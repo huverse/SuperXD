@@ -436,7 +436,8 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
           if (_covered(formatIsoDate(date.subtract(const Duration(days: 1))))) const CustomSemanticsAction(label: '前一天') : () => _step(-1),
           if (_covered(formatIsoDate(date.add(const Duration(days: 1))))) const CustomSemanticsAction(label: '下一天') : () => _step(1),
         },
-        child: ExcludeSemantics(child: Center(child: Text('$year${date.month}月${date.day}日 $weekday', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurface)))),
+        // 日期快照保留布局状态，但颜色订阅当前主题，不能把创建快照时的明暗色固化。
+        child: ExcludeSemantics(child: Center(child: Builder(builder: (context) => Text('$year${date.month}月${date.day}日 $weekday', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurface))))),
     );
   }
 
