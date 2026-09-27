@@ -26,6 +26,8 @@ void main() {
     expect(Theme.of(today).brightness, Brightness.light);
     tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;await tester.pumpAndSettle();
     expect(Theme.of(today).brightness, Brightness.dark);
+    final dateText = tester.widget<Text>(find.byWidgetPredicate((widget) => widget is Text && widget.data != null && RegExp(r'\d+月\d+日 周').hasMatch(widget.data!)).first);
+    expect(dateText.style!.color, CampusPalette.of(today).onSurface);
     expect(identical(today, tester.element(find.byType(TodayPage))), isTrue);
     await display.setThemeMode(ThemeMode.light);await tester.pumpAndSettle();expect(Theme.of(today).brightness, Brightness.light);
     await tester.tap(find.text('消息').last);await tester.pumpAndSettle();await tester.tap(find.text('私信'));await tester.pumpAndSettle();
