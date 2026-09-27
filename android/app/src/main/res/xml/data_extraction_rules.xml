@@ -9,6 +9,7 @@
         <exclude domain="file" path="backgroundDownloaderResumeData/" />
         <exclude domain="file" path="backgroundDownloaderDatabase/" />
         <exclude domain="sharedpref" path="com.superxd.superxd_preferences.xml" />
+        <exclude domain="sharedpref" path="com.superxd.superxd.alpha_preferences.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="superxd_credentials.xml" />
@@ -19,5 +20,6 @@
         <exclude domain="file" path="backgroundDownloaderResumeData/" />
         <exclude domain="file" path="backgroundDownloaderDatabase/" />
         <exclude domain="sharedpref" path="com.superxd.superxd_preferences.xml" />
+        <exclude domain="sharedpref" path="com.superxd.superxd.alpha_preferences.xml" />
     </device-transfer>
 </data-extraction-rules>

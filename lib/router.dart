@@ -7,7 +7,7 @@ import 'package:superxd/gateway/campus_gateway.dart';
 import 'package:superxd/page/account_dialogs.dart';
 import 'package:superxd/page/animated_branches.dart';
 import 'package:superxd/page/login_page.dart';
-import 'package:superxd/page/placeholder_pages.dart';
+import 'package:superxd/page/legal_page.dart';
 import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/grades_page.dart';
 import 'package:superxd/page/section_pages.dart';
@@ -56,7 +56,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       GoRoute(
         path: '/legal/:kind',
         parentNavigatorKey: rootKey,
-        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: LegalPage(title: state.pathParameters['kind'] == 'privacy' ? '隐私政策' : '服务协议')),
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: LegalPage(privacy: state.pathParameters['kind'] == 'privacy')),
       ),
       GoRoute(path: '/toolbox', parentNavigatorKey: rootKey,
         pageBuilder: (context, state) => campusPage(key: state.pageKey, child: ToolboxPage(runtime: toolbox))),

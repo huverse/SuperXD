@@ -8,4 +8,5 @@
     <exclude domain="file" path="backgroundDownloaderResumeData/" />
     <exclude domain="file" path="backgroundDownloaderDatabase/" />
     <exclude domain="sharedpref" path="com.superxd.superxd_preferences.xml" />
+    <exclude domain="sharedpref" path="com.superxd.superxd.alpha_preferences.xml" />
 </full-backup-content>

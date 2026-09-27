@@ -7,22 +7,30 @@
 本地分发按设备架构构建，避免把三套原生库交给每个用户：
 
 ```sh
-flutter build apk --release --split-per-abi --split-debug-info=build/release_symbols
+ORG_GRADLE_PROJECT_superxdSigningProperties=/安全的绝对路径/signing.properties \
+  flutter build apk --release --flavor alpha --split-per-abi --split-debug-info=build/release_symbols
 ```
 
-常见 Android 真机使用 `build/app/outputs/flutter-apk/app-arm64-v8a-release.apk`，模拟器按设备 ABI 选择。上架使用 `flutter build appbundle`，本仓库不会自动上传。
+签名配置只从上述外部properties入口读取，包含storeFile、keyAlias、storePassword、keyPassword；storeFile可相对配置文件或为绝对路径。文件和密钥必须保存在仓库外并限制访问，禁止将真实密码写进命令行、日志、Git或Issue。release缺少有效配置直接失败，不回退debug签名。
+
+常见 Android 真机选择arm64-v8a，较老32位设备选择armeabi-v7a，x86_64用于对应模拟器；构建产物在build/app/outputs/flutter-apk。所有架构使用pubspec的同一构建号，后续发布必须递增。AAB仅用于商店，本次私有Alpha不生成或上架。
 
 `build/release_symbols` 中的符号须随版本离线保存，用于还原崩溃堆栈，不打进APK。`--analyze-size` 与 `--split-debug-info` 不能同次使用。
 
 同架构体积分析（独立构建）：
 
 ```sh
-flutter build apk --release --target-platform android-arm64 --analyze-size
+ORG_GRADLE_PROJECT_superxdSigningProperties=/安全的绝对路径/signing.properties \
+  flutter build apk --release --flavor alpha --target-platform android-arm64 --analyze-size
 ```
 
 性能比较使用同设备、同构建模式、同数据与显示设置；真机 profile 才能作为发布性能验收，不能用多次热重启的 debug 进程内存与冷启动 release 对比。云雾、加载与图标动效保持原设计；字体完整字符覆盖和实际字重不以裁字、系统替代或假粗体压缩。当前字体保真候选未通过验证，原文件保留。
 
-发布签名尚沿用本地 debug key；外部分发前须由维护者配置正式签名。
+Alpha使用长期专用签名，包名com.superxd.superxd.alpha、显示SuperXD Alpha；与原开发包并装，不共享或迁移账号数据。后续Alpha覆盖升级要求同包名、同签名、递增构建号。密钥和密码由维护者离线备份；丢失密钥不能无损替换签名升级。
+
+默认flutter run/build使用production flavor，保留原开发包名；只有显式--flavor alpha才构建Alpha包。请勿向同一测试设备安装debug签名的alphaDebug，以免与alphaRelease签名冲突。
+
+发布前逐个使用apksigner verify --verbose --print-certs验签，并检查包名、版本号、ABI和debuggable=false；生成SHA256SUMS，发布后下载附件再校验。首次Alpha私有Pre-release仅上传release APK和校验文件，不上传签名配置、keystore、真实测试数据或release_symbols。
 
 ## 本地开发
 
