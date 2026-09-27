@@ -15,8 +15,12 @@ import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/page/today_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/toolbox/toolbox_catalog.dart';
+import 'package:superxd/toolbox/toolbox_page.dart';
+import 'package:superxd/toolbox/toolbox_runtime.dart';
 
-GoRouter buildRouter({required CampusGateway gateway, required AppSession session}) {
+GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox}) {
+  final tools = toolboxCatalog(toolbox);
   final rootKey = GlobalKey<NavigatorState>();
   final generation = session.generation;
   return GoRouter(
@@ -29,7 +33,9 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       if (location == '/boot') return session.loggedIn ? '/today' : '/login';
       final atLogin = location == '/login';
       final legal = location.startsWith('/legal');
-      if (!session.loggedIn && !atLogin && !legal) return '/login';
+      // [人工决策-2026-09-27 20:12:08] 仅百宝箱及注册工具免教务登录，其他业务门禁不变。
+      final publicTool = location == '/toolbox' || tools.any((tool) => location == '/toolbox/${tool.id}');
+      if (!session.loggedIn && !atLogin && !legal && !publicTool) return '/login';
       if (session.loggedIn && atLogin) return '/today';
       return null;
     },
@@ -52,6 +58,10 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
         parentNavigatorKey: rootKey,
         pageBuilder: (context, state) => campusPage(key: state.pageKey, child: LegalPage(title: state.pathParameters['kind'] == 'privacy' ? '隐私政策' : '服务协议')),
       ),
+      GoRoute(path: '/toolbox', parentNavigatorKey: rootKey,
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: ToolboxPage(runtime: toolbox))),
+      for (final tool in tools) GoRoute(path: '/toolbox/${tool.id}', parentNavigatorKey: rootKey,
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: tool.builder(context))),
       GoRoute(
         path: '/schedule',
         parentNavigatorKey: rootKey,

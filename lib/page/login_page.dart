@@ -141,6 +141,8 @@ class _LoginPageState extends State<LoginPage> {
                     child: CampusBusyContent(busy: _busy, label: widget.switching ? '登录并切换' : '登录', busyLabel: widget.switching ? '正在登录并切换' : '正在登录'),
                   )),
                 ])),
+                if (!widget.switching) Padding(padding: const EdgeInsets.only(top: 16), child: OutlinedButton.icon(
+                  onPressed: _busy ? null : () => context.push('/toolbox'), icon: const CampusIcon(CampusIcons.toolbox), label: const Text('百宝箱'))),
                 Padding(padding: const EdgeInsets.only(top: 24), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   SizedBox(width: 48, height: 48, child: Checkbox(key: const ValueKey('agree-terms'), value: _agreed, onChanged: _busy ? null : (value) => setState(() => _agreed = value == true))),
                   Expanded(child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [

@@ -3,4 +3,9 @@
     <exclude domain="sharedpref" path="superxd_credentials.xml" />
     <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_credentials.xml" />
     <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
+    <exclude domain="file" path="toolbox/" />
+    <exclude domain="file" path="backgroundDownloaderTaskRecords/" />
+    <exclude domain="file" path="backgroundDownloaderResumeData/" />
+    <exclude domain="file" path="backgroundDownloaderDatabase/" />
+    <exclude domain="sharedpref" path="com.superxd.superxd_preferences.xml" />
 </full-backup-content>
