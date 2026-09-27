@@ -29,6 +29,11 @@ abstract final class CampusIcons {
   static const lock = LucideIcons.lockKeyhole;
   static const switchAccount = LucideIcons.usersRound;
   static const download = LucideIcons.download;
+  static const toolbox = LucideIcons.box;
+  static const video = LucideIcons.video;
+  static const paste = LucideIcons.clipboardPaste;
+  static const manage = LucideIcons.ellipsis;
+  static const delete = LucideIcons.trash2;
   static const logout = LucideIcons.logOut;
   static const success = LucideIcons.circleCheck;
   static const warning = LucideIcons.circleAlert;

@@ -21,9 +21,9 @@ class ServicePage extends StatelessWidget {
     return Column(
       children: [
         const _TitleBar(title: '服务'),
-        // [人工决策-2026-09-25 01:48:56] 服务页扩展为课表、成绩同级入口，替代原仅课表约定；其他未定义服务不添加。
+        // [人工决策-2026-09-27 20:12:08] 保留课表、成绩，新增百宝箱同级入口；教务无关工具集中注册于百宝箱，不添加未定义服务。
         Expanded(child: ListView(padding: const EdgeInsets.all(16), children: [
-          for (final service in [(label: '课表', route: '/schedule', icon: CampusIcons.todaySelected), (label: '成绩', route: '/grades', icon: CampusIcons.grades)]) Padding(padding: const EdgeInsets.only(bottom: 16), child: CampusSurface(
+          for (final service in [(label: '课表', route: '/schedule', icon: CampusIcons.todaySelected), (label: '成绩', route: '/grades', icon: CampusIcons.grades), (label: '百宝箱', route: '/toolbox', icon: CampusIcons.toolbox)]) Padding(padding: const EdgeInsets.only(bottom: 16), child: CampusSurface(
             onTap: () => context.push(service.route), padding: const EdgeInsets.all(20),
             child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 40), child: Row(children: [CampusIcon(service.icon, color: CampusPalette.of(context).primary, size: 28), const SizedBox(width: 20), Expanded(child: Text(service.label, style: TextStyle(fontSize: 16, color: CampusPalette.of(context).onSurface))), CampusIcon(CampusIcons.next, color: CampusPalette.of(context).onSurfaceVariant)])),
           )),

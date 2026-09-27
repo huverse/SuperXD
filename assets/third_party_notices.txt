@@ -1,5 +1,32 @@
 SuperXD 第三方组件与改编声明
 
+短视频媒体模型、来源适配与交互参考
+flutter_video_parse：https://github.com/zhao004/flutter_video_parse
+参考版本：b9ffe59ae4c9fe4b3e9c75b047538a267fed8ee9
+dart_video_parse：https://github.com/zhao004/dart_video_parse
+参考版本：191e42cf08b20663e65c00a02f706c0b9ecf0ffc
+本应用未内置其全部解析源；第三方服务及媒体授权不随代码许可授予。
+MIT License
+Copyright (c) 2026 zhao004
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
 本应用内图标采用 Lucide，形变采用 Flutter 社区项目 Morphnext。Morphnext 的部分几何行为改编自 Morphicons；不是 Morphicons 官方 Flutter 绑定。
 
 Morphicons

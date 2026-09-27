@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:go_router/go_router.dart';
 
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/app_session.dart';
@@ -14,8 +15,37 @@ import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/login_page.dart';
 import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/toolbox/short_video/short_video_page.dart';
+import 'package:superxd/toolbox/toolbox_page.dart';
+import 'toolbox_test_support.dart';
 
 void main() {
+  testWidgets('百宝箱免教务登录，但课表门禁仍有效', (tester) async {
+    final fixture = ToolboxFixture();
+    await tester.runAsync(fixture.initialize);
+    final gateway = _Accounts().._active = null;
+    final session = AppSession(gateway); await session.restore();
+    await tester.pumpWidget(SuperXdApp(session: session, toolbox: fixture.runtime, backgroundPhase: .18));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('百宝箱'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ToolboxPage), findsOneWidget);
+    await tester.tap(find.text('短视频去水印解析【聚合】'));
+    for(var tick=0;tick<100&&find.byType(TextField).evaluate().isEmpty;tick++){
+      await tester.runAsync(()=>Future<void>.delayed(const Duration(milliseconds:10)));
+      await tester.pump(const Duration(milliseconds:16));
+    }
+    await tester.pumpAndSettle();
+    expect(find.byType(ShortVideoPage), findsOneWidget);
+    GoRouter.of(tester.element(find.byType(ShortVideoPage))).go('/schedule');
+    await tester.pumpAndSettle();
+    expect(find.byType(LoginPage), findsOneWidget);
+    expect(find.byType(SchedulePage), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+    await tester.runAsync(fixture.close);
+  });
+
   testWidgets('应用跟随系统与手动明暗切换保留页面上下文', (tester) async {
     final gateway = _Accounts();final session = AppSession(gateway);await session.restore();
     final display = DisplaySettings.memory();

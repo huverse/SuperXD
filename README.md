@@ -39,6 +39,14 @@ flutter run
 
 当前工程提供Android宿主。GitHub仓库为私有，clone需要维护者授权；不要把访问token写入URL或项目文件。
 
+## 百宝箱媒体验证
+
+当前只接入BugPK；自动/手动是可插拔编排能力，不表示已经集成第二家服务。解析历史默认关闭，媒体直链只短时缓存；下载到Download/SuperXD，移除记录不删除导出文件。图集/实况按接口返回项处理，不合成系统Live Photo，不支持DRM或HLS合并。
+
+新增来源实现lib/toolbox/short_video/parse_source.dart端口并在设备级组合根注册；设置服务域名、适配版本和授权版本，不复用教务Cookie。只在用户明确授权后用真实作品联调，离线测试使用合成数据。
+
+tool/verify_toolbox.dart为手动Android原生下载验证入口，不进入正式main或CI。视频播放若使本机Android Emulator 37.1.11在libcuda.so的cuMemcpy2D_v2崩溃，可只对模拟器进程设置ANDROID_EMU_MEDIA_DECODER_CUDA=0；不修改应用或清除AVD数据，此环境规避不代表真机性能验收。
+
 ## 版本管理
 
 main保持可验证状态，功能在短分支开发并通过PR合并。CI只做静态检查和离线测试，不访问真实教务、不自动发布。详见[贡献流程](CONTRIBUTING.md)和[变更记录](CHANGELOG.md)。

@@ -20,6 +20,7 @@ import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/third_party_licenses.dart';
+import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -38,25 +39,42 @@ void main() async {
   }
 }
 
-class SuperXdApp extends StatelessWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase});
+class SuperXdApp extends StatefulWidget {
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox});
+  final ToolboxRuntime? toolbox;
   final AppSession session;
   final DisplaySettings? display;
   // 测试/截图固定装饰相位，不关闭业务转场或图标动画。
   final double? backgroundPhase;
 
   @override
+  State<SuperXdApp> createState() => _SuperXdAppState();
+}
+
+class _SuperXdAppState extends State<SuperXdApp> {
+  late final _toolbox = widget.toolbox ?? ToolboxRuntime();
+  @override
+  void dispose() {
+    if (widget.toolbox == null) {
+      _toolbox.close().catchError((Object error, StackTrace stack) {
+        debugPrint('[Toolbox] action=close errorType=${error.runtimeType}\n$stack');
+      });
+    }
+    super.dispose();
+  }
+  @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
-      listenable: session,
+      listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(session.generation), session: session, display: display, backgroundPhase: backgroundPhase),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox),
     );
   }
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, this.display, this.backgroundPhase});
+  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase});
+  final ToolboxRuntime toolbox;
   final AppSession session;
   final DisplaySettings? display;
   final double? backgroundPhase;
@@ -66,7 +84,7 @@ class _AccountApp extends StatefulWidget {
 }
 
 class _AccountAppState extends State<_AccountApp> {
-  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session);
+  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox);
   late final _display = widget.display ?? DisplaySettings.memory();
 
   @override
