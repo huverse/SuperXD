@@ -31,7 +31,7 @@ CI使用Flutter 3.47.2 / Dart 3.13.2，依赖锁定在pubspec.lock。
 ```sh
 git clone https://github.com/huverse/SuperXD.git
 cd SuperXD
-flutter pub get --enforce-lockfile
+PUB_HOSTED_URL=https://pub.dev flutter pub get --enforce-lockfile
 flutter analyze
 flutter test
 flutter run

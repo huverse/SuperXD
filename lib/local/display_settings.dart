@@ -5,12 +5,20 @@ import 'package:synchronized/synchronized.dart';
 
 class DisplaySettings extends ChangeNotifier {
   DisplaySettings.memory() : _database = null;
-  DisplaySettings._(this._database, this._scale, this._paletteId, this._fontId);
+  DisplaySettings._(
+    this._database,
+    this._scale,
+    this._paletteId,
+    this._fontId,
+    this._themeMode,
+  );
   final Database? _database;
   final Lock _saveLock = Lock();
   double _scale = 1;
   String _paletteId = 'sage';
   String _fontId = 'maple';
+  ThemeMode _themeMode = ThemeMode.system;
+  ThemeMode get themeMode => _themeMode;
   double get scale => _scale;
   String get paletteId => _paletteId;
   String get fontId => _fontId;
@@ -27,10 +35,10 @@ class DisplaySettings extends ChangeNotifier {
     final db = await openDatabase(
       databasePath ??
           path.join(await getDatabasesPath(), 'display_settings.db'),
-      version: 2,
+      version: 3,
       onCreate: (db, _) async {
         await db.execute(
-          "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT 'sage', font_id TEXT NOT NULL DEFAULT 'maple')",
+          "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT 'sage', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system')",
         );
       },
       onUpgrade: (db, oldVersion, _) async {
@@ -42,6 +50,11 @@ class DisplaySettings extends ChangeNotifier {
             "ALTER TABLE display_settings ADD COLUMN font_id TEXT NOT NULL DEFAULT 'maple'",
           );
         }
+        if (oldVersion < 3) {
+          await db.execute(
+            "ALTER TABLE display_settings ADD COLUMN theme_mode TEXT NOT NULL DEFAULT 'system'",
+          );
+        }
       },
     );
     final rows = await db.query('display_settings', where: 'id = 1', limit: 1);
@@ -49,11 +62,14 @@ class DisplaySettings extends ChangeNotifier {
     final scale = row?['text_scale'];
     final palette = row?['palette_id'];
     final font = row?['font_id'];
+    final mode = row?['theme_mode'];
     return DisplaySettings._(
       db,
       scale is num && scales.contains(scale.toDouble()) ? scale.toDouble() : 1,
       palette is String && paletteIds.contains(palette) ? palette : 'sage',
       font is String && fontFamilies.containsKey(font) ? font : 'maple',
+      ThemeMode.values.where((value) => value.name == mode).firstOrNull ??
+          ThemeMode.system,
     );
   }
 
@@ -76,28 +92,39 @@ class DisplaySettings extends ChangeNotifier {
     return _save(fontId: value);
   }
 
+  // [人工决策-2026-09-27 18:22:49] 新旧安装默认跟随系统，可手动浅色/深色；模式属于设备，和配色字体字号锁内合并持久化，切账号保留。
+  Future<void> setThemeMode(ThemeMode value) => _save(themeMode: value);
+
   // [人工决策-2026-09-25 17:43:48] 配色/字体/字号属于设备，切账号保留；锁内合并完整快照，防快速切换覆盖其他设置。
-  Future<void> _save({double? scale, String? paletteId, String? fontId}) =>
-      _saveLock.synchronized(() async {
-        final nextScale = scale ?? _scale,
-            nextPalette = paletteId ?? _paletteId,
-            nextFont = fontId ?? _fontId;
-        if (nextScale == _scale &&
-            nextPalette == _paletteId &&
-            nextFont == _fontId) {
-          return;
-        }
-        await _database?.insert('display_settings', {
-          'id': 1,
-          'text_scale': nextScale,
-          'palette_id': nextPalette,
-          'font_id': nextFont,
-        }, conflictAlgorithm: ConflictAlgorithm.replace);
-        _scale = nextScale;
-        _paletteId = nextPalette;
-        _fontId = nextFont;
-        notifyListeners();
-      });
+  Future<void> _save({
+    double? scale,
+    String? paletteId,
+    String? fontId,
+    ThemeMode? themeMode,
+  }) => _saveLock.synchronized(() async {
+    final nextScale = scale ?? _scale,
+        nextPalette = paletteId ?? _paletteId,
+        nextFont = fontId ?? _fontId,
+        nextMode = themeMode ?? _themeMode;
+    if (nextScale == _scale &&
+        nextPalette == _paletteId &&
+        nextFont == _fontId &&
+        nextMode == _themeMode) {
+      return;
+    }
+    await _database?.insert('display_settings', {
+      'id': 1,
+      'text_scale': nextScale,
+      'palette_id': nextPalette,
+      'font_id': nextFont,
+      'theme_mode': nextMode.name,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    _scale = nextScale;
+    _paletteId = nextPalette;
+    _fontId = nextFont;
+    _themeMode = nextMode;
+    notifyListeners();
+  });
   Future<void> close() async {
     await _database?.close();
     dispose();

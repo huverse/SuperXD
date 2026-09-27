@@ -9,15 +9,22 @@ ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono N
   final colors = palette ?? CampusPalette.values.first;
   final scheme = ColorScheme.fromSeed(
     seedColor: colors.primary,
-    brightness: Brightness.light,
+    brightness: colors.brightness,
     primary: colors.primary,
     onPrimary: colors.onPrimary,
     secondary: colors.primary,
     onSecondary: colors.onPrimary,
     error: colors.danger,
-    onError: colors.onPrimary,
+    onError: colors.onDanger,
     surface: colors.surface,
     onSurface: colors.onSurface,
+    onSurfaceVariant: colors.onSurfaceVariant,
+    outline: colors.outline,
+    outlineVariant: colors.outlineSubtle,
+    surfaceContainerLow: colors.surface,
+    surfaceContainer: colors.glassFallback,
+    surfaceContainerHigh: colors.glassTint,
+    surfaceContainerHighest: colors.surfaceSelected,
   );
   return ThemeData(
     useMaterial3: true,
@@ -34,10 +41,10 @@ ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono N
     colorScheme: scheme,
     scaffoldBackgroundColor: Colors.transparent,
     canvasColor: colors.surface,
-    appBarTheme: AppBarTheme(backgroundColor: Colors.transparent, surfaceTintColor: Colors.transparent, elevation: 0, scrolledUnderElevation: 0, foregroundColor: colors.onSurface, systemOverlayStyle: SystemUiOverlayStyle.dark),
-    cardTheme: CardThemeData(color: colors.surface.withValues(alpha: .91), surfaceTintColor: Colors.transparent, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: BorderSide(color: Colors.white.withValues(alpha: .7)))),
+    appBarTheme: AppBarTheme(backgroundColor: Colors.transparent, surfaceTintColor: Colors.transparent, elevation: 0, scrolledUnderElevation: 0, foregroundColor: colors.onSurface, systemOverlayStyle: campusSystemOverlay(colors)),
+    cardTheme: CardThemeData(color: colors.surface.withValues(alpha: .91), surfaceTintColor: Colors.transparent, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: BorderSide(color: colors.surfaceBorder))),
     pageTransitionsTheme: PageTransitionsTheme(builders: {for (final platform in TargetPlatform.values) platform: CampusPageTransitions()}),
-    snackBarTheme: SnackBarThemeData(behavior: SnackBarBehavior.floating, backgroundColor: colors.onSurface, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
+    snackBarTheme: SnackBarThemeData(behavior: SnackBarBehavior.floating, backgroundColor: colors.onSurface, contentTextStyle: TextStyle(color: colors.surface), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
     progressIndicatorTheme: ProgressIndicatorThemeData(color: colors.primary),
     textTheme: TextTheme(
       bodySmall: TextStyle(fontSize: 14, color: colors.onSurfaceVariant),
@@ -89,6 +96,12 @@ ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono N
     ),
   );
 }
+
+SystemUiOverlayStyle campusSystemOverlay(CampusPalette palette) => (palette.isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark).copyWith(
+  statusBarColor: Colors.transparent,
+  systemNavigationBarColor: Colors.transparent,
+  systemNavigationBarIconBrightness: palette.isDark ? Brightness.light : Brightness.dark,
+);
 
 class CampusBackground extends StatelessWidget {
   const CampusBackground({super.key, required this.child});

@@ -6,6 +6,8 @@ import 'package:superxd/app_session.dart';
 import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/gateway/campus_gateway.dart';
 import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/local/display_settings.dart';
+import 'package:superxd/page/today_page.dart';
 import 'package:superxd/main.dart';
 import 'package:superxd/page/animated_branches.dart';
 import 'package:superxd/page/schedule_page.dart';
@@ -14,6 +16,23 @@ import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
 void main() {
+  testWidgets('应用跟随系统与手动明暗切换保留页面上下文', (tester) async {
+    final gateway = _Accounts();final session = AppSession(gateway);await session.restore();
+    final display = DisplaySettings.memory();
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
+    addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
+    await tester.pumpWidget(SuperXdApp(session: session, display: display, backgroundPhase: .18));await tester.pumpAndSettle();
+    final today = tester.element(find.byType(TodayPage));
+    expect(Theme.of(today).brightness, Brightness.light);
+    tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;await tester.pumpAndSettle();
+    expect(Theme.of(today).brightness, Brightness.dark);
+    expect(identical(today, tester.element(find.byType(TodayPage))), isTrue);
+    await display.setThemeMode(ThemeMode.light);await tester.pumpAndSettle();expect(Theme.of(today).brightness, Brightness.light);
+    await tester.tap(find.text('消息').last);await tester.pumpAndSettle();await tester.tap(find.text('私信'));await tester.pumpAndSettle();
+    await display.setThemeMode(ThemeMode.dark);await tester.pumpAndSettle();expect(find.text('还没有私信'), findsOneWidget);
+    expect(gateway.activeSession?.loginId, 'A');
+    await tester.pumpWidget(const SizedBox());display.dispose();session.dispose();
+  });
   testWidgets('悬浮底栏保留边距，末尾设置可滚到无遮挡位置', (tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 740)); addTearDown(() => tester.binding.setSurfaceSize(null));
     final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
