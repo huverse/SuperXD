@@ -138,7 +138,7 @@ void main() {
       await font.load();
     });
     final boundaryKey = GlobalKey();
-    for (final palette in CampusPalette.values) {
+    for (final palette in [...CampusPalette.values, ...CampusPalette.darkValues]) {
       final frames = <Uint8List>[];
       for (final phase in [0.0, .25, .5, .75]) {
         await tester.pumpWidget(
@@ -217,7 +217,7 @@ void main() {
               .buffer
               .asUint8List();
           await File(
-            '${directory.path}/${palette.id}-${(phase * 4).round()}.png',
+            '${directory.path}/${palette.id}-${palette.brightness.name}-${(phase * 4).round()}.png',
           ).writeAsBytes(png);
           image.dispose();
         });

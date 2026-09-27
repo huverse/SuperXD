@@ -111,7 +111,7 @@ void main() {
     await tester.tap(find.text('雾蓝'));
     await tester.pumpAndSettle();
     expect(settings.paletteId, 'mist');
-    await tester.ensureVisible(find.text('文学衬线'));
+    await tester.scrollUntilVisible(find.text('文学衬线'), 200, scrollable: find.byType(Scrollable).first);
     await tester.tap(find.text('文学衬线'));
     await tester.pumpAndSettle();
     expect(settings.fontId, 'serif');

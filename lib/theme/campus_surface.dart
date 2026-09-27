@@ -42,7 +42,7 @@ class CampusSurface extends StatelessWidget {
           side: BorderSide(
             color: selected
                 ? CampusPalette.of(context).primary.withValues(alpha: .5)
-                : Colors.white.withValues(alpha: .72),
+                : CampusPalette.of(context).surfaceBorder,
           ),
         ),
         child: onTap == null

@@ -79,13 +79,15 @@ class _AccountAppState extends State<_AccountApp> {
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(listenable: _display, builder: (context, _) => MaterialApp.router(
-      title: 'SuperXD', theme: campusTheme(palette: CampusPalette.byId(_display.paletteId), fontFamily: _display.fontFamily), routerConfig: _router,
+      title: 'SuperXD', theme: campusTheme(palette: CampusPalette.byId(_display.paletteId), fontFamily: _display.fontFamily),
+      darkTheme: campusTheme(palette: CampusPalette.byId(_display.paletteId, brightness: Brightness.dark), fontFamily: _display.fontFamily),
+      themeMode: _display.themeMode, routerConfig: _router,
       themeAnimationDuration: WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations || WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.reduceMotion ? Duration.zero : const Duration(milliseconds: 260),
       locale: const Locale('zh', 'CN'), supportedLocales: const [Locale('zh', 'CN')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       builder: (context, child) => DisplayScope(settings: _display, child: MediaQuery(
         data: MediaQuery.of(context).copyWith(textScaler: CampusTextScaler(MediaQuery.textScalerOf(context), _display.scale)),
-        child: AnnotatedRegion<SystemUiOverlayStyle>(value: SystemUiOverlayStyle.dark, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, child: CampusEntryFade(child: LiveClock(child: child!))))),
+        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, child: CampusEntryFade(child: LiveClock(child: child!))))),
       )),
     ));
   }

@@ -19,12 +19,21 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
     required this.fogSage,
     required this.fogChampagne,
     required this.fogPearl,
+    this.brightness = Brightness.light,
+    this.onPrimary = Colors.white,
+    this.danger = const Color(0xFFBA1A1A),
+    this.onDanger = Colors.white,
+    this.surfaceBorder = const Color(0xB8FFFFFF),
   });
   final String id;
   final String label;
   final Color primary;
-  Color get onPrimary => Colors.white;
-  Color get danger => const Color(0xFFBA1A1A);
+  final Brightness brightness;
+  final Color onPrimary;
+  final Color danger;
+  final Color onDanger;
+  final Color surfaceBorder;
+  bool get isDark => brightness == Brightness.dark;
   final Color backgroundTop;
   final Color backgroundBottom;
   final Color surface;
@@ -41,8 +50,14 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
   final Color fogPearl;
   static CampusPalette of(BuildContext context) =>
       Theme.of(context).extension<CampusPalette>() ?? values.first;
-  static CampusPalette byId(String id) =>
-      values.firstWhere((palette) => palette.id == id);
+  static CampusPalette byId(
+    String id, {
+    Brightness brightness = Brightness.light,
+  }) => (brightness == Brightness.dark ? darkValues : values).firstWhere(
+    (palette) => palette.id == id,
+  );
+  static List<CampusPalette> forBrightness(Brightness brightness) =>
+      brightness == Brightness.dark ? darkValues : values;
   static const values = [
     CampusPalette(
       id: 'sage',
@@ -135,6 +150,124 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
       fogPearl: Color(0xFFC8BADE),
     ),
   ];
+  // [人工决策-2026-09-27 18:22:49] 五套暗色独立设计基底、抬升面与低亮度雾光，不反色；完整显示设置仍属设备。
+  static const darkValues = [
+    CampusPalette(
+      id: 'sage',
+      label: '苔灰',
+      brightness: Brightness.dark,
+      onPrimary: Color(0xFF15201A),
+      danger: Color(0xFFFFB4AB),
+      onDanger: Color(0xFF4B1814),
+      surfaceBorder: Color(0x385C7082),
+      primary: Color(0xFFB7D0BD),
+      backgroundTop: Color(0xFF141B18),
+      backgroundBottom: Color(0xFF1B2420),
+      surface: Color(0xFF27322C),
+      surfaceSelected: Color(0xFF34463B),
+      onSurface: Color(0xFFE4EBE5),
+      onSurfaceVariant: Color(0xFFB7C6BC),
+      outline: Color(0xFF819A88),
+      outlineSubtle: Color(0xFF43564A),
+      glassTint: Color(0xFF303F36),
+      glassFallback: Color(0xFF2C3931),
+      fogSage: Color(0xFF365949),
+      fogChampagne: Color(0xFF61503B),
+      fogPearl: Color(0xFF4A445C),
+    ),
+    CampusPalette(
+      id: 'mist',
+      label: '雾蓝',
+      brightness: Brightness.dark,
+      onPrimary: Color(0xFF15201A),
+      danger: Color(0xFFFFB4AB),
+      onDanger: Color(0xFF4B1814),
+      surfaceBorder: Color(0x385C7082),
+      primary: Color(0xFFB4D1EA),
+      backgroundTop: Color(0xFF141A22),
+      backgroundBottom: Color(0xFF1A2430),
+      surface: Color(0xFF263340),
+      surfaceSelected: Color(0xFF34485A),
+      onSurface: Color(0xFFE4ECF4),
+      onSurfaceVariant: Color(0xFFB8C8D8),
+      outline: Color(0xFF839FB7),
+      outlineSubtle: Color(0xFF425A70),
+      glassTint: Color(0xFF2D4051),
+      glassFallback: Color(0xFF2B3948),
+      fogSage: Color(0xFF28596C),
+      fogChampagne: Color(0xFF59465C),
+      fogPearl: Color(0xFF424C73),
+    ),
+    CampusPalette(
+      id: 'rose',
+      label: '藕粉',
+      brightness: Brightness.dark,
+      onPrimary: Color(0xFF15201A),
+      danger: Color(0xFFFFB4AB),
+      onDanger: Color(0xFF4B1814),
+      surfaceBorder: Color(0x385C7082),
+      primary: Color(0xFFE6C0D0),
+      backgroundTop: Color(0xFF21181D),
+      backgroundBottom: Color(0xFF2B2027),
+      surface: Color(0xFF3B2D35),
+      surfaceSelected: Color(0xFF513A46),
+      onSurface: Color(0xFFF2E6EB),
+      onSurfaceVariant: Color(0xFFD4BFC9),
+      outline: Color(0xFFB38C9D),
+      outlineSubtle: Color(0xFF654753),
+      glassTint: Color(0xFF45323D),
+      glassFallback: Color(0xFF3C2D35),
+      fogSage: Color(0xFF634352),
+      fogChampagne: Color(0xFF645040),
+      fogPearl: Color(0xFF345465),
+    ),
+    CampusPalette(
+      id: 'dusk',
+      label: '暮紫',
+      brightness: Brightness.dark,
+      onPrimary: Color(0xFF15201A),
+      danger: Color(0xFFFFB4AB),
+      onDanger: Color(0xFF4B1814),
+      surfaceBorder: Color(0x385C7082),
+      primary: Color(0xFFD4C4EF),
+      backgroundTop: Color(0xFF1B1824),
+      backgroundBottom: Color(0xFF252030),
+      surface: Color(0xFF332D40),
+      surfaceSelected: Color(0xFF493C5B),
+      onSurface: Color(0xFFEBE6F4),
+      onSurfaceVariant: Color(0xFFC9BEDB),
+      outline: Color(0xFFA191BA),
+      outlineSubtle: Color(0xFF574B6C),
+      glassTint: Color(0xFF3D344E),
+      glassFallback: Color(0xFF342C43),
+      fogSage: Color(0xFF514064),
+      fogChampagne: Color(0xFF5C4257),
+      fogPearl: Color(0xFF335763),
+    ),
+    CampusPalette(
+      id: 'oat',
+      label: '燕麦',
+      brightness: Brightness.dark,
+      onPrimary: Color(0xFF15201A),
+      danger: Color(0xFFFFB4AB),
+      onDanger: Color(0xFF4B1814),
+      surfaceBorder: Color(0x385C7082),
+      primary: Color(0xFFE2CBAC),
+      backgroundTop: Color(0xFF201B15),
+      backgroundBottom: Color(0xFF29231B),
+      surface: Color(0xFF383026),
+      surfaceSelected: Color(0xFF4C4030),
+      onSurface: Color(0xFFF1EADD),
+      onSurfaceVariant: Color(0xFFCDBFA8),
+      outline: Color(0xFFAA9678),
+      outlineSubtle: Color(0xFF5F513E),
+      glassTint: Color(0xFF413729),
+      glassFallback: Color(0xFF383024),
+      fogSage: Color(0xFF62503A),
+      fogChampagne: Color(0xFF435940),
+      fogPearl: Color(0xFF55455F),
+    ),
+  ];
   @override
   CampusPalette copyWith({
     Color? primary,
@@ -151,9 +284,18 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
     Color? fogSage,
     Color? fogChampagne,
     Color? fogPearl,
+    Color? onPrimary,
+    Color? danger,
+    Color? onDanger,
+    Color? surfaceBorder,
   }) => CampusPalette(
     id: id,
     label: label,
+    brightness: brightness,
+    onPrimary: onPrimary ?? this.onPrimary,
+    danger: danger ?? this.danger,
+    onDanger: onDanger ?? this.onDanger,
+    surfaceBorder: surfaceBorder ?? this.surfaceBorder,
     primary: primary ?? this.primary,
     backgroundTop: backgroundTop ?? this.backgroundTop,
     backgroundBottom: backgroundBottom ?? this.backgroundBottom,
@@ -176,6 +318,11 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
     return CampusPalette(
       id: other.id,
       label: other.label,
+      brightness: t < .5 ? brightness : other.brightness,
+      onPrimary: blend(onPrimary, other.onPrimary),
+      danger: blend(danger, other.danger),
+      onDanger: blend(onDanger, other.onDanger),
+      surfaceBorder: blend(surfaceBorder, other.surfaceBorder),
       primary: blend(primary, other.primary),
       backgroundTop: blend(backgroundTop, other.backgroundTop),
       backgroundBottom: blend(backgroundBottom, other.backgroundBottom),
