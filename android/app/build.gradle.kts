@@ -1,7 +1,30 @@
+import java.io.File
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val signingPropertiesFile = providers.gradleProperty("superxdSigningProperties").orNull?.let { file(it) }
+val releaseProperties = Properties()
+if (signingPropertiesFile != null) {
+    check(signingPropertiesFile.isFile) { "Release signing properties file is missing" }
+    signingPropertiesFile.inputStream().use { releaseProperties.load(it) }
+}
+val releaseKeyFile = releaseProperties.getProperty("storeFile")?.let { value ->
+    val candidate = File(value)
+    if (candidate.isAbsolute) candidate else File(signingPropertiesFile!!.parentFile, value)
+}
+val releaseSigningReady = releaseKeyFile?.isFile == true &&
+    listOf("keyAlias", "storePassword", "keyPassword").all { !releaseProperties.getProperty(it).isNullOrBlank() }
+
+// [人工决策-2026-09-28 01:15:35] Alpha使用仓库外长期专用签名；缺配置的release直接失败，禁止回退debug签名。
+gradle.taskGraph.whenReady {
+    if (allTasks.any { it.project == project && it.name.startsWith("pre") && it.name.endsWith("ReleaseBuild") }) {
+        check(releaseSigningReady) { "Release signing is required: set -PsuperxdSigningProperties to a private properties file outside Git" }
+    }
 }
 
 android {
@@ -29,12 +52,30 @@ android {
         versionName = flutter.versionName
     }
 
-    buildTypes {
-        release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+    // [人工决策-2026-09-28 01:15:35] 私有Alpha独立包并装，不覆盖开发版数据；后续Alpha复用同一包名和签名。
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("production") { dimension = "distribution" }
+        create("alpha") {
+            dimension = "distribution"
+            applicationIdSuffix = ".alpha"
         }
+    }
+
+    signingConfigs {
+        create("release") {
+            enableV2Signing = true
+            enableV3Signing = true
+            if (releaseSigningReady) {
+                storeFile = releaseKeyFile
+                storePassword = releaseProperties.getProperty("storePassword")
+                keyAlias = releaseProperties.getProperty("keyAlias")
+                keyPassword = releaseProperties.getProperty("keyPassword")
+            }
+        }
+    }
+    buildTypes {
+        release { signingConfig = signingConfigs.getByName("release") }
     }
 }
 

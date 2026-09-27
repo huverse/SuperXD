@@ -41,6 +41,13 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(LoginPage), findsOneWidget);
     expect(find.byType(SchedulePage), findsNothing);
+    for (final title in ['服务协议', '隐私政策']) {
+      await tester.tap(find.text(title)); await tester.pumpAndSettle();
+      expect(find.text(title), findsOneWidget);
+      expect(find.textContaining('待替换'), findsNothing);
+      await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
+      expect(find.byType(LoginPage), findsOneWidget);
+    }
     await tester.pumpWidget(const SizedBox());
     session.dispose();
     await tester.runAsync(fixture.close);
