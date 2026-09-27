@@ -1,0 +1,814 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "error": null,
+  "needsInput": null,
+  "source": "fixture",
+  "fetchedAt": "2026-01-01T00:00:00.000Z",
+  "data": {
+    "term": {
+      "xn": "2026",
+      "xq": "0",
+      "label": "2026-2027学年第一学期"
+    },
+    "student": {
+      "loginId": "20260000001",
+      "name": "示例学生",
+      "className": "示例计算机班"
+    },
+    "courses": [
+      {
+        "courseCode": "DEMO001",
+        "courseName": "示例课程01",
+        "sectionId": "SECTION001",
+        "credit": 2,
+        "teacherName": "示例教师01",
+        "meetings": [
+          {
+            "weekday": 1,
+            "periodStart": 1,
+            "periodEnd": 2,
+            "place": "示例教学楼011室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          }
+        ]
+      },
+      {
+        "courseCode": "DEMO002",
+        "courseName": "示例课程02",
+        "sectionId": "SECTION002",
+        "credit": 2,
+        "teacherName": "示例教师02",
+        "meetings": [
+          {
+            "weekday": 2,
+            "periodStart": 3,
+            "periodEnd": 4,
+            "place": "示例教学楼021室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          },
+          {
+            "weekday": 2,
+            "periodStart": 3,
+            "periodEnd": 4,
+            "place": "示例教学楼022室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          },
+          {
+            "weekday": 2,
+            "periodStart": 3,
+            "periodEnd": 4,
+            "place": "示例教学楼023室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          },
+          {
+            "weekday": 2,
+            "periodStart": 3,
+            "periodEnd": 4,
+            "place": "示例教学楼024室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          }
+        ]
+      },
+      {
+        "courseCode": "DEMO003",
+        "courseName": "示例课程03",
+        "sectionId": "SECTION003",
+        "credit": 2,
+        "teacherName": "示例教师03",
+        "meetings": [
+          {
+            "weekday": 3,
+            "periodStart": 5,
+            "periodEnd": 6,
+            "place": "示例教学楼031室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          },
+          {
+            "weekday": 3,
+            "periodStart": 5,
+            "periodEnd": 6,
+            "place": "示例教学楼032室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          },
+          {
+            "weekday": 3,
+            "periodStart": 5,
+            "periodEnd": 6,
+            "place": "示例教学楼033室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          }
+        ]
+      },
+      {
+        "courseCode": "DEMO004",
+        "courseName": "示例课程04",
+        "sectionId": "SECTION004",
+        "credit": 2,
+        "teacherName": "示例教师04",
+        "meetings": [
+          {
+            "weekday": 4,
+            "periodStart": 7,
+            "periodEnd": 8,
+            "place": "示例教学楼041室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          },
+          {
+            "weekday": 4,
+            "periodStart": 7,
+            "periodEnd": 8,
+            "place": "示例教学楼042室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          },
+          {
+            "weekday": 4,
+            "periodStart": 7,
+            "periodEnd": 8,
+            "place": "示例教学楼043室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          }
+        ]
+      },
+      {
+        "courseCode": "DEMO005",
+        "courseName": "示例课程05",
+        "sectionId": "SECTION005",
+        "credit": 2,
+        "teacherName": "示例教师05",
+        "meetings": [
+          {
+            "weekday": 5,
+            "periodStart": 1,
+            "periodEnd": 2,
+            "place": "示例教学楼051室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          },
+          {
+            "weekday": 5,
+            "periodStart": 1,
+            "periodEnd": 2,
+            "place": "示例教学楼052室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          },
+          {
+            "weekday": 5,
+            "periodStart": 1,
+            "periodEnd": 2,
+            "place": "示例教学楼053室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          }
+        ]
+      },
+      {
+        "courseCode": "DEMO006",
+        "courseName": "示例课程06",
+        "sectionId": "SECTION006",
+        "credit": 2,
+        "teacherName": "示例教师06",
+        "meetings": [
+          {
+            "weekday": 1,
+            "periodStart": 3,
+            "periodEnd": 4,
+            "place": "示例教学楼061室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          }
+        ]
+      },
+      {
+        "courseCode": "DEMO007",
+        "courseName": "示例课程07",
+        "sectionId": "SECTION007",
+        "credit": 2,
+        "teacherName": "示例教师07",
+        "meetings": [
+          {
+            "weekday": 2,
+            "periodStart": 5,
+            "periodEnd": 6,
+            "place": "示例教学楼071室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          },
+          {
+            "weekday": 2,
+            "periodStart": 5,
+            "periodEnd": 6,
+            "place": "示例教学楼072室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          },
+          {
+            "weekday": 2,
+            "periodStart": 5,
+            "periodEnd": 6,
+            "place": "示例教学楼073室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          },
+          {
+            "weekday": 2,
+            "periodStart": 5,
+            "periodEnd": 6,
+            "place": "示例教学楼074室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          }
+        ]
+      },
+      {
+        "courseCode": "DEMO008",
+        "courseName": "示例课程08",
+        "sectionId": "SECTION008",
+        "credit": 2,
+        "teacherName": "示例教师08",
+        "meetings": [
+          {
+            "weekday": 3,
+            "periodStart": 7,
+            "periodEnd": 8,
+            "place": "示例教学楼081室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          },
+          {
+            "weekday": 3,
+            "periodStart": 7,
+            "periodEnd": 8,
+            "place": "示例教学楼082室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          }
+        ]
+      },
+      {
+        "courseCode": "DEMO009",
+        "courseName": "示例课程09",
+        "sectionId": "SECTION009",
+        "credit": 2,
+        "teacherName": "示例教师09",
+        "meetings": [
+          {
+            "weekday": 4,
+            "periodStart": 1,
+            "periodEnd": 2,
+            "place": "示例教学楼091室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          }
+        ]
+      },
+      {
+        "courseCode": "DEMO010",
+        "courseName": "示例课程10",
+        "sectionId": "SECTION010",
+        "credit": 2,
+        "teacherName": "示例教师10",
+        "meetings": [
+          {
+            "weekday": 5,
+            "periodStart": 3,
+            "periodEnd": 4,
+            "place": "示例教学楼101室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          }
+        ]
+      },
+      {
+        "courseCode": "DEMO011",
+        "courseName": "示例课程11",
+        "sectionId": "SECTION011",
+        "credit": 2,
+        "teacherName": "示例教师11",
+        "meetings": [
+          {
+            "weekday": 1,
+            "periodStart": 5,
+            "periodEnd": 6,
+            "place": "示例教学楼111室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          }
+        ]
+      },
+      {
+        "courseCode": "DEMO012",
+        "courseName": "示例课程12",
+        "sectionId": "SECTION012",
+        "credit": 2,
+        "teacherName": "示例教师12",
+        "meetings": [
+          {
+            "weekday": 2,
+            "periodStart": 7,
+            "periodEnd": 8,
+            "place": "示例教学楼121室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          },
+          {
+            "weekday": 2,
+            "periodStart": 7,
+            "periodEnd": 8,
+            "place": "示例教学楼122室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          }
+        ]
+      },
+      {
+        "courseCode": "DEMO013",
+        "courseName": "示例课程13",
+        "sectionId": "SECTION013",
+        "credit": 2,
+        "teacherName": "示例教师13",
+        "meetings": [
+          {
+            "weekday": 3,
+            "periodStart": 1,
+            "periodEnd": 2,
+            "place": "示例教学楼131室",
+            "weeks": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6,
+              7,
+              8,
+              9,
+              10,
+              11,
+              12,
+              13,
+              14,
+              15,
+              16
+            ],
+            "parity": "all"
+          }
+        ]
+      }
+    ]
+  }
+}

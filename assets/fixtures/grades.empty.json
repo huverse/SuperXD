@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "error": null,
+  "needsInput": null,
+  "source": "fixture",
+  "fetchedAt": "2026-01-01T00:00:00.000Z",
+  "data": {
+    "empty": true,
+    "message": "教务系统当前学期没有成绩",
+    "term": {
+      "xn": "2026",
+      "xq": "0",
+      "label": "2026-2027学年第一学期"
+    },
+    "student": {
+      "loginId": "20260000001",
+      "name": "示例学生",
+      "college": "示例学院",
+      "major": "示例专业",
+      "level": "本科",
+      "className": "示例计算机班"
+    },
+    "summary": null,
+    "effective": [],
+    "original": []
+  }
+}

@@ -1,0 +1,287 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "error": null,
+  "needsInput": null,
+  "source": "fixture",
+  "fetchedAt": "2026-01-01T00:00:00.000Z",
+  "data": {
+    "empty": false,
+    "message": "",
+    "term": {
+      "xn": "2025",
+      "xq": "0",
+      "label": "2025-2026学年第一学期"
+    },
+    "student": {
+      "loginId": "20260000001",
+      "name": "示例学生",
+      "college": "示例学院",
+      "major": "示例专业",
+      "level": "本科",
+      "className": "示例计算机班"
+    },
+    "summary": {
+      "earnedCredit": 28,
+      "gpa": 3.0,
+      "averageScore": 80,
+      "weightedAverage": 80
+    },
+    "effective": [
+      {
+        "courseCode": "DEMO001",
+        "courseName": "示例课程01",
+        "credit": 2,
+        "score": 80,
+        "earnedCredit": 2,
+        "gradePoint": 3.0
+      },
+      {
+        "courseCode": "DEMO002",
+        "courseName": "示例课程02",
+        "credit": 2,
+        "score": 80,
+        "earnedCredit": 2,
+        "gradePoint": 3.0
+      },
+      {
+        "courseCode": "DEMO003",
+        "courseName": "示例课程03",
+        "credit": 2,
+        "score": 80,
+        "earnedCredit": 2,
+        "gradePoint": 3.0
+      },
+      {
+        "courseCode": "DEMO004",
+        "courseName": "示例课程04",
+        "credit": 2,
+        "score": 80,
+        "earnedCredit": 2,
+        "gradePoint": 3.0
+      },
+      {
+        "courseCode": "DEMO005",
+        "courseName": "示例课程05",
+        "credit": 2,
+        "score": 80,
+        "earnedCredit": 2,
+        "gradePoint": 3.0
+      },
+      {
+        "courseCode": "DEMO006",
+        "courseName": "示例课程06",
+        "credit": 2,
+        "score": 80,
+        "earnedCredit": 2,
+        "gradePoint": 3.0
+      },
+      {
+        "courseCode": "DEMO007",
+        "courseName": "示例课程07",
+        "credit": 2,
+        "score": 80,
+        "earnedCredit": 2,
+        "gradePoint": 3.0
+      },
+      {
+        "courseCode": "DEMO008",
+        "courseName": "示例课程08",
+        "credit": 2,
+        "score": 80,
+        "earnedCredit": 2,
+        "gradePoint": 3.0
+      },
+      {
+        "courseCode": "DEMO009",
+        "courseName": "示例课程09",
+        "credit": 2,
+        "score": 80,
+        "earnedCredit": 2,
+        "gradePoint": 3.0
+      },
+      {
+        "courseCode": "DEMO010",
+        "courseName": "示例课程10",
+        "credit": 2,
+        "score": 80,
+        "earnedCredit": 2,
+        "gradePoint": 3.0
+      },
+      {
+        "courseCode": "DEMO011",
+        "courseName": "示例课程11",
+        "credit": 2,
+        "score": 80,
+        "earnedCredit": 2,
+        "gradePoint": 3.0
+      },
+      {
+        "courseCode": "DEMO012",
+        "courseName": "示例课程12",
+        "credit": 2,
+        "score": 80,
+        "earnedCredit": 2,
+        "gradePoint": 3.0
+      },
+      {
+        "courseCode": "DEMO013",
+        "courseName": "示例课程13",
+        "credit": 2,
+        "score": 80,
+        "earnedCredit": 2,
+        "gradePoint": 3.0
+      },
+      {
+        "courseCode": "DEMO014",
+        "courseName": "示例课程14",
+        "credit": 2,
+        "score": 80,
+        "earnedCredit": 2,
+        "gradePoint": 3.0
+      }
+    ],
+    "original": [
+      {
+        "courseCode": "DEMO001",
+        "courseName": "示例课程01",
+        "credit": 2,
+        "usualScore": 80,
+        "midtermScore": 80,
+        "finalScore": 80,
+        "skillScore": null,
+        "totalScore": 80
+      },
+      {
+        "courseCode": "DEMO002",
+        "courseName": "示例课程02",
+        "credit": 2,
+        "usualScore": 80,
+        "midtermScore": null,
+        "finalScore": 80,
+        "skillScore": null,
+        "totalScore": 80
+      },
+      {
+        "courseCode": "DEMO003",
+        "courseName": "示例课程03",
+        "credit": 2,
+        "usualScore": 80,
+        "midtermScore": null,
+        "finalScore": 80,
+        "skillScore": null,
+        "totalScore": 80
+      },
+      {
+        "courseCode": "DEMO004",
+        "courseName": "示例课程04",
+        "credit": 2,
+        "usualScore": 80,
+        "midtermScore": null,
+        "finalScore": 80,
+        "skillScore": null,
+        "totalScore": 80
+      },
+      {
+        "courseCode": "DEMO005",
+        "courseName": "示例课程05",
+        "credit": 2,
+        "usualScore": 80,
+        "midtermScore": null,
+        "finalScore": 80,
+        "skillScore": null,
+        "totalScore": 80
+      },
+      {
+        "courseCode": "DEMO006",
+        "courseName": "示例课程06",
+        "credit": 2,
+        "usualScore": 80,
+        "midtermScore": null,
+        "finalScore": 80,
+        "skillScore": null,
+        "totalScore": 80
+      },
+      {
+        "courseCode": "DEMO007",
+        "courseName": "示例课程07",
+        "credit": 2,
+        "usualScore": 80,
+        "midtermScore": null,
+        "finalScore": 80,
+        "skillScore": null,
+        "totalScore": 80
+      },
+      {
+        "courseCode": "DEMO008",
+        "courseName": "示例课程08",
+        "credit": 2,
+        "usualScore": 80,
+        "midtermScore": null,
+        "finalScore": 80,
+        "skillScore": null,
+        "totalScore": 80
+      },
+      {
+        "courseCode": "DEMO009",
+        "courseName": "示例课程09",
+        "credit": 2,
+        "usualScore": null,
+        "midtermScore": null,
+        "finalScore": 80,
+        "skillScore": null,
+        "totalScore": 80
+      },
+      {
+        "courseCode": "DEMO010",
+        "courseName": "示例课程10",
+        "credit": 2,
+        "usualScore": null,
+        "midtermScore": null,
+        "finalScore": null,
+        "skillScore": null,
+        "totalScore": 80
+      },
+      {
+        "courseCode": "DEMO011",
+        "courseName": "示例课程11",
+        "credit": 2,
+        "usualScore": null,
+        "midtermScore": null,
+        "finalScore": null,
+        "skillScore": null,
+        "totalScore": 80
+      },
+      {
+        "courseCode": "DEMO012",
+        "courseName": "示例课程12",
+        "credit": 2,
+        "usualScore": 80,
+        "midtermScore": 80,
+        "finalScore": 80,
+        "skillScore": null,
+        "totalScore": 80
+      },
+      {
+        "courseCode": "DEMO013",
+        "courseName": "示例课程13",
+        "credit": 2,
+        "usualScore": 80,
+        "midtermScore": null,
+        "finalScore": 80,
+        "skillScore": null,
+        "totalScore": 80
+      },
+      {
+        "courseCode": "DEMO014",
+        "courseName": "示例课程14",
+        "credit": 2,
+        "usualScore": null,
+        "midtermScore": null,
+        "finalScore": 80,
+        "skillScore": null,
+        "totalScore": 80
+      }
+    ]
+  }
+}

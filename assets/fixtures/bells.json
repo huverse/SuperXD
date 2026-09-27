@@ -1,0 +1,89 @@
+{
+  "schemaVersion": 1,
+  "ok": true,
+  "error": null,
+  "needsInput": null,
+  "source": "edu",
+  "fetchedAt": "2026-09-23T12:00:00.000Z",
+  "data": {
+    "empty": false,
+    "message": "",
+    "term": {
+      "xn": "2025",
+      "xq": "0",
+      "label": "2025-2026学年第一学期"
+    },
+    "periods": [
+      {
+        "period": 1,
+        "dayPart": "上午",
+        "dayPartCode": "morning",
+        "start": "08:00",
+        "end": "08:45"
+      },
+      {
+        "period": 2,
+        "dayPart": "上午",
+        "dayPartCode": "morning",
+        "start": "08:55",
+        "end": "09:40"
+      },
+      {
+        "period": 3,
+        "dayPart": "上午",
+        "dayPartCode": "morning",
+        "start": "10:00",
+        "end": "10:45"
+      },
+      {
+        "period": 4,
+        "dayPart": "上午",
+        "dayPartCode": "morning",
+        "start": "10:55",
+        "end": "11:40"
+      },
+      {
+        "period": 5,
+        "dayPart": "下午",
+        "dayPartCode": "afternoon",
+        "start": "13:45",
+        "end": "14:30"
+      },
+      {
+        "period": 6,
+        "dayPart": "下午",
+        "dayPartCode": "afternoon",
+        "start": "14:40",
+        "end": "15:25"
+      },
+      {
+        "period": 7,
+        "dayPart": "下午",
+        "dayPartCode": "afternoon",
+        "start": "15:40",
+        "end": "16:25"
+      },
+      {
+        "period": 8,
+        "dayPart": "下午",
+        "dayPartCode": "afternoon",
+        "start": "16:35",
+        "end": "17:20"
+      },
+      {
+        "period": 9,
+        "dayPart": "晚上",
+        "dayPartCode": "evening",
+        "start": "19:00",
+        "end": "19:45"
+      },
+      {
+        "period": 10,
+        "dayPart": "晚上",
+        "dayPartCode": "evening",
+        "start": "19:55",
+        "end": "20:40"
+      }
+    ]
+  }
+}
