@@ -24,6 +24,8 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  // Android 10–14默认不绘制到导航栏后，透明导航栏会露出原生窗口底色（浅色为白条）；15+系统已强制全面屏。
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   ensureCampusClock();
   configureCampusIcons();
   registerCampusLicenses();

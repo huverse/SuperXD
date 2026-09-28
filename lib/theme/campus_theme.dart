@@ -97,10 +97,12 @@ ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono N
   );
 }
 
+// [人工决策-2026-09-29 01:15:11] 导航栏全透明透出背景，三键导航也关闭系统半透明遮罩；内容避让导航栏，按键明暗随主题保证对比度。
 SystemUiOverlayStyle campusSystemOverlay(CampusPalette palette) => (palette.isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark).copyWith(
   statusBarColor: Colors.transparent,
   systemNavigationBarColor: Colors.transparent,
   systemNavigationBarIconBrightness: palette.isDark ? Brightness.light : Brightness.dark,
+  systemNavigationBarContrastEnforced: false,
 );
 
 class CampusBackground extends StatelessWidget {

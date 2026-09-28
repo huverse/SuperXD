@@ -9,8 +9,11 @@ import 'package:superxd/local/period_spans.dart';
 import 'package:superxd/edu/parse_schedule.dart';
 import 'package:superxd/gateway/campus_gateway.dart';
 import 'package:superxd/gateway/fixture_gateway.dart';
+import 'package:superxd/local/campus_clock.dart';
 import 'package:superxd/local/display_settings.dart';
+import 'package:superxd/local/schedule_edit.dart';
 import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/local/week.dart';
 import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/date_rail.dart';
 import 'package:superxd/page/schedule_page.dart';
@@ -66,6 +69,55 @@ void main() {
     await tester.tapAt(const Offset(790, 580));
     await tester.pumpAndSettle();
     expect(detail, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('无课卡长按展开新增与安排已有课程，点击收起；未接入时长按无反应', (tester) async {
+    final spans = periodSpans([course(3, 4)]);
+    String? detail;
+    PeriodSpan? created;
+    PeriodSpan? arranged;
+    Widget cards({required bool editable}) => StatefulBuilder(builder: (context, update) => CourseDayCards(
+      spans: spans, bells: bells, date: '2026-09-21', detailKey: detail, onDetail: (key) => update(() => detail = key), onEdit: (_) {},
+      onCreate: editable ? (span) => created = span : null, onArrange: editable ? (span) => arranged = span : null,
+    ));
+    await tester.pumpWidget(app(cards(editable: false)));
+    await tester.longPress(find.text('早八没课哦~'));
+    await tester.pumpAndSettle();
+    expect(detail, isNull);
+    expect(find.text('新增课程'), findsNothing);
+    await tester.pumpWidget(app(cards(editable: true)));
+    await tester.tap(find.text('早八没课哦~'));
+    await tester.pumpAndSettle();
+    expect(detail, isNull);
+    await tester.longPress(find.text('早八没课哦~'));
+    await tester.pumpAndSettle();
+    expect(detail, spanIdentity(spans.first));
+    await tester.tap(find.text('新增课程'));
+    await tester.tap(find.text('安排已有课程'));
+    expect([created?.start, created?.end, arranged?.start, arranged?.end], [1, 2, 1, 2]);
+    await tester.tap(find.text('早八没课哦~'));
+    await tester.pumpAndSettle();
+    expect(detail, isNull);
+    expect(find.text('新增课程'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('课表页长按无课卡安排已有课程，预填当天星期节次且仅本周', (tester) async {
+    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway())));
+    await tester.pumpAndSettle();
+    final today = campusToday();
+    final date = today.compareTo('2026-08-31') < 0 || today.compareTo('2027-01-03') > 0 ? '2026-08-31' : today;
+    await tester.longPress(find.text('早八没课哦~'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('安排已有课程'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('课程 · 老师'));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑课程'), findsOneWidget);
+    final slot = find.text('周${weekdayLabel(weekdayOf(date))} 第1–2节 · 第${weekIndex('2026-08-31', date)}周');
+    await tester.scrollUntilVisible(slot, 200, scrollable: find.byType(Scrollable).first);
+    expect(slot, findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -227,4 +279,14 @@ class _Gateway extends FixtureCampusGateway {
   Future<GatewayResult<BellsView>> readBells(TermRef term) async => GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: BellsView(empty: false, message: '', term: term, periods: bells));
   @override
   Future<GatewayResult<TermRef>> setTermStart(TermRef term, String date) async { savedStart = date; return GatewayResult(ok: true, source: 'user', fetchedAt: 'stamp', data: term); }
+}
+
+// 每天第3–4节有课，任何运行日期都有第1–2节无课卡。
+class _EveryDayGateway extends _Gateway {
+  @override
+  Future<GatewayResult<ScheduleView>> readSchedule(ScheduleScope scope) async => GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: ScheduleView(term: term, student: const SessionView(loginId: 'test', name: '', className: ''), termStartDate: '2026-08-31', courses: [
+    CourseRecord(courseCode: 'C3', courseName: '课程', sectionId: 'S3', credit: 1, teacherName: '老师', meetings: [
+      for (var weekday = 1; weekday <= 7; weekday++) CourseMeeting(weekday: weekday, periodStart: 3, periodEnd: 4, place: '教室', weeks: [for (var week = 1; week <= 18; week++) week]),
+    ]),
+  ]));
 }

@@ -14,5 +14,7 @@
          This Theme is only used starting with V2 of Flutter's Android embedding. -->
     <style name="NormalTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">?android:colorBackground</item>
+        <!-- Android 15+全面屏下未指定导航栏色且窗口底色为浅色时，系统强制深色导航键并覆盖应用按主题请求的按键明暗。 -->
+        <item name="android:navigationBarColor">@android:color/transparent</item>
     </style>
 </resources>

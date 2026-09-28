@@ -16,11 +16,13 @@ class ScheduleEditorPage extends StatefulWidget {
     required this.gateway,
     required this.term,
     this.courseId,
+    this.slot,
     this.selectedWeek,
   });
   final CampusGateway gateway;
   final TermRef term;
   final String? courseId;
+  final CourseMeeting? slot;
   final int? selectedWeek;
   @override
   State<ScheduleEditorPage> createState() => _ScheduleEditorPageState();
@@ -56,11 +58,13 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
         _loading = false;
         _error = result.ok ? null : result.error?.message;
       });
-      if (openCourse && widget.courseId != null && _view != null) {
+      if (openCourse && _view != null) {
         final course = _view!.courses
             .where((course) => courseKey(course) == widget.courseId)
             .firstOrNull;
-        if (course != null) await _edit(course);
+        if (course != null || widget.courseId == null && widget.slot != null) {
+          await _edit(course, widget.slot);
+        }
       }
     } catch (error, stack) {
       debugPrint('[ScheduleEditor] action=load error=$error\n$stack');
@@ -90,7 +94,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
     return null;
   }
 
-  Future<void> _edit([CourseRecord? course]) async {
+  Future<void> _edit([CourseRecord? course, CourseMeeting? slot]) async {
     if (_busy || _view == null) return;
     final base = _view!;
     setState(() => _busy = true);
@@ -100,6 +104,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
         MaterialPageRoute(
           builder: (context) => CourseEditorPage(
             course: course,
+            slot: slot,
             courses: base.courses,
             bells: _bells,
             selectedWeek: widget.selectedWeek,
