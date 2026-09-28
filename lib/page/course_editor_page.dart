@@ -13,12 +13,14 @@ class CourseEditorPage extends StatefulWidget {
   const CourseEditorPage({
     super.key,
     this.course,
+    this.slot,
     required this.courses,
     required this.bells,
     required this.onSave,
     this.selectedWeek,
   });
   final CourseRecord? course;
+  final CourseMeeting? slot;
   final List<CourseRecord> courses;
   final List<BellPeriod> bells;
   final int? selectedWeek;
@@ -44,9 +46,17 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
   late final _credit = TextEditingController(
     text: _original.credit?.toString() ?? '',
   );
-  late List<CourseMeeting> _meetings = _original.meetings
-      .map((meeting) => meeting.copy())
-      .toList();
+  late List<CourseMeeting> _meetings = [
+    ..._original.meetings.map((meeting) => meeting.copy()),
+    if (widget.slot != null) widget.slot!.copy(),
+  ];
+  // 预填时段属于打开时的初始草稿：未改动返回不提示放弃，但仍须保存才生效。
+  late final _initialMeetings = fingerprint([
+    replaceCourse(
+      _original,
+      meetings: [..._original.meetings, if (widget.slot != null) widget.slot!],
+    ),
+  ]);
   bool _saving = false;
   bool _leaving = false;
   String? _error;
@@ -55,7 +65,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
       _teacher.text != _original.teacherName ||
       _credit.text != (_original.credit?.toString() ?? '') ||
       fingerprint([replaceCourse(_original, meetings: _meetings)]) !=
-          fingerprint([_original]);
+          _initialMeetings;
 
   @override
   void dispose() {

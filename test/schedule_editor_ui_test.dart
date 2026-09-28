@@ -5,6 +5,7 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/gateway/fixture_gateway.dart';
+import 'package:superxd/local/schedule_edit.dart';
 import 'package:superxd/local/schedule_store.dart';
 import 'package:superxd/page/course_editor_page.dart';
 import 'package:superxd/page/schedule_editor_page.dart';
@@ -109,6 +110,67 @@ void main() {
     ))!.data!;
     expect(restored.courses.single.courseName, '手工数学');
     expect(restored.courses.single.localId, saved.courses.single.localId);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('无课时段新增课程预填星期节次且仅本周，未改动返回不提示', (tester) async {
+    final fixtures = {
+      for (final name in ['schedule.json', 'bells.json', 'bells.empty.json'])
+        name: File('assets/fixtures/$name').readAsStringSync(),
+    };
+    final gateway = FixtureCampusGateway(readText: (name) async => fixtures[name]!);
+    Future<void> settle() async {
+      await tester.runAsync(() async => await Future<void>.delayed(const Duration(milliseconds: 100)));
+      await tester.pumpAndSettle();
+    }
+    Widget page(int generation) => ScheduleEditorPage(
+      key: ValueKey(generation), gateway: gateway, term: term,
+      slot: CourseMeeting(weekday: 3, periodStart: 5, periodEnd: 6, place: '', weeks: [7]),
+    );
+    await tester.pumpWidget(app(page(1)));
+    await settle();
+    expect(find.text('周三 第5–6节 · 第7周'), findsOneWidget);
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pumpAndSettle();
+    expect(find.text('放弃未保存修改？'), findsNothing);
+    expect(find.text('管理课程'), findsOneWidget);
+    await tester.pumpWidget(app(page(2)));
+    await settle();
+    await tester.enterText(find.widgetWithText(TextField, '课程名称'), '补课');
+    await tapVisible(tester, find.text('保存课程'));
+    await settle();
+    final saved = (await tester.runAsync(() => gateway.readSchedule(const ScheduleScope.term(term))))!.data!;
+    expect(saved.courses.single.courseName, '补课');
+    expect(saved.courses.single.meetings.map(meetingLabel), ['周三 第5–6节 · 第7周']);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('安排已有课程把本周时段追加到所选课程，原时段不变', (tester) async {
+    final fixtures = {
+      for (final name in ['schedule.json', 'bells.json', 'bells.empty.json'])
+        name: File('assets/fixtures/$name').readAsStringSync(),
+    };
+    final gateway = FixtureCampusGateway(readText: (name) async => fixtures[name]!);
+    final seed = CourseRecord(courseCode: 'C1', courseName: '数据结构', sectionId: 'S1', credit: 2, teacherName: '王老师', meetings: [
+      CourseMeeting(weekday: 1, periodStart: 1, periodEnd: 2, place: '教室', weeks: [1, 2, 3]),
+    ]);
+    await tester.runAsync(() => gateway.saveScheduleRevision(term, [seed], '种子', expectedRevisionId: null));
+    await tester.pumpWidget(app(ScheduleEditorPage(
+      gateway: gateway, term: term, courseId: courseKey(seed),
+      slot: CourseMeeting(weekday: 3, periodStart: 5, periodEnd: 6, place: '', weeks: [7]),
+    )));
+    await tester.runAsync(() async => await Future<void>.delayed(const Duration(milliseconds: 100)));
+    await tester.pumpAndSettle();
+    expect(find.text('编辑课程'), findsOneWidget);
+    expect(find.text('周一 第1–2节 · 第1–3周 · 教室'), findsOneWidget);
+    expect(find.text('周三 第5–6节 · 第7周'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('保存课程'), 200, scrollable: find.byType(Scrollable).first);
+    await tapVisible(tester, find.text('保存课程'));
+    await tester.runAsync(() async => await Future<void>.delayed(const Duration(milliseconds: 100)));
+    await tester.pumpAndSettle();
+    final saved = (await tester.runAsync(() => gateway.readSchedule(const ScheduleScope.term(term))))!.data!;
+    expect(saved.courses.single.courseName, '数据结构');
+    expect(saved.courses.single.meetings.map(meetingLabel), unorderedEquals(['周一 第1–2节 · 第1–3周 · 教室', '周三 第5–6节 · 第7周']));
     expect(tester.takeException(), isNull);
   });
 

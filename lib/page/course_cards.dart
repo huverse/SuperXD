@@ -37,13 +37,15 @@ Map<String, String> courseCountdowns(List<PeriodSpan> spans, List<BellPeriod> be
 }
 
 class CourseDayCards extends StatefulWidget {
-  const CourseDayCards({super.key, required this.spans, required this.bells, required this.date, this.detailKey, this.onDetail, this.onEdit, this.header, this.physics, this.bottomInset = 0});
+  const CourseDayCards({super.key, required this.spans, required this.bells, required this.date, this.detailKey, this.onDetail, this.onEdit, this.onCreate, this.onArrange, this.header, this.physics, this.bottomInset = 0});
   final List<PeriodSpan> spans;
   final List<BellPeriod> bells;
   final String date;
   final String? detailKey;
   final ValueChanged<String?>? onDetail;
   final ValueChanged<CourseRecord>? onEdit;
+  final ValueChanged<PeriodSpan>? onCreate;
+  final ValueChanged<PeriodSpan>? onArrange;
   final Widget? header;
   final ScrollPhysics? physics;
   final double bottomInset;
@@ -186,9 +188,11 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
             final span = widget.spans[index];
             final key = spanIdentity(span);
             final selected = _retainedDetail == key;
+            final editable = span.empty ? widget.onCreate != null : widget.onEdit != null;
+            // [人工决策-2026-09-29 01:01:28] 无课卡仅长按展开、展开后点击收起，再选新增课程或安排已有课程，不单击直达编辑页；有课卡交互不变。
             final card = GestureDetector(
-              onTap: span.empty || widget.onEdit == null ? () {} : () => widget.onDetail?.call(selected ? null : key),
-              onLongPress: span.empty || widget.onDetail == null ? null : () => widget.onDetail!(key),
+              onTap: !editable || span.empty && !selected ? () {} : () => widget.onDetail?.call(selected ? null : key),
+              onLongPress: widget.onDetail == null || span.empty && !editable ? null : () => widget.onDetail!(key),
               child: CampusSurface(
                 key: ValueKey('course-card-$key'), selected: selected, padding: const EdgeInsets.all(12),
                 child: AnimatedBuilder(animation: selected ? _curve : const AlwaysStoppedAnimation(0.0),
@@ -203,7 +207,10 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
                     Text('${span.meeting!.place} · ${span.course!.teacherName}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: CampusPalette.of(context).onSurfaceVariant, height: 1.3)),
                     if (labels[key] != null) Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 4), child: Text(labels[key]!, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: CampusPalette.of(context).primary)))),
                   ],
-                  if (selected) SizeTransition(sizeFactor: _curve, alignment: Alignment.topLeft, child: Padding(padding: const EdgeInsets.only(top: 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  if (selected) SizeTransition(sizeFactor: _curve, alignment: Alignment.topLeft, child: Padding(padding: const EdgeInsets.only(top: 12), child: span.empty ? Wrap(spacing: 8, children: [
+                    if (widget.onCreate != null) TextButton.icon(onPressed: () => widget.onCreate!(span), icon: const CampusIcon(CampusIcons.add), label: const Text('新增课程')),
+                    if (widget.onArrange != null) TextButton.icon(onPressed: () => widget.onArrange!(span), icon: const CampusIcon(CampusIcons.edit), label: const Text('安排已有课程')),
+                  ]) : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                     Text('学分 ${span.course?.credit ?? '—'}\n第${span.start}–${span.end}节', style: const TextStyle(fontSize: 14, height: 1.5)),
                     if (widget.onEdit != null) TextButton.icon(onPressed: () => widget.onEdit!(span.course!), icon: const CampusIcon(CampusIcons.edit), label: const Text('编辑课程')),
                   ]))),

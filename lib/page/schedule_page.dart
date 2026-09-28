@@ -199,12 +199,12 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     setState(() {});
   }
 
-  Future<void> _manage({CourseRecord? course}) async {
+  Future<void> _manage({CourseRecord? course, CourseMeeting? slot}) async {
     final term = _term;
     if (term == null || _loading) return;
     final selection = _selection;
     await Navigator.push<bool>(context, MaterialPageRoute(builder: (context) => ScheduleEditorPage(
-      gateway: widget.gateway, term: term, courseId: course == null ? null : courseKey(course),
+      gateway: widget.gateway, term: term, courseId: course == null ? null : courseKey(course), slot: slot,
       selectedWeek: _start == null ? null : weekIndex(_start!, _selection.date),
     )));
     if (!mounted) return;
@@ -214,6 +214,17 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     setState(() => _selection = selection.copy(date: selectedDate, clearDetail: true,
       clearDrill: selectedDate != selection.date || selection.week != null && selection.week! > _weekCount));
     if (selectedDate != selection.date) await _notice('课程日期范围已变化，已切换到当前课表的有效日期。');
+  }
+
+  // [人工决策-2026-09-29 01:01:28] 无课时段预填当天星期与节次，周次仅本周，扩大周次须用户在时段里自选；可新增或安排已有课程，仅课表页，今天页保持只读。
+  CourseMeeting _slot(String date, PeriodSpan span) => CourseMeeting(weekday: weekdayOf(date), periodStart: span.start, periodEnd: span.end, place: '', weeks: [weekIndex(_start!, date)]);
+
+  Future<void> _arrange(String date, PeriodSpan span) async {
+    final chosen = await showCampusDialog<CourseRecord>(context: context, builder: (context) => SimpleDialog(
+      title: const Text('安排已有课程'),
+      children: [for (final course in _courses) SimpleDialogOption(onPressed: () => Navigator.pop(context, course), child: Text(course.teacherName.isEmpty ? course.courseName : '${course.courseName} · ${course.teacherName}'))],
+    ));
+    if (mounted && chosen != null) await _manage(course: chosen, slot: _slot(date, span));
   }
 
   bool get _canPop => _selection.detailKey == null && (_selection.range == ScheduleRange.day || _selection.month == null) && !_selection.inYearTerm;
@@ -292,6 +303,8 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
               detailKey: date == _selection.date ? _selection.detailKey : null,
               onDetail: (key) => setState(() => _selection = _selection.copy(detailKey: key, clearDetail: key == null)),
               onEdit: (course) => _manage(course: course),
+              onCreate: (span) => _manage(slot: _slot(date, span)),
+              onArrange: _courses.isEmpty ? null : (span) => _arrange(date, span),
             );
           },
         )),
