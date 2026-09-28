@@ -79,6 +79,7 @@ void main() {
       expect(contrast(palette.primary,palette.onPrimary),greaterThanOrEqualTo(4.5));
       expect(contrast(palette.danger,palette.onDanger),greaterThanOrEqualTo(4.5));
       expect(campusSystemOverlay(palette).statusBarIconBrightness,Brightness.light);
+      expect(campusSystemOverlay(palette).systemNavigationBarContrastEnforced,isFalse);
     });
   }
 }
