@@ -6,6 +6,7 @@ import 'package:superxd/local/period_spans.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/gateway/campus_gateway.dart';
 import 'package:superxd/local/campus_clock.dart';
 import 'package:superxd/local/meeting_time.dart';
@@ -37,7 +38,7 @@ Map<String, String> courseCountdowns(List<PeriodSpan> spans, List<BellPeriod> be
 }
 
 class CourseDayCards extends StatefulWidget {
-  const CourseDayCards({super.key, required this.spans, required this.bells, required this.date, this.detailKey, this.onDetail, this.onEdit, this.onCreate, this.onArrange, this.header, this.physics, this.bottomInset = 0});
+  const CourseDayCards({super.key, required this.spans, required this.bells, required this.date, this.detailKey, this.onDetail, this.onEdit, this.onCreate, this.onArrange, this.header, this.physics, this.bottomInset = 0, this.obscuredBottom = 0});
   final List<PeriodSpan> spans;
   final List<BellPeriod> bells;
   final String date;
@@ -49,6 +50,8 @@ class CourseDayCards extends StatefulWidget {
   final Widget? header;
   final ScrollPhysics? physics;
   final double bottomInset;
+  // 列表底部被浮动玻璃栏覆盖的高度：卡片仍按可见区排布，内容可滚入玻璃下方透出。
+  final double obscuredBottom;
   @override
   State<CourseDayCards> createState() => _CourseDayCardsState();
 }
@@ -165,26 +168,30 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
     if (widget.spans.isEmpty) {
       return Column(children: [
       if (widget.header != null) widget.header!,
-      const Expanded(child: Center(child: Padding(padding: EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
+      Expanded(child: Padding(padding: EdgeInsets.only(bottom: widget.obscuredBottom), child: const Center(child: Padding(padding: EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
         Text('这天没课', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
         SizedBox(height: 12),
         Text('是放假了还是?反正今天一定很爽啦!', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, height: 1.5)),
-      ])))),
+      ]))))),
       ]);
     }
     return Column(children: [
       if (widget.header != null) widget.header!,
       Expanded(child: ValueListenableBuilder(valueListenable: _time, builder: (context, instant, _) => LayoutBuilder(builder: (context, constraints) {
       final labels = courseCountdowns(widget.spans, widget.bells, widget.date, instant, timeOf: _timeOf);
-      final height = _cardHeight(context, constraints.maxWidth, constraints.maxHeight, labels);
-      return GestureDetector(
+      final height = _cardHeight(context, constraints.maxWidth, constraints.maxHeight - widget.obscuredBottom, labels);
+      // 顶部淡出只随实际滚动出现，最多24dp；遮罩层有无只由底栏决定，滚动不重建列表。
+      return AnimatedBuilder(animation: _scroll, builder: (context, child) => ScrollEdgeFade(
+        top: widget.obscuredBottom > 0 && _scroll.hasClients ? _scroll.offset.clamp(0.0, 24.0) : 0,
+        bottom: widget.obscuredBottom, child: child!,
+      ), child: GestureDetector(
         behavior: HitTestBehavior.translucent,
         onTap: _retainedDetail == null ? null : () => widget.onDetail?.call(null),
         child: ListView.builder(
           controller: _scroll, padding: EdgeInsets.zero, physics: widget.physics,
           itemCount: widget.spans.length + 1,
           itemBuilder: (context, index) {
-            if (index == widget.spans.length) return SizedBox(height: (_retainedDetail == null ? 0 : 80) + widget.bottomInset);
+            if (index == widget.spans.length) return SizedBox(height: (_retainedDetail == null ? 0 : 80) + widget.bottomInset + widget.obscuredBottom);
             final span = widget.spans[index];
             final key = spanIdentity(span);
             final selected = _retainedDetail == key;
@@ -223,7 +230,7 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
             )));
           },
         ),
-      );
+      ));
     }))),
     ]);
   }

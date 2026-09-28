@@ -20,6 +20,7 @@ import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/page/term_start_dialog.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/scroll_edge_fade.dart';
 
 const term = TermRef(xn: '2026', xq: '0', label: '2026–2027第一学期');
 const bells = [
@@ -119,6 +120,40 @@ void main() {
     await tester.scrollUntilVisible(slot, 200, scrollable: find.byType(Scrollable).first);
     expect(slot, findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('玻璃栏遮挡区：放得下时按可见区排布且不可滚动，不影响切日手势', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(380, 540));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final spans = periodSpans([course(3, 4, name: '高等数学'), course(5, 6, name: '大学英语'), course(7, 8, name: '大学物理')]);
+    await tester.pumpWidget(app(CourseDayCards(spans: spans, bells: bells, date: '2026-09-21', obscuredBottom: 60)));
+    await tester.pumpAndSettle();
+    for (final span in spans) {
+      expect(tester.getBottomRight(find.byKey(ValueKey('course-card-${spanIdentity(span)}'))).dy, lessThanOrEqualTo(540 - 60));
+    }
+    expect(tester.state<ScrollableState>(find.byType(Scrollable)).position.maxScrollExtent, 0);
+    expect(tester.widget<ScrollEdgeFade>(find.byType(ScrollEdgeFade)).top, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('玻璃栏遮挡区：溢出时末项可滚到遮挡区之上，顶部淡出只随滚动出现', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(380, 540));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final spans = periodSpans([for (var start = 1; start <= 9; start += 2) course(start, start + 1, name: '课程$start')]);
+    await tester.pumpWidget(app(CourseDayCards(spans: spans, bells: const [], date: '2026-09-21', obscuredBottom: 100)));
+    await tester.pumpAndSettle();
+    expect(find.byType(ShaderMask), findsOneWidget);
+    expect(tester.widget<ScrollEdgeFade>(find.byType(ScrollEdgeFade)).top, 0);
+    await tester.drag(find.byType(Scrollable), const Offset(0, -2000));
+    await tester.pumpAndSettle();
+    expect(tester.getBottomRight(find.byKey(ValueKey('course-card-${spanIdentity(spans.last)}'))).dy, lessThanOrEqualTo(540 - 100));
+    expect(tester.widget<ScrollEdgeFade>(find.byType(ScrollEdgeFade)).top, 24);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('高对比度下不渐隐内容', (tester) async {
+    await tester.pumpWidget(MaterialApp(home: MediaQuery(data: const MediaQueryData(highContrast: true), child: ScrollEdgeFade(top: 24, bottom: 100, child: const SizedBox.expand()))));
+    expect(find.byType(ShaderMask), findsNothing);
   });
 
   testWidgets('四张课程卡默认字号完整容纳首屏，空课也显示对应时间', (tester) async {
