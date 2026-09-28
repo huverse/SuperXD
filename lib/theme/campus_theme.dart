@@ -76,6 +76,7 @@ ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono N
         backgroundBuilder: campusButtonBackground,
       ),
     ),
+    // 描边框浮动标签凸出上边框且随字号增长：带标签的输入框/下拉框上方用campusFieldGap，选择标签换行行距8dp，固定高度容器不得裁切随字号变化的文字。
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: colors.surface,
@@ -98,6 +99,9 @@ ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono N
 }
 
 // [人工决策-2026-09-29 01:15:11] 导航栏全透明透出背景，三键导航也关闭系统半透明遮罩；内容避让导航栏，按键明暗随主题保证对比度。
+// 带浮动标签的描边框上方间距：实测标签凸出约5.9dp×字号倍率，间距按同一字号放大，任何字号都留出余量。
+double campusFieldGap(BuildContext context) => MediaQuery.textScalerOf(context).scale(16);
+
 SystemUiOverlayStyle campusSystemOverlay(CampusPalette palette) => (palette.isDark ? SystemUiOverlayStyle.light : SystemUiOverlayStyle.dark).copyWith(
   statusBarColor: Colors.transparent,
   systemNavigationBarColor: Colors.transparent,

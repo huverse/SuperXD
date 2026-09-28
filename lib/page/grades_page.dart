@@ -490,7 +490,7 @@ class _GradesPageState extends State<GradesPage> {
               child: CustomScrollView(
                 slivers: [
                   SliverPadding(
-                    padding: const EdgeInsets.all(16),
+                    padding: EdgeInsets.fromLTRB(16, campusFieldGap(context), 16, 16),
                     sliver: SliverToBoxAdapter(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -615,6 +615,7 @@ class _GradesPageState extends State<GradesPage> {
                               if (!_view!.empty) ...[
                                 Wrap(
                                   spacing: 8,
+                                  runSpacing: 8,
                                   children: [
                                     ChoiceChip(
                                       label: const Text('有效成绩'),
@@ -634,7 +635,7 @@ class _GradesPageState extends State<GradesPage> {
                                     ),
                                   ],
                                 ),
-                                const SizedBox(height: 12),
+                                SizedBox(height: campusFieldGap(context)),
                                 TextField(
                                   controller: _search,
                                   decoration: InputDecoration(
@@ -652,7 +653,7 @@ class _GradesPageState extends State<GradesPage> {
                                 const SizedBox(height: 8),
                                 Wrap(
                                   spacing: 6,
-                                  runSpacing: 4,
+                                  runSpacing: 8,
                                   children: [
                                     for (final filter
                                         in grades.GradeFilter.values)
@@ -672,7 +673,7 @@ class _GradesPageState extends State<GradesPage> {
                                       ),
                                   ],
                                 ),
-                                const SizedBox(height: 8),
+                                SizedBox(height: campusFieldGap(context)),
                                 DropdownButtonFormField<grades.GradeSort>(
                                   icon: const CampusIcon(CampusIcons.expand),
                                   initialValue: _sort,
