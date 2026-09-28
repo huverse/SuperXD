@@ -87,13 +87,14 @@ class GlassPanel extends StatelessWidget {
               ? liquid.GlassQuality.premium
               : liquid.GlassQuality.standard,
           allowElevation: false,
+          // 浮动栏下有内容穿过：减淡着色透出内容，加大模糊保标签可读，边缘高光与折射体现液态透镜。
           settings: liquid.LiquidGlassSettings(
-            glassColor: CampusPalette.of(context).glassTint.withValues(alpha: .62),
+            glassColor: CampusPalette.of(context).glassTint.withValues(alpha: floating ? .48 : .62),
             thickness: floating ? 16 : 8,
-            blur: 8,
+            blur: floating ? 10 : 8,
             saturation: .9,
-            refractiveIndex: 1.10,
-            lightIntensity: .25,
+            refractiveIndex: floating ? 1.15 : 1.10,
+            lightIntensity: floating ? .40 : .25,
             ambientStrength: .12,
             chromaticAberration: 0,
             glowIntensity: 0,

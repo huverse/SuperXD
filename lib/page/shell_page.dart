@@ -15,16 +15,20 @@ class ShellPage extends StatelessWidget {
     final barHeight = 72.0 * media.textScaler.scale(14) / 14 + 8;
     final bottom = media.padding.bottom + 12;
     final reserved = keyboard ? 0.0 : barHeight + bottom + 12;
-    // [人工决策-2026-09-25 16:24:31] 四项底栏悬浮于安全区之上，内容明确避让；拖动仍仅预览，松手提交一次。
+    // [人工决策-2026-09-29 04:01:38] 四项底栏悬浮于安全区之上；内容层延伸到玻璃下方透出，底栏占位作为底部安全区交给各页，末项滚到底仍停在底栏上方；拖动仍仅预览，松手提交一次。
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: Stack(
         children: [
+          // 结构固定只换数据，键盘弹出时不重建分支导航状态。
           Positioned.fill(
-            child: Padding(
-              padding: EdgeInsets.only(bottom: reserved),
-              child: navigationShell,
-            ),
+            child: Builder(builder: (context) {
+              final body = MediaQuery.of(context);
+              return MediaQuery(
+                data: keyboard ? body : body.copyWith(padding: body.padding.copyWith(bottom: reserved), viewPadding: body.viewPadding.copyWith(bottom: reserved)),
+                child: navigationShell,
+              );
+            }),
           ),
           if (!keyboard)
             Positioned(

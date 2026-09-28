@@ -356,10 +356,16 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     );
   }
 
+  double _bodyInset(BuildContext context) => (32 * MediaQuery.textScalerOf(context).scale(14) / 14 + 16) / 2;
+  // 正文延伸到玻璃底栏下方，被遮挡高度扣除正文留白后交给列表留白，非列表状态在可见区居中。
+  double _obscured(BuildContext context) => (MediaQuery.paddingOf(context).bottom - _bodyInset(context)).clamp(0.0, double.infinity);
+
   Widget _dayContent(String day) {
     final spans = _covered(day) && _readError == null
         ? _spans(day)
         : const <PeriodSpan>[];
+    final obscured = _obscured(context);
+    var inset = obscured;
     Widget content;
     if (_readError != null) {
       content = Center(
@@ -400,12 +406,14 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         ),
       );
     } else {
+      inset = 0;
       content = CourseDayCards(
           key: ValueKey('today-cards-$day-$_recenter'),
           spans: spans,
           bells: _bells,
           date: day,
           bottomInset: day == _today ? 0 : 68,
+          obscuredBottom: obscured,
           physics: const ClampingScrollPhysics(
             parent: AlwaysScrollableScrollPhysics(),
           ),
@@ -423,7 +431,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
               : null,
       );
     }
-    return Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: content);
+    return Padding(padding: EdgeInsets.fromLTRB(16, 0, 16, inset), child: content);
   }
 
   Widget _dateHeader(String day) {
@@ -464,7 +472,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
       // [人工决策-2026-09-27 17:28:58] 切日只保留页面直接交接，不再叠胶囊让位与回位动画；状态胶囊、归位按钮保持。
       Expanded(child: Stack(fit: StackFit.expand, children: [
         Positioned.fill(child: body),
-        Positioned(right: 16, bottom: hintHeight + 12, child: IgnorePointer(ignoring: _day == _today && !previewing, child: ExcludeSemantics(excluding: _day == _today && !previewing, child: AnimatedOpacity(
+        Positioned(right: 16, bottom: hintHeight + 12 + MediaQuery.paddingOf(context).bottom, child: IgnorePointer(ignoring: _day == _today && !previewing, child: ExcludeSemantics(excluding: _day == _today && !previewing, child: AnimatedOpacity(
           opacity: _day == _today && !previewing ? 0 : 1,
           duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 180),
           child: CampusGlassCircleButton(key: const ValueKey('today-reset'), icon: const CampusIcon(CampusIcons.arrowUp, size: 24), label: '回今天', onPressed: () => _selectDay(_campusDay(), recenter: true)),
@@ -476,12 +484,12 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
   @override
   Widget build(BuildContext context) => TodayDateTransition(
     date: _day, revision: _contentRevision, recenter: _recenter,
-    bodyInset: (32 * MediaQuery.textScalerOf(context).scale(14) / 14 + 16) / 2,
+    bodyInset: _bodyInset(context),
     canSelect: (date) => !_loading && _readError == null && _covered(date),
     onCommit: _selectDay,
     frameBuilder: (date) => TodayDateFrame(
       header: _dateHeader(date),
-      body: _loading ? const Center(child: CampusLoading(label: '正在读取课表')) : _dayContent(date),
+      body: _loading ? Padding(padding: EdgeInsets.only(bottom: _obscured(context)), child: const Center(child: CampusLoading(label: '正在读取课表'))) : _dayContent(date),
       scrollable: !_loading && _readError == null && _covered(date) && _spans(date).isNotEmpty,
     ),
     builder: _layout,
