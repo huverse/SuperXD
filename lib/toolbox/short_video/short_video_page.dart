@@ -6,6 +6,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/download/downloads_page.dart';
 import 'package:superxd/toolbox/short_video/media_result_page.dart';
@@ -280,7 +281,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                   padding: const EdgeInsets.all(16),
                   children: [
                     CampusSurface(
-                      padding: const EdgeInsets.all(16),
+                      padding: EdgeInsets.fromLTRB(16, campusFieldGap(context), 16, 16),
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -322,7 +323,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                                     }
                                   },
                           ),
-                          const SizedBox(height: 16),
+                          SizedBox(height: campusFieldGap(context)),
                           TextField(
                             controller: _input,
                             enabled: !_prompting,

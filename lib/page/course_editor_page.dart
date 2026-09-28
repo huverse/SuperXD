@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
@@ -8,6 +10,7 @@ import 'package:superxd/gateway/campus_gateway.dart';
 import 'package:superxd/local/schedule_edit.dart';
 import 'package:superxd/local/schedule_store.dart';
 import 'package:superxd/theme/campus_loading.dart';
+import 'package:superxd/theme/campus_theme.dart';
 
 class CourseEditorPage extends StatefulWidget {
   const CourseEditorPage({
@@ -295,7 +298,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
           padding: const EdgeInsets.all(16),
           children: [
             const Text('课程信息作用于整门课；上课时段可分别调整。', style: TextStyle(fontSize: 14)),
-            const SizedBox(height: 16),
+            SizedBox(height: campusFieldGap(context)),
             TextField(
               controller: _name,
               enabled: !_saving,
@@ -305,7 +308,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
                 border: OutlineInputBorder(),
               ),
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: campusFieldGap(context)),
             _SuggestionField(
               controller: _teacher,
               label: '教师（选填）',
@@ -316,7 +319,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
                   .toSet()
                   .toList(),
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: campusFieldGap(context)),
             TextField(
               controller: _credit,
               enabled: !_saving,
@@ -535,6 +538,7 @@ class _MeetingDialogState extends State<_MeetingDialog> {
           children: [
             Wrap(
               spacing: 6,
+              runSpacing: 8,
               children: [
                 for (var day = 1; day <= 7; day++)
                   ChoiceChip(
@@ -544,7 +548,7 @@ class _MeetingDialogState extends State<_MeetingDialog> {
                   ),
               ],
             ),
-            const SizedBox(height: 12),
+            SizedBox(height: campusFieldGap(context)),
             DropdownButtonFormField<int>(
               icon: const CampusIcon(CampusIcons.expand),
               initialValue: _start,
@@ -559,6 +563,7 @@ class _MeetingDialogState extends State<_MeetingDialog> {
               ],
               onChanged: (value) => setState(() => _start = value!),
             ),
+            SizedBox(height: campusFieldGap(context)),
             DropdownButtonFormField<int>(
               icon: const CampusIcon(CampusIcons.expand),
               initialValue: _end,
@@ -573,7 +578,7 @@ class _MeetingDialogState extends State<_MeetingDialog> {
               ],
               onChanged: (value) => setState(() => _end = value!),
             ),
-            const SizedBox(height: 16),
+            SizedBox(height: campusFieldGap(context)),
             _SuggestionField(
               controller: _place,
               label: '地点（选填）',
@@ -605,7 +610,7 @@ class _MeetingDialogState extends State<_MeetingDialog> {
               ),
               Wrap(
                 spacing: 6,
-                runSpacing: 4,
+                runSpacing: 8,
                 children: [
                   for (var week = 1; week <= _visibleWeeks; week++)
                     FilterChip(
@@ -666,7 +671,17 @@ class _SuggestionField extends StatelessWidget {
   final List<String> options;
   final bool enabled;
   @override
-  Widget build(BuildContext context) => Column(
+  Widget build(BuildContext context) {
+    // 横向候选栏高度随字号：按真实字形量出标签行高再加标签内边距，大字号不裁切，仍按需构建。
+    final painter = TextPainter(
+      text: TextSpan(text: '国', style: ChipTheme.of(context).labelStyle),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final rowHeight = math.max(48.0, painter.height + 24);
+    painter.dispose();
+    return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       TextField(
@@ -680,7 +695,7 @@ class _SuggestionField extends StatelessWidget {
       ),
       if (options.isNotEmpty)
         SizedBox(
-          height: 48,
+          height: rowHeight,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             itemCount: options.length,
@@ -695,4 +710,5 @@ class _SuggestionField extends StatelessWidget {
         ),
     ],
   );
+  }
 }

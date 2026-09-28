@@ -9,6 +9,8 @@ import 'package:superxd/local/schedule_store.dart';
 import 'package:superxd/page/grades_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
+import 'form_layout_support.dart';
+
 const first = TermRef(xn: '2025', xq: '0', label: '2025-2026学年第一学期');
 const second = TermRef(xn: '2025', xq: '1', label: '2025-2026学年第二学期');
 const student = SessionView(loginId: 'synthetic', name: '', className: '');
@@ -81,6 +83,19 @@ Future<void> reveal(WidgetTester tester, Finder finder) async {
 }
 
 void main() {
+  for (final scale in [1.0, 1.4, 2.8]) {
+    testWidgets('成绩筛选区 ×$scale：学年、搜索、排序标签不压筛选标签，筛选标签不裁切', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(412, 2400));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await loadCampusFonts(tester);
+      await tester.pumpWidget(app(GradesPage(gateway: _Gateway()), scale: scale));
+      await tester.pumpAndSettle();
+      expectFieldLabelsClear(tester, ['学年', '搜索课程名称或代码', '排序'], '成绩筛选');
+      expectChipLabelsUnclipped(tester, '成绩筛选');
+      expect(tester.takeException(), isNull);
+    });
+  }
+
   testWidgets('本地打开、搜索筛选不重算汇总，原始多条记录可查看', (tester) async {
     final gateway = _Gateway();
     await tester.pumpWidget(app(GradesPage(gateway: gateway)));

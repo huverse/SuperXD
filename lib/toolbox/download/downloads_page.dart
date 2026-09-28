@@ -102,6 +102,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                     padding: const EdgeInsets.all(16),
                     child: Wrap(
                       spacing: 8,
+                      runSpacing: 8,
                       children: [
                         for (final value in [(0, '全部'), (1, '进行中'), (2, '已结束')])
                           ChoiceChip(
