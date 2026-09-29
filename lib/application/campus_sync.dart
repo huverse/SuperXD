@@ -61,11 +61,11 @@ class CampusSync {
       // [人工决策-2026-09-25 14:45:43] 进度只报告已有任务阶段，不改同步范围、顺序和确认规则，不生成假百分比。
       onProgress?.call(const CampusSyncProgress('正在刷新学期列表'));
       final listed = await gateway.syncTerms();
+      // [人工决策-2026-09-30 03:14:15] 离开前已拿到的失败照常写入报告，“同步已中止”同时显示失败原因；会话失效仍按原规则提示重新登录。
+      final failed = !listed.ok || listed.data == null;
+      if (failed) items.add(_failure('学期列表', listed.error));
       if (!isActive()) return CampusSyncReport(items, cancelled: true, unfinished: const ['所选学年的全部内容']);
-      if (!listed.ok || listed.data == null) {
-        items.add(_failure('学期列表', listed.error));
-        return CampusSyncReport(items, cancelled: !isActive());
-      }
+      if (failed) return CampusSyncReport(items);
       final allTerms = {for (final term in listed.data!) term.key: term}.values.toList();
       final terms = allTerms.where((term) => years == null || years.contains(term.xn)).toList();
       if (terms.isEmpty) {

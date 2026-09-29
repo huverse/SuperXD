@@ -47,6 +47,7 @@ void main() {
     expect(fixture.transfer.enqueueCount, 2);
     await fixture.finish(ids[0], png, mimeType: 'image/png');
     await fixture.waitFor(ids[0], ToolboxDownloadState.saved);
+    await fixture.waitForEnqueued(3);
     expect(fixture.transfer.enqueueCount, 3);
     await fixture.finish(
       ids[1],
