@@ -221,7 +221,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         _term = term;
         _loading = false;
         _knownSchedule =
-            view.ok && schedule != null && schedule.message != '还没有课表';
+            view.ok && schedule != null && schedule.revisionId != null;
         _needsStart =
             view.error?.code == 'TERM_START_REQUIRED' ||
             _knownSchedule && (start == null || start.isEmpty);

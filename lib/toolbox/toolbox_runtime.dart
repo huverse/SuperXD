@@ -36,7 +36,6 @@ class ToolboxRuntime with WidgetsBindingObserver {
   Future<void>? _initialization;
   ToolboxStore get store => _store!;
   ToolboxDownloadManager get downloads => _downloads!;
-  bool get initialized => _downloads != null;
 
   // [人工决策-2026-09-27 20:12:08] 百宝箱免教务登录，设备级任务独立于账号；不读取教务凭据，切账号不销毁下载。
   Future<void> initialize() => _initialization ??= _initialize().catchError((

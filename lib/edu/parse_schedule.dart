@@ -48,15 +48,6 @@ class ParsedSchedule {
   final List<CourseRecord> courses;
 }
 
-String htmlText(String html) {
-  return html
-      .replaceAll(RegExp(r'<br\s*/?>', caseSensitive: false), ' ')
-      .replaceAll(RegExp(r'<[^>]+>'), '')
-      .replaceAll(RegExp(r'&ensp;|&#160;|&nbsp;'), ' ')
-      .replaceAll(RegExp(r'\s+'), ' ')
-      .trim();
-}
-
 List<int> expandWeeks(String expr, String parity) {
   final weeks = <int>[];
   for (final part in expr.split(',')) {

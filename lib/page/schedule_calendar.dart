@@ -37,8 +37,6 @@ String weekRailLabel(String termStartDate, int week) {
   return '第$week周\n${date.month}/${date.day}';
 }
 
-String monthRailLabel(int month) => '$month月';
-
 String dayInWeek({required String termStartDate, required int week, required String today}) {
   final range = weekRange(termStartDate, week);
   if (weekIndex(termStartDate, today) == week && today.compareTo(range.start) >= 0 && today.compareTo(range.end) <= 0) {

@@ -105,7 +105,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
       if (!full.ok || full.data == null) { setState(() => _loading = false); await _notice(full.error?.message ?? '课表读取失败'); return; }
       _term = term;
       _courses = full.data!.courses;
-      _knownSchedule = full.data!.message != '还没有课表';
+      _knownSchedule = full.data!.revisionId != null;
       _start = full.data!.termStartDate;
       _bells = bells.data?.periods ?? [];
       _selection = _selection.copy(year: term.xn, date: date ?? _selection.date, clearDrill: true, clearDetail: true);

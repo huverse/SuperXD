@@ -345,7 +345,7 @@ class _Accounts extends AccountAccess {
   @override
   dynamic noSuchMethod(Invocation invocation) {
     if (invocation.memberName == #listTerms) return Future.value(const GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: [_term]));
-    if (invocation.memberName == #readSchedule) return Future.value(GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: ScheduleView(term: _term, student: _active!, courses: [])));
+    if (invocation.memberName == #readSchedule) return Future.value(GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: ScheduleView(term: _term, student: _active!, courses: [], revisionId: 'rev-test')));
     if (invocation.memberName == #readBells) return Future.value(const GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: BellsView(empty: true, message: '', term: _term, periods: [])));
     return super.noSuchMethod(invocation);
   }

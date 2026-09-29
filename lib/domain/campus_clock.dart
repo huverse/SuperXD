@@ -49,11 +49,3 @@ int? clockMinutes(String value) {
   final minute = int.parse(match[2]!);
   return hour < 24 && minute < 60 ? hour * 60 + minute : null;
 }
-
-String campusClock() {
-  ensureCampusClock();
-  final now = tz.TZDateTime.now(tz.getLocation(campusTimeZone));
-  final hour = now.hour.toString().padLeft(2, '0');
-  final minute = now.minute.toString().padLeft(2, '0');
-  return '$hour:$minute';
-}

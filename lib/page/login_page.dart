@@ -93,7 +93,7 @@ class _LoginPageState extends State<LoginPage> {
         );
         if (!mounted) return;
         if (error != null) await _notice(error);
-      } else if (!result.ok && result.error?.code != 'LOGIN_CANCELLED') {
+      } else if (!result.ok) {
         await _notice(result.error?.message ?? '登录未完成');
       }
       // 成功仅由账号协调器发布新的generation，不由页面自行翻loggedIn。

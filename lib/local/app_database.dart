@@ -311,25 +311,6 @@ ON CONFLICT(xn, xq) DO UPDATE SET
     );
   }
 
-  Future<ScheduleStore> loadStore() async {
-    final termRows = await _db.query('term');
-    final revisionRows = await _db.query('schedule_revision', orderBy: 'created_at ASC');
-    final headRows = await _db.query('schedule_head');
-    final terms = <String, TermRef>{};
-    final starts = <String, String>{};
-    for (final row in termRows) {
-      final term = TermRef(xn: row['xn'] as String, xq: row['xq'] as String, label: row['label'] as String);
-      terms[term.key] = term;
-      final start = row['start_date'] as String?;
-      if (start != null && start.isNotEmpty) starts[term.key] = start;
-    }
-    final revisions = revisionRows.map(_revisionOf).toList();
-    final heads = {for (final row in headRows) '${row['xn']}-${row['xq']}': row['revision_id'] as String};
-    final store = ScheduleStore();
-    store.load(revisions: revisions, heads: heads, termStarts: starts, terms: terms);
-    return store;
-  }
-
   Future<ScheduleStore> loadTermStore(TermRef term, {String? revisionId}) => _db.transaction((transaction) => _loadTermStore(transaction, term, revisionId: revisionId));
 
   Future<ScheduleStore> _loadTermStore(DatabaseExecutor transaction, TermRef term, {String? revisionId}) async {

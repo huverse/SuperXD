@@ -36,8 +36,6 @@ class KingoCampusGateway implements CampusGateway {
   }
   late final KingoAuth _auth = KingoAuth(client: client, now: _now);
 
-  void abandonLogin() => _auth.cancel();
-
   @override
   Future<GatewayResult<SessionView>> restoreSession() async {
     final saved = await database.readSession();

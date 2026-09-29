@@ -4,12 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/domain/campus_gateway.dart';
-import 'package:superxd/gateway/fixture_gateway.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/today_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
+
+import 'fixture_campus_gateway.dart';
 
 const _current = TermRef(xn: '2026', xq: '0', label: '当前学期');
 const _source = TermRef(xn: '2025', xq: '1', label: '2025-2026第二学期');
@@ -99,7 +100,7 @@ class _Gateway extends FixtureCampusGateway {
   Future<GatewayResult<ScheduleView>> readSchedule(ScheduleScope scope) async {
     if (needsStart) return const GatewayResult(ok: false, source: 'local', fetchedAt: 'stamp', error: GatewayError(code: 'TERM_START_REQUIRED', message: '请选择开学日'));
     final now = campusNow();
-    return _ok(ScheduleView(term: scope.term, student: _student, termStartDate: campusToday(), courses: [
+    return _ok(ScheduleView(term: scope.term, student: _student, termStartDate: campusToday(), revisionId: 'rev-test', courses: [
       CourseRecord(courseCode: 'C1', courseName: '测试课', sectionId: 'S1', credit: 1, teacherName: '老师', meetings: [CourseMeeting(weekday: now.weekday, periodStart: 1, periodEnd: 1, place: '教室', weeks: [1])]),
     ]));
   }

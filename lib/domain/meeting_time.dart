@@ -20,8 +20,3 @@ MeetingTime? periodTime(List<BellPeriod> bells, int periodStart, int periodEnd) 
   if (start == null || end == null || end <= start) return null;
   return MeetingTime(start, end, '${first.start}–${last.end}');
 }
-
-String meetingTimeLabel(List<BellPeriod> bells, CourseMeeting meeting) {
-  return meetingTime(bells, meeting)?.label ??
-      (meeting.periodStart == meeting.periodEnd ? '第${meeting.periodStart}节' : '第${meeting.periodStart}–${meeting.periodEnd}节');
-}
