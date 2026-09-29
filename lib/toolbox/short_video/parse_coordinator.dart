@@ -163,9 +163,11 @@ class ParseCoordinator {
           false,
           attemptWatch.elapsed,
         );
+        // 本次尝试已分到全部剩余预算时，超时即总预算耗尽；不再凭计时器与秒表的亚毫秒偏差把链接交给下一来源。
         if (selected != automatic ||
             lastFailure.code == ParseFailureCode.invalidInput ||
-            lastFailure.code == ParseFailureCode.cancelled) {
+            lastFailure.code == ParseFailureCode.cancelled ||
+            lastFailure.code == ParseFailureCode.timeout && attemptBudget == remaining) {
           throw lastFailure;
         }
       } finally {
