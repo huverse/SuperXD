@@ -96,8 +96,9 @@ class _ToolboxPageState extends State<ToolboxPage> {
                 children: [
                   const Text('百宝箱暂未就绪'),
                   TextButton(
-                    onPressed: () =>
-                        setState(() => _ready = widget.runtime.initialize()),
+                    onPressed: () => setState(() {
+                      _ready = widget.runtime.initialize();
+                    }),
                     child: const Text('重试'),
                   ),
                 ],

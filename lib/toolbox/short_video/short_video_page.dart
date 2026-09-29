@@ -286,7 +286,9 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
           if (snapshot.hasError) {
             return Center(
               child: TextButton(
-                onPressed: () => setState(() => _ready = _initialize()),
+                onPressed: () => setState(() {
+                  _ready = _initialize();
+                }),
                 child: const Text('准备失败，点击重试'),
               ),
             );
