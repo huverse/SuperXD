@@ -42,6 +42,19 @@ void main() {
     expect(violations, isEmpty);
   });
 
+  // 日志统一走 campusLog，出口在 domain/campus_log.dart，由入口注入 debugPrint；直写 stderr 在 Android 上看不到。
+  test('lib日志只经campusLog出口', () {
+    final direct = RegExp(r'(?<![\w.])(debugPrint|print)\(|stderr\.write|developer\.log\(');
+    final offenders = <String>[];
+    for (final file in _dartFiles('lib').where((file) => !file.path.endsWith('campus_log.dart'))) {
+      final lines = file.readAsLinesSync();
+      for (var index = 0; index < lines.length; index++) {
+        if (direct.hasMatch(lines[index])) offenders.add('${file.path}:${index + 1}');
+      }
+    }
+    expect(offenders, isEmpty);
+  });
+
   // 索引只在文件级兜底：新增、删除、搬迁都要同步登记；职责与不变量的变化靠改动前检查清单维护。
   test('项目索引登记lib全部文件且无失效条目', () {
     String read(String index) => File(index).existsSync() ? File(index).readAsStringSync() : '';

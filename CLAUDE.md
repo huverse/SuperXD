@@ -101,7 +101,7 @@
 11. 日志
     - 只经 domain/campus_log.dart 的 campusLog 输出。应用入口必须注入 debugPrint，日志才会进入 logcat。
     - 格式为 [模块] action=... errorType=...，错误附完整堆栈。不写原始 HTML、链接或凭据。
-    - 由 test/code_conventions_test.dart 守护。
+    - 由 test/project_structure_test.dart 守护。
 12. 界面实现
     - 确认和提示统一使用 theme/campus_transitions.dart 的 showCampusConfirm 与 showCampusNotice。
     - setState 回调不得返回 Future；给 Future 字段赋值时用块体。由 test/code_conventions_test.dart 守护。

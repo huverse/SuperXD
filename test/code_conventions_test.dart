@@ -28,21 +28,4 @@ void main() {
     }
     expect(offenders, isEmpty);
   });
-
-  // 日志统一走 campusLog，出口在 domain/campus_log.dart，由入口注入 debugPrint；直写 stderr 在 Android 上看不到。
-  test('lib日志只经campusLog出口', () {
-    final direct = RegExp(r'(?<![\w.])(debugPrint|print)\(|stderr\.write|developer\.log\(');
-    final offenders = <String>[];
-    final files = Directory('lib')
-        .listSync(recursive: true)
-        .whereType<File>()
-        .where((file) => file.path.endsWith('.dart') && !file.path.endsWith('campus_log.dart'));
-    for (final file in files) {
-      final lines = file.readAsLinesSync();
-      for (var index = 0; index < lines.length; index++) {
-        if (direct.hasMatch(lines[index])) offenders.add('${file.path}:${index + 1}');
-      }
-    }
-    expect(offenders, isEmpty);
-  });
 }
