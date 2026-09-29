@@ -134,6 +134,15 @@ class ToolboxFixture {
     await Future<void>.delayed(const Duration(milliseconds: 20));
   }
 
+  // 下一项在前一项状态落定后才异步入队；断言入队数前要等到真实入队，不能以“已保存”代替。
+  Future<void> waitForEnqueued(int count) async {
+    final watch = Stopwatch()..start();
+    while (transfer.enqueueCount < count &&
+        watch.elapsed < const Duration(seconds: 5)) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+  }
+
   Future<void> close() async {
     await runtime.close();
     await directory.delete(recursive: true);
