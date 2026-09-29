@@ -41,4 +41,32 @@ void main() {
     }
     expect(violations, isEmpty);
   });
+
+  // 索引只在文件级兜底：新增、删除、搬迁都要同步登记；职责与不变量的变化靠改动前检查清单维护。
+  test('项目索引登记lib全部文件且无失效条目', () {
+    String read(String index) => File(index).existsSync() ? File(index).readAsStringSync() : '';
+    final problems = <String>[];
+    for (final file in _dartFiles('lib')) {
+      final parts = path.split(path.relative(file.path, from: 'lib'));
+      final module = path.join('lib', parts.first, 'CLAUDE.md');
+      final index = parts.length > 1 && File(module).existsSync() ? module : 'CLAUDE.md';
+      if (!read(index).contains(path.basename(file.path))) problems.add('${file.path}未登记于$index');
+    }
+    final known = {
+      for (final root in ['lib', 'test', 'tool', 'android/app/src'])
+        for (final entity in Directory(root).listSync(recursive: true))
+          if (entity is File) path.basename(entity.path),
+    };
+    final indexes = [
+      'CLAUDE.md',
+      for (final entity in Directory('lib').listSync(recursive: true))
+        if (entity is File && path.basename(entity.path) == 'CLAUDE.md') entity.path,
+    ];
+    for (final index in indexes) {
+      for (final match in RegExp(r'[\w.]+\.(?:dart|kt)\b').allMatches(read(index))) {
+        if (!known.contains(match[0])) problems.add('$index提到的${match[0]}不存在');
+      }
+    }
+    expect(problems, isEmpty);
+  });
 }

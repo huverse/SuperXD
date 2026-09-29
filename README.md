@@ -47,6 +47,8 @@ flutter run
 
 当前工程提供Android宿主。GitHub仓库为私有，clone需要维护者授权；不要把访问token写入URL或项目文件。
 
+项目索引在根目录CLAUDE.md（分层、跨模块不变量、改动前检查清单、测试地图）与lib各模块的CLAUDE.md（文件职责、流程、库表与限额）；新增、删除或搬迁lib文件须同步登记，由test/project_structure_test.dart检查。
+
 ## 百宝箱媒体验证
 
 当前只接入BugPK；自动/手动是可插拔编排能力，不表示已经集成第二家服务。解析历史默认开启（仅本机80条/30天，可在设置关闭），媒体直链只短时缓存；下载到Download/SuperXD，移除记录不删除导出文件。图集/实况按接口返回项处理，不合成系统Live Photo，不支持DRM或HLS合并。
