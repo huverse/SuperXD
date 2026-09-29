@@ -7,6 +7,7 @@ import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/week.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 Future<String?> editTermStart(BuildContext context, CampusGateway gateway, TermRef term, String? savedDate) async {
   final date = savedDate == null ? campusNow() : parseIsoDate(savedDate);
@@ -30,7 +31,7 @@ Future<String?> editTermStart(BuildContext context, CampusGateway gateway, TermR
     ));
     return result.ok ? value : null;
   } catch (error, stack) {
-    debugPrint('[TermStart] action=save errorType=${error.runtimeType}\n$stack');
+    campusLog('[TermStart] action=save errorType=${error.runtimeType}\n$stack');
     if (context.mounted) {
       await showCampusDialog<void>(context: context, builder: (context) => AlertDialog(
         content: const Text('保存开学日失败，请重试'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],

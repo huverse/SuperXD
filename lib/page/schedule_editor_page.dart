@@ -9,6 +9,7 @@ import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/course_editor_page.dart';
 import 'package:superxd/page/schedule_history_page.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ScheduleEditorPage extends StatefulWidget {
   const ScheduleEditorPage({
@@ -67,7 +68,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
         }
       }
     } catch (error, stack) {
-      debugPrint('[ScheduleEditor] action=load error=$error\n$stack');
+      campusLog('[ScheduleEditor] action=load error=$error\n$stack');
       if (mounted) {
         setState(() {
           _loading = false;
@@ -257,7 +258,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                 ));
                 if (mounted && error != null) setState(() => _error = error);
               } catch (error, stack) {
-                debugPrint('[ScheduleEditor] action=undo error=$error\n$stack');
+                campusLog('[ScheduleEditor] action=undo error=$error\n$stack');
                 if (mounted) setState(() => _error = '撤销未完成，请在历史版本中预览恢复');
               }
             },
@@ -265,7 +266,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
         ),
       );
     } catch (error, stack) {
-      debugPrint('[ScheduleEditor] action=delete error=$error\n$stack');
+      campusLog('[ScheduleEditor] action=delete error=$error\n$stack');
       if (mounted) setState(() => _error = '删除未完成，请重试');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -374,7 +375,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                                   final error = await showCampusWaiting(context, label: '正在建立课表', operation: () => _save([], '建立空课表', null));
                                   if (mounted) setState(() => _error = error);
                                 } catch (error, stack) {
-                                  debugPrint(
+                                  campusLog(
                                     '[ScheduleEditor] action=create error=$error\n$stack',
                                   );
                                   if (mounted) {

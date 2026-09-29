@@ -12,6 +12,7 @@ import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.gateway, required this.session, this.switching = false});
@@ -59,7 +60,7 @@ class _LoginPageState extends State<LoginPage> {
     _password.dispose();
     if (_attemptStarted && _generation == widget.gateway.generation) {
       widget.gateway.cancelLogin().catchError((Object error, StackTrace stack) {
-        debugPrint('[LoginPage] action=cancel errorType=${error.runtimeType}\n$stack');
+        campusLog('[LoginPage] action=cancel errorType=${error.runtimeType}\n$stack');
       });
     }
     super.dispose();
@@ -97,7 +98,7 @@ class _LoginPageState extends State<LoginPage> {
       }
       // 成功仅由账号协调器发布新的generation，不由页面自行翻loggedIn。
     } catch (error, stack) {
-      debugPrint('[LoginPage] action=login errorType=${error.runtimeType}\n$stack');
+      campusLog('[LoginPage] action=login errorType=${error.runtimeType}\n$stack');
       if (mounted) {
         _password.clear();
         await _notice('登录未完成，请重试；原账号数据未删除。');
@@ -197,7 +198,7 @@ class _CaptchaDialogState extends State<_CaptchaDialog> {
         _code.clear();
       });
     } catch (error, stack) {
-      debugPrint('[CaptchaDialog] action=refresh errorType=${error.runtimeType}\n$stack');
+      campusLog('[CaptchaDialog] action=refresh errorType=${error.runtimeType}\n$stack');
       if (mounted) Navigator.pop(context, '验证码刷新失败，请重新登录');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -219,7 +220,7 @@ class _CaptchaDialogState extends State<_CaptchaDialog> {
         Navigator.pop(context, result.error?.message ?? '登录未完成');
       }
     } catch (error, stack) {
-      debugPrint('[CaptchaDialog] action=submit errorType=${error.runtimeType}\n$stack');
+      campusLog('[CaptchaDialog] action=submit errorType=${error.runtimeType}\n$stack');
       if (mounted) Navigator.pop(context, '验证码提交未完成，请重新登录');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -231,7 +232,7 @@ class _CaptchaDialogState extends State<_CaptchaDialog> {
     onPopInvokedWithResult: (didPop, result) {
       if (didPop) {
         widget.gateway.cancelLogin().catchError((Object error, StackTrace stack) {
-          debugPrint('[CaptchaDialog] action=cancel errorType=${error.runtimeType}\n$stack');
+          campusLog('[CaptchaDialog] action=cancel errorType=${error.runtimeType}\n$stack');
         });
       }
     },

@@ -11,6 +11,7 @@ import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ToolboxPage extends StatefulWidget {
   const ToolboxPage({super.key, required this.runtime, this.modules});
@@ -35,7 +36,7 @@ class _ToolboxPageState extends State<ToolboxPage> {
     try {
       await action();
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[Toolbox] action=manage errorType=${error.runtimeType}\n$stack',
       );
       if (mounted) {

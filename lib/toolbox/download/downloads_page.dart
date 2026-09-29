@@ -8,6 +8,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/download/download_status.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class DownloadsPage extends StatefulWidget {
   const DownloadsPage({super.key, required this.runtime});
@@ -26,7 +27,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
     try {
       await action();
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[DownloadsPage] action=manage errorType=${error.runtimeType}\n$stack',
       );
       if (mounted) {

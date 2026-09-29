@@ -1,11 +1,11 @@
 import 'dart:async';
 
-import 'package:flutter/foundation.dart';
 import 'package:quiver/collection.dart';
 
 import 'package:superxd/toolbox/short_video/parse_result.dart';
 import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ParseCoordinator {
   ParseCoordinator(
@@ -139,7 +139,7 @@ class ParseCoordinator {
         );
         return ParseOutcome(result, attempts: attempts);
       } catch (error, stack) {
-        debugPrint(
+        campusLog(
           '[ShortVideo] action=source source=${source.id} errorType=${error.runtimeType}\n$stack',
         );
         if (cancellation.isCancelled) {

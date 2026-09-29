@@ -1,11 +1,11 @@
 import 'dart:convert';
-import 'dart:developer' as developer;
 
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/period_spans.dart';
 import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/grades.dart' as grades;
+import 'package:superxd/domain/campus_log.dart';
 
 class FixtureCampusGateway implements CampusGateway {
   FixtureCampusGateway({required this.readText, DateTime Function()? now}) : _now = now ?? DateTime.now;
@@ -187,7 +187,7 @@ class FixtureCampusGateway implements CampusGateway {
   Future<GatewayResult<RevisionView>> saveScheduleRevision(TermRef term, List<CourseRecord> courses, String summary, {required String? expectedRevisionId}) async {
     if (_store.head(term)?.id != expectedRevisionId) return _fail('REVISION_CONFLICT', const RevisionConflict().message);
     final normalized = normalizeSchedule(courses);
-    try { validateSchedule(normalized); } on ScheduleValidation catch (error, stack) { developer.log('[ScheduleFixture] action=validate', error: error, stackTrace: stack); return _fail('INVALID_SCHEDULE', error.message); }
+    try { validateSchedule(normalized); } on ScheduleValidation catch (error, stack) { campusLog('[ScheduleFixture] action=validate errorType=${error.runtimeType}\n$stack'); return _fail('INVALID_SCHEDULE', error.message); }
     final row = _store.edit(term, normalized, summary, _stamp());
     return _ok(_revision(row), source: row.source, fetchedAt: row.createdAt);
   }

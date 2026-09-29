@@ -15,6 +15,7 @@ import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/period_spans.dart';
 import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/grades.dart' as grades;
+import 'package:superxd/domain/campus_log.dart';
 
 class KingoCampusGateway implements CampusGateway {
   KingoCampusGateway({required this.database, KingoClient? client, DateTime Function()? now})
@@ -101,7 +102,7 @@ class KingoCampusGateway implements CampusGateway {
       try {
         await database.syncSchedule(term, courses, confirm: false, now: _stamp());
       } on ScheduleConflict catch (error, stack) {
-        stderr.writeln('[Schedule] action=sync confirmation=required code=${error.code}\n$stack');
+        campusLog('[Schedule] action=sync confirmation=required code=${error.code}\n$stack');
         conflict = true;
       }
       if (parsed.name.isNotEmpty) await database.updateSessionNames(parsed.name, parsed.className);
@@ -170,7 +171,7 @@ class KingoCampusGateway implements CampusGateway {
   Future<GatewayResult<GradesView>> _syncGrades(TermRef term) => _guard(() async {
     final saved = await _openSession();
     if (saved == null) return _fail('SESSION_EXPIRED', '教务登录已失效，需要重新登录');
-    stderr.writeln('[Grades] action=sync term=${term.key} state=start');
+    campusLog('[Grades] action=sync term=${term.key} state=start');
     final form = await client.fetchGradeForm();
     final pages = await client.fetchGrades(xn: term.xn, xq: term.xq, rxnj: form.rxnj, nj: form.nj);
     final bothEmpty = pages.effective.courses.isEmpty && pages.original.courses.isEmpty;
@@ -205,7 +206,7 @@ class KingoCampusGateway implements CampusGateway {
     grades.gradesFromJson(grades.decodeGradeJson(payload), term);
     final fetchedAt = _stamp();
     await database.writeGrades(term.xn, term.xq, fetchedAt, payload, summaryJson: jsonEncode(grades.gradeOverviewJson(view)));
-    stderr.writeln('[Grades] action=sync term=${term.key} state=done effective=${effective.length} original=${original.length}');
+    campusLog('[Grades] action=sync term=${term.key} state=done effective=${effective.length} original=${original.length}');
     return _ok(view, source: 'edu', fetchedAt: fetchedAt);
   });
 
@@ -238,7 +239,7 @@ class KingoCampusGateway implements CampusGateway {
         } else { summary = grades.decodeGradeJson(row['summary_json'] as String); }
         result.add(grades.gradeOverviewFromJson(summary, term, fetchedAt));
       } on grades.GradeDataException catch (error, stack) {
-        stderr.writeln('[Grades] action=overview term=${term.key} invalid=true\n$stack');
+        campusLog('[Grades] action=overview term=${term.key} invalid=true\n$stack');
         result.add(GradeTermOverview(term: term, cached: true, fetchedAt: fetchedAt, error: error.message));
       }
     }
@@ -468,19 +469,19 @@ class KingoCampusGateway implements CampusGateway {
     try {
       return await body();
     } on grades.GradeDataException catch (error, stack) {
-      stderr.writeln('[Grades] action=boundary invalid=true\n$stack');
+      campusLog('[Grades] action=boundary invalid=true\n$stack');
       return _fail('GRADE_DATA_INVALID', error.message);
     } on RevisionConflict catch (error, stack) {
-      stderr.writeln('[Schedule] action=commit conflict=true\n$stack');
+      campusLog('[Schedule] action=commit conflict=true\n$stack');
       return _fail('REVISION_CONFLICT', error.message);
     } on ScheduleConflict catch (error, stack) {
-      stderr.writeln('[Schedule] action=sync confirmation=required\n$stack');
+      campusLog('[Schedule] action=sync confirmation=required\n$stack');
       return _fail(error.code, error.toString());
     } on ScheduleValidation catch (error, stack) {
-      stderr.writeln('[Schedule] action=validate failed=true\n$stack');
+      campusLog('[Schedule] action=validate failed=true\n$stack');
       return _fail('INVALID_SCHEDULE', error.message);
     } on KingoCallException catch (error, stack) {
-      stderr.writeln('[KingoCampusGateway] code=${error.failure.code}\n$stack');
+      campusLog('[KingoCampusGateway] code=${error.failure.code}\n$stack');
       if (error.failure.code == 'SESSION_EXPIRED') {
         await database.clearSession();
         client.jar.clear();
@@ -488,22 +489,22 @@ class KingoCampusGateway implements CampusGateway {
       }
       return _fail(error.failure.code, error.failure.message);
     } on TimeoutException catch (error, stack) {
-      stderr.writeln('[KingoCampusGateway] $error\n$stack');
+      campusLog('[KingoCampusGateway] $error\n$stack');
       return _fail('NETWORK_TIMEOUT', '教务连接超时');
     } on FormatException catch (error, stack) {
-      stderr.writeln('[KingoCampusGateway] code=UPSTREAM_FORMAT errorType=${error.runtimeType}\n$stack');
+      campusLog('[KingoCampusGateway] code=UPSTREAM_FORMAT errorType=${error.runtimeType}\n$stack');
       return _fail('UPSTREAM_FORMAT', '教务返回的数据格式异常，未覆盖已有缓存');
     } on SocketException catch (error, stack) {
-      stderr.writeln('[KingoCampusGateway] code=NETWORK_FAILED errorType=${error.runtimeType}\n$stack');
+      campusLog('[KingoCampusGateway] code=NETWORK_FAILED errorType=${error.runtimeType}\n$stack');
       return _fail('NETWORK_FAILED', '教务连接失败');
     } on http.ClientException catch (error, stack) {
-      stderr.writeln('[KingoCampusGateway] code=NETWORK_FAILED errorType=${error.runtimeType}\n$stack');
+      campusLog('[KingoCampusGateway] code=NETWORK_FAILED errorType=${error.runtimeType}\n$stack');
       return _fail('NETWORK_FAILED', '教务连接失败');
     } on DatabaseException catch (error, stack) {
-      stderr.writeln('[KingoCampusGateway] code=LOCAL_STORAGE_FAILED errorType=${error.runtimeType}\n$stack');
+      campusLog('[KingoCampusGateway] code=LOCAL_STORAGE_FAILED errorType=${error.runtimeType}\n$stack');
       return _fail('LOCAL_STORAGE_FAILED', '本地数据保存失败');
     } catch (error, stack) {
-      stderr.writeln('[KingoCampusGateway] code=OPERATION_FAILED errorType=${error.runtimeType}\n$stack');
+      campusLog('[KingoCampusGateway] code=OPERATION_FAILED errorType=${error.runtimeType}\n$stack');
       return _fail('OPERATION_FAILED', '操作未完成，请重试');
     }
   }

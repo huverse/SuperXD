@@ -11,6 +11,7 @@ import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class CourseEditorPage extends StatefulWidget {
   const CourseEditorPage({
@@ -121,7 +122,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
       }
       validateSchedule([course]);
     } on ScheduleValidation catch (error, stack) {
-      debugPrint('[ScheduleEditor] action=validate error=$error\n$stack');
+      campusLog('[ScheduleEditor] action=validate error=$error\n$stack');
       setState(() => _error = error.message);
       return;
     }
@@ -164,7 +165,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
         setState(() => _error = error);
       }
     } catch (error, stack) {
-      debugPrint('[ScheduleEditor] action=save error=$error\n$stack');
+      campusLog('[ScheduleEditor] action=save error=$error\n$stack');
       if (mounted) setState(() => _error = '保存未完成，草稿仍在，请重试');
     } finally {
       if (mounted) setState(() => _saving = false);

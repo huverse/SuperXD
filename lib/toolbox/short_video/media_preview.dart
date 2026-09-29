@@ -8,6 +8,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/toolbox/media_resource.dart';
 import 'package:superxd/toolbox/short_video/media_image.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class MediaPreview extends StatefulWidget {
   const MediaPreview({super.key, required this.media});
@@ -63,7 +64,7 @@ class _MediaPreviewState extends State<MediaPreview>
             const Center(child: Text('播放未完成，请重新解析或下载后打开')),
       );
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[MediaPreview] action=initialize errorType=${error.runtimeType}\n$stack',
       );
       await video.dispose();
@@ -82,7 +83,7 @@ class _MediaPreviewState extends State<MediaPreview>
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state != AppLifecycleState.resumed) {
       _video?.pause().catchError((Object error, StackTrace stack) {
-        debugPrint(
+        campusLog(
           '[MediaPreview] action=pause errorType=${error.runtimeType}\n$stack',
         );
       });
@@ -95,7 +96,7 @@ class _MediaPreviewState extends State<MediaPreview>
     WidgetsBinding.instance.removeObserver(this);
     _controls?.dispose();
     _video?.dispose().catchError((Object error, StackTrace stack) {
-      debugPrint(
+      campusLog(
         '[MediaPreview] action=dispose errorType=${error.runtimeType}\n$stack',
       );
     });

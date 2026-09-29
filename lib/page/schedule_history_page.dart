@@ -8,6 +8,7 @@ import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/course_editor_page.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ScheduleHistoryPage extends StatefulWidget {
   const ScheduleHistoryPage({
@@ -57,7 +58,7 @@ class _ScheduleHistoryPageState extends State<ScheduleHistoryPage> {
         }
       });
     } catch (error, stack) {
-      debugPrint('[ScheduleHistory] action=list error=$error\n$stack');
+      campusLog('[ScheduleHistory] action=list error=$error\n$stack');
       if (mounted) setState(() => _error = '无法读取历史版本，请重试');
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -194,7 +195,7 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
             : scheduleChanges(_current!.courses, _target!.courses);
       });
     } catch (error, stack) {
-      debugPrint('[ScheduleHistory] action=preview error=$error\n$stack');
+      campusLog('[ScheduleHistory] action=preview error=$error\n$stack');
       if (mounted) setState(() => _error = '无法读取版本详情');
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -229,7 +230,7 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
         });
       }
     } catch (error, stack) {
-      debugPrint('[ScheduleHistory] action=restore error=$error\n$stack');
+      campusLog('[ScheduleHistory] action=restore error=$error\n$stack');
       if (mounted) setState(() => _error = '恢复未完成，请重试');
     } finally {
       if (mounted) setState(() => _saving = false);

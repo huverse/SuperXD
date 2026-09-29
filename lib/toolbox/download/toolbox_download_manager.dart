@@ -12,6 +12,7 @@ import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_resource_manager.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
 import 'package:superxd/toolbox/toolbox_url.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ToolboxDownloadManager extends ChangeNotifier {
   ToolboxDownloadManager({
@@ -75,7 +76,7 @@ class ToolboxDownloadManager extends ChangeNotifier {
       operation = _onUpdate(update)
           .then((_) => _pump())
           .catchError((Object error, StackTrace stack) {
-            debugPrint(
+            campusLog(
               '[ToolboxDownload] action=update errorType=${error.runtimeType}\n$stack',
             );
           })
@@ -298,7 +299,7 @@ class ToolboxDownloadManager extends ChangeNotifier {
           await transfer.enqueue(_downloads[item.id]!);
           count++;
         } catch (error, stack) {
-          debugPrint(
+          campusLog(
             '[ToolboxDownload] action=enqueue errorType=${error.runtimeType}\n$stack',
           );
           await _save(
@@ -436,7 +437,7 @@ class ToolboxDownloadManager extends ChangeNotifier {
         if (foreground) await _publish(ready);
       }
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[ToolboxDownload] action=finish errorType=${error.runtimeType}\n$stack',
       );
       await _save(
@@ -494,9 +495,9 @@ class ToolboxDownloadManager extends ChangeNotifier {
           clearUrl: true,
         ),
       );
-      debugPrint('[ToolboxDownload] action=saved');
+      campusLog('[ToolboxDownload] action=saved');
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[ToolboxDownload] action=publish errorType=${error.runtimeType}\n$stack',
       );
       await _save(
@@ -510,7 +511,7 @@ class ToolboxDownloadManager extends ChangeNotifier {
     try {
       await _clean(item);
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[ToolboxDownload] action=clean_saved errorType=${error.runtimeType}\n$stack',
       );
     }
@@ -585,7 +586,7 @@ class ToolboxDownloadManager extends ChangeNotifier {
           item.change(state: ToolboxDownloadState.cancelled, clearUrl: true),
         );
       } catch (error, stack) {
-        debugPrint(
+        campusLog(
           '[ToolboxDownload] action=cancel errorType=${error.runtimeType}\n$stack',
         );
         await _save(
@@ -640,7 +641,7 @@ class ToolboxDownloadManager extends ChangeNotifier {
     try {
       await publisher.open(item.savedUri!, item.mimeType!);
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[ToolboxDownload] action=open errorType=${error.runtimeType}\n$stack',
       );
       throw const ToolboxException('本地文件无法打开，可在下载管理删除记录后重新下载');

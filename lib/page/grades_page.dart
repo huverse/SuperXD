@@ -14,6 +14,7 @@ import 'package:superxd/page/campus_sync_dialogs.dart';
 import 'package:superxd/page/sync_selection_dialog.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class GradesPage extends StatefulWidget {
   const GradesPage({
@@ -95,7 +96,7 @@ class _GradesPageState extends State<GradesPage> {
       }
       await _loadView();
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[GradesPage] action=terms errorType=${error.runtimeType}\n$stack',
       );
       if (_active && request == _generation) {
@@ -145,7 +146,7 @@ class _GradesPageState extends State<GradesPage> {
         });
       }
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[GradesPage] action=read errorType=${error.runtimeType}\n$stack',
       );
       if (_active && request == _generation) {
@@ -218,7 +219,7 @@ class _GradesPageState extends State<GradesPage> {
       await showCampusSyncReport(context, report);
       if (_active && report.sessionExpired) widget.onLoginRequired?.call();
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[GradesPage] action=sync errorType=${error.runtimeType}\n$stack',
       );
       if (_active) setState(() => _error = '同步未完成，已有本地成绩保留');

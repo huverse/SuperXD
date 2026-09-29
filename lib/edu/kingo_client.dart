@@ -1,6 +1,5 @@
 import 'dart:async';
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:enough_convert/enough_convert.dart';
 import 'package:http/http.dart' as http;
@@ -12,6 +11,7 @@ import 'package:superxd/edu/parse_grades.dart';
 import 'package:superxd/domain/grades.dart';
 import 'package:superxd/edu/parse_schedule.dart';
 import 'package:superxd/edu/parse_terms.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 const kingoBase = 'http://42.247.18.146';
 const kingoUserAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
@@ -64,7 +64,7 @@ class KingoClient {
     try {
       data = (jsonDecode(posted.body) as Map).cast<String, Object?>();
     } catch (error, stack) {
-      stderr.writeln('[KingoClient] action=login_decode errorType=${error.runtimeType}\n$stack');
+      campusLog('[KingoClient] action=login_decode errorType=${error.runtimeType}\n$stack');
       data = null;
     }
     final status = data?['status'];
@@ -152,7 +152,7 @@ class KingoClient {
     try {
       return parseScheduleHtml(page.body);
     } on ScheduleParseException catch (error, stack) {
-      stderr.writeln('[KingoClient] action=schedule_parse term=$xn-$xq reason=${error.message}\n$stack');
+      campusLog('[KingoClient] action=schedule_parse term=$xn-$xq reason=${error.message}\n$stack');
       throw KingoCallException(LoginFailure(code: 'UPSTREAM_FORMAT', message: '课表解析失败：${error.message}，未覆盖已有缓存'));
     }
   }
@@ -305,7 +305,7 @@ class KingoClient {
     try {
       return utf8.decode(bytes);
     } on FormatException catch (error, stack) {
-      stderr.writeln('[KingoClient] action=decode charset=gbk_fallback errorType=${error.runtimeType}\n$stack');
+      campusLog('[KingoClient] action=decode charset=gbk_fallback errorType=${error.runtimeType}\n$stack');
       return gbk.decode(bytes);
     }
   }

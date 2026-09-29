@@ -14,6 +14,7 @@ import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_resource_manager.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ToolboxRuntime with WidgetsBindingObserver {
   ToolboxRuntime({this.resourceSpecifications = const {}})
@@ -42,7 +43,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     Object error,
     StackTrace stack,
   ) {
-    debugPrint(
+    campusLog(
       '[Toolbox] action=initialize errorType=${error.runtimeType}\n$stack',
     );
     _initialization = null;
@@ -91,7 +92,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     manager.foreground = state == AppLifecycleState.resumed;
     if (manager.foreground) {
       manager.resume().catchError((Object error, StackTrace stack) {
-        debugPrint(
+        campusLog(
           '[Toolbox] action=resume errorType=${error.runtimeType}\n$stack',
         );
       });

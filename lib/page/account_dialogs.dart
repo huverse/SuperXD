@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/theme/campus_loading.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 Future<void> showLegacyImport(BuildContext context, AppSession session, {bool automatic = false}) async {
   final accounts = session.gateway;
@@ -42,7 +43,7 @@ Future<void> showLegacyImport(BuildContext context, AppSession session, {bool au
     if (!context.mounted) return;
     await showCampusWaiting(context, label: '正在导入已确认归属的数据', operation: session.importLegacy);
   } catch (error, stack) {
-    debugPrint('[AccountImport] errorType=${error.runtimeType}\n$stack');
+    campusLog('[AccountImport] errorType=${error.runtimeType}\n$stack');
     if (context.mounted && active()) await _notice(context, '旧数据导入未完成，原文件保留，请重试。');
   }
 }

@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:synchronized/synchronized.dart';
 
@@ -13,6 +12,7 @@ import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/app_database.dart';
 import 'package:superxd/local/credential_store.dart';
 import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 // 门面只选择固定账号上下文；协议、缓存和课表业务仍由原网关负责。
 class AccountGateway extends AccountAccess {
@@ -89,7 +89,7 @@ class AccountGateway extends AccountAccess {
       }
       return _ok(login.data!.session!);
     } catch (error, stack) {
-      stderr.writeln('[AccountGateway] action=auto_restore errorType=${error.runtimeType}\n$stack');
+      campusLog('[AccountGateway] action=auto_restore errorType=${error.runtimeType}\n$stack');
       _accountNotice = '保存的鉴权数据不可用，请手动登录。';
       return result;
     }
@@ -221,7 +221,7 @@ class AccountGateway extends AccountAccess {
         } on _CancelledAccountSwitch {
           rethrow;
         } catch (error, stack) {
-          stderr.writeln('[AccountGateway] action=remember errorType=${error.runtimeType}\n$stack');
+          campusLog('[AccountGateway] action=remember errorType=${error.runtimeType}\n$stack');
           _accountNotice = '已登录，但记住账号设置未能保存；不会降级为明文保存。';
         }
         pending.credential = null;
@@ -238,7 +238,7 @@ class AccountGateway extends AccountAccess {
       }
       return result;
     } catch (error, stack) {
-      stderr.writeln('[AccountGateway] action=activate errorType=${error.runtimeType}\n$stack');
+      campusLog('[AccountGateway] action=activate errorType=${error.runtimeType}\n$stack');
       if (!committed) {
         if (identical(_pending, pending)) _cancelPending();
         if (credentialWritten) {
@@ -362,7 +362,7 @@ class AccountGateway extends AccountAccess {
         imported = true;
         return _ok(report);
       } catch (error, stack) {
-        stderr.writeln('[AccountGateway] action=import_legacy errorType=${error.runtimeType}\n$stack');
+        campusLog('[AccountGateway] action=import_legacy errorType=${error.runtimeType}\n$stack');
         return _fail('LEGACY_IMPORT_FAILED', '旧数据导入未完成，可重试；已有数据未被覆盖');
       } finally {
         if (!imported) context.accepting = true;
@@ -465,7 +465,7 @@ class AccountGateway extends AccountAccess {
         return _ok(true);
       });
     } catch (error, stack) {
-      stderr.writeln('[AccountGateway] action=recover errorType=${error.runtimeType}\n$stack');
+      campusLog('[AccountGateway] action=recover errorType=${error.runtimeType}\n$stack');
       context.recoveryBlocked = true;
       return _fail('SESSION_EXPIRED', '无法自动恢复登录，请手动登录');
     } finally { client?.dispose(); if (identical(client, _recoveryClient)) _recoveryClient = null; }
@@ -518,7 +518,7 @@ class AccountGateway extends AccountAccess {
     try {
       return await operation();
     } catch (error, stack) {
-      stderr.writeln('[AccountGateway] action=operation errorType=${error.runtimeType}\n$stack');
+      campusLog('[AccountGateway] action=operation errorType=${error.runtimeType}\n$stack');
       return _fail('OPERATION_FAILED', '操作未完成，请重试');
     }
   }

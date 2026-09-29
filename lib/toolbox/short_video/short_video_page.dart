@@ -17,6 +17,7 @@ import 'package:superxd/toolbox/short_video/short_video_controller.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_url.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ShortVideoPage extends StatefulWidget {
   const ShortVideoPage({
@@ -64,7 +65,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
       final rows = await widget.runtime.store.history(limit: 5);
       if (mounted) setState(() => _recent = rows);
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[ShortVideo] action=recent errorType=${error.runtimeType}\n$stack',
       );
     }
@@ -141,7 +142,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
       }
       if (again == true && mounted) await _parse(refresh: true, source: source);
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[ShortVideo] action=input errorType=${error.runtimeType}\n$stack',
       );
       if (mounted) setState(() => _message = '请检查链接后重试');
@@ -213,7 +214,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                   Object error,
                   StackTrace stack,
                 ) {
-                  debugPrint(
+                  campusLog(
                     '[ShortVideo] action=settings errorType=${error.runtimeType}\n$stack',
                   );
                 }),
@@ -230,7 +231,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                   onChanged: (value) => controller
                       .enable(source.source.id, value)
                       .catchError((Object error, StackTrace stack) {
-                        debugPrint(
+                        campusLog(
                           '[ShortVideo] action=source_toggle errorType=${error.runtimeType}\n$stack',
                         );
                       }),
@@ -341,7 +342,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                                         Object error,
                                         StackTrace stack,
                                       ) {
-                                        debugPrint(
+                                        campusLog(
                                           '[ShortVideo] action=select errorType=${error.runtimeType}\n$stack',
                                         );
                                       });
@@ -385,7 +386,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                                             _replace(value!.text!);
                                           }
                                         } catch (error, stack) {
-                                          debugPrint(
+                                          campusLog(
                                             '[ShortVideo] action=paste errorType=${error.runtimeType}\n$stack',
                                           );
                                         }

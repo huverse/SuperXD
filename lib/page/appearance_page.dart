@@ -5,6 +5,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class AppearancePage extends StatefulWidget {
   const AppearancePage({super.key});
@@ -24,7 +25,7 @@ class _AppearancePageState extends State<AppearancePage> {
     try {
       await operation();
     } catch (error, stack) {
-      debugPrint('[Appearance] action=save error=$error\n$stack');
+      campusLog('[Appearance] action=save error=$error\n$stack');
       if (mounted) setState(() => _error = '保存失败，请重试');
     } finally {
       if (mounted) setState(() => _saving = false);

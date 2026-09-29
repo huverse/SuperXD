@@ -10,7 +10,7 @@ const _allowed = {
   'local': {'domain', 'local'},
   'gateway': {'domain', 'edu', 'local', 'gateway'},
   'application': {'domain', 'gateway', 'application'},
-  'theme': {'theme'},
+  'theme': {'theme', 'domain/campus_log.dart'},
   'toolbox': {'domain', 'theme', 'toolbox'},
   'page': {'domain', 'application', 'gateway', 'local', 'theme', 'page', 'app_session.dart'},
 };
@@ -33,8 +33,10 @@ void main() {
       }
       final imports = RegExp(r'''^import\s+['"]package:superxd/([^'"]+)['"]''', multiLine: true);
       for (final match in imports.allMatches(file.readAsStringSync())) {
-        final target = match[1]!.split('/').first;
-        if (!allowed.contains(target)) violations.add('${file.path} → $target');
+        final target = match[1]!;
+        if (!allowed.contains(target.split('/').first) && !allowed.contains(target)) {
+          violations.add('${file.path} → $target');
+        }
       }
     }
     expect(violations, isEmpty);

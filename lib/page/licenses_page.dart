@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 // [人工决策-2026-09-25 16:24:31] 应用署名按两行展示，LicenseRegistry原始版权和许可正文完整保留。
 class GalaxyousAttribution extends StatelessWidget {
@@ -52,7 +53,7 @@ class _CampusLicensesPageState extends State<CampusLicensesPage> {
             left.key.toLowerCase().compareTo(right.key.toLowerCase()),
       );
     } catch (error, stack) {
-      debugPrint('[Licenses] action=load error=$error\n$stack');
+      campusLog('[Licenses] action=load error=$error\n$stack');
       rethrow;
     }
   }

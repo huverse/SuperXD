@@ -22,6 +22,7 @@ import 'package:superxd/page/live_clock.dart';
 import 'package:superxd/page/sync_selection_dialog.dart';
 import 'package:superxd/page/term_start_dialog.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class TodayPage extends StatefulWidget {
   const TodayPage({
@@ -98,7 +99,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
 
   void _selectDay(String date, {bool recenter = false}) {
     final today = _campusDay();
-    debugPrint('[TodayPage] action=select_day date=$date recenter=$recenter');
+    campusLog('[TodayPage] action=select_day date=$date recenter=$recenter');
     setState(() {
       _today = today;
       _day = date;
@@ -182,7 +183,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
   Future<void> _refresh({bool notify = true}) async {
     final generation = ++_readGeneration;
     _updateToday();
-    debugPrint(
+    campusLog(
       '[TodayPage] action=read_local generation=$generation state=start',
     );
     try {
@@ -239,7 +240,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         _contentRevision++;
         _days.clear();
       });
-      debugPrint(
+      campusLog(
         '[TodayPage] action=read_local generation=$generation state=complete',
       );
       if (!notify) return;
@@ -248,7 +249,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         await _notice(bells.error?.message ?? '本地作息读取失败');
       }
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[TodayPage] action=read_local errorType=${error.runtimeType}\n$stack',
       );
       if (!_current(generation)) return;
@@ -312,7 +313,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
       await showCampusSyncReport(context, report);
       if (mounted && report.sessionExpired) await widget.onSessionExpired?.call();
     } catch (error, stack) {
-      debugPrint('[TodayPage] action=sync errorType=${error.runtimeType}\n$stack');
+      campusLog('[TodayPage] action=sync errorType=${error.runtimeType}\n$stack');
       await _notice('同步中断，已保存的数据保留，请重试。');
     } finally {
       if (mounted) setState(() => _syncing = false);

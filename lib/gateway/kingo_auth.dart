@@ -8,6 +8,7 @@ import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
 import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 // 登录暂态只属于本次认证，不读取或清理正在使用的账号数据库。
 class KingoAuth {
@@ -132,7 +133,7 @@ class KingoAuth {
 
   CaptchaView _captcha(CaptchaViewData data) => CaptchaView(prompt: data.prompt, hint: data.hint, contentType: data.contentType, imageBase64: data.imageBase64);
 
-  void _log(Object error, StackTrace stack, String code) => stderr.writeln('[KingoAuth] code=$code errorType=${error.runtimeType}\n$stack');
+  void _log(Object error, StackTrace stack, String code) => campusLog('[KingoAuth] code=$code errorType=${error.runtimeType}\n$stack');
 
   String _stamp() => _now().toUtc().toIso8601String();
 

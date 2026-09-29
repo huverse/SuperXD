@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
@@ -9,6 +8,7 @@ import 'package:superxd/toolbox/short_video/parse_result.dart';
 import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_url.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class BugpkVideoParser implements ParseProvider {
   BugpkVideoParser({
@@ -56,7 +56,7 @@ class BugpkVideoParser implements ParseProvider {
             error.code == ParseFailureCode.timeout) {
           rethrow;
         }
-        stderr.writeln(
+        campusLog(
           '[BugPK] action=aggregate_fallback errorType=${error.runtimeType}\n$stack',
         );
         final delay = source.interval - watch.elapsed;

@@ -21,8 +21,11 @@ import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/third_party_licenses.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 void main() async {
+  // 日志出口注入debugPrint，Android上才进入logcat，见campus_log.dart。
+  campusLog = debugPrint;
   WidgetsFlutterBinding.ensureInitialized();
   // Android 10–14默认不绘制到导航栏后，透明导航栏会露出原生窗口底色（浅色为白条）；15+系统已强制全面屏。
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -37,7 +40,7 @@ void main() async {
   try {
     await session.restore();
   } catch (error, stack) {
-    debugPrint('[AppSession] action=restore errorType=${error.runtimeType}\n$stack');
+    campusLog('[AppSession] action=restore errorType=${error.runtimeType}\n$stack');
   }
 }
 
@@ -59,7 +62,7 @@ class _SuperXdAppState extends State<SuperXdApp> {
   void dispose() {
     if (widget.toolbox == null) {
       _toolbox.close().catchError((Object error, StackTrace stack) {
-        debugPrint('[Toolbox] action=close errorType=${error.runtimeType}\n$stack');
+        campusLog('[Toolbox] action=close errorType=${error.runtimeType}\n$stack');
       });
     }
     super.dispose();

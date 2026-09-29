@@ -13,6 +13,7 @@ import 'package:superxd/page/account_dialogs.dart';
 import 'package:superxd/page/third_party_page.dart';
 import 'package:superxd/page/appearance_page.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ServicePage extends StatelessWidget {
   const ServicePage({super.key});
@@ -120,7 +121,7 @@ class _MinePageState extends State<MinePage> {
     setState(() => _busy = true);
     try { await showCampusWaiting(context, label: '正在清除记住账号凭据', operation: widget.session.gateway.forgetCredential); if (mounted) setState(() => _remembered = false); }
     catch (error, stack) {
-      debugPrint('[RememberAccount] errorType=${error.runtimeType}\n$stack');
+      campusLog('[RememberAccount] errorType=${error.runtimeType}\n$stack');
       if (mounted) await showCampusDialog<void>(context: context, builder: (context) => AlertDialog(content: const Text('自动登录凭据未能清除，请重试。'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))]));
     } finally { if (mounted) setState(() => _busy = false); }
   }
@@ -139,7 +140,7 @@ class _MinePageState extends State<MinePage> {
     try {
       await showCampusWaiting(context, label: '正在退出账号', operation: widget.session.gateway.logout);
     } catch (error, stack) {
-      debugPrint('[MinePage] action=logout errorType=${error.runtimeType}\n$stack');
+      campusLog('[MinePage] action=logout errorType=${error.runtimeType}\n$stack');
       if (mounted) {
         await showCampusDialog<void>(context: context, builder: (context) => AlertDialog(
           content: const Text('退出未完成，请重试。'),
@@ -162,13 +163,13 @@ class _MinePageState extends State<MinePage> {
       final session = await widget.gateway.restoreSession();
       var remembered = false;
       try { remembered = await widget.session.gateway.isRemembered(); }
-      catch (error, stack) { debugPrint('[RememberAccount] action=read errorType=${error.runtimeType}\n$stack'); }
+      catch (error, stack) { campusLog('[RememberAccount] action=read errorType=${error.runtimeType}\n$stack'); }
       if (!mounted) return;
       _remembered = remembered;
       final name = session.data?.name ?? '';
       final loginId = session.data?.loginId ?? '';
       setState(() => _name = name.isEmpty ? loginId : name);
-    } catch (error, stack) { debugPrint('[MinePage] action=load errorType=${error.runtimeType}\n$stack'); }
+    } catch (error, stack) { campusLog('[MinePage] action=load errorType=${error.runtimeType}\n$stack'); }
     finally { if (mounted) setState(() => _loadingAccount = false); }
   }
 

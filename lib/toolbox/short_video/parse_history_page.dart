@@ -6,6 +6,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 // 首页最近解析与历史页共用：点击整行重开解析结果，只展示本机保存的链接、标题、类型和来源。
 class ParseHistoryTile extends StatelessWidget {
@@ -87,7 +88,7 @@ class _ParseHistoryPageState extends State<ParseHistoryPage> {
         });
       }
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[ParseHistory] action=delete errorType=${error.runtimeType}\n$stack',
       );
       if (mounted) {

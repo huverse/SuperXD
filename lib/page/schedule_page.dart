@@ -19,6 +19,7 @@ import 'package:superxd/page/schedule_editor_page.dart';
 import 'package:superxd/page/term_start_dialog.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 enum ScheduleRange { day, term, year }
 
@@ -89,7 +90,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
       _terms = listed.data!;
       await _loadTerm(_terms.first, date: campusToday());
     } catch (error, stack) {
-      debugPrint('[Schedule] action=load errorType=${error.runtimeType}\n$stack');
+      campusLog('[Schedule] action=load errorType=${error.runtimeType}\n$stack');
       if (mounted) { setState(() => _loading = false); await _notice('读取本地课表失败'); }
     }
   }
@@ -112,7 +113,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
       setState(() => _loading = false);
       if (!bells.ok) await _notice(bells.error?.message ?? '作息读取失败');
     } catch (error, stack) {
-      debugPrint('[Schedule] action=load_term errorType=${error.runtimeType}\n$stack');
+      campusLog('[Schedule] action=load_term errorType=${error.runtimeType}\n$stack');
       if (mounted && request == _request) { setState(() => _loading = false); await _notice('课表读取失败'); }
     }
   }

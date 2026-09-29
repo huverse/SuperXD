@@ -9,8 +9,10 @@ import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/page/shell_page.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 void main() {
+  campusLog = debugPrint;
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
     MaterialApp(
