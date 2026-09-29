@@ -66,6 +66,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
   ValueNotifier<DateTime>? _clock;
   bool? _branchActive;
   int _readGeneration = 0;
+  CampusSyncReport? _pendingReport;
 
   DateTime _instant() => widget.now?.call() ?? _clock?.value ?? DateTime.now();
   String _campusDay() => formatCampusDate(campusInstant(_instant()));
@@ -149,9 +150,11 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     final active = TickerMode.valuesOf(context).enabled;
     final reactivated = _branchActive == false && active;
     _branchActive = active;
-    if (reactivated && !_syncing) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _refresh();
+    if (reactivated) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        if (!_syncing) await _refresh();
+        await _showPendingReport();
       });
     }
   }
@@ -298,14 +301,29 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
       );
       if (!mounted) return;
       await _refresh(notify: false);
-      if (!mounted || !TickerMode.valuesOf(context).enabled || report.cancelled || report.busy) return;
-      await showCampusSyncReport(context, report);
-      if (mounted && report.sessionExpired) await widget.onSessionExpired?.call();
+      if (!mounted || report.busy) return;
+      // [人工决策-2026-09-29 21:31:03] 同步中离开今天页仍在下一检查点中止；结果暂存，回到今天页再提示“同步已中止”，列出已完成与未处理项并可重新同步；离开期间跑完的结果也回来展示，不再静默。
+      _pendingReport = report;
+      await _showPendingReport();
     } catch (error, stack) {
       campusLog('[TodayPage] action=sync errorType=${error.runtimeType}\n$stack');
       await _notice('同步中断，已保存的数据保留，请重试。');
     } finally {
       if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  // 今天页可见且账号未变时才展示；会话失效看完后照常转登录，选择重新同步则打开同步范围。
+  Future<void> _showPendingReport() async {
+    final report = _pendingReport;
+    if (report == null || !mounted || !TickerMode.valuesOf(context).enabled || !(widget.isAccountCurrent?.call() ?? true)) return;
+    _pendingReport = null;
+    final again = await showCampusSyncReport(context, report);
+    if (!mounted) return;
+    if (report.sessionExpired) {
+      await widget.onSessionExpired?.call();
+    } else if (again) {
+      await _chooseSync();
     }
   }
 

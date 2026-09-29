@@ -107,6 +107,37 @@ void main() {
     expect(gateway.gradesRequests, 0);
   });
 
+  test('中途离开按执行顺序带出未处理项，已完成项照常报告', () async {
+    var active = true;
+    final gateway = _Gateway()..onCommit = () => active = false;
+    final report = await CampusSync(gateway).run(contents: {SyncContent.schedule, SyncContent.grades}, years: {'2025'}, isActive: () => active,
+      confirmSchedule: (_, _) async => true, chooseBells: (_, _) async => BellsChoice.cancel);
+    expect(report.cancelled, isTrue);
+    expect(report.items.map((item) => (item.label, item.outcome)), [('课表 · 上学期', SyncOutcome.completed)]);
+    expect(report.unfinished, ['课表 · 第一学期', '成绩 · 上学期', '成绩 · 第一学期']);
+    expect(gateway.synced, [previous.key]);
+    expect(gateway.gradesRequests, 0);
+  });
+
+  test('刷新学期后即离开，未处理项为所选全部内容', () async {
+    final gateway = _Gateway();
+    final report = await CampusSync(gateway).run(contents: SyncContent.values.toSet(), isActive: () => false,
+      confirmSchedule: (_, _) async => true, chooseBells: (_, _) async => BellsChoice.cancel);
+    expect(report.cancelled, isTrue);
+    expect(report.items, isEmpty);
+    expect(report.unfinished, ['所选学年的全部内容']);
+    expect(gateway.synced, isEmpty);
+  });
+
+  test('会话失效提前结束时列出其余未处理项', () async {
+    final gateway = _Gateway()..failedTerm = current.key..errorCode = 'SESSION_EXPIRED';
+    final report = await CampusSync(gateway).run(contents: {SyncContent.schedule, SyncContent.grades}, isActive: () => true,
+      confirmSchedule: (_, _) async => true, chooseBells: (_, _) async => BellsChoice.cancel);
+    expect(report.sessionExpired, isTrue);
+    expect(report.cancelled, isFalse);
+    expect(report.unfinished, ['课表 · 上学期', '课表 · 第一学期', '成绩 · 当前学期', '成绩 · 上学期', '成绩 · 第一学期']);
+  });
+
   test('同步互斥且异常后锁释放', () async {
     final gateway = _Gateway()..gate = Completer<GatewayResult<List<TermRef>>>();
     final service = CampusSync(gateway);
@@ -136,6 +167,7 @@ class _Gateway extends FixtureCampusGateway {
   TermRef? gradeTerm;
   TermRef? adopted;
   Completer<GatewayResult<List<TermRef>>>? gate;
+  void Function()? onCommit;
 
   @override
   Future<GatewayResult<List<TermRef>>> syncTerms() async => gate == null ? ok([current, previous, oldest, previous]) : gate!.future;
@@ -150,6 +182,7 @@ class _Gateway extends FixtureCampusGateway {
   Future<GatewayResult<RevisionView>> commitScheduleSync(TermRef term, List<CourseRecord> courses, {required bool confirm, String? expectedRevisionId}) async {
     commits++;
     if (confirm) confirmedCommits++;
+    onCommit?.call();
     return commitFails ? fail('SYNC_CONFLICT') : ok(const RevisionView(id: 'rev', source: 'edu', createdAt: 'stamp', summary: '同步'));
   }
   @override

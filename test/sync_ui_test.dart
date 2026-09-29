@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -71,6 +72,45 @@ void main() {
     active.dispose();
   });
 
+  testWidgets('同步中离开今天页不弹窗，回来提示已中止并列出未处理项，可重新同步', (tester) async {
+    final gateway = _Gateway()..scheduleGate = Completer<void>();
+    final active = ValueNotifier(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ValueListenableBuilder<bool>(
+      valueListenable: active,
+      builder: (context, enabled, child) => TickerMode(enabled: enabled, child: child!),
+      child: Scaffold(body: TodayPage(gateway: gateway)),
+    )));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('同步'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '开始同步'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(gateway.scheduleCalls, 1);
+    active.value = false;
+    await tester.pump();
+    gateway.scheduleGate!.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('同步已中止'), findsNothing);
+    expect(find.text('同步结果'), findsNothing);
+    active.value = true;
+    await tester.pumpAndSettle();
+    expect(find.text('同步已中止'), findsOneWidget);
+    expect(find.text('未处理 · 课表 · 当前学期'), findsOneWidget);
+    expect(find.text('未处理 · 作息 · 当前学期'), findsOneWidget);
+    expect(find.text('未处理 · 成绩 · 当前学期'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, '重新同步'));
+    await tester.pumpAndSettle();
+    expect(find.text('同步范围'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(gateway.scheduleCalls, 1);
+    expect(gateway.gradeCalls, 0);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    active.dispose();
+  });
+
   testWidgets('课表页读取同一来源时间，浏览不触发同步且只保留三种范围', (tester) async {
     final gateway = _Gateway()..adopted = true;
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: SchedulePage(gateway: gateway)));
@@ -92,6 +132,7 @@ class _Gateway extends FixtureCampusGateway {
   bool needsStart = false;
   int scheduleCalls = 0;
   int gradeCalls = 0;
+  Completer<void>? scheduleGate;
   @override
   Future<GatewayResult<List<TermRef>>> listTerms() async => _ok([_current, _source]);
   @override
@@ -107,6 +148,7 @@ class _Gateway extends FixtureCampusGateway {
   @override
   Future<GatewayResult<ScheduleView>> syncSchedule(TermRef term) async {
     scheduleCalls++;
+    await scheduleGate?.future;
     return readSchedule(ScheduleScope.currentTerm(term));
   }
   @override
