@@ -95,7 +95,6 @@ flutter:
         - asset: assets/fonts/noto_serif_sc_variable.ttf
 
   assets:
-    - assets/fixtures/
     - assets/fonts/LICENSE.txt
     - assets/fonts/noto_serif_sc_license.txt
     - assets/third_party_notices.txt

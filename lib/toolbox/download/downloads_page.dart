@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:superxd/local/campus_clock.dart';
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
@@ -8,6 +8,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/download/download_status.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class DownloadsPage extends StatefulWidget {
   const DownloadsPage({super.key, required this.runtime});
@@ -26,7 +27,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
     try {
       await action();
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[DownloadsPage] action=manage errorType=${error.runtimeType}\n$stack',
       );
       if (mounted) {
@@ -46,24 +47,13 @@ class _DownloadsPageState extends State<DownloadsPage> {
   }
 
   Future<void> _delete(String id) async {
-    final confirmed = await showCampusDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('删除下载记录？'),
-        content: const Text('只移除记录，已保存到本地的文件保留。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除记录'),
-          ),
-        ],
-      ),
+    final confirmed = await showCampusConfirm(
+      context,
+      title: '删除下载记录？',
+      message: '只移除记录，已保存到本地的文件保留。',
+      action: '删除记录',
     );
-    if (confirmed == true && mounted) {
+    if (confirmed && mounted) {
       await _operate(id, () => widget.runtime.downloads.deleteJob(id));
     }
   }

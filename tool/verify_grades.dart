@@ -8,9 +8,11 @@ import 'package:http/http.dart' as http;
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/account_store.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 // 仅复用当前已登录的授权会话只读取成绩结构，不登录、不保存成绩、不输出凭据或成绩明细。
 Future<void> main() async {
+  campusLog = debugPrint;
   WidgetsFlutterBinding.ensureInitialized();
   runApp(
     const MaterialApp(

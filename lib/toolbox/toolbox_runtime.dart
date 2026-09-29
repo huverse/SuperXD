@@ -14,6 +14,7 @@ import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_resource_manager.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ToolboxRuntime with WidgetsBindingObserver {
   ToolboxRuntime({this.resourceSpecifications = const {}})
@@ -35,14 +36,13 @@ class ToolboxRuntime with WidgetsBindingObserver {
   Future<void>? _initialization;
   ToolboxStore get store => _store!;
   ToolboxDownloadManager get downloads => _downloads!;
-  bool get initialized => _downloads != null;
 
   // [人工决策-2026-09-27 20:12:08] 百宝箱免教务登录，设备级任务独立于账号；不读取教务凭据，切账号不销毁下载。
   Future<void> initialize() => _initialization ??= _initialize().catchError((
     Object error,
     StackTrace stack,
   ) {
-    debugPrint(
+    campusLog(
       '[Toolbox] action=initialize errorType=${error.runtimeType}\n$stack',
     );
     _initialization = null;
@@ -91,7 +91,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     manager.foreground = state == AppLifecycleState.resumed;
     if (manager.foreground) {
       manager.resume().catchError((Object error, StackTrace stack) {
-        debugPrint(
+        campusLog(
           '[Toolbox] action=resume errorType=${error.runtimeType}\n$stack',
         );
       });

@@ -5,7 +5,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 const term = TermRef(xn: '2026', xq: '0');
 List<CourseRecord> courses(String name) => [

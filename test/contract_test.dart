@@ -8,9 +8,10 @@ import 'package:superxd/edu/parse_bells.dart';
 import 'package:superxd/edu/parse_grades.dart';
 import 'package:superxd/edu/parse_schedule.dart';
 import 'package:superxd/edu/parse_terms.dart';
-import 'package:superxd/gateway/fixture_gateway.dart';
-import 'package:superxd/local/schedule_store.dart';
-import 'package:superxd/local/week.dart';
+import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/week.dart';
+
+import 'fixture_campus_gateway.dart';
 
 void main() {
   test('开学日按所在周的周一计算', () {

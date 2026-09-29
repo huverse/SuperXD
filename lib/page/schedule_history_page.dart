@@ -3,11 +3,12 @@ import 'package:flutter/material.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/campus_clock.dart';
-import 'package:superxd/local/schedule_edit.dart';
-import 'package:superxd/local/schedule_store.dart';
-import 'package:superxd/page/course_editor_page.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/schedule_edit.dart';
+import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ScheduleHistoryPage extends StatefulWidget {
   const ScheduleHistoryPage({
@@ -57,7 +58,7 @@ class _ScheduleHistoryPageState extends State<ScheduleHistoryPage> {
         }
       });
     } catch (error, stack) {
-      debugPrint('[ScheduleHistory] action=list error=$error\n$stack');
+      campusLog('[ScheduleHistory] action=list error=$error\n$stack');
       if (mounted) setState(() => _error = '无法读取历史版本，请重试');
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -194,7 +195,7 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
             : scheduleChanges(_current!.courses, _target!.courses);
       });
     } catch (error, stack) {
-      debugPrint('[ScheduleHistory] action=preview error=$error\n$stack');
+      campusLog('[ScheduleHistory] action=preview error=$error\n$stack');
       if (mounted) setState(() => _error = '无法读取版本详情');
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -203,11 +204,11 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
 
   Future<void> _restore() async {
     if (_saving || _target == null || _current == null) return;
-    if (!await confirmScheduleAction(
+    if (!await showCampusConfirm(
       context,
-      '恢复这个版本？',
-      '将应用下方预览的${_changes.length}项课程变化并新建本地版本，不改变开学日和作息。每学期最多保留100版。',
-      '确认恢复',
+      title: '恢复这个版本？',
+      message: '将应用下方预览的${_changes.length}项课程变化并新建本地版本，不改变开学日和作息。每学期最多保留100版。',
+      action: '确认恢复',
     )) {
       return;
     }
@@ -229,7 +230,7 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
         });
       }
     } catch (error, stack) {
-      debugPrint('[ScheduleHistory] action=restore error=$error\n$stack');
+      campusLog('[ScheduleHistory] action=restore error=$error\n$stack');
       if (mounted) setState(() => _error = '恢复未完成，请重试');
     } finally {
       if (mounted) setState(() => _saving = false);

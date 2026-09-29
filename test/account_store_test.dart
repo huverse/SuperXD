@@ -5,10 +5,10 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:superxd/gateway/account_access.dart';
+import 'package:superxd/domain/account.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/app_database.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 const _accountA = AccountIdentity(source: 'https://campus.example.edu/base', loginId: 'student-a');
 const _accountB = AccountIdentity(source: 'https://campus.example.edu/base', loginId: 'student-b');

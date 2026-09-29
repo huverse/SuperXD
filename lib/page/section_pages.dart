@@ -8,11 +8,12 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/app_session.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/page/account_dialogs.dart';
 import 'package:superxd/page/third_party_page.dart';
 import 'package:superxd/page/appearance_page.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ServicePage extends StatelessWidget {
   const ServicePage({super.key});
@@ -112,40 +113,25 @@ class _MinePageState extends State<MinePage> {
   bool _loadingAccount = true;
 
   Future<void> _forget() async {
-    final confirmed = await showCampusDialog<bool>(context: context, builder: (context) => AlertDialog(
-      title: const Text('关闭记住账号？'), content: const Text('将删除此账号保存的自动登录凭据。课表和历史数据保持不变。'),
-      actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('关闭并清除'))],
-    ));
-    if (!mounted || confirmed != true) return;
+    final confirmed = await showCampusConfirm(context, title: '关闭记住账号？', message: '将删除此账号保存的自动登录凭据。课表和历史数据保持不变。', action: '关闭并清除');
+    if (!mounted || !confirmed) return;
     setState(() => _busy = true);
     try { await showCampusWaiting(context, label: '正在清除记住账号凭据', operation: widget.session.gateway.forgetCredential); if (mounted) setState(() => _remembered = false); }
     catch (error, stack) {
-      debugPrint('[RememberAccount] errorType=${error.runtimeType}\n$stack');
-      if (mounted) await showCampusDialog<void>(context: context, builder: (context) => AlertDialog(content: const Text('自动登录凭据未能清除，请重试。'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))]));
+      campusLog('[RememberAccount] errorType=${error.runtimeType}\n$stack');
+      if (mounted) await showCampusNotice(context, '自动登录凭据未能清除，请重试。');
     } finally { if (mounted) setState(() => _busy = false); }
   }
 
   Future<void> _logout() async {
-    final confirmed = await showCampusDialog<bool>(context: context, builder: (context) => AlertDialog(
-      title: const Text('退出登录？'),
-      content: const Text('清除本机登录态和此账号保存的自动登录凭据，当前课表和自定义修改保留，历史版本按每学期最多100版保留。'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('退出')),
-      ],
-    ));
-    if (!mounted || confirmed != true) return;
+    final confirmed = await showCampusConfirm(context, title: '退出登录？', message: '清除本机登录态和此账号保存的自动登录凭据，当前课表和自定义修改保留，历史版本按每学期最多100版保留。', action: '退出');
+    if (!mounted || !confirmed) return;
     setState(() => _busy = true);
     try {
       await showCampusWaiting(context, label: '正在退出账号', operation: widget.session.gateway.logout);
     } catch (error, stack) {
-      debugPrint('[MinePage] action=logout errorType=${error.runtimeType}\n$stack');
-      if (mounted) {
-        await showCampusDialog<void>(context: context, builder: (context) => AlertDialog(
-          content: const Text('退出未完成，请重试。'),
-          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
-        ));
-      }
+      campusLog('[MinePage] action=logout errorType=${error.runtimeType}\n$stack');
+      if (mounted) await showCampusNotice(context, '退出未完成，请重试。');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -162,13 +148,13 @@ class _MinePageState extends State<MinePage> {
       final session = await widget.gateway.restoreSession();
       var remembered = false;
       try { remembered = await widget.session.gateway.isRemembered(); }
-      catch (error, stack) { debugPrint('[RememberAccount] action=read errorType=${error.runtimeType}\n$stack'); }
+      catch (error, stack) { campusLog('[RememberAccount] action=read errorType=${error.runtimeType}\n$stack'); }
       if (!mounted) return;
       _remembered = remembered;
       final name = session.data?.name ?? '';
       final loginId = session.data?.loginId ?? '';
       setState(() => _name = name.isEmpty ? loginId : name);
-    } catch (error, stack) { debugPrint('[MinePage] action=load errorType=${error.runtimeType}\n$stack'); }
+    } catch (error, stack) { campusLog('[MinePage] action=load errorType=${error.runtimeType}\n$stack'); }
     finally { if (mounted) setState(() => _loadingAccount = false); }
   }
 

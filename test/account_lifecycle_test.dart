@@ -5,8 +5,9 @@ import 'package:go_router/go_router.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/gateway/account_access.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/account.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/today_page.dart';
 import 'package:superxd/main.dart';
@@ -344,7 +345,7 @@ class _Accounts extends AccountAccess {
   @override
   dynamic noSuchMethod(Invocation invocation) {
     if (invocation.memberName == #listTerms) return Future.value(const GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: [_term]));
-    if (invocation.memberName == #readSchedule) return Future.value(GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: ScheduleView(term: _term, student: _active!, courses: [])));
+    if (invocation.memberName == #readSchedule) return Future.value(GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: ScheduleView(term: _term, student: _active!, courses: [], revisionId: 'rev-test')));
     if (invocation.memberName == #readBells) return Future.value(const GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: BellsView(empty: true, message: '', term: _term, periods: [])));
     return super.noSuchMethod(invocation);
   }

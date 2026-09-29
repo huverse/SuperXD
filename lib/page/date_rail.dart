@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/campus_palette.dart';
-import 'package:superxd/local/week.dart';
+import 'package:superxd/domain/week.dart';
 
 class DateRail extends StatefulWidget {
   static double heightOf(BuildContext context) => 80 * MediaQuery.textScalerOf(context).scale(14) / 14;

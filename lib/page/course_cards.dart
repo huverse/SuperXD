@@ -2,15 +2,15 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'package:superxd/local/period_spans.dart';
+import 'package:superxd/domain/period_spans.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/campus_clock.dart';
-import 'package:superxd/local/meeting_time.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/meeting_time.dart';
+import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/live_clock.dart';
 
 String spanIdentity(PeriodSpan span) => span.empty ? span.key : '${span.key}:${span.meeting!.weekday}:${span.meeting!.place}';

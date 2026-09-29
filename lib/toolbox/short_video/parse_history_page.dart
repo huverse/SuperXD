@@ -1,11 +1,12 @@
 import 'package:flutter/material.dart';
 
-import 'package:superxd/local/campus_clock.dart';
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 // 首页最近解析与历史页共用：点击整行重开解析结果，只展示本机保存的链接、标题、类型和来源。
 class ParseHistoryTile extends StatelessWidget {
@@ -57,24 +58,14 @@ class ParseHistoryPage extends StatefulWidget {
 class _ParseHistoryPageState extends State<ParseHistoryPage> {
   late Future<List<Map<String, Object?>>> _rows = widget.store.history();
   Future<void> _remove([String? id]) async {
-    final agreed = await showCampusDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(id == null ? '清空解析历史？' : '删除这条历史？'),
-        content: const Text('下载记录和已保存文件保持不变。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (agreed != true) return;
+    if (!await showCampusConfirm(
+      context,
+      title: id == null ? '清空解析历史？' : '删除这条历史？',
+      message: '下载记录和已保存文件保持不变。',
+      action: '删除',
+    )) {
+      return;
+    }
     try {
       if (id == null) {
         await widget.store.clearHistory();
@@ -87,7 +78,7 @@ class _ParseHistoryPageState extends State<ParseHistoryPage> {
         });
       }
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[ParseHistory] action=delete errorType=${error.runtimeType}\n$stack',
       );
       if (mounted) {

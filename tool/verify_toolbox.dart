@@ -19,10 +19,12 @@ import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/toolbox_resource_manager.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 // 仅手动运行的Android合成视频验证入口，不进入正式main或CI；不连接教务或第三方解析。
 // 主机端使用本地fixture_server.py监听8765，adb reverse tcp:8765 tcp:8765。
 Future<void> main() async {
+  campusLog = debugPrint;
   WidgetsFlutterBinding.ensureInitialized();
   final root = Directory(
     path.join((await getApplicationSupportDirectory()).path, 'toolbox'),

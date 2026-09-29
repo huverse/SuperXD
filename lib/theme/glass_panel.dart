@@ -5,6 +5,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_background.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 final campusGlassReady = ValueNotifier(false);
 
@@ -12,11 +13,11 @@ Future<void> initializeCampusGlass() async {
   try {
     await liquid.LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
     campusGlassReady.value = true;
-    debugPrint(
+    campusLog(
       '[CampusGlass] ready=true shaderFilter=${ui.ImageFilter.isShaderFilterSupported}',
     );
   } catch (error, stack) {
-    debugPrint('[CampusGlass] fallback=frosted error=$error\n$stack');
+    campusLog('[CampusGlass] fallback=frosted error=$error\n$stack');
   }
 }
 

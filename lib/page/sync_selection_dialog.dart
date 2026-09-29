@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/application/campus_sync.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/theme/campus_loading.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 Future<SyncSelection?> chooseSyncSelection(BuildContext context, CampusGateway gateway, {String? initialYear, Set<SyncContent>? initialContents, Set<SyncContent>? allowedContents}) => showCampusDialog<SyncSelection>(
   context: context,
@@ -49,7 +50,7 @@ class _SyncSelectionDialogState extends State<_SyncSelectionDialog> {
         _error = result.ok ? null : result.error?.message;
       });
     } catch (error, stack) {
-      debugPrint('[SyncSelection] action=load errorType=${error.runtimeType}\n$stack');
+      campusLog('[SyncSelection] action=load errorType=${error.runtimeType}\n$stack');
       if (mounted) setState(() { _loading = false; _error = '读取学年失败，请重试'; });
     }
   }

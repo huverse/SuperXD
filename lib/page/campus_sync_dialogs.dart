@@ -4,38 +4,43 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/theme/campus_icons.dart';
 
-Future<void> showCampusSyncReport(
+// 会话失效优先提示重新登录；中途离开而提前结束时列出未处理项，返回true表示用户选择重新同步。
+Future<bool> showCampusSyncReport(
   BuildContext context,
   CampusSyncReport report,
-) => showCampusDialog<void>(
-  context: context,
-  builder: (context) => AlertDialog(
-    title: Text(report.sessionExpired ? '同步中止，请重新登录' : '同步结果'),
-    content: SingleChildScrollView(
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          for (final item in report.items)
-            Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [CampusIcon(switch (item.outcome) { SyncOutcome.completed => CampusIcons.success, SyncOutcome.failed => CampusIcons.warning, SyncOutcome.skipped => CampusIcons.info }, size: 20), const SizedBox(width: 8), Expanded(child: Text(
-                '${switch (item.outcome) {
-                  SyncOutcome.completed => '完成',
-                  SyncOutcome.skipped => '跳过',
-                  SyncOutcome.failed => '失败',
-                }} · ${item.label}\n${item.message}',
-                style: const TextStyle(fontSize: 14),
-              ))]),
-            ),
-        ],
+) async {
+  final interrupted = !report.sessionExpired && report.unfinished.isNotEmpty;
+  Widget row(IconData icon, String text) => Padding(
+    padding: const EdgeInsets.only(bottom: 12),
+    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [CampusIcon(icon, size: 20), const SizedBox(width: 8), Expanded(child: Text(text, style: const TextStyle(fontSize: 14)))]),
+  );
+  return await showCampusDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: Text(report.sessionExpired ? '同步中止，请重新登录' : interrupted ? '同步已中止' : '同步结果'),
+      content: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            for (final item in report.items)
+              row(switch (item.outcome) { SyncOutcome.completed => CampusIcons.success, SyncOutcome.failed => CampusIcons.warning, SyncOutcome.skipped => CampusIcons.info }, '${switch (item.outcome) {
+                SyncOutcome.completed => '完成',
+                SyncOutcome.skipped => '跳过',
+                SyncOutcome.failed => '失败',
+              }} · ${item.label}\n${item.message}'),
+            for (final label in report.unfinished) row(CampusIcons.pause, '未处理 · $label'),
+            if (interrupted) const Text('离开今天页后已停止，已完成的内容已保存。', style: TextStyle(fontSize: 14)),
+          ],
+        ),
       ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(context, false),
+          child: Text(report.sessionExpired ? '重新登录' : '知道了'),
+        ),
+        if (interrupted) FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('重新同步')),
+      ],
     ),
-    actions: [
-      TextButton(
-        onPressed: () => Navigator.pop(context),
-        child: Text(report.sessionExpired ? '重新登录' : '知道了'),
-      ),
-    ],
-  ),
-);
+  ) == true;
+}

@@ -6,11 +6,12 @@ import 'package:uuid/uuid.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/schedule_edit.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/schedule_edit.dart';
+import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class CourseEditorPage extends StatefulWidget {
   const CourseEditorPage({
@@ -81,11 +82,11 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
   Future<void> _back() async {
     if (_saving) return;
     if (_dirty &&
-        !await confirmScheduleAction(
+        !await showCampusConfirm(
           context,
-          '放弃未保存修改？',
-          '当前草稿尚未保存，离开后将丢失。',
-          '放弃修改',
+          title: '放弃未保存修改？',
+          message: '当前草稿尚未保存，离开后将丢失。',
+          action: '放弃修改',
         )) {
       return;
     }
@@ -121,7 +122,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
       }
       validateSchedule([course]);
     } on ScheduleValidation catch (error, stack) {
-      debugPrint('[ScheduleEditor] action=validate error=$error\n$stack');
+      campusLog('[ScheduleEditor] action=validate error=$error\n$stack');
       setState(() => _error = error.message);
       return;
     }
@@ -135,22 +136,22 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
           _original.meetings.isNotEmpty &&
           course.meetings.isEmpty;
       if (removing &&
-          !await confirmScheduleAction(
+          !await showCampusConfirm(
             context,
-            '保存后删除整门课程？',
-            '所有时段已移除，保存将删除整门课程。可在历史版本中恢复。',
-            '保存并删除',
+            title: '保存后删除整门课程？',
+            message: '所有时段已移除，保存将删除整门课程。可在历史版本中恢复。',
+            action: '保存并删除',
           )) {
         return;
       }
       if (!mounted) return;
       final overlaps = courseOverlaps(course, widget.courses);
       if (overlaps.isNotEmpty &&
-          !await confirmScheduleAction(
+          !await showCampusConfirm(
             context,
-            '上课时间有重叠',
-            '${overlaps.map((overlap) => overlap.label).join('\n')}\n\n保留这些课程并继续保存？',
-            '仍然保存',
+            title: '上课时间有重叠',
+            message: '${overlaps.map((overlap) => overlap.label).join('\n')}\n\n保留这些课程并继续保存？',
+            action: '仍然保存',
           )) {
         return;
       }
@@ -164,7 +165,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
         setState(() => _error = error);
       }
     } catch (error, stack) {
-      debugPrint('[ScheduleEditor] action=save error=$error\n$stack');
+      campusLog('[ScheduleEditor] action=save error=$error\n$stack');
       if (mounted) setState(() => _error = '保存未完成，草稿仍在，请重试');
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -258,11 +259,11 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
           )
         : null;
     if (!mounted || (scope == 'one' && week == null)) return;
-    if (!await confirmScheduleAction(
+    if (!await showCampusConfirm(
       context,
-      '从草稿移除此时段？',
-      '${week == null ? meetingLabel(meeting) : '仅第$week周的这次课'}\n保存课程后生效，历史版本中可恢复。',
-      '移除',
+      title: '从草稿移除此时段？',
+      message: '${week == null ? meetingLabel(meeting) : '仅第$week周的这次课'}\n保存课程后生效，历史版本中可恢复。',
+      action: '移除',
     )) {
       return;
     }
@@ -407,31 +408,6 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
     ),
   );
 }
-
-Future<bool> confirmScheduleAction(
-  BuildContext context,
-  String title,
-  String message,
-  String action,
-) async =>
-    await showCampusDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(title),
-        content: SingleChildScrollView(child: Text(message)),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: Text(action),
-          ),
-        ],
-      ),
-    ) ??
-    false;
 
 Future<int?> chooseMeetingWeek(
   BuildContext context,

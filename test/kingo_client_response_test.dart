@@ -8,7 +8,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 void main() {
   test('合法空课表可读取，陌生HTML和HTTP错误不可当空课表', () async {

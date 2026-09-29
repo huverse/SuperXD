@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:background_downloader/background_downloader.dart' as background;
-import 'package:flutter/foundation.dart';
 
 import 'package:superxd/toolbox/toolbox_models.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class BackgroundTransfer implements ToolboxTransfer {
   BackgroundTransfer(this.directory);
@@ -45,7 +45,7 @@ class BackgroundTransfer implements ToolboxTransfer {
       group: group,
       taskStatusCallback: (update) {
         if (update.exception != null) {
-          debugPrint(
+          campusLog(
             '[ToolboxDownload] action=transfer errorType=${update.exception.runtimeType}',
           );
         }

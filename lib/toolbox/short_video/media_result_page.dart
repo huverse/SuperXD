@@ -13,6 +13,7 @@ import 'package:superxd/toolbox/short_video/media_image.dart';
 import 'package:superxd/toolbox/short_video/parse_result.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class MediaResultPage extends StatefulWidget {
   const MediaResultPage({
@@ -51,7 +52,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
     try {
       await action();
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[MediaResult] action=manage errorType=${error.runtimeType}\n$stack',
       );
       _notice(error is ToolboxException ? error.message : '操作未完成，请重试');
@@ -72,7 +73,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
         media: media,
       );
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[MediaResult] action=download errorType=${error.runtimeType}\n$stack',
       );
       _notice(error is ToolboxException ? error.message : '下载未启动，请稍后重试');
@@ -86,7 +87,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
       await Clipboard.setData(ClipboardData(text: uri.toString()));
       _notice('已复制，媒体直链可能过期');
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[MediaResult] action=copy errorType=${error.runtimeType}\n$stack',
       );
       _notice('复制未完成');

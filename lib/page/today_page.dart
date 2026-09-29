@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 
-import 'package:superxd/local/period_spans.dart';
-import 'package:superxd/local/week.dart';
+import 'package:superxd/domain/period_spans.dart';
+import 'package:superxd/domain/week.dart';
 import 'package:superxd/page/schedule_calendar.dart';
 import 'package:superxd/page/today_date_transition.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -12,16 +12,18 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/application/campus_sync.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/campus_clock.dart';
-import 'package:superxd/local/meeting_time.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/meeting_time.dart';
+import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/campus_sync_dialogs.dart';
 import 'package:superxd/page/live_clock.dart';
 import 'package:superxd/page/sync_selection_dialog.dart';
 import 'package:superxd/page/term_start_dialog.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/gateway_code.dart';
 
 class TodayPage extends StatefulWidget {
   const TodayPage({
@@ -64,6 +66,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
   ValueNotifier<DateTime>? _clock;
   bool? _branchActive;
   int _readGeneration = 0;
+  CampusSyncReport? _pendingReport;
 
   DateTime _instant() => widget.now?.call() ?? _clock?.value ?? DateTime.now();
   String _campusDay() => formatCampusDate(campusInstant(_instant()));
@@ -98,7 +101,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
 
   void _selectDay(String date, {bool recenter = false}) {
     final today = _campusDay();
-    debugPrint('[TodayPage] action=select_day date=$date recenter=$recenter');
+    campusLog('[TodayPage] action=select_day date=$date recenter=$recenter');
     setState(() {
       _today = today;
       _day = date;
@@ -147,9 +150,11 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     final active = TickerMode.valuesOf(context).enabled;
     final reactivated = _branchActive == false && active;
     _branchActive = active;
-    if (reactivated && !_syncing) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _refresh();
+    if (reactivated) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        if (!mounted) return;
+        if (!_syncing) await _refresh();
+        await _showPendingReport();
       });
     }
   }
@@ -182,7 +187,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
   Future<void> _refresh({bool notify = true}) async {
     final generation = ++_readGeneration;
     _updateToday();
-    debugPrint(
+    campusLog(
       '[TodayPage] action=read_local generation=$generation state=start',
     );
     try {
@@ -220,9 +225,9 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         _term = term;
         _loading = false;
         _knownSchedule =
-            view.ok && schedule != null && schedule.message != '还没有课表';
+            view.ok && schedule != null && schedule.revisionId != null;
         _needsStart =
-            view.error?.code == 'TERM_START_REQUIRED' ||
+            view.error?.code == GatewayCode.termStartRequired ||
             _knownSchedule && (start == null || start.isEmpty);
         _readError = !view.ok && !_needsStart
             ? view.error?.message ?? '本地课表读取失败'
@@ -239,7 +244,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         _contentRevision++;
         _days.clear();
       });
-      debugPrint(
+      campusLog(
         '[TodayPage] action=read_local generation=$generation state=complete',
       );
       if (!notify) return;
@@ -248,7 +253,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         await _notice(bells.error?.message ?? '本地作息读取失败');
       }
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[TodayPage] action=read_local errorType=${error.runtimeType}\n$stack',
       );
       if (!_current(generation)) return;
@@ -289,33 +294,36 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         contents: selection.contents,
         years: selection.years,
         isActive: () => mounted && (widget.isAccountCurrent?.call() ?? true) && TickerMode.valuesOf(context).enabled,
-        confirmSchedule: (term, message) async {
-          if (!mounted) return false;
-          return await showCampusDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: Text(term.label.isEmpty ? term.key : term.label),
-              content: SingleChildScrollView(child: Text(message)),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('保留本地')),
-                FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('覆盖')),
-              ],
-            ),
-          ) == true;
-        },
+        confirmSchedule: (term, message) async => mounted &&
+            await showCampusConfirm(context, title: term.label.isEmpty ? term.key : term.label, message: message, cancel: '保留本地', action: '覆盖'),
         chooseBells: _chooseBells,
         onProgress: (progress) { if (mounted) setState(() => _syncProgress = progress); },
       );
       if (!mounted) return;
       await _refresh(notify: false);
-      if (!mounted || !TickerMode.valuesOf(context).enabled || report.cancelled || report.busy) return;
-      await showCampusSyncReport(context, report);
-      if (mounted && report.sessionExpired) await widget.onSessionExpired?.call();
+      if (!mounted || report.busy) return;
+      // [人工决策-2026-09-29 21:31:03] 同步中离开今天页仍在下一检查点中止；结果暂存，回到今天页再提示“同步已中止”，列出已完成与未处理项并可重新同步；离开期间跑完的结果也回来展示，不再静默。
+      _pendingReport = report;
+      await _showPendingReport();
     } catch (error, stack) {
-      debugPrint('[TodayPage] action=sync errorType=${error.runtimeType}\n$stack');
+      campusLog('[TodayPage] action=sync errorType=${error.runtimeType}\n$stack');
       await _notice('同步中断，已保存的数据保留，请重试。');
     } finally {
       if (mounted) setState(() => _syncing = false);
+    }
+  }
+
+  // 今天页可见且账号未变时才展示；会话失效看完后照常转登录，选择重新同步则打开同步范围。
+  Future<void> _showPendingReport() async {
+    final report = _pendingReport;
+    if (report == null || !mounted || !TickerMode.valuesOf(context).enabled || !(widget.isAccountCurrent?.call() ?? true)) return;
+    _pendingReport = null;
+    final again = await showCampusSyncReport(context, report);
+    if (!mounted) return;
+    if (report.sessionExpired) {
+      await widget.onSessionExpired?.call();
+    } else if (again) {
+      await _chooseSync();
     }
   }
 
@@ -347,13 +355,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
 
   Future<void> _notice(String message) async {
     if (!mounted || message.isEmpty || !TickerMode.valuesOf(context).enabled) return;
-    await showCampusDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        content: Text(message),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
-      ),
-    );
+    await showCampusNotice(context, message);
   }
 
   double _bodyInset(BuildContext context) => (32 * MediaQuery.textScalerOf(context).scale(14) / 14 + 16) / 2;

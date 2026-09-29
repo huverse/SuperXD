@@ -4,12 +4,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:superxd/gateway/fixture_gateway.dart';
-import 'package:superxd/local/schedule_edit.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_edit.dart';
+import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/course_editor_page.dart';
 import 'package:superxd/page/schedule_editor_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
+
+import 'fixture_campus_gateway.dart';
 
 const term = TermRef(xn: '2090', xq: '0', label: '测试学期');
 Widget app(Widget page, {double scale = 1}) => MaterialApp(

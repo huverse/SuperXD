@@ -8,6 +8,7 @@ import 'package:superxd/toolbox/short_video/parse_result.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
 import 'package:superxd/toolbox/toolbox_url.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ShortVideoController extends ChangeNotifier {
   ShortVideoController(this.coordinator, this.store);
@@ -125,13 +126,13 @@ class ShortVideoController extends ChangeNotifier {
             kind: value.result.kind,
           );
         } catch (failure, stack) {
-          debugPrint(
+          campusLog(
             '[ShortVideo] action=history errorType=${failure.runtimeType}\n$stack',
           );
         }
       }
     } catch (failure, stack) {
-      debugPrint(
+      campusLog(
         '[ShortVideo] action=parse errorType=${failure.runtimeType}\n$stack',
       );
       if (_disposed || request.isCancelled || request != _request) return;

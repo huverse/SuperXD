@@ -8,8 +8,10 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/curve_geometry.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 Future<void> main() async {
+  campusLog = debugPrint;
   WidgetsFlutterBinding.ensureInitialized();
   configureCampusIcons();
   runApp(const _Preview());

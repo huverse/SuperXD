@@ -3,13 +3,15 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
-import 'package:superxd/local/campus_clock.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/schedule_editor_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 // 仅手工验收入口：内存SQLite、合成学期、不使用AccountStore、不登录或请求教务。
 Future<void> main() async {
+  campusLog = debugPrint;
   WidgetsFlutterBinding.ensureInitialized();
   ensureCampusClock();
   final database = await AppDatabase.openMemory();

@@ -5,16 +5,18 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:sqflite/sqflite.dart';
 
-import 'package:superxd/application/kingo_auth.dart';
+import 'package:superxd/gateway/kingo_auth.dart';
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/edu/parse_grades.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/campus_clock.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/app_database.dart';
-import 'package:superxd/local/schedule_store.dart';
-import 'package:superxd/local/period_spans.dart';
-import 'package:superxd/local/schedule_edit.dart';
-import 'package:superxd/local/grades.dart' as grades;
+import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/period_spans.dart';
+import 'package:superxd/domain/schedule_edit.dart';
+import 'package:superxd/domain/grades.dart' as grades;
+import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/gateway_code.dart';
 
 class KingoCampusGateway implements CampusGateway {
   KingoCampusGateway({required this.database, KingoClient? client, DateTime Function()? now})
@@ -29,18 +31,16 @@ class KingoCampusGateway implements CampusGateway {
   String? _gradesTerm;
 
   Future<GatewayResult<T>> _networkGuard<T>(Future<GatewayResult<T>> Function() body) async {
-    if (_gradesInFlight != null) return _fail('SYNC_BUSY', '成绩同步进行中，请稍后重试');
+    if (_gradesInFlight != null) return _fail(GatewayCode.syncBusy, '成绩同步进行中，请稍后重试');
     _networkCalls++;
     try { return await _guard(body); } finally { _networkCalls--; }
   }
   late final KingoAuth _auth = KingoAuth(client: client, now: _now);
 
-  void abandonLogin() => _auth.cancel();
-
   @override
   Future<GatewayResult<SessionView>> restoreSession() async {
     final saved = await database.readSession();
-    if (saved == null) return _fail('SESSION_EXPIRED', '教务登录已失效，需要重新登录');
+    if (saved == null) return _fail(GatewayCode.sessionExpired, '教务登录已失效，需要重新登录');
     _applyCookie(saved.cookieJson);
     return _ok(_sessionOf(saved), source: 'local', fetchedAt: saved.savedAt);
   }
@@ -74,7 +74,7 @@ class KingoCampusGateway implements CampusGateway {
       if (xn != null && xq != null && !terms.any((term) => term.xn == xn && term.xq == xq)) {
         terms.add(TermRef(xn: xn, xq: xq, label: '$xn-${int.parse(xn) + 1}学年第${xq == '0' ? '一' : '二'}学期'));
       }
-      if (terms.isEmpty) return _fail('UPSTREAM_FORMAT', '教务未返回学期列表');
+      if (terms.isEmpty) return _fail(GatewayCode.upstreamFormat, '教务未返回学期列表');
       await database.saveTerms(terms, currentXn: xn, currentXq: xq);
       if (session != null && profile != null) {
         await database.writeSession(SavedSession(loginId: session.loginId, displayName: session.displayName, className: session.className,
@@ -89,11 +89,11 @@ class KingoCampusGateway implements CampusGateway {
   Future<GatewayResult<ScheduleView>> syncSchedule(TermRef term) {
     return _networkGuard(() async {
       final saved = await _openSession();
-      if (saved == null) return _fail('SESSION_EXPIRED', '教务登录已失效，需要重新登录');
+      if (saved == null) return _fail(GatewayCode.sessionExpired, '教务登录已失效，需要重新登录');
       final userCode = _userCodeOf(saved.cookieJson);
       if (userCode.isEmpty) {
         await database.clearSession();
-        return _fail('SESSION_EXPIRED', '教务登录已失效，需要重新登录');
+        return _fail(GatewayCode.sessionExpired, '教务登录已失效，需要重新登录');
       }
       final parsed = await client.fetchSchedule(xn: term.xn, xq: term.xq, userCode: userCode);
       final courses = parsed.courses;
@@ -101,7 +101,7 @@ class KingoCampusGateway implements CampusGateway {
       try {
         await database.syncSchedule(term, courses, confirm: false, now: _stamp());
       } on ScheduleConflict catch (error, stack) {
-        stderr.writeln('[Schedule] action=sync confirmation=required code=${error.code}\n$stack');
+        campusLog('[Schedule] action=sync confirmation=required code=${error.code}\n$stack');
         conflict = true;
       }
       if (parsed.name.isNotEmpty) await database.updateSessionNames(parsed.name, parsed.className);
@@ -152,15 +152,15 @@ class KingoCampusGateway implements CampusGateway {
         fetchedAt: head.createdAt,
       );
     } on StateError catch (error) {
-      return _fail('TERM_START_REQUIRED', error.message);
+      return _fail(GatewayCode.termStartRequired, error.message);
     }
   }
 
   @override
   Future<GatewayResult<GradesView>> syncGrades(TermRef term) {
     final pending = _gradesInFlight;
-    if (pending != null) return _gradesTerm == term.key ? pending : Future.value(_fail('SYNC_BUSY', '另一个学期正在同步，请稍后重试'));
-    if (_networkCalls > 0) return Future.value(_fail('SYNC_BUSY', '其他教务同步进行中，请稍后重试'));
+    if (pending != null) return _gradesTerm == term.key ? pending : Future.value(_fail(GatewayCode.syncBusy, '另一个学期正在同步，请稍后重试'));
+    if (_networkCalls > 0) return Future.value(_fail(GatewayCode.syncBusy, '其他教务同步进行中，请稍后重试'));
     _gradesTerm = term.key;
     final future = _syncGrades(term);
     _gradesInFlight = future;
@@ -169,8 +169,8 @@ class KingoCampusGateway implements CampusGateway {
 
   Future<GatewayResult<GradesView>> _syncGrades(TermRef term) => _guard(() async {
     final saved = await _openSession();
-    if (saved == null) return _fail('SESSION_EXPIRED', '教务登录已失效，需要重新登录');
-    stderr.writeln('[Grades] action=sync term=${term.key} state=start');
+    if (saved == null) return _fail(GatewayCode.sessionExpired, '教务登录已失效，需要重新登录');
+    campusLog('[Grades] action=sync term=${term.key} state=start');
     final form = await client.fetchGradeForm();
     final pages = await client.fetchGrades(xn: term.xn, xq: term.xq, rxnj: form.rxnj, nj: form.nj);
     final bothEmpty = pages.effective.courses.isEmpty && pages.original.courses.isEmpty;
@@ -205,7 +205,7 @@ class KingoCampusGateway implements CampusGateway {
     grades.gradesFromJson(grades.decodeGradeJson(payload), term);
     final fetchedAt = _stamp();
     await database.writeGrades(term.xn, term.xq, fetchedAt, payload, summaryJson: jsonEncode(grades.gradeOverviewJson(view)));
-    stderr.writeln('[Grades] action=sync term=${term.key} state=done effective=${effective.length} original=${original.length}');
+    campusLog('[Grades] action=sync term=${term.key} state=done effective=${effective.length} original=${original.length}');
     return _ok(view, source: 'edu', fetchedAt: fetchedAt);
   });
 
@@ -238,7 +238,7 @@ class KingoCampusGateway implements CampusGateway {
         } else { summary = grades.decodeGradeJson(row['summary_json'] as String); }
         result.add(grades.gradeOverviewFromJson(summary, term, fetchedAt));
       } on grades.GradeDataException catch (error, stack) {
-        stderr.writeln('[Grades] action=overview term=${term.key} invalid=true\n$stack');
+        campusLog('[Grades] action=overview term=${term.key} invalid=true\n$stack');
         result.add(GradeTermOverview(term: term, cached: true, fetchedAt: fetchedAt, error: error.message));
       }
     }
@@ -281,9 +281,9 @@ class KingoCampusGateway implements CampusGateway {
   Future<GatewayResult<TermRef>> useBellsSource(TermRef target, TermRef source) async {
     // [人工决策-2026-09-24 19:22:21] 采用来源只引用原始缓存；确认后持久化，普通同步不改绑定。
     final row = await database.bellsRow(source.xn, source.xq);
-    if (row == null || row['empty'] == 1) return _fail('BELLS_SOURCE_INVALID', '这套作息没有可用时间，原选择保持不变');
+    if (row == null || row['empty'] == 1) return _fail(GatewayCode.bellsSourceInvalid, '这套作息没有可用时间，原选择保持不变');
     final periods = jsonDecode(row['periods_json'] as String) as List<dynamic>;
-    if (!_validBellPeriods(periods)) return _fail('BELLS_SOURCE_INVALID', '这套作息时间不完整，原选择保持不变');
+    if (!_validBellPeriods(periods)) return _fail(GatewayCode.bellsSourceInvalid, '这套作息时间不完整，原选择保持不变');
     await database.setBellsSource(targetXn: target.xn, targetXq: target.xq, sourceXn: source.xn, sourceXq: source.xq);
     return _ok(source, source: 'user', fetchedAt: _stamp());
   }
@@ -306,7 +306,7 @@ class KingoCampusGateway implements CampusGateway {
         'start': period.start, 'end': period.end,
       }).toList();
       if ((parsed.empty && payload.isNotEmpty) || (!parsed.empty && !_validBellPeriods(payload))) {
-        return _fail('UPSTREAM_FORMAT', '作息时间数据异常，保留已有缓存');
+        return _fail(GatewayCode.upstreamFormat, '作息时间数据异常，保留已有缓存');
       }
       final fetchedAt = _stamp();
       await database.writeBells(
@@ -338,7 +338,7 @@ class KingoCampusGateway implements CampusGateway {
       await database.setTermStart(term, date);
       return _ok(saved, source: 'user', fetchedAt: _stamp());
     } on FormatException catch (error) {
-      return _fail('INVALID_DATE', error.message);
+      return _fail(GatewayCode.invalidDate, error.message);
     }
   }
 
@@ -373,13 +373,13 @@ class KingoCampusGateway implements CampusGateway {
   @override
   Future<GatewayResult<ScheduleRevision>> readScheduleRevision(TermRef term, String id) => _guard(() async {
     final row = await database.readRevision(term, id);
-    return row == null ? _fail('REVISION_MISSING', '版本已清理或不属于此学期') : _ok(row, source: row.source, fetchedAt: row.createdAt);
+    return row == null ? _fail(GatewayCode.revisionMissing, '版本已清理或不属于此学期') : _ok(row, source: row.source, fetchedAt: row.createdAt);
   });
 
   @override
   Future<GatewayResult<RevisionView>> restoreScheduleRevision(TermRef term, String id, {required String? expectedRevisionId}) => _guard(() async {
     final target = await database.readRevision(term, id);
-    if (target == null) return _fail('REVISION_MISSING', '版本已清理或不属于此学期');
+    if (target == null) return _fail(GatewayCode.revisionMissing, '版本已清理或不属于此学期');
     final row = await database.restoreRevision(term, id, expectedRevisionId: expectedRevisionId, now: _stamp());
     return _ok(_revision(row), source: row.source, fetchedAt: row.createdAt);
   });
@@ -468,43 +468,43 @@ class KingoCampusGateway implements CampusGateway {
     try {
       return await body();
     } on grades.GradeDataException catch (error, stack) {
-      stderr.writeln('[Grades] action=boundary invalid=true\n$stack');
-      return _fail('GRADE_DATA_INVALID', error.message);
+      campusLog('[Grades] action=boundary invalid=true\n$stack');
+      return _fail(GatewayCode.gradeDataInvalid, error.message);
     } on RevisionConflict catch (error, stack) {
-      stderr.writeln('[Schedule] action=commit conflict=true\n$stack');
-      return _fail('REVISION_CONFLICT', error.message);
+      campusLog('[Schedule] action=commit conflict=true\n$stack');
+      return _fail(GatewayCode.revisionConflict, error.message);
     } on ScheduleConflict catch (error, stack) {
-      stderr.writeln('[Schedule] action=sync confirmation=required\n$stack');
+      campusLog('[Schedule] action=sync confirmation=required\n$stack');
       return _fail(error.code, error.toString());
     } on ScheduleValidation catch (error, stack) {
-      stderr.writeln('[Schedule] action=validate failed=true\n$stack');
-      return _fail('INVALID_SCHEDULE', error.message);
+      campusLog('[Schedule] action=validate failed=true\n$stack');
+      return _fail(GatewayCode.invalidSchedule, error.message);
     } on KingoCallException catch (error, stack) {
-      stderr.writeln('[KingoCampusGateway] code=${error.failure.code}\n$stack');
-      if (error.failure.code == 'SESSION_EXPIRED') {
+      campusLog('[KingoCampusGateway] code=${error.failure.code}\n$stack');
+      if (error.failure.code == GatewayCode.sessionExpired) {
         await database.clearSession();
         client.jar.clear();
         client.pageSession = '';
       }
       return _fail(error.failure.code, error.failure.message);
     } on TimeoutException catch (error, stack) {
-      stderr.writeln('[KingoCampusGateway] $error\n$stack');
-      return _fail('NETWORK_TIMEOUT', '教务连接超时');
+      campusLog('[KingoCampusGateway] $error\n$stack');
+      return _fail(GatewayCode.networkTimeout, '教务连接超时');
     } on FormatException catch (error, stack) {
-      stderr.writeln('[KingoCampusGateway] code=UPSTREAM_FORMAT errorType=${error.runtimeType}\n$stack');
-      return _fail('UPSTREAM_FORMAT', '教务返回的数据格式异常，未覆盖已有缓存');
+      campusLog('[KingoCampusGateway] code=UPSTREAM_FORMAT errorType=${error.runtimeType}\n$stack');
+      return _fail(GatewayCode.upstreamFormat, '教务返回的数据格式异常，未覆盖已有缓存');
     } on SocketException catch (error, stack) {
-      stderr.writeln('[KingoCampusGateway] code=NETWORK_FAILED errorType=${error.runtimeType}\n$stack');
-      return _fail('NETWORK_FAILED', '教务连接失败');
+      campusLog('[KingoCampusGateway] code=NETWORK_FAILED errorType=${error.runtimeType}\n$stack');
+      return _fail(GatewayCode.networkFailed, '教务连接失败');
     } on http.ClientException catch (error, stack) {
-      stderr.writeln('[KingoCampusGateway] code=NETWORK_FAILED errorType=${error.runtimeType}\n$stack');
-      return _fail('NETWORK_FAILED', '教务连接失败');
+      campusLog('[KingoCampusGateway] code=NETWORK_FAILED errorType=${error.runtimeType}\n$stack');
+      return _fail(GatewayCode.networkFailed, '教务连接失败');
     } on DatabaseException catch (error, stack) {
-      stderr.writeln('[KingoCampusGateway] code=LOCAL_STORAGE_FAILED errorType=${error.runtimeType}\n$stack');
-      return _fail('LOCAL_STORAGE_FAILED', '本地数据保存失败');
+      campusLog('[KingoCampusGateway] code=LOCAL_STORAGE_FAILED errorType=${error.runtimeType}\n$stack');
+      return _fail(GatewayCode.localStorageFailed, '本地数据保存失败');
     } catch (error, stack) {
-      stderr.writeln('[KingoCampusGateway] code=OPERATION_FAILED errorType=${error.runtimeType}\n$stack');
-      return _fail('OPERATION_FAILED', '操作未完成，请重试');
+      campusLog('[KingoCampusGateway] code=OPERATION_FAILED errorType=${error.runtimeType}\n$stack');
+      return _fail(GatewayCode.operationFailed, '操作未完成，请重试');
     }
   }
 }

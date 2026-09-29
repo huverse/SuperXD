@@ -1,5 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/schedule_calendar.dart';
 
 void main() {

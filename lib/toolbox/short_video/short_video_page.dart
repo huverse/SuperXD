@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:superxd/local/campus_clock.dart';
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -17,6 +17,7 @@ import 'package:superxd/toolbox/short_video/short_video_controller.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_url.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ShortVideoPage extends StatefulWidget {
   const ShortVideoPage({
@@ -64,7 +65,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
       final rows = await widget.runtime.store.history(limit: 5);
       if (mounted) setState(() => _recent = rows);
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[ShortVideo] action=recent errorType=${error.runtimeType}\n$stack',
       );
     }
@@ -95,26 +96,13 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
       }
       if (needed.isNotEmpty) {
         if (!mounted) return;
-        final agreed = await showCampusDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('第三方解析'),
-            content: Text(
-              '作品链接将发送至：\n${needed.map((id) => controller.coordinator.providers[id]!.source.host).join('\n')}\n\n不发送教务信息。仅处理本人或已获授权的作品。',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('同意并解析'),
-              ),
-            ],
-          ),
+        final agreed = await showCampusConfirm(
+          context,
+          title: '第三方解析',
+          message: '作品链接将发送至：\n${needed.map((id) => controller.coordinator.providers[id]!.source.host).join('\n')}\n\n不发送教务信息。仅处理本人或已获授权的作品。',
+          action: '同意并解析',
         );
-        if (!mounted || agreed != true || version != _inputVersion) return;
+        if (!mounted || !agreed || version != _inputVersion) return;
         for (final id in needed) {
           final source = controller.coordinator.providers[id]!.source;
           await widget.runtime.store.grantConsent(id, source.consentVersion);
@@ -141,7 +129,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
       }
       if (again == true && mounted) await _parse(refresh: true, source: source);
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[ShortVideo] action=input errorType=${error.runtimeType}\n$stack',
       );
       if (mounted) setState(() => _message = '请检查链接后重试');
@@ -213,7 +201,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                   Object error,
                   StackTrace stack,
                 ) {
-                  debugPrint(
+                  campusLog(
                     '[ShortVideo] action=settings errorType=${error.runtimeType}\n$stack',
                   );
                 }),
@@ -230,7 +218,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                   onChanged: (value) => controller
                       .enable(source.source.id, value)
                       .catchError((Object error, StackTrace stack) {
-                        debugPrint(
+                        campusLog(
                           '[ShortVideo] action=source_toggle errorType=${error.runtimeType}\n$stack',
                         );
                       }),
@@ -341,7 +329,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                                         Object error,
                                         StackTrace stack,
                                       ) {
-                                        debugPrint(
+                                        campusLog(
                                           '[ShortVideo] action=select errorType=${error.runtimeType}\n$stack',
                                         );
                                       });
@@ -385,7 +373,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                                             _replace(value!.text!);
                                           }
                                         } catch (error, stack) {
-                                          debugPrint(
+                                          campusLog(
                                             '[ShortVideo] action=paste errorType=${error.runtimeType}\n$stack',
                                           );
                                         }

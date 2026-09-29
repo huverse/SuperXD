@@ -4,11 +4,12 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/schedule_edit.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/schedule_edit.dart';
+import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/course_editor_page.dart';
 import 'package:superxd/page/schedule_history_page.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ScheduleEditorPage extends StatefulWidget {
   const ScheduleEditorPage({
@@ -67,7 +68,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
         }
       }
     } catch (error, stack) {
-      debugPrint('[ScheduleEditor] action=load error=$error\n$stack');
+      campusLog('[ScheduleEditor] action=load error=$error\n$stack');
       if (mounted) {
         setState(() {
           _loading = false;
@@ -201,11 +202,11 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
           ? meetingLabel(meeting)
           : '第$week周 · 周${weekdayLabel(meeting.weekday)} 第${meeting.periodStart}–${meeting.periodEnd}节';
     }
-    if (!await confirmScheduleAction(
+    if (!await showCampusConfirm(
       context,
-      '确认删除？',
-      '${course.courseName}\n$label\n\n会保存新版本，可撤销或在历史版本中恢复。',
-      '删除',
+      title: '确认删除？',
+      message: '${course.courseName}\n$label\n\n会保存新版本，可撤销或在历史版本中恢复。',
+      action: '删除',
     )) {
       return;
     }
@@ -257,7 +258,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                 ));
                 if (mounted && error != null) setState(() => _error = error);
               } catch (error, stack) {
-                debugPrint('[ScheduleEditor] action=undo error=$error\n$stack');
+                campusLog('[ScheduleEditor] action=undo error=$error\n$stack');
                 if (mounted) setState(() => _error = '撤销未完成，请在历史版本中预览恢复');
               }
             },
@@ -265,7 +266,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
         ),
       );
     } catch (error, stack) {
-      debugPrint('[ScheduleEditor] action=delete error=$error\n$stack');
+      campusLog('[ScheduleEditor] action=delete error=$error\n$stack');
       if (mounted) setState(() => _error = '删除未完成，请重试');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -274,11 +275,11 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
 
   Future<void> _clear() async {
     final base = _view!;
-    if (!await confirmScheduleAction(
+    if (!await showCampusConfirm(
       context,
-      '清空本学期课程？',
-      '将移除${base.courses.length}门课程并保存空课表版本。学期、成绩、开学日和作息不变，可在保留的历史版本内恢复。',
-      '清空课程',
+      title: '清空本学期课程？',
+      message: '将移除${base.courses.length}门课程并保存空课表版本。学期、成绩、开学日和作息不变，可在保留的历史版本内恢复。',
+      action: '清空课程',
     )) {
       return;
     }
@@ -374,7 +375,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                                   final error = await showCampusWaiting(context, label: '正在建立课表', operation: () => _save([], '建立空课表', null));
                                   if (mounted) setState(() => _error = error);
                                 } catch (error, stack) {
-                                  debugPrint(
+                                  campusLog(
                                     '[ScheduleEditor] action=create error=$error\n$stack',
                                   );
                                   if (mounted) {

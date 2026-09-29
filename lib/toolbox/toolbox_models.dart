@@ -1,7 +1,5 @@
 import 'dart:async';
 
-import 'package:superxd/toolbox/media_resource.dart';
-
 class ToolboxException implements Exception {
   const ToolboxException(this.message);
   final String message;
@@ -117,11 +115,6 @@ class ToolboxDownload {
       transferring ||
       state == ToolboxDownloadState.paused ||
       state == ToolboxDownloadState.awaitingSave;
-  MediaKind get mediaKind => switch (kind) {
-    ToolboxDownloadKind.image => MediaKind.image,
-    ToolboxDownloadKind.audio => MediaKind.audio,
-    _ => MediaKind.video,
-  };
 
   ToolboxDownload change({
     ToolboxDownloadState? state,

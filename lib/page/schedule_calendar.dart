@@ -1,5 +1,5 @@
-import 'package:superxd/local/schedule_store.dart';
-import 'package:superxd/local/week.dart';
+import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/week.dart';
 
 int maxCourseWeek(List<CourseRecord> courses) {
   var maxWeek = 1;
@@ -36,8 +36,6 @@ String weekRailLabel(String termStartDate, int week) {
   final date = parseIsoDate(first);
   return '第$week周\n${date.month}/${date.day}';
 }
-
-String monthRailLabel(int month) => '$month月';
 
 String dayInWeek({required String termStartDate, required int week, required String today}) {
   final range = weekRange(termStartDate, week);

@@ -9,11 +9,11 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/edu/parse_grades.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
-import 'package:superxd/local/grades.dart' as grades;
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/grades.dart' as grades;
+import 'package:superxd/domain/schedule_store.dart';
 
 const term = TermRef(xn: '2025', xq: '0', label: '2025-2026学年第一学期');
 const student = SessionView(loginId: 'test', name: '', className: '');

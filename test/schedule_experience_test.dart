@@ -5,15 +5,14 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:superxd/local/period_spans.dart';
+import 'package:superxd/domain/period_spans.dart';
 import 'package:superxd/edu/parse_schedule.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/gateway/fixture_gateway.dart';
-import 'package:superxd/local/campus_clock.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/display_settings.dart';
-import 'package:superxd/local/schedule_edit.dart';
-import 'package:superxd/local/schedule_store.dart';
-import 'package:superxd/local/week.dart';
+import 'package:superxd/domain/schedule_edit.dart';
+import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/week.dart';
 import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/date_rail.dart';
 import 'package:superxd/page/schedule_page.dart';
@@ -21,6 +20,8 @@ import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/page/term_start_dialog.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+
+import 'fixture_campus_gateway.dart';
 
 const term = TermRef(xn: '2026', xq: '0', label: '2026–2027第一学期');
 const bells = [
@@ -329,7 +330,7 @@ class _Gateway extends FixtureCampusGateway {
   @override
   Future<GatewayResult<List<TermRef>>> listTerms() async => const GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: [term]);
   @override
-  Future<GatewayResult<ScheduleView>> readSchedule(ScheduleScope scope) async => GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: ScheduleView(term: term, student: const SessionView(loginId: 'test', name: '', className: ''), termStartDate: '2026-08-31', courses: [course(3, 4)]));
+  Future<GatewayResult<ScheduleView>> readSchedule(ScheduleScope scope) async => GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: ScheduleView(term: term, student: const SessionView(loginId: 'test', name: '', className: ''), termStartDate: '2026-08-31', revisionId: 'rev-test', courses: [course(3, 4)]));
   @override
   Future<GatewayResult<BellsView>> readBells(TermRef term) async => GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: BellsView(empty: false, message: '', term: term, periods: bells));
   @override
@@ -339,7 +340,7 @@ class _Gateway extends FixtureCampusGateway {
 // 每天第3–4节有课，任何运行日期都有第1–2节无课卡。
 class _EveryDayGateway extends _Gateway {
   @override
-  Future<GatewayResult<ScheduleView>> readSchedule(ScheduleScope scope) async => GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: ScheduleView(term: term, student: const SessionView(loginId: 'test', name: '', className: ''), termStartDate: '2026-08-31', courses: [
+  Future<GatewayResult<ScheduleView>> readSchedule(ScheduleScope scope) async => GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: ScheduleView(term: term, student: const SessionView(loginId: 'test', name: '', className: ''), termStartDate: '2026-08-31', revisionId: 'rev-test', courses: [
     CourseRecord(courseCode: 'C3', courseName: '课程', sectionId: 'S3', credit: 1, teacherName: '老师', meetings: [
       for (var weekday = 1; weekday <= 7; weekday++) CourseMeeting(weekday: weekday, periodStart: 3, periodEnd: 4, place: '教室', weeks: [for (var week = 1; week <= 18; week++) week]),
     ]),

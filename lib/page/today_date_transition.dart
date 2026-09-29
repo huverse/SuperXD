@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:superxd/local/week.dart';
+import 'package:superxd/domain/week.dart';
 import 'package:superxd/page/today_day_navigation.dart';
 import 'package:superxd/theme/campus_motion.dart';
 

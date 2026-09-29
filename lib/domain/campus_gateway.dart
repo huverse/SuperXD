@@ -1,4 +1,4 @@
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 class GatewayError {
   const GatewayError({required this.code, required this.message, this.detail});

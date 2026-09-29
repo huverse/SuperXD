@@ -8,10 +8,11 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/gateway/account_access.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.gateway, required this.session, this.switching = false});
@@ -32,13 +33,9 @@ class _LoginPageState extends State<LoginPage> {
 
   Future<void> _chooseRemember(bool value) async {
     if (!value) { setState(() => _remember = false); return; }
-    final confirmed = await showCampusDialog<bool>(context: context, builder: (context) => AlertDialog(
-      title: const Text('记住账号'),
-      scrollable: true,
-      content: const Text('SuperXD本地版的记住账号功能将会把账号鉴权数据加密存储在本地，用于会话失效后自动登录。\n\n仅在此账号成功登录后保存，你可在“我的”关闭记住账号，或退出登录清除凭据。\n\n本地加密不等于传输加密：当前教务系统使用HTTP。请只在你信任的设备和网络上启用。'),
-      actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('同意并开启'))],
-    ));
-    if (mounted && confirmed == true) setState(() => _remember = true);
+    final confirmed = await showCampusConfirm(context, title: '记住账号', action: '同意并开启',
+      message: 'SuperXD本地版的记住账号功能将会把账号鉴权数据加密存储在本地，用于会话失效后自动登录。\n\n仅在此账号成功登录后保存，你可在“我的”关闭记住账号，或退出登录清除凭据。\n\n本地加密不等于传输加密：当前教务系统使用HTTP。请只在你信任的设备和网络上启用。');
+    if (mounted && confirmed) setState(() => _remember = true);
   }
   bool _busy = false;
   bool _attemptStarted = false;
@@ -59,7 +56,7 @@ class _LoginPageState extends State<LoginPage> {
     _password.dispose();
     if (_attemptStarted && _generation == widget.gateway.generation) {
       widget.gateway.cancelLogin().catchError((Object error, StackTrace stack) {
-        debugPrint('[LoginPage] action=cancel errorType=${error.runtimeType}\n$stack');
+        campusLog('[LoginPage] action=cancel errorType=${error.runtimeType}\n$stack');
       });
     }
     super.dispose();
@@ -68,11 +65,7 @@ class _LoginPageState extends State<LoginPage> {
   bool get _canLogin => _account.text.trim().isNotEmpty && _password.text.isNotEmpty && _agreed && !_busy;
 
   Future<void> _notice(String message) async {
-    if (!mounted) return;
-    await showCampusDialog<void>(context: context, builder: (context) => AlertDialog(
-      content: Text(message),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
-    ));
+    if (mounted) await showCampusNotice(context, message);
   }
 
   Future<void> _login() async {
@@ -92,12 +85,12 @@ class _LoginPageState extends State<LoginPage> {
         );
         if (!mounted) return;
         if (error != null) await _notice(error);
-      } else if (!result.ok && result.error?.code != 'LOGIN_CANCELLED') {
+      } else if (!result.ok) {
         await _notice(result.error?.message ?? '登录未完成');
       }
       // 成功仅由账号协调器发布新的generation，不由页面自行翻loggedIn。
     } catch (error, stack) {
-      debugPrint('[LoginPage] action=login errorType=${error.runtimeType}\n$stack');
+      campusLog('[LoginPage] action=login errorType=${error.runtimeType}\n$stack');
       if (mounted) {
         _password.clear();
         await _notice('登录未完成，请重试；原账号数据未删除。');
@@ -197,7 +190,7 @@ class _CaptchaDialogState extends State<_CaptchaDialog> {
         _code.clear();
       });
     } catch (error, stack) {
-      debugPrint('[CaptchaDialog] action=refresh errorType=${error.runtimeType}\n$stack');
+      campusLog('[CaptchaDialog] action=refresh errorType=${error.runtimeType}\n$stack');
       if (mounted) Navigator.pop(context, '验证码刷新失败，请重新登录');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -219,7 +212,7 @@ class _CaptchaDialogState extends State<_CaptchaDialog> {
         Navigator.pop(context, result.error?.message ?? '登录未完成');
       }
     } catch (error, stack) {
-      debugPrint('[CaptchaDialog] action=submit errorType=${error.runtimeType}\n$stack');
+      campusLog('[CaptchaDialog] action=submit errorType=${error.runtimeType}\n$stack');
       if (mounted) Navigator.pop(context, '验证码提交未完成，请重新登录');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -231,7 +224,7 @@ class _CaptchaDialogState extends State<_CaptchaDialog> {
     onPopInvokedWithResult: (didPop, result) {
       if (didPop) {
         widget.gateway.cancelLogin().catchError((Object error, StackTrace stack) {
-          debugPrint('[CaptchaDialog] action=cancel errorType=${error.runtimeType}\n$stack');
+          campusLog('[CaptchaDialog] action=cancel errorType=${error.runtimeType}\n$stack');
         });
       }
     },

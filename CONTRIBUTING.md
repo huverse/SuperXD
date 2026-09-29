@@ -4,6 +4,7 @@
 - 通过PR合并，等待Flutter analyze and test检查成功，推荐squash；不force push main。
 - 提交使用feat:、fix:、test:、docs:、chore:等清晰前缀，一次提交聚焦一个变化。
 - 运行flutter pub get --enforce-lockfile、flutter analyze、flutter test。只在明确更新依赖时修改pubspec.lock。
+- 改动前按根目录CLAUDE.md的检查清单：读项目索引与涉及模块的CLAUDE.md，检索人工决策注释；改变文件、职责、流程、库表或限额时在同一提交更新索引。
 - UI变更必须在真实应用中检查相关交互和中间帧，模拟器证据不代表真机性能。
 - 夹具必须是合成数据；不提交真实课表、成绩、账号标识、鉴权数据、截图、日志或本地数据库。tool/verify_edu.dart和verify_grades.dart仅在明确授权的本地环境手动运行，禁止加入CI。
 

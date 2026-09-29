@@ -1,5 +1,6 @@
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/gateway_code.dart';
 
 enum SyncContent { schedule, bells, grades }
 
@@ -22,11 +23,13 @@ class SyncItemResult {
 }
 
 class CampusSyncReport {
-  const CampusSyncReport(this.items, {this.busy = false, this.cancelled = false});
+  const CampusSyncReport(this.items, {this.busy = false, this.cancelled = false, this.unfinished = const []});
   final List<SyncItemResult> items;
   final bool busy;
   final bool cancelled;
-  bool get sessionExpired => items.any((item) => item.code == 'SESSION_EXPIRED');
+  // 提前结束时尚未处理的同步项，按原执行顺序排列。
+  final List<String> unfinished;
+  bool get sessionExpired => items.any((item) => item.code == GatewayCode.sessionExpired);
 }
 
 class CampusSyncProgress {
@@ -58,7 +61,7 @@ class CampusSync {
       // [人工决策-2026-09-25 14:45:43] 进度只报告已有任务阶段，不改同步范围、顺序和确认规则，不生成假百分比。
       onProgress?.call(const CampusSyncProgress('正在刷新学期列表'));
       final listed = await gateway.syncTerms();
-      if (!isActive()) return CampusSyncReport(items, cancelled: true);
+      if (!isActive()) return CampusSyncReport(items, cancelled: true, unfinished: const ['所选学年的全部内容']);
       if (!listed.ok || listed.data == null) {
         items.add(_failure('学期列表', listed.error));
         return CampusSyncReport(items, cancelled: !isActive());
@@ -69,27 +72,37 @@ class CampusSync {
         items.add(const SyncItemResult('学期列表', SyncOutcome.failed, '教务未提供可同步的学期'));
         return CampusSyncReport(items, cancelled: !isActive());
       }
+      // 待办按执行顺序登记，处理完一项移除一项；提前结束时把剩余项带给页面提示，可重新同步。
+      final pending = [
+        if (contents.contains(SyncContent.schedule))
+          for (final term in terms) '课表 · ${term.label.isEmpty ? term.key : term.label}',
+        for (final term in terms) ...[
+          if (contents.contains(SyncContent.bells)) '作息 · ${term.label.isEmpty ? term.key : term.label}',
+          if (contents.contains(SyncContent.grades)) '成绩 · ${term.label.isEmpty ? term.key : term.label}',
+        ],
+      ];
+      CampusSyncReport stop(bool cancelled) => CampusSyncReport(items, cancelled: cancelled, unfinished: List.unmodifiable(pending));
       // 同一教务会话顺序请求，避免公共页和私有页并发改 cookie；不自动重试。
       if (contents.contains(SyncContent.schedule)) {
         for (final term in terms) {
-          if (!isActive()) return CampusSyncReport(items, cancelled: true);
+          if (!isActive()) return stop(true);
           final label = '课表 · ${term.label.isEmpty ? term.key : term.label}';
           onProgress?.call(CampusSyncProgress('正在同步$label'));
           final fetched = await gateway.syncSchedule(term);
           if (!fetched.ok || fetched.data == null) {
             items.add(_failure(label, fetched.error));
           } else {
-            if (!isActive()) return CampusSyncReport(items, cancelled: true);
+            if (!isActive()) return stop(true);
             final plan = await gateway.planScheduleSync(term, fetched.data!.courses);
-            if (!isActive()) return CampusSyncReport(items, cancelled: true);
+            if (!isActive()) return stop(true);
             if (!plan.ok || plan.data == null) {
               items.add(_failure(label, plan.error));
             } else if (plan.data!.conflict) {
-              if (!isActive()) return CampusSyncReport(items, cancelled: true);
+              if (!isActive()) return stop(true);
               onProgress?.call(CampusSyncProgress('等待确认$label', waitingForInput: true));
               final confirmed = await confirmSchedule(term, plan.data!.message ?? syncOverwriteMessage);
               onProgress?.call(CampusSyncProgress('正在保存$label'));
-              if (!isActive()) return CampusSyncReport(items, cancelled: true);
+              if (!isActive()) return stop(true);
               if (!confirmed) {
                 items.add(SyncItemResult(label, SyncOutcome.skipped, '保留本地自定义版本'));
               } else {
@@ -106,12 +119,13 @@ class CampusSync {
                   : _failure(label, committed.error));
             }
           }
-          if (items.last.code == 'SESSION_EXPIRED') return CampusSyncReport(items, cancelled: !isActive());
+          pending.removeAt(0);
+          if (items.last.code == GatewayCode.sessionExpired) return stop(!isActive());
         }
       }
-      if (!isActive()) return CampusSyncReport(items, cancelled: true);
+      if (!isActive()) return stop(true);
       for (final term in terms) {
-        if (!isActive()) return CampusSyncReport(items, cancelled: true);
+        if (!isActive()) return stop(true);
         if (contents.contains(SyncContent.bells)) {
           onProgress?.call(CampusSyncProgress('正在同步作息 · ${term.label}'));
           await _syncBells(term, allTerms, items, (target, source) async {
@@ -120,16 +134,19 @@ class CampusSync {
             onProgress?.call(CampusSyncProgress('正在处理作息 · ${target.label}'));
             return choice;
           }, isActive);
-          if (items.any((item) => item.code == 'SESSION_EXPIRED')) return CampusSyncReport(items, cancelled: !isActive());
+          if (!isActive()) return stop(true);
+          pending.removeAt(0);
+          if (items.any((item) => item.code == GatewayCode.sessionExpired)) return stop(!isActive());
         }
-        if (!isActive()) return CampusSyncReport(items, cancelled: true);
+        if (!isActive()) return stop(true);
         if (contents.contains(SyncContent.grades)) {
           onProgress?.call(CampusSyncProgress('正在同步成绩 · ${term.label}'));
           final grades = await gateway.syncGrades(term);
           items.add(grades.ok && grades.data != null
               ? SyncItemResult('成绩 · ${term.label}', SyncOutcome.completed, grades.data!.empty ? '教务暂无成绩，已保存空结果' : '已同步')
               : _failure('成绩 · ${term.label}', grades.error));
-          if (grades.error?.code == 'SESSION_EXPIRED') return CampusSyncReport(items, cancelled: !isActive());
+          pending.removeAt(0);
+          if (grades.error?.code == GatewayCode.sessionExpired) return stop(!isActive());
         }
       }
       return CampusSyncReport(items, cancelled: !isActive());
@@ -206,7 +223,7 @@ class CampusSync {
       }
       if (!candidate.ok || candidate.data == null) {
         items.add(_failure('作息 · ${term.label}', candidate.error));
-        if (candidate.error?.code == 'SESSION_EXPIRED') return;
+        if (candidate.error?.code == GatewayCode.sessionExpired) return;
         continue;
       }
       if (candidate.data!.periods.isEmpty) continue;

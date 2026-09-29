@@ -1,17 +1,19 @@
 import 'dart:async';
-import 'dart:io';
 
 import 'package:synchronized/synchronized.dart';
 
-import 'package:superxd/application/kingo_auth.dart';
+import 'package:superxd/gateway/kingo_auth.dart';
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/gateway/account_access.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
+import 'package:superxd/domain/account.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/app_database.dart';
 import 'package:superxd/local/credential_store.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/gateway_code.dart';
 
 // 门面只选择固定账号上下文；协议、缓存和课表业务仍由原网关负责。
 class AccountGateway extends AccountAccess {
@@ -75,11 +77,11 @@ class AccountGateway extends AccountAccess {
       final login = await _login(saved.account, saved.password, source: identity.source, expected: identity);
       if (!login.ok || login.needsInput != null) {
         final code = login.error?.code;
-        if (code == 'ACCOUNT_CHANGED') return result;
+        if (code == GatewayCode.accountChanged) return result;
         await cancelLogin();
         await _transition.synchronized(() async {
           if (_active != null || _pending != null) return;
-          if (code == 'PASSWORD_WRONG' || code == 'PASSWORD_WRONG_COUNT' || code == 'ACCOUNT_LOCKED') await credentials!.delete(store.keyOf(identity));
+          if (code == GatewayCode.passwordWrong || code == GatewayCode.passwordWrongCount || code == GatewayCode.accountLocked) await credentials!.delete(store.keyOf(identity));
           // 转人工后不再沿活动指针在下次启动反复尝试同一份凭据。
           await store.clearCurrent();
           _accountNotice = login.needsInput == 'captcha' ? '自动登录需要验证码，请手动登录完成验证。' : '自动登录未完成：${login.error?.message ?? '请手动登录'}';
@@ -88,7 +90,7 @@ class AccountGateway extends AccountAccess {
       }
       return _ok(login.data!.session!);
     } catch (error, stack) {
-      stderr.writeln('[AccountGateway] action=auto_restore errorType=${error.runtimeType}\n$stack');
+      campusLog('[AccountGateway] action=auto_restore errorType=${error.runtimeType}\n$stack');
       _accountNotice = '保存的鉴权数据不可用，请手动登录。';
       return result;
     }
@@ -105,7 +107,7 @@ class AccountGateway extends AccountAccess {
     var retained = false;
     try {
       if (store.keyOf(AccountIdentity(source: client.base, loginId: identity.loginId)) != store.keyOf(identity)) {
-        return _fail('ACCOUNT_SOURCE_CHANGED', '教务来源已变化，请重新登录');
+        return _fail(GatewayCode.accountSourceChanged, '教务来源已变化，请重新登录');
       }
       final gateway = KingoCampusGateway(database: database, client: client, now: _now);
       final restored = await gateway.restoreSession();
@@ -149,18 +151,18 @@ class AccountGateway extends AccountAccess {
   @override
   Future<GatewayResult<LoginView>> submitLoginCaptcha(String code) => _guard(() async {
     final pending = _pending;
-    if (pending == null || _closed) return _fail('LOGIN_FAILED', '请重新登录');
+    if (pending == null || _closed) return _fail(GatewayCode.loginFailed, '请重新登录');
     return _finishLogin(pending, await pending.auth.submitLoginCaptcha(code));
   });
 
   @override
   Future<GatewayResult<CaptchaView>> refreshLoginCaptcha() => _guard(() async {
     final pending = _pending;
-    if (pending == null || _closed) return _fail('LOGIN_FAILED', '请重新登录');
+    if (pending == null || _closed) return _fail(GatewayCode.loginFailed, '请重新登录');
     final result = await pending.auth.refreshLoginCaptcha();
     return _transition.synchronized(() {
       if (!_isPending(pending)) return _changed<CaptchaView>();
-      if (!result.ok && result.error?.code != 'LOGIN_BUSY') _cancelPending();
+      if (!result.ok && result.error?.code != GatewayCode.loginBusy) _cancelPending();
       return result;
     });
   });
@@ -169,14 +171,14 @@ class AccountGateway extends AccountAccess {
 
   Future<GatewayResult<LoginView>> _finishLogin(_PendingLogin pending, GatewayResult<LoginView> result) => _transition.synchronized(() async {
     if (!_isPending(pending)) return _changed();
-    if (result.needsInput != null || result.error?.code == 'LOGIN_BUSY') return result;
+    if (result.needsInput != null || result.error?.code == GatewayCode.loginBusy) return result;
     final authenticated = pending.auth.session;
     if (!result.ok || authenticated == null) {
       _cancelPending();
       return result;
     }
     final identity = AccountIdentity(source: pending.auth.client.base, loginId: authenticated.loginId);
-    if (pending.expected != null && store.keyOf(identity) != store.keyOf(pending.expected!)) { _cancelPending(); return _fail('ACCOUNT_MISMATCH', '自动登录身份不一致，已停止'); }
+    if (pending.expected != null && store.keyOf(identity) != store.keyOf(pending.expected!)) { _cancelPending(); return _fail(GatewayCode.accountMismatch, '自动登录身份不一致，已停止'); }
     final old = _active;
     final sameAccount = old != null && store.keyOf(old.identity) == store.keyOf(identity);
     AppDatabase? database;
@@ -220,7 +222,7 @@ class AccountGateway extends AccountAccess {
         } on _CancelledAccountSwitch {
           rethrow;
         } catch (error, stack) {
-          stderr.writeln('[AccountGateway] action=remember errorType=${error.runtimeType}\n$stack');
+          campusLog('[AccountGateway] action=remember errorType=${error.runtimeType}\n$stack');
           _accountNotice = '已登录，但记住账号设置未能保存；不会降级为明文保存。';
         }
         pending.credential = null;
@@ -237,7 +239,7 @@ class AccountGateway extends AccountAccess {
       }
       return result;
     } catch (error, stack) {
-      stderr.writeln('[AccountGateway] action=activate errorType=${error.runtimeType}\n$stack');
+      campusLog('[AccountGateway] action=activate errorType=${error.runtimeType}\n$stack');
       if (!committed) {
         if (identical(_pending, pending)) _cancelPending();
         if (credentialWritten) {
@@ -267,7 +269,7 @@ class AccountGateway extends AccountAccess {
         if (database != null && !sameAccount) await database.close();
         old?.accepting = true;
       }
-      return error is _CancelledAccountSwitch ? _changed() : _fail('LOCAL_STORAGE_FAILED', '账号切换未完成，请重试');
+      return error is _CancelledAccountSwitch ? _changed() : _fail(GatewayCode.localStorageFailed, '账号切换未完成，请重试');
     } finally {
       _changing = false;
       if (committed) notifyListeners();
@@ -361,8 +363,8 @@ class AccountGateway extends AccountAccess {
         imported = true;
         return _ok(report);
       } catch (error, stack) {
-        stderr.writeln('[AccountGateway] action=import_legacy errorType=${error.runtimeType}\n$stack');
-        return _fail('LEGACY_IMPORT_FAILED', '旧数据导入未完成，可重试；已有数据未被覆盖');
+        campusLog('[AccountGateway] action=import_legacy errorType=${error.runtimeType}\n$stack');
+        return _fail(GatewayCode.legacyImportFailed, '旧数据导入未完成，可重试；已有数据未被覆盖');
       } finally {
         if (!imported) context.accepting = true;
         _changing = false;
@@ -404,7 +406,7 @@ class AccountGateway extends AccountAccess {
     try { result = await _guard(() => operation(context.gateway)); }
     finally { context.release(); }
     if (!identical(context, _active) || expectedGeneration != generation || !context.accepting) return _changed();
-    if (!recover || result.error?.code != 'SESSION_EXPIRED' || credentials == null) return result;
+    if (!recover || result.error?.code != GatewayCode.sessionExpired || credentials == null) return result;
     final restored = revision != context.sessionRevision ? _ok(true) : await _recover(context);
     if (!restored.ok) return _fail(restored.error!.code, restored.error!.message);
     if (!identical(context, _active) || expectedGeneration != generation || !context.accepting) return _changed();
@@ -412,14 +414,14 @@ class AccountGateway extends AccountAccess {
     try {
       final replayed = await _guard(() => operation(context.gateway));
       if (!identical(context, _active) || expectedGeneration != generation || !context.accepting) return _changed();
-      if (replayed.error?.code == 'SESSION_EXPIRED') context.recoveryBlocked = true;
+      if (replayed.error?.code == GatewayCode.sessionExpired) context.recoveryBlocked = true;
       return replayed;
     } finally { context.release(); }
   }
 
   Future<GatewayResult<bool>> _recover(_AccountContext context) {
     if (context.recovery != null) return context.recovery!;
-    if (context.recoveryBlocked) return Future.value(_fail('SESSION_EXPIRED', '自动登录未完成，请手动登录'));
+    if (context.recoveryBlocked) return Future.value(_fail(GatewayCode.sessionExpired, '自动登录未完成，请手动登录'));
     final future = Future<GatewayResult<bool>>.microtask(() => _recoverOnce(context));
     context.recovery = future;
     future.whenComplete(() { if (identical(context.recovery, future)) context.recovery = null; });
@@ -433,7 +435,7 @@ class AccountGateway extends AccountAccess {
     try {
       final saved = await credentials!.read(store.keyOf(context.identity));
       if (!active()) return _changed();
-      if (saved == null) return _fail('SESSION_EXPIRED', '会话已失效，请登录或开启记住账号');
+      if (saved == null) return _fail(GatewayCode.sessionExpired, '会话已失效，请登录或开启记住账号');
       await context.drain();
       if (!active()) return _changed();
       client = _newClient(source: context.identity.source);
@@ -444,10 +446,10 @@ class AccountGateway extends AccountAccess {
       if (!login.ok || login.needsInput != null) {
         context.recoveryBlocked = true;
         final code = login.error?.code;
-        if (code == 'PASSWORD_WRONG' || code == 'PASSWORD_WRONG_COUNT' || code == 'ACCOUNT_LOCKED') await credentials!.delete(store.keyOf(context.identity));
-        return _fail('SESSION_EXPIRED', login.needsInput == 'captcha' ? '自动登录需要验证码，请手动登录完成验证' : '自动登录未完成：${login.error?.message ?? '需要人工验证'}');
+        if (code == GatewayCode.passwordWrong || code == GatewayCode.passwordWrongCount || code == GatewayCode.accountLocked) await credentials!.delete(store.keyOf(context.identity));
+        return _fail(GatewayCode.sessionExpired, login.needsInput == 'captcha' ? '自动登录需要验证码，请手动登录完成验证' : '自动登录未完成：${login.error?.message ?? '需要人工验证'}');
       }
-      if (auth.session?.loginId != context.identity.loginId) { context.recoveryBlocked = true; return _fail('SESSION_EXPIRED', '自动登录身份不一致，已停止'); }
+      if (auth.session?.loginId != context.identity.loginId) { context.recoveryBlocked = true; return _fail(GatewayCode.sessionExpired, '自动登录身份不一致，已停止'); }
       return await _transition.synchronized(() async {
         if (!active()) return _changed();
         final previous = await context.gateway.database.readSession();
@@ -464,9 +466,9 @@ class AccountGateway extends AccountAccess {
         return _ok(true);
       });
     } catch (error, stack) {
-      stderr.writeln('[AccountGateway] action=recover errorType=${error.runtimeType}\n$stack');
+      campusLog('[AccountGateway] action=recover errorType=${error.runtimeType}\n$stack');
       context.recoveryBlocked = true;
-      return _fail('SESSION_EXPIRED', '无法自动恢复登录，请手动登录');
+      return _fail(GatewayCode.sessionExpired, '无法自动恢复登录，请手动登录');
     } finally { client?.dispose(); if (identical(client, _recoveryClient)) _recoveryClient = null; }
   }
 
@@ -510,15 +512,15 @@ class AccountGateway extends AccountAccess {
   String _stamp() => _now().toUtc().toIso8601String();
   GatewayResult<T> _ok<T>(T data) => GatewayResult(ok: true, source: 'local', fetchedAt: _stamp(), data: data);
   GatewayResult<T> _fail<T>(String code, String message) => GatewayResult(ok: false, source: 'local', fetchedAt: _stamp(), error: GatewayError(code: code, message: message));
-  GatewayResult<T> _changed<T>() => _fail('ACCOUNT_CHANGED', '账号已变化，请在当前账号重试');
-  GatewayResult<T> _loginRequired<T>() => _fail('SESSION_EXPIRED', '请先登录教务账号');
+  GatewayResult<T> _changed<T>() => _fail(GatewayCode.accountChanged, '账号已变化，请在当前账号重试');
+  GatewayResult<T> _loginRequired<T>() => _fail(GatewayCode.sessionExpired, '请先登录教务账号');
 
   Future<GatewayResult<T>> _guard<T>(Future<GatewayResult<T>> Function() operation) async {
     try {
       return await operation();
     } catch (error, stack) {
-      stderr.writeln('[AccountGateway] action=operation errorType=${error.runtimeType}\n$stack');
-      return _fail('OPERATION_FAILED', '操作未完成，请重试');
+      campusLog('[AccountGateway] action=operation errorType=${error.runtimeType}\n$stack');
+      return _fail(GatewayCode.operationFailed, '操作未完成，请重试');
     }
   }
 }

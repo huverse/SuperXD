@@ -3,15 +3,15 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:superxd/local/period_spans.dart';
+import 'package:superxd/domain/period_spans.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/campus_clock.dart';
-import 'package:superxd/local/schedule_store.dart';
-import 'package:superxd/local/week.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/week.dart';
 import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/date_rail.dart';
 import 'package:superxd/page/schedule_calendar.dart';
@@ -19,6 +19,7 @@ import 'package:superxd/page/schedule_editor_page.dart';
 import 'package:superxd/page/term_start_dialog.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 enum ScheduleRange { day, term, year }
 
@@ -89,7 +90,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
       _terms = listed.data!;
       await _loadTerm(_terms.first, date: campusToday());
     } catch (error, stack) {
-      debugPrint('[Schedule] action=load errorType=${error.runtimeType}\n$stack');
+      campusLog('[Schedule] action=load errorType=${error.runtimeType}\n$stack');
       if (mounted) { setState(() => _loading = false); await _notice('读取本地课表失败'); }
     }
   }
@@ -104,7 +105,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
       if (!full.ok || full.data == null) { setState(() => _loading = false); await _notice(full.error?.message ?? '课表读取失败'); return; }
       _term = term;
       _courses = full.data!.courses;
-      _knownSchedule = full.data!.message != '还没有课表';
+      _knownSchedule = full.data!.revisionId != null;
       _start = full.data!.termStartDate;
       _bells = bells.data?.periods ?? [];
       _selection = _selection.copy(year: term.xn, date: date ?? _selection.date, clearDrill: true, clearDetail: true);
@@ -112,7 +113,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
       setState(() => _loading = false);
       if (!bells.ok) await _notice(bells.error?.message ?? '作息读取失败');
     } catch (error, stack) {
-      debugPrint('[Schedule] action=load_term errorType=${error.runtimeType}\n$stack');
+      campusLog('[Schedule] action=load_term errorType=${error.runtimeType}\n$stack');
       if (mounted && request == _request) { setState(() => _loading = false); await _notice('课表读取失败'); }
     }
   }
@@ -236,8 +237,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
   }
 
   Future<void> _notice(String text) async {
-    if (!mounted) return;
-    await showCampusDialog<void>(context: context, builder: (context) => AlertDialog(content: Text(text), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))]));
+    if (mounted) await showCampusNotice(context, text);
   }
 
   @override

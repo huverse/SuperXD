@@ -9,7 +9,7 @@ import 'package:superxd/edu/login_rules.dart';
 import 'package:superxd/edu/parse_schedule.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 const term = TermRef(xn: '2026', xq: '0', label: '测试学期');
 CourseRecord course(String name) => CourseRecord(courseCode: 'C', courseName: name, sectionId: 'S', credit: 1, teacherName: '', meetings: []);

@@ -7,6 +7,7 @@ import 'package:mime/mime.dart';
 
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/toolbox/toolbox_url.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class MediaImage extends StatefulWidget {
   const MediaImage({
@@ -46,7 +47,7 @@ class _MediaImageState extends State<MediaImage> {
     if (abort != null && !abort.isCompleted) abort.complete();
     _client?.close();
     _image?.evict().catchError((Object error, StackTrace stack) {
-      debugPrint(
+      campusLog(
         '[MediaImage] action=evict errorType=${error.runtimeType}\n$stack',
       );
       return false;
@@ -116,7 +117,7 @@ class _MediaImageState extends State<MediaImage> {
         );
       }
     } catch (error, stack) {
-      debugPrint(
+      campusLog(
         '[MediaImage] action=load errorType=${error.runtimeType}\n$stack',
       );
       if (mounted && generation == _generation) setState(() => _failed = true);
@@ -152,7 +153,7 @@ class _MediaImageState extends State<MediaImage> {
           image: _image!,
           fit: BoxFit.contain,
           errorBuilder: (_, error, stack) {
-            debugPrint(
+            campusLog(
               '[MediaImage] action=decode errorType=${error.runtimeType}\n$stack',
             );
             return _failure();
