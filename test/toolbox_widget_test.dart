@@ -7,6 +7,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/toolbox/download/download_status.dart';
 import 'package:superxd/toolbox/download/downloads_page.dart';
+import 'package:superxd/toolbox/short_video/parse_history_page.dart';
 import 'package:superxd/toolbox/short_video/short_video_page.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
@@ -156,6 +157,59 @@ void main() {
           saved = await fixture.store.preference('parse_source'),
     );
     expect(saved, isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('解析历史逐条删除与清空后列表即时刷新，不误报失败', (tester) async {
+    await tester.runAsync(() async {
+      for (final name in ['甲', '乙']) {
+        await fixture.store.addHistory(
+          id: 'history_$name',
+          sourceUrl: Uri.parse('https://example.com/$name'),
+          providerId: 'bugpk',
+          title: '合成历史$name',
+          kind: 'video',
+        );
+      }
+    });
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: campusTheme(),
+        home: ParseHistoryPage(
+          store: fixture.store,
+          providers: fixture.runtime.coordinator.providers,
+        ),
+      ),
+    );
+    await waitForWidget(tester, find.text('合成历史甲'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.descendant(
+        of: find.ancestor(
+          of: find.text('合成历史甲'),
+          matching: find.byType(ListTile),
+        ),
+        matching: find.byTooltip('删除此条'),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await waitUntil(tester, () => find.text('合成历史甲').evaluate().isEmpty);
+    await tester.pumpAndSettle();
+    expect(find.text('删除未完成，请重试'), findsNothing);
+    expect(find.text('合成历史乙'), findsOneWidget);
+    List<Map<String, Object?>> rows = const [];
+    await tester.runAsync(() async => rows = await fixture.store.history());
+    expect(rows.map((row) => row['title']), ['合成历史乙']);
+    await tester.tap(find.byTooltip('清空历史'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await waitForWidget(tester, find.text('暂无解析历史'));
+    await tester.pumpAndSettle();
+    expect(find.text('删除未完成，请重试'), findsNothing);
+    await tester.runAsync(() async => rows = await fixture.store.history());
+    expect(rows, isEmpty);
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
 

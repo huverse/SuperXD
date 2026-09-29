@@ -81,7 +81,11 @@ class _ParseHistoryPageState extends State<ParseHistoryPage> {
       } else {
         await widget.store.deleteHistory(id);
       }
-      if (mounted) setState(() => _rows = widget.store.history());
+      if (mounted) {
+        setState(() {
+          _rows = widget.store.history();
+        });
+      }
     } catch (error, stack) {
       debugPrint(
         '[ParseHistory] action=delete errorType=${error.runtimeType}\n$stack',
@@ -117,7 +121,9 @@ class _ParseHistoryPageState extends State<ParseHistoryPage> {
           if (snapshot.hasError) {
             return Center(
               child: TextButton(
-                onPressed: () => setState(() => _rows = widget.store.history()),
+                onPressed: () => setState(() {
+                  _rows = widget.store.history();
+                }),
                 child: const Text('读取失败，重试'),
               ),
             );
