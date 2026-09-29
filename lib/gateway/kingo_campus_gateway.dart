@@ -5,16 +5,16 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 import 'package:sqflite/sqflite.dart';
 
-import 'package:superxd/application/kingo_auth.dart';
+import 'package:superxd/gateway/kingo_auth.dart';
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/edu/parse_grades.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/campus_clock.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/app_database.dart';
-import 'package:superxd/local/schedule_store.dart';
-import 'package:superxd/local/period_spans.dart';
-import 'package:superxd/local/schedule_edit.dart';
-import 'package:superxd/local/grades.dart' as grades;
+import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/period_spans.dart';
+import 'package:superxd/domain/schedule_edit.dart';
+import 'package:superxd/domain/grades.dart' as grades;
 
 class KingoCampusGateway implements CampusGateway {
   KingoCampusGateway({required this.database, KingoClient? client, DateTime Function()? now})

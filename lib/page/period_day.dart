@@ -2,8 +2,8 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
-import 'package:superxd/local/schedule_store.dart';
-import 'package:superxd/local/period_spans.dart';
+import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/period_spans.dart';
 
 class PeriodDay extends StatelessWidget {
   const PeriodDay({super.key, required this.courses, required this.card, this.empty});

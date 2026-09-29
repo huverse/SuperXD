@@ -8,7 +8,7 @@ import 'package:superxd/app_session.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/credential_store.dart';
-import 'package:superxd/local/campus_clock.dart';
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/router.dart';
 import 'package:superxd/page/live_clock.dart';

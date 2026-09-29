@@ -4,9 +4,9 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/application/campus_sync.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/gateway/fixture_gateway.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 const current = TermRef(xn: '2026', xq: '0', label: '当前学期');
 const previous = TermRef(xn: '2025', xq: '1', label: '上学期');

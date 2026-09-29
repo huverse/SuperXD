@@ -1,7 +1,7 @@
 import 'dart:convert';
 
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 const gradePayloadLimit = 4 * 1024 * 1024;
 const gradeRowsLimit = 1000;

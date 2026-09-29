@@ -1,5 +1,5 @@
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 enum SyncContent { schedule, bells, grades }
 

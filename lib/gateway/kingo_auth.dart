@@ -5,9 +5,9 @@ import 'dart:io';
 import 'package:http/http.dart' as http;
 
 import 'package:superxd/edu/kingo_client.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 // 登录暂态只属于本次认证，不读取或清理正在使用的账号数据库。
 class KingoAuth {

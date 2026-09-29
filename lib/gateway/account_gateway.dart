@@ -3,15 +3,16 @@ import 'dart:io';
 
 import 'package:synchronized/synchronized.dart';
 
-import 'package:superxd/application/kingo_auth.dart';
+import 'package:superxd/gateway/kingo_auth.dart';
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/gateway/account_access.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
+import 'package:superxd/domain/account.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/app_database.dart';
 import 'package:superxd/local/credential_store.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 // 门面只选择固定账号上下文；协议、缓存和课表业务仍由原网关负责。
 class AccountGateway extends AccountAccess {

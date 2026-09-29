@@ -8,11 +8,11 @@ import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/edu/parse_bells.dart';
 import 'package:superxd/edu/parse_schedule.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/gateway/fixture_gateway.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 const _term = TermRef(xn: '2026', xq: '0');
 

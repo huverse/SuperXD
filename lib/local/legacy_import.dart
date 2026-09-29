@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:sqflite/sqflite.dart';
 
-import 'package:superxd/gateway/account_access.dart';
+import 'package:superxd/domain/account.dart';
 
 const _chunkSize = 200;
 

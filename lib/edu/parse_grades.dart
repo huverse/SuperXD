@@ -1,7 +1,7 @@
 import 'package:html/dom.dart' as dom;
 import 'package:html/parser.dart' as html_parser;
 
-import 'package:superxd/local/grades.dart';
+import 'package:superxd/domain/grades.dart';
 
 class ParsedGradeCourse {
   const ParsedGradeCourse({

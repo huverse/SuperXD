@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 
-import 'package:superxd/local/period_spans.dart';
-import 'package:superxd/local/week.dart';
+import 'package:superxd/domain/period_spans.dart';
+import 'package:superxd/domain/week.dart';
 import 'package:superxd/page/schedule_calendar.dart';
 import 'package:superxd/page/today_date_transition.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -12,10 +12,10 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/application/campus_sync.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/campus_clock.dart';
-import 'package:superxd/local/meeting_time.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/meeting_time.dart';
+import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/campus_sync_dialogs.dart';
 import 'package:superxd/page/live_clock.dart';

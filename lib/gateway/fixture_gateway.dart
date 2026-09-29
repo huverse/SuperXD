@@ -1,11 +1,11 @@
 import 'dart:convert';
 import 'dart:developer' as developer;
 
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/schedule_store.dart';
-import 'package:superxd/local/period_spans.dart';
-import 'package:superxd/local/schedule_edit.dart';
-import 'package:superxd/local/grades.dart' as grades;
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/period_spans.dart';
+import 'package:superxd/domain/schedule_edit.dart';
+import 'package:superxd/domain/grades.dart' as grades;
 
 class FixtureCampusGateway implements CampusGateway {
   FixtureCampusGateway({required this.readText, DateTime Function()? now}) : _now = now ?? DateTime.now;

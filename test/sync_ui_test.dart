@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
-import 'package:superxd/gateway/campus_gateway.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/gateway/fixture_gateway.dart';
-import 'package:superxd/local/campus_clock.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/today_page.dart';
 import 'package:superxd/theme/campus_theme.dart';

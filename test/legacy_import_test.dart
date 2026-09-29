@@ -3,10 +3,10 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-import 'package:superxd/gateway/account_access.dart';
+import 'package:superxd/domain/account.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/app_database.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 const a = AccountIdentity(source: 'https://school.example/edu', loginId: 'A');
 const b = AccountIdentity(source: 'https://school.example/edu', loginId: 'B');

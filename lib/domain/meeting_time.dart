@@ -1,6 +1,6 @@
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/campus_clock.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 class MeetingTime {
   const MeetingTime(this.startMinute, this.endMinute, this.label);

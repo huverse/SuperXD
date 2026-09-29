@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
-import 'package:superxd/local/period_spans.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/period_spans.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 CourseRecord course(int start, int end) => CourseRecord(courseCode: '$start', courseName: '课程$start', sectionId: '$end', credit: 1, teacherName: '', meetings: [CourseMeeting(weekday: 1, periodStart: start, periodEnd: end, place: '', weeks: [1])]);
 final bells = [for (var period = 1; period <= 10; period++) BellPeriod(period: period, dayPart: '', dayPartCode: period <= 4 ? 'morning' : period <= 8 ? 'afternoon' : 'evening', start: '08:00', end: '08:45')];

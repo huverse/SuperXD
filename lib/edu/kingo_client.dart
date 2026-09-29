@@ -9,7 +9,7 @@ import 'package:superxd/edu/kingo_codec.dart';
 import 'package:superxd/edu/login_rules.dart';
 import 'package:superxd/edu/parse_bells.dart';
 import 'package:superxd/edu/parse_grades.dart';
-import 'package:superxd/local/grades.dart';
+import 'package:superxd/domain/grades.dart';
 import 'package:superxd/edu/parse_schedule.dart';
 import 'package:superxd/edu/parse_terms.dart';
 

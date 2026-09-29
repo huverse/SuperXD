@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/application/campus_sync.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/theme/campus_loading.dart';
 
 Future<SyncSelection?> chooseSyncSelection(BuildContext context, CampusGateway gateway, {String? initialYear, Set<SyncContent>? initialContents, Set<SyncContent>? allowedContents}) => showCampusDialog<SyncSelection>(

@@ -8,7 +8,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/app_session.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/page/account_dialogs.dart';
 import 'package:superxd/page/third_party_page.dart';
 import 'package:superxd/page/appearance_page.dart';

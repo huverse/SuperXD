@@ -11,7 +11,7 @@ import 'package:superxd/edu/parse_schedule.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/credential_store.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 const _term = TermRef(xn: '2026', xq: '0');
 

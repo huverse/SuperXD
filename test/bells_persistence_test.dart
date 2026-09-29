@@ -8,7 +8,7 @@ import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/edu/parse_bells.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 const current = TermRef(xn: '2026', xq: '0', label: '2026-2027第一学期');
 const previous = TermRef(xn: '2025', xq: '1', label: '2025-2026第二学期');

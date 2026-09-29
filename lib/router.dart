@@ -3,7 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/app_session.dart';
-import 'package:superxd/gateway/campus_gateway.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/page/account_dialogs.dart';
 import 'package:superxd/page/animated_branches.dart';
 import 'package:superxd/page/login_page.dart';

@@ -1,5 +1,5 @@
-import 'package:superxd/local/schedule_store.dart';
-import 'package:superxd/local/week.dart';
+import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/week.dart';
 
 int maxCourseWeek(List<CourseRecord> courses) {
   var maxWeek = 1;

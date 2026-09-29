@@ -1,4 +1,4 @@
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 // 表单的单次工作量有界，周次是实际发生周的唯一依据。
 const maxScheduleWeeks = 53;

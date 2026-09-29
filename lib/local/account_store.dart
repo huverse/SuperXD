@@ -5,7 +5,7 @@ import 'package:crypto/crypto.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
 
-import 'package:superxd/gateway/account_access.dart';
+import 'package:superxd/domain/account.dart';
 import 'package:superxd/local/app_database.dart';
 
 class AccountStore {

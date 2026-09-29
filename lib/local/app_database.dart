@@ -2,10 +2,10 @@ import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
 
-import 'package:superxd/gateway/account_access.dart';
+import 'package:superxd/domain/account.dart';
 import 'package:superxd/local/legacy_import.dart';
-import 'package:superxd/local/schedule_store.dart';
-import 'package:superxd/local/schedule_edit.dart';
+import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/schedule_edit.dart';
 
 class SavedSession {
   const SavedSession({

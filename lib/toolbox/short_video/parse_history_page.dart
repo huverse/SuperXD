@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'package:superxd/local/campus_clock.dart';
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_transitions.dart';

@@ -8,7 +8,7 @@ import 'package:superxd/edu/parse_grades.dart';
 import 'package:superxd/edu/parse_schedule.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
-import 'package:superxd/local/schedule_store.dart';
+import 'package:superxd/domain/schedule_store.dart';
 
 void main() {
   setUpAll(() {
