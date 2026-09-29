@@ -195,11 +195,10 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
             final span = widget.spans[index];
             final key = spanIdentity(span);
             final selected = _retainedDetail == key;
-            final editable = span.empty ? widget.onCreate != null : widget.onEdit != null;
-            // [人工决策-2026-09-29 01:01:28] 无课卡仅长按展开、展开后点击收起，再选新增课程或安排已有课程，不单击直达编辑页；有课卡交互不变。
+            // [人工决策-2026-09-29 16:10:53] 有课卡与无课卡一致：仅长按展开详情与编辑入口，展开后点击收起，单击不展开；无课卡展开后再选新增课程或安排已有课程。
             final card = GestureDetector(
-              onTap: !editable || span.empty && !selected ? () {} : () => widget.onDetail?.call(selected ? null : key),
-              onLongPress: widget.onDetail == null || span.empty && !editable ? null : () => widget.onDetail!(key),
+              onTap: selected ? () => widget.onDetail?.call(null) : () {},
+              onLongPress: widget.onDetail == null || span.empty && widget.onCreate == null ? null : () => widget.onDetail!(key),
               child: CampusSurface(
                 key: ValueKey('course-card-$key'), selected: selected, padding: const EdgeInsets.all(12),
                 child: AnimatedBuilder(animation: selected ? _curve : const AlwaysStoppedAnimation(0.0),

@@ -4,11 +4,52 @@ import 'package:superxd/local/campus_clock.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
 
+// 首页最近解析与历史页共用：点击整行重开解析结果，只展示本机保存的链接、标题、类型和来源。
+class ParseHistoryTile extends StatelessWidget {
+  const ParseHistoryTile({
+    super.key,
+    required this.row,
+    required this.providers,
+    required this.onTap,
+    this.trailing,
+  });
+  final Map<String, Object?> row;
+  final Map<String, ParseProvider> providers;
+  final VoidCallback? onTap;
+  final Widget? trailing;
+  @override
+  Widget build(BuildContext context) {
+    final title = row['title'] as String;
+    final gallery = row['kind'] == 'gallery';
+    final providerId = row['provider_id'] as String;
+    return ListTile(
+      contentPadding: const EdgeInsets.symmetric(horizontal: 16),
+      leading: CampusIcon(gallery ? CampusIcons.images : CampusIcons.video),
+      title: Text(
+        title.isEmpty ? '作品链接' : title,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      subtitle: Text(
+        '${gallery ? '图集' : '视频'} · ${providers[providerId]?.source.name ?? providerId} · ${formatCampusTimestamp(DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int, isUtc: true).toIso8601String())}',
+      ),
+      trailing: trailing ?? const CampusIcon(CampusIcons.next),
+      onTap: onTap,
+    );
+  }
+}
+
 class ParseHistoryPage extends StatefulWidget {
-  const ParseHistoryPage({super.key, required this.store});
+  const ParseHistoryPage({
+    super.key,
+    required this.store,
+    required this.providers,
+  });
   final ToolboxStore store;
+  final Map<String, ParseProvider> providers;
   @override
   State<ParseHistoryPage> createState() => _ParseHistoryPageState();
 }
@@ -90,17 +131,9 @@ class _ParseHistoryPageState extends State<ParseHistoryPage> {
             itemCount: rows.length,
             itemBuilder: (context, index) {
               final row = rows[index];
-              return ListTile(
-                title: Text(
-                  (row['title'] as String).isEmpty
-                      ? '作品链接'
-                      : row['title'] as String,
-                  maxLines: 2,
-                  overflow: TextOverflow.ellipsis,
-                ),
-                subtitle: Text(
-                  '${row['provider_id']} · ${formatCampusTimestamp(DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int, isUtc: true).toIso8601String())}',
-                ),
+              return ParseHistoryTile(
+                row: row,
+                providers: widget.providers,
                 onTap: () => Navigator.pop(context, row),
                 trailing: IconButton(
                   tooltip: '删除此条',

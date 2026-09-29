@@ -4,7 +4,9 @@ import 'package:flutter/services.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/toolbox/download/download_status.dart';
 import 'package:superxd/toolbox/download/downloads_page.dart';
+import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
 import 'package:superxd/toolbox/media_resource.dart';
 import 'package:superxd/toolbox/short_video/media_preview.dart';
 import 'package:superxd/toolbox/short_video/media_image.dart';
@@ -25,70 +27,274 @@ class MediaResultPage extends StatefulWidget {
 }
 
 class _MediaResultPageState extends State<MediaResultPage> {
-  bool _busy = false;
+  bool _enqueuing = false;
   bool _expanded = false;
-  String? _message;
+  final _busy = <String>{};
   ParseResult get result => widget.outcome.result;
-  ToolboxDownload? _saved(MediaResource media) => widget.runtime.downloads
-      .forTool('short_video')
-      .where(
-        (item) =>
-            item.identity == result.identity &&
-            item.resourceId == media.id &&
-            item.state == ToolboxDownloadState.saved,
-      )
-      .firstOrNull;
-  Future<void> _preview(MediaResource media) async {
-    final saved = _saved(media);
-    if (saved != null) {
-      try {
-        await widget.runtime.downloads.open(saved.id);
-      } catch (error, stack) {
-        debugPrint(
-          '[MediaResult] action=open_saved errorType=${error.runtimeType}\n$stack',
-        );
-        if (mounted) setState(() => _message = '本地文件无法打开，可从下载管理移除记录后重新下载');
-      }
-    } else if (mounted) {
-      await Navigator.push(
-        context,
-        MaterialPageRoute<void>(builder: (_) => MediaPreview(media: media)),
+  ToolboxDownloadManager get _manager => widget.runtime.downloads;
+  // forTool已按进行中优先、再按新旧排序；倒序覆盖后每个资源只留最该展示的一条。
+  Map<String, ToolboxDownload> _latest() => {
+    for (final item in _manager.forTool('short_video').reversed)
+      if (item.identity == result.identity && item.resourceId != null)
+        item.resourceId!: item,
+  };
+  void _notice(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text)));
+  }
+
+  Future<void> _operate(String id, Future<void> Function() action) async {
+    if (_busy.contains(id)) return;
+    setState(() => _busy.add(id));
+    try {
+      await action();
+    } catch (error, stack) {
+      debugPrint(
+        '[MediaResult] action=manage errorType=${error.runtimeType}\n$stack',
       );
+      _notice(error is ToolboxException ? error.message : '操作未完成，请重试');
+    } finally {
+      if (mounted) setState(() => _busy.remove(id));
     }
   }
 
   Future<void> _download(List<MediaResource> media) async {
-    if (_busy) return;
-    setState(() => _busy = true);
+    if (_enqueuing) return;
+    setState(() => _enqueuing = true);
     try {
-      final ids = await widget.runtime.downloads.downloadMedia(
+      await _manager.downloadMedia(
         title: result.title,
         identity: result.identity,
         sourceUrl: result.sourceUrl,
         providerId: result.providerId,
         media: media,
       );
-      if (mounted) setState(() => _message = '已加入下载，共${ids.length}项');
     } catch (error, stack) {
       debugPrint(
         '[MediaResult] action=download errorType=${error.runtimeType}\n$stack',
       );
-      if (mounted) setState(() => _message = '下载未启动，请稍后重试');
+      _notice(error is ToolboxException ? error.message : '下载未启动，请稍后重试');
     } finally {
-      if (mounted) setState(() => _busy = false);
+      if (mounted) setState(() => _enqueuing = false);
     }
   }
 
   Future<void> _copy(Uri uri) async {
     try {
       await Clipboard.setData(ClipboardData(text: uri.toString()));
-      if (mounted) setState(() => _message = '已复制，媒体直链可能过期');
+      _notice('已复制，媒体直链可能过期');
     } catch (error, stack) {
       debugPrint(
         '[MediaResult] action=copy errorType=${error.runtimeType}\n$stack',
       );
-      if (mounted) setState(() => _message = '复制未完成');
+      _notice('复制未完成');
     }
+  }
+
+  // 未下载或已取消给下载入口；下载后同一位置原地切换为进度、暂停继续、打开，不再只留一行提示。
+  Widget _controls(
+    MediaResource media,
+    ToolboxDownload? latest,
+    String downloadLabel,
+  ) {
+    final item = latest?.state == ToolboxDownloadState.cancelled
+        ? null
+        : latest;
+    final failed = item?.state == ToolboxDownloadState.failed;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (item != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 8),
+            child: DownloadProgress(item: item),
+          ),
+        const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 4,
+          children: [
+            if (item == null || failed)
+              FilledButton.icon(
+                onPressed: _enqueuing ? null : () => _download([media]),
+                icon: CampusIcon(
+                  failed ? CampusIcons.sync : CampusIcons.download,
+                ),
+                label: Text(failed ? '重新下载' : downloadLabel),
+              )
+            else
+              ...downloadActions(
+                item: item,
+                manager: _manager,
+                busy: _busy.contains(item.id),
+                operate: _operate,
+              ),
+            if (media.kind == MediaKind.video &&
+                item?.state != ToolboxDownloadState.saved)
+              TextButton.icon(
+                onPressed: () => Navigator.push(
+                  context,
+                  MaterialPageRoute<void>(
+                    builder: (_) => MediaPreview(media: media),
+                  ),
+                ),
+                icon: const CampusIcon(CampusIcons.video),
+                label: const Text('预览'),
+              ),
+            TextButton.icon(
+              onPressed: () => _copy(media.url),
+              icon: const CampusIcon(CampusIcons.paste),
+              label: const Text('复制链接'),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+
+  Widget _tileAction(MediaResource image, int index, ToolboxDownload? item) {
+    final palette = CampusPalette.of(context);
+    final number = index + 1;
+    VoidCallback? run(String id, Future<void> Function() action) =>
+        _busy.contains(id) ? null : () => _operate(id, action);
+    return switch (item) {
+      null ||
+      ToolboxDownload(state: ToolboxDownloadState.cancelled) => IconButton(
+        tooltip: '下载第$number张',
+        onPressed: _enqueuing ? null : () => _download([image]),
+        icon: const CampusIcon(CampusIcons.download),
+      ),
+      ToolboxDownload(state: ToolboxDownloadState.failed) => IconButton(
+        tooltip: '重新下载第$number张',
+        onPressed: _enqueuing ? null : () => _download([image]),
+        icon: CampusIcon(CampusIcons.sync, color: palette.danger),
+      ),
+      ToolboxDownload(state: ToolboxDownloadState.saved, :final id) =>
+        IconButton(
+          tooltip: '打开第$number张',
+          onPressed: run(id, () => _manager.open(id)),
+          icon: CampusIcon(CampusIcons.success, color: palette.primary),
+        ),
+      ToolboxDownload(state: ToolboxDownloadState.awaitingSave, :final id) =>
+        IconButton(
+          tooltip: '重试保存第$number张',
+          onPressed: run(id, () => _manager.save(id)),
+          icon: CampusIcon(CampusIcons.warning, color: palette.danger),
+        ),
+      ToolboxDownload(state: ToolboxDownloadState.paused, :final id) =>
+        IconButton(
+          tooltip: '继续下载第$number张',
+          onPressed: run(id, () => _manager.resumeTask(id)),
+          icon: const CampusIcon(CampusIcons.resume),
+        ),
+      final item => IconButton(
+        tooltip: '取消下载第$number张',
+        onPressed:
+            item.canCancel || item.state == ToolboxDownloadState.cancelling
+            ? run(item.id, () => _manager.cancel(item.id))
+            : null,
+        icon: SizedBox.square(
+          dimension: 24,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              CircularProgressIndicator(
+                value:
+                    item.state == ToolboxDownloadState.downloading &&
+                        item.totalBytes > 0
+                    ? item.progress
+                    : null,
+                strokeWidth: 2.5,
+              ),
+              const CampusIcon(CampusIcons.close, size: 12),
+            ],
+          ),
+        ),
+      ),
+    };
+  }
+
+  Widget _gallerySummary(
+    List<MediaResource> images,
+    Map<String, ToolboxDownload> latest,
+  ) {
+    final items = [for (final image in images) latest[image.id]];
+    final saved = items
+        .where((item) => item?.state == ToolboxDownloadState.saved)
+        .length;
+    final failed = items
+        .where((item) => item?.state == ToolboxDownloadState.failed)
+        .length;
+    final remaining = [
+      for (final (index, image) in images.indexed)
+        if (items[index] == null ||
+            items[index]!.state == ToolboxDownloadState.cancelled ||
+            items[index]!.state == ToolboxDownloadState.failed)
+          image,
+    ];
+    final active = images.length - saved - remaining.length;
+    final progress =
+        items.fold<double>(
+          0,
+          (sum, item) =>
+              sum +
+              switch (item?.state) {
+                ToolboxDownloadState.saved => 1,
+                ToolboxDownloadState.failed ||
+                ToolboxDownloadState.cancelled ||
+                null => 0,
+                _ => item!.progress,
+              },
+        ) /
+        images.length;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '图片 ${images.length} 张',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                  if (remaining.length < images.length)
+                    Text(
+                      [
+                        '已保存 $saved/${images.length}',
+                        if (active > 0) '进行中 $active',
+                        if (failed > 0) '未完成 $failed',
+                      ].join(' · '),
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                ],
+              ),
+            ),
+            if (remaining.isNotEmpty)
+              FilledButton.icon(
+                onPressed: _enqueuing ? null : () => _download(remaining),
+                icon: const CampusIcon(CampusIcons.download),
+                label: Text(
+                  remaining.length == images.length
+                      ? '全部下载'
+                      : '下载其余${remaining.length}张',
+                ),
+              ),
+          ],
+        ),
+        if (active > 0) ...[
+          const SizedBox(height: 8),
+          LinearProgressIndicator(
+            value: progress,
+            borderRadius: BorderRadius.circular(4),
+          ),
+        ],
+      ],
+    );
   }
 
   @override
@@ -123,228 +329,187 @@ class _MediaResultPageState extends State<MediaResultPage> {
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 900),
-            child: CustomScrollView(
-              slivers: [
-                SliverPadding(
-                  padding: const EdgeInsets.all(16),
-                  sliver: SliverList.list(
-                    children: [
-                      CampusSurface(
-                        padding: const EdgeInsets.all(16),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: [
-                            Text(
-                              result.title.isEmpty ? '解析成功' : result.title,
-                              maxLines: _expanded ? null : 3,
-                              overflow: _expanded
-                                  ? null
-                                  : TextOverflow.ellipsis,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            if (result.title.length > 60)
-                              Align(
-                                alignment: Alignment.centerRight,
-                                child: TextButton(
-                                  onPressed: () =>
-                                      setState(() => _expanded = !_expanded),
-                                  child: Text(_expanded ? '收起' : '展开'),
-                                ),
-                              ),
-                            if (result.author.isNotEmpty)
-                              Padding(
-                                padding: const EdgeInsets.only(top: 8),
-                                child: Text(result.author),
-                              ),
-                            const SizedBox(height: 8),
-                            Text(
-                              '来源：${widget.runtime.coordinator.providers[result.providerId]!.source.name}${widget.outcome.fromCache ? ' · 最近缓存' : ''}',
-                              style: TextStyle(
-                                color: CampusPalette.of(context)
-                                    .onSurfaceVariant,
-                              ),
-                            ),
-                            Wrap(
-                              spacing: 8,
-                              children: [
-                                TextButton(
-                                  onPressed: () => _copy(result.sourceUrl),
-                                  child: const Text('复制作品链接'),
-                                ),
-                                TextButton(
-                                  onPressed: () => Navigator.pop(context, true),
-                                  child: const Text('重新解析'),
-                                ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      ),
-                      if (_message != null)
-                        Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 12),
-                          child: Text(_message!),
-                        ),
-                      if (result.cover case final cover?) ...[
-                        const SizedBox(height: 16),
-                        CampusSurface(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            children: [
-                              AspectRatio(
-                                aspectRatio: 16 / 9,
-                                child: MediaImage(url: cover.url, width: 900),
-                              ),
-                              Wrap(
-                                spacing: 8,
-                                children: [
-                                  TextButton(
-                                    onPressed: () => _copy(cover.url),
-                                    child: const Text('复制封面链接'),
-                                  ),
-                                  TextButton(
-                                    onPressed: _busy
-                                        ? null
-                                        : () => _download([cover]),
-                                    child: const Text('下载封面'),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
-                        ),
-                      ],
-                      for (final media in [...videos, ...result.audio])
-                        Padding(
-                          padding: const EdgeInsets.only(top: 16),
-                          child: CampusSurface(
+            child: ListenableBuilder(
+              listenable: _manager,
+              builder: (context, _) {
+                final latest = _latest();
+                return CustomScrollView(
+                  slivers: [
+                    SliverPadding(
+                      padding: const EdgeInsets.all(16),
+                      sliver: SliverList.list(
+                        children: [
+                          CampusSurface(
                             padding: const EdgeInsets.all(16),
                             child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
                               children: [
                                 Text(
-                                  media.label,
+                                  result.title.isEmpty ? '解析成功' : result.title,
+                                  maxLines: _expanded ? null : 3,
+                                  overflow: _expanded
+                                      ? null
+                                      : TextOverflow.ellipsis,
                                   style: Theme.of(context)
                                       .textTheme
                                       .titleMedium,
+                                ),
+                                if (result.title.length > 60)
+                                  Align(
+                                    alignment: Alignment.centerRight,
+                                    child: TextButton(
+                                      onPressed: () => setState(
+                                        () => _expanded = !_expanded,
+                                      ),
+                                      child: Text(_expanded ? '收起' : '展开'),
+                                    ),
+                                  ),
+                                if (result.author.isNotEmpty)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 8),
+                                    child: Text(result.author),
+                                  ),
+                                const SizedBox(height: 8),
+                                Text(
+                                  '来源：${widget.runtime.coordinator.providers[result.providerId]!.source.name}${widget.outcome.fromCache ? ' · 最近缓存' : ''}',
+                                  style: TextStyle(
+                                    color: CampusPalette.of(context)
+                                        .onSurfaceVariant,
+                                  ),
                                 ),
                                 Wrap(
                                   spacing: 8,
                                   runSpacing: 4,
                                   children: [
-                                    if (media.kind == MediaKind.video)
-                                      TextButton.icon(
-                                        onPressed: () => _preview(media),
-                                        icon: const CampusIcon(
-                                          CampusIcons.video,
-                                        ),
-                                        label: Text(
-                                          _saved(media) == null
-                                              ? '预览'
-                                              : '打开已保存视频',
-                                        ),
-                                      ),
-                                    FilledButton.icon(
-                                      onPressed: _busy
-                                          ? null
-                                          : () => _download([media]),
-                                      icon: const CampusIcon(
-                                        CampusIcons.download,
-                                      ),
-                                      label: Text(
-                                        media.kind == MediaKind.audio
-                                            ? '下载音乐'
-                                            : '下载视频',
-                                      ),
+                                    TextButton.icon(
+                                      onPressed: () => _copy(result.sourceUrl),
+                                      icon: const CampusIcon(CampusIcons.paste),
+                                      label: const Text('复制作品链接'),
                                     ),
-                                    TextButton(
-                                      onPressed: () => _copy(media.url),
-                                      child: const Text('复制链接'),
+                                    TextButton.icon(
+                                      onPressed: () =>
+                                          Navigator.pop(context, true),
+                                      icon: const CampusIcon(CampusIcons.sync),
+                                      label: const Text('重新解析'),
                                     ),
                                   ],
                                 ),
                               ],
                             ),
                           ),
-                        ),
-                      if (images.isNotEmpty) ...[
-                        const SizedBox(height: 20),
-                        Row(
-                          children: [
-                            Expanded(
-                              child: Text(
-                                '图片 ${images.length} 张',
-                                style: Theme.of(context).textTheme.titleMedium,
+                          if (result.cover case final cover?) ...[
+                            const SizedBox(height: 16),
+                            CampusSurface(
+                              padding: const EdgeInsets.all(12),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  AspectRatio(
+                                    aspectRatio: 16 / 9,
+                                    child: MediaImage(
+                                      url: cover.url,
+                                      width: 900,
+                                    ),
+                                  ),
+                                  _controls(cover, latest[cover.id], '下载封面'),
+                                ],
                               ),
                             ),
-                            FilledButton(
-                              onPressed: _busy ? null : () => _download(images),
-                              child: const Text('全部下载'),
-                            ),
                           ],
-                        ),
-                        const SizedBox(height: 12),
-                      ],
-                    ],
-                  ),
-                ),
-                if (images.isNotEmpty)
-                  SliverPadding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                    sliver: SliverGrid.builder(
-                      itemCount: images.length,
-                      gridDelegate:
-                          const SliverGridDelegateWithMaxCrossAxisExtent(
-                            maxCrossAxisExtent: 280,
-                            childAspectRatio: .8,
-                            crossAxisSpacing: 12,
-                            mainAxisSpacing: 12,
-                          ),
-                      itemBuilder: (context, index) {
-                        final image = images[index];
-                        return CampusSurface(
-                          padding: const EdgeInsets.all(8),
-                          child: Column(
-                            children: [
-                              Expanded(
-                                child: InkWell(
-                                  onTap: () => Navigator.push(
-                                    context,
-                                    MaterialPageRoute<void>(
-                                      builder: (_) => GalleryPreview(
-                                        images: images,
-                                        initialIndex: index,
+                          for (final media in [...videos, ...result.audio])
+                            Padding(
+                              padding: const EdgeInsets.only(top: 16),
+                              child: CampusSurface(
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment:
+                                      CrossAxisAlignment.stretch,
+                                  children: [
+                                    Text(
+                                      media.label,
+                                      style: Theme.of(context)
+                                          .textTheme
+                                          .titleMedium,
+                                    ),
+                                    _controls(
+                                      media,
+                                      latest[media.id],
+                                      media.kind == MediaKind.audio
+                                          ? '下载音乐'
+                                          : '下载视频',
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          if (images.isNotEmpty) ...[
+                            const SizedBox(height: 20),
+                            _gallerySummary(images, latest),
+                            const SizedBox(height: 12),
+                          ],
+                        ],
+                      ),
+                    ),
+                    if (images.isNotEmpty)
+                      SliverPadding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        sliver: SliverGrid.builder(
+                          itemCount: images.length,
+                          gridDelegate:
+                              const SliverGridDelegateWithMaxCrossAxisExtent(
+                                maxCrossAxisExtent: 280,
+                                childAspectRatio: .8,
+                                crossAxisSpacing: 12,
+                                mainAxisSpacing: 12,
+                              ),
+                          itemBuilder: (context, index) {
+                            final image = images[index];
+                            return CampusSurface(
+                              padding: const EdgeInsets.all(8),
+                              child: Column(
+                                children: [
+                                  Expanded(
+                                    child: InkWell(
+                                      onTap: () => Navigator.push(
+                                        context,
+                                        MaterialPageRoute<void>(
+                                          builder: (_) => GalleryPreview(
+                                            images: images,
+                                            initialIndex: index,
+                                          ),
+                                        ),
+                                      ),
+                                      child: MediaImage(
+                                        url: image.url,
+                                        width: 500,
                                       ),
                                     ),
                                   ),
-                                  child: MediaImage(url: image.url, width: 500),
-                                ),
-                              ),
-                              Wrap(
-                                children: [
-                                  IconButton(
-                                    tooltip: '下载第${index + 1}张',
-                                    onPressed: _busy
-                                        ? null
-                                        : () => _download([image]),
-                                    icon: const CampusIcon(
-                                      CampusIcons.download,
-                                    ),
-                                  ),
-                                  IconButton(
-                                    tooltip: '复制图片链接',
-                                    onPressed: () => _copy(image.url),
-                                    icon: const CampusIcon(CampusIcons.paste),
+                                  Wrap(
+                                    children: [
+                                      _tileAction(
+                                        image,
+                                        index,
+                                        latest[image.id],
+                                      ),
+                                      IconButton(
+                                        tooltip: '复制图片链接',
+                                        onPressed: () => _copy(image.url),
+                                        icon: const CampusIcon(
+                                          CampusIcons.paste,
+                                        ),
+                                      ),
+                                    ],
                                   ),
                                 ],
                               ),
-                            ],
-                          ),
-                        );
-                      },
-                    ),
-                  ),
-              ],
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                );
+              },
             ),
           ),
         ),

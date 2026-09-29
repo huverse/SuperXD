@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
 
+import 'package:superxd/local/campus_clock.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/toolbox/download/download_status.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
@@ -17,13 +19,10 @@ class DownloadsPage extends StatefulWidget {
 class _DownloadsPageState extends State<DownloadsPage> {
   int _filter = 0;
   final _busy = <String>{};
-  String? _error;
+  final _expanded = <String>{};
   Future<void> _operate(String id, Future<void> Function() action) async {
     if (_busy.contains(id)) return;
-    setState(() {
-      _busy.add(id);
-      _error = null;
-    });
+    setState(() => _busy.add(id));
     try {
       await action();
     } catch (error, stack) {
@@ -31,10 +30,15 @@ class _DownloadsPageState extends State<DownloadsPage> {
         '[DownloadsPage] action=manage errorType=${error.runtimeType}\n$stack',
       );
       if (mounted) {
-        setState(
-          () =>
-              _error = error is ToolboxException ? error.message : '操作未完成，请重试',
-        );
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(
+                error is ToolboxException ? error.message : '操作未完成，请重试',
+              ),
+            ),
+          );
       }
     } finally {
       if (mounted) setState(() => _busy.remove(id));
@@ -64,6 +68,24 @@ class _DownloadsPageState extends State<DownloadsPage> {
     }
   }
 
+  static String _kindLabel(ToolboxDownloadKind kind) => switch (kind) {
+    ToolboxDownloadKind.image => '图片',
+    ToolboxDownloadKind.audio => '音频',
+    ToolboxDownloadKind.resource => '资源',
+    ToolboxDownloadKind.video => '视频',
+  };
+  // 同组按类型与资源序号自然排序，状态变化时条目位置不跳动。
+  static int _order(ToolboxDownload a, ToolboxDownload b) {
+    final pattern = RegExp(r'^(.*?)(\d*)$');
+    final left = pattern.firstMatch(a.resourceId ?? a.id)!;
+    final right = pattern.firstMatch(b.resourceId ?? b.id)!;
+    if (a.kind != b.kind) return a.kind.index.compareTo(b.kind.index);
+    if (left[1] != right[1]) return left[1]!.compareTo(right[1]!);
+    return (int.tryParse(left[2]!) ?? -1).compareTo(
+      int.tryParse(right[2]!) ?? -1,
+    );
+  }
+
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
@@ -87,6 +109,9 @@ class _DownloadsPageState extends State<DownloadsPage> {
               )) {
                 groups.putIfAbsent(item.jobId, () => []).add(item);
               }
+              final running = groups.values
+                  .where((items) => items.any((item) => !item.terminal))
+                  .length;
               final jobs = groups.entries
                   .where(
                     (entry) =>
@@ -99,34 +124,49 @@ class _DownloadsPageState extends State<DownloadsPage> {
               return Column(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 8,
-                      children: [
-                        for (final value in [(0, '全部'), (1, '进行中'), (2, '已结束')])
-                          ChoiceChip(
-                            label: Text(value.$2),
-                            selected: _filter == value.$1,
-                            onSelected: (_) =>
-                                setState(() => _filter = value.$1),
-                          ),
-                      ],
-                    ),
-                  ),
-                  if (_error != null)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16),
-                      child: Text(
-                        _error!,
-                        style: TextStyle(
-                          color: CampusPalette.of(context).danger,
-                        ),
+                    padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                    child: Align(
+                      alignment: Alignment.centerLeft,
+                      child: Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: [
+                          for (final value in [
+                            (0, '全部 ${groups.length}'),
+                            (1, '进行中 $running'),
+                            (2, '已结束 ${groups.length - running}'),
+                          ])
+                            ChoiceChip(
+                              label: Text(value.$2),
+                              selected: _filter == value.$1,
+                              onSelected: (_) =>
+                                  setState(() => _filter = value.$1),
+                            ),
+                        ],
                       ),
                     ),
+                  ),
                   Expanded(
                     child: jobs.isEmpty
-                        ? const Center(child: Text('暂无下载任务'))
+                        ? Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                CampusIcon(
+                                  CampusIcons.download,
+                                  size: 40,
+                                  color: CampusPalette.of(context)
+                                      .onSurfaceVariant,
+                                ),
+                                const SizedBox(height: 12),
+                                Text(switch (_filter) {
+                                  1 => '没有进行中的任务',
+                                  2 => '没有已结束的任务',
+                                  _ => '暂无下载任务',
+                                }),
+                              ],
+                            ),
+                          )
                         : ListView.builder(
                             padding: const EdgeInsets.all(16),
                             itemCount: jobs.length,
@@ -142,8 +182,14 @@ class _DownloadsPageState extends State<DownloadsPage> {
       ),
     ),
   );
+
+  // 层级：标题区只读说明，⋯菜单放整组操作，条目状态文字不可点，可点的都是带图标按钮。
   Widget _job(String id, List<ToolboxDownload> items) {
-    final done = items
+    final palette = CampusPalette.of(context);
+    final textTheme = Theme.of(context).textTheme;
+    items.sort(_order);
+    final first = items.first;
+    final saved = items
         .where((item) => item.state == ToolboxDownloadState.saved)
         .length;
     final failed = items
@@ -153,145 +199,188 @@ class _DownloadsPageState extends State<DownloadsPage> {
               item.state == ToolboxDownloadState.cancelled,
         )
         .length;
-    final total = items.first.groupTotal;
-    final terminal = items.every((item) => item.terminal);
+    final active = items.where((item) => !item.terminal).length;
+    final single = items.length == 1;
+    final expanded = items.length <= 3 || _expanded.contains(id);
+    final menu = [
+      if (!single && active > 0) ('cancel', '取消全部', CampusIcons.close),
+      if (active == 0) ('delete', '删除记录', CampusIcons.delete),
+    ];
+    final progress =
+        items.fold<double>(
+          0,
+          (sum, item) =>
+              sum +
+              switch (item.state) {
+                ToolboxDownloadState.saved => 1,
+                ToolboxDownloadState.failed ||
+                ToolboxDownloadState.cancelled => 0,
+                _ => item.progress,
+              },
+        ) /
+        items.length;
+    final ordinals = <ToolboxDownloadKind, int>{};
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: CampusSurface(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 16, 8, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              items.first.title.isEmpty ? '媒体下载' : items.first.title,
-              maxLines: 2,
-              overflow: TextOverflow.ellipsis,
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            if (total > 1)
-              Text('已保存 $done / $total${failed > 0 ? ' · 未完成 $failed' : ''}'),
-            Wrap(
-              spacing: 8,
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (!terminal)
-                  TextButton(
-                    onPressed: _busy.contains(id)
-                        ? null
-                        : () => _operate(
+                Container(
+                  width: 40,
+                  height: 40,
+                  alignment: Alignment.center,
+                  decoration: BoxDecoration(
+                    color: palette.surfaceSelected,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: CampusIcon(
+                    switch (first.kind) {
+                      _ when !single => CampusIcons.images,
+                      ToolboxDownloadKind.image => CampusIcons.image,
+                      ToolboxDownloadKind.audio => CampusIcons.audio,
+                      _ => CampusIcons.video,
+                    },
+                    size: 20,
+                    color: palette.primary,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        first.title.isEmpty ? '媒体下载' : first.title,
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                        style: textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        '${single ? _kindLabel(first.kind) : '${items.length} 项'} · ${formatCampusTimestamp(first.createdAt.toIso8601String())}',
+                        style: textTheme.bodySmall,
+                      ),
+                    ],
+                  ),
+                ),
+                if (menu.isNotEmpty)
+                  PopupMenuButton<String>(
+                    tooltip: '更多操作',
+                    enabled: !_busy.contains(id),
+                    icon: const CampusIcon(CampusIcons.manage),
+                    onSelected: (value) => value == 'delete'
+                        ? _delete(id)
+                        : _operate(
                             id,
                             () => widget.runtime.downloads.cancelJob(id),
                           ),
-                    child: const Text('取消整组'),
-                  ),
-                if (terminal)
-                  TextButton(
-                    onPressed: _busy.contains(id) ? null : () => _delete(id),
-                    child: const Text('删除记录'),
-                  ),
-                if (failed > 0 && items.first.sourceUrl != null)
-                  TextButton(
-                    onPressed: () => Navigator.pop(context, items.first),
-                    child: const Text('重新解析未完成项'),
-                  ),
+                    itemBuilder: (context) => [
+                      for (final entry in menu)
+                        PopupMenuItem(
+                          value: entry.$1,
+                          child: Row(
+                            children: [
+                              CampusIcon(entry.$3, size: 18),
+                              const SizedBox(width: 12),
+                              Text(entry.$2),
+                            ],
+                          ),
+                        ),
+                    ],
+                  )
+                else
+                  const SizedBox(width: 8),
               ],
             ),
-            for (final item in items) _item(item),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  if (!single) ...[
+                    const SizedBox(height: 12),
+                    Text(
+                      [
+                        '已保存 $saved/${items.length}',
+                        if (active > 0) '进行中 $active',
+                        if (failed > 0) '未完成 $failed',
+                      ].join(' · '),
+                    ),
+                    if (active > 0) ...[
+                      const SizedBox(height: 8),
+                      LinearProgressIndicator(
+                        value: progress,
+                        borderRadius: BorderRadius.circular(4),
+                      ),
+                    ],
+                  ],
+                  for (final item in items)
+                    if (single || expanded)
+                      _item(
+                        item,
+                        single
+                            ? null
+                            : '${_kindLabel(item.kind)} ${ordinals.update(item.kind, (count) => count + 1, ifAbsent: () => 1)}',
+                      ),
+                  if (!single && items.length > 3)
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        onPressed: () => setState(
+                          () => expanded
+                              ? _expanded.remove(id)
+                              : _expanded.add(id),
+                        ),
+                        icon: CampusIcon(
+                          expanded ? CampusIcons.collapse : CampusIcons.expand,
+                        ),
+                        label: Text(expanded ? '收起' : '查看全部 ${items.length} 项'),
+                      ),
+                    ),
+                  if (failed > 0 && first.sourceUrl != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 12),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: FilledButton.icon(
+                          onPressed: () => Navigator.pop(context, first),
+                          icon: const CampusIcon(CampusIcons.sync),
+                          label: Text(single ? '重新解析' : '重新解析未完成项'),
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
           ],
         ),
       ),
     );
   }
 
-  Widget _item(ToolboxDownload item) {
-    final manager = widget.runtime.downloads;
-    final busy = _busy.contains(item.id) || _busy.contains(item.jobId);
-    final label = switch (item.state) {
-      ToolboxDownloadState.queued => '等待下载',
-      ToolboxDownloadState.downloading => '下载中',
-      ToolboxDownloadState.pausing => '正在暂停',
-      ToolboxDownloadState.paused => '已暂停',
-      ToolboxDownloadState.cancelling => '正在停止',
-      ToolboxDownloadState.verifying => '校验中',
-      ToolboxDownloadState.awaitingSave => '待保存',
-      ToolboxDownloadState.saving => '保存中',
-      ToolboxDownloadState.saved => '已保存到本地',
-      ToolboxDownloadState.installed => '资源已就绪',
-      ToolboxDownloadState.cancelled => '已取消',
-      ToolboxDownloadState.failed => '未完成',
-    };
+  Widget _item(ToolboxDownload item, String? label) {
+    final actions = downloadActions(
+      item: item,
+      manager: widget.runtime.downloads,
+      busy: _busy.contains(item.id) || _busy.contains(item.jobId),
+      operate: _operate,
+    );
     return Padding(
       padding: const EdgeInsets.only(top: 12),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text(
-            '${switch (item.kind) {
-              ToolboxDownloadKind.image => '图片',
-              ToolboxDownloadKind.audio => '音频',
-              ToolboxDownloadKind.resource => '资源',
-              _ => '视频',
-            }} · $label',
-          ),
-          if (item.transferring) ...[
-            const SizedBox(height: 6),
-            LinearProgressIndicator(
-              value: item.totalBytes > 0 ? item.progress : null,
+          DownloadProgress(item: item, label: label),
+          if (actions.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: Wrap(spacing: 8, runSpacing: 4, children: actions),
             ),
-            if (item.totalBytes > 0)
-              Text(
-                '${(item.progress * item.totalBytes / 1048576).toStringAsFixed(1)} / ${(item.totalBytes / 1048576).toStringAsFixed(1)} MB',
-              ),
-          ],
-          if (item.error != null)
-            Text(
-              item.error!,
-              style: TextStyle(color: CampusPalette.of(context).danger),
-            ),
-          Wrap(
-            spacing: 8,
-            children: [
-              if (item.transferring)
-                TextButton(
-                  onPressed: busy
-                      ? null
-                      : () =>
-                            _operate(item.id, () => manager.pauseTask(item.id)),
-                  child: const Text('暂停'),
-                ),
-              if (item.state == ToolboxDownloadState.paused)
-                TextButton(
-                  onPressed: busy
-                      ? null
-                      : () => _operate(
-                          item.id,
-                          () => manager.resumeTask(item.id),
-                        ),
-                  child: const Text('继续'),
-                ),
-              if (item.canCancel ||
-                  item.state == ToolboxDownloadState.cancelling)
-                TextButton(
-                  onPressed: busy
-                      ? null
-                      : () => _operate(item.id, () => manager.cancel(item.id)),
-                  child: const Text('取消'),
-                ),
-              if (item.state == ToolboxDownloadState.awaitingSave)
-                FilledButton(
-                  onPressed: busy
-                      ? null
-                      : () => _operate(item.id, () => manager.save(item.id)),
-                  child: const Text('重试保存'),
-                ),
-              if (item.state == ToolboxDownloadState.saved)
-                TextButton(
-                  onPressed: busy
-                      ? null
-                      : () => _operate(item.id, () => manager.open(item.id)),
-                  child: const Text('打开文件'),
-                ),
-            ],
-          ),
         ],
       ),
     );

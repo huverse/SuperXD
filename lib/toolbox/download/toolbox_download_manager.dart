@@ -637,7 +637,14 @@ class ToolboxDownloadManager extends ChangeNotifier {
   });
   Future<void> open(String id) async {
     final item = _downloads[id]!;
-    await publisher.open(item.savedUri!, item.mimeType!);
+    try {
+      await publisher.open(item.savedUri!, item.mimeType!);
+    } catch (error, stack) {
+      debugPrint(
+        '[ToolboxDownload] action=open errorType=${error.runtimeType}\n$stack',
+      );
+      throw const ToolboxException('本地文件无法打开，可在下载管理删除记录后重新下载');
+    }
   }
 
   Future<void> _clean(ToolboxDownload item) async {

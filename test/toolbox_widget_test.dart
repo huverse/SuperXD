@@ -5,6 +5,8 @@ import 'package:go_router/go_router.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/toolbox/download/download_status.dart';
+import 'package:superxd/toolbox/download/downloads_page.dart';
 import 'package:superxd/toolbox/short_video/short_video_page.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
@@ -23,6 +25,17 @@ Future<void> waitForWidget(WidgetTester tester, Finder finder) async {
     await tester.pump(const Duration(milliseconds: 16));
   }
   expect(finder, findsOneWidget);
+}
+
+// 界面先于入队出现；等点击发起的入队在测试时钟里跑完再推送传输事件，避免锁被挂起的调度占住。
+Future<void> waitUntil(WidgetTester tester, bool Function() done) async {
+  for (var attempt = 0; attempt < 100 && !done(); attempt++) {
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 10)),
+    );
+    await tester.pump(const Duration(milliseconds: 16));
+  }
+  expect(done(), isTrue);
 }
 
 void main() {
@@ -81,12 +94,193 @@ void main() {
     expect(fixture.parser.calls, 1);
     expect(find.text('下载视频'), findsOneWidget);
     await tester.tap(find.text('下载视频'));
-    await waitForWidget(tester, find.text('已加入下载，共1项'));
+    await waitForWidget(tester, find.text('等待下载'));
+    expect(find.text('下载视频'), findsNothing);
+    expect(find.text('取消下载'), findsOneWidget);
     await tester.tap(find.byTooltip('下载管理'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 500));
-    await waitForWidget(tester, find.text('视频 · 等待下载'));
-    expect(find.text('取消'), findsOneWidget);
+    await waitForWidget(tester, find.text('等待下载'));
+    expect(find.text('取消下载'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('最近解析与历史点击直达结果页，命中缓存且不改保存的来源', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: campusTheme(),
+        home: ShortVideoPage(runtime: fixture.runtime),
+      ),
+    );
+    await waitForWidget(tester, find.byType(TextField));
+    await tester.pumpAndSettle();
+    expect(find.text('最近解析'), findsNothing);
+    await tester.enterText(
+      find.byType(TextField),
+      'https://v.douyin.com/example/',
+    );
+    await tester.pump();
+    await tester.tap(find.text('解析'));
+    await waitForWidget(tester, find.text('同意并解析'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('同意并解析'));
+    await tester.pump();
+    await waitForWidget(tester, find.text('下载视频'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('返回'));
+    await waitForWidget(tester, find.text('最近解析'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('视频 · BugPK · '), findsOneWidget);
+    await tester.tap(find.text('设置'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('最近一次成功 · '), findsOneWidget);
+    await tester.tap(find.text('关闭'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('合成视频'));
+    await waitForWidget(tester, find.text('下载视频'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('最近缓存'), findsOneWidget);
+    await tester.tap(find.byTooltip('返回'));
+    await waitForWidget(tester, find.text('全部'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('全部'));
+    await waitForWidget(tester, find.byTooltip('删除此条'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('合成视频'));
+    await waitForWidget(tester, find.text('下载视频'));
+    await tester.pumpAndSettle();
+    expect(fixture.parser.calls, 1);
+    String? saved;
+    await tester.runAsync(
+      () async =>
+          saved = await fixture.store.preference('parse_source'),
+    );
+    expect(saved, isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('结果页下载进度原地刷新，保存完成后切换为打开', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: campusTheme(),
+        home: MediaResultPage(
+          runtime: fixture.runtime,
+          outcome: ParseOutcome(ToolboxFixture.video, attempts: const []),
+        ),
+      ),
+    );
+    await tester.pump();
+    await tester.tap(find.text('下载视频'));
+    await waitForWidget(tester, find.text('等待下载'));
+    await waitUntil(tester, () => fixture.transfer.enqueueCount == 1);
+    final id = fixture.manager.forTool('short_video').single.id;
+    await tester.runAsync(() async {
+      fixture.transfer.send(
+        ToolboxTransferUpdate(
+          id,
+          ToolboxDownloadState.downloading,
+          progress: .42,
+          totalBytes: 10 * 1048576,
+        ),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+    });
+    await tester.pump();
+    expect(find.text('下载中'), findsOneWidget);
+    expect(find.text('42%'), findsOneWidget);
+    expect(find.text('4.2 / 10.0 MB'), findsOneWidget);
+    expect(find.text('暂停'), findsOneWidget);
+    await tester.runAsync(() async {
+      await fixture.finish(id, ToolboxFixture.mp4);
+      await fixture.waitFor(id, ToolboxDownloadState.saved);
+    });
+    await tester.pump();
+    expect(find.text('已保存到本地'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, '打开'), findsOneWidget);
+    expect(find.text('下载视频'), findsNothing);
+    expect(find.text('预览'), findsNothing);
+    await tester.tap(find.text('打开'));
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('下载管理页按序号稳定排列，整组操作收进菜单', (tester) async {
+    final gallery = ParseResult(
+      sourceUrl: Uri.parse('https://example.com/gallery'),
+      providerId: 'bugpk',
+      title: '合成图集',
+      author: '',
+      resources: List.generate(
+        12,
+        (index) => MediaResource(
+          id: 'image_$index',
+          kind: MediaKind.image,
+          url: Uri.parse('https://cdn.example.com/$index.png'),
+          label: '图片${index + 1}',
+        ),
+      ),
+    );
+    await tester.runAsync(() async {
+      await fixture.manager.downloadMedia(
+        title: gallery.title,
+        identity: gallery.identity,
+        sourceUrl: gallery.sourceUrl,
+        providerId: gallery.providerId,
+        media: gallery.resources,
+      );
+      final failed = fixture.manager
+          .forTool('short_video')
+          .firstWhere((item) => item.resourceId == 'image_10');
+      fixture.transfer.send(
+        ToolboxTransferUpdate(
+          failed.id,
+          ToolboxDownloadState.failed,
+          error: '网络中断',
+        ),
+      );
+      await fixture.waitFor(failed.id, ToolboxDownloadState.failed);
+    });
+    await tester.binding.setSurfaceSize(const Size(320, 720));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: campusTheme(),
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(context)
+              .copyWith(textScaler: const TextScaler.linear(1.4)),
+          child: child!,
+        ),
+        home: DownloadsPage(runtime: fixture.runtime),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('进行中 1'), findsOneWidget);
+    expect(find.text('已保存 0/12 · 进行中 11 · 未完成 1'), findsOneWidget);
+    expect(find.text('图片 1'), findsNothing);
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('取消全部'), findsOneWidget);
+    expect(find.text('删除记录'), findsNothing);
+    await tester.tapAt(Offset.zero);
+    await tester.pump(const Duration(milliseconds: 500));
+    await tester.tap(find.text('查看全部 12 项'));
+    await tester.pump();
+    await tester.scrollUntilVisible(find.text('图片 11'), 200);
+    final row = tester.widget<DownloadProgress>(
+      find.ancestor(
+        of: find.text('图片 11'),
+        matching: find.byType(DownloadProgress),
+      ),
+    );
+    expect(row.item.resourceId, 'image_10');
+    expect(find.text('网络中断'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('重新解析未完成项'), 200);
+    expect(
+      find.widgetWithText(FilledButton, '重新解析未完成项'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -197,6 +391,24 @@ void main() {
     );
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('全部下载'), findsOneWidget);
+    await tester.tap(find.text('全部下载'));
+    await waitForWidget(tester, find.text('已保存 0/3 · 进行中 3'));
+    await waitUntil(tester, () => fixture.transfer.enqueueCount == 2);
+    expect(find.text('全部下载'), findsNothing);
+    final failed = fixture.manager
+        .forTool('short_video')
+        .firstWhere((item) => item.resourceId == 'image_1');
+    await tester.runAsync(() async {
+      fixture.transfer.send(
+        ToolboxTransferUpdate(failed.id, ToolboxDownloadState.failed),
+      );
+      await fixture.waitFor(failed.id, ToolboxDownloadState.failed);
+    });
+    await tester.pump();
+    expect(find.text('已保存 0/3 · 进行中 2 · 未完成 1'), findsOneWidget);
+    expect(find.text('下载其余1张'), findsOneWidget);
+    await tester.scrollUntilVisible(find.byTooltip('重新下载第2张'), 200);
+    expect(find.byTooltip('取消下载第1张'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

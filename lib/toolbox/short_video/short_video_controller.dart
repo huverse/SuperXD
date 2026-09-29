@@ -19,7 +19,7 @@ class ShortVideoController extends ChangeNotifier {
   bool busy = false;
   String selected = ParseCoordinator.automatic;
   Set<String> enabled = {};
-  bool historyEnabled = false;
+  bool historyEnabled = true;
   ToolboxCancellation? _request;
   bool _disposed = false;
 
@@ -37,7 +37,7 @@ class ShortVideoController extends ChangeNotifier {
               .whereType<String>()
               .where(coordinator.providers.containsKey)
               .toSet();
-    historyEnabled = await store.preference('history_enabled') == 'true';
+    historyEnabled = await store.preference('history_enabled') != 'false';
     if (!_disposed) notifyListeners();
   }
 
@@ -74,12 +74,18 @@ class ShortVideoController extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  Future<void> parse(String input, {bool refresh = false}) async {
+  // source只作用于本次解析（历史或下载任务按原来源重开），不改写用户保存的来源选择。
+  Future<void> parse(
+    String input, {
+    bool refresh = false,
+    String? source,
+  }) async {
     invalidate();
     final request = ToolboxCancellation();
     _request = request;
     busy = true;
     notifyListeners();
+    final selected = source ?? this.selected;
     try {
       final uri = shortVideoInput(input);
       final consented = <String>{};
