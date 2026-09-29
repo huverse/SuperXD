@@ -129,6 +129,19 @@ void main() {
     expect(gateway.synced, isEmpty);
   });
 
+  test('离开前学期列表已失败：报告保留失败原因，会话失效仍提示重新登录', () async {
+    for (final code in ['NETWORK_TIMEOUT', 'SESSION_EXPIRED']) {
+      final gateway = _Gateway()..gate = (Completer<GatewayResult<List<TermRef>>>()..complete(fail(code)));
+      final report = await CampusSync(gateway).run(contents: {SyncContent.schedule, SyncContent.grades}, isActive: () => false,
+        confirmSchedule: (_, _) async => true, chooseBells: (_, _) async => BellsChoice.cancel);
+      expect(report.cancelled, isTrue);
+      expect(report.items.map((item) => (item.label, item.code)), [('学期列表', code)]);
+      expect(report.unfinished, ['所选学年的全部内容']);
+      expect(report.sessionExpired, code == 'SESSION_EXPIRED');
+      expect(gateway.synced, isEmpty);
+    }
+  });
+
   test('会话失效提前结束时列出其余未处理项', () async {
     final gateway = _Gateway()..failedTerm = current.key..errorCode = 'SESSION_EXPIRED';
     final report = await CampusSync(gateway).run(contents: {SyncContent.schedule, SyncContent.grades}, isActive: () => true,
