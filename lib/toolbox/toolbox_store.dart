@@ -137,7 +137,7 @@ class ToolboxStore {
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
-  // [人工决策-2026-09-27 21:47:55] 历史默认关闭，开启后仅本机80条/30天；不保存签名媒体地址，删历史不删下载文件。
+  // [人工决策-2026-09-29 16:41:32] 历史默认开启：未设置视为开启，用户手动关闭的保持关闭；仅本机80条/30天；不保存签名媒体地址，删历史不删下载文件。
   Future<void> addHistory({
     required String id,
     required Uri sourceUrl,
@@ -145,7 +145,7 @@ class ToolboxStore {
     required String title,
     required String kind,
   }) async {
-    if (await preference('history_enabled') != 'true') return;
+    if (await preference('history_enabled') == 'false') return;
     await _database.transaction((transaction) async {
       await transaction.insert('parse_history', {
         'id': id,
@@ -175,12 +175,12 @@ class ToolboxStore {
     );
   }
 
-  Future<List<Map<String, Object?>>> history() async {
+  Future<List<Map<String, Object?>>> history({int limit = 80}) async {
     await _pruneHistory(_database);
     return _database.query(
       'parse_history',
       orderBy: 'created_at DESC, id DESC',
-      limit: 80,
+      limit: limit,
     );
   }
 

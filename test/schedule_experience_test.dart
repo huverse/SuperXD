@@ -104,6 +104,26 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('有课卡单击不展开，长按展开编辑入口，展开后单击收起', (tester) async {
+    final spans = periodSpans([course(3, 4)]);
+    String? detail;
+    await tester.pumpWidget(app(StatefulBuilder(builder: (context, update) => CourseDayCards(
+      spans: spans, bells: bells, date: '2026-09-21', detailKey: detail, onDetail: (key) => update(() => detail = key), onEdit: (_) {},
+    ))));
+    await tester.tap(find.text('课程'));
+    await tester.pumpAndSettle();
+    expect(detail, isNull);
+    expect(find.text('编辑课程'), findsNothing);
+    await tester.longPress(find.text('课程'));
+    await tester.pumpAndSettle();
+    expect(detail, spanIdentity(spans.last));
+    expect(find.text('编辑课程'), findsOneWidget);
+    await tester.tap(find.text('课程'));
+    await tester.pumpAndSettle();
+    expect(detail, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('课表页长按无课卡安排已有课程，预填当天星期节次且仅本周', (tester) async {
     await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway())));
     await tester.pumpAndSettle();

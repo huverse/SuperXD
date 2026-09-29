@@ -107,7 +107,7 @@ void main() {
       isTrue,
     );
   });
-  test('历史默认关闭、开启有界、关闭不新增、删除不影响下载', () async {
+  test('历史默认开启、有界、手动关闭不新增、删除不影响下载', () async {
     Future<void> add(int index) => fixture.store.addHistory(
       id: '$index',
       sourceUrl: Uri.parse('https://example.com/$index'),
@@ -115,9 +115,9 @@ void main() {
       title: 'test',
       kind: 'video',
     );
+    expect(await fixture.store.preference('history_enabled'), isNull);
     await add(0);
-    expect(await fixture.store.history(), isEmpty);
-    await fixture.store.setPreference('history_enabled', 'true');
+    expect(await fixture.store.history(), hasLength(1));
     for (var index = 0; index < 85; index++) {
       await add(index);
     }

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:superxd/local/campus_clock.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -38,6 +39,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
   bool _prompting = false;
   int _inputVersion = 0;
   String? _message;
+  List<Map<String, Object?>> _recent = const [];
   Future<void> _initialize() async {
     await widget.runtime.initialize();
     final controller = ShortVideoController(
@@ -54,9 +56,21 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
       return;
     }
     _controller = controller;
+    await _reloadRecent();
   }
 
-  Future<void> _parse({bool refresh = false}) async {
+  Future<void> _reloadRecent() async {
+    try {
+      final rows = await widget.runtime.store.history(limit: 5);
+      if (mounted) setState(() => _recent = rows);
+    } catch (error, stack) {
+      debugPrint(
+        '[ShortVideo] action=recent errorType=${error.runtimeType}\n$stack',
+      );
+    }
+  }
+
+  Future<void> _parse({bool refresh = false, String? source}) async {
     final controller = _controller!;
     if (controller.busy || _prompting) return;
     final version = _inputVersion;
@@ -67,7 +81,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
     try {
       final uri = shortVideoInput(_input.text);
       final candidates = controller.coordinator.candidates(
-        controller.selected,
+        source ?? controller.selected,
         controller.enabled,
       );
       final needed = <String>[];
@@ -108,7 +122,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
       }
       if (!mounted || version != _inputVersion) return;
       setState(() => _prompting = false);
-      await controller.parse(uri.toString(), refresh: refresh);
+      await controller.parse(uri.toString(), refresh: refresh, source: source);
       if (!mounted || version != _inputVersion || controller.outcome == null) {
         return;
       }
@@ -121,8 +135,11 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
           ),
         ),
       );
-      if (again is ToolboxDownload && mounted) await _prepareRetry(again);
-      if (again == true && mounted) await _parse(refresh: true);
+      await _reloadRecent();
+      if (again is ToolboxDownload && mounted) {
+        await _open(again.sourceUrl.toString(), again.providerId, refresh: true);
+      }
+      if (again == true && mounted) await _parse(refresh: true, source: source);
     } catch (error, stack) {
       debugPrint(
         '[ShortVideo] action=input errorType=${error.runtimeType}\n$stack',
@@ -133,13 +150,13 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
     }
   }
 
-  Future<void> _prepareRetry(ToolboxDownload task) async {
-    _replace(task.sourceUrl.toString());
-    widget.runtime.coordinator.clearCache();
-    if (task.providerId case final id?
-        when widget.runtime.coordinator.providers.containsKey(id)) {
-      await _controller!.select(id);
-    }
+  // 历史与下载任务直达结果页：按原来源解析且不改保存的来源选择；2分钟内命中缓存直接打开，否则正常解析可取消，失败原地提示。
+  Future<void> _open(String sourceUrl, String? providerId, {bool refresh = false}) async {
+    _replace(sourceUrl);
+    await _parse(
+      refresh: refresh,
+      source: widget.runtime.coordinator.providers.containsKey(providerId) ? providerId : null,
+    );
   }
 
   Future<void> _downloads() async {
@@ -147,22 +164,24 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
       context,
       MaterialPageRoute(builder: (_) => DownloadsPage(runtime: widget.runtime)),
     );
-    if (task != null && mounted) await _prepareRetry(task);
+    if (task != null && mounted) {
+      await _open(task.sourceUrl.toString(), task.providerId, refresh: true);
+    }
   }
 
   Future<void> _history() async {
     final row = await Navigator.push<Map<String, Object?>>(
       context,
       MaterialPageRoute(
-        builder: (_) => ParseHistoryPage(store: widget.runtime.store),
+        builder: (_) => ParseHistoryPage(
+          store: widget.runtime.store,
+          providers: widget.runtime.coordinator.providers,
+        ),
       ),
     );
+    await _reloadRecent();
     if (row != null && mounted) {
-      _replace(row['source_url'] as String);
-      final source = row['provider_id'] as String;
-      if (widget.runtime.coordinator.providers.containsKey(source)) {
-        await _controller!.select(source);
-      }
+      await _open(row['source_url'] as String, row['provider_id'] as String);
     }
   }
 
@@ -203,6 +222,10 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                 SwitchListTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text('${source.source.name} 参与自动解析'),
+                  subtitle: Text(switch (controller.coordinator.statuses[source.source.id]) {
+                    null => '本次运行尚未解析',
+                    final status => '${status.success ? '最近一次成功' : '最近一次未完成'} · ${formatCampusTimestamp(status.checkedAt.toUtc().toIso8601String())}',
+                  }),
                   value: controller.enabled.contains(source.source.id),
                   onChanged: (value) => controller
                       .enable(source.source.id, value)
@@ -421,39 +444,55 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                     const SizedBox(height: 16),
                     Wrap(
                       spacing: 8,
+                      runSpacing: 4,
                       children: [
+                        ListenableBuilder(
+                          listenable: widget.runtime.downloads,
+                          builder: (context, _) {
+                            final active = widget.runtime.downloads.forTool('short_video').where((item) => !item.terminal).length;
+                            return TextButton.icon(
+                              onPressed: _downloads,
+                              icon: const CampusIcon(CampusIcons.download),
+                              label: Text(active > 0 ? '下载管理（$active）' : '下载管理'),
+                            );
+                          },
+                        ),
                         TextButton.icon(
-                          onPressed: _downloads,
-                          icon: const CampusIcon(CampusIcons.download),
-                          label: const Text('下载管理'),
-                        ),
-                        TextButton(
-                          onPressed: _history,
-                          child: const Text('解析历史'),
-                        ),
-                        TextButton(
                           onPressed: _settings,
-                          child: const Text('设置'),
+                          icon: const CampusIcon(CampusIcons.settings),
+                          label: const Text('设置'),
                         ),
                       ],
                     ),
-                    for (final provider
-                        in controller.coordinator.providers.values)
-                      ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        title: Text(provider.source.name),
-                        subtitle: Text(
-                          controller.coordinator.statuses[provider.source.id] ==
-                                  null
-                              ? '尚无本机解析记录'
-                              : controller
-                                    .coordinator
-                                    .statuses[provider.source.id]!
-                                    .success
-                              ? '最近一次解析成功'
-                              : '最近一次解析未完成',
+                    if (_recent.isNotEmpty) ...[
+                      const SizedBox(height: 8),
+                      Row(
+                        children: [
+                          Expanded(child: Text('最近解析', style: Theme.of(context).textTheme.titleMedium)),
+                          TextButton.icon(
+                            onPressed: _history,
+                            iconAlignment: IconAlignment.end,
+                            icon: const CampusIcon(CampusIcons.next),
+                            label: const Text('全部'),
+                          ),
+                        ],
+                      ),
+                      CampusSurface(
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        child: Column(
+                          children: [
+                            for (final row in _recent)
+                              ParseHistoryTile(
+                                row: row,
+                                providers: controller.coordinator.providers,
+                                onTap: _prompting || controller.busy
+                                    ? null
+                                    : () => _open(row['source_url'] as String, row['provider_id'] as String),
+                              ),
+                          ],
                         ),
                       ),
+                    ],
                   ],
                 ),
               ),
