@@ -113,40 +113,25 @@ class _MinePageState extends State<MinePage> {
   bool _loadingAccount = true;
 
   Future<void> _forget() async {
-    final confirmed = await showCampusDialog<bool>(context: context, builder: (context) => AlertDialog(
-      title: const Text('关闭记住账号？'), content: const Text('将删除此账号保存的自动登录凭据。课表和历史数据保持不变。'),
-      actions: [TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')), FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('关闭并清除'))],
-    ));
-    if (!mounted || confirmed != true) return;
+    final confirmed = await showCampusConfirm(context, title: '关闭记住账号？', message: '将删除此账号保存的自动登录凭据。课表和历史数据保持不变。', action: '关闭并清除');
+    if (!mounted || !confirmed) return;
     setState(() => _busy = true);
     try { await showCampusWaiting(context, label: '正在清除记住账号凭据', operation: widget.session.gateway.forgetCredential); if (mounted) setState(() => _remembered = false); }
     catch (error, stack) {
       campusLog('[RememberAccount] errorType=${error.runtimeType}\n$stack');
-      if (mounted) await showCampusDialog<void>(context: context, builder: (context) => AlertDialog(content: const Text('自动登录凭据未能清除，请重试。'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))]));
+      if (mounted) await showCampusNotice(context, '自动登录凭据未能清除，请重试。');
     } finally { if (mounted) setState(() => _busy = false); }
   }
 
   Future<void> _logout() async {
-    final confirmed = await showCampusDialog<bool>(context: context, builder: (context) => AlertDialog(
-      title: const Text('退出登录？'),
-      content: const Text('清除本机登录态和此账号保存的自动登录凭据，当前课表和自定义修改保留，历史版本按每学期最多100版保留。'),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('退出')),
-      ],
-    ));
-    if (!mounted || confirmed != true) return;
+    final confirmed = await showCampusConfirm(context, title: '退出登录？', message: '清除本机登录态和此账号保存的自动登录凭据，当前课表和自定义修改保留，历史版本按每学期最多100版保留。', action: '退出');
+    if (!mounted || !confirmed) return;
     setState(() => _busy = true);
     try {
       await showCampusWaiting(context, label: '正在退出账号', operation: widget.session.gateway.logout);
     } catch (error, stack) {
       campusLog('[MinePage] action=logout errorType=${error.runtimeType}\n$stack');
-      if (mounted) {
-        await showCampusDialog<void>(context: context, builder: (context) => AlertDialog(
-          content: const Text('退出未完成，请重试。'),
-          actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
-        ));
-      }
+      if (mounted) await showCampusNotice(context, '退出未完成，请重试。');
     } finally {
       if (mounted) setState(() => _busy = false);
     }

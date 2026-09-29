@@ -1,5 +1,6 @@
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/gateway_code.dart';
 
 enum SyncContent { schedule, bells, grades }
 
@@ -26,7 +27,7 @@ class CampusSyncReport {
   final List<SyncItemResult> items;
   final bool busy;
   final bool cancelled;
-  bool get sessionExpired => items.any((item) => item.code == 'SESSION_EXPIRED');
+  bool get sessionExpired => items.any((item) => item.code == GatewayCode.sessionExpired);
 }
 
 class CampusSyncProgress {
@@ -106,7 +107,7 @@ class CampusSync {
                   : _failure(label, committed.error));
             }
           }
-          if (items.last.code == 'SESSION_EXPIRED') return CampusSyncReport(items, cancelled: !isActive());
+          if (items.last.code == GatewayCode.sessionExpired) return CampusSyncReport(items, cancelled: !isActive());
         }
       }
       if (!isActive()) return CampusSyncReport(items, cancelled: true);
@@ -120,7 +121,7 @@ class CampusSync {
             onProgress?.call(CampusSyncProgress('正在处理作息 · ${target.label}'));
             return choice;
           }, isActive);
-          if (items.any((item) => item.code == 'SESSION_EXPIRED')) return CampusSyncReport(items, cancelled: !isActive());
+          if (items.any((item) => item.code == GatewayCode.sessionExpired)) return CampusSyncReport(items, cancelled: !isActive());
         }
         if (!isActive()) return CampusSyncReport(items, cancelled: true);
         if (contents.contains(SyncContent.grades)) {
@@ -129,7 +130,7 @@ class CampusSync {
           items.add(grades.ok && grades.data != null
               ? SyncItemResult('成绩 · ${term.label}', SyncOutcome.completed, grades.data!.empty ? '教务暂无成绩，已保存空结果' : '已同步')
               : _failure('成绩 · ${term.label}', grades.error));
-          if (grades.error?.code == 'SESSION_EXPIRED') return CampusSyncReport(items, cancelled: !isActive());
+          if (grades.error?.code == GatewayCode.sessionExpired) return CampusSyncReport(items, cancelled: !isActive());
         }
       }
       return CampusSyncReport(items, cancelled: !isActive());
@@ -206,7 +207,7 @@ class CampusSync {
       }
       if (!candidate.ok || candidate.data == null) {
         items.add(_failure('作息 · ${term.label}', candidate.error));
-        if (candidate.error?.code == 'SESSION_EXPIRED') return;
+        if (candidate.error?.code == GatewayCode.sessionExpired) return;
         continue;
       }
       if (candidate.data!.periods.isEmpty) continue;

@@ -47,24 +47,13 @@ class _DownloadsPageState extends State<DownloadsPage> {
   }
 
   Future<void> _delete(String id) async {
-    final confirmed = await showCampusDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('删除下载记录？'),
-        content: const Text('只移除记录，已保存到本地的文件保留。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除记录'),
-          ),
-        ],
-      ),
+    final confirmed = await showCampusConfirm(
+      context,
+      title: '删除下载记录？',
+      message: '只移除记录，已保存到本地的文件保留。',
+      action: '删除记录',
     );
-    if (confirmed == true && mounted) {
+    if (confirmed && mounted) {
       await _operate(id, () => widget.runtime.downloads.deleteJob(id));
     }
   }

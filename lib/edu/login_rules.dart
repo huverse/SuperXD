@@ -1,4 +1,5 @@
 import 'package:superxd/edu/kingo_codec.dart';
+import 'package:superxd/domain/gateway_code.dart';
 
 class LoginFailure {
   const LoginFailure({required this.code, required this.message, this.detail, this.failCount});
@@ -14,46 +15,46 @@ LoginFailure explainLogin(Object? status, Object? message, Object? rawBody) {
   final text = bar >= 0 ? raw.substring(0, bar) : raw;
   final failCount = bar >= 0 ? int.tryParse(raw.substring(bar + 1)) : null;
   final code = status == null ? '' : '$status';
-  if (code == '200') return const LoginFailure(code: 'OK', message: '登录成功');
+  if (code == '200') return const LoginFailure(code: GatewayCode.ok, message: '登录成功');
   if (raw.isEmpty && (rawBody == null || '$rawBody'.trim().isEmpty)) {
-    return const LoginFailure(code: 'SERVER_UNAVAILABLE', message: '教务系统没有返回登录结果');
+    return const LoginFailure(code: GatewayCode.serverUnavailable, message: '教务系统没有返回登录结果');
   }
   if (code == '505' || text.contains('短信')) {
-    return LoginFailure(code: 'SMS_REQUIRED', message: '教务要求先完成短信验证才能登录', detail: text);
+    return LoginFailure(code: GatewayCode.smsRequired, message: '教务要求先完成短信验证才能登录', detail: text);
   }
   if (code == '401' || text.contains('验证码')) {
     return LoginFailure(
-      code: 'CAPTCHA_REQUIRED',
+      code: GatewayCode.captchaRequired,
       message: '需要填写验证码，或验证码不正确',
       detail: text,
       failCount: failCount,
     );
   }
   if (text.contains('已输错')) {
-    return LoginFailure(code: 'PASSWORD_WRONG_COUNT', message: text, detail: text, failCount: failCount);
+    return LoginFailure(code: GatewayCode.passwordWrongCount, message: text, detail: text, failCount: failCount);
   }
   if (text.contains('锁定')) {
-    return LoginFailure(code: 'ACCOUNT_LOCKED', message: text.isEmpty ? '账号已锁定' : text, detail: text, failCount: failCount);
+    return LoginFailure(code: GatewayCode.accountLocked, message: text.isEmpty ? '账号已锁定' : text, detail: text, failCount: failCount);
   }
   if (text.contains('账号或密码')) {
-    return LoginFailure(code: 'PASSWORD_WRONG', message: '账号或密码不正确', detail: text);
+    return LoginFailure(code: GatewayCode.passwordWrong, message: '账号或密码不正确', detail: text);
   }
   if (code == '407' || code == '410') {
-    return LoginFailure(code: 'ACCOUNT_STATE', message: text.isEmpty ? '账号状态异常，教务拒绝登录' : text, detail: text);
+    return LoginFailure(code: GatewayCode.accountState, message: text.isEmpty ? '账号状态异常，教务拒绝登录' : text, detail: text);
   }
   if (text.contains('凭证已失效') || text.contains('请重新登录')) {
-    return LoginFailure(code: 'SESSION_EXPIRED', message: '教务登录已失效，需要重新登录', detail: text);
+    return LoginFailure(code: GatewayCode.sessionExpired, message: '教务登录已失效，需要重新登录', detail: text);
   }
-  return LoginFailure(code: 'LOGIN_FAILED', message: text.isEmpty ? '登录失败' : text, detail: text);
+  return LoginFailure(code: GatewayCode.loginFailed, message: text.isEmpty ? '登录失败' : text, detail: text);
 }
 
 LoginFailure? explainPage(String? html) {
   final text = html ?? '';
   if (text.contains('凭证已失效') || text.contains('kingo.guest')) {
-    return const LoginFailure(code: 'SESSION_EXPIRED', message: '教务登录已失效，需要重新登录');
+    return const LoginFailure(code: GatewayCode.sessionExpired, message: '教务登录已失效，需要重新登录');
   }
   if (text.contains('未设置作息时间')) {
-    return const LoginFailure(code: 'EMPTY', message: '教务系统当前学期未设置作息时间');
+    return const LoginFailure(code: GatewayCode.empty, message: '教务系统当前学期未设置作息时间');
   }
   return null;
 }

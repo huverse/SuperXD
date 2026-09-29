@@ -9,6 +9,7 @@ import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/gateway_code.dart';
 
 // 登录暂态只属于本次认证，不读取或清理正在使用的账号数据库。
 class KingoAuth {
@@ -45,17 +46,17 @@ class KingoAuth {
   }
 
   Future<GatewayResult<LoginView>> submitLoginCaptcha(String code) {
-    if (_busy) return Future.value(_fail('LOGIN_BUSY', '登录处理中，请稍候'));
+    if (_busy) return Future.value(_fail(GatewayCode.loginBusy, '登录处理中，请稍候'));
     final account = _account;
     final password = _password;
-    if (account == null || password == null) return Future.value(_fail('LOGIN_FAILED', '请重新登录'));
+    if (account == null || password == null) return Future.value(_fail(GatewayCode.loginFailed, '请重新登录'));
     return _attempt(() => client.login(account, password, captcha: code));
   }
 
   Future<GatewayResult<CaptchaView>> refreshLoginCaptcha() {
-    if (_busy) return Future.value(_fail('LOGIN_BUSY', '登录处理中，请稍候'));
+    if (_busy) return Future.value(_fail(GatewayCode.loginBusy, '登录处理中，请稍候'));
     if (_account == null || _password == null || client.pageSession.isEmpty) {
-      return Future.value(_fail('LOGIN_FAILED', '请重新登录'));
+      return Future.value(_fail(GatewayCode.loginFailed, '请重新登录'));
     }
     return _run(() async => GatewayResult(ok: true, source: 'edu', fetchedAt: _stamp(), data: _captcha(await client.fetchCaptcha())));
   }
@@ -64,16 +65,16 @@ class KingoAuth {
     final epoch = _epoch;
     return _run(() async {
       final result = await request();
-      if (epoch != _epoch) return _fail('ACCOUNT_CHANGED', '登录操作已取消或被替换');
+      if (epoch != _epoch) return _fail(GatewayCode.accountChanged, '登录操作已取消或被替换');
       if (result.needsCaptcha && result.captcha != null) {
         return GatewayResult(ok: true, needsInput: 'captcha', source: 'edu', fetchedAt: _stamp(), data: LoginView(captcha: _captcha(result.captcha!)));
       }
       _account = null;
       _password = null;
-      if (!result.ok) return _fail(result.failure?.code ?? 'LOGIN_FAILED', result.failure?.message ?? '登录失败');
+      if (!result.ok) return _fail(result.failure?.code ?? GatewayCode.loginFailed, result.failure?.message ?? '登录失败');
       final loginId = result.loginId?.trim() ?? '';
       if (loginId.isEmpty || result.userCode.trim().isEmpty) {
-        return _fail('UPSTREAM_FORMAT', '教务未返回有效账号身份，未切换账号');
+        return _fail(GatewayCode.upstreamFormat, '教务未返回有效账号身份，未切换账号');
       }
       _authenticated = result;
       _session = SavedSession(
@@ -110,22 +111,22 @@ class KingoAuth {
       _log(error, stack, error.failure.code);
       result = _fail(error.failure.code, error.failure.message);
     } on TimeoutException catch (error, stack) {
-      _log(error, stack, 'NETWORK_TIMEOUT');
-      result = _fail('NETWORK_TIMEOUT', '教务连接超时');
+      _log(error, stack, GatewayCode.networkTimeout);
+      result = _fail(GatewayCode.networkTimeout, '教务连接超时');
     } on FormatException catch (error, stack) {
-      _log(error, stack, 'UPSTREAM_FORMAT');
-      result = _fail('UPSTREAM_FORMAT', '教务返回的数据格式异常');
+      _log(error, stack, GatewayCode.upstreamFormat);
+      result = _fail(GatewayCode.upstreamFormat, '教务返回的数据格式异常');
     } on SocketException catch (error, stack) {
-      _log(error, stack, 'NETWORK_FAILED');
-      result = _fail('NETWORK_FAILED', '教务连接失败');
+      _log(error, stack, GatewayCode.networkFailed);
+      result = _fail(GatewayCode.networkFailed, '教务连接失败');
     } on http.ClientException catch (error, stack) {
-      _log(error, stack, 'NETWORK_FAILED');
-      result = _fail('NETWORK_FAILED', '教务连接失败');
+      _log(error, stack, GatewayCode.networkFailed);
+      result = _fail(GatewayCode.networkFailed, '教务连接失败');
     } catch (error, stack) {
-      _log(error, stack, 'LOGIN_FAILED');
-      result = _fail('LOGIN_FAILED', '登录未完成，请重试');
+      _log(error, stack, GatewayCode.loginFailed);
+      result = _fail(GatewayCode.loginFailed, '登录未完成，请重试');
     }
-    if (epoch != _epoch) return _fail('ACCOUNT_CHANGED', '登录操作已取消或被替换');
+    if (epoch != _epoch) return _fail(GatewayCode.accountChanged, '登录操作已取消或被替换');
     _busy = false;
     if (!result.ok) cancel();
     return result;

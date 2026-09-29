@@ -51,24 +51,13 @@ class _ToolboxPageState extends State<ToolboxPage> {
   }
 
   Future<void> _uninstall(ToolboxModule module) async {
-    final agreed = await showCampusDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text('卸载${module.name}？'),
-        content: const Text('将取消本工具任务并移除资源，已保存的视频保留。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('卸载'),
-          ),
-        ],
-      ),
+    final agreed = await showCampusConfirm(
+      context,
+      title: '卸载${module.name}？',
+      message: '将取消本工具任务并移除资源，已保存的视频保留。',
+      action: '卸载',
     );
-    if (agreed == true && mounted) {
+    if (agreed && mounted) {
       await _operation(
         module.id,
         () => widget.runtime.downloads.uninstall(module.id),

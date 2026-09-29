@@ -123,3 +123,27 @@ class CampusDialogRoute<T> extends DialogRoute<T> {
 }
 
 Future<T?> showCampusDialog<T>({required BuildContext context, required WidgetBuilder builder, bool barrierDismissible = true}) => Navigator.of(context, rootNavigator: true).push<T>(CampusDialogRoute<T>(context: context, builder: builder, barrierDismissible: barrierDismissible));
+
+// 只读提示：长文本可滚动，唯一按钮“知道了”。
+Future<void> showCampusNotice(BuildContext context, String message, {String? title}) => showCampusDialog<void>(
+  context: context,
+  builder: (context) => AlertDialog(
+    title: title == null ? null : Text(title),
+    content: SingleChildScrollView(child: Text(message)),
+    actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
+  ),
+);
+
+// 二次确认：仅点确认按钮返回true，取消、点遮罩或系统返回都视为不确认。
+Future<bool> showCampusConfirm(BuildContext context, {required String title, required String message, required String action, String cancel = '取消', bool barrierDismissible = true}) async => await showCampusDialog<bool>(
+  context: context,
+  barrierDismissible: barrierDismissible,
+  builder: (context) => AlertDialog(
+    title: Text(title),
+    content: SingleChildScrollView(child: Text(message)),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context, false), child: Text(cancel)),
+      FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(action)),
+    ],
+  ),
+) == true;

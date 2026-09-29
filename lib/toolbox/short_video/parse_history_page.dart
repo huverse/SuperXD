@@ -58,24 +58,14 @@ class ParseHistoryPage extends StatefulWidget {
 class _ParseHistoryPageState extends State<ParseHistoryPage> {
   late Future<List<Map<String, Object?>>> _rows = widget.store.history();
   Future<void> _remove([String? id]) async {
-    final agreed = await showCampusDialog<bool>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: Text(id == null ? '清空解析历史？' : '删除这条历史？'),
-        content: const Text('下载记录和已保存文件保持不变。'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context, false),
-            child: const Text('取消'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.pop(context, true),
-            child: const Text('删除'),
-          ),
-        ],
-      ),
-    );
-    if (agreed != true) return;
+    if (!await showCampusConfirm(
+      context,
+      title: id == null ? '清空解析历史？' : '删除这条历史？',
+      message: '下载记录和已保存文件保持不变。',
+      action: '删除',
+    )) {
+      return;
+    }
     try {
       if (id == null) {
         await widget.store.clearHistory();

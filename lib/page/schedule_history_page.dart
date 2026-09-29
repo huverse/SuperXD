@@ -7,7 +7,7 @@ import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
-import 'package:superxd/page/course_editor_page.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 class ScheduleHistoryPage extends StatefulWidget {
@@ -204,11 +204,11 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
 
   Future<void> _restore() async {
     if (_saving || _target == null || _current == null) return;
-    if (!await confirmScheduleAction(
+    if (!await showCampusConfirm(
       context,
-      '恢复这个版本？',
-      '将应用下方预览的${_changes.length}项课程变化并新建本地版本，不改变开学日和作息。每学期最多保留100版。',
-      '确认恢复',
+      title: '恢复这个版本？',
+      message: '将应用下方预览的${_changes.length}项课程变化并新建本地版本，不改变开学日和作息。每学期最多保留100版。',
+      action: '确认恢复',
     )) {
       return;
     }

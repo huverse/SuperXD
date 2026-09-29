@@ -23,6 +23,7 @@ import 'package:superxd/page/sync_selection_dialog.dart';
 import 'package:superxd/page/term_start_dialog.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/gateway_code.dart';
 
 class TodayPage extends StatefulWidget {
   const TodayPage({
@@ -223,7 +224,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         _knownSchedule =
             view.ok && schedule != null && schedule.revisionId != null;
         _needsStart =
-            view.error?.code == 'TERM_START_REQUIRED' ||
+            view.error?.code == GatewayCode.termStartRequired ||
             _knownSchedule && (start == null || start.isEmpty);
         _readError = !view.ok && !_needsStart
             ? view.error?.message ?? '本地课表读取失败'
@@ -290,20 +291,8 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         contents: selection.contents,
         years: selection.years,
         isActive: () => mounted && (widget.isAccountCurrent?.call() ?? true) && TickerMode.valuesOf(context).enabled,
-        confirmSchedule: (term, message) async {
-          if (!mounted) return false;
-          return await showCampusDialog<bool>(
-            context: context,
-            builder: (context) => AlertDialog(
-              title: Text(term.label.isEmpty ? term.key : term.label),
-              content: SingleChildScrollView(child: Text(message)),
-              actions: [
-                TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('保留本地')),
-                FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('覆盖')),
-              ],
-            ),
-          ) == true;
-        },
+        confirmSchedule: (term, message) async => mounted &&
+            await showCampusConfirm(context, title: term.label.isEmpty ? term.key : term.label, message: message, cancel: '保留本地', action: '覆盖'),
         chooseBells: _chooseBells,
         onProgress: (progress) { if (mounted) setState(() => _syncProgress = progress); },
       );
@@ -348,13 +337,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
 
   Future<void> _notice(String message) async {
     if (!mounted || message.isEmpty || !TickerMode.valuesOf(context).enabled) return;
-    await showCampusDialog<void>(
-      context: context,
-      builder: (context) => AlertDialog(
-        content: Text(message),
-        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
-      ),
-    );
+    await showCampusNotice(context, message);
   }
 
   double _bodyInset(BuildContext context) => (32 * MediaQuery.textScalerOf(context).scale(14) / 14 + 16) / 2;

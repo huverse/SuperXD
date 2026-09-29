@@ -22,21 +22,13 @@ Future<String?> editTermStart(BuildContext context, CampusGateway gateway, TermR
   try {
     final result = await showCampusWaiting(context, label: '正在保存开学日', operation: () => gateway.setTermStart(term, value));
     if (!context.mounted) return null;
-    await showCampusDialog<void>(context: context, builder: (context) => AlertDialog(
-      title: Text(result.ok ? '开学日已保存' : '保存失败'),
-      content: SingleChildScrollView(child: Text(result.ok
-          ? '${term.label}\n开学日：$value\n第1周从 ${mondayOf(value)} 开始。\n\n$termStartHint'
-          : result.error?.message ?? '保存未完成，请重试')),
-      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
-    ));
+    await showCampusNotice(context, title: result.ok ? '开学日已保存' : '保存失败', result.ok
+        ? '${term.label}\n开学日：$value\n第1周从 ${mondayOf(value)} 开始。\n\n$termStartHint'
+        : result.error?.message ?? '保存未完成，请重试');
     return result.ok ? value : null;
   } catch (error, stack) {
     campusLog('[TermStart] action=save errorType=${error.runtimeType}\n$stack');
-    if (context.mounted) {
-      await showCampusDialog<void>(context: context, builder: (context) => AlertDialog(
-        content: const Text('保存开学日失败，请重试'), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
-      ));
-    }
+    if (context.mounted) await showCampusNotice(context, '保存开学日失败，请重试');
     return null;
   }
 }

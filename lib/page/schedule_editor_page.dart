@@ -202,11 +202,11 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
           ? meetingLabel(meeting)
           : '第$week周 · 周${weekdayLabel(meeting.weekday)} 第${meeting.periodStart}–${meeting.periodEnd}节';
     }
-    if (!await confirmScheduleAction(
+    if (!await showCampusConfirm(
       context,
-      '确认删除？',
-      '${course.courseName}\n$label\n\n会保存新版本，可撤销或在历史版本中恢复。',
-      '删除',
+      title: '确认删除？',
+      message: '${course.courseName}\n$label\n\n会保存新版本，可撤销或在历史版本中恢复。',
+      action: '删除',
     )) {
       return;
     }
@@ -275,11 +275,11 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
 
   Future<void> _clear() async {
     final base = _view!;
-    if (!await confirmScheduleAction(
+    if (!await showCampusConfirm(
       context,
-      '清空本学期课程？',
-      '将移除${base.courses.length}门课程并保存空课表版本。学期、成绩、开学日和作息不变，可在保留的历史版本内恢复。',
-      '清空课程',
+      title: '清空本学期课程？',
+      message: '将移除${base.courses.length}门课程并保存空课表版本。学期、成绩、开学日和作息不变，可在保留的历史版本内恢复。',
+      action: '清空课程',
     )) {
       return;
     }

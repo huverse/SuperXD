@@ -96,26 +96,13 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
       }
       if (needed.isNotEmpty) {
         if (!mounted) return;
-        final agreed = await showCampusDialog<bool>(
-          context: context,
-          builder: (context) => AlertDialog(
-            title: const Text('第三方解析'),
-            content: Text(
-              '作品链接将发送至：\n${needed.map((id) => controller.coordinator.providers[id]!.source.host).join('\n')}\n\n不发送教务信息。仅处理本人或已获授权的作品。',
-            ),
-            actions: [
-              TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('取消'),
-              ),
-              FilledButton(
-                onPressed: () => Navigator.pop(context, true),
-                child: const Text('同意并解析'),
-              ),
-            ],
-          ),
+        final agreed = await showCampusConfirm(
+          context,
+          title: '第三方解析',
+          message: '作品链接将发送至：\n${needed.map((id) => controller.coordinator.providers[id]!.source.host).join('\n')}\n\n不发送教务信息。仅处理本人或已获授权的作品。',
+          action: '同意并解析',
         );
-        if (!mounted || agreed != true || version != _inputVersion) return;
+        if (!mounted || !agreed || version != _inputVersion) return;
         for (final id in needed) {
           final source = controller.coordinator.providers[id]!.source;
           await widget.runtime.store.grantConsent(id, source.consentVersion);

@@ -12,6 +12,7 @@ import 'package:superxd/domain/grades.dart';
 import 'package:superxd/edu/parse_schedule.dart';
 import 'package:superxd/edu/parse_terms.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/gateway_code.dart';
 
 const kingoBase = 'http://42.247.18.146';
 const kingoUserAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
@@ -128,7 +129,7 @@ class KingoClient {
     _throwIfExpired(info.body);
     final profile = _profileOf(info.body);
     if (profile.userCode.isEmpty || profile.xn.isEmpty || profile.xq.isEmpty) {
-      throw KingoCallException(const LoginFailure(code: 'UPSTREAM_FORMAT', message: '教务身份信息格式异常'));
+      throw KingoCallException(const LoginFailure(code: GatewayCode.upstreamFormat, message: '教务身份信息格式异常'));
     }
     return profile;
   }
@@ -153,7 +154,7 @@ class KingoClient {
       return parseScheduleHtml(page.body);
     } on ScheduleParseException catch (error, stack) {
       campusLog('[KingoClient] action=schedule_parse term=$xn-$xq reason=${error.message}\n$stack');
-      throw KingoCallException(LoginFailure(code: 'UPSTREAM_FORMAT', message: '课表解析失败：${error.message}，未覆盖已有缓存'));
+      throw KingoCallException(LoginFailure(code: GatewayCode.upstreamFormat, message: '课表解析失败：${error.message}，未覆盖已有缓存'));
     }
   }
 
@@ -163,7 +164,7 @@ class KingoClient {
     final rxnj = RegExp(r'id="rxnj"[^>]*value="([^"]*)"').firstMatch(page.body)?.group(1) ?? '';
     final nj = RegExp(r'id="nj"[^>]*value="([^"]*)"').firstMatch(page.body)?.group(1) ?? '';
     if (rxnj.isEmpty) {
-      throw KingoCallException(const LoginFailure(code: 'UPSTREAM_FORMAT', message: '教务成绩查询页格式异常'));
+      throw KingoCallException(const LoginFailure(code: GatewayCode.upstreamFormat, message: '教务成绩查询页格式异常'));
     }
     return (rxnj: rxnj, nj: nj.isEmpty ? rxnj : nj);
   }
@@ -217,9 +218,9 @@ class KingoClient {
 
   void _throwIfExpired(String html) {
     final failure = explainPage(html);
-    if (failure?.code == 'SESSION_EXPIRED') throw KingoCallException(failure!);
+    if (failure?.code == GatewayCode.sessionExpired) throw KingoCallException(failure!);
     if (html.contains('请重新登录') || html.contains('/cas/logon.action') || RegExp(r'''location(?:\.href)?\s*=\s*['"][^'"]*cas/login''').hasMatch(html)) {
-      throw KingoCallException(const LoginFailure(code: 'SESSION_EXPIRED', message: '教务登录已失效，需要重新登录'));
+      throw KingoCallException(const LoginFailure(code: GatewayCode.sessionExpired, message: '教务登录已失效，需要重新登录'));
     }
   }
 
@@ -279,10 +280,10 @@ class KingoClient {
     // 即使测试传输或平台未响应 abort，取消后的迟到响应也不能改写 cookie。
     if (_disposed || epoch != _requestEpoch) throw http.RequestAbortedException(uri);
     if (response.statusCode >= 300 && response.statusCode < 400 && (response.headers['location'] ?? '').contains('/cas/login')) {
-      throw KingoCallException(const LoginFailure(code: 'SESSION_EXPIRED', message: '教务登录已失效，需要重新登录'));
+      throw KingoCallException(const LoginFailure(code: GatewayCode.sessionExpired, message: '教务登录已失效，需要重新登录'));
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
-      throw KingoCallException(LoginFailure(code: 'UPSTREAM_HTTP', message: '教务请求失败（HTTP ${response.statusCode}）'));
+      throw KingoCallException(LoginFailure(code: GatewayCode.upstreamHttp, message: '教务请求失败（HTTP ${response.statusCode}）'));
     }
     _mergeCookie(response);
     return KingoResponse(response.statusCode, accept.startsWith('image/') ? '' : _decode(response.bodyBytes, response.headers['content-type']), response.headers, response.bodyBytes);

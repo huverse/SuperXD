@@ -237,8 +237,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
   }
 
   Future<void> _notice(String text) async {
-    if (!mounted) return;
-    await showCampusDialog<void>(context: context, builder: (context) => AlertDialog(content: Text(text), actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))]));
+    if (mounted) await showCampusNotice(context, text);
   }
 
   @override
