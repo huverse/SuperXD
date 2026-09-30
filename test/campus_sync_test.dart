@@ -142,6 +142,18 @@ void main() {
     }
   });
 
+  test('教务限流立即停止本轮剩余请求并列出未处理项，不转登录', () async {
+    final gateway = _Gateway()..failedTerm = previous.key..errorCode = 'RATE_LIMITED';
+    final report = await CampusSync(gateway).run(contents: {SyncContent.schedule, SyncContent.grades}, isActive: () => true,
+      confirmSchedule: (_, _) async => true, chooseBells: (_, _) async => BellsChoice.cancel);
+    expect(report.rateLimited, isTrue);
+    expect(report.sessionExpired, isFalse);
+    expect(report.cancelled, isFalse);
+    expect(gateway.synced, [current.key, previous.key]);
+    expect(gateway.gradesRequests, 0);
+    expect(report.unfinished, ['课表 · 第一学期', '成绩 · 当前学期', '成绩 · 上学期', '成绩 · 第一学期']);
+  });
+
   test('会话失效提前结束时列出其余未处理项', () async {
     final gateway = _Gateway()..failedTerm = current.key..errorCode = 'SESSION_EXPIRED';
     final report = await CampusSync(gateway).run(contents: {SyncContent.schedule, SyncContent.grades}, isActive: () => true,

@@ -4,9 +4,11 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/page/campus_sync_dialogs.dart';
 import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/today_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -109,6 +111,22 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     active.dispose();
+  });
+
+  testWidgets('教务限流停下时说明原因并列出未处理项，不提供立即重新同步', (tester) async {
+    const report = CampusSyncReport([SyncItemResult('课表 · 上学期', SyncOutcome.failed, '教务提示请求太过频繁，请约1分钟后再同步', code: 'RATE_LIMITED')], unfinished: ['成绩 · 当前学期']);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Builder(builder: (context) => Scaffold(
+      body: TextButton(onPressed: () => showCampusSyncReport(context, report), child: const Text('查看结果')),
+    ))));
+    await tester.tap(find.text('查看结果'));
+    await tester.pumpAndSettle();
+    expect(find.text('同步已中止'), findsOneWidget);
+    expect(find.textContaining('请求太过频繁，已停止剩余项'), findsOneWidget);
+    expect(find.text('未处理 · 成绩 · 当前学期'), findsOneWidget);
+    expect(find.text('重新同步'), findsNothing);
+    await tester.tap(find.text('知道了'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('课表页读取同一来源时间，浏览不触发同步且只保留三种范围', (tester) async {
