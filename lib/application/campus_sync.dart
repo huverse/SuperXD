@@ -30,7 +30,11 @@ class CampusSyncReport {
   // 提前结束时尚未处理的同步项，按原执行顺序排列。
   final List<String> unfinished;
   bool get sessionExpired => items.any((item) => item.code == GatewayCode.sessionExpired);
+  bool get rateLimited => items.any((item) => item.code == GatewayCode.rateLimited);
 }
+
+// [人工决策-2026-09-30 15:18:51] 教务限流与会话失效一样立即停止本轮剩余请求并列出未处理项；限流不转登录、不自动重试，由用户稍后重新同步。
+const _stopCodes = {GatewayCode.sessionExpired, GatewayCode.rateLimited};
 
 class CampusSyncProgress {
   const CampusSyncProgress(this.label, {this.waitingForInput = false});
@@ -120,7 +124,7 @@ class CampusSync {
             }
           }
           pending.removeAt(0);
-          if (items.last.code == GatewayCode.sessionExpired) return stop(!isActive());
+          if (_stopCodes.contains(items.last.code)) return stop(!isActive());
         }
       }
       if (!isActive()) return stop(true);
@@ -136,7 +140,7 @@ class CampusSync {
           }, isActive);
           if (!isActive()) return stop(true);
           pending.removeAt(0);
-          if (items.any((item) => item.code == GatewayCode.sessionExpired)) return stop(!isActive());
+          if (items.any((item) => _stopCodes.contains(item.code))) return stop(!isActive());
         }
         if (!isActive()) return stop(true);
         if (contents.contains(SyncContent.grades)) {
@@ -146,7 +150,7 @@ class CampusSync {
               ? SyncItemResult('成绩 · ${term.label}', SyncOutcome.completed, grades.data!.empty ? '教务暂无成绩，已保存空结果' : '已同步')
               : _failure('成绩 · ${term.label}', grades.error));
           pending.removeAt(0);
-          if (grades.error?.code == GatewayCode.sessionExpired) return stop(!isActive());
+          if (_stopCodes.contains(grades.error?.code)) return stop(!isActive());
         }
       }
       return CampusSyncReport(items, cancelled: !isActive());
@@ -223,7 +227,7 @@ class CampusSync {
       }
       if (!candidate.ok || candidate.data == null) {
         items.add(_failure('作息 · ${term.label}', candidate.error));
-        if (candidate.error?.code == GatewayCode.sessionExpired) return;
+        if (_stopCodes.contains(candidate.error?.code)) return;
         continue;
       }
       if (candidate.data!.periods.isEmpty) continue;

@@ -18,9 +18,14 @@ const kingoBase = 'http://42.247.18.146';
 const kingoUserAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
 
 class KingoClient {
-  KingoClient({http.Client? client, this.base = kingoBase, this.requestTimeout = const Duration(seconds: 25)}) : _client = client ?? http.Client();
+  KingoClient({http.Client? client, this.base = kingoBase, this.requestTimeout = const Duration(seconds: 25), this.dataQuota = 6, this.dataWindow = const Duration(seconds: 10)}) : _client = client ?? http.Client();
 
   final Duration requestTimeout;
+  // [人工决策-2026-09-30 15:18:51] 教务在几秒内连续约10次数据查询（课表、成绩数据页）后跳转406“请求太过频繁”，其他页面不受限；数据查询按滑动窗口排队，任意dataWindow内最多dataQuota次（实测10秒内7次、15秒内10次均未被拒）。仍被拒报RATE_LIMITED，同步停止，不自动重试。
+  final int dataQuota;
+  final Duration dataWindow;
+  final Stopwatch _clock = Stopwatch()..start();
+  final List<Duration> _dataSlots = [];
 
   final http.Client _client;
   final String base;
@@ -148,7 +153,7 @@ class KingoClient {
   Future<ParsedSchedule> fetchSchedule({required String xn, required String xq, required String userCode}) async {
     final plain = 'xn=$xn&xq=$xq&xh=$userCode';
     final params = Uri.encodeQueryComponent(utf8Base64(plain));
-    final page = await _get('/wsxk/xkjg.ckdgxsxdkchj_data10319.jsp?params=$params', referer: '/student/xkjg.wdkb.jsp?menucode=S20301');
+    final page = await _get('/wsxk/xkjg.ckdgxsxdkchj_data10319.jsp?params=$params', referer: '/student/xkjg.wdkb.jsp?menucode=S20301', data: true);
     _throwIfExpired(page.body);
     try {
       return parseScheduleHtml(page.body);
@@ -200,6 +205,7 @@ class KingoClient {
       '/student/xscj.stuckcj_data.jsp',
       buildGradeBody(kind: kind, xn: xn, xq: xq, rxnj: rxnj, nj: nj),
       referer: '/student/xscj.stuckcj.jsp?menucode=S40303',
+      data: true,
     );
     _throwIfExpired(page.body);
     return kind == 'yscj' ? parseOriginalGrades(page.body) : parseEffectiveGrades(page.body);
@@ -224,36 +230,48 @@ class KingoClient {
     }
   }
 
-  Future<KingoResponse> _get(String path, {String? referer, String accept = 'text/plain, */*; q=0.01'}) {
-    return _send('GET', path, null, referer: referer, accept: accept);
+  Future<KingoResponse> _get(String path, {String? referer, String accept = 'text/plain, */*; q=0.01', bool data = false}) {
+    return _send('GET', path, null, referer: referer, accept: accept, data: data);
   }
 
   Future<KingoResponse> _getBytes(String path, {required String accept}) {
     return _send('GET', path, null, accept: accept);
   }
 
-  Future<KingoResponse> _post(String path, String body, {String? referer, String accept = 'text/html, */*; q=0.01'}) {
-    return _send('POST', path, body, referer: referer, accept: accept);
+  Future<KingoResponse> _post(String path, String body, {String? referer, String accept = 'text/html, */*; q=0.01', bool data = false}) {
+    return _send('POST', path, body, referer: referer, accept: accept, data: data);
   }
 
-  Future<KingoResponse> _send(String method, String path, String? body, {String? referer, required String accept}) async {
+  Future<KingoResponse> _send(String method, String path, String? body, {String? referer, required String accept, bool data = false}) async {
     final uri = Uri.parse(path.startsWith('http') ? path : '$base$path');
     if (_disposed) throw http.RequestAbortedException(uri);
     if (uri.origin != Uri.parse(base).origin) throw const FormatException('教务返回了非同源地址');
     final epoch = _requestEpoch;
     final abort = Completer<void>();
     _requests.add(abort);
-    final request = http.AbortableRequest(method, uri, abortTrigger: abort.future)..followRedirects = false;
-    request.headers['User-Agent'] = kingoUserAgent;
-    request.headers['Accept'] = accept;
-    if (jar.isNotEmpty) request.headers['Cookie'] = jar.entries.map((entry) => '${entry.key}=${entry.value}').join('; ');
-    if (referer != null) request.headers['Referer'] = referer.startsWith('http') ? referer : '$base$referer';
-    if (body != null) {
-      request.headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
-      request.body = body;
-    }
     late final http.Response response;
     try {
+      if (data) {
+        // 按调用先后预约发出时刻，保证任意dataWindow内至多dataQuota次；排队中可被cancelRequests立即打断且不再发出。
+        final now = _clock.elapsed;
+        _dataSlots.removeWhere((slot) => slot <= now - dataWindow);
+        var slot = _dataSlots.isNotEmpty && _dataSlots.last > now ? _dataSlots.last : now;
+        if (_dataSlots.length >= dataQuota && _dataSlots[_dataSlots.length - dataQuota] + dataWindow > slot) {
+          slot = _dataSlots[_dataSlots.length - dataQuota] + dataWindow;
+        }
+        _dataSlots.add(slot);
+        if (slot > now) await Future.any([Future<void>.delayed(slot - now), abort.future]);
+        if (_disposed || epoch != _requestEpoch) throw http.RequestAbortedException(uri);
+      }
+      final request = http.AbortableRequest(method, uri, abortTrigger: abort.future)..followRedirects = false;
+      request.headers['User-Agent'] = kingoUserAgent;
+      request.headers['Accept'] = accept;
+      if (jar.isNotEmpty) request.headers['Cookie'] = jar.entries.map((entry) => '${entry.key}=${entry.value}').join('; ');
+      if (referer != null) request.headers['Referer'] = referer.startsWith('http') ? referer : '$base$referer';
+      if (body != null) {
+        request.headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
+        request.body = body;
+      }
       response = await Future.any([
         (() async {
           final streamed = await _client.send(request);
@@ -281,6 +299,10 @@ class KingoClient {
     if (_disposed || epoch != _requestEpoch) throw http.RequestAbortedException(uri);
     if (response.statusCode >= 300 && response.statusCode < 400 && (response.headers['location'] ?? '').contains('/cas/login')) {
       throw KingoCallException(const LoginFailure(code: GatewayCode.sessionExpired, message: '教务登录已失效，需要重新登录'));
+    }
+    // 教务的频率限制页：不是登录失效，报RATE_LIMITED让同步停下，不自动重试。
+    if (response.statusCode >= 300 && response.statusCode < 400 && (response.headers['location'] ?? '').contains('/frame/errors/406')) {
+      throw KingoCallException(const LoginFailure(code: GatewayCode.rateLimited, message: '教务提示请求太过频繁，请约1分钟后再同步'));
     }
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw KingoCallException(LoginFailure(code: GatewayCode.upstreamHttp, message: '教务请求失败（HTTP ${response.statusCode}）'));

@@ -38,6 +38,8 @@ abstract final class GatewayCode {
   static const networkTimeout = 'NETWORK_TIMEOUT';
   // 教务连接失败
   static const networkFailed = 'NETWORK_FAILED';
+  // 教务提示请求太过频繁（跳转406页）：本轮同步立即停止，稍后再同步，不自动重试
+  static const rateLimited = 'RATE_LIMITED';
   // 另一项教务同步进行中
   static const syncBusy = 'SYNC_BUSY';
   // 本地自定义课表须经确认才能被教务版本替换

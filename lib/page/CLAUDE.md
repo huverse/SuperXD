@@ -43,7 +43,7 @@
   - sync_selection_dialog.dart：同步范围选择 chooseSyncSelection。
     - 学年和同步内容都可多选。
     - 默认读取本地学期列表，用户点刷新时才联网刷新。
-  - campus_sync_dialogs.dart：同步结果弹窗 showCampusSyncReport，展示结果和未处理项，可重新登录或重新同步。
+  - campus_sync_dialogs.dart：同步结果弹窗 showCampusSyncReport，展示结果和未处理项，可重新登录或重新同步。教务限流停下时只说明约 1 分钟后再同步，不提供立即重新同步。
 - 账号与设置：
   - login_page.dart：登录页 LoginPage，也用于切换账号。包含验证码、记住账号确认，以及百宝箱和法务入口。
   - account_dialogs.dart：旧版本数据导入确认 showLegacyImport，以及登录后自动提示导入的 LegacyImportGate。

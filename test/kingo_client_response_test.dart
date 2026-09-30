@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -69,6 +70,41 @@ void main() {
     await transport.body.close();
   });
 
+  test('数据查询在任意窗口内至多配额次，超出的排到窗口之后，其他请求不排队', () async {
+    final sent = <(String, Duration)>[];
+    final watch = Stopwatch()..start();
+    final client = KingoClient(dataQuota: 2, dataWindow: const Duration(milliseconds: 300), client: MockClient((request) async {
+      sent.add((request.url.path, watch.elapsed));
+      return http.Response('<h1>学生个人课表</h1><p>课程门数：0</p>', 200, headers: {'content-type': 'text/html; charset=utf-8'});
+    }));
+    await Future.wait([
+      for (var round = 0; round < 3; round++) client.fetchSchedule(xn: '2026', xq: '0', userCode: 'test'),
+      client.fetchCaptcha(),
+    ]);
+    final data = [for (final (path, at) in sent) if (path.contains('_data')) at];
+    final other = [for (final (path, at) in sent) if (!path.contains('_data')) at];
+    expect(data, hasLength(3));
+    expect(data[2] - data[0], greaterThanOrEqualTo(const Duration(milliseconds: 280)));
+    expect(other.single, lessThan(data[2]));
+  });
+
+  test('排队中的数据查询被取消后立即结束且不再发出', () async {
+    final transport = _CountingClient();
+    final client = KingoClient(dataQuota: 1, dataWindow: const Duration(seconds: 5), client: transport);
+    await client.fetchSchedule(xn: '2026', xq: '0', userCode: 'test');
+    final watch = Stopwatch()..start();
+    final queued = client.fetchSchedule(xn: '2026', xq: '0', userCode: 'test');
+    client.cancelRequests();
+    await expectLater(queued, throwsA(isA<http.RequestAbortedException>()));
+    expect(watch.elapsed, lessThan(const Duration(seconds: 1)));
+    expect(transport.sent, 1);
+  });
+
+  test('跳转教务频率限制页报RATE_LIMITED，不当作登录失效', () async {
+    final client = KingoClient(client: MockClient((_) async => http.Response('', 302, headers: {'location': 'http://42.247.18.146/frame/errors/406.jsp'})));
+    await expectLater(client.fetchSchedule(xn: '2026', xq: '0', userCode: 'test'), throwsA(isA<KingoCallException>().having((error) => error.failure.code, 'code', 'RATE_LIMITED')));
+  });
+
   test('500与畸形回包不会覆盖已有版本或清空会话', () async {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
@@ -84,6 +120,16 @@ void main() {
     expect((await db.readSession())?.loginId, 'test');
     await db.close();
   });
+}
+
+// 调用send即计数（早于任何await），用来区分“排队中取消”与“发出后取消”。
+class _CountingClient extends http.BaseClient {
+  int sent = 0;
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    sent++;
+    return Future.value(http.StreamedResponse(Stream.value(utf8.encode('<h1>学生个人课表</h1><p>课程门数：0</p>')), 200, headers: {'content-type': 'text/html; charset=utf-8'}));
+  }
 }
 
 class _BodyStalls extends http.BaseClient {
