@@ -5,14 +5,14 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 
-String downloadStateLabel(ToolboxDownloadState state) => switch (state) {
+String downloadStateLabel(ToolboxDownload item) => switch (item.state) {
   ToolboxDownloadState.queued => '等待下载',
   ToolboxDownloadState.downloading => '下载中',
   ToolboxDownloadState.pausing => '正在暂停',
   ToolboxDownloadState.paused => '已暂停',
   ToolboxDownloadState.cancelling => '正在停止',
   ToolboxDownloadState.verifying => '校验中',
-  ToolboxDownloadState.awaitingSave => '待保存',
+  ToolboxDownloadState.awaitingSave => item.saveFailed ? '待保存' : '等待保存',
   ToolboxDownloadState.saving => '保存中',
   ToolboxDownloadState.saved => '已保存到本地',
   ToolboxDownloadState.installed => '资源已就绪',
@@ -29,18 +29,18 @@ class DownloadProgress extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
     final state = item.state;
+    // 排队等导出是正常等待，与等待下载一样中性显示；只有失败和保存未完成才用警示色。
+    final warning = state == ToolboxDownloadState.failed || item.saveFailed;
     final color = switch (state) {
+      _ when warning => palette.danger,
       ToolboxDownloadState.saved ||
       ToolboxDownloadState.installed => palette.primary,
-      ToolboxDownloadState.failed ||
-      ToolboxDownloadState.awaitingSave => palette.danger,
       _ => palette.onSurfaceVariant,
     };
     final icon = switch (state) {
+      _ when warning => CampusIcons.warning,
       ToolboxDownloadState.saved ||
       ToolboxDownloadState.installed => CampusIcons.success,
-      ToolboxDownloadState.failed ||
-      ToolboxDownloadState.awaitingSave => CampusIcons.warning,
       ToolboxDownloadState.cancelled => CampusIcons.close,
       ToolboxDownloadState.paused ||
       ToolboxDownloadState.pausing => CampusIcons.pause,
@@ -52,9 +52,11 @@ class DownloadProgress extends StatelessWidget {
             state == ToolboxDownloadState.paused ||
             state == ToolboxDownloadState.pausing);
     final (bar, value) = switch (state) {
+      _ when item.saveFailed => (false, null),
       ToolboxDownloadState.queued ||
       ToolboxDownloadState.pausing ||
-      ToolboxDownloadState.paused => (true, item.progress),
+      ToolboxDownloadState.paused ||
+      ToolboxDownloadState.awaitingSave => (true, item.progress),
       ToolboxDownloadState.downloading => (
         true,
         item.totalBytes > 0 ? item.progress : null,
@@ -66,7 +68,7 @@ class DownloadProgress extends StatelessWidget {
     };
     // 主色只留给可点按钮：成功态文字用次要色、仅图标着主色，避免与"打开"混淆；异常态文字保留警示色。
     final status = Text(
-      downloadStateLabel(state),
+      downloadStateLabel(item),
       style: TextStyle(
         color: color == palette.danger ? color : palette.onSurfaceVariant,
         fontWeight: FontWeight.w600,
@@ -142,7 +144,7 @@ List<Widget> downloadActions({
         icon: const CampusIcon(CampusIcons.resume),
         label: const Text('继续'),
       ),
-    if (item.state == ToolboxDownloadState.awaitingSave)
+    if (item.saveFailed)
       FilledButton.icon(
         onPressed: run(() => manager.save(item.id)),
         icon: const CampusIcon(CampusIcons.download),

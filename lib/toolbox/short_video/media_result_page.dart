@@ -178,12 +178,11 @@ class _MediaResultPageState extends State<MediaResultPage> {
           onPressed: run(id, () => _manager.open(id)),
           icon: CampusIcon(CampusIcons.success, color: palette.primary),
         ),
-      ToolboxDownload(state: ToolboxDownloadState.awaitingSave, :final id) =>
-        IconButton(
-          tooltip: '重试保存第$number张',
-          onPressed: run(id, () => _manager.save(id)),
-          icon: CampusIcon(CampusIcons.warning, color: palette.danger),
-        ),
+      ToolboxDownload(saveFailed: true, :final id) => IconButton(
+        tooltip: '重试保存第$number张',
+        onPressed: run(id, () => _manager.save(id)),
+        icon: CampusIcon(CampusIcons.warning, color: palette.danger),
+      ),
       ToolboxDownload(state: ToolboxDownloadState.paused, :final id) =>
         IconButton(
           tooltip: '继续下载第$number张',

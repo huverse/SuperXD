@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
@@ -463,6 +465,95 @@ void main() {
     expect(find.text('下载其余1张'), findsOneWidget);
     await tester.scrollUntilVisible(find.byTooltip('重新下载第2张'), 200);
     expect(find.byTooltip('取消下载第1张'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('图集排队等导出显示中性等待，导出失败才给重试保存', (tester) async {
+    final result = ParseResult(
+      sourceUrl: Uri.parse('https://example.com/slow_gallery'),
+      providerId: 'bugpk',
+      title: '慢导出图集',
+      author: '',
+      resources: List.generate(
+        2,
+        (index) => MediaResource(
+          id: 'image_$index',
+          kind: MediaKind.image,
+          url: Uri.parse('https://cdn.example.com/$index.png'),
+          label: '图片${index + 1}',
+        ),
+      ),
+    );
+    const png = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: campusTheme(),
+        home: MediaResultPage(
+          runtime: fixture.runtime,
+          outcome: ParseOutcome(result, attempts: const []),
+        ),
+      ),
+    );
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.tap(find.text('全部下载'));
+    await waitUntil(tester, () => fixture.transfer.enqueueCount == 2);
+    final items = {
+      for (final item in fixture.manager.forTool('short_video'))
+        item.resourceId!: item.id,
+    };
+    await tester.runAsync(() async {
+      // 闸门须在真实异步区创建：假时钟区建的 Completer 完成后要靠 pump 才传播，用例失败时 tearDown 放闸也传不出去。
+      fixture.publisher.gate = Completer<void>();
+      await fixture.finish(items['image_0']!, png);
+      await fixture.waitFor(items['image_0']!, ToolboxDownloadState.saving);
+      await fixture.finish(items['image_1']!, png);
+      await fixture.waitFor(
+        items['image_1']!,
+        ToolboxDownloadState.awaitingSave,
+      );
+    });
+    await tester.pump();
+    await tester.scrollUntilVisible(find.byTooltip('取消下载第2张'), 200);
+    expect(find.byTooltip('重试保存第2张'), findsNothing);
+    expect(
+      tester
+          .widget<IconButton>(
+            find.ancestor(
+              of: find.byTooltip('取消下载第2张'),
+              matching: find.byType(IconButton),
+            ),
+          )
+          .onPressed,
+      isNull,
+    );
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: campusTheme(),
+        home: DownloadsPage(runtime: fixture.runtime),
+      ),
+    );
+    await tester.pump();
+    expect(find.text('等待保存'), findsOneWidget);
+    expect(find.text('重试保存'), findsNothing);
+    expect(find.text('取消下载'), findsNothing);
+    fixture.publisher.fail = true;
+    fixture.publisher.gate!.complete();
+    await waitUntil(
+      tester,
+      () => items.values.every((id) => fixture.manager.byId(id)!.saveFailed),
+    );
+    expect(find.text('待保存'), findsNWidgets(2));
+    expect(find.widgetWithText(FilledButton, '重试保存'), findsNWidgets(2));
+    fixture.publisher.fail = false;
+    await tester.tap(find.widgetWithText(FilledButton, '重试保存').first);
+    await waitUntil(
+      tester,
+      () =>
+          fixture.manager.byId(items['image_0']!)!.state ==
+          ToolboxDownloadState.saved,
+    );
+    expect(find.widgetWithText(FilledButton, '重试保存'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });

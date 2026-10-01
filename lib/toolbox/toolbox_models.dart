@@ -111,10 +111,12 @@ class ToolboxDownload {
   bool get transferring =>
       state == ToolboxDownloadState.queued ||
       state == ToolboxDownloadState.downloading;
+  // 待保存带错误＝导出失败或旧系统未选保存位置，需用户重试；无错误＝前台排队导出或等回前台自动导出，属正常等待。
+  bool get saveFailed =>
+      state == ToolboxDownloadState.awaitingSave && error != null;
+  // 排队导出的项由逐项锁占着，取消要等导出结束才生效，所以与保存中一样不给取消。
   bool get canCancel =>
-      transferring ||
-      state == ToolboxDownloadState.paused ||
-      state == ToolboxDownloadState.awaitingSave;
+      transferring || state == ToolboxDownloadState.paused || saveFailed;
 
   ToolboxDownload change({
     ToolboxDownloadState? state,
