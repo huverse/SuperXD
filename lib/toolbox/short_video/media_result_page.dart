@@ -178,12 +178,11 @@ class _MediaResultPageState extends State<MediaResultPage> {
           onPressed: run(id, () => _manager.open(id)),
           icon: CampusIcon(CampusIcons.success, color: palette.primary),
         ),
-      ToolboxDownload(state: ToolboxDownloadState.awaitingSave, :final id) =>
-        IconButton(
-          tooltip: '重试保存第$number张',
-          onPressed: run(id, () => _manager.save(id)),
-          icon: CampusIcon(CampusIcons.warning, color: palette.danger),
-        ),
+      ToolboxDownload(saveFailed: true, :final id) => IconButton(
+        tooltip: '重试保存第$number张',
+        onPressed: run(id, () => _manager.save(id)),
+        icon: CampusIcon(CampusIcons.warning, color: palette.danger),
+      ),
       ToolboxDownload(state: ToolboxDownloadState.paused, :final id) =>
         IconButton(
           tooltip: '继续下载第$number张',
@@ -235,6 +234,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
             items[index]!.state == ToolboxDownloadState.failed)
           image,
     ];
+    // [人工决策-2026-10-01 22:31:55] 汇总“进行中”含排队等下载与等待保存的项，不拆成“下载中/排队”；逐张状态已能区分，汇总保持简短。下载管理页同口径。
     final active = images.length - saved - remaining.length;
     final progress =
         items.fold<double>(

@@ -14,6 +14,22 @@ import 'package:superxd/toolbox/toolbox_store.dart';
 import 'package:superxd/toolbox/toolbox_url.dart';
 import 'package:superxd/domain/campus_log.dart';
 
+// mime 2.1.0 的文件头表只认 avc1/iso2/isom/mp41/mp42 五种 ftyp 品牌和 ID3、FF FB 开头的 mp3；
+// m4a（M4A ）、QuickTime（qt  ）、iso5/iso6/M4V 等 MP4 与无 ID3 且帧头不是 FF FB 的 mp3 都识别不出，默认表查不到时再查这里。
+final _supplementalMediaTypes = MimeTypeResolver.empty()
+  ..addMagicNumber(
+    [0, 0, 0, 0, ...'ftypqt  '.codeUnits],
+    'video/quicktime',
+    mask: [0, 0, 0, 0, ...List.filled(8, 0xFF)],
+  )
+  ..addMagicNumber(
+    [0, 0, 0, 0, ...'ftyp'.codeUnits],
+    'video/mp4',
+    mask: [0, 0, 0, 0, ...List.filled(4, 0xFF)],
+  )
+  // MPEG 音频 Layer III 帧同步：同步位全 1、层位 01，版本与 CRC 位不限（FF E2/E3/F2/F3/FA/FB）。
+  ..addMagicNumber([0xFF, 0xE2], 'audio/mpeg', mask: [0xFF, 0xE6]);
+
 class ToolboxDownloadManager extends ChangeNotifier {
   ToolboxDownloadManager({
     required this.store,
@@ -396,7 +412,15 @@ class ToolboxDownloadManager extends ChangeNotifier {
         } finally {
           await handle.close();
         }
-        final mime = lookupMimeType('download', headerBytes: header);
+        // 只认文件头，不拿 Content-Type 或链接后缀兜底：CDN 常回 octet-stream，错误页也可能带媒体类型，兜底会把错误页当媒体保存。
+        final sniffed =
+            lookupMimeType('download', headerBytes: header) ??
+            _supplementalMediaTypes.lookup('download', headerBytes: header);
+        // MP4 容器也装纯音频，音频资源统一按 audio/mp4 导出为 .m4a。
+        final mime =
+            item.kind == ToolboxDownloadKind.audio && sniffed == 'video/mp4'
+            ? 'audio/mp4'
+            : sniffed;
         final allowed = switch (item.kind) {
           ToolboxDownloadKind.image => const {
             'image/jpeg',
@@ -452,6 +476,7 @@ class ToolboxDownloadManager extends ChangeNotifier {
     await _prune();
   }
 
+  // 与 _onUpdate→_finish→_publish 持同一把逐项锁：排队中再点保存会等前一次导出结束，再按最新状态判断，不会重复导出或把已保存回退。
   Future<void> save(String id) => _lock(id).synchronized(() async {
     final item = _downloads[id];
     if (item?.state == ToolboxDownloadState.awaitingSave) await _publish(item!);
@@ -484,8 +509,14 @@ class ToolboxDownloadManager extends ChangeNotifier {
         filename: 'SuperXD_${item.id}.$extension',
         mimeType: item.mimeType!,
       );
+      // 旧系统用户取消选址；带上错误才归为需用户重试，无错误的待保存会显示成排队等待。
       if (uri == null) {
-        await _save(item.change(state: ToolboxDownloadState.awaitingSave));
+        await _save(
+          item.change(
+            state: ToolboxDownloadState.awaitingSave,
+            error: '保存未完成，可重试保存',
+          ),
+        );
         return;
       }
       await _save(

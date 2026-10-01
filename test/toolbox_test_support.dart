@@ -134,6 +134,16 @@ class ToolboxFixture {
     await Future<void>.delayed(const Duration(milliseconds: 20));
   }
 
+  // 待保存先以无错误的排队态出现，导出失败后才带上错误；断言失败态要等错误真正写入，不能以“待保存”代替。
+  Future<void> waitForSaveFailed(String id) async {
+    final watch = Stopwatch()..start();
+    while (manager.byId(id)?.saveFailed != true &&
+        watch.elapsed < const Duration(seconds: 5)) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    expect(manager.byId(id)?.saveFailed, isTrue);
+  }
+
   // 下一项在前一项状态落定后才异步入队；断言入队数前要等到真实入队，不能以“已保存”代替。
   Future<void> waitForEnqueued(int count) async {
     final watch = Stopwatch()..start();
@@ -144,6 +154,8 @@ class ToolboxFixture {
   }
 
   Future<void> close() async {
+    // 断言失败时导出闸门可能没放开，close 会一直等在途导出直到超时。
+    if (publisher.gate case final gate? when !gate.isCompleted) gate.complete();
     await runtime.close();
     await directory.delete(recursive: true);
   }
@@ -217,6 +229,8 @@ class FakePublisher implements ToolboxFilePublisher {
   bool fail = false;
   bool cancel = false;
   int calls = 0;
+  // 拖住导出，模拟真机 MediaStore 写入与哈希校验慢、后续项排队等导出。
+  Completer<void>? gate;
   final published = <String, Uri>{};
   @override
   Future<Uri?> publish({
@@ -226,6 +240,7 @@ class FakePublisher implements ToolboxFilePublisher {
     required String mimeType,
   }) async {
     calls++;
+    await gate?.future;
     if (fail) throw const ToolboxException('存储空间不足');
     if (cancel) return null;
     return published.putIfAbsent(

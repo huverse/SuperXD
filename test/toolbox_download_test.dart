@@ -19,6 +19,20 @@ void main() {
   tearDown(() async {
     await fixture.close();
   });
+  ParseResult single(MediaKind kind, String name) => ParseResult(
+    sourceUrl: Uri.parse('https://example.com/$name'),
+    providerId: 'bugpk',
+    title: '',
+    author: '',
+    resources: [
+      MediaResource(
+        id: 'media',
+        kind: kind,
+        url: Uri.parse('https://cdn.example.com/$name'),
+        label: '媒体',
+      ),
+    ],
+  );
 
   test('权限弹窗未结束时不暴露尚未入队的可取消任务', () async {
     fixture.transfer.notificationPermission = Completer<void>();
@@ -78,18 +92,86 @@ void main() {
     );
   });
 
-  test('保存失败保留私有源文件，不误报成功且可重试', () async {
+  test('保存失败或取消选址保留私有源文件，不误报成功且可重试', () async {
     fixture.publisher.fail = true;
     final id = await fixture.downloadVideo(ToolboxFixture.video);
     await fixture.finish(id, ToolboxFixture.mp4);
-    await fixture.waitFor(id, ToolboxDownloadState.awaitingSave);
+    await fixture.waitForSaveFailed(id);
     expect(
       await fixture.manager.file(fixture.manager.byId(id)!).exists(),
       isTrue,
     );
     fixture.publisher.fail = false;
+    fixture.publisher.cancel = true;
+    await fixture.manager.save(id);
+    expect(fixture.manager.byId(id)!.saveFailed, isTrue);
+    fixture.publisher.cancel = false;
     await fixture.manager.save(id);
     expect(fixture.manager.byId(id)!.state, ToolboxDownloadState.saved);
+  });
+
+  test('排队等导出不算失败也不给取消，排队中再点保存不重复导出、不回退已保存', () async {
+    fixture.publisher.gate = Completer<void>();
+    final first = await fixture.downloadVideo(ToolboxFixture.video);
+    final second = await fixture.downloadVideo(
+      single(MediaKind.video, 'queued'),
+    );
+    await fixture.finish(first, ToolboxFixture.mp4);
+    await fixture.waitFor(first, ToolboxDownloadState.saving);
+    await fixture.finish(second, ToolboxFixture.mp4);
+    await fixture.waitFor(second, ToolboxDownloadState.awaitingSave);
+    expect(fixture.manager.byId(second)!.saveFailed, isFalse);
+    expect(fixture.manager.byId(second)!.canCancel, isFalse);
+    final retry = fixture.manager.save(second);
+    fixture.publisher.gate!.complete();
+    await retry;
+    expect(fixture.manager.byId(second)!.state, ToolboxDownloadState.saved);
+    expect(fixture.manager.byId(second)!.error, isNull);
+    expect(fixture.publisher.calls, 2);
+  });
+
+  test('mime默认表漏掉的m4a、其余MP4品牌、QuickTime与无ID3的mp3按文件头保存', () async {
+    // 文件头取自 ffmpeg 实际输出（m4a、纯音频 isom、mov、iso5、m4v、22.05kHz 无 ID3 mp3）；FF F2、FF FA 是带 CRC 的帧头。
+    List<int> box(String brand) => [
+      0,
+      0,
+      0,
+      28,
+      ...'ftyp$brand'.codeUnits,
+      0,
+      0,
+      2,
+      0,
+    ];
+    final cases = [
+      (MediaKind.audio, box('M4A '), 'audio/mp4'),
+      (MediaKind.audio, box('isom'), 'audio/mp4'),
+      (MediaKind.audio, [0xFF, 0xF3, 0x40, 0xC4], 'audio/mpeg'),
+      (MediaKind.audio, [0xFF, 0xF2, 0x40, 0xC4], 'audio/mpeg'),
+      (MediaKind.audio, [0xFF, 0xFA, 0x50, 0xC4], 'audio/mpeg'),
+      (MediaKind.video, box('iso5'), 'video/mp4'),
+      (MediaKind.video, box('M4V '), 'video/mp4'),
+      (MediaKind.video, box('qt  '), 'video/quicktime'),
+    ];
+    for (final (index, (kind, bytes, mimeType)) in cases.indexed) {
+      final id = await fixture.downloadVideo(single(kind, 'header_$index'));
+      await fixture.finish(id, bytes);
+      await fixture.waitFor(id, ToolboxDownloadState.saved);
+      expect(fixture.manager.byId(id)!.mimeType, mimeType, reason: '第$index组');
+    }
+  });
+
+  test('文件头不认识时不按Content-Type或链接后缀放行', () async {
+    final id = await fixture.downloadVideo(
+      single(MediaKind.audio, 'music.m4a'),
+    );
+    await fixture.finish(
+      id,
+      List.generate(16, (index) => index + 1),
+      mimeType: 'audio/mp4',
+    );
+    await fixture.waitFor(id, ToolboxDownloadState.failed);
+    expect(fixture.publisher.calls, 0);
   });
 
   test('后台传输完成保持待保存，恢复前台后完成发布', () async {
