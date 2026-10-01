@@ -189,6 +189,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
               item.state == ToolboxDownloadState.cancelled,
         )
         .length;
+    // [人工决策-2026-10-01 22:31:55] 组内“进行中”含排队项，不拆成“下载中/排队”；与结果页图集汇总同口径。
     final active = items.where((item) => !item.terminal).length;
     final single = items.length == 1;
     final expanded = items.length <= 3 || _expanded.contains(id);
