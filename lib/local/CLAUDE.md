@@ -39,8 +39,10 @@
   - CredentialStore：记住账号的凭据存取接口。
   - SecureCredentialStore：基于系统安全存储的实现，按账号键保存带版本号的 JSON。
 - display_settings.dart：设备级显示设置。
-  - DisplaySettings 存在 display_settings.db（schema 版本 4），包括字号、配色、字体、深浅色和玻璃效果（auto、full、reduced，默认 auto）。
+  - DisplaySettings 存在 display_settings.db（schema 版本 5），包括字号、配色、字体、深浅色、玻璃效果（auto、full、reduced，默认 auto），以及自定义壁纸（文件名、色调网格、模糊与淡化档位）。
+  - 壁纸文件交给 WallpaperStore；复制、落库、删旧文件在保存锁内一次完成。启动时文件丢失则按未设置处理，并清理残留文件。
   - DisplayScope 负责向下传递；CampusTextScaler 在系统字号基础上叠加应用字号。
+- wallpaper_store.dart：WallpaperStore 管理壁纸文件，放在应用支持目录 display/wallpaper 下，只保留当前一份，单图上限 20MB；每次导入用新文件名。
 - legacy_import.dart：旧单库导入 importLegacyDatabase。
   - 旧库只读打开，只支持 user_version 1–2。
   - 按主键游标每批读取 200 行。发生冲突时一律保留目标数据，计为跳过。

@@ -47,7 +47,9 @@
 - 账号与设置：
   - login_page.dart：登录页 LoginPage，也用于切换账号。包含验证码、记住账号确认，以及百宝箱和法务入口。
   - account_dialogs.dart：旧版本数据导入确认 showLegacyImport，以及登录后自动提示导入的 LegacyImportGate。
-  - appearance_page.dart：界面设置 AppearancePage，调整字号、配色、字体和深浅色。
+  - appearance_page.dart：界面设置 AppearancePage，调整字号、配色、字体、深浅色、玻璃效果和背景。
+    - 背景可选自定义图片：系统照片选择器选一张，取色后交给 DisplaySettings 保存；选图插件的缓存副本用完即删。
+    - 选图函数可注入（pickWallpaper），测试用假选图。
   - legal_page.dart：服务协议与隐私政策 LegalPage，内容是私有 Alpha 内测说明。
   - licenses_page.dart：开源许可列表 CampusLicensesPage 和应用署名 GalaxyousAttribution。
   - third_party_page.dart：第三方声明全文 ThirdPartyPage，读取 assets/third_party_notices.txt。

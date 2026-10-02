@@ -1,8 +1,13 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:image_picker_android/image_picker_android.dart';
+import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
+import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 import 'package:superxd/app_session.dart';
 import 'package:superxd/gateway/account_gateway.dart';
@@ -21,6 +26,7 @@ import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/third_party_licenses.dart';
+import 'package:superxd/theme/wallpaper_tone.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/domain/campus_log.dart';
 
@@ -35,7 +41,11 @@ void main() async {
   registerCampusLicenses();
   final store = await AccountStore.open();
   final session = AppSession(AccountGateway(store: store, credentials: SecureCredentialStore()));
-  final display = await DisplaySettings.open();
+  final support = await getApplicationSupportDirectory();
+  final display = await DisplaySettings.open(wallpaperDirectory: Directory(path.join(support.path, 'display', 'wallpaper')));
+  // 选壁纸走系统照片选择器：不申请存储权限，只拿到用户选中的那一张（API 36 起插件默认如此，更低版本须显式打开）。
+  final picker = ImagePickerPlatform.instance;
+  if (picker is ImagePickerAndroid) picker.useAndroidPhotoPicker = true;
   final glassCapped = await CampusGlassGuard.capped();
   runApp(SuperXdApp(session: session, display: display, glassCapped: glassCapped));
   unawaited(initializeCampusGlass());
@@ -103,6 +113,19 @@ class _AccountAppState extends State<_AccountApp> {
     super.dispose();
   }
 
+  // 色调网格缺失或损坏时按未设置壁纸处理，回到云雾；同一份网格只解码一次。
+  (String, WallpaperTone)? _tone;
+  CampusWallpaper? _wallpaper() {
+    final file = _display.wallpaperFile, encoded = _display.wallpaperTone;
+    if (file == null || encoded == null) return null;
+    if (_tone?.$1 != encoded) {
+      final tone = WallpaperTone.decode(encoded);
+      if (tone == null) return null;
+      _tone = (encoded, tone);
+    }
+    return CampusWallpaper(image: FileImage(file), tone: _tone!.$2, blurLevel: _display.wallpaperBlur, fadeLevel: _display.wallpaperFade);
+  }
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(listenable: _display, builder: (context, _) => MaterialApp.router(
@@ -114,7 +137,7 @@ class _AccountAppState extends State<_AccountApp> {
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       builder: (context, child) => DisplayScope(settings: _display, child: MediaQuery(
         data: MediaQuery.of(context).copyWith(textScaler: CampusTextScaler(MediaQuery.textScalerOf(context), _display.scale)),
-        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: widget.glassCapped, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, child: CampusEntryFade(child: LiveClock(child: child!)))))),
+        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: widget.glassCapped, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, wallpaper: _wallpaper(), child: CampusEntryFade(child: LiveClock(child: child!)))))),
       )),
     ));
   }

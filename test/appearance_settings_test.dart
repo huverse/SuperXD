@@ -70,6 +70,41 @@ void main() {
     await settings.close();
     await directory.delete(recursive: true);
   });
+  test('设备设置v4迁移无壁纸；壁纸与其他设置并发保存后重开保留，启动清孤儿文件，文件丢失按未设置处理', () async {
+    final directory = await Directory.systemTemp.createTemp('appearance-');
+    final path = '${directory.path}/display.db';
+    final wallpapers = Directory('${directory.path}/wallpaper');
+    final old = await openDatabase(
+      path,
+      version: 4,
+      onCreate: (db, _) => db.execute(
+        "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT 'sage', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system', glass_mode TEXT NOT NULL DEFAULT 'auto')",
+      ),
+    );
+    await old.insert('display_settings', {'id': 1, 'text_scale': 1.1, 'palette_id': 'oat', 'glass_mode': 'full'});
+    await old.close();
+    var settings = await DisplaySettings.open(databasePath: path, wallpaperDirectory: wallpapers);
+    expect([settings.wallpaperFile, settings.wallpaperTone, settings.wallpaperBlur, settings.wallpaperFade], [null, null, 1, 0]);
+    expect([settings.paletteId, settings.glassMode], ['oat', 'full']);
+    final picked = File('${directory.path}/picked.jpg')..writeAsBytesSync([1, 2, 3]);
+    await Future.wait([settings.setWallpaper(picked.path, '色调'), settings.setWallpaperFade(2), settings.setScale(1.25)]);
+    expect(() => settings.setWallpaperBlur(3), throwsArgumentError);
+    final name = settings.wallpaperFile!.path;
+    expect(picked.existsSync(), isTrue);
+    await settings.close();
+    File('${wallpapers.path}/wallpaper_0.jpg').writeAsBytesSync([9]);
+    settings = await DisplaySettings.open(databasePath: path, wallpaperDirectory: wallpapers);
+    expect([settings.wallpaperFile?.path, settings.wallpaperTone, settings.wallpaperFade, settings.scale], [name, '色调', 2, 1.25]);
+    expect(wallpapers.listSync().map((entity) => entity.path), [name]);
+    await settings.close();
+    File(name).deleteSync();
+    settings = await DisplaySettings.open(databasePath: path, wallpaperDirectory: wallpapers);
+    expect([settings.wallpaperFile, settings.wallpaperTone], [null, null]);
+    await settings.close();
+    final rows = await (await openDatabase(path)).query('display_settings');
+    expect([rows.single['wallpaper_file'], rows.single['wallpaper_tone'], rows.single['palette_id']], [null, null, 'oat']);
+    await directory.delete(recursive: true);
+  });
   test('五套配色在所有表面角色上均可读', () {
     double contrast(Color a, Color b) {
       final first = a.computeLuminance(), second = b.computeLuminance();

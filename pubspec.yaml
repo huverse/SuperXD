@@ -57,6 +57,9 @@ dependencies:
   video_player: ^2.14.0
   chewie: ^1.17.2
   quiver: ^3.2.2
+  image_picker: ^1.2.3
+  image_picker_android: ^0.8.13+23
+  image_picker_platform_interface: ^2.11.1
 
 dev_dependencies:
   flutter_test:

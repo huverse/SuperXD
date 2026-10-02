@@ -13,7 +13,12 @@
 - campus_background.dart：
   - CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，不随路由或列表项复制。
   - AtmospherePainter 负责绘制背景。
+  - CampusWallpaper 是可选的自定义壁纸：设了壁纸时改画静态图，不再循环；按色调网格逐格铺一层淡化，保证直接压在背景上的文字可读。云雾仍是默认，高对比度时不显示壁纸。
   - FrostTexture 是固定的颗粒纹理，不逐帧生成随机噪点。
+- wallpaper_tone.dart：
+  - WallpaperTone 是壁纸色调网格：导入时解码成小图，按格记下最暗与最亮的像素，运行时不再解码原图。
+  - wallpaperVeilAlphas 按当前配色算每格最小淡化透明度：衬底色为 backgroundTop，叠在最不利的像素上，正文、次要文字和主色文字都不低于 4.8:1（给玻璃栏和取样留余量）。
+  - 每格结果先 3×3 取最大再 3×3 取平均：过渡平滑不显网格，且每格仍不低于所需。改动后要在模拟器上用高反差测试图复测。
 - campus_motion.dart：CampusMotion 管理视觉动效的生命周期；另有玻璃控件专用的弹簧令牌（只给玻璃控件用，其余动效不回弹）。以下任一情况都不播放装饰动效：减少动画、后台、分支不可见、当前路由不在最上层。后台暂停动效不代表取消业务请求。
 - campus_transitions.dart：
   - 统一时长：页面进入 360ms、返回 320ms，弹层 300ms。
