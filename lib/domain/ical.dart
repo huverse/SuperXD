@@ -24,7 +24,6 @@ String buildIcal({required TermRef term, required List<CourseOccurrence> occurre
   ];
   for (final occurrence in occurrences) {
     final meeting = occurrence.meeting, course = occurrence.course;
-    final periods = meeting.periodStart == meeting.periodEnd ? '第${meeting.periodStart}节' : '第${meeting.periodStart}–${meeting.periodEnd}节';
     lines.addAll([
       'BEGIN:VEVENT',
       'UID:${sha256.convert(utf8.encode('${term.key}|${occurrence.key}')).toString().substring(0, 32)}@superxd',
@@ -33,7 +32,7 @@ String buildIcal({required TermRef term, required List<CourseOccurrence> occurre
       'DTEND:${_utc(occurrence.end)}',
       'SUMMARY:${_text(course.courseName)}',
       if (meeting.place.isNotEmpty) 'LOCATION:${_text(meeting.place)}',
-      'DESCRIPTION:${_text([periods, if (course.teacherName.isNotEmpty) '教师：${course.teacherName}'].join(' · '))}',
+      'DESCRIPTION:${_text([occurrence.periods, if (course.teacherName.isNotEmpty) '教师：${course.teacherName}'].join(' · '))}',
       'END:VEVENT',
     ]);
   }

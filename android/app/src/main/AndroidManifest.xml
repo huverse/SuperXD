@@ -24,6 +24,35 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+        <!-- 桌面课表小组件，见 CourseWidgets.kt：三种尺寸、课程边界刷新（改时间或时区时也重画）、今日课程列表服务。 -->
+        <receiver android:name=".CourseWidgetNext" android:exported="false" android:label="@string/course_widget_next_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/course_widget_next_info" />
+        </receiver>
+        <receiver android:name=".CourseWidgetPair" android:exported="false" android:label="@string/course_widget_pair_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/course_widget_pair_info" />
+        </receiver>
+        <receiver android:name=".CourseWidgetDay" android:exported="false" android:label="@string/course_widget_day_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data android:name="android.appwidget.provider" android:resource="@xml/course_widget_day_info" />
+        </receiver>
+        <receiver android:name=".CourseWidgetRefresh" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+        <service
+            android:name=".CourseWidgetDayService"
+            android:exported="false"
+            android:permission="android.permission.BIND_REMOTEVIEWS" />
         <!-- 日历导出：把缓存里的 .ics 以只读授权交给日历或分享目标。 -->
         <provider
             android:name=".CalendarFileProvider"

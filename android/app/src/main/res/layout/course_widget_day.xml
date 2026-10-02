@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 2×2 起可拉伸：今天的全部课程，列表由 CourseWidgetDayService 提供，课多时可滚动。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clipToOutline="true">
+
+    <ImageView
+        android:id="@+id/course_widget_bg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no"
+        android:scaleType="fitXY"
+        android:src="@drawable/course_widget_background" />
+
+    <LinearLayout
+        android:id="@+id/course_widget_content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:orientation="vertical"
+        android:paddingTop="@dimen/course_widget_padding">
+
+        <TextView
+            android:id="@+id/course_widget_label"
+            style="@style/CourseWidgetSecondary"
+            android:paddingStart="@dimen/course_widget_padding"
+            android:paddingEnd="@dimen/course_widget_padding" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1">
+
+            <ListView
+                android:id="@+id/course_widget_list"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:divider="@null"
+                android:paddingBottom="8dp"
+                android:clipToPadding="false" />
+
+            <TextView
+                android:id="@+id/course_widget_list_empty"
+                android:layout_width="match_parent"
+                android:layout_height="match_parent"
+                android:gravity="center"
+                android:text="@string/course_widget_empty"
+                android:textSize="14sp" />
+        </FrameLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/course_widget_message"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:padding="@dimen/course_widget_padding"
+        android:textSize="14sp"
+        android:visibility="gone" />
+</FrameLayout>

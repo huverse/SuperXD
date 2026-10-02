@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 今日课程的一行：左列起止时间，右侧课名与地点（过长时省略开头、保留房间号）。 -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/course_widget_row"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="horizontal"
+    android:paddingStart="@dimen/course_widget_padding"
+    android:paddingTop="8dp"
+    android:paddingEnd="@dimen/course_widget_padding"
+    android:paddingBottom="4dp">
+
+    <TextView
+        android:id="@+id/course_widget_row_time"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:includeFontPadding="false"
+        android:lineSpacingExtra="4sp"
+        android:textSize="14sp" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="10dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/course_widget_row_name"
+            style="@style/CourseWidgetTitle"
+            android:maxLines="2" />
+
+        <TextView
+            android:id="@+id/course_widget_row_place"
+            style="@style/CourseWidgetSecondary"
+            android:layout_marginTop="2dp"
+            android:ellipsize="start" />
+    </LinearLayout>
+</LinearLayout>

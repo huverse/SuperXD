@@ -17,6 +17,8 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler(GlassGuard(this))
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/calendar_export")
             .setMethodCallHandler(CalendarExporter(this))
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/course_widget")
+            .setMethodCallHandler(CourseWidgetChannel(applicationContext))
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

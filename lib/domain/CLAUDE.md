@@ -15,7 +15,7 @@
   - campusToday：校园时区的今天。campusNow：校园时区今天的零点。
   - formatCampusTimestamp：把 UTC 字符串转成校园时间用于展示。
   - clockMinutes：把 HH:mm 转成分钟数。
-  - campusMoment：校园日期加当天分钟换算成 UTC 绝对时刻。
+  - campusMoment：校园日期加当天分钟换算成 UTC 绝对时刻。formatCampusClock：绝对时刻在校园时区的钟点 HH:mm。
 - week.dart：ISO 日期与周次计算。第几周从开学日所在周的周一起算（weekIndex、weekRange）。termStartHint 是开学日的说明文案。
 - schedule_store.dart：课表核心模型与版本规则。
   - 模型：CourseRecord、CourseMeeting、TermRef、ScheduleRevision、ScheduleScope。
@@ -27,13 +27,17 @@
   - 变更对比 scheduleChanges，以及时段、周次的显示文案。
 - period_spans.dart：把当日课程按节次展开成 PeriodSpan（有课段与空档段），并决定补齐哪些节次。
 - meeting_time.dart：按作息把节次换算成上课时刻 MeetingTime。
-- course_occurrence.dart：courseOccurrences 把课表、开学日与作息展开成带 UTC 起止时刻的课程实例 CourseOccurrence，供课前提醒、日历导出、桌面小组件共用。
+- course_occurrence.dart：courseOccurrences 把课表、开学日与作息展开成带 UTC 起止时刻的课程实例 CourseOccurrence，供课前提醒、日历导出、桌面小组件共用；节次文案统一用 CourseOccurrence.periods。
   - 按“时段 × 周次”直接定位日期，不逐天扫描。
   - 缺开学日或作息时返回空并带原因（OccurrenceGap），作息里找不到的节次计入 unresolved，不猜时刻。
 - course_reminder.dart：课前提醒规则与端口。
   - planReminders：未来 14 天、最多 128 条，提醒时刻已过的不安排。
   - CourseReminderPort：系统调度端口，由 device 层实现；ReminderCapability 表示通知与精确闹钟权限。
   - 提醒设置类型 ReminderSetting 定义在 campus_gateway.dart（默认关闭、提前 15 分钟，档位 5/10/15/30）。
+- course_widget.dart：桌面小组件快照与端口。
+  - widgetSnapshot：今天起 7 天、最多 200 次课；缺开学日或作息时只给状态。今天已下课的也保留，供“今日课程”变淡显示。
+  - WidgetStatus 区分未登录、没有学期、缺开学日、缺作息与正常；快照带过期时刻，过期后小组件提示打开应用。
+  - CourseWidgetPort 由 device 层实现；配色类型 WidgetTheme（浅深两套与深浅色模式）。
 - ical.dart：buildIcal 把课程实例写成 iCalendar 文本（RFC 5545 最小子集，手写）。
   - 每次上课一个事件，时刻一律 UTC；转义、CRLF、75 八位组折行且不切断多字节字符。
   - UID 由学期、课程、日期、节次哈希而来，重复导入时更新同一事件；不含账号信息。单次最多 icalEventLimit（5000）个事件。
