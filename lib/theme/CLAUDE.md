@@ -21,6 +21,9 @@
   - CampusDialogRoute、showCampusDialog：统一的弹窗转场。
   - CampusEntryFade：账号应用的整体淡入。它挂在按代次重建的账号应用内，所以应用启动和每次切换账号时都会触发。
   - 共享弹窗：showCampusNotice 用于只读提示，showCampusConfirm 用于二次确认。
+  - CampusGlassDialog：统一的玻璃弹窗，版式同 AlertDialog。options 对应 SimpleDialog 的选项；solid 固定实色（验证码弹窗用）。全应用弹窗一律用它，日期选择器除外。
+  - showCampusToast：提示条，可带一个操作（如撤销）。沿用 SnackBar 的排队、读屏与滑动关闭，内容是 overlay 玻璃胶囊。不用库的 GlassToast，因为它的操作触区只有 32。
+  - CampusDialogRoute 装入和销毁时增减 campusOverlayDepth。
 - campus_loading.dart：
   - CampusLoader 绘制曲线加载动画，CampusLoading 是带文字的加载状态。
   - CampusBusyContent 让按钮在操作期间原地切换为忙碌态。
@@ -30,6 +33,11 @@
 - glass_panel.dart：
   - GlassPanel 是液态玻璃面板，用于顶栏和底栏。
   - initializeCampusGlass 负责初始化玻璃渲染，失败时退回磨砂效果；campusGlassReady 表示是否初始化完成。
+  - campusOverlayDepth 是正在显示的弹窗层数。大于 0 时顶栏和底栏改实色，不让玻璃叠玻璃。
+- campus_glass_controls.dart：
+  - CampusGlassChip 是选择标签，复用主按钮的玻璃与按压，选中时带勾。
+  - CampusSwitchTile 是开关行，玻璃档用 GlassSwitch，实色档用系统 Switch。
+  - 页面不再直接用 ChoiceChip、FilterChip、SwitchListTile。
 - campus_glass_tier.dart：玻璃档位。
   - 档位有四档：满档 full、标准 standard、磨砂 minimal、实色 solid。
   - resolveCampusGlassTier 按以下规则决定档位：无障碍条件走实色；简化模式或未就绪走磨砂；完整模式固定满档；自动模式跟随 GlassAdaptiveScope 的实测结果；限档时满档降为标准。
@@ -38,8 +46,11 @@
 - campus_glass_material.dart：玻璃材质表。
   - 按角色区分：navigation（顶栏、底栏）、control（按钮、开关、标签）、overlay（菜单、弹层、弹窗、提示条）。
   - campusGlassSettings 按配色、角色和档位生成参数。满档以 iOS 27 预设为底并按配色着色，色散只给控件与浮层；标准档和磨砂档保持升级前的参数。
+  - 浮层满档完全雾化，不透出底层文字；浅色浮层各档整块均匀提亮。提亮值按模拟器五套配色实测取，改动后要重测弹窗次要文字对比度。
   - campusGlassQuality 把档位映射为库的 GlassQuality。
-- campus_glass_surface.dart：CampusGlassSurface 是按钮和手势反馈共用的玻璃材质，本身不提供点击行为。
+- campus_glass_surface.dart：
+  - CampusGlassSurface 是按钮和手势反馈共用的玻璃材质，本身不提供点击行为。
+  - CampusOverlayGlass 是弹窗、提示条用的 overlay 玻璃面板，实色档用 surface。
 - campus_glass_button.dart：
   - 主按钮是紧凑的玻璃胶囊，视觉高度约 38dp，触区至少 48dp。全局 FilledButton 主题用它画背景，所以所有主操作都是玻璃按钮。
   - CampusGlassButtonSurface 是胶囊按钮，CampusGlassCircleButton 是圆形按钮。圆形按钮默认 52，顶栏操作用 44。

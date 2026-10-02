@@ -5,6 +5,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/toolbox/download/download_status.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
@@ -31,15 +32,10 @@ class _DownloadsPageState extends State<DownloadsPage> {
         '[DownloadsPage] action=manage errorType=${error.runtimeType}\n$stack',
       );
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(
-                error is ToolboxException ? error.message : '操作未完成，请重试',
-              ),
-            ),
-          );
+        showCampusToast(
+          context,
+          error is ToolboxException ? error.message : '操作未完成，请重试',
+        );
       }
     } finally {
       if (mounted) setState(() => _busy.remove(id));
@@ -126,8 +122,8 @@ class _DownloadsPageState extends State<DownloadsPage> {
                             (1, '进行中 $running'),
                             (2, '已结束 ${groups.length - running}'),
                           ])
-                            ChoiceChip(
-                              label: Text(value.$2),
+                            CampusGlassChip(
+                              label: value.$2,
                               selected: _filter == value.$1,
                               onSelected: (_) =>
                                   setState(() => _filter = value.$1),

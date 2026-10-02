@@ -331,7 +331,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     if (!mounted) return BellsChoice.cancel;
     return await showCampusDialog<BellsChoice>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => CampusGlassDialog(
         title: const Text('采用这套作息时间？'),
         content: SingleChildScrollView(
           child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [

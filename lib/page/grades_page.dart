@@ -14,6 +14,7 @@ import 'package:superxd/page/campus_sync_dialogs.dart';
 import 'package:superxd/page/sync_selection_dialog.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 class GradesPage extends StatefulWidget {
@@ -403,16 +404,16 @@ class _GradesPageState extends State<GradesPage> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            ChoiceChip(
-              label: const Text('学期详情'),
+            CampusGlassChip(
+              label: '学期详情',
               selected: !_yearMode,
               onSelected: (_) {
                 setState(() => _yearMode = false);
                 _loadView();
               },
             ),
-            ChoiceChip(
-              label: const Text('学年概览'),
+            CampusGlassChip(
+              label: '学年概览',
               selected: _yearMode,
               onSelected: (_) {
                 setState(() => _yearMode = true);
@@ -429,14 +430,12 @@ class _GradesPageState extends State<GradesPage> {
               runSpacing: 8,
               children: [
                 for (final term in yearTerms)
-                  ChoiceChip(
-                    label: Text(
-                      term.xq == '0'
+                  CampusGlassChip(
+                    label: term.xq == '0'
                           ? '第一学期'
                           : term.xq == '1'
                           ? '第二学期'
                           : term.label,
-                    ),
                     selected: _term?.key == term.key,
                     onSelected: (_) => _chooseTerm(term),
                   ),
@@ -618,16 +617,16 @@ class _GradesPageState extends State<GradesPage> {
                                   spacing: 8,
                                   runSpacing: 8,
                                   children: [
-                                    ChoiceChip(
-                                      label: const Text('有效成绩'),
+                                    CampusGlassChip(
+                                      label: '有效成绩',
                                       selected: !_original,
                                       onSelected: (_) => setState(() {
                                         _original = false;
                                         _updateRows();
                                       }),
                                     ),
-                                    ChoiceChip(
-                                      label: const Text('原始成绩'),
+                                    CampusGlassChip(
+                                      label: '原始成绩',
                                       selected: _original,
                                       onSelected: (_) => setState(() {
                                         _original = true;
@@ -658,14 +657,14 @@ class _GradesPageState extends State<GradesPage> {
                                   children: [
                                     for (final filter
                                         in grades.GradeFilter.values)
-                                      FilterChip(
-                                        label: Text(switch (filter) {
+                                      CampusGlassChip(
+                                        label: switch (filter) {
                                           grades.GradeFilter.all => '全部',
                                           grades.GradeFilter.numeric => '数值成绩',
                                           grades.GradeFilter.text => '等级或状态',
                                           grades.GradeFilter.unpublished =>
                                             '未公布',
-                                        }),
+                                        },
                                         selected: _filter == filter,
                                         onSelected: (_) => setState(() {
                                           _filter = filter;

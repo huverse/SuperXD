@@ -16,7 +16,7 @@ Future<bool> showCampusSyncReport(
   );
   return await showCampusDialog<bool>(
     context: context,
-    builder: (context) => AlertDialog(
+    builder: (context) => CampusGlassDialog(
       title: Text(report.sessionExpired ? '同步中止，请重新登录' : interrupted ? '同步已中止' : '同步结果'),
       content: SingleChildScrollView(
         child: Column(

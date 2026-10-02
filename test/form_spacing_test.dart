@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/course_editor_page.dart';
@@ -47,7 +48,7 @@ void main() {
         await tester.pumpAndSettle();
         await tester.tap(find.text('添加时段'));
         await tester.pumpAndSettle();
-        final dialog = find.byType(AlertDialog);
+        final dialog = find.byType(CampusGlassDialog);
         expectFieldLabelsClear(tester, ['开始节次', '结束节次', '地点（选填）'], '上课时段弹窗', scope: dialog);
         expectChipLabelsUnclipped(tester, '上课时段弹窗', scope: dialog);
         expect(tester.takeException(), isNull);

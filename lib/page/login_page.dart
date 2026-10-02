@@ -228,8 +228,8 @@ class _CaptchaDialogState extends State<_CaptchaDialog> {
         });
       }
     },
-    child: AlertDialog(
-      backgroundColor: CampusPalette.of(context).surface,
+    child: CampusGlassDialog(
+      solid: true,
       title: const Text('验证码'),
       content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
         GestureDetector(onTap: _busy ? null : _refresh, child: Image.memory(base64Decode(_captcha.imageBase64), height: 64, gaplessPlayback: true)),

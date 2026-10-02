@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:morphnext/morphnext.dart';
 
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_motion.dart';
@@ -179,14 +180,14 @@ void main() {
     );
     await tester.tap(find.text('开始'));
     await tester.pump(const Duration(milliseconds: 100));
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(CampusGlassDialog), findsNothing);
     await tester.pump(const Duration(milliseconds: 250));
-    expect(find.byType(AlertDialog), findsOneWidget);
+    expect(find.byType(CampusGlassDialog), findsOneWidget);
     expect(calls, 1);
     task.complete(42);
     await tester.pumpAndSettle();
     expect(result, 42);
-    expect(find.byType(AlertDialog), findsNothing);
+    expect(find.byType(CampusGlassDialog), findsNothing);
   });
   testWidgets('不透明新路由覆盖后旧页面曲线停止，返回后恢复', (tester) async {
     await tester.pumpWidget(

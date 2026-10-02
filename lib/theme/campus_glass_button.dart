@@ -36,11 +36,12 @@ class CampusGlassButtonSurface extends StatelessWidget {
         glowColor: CampusGlassScope.tierOf(context, ready: ready) == CampusGlassTier.full
             ? Colors.white.withValues(alpha: CampusPalette.of(context).isDark ? .16 : .32)
             : null,
+        // 选中的标签与按下时同样着 surfaceSelected 色，但不鼓起。
         builder: (context, contentScale) => CampusGlassSurface(
           round: true,
           softOutline: !round,
           disabled: disabled,
-          pressed: pressed,
+          pressed: pressed || states.contains(WidgetState.selected),
           focused: states.contains(WidgetState.focused),
           child: Transform.scale(scale: contentScale, child: child),
         ),

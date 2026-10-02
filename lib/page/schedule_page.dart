@@ -221,9 +221,9 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
   CourseMeeting _slot(String date, PeriodSpan span) => CourseMeeting(weekday: weekdayOf(date), periodStart: span.start, periodEnd: span.end, place: '', weeks: [weekIndex(_start!, date)]);
 
   Future<void> _arrange(String date, PeriodSpan span) async {
-    final chosen = await showCampusDialog<CourseRecord>(context: context, builder: (context) => SimpleDialog(
+    final chosen = await showCampusDialog<CourseRecord>(context: context, builder: (context) => CampusGlassDialog(
       title: const Text('安排已有课程'),
-      children: [for (final course in _courses) SimpleDialogOption(onPressed: () => Navigator.pop(context, course), child: Text(course.teacherName.isEmpty ? course.courseName : '${course.courseName} · ${course.teacherName}'))],
+      options: [for (final course in _courses) SimpleDialogOption(onPressed: () => Navigator.pop(context, course), child: Text(course.teacherName.isEmpty ? course.courseName : '${course.courseName} · ${course.teacherName}'))],
     ));
     if (mounted && chosen != null) await _manage(course: chosen, slot: _slot(date, span));
   }

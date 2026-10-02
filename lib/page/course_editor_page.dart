@@ -11,6 +11,7 @@ import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 class CourseEditorPage extends StatefulWidget {
@@ -178,9 +179,9 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
     if (original != null && !duplicate && original.weeks.length > 1) {
       final choice = await showCampusDialog<String>(
         context: context,
-        builder: (context) => SimpleDialog(
+        builder: (context) => CampusGlassDialog(
           title: const Text('调整哪些周次？'),
-          children: [
+          options: [
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, 'all'),
               child: const Text('此时段的全部周次'),
@@ -236,9 +237,9 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
     final meeting = _meetings[index];
     final scope = await showCampusDialog<String>(
       context: context,
-      builder: (context) => SimpleDialog(
+      builder: (context) => CampusGlassDialog(
         title: const Text('删除范围'),
-        children: [
+        options: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context, 'all'),
             child: const Text('这个时段的全部周次'),
@@ -415,7 +416,7 @@ Future<int?> chooseMeetingWeek(
   int? preferred,
 }) => showCampusDialog<int>(
   context: context,
-  builder: (context) => AlertDialog(
+  builder: (context) => CampusGlassDialog(
     title: const Text('选择周次'),
     content: SizedBox(
       width: 420,
@@ -425,8 +426,8 @@ Future<int?> chooseMeetingWeek(
           runSpacing: 8,
           children: [
             for (final week in weeks.toSet().toList()..sort())
-              ChoiceChip(
-                label: Text('第$week周'),
+              CampusGlassChip(
+                label: '第$week周',
                 selected: week == preferred,
                 onSelected: (_) => Navigator.pop(context, week),
               ),
@@ -503,7 +504,7 @@ class _MeetingDialogState extends State<_MeetingDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => CampusGlassDialog(
     title: Text(widget.onlyWeek == null ? '上课时段' : '仅调整第${widget.onlyWeek}周'),
     content: SizedBox(
       width: 480,
@@ -517,8 +518,8 @@ class _MeetingDialogState extends State<_MeetingDialog> {
               runSpacing: 8,
               children: [
                 for (var day = 1; day <= 7; day++)
-                  ChoiceChip(
-                    label: Text('周${weekdayLabel(day)}'),
+                  CampusGlassChip(
+                    label: '周${weekdayLabel(day)}',
                     selected: _weekday == day,
                     onSelected: (_) => setState(() => _weekday = day),
                   ),
@@ -589,8 +590,8 @@ class _MeetingDialogState extends State<_MeetingDialog> {
                 runSpacing: 8,
                 children: [
                   for (var week = 1; week <= _visibleWeeks; week++)
-                    FilterChip(
-                      label: Text('$week'),
+                    CampusGlassChip(
+                      label: '$week',
                       selected: _weeks.contains(week),
                       onSelected: (selected) => setState(() {
                         if (selected) {

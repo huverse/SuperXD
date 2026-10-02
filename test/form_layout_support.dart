@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/theme/campus_glass_controls.dart';
+
 // 表单排版回归须用真实字体：描边框浮动标签凸出上边框的高度取决于字形行高，测试默认字体量不出来。
 Future<void> loadCampusFonts(WidgetTester tester) async {
   await tester.runAsync(() async {
@@ -23,7 +25,7 @@ Finder _inside(Finder? scope, Finder finder) => scope == null ? finder : find.de
 // 每个输入框的标签不得压到其他输入框或选择标签上；弹窗下层页面仍在树里，须用scope限定。
 void expectFieldLabelsClear(WidgetTester tester, List<String> labels, String scene, {Finder? scope}) {
   final decorators = _inside(scope, find.byType(InputDecorator));
-  final chips = _inside(scope, find.byWidgetPredicate((widget) => widget is RawChip));
+  final chips = _inside(scope, find.byWidgetPredicate((widget) => widget is CampusGlassChip));
   for (final label in labels) {
     final text = find.descendant(of: decorators, matching: find.text(label)).first;
     final labelRect = paintedRect(tester, text);
@@ -39,7 +41,7 @@ void expectFieldLabelsClear(WidgetTester tester, List<String> labels, String sce
 
 // 选择标签内的文字必须完整落在标签内，不被固定高度的容器裁切。
 void expectChipLabelsUnclipped(WidgetTester tester, String scene, {Finder? scope}) {
-  for (final element in _inside(scope, find.byWidgetPredicate((widget) => widget is RawChip)).evaluate()) {
+  for (final element in _inside(scope, find.byWidgetPredicate((widget) => widget is CampusGlassChip)).evaluate()) {
     final chip = element.renderObject! as RenderBox;
     final chipRect = chip.localToGlobal(Offset.zero) & chip.size;
     final label = find.descendant(of: find.byElementPredicate((candidate) => candidate == element), matching: find.byType(Text)).first;

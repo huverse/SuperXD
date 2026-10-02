@@ -3,8 +3,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_material.dart';
+import 'package:superxd/theme/campus_glass_surface.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
+import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/page/licenses_page.dart';
 import 'package:superxd/theme/campus_background.dart';
@@ -160,6 +165,13 @@ void main() {
         expect(standard.chromaticAberration, 0);
         expect(standard.frost, 0);
         expect(standard.glowIntensity, 0);
+        // 浮层：完全雾化不透底层清晰副本；浅色在遮罩上整块均匀提亮（取值见模拟器实测），导航与控件不提亮。
+        final overlay = role == CampusGlassRole.overlay;
+        expect(full.frostOpacity, overlay ? 1 : preset.frostOpacity);
+        for (final settings in [full, standard, campusGlassSettings(palette, role, CampusGlassTier.minimal)]) {
+          expect(settings.whitenStrength, overlay && !palette.isDark ? .65 : 0, reason: '${palette.id} $role');
+          expect(settings.whitenGated, isFalse);
+        }
       }
       final pressed = campusGlassSettings(palette, CampusGlassRole.control, CampusGlassTier.full, pressed: true);
       expect(pressed.glassColor.withValues(alpha: 1), palette.surfaceSelected.withValues(alpha: 1));
@@ -192,5 +204,104 @@ void main() {
     await pump(CampusGlassMode.full, media: const MediaQueryData(highContrast: true));
     await pump(CampusGlassMode.auto, media: const MediaQueryData(disableAnimations: true));
     expect(tiers, [CampusGlassTier.minimal, CampusGlassTier.standard, CampusGlassTier.solid, CampusGlassTier.solid]);
+  });
+  group('浮层与控件玻璃', () {
+    tearDown(() => campusGlassReady.value = false);
+    Widget host(Widget home, {CampusGlassMode mode = CampusGlassMode.full}) => MaterialApp(theme: campusTheme(), home: CampusGlassScope(mode: mode, capped: false, child: home));
+
+    testWidgets('弹窗玻璃面板与实色退路，打开期间顶栏改实色、关闭后恢复', (tester) async {
+      campusGlassReady.value = true;
+      late BuildContext page;
+      await tester.pumpWidget(host(Scaffold(body: Builder(builder: (context) {
+        page = context;
+        return const GlassPanel(edge: GlassEdge.top, child: SizedBox(height: 56));
+      }))));
+      bool panelOpaque() => tester.widget<GlassPanelScope>(find.descendant(of: find.byType(GlassPanel), matching: find.byType(GlassPanelScope))).opaque;
+      expect(panelOpaque(), isFalse);
+      final confirm = showCampusConfirm(page, title: '删除记录？', message: '只移除记录。', action: '删除');
+      await tester.pumpAndSettle();
+      expect(find.byType(CampusGlassDialog), findsOneWidget);
+      // 面板一层玻璃；面板内的按钮只做 vibrancy，不再叠第二层。
+      expect(find.descendant(of: find.byType(CampusOverlayGlass), matching: find.byType(liquid.AdaptiveGlass)), findsOneWidget);
+      expect(find.descendant(of: find.widgetWithText(FilledButton, '删除'), matching: find.byType(liquid.AdaptiveGlass)), findsNothing);
+      expect(panelOpaque(), isTrue);
+      await tester.tap(find.text('删除'));
+      await tester.pumpAndSettle();
+      expect(await confirm, isTrue);
+      expect(campusOverlayDepth.value, 0);
+      expect(panelOpaque(), isFalse);
+      showCampusDialog<void>(context: page, builder: (context) => CampusGlassDialog(solid: true, title: const Text('验证码'), options: [SimpleDialogOption(onPressed: () => Navigator.pop(context), child: const Text('选项一'))]));
+      await tester.pumpAndSettle();
+      expect(find.descendant(of: find.byType(CampusOverlayGlass), matching: find.byType(liquid.AdaptiveGlass)), findsNothing);
+      await tester.tap(find.text('选项一'));
+      await tester.pumpAndSettle();
+      expect(find.byType(CampusGlassDialog), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('提示条为玻璃胶囊，撤销48dp可点并收起；未就绪为实色', (tester) async {
+      campusGlassReady.value = true;
+      late BuildContext page;
+      var undone = 0;
+      await tester.pumpWidget(host(Scaffold(body: Builder(builder: (context) => Center(child: TextButton(onPressed: () {
+        page = context;
+        showCampusToast(context, '已保存删除记录', action: '撤销', onAction: () => undone++);
+      }, child: const Text('删除')))))));
+      await tester.tap(find.text('删除'));
+      await tester.pumpAndSettle();
+      final toast = find.widgetWithText(SnackBar, '已保存删除记录');
+      expect(toast, findsOneWidget);
+      expect(find.descendant(of: toast, matching: find.byType(liquid.AdaptiveGlass)), findsOneWidget);
+      expect(tester.getSize(find.widgetWithText(TextButton, '撤销')).height, greaterThanOrEqualTo(48));
+      await tester.tap(find.text('撤销'));
+      await tester.pumpAndSettle();
+      expect(undone, 1);
+      expect(toast, findsNothing);
+      campusGlassReady.value = false;
+      showCampusToast(page, '删除未完成，请重试');
+      await tester.pumpAndSettle();
+      final solid = find.widgetWithText(SnackBar, '删除未完成，请重试');
+      expect(solid, findsOneWidget);
+      expect(find.descendant(of: solid, matching: find.byType(liquid.AdaptiveGlass)), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('选择标签选中带勾可切换，开关行整行可点且读屏为开关', (tester) async {
+      var selected = false, enabled = false;
+      await tester.pumpWidget(host(Scaffold(body: StatefulBuilder(builder: (context, setState) => Column(children: [
+        CampusGlassChip(label: '第一学期', selected: selected, onSelected: (value) => setState(() => selected = value)),
+        CampusSwitchTile(title: const Text('保存解析历史'), value: enabled, onChanged: (value) => setState(() => enabled = value)),
+      ])))));
+      expect(find.byType(CampusIcon), findsNothing);
+      await tester.tap(find.text('第一学期'));
+      await tester.pumpAndSettle();
+      expect(selected, isTrue);
+      expect(find.descendant(of: find.byType(CampusGlassChip), matching: find.byType(CampusIcon)), findsOneWidget);
+      final semantics = tester.ensureSemantics();
+      expect(tester.getSemantics(find.byType(CampusSwitchTile)), isSemantics(hasToggledState: true, isToggled: false, hasTapAction: true, label: '保存解析历史'));
+      expect(find.byType(Switch), findsOneWidget);
+      await tester.tap(find.text('保存解析历史'));
+      await tester.pumpAndSettle();
+      expect(enabled, isTrue);
+      semantics.dispose();
+      campusGlassReady.value = true;
+      await tester.pumpAndSettle();
+      expect(find.byType(liquid.GlassSwitch), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('浅色玻璃开关关闭态：白色滑块对轨道不低于3:1，且与开启轨道可分', (tester) async {
+      campusGlassReady.value = true;
+      double contrast(Color a, Color b) {
+        final first = a.computeLuminance(), second = b.computeLuminance();
+        return (first > second ? first + .05 : second + .05) / (first > second ? second + .05 : first + .05);
+      }
+      for (final palette in CampusPalette.values) {
+        await tester.pumpWidget(MaterialApp(key: ValueKey(palette.id), theme: campusTheme(palette: palette), home: CampusGlassScope(mode: CampusGlassMode.full, capped: false, child: Scaffold(body: CampusSwitchTile(title: const Text('保存解析历史'), value: false, onChanged: (_) {})))));
+        final glassSwitch = tester.widget<liquid.GlassSwitch>(find.byType(liquid.GlassSwitch));
+        expect(contrast(glassSwitch.thumbColor, glassSwitch.inactiveColor!), greaterThanOrEqualTo(3), reason: palette.id);
+        expect(contrast(glassSwitch.activeColor!, glassSwitch.inactiveColor!), greaterThanOrEqualTo(1.8), reason: palette.id);
+      }
+    });
   });
 }
