@@ -56,6 +56,13 @@ class _AppearancePageState extends State<AppearancePage> {
                 ChoiceChip(label: Text(mode.label), selected: settings.themeMode == mode.value, onSelected: _saving ? null : (_) => _save(() => settings.setThemeMode(mode.value))),
             ]),
             const SizedBox(height: 24),
+            Text('玻璃效果', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 12),
+            Wrap(spacing: 8, runSpacing: 8, children: [
+              for (final mode in [(value: 'auto', label: '自动'), (value: 'full', label: '完整'), (value: 'reduced', label: '简化')])
+                ChoiceChip(label: Text(mode.label), selected: settings.glassMode == mode.value, onSelected: _saving ? null : (_) => _save(() => settings.setGlassMode(mode.value))),
+            ]),
+            const SizedBox(height: 24),
             Text('配色', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
             LayoutBuilder(

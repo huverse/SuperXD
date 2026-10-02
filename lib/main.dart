@@ -15,6 +15,7 @@ import 'package:superxd/page/live_clock.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_background.dart';
+import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/campus_motion.dart';
@@ -35,7 +36,8 @@ void main() async {
   final store = await AccountStore.open();
   final session = AppSession(AccountGateway(store: store, credentials: SecureCredentialStore()));
   final display = await DisplaySettings.open();
-  runApp(SuperXdApp(session: session, display: display));
+  final glassCapped = await CampusGlassGuard.capped();
+  runApp(SuperXdApp(session: session, display: display, glassCapped: glassCapped));
   unawaited(initializeCampusGlass());
   try {
     await session.restore();
@@ -45,10 +47,11 @@ void main() async {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.glassCapped = false});
   final ToolboxRuntime? toolbox;
   final AppSession session;
   final DisplaySettings? display;
+  final bool glassCapped;
   // 测试/截图固定装饰相位，不关闭业务转场或图标动画。
   final double? backgroundPhase;
 
@@ -72,17 +75,18 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, glassCapped: widget.glassCapped),
     );
   }
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase});
+  const _AccountApp({super.key, required this.session, required this.toolbox, required this.glassCapped, this.display, this.backgroundPhase});
   final ToolboxRuntime toolbox;
   final AppSession session;
   final DisplaySettings? display;
   final double? backgroundPhase;
+  final bool glassCapped;
 
   @override
   State<_AccountApp> createState() => _AccountAppState();
@@ -110,7 +114,7 @@ class _AccountAppState extends State<_AccountApp> {
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       builder: (context, child) => DisplayScope(settings: _display, child: MediaQuery(
         data: MediaQuery.of(context).copyWith(textScaler: CampusTextScaler(MediaQuery.textScalerOf(context), _display.scale)),
-        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, child: CampusEntryFade(child: LiveClock(child: child!))))),
+        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: widget.glassCapped, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, child: CampusEntryFade(child: LiveClock(child: child!)))))),
       )),
     ));
   }

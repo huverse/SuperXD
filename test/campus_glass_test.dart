@@ -1,7 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
+import 'package:superxd/theme/campus_glass_material.dart';
+import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/page/licenses_page.dart';
 import 'package:superxd/theme/campus_background.dart';
@@ -113,5 +116,81 @@ void main() {
     expect(clicked, isTrue);
     expect(find.byType(BackdropFilter), findsNothing);
     expect(tester.takeException(), isNull);
+  });
+  test('玻璃档位：无障碍实色，简化与未就绪磨砂，自动跟随实测，满档异常退出后降为标准', () {
+    CampusGlassTier tier(
+      CampusGlassMode mode, {
+      liquid.GlassQuality? adaptive,
+      bool capped = false,
+      bool ready = true,
+      bool accessible = false,
+    }) => resolveCampusGlassTier(
+      mode: mode,
+      adaptive: adaptive,
+      capped: capped,
+      ready: ready,
+      accessible: accessible,
+    );
+    for (final mode in CampusGlassMode.values) {
+      expect(tier(mode, accessible: true), CampusGlassTier.solid);
+      expect(tier(mode, ready: false), CampusGlassTier.minimal);
+    }
+    expect(tier(CampusGlassMode.reduced), CampusGlassTier.minimal);
+    expect(tier(CampusGlassMode.full, adaptive: liquid.GlassQuality.minimal), CampusGlassTier.full);
+    expect(tier(CampusGlassMode.full, capped: true), CampusGlassTier.standard);
+    expect(tier(CampusGlassMode.auto), CampusGlassTier.full);
+    expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.premium), CampusGlassTier.full);
+    expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.standard), CampusGlassTier.standard);
+    expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.minimal), CampusGlassTier.minimal);
+    expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.premium, capped: true), CampusGlassTier.standard);
+    expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.minimal, capped: true), CampusGlassTier.minimal);
+  });
+  test('满档以iOS 27材质按配色着色，色散只给控件与浮层；标准档保持升级前参数', () {
+    for (final palette in [...CampusPalette.values, ...CampusPalette.darkValues]) {
+      for (final role in CampusGlassRole.values) {
+        final full = campusGlassSettings(palette, role, CampusGlassTier.full);
+        final preset = palette.isDark ? liquid.LiquidGlassSettings.ios27Dark : liquid.LiquidGlassSettings.ios27Light;
+        expect(full.glassColor.withValues(alpha: 1), palette.glassTint.withValues(alpha: 1));
+        expect(full.frost, preset.frost);
+        expect(full.rimLight, preset.rimLight);
+        expect(full.lensModel, liquid.GlassLensModel.paraxial);
+        expect(full.platformViewFallbackColor, palette.glassFallback);
+        expect(full.chromaticAberration, role == CampusGlassRole.navigation ? 0 : greaterThan(0));
+        final standard = campusGlassSettings(palette, role, CampusGlassTier.standard);
+        expect(standard.chromaticAberration, 0);
+        expect(standard.frost, 0);
+        expect(standard.glowIntensity, 0);
+      }
+      final pressed = campusGlassSettings(palette, CampusGlassRole.control, CampusGlassTier.full, pressed: true);
+      expect(pressed.glassColor.withValues(alpha: 1), palette.surfaceSelected.withValues(alpha: 1));
+    }
+    final bar = campusGlassSettings(CampusPalette.values.first, CampusGlassRole.navigation, CampusGlassTier.standard, floating: true);
+    expect([bar.thickness, bar.blur, bar.refractiveIndex, bar.lightIntensity, bar.shadowElevation], [16, 10, 1.15, .40, 1]);
+    final button = campusGlassSettings(CampusPalette.values.first, CampusGlassRole.control, CampusGlassTier.standard);
+    expect([button.thickness, button.blur, button.refractiveIndex, button.lightIntensity, button.ambientStrength], [8, 6, 1.10, .35, .16]);
+    expect(campusGlassQuality(CampusGlassTier.full), liquid.GlassQuality.premium);
+    expect(campusGlassQuality(CampusGlassTier.standard), liquid.GlassQuality.standard);
+    expect(campusGlassQuality(CampusGlassTier.minimal), liquid.GlassQuality.minimal);
+  });
+  testWidgets('玻璃档位读取所在作用域的模式与限档，高对比和减少动画时实色', (tester) async {
+    final tiers = <CampusGlassTier>[];
+    Future<void> pump(CampusGlassMode mode, {bool capped = false, MediaQueryData media = const MediaQueryData()}) async {
+      await tester.pumpWidget(MediaQuery(
+        data: media,
+        child: CampusGlassScope(
+          mode: mode,
+          capped: capped,
+          child: Builder(builder: (context) {
+            tiers.add(CampusGlassScope.tierOf(context, ready: true));
+            return const SizedBox();
+          }),
+        ),
+      ));
+    }
+    await pump(CampusGlassMode.reduced);
+    await pump(CampusGlassMode.full, capped: true);
+    await pump(CampusGlassMode.full, media: const MediaQueryData(highContrast: true));
+    await pump(CampusGlassMode.auto, media: const MediaQueryData(disableAnimations: true));
+    expect(tiers, [CampusGlassTier.minimal, CampusGlassTier.standard, CampusGlassTier.solid, CampusGlassTier.solid]);
   });
 }

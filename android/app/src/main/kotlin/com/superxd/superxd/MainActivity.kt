@@ -13,6 +13,8 @@ class MainActivity : FlutterActivity() {
         toolboxFiles = ToolboxFileExporter(this)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/toolbox_files")
             .setMethodCallHandler(toolboxFiles)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/glass")
+            .setMethodCallHandler(GlassGuard(this))
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
