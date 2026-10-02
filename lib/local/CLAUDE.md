@@ -14,7 +14,7 @@
     - 拒绝带凭据、查询或片段的来源。
   - 账号库路径为 accounts/账号键.db，打开时校验 owner。
   - 旧版单库 superxd.db：用户确认归属后只认领一次，导入目标必须是该账号自己的库。
-- app_database.dart：单个账号的业务库 AppDatabase，schema 版本 5。
+- app_database.dart：单个账号的业务库 AppDatabase，schema 版本 6。
   - 表：
     - session：会话与 cookie，只有一行。
     - term：学期、当前学期标记、开学日。
@@ -25,6 +25,7 @@
     - term_bells_source：作息的采用来源绑定。
     - account_owner：库的归属，只有一行。
     - legacy_import_marker：旧库导入完成标记。
+    - reminder_setting：课前提醒设置，每学期一行（v6 新增）。
   - 课表写入（saveSchedule、syncSchedule、restoreRevision）在同一事务内完成：
     1. 读取 head，核对 expectedRevisionId。
     2. 写入新版本并更新 head。

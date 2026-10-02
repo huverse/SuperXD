@@ -10,6 +10,8 @@ const _allowed = {
   'local': {'domain', 'local'},
   'gateway': {'domain', 'edu', 'local', 'gateway'},
   'application': {'domain', 'gateway', 'application'},
+  // 设备能力适配（系统通知等），只实现 domain 端口，由组合根注入；页面不直接依赖。
+  'device': {'domain', 'device'},
   'theme': {'theme', 'domain/campus_log.dart'},
   'toolbox': {'domain', 'theme', 'toolbox'},
   'page': {'domain', 'application', 'gateway', 'local', 'theme', 'page', 'app_session.dart'},

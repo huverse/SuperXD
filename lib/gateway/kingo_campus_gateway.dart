@@ -384,6 +384,18 @@ class KingoCampusGateway implements CampusGateway {
     return _ok(_revision(row), source: row.source, fetchedAt: row.createdAt);
   });
 
+  @override
+  Future<GatewayResult<ReminderSetting>> readReminderSetting(TermRef term) => _guard(() async {
+    return _ok(await database.readReminderSetting(term) ?? ReminderSetting.initial, source: 'local', fetchedAt: _stamp());
+  });
+
+  @override
+  Future<GatewayResult<ReminderSetting>> saveReminderSetting(TermRef term, ReminderSetting setting) => _guard(() async {
+    if (!ReminderSetting.leads.contains(setting.leadMinutes)) return _fail(GatewayCode.invalidReminder, '提前时间只能选5、10、15或30分钟');
+    await database.saveReminderSetting(term, setting, now: _stamp());
+    return _ok(setting, source: 'user', fetchedAt: _stamp());
+  });
+
   Future<GatewayResult<LoginView>> _saveLogin(GatewayResult<LoginView> result) async {
     if (result.ok && result.data?.session != null) await _auth.persistSession(database);
     return result;

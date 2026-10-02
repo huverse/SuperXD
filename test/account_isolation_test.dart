@@ -9,6 +9,7 @@ import 'package:superxd/edu/login_rules.dart';
 import 'package:superxd/edu/parse_schedule.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
 
 const term = TermRef(xn: '2026', xq: '0', label: '测试学期');
@@ -49,6 +50,29 @@ void main() {
     expect((await gateway.readSchedule(const ScheduleScope.term(term))).ok, isFalse);
     expect((await gateway.login('A', 'secret')).ok, isTrue);
     expect((await gateway.listScheduleRevisions(term)).data!.single.summary, 'A自定义');
+    await gateway.close();
+    await dir.delete(recursive: true);
+  });
+
+  test('本机写入成功才通知课前提醒对账；提醒设置按账号隔离，非法档位不改原设置', () async {
+    final dir = await Directory.systemTemp.createTemp('superxd-account-');
+    final gateway = AccountGateway(store: await AccountStore.open(directory: dir.path), clientFactory: _Client.new);
+    expect((await gateway.login('A', 'secret')).ok, isTrue);
+    var changes = 0;
+    gateway.scheduleChanges.addListener(() => changes++);
+    expect((await gateway.setTermStart(term, '2026-08-31')).ok, isTrue);
+    expect(changes, 1);
+    expect((await gateway.setTermStart(term, '2026-02-30')).ok, isFalse);
+    expect(changes, 1);
+    expect((await gateway.readReminderSetting(term)).data, isA<ReminderSetting>().having((setting) => setting.enabled, 'enabled', isFalse).having((setting) => setting.leadMinutes, 'lead', 15));
+    expect((await gateway.saveReminderSetting(term, const ReminderSetting(enabled: true, leadMinutes: 30))).ok, isTrue);
+    expect(changes, 2);
+    final invalid = await gateway.saveReminderSetting(term, const ReminderSetting(enabled: true, leadMinutes: 7));
+    expect(invalid.error?.code, 'INVALID_REMINDER');
+    expect(changes, 2);
+    expect((await gateway.readReminderSetting(term)).data?.leadMinutes, 30);
+    expect((await gateway.login('B', 'secret')).ok, isTrue);
+    expect((await gateway.readReminderSetting(term)).data?.enabled, isFalse);
     await gateway.close();
     await dir.delete(recursive: true);
   });

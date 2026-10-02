@@ -60,6 +60,8 @@ abstract final class GatewayCode {
   static const gradeDataInvalid = 'GRADE_DATA_INVALID';
   // 旧版本数据导入未完成，已有数据未被覆盖
   static const legacyImportFailed = 'LEGACY_IMPORT_FAILED';
+  // 课前提醒设置不在可选档位内，原设置不变
+  static const invalidReminder = 'INVALID_REMINDER';
   // 本地数据库读写失败
   static const localStorageFailed = 'LOCAL_STORAGE_FAILED';
   // 未归类的操作失败兜底

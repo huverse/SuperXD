@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/app_session.dart';
+import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/page/account_dialogs.dart';
 import 'package:superxd/page/animated_branches.dart';
@@ -19,7 +20,7 @@ import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
-GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox}) {
+GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, CampusReminders? reminders}) {
   final tools = toolboxCatalog(toolbox);
   final rootKey = GlobalKey<NavigatorState>();
   final generation = session.generation;
@@ -65,7 +66,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       GoRoute(
         path: '/schedule',
         parentNavigatorKey: rootKey,
-        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: SchedulePage(gateway: gateway)),
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: SchedulePage(gateway: gateway, reminders: reminders)),
       ),
       GoRoute(
         path: '/grades', parentNavigatorKey: rootKey,

@@ -46,6 +46,7 @@ abstract final class CampusIcons {
   static const warning = LucideIcons.circleAlert;
   static const info = LucideIcons.info;
   static const check = LucideIcons.check;
+  static const reminder = LucideIcons.bell;
 }
 
 void configureCampusIcons() =>

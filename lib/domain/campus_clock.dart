@@ -36,6 +36,14 @@ String formatCampusTimestamp(String value) {
   return '${formatCampusDate(date)} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}:${date.second.toString().padLeft(2, '0')}';
 }
 
+// 校园日期（YYYY-MM-DD）当天第 minuteOfDay 分钟对应的绝对时刻（UTC）。
+DateTime campusMoment(String isoDate, int minuteOfDay) {
+  ensureCampusClock();
+  final parts = isoDate.split('-').map(int.parse).toList();
+  final local = tz.TZDateTime(tz.getLocation(campusTimeZone), parts[0], parts[1], parts[2], minuteOfDay ~/ 60, minuteOfDay % 60);
+  return DateTime.fromMillisecondsSinceEpoch(local.millisecondsSinceEpoch, isUtc: true);
+}
+
 DateTime campusNow() {
   ensureCampusClock();
   final now = tz.TZDateTime.now(tz.getLocation(campusTimeZone));

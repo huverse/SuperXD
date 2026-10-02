@@ -10,6 +10,8 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:superxd/app_session.dart';
+import 'package:superxd/application/campus_reminders.dart';
+import 'package:superxd/device/notification_reminders.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/credential_store.dart';
@@ -47,17 +49,45 @@ void main() async {
   final picker = ImagePickerPlatform.instance;
   if (picker is ImagePickerAndroid) picker.useAndroidPhotoPicker = true;
   final glassCapped = await CampusGlassGuard.capped();
-  runApp(SuperXdApp(session: session, display: display, glassCapped: glassCapped));
+  final reminders = CampusReminders(gateway: session.gateway, port: NotificationReminders());
+  runApp(SuperXdApp(session: session, display: display, glassCapped: glassCapped, reminders: reminders));
   unawaited(initializeCampusGlass());
   try {
     await session.restore();
   } catch (error, stack) {
     campusLog('[AppSession] action=restore errorType=${error.runtimeType}\n$stack');
   }
+  watchReminders(session, reminders);
+}
+
+// 课前提醒对账时机：启动恢复会话后、回到前台、切换账号或退出登录、本机课表相关写入后；1秒防抖合并连续写入。
+// 对账只读本地数据，失败只记日志，不影响应用。
+void watchReminders(AppSession session, CampusReminders reminders) {
+  Timer? pending;
+  void schedule() {
+    pending?.cancel();
+    pending = Timer(const Duration(seconds: 1), () {
+      reminders.reconcile().then<void>((_) {}).catchError((Object error, StackTrace stack) {
+        campusLog('[Reminder] action=reconcile errorType=${error.runtimeType}\n$stack');
+      });
+    });
+  }
+
+  var generation = session.generation, loggedIn = session.loggedIn;
+  session.addListener(() {
+    if (session.generation == generation && session.loggedIn == loggedIn) return;
+    generation = session.generation;
+    loggedIn = session.loggedIn;
+    schedule();
+  });
+  session.gateway.scheduleChanges.addListener(schedule);
+  AppLifecycleListener(onResume: schedule);
+  schedule();
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.glassCapped = false});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.glassCapped = false, this.reminders});
+  final CampusReminders? reminders;
   final ToolboxRuntime? toolbox;
   final AppSession session;
   final DisplaySettings? display;
@@ -85,13 +115,14 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, glassCapped: widget.glassCapped),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, glassCapped: widget.glassCapped, reminders: widget.reminders),
     );
   }
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, required this.glassCapped, this.display, this.backgroundPhase});
+  const _AccountApp({super.key, required this.session, required this.toolbox, required this.glassCapped, this.display, this.backgroundPhase, this.reminders});
+  final CampusReminders? reminders;
   final ToolboxRuntime toolbox;
   final AppSession session;
   final DisplaySettings? display;
@@ -103,7 +134,7 @@ class _AccountApp extends StatefulWidget {
 }
 
 class _AccountAppState extends State<_AccountApp> {
-  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox);
+  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, reminders: widget.reminders);
   late final _display = widget.display ?? DisplaySettings.memory();
 
   @override

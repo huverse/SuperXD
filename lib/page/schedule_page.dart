@@ -3,7 +3,9 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/domain/period_spans.dart';
+import 'package:superxd/page/reminder_dialog.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -42,8 +44,10 @@ class ScheduleSelection {
 }
 
 class SchedulePage extends StatefulWidget {
-  const SchedulePage({super.key, required this.gateway});
+  const SchedulePage({super.key, required this.gateway, this.reminders});
   final CampusGateway gateway;
+  // 为空时不显示课前提醒入口（测试与未接入提醒的环境）。
+  final CampusReminders? reminders;
   @override
   State<SchedulePage> createState() => _SchedulePageState();
 }
@@ -252,6 +256,8 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
           Expanded(child: Text(_selection.yearOverview && _selection.year.isNotEmpty ? '${_selection.year}–${int.parse(_selection.year)+1}' : '课表', style: Theme.of(context).textTheme.titleLarge)),
           TextButton(onPressed: _term == null || _loading ? null : _editStart, child: const Text('开学日')),
           TextButton(onPressed: _loading ? null : _today, child: const Text('今天')),
+          if (widget.reminders case final reminders?)
+            IconButton(tooltip: '课前提醒', onPressed: () => showReminderSettings(context, gateway: widget.gateway, reminders: reminders), icon: const CampusIcon(CampusIcons.reminder)),
           IconButton(tooltip: '管理课程', onPressed: _term == null || _loading ? null : _manage, icon: const CampusIcon(CampusIcons.manageSchedule)),
         ])))),
         SizedBox(height: 48 * scale, child: Row(children: [for (final range in ScheduleRange.values) Expanded(child: InkWell(

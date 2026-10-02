@@ -8,10 +8,12 @@
   - 继承 ChangeNotifier，并实现 CampusGateway。
   - 提供代次 generation、当前会话与身份、记住账号、登出与会话过期、旧库导入状态。
   - 页面和 AppSession 只依赖这个接口。
+  - scheduleChanges：学期、课表、作息、开学日或提醒设置在本机写入成功后通知，组合根据此重新对账课前提醒；默认实现从不通知。
 - account_gateway.dart：AccountAccess 的实现 AccountGateway。这个门面只负责选中固定的账号上下文。
   - 活动上下文包含身份、会话和该账号专属的 KingoCampusGateway。
     - 业务调用经 _dispatch 转发，并记录在途请求数。
     - 账号变化后，迟到的调用返回 ACCOUNT_CHANGED。
+    - 写入类调用经 _notifyWrite 包一层，成功后触发 scheduleChanges。
   - 切换锁：登录落定、退出、会话过期、旧库导入和关闭都在同一把锁里执行。切换前，旧上下文先停止接收请求，并等在途请求全部结束。
   - 登录：
     - 每次尝试都新建一个 KingoAuth 和一个客户端，用尝试编号（epoch）防止旧尝试回写。

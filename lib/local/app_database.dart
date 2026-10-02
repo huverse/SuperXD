@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:superxd/domain/account.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/local/legacy_import.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/schedule_edit.dart';
@@ -30,12 +31,12 @@ class AppDatabase {
 
   static Future<AppDatabase> open({String? databasePath}) async {
     if (databasePath == null) throw ArgumentError('必须显式指定数据库路径；账号数据库请使用 AccountStore');
-    final db = await openDatabase(databasePath, version: 5, onConfigure: _configure, onCreate: _create, onUpgrade: _upgrade);
+    final db = await openDatabase(databasePath, version: 6, onConfigure: _configure, onCreate: _create, onUpgrade: _upgrade);
     return AppDatabase(db);
   }
 
   static Future<AppDatabase> openForAccount({required String databasePath, required AccountIdentity identity}) async {
-    final db = await openDatabase(databasePath, version: 5, singleInstance: false,
+    final db = await openDatabase(databasePath, version: 6, singleInstance: false,
       onConfigure: (db) async {
         await _configure(db);
         // Android 会先创建 android_metadata；它不是旧业务数据，不能阻止新账号库初始化。
@@ -102,6 +103,7 @@ class AppDatabase {
       await _revisionIndexes(db);
       await _pruneAllRevisions(db);
     }
+    if (oldVersion < 6) await _createReminderSetting(db);
   }
 
   static Future<void> _revisionIndexes(DatabaseExecutor db) async {
@@ -234,7 +236,33 @@ CREATE TABLE bells_cache (
     await _createBellsSource(db);
     await _createAccountMetadata(db);
     await _revisionIndexes(db);
+    await _createReminderSetting(db);
   }
+
+  // 课前提醒设置：每学期一行，行数随学期数有界。
+  static Future<void> _createReminderSetting(Database db) async {
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS reminder_setting (
+  xn TEXT NOT NULL,
+  xq TEXT NOT NULL,
+  enabled INTEGER NOT NULL,
+  lead_minutes INTEGER NOT NULL,
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (xn, xq)
+)''');
+  }
+
+  Future<ReminderSetting?> readReminderSetting(TermRef term) async {
+    final rows = await _db.query('reminder_setting', where: 'xn = ? AND xq = ?', whereArgs: [term.xn, term.xq], limit: 1);
+    final row = rows.firstOrNull;
+    return row == null ? null : ReminderSetting(enabled: row['enabled'] == 1, leadMinutes: row['lead_minutes'] as int);
+  }
+
+  Future<void> saveReminderSetting(TermRef term, ReminderSetting setting, {required String now}) => _db.insert(
+    'reminder_setting',
+    {'xn': term.xn, 'xq': term.xq, 'enabled': setting.enabled ? 1 : 0, 'lead_minutes': setting.leadMinutes, 'updated_at': now},
+    conflictAlgorithm: ConflictAlgorithm.replace,
+  );
 
   Future<SavedSession?> readSession() async {
     final rows = await _db.query('session', where: 'id = 1');

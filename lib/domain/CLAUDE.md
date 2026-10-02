@@ -15,6 +15,7 @@
   - campusToday：校园时区的今天。campusNow：校园时区今天的零点。
   - formatCampusTimestamp：把 UTC 字符串转成校园时间用于展示。
   - clockMinutes：把 HH:mm 转成分钟数。
+  - campusMoment：校园日期加当天分钟换算成 UTC 绝对时刻。
 - week.dart：ISO 日期与周次计算。第几周从开学日所在周的周一起算（weekIndex、weekRange）。termStartHint 是开学日的说明文案。
 - schedule_store.dart：课表核心模型与版本规则。
   - 模型：CourseRecord、CourseMeeting、TermRef、ScheduleRevision、ScheduleScope。
@@ -26,6 +27,13 @@
   - 变更对比 scheduleChanges，以及时段、周次的显示文案。
 - period_spans.dart：把当日课程按节次展开成 PeriodSpan（有课段与空档段），并决定补齐哪些节次。
 - meeting_time.dart：按作息把节次换算成上课时刻 MeetingTime。
+- course_occurrence.dart：courseOccurrences 把课表、开学日与作息展开成带 UTC 起止时刻的课程实例 CourseOccurrence，供课前提醒、日历导出、桌面小组件共用。
+  - 按“时段 × 周次”直接定位日期，不逐天扫描。
+  - 缺开学日或作息时返回空并带原因（OccurrenceGap），作息里找不到的节次计入 unresolved，不猜时刻。
+- course_reminder.dart：课前提醒规则与端口。
+  - planReminders：未来 14 天、最多 128 条，提醒时刻已过的不安排。
+  - CourseReminderPort：系统调度端口，由 device 层实现；ReminderCapability 表示通知与精确闹钟权限。
+  - 提醒设置类型 ReminderSetting 定义在 campus_gateway.dart（默认关闭、提前 15 分钟，档位 5/10/15/30）。
 - grades.dart：成绩 JSON 的编解码与边界校验（GradeDataException）、学年摘要，以及筛选与排序（GradeFilter、GradeSort、selectGrades）。
 
 # 关键规则
