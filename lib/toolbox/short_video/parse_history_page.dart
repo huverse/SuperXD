@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -98,10 +99,14 @@ class _ParseHistoryPageState extends State<ParseHistoryPage> {
         icon: const CampusIcon(CampusIcons.back),
       ),
       actions: [
-        IconButton(
-          tooltip: '清空历史',
-          onPressed: () => _remove(),
-          icon: const CampusIcon(CampusIcons.delete),
+        Padding(
+          padding: const EdgeInsets.only(right: 12),
+          child: CampusGlassCircleButton(
+            label: '清空历史',
+            size: 44,
+            onPressed: () => _remove(),
+            icon: const CampusIcon(CampusIcons.delete),
+          ),
         ),
       ],
     ),

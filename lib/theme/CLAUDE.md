@@ -14,7 +14,7 @@
   - CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，不随路由或列表项复制。
   - AtmospherePainter 负责绘制背景。
   - FrostTexture 是固定的颗粒纹理，不逐帧生成随机噪点。
-- campus_motion.dart：CampusMotion 管理视觉动效的生命周期。以下任一情况都不播放装饰动效：减少动画、后台、分支不可见、当前路由不在最上层。后台暂停动效不代表取消业务请求。
+- campus_motion.dart：CampusMotion 管理视觉动效的生命周期；另有玻璃控件专用的弹簧令牌（只给玻璃控件用，其余动效不回弹）。以下任一情况都不播放装饰动效：减少动画、后台、分支不可见、当前路由不在最上层。后台暂停动效不代表取消业务请求。
 - campus_transitions.dart：
   - 统一时长：页面进入 360ms、返回 320ms，弹层 300ms。
   - campusPage 让 GoRouter 与 push 共用同一套 Material 路由契约。
@@ -41,8 +41,12 @@
   - campusGlassQuality 把档位映射为库的 GlassQuality。
 - campus_glass_surface.dart：CampusGlassSurface 是按钮和手势反馈共用的玻璃材质，本身不提供点击行为。
 - campus_glass_button.dart：
-  - 主按钮是紧凑的玻璃胶囊，视觉高度约 38dp，触区至少 48dp。
-  - CampusGlassButtonSurface 是胶囊按钮，CampusGlassCircleButton 是圆形按钮。
+  - 主按钮是紧凑的玻璃胶囊，视觉高度约 38dp，触区至少 48dp。全局 FilledButton 主题用它画背景，所以所有主操作都是玻璃按钮。
+  - CampusGlassButtonSurface 是胶囊按钮，CampusGlassCircleButton 是圆形按钮。圆形按钮默认 52，顶栏操作用 44。
+- campus_glass_press.dart：玻璃控件的按压物理 CampusGlassPress。
+  - 按下鼓起 6%，松手过冲一次后回位；内容只跟随一半。
+  - 满档时在手指处画径向高光。减少动画时不形变。
+  - 弹簧令牌在 campus_motion.dart：campusGlassSpring 用于按压与松手，campusGlassTravelSpring 用于指示器跨格移动。
 - campus_surface.dart：CampusSurface 是通用卡片表面，可带点击。
 - scroll_edge_fade.dart：ScrollEdgeFade 在浮动玻璃栏下只渐隐内容本身，露出真实背景；高对比度时不渐隐。它的子树里不能再放玻璃。
 - third_party_licenses.dart：registerCampusLicenses 把第三方声明和字体许可注册进 LicenseRegistry。

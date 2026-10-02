@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
@@ -311,18 +312,24 @@ class _MediaResultPageState extends State<MediaResultPage> {
           icon: const CampusIcon(CampusIcons.back),
         ),
         actions: [
-          IconButton(
-            tooltip: '下载管理',
-            onPressed: () async {
-              final task = await Navigator.push<ToolboxDownload>(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => DownloadsPage(runtime: widget.runtime),
-                ),
-              );
-              if (task != null && context.mounted) Navigator.pop(context, task);
-            },
-            icon: const CampusIcon(CampusIcons.download),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: CampusGlassCircleButton(
+              label: '下载管理',
+              size: 44,
+              onPressed: () async {
+                final task = await Navigator.push<ToolboxDownload>(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => DownloadsPage(runtime: widget.runtime),
+                  ),
+                );
+                if (task != null && context.mounted) {
+                  Navigator.pop(context, task);
+                }
+              },
+              icon: const CampusIcon(CampusIcons.download),
+            ),
           ),
         ],
       ),

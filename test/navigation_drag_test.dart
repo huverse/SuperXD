@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
 import 'package:superxd/page/shell_page.dart';
+import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/glass_panel.dart';
 
 Future<void> _mount(WidgetTester tester, List<int> changes, {bool rtl = false}) async {
   var selected = 0;
@@ -60,5 +63,30 @@ void main() {
     final position=tester.getCenter(_capsule);
     final next=await tester.startGesture(position);await tester.pump();expect(tester.getCenter(_capsule).dx,closeTo(position.dx,.1));
     await next.moveTo(Offset(first.dx,first.dy-100));await tester.pump();await next.up();await tester.pumpAndSettle();expect(changes,[3,0]);
+  });
+
+  testWidgets('满档拖动时升起玻璃透镜，回位后落回；减少动画不升起', (tester) async {
+    campusGlassReady.value = true;
+    addTearDown(() => campusGlassReady.value = false);
+    Future<void> mount(MediaQueryData media) => tester.pumpWidget(MaterialApp(theme: campusTheme(), home: MediaQuery(data: media, child: CampusGlassScope(mode: CampusGlassMode.full, capped: false, child: Scaffold(body: Align(alignment: Alignment.bottomCenter, child: DragNavigationBar(selected: 0, onSelected: (_) {})))))));
+    await mount(const MediaQueryData());
+    final lens = find.byType(liquid.AnimatedGlassIndicator);
+    expect(lens, findsNothing);
+    final drag = await tester.startGesture(tester.getCenter(find.text('今天')));
+    // 动画首帧只记录起点，下一帧才推进升起进度。
+    await tester.pump();await tester.pump(const Duration(milliseconds: 80));
+    await drag.moveTo(tester.getCenter(find.text('消息')));await tester.pump();
+    expect(lens, findsOneWidget);
+    // 指示器的渲染框是整条栏，透镜按 exactOffset/exactWidth 放在其中，须与静态胶囊几何一致。
+    final indicator = tester.widget<liquid.AnimatedGlassIndicator>(lens), capsule = tester.getRect(_capsule);
+    expect(tester.getRect(lens).left + 4 + indicator.exactOffset!, closeTo(capsule.left, .1));
+    expect(indicator.exactWidth, closeTo(capsule.width, .1));
+    await drag.up();await tester.pumpAndSettle();
+    expect(lens, findsNothing);
+    await mount(const MediaQueryData(disableAnimations: true));
+    final reduced = await tester.startGesture(tester.getCenter(find.text('今天')));await tester.pump(const Duration(milliseconds: 200));
+    expect(lens, findsNothing);
+    await reduced.up();await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 }
