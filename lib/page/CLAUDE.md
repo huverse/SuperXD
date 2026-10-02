@@ -30,7 +30,11 @@
   - schedule_page.dart：课表页 SchedulePage。
     - 支持天、学期、学年三种范围，可设置开学日。
     - 无课时段可新增课程或安排已有课程，也可进入课程管理。
-    - 顶栏“课前提醒”入口（只在传入 CampusReminders 时显示）。
+    - 顶栏⋯菜单：课前提醒（只在传入 CampusReminders 时显示）与导出到日历。
+  - calendar_export.dart：导出到日历 exportTermCalendar。
+    - 把当前所看学期的全部上课时段写成 .ics 交给日历应用导入；缺开学日、缺作息或没有可导出时段时说明原因，不导出。
+    - 作息里找不到的节次不猜时刻，导出前确认未导出的时段数。
+    - 交付函数可注入（openCalendar），测试用假实现；默认 openCalendarFile 写入缓存 calendar_export 文件夹（每次先清空，只留最近一份），经原生通道 superxd/calendar_export 交出，见 CalendarExporter.kt。
   - reminder_dialog.dart：课前提醒设置 showReminderSettings。开关与提前时间（5/10/15/30 分钟）按学期保存；状态行如实显示已安排几次、排到哪天、缺开学日或作息、通知未开启、可能延迟，需要处理的给“开启通知”“准时提醒”按钮。
   - schedule_calendar.dart：课表页月份轨道与周次轨道的纯函数计算。
   - schedule_editor_page.dart：课程管理 ScheduleEditorPage，可新增、编辑、删除（可撤销）、清空、建立空课表，并提供历史版本入口。

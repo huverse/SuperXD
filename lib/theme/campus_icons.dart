@@ -47,6 +47,7 @@ abstract final class CampusIcons {
   static const info = LucideIcons.info;
   static const check = LucideIcons.check;
   static const reminder = LucideIcons.bell;
+  static const exportCalendar = LucideIcons.calendarArrowUp;
 }
 
 void configureCampusIcons() =>

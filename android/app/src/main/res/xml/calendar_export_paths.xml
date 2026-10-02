@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 日历导出只开放这一个缓存文件夹，见 CalendarExporter.kt。 -->
+<paths>
+    <cache-path name="calendar_export" path="calendar_export/" />
+</paths>

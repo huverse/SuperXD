@@ -1,6 +1,6 @@
 # domain 领域核心
 
-定位：纯 Dart，不依赖 Flutter，也不依赖项目内其他层。外部包只有两个：uuid 用于生成版本 id，timezone 用于校园时区。业务端口 CampusGateway 和全部视图类型都定义在这里，供 page、application、gateway 共用。
+定位：纯 Dart，不依赖 Flutter，也不依赖项目内其他层。外部包只有三个：uuid 用于生成版本 id，timezone 用于校园时区，crypto 用于日历事件 UID。业务端口 CampusGateway 和全部视图类型都定义在这里，供 page、application、gateway 共用。
 
 # 文件职责
 
@@ -34,6 +34,9 @@
   - planReminders：未来 14 天、最多 128 条，提醒时刻已过的不安排。
   - CourseReminderPort：系统调度端口，由 device 层实现；ReminderCapability 表示通知与精确闹钟权限。
   - 提醒设置类型 ReminderSetting 定义在 campus_gateway.dart（默认关闭、提前 15 分钟，档位 5/10/15/30）。
+- ical.dart：buildIcal 把课程实例写成 iCalendar 文本（RFC 5545 最小子集，手写）。
+  - 每次上课一个事件，时刻一律 UTC；转义、CRLF、75 八位组折行且不切断多字节字符。
+  - UID 由学期、课程、日期、节次哈希而来，重复导入时更新同一事件；不含账号信息。单次最多 icalEventLimit（5000）个事件。
 - grades.dart：成绩 JSON 的编解码与边界校验（GradeDataException）、学年摘要，以及筛选与排序（GradeFilter、GradeSort、selectGrades）。
 
 # 关键规则
