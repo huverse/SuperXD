@@ -64,8 +64,10 @@ class CampusGlassCircleButton extends StatelessWidget {
   // 顶栏操作用44，视觉更轻；触区仍由按钮主题的padded保证至少48。
   final double size;
   @override
+  // 读屏标签由按钮内的 Semantics 提供，提示框不再重复生成一个同名节点，避免读两遍。
   Widget build(BuildContext context) => Tooltip(
     message: label,
+    excludeFromSemantics: true,
     child: FilledButton(
       onPressed: onPressed,
       style: FilledButton.styleFrom(

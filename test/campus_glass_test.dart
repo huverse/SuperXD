@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +7,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_material.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_glass_surface.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -16,6 +19,31 @@ import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_surface.dart';
+
+// 玻璃的背景采样整块绘制或不画：显隐期间玻璃之上不得有半透明的 Opacity 或 FadeTransition，否则玻璃到最后才突然出现。
+void expectGlassUnfaded(Finder glass) {
+  expect(glass, findsWidgets);
+  for (final element in glass.evaluate()) {
+    element.visitAncestorElements((ancestor) {
+      final widget = ancestor.widget;
+      if (widget is Opacity) expect(widget.opacity, 1);
+      if (widget is FadeTransition) expect(widget.opacity.value, 1);
+      return true;
+    });
+  }
+}
+
+// 实色面板没有玻璃，仍须随进度淡入：返回其上最小的不透明度。
+double fadedOpacity(Finder panel) {
+  var opacity = 1.0;
+  panel.evaluate().single.visitAncestorElements((ancestor) {
+    final widget = ancestor.widget;
+    if (widget is Opacity) opacity = math.min(opacity, widget.opacity);
+    if (widget is FadeTransition) opacity = math.min(opacity, widget.opacity.value);
+    return true;
+  });
+  return opacity;
+}
 
 void main() {
   test('暖灰背景最坏明度下正文辅助与按钮对比度合格', () {
@@ -172,6 +200,13 @@ void main() {
           expect(settings.whitenStrength, overlay && !palette.isDark ? .65 : 0, reason: '${palette.id} $role');
           expect(settings.whitenGated, isFalse);
         }
+        // 无遮罩的浮层（菜单、提示条）带柔和投影；其余保持原有阴影。
+        expect(full.shadow, preset.shadow);
+        for (final tier in [CampusGlassTier.full, CampusGlassTier.standard, CampusGlassTier.minimal]) {
+          final floating = campusGlassSettings(palette, role, tier, floating: true);
+          if (overlay) expect(floating.shadow, campusFloatingShadow);
+          if (!overlay && tier != CampusGlassTier.full) expect(floating.shadow, isNull);
+        }
       }
       final pressed = campusGlassSettings(palette, CampusGlassRole.control, CampusGlassTier.full, pressed: true);
       expect(pressed.glassColor.withValues(alpha: 1), palette.surfaceSelected.withValues(alpha: 1));
@@ -219,6 +254,10 @@ void main() {
       bool panelOpaque() => tester.widget<GlassPanelScope>(find.descendant(of: find.byType(GlassPanel), matching: find.byType(GlassPanelScope))).opaque;
       expect(panelOpaque(), isFalse);
       final confirm = showCampusConfirm(page, title: '删除记录？', message: '只移除记录。', action: '删除');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      expectGlassUnfaded(find.descendant(of: find.byType(CampusOverlayGlass), matching: find.byType(liquid.AdaptiveGlass)));
+      expect(find.byType(liquid.GlassMaterializeTransition), findsOneWidget);
       await tester.pumpAndSettle();
       expect(find.byType(CampusGlassDialog), findsOneWidget);
       // 面板一层玻璃；面板内的按钮只做 vibrancy，不再叠第二层。
@@ -231,11 +270,21 @@ void main() {
       expect(campusOverlayDepth.value, 0);
       expect(panelOpaque(), isFalse);
       showCampusDialog<void>(context: page, builder: (context) => CampusGlassDialog(solid: true, title: const Text('验证码'), options: [SimpleDialogOption(onPressed: () => Navigator.pop(context), child: const Text('选项一'))]));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      // 实色面板没有玻璃，仍随路由进度淡入。
+      expect(fadedOpacity(find.descendant(of: find.byType(CampusOverlayGlass), matching: find.byType(DecoratedBox)).first), inExclusiveRange(0, 1));
       await tester.pumpAndSettle();
       expect(find.descendant(of: find.byType(CampusOverlayGlass), matching: find.byType(liquid.AdaptiveGlass)), findsNothing);
       await tester.tap(find.text('选项一'));
       await tester.pumpAndSettle();
       expect(find.byType(CampusGlassDialog), findsNothing);
+      // 日期选择器等系统弹窗不含玻璃面板，整体随进度淡入。
+      showCampusDialog<void>(context: page, glassPanel: false, builder: (context) => const AlertDialog(content: Text('选择开学日')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(fadedOpacity(find.byType(AlertDialog)), inExclusiveRange(0, 1));
+      await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });
 
@@ -248,8 +297,12 @@ void main() {
         showCampusToast(context, '已保存删除记录', action: '撤销', onAction: () => undone++);
       }, child: const Text('删除')))))));
       await tester.tap(find.text('删除'));
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 120));
       final toast = find.widgetWithText(SnackBar, '已保存删除记录');
+      expect(tester.widget<SnackBar>(toast).behavior, SnackBarBehavior.fixed);
+      expectGlassUnfaded(find.descendant(of: toast, matching: find.byType(liquid.AdaptiveGlass)));
+      await tester.pumpAndSettle();
       expect(toast, findsOneWidget);
       expect(find.descendant(of: toast, matching: find.byType(liquid.AdaptiveGlass)), findsOneWidget);
       expect(tester.getSize(find.widgetWithText(TextButton, '撤销')).height, greaterThanOrEqualTo(48));
@@ -302,6 +355,138 @@ void main() {
         expect(contrast(glassSwitch.thumbColor, glassSwitch.inactiveColor!), greaterThanOrEqualTo(3), reason: palette.id);
         expect(contrast(glassSwitch.activeColor!, glassSwitch.inactiveColor!), greaterThanOrEqualTo(1.8), reason: palette.id);
       }
+    });
+  });
+
+  group('玻璃菜单与底部弹层', () {
+    tearDown(() => campusGlassReady.value = false);
+    const items = [
+      CampusMenuItem(value: 'cancel', label: '取消全部', icon: CampusIcons.close),
+      CampusMenuItem(value: 'delete', label: '删除记录', icon: CampusIcons.manage),
+    ];
+    Widget host(Widget body, {bool reduceMotion = false}) => MaterialApp(
+      theme: campusTheme(),
+      builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(disableAnimations: reduceMotion), child: child!),
+      home: CampusGlassScope(mode: CampusGlassMode.full, capped: false, child: Scaffold(body: body)),
+    );
+    double menuScale(WidgetTester tester) => tester.widget<Transform>(find.ancestor(of: find.byType(CampusOverlayGlass), matching: find.byType(Transform)).first).transform.getMaxScaleOnAxis();
+
+    testWidgets('菜单为路由：点选返回值，返回键只关菜单，期间栏改实色；展开过冲一次后回位', (tester) async {
+      campusGlassReady.value = true;
+      late BuildContext anchor;
+      final results = <String?>[];
+      await tester.pumpWidget(host(Center(child: Builder(builder: (context) {
+        anchor = context;
+        return TextButton(onPressed: () => showCampusMenu<String>(context, items: items, selected: 'delete').then(results.add), child: const Text('更多'));
+      }))));
+      await tester.tap(find.text('更多'));
+      await tester.pump();
+      var peak = 0.0;
+      for (var frame = 0; frame < 40; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        peak = math.max(peak, menuScale(tester));
+        if (frame == 6) {
+          expectGlassUnfaded(find.descendant(of: find.byType(CampusOverlayGlass), matching: find.byType(liquid.AdaptiveGlass)));
+          expect(find.byType(liquid.GlassMaterializeTransition), findsOneWidget);
+        }
+      }
+      await tester.pumpAndSettle();
+      expect(peak, greaterThan(1.0));
+      expect(menuScale(tester), moreOrLessEquals(1, epsilon: 1e-3));
+      expect(campusOverlayDepth.value, 1);
+      expect(find.descendant(of: find.byType(CampusOverlayGlass), matching: find.byType(liquid.AdaptiveGlass)), findsOneWidget);
+      final row = find.ancestor(of: find.text('删除记录'), matching: find.byType(InkWell)).first;
+      expect(tester.getSize(row).height, greaterThanOrEqualTo(48));
+      expect(find.descendant(of: row, matching: find.byIcon(CampusIcons.check)), findsOneWidget);
+      expect(tester.getSemantics(find.text('删除记录')), isSemantics(isSelected: true, hasSelectedState: true, isButton: true, hasTapAction: true, label: '删除记录'));
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('取消全部'), findsNothing);
+      expect(find.text('更多'), findsOneWidget);
+      expect(campusOverlayDepth.value, 0);
+      await tester.tap(find.text('更多'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('取消全部'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('更多'));
+      await tester.pumpAndSettle();
+      await tester.tapAt(Offset.zero);
+      await tester.pumpAndSettle();
+      expect(results, [null, 'cancel', null]);
+      expect(anchor.mounted, isTrue);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('减少动画时菜单直接到位不缩放；靠右下角向上、右对齐且不出屏', (tester) async {
+      // 按钮离右缘100：左对齐会被屏幕夹回，只有右缘对齐时菜单右缘才与按钮一致。
+      await tester.pumpWidget(host(reduceMotion: true, Align(alignment: Alignment.bottomRight, child: Padding(padding: const EdgeInsets.only(right: 100), child: Builder(builder: (context) => IconButton(tooltip: '更多操作', onPressed: () => showCampusMenu<String>(context, items: items), icon: const CampusIcon(CampusIcons.manage)))))));
+      await tester.tap(find.byTooltip('更多操作'));
+      await tester.pump();
+      expect(menuScale(tester), 1);
+      final anchor = tester.getRect(find.byType(IconButton));
+      final menu = tester.getRect(find.byType(CampusOverlayGlass));
+      final screen = tester.getRect(find.byType(Scaffold));
+      expect(menu.bottom, lessThanOrEqualTo(anchor.top));
+      expect(menu.right, moreOrLessEquals(anchor.right));
+      expect(menu.width, greaterThanOrEqualTo(200));
+      expect(screen.deflate(12).contains(menu.topLeft), isTrue);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('下拉字段：标签外观、等宽菜单、只在值变化时回调、禁用不弹出', (tester) async {
+      final changes = <int>[];
+      var enabled = true;
+      await tester.pumpWidget(host(StatefulBuilder(builder: (context, setState) => Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(children: [
+          CampusMenuField<int>(label: '开始节次', value: 2, items: [for (var period = 1; period <= 3; period++) CampusMenuItem(value: period, label: '第$period节')], onChanged: enabled ? changes.add : null),
+          TextButton(onPressed: () => setState(() => enabled = false), child: const Text('禁用')),
+        ]),
+      ))));
+      expect(find.descendant(of: find.byType(InputDecorator), matching: find.text('开始节次')), findsOneWidget);
+      expect(find.text('第2节'), findsOneWidget);
+      await tester.tap(find.text('第2节'));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(find.byType(CampusOverlayGlass)).width, tester.getSize(find.byType(CampusMenuField<int>)).width);
+      await tester.tap(find.text('第2节').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('第2节'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('第3节'));
+      await tester.pumpAndSettle();
+      expect(changes, [3]);
+      await tester.tap(find.text('禁用'));
+      await tester.pump();
+      await tester.tap(find.byType(CampusMenuField<int>));
+      await tester.pumpAndSettle();
+      expect(find.byType(CampusOverlayGlass), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('底部弹层为悬浮玻璃面板，返回键关闭，期间栏改实色', (tester) async {
+      // 手机宽度；宽于640时系统弹层按M3居中限宽，边距另算。
+      await tester.binding.setSurfaceSize(const Size(400, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      campusGlassReady.value = true;
+      await tester.pumpWidget(host(Builder(builder: (context) => Center(child: TextButton(
+        onPressed: () => showCampusSheet<void>(context: context, builder: (context) => DraggableScrollableSheet(
+          expand: false,
+          builder: (context, controller) => CampusSheetPanel(child: ListView(controller: controller, children: const [Text('原始成绩记录')])),
+        )),
+        child: const Text('详情'),
+      )))));
+      await tester.tap(find.text('详情'));
+      await tester.pumpAndSettle();
+      expect(find.descendant(of: find.byType(CampusSheetPanel), matching: find.byType(liquid.AdaptiveGlass)), findsOneWidget);
+      final panel = tester.getRect(find.byType(CampusOverlayGlass));
+      final screen = tester.getRect(find.byType(Scaffold));
+      expect([panel.left, screen.right - panel.right, screen.bottom - panel.bottom], [8, 8, 8]);
+      expect(campusOverlayDepth.value, 1);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('原始成绩记录'), findsNothing);
+      expect(campusOverlayDepth.value, 0);
+      expect(tester.takeException(), isNull);
     });
   });
 }

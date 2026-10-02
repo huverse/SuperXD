@@ -110,7 +110,13 @@ void main() {
       expect(circle.width, greaterThanOrEqualTo(48));
       expect(find.text('回今天'), findsNothing);
       final semantics = tester.ensureSemantics();
-      expect(find.bySemanticsLabel('回今天'), findsWidgets);
+      // 只读一遍：标签落在可点的按钮节点上；提示框不得在外层另生成带同名 tooltip 的节点（安卓会把它当成第二个同名元素）。
+      expect(find.bySemanticsLabel('回今天'), findsOneWidget);
+      final node = tester.getSemantics(find.bySemanticsLabel('回今天'));
+      expect(node, isSemantics(label: '回今天', isButton: true, hasTapAction: true));
+      for (var ancestor = node.parent; ancestor != null; ancestor = ancestor.parent) {
+        expect(ancestor.getSemanticsData().tooltip, isNot('回今天'));
+      }
       semantics.dispose();
       expect(tester.takeException(), isNull, reason: palette.id);
     }

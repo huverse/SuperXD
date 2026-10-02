@@ -15,6 +15,7 @@ import 'package:superxd/page/sync_selection_dialog.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 class GradesPage extends StatefulWidget {
@@ -234,17 +235,14 @@ class _GradesPageState extends State<GradesPage> {
     final originals = _original
         ? [course]
         : _originalByCode[course.courseCode] ?? [];
-    showModalBottomSheet<void>(
+    showCampusSheet<void>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      sheetAnimationStyle: MediaQuery.disableAnimationsOf(context) ? AnimationStyle.noAnimation : campusOverlay,
       builder: (context) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: .75,
         maxChildSize: .95,
         minChildSize: .35,
-        builder: (context, controller) => ListView(
+        builder: (context, controller) => CampusSheetPanel(child: ListView(
           controller: controller,
           padding: const EdgeInsets.all(20),
           children: [
@@ -309,7 +307,7 @@ class _GradesPageState extends State<GradesPage> {
               style: TextStyle(fontSize: 14),
             ),
           ],
-        ),
+        )),
       ),
     );
   }
@@ -374,24 +372,18 @@ class _GradesPageState extends State<GradesPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DropdownButtonFormField<String>(
-          icon: const CampusIcon(CampusIcons.expand),
-          key: ValueKey(_year),
-          initialValue: _year,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: '学年'),
+        CampusMenuField<String>(
+          label: '学年',
+          value: _year,
           items: [
             for (final year in years)
-              DropdownMenuItem(
-                value: year,
-                child: Text('$year–${int.parse(year) + 1}学年'),
-              ),
+              CampusMenuItem(value: year, label: '$year–${int.parse(year) + 1}学年'),
           ],
           onChanged: _syncing
               ? null
               : (year) {
                   setState(() {
-                    _year = year!;
+                    _year = year;
                     _term = _terms.firstWhere((term) => term.xn == year);
                     _view = null;
                     _overview = [];
@@ -674,27 +666,23 @@ class _GradesPageState extends State<GradesPage> {
                                   ],
                                 ),
                                 SizedBox(height: campusFieldGap(context)),
-                                DropdownButtonFormField<grades.GradeSort>(
-                                  icon: const CampusIcon(CampusIcons.expand),
-                                  initialValue: _sort,
-                                  isExpanded: true,
-                                  decoration: const InputDecoration(
-                                    labelText: '排序',
-                                  ),
+                                CampusMenuField<grades.GradeSort>(
+                                  label: '排序',
+                                  value: _sort,
                                   items: [
                                     for (final sort in grades.GradeSort.values)
-                                      DropdownMenuItem(
+                                      CampusMenuItem(
                                         value: sort,
-                                        child: Text(switch (sort) {
+                                        label: switch (sort) {
                                           grades.GradeSort.original => '教务原始顺序',
                                           grades.GradeSort.high => '数值成绩从高到低',
                                           grades.GradeSort.low => '数值成绩从低到高',
                                           grades.GradeSort.name => '课程名称',
-                                        }),
+                                        },
                                       ),
                                   ],
                                   onChanged: (sort) => setState(() {
-                                    _sort = sort!;
+                                    _sort = sort;
                                     _updateRows();
                                   }),
                                 ),

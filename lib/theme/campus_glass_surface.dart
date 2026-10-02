@@ -91,21 +91,38 @@ class CampusGlassSurface extends StatelessWidget {
   }
 }
 
-// 浮层面板（弹窗、提示条）共用的 overlay 玻璃；实色档和未就绪时用 surface，与升级前的弹窗底色一致。
+// 浮层路由把显隐进度交给面板。玻璃的背景采样要么整块绘制、要么不画，祖先 Opacity 会让玻璃在淡入末尾才突然出现，
+// 所以由面板自己显隐：有玻璃时用库的 materialize 驱动着色器自身的可见度，实色时改不透明度。
+class CampusOverlayReveal extends InheritedWidget {
+  const CampusOverlayReveal({super.key, required this.animation, required super.child});
+  final Animation<double> animation;
+
+  static Animation<double>? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<CampusOverlayReveal>()?.animation;
+
+  @override
+  bool updateShouldNotify(CampusOverlayReveal oldWidget) => animation != oldWidget.animation;
+}
+
+// 浮层面板（弹窗、菜单、弹层、提示条）共用的 overlay 玻璃；实色档和未就绪时用 surface，与升级前的弹窗底色一致。
+// floating 为真表示没有遮罩、直接压在内容上（菜单、提示条），带柔和投影分层。
 class CampusOverlayGlass extends StatelessWidget {
   const CampusOverlayGlass({
     super.key,
     required this.radius,
     required this.child,
     this.solid = false,
+    this.floating = false,
   });
   final double radius;
   final Widget child;
   final bool solid;
+  final bool floating;
 
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
+    final reveal = CampusOverlayReveal.maybeOf(context);
     return ValueListenableBuilder<bool>(
       valueListenable: campusGlassReady,
       builder: (context, ready, _) {
@@ -114,27 +131,42 @@ class CampusOverlayGlass extends StatelessWidget {
             : CampusGlassScope.tierOf(context, ready: ready);
         final opaque = tier == CampusGlassTier.solid || !ready;
         // 面板内的按钮、开关按父玻璃处理（只做 vibrancy 或随面板实色），不再叠一层玻璃；
-        // 墨水画在最近的 Material 上，内容外包透明 Material，点按涟漪才不被面板背景盖住。
+        // 墨水画在最近的 Material 上，内容外包透明 Material，点按涟漪才不被面板背景盖住；
+        // 菜单、弹层的内容会滚动，按面板形状裁剪，不溢出圆角。
         final content = GlassPanelScope(
           opaque: opaque,
-          child: Material(type: MaterialType.transparency, child: child),
+          child: ClipRSuperellipse(
+            borderRadius: BorderRadius.circular(radius),
+            child: Material(type: MaterialType.transparency, child: child),
+          ),
         );
         if (opaque) {
-          return DecoratedBox(
+          final panel = DecoratedBox(
             decoration: BoxDecoration(
               color: palette.surface,
               borderRadius: BorderRadius.circular(radius),
+              boxShadow: floating ? campusFloatingShadow : null,
             ),
             child: content,
           );
+          return reveal == null ? panel : FadeTransition(opacity: reveal, child: panel);
         }
-        return liquid.AdaptiveGlass(
+        final glass = liquid.AdaptiveGlass(
           shape: liquid.LiquidRoundedSuperellipse(borderRadius: radius),
           quality: campusGlassQuality(tier),
           allowElevation: false,
-          settings: campusGlassSettings(palette, CampusGlassRole.overlay, tier),
+          settings: campusGlassSettings(palette, CampusGlassRole.overlay, tier, floating: floating),
           child: content,
         );
+        // 只借 materialize 的可见度，不缩放、不模糊内容；位移和缩放仍由各路由自己的转场负责。
+        return reveal == null
+            ? glass
+            : liquid.GlassMaterializeTransition(
+                animation: reveal,
+                scaleFrom: 1,
+                contentSigma: 0,
+                child: glass,
+              );
       },
     );
   }

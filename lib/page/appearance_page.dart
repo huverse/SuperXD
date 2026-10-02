@@ -5,7 +5,8 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
-import 'package:superxd/theme/campus_glass_controls.dart';import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class AppearancePage extends StatefulWidget {
   const AppearancePage({super.key});
