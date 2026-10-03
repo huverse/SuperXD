@@ -84,7 +84,8 @@
    - 业务 SQLite、账号索引和日志一律不存密码。
    - 用户关闭记住账号或主动退出时，立即删除凭据。
 8. 设备级数据
-   - 百宝箱、下载任务，以及配色、字体、字号和深浅色设置都属于设备，切换账号时保留。
+   - 百宝箱、下载任务，以及配色、字体、字号、深浅色、玻璃效果和自定义壁纸都属于设备，切换账号时保留。
+   - 自定义壁纸只经系统照片选择器读取用户选中的一张，复制到应用私有目录，不上传、不申请存储权限。
    - 百宝箱不读取教务凭据或 cookie。
    - 第三方解析来源逐个来源、按授权版本单独征得同意。自动模式只尝试已启用且已同意的来源。
 9. 对外网络
@@ -97,6 +98,7 @@
     - 课表版本：每学期 100 个。
     - 解析历史：只存本机，最多 80 条且保留 30 天；默认开启，用户可关闭。
     - 下载记录：已结束的最多保留 100 项且 30 天。创建超过 24 小时仍未完成的任务，在启动时取消。
+    - 自定义壁纸：只保留当前一张，不超过 20MB；换图或恢复云雾时删除，启动时清理残留；选图插件留在缓存里的副本用完即删。
     - 成绩：单次载荷上限 4MB，课程上限 1000 条。
     - 新增只增不删的数据时，必须同时给出上限或清理策略。
 11. 日志
@@ -145,7 +147,7 @@
   - today_navigation_test.dart、today_date_transition_test.dart、schedule_experience_test.dart、schedule_editor_ui_test.dart
   - grades_ui_test.dart、form_spacing_test.dart、navigation_drag_test.dart、shell_layout_test.dart
   - legal_page_test.dart、course_clock_performance_test.dart
-- 主题与显示设置：atmosphere_test.dart、campus_glass_test.dart、campus_glass_button_test.dart、campus_motion_test.dart、dark_mode_test.dart、appearance_settings_test.dart
+- 主题与显示设置：atmosphere_test.dart、campus_glass_test.dart、campus_glass_button_test.dart、campus_motion_test.dart、dark_mode_test.dart、appearance_settings_test.dart、wallpaper_test.dart
 - 百宝箱：toolbox_widget_test.dart、toolbox_download_test.dart、toolbox_media_features_test.dart、short_video_parser_test.dart、media_image_test.dart
 - 测试支撑：
   - fixture_campus_gateway.dart：合成数据教务网关，读取 assets/fixtures。
