@@ -232,6 +232,18 @@ class FixtureCampusGateway implements CampusGateway {
     }
   }
 
+  final Map<String, ReminderSetting> _reminders = {};
+
+  @override
+  Future<GatewayResult<ReminderSetting>> readReminderSetting(TermRef term) async => _ok(_reminders[term.key] ?? ReminderSetting.initial, source: 'local', fetchedAt: _stamp());
+
+  @override
+  Future<GatewayResult<ReminderSetting>> saveReminderSetting(TermRef term, ReminderSetting setting) async {
+    if (!ReminderSetting.leads.contains(setting.leadMinutes)) return _fail('INVALID_REMINDER', '提前时间只能选5、10、15或30分钟');
+    _reminders[term.key] = setting;
+    return _ok(setting, source: 'user', fetchedAt: _stamp());
+  }
+
   Future<({ScheduleView view, String fetchedAt, SessionView student})> _schedule() async {
     final json = await _read('schedule.json');
     final data = _map(json['data']);

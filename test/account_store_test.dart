@@ -135,7 +135,7 @@ void main() {
   });
 
   for (final version in [1, 2]) {
-    test('显式 v$version 库升级 v5 保留原数据且不自动写 owner', () async {
+    test('显式 v$version 库升级 v6 保留原数据且不自动写 owner，补建提醒设置表', () async {
       final directory = await Directory.systemTemp.createTemp('account-version-');
       final file = '${directory.path}/test.db';
       var database = await AppDatabase.open(databasePath: file);
@@ -146,6 +146,7 @@ void main() {
       final old = await openDatabase(file, singleInstance: false);
       await old.execute('DROP TABLE account_owner');
       await old.execute('DROP TABLE legacy_import_marker');
+      await old.execute('DROP TABLE reminder_setting');
       if (version == 1) {
         await old.execute('DROP TABLE term_bells_source');
         await old.execute('DROP INDEX schedule_revision_term_created');
@@ -157,9 +158,10 @@ void main() {
       expect(await database.termStartDate(_term.xn, _term.xq), '2026-08-31');
       await database.close();
       final upgraded = await openReadOnlyDatabase(file, singleInstance: false);
-      expect(await upgraded.getVersion(), 5);
+      expect(await upgraded.getVersion(), 6);
       expect(await upgraded.query('account_owner'), isEmpty);
       expect(await upgraded.query('legacy_import_marker'), isEmpty);
+      expect(await upgraded.query('reminder_setting'), isEmpty);
       await upgraded.close();
       await directory.delete(recursive: true);
     });

@@ -185,6 +185,15 @@ class BellsView {
   final TermRef? sourceTerm;
 }
 
+// 课前提醒设置，按学期一条；默认关闭，提前 15 分钟。
+class ReminderSetting {
+  const ReminderSetting({required this.enabled, required this.leadMinutes});
+  final bool enabled;
+  final int leadMinutes;
+  static const leads = [5, 10, 15, 30];
+  static const initial = ReminderSetting(enabled: false, leadMinutes: 15);
+}
+
 class RevisionView {
   const RevisionView({
     required this.id,
@@ -229,4 +238,7 @@ abstract class CampusGateway {
   Future<GatewayResult<List<RevisionView>>> listScheduleRevisions(TermRef term, {int? beforeSequence, int limit = 20});
   Future<GatewayResult<ScheduleRevision>> readScheduleRevision(TermRef term, String id);
   Future<GatewayResult<RevisionView>> restoreScheduleRevision(TermRef term, String id, {required String? expectedRevisionId});
+  // 只读写本机账号库；未设置过时返回 ReminderSetting.initial。
+  Future<GatewayResult<ReminderSetting>> readReminderSetting(TermRef term);
+  Future<GatewayResult<ReminderSetting>> saveReminderSetting(TermRef term, ReminderSetting setting);
 }

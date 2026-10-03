@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:synchronized/synchronized.dart';
 
 import 'package:superxd/gateway/kingo_auth.dart';
@@ -390,6 +391,22 @@ class AccountGateway extends AccountAccess {
     super.dispose();
   });
 
+  final _scheduleChanges = _Pulse();
+  @override
+  Listenable get scheduleChanges => _scheduleChanges;
+
+  // 写入成功后通知 scheduleChanges，失败不通知。
+  Future<GatewayResult<T>> _notifyWrite<T>(Future<GatewayResult<T>> pending) async {
+    final result = await pending;
+    if (result.ok) _scheduleChanges.pulse();
+    return result;
+  }
+
+  @override
+  Future<GatewayResult<ReminderSetting>> readReminderSetting(TermRef term) => _dispatch((gateway) => gateway.readReminderSetting(term));
+  @override
+  Future<GatewayResult<ReminderSetting>> saveReminderSetting(TermRef term, ReminderSetting setting) => _notifyWrite(_dispatch((gateway) => gateway.saveReminderSetting(term, setting)));
+
   Future<GatewayResult<T>> _dispatch<T>(Future<GatewayResult<T>> Function(KingoCampusGateway gateway) operation, {bool recover = false}) async {
     final context = _active;
     final expectedGeneration = generation;
@@ -475,9 +492,9 @@ class AccountGateway extends AccountAccess {
   @override
   Future<GatewayResult<List<TermRef>>> listTerms() => _dispatch((gateway) => gateway.listTerms());
   @override
-  Future<GatewayResult<List<TermRef>>> syncTerms() => _dispatch((gateway) => gateway.syncTerms(), recover: true);
+  Future<GatewayResult<List<TermRef>>> syncTerms() => _notifyWrite(_dispatch((gateway) => gateway.syncTerms(), recover: true));
   @override
-  Future<GatewayResult<ScheduleView>> syncSchedule(TermRef term) => _dispatch((gateway) => gateway.syncSchedule(term), recover: true);
+  Future<GatewayResult<ScheduleView>> syncSchedule(TermRef term) => _notifyWrite(_dispatch((gateway) => gateway.syncSchedule(term), recover: true));
   @override
   Future<GatewayResult<ScheduleView>> readSchedule(ScheduleScope scope) => _dispatch((gateway) => gateway.readSchedule(scope));
   @override
@@ -487,27 +504,27 @@ class AccountGateway extends AccountAccess {
   @override
   Future<GatewayResult<List<GradeTermOverview>>> readGradeYear(String year) => _dispatch((gateway) => gateway.readGradeYear(year));
   @override
-  Future<GatewayResult<BellsView>> syncBells(TermRef term) => _dispatch((gateway) => gateway.syncBells(term), recover: true);
+  Future<GatewayResult<BellsView>> syncBells(TermRef term) => _notifyWrite(_dispatch((gateway) => gateway.syncBells(term), recover: true));
   @override
   Future<GatewayResult<BellsView>> readBells(TermRef term) => _dispatch((gateway) => gateway.readBells(term));
   @override
   Future<GatewayResult<TermRef?>> readBellsSource(TermRef term) => _dispatch((gateway) => gateway.readBellsSource(term));
   @override
-  Future<GatewayResult<TermRef>> useBellsSource(TermRef target, TermRef source) => _dispatch((gateway) => gateway.useBellsSource(target, source));
+  Future<GatewayResult<TermRef>> useBellsSource(TermRef target, TermRef source) => _notifyWrite(_dispatch((gateway) => gateway.useBellsSource(target, source)));
   @override
-  Future<GatewayResult<TermRef>> setTermStart(TermRef term, String date) => _dispatch((gateway) => gateway.setTermStart(term, date));
+  Future<GatewayResult<TermRef>> setTermStart(TermRef term, String date) => _notifyWrite(_dispatch((gateway) => gateway.setTermStart(term, date)));
   @override
-  Future<GatewayResult<RevisionView>> saveScheduleRevision(TermRef term, List<CourseRecord> courses, String summary, {required String? expectedRevisionId}) => _dispatch((gateway) => gateway.saveScheduleRevision(term, courses, summary, expectedRevisionId: expectedRevisionId));
+  Future<GatewayResult<RevisionView>> saveScheduleRevision(TermRef term, List<CourseRecord> courses, String summary, {required String? expectedRevisionId}) => _notifyWrite(_dispatch((gateway) => gateway.saveScheduleRevision(term, courses, summary, expectedRevisionId: expectedRevisionId)));
   @override
   Future<GatewayResult<SyncPlan>> planScheduleSync(TermRef term, List<CourseRecord> courses) => _dispatch((gateway) => gateway.planScheduleSync(term, courses));
   @override
-  Future<GatewayResult<RevisionView>> commitScheduleSync(TermRef term, List<CourseRecord> courses, {required bool confirm, String? expectedRevisionId}) => _dispatch((gateway) => gateway.commitScheduleSync(term, courses, confirm: confirm, expectedRevisionId: expectedRevisionId));
+  Future<GatewayResult<RevisionView>> commitScheduleSync(TermRef term, List<CourseRecord> courses, {required bool confirm, String? expectedRevisionId}) => _notifyWrite(_dispatch((gateway) => gateway.commitScheduleSync(term, courses, confirm: confirm, expectedRevisionId: expectedRevisionId)));
   @override
   Future<GatewayResult<List<RevisionView>>> listScheduleRevisions(TermRef term, {int? beforeSequence, int limit = 20}) => _dispatch((gateway) => gateway.listScheduleRevisions(term, beforeSequence: beforeSequence, limit: limit));
   @override
   Future<GatewayResult<ScheduleRevision>> readScheduleRevision(TermRef term, String id) => _dispatch((gateway) => gateway.readScheduleRevision(term, id));
   @override
-  Future<GatewayResult<RevisionView>> restoreScheduleRevision(TermRef term, String id, {required String? expectedRevisionId}) => _dispatch((gateway) => gateway.restoreScheduleRevision(term, id, expectedRevisionId: expectedRevisionId));
+  Future<GatewayResult<RevisionView>> restoreScheduleRevision(TermRef term, String id, {required String? expectedRevisionId}) => _notifyWrite(_dispatch((gateway) => gateway.restoreScheduleRevision(term, id, expectedRevisionId: expectedRevisionId)));
 
   String _stamp() => _now().toUtc().toIso8601String();
   GatewayResult<T> _ok<T>(T data) => GatewayResult(ok: true, source: 'local', fetchedAt: _stamp(), data: data);
@@ -559,4 +576,8 @@ class _AccountContext {
       _drained = null;
     }
   }
+}
+
+class _Pulse extends ChangeNotifier {
+  void pulse() => notifyListeners();
 }

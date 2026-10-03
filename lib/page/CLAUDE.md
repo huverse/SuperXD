@@ -30,6 +30,8 @@
   - schedule_page.dart：课表页 SchedulePage。
     - 支持天、学期、学年三种范围，可设置开学日。
     - 无课时段可新增课程或安排已有课程，也可进入课程管理。
+    - 顶栏“课前提醒”入口（只在传入 CampusReminders 时显示）。
+  - reminder_dialog.dart：课前提醒设置 showReminderSettings。开关与提前时间（5/10/15/30 分钟）按学期保存；状态行如实显示已安排几次、排到哪天、缺开学日或作息、通知未开启、可能延迟，需要处理的给“开启通知”“准时提醒”按钮。
   - schedule_calendar.dart：课表页月份轨道与周次轨道的纯函数计算。
   - schedule_editor_page.dart：课程管理 ScheduleEditorPage，可新增、编辑、删除（可撤销）、清空、建立空课表，并提供历史版本入口。
   - course_editor_page.dart：单门课程编辑 CourseEditorPage，编辑名称、教师、学分和多个上课时段。

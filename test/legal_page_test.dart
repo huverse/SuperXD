@@ -23,6 +23,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('公共 Download/SuperXD'), findsOneWidget);
     expect(find.textContaining('只读取你选中的那一张图片'), findsOneWidget);
+    expect(find.textContaining('课前提醒只按本机课表在系统中定时'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('反馈与更新'),
       300,

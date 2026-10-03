@@ -6,7 +6,7 @@
 - 文件级登记由 test/project_structure_test.dart 兜底，有两条检查：
   - lib 下每个 dart 文件都要在最近的模块 CLAUDE.md 里按文件名登记，所在模块没有 CLAUDE.md 时登记在本文件。
   - 索引中提到的 dart 或 kt 文件必须真实存在。
-- 模块索引共 7 个：lib/domain、lib/edu、lib/local、lib/gateway、lib/page、lib/theme、lib/toolbox 下各一个 CLAUDE.md。lib/application 与根目录文件登记在本文件。
+- 模块索引共 8 个：lib/domain、lib/edu、lib/local、lib/gateway、lib/device、lib/page、lib/theme、lib/toolbox 下各一个 CLAUDE.md。lib/application 与根目录文件登记在本文件。
 
 # 定位
 
@@ -28,6 +28,7 @@
   - 现有例外只有外观页读写 DisplaySettings。
 - toolbox 百宝箱：设备级、免登录，可依赖 domain、theme，不依赖教务相关任何层。
 - application 应用编排：可依赖 domain、gateway。
+- device 设备能力：系统通知等适配器，只实现 domain 端口、只依赖 domain，由组合根注入；页面不直接依赖。
 - gateway 网关：负责账号生命周期与教务网关实现，可依赖 domain、edu、local。
 - edu 教务协议与页面解析：可依赖 domain。
 - local 本地存储：可依赖 domain。
@@ -55,6 +56,10 @@
   - 先刷新学期列表，再按所选学年依次处理：先同步全部学期的课表，再逐学期同步作息和成绩。
   - 页面离开、会话失效或教务限流时，在下一检查点停止，报告里带出已完成项、停下前已发生的失败与未处理项。
   - 学年与数据项的选择、进度口径、未提交不报已同步，这几条规则都见该文件的人工决策注释。
+- application/campus_reminders.dart（CampusReminders）：课前提醒对账。
+  - 读本机的当前学期、提醒设置、课表与作息，展开未来 14 天的课程实例，整体替换系统里的提醒；只读本地，从不联网。
+  - 对账时机由 main.dart 的 watchReminders 决定：启动恢复会话后、回到前台、切换账号或退出、本机课表相关写入后（AccountAccess.scheduleChanges），1 秒防抖。
+  - 没有当前学期（含退出登录）、未开启或没有通知权限时，撤销本应用的全部课前提醒。
 
 # 跨模块不变量（改动前逐条自查）
 
@@ -100,6 +105,7 @@
     - 下载记录：已结束的最多保留 100 项且 30 天。创建超过 24 小时仍未完成的任务，在启动时取消。
     - 自定义壁纸：只保留当前一张，不超过 20MB；换图或恢复云雾时删除，启动时清理残留；选图插件留在缓存里的副本用完即删。
     - 成绩：单次载荷上限 4MB，课程上限 1000 条。
+    - 课前提醒：只安排未来 14 天、最多 128 条，每次对账整体替换；提醒设置每学期一行。
     - 新增只增不删的数据时，必须同时给出上限或清理策略。
 11. 日志
     - 只经 domain/campus_log.dart 的 campusLog 输出。应用入口必须注入 debugPrint，日志才会进入 logcat。
@@ -143,6 +149,7 @@
 - 教务协议与解析：contract_test.dart、kingo_client_response_test.dart、sync_boundary_regression_test.dart、grades_test.dart
 - 课表数据：schedule_edit_test.dart、schedule_version_test.dart、schedule_migration_test.dart、bells_persistence_test.dart、period_day_test.dart、schedule_calendar_test.dart
 - 同步编排与同步界面：campus_sync_test.dart、sync_ui_test.dart、transition_sync_test.dart
+- 课程实例与课前提醒：reminder_test.dart
 - 页面交互：
   - today_navigation_test.dart、today_date_transition_test.dart、schedule_experience_test.dart、schedule_editor_ui_test.dart
   - grades_ui_test.dart、form_spacing_test.dart、navigation_drag_test.dart、shell_layout_test.dart
