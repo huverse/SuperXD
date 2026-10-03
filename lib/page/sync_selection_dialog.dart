@@ -4,6 +4,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/theme/campus_loading.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 Future<SyncSelection?> chooseSyncSelection(BuildContext context, CampusGateway gateway, {String? initialYear, Set<SyncContent>? initialContents, Set<SyncContent>? allowedContents}) => showCampusDialog<SyncSelection>(
@@ -56,7 +57,7 @@ class _SyncSelectionDialogState extends State<_SyncSelectionDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => CampusGlassDialog(
     title: const Text('同步范围'),
     content: SizedBox(width: 440, child: SingleChildScrollView(child: Column(
       mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
@@ -71,7 +72,7 @@ class _SyncSelectionDialogState extends State<_SyncSelectionDialog> {
               _selectedYears.clear(); if (value == true) _selectedYears.addAll(_years);
             })),
           Wrap(spacing: 8, runSpacing: 8, children: [for (final year in _years)
-            FilterChip(label: Text('$year–${int.parse(year) + 1}'), selected: _selectedYears.contains(year), onSelected: _loading ? null : (value) => setState(() {
+            CampusGlassChip(label: '$year–${int.parse(year) + 1}', selected: _selectedYears.contains(year), onSelected: _loading ? null : (value) => setState(() {
               if (value) { _selectedYears.add(year); } else { _selectedYears.remove(year); }
             })),
           ]),

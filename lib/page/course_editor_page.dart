@@ -11,6 +11,8 @@ import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 class CourseEditorPage extends StatefulWidget {
@@ -178,9 +180,9 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
     if (original != null && !duplicate && original.weeks.length > 1) {
       final choice = await showCampusDialog<String>(
         context: context,
-        builder: (context) => SimpleDialog(
+        builder: (context) => CampusGlassDialog(
           title: const Text('调整哪些周次？'),
-          children: [
+          options: [
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, 'all'),
               child: const Text('此时段的全部周次'),
@@ -236,9 +238,9 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
     final meeting = _meetings[index];
     final scope = await showCampusDialog<String>(
       context: context,
-      builder: (context) => SimpleDialog(
+      builder: (context) => CampusGlassDialog(
         title: const Text('删除范围'),
-        children: [
+        options: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context, 'all'),
             child: const Text('这个时段的全部周次'),
@@ -415,7 +417,7 @@ Future<int?> chooseMeetingWeek(
   int? preferred,
 }) => showCampusDialog<int>(
   context: context,
-  builder: (context) => AlertDialog(
+  builder: (context) => CampusGlassDialog(
     title: const Text('选择周次'),
     content: SizedBox(
       width: 420,
@@ -425,8 +427,8 @@ Future<int?> chooseMeetingWeek(
           runSpacing: 8,
           children: [
             for (final week in weeks.toSet().toList()..sort())
-              ChoiceChip(
-                label: Text('第$week周'),
+              CampusGlassChip(
+                label: '第$week周',
                 selected: week == preferred,
                 onSelected: (_) => Navigator.pop(context, week),
               ),
@@ -503,7 +505,7 @@ class _MeetingDialogState extends State<_MeetingDialog> {
   }
 
   @override
-  Widget build(BuildContext context) => AlertDialog(
+  Widget build(BuildContext context) => CampusGlassDialog(
     title: Text(widget.onlyWeek == null ? '上课时段' : '仅调整第${widget.onlyWeek}周'),
     content: SizedBox(
       width: 480,
@@ -517,42 +519,32 @@ class _MeetingDialogState extends State<_MeetingDialog> {
               runSpacing: 8,
               children: [
                 for (var day = 1; day <= 7; day++)
-                  ChoiceChip(
-                    label: Text('周${weekdayLabel(day)}'),
+                  CampusGlassChip(
+                    label: '周${weekdayLabel(day)}',
                     selected: _weekday == day,
                     onSelected: (_) => setState(() => _weekday = day),
                   ),
               ],
             ),
             SizedBox(height: campusFieldGap(context)),
-            DropdownButtonFormField<int>(
-              icon: const CampusIcon(CampusIcons.expand),
-              initialValue: _start,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: '开始节次'),
+            CampusMenuField<int>(
+              label: '开始节次',
+              value: _start,
               items: [
                 for (var period = 1; period <= maxSchedulePeriods; period++)
-                  DropdownMenuItem(
-                    value: period,
-                    child: Text(_periodLabel(period)),
-                  ),
+                  CampusMenuItem(value: period, label: _periodLabel(period)),
               ],
-              onChanged: (value) => setState(() => _start = value!),
+              onChanged: (value) => setState(() => _start = value),
             ),
             SizedBox(height: campusFieldGap(context)),
-            DropdownButtonFormField<int>(
-              icon: const CampusIcon(CampusIcons.expand),
-              initialValue: _end,
-              isExpanded: true,
-              decoration: const InputDecoration(labelText: '结束节次'),
+            CampusMenuField<int>(
+              label: '结束节次',
+              value: _end,
               items: [
                 for (var period = 1; period <= maxSchedulePeriods; period++)
-                  DropdownMenuItem(
-                    value: period,
-                    child: Text(_periodLabel(period)),
-                  ),
+                  CampusMenuItem(value: period, label: _periodLabel(period)),
               ],
-              onChanged: (value) => setState(() => _end = value!),
+              onChanged: (value) => setState(() => _end = value),
             ),
             SizedBox(height: campusFieldGap(context)),
             _SuggestionField(
@@ -589,8 +581,8 @@ class _MeetingDialogState extends State<_MeetingDialog> {
                 runSpacing: 8,
                 children: [
                   for (var week = 1; week <= _visibleWeeks; week++)
-                    FilterChip(
-                      label: Text('$week'),
+                    CampusGlassChip(
+                      label: '$week',
                       selected: _weeks.contains(week),
                       onSelected: (selected) => setState(() {
                         if (selected) {
@@ -648,14 +640,15 @@ class _SuggestionField extends StatelessWidget {
   final bool enabled;
   @override
   Widget build(BuildContext context) {
-    // 横向候选栏高度随字号：按真实字形量出标签行高再加标签内边距，大字号不裁切，仍按需构建。
+    // 横向候选栏高度随字号：按真实字形量出按钮文字行高再加按钮上下内边距，大字号不裁切，仍按需构建。
+    // 候选是“点一下填入”的动作，用全局玻璃胶囊按钮，不用带选中语义的选择标签。
     final painter = TextPainter(
-      text: TextSpan(text: '国', style: ChipTheme.of(context).labelStyle),
+      text: TextSpan(text: '国', style: FilledButtonTheme.of(context).style!.textStyle!.resolve(const {})),
       textDirection: Directionality.of(context),
       textScaler: MediaQuery.textScalerOf(context),
       maxLines: 1,
     )..layout();
-    final rowHeight = math.max(48.0, painter.height + 24);
+    final rowHeight = math.max(48.0, painter.height + 14);
     painter.dispose();
     return Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -676,11 +669,14 @@ class _SuggestionField extends StatelessWidget {
             scrollDirection: Axis.horizontal,
             itemCount: options.length,
             separatorBuilder: (_, _) => const SizedBox(width: 8),
-            itemBuilder: (context, index) => ActionChip(
-              label: Text(options[index]),
-              onPressed: enabled
-                  ? () => controller.text = options[index]
-                  : null,
+            // 横向列表给子项的是行高的紧约束，居中放开后按钮保持约38的视觉高度、48的触区。
+            itemBuilder: (context, index) => Center(
+              child: FilledButton(
+                onPressed: enabled
+                    ? () => controller.text = options[index]
+                    : null,
+                child: Text(options[index]),
+              ),
             ),
           ),
         ),

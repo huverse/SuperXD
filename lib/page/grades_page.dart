@@ -14,6 +14,8 @@ import 'package:superxd/page/campus_sync_dialogs.dart';
 import 'package:superxd/page/sync_selection_dialog.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 class GradesPage extends StatefulWidget {
@@ -233,17 +235,14 @@ class _GradesPageState extends State<GradesPage> {
     final originals = _original
         ? [course]
         : _originalByCode[course.courseCode] ?? [];
-    showModalBottomSheet<void>(
+    showCampusSheet<void>(
       context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      sheetAnimationStyle: MediaQuery.disableAnimationsOf(context) ? AnimationStyle.noAnimation : campusOverlay,
       builder: (context) => DraggableScrollableSheet(
         expand: false,
         initialChildSize: .75,
         maxChildSize: .95,
         minChildSize: .35,
-        builder: (context, controller) => ListView(
+        builder: (context, controller) => CampusSheetPanel(child: ListView(
           controller: controller,
           padding: const EdgeInsets.all(20),
           children: [
@@ -308,7 +307,7 @@ class _GradesPageState extends State<GradesPage> {
               style: TextStyle(fontSize: 14),
             ),
           ],
-        ),
+        )),
       ),
     );
   }
@@ -373,24 +372,18 @@ class _GradesPageState extends State<GradesPage> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        DropdownButtonFormField<String>(
-          icon: const CampusIcon(CampusIcons.expand),
-          key: ValueKey(_year),
-          initialValue: _year,
-          isExpanded: true,
-          decoration: const InputDecoration(labelText: '学年'),
+        CampusMenuField<String>(
+          label: '学年',
+          value: _year,
           items: [
             for (final year in years)
-              DropdownMenuItem(
-                value: year,
-                child: Text('$year–${int.parse(year) + 1}学年'),
-              ),
+              CampusMenuItem(value: year, label: '$year–${int.parse(year) + 1}学年'),
           ],
           onChanged: _syncing
               ? null
               : (year) {
                   setState(() {
-                    _year = year!;
+                    _year = year;
                     _term = _terms.firstWhere((term) => term.xn == year);
                     _view = null;
                     _overview = [];
@@ -403,16 +396,16 @@ class _GradesPageState extends State<GradesPage> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            ChoiceChip(
-              label: const Text('学期详情'),
+            CampusGlassChip(
+              label: '学期详情',
               selected: !_yearMode,
               onSelected: (_) {
                 setState(() => _yearMode = false);
                 _loadView();
               },
             ),
-            ChoiceChip(
-              label: const Text('学年概览'),
+            CampusGlassChip(
+              label: '学年概览',
               selected: _yearMode,
               onSelected: (_) {
                 setState(() => _yearMode = true);
@@ -429,14 +422,12 @@ class _GradesPageState extends State<GradesPage> {
               runSpacing: 8,
               children: [
                 for (final term in yearTerms)
-                  ChoiceChip(
-                    label: Text(
-                      term.xq == '0'
+                  CampusGlassChip(
+                    label: term.xq == '0'
                           ? '第一学期'
                           : term.xq == '1'
                           ? '第二学期'
                           : term.label,
-                    ),
                     selected: _term?.key == term.key,
                     onSelected: (_) => _chooseTerm(term),
                   ),
@@ -618,16 +609,16 @@ class _GradesPageState extends State<GradesPage> {
                                   spacing: 8,
                                   runSpacing: 8,
                                   children: [
-                                    ChoiceChip(
-                                      label: const Text('有效成绩'),
+                                    CampusGlassChip(
+                                      label: '有效成绩',
                                       selected: !_original,
                                       onSelected: (_) => setState(() {
                                         _original = false;
                                         _updateRows();
                                       }),
                                     ),
-                                    ChoiceChip(
-                                      label: const Text('原始成绩'),
+                                    CampusGlassChip(
+                                      label: '原始成绩',
                                       selected: _original,
                                       onSelected: (_) => setState(() {
                                         _original = true;
@@ -658,14 +649,14 @@ class _GradesPageState extends State<GradesPage> {
                                   children: [
                                     for (final filter
                                         in grades.GradeFilter.values)
-                                      FilterChip(
-                                        label: Text(switch (filter) {
+                                      CampusGlassChip(
+                                        label: switch (filter) {
                                           grades.GradeFilter.all => '全部',
                                           grades.GradeFilter.numeric => '数值成绩',
                                           grades.GradeFilter.text => '等级或状态',
                                           grades.GradeFilter.unpublished =>
                                             '未公布',
-                                        }),
+                                        },
                                         selected: _filter == filter,
                                         onSelected: (_) => setState(() {
                                           _filter = filter;
@@ -675,27 +666,23 @@ class _GradesPageState extends State<GradesPage> {
                                   ],
                                 ),
                                 SizedBox(height: campusFieldGap(context)),
-                                DropdownButtonFormField<grades.GradeSort>(
-                                  icon: const CampusIcon(CampusIcons.expand),
-                                  initialValue: _sort,
-                                  isExpanded: true,
-                                  decoration: const InputDecoration(
-                                    labelText: '排序',
-                                  ),
+                                CampusMenuField<grades.GradeSort>(
+                                  label: '排序',
+                                  value: _sort,
                                   items: [
                                     for (final sort in grades.GradeSort.values)
-                                      DropdownMenuItem(
+                                      CampusMenuItem(
                                         value: sort,
-                                        child: Text(switch (sort) {
+                                        label: switch (sort) {
                                           grades.GradeSort.original => '教务原始顺序',
                                           grades.GradeSort.high => '数值成绩从高到低',
                                           grades.GradeSort.low => '数值成绩从低到高',
                                           grades.GradeSort.name => '课程名称',
-                                        }),
+                                        },
                                       ),
                                   ],
                                   onChanged: (sort) => setState(() {
-                                    _sort = sort!;
+                                    _sort = sort;
                                     _updateRows();
                                   }),
                                 ),

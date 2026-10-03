@@ -82,10 +82,7 @@ class _ParseHistoryPageState extends State<ParseHistoryPage> {
       campusLog(
         '[ParseHistory] action=delete errorType=${error.runtimeType}\n$stack',
       );
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(const SnackBar(content: Text('删除未完成，请重试')));
-      }
+      if (mounted) showCampusToast(context, '删除未完成，请重试');
     }
   }
 

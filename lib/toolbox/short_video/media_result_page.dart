@@ -5,6 +5,7 @@ import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/download/download_status.dart';
 import 'package:superxd/toolbox/download/downloads_page.dart';
 import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
@@ -41,10 +42,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
         item.resourceId!: item,
   };
   void _notice(String text) {
-    if (!mounted) return;
-    ScaffoldMessenger.of(context)
-      ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(text)));
+    if (mounted) showCampusToast(context, text);
   }
 
   Future<void> _operate(String id, Future<void> Function() action) async {

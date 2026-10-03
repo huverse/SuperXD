@@ -5,6 +5,8 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/toolbox/download/download_status.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
@@ -31,15 +33,10 @@ class _DownloadsPageState extends State<DownloadsPage> {
         '[DownloadsPage] action=manage errorType=${error.runtimeType}\n$stack',
       );
       if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            SnackBar(
-              content: Text(
-                error is ToolboxException ? error.message : '操作未完成，请重试',
-              ),
-            ),
-          );
+        showCampusToast(
+          context,
+          error is ToolboxException ? error.message : '操作未完成，请重试',
+        );
       }
     } finally {
       if (mounted) setState(() => _busy.remove(id));
@@ -126,8 +123,8 @@ class _DownloadsPageState extends State<DownloadsPage> {
                             (1, '进行中 $running'),
                             (2, '已结束 ${groups.length - running}'),
                           ])
-                            ChoiceChip(
-                              label: Text(value.$2),
+                            CampusGlassChip(
+                              label: value.$2,
                               selected: _filter == value.$1,
                               onSelected: (_) =>
                                   setState(() => _filter = value.$1),
@@ -260,29 +257,33 @@ class _DownloadsPageState extends State<DownloadsPage> {
                   ),
                 ),
                 if (menu.isNotEmpty)
-                  PopupMenuButton<String>(
-                    tooltip: '更多操作',
-                    enabled: !_busy.contains(id),
-                    icon: const CampusIcon(CampusIcons.manage),
-                    onSelected: (value) => value == 'delete'
-                        ? _delete(id)
-                        : _operate(
-                            id,
-                            () => widget.runtime.downloads.cancelJob(id),
-                          ),
-                    itemBuilder: (context) => [
-                      for (final entry in menu)
-                        PopupMenuItem(
-                          value: entry.$1,
-                          child: Row(
-                            children: [
-                              CampusIcon(entry.$3, size: 18),
-                              const SizedBox(width: 12),
-                              Text(entry.$2),
-                            ],
-                          ),
-                        ),
-                    ],
+                  Builder(
+                    builder: (anchor) => IconButton(
+                      tooltip: '更多操作',
+                      icon: const CampusIcon(CampusIcons.manage),
+                      onPressed: _busy.contains(id)
+                          ? null
+                          : () async {
+                              final value = await showCampusMenu<String>(
+                                anchor,
+                                items: [
+                                  for (final entry in menu)
+                                    CampusMenuItem(
+                                      value: entry.$1,
+                                      label: entry.$2,
+                                      icon: entry.$3,
+                                    ),
+                                ],
+                              );
+                              if (value == null || !mounted) return;
+                              await (value == 'delete'
+                                  ? _delete(id)
+                                  : _operate(
+                                      id,
+                                      () => widget.runtime.downloads.cancelJob(id),
+                                    ));
+                            },
+                    ),
                   )
                 else
                   const SizedBox(width: 8),

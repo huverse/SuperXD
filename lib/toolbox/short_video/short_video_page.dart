@@ -8,6 +8,8 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/download/downloads_page.dart';
 import 'package:superxd/toolbox/short_video/media_result_page.dart';
@@ -186,13 +188,13 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
       context: context,
       builder: (context) => ListenableBuilder(
         listenable: controller,
-        builder: (context, _) => AlertDialog(
+        builder: (context, _) => CampusGlassDialog(
           title: const Text('解析设置'),
           scrollable: true,
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              SwitchListTile(
+              CampusSwitchTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('保存解析历史'),
                 subtitle: const Text('仅本机，最多80条／30天'),
@@ -207,7 +209,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                 }),
               ),
               for (final source in controller.coordinator.providers.values)
-                SwitchListTile(
+                CampusSwitchTile(
                   contentPadding: EdgeInsets.zero,
                   title: Text('${source.source.name} 参与自动解析'),
                   subtitle: Text(switch (controller.coordinator.statuses[source.source.id]) {
@@ -298,42 +300,33 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          DropdownButtonFormField<String>(
-                            isExpanded: true,
-                            initialValue: controller.selected,
-                            key: ValueKey(controller.selected),
-                            decoration: const InputDecoration(
-                              labelText: '解析来源',
-                            ),
+                          CampusMenuField<String>(
+                            label: '解析来源',
+                            value: controller.selected,
                             items: [
-                              const DropdownMenuItem(
+                              const CampusMenuItem(
                                 value: ParseCoordinator.automatic,
-                                child: Text(
-                                  '自动',
-                                  overflow: TextOverflow.ellipsis,
-                                ),
+                                label: '自动',
                               ),
                               for (final provider
                                   in controller.coordinator.providers.values)
-                                DropdownMenuItem(
+                                CampusMenuItem(
                                   value: provider.source.id,
-                                  child: Text(provider.source.name),
+                                  label: provider.source.name,
                                 ),
                             ],
                             onChanged: _prompting
                                 ? null
                                 : (value) {
-                                    if (value != null) {
-                                      _inputVersion++;
-                                      controller.select(value).catchError((
-                                        Object error,
-                                        StackTrace stack,
-                                      ) {
-                                        campusLog(
-                                          '[ShortVideo] action=select errorType=${error.runtimeType}\n$stack',
-                                        );
-                                      });
-                                    }
+                                    _inputVersion++;
+                                    controller.select(value).catchError((
+                                      Object error,
+                                      StackTrace stack,
+                                    ) {
+                                      campusLog(
+                                        '[ShortVideo] action=select errorType=${error.runtimeType}\n$stack',
+                                      );
+                                    });
                                   },
                           ),
                           SizedBox(height: campusFieldGap(context)),

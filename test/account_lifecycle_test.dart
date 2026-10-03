@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/domain/account.dart';
@@ -195,11 +196,11 @@ void main() {
 
   testWidgets('选择控件选中、未选、禁用的实际文字颜色均清晰', (tester) async {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Scaffold(body: Column(children: [
-      ChoiceChip(label: const Text('未选'), selected: false, onSelected: (_) {}),
-      ChoiceChip(label: const Text('已选'), selected: true, onSelected: (_) {}),
-      const ChoiceChip(label: Text('禁用'), selected: false),
-      const ChoiceChip(label: Text('禁用已选'), selected: true),
-      FilterChip(label: const Text('学年'), selected: false, onSelected: (_) {}),
+      CampusGlassChip(label: '未选', selected: false, onSelected: (_) {}),
+      CampusGlassChip(label: '已选', selected: true, onSelected: (_) {}),
+      const CampusGlassChip(label: '禁用', selected: false, onSelected: null),
+      const CampusGlassChip(label: '禁用已选', selected: true, onSelected: null),
+      CampusGlassChip(label: '学年', selected: false, onSelected: (_) {}),
       Checkbox(value: true, onChanged: (_) {}),
       Checkbox(value: false, onChanged: (_) {}),
     ]))));
@@ -207,7 +208,7 @@ void main() {
       final rich = tester.widget<RichText>(find.descendant(of: find.text(label), matching: find.byType(RichText)));
       final color = rich.text.style!.color!;
       expect(color, isNot(Colors.white));
-      final background = label.contains('禁用') ? CampusPalette.values.first.glassFallback : label == '已选' ? CampusPalette.values.first.surfaceSelected : CampusPalette.values.first.surface;
+      final background = label.contains('禁用') || label == '已选' ? CampusPalette.values.first.surfaceSelected : CampusPalette.values.first.glassFallback;
       final contrast = (background.computeLuminance() + .05) / (color.computeLuminance() + .05);
       expect(contrast, greaterThanOrEqualTo(4.5), reason: label);
     }

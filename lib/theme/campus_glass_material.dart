@@ -1,3 +1,4 @@
+import 'package:flutter/painting.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
 import 'package:superxd/theme/campus_glass_tier.dart';
@@ -32,6 +33,11 @@ liquid.LiquidGlassSettings campusGlassSettings(
           CampusGlassRole.overlay => .82,
         },
       );
+  // 浅色浮层压在弹窗遮罩上会发灰，整块均匀提亮（不按明度门控，否则暗底上不起作用），
+  // 让次要文字和文字按钮在实际合成背景上不低于 4.5:1；数值按模拟器实测取。
+  final whiten = role == CampusGlassRole.overlay && !palette.isDark ? .65 : 0.0;
+  // 没有遮罩的浮层（菜单、提示条，floating）压在同色内容上，靠柔和投影分层；有遮罩的弹窗、弹层不加。
+  final shadow = role == CampusGlassRole.overlay && floating ? campusFloatingShadow : null;
   if (tier == CampusGlassTier.full) {
     return (palette.isDark
             ? liquid.LiquidGlassSettings.ios27Dark
@@ -44,6 +50,11 @@ liquid.LiquidGlassSettings campusGlassSettings(
             CampusGlassRole.overlay => 24,
           },
           chromaticAberration: navigation ? 0 : .2,
+          // 浮层承载整段文字，雾化完全盖住底层清晰副本，只透出模糊色块，避免底下的字和浮层文字叠影。
+          frostOpacity: role == CampusGlassRole.overlay ? 1 : null,
+          whitenStrength: whiten,
+          whitenGated: false,
+          shadow: shadow,
           platformViewFallbackColor: palette.glassFallback,
         );
   }
@@ -58,6 +69,11 @@ liquid.LiquidGlassSettings campusGlassSettings(
     chromaticAberration: 0,
     glowIntensity: 0,
     shadowElevation: navigation && floating ? 1 : 0,
+    whitenStrength: whiten,
+    whitenGated: false,
+    shadow: shadow,
     platformViewFallbackColor: palette.glassFallback,
   );
 }
+
+const campusFloatingShadow = [BoxShadow(color: Color(0x24000000), blurRadius: 32, offset: Offset(0, 8))];

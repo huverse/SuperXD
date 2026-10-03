@@ -322,7 +322,7 @@ Future<T> showCampusWaiting<T>(
   required Future<T> Function() operation,
 }) async {
   final navigator = Navigator.of(context, rootNavigator: true);
-  final route = CampusDialogRoute<void>(context: context, barrierDismissible: false, builder: (context) => PopScope(canPop: false, child: AlertDialog(content: CampusLoading(label: label))));
+  final route = CampusDialogRoute<void>(context: context, barrierDismissible: false, builder: (context) => PopScope(canPop: false, child: CampusGlassDialog(content: CampusLoading(label: label))));
   final delay = Timer(const Duration(milliseconds: 150), () {
     if (context.mounted &&
         navigator.mounted &&

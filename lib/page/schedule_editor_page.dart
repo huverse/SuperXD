@@ -151,9 +151,9 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
     final base = _view!;
     final scope = await showCampusDialog<String>(
       context: context,
-      builder: (context) => SimpleDialog(
+      builder: (context) => CampusGlassDialog(
         title: Text('删除：${course.courseName}'),
-        children: [
+        options: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context, 'course'),
             child: const Text('整门课程（所有时段和周次）'),
@@ -177,9 +177,9 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
     if (scope != 'course') {
       final index = await showCampusDialog<int>(
         context: context,
-        builder: (context) => SimpleDialog(
+        builder: (context) => CampusGlassDialog(
           title: const Text('选择时段'),
-          children: [
+          options: [
             for (var index = 0; index < course.meetings.length; index++)
               SimpleDialogOption(
                 onPressed: () => Navigator.pop(context, index),
@@ -245,26 +245,23 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
       _changed = true;
       await _load();
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text('已保存删除记录'),
-          action: SnackBarAction(
-            label: '撤销',
-            onPressed: () async {
-              try {
-                final error = await showCampusWaiting(context, label: '正在撤销课程变更', operation: () => _save(
-                  base.courses,
-                  '撤销：$summary',
-                  result.data!.id,
-                ));
-                if (mounted && error != null) setState(() => _error = error);
-              } catch (error, stack) {
-                campusLog('[ScheduleEditor] action=undo error=$error\n$stack');
-                if (mounted) setState(() => _error = '撤销未完成，请在历史版本中预览恢复');
-              }
-            },
-          ),
-        ),
+      showCampusToast(
+        context,
+        '已保存删除记录',
+        action: '撤销',
+        onAction: () async {
+          try {
+            final error = await showCampusWaiting(context, label: '正在撤销课程变更', operation: () => _save(
+              base.courses,
+              '撤销：$summary',
+              result.data!.id,
+            ));
+            if (mounted && error != null) setState(() => _error = error);
+          } catch (error, stack) {
+            campusLog('[ScheduleEditor] action=undo error=$error\n$stack');
+            if (mounted) setState(() => _error = '撤销未完成，请在历史版本中预览恢复');
+          }
+        },
       );
     } catch (error, stack) {
       campusLog('[ScheduleEditor] action=delete error=$error\n$stack');

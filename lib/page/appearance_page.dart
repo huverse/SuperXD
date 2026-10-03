@@ -5,6 +5,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 class AppearancePage extends StatefulWidget {
@@ -53,14 +54,14 @@ class _AppearancePageState extends State<AppearancePage> {
             const SizedBox(height: 12),
             Wrap(spacing: 8, runSpacing: 8, children: [
               for (final mode in [(value: ThemeMode.system, label: '跟随系统'), (value: ThemeMode.light, label: '浅色'), (value: ThemeMode.dark, label: '深色')])
-                ChoiceChip(label: Text(mode.label), selected: settings.themeMode == mode.value, onSelected: _saving ? null : (_) => _save(() => settings.setThemeMode(mode.value))),
+                CampusGlassChip(label: mode.label, selected: settings.themeMode == mode.value, onSelected: _saving ? null : (_) => _save(() => settings.setThemeMode(mode.value))),
             ]),
             const SizedBox(height: 24),
             Text('玻璃效果', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
             Wrap(spacing: 8, runSpacing: 8, children: [
               for (final mode in [(value: 'auto', label: '自动'), (value: 'full', label: '完整'), (value: 'reduced', label: '简化')])
-                ChoiceChip(label: Text(mode.label), selected: settings.glassMode == mode.value, onSelected: _saving ? null : (_) => _save(() => settings.setGlassMode(mode.value))),
+                CampusGlassChip(label: mode.label, selected: settings.glassMode == mode.value, onSelected: _saving ? null : (_) => _save(() => settings.setGlassMode(mode.value))),
             ]),
             const SizedBox(height: 24),
             Text('配色', style: Theme.of(context).textTheme.titleLarge),
@@ -206,8 +207,8 @@ class _AppearancePageState extends State<AppearancePage> {
                   index < DisplaySettings.scales.length;
                   index++
                 )
-                  ChoiceChip(
-                    label: Text(DisplaySettings.labels[index]),
+                  CampusGlassChip(
+                    label: DisplaySettings.labels[index],
                     selected: settings.scale == DisplaySettings.scales[index],
                     onSelected: _saving
                         ? null

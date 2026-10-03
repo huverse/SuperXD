@@ -11,7 +11,7 @@ import 'package:superxd/domain/campus_log.dart';
 
 Future<String?> editTermStart(BuildContext context, CampusGateway gateway, TermRef term, String? savedDate) async {
   final date = savedDate == null ? campusNow() : parseIsoDate(savedDate);
-  final picked = await showCampusDialog<DateTime>(context: context, builder: (context) => DatePickerDialog(
+  final picked = await showCampusDialog<DateTime>(context: context, glassPanel: false, builder: (context) => DatePickerDialog(
     initialDate: date, currentDate: campusNow(),
     firstDate: DateTime(2000), lastDate: DateTime(2100), helpText: '选择开学日',
     cancelText: '取消', confirmText: '保存',

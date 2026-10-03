@@ -14,36 +14,49 @@ void main() {
         theme: campusTheme(),
         home: Builder(
           builder: (context) => Scaffold(
-            body: TextButton(
-              onPressed: () => showCampusDialog<void>(
-                context: context,
-                builder: (context) => const AlertDialog(content: Text('旧库提示')),
+            body: Column(children: [
+              TextButton(
+                onPressed: () => showCampusDialog<void>(
+                  context: context,
+                  builder: (context) => const CampusGlassDialog(content: Text('旧库提示')),
+                ),
+                child: const Text('打开'),
               ),
-              child: const Text('打开'),
-            ),
+              TextButton(
+                onPressed: () => showCampusDialog<void>(
+                  context: context,
+                  glassPanel: false,
+                  builder: (context) => const AlertDialog(content: Text('选择开学日')),
+                ),
+                child: const Text('日期'),
+              ),
+            ]),
           ),
         ),
       ),
     );
+    // 面板显隐与模糊取同一条路由进度：玻璃面板由面板自己淡入（此处玻璃未就绪，走实色淡入），系统弹窗整体改不透明度。
+    Future<void> expectShared(String text, double Function() panelOpacity) async {
+      final route = ModalRoute.of(tester.element(find.text(text)))!;
+      expect(route.animation!.value, 0);
+      for (final elapsed in [75, 75, 75]) {
+        await tester.pump(Duration(milliseconds: elapsed));
+        final t = Curves.easeInOutCubic.transform(route.animation!.value);
+        final filter = tester.widget<BackdropFilter>(find.byType(BackdropFilter));
+        expect(filter.filter, ui.ImageFilter.blur(sigmaX: 5 * t, sigmaY: 5 * t));
+        expect(panelOpacity(), closeTo(t, .0001));
+      }
+    }
+    await tester.tap(find.text('日期'));
+    await tester.pump();
+    await expectShared('选择开学日', () => tester.widgetList<Opacity>(find.ancestor(of: find.text('选择开学日'), matching: find.byType(Opacity))).first.opacity);
+    await tester.pumpAndSettle();
+    await tester.tapAt(const Offset(5, 5));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('打开'));
     await tester.pump();
     final route = ModalRoute.of(tester.element(find.text('旧库提示')))!;
-    expect(route.animation!.value, 0);
-    for (final elapsed in [75, 75, 75]) {
-      await tester.pump(Duration(milliseconds: elapsed));
-      final t = Curves.easeInOutCubic.transform(route.animation!.value);
-      final filter = tester.widget<BackdropFilter>(find.byType(BackdropFilter));
-      expect(filter.filter, ui.ImageFilter.blur(sigmaX: 5 * t, sigmaY: 5 * t));
-      final opacity = tester
-          .widgetList<Opacity>(
-            find.ancestor(
-              of: find.text('旧库提示'),
-              matching: find.byType(Opacity),
-            ),
-          )
-          .first;
-      expect(opacity.opacity, closeTo(t, .0001));
-    }
+    await expectShared('旧库提示', () => tester.widgetList<FadeTransition>(find.ancestor(of: find.text('旧库提示'), matching: find.byType(FadeTransition))).first.opacity.value);
     await tester.pumpAndSettle();
     await tester.tapAt(const Offset(5, 5));
     await tester.pump();
