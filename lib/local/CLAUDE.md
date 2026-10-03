@@ -39,7 +39,7 @@
   - CredentialStore：记住账号的凭据存取接口。
   - SecureCredentialStore：基于系统安全存储的实现，按账号键保存带版本号的 JSON。
 - display_settings.dart：设备级显示设置。
-  - DisplaySettings 存在 display_settings.db，包括字号、配色、字体和深浅色。
+  - DisplaySettings 存在 display_settings.db（schema 版本 4），包括字号、配色、字体、深浅色和玻璃效果（auto、full、reduced，默认 auto）。
   - DisplayScope 负责向下传递；CampusTextScaler 在系统字号基础上叠加应用字号。
 - legacy_import.dart：旧单库导入 importLegacyDatabase。
   - 旧库只读打开，只支持 user_version 1–2。

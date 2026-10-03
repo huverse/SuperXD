@@ -43,6 +43,32 @@ void main() {
     await settings.close();
     await directory.delete(recursive: true);
   });
+  test('设备设置v3迁移默认玻璃自动，玻璃模式与其他设置并发保存后重开保留', () async {
+    final directory = await Directory.systemTemp.createTemp('appearance-');
+    final path = '${directory.path}/display.db';
+    final old = await openDatabase(
+      path,
+      version: 3,
+      onCreate: (db, _) => db.execute(
+        "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT 'sage', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system')",
+      ),
+    );
+    await old.insert('display_settings', {'id': 1, 'text_scale': 1.1, 'palette_id': 'dusk', 'theme_mode': 'dark'});
+    await old.close();
+    var settings = await DisplaySettings.open(databasePath: path);
+    expect(settings.glassMode, 'auto');
+    expect(settings.paletteId, 'dusk');
+    expect(settings.themeMode, ThemeMode.dark);
+    await Future.wait([settings.setGlassMode('reduced'), settings.setScale(1.25)]);
+    expect(() => settings.setGlassMode('ultra'), throwsArgumentError);
+    await settings.close();
+    settings = await DisplaySettings.open(databasePath: path);
+    expect(settings.glassMode, 'reduced');
+    expect(settings.scale, 1.25);
+    expect(settings.paletteId, 'dusk');
+    await settings.close();
+    await directory.delete(recursive: true);
+  });
   test('五套配色在所有表面角色上均可读', () {
     double contrast(Color a, Color b) {
       final first = a.computeLuminance(), second = b.computeLuminance();
@@ -125,6 +151,12 @@ void main() {
     await tester.tap(find.text('特大'));
     await tester.pumpAndSettle();
     expect(settings.scale, 1.4);
+    await tester.scrollUntilVisible(find.text('简化'), -200, scrollable: find.byType(Scrollable).first);
+    expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '自动')).selected, isTrue);
+    await tester.tap(find.text('简化'));
+    await tester.pumpAndSettle();
+    expect(settings.glassMode, 'reduced');
+    expect(tester.widget<ChoiceChip>(find.widgetWithText(ChoiceChip, '简化')).selected, isTrue);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     settings.dispose();

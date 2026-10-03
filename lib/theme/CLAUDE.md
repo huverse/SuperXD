@@ -30,6 +30,15 @@
 - glass_panel.dart：
   - GlassPanel 是液态玻璃面板，用于顶栏和底栏。
   - initializeCampusGlass 负责初始化玻璃渲染，失败时退回磨砂效果；campusGlassReady 表示是否初始化完成。
+- campus_glass_tier.dart：玻璃档位。
+  - 档位有四档：满档 full、标准 standard、磨砂 minimal、实色 solid。
+  - resolveCampusGlassTier 按以下规则决定档位：无障碍条件走实色；简化模式或未就绪走磨砂；完整模式固定满档；自动模式跟随 GlassAdaptiveScope 的实测结果；限档时满档降为标准。
+  - CampusGlassScope 向下传递模式与限档；自动模式下外包 GlassAdaptiveScope 采样帧耗时。玻璃组件统一用 tierOf 取档位，并显式传给 AdaptiveGlass，不依赖库的隐式上限。
+  - CampusGlassGuard 通过通道 superxd/glass 读写原生的限档状态，原生实现见 GlassGuard.kt。
+- campus_glass_material.dart：玻璃材质表。
+  - 按角色区分：navigation（顶栏、底栏）、control（按钮、开关、标签）、overlay（菜单、弹层、弹窗、提示条）。
+  - campusGlassSettings 按配色、角色和档位生成参数。满档以 iOS 27 预设为底并按配色着色，色散只给控件与浮层；标准档和磨砂档保持升级前的参数。
+  - campusGlassQuality 把档位映射为库的 GlassQuality。
 - campus_glass_surface.dart：CampusGlassSurface 是按钮和手势反馈共用的玻璃材质，本身不提供点击行为。
 - campus_glass_button.dart：
   - 主按钮是紧凑的玻璃胶囊，视觉高度约 38dp，触区至少 48dp。
@@ -40,6 +49,7 @@
 
 # 关键规则
 
+- 玻璃只用于浮在内容之上的导航与控件层，内容卡片和列表保持高遮色磨砂实卡，不叠玻璃。新增玻璃组件一律从 campus_glass_material 取材质，从 CampusGlassScope.tierOf 取档位，不在组件里写死 LiquidGlassSettings。
 - 颜色一律取 CampusPalette 的色彩角色，不在页面里写死色值。改配色要在深浅两套、所有配色、实际合成背景上测对比度，见 test/campus_glass_test.dart、test/atmosphere_test.dart。
 - 必须尊重减少动画与无障碍设置。装饰动效用 CampusMotion.allowed 判断能否播放，业务转场不因为装饰暂停而跳过。
 - 背景只画一份：新页面不再单独铺背景，也不给整页包遮罩。离屏遮罩会让玻璃取不到外层背景。
@@ -52,6 +62,7 @@
 - 命令：grep -rn 人工决策- lib/theme
 - 本目录的标记位于以下几处：
   - 主按钮形态
+  - 玻璃档位
   - 导航栏透明
   - 配色
   - 转场时长与路由契约

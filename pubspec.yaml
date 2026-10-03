@@ -49,7 +49,7 @@ dependencies:
   uuid: ^4.6.0
   morphnext: ^0.6.1
   lucide_icons_flutter: ^3.1.20
-  liquid_glass_widgets: ^1.7.2
+  liquid_glass_widgets: ^1.8.1
   background_downloader: ^9.6.3
   flutter_slidable: ^4.0.3
   path_provider: ^2.1.6

@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
+import 'package:superxd/theme/campus_glass_material.dart';
+import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/glass_panel.dart';
 
@@ -25,27 +27,8 @@ class CampusGlassSurface extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
-    final opaque =
-        disabled ||
-        MediaQuery.highContrastOf(context) ||
-        MediaQuery.accessibleNavigationOf(context) ||
-        MediaQuery.disableAnimationsOf(context);
     final nested = GlassPanelScope.maybeOf(context);
     final radius = round ? 1000.0 : 12.0;
-    final tint = pressed ? palette.surfaceSelected : palette.glassTint;
-    final settings = liquid.LiquidGlassSettings(
-      glassColor: tint.withValues(alpha: .74),
-      thickness: 8,
-      blur: 6,
-      saturation: .9,
-      refractiveIndex: 1.10,
-      lightIntensity: .35,
-      ambientStrength: .16,
-      chromaticAberration: 0,
-      glowIntensity: 0,
-      shadowElevation: 0,
-      platformViewFallbackColor: palette.glassFallback,
-    );
     final shape = round
         ? const liquid.LiquidRoundedSuperellipse(borderRadius: 1000)
         : const liquid.LiquidRoundedSuperellipse(borderRadius: 12);
@@ -53,7 +36,17 @@ class CampusGlassSurface extends StatelessWidget {
       valueListenable: campusGlassReady,
       child: child,
       builder: (context, ready, content) {
-        final surface = opaque || !ready || nested?.opaque == true
+        final tier = disabled
+            ? CampusGlassTier.solid
+            : CampusGlassScope.tierOf(context, ready: ready);
+        final settings = campusGlassSettings(
+          palette,
+          CampusGlassRole.control,
+          tier,
+          pressed: pressed,
+        );
+        final surface =
+            tier == CampusGlassTier.solid || !ready || nested?.opaque == true
             ? DecoratedBox(
                 decoration: BoxDecoration(
                   color: disabled
@@ -72,7 +65,7 @@ class CampusGlassSurface extends StatelessWidget {
             : liquid.AdaptiveGlass(
                 shape: shape,
                 settings: settings,
-                quality: liquid.GlassQuality.standard,
+                quality: campusGlassQuality(tier),
                 allowElevation: false,
                 isInteractive: true,
                 child: content!,
