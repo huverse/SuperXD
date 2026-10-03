@@ -11,7 +11,10 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/campus_reminders.dart';
+import 'package:superxd/application/campus_widgets.dart';
+import 'package:superxd/device/home_widget_publisher.dart';
 import 'package:superxd/device/notification_reminders.dart';
+import 'package:superxd/domain/course_widget.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/credential_store.dart';
@@ -50,6 +53,8 @@ void main() async {
   if (picker is ImagePickerAndroid) picker.useAndroidPhotoPicker = true;
   final glassCapped = await CampusGlassGuard.capped();
   final reminders = CampusReminders(gateway: session.gateway, port: NotificationReminders());
+  final widgetPort = HomeWidgetPublisher();
+  final widgets = CampusWidgets(gateway: session.gateway, port: widgetPort);
   runApp(SuperXdApp(session: session, display: display, glassCapped: glassCapped, reminders: reminders));
   unawaited(initializeCampusGlass());
   try {
@@ -57,18 +62,22 @@ void main() async {
   } catch (error, stack) {
     campusLog('[AppSession] action=restore errorType=${error.runtimeType}\n$stack');
   }
-  watchReminders(session, reminders);
+  watchLocalSchedule(session, reminders: reminders, widgets: widgets);
+  watchWidgetTheme(display, widgetPort);
 }
 
-// 课前提醒对账时机：启动恢复会话后、回到前台、切换账号或退出登录、本机课表相关写入后；1秒防抖合并连续写入。
-// 对账只读本地数据，失败只记日志，不影响应用。
-void watchReminders(AppSession session, CampusReminders reminders) {
+// 课前提醒与桌面小组件的对账时机：启动恢复会话后、回到前台、切换账号或退出登录、本机课表相关写入后；1秒防抖合并连续写入。
+// 两者都只读本地数据，失败只记日志，不影响应用。
+void watchLocalSchedule(AppSession session, {required CampusReminders reminders, required CampusWidgets widgets}) {
   Timer? pending;
   void schedule() {
     pending?.cancel();
     pending = Timer(const Duration(seconds: 1), () {
       reminders.reconcile().then<void>((_) {}).catchError((Object error, StackTrace stack) {
         campusLog('[Reminder] action=reconcile errorType=${error.runtimeType}\n$stack');
+      });
+      widgets.refresh(signedIn: session.loggedIn).catchError((Object error, StackTrace stack) {
+        campusLog('[Widget] action=refresh errorType=${error.runtimeType}\n$stack');
       });
     });
   }
@@ -83,6 +92,34 @@ void watchReminders(AppSession session, CampusReminders reminders) {
   session.gateway.scheduleChanges.addListener(schedule);
   AppLifecycleListener(onResume: schedule);
   schedule();
+}
+
+// 小组件衬底不透明度：叠在任意桌面壁纸上，正文与次要文字仍不低于 4.5:1（见 home_widget_test）。
+const widgetBackgroundAlpha = .92;
+
+// 小组件配色取当前配色方案的卡片底色与文字色，浅色深色各一套，深浅色跟随“界面”设置。
+WidgetTheme widgetThemeOf(DisplaySettings display) {
+  WidgetPalette colors(Brightness brightness) {
+    final palette = CampusPalette.byId(display.paletteId, brightness: brightness);
+    return WidgetPalette(background: palette.surface.withValues(alpha: widgetBackgroundAlpha).toARGB32(), text: palette.onSurface.toARGB32(), secondary: palette.onSurfaceVariant.toARGB32());
+  }
+  return WidgetTheme(light: colors(Brightness.light), dark: colors(Brightness.dark), mode: display.themeMode.name);
+}
+
+// 只在配色或深浅色变化时重发，字号、字体、壁纸等变化不影响小组件。
+void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
+  String? applied;
+  void apply() {
+    final signature = '${display.paletteId}|${display.themeMode.name}';
+    if (signature == applied) return;
+    applied = signature;
+    port.applyTheme(widgetThemeOf(display)).catchError((Object error, StackTrace stack) {
+      campusLog('[Widget] action=theme errorType=${error.runtimeType}\n$stack');
+    });
+  }
+
+  display.addListener(apply);
+  apply();
 }
 
 class SuperXdApp extends StatefulWidget {

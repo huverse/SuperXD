@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 桌面课表小组件，见 CourseWidgets.kt。文字不小于14sp；颜色由代码按当前配色设置。 -->
+<resources>
+    <dimen name="course_widget_radius">16dp</dimen>
+    <dimen name="course_widget_padding">12dp</dimen>
+
+    <string name="course_widget_next_label">下一节课</string>
+    <string name="course_widget_next_description">正在上或接下来的一节课</string>
+    <string name="course_widget_pair_label">接下来两节</string>
+    <string name="course_widget_pair_description">正在上或接下来的两节课</string>
+    <string name="course_widget_day_label">今日课程</string>
+    <string name="course_widget_day_description">今天的全部课程，已下课的变淡；今天的课上完后显示下一个有课的日子</string>
+    <string name="course_widget_signed_out">登录后显示课表</string>
+    <string name="course_widget_no_term">还没有课表</string>
+    <string name="course_widget_no_term_start">开学日未设置</string>
+    <string name="course_widget_no_bells">作息时间未设置</string>
+    <string name="course_widget_stale">打开应用更新课表</string>
+    <string name="course_widget_empty">近期没课</string>
+
+    <!-- 三种文字都是14sp，CourseWidgets.kt 按统一行高估算能放几行。 -->
+    <style name="CourseWidgetTitle">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:textStyle">bold</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
+    <style name="CourseWidgetBody">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
+    <style name="CourseWidgetSecondary">
+        <item name="android:layout_width">match_parent</item>
+        <item name="android:layout_height">wrap_content</item>
+        <item name="android:textSize">14sp</item>
+        <item name="android:maxLines">1</item>
+        <item name="android:ellipsize">end</item>
+        <item name="android:includeFontPadding">false</item>
+    </style>
+</resources>

@@ -23,6 +23,9 @@ class CourseOccurrence {
 
   // 稳定标识：课表校验保证同一课程的“时段加周次”不重复，所以课程加日期加节次唯一。
   String get key => '${course.sectionId.isNotEmpty ? course.sectionId : course.courseName}|$date|${meeting.periodStart}-${meeting.periodEnd}';
+
+  // 节次文案：“第1–2节”，只有一节时“第3节”。
+  String get periods => meeting.periodStart == meeting.periodEnd ? '第${meeting.periodStart}节' : '第${meeting.periodStart}–${meeting.periodEnd}节';
 }
 
 // 缺开学日或作息时无法换算成钟点，列表为空并给出原因，不猜时刻。

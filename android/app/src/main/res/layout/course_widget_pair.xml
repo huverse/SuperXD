@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 2×1：正在上或接下来的两节课，每节两行（课名；时间与地点，地点过长时省略开头、保留房间号）。放不下两节时只显示一节，见 CourseWidgets.kt。 -->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:clipToOutline="true">
+
+    <ImageView
+        android:id="@+id/course_widget_bg"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:importantForAccessibility="no"
+        android:scaleType="fitXY"
+        android:src="@drawable/course_widget_background" />
+
+    <LinearLayout
+        android:id="@+id/course_widget_content"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_vertical"
+        android:orientation="vertical"
+        android:paddingStart="@dimen/course_widget_padding"
+        android:paddingTop="8dp"
+        android:paddingEnd="@dimen/course_widget_padding"
+        android:paddingBottom="8dp">
+
+        <TextView
+            android:id="@+id/course_widget_name"
+            style="@style/CourseWidgetTitle"
+            android:maxLines="1" />
+
+        <LinearLayout
+            android:id="@+id/course_widget_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/course_widget_label"
+                style="@style/CourseWidgetSecondary"
+                android:layout_width="wrap_content"
+                android:ellipsize="none" />
+
+            <TextView
+                android:id="@+id/course_widget_place"
+                style="@style/CourseWidgetSecondary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:ellipsize="start" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/course_widget_second_name"
+            style="@style/CourseWidgetTitle"
+            android:layout_marginTop="4dp"
+            android:maxLines="1" />
+
+        <LinearLayout
+            android:id="@+id/course_widget_second_row"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/course_widget_second_label"
+                style="@style/CourseWidgetSecondary"
+                android:layout_width="wrap_content"
+                android:ellipsize="none" />
+
+            <TextView
+                android:id="@+id/course_widget_second_place"
+                style="@style/CourseWidgetSecondary"
+                android:layout_width="0dp"
+                android:layout_weight="1"
+                android:ellipsize="start" />
+        </LinearLayout>
+    </LinearLayout>
+
+    <TextView
+        android:id="@+id/course_widget_message"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center"
+        android:padding="@dimen/course_widget_padding"
+        android:textSize="14sp"
+        android:visibility="gone" />
+</FrameLayout>

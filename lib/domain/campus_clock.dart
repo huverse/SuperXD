@@ -36,6 +36,12 @@ String formatCampusTimestamp(String value) {
   return '${formatCampusDate(date)} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}:${date.second.toString().padLeft(2, '0')}';
 }
 
+// 绝对时刻在校园时区的钟点 HH:mm。
+String formatCampusClock(DateTime instant) {
+  final local = campusInstant(instant);
+  return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
+}
+
 // 校园日期（YYYY-MM-DD）当天第 minuteOfDay 分钟对应的绝对时刻（UTC）。
 DateTime campusMoment(String isoDate, int minuteOfDay) {
   ensureCampusClock();

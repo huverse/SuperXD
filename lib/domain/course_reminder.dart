@@ -19,14 +19,11 @@ List<PlannedReminder> planReminders(List<CourseOccurrence> occurrences, {require
   for (final occurrence in occurrences) {
     final fireAt = occurrence.start.subtract(Duration(minutes: leadMinutes));
     if (!fireAt.isAfter(now)) continue;
-    final start = campusInstant(occurrence.start);
-    final clock = '${start.hour.toString().padLeft(2, '0')}:${start.minute.toString().padLeft(2, '0')}';
-    final meeting = occurrence.meeting;
-    final periods = meeting.periodStart == meeting.periodEnd ? '第${meeting.periodStart}节' : '第${meeting.periodStart}–${meeting.periodEnd}节';
+    final place = occurrence.meeting.place;
     planned.add(PlannedReminder(
       fireAt: fireAt,
       title: occurrence.course.courseName,
-      body: [clock, periods, if (meeting.place.isNotEmpty) meeting.place].join(' · '),
+      body: [formatCampusClock(occurrence.start), occurrence.periods, if (place.isNotEmpty) place].join(' · '),
       occurrence: occurrence,
     ));
     if (planned.length == reminderLimit) break;

@@ -28,7 +28,7 @@
   - 现有例外只有外观页读写 DisplaySettings。
 - toolbox 百宝箱：设备级、免登录，可依赖 domain、theme，不依赖教务相关任何层。
 - application 应用编排：可依赖 domain、gateway。
-- device 设备能力：系统通知等适配器，只实现 domain 端口、只依赖 domain，由组合根注入；页面不直接依赖。
+- device 设备能力：系统通知、桌面小组件等适配器，只实现 domain 端口、只依赖 domain，由组合根注入；页面不直接依赖。
 - gateway 网关：负责账号生命周期与教务网关实现，可依赖 domain、edu、local。
 - edu 教务协议与页面解析：可依赖 domain。
 - local 本地存储：可依赖 domain。
@@ -58,8 +58,12 @@
   - 学年与数据项的选择、进度口径、未提交不报已同步，这几条规则都见该文件的人工决策注释。
 - application/campus_reminders.dart（CampusReminders）：课前提醒对账。
   - 读本机的当前学期、提醒设置、课表与作息，展开未来 14 天的课程实例，整体替换系统里的提醒；只读本地，从不联网。
-  - 对账时机由 main.dart 的 watchReminders 决定：启动恢复会话后、回到前台、切换账号或退出、本机课表相关写入后（AccountAccess.scheduleChanges），1 秒防抖。
+  - 对账时机由 main.dart 的 watchLocalSchedule 决定：启动恢复会话后、回到前台、切换账号或退出、本机课表相关写入后（AccountAccess.scheduleChanges），1 秒防抖。
   - 没有当前学期（含退出登录）、未开启或没有通知权限时，撤销本应用的全部课前提醒。
+- application/campus_widgets.dart（CampusWidgets）：桌面课表小组件的快照。
+  - 读本机的当前学期、课表与作息，展开今天起 7 天的课程实例交给小组件端口；只读本地，从不联网。对账时机与课前提醒相同。
+  - 退出登录时发布空快照，小组件不显示上一个账号的课；缺开学日或作息时如实提示。
+  - 配色由 main.dart 的 watchWidgetTheme 跟随“配色”和“深浅色”设置单独下发；原生侧见 CourseWidgets.kt。
 
 # 跨模块不变量（改动前逐条自查）
 
@@ -91,6 +95,7 @@
 8. 设备级数据
    - 百宝箱、下载任务，以及配色、字体、字号、深浅色、玻璃效果和自定义壁纸都属于设备，切换账号时保留。
    - 自定义壁纸只经系统照片选择器读取用户选中的一张，复制到应用私有目录，不上传、不申请存储权限。
+   - 桌面小组件显示的是当前账号的课，跟着账号切换，退出登录即清空；只有它的配色跟随设备设置。
    - 百宝箱不读取教务凭据或 cookie。
    - 第三方解析来源逐个来源、按授权版本单独征得同意。自动模式只尝试已启用且已同意的来源。
 9. 对外网络
@@ -107,6 +112,7 @@
     - 成绩：单次载荷上限 4MB，课程上限 1000 条。
     - 课前提醒：只安排未来 14 天、最多 128 条，每次对账整体替换；提醒设置每学期一行。
     - 日历导出：单次最多 5000 个事件；缓存里只留最近一次导出的文件，下次导出前清空。
+    - 桌面小组件：快照只覆盖今天起 7 天、最多 200 次课，每次整体替换；过期后提示打开应用。桌面上没有小组件时不留刷新闹钟。
     - 新增只增不删的数据时，必须同时给出上限或清理策略。
 11. 日志
     - 只经 domain/campus_log.dart 的 campusLog 输出。应用入口必须注入 debugPrint，日志才会进入 logcat。
@@ -150,7 +156,7 @@
 - 教务协议与解析：contract_test.dart、kingo_client_response_test.dart、sync_boundary_regression_test.dart、grades_test.dart
 - 课表数据：schedule_edit_test.dart、schedule_version_test.dart、schedule_migration_test.dart、bells_persistence_test.dart、period_day_test.dart、schedule_calendar_test.dart
 - 同步编排与同步界面：campus_sync_test.dart、sync_ui_test.dart、transition_sync_test.dart
-- 课程实例、课前提醒与日历导出：reminder_test.dart、calendar_export_test.dart
+- 课程实例、课前提醒、日历导出与桌面小组件：reminder_test.dart、calendar_export_test.dart、home_widget_test.dart
 - 页面交互：
   - today_navigation_test.dart、today_date_transition_test.dart、schedule_experience_test.dart、schedule_editor_ui_test.dart
   - grades_ui_test.dart、form_spacing_test.dart、navigation_drag_test.dart、shell_layout_test.dart
@@ -179,4 +185,4 @@
   - 结果页和下载页随进度通知整页重建
   - FrostTexture 逐点绘制颗粒
   - 成绩响应分块累加
-- 平台：只有 Android 宿主。验证只在模拟器（API 36、API 34）上做过，真机和 iOS 都未验收。原生导出通道见 MainActivity.kt、ToolboxFileExporter.kt 与 CalendarExporter.kt（日历文件只经 CalendarFileProvider 开放缓存 calendar_export 文件夹）。
+- 平台：只有 Android 宿主。验证只在模拟器（API 36、API 34）上做过，真机和 iOS 都未验收。原生导出通道见 MainActivity.kt、ToolboxFileExporter.kt 与 CalendarExporter.kt（日历文件只经 CalendarFileProvider 开放缓存 calendar_export 文件夹）；桌面小组件见 CourseWidgets.kt。
