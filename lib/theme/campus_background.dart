@@ -1,7 +1,7 @@
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_log.dart';
@@ -10,16 +10,20 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/wallpaper_tone.dart';
 
 // 自定义壁纸：静态图替代云雾（云雾仍是默认），按色调网格逐格淡化，直接压在背景上的文字和状态栏图标照旧可读。
-// blurLevel、fadeLevel 是档位下标，对应 blurSigmas、fadeExtras。
+// look 是模糊与淡化（0–100），拖动滑杆时连续变化；背景单独监听它重画，不重建应用。
 class CampusWallpaper {
-  const CampusWallpaper({required this.image, required this.tone, required this.blurLevel, required this.fadeLevel});
+  const CampusWallpaper({required this.image, required this.tone, required this.look});
   final ImageProvider image;
   final WallpaperTone tone;
-  final int blurLevel;
-  final int fadeLevel;
-  static const blurSigmas = [0.0, 8.0, 20.0];
-  static const fadeExtras = [0.0, .2, .4];
+  final ValueListenable<({int blur, int fade})> look;
+  // 模糊拉满时的 sigma。
+  static const maxBlurSigma = 30.0;
 }
+
+// 云雾与壁纸互换、换图时交叉淡化的时长（新图已先解码好）；背景在所有玻璃之下，淡化不影响玻璃取背景。
+const _backgroundSwap = Duration(milliseconds: 420);
+// 模糊、淡化数值变化（读屏增减、松手吸附、预览退回）时平滑跟随的时长；拖动中逐帧跟手，几乎无延迟感。
+const _lookFollow = Duration(milliseconds: 160);
 
 // 唯一背景循环，不随路由/列表项复制。纹理固定，不逐帧生成随机噪点。设了壁纸时改画静态壁纸，不再循环；高对比度时两者都不画。
 class CampusAtmosphere extends StatefulWidget {
@@ -38,6 +42,10 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
     duration: const Duration(seconds: 24),
   );
   bool _allowed = false;
+  // 正在显示的壁纸。换上新图时先按铺满屏幕的尺寸解码好再换，交叉淡化直接从旧背景到新图，
+  // 不会先淡到底色、等解码完图片再冒出来；恢复云雾和同一张图的外观变化立即生效。
+  late CampusWallpaper? _shown = widget.wallpaper;
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -48,8 +56,23 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
     _updatePlayback();
   }
 
+  void _syncWallpaper() {
+    final next = widget.wallpaper;
+    if (next == null || next.image == _shown?.image) {
+      _shown = next;
+      return;
+    }
+    precacheImage(_wallpaperImage(next, context), context, onError: (error, stack) {
+      campusLog('[Wallpaper] action=precache errorType=${error.runtimeType}\n$stack');
+    }).then((_) {
+      if (!mounted || widget.wallpaper?.image != next.image) return;
+      setState(() => _shown = widget.wallpaper);
+      _updatePlayback();
+    });
+  }
+
   void _updatePlayback() {
-    if (_allowed && widget.phase == null && widget.wallpaper == null) {
+    if (_allowed && widget.phase == null && _shown == null) {
       if (!_controller.isAnimating) _controller.repeat();
     } else {
       _controller.stop();
@@ -59,7 +82,8 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   @override
   void didUpdateWidget(CampusAtmosphere oldWidget) {
     super.didUpdateWidget(oldWidget);
-    if (oldWidget.phase != widget.phase || (oldWidget.wallpaper == null) != (widget.wallpaper == null)) _updatePlayback();
+    if (oldWidget.wallpaper != widget.wallpaper) _syncWallpaper();
+    _updatePlayback();
   }
 
   @override
@@ -70,21 +94,28 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
 
   Widget _layer(BuildContext context) {
     final highContrast = MediaQuery.highContrastOf(context);
-    final wallpaper = highContrast ? null : widget.wallpaper;
+    final wallpaper = highContrast ? null : _shown;
     return RepaintBoundary(
       child: IgnorePointer(
         child: ExcludeSemantics(
-          child: wallpaper != null
-              ? _WallpaperLayer(wallpaper: wallpaper)
-              : CustomPaint(
-                  painter: AtmospherePainter(
-                    palette: CampusPalette.of(context),
-                    progress: _allowed && widget.phase == null
-                        ? _controller
-                        : AlwaysStoppedAnimation(widget.phase ?? .18),
-                    highContrast: highContrast,
+          child: AnimatedSwitcher(
+            duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : _backgroundSwap,
+            switchInCurve: Curves.easeInOutCubic,
+            switchOutCurve: Curves.easeInOutCubic,
+            layoutBuilder: (current, previous) => Stack(fit: StackFit.expand, children: [...previous, ?current]),
+            child: wallpaper != null
+                ? _WallpaperLayer(key: ValueKey(wallpaper.image), wallpaper: wallpaper)
+                : CustomPaint(
+                    key: const ValueKey('fog'),
+                    painter: AtmospherePainter(
+                      palette: CampusPalette.of(context),
+                      progress: _allowed && widget.phase == null
+                          ? _controller
+                          : AlwaysStoppedAnimation(widget.phase ?? .18),
+                      highContrast: highContrast,
+                    ),
                   ),
-                ),
+          ),
         ),
       ),
     );
@@ -113,38 +144,42 @@ class CampusBackdrop extends InheritedWidget {
   bool updateShouldNotify(CampusBackdrop oldWidget) => layer != oldWidget.layer;
 }
 
+// 按铺满屏幕所需的像素解码，不放大原图；预解码与绘制共用，缓存键一致。只订阅屏幕尺寸与像素密度。
+ImageProvider _wallpaperImage(CampusWallpaper wallpaper, BuildContext context) {
+  final tone = wallpaper.tone;
+  final physical = MediaQuery.sizeOf(context) * MediaQuery.devicePixelRatioOf(context);
+  final scale = math.min(1.0, math.max(physical.width / tone.width, physical.height / tone.height));
+  return ResizeImage(wallpaper.image, width: math.max(1, (tone.width * scale).round()), height: math.max(1, (tone.height * scale).round()));
+}
+
 class _WallpaperLayer extends StatefulWidget {
-  const _WallpaperLayer({required this.wallpaper});
+  const _WallpaperLayer({super.key, required this.wallpaper});
   final CampusWallpaper wallpaper;
   @override
   State<_WallpaperLayer> createState() => _WallpaperLayerState();
 }
 
 class _WallpaperLayerState extends State<_WallpaperLayer> {
-  // 淡化透明度只在网格、配色或淡化档变化时重算；只订阅屏幕尺寸，键盘弹起等不触发重算。
-  (WallpaperTone, CampusPalette, int)? _key;
-  Float64List _alphas = Float64List(0);
+  // 可读下限只在网格或配色变化时重算；只订阅屏幕尺寸，键盘弹起等不触发重算。拖动淡化滑杆时只在绘制里做加法。
+  (WallpaperTone, CampusPalette)? _key;
+  Float64List _floor = Float64List(0);
 
   Float64List _veil(CampusPalette palette) {
-    final wallpaper = widget.wallpaper;
-    final key = (wallpaper.tone, palette, wallpaper.fadeLevel);
+    final key = (widget.wallpaper.tone, palette);
     if (key != _key) {
       _key = key;
-      _alphas = wallpaperVeilAlphas(wallpaper.tone, palette, CampusWallpaper.fadeExtras[wallpaper.fadeLevel]);
+      _floor = wallpaperVeilAlphas(widget.wallpaper.tone, palette);
     }
-    return _alphas;
+    return _floor;
   }
 
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
     final wallpaper = widget.wallpaper, tone = wallpaper.tone;
-    final physical = MediaQuery.sizeOf(context) * MediaQuery.devicePixelRatioOf(context);
-    // 按铺满屏幕所需的像素解码，不放大原图。
-    final scale = math.min(1.0, math.max(physical.width / tone.width, physical.height / tone.height));
-    final sigma = CampusWallpaper.blurSigmas[wallpaper.blurLevel];
-    Widget image = Image(
-      image: ResizeImage(wallpaper.image, width: math.max(1, (tone.width * scale).round()), height: math.max(1, (tone.height * scale).round())),
+    final follow = MediaQuery.disableAnimationsOf(context) ? Duration.zero : _lookFollow;
+    final image = Image(
+      image: _wallpaperImage(wallpaper, context),
       fit: BoxFit.cover,
       filterQuality: FilterQuality.medium,
       gaplessPlayback: true,
@@ -153,20 +188,37 @@ class _WallpaperLayerState extends State<_WallpaperLayer> {
         return const SizedBox.expand();
       },
     );
-    if (sigma > 0) image = ImageFiltered(imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma, tileMode: TileMode.clamp), child: image);
-    return Stack(fit: StackFit.expand, children: [
-      ColoredBox(color: wallpaperVeilColor(palette)),
-      image,
-      CustomPaint(painter: _VeilPainter(tone: tone, alphas: _veil(palette), color: wallpaperVeilColor(palette))),
-    ]);
+    return ValueListenableBuilder<({int blur, int fade})>(
+      valueListenable: wallpaper.look,
+      builder: (context, look, _) => Stack(fit: StackFit.expand, children: [
+        ColoredBox(color: wallpaperVeilColor(palette)),
+        TweenAnimationBuilder<double>(
+          tween: Tween(end: look.blur / 100 * CampusWallpaper.maxBlurSigma),
+          duration: follow,
+          curve: Curves.easeOutCubic,
+          child: image,
+          builder: (context, sigma, image) => sigma < .1
+              ? image!
+              : ImageFiltered(imageFilter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma, tileMode: TileMode.clamp), child: image),
+        ),
+        TweenAnimationBuilder<double>(
+          tween: Tween(end: look.fade / 100),
+          duration: follow,
+          curve: Curves.easeOutCubic,
+          builder: (context, fade, _) => CustomPaint(painter: _VeilPainter(tone: tone, floor: _veil(palette), fade: fade, color: wallpaperVeilColor(palette))),
+        ),
+      ]),
+    );
   }
 }
 
-// 淡化层与壁纸同一个 cover 映射。网格顶点着色：每个顶点取相邻格的最大透明度，格内插值不低于该格所需，过渡平滑无方块。
+// 淡化层与壁纸同一个 cover 映射。网格顶点着色：每个顶点取相邻格的最大下限，再叠上用户淡化量；
+// 格内插值不低于该格所需，过渡平滑无方块。
 class _VeilPainter extends CustomPainter {
-  _VeilPainter({required this.tone, required this.alphas, required this.color});
+  _VeilPainter({required this.tone, required this.floor, required this.fade, required this.color});
   final WallpaperTone tone;
-  final Float64List alphas;
+  final Float64List floor;
+  final double fade;
   final Color color;
 
   @override
@@ -183,10 +235,10 @@ class _VeilPainter extends CustomPainter {
         var alpha = 0.0;
         for (final (cellRow, cellColumn) in [(row - 1, column - 1), (row - 1, column), (row, column - 1), (row, column)]) {
           if (cellRow >= 0 && cellRow < rows && cellColumn >= 0 && cellColumn < columns) {
-            alpha = math.max(alpha, alphas[cellRow * columns + cellColumn]);
+            alpha = math.max(alpha, floor[cellRow * columns + cellColumn]);
           }
         }
-        colors.add(color.withValues(alpha: alpha));
+        colors.add(color.withValues(alpha: wallpaperVeilAlpha(alpha, fade)));
       }
     }
     final indices = <int>[];
@@ -202,7 +254,7 @@ class _VeilPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(_VeilPainter oldDelegate) => oldDelegate.tone != tone || oldDelegate.alphas != alphas || oldDelegate.color != color;
+  bool shouldRepaint(_VeilPainter oldDelegate) => oldDelegate.tone != tone || oldDelegate.floor != floor || oldDelegate.fade != fade || oldDelegate.color != color;
 }
 
 class AtmospherePainter extends CustomPainter {

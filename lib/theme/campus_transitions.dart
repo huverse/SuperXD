@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/campus_glass_surface.dart';
+import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/glass_panel.dart';
 
@@ -24,19 +25,60 @@ Widget campusPageTransition(
   Widget child,
 ) {
   if (MediaQuery.disableAnimationsOf(context)) return child;
-  final direction = Directionality.of(context) == TextDirection.rtl
-      ? -1.0
-      : 1.0;
-  final curve = CurveTween(curve: Curves.easeInOutCubic);
-  // 页面透明、共用一份背景，新旧页整屏并排平移、互不重叠；不淡入淡出：玻璃在 Opacity 下取不到背景，
-  // 整段转场会显示成底色，最后一帧才突然变回玻璃。旧页由新页同一进度推出，全程连续退场。
-  return SlideTransition(
-    position: secondaryAnimation.drive(curve).drive(Tween(begin: Offset.zero, end: Offset(-direction, 0))),
-    child: SlideTransition(
-      position: animation.drive(curve).drive(Tween(begin: Offset(direction, 0), end: Offset.zero)),
-      child: child,
-    ),
-  );
+  return _CampusPageSlide(animation: animation, secondaryAnimation: secondaryAnimation, child: child);
+}
+
+// 页面透明、共用一份背景，新旧页整屏并排平移、互不重叠；不淡入淡出：玻璃在 Opacity 下取不到背景，
+// 整段转场会显示成底色，最后一帧才突然变回玻璃。旧页由新页同一进度、同一曲线推出，全程连续退场。
+// 曲线为临界阻尼弹簧（见 campus_motion.dart），推入与返回都先快后慢。
+class _CampusPageSlide extends StatefulWidget {
+  const _CampusPageSlide({required this.animation, required this.secondaryAnimation, required this.child});
+  final Animation<double> animation;
+  final Animation<double> secondaryAnimation;
+  final Widget child;
+
+  @override
+  State<_CampusPageSlide> createState() => _CampusPageSlideState();
+}
+
+class _CampusPageSlideState extends State<_CampusPageSlide> {
+  late CurvedAnimation _enter = _curved(widget.animation);
+  late CurvedAnimation _leave = _curved(widget.secondaryAnimation);
+
+  static CurvedAnimation _curved(Animation<double> parent) =>
+      CurvedAnimation(parent: parent, curve: campusSpringCurve, reverseCurve: campusSpringCurve.flipped);
+
+  @override
+  void didUpdateWidget(_CampusPageSlide oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation != widget.animation) {
+      _enter.dispose();
+      _enter = _curved(widget.animation);
+    }
+    if (oldWidget.secondaryAnimation != widget.secondaryAnimation) {
+      _leave.dispose();
+      _leave = _curved(widget.secondaryAnimation);
+    }
+  }
+
+  @override
+  void dispose() {
+    _enter.dispose();
+    _leave.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final direction = Directionality.of(context) == TextDirection.rtl ? -1.0 : 1.0;
+    return SlideTransition(
+      position: _leave.drive(Tween(begin: Offset.zero, end: Offset(-direction, 0))),
+      child: SlideTransition(
+        position: _enter.drive(Tween(begin: Offset(direction, 0), end: Offset.zero)),
+        child: widget.child,
+      ),
+    );
+  }
 }
 
 // [人工决策-2026-09-25 17:43:48] GoRouter与push统一Material路由契约，旧页在完整进度内退场，不前半段抢先消失。
@@ -116,7 +158,7 @@ class _CampusEntryFadeState extends State<CampusEntryFade>
 
 // glassPanel 为真表示内容是 CampusGlassDialog 这类 overlay 玻璃面板，由面板按路由进度自己显隐；
 // 日期选择器等系统弹窗传 false，仍整体改不透明度。
-class CampusDialogRoute<T> extends DialogRoute<T> {
+class CampusDialogRoute<T> extends DialogRoute<T> with CampusOverlayDepthRoute<T> {
   CampusDialogRoute({required super.context, required super.builder, super.barrierDismissible = true, this.glassPanel = true})
       : super(themes: InheritedTheme.capture(from: context, to: Navigator.of(context, rootNavigator: true).context),
           animationStyle: MediaQuery.disableAnimationsOf(context) ? AnimationStyle.noAnimation : campusOverlay);
@@ -124,17 +166,6 @@ class CampusDialogRoute<T> extends DialogRoute<T> {
   late final Animation<double> _reveal = animation!.drive(CurveTween(curve: Curves.easeInOutCubic));
   @override
   Curve get barrierCurve => Curves.easeInOutCubic;
-  @override
-  void install() {
-    super.install();
-    shiftCampusOverlayDepth(1);
-  }
-
-  @override
-  void dispose() {
-    shiftCampusOverlayDepth(-1);
-    super.dispose();
-  }
   @override
   Widget buildTransitions(BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation, Widget child) {
     final media = MediaQuery.of(context);
@@ -280,7 +311,7 @@ void showCampusToast(BuildContext context, String message, {String? action, Void
 }
 
 // 底部弹层：沿用系统弹层的拖动关闭、返回键与读屏，背景透明，内容放进 CampusSheetPanel。
-class CampusSheetRoute<T> extends ModalBottomSheetRoute<T> {
+class CampusSheetRoute<T> extends ModalBottomSheetRoute<T> with CampusOverlayDepthRoute<T> {
   CampusSheetRoute({
     required super.builder,
     required super.capturedThemes,
@@ -288,18 +319,6 @@ class CampusSheetRoute<T> extends ModalBottomSheetRoute<T> {
     required super.barrierOnTapHint,
     required super.sheetAnimationStyle,
   }) : super(isScrollControlled: true, useSafeArea: true, backgroundColor: Colors.transparent, elevation: 0);
-
-  @override
-  void install() {
-    super.install();
-    shiftCampusOverlayDepth(1);
-  }
-
-  @override
-  void dispose() {
-    shiftCampusOverlayDepth(-1);
-    super.dispose();
-  }
 }
 
 Future<T?> showCampusSheet<T>({required BuildContext context, required WidgetBuilder builder}) {

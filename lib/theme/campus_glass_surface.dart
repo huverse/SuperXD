@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
+import 'package:superxd/theme/campus_glass_blend.dart';
 import 'package:superxd/theme/campus_glass_material.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -32,61 +33,67 @@ class CampusGlassSurface extends StatelessWidget {
     final shape = round
         ? const liquid.LiquidRoundedSuperellipse(borderRadius: 1000)
         : const liquid.LiquidRoundedSuperellipse(borderRadius: 12);
+    // 实色档里选中、按下同样着 surfaceSelected，高对比度下选中态不只靠勾号区分。
+    final solidColor = disabled || pressed ? palette.surfaceSelected : palette.glassFallback;
     return ValueListenableBuilder<bool>(
       valueListenable: campusGlassReady,
       child: child,
-      builder: (context, ready, content) {
-        final tier = disabled
-            ? CampusGlassTier.solid
-            : CampusGlassScope.tierOf(context, ready: ready);
-        final settings = campusGlassSettings(
-          palette,
-          CampusGlassRole.control,
-          tier,
-          pressed: pressed,
-        );
-        // 描边画在玻璃的内容里（内描边），随玻璃的 materialize 一起显隐，不在玻璃外再包一层。
-        final outlined = DecoratedBox(
-          position: DecorationPosition.foreground,
-          decoration: BoxDecoration(
-            borderRadius: BorderRadius.circular(radius),
-            border: Border.all(
-              color: focused
-                  ? palette.primary
-                  : disabled
-                  ? palette.outlineSubtle
-                  : palette.primary.withValues(alpha: softOutline ? .12 : .24),
-              width: focused ? 2 : 1,
+      // 禁用、未就绪、父面板实色都画实色；与玻璃互换和换档经盖板过渡，不突变。
+      builder: (context, ready, content) => CampusGlassBlend<CampusGlassTier>(
+        look: disabled || !ready || nested?.opaque == true ? CampusGlassTier.solid : CampusGlassScope.tierOf(context, ready: ready),
+        opaque: (tier) => tier == CampusGlassTier.solid,
+        builder: (context, tier, cover) {
+          final settings = campusGlassSettings(
+            palette,
+            CampusGlassRole.control,
+            tier,
+            pressed: pressed,
+          );
+          // 描边画在玻璃的内容里（内描边），随玻璃的 materialize 一起显隐，不在玻璃外再包一层；盖板在描边与内容之下。
+          final outlined = DecoratedBox(
+            position: DecorationPosition.foreground,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(radius),
+              border: Border.all(
+                color: focused
+                    ? palette.primary
+                    : disabled
+                    ? palette.outlineSubtle
+                    : palette.primary.withValues(alpha: softOutline ? .12 : .24),
+                width: focused ? 2 : 1,
+              ),
             ),
-          ),
-          child: content,
-        );
-        return tier == CampusGlassTier.solid || !ready || nested?.opaque == true
-            // 实色档里选中、按下同样着 surfaceSelected，高对比度下选中态不只靠勾号区分。
-            ? DecoratedBox(
-                decoration: BoxDecoration(
-                  color: disabled || pressed
-                      ? palette.surfaceSelected
-                      : palette.glassFallback,
-                  borderRadius: BorderRadius.circular(radius),
-                ),
-                child: outlined,
-              )
-            : nested != null
-            ? liquid.AdaptiveGlass.vibrancy(
-                shape: shape,
-                settings: settings,
-                child: outlined,
-              )
-            : liquid.AdaptiveGlass(
-                shape: shape,
-                settings: settings,
-                quality: campusGlassQuality(tier),
-                allowElevation: false,
-                isInteractive: true,
-                child: outlined,
-              );
-      },
+            child: tier == CampusGlassTier.solid || cover <= 0
+                ? content
+                : DecoratedBox(
+                    decoration: BoxDecoration(color: solidColor.withValues(alpha: cover), borderRadius: BorderRadius.circular(radius)),
+                    child: content,
+                  ),
+          );
+          return tier == CampusGlassTier.solid
+              ? DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: solidColor,
+                    borderRadius: BorderRadius.circular(radius),
+                  ),
+                  child: outlined,
+                )
+              : nested != null
+              ? liquid.AdaptiveGlass.vibrancy(
+                  shape: shape,
+                  settings: settings,
+                  child: outlined,
+                )
+              : liquid.AdaptiveGlass(
+                  shape: shape,
+                  settings: settings,
+                  quality: campusGlassQuality(tier),
+                  allowElevation: false,
+                  isInteractive: true,
+                  child: outlined,
+                );
+        },
+      ),
     );
   }
 }

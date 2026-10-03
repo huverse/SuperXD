@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import 'package:superxd/theme/campus_motion.dart';
+
 // 保留每个分支Navigator实例，只对进出分支做转场，不用截图或重建页面伪装动画。
 class AnimatedBranches extends StatefulWidget {
   const AnimatedBranches({super.key, required this.index, required this.children});
@@ -11,7 +13,8 @@ class AnimatedBranches extends StatefulWidget {
 
 class _AnimatedBranchesState extends State<AnimatedBranches> with SingleTickerProviderStateMixin {
   late final _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 300), value: 1);
-  late final _curve = CurvedAnimation(parent: _controller, curve: Curves.easeInOutCubic);
+  // 曲线同页面转场（临界阻尼弹簧，先快后慢），见 campus_motion.dart。
+  late final _curve = CurvedAnimation(parent: _controller, curve: campusSpringCurve);
   int? _previous;
   double _direction = 1;
   @override

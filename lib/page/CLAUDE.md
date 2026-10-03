@@ -11,7 +11,7 @@
     - 底栏壳 ShellPage，包含今天、服务、消息、我的四个分支。
     - 可拖动底栏 DragNavigationBar，悬浮在安全区之上；内容层延伸到玻璃下方，底栏占位作为各页的底部安全区。
     - 拖动时的玻璃透镜是栏玻璃的兄弟层，不被栏裁剪，按 iOS 底栏向四周鼓出、略超出栏沿；镜下的静止胶囊随之淡出。
-  - animated_branches.dart：AnimatedBranches 负责分支切换转场，保留每个分支的 Navigator；进出两页整屏并排平移，不淡入淡出（页内玻璃在半透明图层下取不到背景）。
+  - animated_branches.dart：AnimatedBranches 负责分支切换转场，保留每个分支的 Navigator；进出两页整屏并排平移，不淡入淡出（页内玻璃在半透明图层下取不到背景），曲线同页面转场（campusSpringCurve）。
   - section_pages.dart：
     - 服务页：课表、成绩、百宝箱三个入口。
     - 消息页：通知、私信，当前为占位。
@@ -57,6 +57,7 @@
   - appearance_page.dart：界面设置 AppearancePage，调整字号、配色、字体、深浅色、玻璃效果和背景。
     - 背景可选自定义图片：系统照片选择器选一张，取色后交给 DisplaySettings 保存；选图插件的缓存副本用完即删。
     - 选图函数可注入（pickWallpaper），测试用假选图。
+    - 模糊与透明度是两条滑杆（CampusSlider），拖动中只预览，正常松手立即保存；系统取消、读屏增减没有松手回调，停手 300ms 补存；离开页面时把没存的预览存掉。
   - legal_page.dart：服务协议与隐私政策 LegalPage，内容是私有 Alpha 内测说明。
   - licenses_page.dart：开源许可列表 CampusLicensesPage 和应用署名 GalaxyousAttribution。
   - third_party_page.dart：第三方声明全文 ThirdPartyPage，读取 assets/third_party_notices.txt。

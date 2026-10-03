@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 // [人工决策-2026-10-02 16:43:38] 只有玻璃控件用物理弹簧：按下近临界阻尼快速到位不回弹，松手低阻尼过冲一次再回位；页面转场、列表、切日、课表形变仍不回弹；减少动画时不用弹簧，直接到位。
@@ -9,6 +11,22 @@ SpringDescription? campusGlassTravelSpring(BuildContext context) =>
 final _glassPress = SpringDescription.withDampingRatio(mass: 1, stiffness: 900, ratio: .9);
 final _glassRelease = SpringDescription.withDampingRatio(mass: 1, stiffness: 340, ratio: .45);
 final _glassTravel = SpringDescription.withDampingRatio(mass: 1, stiffness: 500, ratio: .7);
+
+// 页面与底栏分支转场的曲线：临界阻尼弹簧（同鸿蒙 Navigation 默认转场 interpolatingSpring(0, 1, 342, 37)、
+// iOS 推入），起步不突兀但立即跟上（约 1/7 处速度最大）、之后长尾减速，不回弹；按固定时长归一化，时长仍以
+// campus_transitions.dart 为准。取代 easeInOutCubic：它前 15% 时长只走 1.4%，点按后页面像慢半拍才动。
+// 返回、反向时用 flipped，同样先快后慢。
+class CampusSpringCurve extends Curve {
+  const CampusSpringCurve();
+  // ωT：时长内走完约 99.3%，末端速度只剩约 4%，与归一化后的到位衔接无感。
+  static const _stiffness = 7.0;
+  static final _end = 1 - (1 + _stiffness) * math.exp(-_stiffness);
+
+  @override
+  double transformInternal(double t) => (1 - (1 + _stiffness * t) * math.exp(-_stiffness * t)) / _end;
+}
+
+const campusSpringCurve = CampusSpringCurve();
 
 // 仅视觉生命周期；后台暂停不代表取消业务请求。
 class CampusMotion extends StatefulWidget {

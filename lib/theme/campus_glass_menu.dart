@@ -43,7 +43,7 @@ Future<T?> showCampusMenu<T>(BuildContext anchor, {required List<CampusMenuItem<
   ));
 }
 
-class _CampusMenuRoute<T> extends PopupRoute<T> {
+class _CampusMenuRoute<T> extends PopupRoute<T> with CampusOverlayDepthRoute<T> {
   _CampusMenuRoute({
     required this.anchor,
     required this.items,
@@ -71,18 +71,6 @@ class _CampusMenuRoute<T> extends PopupRoute<T> {
   Duration get transitionDuration => animate ? campusOverlay.duration! : Duration.zero;
   @override
   Duration get reverseTransitionDuration => animate ? campusOverlay.reverseDuration! : Duration.zero;
-
-  @override
-  void install() {
-    super.install();
-    shiftCampusOverlayDepth(1);
-  }
-
-  @override
-  void dispose() {
-    shiftCampusOverlayDepth(-1);
-    super.dispose();
-  }
 
   @override
   Widget buildPage(BuildContext context, Animation<double> animation, Animation<double> secondaryAnimation) =>

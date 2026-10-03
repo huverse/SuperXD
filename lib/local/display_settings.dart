@@ -36,8 +36,11 @@ class DisplaySettings extends ChangeNotifier {
   String _glassMode = 'auto';
   String? _wallpaperFile;
   String? _wallpaperTone;
-  int _wallpaperBlur = 1;
+  int _wallpaperBlur = defaultWallpaperBlur;
   int _wallpaperFade = 0;
+  // 壁纸模糊与淡化的当前外观。拖动滑杆时 previewWallpaper 只改它、不落库，背景单独监听它实时重画，
+  // 不重建整个应用；落库后同步为已保存的值。
+  late final wallpaperLook = ValueNotifier<({int blur, int fade})>((blur: _wallpaperBlur, fade: _wallpaperFade));
   ThemeMode get themeMode => _themeMode;
   double get scale => _scale;
   String get paletteId => _paletteId;
@@ -54,8 +57,9 @@ class DisplaySettings extends ChangeNotifier {
   static const labels = ['标准', '较大', '大', '特大'];
   static const paletteIds = ['sage', 'mist', 'rose', 'dusk', 'oat'];
   static const glassModes = ['auto', 'full', 'reduced'];
-  // 壁纸模糊与淡化各三档，存档位下标；默认轻度模糊、标准淡化。
-  static const wallpaperLevels = 3;
+  // 壁纸模糊与淡化为 0–100 的连续量（v6 起；此前是三档下标，升级时按原效果换算）；默认轻度模糊、不额外淡化。
+  static const wallpaperMax = 100;
+  static const defaultWallpaperBlur = 27;
   static const wallpaperMaxBytes = WallpaperStore.maxBytes;
   static const fontFamilies = {
     'maple': 'Maple Mono NF CN',
@@ -66,10 +70,10 @@ class DisplaySettings extends ChangeNotifier {
     final db = await openDatabase(
       databasePath ??
           path.join(await getDatabasesPath(), 'display_settings.db'),
-      version: 5,
+      version: 6,
       onCreate: (db, _) async {
         await db.execute(
-          "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT 'sage', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system', glass_mode TEXT NOT NULL DEFAULT 'auto', wallpaper_file TEXT, wallpaper_tone TEXT, wallpaper_blur INTEGER NOT NULL DEFAULT 1, wallpaper_fade INTEGER NOT NULL DEFAULT 0)",
+          "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT 'sage', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system', glass_mode TEXT NOT NULL DEFAULT 'auto', wallpaper_file TEXT, wallpaper_tone TEXT, wallpaper_blur INTEGER NOT NULL DEFAULT $defaultWallpaperBlur, wallpaper_fade INTEGER NOT NULL DEFAULT 0)",
         );
       },
       onUpgrade: (db, oldVersion, _) async {
@@ -97,6 +101,13 @@ class DisplaySettings extends ChangeNotifier {
           await db.execute('ALTER TABLE display_settings ADD COLUMN wallpaper_blur INTEGER NOT NULL DEFAULT 1');
           await db.execute('ALTER TABLE display_settings ADD COLUMN wallpaper_fade INTEGER NOT NULL DEFAULT 0');
         }
+        if (oldVersion < 6) {
+          // 三档下标换成连续量，观感基本不变：模糊 sigma 0/8/20、淡化“下限之上再加 .2/.4”按常见下限约 .4 换算的百分比。
+          await db.execute(
+            'UPDATE display_settings SET wallpaper_blur = CASE wallpaper_blur WHEN 0 THEN 0 WHEN 2 THEN 67 ELSE $defaultWallpaperBlur END, '
+            'wallpaper_fade = CASE wallpaper_fade WHEN 1 THEN 33 WHEN 2 THEN 67 ELSE 0 END',
+          );
+        }
       },
     );
     final rows = await db.query('display_settings', where: 'id = 1', limit: 1);
@@ -122,8 +133,8 @@ class DisplaySettings extends ChangeNotifier {
       glass is String && glassModes.contains(glass) ? glass : 'auto',
       hasWallpaper ? file : null,
       hasWallpaper ? tone : null,
-      blur is int && blur >= 0 && blur < wallpaperLevels ? blur : 1,
-      fade is int && fade >= 0 && fade < wallpaperLevels ? fade : 0,
+      blur is int && blur >= 0 && blur <= wallpaperMax ? blur : defaultWallpaperBlur,
+      fade is int && fade >= 0 && fade <= wallpaperMax ? fade : 0,
     );
     if (file != null && !hasWallpaper) {
       await db.update('display_settings', {'wallpaper_file': null, 'wallpaper_tone': null}, where: 'id = 1');
@@ -162,14 +173,24 @@ class DisplaySettings extends ChangeNotifier {
     return _save(glassMode: value);
   }
 
-  Future<void> setWallpaperBlur(int level) {
-    if (level < 0 || level >= wallpaperLevels) throw ArgumentError.value(level, 'blur');
-    return _save(wallpaperBlur: level);
+  // 拖动中的实时预览：只改 wallpaperLook，不落库、不通知整个应用；停手后用 setWallpaperLook 保存。
+  void previewWallpaper({int? blur, int? fade}) {
+    final next = (blur: blur ?? wallpaperLook.value.blur, fade: fade ?? wallpaperLook.value.fade);
+    _checkLook(next);
+    wallpaperLook.value = next;
   }
 
-  Future<void> setWallpaperFade(int level) {
-    if (level < 0 || level >= wallpaperLevels) throw ArgumentError.value(level, 'fade');
-    return _save(wallpaperFade: level);
+  // 保存壁纸模糊与淡化（0–100）。外观立即更新，落库在保存锁内排队完成；落库后不回写外观，
+  // 否则保存期间继续拖动的预览会被拽回刚保存的旧值。
+  Future<void> setWallpaperLook({required int blur, required int fade}) {
+    final look = (blur: blur, fade: fade);
+    _checkLook(look);
+    wallpaperLook.value = look;
+    return _save(wallpaperBlur: blur, wallpaperFade: fade);
+  }
+
+  void _checkLook(({int blur, int fade}) look) {
+    if (look.blur < 0 || look.blur > wallpaperMax || look.fade < 0 || look.fade > wallpaperMax) throw ArgumentError.value(look, 'look');
   }
 
   // 复制图片、落库、删旧文件在同一把锁内完成，连续换图不会删掉刚导入的文件。
@@ -266,6 +287,12 @@ class DisplaySettings extends ChangeNotifier {
   Future<void> close() async {
     await _database?.close();
     dispose();
+  }
+
+  @override
+  void dispose() {
+    wallpaperLook.dispose();
+    super.dispose();
   }
 }
 

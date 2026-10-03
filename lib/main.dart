@@ -191,7 +191,7 @@ class _AccountAppState extends State<_AccountApp> {
       if (tone == null) return null;
       _tone = (encoded, tone);
     }
-    return CampusWallpaper(image: FileImage(file), tone: _tone!.$2, blurLevel: _display.wallpaperBlur, fadeLevel: _display.wallpaperFade);
+    return CampusWallpaper(image: FileImage(file), tone: _tone!.$2, look: _display.wallpaperLook);
   }
 
   @override
