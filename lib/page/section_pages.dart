@@ -7,6 +7,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/page/account_dialogs.dart';
@@ -51,15 +52,10 @@ class _MessagePageState extends State<MessagePage> {
     return Column(
       children: [
         const _TitleBar(title: '消息'),
-        SizedBox(
-          height: 48,
-          child: Row(
-            children: [
-              _Segment(label: '通知', selected: _index == 0, onTap: () => setState(() => _index = 0)),
-              _Segment(label: '私信', selected: _index == 1, onTap: () => setState(() => _index = 1)),
-            ],
-          ),
-        ),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: CampusSegmented<int>(
+          values: const [0, 1], selected: _index, onSelected: (index) => setState(() => _index = index),
+          label: (index) => index == 0 ? '通知' : '私信',
+        )),
         Expanded(
           child: Padding(
             padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
@@ -69,30 +65,6 @@ class _MessagePageState extends State<MessagePage> {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _Segment extends StatelessWidget {
-  const _Segment({required this.label, required this.selected, required this.onTap});
-  final String label;
-  final bool selected;
-  final VoidCallback onTap;
-
-  @override
-  Widget build(BuildContext context) {
-    return Expanded(
-      child: InkWell(
-        onTap: onTap,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(label, style: TextStyle(fontSize: 16, color: selected ? CampusPalette.of(context).primary : CampusPalette.of(context).onSurfaceVariant)),
-            const SizedBox(height: 6),
-            Container(height: 2, width: 32, color: selected ? CampusPalette.of(context).primary : Colors.transparent),
-          ],
-        ),
-      ),
     );
   }
 }
@@ -206,7 +178,7 @@ class _TitleBar extends StatelessWidget {
           alignment: Alignment.centerLeft,
           child: Padding(
             padding: const EdgeInsets.only(left: 16),
-            child: Text(title, style: Theme.of(context).textTheme.titleLarge),
+            child: Text(title, style: Theme.of(context).textTheme.headlineMedium),
           ),
         ),
       ),

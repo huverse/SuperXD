@@ -40,7 +40,12 @@ class CampusGlassChip extends StatelessWidget {
         child: child!,
       ),
     );
-    return Semantics(
+    // 选中时多出勾号，宽度平滑展开而不是瞬间跳变；减少动画时直接到位。
+    return AnimatedSize(
+      duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+      alignment: AlignmentDirectional.centerStart,
+      child: Semantics(
       selected: selected,
       child: selected
           ? FilledButton.icon(
@@ -50,7 +55,7 @@ class CampusGlassChip extends StatelessWidget {
               label: Text(label),
             )
           : FilledButton(style: style, onPressed: onPressed, child: Text(label)),
-    );
+    ));
   }
 }
 

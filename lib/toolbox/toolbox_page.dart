@@ -135,15 +135,16 @@ class _ToolboxPageState extends State<ToolboxPage> {
         .firstOrNull;
     final busy = _busy.contains(module.id);
     final colors = CampusPalette.of(context);
+    // 入口卡与服务页的入口卡同一规格：内边距20、图标与文字间距20、内容至少40高。
     final card = CampusSurface(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(20),
       onTap: installed && !busy
           ? () => context.push('/toolbox/${module.id}')
           : null,
-      child: Row(
+      child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 40), child: Row(
         children: [
           CampusIcon(module.icon, size: 28, color: colors.primary),
-          const SizedBox(width: 16),
+          const SizedBox(width: 20),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -193,7 +194,7 @@ class _ToolboxPageState extends State<ToolboxPage> {
               icon: const CampusIcon(CampusIcons.download),
             ),
         ],
-      ),
+      )),
     );
     if (module.resource == null || !installed) return card;
     // [人工决策-2026-09-27 20:12:08] 保留右滑但仅揭示卸载按钮，必须点击确认；不以滑动距离直接删除。

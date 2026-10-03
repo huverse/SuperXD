@@ -96,7 +96,12 @@ flutter:
           weight: 600
     - family: Noto Serif SC
       fonts:
-        - asset: assets/fonts/noto_serif_sc_variable.ttf
+        - asset: assets/fonts/noto_serif_sc_regular.ttf
+          weight: 400
+        - asset: assets/fonts/noto_serif_sc_medium.ttf
+          weight: 500
+        - asset: assets/fonts/noto_serif_sc_semibold.ttf
+          weight: 600
 
   assets:
     - assets/fonts/LICENSE.txt

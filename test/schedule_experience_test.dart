@@ -192,9 +192,11 @@ void main() {
     expect(heights.toSet(), hasLength(1));
     final position = tester.state<ScrollableState>(find.byType(Scrollable)).position;
     expect(position.maxScrollExtent, 0);
-    expect(find.text('08:00–09:40'), findsOneWidget);
-    expect(tester.getTopLeft(find.text('第1–2节')).dy, lessThan(tester.getTopLeft(find.text('08:00–09:40')).dy));
-    expect(find.text('作息时间未设置'), findsNWidgets(2));
+    // 左列开始、结束时刻，右列节次；缺作息的节次在同一行注明，空课同样显示。
+    expect(find.text('08:00'), findsOneWidget);
+    expect(find.text('09:40'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('08:00')).dx, lessThan(tester.getTopLeft(find.text('第1–2节', findRichText: true)).dx));
+    expect(find.textContaining('作息时间未设置', findRichText: true), findsNWidgets(2));
     expect(tester.takeException(), isNull);
   });
 

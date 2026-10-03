@@ -3,10 +3,12 @@ import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/schedule_store.dart';
 
 class MeetingTime {
-  const MeetingTime(this.startMinute, this.endMinute, this.label);
+  const MeetingTime(this.startMinute, this.endMinute, this.startLabel, this.endLabel);
   final int startMinute;
   final int endMinute;
-  final String label;
+  final String startLabel;
+  final String endLabel;
+  String get label => '$startLabel–$endLabel';
 }
 
 MeetingTime? meetingTime(List<BellPeriod> bells, CourseMeeting meeting) => periodTime(bells, meeting.periodStart, meeting.periodEnd);
@@ -18,5 +20,5 @@ MeetingTime? periodTime(List<BellPeriod> bells, int periodStart, int periodEnd) 
   final start = clockMinutes(first.start);
   final end = clockMinutes(last.end);
   if (start == null || end == null || end <= start) return null;
-  return MeetingTime(start, end, '${first.start}–${last.end}');
+  return MeetingTime(start, end, first.start, last.end);
 }

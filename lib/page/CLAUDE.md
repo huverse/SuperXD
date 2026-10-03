@@ -24,7 +24,7 @@
     - 同步中离开今天页时，结果先暂存，回来后再提示。
   - today_day_navigation.dart：上下拖动切日的手势 TodayDayNavigation，拖动阈值 64，上限 120。
   - today_date_transition.dart：TodayDateTransition 让切日时的日期和正文按同一进度纵向交接。
-  - course_cards.dart：当日节次卡片 CourseDayCards，分有课卡和空档卡，长按展开；另有倒计时 courseCountdowns。
+  - course_cards.dart：当日节次卡片 CourseDayCards，分有课卡和空档卡，长按展开；另有倒计时 courseCountdowns。卡片左列开始与结束时刻（按本页最宽时刻对齐）、中间竖条、右列节次课名地点教师，高度按同样版式测量；空档降一级。
   - live_clock.dart：全局分钟时钟 LiveClock，在每个整分钟唤醒，应用进入后台时暂停。
   - date_rail.dart：日期横条 DateRail。
 - 课表：
