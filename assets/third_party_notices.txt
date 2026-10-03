@@ -280,8 +280,12 @@ lib/utils/glass_spring.dart.
 Noto Serif SC（文学衬线）
 来源：https://github.com/google/fonts/tree/main/ofl/notoserifsc
 提交：8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5
-完整变量字体，wght 200–900，未按应用文字裁剪。
-SHA256：050080d9255a86808f2945bffac582b31ef32bc36411ce29563b4961670c66f9
+上游为完整变量字体（wght 200–900，SHA256：050080d9255a86808f2945bffac582b31ef32bc36411ce29563b4961670c66f9）。
+本应用用 fontTools 4.66.1 的 instancer 从中导出 wght 400、500、600 三个静态字重（Flutter 不会把字重映射到可变字体的字重轴，
+可变字体会按默认的 ExtraLight 200 渲染），字符与字形完整、未按应用文字裁剪，其余未修改。
+SHA256：Regular c6703a84c9fc049f8c528f4ac0680fa19907d79cf627724a5ed21ca9199f1440
+SHA256：Medium 7e2e4943ef89ed89ddd97558f76aff7ef72a1f39d85014ece03df28125d6c02a
+SHA256：SemiBold 738b5fab642d8cf91769e57c06323cde6dc268a153cd5cf2e370ae10c37ee91e
 
 Copyright 2012 Google Inc. All Rights Reserved.
 

@@ -7,6 +7,7 @@ import 'package:superxd/theme/campus_glass_button.dart';
 
 // 越界与 iOS、鸿蒙一致用弹性回弹，只平移内容。Android 默认的拉伸越界会给整个列表套图像滤镜，
 // 列表里的玻璃在滤镜下取不到背景，拉到边缘或快速甩到边缘时就退成底色实板。显式指定夹紧的列表（今天页切日）不受影响。
+// [人工决策-2026-10-03 19:52:06] 保留弹性回弹，取代设计文档旧的“页面与列表不做弹性过冲”；列表 stagger 与转场弹簧仍不做。
 class CampusScrollBehavior extends MaterialScrollBehavior {
   const CampusScrollBehavior();
   @override
@@ -50,6 +51,23 @@ ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono N
     popupMenuTheme: PopupMenuThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
     chipTheme: ChipThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), backgroundColor: colors.surface, selectedColor: colors.surfaceSelected, disabledColor: colors.glassFallback, checkmarkColor: colors.primary, side: BorderSide(color: colors.outline), labelStyle: TextStyle(fontFamily: fontFamily, fontSize: 14, fontWeight: FontWeight.w600, color: colors.onSurface)),
     checkboxTheme: CheckboxThemeData(checkColor: WidgetStatePropertyAll(colors.onPrimary), fillColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? colors.primary : colors.surface), side: BorderSide(color: colors.outline, width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5))),
+    // 次要按钮（同 iOS、鸿蒙的灰底次要按钮）：内容区为中性浅底胶囊配主色字、不加描边；导航层与浮层里仍是玻璃。
+    outlinedButtonTheme: OutlinedButtonThemeData(
+      style: OutlinedButton.styleFrom(
+        foregroundColor: colors.primary,
+        iconColor: colors.primary,
+        disabledForegroundColor: colors.onSurfaceVariant,
+        disabledIconColor: colors.onSurfaceVariant,
+        overlayColor: colors.primary.withValues(alpha: .08),
+        side: BorderSide.none,
+        shape: StadiumBorder(),
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        minimumSize: Size(40, 38),
+        tapTargetSize: MaterialTapTargetSize.padded,
+        textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, height: 1.25),
+        backgroundBuilder: (context, states, child) => CampusGlassButtonSurface(states: states, neutral: true, child: child!),
+      ),
+    ),
     textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(minimumSize: Size(48, 48), textStyle: TextStyle(fontFamily: fontFamily, fontSize: 14))),
     colorScheme: scheme,
     scaffoldBackgroundColor: Colors.transparent,
@@ -63,6 +81,8 @@ ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono N
       bodySmall: TextStyle(fontSize: 14, color: colors.onSurfaceVariant),
       labelMedium: TextStyle(fontSize: 14),
       labelSmall: TextStyle(fontSize: 14),
+      // 底栏根页的大标题（同 iOS Large Title、鸿蒙根页大标题），推入的二级页仍用 titleLarge。
+      headlineMedium: TextStyle(fontSize: 26, fontWeight: FontWeight.w600, color: colors.onSurface, height: 32 / 26),
       titleLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: colors.onSurface, height: 24 / 18),
       titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: colors.onSurface, height: 24 / 16),
       bodyLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: colors.onSurface, height: 24 / 16),

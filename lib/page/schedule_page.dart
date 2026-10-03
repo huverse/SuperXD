@@ -8,6 +8,7 @@ import 'package:superxd/domain/period_spans.dart';
 import 'package:superxd/page/reminder_dialog.dart';
 import 'package:superxd/page/calendar_export.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -279,9 +280,10 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
           IconButton(tooltip: '管理课程', onPressed: _term == null || _loading ? null : _manage, icon: const CampusIcon(CampusIcons.manageSchedule)),
           Builder(builder: (anchor) => IconButton(tooltip: '更多操作', onPressed: _loading || _term == null && widget.reminders == null ? null : () => _more(anchor), icon: const CampusIcon(CampusIcons.manage))),
         ]))),
-        SizedBox(height: 48 * scale, child: Row(children: [for (final range in ScheduleRange.values) Expanded(child: InkWell(
-          onTap: () => _selectRange(range), child: Center(child: AnimatedContainer(duration: motion, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: range == _selection.range ? CampusPalette.of(context).surfaceSelected : Colors.transparent, borderRadius: BorderRadius.circular(12)), child: Text(switch(range) { ScheduleRange.day => '天', ScheduleRange.term => '学期', ScheduleRange.year => '学年' }, style: TextStyle(fontSize: 16, color: range == _selection.range ? CampusPalette.of(context).primary : CampusPalette.of(context).onSurfaceVariant)))),
-        ))])),
+        Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: CampusSegmented<ScheduleRange>(
+          values: ScheduleRange.values, selected: _selection.range, onSelected: _selectRange,
+          label: (range) => switch (range) { ScheduleRange.day => '天', ScheduleRange.term => '学期', ScheduleRange.year => '学年' },
+        )),
         // 日期栏从不因钻取/范围改变被销毁。只在更换学期时替换其日期集合。
         SizedBox(height: DateRail.heightOf(context), child: _first == null || _last == null
             ? Center(child: Text(_term?.label ?? '课表', style: const TextStyle(fontSize: 14)))

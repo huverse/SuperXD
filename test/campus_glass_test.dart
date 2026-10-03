@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
@@ -15,6 +16,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/page/licenses_page.dart';
 import 'package:superxd/theme/campus_background.dart';
@@ -368,6 +370,86 @@ void main() {
       await tester.pump();
       expect(top(), 24);
       expect(find.byType(ShaderMask), findsOneWidget);
+    });
+
+    testWidgets('分段控件：选中块滑到所选项，读屏带选中态；减少动画直接到位', (tester) async {
+      var selected = 0;
+      Future<void> mount(MediaQueryData media) => tester.pumpWidget(MaterialApp(theme: campusTheme(), home: MediaQuery(data: media, child: Scaffold(body: Center(child: SizedBox(width: 300, child: StatefulBuilder(builder: (context, update) => CampusSegmented<int>(
+        values: const [0, 1, 2], selected: selected, label: (index) => ['天', '学期', '学年'][index], onSelected: (index) => update(() => selected = index),
+      ))))))));
+      await mount(const MediaQueryData());
+      final pill = find.byKey(const ValueKey('segment-pill'));
+      expect(tester.getCenter(pill).dx, closeTo(tester.getCenter(find.text('天')).dx, 1));
+      await tester.tap(find.text('学年'));
+      // 首帧只记录动画起点，下一帧才推进。
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      final moving = tester.getCenter(pill).dx;
+      expect(moving, inExclusiveRange(tester.getCenter(find.text('天')).dx, tester.getCenter(find.text('学年')).dx));
+      await tester.pumpAndSettle();
+      expect(tester.getCenter(pill).dx, closeTo(tester.getCenter(find.text('学年')).dx, 1));
+      expect(tester.getSemantics(find.text('学年')), isSemantics(isSelected: true, isButton: true, hasSelectedState: true));
+      expect(tester.getSize(find.byType(CampusSegmented<int>)).height, greaterThanOrEqualTo(48));
+      await mount(const MediaQueryData(disableAnimations: true));
+      await tester.tap(find.text('天'));
+      await tester.pump();
+      await tester.pump();
+      expect(tester.getCenter(pill).dx, closeTo(tester.getCenter(find.text('天')).dx, 1));
+    });
+
+    testWidgets('分段控件可拖动：跟手、按下轻缩、经过每段轻触感，松手只提交一次，系统取消退回，纵向滑动交给滚动', (tester) async {
+      var selected = 0;
+      final commits = <int>[];
+      final haptics = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'HapticFeedback.vibrate') haptics.add(call.arguments as String);
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Scaffold(body: ListView(children: [
+        const SizedBox(height: 200),
+        StatefulBuilder(builder: (context, update) => CampusSegmented<int>(
+          values: const [0, 1, 2], selected: selected, label: (index) => ['天', '学期', '学年'][index],
+          onSelected: (index) { commits.add(index); update(() => selected = index); },
+        )),
+        const SizedBox(height: 1200),
+      ]))));
+      final pill = find.byKey(const ValueKey('segment-pill'));
+      double center(String text) => tester.getCenter(find.text(text)).dx;
+      double painted() => tester.getBottomRight(pill).dx - tester.getTopLeft(pill).dx;
+      final rest = painted();
+      final drag = await tester.startGesture(tester.getCenter(find.text('天')));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 150));
+      expect(painted(), closeTo(rest * .95, 1));
+      await drag.moveBy(const Offset(20, 0));
+      await drag.moveTo(Offset((center('学期') + center('学年')) / 2 - 10, tester.getCenter(find.text('天')).dy));
+      await tester.pump();
+      // 跟手：选中块停在手指处，尚未提交；经过一段给一次轻触感。
+      expect(tester.getCenter(pill).dx, inExclusiveRange(center('学期'), center('学年')));
+      expect(commits, isEmpty);
+      expect(haptics, ['HapticFeedbackType.selectionClick']);
+      await drag.moveTo(Offset(center('学年'), tester.getCenter(find.text('天')).dy));
+      await tester.pump();
+      await drag.up();
+      await tester.pumpAndSettle();
+      expect(commits, [2]);
+      expect(tester.getCenter(pill).dx, closeTo(center('学年'), 1));
+      // 系统取消：不提交，退回原选中。
+      final cancelled = await tester.startGesture(tester.getCenter(find.text('学年')));
+      await cancelled.moveBy(const Offset(-30, 0));
+      await cancelled.moveTo(tester.getCenter(find.text('天')));
+      await tester.pump();
+      await cancelled.cancel();
+      await tester.pumpAndSettle();
+      expect(commits, [2]);
+      expect(tester.getCenter(pill).dx, closeTo(center('学年'), 1));
+      // 纵向滑动交给页面滚动，不改选中。
+      final scroll = tester.state<ScrollableState>(find.byType(Scrollable).first).position;
+      await tester.drag(find.text('学期'), const Offset(0, -120));
+      await tester.pumpAndSettle();
+      expect(scroll.pixels, greaterThan(0));
+      expect(commits, [2]);
     });
 
     test('越界用弹性回弹、不加拉伸滤镜，显式夹紧的列表仍夹紧', () {

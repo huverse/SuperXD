@@ -43,7 +43,9 @@ void main() {
     expect(find.text('同步结果'), findsOneWidget);
     await tester.tap(find.text('知道了'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('08:00–08:45'), findsWidgets);
+    // 课程卡左列分行显示开始与结束时刻。
+    expect(find.text('08:00'), findsWidgets);
+    expect(find.text('08:45'), findsWidgets);
     expect(gateway.scheduleCalls, 0);
     expect(gateway.gradeCalls, 0);
     expect(tester.takeException(), isNull);
@@ -133,7 +135,8 @@ void main() {
     final gateway = _Gateway()..adopted = true;
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: SchedulePage(gateway: gateway)));
     await tester.pumpAndSettle();
-    expect(find.text('08:00–08:45'), findsOneWidget);
+    expect(find.text('08:00'), findsOneWidget);
+    expect(find.text('08:45'), findsOneWidget);
     expect(find.text('周'), findsNothing);
     expect(find.text('天'), findsOneWidget);
     expect(find.text('学期'), findsOneWidget);

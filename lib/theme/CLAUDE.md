@@ -6,7 +6,7 @@
 
 - campus_palette.dart：CampusPalette 是设备级的完整色彩角色，有苔灰（默认）、雾蓝、藕粉、暮紫、燕麦五套，每套分浅色和深色。
 - campus_theme.dart：
-  - campusTheme 按配色和字体生成 ThemeData。
+  - campusTheme 按配色和字体生成 ThemeData。headlineMedium（26）是底栏根页的大标题，titleLarge（18）是二级页标题。OutlinedButton 主题即次要按钮：内容区中性浅底胶囊配主色字、无描边。
   - campusFieldGap 给带浮动标签的输入框算上方间距，随字号缩放。
   - campusSystemOverlay 设置系统栏：导航栏全透明，按键明暗随主题变化。
   - CampusScrollBehavior：全局越界用弹性回弹、不加拉伸效果（拉伸会给列表套图像滤镜，里面的玻璃退成底色）；显式指定夹紧的列表不受影响。
@@ -48,7 +48,7 @@
   - initializeCampusGlass 负责初始化玻璃渲染，失败时退回磨砂效果；campusGlassReady 表示是否初始化完成。
   - campusOverlayDepth 是正在显示的弹窗层数。大于 0 时顶栏和底栏改实色，不让玻璃叠玻璃。
 - campus_glass_controls.dart：
-  - CampusGlassChip 是选择标签，复用主按钮的玻璃与按压，选中时带勾。
+  - CampusGlassChip 是选择标签，复用主按钮的背景（内容区为中性色调胶囊），选中时带勾，宽度变化平滑展开。两三项的单选用 CampusSegmented。
   - CampusSwitchTile 是开关行，玻璃档用 GlassSwitch，实色档用系统 Switch。
   - 页面不再直接用 ChoiceChip、FilterChip、SwitchListTile。
 - campus_glass_menu.dart：
@@ -82,6 +82,7 @@
   - 满档时在手指处画径向高光。减少动画时不形变。
   - 弹簧令牌在 campus_motion.dart：campusGlassSpring 用于按压与松手，campusGlassTravelSpring 用于指示器跨格移动。
 - campus_surface.dart：CampusSurface 是通用卡片表面，可带点击。
+- campus_segmented.dart：CampusSegmented 是内容区的分段控件（同 iOS 分段控件、鸿蒙 Segment）：中性浅底胶囊槽，选中项是浮起的实色胶囊并滑动切换，可拖动（规则见文件内人工决策），文字加粗不着主色，整行 48dp 触区。二至三项的单选（课表范围、消息、成绩视图与学期）一律用它。
 - scroll_edge_fade.dart：ScrollEdgeFade 在浮动玻璃栏下只渐隐内容本身，露出真实背景；高对比度时不渐隐。它的子树里不能再放玻璃。
   - CampusScrollFade：页面滚动区的柔和边缘，透明顶栏下内容滚过上缘时自身渐隐（最多 24dp），下缘按底栏覆盖高度渐隐；遮罩常在，滚动不切换图层。顶栏页和 AppBar 页的滚动区都包一层；子树有玻璃开关或视频的页面（短视频解析、媒体预览）不包。
 - third_party_licenses.dart：registerCampusLicenses 把第三方声明和字体许可注册进 LicenseRegistry。

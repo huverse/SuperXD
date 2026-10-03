@@ -145,7 +145,7 @@ void main() {
     final gateway = _Gateway();
     await tester.pumpWidget(app(GradesPage(gateway: gateway)));
     await tester.pumpAndSettle();
-    await tester.tap(find.widgetWithText(TextButton, '同步'));
+    await tester.tap(find.widgetWithText(FilledButton, '同步'));
     await tester.pumpAndSettle();
     expect(find.text('同步范围'), findsOneWidget);
     expect(find.text('课表'), findsNothing);

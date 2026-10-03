@@ -6,6 +6,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -177,17 +178,22 @@ class _AppearancePageState extends State<AppearancePage> {
           children: [
             Text('外观模式', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final mode in [(value: ThemeMode.system, label: '跟随系统'), (value: ThemeMode.light, label: '浅色'), (value: ThemeMode.dark, label: '深色')])
-                CampusGlassChip(label: mode.label, selected: settings.themeMode == mode.value, onSelected: _saving ? null : (_) => _save(() => settings.setThemeMode(mode.value))),
-            ]),
+            // 三选一用分段控件（同 iOS、鸿蒙）。
+            CampusSegmented<ThemeMode>(
+              values: const [ThemeMode.system, ThemeMode.light, ThemeMode.dark],
+              selected: settings.themeMode,
+              label: (mode) => switch (mode) { ThemeMode.system => '跟随系统', ThemeMode.light => '浅色', ThemeMode.dark => '深色' },
+              onSelected: _saving ? null : (mode) => _save(() => settings.setThemeMode(mode)),
+            ),
             const SizedBox(height: 24),
             Text('玻璃效果', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
-            Wrap(spacing: 8, runSpacing: 8, children: [
-              for (final mode in [(value: 'auto', label: '自动'), (value: 'full', label: '完整'), (value: 'reduced', label: '简化')])
-                CampusGlassChip(label: mode.label, selected: settings.glassMode == mode.value, onSelected: _saving ? null : (_) => _save(() => settings.setGlassMode(mode.value))),
-            ]),
+            CampusSegmented<String>(
+              values: const ['auto', 'full', 'reduced'],
+              selected: settings.glassMode,
+              label: (mode) => switch (mode) { 'full' => '完整', 'reduced' => '简化', _ => '自动' },
+              onSelected: _saving ? null : (mode) => _save(() => settings.setGlassMode(mode)),
+            ),
             if (settings.supportsWallpaper) ..._wallpaperSection(context, settings),
             const SizedBox(height: 24),
             Text('配色', style: Theme.of(context).textTheme.titleLarge),

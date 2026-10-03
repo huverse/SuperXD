@@ -4,9 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/appearance_page.dart';
-import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
@@ -188,11 +188,11 @@ void main() {
     await tester.pumpAndSettle();
     expect(settings.scale, 1.4);
     await tester.scrollUntilVisible(find.text('简化'), -200, scrollable: find.byType(Scrollable).first);
-    expect(tester.widget<CampusGlassChip>(find.widgetWithText(CampusGlassChip, '自动')).selected, isTrue);
+    expect(tester.widget<CampusSegmented<String>>(find.byType(CampusSegmented<String>)).selected, 'auto');
     await tester.tap(find.text('简化'));
     await tester.pumpAndSettle();
     expect(settings.glassMode, 'reduced');
-    expect(tester.widget<CampusGlassChip>(find.widgetWithText(CampusGlassChip, '简化')).selected, isTrue);
+    expect(tester.widget<CampusSegmented<String>>(find.byType(CampusSegmented<String>)).selected, 'reduced');
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     settings.dispose();

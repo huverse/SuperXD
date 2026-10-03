@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -393,29 +394,28 @@ class _GradesPageState extends State<GradesPage> {
                 },
         ),
         const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            CampusGlassChip(
-              label: '学期详情',
-              selected: !_yearMode,
-              onSelected: (_) {
-                setState(() => _yearMode = false);
-                _loadView();
-              },
-            ),
-            CampusGlassChip(
-              label: '学年概览',
-              selected: _yearMode,
-              onSelected: (_) {
-                setState(() => _yearMode = true);
-                _loadView();
-              },
-            ),
-          ],
+        // 二选一用分段控件（同 iOS、鸿蒙），切换时选中块滑过去。
+        CampusSegmented<bool>(
+          values: const [false, true],
+          selected: _yearMode,
+          label: (year) => year ? '学年概览' : '学期详情',
+          onSelected: (year) {
+            if (year == _yearMode) return;
+            setState(() => _yearMode = year);
+            _loadView();
+          },
         ),
-        if (!_yearMode)
+        if (!_yearMode && yearTerms.length <= 3 && yearTerms.any((term) => term.key == _term?.key))
+          Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: CampusSegmented<String>(
+              values: [for (final term in yearTerms) term.key],
+              selected: _term!.key,
+              label: (key) => _termLabel(yearTerms.firstWhere((term) => term.key == key)),
+              onSelected: (key) => _chooseTerm(yearTerms.firstWhere((term) => term.key == key)),
+            ),
+          )
+        else if (!_yearMode)
           Padding(
             padding: const EdgeInsets.only(top: 8),
             child: Wrap(
@@ -424,11 +424,7 @@ class _GradesPageState extends State<GradesPage> {
               children: [
                 for (final term in yearTerms)
                   CampusGlassChip(
-                    label: term.xq == '0'
-                          ? '第一学期'
-                          : term.xq == '1'
-                          ? '第二学期'
-                          : term.label,
+                    label: _termLabel(term),
                     selected: _term?.key == term.key,
                     onSelected: (_) => _chooseTerm(term),
                   ),
@@ -438,6 +434,8 @@ class _GradesPageState extends State<GradesPage> {
       ],
     );
   }
+
+  String _termLabel(TermRef term) => term.xq == '0' ? '第一学期' : term.xq == '1' ? '第二学期' : term.label;
 
   @override
   Widget build(BuildContext context) => CampusBackground(
@@ -466,9 +464,11 @@ class _GradesPageState extends State<GradesPage> {
                         style: Theme.of(context).textTheme.titleLarge,
                       ),
                     ),
-                    TextButton(
+                    // 顶栏操作与今天页一致：带图标的玻璃胶囊。
+                    FilledButton.icon(
                       onPressed: _syncing || _choosing ? null : _sync,
-                      child: Text(_syncing ? '同步中…' : '同步'),
+                      icon: const CampusIcon(CampusIcons.sync, size: 20),
+                      label: Text(_syncing ? '同步中' : '同步', style: const TextStyle(fontSize: 16)),
                     ),
                   ],
                 ),

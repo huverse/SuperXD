@@ -13,7 +13,10 @@ Future<void> loadCampusFonts(WidgetTester tester) async {
       maple.addFont(rootBundle.load('assets/fonts/maple_mono_nf_cn_$weight.ttf'));
     }
     await maple.load();
-    final serif = FontLoader('Noto Serif SC')..addFont(rootBundle.load('assets/fonts/noto_serif_sc_variable.ttf'));
+    final serif = FontLoader('Noto Serif SC');
+    for (final weight in ['regular', 'medium', 'semibold']) {
+      serif.addFont(rootBundle.load('assets/fonts/noto_serif_sc_$weight.ttf'));
+    }
     await serif.load();
   });
 }

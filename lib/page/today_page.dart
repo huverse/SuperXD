@@ -459,7 +459,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
       CampusTopBar(child: SizedBox(
         height: 56 * scale,
         child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), child: Row(children: [
-          Text('今天', style: Theme.of(context).textTheme.titleLarge),
+          Text('今天', style: Theme.of(context).textTheme.headlineMedium),
           const SizedBox(width: 8),
           Expanded(child: date),
           const SizedBox(width: 8),

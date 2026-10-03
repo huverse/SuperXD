@@ -71,6 +71,8 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
   double _restoreOffset = 0;
   String? _measureKey;
   double _height = 140;
+  // 左侧时间列宽：按当前字体与字号量“00:00”，各卡对齐。
+  double _timeWidth = 56;
 
   @override
   void initState() {
@@ -133,6 +135,8 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
   @override
   void dispose() { _clock?.removeListener(_tick); _fallbackTime.dispose(); _curve.dispose(); _detail.dispose(); _scroll.dispose(); super.dispose(); }
 
+  String _emptyName(PeriodSpan span) => span.start == 1 && span.end >= 2 ? '早八没课哦~' : '这几节没课';
+
   MeetingTime? _timeOf(PeriodSpan span) => _times.putIfAbsent(spanIdentity(span), () => periodTime(widget.bells, span.start, span.end));
 
   double _cardHeight(BuildContext context, double width, double available, Map<String, String> labels) {
@@ -142,20 +146,28 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
     final stamp = '$font:${Localizations.localeOf(context)}:${Directionality.of(context)}:$width:$available:${scaler.scale(14)}:${scaler.scale(16)}:${labels.entries.map((entry) => '${entry.key}:${entry.value}').join('|')}:$_dataStamp';
     if (_measureKey == stamp) return _height;
     _measureKey = stamp;
-    var contentHeight = 0.0;
+    double measure(String text, double size, FontWeight weight, double maxWidth) {
+      final painter = TextPainter(text: TextSpan(text: text, style: TextStyle(fontFamily: font, fontSize: size, fontWeight: weight, height: 1.3, fontFeatures: const [FontFeature.tabularFigures()])), textDirection: Directionality.of(context), locale: Localizations.localeOf(context), textScaler: scaler)..layout(maxWidth: maxWidth);
+      final height = maxWidth == double.infinity ? painter.width : painter.height;
+      painter.dispose();
+      return height;
+    }
+    // 字体不一定带等宽数字（衬线体没有 tnum），按本页实际出现的开始时间取最宽，避免“08:00”折行。
+    _timeWidth = [for (final span in widget.spans) _timeOf(span)?.startLabel ?? '--:--', '00:00'].map((label) => measure(label, 20, FontWeight.w600, double.infinity)).reduce(math.max).ceilToDouble() + 1;
+    final timeColumn = measure('00:00', 20, FontWeight.w600, 200) + measure('00:00', 14, FontWeight.w500, 200);
+    final detailWidth = math.max(48.0, width - 28 - _timeWidth - 25);
+    var contentHeight = timeColumn;
     for (final span in widget.spans) {
-      var height = 0.0;
+      var height = 2.0;
       for (final field in [
-        ('第${span.start}–${span.end}节', 14.0),
-        (_timeOf(span)?.label ?? '作息时间未设置', 14.0),
-        (span.course?.courseName ?? '早八没课哦~', 16.0),
-        if (!span.empty) ('${span.meeting!.place} · ${span.course!.teacherName}', 14.0),
-        if (labels[spanIdentity(span)] != null) (labels[spanIdentity(span)]!, 14.0),
+        ('第${span.start}–${span.end}节${_timeOf(span) == null ? ' · 作息时间未设置' : ''}', 14.0, FontWeight.w500),
+        span.empty ? (_emptyName(span), 16.0, FontWeight.w500) : (span.course!.courseName, 17.0, FontWeight.w600),
+        if (!span.empty) ('${span.meeting!.place} · ${span.course!.teacherName}', 14.0, FontWeight.w500),
+        if (labels[spanIdentity(span)] != null) (labels[spanIdentity(span)]!, 14.0, FontWeight.w500),
       ]) {
-        final painter = TextPainter(text: TextSpan(text: field.$1, style: TextStyle(fontFamily: font, fontSize: field.$2, fontWeight: field.$2 == 16 ? FontWeight.w600 : FontWeight.w500, height: 1.3)), textDirection: Directionality.of(context), locale: Localizations.localeOf(context), textScaler: scaler)..layout(maxWidth: math.max(48, width - 24));
-        height += painter.height;
-        painter.dispose();
+        height += measure(field.$1, field.$2, field.$3, detailWidth);
       }
+      if (!span.empty) height += 4;
       contentHeight = math.max(contentHeight, height);
     }
     final minimum = math.max(112.0, contentHeight + 34 + (labels.isEmpty ? 0 : 4));
@@ -200,19 +212,11 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
               onTap: selected ? () => widget.onDetail?.call(null) : () {},
               onLongPress: widget.onDetail == null || span.empty && widget.onCreate == null ? null : () => widget.onDetail!(key),
               child: CampusSurface(
-                key: ValueKey('course-card-$key'), selected: selected, padding: const EdgeInsets.all(12),
+                key: ValueKey('course-card-$key'), selected: selected, padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                 child: AnimatedBuilder(animation: selected ? _curve : const AlwaysStoppedAnimation(0.0),
                 builder: (context, child) => ConstrainedBox(constraints: BoxConstraints(minWidth: double.infinity, minHeight: height - 24 + (selected ? _curve.value * 80 : 0)), child: child),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-                  Text('第${span.start}–${span.end}节', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600, color: CampusPalette.of(context).primary, height: 1.3)),
-                  Text(_timeOf(span)?.label ?? '作息时间未设置', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: CampusPalette.of(context).onSurfaceVariant, height: 1.3)),
-                  const SizedBox(height: 4),
-                  Text(span.empty ? (span.start == 1 && span.end >= 2 ? '早八没课哦~' : '这几节没课') : span.course!.courseName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: CampusPalette.of(context).onSurface, height: 1.3)),
-                  if (!span.empty) ...[
-                    const SizedBox(height: 4),
-                    Text('${span.meeting!.place} · ${span.course!.teacherName}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: CampusPalette.of(context).onSurfaceVariant, height: 1.3)),
-                    if (labels[key] != null) Align(alignment: Alignment.centerRight, child: Padding(padding: const EdgeInsets.only(top: 4), child: Text(labels[key]!, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: CampusPalette.of(context).primary)))),
-                  ],
+                  _CourseCardBody(span: span, time: _timeOf(span), emptyName: _emptyName(span), countdown: labels[key], timeWidth: _timeWidth),
                   if (selected) SizeTransition(sizeFactor: _curve, alignment: Alignment.topLeft, child: Padding(padding: const EdgeInsets.only(top: 12), child: span.empty ? Wrap(spacing: 8, children: [
                     if (widget.onCreate != null) TextButton.icon(onPressed: () => widget.onCreate!(span), icon: const CampusIcon(CampusIcons.add), label: const Text('新增课程')),
                     if (widget.onArrange != null) TextButton.icon(onPressed: () => widget.onArrange!(span), icon: const CampusIcon(CampusIcons.edit), label: const Text('安排已有课程')),
@@ -232,5 +236,48 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
       ));
     }))),
     ]);
+  }
+}
+
+// 课程卡正文（同 iOS 日程、鸿蒙日程卡的层级）：左列开始时间加粗、结束时间次要，等宽数字各卡对齐；
+// 中间一道竖条，有课为主色、空档为浅描边；右列节次、课名、地点与教师，倒计时在右下。空档整体降一级，不与有课卡同等醒目。
+class _CourseCardBody extends StatelessWidget {
+  const _CourseCardBody({required this.span, required this.time, required this.emptyName, required this.countdown, required this.timeWidth});
+  final PeriodSpan span;
+  final MeetingTime? time;
+  final String emptyName;
+  final String? countdown;
+  final double timeWidth;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    const figures = [FontFeature.tabularFigures()];
+    final time = this.time;
+    return IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      SizedBox(width: timeWidth, child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Text(time?.startLabel ?? '--:--', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, height: 1.3, fontFeatures: figures, color: span.empty ? palette.onSurfaceVariant : palette.onSurface)),
+        if (time != null) Text(time.endLabel, maxLines: 1, softWrap: false, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, fontFeatures: figures, color: palette.onSurfaceVariant)),
+      ])),
+      const SizedBox(width: 10),
+      DecoratedBox(decoration: BoxDecoration(color: span.empty ? palette.outlineSubtle : palette.primary, borderRadius: BorderRadius.circular(2)), child: const SizedBox(width: 3)),
+      const SizedBox(width: 12),
+      Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+        // 缺作息时提示并在节次同一行，不额外占一行。
+        Text.rich(TextSpan(children: [
+          TextSpan(text: '第${span.start}–${span.end}节', style: TextStyle(color: span.empty ? palette.onSurfaceVariant : palette.primary)),
+          if (time == null) TextSpan(text: ' · 作息时间未设置', style: TextStyle(color: palette.onSurfaceVariant)),
+        ]), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3)),
+        const SizedBox(height: 2),
+        span.empty
+            ? Text(emptyName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, height: 1.3, color: palette.onSurfaceVariant))
+            : Text(span.course!.courseName, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface)),
+        if (!span.empty) ...[
+          const SizedBox(height: 4),
+          Text('${span.meeting!.place} · ${span.course!.teacherName}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: palette.onSurfaceVariant)),
+          if (countdown != null) Align(alignment: Alignment.centerRight, child: Text(countdown!, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: palette.primary))),
+        ],
+      ])),
+    ]));
   }
 }
