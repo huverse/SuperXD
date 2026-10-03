@@ -10,7 +10,8 @@
   - shell_page.dart：
     - 底栏壳 ShellPage，包含今天、服务、消息、我的四个分支。
     - 可拖动底栏 DragNavigationBar，悬浮在安全区之上；内容层延伸到玻璃下方，底栏占位作为各页的底部安全区。
-  - animated_branches.dart：AnimatedBranches 负责分支切换转场，保留每个分支的 Navigator。
+    - 拖动时的玻璃透镜是栏玻璃的兄弟层，不被栏裁剪，按 iOS 底栏向四周鼓出、略超出栏沿；镜下的静止胶囊随之淡出。
+  - animated_branches.dart：AnimatedBranches 负责分支切换转场，保留每个分支的 Navigator；进出两页整屏并排平移，不淡入淡出（页内玻璃在半透明图层下取不到背景）。
   - section_pages.dart：
     - 服务页：课表、成绩、百宝箱三个入口。
     - 消息页：通知、私信，当前为占位。

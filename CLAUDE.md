@@ -121,11 +121,13 @@
 12. 界面实现
     - 确认和提示统一使用 theme/campus_transitions.dart 的 showCampusConfirm 与 showCampusNotice。
     - setState 回调不得返回 Future；给 Future 字段赋值时用块体。由 test/code_conventions_test.dart 守护。
+    - 只有图标的 IconButton 必须带 tooltip，作为读屏标签。由 test/code_conventions_test.dart 守护。
 
 # 界面约定（来自用户反馈，细节见自动记忆）
 
 - 耗时操作在发起位置原地显示状态：等待、进度、可暂停或取消，完成后原地切换为下一步动作（如“打开”）。
 - 可点击元素一律做成带图标的按钮。状态信息只读，不用主色；主色只留给按钮和图标。整组操作和破坏性操作收进⋯菜单，并保留确认。
+- 液态玻璃只用于导航层与浮层；内容区按钮与标签用色调胶囊，顶栏透明、内容滚动时自身渐隐（见 lib/theme/CLAUDE.md）。
 - 会变化的列表按稳定键排序，状态变化时条目不跳动。
 - 文案简洁，少放说明性文字。账号授权、旧数据归属、删除或覆盖确认以及必要的错误文案必须保留。
 - 手势、方向等偏离常见习惯的要求，先提醒用户确认再实现。

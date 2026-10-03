@@ -9,12 +9,15 @@
   - campusTheme 按配色和字体生成 ThemeData。
   - campusFieldGap 给带浮动标签的输入框算上方间距，随字号缩放。
   - campusSystemOverlay 设置系统栏：导航栏全透明，按键明暗随主题变化。
+  - CampusScrollBehavior：全局越界用弹性回弹、不加拉伸效果（拉伸会给列表套图像滤镜，里面的玻璃退成底色）；显式指定夹紧的列表不受影响。
+  - 按压反馈同 iOS：不用扩散水波（NoSplash），按下整块变暗（highlightColor），松手淡出。卡片里的多行列表去掉卡片横向内边距、行自带边距，高亮横向铺满卡片；单项卡片直接让整卡可点。底栏的按压反馈由透镜承担，不叠变暗。
   - CampusBackground 是空包装，保留它只为兼容现有调用点。
 - campus_background.dart：
   - CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，不随路由或列表项复制。
   - AtmospherePainter 负责绘制背景。
   - CampusWallpaper 是可选的自定义壁纸：设了壁纸时改画静态图，不再循环；按色调网格逐格铺一层淡化，保证直接压在背景上的文字可读。云雾仍是默认，高对比度时不显示壁纸。
   - FrostTexture 是固定的颗粒纹理，不逐帧生成随机噪点。
+  - CampusBackdrop 向下提供一份同相位的背景副本，只给入场遮罩用。
 - wallpaper_tone.dart：
   - WallpaperTone 是壁纸色调网格：导入时解码成小图，按格记下最暗与最亮的像素，运行时不再解码原图。
   - wallpaperVeilAlphas 按当前配色算每格最小淡化透明度：衬底色为 backgroundTop，叠在最不利的像素上，正文、次要文字和主色文字都不低于 4.8:1（给玻璃栏和取样留余量）。
@@ -24,7 +27,8 @@
   - 统一时长：页面进入 360ms、返回 320ms，弹层 300ms。
   - campusPage 让 GoRouter 与 push 共用同一套 Material 路由契约。
   - CampusDialogRoute、showCampusDialog：统一的弹窗转场。
-  - CampusEntryFade：账号应用的整体淡入。它挂在按代次重建的账号应用内，所以应用启动和每次切换账号时都会触发。
+  - campusPageTransition：新旧页整屏并排平移、互不重叠，不淡入淡出。
+  - CampusEntryFade：账号应用的整体入场。它挂在按代次重建的账号应用内，所以应用启动和每次切换账号时都会触发。内容不套透明度，由盖在上面的背景副本（CampusBackdrop）淡出，玻璃从第一帧起取到真实背景。
   - 共享弹窗：showCampusNotice 用于只读提示，showCampusConfirm 用于二次确认。
   - CampusGlassDialog：统一的玻璃弹窗，版式同 AlertDialog。options 对应 SimpleDialog 的选项；solid 固定实色（验证码弹窗用）。全应用弹窗一律用它，日期选择器除外。
   - showCampusToast：提示条，可带一个操作（如撤销）。沿用 SnackBar 的排队、读屏与滑动关闭，内容是 overlay 玻璃胶囊。不用库的 GlassToast，因为它的操作触区只有 32。用固定样式，只做高度展开不淡入。
@@ -38,7 +42,9 @@
 - curve_geometry.dart：三种闭合曲线（无穷、玫瑰、李萨如）的几何与按弧长预采样。改编自 math-curve-loaders，授权说明见 assets/third_party_notices.txt。
 - campus_icons.dart：CampusIcons 统一映射 Lucide 图标；CampusIcon 负责渲染单个图标；CampusMorphIcon 负责导航图标形变；configureCampusIcons 在启动时配置。
 - glass_panel.dart：
-  - GlassPanel 是液态玻璃面板，用于顶栏和底栏。
+  - GlassPanel 是液态玻璃面板，现只用于悬浮底栏。
+  - CampusTopBar 是透明顶栏：无底板、无分割线，与主体同一背景，栏内按钮仍是玻璃。
+  - CampusChrome 标记导航层（顶栏、悬浮按钮），其中的按钮画玻璃。
   - initializeCampusGlass 负责初始化玻璃渲染，失败时退回磨砂效果；campusGlassReady 表示是否初始化完成。
   - campusOverlayDepth 是正在显示的弹窗层数。大于 0 时顶栏和底栏改实色，不让玻璃叠玻璃。
 - campus_glass_controls.dart：
@@ -57,32 +63,36 @@
   - CampusGlassGuard 通过通道 superxd/glass 读写原生的限档状态，原生实现见 GlassGuard.kt。
 - campus_glass_material.dart：玻璃材质表。
   - 按角色区分：navigation（顶栏、底栏）、control（按钮、开关、标签）、overlay（菜单、弹层、弹窗、提示条）。
-  - campusGlassSettings 按配色、角色和档位生成参数。满档以 iOS 27 预设为底并按配色着色，色散只给控件与浮层；标准档和磨砂档保持升级前的参数。
-  - 浮层满档完全雾化，不透出底层文字；浅色浮层各档整块均匀提亮。提亮值按模拟器五套配色实测取，改动后要重测弹窗次要文字对比度。
+  - campusGlassSettings 按配色、角色和档位生成参数。满档以 iOS 27 预设为底并按配色轻着色：底色减薄、不加色散，背景饱和浅色 1.4、深色不加；选中或按下的控件底色铺厚。标准档和磨砂档保持升级前的参数。
+  - 浮层满档完全雾化，不透出底层文字；浅色浮层各档整块均匀提亮（满档 .8，其余 .65）。底色、饱和与提亮都按模拟器五套配色深浅色实测取，改动后要重测玻璃上文字的对比度（不低于 4.5:1）。
   - 浮层传 floating 时加 campusFloatingShadow 投影，其余角色保持原有阴影。
   - campusGlassQuality 把档位映射为库的 GlassQuality。
 - campus_glass_surface.dart：
   - CampusGlassSurface 是按钮和手势反馈共用的玻璃材质，本身不提供点击行为。
   - CampusOverlayGlass 是弹窗、菜单、弹层、提示条用的 overlay 玻璃面板，实色档用 surface。floating 表示没有遮罩、直接压在内容上（菜单、提示条），带柔和投影。
   - CampusOverlayReveal 由浮层路由提供显隐进度：有玻璃时面板用库的 GlassMaterializeTransition 驱动着色器可见度，实色时用 FadeTransition。
+  - CampusGlassPresence 是玻璃控件的出现与消失（AnimatedOpacity 的玻璃版）：玻璃档用库的 GlassMaterialize，实色档改不透明度。
+  - 按钮描边画在玻璃内容里（内描边），随玻璃一起显隐。
 - campus_glass_button.dart：
-  - 主按钮是紧凑的玻璃胶囊，视觉高度约 38dp，触区至少 48dp。全局 FilledButton 主题用它画背景，所以所有主操作都是玻璃按钮。
-  - CampusGlassButtonSurface 是胶囊按钮，CampusGlassCircleButton 是圆形按钮。圆形按钮默认 52，顶栏操作用 44。
+  - 全局 FilledButton 主题用 CampusGlassButtonSurface 画背景，视觉高度约 38dp，触区至少 48dp。按所在层分流：在导航层（CampusChrome）或玻璃面板、浮层（GlassPanelScope）里是玻璃胶囊；其余属于内容区，画 CampusTonalSurface 色调胶囊（操作按钮主色浅底，选择标签中性浅底、选中 surfaceSelected 加主色细边，按下加深并缩到 97%）。
+  - CampusGlassButtonSurface 是胶囊按钮，CampusGlassCircleButton 是圆形按钮（只用于顶栏操作和悬浮按钮，始终是玻璃）。圆形按钮默认 52，顶栏操作用 44。
+  - 色调胶囊的底色按模拟器五套配色深浅色实测取，改动后要重测按钮文字对比度（不低于 4.5:1）。
 - campus_glass_press.dart：玻璃控件的按压物理 CampusGlassPress。
   - 按下鼓起 6%，松手过冲一次后回位；内容只跟随一半。
   - 满档时在手指处画径向高光。减少动画时不形变。
   - 弹簧令牌在 campus_motion.dart：campusGlassSpring 用于按压与松手，campusGlassTravelSpring 用于指示器跨格移动。
 - campus_surface.dart：CampusSurface 是通用卡片表面，可带点击。
 - scroll_edge_fade.dart：ScrollEdgeFade 在浮动玻璃栏下只渐隐内容本身，露出真实背景；高对比度时不渐隐。它的子树里不能再放玻璃。
+  - CampusScrollFade：页面滚动区的柔和边缘，透明顶栏下内容滚过上缘时自身渐隐（最多 24dp），下缘按底栏覆盖高度渐隐；遮罩常在，滚动不切换图层。顶栏页和 AppBar 页的滚动区都包一层；子树有玻璃开关或视频的页面（短视频解析、媒体预览）不包。
 - third_party_licenses.dart：registerCampusLicenses 把第三方声明和字体许可注册进 LicenseRegistry。
 
 # 关键规则
 
-- 玻璃只用于浮在内容之上的导航与控件层，内容卡片和列表保持高遮色磨砂实卡，不叠玻璃。新增玻璃组件一律从 campus_glass_material 取材质，从 CampusGlassScope.tierOf 取档位，不在组件里写死 LiquidGlassSettings。
-- 玻璃显隐不得用祖先 Opacity 或 FadeTransition：玻璃的背景采样要么整块绘制、要么不画，淡入时文字先浮在页面上、玻璃到最后才突然出现。改用 CampusOverlayReveal 或库的 GlassMaterializeTransition，由 test/campus_glass_test.dart 的 expectGlassUnfaded 守护。
+- 玻璃只用于导航层与浮层：悬浮底栏、顶栏按钮、悬浮按钮、弹窗、菜单、弹层、提示条和开关。内容区（页面与卡片里）的按钮与选择标签用色调胶囊，卡片和列表保持高遮色磨砂实卡，不叠玻璃（同苹果 HIG、鸿蒙 7）。新增玻璃组件一律从 campus_glass_material 取材质，从 CampusGlassScope.tierOf 取档位，不在组件里写死 LiquidGlassSettings。
+- 玻璃显隐不得用祖先 Opacity、FadeTransition 或 ShaderMask：玻璃在半透明图层下取不到背景，整段显示成底色实板，结束时才突然变回玻璃。浮层用 CampusOverlayReveal，控件用 CampusGlassPresence，页面与分支转场只平移不淡入淡出，入场用背景副本淡出。由 test/campus_glass_test.dart 的 expectGlassUnfaded、transition_sync_test.dart 与 account_lifecycle_test.dart 的转场中间帧检查守护。
 - 颜色一律取 CampusPalette 的色彩角色，不在页面里写死色值。改配色要在深浅两套、所有配色、实际合成背景上测对比度，见 test/campus_glass_test.dart、test/atmosphere_test.dart。
 - 必须尊重减少动画与无障碍设置。装饰动效用 CampusMotion.allowed 判断能否播放，业务转场不因为装饰暂停而跳过。
-- 背景只画一份：新页面不再单独铺背景，也不给整页包遮罩。离屏遮罩会让玻璃取不到外层背景。
+- 背景只画一份：新页面不再单独铺背景，也不给整页包遮罩。离屏遮罩会让玻璃取不到外层背景。唯一例外是入场的 360ms 内多画一份背景副本作遮罩。
 - 页面、弹窗和转场的时长以 campus_transitions.dart 为准，不在页面里另设。
 - 本层不写业务文案，也不做业务判断。
 - 改视觉之前，先读本目录的人工决策注释，以及自动记忆里被否决的方案（切日胶囊、云雾、字体压缩、玻璃滚动边缘），不要重提。

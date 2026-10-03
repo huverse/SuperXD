@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -331,7 +332,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
           ),
         ],
       ),
-      body: SafeArea(
+      body: CampusScrollFade(child: SafeArea(
         child: Center(
           child: ConstrainedBox(
             constraints: const BoxConstraints(maxWidth: 900),
@@ -519,7 +520,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
             ),
           ),
         ),
-      ),
+      )),
     );
   }
 }

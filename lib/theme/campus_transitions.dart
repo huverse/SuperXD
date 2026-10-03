@@ -2,6 +2,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/campus_glass_surface.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/glass_panel.dart';
@@ -26,22 +27,14 @@ Widget campusPageTransition(
   final direction = Directionality.of(context) == TextDirection.rtl
       ? -1.0
       : 1.0;
-  final curve = animation.drive(CurveTween(curve: Curves.easeInOutCubic));
-  final outgoing = secondaryAnimation
-      .drive(
-        CurveTween(curve: Curves.easeInOutCubic),
-      )
-      .drive(Tween(begin: 1.0, end: 0.0));
-  return FadeTransition(
-    opacity: outgoing,
-    child: FadeTransition(
-      opacity: curve,
-      child: SlideTransition(
-        position: curve.drive(
-          Tween(begin: Offset(.035 * direction, .012), end: Offset.zero),
-        ),
-        child: child,
-      ),
+  final curve = CurveTween(curve: Curves.easeInOutCubic);
+  // 页面透明、共用一份背景，新旧页整屏并排平移、互不重叠；不淡入淡出：玻璃在 Opacity 下取不到背景，
+  // 整段转场会显示成底色，最后一帧才突然变回玻璃。旧页由新页同一进度推出，全程连续退场。
+  return SlideTransition(
+    position: secondaryAnimation.drive(curve).drive(Tween(begin: Offset.zero, end: Offset(-direction, 0))),
+    child: SlideTransition(
+      position: animation.drive(curve).drive(Tween(begin: Offset(direction, 0), end: Offset.zero)),
+      child: child,
     ),
   );
 }
@@ -97,11 +90,28 @@ class _CampusEntryFadeState extends State<CampusEntryFade>
     super.dispose();
   }
 
+  // 内容不套透明度，改由上面一层同相位背景淡出，观感等同内容淡入，玻璃从第一帧起取到真实背景；没有背景时直接显示。
   @override
-  Widget build(BuildContext context) => FadeTransition(
-    opacity: _controller.drive(CurveTween(curve: Curves.easeInOutCubic)),
-    child: widget.child,
-  );
+  Widget build(BuildContext context) {
+    final backdrop = CampusBackdrop.maybeOf(context);
+    return AnimatedBuilder(
+      animation: _controller,
+      child: widget.child,
+      builder: (context, child) => Stack(
+        fit: StackFit.expand,
+        children: [
+          child!,
+          if (backdrop != null && !_controller.isCompleted)
+            IgnorePointer(
+              child: Opacity(
+                opacity: 1 - Curves.easeInOutCubic.transform(_controller.value),
+                child: backdrop(context),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
 }
 
 // glassPanel 为真表示内容是 CampusGlassDialog 这类 overlay 玻璃面板，由面板按路由进度自己显隐；

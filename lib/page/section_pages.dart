@@ -25,7 +25,7 @@ class ServicePage extends StatelessWidget {
       children: [
         const _TitleBar(title: '服务'),
         // [人工决策-2026-09-27 20:12:08] 保留课表、成绩，新增百宝箱同级入口；教务无关工具集中注册于百宝箱，不添加未定义服务。
-        Expanded(child: ScrollEdgeFade(bottom: inset, child: ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), children: [
+        Expanded(child: CampusScrollFade(bottom: inset, child: ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), children: [
           for (final service in [(label: '课表', route: '/schedule', icon: CampusIcons.todaySelected), (label: '成绩', route: '/grades', icon: CampusIcons.grades), (label: '百宝箱', route: '/toolbox', icon: CampusIcons.toolbox)]) Padding(padding: const EdgeInsets.only(bottom: 16), child: CampusSurface(
             onTap: () => context.push(service.route), padding: const EdgeInsets.all(20),
             child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 40), child: Row(children: [CampusIcon(service.icon, color: CampusPalette.of(context).primary, size: 28), const SizedBox(width: 20), Expanded(child: Text(service.label, style: TextStyle(fontSize: 16, color: CampusPalette.of(context).onSurface))), CampusIcon(CampusIcons.next, color: CampusPalette.of(context).onSurfaceVariant)])),
@@ -166,7 +166,7 @@ class _MinePageState extends State<MinePage> {
     return Column(
       children: [
         const _TitleBar(title: '我的'),
-        Expanded(child: ScrollEdgeFade(bottom: inset, child: SingleChildScrollView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), child: Center(child: ConstrainedBox(
+        Expanded(child: CampusScrollFade(bottom: inset, child: SingleChildScrollView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), child: Center(child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             _settingsCard(child: Row(children: [
               CircleAvatar(radius: 28, backgroundColor: CampusPalette.of(context).surfaceSelected, child: CampusIcon(CampusIcons.account, color: CampusPalette.of(context).primary, size: 28)),
@@ -176,14 +176,15 @@ class _MinePageState extends State<MinePage> {
               ])),
             ])),
             const SizedBox(height: 16),
-            _settingsCard(child: ListTile(contentPadding: EdgeInsets.zero, leading: const CampusIcon(CampusIcons.services), title: const Text('界面'), trailing: const CampusIcon(CampusIcons.next), onTap: () => Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(builder: (context) => const AppearancePage())))),
+            CampusSurface(padding: const EdgeInsets.all(20), onTap: () => Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(builder: (context) => const AppearancePage())), child: const ListTile(contentPadding: EdgeInsets.zero, leading: CampusIcon(CampusIcons.services), title: Text('界面'), trailing: CampusIcon(CampusIcons.next))),
             const SizedBox(height: 16),
-            _settingsCard(child: Column(children: [
-              if (_remembered) ListTile(contentPadding: EdgeInsets.zero, leading: const CampusIcon(CampusIcons.lock), title: const Text('关闭记住账号'), enabled: !_busy, onTap: _forget),
-              ListTile(contentPadding: EdgeInsets.zero, leading: const CampusIcon(CampusIcons.switchAccount), trailing: const CampusIcon(CampusIcons.next), title: const Text('切换账号'), enabled: !_busy, onTap: () => context.push('/switch-account')),
-              ListTile(contentPadding: EdgeInsets.zero, leading: const CampusIcon(CampusIcons.download), trailing: const CampusIcon(CampusIcons.next), title: const Text('导入旧版本数据'), enabled: !_busy, onTap: () => showLegacyImport(context, widget.session)),
-              ListTile(contentPadding: EdgeInsets.zero, leading: const CampusIcon(CampusIcons.logout), title: const Text('退出登录'), enabled: !_busy, onTap: _logout),
-              ListTile(contentPadding: EdgeInsets.zero, leading: const CampusIcon(CampusIcons.info), trailing: const CampusIcon(CampusIcons.next), title: const Text('开源与第三方声明'), enabled: !_busy, onTap: () => Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(builder: (context) => const ThirdPartyPage()))),
+            // 多行卡片去掉横向内边距，行自带 20 边距：按下变暗时整行铺满卡片宽度，同 iOS 分组列表。
+            CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
+              if (_remembered) ListTile(contentPadding: const EdgeInsets.symmetric(horizontal: 20), leading: const CampusIcon(CampusIcons.lock), title: const Text('关闭记住账号'), enabled: !_busy, onTap: _forget),
+              ListTile(contentPadding: const EdgeInsets.symmetric(horizontal: 20), leading: const CampusIcon(CampusIcons.switchAccount), trailing: const CampusIcon(CampusIcons.next), title: const Text('切换账号'), enabled: !_busy, onTap: () => context.push('/switch-account')),
+              ListTile(contentPadding: const EdgeInsets.symmetric(horizontal: 20), leading: const CampusIcon(CampusIcons.download), trailing: const CampusIcon(CampusIcons.next), title: const Text('导入旧版本数据'), enabled: !_busy, onTap: () => showLegacyImport(context, widget.session)),
+              ListTile(contentPadding: const EdgeInsets.symmetric(horizontal: 20), leading: const CampusIcon(CampusIcons.logout), title: const Text('退出登录'), enabled: !_busy, onTap: _logout),
+              ListTile(contentPadding: const EdgeInsets.symmetric(horizontal: 20), leading: const CampusIcon(CampusIcons.info), trailing: const CampusIcon(CampusIcons.next), title: const Text('开源与第三方声明'), enabled: !_busy, onTap: () => Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(builder: (context) => const ThirdPartyPage()))),
             ])),
           ]),
         ))))),
@@ -198,18 +199,14 @@ class _TitleBar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return GlassPanel(
-      edge: GlassEdge.bottom,
-      child: SafeArea(
-        bottom: false,
-        child: SizedBox(
-          height: 56 * MediaQuery.textScalerOf(context).scale(14) / 14,
-          child: Align(
-            alignment: Alignment.centerLeft,
-            child: Padding(
-              padding: const EdgeInsets.only(left: 16),
-              child: Text(title, style: Theme.of(context).textTheme.titleLarge),
-            ),
+    return CampusTopBar(
+      child: SizedBox(
+        height: 56 * MediaQuery.textScalerOf(context).scale(14) / 14,
+        child: Align(
+          alignment: Alignment.centerLeft,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 16),
+            child: Text(title, style: Theme.of(context).textTheme.titleLarge),
           ),
         ),
       ),

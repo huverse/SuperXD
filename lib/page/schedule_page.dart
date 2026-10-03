@@ -7,6 +7,7 @@ import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/domain/period_spans.dart';
 import 'package:superxd/page/reminder_dialog.dart';
 import 'package:superxd/page/calendar_export.dart';
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -270,14 +271,14 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     return PopScope(canPop: _canPop, onPopInvokedWithResult: (didPop, _) { if (!didPop) _back(); }, child: CampusBackground(child: Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(bottom: true, top: false, child: Column(children: [
-        GlassPanel(edge: GlassEdge.bottom, child: SafeArea(bottom: false, child: SizedBox(height: 56 * scale, child: Row(children: [
-          IconButton(onPressed: _back, icon: const CampusIcon(CampusIcons.back)),
+        CampusTopBar(child: SizedBox(height: 56 * scale, child: Row(children: [
+          IconButton(tooltip: '返回', onPressed: _back, icon: const CampusIcon(CampusIcons.back)),
           Expanded(child: Text(_selection.yearOverview && _selection.year.isNotEmpty ? '${_selection.year}–${int.parse(_selection.year)+1}' : '课表', style: Theme.of(context).textTheme.titleLarge)),
           TextButton(onPressed: _term == null || _loading ? null : _editStart, child: const Text('开学日')),
           TextButton(onPressed: _loading ? null : _today, child: const Text('今天')),
           IconButton(tooltip: '管理课程', onPressed: _term == null || _loading ? null : _manage, icon: const CampusIcon(CampusIcons.manageSchedule)),
           Builder(builder: (anchor) => IconButton(tooltip: '更多操作', onPressed: _loading || _term == null && widget.reminders == null ? null : () => _more(anchor), icon: const CampusIcon(CampusIcons.manage))),
-        ])))),
+        ]))),
         SizedBox(height: 48 * scale, child: Row(children: [for (final range in ScheduleRange.values) Expanded(child: InkWell(
           onTap: () => _selectRange(range), child: Center(child: AnimatedContainer(duration: motion, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: range == _selection.range ? CampusPalette.of(context).surfaceSelected : Colors.transparent, borderRadius: BorderRadius.circular(12)), child: Text(switch(range) { ScheduleRange.day => '天', ScheduleRange.term => '学期', ScheduleRange.year => '学年' }, style: TextStyle(fontSize: 16, color: range == _selection.range ? CampusPalette.of(context).primary : CampusPalette.of(context).onSurfaceVariant)))),
         ))])),
@@ -286,9 +287,9 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
             ? Center(child: Text(_term?.label ?? '课表', style: const TextStyle(fontSize: 14)))
             : DateRail(first: _first!, last: _last!, selected: _selection.date, recenterRequest: _recenterRequest, onSelect: _selectDate)),
         if (_loading && _refreshingCurrent) const CampusLoading(label: '正在更新课表', inline: true),
-        Expanded(child: _loading && !_refreshingCurrent ? const Center(child: CampusLoading(label: '正在读取课表')) : AnimatedSwitcher(duration: motion,
+        Expanded(child: _loading && !_refreshingCurrent ? const Center(child: CampusLoading(label: '正在读取课表')) : CampusScrollFade(child: AnimatedSwitcher(duration: motion,
           child: _selection.yearOverview ? _years() : _content(scale, motion),
-        )),
+        ))),
       ])),
     )));
   }

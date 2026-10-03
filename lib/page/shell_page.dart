@@ -43,17 +43,13 @@ class ShellPage extends StatelessWidget {
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 620),
-                  child: GlassPanel(
-                    edge: GlassEdge.top,
-                    floating: true,
-                    child: DragNavigationBar(
-                      selected: navigationShell.currentIndex,
-                      onSelected: (index) {
-                        if (index != navigationShell.currentIndex) {
-                          navigationShell.goBranch(index);
-                        }
-                      },
-                    ),
+                  child: DragNavigationBar(
+                    selected: navigationShell.currentIndex,
+                    onSelected: (index) {
+                      if (index != navigationShell.currentIndex) {
+                        navigationShell.goBranch(index);
+                      }
+                    },
                   ),
                 ),
               ),
@@ -206,8 +202,67 @@ class _DragNavigationBarState extends State<DragNavigationBar>
     super.dispose();
   }
 
+  // 拖动和回位期间升起玻璃透镜（与 iOS 底栏一致），静止后落回着色胶囊；磨砂、实色档和弹窗打开（栏改实色）时不升起。
+  bool _lensUp(BuildContext context) {
+    final tier = CampusGlassScope.tierOf(context, ready: campusGlassReady.value);
+    return _lift.value > .01 &&
+        campusOverlayDepth.value == 0 &&
+        (tier == CampusGlassTier.full || tier == CampusGlassTier.standard);
+  }
+
+  // 透镜与栏是兄弟层而非栏玻璃的子节点：栏的玻璃按自身形状裁剪，透镜放在里面就被限制在栏内。
+  // 放在栏上方、不裁剪，拖动时按 iOS 底栏那样向四周鼓出、略超出栏的上下沿，同时折射底下的栏与图标。
+  static const _lensExpansion = EdgeInsets.symmetric(horizontal: 18, vertical: 10);
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => LayoutBuilder(
+    builder: (context, constraints) {
+      final slotWidth = (constraints.maxWidth - 16) / 4;
+      return Stack(
+        clipBehavior: Clip.none,
+        children: [
+          GlassPanel(edge: GlassEdge.top, floating: true, child: _bar(context)),
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: AnimatedBuilder(
+                  animation: Listenable.merge([_position, _lift, campusGlassReady, campusOverlayDepth]),
+                  builder: (context, _) => !_lensUp(context)
+                      ? const SizedBox.shrink()
+                      // 指示器自带 Positioned.fill，须直接放在 Stack 里。
+                      : Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            liquid.AnimatedGlassIndicator(
+                              velocity: (_position.isAnimating ? _position.velocity : _velocity) * 2 / 3,
+                              itemCount: labels.length,
+                              alignment: Alignment(_position.value / 3 * 2 - 1, 0),
+                              thickness: _lift.value,
+                              quality: campusGlassQuality(CampusGlassScope.tierOf(context, ready: campusGlassReady.value)),
+                              indicatorColor: CampusPalette.of(context).surfaceSelected,
+                              isBackgroundIndicator: false,
+                              paintBackground: false,
+                              paintGlass: true,
+                              padding: const EdgeInsets.all(4),
+                              expansion: _lensExpansion,
+                              exactOffset: _position.value * slotWidth,
+                              exactWidth: slotWidth - 8,
+                              // 鼓出后按胶囊形收圆角（库默认），有限圆角在放大后会显方。
+                              borderRadius: 1000,
+                            ),
+                          ],
+                        ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      );
+    },
+  );
+
+  Widget _bar(BuildContext context) {
     final height = 72.0 * MediaQuery.textScalerOf(context).scale(14) / 14;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
@@ -264,22 +319,21 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                   if (_pointer != null) _cancel();
                 },
                 child: AnimatedBuilder(
-                  animation: Listenable.merge([_position, _lift, campusGlassReady]),
+                  animation: Listenable.merge([_position, _lift, campusGlassReady, campusOverlayDepth]),
                   builder: (context, _) {
                     final preview = _indexAt(_position.value);
-                    final tier = CampusGlassScope.tierOf(context, ready: campusGlassReady.value);
-                    // 拖动和回位期间升起玻璃透镜（与 iOS 底栏一致），静止后落回着色胶囊；磨砂、实色档不升起。
-                    final lens =
-                        _lift.value > .01 &&
-                        GlassPanelScope.maybeOf(context)?.opaque != true &&
-                        (tier == CampusGlassTier.full || tier == CampusGlassTier.standard);                    return Stack(
+                    // 透镜升起时静止胶囊随之淡出（同库的底栏），否则透镜会把这块着色胶囊折射成镜内的色块。
+                    final rest = _lensUp(context) ? (1 - _lift.value / .15).clamp(0.0, 1.0) : 1.0;
+                    return Stack(
                       children: [
                         Positioned(
                           left: _position.value * slotWidth + 4,
                           top: 4,
                           bottom: 4,
                           width: slotWidth - 8,
-                          child: DecoratedBox(
+                          child: Opacity(
+                            opacity: rest,
+                            child: DecoratedBox(
                             key: const ValueKey('navigation-capsule'),
                             decoration: BoxDecoration(
                               color: CampusPalette.of(context).surfaceSelected,
@@ -288,6 +342,7 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                                 color: CampusPalette.of(context).outlineSubtle,
                               ),
                             ),
+                          ),
                           ),
                         ),
                         Row(
@@ -300,6 +355,8 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                                   label: labels[index],
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(24),
+                                    // 底栏的按压反馈由玻璃透镜承担，不再叠按下变暗，否则会被透镜折射成镜内色块。
+                                    highlightColor: Colors.transparent,
                                     onTap: () { if (_pointer == null && !_dragging) _commit(index); },
                                     child: Column(
                                       mainAxisAlignment:
@@ -338,31 +395,6 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                               ),
                           ],
                         ),
-                        // 指示器自带 Positioned.fill，须直接放在 Stack 里，所以外层再包一层 Stack 来忽略点击。
-                        if (lens)
-                          Positioned.fill(
-                            child: IgnorePointer(
-                              child: Stack(
-                                children: [
-                                  liquid.AnimatedGlassIndicator(
-                                    velocity: (_position.isAnimating ? _position.velocity : _velocity) * 2 / 3,
-                                    itemCount: labels.length,
-                                    alignment: Alignment(_position.value / 3 * 2 - 1, 0),
-                                    thickness: _lift.value,
-                                    quality: campusGlassQuality(tier),
-                                    indicatorColor: CampusPalette.of(context).surfaceSelected,
-                                    isBackgroundIndicator: false,
-                                    paintBackground: false,
-                                    paintGlass: true,
-                                    padding: const EdgeInsets.all(4),
-                                    exactOffset: _position.value * slotWidth,
-                                    exactWidth: slotWidth - 8,
-                                    borderRadius: 24,
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ),
                       ],
                     );
                   },

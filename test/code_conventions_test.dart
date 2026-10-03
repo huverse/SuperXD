@@ -28,4 +28,29 @@ void main() {
     }
     expect(offenders, isEmpty);
   });
+
+  // 只有图标的按钮没有文字，读屏只能读出“按钮”；tooltip同时提供读屏标签和长按提示。
+  test('IconButton都带tooltip', () {
+    final offenders = <String>[];
+    final files = Directory('lib')
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((file) => file.path.endsWith('.dart'));
+    for (final file in files) {
+      final source = file.readAsStringSync();
+      for (final match in RegExp(r'\bIconButton(\.\w+)?\(').allMatches(source)) {
+        var depth = 1;
+        var end = match.end;
+        while (depth > 0) {
+          final char = source[end++];
+          if (char == '(') depth++;
+          if (char == ')') depth--;
+        }
+        if (source.substring(match.end, end).contains('tooltip:')) continue;
+        final line = '\n'.allMatches(source.substring(0, match.start)).length + 1;
+        offenders.add('${file.path}:$line');
+      }
+    }
+    expect(offenders, isEmpty);
+  });
 }

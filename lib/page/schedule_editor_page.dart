@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -303,6 +304,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
     child: Scaffold(
       appBar: AppBar(
         leading: IconButton(
+          tooltip: '返回',
           onPressed: _busy ? null : () => Navigator.pop(context, _changed),
           icon: const CampusIcon(CampusIcons.back),
         ),
@@ -319,7 +321,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
           ),
         ],
       ),
-      body: SafeArea(
+      body: CampusScrollFade(child: SafeArea(
         child: _loading && _view == null
             ? const Center(child: CampusLoading(label: '正在读取课程'))
             : ListView(
@@ -446,7 +448,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                   ],
                 ],
               ),
-      ),
+      )),
     ),
   );
 }

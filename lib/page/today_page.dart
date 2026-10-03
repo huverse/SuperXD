@@ -8,6 +8,7 @@ import 'package:superxd/page/today_date_transition.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
+import 'package:superxd/theme/campus_glass_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -455,7 +456,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
     final hintHeight = (32 * scale + 16) / 2;
     return Column(children: [
-      GlassPanel(edge: GlassEdge.bottom, child: SafeArea(bottom: false, child: SizedBox(
+      CampusTopBar(child: SizedBox(
         height: 56 * scale,
         child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), child: Row(children: [
           Text('今天', style: Theme.of(context).textTheme.titleLarge),
@@ -469,14 +470,13 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
             label: Text(_syncing ? '同步中' : '同步', style: const TextStyle(fontSize: 16)),
           ),
         ])),
-      ))),
+      )),
       if (_syncing) CampusLoading(label: _syncProgress.label, inline: true, network: true, animating: !_syncProgress.waitingForInput),
       // [人工决策-2026-09-27 17:28:58] 切日只保留页面直接交接，不再叠胶囊让位与回位动画；状态胶囊、归位按钮保持。
       Expanded(child: Stack(fit: StackFit.expand, children: [
         Positioned.fill(child: body),
-        Positioned(right: 16, bottom: hintHeight + 12 + MediaQuery.paddingOf(context).bottom, child: IgnorePointer(ignoring: _day == _today && !previewing, child: ExcludeSemantics(excluding: _day == _today && !previewing, child: AnimatedOpacity(
-          opacity: _day == _today && !previewing ? 0 : 1,
-          duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 180),
+        Positioned(right: 16, bottom: hintHeight + 12 + MediaQuery.paddingOf(context).bottom, child: IgnorePointer(ignoring: _day == _today && !previewing, child: ExcludeSemantics(excluding: _day == _today && !previewing, child: CampusGlassPresence(
+          visible: _day != _today || previewing,
           child: CampusGlassCircleButton(key: const ValueKey('today-reset'), icon: const CampusIcon(CampusIcons.arrowUp, size: 24), label: '回今天', onPressed: () => _selectDay(_campusDay(), recenter: true)),
         )))),
       ])),

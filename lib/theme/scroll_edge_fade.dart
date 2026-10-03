@@ -3,16 +3,18 @@ import 'package:flutter/material.dart';
 // 内容层在浮动玻璃栏下的柔和滚动边缘：只渐隐内容本身，露出真实动态背景，不叠纯色遮罩。
 // 遮罩把子树放进离屏层，子树内不能再有玻璃，否则玻璃取不到外层背景；高对比度时不渐隐。
 class ScrollEdgeFade extends StatelessWidget {
-  const ScrollEdgeFade({super.key, this.top = 0, required this.bottom, required this.child});
+  const ScrollEdgeFade({super.key, this.top = 0, required this.bottom, required this.child, this.keep = false});
   // 内容已滚过上缘时的淡出高度，0表示未滚动不淡出；调用方须保证遮罩层有无不随滚动切换。
   final double top;
   // 子树底部被玻璃栏覆盖的高度，0表示没有浮动栏。
   final double bottom;
   final Widget child;
+  // 上下都不淡出时仍保留遮罩层：上缘随滚动出现时不切换图层、不重建子树。
+  final bool keep;
 
   @override
   Widget build(BuildContext context) {
-    if ((top <= 0 && bottom <= 0) || MediaQuery.highContrastOf(context)) return child;
+    if ((top <= 0 && bottom <= 0 && !keep) || MediaQuery.highContrastOf(context)) return child;
     return ShaderMask(
       blendMode: BlendMode.dstIn,
       shaderCallback: (bounds) {
@@ -54,4 +56,31 @@ class _VisibleClip extends CustomClipper<Rect> {
   Rect getClip(Size size) => Rect.fromLTRB(0, 0, size.width, size.height - hidden);
   @override
   bool shouldReclip(_VisibleClip oldClipper) => oldClipper.hidden != hidden;
+}
+
+// 页面滚动区的柔和边缘（鸿蒙标题栏渐变、iOS 滚动边缘的轻量做法）：透明顶栏下，内容滚过上缘时自身渐隐（最多24dp），
+// 露出真实背景而不是被一条硬线截断；下缘按浮动底栏覆盖高度渐隐。听子树里的纵向滚动（含横向翻页里的每页列表）。子树里同样不能放玻璃。
+class CampusScrollFade extends StatefulWidget {
+  const CampusScrollFade({super.key, this.bottom = 0, required this.child});
+  final double bottom;
+  final Widget child;
+  @override
+  State<CampusScrollFade> createState() => _CampusScrollFadeState();
+}
+
+class _CampusScrollFadeState extends State<CampusScrollFade> {
+  double _top = 0;
+
+  bool _scrolled(ScrollNotification notification) {
+    if (notification.metrics.axis != Axis.vertical) return false;
+    final top = notification.metrics.extentBefore.clamp(0.0, 24.0);
+    if (top != _top) setState(() => _top = top);
+    return false;
+  }
+
+  @override
+  Widget build(BuildContext context) => NotificationListener<ScrollNotification>(
+    onNotification: _scrolled,
+    child: ScrollEdgeFade(top: _top, bottom: widget.bottom, keep: true, child: widget.child),
+  );
 }

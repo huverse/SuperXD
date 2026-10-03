@@ -5,6 +5,16 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 
+// 越界与 iOS、鸿蒙一致用弹性回弹，只平移内容。Android 默认的拉伸越界会给整个列表套图像滤镜，
+// 列表里的玻璃在滤镜下取不到背景，拉到边缘或快速甩到边缘时就退成底色实板。显式指定夹紧的列表（今天页切日）不受影响。
+class CampusScrollBehavior extends MaterialScrollBehavior {
+  const CampusScrollBehavior();
+  @override
+  ScrollPhysics getScrollPhysics(BuildContext context) => const BouncingScrollPhysics();
+  @override
+  Widget buildOverscrollIndicator(BuildContext context, Widget child, ScrollableDetails details) => child;
+}
+
 ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono NF CN'}) {
   final colors = palette ?? CampusPalette.values.first;
   final scheme = ColorScheme.fromSeed(
@@ -28,6 +38,9 @@ ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono N
   );
   return ThemeData(
     useMaterial3: true,
+    // [人工决策-2026-10-03 18:10:44] 按压反馈同 iOS：按下整块变暗（深色下按 iOS 惯例是浅一档的灰），松手淡出；不用 Material 3 在手指处扩散的水波（InkSparkle 呈一团模糊灰斑）。
+    splashFactory: NoSplash.splashFactory,
+    highlightColor: colors.onSurface.withValues(alpha: colors.isDark ? .12 : .10),
     extensions: [colors],
     // [人工决策-2026-09-25 17:43:48] Maple仍为默认，可选内置Noto Serif SC；全局字体和测量口径一致，不引入在线字体。
     fontFamily: fontFamily,

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -82,30 +83,26 @@ class LegalPage extends StatelessWidget {
         backgroundColor: Colors.transparent,
         body: Column(
           children: [
-            GlassPanel(
-              edge: GlassEdge.bottom,
-              child: SafeArea(
-                bottom: false,
-                child: SizedBox(
-                  height: 56 * MediaQuery.textScalerOf(context).scale(14) / 14,
-                  child: Row(
-                    children: [
-                      IconButton(
-                        tooltip: '返回',
-                        onPressed: () => context.pop(),
-                        icon: CampusIcon(
-                          CampusIcons.back,
-                          color: colors.onSurface,
-                        ),
+            CampusTopBar(
+              child: SizedBox(
+                height: 56 * MediaQuery.textScalerOf(context).scale(14) / 14,
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: '返回',
+                      onPressed: () => context.pop(),
+                      icon: CampusIcon(
+                        CampusIcons.back,
+                        color: colors.onSurface,
                       ),
-                      Expanded(
-                        child: Text(
-                          privacy ? '隐私政策' : '服务协议',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
+                    ),
+                    Expanded(
+                      child: Text(
+                        privacy ? '隐私政策' : '服务协议',
+                        style: Theme.of(context).textTheme.titleLarge,
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
               ),
             ),
@@ -115,7 +112,7 @@ class LegalPage extends StatelessWidget {
                 child: Center(
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 800),
-                    child: ListView.builder(
+                    child: CampusScrollFade(child: ListView.builder(
                       padding: const EdgeInsets.all(20),
                       itemCount: sections.length,
                       itemBuilder: (context, index) => Padding(
@@ -139,7 +136,7 @@ class LegalPage extends StatelessWidget {
                           ],
                         ),
                       ),
-                    ),
+                    )),
                   ),
                 ),
               ),

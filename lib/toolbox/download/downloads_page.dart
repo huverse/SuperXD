@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -83,7 +84,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
         icon: const CampusIcon(CampusIcons.back),
       ),
     ),
-    body: SafeArea(
+    body: CampusScrollFade(child: SafeArea(
       child: Center(
         child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 900),
@@ -167,7 +168,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
           ),
         ),
       ),
-    ),
+    )),
   );
 
   // 层级：标题区只读说明，⋯菜单放整组操作，条目状态文字不可点，可点的都是带图标按钮。

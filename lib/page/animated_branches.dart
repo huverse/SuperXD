@@ -35,10 +35,8 @@ class _AnimatedBranchesState extends State<AnimatedBranches> with SingleTickerPr
     for (var index = 0; index < widget.children.length; index++)
       Offstage(offstage: index != widget.index && index != _previous, child: TickerMode(enabled: index == widget.index,
         child: ExcludeSemantics(excluding: index != widget.index, child: IgnorePointer(ignoring: index != widget.index,
-          child: FadeTransition(
-            opacity: index == widget.index ? _curve : index == _previous ? ReverseAnimation(_curve) : const AlwaysStoppedAnimation(0),
-            child: AnimatedBuilder(animation: index == widget.index || index == _previous ? _curve : const AlwaysStoppedAnimation(1.0), child: widget.children[index], builder: (context, child) => Transform.translate(offset: Offset((index == widget.index ? (1 - _curve.value) : -_curve.value) * _direction * 12, 0), child: child)),
-          ),
+          // 分支页透明、共用背景，进出两页整屏并排平移互不重叠；不淡入淡出，否则页内玻璃转场中取不到背景、结束时突变。
+          child: AnimatedBuilder(animation: index == widget.index || index == _previous ? _curve : const AlwaysStoppedAnimation(1.0), child: widget.children[index], builder: (context, child) => FractionalTranslation(translation: Offset((index == widget.index ? (1 - _curve.value) : -_curve.value) * _direction, 0), child: child)),
         )),
       )),
   ]);

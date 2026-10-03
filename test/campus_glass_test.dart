@@ -9,10 +9,12 @@ import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_material.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_glass_surface.dart';
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/page/licenses_page.dart';
 import 'package:superxd/theme/campus_background.dart';
@@ -178,7 +180,7 @@ void main() {
     expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.premium, capped: true), CampusGlassTier.standard);
     expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.minimal, capped: true), CampusGlassTier.minimal);
   });
-  test('满档以iOS 27材质按配色着色，色散只给控件与浮层；标准档保持升级前参数', () {
+  test('满档以iOS 27材质按配色轻着色、不加色散，饱和按明暗收敛，选中铺厚；标准档保持升级前参数', () {
     for (final palette in [...CampusPalette.values, ...CampusPalette.darkValues]) {
       for (final role in CampusGlassRole.values) {
         final full = campusGlassSettings(palette, role, CampusGlassTier.full);
@@ -188,7 +190,10 @@ void main() {
         expect(full.rimLight, preset.rimLight);
         expect(full.lensModel, liquid.GlassLensModel.paraxial);
         expect(full.platformViewFallbackColor, palette.glassFallback);
-        expect(full.chromaticAberration, role == CampusGlassRole.navigation ? 0 : greaterThan(0));
+        expect(full.chromaticAberration, 0);
+        // 预设饱和压在带色云雾上会把玻璃染艳：浅色 1.4、深色不加；底色只轻铺，不盖住雾化与高光。
+        expect(full.saturation, palette.isDark ? 1 : 1.4);
+        expect(full.glassColor.a, lessThanOrEqualTo(.56));
         final standard = campusGlassSettings(palette, role, CampusGlassTier.standard);
         expect(standard.chromaticAberration, 0);
         expect(standard.frost, 0);
@@ -197,7 +202,8 @@ void main() {
         final overlay = role == CampusGlassRole.overlay;
         expect(full.frostOpacity, overlay ? 1 : preset.frostOpacity);
         for (final settings in [full, standard, campusGlassSettings(palette, role, CampusGlassTier.minimal)]) {
-          expect(settings.whitenStrength, overlay && !palette.isDark ? .65 : 0, reason: '${palette.id} $role');
+          // 满档浅色浮层的雾化透出遮罩发灰，提亮多一些；其余档沿用实测的 .65。
+          expect(settings.whitenStrength, overlay && !palette.isDark ? (settings == full ? .8 : .65) : 0, reason: '${palette.id} $role');
           expect(settings.whitenGated, isFalse);
         }
         // 无遮罩的浮层（菜单、提示条）带柔和投影；其余保持原有阴影。
@@ -210,6 +216,8 @@ void main() {
       }
       final pressed = campusGlassSettings(palette, CampusGlassRole.control, CampusGlassTier.full, pressed: true);
       expect(pressed.glassColor.withValues(alpha: 1), palette.surfaceSelected.withValues(alpha: 1));
+      // 选中、按下的控件铺厚，与未选中的透明玻璃一眼可分。
+      expect(pressed.glassColor.a, greaterThan(campusGlassSettings(palette, CampusGlassRole.control, CampusGlassTier.full).glassColor.a * 2));
     }
     final bar = campusGlassSettings(CampusPalette.values.first, CampusGlassRole.navigation, CampusGlassTier.standard, floating: true);
     expect([bar.thickness, bar.blur, bar.refractiveIndex, bar.lightIntensity, bar.shadowElevation], [16, 10, 1.15, .40, 1]);
@@ -317,6 +325,60 @@ void main() {
       expect(solid, findsOneWidget);
       expect(find.descendant(of: solid, matching: find.byType(liquid.AdaptiveGlass)), findsNothing);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('玻璃控件出现消失走着色器可见度，不套半透明图层；实色档改不透明度', (tester) async {
+      campusGlassReady.value = true;
+      Widget button(bool visible, {CampusGlassMode mode = CampusGlassMode.full}) => host(Scaffold(body: Center(child: CampusGlassPresence(
+        visible: visible,
+        child: CampusGlassCircleButton(icon: const Icon(Icons.arrow_upward), label: '回今天', onPressed: () {}),
+      ))), mode: mode);
+      await tester.pumpWidget(button(false));
+      await tester.pumpWidget(button(true));
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(find.byType(liquid.GlassMaterialize), findsOneWidget);
+      expectGlassUnfaded(find.descendant(of: find.byType(CampusGlassPresence), matching: find.byType(liquid.AdaptiveGlass)));
+      await tester.pumpAndSettle();
+      campusGlassReady.value = false;
+      await tester.pumpWidget(button(false));
+      await tester.pump(const Duration(milliseconds: 90));
+      final opacity = tester.widget<AnimatedOpacity>(find.byType(AnimatedOpacity)).opacity;
+      expect(opacity, 0);
+      expect(find.byType(liquid.GlassMaterialize), findsNothing);
+    });
+    testWidgets('透明顶栏无底板、栏内按钮是玻璃；滚动区上缘只随实际滚动渐隐，遮罩层常在', (tester) async {
+      campusGlassReady.value = true;
+      final scroll = ScrollController();
+      addTearDown(scroll.dispose);
+      await tester.pumpWidget(host(Scaffold(body: Column(children: [
+        CampusTopBar(child: Row(children: [const Expanded(child: Text('今天')), FilledButton(onPressed: () {}, child: const Text('同步'))])),
+        Expanded(child: CampusScrollFade(child: ListView(controller: scroll, children: [for (var index = 0; index < 40; index++) SizedBox(height: 60, child: Text('行$index'))]))),
+      ]))));
+      await tester.pumpAndSettle();
+      expect(find.byType(GlassPanel), findsNothing);
+      expect(find.descendant(of: find.byType(CampusTopBar), matching: find.byType(DecoratedBox)).evaluate().where((element) => (element.widget as DecoratedBox).decoration is BoxDecoration && ((element.widget as DecoratedBox).decoration as BoxDecoration).color != null), isEmpty);
+      expect(find.descendant(of: find.byType(CampusTopBar), matching: find.byType(liquid.AdaptiveGlass)), findsOneWidget);
+      double top() => tester.widget<ScrollEdgeFade>(find.byType(ScrollEdgeFade)).top;
+      expect(find.byType(ShaderMask), findsOneWidget);
+      expect(top(), 0);
+      scroll.jumpTo(10);
+      await tester.pump();
+      expect(top(), 10);
+      scroll.jumpTo(300);
+      await tester.pump();
+      expect(top(), 24);
+      expect(find.byType(ShaderMask), findsOneWidget);
+    });
+
+    test('越界用弹性回弹、不加拉伸滤镜，显式夹紧的列表仍夹紧', () {
+      const behavior = CampusScrollBehavior();
+      final context = _FakeContext();
+      expect(behavior.getScrollPhysics(context), isA<BouncingScrollPhysics>());
+      const child = SizedBox();
+      expect(identical(behavior.buildOverscrollIndicator(context, child, const ScrollableDetails.vertical(controller: null)), child), isTrue);
+      final clamped = const ClampingScrollPhysics().applyTo(behavior.getScrollPhysics(context));
+      final metrics = FixedScrollMetrics(minScrollExtent: 0, maxScrollExtent: 100, pixels: 0, viewportDimension: 100, axisDirection: AxisDirection.down, devicePixelRatio: 1);
+      expect(clamped.applyBoundaryConditions(metrics, -10), -10);
     });
 
     testWidgets('选择标签选中带勾可切换，开关行整行可点且读屏为开关', (tester) async {
@@ -490,3 +552,5 @@ void main() {
     });
   });
 }
+
+class _FakeContext extends Fake implements BuildContext {}

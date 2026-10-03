@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -170,7 +171,7 @@ class _AppearancePageState extends State<AppearancePage> {
         ),
         title: const Text('界面'),
       ),
-      body: SafeArea(
+      body: CampusScrollFade(child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(20),
           children: [
@@ -353,7 +354,7 @@ class _AppearancePageState extends State<AppearancePage> {
               ),
           ],
         ),
-      ),
+      )),
     );
   }
 }

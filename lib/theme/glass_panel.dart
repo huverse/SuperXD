@@ -114,3 +114,24 @@ class GlassPanel extends StatelessWidget {
     );
   }
 }
+
+// 导航层标记：顶栏、悬浮按钮这类浮在内容之上的控件层，其中的按钮画玻璃。
+// 不在导航层、也不在玻璃面板或浮层（GlassPanelScope）里的按钮属于内容区，画色调胶囊，见 campus_glass_button.dart。
+class CampusChrome extends InheritedWidget {
+  const CampusChrome({super.key, required super.child});
+
+  static bool of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<CampusChrome>() != null;
+
+  @override
+  bool updateShouldNotify(CampusChrome oldWidget) => false;
+}
+
+// [人工决策-2026-10-03 17:37:24] 顶栏保留整条，静止时透明、与主体同一背景，无底板和分割线；内容滚到栏下时由内容自身渐隐露出真实背景
+// （鸿蒙 GRADIENT_BLUR、iOS 滚动边缘的轻量做法），不额外模糊背景；栏内按钮仍是玻璃胶囊。取代整宽玻璃顶栏（与主体割裂）。
+class CampusTopBar extends StatelessWidget {
+  const CampusTopBar({super.key, required this.child});
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => CampusChrome(child: SafeArea(bottom: false, child: child));
+}
