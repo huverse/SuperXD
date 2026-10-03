@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/appearance_page.dart';
 import 'package:superxd/theme/campus_background.dart';
@@ -40,9 +41,22 @@ WallpaperTone _tone(int columns, int rows, List<int> Function(int cell) darkest,
 );
 
 Future<void> _until(WidgetTester tester, bool Function() done) async {
-  for (var attempt = 0; attempt < 300 && !done(); attempt++) {
+  for (var attempt = 0; attempt < 1000 && !done(); attempt++) {
     await Future<void>.delayed(const Duration(milliseconds: 20));
   }
+}
+
+// 业务完成信号（设置已写入、文件已删除）先于页面“保存中/导入中”的收尾：继续让真实异步跑到加载提示消失，再按控件动画时长推进，
+// 不用 pumpAndSettle 等“绝对静止”（慢机器上转圈还在播，CI 曾在清除壁纸后超时）。点按发生在真实异步里，先出一帧再看提示。
+Future<void> _settled(WidgetTester tester) async {
+  await tester.pump();
+  for (var attempt = 0; attempt < 1000 && find.byType(CampusLoading).evaluate().isNotEmpty; attempt++) {
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pump();
+  }
+  expect(find.byType(CampusLoading), findsNothing);
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.pump(const Duration(milliseconds: 400));
 }
 
 void main() {
@@ -178,7 +192,7 @@ void main() {
       await _until(tester, () => picks == 1);
       await Future<void>.delayed(const Duration(milliseconds: 50));
     });
-    await tester.pumpAndSettle();
+    await _settled(tester);
     expect(settings.wallpaperFile, isNull);
     expect(find.textContaining('请'), findsNothing);
     // 坏图：原地提示，缓存副本照样删除。
@@ -187,7 +201,7 @@ void main() {
       await tester.tap(find.text('自定义图片'));
       await _until(tester, () => !File(next!).existsSync());
     });
-    await tester.pumpAndSettle();
+    await _settled(tester);
     expect(find.text('无法读取这张图片，请换一张'), findsOneWidget);
     expect(File(next).existsSync(), isFalse);
     expect(settings.wallpaperFile, isNull);
@@ -204,7 +218,7 @@ void main() {
       await tester.tap(find.text('自定义图片'));
       await _until(tester, () => !File(next!).existsSync());
     });
-    await tester.pumpAndSettle();
+    await _settled(tester);
     expect(find.text('图片超过20MB，请换一张'), findsOneWidget);
     // 正常导入两次：目录只留最新一份，缓存副本删除。
     for (final name in ['first.png', 'second.png']) {
@@ -214,7 +228,7 @@ void main() {
         await tester.tap(find.text(before == null ? '自定义图片' : '更换图片'));
         await _until(tester, () => settings.wallpaperFile != null && settings.wallpaperFile?.path != before?.path && !File(next!).existsSync());
       });
-      await tester.pumpAndSettle();
+      await _settled(tester);
     }
     expect(find.textContaining('请换一张'), findsNothing);
     expect(File(next!).existsSync(), isFalse);
@@ -234,7 +248,7 @@ void main() {
       await tester.tap(find.text('默认云雾'));
       await _until(tester, () => settings.wallpaperFile == null && wallpaperDirectory.listSync().isEmpty);
     });
-    await tester.pumpAndSettle();
+    await _settled(tester);
     expect(settings.wallpaperFile, isNull);
     expect(wallpaperDirectory.listSync(), isEmpty);
     expect(find.text('模糊'), findsNothing);
