@@ -1,9 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
 import 'package:superxd/theme/campus_glass_button.dart';
+import 'package:superxd/theme/campus_glass_press.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -34,20 +37,35 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('可见胶囊更紧凑但48dp触区不缩小，按压有连续反馈', (tester) async {
+  testWidgets('可见胶囊更紧凑但48dp触区不缩小，按下连续鼓起、松手过冲回位，减少动画不形变', (tester) async {
     var clicks = 0;
-    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Scaffold(body: Center(child: FilledButton(onPressed: () => clicks++, child: const Text('开始同步'))))));
+    Future<void> mount(MediaQueryData media) => tester.pumpWidget(MaterialApp(theme: campusTheme(), home: MediaQuery(data: media, child: Scaffold(body: Center(child: FilledButton(onPressed: () => clicks++, child: const Text('开始同步')))))));
+    await mount(const MediaQueryData());
     final button = find.byType(FilledButton);
     final surface = find.byType(CampusGlassButtonSurface);
+    double scale() => tester.widget<Transform>(find.descendant(of: surface, matching: find.byType(Transform)).first).transform.entry(0, 0);
     expect(tester.getSize(surface).height, inInclusiveRange(36, 40));
     expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
     final rect = tester.getRect(button);
     await tester.tapAt(Offset(rect.center.dx, rect.top + 1)); await tester.pumpAndSettle(); expect(clicks, 1);
-    final gesture = await tester.startGesture(rect.center);await tester.pump(const Duration(milliseconds: 110));await tester.pump();await tester.pump(const Duration(milliseconds: 60));
-    final transform = tester.widget<Transform>(find.descendant(of: surface, matching: find.byType(Transform)).first);
-    expect(tester.widget<AnimatedScale>(find.descendant(of: surface, matching: find.byType(AnimatedScale))).scale, .98);
-    expect(transform.transform.entry(0, 0), inExclusiveRange(.979, 1));
-    await gesture.up();await tester.pumpAndSettle();expect(clicks,2);
+    final gesture = await tester.startGesture(rect.center);await tester.pump(const Duration(milliseconds: 110));await tester.pump(const Duration(milliseconds: 16));
+    final early = scale();
+    await tester.pump(const Duration(milliseconds: 80));
+    final pressed = scale();
+    expect(early, inExclusiveRange(1, pressed));
+    expect(pressed, inInclusiveRange(1.03, 1 + campusGlassSwell + .001));
+    await gesture.up();
+    var lowest = pressed;
+    for (var frame = 0; frame < 40; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      lowest = math.min(lowest, scale());
+    }
+    expect(lowest, lessThan(1));
+    await tester.pumpAndSettle();expect(scale(), closeTo(1, .0001));expect(clicks,2);
+    await mount(const MediaQueryData(disableAnimations: true));
+    final reduced = await tester.startGesture(tester.getCenter(button));await tester.pump(const Duration(milliseconds: 200));
+    expect(scale(), 1);
+    await reduced.up();await tester.pumpAndSettle();expect(clicks,3);
     expect(tester.takeException(),isNull);
   });
 

@@ -1,8 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/physics.dart';
 import 'package:go_router/go_router.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_glass_material.dart';
+import 'package:superxd/theme/campus_glass_tier.dart';
+import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/glass_panel.dart';
 
 class ShellPage extends StatelessWidget {
@@ -73,7 +78,7 @@ class DragNavigationBar extends StatefulWidget {
 
 // [人工决策-2026-09-27 16:30:11] 栏内起拖后即使离栏仍跟随横坐标；正常松手吸附最近模块且只提交一次，系统取消/后台不提交。
 class _DragNavigationBarState extends State<DragNavigationBar>
-    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   static const labels = ['今天', '服务', '消息', '我的'];
   static const icons = [
     CampusIcons.today,
@@ -94,11 +99,20 @@ class _DragNavigationBarState extends State<DragNavigationBar>
     upperBound: 3,
     value: widget.selected.toDouble(),
   );
+  // 透镜升起进度：按下升起为玻璃透镜，回位完成后落回静态胶囊。
+  late final _lift = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 160),
+    reverseDuration: const Duration(milliseconds: 260),
+  );
   int? _pointer;
   bool _dragging = false;
   bool _rtl = false;
   bool _initialized = false;
   Offset? _lastGlobal;
+  Duration? _lastMove;
+  // 拖动速度，单位为每秒多少槽；松手时作为回位弹簧的初速。
+  double _velocity = 0;
 
   double _slotFor(int index) => (_rtl ? 3 - index : index).toDouble();
   int _indexAt(double slot) => _rtl ? 3 - slot.round() : slot.round();
@@ -110,15 +124,21 @@ class _DragNavigationBarState extends State<DragNavigationBar>
 
   void _settle(int index) {
     final target = _slotFor(index);
-    if (!mounted || MediaQuery.disableAnimationsOf(context)) {
+    final spring = mounted ? campusGlassTravelSpring(context) : null;
+    final velocity = _velocity;
+    _velocity = 0;
+    if (spring == null) {
       _position.value = target;
-    } else {
-      _position.animateTo(
-        target,
-        duration: const Duration(milliseconds: 180),
-        curve: Curves.easeOutCubic,
-      );
+      _lift.value = 0;
+      return;
     }
+    _position
+        .animateWith(
+          SpringSimulation(spring, _position.value, target, velocity),
+        )
+        .whenCompleteOrCancel(() {
+          if (mounted && _pointer == null) _lift.reverse();
+        });
   }
 
   void _cancel() {
@@ -126,6 +146,15 @@ class _DragNavigationBarState extends State<DragNavigationBar>
     _dragging = false;
     _lastGlobal = null;
     _settle(widget.selected);
+  }
+
+  void _rest() {
+    _pointer = null;
+    _dragging = false;
+    _velocity = 0;
+    _position.stop();
+    _position.value = _slotFor(widget.selected);
+    _lift.value = 0;
   }
 
   void _commit(int index) {
@@ -150,12 +179,7 @@ class _DragNavigationBarState extends State<DragNavigationBar>
       _dragging = false;
       _position.value = _slotFor(widget.selected);
     }
-    if (!TickerMode.valuesOf(context).enabled) {
-      _pointer = null;
-      _dragging = false;
-      _position.stop();
-      _position.value = _slotFor(widget.selected);
-    }
+    if (!TickerMode.valuesOf(context).enabled) _rest();
   }
 
   @override
@@ -171,18 +195,14 @@ class _DragNavigationBarState extends State<DragNavigationBar>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state != AppLifecycleState.resumed) {
-      _pointer = null;
-      _dragging = false;
-      _position.stop();
-      _position.value = _slotFor(widget.selected);
-    }
+    if (state != AppLifecycleState.resumed) _rest();
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _position.dispose();
+    _lift.dispose();
     super.dispose();
   }
 
@@ -201,12 +221,22 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                 if (_pointer != null) return;
                 _pointer = event.pointer;
                 _lastGlobal = event.position;
+                _lastMove = event.timeStamp;
+                _velocity = 0;
                 _position.stop();
+                _lift.forward();
               },
               onPointerMove: (event) {
                 if (event.pointer != _pointer) return;
                 _lastGlobal = event.position;
-                if (_dragging) _position.value = _slotAt(event.position);
+                if (!_dragging) return;
+                final slot = _slotAt(event.position);
+                final seconds = (event.timeStamp - _lastMove!).inMicroseconds / 1e6;
+                if (seconds > 0) {
+                  _velocity = _velocity * .5 + (slot - _position.value) / seconds * .5;
+                }
+                _lastMove = event.timeStamp;
+                _position.value = slot;
               },
               onPointerUp: (event) {
                 if (event.pointer != _pointer) return;
@@ -234,10 +264,15 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                   if (_pointer != null) _cancel();
                 },
                 child: AnimatedBuilder(
-                  animation: _position,
+                  animation: Listenable.merge([_position, _lift, campusGlassReady]),
                   builder: (context, _) {
                     final preview = _indexAt(_position.value);
-                    return Stack(
+                    final tier = CampusGlassScope.tierOf(context, ready: campusGlassReady.value);
+                    // 拖动和回位期间升起玻璃透镜（与 iOS 底栏一致），静止后落回着色胶囊；磨砂、实色档不升起。
+                    final lens =
+                        _lift.value > .01 &&
+                        GlassPanelScope.maybeOf(context)?.opaque != true &&
+                        (tier == CampusGlassTier.full || tier == CampusGlassTier.standard);                    return Stack(
                       children: [
                         Positioned(
                           left: _position.value * slotWidth + 4,
@@ -303,6 +338,31 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                               ),
                           ],
                         ),
+                        // 指示器自带 Positioned.fill，须直接放在 Stack 里，所以外层再包一层 Stack 来忽略点击。
+                        if (lens)
+                          Positioned.fill(
+                            child: IgnorePointer(
+                              child: Stack(
+                                children: [
+                                  liquid.AnimatedGlassIndicator(
+                                    velocity: (_position.isAnimating ? _position.velocity : _velocity) * 2 / 3,
+                                    itemCount: labels.length,
+                                    alignment: Alignment(_position.value / 3 * 2 - 1, 0),
+                                    thickness: _lift.value,
+                                    quality: campusGlassQuality(tier),
+                                    indicatorColor: CampusPalette.of(context).surfaceSelected,
+                                    isBackgroundIndicator: false,
+                                    paintBackground: false,
+                                    paintGlass: true,
+                                    padding: const EdgeInsets.all(4),
+                                    exactOffset: _position.value * slotWidth,
+                                    exactWidth: slotWidth - 8,
+                                    borderRadius: 24,
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                       ],
                     );
                   },

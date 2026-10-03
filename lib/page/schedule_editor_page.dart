@@ -4,6 +4,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
@@ -310,10 +311,14 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
         ),
         title: const Text('管理课程'),
         actions: [
-          IconButton(
-            tooltip: '历史版本',
-            onPressed: _busy || _loading ? null : _history,
-            icon: const CampusIcon(CampusIcons.history),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: CampusGlassCircleButton(
+              label: '历史版本',
+              size: 44,
+              onPressed: _busy || _loading ? null : _history,
+              icon: const CampusIcon(CampusIcons.history),
+            ),
           ),
         ],
       ),

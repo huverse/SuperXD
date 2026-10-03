@@ -1,5 +1,15 @@
 import 'package:flutter/material.dart';
 
+// [人工决策-2026-10-02 16:43:38] 只有玻璃控件用物理弹簧：按下近临界阻尼快速到位不回弹，松手低阻尼过冲一次再回位；页面转场、列表、切日、课表形变仍不回弹；减少动画时不用弹簧，直接到位。
+SpringDescription? campusGlassSpring(BuildContext context, {required bool release}) =>
+    MediaQuery.disableAnimationsOf(context) ? null : release ? _glassRelease : _glassPress;
+// 指示器跨格移动用的弹簧：过冲约5%，比按压回位更收敛，避免长距离移动时晃动。
+SpringDescription? campusGlassTravelSpring(BuildContext context) =>
+    MediaQuery.disableAnimationsOf(context) ? null : _glassTravel;
+final _glassPress = SpringDescription.withDampingRatio(mass: 1, stiffness: 900, ratio: .9);
+final _glassRelease = SpringDescription.withDampingRatio(mass: 1, stiffness: 340, ratio: .45);
+final _glassTravel = SpringDescription.withDampingRatio(mass: 1, stiffness: 500, ratio: .7);
+
 // 仅视觉生命周期；后台暂停不代表取消业务请求。
 class CampusMotion extends StatefulWidget {
   const CampusMotion({super.key, required this.child});
