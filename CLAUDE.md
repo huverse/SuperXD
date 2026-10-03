@@ -106,6 +106,7 @@
     - 自定义壁纸：只保留当前一张，不超过 20MB；换图或恢复云雾时删除，启动时清理残留；选图插件留在缓存里的副本用完即删。
     - 成绩：单次载荷上限 4MB，课程上限 1000 条。
     - 课前提醒：只安排未来 14 天、最多 128 条，每次对账整体替换；提醒设置每学期一行。
+    - 日历导出：单次最多 5000 个事件；缓存里只留最近一次导出的文件，下次导出前清空。
     - 新增只增不删的数据时，必须同时给出上限或清理策略。
 11. 日志
     - 只经 domain/campus_log.dart 的 campusLog 输出。应用入口必须注入 debugPrint，日志才会进入 logcat。
@@ -149,7 +150,7 @@
 - 教务协议与解析：contract_test.dart、kingo_client_response_test.dart、sync_boundary_regression_test.dart、grades_test.dart
 - 课表数据：schedule_edit_test.dart、schedule_version_test.dart、schedule_migration_test.dart、bells_persistence_test.dart、period_day_test.dart、schedule_calendar_test.dart
 - 同步编排与同步界面：campus_sync_test.dart、sync_ui_test.dart、transition_sync_test.dart
-- 课程实例与课前提醒：reminder_test.dart
+- 课程实例、课前提醒与日历导出：reminder_test.dart、calendar_export_test.dart
 - 页面交互：
   - today_navigation_test.dart、today_date_transition_test.dart、schedule_experience_test.dart、schedule_editor_ui_test.dart
   - grades_ui_test.dart、form_spacing_test.dart、navigation_drag_test.dart、shell_layout_test.dart
@@ -178,4 +179,4 @@
   - 结果页和下载页随进度通知整页重建
   - FrostTexture 逐点绘制颗粒
   - 成绩响应分块累加
-- 平台：只有 Android 宿主。验证只在模拟器（API 36、API 34）上做过，真机和 iOS 都未验收。原生导出通道见 MainActivity.kt 与 ToolboxFileExporter.kt。
+- 平台：只有 Android 宿主。验证只在模拟器（API 36、API 34）上做过，真机和 iOS 都未验收。原生导出通道见 MainActivity.kt、ToolboxFileExporter.kt 与 CalendarExporter.kt（日历文件只经 CalendarFileProvider 开放缓存 calendar_export 文件夹）。

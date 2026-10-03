@@ -15,6 +15,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('隐私政策'), findsOneWidget);
     expect(find.textContaining('HTTP 明文'), findsOneWidget);
+    expect(find.textContaining('交给你选择的日历应用'), findsOneWidget);
     await tester.scrollUntilVisible(
       find.text('删除与设备备份'),
       350,

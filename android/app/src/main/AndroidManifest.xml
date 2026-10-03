@@ -24,6 +24,16 @@
                 <action android:name="android.intent.action.QUICKBOOT_POWERON" />
             </intent-filter>
         </receiver>
+        <!-- 日历导出：把缓存里的 .ics 以只读授权交给日历或分享目标。 -->
+        <provider
+            android:name=".CalendarFileProvider"
+            android:authorities="${applicationId}.calendar_export"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/calendar_export_paths" />
+        </provider>
         <activity
             android:name=".MainActivity"
             android:exported="true"

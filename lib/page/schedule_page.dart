@@ -6,6 +6,8 @@ import 'package:go_router/go_router.dart';
 import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/domain/period_spans.dart';
 import 'package:superxd/page/reminder_dialog.dart';
+import 'package:superxd/page/calendar_export.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -44,10 +46,11 @@ class ScheduleSelection {
 }
 
 class SchedulePage extends StatefulWidget {
-  const SchedulePage({super.key, required this.gateway, this.reminders});
+  const SchedulePage({super.key, required this.gateway, this.reminders, this.openCalendar = openCalendarFile});
   final CampusGateway gateway;
   // 为空时不显示课前提醒入口（测试与未接入提醒的环境）。
   final CampusReminders? reminders;
+  final CalendarOpener openCalendar;
   @override
   State<SchedulePage> createState() => _SchedulePageState();
 }
@@ -244,6 +247,22 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     if (mounted) await showCampusNotice(context, text);
   }
 
+  Future<void> _more(BuildContext anchor) async {
+    final action = await showCampusMenu<String>(anchor, items: [
+      if (widget.reminders != null) const CampusMenuItem(value: 'reminder', label: '课前提醒', icon: CampusIcons.reminder),
+      if (_term != null) const CampusMenuItem(value: 'export', label: '导出到日历', icon: CampusIcons.exportCalendar),
+    ]);
+    if (!mounted) return;
+    switch (action) {
+      case 'reminder':
+        await showReminderSettings(context, gateway: widget.gateway, reminders: widget.reminders!);
+      case 'export' when !_knownSchedule:
+        await _notice('该学期尚未同步，请在今天页选择这个学年同步。');
+      case 'export':
+        await exportTermCalendar(context, term: _term!, termStartDate: _start, bells: _bells, courses: _courses, open: widget.openCalendar);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
@@ -256,9 +275,8 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
           Expanded(child: Text(_selection.yearOverview && _selection.year.isNotEmpty ? '${_selection.year}–${int.parse(_selection.year)+1}' : '课表', style: Theme.of(context).textTheme.titleLarge)),
           TextButton(onPressed: _term == null || _loading ? null : _editStart, child: const Text('开学日')),
           TextButton(onPressed: _loading ? null : _today, child: const Text('今天')),
-          if (widget.reminders case final reminders?)
-            IconButton(tooltip: '课前提醒', onPressed: () => showReminderSettings(context, gateway: widget.gateway, reminders: reminders), icon: const CampusIcon(CampusIcons.reminder)),
           IconButton(tooltip: '管理课程', onPressed: _term == null || _loading ? null : _manage, icon: const CampusIcon(CampusIcons.manageSchedule)),
+          Builder(builder: (anchor) => IconButton(tooltip: '更多操作', onPressed: _loading || _term == null && widget.reminders == null ? null : () => _more(anchor), icon: const CampusIcon(CampusIcons.manage))),
         ])))),
         SizedBox(height: 48 * scale, child: Row(children: [for (final range in ScheduleRange.values) Expanded(child: InkWell(
           onTap: () => _selectRange(range), child: Center(child: AnimatedContainer(duration: motion, padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8), decoration: BoxDecoration(color: range == _selection.range ? CampusPalette.of(context).surfaceSelected : Colors.transparent, borderRadius: BorderRadius.circular(12)), child: Text(switch(range) { ScheduleRange.day => '天', ScheduleRange.term => '学期', ScheduleRange.year => '学年' }, style: TextStyle(fontSize: 16, color: range == _selection.range ? CampusPalette.of(context).primary : CampusPalette.of(context).onSurfaceVariant)))),
