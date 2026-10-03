@@ -6,6 +6,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_background.dart';
+import 'package:superxd/theme/campus_glass_blend.dart';
 import 'package:superxd/theme/campus_glass_material.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/domain/campus_log.dart';
@@ -22,6 +23,37 @@ void shiftCampusOverlayDepth(int delta) {
     binding.addPostFrameCallback((_) => campusOverlayDepth.value += delta);
   } else {
     campusOverlayDepth.value += delta;
+  }
+}
+
+// 浮层路由（弹窗、弹层、菜单）的层数登记：装入时加一；开始关闭（didPop）就减一，栏和遮罩一起恢复玻璃，
+// 不等关闭动画结束、遮罩已消失才突然换回；没经过 pop 被直接移除时在 dispose 补减，只减一次。
+mixin CampusOverlayDepthRoute<T> on Route<T> {
+  bool _counted = false;
+
+  @override
+  void install() {
+    super.install();
+    _counted = true;
+    shiftCampusOverlayDepth(1);
+  }
+
+  @override
+  bool didPop(T? result) {
+    _release();
+    return super.didPop(result);
+  }
+
+  @override
+  void dispose() {
+    _release();
+    super.dispose();
+  }
+
+  void _release() {
+    if (!_counted) return;
+    _counted = false;
+    shiftCampusOverlayDepth(-1);
   }
 }
 
@@ -61,56 +93,69 @@ class GlassPanel extends StatelessWidget {
   final bool floating;
   @override
   Widget build(BuildContext context) {
-    final radius = floating ? 32.0 : 0.0;
+    final fallback = CampusPalette.of(context).glassFallback;
     return ListenableBuilder(
       listenable: Listenable.merge([campusGlassReady, campusOverlayDepth]),
       builder: (context, _) {
         final ready = campusGlassReady.value;
-        final tier = solid || campusOverlayDepth.value > 0
-            ? CampusGlassTier.solid
-            : CampusGlassScope.tierOf(context, ready: ready);
-        final opaque = tier == CampusGlassTier.solid;
-        final content = Stack(
-          children: [
-            Positioned.fill(child: FrostTexture(radius: radius)),
-            GlassPanelScope(opaque: opaque || !ready, child: child),
-          ],
-        );
-        if (opaque) {
-          return DecoratedBox(
-            decoration: BoxDecoration(
-              color: CampusPalette.of(context).glassFallback,
-              borderRadius: BorderRadius.circular(radius),
-            ),
-            child: content,
-          );
-        }
-        if (!ready) {
-          return ClipRRect(
-            borderRadius: BorderRadius.circular(radius),
-            child: BackdropFilter(
-              filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
-              child: ColoredBox(
-                color: CampusPalette.of(context).glassTint.withValues(alpha: .86),
-                child: content,
-              ),
-            ),
-          );
-        }
-        // 浮动栏下有内容穿过：减淡着色透出内容，加大模糊保标签可读，边缘高光与折射体现液态透镜。
-        return liquid.AdaptiveGlass(
-          shape: liquid.LiquidRoundedSuperellipse(borderRadius: radius),
-          quality: campusGlassQuality(tier),
-          allowElevation: false,
-          settings: campusGlassSettings(
-            CampusPalette.of(context),
-            CampusGlassRole.navigation,
-            tier,
-            floating: floating,
+        // 弹窗打开时改实色、换档时都经盖板过渡；弹窗从开始关闭就恢复玻璃（见 campus_transitions.dart），和遮罩一起淡出。
+        return CampusGlassBlend<(bool, CampusGlassTier)>(
+          look: (
+            ready,
+            solid || campusOverlayDepth.value > 0 ? CampusGlassTier.solid : CampusGlassScope.tierOf(context, ready: ready),
           ),
-          child: content,
+          opaque: (look) => look.$2 == CampusGlassTier.solid,
+          builder: (context, look, cover) => _surface(context, look.$1, look.$2, cover, fallback),
         );
       },
+    );
+  }
+
+  Widget _surface(BuildContext context, bool ready, CampusGlassTier tier, double cover, Color fallback) {
+    final radius = floating ? 32.0 : 0.0;
+    final opaque = tier == CampusGlassTier.solid;
+    final content = Stack(
+      children: [
+        if (!opaque && cover > 0)
+          Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(color: fallback.withValues(alpha: cover), borderRadius: BorderRadius.circular(radius)),
+            ),
+          ),
+        Positioned.fill(child: FrostTexture(radius: radius)),
+        GlassPanelScope(opaque: opaque || !ready, child: child),
+      ],
+    );
+    if (opaque) {
+      return DecoratedBox(
+        decoration: BoxDecoration(color: fallback, borderRadius: BorderRadius.circular(radius)),
+        child: content,
+      );
+    }
+    if (!ready) {
+      return ClipRRect(
+        borderRadius: BorderRadius.circular(radius),
+        child: BackdropFilter(
+          filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+          child: ColoredBox(
+            color: CampusPalette.of(context).glassTint.withValues(alpha: .86),
+            child: content,
+          ),
+        ),
+      );
+    }
+    // 浮动栏下有内容穿过：减淡着色透出内容，加大模糊保标签可读，边缘高光与折射体现液态透镜。
+    return liquid.AdaptiveGlass(
+      shape: liquid.LiquidRoundedSuperellipse(borderRadius: radius),
+      quality: campusGlassQuality(tier),
+      allowElevation: false,
+      settings: campusGlassSettings(
+        CampusPalette.of(context),
+        CampusGlassRole.navigation,
+        tier,
+        floating: floating,
+      ),
+      child: content,
     );
   }
 }

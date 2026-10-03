@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -59,6 +60,49 @@ class _AppearancePageState extends State<AppearancePage> {
   String? _error;
   bool _importing = false;
   String? _wallpaperError;
+  // 滑杆预览后待保存的定时器：系统取消拖动、读屏增减都没有松手回调，停手 300ms 后补存。
+  Timer? _lookSave;
+  DisplaySettings? _settings;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _settings = DisplayScope.of(context);
+  }
+
+  // 离开页面时还没存的预览立即保存，页面已不在，失败只记日志。
+  @override
+  void dispose() {
+    if (_lookSave?.isActive == true) {
+      _lookSave!.cancel();
+      _storeLook(_settings!).catchError((Object error, StackTrace stack) {
+        campusLog('[Appearance] action=save_wallpaper_look errorType=${error.runtimeType}\n$stack');
+      });
+    }
+    super.dispose();
+  }
+
+  Future<void> _storeLook(DisplaySettings settings) {
+    final look = settings.wallpaperLook.value;
+    return settings.setWallpaperLook(blur: look.blur, fade: look.fade);
+  }
+
+  // 拖动中逐帧预览、不落库；正常松手立即保存，其余情况停手后补存。保存失败在背景区原地提示。
+  void _preview(DisplaySettings settings, {int? blur, int? fade}) {
+    settings.previewWallpaper(blur: blur, fade: fade);
+    _lookSave?.cancel();
+    _lookSave = Timer(const Duration(milliseconds: 300), () => _commitLook(settings));
+  }
+
+  Future<void> _commitLook(DisplaySettings settings) async {
+    _lookSave?.cancel();
+    try {
+      await _storeLook(settings);
+    } catch (error, stack) {
+      campusLog('[Appearance] action=save_wallpaper_look errorType=${error.runtimeType}\n$stack');
+      if (mounted) setState(() => _wallpaperError = '保存失败，请重试');
+    }
+  }
 
   // 选图、取色、复制在发起处原地显示进度与错误；取消选图不提示。选图的缓存副本用完即删，不在缓存里累积。
   Future<void> _importWallpaper(DisplaySettings settings) async {
@@ -119,9 +163,18 @@ class _AppearancePageState extends State<AppearancePage> {
   List<Widget> _wallpaperSection(BuildContext context, DisplaySettings settings) {
     final busy = _saving || _importing;
     final custom = settings.wallpaperFile != null;
-    Widget levels(List<String> labels, int selected, Future<void> Function(int) choose) => Wrap(spacing: 8, runSpacing: 8, children: [
-      for (var level = 0; level < labels.length; level++)
-        CampusGlassChip(label: labels[level], selected: selected == level, onSelected: busy ? null : (_) => _save(() => choose(level))),
+    // 模糊与透明度连续可调（0–100%），拖动时背景实时变化；透明度只在保证文字可读的下限之上调，不会让文字看不清。
+    Widget slider(String label, int value, void Function(int) preview) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Row(children: [
+        Expanded(child: Text(label, style: Theme.of(context).textTheme.titleMedium)),
+        Text('$value%', style: TextStyle(color: CampusPalette.of(context).onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()])),
+      ]),
+      CampusSlider(
+        value: value / DisplaySettings.wallpaperMax,
+        label: label,
+        onChanged: busy ? null : (fraction) => preview((fraction * DisplaySettings.wallpaperMax).round()),
+        onChangeEnd: busy ? null : (_) => _commitLook(settings),
+      ),
     ]);
     return [
       const SizedBox(height: 24),
@@ -141,14 +194,15 @@ class _AppearancePageState extends State<AppearancePage> {
             label: const Text('更换图片'),
           ),
         ),
-        const SizedBox(height: 12),
-        Text('模糊', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        levels(const ['无', '轻', '强'], settings.wallpaperBlur, settings.setWallpaperBlur),
-        const SizedBox(height: 12),
-        Text('淡化', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 8),
-        levels(const ['标准', '较淡', '最淡'], settings.wallpaperFade, settings.setWallpaperFade),
+        const SizedBox(height: 16),
+        ValueListenableBuilder<({int blur, int fade})>(
+          valueListenable: settings.wallpaperLook,
+          builder: (context, look, _) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+            slider('模糊', look.blur, (value) => _preview(settings, blur: value)),
+            const SizedBox(height: 8),
+            slider('透明度', look.fade, (value) => _preview(settings, fade: value)),
+          ]),
+        ),
       ],
       if (_importing) const CampusLoading(label: '正在导入图片', inline: true),
       if (_wallpaperError != null)

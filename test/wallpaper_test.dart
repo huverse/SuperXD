@@ -4,7 +4,9 @@ import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/local/display_settings.dart';
@@ -12,6 +14,7 @@ import 'package:superxd/page/appearance_page.dart';
 import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/wallpaper_tone.dart';
 
 Future<Uint8List> _png(int width, int height, void Function(Canvas canvas, Size size) draw) async {
@@ -107,8 +110,7 @@ void main() {
       final texts = [palette.onSurface, palette.onSurfaceVariant, palette.primary].map((color) => color.computeLuminance());
       for (final entry in tones.entries) {
         final tone = entry.value;
-        final alphas = wallpaperVeilAlphas(tone, palette, 0);
-        final stronger = wallpaperVeilAlphas(tone, palette, .4);
+        final alphas = wallpaperVeilAlphas(tone, palette);
         final worst = palette.isDark ? tone.brightest : tone.darkest;
         for (var cell = 0; cell < alphas.length; cell++) {
           final alpha = alphas[cell];
@@ -120,13 +122,21 @@ void main() {
           for (final text in texts) {
             expect(_contrast(text, mixed), greaterThanOrEqualTo(4.5), reason: '${palette.id} ${palette.isDark} ${entry.key} cell=$cell');
           }
-          expect(stronger[cell], greaterThanOrEqualTo(math.max(alpha, .4) - 1e-9));
-          expect(stronger[cell], lessThanOrEqualTo(1));
+          // 用户淡化量只会在下限之上加，单调、拉满即整张盖住。
+          var previous = alpha;
+          for (final fade in [0.0, .25, .5, .75, 1.0]) {
+            final veiled = wallpaperVeilAlpha(alpha, fade);
+            expect(veiled, greaterThanOrEqualTo(previous - 1e-12));
+            expect(veiled, lessThanOrEqualTo(1));
+            previous = veiled;
+          }
+          expect(wallpaperVeilAlpha(alpha, 0), alpha);
+          expect(wallpaperVeilAlpha(alpha, 1), 1);
         }
       }
       // 单格暗斑：淡化从峰值向四周约三格平滑下降，相邻格之差不超过峰值的三分之一，壁纸上不显网格。
       final spot = _tone(16, 32, (cell) => cell == 16 * 15 + 8 ? (palette.isDark ? [255, 255, 255] : [0, 0, 0]) : (palette.isDark ? [0, 0, 0] : [255, 255, 255]), (cell) => cell == 16 * 15 + 8 ? (palette.isDark ? [255, 255, 255] : [0, 0, 0]) : (palette.isDark ? [0, 0, 0] : [255, 255, 255]));
-      final bump = wallpaperVeilAlphas(spot, palette, 0);
+      final bump = wallpaperVeilAlphas(spot, palette);
       final peak = bump.reduce(math.max);
       expect(peak, greaterThan(.3), reason: palette.id);
       for (var row = 0; row < 32; row++) {
@@ -135,27 +145,56 @@ void main() {
         }
       }
       // 浅色壁纸在浅色主题下本就可读，不额外淡化。
-      if (!palette.isDark) expect(wallpaperVeilAlphas(tones['纯白']!, palette, 0).every((alpha) => alpha == 0), isTrue, reason: palette.id);
+      if (!palette.isDark) expect(wallpaperVeilAlphas(tones['纯白']!, palette).every((alpha) => alpha == 0), isTrue, reason: palette.id);
     }
   });
 
-  testWidgets('设了壁纸时背景不再循环、可停稳，画壁纸与淡化层；高对比度时不画壁纸', (tester) async {
+  testWidgets('设了壁纸时背景不再循环、可停稳，画壁纸与淡化层；外观变化平滑跟随，与云雾互换交叉淡化；高对比度时不画壁纸', (tester) async {
     final bytes = (await tester.runAsync(() => _png(90, 160, (canvas, size) => canvas.drawColor(const Color(0xFF203040), BlendMode.src))))!;
     final tone = (await tester.runAsync(() => measureWallpaper(bytes)))!;
-    final wallpaper = CampusWallpaper(image: MemoryImage(bytes), tone: tone, blurLevel: 2, fadeLevel: 0);
-    Widget host({bool highContrast = false}) => MaterialApp(
+    final look = ValueNotifier((blur: 67, fade: 0));
+    addTearDown(look.dispose);
+    final wallpaper = CampusWallpaper(image: MemoryImage(bytes), tone: tone, look: look);
+    Widget host({bool highContrast = false, bool custom = true}) => MaterialApp(
       theme: campusTheme(),
-      home: MediaQuery(data: MediaQueryData(size: const Size(400, 800), highContrast: highContrast), child: CampusAtmosphere(wallpaper: wallpaper, child: const SizedBox.expand())),
+      home: MediaQuery(data: MediaQueryData(size: const Size(400, 800), highContrast: highContrast), child: CampusAtmosphere(phase: .3, wallpaper: custom ? wallpaper : null, child: const SizedBox.expand())),
     );
+    final fog = find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter);
+    double sigma() => (tester.widget<ImageFiltered>(find.byType(ImageFiltered)).imageFilter as dynamic).sigmaX as double;
     await tester.pumpWidget(host());
     await tester.pumpAndSettle();
     expect(find.byType(Image), findsOneWidget);
-    expect(find.byType(ImageFiltered), findsOneWidget);
-    expect(find.descendant(of: find.byType(CampusAtmosphere), matching: find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter)), findsNothing);
+    expect(sigma(), closeTo(.67 * CampusWallpaper.maxBlurSigma, .01));
+    expect(fog, findsNothing);
+    // 滑杆改值时模糊平滑跟随，中途是中间值；模糊为 0 时不再套滤镜。
+    look.value = (blur: 0, fade: 50);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 60));
+    expect(sigma(), allOf(greaterThan(0), lessThan(.67 * CampusWallpaper.maxBlurSigma)));
+    await tester.pumpAndSettle();
+    expect(find.byType(ImageFiltered), findsNothing);
+    // 恢复云雾：中途两层同在、交叉淡化，结束只剩云雾。
+    await tester.pumpWidget(host(custom: false));
+    await tester.pump(const Duration(milliseconds: 200));
+    expect([find.byType(Image).evaluate().length, fog.evaluate().length], [1, 1]);
+    await tester.pumpAndSettle();
+    expect(find.byType(Image), findsNothing);
+    // 换上壁纸：先解码好再换，解码完成前仍是云雾（不先淡到底色）；完成后从云雾直接交叉淡化到图片。
+    await tester.pumpWidget(host());
+    await tester.pump();
+    expect([find.byType(Image).evaluate().length, fog.evaluate().length], [0, 1]);
+    for (var attempt = 0; attempt < 200 && find.byType(Image).evaluate().isEmpty; attempt++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+      await tester.pump();
+    }
+    await tester.pump(const Duration(milliseconds: 200));
+    expect([find.byType(Image).evaluate().length, fog.evaluate().length], [1, 1]);
+    await tester.pumpAndSettle();
+    expect([find.byType(Image).evaluate().length, fog.evaluate().length], [1, 0]);
     await tester.pumpWidget(host(highContrast: true));
     await tester.pumpAndSettle();
     expect(find.byType(Image), findsNothing);
-    expect(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter), findsOneWidget);
+    expect(fog, findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 
@@ -234,15 +273,38 @@ void main() {
     expect(File(next!).existsSync(), isFalse);
     expect(wallpaperDirectory.listSync().map((entity) => entity.path), [settings.wallpaperFile!.path]);
     expect(WallpaperTone.decode(settings.wallpaperTone), isNotNull);
-    expect(settings.wallpaperBlur, 1);
+    expect([settings.wallpaperBlur, settings.wallpaperFade], [DisplaySettings.defaultWallpaperBlur, 0]);
     final list = find.byType(Scrollable).first;
-    await tester.scrollUntilVisible(find.text('强'), 120, scrollable: list);
-    await tester.tap(find.text('强'));
+    await tester.scrollUntilVisible(find.text('透明度'), 120, scrollable: list);
     await tester.pumpAndSettle();
-    await tester.scrollUntilVisible(find.text('最淡'), 120, scrollable: list);
-    await tester.tap(find.text('最淡'));
+    expect(find.text('${DisplaySettings.defaultWallpaperBlur}%'), findsOneWidget);
+    // 拖动中只预览（背景与百分比实时变化），松手才落库。
+    final fade = find.byType(Slider).last;
+    final gesture = await tester.startGesture(tester.getCenter(fade) - Offset(tester.getSize(fade).width / 2 - 24, 0));
+    await gesture.moveBy(const Offset(40, 0));
+    await tester.pump();
+    await gesture.moveBy(const Offset(80, 0));
+    await tester.pump();
+    final previewed = settings.wallpaperLook.value.fade;
+    expect(previewed, greaterThan(0));
+    expect(settings.wallpaperFade, 0);
+    expect(find.text('$previewed%'), findsOneWidget);
+    await gesture.up();
+    await tester.pump();
+    expect(settings.wallpaperFade, previewed);
+    // 玻璃滑杆的读屏增减没有松手回调：停手后补存。
+    campusGlassReady.value = true;
+    addTearDown(() => campusGlassReady.value = false);
+    final handle = tester.ensureSemantics();
+    await tester.pump();
+    expect(find.byType(liquid.GlassSlider), findsNWidgets(2));
+    tester.semantics.increase(find.semantics.byPredicate((node) => node.label == '模糊' && node.getSemanticsData().hasAction(SemanticsAction.increase)));
+    await tester.pump();
+    expect(settings.wallpaperBlur, DisplaySettings.defaultWallpaperBlur);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(settings.wallpaperBlur, greaterThan(DisplaySettings.defaultWallpaperBlur));
+    handle.dispose();
     await tester.pumpAndSettle();
-    expect([settings.wallpaperBlur, settings.wallpaperFade], [2, 2]);
     await tester.scrollUntilVisible(find.text('默认云雾'), -120, scrollable: list);
     await tester.runAsync(() async {
       await tester.tap(find.text('默认云雾'));

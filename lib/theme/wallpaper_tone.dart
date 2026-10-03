@@ -103,9 +103,10 @@ Future<WallpaperTone> measureWallpaper(Uint8List bytes) async {
 // 淡化衬底色取 backgroundTop：五套配色深浅两色下它对正文、次要文字和主色文字都在 5.9:1 以上，每格总能淡化达标。
 ui.Color wallpaperVeilColor(CampusPalette palette) => palette.backgroundTop;
 
-// 每格最小淡化透明度：衬底色叠在该格最不利的像素上（浅色看最暗、深色看最亮），正文、次要文字和主色文字都不低于 4.5:1，
-// 再加上用户选的淡化档 extra。混色按 sRGB 通道计算，与界面实际合成方式一致。
-Float64List wallpaperVeilAlphas(WallpaperTone tone, CampusPalette palette, double extra) {
+// 每格最小淡化透明度：衬底色叠在该格最不利的像素上（浅色看最暗、深色看最亮），正文、次要文字和主色文字都不低于 4.8:1。
+// 混色按 sRGB 通道计算，与界面实际合成方式一致。用户调的淡化量不在这里加，见 wallpaperVeilAlpha：
+// 拖动滑杆时每帧只做一次加法，不重算这份网格。
+Float64List wallpaperVeilAlphas(WallpaperTone tone, CampusPalette palette) {
   final veil = wallpaperVeilColor(palette);
   final texts = [palette.onSurface, palette.onSurfaceVariant, palette.primary].map((color) => color.computeLuminance()).toList();
   final worst = palette.isDark ? tone.brightest : tone.darkest;
@@ -134,10 +135,14 @@ Float64List wallpaperVeilAlphas(WallpaperTone tone, CampusPalette palette, doubl
     } else {
       high = 0;
     }
-    alphas[cell] = math.min(1, high + extra);
+    alphas[cell] = high;
   }
   return _smooth(_smooth(alphas, tone.columns, tone.rows, dilate: true), tone.columns, tone.rows, dilate: false);
 }
+
+// 用户淡化量 fade（0–1）叠在可读下限 floor 之上：fade 为 0 时就是下限，为 1 时整张盖满（等于看不到图）。
+// 结果单调不低于 floor，可读性保证不受淡化量影响。
+double wallpaperVeilAlpha(double floor, double fade) => floor + (1 - floor) * fade;
 
 // 先 3×3 取最大再 3×3 取平均：相邻格的透明度从阶跃变为约三格宽的平滑过渡，壁纸上不显网格；
 // 膨胀后每格周围 3×3 都不低于它原本所需，取平均仍不低于所需，可读性保证不变。

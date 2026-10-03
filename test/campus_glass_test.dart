@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
+import 'package:superxd/theme/campus_glass_blend.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_material.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
@@ -250,6 +251,13 @@ void main() {
     await pump(CampusGlassMode.auto, media: const MediaQueryData(disableAnimations: true));
     expect(tiers, [CampusGlassTier.minimal, CampusGlassTier.standard, CampusGlassTier.solid, CampusGlassTier.solid]);
   });
+  testWidgets('切换玻璃模式不重建下面的应用：背景、入场与页面状态保留', (tester) async {
+    var created = 0;
+    for (final mode in [CampusGlassMode.auto, CampusGlassMode.full, CampusGlassMode.reduced, CampusGlassMode.auto]) {
+      await tester.pumpWidget(CampusGlassScope.wrap(mode: mode, capped: false, child: _Mounted(() => created++)));
+      expect(created, 1, reason: mode.name);
+    }
+  });
   group('浮层与控件玻璃', () {
     tearDown(() => campusGlassReady.value = false);
     Widget host(Widget home, {CampusGlassMode mode = CampusGlassMode.full}) => MaterialApp(theme: campusTheme(), home: CampusGlassScope(mode: mode, capped: false, child: home));
@@ -296,6 +304,90 @@ void main() {
       expect(fadedOpacity(find.byType(AlertDialog)), inExclusiveRange(0, 1));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('栏随弹窗经盖板过渡：打开时盖满才换实色，开始关闭即揭开回玻璃，全程不跳变、不套半透明图层', (tester) async {
+      campusGlassReady.value = true;
+      late BuildContext page;
+      await tester.pumpWidget(host(Scaffold(body: Builder(builder: (context) {
+        page = context;
+        return const GlassPanel(edge: GlassEdge.top, child: SizedBox(height: 56));
+      }))));
+      final fallback = CampusPalette.of(page).glassFallback;
+      final glass = find.descendant(of: find.byType(GlassPanel), matching: find.byType(liquid.AdaptiveGlass));
+      // 栏当前的遮盖程度：玻璃上盖板的不透明度，实色为 1。
+      double cover() {
+        if (glass.evaluate().isEmpty) return 1;
+        final boxes = tester.widgetList<DecoratedBox>(find.descendant(of: glass, matching: find.byType(DecoratedBox)));
+        final colors = [for (final box in boxes) if (box.decoration case BoxDecoration(:final color?) when color.withValues(alpha: 1) == fallback.withValues(alpha: 1)) color.a];
+        return colors.isEmpty ? 0 : colors.single;
+      }
+      final opening = <double>[];
+      final confirm = showCampusConfirm(page, title: '删除记录？', message: '只移除记录。', action: '删除');
+      for (var frame = 0; frame < 30; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        opening.add(cover());
+        if (glass.evaluate().isNotEmpty) expectGlassUnfaded(glass);
+      }
+      expect(opening.first, lessThan(.2));
+      expect(opening.where((value) => value > 0 && value < 1), isNotEmpty);
+      for (var index = 1; index < opening.length; index++) {
+        expect(opening[index], greaterThanOrEqualTo(opening[index - 1]));
+      }
+      await tester.pumpAndSettle();
+      expect(glass, findsNothing);
+      await tester.tap(find.text('取消'));
+      await tester.pump();
+      // 开始关闭就退出层数，不等关闭动画结束。
+      expect(campusOverlayDepth.value, 0);
+      final closing = <double>[];
+      for (var frame = 0; frame < 30; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        closing.add(cover());
+        if (glass.evaluate().isNotEmpty) expectGlassUnfaded(glass);
+      }
+      expect(closing.where((value) => value > 0 && value < 1), isNotEmpty);
+      for (var index = 1; index < closing.length; index++) {
+        expect(closing[index], lessThanOrEqualTo(closing[index - 1]));
+      }
+      expect(closing.last, 0);
+      expect(await confirm, isFalse);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('换档盖满后才换、中途改回从当前遮盖续接；减少动画直接换', (tester) async {
+      Future<void> pump(CampusGlassTier tier, {bool reduce = false}) => tester.pumpWidget(MediaQuery(
+        data: MediaQueryData(disableAnimations: reduce),
+        child: CampusGlassBlend<CampusGlassTier>(
+          look: tier,
+          opaque: (tier) => tier == CampusGlassTier.solid,
+          builder: (context, tier, cover) => Text('${tier.name} ${cover.toStringAsFixed(3)}', textDirection: TextDirection.ltr),
+        ),
+      ));
+      (String, double) shown() {
+        final [name, cover] = tester.widget<Text>(find.byType(Text)).data!.split(' ');
+        return (name, double.parse(cover));
+      }
+      await pump(CampusGlassTier.full);
+      expect(shown(), ('full', 0));
+      await pump(CampusGlassTier.standard);
+      await tester.pump(const Duration(milliseconds: 120));
+      final (name, half) = shown();
+      expect([name, half > 0 && half < 1], ['full', true]);
+      // 中途改回原档：从当前遮盖量往回揭开，不跳到 0。
+      await pump(CampusGlassTier.full);
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(shown().$2, allOf(greaterThan(0), lessThan(half)));
+      await tester.pumpAndSettle();
+      expect(shown(), ('full', 0));
+      await pump(CampusGlassTier.standard);
+      await tester.pump(const Duration(milliseconds: 240));
+      await tester.pump(const Duration(milliseconds: 16));
+      expect(shown().$1, 'standard');
+      await tester.pumpAndSettle();
+      expect(shown(), ('standard', 0));
+      await pump(CampusGlassTier.solid, reduce: true);
+      expect(shown(), ('solid', 1));
     });
 
     testWidgets('提示条为玻璃胶囊，撤销48dp可点并收起；未就绪为实色', (tester) async {
@@ -636,3 +728,22 @@ void main() {
 }
 
 class _FakeContext extends Fake implements BuildContext {}
+
+// 记录被创建的次数：State 重新创建说明子树被整棵重建。
+class _Mounted extends StatefulWidget {
+  const _Mounted(this.onCreate);
+  final VoidCallback onCreate;
+  @override
+  State<_Mounted> createState() => _MountedState();
+}
+
+class _MountedState extends State<_Mounted> {
+  @override
+  void initState() {
+    super.initState();
+    widget.onCreate();
+  }
+
+  @override
+  Widget build(BuildContext context) => const SizedBox();
+}

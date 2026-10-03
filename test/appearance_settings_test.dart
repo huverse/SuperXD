@@ -84,17 +84,22 @@ void main() {
     await old.insert('display_settings', {'id': 1, 'text_scale': 1.1, 'palette_id': 'oat', 'glass_mode': 'full'});
     await old.close();
     var settings = await DisplaySettings.open(databasePath: path, wallpaperDirectory: wallpapers);
-    expect([settings.wallpaperFile, settings.wallpaperTone, settings.wallpaperBlur, settings.wallpaperFade], [null, null, 1, 0]);
+    expect([settings.wallpaperFile, settings.wallpaperTone, settings.wallpaperBlur, settings.wallpaperFade], [null, null, DisplaySettings.defaultWallpaperBlur, 0]);
     expect([settings.paletteId, settings.glassMode], ['oat', 'full']);
     final picked = File('${directory.path}/picked.jpg')..writeAsBytesSync([1, 2, 3]);
-    await Future.wait([settings.setWallpaper(picked.path, '色调'), settings.setWallpaperFade(2), settings.setScale(1.25)]);
-    expect(() => settings.setWallpaperBlur(3), throwsArgumentError);
+    await Future.wait([settings.setWallpaper(picked.path, '色调'), settings.setWallpaperLook(blur: 80, fade: 67), settings.setScale(1.25)]);
+    expect(() => settings.setWallpaperLook(blur: 101, fade: 0), throwsArgumentError);
+    expect(() => settings.previewWallpaper(fade: -1), throwsArgumentError);
+    // 预览只改外观、不落库。
+    settings.previewWallpaper(blur: 10);
+    expect([settings.wallpaperLook.value.blur, settings.wallpaperBlur], [10, 80]);
     final name = settings.wallpaperFile!.path;
     expect(picked.existsSync(), isTrue);
     await settings.close();
     File('${wallpapers.path}/wallpaper_0.jpg').writeAsBytesSync([9]);
     settings = await DisplaySettings.open(databasePath: path, wallpaperDirectory: wallpapers);
-    expect([settings.wallpaperFile?.path, settings.wallpaperTone, settings.wallpaperFade, settings.scale], [name, '色调', 2, 1.25]);
+    expect([settings.wallpaperFile?.path, settings.wallpaperTone, settings.wallpaperBlur, settings.wallpaperFade, settings.scale], [name, '色调', 80, 67, 1.25]);
+    expect(settings.wallpaperLook.value, (blur: 80, fade: 67));
     expect(wallpapers.listSync().map((entity) => entity.path), [name]);
     await settings.close();
     File(name).deleteSync();
@@ -103,6 +108,25 @@ void main() {
     await settings.close();
     final rows = await (await openDatabase(path)).query('display_settings');
     expect([rows.single['wallpaper_file'], rows.single['wallpaper_tone'], rows.single['palette_id']], [null, null, 'oat']);
+    await directory.delete(recursive: true);
+  });
+  test('设备设置v5迁移：壁纸模糊与淡化三档换算为连续量，观感不变', () async {
+    final directory = await Directory.systemTemp.createTemp('appearance-');
+    for (final (blur, fade, expected) in [(0, 2, [0, 67]), (1, 0, [DisplaySettings.defaultWallpaperBlur, 0]), (2, 1, [67, 33])]) {
+      final path = '${directory.path}/display_$blur$fade.db';
+      final old = await openDatabase(
+        path,
+        version: 5,
+        onCreate: (db, _) => db.execute(
+          "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT 'sage', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system', glass_mode TEXT NOT NULL DEFAULT 'auto', wallpaper_file TEXT, wallpaper_tone TEXT, wallpaper_blur INTEGER NOT NULL DEFAULT 1, wallpaper_fade INTEGER NOT NULL DEFAULT 0)",
+        ),
+      );
+      await old.insert('display_settings', {'id': 1, 'text_scale': 1.1, 'wallpaper_blur': blur, 'wallpaper_fade': fade});
+      await old.close();
+      final settings = await DisplaySettings.open(databasePath: path);
+      expect([settings.wallpaperBlur, settings.wallpaperFade, settings.scale], [...expected, 1.1]);
+      await settings.close();
+    }
     await directory.delete(recursive: true);
   });
   test('五套配色在所有表面角色上均可读', () {

@@ -41,21 +41,18 @@ class CampusGlassScope extends InheritedWidget {
   final CampusGlassMode mode;
   final bool capped;
 
-  // 自动模式才挂 GlassAdaptiveScope 采样帧耗时；固定档位不额外监听。
+  // GlassAdaptiveScope 常挂、只在自动模式下被采用：按模式增减这一层会改变树结构，切换玻璃效果时整个应用
+  // （背景相位、入场遮罩、路由页面的状态）都被重建；固定档位下它只多一个帧耗时回调。
   static Widget wrap({
     required CampusGlassMode mode,
     required bool capped,
     required Widget child,
-  }) {
-    final scope = CampusGlassScope(mode: mode, capped: capped, child: child);
-    if (mode != CampusGlassMode.auto) return scope;
-    return liquid.GlassAdaptiveScope(
-      onQualityChanged: (from, to) => campusLog(
-        '[CampusGlass] action=quality from=${from.name} to=${to.name}',
-      ),
-      child: scope,
-    );
-  }
+  }) => liquid.GlassAdaptiveScope(
+    onQualityChanged: (from, to) => campusLog(
+      '[CampusGlass] action=quality from=${from.name} to=${to.name} mode=${mode.name}',
+    ),
+    child: CampusGlassScope(mode: mode, capped: capped, child: child),
+  );
 
   static CampusGlassTier tierOf(BuildContext context, {required bool ready}) {
     final scope = context

@@ -120,3 +120,41 @@ class CampusSwitchTile extends StatelessWidget {
     );
   }
 }
+
+// 滑杆：同 iOS 26 滑杆，细轨道、白色滑块，拖动时滑块化为玻璃透镜，已选段着主色；实色档沿用系统 Slider。
+// 值域 0–1。onChanged 在拖动中连续回调；onChangeEnd 只在正常松手时回调，系统取消与读屏增减不回调，调用方要自行兜底保存。
+class CampusSlider extends StatelessWidget {
+  const CampusSlider({super.key, required this.value, required this.label, required this.onChanged, this.onChangeEnd});
+  final double value;
+  final String label;
+  final ValueChanged<double>? onChanged;
+  final ValueChanged<double>? onChangeEnd;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    return ValueListenableBuilder<bool>(
+      valueListenable: campusGlassReady,
+      builder: (context, ready, _) {
+        final tier = CampusGlassScope.tierOf(context, ready: ready);
+        return SizedBox(
+          height: 48,
+          child: Center(
+            child: tier == CampusGlassTier.solid || !ready
+                ? MergeSemantics(child: Semantics(label: label, child: Slider(value: value, onChanged: onChanged, onChangeEnd: onChangeEnd)))
+                : liquid.GlassSlider(
+                    value: value,
+                    onChanged: onChanged,
+                    onChangeEnd: onChangeEnd,
+                    label: label,
+                    activeColor: palette.primary,
+                    inactiveColor: palette.onSurfaceVariant.withValues(alpha: .28),
+                    quality: campusGlassQuality(tier),
+                    settings: campusGlassSettings(palette, CampusGlassRole.control, tier),
+                  ),
+          ),
+        );
+      },
+    );
+  }
+}

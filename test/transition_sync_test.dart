@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/page/date_rail.dart';
 
@@ -83,7 +84,7 @@ void main() {
     // 旧页随新页同一进度整屏推出，仍在屏内，且不靠淡出（玻璃在半透明图层下取不到背景）。
     final width = tester.getSize(find.byType(MaterialApp)).width;
     final left = tester.getTopLeft(find.text('旧页面')).dx;
-    expect(left, closeTo(-width * Curves.easeInOutCubic.transform(.6), .5));
+    expect(left, closeTo(-width * campusSpringCurve.transform(.6), .5));
     expectUnfaded(find.text('旧页面'));
   });
   testWidgets('页面推入与返回：新旧页整屏并排平移不重叠，全程不淡入淡出', (tester) async {
