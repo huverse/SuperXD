@@ -8,7 +8,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/glass_panel.dart';
 
-// 选择标签：复用主按钮的玻璃背景与按压物理；选中时着 surfaceSelected 色并带勾。
+// 选择标签：复用主按钮的背景（导航层与浮层里是玻璃，内容区是中性色调胶囊）；选中时着 surfaceSelected 色并带勾。
 // 未选、选中都用可读深色文字，禁用为 onSurfaceVariant，不用 primary，避免和按钮混淆。
 class CampusGlassChip extends StatelessWidget {
   const CampusGlassChip({
@@ -36,6 +36,7 @@ class CampusGlassChip extends StatelessWidget {
       ),
       backgroundBuilder: (context, states, child) => CampusGlassButtonSurface(
         states: {...states, if (selected) WidgetState.selected},
+        neutral: true,
         child: child!,
       ),
     );

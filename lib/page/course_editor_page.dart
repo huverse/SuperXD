@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -296,7 +297,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
         ),
         title: Text(widget.course == null ? '新增课程' : '编辑课程'),
       ),
-      body: SafeArea(
+      body: CampusScrollFade(child: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -406,7 +407,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
             ),
           ],
         ),
-      ),
+      )),
     ),
   );
 }

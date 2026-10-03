@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_surface.dart';
@@ -68,7 +69,7 @@ class _CampusLicensesPageState extends State<CampusLicensesPage> {
       ),
       title: const Text('全部依赖许可'),
     ),
-    body: SafeArea(
+    body: CampusScrollFade(child: SafeArea(
       child: FutureBuilder<List<MapEntry<String, List<LicenseEntry>>>>(
         future: _licenses,
         builder: (context, snapshot) {
@@ -120,7 +121,7 @@ class _CampusLicensesPageState extends State<CampusLicensesPage> {
           );
         },
       ),
-    ),
+    )),
   );
 }
 
@@ -138,7 +139,7 @@ class _LicenseDetail extends StatelessWidget {
       ),
       title: Text(package),
     ),
-    body: SafeArea(
+    body: CampusScrollFade(child: SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(20),
         children: [
@@ -161,6 +162,6 @@ class _LicenseDetail extends StatelessWidget {
           ],
         ],
       ),
-    ),
+    )),
   );
 }

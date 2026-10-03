@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -446,40 +447,36 @@ class _GradesPageState extends State<GradesPage> {
         top: false,
         child: Column(
           children: [
-            GlassPanel(
-              edge: GlassEdge.bottom,
-              child: SafeArea(
-                bottom: false,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 8,
-                    vertical: 4,
-                  ),
-                  child: Row(
-                    children: [
-                      IconButton(
-                        tooltip: '返回服务',
-                        onPressed: () => Navigator.pop(context),
-                        icon: const CampusIcon(CampusIcons.back),
+            CampusTopBar(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 8,
+                  vertical: 4,
+                ),
+                child: Row(
+                  children: [
+                    IconButton(
+                      tooltip: '返回服务',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const CampusIcon(CampusIcons.back),
+                    ),
+                    Expanded(
+                      child: Text(
+                        '成绩',
+                        style: Theme.of(context).textTheme.titleLarge,
                       ),
-                      Expanded(
-                        child: Text(
-                          '成绩',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                      ),
-                      TextButton(
-                        onPressed: _syncing || _choosing ? null : _sync,
-                        child: Text(_syncing ? '同步中…' : '同步'),
-                      ),
-                    ],
-                  ),
+                    ),
+                    TextButton(
+                      onPressed: _syncing || _choosing ? null : _sync,
+                      child: Text(_syncing ? '同步中…' : '同步'),
+                    ),
+                  ],
                 ),
               ),
             ),
             if (_syncing) CampusLoading(label: _syncProgress.label, inline: true, network: true, animating: !_syncProgress.waitingForInput),
             Expanded(
-              child: CustomScrollView(
+              child: CampusScrollFade(child: CustomScrollView(
                 slivers: [
                   SliverPadding(
                     padding: EdgeInsets.fromLTRB(16, campusFieldGap(context), 16, 16),
@@ -757,7 +754,7 @@ class _GradesPageState extends State<GradesPage> {
                       ),
                     ),
                 ],
-              ),
+              )),
             ),
           ],
         ),

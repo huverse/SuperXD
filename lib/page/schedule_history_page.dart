@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -84,12 +85,13 @@ class _ScheduleHistoryPageState extends State<ScheduleHistoryPage> {
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
       leading: IconButton(
+        tooltip: '返回',
         onPressed: () => Navigator.pop(context, _changed),
         icon: const CampusIcon(CampusIcons.back),
       ),
       title: const Text('历史版本'),
     ),
-    body: SafeArea(
+    body: CampusScrollFade(child: SafeArea(
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -138,7 +140,7 @@ class _ScheduleHistoryPageState extends State<ScheduleHistoryPage> {
             OutlinedButton(onPressed: _load, child: const Text('加载更早版本')),
         ],
       ),
-    ),
+    )),
   );
 }
 
@@ -242,7 +244,7 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
     canPop: !_saving,
     child: Scaffold(
       appBar: AppBar(leading: IconButton(tooltip: '返回', onPressed: _saving ? null : () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)), title: const Text('版本预览')),
-      body: SafeArea(
+      body: CampusScrollFade(child: SafeArea(
         child: _loading
             ? const Center(child: CampusLoading(label: '正在读取历史版本'))
             : ListView(
@@ -306,7 +308,7 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
                   ],
                 ],
               ),
-      ),
+      )),
     ),
   );
   Widget _courseDetails(String title, CourseRecord course) => Padding(

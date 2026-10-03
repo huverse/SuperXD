@@ -80,16 +80,40 @@ void main() {
         ),
       ),
     );
-    final fading = tester.widgetList<FadeTransition>(
-      find.ancestor(
-        of: find.text('旧页面'),
-        matching: find.byType(FadeTransition),
-      ),
-    );
-    expect(
-      fading.any((fade) => fade.opacity.value > 0 && fade.opacity.value < .5),
-      isTrue,
-    );
+    // 旧页随新页同一进度整屏推出，仍在屏内，且不靠淡出（玻璃在半透明图层下取不到背景）。
+    final width = tester.getSize(find.byType(MaterialApp)).width;
+    final left = tester.getTopLeft(find.text('旧页面')).dx;
+    expect(left, closeTo(-width * Curves.easeInOutCubic.transform(.6), .5));
+    expectUnfaded(find.text('旧页面'));
+  });
+  testWidgets('页面推入与返回：新旧页整屏并排平移不重叠，全程不淡入淡出', (tester) async {
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(
+      theme: campusTheme(),
+      navigatorKey: navigator,
+      home: const SizedBox.expand(child: Text('旧页面')),
+    ));
+    final width = tester.getSize(find.byType(MaterialApp)).width;
+    navigator.currentState!.push(MaterialPageRoute<void>(builder: (context) => const SizedBox.expand(child: Text('新页面'))));
+    await tester.pump();
+    for (final elapsed in [90, 90, 90]) {
+      await tester.pump(Duration(milliseconds: elapsed));
+      final previous = tester.getTopLeft(find.text('旧页面')).dx, next = tester.getTopLeft(find.text('新页面')).dx;
+      expect(previous, lessThan(0));
+      expect(next, closeTo(previous + width, .5));
+      expectUnfaded(find.text('旧页面'));
+      expectUnfaded(find.text('新页面'));
+    }
+    await tester.pumpAndSettle();
+    navigator.currentState!.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 120));
+    final previous = tester.getTopLeft(find.text('旧页面')).dx, next = tester.getTopLeft(find.text('新页面')).dx;
+    expect(next, inExclusiveRange(0, width));
+    expect(next, closeTo(previous + width, .5));
+    expectUnfaded(find.text('新页面'));
+    await tester.pumpAndSettle();
+    expect(find.text('新页面'), findsNothing);
   });
   testWidgets('日期与星期同显，周日跨年正确且文学字体大字不溢出', (tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 300));
@@ -117,5 +141,15 @@ void main() {
     expect(find.text('1/3').hitTestable(), findsOneWidget);
     expect(find.text('周日').hitTestable(), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+}
+
+// 玻璃在半透明 Opacity、FadeTransition 下取不到背景，转场期间内容之上不得有它们。
+void expectUnfaded(Finder finder) {
+  finder.evaluate().single.visitAncestorElements((ancestor) {
+    final widget = ancestor.widget;
+    if (widget is Opacity) expect(widget.opacity, 1);
+    if (widget is FadeTransition) expect(widget.opacity.value, 1);
+    return true;
   });
 }

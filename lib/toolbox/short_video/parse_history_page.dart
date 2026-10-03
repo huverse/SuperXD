@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -107,7 +108,7 @@ class _ParseHistoryPageState extends State<ParseHistoryPage> {
         ),
       ],
     ),
-    body: SafeArea(
+    body: CampusScrollFade(child: SafeArea(
       child: FutureBuilder<List<Map<String, Object?>>>(
         future: _rows,
         builder: (context, snapshot) {
@@ -144,6 +145,6 @@ class _ParseHistoryPageState extends State<ParseHistoryPage> {
           );
         },
       ),
-    ),
+    )),
   );
 }

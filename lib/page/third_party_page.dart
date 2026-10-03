@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/page/licenses_page.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -23,7 +24,7 @@ class _ThirdPartyPageState extends State<ThirdPartyPage> {
       ),
       title: const Text('开源与第三方声明'),
     ),
-    body: SafeArea(
+    body: CampusScrollFade(child: SafeArea(
       child: FutureBuilder<String>(
         future: _text,
         builder: (context, snapshot) {
@@ -48,6 +49,6 @@ class _ThirdPartyPageState extends State<ThirdPartyPage> {
           );
         },
       ),
-    ),
+    )),
   );
 }

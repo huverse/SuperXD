@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -75,7 +76,7 @@ class _ToolboxPageState extends State<ToolboxPage> {
       ),
       title: const Text('百宝箱'),
     ),
-    body: SafeArea(
+    body: CampusScrollFade(child: SafeArea(
       child: FutureBuilder<void>(
         future: _ready,
         builder: (context, snapshot) {
@@ -121,7 +122,7 @@ class _ToolboxPageState extends State<ToolboxPage> {
           );
         },
       ),
-    ),
+    )),
   );
 
   Widget _tile(ToolboxModule module) {

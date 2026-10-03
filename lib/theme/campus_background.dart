@@ -68,36 +68,49 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _layer(BuildContext context) {
     final highContrast = MediaQuery.highContrastOf(context);
     final wallpaper = highContrast ? null : widget.wallpaper;
-    return Stack(
-      fit: StackFit.expand,
-      children: [
-        Positioned.fill(
-          child: RepaintBoundary(
-            child: IgnorePointer(
-              child: ExcludeSemantics(
-                child: wallpaper != null
-                    ? _WallpaperLayer(wallpaper: wallpaper)
-                    : CustomPaint(
-                        painter: AtmospherePainter(
-                          palette: CampusPalette.of(context),
-                          progress: _allowed && widget.phase == null
-                              ? _controller
-                              : AlwaysStoppedAnimation(widget.phase ?? .18),
-                          highContrast: highContrast,
-                        ),
-                      ),
-              ),
-            ),
-          ),
+    return RepaintBoundary(
+      child: IgnorePointer(
+        child: ExcludeSemantics(
+          child: wallpaper != null
+              ? _WallpaperLayer(wallpaper: wallpaper)
+              : CustomPaint(
+                  painter: AtmospherePainter(
+                    palette: CampusPalette.of(context),
+                    progress: _allowed && widget.phase == null
+                        ? _controller
+                        : AlwaysStoppedAnimation(widget.phase ?? .18),
+                    highContrast: highContrast,
+                  ),
+                ),
         ),
-        widget.child,
-      ],
+      ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) => Stack(
+    fit: StackFit.expand,
+    children: [
+      Positioned.fill(child: _layer(context)),
+      CampusBackdrop(layer: _layer, child: widget.child),
+    ],
+  );
+}
+
+// 向下提供与背景同相位的一份副本。只给入场遮罩临时叠在内容之上：内容淡入改为盖在上面的背景淡出，
+// 玻璃不处在半透明图层里，从第一帧起就按真实背景绘制。
+class CampusBackdrop extends InheritedWidget {
+  const CampusBackdrop({super.key, required this.layer, required super.child});
+  final WidgetBuilder layer;
+
+  static WidgetBuilder? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<CampusBackdrop>()?.layer;
+
+  @override
+  bool updateShouldNotify(CampusBackdrop oldWidget) => layer != oldWidget.layer;
 }
 
 class _WallpaperLayer extends StatefulWidget {

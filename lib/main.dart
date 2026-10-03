@@ -199,7 +199,7 @@ class _AccountAppState extends State<_AccountApp> {
     return ListenableBuilder(listenable: _display, builder: (context, _) => MaterialApp.router(
       title: 'SuperXD', theme: campusTheme(palette: CampusPalette.byId(_display.paletteId), fontFamily: _display.fontFamily),
       darkTheme: campusTheme(palette: CampusPalette.byId(_display.paletteId, brightness: Brightness.dark), fontFamily: _display.fontFamily),
-      themeMode: _display.themeMode, routerConfig: _router,
+      themeMode: _display.themeMode, routerConfig: _router, scrollBehavior: const CampusScrollBehavior(),
       themeAnimationDuration: WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations || WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.reduceMotion ? Duration.zero : const Duration(milliseconds: 260),
       locale: const Locale('zh', 'CN'), supportedLocales: const [Locale('zh', 'CN')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,

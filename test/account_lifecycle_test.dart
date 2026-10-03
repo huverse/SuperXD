@@ -14,6 +14,9 @@ import 'package:superxd/page/today_page.dart';
 import 'package:superxd/main.dart';
 import 'package:superxd/page/animated_branches.dart';
 import 'package:superxd/page/schedule_page.dart';
+import 'package:superxd/page/section_pages.dart';
+import 'package:superxd/theme/campus_background.dart';
+import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/page/login_page.dart';
 import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -93,12 +96,27 @@ void main() {
     await tester.tap(find.text('我的').last); await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('切换账号')); await tester.tap(find.text('切换账号')); await tester.pump();
     await tester.pump(const Duration(milliseconds: 90));
-    final fade = tester.widgetList<FadeTransition>(find.ancestor(of: find.byType(LoginPage), matching: find.byType(FadeTransition)));
-    expect(fade.any((transition) => transition.opacity.value > 0 && transition.opacity.value < 1), isTrue);
+    expectSliding(tester, find.byType(LoginPage));
     await tester.pumpAndSettle(); await tester.tap(find.byTooltip('返回')); await tester.pump(); await tester.pump(const Duration(milliseconds: 90));
-    final exiting = tester.widgetList<FadeTransition>(find.ancestor(of: find.byType(LoginPage), matching: find.byType(FadeTransition)));
-    expect(exiting.any((transition) => transition.opacity.value > 0 && transition.opacity.value < 1), isTrue);
+    expectSliding(tester, find.byType(LoginPage));
     await tester.pumpAndSettle(); expect(gateway.activeSession?.loginId, 'A'); expect(find.byType(LoginPage), findsNothing);
+    await tester.pumpWidget(const SizedBox()); session.dispose();
+  });
+  testWidgets('入场淡入由上层背景副本淡出完成，内容和玻璃不套半透明图层', (tester) async {
+    final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18)); await tester.pump(); await tester.pump(const Duration(milliseconds: 120));
+    final veil = tester.widgetList<Opacity>(find.ancestor(of: find.byType(CustomPaint), matching: find.byType(Opacity))).map((widget) => widget.opacity);
+    expect(veil.where((opacity) => opacity > 0 && opacity < 1), isNotEmpty);
+    find.byType(ShellPage).evaluate().single.visitAncestorElements((ancestor) {
+      final widget = ancestor.widget;
+      if (widget is Opacity) expect(widget.opacity, 1);
+      if (widget is FadeTransition) expect(widget.opacity.value, 1);
+      return true;
+    });
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: find.byType(CampusBackdrop), matching: find.byType(Opacity)).evaluate().where((element) => (element.widget as Opacity).opacity < 1), isEmpty);
+    // 顶栏透明、与主体同一背景，整页只剩悬浮底栏一块玻璃面板。
+    expect(find.byType(GlassPanel), findsOneWidget);
     await tester.pumpWidget(const SizedBox()); session.dispose();
   });
   testWidgets('记住账号必须先同意，取消不勾选；成功后可在我的立即清除', (tester) async {
@@ -166,8 +184,13 @@ void main() {
     await tester.tap(find.text('消息').last);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 90));
-    final opacity = tester.widgetList<FadeTransition>(find.descendant(of: find.byType(AnimatedBranches), matching: find.byType(FadeTransition))).map((widget) => widget.opacity.value);
-    expect(opacity.where((value) => value > 0 && value < 1), hasLength(2));
+    // 进出两个分支整屏并排平移：消息从右侧进入，今天向左退出，两页相接不重叠。
+    final width = tester.getSize(find.byType(AnimatedBranches)).width;
+    final entering = tester.getTopLeft(find.byType(MessagePage)).dx, leaving = tester.getTopLeft(find.byType(TodayPage)).dx;
+    expect(entering, inExclusiveRange(0, width));
+    expect(leaving, closeTo(entering - width, .5));
+    expectSliding(tester, find.byType(MessagePage));
+    expectSliding(tester, find.byType(TodayPage));
     await tester.pumpAndSettle();
     await tester.tap(find.text('私信'));
     await tester.pumpAndSettle();
@@ -184,8 +207,7 @@ void main() {
     await tester.binding.handlePopRoute();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 90));
-    final transitions = tester.widgetList<FadeTransition>(find.ancestor(of: find.byType(SchedulePage), matching: find.byType(FadeTransition)));
-    expect(transitions.any((widget) => widget.opacity.value > 0 && widget.opacity.value < 1), isTrue);
+    expectSliding(tester, find.byType(SchedulePage));
     await tester.pumpAndSettle();
     expect(find.byType(SchedulePage), findsNothing);
     expect(find.text('课表'), findsOneWidget);
@@ -350,4 +372,17 @@ class _Accounts extends AccountAccess {
     if (invocation.memberName == #readBells) return Future.value(const GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: BellsView(empty: true, message: '', term: _term, periods: [])));
     return super.noSuchMethod(invocation);
   }
+}
+
+// 转场中途：页面已离开原位但仍部分在屏内，且之上没有半透明图层（玻璃在其下取不到背景，结束时会突变）。
+void expectSliding(WidgetTester tester, Finder page) {
+  final width = tester.getSize(find.byType(MaterialApp).first).width;
+  final left = tester.getTopLeft(page).dx;
+  expect(left.abs(), inExclusiveRange(0, width));
+  page.evaluate().single.visitAncestorElements((ancestor) {
+    final widget = ancestor.widget;
+    if (widget is Opacity) expect(widget.opacity, 1);
+    if (widget is FadeTransition) expect(widget.opacity.value, 1);
+    return true;
+  });
 }

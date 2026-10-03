@@ -81,7 +81,13 @@ void main() {
     final indicator = tester.widget<liquid.AnimatedGlassIndicator>(lens), capsule = tester.getRect(_capsule);
     expect(tester.getRect(lens).left + 4 + indicator.exactOffset!, closeTo(capsule.left, .1));
     expect(indicator.exactWidth, closeTo(capsule.width, .1));
+    // 透镜是栏玻璃的兄弟层（不被栏的形状裁剪），拖动时向四周鼓出、上下超出栏沿；镜下的静止胶囊随之淡出，不在镜内留色块。
+    expect(find.ancestor(of: lens, matching: find.byType(GlassPanel)), findsNothing);
+    // 静止胶囊距栏内区 4、内区距栏外沿 4：上下鼓出超过 8 才越过栏沿。
+    expect(indicator.expansion.vertical / 2, greaterThan(8));
+    expect(tester.widget<Opacity>(find.ancestor(of: _capsule, matching: find.byType(Opacity)).first).opacity, lessThan(1));
     await drag.up();await tester.pumpAndSettle();
+    expect(tester.widget<Opacity>(find.ancestor(of: _capsule, matching: find.byType(Opacity)).first).opacity, 1);
     expect(lens, findsNothing);
     await mount(const MediaQueryData(disableAnimations: true));
     final reduced = await tester.startGesture(tester.getCenter(find.text('今天')));await tester.pump(const Duration(milliseconds: 200));

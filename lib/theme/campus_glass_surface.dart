@@ -45,33 +45,8 @@ class CampusGlassSurface extends StatelessWidget {
           tier,
           pressed: pressed,
         );
-        final surface =
-            tier == CampusGlassTier.solid || !ready || nested?.opaque == true
-            // 实色档里选中、按下同样着 surfaceSelected，高对比度下选中态不只靠勾号区分。
-            ? DecoratedBox(
-                decoration: BoxDecoration(
-                  color: disabled || pressed
-                      ? palette.surfaceSelected
-                      : palette.glassFallback,
-                  borderRadius: BorderRadius.circular(radius),
-                ),
-                child: content,
-              )
-            : nested != null
-            ? liquid.AdaptiveGlass.vibrancy(
-                shape: shape,
-                settings: settings,
-                child: content!,
-              )
-            : liquid.AdaptiveGlass(
-                shape: shape,
-                settings: settings,
-                quality: campusGlassQuality(tier),
-                allowElevation: false,
-                isInteractive: true,
-                child: content!,
-              );
-        return DecoratedBox(
+        // 描边画在玻璃的内容里（内描边），随玻璃的 materialize 一起显隐，不在玻璃外再包一层。
+        final outlined = DecoratedBox(
           position: DecorationPosition.foreground,
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(radius),
@@ -84,11 +59,57 @@ class CampusGlassSurface extends StatelessWidget {
               width: focused ? 2 : 1,
             ),
           ),
-          child: surface,
+          child: content,
         );
+        return tier == CampusGlassTier.solid || !ready || nested?.opaque == true
+            // 实色档里选中、按下同样着 surfaceSelected，高对比度下选中态不只靠勾号区分。
+            ? DecoratedBox(
+                decoration: BoxDecoration(
+                  color: disabled || pressed
+                      ? palette.surfaceSelected
+                      : palette.glassFallback,
+                  borderRadius: BorderRadius.circular(radius),
+                ),
+                child: outlined,
+              )
+            : nested != null
+            ? liquid.AdaptiveGlass.vibrancy(
+                shape: shape,
+                settings: settings,
+                child: outlined,
+              )
+            : liquid.AdaptiveGlass(
+                shape: shape,
+                settings: settings,
+                quality: campusGlassQuality(tier),
+                allowElevation: false,
+                isInteractive: true,
+                child: outlined,
+              );
       },
     );
   }
+}
+
+// 玻璃控件的出现与消失（AnimatedOpacity 的玻璃版）：玻璃档交给库的 materialize，由着色器自身的可见度显隐，
+// 祖先 Opacity 会让玻璃整段显示成底色、结束时才突变；实色档没有玻璃，直接改不透明度。减少动画时实色、立即到位。
+class CampusGlassPresence extends StatelessWidget {
+  const CampusGlassPresence({super.key, required this.visible, required this.child});
+  final bool visible;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => ValueListenableBuilder<bool>(
+    valueListenable: campusGlassReady,
+    child: child,
+    builder: (context, ready, child) => !ready || CampusGlassScope.tierOf(context, ready: ready) == CampusGlassTier.solid
+        ? AnimatedOpacity(
+            opacity: visible ? 1 : 0,
+            duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 180),
+            child: child,
+          )
+        : liquid.GlassMaterialize(visible: visible, child: child!),
+  );
 }
 
 // 浮层路由把显隐进度交给面板。玻璃的背景采样要么整块绘制、要么不画，祖先 Opacity 会让玻璃在淡入末尾才突然出现，
