@@ -63,3 +63,5 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
       - run: npm test
+      # 编译产物能在 Node ESM 下加载（Vitest 不经过编译产物，测不到）。
+      - run: npm run build && npm run smoke

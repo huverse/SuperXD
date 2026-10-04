@@ -51,7 +51,6 @@ class _FriendAddPageState extends State<FriendAddPage> {
   bool _creating = false;
   bool _redeeming = false;
   Timer? _ticker;
-  Timer? _watcher;
   // 进入页面时已有的好友；必须在 initState 里取，懒初始化会在新好友到达后才取值而漏报。
   late Set<String> _known;
   final _added = <String>[];
@@ -71,7 +70,6 @@ class _FriendAddPageState extends State<FriendAddPage> {
   void dispose() {
     _social.removeListener(_detectNew);
     _ticker?.cancel();
-    _watcher?.cancel();
     final code = _code;
     if (code != null && _remaining > 0) unawaited(_social.revokeInvite(code.inviteId));
     super.dispose();
@@ -96,17 +94,7 @@ class _FriendAddPageState extends State<FriendAddPage> {
       });
       _ticker?.cancel();
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (!mounted) return;
-        setState(() {});
-        if (_remaining <= 0) _watcher?.cancel();
-      });
-      _watcher?.cancel();
-      _watcher = Timer.periodic(const Duration(seconds: 3), (_) {
-        // 后台不拉取（测试环境没有生命周期状态时视为前台）。
-        if (!const [null, AppLifecycleState.resumed].contains(WidgetsBinding.instance.lifecycleState)) return;
-        _social.refresh().catchError((Object error, StackTrace stack) {
-          campusLog('[FriendAdd] action=watch errorType=${error.runtimeType}\n$stack');
-        });
+        if (mounted) setState(() {});
       });
     } on SocialException catch (error) {
       if (mounted) setState(() => _error = socialErrorText(error.code));

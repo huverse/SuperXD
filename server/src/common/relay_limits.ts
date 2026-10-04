@@ -15,6 +15,11 @@ export const envelopeMaxBytes = 256 * 1024;
 export const mailboxLimit = 1000;
 // 未取走的消息 30 天后删除；取走并确认后立即删除。
 export const messageTtlDays = 30;
+// 长轮询：没有消息时最多挂起 25 秒（低于客户端与常见代理的 30 秒超时）；每设备同时最多 2 个挂起请求（再来就让最早的先返回），
+// 每个实例最多 20000 个（超出时立即返回空，由客户端按最小间隔重试），挂起只占内存与一个空闲连接，不占数据库连接。
+export const longPollMaxSeconds = 25;
+export const longPollPerDevice = 2;
+export const longPollPerInstance = 20000;
 // 单次拉取最多 50 条，确认最多 100 条。
 export const fetchLimit = 50;
 export const ackLimit = 100;

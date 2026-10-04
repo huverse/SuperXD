@@ -7,17 +7,19 @@ import { DataSource } from 'typeorm';
 import { createRelayApp } from 'src/relay_app';
 import { REDIS } from 'src/common/redis/redis.module';
 import { base64url } from 'src/common/crypto/relay_crypto';
+import { MailboxNotifier } from 'src/modules/message/mailbox_notifier';
 import { RetentionTask } from 'src/modules/pairing/retention.task';
 import { createInviteKeys, fakeEnvelope, helloOf, inviteProof, TestDevice } from './test_device';
 
 let app: NestExpressApplication;
-let server: ReturnType<NestExpressApplication['getHttpServer']>;
+// 真正监听端口：长轮询用例要并发发请求，supertest 对未监听的 server 每个请求临时起端口，并发时会出错。
+let server: string;
 let dataSource: DataSource;
 
 beforeAll(async () => {
   app = await createRelayApp();
-  await app.init();
-  server = app.getHttpServer();
+  await app.listen(0, '127.0.0.1');
+  server = await app.getUrl();
   dataSource = app.get(DataSource);
   await dataSource.query('DELETE FROM message');
   await dataSource.query('DELETE FROM friendship');
@@ -239,6 +241,82 @@ describe('信箱', () => {
     const alice = await registered();
     expect((await alice.call('POST', '/v1/messages', { to: 'x', clientId: randomUUID(), envelope: 'abc' })).body.code).toBe('INVALID_REQUEST');
     expect((await alice.call('GET', '/v1/messages?limit=500')).body.code).toBe('INVALID_REQUEST');
+  });
+});
+
+// supertest 请求在 then 时才发出，挂起类请求先用它立刻发出去。
+const start = (test: PromiseLike<request.Response>) => Promise.resolve(test);
+
+describe('长轮询', () => {
+  it('已有消息时立即返回', async () => {
+    const alice = await registered(), bob = await registered();
+    await pair(alice, bob);
+    const started = Date.now();
+    const inbox = await alice.call('GET', '/v1/messages?wait=10');
+    expect(inbox.body.messages).toHaveLength(1);
+    expect(Date.now() - started).toBeLessThan(2000);
+  });
+
+  it('挂起期间到达的消息立即唤醒并返回', async () => {
+    const alice = await registered(), bob = await registered();
+    await pair(alice, bob);
+    const hello = (await alice.call('GET', '/v1/messages')).body.messages;
+    await alice.call('POST', '/v1/messages/ack', { ids: hello.map((message: { id: string }) => message.id) });
+    const started = Date.now();
+    const waiting = start(alice.call('GET', '/v1/messages?wait=10'));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const envelope = fakeEnvelope();
+    await bob.call('POST', '/v1/messages', { to: alice.deviceId, clientId: randomUUID(), envelope });
+    const inbox = await waiting;
+    expect(inbox.body.messages.map((message: { envelope: string }) => message.envelope)).toEqual([envelope]);
+    expect(Date.now() - started).toBeLessThan(3000);
+    expect(app.get(MailboxNotifier).size).toBe(0);
+  });
+
+  it('扫码加好友的问候同样唤醒邀请人', async () => {
+    const owner = await registered(), redeemer = await registered();
+    const waiting = start(owner.call('GET', '/v1/messages?wait=10'));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    const started = Date.now();
+    await pair(owner, redeemer);
+    expect((await waiting).body.messages).toHaveLength(1);
+    expect(Date.now() - started).toBeLessThan(3000);
+  });
+
+  it('没有消息时到时返回空', async () => {
+    const alice = await registered();
+    const started = Date.now();
+    const inbox = await alice.call('GET', '/v1/messages?wait=1');
+    expect(inbox.body.messages).toEqual([]);
+    expect(Date.now() - started).toBeGreaterThanOrEqual(900);
+  });
+
+  it('同一设备第三个挂起请求让最早的先返回', async () => {
+    const alice = await registered();
+    const started = Date.now();
+    const first = start(alice.call('GET', '/v1/messages?wait=10'));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const second = start(alice.call('GET', '/v1/messages?wait=2'));
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    const third = start(alice.call('GET', '/v1/messages?wait=1'));
+    expect((await first).body.messages).toEqual([]);
+    expect(Date.now() - started).toBeLessThan(3000);
+    expect((await third).status).toBe(200);
+    expect((await second).status).toBe(200);
+    expect(app.get(MailboxNotifier).size).toBe(0);
+  });
+
+  it('客户端中途断开即释放挂起', async () => {
+    const alice = await registered();
+    const notifier = app.get(MailboxNotifier);
+    await alice.call('GET', '/v1/messages?wait=10').timeout(300).catch(() => undefined);
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    expect(notifier.size).toBe(0);
+  });
+
+  it('wait 超过 25 秒被拒', async () => {
+    const alice = await registered();
+    expect((await alice.call('GET', '/v1/messages?wait=60')).body.code).toBe('INVALID_REQUEST');
   });
 });
 

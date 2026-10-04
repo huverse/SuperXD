@@ -26,7 +26,7 @@ export class TestDevice {
     return { 'x-sxd-device': this.deviceId, 'x-sxd-time': time, 'x-sxd-nonce': nonce, 'x-sxd-signature': base64url(signature), 'content-type': 'application/json' };
   }
 
-  async call(method: 'GET' | 'POST' | 'DELETE', path: string, payload?: unknown, nonce?: string) {
+  call(method: 'GET' | 'POST' | 'DELETE', path: string, payload?: unknown, nonce?: string) {
     const body = payload === undefined ? Buffer.alloc(0) : Buffer.from(JSON.stringify(payload));
     const agent = request(this.server);
     const pending = method === 'GET' ? agent.get(path) : method === 'POST' ? agent.post(path) : agent.delete(path);

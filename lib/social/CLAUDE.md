@@ -13,14 +13,14 @@
 - relay_client.dart：
   - relayBaseUrl：中转地址只来自构建参数 SUPERXD_RELAY，不写进代码；未配置时私信不可用。
   - RelayCode：错误码，与服务端 relay_error.ts 一致，另有 NETWORK、TIMEOUT、BAD_RESPONSE。
-  - RelayTransport 传输端口；HttpRelayTransport 单次 15 秒超时。
+  - RelayTransport 传输端口，可按请求给超时；HttpRelayTransport 默认 15 秒，长轮询为挂起时长加 10 秒。
   - RelayClient：每个请求用设备私钥签名，没有会话令牌；收到 CLOCK_SKEW 按服务器时间校正并只重发这一次。
 - social_store.dart：本机库 social.db（数据库目录，已排除备份）：profile、friend、message、invite 四张表，时间存 UTC ISO 字符串。
 - social_service.dart：SocialService 私信编排，是页面唯一入口。
   - 状态：loading、unavailable（未配置中转）、disabled（未开启）、ready、failed。
   - enable 生成身份、注册、保存昵称；disable 先删服务端设备再清本机。
   - createInvite / redeem 扫码加好友；refresh 拉信箱、解密验签、入库后再确认删除；send / retry 发送卡片；removeFriend、setRemark、markRead、deleteMessage。
-  - polling 为真时就绪后前台每 60 秒、回到前台刷新一次（应用开启，测试关闭）。
+  - polling 为真时就绪后在前台持续长轮询（每次挂起 longPollWait 25 秒，有新消息立即返回），回到前台先拉一次并核对好友，进入后台不再发起；网络失败指数退避（2 秒起、上限 60 秒），空响应快于 5 秒时等满 5 秒防空转。应用里开启，测试关闭。页面不再自己定时拉取。
 
 # 关键规则
 
@@ -28,7 +28,7 @@
 - 信任链：扫码方从二维码直接拿到出示方公钥；出示方收到的问候要同时满足“设备号由问候里的签名公钥推出”“问候签名有效”“凭证由本机出示过的邀请私钥签出且绑定扫码方设备号”，服务器无法伪造好友。
 - 收到的任何消息都是外部输入：解密、核对消息头（发送方、收件人、消息号格式）、验签、卡片解码（decodeShareCard）任一步失败就丢弃并记日志，照样确认删除，避免反复拉取坏消息。非好友发来的卡片同样丢弃。
 - 收发幂等：发送消息号即服务端去重键，重发沿用同一号；收到的消息按消息号入库，重复投递只算一次。
-- 不自动重试：发送失败记错误码，由用户点重发；唯一例外是时钟偏差校正后的一次重发。应用被杀时停在“发送中”的消息启动后改为失败。
+- 不自动重试：发送失败记错误码，由用户点重发；唯一例外是时钟偏差校正后的一次重发。收消息的长轮询是持续的接收通道，失败后退避继续，不属于重试用户操作。应用被杀时停在“发送中”的消息启动后改为失败。
 - 上限：好友 500；每个好友保留最近 200 条；邀请记录保留 31 天（覆盖信箱 30 天保留期内迟到的问候）；单条密文 256KB（服务端判定）。
 - 隐私：私钥只在安全存储；服务端只见设备号、好友关系、密文大小与时间；昵称、课表、界面、作品链接都在密文里。视频卡片不带媒体直链与封面。
 - 身份丢失（安全存储被清）时清空本机私信库回到未开启，旧会话已无法解密。
@@ -36,4 +36,4 @@
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/social server/src
-- 标记位于：自建加密中转与地址不写死（relay_client.dart）、身份跟设备走（social_service.dart）、扫码即成为好友（social_service.dart 的 redeem 与服务端 pairing.service.ts）、课表一次性快照与首批卡片（domain/share_card.dart）。
+- 标记位于：前台长轮询收消息、不接推送（social_service.dart 的 startPolling）、自建加密中转与地址不写死（relay_client.dart）、身份跟设备走（social_service.dart）、扫码即成为好友（social_service.dart 的 redeem 与服务端 pairing.service.ts）、课表一次性快照与首批卡片（domain/share_card.dart）。

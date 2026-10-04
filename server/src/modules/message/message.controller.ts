@@ -1,5 +1,6 @@
-import { Body, Controller, Get, HttpCode, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Post, Query, Res, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
+import type { Response } from 'express';
 
 import { fetchLimit } from 'src/common/relay_limits';
 import { CurrentDevice, DeviceAuthGuard } from 'src/modules/device/device_auth.guard';
@@ -19,9 +20,11 @@ export class MessageController {
     return { id: stored.id, createTime: stored.createTime.getTime() };
   }
 
+  // 客户端在挂起期间断开（切后台、网络中断）时立即释放等待。
   @Get()
-  fetch(@CurrentDevice() deviceId: string, @Query() query: dtos.FetchMessagesQueryDto): Promise<dtos.InboxDto> {
-    return this.messages.fetch(deviceId, query.after ?? '0', query.limit ?? fetchLimit);
+  fetch(@CurrentDevice() deviceId: string, @Query() query: dtos.FetchMessagesQueryDto, @Res({ passthrough: true }) response: Response): Promise<dtos.InboxDto> {
+    const closed = new Promise<void>((resolve) => response.on('close', () => resolve()));
+    return this.messages.fetch(deviceId, query.after ?? '0', query.limit ?? fetchLimit, query.wait ?? 0, closed);
   }
 
   @Post('ack')

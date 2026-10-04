@@ -243,9 +243,11 @@ void main() {
     expect(find.bySemanticsLabel(RegExp('我的好友二维码')), findsOneWidget);
     expect(find.byType(PrettyQrView), findsOneWidget);
     expect(find.textContaining('后失效'), findsOneWidget);
-    // bob 扫码加 alice（二维码编码本身由 social_protocol_test 覆盖）：alice 页面 3 秒内轮询到问候，原地提示。
-    await tester.runAsync(() async => bob.redeem(InviteCode.decode((await alice.createInvite()).encode())!));
-    await tester.pump(const Duration(seconds: 3));
+    // bob 扫码加 alice（二维码编码本身由 social_protocol_test 覆盖）：问候到达后（应用里由长轮询送达，这里手动拉一次）原地提示。
+    await tester.runAsync(() async {
+      await bob.redeem(InviteCode.decode((await alice.createInvite()).encode())!);
+      await alice.refresh();
+    });
     await advance(tester);
     expect(find.textContaining('已添加：小明'), findsOneWidget);
     await tester.tap(find.text('扫一扫'));

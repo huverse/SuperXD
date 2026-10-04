@@ -34,13 +34,15 @@ abstract final class SocialCode {
 
 // [人工决策-2026-10-04 16:44:36] 好友与私信的身份跟设备走（独立昵称、不暴露学号），切换教务账号保留，百宝箱未登录也能分享。
 // 私信编排：本机库、设备身份与中转服务之间的唯一入口，页面只经它读写。设备级，切换教务账号保留。
-// 联网时机：开启、出示/扫码、发送、刷新（回到前台、进入私信、下拉、前台每 60 秒）。除校时重发一次外不自动重试。
+// 联网时机：开启、出示/扫码、发送、刷新（回到前台、进入私信、下拉），以及前台长轮询收消息。除校时重发一次外不自动重试。
 class SocialService extends ChangeNotifier {
   SocialService({required this.store, required this.vault, RelayTransport? transport, DateTime Function()? clock, this.polling = false})
     : _relay = transport == null ? null : RelayClient(transport),
       _clock = clock ?? DateTime.now;
-  // 就绪后是否自动前台轮询（应用里开启；测试关闭，避免残留定时器）。
+  // 就绪后是否在前台持续长轮询收消息（应用里开启；测试关闭，避免残留请求与定时器）。
   final bool polling;
+  // 长轮询每次挂起时长，服务端上限 25 秒。
+  static const longPollWait = Duration(seconds: 25);
   final SocialStore store;
   final IdentityVault vault;
   final RelayClient? _relay;
@@ -48,8 +50,10 @@ class SocialService extends ChangeNotifier {
   final _refreshLock = Lock();
   final _uuid = const Uuid();
   SocialIdentity? _identity;
-  Timer? _poller;
   AppLifecycleListener? _lifecycle;
+  bool _foreground = true;
+  bool _living = false;
+  bool _disposed = false;
 
   SocialStatus status = SocialStatus.loading;
   SocialProfile? profile;
@@ -157,7 +161,6 @@ class SocialService extends ChangeNotifier {
     } on RelayException catch (error) {
       throw SocialException(error.code);
     }
-    stopPolling();
     await store.clear();
     await vault.delete();
     _identity = null;
@@ -239,18 +242,12 @@ class SocialService extends ChangeNotifier {
       refreshing = true;
       notifyListeners();
       try {
-        final relay = _relay!, identity = _identity!;
         String? after;
         var received = 0;
         for (var page = 0; page < 20; page++) {
-          final batch = await relay.fetch(identity, after: after);
-          for (final item in batch.messages) {
-            if (await _accept(item)) received++;
-          }
-          if (batch.messages.isNotEmpty) {
-            await relay.ack(identity, [for (final item in batch.messages) item.id]);
-            after = batch.messages.last.id;
-          }
+          final batch = await _relay!.fetch(_identity!, after: after);
+          received += await _consume(batch.messages);
+          if (batch.messages.isNotEmpty) after = batch.messages.last.id;
           if (!batch.more) break;
         }
         if (reconcile) await _reconcile();
@@ -267,6 +264,17 @@ class SocialService extends ChangeNotifier {
         await _reload();
       }
     });
+  }
+
+  // 处理一批信箱消息并确认删除，返回新增条数；调用方须持有 _refreshLock。
+  Future<int> _consume(List<InboxItem> items) async {
+    if (items.isEmpty) return 0;
+    var received = 0;
+    for (final item in items) {
+      if (await _accept(item)) received++;
+    }
+    await _relay!.ack(_identity!, [for (final item in items) item.id]);
+    return received;
   }
 
   // 服务端没有、本机还有效的好友，标为对方已解除。
@@ -397,35 +405,65 @@ class SocialService extends ChangeNotifier {
     await _reload();
   }
 
-  // 前台轮询：回到前台立即刷新，前台每 60 秒刷新一次；进入后台停止。没有推送通道（国内无统一推送），这是收消息的唯一方式。
+  // [人工决策-2026-10-04 22:10:46] 收消息用前台长轮询（不接厂商推送，后台收不到）：应用在前台且私信就绪时始终挂着一个拉取请求，
+  // 有新消息服务端立即返回，接近实时；没有就 25 秒后空返回再挂。回到前台先拉一次并核对好友，进入后台不再发起（在途请求自然结束）。
+  // 网络失败按 2、4、8…秒退避、上限 60 秒；空响应快于 5 秒（服务端满载时会立即返回）也等满 5 秒，防止空转。
   void startPolling() {
     _lifecycle ??= AppLifecycleListener(
       onResume: () {
-        _schedule();
+        _foreground = true;
         _background(refresh(reconcile: true));
+        _live();
       },
-      onPause: () => _poller?.cancel(),
+      onPause: () => _foreground = false,
     );
-    _schedule();
+    _live();
   }
 
-  void _schedule() {
-    _poller?.cancel();
-    _poller = Timer.periodic(const Duration(seconds: 60), (_) => _background(refresh()));
+  bool get _keepLive => polling && _foreground && !_disposed && status == SocialStatus.ready;
+
+  void _live() {
+    if (_living || !_keepLive) return;
+    _living = true;
+    _background(_liveLoop());
+  }
+
+  Future<void> _liveLoop() async {
+    var backoff = const Duration(seconds: 2);
+    try {
+      while (_keepLive) {
+        final started = _clock();
+        try {
+          final batch = await _relay!.fetch(_identity!, wait: longPollWait);
+          if (!_keepLive) break;
+          backoff = const Duration(seconds: 2);
+          if (batch.messages.isNotEmpty) {
+            final received = await _refreshLock.synchronized(() => _consume(batch.messages));
+            campusLog('[Social] action=live received=$received');
+            await _reload();
+            continue;
+          }
+          final elapsed = _clock().difference(started);
+          if (elapsed < const Duration(seconds: 5)) await Future<void>.delayed(const Duration(seconds: 5) - elapsed);
+        } catch (error, stack) {
+          // 网络类错误只记错误码；其他异常记完整堆栈。都退避后继续，不让收消息在前台静默停掉。
+          campusLog(error is RelayException ? '[Social] action=live errorType=${error.code} retryIn=${backoff.inSeconds}s' : '[Social] action=live errorType=${error.runtimeType} retryIn=${backoff.inSeconds}s\n$stack');
+          await Future<void>.delayed(backoff);
+          backoff = backoff * 2 > const Duration(seconds: 60) ? const Duration(seconds: 60) : backoff * 2;
+        }
+      }
+    } finally {
+      _living = false;
+    }
   }
 
   void _background(Future<void> work) => work.catchError((Object error, StackTrace stack) {
-    campusLog('[Social] action=poll errorType=${error.runtimeType}\n$stack');
+    campusLog('[Social] action=background errorType=${error.runtimeType}\n$stack');
   });
-
-  void stopPolling() {
-    _poller?.cancel();
-    _poller = null;
-  }
 
   @override
   void dispose() {
-    stopPolling();
+    _disposed = true;
     _lifecycle?.dispose();
     super.dispose();
   }
