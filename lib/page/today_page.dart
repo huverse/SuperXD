@@ -296,7 +296,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         years: selection.years,
         isActive: () => mounted && (widget.isAccountCurrent?.call() ?? true) && TickerMode.valuesOf(context).enabled,
         confirmSchedule: (term, message) async => mounted &&
-            await showCampusConfirm(context, title: term.label.isEmpty ? term.key : term.label, message: message, cancel: '保留本地', action: '覆盖'),
+            await showCampusConfirm(context, title: term.label.isEmpty ? term.key : term.label, message: message, cancel: '保留本地', action: '覆盖', destructive: true),
         chooseBells: _chooseBells,
         onProgress: (progress) { if (mounted) setState(() => _syncProgress = progress); },
       );
@@ -376,13 +376,13 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
           mainAxisSize: MainAxisSize.min,
           children: [
             Text(_readError!, textAlign: TextAlign.center),
-            TextButton(onPressed: _refresh, child: const Text('重试')),
+            TextButton.icon(onPressed: _refresh, icon: const CampusIcon(CampusIcons.sync), label: const Text('重试')),
           ],
         ),
       );
     } else if (_needsStart) {
       content = Center(
-        child: FilledButton(onPressed: _pickStart, child: const Text('设置开学日')),
+        child: FilledButton.icon(style: campusProminent, onPressed: _pickStart, icon: const CampusIcon(CampusIcons.termStart), label: const Text('设置开学日')),
       );
     } else if (!_knownSchedule) {
       content = const Center(child: Text('尚未同步课表'));

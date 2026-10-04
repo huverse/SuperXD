@@ -48,6 +48,11 @@ abstract final class CampusIcons {
   static const check = LucideIcons.check;
   static const reminder = LucideIcons.bell;
   static const exportCalendar = LucideIcons.calendarArrowUp;
+  static const parse = LucideIcons.wandSparkles;
+  static const termStart = LucideIcons.calendar1;
+  static const jumpToday = LucideIcons.locateFixed;
+  static const login = LucideIcons.logIn;
+  static const restore = LucideIcons.rotateCcw;
 }
 
 void configureCampusIcons() =>

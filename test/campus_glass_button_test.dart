@@ -15,9 +15,76 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 
 void main() {
   tearDown(() => campusGlassReady.value = false);
+  test('强调按钮：五套配色深浅两色白字对强调色与警示红实底不低于4.5:1', () {
+    double contrast(Color color) => 1.05 / (color.computeLuminance() + .05);
+    for (final palette in [...CampusPalette.values, ...CampusPalette.darkValues]) {
+      expect(contrast(palette.accent), greaterThanOrEqualTo(4.5), reason: '${palette.id} ${palette.isDark}');
+      expect(contrast(palette.dangerFill), greaterThanOrEqualTo(4.5), reason: '${palette.id} ${palette.isDark}');
+    }
+  });
+
+  testWidgets('按钮层级：强调为实底白字、文字按钮为中性胶囊、链接不画胶囊，文字跟随应用字体', (tester) async {
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(fontFamily: 'Noto Serif SC'), home: Scaffold(body: Column(children: [
+      FilledButton(style: campusProminent, onPressed: () {}, child: const Text('解析')),
+      FilledButton(style: campusProminent, onPressed: null, child: const Text('禁用强调')),
+      TextButton(onPressed: () {}, child: const Text('重试')),
+      TextButton(style: campusLink, onPressed: () {}, child: const Text('隐私政策')),
+    ]))));
+    final palette = CampusPalette.values.first;
+    Color fill(String label) => (tester.widget<AnimatedContainer>(find.descendant(of: find.ancestor(of: find.text(label), matching: find.byType(FilledButton)), matching: find.byType(AnimatedContainer))).decoration! as ShapeDecoration).color!;
+    expect(fill('解析'), palette.accent);
+    expect(fill('禁用强调'), palette.accent.withValues(alpha: .4));
+    Color text(String label) => tester.widget<RichText>(find.descendant(of: find.text(label), matching: find.byType(RichText))).text.style!.color!;
+    expect(text('解析'), Colors.white);
+    expect(find.descendant(of: find.widgetWithText(TextButton, '重试'), matching: find.byType(CampusTonalSurface)), findsOneWidget);
+    expect(find.descendant(of: find.widgetWithText(TextButton, '隐私政策'), matching: find.byType(CampusGlassButtonSurface)), findsNothing);
+    for (final label in ['解析', '重试']) {
+      expect(tester.widget<RichText>(find.descendant(of: find.text(label), matching: find.byType(RichText))).text.style!.fontFamily, 'Noto Serif SC', reason: label);
+    }
+  });
+
+  testWidgets('弹窗操作：两个等宽并排、主操作为强调色，破坏性为警示红；三个竖排且主操作在最上', (tester) async {
+    late BuildContext page;
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Scaffold(body: Builder(builder: (context) {
+      page = context;
+      return const SizedBox.expand();
+    }))));
+    final palette = CampusPalette.values.first;
+    Color tint(String label) => tester.widget<CampusGlassButtonSurface>(find.descendant(of: find.widgetWithText(FilledButton, label), matching: find.byType(CampusGlassButtonSurface))).tint!;
+    final confirm = showCampusConfirm(page, title: '开始同步？', message: '同步所选学年。', action: '开始同步');
+    await tester.pumpAndSettle();
+    final cancel = tester.getRect(find.widgetWithText(TextButton, '取消')), start = tester.getRect(find.widgetWithText(FilledButton, '开始同步'));
+    expect(cancel.width, closeTo(start.width, .5));
+    expect(cancel.center.dy, closeTo(start.center.dy, .5));
+    expect(cancel.right, lessThan(start.left));
+    expect(tint('开始同步'), palette.accent);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(await confirm, isFalse);
+    final remove = showCampusConfirm(page, title: '删除记录？', message: '只移除记录。', action: '删除', destructive: true);
+    await tester.pumpAndSettle();
+    expect(tint('删除'), palette.dangerFill);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(await remove, isFalse);
+    showCampusDialog<void>(context: page, builder: (context) => CampusGlassDialog(title: const Text('作息'), actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('暂不采用')),
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('看下一套')),
+      FilledButton(onPressed: () => Navigator.pop(context), child: const Text('用这套')),
+    ]));
+    await tester.pumpAndSettle();
+    final top = tester.getRect(find.widgetWithText(FilledButton, '用这套')), bottom = tester.getRect(find.widgetWithText(TextButton, '暂不采用'));
+    expect(top.top, lessThan(bottom.top));
+    expect(top.width, closeTo(bottom.width, .5));
+    await tester.tap(find.text('暂不采用'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('全局主按钮保留原生点击禁用和键盘焦点，图文组合几何居中', (tester) async {
     var clicks = 0;
     final focus = FocusNode();

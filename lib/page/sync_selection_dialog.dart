@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
@@ -62,7 +63,7 @@ class _SyncSelectionDialogState extends State<_SyncSelectionDialog> {
     content: SizedBox(width: 440, child: SingleChildScrollView(child: Column(
       mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Row(children: [const Expanded(child: Text('选择学年')), TextButton(onPressed: _loading ? null : () => _load(true), child: const Text('刷新学年'))]),
+        Row(children: [const Expanded(child: Text('选择学年')), TextButton.icon(onPressed: _loading ? null : () => _load(true), icon: const CampusIcon(CampusIcons.sync), label: const Text('刷新学年'))]),
         if (_loading) const CampusLoading(label: '正在读取学年', inline: true),
         if (_error != null) Text(_error!),
         if (!_loading && _years.isEmpty) const Text('暂无学年，请先点“刷新学年”。不会自动同步课表。'),

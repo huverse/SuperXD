@@ -57,6 +57,7 @@
     - 首次使用来源前需要用户同意。
     - 页面有输入框、解析和取消。
     - 有最近解析与下载入口；历史或下载任务可直达结果页。
+    - 解析设置（保存历史、来源参与自动解析、清除解析缓存）在底部弹层里。
   - media_result_page.dart：结果页 MediaResultPage，展示预览和逐项下载。下载按钮原地切换为进度、暂停继续，完成后变为打开。
   - media_preview.dart：视频预览 MediaPreview 与图集预览 GalleryPreview。
   - media_image.dart：网络图片 MediaImage。加载失败后点按重试，不自动循环请求。

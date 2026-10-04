@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/theme/campus_theme.dart';
@@ -115,6 +116,69 @@ void main() {
     expectUnfaded(find.text('新页面'));
     await tester.pumpAndSettle();
     expect(find.text('新页面'), findsNothing);
+  });
+  // 模拟系统的预测性返回手势（Android 14 起），progress 为手指拖动进度。
+  Future<void> backGesture(WidgetTester tester, String method, [double progress = 0]) async {
+    final message = const StandardMethodCodec().encodeMethodCall(MethodCall(method, method == 'startBackGesture' || method == 'updateBackGestureProgress'
+        ? {'touchOffset': [5.0, 300.0], 'progress': progress, 'swipeEdge': 0}
+        : null));
+    await tester.binding.defaultBinaryMessenger.handlePlatformMessage('flutter/backgesture', message, (_) {});
+    await tester.pump();
+  }
+
+  testWidgets('跟手返回：拖动中新旧页按手指线性并排平移，松手从当前位置续接返回，取消回弹原位', (tester) async {
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), navigatorKey: navigator, home: const SizedBox.expand(child: Text('旧页面'))));
+    final width = tester.getSize(find.byType(MaterialApp)).width;
+    navigator.currentState!.push(MaterialPageRoute<void>(builder: (context) => const SizedBox.expand(child: Text('新页面'))));
+    await tester.pumpAndSettle();
+    await backGesture(tester, 'startBackGesture');
+    await backGesture(tester, 'updateBackGestureProgress', .5);
+    expect(tester.getTopLeft(find.text('新页面')).dx, closeTo(width * .5, 1));
+    expect(tester.getTopLeft(find.text('旧页面')).dx, closeTo(-width * .5, 1));
+    await backGesture(tester, 'cancelBackGesture');
+    final settling = tester.getTopLeft(find.text('新页面')).dx;
+    expect(settling, inInclusiveRange(0, width * .5 + 1));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('新页面')).dx, 0);
+    expect(navigator.currentState!.userGestureInProgress, isFalse);
+    await backGesture(tester, 'startBackGesture');
+    await backGesture(tester, 'updateBackGestureProgress', .6);
+    await backGesture(tester, 'commitBackGesture');
+    // 松手后从约 60% 处继续向右退出，不先跳回原位。
+    var previous = tester.getTopLeft(find.text('新页面')).dx;
+    expect(previous, greaterThanOrEqualTo(width * .6 - 1));
+    for (var frame = 0; frame < 8; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      if (find.text('新页面').evaluate().isEmpty) break;
+      final next = tester.getTopLeft(find.text('新页面')).dx;
+      expect(next, greaterThanOrEqualTo(previous - .5));
+      previous = next;
+    }
+    await tester.pumpAndSettle();
+    expect(find.text('新页面'), findsNothing);
+    expect(navigator.currentState!.userGestureInProgress, isFalse);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('跟手返回只作用于最前面的页面：被盖住的嵌套导航器里的页面不跟着返回', (tester) async {
+    final root = GlobalKey<NavigatorState>(), nested = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(
+      theme: campusTheme(),
+      navigatorKey: root,
+      home: Navigator(key: nested, onGenerateRoute: (_) => MaterialPageRoute<void>(builder: (context) => const Text('分支首页'))),
+    ));
+    nested.currentState!.push(MaterialPageRoute<void>(builder: (context) => const Text('分支二级页')));
+    await tester.pumpAndSettle();
+    root.currentState!.push(MaterialPageRoute<void>(builder: (context) => const Text('顶层页')));
+    await tester.pumpAndSettle();
+    await backGesture(tester, 'startBackGesture');
+    await backGesture(tester, 'updateBackGestureProgress', .5);
+    await backGesture(tester, 'commitBackGesture');
+    await tester.pumpAndSettle();
+    expect(find.text('顶层页'), findsNothing);
+    expect(find.text('分支二级页'), findsOneWidget);
+    expect(nested.currentState!.canPop(), isTrue);
   });
   testWidgets('日期与星期同显，周日跨年正确且文学字体大字不溢出', (tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 300));

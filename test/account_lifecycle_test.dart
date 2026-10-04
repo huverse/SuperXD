@@ -235,7 +235,10 @@ void main() {
       expect(contrast, greaterThanOrEqualTo(4.5), reason: label);
     }
     final theme = Theme.of(tester.element(find.byType(Checkbox).first)).checkboxTheme;
-    expect(theme.fillColor!.resolve({WidgetState.selected}), CampusPalette.values.first.primary);
+    // 复选框选中与开关同为控件激活色；白色对勾对它不低于 4.5:1。
+    final accent = CampusPalette.values.first.accent;
+    expect(theme.fillColor!.resolve({WidgetState.selected}), accent);
+    expect((1.05) / (accent.computeLuminance() + .05), greaterThanOrEqualTo(4.5));
     expect(theme.fillColor!.resolve({}), CampusPalette.values.first.surface);
     expect(theme.checkColor!.resolve({WidgetState.selected}), Colors.white);
     expect(tester.takeException(), isNull);

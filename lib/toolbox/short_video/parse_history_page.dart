@@ -64,7 +64,7 @@ class _ParseHistoryPageState extends State<ParseHistoryPage> {
       context,
       title: id == null ? '清空解析历史？' : '删除这条历史？',
       message: '下载记录和已保存文件保持不变。',
-      action: '删除',
+      action: '删除', destructive: true,
     )) {
       return;
     }

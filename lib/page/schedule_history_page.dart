@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -302,8 +303,9 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
                       ),
                     const SizedBox(height: 16),
                     FilledButton(
+                      style: campusProminent,
                       onPressed: _saving || _changes.isEmpty ? null : _restore,
-                      child: CampusBusyContent(busy: _saving, label: '恢复此版本', busyLabel: '恢复中'),
+                      child: CampusBusyContent(busy: _saving, label: '恢复此版本', busyLabel: '恢复中', icon: const CampusIcon(CampusIcons.restore)),
                     ),
                   ],
                 ],

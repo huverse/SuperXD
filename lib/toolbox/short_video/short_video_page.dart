@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -182,64 +183,85 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
     setState(() => _message = null);
   }
 
+  // 几项开关的设置放底部弹层（同 iOS 设置类弹层、鸿蒙半模态），居中弹窗只留给简短确认：
+  // 弹窗太窄，开关旁的标题与说明会把末字挤成单独一行。
   Future<void> _settings() async {
     final controller = _controller!;
-    await showCampusDialog<void>(
+    await showCampusSheet<void>(
       context: context,
-      builder: (context) => ListenableBuilder(
-        listenable: controller,
-        builder: (context, _) => CampusGlassDialog(
-          title: const Text('解析设置'),
-          scrollable: true,
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CampusSwitchTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('保存解析历史'),
-                subtitle: const Text('仅本机，最多80条／30天'),
-                value: controller.historyEnabled,
-                onChanged: (value) => controller.setHistory(value).catchError((
-                  Object error,
-                  StackTrace stack,
-                ) {
-                  campusLog(
-                    '[ShortVideo] action=settings errorType=${error.runtimeType}\n$stack',
-                  );
-                }),
-              ),
-              for (final source in controller.coordinator.providers.values)
-                CampusSwitchTile(
-                  contentPadding: EdgeInsets.zero,
-                  title: Text('${source.source.name} 参与自动解析'),
-                  subtitle: Text(switch (controller.coordinator.statuses[source.source.id]) {
-                    null => '本次运行尚未解析',
-                    final status => '${status.success ? '最近一次成功' : '最近一次未完成'} · ${formatCampusTimestamp(status.checkedAt.toUtc().toIso8601String())}',
-                  }),
-                  value: controller.enabled.contains(source.source.id),
-                  onChanged: (value) => controller
-                      .enable(source.source.id, value)
-                      .catchError((Object error, StackTrace stack) {
-                        campusLog(
-                          '[ShortVideo] action=source_toggle errorType=${error.runtimeType}\n$stack',
-                        );
-                      }),
+      builder: (context) => CampusSheetPanel(
+        child: ListenableBuilder(
+          listenable: controller,
+          builder: (context, _) => SingleChildScrollView(
+            padding: const EdgeInsets.fromLTRB(24, 12, 12, 20),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Row(
+                  children: [
+                    Expanded(child: Text('解析设置', style: Theme.of(context).textTheme.titleLarge)),
+                    IconButton(
+                      tooltip: '关闭',
+                      onPressed: () => Navigator.pop(context),
+                      icon: const CampusIcon(CampusIcons.close),
+                    ),
+                  ],
                 ),
-              TextButton(
-                onPressed: () {
-                  controller.coordinator.clearCache();
-                  Navigator.pop(context);
-                },
-                child: const Text('清除解析缓存'),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('关闭'),
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      CampusSwitchTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('保存解析历史'),
+                        subtitle: const Text('仅本机，最多80条／30天'),
+                        value: controller.historyEnabled,
+                        onChanged: (value) => controller.setHistory(value).catchError((
+                          Object error,
+                          StackTrace stack,
+                        ) {
+                          campusLog(
+                            '[ShortVideo] action=settings errorType=${error.runtimeType}\n$stack',
+                          );
+                        }),
+                      ),
+                      for (final source in controller.coordinator.providers.values)
+                        CampusSwitchTile(
+                          contentPadding: EdgeInsets.zero,
+                          title: Text('${source.source.name} 参与自动解析'),
+                          subtitle: Text(switch (controller.coordinator.statuses[source.source.id]) {
+                            null => '本次运行尚未解析',
+                            final status => '${status.success ? '最近一次成功' : '最近一次未完成'} · ${formatCampusTimestamp(status.checkedAt.toUtc().toIso8601String())}',
+                          }),
+                          value: controller.enabled.contains(source.source.id),
+                          onChanged: (value) => controller
+                              .enable(source.source.id, value)
+                              .catchError((Object error, StackTrace stack) {
+                                campusLog(
+                                  '[ShortVideo] action=source_toggle errorType=${error.runtimeType}\n$stack',
+                                );
+                              }),
+                        ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: FilledButton.icon(
+                    onPressed: () {
+                      controller.coordinator.clearCache();
+                      Navigator.pop(context);
+                    },
+                    icon: const CampusIcon(CampusIcons.delete),
+                    label: const Text('清除解析缓存'),
+                  ),
+                ),
+              ],
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -375,13 +397,15 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                                 label: const Text('粘贴'),
                               ),
                               if (_input.text.isNotEmpty)
-                                TextButton(
+                                TextButton.icon(
                                   onPressed: _prompting
                                       ? null
                                       : () => _replace(''),
-                                  child: const Text('清空'),
+                                  icon: const CampusIcon(CampusIcons.close),
+                                  label: const Text('清空'),
                                 ),
                               FilledButton(
+                                style: campusProminent,
                                 onPressed:
                                     _prompting ||
                                         controller.busy ||
@@ -392,15 +416,17 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                                   busy: controller.busy,
                                   label: '解析',
                                   busyLabel: '解析中',
+                                  icon: const CampusIcon(CampusIcons.parse),
                                 ),
                               ),
                               if (controller.busy)
-                                TextButton(
+                                TextButton.icon(
                                   onPressed: () {
                                     _inputVersion++;
                                     controller.cancel();
                                   },
-                                  child: const Text('取消'),
+                                  icon: const CampusIcon(CampusIcons.close),
+                                  label: const Text('取消'),
                                 ),
                             ],
                           ),

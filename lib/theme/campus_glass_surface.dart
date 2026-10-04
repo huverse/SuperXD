@@ -7,6 +7,13 @@ import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/glass_panel.dart';
 
+// 强调按钮底色：按下叠一层黑加深，禁用为四成透明（同鸿蒙禁用态）。
+Color campusProminentFill(Color color, {required bool pressed, required bool disabled}) => disabled
+    ? color.withValues(alpha: .4)
+    : pressed
+    ? Color.alphaBlend(Colors.black.withValues(alpha: .14), color)
+    : color;
+
 // 按钮和手势反馈共用材质；不提供点击行为或按钮语义。
 class CampusGlassSurface extends StatelessWidget {
   const CampusGlassSurface({
@@ -17,6 +24,7 @@ class CampusGlassSurface extends StatelessWidget {
     this.pressed = false,
     this.focused = false,
     this.softOutline = false,
+    this.tint,
   });
   final Widget child;
   final bool round;
@@ -24,6 +32,8 @@ class CampusGlassSurface extends StatelessWidget {
   final bool pressed;
   final bool focused;
   final bool softOutline;
+  // 强调按钮的染色（accent，破坏性操作为 dangerFill）：玻璃底色几乎不透明地铺这个色，白字才可读；实色档直接用它。
+  final Color? tint;
 
   @override
   Widget build(BuildContext context) {
@@ -34,21 +44,28 @@ class CampusGlassSurface extends StatelessWidget {
         ? const liquid.LiquidRoundedSuperellipse(borderRadius: 1000)
         : const liquid.LiquidRoundedSuperellipse(borderRadius: 12);
     // 实色档里选中、按下同样着 surfaceSelected，高对比度下选中态不只靠勾号区分。
-    final solidColor = disabled || pressed ? palette.surfaceSelected : palette.glassFallback;
+    final tint = this.tint;
+    final solidColor = tint != null
+        ? campusProminentFill(tint, pressed: pressed, disabled: disabled)
+        : disabled || pressed
+        ? palette.surfaceSelected
+        : palette.glassFallback;
     return ValueListenableBuilder<bool>(
       valueListenable: campusGlassReady,
       child: child,
       // 禁用、未就绪、父面板实色都画实色；与玻璃互换和换档经盖板过渡，不突变。
       builder: (context, ready, content) => CampusGlassBlend<CampusGlassTier>(
-        look: disabled || !ready || nested?.opaque == true ? CampusGlassTier.solid : CampusGlassScope.tierOf(context, ready: ready),
+        // 玻璃面板（弹窗、弹层）里的强调按钮画实色：父玻璃内的按钮只做半透明 vibrancy，会把强调色冲淡成像禁用的浅色（同 iOS 浮层里的 prominent 按钮是不透明的）。
+        look: disabled || !ready || nested?.opaque == true || (tint != null && nested != null) ? CampusGlassTier.solid : CampusGlassScope.tierOf(context, ready: ready),
         opaque: (tier) => tier == CampusGlassTier.solid,
         builder: (context, tier, cover) {
-          final settings = campusGlassSettings(
+          final base = campusGlassSettings(
             palette,
             CampusGlassRole.control,
             tier,
             pressed: pressed,
           );
+          final settings = tint == null ? base : base.copyWith(glassColor: solidColor.withValues(alpha: .92));
           // 描边画在玻璃的内容里（内描边），随玻璃的 materialize 一起显隐，不在玻璃外再包一层；盖板在描边与内容之下。
           final outlined = DecoratedBox(
             position: DecorationPosition.foreground,
@@ -57,6 +74,8 @@ class CampusGlassSurface extends StatelessWidget {
               border: Border.all(
                 color: focused
                     ? palette.primary
+                    : tint != null
+                    ? Colors.white.withValues(alpha: .18)
                     : disabled
                     ? palette.outlineSubtle
                     : palette.primary.withValues(alpha: softOutline ? .12 : .24),

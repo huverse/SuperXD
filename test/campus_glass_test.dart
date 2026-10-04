@@ -579,17 +579,38 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('浅色玻璃开关关闭态：白色滑块对轨道不低于3:1，且与开启轨道可分', (tester) async {
+    // 开关状态主要由滑块位置表达（同 iOS、鸿蒙）；颜色上开启为鲜亮的激活色、关闭为灰，按感知色差区分，
+    // 不要求亮度差（鲜亮激活色与关闭灰亮度相近）。两种状态下白色滑块对轨道都不低于 3:1。
+    testWidgets('玻璃开关：开启为激活色，两态白色滑块对轨道不低于3:1，开关两态色差明显', (tester) async {
       campusGlassReady.value = true;
       double contrast(Color a, Color b) {
         final first = a.computeLuminance(), second = b.computeLuminance();
         return (first > second ? first + .05 : second + .05) / (first > second ? second + .05 : first + .05);
       }
+      // OKLab 距离（感知均匀色差），> .1 即肉眼一眼可分。
+      List<double> oklab(Color color) {
+        double linear(double channel) => channel <= .04045 ? channel / 12.92 : math.pow((channel + .055) / 1.055, 2.4).toDouble();
+        final r = linear(color.r), g = linear(color.g), b = linear(color.b);
+        double cube(double value) => math.pow(value, 1 / 3).toDouble();
+        final l = cube(.4122214708 * r + .5363325363 * g + .0514459929 * b);
+        final m = cube(.2119034982 * r + .6806995451 * g + .1073969566 * b);
+        final s = cube(.0883024619 * r + .2817188376 * g + .6299787005 * b);
+        return [.2104542553 * l + .7936177850 * m - .0040720468 * s, 1.9779984951 * l - 2.4285922050 * m + .4505937099 * s, .0259040371 * l + .7827717662 * m - .8086757660 * s];
+      }
+      double difference(Color a, Color b) {
+        final first = oklab(a), second = oklab(b);
+        return math.sqrt([for (var index = 0; index < 3; index++) math.pow(first[index] - second[index], 2)].reduce((sum, value) => sum + value));
+      }
+      for (final palette in [...CampusPalette.values, ...CampusPalette.darkValues]) {
+        expect(contrast(Colors.white, palette.accent), greaterThanOrEqualTo(3), reason: '${palette.id} ${palette.isDark}');
+      }
       for (final palette in CampusPalette.values) {
         await tester.pumpWidget(MaterialApp(key: ValueKey(palette.id), theme: campusTheme(palette: palette), home: CampusGlassScope(mode: CampusGlassMode.full, capped: false, child: Scaffold(body: CampusSwitchTile(title: const Text('保存解析历史'), value: false, onChanged: (_) {})))));
         final glassSwitch = tester.widget<liquid.GlassSwitch>(find.byType(liquid.GlassSwitch));
+        expect(glassSwitch.activeColor, palette.accent);
         expect(contrast(glassSwitch.thumbColor, glassSwitch.inactiveColor!), greaterThanOrEqualTo(3), reason: palette.id);
-        expect(contrast(glassSwitch.activeColor!, glassSwitch.inactiveColor!), greaterThanOrEqualTo(1.8), reason: palette.id);
+        expect(contrast(glassSwitch.thumbColor, glassSwitch.activeColor!), greaterThanOrEqualTo(3), reason: palette.id);
+        expect(difference(glassSwitch.activeColor!, glassSwitch.inactiveColor!), greaterThan(.1), reason: palette.id);
       }
     });
   });

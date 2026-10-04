@@ -34,7 +34,7 @@ class GradesPage extends StatefulWidget {
   State<GradesPage> createState() => _GradesPageState();
 }
 
-class _GradesPageState extends State<GradesPage> {
+class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateMixin {
   final _search = TextEditingController();
   late final _syncService = CampusSync(widget.gateway);
   List<TermRef> _terms = [];
@@ -60,6 +60,41 @@ class _GradesPageState extends State<GradesPage> {
   List<GradeCourse> _visible = [];
   Map<String, List<GradeCourse>> _originalByCode = {};
   bool get _active => mounted && (widget.isAccountCurrent?.call() ?? true);
+  // 学期详情与学年概览、学期、学年之间的切换（淡出淡入）：旧内容先淡出，看不见时再换数据、读本地，
+  // 读到（最多等 300ms）再淡入，高度与滚动位置的变化都发生在看不见的时候。分段控件按待切换的值立即滑过去，不等内容。
+  // 内容区只有卡片与色调胶囊、没有玻璃，可以整体改不透明度。减少动画时直接切换。
+  late final _content = AnimationController(vsync: this, value: 1);
+  int _switching = 0;
+  bool? _pendingYearMode;
+  TermRef? _pendingTerm;
+
+  Future<void> _switchContent(VoidCallback apply, {bool? yearMode, TermRef? term}) async {
+    final switching = ++_switching;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      setState(apply);
+      await _loadView();
+      return;
+    }
+    setState(() {
+      _pendingYearMode = yearMode;
+      _pendingTerm = term;
+    });
+    try {
+      await _content.animateTo(0, duration: const Duration(milliseconds: 110), curve: Curves.easeInCubic).orCancel;
+      if (!mounted || switching != _switching) return;
+      setState(() {
+        apply();
+        _pendingYearMode = null;
+        _pendingTerm = null;
+      });
+      await Future.any([_loadView(), Future<void>.delayed(const Duration(milliseconds: 300))]);
+      if (!mounted || switching != _switching) return;
+      await _content.animateTo(1, duration: const Duration(milliseconds: 220), curve: Curves.easeOutCubic).orCancel;
+    } on TickerCanceled {
+      // 新的切换接手了动画，从当前不透明度继续。
+    }
+  }
+
   @override
   void initState() {
     super.initState();
@@ -69,6 +104,7 @@ class _GradesPageState extends State<GradesPage> {
 
   @override
   void dispose() {
+    _content.dispose();
     _search.dispose();
     super.dispose();
   }
@@ -177,14 +213,13 @@ class _GradesPageState extends State<GradesPage> {
   }
 
   void _chooseTerm(TermRef term) {
-    setState(() {
+    _switchContent(() {
       _term = term;
       _year = term.xn;
       _yearMode = false;
       _view = null;
       _visible = [];
-    });
-    _loadView();
+    }, yearMode: false, term: term);
   }
 
   Future<void> _sync() async {
@@ -371,6 +406,9 @@ class _GradesPageState extends State<GradesPage> {
       ..sort((left, right) => left.xq.compareTo(right.xq));
     final years = _terms.map((term) => term.xn).toSet().toList()
       ..sort((a, b) => b.compareTo(a));
+    final yearMode = _pendingYearMode ?? _yearMode;
+    final selectedTerm = _pendingTerm ?? _term;
+    final motion = MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 260);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
@@ -383,54 +421,65 @@ class _GradesPageState extends State<GradesPage> {
           ],
           onChanged: _syncing
               ? null
-              : (year) {
-                  setState(() {
-                    _year = year;
-                    _term = _terms.firstWhere((term) => term.xn == year);
-                    _view = null;
-                    _overview = [];
-                  });
-                  _loadView();
-                },
+              : (year) => _switchContent(() {
+                  _year = year;
+                  _term = _terms.firstWhere((term) => term.xn == year);
+                  _view = null;
+                  _overview = [];
+                }),
         ),
         const SizedBox(height: 12),
         // 二选一用分段控件（同 iOS、鸿蒙），切换时选中块滑过去。
         CampusSegmented<bool>(
           values: const [false, true],
-          selected: _yearMode,
+          selected: yearMode,
           label: (year) => year ? '学年概览' : '学期详情',
           onSelected: (year) {
-            if (year == _yearMode) return;
-            setState(() => _yearMode = year);
-            _loadView();
+            if (year == yearMode) return;
+            _switchContent(() => _yearMode = year, yearMode: year);
           },
         ),
-        if (!_yearMode && yearTerms.length <= 3 && yearTerms.any((term) => term.key == _term?.key))
-          Padding(
-            padding: const EdgeInsets.only(top: 4),
-            child: CampusSegmented<String>(
-              values: [for (final term in yearTerms) term.key],
-              selected: _term!.key,
-              label: (key) => _termLabel(yearTerms.firstWhere((term) => term.key == key)),
-              onSelected: (key) => _chooseTerm(yearTerms.firstWhere((term) => term.key == key)),
-            ),
-          )
-        else if (!_yearMode)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final term in yearTerms)
-                  CampusGlassChip(
-                    label: _termLabel(term),
-                    selected: _term?.key == term.key,
-                    onSelected: (_) => _chooseTerm(term),
+        // 学期一行随模式展开、收起，与分段控件同时开始，不等内容。
+        AnimatedSize(
+          duration: motion,
+          curve: Curves.easeInOutCubic,
+          alignment: Alignment.topCenter,
+          child: AnimatedSwitcher(
+            duration: motion,
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            layoutBuilder: (current, previous) => Stack(alignment: Alignment.topCenter, children: [...previous, ?current]),
+            child: yearMode
+                ? const SizedBox(key: ValueKey('no-terms'), width: double.infinity)
+                : yearTerms.length <= 3 && yearTerms.any((term) => term.key == selectedTerm?.key)
+                ? Padding(
+                    key: const ValueKey('term-segments'),
+                    padding: const EdgeInsets.only(top: 4),
+                    child: CampusSegmented<String>(
+                      values: [for (final term in yearTerms) term.key],
+                      selected: selectedTerm!.key,
+                      label: (key) => _termLabel(yearTerms.firstWhere((term) => term.key == key)),
+                      onSelected: (key) => _chooseTerm(yearTerms.firstWhere((term) => term.key == key)),
+                    ),
+                  )
+                : Padding(
+                    key: const ValueKey('term-chips'),
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final term in yearTerms)
+                          CampusGlassChip(
+                            label: _termLabel(term),
+                            selected: selectedTerm?.key == term.key,
+                            onSelected: (_) => _chooseTerm(term),
+                          ),
+                      ],
+                    ),
                   ),
-              ],
-            ),
           ),
+        ),
       ],
     );
   }
@@ -479,12 +528,15 @@ class _GradesPageState extends State<GradesPage> {
               child: CampusScrollFade(child: CustomScrollView(
                 slivers: [
                   SliverPadding(
-                    padding: EdgeInsets.fromLTRB(16, campusFieldGap(context), 16, 16),
+                    padding: EdgeInsets.fromLTRB(16, campusFieldGap(context), 16, 0),
+                    sliver: SliverToBoxAdapter(child: _terms.isNotEmpty ? _controls() : const SizedBox.shrink()),
+                  ),
+                  SliverFadeTransition(opacity: _content, sliver: SliverPadding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
                     sliver: SliverToBoxAdapter(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          if (_terms.isNotEmpty) _controls(),
                           if (_loading && !_syncing)
                             CampusLoading(label: _hasVisibleData ? '正在更新本地显示' : '正在读取成绩', inline: _hasVisibleData),
                           if (_error != null)
@@ -700,12 +752,12 @@ class _GradesPageState extends State<GradesPage> {
                         ],
                       ),
                     ),
-                  ),
+                  )),
                   if (_hasVisibleData &&
                       !_yearMode &&
                       _view?.cached == true &&
                       _view?.empty == false)
-                    SliverPadding(
+                    SliverFadeTransition(opacity: _content, sliver: SliverPadding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
                       sliver: SliverList.builder(
                         itemCount: _visible.length,
@@ -752,7 +804,7 @@ class _GradesPageState extends State<GradesPage> {
                           );
                         },
                       ),
-                    ),
+                    )),
                 ],
               )),
             ),
