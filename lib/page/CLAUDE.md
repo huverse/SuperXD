@@ -15,7 +15,7 @@
   - shell_page.dart 的底栏“消息”带私信未读角标（警示红底白字，读屏读出条数）。
   - section_pages.dart：
     - 服务页：课表、成绩、百宝箱三个入口。
-    - 我的页：界面设置、关闭记住账号、切换账号、导入旧版本数据、退出登录、开源与第三方声明。
+    - 我的页：头像卡（点按进入账号页）、界面、关于。
     - SectionTitleBar：底栏根页的大标题顶栏（服务、消息、我的共用）。
 - 私信（功能性，只有分享卡片、没有文字聊天）：
   - message_page.dart：消息页 MessagePage，分段“通知 | 私信”，默认停在私信（通知尚未接入）。
@@ -71,9 +71,11 @@
     - 背景可选自定义图片：系统照片选择器选一张，取色后交给 DisplaySettings 保存；选图插件的缓存副本用完即删。
     - 选图函数可注入（pickWallpaper），测试用假选图。
     - 模糊与透明度是两条滑杆（CampusSlider），拖动中只预览，正常松手立即保存；系统取消、读屏增减没有松手回调，停手 300ms 补存；离开页面时把没存的预览存掉。
-  - legal_page.dart：服务协议与隐私政策 LegalPage，内容是私有 Alpha 内测说明。
-  - licenses_page.dart：开源许可列表 CampusLicensesPage 和应用署名 GalaxyousAttribution。
-  - third_party_page.dart：第三方声明全文 ThirdPartyPage，读取 assets/third_party_notices.txt。
+  - account_page.dart：账号页 AccountPage（同 iOS Apple ID）。记住账号（只能在这里关闭，开启要在登录时输入密码，未开启时只读显示状态）、切换账号、导入旧版本数据一组；退出登录单独一组、红字放最底。退出后账号代次变化，账号页随旧路由一起销毁。
+  - about_page.dart：关于页 AboutPage。应用名与版本（package_info_plus 读安装包）、用户协议、隐私政策、开源许可、源代码与反馈问题（url_launcher 交给系统浏览器，打不开时原地提示链接），底部应用署名。版本信息与打开链接可注入，测试用假实现。
+  - legal_page.dart：用户协议与隐私政策 LegalPage（路由 /legal/service、/legal/privacy），面向公开 Alpha，顶部显示更新日期 legalUpdated；改动数据处理时同步改隐私政策并更新日期。
+  - licenses_page.dart：全部依赖许可列表 CampusLicensesPage 和应用署名 GalaxyousAttribution。
+  - third_party_page.dart：开源许可页 ThirdPartyPage，读取 assets/third_party_notices.txt（本项目 GPL-3.0 与第三方组件），顶部进入全部依赖许可。
 
 # 关键规则
 
@@ -104,7 +106,8 @@
   - 无课时段新增
   - 成绩同步范围与学年汇总
   - 旧库导入确认
-  - 法务说明
+  - 法务说明（公开 Alpha 重写）
+  - 我的页与账号页、关于页的归类
   - 同步中止提示
   - 壁纸模糊与透明度滑杆
   - 课表顶栏精简

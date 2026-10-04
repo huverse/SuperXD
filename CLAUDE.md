@@ -12,11 +12,11 @@
 
 - 校园课表与成绩 Flutter 应用。当前只有 Android 宿主，对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱，目前提供短视频解析与下载。
 - 功能性私信：扫码互加好友后，在私信里分享课表、界面配置、短视频等功能卡片，没有文字聊天。经自建中转服务（server 目录，NestJS + MySQL + Redis）端到端加密转交，中转地址由构建参数 SUPERXD_RELAY 传入。
-- 当前阶段为私有 Alpha 内测。Flutter 3.47.2 / Dart 3.13.2，依赖锁定在 pubspec.lock。
+- 当前阶段为公开 Alpha 测试，仓库公开、以 GPL-3.0 开源（curve_geometry.dart 例外，见 README 许可一节）。Flutter 3.47.2 / Dart 3.13.2，依赖锁定在 pubspec.lock。
 - 相关文档：
   - 设计语言：UITEMP/design_language.md
-  - 发布、签名与本地开发：README.md
-  - 协作流程：CONTRIBUTING.md
+  - 用户介绍、隐私摘要与从源码构建：README.md
+  - 发布、签名与贡献约定：CONTRIBUTING.md
   - 变更记录：CHANGELOG.md
 
 # 分层与依赖方向
@@ -168,7 +168,7 @@
 - 页面交互：
   - today_navigation_test.dart、today_date_transition_test.dart、schedule_experience_test.dart、schedule_editor_ui_test.dart
   - grades_ui_test.dart、form_spacing_test.dart、navigation_drag_test.dart、shell_layout_test.dart
-  - legal_page_test.dart、course_clock_performance_test.dart
+  - legal_page_test.dart、about_page_test.dart、course_clock_performance_test.dart
 - 主题与显示设置：atmosphere_test.dart、campus_glass_test.dart、campus_glass_button_test.dart、campus_motion_test.dart、dark_mode_test.dart、appearance_settings_test.dart、wallpaper_test.dart
 - 百宝箱：toolbox_widget_test.dart、toolbox_download_test.dart、toolbox_media_features_test.dart、short_video_parser_test.dart、media_image_test.dart
 - 私信：
@@ -182,6 +182,7 @@
   - verify_edu.dart、verify_grades.dart：访问真实教务，只在授权环境手动运行。
   - verify_toolbox.dart：Android 原生下载验证。
   - verify_social.dart：两个真实客户端经真实中转服务联调（合成数据），运行方式见文件头。
+  - readme_demo.dart：README 截图入口，内存库合成课表与假登录。
   - schedule_smoke.dart、glass_preview.dart、motion_preview.dart
   - motion_release_test.dart：检查发布包的图标字体。
 

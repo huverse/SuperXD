@@ -63,6 +63,10 @@ abstract final class CampusIcons {
   static const commonFree = LucideIcons.calendarCheck2;
   static const scanImage = LucideIcons.imageUp;
   static const flashlight = LucideIcons.flashlight;
+  static const terms = LucideIcons.fileText;
+  static const privacy = LucideIcons.shieldCheck;
+  static const sourceCode = LucideIcons.codeXml;
+  static const feedback = LucideIcons.messageSquareWarning;
 }
 
 void configureCampusIcons() =>
