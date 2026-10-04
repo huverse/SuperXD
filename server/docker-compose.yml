@@ -2,7 +2,10 @@
 # 用法见 README：复制 .env.example 为 .env 并改密码，然后 docker compose up -d --build。
 services:
   relay:
-    build: .
+    build:
+      context: .
+      args:
+        NPM_REGISTRY: ${NPM_REGISTRY}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -30,7 +33,8 @@ services:
       MYSQL_USER: ${MYSQL_USER}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     # 只读查询 5 秒、锁等待 5 秒超时，慢查询不拖垮连接池；服务端会话时区 UTC。
-    command: ["--max-execution-time=5000", "--innodb-lock-wait-timeout=5", "--default-time-zone=+00:00", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_bin"]
+    # 小内存机器（2GB 以内）：关闭 performance_schema（约省 200MB），缓冲池 128MB 足够信箱规模；数据量增长后再调大。
+    command: ["--max-execution-time=5000", "--innodb-lock-wait-timeout=5", "--default-time-zone=+00:00", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_bin", "--performance-schema=OFF", "--innodb-buffer-pool-size=128M"]
     volumes:
       - mysql-data:/var/lib/mysql
       # 仅首次初始化空库时执行建表；之后的表结构变更由人工执行。
