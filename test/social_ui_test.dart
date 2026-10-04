@@ -60,6 +60,15 @@ Future<void> advance(WidgetTester tester, [int frames = 12]) async {
   }
 }
 
+// 等真实异步（生成密钥、写库）完成再断言：固定帧数在 CI 慢磁盘上不够，上限只在失败时才会用满。
+Future<void> advanceUntil(WidgetTester tester, bool Function() done) async {
+  for (var tick = 0; tick < 1000 && !done(); tick++) {
+    await advance(tester, 1);
+  }
+  expect(done(), isTrue);
+  await advance(tester);
+}
+
 // 只实现好友课表页用到的读取方法。
 class _MyScheduleGateway implements CampusGateway {
   _MyScheduleGateway(this.courses, {this.termStartDate});
@@ -98,12 +107,7 @@ void main() {
     expect(find.textContaining('昵称为 1–20 个字'), findsOneWidget);
     await tester.enterText(find.byType(TextField), '小红');
     await tester.tap(find.text('同意并开启'));
-    // 开启要生成密钥、注册、写库，真实耗时随机器快慢变化（CI 曾在固定 12 帧内没跑完）；等到状态真正变为就绪再断言。
-    for (var tick = 0; tick < 200 && social.status != SocialStatus.ready; tick++) {
-      await advance(tester, 1);
-    }
-    await advance(tester);
-    expect(social.status, SocialStatus.ready);
+    await advanceUntil(tester, () => social.status == SocialStatus.ready && find.text('添加好友').evaluate().isNotEmpty);
     expect(find.text('添加好友'), findsOneWidget);
     expect(find.textContaining('还没有好友'), findsOneWidget);
   });
@@ -123,7 +127,8 @@ void main() {
     expect(find.text('2'), findsOneWidget);
     expect(find.text('私信 2'), findsOneWidget);
     await tester.tap(find.text('小明'));
-    await advance(tester);
+    // 进入会话后标记已读要写库，CI 曾在固定帧数内没写完（未读仍为 2）。
+    await advanceUntil(tester, () => alice.unread == 0);
     expect(find.byType(ConversationPage), findsOneWidget);
     expect(find.text('2026-2027学年第一学期'), findsOneWidget);
     expect(find.text('合成作品'), findsOneWidget);
@@ -160,7 +165,7 @@ void main() {
     await advance(tester);
     expect(find.text('分享课表'), findsNothing, reason: '没有教务网关时不提供分享课表');
     await tester.tap(find.text('分享界面'));
-    await advance(tester);
+    await advanceUntil(tester, () => find.text('界面配置').evaluate().isNotEmpty);
     expect(find.text('界面配置'), findsOneWidget);
     expect(relay.mailbox, hasLength(1));
     await tester.runAsync(() async {
@@ -182,7 +187,7 @@ void main() {
     await tester.tap(find.text('小红'));
     await advance(tester, 2);
     await tester.tap(find.text('发送给 1 位好友'));
-    await advance(tester);
+    await advanceUntil(tester, () => find.text('已发送').evaluate().isNotEmpty);
     expect(find.text('已发送'), findsOneWidget);
     expect(find.text('完成'), findsOneWidget);
     expect(relay.mailbox.single.recipient, alice.deviceId);
@@ -255,7 +260,7 @@ void main() {
     await advance(tester);
     expect(find.textContaining('已添加：小明'), findsOneWidget);
     await tester.tap(find.text('扫一扫'));
-    await advance(tester);
+    await advanceUntil(tester, () => result != null);
     expect(result, carol.deviceId);
     expect(alice.friends.map((friend) => friend.nickname), containsAll(['小明', '小青']));
     semantics.dispose();
