@@ -143,6 +143,26 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('课表顶栏在窄屏特大字号下不溢出：今天胶囊与两个玻璃圆按钮都在屏内', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    for (final font in ['Maple Mono NF CN', 'Noto Serif SC']) {
+      await tester.pumpWidget(MaterialApp(
+        key: ValueKey(font),
+        theme: campusTheme(fontFamily: font),
+        locale: const Locale('zh', 'CN'), supportedLocales: const [Locale('zh', 'CN')], localizationsDelegates: GlobalMaterialLocalizations.delegates,
+        home: MediaQuery(data: const MediaQueryData(size: Size(360, 700), textScaler: TextScaler.linear(1.4)), child: Scaffold(body: SchedulePage(gateway: _EveryDayGateway()))),
+      ));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull, reason: font);
+      for (final target in [find.widgetWithText(TextButton, '今天'), find.byTooltip('管理课程'), find.byTooltip('更多操作')]) {
+        final rect = tester.getRect(target);
+        expect(rect.left, greaterThanOrEqualTo(0), reason: font);
+        expect(rect.right, lessThanOrEqualTo(360), reason: font);
+      }
+    }
+  });
+
   testWidgets('玻璃栏遮挡区：放得下时按可见区排布且不可滚动，不影响切日手势', (tester) async {
     await tester.binding.setSurfaceSize(const Size(380, 540));
     addTearDown(() => tester.binding.setSurfaceSize(null));

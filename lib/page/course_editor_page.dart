@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -89,7 +90,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
           context,
           title: '放弃未保存修改？',
           message: '当前草稿尚未保存，离开后将丢失。',
-          action: '放弃修改',
+          action: '放弃修改', destructive: true,
         )) {
       return;
     }
@@ -143,7 +144,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
             context,
             title: '保存后删除整门课程？',
             message: '所有时段已移除，保存将删除整门课程。可在历史版本中恢复。',
-            action: '保存并删除',
+            action: '保存并删除', destructive: true,
           )) {
         return;
       }
@@ -266,7 +267,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
       context,
       title: '从草稿移除此时段？',
       message: '${week == null ? meetingLabel(meeting) : '仅第$week周的这次课'}\n保存课程后生效，历史版本中可恢复。',
-      action: '移除',
+      action: '移除', destructive: true,
     )) {
       return;
     }
@@ -402,8 +403,9 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
               ),
             const SizedBox(height: 16),
             FilledButton(
+              style: campusProminent,
               onPressed: _saving ? null : _save,
-              child: CampusBusyContent(busy: _saving, label: '保存课程', busyLabel: '保存中'),
+              child: CampusBusyContent(busy: _saving, label: '保存课程', busyLabel: '保存中', icon: const CampusIcon(CampusIcons.check)),
             ),
           ],
         ),

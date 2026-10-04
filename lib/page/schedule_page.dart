@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/domain/period_spans.dart';
 import 'package:superxd/page/reminder_dialog.dart';
@@ -251,11 +252,14 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
 
   Future<void> _more(BuildContext anchor) async {
     final action = await showCampusMenu<String>(anchor, items: [
+      if (_term != null) const CampusMenuItem(value: 'start', label: '开学日', icon: CampusIcons.termStart),
       if (widget.reminders != null) const CampusMenuItem(value: 'reminder', label: '课前提醒', icon: CampusIcons.reminder),
       if (_term != null) const CampusMenuItem(value: 'export', label: '导出到日历', icon: CampusIcons.exportCalendar),
     ]);
     if (!mounted) return;
     switch (action) {
+      case 'start':
+        await _editStart();
       case 'reminder':
         await showReminderSettings(context, gateway: widget.gateway, reminders: widget.reminders!);
       case 'export' when !_knownSchedule:
@@ -275,10 +279,13 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
         CampusTopBar(child: SizedBox(height: 56 * scale, child: Row(children: [
           IconButton(tooltip: '返回', onPressed: _back, icon: const CampusIcon(CampusIcons.back)),
           Expanded(child: Text(_selection.yearOverview && _selection.year.isNotEmpty ? '${_selection.year}–${int.parse(_selection.year)+1}' : '课表', style: Theme.of(context).textTheme.titleLarge)),
-          TextButton(onPressed: _term == null || _loading ? null : _editStart, child: const Text('开学日')),
-          TextButton(onPressed: _loading ? null : _today, child: const Text('今天')),
-          IconButton(tooltip: '管理课程', onPressed: _term == null || _loading ? null : _manage, icon: const CampusIcon(CampusIcons.manageSchedule)),
-          Builder(builder: (anchor) => IconButton(tooltip: '更多操作', onPressed: _loading || _term == null && widget.reminders == null ? null : () => _more(anchor), icon: const CampusIcon(CampusIcons.manage))),
+          // 标题栏只留高频操作（同 iOS、鸿蒙标题栏）：“今天”是带图标的胶囊；每学期只设一次的开学日收进⋯菜单，空课表时页面里仍有“设置开学日”。
+          TextButton.icon(onPressed: _loading ? null : _today, icon: const CampusIcon(CampusIcons.jumpToday), label: const Text('今天')),
+          const SizedBox(width: 4),
+          CampusGlassCircleButton(label: '管理课程', size: 44, onPressed: _term == null || _loading ? null : _manage, icon: const CampusIcon(CampusIcons.manageSchedule)),
+          const SizedBox(width: 4),
+          Builder(builder: (anchor) => CampusGlassCircleButton(label: '更多操作', size: 44, onPressed: _loading || _term == null && widget.reminders == null ? null : () => _more(anchor), icon: const CampusIcon(CampusIcons.manage))),
+          const SizedBox(width: 8),
         ]))),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: CampusSegmented<ScheduleRange>(
           values: ScheduleRange.values, selected: _selection.range, onSelected: _selectRange,
@@ -311,7 +318,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
 
   Widget _content(double scale, Duration motion) {
     if (!_knownSchedule) return Center(key: const ValueKey('not-synced'), child: TextButton(onPressed: () => _notice('该学期尚未同步，请在今天页选择这个学年同步。'), child: const Text('尚未同步此学期')));
-    if (_start == null) return Center(key: const ValueKey('start'), child: FilledButton(onPressed: _editStart, child: const Text('设置开学日')));
+    if (_start == null) return Center(key: const ValueKey('start'), child: FilledButton.icon(style: campusProminent, onPressed: _editStart, icon: const CampusIcon(CampusIcons.termStart), label: const Text('设置开学日')));
     final showRail = _selection.showRail;
     return LayoutBuilder(key: const ValueKey('calendar-body'), builder: (context, constraints) {
       final railWidth = math.min(112 * scale, constraints.maxWidth * .34);

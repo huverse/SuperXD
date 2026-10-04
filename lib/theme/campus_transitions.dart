@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:superxd/theme/campus_background.dart';
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_surface.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -336,15 +337,27 @@ class CampusGlassDialog extends StatelessWidget {
                       child: DefaultTextStyle(style: contentStyle, child: body),
                     ),
                   ),
+                // [人工决策-2026-10-04 15:29:32] 操作按钮同鸿蒙对话框、iOS 26 弹窗：一到两个等宽并排铺满（取消在左、主操作在右），
+                // 三个及以上竖排；操作区的 FilledButton 即本弹窗主操作，自动为强调按钮，TextButton 为中性胶囊。
                 if (actions.isNotEmpty)
                   Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
-                    child: OverflowBar(
-                      alignment: MainAxisAlignment.end,
-                      overflowAlignment: OverflowBarAlignment.end,
-                      spacing: 8,
-                      overflowSpacing: 8,
-                      children: actions,
+                    padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
+                    child: FilledButtonTheme(
+                      data: FilledButtonThemeData(style: campusProminent.merge(Theme.of(context).filledButtonTheme.style)),
+                      child: actions.length <= 2
+                          ? Row(children: [
+                              for (var index = 0; index < actions.length; index++) ...[
+                                if (index > 0) const SizedBox(width: 12),
+                                Expanded(child: actions[index]),
+                              ],
+                            ])
+                          : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                              // 竖排时主操作在最上、取消在最下（同 iOS、鸿蒙），调用处仍按“取消在前”书写。
+                              for (final (index, action) in actions.reversed.indexed) ...[
+                                if (index > 0) const SizedBox(height: 8),
+                                action,
+                              ],
+                            ]),
                     ),
                   ),
               ],
@@ -441,7 +454,8 @@ Future<void> showCampusNotice(BuildContext context, String message, {String? tit
 );
 
 // 二次确认：仅点确认按钮返回true，取消、点遮罩或系统返回都视为不确认。
-Future<bool> showCampusConfirm(BuildContext context, {required String title, required String message, required String action, String cancel = '取消', bool barrierDismissible = true}) async => await showCampusDialog<bool>(
+// destructive 为真时主按钮是警示红（删除、清空、退出、覆盖、放弃修改等不可撤销的操作）。
+Future<bool> showCampusConfirm(BuildContext context, {required String title, required String message, required String action, String cancel = '取消', bool barrierDismissible = true, bool destructive = false}) async => await showCampusDialog<bool>(
   context: context,
   barrierDismissible: barrierDismissible,
   builder: (context) => CampusGlassDialog(
@@ -449,7 +463,7 @@ Future<bool> showCampusConfirm(BuildContext context, {required String title, req
     content: SingleChildScrollView(child: Text(message)),
     actions: [
       TextButton(onPressed: () => Navigator.pop(context, false), child: Text(cancel)),
-      FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(action)),
+      FilledButton(style: destructive ? campusDestructive : null, onPressed: () => Navigator.pop(context, true), child: Text(action)),
     ],
   ),
 ) == true;

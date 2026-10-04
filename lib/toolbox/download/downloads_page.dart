@@ -49,7 +49,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
       context,
       title: '删除下载记录？',
       message: '只移除记录，已保存到本地的文件保留。',
-      action: '删除记录',
+      action: '删除记录', destructive: true,
     );
     if (confirmed && mounted) {
       await _operate(id, () => widget.runtime.downloads.deleteJob(id));

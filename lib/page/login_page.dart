@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -130,8 +131,9 @@ class _LoginPageState extends State<LoginPage> {
                     onChanged: _busy ? null : (value) => _chooseRemember(value == true)),
                   const SizedBox(height: 8),
                   SizedBox(width: double.infinity, child: FilledButton(
+                    style: campusProminent,
                     onPressed: _canLogin ? _login : null,
-                    child: CampusBusyContent(busy: _busy, label: widget.switching ? '登录并切换' : '登录', busyLabel: widget.switching ? '正在登录并切换' : '正在登录'),
+                    child: CampusBusyContent(busy: _busy, label: widget.switching ? '登录并切换' : '登录', busyLabel: widget.switching ? '正在登录并切换' : '正在登录', icon: const CampusIcon(CampusIcons.login)),
                   )),
                 ])),
                 if (!widget.switching) Padding(padding: const EdgeInsets.only(top: 16), child: OutlinedButton.icon(
@@ -140,9 +142,9 @@ class _LoginPageState extends State<LoginPage> {
                   SizedBox(width: 48, height: 48, child: Checkbox(key: const ValueKey('agree-terms'), value: _agreed, onChanged: _busy ? null : (value) => setState(() => _agreed = value == true))),
                   Expanded(child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
                     Text('我已阅读并同意', style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant)),
-                    TextButton(onPressed: _busy ? null : () => context.push('/legal/service'), child: const Text('服务协议', style: TextStyle(fontSize: 14))),
+                    TextButton(style: campusLink, onPressed: _busy ? null : () => context.push('/legal/service'), child: const Text('服务协议', style: TextStyle(fontSize: 14))),
                     const Text('和', style: TextStyle(fontSize: 14)),
-                    TextButton(onPressed: _busy ? null : () => context.push('/legal/privacy'), child: const Text('隐私政策', style: TextStyle(fontSize: 14))),
+                    TextButton(style: campusLink, onPressed: _busy ? null : () => context.push('/legal/privacy'), child: const Text('隐私政策', style: TextStyle(fontSize: 14))),
                   ])),
                 ])),
               ]),

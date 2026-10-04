@@ -56,7 +56,7 @@ class _ToolboxPageState extends State<ToolboxPage> {
       context,
       title: '卸载${module.name}？',
       message: '将取消本工具任务并移除资源，已保存的视频保留。',
-      action: '卸载',
+      action: '卸载', destructive: true,
     );
     if (agreed && mounted) {
       await _operation(

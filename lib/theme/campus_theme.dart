@@ -50,7 +50,8 @@ ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono N
     bottomSheetTheme: BottomSheetThemeData(backgroundColor: colors.surface, shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24)))),
     popupMenuTheme: PopupMenuThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
     chipTheme: ChipThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), backgroundColor: colors.surface, selectedColor: colors.surfaceSelected, disabledColor: colors.glassFallback, checkmarkColor: colors.primary, side: BorderSide(color: colors.outline), labelStyle: TextStyle(fontFamily: fontFamily, fontSize: 14, fontWeight: FontWeight.w600, color: colors.onSurface)),
-    checkboxTheme: CheckboxThemeData(checkColor: WidgetStatePropertyAll(colors.onPrimary), fillColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? colors.primary : colors.surface), side: BorderSide(color: colors.outline, width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5))),
+    // 复选框选中与开关开启同为控件激活色 accent（同鸿蒙 component_activated）。
+    checkboxTheme: CheckboxThemeData(checkColor: WidgetStatePropertyAll(colors.onPrimary), fillColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? colors.accent : colors.surface), side: BorderSide(color: colors.outline, width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5))),
     // 次要按钮（同 iOS、鸿蒙的灰底次要按钮）：内容区为中性浅底胶囊配主色字、不加描边；导航层与浮层里仍是玻璃。
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
@@ -64,11 +65,26 @@ ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono N
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         minimumSize: Size(40, 38),
         tapTargetSize: MaterialTapTargetSize.padded,
-        textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, height: 1.25),
+        textStyle: TextStyle(fontFamily: fontFamily, fontSize: 16, fontWeight: FontWeight.w500, height: 1.25),
         backgroundBuilder: (context, states, child) => CampusGlassButtonSurface(states: states, neutral: true, child: child!),
       ),
     ),
-    textButtonTheme: TextButtonThemeData(style: TextButton.styleFrom(minimumSize: Size(48, 48), textStyle: TextStyle(fontFamily: fontFamily, fontSize: 14))),
+    // 文字按钮与次要按钮同一形态（中性胶囊）：只有文字的按钮看着像普通标签，认不出能点；句中的链接改用 campusLink。
+    textButtonTheme: TextButtonThemeData(
+      style: TextButton.styleFrom(
+        foregroundColor: colors.primary,
+        iconColor: colors.primary,
+        disabledForegroundColor: colors.onSurfaceVariant,
+        disabledIconColor: colors.onSurfaceVariant,
+        overlayColor: colors.primary.withValues(alpha: .08),
+        shape: StadiumBorder(),
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        minimumSize: Size(40, 38),
+        tapTargetSize: MaterialTapTargetSize.padded,
+        textStyle: TextStyle(fontFamily: fontFamily, fontSize: 16, fontWeight: FontWeight.w500, height: 1.25),
+        backgroundBuilder: (context, states, child) => CampusGlassButtonSurface(states: states, neutral: true, child: child!),
+      ),
+    ),
     colorScheme: scheme,
     scaffoldBackgroundColor: Colors.transparent,
     canvasColor: colors.surface,
@@ -105,7 +121,7 @@ ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono N
         tapTargetSize: MaterialTapTargetSize.padded,
         visualDensity: VisualDensity.standard,
         shape: StadiumBorder(),
-        textStyle: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, height: 1.25),
+        textStyle: TextStyle(fontFamily: fontFamily, fontSize: 16, fontWeight: FontWeight.w500, height: 1.25),
         backgroundBuilder: campusButtonBackground,
       ),
     ),

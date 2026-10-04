@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -396,13 +397,15 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                                 label: const Text('粘贴'),
                               ),
                               if (_input.text.isNotEmpty)
-                                TextButton(
+                                TextButton.icon(
                                   onPressed: _prompting
                                       ? null
                                       : () => _replace(''),
-                                  child: const Text('清空'),
+                                  icon: const CampusIcon(CampusIcons.close),
+                                  label: const Text('清空'),
                                 ),
                               FilledButton(
+                                style: campusProminent,
                                 onPressed:
                                     _prompting ||
                                         controller.busy ||
@@ -413,15 +416,17 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                                   busy: controller.busy,
                                   label: '解析',
                                   busyLabel: '解析中',
+                                  icon: const CampusIcon(CampusIcons.parse),
                                 ),
                               ),
                               if (controller.busy)
-                                TextButton(
+                                TextButton.icon(
                                   onPressed: () {
                                     _inputVersion++;
                                     controller.cancel();
                                   },
-                                  child: const Text('取消'),
+                                  icon: const CampusIcon(CampusIcons.close),
+                                  label: const Text('取消'),
                                 ),
                             ],
                           ),

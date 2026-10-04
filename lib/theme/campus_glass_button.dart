@@ -15,6 +15,30 @@ Widget campusButtonBackground(
   Widget? child,
 ) => CampusGlassButtonSurface(states: states, child: child!);
 
+// [人工决策-2026-10-04 15:29:32] 新增强调按钮（同 iOS 26 glassProminent、鸿蒙 EMPHASIZED）：每屏、每个弹窗只给一个主操作，
+// 控件激活色 accent 为底、白字带图标；内容区是实底胶囊，导航层与浮层是 accent 染色玻璃（扩展上两条，其余按钮形态不变）。
+// 禁用时整体变淡、形态不变，仍看得出是本页主操作。用法：FilledButton(style: campusProminent, ...)；弹窗操作区的 FilledButton 自动是强调。
+final campusProminent = _tinted((palette) => palette.accent);
+
+// 句中的链接（如“服务协议”“隐私政策”）：只有主色文字、不画胶囊，触区仍至少 48。
+final campusLink = ButtonStyle(
+  padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(horizontal: 4)),
+  minimumSize: const WidgetStatePropertyAll(Size(0, 48)),
+  backgroundBuilder: (context, states, child) => child!,
+);
+
+// 破坏性操作（删除、清空、退出、覆盖等）的确认按钮：同强调按钮，底色为警示红（同 iOS destructive、鸿蒙警示按钮）。
+final campusDestructive = _tinted((palette) => palette.dangerFill);
+
+ButtonStyle _tinted(Color Function(CampusPalette palette) color) {
+  final foreground = WidgetStateProperty.resolveWith((states) => Colors.white.withValues(alpha: states.contains(WidgetState.disabled) ? .9 : 1));
+  return ButtonStyle(
+    foregroundColor: foreground,
+    iconColor: foreground,
+    backgroundBuilder: (context, states, child) => CampusGlassButtonSurface(states: states, tint: color(CampusPalette.of(context)), child: child!),
+  );
+}
+
 class CampusGlassButtonSurface extends StatelessWidget {
   const CampusGlassButtonSurface({
     super.key,
@@ -22,19 +46,23 @@ class CampusGlassButtonSurface extends StatelessWidget {
     required this.child,
     this.round = false,
     this.neutral = false,
+    this.tint,
   });
   final Set<WidgetState> states;
   final Widget child;
   final bool round;
   // 选择标签：内容区未选时为中性底，不着主色，与操作按钮区分。
   final bool neutral;
+  // 强调按钮的底色（accent 或 dangerFill），白字；为空是普通按钮。见 campusProminent、campusDestructive。
+  final Color? tint;
 
   @override
   Widget build(BuildContext context) {
     final disabled = states.contains(WidgetState.disabled);
     final pressed = states.contains(WidgetState.pressed) && !disabled;
     if (GlassPanelScope.maybeOf(context) == null && !CampusChrome.of(context)) {
-      return CampusTonalSurface(states: states, neutral: neutral, child: child);
+      final tint = this.tint;
+      return tint != null ? CampusProminentSurface(states: states, color: tint, child: child) : CampusTonalSurface(states: states, neutral: neutral, child: child);
     }
     return ValueListenableBuilder<bool>(
       valueListenable: campusGlassReady,
@@ -49,6 +77,7 @@ class CampusGlassButtonSurface extends StatelessWidget {
           round: true,
           softOutline: !round,
           disabled: disabled,
+          tint: tint,
           pressed: pressed || states.contains(WidgetState.selected),
           focused: states.contains(WidgetState.focused),
           child: Transform.scale(scale: contentScale, child: child),
@@ -93,6 +122,35 @@ class CampusGlassCircleButton extends StatelessWidget {
       child: Semantics(label: label, excludeSemantics: true, child: icon),
     ),
   ));
+}
+
+// 内容区的强调按钮：accent 实底胶囊；按下加深一档并轻缩到 97%（同色调胶囊），禁用时底色变淡、形态不变。减少动画时不缩放。
+class CampusProminentSurface extends StatelessWidget {
+  const CampusProminentSurface({super.key, required this.states, required this.color, required this.child});
+  final Set<WidgetState> states;
+  final Color color;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    final disabled = states.contains(WidgetState.disabled);
+    final pressed = states.contains(WidgetState.pressed) && !disabled;
+    final duration = MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 120);
+    return AnimatedScale(
+      scale: pressed && duration > Duration.zero ? .97 : 1,
+      duration: duration,
+      curve: Curves.easeOutCubic,
+      child: AnimatedContainer(
+        duration: duration,
+        decoration: ShapeDecoration(
+          color: campusProminentFill(color, pressed: pressed, disabled: disabled),
+          shape: StadiumBorder(side: states.contains(WidgetState.focused) ? BorderSide(color: palette.onSurface, width: 2) : BorderSide.none),
+        ),
+        child: child,
+      ),
+    );
+  }
 }
 
 // 内容区按钮与选择标签的色调胶囊：不透明、不取背景，不随背景变化；操作按钮着主色浅底配主色字，

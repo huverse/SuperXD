@@ -85,7 +85,7 @@ class _MinePageState extends State<MinePage> {
   bool _loadingAccount = true;
 
   Future<void> _forget() async {
-    final confirmed = await showCampusConfirm(context, title: '关闭记住账号？', message: '将删除此账号保存的自动登录凭据。课表和历史数据保持不变。', action: '关闭并清除');
+    final confirmed = await showCampusConfirm(context, title: '关闭记住账号？', message: '将删除此账号保存的自动登录凭据。课表和历史数据保持不变。', action: '关闭并清除', destructive: true);
     if (!mounted || !confirmed) return;
     setState(() => _busy = true);
     try { await showCampusWaiting(context, label: '正在清除记住账号凭据', operation: widget.session.gateway.forgetCredential); if (mounted) setState(() => _remembered = false); }
@@ -96,7 +96,7 @@ class _MinePageState extends State<MinePage> {
   }
 
   Future<void> _logout() async {
-    final confirmed = await showCampusConfirm(context, title: '退出登录？', message: '清除本机登录态和此账号保存的自动登录凭据，当前课表和自定义修改保留，历史版本按每学期最多100版保留。', action: '退出');
+    final confirmed = await showCampusConfirm(context, title: '退出登录？', message: '清除本机登录态和此账号保存的自动登录凭据，当前课表和自定义修改保留，历史版本按每学期最多100版保留。', action: '退出', destructive: true);
     if (!mounted || !confirmed) return;
     setState(() => _busy = true);
     try {

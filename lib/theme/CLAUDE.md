@@ -5,9 +5,9 @@
 # 文件职责
 
 - campus_palette.dart：CampusPalette 是设备级的完整色彩角色，有苔灰（默认）、雾蓝、藕粉、暮紫、燕麦五套，每套分浅色和深色。
-  - accent 是控件激活色（开关开启轨道、滑杆已选段），同鸿蒙 component_activated、iOS 开关 onTintColor，与文字主色 primary 分开：primary 为文字可读压得深而灰，铺成大块轨道发闷。白色滑块对 accent 不低于 3:1。
+  - accent 是控件激活色（开关开启轨道、滑杆已选段、复选框选中、强调按钮底色），同鸿蒙 component_activated、iOS 开关 onTintColor，与文字主色 primary 分开：primary 为文字可读压得深而灰，铺成大块轨道发闷。白字、白色滑块对 accent 都不低于 4.5:1。dangerFill 是破坏性按钮的红底（深色下的 danger 是给文字用的浅红）。
 - campus_theme.dart：
-  - campusTheme 按配色和字体生成 ThemeData。headlineMedium（26）是底栏根页的大标题，titleLarge（18）是二级页标题。OutlinedButton 主题即次要按钮：内容区中性浅底胶囊配主色字、无描边。
+  - campusTheme 按配色和字体生成 ThemeData。三类按钮的文字都显式带应用字体（按钮 textStyle 不带 fontFamily 时会回落成系统字体）。headlineMedium（26）是底栏根页的大标题，titleLarge（18）是二级页标题。OutlinedButton 主题即次要按钮：内容区中性浅底胶囊配主色字、无描边。
   - campusFieldGap 给带浮动标签的输入框算上方间距，随字号缩放。
   - campusSystemOverlay 设置系统栏：导航栏全透明，按键明暗随主题变化。
   - CampusScrollBehavior：全局越界用弹性回弹、不加拉伸效果（拉伸会给列表套图像滤镜，里面的玻璃退成底色）；显式指定夹紧的列表不受影响。
@@ -34,8 +34,8 @@
   - campusPageTransition：新旧页整屏并排平移、互不重叠，不淡入淡出；曲线为 campusSpringCurve，返回用翻转曲线；跟手返回期间及松手后的收尾按进度线性平移。
   - 跟手返回（CampusPageTransitions 内的 _CampusBackGesture）：Android 14 起的预测性返回，同 iOS、鸿蒙侧滑返回，页面随手指平移、松手从当前位置续接返回或回弹。只有最前面的页面响应（栈顶、允许返回、TickerMode 开启）；不用路由自带的 handleCommitBackGesture，它会把进度重置到 1 再倒放。需要 AndroidManifest 的 enableOnBackInvokedCallback。
   - CampusEntryFade：账号应用的整体入场。它挂在按代次重建的账号应用内，所以应用启动和每次切换账号时都会触发。内容不套透明度，由盖在上面的背景副本（CampusBackdrop）淡出，玻璃从第一帧起取到真实背景。
-  - 共享弹窗：showCampusNotice 用于只读提示，showCampusConfirm 用于二次确认。
-  - CampusGlassDialog：统一的玻璃弹窗，版式同 AlertDialog。options 对应 SimpleDialog 的选项；solid 固定实色（验证码弹窗用）。全应用弹窗一律用它，日期选择器除外。
+  - 共享弹窗：showCampusNotice 用于只读提示，showCampusConfirm 用于二次确认；destructive 为真时主按钮是警示红（删除、清空、退出、覆盖、放弃修改等）。
+  - CampusGlassDialog：统一的玻璃弹窗，版式同 AlertDialog。操作按钮一到两个等宽并排，三个及以上竖排且主操作在最上；操作区里的 FilledButton 自动是强调按钮（人工决策见文件内）。options 对应 SimpleDialog 的选项；solid 固定实色（验证码弹窗用）。全应用弹窗一律用它，日期选择器除外。
   - showCampusToast：提示条，可带一个操作（如撤销）。沿用 SnackBar 的排队、读屏与滑动关闭，内容是 overlay 玻璃胶囊。不用库的 GlassToast，因为它的操作触区只有 32。用固定样式，只做高度展开不淡入。
   - showCampusDialog 的 glassPanel 默认为真，表示内容是玻璃面板、由面板自己显隐；日期选择器等系统弹窗传 false，仍整体改不透明度。
   - showCampusSheet、CampusSheetRoute：底部弹层，沿用系统弹层的拖动关闭、返回键与读屏，背景透明；内容放进 CampusSheetPanel（四周留 8 悬浮的 overlay 玻璃，圆角 24）。
@@ -84,6 +84,8 @@
 - campus_glass_button.dart：
   - 全局 FilledButton 主题用 CampusGlassButtonSurface 画背景，视觉高度约 38dp，触区至少 48dp。按所在层分流：在导航层（CampusChrome）或玻璃面板、浮层（GlassPanelScope）里是玻璃胶囊；其余属于内容区，画 CampusTonalSurface 色调胶囊（操作按钮主色浅底，选择标签中性浅底、选中 surfaceSelected 加主色细边，按下加深并缩到 97%）。
   - CampusGlassButtonSurface 是胶囊按钮，CampusGlassCircleButton 是圆形按钮（只用于顶栏操作和悬浮按钮，始终是玻璃）。圆形按钮默认 52，顶栏操作用 44。
+  - 强调按钮 campusProminent（FilledButton 的 style）：每屏、每个弹窗只给一个主操作，accent 底、白字带图标；内容区是 CampusProminentSurface 实底，导航层是 accent 染色玻璃，玻璃面板（弹窗、弹层）里为实底（父玻璃内的 vibrancy 会把强调色冲淡成像禁用）。禁用时四成透明。campusDestructive 同形态、底色为 dangerFill，给破坏性确认用。规则见文件内人工决策。
+  - campusLink：句中链接，只有主色文字、不画胶囊。TextButton 主题与 OutlinedButton 同为中性胶囊（campus_theme.dart）。
   - 色调胶囊的底色按模拟器五套配色深浅色实测取，改动后要重测按钮文字对比度（不低于 4.5:1）。
 - campus_glass_press.dart：玻璃控件的按压物理 CampusGlassPress。
   - 按下鼓起 6%，松手过冲一次后回位；内容只跟随一半。
