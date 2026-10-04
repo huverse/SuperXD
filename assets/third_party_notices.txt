@@ -1,13 +1,91 @@
-SuperXD 第三方组件与改编声明
+SuperXD 开源与第三方声明
 
-短视频媒体模型、来源适配与交互参考
-flutter_video_parse：https://github.com/zhao004/flutter_video_parse
-参考版本：b9ffe59ae4c9fe4b3e9c75b047538a267fed8ee9
-dart_video_parse：https://github.com/zhao004/dart_video_parse
-参考版本：191e42cf08b20663e65c00a02f706c0b9ecf0ffc
-本应用未内置其全部解析源；第三方服务及媒体授权不随代码许可授予。
+本文件说明 SuperXD 自身的开源许可，以及随应用分发或改编使用的第三方作品。Flutter 框架和 pub 依赖包的许可由构建工具自动收集，在应用“关于 › 开源许可 › 全部依赖许可”中逐个列出，不在此重复。
+
+
+一、本项目
+
+SuperXD
+版权所有 (C) 2026 Galaxyous
+源代码：https://github.com/huverse/SuperXD
+许可：GNU General Public License v3.0（GPL-3.0），全文见仓库根目录 LICENSE 或 https://www.gnu.org/licenses/gpl-3.0.html
+
+本程序是自由软件：你可以依据自由软件基金会发布的 GNU 通用公共许可证第 3 版重新分发和修改它。本程序以“希望有用”为目的分发，但不提供任何担保，也不担保适销性或特定用途适用性，详见 GPL-3.0 全文。
+
+GPL 的例外：下文第四节所述 math-curve-loaders 改编部分（lib/theme/curve_geometry.dart 中的曲线几何）不随本项目以 GPL 再授权。再分发本项目或其修改版时，须自行取得原作者授权，或移除、替换这部分代码。
+
+
+二、随应用分发的第三方作品
+
+1. Lucide 图标
+   来源：https://github.com/lucide-icons/lucide
+   许可：ISC（全文见第五节）
+   版权：Copyright (c) 2026 Lucide Icons and Contributors
+   部分图形源于 Feather（MIT，Copyright (c) 2013-present Cole Bemis），本应用用到的有 arrow-left、calendar、check、chevron-down、chevron-right、chevron-up、download、info、log-out、plus、search、x。
+
+2. lucide_icons_flutter 3.1.20
+   来源：https://github.com/vqh2602/lucide-flutter-main
+   许可：MIT
+   版权：Copyright (c) 2024 vqhapp
+   用途：Lucide 图标的 Flutter 字体封装。
+
+3. Morphnext 0.6.1
+   来源：https://github.com/KickNext/morphnext
+   许可：MIT
+   版权：Copyright (c) 2026 KickNext
+   用途：图标形变动画。Morphnext 的部分几何行为改编自 Morphicons，它不是 Morphicons 官方的 Flutter 绑定。
+   上游一：Morphicons（https://github.com/guillermolg00/morphicons，核验版本 38d2a7221633a453eeafebd872ee3649b9274b22；Morphnext 声明引用版本 2cdc9292c2b6165274d34ea16909a941cf550cab），MIT，Copyright (c) 2026 Guillermo
+   上游二：icon_font_generator 4.1.0（https://github.com/ScerIO/icon_font_generator，修订 498965ac0c0c34f73ecfccd3e8fc02cfdf8ea874），字体读取器，MIT，Copyright (c) 2019 Serge Shkurko, Igor Kharakhordin
+
+4. liquid_glass_widgets 1.8.1
+   来源：https://github.com/sdegenaar/liquid_glass_widgets
+   许可：MIT
+   版权：Copyright (c) 2024–2026 Sebastian Degenaar
+   用途：导航层与浮层的液态玻璃效果；页面内容区不使用逐项折射。
+   上游一：liquid_glass_renderer 0.2.0-dev.4（https://github.com/whynotmake-it/flutter_liquid_glass），渲染引擎，MIT，Copyright 2025 Tim Lehmann for whynotmake.it
+   上游二：motor 1.1.0（https://github.com/whynotmake-it/rivership），弹簧动画工具，MIT，Copyright (c) 2024 Tim Lehmann for whynotmake.it
+
+5. Maple Mono NF CN 7.900（等宽字体）
+   来源：https://github.com/subframe7536/maple-font
+   许可：SIL Open Font License 1.1
+   版权：Copyright 2022 The Maple Mono Project Authors
+   内置常规、中等、半粗三个字重，未修改。NF 版本含 Nerd Fonts 图标字形，其来源与许可见 https://github.com/ryanoasis/nerd-fonts 。
+   SHA256：Regular bb8e8e8c263896f42555107202f1847f7a42c340a3e532df9c4d585c9794411c
+   SHA256：Medium 6ffdd917c83f397ea021c96f23a54f23f5da835d75f8ddf77f8252ccb35d914f
+   SHA256：SemiBold 62a707a1c155e971055ce22bbdfacfa5bab50cd09d27bcb27e3ecbf1ac154aab
+   许可全文见“全部依赖许可”中的 Maple Mono NF CN。
+
+6. Noto Serif SC（文学衬线）
+   来源：https://github.com/google/fonts/tree/main/ofl/notoserifsc（提交 8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5）
+   许可：SIL Open Font License 1.1
+   版权：Copyright 2012 Google Inc. All Rights Reserved.
+   改动：上游为可变字体（wght 200–900，SHA256 050080d9255a86808f2945bffac582b31ef32bc36411ce29563b4961670c66f9）。本应用用 fontTools 4.66.1 的 instancer 导出 400、500、600 三个静态字重（Flutter 不会把字重映射到可变字体的字重轴），字符与字形完整、未裁剪，其余未修改。
+   SHA256：Regular c6703a84c9fc049f8c528f4ac0680fa19907d79cf627724a5ed21ca9199f1440
+   SHA256：Medium 7e2e4943ef89ed89ddd97558f76aff7ef72a1f39d85014ece03df28125d6c02a
+   SHA256：SemiBold 738b5fab642d8cf91769e57c06323cde6dc268a153cd5cf2e370ae10c37ee91e
+   许可全文见“全部依赖许可”中的 Noto Serif SC。
+
+
+三、参考与借鉴
+
+flutter_video_parse（https://github.com/zhao004/flutter_video_parse，参考版本 b9ffe59ae4c9fe4b3e9c75b047538a267fed8ee9）与 dart_video_parse（https://github.com/zhao004/dart_video_parse，参考版本 191e42cf08b20663e65c00a02f706c0b9ecf0ffc）
+许可：MIT，Copyright (c) 2026 zhao004
+用途：百宝箱短视频解析的媒体模型、来源适配与交互参考。本应用未内置它们的全部解析源；第三方服务和作品的授权不随代码许可授予。
+
+
+四、经授权改编
+
+math-curve-loaders（曲线加载动画设计）
+作者：Paidax01
+来源：https://github.com/Paidax01/math-curve-loaders（参考提交 70f4e00a6d452532039ff7c2ccb4c379ec90c772）
+上游未附公开许可证。本项目维护者于 2026-09-25 确认已获作者允许改编并随应用分发，2026-10-05 确认授权范围包括公开源码；作者未指定署名格式。这不代表上游向所有人授予开源许可，也不是 MIT 或 GPL 授权。
+改编内容：双纽线、三瓣玫瑰和利萨茹曲线及拖尾表现，重写为 Dart/Flutter 原生绘制，增加按弧长预采样、有限粒子、局部重绘、后台暂停、减少动态效果和读屏说明。未复制上游的网页图库、导出器或其余效果。
+
+
+五、许可证全文
+
 MIT License
-Copyright (c) 2026 zhao004
+适用于第二、三节标注 MIT 的作品，各自的版权声明见上文。
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -27,84 +105,8 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 
-本应用内图标采用 Lucide，形变采用 Flutter 社区项目 Morphnext。Morphnext 的部分几何行为改编自 Morphicons；不是 Morphicons 官方 Flutter 绑定。
-
-Morphicons
-来源：https://github.com/guillermolg00/morphicons
-本次核验版本：38d2a7221633a453eeafebd872ee3649b9274b22
-Morphnext 声明引用的版本：2cdc9292c2b6165274d34ea16909a941cf550cab
-MIT License
-Copyright (c) 2026 Guillermo
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-Morphnext 0.6.1
-来源：https://github.com/KickNext/morphnext
-MIT License
-Copyright (c) 2026 KickNext
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-Morphnext 字体读取器来源：icon_font_generator 4.1.0
-https://github.com/ScerIO/icon_font_generator
-Revision: 498965ac0c0c34f73ecfccd3e8fc02cfdf8ea874
-MIT License
-Copyright (c) 2019 Serge Shkurko, Igor Kharakhordin
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-Lucide 图形
-来源：https://github.com/lucide-icons/lucide
 ISC License
-Copyright (c) 2026 Lucide Icons and Contributors
+适用于 Lucide，Copyright (c) 2026 Lucide Icons and Contributors
 
 Permission to use, copy, modify, and/or distribute this software for any
 purpose with or without fee is hereby granted, provided that the above
@@ -117,267 +119,3 @@ ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
 WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
 ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
 OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
-部分 Lucide 图形源于 Feather，包括本应用使用的 arrow-left、calendar、check、chevron-down、chevron-right、chevron-up、download、info、log-out、plus、search、x。
-The MIT License (MIT)
-Copyright (c) 2013-present Cole Bemis
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in
-all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
-DEALINGS IN THE SOFTWARE.
-
-lucide_icons_flutter 3.1.20
-来源：https://github.com/vqh2602/lucide-flutter-main
-MIT License
-Copyright (c) 2024 vqhapp
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-math-curve-loaders 曲线加载设计
-作者：Paidax01
-来源：https://github.com/Paidax01/math-curve-loaders
-参考提交：70f4e00a6d452532039ff7c2ccb4c379ec90c772
-该上游提交未提供公开许可证。本项目维护者于2026-09-25明确确认已有允许改编和随应用分发的授权，未指定额外署名格式；此记录不代表上游授予所有访问者通用开源许可，亦不是MIT授权。
-本应用改编双纽线、三瓣玫瑰和利萨茹曲线及拖尾表现，重写为Dart/Flutter原生绘制；增加固定曲线弧长预采样、有限粒子、局部重绘、生命周期暂停、减少动态效果和语义说明。未复制上游网页图库、导出器或全部21种效果。后续扩展或再分发须继续遵守实际取得的授权范围。
-
-liquid_glass_widgets 1.7.2
-来源：https://github.com/sdegenaar/liquid_glass_widgets
-用于少量固定导航玻璃；业务卡片不启用逐项折射。
-
-MIT License
-
-Copyright (c) 2024–2026 Sebastian Degenaar
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-THIRD-PARTY NOTICES
-===================
-
-This file contains the complete copyright notices and license terms for
-third-party works vendored or adapted within liquid_glass_widgets.
-
-────────────────────────────────────────────────────────────────────────────────
-1. liquid_glass_renderer
-────────────────────────────────────────────────────────────────────────────────
-
-Source:  https://github.com/whynotmake-it/flutter_liquid_glass/tree/main/packages/liquid_glass_renderer
-Version: 0.2.0-dev.4 (vendored 2026-03-28)
-
-The foundational rendering engine in lib/src/engine/ is derived from
-liquid_glass_renderer by Tim Lehmann for whynotmake.it. It has been
-extensively evolved and maintained in-tree (pure Flutter SDK conversion,
-bug fixes, performance improvements, and shader optimisations).
-
-MIT License
-
-Copyright 2025 Tim Lehmann for whynotmake.it
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-────────────────────────────────────────────────────────────────────────────────
-2. motor
-────────────────────────────────────────────────────────────────────────────────
-
-Source:  https://github.com/whynotmake-it/rivership/tree/main/packages/motor
-Version: 1.1.0
-
-The spring animation utilities in lib/utils/glass_spring.dart are derived from
-the motor package by Tim Lehmann for whynotmake.it. The adapted code implements
-an equivalent subset of motor's spring presets (CupertinoMotion) and controller
-types (SingleMotionController, SingleMotionBuilder, VelocityMotionBuilder) using
-Flutter's built-in physics primitives.
-
-MIT License
-
-Copyright (c) 2024 Tim Lehmann for whynotmake.it
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
-
-────────────────────────────────────────────────────────────────────────────────
-
-For a detailed description of what was vendored and what patches were applied,
-see lib/src/engine/ATTRIBUTION.md and the header comments in
-lib/utils/glass_spring.dart.
-
-Noto Serif SC（文学衬线）
-来源：https://github.com/google/fonts/tree/main/ofl/notoserifsc
-提交：8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5
-上游为完整变量字体（wght 200–900，SHA256：050080d9255a86808f2945bffac582b31ef32bc36411ce29563b4961670c66f9）。
-本应用用 fontTools 4.66.1 的 instancer 从中导出 wght 400、500、600 三个静态字重（Flutter 不会把字重映射到可变字体的字重轴，
-可变字体会按默认的 ExtraLight 200 渲染），字符与字形完整、未按应用文字裁剪，其余未修改。
-SHA256：Regular c6703a84c9fc049f8c528f4ac0680fa19907d79cf627724a5ed21ca9199f1440
-SHA256：Medium 7e2e4943ef89ed89ddd97558f76aff7ef72a1f39d85014ece03df28125d6c02a
-SHA256：SemiBold 738b5fab642d8cf91769e57c06323cde6dc268a153cd5cf2e370ae10c37ee91e
-
-Copyright 2012 Google Inc. All Rights Reserved.
-
-This Font Software is licensed under the SIL Open Font License,
-Version 1.1.
-
-This license is copied below, and is also available with a FAQ at:
-http://scripts.sil.org/OFL
-
------------------------------------------------------------
-SIL OPEN FONT LICENSE Version 1.1 - 26 February 2007
------------------------------------------------------------
-
-PREAMBLE
-The goals of the Open Font License (OFL) are to stimulate worldwide
-development of collaborative font projects, to support the font
-creation efforts of academic and linguistic communities, and to
-provide a free and open framework in which fonts may be shared and
-improved in partnership with others.
-
-The OFL allows the licensed fonts to be used, studied, modified and
-redistributed freely as long as they are not sold by themselves. The
-fonts, including any derivative works, can be bundled, embedded,
-redistributed and/or sold with any software provided that any reserved
-names are not used by derivative works. The fonts and derivatives,
-however, cannot be released under any other type of license. The
-requirement for fonts to remain under this license does not apply to
-any document created using the fonts or their derivatives.
-
-DEFINITIONS
-"Font Software" refers to the set of files released by the Copyright
-Holder(s) under this license and clearly marked as such. This may
-include source files, build scripts and documentation.
-
-"Reserved Font Name" refers to any names specified as such after the
-copyright statement(s).
-
-"Original Version" refers to the collection of Font Software
-components as distributed by the Copyright Holder(s).
-
-"Modified Version" refers to any derivative made by adding to,
-deleting, or substituting -- in part or in whole -- any of the
-components of the Original Version, by changing formats or by porting
-the Font Software to a new environment.
-
-"Author" refers to any designer, engineer, programmer, technical
-writer or other person who contributed to the Font Software.
-
-PERMISSION & CONDITIONS
-Permission is hereby granted, free of charge, to any person obtaining
-a copy of the Font Software, to use, study, copy, merge, embed,
-modify, redistribute, and sell modified and unmodified copies of the
-Font Software, subject to the following conditions:
-
-1) Neither the Font Software nor any of its individual components, in
-Original or Modified Versions, may be sold by itself.
-
-2) Original or Modified Versions of the Font Software may be bundled,
-redistributed and/or sold with any software, provided that each copy
-contains the above copyright notice and this license. These can be
-included either as stand-alone text files, human-readable headers or
-in the appropriate machine-readable metadata fields within text or
-binary files as long as those fields can be easily viewed by the user.
-
-3) No Modified Version of the Font Software may use the Reserved Font
-Name(s) unless explicit written permission is granted by the
-corresponding Copyright Holder. This restriction only applies to the
-primary font name as presented to the users.
-
-4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font
-Software shall not be used to promote, endorse or advertise any
-Modified Version, except to acknowledge the contribution(s) of the
-Copyright Holder(s) and the Author(s) or with their explicit written
-permission.
-
-5) The Font Software, modified or unmodified, in part or in whole,
-must be distributed entirely under this license, and must not be
-distributed under any other license. The requirement for fonts to
-remain under this license does not apply to any document created using
-the Font Software.
-
-TERMINATION
-This license becomes null and void if any of the above conditions are
-not met.
-
-DISCLAIMER
-THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
-EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF
-MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT
-OF COPYRIGHT, PATENT, TRADEMARK, OR OTHER RIGHT. IN NO EVENT SHALL THE
-COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY,
-INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR CONSEQUENTIAL
-DAMAGES, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING
-FROM, OUT OF THE USE OR INABILITY TO USE THE FONT SOFTWARE OR FROM
-OTHER DEALINGS IN THE FONT SOFTWARE.

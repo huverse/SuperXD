@@ -35,7 +35,7 @@ class _LoginPageState extends State<LoginPage> {
   Future<void> _chooseRemember(bool value) async {
     if (!value) { setState(() => _remember = false); return; }
     final confirmed = await showCampusConfirm(context, title: '记住账号', action: '同意并开启',
-      message: 'SuperXD本地版的记住账号功能将会把账号鉴权数据加密存储在本地，用于会话失效后自动登录。\n\n仅在此账号成功登录后保存，你可在“我的”关闭记住账号，或退出登录清除凭据。\n\n本地加密不等于传输加密：当前教务系统使用HTTP。请只在你信任的设备和网络上启用。');
+      message: 'SuperXD本地版的记住账号功能将会把账号鉴权数据加密存储在本地，用于会话失效后自动登录。\n\n仅在此账号成功登录后保存，你可在“我的 › 账号”关闭记住账号，或退出登录清除凭据。\n\n本地加密不等于传输加密：当前教务系统使用HTTP。请只在你信任的设备和网络上启用。');
     if (mounted && confirmed) setState(() => _remember = true);
   }
   bool _busy = false;
@@ -142,7 +142,7 @@ class _LoginPageState extends State<LoginPage> {
                   SizedBox(width: 48, height: 48, child: Checkbox(key: const ValueKey('agree-terms'), value: _agreed, onChanged: _busy ? null : (value) => setState(() => _agreed = value == true))),
                   Expanded(child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
                     Text('我已阅读并同意', style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant)),
-                    TextButton(style: campusLink, onPressed: _busy ? null : () => context.push('/legal/service'), child: const Text('服务协议', style: TextStyle(fontSize: 14))),
+                    TextButton(style: campusLink, onPressed: _busy ? null : () => context.push('/legal/service'), child: const Text('用户协议', style: TextStyle(fontSize: 14))),
                     const Text('和', style: TextStyle(fontSize: 14)),
                     TextButton(style: campusLink, onPressed: _busy ? null : () => context.push('/legal/privacy'), child: const Text('隐私政策', style: TextStyle(fontSize: 14))),
                   ])),

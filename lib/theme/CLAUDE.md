@@ -44,7 +44,7 @@
   - CampusLoader 绘制曲线加载动画，CampusLoading 是带文字的加载状态。
   - CampusBusyContent 让按钮在操作期间原地切换为忙碌态。
   - showCampusWaiting：只在已有的异步操作期间显示等待弹窗（延迟 150ms 出现），不增加业务等待时间。
-- curve_geometry.dart：三种闭合曲线（无穷、玫瑰、李萨如）的几何与按弧长预采样。改编自 math-curve-loaders，授权说明见 assets/third_party_notices.txt。
+- curve_geometry.dart：三种闭合曲线（无穷、玫瑰、李萨如）的几何与按弧长预采样。改编自 math-curve-loaders，不随项目以 GPL 再授权，授权说明见 assets/third_party_notices.txt 与文件内人工决策。
 - campus_icons.dart：CampusIcons 统一映射 Lucide 图标；CampusIcon 负责渲染单个图标；CampusMorphIcon 负责导航图标形变；configureCampusIcons 在启动时配置。
 - glass_panel.dart：
   - GlassPanel 是液态玻璃面板，现只用于悬浮底栏。
@@ -95,7 +95,7 @@
 - campus_segmented.dart：CampusSegmented 是内容区的分段控件（同 iOS 分段控件、鸿蒙 Segment）：中性浅底胶囊槽，选中项是浮起的实色胶囊并滑动切换，可拖动（规则见文件内人工决策），文字加粗不着主色，整行 48dp 触区。二至三项的单选（课表范围、消息、成绩视图与学期）一律用它。
 - scroll_edge_fade.dart：ScrollEdgeFade 在浮动玻璃栏下只渐隐内容本身，露出真实背景；高对比度时不渐隐。它的子树里不能再放玻璃。
   - CampusScrollFade：页面滚动区的柔和边缘，透明顶栏下内容滚过上缘时自身渐隐（最多 24dp），下缘按底栏覆盖高度渐隐；遮罩常在，滚动不切换图层。顶栏页和 AppBar 页的滚动区都包一层；子树有玻璃开关或视频的页面（短视频解析、媒体预览）不包。
-- third_party_licenses.dart：registerCampusLicenses 把第三方声明和字体许可注册进 LicenseRegistry。
+- third_party_licenses.dart：registerCampusLicenses 把本项目 GPL-3.0 全文（根目录 LICENSE 作为资源打包）、第三方声明和两套字体许可注册进 LicenseRegistry。
 
 # 关键规则
 

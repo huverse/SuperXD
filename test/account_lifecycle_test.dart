@@ -46,7 +46,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(LoginPage), findsOneWidget);
     expect(find.byType(SchedulePage), findsNothing);
-    for (final title in ['服务协议', '隐私政策']) {
+    for (final title in ['用户协议', '隐私政策']) {
       await tester.tap(find.text(title)); await tester.pumpAndSettle();
       expect(find.text(title), findsOneWidget);
       expect(find.textContaining('待替换'), findsNothing);
@@ -85,9 +85,9 @@ void main() {
     final bar = find.byType(DragNavigationBar); final rect = tester.getRect(bar);
     expect(rect.left, greaterThanOrEqualTo(16)); expect(rect.right, lessThanOrEqualTo(344)); expect(rect.bottom, lessThan(740));
     await tester.tap(find.text('我的').last); await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('开源与第三方声明')); await tester.pumpAndSettle();
-    expect(tester.getCenter(find.text('开源与第三方声明')).dy, lessThan(tester.getRect(bar).top));
-    await tester.tap(find.text('开源与第三方声明')); await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('关于')); await tester.pumpAndSettle();
+    expect(tester.getCenter(find.text('关于')).dy, lessThan(tester.getRect(bar).top));
+    await tester.tap(find.text('关于')); await tester.pumpAndSettle();
     expect(find.text('Powered&Design By Galaxyous'), findsOneWidget);
     expect(tester.takeException(), isNull); await tester.pumpWidget(const SizedBox()); session.dispose();
   });
@@ -95,6 +95,7 @@ void main() {
     final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
     await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18)); await tester.pumpAndSettle();
     await tester.tap(find.text('我的').last); await tester.pumpAndSettle();
+    await tester.tap(find.text('用户A')); await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('切换账号')); await tester.tap(find.text('切换账号')); await tester.pump();
     await tester.pump(const Duration(milliseconds: 90));
     expectSliding(tester, find.byType(LoginPage));
@@ -149,17 +150,39 @@ void main() {
     expect(gateway.rememberRequests, [true]);
     await tester.tap(find.text('我的').last);
     await tester.pumpAndSettle();
-    await tester.ensureVisible(find.text('关闭记住账号'));
-    await tester.tap(find.text('关闭记住账号'));
+    await tester.tap(find.text('用户A'));
+    await tester.pumpAndSettle();
+    expect(find.text('已开启'), findsOneWidget);
+    await tester.tap(find.text('记住账号'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('关闭并清除'));
     await tester.pumpAndSettle();
     expect(gateway.forgotten, 1);
-    expect(find.text('关闭记住账号'), findsNothing);
+    // 关闭后只读显示“未开启”，不能在这里重新开启（要在登录时输入密码）。
+    expect(find.text('未开启'), findsOneWidget);
+    await tester.tap(find.text('记住账号'));
+    await tester.pumpAndSettle();
+    expect(find.text('关闭并清除'), findsNothing);
     expect(gateway.activeSession?.loginId, 'A');
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     session.dispose();
+  });
+
+  testWidgets('账号页退出登录：警示确认后回登录页，账号页随旧代次一起销毁', (tester) async {
+    final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18)); await tester.pumpAndSettle();
+    await tester.tap(find.text('我的').last); await tester.pumpAndSettle();
+    await tester.tap(find.text('用户A')); await tester.pumpAndSettle();
+    await tester.tap(find.text('退出登录')); await tester.pumpAndSettle();
+    await tester.tap(find.text('取消')); await tester.pumpAndSettle();
+    expect(gateway.activeSession?.loginId, 'A');
+    await tester.tap(find.text('退出登录')); await tester.pumpAndSettle();
+    await tester.tap(find.text('退出')); await tester.pumpAndSettle();
+    expect(gateway.activeSession, isNull);
+    expect(find.byType(LoginPage), findsOneWidget);
+    expect(find.text('退出登录'), findsNothing);
+    expect(tester.takeException(), isNull); await tester.pumpWidget(const SizedBox()); session.dispose();
   });
 
   testWidgets('冷启动自动登录失败在登录页弹出提示', (tester) async {
@@ -255,6 +278,8 @@ void main() {
     await tester.tap(find.text('我的').last);
     await tester.pumpAndSettle();
     expect(find.text('用户A'), findsOneWidget);
+    await tester.tap(find.text('用户A'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('切换账号'));
     await tester.pumpAndSettle();
     expect(find.text('登录并切换'), findsOneWidget);
@@ -302,6 +327,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(gateway.imports, 0);
     await tester.tap(find.text('我的').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('用户A'));
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('导入旧版本数据'));
     await tester.pumpAndSettle();

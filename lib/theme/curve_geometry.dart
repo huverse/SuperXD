@@ -2,6 +2,7 @@ import 'dart:math' as math;
 import 'dart:ui';
 
 // 改编自Paidax01/math-curve-loaders（70f4e00）；用户确认允许改编与分发，详见第三方声明。
+// [人工决策-2026-10-05 01:28:53] 维护者确认原作者授权覆盖公开源码；本文件不随项目以 GPL-3.0 再授权，再分发者须自行取得授权或替换（见 README 许可一节与第三方声明第一、四节）。
 // 只保留三种闭合曲线。呼吸从逐帧改几何改为Canvas等比缩放，轨迹按弧长预采样。
 enum CampusCurve { infinity, rose, lissajous }
 

@@ -22,7 +22,7 @@ class _ThirdPartyPageState extends State<ThirdPartyPage> {
         onPressed: () => Navigator.pop(context),
         icon: const CampusIcon(CampusIcons.back),
       ),
-      title: const Text('开源与第三方声明'),
+      title: const Text('开源许可'),
     ),
     body: CampusScrollFade(child: SafeArea(
       child: FutureBuilder<String>(
@@ -30,16 +30,16 @@ class _ThirdPartyPageState extends State<ThirdPartyPage> {
         builder: (context, snapshot) {
           if (snapshot.hasError) return const Center(child: Text('声明资源读取失败'));
           if (!snapshot.hasData) {
-            return const Center(child: CampusLoading(label: '正在读取第三方声明'));
+            return const Center(child: CampusLoading(label: '正在读取开源许可'));
           }
           return ListView(
             padding: const EdgeInsets.all(16),
             children: [
-              const GalaxyousAttribution(),
-              OutlinedButton(
+              Align(alignment: AlignmentDirectional.centerStart, child: OutlinedButton.icon(
                 onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (context) => const CampusLicensesPage())),
-                child: const Text('查看所有依赖许可'),
-              ),
+                icon: const CampusIcon(CampusIcons.info),
+                label: const Text('全部依赖许可'),
+              )),
               const SizedBox(height: 16),
               SelectableText(
                 snapshot.data!,
