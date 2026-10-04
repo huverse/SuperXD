@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -7,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/grades_page.dart';
+import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
 import 'form_layout_support.dart';
@@ -139,6 +141,34 @@ void main() {
     gateway.hold!.complete(ok(view(first)));
     await tester.pumpAndSettle();
     expect(find.text(second.label), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('学期详情与学年概览切换淡出淡入：分段立即切换，内容先淡出再淡入、不跳变，学期一行随之收起', (tester) async {
+    final gateway = _Gateway();
+    await tester.pumpWidget(app(GradesPage(gateway: gateway)));
+    await tester.pumpAndSettle();
+    double opacity() => tester.widgetList<SliverFadeTransition>(find.byType(SliverFadeTransition)).first.opacity.value;
+    expect(opacity(), 1);
+    await tester.tap(find.text('学年概览'));
+    await tester.pump();
+    expect(tester.widget<CampusSegmented<bool>>(find.byType(CampusSegmented<bool>)).selected, isTrue);
+    final values = <double>[];
+    for (var frame = 0; frame < 40; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+      values.add(opacity());
+    }
+    final lowest = values.indexOf(values.reduce(math.min));
+    expect(values[lowest], lessThan(.05));
+    for (var index = 1; index <= lowest; index++) {
+      expect(values[index], lessThanOrEqualTo(values[index - 1] + 1e-9));
+    }
+    for (var index = lowest + 1; index < values.length; index++) {
+      expect(values[index], greaterThanOrEqualTo(values[index - 1] - 1e-9));
+    }
+    await tester.pumpAndSettle();
+    expect(opacity(), 1);
+    expect(find.text('各学期独立展示，不计算未经教务提供的全年绩点。'), findsOneWidget);
+    expect(find.text('第一学期'), findsNothing);
     expect(tester.takeException(), isNull);
   });
   testWidgets('成绩专页同步默认当前年且不展示课表作息，取消不联网', (tester) async {
