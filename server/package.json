@@ -13,7 +13,8 @@
     "start": "node dist/main.js",
     "dev": "node scripts/dev.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "smoke": "node --input-type=module -e \"await import('./dist/relay_app.js'); console.log('dist ok')\""
   },
   "dependencies": {
     "@nestjs/common": "^12.1.2",

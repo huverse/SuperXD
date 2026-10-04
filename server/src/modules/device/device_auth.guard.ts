@@ -1,6 +1,6 @@
 import { CanActivate, createParamDecorator, ExecutionContext, HttpStatus, Inject, Injectable, Logger, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import { Request } from 'express';
+import type { Request } from 'express';
 import Redis from 'ioredis';
 
 import { REDIS } from 'src/common/redis/redis.module';

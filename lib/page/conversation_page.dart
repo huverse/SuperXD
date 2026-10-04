@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_clock.dart';
@@ -21,9 +19,6 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 
-// 应用在前台（测试环境没有生命周期状态时视为前台）；后台不拉取。
-bool get _foreground => const [null, AppLifecycleState.resumed].contains(WidgetsBinding.instance.lifecycleState);
-
 // 打开好友分享的视频：由组合根接到百宝箱的短视频页（页面层不依赖百宝箱）。
 typedef VideoOpener = void Function(BuildContext context, VideoShare video);
 
@@ -42,7 +37,6 @@ class ConversationPage extends StatefulWidget {
 class _ConversationPageState extends State<ConversationPage> {
   List<SocialMessage>? _messages;
   int _loadVersion = 0;
-  Timer? _poller;
   bool _preparing = false;
 
   SocialService get _social => widget.social;
@@ -52,25 +46,12 @@ class _ConversationPageState extends State<ConversationPage> {
   void initState() {
     super.initState();
     _social.addListener(_reload);
+    // 新消息由服务的前台长轮询送达并通知，这里只跟着重读本机，不另外拉取。
     _reload();
-    // 刷新会同步通知监听者，不能在构建期间发起，放到首帧之后。
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _pull();
-    });
-    // 正在看会话时每 10 秒拉一次（没有推送通道），离开页面即停；应用进入后台由服务的前台判断兜底。
-    _poller = Timer.periodic(const Duration(seconds: 10), (_) => _pull());
-  }
-
-  void _pull() {
-    if (!_foreground) return;
-    _social.refresh().catchError((Object error, StackTrace stack) {
-      campusLog('[Conversation] action=refresh errorType=${error.runtimeType}\n$stack');
-    });
   }
 
   @override
   void dispose() {
-    _poller?.cancel();
     _social.removeListener(_reload);
     super.dispose();
   }

@@ -40,7 +40,7 @@ class _MessagePageState extends State<MessagePage> {
 
   SocialService get _social => widget.social!;
 
-  // 分支重新可见时拉一次信箱（同时核对好友列表）；后台与其他分支由服务自己的前台轮询负责。
+  // 分支重新可见时拉一次信箱并核对好友列表（被对方解除的标出来）；平时的新消息由服务的前台长轮询送达。
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();

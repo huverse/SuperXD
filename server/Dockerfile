@@ -7,7 +7,8 @@ COPY package.json package-lock.json ./
 RUN npm ci --registry=$NPM_REGISTRY
 COPY .swcrc tsconfig.json ./
 COPY src ./src
-RUN npm run build
+# 构建后立即试加载编译产物：类型导入被编译成运行时导入等问题在这里就失败，不会带到线上。
+RUN npm run build && npm run smoke
 
 FROM node:24-alpine
 ARG NPM_REGISTRY=https://registry.npmjs.org

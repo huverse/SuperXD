@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:superxd/social/relay_client.dart';
@@ -17,6 +18,8 @@ class FakeRelay {
   // 下一个请求直接抛出这个错误（模拟断网等）。
   RelayException? failNext;
   final calls = <String>[];
+  // 长轮询中挂起的请求：设备号 → 等待者，投递时唤醒。
+  final _waiters = <String, List<Completer<void>>>{};
 
   int get now => DateTime.now().millisecondsSinceEpoch + serverOffset;
 
@@ -24,7 +27,14 @@ class FakeRelay {
 
   bool friends(String first, String second) => friendships.contains('$first|$second');
 
-  Future<RelayResponse> handle(String method, String path, Map<String, String> headers, List<int>? body) async {
+  // 测试结束时放掉还挂着的长轮询，不留未完成的计时。
+  void releaseWaiters() {
+    for (final waiter in _waiters.values.expand((list) => list)) {
+      if (!waiter.isCompleted) waiter.complete();
+    }
+  }
+
+  Future<RelayResponse> handle(String method, String path, Map<String, String> headers, List<int>? body, {Duration? timeout}) async {
     calls.add('$method ${path.split('?').first}');
     final failure = failNext;
     if (failure != null) {
@@ -84,6 +94,13 @@ class FakeRelay {
         return RelayResponse(200, {'id': '${stored.id}', 'createTime': stored.createTime});
       case ('GET', '/v1/messages'):
         final after = int.parse(uri.queryParameters['after'] ?? '0'), limit = int.parse(uri.queryParameters['limit'] ?? '50');
+        final wait = int.parse(uri.queryParameters['wait'] ?? '0');
+        if (wait > 0 && !mailbox.any((item) => item.recipient == deviceId && item.id > after)) {
+          final waiter = Completer<void>();
+          _waiters.putIfAbsent(deviceId, () => []).add(waiter);
+          await waiter.future.timeout(Duration(seconds: wait), onTimeout: () {});
+          _waiters[deviceId]?.remove(waiter);
+        }
         final pending = mailbox.where((item) => item.recipient == deviceId && item.id > after).toList();
         return RelayResponse(200, {
           'messages': [
@@ -111,6 +128,9 @@ class FakeRelay {
     if (existing != null) return (id: existing.id, createTime: existing.createTime);
     final stored = (id: ++_nextId, recipient: recipient, sender: sender, clientId: clientId, envelope: envelope, createTime: now);
     mailbox.add(stored);
+    for (final waiter in [...?_waiters[recipient]]) {
+      if (!waiter.isCompleted) waiter.complete();
+    }
     return (id: stored.id, createTime: stored.createTime);
   }
 
@@ -121,5 +141,5 @@ class _FakeTransport implements RelayTransport {
   _FakeTransport(this.relay);
   final FakeRelay relay;
   @override
-  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body) => relay.handle(method, pathWithQuery, headers, body);
+  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout}) => relay.handle(method, pathWithQuery, headers, body, timeout: timeout);
 }

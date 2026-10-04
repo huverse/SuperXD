@@ -68,6 +68,18 @@ void main() {
     expect((received.firstWhere((message) => message.card is ScheduleShare).card! as ScheduleShare).courses, hasLength(60));
     expect(alice.unread, 3);
 
+    // 长轮询：alice 挂着拉取，bob 一秒后发一张，看 alice 多久拿到（应远小于挂起时长）。
+    final aliceIdentity = await alice.vault.read();
+    final relay = RelayClient(HttpRelayTransport(relayBaseUrl));
+    final waiting = relay.fetch(aliceIdentity!, wait: SocialService.longPollWait);
+    await Future<void>.delayed(const Duration(seconds: 1));
+    final sentAt = DateTime.now();
+    await bob.send(alice.deviceId!, cards.last);
+    final woken = await waiting;
+    stdout.writeln('[VerifySocial] long_poll_wake_ms=${DateTime.now().difference(sentAt).inMilliseconds} items=${woken.messages.length}');
+    expect(woken.messages, hasLength(1));
+    await alice.refresh();
+
     await alice.removeFriend(bob.deviceId!);
     expect((await bob.send(alice.deviceId!, cards.last)).error, RelayCode.notFriend);
     await alice.disable();

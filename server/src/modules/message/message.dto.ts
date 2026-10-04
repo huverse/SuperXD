@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, IsArray, IsInt, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
 
-import { ackLimit, fetchLimit } from 'src/common/relay_limits';
+import { ackLimit, fetchLimit, longPollMaxSeconds } from 'src/common/relay_limits';
 
 export class SendMessageDto {
   @ApiProperty({ description: '收件设备号' }) @Matches(/^[A-Za-z0-9_-]{22}$/) to: string;
@@ -18,6 +18,7 @@ export class SendMessageResultDto {
 export class FetchMessagesQueryDto {
   @ApiProperty({ description: '从这个消息号之后取，默认从头', required: false }) @IsOptional() @Matches(/^\d{1,20}$/) after?: string;
   @ApiProperty({ description: '最多取几条，1–50，默认 50', required: false }) @IsOptional() @Type(() => Number) @IsInt() @Min(1) @Max(fetchLimit) limit?: number;
+  @ApiProperty({ description: '长轮询：没有消息时最多挂起几秒，0–25，默认 0（立即返回）', required: false }) @IsOptional() @Type(() => Number) @IsInt() @Min(0) @Max(longPollMaxSeconds) wait?: number;
 }
 
 export class InboxMessageDto {

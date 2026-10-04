@@ -18,9 +18,9 @@ import 'share_card_test.dart' show sampleSchedule;
 late Directory temporary;
 var _databases = 0;
 
-Future<SocialService> device(FakeRelay? relay, {MemoryIdentityVault? vault, String? databasePath}) async {
+Future<SocialService> device(FakeRelay? relay, {MemoryIdentityVault? vault, String? databasePath, bool polling = false}) async {
   final store = await SocialStore.open(databasePath ?? path.join(temporary.path, 'social_${_databases++}.db'));
-  final service = SocialService(store: store, vault: vault ?? MemoryIdentityVault(), transport: relay?.transport());
+  final service = SocialService(store: store, vault: vault ?? MemoryIdentityVault(), transport: relay?.transport(), polling: polling);
   await service.initialize();
   return service;
 }
@@ -34,7 +34,18 @@ Future<(SocialService, SocialService)> friendsPair(FakeRelay relay) async {
   return (alice, bob);
 }
 
+// 等到条件成立（真实时间，最多 timeout）。
+Future<void> eventually(bool Function() condition, {Duration timeout = const Duration(seconds: 6)}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!condition()) {
+    if (DateTime.now().isAfter(deadline)) fail('超时未满足条件');
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+}
+
 void main() {
+  // 长轮询用到生命周期监听，需要绑定。
+  TestWidgetsFlutterBinding.ensureInitialized();
   setUpAll(() {
     sqfliteFfiInit();
     databaseFactory = databaseFactoryFfi;
@@ -254,5 +265,42 @@ void main() {
     await first.store.close();
     final second = await device(relay, vault: vault, databasePath: databasePath);
     expect((await second.store.message('pending'))!.state, MessageState.failed);
+  });
+
+  test('前台长轮询：对方发送后不用手动刷新就收到，挂起的请求立即返回', () async {
+    final relay = FakeRelay();
+    final alice = await device(relay, polling: true), bob = await device(relay);
+    await alice.enable('小红');
+    await bob.enable('小明');
+    await bob.redeem(InviteCode.decode((await alice.createInvite()).encode())!);
+    await eventually(() => alice.friends.length == 1);
+    final started = DateTime.now();
+    await bob.send(alice.deviceId!, sampleSchedule());
+    await eventually(() => alice.unread == 1);
+    expect(DateTime.now().difference(started), lessThan(const Duration(seconds: 2)));
+    // 挂起中的拉取都带 wait，不是立即返回的短轮询。
+    expect(relay.calls.where((call) => call == 'GET /v1/messages'), isNotEmpty);
+    alice.dispose();
+    relay.releaseWaiters();
+  });
+
+  test('前台长轮询：网络失败退避后自动恢复', () async {
+    final relay = FakeRelay();
+    final vault = MemoryIdentityVault();
+    final databasePath = path.join(temporary.path, 'live.db');
+    final bob = await device(relay);
+    await bob.enable('小明');
+    final first = await device(relay, vault: vault, databasePath: databasePath);
+    await first.enable('小青');
+    await bob.redeem(InviteCode.decode((await first.createInvite()).encode())!);
+    await first.refresh();
+    await first.store.close();
+    // 重开为带长轮询的实例，第一次拉取就断网：退避 2 秒后应恢复并收到。
+    relay.failNext = const RelayException(RelayCode.network);
+    final resumed = await device(relay, vault: vault, databasePath: databasePath, polling: true);
+    await bob.send(resumed.deviceId!, sampleSchedule());
+    await eventually(() => resumed.unread == 1, timeout: const Duration(seconds: 8));
+    resumed.dispose();
+    relay.releaseWaiters();
   });
 }

@@ -22,3 +22,9 @@ export const RedisKeys = {
   // 分布式锁，单值，持有者令牌。
   lock: (name: string) => `lock:${name}`,
 } as const;
+
+// 发布订阅频道：ioredis 的 keyPrefix 不作用于频道名，这里手动加同一前缀隔离环境。
+export const RedisChannels = {
+  // 信箱有新消息，载荷是收件设备号；各实例只唤醒自己持有的长轮询。
+  mailNotify: (keyPrefix: string) => `${keyPrefix}mail_notify`,
+} as const;

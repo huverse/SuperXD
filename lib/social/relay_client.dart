@@ -30,7 +30,7 @@ abstract final class RelayCode {
   static const internal = 'INTERNAL';
   // 以下只在客户端产生。
   static const network = 'NETWORK'; // 连不上服务器
-  static const timeout = 'TIMEOUT'; // 15 秒内没有响应
+  static const timeout = 'TIMEOUT'; // 请求超时（普通 15 秒，长轮询为挂起时长再加 10 秒）
   static const badResponse = 'BAD_RESPONSE'; // 响应不是约定的格式
 }
 
@@ -50,7 +50,8 @@ class RelayResponse {
 
 // 传输端口：生产用 HTTP，测试用内存假服务。
 abstract interface class RelayTransport {
-  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body);
+  // timeout 为空用传输的默认超时；长轮询按挂起时长另给。
+  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout});
 }
 
 class HttpRelayTransport implements RelayTransport {
@@ -60,12 +61,13 @@ class HttpRelayTransport implements RelayTransport {
   final http.Client _client;
 
   @override
-  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body) async {
+  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout}) async {
     final request = http.Request(method, Uri.parse('$baseUrl$pathWithQuery'))..headers.addAll(headers);
     if (body != null) request.bodyBytes = body;
+    final limit = timeout ?? this.timeout;
     final http.Response response;
     try {
-      response = await http.Response.fromStream(await _client.send(request).timeout(timeout)).timeout(timeout);
+      response = await http.Response.fromStream(await _client.send(request).timeout(limit)).timeout(limit);
     } on TimeoutException {
       throw const RelayException(RelayCode.timeout);
     } on SocketException {
@@ -101,7 +103,7 @@ class RelayClient {
   // 本机时钟与服务器的差（毫秒）。收到 CLOCK_SKEW 时按服务器时间校正，并只重发这一次。
   int clockOffset = 0;
 
-  Future<Map<String, Object?>> _call(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload]) async {
+  Future<Map<String, Object?>> _call(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload, Duration? timeout]) async {
     final body = payload == null ? <int>[] : utf8.encode(jsonEncode(payload));
     for (var attempt = 0;; attempt++) {
       final time = '${DateTime.now().millisecondsSinceEpoch + clockOffset}';
@@ -113,7 +115,7 @@ class RelayClient {
         'x-sxd-nonce': nonce,
         'x-sxd-signature': base64UrlNoPad(signature),
         'content-type': 'application/json',
-      }, payload == null ? null : body);
+      }, payload == null ? null : body, timeout: timeout);
       if (response.status >= 200 && response.status < 300) return response.body;
       final code = response.body['code'];
       if (code is! String) throw const RelayException(RelayCode.badResponse);
@@ -158,8 +160,10 @@ class RelayClient {
   Future<int> send(SocialIdentity identity, {required String to, required String clientId, required List<int> envelope}) async =>
       _integer((await _call(identity, 'POST', '/v1/messages', {'to': to, 'clientId': clientId, 'envelope': base64UrlNoPad(envelope)}))['createTime']);
 
-  Future<({List<InboxItem> messages, bool more})> fetch(SocialIdentity identity, {String? after, int limit = 50}) async {
-    final body = await _call(identity, 'GET', '/v1/messages?${after == null ? '' : 'after=$after&'}limit=$limit');
+  // wait 为长轮询挂起时长（服务端上限 25 秒）：没有消息时服务端挂起到有新消息或到时；本次请求超时放宽到挂起时长再加 10 秒。
+  Future<({List<InboxItem> messages, bool more})> fetch(SocialIdentity identity, {String? after, int limit = 50, Duration? wait}) async {
+    final query = '${after == null ? '' : 'after=$after&'}limit=$limit${wait == null ? '' : '&wait=${wait.inSeconds}'}';
+    final body = await _call(identity, 'GET', '/v1/messages?$query', null, wait == null ? null : wait + const Duration(seconds: 10));
     final list = body['messages'], more = body['more'];
     if (list is! List || more is! bool) throw const RelayException(RelayCode.badResponse);
     return (

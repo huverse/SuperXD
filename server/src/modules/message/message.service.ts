@@ -6,6 +6,7 @@ import { RelayCode, RelayError } from 'src/common/relay_error';
 import { envelopeMaxBytes, fetchLimit, mailboxLimit, sendPerDay, sendPerMinute } from 'src/common/relay_limits';
 import { decodeBase64url } from 'src/common/crypto/relay_crypto';
 import { FriendService } from 'src/modules/friend/friend.service';
+import { MailboxNotifier } from 'src/modules/message/mailbox_notifier';
 import { MessageRepository } from 'src/modules/message/message.repository';
 
 @Injectable()
@@ -16,6 +17,7 @@ export class MessageService {
     private readonly messages: MessageRepository,
     private readonly friends: FriendService,
     private readonly limiter: RateLimiter,
+    private readonly notifier: MailboxNotifier,
   ) {}
 
   decodeEnvelope(envelope: string) {
@@ -33,6 +35,7 @@ export class MessageService {
       if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '发送过于频繁', { retryAfter });
     }
     const stored = await this.deliver(recipientDeviceId, senderDeviceId, clientId, bytes);
+    this.notifier.notify(recipientDeviceId);
     this.logger.debug(`[Message] action=send senderDeviceId=${senderDeviceId} recipientDeviceId=${recipientDeviceId} bytes=${bytes.length} id=${stored.id}`);
     return stored;
   }
@@ -45,7 +48,20 @@ export class MessageService {
     return this.messages.insert(recipientDeviceId, senderDeviceId, clientId, envelope, manager);
   }
 
-  async fetch(recipientDeviceId: string, afterId: string, limit: number) {
+  // 长轮询：先登记等待再查库（查完之前到达的消息也能唤醒，不会漏），有消息立即返回；没有就挂起到被唤醒、超时或客户端断开，再查一次。
+  async fetch(recipientDeviceId: string, afterId: string, limit: number, waitSeconds = 0, closed?: Promise<void>) {
+    const waiter = waitSeconds > 0 ? this.notifier.wait(recipientDeviceId, waitSeconds * 1000) : null;
+    try {
+      const page = await this.page(recipientDeviceId, afterId, limit);
+      if (waiter === null || page.messages.length > 0) return page;
+      await Promise.race([waiter.signal, ...(closed ? [closed] : [])]);
+      return this.page(recipientDeviceId, afterId, limit);
+    } finally {
+      waiter?.cancel();
+    }
+  }
+
+  private async page(recipientDeviceId: string, afterId: string, limit: number) {
     const rows = await this.messages.fetch(recipientDeviceId, afterId, Math.min(limit, fetchLimit) + 1);
     const page = rows.slice(0, limit);
     return {
