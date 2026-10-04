@@ -59,13 +59,22 @@ class _MessagePageState extends State<MessagePage> {
     if (report && mounted && _social.refreshError != null) showCampusToast(context, socialErrorText(_social.refreshError));
   }
 
-  Future<void> _open(String friendId) => Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(
-    builder: (_) => ConversationPage(social: _social, friendId: friendId, gateway: widget.gateway, openVideo: widget.openVideo),
-  ));
+  // 从会话、添加好友返回时刷新一次：期间可能有新消息或新好友。
+  Future<void> _open(String friendId) async {
+    await Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(
+      builder: (_) => ConversationPage(social: _social, friendId: friendId, gateway: widget.gateway, openVideo: widget.openVideo),
+    ));
+    if (mounted) await _refresh();
+  }
 
   Future<void> _add() async {
     final friendId = await Navigator.of(context, rootNavigator: true).push<String>(MaterialPageRoute(builder: (_) => FriendAddPage(social: _social, scan: widget.scan)));
-    if (friendId != null && mounted) await _open(friendId);
+    if (!mounted) return;
+    if (friendId != null) {
+      await _open(friendId);
+    } else {
+      await _refresh();
+    }
   }
 
   Future<void> _more(BuildContext anchor) async {

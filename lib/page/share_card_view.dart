@@ -75,8 +75,8 @@ class _AppearanceCard extends StatelessWidget {
       header,
       const SizedBox(height: 12),
       if (palette != null) Row(children: [
-        // 色板预览：背景、卡片、主色、激活色四块，直观看到配色。
-        for (final color in [palette.backgroundTop, palette.surface, palette.primary, palette.accent]) Container(
+        // 色板预览：背景、主色、激活色三块（背景与卡片色几乎一样白，放两块看不出差别）。
+        for (final color in [palette.backgroundTop, palette.primary, palette.accent]) Container(
           width: 28,
           height: 28,
           margin: const EdgeInsets.only(right: 8),
@@ -84,7 +84,8 @@ class _AppearanceCard extends StatelessWidget {
         ),
       ]),
       const SizedBox(height: 8),
-      Text(details.join(' · '), style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
+      // 各项整体换行，不在词中间断开留下孤字。
+      Wrap(spacing: 12, runSpacing: 4, children: [for (final detail in details) Text(detail, style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant))]),
       ?action,
     ]);
   }

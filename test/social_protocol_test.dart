@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/page/friend_add_page.dart';
 import 'package:superxd/social/invite_code.dart';
 import 'package:superxd/social/social_crypto.dart';
 
@@ -85,9 +86,13 @@ void main() {
       final owner = await SocialIdentity.generate();
       final code = InviteCode(inviteId: base64UrlNoPad(randomBytes(16)), inviteSeed: randomBytes(32), owner: PeerKeys(owner.signPublicKey, owner.boxPublicKey), nickname: '小明', expiresAt: 1791100000000);
       final text = code.encode();
-      expect(text, startsWith('SXD1F.'));
-      // 二维码内容要短，扫码才稳：远低于 QR 版本 15 的容量。
-      expect(text.length, lessThan(400));
+      expect(text, startsWith('SXD1F:'));
+      // 全是 QR 字母数字模式字符（Base45），内容约 190 字符，纠错 M 下版本 8（49×49）即可装下。
+      expect(RegExp(r'^[0-9A-Z $%*+\-./:]+$').hasMatch(text), isTrue);
+      expect(inviteQrImage(text).moduleCount, lessThanOrEqualTo(49));
+      // 昵称取满 20 个汉字时也不超过版本 10（57×57）。
+      final longest = InviteCode(inviteId: code.inviteId, inviteSeed: code.inviteSeed, owner: code.owner, nickname: '汉' * 20, expiresAt: code.expiresAt).encode();
+      expect(inviteQrImage(longest).moduleCount, lessThanOrEqualTo(57));
       final decoded = InviteCode.decode(text)!;
       expect(decoded.owner.deviceId, owner.deviceId);
       expect(decoded.nickname, '小明');
@@ -96,8 +101,19 @@ void main() {
 
     test('别的二维码与损坏内容返回 null', () {
       expect(InviteCode.decode('https://example.com'), isNull);
-      expect(InviteCode.decode('SXD1F.not-json'), isNull);
-      expect(InviteCode.decode('SXD1F.${base64UrlNoPad(utf8.encode('{"v":2}'))}'), isNull);
+      expect(InviteCode.decode('SXD1F:abc'), isNull);
+      expect(InviteCode.decode('SXD1F:${base45Encode([2, ...List.filled(130, 0)])}'), isNull, reason: '未知版本');
+      expect(InviteCode.decode('SXD1F:${base45Encode([1, ...List.filled(120, 0)])}'), isNull, reason: '缺昵称');
+    });
+
+    test('Base45 与 RFC 9285 示例一致，非法输入返回 null', () {
+      expect(base45Encode(utf8.encode('AB')), 'BB8');
+      expect(base45Encode(utf8.encode('Hello!!')), '%69 VD92EX0');
+      expect(base45Encode(utf8.encode('base-45')), 'UJCLQE7W581');
+      expect(utf8.decode(base45Decode('QED8WEX0')!), 'ietf!');
+      expect(base45Decode('GGW'), isNull, reason: '超过 65535');
+      expect(base45Decode('a'), isNull);
+      expect(base45Decode('ZZZZ'), isNull);
     });
 
     test('昵称：1–20 字、无首尾空白与控制字符', () {

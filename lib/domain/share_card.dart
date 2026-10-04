@@ -22,6 +22,7 @@ sealed class ShareCard {
   Map<String, Object?> toBody();
 }
 
+// [人工决策-2026-10-04 16:44:36] 课表分享为一次性快照（之后改了要再发一次），不做持续共享；首批卡片为课表、界面配置、短视频。
 // 课表快照：发送时的某学期课表、开学日与作息。接收方只读查看，可与自己的课表对比共同空闲，不覆盖自己的课表。
 class ScheduleShare extends ShareCard {
   const ScheduleShare({required this.term, required this.courses, required this.bells, this.termStartDate});

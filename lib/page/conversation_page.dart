@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_clock.dart';
@@ -19,6 +21,9 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 
+// 应用在前台（测试环境没有生命周期状态时视为前台）；后台不拉取。
+bool get _foreground => const [null, AppLifecycleState.resumed].contains(WidgetsBinding.instance.lifecycleState);
+
 // 打开好友分享的视频：由组合根接到百宝箱的短视频页（页面层不依赖百宝箱）。
 typedef VideoOpener = void Function(BuildContext context, VideoShare video);
 
@@ -37,6 +42,7 @@ class ConversationPage extends StatefulWidget {
 class _ConversationPageState extends State<ConversationPage> {
   List<SocialMessage>? _messages;
   int _loadVersion = 0;
+  Timer? _poller;
   bool _preparing = false;
 
   SocialService get _social => widget.social;
@@ -49,15 +55,22 @@ class _ConversationPageState extends State<ConversationPage> {
     _reload();
     // 刷新会同步通知监听者，不能在构建期间发起，放到首帧之后。
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      _social.refresh().catchError((Object error, StackTrace stack) {
-        campusLog('[Conversation] action=refresh errorType=${error.runtimeType}\n$stack');
-      });
+      if (mounted) _pull();
+    });
+    // 正在看会话时每 10 秒拉一次（没有推送通道），离开页面即停；应用进入后台由服务的前台判断兜底。
+    _poller = Timer.periodic(const Duration(seconds: 10), (_) => _pull());
+  }
+
+  void _pull() {
+    if (!_foreground) return;
+    _social.refresh().catchError((Object error, StackTrace stack) {
+      campusLog('[Conversation] action=refresh errorType=${error.runtimeType}\n$stack');
     });
   }
 
   @override
   void dispose() {
+    _poller?.cancel();
     _social.removeListener(_reload);
     super.dispose();
   }
@@ -212,21 +225,28 @@ class _ConversationPageState extends State<ConversationPage> {
         Text(socialErrorText(message.error), style: TextStyle(fontSize: 14, color: colors.danger)),
         if (_friend?.removed == false) TextButton.icon(onPressed: () => _social.retry(message.id), icon: const CampusIcon(CampusIcons.sync), label: const Text('重新发送')),
       ]),
-      _ => Text(formatCampusTimestamp(message.createTime), style: secondary),
+      _ => const SizedBox.shrink(),
     };
   }
 
-  Widget _item(SocialMessage message, CampusPalette colors, double maxWidth) {
+  // 时间分隔：与上一条相隔超过 5 分钟（或是第一条）才在上方居中显示一次时间，同常见 IM，不在每张卡片下重复。
+  static bool _timeGap(SocialMessage message, SocialMessage? older) =>
+      older == null || DateTime.parse(message.createTime).difference(DateTime.parse(older.createTime)) > const Duration(minutes: 5);
+
+  Widget _item(SocialMessage message, SocialMessage? older, CampusPalette colors, double maxWidth) {
+    final secondary = TextStyle(fontSize: 14, color: colors.onSurfaceVariant);
+    final time = _timeGap(message, older) ? Padding(padding: const EdgeInsets.only(top: 12, bottom: 4), child: Center(child: Text(formatCampusTimestamp(message.createTime), style: secondary))) : null;
     if (message.system != null) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12),
-        child: Center(child: Text('已成为好友 · ${formatCampusTimestamp(message.createTime)}', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant))),
-      );
+      return Column(children: [
+        ?time,
+        Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Center(child: Text('已成为好友', style: secondary))),
+      ]);
     }
     final alignment = message.outgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start;
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
+      padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(crossAxisAlignment: alignment, children: [
+        if (time != null) SizedBox(width: double.infinity, child: time),
         Builder(builder: (anchor) => ConstrainedBox(
           constraints: BoxConstraints(maxWidth: maxWidth),
           child: GestureDetector(
@@ -243,7 +263,7 @@ class _ConversationPageState extends State<ConversationPage> {
             ),
           ),
         )),
-        Padding(padding: const EdgeInsets.only(top: 6, left: 4, right: 4), child: _status(message, colors)),
+        if (message.outgoing && message.state != MessageState.sent) Padding(padding: const EdgeInsets.only(top: 6, left: 4, right: 4), child: _status(message, colors)),
       ]),
     );
   }
@@ -273,22 +293,28 @@ class _ConversationPageState extends State<ConversationPage> {
                   reverse: true,
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                   itemCount: messages.length,
-                  itemBuilder: (context, index) => KeyedSubtree(key: ValueKey(messages[index].id), child: _item(messages[index], colors, constraints.maxWidth * .82)),
+                  // 列表倒序：index + 1 是更早的一条。
+                  itemBuilder: (context, index) => KeyedSubtree(key: ValueKey(messages[index].id), child: _item(messages[index], index + 1 < messages.length ? messages[index + 1] : null, colors, constraints.maxWidth * .82)),
                 ))),
-          // 底部操作栏：实色、顶部分割线（同会话页输入栏规格），不模糊。
-          DecoratedBox(
+          // 底部操作栏：实色、顶部分割线（同会话页输入栏规格），不模糊，铺满宽度。
+          Container(
+            width: double.infinity,
             decoration: BoxDecoration(color: colors.surface, border: Border(top: BorderSide(color: colors.outlineSubtle))),
             child: SafeArea(top: false, child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: friend == null || friend.removed
                   ? SizedBox(height: 48, child: Center(child: Text('对方已解除好友，无法发送', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant))))
-                  : Wrap(spacing: 8, runSpacing: 8, children: [
-                      if (widget.gateway != null) Builder(builder: (anchor) => FilledButton.icon(
-                        onPressed: _preparing ? null : () => _shareSchedule(anchor),
-                        icon: const CampusIcon(CampusIcons.todaySelected),
-                        label: CampusBusyContent(busy: _preparing, label: '分享课表', busyLabel: '读取课表'),
-                      )),
-                      FilledButton.icon(onPressed: () => _send(DisplayScope.of(context).appearance), icon: const CampusIcon(CampusIcons.palette), label: const Text('分享界面')),
+                  // 两个操作等宽并排。
+                  : Row(children: [
+                      if (widget.gateway != null) ...[
+                        Expanded(child: Builder(builder: (anchor) => FilledButton.icon(
+                          onPressed: _preparing ? null : () => _shareSchedule(anchor),
+                          icon: const CampusIcon(CampusIcons.todaySelected),
+                          label: CampusBusyContent(busy: _preparing, label: '分享课表', busyLabel: '读取课表'),
+                        ))),
+                        const SizedBox(width: 12),
+                      ],
+                      Expanded(child: FilledButton.icon(onPressed: () => _send(DisplayScope.of(context).appearance), icon: const CampusIcon(CampusIcons.palette), label: const Text('分享界面'))),
                     ]),
             )),
           ),

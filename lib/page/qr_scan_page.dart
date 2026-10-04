@@ -4,10 +4,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/appearance_page.dart';
 import 'package:superxd/social/invite_code.dart';
-import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
-import 'package:superxd/theme/campus_palette.dart';
-import 'package:superxd/theme/glass_panel.dart';
 
 // 扫好友二维码：相机取景（识别在本机完成，ML Kit 内置模型、不联网），也可从相册选一张截图识别。
 // 只认 SuperXD 好友二维码，扫到其他内容原地提示，不跳转、不打开链接。返回解出的邀请。
@@ -66,10 +63,8 @@ class _QrScanPageState extends State<QrScanPage> {
 
   @override
   Widget build(BuildContext context) {
-    final colors = CampusPalette.of(context);
-    // 相机画面上的文字与取景框固定用白色加阴影，与系统相机一致；不跟随配色，否则浅色字在亮处看不清。
+    // 相机画面上的文字与取景框固定用白色（文字衬半透明深色底），与系统相机一致；不跟随配色，否则在亮处看不清。
     const onCamera = Colors.white;
-    const shadow = [Shadow(blurRadius: 6, color: Colors.black54)];
     final side = MediaQuery.sizeOf(context).shortestSide * .68;
     return Scaffold(
       backgroundColor: Colors.black,
@@ -95,26 +90,48 @@ class _QrScanPageState extends State<QrScanPage> {
           alignment: const Alignment(0, .62),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 32),
-            child: Text(_hint ?? '将好友的二维码放入框内', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, color: onCamera, shadows: shadow)),
+            child: DecoratedBox(
+              decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Text(_hint ?? '将好友的二维码放入框内', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, color: onCamera)),
+              ),
+            ),
           ),
         ),
-        // 顶栏按钮属于导航层，画玻璃。
-        CampusChrome(child: SafeArea(child: Padding(
+        // 取景页顶栏按钮用半透明深色圆底加白色图标（同系统相机）：玻璃会随取景画面变亮变暗，亮处的白色图标看不清。
+        // 钉在顶部，铺满的 Stack 里不定位会被拉到正中。
+        Positioned(top: 0, left: 0, right: 0, child: SafeArea(child: Padding(
           padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
           child: Row(children: [
-            CampusGlassCircleButton(label: '返回', size: 44, onPressed: () => Navigator.pop(context), icon: CampusIcon(CampusIcons.back, color: colors.onSurface)),
+            _CameraButton(tooltip: '返回', icon: CampusIcons.back, onPressed: () => Navigator.pop(context)),
             const Spacer(),
             ValueListenableBuilder(
               valueListenable: _controller,
               builder: (context, state, _) => state.torchState == TorchState.unavailable
                   ? const SizedBox.shrink()
-                  : CampusGlassCircleButton(label: state.torchState == TorchState.on ? '关闭手电筒' : '打开手电筒', size: 44, onPressed: _controller.toggleTorch, icon: CampusIcon(CampusIcons.flashlight, color: colors.onSurface)),
+                  : _CameraButton(tooltip: state.torchState == TorchState.on ? '关闭手电筒' : '打开手电筒', icon: CampusIcons.flashlight, onPressed: _controller.toggleTorch),
             ),
             const SizedBox(width: 8),
-            CampusGlassCircleButton(label: '从相册识别', size: 44, onPressed: _fromGallery, icon: CampusIcon(CampusIcons.scanImage, color: colors.onSurface)),
+            _CameraButton(tooltip: '从相册识别', icon: CampusIcons.scanImage, onPressed: _fromGallery),
           ]),
         ))),
       ]),
     );
   }
+}
+
+class _CameraButton extends StatelessWidget {
+  const _CameraButton({required this.tooltip, required this.icon, required this.onPressed});
+  final String tooltip;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    tooltip: tooltip,
+    onPressed: onPressed,
+    style: const ButtonStyle(backgroundColor: WidgetStatePropertyAll(Colors.black54), fixedSize: WidgetStatePropertyAll(Size(48, 48))),
+    icon: CampusIcon(icon, color: Colors.white),
+  );
 }

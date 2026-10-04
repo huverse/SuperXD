@@ -1,6 +1,6 @@
 # domain 领域核心
 
-定位：纯 Dart，不依赖 Flutter，也不依赖项目内其他层。外部包只有三个：uuid 用于生成版本 id，timezone 用于校园时区，crypto 用于日历事件 UID。业务端口 CampusGateway 和全部视图类型都定义在这里，供 page、application、gateway 共用。
+定位：纯 Dart，不依赖 Flutter，也不依赖项目内其他层。外部包只有三个：uuid 用于生成版本 id，timezone 用于校园时区，crypto 用于日历事件 UID。私信的分享卡片协议也在这里（share_card.dart），供 social、page、toolbox、local 共用。业务端口 CampusGateway 和全部视图类型都定义在这里，供 page、application、gateway 共用。
 
 # 文件职责
 
@@ -42,6 +42,11 @@
   - 每次上课一个事件，时刻一律 UTC；转义、CRLF、75 八位组折行且不切断多字节字符。
   - UID 由学期、课程、日期、节次哈希而来，重复导入时更新同一事件；不含账号信息。单次最多 icalEventLimit（5000）个事件。
 - grades.dart：成绩 JSON 的编解码与边界校验（GradeDataException）、学年摘要，以及筛选与排序（GradeFilter、GradeSort、selectGrades）。
+- share_card.dart：功能性私信的分享卡片协议。
+  - 卡片有类型名与版本号：ScheduleShare（课表快照：学期、开学日、课程、作息）、AppearanceShare（配色、字体、字号、深浅色、玻璃、壁纸模糊透明度，不含图片）、VideoShare（作品原链接、标题、作者、平台、类型，不含直链与封面）；不认识的类型或更高版本解成 UnknownShare，界面提示更新应用。
+  - decodeShareCard 是外部输入的边界：结构、长度、范围逐项校验，课表再走 validateSchedule，失败抛 ShareCardException。shareCardSummary 给列表预览。
+  - 新增卡片类型：这里加子类与编解码，页面 share_card_view.dart 加渲染。
+- common_free.dart：好友课表与自己课表的共同空闲。compareWeek 按好友那一周的日期对齐双方周次（任一方缺开学日时按相同周次），busyPeriods 求某周每天占用的节次，commonFree 合并双方都空的连续节次并配上作息时刻；周末任一方有课才显示周末。
 
 # 关键规则
 

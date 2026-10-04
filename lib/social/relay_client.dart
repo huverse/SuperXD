@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:superxd/social/social_crypto.dart';
 
+// [人工决策-2026-10-04 16:44:36] 私信经自建加密中转送达（NestJS + MySQL + Redis）；测试期用国内服务器 IP，之后换正式域名，地址不写死。
 // 中转服务地址在构建时传入：--dart-define=SUPERXD_RELAY=http://IP:端口（正式环境换成 https 域名），不写进代码。
 // 未传入时私信不可用，界面如实提示。
 const relayBaseUrl = String.fromEnvironment('SUPERXD_RELAY');

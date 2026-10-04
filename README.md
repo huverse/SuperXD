@@ -8,8 +8,11 @@
 
 ```sh
 ORG_GRADLE_PROJECT_superxdSigningProperties=/安全的绝对路径/signing.properties \
-  flutter build apk --release --flavor alpha --split-per-abi --split-debug-info=build/release_symbols
+  flutter build apk --release --flavor alpha --split-per-abi --split-debug-info=build/release_symbols \
+  --dart-define=SUPERXD_RELAY=http://中转服务器地址:端口
 ```
+
+SUPERXD_RELAY是私信中转服务地址，只在构建时传入、不写进代码；不传时私信显示“未配置”，其余功能不受影响。测试期可用IP加HTTP，换正式域名后改为https://域名重新构建即可，见server/README.md。
 
 签名配置只从上述外部properties入口读取，包含storeFile、keyAlias、storePassword、keyPassword；storeFile可相对配置文件或为绝对路径。文件和密钥必须保存在仓库外并限制访问，禁止将真实密码写进命令行、日志、Git或Issue。release缺少有效配置直接失败，不回退debug签名。
 
@@ -46,6 +49,8 @@ flutter run
 ```
 
 当前工程提供Android宿主。GitHub仓库为私有，clone需要维护者授权；不要把访问token写入URL或项目文件。
+
+私信中转服务在server目录（NestJS + MySQL + Redis），开发、测试与部署见server/README.md；客户端与真实中转联调用tool/verify_social.dart。
 
 项目索引在根目录CLAUDE.md（分层、跨模块不变量、改动前检查清单、测试地图）与lib各模块的CLAUDE.md（文件职责、流程、库表与限额）；新增、删除或搬迁lib文件须同步登记，由test/project_structure_test.dart检查。
 

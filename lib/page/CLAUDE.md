@@ -1,8 +1,8 @@
 # page 页面
 
 定位：Flutter 页面与页面级组件。
-- 依赖范围：domain（端口与类型）、application（同步编排）、theme（视觉组件）和 app_session.dart。gateway 只用 account_access.dart，local 只用 display_settings.dart。
-- 页面只调用 CampusGateway 和 AccountAccess，不直接读写数据库，也不直接调用教务客户端。
+- 依赖范围：domain（端口与类型）、application（同步编排）、social（私信服务）、theme（视觉组件）和 app_session.dart。gateway 只用 account_access.dart，local 只用 display_settings.dart。
+- 页面只调用 CampusGateway、AccountAccess 和 SocialService，不直接读写数据库，也不直接调用教务客户端或中转服务。页面不依赖百宝箱，打开好友分享的视频经路由注入的 VideoOpener。
 
 # 文件职责
 
@@ -12,10 +12,22 @@
     - 可拖动底栏 DragNavigationBar，悬浮在安全区之上；内容层延伸到玻璃下方，底栏占位作为各页的底部安全区。
     - 拖动时的玻璃透镜是栏玻璃的兄弟层，不被栏裁剪，按 iOS 底栏向四周鼓出、略超出栏沿；镜下的静止胶囊随之淡出。
   - animated_branches.dart：AnimatedBranches 负责分支切换转场，保留每个分支的 Navigator；进出两页整屏并排平移，不淡入淡出（页内玻璃在半透明图层下取不到背景），曲线同页面转场（campusSpringCurve）。
+  - shell_page.dart 的底栏“消息”带私信未读角标（警示红底白字，读屏读出条数）。
   - section_pages.dart：
     - 服务页：课表、成绩、百宝箱三个入口。
-    - 消息页：通知、私信，当前为占位。
     - 我的页：界面设置、关闭记住账号、切换账号、导入旧版本数据、退出登录、开源与第三方声明。
+    - SectionTitleBar：底栏根页的大标题顶栏（服务、消息、我的共用）。
+- 私信（功能性，只有分享卡片、没有文字聊天）：
+  - message_page.dart：消息页 MessagePage，分段“通知 | 私信”，默认停在私信（通知尚未接入）。
+    - 私信未开启时是开启卡片（昵称、数据处理说明、隐私政策链接、同意并开启）；开启后是“添加好友”（强调）、⋯（修改昵称、关闭私信）与好友列表。
+    - 好友行：头像首字、名字、最后一条摘要、时间（今天只显示钟点）与未读角标；按最近活动排序。下拉刷新并核对好友列表；分支重新可见时刷新一次。
+  - friend_add_page.dart：添加好友 FriendAddPage。出示自己的二维码（浅色配色画，保证可扫）与倒计时、刷新；出示期间每 3 秒拉一次信箱，对方一扫原地提示“已添加”；离开即作废二维码。“扫一扫”（强调）扫对方的码，成功后返回新好友并进入会话。扫码函数可注入（InviteScanner），测试用假扫码。
+  - qr_scan_page.dart：扫码页 QrScanPage。相机只认 QR，识别在本机完成；也可从相册识别（复用 pickWallpaperFromGallery，用完删缓存副本）；扫到非本应用二维码原地提示，不打开任何链接；有闪光灯时给手电筒按钮。
+  - conversation_page.dart：会话页 ConversationPage。卡片列表最新在下；自己的卡片下方原地显示发送中、失败原因与重新发送、或时间；长按卡片可重发或删除（仅本机）。底部实色操作栏：分享课表（多学期时先选学期，只发本机已有课表）、分享界面；对方解除好友后改为提示。⋯：修改备注、删除好友（警示确认）。
+  - share_card_view.dart：卡片渲染 ShareCardView：课表（查看与对比）、界面配置（色板预览、套用）、视频（打开）、未知类型（提示更新应用）。
+  - friend_schedule_page.dart：好友课表 FriendSchedulePage。周网格看 TA 的课（点课程看详情）；“共同空闲”读本机同学期课表按日期对齐，逐格标出谁有课、双方都空的着激活色，并列出本周共同空闲时段。没有同学期课表或缺开学日时如实说明。
+  - share_target_sheet.dart：分享弹层 showShareSheet。多选好友后逐个发送，每行原地显示发送中、已发送或失败原因，完成后按钮变为“完成”，失败的可重发。课表页⋯、界面页顶栏、百宝箱结果页共用。
+  - social_dialogs.dart：错误码文案 socialErrorText、列表时间 socialShortTime、单行输入弹窗 showSocialTextInput（昵称、备注）。
 - 今天：
   - today_page.dart：今天页 TodayPage。
     - 读取当前学期的课表和作息，按日浏览。
@@ -31,7 +43,7 @@
   - schedule_page.dart：课表页 SchedulePage。
     - 支持天、学期、学年三种范围，可设置开学日。
     - 无课时段可新增课程或安排已有课程，也可进入课程管理。
-    - 顶栏只留“今天”胶囊与“管理课程”“⋯”玻璃圆按钮；⋯菜单：开学日、课前提醒（只在传入 CampusReminders 时显示）与导出到日历。
+    - 顶栏只留“今天”胶囊与“管理课程”“⋯”玻璃圆按钮；⋯菜单：开学日、课前提醒（只在传入 CampusReminders 时显示）、导出到日历与分享给好友（只在传入 SocialService 时显示，分享当前所看学期的快照）。
   - calendar_export.dart：导出到日历 exportTermCalendar。
     - 把当前所看学期的全部上课时段写成 .ics 交给日历应用导入；缺开学日、缺作息或没有可导出时段时说明原因，不导出。
     - 作息里找不到的节次不猜时刻，导出前确认未导出的时段数。
@@ -55,7 +67,7 @@
 - 账号与设置：
   - login_page.dart：登录页 LoginPage，也用于切换账号。包含验证码、记住账号确认，以及百宝箱和法务入口。
   - account_dialogs.dart：旧版本数据导入确认 showLegacyImport，以及登录后自动提示导入的 LegacyImportGate。
-  - appearance_page.dart：界面设置 AppearancePage，调整字号、配色、字体、深浅色、玻璃效果和背景。
+  - appearance_page.dart：界面设置 AppearancePage，调整字号、配色、字体、深浅色、玻璃效果和背景；传入 SocialService 时顶栏有“分享给好友”（不含壁纸图片）。
     - 背景可选自定义图片：系统照片选择器选一张，取色后交给 DisplaySettings 保存；选图插件的缓存副本用完即删。
     - 选图函数可注入（pickWallpaper），测试用假选图。
     - 模糊与透明度是两条滑杆（CampusSlider），拖动中只预览，正常松手立即保存；系统取消、读屏增减没有松手回调，停手 300ms 补存；离开页面时把没存的预览存掉。
@@ -70,6 +82,8 @@
 - 页面平时只读本地（read 系列方法）。联网只能由用户显式触发：
   - 同步统一经 CampusSync 编排，成绩页只同步成绩。
   - 同步范围弹窗里的刷新学期，也需要用户点击才会联网。
+  - 私信例外：联系的是自建中转服务而非教务，进入私信、会话与出示二维码时自动拉取，前台每 60 秒刷新。SocialService.refresh 会同步通知监听者，页面不能在构建期间调用（放到首帧之后）。
+- 好友分享的课表只读查看，不写进自己的课表；界面配置套用后提示条可撤销；视频交给百宝箱重新解析，首次使用来源仍由本人同意。
 - 今天页只读课表，编辑入口只在课表页。
 - 有课卡和无课卡都只在长按时展开，单击不展开。
 - 弹窗统一走 showCampusDialog 系列：

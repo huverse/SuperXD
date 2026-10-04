@@ -32,6 +32,7 @@ abstract final class SocialCode {
   static const identityLost = 'IDENTITY_LOST'; // 安全存储里的身份丢失，需重新开启
 }
 
+// [人工决策-2026-10-04 16:44:36] 好友与私信的身份跟设备走（独立昵称、不暴露学号），切换教务账号保留，百宝箱未登录也能分享。
 // 私信编排：本机库、设备身份与中转服务之间的唯一入口，页面只经它读写。设备级，切换教务账号保留。
 // 联网时机：开启、出示/扫码、发送、刷新（回到前台、进入私信、下拉、前台每 60 秒）。除校时重发一次外不自动重试。
 class SocialService extends ChangeNotifier {

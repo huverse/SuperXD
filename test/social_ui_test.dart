@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
+import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:superxd/domain/campus_gateway.dart';
@@ -240,7 +241,7 @@ void main() {
     await tester.tap(find.text('打开'));
     await advance(tester);
     expect(find.bySemanticsLabel(RegExp('我的好友二维码')), findsOneWidget);
-    expect(find.byWidgetPredicate((widget) => widget.runtimeType.toString() == 'PrettyQrDataView'), findsOneWidget);
+    expect(find.byType(PrettyQrView), findsOneWidget);
     expect(find.textContaining('后失效'), findsOneWidget);
     // bob 扫码加 alice（二维码编码本身由 social_protocol_test 覆盖）：alice 页面 3 秒内轮询到问候，原地提示。
     await tester.runAsync(() async => bob.redeem(InviteCode.decode((await alice.createInvite()).encode())!));

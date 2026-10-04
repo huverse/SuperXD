@@ -16,6 +16,19 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
+// 好友二维码：内容是 Base45（全是字母数字模式字符），按字母数字模式编码并取装得下的最小版本；
+// qr 库的 fromData 固定用字节模式，同样内容要大好几个版本。纠错取 M，屏幕反光时也能扫。
+QrImage inviteQrImage(String text) {
+  for (var version = 1; version <= 40; version++) {
+    try {
+      return QrImage(QrCode(version, QrErrorCorrectLevel.M)..addAlphaNumeric(text));
+    } on InputTooLongException {
+      continue;
+    }
+  }
+  throw ArgumentError.value(text.length, 'text', '二维码内容过长');
+}
+
 // 扫码页的入口函数可注入，测试用假扫码。
 typedef InviteScanner = Future<InviteCode?> Function(BuildContext context);
 
@@ -33,6 +46,7 @@ class FriendAddPage extends StatefulWidget {
 
 class _FriendAddPageState extends State<FriendAddPage> {
   InviteCode? _code;
+  QrImage? _qrImage;
   String? _error;
   bool _creating = false;
   bool _redeeming = false;
@@ -75,7 +89,11 @@ class _FriendAddPageState extends State<FriendAddPage> {
         unawaited(_social.revokeInvite(code.inviteId));
         return;
       }
-      setState(() => _code = code);
+      final image = inviteQrImage(code.encode());
+      setState(() {
+        _code = code;
+        _qrImage = image;
+      });
       _ticker?.cancel();
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
@@ -83,9 +101,13 @@ class _FriendAddPageState extends State<FriendAddPage> {
         if (_remaining <= 0) _watcher?.cancel();
       });
       _watcher?.cancel();
-      _watcher = Timer.periodic(const Duration(seconds: 3), (_) => _social.refresh().catchError((Object error, StackTrace stack) {
-        campusLog('[FriendAdd] action=watch errorType=${error.runtimeType}\n$stack');
-      }));
+      _watcher = Timer.periodic(const Duration(seconds: 3), (_) {
+        // 后台不拉取（测试环境没有生命周期状态时视为前台）。
+        if (!const [null, AppLifecycleState.resumed].contains(WidgetsBinding.instance.lifecycleState)) return;
+        _social.refresh().catchError((Object error, StackTrace stack) {
+          campusLog('[FriendAdd] action=watch errorType=${error.runtimeType}\n$stack');
+        });
+      });
     } on SocialException catch (error) {
       if (mounted) setState(() => _error = socialErrorText(error.code));
     } catch (error, stack) {
@@ -149,9 +171,8 @@ class _FriendAddPageState extends State<FriendAddPage> {
                     Semantics(
                       label: '我的好友二维码',
                       image: true,
-                      child: PrettyQrView.data(
-                        data: code.encode(),
-                        errorCorrectLevel: QrErrorCorrectLevel.M,
+                      child: PrettyQrView(
+                        qrImage: _qrImage!,
                         decoration: PrettyQrDecoration(shape: PrettyQrSmoothSymbol(color: light.onSurface, roundFactor: .5), quietZone: PrettyQrQuietZone.standard),
                       ),
                     ),

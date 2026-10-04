@@ -78,8 +78,23 @@ class _FriendSchedulePageState extends State<FriendSchedulePage> {
     } catch (error, stack) {
       campusLog('[FriendSchedule] action=load_mine errorType=${error.runtimeType}\n$stack');
     } finally {
-      if (mounted) setState(() => _loadingMine = false);
+      if (mounted) {
+        setState(() {
+          _loadingMine = false;
+          // 没有可对比的课表时默认看 TA 的课；仍可切到共同空闲看说明。
+          if (_myCourses == null) _view = _View.theirs;
+        });
+      }
     }
+  }
+
+  // 第几周对应的日期范围（按对方开学日），缺开学日时不显示。
+  String? _weekDates() {
+    final start = widget.share.termStartDate;
+    if (start == null) return null;
+    final monday = parseIsoDate(mondayOf(start)).add(Duration(days: (_week - 1) * 7));
+    final sunday = monday.add(const Duration(days: 6));
+    return '${monday.month}月${monday.day}日–${sunday.month}月${sunday.day}日';
   }
 
   List<BellPeriod> get _bells => widget.share.bells.isNotEmpty ? widget.share.bells : _myBells;
@@ -111,7 +126,10 @@ class _FriendSchedulePageState extends State<FriendSchedulePage> {
         ],
         Row(children: [
           IconButton(tooltip: '上一周', onPressed: _week > 1 ? () => setState(() => _week--) : null, icon: const CampusIcon(CampusIcons.back)),
-          Expanded(child: Text('第 $_week 周', textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium)),
+          Expanded(child: Column(children: [
+            Text('第 $_week 周', textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium),
+            if (_weekDates() case final dates?) Text(dates, style: secondary),
+          ])),
           IconButton(tooltip: '下一周', onPressed: _week < _weekCount ? () => setState(() => _week++) : null, icon: Transform.flip(flipX: true, child: const CampusIcon(CampusIcons.back))),
         ]),
         if (common && _loadingMine) const Padding(padding: EdgeInsets.all(24), child: CampusLoading(label: '读取我的课表'))
@@ -147,7 +165,7 @@ class _WeekGrid extends StatelessWidget {
     final colors = CampusPalette.of(context);
     final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
     final rowHeight = 48.0 * scale;
-    final labelWidth = 36.0 * scale;
+    final labelWidth = 48.0 * scale;
     final days = comparison.weekdays;
     final periods = comparison.periodCount;
     final cell = TextStyle(fontSize: 14, color: colors.onSurfaceVariant, height: 1.15);
@@ -205,8 +223,10 @@ class _WeekGrid extends StatelessWidget {
             top: rowHeight * (period - 1),
             width: labelWidth,
             height: rowHeight,
+            // 节次与开始时刻（来自作息，没有就只显示节次）。
             child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-              Text('$period', style: TextStyle(fontSize: 14, color: colors.onSurface)),
+              Text('$period', style: TextStyle(fontSize: 14, color: colors.onSurface, height: 1.15)),
+              if (bells.where((bell) => bell.period == period).firstOrNull case final bell?) Text(bell.start, maxLines: 1, style: cell),
             ]),
           ),
           ...blocks,

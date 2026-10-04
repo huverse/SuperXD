@@ -9,6 +9,7 @@
     - 在应用支持目录的 toolbox 子目录下，打开 toolbox.db、资源目录和下载目录。
     - 组装 ParseCoordinator（当前只有 BugPK）、下载管理器、后台传输和文件导出。
     - 跟随应用前后台状态恢复下载。
+    - shareVideo（ToolboxVideoShare）：把作品分享给好友的回调，由组合根注入（接到私信的分享弹层）；为空时不显示分享入口。百宝箱不感知私信。
   - toolbox_catalog.dart：工具注册表 toolboxCatalog。路由按这里的 id 生成免登录的工具路由。
   - toolbox_module.dart：ToolboxModule 描述一个工具，字段有 id、名称、图标、页面构造器和可选的按需资源。
   - toolbox_page.dart：百宝箱首页 ToolboxPage，展示工具列表。右滑只揭示卸载按钮，卸载须点击确认。
@@ -58,7 +59,8 @@
     - 页面有输入框、解析和取消。
     - 有最近解析与下载入口；历史或下载任务可直达结果页。
     - 解析设置（保存历史、来源参与自动解析、清除解析缓存）在底部弹层里。
-  - media_result_page.dart：结果页 MediaResultPage，展示预览和逐项下载。下载按钮原地切换为进度、暂停继续，完成后变为打开。
+    - autoParse：打开好友分享的作品时带着链接直接开始解析；首次使用来源仍先征得本人同意。
+  - media_result_page.dart：结果页 MediaResultPage，展示预览和逐项下载。下载按钮原地切换为进度、暂停继续，完成后变为打开。注入了 shareVideo 时顶栏有“分享给好友”，只发作品原链接与标题作者。
   - media_preview.dart：视频预览 MediaPreview 与图集预览 GalleryPreview。
   - media_image.dart：网络图片 MediaImage。加载失败后点按重试，不自动循环请求。
   - parse_history_page.dart：解析历史全部页 ParseHistoryPage 和条目组件 ParseHistoryTile，支持删除单条与清空。
