@@ -10,4 +10,8 @@
     <exclude domain="sharedpref" path="com.superxd.superxd_preferences.xml" />
     <exclude domain="sharedpref" path="com.superxd.superxd.alpha_preferences.xml" />
     <exclude domain="sharedpref" path="superxd_course_widget.xml" />
+    <!-- 私信身份私钥只属于这台设备（Keystore 加密，换机无法解密）；私信库随身份一起排除，避免恢复出无法解密的会话。 -->
+    <exclude domain="sharedpref" path="superxd_social.xml" />
+    <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_social.xml" />
+    <exclude domain="database" path="social.db" />
 </full-backup-content>

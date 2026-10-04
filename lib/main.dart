@@ -8,6 +8,7 @@ import 'package:image_picker_android/image_picker_android.dart';
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
+import 'package:sqflite/sqflite.dart';
 
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/campus_reminders.dart';
@@ -22,6 +23,11 @@ import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/router.dart';
 import 'package:superxd/page/live_clock.dart';
+import 'package:superxd/page/share_target_sheet.dart';
+import 'package:superxd/social/identity_vault.dart';
+import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/social/social_service.dart';
+import 'package:superxd/social/social_store.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_background.dart';
@@ -55,8 +61,16 @@ void main() async {
   final reminders = CampusReminders(gateway: session.gateway, port: NotificationReminders());
   final widgetPort = HomeWidgetPublisher();
   final widgets = CampusWidgets(gateway: session.gateway, port: widgetPort);
-  runApp(SuperXdApp(session: session, display: display, glassCapped: glassCapped, reminders: reminders));
+  final social = SocialService(
+    store: await SocialStore.open(path.join(await getDatabasesPath(), 'social.db')),
+    vault: SecureIdentityVault(),
+    transport: relayTransport(),
+    polling: true,
+  );
+  runApp(SuperXdApp(session: session, display: display, glassCapped: glassCapped, reminders: reminders, social: social));
   unawaited(initializeCampusGlass());
+  // 私信是设备级的，与教务会话无关；初始化失败只影响私信（状态 failed），不影响应用。
+  unawaited(social.initialize());
   try {
     await session.restore();
   } catch (error, stack) {
@@ -64,6 +78,17 @@ void main() async {
   }
   watchLocalSchedule(session, reminders: reminders, widgets: widgets);
   watchWidgetTheme(display, widgetPort);
+}
+
+// 中转服务地址来自构建参数 SUPERXD_RELAY；未配置或格式不对时私信不可用，不猜默认地址。
+RelayTransport? relayTransport() {
+  if (relayBaseUrl.isEmpty) return null;
+  final uri = Uri.tryParse(relayBaseUrl);
+  if (uri == null || !uri.isScheme('http') && !uri.isScheme('https') || uri.host.isEmpty || relayBaseUrl.endsWith('/')) {
+    campusLog('[Social] action=config errorType=INVALID_RELAY_URL');
+    return null;
+  }
+  return HttpRelayTransport(relayBaseUrl);
 }
 
 // 课前提醒与桌面小组件的对账时机：启动恢复会话后、回到前台、切换账号或退出登录、本机课表相关写入后；1秒防抖合并连续写入。
@@ -123,8 +148,10 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.glassCapped = false, this.reminders});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.glassCapped = false, this.reminders, this.social});
   final CampusReminders? reminders;
+  // 设备级私信服务，切换账号不重建；为空时私信入口显示未配置。
+  final SocialService? social;
   final ToolboxRuntime? toolbox;
   final AppSession session;
   final DisplaySettings? display;
@@ -137,7 +164,10 @@ class SuperXdApp extends StatefulWidget {
 }
 
 class _SuperXdAppState extends State<SuperXdApp> {
-  late final _toolbox = widget.toolbox ?? ToolboxRuntime();
+  late final _toolbox = widget.toolbox ?? ToolboxRuntime(shareVideo: switch (widget.social) {
+    final social? => (context, video) => showShareSheet(context, social: social, card: video),
+    null => null,
+  });
   @override
   void dispose() {
     if (widget.toolbox == null) {
@@ -152,14 +182,15 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, glassCapped: widget.glassCapped, reminders: widget.reminders),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, glassCapped: widget.glassCapped, reminders: widget.reminders, social: widget.social),
     );
   }
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, required this.glassCapped, this.display, this.backgroundPhase, this.reminders});
+  const _AccountApp({super.key, required this.session, required this.toolbox, required this.glassCapped, this.display, this.backgroundPhase, this.reminders, this.social});
   final CampusReminders? reminders;
+  final SocialService? social;
   final ToolboxRuntime toolbox;
   final AppSession session;
   final DisplaySettings? display;
@@ -171,7 +202,7 @@ class _AccountApp extends StatefulWidget {
 }
 
 class _AccountAppState extends State<_AccountApp> {
-  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, reminders: widget.reminders);
+  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, reminders: widget.reminders, social: widget.social);
   late final _display = widget.display ?? DisplaySettings.memory();
 
   @override

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -311,6 +312,26 @@ class _MediaResultPageState extends State<MediaResultPage> {
           icon: const CampusIcon(CampusIcons.back),
         ),
         actions: [
+          // 分享给好友：只发作品原链接与标题作者，好友打开时用自己同意的来源重新解析。
+          // 不发媒体直链与封面：直链会过期，封面在对方设备上自动加载会把对方 IP 暴露给第三方图床。
+          if (widget.runtime.shareVideo case final share?)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: CampusGlassCircleButton(
+                label: '分享给好友',
+                size: 44,
+                onPressed: () => share(context, VideoShare(
+                  sourceUrl: result.sourceUrl.toString(),
+                  title: result.title,
+                  author: result.author,
+                  platform: result.platform,
+                  kind: result.kind,
+                )).catchError((Object error, StackTrace stack) {
+                  campusLog('[MediaResult] action=share errorType=${error.runtimeType}\n$stack');
+                }),
+                icon: const CampusIcon(CampusIcons.share),
+              ),
+            ),
           Padding(
             padding: const EdgeInsets.only(right: 12),
             child: CampusGlassCircleButton(

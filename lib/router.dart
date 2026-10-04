@@ -11,17 +11,25 @@ import 'package:superxd/page/login_page.dart';
 import 'package:superxd/page/legal_page.dart';
 import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/grades_page.dart';
+import 'package:superxd/page/message_page.dart';
 import 'package:superxd/page/section_pages.dart';
 import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/page/today_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/domain/share_card.dart';
+import 'package:superxd/social/social_service.dart';
+import 'package:superxd/toolbox/short_video/short_video_page.dart';
 import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
-GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, CampusReminders? reminders}) {
+GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, CampusReminders? reminders, SocialService? social}) {
   final tools = toolboxCatalog(toolbox);
+  // 好友分享的视频在百宝箱短视频页打开并直接解析（页面层不依赖百宝箱，由这里接上）。
+  void openVideo(BuildContext context, VideoShare video) => Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(
+    builder: (_) => ShortVideoPage(runtime: toolbox, initialInput: video.sourceUrl, autoParse: true),
+  ));
   final rootKey = GlobalKey<NavigatorState>();
   final generation = session.generation;
   return GoRouter(
@@ -66,7 +74,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       GoRoute(
         path: '/schedule',
         parentNavigatorKey: rootKey,
-        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: SchedulePage(gateway: gateway, reminders: reminders)),
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: SchedulePage(gateway: gateway, reminders: reminders, social: social)),
       ),
       GoRoute(
         path: '/grades', parentNavigatorKey: rootKey,
@@ -75,12 +83,12 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       ),
       StatefulShellRoute(
         navigatorContainerBuilder: (context, shell, children) => AnimatedBranches(index: shell.currentIndex, children: children),
-        pageBuilder: (context, state, navigationShell) => campusPage(key: state.pageKey, child: LegacyImportGate(session: session, child: ShellPage(navigationShell: navigationShell))),
+        pageBuilder: (context, state, navigationShell) => campusPage(key: state.pageKey, child: LegacyImportGate(session: session, child: ShellPage(navigationShell: navigationShell, social: social))),
         branches: [
           StatefulShellBranch(routes: [GoRoute(path: '/today', builder: (context, state) => TodayPage(gateway: gateway, onSessionExpired: () => session.expire(generation), isAccountCurrent: () => session.generation == generation && session.loggedIn))]),
           StatefulShellBranch(routes: [GoRoute(path: '/service', builder: (context, state) => const ServicePage())]),
-          StatefulShellBranch(routes: [GoRoute(path: '/message', builder: (context, state) => const MessagePage())]),
-          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(gateway: gateway, session: session))]),
+          StatefulShellBranch(routes: [GoRoute(path: '/message', builder: (context, state) => MessagePage(social: social, gateway: gateway, openVideo: openVideo))]),
+          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(gateway: gateway, session: session, social: social))]),
         ],
       ),
     ],

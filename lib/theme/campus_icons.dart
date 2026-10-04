@@ -53,6 +53,16 @@ abstract final class CampusIcons {
   static const jumpToday = LucideIcons.locateFixed;
   static const login = LucideIcons.logIn;
   static const restore = LucideIcons.rotateCcw;
+  static const share = LucideIcons.share2;
+  static const send = LucideIcons.send;
+  static const qrCode = LucideIcons.qrCode;
+  static const scan = LucideIcons.scanQrCode;
+  static const addFriend = LucideIcons.userPlus;
+  static const removeFriend = LucideIcons.userMinus;
+  static const palette = LucideIcons.palette;
+  static const commonFree = LucideIcons.calendarCheck2;
+  static const scanImage = LucideIcons.imageUp;
+  static const flashlight = LucideIcons.flashlight;
 }
 
 void configureCampusIcons() =>

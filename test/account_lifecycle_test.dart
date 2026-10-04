@@ -14,7 +14,7 @@ import 'package:superxd/page/today_page.dart';
 import 'package:superxd/main.dart';
 import 'package:superxd/page/animated_branches.dart';
 import 'package:superxd/page/schedule_page.dart';
-import 'package:superxd/page/section_pages.dart';
+import 'package:superxd/page/message_page.dart';
 import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/page/login_page.dart';
@@ -72,8 +72,9 @@ void main() {
     expect(dateText.style!.color, CampusPalette.of(today).onSurface);
     expect(identical(today, tester.element(find.byType(TodayPage))), isTrue);
     await display.setThemeMode(ThemeMode.light);await tester.pumpAndSettle();expect(Theme.of(today).brightness, Brightness.light);
-    await tester.tap(find.text('消息').last);await tester.pumpAndSettle();await tester.tap(find.text('私信'));await tester.pumpAndSettle();
-    await display.setThemeMode(ThemeMode.dark);await tester.pumpAndSettle();expect(find.text('还没有私信'), findsOneWidget);
+    // 消息页默认停在私信；选中非默认的“通知”，换深浅色后仍停在通知。
+    await tester.tap(find.text('消息').last);await tester.pumpAndSettle();await tester.tap(find.text('通知'));await tester.pumpAndSettle();
+    await display.setThemeMode(ThemeMode.dark);await tester.pumpAndSettle();expect(find.text('还没有通知'), findsOneWidget);
     expect(gateway.activeSession?.loginId, 'A');
     await tester.pumpWidget(const SizedBox());display.dispose();session.dispose();
   });
@@ -192,13 +193,14 @@ void main() {
     expectSliding(tester, find.byType(MessagePage));
     expectSliding(tester, find.byType(TodayPage));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('私信'));
+    // 选中非默认的“通知”，切走再回来仍停在通知（分支状态保留）。
+    await tester.tap(find.text('通知'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('服务').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('消息').last);
     await tester.pumpAndSettle();
-    expect(find.text('还没有私信'), findsOneWidget);
+    expect(find.text('还没有通知'), findsOneWidget);
     await tester.tap(find.text('服务').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('课表'));

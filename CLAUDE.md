@@ -6,11 +6,12 @@
 - 文件级登记由 test/project_structure_test.dart 兜底，有两条检查：
   - lib 下每个 dart 文件都要在最近的模块 CLAUDE.md 里按文件名登记，所在模块没有 CLAUDE.md 时登记在本文件。
   - 索引中提到的 dart 或 kt 文件必须真实存在。
-- 模块索引共 8 个：lib/domain、lib/edu、lib/local、lib/gateway、lib/device、lib/page、lib/theme、lib/toolbox 下各一个 CLAUDE.md。lib/application 与根目录文件登记在本文件。
+- 模块索引共 9 个：lib/domain、lib/edu、lib/local、lib/gateway、lib/device、lib/page、lib/theme、lib/toolbox、lib/social 下各一个 CLAUDE.md。lib/application 与根目录文件登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md。
 
 # 定位
 
 - 校园课表与成绩 Flutter 应用。当前只有 Android 宿主，对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱，目前提供短视频解析与下载。
+- 功能性私信：扫码互加好友后，在私信里分享课表、界面配置、短视频等功能卡片，没有文字聊天。经自建中转服务（server 目录，NestJS + MySQL + Redis）端到端加密转交，中转地址由构建参数 SUPERXD_RELAY 传入。
 - 当前阶段为私有 Alpha 内测。Flutter 3.47.2 / Dart 3.13.2，依赖锁定在 pubspec.lock。
 - 相关文档：
   - 设计语言：UITEMP/design_language.md
@@ -23,10 +24,11 @@
 目录即分层，依赖只许自上而下，由 test/project_structure_test.dart 守护。出现反向依赖时先重新划分职责，不要绕过检查。
 
 - 根目录组合根：main.dart、router.dart、app_session.dart，可依赖任何层。
-- page 页面：可依赖 domain、application、gateway、local、theme 与 app_session.dart。
+- page 页面：可依赖 domain、application、gateway、local、social、theme 与 app_session.dart。
   - 页面只通过 domain 端口 CampusGateway 和账号接口 AccountAccess 访问业务，不直接接触 SQLite、KingoClient 或 cookie。
   - 现有例外只有外观页读写 DisplaySettings。
-- toolbox 百宝箱：设备级、免登录，可依赖 domain、theme，不依赖教务相关任何层。
+- toolbox 百宝箱：设备级、免登录，可依赖 domain、theme，不依赖教务相关任何层。分享给好友经组合根注入的回调，不依赖 social。
+- social 私信：设备级的身份、好友、本机库与中转客户端，只依赖 domain；页面经 SocialService 使用。
 - application 应用编排：可依赖 domain、gateway。
 - device 设备能力：系统通知、桌面小组件等适配器，只实现 domain 端口、只依赖 domain，由组合根注入；页面不直接依赖。
 - gateway 网关：负责账号生命周期与教务网关实现，可依赖 domain、edu、local。
@@ -39,8 +41,8 @@
 
 - main.dart 的启动顺序：
   1. 把日志出口注入为 debugPrint，再初始化时区库、图标与第三方许可。
-  2. 打开 AccountStore，组装 AppSession（内含 AccountGateway 与 SecureCredentialStore）和 DisplaySettings。
-  3. runApp 之后，不等待地初始化玻璃渲染，再恢复会话。
+  2. 打开 AccountStore，组装 AppSession（内含 AccountGateway 与 SecureCredentialStore）、DisplaySettings 与设备级 SocialService（social.db、安全存储里的身份、按 SUPERXD_RELAY 建的中转传输，未配置或格式不对时为不可用）。
+  3. runApp 之后，不等待地初始化玻璃渲染与私信服务，再恢复会话。百宝箱的 shareVideo 接到私信分享弹层，路由把 VideoOpener 接到百宝箱短视频页。
 - 账号代次：SuperXdApp 以 session.generation 作 key 重建内部账号应用。账号切换时，路由和页面内存状态整体丢弃，旧账号状态不会带入新账号。
 - router.dart 的门禁：
   - 会话恢复完成前停在 /boot。
@@ -97,6 +99,7 @@
    - 自定义壁纸只经系统照片选择器读取用户选中的一张，复制到应用私有目录，不上传、不申请存储权限。
    - 桌面小组件显示的是当前账号的课，跟着账号切换，退出登录即清空；只有它的配色跟随设备设置。
    - 百宝箱不读取教务凭据或 cookie。
+   - 私信身份、好友与会话属于设备，切换账号保留、退出登录不清；身份私钥只在系统安全存储，私钥与 social.db 都排除出云备份与设备迁移。只有用户“关闭私信”才删除（先删服务端设备，再清本机）。
    - 第三方解析来源逐个来源、按授权版本单独征得同意。自动模式只尝试已启用且已同意的来源。
 9. 对外网络
    - 教务请求：单次 25 秒超时，只允许同源地址。
@@ -104,6 +107,7 @@
    - 除了会话自动恢复后的一次重放，其他请求都不自动重试。
    - 教务限流：课表、成绩数据查询在任意 10 秒内最多发 6 次，超出的排队。教务仍提示“请求太过频繁”时报 RATE_LIMITED，本轮同步立即停止，由用户稍后再同步。
    - 百宝箱解析：总预算 30 秒，单次响应上限 1MB。媒体地址必须是公网 https，拒绝本机和内网地址。
+   - 私信中转：单次 15 秒超时；每个请求用设备私钥签名（防冒用与重放），不发会话令牌；内容端到端加密，服务端只见设备号、好友关系、密文大小与时间。除时钟偏差校正后的一次重发外不自动重试。进入私信、会话、出示二维码时自动拉取，前台每 60 秒刷新，没有推送。
 10. 数据保留
     - 课表版本：每学期 100 个。
     - 解析历史：只存本机，最多 80 条且保留 30 天；默认开启，用户可关闭。
@@ -113,6 +117,7 @@
     - 课前提醒：只安排未来 14 天、最多 128 条，每次对账整体替换；提醒设置每学期一行。
     - 日历导出：单次最多 5000 个事件；缓存里只留最近一次导出的文件，下次导出前清空。
     - 桌面小组件：快照只覆盖今天起 7 天、最多 200 次课，每次整体替换；过期后提示打开应用。桌面上没有小组件时不留刷新闹钟。
+    - 私信：好友 500；每个好友本机保留最近 200 条；邀请记录 31 天。服务端信箱单条密文 256KB、每设备待取 1000 条，取走确认即删、未取走 30 天删除，设备 400 天不活跃连同关系与信箱删除（见 server/README.md）。
     - 新增只增不删的数据时，必须同时给出上限或清理策略。
 11. 日志
     - 只经 domain/campus_log.dart 的 campusLog 输出。应用入口必须注入 debugPrint，日志才会进入 logcat。
@@ -165,12 +170,17 @@
   - legal_page_test.dart、course_clock_performance_test.dart
 - 主题与显示设置：atmosphere_test.dart、campus_glass_test.dart、campus_glass_button_test.dart、campus_motion_test.dart、dark_mode_test.dart、appearance_settings_test.dart、wallpaper_test.dart
 - 百宝箱：toolbox_widget_test.dart、toolbox_download_test.dart、toolbox_media_features_test.dart、short_video_parser_test.dart、media_image_test.dart
+- 私信：
+  - social_protocol_test.dart（与服务端共用测试向量、信封、二维码）、share_card_test.dart、social_service_test.dart、social_ui_test.dart
+  - fake_relay.dart：按协议 v1 规则验签的内存假中转服务。
+  - 服务端：cd server 后 npm test（Vitest，需 docker-compose.test.yml 起的 MySQL 与 Redis）。
 - 测试支撑：
   - fixture_campus_gateway.dart：合成数据教务网关，读取 assets/fixtures。
   - toolbox_test_support.dart、form_layout_support.dart
 - tool 下的手动入口，不进 CI：
   - verify_edu.dart、verify_grades.dart：访问真实教务，只在授权环境手动运行。
   - verify_toolbox.dart：Android 原生下载验证。
+  - verify_social.dart：两个真实客户端经真实中转服务联调（合成数据），运行方式见文件头。
   - schedule_smoke.dart、glass_preview.dart、motion_preview.dart
   - motion_release_test.dart：检查发布包的图标字体。
 

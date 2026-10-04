@@ -3,6 +3,7 @@ import 'package:flutter/physics.dart';
 import 'package:go_router/go_router.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
+import 'package:superxd/social/social_service.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_glass_material.dart';
@@ -11,8 +12,10 @@ import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/glass_panel.dart';
 
 class ShellPage extends StatelessWidget {
-  const ShellPage({super.key, required this.navigationShell});
+  const ShellPage({super.key, required this.navigationShell, this.social});
   final StatefulNavigationShell navigationShell;
+  // 私信未读数显示在“消息”上；为空时不显示。
+  final SocialService? social;
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
@@ -43,13 +46,17 @@ class ShellPage extends StatelessWidget {
               child: Center(
                 child: ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 620),
-                  child: DragNavigationBar(
-                    selected: navigationShell.currentIndex,
-                    onSelected: (index) {
-                      if (index != navigationShell.currentIndex) {
-                        navigationShell.goBranch(index);
-                      }
-                    },
+                  child: ListenableBuilder(
+                    listenable: social ?? const AlwaysStoppedAnimation(0),
+                    builder: (context, _) => DragNavigationBar(
+                      selected: navigationShell.currentIndex,
+                      badges: [0, 0, social?.unread ?? 0, 0],
+                      onSelected: (index) {
+                        if (index != navigationShell.currentIndex) {
+                          navigationShell.goBranch(index);
+                        }
+                      },
+                    ),
                   ),
                 ),
               ),
@@ -65,9 +72,12 @@ class DragNavigationBar extends StatefulWidget {
     super.key,
     required this.selected,
     required this.onSelected,
+    this.badges = const [],
   });
   final int selected;
   final ValueChanged<int> onSelected;
+  // 各项的未读角标数，0 或缺省不显示。
+  final List<int> badges;
   @override
   State<DragNavigationBar> createState() => _DragNavigationBarState();
 }
@@ -76,6 +86,7 @@ class DragNavigationBar extends StatefulWidget {
 class _DragNavigationBarState extends State<DragNavigationBar>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   static const labels = ['今天', '服务', '消息', '我的'];
+  int _badge(int index) => index < widget.badges.length ? widget.badges[index] : 0;
   static const icons = [
     CampusIcons.today,
     CampusIcons.services,
@@ -352,7 +363,7 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                                 child: Semantics(
                                   button: true,
                                   selected: index == widget.selected,
-                                  label: labels[index],
+                                  label: _badge(index) > 0 ? '${labels[index]}，${_badge(index)} 条未读' : labels[index],
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(24),
                                     // 底栏的按压反馈由玻璃透镜承担，不再叠按下变暗，否则会被透镜折射成镜内色块。
@@ -362,17 +373,31 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                                       mainAxisAlignment:
                                           MainAxisAlignment.center,
                                       children: [
-                                        CampusMorphIcon(
-                                          from: icons[index],
-                                          to: selectedIcons[index],
-                                          selected: widget.selected == index,
-                                          size: 24,
-                                          color: preview == index
-                                              ? CampusPalette.of(context)
-                                                    .primary
-                                              : CampusPalette.of(context)
-                                                    .onSurfaceVariant,
-                                        ),
+                                        Stack(clipBehavior: Clip.none, children: [
+                                          CampusMorphIcon(
+                                            from: icons[index],
+                                            to: selectedIcons[index],
+                                            selected: widget.selected == index,
+                                            size: 24,
+                                            color: preview == index
+                                                ? CampusPalette.of(context)
+                                                      .primary
+                                                : CampusPalette.of(context)
+                                                      .onSurfaceVariant,
+                                          ),
+                                          // 未读角标：警示红底白字（同 iOS 角标），状态信息不用主色。
+                                          if (_badge(index) > 0)
+                                            PositionedDirectional(
+                                              start: 14,
+                                              top: -6,
+                                              child: ExcludeSemantics(child: Container(
+                                                padding: const EdgeInsets.symmetric(horizontal: 5),
+                                                constraints: const BoxConstraints(minWidth: 18),
+                                                decoration: BoxDecoration(color: CampusPalette.of(context).dangerFill, borderRadius: BorderRadius.circular(9)),
+                                                child: Text(_badge(index) > 99 ? '99+' : '${_badge(index)}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, height: 1.3, color: Colors.white)),
+                                              )),
+                                            ),
+                                        ]),
                                         const SizedBox(height: 4),
                                         Text(
                                           labels[index],
