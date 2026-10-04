@@ -29,6 +29,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
   final String id;
   final String label;
   final Color primary;
+  // [人工决策-2026-10-04 16:08:17] 开关、滑杆、复选框与强调按钮用各配色专属的鲜亮激活色 accent，不用文字主色；色值见各配色。用户实测确认。
   // 控件激活色：开关开启轨道、滑杆已选段（同鸿蒙 component_activated、iOS 开关 onTintColor），与文字主色分开。
   // primary 为文字可读压得深而灰，铺成大块轨道发闷；accent 同色系、更鲜亮。也是强调按钮的底色，白字对它不低于 4.5:1。
   final Color accent;

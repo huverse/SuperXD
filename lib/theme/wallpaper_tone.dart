@@ -140,6 +140,7 @@ Float64List wallpaperVeilAlphas(WallpaperTone tone, CampusPalette palette) {
   return _smooth(_smooth(alphas, tone.columns, tone.rows, dilate: true), tone.columns, tone.rows, dilate: false);
 }
 
+// [人工决策-2026-10-04 16:08:17] 壁纸“透明度”语义：0% 为可读下限（图片最清晰），100% 为完全盖住；不允许低于下限，文字始终不低于 4.8:1。用户实测确认。
 // 用户淡化量 fade（0–1）叠在可读下限 floor 之上：fade 为 0 时就是下限，为 1 时整张盖满（等于看不到图）。
 // 结果单调不低于 floor，可读性保证不受淡化量影响。
 double wallpaperVeilAlpha(double floor, double fade) => floor + (1 - floor) * fade;

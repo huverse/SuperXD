@@ -279,6 +279,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
         CampusTopBar(child: SizedBox(height: 56 * scale, child: Row(children: [
           IconButton(tooltip: '返回', onPressed: _back, icon: const CampusIcon(CampusIcons.back)),
           Expanded(child: Text(_selection.yearOverview && _selection.year.isNotEmpty ? '${_selection.year}–${int.parse(_selection.year)+1}' : '课表', style: Theme.of(context).textTheme.titleLarge)),
+          // [人工决策-2026-10-04 16:08:17] 课表顶栏只留“今天”胶囊与“管理课程”“⋯”玻璃圆按钮，开学日移入⋯菜单；用户实测确认。
           // 标题栏只留高频操作（同 iOS、鸿蒙标题栏）：“今天”是带图标的胶囊；每学期只设一次的开学日收进⋯菜单，空课表时页面里仍有“设置开学日”。
           TextButton.icon(onPressed: _loading ? null : _today, icon: const CampusIcon(CampusIcons.jumpToday), label: const Text('今天')),
           const SizedBox(width: 4),
