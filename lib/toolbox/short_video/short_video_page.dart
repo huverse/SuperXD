@@ -28,10 +28,13 @@ class ShortVideoPage extends StatefulWidget {
     required this.runtime,
     this.initialInput = '',
     this.initialSource,
+    this.autoParse = false,
   });
   final ToolboxRuntime runtime;
   final String initialInput;
   final String? initialSource;
+  // 打开好友分享的作品时直接开始解析；首次使用来源仍先征得同意，好友的同意不代替本人。
+  final bool autoParse;
   @override
   State<ShortVideoPage> createState() => _ShortVideoPageState();
 }
@@ -61,6 +64,11 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
     }
     _controller = controller;
     await _reloadRecent();
+    if (widget.autoParse && widget.initialInput.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _parse();
+      });
+    }
   }
 
   Future<void> _reloadRecent() async {

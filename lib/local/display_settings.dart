@@ -6,6 +6,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:synchronized/synchronized.dart';
 
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/local/wallpaper_store.dart';
 
 // wallpaperDirectory 为 null 时不支持自定义壁纸（测试与内存实例）。
@@ -191,6 +192,40 @@ class DisplaySettings extends ChangeNotifier {
 
   void _checkLook(({int blur, int fade}) look) {
     if (look.blur < 0 || look.blur > wallpaperMax || look.fade < 0 || look.fade > wallpaperMax) throw ArgumentError.value(look, 'look');
+  }
+
+  // 当前界面配置，用于分享给好友与套用前的撤销点；壁纸图片属于本机，不在其中。
+  AppearanceShare get appearance => AppearanceShare(
+    paletteId: _paletteId,
+    fontId: _fontId,
+    scale: _scale,
+    themeMode: _themeMode.name,
+    glassMode: _glassMode,
+    wallpaperBlur: _wallpaperBlur,
+    wallpaperFade: _wallpaperFade,
+  );
+
+  // 套用好友分享的界面配置：本版本支持的取值一并在保存锁内落库，不支持的保持不变；返回被跳过的项名。
+  Future<List<String>> applyAppearance(AppearanceShare shared) async {
+    final skipped = <String>[];
+    T? pick<T>(bool supported, T value, String name) {
+      if (supported) return value;
+      skipped.add(name);
+      return null;
+    }
+
+    final mode = ThemeMode.values.where((value) => value.name == shared.themeMode).firstOrNull;
+    await _save(
+      paletteId: pick(paletteIds.contains(shared.paletteId), shared.paletteId, '配色'),
+      fontId: pick(fontFamilies.containsKey(shared.fontId), shared.fontId, '字体'),
+      scale: pick(scales.contains(shared.scale), shared.scale, '字号'),
+      themeMode: pick<ThemeMode?>(mode != null, mode, '深浅色'),
+      glassMode: pick(glassModes.contains(shared.glassMode), shared.glassMode, '玻璃效果'),
+      wallpaperBlur: shared.wallpaperBlur,
+      wallpaperFade: shared.wallpaperFade,
+    );
+    wallpaperLook.value = (blur: _wallpaperBlur, fade: _wallpaperFade);
+    return skipped;
   }
 
   // 复制图片、落库、删旧文件在同一把锁内完成，连续换图不会删掉刚导入的文件。

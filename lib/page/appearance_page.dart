@@ -6,6 +6,9 @@ import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:superxd/page/share_target_sheet.dart';
+import 'package:superxd/social/social_service.dart';
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/local/display_settings.dart';
@@ -49,8 +52,10 @@ Future<PickedWallpaper?> pickWallpaperFromGallery() async {
 }
 
 class AppearancePage extends StatefulWidget {
-  const AppearancePage({super.key, this.pickWallpaper = pickWallpaperFromGallery});
+  const AppearancePage({super.key, this.pickWallpaper = pickWallpaperFromGallery, this.social});
   final Future<PickedWallpaper?> Function() pickWallpaper;
+  // 为空时不显示“分享给好友”。
+  final SocialService? social;
   @override
   State<AppearancePage> createState() => _AppearancePageState();
 }
@@ -226,6 +231,13 @@ class _AppearancePageState extends State<AppearancePage> {
           icon: const CampusIcon(CampusIcons.back),
         ),
         title: const Text('界面'),
+        actions: [
+          // 分享当前界面配置（不含壁纸图片），好友预览后一键套用、可撤销。
+          if (widget.social case final social?) Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: CampusGlassCircleButton(label: '分享给好友', size: 44, onPressed: () => showShareSheet(context, social: social, card: settings.appearance), icon: const CampusIcon(CampusIcons.share)),
+          ),
+        ],
       ),
       body: CampusScrollFade(child: SafeArea(
         child: ListView(

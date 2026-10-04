@@ -81,9 +81,10 @@ class AppearanceShare extends ShareCard {
   };
 }
 
-// 短视频：只分享作品原链接与展示信息，不分享会过期的媒体直链；接收方打开时经自己同意的解析来源重新解析。
+// 短视频：只分享作品原链接与标题作者，不分享会过期的媒体直链与封面（封面在对方设备上自动加载会把对方 IP 暴露给第三方图床）；
+// 接收方打开时经自己同意的解析来源重新解析。
 class VideoShare extends ShareCard {
-  const VideoShare({required this.sourceUrl, required this.title, required this.author, required this.platform, required this.kind, this.coverUrl});
+  const VideoShare({required this.sourceUrl, required this.title, required this.author, required this.platform, required this.kind});
   static const typeName = 'video';
   final String sourceUrl;
   final String title;
@@ -91,14 +92,13 @@ class VideoShare extends ShareCard {
   final String platform;
   // video 或 gallery。
   final String kind;
-  final String? coverUrl;
   @override
   String get type => typeName;
   @override
   int get version => 1;
 
   @override
-  Map<String, Object?> toBody() => {'sourceUrl': sourceUrl, 'title': title, 'author': author, 'platform': platform, 'kind': kind, 'coverUrl': coverUrl};
+  Map<String, Object?> toBody() => {'sourceUrl': sourceUrl, 'title': title, 'author': author, 'platform': platform, 'kind': kind};
 }
 
 // 本版本不认识的卡片：原样保留类型与版本，界面提示更新应用。
@@ -221,20 +221,12 @@ VideoShare _video(Map<String, Object?> body) {
   if (uri == null || !uri.isScheme('https') && !uri.isScheme('http') || uri.host.isEmpty) throw const ShareCardException('作品链接不正确');
   final kind = _text(body['kind'], '作品类型', max: 20);
   if (kind != 'video' && kind != 'gallery') throw const ShareCardException('作品类型不正确');
-  final cover = body['coverUrl'];
-  String? coverUrl;
-  if (cover != null) {
-    coverUrl = _text(cover, '封面', max: 8192);
-    // 封面只接受 https，其余忽略，不影响卡片。
-    if (Uri.tryParse(coverUrl)?.isScheme('https') != true) coverUrl = null;
-  }
   return VideoShare(
     sourceUrl: sourceUrl,
     title: _text(body['title'], '标题', max: 500, allowEmpty: true),
     author: _text(body['author'], '作者', max: 200, allowEmpty: true),
     platform: _text(body['platform'], '平台', max: 50, allowEmpty: true),
     kind: kind,
-    coverUrl: coverUrl,
   );
 }
 

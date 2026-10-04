@@ -8,6 +8,9 @@ import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/domain/period_spans.dart';
 import 'package:superxd/page/reminder_dialog.dart';
 import 'package:superxd/page/calendar_export.dart';
+import 'package:superxd/page/share_target_sheet.dart';
+import 'package:superxd/domain/share_card.dart';
+import 'package:superxd/social/social_service.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
@@ -49,8 +52,10 @@ class ScheduleSelection {
 }
 
 class SchedulePage extends StatefulWidget {
-  const SchedulePage({super.key, required this.gateway, this.reminders, this.openCalendar = openCalendarFile});
+  const SchedulePage({super.key, required this.gateway, this.reminders, this.openCalendar = openCalendarFile, this.social});
   final CampusGateway gateway;
+  // 为空时不显示“分享给好友”（未接入私信的环境）。
+  final SocialService? social;
   // 为空时不显示课前提醒入口（测试与未接入提醒的环境）。
   final CampusReminders? reminders;
   final CalendarOpener openCalendar;
@@ -255,6 +260,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
       if (_term != null) const CampusMenuItem(value: 'start', label: '开学日', icon: CampusIcons.termStart),
       if (widget.reminders != null) const CampusMenuItem(value: 'reminder', label: '课前提醒', icon: CampusIcons.reminder),
       if (_term != null) const CampusMenuItem(value: 'export', label: '导出到日历', icon: CampusIcons.exportCalendar),
+      if (_term != null && widget.social != null) const CampusMenuItem(value: 'share', label: '分享给好友', icon: CampusIcons.share),
     ]);
     if (!mounted) return;
     switch (action) {
@@ -266,6 +272,11 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
         await _notice('该学期尚未同步，请在今天页选择这个学年同步。');
       case 'export':
         await exportTermCalendar(context, term: _term!, termStartDate: _start, bells: _bells, courses: _courses, open: widget.openCalendar);
+      case 'share' when !_knownSchedule:
+        await _notice('该学期尚未同步，请在今天页选择这个学年同步。');
+      // 分享当前所看学期的课表快照（含开学日与作息），好友只读查看与对比，不覆盖其课表。
+      case 'share':
+        await showShareSheet(context, social: widget.social!, card: ScheduleShare(term: _term!, termStartDate: _start, courses: _courses, bells: _bells));
     }
   }
 

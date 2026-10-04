@@ -35,9 +35,11 @@ abstract final class SocialCode {
 // 私信编排：本机库、设备身份与中转服务之间的唯一入口，页面只经它读写。设备级，切换教务账号保留。
 // 联网时机：开启、出示/扫码、发送、刷新（回到前台、进入私信、下拉、前台每 60 秒）。除校时重发一次外不自动重试。
 class SocialService extends ChangeNotifier {
-  SocialService({required this.store, required this.vault, RelayTransport? transport, DateTime Function()? clock})
+  SocialService({required this.store, required this.vault, RelayTransport? transport, DateTime Function()? clock, this.polling = false})
     : _relay = transport == null ? null : RelayClient(transport),
       _clock = clock ?? DateTime.now;
+  // 就绪后是否自动前台轮询（应用里开启；测试关闭，避免残留定时器）。
+  final bool polling;
   final SocialStore store;
   final IdentityVault vault;
   final RelayClient? _relay;
@@ -56,6 +58,8 @@ class SocialService extends ChangeNotifier {
   // 最近一次刷新的错误码，成功后清空；界面只在用户下拉刷新失败时提示。
   String? refreshError;
   String? get deviceId => _identity?.deviceId;
+  // 按服务器校正过的当前时刻（毫秒），用于二维码倒计时。
+  int get serverNow => _clock().millisecondsSinceEpoch + (_relay?.clockOffset ?? 0);
 
   String _now() => _clock().toUtc().toIso8601String();
 
@@ -82,7 +86,7 @@ class SocialService extends ChangeNotifier {
       await store.failInterrupted();
       await store.pruneInvites(_clock().toUtc().subtract(inviteRetention).toIso8601String());
       if (!profile!.registered) await _register();
-      status = SocialStatus.ready;
+      _becomeReady();
       await _reload();
     } catch (error, stack) {
       campusLog('[Social] action=initialize errorType=${error.runtimeType}\n$stack');
@@ -102,6 +106,11 @@ class SocialService extends ChangeNotifier {
     friends = await store.friends();
     unread = await store.unreadTotal();
     notifyListeners();
+  }
+
+  void _becomeReady() {
+    status = SocialStatus.ready;
+    if (polling) startPolling();
   }
 
   RelayClient _ready() {
@@ -126,7 +135,7 @@ class SocialService extends ChangeNotifier {
       notifyListeners();
       throw SocialException(error.code);
     }
-    status = SocialStatus.ready;
+    _becomeReady();
     campusLog('[Social] action=enable deviceId=${_identity!.deviceId}');
     await _reload();
   }

@@ -7,12 +7,12 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
-import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/page/account_dialogs.dart';
 import 'package:superxd/page/third_party_page.dart';
 import 'package:superxd/page/appearance_page.dart';
+import 'package:superxd/social/social_service.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/domain/campus_log.dart';
 
@@ -24,7 +24,7 @@ class ServicePage extends StatelessWidget {
     final inset = MediaQuery.paddingOf(context).bottom;
     return Column(
       children: [
-        const _TitleBar(title: '服务'),
+        const SectionTitleBar(title: '服务'),
         // [人工决策-2026-09-27 20:12:08] 保留课表、成绩，新增百宝箱同级入口；教务无关工具集中注册于百宝箱，不添加未定义服务。
         Expanded(child: CampusScrollFade(bottom: inset, child: ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), children: [
           for (final service in [(label: '课表', route: '/schedule', icon: CampusIcons.todaySelected), (label: '成绩', route: '/grades', icon: CampusIcons.grades), (label: '百宝箱', route: '/toolbox', icon: CampusIcons.toolbox)]) Padding(padding: const EdgeInsets.only(bottom: 16), child: CampusSurface(
@@ -37,42 +37,11 @@ class ServicePage extends StatelessWidget {
   }
 }
 
-class MessagePage extends StatefulWidget {
-  const MessagePage({super.key});
-
-  @override
-  State<MessagePage> createState() => _MessagePageState();
-}
-
-class _MessagePageState extends State<MessagePage> {
-  int _index = 0;
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        const _TitleBar(title: '消息'),
-        Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: CampusSegmented<int>(
-          values: const [0, 1], selected: _index, onSelected: (index) => setState(() => _index = index),
-          label: (index) => index == 0 ? '通知' : '私信',
-        )),
-        Expanded(
-          child: Padding(
-            padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
-            child: Center(
-              child: Text(_index == 0 ? '还没有通知' : '还没有私信', style: TextStyle(fontSize: 16, color: CampusPalette.of(context).onSurface)),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class MinePage extends StatefulWidget {
-  const MinePage({super.key, required this.gateway, required this.session});
+  const MinePage({super.key, required this.gateway, required this.session, this.social});
   final CampusGateway gateway;
   final AppSession session;
+  final SocialService? social;
 
   @override
   State<MinePage> createState() => _MinePageState();
@@ -137,7 +106,7 @@ class _MinePageState extends State<MinePage> {
     final inset = MediaQuery.paddingOf(context).bottom;
     return Column(
       children: [
-        const _TitleBar(title: '我的'),
+        const SectionTitleBar(title: '我的'),
         Expanded(child: CampusScrollFade(bottom: inset, child: SingleChildScrollView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), child: Center(child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             _settingsCard(child: Row(children: [
@@ -148,7 +117,7 @@ class _MinePageState extends State<MinePage> {
               ])),
             ])),
             const SizedBox(height: 16),
-            CampusSurface(padding: const EdgeInsets.all(20), onTap: () => Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(builder: (context) => const AppearancePage())), child: const ListTile(contentPadding: EdgeInsets.zero, leading: CampusIcon(CampusIcons.services), title: Text('界面'), trailing: CampusIcon(CampusIcons.next))),
+            CampusSurface(padding: const EdgeInsets.all(20), onTap: () => Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(builder: (context) => AppearancePage(social: widget.social))), child: const ListTile(contentPadding: EdgeInsets.zero, leading: CampusIcon(CampusIcons.services), title: Text('界面'), trailing: CampusIcon(CampusIcons.next))),
             const SizedBox(height: 16),
             // 多行卡片去掉横向内边距，行自带 20 边距：按下变暗时整行铺满卡片宽度，同 iOS 分组列表。
             CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
@@ -165,8 +134,9 @@ class _MinePageState extends State<MinePage> {
   }
 }
 
-class _TitleBar extends StatelessWidget {
-  const _TitleBar({required this.title});
+// 底栏根页的大标题顶栏（今天以外的三个分支共用）。
+class SectionTitleBar extends StatelessWidget {
+  const SectionTitleBar({super.key, required this.title});
   final String title;
 
   @override

@@ -39,10 +39,9 @@ void main() {
     const appearance = AppearanceShare(paletteId: 'mist', fontId: 'serif', scale: 1.1, themeMode: 'dark', glassMode: 'auto', wallpaperBlur: 27, wallpaperFade: 40);
     final decodedAppearance = roundTrip(appearance) as AppearanceShare;
     expect([decodedAppearance.paletteId, decodedAppearance.fontId, decodedAppearance.scale, decodedAppearance.themeMode, decodedAppearance.wallpaperFade], ['mist', 'serif', 1.1, 'dark', 40]);
-    const video = VideoShare(sourceUrl: 'https://v.douyin.com/abc/', title: '标题', author: '作者', platform: 'douyin', kind: 'video', coverUrl: 'https://p3.example.com/c.jpg');
+    const video = VideoShare(sourceUrl: 'https://v.douyin.com/abc/', title: '标题', author: '作者', platform: 'douyin', kind: 'video');
     final decodedVideo = roundTrip(video) as VideoShare;
-    expect(decodedVideo.sourceUrl, 'https://v.douyin.com/abc/');
-    expect(decodedVideo.coverUrl, 'https://p3.example.com/c.jpg');
+    expect([decodedVideo.sourceUrl, decodedVideo.title, decodedVideo.author, decodedVideo.kind], ['https://v.douyin.com/abc/', '标题', '作者', 'video']);
   });
 
   test('不认识的类型或更高版本落到 UnknownShare，不抛错', () {
@@ -91,10 +90,10 @@ void main() {
     }
   });
 
-  test('非 https 封面被忽略，卡片仍可用', () {
+  test('多余字段（如旧版的封面）被忽略，卡片仍可用', () {
     final card = decodeShareCard({'type': 'video', 'version': 1, 'body': {'sourceUrl': 'https://a.com/x', 'title': 't', 'author': '', 'platform': '', 'kind': 'gallery', 'coverUrl': 'http://a.com/c.jpg'}}) as VideoShare;
-    expect(card.coverUrl, isNull);
     expect(card.kind, 'gallery');
+    expect(card.toBody().containsKey('coverUrl'), isFalse);
   });
 
   test('列表预览文案', () {

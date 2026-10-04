@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/toolbox/download/android_file_publisher.dart';
 import 'package:superxd/toolbox/download/background_transfer.dart';
 import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
@@ -16,13 +17,17 @@ import 'package:superxd/toolbox/toolbox_resource_manager.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
 import 'package:superxd/domain/campus_log.dart';
 
+// 把作品分享给好友：百宝箱不感知私信，由组合根注入（为空时不显示分享入口）。
+typedef ToolboxVideoShare = Future<void> Function(BuildContext context, VideoShare video);
+
 class ToolboxRuntime with WidgetsBindingObserver {
-  ToolboxRuntime({this.resourceSpecifications = const {}})
+  ToolboxRuntime({this.resourceSpecifications = const {}, this.shareVideo})
     : coordinator = ParseCoordinator([BugpkVideoParser()]);
   ToolboxRuntime.testing({
     required ToolboxStore store,
     required ToolboxDownloadManager downloads,
     required ParseProvider parser,
+    this.shareVideo,
   }) : coordinator = ParseCoordinator([parser]),
        resourceSpecifications = downloads.resources.specifications {
     _store = store;
@@ -31,6 +36,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
   }
   final Map<String, ToolboxResource> resourceSpecifications;
   final ParseCoordinator coordinator;
+  final ToolboxVideoShare? shareVideo;
   ToolboxStore? _store;
   ToolboxDownloadManager? _downloads;
   Future<void>? _initialization;

@@ -14,7 +14,9 @@ const _allowed = {
   'device': {'domain', 'device'},
   'theme': {'theme', 'domain/campus_log.dart'},
   'toolbox': {'domain', 'theme', 'toolbox'},
-  'page': {'domain', 'application', 'gateway', 'local', 'theme', 'page', 'app_session.dart'},
+  // 功能性私信（设备级）：本机库、设备身份与中转服务客户端，只依赖 domain；页面经 SocialService 使用，百宝箱经组合根注入的回调使用。
+  'social': {'domain', 'social'},
+  'page': {'domain', 'application', 'gateway', 'local', 'social', 'theme', 'page', 'app_session.dart'},
 };
 
 Iterable<File> _dartFiles(String root) => Directory(root)
