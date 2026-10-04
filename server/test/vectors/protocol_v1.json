@@ -1,0 +1,22 @@
+{
+  "signSeed": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+  "signPublicKey": "ebVWLo_mVPlAeLES6KmLp5AfhTrmlb7X4OORC60ElmQ",
+  "deviceId": "ZbYGc9btiEvwHCwiLYKtoA",
+  "request": {
+    "method": "POST",
+    "path": "/v1/messages?limit=5",
+    "time": "1791100000000",
+    "nonce": "AAECAwQFBgcICQoLDA0ODw",
+    "body": "{\"to\":\"x\"}",
+    "canonical": "SXD1\nPOST\n/v1/messages?limit=5\n1791100000000\nAAECAwQFBgcICQoLDA0ODw\nWWctKUiuyvwR-MN2Nwgu4qFKxmAFnMiUdxJ8IPO1WQk",
+    "signature": "gc_WUU_4KOw5Pd_adSiY2QMQI8MSSz3o-tQQ3MSz_6uNI-ujLayS1uEd3CKPTLb2I5df2HNUlK4iLNThwZMxCg"
+  },
+  "invite": {
+    "seed": "yMfGxcTDwsHAv769vLu6ubi3trW0s7KxsK-urayrqqk",
+    "publicKey": "J07WsmgF0v6NBgUp7povKHY7aXbZxf0d7jj_NrO3aTk",
+    "inviteId": "EBESExQVFhcYGRobHB0eHw",
+    "redeemerDeviceId": "ZbYGc9btiEvwHCwiLYKtoA",
+    "canonical": "SXD1-invite\nEBESExQVFhcYGRobHB0eHw\nZbYGc9btiEvwHCwiLYKtoA",
+    "proof": "4cSaRWKSdNzpcoo9Gq-BPJug11mHkQJL7uqUmc9cIogrvvZ1aVgrcbgqovMc1vWsKCGRm1LHamsNBQjIYE0UAA"
+  }
+}
