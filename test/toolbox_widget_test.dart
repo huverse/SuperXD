@@ -31,8 +31,9 @@ Future<void> waitForWidget(WidgetTester tester, Finder finder) async {
 }
 
 // 界面先于入队出现；等点击发起的入队在测试时钟里跑完再推送传输事件，避免锁被挂起的调度占住。
+// 上限只在失败时用满；CI 慢磁盘上 100 次（约 1 秒）曾不够。
 Future<void> waitUntil(WidgetTester tester, bool Function() done) async {
-  for (var attempt = 0; attempt < 100 && !done(); attempt++) {
+  for (var attempt = 0; attempt < 1000 && !done(); attempt++) {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 10)),
     );
@@ -373,18 +374,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '卸载'));
     await tester.pumpAndSettle();
-    for (
-      var tick = 0;
-      tick < 20 && fixture.resources.installed('large_tool');
-      tick++
-    ) {
-      await tester.runAsync(
-        () => Future<void>.delayed(const Duration(milliseconds: 10)),
-      );
-      await tester.pump(const Duration(milliseconds: 16));
-    }
+    // 卸载要删文件、写库，CI 曾在约 200 毫秒的固定预算内没完成；等到真正卸载。
+    await waitUntil(tester, () => !fixture.resources.installed('large_tool'));
     await tester.pumpAndSettle();
-    expect(fixture.resources.installed('large_tool'), isFalse);
     expect(find.byTooltip('下载资源'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
