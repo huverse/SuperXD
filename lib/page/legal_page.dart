@@ -8,6 +8,7 @@ import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/glass_panel.dart';
 
 // [人工决策-2026-10-05 01:28:53] 仓库公开、发行公开 Alpha 后，用户协议与隐私政策按公开测试重写（取代 2026-09-28 的私有内测说明）：开发者 Galaxyous 个人开发者、GPL-3.0 开源、反馈走 GitHub Issues；仍告知真实数据流与未验收边界，不冒充学校官方服务或稳定版承诺。
+// [人工决策-2026-10-05 03:00:17] 联系方式加 QQ 209320162 与邮箱 vbhcchhvvvhh@gmail.com，涉及个人信息的请求走私下渠道，不在公开 Issue 里提。
 const legalUpdated = '2026年10月5日';
 
 const _termsSections = [
@@ -49,7 +50,7 @@ const _termsSections = [
   ),
   (
     title: '反馈与联系',
-    body: '问题与建议请提交至 https://github.com/huverse/SuperXD/issues 。Issue 公开可见，请勿附上密码、Cookie、验证码、学号、真实课表成绩或未打码的截图。',
+    body: '问题与建议请提交至 https://github.com/huverse/SuperXD/issues ，Issue 公开可见，请勿附上密码、Cookie、验证码、学号、真实课表成绩或未打码的截图。也可以联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com。',
   ),
 ];
 
@@ -104,7 +105,7 @@ const _privacySections = [
   ),
   (
     title: '政策更新与联系',
-    body: '本政策随应用版本更新，新增数据处理（例如接入新的解析来源）会先在应用内单独征得你的同意。问题请提交至 https://github.com/huverse/SuperXD/issues ，Issue 公开可见，请勿附上任何个人信息。',
+    body: '本政策随应用版本更新，新增数据处理（例如接入新的解析来源）会先在应用内单独征得你的同意。对个人信息处理有疑问、或要求查询删除，请私下联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com。一般问题可提交至 https://github.com/huverse/SuperXD/issues ，Issue 公开可见，请勿附上任何个人信息。',
   ),
 ];
 

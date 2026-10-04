@@ -12,14 +12,14 @@ SuperXD
 
 本程序是自由软件：你可以依据自由软件基金会发布的 GNU 通用公共许可证第 3 版重新分发和修改它。本程序以“希望有用”为目的分发，但不提供任何担保，也不担保适销性或特定用途适用性，详见 GPL-3.0 全文。
 
-GPL 的例外：下文第四节所述 math-curve-loaders 改编部分（lib/theme/curve_geometry.dart 中的曲线几何）不随本项目以 GPL 再授权。再分发本项目或其修改版时，须自行取得原作者授权，或移除、替换这部分代码。
+GPL 的例外：下文第四节所述 math-curve-loaders 改编部分（lib/theme/curve_geometry.dart 中的曲线几何）与第五节所述测试期临时图标不随本项目以 GPL 授权。再分发本项目或其修改版时，须自行取得相应授权，或移除、替换这些部分。
 
 
 二、随应用分发的第三方作品
 
 1. Lucide 图标
    来源：https://github.com/lucide-icons/lucide
-   许可：ISC（全文见第五节）
+   许可：ISC（全文见第六节）
    版权：Copyright (c) 2026 Lucide Icons and Contributors
    部分图形源于 Feather（MIT，Copyright (c) 2013-present Cole Bemis），本应用用到的有 arrow-left、calendar、check、chevron-down、chevron-right、chevron-up、download、info、log-out、plus、search、x。
 
@@ -82,7 +82,12 @@ math-curve-loaders（曲线加载动画设计）
 改编内容：双纽线、三瓣玫瑰和利萨茹曲线及拖尾表现，重写为 Dart/Flutter 原生绘制，增加按弧长预采样、有限粒子、局部重绘、后台暂停、减少动态效果和读屏说明。未复制上游的网页图库、导出器或其余效果。
 
 
-五、许可证全文
+五、测试期临时图标
+
+应用启动图标使用动画《Charlotte》角色友利奈绪的画面，版权归原权利人所有（©VisualArt's/Key/Charlotte Project）。仅供测试期间临时使用，不随本项目以 GPL 授权，也不得从本项目中单独取用；正式版前替换为原创图标。如权利人要求，将立即移除。
+
+
+六、许可证全文
 
 MIT License
 适用于第二、三节标注 MIT 的作品，各自的版权声明见上文。

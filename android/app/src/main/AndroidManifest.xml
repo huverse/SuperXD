@@ -7,6 +7,7 @@
     <!-- 课前提醒：开机后重新排定已安排的提醒；精确时刻须用户在系统设置中允许，未允许时改用可能延迟的普通调度。 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- [人工决策-2026-10-05 03:02:59] 启动图标暂用维护者指定的《Charlotte》角色画面（版权归原权利人），仅限测试期，已告知侵权风险由维护者承担；声明见 assets/third_party_notices.txt 第五节，正式版前换原创图标。 -->
     <application
         android:label="@string/app_name"
         android:name="${applicationName}"
