@@ -98,6 +98,10 @@ void main() {
     expect(find.textContaining('昵称为 1–20 个字'), findsOneWidget);
     await tester.enterText(find.byType(TextField), '小红');
     await tester.tap(find.text('同意并开启'));
+    // 开启要生成密钥、注册、写库，真实耗时随机器快慢变化（CI 曾在固定 12 帧内没跑完）；等到状态真正变为就绪再断言。
+    for (var tick = 0; tick < 200 && social.status != SocialStatus.ready; tick++) {
+      await advance(tester, 1);
+    }
     await advance(tester);
     expect(social.status, SocialStatus.ready);
     expect(find.text('添加好友'), findsOneWidget);
