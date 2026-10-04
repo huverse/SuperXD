@@ -12,6 +12,7 @@ final _glassPress = SpringDescription.withDampingRatio(mass: 1, stiffness: 900, 
 final _glassRelease = SpringDescription.withDampingRatio(mass: 1, stiffness: 340, ratio: .45);
 final _glassTravel = SpringDescription.withDampingRatio(mass: 1, stiffness: 500, ratio: .7);
 
+// [人工决策-2026-10-04 16:08:17] 页面推入、返回与底栏切换用临界阻尼弹簧曲线（先快后慢、不回弹），时长仍为 360/320/300ms；用户实测确认。
 // 页面与底栏分支转场的曲线：临界阻尼弹簧（同鸿蒙 Navigation 默认转场 interpolatingSpring(0, 1, 342, 37)、
 // iOS 推入），起步不突兀但立即跟上（约 1/7 处速度最大）、之后长尾减速，不回弹；按固定时长归一化，时长仍以
 // campus_transitions.dart 为准。取代 easeInOutCubic：它前 15% 时长只走 1.4%，点按后页面像慢半拍才动。

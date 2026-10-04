@@ -163,6 +163,7 @@ class _AppearancePageState extends State<AppearancePage> {
   List<Widget> _wallpaperSection(BuildContext context, DisplaySettings settings) {
     final busy = _saving || _importing;
     final custom = settings.wallpaperFile != null;
+    // [人工决策-2026-10-04 16:08:17] 壁纸模糊与透明度为连续滑杆，拖动实时预览、松手保存（取代三档标签）；用户实测确认。
     // 模糊与透明度连续可调（0–100%），拖动时背景实时变化；透明度只在保证文字可读的下限之上调，不会让文字看不清。
     Widget slider(String label, int value, void Function(int) preview) => Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Row(children: [

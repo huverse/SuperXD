@@ -60,6 +60,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
   List<GradeCourse> _visible = [];
   Map<String, List<GradeCourse>> _originalByCode = {};
   bool get _active => mounted && (widget.isAccountCurrent?.call() ?? true);
+  // [人工决策-2026-10-04 16:08:17] 成绩页切换学期详情/学年概览、学期、学年时淡出淡入，分段控件立即滑过去；用户实测确认。
   // 学期详情与学年概览、学期、学年之间的切换（淡出淡入）：旧内容先淡出，看不见时再换数据、读本地，
   // 读到（最多等 300ms）再淡入，高度与滚动位置的变化都发生在看不见的时候。分段控件按待切换的值立即滑过去，不等内容。
   // 内容区只有卡片与色调胶囊、没有玻璃，可以整体改不透明度。减少动画时直接切换。

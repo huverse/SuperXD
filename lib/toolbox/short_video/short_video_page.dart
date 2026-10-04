@@ -183,6 +183,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
     setState(() => _message = null);
   }
 
+  // [人工决策-2026-10-04 16:08:17] 解析设置用底部弹层（取代居中弹窗），“清除解析缓存”为带图标按钮；用户实测确认。
   // 几项开关的设置放底部弹层（同 iOS 设置类弹层、鸿蒙半模态），居中弹窗只留给简短确认：
   // 弹窗太窄，开关旁的标题与说明会把末字挤成单独一行。
   Future<void> _settings() async {
