@@ -138,7 +138,7 @@ tool/           手动验证与截图入口，不进 CI
 
 欢迎提交 [Issue](https://github.com/huverse/SuperXD/issues) 和 Pull Request。改动前请读 [CONTRIBUTING.md](CONTRIBUTING.md)：功能在短分支开发、通过 CI 后合并；测试与截图只用合成数据，不要提交真实账号、课表、成绩、Cookie 或日志。
 
-反馈问题时请写明应用版本、手机型号与系统版本、操作步骤和看到的提示，截图记得遮住学号姓名。
+反馈问题时请写明应用版本、手机型号与系统版本、操作步骤和看到的提示，截图记得遮住学号姓名。也可以联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com（涉及个人信息的请求请走这里，不要发在公开 Issue）。
 
 ## 许可
 
@@ -148,6 +148,7 @@ SuperXD 以 [GNU GPL v3.0](LICENSE) 开源，版权所有 (C) 2026 Galaxyous。�
 
 - `lib/theme/curve_geometry.dart` 中的曲线加载动画改编自 [Paidax01/math-curve-loaders](https://github.com/Paidax01/math-curve-loaders)，上游未附开源许可，本项目已获作者授权使用。再分发本项目或其修改版时，请自行取得授权，或移除、替换这部分代码。
 - 内置字体 Maple Mono NF CN 与 Noto Serif SC 按 SIL Open Font License 1.1 分发。
+- 测试期临时启动图标（android/app/src/main/res 下的 ic_launcher 与 ic_launcher_background）使用动画《Charlotte》角色画面，版权归原权利人所有（©VisualArt's/Key/Charlotte Project），仅供测试期间临时使用，正式版前替换为原创图标。
 - 其他第三方组件按各自许可使用，清单见 [assets/third_party_notices.txt](assets/third_party_notices.txt)，或应用内“我的 › 关于 › 开源许可”。
 
 本项目与学校、Kingo 教务系统及短视频平台均无关联。短视频解析依赖第三方服务，请只处理本人或已获授权的作品。

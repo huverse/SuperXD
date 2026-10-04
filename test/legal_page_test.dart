@@ -23,7 +23,7 @@ void main() {
       ('系统权限', '相机：只在扫码加好友时使用'),
       ('你的权利', '你可以撤回同意'),
       ('未成年人', '未满 14 周岁'),
-      ('政策更新与联系', 'github.com/huverse/SuperXD/issues'),
+      ('政策更新与联系', '私下联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com'),
     ]) {
       await tester.scrollUntilVisible(find.text(title), 300, scrollable: scrollable);
       await tester.pumpAndSettle();
