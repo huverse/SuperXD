@@ -5,6 +5,7 @@
 # 文件职责
 
 - campus_palette.dart：CampusPalette 是设备级的完整色彩角色，有苔灰（默认）、雾蓝、藕粉、暮紫、燕麦五套，每套分浅色和深色。
+  - accent 是控件激活色（开关开启轨道、滑杆已选段），同鸿蒙 component_activated、iOS 开关 onTintColor，与文字主色 primary 分开：primary 为文字可读压得深而灰，铺成大块轨道发闷。白色滑块对 accent 不低于 3:1。
 - campus_theme.dart：
   - campusTheme 按配色和字体生成 ThemeData。headlineMedium（26）是底栏根页的大标题，titleLarge（18）是二级页标题。OutlinedButton 主题即次要按钮：内容区中性浅底胶囊配主色字、无描边。
   - campusFieldGap 给带浮动标签的输入框算上方间距，随字号缩放。
@@ -30,7 +31,8 @@
   - 统一时长：页面进入 360ms、返回 320ms，弹层 300ms。
   - campusPage 让 GoRouter 与 push 共用同一套 Material 路由契约。
   - CampusDialogRoute、showCampusDialog：统一的弹窗转场。
-  - campusPageTransition：新旧页整屏并排平移、互不重叠，不淡入淡出；曲线为 campusSpringCurve，返回用翻转曲线。
+  - campusPageTransition：新旧页整屏并排平移、互不重叠，不淡入淡出；曲线为 campusSpringCurve，返回用翻转曲线；跟手返回期间及松手后的收尾按进度线性平移。
+  - 跟手返回（CampusPageTransitions 内的 _CampusBackGesture）：Android 14 起的预测性返回，同 iOS、鸿蒙侧滑返回，页面随手指平移、松手从当前位置续接返回或回弹。只有最前面的页面响应（栈顶、允许返回、TickerMode 开启）；不用路由自带的 handleCommitBackGesture，它会把进度重置到 1 再倒放。需要 AndroidManifest 的 enableOnBackInvokedCallback。
   - CampusEntryFade：账号应用的整体入场。它挂在按代次重建的账号应用内，所以应用启动和每次切换账号时都会触发。内容不套透明度，由盖在上面的背景副本（CampusBackdrop）淡出，玻璃从第一帧起取到真实背景。
   - 共享弹窗：showCampusNotice 用于只读提示，showCampusConfirm 用于二次确认。
   - CampusGlassDialog：统一的玻璃弹窗，版式同 AlertDialog。options 对应 SimpleDialog 的选项；solid 固定实色（验证码弹窗用）。全应用弹窗一律用它，日期选择器除外。
@@ -53,7 +55,7 @@
   - CampusOverlayDepthRoute：浮层路由装入时层数加一，开始关闭（didPop）就减一，没经过 pop 被移除时在 dispose 补减，只减一次。
 - campus_glass_controls.dart：
   - CampusGlassChip 是选择标签，复用主按钮的背景（内容区为中性色调胶囊），选中时带勾，宽度变化平滑展开。两三项的单选用 CampusSegmented。
-  - CampusSwitchTile 是开关行，玻璃档用 GlassSwitch，实色档用系统 Switch。
+  - CampusSwitchTile 是开关行，玻璃档用 GlassSwitch，实色档用系统 Switch；开启色都是 accent。
   - CampusSlider 是滑杆（0–1）：玻璃档用 GlassSlider（拖动时滑块化为玻璃透镜），实色档用系统 Slider 并合并读屏标签。GlassSlider 在系统取消与读屏增减时不回调 onChangeEnd，调用方要自行兜底保存。
   - 页面不再直接用 ChoiceChip、FilterChip、SwitchListTile、Slider。
 - campus_glass_menu.dart：

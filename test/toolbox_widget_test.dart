@@ -137,7 +137,7 @@ void main() {
     await tester.tap(find.text('设置'));
     await tester.pumpAndSettle();
     expect(find.textContaining('最近一次成功 · '), findsOneWidget);
-    await tester.tap(find.text('关闭'));
+    await tester.tap(find.byTooltip('关闭'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('合成视频'));
     await waitForWidget(tester, find.text('下载视频'));

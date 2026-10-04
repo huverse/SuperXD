@@ -6,6 +6,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
     required this.id,
     required this.label,
     required this.primary,
+    required this.accent,
     required this.backgroundTop,
     required this.backgroundBottom,
     required this.surface,
@@ -28,6 +29,9 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
   final String id;
   final String label;
   final Color primary;
+  // 控件激活色：开关开启轨道、滑杆已选段（同鸿蒙 component_activated、iOS 开关 onTintColor），与文字主色分开。
+  // primary 为文字可读压得深而灰，铺成大块轨道发闷；accent 同色系、更鲜亮，白色滑块对它不低于 3:1。
+  final Color accent;
   final Brightness brightness;
   final Color onPrimary;
   final Color danger;
@@ -63,6 +67,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
       id: 'sage',
       label: '苔灰',
       primary: Color(0xFF49584E),
+      accent: Color(0xFF3E8E63),
       backgroundTop: Color(0xFFF1F0ED),
       backgroundBottom: Color(0xFFE8E7E3),
       surface: Color(0xFFF9F8F5),
@@ -81,6 +86,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
       id: 'mist',
       label: '雾蓝',
       primary: Color(0xFF3F566C),
+      accent: Color(0xFF3478C0),
       backgroundTop: Color(0xFFEFF3F5),
       backgroundBottom: Color(0xFFDFE7EE),
       surface: Color(0xFFF6F9FC),
@@ -99,6 +105,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
       id: 'rose',
       label: '藕粉',
       primary: Color(0xFF76525F),
+      accent: Color(0xFFBB5478),
       backgroundTop: Color(0xFFF6F0F0),
       backgroundBottom: Color(0xFFEEDFE3),
       surface: Color(0xFFFCF7F8),
@@ -117,6 +124,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
       id: 'dusk',
       label: '暮紫',
       primary: Color(0xFF605275),
+      accent: Color(0xFF7558C2),
       backgroundTop: Color(0xFFF2F0F7),
       backgroundBottom: Color(0xFFE5DFEF),
       surface: Color(0xFFF9F7FC),
@@ -135,6 +143,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
       id: 'oat',
       label: '燕麦',
       primary: Color(0xFF70563A),
+      accent: Color(0xFFB06A2C),
       backgroundTop: Color(0xFFF6F2EA),
       backgroundBottom: Color(0xFFECE1D0),
       surface: Color(0xFFFCF9F2),
@@ -161,6 +170,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
       onDanger: Color(0xFF4B1814),
       surfaceBorder: Color(0x385C7082),
       primary: Color(0xFFB7D0BD),
+      accent: Color(0xFF3F9468),
       backgroundTop: Color(0xFF141B18),
       backgroundBottom: Color(0xFF1B2420),
       surface: Color(0xFF27322C),
@@ -184,6 +194,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
       onDanger: Color(0xFF4B1814),
       surfaceBorder: Color(0x385C7082),
       primary: Color(0xFFB4D1EA),
+      accent: Color(0xFF3A7FC6),
       backgroundTop: Color(0xFF141A22),
       backgroundBottom: Color(0xFF1A2430),
       surface: Color(0xFF263340),
@@ -207,6 +218,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
       onDanger: Color(0xFF4B1814),
       surfaceBorder: Color(0x385C7082),
       primary: Color(0xFFE6C0D0),
+      accent: Color(0xFFC0587E),
       backgroundTop: Color(0xFF21181D),
       backgroundBottom: Color(0xFF2B2027),
       surface: Color(0xFF3B2D35),
@@ -230,6 +242,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
       onDanger: Color(0xFF4B1814),
       surfaceBorder: Color(0x385C7082),
       primary: Color(0xFFD4C4EF),
+      accent: Color(0xFF7D62CC),
       backgroundTop: Color(0xFF1B1824),
       backgroundBottom: Color(0xFF252030),
       surface: Color(0xFF332D40),
@@ -253,6 +266,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
       onDanger: Color(0xFF4B1814),
       surfaceBorder: Color(0x385C7082),
       primary: Color(0xFFE2CBAC),
+      accent: Color(0xFFB57134),
       backgroundTop: Color(0xFF201B15),
       backgroundBottom: Color(0xFF29231B),
       surface: Color(0xFF383026),
@@ -271,6 +285,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
   @override
   CampusPalette copyWith({
     Color? primary,
+    Color? accent,
     Color? backgroundTop,
     Color? backgroundBottom,
     Color? surface,
@@ -297,6 +312,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
     onDanger: onDanger ?? this.onDanger,
     surfaceBorder: surfaceBorder ?? this.surfaceBorder,
     primary: primary ?? this.primary,
+    accent: accent ?? this.accent,
     backgroundTop: backgroundTop ?? this.backgroundTop,
     backgroundBottom: backgroundBottom ?? this.backgroundBottom,
     surface: surface ?? this.surface,
@@ -324,6 +340,7 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
       onDanger: blend(onDanger, other.onDanger),
       surfaceBorder: blend(surfaceBorder, other.surfaceBorder),
       primary: blend(primary, other.primary),
+      accent: blend(accent, other.accent),
       backgroundTop: blend(backgroundTop, other.backgroundTop),
       backgroundBottom: blend(backgroundBottom, other.backgroundBottom),
       surface: blend(surface, other.surface),

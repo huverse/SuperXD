@@ -1,6 +1,7 @@
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/campus_glass_surface.dart';
@@ -30,7 +31,8 @@ Widget campusPageTransition(
 
 // 页面透明、共用一份背景，新旧页整屏并排平移、互不重叠；不淡入淡出：玻璃在 Opacity 下取不到背景，
 // 整段转场会显示成底色，最后一帧才突然变回玻璃。旧页由新页同一进度、同一曲线推出，全程连续退场。
-// 曲线为临界阻尼弹簧（见 campus_motion.dart），推入与返回都先快后慢。
+// 曲线为临界阻尼弹簧（见 campus_motion.dart），推入与返回都先快后慢；跟手返回期间（含松手后的收尾）按进度线性
+// 平移，页面严格跟着手指，收尾到端点时两种映射重合，切回曲线不跳。
 class _CampusPageSlide extends StatefulWidget {
   const _CampusPageSlide({required this.animation, required this.secondaryAnimation, required this.child});
   final Animation<double> animation;
@@ -68,17 +70,100 @@ class _CampusPageSlideState extends State<_CampusPageSlide> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
+  Widget _slide(BuildContext context, bool following) {
     final direction = Directionality.of(context) == TextDirection.rtl ? -1.0 : 1.0;
     return SlideTransition(
-      position: _leave.drive(Tween(begin: Offset.zero, end: Offset(-direction, 0))),
+      position: (following ? widget.secondaryAnimation : _leave).drive(Tween(begin: Offset.zero, end: Offset(-direction, 0))),
       child: SlideTransition(
-        position: _enter.drive(Tween(begin: Offset(direction, 0), end: Offset.zero)),
+        position: (following ? widget.animation : _enter).drive(Tween(begin: Offset(direction, 0), end: Offset.zero)),
         child: widget.child,
       ),
     );
   }
+
+  @override
+  Widget build(BuildContext context) {
+    final gesture = Navigator.maybeOf(context)?.userGestureInProgressNotifier;
+    return gesture == null
+        ? _slide(context, false)
+        : ValueListenableBuilder<bool>(valueListenable: gesture, builder: (context, following, _) => _slide(context, following));
+  }
+}
+
+// 跟手返回（Android 14 起的预测性返回，同 iOS、鸿蒙的侧滑返回）：手势中页面随手指平移、露出上一页，
+// 松手由系统判定返回或回弹，都从当前位置续接。只有真正在最前面的页面响应：底栏其他分支里压着的页面、
+// 被上层页面盖住的页面都不响应，否则一次手势会把看不见的页面也返回掉。
+// 不允许返回的页面（首页、有未保存编辑的 PopScope）和减少动画时不接管，手势按普通返回处理。
+class _CampusBackGesture extends StatefulWidget {
+  const _CampusBackGesture({required this.route, required this.child});
+  final PageRoute<dynamic> route;
+  final Widget child;
+
+  @override
+  State<_CampusBackGesture> createState() => _CampusBackGestureState();
+}
+
+class _CampusBackGestureState extends State<_CampusBackGesture> with WidgetsBindingObserver {
+  bool _tracking = false;
+
+  // 被不透明页面盖住的路由、底栏不可见的分支都处在关闭的 TickerMode 下，据此排除。
+  bool get _frontmost => widget.route.isCurrent && widget.route.popGestureEnabled && TickerMode.valuesOf(context).enabled;
+
+  @override
+  bool handleStartBackGesture(PredictiveBackEvent backEvent) {
+    if (backEvent.isButtonEvent || MediaQuery.disableAnimationsOf(context) || !_frontmost) return false;
+    _tracking = true;
+    widget.route.handleStartBackGesture(progress: 1 - backEvent.progress);
+    return true;
+  }
+
+  @override
+  void handleUpdateBackGestureProgress(PredictiveBackEvent backEvent) {
+    if (_tracking) widget.route.handleUpdateBackGestureProgress(progress: 1 - backEvent.progress);
+  }
+
+  @override
+  void handleCancelBackGesture() {
+    if (!_tracking) return;
+    _tracking = false;
+    widget.route.handleCancelBackGesture();
+  }
+
+  // 不用路由自带的 handleCommitBackGesture：它在返回中把进度重置到 1 再倒放，并排平移会先跳回原位。
+  // 直接返回，路由从手指松开的进度倒放；收尾结束再结束手势状态，期间保持线性跟手映射。
+  @override
+  void handleCommitBackGesture() {
+    if (!_tracking) return;
+    _tracking = false;
+    final navigator = widget.route.navigator!, animation = widget.route.animation!;
+    navigator.pop();
+    if (!animation.isAnimating) {
+      navigator.didStopUserGesture();
+      return;
+    }
+    late final AnimationStatusListener settled;
+    settled = (status) {
+      if (status.isAnimating) return;
+      animation.removeStatusListener(settled);
+      navigator.didStopUserGesture();
+    };
+    animation.addStatusListener(settled);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
 }
 
 // [人工决策-2026-09-25 17:43:48] GoRouter与push统一Material路由契约，旧页在完整进度内退场，不前半段抢先消失。
@@ -97,7 +182,7 @@ class CampusPageTransitions extends PageTransitionsBuilder {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     Widget child,
-  ) => campusPageTransition(context, animation, secondaryAnimation, child);
+  ) => _CampusBackGesture(route: route, child: campusPageTransition(context, animation, secondaryAnimation, child));
 }
 
 class CampusEntryFade extends StatefulWidget {

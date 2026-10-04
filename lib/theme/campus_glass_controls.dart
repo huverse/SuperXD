@@ -92,11 +92,11 @@ class CampusSwitchTile extends StatelessWidget {
               onTap: () => onChanged(!value),
               trailing: ExcludeSemantics(
                 child: tier == CampusGlassTier.solid || !ready
-                    ? Switch(value: value, onChanged: onChanged)
+                    ? Switch(value: value, onChanged: onChanged, activeTrackColor: palette.accent, activeThumbColor: Colors.white)
                     : liquid.GlassSwitch(
                         value: value,
                         onChanged: onChanged,
-                        activeColor: palette.primary,
+                        activeColor: palette.accent,
                         // 浅色下库默认的 iOS 浅灰轨道与白色滑块只有约1.7:1，关闭态看不清；
                         // 改为按配色压暗的不透明灰，滑块对轨道不低于3:1。深色默认值已足够。
                         inactiveColor: palette.isDark
@@ -141,13 +141,13 @@ class CampusSlider extends StatelessWidget {
           height: 48,
           child: Center(
             child: tier == CampusGlassTier.solid || !ready
-                ? MergeSemantics(child: Semantics(label: label, child: Slider(value: value, onChanged: onChanged, onChangeEnd: onChangeEnd)))
+                ? MergeSemantics(child: Semantics(label: label, child: Slider(value: value, onChanged: onChanged, onChangeEnd: onChangeEnd, activeColor: palette.accent)))
                 : liquid.GlassSlider(
                     value: value,
                     onChanged: onChanged,
                     onChangeEnd: onChangeEnd,
                     label: label,
-                    activeColor: palette.primary,
+                    activeColor: palette.accent,
                     inactiveColor: palette.onSurfaceVariant.withValues(alpha: .28),
                     quality: campusGlassQuality(tier),
                     settings: campusGlassSettings(palette, CampusGlassRole.control, tier),
