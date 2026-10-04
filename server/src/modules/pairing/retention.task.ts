@@ -1,13 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
-import { DataSource } from 'typeorm';
 
 import { DistributedLock } from 'src/common/redis/redis.module';
 import { cleanupBatch, deviceIdleDays } from 'src/common/relay_limits';
 import { DeviceRepository } from 'src/modules/device/device.repository';
-import { DeviceService } from 'src/modules/device/device.service';
-import { FriendshipRepository } from 'src/modules/friend/friendship.repository';
 import { MessageRepository } from 'src/modules/message/message.repository';
+import { DeviceRemovalService } from 'src/modules/pairing/device_removal.service';
 
 // 数据保留：过期消息与长期不活跃的设备分批删除。多实例抢分布式锁，全局只跑一份；每批 1000 行，单次运行工作量有界。
 @Injectable()
@@ -15,12 +13,10 @@ export class RetentionTask {
   private readonly logger = new Logger('Retention');
 
   constructor(
-    private readonly dataSource: DataSource,
     private readonly lock: DistributedLock,
     private readonly devices: DeviceRepository,
-    private readonly deviceService: DeviceService,
-    private readonly friendships: FriendshipRepository,
     private readonly messages: MessageRepository,
+    private readonly removal: DeviceRemovalService,
   ) {}
 
   // 每 10 分钟一次，与业务时区无关（只比较 UTC 绝对时刻），显式按 UTC 调度。
@@ -47,13 +43,7 @@ export class RetentionTask {
     let idle = 0;
     for (let round = 0; round < 20; round++) {
       const deviceIds = await this.devices.idle(idleBefore, cleanupBatch);
-      if (deviceIds.length === 0) break;
-      await this.dataSource.transaction(async (manager) => {
-        await this.friendships.removeAllOf(deviceIds, manager);
-        await this.messages.removeMailboxes(deviceIds, manager);
-        await this.devices.remove(deviceIds, manager);
-      });
-      this.deviceService.forget(deviceIds);
+      await this.removal.remove(deviceIds);
       idle += deviceIds.length;
       if (deviceIds.length < cleanupBatch) break;
     }

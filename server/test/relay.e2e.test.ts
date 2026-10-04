@@ -242,6 +242,17 @@ describe('信箱', () => {
   });
 });
 
+describe('关闭私信', () => {
+  it('删除本设备连同好友关系与待收消息，之后请求一律 UNAUTHORIZED', async () => {
+    const alice = await registered(), bob = await registered();
+    await pair(alice, bob);
+    expect((await alice.call('DELETE', '/v1/devices')).status).toBe(204);
+    expect(await dataSource.query('SELECT id FROM message WHERE recipient_device_id = ?', [alice.deviceId])).toHaveLength(0);
+    expect((await bob.call('GET', '/v1/friends')).body.friends).toHaveLength(0);
+    expect((await alice.call('GET', '/v1/friends')).body.code).toBe('UNAUTHORIZED');
+  });
+});
+
 describe('数据保留', () => {
   it('过期消息与长期不活跃设备被清理', async () => {
     const alice = await registered(), bob = await registered();
