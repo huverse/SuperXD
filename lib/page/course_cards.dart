@@ -15,27 +15,63 @@ import 'package:superxd/page/live_clock.dart';
 
 String spanIdentity(PeriodSpan span) => span.empty ? span.key : '${span.key}:${span.meeting!.weekday}:${span.meeting!.place}';
 
-Map<String, String> courseCountdowns(List<PeriodSpan> spans, List<BellPeriod> bells, String date, DateTime instant, {MeetingTime? Function(PeriodSpan)? timeOf}) {
+// 今天此刻的上课状态（同 iOS 实时活动：有明确起止就画进度）。只对今天计算，其他日子为空。
+// progress：已开始各节的进度，已下课为 1，上课中为已过比例；focus：正在上的课，没有就是下一节。
+// 进度条起止：上课中是上课到下课；课间是上一节下课到下一节上课；第一节课前没有起点，只显示剩余时长。
+class ClassMoment {
+  const ClassMoment({this.progress = const {}, this.focus, this.ongoing = false, this.seconds = 0, this.target = 0, this.from, this.fromLabel = '', this.targetLabel = ''});
+  final Map<String, double> progress;
+  final PeriodSpan? focus;
+  final bool ongoing;
+  // 均为校园时区当天的秒数。
+  final int seconds;
+  final int target;
+  final int? from;
+  final String fromLabel;
+  final String targetLabel;
+  int get remainingMinutes => ((target - seconds) / 60).ceil();
+  double? get fraction => from == null ? null : ((seconds - from!) / (target - from!)).clamp(0.0, 1.0);
+}
+
+ClassMoment classMoment(List<PeriodSpan> spans, List<BellPeriod> bells, String date, DateTime instant, {MeetingTime? Function(PeriodSpan)? timeOf}) {
   final now = campusInstant(instant);
-  if (formatCampusDate(now) != date) return const {};
+  if (formatCampusDate(now) != date) return const ClassMoment();
   final seconds = now.hour * 3600 + now.minute * 60 + now.second;
-  PeriodSpan? current;
-  PeriodSpan? next;
-  var currentStart = -1;
-  var currentEnd = -1;
-  var nextStart = 86401;
+  final progress = <String, double>{};
+  (PeriodSpan, MeetingTime)? current, next, previous;
   for (final span in spans.where((span) => !span.empty)) {
     final time = timeOf == null ? meetingTime(bells, span.meeting!) : timeOf(span);
     if (time == null) continue;
-    final start = time.startMinute * 60;
-    if (start <= seconds && seconds < time.endMinute * 60 && start > currentStart) { current = span; currentStart = start; currentEnd = time.endMinute * 60; }
-    if (start > seconds && start < nextStart) { next = span; nextStart = start; }
+    final start = time.startMinute * 60, end = time.endMinute * 60;
+    if (end <= seconds) {
+      progress[spanIdentity(span)] = 1;
+      if (previous == null || end > previous.$2.endMinute * 60) previous = (span, time);
+    } else if (start <= seconds) {
+      progress[spanIdentity(span)] = (seconds - start) / (end - start);
+      if (current == null || start > current.$2.startMinute * 60) current = (span, time);
+    } else if (next == null || start < next.$2.startMinute * 60) {
+      next = (span, time);
+    }
   }
-  return {
-    if (current != null) spanIdentity(current): '距离下课还有${((currentEnd - seconds) / 60).ceil()}分钟',
-    if (next != null) spanIdentity(next): '距离上课还有${((nextStart - seconds) / 60).ceil()}分钟',
-  };
+  if (current case (final span, final time)) {
+    return ClassMoment(progress: progress, focus: span, ongoing: true, seconds: seconds, target: time.endMinute * 60, from: time.startMinute * 60, fromLabel: time.startLabel, targetLabel: time.endLabel);
+  }
+  if (next case (final span, final time)) {
+    return ClassMoment(progress: progress, focus: span, seconds: seconds, target: time.startMinute * 60, from: previous == null ? null : previous.$2.endMinute * 60, fromLabel: previous?.$2.endLabel ?? '', targetLabel: time.startLabel);
+  }
+  return ClassMoment(progress: progress, seconds: seconds);
 }
+
+// 时长按小时分钟写：不足一小时“45分钟”，整点“2小时”，其余“1小时05分”（分钟补零，数字跳动时宽度不变）。
+// 返回数字与单位分段，界面把数字放大、单位缩小；拼起来就是读屏与提示用的完整文字。
+List<(String, bool)> classDurationParts(int minutes) {
+  final hours = minutes ~/ 60, rest = minutes % 60;
+  if (hours == 0) return [('$rest', true), ('分钟', false)];
+  if (rest == 0) return [('$hours', true), ('小时', false)];
+  return [('$hours', true), ('小时', false), (rest.toString().padLeft(2, '0'), true), ('分', false)];
+}
+
+String classDuration(int minutes) => classDurationParts(minutes).map((part) => part.$1).join();
 
 class CourseDayCards extends StatefulWidget {
   const CourseDayCards({super.key, required this.spans, required this.bells, required this.date, this.detailKey, this.onDetail, this.onEdit, this.onCreate, this.onArrange, this.header, this.physics, this.bottomInset = 0, this.obscuredBottom = 0});
@@ -139,11 +175,11 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
 
   MeetingTime? _timeOf(PeriodSpan span) => _times.putIfAbsent(spanIdentity(span), () => periodTime(widget.bells, span.start, span.end));
 
-  double _cardHeight(BuildContext context, double width, double available, Map<String, String> labels) {
+  double _cardHeight(BuildContext context, double width, double available) {
     final scaler = MediaQuery.textScalerOf(context);
     final font = Theme.of(context).textTheme.bodyMedium!.fontFamily;
     _dataStamp ??= widget.spans.map((span) => '${span.key}:${span.course?.courseName}:${span.meeting?.place}:${span.course?.teacherName}:${_timeOf(span)?.label}').join('|');
-    final stamp = '$font:${Localizations.localeOf(context)}:${Directionality.of(context)}:$width:$available:${scaler.scale(14)}:${scaler.scale(16)}:${labels.entries.map((entry) => '${entry.key}:${entry.value}').join('|')}:$_dataStamp';
+    final stamp = '$font:${Localizations.localeOf(context)}:${Directionality.of(context)}:$width:$available:${scaler.scale(14)}:${scaler.scale(16)}:$_dataStamp';
     if (_measureKey == stamp) return _height;
     _measureKey = stamp;
     double measure(String text, double size, FontWeight weight, double maxWidth) {
@@ -163,14 +199,13 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
         ('第${span.start}–${span.end}节${_timeOf(span) == null ? ' · 作息时间未设置' : ''}', 14.0, FontWeight.w500),
         span.empty ? (_emptyName(span), 16.0, FontWeight.w500) : (span.course!.courseName, 17.0, FontWeight.w600),
         if (!span.empty) ('${span.meeting!.place} · ${span.course!.teacherName}', 14.0, FontWeight.w500),
-        if (labels[spanIdentity(span)] != null) (labels[spanIdentity(span)]!, 14.0, FontWeight.w500),
       ]) {
         height += measure(field.$1, field.$2, field.$3, detailWidth);
       }
       if (!span.empty) height += 4;
       contentHeight = math.max(contentHeight, height);
     }
-    final minimum = math.max(112.0, contentHeight + 34 + (labels.isEmpty ? 0 : 4));
+    final minimum = math.max(112.0, contentHeight + 34);
     final slot = (available - (widget.spans.length - 1) * 8) / widget.spans.length;
     return _height = slot >= minimum ? math.min(slot, minimum * 1.12) : minimum;
   }
@@ -190,8 +225,8 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
     return Column(children: [
       if (widget.header != null) widget.header!,
       Expanded(child: ValueListenableBuilder(valueListenable: _time, builder: (context, instant, _) => LayoutBuilder(builder: (context, constraints) {
-      final labels = courseCountdowns(widget.spans, widget.bells, widget.date, instant, timeOf: _timeOf);
-      final height = _cardHeight(context, constraints.maxWidth, constraints.maxHeight - widget.obscuredBottom, labels);
+      final progress = classMoment(widget.spans, widget.bells, widget.date, instant, timeOf: _timeOf).progress;
+      final height = _cardHeight(context, constraints.maxWidth, constraints.maxHeight - widget.obscuredBottom);
       // 顶部淡出只随实际滚动出现，最多24dp；遮罩层有无只由底栏决定，滚动不重建列表。
       return AnimatedBuilder(animation: _scroll, builder: (context, child) => ScrollEdgeFade(
         top: widget.obscuredBottom > 0 && _scroll.hasClients ? _scroll.offset.clamp(0.0, 24.0) : 0,
@@ -216,7 +251,7 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
                 child: AnimatedBuilder(animation: selected ? _curve : const AlwaysStoppedAnimation(0.0),
                 builder: (context, child) => ConstrainedBox(constraints: BoxConstraints(minWidth: double.infinity, minHeight: height - 24 + (selected ? _curve.value * 80 : 0)), child: child),
                 child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-                  _CourseCardBody(span: span, time: _timeOf(span), emptyName: _emptyName(span), countdown: labels[key], timeWidth: _timeWidth),
+                  _CourseCardBody(span: span, time: _timeOf(span), emptyName: _emptyName(span), progress: progress[key], timeWidth: _timeWidth),
                   if (selected) SizeTransition(sizeFactor: _curve, alignment: Alignment.topLeft, child: Padding(padding: const EdgeInsets.only(top: 12), child: span.empty ? Wrap(spacing: 8, children: [
                     if (widget.onCreate != null) TextButton.icon(onPressed: () => widget.onCreate!(span), icon: const CampusIcon(CampusIcons.add), label: const Text('新增课程')),
                     if (widget.onArrange != null) TextButton.icon(onPressed: () => widget.onArrange!(span), icon: const CampusIcon(CampusIcons.edit), label: const Text('安排已有课程')),
@@ -240,13 +275,16 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
 }
 
 // 课程卡正文（同 iOS 日程、鸿蒙日程卡的层级）：左列开始时间加粗、结束时间次要，等宽数字各卡对齐；
-// 中间一道竖条，有课为主色、空档为浅描边；右列节次、课名、地点与教师，倒计时在右下。空档整体降一级，不与有课卡同等醒目。
+// 中间一道竖条，有课为主色、空档为浅描边；右列节次、课名、地点与教师。空档整体降一级，不与有课卡同等醒目。
+// 今天的课按此刻分三态（同 iOS 日历、Google 日历的当日视图）：上课中的竖条自上而下按已过时间填满激活色；
+// 已下课的整卡降一级（课名与时刻转次要色、竖条转浅描边）；没开始的不变。剩余时长只在顶部“此刻”卡里显示，卡片不重复文字倒计时。
 class _CourseCardBody extends StatelessWidget {
-  const _CourseCardBody({required this.span, required this.time, required this.emptyName, required this.countdown, required this.timeWidth});
+  const _CourseCardBody({required this.span, required this.time, required this.emptyName, required this.progress, required this.timeWidth});
   final PeriodSpan span;
   final MeetingTime? time;
   final String emptyName;
-  final String? countdown;
+  // 今天已开始的课：1 为已下课，其余为上课中已过的比例；没开始或不是今天为空。
+  final double? progress;
   final double timeWidth;
 
   @override
@@ -254,30 +292,60 @@ class _CourseCardBody extends StatelessWidget {
     final palette = CampusPalette.of(context);
     const figures = [FontFeature.tabularFigures()];
     final time = this.time;
+    final progress = this.progress;
+    final done = progress == 1;
+    final quiet = span.empty || done;
     return IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       SizedBox(width: timeWidth, child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(time?.startLabel ?? '--:--', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, height: 1.3, fontFeatures: figures, color: span.empty ? palette.onSurfaceVariant : palette.onSurface)),
+        Text(time?.startLabel ?? '--:--', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, height: 1.3, fontFeatures: figures, color: quiet ? palette.onSurfaceVariant : palette.onSurface)),
         if (time != null) Text(time.endLabel, maxLines: 1, softWrap: false, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, fontFeatures: figures, color: palette.onSurfaceVariant)),
       ])),
       const SizedBox(width: 10),
-      DecoratedBox(decoration: BoxDecoration(color: span.empty ? palette.outlineSubtle : palette.primary, borderRadius: BorderRadius.circular(2)), child: const SizedBox(width: 3)),
+      progress != null && !done
+          ? _ProgressStripe(progress: progress)
+          : DecoratedBox(decoration: BoxDecoration(color: quiet ? palette.outlineSubtle : palette.primary, borderRadius: BorderRadius.circular(2)), child: const SizedBox(width: 3)),
       const SizedBox(width: 12),
       Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
         // 缺作息时提示并在节次同一行，不额外占一行。
         Text.rich(TextSpan(children: [
-          TextSpan(text: '第${span.start}–${span.end}节', style: TextStyle(color: span.empty ? palette.onSurfaceVariant : palette.primary)),
+          TextSpan(text: '第${span.start}–${span.end}节', style: TextStyle(color: quiet ? palette.onSurfaceVariant : palette.primary)),
           if (time == null) TextSpan(text: ' · 作息时间未设置', style: TextStyle(color: palette.onSurfaceVariant)),
         ]), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3)),
         const SizedBox(height: 2),
         span.empty
             ? Text(emptyName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, height: 1.3, color: palette.onSurfaceVariant))
-            : Text(span.course!.courseName, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface)),
+            : Text(span.course!.courseName, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.3, color: done ? palette.onSurfaceVariant : palette.onSurface)),
         if (!span.empty) ...[
           const SizedBox(height: 4),
           Text('${span.meeting!.place} · ${span.course!.teacherName}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: palette.onSurfaceVariant)),
-          if (countdown != null) Align(alignment: Alignment.centerRight, child: Text(countdown!, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: palette.primary))),
         ],
       ])),
     ]));
+  }
+}
+
+// 上课中的竖条：浅主色轨道上自上而下填激活色，随分钟时钟平滑推进；减少动画时直接到位。
+class _ProgressStripe extends StatelessWidget {
+  const _ProgressStripe({required this.progress});
+  final double progress;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    return Semantics(
+      label: '上课中，已过${(progress * 100).round()}%',
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(2),
+        child: SizedBox(width: 3, child: ColoredBox(
+          color: palette.primary.withValues(alpha: .22),
+          child: TweenAnimationBuilder<double>(
+            tween: Tween(end: progress),
+            duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 600),
+            curve: Curves.easeOutCubic,
+            builder: (context, value, _) => Align(alignment: Alignment.topCenter, child: FractionallySizedBox(heightFactor: value, widthFactor: 1, child: ColoredBox(color: palette.accent))),
+          ),
+        )),
+      ),
+    );
   }
 }

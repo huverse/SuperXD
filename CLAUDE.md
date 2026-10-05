@@ -183,6 +183,7 @@
   - verify_toolbox.dart：Android 原生下载验证。
   - verify_social.dart：两个真实客户端经真实中转服务联调（合成数据），运行方式见文件头。
   - readme_demo.dart：README 截图入口，内存库合成课表与假登录。
+  - font_previews.dart：生成界面页的字体预览图（assets/font_previews），改预览文字或内置字体后重跑。
   - schedule_smoke.dart、glass_preview.dart、motion_preview.dart
   - motion_release_test.dart：检查发布包的图标字体。
 

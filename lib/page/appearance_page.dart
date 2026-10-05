@@ -51,6 +51,29 @@ Future<PickedWallpaper?> pickWallpaperFromGallery() async {
   return (path: picked.path, discard: discard);
 }
 
+// 字体预览用预先画好的图（tool/font_previews.dart 按同样的文字样式生成），不为预览去加载没在用的字体：
+// 内置字体首次使用时要在主线程解析全部三个字重（Maple 约 470ms），界面页首帧会卡住，页面没有过渡直接出现。
+// 同微信读书、Kindle 未下载字体的预览图；图随字号缩放、按配色着色。真正换字体时才加载。
+const fontPreviewText = '山有扶苏，隰有荷华。\n08:00–09:40  高等数学';
+const fontPreviewScale = 3.0;
+TextStyle fontPreviewStyle(String family) => TextStyle(fontFamily: family, fontWeight: FontWeight.w500, fontSize: 16, height: 1.6);
+
+class _FontPreview extends StatelessWidget {
+  const _FontPreview({required this.fontId, required this.color});
+  final String fontId;
+  final Color color;
+
+  @override
+  Widget build(BuildContext context) => Image.asset(
+    'assets/font_previews/$fontId.png',
+    scale: fontPreviewScale * 16 / MediaQuery.textScalerOf(context).scale(16),
+    color: color,
+    colorBlendMode: BlendMode.srcIn,
+    filterQuality: FilterQuality.medium,
+    semanticLabel: fontPreviewText,
+  );
+}
+
 class AppearancePage extends StatefulWidget {
   const AppearancePage({super.key, this.pickWallpaper = pickWallpaperFromGallery, this.social});
   final Future<PickedWallpaper?> Function() pickWallpaper;
@@ -373,17 +396,7 @@ class _AppearancePageState extends State<AppearancePage> {
                                 style: Theme.of(context).textTheme.titleMedium,
                               ),
                               const SizedBox(height: 8),
-                              Text(
-                                '山有扶苏，隰有荷华。\n08:00–09:40  高等数学',
-                                style: TextStyle(
-                                  fontFamily:
-                                      DisplaySettings.fontFamilies[font.id],
-                                  fontWeight: FontWeight.w500,
-                                  fontSize: 16,
-                                  height: 1.6,
-                                  color: colors.onSurface,
-                                ),
-                              ),
+                              _FontPreview(fontId: font.id, color: colors.onSurface),
                             ],
                           ),
                         ),

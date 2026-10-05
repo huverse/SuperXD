@@ -27,7 +27,7 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, CampusReminders? reminders, SocialService? social}) {
   final tools = toolboxCatalog(toolbox);
   // 好友分享的视频在百宝箱短视频页打开并直接解析（页面层不依赖百宝箱，由这里接上）。
-  void openVideo(BuildContext context, VideoShare video) => Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(
+  void openVideo(BuildContext context, VideoShare video) => Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(
     builder: (_) => ShortVideoPage(runtime: toolbox, initialInput: video.sourceUrl, autoParse: true),
   ));
   final rootKey = GlobalKey<NavigatorState>();

@@ -43,15 +43,39 @@ void main() {
     expect(parsed.courses.last.sectionId, 'S13');
   });
 
-  test('倒计时只对今天当前和下一节；秒向上取整且边界明确', () {
+  test('此刻只对今天：上课中与课间的进度和剩余时长，秒向上取整，时长按小时分钟', () {
     final spans = periodSpans([course(1, 2), course(3, 4)]);
-    final countdown = courseCountdowns(spans, bells, '2026-09-24', DateTime.utc(2026, 9, 24, 0, 44, 30));
-    expect(countdown.values, contains('距离下课还有56分钟'));
-    expect(countdown.values, contains('距离上课还有76分钟'));
-    expect(courseCountdowns(spans, bells, '2026-09-23', DateTime.utc(2026, 9, 24)), isEmpty);
-    expect(courseCountdowns(spans, [], '2026-09-24', DateTime.utc(2026, 9, 24)), isEmpty);
-    final atEnd = courseCountdowns(spans, bells, '2026-09-24', DateTime.utc(2026, 9, 24, 1, 40));
-    expect(atEnd.values, ['距离上课还有20分钟']);
+    final first = spanIdentity(spans.first), second = spanIdentity(spans.last);
+    // 08:44:30 第1–2节上课中（08:00–09:40）。
+    final during = classMoment(spans, bells, '2026-09-24', DateTime.utc(2026, 9, 24, 0, 44, 30));
+    expect(during.ongoing, isTrue);
+    expect(during.focus!.start, 1);
+    expect(during.remainingMinutes, 56);
+    expect(during.fraction, closeTo(2670 / 6000, 1e-9));
+    expect(during.progress[first], closeTo(2670 / 6000, 1e-9));
+    expect(during.progress.containsKey(second), isFalse);
+    expect((during.fromLabel, during.targetLabel), ('08:00', '09:40'));
+    // 09:40 第一节刚下课：课间从上一节下课画到下一节上课。
+    final gap = classMoment(spans, bells, '2026-09-24', DateTime.utc(2026, 9, 24, 1, 40));
+    expect(gap.ongoing, isFalse);
+    expect(gap.focus!.start, 3);
+    expect(gap.remainingMinutes, 20);
+    expect(gap.fraction, 0);
+    expect(gap.progress[first], 1);
+    expect((gap.fromLabel, gap.targetLabel), ('09:40', '10:00'));
+    // 06:50 第一节课前没有起点，只给剩余时长。
+    final early = classMoment(spans, bells, '2026-09-24', DateTime.utc(2026, 9, 23, 22, 50));
+    expect(early.focus!.start, 1);
+    expect(classDuration(early.remainingMinutes), '1小时10分');
+    expect(early.fraction, isNull);
+    expect(early.progress, isEmpty);
+    final over = classMoment(spans, bells, '2026-09-24', DateTime.utc(2026, 9, 24, 4));
+    expect(over.focus, isNull);
+    expect(over.progress.values, [1, 1]);
+    expect(classMoment(spans, bells, '2026-09-23', DateTime.utc(2026, 9, 24)).focus, isNull);
+    expect(classMoment(spans, bells, '2026-09-23', DateTime.utc(2026, 9, 24)).progress, isEmpty);
+    expect(classMoment(spans, [], '2026-09-24', DateTime.utc(2026, 9, 24)).focus, isNull);
+    expect([1, 45, 60, 65, 125].map(classDuration), ['1分钟', '45分钟', '1小时', '1小时05分', '2小时05分']);
   });
 
   testWidgets('空课与正课等高，大字不溢出，详情可点空白关闭', (tester) async {

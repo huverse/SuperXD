@@ -104,7 +104,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
     try {
       await Navigator.push<bool>(
         context,
-        MaterialPageRoute(
+        CampusPageRoute(
           builder: (context) => CourseEditorPage(
             course: course,
             slot: slot,
@@ -288,7 +288,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
   Future<void> _history() async {
     final changed = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(
+      CampusPageRoute(
         builder: (context) =>
             ScheduleHistoryPage(gateway: widget.gateway, term: widget.term),
       ),

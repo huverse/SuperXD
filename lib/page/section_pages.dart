@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
@@ -67,7 +68,7 @@ class _MinePageState extends State<MinePage> {
     finally { if (mounted) setState(() => _loadingAccount = false); }
   }
 
-  void _push(Widget page) => Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(builder: (context) => page));
+  void _push(Widget page) => Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => page));
 
   @override
   Widget build(BuildContext context) {

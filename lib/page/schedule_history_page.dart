@@ -70,7 +70,7 @@ class _ScheduleHistoryPageState extends State<ScheduleHistoryPage> {
   Future<void> _preview(RevisionView row) async {
     final restored = await Navigator.push<bool>(
       context,
-      MaterialPageRoute(
+      CampusPageRoute(
         builder: (context) => _RevisionPreview(
           gateway: widget.gateway,
           term: widget.term,

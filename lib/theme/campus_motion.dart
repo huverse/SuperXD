@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 // [人工决策-2026-10-02 16:43:38] 只有玻璃控件用物理弹簧：按下近临界阻尼快速到位不回弹，松手低阻尼过冲一次再回位；页面转场、列表、切日、课表形变仍不回弹；减少动画时不用弹簧，直接到位。
 SpringDescription? campusGlassSpring(BuildContext context, {required bool release}) =>
@@ -28,6 +29,40 @@ class CampusSpringCurve extends Curve {
 }
 
 const campusSpringCurve = CampusSpringCurve();
+
+// 转场计时从新内容的首帧画完后开始（同 Android 活动转场、iOS 推入：等目标页首帧就绪才开始动）。
+// 动画时钟在首帧的节拍上就开始走；首帧若因首次加载字体、编译着色器或慢机型而耗时，下一帧时整段转场
+// 已经走完，看起来就是没有过渡的硬切。这里用真实时钟量出首帧到次帧的间隔，超出一帧的部分从计时里扣掉，
+// 转场从次帧起完整播放；首帧正常时不扣。测试的假时钟里两帧之间几乎不耗真实时间，同样不扣。
+class CampusFirstFrameVsync implements TickerProvider {
+  const CampusFirstFrameVsync(this.parent);
+  final TickerProvider parent;
+
+  @override
+  Ticker createTicker(TickerCallback onTick) => parent.createTicker(_FirstFrameClock(onTick).tick);
+}
+
+class _FirstFrameClock {
+  _FirstFrameClock(this.onTick);
+  final TickerCallback onTick;
+  final _sinceFirst = Stopwatch();
+  Duration _skipped = Duration.zero;
+  static const _frame = Duration(milliseconds: 17);
+  static const _slow = Duration(milliseconds: 50);
+
+  void tick(Duration elapsed) {
+    // 每次开始（推入、返回、跟手松手后的续接）第一拍的 elapsed 都是零。
+    if (elapsed == Duration.zero) {
+      _skipped = Duration.zero;
+      _sinceFirst..reset()..start();
+    } else if (_sinceFirst.isRunning) {
+      _sinceFirst.stop();
+      final gap = _sinceFirst.elapsed;
+      if (gap > _slow) _skipped = gap - _frame < elapsed ? gap - _frame : elapsed;
+    }
+    onTick(elapsed - _skipped);
+  }
+}
 
 // 仅视觉生命周期；后台暂停不代表取消业务请求。
 class CampusMotion extends StatefulWidget {

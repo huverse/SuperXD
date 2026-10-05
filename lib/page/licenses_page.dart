@@ -5,6 +5,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 // [人工决策-2026-09-25 16:24:31] 应用署名按两行展示，LicenseRegistry原始版权和许可正文完整保留。
@@ -91,7 +92,7 @@ class _CampusLicensesPageState extends State<CampusLicensesPage> {
                 child: CampusSurface(
                   onTap: () => Navigator.push(
                     context,
-                    MaterialPageRoute<void>(
+                    CampusPageRoute<void>(
                       builder: (context) => _LicenseDetail(
                         package: package.key,
                         entries: package.value,

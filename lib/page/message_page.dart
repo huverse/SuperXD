@@ -15,6 +15,7 @@ import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_refresh.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -61,14 +62,14 @@ class _MessagePageState extends State<MessagePage> {
 
   // 从会话、添加好友返回时刷新一次：期间可能有新消息或新好友。
   Future<void> _open(String friendId) async {
-    await Navigator.of(context, rootNavigator: true).push(MaterialPageRoute<void>(
+    await Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(
       builder: (_) => ConversationPage(social: _social, friendId: friendId, gateway: widget.gateway, openVideo: widget.openVideo),
     ));
     if (mounted) await _refresh();
   }
 
   Future<void> _add() async {
-    final friendId = await Navigator.of(context, rootNavigator: true).push<String>(MaterialPageRoute(builder: (_) => FriendAddPage(social: _social, scan: widget.scan)));
+    final friendId = await Navigator.of(context, rootNavigator: true).push<String>(CampusPageRoute(builder: (_) => FriendAddPage(social: _social, scan: widget.scan)));
     if (!mounted) return;
     if (friendId != null) {
       await _open(friendId);
@@ -230,12 +231,12 @@ class _FriendList extends StatelessWidget {
     final colors = CampusPalette.of(context);
     final inset = MediaQuery.paddingOf(context).bottom;
     final friends = social.friends;
-    return RefreshIndicator(
-      onRefresh: onRefresh,
-      child: CampusScrollFade(bottom: inset, child: ListView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset),
-        children: [
+    // 下拉刷新用应用自己的曲线动效（见 campus_refresh.dart），不用 Material 转圈。
+    return CampusScrollFade(bottom: inset, child: CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+      slivers: [
+        CampusRefreshControl(onRefresh: onRefresh),
+        SliverPadding(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), sliver: SliverList.list(children: [
           Row(children: [
             Expanded(child: Text('我：${social.profile?.nickname ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant))),
             FilledButton.icon(style: campusProminent, onPressed: onAdd, icon: const CampusIcon(CampusIcons.addFriend), label: const Text('添加好友')),
@@ -250,9 +251,9 @@ class _FriendList extends StatelessWidget {
             CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
               for (final friend in friends) _FriendRow(friend: friend, onTap: () => onOpen(friend.deviceId)),
             ])),
-        ],
-      )),
-    );
+        ])),
+      ],
+    ));
   }
 }
 

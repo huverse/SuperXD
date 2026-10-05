@@ -134,7 +134,7 @@ class _ConversationPageState extends State<ConversationPage> {
     final card = message.card;
     switch (card) {
       case ScheduleShare():
-        Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => FriendSchedulePage(
+        Navigator.of(context).push(CampusPageRoute<void>(builder: (_) => FriendSchedulePage(
           friendName: message.outgoing ? '我' : _friend?.displayName ?? '好友',
           share: card,
           sharedAt: message.createTime,

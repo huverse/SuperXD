@@ -12,7 +12,8 @@ class AnimatedBranches extends StatefulWidget {
 }
 
 class _AnimatedBranchesState extends State<AnimatedBranches> with SingleTickerProviderStateMixin {
-  late final _controller = AnimationController(vsync: this, duration: const Duration(milliseconds: 300), value: 1);
+  // 分支首次进入要先建页面，计时从首帧画完后开始，同页面转场。
+  late final _controller = AnimationController(vsync: CampusFirstFrameVsync(this), duration: const Duration(milliseconds: 300), value: 1);
   // 曲线同页面转场（临界阻尼弹簧，先快后慢），见 campus_motion.dart。
   late final _curve = CurvedAnimation(parent: _controller, curve: campusSpringCurve);
   int? _previous;

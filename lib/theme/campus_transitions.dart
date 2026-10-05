@@ -169,7 +169,43 @@ class _CampusBackGestureState extends State<_CampusBackGesture> with WidgetsBind
 }
 
 // [人工决策-2026-09-25 17:43:48] GoRouter与push统一Material路由契约，旧页在完整进度内退场，不前半段抢先消失。
-MaterialPage<void> campusPage({required LocalKey key, required Widget child}) => MaterialPage<void>(key: key, child: child);
+MaterialPage<void> campusPage({required LocalKey key, required Widget child}) => _CampusPage<void>(key: key, child: child);
+
+// 全应用页面路由一律用它（GoRouter 页面经 campusPage），不直接用 MaterialPageRoute：契约与转场同 Material，
+// 只是转场计时从新页首帧画完后开始，首帧再慢也能完整滑入，不会硬切（见 CampusFirstFrameVsync）。
+class CampusPageRoute<T> extends MaterialPageRoute<T> {
+  CampusPageRoute({required super.builder, super.settings});
+  @override
+  AnimationController createAnimationController() => _firstFrameController(this);
+}
+
+AnimationController _firstFrameController(PageRoute<dynamic> route) => AnimationController(
+  duration: route.transitionDuration,
+  reverseDuration: route.reverseTransitionDuration,
+  debugLabel: route.debugLabel,
+  vsync: CampusFirstFrameVsync(route.navigator!),
+);
+
+class _CampusPage<T> extends MaterialPage<T> {
+  const _CampusPage({required super.key, required super.child});
+  @override
+  Route<T> createRoute(BuildContext context) => _CampusPageBasedRoute<T>(page: this);
+}
+
+class _CampusPageBasedRoute<T> extends PageRoute<T> with MaterialRouteTransitionMixin<T> {
+  _CampusPageBasedRoute({required MaterialPage<T> page}) : super(settings: page);
+  MaterialPage<T> get _page => settings as MaterialPage<T>;
+  @override
+  Widget buildContent(BuildContext context) => _page.child;
+  @override
+  bool get maintainState => _page.maintainState;
+  @override
+  bool get fullscreenDialog => _page.fullscreenDialog;
+  @override
+  String get debugLabel => '${super.debugLabel}(${_page.name})';
+  @override
+  AnimationController createAnimationController() => _firstFrameController(this);
+}
 
 class CampusPageTransitions extends PageTransitionsBuilder {
   const CampusPageTransitions();

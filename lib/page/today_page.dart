@@ -1,5 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 
 import 'package:superxd/domain/period_spans.dart';
 import 'package:superxd/domain/week.dart';
@@ -12,6 +15,7 @@ import 'package:superxd/theme/campus_glass_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_clock.dart';
@@ -76,7 +80,8 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
       generation == _readGeneration &&
       (widget.isAccountCurrent?.call() ?? true);
 
-  // [人工决策-2026-09-25 21:16:32] 上滑下一天、下滑上一天；日期与标题同栏，圆形上箭头归位；当前学期范围、保留浏览日及午夜仅跟随今天不变。
+  // [人工决策-2026-09-25 21:16:32] 上滑下一天、下滑上一天；日期与标题同栏；当前学期范围、保留浏览日及午夜仅跟随今天不变。
+  // 原“圆形上箭头归位”已由 2026-10-05 23:16:48 的人工决策改为底部居中“今天”胶囊，见 _layout。
   void _updateToday() {
     final today = _campusDay();
     if (_today == today) return;
@@ -424,9 +429,10 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
               ? Padding(
                   padding: const EdgeInsets.only(bottom: 12),
                   child: _Card(
-                    child: day != _today && spans.isEmpty ? const Text('当天暂无课程') : _NextClass(
+                    child: day != _today && spans.isEmpty ? const Text('当天暂无课程') : _ClassNow(
                       spans: spans,
                       bells: _bells,
+                      date: day,
                       now: widget.now,
                     ),
                   ),
@@ -441,14 +447,20 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     final date = parseIsoDate(day);
     final weekday = const ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][date.weekday - 1];
     final year = date.year == parseIsoDate(_today).year ? '' : '${date.year}年';
+    // 看别的日子时在日期下注明离今天多远，和底部“今天”胶囊的箭头方向一起说明今天在哪边。
+    final offset = date.difference(parseIsoDate(_today)).inDays;
+    final relative = switch (offset) { 0 => null, 1 => '明天', -1 => '昨天', 2 => '后天', -2 => '前天', > 0 => '$offset天后', _ => '${-offset}天前' };
     return Semantics(
-        key: ValueKey('today-date-$day'), label: '$day $weekday', liveRegion: true,
+        key: ValueKey('today-date-$day'), label: '$day $weekday${relative == null ? '' : ' $relative'}', liveRegion: true,
         customSemanticsActions: {
           if (_covered(formatIsoDate(date.subtract(const Duration(days: 1))))) const CustomSemanticsAction(label: '前一天') : () => _step(-1),
           if (_covered(formatIsoDate(date.add(const Duration(days: 1))))) const CustomSemanticsAction(label: '下一天') : () => _step(1),
         },
         // 日期快照保留布局状态，但颜色订阅当前主题，不能把创建快照时的明暗色固化。
-        child: ExcludeSemantics(child: Center(child: Builder(builder: (context) => Text('$year${date.month}月${date.day}日 $weekday', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurface))))),
+        child: ExcludeSemantics(child: Center(child: Builder(builder: (context) => Column(mainAxisSize: MainAxisSize.min, children: [
+          Text('$year${date.month}月${date.day}日 $weekday', textAlign: TextAlign.center, maxLines: 1, style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurface)),
+          if (relative != null) Text(relative, textAlign: TextAlign.center, maxLines: 1, style: TextStyle(fontSize: 14, height: 1.2, color: CampusPalette.of(context).onSurfaceVariant)),
+        ])))),
     );
   }
 
@@ -475,10 +487,16 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
       // [人工决策-2026-09-27 17:28:58] 切日只保留页面直接交接，不再叠胶囊让位与回位动画；状态胶囊、归位按钮保持。
       Expanded(child: Stack(fit: StackFit.expand, children: [
         Positioned.fill(child: body),
-        Positioned(right: 16, bottom: hintHeight + 12 + MediaQuery.paddingOf(context).bottom, child: IgnorePointer(ignoring: _day == _today && !previewing, child: ExcludeSemantics(excluding: _day == _today && !previewing, child: CampusGlassPresence(
+        // [人工决策-2026-10-05 23:16:48] 回今天改为底栏上方居中的玻璃胶囊“今天”，取代右下圆形上箭头（用户选定，同 X、Telegram 的“回到最新”）：
+        // 左右对称；箭头指向今天所在方向（看之后的日子朝上、之前的日子朝下，与上下滑切日一致）；出现时自下浮起并显形；顶栏日期下注明相对天数。
+        Positioned(left: 0, right: 0, bottom: hintHeight + 12 + MediaQuery.paddingOf(context).bottom, child: Center(child: _TodayReturn(
           visible: _day != _today || previewing,
-          child: CampusGlassCircleButton(key: const ValueKey('today-reset'), icon: const CampusIcon(CampusIcons.arrowUp, size: 24), label: '回今天', onPressed: () => _selectDay(_campusDay(), recenter: true)),
-        )))),
+          upward: _day.compareTo(_today) >= 0,
+          onPressed: () {
+            HapticFeedback.selectionClick();
+            _selectDay(_campusDay(), recenter: true);
+          },
+        ))),
       ])),
     ]);
   }
@@ -499,10 +517,13 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
 
 }
 
-class _NextClass extends StatelessWidget {
-  const _NextClass({required this.spans, required this.bells, this.now});
+// 今天页顶部的“此刻”卡（同 iOS 实时活动、Google 日历的“下一项”）：上课中或下一节的课名、地点，
+// 大号剩余时长（小时分钟）加起止时刻进度条；课间画上一节下课到下一节上课的进度，第一节课前只显示时长。
+class _ClassNow extends StatelessWidget {
+  const _ClassNow({required this.spans, required this.bells, required this.date, this.now});
   final List<PeriodSpan> spans;
   final List<BellPeriod> bells;
+  final String date;
   final DateTime Function()? now;
 
   @override
@@ -516,46 +537,133 @@ class _NextClass extends StatelessWidget {
   }
 
   Widget _summary(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
     final occupied = spans.where((span) => !span.empty);
     if (occupied.isEmpty) return const Text('今天暂无课程');
     // 作息不完整时不把“第3节”当钟点比较，也不猜测下一节或已下课。
     if (occupied.any((span) => meetingTime(bells, span.meeting!) == null)) {
       return const Text('今日课程');
     }
-    final instant = campusInstant(
-      now?.call() ?? LiveClock.maybeOf(context)?.value,
-    );
-    final minutes = instant.hour * 60 + instant.minute;
-    final active = occupied
-        .where((span) => meetingTime(bells, span.meeting!)!.endMinute > minutes)
-        .firstOrNull;
-    if (active == null) return const Text('今天的课上完了');
-    final time = meetingTime(bells, active.meeting!)!;
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        Text(
-          time.startMinute <= minutes ? '正在上课' : '下一节',
-          style: TextStyle(
-            fontSize: 14,
-            color: CampusPalette.of(context).onSurfaceVariant,
-          ),
+    final moment = classMoment(spans, bells, date, now?.call() ?? LiveClock.maybeOf(context)?.value ?? DateTime.now());
+    final focus = moment.focus;
+    if (focus == null) {
+      return Row(children: [
+        CampusIcon(CampusIcons.success, color: palette.primary, size: 20),
+        const SizedBox(width: 10),
+        const Expanded(child: Text('今天的课上完了')),
+      ]);
+    }
+    final remaining = classDuration(moment.remainingMinutes);
+    final suffix = moment.ongoing ? '后下课' : '后上课';
+    final fraction = moment.fraction;
+    const figures = [FontFeature.tabularFigures()];
+    // 同 iOS 实时活动：课的信息在左，剩余时长在右上（数字大、单位小），起止时刻标在进度条两端。
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${moment.ongoing ? '上课中' : '下一节'} · 第${focus.start}–${focus.end}节', style: secondary),
+          const SizedBox(height: 4),
+          Text(focus.course!.courseName, style: Theme.of(context).textTheme.titleLarge),
+          const SizedBox(height: 2),
+          Text('${focus.meeting!.place} · ${focus.course!.teacherName}', style: secondary),
+        ])),
+        const SizedBox(width: 12),
+        Semantics(
+          label: '$remaining$suffix',
+          excludeSemantics: true,
+          child: Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
+            Text.rich(TextSpan(children: [
+              for (final (text, number) in classDurationParts(moment.remainingMinutes))
+                TextSpan(text: text, style: number
+                    ? TextStyle(fontSize: 28, fontWeight: FontWeight.w600, height: 1.15, color: palette.onSurface, fontFeatures: figures)
+                    : TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.onSurface)),
+            ])),
+            Text(suffix, style: secondary),
+          ]),
         ),
-        const SizedBox(height: 4),
-        Text(
-          active.course!.courseName,
-          style: Theme.of(context).textTheme.titleLarge,
-        ),
-        const SizedBox(height: 4),
-        Text(
-          '${time.label}  ${active.meeting!.place}  ${active.course!.teacherName}',
-          style: TextStyle(
-            fontSize: 14,
-            color: CampusPalette.of(context).onSurfaceVariant,
-          ),
-        ),
+      ]),
+      if (fraction != null) ...[
+        const SizedBox(height: 12),
+        ExcludeSemantics(child: DefaultTextStyle.merge(style: secondary.copyWith(fontFeatures: figures), child: Row(children: [
+          Text(moment.fromLabel),
+          const SizedBox(width: 10),
+          Expanded(child: _TimeTrack(fraction: fraction)),
+          const SizedBox(width: 10),
+          Text(moment.targetLabel),
+        ]))),
       ],
-    );
+    ]);
+  }
+}
+
+// 起止时刻进度条：浅轨道上填激活色，末端一个小圆点标出此刻；随分钟时钟平滑推进，减少动画时直接到位。
+class _TimeTrack extends StatelessWidget {
+  const _TimeTrack({required this.fraction});
+  final double fraction;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    return SizedBox(height: 10, child: TweenAnimationBuilder<double>(
+      tween: Tween(end: fraction),
+      duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 600),
+      curve: Curves.easeOutCubic,
+      builder: (context, value, _) => CustomPaint(size: Size.infinite, painter: _TimeTrackPainter(value: value, track: palette.primary.withValues(alpha: .18), fill: palette.accent, knob: palette.surface)),
+    ));
+  }
+}
+
+class _TimeTrackPainter extends CustomPainter {
+  _TimeTrackPainter({required this.value, required this.track, required this.fill, required this.knob});
+  final double value;
+  final Color track;
+  final Color fill;
+  final Color knob;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    const bar = 6.0;
+    final top = (size.height - bar) / 2;
+    final paint = Paint();
+    canvas.drawRRect(RRect.fromLTRBR(0, top, size.width, top + bar, const Radius.circular(bar / 2)), paint..color = track);
+    final end = size.width * value;
+    if (end > 0) canvas.drawRRect(RRect.fromLTRBR(0, top, math.max(end, bar), top + bar, const Radius.circular(bar / 2)), paint..color = fill);
+    final center = Offset(end.clamp(size.height / 2, size.width - size.height / 2), size.height / 2);
+    canvas.drawCircle(center, size.height / 2, paint..color = fill);
+    canvas.drawCircle(center, size.height / 2 - 2.5, paint..color = knob);
+  }
+
+  @override
+  bool shouldRepaint(_TimeTrackPainter oldDelegate) => oldDelegate.value != value || oldDelegate.track != track || oldDelegate.fill != fill || oldDelegate.knob != knob;
+}
+
+// 回今天胶囊：导航层玻璃胶囊（箭头加“今天”），隐藏时不可点、不进读屏；显隐用玻璃显形加 12dp 上浮，减少动画时直接切换。
+class _TodayReturn extends StatelessWidget {
+  const _TodayReturn({required this.visible, required this.upward, required this.onPressed});
+  final bool visible;
+  final bool upward;
+  final VoidCallback onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final duration = MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 300);
+    return IgnorePointer(ignoring: !visible, child: ExcludeSemantics(excluding: !visible, child: AnimatedSlide(
+      offset: visible ? Offset.zero : const Offset(0, .25),
+      duration: duration,
+      curve: campusSpringCurve,
+      child: CampusGlassPresence(visible: visible, child: CampusChrome(child: Semantics(
+        label: '回今天',
+        button: true,
+        excludeSemantics: true,
+        child: FilledButton.icon(
+          key: const ValueKey('today-reset'),
+          onPressed: onPressed,
+          icon: AnimatedRotation(turns: upward ? 0 : .5, duration: duration, curve: campusSpringCurve, child: const CampusIcon(CampusIcons.arrowUp, size: 20)),
+          label: const Text('今天'),
+        ),
+      ))),
+    )));
   }
 }
 
@@ -565,6 +673,6 @@ class _Card extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return CampusSurface(padding: const EdgeInsets.all(16), child: child);
+    return SizedBox(width: double.infinity, child: CampusSurface(padding: const EdgeInsets.all(16), child: child));
   }
 }

@@ -214,12 +214,25 @@ void main() {
     await tester.pumpAndSettle();
     expect(_date('2026-09-26'), findsOneWidget);
     expect(find.text('星期6的课'), findsOneWidget);
-    expect(find.text('下一节'), findsNothing);
-    expect(find.textContaining('距离上课'), findsNothing);
+    expect(find.textContaining('下一节'), findsNothing);
+    expect(find.textContaining('后上课'), findsNothing);
+    // 回今天是底栏上方水平居中的胶囊，箭头指向今天所在方向；日期下注明相对天数。
+    final width = tester.getSize(find.byType(TodayPage)).width;
+    expect(tester.getCenter(find.byKey(const ValueKey('today-reset'))).dx, closeTo(width / 2, 1));
+    expect(find.text('明天'), findsOneWidget);
+    expect(tester.widget<AnimatedRotation>(find.descendant(of: find.byKey(const ValueKey('today-reset')), matching: find.byType(AnimatedRotation))).turns, 0);
     await _swipeDate(tester, '2026-09-26', 100);
     expect(_date('2026-09-27'), findsOneWidget);
+    expect(find.text('后天'), findsOneWidget);
     await _swipeDate(tester, '2026-09-27', -100);
     expect(_date('2026-09-26'), findsOneWidget);
+    await tester.tap(find.byKey(const ValueKey('today-reset')));
+    await tester.pumpAndSettle();
+    await _swipeDate(tester, '2026-09-25', -100);
+    await _swipeDate(tester, '2026-09-24', -100);
+    await _swipeDate(tester, '2026-09-23', -100);
+    expect(find.text('3天前'), findsOneWidget);
+    expect(tester.widget<AnimatedRotation>(find.descendant(of: find.byKey(const ValueKey('today-reset')), matching: find.byType(AnimatedRotation))).turns, .5);
     await tester.tap(find.byKey(const ValueKey('today-reset')));
     await tester.pumpAndSettle();
     expect(_date('2026-09-25'), findsOneWidget);
@@ -515,13 +528,38 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('today-reset')));await tester.pumpAndSettle();
     await _swipeDate(tester, '2026-09-25', -100);
     expect(find.text('当天暂无课程'), findsOneWidget);
-    expect(find.text('下一节'), findsNothing);
-    expect(find.textContaining('距离上课'), findsNothing);
+    expect(find.textContaining('下一节'), findsNothing);
+    expect(find.textContaining('后上课'), findsNothing);
+  });
+
+  testWidgets('此刻卡：上课中按小时分钟显示剩余与起止进度条，课前显示下一节，下课后提示课上完了', (tester) async {
+    var now = DateTime.utc(2026, 9, 25, 0, 20);
+    await _mount(tester, _Gateway(), now: () => now);
+    expect(find.text('上课中 · 第1–2节'), findsOneWidget);
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '1小时25分后下课'), findsOneWidget);
+    expect(find.text('8:00'), findsNWidgets(2));
+    expect(find.text('9:45'), findsWidgets);
+    expect(find.textContaining('距离'), findsNothing);
+    // 窄屏特大字号时右侧时长不挤爆课名。
+    await tester.pumpWidget(const SizedBox());
+    await _mount(tester, _Gateway(), now: () => now, size: const Size(320, 640), scale: 1.4);
+    expect(find.text('上课中 · 第1–2节'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    now = DateTime.utc(2026, 9, 24, 23, 15);
+    await _mount(tester, _Gateway(), now: () => now);
+    expect(find.text('下一节 · 第1–2节'), findsOneWidget);
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '45分钟后上课'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    now = DateTime.utc(2026, 9, 25, 2);
+    await _mount(tester, _Gateway(), now: () => now);
+    expect(find.text('今天的课上完了'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('日期同栏且不再创建独立切日胶囊，预览不提交', (tester) async {
     await _mount(tester, _Gateway());
-    expect(tester.getCenter(_date('2026-09-25')).dy, closeTo(tester.getCenter(find.text('今天')).dy, 1));
+    expect(tester.getCenter(_date('2026-09-25')).dy, closeTo(tester.getCenter(find.text('今天').first).dy, 1));
     final gesture = await tester.startGesture(tester.getCenter(_date('2026-09-25')));
     await gesture.moveBy(const Offset(0, -24)); await tester.pump();
     await gesture.moveBy(const Offset(0, -40)); await tester.pump();

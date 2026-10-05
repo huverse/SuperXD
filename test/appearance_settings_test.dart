@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -173,6 +174,13 @@ void main() {
         await tester.pumpWidget(MaterialApp(theme: campusTheme(palette: palette, fontFamily: settings.fontFamily), builder: (context, child) => DisplayScope(settings: settings, child: MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.4)), child: child!)), home: AppearancePage(key: ValueKey('${palette.id}-$font'))));
         await tester.pumpAndSettle(); await tester.scrollUntilVisible(find.text('文学衬线'), 220, scrollable: find.byType(Scrollable).first); await tester.pumpAndSettle();
         expect(tester.takeException(), isNull, reason: '${palette.id}-$font');
+        // 字体预览是图，页面上的文字只用正在用的字体：没在用的内置字体首次排版要在主线程解析全部字重，首帧会卡住、转场被吃掉。
+        final families = <String?>{};
+        for (final paragraph in tester.allRenderObjects.whereType<RenderParagraph>()) {
+          paragraph.text.visitChildren((span) { families.add(span.style?.fontFamily); return true; });
+        }
+        expect(families.difference({null, settings.fontFamily, 'packages/lucide_icons_flutter/Lucide'}), isEmpty, reason: '${palette.id}-$font');
+        expect(find.byWidgetPredicate((widget) => widget is Image && '${widget.image}'.contains('font_previews')), findsNWidgets(2));
         await tester.pumpWidget(const SizedBox()); settings.dispose();
       }
     }
