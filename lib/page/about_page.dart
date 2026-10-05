@@ -71,7 +71,7 @@ class _AboutPageState extends State<AboutPage> {
           ])),
           const SizedBox(height: 16),
           CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
-            row(CampusIcons.info, '开源许可', () => Navigator.push(context, MaterialPageRoute<void>(builder: (context) => const ThirdPartyPage()))),
+            row(CampusIcons.info, '开源许可', () => Navigator.push(context, CampusPageRoute<void>(builder: (context) => const ThirdPartyPage()))),
             row(CampusIcons.sourceCode, '源代码', () => _open(sourceRepositoryUrl), external: true),
             row(CampusIcons.feedback, '反馈问题', () => _open('$sourceRepositoryUrl/issues'), external: true),
           ])),

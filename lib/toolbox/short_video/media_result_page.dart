@@ -138,7 +138,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
               TextButton.icon(
                 onPressed: () => Navigator.push(
                   context,
-                  MaterialPageRoute<void>(
+                  CampusPageRoute<void>(
                     builder: (_) => MediaPreview(media: media),
                   ),
                 ),
@@ -340,7 +340,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
               onPressed: () async {
                 final task = await Navigator.push<ToolboxDownload>(
                   context,
-                  MaterialPageRoute(
+                  CampusPageRoute(
                     builder: (_) => DownloadsPage(runtime: widget.runtime),
                   ),
                 );
@@ -500,7 +500,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
                                     child: InkWell(
                                       onTap: () => Navigator.push(
                                         context,
-                                        MaterialPageRoute<void>(
+                                        CampusPageRoute<void>(
                                           builder: (_) => GalleryPreview(
                                             images: images,
                                             initialIndex: index,

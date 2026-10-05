@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/download/android_file_publisher.dart';
 import 'package:superxd/toolbox/download/downloads_page.dart';
 import 'package:superxd/toolbox/download/background_transfer.dart';
@@ -135,7 +136,7 @@ class _VerifyPage extends StatelessWidget {
           TextButton(
             onPressed: () => Navigator.push(
               context,
-              MaterialPageRoute<ToolboxDownload>(
+              CampusPageRoute<ToolboxDownload>(
                 builder: (_) => DownloadsPage(runtime: runtime),
               ),
             ),

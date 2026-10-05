@@ -32,7 +32,7 @@ QrImage inviteQrImage(String text) {
 // 扫码页的入口函数可注入，测试用假扫码。
 typedef InviteScanner = Future<InviteCode?> Function(BuildContext context);
 
-Future<InviteCode?> scanInviteWithCamera(BuildContext context) => Navigator.of(context).push<InviteCode>(MaterialPageRoute(builder: (_) => const QrScanPage()));
+Future<InviteCode?> scanInviteWithCamera(BuildContext context) => Navigator.of(context).push<InviteCode>(CampusPageRoute(builder: (_) => const QrScanPage()));
 
 // 添加好友：出示自己的二维码（5 分钟有效，可刷新），或扫对方的二维码。
 // 出示期间每 3 秒拉一次信箱，对方一扫就原地提示“已添加”；离开页面即作废二维码。返回新加好友的设备号。

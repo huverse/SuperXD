@@ -127,7 +127,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
       }
       final again = await Navigator.push<Object?>(
         context,
-        MaterialPageRoute(
+        CampusPageRoute(
           builder: (_) => MediaResultPage(
             runtime: widget.runtime,
             outcome: controller.outcome!,
@@ -161,7 +161,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
   Future<void> _downloads() async {
     final task = await Navigator.push<ToolboxDownload>(
       context,
-      MaterialPageRoute(builder: (_) => DownloadsPage(runtime: widget.runtime)),
+      CampusPageRoute(builder: (_) => DownloadsPage(runtime: widget.runtime)),
     );
     if (task != null && mounted) {
       await _open(task.sourceUrl.toString(), task.providerId, refresh: true);
@@ -171,7 +171,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
   Future<void> _history() async {
     final row = await Navigator.push<Map<String, Object?>>(
       context,
-      MaterialPageRoute(
+      CampusPageRoute(
         builder: (_) => ParseHistoryPage(
           store: widget.runtime.store,
           providers: widget.runtime.coordinator.providers,

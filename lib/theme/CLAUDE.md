@@ -26,10 +26,10 @@
   - wallpaperVeilAlphas 按当前配色算每格最小淡化透明度（可读下限）：衬底色为 backgroundTop，叠在最不利的像素上，正文、次要文字和主色文字都不低于 4.8:1（给玻璃栏和取样留余量）。
   - wallpaperVeilAlpha 把用户透明度叠在下限之上（下限到完全盖住之间插值），单调不低于下限。
   - 每格结果先 3×3 取最大再 3×3 取平均：过渡平滑不显网格，且每格仍不低于所需。改动后要在模拟器上用高反差测试图复测。
-- campus_motion.dart：CampusMotion 管理视觉动效的生命周期；另有玻璃控件专用的弹簧令牌（只给玻璃控件用，其余动效不回弹）；campusSpringCurve 是页面与底栏分支转场的曲线（临界阻尼弹簧归一化到固定时长，先快后慢、不回弹）。以下任一情况都不播放装饰动效：减少动画、后台、分支不可见、当前路由不在最上层。后台暂停动效不代表取消业务请求。
+- campus_motion.dart：CampusMotion 管理视觉动效的生命周期；另有玻璃控件专用的弹簧令牌（只给玻璃控件用，其余动效不回弹）；campusSpringCurve 是页面与底栏分支转场的曲线（临界阻尼弹簧归一化到固定时长，先快后慢、不回弹）。CampusFirstFrameVsync 让转场计时从新内容首帧画完后开始（同 Android、iOS 原生），首帧慢时扣掉超出一帧的部分，转场不被吃掉。以下任一情况都不播放装饰动效：减少动画、后台、分支不可见、当前路由不在最上层。后台暂停动效不代表取消业务请求。
 - campus_transitions.dart：
   - 统一时长：页面进入 360ms、返回 320ms，弹层 300ms。
-  - campusPage 让 GoRouter 与 push 共用同一套 Material 路由契约。
+  - campusPage 让 GoRouter 与 push 共用同一套 Material 路由契约；push 一律用 CampusPageRoute，两者的计时都经 CampusFirstFrameVsync。不直接用 MaterialPageRoute（test/code_conventions_test.dart 守护）。
   - CampusDialogRoute、showCampusDialog：统一的弹窗转场。
   - campusPageTransition：新旧页整屏并排平移、互不重叠，不淡入淡出；曲线为 campusSpringCurve，返回用翻转曲线；跟手返回期间及松手后的收尾按进度线性平移。
   - 跟手返回（CampusPageTransitions 内的 _CampusBackGesture）：Android 14 起的预测性返回，同 iOS、鸿蒙侧滑返回，页面随手指平移、松手从当前位置续接返回或回弹。只有最前面的页面响应（栈顶、允许返回、TickerMode 开启）；不用路由自带的 handleCommitBackGesture，它会把进度重置到 1 再倒放。需要 AndroidManifest 的 enableOnBackInvokedCallback。
@@ -40,6 +40,7 @@
   - showCampusDialog 的 glassPanel 默认为真，表示内容是玻璃面板、由面板自己显隐；日期选择器等系统弹窗传 false，仍整体改不透明度。
   - showCampusSheet、CampusSheetRoute：底部弹层，沿用系统弹层的拖动关闭、返回键与读屏，背景透明；内容放进 CampusSheetPanel（四周留 8 悬浮的 overlay 玻璃，圆角 24）。
   - CampusDialogRoute、CampusSheetRoute 经 CampusOverlayDepthRoute 登记 campusOverlayDepth。
+- campus_refresh.dart：CampusRefreshControl 下拉刷新（基于 CupertinoSliverRefreshControl，同 iOS：列表被拉下、拉够即刷新、完成后收起），放在 CustomScrollView 第一个 sliver。指示器是曲线动效：拉动时 CurveRevealPainter 按比例一笔描出玫瑰曲线，拉够轻震，刷新中换 CampusLoader 循环，完成后缩小淡出；指示至少停留 600ms。
 - campus_loading.dart：
   - CampusLoader 绘制曲线加载动画，CampusLoading 是带文字的加载状态。
   - CampusBusyContent 让按钮在操作期间原地切换为忙碌态。

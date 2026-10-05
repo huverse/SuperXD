@@ -219,7 +219,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     final term = _term;
     if (term == null || _loading) return;
     final selection = _selection;
-    await Navigator.push<bool>(context, MaterialPageRoute(builder: (context) => ScheduleEditorPage(
+    await Navigator.push<bool>(context, CampusPageRoute(builder: (context) => ScheduleEditorPage(
       gateway: widget.gateway, term: term, courseId: course == null ? null : courseKey(course), slot: slot,
       selectedWeek: _start == null ? null : weekIndex(_start!, _selection.date),
     )));

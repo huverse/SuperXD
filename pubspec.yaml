@@ -113,6 +113,7 @@ flutter:
     - assets/fonts/LICENSE.txt
     - assets/fonts/noto_serif_sc_license.txt
     - assets/third_party_notices.txt
+    - assets/font_previews/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

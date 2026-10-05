@@ -20,7 +20,9 @@ import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/invite_code.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_store.dart';
+import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_refresh.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
 import 'fake_relay.dart';
@@ -136,6 +138,37 @@ void main() {
     expect(find.text('打开'), findsOneWidget);
     expect(find.textContaining('已成为好友'), findsOneWidget);
     expect(alice.unread, 0);
+  });
+
+  testWidgets('下拉刷新：应用自己的曲线指示随拉动描出，拉够即刷新收到新卡片，完成后收起；不用 Material 转圈', (tester) async {
+    final relay = FakeRelay();
+    final (alice, bob) = (await tester.runAsync(() => friends(relay)))!;
+    await tester.pumpWidget(app(Scaffold(body: MessagePage(social: alice))));
+    await advanceUntil(tester, () => find.text('小明').evaluate().isNotEmpty);
+    await tester.runAsync(() => bob.send(alice.deviceId!, const VideoShare(sourceUrl: 'https://v.example.com/2', title: '新作品', author: '作者乙', platform: 'douyin', kind: 'video')));
+    expect(find.text('[视频] 新作品'), findsNothing);
+    final reveal = find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is CurveRevealPainter);
+    final rest = tester.getTopLeft(find.text('小明')).dy;
+    final gesture = await tester.startGesture(tester.getCenter(find.text('小明')));
+    await gesture.moveBy(const Offset(0, 20));
+    await gesture.moveBy(const Offset(0, 40));
+    await tester.pump();
+    // 没拉够：只描出一部分曲线，还没有开始刷新。
+    expect(reveal, findsOneWidget);
+    final partial = (tester.widget<CustomPaint>(reveal).painter! as CurveRevealPainter).fraction;
+    expect(partial, inExclusiveRange(0, 1));
+    await gesture.moveBy(const Offset(0, 160));
+    await tester.pump();
+    await gesture.up();
+    await tester.pump();
+    expect(find.byType(CampusLoader), findsOneWidget);
+    expect(find.byType(RefreshProgressIndicator), findsNothing);
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+    await advanceUntil(tester, () => find.text('[视频] 新作品').evaluate().isNotEmpty);
+    await advanceUntil(tester, () => find.byType(CampusLoader).evaluate().isEmpty);
+    await tester.pump(const Duration(seconds: 1));
+    expect(tester.getTopLeft(find.text('小明')).dy, closeTo(rest, .5));
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('界面配置卡片：套用立即生效，提示条撤销回到原样', (tester) async {

@@ -5,6 +5,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/page/licenses_page.dart';
 import 'package:superxd/theme/campus_loading.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 
 class ThirdPartyPage extends StatefulWidget {
   const ThirdPartyPage({super.key});
@@ -36,7 +37,7 @@ class _ThirdPartyPageState extends State<ThirdPartyPage> {
             padding: const EdgeInsets.all(16),
             children: [
               Align(alignment: AlignmentDirectional.centerStart, child: OutlinedButton.icon(
-                onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (context) => const CampusLicensesPage())),
+                onPressed: () => Navigator.push(context, CampusPageRoute<void>(builder: (context) => const CampusLicensesPage())),
                 icon: const CampusIcon(CampusIcons.info),
                 label: const Text('全部依赖许可'),
               )),

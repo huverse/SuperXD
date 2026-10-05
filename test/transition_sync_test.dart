@@ -96,7 +96,7 @@ void main() {
       home: const SizedBox.expand(child: Text('旧页面')),
     ));
     final width = tester.getSize(find.byType(MaterialApp)).width;
-    navigator.currentState!.push(MaterialPageRoute<void>(builder: (context) => const SizedBox.expand(child: Text('新页面'))));
+    navigator.currentState!.push(CampusPageRoute<void>(builder: (context) => const SizedBox.expand(child: Text('新页面'))));
     await tester.pump();
     for (final elapsed in [90, 90, 90]) {
       await tester.pump(Duration(milliseconds: elapsed));
@@ -117,6 +117,30 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('新页面'), findsNothing);
   });
+  // 首帧慢（首次加载字体、编译着色器、慢机型）时转场不能被首帧吃掉：计时从首帧画完后开始，新页仍从屏外完整滑入。
+  // 真实首帧耗时用忙等模拟（真实时钟），并让假时钟同样跨过这段时间，等同真机上次帧的时间戳。
+  testWidgets('新页首帧耗时 480ms 时，转场仍从首帧之后完整播放，不硬切', (tester) async {
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), navigatorKey: navigator, home: const SizedBox.expand(child: Text('旧页面'))));
+    final width = tester.getSize(find.byType(MaterialApp)).width;
+    var built = false;
+    navigator.currentState!.push(CampusPageRoute<void>(builder: (context) {
+      if (!built) {
+        built = true;
+        final watch = Stopwatch()..start();
+        while (watch.elapsedMilliseconds < 480) {}
+      }
+      return const SizedBox.expand(child: Text('新页面'));
+    }));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 480));
+    expect(tester.getTopLeft(find.text('新页面')).dx, greaterThan(width * .5));
+    await tester.pump(const Duration(milliseconds: 120));
+    final left = tester.getTopLeft(find.text('新页面')).dx;
+    expect(left, inExclusiveRange(0, width * .5));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('新页面')).dx, 0);
+  });
   // 模拟系统的预测性返回手势（Android 14 起），progress 为手指拖动进度。
   Future<void> backGesture(WidgetTester tester, String method, [double progress = 0]) async {
     final message = const StandardMethodCodec().encodeMethodCall(MethodCall(method, method == 'startBackGesture' || method == 'updateBackGestureProgress'
@@ -130,7 +154,7 @@ void main() {
     final navigator = GlobalKey<NavigatorState>();
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), navigatorKey: navigator, home: const SizedBox.expand(child: Text('旧页面'))));
     final width = tester.getSize(find.byType(MaterialApp)).width;
-    navigator.currentState!.push(MaterialPageRoute<void>(builder: (context) => const SizedBox.expand(child: Text('新页面'))));
+    navigator.currentState!.push(CampusPageRoute<void>(builder: (context) => const SizedBox.expand(child: Text('新页面'))));
     await tester.pumpAndSettle();
     await backGesture(tester, 'startBackGesture');
     await backGesture(tester, 'updateBackGestureProgress', .5);
@@ -166,11 +190,11 @@ void main() {
     await tester.pumpWidget(MaterialApp(
       theme: campusTheme(),
       navigatorKey: root,
-      home: Navigator(key: nested, onGenerateRoute: (_) => MaterialPageRoute<void>(builder: (context) => const Text('分支首页'))),
+      home: Navigator(key: nested, onGenerateRoute: (_) => CampusPageRoute<void>(builder: (context) => const Text('分支首页'))),
     ));
-    nested.currentState!.push(MaterialPageRoute<void>(builder: (context) => const Text('分支二级页')));
+    nested.currentState!.push(CampusPageRoute<void>(builder: (context) => const Text('分支二级页')));
     await tester.pumpAndSettle();
-    root.currentState!.push(MaterialPageRoute<void>(builder: (context) => const Text('顶层页')));
+    root.currentState!.push(CampusPageRoute<void>(builder: (context) => const Text('顶层页')));
     await tester.pumpAndSettle();
     await backGesture(tester, 'startBackGesture');
     await backGesture(tester, 'updateBackGestureProgress', .5);
