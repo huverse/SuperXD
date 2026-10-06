@@ -6,6 +6,9 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:superxd/domain/share_card.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
 import 'package:superxd/toolbox/download/android_file_publisher.dart';
 import 'package:superxd/toolbox/download/background_transfer.dart';
 import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
@@ -20,16 +23,28 @@ import 'package:superxd/domain/campus_log.dart';
 // 把作品分享给好友：百宝箱不感知私信，由组合根注入（为空时不显示分享入口）。
 typedef ToolboxVideoShare = Future<void> Function(BuildContext context, VideoShare video);
 
+// 扫码：相机页面在 page 层，百宝箱不依赖它，由组合根注入；返回二维码原文，取消返回空。
+typedef ToolboxQrScan = Future<String?> Function(BuildContext context);
+
 class ToolboxRuntime with WidgetsBindingObserver {
-  ToolboxRuntime({this.resourceSpecifications = const {}, this.shareVideo})
-    : coordinator = ParseCoordinator([BugpkVideoParser()]);
+  ToolboxRuntime({
+    this.resourceSpecifications = const {},
+    this.shareVideo,
+    this.scanQrCode,
+    ChaoxingAccounts? chaoxing,
+  }) : coordinator = ParseCoordinator([BugpkVideoParser()]) {
+    _chaoxing = chaoxing;
+  }
   ToolboxRuntime.testing({
     required ToolboxStore store,
     required ToolboxDownloadManager downloads,
     required ParseProvider parser,
     this.shareVideo,
+    this.scanQrCode,
+    ChaoxingAccounts? chaoxing,
   }) : coordinator = ParseCoordinator([parser]),
        resourceSpecifications = downloads.resources.specifications {
+    _chaoxing = chaoxing;
     _store = store;
     _downloads = downloads;
     _initialization = SynchronousFuture<void>(null);
@@ -37,6 +52,10 @@ class ToolboxRuntime with WidgetsBindingObserver {
   final Map<String, ToolboxResource> resourceSpecifications;
   final ParseCoordinator coordinator;
   final ToolboxVideoShare? shareVideo;
+  final ToolboxQrScan? scanQrCode;
+  // 学习通签到的账号闭环，随应用支持目录一起打开；测试可直接注入。
+  ChaoxingAccounts? _chaoxing;
+  ChaoxingAccounts? get chaoxing => _chaoxing;
   ToolboxStore? _store;
   ToolboxDownloadManager? _downloads;
   Future<void>? _initialization;
@@ -87,6 +106,10 @@ class ToolboxRuntime with WidgetsBindingObserver {
     }
     _store = store;
     _downloads = downloads;
+    _chaoxing ??= ChaoxingAccounts(
+      store: await ChaoxingStore.open(path.join(base.path, 'chaoxing.db')),
+      vault: SecureChaoxingVault(),
+    );
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -109,5 +132,6 @@ class ToolboxRuntime with WidgetsBindingObserver {
     coordinator.close();
     await _downloads?.close();
     await _store?.close();
+    await _chaoxing?.store.close();
   }
 }

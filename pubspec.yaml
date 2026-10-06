@@ -66,6 +66,9 @@ dependencies:
   mobile_scanner: ^7.4.2
   package_info_plus: ^10.2.2
   url_launcher: ^6.3.3
+  image: ^4.10.1
+  amap_map: ^1.0.15
+  x_amap_base: ^1.0.3
 
 dev_dependencies:
   flutter_test:

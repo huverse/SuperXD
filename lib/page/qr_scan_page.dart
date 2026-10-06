@@ -3,13 +3,19 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/appearance_page.dart';
-import 'package:superxd/social/invite_code.dart';
 import 'package:superxd/theme/campus_icons.dart';
 
-// 扫好友二维码：相机取景（识别在本机完成，ML Kit 内置模型、不联网），也可从相册选一张截图识别。
-// 只认 SuperXD 好友二维码，扫到其他内容原地提示，不跳转、不打开链接。返回解出的邀请。
+// 通用扫码页：相机取景（识别在本机完成，ML Kit 内置模型、不联网），也可从相册选一张截图识别。
+// 只把内容交给调用方的 accept 判断，认下的原样返回，不跳转、不打开链接；不认的原地提示后继续扫。
+// 好友二维码与课堂签到二维码共用这一页，accept 由调用方给（见 friend_add_page.dart 与 main.dart）。
+typedef QrAccept = String? Function(String raw);
+
 class QrScanPage extends StatefulWidget {
-  const QrScanPage({super.key});
+  const QrScanPage({super.key, this.hint, required this.accept});
+  final String? hint;
+
+  // 返回提示文案表示不认这个内容；返回 null 表示认下，页面随即关掉并把原文交给调用方。
+  final QrAccept accept;
   @override
   State<QrScanPage> createState() => _QrScanPageState();
 }
@@ -28,14 +34,16 @@ class _QrScanPageState extends State<QrScanPage> {
   void _accept(Iterable<Barcode> barcodes) {
     if (_done) return;
     for (final barcode in barcodes) {
-      final code = InviteCode.decode(barcode.rawValue ?? '');
-      if (code != null) {
+      final raw = barcode.rawValue ?? '';
+      if (raw.isEmpty) continue;
+      final rejected = widget.accept(raw);
+      if (rejected == null) {
         _done = true;
-        Navigator.pop(context, code);
+        Navigator.pop(context, raw);
         return;
       }
+      setState(() => _hint = rejected);
     }
-    if (barcodes.isNotEmpty) setState(() => _hint = '不是 SuperXD 好友二维码');
   }
 
   // 相册识别：复用壁纸的选图（系统照片选择器只给选中的那一张，不申请存储权限），识别完即删插件留在缓存里的副本。
@@ -94,7 +102,7 @@ class _QrScanPageState extends State<QrScanPage> {
               decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text(_hint ?? '将好友的二维码放入框内', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, color: onCamera)),
+                child: Text(_hint ?? widget.hint ?? '把二维码放入框内', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, color: onCamera)),
               ),
             ),
           ),

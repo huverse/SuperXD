@@ -1,4 +1,5 @@
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_page.dart';
 import 'package:superxd/toolbox/short_video/short_video_page.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
@@ -11,5 +12,11 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
     icon: CampusIcons.video,
     resource: runtime.resourceSpecifications['short_video'],
     builder: (context) => ShortVideoPage(runtime: runtime),
+  ),
+  ToolboxModule(
+    id: 'chaoxing_sign',
+    name: '学习通签到',
+    icon: CampusIcons.success,
+    builder: (context) => ChaoxingPage(runtime: runtime),
   ),
 ];

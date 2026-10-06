@@ -10,7 +10,7 @@
 
 # 定位
 
-- 校园课表与成绩 Flutter 应用。当前只有 Android 宿主，对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱，目前提供短视频解析与下载。
+- 校园课表与成绩 Flutter 应用。当前只有 Android 宿主，对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱，目前提供短视频解析与下载、学习通签到。
 - 功能性私信：扫码互加好友后，在私信里分享课表、界面配置、短视频等功能卡片，没有文字聊天。经自建中转服务（server 目录，NestJS + MySQL + Redis）端到端加密转交，中转地址由构建参数 SUPERXD_RELAY 传入。
 - 当前阶段为公开 Alpha 测试，仓库公开、以 GPL-3.0 开源（curve_geometry.dart 例外，见 README 许可一节）。Flutter 3.47.2 / Dart 3.13.2，依赖锁定在 pubspec.lock。
 - 相关文档：
@@ -99,6 +99,7 @@
    - 自定义壁纸只经系统照片选择器读取用户选中的一张，复制到应用私有目录，不上传、不申请存储权限。
    - 桌面小组件显示的是当前账号的课，跟着账号切换，退出登录即清空；只有它的配色跟随设备设置。
    - 百宝箱不读取教务凭据或 cookie。
+   - 学习通账号、收藏位置与签到记录属于设备，切换教务账号保留；学习通密码与 cookie 只进系统安全存储，不进业务库。
    - 私信身份、好友与会话属于设备，切换账号保留、退出登录不清；身份私钥只在系统安全存储，私钥与 social.db 都排除出云备份与设备迁移。只有用户“关闭私信”才删除（先删服务端设备，再清本机）。
    - 第三方解析来源逐个来源、按授权版本单独征得同意。自动模式只尝试已启用且已同意的来源。
 9. 对外网络
@@ -171,6 +172,7 @@
   - legal_page_test.dart、about_page_test.dart、course_clock_performance_test.dart
 - 主题与显示设置：atmosphere_test.dart、campus_glass_test.dart、campus_glass_button_test.dart、campus_motion_test.dart、dark_mode_test.dart、appearance_settings_test.dart、wallpaper_test.dart
 - 百宝箱：toolbox_widget_test.dart、toolbox_download_test.dart、toolbox_media_features_test.dart、short_video_parser_test.dart、media_image_test.dart
+  - 学习通签到：chaoxing_protocol_test.dart（协议与坐标转换）、chaoxing_store_test.dart（本机库与上限）、chaoxing_ui_test.dart（登录与签到流程，用 chaoxing_fake_server.dart）
 - 私信：
   - social_protocol_test.dart（与服务端共用测试向量、信封、二维码）、share_card_test.dart、social_service_test.dart、social_ui_test.dart
   - fake_relay.dart：按协议 v1 规则验签的内存假中转服务。
@@ -182,6 +184,7 @@
   - verify_edu.dart、verify_grades.dart：访问真实教务，只在授权环境手动运行。
   - verify_toolbox.dart：Android 原生下载验证。
   - verify_social.dart：两个真实客户端经真实中转服务联调（合成数据），运行方式见文件头。
+  - verify_chaoxing_map.dart：高德地图选点能不能出图与返回坐标，要带 --dart-define=SUPERXD_AMAP_KEY 跑，运行方式见文件头。
   - readme_demo.dart：README 截图入口，内存库合成课表与假登录。
   - font_previews.dart：生成界面页的字体预览图（assets/font_previews），改预览文字或内置字体后重跑。
   - schedule_smoke.dart、glass_preview.dart、motion_preview.dart
