@@ -261,10 +261,13 @@ void main() {
     expect(heights.toSet(), hasLength(1));
     final position = tester.state<ScrollableState>(find.byType(Scrollable)).position;
     expect(position.maxScrollExtent, 0);
-    // 有课卡左列开始、结束时刻，右列节次；缺作息的节次在同一行注明；空档一行写时段与节次。
-    expect(find.text('08:00–09:40 · 第1–2节'), findsOneWidget);
+    // 有课卡左列开始、结束时刻，右列节次；缺作息的节次在同一行注明。
     expect(find.text('10:00'), findsOneWidget);
     expect(tester.getTopLeft(find.text('10:00')).dx, lessThan(tester.getTopLeft(find.text('第3–4节', findRichText: true)).dx));
+    // 空档沿用卡片三列网格：开始时刻与卡片时刻列左对齐，内容与课名同起点，写空闲时长与节次。
+    expect(find.text('1小时40分 · 第1–2节'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('08:00')).dx, tester.getTopLeft(find.text('10:00')).dx);
+    expect(tester.getTopLeft(find.text('早八没课哦~')).dx, tester.getTopLeft(find.text('高等数学')).dx);
     expect(find.textContaining('作息时间未设置', findRichText: true), findsNWidgets(2));
     expect(tester.takeException(), isNull);
   });

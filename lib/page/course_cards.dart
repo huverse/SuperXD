@@ -261,7 +261,7 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
               onTap: selected ? () => widget.onDetail?.call(null) : !span.empty && widget.onOpen != null ? () => widget.onOpen!(span) : () {},
               onLongPress: widget.onDetail == null || span.empty && widget.onCreate == null ? null : () => widget.onDetail!(key),
               child: span.empty
-                  ? _EmptySlot(key: ValueKey('course-card-$key'), span: span, time: _timeOf(span), name: _emptyName(span), minHeight: _rowHeight, reveal: selected ? _curve : const AlwaysStoppedAnimation(0.0), actions: actions)
+                  ? _EmptySlot(key: ValueKey('course-card-$key'), span: span, time: _timeOf(span), name: _emptyName(span), minHeight: _rowHeight, timeWidth: _timeWidth, reveal: selected ? _curve : const AlwaysStoppedAnimation(0.0), actions: actions)
                   : CampusSurface(
                       key: ValueKey('course-card-$key'), selected: selected, padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                       child: AnimatedBuilder(animation: selected ? _curve : const AlwaysStoppedAnimation(0.0),
@@ -334,11 +334,14 @@ class _CourseCardBody extends StatelessWidget {
   }
 }
 
-// 空档一行（同 iOS 日历、Google 日历不给空闲整卡）：时段、节次与“没课”，次要色、无底无边，触区不低于 48。
+// 空档一行，沿用课程卡“时刻 │ 竖条 │ 内容”三列网格（同 Structured、Timepage 的时间轴）：开始时刻对齐卡片时刻列，
+// 竖条位置画虚线把上下课程串起来，内容列写“没课”与空闲时长、节次；无底无边、次要色，触区不低于 48。
 // 课表页长按展开时，同一块底色与描边渐显成选中卡、下方展开新增入口，不从细行跳成整卡。
 // [人工决策-2026-10-06 13:06:11] 空档由与正课等高的整卡改为细行（取代 09-24“正课空课等宽等高”），用户选定；今天页相邻空档合并，课表页按节次分行以便新增课程。
+// [人工决策-2026-10-06 13:31:50] 细行改为时间轴连接形态（对齐卡片三列网格、虚线竖条、写空闲时长），用户从时间轴与轻量卡两种实物对比中选定；轻量卡的全圆角胶囊像可点按钮，未采用。
 class _EmptySlot extends StatelessWidget {
-  const _EmptySlot({super.key, required this.span, required this.time, required this.name, required this.minHeight, required this.reveal, this.actions});
+  const _EmptySlot({super.key, required this.span, required this.time, required this.name, required this.minHeight, required this.timeWidth, required this.reveal, this.actions});
+  final double timeWidth;
   final PeriodSpan span;
   final MeetingTime? time;
   final String name;
@@ -364,20 +367,47 @@ class _EmptySlot extends StatelessWidget {
       child: ConstrainedBox(
         constraints: BoxConstraints(minWidth: double.infinity, minHeight: minHeight),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 15, vertical: 8),
-          child: Column(mainAxisSize: MainAxisSize.min, mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            // 用 Wrap 逐项换行，窄屏大字时不把一项拆成孤字。
-            Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-              Text(time == null ? '第${span.start}–${span.end}节' : '${time.label} · 第${span.start}–${span.end}节', style: style),
-              Text(name, style: style),
-              if (time == null) Text('作息时间未设置', style: style),
-            ]),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(minHeight: minHeight - 4),
+              child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                SizedBox(width: timeWidth, child: Align(alignment: Alignment.centerLeft, child: Text(time?.startLabel ?? '--:--', maxLines: 1, softWrap: false, style: style))),
+                const SizedBox(width: 10),
+                SizedBox(width: 3, child: CustomPaint(painter: _DashPainter(palette.outline.withValues(alpha: .45)))),
+                const SizedBox(width: 12),
+                // 用 Wrap 逐项换行，窄屏大字时不把一项拆成孤字。
+                Expanded(child: Align(alignment: Alignment.centerLeft, child: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  Text(name, style: style.copyWith(fontSize: 16)),
+                  Text(time == null ? '第${span.start}–${span.end}节 · 作息时间未设置' : '${classDuration(time.endMinute - time.startMinute)} · 第${span.start}–${span.end}节', style: style),
+                ]))),
+              ])),
+            ),
             ?actions,
           ]),
         ),
       ),
     );
   }
+}
+
+// 空档的虚线竖条：与课程卡竖条同一列、同宽，空闲段用虚线（时间轴列表的通用写法）。
+class _DashPainter extends CustomPainter {
+  _DashPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color..strokeWidth = size.width..strokeCap = StrokeCap.round;
+    const dash = 3.0, gap = 5.0;
+    final x = size.width / 2;
+    for (var y = size.width / 2; y < size.height - size.width / 2; y += dash + gap) {
+      canvas.drawLine(Offset(x, y), Offset(x, math.min(y + dash, size.height - size.width / 2)), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashPainter oldDelegate) => oldDelegate.color != color;
 }
 
 // 上课中的竖条：浅主色轨道上自上而下填激活色，随分钟时钟平滑推进；减少动画时直接到位。
