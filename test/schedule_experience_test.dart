@@ -15,6 +15,7 @@ import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/week.dart';
 import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/date_rail.dart';
+import 'package:superxd/page/live_clock.dart';
 import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/page/term_start_dialog.dart';
@@ -78,7 +79,7 @@ void main() {
     expect([1, 45, 60, 65, 125].map(classDuration), ['1分钟', '45分钟', '1小时', '1小时05分', '2小时05分']);
   });
 
-  testWidgets('空课与正课等高，大字不溢出，详情可点空白关闭', (tester) async {
+  testWidgets('空档是同宽细行（触区不低于48、比正课矮），大字不溢出，详情可点空白关闭', (tester) async {
     final spans = periodSpans([course(3, 4)]);
     String? detail;
     await tester.pumpWidget(app(StatefulBuilder(builder: (context, update) => MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.4)), child: CourseDayCards(
@@ -87,7 +88,8 @@ void main() {
     await tester.pumpAndSettle();
     final empty = find.byKey(ValueKey('course-card-${spanIdentity(spans.first)}'));
     final normal = find.byKey(ValueKey('course-card-${spanIdentity(spans.last)}'));
-    expect(tester.getSize(empty).height, tester.getSize(normal).height);
+    expect(tester.getSize(empty).height, greaterThanOrEqualTo(48));
+    expect(tester.getSize(empty).height, lessThan(tester.getSize(normal).height / 2));
     expect(tester.getSize(empty).width, tester.getSize(normal).width);
     await tester.longPress(find.text('课程'));
     await tester.pumpAndSettle();
@@ -146,6 +148,29 @@ void main() {
     await tester.tap(find.text('课程'));
     await tester.pumpAndSettle();
     expect(detail, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('传入 onOpen 时单击有课卡回调该课，空档单击不回调；已下课整卡淡化', (tester) async {
+    final spans = periodSpans([course(1, 2, name: '早课'), course(3, 4)]);
+    final opened = <PeriodSpan>[];
+    // 2026-09-21 周一 09:50（校园时区）：第1–2节已下课，第3–4节没开始。
+    ValueNotifier<DateTime>? clock;
+    await tester.pumpWidget(app(LiveClock(child: Builder(builder: (context) {
+      clock = LiveClock.maybeOf(context);
+      return CourseDayCards(spans: spans, bells: bells, date: '2026-09-21', onOpen: opened.add);
+    }))));
+    clock!.value = DateTime.utc(2026, 9, 21, 1, 50);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('课程'));
+    expect(opened.map((span) => span.course!.courseName), ['课程']);
+    double opacityOf(String name) => tester.widget<AnimatedOpacity>(find.ancestor(of: find.text(name), matching: find.byType(AnimatedOpacity)).first).opacity;
+    expect(opacityOf('早课'), .55);
+    expect(opacityOf('课程'), 1);
+    opened.clear();
+    await tester.pumpWidget(app(CourseDayCards(spans: periodSpans([course(3, 4)]), bells: bells, date: '2026-09-21', onOpen: opened.add)));
+    await tester.tap(find.text('早八没课哦~'));
+    expect(opened, isEmpty);
     expect(tester.takeException(), isNull);
   });
 
@@ -221,7 +246,7 @@ void main() {
     expect(find.byType(ShaderMask), findsNothing);
   });
 
-  testWidgets('四张课程卡默认字号完整容纳首屏，空课也显示对应时间', (tester) async {
+  testWidgets('三门课加空档默认字号完整容纳首屏，有课卡等高，空档一行也显示对应时间', (tester) async {
     await tester.binding.setSurfaceSize(const Size(380, 540));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final spans = periodSpans([course(3, 4, name: '高等数学'), course(5, 6, name: '大学英语'), course(7, 8, name: '大学物理')]);
@@ -231,15 +256,18 @@ void main() {
     for (final span in spans) {
       final card = find.byKey(ValueKey('course-card-${spanIdentity(span)}'));
       expect(tester.getBottomRight(card).dy, lessThanOrEqualTo(540));
-      heights.add(tester.getSize(card).height);
+      if (!span.empty) heights.add(tester.getSize(card).height);
     }
     expect(heights.toSet(), hasLength(1));
     final position = tester.state<ScrollableState>(find.byType(Scrollable)).position;
     expect(position.maxScrollExtent, 0);
-    // 左列开始、结束时刻，右列节次；缺作息的节次在同一行注明，空课同样显示。
-    expect(find.text('08:00'), findsOneWidget);
-    expect(find.text('09:40'), findsOneWidget);
-    expect(tester.getTopLeft(find.text('08:00')).dx, lessThan(tester.getTopLeft(find.text('第1–2节', findRichText: true)).dx));
+    // 有课卡左列开始、结束时刻，右列节次；缺作息的节次在同一行注明。
+    expect(find.text('10:00'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('10:00')).dx, lessThan(tester.getTopLeft(find.text('第3–4节', findRichText: true)).dx));
+    // 空档沿用卡片三列网格：开始时刻与卡片时刻列左对齐，内容与课名同起点，写空闲时长与节次。
+    expect(find.text('1小时40分 · 第1–2节'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('08:00')).dx, tester.getTopLeft(find.text('10:00')).dx);
+    expect(tester.getTopLeft(find.text('早八没课哦~')).dx, tester.getTopLeft(find.text('高等数学')).dx);
     expect(find.textContaining('作息时间未设置', findRichText: true), findsNWidgets(2));
     expect(tester.takeException(), isNull);
   });

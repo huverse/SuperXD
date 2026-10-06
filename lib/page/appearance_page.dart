@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
@@ -275,29 +276,27 @@ class _AppearancePageState extends State<AppearancePage> {
               label: (mode) => switch (mode) { ThemeMode.system => '跟随系统', ThemeMode.light => '浅色', ThemeMode.dark => '深色' },
               onSelected: _saving ? null : (mode) => _save(() => settings.setThemeMode(mode)),
             ),
-            const SizedBox(height: 24),
-            Text('玻璃效果', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
-            CampusSegmented<String>(
-              values: const ['auto', 'full', 'reduced'],
-              selected: settings.glassMode,
-              label: (mode) => switch (mode) { 'full' => '完整', 'reduced' => '简化', _ => '自动' },
-              onSelected: _saving ? null : (mode) => _save(() => settings.setGlassMode(mode)),
-            ),
-            if (settings.supportsWallpaper) ..._wallpaperSection(context, settings),
+            // [人工决策-2026-10-06 13:06:11] 按使用频率排：外观模式、配色、背景、字体、字号在前，玻璃效果（性能项、少用）放最后，用户选定。
             const SizedBox(height: 24),
             Text('配色', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
             LayoutBuilder(
               builder: (context, constraints) {
-                final width = constraints.maxWidth > 360
-                    ? (constraints.maxWidth - 12) / 2
-                    : constraints.maxWidth;
+                // 两列放不下“色点 + 名称 + 勾”时改单列，大字号下名称不折出孤字；按当前字体与字号实测最长名称。
+                final palettes = CampusPalette.forBrightness(Theme.of(context).brightness);
+                final labelWidth = palettes.map((palette) {
+                  final painter = TextPainter(text: TextSpan(text: palette.label, style: DefaultTextStyle.of(context).style.copyWith(fontSize: 16)), textDirection: Directionality.of(context), textScaler: MediaQuery.textScalerOf(context))..layout();
+                  final width = painter.width;
+                  painter.dispose();
+                  return width;
+                }).reduce(math.max);
+                final half = (constraints.maxWidth - 12) / 2;
+                final width = half >= 32 + 3 * 24 + 8 + labelWidth + 24 ? half : constraints.maxWidth;
                 return Wrap(
                   spacing: 12,
                   runSpacing: 12,
                   children: [
-                    for (final palette in CampusPalette.forBrightness(Theme.of(context).brightness))
+                    for (final palette in palettes)
                       SizedBox(
                         width: width,
                         child: Semantics(
@@ -367,6 +366,7 @@ class _AppearancePageState extends State<AppearancePage> {
                 );
               },
             ),
+            if (settings.supportsWallpaper) ..._wallpaperSection(context, settings),
             const SizedBox(height: 24),
             Text('字体', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
@@ -431,6 +431,15 @@ class _AppearancePageState extends State<AppearancePage> {
                           ),
                   ),
               ],
+            ),
+            const SizedBox(height: 24),
+            Text('玻璃效果', style: Theme.of(context).textTheme.titleLarge),
+            const SizedBox(height: 12),
+            CampusSegmented<String>(
+              values: const ['auto', 'full', 'reduced'],
+              selected: settings.glassMode,
+              label: (mode) => switch (mode) { 'full' => '完整', 'reduced' => '简化', _ => '自动' },
+              onSelected: _saving ? null : (mode) => _save(() => settings.setGlassMode(mode)),
             ),
             if (_saving) const CampusLoading(label: '保存中', inline: true),
             if (_error != null)

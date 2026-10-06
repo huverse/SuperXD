@@ -74,7 +74,7 @@ List<(String, bool)> classDurationParts(int minutes) {
 String classDuration(int minutes) => classDurationParts(minutes).map((part) => part.$1).join();
 
 class CourseDayCards extends StatefulWidget {
-  const CourseDayCards({super.key, required this.spans, required this.bells, required this.date, this.detailKey, this.onDetail, this.onEdit, this.onCreate, this.onArrange, this.header, this.physics, this.bottomInset = 0, this.obscuredBottom = 0});
+  const CourseDayCards({super.key, required this.spans, required this.bells, required this.date, this.detailKey, this.onDetail, this.onEdit, this.onCreate, this.onArrange, this.onOpen, this.header, this.physics, this.bottomInset = 0, this.obscuredBottom = 0});
   final List<PeriodSpan> spans;
   final List<BellPeriod> bells;
   final String date;
@@ -83,6 +83,8 @@ class CourseDayCards extends StatefulWidget {
   final ValueChanged<CourseRecord>? onEdit;
   final ValueChanged<PeriodSpan>? onCreate;
   final ValueChanged<PeriodSpan>? onArrange;
+  // 单击有课卡（今天页弹只读详情）；课表页不传，仍只认长按。
+  final ValueChanged<PeriodSpan>? onOpen;
   final Widget? header;
   final ScrollPhysics? physics;
   final double bottomInset;
@@ -107,6 +109,7 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
   double _restoreOffset = 0;
   String? _measureKey;
   double _height = 140;
+  double _rowHeight = 48;
   // 左侧时间列宽：按当前字体与字号量“00:00”，各卡对齐。
   double _timeWidth = 56;
 
@@ -171,7 +174,7 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
   @override
   void dispose() { _clock?.removeListener(_tick); _fallbackTime.dispose(); _curve.dispose(); _detail.dispose(); _scroll.dispose(); super.dispose(); }
 
-  String _emptyName(PeriodSpan span) => span.start == 1 && span.end >= 2 ? '早八没课哦~' : '这几节没课';
+  String _emptyName(PeriodSpan span) => span.start == 1 && span.end >= 2 ? '早八没课哦~' : '没课';
 
   MeetingTime? _timeOf(PeriodSpan span) => _times.putIfAbsent(spanIdentity(span), () => periodTime(widget.bells, span.start, span.end));
 
@@ -192,21 +195,23 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
     _timeWidth = [for (final span in widget.spans) _timeOf(span)?.startLabel ?? '--:--', '00:00'].map((label) => measure(label, 20, FontWeight.w600, double.infinity)).reduce(math.max).ceilToDouble() + 1;
     final timeColumn = measure('00:00', 20, FontWeight.w600, 200) + measure('00:00', 14, FontWeight.w500, 200);
     final detailWidth = math.max(48.0, width - 28 - _timeWidth - 25);
+    // 空档是一行（触区不低于 48），只有有课卡分剩余高度。
+    _rowHeight = math.max(48.0, measure('00:00', 14, FontWeight.w500, 200) + 16);
+    final occupied = widget.spans.where((span) => !span.empty).toList();
     var contentHeight = timeColumn;
-    for (final span in widget.spans) {
-      var height = 2.0;
+    for (final span in occupied) {
+      var height = 6.0;
       for (final field in [
         ('第${span.start}–${span.end}节${_timeOf(span) == null ? ' · 作息时间未设置' : ''}', 14.0, FontWeight.w500),
-        span.empty ? (_emptyName(span), 16.0, FontWeight.w500) : (span.course!.courseName, 17.0, FontWeight.w600),
-        if (!span.empty) ('${span.meeting!.place} · ${span.course!.teacherName}', 14.0, FontWeight.w500),
+        (span.course!.courseName, 17.0, FontWeight.w600),
+        ('${span.meeting!.place} · ${span.course!.teacherName}', 14.0, FontWeight.w500),
       ]) {
         height += measure(field.$1, field.$2, field.$3, detailWidth);
       }
-      if (!span.empty) height += 4;
       contentHeight = math.max(contentHeight, height);
     }
     final minimum = math.max(112.0, contentHeight + 34);
-    final slot = (available - (widget.spans.length - 1) * 8) / widget.spans.length;
+    final slot = (available - (widget.spans.length - 1) * 8 - (widget.spans.length - occupied.length) * _rowHeight) / math.max(1, occupied.length);
     return _height = slot >= minimum ? math.min(slot, minimum * 1.12) : minimum;
   }
 
@@ -226,7 +231,8 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
       if (widget.header != null) widget.header!,
       Expanded(child: ValueListenableBuilder(valueListenable: _time, builder: (context, instant, _) => LayoutBuilder(builder: (context, constraints) {
       final progress = classMoment(widget.spans, widget.bells, widget.date, instant, timeOf: _timeOf).progress;
-      final height = _cardHeight(context, constraints.maxWidth, constraints.maxHeight - widget.obscuredBottom);
+      // 底部留白（今天页的“今天”胶囊）也不参与铺满：卡片排在胶囊上方，静止时最后一节课不被盖住。
+      final height = _cardHeight(context, constraints.maxWidth, constraints.maxHeight - widget.obscuredBottom - widget.bottomInset);
       // 顶部淡出只随实际滚动出现，最多24dp；遮罩层有无只由底栏决定，滚动不重建列表。
       return AnimatedBuilder(animation: _scroll, builder: (context, child) => ScrollEdgeFade(
         top: widget.obscuredBottom > 0 && _scroll.hasClients ? _scroll.offset.clamp(0.0, 24.0) : 0,
@@ -243,24 +249,28 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
             final key = spanIdentity(span);
             final selected = _retainedDetail == key;
             // [人工决策-2026-09-29 16:10:53] 有课卡与无课卡一致：仅长按展开详情与编辑入口，展开后点击收起，单击不展开；无课卡展开后再选新增课程或安排已有课程。
+            // [人工决策-2026-10-06 13:06:11] 课表页仍按上条；今天页（只读、不传 onDetail）单击有课卡经 onOpen 弹只读详情（用户选定）。
+            final actions = selected ? SizeTransition(sizeFactor: _curve, alignment: Alignment.topLeft, child: Padding(padding: const EdgeInsets.only(top: 12), child: span.empty ? Wrap(spacing: 8, children: [
+              if (widget.onCreate != null) TextButton.icon(onPressed: () => widget.onCreate!(span), icon: const CampusIcon(CampusIcons.add), label: const Text('新增课程')),
+              if (widget.onArrange != null) TextButton.icon(onPressed: () => widget.onArrange!(span), icon: const CampusIcon(CampusIcons.edit), label: const Text('安排已有课程')),
+            ]) : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('学分 ${span.course?.credit ?? '—'}\n第${span.start}–${span.end}节', style: const TextStyle(fontSize: 14, height: 1.5)),
+              if (widget.onEdit != null) TextButton.icon(onPressed: () => widget.onEdit!(span.course!), icon: const CampusIcon(CampusIcons.edit), label: const Text('编辑课程')),
+            ]))) : null;
             final card = GestureDetector(
-              onTap: selected ? () => widget.onDetail?.call(null) : () {},
+              onTap: selected ? () => widget.onDetail?.call(null) : !span.empty && widget.onOpen != null ? () => widget.onOpen!(span) : () {},
               onLongPress: widget.onDetail == null || span.empty && widget.onCreate == null ? null : () => widget.onDetail!(key),
-              child: CampusSurface(
-                key: ValueKey('course-card-$key'), selected: selected, padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
-                child: AnimatedBuilder(animation: selected ? _curve : const AlwaysStoppedAnimation(0.0),
-                builder: (context, child) => ConstrainedBox(constraints: BoxConstraints(minWidth: double.infinity, minHeight: height - 24 + (selected ? _curve.value * 80 : 0)), child: child),
-                child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-                  _CourseCardBody(span: span, time: _timeOf(span), emptyName: _emptyName(span), progress: progress[key], timeWidth: _timeWidth),
-                  if (selected) SizeTransition(sizeFactor: _curve, alignment: Alignment.topLeft, child: Padding(padding: const EdgeInsets.only(top: 12), child: span.empty ? Wrap(spacing: 8, children: [
-                    if (widget.onCreate != null) TextButton.icon(onPressed: () => widget.onCreate!(span), icon: const CampusIcon(CampusIcons.add), label: const Text('新增课程')),
-                    if (widget.onArrange != null) TextButton.icon(onPressed: () => widget.onArrange!(span), icon: const CampusIcon(CampusIcons.edit), label: const Text('安排已有课程')),
-                  ]) : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                    Text('学分 ${span.course?.credit ?? '—'}\n第${span.start}–${span.end}节', style: const TextStyle(fontSize: 14, height: 1.5)),
-                    if (widget.onEdit != null) TextButton.icon(onPressed: () => widget.onEdit!(span.course!), icon: const CampusIcon(CampusIcons.edit), label: const Text('编辑课程')),
-                  ]))),
-                ])),
-              ),
+              child: span.empty
+                  ? _EmptySlot(key: ValueKey('course-card-$key'), span: span, time: _timeOf(span), name: _emptyName(span), minHeight: _rowHeight, timeWidth: _timeWidth, reveal: selected ? _curve : const AlwaysStoppedAnimation(0.0), actions: actions)
+                  : CampusSurface(
+                      key: ValueKey('course-card-$key'), selected: selected, padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+                      child: AnimatedBuilder(animation: selected ? _curve : const AlwaysStoppedAnimation(0.0),
+                      builder: (context, child) => ConstrainedBox(constraints: BoxConstraints(minWidth: double.infinity, minHeight: height - 24 + (selected ? _curve.value * 80 : 0)), child: child),
+                      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
+                        _CourseCardBody(span: span, time: _timeOf(span), progress: progress[key], timeWidth: _timeWidth),
+                        ?actions,
+                      ])),
+                    ),
             );
             return AnimatedBuilder(animation: _retainedDetail == null ? const AlwaysStoppedAnimation(1.0) : _curve, child: RepaintBoundary(child: card), builder: (context, child) => ClipRect(child: Align(
               alignment: Alignment.topCenter, heightFactor: _retainedDetail != null && !selected ? 1 - _curve.value : 1,
@@ -275,14 +285,14 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
 }
 
 // 课程卡正文（同 iOS 日程、鸿蒙日程卡的层级）：左列开始时间加粗、结束时间次要，等宽数字各卡对齐；
-// 中间一道竖条，有课为主色、空档为浅描边；右列节次、课名、地点与教师。空档整体降一级，不与有课卡同等醒目。
+// 中间一道主色竖条；右列节次、课名、地点与教师。
 // 今天的课按此刻分三态（同 iOS 日历、Google 日历的当日视图）：上课中的竖条自上而下按已过时间填满激活色；
-// 已下课的整卡降一级（课名与时刻转次要色、竖条转浅描边）；没开始的不变。剩余时长只在顶部“此刻”卡里显示，卡片不重复文字倒计时。
+// 已下课的整卡内容淡到 55%（同 iOS 日历的过去事件，卡底不变）；没开始的不变。剩余时长只在顶部“此刻”卡里显示，卡片不重复文字倒计时。
+// [人工决策-2026-10-06 13:06:11] 已下课改为整卡内容淡化（取代只把课名转次要色），用户选定。
 class _CourseCardBody extends StatelessWidget {
-  const _CourseCardBody({required this.span, required this.time, required this.emptyName, required this.progress, required this.timeWidth});
+  const _CourseCardBody({required this.span, required this.time, required this.progress, required this.timeWidth});
   final PeriodSpan span;
   final MeetingTime? time;
-  final String emptyName;
   // 今天已开始的课：1 为已下课，其余为上课中已过的比例；没开始或不是今天为空。
   final double? progress;
   final double timeWidth;
@@ -294,34 +304,110 @@ class _CourseCardBody extends StatelessWidget {
     final time = this.time;
     final progress = this.progress;
     final done = progress == 1;
-    final quiet = span.empty || done;
-    return IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      SizedBox(width: timeWidth, child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Text(time?.startLabel ?? '--:--', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, height: 1.3, fontFeatures: figures, color: quiet ? palette.onSurfaceVariant : palette.onSurface)),
-        if (time != null) Text(time.endLabel, maxLines: 1, softWrap: false, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, fontFeatures: figures, color: palette.onSurfaceVariant)),
-      ])),
-      const SizedBox(width: 10),
-      progress != null && !done
-          ? _ProgressStripe(progress: progress)
-          : DecoratedBox(decoration: BoxDecoration(color: quiet ? palette.outlineSubtle : palette.primary, borderRadius: BorderRadius.circular(2)), child: const SizedBox(width: 3)),
-      const SizedBox(width: 12),
-      Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        // 缺作息时提示并在节次同一行，不额外占一行。
-        Text.rich(TextSpan(children: [
-          TextSpan(text: '第${span.start}–${span.end}节', style: TextStyle(color: quiet ? palette.onSurfaceVariant : palette.primary)),
-          if (time == null) TextSpan(text: ' · 作息时间未设置', style: TextStyle(color: palette.onSurfaceVariant)),
-        ]), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3)),
-        const SizedBox(height: 2),
-        span.empty
-            ? Text(emptyName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, height: 1.3, color: palette.onSurfaceVariant))
-            : Text(span.course!.courseName, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.3, color: done ? palette.onSurfaceVariant : palette.onSurface)),
-        if (!span.empty) ...[
+    return AnimatedOpacity(
+      opacity: done ? .55 : 1,
+      duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 600),
+      curve: Curves.easeOutCubic,
+      child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        SizedBox(width: timeWidth, child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(time?.startLabel ?? '--:--', maxLines: 1, softWrap: false, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, height: 1.3, fontFeatures: figures, color: palette.onSurface)),
+          if (time != null) Text(time.endLabel, maxLines: 1, softWrap: false, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, fontFeatures: figures, color: palette.onSurfaceVariant)),
+        ])),
+        const SizedBox(width: 10),
+        progress != null && !done
+            ? _ProgressStripe(progress: progress)
+            : DecoratedBox(decoration: BoxDecoration(color: palette.primary, borderRadius: BorderRadius.circular(2)), child: const SizedBox(width: 3)),
+        const SizedBox(width: 12),
+        Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          // 缺作息时提示并在节次同一行，不额外占一行。
+          Text.rich(TextSpan(children: [
+            TextSpan(text: '第${span.start}–${span.end}节', style: TextStyle(color: palette.primary)),
+            if (time == null) TextSpan(text: ' · 作息时间未设置', style: TextStyle(color: palette.onSurfaceVariant)),
+          ]), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3)),
+          const SizedBox(height: 2),
+          Text(span.course!.courseName, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface)),
           const SizedBox(height: 4),
           Text('${span.meeting!.place} · ${span.course!.teacherName}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: palette.onSurfaceVariant)),
-        ],
+        ])),
       ])),
-    ]));
+    );
   }
+}
+
+// 空档一行，沿用课程卡“时刻 │ 竖条 │ 内容”三列网格（同 Structured、Timepage 的时间轴）：开始时刻对齐卡片时刻列，
+// 竖条位置画虚线把上下课程串起来，内容列写“没课”与空闲时长、节次；无底无边、次要色，触区不低于 48。
+// 课表页长按展开时，同一块底色与描边渐显成选中卡、下方展开新增入口，不从细行跳成整卡。
+// [人工决策-2026-10-06 13:06:11] 空档由与正课等高的整卡改为细行（取代 09-24“正课空课等宽等高”），用户选定；今天页相邻空档合并，课表页按节次分行以便新增课程。
+// [人工决策-2026-10-06 13:31:50] 细行改为时间轴连接形态（对齐卡片三列网格、虚线竖条、写空闲时长），用户从时间轴与轻量卡两种实物对比中选定；轻量卡的全圆角胶囊像可点按钮，未采用。
+class _EmptySlot extends StatelessWidget {
+  const _EmptySlot({super.key, required this.span, required this.time, required this.name, required this.minHeight, required this.timeWidth, required this.reveal, this.actions});
+  final double timeWidth;
+  final PeriodSpan span;
+  final MeetingTime? time;
+  final String name;
+  final double minHeight;
+  final Animation<double> reveal;
+  final Widget? actions;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    final style = TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: palette.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()]);
+    final time = this.time;
+    return AnimatedBuilder(
+      animation: reveal,
+      builder: (context, child) => DecoratedBox(
+        decoration: BoxDecoration(
+          color: palette.surfaceSelected.withValues(alpha: .91 * reveal.value),
+          borderRadius: BorderRadius.circular(24),
+          border: Border.all(color: palette.primary.withValues(alpha: .5 * reveal.value)),
+        ),
+        child: child,
+      ),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(minWidth: double.infinity, minHeight: minHeight),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            ConstrainedBox(
+              constraints: BoxConstraints(minHeight: minHeight - 4),
+              child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                SizedBox(width: timeWidth, child: Align(alignment: Alignment.centerLeft, child: Text(time?.startLabel ?? '--:--', maxLines: 1, softWrap: false, style: style))),
+                const SizedBox(width: 10),
+                SizedBox(width: 3, child: CustomPaint(painter: _DashPainter(palette.outline.withValues(alpha: .45)))),
+                const SizedBox(width: 12),
+                // 用 Wrap 逐项换行，窄屏大字时不把一项拆成孤字。
+                Expanded(child: Align(alignment: Alignment.centerLeft, child: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
+                  Text(name, style: style.copyWith(fontSize: 16)),
+                  Text(time == null ? '第${span.start}–${span.end}节 · 作息时间未设置' : '${classDuration(time.endMinute - time.startMinute)} · 第${span.start}–${span.end}节', style: style),
+                ]))),
+              ])),
+            ),
+            ?actions,
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+// 空档的虚线竖条：与课程卡竖条同一列、同宽，空闲段用虚线（时间轴列表的通用写法）。
+class _DashPainter extends CustomPainter {
+  _DashPainter(this.color);
+  final Color color;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color..strokeWidth = size.width..strokeCap = StrokeCap.round;
+    const dash = 3.0, gap = 5.0;
+    final x = size.width / 2;
+    for (var y = size.width / 2; y < size.height - size.width / 2; y += dash + gap) {
+      canvas.drawLine(Offset(x, y), Offset(x, math.min(y + dash, size.height - size.width / 2)), paint);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DashPainter oldDelegate) => oldDelegate.color != color;
 }
 
 // 上课中的竖条：浅主色轨道上自上而下填激活色，随分钟时钟平滑推进；减少动画时直接到位。

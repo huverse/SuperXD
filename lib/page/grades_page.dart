@@ -450,7 +450,8 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
             switchInCurve: Curves.easeOutCubic,
             switchOutCurve: Curves.easeInCubic,
             layoutBuilder: (current, previous) => Stack(alignment: Alignment.topCenter, children: [...previous, ?current]),
-            child: yearMode
+            // 学年只有一个学期（新学年刚开学）时没得选，不画单项分段；学期名已在下方标题里。
+            child: yearMode || yearTerms.length == 1
                 ? const SizedBox(key: ValueKey('no-terms'), width: double.infinity)
                 : yearTerms.length <= 3 && yearTerms.any((term) => term.key == selectedTerm?.key)
                 ? Padding(

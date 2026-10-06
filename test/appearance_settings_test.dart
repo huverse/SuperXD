@@ -185,6 +185,19 @@ void main() {
       }
     }
   });
+  testWidgets('配色名在常见宽度特大字号下不折行：两列放不下就改单列', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(412, 900)); addTearDown(() => tester.binding.setSurfaceSize(null));
+    for (final scale in [1.0, 1.4]) {
+      final settings = DisplaySettings.memory();
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => DisplayScope(settings: settings, child: MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)), child: child!)), home: AppearancePage(key: ValueKey(scale))));
+      await tester.pumpAndSettle();
+      final label = find.text(CampusPalette.values.first.label);
+      expect(tester.getSize(label).height, lessThan(16 * scale * 2), reason: '×$scale');
+      final columns = CampusPalette.forBrightness(Brightness.light).map((palette) => tester.getTopLeft(find.text(palette.label)).dx.round()).toSet();
+      expect(columns, hasLength(scale == 1 ? 2 : 1), reason: '×$scale');
+      await tester.pumpWidget(const SizedBox()); settings.dispose();
+    }
+  });
   testWidgets('界面页配色字体即时生效，两种字体预览和字号可选', (tester) async {
     final settings = DisplaySettings.memory();
     await tester.pumpWidget(
