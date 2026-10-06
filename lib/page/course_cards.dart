@@ -176,6 +176,15 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
 
   String _emptyName(PeriodSpan span) => span.start == 1 && span.end >= 2 ? '早八没课哦~' : '没课';
 
+  // 空档高度随时长增长（对数压缩，45 分钟起每翻倍加 16、最多加 40）：不读字也能看出空当长短
+  // （Structured 用户反馈“30 分钟的空当和两小时看起来一样”）；不按真实比例，免得长空当把课挤出屏幕。
+  double _gapHeight(PeriodSpan span) {
+    final time = _timeOf(span);
+    if (time == null) return _rowHeight;
+    final minutes = math.max(1, time.endMinute - time.startMinute);
+    return _rowHeight + (16 * math.log(minutes / 45) / math.ln2).clamp(0.0, 40.0);
+  }
+
   MeetingTime? _timeOf(PeriodSpan span) => _times.putIfAbsent(spanIdentity(span), () => periodTime(widget.bells, span.start, span.end));
 
   double _cardHeight(BuildContext context, double width, double available) {
@@ -196,7 +205,8 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
     final timeColumn = measure('00:00', 20, FontWeight.w600, 200) + measure('00:00', 14, FontWeight.w500, 200);
     final detailWidth = math.max(48.0, width - 28 - _timeWidth - 25);
     // 空档是一行（触区不低于 48），只有有课卡分剩余高度。
-    _rowHeight = math.max(48.0, measure('00:00', 14, FontWeight.w500, 200) + 16);
+    // 空档两行（时长标题 16、节次 14）的基础高度，触区不低于 48；再按时长加高，见 _gapHeight。
+    _rowHeight = math.max(48.0, measure('00:00', 16, FontWeight.w600, 200) + measure('00:00', 14, FontWeight.w500, 200) + 18);
     final occupied = widget.spans.where((span) => !span.empty).toList();
     var contentHeight = timeColumn;
     for (final span in occupied) {
@@ -211,7 +221,8 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
       contentHeight = math.max(contentHeight, height);
     }
     final minimum = math.max(112.0, contentHeight + 34);
-    final slot = (available - (widget.spans.length - 1) * 8 - (widget.spans.length - occupied.length) * _rowHeight) / math.max(1, occupied.length);
+    final gaps = widget.spans.where((span) => span.empty).fold(0.0, (sum, span) => sum + _gapHeight(span));
+    final slot = (available - (widget.spans.length - 1) * 8 - gaps) / math.max(1, occupied.length);
     return _height = slot >= minimum ? math.min(slot, minimum * 1.12) : minimum;
   }
 
@@ -261,7 +272,7 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
               onTap: selected ? () => widget.onDetail?.call(null) : !span.empty && widget.onOpen != null ? () => widget.onOpen!(span) : () {},
               onLongPress: widget.onDetail == null || span.empty && widget.onCreate == null ? null : () => widget.onDetail!(key),
               child: span.empty
-                  ? _EmptySlot(key: ValueKey('course-card-$key'), span: span, time: _timeOf(span), name: _emptyName(span), minHeight: _rowHeight, timeWidth: _timeWidth, reveal: selected ? _curve : const AlwaysStoppedAnimation(0.0), actions: actions)
+                  ? _EmptySlot(key: ValueKey('course-card-$key'), span: span, time: _timeOf(span), name: _emptyName(span), minHeight: _gapHeight(span), timeWidth: _timeWidth, reveal: selected ? _curve : const AlwaysStoppedAnimation(0.0), actions: actions)
                   : CampusSurface(
                       key: ValueKey('course-card-$key'), selected: selected, padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
                       child: AnimatedBuilder(animation: selected ? _curve : const AlwaysStoppedAnimation(0.0),
@@ -334,11 +345,12 @@ class _CourseCardBody extends StatelessWidget {
   }
 }
 
-// 空档一行，沿用课程卡“时刻 │ 竖条 │ 内容”三列网格（同 Structured、Timepage 的时间轴）：开始时刻对齐卡片时刻列，
-// 竖条位置画虚线把上下课程串起来，内容列写“没课”与空闲时长、节次；无底无边、次要色，触区不低于 48。
-// 课表页长按展开时，同一块底色与描边渐显成选中卡、下方展开新增入口，不从细行跳成整卡。
+// 空档（同 Structured、Timepage 的时间轴，并按其用户反馈“30 分钟和两小时看起来一样”改进）：
+// 虚线空位框与课程卡同宽同圆角，沿用“时刻 │ 竖条 │ 内容”三列；时刻列像尺子，上沿开始、下沿结束，中间虚线连起来；
+// 标题写空多久（“没课 1小时40分”），副标题写节次；高度随时长对数加高（见 _gapHeight），不读字也能看出空当长短。
+// 课表页长按展开时，框内渐显成选中卡、下方展开新增入口，不从细行跳成整卡。
 // [人工决策-2026-10-06 13:06:11] 空档由与正课等高的整卡改为细行（取代 09-24“正课空课等宽等高”），用户选定；今天页相邻空档合并，课表页按节次分行以便新增课程。
-// [人工决策-2026-10-06 13:31:50] 细行改为时间轴连接形态（对齐卡片三列网格、虚线竖条、写空闲时长），用户从时间轴与轻量卡两种实物对比中选定；轻量卡的全圆角胶囊像可点按钮，未采用。
+// [人工决策-2026-10-06 14:20:54] 空档定为虚线空位框（取代 13:31:50 的无容器时间轴连接）：尺子时刻列、按时长加高、标题写时长；用户从时间带、虚线空位框、斜纹带三种实物中选定。斜纹在日历里常表示忙碌，未采用。
 class _EmptySlot extends StatelessWidget {
   const _EmptySlot({super.key, required this.span, required this.time, required this.name, required this.minHeight, required this.timeWidth, required this.reveal, this.actions});
   final double timeWidth;
@@ -352,43 +364,72 @@ class _EmptySlot extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
-    final style = TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: palette.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()]);
+    const figures = [FontFeature.tabularFigures()];
+    final secondary = TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: palette.onSurfaceVariant, fontFeatures: figures);
     final time = this.time;
+    final duration = time == null ? null : classDuration(time.endMinute - time.startMinute);
+    // 标题写空多久（“没课 1小时40分”），早八写彩蛋；节次与缺作息放副标题。
+    final title = name == '没课' && duration != null ? '没课 $duration' : name;
+    final detail = [if (name != '没课' && duration != null) duration, '第${span.start}–${span.end}节', if (time == null) '作息时间未设置'].join(' · ');
     return AnimatedBuilder(
       animation: reveal,
-      builder: (context, child) => DecoratedBox(
-        decoration: BoxDecoration(
-          color: palette.surfaceSelected.withValues(alpha: .91 * reveal.value),
-          borderRadius: BorderRadius.circular(24),
-          border: Border.all(color: palette.primary.withValues(alpha: .5 * reveal.value)),
-        ),
+      builder: (context, child) => CustomPaint(
+        painter: _GapBackdropPainter(line: palette.outline.withValues(alpha: .4), reveal: reveal.value, selectedFill: palette.surfaceSelected.withValues(alpha: .91), selectedBorder: palette.primary.withValues(alpha: .5)),
         child: child,
       ),
-      child: ConstrainedBox(
-        constraints: BoxConstraints(minWidth: double.infinity, minHeight: minHeight),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            ConstrainedBox(
-              constraints: BoxConstraints(minHeight: minHeight - 4),
-              child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                SizedBox(width: timeWidth, child: Align(alignment: Alignment.centerLeft, child: Text(time?.startLabel ?? '--:--', maxLines: 1, softWrap: false, style: style))),
-                const SizedBox(width: 10),
-                SizedBox(width: 3, child: CustomPaint(painter: _DashPainter(palette.outline.withValues(alpha: .45)))),
-                const SizedBox(width: 12),
-                // 用 Wrap 逐项换行，窄屏大字时不把一项拆成孤字。
-                Expanded(child: Align(alignment: Alignment.centerLeft, child: Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
-                  Text(name, style: style.copyWith(fontSize: 16)),
-                  Text(time == null ? '第${span.start}–${span.end}节 · 作息时间未设置' : '${classDuration(time.endMinute - time.startMinute)} · 第${span.start}–${span.end}节', style: style),
-                ]))),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          ConstrainedBox(
+            constraints: BoxConstraints(minWidth: double.infinity, minHeight: minHeight - 16),
+            child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+              // 时刻列像尺子：上沿写开始、下沿写结束，与中间虚线两端对齐，一眼读出“从几点到几点”。
+              SizedBox(width: timeWidth, child: Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(time?.startLabel ?? '--:--', maxLines: 1, softWrap: false, style: secondary.copyWith(fontSize: 16)),
+                if (time != null) Text(time.endLabel, maxLines: 1, softWrap: false, style: secondary),
               ])),
-            ),
-            ?actions,
-          ]),
-        ),
+              const SizedBox(width: 10),
+              SizedBox(width: 3, child: CustomPaint(painter: _DashPainter(palette.outline.withValues(alpha: .5)))),
+              const SizedBox(width: 12),
+              Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurfaceVariant, fontFeatures: figures)),
+                const SizedBox(height: 2),
+                Text(detail, style: secondary),
+              ])),
+            ])),
+          ),
+          ?actions,
+        ]),
       ),
     );
   }
+}
+
+// 空档的虚线空位框：与课程卡同宽同圆角，实线卡是有课、虚线框是空着；课表页展开时框内渐显成选中卡。
+class _GapBackdropPainter extends CustomPainter {
+  _GapBackdropPainter({required this.line, required this.reveal, required this.selectedFill, required this.selectedBorder});
+  final Color line;
+  final double reveal;
+  final Color selectedFill;
+  final Color selectedBorder;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final shape = RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(24));
+    final paint = Paint()..color = line.withValues(alpha: line.a * (1 - reveal))..style = PaintingStyle.stroke..strokeWidth = 1.2;
+    for (final metric in (Path()..addRRect(shape.deflate(.6))).computeMetrics()) {
+      for (var distance = 0.0; distance < metric.length; distance += 9) {
+        canvas.drawPath(metric.extractPath(distance, distance + 5), paint);
+      }
+    }
+    if (reveal > 0) {
+      canvas.drawRRect(shape, Paint()..color = selectedFill.withValues(alpha: selectedFill.a * reveal));
+      canvas.drawRRect(shape.deflate(.5), Paint()..color = selectedBorder.withValues(alpha: selectedBorder.a * reveal)..style = PaintingStyle.stroke);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_GapBackdropPainter oldDelegate) => oldDelegate.line != line || oldDelegate.reveal != reveal || oldDelegate.selectedFill != selectedFill || oldDelegate.selectedBorder != selectedBorder;
 }
 
 // 空档的虚线竖条：与课程卡竖条同一列、同宽，空闲段用虚线（时间轴列表的通用写法）。

@@ -79,7 +79,7 @@ void main() {
     expect([1, 45, 60, 65, 125].map(classDuration), ['1分钟', '45分钟', '1小时', '1小时05分', '2小时05分']);
   });
 
-  testWidgets('空档是同宽细行（触区不低于48、比正课矮），大字不溢出，详情可点空白关闭', (tester) async {
+  testWidgets('空档与正课同宽（触区不低于48、比正课矮），大字不溢出，详情可点空白关闭', (tester) async {
     final spans = periodSpans([course(3, 4)]);
     String? detail;
     await tester.pumpWidget(app(StatefulBuilder(builder: (context, update) => MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.4)), child: CourseDayCards(
@@ -89,7 +89,7 @@ void main() {
     final empty = find.byKey(ValueKey('course-card-${spanIdentity(spans.first)}'));
     final normal = find.byKey(ValueKey('course-card-${spanIdentity(spans.last)}'));
     expect(tester.getSize(empty).height, greaterThanOrEqualTo(48));
-    expect(tester.getSize(empty).height, lessThan(tester.getSize(normal).height / 2));
+    expect(tester.getSize(empty).height, lessThan(tester.getSize(normal).height));
     expect(tester.getSize(empty).width, tester.getSize(normal).width);
     await tester.longPress(find.text('课程'));
     await tester.pumpAndSettle();
@@ -148,6 +148,21 @@ void main() {
     await tester.tap(find.text('课程'));
     await tester.pumpAndSettle();
     expect(detail, isNull);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('空档按时长加高：3小时40分的空当比1小时40分高，时刻列上开始下结束、标题写时长', (tester) async {
+    Future<double> gapHeight(List<PeriodSpan> spans) async {
+      await tester.pumpWidget(app(CourseDayCards(key: UniqueKey(), spans: spans, bells: bells, date: '2026-09-21')));
+      await tester.pumpAndSettle();
+      return tester.getSize(find.byKey(ValueKey('course-card-${spanIdentity(spans.first)}'))).height;
+    }
+    final short = await gapHeight(periodSpans([course(3, 4)]));
+    expect(find.text('早八没课哦~'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('08:00')).dy, lessThan(tester.getTopLeft(find.text('09:40')).dy));
+    final long = await gapHeight([const PeriodSpan(start: 1, end: 4), ...periodSpans([course(5, 6)]).where((span) => !span.empty)]);
+    expect(find.text('3小时40分 · 第1–4节'), findsOneWidget);
+    expect(long, greaterThan(short));
     expect(tester.takeException(), isNull);
   });
 
