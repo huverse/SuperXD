@@ -15,6 +15,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -287,8 +288,11 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     return PopScope(canPop: _canPop, onPopInvokedWithResult: (didPop, _) { if (!didPop) _back(); }, child: CampusBackground(child: Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(bottom: true, top: false, child: Column(children: [
+        // 返回图标对齐 16、标题从 56 起，同 AppBar（见 campus_theme.dart 的顶栏人工决策）。
         CampusTopBar(child: SizedBox(height: 56 * scale, child: Row(children: [
+          const SizedBox(width: 4),
           IconButton(tooltip: '返回', onPressed: _back, icon: const CampusIcon(CampusIcons.back)),
+          const SizedBox(width: 4),
           Expanded(child: Text(_selection.yearOverview && _selection.year.isNotEmpty ? '${_selection.year}–${int.parse(_selection.year)+1}' : '课表', style: Theme.of(context).textTheme.titleLarge)),
           // [人工决策-2026-10-04 16:08:17] 课表顶栏只留“今天”胶囊与“管理课程”“⋯”玻璃圆按钮，开学日移入⋯菜单；用户实测确认。
           // 标题栏只留高频操作（同 iOS、鸿蒙标题栏）：“今天”是带图标的胶囊；每学期只设一次的开学日收进⋯菜单，空课表时页面里仍有“设置开学日”。
@@ -320,11 +324,20 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     final index = years.indexOf(_selection.year);
     return ListView(key: const ValueKey('years'), padding: const EdgeInsets.all(16), children: [
       Row(children: [
-        TextButton(onPressed: index <= 0 ? null : () => setState(() => _selection = _selection.copy(year: years[index-1])), child: const Text('上一年')),
+        TextButton.icon(onPressed: index <= 0 ? null : () => setState(() => _selection = _selection.copy(year: years[index-1])), icon: const CampusIcon(CampusIcons.previous), label: const Text('上一年')),
         const Spacer(),
-        TextButton(onPressed: index < 0 || index >= years.length-1 ? null : () => setState(() => _selection = _selection.copy(year: years[index+1])), child: const Text('下一年')),
+        // 图标在右，方向与文字一致。
+        TextButton.icon(iconAlignment: IconAlignment.end, onPressed: index < 0 || index >= years.length-1 ? null : () => setState(() => _selection = _selection.copy(year: years[index+1])), icon: const CampusIcon(CampusIcons.next), label: const Text('下一年')),
       ]),
-      for (final term in _terms.where((term) => term.xn == _selection.year)) Padding(padding: const EdgeInsets.only(bottom: 12), child: _tile(term.label.isEmpty ? term.key : term.label, false, () => _openTerm(term), minHeight: 72)),
+      const SizedBox(height: 4),
+      // 学期卡同服务页入口：正文色加右箭头，一眼看出可点进去。
+      for (final term in _terms.where((term) => term.xn == _selection.year)) Padding(padding: const EdgeInsets.only(bottom: 12), child: CampusSurface(
+        onTap: () => _openTerm(term), padding: const EdgeInsets.all(20),
+        child: Row(children: [
+          Expanded(child: Text(term.label.isEmpty ? term.key : term.label, style: TextStyle(fontSize: 16, color: CampusPalette.of(context).onSurface))),
+          CampusIcon(CampusIcons.next, color: CampusPalette.of(context).onSurfaceVariant),
+        ]),
+      )),
     ]);
   }
 

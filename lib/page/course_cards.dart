@@ -338,7 +338,11 @@ class _CourseCardBody extends StatelessWidget {
           const SizedBox(height: 2),
           Text(span.course!.courseName, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface)),
           const SizedBox(height: 4),
-          Text('${span.meeting!.place} · ${span.course!.teacherName}', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: palette.onSurfaceVariant)),
+          // 地点与教师分项换行（Wrap），窄卡（学期视图）里不把“老师”拆成孤字。
+          Wrap(spacing: 4, children: [
+            for (final part in [span.meeting!.place, if (span.course!.teacherName.isNotEmpty) '· ${span.course!.teacherName}'])
+              Text(part, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: palette.onSurfaceVariant)),
+          ]),
         ])),
       ])),
     );

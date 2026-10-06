@@ -148,6 +148,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(CampusSegmented<String>), findsNothing);
     expect(find.text(first.label), findsOneWidget);
+    // 自绘顶栏与 AppBar 一致：标题从 56 起。
+    expect(tester.getTopLeft(find.text('成绩')).dx, 56);
     await tester.pumpWidget(app(GradesPage(key: const ValueKey('two'), gateway: _Gateway())));
     await tester.pumpAndSettle();
     expect(find.byType(CampusSegmented<String>), findsOneWidget);

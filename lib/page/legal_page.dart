@@ -125,8 +125,10 @@ class LegalPage extends StatelessWidget {
             CampusTopBar(
               child: SizedBox(
                 height: 56 * MediaQuery.textScalerOf(context).scale(14) / 14,
+                // 返回图标对齐 16、标题从 56 起，同 AppBar（见 campus_theme.dart 的顶栏人工决策）。
                 child: Row(
                   children: [
+                    const SizedBox(width: 4),
                     IconButton(
                       tooltip: '返回',
                       onPressed: () => context.pop(),
@@ -135,6 +137,7 @@ class LegalPage extends StatelessWidget {
                         color: colors.onSurface,
                       ),
                     ),
+                    const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         privacy ? '隐私政策' : '用户协议',

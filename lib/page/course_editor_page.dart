@@ -8,6 +8,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
@@ -302,12 +303,12 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            const Text('课程信息作用于整门课；上课时段可分别调整。', style: TextStyle(fontSize: 14)),
             SizedBox(height: campusFieldGap(context)),
             TextField(
               controller: _name,
               enabled: !_saving,
               maxLength: 200,
+              buildCounter: _nearLimitCounter,
               decoration: const InputDecoration(
                 labelText: '课程名称',
                 border: OutlineInputBorder(),
@@ -355,13 +356,14 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
                       Wrap(
                         spacing: 8,
                         children: [
-                          TextButton(
+                          TextButton.icon(
                             onPressed: _saving
                                 ? null
                                 : () => _editMeeting(index: index),
-                            child: const Text('调整'),
+                            icon: const CampusIcon(CampusIcons.edit),
+                            label: const Text('调整'),
                           ),
-                          TextButton(
+                          TextButton.icon(
                             onPressed:
                                 _saving || _meetings.length >= maxCourseMeetings
                                 ? null
@@ -369,13 +371,15 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
                                     index: index,
                                     duplicate: true,
                                   ),
-                            child: const Text('复制'),
+                            icon: const CampusIcon(CampusIcons.copy),
+                            label: const Text('复制'),
                           ),
-                          TextButton(
+                          TextButton.icon(
                             onPressed: _saving
                                 ? null
                                 : () => _deleteMeeting(index),
-                            child: const Text('移除'),
+                            icon: const CampusIcon(CampusIcons.delete),
+                            label: const Text('移除'),
                           ),
                         ],
                       ),
@@ -660,6 +664,7 @@ class _SuggestionField extends StatelessWidget {
         controller: controller,
         enabled: enabled,
         maxLength: 200,
+        buildCounter: _nearLimitCounter,
         decoration: InputDecoration(
           labelText: label,
           border: const OutlineInputBorder(),
@@ -687,3 +692,7 @@ class _SuggestionField extends StatelessWidget {
   );
   }
 }
+
+// 字数计数只在接近上限（剩 20 字以内）时出现，平时不占视线；超限仍由 maxLength 截断。
+Widget? _nearLimitCounter(BuildContext context, {required int currentLength, required int? maxLength, required bool isFocused}) =>
+    maxLength == null || maxLength - currentLength > 20 ? null : Text('$currentLength/$maxLength', style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant));

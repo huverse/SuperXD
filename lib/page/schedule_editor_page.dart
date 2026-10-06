@@ -6,6 +6,8 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
+import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
@@ -145,6 +147,16 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
     } finally {
       if (mounted) setState(() => _busy = false);
     }
+  }
+
+  Future<void> _courseMenu(BuildContext anchor, CourseRecord course) async {
+    final action = await showCampusMenu<String>(anchor, items: const [
+      CampusMenuItem(value: 'edit', label: '编辑', icon: CampusIcons.edit),
+      CampusMenuItem(value: 'delete', label: '删除', icon: CampusIcons.delete, destructive: true),
+    ]);
+    if (!mounted) return;
+    if (action == 'edit') await _edit(course);
+    if (action == 'delete') await _delete(course);
   }
 
   Future<void> _delete(CourseRecord course) async {
@@ -334,11 +346,6 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                         : widget.term.label,
                     style: Theme.of(context).textTheme.titleMedium,
                   ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    '每学期一张课表 · 最多保留100个版本',
-                    style: TextStyle(fontSize: 14),
-                  ),
                   const SizedBox(height: 16),
                   if (_error != null) ...[
                     Text(
@@ -371,7 +378,8 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                         ),
                       ),
                     if (_view!.revisionId == null)
-                      OutlinedButton(
+                      OutlinedButton.icon(
+                        icon: const CampusIcon(CampusIcons.add),
                         onPressed: _busy
                             ? null
                             : () async {
@@ -390,60 +398,55 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                                   if (mounted) setState(() => _busy = false);
                                 }
                               },
-                        child: const Text('建立空课表'),
+                        label: const Text('建立空课表'),
                       ),
+                    // [人工决策-2026-10-06 15:46:09] 课程卡整卡可点进编辑（右侧箭头），编辑与删除收进右上 ⋯ 菜单，删除标警示色并保留确认与撤销；用户选定（同 iOS、鸿蒙列表）。
                     for (final course in _view!.courses)
                       CampusSurface(padding: EdgeInsets.zero, margin: const EdgeInsets.symmetric(vertical: 8),
+                        onTap: _busy ? null : () => _edit(course),
                         child: Padding(
-                          padding: const EdgeInsets.all(12),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.stretch,
-                            children: [
-                              Text(
-                                course.courseName,
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              if (course.teacherName.isNotEmpty)
-                                Text(course.teacherName),
-                              if (course.meetings.isEmpty) const Text('暂无上课时间'),
-                              for (final meeting in course.meetings)
-                                Padding(
-                                  padding: const EdgeInsets.only(top: 6),
-                                  child: Text(
-                                    meetingLabel(meeting),
-                                    style: const TextStyle(
-                                      fontSize: 14,
-                                      height: 1.5,
-                                    ),
-                                  ),
+                          padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
+                          child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+                            Expanded(child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Text(
+                                  course.courseName,
+                                  style: Theme.of(context).textTheme.titleMedium,
                                 ),
-                              Wrap(
-                                spacing: 8,
-                                children: [
-                                  TextButton(
-                                    onPressed: _busy
-                                        ? null
-                                        : () => _edit(course),
-                                    child: const Text('编辑'),
+                                if (course.teacherName.isNotEmpty)
+                                  Text(course.teacherName),
+                                if (course.meetings.isEmpty) const Text('暂无上课时间'),
+                                for (final meeting in course.meetings)
+                                  Padding(
+                                    padding: const EdgeInsets.only(top: 6),
+                                    // 按“ · ”分项换行（Wrap），窄处不把“A201”之类拆成孤字。
+                                    child: Wrap(spacing: 6, children: [
+                                      for (final (index, part) in meetingLabel(meeting).split(' · ').indexed)
+                                        Text(index == 0 ? part : '· $part', style: const TextStyle(fontSize: 14, height: 1.5)),
+                                    ]),
                                   ),
-                                  TextButton(
-                                    onPressed: _busy
-                                        ? null
-                                        : () => _delete(course),
-                                    child: const Text('删除'),
-                                  ),
-                                ],
-                              ),
-                            ],
-                          ),
+                              ],
+                            )),
+                            Column(children: [
+                              Builder(builder: (anchor) => IconButton(
+                                tooltip: '课程操作',
+                                onPressed: _busy ? null : () => _courseMenu(anchor, course),
+                                icon: const CampusIcon(CampusIcons.manage),
+                              )),
+                              Expanded(child: Center(child: CampusIcon(CampusIcons.next, color: CampusPalette.of(context).onSurfaceVariant))),
+                              const SizedBox(height: 48),
+                            ]),
+                          ])),
                         ),
                       ),
                     if (_view!.courses.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 24),
-                        child: OutlinedButton(
+                        child: OutlinedButton.icon(
                           onPressed: _busy ? null : _clear,
-                          child: const Text('清空本学期课程'),
+                          icon: const CampusIcon(CampusIcons.delete),
+                          label: const Text('清空本学期课程'),
                         ),
                       ),
                   ],
