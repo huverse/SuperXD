@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
 import 'package:superxd/toolbox/download/android_file_publisher.dart';
@@ -23,8 +24,9 @@ import 'package:superxd/domain/campus_log.dart';
 // 把作品分享给好友：百宝箱不感知私信，由组合根注入（为空时不显示分享入口）。
 typedef ToolboxVideoShare = Future<void> Function(BuildContext context, VideoShare video);
 
-// 扫码：相机页面在 page 层，百宝箱不依赖它，由组合根注入；返回二维码原文，取消返回空。
-typedef ToolboxQrScan = Future<String?> Function(BuildContext context);
+// 扫码：相机页面在 page 层，百宝箱不依赖它，由组合根注入。
+// hint 是取景页的提示语，accept 返回非空表示不认这个内容（原地提示），认下就把原文交回来；取消返回空。
+typedef ToolboxQrScan = Future<String?> Function(BuildContext context, String hint, String? Function(String raw) accept);
 
 class ToolboxRuntime with WidgetsBindingObserver {
   ToolboxRuntime({
@@ -32,6 +34,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.shareVideo,
     this.scanQrCode,
     ChaoxingAccounts? chaoxing,
+    this.chaoxingHub,
   }) : coordinator = ParseCoordinator([BugpkVideoParser()]) {
     _chaoxing = chaoxing;
   }
@@ -42,6 +45,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.shareVideo,
     this.scanQrCode,
     ChaoxingAccounts? chaoxing,
+    this.chaoxingHub,
   }) : coordinator = ParseCoordinator([parser]),
        resourceSpecifications = downloads.resources.specifications {
     _chaoxing = chaoxing;
@@ -53,6 +57,9 @@ class ToolboxRuntime with WidgetsBindingObserver {
   final ParseCoordinator coordinator;
   final ToolboxVideoShare? shareVideo;
   final ToolboxQrScan? scanQrCode;
+
+  // 代签凭据包的中转，与私信共用同一个自建服务（地址由组合根从构建参数取）；为空时代签码不可用。
+  final ChaoxingPackHub? chaoxingHub;
   // 学习通签到的账号闭环，随应用支持目录一起打开；测试可直接注入。
   ChaoxingAccounts? _chaoxing;
   ChaoxingAccounts? get chaoxing => _chaoxing;
@@ -133,5 +140,6 @@ class ToolboxRuntime with WidgetsBindingObserver {
     await _downloads?.close();
     await _store?.close();
     await _chaoxing?.store.close();
+    chaoxingHub?.close();
   }
 }

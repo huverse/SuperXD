@@ -1,3 +1,6 @@
+import 'dart:async';
+
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
@@ -6,14 +9,19 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
+import 'chaoxing_fake_hub.dart';
 import 'chaoxing_fake_server.dart';
 import 'toolbox_test_support.dart';
 
@@ -74,11 +82,12 @@ void main() {
   late ToolboxRuntime runtime;
 
 
-  ToolboxRuntime buildRuntime({ToolboxQrScan? scanQrCode}) => ToolboxRuntime.testing(
+  ToolboxRuntime buildRuntime({ToolboxQrScan? scanQrCode, ChaoxingPackHub? hub}) => ToolboxRuntime.testing(
     store: fixture.store,
     downloads: fixture.manager,
     parser: fixture.parser,
     scanQrCode: scanQrCode,
+    chaoxingHub: hub,
     chaoxing: ChaoxingAccounts(
       store: store,
       vault: MemoryChaoxingVault(),
@@ -171,7 +180,7 @@ void main() {
       {'id': 501, 'type': 2, 'otherId': '2', 'nameOne': '签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0, 'ext': {'a': 1}},
     ];
     fake.signDetail = {'isOver': 0, 'signCode': '501'};
-    runtime = buildRuntime(scanQrCode: (_) async => 'SIGNIN:id=501&enc=ENCV-1.2.3');
+    runtime = buildRuntime(scanQrCode: (context, hint, accept) async => 'SIGNIN:id=501&enc=ENCV-1.2.3');
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
 
@@ -290,6 +299,89 @@ void main() {
     await tapSign(tester);
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     expect(fake.signQuery!['address'], '知敬楼402');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('账号菜单里有出示与扫码导入两个代签入口', (tester) async {
+    usePhoneScreen(tester);
+    runtime = buildRuntime(hub: ChaoxingPackHub(baseUrl: Uri.parse('http://relay.test'), client: FakePackHub().client()));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: campusTheme(),
+        builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(disableAnimations: true), child: child!),
+        home: ChaoxingPage(runtime: runtime),
+      ),
+    );
+    await login(tester);
+
+    await tester.tap(find.byTooltip('账号操作'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('出示我的代签码').evaluate().isNotEmpty);
+    expect(find.text('扫别人的代签码'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('没配中转时不显示代签入口', (tester) async {
+    usePhoneScreen(tester);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: campusTheme(),
+        builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(disableAnimations: true), child: child!),
+        home: ChaoxingPage(runtime: runtime),
+      ),
+    );
+    await login(tester);
+
+    await tester.tap(find.byTooltip('账号操作'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('登录其他账号').evaluate().isNotEmpty);
+    expect(find.text('出示我的代签码'), findsNothing);
+    expect(find.text('扫别人的代签码'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('扫码导入：确认后把对方账号存进本机', (tester) async {
+    usePhoneScreen(tester);
+    await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');
+    final packs = FakePackHub();
+    final hub = ChaoxingPackHub(baseUrl: Uri.parse('http://relay.test'), client: packs.client());
+    // 对方出示的代签码：先封包投递，再拼出二维码文本。
+    final sealed = await sealChaoxingCredentialPack(
+      ChaoxingCredentialPack(
+        phoneNumber: '13900139000',
+        encryptedPassword: await chaoxingEncrypt('otherPassword1'),
+        name: '同学乙',
+        deviceCode: 'device-of-b',
+      ),
+    );
+    final pickupId = await hub.submit(sealed.cipherText);
+    final ticket = encodeChaoxingPackTicket(ChaoxingPackTicket(pickupId: pickupId, key: sealed.key));
+
+    final controller = ChaoxingController(
+      accounts: ChaoxingAccounts(
+        store: store,
+        vault: MemoryChaoxingVault(),
+        transport: (cookies) => ChaoxingHttp(client: fake.client(), cookies: cookies),
+      ),
+      hub: hub,
+    );
+    // 登录要读本机库与网络桩，在假时钟里只能靠 runAsync 驱动。
+    await tester.runAsync(() => controller.signIn('13800138000', 'myPassword123'));
+
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: const Scaffold(body: Center(child: Text('宿主')))));
+    unawaited(
+      importChaoxingTicket(
+        tester.element(find.text('宿主')),
+        controller: controller,
+        scan: (context, hint, accept) async => ticket,
+      ),
+    );
+    await waitUntil(tester, () => find.text('导入代签账号').evaluate().isNotEmpty);
+    await tester.tap(find.text('导入'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('已导入 同学乙').evaluate().isNotEmpty);
+    expect(controller.accountList.map((item) => item.phoneNumber), contains('13900139000'));
+    expect(controller.accountList.where((item) => item.isOtherUser), hasLength(1));
     await tester.pumpWidget(const SizedBox());
   });
 }

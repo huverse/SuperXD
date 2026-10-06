@@ -41,3 +41,17 @@ CREATE TABLE IF NOT EXISTS message (
   KEY idx_recipient (recipient_device_id, id),
   KEY idx_expire (expire_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- 代签凭据包的临时信箱：只存客户端拿一次性密钥加过密的包（服务端没有密钥），取走即删，未取走的 10 分钟后由清理任务删除。
+CREATE TABLE IF NOT EXISTS chaoxing_pack (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  pickup_id VARCHAR(32) NOT NULL COMMENT '取件号，12 字节随机数的 base64url',
+  data VARBINARY(2048) NOT NULL COMMENT '一次性密钥加密后的代签凭据包',
+  bytes INT UNSIGNED NOT NULL,
+  expire_time DATETIME(3) NOT NULL,
+  create_time DATETIME(3) NOT NULL,
+  update_time DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_pickup (pickup_id),
+  KEY idx_expire (expire_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;

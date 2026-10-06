@@ -16,6 +16,7 @@ export const RelayCode = {
   peerNotFound: 'PEER_NOT_FOUND', // 对方设备不存在
   envelopeTooLarge: 'ENVELOPE_TOO_LARGE', // 密文超过上限
   mailboxFull: 'MAILBOX_FULL', // 对方待取消息已满
+  packNotFound: 'PACK_NOT_FOUND', // 代签凭据包不存在、已被取走或已过期
   internal: 'INTERNAL', // 未预期的服务端错误
 } as const;
 

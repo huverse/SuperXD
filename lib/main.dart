@@ -39,7 +39,7 @@ import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/third_party_licenses.dart';
 import 'package:superxd/theme/wallpaper_tone.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/domain/campus_log.dart';
 
@@ -171,15 +171,12 @@ class _SuperXdAppState extends State<SuperXdApp> {
       final social? => (context, video) => showShareSheet(context, social: social, card: video),
       null => null,
     },
-    // 课堂签到二维码与好友二维码共用扫码页，认不认由这里给的 accept 决定。
-    scanQrCode: (context) => Navigator.of(context).push<String>(
-      CampusPageRoute(
-        builder: (_) => QrScanPage(
-          hint: '把课堂签到二维码放入框内',
-          accept: (raw) => chaoxingParseQrCode(raw) == null ? '这不是课堂签到二维码' : null,
-        ),
-      ),
+    // 课堂签到二维码、代签二维码与好友二维码共用扫码页，认不认由调用方给的 accept 决定。
+    scanQrCode: (context, hint, accept) => Navigator.of(context).push<String>(
+      CampusPageRoute(builder: (_) => QrScanPage(hint: hint, accept: accept)),
     ),
+    // 代签凭据包与私信共用同一个自建中转，地址同样只从构建参数来。
+    chaoxingHub: relayBaseUrl.isEmpty ? null : ChaoxingPackHub(baseUrl: Uri.tryParse(relayBaseUrl)),
   );
   @override
   void dispose() {

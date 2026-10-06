@@ -12,6 +12,8 @@ enum ChaoxingFailureCode {
   faceRequired,
   qrCodeExpired,
   unsupported,
+  unavailable,
+  packNotFound,
   rateLimited,
   timeout,
   network,

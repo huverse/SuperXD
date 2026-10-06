@@ -4,6 +4,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { env } from 'src/config/env';
 import { RedisModule } from 'src/common/redis/redis.module';
+import { ChaoxingPackEntity } from 'src/modules/chaoxing/chaoxing_pack.entity';
+import { ChaoxingPackModule } from 'src/modules/chaoxing/chaoxing_pack.module';
 import { DeviceEntity } from 'src/modules/device/device.entity';
 import { DeviceModule } from 'src/modules/device/device.module';
 import { FriendshipEntity } from 'src/modules/friend/friendship.entity';
@@ -20,7 +22,7 @@ import { PairingModule } from 'src/modules/pairing/pairing.module';
       useFactory: () => ({
         type: 'mysql',
         ...env().mysql,
-        entities: [DeviceEntity, FriendshipEntity, MessageEntity],
+        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity],
         // 表结构由人工执行 sql/schema.sql 管理，启动不做 DDL。
         synchronize: false,
         migrationsRun: false,
@@ -40,6 +42,7 @@ import { PairingModule } from 'src/modules/pairing/pairing.module';
     InviteModule,
     FriendModule,
     MessageModule,
+    ChaoxingPackModule,
     PairingModule,
   ],
   controllers: [HealthController],
