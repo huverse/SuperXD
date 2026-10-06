@@ -11,6 +11,7 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/course_editor_page.dart';
 import 'package:superxd/page/schedule_history_page.dart';
 import 'package:superxd/domain/campus_log.dart';
@@ -420,11 +421,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                                 for (final meeting in course.meetings)
                                   Padding(
                                     padding: const EdgeInsets.only(top: 6),
-                                    // 按“ · ”分项换行（Wrap），窄处不把“A201”之类拆成孤字。
-                                    child: Wrap(spacing: 6, children: [
-                                      for (final (index, part) in meetingLabel(meeting).split(' · ').indexed)
-                                        Text(index == 0 ? part : '· $part', style: const TextStyle(fontSize: 14, height: 1.5)),
-                                    ]),
+                                    child: DotSeparatedText(meetingLabel(meeting), style: const TextStyle(fontSize: 14, height: 1.5)),
                                   ),
                               ],
                             )),

@@ -100,9 +100,9 @@ void main() {
     active.value = true;
     await tester.pumpAndSettle();
     expect(find.text('同步已中止'), findsOneWidget);
-    expect(find.text('未处理 · 课表 · 当前学期'), findsOneWidget);
-    expect(find.text('未处理 · 作息 · 当前学期'), findsOneWidget);
-    expect(find.text('未处理 · 成绩 · 当前学期'), findsOneWidget);
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '未处理 · 课表 · 当前学期'), findsOneWidget);
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '未处理 · 作息 · 当前学期'), findsOneWidget);
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '未处理 · 成绩 · 当前学期'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, '重新同步'));
     await tester.pumpAndSettle();
     expect(find.text('同步范围'), findsOneWidget);
@@ -124,7 +124,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('同步已中止'), findsOneWidget);
     expect(find.textContaining('请求太过频繁，已停止剩余项'), findsOneWidget);
-    expect(find.text('未处理 · 成绩 · 当前学期'), findsOneWidget);
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '未处理 · 成绩 · 当前学期'), findsOneWidget);
     expect(find.text('重新同步'), findsNothing);
     await tester.tap(find.text('知道了'));
     await tester.pumpAndSettle();

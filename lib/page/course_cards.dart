@@ -13,6 +13,32 @@ import 'package:superxd/domain/meeting_time.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/live_clock.dart';
 
+// “甲 · 乙 · 丙”式的说明行：按“ · ”分项换行（Wrap），学期名再在“学年”后切开，窄处与大字号下不把“老师”“A201”“期”拆成孤字；读屏读整句。
+class DotSeparatedText extends StatelessWidget {
+  const DotSeparatedText(this.text, {super.key, required this.style});
+  final String text;
+  final TextStyle style;
+
+  static final _term = RegExp(r'^(.+学年)(第.+学期)$');
+
+  @override
+  Widget build(BuildContext context) {
+    // 分隔的“ · ”挂在前一项末尾，换行后每行左缘对齐；Wrap 不另加间距，同一行里学年与学期紧挨着。
+    final parts = text.split(' · ');
+    final items = <String>[];
+    for (final (index, part) in parts.indexed) {
+      final tail = index == parts.length - 1 ? '' : ' · ';
+      final match = _term.firstMatch(part);
+      if (match == null) {
+        items.add('$part$tail');
+      } else {
+        items..add(match.group(1)!)..add('${match.group(2)}$tail');
+      }
+    }
+    return Semantics(label: text, excludeSemantics: true, child: Wrap(children: [for (final item in items) Text(item, style: style)]));
+  }
+}
+
 String spanIdentity(PeriodSpan span) => span.empty ? span.key : '${span.key}:${span.meeting!.weekday}:${span.meeting!.place}';
 
 // 今天此刻的上课状态（同 iOS 实时活动：有明确起止就画进度）。只对今天计算，其他日子为空。
@@ -338,11 +364,7 @@ class _CourseCardBody extends StatelessWidget {
           const SizedBox(height: 2),
           Text(span.course!.courseName, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface)),
           const SizedBox(height: 4),
-          // 地点与教师分项换行（Wrap），窄卡（学期视图）里不把“老师”拆成孤字。
-          Wrap(spacing: 4, children: [
-            for (final part in [span.meeting!.place, if (span.course!.teacherName.isNotEmpty) '· ${span.course!.teacherName}'])
-              Text(part, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: palette.onSurfaceVariant)),
-          ]),
+          DotSeparatedText([span.meeting!.place, span.course!.teacherName].where((part) => part.isNotEmpty).join(' · '), style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, color: palette.onSurfaceVariant)),
         ])),
       ])),
     );

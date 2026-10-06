@@ -96,11 +96,7 @@ class _ScheduleHistoryPageState extends State<ScheduleHistoryPage> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text(
-            '每学期最多100版，保护当前版本和最近教务基线。恢复会新建本地版本，不改变开学日与作息。',
-            style: TextStyle(fontSize: 14, height: 1.5),
-          ),
-          const SizedBox(height: 16),
+          // 恢复的影响（新建本地版本、不改开学日与作息、最多 100 版）在恢复确认里说明，列表上方不重复。
           if (_error != null) ...[
             Text(
               _error!,

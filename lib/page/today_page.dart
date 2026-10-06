@@ -200,7 +200,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         const SizedBox(height: 16),
         Text('上课时段', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),
-        for (final meeting in course.meetings) Padding(padding: const EdgeInsets.fromLTRB(0, 4, 12, 4), child: Text(meetingLabel(meeting), style: const TextStyle(fontSize: 14, height: 1.5))),
+        for (final meeting in course.meetings) Padding(padding: const EdgeInsets.fromLTRB(0, 4, 12, 4), child: DotSeparatedText(meetingLabel(meeting), style: const TextStyle(fontSize: 14, height: 1.5))),
       ]),
     ));
     });
