@@ -15,6 +15,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_group_page.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_history_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_share_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_sign_sheet.dart';
@@ -143,14 +144,14 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     await controller.refresh();
   }
 
-  Future<void> _accountMenu() async {
+  Future<void> _accountMenu(BuildContext anchor) async {
     final controller = _controller;
     final record = controller?.current;
     if (controller == null || record == null) return;
     // 代签要靠自建中转转交凭据包，没配中转时不显示这两项。
     final canDelegate = widget.runtime.chaoxingHub?.available ?? false;
     final action = await showCampusMenu<String>(
-      context,
+      anchor,
       items: [
         if (controller.accountList.length > 1)
           const CampusMenuItem(value: 'switch', label: '切换账号', icon: CampusIcons.switchAccount),
@@ -313,10 +314,14 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                     ],
                   ),
                 ),
-                IconButton(
-                  tooltip: '账号操作',
-                  onPressed: () => _accountMenu(),
-                  icon: const CampusIcon(CampusIcons.manage),
+                // 菜单按 anchor 控件的矩形定位，必须把按钮自己的 context 传进去；
+                // 传整页的 context 会让菜单算成「从整页弹出」，落到屏幕左下角。
+                Builder(
+                  builder: (menuAnchor) => IconButton(
+                    tooltip: '账号操作',
+                    onPressed: () => _accountMenu(menuAnchor),
+                    icon: const CampusIcon(CampusIcons.manage),
+                  ),
                 ),
               ],
             ),
@@ -372,6 +377,15 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                 busy: controller.signingActiveId == activity.activeId,
                 onSign: () => _sign(activity),
               ),
+          if (controller.pastActivities.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 4),
+              child: OutlinedButton.icon(
+                onPressed: () => showChaoxingHistoryPage(context, controller: controller),
+                icon: const CampusIcon(CampusIcons.history),
+                label: Text('往期签到（${controller.pastActivities.length}）'),
+              ),
+            ),
         ],
       ),
     );
@@ -398,7 +412,7 @@ class _ActivityCard extends StatelessWidget {
               children: [
                 Text(activity.subtitle, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
                 const SizedBox(height: 4),
-                Text('${activity.title} · ${activity.signType.label}', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+                Text(activity.displayTitle, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
                 const SizedBox(height: 2),
                 Text(
                   endTime != null && activity.ended

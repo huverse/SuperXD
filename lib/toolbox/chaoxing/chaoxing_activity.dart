@@ -81,7 +81,9 @@ ChaoxingActivity? chaoxingActivity(Map<String, Object?> json, ChaoxingCourse cou
     courseId: course.courseId,
     classId: course.classId,
     title: chaoxingString(json['nameOne'], fallback: signType.label),
-    subtitle: chaoxingString(json['nameFour'], fallback: course.name),
+    // 标题行用课程名：真实数据里 nameFour 是「09-23 14:22」这样的时间串，直接当标题会跟下面的
+    // 结束时间重复，也看不出是哪门课；nameFour 只在拿不到课程名时兜底。
+    subtitle: course.name.isNotEmpty ? course.name : chaoxingString(json['nameFour']),
     signType: signType,
     startTime: chaoxingTimestamp(json['startTime']) ?? DateTime.now().toUtc(),
     endTime: chaoxingTimestamp(json['endTime']),

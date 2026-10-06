@@ -122,6 +122,10 @@ class ChaoxingActivity {
 
   // 是否已签到只认 preSign 返回的页面状态，不看列表字段。
   bool get ended => endTime != null && DateTime.now().toUtc().isAfter(endTime!);
+
+  // [人工决策-2026-10-06 23:16:39] 活动名与签到类型名相同时只显示一个：真实数据里活动名常常
+  // 就是「二维码签到」这类，和类型名叠一起会重复成「二维码签到 · 二维码签到」。
+  String get displayTitle => title == signType.label ? title : '$title · ${signType.label}';
 }
 
 class ChaoxingCourse {

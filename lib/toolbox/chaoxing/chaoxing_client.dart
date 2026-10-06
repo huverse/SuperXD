@@ -10,6 +10,12 @@ const chaoxingUserInfoUri = 'https://sso.chaoxing.com/apis/login/userLogin4Uname
 const chaoxingPasswordMinLength = 8;
 const chaoxingPasswordMaxLength = 16;
 
+// [人工决策-2026-10-06 23:02:25] 登录与用户信息这两个接口单独用 30 秒超时：实测它们的响应在
+// 2.4–30.5 秒之间波动（同刻 curl 与纯 dart:io 请求对照一致，不是客户端问题），按默认 15 秒
+// 会在真实网络上偶发「请求超时」；登录是低频关键操作，值得多等。列表、签到等交互密集的接口
+// 仍用 chaoxing_http 的默认超时。
+const chaoxingAccountTimeout = Duration(seconds: 30);
+
 // 登录表单固定字段；手机号与密码是 AES 密文，按表单编码提交。
 String chaoxingLoginBody({
   required String encryptedPhone,
@@ -90,6 +96,7 @@ class ChaoxingClient {
         encryptedPhone: await chaoxingEncrypt(phoneNumber),
         encryptedPassword: encryptedPassword,
       ),
+      timeout: chaoxingAccountTimeout,
     );
     final result = chaoxingJson(response.body);
     if (result['status'] != true) {
@@ -111,7 +118,7 @@ class ChaoxingClient {
   }
 
   Future<ChaoxingAccount> loadAccount() async {
-    final response = await http.get(Uri.parse(chaoxingUserInfoUri));
+    final response = await http.get(Uri.parse(chaoxingUserInfoUri), timeout: chaoxingAccountTimeout);
     final message = chaoxingJson(response.body)['msg'];
     if (message is! Map) {
       throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '登录已过期，请重新登录');

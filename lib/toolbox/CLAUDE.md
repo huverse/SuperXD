@@ -68,8 +68,8 @@
   - 对接超星学习通的课堂签到，账号是学习通账号，与教务账号无关；协议按参考项目 ChaoxingSignFaker 的接口行为独立重写。
   - chaoxing_models.dart：活动、课程、活动详情、账号与错误码 ChaoxingFailure；otherId 到 ChaoxingSignType 的映射。
   - chaoxing_crypto.dart：学习通固定的传输加密（AES-128-CBC，IV 与密钥同为固定串）与 MD5。
-  - chaoxing_http.dart：请求封装与 Cookie 会话 ChaoxingCookieJar；UA 固定成学习通安卓客户端；超时 15 秒、响应上限 1MB，日志只记路径。
-  - chaoxing_client.dart：登录、用户信息、重登与设备码。
+  - chaoxing_http.dart：请求封装与 Cookie 会话 ChaoxingCookieJar；UA 固定成学习通安卓客户端；默认超时 15 秒（登录与用户信息另用 30 秒，见 chaoxing_client.dart 的人工决策）、响应上限 1MB，日志只记路径。
+  - chaoxing_client.dart：登录、用户信息、重登与设备码。登录与用户信息这两个上游最慢的接口用 chaoxingAccountTimeout（30 秒）。
   - chaoxing_activity.dart：课程列表、活动列表与活动详情。
   - chaoxing_signer.dart：preSign 页面状态判定、各签到类型的提交参数、提交结果分支。
   - chaoxing_location.dart：坐标模型、坐标系转换（提交口径 BD-09）、随机偏移与 location/locationResult 负载。
@@ -80,6 +80,7 @@
   - chaoxing_face.dart：人脸识别签到。用内置公钥（SPKI 里 128 字节模数）对 clientId 做模幂还原出设备信息，按字段排序拼 sc 做 md5 得 signToken，换一次性的 faceEnc；也用来取学习通里存着的人脸照片 objectId。
   - chaoxing_im.dart：群聊签到。学习通群聊走环信：DES 解出登录下发的环信密码（pointycastle 只有 3DES，三段同一把钥匙等价单 DES）换令牌，列群、拉漫游消息，用极简 protobuf 读 Meta/MessageBody/KeyValue 三段取 attachment 扩展，再挑 attachmentType 15 且 atype 为 2/74 的签到。
   - chaoxing_group_page.dart：群聊里的签到页，按群翻出只发在群里的签到，逐条走同一套签到弹层。
+  - chaoxing_history_page.dart：往期签到页，只读回看已结束的活动（复用主列表那一次拉取的数据，不额外请求）。
   - chaoxing_credential_pack.dart：代签凭据包（手机号、密文密码、昵称、对方设备码）的编解码与一次性密钥封装（AES-256-GCM），以及二维码取件票（SXDC1: 取件号 + 密钥）的编解码；包来自别人的二维码，一律按外部输入逐项校验。
   - chaoxing_pack_client.dart：代签凭据包的自建中转客户端，投递换取件号、凭号取件（取走即删），地址由组合根从构建参数注入；没配中转时代签入口不显示。
   - chaoxing_share_page.dart：出示代签码页面，画二维码并说明「被扫走即失效」。
@@ -117,7 +118,7 @@
   - 高德地图只用于选点：不申请定位权限、不读实时位置，隐私政策单列「地图选点」一节。
   - 代签：凭据包用一次性随机密钥加密，密钥只在二维码里、不进服务器；密文经自建中转暂存，取件号一次性、10 分钟过期、取走即删。导入的账号按他人账号对待（is_other_user），带对方的设备码，签到时不会提示「更换了签到设备」；本机库里已有本人账号时拒绝导入自己的码。
   - 上限：账号 21 个（本人 1 加他人 20）、收藏位置 50 条、签到记录 500 条且 90 天、每人人脸照片 objectId 5 条，打开库时裁剪。
-  - 人脸识别：照片本身存在学习通云盘，本机只记 objectId；默认用学习通里存着的那张，选新照片时不做裁剪旋转（要认得出人）。clientId 与环信密码都只在登录响应里下发，不落库，用到时补一次用户信息。
+  - 人脸识别：照片本身存在学习通云盘，本机只记 objectId；默认用学习通里存着的那张，选新照片时不做裁剪旋转（要认得出人）。clientId 与环信密码都只在登录后的用户信息接口下发，不落库，用到时补一次用户信息；clientId 上游可能不给（2026-10-06 实测有账号不下发），缺失时人脸提交不带设备签名。
   - 群聊：环信令牌、群列表与漫游消息每次都现拉，不在本机存群消息。
 - 轻量逻辑随应用一起发布，只有重型纯资源才按需安装。解析器没有大资源，不显示假的下载安装过程。
 - 真实作品链接只在用户授权后联调；离线测试一律用合成数据。

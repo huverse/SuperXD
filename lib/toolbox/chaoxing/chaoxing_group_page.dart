@@ -128,7 +128,7 @@ class _ChaoxingGroupPageState extends State<ChaoxingGroupPage> {
                               ),
                               const SizedBox(height: 4),
                               Text(
-                                '${activity.title} · ${activity.signType.label}',
+                                activity.displayTitle,
                                 style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
                               ),
                             ],
