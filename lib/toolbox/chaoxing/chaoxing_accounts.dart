@@ -55,6 +55,7 @@ class ChaoxingAccounts {
         name: stored.name,
         deviceCode: stored.deviceCode,
         schoolName: stored.schoolName,
+        clientId: stored.clientId.isEmpty ? null : stored.clientId,
       ),
     );
   }
@@ -127,6 +128,28 @@ class ChaoxingAccounts {
         deviceCode: client.deviceCode,
         isOtherUser: isOtherUser,
         createdAt: createdAt ?? DateTime.now().toUtc(),
+        clientId: account.clientId ?? '',
+      ),
+    );
+  }
+
+  // 人脸识别签到要 clientId 做设备签名；旧的库里没有时补写回去，省得每次重新取。
+  Future<void> rememberClientId(String phoneNumber, String clientId) async {
+    if (clientId.isEmpty) return;
+    final existing = await record(phoneNumber);
+    if (existing == null || existing.clientId == clientId) return;
+    await store.putAccount(
+      ChaoxingAccountRecord(
+        phoneNumber: existing.phoneNumber,
+        uid: existing.uid,
+        puid: existing.puid,
+        fid: existing.fid,
+        name: existing.name,
+        schoolName: existing.schoolName,
+        deviceCode: existing.deviceCode,
+        isOtherUser: existing.isOtherUser,
+        createdAt: existing.createdAt,
+        clientId: clientId,
       ),
     );
   }

@@ -60,6 +60,7 @@ abstract final class CampusIcons {
   static const share = LucideIcons.share2;
   static const send = LucideIcons.send;
   static const qrCode = LucideIcons.qrCode;
+  static const scanFace = LucideIcons.scanFace;
   static const scan = LucideIcons.scanQrCode;
   static const addFriend = LucideIcons.userPlus;
   static const removeFriend = LucideIcons.userMinus;

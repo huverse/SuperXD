@@ -14,6 +14,7 @@ class ChaoxingAccountRecord {
     required this.deviceCode,
     required this.isOtherUser,
     required this.createdAt,
+    this.clientId = '',
   });
   final String phoneNumber;
   final int uid;
@@ -24,6 +25,9 @@ class ChaoxingAccountRecord {
   final String deviceCode;
   final bool isOtherUser;
   final DateTime createdAt;
+
+  // 人脸识别签到要用它做设备签名；会话过期重登后才有值。
+  final String clientId;
 }
 
 class ChaoxingSavedLocation {
@@ -66,17 +70,18 @@ class ChaoxingStore {
   static const locationLimit = 50;
   static const signRecordLimit = 500;
   static const signRecordRetention = Duration(days: 90);
+  static const faceImageLimit = 5;
 
   static Future<ChaoxingStore> open(String path) async {
     final store = ChaoxingStore._(
       await openDatabase(
         path,
-        version: 1,
+        version: 2,
         onCreate: (database, _) async {
           await database.execute(
             'CREATE TABLE accounts (phone_number TEXT PRIMARY KEY, uid INTEGER NOT NULL, puid INTEGER NOT NULL, '
             'fid INTEGER NOT NULL, name TEXT NOT NULL, school_name TEXT NOT NULL, device_code TEXT NOT NULL, '
-            'is_other_user INTEGER NOT NULL, created_at INTEGER NOT NULL)',
+            'is_other_user INTEGER NOT NULL, created_at INTEGER NOT NULL, client_id TEXT NOT NULL DEFAULT \'\')',
           );
           await database.execute(
             'CREATE TABLE locations (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, address TEXT NOT NULL, '
@@ -93,11 +98,27 @@ class ChaoxingStore {
           await database.execute(
             'CREATE INDEX sign_records_time ON sign_records (created_at DESC, id DESC)',
           );
+          await _createFaceTables(database);
+        },
+        onUpgrade: (database, oldVersion, _) async {
+          if (oldVersion < 2) {
+            await database.execute("ALTER TABLE accounts ADD COLUMN client_id TEXT NOT NULL DEFAULT ''");
+            await _createFaceTables(database);
+          }
         },
       ),
     );
     await store.prune();
     return store;
+  }
+
+  // 人脸照片只记 objectId（照片本身在学习通的云盘里），每人最多 5 张。
+  static Future<void> _createFaceTables(Database database) async {
+    await database.execute(
+      'CREATE TABLE face_images (id INTEGER PRIMARY KEY AUTOINCREMENT, phone_number TEXT NOT NULL, '
+      'object_id TEXT NOT NULL, created_at INTEGER NOT NULL)',
+    );
+    await database.execute('CREATE INDEX face_images_owner ON face_images (phone_number, id DESC)');
   }
 
   // 只增不删的数据都要有上限：账号、收藏位置与签到记录在每次打开时裁剪。
@@ -115,6 +136,12 @@ class ChaoxingStore {
     await _database.rawDelete(
       'DELETE FROM locations WHERE id NOT IN (SELECT id FROM locations ORDER BY updated_at DESC, id DESC LIMIT $locationLimit)',
     );
+    // 每个账号各自留最近几张人脸照片。
+    await _database.rawDelete(
+      'DELETE FROM face_images WHERE id NOT IN ('
+      'SELECT id FROM (SELECT id, phone_number, ROW_NUMBER() OVER (PARTITION BY phone_number ORDER BY id DESC) AS rank FROM face_images) '
+      'WHERE rank <= $faceImageLimit)',
+    );
   }
 
   Future<List<ChaoxingAccountRecord>> accounts() async {
@@ -124,6 +151,33 @@ class ChaoxingStore {
       limit: accountLimit,
     );
     return rows.map(_account).toList();
+  }
+
+  Future<List<String>> faceImages(String phoneNumber) async {
+    final rows = await _database.query(
+      'face_images',
+      columns: ['object_id'],
+      where: 'phone_number = ?',
+      whereArgs: [phoneNumber],
+      orderBy: 'id DESC',
+      limit: faceImageLimit,
+    );
+    return rows.map((row) => row['object_id']! as String).toList();
+  }
+
+  // 同一个 objectId 只留一条，重复使用把它提到最新。
+  Future<void> putFaceImage(String phoneNumber, String objectId) async {
+    await _database.delete('face_images', where: 'phone_number = ? AND object_id = ?', whereArgs: [phoneNumber, objectId]);
+    await _database.insert('face_images', {
+      'phone_number': phoneNumber,
+      'object_id': objectId,
+      'created_at': DateTime.now().toUtc().millisecondsSinceEpoch,
+    });
+    await prune();
+  }
+
+  Future<void> removeFaceImage(String phoneNumber, String objectId) async {
+    await _database.delete('face_images', where: 'phone_number = ? AND object_id = ?', whereArgs: [phoneNumber, objectId]);
   }
 
   static ChaoxingAccountRecord _account(Map<String, Object?> row) => ChaoxingAccountRecord(
@@ -136,6 +190,7 @@ class ChaoxingStore {
     deviceCode: row['device_code']! as String,
     isOtherUser: (row['is_other_user']! as int) == 1,
     createdAt: DateTime.fromMillisecondsSinceEpoch(row['created_at']! as int, isUtc: true),
+    clientId: '${row['client_id'] ?? ''}',
   );
 
   Future<void> putAccount(ChaoxingAccountRecord record) => _database.insert(
@@ -150,6 +205,7 @@ class ChaoxingStore {
       'device_code': record.deviceCode,
       'is_other_user': record.isOtherUser ? 1 : 0,
       'created_at': record.createdAt.millisecondsSinceEpoch,
+      'client_id': record.clientId,
     },
     conflictAlgorithm: ConflictAlgorithm.replace,
   );

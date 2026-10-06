@@ -4,6 +4,8 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_captcha.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_face.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_im.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
@@ -147,6 +149,8 @@ class ChaoxingController extends ChangeNotifier {
     ChaoxingLocation? location,
     String? photoObjectId,
     ChaoxingQrCode? qrCode,
+    String? faceObjectId,
+    String? faceEnc,
     String? captchaValidate,
     String? enc2,
   }) async {
@@ -172,6 +176,8 @@ class ChaoxingController extends ChangeNotifier {
         location: location,
         enc: qrCode?.enc,
         objectId: photoObjectId,
+        faceObjectId: faceObjectId,
+        faceEnc: faceEnc,
         captchaValidate: captchaValidate,
         enc2: enc2,
       );
@@ -250,6 +256,83 @@ class ChaoxingController extends ChangeNotifier {
   Future<bool> checkSignCode(ChaoxingActivity activity, String signCode) async {
     final client = _requireClient();
     return accounts.run(client, () => chaoxingCheckSignCode(client, activeId: activity.activeId, signCode: signCode));
+  }
+
+  // 群聊里的签到：先换环信令牌、列群、拉漫游，再按附件拼出活动；类型名认不出来的去详情里问。
+  Future<List<ChaoxingActivity>> loadGroupActivities() async {
+    final client = _requireClient();
+    // 群聊凭证只在登录响应里下发，恢复出来的账号要先补一次用户信息（这类密钥不落库）。
+    if (client.account!.imPassword.isEmpty) {
+      await accounts.run(client, () async {
+        client.account = await client.loadAccount();
+        return true;
+      });
+    }
+    final found = await accounts.run(client, () => chaoxingImActivities(client, groupLimit: chaoxingImGroupLimit));
+    final activities = <ChaoxingActivity>[];
+    for (final item in found) {
+      var signType = chaoxingSignTypeOfAtypeName(item.atypeName);
+      ChaoxingActiveInfo? info;
+      if (signType == null) {
+        final detail = await accounts.run(client, () => chaoxingActiveInfo(client, item.activeId));
+        info = detail;
+        signType = detail.signType;
+      }
+      if (signType == null) continue;
+      final resolved = signType;
+      activities.add(
+        ChaoxingActivity(
+          activeId: item.activeId,
+          courseId: item.courseId,
+          classId: item.classId,
+          title: item.title.isEmpty ? resolved.label : item.title,
+          subtitle: item.courseName.isEmpty ? item.groupName : item.courseName,
+          signType: signType,
+          startTime: info?.startTime ?? DateTime.now().toUtc(),
+          endTime: info?.endTime,
+          status: 0,
+          userStatus: 0,
+          ext: '',
+        ),
+      );
+    }
+    return activities;
+  }
+
+  // 人脸识别：优先用本机记着的照片，其次用学习通里存的那张；都没有就让用户先选一张。
+  Future<({String objectId, String faceEnc})> prepareFace(ChaoxingActivity activity, {String? objectId}) async {
+    final client = _requireClient();
+    final chosen = objectId ?? await _preferredFaceObjectId(client);
+    if (chosen == null) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.faceRequired, '这场签到要人脸照片，请先选一张');
+    }
+    final faceEnc = await accounts.run(client, () => chaoxingFaceEnc(client, activeId: activity.activeId, objectId: chosen));
+    return (objectId: chosen, faceEnc: faceEnc);
+  }
+
+  Future<String?> _preferredFaceObjectId(ChaoxingClient client) async {
+    final stored = await accounts.store.faceImages(client.phoneNumber);
+    if (stored.isNotEmpty) return stored.first;
+    // clientId 是签名要用的，库里没有就先补一次（会话过期时 run 会先重登）。
+    if ((client.account?.clientId ?? '').isEmpty) {
+      await accounts.run(client, () async {
+        client.account = await client.loadAccount();
+        return true;
+      });
+      await accounts.rememberClientId(client.phoneNumber, client.account?.clientId ?? '');
+    }
+    final profile = await accounts.run(client, () => chaoxingProfileFaceObjectId(client));
+    if (profile == null) return null;
+    await accounts.store.putFaceImage(client.phoneNumber, profile);
+    return profile;
+  }
+
+  // 人脸照片不做裁剪旋转（要认得出人），上传后记下来供以后复用。
+  Future<String> uploadFacePhoto(List<int> bytes) async {
+    final client = _requireClient();
+    final objectId = await accounts.run(client, () => chaoxingUploadPhoto(client, bytes: bytes));
+    await accounts.store.putFaceImage(client.phoneNumber, objectId);
+    return objectId;
   }
 
   // 出示代签码：把当前账号封成凭据包，密文放到中转，二维码里只有取件号与一次性密钥。

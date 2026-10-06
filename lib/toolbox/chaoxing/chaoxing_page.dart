@@ -14,6 +14,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_group_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_share_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_sign_sheet.dart';
@@ -332,6 +333,17 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                   '进行中的签到',
                   style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface),
                 ),
+              ),
+              IconButton(
+                tooltip: '从群聊里找签到',
+                onPressed: controller.busy
+                    ? null
+                    : () => showChaoxingGroupPage(
+                        context,
+                        controller: controller,
+                        scanQrCode: widget.runtime.scanQrCode,
+                      ),
+                icon: const CampusIcon(CampusIcons.messages),
               ),
               IconButton(
                 tooltip: '刷新',
