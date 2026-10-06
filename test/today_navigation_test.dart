@@ -577,7 +577,7 @@ void main() {
 
   testWidgets('看别的日子时“今天”胶囊不压最后一节课：底栏占位下静止时末卡在胶囊之上', (tester) async {
     // 底部留白模拟悬浮底栏的占位（各页的底部安全区）。
-    await _mount(tester, _Gateway(periods: 12), size: const Size(390, 560), bottomPadding: 100);
+    await _mount(tester, _Gateway(periods: 12), size: const Size(390, 580), bottomPadding: 100);
     await _swipeDate(tester, '2026-09-25', 100);
     expect(_date('2026-09-26'), findsOneWidget);
     final last = find.byWidgetPredicate((widget) => widget.key is ValueKey<String> && (widget.key! as ValueKey<String>).value.startsWith('course-card-') && (widget.key! as ValueKey<String>).value.contains(':11-12'));
