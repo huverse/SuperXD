@@ -270,13 +270,22 @@ class ChaoxingController extends ChangeNotifier {
     }
     final found = await accounts.run(client, () => chaoxingImActivities(client, groupLimit: chaoxingImGroupLimit));
     final activities = <ChaoxingActivity>[];
+    var failures = 0;
     for (final item in found) {
       var signType = chaoxingSignTypeOfAtypeName(item.atypeName);
       ChaoxingActiveInfo? info;
       if (signType == null) {
-        final detail = await accounts.run(client, () => chaoxingActiveInfo(client, item.activeId));
-        info = detail;
-        signType = detail.signType;
+        // 群附件里的类型名认不出来时要去详情里问；单条问不到就跳过这一条，不能让整页失败
+        // （与 _loadActivities 一个口径：个别活动读不到不影响其余）。
+        try {
+          final detail = await accounts.run(client, () => chaoxingActiveInfo(client, item.activeId));
+          info = detail;
+          signType = detail.signType;
+        } catch (failure, stack) {
+          campusLog('[Chaoxing] action=group_detail errorType=${failure.runtimeType} activeId=${item.activeId}\n$stack');
+          failures++;
+          continue;
+        }
       }
       if (signType == null) continue;
       final resolved = signType;
@@ -295,6 +304,10 @@ class ChaoxingController extends ChangeNotifier {
           ext: '',
         ),
       );
+    }
+    // 一条都没读出来而且有失败，说明是网络或上游的问题，不能显示成「群里现在没有能签到的活动」。
+    if (activities.isEmpty && failures > 0) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.network, '群聊里的签到没读全，请稍后重试');
     }
     return activities;
   }

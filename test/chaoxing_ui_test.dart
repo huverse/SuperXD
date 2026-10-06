@@ -473,4 +473,25 @@ void main() {
     expect(fake.signQuery!['activeId'], '777');
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('群聊里单条活动详情读不到时只跳过那一条', (tester) async {
+    usePhoneScreen(tester);
+    fake.imGroups.addAll([
+      {'id': 'g1', 'name': '高等数学群'},
+    ]);
+    fake.imMessages.addAll([
+      // 类型名认不出来，必须去详情里问；这条详情读不到，应只跳过它，不能让整页失败。
+      _imAttachmentMessage(activeId: 777, atype: 2, atypeName: '签到', title: '认不出类型的签到'),
+      _imAttachmentMessage(activeId: 888, atype: 2, atypeName: '密码签到', title: '群里签到'),
+    ]);
+    fake.failingActiveInfoIds.add(777);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await tester.tap(find.byTooltip('从群聊里找签到'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('群里签到 · 签到码签到').evaluate().isNotEmpty);
+    expect(find.textContaining('认不出类型的签到'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
 }

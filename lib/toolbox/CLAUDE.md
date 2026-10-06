@@ -68,8 +68,8 @@
   - 对接超星学习通的课堂签到，账号是学习通账号，与教务账号无关；协议按参考项目 ChaoxingSignFaker 的接口行为独立重写。
   - chaoxing_models.dart：活动、课程、活动详情、账号与错误码 ChaoxingFailure；otherId 到 ChaoxingSignType 的映射。
   - chaoxing_crypto.dart：学习通固定的传输加密（AES-128-CBC，IV 与密钥同为固定串）与 MD5。
-  - chaoxing_http.dart：请求封装与 Cookie 会话 ChaoxingCookieJar；UA 固定成学习通安卓客户端；超时 15 秒、响应上限 1MB，日志只记路径。
-  - chaoxing_client.dart：登录、用户信息、重登与设备码。
+  - chaoxing_http.dart：请求封装与 Cookie 会话 ChaoxingCookieJar；UA 固定成学习通安卓客户端；默认超时 15 秒（登录与用户信息另用 30 秒，见 chaoxing_client.dart 的人工决策）、响应上限 1MB，日志只记路径。
+  - chaoxing_client.dart：登录、用户信息、重登与设备码。登录与用户信息这两个上游最慢的接口用 chaoxingAccountTimeout（30 秒）。
   - chaoxing_activity.dart：课程列表、活动列表与活动详情。
   - chaoxing_signer.dart：preSign 页面状态判定、各签到类型的提交参数、提交结果分支。
   - chaoxing_location.dart：坐标模型、坐标系转换（提交口径 BD-09）、随机偏移与 location/locationResult 负载。

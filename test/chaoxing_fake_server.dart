@@ -69,6 +69,9 @@ class FakeChaoxing {
 
   // 按活动号给不同的详情（签退跳转要取另一个活动）。
   Map<int, Map<String, Object?>> activeInfos = {};
+
+  // 列进来的活动号，详情接口按读不到返回，用来验单条失败不影响其余。
+  final failingActiveInfoIds = <int>{};
   String preSignHtml = '';
   String signResponse = 'success';
 
@@ -174,6 +177,7 @@ class FakeChaoxing {
           return _json({'data': {'activeList': activities}});
         case '/v2/apis/active/getPPTActiveInfo':
           final activeId = int.tryParse(request.url.queryParameters['activeId'] ?? '');
+          if (activeId != null && failingActiveInfoIds.contains(activeId)) return _json({'result': 0});
           return _json({'data': activeInfos[activeId] ?? activeInfo});
         case '/newsign/signDetail':
           return _json(signDetail);
