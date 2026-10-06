@@ -107,6 +107,14 @@ flutter run
 flutter run --dart-define=SUPERXD_RELAY=http://你的中转地址:端口
 ```
 
+百宝箱的学习通签到可以用高德地图选签到位置，key 同样在构建时传入，不指定时位置只能用收藏或手输坐标：
+
+```sh
+flutter run --dart-define=SUPERXD_AMAP_KEY=你的高德Android平台key
+```
+
+高德 key 要绑定本机调试签名的 SHA1 与包名（`com.superxd.superxd`），调试与发布签名不同要各申请一个。
+
 中转服务（NestJS + MySQL + Redis）的开发、测试与 Docker 部署见 [server/README.md](server/README.md)。发布签名、版本与发行流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 <details>

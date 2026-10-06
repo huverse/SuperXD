@@ -14,6 +14,7 @@
         android:icon="@mipmap/ic_launcher"
         android:usesCleartextTraffic="true"
         android:enableOnBackInvokedCallback="true"
+        android:allowNativeHeapPointerTagging="false"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules">
         <service android:name="androidx.work.impl.foreground.SystemForegroundService"

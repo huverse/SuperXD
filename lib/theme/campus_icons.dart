@@ -21,6 +21,8 @@ abstract final class CampusIcons {
   static const collapse = LucideIcons.chevronUp;
   static const arrowUp = LucideIcons.arrowUp;
   static const close = LucideIcons.x;
+  static const eye = LucideIcons.eye;
+  static const eyeClosed = LucideIcons.eyeClosed;
   static const search = LucideIcons.search;
   static const sync = LucideIcons.refreshCw;
   static const edit = LucideIcons.pencil;

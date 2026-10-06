@@ -1,6 +1,6 @@
 # toolbox 百宝箱
 
-定位：设备级工具集，不需要教务登录，也不依赖教务相关的任何层（只依赖 domain 与 theme）。不读取教务凭据或 cookie；切换账号时，下载任务不销毁。当前只注册了一个工具：短视频解析与下载。子目录 download 与 short_video 也登记在本文件。
+定位：设备级工具集，不需要教务登录，也不依赖教务相关的任何层（只依赖 domain 与 theme）。不读取教务凭据或 cookie；切换账号时，下载任务不销毁。当前注册了两个工具：短视频解析与下载、学习通签到。子目录 download、short_video 与 chaoxing 也登记在本文件。
 
 # 文件职责
 
@@ -64,6 +64,27 @@
   - media_preview.dart：视频预览 MediaPreview 与图集预览 GalleryPreview。
   - media_image.dart：网络图片 MediaImage。加载失败后点按重试，不自动循环请求。
   - parse_history_page.dart：解析历史全部页 ParseHistoryPage 和条目组件 ParseHistoryTile，支持删除单条与清空。
+- chaoxing 学习通签到：
+  - 对接超星学习通的课堂签到，账号是学习通账号，与教务账号无关；协议按参考项目 ChaoxingSignFaker 的接口行为独立重写。
+  - chaoxing_models.dart：活动、课程、活动详情、账号与错误码 ChaoxingFailure；otherId 到 ChaoxingSignType 的映射。
+  - chaoxing_crypto.dart：学习通固定的传输加密（AES-128-CBC，IV 与密钥同为固定串）与 MD5。
+  - chaoxing_http.dart：请求封装与 Cookie 会话 ChaoxingCookieJar；UA 固定成学习通安卓客户端；超时 15 秒、响应上限 1MB，日志只记路径。
+  - chaoxing_client.dart：登录、用户信息、重登与设备码。
+  - chaoxing_activity.dart：课程列表、活动列表与活动详情。
+  - chaoxing_signer.dart：preSign 页面状态判定、各签到类型的提交参数、提交结果分支。
+  - chaoxing_location.dart：坐标模型、坐标系转换（提交口径 BD-09）、随机偏移与 location/locationResult 负载。
+  - chaoxing_photo.dart：拍照签到。上传前随机裁剪、旋转再按安全内接矩形裁齐（同一张照片反复用会被教师端比对出来），再传云盘拿 objectId。
+  - chaoxing_qrcode.dart：课堂签到二维码的解析（SIGNIN: 内嵌串与带 enc 的链接两种）与过期查询（newsign/signDetail）。
+  - chaoxing_captcha.dart：滑块验证码，取配置与底图、按 280 宽的坐标空间提交拖动位置、换成一次性 validate。
+  - chaoxing_captcha_dialog.dart：滑块验证弹窗，底图上拖缺口块，不通过自动换一张。
+  - chaoxing_map_page.dart：高德地图选点。高德 key 走构建参数 SUPERXD_AMAP_KEY（Android 平台 key，不写进源码）；key 没配或不在 arm 设备上（高德只带 arm 原生库）时地图入口不出现，位置直接摊开经纬度并写明原因（回退路径，不让人对着空白找）。地图按 GCJ-02 画，收藏里的 BD-09 与 WGS-84 先换算；底部面板给高德 logo 留出位置。
+    - 地图渲染无法在 x86 模拟器上验证，只能在真机；手动入口见 tool/verify_chaoxing_map.dart。
+  - chaoxing_accounts.dart：账号闭环，登录、恢复会话、删除；会话过期自动重登一次并重放该次请求。
+  - chaoxing_vault.dart：密码与 Cookie 的存放，Secure 版用系统安全存储（命名空间 superxd_chaoxing），测试用内存版。
+  - chaoxing_store.dart：chaoxing.db，账号索引、收藏位置与签到记录三张表，打开时按上限裁剪。
+  - chaoxing_controller.dart：页面状态，账号切换、刷新（课程与活动，最多并发三个课程请求）、签到、收藏位置、签退跳转、验证码与照片风格化（风格化放 compute 里做）。
+  - chaoxing_page.dart：首页与登录表单，先取同意再登录；账号操作用⋯菜单（切换、登录其他账号、删除）。
+  - chaoxing_sign_sheet.dart：签到弹层，先取活动详情再按类型要输入（签到码、二维码、位置、照片）；详情里有签退关系时给跳转入口；服务端要验证码时就地弹滑块，过了自动把这次签到重发一遍。
 
 # 关键规则
 
@@ -81,6 +102,14 @@
   - 导出前只按文件头识别类型：先查 mime 默认表，查不到再查下载管理器里补充的规则。不按 Content-Type 或链接后缀兜底。音频资源的 MP4 容器按 audio/mp4 导出。
   - 待保存不带错误，表示排队等导出或等回前台自动导出，显示为中性等待；带错误（导出失败、旧系统取消选址）才显示重试保存，判定见 ToolboxDownload.saveFailed。
   - 导出的视频归用户所有，卸载工具时不删除。
+- 学习通签到（chaoxing）：
+  - 协议按参考项目 ChaoxingSignFaker 的接口行为独立重写，不复制其代码，也不依赖它的任何域名与服务。
+  - 不碰教务凭据与 cookie；学习通账号的密码与 cookie 只进系统安全存储，业务库只存账号索引。
+  - 活动列表、preSign 与提交结果的解析集中在 chaoxing_activity.dart 与 chaoxing_signer.dart，学习通改版时只动这两处。
+  - 扫码页在 page 层，百宝箱用组合根注入的 ToolboxQrScan 取二维码原文（toolbox_runtime.dart），不依赖 page。
+  - 位置签到的坐标提交口径是 BD-09，地图或定位给的 WGS-84、GCJ-02 先在 chaoxing_location.dart 转换；坐标系尚未用真账号校准。提交前一律先换算再按小范围随机偏移（超范围时收紧到 0.00001 重试一次），手输坐标按高德 GCJ-02 算。
+  - 高德地图只用于选点：不申请定位权限、不读实时位置，隐私政策单列「地图选点」一节。
+  - 上限：账号 21 个（本人 1 加他人 20）、收藏位置 50 条、签到记录 500 条且 90 天，打开库时裁剪。
 - 轻量逻辑随应用一起发布，只有重型纯资源才按需安装。解析器没有大资源，不显示假的下载安装过程。
 - 真实作品链接只在用户授权后联调；离线测试一律用合成数据。
 

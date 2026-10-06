@@ -23,6 +23,7 @@ import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/router.dart';
 import 'package:superxd/page/live_clock.dart';
+import 'package:superxd/page/qr_scan_page.dart';
 import 'package:superxd/page/share_target_sheet.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/relay_client.dart';
@@ -38,6 +39,7 @@ import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/third_party_licenses.dart';
 import 'package:superxd/theme/wallpaper_tone.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/domain/campus_log.dart';
 
@@ -164,10 +166,21 @@ class SuperXdApp extends StatefulWidget {
 }
 
 class _SuperXdAppState extends State<SuperXdApp> {
-  late final _toolbox = widget.toolbox ?? ToolboxRuntime(shareVideo: switch (widget.social) {
-    final social? => (context, video) => showShareSheet(context, social: social, card: video),
-    null => null,
-  });
+  late final _toolbox = widget.toolbox ?? ToolboxRuntime(
+    shareVideo: switch (widget.social) {
+      final social? => (context, video) => showShareSheet(context, social: social, card: video),
+      null => null,
+    },
+    // 课堂签到二维码与好友二维码共用扫码页，认不认由这里给的 accept 决定。
+    scanQrCode: (context) => Navigator.of(context).push<String>(
+      CampusPageRoute(
+        builder: (_) => QrScanPage(
+          hint: '把课堂签到二维码放入框内',
+          accept: (raw) => chaoxingParseQrCode(raw) == null ? '这不是课堂签到二维码' : null,
+        ),
+      ),
+    ),
+  );
   @override
   void dispose() {
     if (widget.toolbox == null) {
