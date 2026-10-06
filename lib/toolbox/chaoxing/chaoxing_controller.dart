@@ -32,7 +32,12 @@ class ChaoxingController extends ChangeNotifier {
   List<ChaoxingAccountRecord> accountList = const [];
   ChaoxingAccountRecord? current;
   List<ChaoxingCourse> courses = const [];
+
+  // 还能签的活动（接口把课程的全部历史活动一起给回来，这里只留未结束的）。
   List<ChaoxingActivity> activities = const [];
+
+  // 已结束的活动，给「往期签到」入口用。
+  List<ChaoxingActivity> pastActivities = const [];
   List<ChaoxingSavedLocation> locations = const [];
   String? error;
   bool busy = false;
@@ -103,6 +108,7 @@ class ChaoxingController extends ChangeNotifier {
       _client = null;
       current = null;
       activities = const [];
+      pastActivities = const [];
       courses = const [];
       accountList = await accounts.list();
       if (accountList.isEmpty) {
@@ -440,11 +446,12 @@ class ChaoxingController extends ChangeNotifier {
     if (collected.isEmpty && failures > 0) {
       throw const ChaoxingFailure(ChaoxingFailureCode.network, '签到活动没读到，请稍后重试');
     }
-    // [人工决策-2026-10-06 23:16:39] 只列进行中的活动：接口会把课程的全部历史活动一起给回来
-    // （实测 195 条里绝大多数已结束），已结束的点了也签不上，堆在「进行中的签到」下面既对不上
-    // 标题、又让人找不到真正能签的那一场。历史签到不由本应用留档，要看去学习通自己看。
-    activities = [for (final activity in collected) if (!activity.ended) activity]
-      ..sort((first, second) => second.startTime.compareTo(first.startTime));
+    // [人工决策-2026-10-06 23:24:35] 「进行中的签到」只列未结束的：接口会把课程的全部历史活动
+    // 一起给回来（实测 195 条里绝大多数已结束），已结束的点了也签不上，堆在这里既对不上标题、
+    // 又让人找不到真正能签的那一场。已结束的另走「往期签到」入口，不再混在同一个列表里。
+    collected.sort((first, second) => second.startTime.compareTo(first.startTime));
+    activities = [for (final activity in collected) if (!activity.ended) activity];
+    pastActivities = [for (final activity in collected) if (activity.ended) activity];
   }
 
   Uri _preSignUri(ChaoxingClient client, ChaoxingActivity activity) =>

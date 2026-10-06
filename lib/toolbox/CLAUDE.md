@@ -80,6 +80,7 @@
   - chaoxing_face.dart：人脸识别签到。用内置公钥（SPKI 里 128 字节模数）对 clientId 做模幂还原出设备信息，按字段排序拼 sc 做 md5 得 signToken，换一次性的 faceEnc；也用来取学习通里存着的人脸照片 objectId。
   - chaoxing_im.dart：群聊签到。学习通群聊走环信：DES 解出登录下发的环信密码（pointycastle 只有 3DES，三段同一把钥匙等价单 DES）换令牌，列群、拉漫游消息，用极简 protobuf 读 Meta/MessageBody/KeyValue 三段取 attachment 扩展，再挑 attachmentType 15 且 atype 为 2/74 的签到。
   - chaoxing_group_page.dart：群聊里的签到页，按群翻出只发在群里的签到，逐条走同一套签到弹层。
+  - chaoxing_history_page.dart：往期签到页，只读回看已结束的活动（复用主列表那一次拉取的数据，不额外请求）。
   - chaoxing_credential_pack.dart：代签凭据包（手机号、密文密码、昵称、对方设备码）的编解码与一次性密钥封装（AES-256-GCM），以及二维码取件票（SXDC1: 取件号 + 密钥）的编解码；包来自别人的二维码，一律按外部输入逐项校验。
   - chaoxing_pack_client.dart：代签凭据包的自建中转客户端，投递换取件号、凭号取件（取走即删），地址由组合根从构建参数注入；没配中转时代签入口不显示。
   - chaoxing_share_page.dart：出示代签码页面，画二维码并说明「被扫走即失效」。
