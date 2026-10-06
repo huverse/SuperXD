@@ -14,6 +14,7 @@
   - relayBaseUrl：中转地址只来自构建参数 SUPERXD_RELAY，不写进代码；未配置时私信不可用。
   - RelayCode：错误码，与服务端 relay_error.ts 一致，另有 NETWORK、TIMEOUT、BAD_RESPONSE。
   - RelayTransport 传输端口，可按请求给超时；HttpRelayTransport 默认 15 秒，长轮询为挂起时长加 10 秒。
+  - HttpRelayTransport 在断网、超时、响应格式不对时记 [RelayTransport] 日志：错误码、方法与路径、异常类型与完整堆栈，不写服务器地址与查询参数；往上只抛 RelayException 错误码。
   - RelayClient：每个请求用设备私钥签名，没有会话令牌；收到 CLOCK_SKEW 按服务器时间校正并只重发这一次。
 - social_store.dart：本机库 social.db（数据库目录，已排除备份）：profile、friend、message、invite 四张表，时间存 UTC ISO 字符串。
 - social_service.dart：SocialService 私信编排，是页面唯一入口。

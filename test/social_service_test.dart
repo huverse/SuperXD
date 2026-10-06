@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/invite_code.dart';
@@ -302,5 +306,31 @@ void main() {
     await eventually(() => resumed.unread == 1, timeout: const Duration(seconds: 8));
     resumed.dispose();
     relay.releaseWaiters();
+  });
+
+  test('HTTP 传输失败记日志：错误码、方法与路径、完整堆栈，不写服务器地址与查询参数', () async {
+    final logs = <String>[];
+    final original = campusLog;
+    campusLog = logs.add;
+    addTearDown(() => campusLog = original);
+    Future<String> failure(MockClient client, {Duration timeout = const Duration(seconds: 15)}) async {
+      logs.clear();
+      final transport = HttpRelayTransport('http://relay.invalid:8080', client: client, timeout: timeout);
+      await expectLater(transport.send('GET', '/v1/messages?after=secret-cursor&limit=50', const {}, null), throwsA(isA<RelayException>()));
+      expect(logs, hasLength(1));
+      final log = logs.single;
+      expect(log, startsWith('[RelayTransport] action=request route=GET /v1/messages '));
+      expect(log, contains('relay_client.dart'), reason: '应附完整堆栈');
+      expect(log, isNot(contains('relay.invalid')));
+      expect(log, isNot(contains('secret-cursor')));
+      return log;
+    }
+
+    expect(await failure(MockClient((_) async => throw http.ClientException('connection refused'))), contains('code=NETWORK errorType=ClientException'));
+    expect(
+      await failure(MockClient((_) => Completer<http.Response>().future), timeout: const Duration(milliseconds: 50)),
+      contains('code=TIMEOUT errorType=TimeoutException'),
+    );
+    expect(await failure(MockClient((_) async => http.Response('<html>', 502))), contains('code=BAD_RESPONSE status=502 errorType=FormatException'));
   });
 }

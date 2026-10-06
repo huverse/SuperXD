@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/social/social_crypto.dart';
 
 // [人工决策-2026-10-04 16:44:36] 私信经自建加密中转送达（NestJS + MySQL + Redis）；测试期用国内服务器 IP，之后换正式域名，地址不写死。
@@ -65,25 +66,34 @@ class HttpRelayTransport implements RelayTransport {
     final request = http.Request(method, Uri.parse('$baseUrl$pathWithQuery'))..headers.addAll(headers);
     if (body != null) request.bodyBytes = body;
     final limit = timeout ?? this.timeout;
+    // 日志只记方法与路径（不含服务器地址与查询参数），原始异常与堆栈留在日志里，往上只抛错误码。
+    final route = '$method ${pathWithQuery.split('?').first}';
     final http.Response response;
     try {
       response = await http.Response.fromStream(await _client.send(request).timeout(limit)).timeout(limit);
-    } on TimeoutException {
+    } on TimeoutException catch (error, stack) {
+      _log(route, RelayCode.timeout, error, stack);
       throw const RelayException(RelayCode.timeout);
-    } on SocketException {
+    } on SocketException catch (error, stack) {
+      _log(route, RelayCode.network, error, stack);
       throw const RelayException(RelayCode.network);
-    } on http.ClientException {
+    } on http.ClientException catch (error, stack) {
+      _log(route, RelayCode.network, error, stack);
       throw const RelayException(RelayCode.network);
     }
     if (response.statusCode == 204 || response.bodyBytes.isEmpty) return RelayResponse(response.statusCode, const {});
     try {
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
       if (decoded is Map) return RelayResponse(response.statusCode, decoded.cast<String, Object?>());
-    } on FormatException {
-      // 走下面的统一错误。
+      campusLog('[RelayTransport] action=request route=$route code=${RelayCode.badResponse} status=${response.statusCode} errorType=${decoded.runtimeType}');
+    } on FormatException catch (error, stack) {
+      _log(route, RelayCode.badResponse, error, stack, status: response.statusCode);
     }
     throw const RelayException(RelayCode.badResponse);
   }
+
+  static void _log(String route, String code, Object error, StackTrace stack, {int? status}) =>
+      campusLog('[RelayTransport] action=request route=$route code=$code${status == null ? '' : ' status=$status'} errorType=${error.runtimeType}\n$stack');
 
   void close() => _client.close();
 }
