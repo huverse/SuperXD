@@ -1,4 +1,5 @@
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
@@ -74,12 +75,44 @@ class ChaoxingAccounts {
     }
   }
 
+  // 导入别人的代签凭据：密文密码与对方设备码进安全存储，再登录一次拿真实的 uid/fid 与昵称。
+  // 带上对方的设备码，用它签到时学习通不会提示「更换了签到设备」。
+  Future<ChaoxingAccountRecord> importOther(ChaoxingCredentialPack pack) async {
+    final existing = await record(pack.phoneNumber);
+    if (existing != null && !existing.isOtherUser) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '这是你自己的账号，不用导入代签码');
+    }
+    final client = ChaoxingClient(
+      http: _transport(ChaoxingCookieJar()),
+      phoneNumber: pack.phoneNumber,
+      encryptedPassword: pack.encryptedPassword,
+      deviceCode: pack.deviceCode,
+    );
+    try {
+      await client.login();
+      client.account = await client.loadAccount();
+    } on ChaoxingFailure catch (error) {
+      client.close();
+      throw ChaoxingFailure(
+        error.code == ChaoxingFailureCode.login ? ChaoxingFailureCode.login : error.code,
+        '这个账号登不上去，请让对方重新生成代签码',
+      );
+    }
+    await _persist(client, isOtherUser: true, name: pack.name, createdAt: existing?.createdAt);
+    return (await record(pack.phoneNumber))!;
+  }
+
   Future<void> forget(String phoneNumber) async {
     await store.removeAccount(phoneNumber);
     await vault.delete(phoneNumber);
   }
 
-  Future<void> _persist(ChaoxingClient client, {required bool isOtherUser}) async {
+  Future<void> _persist(
+    ChaoxingClient client, {
+    required bool isOtherUser,
+    String? name,
+    DateTime? createdAt,
+  }) async {
     final account = client.account!;
     await vault.writePassword(client.phoneNumber, client.encryptedPassword);
     await vault.writeCookies(client.phoneNumber, client.http.cookies.session);
@@ -89,11 +122,11 @@ class ChaoxingAccounts {
         uid: account.uid,
         puid: account.puid,
         fid: account.fid,
-        name: account.name,
+        name: name?.isNotEmpty == true ? name! : account.name,
         schoolName: account.schoolName,
         deviceCode: client.deviceCode,
         isOtherUser: isOtherUser,
-        createdAt: DateTime.now().toUtc(),
+        createdAt: createdAt ?? DateTime.now().toUtc(),
       ),
     );
   }

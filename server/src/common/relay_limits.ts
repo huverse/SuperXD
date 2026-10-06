@@ -32,6 +32,12 @@ export const registerPerHour = 20;
 // 兑换邀请限流：每设备每分钟 10 次，防止穷举。
 export const redeemPerMinute = 10;
 
+// 代签凭据包：单条不超过 2KB，取件号 10 分钟有效；同一 IP 每小时最多提交 20 个、取件 60 次（取件号随机、一次性，限流只为防刷）。
+export const chaoxingPackMaxBytes = 2 * 1024;
+export const chaoxingPackTtlSeconds = 10 * 60;
+export const chaoxingPackPerHour = 20;
+export const chaoxingPackPickupPerHour = 60;
+
 // 设备 400 天没有任何请求即删除，连同其好友关系与待取消息。
 export const deviceIdleDays = 400;
 // 最后活跃时间每设备最多每小时写一次库。

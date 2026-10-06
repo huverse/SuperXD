@@ -163,7 +163,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       return;
     }
     try {
-      final raw = await scan(context);
+      final raw = await scan(context, '把课堂签到二维码放入框内', (value) => chaoxingParseQrCode(value) == null ? '这不是课堂签到二维码' : null);
       if (!mounted || raw == null) return;
       final code = chaoxingParseQrCode(raw);
       if (code == null) {

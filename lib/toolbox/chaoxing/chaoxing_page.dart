@@ -13,11 +13,48 @@ import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_share_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_sign_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
+
+// 扫别人的代签码：扫到就导入，导入前把「本机会保存对方的账号与凭据」说清楚。
+// 抽成独立函数便于测试直接驱动这条流程（菜单在测试环境里的定位不可靠）。
+Future<void> importChaoxingTicket(
+  BuildContext context, {
+  required ChaoxingController controller,
+  ToolboxQrScan? scan,
+}) async {
+  if (scan == null) {
+    await showCampusNotice(context, '当前版本不能扫码，请让对方出示代签码后再试');
+    return;
+  }
+  final raw = await scan(
+    context,
+    '把对方的代签二维码放入框内',
+    (value) => decodeChaoxingPackTicket(value) == null ? '这不是学习通代签二维码' : null,
+  );
+  if (raw == null || !context.mounted) return;
+  final agreed = await showCampusConfirm(
+    context,
+    title: '导入代签账号',
+    message: '导入后本机会保存对方的手机号、登录凭据与设备码，用来替他签到；对方改了密码要重新导入。你可以在账号菜单里随时删掉。',
+    action: '导入',
+  );
+  if (!agreed || !context.mounted) return;
+  try {
+    final record = await controller.importCredentialTicket(raw);
+    if (context.mounted) showCampusToast(context, '已导入 ${record.name}');
+  } on ChaoxingFailure catch (failure) {
+    if (context.mounted) await showCampusNotice(context, failure.message);
+  } catch (failure, stack) {
+    campusLog('[Chaoxing] action=import errorType=${failure.runtimeType}\n$stack');
+    if (context.mounted) await showCampusNotice(context, '导入没完成，请稍后重试');
+  }
+}
 
 // 首次登录前的第三方说明；条款版本变了要重新征得同意。
 const chaoxingConsentService = 'chaoxing';
@@ -52,7 +89,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
       await widget.runtime.initialize();
       final accounts = widget.runtime.chaoxing;
       if (accounts == null) throw const ToolboxException('学习通签到暂不可用');
-      final controller = ChaoxingController(accounts: accounts);
+      final controller = ChaoxingController(accounts: accounts, hub: widget.runtime.chaoxingHub);
       if (!mounted) {
         controller.dispose();
         return;
@@ -109,12 +146,18 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     final controller = _controller;
     final record = controller?.current;
     if (controller == null || record == null) return;
+    // 代签要靠自建中转转交凭据包，没配中转时不显示这两项。
+    final canDelegate = widget.runtime.chaoxingHub?.available ?? false;
     final action = await showCampusMenu<String>(
       context,
       items: [
         if (controller.accountList.length > 1)
           const CampusMenuItem(value: 'switch', label: '切换账号', icon: CampusIcons.switchAccount),
         const CampusMenuItem(value: 'signIn', label: '登录其他账号', icon: CampusIcons.add),
+        if (canDelegate)
+          const CampusMenuItem(value: 'ticket', label: '出示我的代签码', icon: CampusIcons.qrCode),
+        if (canDelegate)
+          const CampusMenuItem(value: 'import', label: '扫别人的代签码', icon: CampusIcons.scan),
         CampusMenuItem(value: 'remove', label: '删除该账号', icon: CampusIcons.delete, destructive: true),
       ],
     );
@@ -124,10 +167,17 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
         await _pickAccount(controller);
       case 'signIn':
         await _addAccount();
+      case 'ticket':
+        await showChaoxingTicketPage(context, controller: controller);
+      case 'import':
+        await _importTicket(controller);
       case 'remove':
         await _removeAccount(controller, record);
     }
   }
+
+  Future<void> _importTicket(ChaoxingController controller) =>
+      importChaoxingTicket(context, controller: controller, scan: widget.runtime.scanQrCode);
 
   Future<void> _pickAccount(ChaoxingController controller) async {
     await showCampusSheet<void>(
@@ -156,7 +206,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                 ListTile(
                   title: Text(item.name, style: const TextStyle(fontSize: 16)),
                   subtitle: Text(
-                    '${item.schoolName.isEmpty ? '学习通' : item.schoolName} · ${item.phoneNumber}',
+                    '${item.schoolName.isEmpty ? '学习通' : item.schoolName} · ${item.phoneNumber}${item.isOtherUser ? ' · 他人账号' : ''}',
                     style: const TextStyle(fontSize: 14),
                   ),
                   trailing: item.phoneNumber == controller.current?.phoneNumber ? const CampusIcon(CampusIcons.check) : null,

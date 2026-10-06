@@ -4,9 +4,11 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_captcha.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_photo.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_signer.dart';
@@ -15,8 +17,11 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 enum ChaoxingStatus { loading, signedOut, ready }
 
 class ChaoxingController extends ChangeNotifier {
-  ChaoxingController({required this.accounts});
+  ChaoxingController({required this.accounts, this.hub});
   final ChaoxingAccounts accounts;
+
+  // 代签凭据包的中转；没配中转时为 null，出示与扫码导入都不显示。
+  final ChaoxingPackHub? hub;
 
   // 一次刷新最多并发三个课程请求，课程多时也不至于把刷新拖太久。
   static const refreshConcurrency = 3;
@@ -245,6 +250,47 @@ class ChaoxingController extends ChangeNotifier {
   Future<bool> checkSignCode(ChaoxingActivity activity, String signCode) async {
     final client = _requireClient();
     return accounts.run(client, () => chaoxingCheckSignCode(client, activeId: activity.activeId, signCode: signCode));
+  }
+
+  // 出示代签码：把当前账号封成凭据包，密文放到中转，二维码里只有取件号与一次性密钥。
+  Future<String> createCredentialTicket() async {
+    final client = _requireClient();
+    final packHub = hub;
+    if (packHub == null || !packHub.available) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.unavailable, '还没有配置中转服务，代签码用不了');
+    }
+    final password = await accounts.vault.readPassword(client.phoneNumber);
+    if (password == null || password.isEmpty) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '请先重新登录这个账号再出示代签码');
+    }
+    final sealed = await sealChaoxingCredentialPack(
+      ChaoxingCredentialPack(
+        phoneNumber: client.phoneNumber,
+        encryptedPassword: password,
+        name: client.account!.name,
+        deviceCode: client.deviceCode,
+      ),
+    );
+    final pickupId = await packHub.submit(sealed.cipherText);
+    return encodeChaoxingPackTicket(ChaoxingPackTicket(pickupId: pickupId, key: sealed.key));
+  }
+
+  // 导入别人的代签码：取件、解密、用对方的设备码登录一次确认，再按他人账号存进本机。
+  Future<ChaoxingAccountRecord> importCredentialTicket(String raw) async {
+    final packHub = hub;
+    if (packHub == null || !packHub.available) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.unavailable, '还没有配置中转服务，代签码用不了');
+    }
+    final ticket = decodeChaoxingPackTicket(raw);
+    if (ticket == null) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '这不是学习通代签二维码');
+    }
+    final cipherText = await packHub.pickup(ticket.pickupId);
+    final pack = await openChaoxingCredentialPack(ChaoxingSealedPack(key: ticket.key, cipherText: cipherText));
+    final record = await accounts.importOther(pack);
+    accountList = await accounts.list();
+    _notify();
+    return record;
   }
 
   Future<void> saveLocation(String label, ChaoxingLocation location) async {

@@ -26,14 +26,26 @@ class FakeChaoxing {
     int puid = 7007,
     int fid = 1234,
     String name = '同学甲',
-  }) async => FakeChaoxing._(
-    uid: uid,
-    puid: puid,
-    fid: fid,
-    name: name,
-    encryptedPhone: await chaoxingEncrypt(phoneNumber),
-    encryptedPassword: await chaoxingEncrypt(password),
-  );
+  }) async {
+    final fake = FakeChaoxing._(
+      uid: uid,
+      puid: puid,
+      fid: fid,
+      name: name,
+      encryptedPhone: await chaoxingEncrypt(phoneNumber),
+      encryptedPassword: await chaoxingEncrypt(password),
+    );
+    fake.users[phoneNumber] = (phoneCipher: fake.encryptedPhone, passwordCipher: fake.encryptedPassword, name: name);
+    return fake;
+  }
+
+  Future<void> addUser(String phoneNumber, String password, {String? name}) async {
+    users[phoneNumber] = (
+      phoneCipher: await chaoxingEncrypt(phoneNumber),
+      passwordCipher: await chaoxingEncrypt(password),
+      name: name ?? '同学$phoneNumber',
+    );
+  }
 
   final int uid;
   final int puid;
@@ -44,6 +56,10 @@ class FakeChaoxing {
 
   final calls = <String>[];
   String? loginBody;
+
+  // 支持多个学习通账号：手机号 → 手机号密文、密码密文与昵称（代签要两个账号）。
+  final users = <String, ({String phoneCipher, String passwordCipher, String name})>{};
+  String? lastPhone;
   Map<String, String>? signQuery;
   String? preSignBody;
 
@@ -105,9 +121,11 @@ class FakeChaoxing {
     if (request.url.host == 'passport2.chaoxing.com' && path == '/fanyalogin') {
       loginBody = request.body;
       final fields = Uri.splitQueryString(request.body);
-      if (fields['uname'] != encryptedPhone || fields['password'] != encryptedPassword) {
+      final matched = users.entries.where((entry) => entry.value.phoneCipher == fields['uname']).firstOrNull;
+      if (matched == null || matched.value.passwordCipher != fields['password']) {
         return _json({'status': false, 'msg2': '用户名或密码错误'});
       }
+      lastPhone = matched.key;
       return http.Response(
         jsonEncode({'status': true}),
         200,
@@ -118,13 +136,14 @@ class FakeChaoxing {
       );
     }
     if (request.url.host == 'sso.chaoxing.com') {
+      final phone = lastPhone ?? users.keys.first;
       return _json({
         'msg': {
           'uid': uid,
           'puid': puid,
           'fid': fid,
-          'name': name,
-          'uname': '13800138000',
+          'name': users[phone]?.name ?? name,
+          'uname': phone,
           'pic': 'http://p.ananas.chaoxing.com/star3/photo.jpg',
           'schoolname': '示例大学',
           'accountInfo': {

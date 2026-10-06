@@ -11,7 +11,7 @@
 # 定位
 
 - 校园课表与成绩 Flutter 应用。当前只有 Android 宿主，对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱，目前提供短视频解析与下载、学习通签到。
-- 功能性私信：扫码互加好友后，在私信里分享课表、界面配置、短视频等功能卡片，没有文字聊天。经自建中转服务（server 目录，NestJS + MySQL + Redis）端到端加密转交，中转地址由构建参数 SUPERXD_RELAY 传入。
+- 功能性私信：扫码互加好友后，在私信里分享课表、界面配置、短视频等功能卡片，没有文字聊天。经自建中转服务（server 目录，NestJS + MySQL + Redis）端到端加密转交，中转地址由构建参数 SUPERXD_RELAY 传入；学习通代签的凭据包也走这个中转（取件号一次性、10 分钟过期、取走即删）。
 - 当前阶段为公开 Alpha 测试，仓库公开、以 GPL-3.0 开源（curve_geometry.dart 例外，见 README 许可一节）。Flutter 3.47.2 / Dart 3.13.2，依赖锁定在 pubspec.lock。
 - 相关文档：
   - 设计语言：UITEMP/design_language.md
@@ -108,6 +108,7 @@
    - 除了会话自动恢复后的一次重放，其他请求都不自动重试。
    - 教务限流：课表、成绩数据查询在任意 10 秒内最多发 6 次，超出的排队。教务仍提示“请求太过频繁”时报 RATE_LIMITED，本轮同步立即停止，由用户稍后再同步。
    - 百宝箱解析：总预算 30 秒，单次响应上限 1MB。媒体地址必须是公网 https，拒绝本机和内网地址。
+   - 代签凭据包：投递与取件各 15 秒超时，密文上限 2KB；取件号一次性、10 分钟过期，取走即删。除时钟偏差校正后的一次重发外不自动重试。
    - 私信中转：普通请求单次 15 秒超时；每个请求用设备私钥签名（防冒用与重放），不发会话令牌；内容端到端加密，服务端只见设备号、好友关系、密文大小与时间。除时钟偏差校正后的一次重发外不自动重试。
    - 私信收取：应用在前台时持续长轮询（服务端没有消息时最多挂起 25 秒，有新消息经 Redis 发布订阅唤醒立即返回，客户端超时为挂起时长加 10 秒）；进入后台不再发起；网络失败 2 秒起指数退避、上限 60 秒，空响应快于 5 秒时等满 5 秒。没有推送，后台收不到（人工决策见 social_service.dart）。
 10. 数据保留
@@ -119,6 +120,7 @@
     - 课前提醒：只安排未来 14 天、最多 128 条，每次对账整体替换；提醒设置每学期一行。
     - 日历导出：单次最多 5000 个事件；缓存里只留最近一次导出的文件，下次导出前清空。
     - 桌面小组件：快照只覆盖今天起 7 天、最多 200 次课，每次整体替换；过期后提示打开应用。桌面上没有小组件时不留刷新闹钟。
+    - 代签凭据包：密文只在中转上暂存 10 分钟（取走即删、未取走由服务端清理任务删除）；导入的账号凭据按学习通账号的规矩只进系统安全存储。
     - 私信：好友 500；每个好友本机保留最近 200 条；邀请记录 31 天。服务端信箱单条密文 256KB、每设备待取 1000 条，取走确认即删、未取走 30 天删除，设备 400 天不活跃连同关系与信箱删除（见 server/README.md）。
     - 新增只增不删的数据时，必须同时给出上限或清理策略。
 11. 日志
@@ -172,7 +174,8 @@
   - legal_page_test.dart、about_page_test.dart、course_clock_performance_test.dart
 - 主题与显示设置：atmosphere_test.dart、campus_glass_test.dart、campus_glass_button_test.dart、campus_motion_test.dart、dark_mode_test.dart、appearance_settings_test.dart、wallpaper_test.dart
 - 百宝箱：toolbox_widget_test.dart、toolbox_download_test.dart、toolbox_media_features_test.dart、short_video_parser_test.dart、media_image_test.dart
-  - 学习通签到：chaoxing_protocol_test.dart（协议与坐标转换）、chaoxing_store_test.dart（本机库与上限）、chaoxing_ui_test.dart（登录与签到流程，用 chaoxing_fake_server.dart）
+  - 学习通签到：chaoxing_protocol_test.dart（协议与坐标转换）、chaoxing_store_test.dart（本机库与上限）、chaoxing_ui_test.dart（登录、签到、代签入口与导入流程，用 chaoxing_fake_server.dart 与 chaoxing_fake_hub.dart）
+  - 代签：chaoxing_pack_test.dart（凭据包编解码与封装）、chaoxing_delegate_test.dart（两台设备之间的出示与导入，chaoxing_fake_hub.dart 是内存中转）
 - 私信：
   - social_protocol_test.dart（与服务端共用测试向量、信封、二维码）、share_card_test.dart、social_service_test.dart、social_ui_test.dart
   - fake_relay.dart：按协议 v1 规则验签的内存假中转服务。

@@ -3,6 +3,7 @@ import { Cron } from '@nestjs/schedule';
 
 import { DistributedLock } from 'src/common/redis/redis.module';
 import { cleanupBatch, deviceIdleDays } from 'src/common/relay_limits';
+import { ChaoxingPackRepository } from 'src/modules/chaoxing/chaoxing_pack.repository';
 import { DeviceRepository } from 'src/modules/device/device.repository';
 import { MessageRepository } from 'src/modules/message/message.repository';
 import { DeviceRemovalService } from 'src/modules/pairing/device_removal.service';
@@ -16,6 +17,7 @@ export class RetentionTask {
     private readonly lock: DistributedLock,
     private readonly devices: DeviceRepository,
     private readonly messages: MessageRepository,
+    private readonly packs: ChaoxingPackRepository,
     private readonly removal: DeviceRemovalService,
   ) {}
 
@@ -39,6 +41,12 @@ export class RetentionTask {
       expired += removed;
       if (removed < cleanupBatch) break;
     }
+    let picked = 0;
+    for (let round = 0; round < 20; round++) {
+      const removed = await this.packs.deleteExpired(now, cleanupBatch);
+      picked += removed;
+      if (removed < cleanupBatch) break;
+    }
     const idleBefore = new Date(now.getTime() - deviceIdleDays * 24 * 3600 * 1000);
     let idle = 0;
     for (let round = 0; round < 20; round++) {
@@ -47,6 +55,6 @@ export class RetentionTask {
       idle += deviceIds.length;
       if (deviceIds.length < cleanupBatch) break;
     }
-    this.logger.log(`[Retention] action=sweep expiredMessages=${expired} idleDevices=${idle}`);
+    this.logger.log(`[Retention] action=sweep expiredMessages=${expired} expiredPacks=${picked} idleDevices=${idle}`);
   }
 }
