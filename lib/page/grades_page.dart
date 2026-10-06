@@ -498,10 +498,8 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
           children: [
             CampusTopBar(
               child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 8,
-                  vertical: 4,
-                ),
+                // 返回图标对齐 16、标题从 56 起，同 AppBar（见 campus_theme.dart 的顶栏人工决策）。
+                padding: const EdgeInsets.fromLTRB(4, 4, 8, 4),
                 child: Row(
                   children: [
                     IconButton(
@@ -509,6 +507,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
                       onPressed: () => Navigator.pop(context),
                       icon: const CampusIcon(CampusIcons.back),
                     ),
+                    const SizedBox(width: 4),
                     Expanded(
                       child: Text(
                         '成绩',

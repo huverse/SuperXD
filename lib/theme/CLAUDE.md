@@ -7,7 +7,7 @@
 - campus_palette.dart：CampusPalette 是设备级的完整色彩角色，有苔灰（默认）、雾蓝、藕粉、暮紫、燕麦五套，每套分浅色和深色。
   - accent 是控件激活色（开关开启轨道、滑杆已选段、复选框选中、强调按钮底色），同鸿蒙 component_activated、iOS 开关 onTintColor，与文字主色 primary 分开：primary 为文字可读压得深而灰，铺成大块轨道发闷。白字、白色滑块对 accent 都不低于 4.5:1。dangerFill 是破坏性按钮的红底（深色下的 danger 是给文字用的浅红）。
 - campus_theme.dart：
-  - campusTheme 按配色和字体生成 ThemeData。三类按钮的文字都显式带应用字体（按钮 textStyle 不带 fontFamily 时会回落成系统字体）。headlineMedium（26）是底栏根页的大标题，titleLarge（18）是二级页标题。OutlinedButton 主题即次要按钮：内容区中性浅底胶囊配主色字、无描边。
+  - campusTheme 按配色和字体生成 ThemeData。三类按钮的文字都显式带应用字体（按钮 textStyle 不带 fontFamily 时会回落成系统字体）。headlineMedium（26）是底栏根页的大标题，titleLarge（18）是二级页标题。AppBar 的 titleSpacing 为 0：返回图标与内容左边距 16 对齐，标题从 56 起；课表、成绩、协议的自绘顶栏按同样间距排（人工决策见文件内）。OutlinedButton 主题即次要按钮：内容区中性浅底胶囊配主色字、无描边。
   - campusFieldGap 给带浮动标签的输入框算上方间距，随字号缩放。
   - campusSystemOverlay 设置系统栏：导航栏全透明，按键明暗随主题变化。
   - CampusScrollBehavior：全局越界用弹性回弹、不加拉伸效果（拉伸会给列表套图像滤镜，里面的玻璃退成底色）；显式指定夹紧的列表不受影响。
@@ -61,7 +61,7 @@
   - 页面不再直接用 ChoiceChip、FilterChip、SwitchListTile、Slider。
 - campus_glass_menu.dart：
   - showCampusMenu 从触发控件弹出 overlay 玻璃菜单，返回点选的值。菜单是路由：返回键关闭、读屏模态、经 CampusOverlayDepthRoute 登记层数。不用库的 GlassMenu，因为它直接插 OverlayEntry，返回键会退出底下的页面。
-  - 展开按玻璃松手弹簧轻过冲一次，收回淡出不回弹；菜单项高至少 48，选中项着选中色并带勾。
+  - 展开按玻璃松手弹簧轻过冲一次，收回淡出不回弹；菜单项高至少 48，选中项着选中色并带勾；CampusMenuItem.destructive 的项（删除等）图标与文字用警示色。
   - CampusMenuField 是下拉字段，外观沿用带浮动标签的输入框，只在值变化时回调。
   - 页面不再直接用 DropdownButtonFormField、PopupMenuButton、showModalBottomSheet。
 - campus_glass_tier.dart：玻璃档位。

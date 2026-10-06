@@ -567,7 +567,7 @@ void main() {
     await tester.tap(find.text('星期5的课'));
     await tester.pumpAndSettle();
     expect(find.text('上课时段'), findsOneWidget);
-    expect(find.text('周五 第1–2节 · 第1–8周 · 教室'), findsOneWidget);
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '周五 第1–2节 · 第1–8周 · 教室'), findsOneWidget);
     expect(find.text('编辑课程'), findsNothing);
     await tester.tap(find.byTooltip('关闭'));
     await tester.pumpAndSettle();

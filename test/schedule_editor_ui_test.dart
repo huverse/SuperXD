@@ -8,6 +8,7 @@ import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/course_editor_page.dart';
 import 'package:superxd/page/schedule_editor_page.dart';
+import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
 import 'fixture_campus_gateway.dart';
@@ -55,6 +56,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     await tapVisible(tester, find.text('新增课程'));
+    // 字数计数平时不显示，剩 20 字以内才出现。
+    expect(find.text('0/200'), findsNothing);
+    await tester.enterText(find.widgetWithText(TextField, '课程名称'), '课' * 185);
+    await tester.pump();
+    expect(find.text('185/200'), findsOneWidget);
     await tester.enterText(find.widgetWithText(TextField, '课程名称'), '手工数学');
     await tapVisible(tester, find.text('添加时段'));
     await tapVisible(tester, find.text('单周'));
@@ -73,7 +79,8 @@ void main() {
       isTrue,
     );
     expect(saved.courses.single.localId, isNotEmpty);
-    await tapVisible(tester, find.text('编辑'));
+    // 整卡可点进编辑；删除在卡片右上 ⋯ 菜单里。
+    await tapVisible(tester, find.text('手工数学'));
     await tester.enterText(find.widgetWithText(TextField, '课程名称'), '手工数学新版');
     await tapVisible(tester, find.text('保存课程'));
     await tester.runAsync(
@@ -81,6 +88,11 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('手工数学新版'), findsOneWidget);
+    // 二级页标题统一从 56 起（返回图标对齐内容左边距 16）。
+    expect(tester.getTopLeft(find.text('管理课程')).dx, 56);
+    await tapVisible(tester, find.byTooltip('课程操作'));
+    // ⋯ 菜单里的删除是警示色。
+    expect(tester.widget<Text>(find.text('删除')).style?.color, CampusPalette.of(tester.element(find.text('删除'))).danger);
     await tapVisible(tester, find.text('删除'));
     await tapVisible(tester, find.text('整门课程（所有时段和周次）'));
     await tapVisible(tester, find.widgetWithText(FilledButton, '删除'));

@@ -166,6 +166,12 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('说明行按“ · ”分项、学期名在“学年”后切开，读屏读整句', (tester) async {
+    await tester.pumpWidget(app(const DotSeparatedText('完成 · 课表 · 2026-2027学年第一学期', style: TextStyle(fontSize: 14))));
+    expect(tester.widgetList<Text>(find.byType(Text)).map((text) => text.data), ['完成 · ', '课表 · ', '2026-2027学年', '第一学期']);
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '完成 · 课表 · 2026-2027学年第一学期'), findsOneWidget);
+  });
+
   testWidgets('传入 onOpen 时单击有课卡回调该课，空档单击不回调；已下课整卡淡化', (tester) async {
     final spans = periodSpans([course(1, 2, name: '早课'), course(3, 4)]);
     final opened = <PeriodSpan>[];

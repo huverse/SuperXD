@@ -86,7 +86,7 @@ class _SyncSelectionDialogState extends State<_SyncSelectionDialog> {
             title: Text(switch (content) { SyncContent.schedule => '课表', SyncContent.bells => '作息', SyncContent.grades => '成绩' }),
             onChanged: (value) => setState(() { if (value == true) { _contents.add(content); } else { _contents.remove(content); } }),
           ),
-        const Text('所选内容覆盖这些学年的已公布学期。', style: TextStyle(fontSize: 14)),
+        const Text('覆盖所选学年已公布的学期', style: TextStyle(fontSize: 14)),
       ],
     ))),
     actions: [

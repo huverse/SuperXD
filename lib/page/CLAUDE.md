@@ -40,7 +40,7 @@
     - 单击有课卡弹只读详情底部弹层（_openCourse）：当天时段、地点、教师、学分与这门课的全部上课时段。
   - today_day_navigation.dart：上下拖动切日的手势 TodayDayNavigation，拖动阈值 64，上限 120。
   - today_date_transition.dart：TodayDateTransition 让切日时的日期和正文按同一进度纵向交接。
-  - course_cards.dart：当日节次卡片 CourseDayCards，有课卡与空档行，长按展开（课表页）；传入 onOpen 时单击有课卡回调（今天页弹只读详情）。今天的课按此刻分三态（classMoment）：上课中竖条按已过时间填满、已下课整卡内容淡到 55%；剩余时长只在今天页“此刻”卡显示，时长格式 classDuration（小时分钟）。有课卡左列开始与结束时刻（按本页最宽时刻对齐）、中间竖条、右列节次课名地点教师，高度按同样版式测量、只在有课卡间分剩余空间；空档是虚线空位框（_EmptySlot：与卡片同宽同圆角、尺子时刻列上开始下结束、虚线竖条、标题写空闲时长、副标题节次），高度随时长对数加高（_gapHeight），展开时框内渐显成选中卡。
+  - course_cards.dart：当日节次卡片 CourseDayCards，有课卡与空档行，长按展开（课表页）；传入 onOpen 时单击有课卡回调（今天页弹只读详情）。今天的课按此刻分三态（classMoment）：上课中竖条按已过时间填满、已下课整卡内容淡到 55%；剩余时长只在今天页“此刻”卡显示，时长格式 classDuration（小时分钟）。有课卡左列开始与结束时刻（按本页最宽时刻对齐）、中间竖条、右列节次课名地点教师，高度按同样版式测量、只在有课卡间分剩余空间；空档是虚线空位框（_EmptySlot：与卡片同宽同圆角、尺子时刻列上开始下结束、虚线竖条、标题写空闲时长、副标题节次），高度随时长对数加高（_gapHeight），展开时框内渐显成选中卡。DotSeparatedText 是“甲 · 乙 · 丙”式说明行的统一写法：按“ · ”分项换行、学期名在“学年”后切开、分隔符挂在前一项末尾，读屏读整句；课程卡地点教师、上课时段、同步结果都用它，避免窄处与大字号下折出孤字。
   - live_clock.dart：全局分钟时钟 LiveClock，在每个整分钟唤醒，应用进入后台时暂停。
   - date_rail.dart：日期横条 DateRail。
 - 课表：
@@ -54,9 +54,9 @@
     - 交付函数可注入（openCalendar），测试用假实现；默认 openCalendarFile 写入缓存 calendar_export 文件夹（每次先清空，只留最近一份），经原生通道 superxd/calendar_export 交出，见 CalendarExporter.kt。
   - reminder_dialog.dart：课前提醒设置 showReminderSettings。开关与提前时间（5/10/15/30 分钟）按学期保存；状态行如实显示已安排几次、排到哪天、缺开学日或作息、通知未开启、可能延迟，需要处理的给“开启通知”“准时提醒”按钮。
   - schedule_calendar.dart：课表页月份轨道与周次轨道的纯函数计算。
-  - schedule_editor_page.dart：课程管理 ScheduleEditorPage，可新增、编辑、删除（可撤销）、清空、建立空课表，并提供历史版本入口。
+  - schedule_editor_page.dart：课程管理 ScheduleEditorPage，可新增、编辑、删除（可撤销）、清空、建立空课表，并提供历史版本入口。课程卡整卡可点进编辑（右侧箭头），编辑与删除在右上 ⋯ 菜单（删除为警示色）；上课时段按“ · ”分项换行。
   - course_editor_page.dart：单门课程编辑 CourseEditorPage，编辑名称、教师、学分和多个上课时段。
-  - schedule_history_page.dart：课表历史版本 ScheduleHistoryPage。按序号分页列出版本，可预览与当前的差异，恢复时带乐观锁。
+  - schedule_history_page.dart：课表历史版本 ScheduleHistoryPage。按序号分页列出版本，可预览与当前的差异，恢复时带乐观锁；恢复的影响只在恢复确认里说明，列表上方不放说明。
   - term_start_dialog.dart：开学日设置弹窗 editTermStart。
 - 成绩：
   - grades_page.dart：成绩页 GradesPage。
@@ -67,7 +67,7 @@
   - sync_selection_dialog.dart：同步范围选择 chooseSyncSelection。
     - 学年和同步内容都可多选。
     - 默认读取本地学期列表，用户点刷新时才联网刷新。
-  - campus_sync_dialogs.dart：同步结果弹窗 showCampusSyncReport，展示结果和未处理项，可重新登录或重新同步。教务限流停下时只说明约 1 分钟后再同步，不提供立即重新同步。
+  - campus_sync_dialogs.dart：同步结果弹窗 showCampusSyncReport，展示结果和未处理项，可重新登录或重新同步。每项两层：状态 · 内容 · 学期（DotSeparatedText）在上，说明次要色在下。教务限流停下时只说明约 1 分钟后再同步，不提供立即重新同步。
 - 账号与设置：
   - login_page.dart：登录页 LoginPage，也用于切换账号。包含验证码、记住账号确认，以及百宝箱和法务入口。
   - account_dialogs.dart：旧版本数据导入确认 showLegacyImport，以及登录后自动提示导入的 LegacyImportGate。

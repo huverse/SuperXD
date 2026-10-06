@@ -88,7 +88,8 @@ ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono N
     colorScheme: scheme,
     scaffoldBackgroundColor: Colors.transparent,
     canvasColor: colors.surface,
-    appBarTheme: AppBarTheme(backgroundColor: Colors.transparent, surfaceTintColor: Colors.transparent, elevation: 0, scrolledUnderElevation: 0, foregroundColor: colors.onSurface, systemOverlayStyle: campusSystemOverlay(colors)),
+    // [人工决策-2026-10-06 15:46:09] 二级页顶栏统一：返回图标与内容左边距 16 对齐（AppBar 前导区 56），标题紧跟其后从 56 起；自绘顶栏（课表、成绩、协议）同此，用户选定。
+    appBarTheme: AppBarTheme(titleSpacing: 0, backgroundColor: Colors.transparent, surfaceTintColor: Colors.transparent, elevation: 0, scrolledUnderElevation: 0, foregroundColor: colors.onSurface, systemOverlayStyle: campusSystemOverlay(colors)),
     cardTheme: CardThemeData(color: colors.surface.withValues(alpha: .91), surfaceTintColor: Colors.transparent, elevation: 0, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24), side: BorderSide(color: colors.surfaceBorder))),
     pageTransitionsTheme: PageTransitionsTheme(builders: {for (final platform in TargetPlatform.values) platform: CampusPageTransitions()}),
     snackBarTheme: SnackBarThemeData(behavior: SnackBarBehavior.floating, backgroundColor: colors.onSurface, contentTextStyle: TextStyle(color: colors.surface), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),

@@ -11,10 +11,12 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/glass_panel.dart';
 
 class CampusMenuItem<T> {
-  const CampusMenuItem({required this.value, required this.label, this.icon});
+  const CampusMenuItem({required this.value, required this.label, this.icon, this.destructive = false});
   final T value;
   final String label;
   final IconData? icon;
+  // 破坏性操作（删除等）图标与文字用警示色，确认仍由调用方弹 showCampusConfirm。
+  final bool destructive;
 }
 
 const _itemExtent = 48.0;
@@ -243,10 +245,10 @@ class _MenuRow<T> extends StatelessWidget {
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
               child: Row(children: [
                 if (item.icon case final icon?) ...[
-                  CampusIcon(icon, size: 20, color: palette.primary),
+                  CampusIcon(icon, size: 20, color: item.destructive ? palette.danger : palette.primary),
                   const SizedBox(width: 12),
                 ],
-                Expanded(child: Text(item.label, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: palette.onSurface))),
+                Expanded(child: Text(item.label, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: item.destructive ? palette.danger : palette.onSurface))),
                 if (selected) ...[
                   const SizedBox(width: 12),
                   CampusIcon(CampusIcons.check, size: 20, color: palette.primary),

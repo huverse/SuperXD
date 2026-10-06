@@ -16,6 +16,7 @@ abstract final class CampusIcons {
   static const grades = LucideIcons.fileChartColumn;
   static const back = LucideIcons.arrowLeft;
   static const next = LucideIcons.chevronRight;
+  static const previous = LucideIcons.chevronLeft;
   static const expand = LucideIcons.chevronDown;
   static const collapse = LucideIcons.chevronUp;
   static const arrowUp = LucideIcons.arrowUp;
@@ -39,6 +40,7 @@ abstract final class CampusIcons {
   static const open = LucideIcons.externalLink;
   static const settings = LucideIcons.settings;
   static const paste = LucideIcons.clipboardPaste;
+  static const copy = LucideIcons.copy;
   static const manage = LucideIcons.ellipsis;
   static const delete = LucideIcons.trash2;
   static const logout = LucideIcons.logOut;
