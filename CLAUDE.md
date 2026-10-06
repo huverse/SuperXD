@@ -190,6 +190,8 @@
   - verify_toolbox.dart：Android 原生下载验证。
   - verify_social.dart：两个真实客户端经真实中转服务联调（合成数据），运行方式见文件头。
   - verify_chaoxing_map.dart：高德地图选点能不能出图与返回坐标，要带 --dart-define=SUPERXD_AMAP_KEY 跑，运行方式见文件头。
+  - verify_chaoxing.dart：访问真实学习通，只在授权的测试账号上手动运行；凭据从参数指定的文件读入，输出一律脱敏，运行方式见文件头。
+  - verify_chaoxing_pack.dart：代签凭据包经真实中转服务的往返（投递、取件、取走即删），只用合成凭据，运行方式见文件头。
   - readme_demo.dart：README 截图入口，内存库合成课表与假登录。
   - font_previews.dart：生成界面页的字体预览图（assets/font_previews），改预览文字或内置字体后重跑。
   - schedule_smoke.dart、glass_preview.dart、motion_preview.dart
