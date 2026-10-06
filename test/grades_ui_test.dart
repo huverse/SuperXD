@@ -143,6 +143,16 @@ void main() {
     expect(find.text(second.label), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('学年只有一个学期时不画单项分段，学期名在标题里', (tester) async {
+    await tester.pumpWidget(app(GradesPage(gateway: _Gateway()..onlyFirst = true)));
+    await tester.pumpAndSettle();
+    expect(find.byType(CampusSegmented<String>), findsNothing);
+    expect(find.text(first.label), findsOneWidget);
+    await tester.pumpWidget(app(GradesPage(key: const ValueKey('two'), gateway: _Gateway())));
+    await tester.pumpAndSettle();
+    expect(find.byType(CampusSegmented<String>), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
   testWidgets('学期详情与学年概览切换淡出淡入：分段立即切换，内容先淡出再淡入、不跳变，学期一行随之收起', (tester) async {
     final gateway = _Gateway();
     await tester.pumpWidget(app(GradesPage(gateway: gateway)));
@@ -215,9 +225,11 @@ class _Gateway implements CampusGateway {
   int syncs = 0;
   int yearReads = 0;
   bool failed = false;
+  // 新学年刚开学时教务只公布了第一学期。
+  bool onlyFirst = false;
   Completer<GatewayResult<GradesView>>? hold;
   @override
-  Future<GatewayResult<List<TermRef>>> listTerms() async => ok([first, second]);
+  Future<GatewayResult<List<TermRef>>> listTerms() async => ok(onlyFirst ? [first] : [first, second]);
   @override
   Future<GatewayResult<GradesView>> readGrades(TermRef term) async {
     if (failed) {

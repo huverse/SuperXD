@@ -140,6 +140,7 @@ Future<void> _mount(
   double scale = 1,
   Size size = const Size(390, 850),
   ValueNotifier<bool>? active,
+  double bottomPadding = 0,
 }) async {
   await tester.binding.setSurfaceSize(size);
   addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -150,6 +151,7 @@ Future<void> _mount(
       home: MediaQuery(
         data: MediaQueryData(
           size: size,
+          padding: EdgeInsets.only(bottom: bottomPadding),
           textScaler: TextScaler.linear(scale),
           disableAnimations: reduced,
         ),
@@ -283,7 +285,8 @@ void main() {
   });
 
   testWidgets('顶下拉前一天，长列表中间滚动和惯性不切日，底上推下一天', (tester) async {
-    await _mount(tester, _Gateway(periods: 12), size: const Size(390, 670));
+    // 空档合成一行后内容变短，放大字号仍构成需要滚动的长列表。
+    await _mount(tester, _Gateway(periods: 12), size: const Size(390, 670), scale: 1.6);
     Finder list() => find.descendant(
       of: find.byType(CourseDayCards),
       matching: find.byType(ListView),
@@ -379,7 +382,8 @@ void main() {
   });
 
   testWidgets('转场保持出场列表的滚动位置，反向拖回不误切日', (tester) async {
-    await _mount(tester, _Gateway(periods: 12), size: const Size(390, 670));
+    // 空档合成一行后内容变短，放大字号仍构成需要滚动的长列表。
+    await _mount(tester, _Gateway(periods: 12), size: const Size(390, 670), scale: 1.6);
     final list = find.descendant(
       of: find.byType(CourseDayCards),
       matching: find.byType(ListView),
@@ -521,6 +525,8 @@ void main() {
   testWidgets('今天昨天明天空日均有顶部胶囊且不伪造实时摘要', (tester) async {
     await _mount(tester, _Gateway()..emptyWeekdays = {4,5,6});
     expect(find.text('今天暂无课程'), findsOneWidget);
+    // 今天没课时预告下一节，跳过同样没课的周六。
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '下一节 后天 8:00 星期7的课 教室'), findsOneWidget);
     expect(find.text('这天没课'), findsOneWidget);
     await _swipeDate(tester, '2026-09-25', 100);
     expect(find.text('当天暂无课程'), findsOneWidget);
@@ -554,6 +560,28 @@ void main() {
     now = DateTime.utc(2026, 9, 25, 2);
     await _mount(tester, _Gateway(), now: () => now);
     expect(find.text('今天的课上完了'), findsOneWidget);
+    // 课上完后预告下一节，省去下滑切日。
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '下一节 明天 8:00 星期6的课 教室'), findsOneWidget);
+    expect(find.text('下一节 · 明天 8:00'), findsOneWidget);
+    // 单击课程卡弹只读详情：当天时段与这门课的全部上课时段，不出编辑入口。
+    await tester.tap(find.text('星期5的课'));
+    await tester.pumpAndSettle();
+    expect(find.text('上课时段'), findsOneWidget);
+    expect(find.text('周五 第1–2节 · 第1–8周 · 教室'), findsOneWidget);
+    expect(find.text('编辑课程'), findsNothing);
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+    expect(find.text('上课时段'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('看别的日子时“今天”胶囊不压最后一节课：底栏占位下静止时末卡在胶囊之上', (tester) async {
+    // 底部留白模拟悬浮底栏的占位（各页的底部安全区）。
+    await _mount(tester, _Gateway(periods: 12), size: const Size(390, 560), bottomPadding: 100);
+    await _swipeDate(tester, '2026-09-25', 100);
+    expect(_date('2026-09-26'), findsOneWidget);
+    final last = find.byWidgetPredicate((widget) => widget.key is ValueKey<String> && (widget.key! as ValueKey<String>).value.startsWith('course-card-') && (widget.key! as ValueKey<String>).value.contains(':11-12'));
+    expect(tester.getRect(last).bottom, lessThanOrEqualTo(tester.getRect(find.byKey(const ValueKey('today-reset'))).top));
     expect(tester.takeException(), isNull);
   });
 

@@ -21,6 +21,7 @@ import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/meeting_time.dart';
 import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/campus_sync_dialogs.dart';
 import 'package:superxd/page/live_clock.dart';
@@ -72,6 +73,8 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
   bool? _branchActive;
   int _readGeneration = 0;
   CampusSyncReport? _pendingReport;
+  String? _nextStamp;
+  ({String date, CourseRecord course, CourseMeeting meeting})? _next;
 
   DateTime _instant() => widget.now?.call() ?? _clock?.value ?? DateTime.now();
   String _campusDay() => formatCampusDate(campusInstant(_instant()));
@@ -130,11 +133,77 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         termStartDate: _schedule!.termStartDate!,
       ),
     );
-    final spans = List<PeriodSpan>.unmodifiable(
-      periodSpans(courses, bells: _bells, termLastPeriod: _termLastPeriod),
-    );
+    // 今天页只读：相邻空档合成一行（“16:00–20:40 · 第7–10节 没课”）；课表页仍按节次分行，便于在其中新增课程。
+    final merged = <PeriodSpan>[];
+    for (final span in periodSpans(courses, bells: _bells, termLastPeriod: _termLastPeriod)) {
+      final previous = merged.lastOrNull;
+      if (span.empty && previous != null && previous.empty) {
+        merged.last = PeriodSpan(start: previous.start, end: span.end);
+      } else {
+        merged.add(span);
+      }
+    }
+    final spans = List<PeriodSpan>.unmodifiable(merged);
     if (_days.length >= 5) _days.remove(_days.keys.first);
     return _days[date] = spans;
+  }
+
+  // 今天之后的第一节课（只读本机课表，最多看到已知范围末）：今天的课上完或今天没课时在此刻卡预告，省去下滑切日。
+  // 按今天与内容版本缓存，分钟时钟重建时不重算。
+  ({String date, CourseRecord course, CourseMeeting meeting})? _nextClass() {
+    final stamp = '$_today:$_contentRevision';
+    if (_nextStamp == stamp) return _next;
+    _nextStamp = stamp;
+    _next = null;
+    if (_first == null || _last == null) return null;
+    final tomorrow = formatIsoDate(parseIsoDate(_today).add(const Duration(days: 1)));
+    for (var date = tomorrow.compareTo(_first!) < 0 ? _first! : tomorrow; date.compareTo(_last!) <= 0; date = formatIsoDate(parseIsoDate(date).add(const Duration(days: 1)))) {
+      final courses = visibleCourses(_schedule!.courses, ScheduleScope.day(term: _term!, date: date, termStartDate: _schedule!.termStartDate!));
+      for (final course in courses) {
+        for (final meeting in course.meetings) {
+          if (_next == null || meeting.periodStart < _next!.meeting.periodStart) _next = (date: date, course: course, meeting: meeting);
+        }
+      }
+      if (_next != null) break;
+    }
+    return _next;
+  }
+
+  // 今天页单击有课卡：只读详情（当天时段、地点、教师、学分与这门课的全部上课时段）；编辑仍只在课表页。
+  Future<void> _openCourse(PeriodSpan span) async {
+    HapticFeedback.selectionClick();
+    final key = courseKey(span.course!);
+    final course = _schedule!.courses.firstWhere((course) => courseKey(course) == key, orElse: () => span.course!);
+    final time = meetingTime(_bells, span.meeting!);
+    // 次要色在弹层自己的 builder 里取，弹层开着时切深浅色也跟着变。
+    await showCampusSheet<void>(context: context, builder: (context) {
+      final secondary = TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant);
+      return CampusSheetPanel(child: SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 8, 20),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: Padding(padding: const EdgeInsets.only(top: 10), child: Text(course.courseName, style: Theme.of(context).textTheme.titleLarge))),
+          IconButton(tooltip: '关闭', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.close)),
+        ]),
+        Text('第${span.start}–${span.end}节${time == null ? '' : ' · ${time.label}'}', style: secondary),
+        const SizedBox(height: 16),
+        Padding(padding: const EdgeInsets.only(right: 12), child: Table(
+          columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth()},
+          children: [
+            for (final (label, value) in [('地点', span.meeting!.place), ('教师', course.teacherName), ('学分', '${course.credit}')])
+              if (value.isNotEmpty) TableRow(children: [
+                Padding(padding: const EdgeInsets.fromLTRB(0, 6, 16, 6), child: Text(label, style: secondary)),
+                Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text(value, style: const TextStyle(fontSize: 16))),
+              ]),
+          ],
+        )),
+        const SizedBox(height: 16),
+        Text('上课时段', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        for (final meeting in course.meetings) Padding(padding: const EdgeInsets.fromLTRB(0, 4, 12, 4), child: Text(meetingLabel(meeting), style: const TextStyle(fontSize: 14, height: 1.5))),
+      ]),
+    ));
+    });
   }
 
   @override
@@ -420,11 +489,13 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
           spans: spans,
           bells: _bells,
           date: day,
-          bottomInset: day == _today ? 0 : 68,
+          // 看别的日子时给“今天”胶囊让位：胶囊触区随字号增高，再留 8dp 间隙，滚到底时最后一节课完整露出。
+          bottomInset: day == _today ? 0 : 8 + 48 * MediaQuery.textScalerOf(context).scale(14) / 14,
           obscuredBottom: obscured,
           physics: const ClampingScrollPhysics(
             parent: AlwaysScrollableScrollPhysics(),
           ),
+          onOpen: _openCourse,
           header: day == _today || spans.isEmpty
               ? Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -434,6 +505,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
                       bells: _bells,
                       date: day,
                       now: widget.now,
+                      next: _nextClass(),
                     ),
                   ),
                 )
@@ -466,7 +538,6 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
 
   Widget _layout(BuildContext context, Widget date, Widget body, bool previewing) {
     final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
-    final hintHeight = (32 * scale + 16) / 2;
     return Column(children: [
       CampusTopBar(child: SizedBox(
         height: 56 * scale,
@@ -489,7 +560,8 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         Positioned.fill(child: body),
         // [人工决策-2026-10-05 23:16:48] 回今天改为底栏上方居中的玻璃胶囊“今天”，取代右下圆形上箭头（用户选定，同 X、Telegram 的“回到最新”）：
         // 左右对称；箭头指向今天所在方向（看之后的日子朝上、之前的日子朝下，与上下滑切日一致）；出现时自下浮起并显形；顶栏日期下注明相对天数。
-        Positioned(left: 0, right: 0, bottom: hintHeight + 12 + MediaQuery.paddingOf(context).bottom, child: Center(child: _TodayReturn(
+        // 胶囊贴着底栏上沿（可见间隙约 18dp，同 Telegram“回到最新”），少压内容、拇指也更近。
+        Positioned(left: 0, right: 0, bottom: MediaQuery.paddingOf(context).bottom, child: Center(child: _TodayReturn(
           visible: _day != _today || previewing,
           upward: _day.compareTo(_today) >= 0,
           onPressed: () {
@@ -519,12 +591,35 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
 
 // 今天页顶部的“此刻”卡（同 iOS 实时活动、Google 日历的“下一项”）：上课中或下一节的课名、地点，
 // 大号剩余时长（小时分钟）加起止时刻进度条；课间画上一节下课到下一节上课的进度，第一节课前只显示时长。
+// [人工决策-2026-10-06 13:06:11] 今天的课上完或今天没课时，此刻卡下方预告下一节（日子、开始时刻、课名、地点），用户选定。
 class _ClassNow extends StatelessWidget {
-  const _ClassNow({required this.spans, required this.bells, required this.date, this.now});
+  const _ClassNow({required this.spans, required this.bells, required this.date, this.now, this.next});
   final List<PeriodSpan> spans;
   final List<BellPeriod> bells;
   final String date;
   final DateTime Function()? now;
+  final ({String date, CourseRecord course, CourseMeeting meeting})? next;
+
+  // “下一节 · 明天 08:00 大学物理 · 格物楼 101”：一周内写明天、后天或星期，更远写月日；作息缺这节时写节次。
+  Widget? _upcoming(TextStyle style) {
+    final next = this.next;
+    if (next == null) return null;
+    final target = parseIsoDate(next.date);
+    final offset = target.difference(parseIsoDate(date)).inDays;
+    final day = switch (offset) { 1 => '明天', 2 => '后天', < 7 => '周${weekdayLabel(target.weekday)}', _ => '${target.month}月${target.day}日' };
+    final time = meetingTime(bells, next.meeting)?.startLabel ?? '第${next.meeting.periodStart}–${next.meeting.periodEnd}节';
+    final place = next.meeting.place;
+    // 分三段逐项换行（Wrap），窄屏不把“101”之类拆成孤字；读屏读整句。
+    return Semantics(
+      label: '下一节 $day $time ${next.course.courseName}${place.isEmpty ? '' : ' $place'}',
+      excludeSemantics: true,
+      child: Wrap(spacing: 8, children: [
+        Text('下一节 · $day $time', style: style),
+        Text(next.course.courseName, style: style),
+        if (place.isNotEmpty) Text(place, style: style),
+      ]),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -540,7 +635,13 @@ class _ClassNow extends StatelessWidget {
     final palette = CampusPalette.of(context);
     final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
     final occupied = spans.where((span) => !span.empty);
-    if (occupied.isEmpty) return const Text('今天暂无课程');
+    final upcoming = _upcoming(secondary);
+    if (occupied.isEmpty) {
+      return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        const Text('今天暂无课程'),
+        if (upcoming != null) ...[const SizedBox(height: 4), upcoming],
+      ]);
+    }
     // 作息不完整时不把“第3节”当钟点比较，也不猜测下一节或已下课。
     if (occupied.any((span) => meetingTime(bells, span.meeting!) == null)) {
       return const Text('今日课程');
@@ -548,10 +649,13 @@ class _ClassNow extends StatelessWidget {
     final moment = classMoment(spans, bells, date, now?.call() ?? LiveClock.maybeOf(context)?.value ?? DateTime.now());
     final focus = moment.focus;
     if (focus == null) {
-      return Row(children: [
+      return Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         CampusIcon(CampusIcons.success, color: palette.primary, size: 20),
         const SizedBox(width: 10),
-        const Expanded(child: Text('今天的课上完了')),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          const Text('今天的课上完了'),
+          if (upcoming != null) ...[const SizedBox(height: 4), upcoming],
+        ])),
       ]);
     }
     final remaining = classDuration(moment.remainingMinutes);

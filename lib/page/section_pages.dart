@@ -89,7 +89,7 @@ class _MinePageState extends State<MinePage> {
             const SizedBox(height: 16),
             // 多行卡片去掉横向内边距，行自带 20 边距：按下变暗时整行铺满卡片宽度，同 iOS 分组列表。
             CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
-              ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.services), trailing: const CampusIcon(CampusIcons.next), title: const Text('界面'), onTap: () => _push(AppearancePage(social: widget.social))),
+              ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.palette), trailing: const CampusIcon(CampusIcons.next), title: const Text('界面'), onTap: () => _push(AppearancePage(social: widget.social))),
               ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.info), trailing: const CampusIcon(CampusIcons.next), title: const Text('关于'), onTap: () => _push(const AboutPage())),
             ])),
           ]),
