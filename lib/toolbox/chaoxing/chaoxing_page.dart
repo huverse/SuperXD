@@ -398,7 +398,7 @@ class _ActivityCard extends StatelessWidget {
               children: [
                 Text(activity.subtitle, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
                 const SizedBox(height: 4),
-                Text('${activity.title} · ${activity.signType.label}', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+                Text(activity.displayTitle, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
                 const SizedBox(height: 2),
                 Text(
                   endTime != null && activity.ended
