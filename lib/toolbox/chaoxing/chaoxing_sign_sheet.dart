@@ -58,10 +58,13 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   List<int>? _photoBytes;
   String? _photoName;
   String? _photoObjectId;
+  String? _faceObjectId;
+  String? _faceName;
 
   ChaoxingSignType get _type => _activity.signType;
   bool get _needsLocation => _type == ChaoxingSignType.location || (_info?.needLocation ?? false);
   bool get _needsPhoto => _type == ChaoxingSignType.photo && (_info?.needPhoto ?? false);
+  bool get _needsFace => _info?.needFace ?? false;
   bool get _busy => _signing || _loadingRelated;
 
   @override
@@ -156,6 +159,26 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     }
   }
 
+  // 人脸照片：默认用学习通里存着的那张，也可以现选一张（选过就记住，下次直接用）。
+  Future<void> _pickFace() async {
+    try {
+      final file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1280, maxHeight: 1280, imageQuality: 90);
+      if (file == null || !mounted) return;
+      final bytes = await file.readAsBytes();
+      if (!mounted) return;
+      final objectId = await widget.controller.uploadFacePhoto(bytes);
+      if (!mounted) return;
+      setState(() {
+        _faceObjectId = objectId;
+        _faceName = file.name;
+        _error = null;
+      });
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=face_photo errorType=${failure.runtimeType}\n$stack');
+      if (mounted) setState(() => _error = failure is ChaoxingFailure ? failure.message : '人脸照片上传失败，请重试');
+    }
+  }
+
   Future<void> _scanQrCode() async {
     final scan = widget.scanQrCode;
     if (scan == null) {
@@ -198,6 +221,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         _photoBytes = null;
         _photoName = null;
         _photoObjectId = null;
+        _faceObjectId = null;
+        _faceName = null;
         _code.clear();
       });
       await _load();
@@ -231,12 +256,15 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   // 服务端要求验证码时，先弹验证；过了带着 validate 与 enc2 把这次签到重发一遍。
   Future<void> _submit(int attempt, String? validate, String? enc2, String? signCode, ChaoxingLocation? location) async {
     try {
+      final face = _needsFace ? await widget.controller.prepareFace(_activity, objectId: _faceObjectId) : null;
       final result = await widget.controller.sign(
         _activity,
         signCode: signCode,
         location: location,
         photoObjectId: _photoObjectId,
         qrCode: _qrCode,
+        faceObjectId: face?.objectId,
+        faceEnc: face?.faceEnc,
         captchaValidate: validate,
         enc2: enc2,
       );
@@ -392,6 +420,19 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
             onPressed: _busy ? null : () => _pickPhoto(),
             icon: const CampusIcon(CampusIcons.image),
             label: Text(_photoName ?? '选择签到照片'),
+          ),
+        ],
+        if (_needsFace) ...[
+          const SizedBox(height: 16),
+          Text(
+            _faceName == null ? '这场签到要人脸识别，会用学习通里存的人脸照片' : '人脸照片：$_faceName',
+            style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
+          ),
+          const SizedBox(height: 8),
+          OutlinedButton.icon(
+            onPressed: _busy ? null : () => _pickFace(),
+            icon: const CampusIcon(CampusIcons.scanFace),
+            label: Text(_faceName == null ? '换一张人脸照片' : '重新选择'),
           ),
         ],
         if (_error != null) ...[

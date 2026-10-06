@@ -95,13 +95,13 @@ class ChaoxingHttp {
   Future<Uint8List> getBytes(Uri uri, {Duration? timeout}) async =>
       (await _send('GET', uri, timeout: timeout)).bytes;
 
-  Future<ChaoxingResponse> postForm(Uri uri, String body, {Duration? timeout}) => _send(
-    'POST',
-    uri,
-    body: body,
-    contentType: 'application/x-www-form-urlencoded; charset=UTF-8',
-    timeout: timeout,
-  );
+  Future<ChaoxingResponse> postForm(
+    Uri uri,
+    String body, {
+    String contentType = 'application/x-www-form-urlencoded; charset=UTF-8',
+    Map<String, String>? headers,
+    Duration? timeout,
+  }) => _send('POST', uri, body: body, contentType: contentType, headers: headers, timeout: timeout);
 
   Future<ChaoxingResponse> postMultipart(
     Uri uri, {

@@ -121,6 +121,7 @@
     - 日历导出：单次最多 5000 个事件；缓存里只留最近一次导出的文件，下次导出前清空。
     - 桌面小组件：快照只覆盖今天起 7 天、最多 200 次课，每次整体替换；过期后提示打开应用。桌面上没有小组件时不留刷新闹钟。
     - 代签凭据包：密文只在中转上暂存 10 分钟（取走即删、未取走由服务端清理任务删除）；导入的账号凭据按学习通账号的规矩只进系统安全存储。
+    - 人脸照片：只在本机记 objectId（照片在学习通云盘），每人保留 5 条，打开库时裁剪；群聊消息不在本机留存。
     - 私信：好友 500；每个好友本机保留最近 200 条；邀请记录 31 天。服务端信箱单条密文 256KB、每设备待取 1000 条，取走确认即删、未取走 30 天删除，设备 400 天不活跃连同关系与信箱删除（见 server/README.md）。
     - 新增只增不删的数据时，必须同时给出上限或清理策略。
 11. 日志
@@ -176,6 +177,7 @@
 - 百宝箱：toolbox_widget_test.dart、toolbox_download_test.dart、toolbox_media_features_test.dart、short_video_parser_test.dart、media_image_test.dart
   - 学习通签到：chaoxing_protocol_test.dart（协议与坐标转换）、chaoxing_store_test.dart（本机库与上限）、chaoxing_ui_test.dart（登录、签到、代签入口与导入流程，用 chaoxing_fake_server.dart 与 chaoxing_fake_hub.dart）
   - 代签：chaoxing_pack_test.dart（凭据包编解码与封装）、chaoxing_delegate_test.dart（两台设备之间的出示与导入，chaoxing_fake_hub.dart 是内存中转）
+  - 人脸与群聊：chaoxing_im_test.dart（DES、protobuf 附件解析、环信链路与类型映射）、chaoxing_protocol_test.dart 里的人脸公钥与签名用例
 - 私信：
   - social_protocol_test.dart（与服务端共用测试向量、信封、二维码）、share_card_test.dart、social_service_test.dart、social_ui_test.dart
   - fake_relay.dart：按协议 v1 规则验签的内存假中转服务。

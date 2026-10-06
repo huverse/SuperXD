@@ -8,6 +8,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_activity.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_captcha.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_face.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
@@ -537,5 +538,62 @@ void main() {
     expect(info.title, '签到');
     expect(info.startTime?.millisecondsSinceEpoch, 1760000000000);
     expect(info.endTime?.millisecondsSinceEpoch, 1760000600000);
+  });
+
+  test('人脸公钥解析出 1024 位模数', () {
+    final modulus = chaoxingFaceModulus();
+    expect(modulus, isNotNull);
+    expect(modulus!.bitLength, 1024);
+    expect(
+      modulus.toRadixString(16),
+      'bbf5df0eb748426f1c522120bac7c482c1306ca454b394b28725462aa0536ed5'
+      '34916b0e2111890e9ef11a2f5572a3157a1d7703af3c18bda15969968f40f16'
+      '77c21d9cb9750c3172689f8121ea4bea0a5f0e3462ce1c548aa753977dd12ec4'
+      '59245d060957e3cf6396a55a35c412903c764d8982f836c0abd155fc1534f4849',
+    );
+    // 不是合法 base64 或长度不对时一律当作解不出来。
+    expect(chaoxingDecryptClientId('%%%'), isNull);
+    expect(chaoxingDecryptClientId('AAAA'), isNull);
+    expect(chaoxingDecryptClientId(''), isNull);
+  });
+
+  test('人脸签名的字段按 key 排序拼接后加 sc 做 md5', () {
+    expect(
+      chaoxingFaceSignToken(
+        fields: {
+          'currentFaceId': 'obj-1',
+          'LiveDetectionStatus': '1',
+          'collectStatus': '1',
+          'cxtime': '1700000000000',
+        },
+        secret: 'secret-value',
+      ),
+      // 排序按 UTF-16 码元，大写字母在前，与参考实现的 TreeMap 一致。
+      'a01c25d2a610f669f972ae8a4b9c3761',
+    );
+  });
+
+  test('人脸 faceResult 与换取 faceEnc', () async {
+    final fake = await FakeChaoxing.create();
+    final client = await ChaoxingClient.signIn(
+      http: ChaoxingHttp(client: fake.client()),
+      phoneNumber: '13800138000',
+      password: 'myPassword123',
+    );
+
+    // 没有 clientId 时只带最基本的几个字段（测试账号登录返回里没有 clientId）。
+    final result = await chaoxingFaceResult(client, objectId: 'obj-9', now: DateTime.fromMillisecondsSinceEpoch(1700000000000));
+    expect(result['currentFaceId'], 'obj-9');
+    expect(result['LiveDetectionStatus'], 1);
+    expect(result['collectStatus'], 1);
+    expect(result['cxtime'], '1700000000000');
+    expect(result.containsKey('signToken'), isFalse);
+
+    expect(await chaoxingProfileFaceObjectId(client), 'face-object-1');
+
+    final enc = await chaoxingFaceEnc(client, activeId: 501, objectId: 'face-object-1');
+    expect(enc, 'FACE-ENC');
+    expect(fake.faceQuery!['activeId'], '501');
+    expect(fake.faceQuery!['faceResult'], contains('"currentFaceId":"face-object-1"'));
   });
 }

@@ -77,6 +77,19 @@ class FakeChaoxing {
   int? checkSignCodeResult = 1;
   Map<String, Object?> signDetail = {'isOver': 0};
 
+  // 群聊：环信令牌、群列表与漫游消息。
+  String imPasswordHex = '9523f40340818f573b71a58235f15865';
+  String? imTokenBody;
+  final imGroups = <Map<String, Object?>>[];
+  final imMessages = <List<int>>[];
+  String? imRoamingBody;
+  String? imRoamingQueue;
+
+  // 人脸识别：学习通里存着的人脸照片与换回来的 faceEnc。
+  String profileFaceObjectId = 'face-object-1';
+  String faceEnc = 'FACE-ENC';
+  Map<String, String>? faceQuery;
+
   // 云盘（拍照签到）。
   String? uploadQuery;
   String? uploadContentType;
@@ -147,7 +160,7 @@ class FakeChaoxing {
           'pic': 'http://p.ananas.chaoxing.com/star3/photo.jpg',
           'schoolname': '示例大学',
           'accountInfo': {
-            'imAccount': {'password': 'im-cipher'},
+            'imAccount': {'password': imPasswordHex},
           },
         },
       });
@@ -164,6 +177,11 @@ class FakeChaoxing {
           return _json({'data': activeInfos[activeId] ?? activeInfo});
         case '/newsign/signDetail':
           return _json(signDetail);
+        case '/v2/apis/sign/collectionfilephotoEnc':
+          return _json({'data': {'oldObjectId': profileFaceObjectId}});
+        case '/pptSign/check-face-result':
+          faceQuery = request.url.queryParameters;
+          return _json({'enc': faceEnc});
         case '/newsign/preSign':
           preSignBody = request.body;
           return _text(preSignHtml);
@@ -172,6 +190,33 @@ class FakeChaoxing {
           return _text(signResponses.isEmpty ? signResponse : signResponses.removeAt(0), type: 'text/plain');
         case '/widget/sign/pcStuSignController/checkSignCode':
           return _json({'result': checkSignCodeResult});
+      }
+    }
+    if (request.url.host == 'a1-vip6.easemob.com' || request.url.host == 'a1-vip6.easecdn.com') {
+      if (path.endsWith('/token')) {
+        imTokenBody = request.body;
+        final fields = jsonDecode(request.body) as Map;
+        if (fields['grant_type'] != 'password' || '${fields['username']}'.isEmpty) {
+          return _json({'error': 'invalid_grant'});
+        }
+        return _json({
+          'access_token': 'im-token',
+          'user': {'uuid': 'im-uuid', 'username': 'cx_${fields['username']}'},
+        });
+      }
+      if (path.endsWith('/joined_chatgroups')) {
+        return _json({'data': imGroups});
+      }
+      if (path.endsWith('/messageroaming')) {
+        imRoamingBody = request.body;
+        imRoamingQueue = '${(jsonDecode(request.body) as Map)['queue']}';
+        return _json({
+          'data': {
+            'msgs': [
+              for (final message in imMessages) {'msg': base64.encode(message)},
+            ],
+          },
+        });
       }
     }
     if (request.url.host == 'pan-yz.chaoxing.com') {

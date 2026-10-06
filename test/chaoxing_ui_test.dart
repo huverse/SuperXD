@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 
 import 'package:flutter/material.dart';
@@ -12,6 +13,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_group_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
@@ -67,11 +69,46 @@ Future<void> openSignSheet(WidgetTester tester, {String button = '去签到'}) a
 }
 
 Future<void> tapSign(WidgetTester tester) async {
+  // 弹层入场还没滑完时量到的坐标在屏幕外，先让动画走完。
+  await tester.pump(const Duration(milliseconds: 400));
   final button = find.widgetWithText(FilledButton, '签到');
   await tester.ensureVisible(button);
   await tester.pump();
   await tester.tap(button);
   await tester.pump();
+}
+
+// 造一条环信漫游消息：Meta.field6 里是 MessageBody，它的 ext 里 key=attachment 的那项是签到附件。
+List<int> _imVarint(int value) {
+  final bytes = <int>[];
+  var remaining = value;
+  while (remaining > 0x7f) {
+    bytes.add((remaining & 0x7f) | 0x80);
+    remaining >>= 7;
+  }
+  bytes.add(remaining);
+  return bytes;
+}
+
+List<int> _imBytesField(int field, List<int> bytes) => [..._imVarint((field << 3) | 2), ..._imVarint(bytes.length), ...bytes];
+
+List<int> _imAttachmentMessage({
+  required int activeId,
+  required int atype,
+  required String atypeName,
+  required String title,
+}) {
+  final attachment = jsonEncode({
+    'attachmentType': 15,
+    'att_chat_course': {
+      'aid': activeId,
+      'atype': atype,
+      'atypeName': atypeName,
+      'title': title,
+      'courseInfo': {'classid': 88, 'courseid': 9001, 'coursename': '高等数学'},
+    },
+  });
+  return _imBytesField(6, _imBytesField(5, [..._imBytesField(1, utf8.encode('attachment')), ..._imBytesField(6, utf8.encode(attachment))]));
 }
 
 void main() {
@@ -382,6 +419,58 @@ void main() {
     await waitUntil(tester, () => find.text('已导入 同学乙').evaluate().isNotEmpty);
     expect(controller.accountList.map((item) => item.phoneNumber), contains('13900139000'));
     expect(controller.accountList.where((item) => item.isOtherUser), hasLength(1));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('要人脸识别的签到会带上学习通里的人脸照片与 faceEnc', (tester) async {
+    usePhoneScreen(tester);
+    fake.activeInfo = {'numberCount': 4, 'openCheckFaceFlag': 1, 'signOutPublishTimeStamp': 4999};
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await openSignSheet(tester, button: '去签到');
+    expect(find.textContaining('人脸识别'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, '签到码'), '1234');
+    await tester.pump();
+    await tapSign(tester);
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    expect(fake.signQuery!['currentFaceId'], 'face-object-1');
+    expect(fake.signQuery!['faceEnc'], 'FACE-ENC');
+    expect(fake.signQuery!['ifCFP'], '0');
+    expect(fake.faceQuery!['activeId'], '501');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('群聊里的签到能从群聊页直接签', (tester) async {
+    usePhoneScreen(tester);
+    fake.imGroups.addAll([
+      {'id': 'g1', 'name': '高等数学群'},
+    ]);
+    fake.imMessages.addAll([
+      _imAttachmentMessage(activeId: 777, atype: 2, atypeName: '密码签到', title: '群里签到'),
+    ]);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await tester.tap(find.byTooltip('从群聊里找签到'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('群里签到 · 签到码签到').evaluate().isNotEmpty);
+    // 等页面转场滑完再点，转场中途量到的坐标还在屏幕外。
+    await tester.pump(const Duration(milliseconds: 400));
+    // 群聊页是推上去的，底下主页面也有“去签到”，按页面类型限定一下。
+    await tester.tap(
+      find.descendant(
+        of: find.byType(ChaoxingGroupPage),
+        matching: find.widgetWithText(FilledButton, '去签到'),
+      ),
+    );
+    await tester.pump();
+    await waitUntil(tester, () => find.widgetWithText(TextField, '签到码').evaluate().isNotEmpty);
+    await tester.enterText(find.widgetWithText(TextField, '签到码'), '1234');
+    await tester.pump();
+    await tapSign(tester);
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    expect(fake.signQuery!['activeId'], '777');
     await tester.pumpWidget(const SizedBox());
   });
 }
