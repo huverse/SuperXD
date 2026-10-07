@@ -70,6 +70,7 @@ dependencies:
   amap_map: ^1.0.15
   x_amap_base: ^1.0.3
   pointycastle: ^4.0.0
+  pool: ^1.5.3
 
 dev_dependencies:
   flutter_test:

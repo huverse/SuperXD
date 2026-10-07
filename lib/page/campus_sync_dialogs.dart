@@ -4,7 +4,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
-import 'package:superxd/page/course_cards.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 // 会话失效优先提示重新登录；中途离开或教务限流而提前结束时列出未处理项，返回true表示用户选择重新同步。
 Future<bool> showCampusSyncReport(

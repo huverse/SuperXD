@@ -9,6 +9,7 @@
     - 在应用支持目录的 toolbox 子目录下，打开 toolbox.db、资源目录和下载目录。
     - 组装 ParseCoordinator（当前只有 BugPK）、下载管理器、后台传输和文件导出。
     - 跟随应用前后台状态恢复下载。
+    - 框架不认识各工具的服务类型：工具经 serviceOpeners 注册自己的打开函数（实现 ToolboxService 接口），页面用 runtime.service 取用，退出时框架按接口统一关闭；学习通的服务见 chaoxing_service.dart，短视频的解析器仍由框架组装。
     - shareVideo（ToolboxVideoShare）：把作品分享给好友的回调，由组合根注入（接到私信的分享弹层）；为空时不显示分享入口。百宝箱不感知私信。
   - toolbox_catalog.dart：工具注册表 toolboxCatalog。路由按这里的 id 生成免登录的工具路由。
   - toolbox_module.dart：ToolboxModule 描述一个工具，字段有 id、名称、图标、页面构造器和可选的按需资源。
@@ -82,6 +83,8 @@
   - chaoxing_captcha.dart：滑块验证码，取配置与底图、按 280 宽的坐标空间提交拖动位置、换成一次性 validate（按签到对象各自的会话取）。
   - chaoxing_captcha_dialog.dart：滑块验证弹窗，底图上拖缺口块，不通过自动换一张。
   - chaoxing_face.dart：人脸识别签到。用设备公钥对 clientId 做模幂还原出设备信息，按字段排序拼 sc 做 md5 得 signToken，换一次性的 faceEnc；也用来取学习通里存着的人脸照片 objectId 与云盘原图地址（预览用）。
+  - chaoxing_code_cells.dart：签到码的格子输入 ChaoxingCodeCells：按位数显示空格、输满自动回调（校验与提交由签到弹层接手），真正的输入框藏在格子底下收键盘输入。
+  - chaoxing_gesture_field.dart：手势签到的 3×3 图案输入 ChaoxingGestureField：原始指针事件画图案（不走手势竞技场，弹层里不会被拖动关闭抢走），抬起即回调序号串，校验失败清空标红。
   - chaoxing_face_sheet.dart：人脸照片弹层，预览（从学习通云盘取原图，内存里留最近 10 张）、用过几次、是否没通过过；管理模式可删，签到时选这次用哪张。
   - chaoxing_im.dart：群聊签到。学习通群聊走环信：DES 解出登录下发的环信密码（pointycastle 只有 3DES，三段同一把钥匙等价单 DES）换令牌，列群、拉漫游消息，用极简 protobuf 读 Meta/MessageBody/KeyValue 三段取 attachment 扩展，再挑 attachmentType 15 且 atype 为 2/74 的签到。
   - chaoxing_group_page.dart：群聊里的签到页，按群翻出只发在群里的签到，逐条走同一套签到弹层。
@@ -89,6 +92,8 @@
   - chaoxing_course_page.dart：按课程查看，课程可搜课名、老师与学校，可置顶；同名课程合并成一项，点进去看全部签到，进行中与已结束分两组。
   - chaoxing_activity_card.dart：各页共用的活动卡片、分组标题与签到入口 ChaoxingSignLauncher（开签到弹层、签完给提示并刷新）。
   - chaoxing_settings_sheet.dart：签到设置弹层（学校单位、模拟的客户端），以及修复账号时重新输密码的对话框。
+  - chaoxing_sign_flow.dart：一个人的完整签到流程 ChaoxingSignFlow（签到前检查可强制跳过、拍照上传、人脸、提交，验证码/换码/位置收紧重试），从页面状态类抽出；会话与存储经 ChaoxingSignContext 注入，controller 是现在的实现来源。签到输入与回调类型（ChaoxingSignInputs、ChaoxingCaptchaSolver、ChaoxingFreshQrCode）也定义在这里。
+  - chaoxing_service.dart：学习通签到的服务 ChaoxingService（实现 ToolboxService 接口）：自己打开与关闭库、安全存储、设备通道与代签中转客户端；组合根把它的 open 注册进 ToolboxRuntime 的 serviceOpeners，页面经 runtime.service 取用。
   - chaoxing_credential_pack.dart：代签凭据包（手机号、密文密码、昵称、对方设备码、最多 5 张人脸照片 objectId）的编解码与一次性密钥封装（AES-256-GCM），以及二维码取件票（SXDC1: 取件号 + 密钥）的编解码；第 2 版加了人脸照片，第 1 版照样能解；包来自别人的二维码，一律按外部输入逐项校验。
   - chaoxing_pack_client.dart：代签凭据包的自建中转客户端，投递换取件号、凭号取件（取走即删），地址由组合根从构建参数注入；没配中转时代签入口不显示。
   - chaoxing_share_page.dart：出示代签码页面，画二维码并说明「被扫走即失效」。
@@ -96,10 +101,10 @@
     - 地图渲染无法在 x86 模拟器上验证，只能在真机；手动入口见 tool/verify_chaoxing_map.dart。
   - chaoxing_accounts.dart：账号闭环，登录、恢复会话、补用户信息、切换学校单位、修复（重输密码）、删除与模拟客户端的设置；会话过期自动重登一次并重放该次请求。本人账号的设备码优先用本机 OAID 算的。
   - chaoxing_vault.dart：密码与 Cookie 的存放，Secure 版用系统安全存储（命名空间 superxd_chaoxing），测试用内存版。
-  - chaoxing_store.dart：chaoxing.db，账号索引（含学校单位与设备码来源）、收藏位置、签到记录、人脸照片索引（含使用次数与失败标记）、设置、置顶课程与学习通课表缓存，打开时按上限裁剪，删账号时连带清掉它的置顶、课表缓存与人脸照片索引。
+  - chaoxing_store.dart：chaoxing.db，账号索引（含学校单位与设备码来源）、收藏位置、人脸照片索引（含使用次数与失败标记）、设置、置顶课程与学习通课表缓存，打开时按上限裁剪，删账号时连带清掉它的置顶、课表缓存与人脸照片索引。
   - chaoxing_controller.dart：页面状态，账号切换、刷新（课程与活动，最多并发三个课程请求；进行中与往期按 status 分）、课表推断、每个签到对象的完整签到流程（检查、拍照上传、人脸、验证码、二维码换码、位置收紧）、课程分组与置顶、人脸照片、代签码、学校单位与模拟客户端；签到对象的会话按需打开、整页关掉时一起关。
   - chaoxing_page.dart：首页与登录表单，先取同意再登录；首页分「可能正在签到（按学习通课表）」与「进行中的签到」两组，底下是往期、按课程、群聊三个入口；账号操作用⋯菜单（切换、登录其他账号、人脸照片、签到设置、代签码、删除）。
-  - chaoxing_sign_sheet.dart：签到弹层，先取活动详情再按类型要输入（签到码、位置）；有多个账号时列出签到对象可多选，每人一行原地显示状态，拍照与人脸按人选；失败的可重试、强制签到或重新登录；二维码签到用连续扫码，签完所有人自动关、码过期等新码接着签；已结束或发布太久的给时间提示；服务端要验证码时就地弹滑块，过了自动把这个人重发一遍。文件里另有 ChaoxingDotText：「甲 · 乙」说明行按项整体换行、不折孤字（同 page 层 DotSeparatedText，百宝箱不依赖 page）。
+  - chaoxing_sign_sheet.dart：签到弹层，先取活动详情再按类型要输入（签到码、位置）；有多个账号时列出签到对象可多选，每人一行原地显示状态，拍照与人脸按人选；失败的可重试、强制签到或重新登录；二维码签到用连续扫码，签完所有人自动关、码过期等新码接着签；已结束或发布太久的给时间提示；服务端要验证码时就地弹滑块，过了自动把这个人重发一遍。「甲 · 乙」说明行用 theme 的 DotSeparatedText。
 
 # 关键规则
 
@@ -127,7 +132,7 @@
   - 位置签到的坐标提交口径是 BD-09，地图或定位给的 WGS-84、GCJ-02 先在 chaoxing_location.dart 转换；坐标系尚未用真账号校准。提交前一律先换算再按小范围随机偏移（超范围时收紧到 0.00001 重试一次），手输坐标按高德 GCJ-02 算。
   - 高德地图只用于选点：不申请定位权限、不读实时位置，隐私政策单列「地图选点」一节。
   - 代签：凭据包用一次性随机密钥加密，密钥只在二维码里、不进服务器；密文经自建中转暂存，取件号一次性、10 分钟过期、取走即删。导入的账号按他人账号对待（is_other_user），带对方的设备码，签到时不会提示「更换了签到设备」；本机库里已有本人账号时拒绝导入自己的码。附带人脸照片要出示方勾选，默认不带。
-  - 上限：账号 21 个（本人 1 加他人 20）、收藏位置 50 条、签到记录 500 条且 90 天、每人人脸照片 objectId 5 条、每个账号置顶课程 100 个、学习通课表缓存每个账号一行且 7 天过期，打开库时裁剪。
+  - 上限：账号 21 个（本人 1 加他人 20）、收藏位置 50 条、每人人脸照片 objectId 5 条、每个账号置顶课程 100 个、学习通课表缓存每个账号一行且 7 天过期，打开库时裁剪。
   - 人脸识别：照片本身存在学习通云盘，本机只记 objectId 与使用情况；默认用存着的第一张，其次学习通里存的那张，选新照片时不做裁剪旋转（要认得出人）。clientId 与环信密码都只在用户信息接口下发，环信密码不落库；参考项目是带设备信息 POST 拿到 clientId 的（2026-10-07 用测试账号实测：GET 不给，POST 合成设备信息即下发，能还原出 sc、_t、cid；经原生通道取真机设备信息的路径还没验），缺失时人脸提交不带设备签名。
   - 群聊：环信令牌、群列表与漫游消息每次都现拉，不在本机存群消息。
 - 轻量逻辑随应用一起发布，只有重型纯资源才按需安装。解析器没有大资源，不显示假的下载安装过程。

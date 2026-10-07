@@ -56,8 +56,9 @@ class ChaoxingBatchSigning extends ChangeNotifier {
 
   bool get allSucceeded => targets.where((target) => target.selected).every((target) => target.done);
 
-  // 按顺序签所有勾选且还没成功的人；返回是否全部成功。
-  Future<bool> run(ChaoxingTargetSigner signer, {Duration interval = chaoxingSignInterval}) async {
+  // 按顺序签所有勾选且还没成功的人；返回是否全部成功。stopOnFailure 用于连续扫码：任何一人失败就停，
+  // 后面的人不再签（对齐参考项目），而普通模式失败的人单独重试、其余照签。
+  Future<bool> run(ChaoxingTargetSigner signer, {Duration interval = chaoxingSignInterval, bool stopOnFailure = false}) async {
     if (running) return false;
     final queue = pending;
     if (queue.isEmpty) return allSucceeded;
@@ -76,7 +77,7 @@ class ChaoxingBatchSigning extends ChangeNotifier {
         first = false;
         lastNeededCaptcha = false;
         final stop = await _signOne(target, signer, force: false);
-        if (stop) {
+        if (stop || (stopOnFailure && !target.done)) {
           for (final rest in queue) {
             if (rest.state == ChaoxingTargetState.waiting) {
               rest

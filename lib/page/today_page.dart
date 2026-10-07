@@ -30,6 +30,7 @@ import 'package:superxd/page/term_start_dialog.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/gateway_code.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 class TodayPage extends StatefulWidget {
   const TodayPage({

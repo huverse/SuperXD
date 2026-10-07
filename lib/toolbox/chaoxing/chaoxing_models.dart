@@ -257,9 +257,3 @@ class ChaoxingSignResult {
   const ChaoxingSignResult({this.late = false});
   final bool late;
 }
-
-// 提交时服务端要求先过滑块验证码，enc2 要回传给下一次提交。
-class ChaoxingCaptchaChallenge {
-  const ChaoxingCaptchaChallenge(this.enc2);
-  final String enc2;
-}

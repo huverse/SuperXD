@@ -39,7 +39,7 @@ import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/third_party_licenses.dart';
 import 'package:superxd/theme/wallpaper_tone.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/domain/campus_log.dart';
 
@@ -182,8 +182,11 @@ class _SuperXdAppState extends State<SuperXdApp> {
             builder: (_) => QrScanPage(hint: hint, accept: accept, onCode: onCode, until: until, status: status),
           ),
         ),
-    // 代签凭据包与私信共用同一个自建中转，地址同样只从构建参数来。
-    chaoxingHub: relayBaseUrl.isEmpty ? null : ChaoxingPackHub(baseUrl: Uri.tryParse(relayBaseUrl)),
+    // 学习通签到的服务由它自己的模块打开与关闭（库、安全存储、设备通道、代签中转客户端），
+    // 框架只给目录；代签凭据包与私信共用同一个自建中转，地址同样只从构建参数来。
+    serviceOpeners: {
+      ChaoxingService.serviceId: (base) => ChaoxingService.open(base, relayUrl: relayBaseUrl.isEmpty ? null : Uri.tryParse(relayBaseUrl)),
+    },
   );
   @override
   void dispose() {

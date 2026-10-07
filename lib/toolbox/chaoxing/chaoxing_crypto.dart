@@ -36,8 +36,13 @@ List<int> chaoxingSha256Bytes(List<int> value) => hash.sha256.convert(value).byt
 
 String chaoxingSha256Hex(String value) => hash.sha256.convert(utf8.encode(value)).toString();
 
+// 公钥是常量，模数只解析一次（顶层 final 首次读取时才求值）。
+final BigInt? _rsaModulus = _parseRsaModulus();
+
+BigInt? chaoxingRsaModulus() => _rsaModulus;
+
 // 公钥是 SPKI 格式：取出里面 128 字节的模数。拿不到就说明这把公钥换了，依赖它的功能按不可用处理。
-BigInt? chaoxingRsaModulus() {
+BigInt? _parseRsaModulus() {
   try {
     final der = base64.decode(chaoxingRsaPublicKey);
     // SEQUENCE { … BIT STRING { SEQUENCE { INTEGER(129，含前导零) , INTEGER(65537) } } }

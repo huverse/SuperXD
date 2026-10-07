@@ -5,9 +5,10 @@ import { DataSource } from 'typeorm';
 
 import { createRelayApp } from 'src/relay_app';
 import { REDIS } from 'src/common/redis/redis.module';
+import { RedisKeys } from 'src/common/redis/redis_keys';
 import { base64url } from 'src/common/crypto/relay_crypto';
 import { chaoxingPackMaxBytes, chaoxingPackPerHour } from 'src/common/relay_limits';
-import { RetentionTask } from 'src/modules/pairing/retention.task';
+import { ChaoxingPackRetentionTask } from 'src/modules/chaoxing/chaoxing_pack_retention.task';
 
 let app: NestExpressApplication;
 let server: string;
@@ -66,13 +67,19 @@ describe('代签凭据包', () => {
     expect(missing.body.code).toBe('PACK_NOT_FOUND');
   });
 
-  it('按来源 IP 限流', async () => {
-    let limited = 0;
-    for (let index = 0; index <= chaoxingPackPerHour; index++) {
-      const response = await submit(base64url(Buffer.from(`pack-${index}`)));
-      if (response.status === 429) limited++;
-    }
-    expect(limited).toBeGreaterThan(0);
+  // 上限宽到每小时上千次，逐个发请求太慢：把本窗口的计数直接预置到上限，再发一次看是否被拦。
+  it('按来源 IP 限流，宽松上限之内照常放行', async () => {
+    await submit(base64url(Buffer.from('first'))).expect(200);
+    // 计数键按实际来源 IP 生成（本机可能是 127.0.0.1 或 ::ffff:127.0.0.1），先投递一次再按前缀找到它。
+    // ioredis 只给命令的 key 参数自动加 keyPrefix，SCAN 的 MATCH 模式与结果都不会动它：模式要自己拼前缀，结果要自己剥掉。
+    const redis = app.get<Redis>(REDIS);
+    const prefix = redis.options.keyPrefix ?? '';
+    const [, keys] = await redis.scan('0', 'MATCH', `${prefix}${RedisKeys.rate('chaoxing_pack', '*', 0).replace(/:0$/, '')}:*`, 'COUNT', 1000);
+    expect(keys).toHaveLength(1);
+    await redis.set(keys[0].slice(prefix.length), chaoxingPackPerHour, 'KEEPTTL');
+    const limited = await submit(base64url(Buffer.from('over')));
+    expect(limited.status).toBe(429);
+    expect(limited.body.code).toBe('RATE_LIMITED');
   });
 
   it('过期的包取不到，清理任务会删掉', async () => {
@@ -82,7 +89,7 @@ describe('代签凭据包', () => {
     expect(rows).toHaveLength(1);
     await pickup(rows[0].pickup_id).expect(404);
 
-    await app.get(RetentionTask).sweep();
+    await app.get(ChaoxingPackRetentionTask).sweep();
     const counts: { total: string | number }[] = await dataSource.query('SELECT COUNT(*) AS total FROM chaoxing_pack');
     expect(Number(counts[0].total)).toBe(0);
   });

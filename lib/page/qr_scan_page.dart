@@ -31,6 +31,9 @@ class _QrScanPageState extends State<QrScanPage> {
   String? _hint;
   bool _done = false;
 
+  // 调用方没给进度文字时用的空占位，只建一次、随页面释放。
+  final _noStatus = ValueNotifier<String?>(null);
+
   @override
   void initState() {
     super.initState();
@@ -45,6 +48,7 @@ class _QrScanPageState extends State<QrScanPage> {
   @override
   void dispose() {
     _controller.dispose();
+    _noStatus.dispose();
     super.dispose();
   }
 
@@ -126,7 +130,7 @@ class _QrScanPageState extends State<QrScanPage> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 child: ValueListenableBuilder<String?>(
-                  valueListenable: widget.status ?? ValueNotifier<String?>(null),
+                  valueListenable: widget.status ?? _noStatus,
                   builder: (context, status, _) => Text(
                     _hint ?? status ?? widget.hint ?? '把二维码放入框内',
                     textAlign: TextAlign.center,

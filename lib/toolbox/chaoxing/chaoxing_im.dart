@@ -12,7 +12,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 const chaoxingImSecretKey = 'SL2(M/eD';
 const chaoxingImTokenUri = 'https://a1-vip6.easemob.com/cx-dev/cxstudy/token';
 const chaoxingImUserAgent = 'Easemob-SDK(Android) 4.9.0.1';
-const chaoxingImGroupLimit = 50;
+const chaoxingImGroupLimit = 200;
 const chaoxingImMessageLimit = 20;
 
 // 登录响应里的环信密码是 DES/ECB/PKCS5 的十六进制密文。
@@ -59,12 +59,16 @@ class ChaoxingImConfig {
 }
 
 class ChaoxingImGroup {
-  const ChaoxingImGroup({required this.id, required this.name});
+  const ChaoxingImGroup({required this.id, required this.name, required this.description});
   final String id;
   final String name;
+  final String description;
+
+  // 实测大部分群的名称是空的，老师建群时把课程名写在了描述里（与参考项目同一处理）。
+  String get displayName => name.isNotEmpty ? name : description;
 }
 
-// 群聊里announced的一场签到。
+// 群聊里发出的一场签到。
 class ChaoxingImActivity {
   const ChaoxingImActivity({
     required this.activeId,
@@ -74,6 +78,7 @@ class ChaoxingImActivity {
     required this.title,
     required this.atypeName,
     required this.groupName,
+    this.startTime,
   });
   final int activeId;
   final int classId;
@@ -84,6 +89,9 @@ class ChaoxingImActivity {
   // 群聊里带的签到类型名；认不出来的要去活动详情里问。
   final String atypeName;
   final String groupName;
+
+  // 消息里的发起时刻（毫秒），群列表排序用；读不到时为空。
+  final DateTime? startTime;
 }
 
 // 群聊里带的类型名与活动列表里的 otherId 是一套语义。
@@ -134,24 +142,27 @@ Future<List<ChaoxingImGroup>> chaoxingImGroups(ChaoxingClient client, ChaoxingIm
     if (item is! Map) continue;
     final id = chaoxingString(item['id']);
     if (id.isEmpty) continue;
-    groups.add(ChaoxingImGroup(id: id, name: chaoxingString(item['name'])));
+    groups.add(ChaoxingImGroup(id: id, name: chaoxingString(item['name']), description: chaoxingString(item['description'])));
   }
   return groups;
 }
 
-// 把群里能签到的活动都找出来：逐群拉漫游并去重。
+// 把群里能签到的活动都找出来：所有群并发拉漫游（对齐参考项目），按发起时间去重后从新到旧排。
 Future<List<ChaoxingImActivity>> chaoxingImActivities(ChaoxingClient client, {int groupLimit = chaoxingImGroupLimit}) async {
   final config = await chaoxingImConfig(client);
   final groups = await chaoxingImGroups(client, config);
-  final activities = <ChaoxingImActivity>[];
-  for (final group in groups.take(groupLimit)) {
-    activities.addAll(await chaoxingImGroupActivities(client, config: config, group: group));
-  }
+  final results = await Future.wait([for (final group in groups.take(groupLimit)) chaoxingImGroupActivities(client, config: config, group: group)]);
   final seen = <int>{};
-  return [
-    for (final activity in activities)
-      if (seen.add(activity.activeId)) activity,
-  ];
+  final activities = <ChaoxingImActivity>[];
+  for (final result in results) {
+    for (final activity in result) {
+      if (seen.add(activity.activeId)) activities.add(activity);
+    }
+  }
+  // 读不到时间的排最后，其余从新到旧。
+  final epoch = DateTime.fromMillisecondsSinceEpoch(0, isUtc: true);
+  activities.sort((first, second) => (second.startTime ?? epoch).compareTo(first.startTime ?? epoch));
+  return activities;
 }
 
 // 拉一个群的漫游消息，从里面挑出签到附件。
@@ -167,10 +178,8 @@ Future<List<ChaoxingImActivity>> chaoxingImGroupActivities(
     headers: {'Authorization': 'Bearer ${config.token}', 'User-Agent': chaoxingImUserAgent},
     timeout: const Duration(seconds: 20),
   );
-  // 这一条接口的响应是 JSON，正文里每条消息的 msg 字段是 base64 的 protobuf。
-  final body = jsonDecode(response.body);
-  if (body is! Map) return const [];
-  final data = body['data'];
+  // 这一条接口的响应是 JSON，正文里每条消息的 msg 字段是 base64 的 protobuf；格式不对按统一的「未知格式」报错。
+  final data = chaoxingJson(response.body)['data'];
   final messages = data is Map ? data['msgs'] : null;
   if (messages is! List) return const [];
   final activities = <ChaoxingImActivity>[];
@@ -184,8 +193,13 @@ Future<List<ChaoxingImActivity>> chaoxingImGroupActivities(
     } on FormatException {
       continue;
     }
+    final sentAt = chaoxingInt(message['timestamp']);
     for (final attachment in chaoxingImAttachments(bytes)) {
-      final activity = chaoxingImActivityOf(attachment, group.name);
+      final activity = chaoxingImActivityOf(
+        attachment,
+        group.displayName,
+        startTime: sentAt > 0 ? DateTime.fromMillisecondsSinceEpoch(sentAt, isUtc: true) : null,
+      );
       if (activity != null) activities.add(activity);
     }
   }
@@ -218,7 +232,7 @@ List<Map<String, Object?>> chaoxingImAttachments(List<int> metaBytes) {
 }
 
 // 附件里只有 attachmentType 为 15、活动类型是签到的才是签到；其余（公告、作业等）跳过。
-ChaoxingImActivity? chaoxingImActivityOf(Map<String, Object?> attachment, String groupName) {
+ChaoxingImActivity? chaoxingImActivityOf(Map<String, Object?> attachment, String groupName, {DateTime? startTime}) {
   if (chaoxingInt(attachment['attachmentType']) != 15) return null;
   final signInfo = attachment['att_chat_course'];
   if (signInfo is! Map) return null;
@@ -235,6 +249,7 @@ ChaoxingImActivity? chaoxingImActivityOf(Map<String, Object?> attachment, String
     title: chaoxingString(signInfo['title']),
     atypeName: chaoxingString(signInfo['atypeName']),
     groupName: groupName,
+    startTime: startTime,
   );
 }
 

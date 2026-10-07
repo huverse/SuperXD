@@ -7,6 +7,7 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity_card.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
@@ -54,29 +55,29 @@ class _ChaoxingCoursePageState extends State<ChaoxingCoursePage> {
         listenable: Listenable.merge([controller, _query]),
         builder: (context, _) {
           final groups = controller.courseGroups(query: _query.text);
-          return CampusScrollFade(
-            child: ListView(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-              children: [
-                TextField(
-                  controller: _query,
-                  decoration: const InputDecoration(
-                    labelText: '搜索课程、老师或学校',
-                    prefixIcon: CampusIcon(CampusIcons.search),
-                  ),
+          // 课程多的账号上百门：先列出每行的构造函数，滚到哪建到哪。
+          final rows = <Widget Function()>[
+            () => Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: TextField(
+                controller: _query,
+                decoration: const InputDecoration(
+                  labelText: '搜索课程、老师或学校',
+                  prefixIcon: CampusIcon(CampusIcons.search),
                 ),
-                const SizedBox(height: 12),
-                if (groups.isEmpty)
-                  Padding(
+              ),
+            ),
+            if (groups.isEmpty)
+              () => Padding(
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     child: Text(
                       controller.courses.isEmpty ? '暂无课程，确认登录的学习通账号与学校单位是否正确' : '没有找到「${_query.text.trim()}」',
                       style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
                     ),
                   )
-                else
-                  for (final group in groups)
-                    CampusSurface(
+            else
+              for (final group in groups)
+                () => CampusSurface(
                       key: ValueKey(group.name),
                       margin: const EdgeInsets.only(bottom: 12),
                       padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
@@ -91,7 +92,7 @@ class _ChaoxingCoursePageState extends State<ChaoxingCoursePage> {
                               children: [
                                 Text(group.name, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
                                 const SizedBox(height: 2),
-                                Text(
+                                DotSeparatedText(
                                   [
                                     if (group.courses.first.teacher.isNotEmpty) group.courses.first.teacher,
                                     if (group.courses.length > 1) '${group.courses.length} 个班',
@@ -110,7 +111,12 @@ class _ChaoxingCoursePageState extends State<ChaoxingCoursePage> {
                         ],
                       ),
                     ),
-              ],
+          ];
+          return CampusScrollFade(
+            child: ListView.builder(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+              itemCount: rows.length,
+              itemBuilder: (context, index) => rows[index](),
             ),
           );
         },
@@ -189,12 +195,9 @@ class _ChaoxingCourseDetailPageState extends State<ChaoxingCourseDetailPage> {
           ),
         ),
         (_, null) => const CampusLoading(label: '正在读取签到活动…', network: true),
-        _ => CampusScrollFade(
-          child: ListView(
-            padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
-            children: [
+        _ => _lazyList([
               if (widget.group.courses.length > 1 || _failures > 0)
-                Padding(
+                () => Padding(
                   padding: const EdgeInsets.only(top: 8),
                   child: Text(
                     [
@@ -204,22 +207,29 @@ class _ChaoxingCourseDetailPageState extends State<ChaoxingCourseDetailPage> {
                     style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
                   ),
                 ),
-              ChaoxingSectionTitle('进行中（${ongoing.length}）'),
+              () => ChaoxingSectionTitle('进行中（${ongoing.length}）'),
               if (ongoing.isEmpty)
-                Text('现在没有进行中的签到', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))
+                () => Text('现在没有进行中的签到', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))
               else
                 for (final activity in ongoing)
-                  ChaoxingActivityCard(key: ValueKey(activity.activeId), activity: activity, showCourse: false, onSign: () => _sign(activity)),
-              ChaoxingSectionTitle('已结束（${ended.length}）'),
+                  () => ChaoxingActivityCard(key: ValueKey(activity.activeId), activity: activity, showCourse: false, onSign: () => _sign(activity)),
+              () => ChaoxingSectionTitle('已结束（${ended.length}）'),
               if (ended.isEmpty)
-                Text('还没有已结束的签到', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))
+                () => Text('还没有已结束的签到', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))
               else
                 for (final activity in ended)
-                  ChaoxingActivityCard(key: ValueKey(activity.activeId), activity: activity, showCourse: false, onSign: () => _sign(activity)),
-            ],
-          ),
-        ),
+                  () => ChaoxingActivityCard(key: ValueKey(activity.activeId), activity: activity, showCourse: false, onSign: () => _sign(activity)),
+            ]),
       },
     );
   }
+
+  // 一门课的签到会越积越多：按需构建，只建屏幕上的那几行。
+  Widget _lazyList(List<Widget Function()> rows) => CampusScrollFade(
+    child: ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+      itemCount: rows.length,
+      itemBuilder: (context, index) => rows[index](),
+    ),
+  );
 }

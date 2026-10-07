@@ -106,6 +106,8 @@ class FakeChaoxing {
   String? imTokenBody;
   final imGroups = <Map<String, Object?>>[];
   final imMessages = <List<int>>[];
+  // 与 imMessages 一一对应的发起时刻（毫秒）；没给的那条消息不带时间。
+  final imTimestamps = <int?>[];
   String? imRoamingBody;
   String? imRoamingQueue;
 
@@ -259,7 +261,11 @@ class FakeChaoxing {
         return _json({
           'data': {
             'msgs': [
-              for (final message in imMessages) {'msg': base64.encode(message)},
+              for (var index = 0; index < imMessages.length; index++)
+                {
+                  'msg': base64.encode(imMessages[index]),
+                  if (index < imTimestamps.length && imTimestamps[index] != null) 'timestamp': imTimestamps[index],
+                },
             ],
           },
         });
