@@ -23,13 +23,16 @@ enum ChaoxingFailureCode {
 }
 
 class ChaoxingFailure implements Exception {
-  const ChaoxingFailure(this.code, this.message, {this.retryAfter, this.payload});
+  const ChaoxingFailure(this.code, this.message, {this.retryAfter, this.payload, this.predicted = false});
   final ChaoxingFailureCode code;
   final String message;
   final Duration? retryAfter;
 
   // 服务端附带的原始信息：位置超范围的距离、需要验证码的 enc2、人脸态等。
   final String? payload;
+
+  // 是签到前的检查（preSign 页面、班级检查）推断出来的，不是提交后学习通退回的；这类可以强制签到。
+  final bool predicted;
 
   @override
   String toString() => message;
@@ -54,6 +57,21 @@ enum ChaoxingSignType {
   }
 }
 
+// 学校单位：一个学习通账号可能挂在多个单位下（学校、培训机构等），课程列表与签到都按所选单位走。
+class ChaoxingUnit {
+  const ChaoxingUnit({required this.fid, required this.name});
+  final int fid;
+  final String name;
+
+  Map<String, Object?> toJson() => {'fid': fid, 'name': name};
+
+  @override
+  bool operator ==(Object other) => other is ChaoxingUnit && other.fid == fid && other.name == name;
+
+  @override
+  int get hashCode => Object.hash(fid, name);
+}
+
 class ChaoxingAccount {
   const ChaoxingAccount({
     required this.phoneNumber,
@@ -66,10 +84,13 @@ class ChaoxingAccount {
     this.photoUrl = '',
     this.imPassword = '',
     this.clientId,
+    this.units = const [],
   });
   final String phoneNumber;
   final int uid;
   final int puid;
+
+  // 当前所选的学校单位；默认是用户信息里的主单位。
   final int fid;
   final String name;
   final String deviceCode;
@@ -77,18 +98,20 @@ class ChaoxingAccount {
   final String photoUrl;
   final String imPassword;
   final String? clientId;
+  final List<ChaoxingUnit> units;
 
-  ChaoxingAccount change({int? fid, String? deviceCode}) => ChaoxingAccount(
+  ChaoxingAccount change({int? fid, String? deviceCode, String? schoolName}) => ChaoxingAccount(
     phoneNumber: phoneNumber,
     uid: uid,
     puid: puid,
     fid: fid ?? this.fid,
     name: name,
     deviceCode: deviceCode ?? this.deviceCode,
-    schoolName: schoolName,
+    schoolName: schoolName ?? this.schoolName,
     photoUrl: photoUrl,
     imPassword: imPassword,
     clientId: clientId,
+    units: units,
   );
 }
 
@@ -121,7 +144,26 @@ class ChaoxingActivity {
   final String ext;
 
   // 是否已签到只认 preSign 返回的页面状态，不看列表字段。
-  bool get ended => endTime != null && DateTime.now().toUtc().isAfter(endTime!);
+  bool get ended => endedAt(DateTime.now().toUtc());
+
+  // 进行中只认活动列表的 status（1 进行中），与学习通客户端一致；截止时间到了但老师没结束的仍算进行中。
+  bool get ongoing => status == 1;
+
+  bool endedAt(DateTime now) => endTime != null && now.isAfter(endTime!);
+
+  ChaoxingActivity change({int? classId}) => ChaoxingActivity(
+    activeId: activeId,
+    courseId: courseId,
+    classId: classId ?? this.classId,
+    title: title,
+    subtitle: subtitle,
+    signType: signType,
+    startTime: startTime,
+    status: status,
+    userStatus: userStatus,
+    ext: ext,
+    endTime: endTime,
+  );
 
   // [人工决策-2026-10-06 23:16:39] 活动名与签到类型名相同时只显示一个：真实数据里活动名常常
   // 就是「二维码签到」这类，和类型名叠一起会重复成「二维码签到 · 二维码签到」。
@@ -135,12 +177,14 @@ class ChaoxingCourse {
     required this.name,
     this.teacher = '',
     this.cover = '',
+    this.schools = '',
   });
   final int courseId;
   final int classId;
   final String name;
   final String teacher;
   final String cover;
+  final String schools;
 }
 
 // 没有签退活动时服务端在 signOutPublishTimeStamp 里用这个值占位。
@@ -208,7 +252,7 @@ class ChaoxingActiveInfo {
   };
 }
 
-// 位置签到的提交结果：成功后附带服务端算出的距离，用于校准坐标系。
+// 签到结果：迟到按活动的截止时间判断（截止之后才提交成功的算迟到），与学习通客户端一致。
 class ChaoxingSignResult {
   const ChaoxingSignResult({this.late = false});
   final bool late;

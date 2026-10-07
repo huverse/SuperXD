@@ -72,6 +72,9 @@ abstract final class CampusIcons {
   static const privacy = LucideIcons.shieldCheck;
   static const sourceCode = LucideIcons.codeXml;
   static const feedback = LucideIcons.messageSquareWarning;
+  static const pin = LucideIcons.pin;
+  static const unpin = LucideIcons.pinOff;
+  static const course = LucideIcons.bookOpen;
 }
 
 void configureCampusIcons() =>

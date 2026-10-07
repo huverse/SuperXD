@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -12,31 +14,53 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_batch.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_captcha_dialog.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_face_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_map_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_settings_sheet.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
-// 签到弹层：先取活动详情，再按类型要输入；签到在弹层里原地给状态，成功后随结果一起关掉。
-// 需要滑块验证码时就地弹验证，过了自动把这次签到重发一遍。
-Future<ChaoxingSignResult?> showChaoxingSignSheet(
+// 发布超过这么久还没截止的签到，提醒确认没选错（与学习通客户端同一口径）。
+const chaoxingStaleActivityAge = Duration(hours: 6);
+
+// 签到结果：成功了几个人、有没有迟到的；关弹层时页面按这个给提示。
+class ChaoxingSignSummary {
+  const ChaoxingSignSummary({required this.succeeded, required this.late});
+  final int succeeded;
+  final bool late;
+}
+
+// 签到弹层：先取活动详情，再按类型要输入；下面是签到对象（本人与导入的代签账号，可多选），
+// 每个人的状态在原位显示，失败的可以单独重试、强制签到或重新登录。全部成功后随结果一起关掉。
+// 需要滑块验证码时就地弹验证，过了自动把这个人的签到重发一遍。
+Future<ChaoxingSignSummary?> showChaoxingSignSheet(
   BuildContext context, {
   required ChaoxingController controller,
   required ChaoxingActivity activity,
   ToolboxQrScan? scanQrCode,
-}) => showCampusSheet<ChaoxingSignResult>(
+  ToolboxQrWatch? watchQrCode,
+}) => showCampusSheet<ChaoxingSignSummary>(
   context: context,
-  builder: (context) => _ChaoxingSignSheet(controller: controller, activity: activity, scanQrCode: scanQrCode),
+  builder: (context) => _ChaoxingSignSheet(
+    controller: controller,
+    activity: activity,
+    scanQrCode: scanQrCode,
+    watchQrCode: watchQrCode,
+  ),
 );
 
 class _ChaoxingSignSheet extends StatefulWidget {
-  const _ChaoxingSignSheet({required this.controller, required this.activity, this.scanQrCode});
+  const _ChaoxingSignSheet({required this.controller, required this.activity, this.scanQrCode, this.watchQrCode});
   final ChaoxingController controller;
   final ChaoxingActivity activity;
   final ToolboxQrScan? scanQrCode;
+  final ToolboxQrWatch? watchQrCode;
   @override
   State<_ChaoxingSignSheet> createState() => _ChaoxingSignSheetState();
 }
@@ -47,39 +71,46 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   final _longitude = TextEditingController();
   final _address = TextEditingController();
   late ChaoxingActivity _activity = widget.activity;
+  late final _batch = ChaoxingBatchSigning(widget.controller.signTargets());
   ChaoxingActiveInfo? _info;
-  ChaoxingQrCode? _qrCode;
   String? _loadError;
   String? _error;
-  bool _signing = false;
+  bool _preparing = false;
   bool _loadingRelated = false;
   bool _manualLocation = false;
   ChaoxingLocation? _savedLocation;
-  List<int>? _photoBytes;
-  String? _photoName;
-  String? _photoObjectId;
-  String? _faceObjectId;
-  String? _faceName;
+  _QrFeed? _feed;
 
   ChaoxingSignType get _type => _activity.signType;
   bool get _needsLocation => _type == ChaoxingSignType.location || (_info?.needLocation ?? false);
   bool get _needsPhoto => _type == ChaoxingSignType.photo && (_info?.needPhoto ?? false);
-  bool get _needsFace => _info?.needFace ?? false;
-  bool get _busy => _signing || _loadingRelated;
+  bool get _needsFace => _info != null && chaoxingFaceApplies(_type, _info!);
+  bool get _needsCode => _type == ChaoxingSignType.password || _type == ChaoxingSignType.gesture;
+  bool get _multi => _batch.targets.length > 1;
+  bool get _busy => _preparing || _loadingRelated || _batch.running;
 
   @override
   void initState() {
     super.initState();
+    _batch.addListener(_onBatch);
     _load();
   }
 
   @override
   void dispose() {
+    _batch
+      ..removeListener(_onBatch)
+      ..dispose();
+    _feed?.close();
     _code.dispose();
     _latitude.dispose();
     _longitude.dispose();
     _address.dispose();
     super.dispose();
+  }
+
+  void _onBatch() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _load() async {
@@ -137,21 +168,19 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     });
   }
 
-  Future<void> _pickPhoto() async {
+  // 拍照签到每人一张照片（上传前各自随机裁剪旋转）。
+  Future<void> _pickPhoto(ChaoxingSignTarget target) async {
     try {
-      final file = await ImagePicker().pickImage(
-        source: ImageSource.gallery,
-        maxWidth: 1920,
-        maxHeight: 1920,
-        imageQuality: 95,
-      );
+      final file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1920, maxHeight: 1920, imageQuality: 95);
       if (file == null || !mounted) return;
       final bytes = await file.readAsBytes();
       if (!mounted) return;
       setState(() {
-        _photoBytes = bytes;
-        _photoName = file.name;
-        _photoObjectId = null;
+        target
+          ..photoBytes = bytes
+          ..photoName = file.name
+          ..photoObjectId = null;
+        _error = null;
       });
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=photo errorType=${failure.runtimeType}\n$stack');
@@ -159,48 +188,11 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     }
   }
 
-  // 人脸照片：默认用学习通里存着的那张，也可以现选一张（选过就记住，下次直接用）。
-  Future<void> _pickFace() async {
-    try {
-      final file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1280, maxHeight: 1280, imageQuality: 90);
-      if (file == null || !mounted) return;
-      final bytes = await file.readAsBytes();
-      if (!mounted) return;
-      final objectId = await widget.controller.uploadFacePhoto(bytes);
-      if (!mounted) return;
-      setState(() {
-        _faceObjectId = objectId;
-        _faceName = file.name;
-        _error = null;
-      });
-    } catch (failure, stack) {
-      campusLog('[Chaoxing] action=face_photo errorType=${failure.runtimeType}\n$stack');
-      if (mounted) setState(() => _error = failure is ChaoxingFailure ? failure.message : '人脸照片上传失败，请重试');
-    }
-  }
-
-  Future<void> _scanQrCode() async {
-    final scan = widget.scanQrCode;
-    if (scan == null) {
-      setState(() => _error = '当前版本不能扫码，请让老师贴出签到码');
-      return;
-    }
-    try {
-      final raw = await scan(context, '把课堂签到二维码放入框内', (value) => chaoxingParseQrCode(value) == null ? '这不是课堂签到二维码' : null);
-      if (!mounted || raw == null) return;
-      final code = chaoxingParseQrCode(raw);
-      if (code == null) {
-        setState(() => _error = '这不是课堂签到二维码');
-        return;
-      }
-      setState(() {
-        _qrCode = code;
-        _error = null;
-      });
-    } catch (failure, stack) {
-      campusLog('[Chaoxing] action=scan errorType=${failure.runtimeType}\n$stack');
-      if (mounted) setState(() => _error = '扫码没完成，请重试');
-    }
+  // 人脸照片：默认用这个人存着的那张，也可以这次另选一张。
+  Future<void> _pickFace(ChaoxingSignTarget target) async {
+    final objectId = await showChaoxingFaceSheet(context, controller: widget.controller, record: target.record, pick: true);
+    if (!mounted || objectId == null) return;
+    setState(() => target.faceObjectId = objectId);
   }
 
   // 从主签到跳到它关联的签退活动，或从签退活动回到主签到；换活动后详情要重新取。
@@ -217,12 +209,15 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         _activity = related;
         _info = null;
         _loadError = null;
-        _qrCode = null;
-        _photoBytes = null;
-        _photoName = null;
-        _photoObjectId = null;
-        _faceObjectId = null;
-        _faceName = null;
+        for (final target in _batch.targets) {
+          target
+            ..state = ChaoxingTargetState.idle
+            ..message = null
+            ..photoBytes = null
+            ..photoName = null
+            ..photoObjectId = null
+            ..faceObjectId = null;
+        }
         _code.clear();
       });
       await _load();
@@ -246,92 +241,204 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     if (mounted) setState(() => _error = null);
   }
 
-  Future<String?> _solveCaptcha() => showChaoxingCaptchaDialog(
-    context,
-    load: () => widget.controller.captchaPuzzle(_activity),
-    loadImage: widget.controller.captchaImage,
-    verify: (puzzle, position) => widget.controller.solveCaptcha(_activity, puzzle, position),
-  );
-
-  // 服务端要求验证码时，先弹验证；过了带着 validate 与 enc2 把这次签到重发一遍。
-  Future<void> _submit(int attempt, String? validate, String? enc2, String? signCode, ChaoxingLocation? location) async {
-    try {
-      final face = _needsFace ? await widget.controller.prepareFace(_activity, objectId: _faceObjectId) : null;
-      final result = await widget.controller.sign(
-        _activity,
-        signCode: signCode,
-        location: location,
-        photoObjectId: _photoObjectId,
-        qrCode: _qrCode,
-        faceObjectId: face?.objectId,
-        faceEnc: face?.faceEnc,
-        captchaValidate: validate,
-        enc2: enc2,
-      );
-      if (mounted) Navigator.pop(context, result);
-    } on ChaoxingFailure catch (failure) {
-      if (failure.code == ChaoxingFailureCode.captchaRequired && attempt < 3) {
-        final answer = await _solveCaptcha();
-        if (!mounted) return;
-        if (answer == null) {
-          setState(() => _error = '需要完成安全验证才能签到');
-          return;
-        }
-        return _submit(attempt + 1, answer, failure.payload ?? enc2, signCode, location);
-      }
-      rethrow;
-    }
+  Future<String?> _solveCaptcha(ChaoxingClient client, ChaoxingActivity activity) async {
+    final answer = await showChaoxingCaptchaDialog(
+      context,
+      load: () => widget.controller.captchaPuzzle(client, activity),
+      loadImage: (url) => widget.controller.captchaImage(client, url),
+      verify: (puzzle, position) => widget.controller.solveCaptcha(client, activity, puzzle, position),
+    );
+    _batch.lastNeededCaptcha = true;
+    return answer;
   }
 
-  void _start() {
+  ChaoxingTargetSigner _signer(ChaoxingSignInputs inputs, {ChaoxingFreshQrCode? freshQrCode}) =>
+      (target, {required force}) => widget.controller.signTarget(
+        target,
+        _activity,
+        info: _info!,
+        inputs: inputs,
+        solveCaptcha: _solveCaptcha,
+        freshQrCode: freshQrCode,
+        force: force,
+      );
+
+  // 开签前把所有人共用的输入与每个人的照片都核对一遍，缺什么原地提示。
+  ChaoxingSignInputs? _inputs() {
     final location = _currentLocation();
     if (_needsLocation && location == null) {
       setState(() => _error = '这场签到要位置，请选一个位置或填写坐标');
-      return;
+      return null;
     }
-    final needsCode = _type == ChaoxingSignType.password || _type == ChaoxingSignType.gesture;
-    final signCode = needsCode ? _code.text.trim() : null;
-    if (needsCode && signCode!.isEmpty) {
+    final signCode = _needsCode ? _code.text.trim() : null;
+    if (_needsCode && signCode!.isEmpty) {
       setState(() => _error = _type == ChaoxingSignType.password ? '请填写签到码' : '请填写手势码');
-      return;
+      return null;
     }
-    if (_type == ChaoxingSignType.qrCode && _qrCode == null) {
-      setState(() => _error = '请先扫描老师的签到二维码');
-      return;
+    if (_batch.pending.isEmpty) {
+      setState(() => _error = _batch.targets.any((target) => target.selected) ? '选中的人都已签到' : '请先选要签到的人');
+      return null;
     }
-    if (_needsPhoto && _photoBytes == null) {
-      setState(() => _error = '这场签到要照片，请先选一张');
-      return;
+    final missingPhoto = _needsPhoto ? _batch.pending.where((target) => target.photoBytes == null && target.photoObjectId == null).firstOrNull : null;
+    if (missingPhoto != null) {
+      setState(() => _error = _multi ? '请给 ${missingPhoto.record.name} 选签到照片' : '这场签到要照片，请先选一张');
+      return null;
     }
-    setState(() {
-      _signing = true;
-      _error = null;
-    });
-    _run(signCode, location);
+    return ChaoxingSignInputs(signCode: signCode, location: location);
   }
 
-  Future<void> _run(String? signCode, ChaoxingLocation? location) async {
+  Future<void> _start() async {
+    final inputs = _inputs();
+    if (inputs == null) return;
+    setState(() {
+      _preparing = true;
+      _error = null;
+    });
     try {
-      // 照片只传一次：验证码重试用的是同一个 objectId。
-      if (_needsPhoto && _photoObjectId == null && _photoBytes != null) {
-        _photoObjectId = await widget.controller.uploadPhoto(_photoBytes!);
-        if (!mounted) return;
+      final signCode = inputs.signCode;
+      if (signCode != null && !await widget.controller.checkSignCode(_activity, signCode)) {
+        if (mounted) setState(() => _error = _type == ChaoxingSignType.password ? '签到码不对，核对后再试' : '手势码不对，核对后再试');
+        return;
       }
-      if (signCode != null) {
-        final valid = await widget.controller.checkSignCode(_activity, signCode);
-        if (!valid) {
-          if (mounted) setState(() => _error = _type == ChaoxingSignType.password ? '签到码不对，核对后再试' : '手势码不对，核对后再试');
-          return;
-        }
-      }
-      await _submit(0, null, null, signCode, location);
     } on ChaoxingFailure catch (failure) {
       if (mounted) setState(() => _error = failure.message);
+      return;
     } catch (failure, stack) {
-      campusLog('[Chaoxing] action=sign errorType=${failure.runtimeType}\n$stack');
+      campusLog('[Chaoxing] action=check_code errorType=${failure.runtimeType}\n$stack');
       if (mounted) setState(() => _error = '签到没完成，请稍后重试');
+      return;
     } finally {
-      if (mounted) setState(() => _signing = false);
+      if (mounted) setState(() => _preparing = false);
+    }
+    if (!mounted) return;
+    await _batch.run(_signer(inputs));
+    _finishIfDone();
+  }
+
+  // 二维码签到：取景页一直开着，扫到的新码交给连签，所有人签完自动关；码过期就等下一个新码接着签。
+  // 没有连续扫码能力时（测试环境）退回单次扫码，过期了再打开一次扫码页。
+  Future<void> _startQr({ChaoxingSignTarget? only, bool force = false}) async {
+    final base = _inputs();
+    if (base == null) return;
+    final watch = widget.watchQrCode;
+    final scan = widget.scanQrCode;
+    if (watch == null && scan == null) {
+      setState(() => _error = '当前版本不能扫码，请让老师贴出签到码');
+      return;
+    }
+    final feed = _feed = _QrFeed();
+    final done = Completer<void>();
+    final status = ValueNotifier<String?>(null);
+    void onBatch() {
+      final phone = _batch.currentPhone;
+      final pending = _batch.pending;
+      final current = pending.where((target) => target.phoneNumber == phone).firstOrNull;
+      status.value = current == null ? null : '正在为 ${current.record.name} 签到，还剩 ${pending.length} 人';
+    }
+
+    _batch.addListener(onBatch);
+    if (watch != null) {
+      unawaited(
+        watch(
+          context,
+          hint: _multi ? '对准老师的签到二维码，签完所有人自动关闭' : '把课堂签到二维码放入框内',
+          accept: (raw) => chaoxingParseQrCode(raw) == null ? '这不是课堂签到二维码' : null,
+          onCode: (raw) => feed.push(chaoxingParseQrCode(raw)!),
+          until: done.future,
+          status: status,
+        ).whenComplete(feed.close),
+      );
+    }
+    Future<ChaoxingQrCode> next(ChaoxingQrCode? expired) async {
+      if (watch != null) return feed.next(expired);
+      final raw = await scan!(context, '把课堂签到二维码放入框内', (value) => chaoxingParseQrCode(value) == null ? '这不是课堂签到二维码' : null);
+      if (raw == null) throw const ChaoxingFailure(ChaoxingFailureCode.cancelled, '扫码已取消');
+      return chaoxingParseQrCode(raw)!;
+    }
+
+    try {
+      // 扫到的第一个码先问一次是否过期，过期就提示对准新的码。
+      var code = await next(null);
+      while (await widget.controller.qrCodeExpired(code, _activity)) {
+        status.value = '这个二维码已过期，请对准老师屏幕上的新码';
+        code = await next(code);
+      }
+      if (!mounted) return;
+      final signer = _signer(
+        ChaoxingSignInputs(location: base.location, qrCode: code),
+        freshQrCode: (expired) {
+          status.value = '二维码过期了，正在等新的码';
+          return next(expired);
+        },
+      );
+      if (only == null) {
+        await _batch.run(signer);
+      } else {
+        await _batch.retry(only, signer, force: force);
+      }
+    } on ChaoxingFailure catch (failure) {
+      if (mounted && failure.code != ChaoxingFailureCode.cancelled) setState(() => _error = failure.message);
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=qr_sign errorType=${failure.runtimeType}\n$stack');
+      if (mounted) setState(() => _error = '扫码签到没完成，请重试');
+    } finally {
+      _batch.removeListener(onBatch);
+      if (!done.isCompleted) done.complete();
+      feed.close();
+      status.dispose();
+      if (identical(_feed, feed)) _feed = null;
+    }
+    _finishIfDone();
+  }
+
+  void _finishIfDone() {
+    if (!mounted || !_batch.allSucceeded) return;
+    final succeeded = _batch.targets.where((target) => target.selected && target.done).toList();
+    if (succeeded.isEmpty) return;
+    Navigator.pop(context, ChaoxingSignSummary(succeeded: succeeded.length, late: succeeded.any((target) => target.late)));
+  }
+
+  // 单独重试一个人；强制签到先说明后果再确认。
+  Future<void> _retry(ChaoxingSignTarget target, {required bool force}) async {
+    if (force) {
+      final agreed = await showCampusConfirm(
+        context,
+        title: '强制签到',
+        message: '会跳过签到前的检查（已签到、已截止、是否在班级）直接提交。检查判断没错时，老师那边可能出现不在班级的名单或重复记录。',
+        action: '强制签到',
+      );
+      if (!agreed || !mounted) return;
+    }
+    final inputs = _inputs();
+    if (inputs == null) return;
+    if (_type == ChaoxingSignType.qrCode) {
+      await _startQr(only: target, force: force);
+      return;
+    }
+    await _batch.retry(target, _signer(inputs), force: force);
+    _finishIfDone();
+  }
+
+  Future<void> _repair(ChaoxingSignTarget target) async {
+    final password = await showChaoxingPasswordPrompt(context, name: target.record.name);
+    if (password == null || !mounted) return;
+    setState(() {
+      target.message = '正在重新登录…';
+      _error = null;
+    });
+    try {
+      await widget.controller.repairAccount(target.record, password);
+      if (!mounted) return;
+      setState(() {
+        target
+          ..needsRepair = false
+          ..message = '已重新登录，可以重试';
+      });
+    } on ChaoxingFailure catch (failure) {
+      if (mounted) setState(() => target.message = failure.message);
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=repair errorType=${failure.runtimeType}\n$stack');
+      if (mounted) setState(() => target.message = '重新登录没完成，请稍后重试');
     }
   }
 
@@ -376,17 +483,22 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         child: CampusLoading(label: '正在读取活动…', inline: true),
       );
     }
+    final single = _batch.targets.first;
     return Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         const SizedBox(height: 4),
+        // 第一行课程名，第二行活动名与类型（同名时只显示一个，见 displayTitle），第三行时间。
         Text(
-          '${_activity.subtitle} · ${_activity.title}',
+          _activity.subtitle,
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface),
         ),
         const SizedBox(height: 4),
-        Text('${_type.label} · ${_windowText()}', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+        ChaoxingDotText(_activity.displayTitle, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+        // 时间单独一行：完整的日期时间跟在活动名后面会被折断。
+        Text(_windowText(), style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+        _timeNotice(palette),
         _signOutNotice(palette, info),
         if (_needsLocation) ...[
           const SizedBox(height: 16),
@@ -394,15 +506,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
           const SizedBox(height: 8),
           _locationPicker(palette),
         ],
-        if (_type == ChaoxingSignType.qrCode) ...[
-          const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _scanQrCode(),
-            icon: const CampusIcon(CampusIcons.scan),
-            label: Text(_qrCode == null ? '扫描签到二维码' : '重新扫描二维码'),
-          ),
-        ],
-        if (_type == ChaoxingSignType.password || _type == ChaoxingSignType.gesture) ...[
+        if (_needsCode) ...[
           SizedBox(height: campusFieldGap(context)),
           TextField(
             controller: _code,
@@ -414,26 +518,34 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
             ),
           ),
         ],
-        if (_needsPhoto) ...[
+        if (_multi) ...[
           const SizedBox(height: 16),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _pickPhoto(),
-            icon: const CampusIcon(CampusIcons.image),
-            label: Text(_photoName ?? '选择签到照片'),
-          ),
-        ],
-        if (_needsFace) ...[
-          const SizedBox(height: 16),
-          Text(
-            _faceName == null ? '这场签到要人脸识别，会用学习通里存的人脸照片' : '人脸照片：$_faceName',
-            style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
-          ),
+          Text('签到对象', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
           const SizedBox(height: 8),
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _pickFace(),
-            icon: const CampusIcon(CampusIcons.scanFace),
-            label: Text(_faceName == null ? '换一张人脸照片' : '重新选择'),
-          ),
+          for (final target in _batch.targets) _targetRow(palette, target),
+        ] else ...[
+          if (_needsPhoto) ...[
+            const SizedBox(height: 16),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : () => _pickPhoto(single),
+              icon: const CampusIcon(CampusIcons.image),
+              label: Text(single.photoName ?? '选择签到照片'),
+            ),
+          ],
+          if (_needsFace) ...[
+            const SizedBox(height: 16),
+            Text(
+              single.faceObjectId == null ? '这场签到要人脸识别，会用存着的人脸照片' : '已选这次用的人脸照片',
+              style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
+            ),
+            const SizedBox(height: 8),
+            OutlinedButton.icon(
+              onPressed: _busy ? null : () => _pickFace(single),
+              icon: const CampusIcon(CampusIcons.scanFace),
+              label: Text(single.faceObjectId == null ? '换一张人脸照片' : '重新选择'),
+            ),
+          ],
+          if (single.state == ChaoxingTargetState.failed) _failureActions(palette, single, inline: false),
         ],
         if (_error != null) ...[
           const SizedBox(height: 12),
@@ -442,15 +554,162 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         const SizedBox(height: 20),
         FilledButton(
           style: campusProminent,
-          onPressed: _busy ? null : _start,
+          onPressed: _busy ? null : (_type == ChaoxingSignType.qrCode ? () => _startQr() : _start),
           child: CampusBusyContent(
             busy: _busy,
-            label: '签到',
-            busyLabel: _needsPhoto && _photoObjectId == null ? '上传中' : '签到中',
-            icon: const CampusIcon(CampusIcons.check),
+            label: _primaryLabel(),
+            busyLabel: _batch.running && _needsPhoto ? '上传与签到中' : '签到中',
+            icon: CampusIcon(_type == ChaoxingSignType.qrCode ? CampusIcons.scan : CampusIcons.check),
           ),
         ),
       ],
+    );
+  }
+
+  String _primaryLabel() {
+    final count = _batch.pending.length;
+    final base = _type == ChaoxingSignType.qrCode ? '扫码签到' : '签到';
+    return _multi && count > 1 ? '$base（$count 人）' : base;
+  }
+
+  // 每个签到对象一行：勾选、名字与状态，拍照/人脸要的输入，失败时的操作。
+  Widget _targetRow(CampusPalette palette, ChaoxingSignTarget target) {
+    final record = target.record;
+    final statusText = switch (target.state) {
+      ChaoxingTargetState.idle => record.isOtherUser ? '代签账号' : '本人',
+      ChaoxingTargetState.waiting => '等待中',
+      ChaoxingTargetState.signing => '签到中',
+      ChaoxingTargetState.succeeded || ChaoxingTargetState.failed => target.message ?? '',
+    };
+    return CampusSurface(
+      margin: const EdgeInsets.only(bottom: 8),
+      padding: const EdgeInsets.fromLTRB(4, 8, 12, 8),
+      radius: 16,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Checkbox(
+                value: target.selected,
+                onChanged: _busy || target.done ? null : (value) => setState(() => target.selected = value ?? false),
+              ),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(record.name, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                    Text(
+                      statusText,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: target.state == ChaoxingTargetState.failed ? palette.danger : palette.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              switch (target.state) {
+                ChaoxingTargetState.signing => const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                ChaoxingTargetState.succeeded => const CampusIcon(CampusIcons.success),
+                _ => const SizedBox.shrink(),
+              },
+            ],
+          ),
+          if (target.selected && !target.done && (_needsPhoto || _needsFace))
+            Padding(
+              padding: const EdgeInsets.only(left: 12, top: 4),
+              child: Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: [
+                  if (_needsPhoto)
+                    OutlinedButton.icon(
+                      onPressed: _busy ? null : () => _pickPhoto(target),
+                      icon: const CampusIcon(CampusIcons.image),
+                      label: Text(target.photoName ?? '选签到照片'),
+                    ),
+                  if (_needsFace)
+                    OutlinedButton.icon(
+                      onPressed: _busy ? null : () => _pickFace(target),
+                      icon: const CampusIcon(CampusIcons.scanFace),
+                      label: Text(target.faceObjectId == null ? '人脸照片：用存着的' : '人脸照片：已另选'),
+                    ),
+                ],
+              ),
+            ),
+          if (target.state == ChaoxingTargetState.failed) _failureActions(palette, target, inline: true),
+        ],
+      ),
+    );
+  }
+
+  // 失败后的操作：会话失效先修复；签到前检查拦下的可以强制签到；其余可以重试。
+  Widget _failureActions(CampusPalette palette, ChaoxingSignTarget target, {required bool inline}) => Padding(
+    padding: EdgeInsets.only(left: inline ? 12 : 0, top: inline ? 4 : 12),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        if (!inline) Text(target.message ?? '', style: TextStyle(fontSize: 14, color: palette.danger)),
+        if (!inline) const SizedBox(height: 8),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            if (target.needsRepair)
+              OutlinedButton.icon(
+                onPressed: _busy ? null : () => _repair(target),
+                icon: const CampusIcon(CampusIcons.login),
+                label: const Text('重新登录'),
+              )
+            else ...[
+              OutlinedButton.icon(
+                onPressed: _busy ? null : () => _retry(target, force: false),
+                icon: const CampusIcon(CampusIcons.restore),
+                label: const Text('重试'),
+              ),
+              if (target.forceAvailable)
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _retry(target, force: true),
+                  icon: const CampusIcon(CampusIcons.warning),
+                  label: const Text('强制签到'),
+                ),
+            ],
+          ],
+        ),
+      ],
+    ),
+  );
+
+  // 已结束的活动照样能签，但可能记为迟到；发布太久的提醒确认没选错。
+  Widget _timeNotice(CampusPalette palette) {
+    final now = DateTime.now().toUtc();
+    final end = _activity.endTime;
+    final String? message;
+    if (!_activity.ongoing) {
+      message = end == null
+          ? '这场签到已经结束或还没开始，现在签到可能会记为迟到'
+          : '这场签到已在 ${formatCampusTimestamp(end.toIso8601String())} 截止，现在签到可能会记为迟到';
+    } else if (now.difference(_activity.startTime) > chaoxingStaleActivityAge) {
+      message = '这场签到发布于 ${formatCampusTimestamp(_activity.startTime.toIso8601String())}，'
+          '已经过去 ${now.difference(_activity.startTime).inHours} 小时，确认没有选错';
+    } else {
+      message = null;
+    }
+    if (message == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 12),
+      child: CampusSurface(
+        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
+        radius: 16,
+        child: Row(
+          children: [
+            CampusIcon(CampusIcons.warning, color: palette.onSurfaceVariant),
+            const SizedBox(width: 8),
+            Expanded(child: Text(message, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))),
+          ],
+        ),
+      ),
     );
   }
 
@@ -487,7 +746,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
 
   String _windowText() {
     final end = _activity.endTime;
-    if (end == null) return '已开始';
+    if (end == null) return _activity.ongoing ? '进行中' : '已结束';
     return '截止 ${formatCampusTimestamp(end.toIso8601String())}';
   }
 
@@ -577,6 +836,65 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
           style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
         ),
       ],
+    );
+  }
+}
+
+// 连续扫码时的最新二维码：签到要新码时，有比过期那个新的就直接给，没有就等下一次扫到。
+class _QrFeed {
+  ChaoxingQrCode? _latest;
+  final _waiters = <Completer<ChaoxingQrCode>>[];
+  bool _closed = false;
+
+  void push(ChaoxingQrCode code) {
+    if (_closed) return;
+    _latest = code;
+    for (final waiter in _waiters) {
+      if (!waiter.isCompleted) waiter.complete(code);
+    }
+    _waiters.clear();
+  }
+
+  // 返回一个与 expired 不同的码；取景页被关掉时以「已取消」结束。
+  Future<ChaoxingQrCode> next(ChaoxingQrCode? expired) async {
+    while (true) {
+      final latest = _latest;
+      if (latest != null && latest.enc != expired?.enc) return latest;
+      if (_closed) throw const ChaoxingFailure(ChaoxingFailureCode.cancelled, '扫码已取消');
+      final waiter = Completer<ChaoxingQrCode>();
+      _waiters.add(waiter);
+      await waiter.future;
+    }
+  }
+
+  void close() {
+    if (_closed) return;
+    _closed = true;
+    for (final waiter in _waiters) {
+      if (!waiter.isCompleted) waiter.completeError(const ChaoxingFailure(ChaoxingFailureCode.cancelled, '扫码已取消'));
+    }
+    _waiters.clear();
+  }
+}
+
+// 「甲 · 乙」这类说明行：窄处按项整体换行，分隔符挂在前一项末尾，不在句末折出孤字
+// （同 page 层 course_cards.dart 的 DotSeparatedText；百宝箱不依赖 page，这里单独放一个）。
+class ChaoxingDotText extends StatelessWidget {
+  const ChaoxingDotText(this.text, {super.key, required this.style});
+  final String text;
+  final TextStyle style;
+
+  @override
+  Widget build(BuildContext context) {
+    final parts = text.split(' · ');
+    return Semantics(
+      label: text,
+      excludeSemantics: true,
+      child: Wrap(
+        children: [
+          for (final (index, part) in parts.indexed) Text(index == parts.length - 1 ? part : '$part · ', style: style),
+        ],
+      ),
     );
   }
 }

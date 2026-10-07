@@ -131,7 +131,7 @@ Future<void> main(List<String> args) async {
       final clientId = account.clientId ?? '';
       final device = chaoxingDecryptClientId(clientId);
       _log(
-        'face modulus=${chaoxingFaceModulus() == null ? 'none' : 'ok'} clientId=${clientId.isEmpty ? 'none' : 'len=${clientId.length}'} '
+        'face modulus=${chaoxingRsaModulus() == null ? 'none' : 'ok'} clientId=${clientId.isEmpty ? 'none' : 'len=${clientId.length}'} '
         'deviceKeys=${device == null ? 'none' : device.keys.join(',')} '
         'cid=${device == null ? 'none' : _mask(chaoxingString(device['cid']))} sc=${device == null ? 'none' : 'len=${chaoxingString(device['sc']).length}'}',
       );

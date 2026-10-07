@@ -112,21 +112,80 @@ void main() {
     expect((await store.accounts()).single.clientId, 'cid-1');
   });
 
+  Future<List<String>> faceIds(ChaoxingStore target, String phoneNumber) async =>
+      [for (final image in await target.faceImages(phoneNumber)) image.objectId];
+
   test('人脸照片按账号各留最近 5 张', () async {
     for (var index = 0; index < 7; index++) {
       await store.putFaceImage('138', 'obj-$index');
     }
-    expect(await store.faceImages('138'), ['obj-6', 'obj-5', 'obj-4', 'obj-3', 'obj-2']);
+    expect(await faceIds(store, '138'), ['obj-6', 'obj-5', 'obj-4', 'obj-3', 'obj-2']);
 
     await store.putFaceImage('138', 'obj-4');
-    expect(await store.faceImages('138'), ['obj-4', 'obj-6', 'obj-5', 'obj-3', 'obj-2']);
+    expect(await faceIds(store, '138'), ['obj-4', 'obj-6', 'obj-5', 'obj-3', 'obj-2']);
 
     await store.putFaceImage('139', 'other');
-    expect(await store.faceImages('139'), ['other']);
+    expect(await faceIds(store, '139'), ['other']);
     expect(await store.faceImages('138'), hasLength(5));
 
     await store.removeFaceImage('138', 'obj-4');
-    expect(await store.faceImages('138'), isNot(contains('obj-4')));
+    expect(await faceIds(store, '138'), isNot(contains('obj-4')));
+  });
+
+  test('人脸照片记用过几次与是否失败过，重新存一次不清零', () async {
+    await store.putFaceImage('138', 'obj-1');
+    await store.markFaceImageUsed('138', 'obj-1', failed: false);
+    await store.markFaceImageUsed('138', 'obj-1', failed: true);
+    await store.markFaceImageUsed('138', 'obj-1', failed: false);
+    var image = (await store.faceImages('138')).single;
+    expect(image.useCount, 3);
+    expect(image.failedBefore, isTrue);
+    await store.putFaceImage('138', 'obj-1');
+    image = (await store.faceImages('138')).single;
+    expect(image.useCount, 3);
+    expect(image.failedBefore, isTrue);
+  });
+
+  test('学校单位与设备码来源跟着账号存取', () async {
+    await store.putAccount(
+      _account('138').change(units: const [ChaoxingUnit(fid: 3, name: '甲大学'), ChaoxingUnit(fid: 4, name: '乙培训')]),
+    );
+    var stored = (await store.accounts()).single;
+    expect(stored.units.map((unit) => unit.fid), [3, 4]);
+    expect(stored.deviceCodeBound, isFalse);
+    await store.putAccount(stored.change(fid: 4, schoolName: '乙培训'));
+    stored = (await store.accounts()).single;
+    expect(stored.fid, 4);
+    expect(stored.schoolName, '乙培训');
+    expect(stored.units, hasLength(2));
+  });
+
+  test('设置、置顶课程与课表缓存；删账号时连带清掉', () async {
+    await store.putAccount(_account('138'));
+    expect(await store.preference('client_profile'), isNull);
+    await store.setPreference('client_profile', 'xuezaixidian');
+    expect(await store.preference('client_profile'), 'xuezaixidian');
+    await store.setPreference('client_profile', null);
+    expect(await store.preference('client_profile'), isNull);
+
+    await store.setCoursesPinned('138', [11, 12], pinned: true);
+    expect(await store.pinnedCourses('138'), {11, 12});
+    await store.setCoursesPinned('138', [11], pinned: false);
+    expect(await store.pinnedCourses('138'), {12});
+
+    await store.putLessonCache('138', '{"lessonArray":[]}');
+    expect((await store.lessonCache('138'))?.payload, '{"lessonArray":[]}');
+
+    await store.putFaceImage('138', 'obj-1');
+    await store.removeAccount('138');
+    expect(await store.pinnedCourses('138'), isEmpty);
+    expect(await store.lessonCache('138'), isNull);
+    expect(await store.faceImages('138'), isEmpty);
+  });
+
+  test('置顶课程每个账号有上限', () async {
+    await store.setCoursesPinned('138', [for (var index = 0; index < ChaoxingStore.pinnedCourseLimit + 5; index++) index], pinned: true);
+    expect(await store.pinnedCourses('138'), hasLength(ChaoxingStore.pinnedCourseLimit));
   });
 
   test('v1 的库升到 v2 会补出 clientId 列与人脸照片表', () async {
@@ -170,7 +229,14 @@ void main() {
     expect(accounts.single.clientId, '');
     expect(await upgraded.faceImages('138'), isEmpty);
     await upgraded.putFaceImage('138', 'obj-1');
-    expect(await upgraded.faceImages('138'), ['obj-1']);
+    expect(await faceIds(upgraded, '138'), ['obj-1']);
+    // 一路升到 v3：学校单位、设备码来源、人脸统计与新表都在。
+    expect(accounts.single.units, isEmpty);
+    expect(accounts.single.deviceCodeBound, isFalse);
+    expect((await upgraded.faceImages('138')).single.useCount, 0);
+    await upgraded.setPreference('k', 'v');
+    expect(await upgraded.pinnedCourses('138'), isEmpty);
+    expect(await upgraded.lessonCache('138'), isNull);
     await upgraded.close();
   });
 }

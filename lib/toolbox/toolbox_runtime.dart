@@ -7,6 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_device.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
@@ -28,11 +29,24 @@ typedef ToolboxVideoShare = Future<void> Function(BuildContext context, VideoSha
 // hint 是取景页的提示语，accept 返回非空表示不认这个内容（原地提示），认下就把原文交回来；取消返回空。
 typedef ToolboxQrScan = Future<String?> Function(BuildContext context, String hint, String? Function(String raw) accept);
 
+// 连续扫码：取景页一直开着，每认下一个新码就交给 onCode，until 完成后自动关上；status 是取景页上的进度文字。
+// 用户按返回提前关掉时，返回的 Future 完成。
+typedef ToolboxQrWatch =
+    Future<void> Function(
+      BuildContext context, {
+      required String hint,
+      required String? Function(String raw) accept,
+      required void Function(String raw) onCode,
+      required Future<void> until,
+      required ValueListenable<String?> status,
+    });
+
 class ToolboxRuntime with WidgetsBindingObserver {
   ToolboxRuntime({
     this.resourceSpecifications = const {},
     this.shareVideo,
     this.scanQrCode,
+    this.watchQrCode,
     ChaoxingAccounts? chaoxing,
     this.chaoxingHub,
   }) : coordinator = ParseCoordinator([BugpkVideoParser()]) {
@@ -44,6 +58,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     required ParseProvider parser,
     this.shareVideo,
     this.scanQrCode,
+    this.watchQrCode,
     ChaoxingAccounts? chaoxing,
     this.chaoxingHub,
   }) : coordinator = ParseCoordinator([parser]),
@@ -57,6 +72,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
   final ParseCoordinator coordinator;
   final ToolboxVideoShare? shareVideo;
   final ToolboxQrScan? scanQrCode;
+  final ToolboxQrWatch? watchQrCode;
 
   // 代签凭据包的中转，与私信共用同一个自建服务（地址由组合根从构建参数取）；为空时代签码不可用。
   final ChaoxingPackHub? chaoxingHub;
@@ -116,6 +132,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     _chaoxing ??= ChaoxingAccounts(
       store: await ChaoxingStore.open(path.join(base.path, 'chaoxing.db')),
       vault: SecureChaoxingVault(),
+      device: ChannelChaoxingDeviceProbe(),
     );
     WidgetsBinding.instance.addObserver(this);
   }

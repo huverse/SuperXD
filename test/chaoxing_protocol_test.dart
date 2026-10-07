@@ -8,8 +8,10 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_activity.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_captcha.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_device.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_face.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_lessons.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_photo.dart';
@@ -17,6 +19,31 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_signer.dart';
 
 import 'chaoxing_fake_server.dart';
+
+class _FakeProbe implements ChaoxingDeviceProbe {
+  _FakeProbe({this.oaidValue = ''});
+  final String oaidValue;
+
+  @override
+  Future<ChaoxingDeviceFacts> facts(String packageName) async => const ChaoxingDeviceFacts(
+    androidId: 'android-1',
+    fingerprint: 'fp/1',
+    mediaDrmId: 'drm',
+    osVersion: '14',
+    language: 'zh-CN',
+    brand: 'brand',
+    board: 'board',
+    hardware: 'hw',
+    model: 'model',
+    abis: 'arm64-v8a',
+    width: 1080,
+    height: 2400,
+    density: '3.0',
+  );
+
+  @override
+  Future<String> oaid() async => oaidValue;
+}
 
 const _account = ChaoxingAccount(
   phoneNumber: '13800138000',
@@ -103,7 +130,11 @@ void main() {
 
   test('提交响应的分支', () {
     expect(chaoxingSignOutcome('success'), isA<ChaoxingSignSucceeded>());
-    expect((chaoxingSignOutcome('success2') as ChaoxingSignSucceeded).late, isTrue);
+    // success2 是「迟到或签到已结束」，按失败处理（与学习通客户端一致）。
+    expect(
+      () => chaoxingSignOutcome('success2'),
+      throwsA(isA<ChaoxingFailure>().having((failure) => failure.message, 'message', '迟到或签到已结束')),
+    );
     expect(
       chaoxingSignOutcome('validate_enc2value'),
       isA<ChaoxingSignNeedsCaptcha>().having((value) => value.enc2, 'enc2', 'enc2value'),
@@ -156,6 +187,9 @@ void main() {
     expect(passwordQuery['signCode'], '1234');
     expect(passwordQuery['latitude'], '-1');
     expect(passwordQuery.containsKey('location'), isFalse);
+    // 签到码与手势不带 vp 两项，位置与二维码才带。
+    expect(passwordQuery.containsKey('vpProbability'), isFalse);
+    expect(locationQuery['vpProbability'], '-1');
 
     final gestureQuery = chaoxingSignRequestUri(
       account: _account,
@@ -171,9 +205,29 @@ void main() {
 
     final qrQuery = chaoxingSignRequestUri(
       account: _account,
-      submission: ChaoxingSignSubmission(activity: _activity(ChaoxingSignType.qrCode), enc: 'ENCVALUE'),
+      submission: ChaoxingSignSubmission(activity: _activity(ChaoxingSignType.qrCode), enc: 'ENCVALUE', location: location),
     ).queryParameters;
     expect(qrQuery['enc'], 'ENCVALUE');
+    // 二维码的坐标参数固定 -1，位置只放在 location 与 locationResult 里。
+    expect(qrQuery['latitude'], '-1');
+    expect(qrQuery['longitude'], '-1');
+    expect(jsonDecode(qrQuery['location']!) as Map, isNot(contains('mockData')));
+    expect(jsonDecode(qrQuery['locationResult']!) as Map, contains('mockData'));
+    expect(qrQuery['vpProbability'], '-1');
+
+    // 人脸参数只有位置与二维码签到才带。
+    final faceQr = chaoxingSignRequestUri(
+      account: _account,
+      submission: ChaoxingSignSubmission(activity: _activity(ChaoxingSignType.qrCode), enc: 'E', faceObjectId: 'face-1', faceEnc: 'FE'),
+    ).queryParameters;
+    expect(faceQr['currentFaceId'], 'face-1');
+    expect(faceQr['faceEnc'], 'FE');
+    expect(faceQr['ifCFP'], '0');
+    final facePassword = chaoxingSignRequestUri(
+      account: _account,
+      submission: ChaoxingSignSubmission(activity: _activity(ChaoxingSignType.password), signCode: '1', faceObjectId: 'face-1'),
+    ).queryParameters;
+    expect(facePassword.containsKey('currentFaceId'), isFalse);
 
     final photoQuery = chaoxingSignRequestUri(
       account: _account,
@@ -245,7 +299,8 @@ void main() {
     expect((longitude - bd09.longitude).abs(), lessThanOrEqualTo(chaoxingLocationRange));
     expect((latitude - 36.6).abs(), greaterThan(0.001));
     expect(query['address'], '知敬楼402');
-    expect(jsonDecode(query['locationResult']!)[ 'latitude'], closeTo(latitude, 1e-9));
+    // latitude 参数是原值，locationResult 里的是保留 6 位小数的同一个点（与学习通客户端一致）。
+    expect(jsonDecode(query['locationResult']!)['latitude'], closeTo(latitude, 1e-6));
 
     final tight = chaoxingSignRequestUri(
       account: _account,
@@ -275,7 +330,7 @@ void main() {
       {'id': 3, 'type': 3, 'otherId': '4', 'nameOne': '作业', 'startTime': 1760000000000},
       {'id': 4, 'type': 2, 'otherId': '9', 'nameOne': '未知类型', 'startTime': 1760000000000},
       {'id': 0, 'type': 2, 'otherId': '4', 'nameOne': '缺 id', 'startTime': 1760000000000},
-    ].map((json) => chaoxingActivity(json.cast<String, Object?>(), course)).toList();
+    ].map((json) => chaoxingActivity(json.cast<String, Object?>(), course, ext: '{"a":1}')).toList();
     expect(parsed.whereType<ChaoxingActivity>().map((activity) => activity.activeId), [1, 2]);
     expect(parsed.first!.ext, '{"a":1}');
     expect(parsed.first!.subtitle, '高等数学');
@@ -361,8 +416,13 @@ void main() {
     expect(info.signOutState, ChaoxingSignOutState.none);
 
     fake.preSignHtml = '<script>signstatus = 0;</script>';
-    expect(await chaoxingPreSign(client, activities.single), ChaoxingPreSignStatus.readyToSign);
-    expect(jsonDecode(Uri.splitQueryString(fake.preSignBody!)['ext']!), {'a': 1});
+    fake.listExt = {'list': 'ext'};
+    final relisted = await chaoxingActivities(client, courses.single);
+    expect(await chaoxingPreSign(client, relisted.single), ChaoxingPreSignStatus.readyToSign);
+    // preSign 回传的是活动列表 data 级别的 ext，不是每条活动自己的字段。
+    expect(jsonDecode(Uri.splitQueryString(fake.preSignBody!)['ext']!), {'list': 'ext'});
+    // preSign 之后紧跟 analysis → analysis2，把页面里的 code 原样带过去。
+    expect(fake.analysis2Code, 'abc123ef');
 
     fake.signResponse = 'success';
     final result = await chaoxingSubmit(
@@ -541,7 +601,7 @@ void main() {
   });
 
   test('人脸公钥解析出 1024 位模数', () {
-    final modulus = chaoxingFaceModulus();
+    final modulus = chaoxingRsaModulus();
     expect(modulus, isNotNull);
     expect(modulus!.bitLength, 1024);
     expect(
@@ -595,5 +655,195 @@ void main() {
     expect(enc, 'FACE-ENC');
     expect(fake.faceQuery!['activeId'], '501');
     expect(fake.faceQuery!['faceResult'], contains('"currentFaceId":"face-object-1"'));
+  });
+
+  test('preSign 返回 302 视为不在班级；analysis 抠不到 code 时不拦签到', () async {
+    final fake = await FakeChaoxing.create();
+    final client = await ChaoxingClient.signIn(
+      http: ChaoxingHttp(client: fake.client()),
+      phoneNumber: '13800138000',
+      password: 'myPassword123',
+    );
+    fake.preSignStatusCode = 302;
+    await expectLater(
+      chaoxingPreSign(client, _activity(ChaoxingSignType.password)),
+      throwsA(isA<ChaoxingFailure>().having((failure) => failure.code, 'code', ChaoxingFailureCode.noPermission)),
+    );
+    fake.preSignStatusCode = 200;
+    fake.preSignHtml = '<script>signstatus = 0;</script>';
+    fake.analysisPage = '<html>改版了</html>';
+    expect(await chaoxingPreSign(client, _activity(ChaoxingSignType.password)), ChaoxingPreSignStatus.readyToSign);
+    expect(fake.analysis2Code, isNull);
+  });
+
+  test('迟到按活动截止时间判断，截止前提交成功不算迟到', () async {
+    final fake = await FakeChaoxing.create();
+    final client = await ChaoxingClient.signIn(
+      http: ChaoxingHttp(client: fake.client()),
+      phoneNumber: '13800138000',
+      password: 'myPassword123',
+    );
+    final ended = ChaoxingActivity(
+      activeId: 501,
+      courseId: 9001,
+      classId: 88,
+      title: '签到',
+      subtitle: '高等数学',
+      signType: ChaoxingSignType.password,
+      startTime: DateTime.utc(2026, 1, 1),
+      endTime: DateTime.utc(2026, 1, 1, 1),
+      status: 2,
+      userStatus: 0,
+      ext: '{}',
+    );
+    expect((await chaoxingSubmit(client, ChaoxingSignSubmission(activity: ended, signCode: '1'))).late, isTrue);
+    expect((await chaoxingSubmit(client, ChaoxingSignSubmission(activity: _activity(ChaoxingSignType.password), signCode: '1'))).late, isFalse);
+  });
+
+  test('课程频道只认带 cataName 的课程条目', () {
+    final courses = chaoxingCourseList([
+      {
+        'cataName': '课程',
+        'content': {
+          'id': 88,
+          'course': {
+            'data': [
+              {'id': 9001, 'name': '高等数学', 'schools': '示例大学'},
+            ],
+          },
+        },
+      },
+      {
+        'content': {
+          'id': 99,
+          'course': {
+            'data': [
+              {'id': 9002, 'name': '文件夹里的东西'},
+            ],
+          },
+        },
+      },
+    ]);
+    expect(courses.map((course) => course.classId), [88]);
+    expect(courses.single.schools, '示例大学');
+  });
+
+  test('学校单位：主单位在前，其余单位去重补名', () {
+    final units = chaoxingUnits({
+      'fid': 100,
+      'schoolname': '',
+      'unitConfigInfos': [
+        {'fid': 100, 'schoolname': '甲大学'},
+        {'fid': 200, 'schoolname': '乙培训'},
+        {'fid': 200, 'schoolname': '重复的'},
+        {'schoolname': '缺 fid'},
+      ],
+    });
+    expect(units.map((unit) => unit.fid), [100, 200]);
+    expect(units.map((unit) => unit.name), ['甲大学', '乙培训']);
+    expect(chaoxingUnits({'fid': 7}).single.name, chaoxingUnknownSchool);
+  });
+
+  test('设备码按 OAID 做 AES-ECB，与 openssl 的已知答案一致', () async {
+    expect(
+      chaoxingDeviceCodeFromOaid('c8b3a6e1-2f4d-4b7a-9e10-5d3f2a1b0c9e'),
+      'Dpl3RndTUkExstIDHs+8jXL69FRpyroc/Qy6m93xDqTDWqVMeZPr2+vbQ2U03Mt2',
+    );
+    expect(await chaoxingLocalDeviceCode(_FakeProbe(oaidValue: 'c8b3a6e1-2f4d-4b7a-9e10-5d3f2a1b0c9e')), startsWith('Dpl3'));
+    // 取不到或全 0 占位的 OAID 不算，交给固定随机设备码。
+    expect(await chaoxingLocalDeviceCode(_FakeProbe(oaidValue: '00000000-0000-0000-0000-000000000000')), '');
+    expect(await chaoxingLocalDeviceCode(_FakeProbe()), '');
+    expect(await chaoxingLocalDeviceCode(null), '');
+  });
+
+  test('设备信息的字段与顺序照学习通客户端，RSA 按 117 字节分块', () async {
+    final info = chaoxingDeviceInfo(
+      await _FakeProbe().facts('com.chaoxing.mobile'),
+      packageName: 'com.chaoxing.mobile',
+      now: DateTime.fromMillisecondsSinceEpoch(1700000000000),
+    );
+    expect(info.keys.toList(), [
+      'deviceUniqueId', 'cdid', 'device_id', 'android_id', 'mediaDrmId', 'oaid', 'platform', 'os_name', 'os_ver',
+      'os_lang', 'brand', 'board', 'hardware', 'model', 'cpu_ar', 'app_name', 'app_ver', 'versionCode', 'signatures',
+      'resolution', 'dpi', 'time_stamp',
+    ]);
+    expect(info['deviceUniqueId'], 'fdc5e0753d6c23b346baac7be567f0892db04678c36c482ff8f7245ba95573c5');
+    expect(info['app_ver'], chaoxingDefaultAppVersion);
+    expect(info['signatures'], chaoxingDefaultSignature);
+    expect(info['resolution'], '1080*2400');
+    expect(info['time_stamp'], 1700000000000);
+    final plain = utf8.encode(jsonEncode(info));
+    final encrypted = base64.decode(chaoxingRsaEncrypt(plain));
+    expect(encrypted.length, (plain.length / chaoxingRsaPlainBlockBytes).ceil() * chaoxingRsaBlockBytes);
+  });
+
+  test('有设备信息时用户信息改用 POST 带 data，并收下 clientId', () async {
+    final fake = await FakeChaoxing.create();
+    fake.clientId = 'client-id-1';
+    final http = ChaoxingHttp(client: fake.client());
+    final client = await ChaoxingClient.signIn(
+      http: http,
+      phoneNumber: '13800138000',
+      password: 'myPassword123',
+      device: _FakeProbe(),
+    );
+    expect(fake.userInfoMethod, 'POST');
+    expect(Uri.splitQueryString(fake.userInfoBody!)['data'], isNotEmpty);
+    expect(client.account!.clientId, 'client-id-1');
+
+    final plain = await ChaoxingClient.signIn(http: ChaoxingHttp(client: fake.client()), phoneNumber: '13800138000', password: 'myPassword123');
+    expect(fake.userInfoMethod, 'GET');
+    expect(plain.account!.units.single.fid, 1234);
+  });
+
+  test('模拟的客户端换了，请求的 UA 跟着换', () {
+    expect(ChaoxingClientProfile.xuezaixidian.userAgent, contains('com.chaoxing.mobile.xuezaixidian'));
+    expect(ChaoxingClientProfile.userAgentProblem(''), isNotNull);
+    expect(ChaoxingClientProfile.userAgentProblem('含中文的 UA'), isNotNull);
+    expect(ChaoxingClientProfile.userAgentProblem('Dalvik/2.1.0'), isNull);
+    expect(ChaoxingClientProfile.custom(userAgent: ' UA ').packageName, ChaoxingClientProfile.chaoxing.packageName);
+  });
+
+  test('学习通课表：节次换算、本周的课与当前时段', () {
+    final table = chaoxingParseLessons({
+      'curriculum': {
+        'lessonTimeConfigArray': ['08:00-08:45', '08:55-09:40', '10:00-10:45'],
+        // 2026-09-07（周一）零点，北京时间。
+        'firstWeekDate': DateTime.utc(2026, 9, 6, 16).millisecondsSinceEpoch,
+      },
+      'lessonArray': [
+        {'name': '高等数学（一）', 'dayOfWeek': 3, 'beginNumber': 1, 'length': 2, 'weeks': '1,2,5', 'classId': 0, 'courseId': 0},
+        {'name': '缺节次', 'dayOfWeek': 3, 'beginNumber': 9, 'weeks': '5'},
+        {'name': '', 'dayOfWeek': 3, 'beginNumber': 1, 'weeks': '5'},
+      ],
+    });
+    expect(table.lessons, hasLength(1));
+    expect(table.lessons.single.startMinute, 8 * 60);
+    expect(table.lessons.single.endMinute, 9 * 60 + 40);
+    // 2026-10-07 是第 5 周的周三；北京时间 09:30 在课上，11:00 已过下课 30 分钟之外。
+    expect(chaoxingCurrentWeek(table.firstWeekDate, DateTime.utc(2026, 10, 7, 1, 30)), 5);
+    expect(chaoxingCurrentLessons(table, DateTime.utc(2026, 10, 7, 1, 30)), hasLength(1));
+    expect(chaoxingCurrentLessons(table, DateTime.utc(2026, 10, 7, 3, 11)), isEmpty);
+    expect(chaoxingCurrentLessons(table, DateTime.utc(2026, 10, 8, 1, 30)), isEmpty);
+    expect(() => chaoxingParseLessons({'curriculum': 1}), throwsA(isA<ChaoxingFailure>()));
+  });
+
+  test('课表课名与课程列表课名：归一化、互相包含或二元组相似', () {
+    expect(chaoxingNormalizeCourseName('高等数学（一）'), '高等数学');
+    expect(chaoxingNormalizeCourseName('Ｃ语言 程序设计 II'), 'c语言程序设计');
+    expect(chaoxingCourseNameMatches('高等数学（一）', '高等数学A'), isTrue);
+    expect(chaoxingCourseNameMatches('大学英语', '大学英语读写'), isTrue);
+    expect(chaoxingCourseNameMatches('马克思主义基本原理概论', '马克思主义原理'), isTrue);
+    expect(chaoxingCourseNameMatches('高等数学', '大学物理'), isFalse);
+    const courses = [
+      ChaoxingCourse(courseId: 1, classId: 11, name: '高等数学A'),
+      ChaoxingCourse(courseId: 2, classId: 22, name: '大学物理'),
+    ];
+    const lesson = ChaoxingLesson(courseId: 0, classId: 0, courseName: '高等数学（一）', dayOfWeek: 1, startMinute: 0, endMinute: 1, weeks: {1});
+    expect(chaoxingLessonCourses([lesson], courses).map((course) => course.classId), [11]);
+    final now = DateTime.utc(2026, 10, 7, 1);
+    final fresh = ChaoxingActivity(activeId: 1, courseId: 1, classId: 11, title: '签到', subtitle: '', signType: ChaoxingSignType.password, startTime: now.subtract(const Duration(minutes: 5)), status: 1, userStatus: 0, ext: '');
+    expect(chaoxingFreshActivity(fresh, now), isTrue);
+    expect(chaoxingFreshActivity(fresh, now.add(const Duration(minutes: 30))), isFalse);
   });
 }

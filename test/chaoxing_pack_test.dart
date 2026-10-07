@@ -49,6 +49,39 @@ void main() {
     );
   });
 
+  test('第 2 版带人脸照片，第 1 版的包照样能解', () {
+    const withFaces = ChaoxingCredentialPack(
+      phoneNumber: '13800138000',
+      encryptedPassword: 'x',
+      name: '甲',
+      deviceCode: 'd',
+      faceObjectIds: ['face-1', 'face_2'],
+    );
+    expect(decodeChaoxingCredentialPack(encodeChaoxingCredentialPack(withFaces)).faceObjectIds, ['face-1', 'face_2']);
+
+    // 第 1 版：版本号 1，四个字段后面没有人脸照片段。
+    final v2 = encodeChaoxingCredentialPack(_pack);
+    final v1 = Uint8List.fromList([chaoxingPackLegacyVersion, ...v2.sublist(1, v2.length - 1)]);
+    final legacy = decodeChaoxingCredentialPack(v1);
+    expect(legacy.deviceCode, 'device-code-1');
+    expect(legacy.faceObjectIds, isEmpty);
+
+    for (final faces in [
+      List.generate(chaoxingPackFaceLimit + 1, (index) => 'f$index'),
+      ['带中文'],
+      [''],
+      ['x' * (chaoxingPackObjectIdMaxLength + 1)],
+    ]) {
+      expect(
+        () => encodeChaoxingCredentialPack(
+          ChaoxingCredentialPack(phoneNumber: '13800138000', encryptedPassword: 'x', name: '', deviceCode: '', faceObjectIds: faces),
+        ),
+        throwsA(isA<ChaoxingFailure>()),
+        reason: '$faces',
+      );
+    }
+  });
+
   test('两次封同一个包得到不同密文', () async {
     final first = await sealChaoxingCredentialPack(_pack);
     final second = await sealChaoxingCredentialPack(_pack);

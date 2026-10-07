@@ -70,6 +70,13 @@ GPL 的例外：下文第四节所述 math-curve-loaders 改编部分（lib/them
    版本：Android 地图 SDK 10.1.200（带定位与搜索库，本应用只用地图显示与选点）
    说明：高德地图 SDK 是闭源商业 SDK，按高德开放平台的服务条款分发与使用，不是开源许可，也不随本项目的 GPL-3.0 授权。使用前须在构建时提供绑定了本应用包名与签名的高德 key（`--dart-define=SUPERXD_AMAP_KEY`），未提供或设备不是 arm 架构时地图入口不出现；应用不申请定位权限，也不读取实时位置。
 
+8. Android_CN_OAID 4.2.17
+   来源：https://github.com/gzu-liyujiang/Android_CN_OAID（经 JitPack 分发）
+   许可：木兰宽松许可证第 2 版（Mulan PSL v2，http://license.coscl.org.cn/MulanPSL2）
+   版权：Copyright (c) 2016-present. 贵州纳雍穿青人李裕江 and All Contributors.
+   用途：学习通签到读取系统的匿名设备标识 OAID，按学习通客户端的算法换成设备码。它自带的电话状态、存储、写系统设置与广告 ID 权限在本应用的清单里已移除。
+   随它打包的华为广告标识服务 SDK（com.huawei.hms:ads-identifier 3.4.62.300）与荣耀广告标识服务 SDK（com.hihonor.mcs:ads-identifier 1.0.2.301）是厂商闭源 SDK，按各自厂商的条款分发与使用，不随本项目的 GPL-3.0 授权。
+
 
 三、参考与借鉴
 
@@ -79,7 +86,7 @@ flutter_video_parse（https://github.com/zhao004/flutter_video_parse，参考版
 
 ChaoxingSignFaker（https://github.com/aquamarine5/ChaoxingSignFaker，参考版本 6116f8bf1932dad033c922342e456e110c4cdaab）
 许可：AGPL-3.0
-用途：百宝箱「学习通签到」只参考它记录的接口地址、参数与响应语义（登录、活动列表、preSign、各类型提交、二维码与滑块验证码）。实现（lib/toolbox/chaoxing）按这些行为用 Dart 重写，未复制其代码，也不依赖它的域名、CDN 或模型资产。
+用途：百宝箱「学习通签到」只参考它记录的接口地址、参数与响应语义（登录与设备信息、学校单位、活动列表、preSign 与 analysis、各类型提交、二维码与滑块验证码、学习通课表）以及多人连签的规则。实现（lib/toolbox/chaoxing）按这些行为用 Dart 重写，未复制其代码，也不依赖它的域名、CDN 或模型资产。
 
 
 四、经授权改编

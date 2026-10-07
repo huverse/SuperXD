@@ -93,4 +93,6 @@ flutter {
 
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
+    // 学习通签到的设备码按 OAID 算（与官方客户端一致）；它自带的存储、电话状态等权限在清单里移除。
+    implementation("com.github.gzu-liyujiang:Android_CN_OAID:4.2.17")
 }
