@@ -582,6 +582,20 @@ class ChaoxingController extends ChangeNotifier {
     _notify();
   }
 
+  Future<void> renameLocation(int id, String label) async {
+    await accounts.store.renameLocation(id, label);
+    locations = await accounts.store.locations();
+    _notify();
+  }
+
+  // 离这个位置 withinMeters 米内已有的收藏（签完提示收藏时用它判断「附近已经收藏过了」，对齐参考项目）。
+  ChaoxingSavedLocation? nearbyLocation(ChaoxingLocation location, {double withinMeters = 500}) {
+    for (final saved in locations) {
+      if (chaoxingDistanceMeters(saved.location, location) <= withinMeters) return saved;
+    }
+    return null;
+  }
+
   Future<void> _open(ChaoxingAccountRecord record) async {
     _client?.close();
     _client = null;

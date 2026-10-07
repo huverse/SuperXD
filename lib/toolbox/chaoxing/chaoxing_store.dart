@@ -406,6 +406,10 @@ class ChaoxingStore {
     await _database.delete('locations', where: 'id = ?', whereArgs: [id]);
   }
 
+  Future<void> renameLocation(int id, String label) async {
+    await _database.update('locations', {'label': label}, where: 'id = ?', whereArgs: [id]);
+  }
+
   Future<void> close() async {
     if (_closed) return;
     _closed = true;

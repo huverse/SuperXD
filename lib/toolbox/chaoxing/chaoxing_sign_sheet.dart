@@ -25,6 +25,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_face_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_gesture_field.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_image_pick.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_location_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_map_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
@@ -221,10 +222,18 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   }
 
   Future<void> _pickOnMap() async {
+    final info = _info;
+    final rangeLatitude = info?.locationLatitude;
+    final rangeLongitude = info?.locationLongitude;
     final picked = await openChaoxingMapPicker(
       context,
       initial: _currentLocation() ?? (_manualLocation ? null : _savedLocation),
       label: _savedLocation?.address,
+      // 详情里有签到点与范围时画出来（学习通给的是 BD-09 口径，地图内部会换算成 GCJ-02）。
+      rangeCenter: rangeLatitude == null || rangeLongitude == null
+          ? null
+          : ChaoxingLocation(latitude: rangeLatitude, longitude: rangeLongitude, address: '', system: ChaoxingCoordinateSystem.bd09),
+      rangeMeters: info?.locationRange?.toDouble(),
     );
     if (!mounted || picked == null) return;
     await widget.controller.saveLocation(picked.address, picked);
@@ -432,6 +441,21 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     return false;
   }
 
+  // 位置签到成功后：附近 500 米内还没有收藏时问一句要不要收藏这次的位置（对齐参考项目，问了就不打扰）。
+  Future<void> _offerSaveLocation(ChaoxingSignInputs inputs) async {
+    final location = inputs.location;
+    if (location == null || !_batch.targets.any((target) => target.selected && target.done)) return;
+    if (widget.controller.nearbyLocation(location) != null) return;
+    final agreed = await showCampusConfirm(
+      context,
+      title: '收藏这次的位置？',
+      message: '下次在这附近签到可以直接选；附近 500 米内已有收藏时不再问。',
+      action: '收藏',
+    );
+    if (!mounted || !agreed) return;
+    await widget.controller.saveLocation(location.address, location);
+  }
+
   Future<void> _start() async {
     final inputs = _inputs();
     if (inputs == null) return;
@@ -466,6 +490,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     }
     if (!mounted) return;
     await _batch.run(_signer(inputs));
+    await _offerSaveLocation(inputs);
     _finishIfDone();
   }
 
@@ -1038,6 +1063,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
                 onSelected: (_) => setState(() => _savedLocation = item.location),
               ),
             CampusGlassChip(label: '手动输入', selected: false, onSelected: (_) => setState(() => _manualLocation = true)),
+            // 收藏的维护入口：改名与删除（选择在上面这些 chip 里做）。
+            CampusGlassChip(label: '管理收藏', selected: false, onSelected: (_) => showChaoxingLocationSheet(context, controller: widget.controller)),
           ],
         ),
         const SizedBox(height: 8),

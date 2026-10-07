@@ -369,6 +369,10 @@ void main() {
     // 没有收藏位置时直接是手输，坐标已按签到点预填。
     expect(find.widgetWithText(TextField, '纬度'), findsOneWidget);
     await tapSign(tester);
+    // 位置签到成功后先弹「收藏这次的位置？」（附近无收藏时），点取消后再等主页面的成功提示。
+    await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
+    await tester.tap(find.text('取消'));
+    await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     expect(fake.calls.where((call) => call.contains('stuSignajax')).length, 2);
     await tester.pumpWidget(const SizedBox());
@@ -410,6 +414,8 @@ void main() {
     await tester.pump();
     await tapSign(tester);
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    // 用的就是收藏里的位置（500 米内已有收藏），不会再问要不要收藏。
+    expect(find.text('收藏这次的位置？'), findsNothing);
     expect(fake.signQuery!['address'], '知敬楼402');
     await tester.pumpWidget(const SizedBox());
   });
@@ -519,6 +525,10 @@ void main() {
     await waitUntil(tester, () => find.text('重处理默认照片').evaluate().isNotEmpty);
     await tester.tap(find.text('重处理默认照片'));
     await tester.pump();
+    // 位置签到成功后先弹「收藏这次的位置？」（附近无收藏时），点取消后再等主页面的成功提示。
+    await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
+    await tester.tap(find.text('取消'));
+    await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     // 用的是重处理上传后的新 objectId（fake 的云盘上传固定回 obj-1），不再是学习通里那张的原 objectId。
     expect(fake.signQuery!['currentFaceId'], 'obj-1');
@@ -548,6 +558,10 @@ void main() {
     await tapSign(tester);
     await waitUntil(tester, () => find.text('重处理默认照片').evaluate().isNotEmpty);
     await tester.tap(find.text('重处理默认照片'));
+    await tester.pump();
+    // 位置签到成功后先弹「收藏这次的位置？」（附近无收藏时），点取消后再等主页面的成功提示。
+    await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
+    await tester.tap(find.text('取消'));
     await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     // 第二次提交把 checkFace_ 的后缀作为 enc2 续传上去。
