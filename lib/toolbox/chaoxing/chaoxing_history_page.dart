@@ -1,27 +1,26 @@
 import 'package:flutter/material.dart';
 
-import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
-import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_activity_card.dart';
 
-// 往期签到：只读回看本账号已经结束的活动。能签的那些在主列表里，这里不给操作
-// （已结束的提交也只会被学习通退回）。数据来自主列表同一次拉取，不额外请求。
-Future<void> showChaoxingHistoryPage(BuildContext context, {required ChaoxingController controller}) =>
+// 往期签到：本账号已结束的活动（活动列表 status 不为 1 的）。照样能签，签到页会提示可能记为迟到；
+// 数据来自主列表同一次拉取，不额外请求。
+Future<void> showChaoxingHistoryPage(BuildContext context, {required ChaoxingSignLauncher launcher}) =>
     Navigator.of(context).push<void>(
-      CampusPageRoute(builder: (_) => ChaoxingHistoryPage(controller: controller)),
+      CampusPageRoute(builder: (_) => ChaoxingHistoryPage(launcher: launcher)),
     );
 
 class ChaoxingHistoryPage extends StatelessWidget {
-  const ChaoxingHistoryPage({super.key, required this.controller});
-  final ChaoxingController controller;
+  const ChaoxingHistoryPage({super.key, required this.launcher});
+  final ChaoxingSignLauncher launcher;
 
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
+    final controller = launcher.controller;
     return Scaffold(
       appBar: AppBar(
         title: const Text('往期签到'),
@@ -45,27 +44,10 @@ class ChaoxingHistoryPage extends StatelessWidget {
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
               children: [
                 for (final activity in activities)
-                  CampusSurface(
-                    margin: const EdgeInsets.only(bottom: 12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          activity.subtitle,
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          activity.displayTitle,
-                          style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
-                        ),
-                        const SizedBox(height: 2),
-                        Text(
-                          '已结束 ${formatCampusTimestamp((activity.endTime ?? activity.startTime).toIso8601String())}',
-                          style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
-                        ),
-                      ],
-                    ),
+                  ChaoxingActivityCard(
+                    key: ValueKey(activity.activeId),
+                    activity: activity,
+                    onSign: () => launcher.open(context, activity),
                   ),
               ],
             ),

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_device.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 
@@ -33,7 +34,7 @@ String chaoxingLoginBody({
   'independentNameId': '0',
 });
 
-// 设备码只要求稳定且够长：sha256 摘要拼接后 Base64，与学习通客户端同一个形状。
+// 固定随机设备码：取不到 OAID 时用，只要求稳定且够长；sha256 摘要拼接后 Base64，与学习通客户端同一个形状。
 String chaoxingDeviceCode([Random? random]) {
   final source = random ?? Random.secure();
   final digest = chaoxingSha256Bytes(List<int>.generate(64, (_) => source.nextInt(256)));
@@ -48,11 +49,17 @@ class ChaoxingClient {
     required this.encryptedPassword,
     required this.deviceCode,
     this.account,
+    this.device,
   });
 
   final ChaoxingHttp http;
   final String phoneNumber;
-  final String encryptedPassword;
+
+  // 对方改了密码后可以重输一次修复，所以不是 final。
+  String encryptedPassword;
+
+  // 设备信息来源；为空时用户信息接口退回不带设备信息的 GET（拿不到人脸签名要的 clientId）。
+  final ChaoxingDeviceProbe? device;
 
   // 设备码会随导入他人账号而改变，所以不是 final。
   String deviceCode;
@@ -72,6 +79,7 @@ class ChaoxingClient {
     required String phoneNumber,
     required String password,
     String? deviceCode,
+    ChaoxingDeviceProbe? device,
   }) async {
     final trimmed = phoneNumber.trim();
     if (trimmed.isEmpty) {
@@ -83,6 +91,7 @@ class ChaoxingClient {
       phoneNumber: trimmed,
       encryptedPassword: await chaoxingEncrypt(password),
       deviceCode: deviceCode ?? chaoxingDeviceCode(),
+      device: device,
     );
     await client.login();
     client.account = await client.loadAccount();
@@ -103,6 +112,14 @@ class ChaoxingClient {
       final message = chaoxingString(result['msg2']).trim();
       throw ChaoxingFailure(ChaoxingFailureCode.login, message.isEmpty ? '登录失败，请核对账号密码' : message);
     }
+    // 登录响应会把 fid 换回主单位；选了别的学校单位时改回所选的，课程列表才对得上。
+    final selected = account?.fid;
+    if (selected != null && selected != 0) applyUnit(selected);
+  }
+
+  // 只改会话里已有的 fid，不凭空加。
+  void applyUnit(int fid) {
+    if (http.cookies['fid'] != null) http.cookies.set('fid', '$fid');
   }
 
   // 会话过期后拿密文密码再登一次；这次仍失败就按过期处理，由用户重新登录。
@@ -117,8 +134,12 @@ class ChaoxingClient {
     }
   }
 
+  // 用户信息接口按上传的设备信息下发人脸签名要的 clientId：带得上设备信息就 POST，带不上退回 GET（学习通客户端同样如此）。
   Future<ChaoxingAccount> loadAccount() async {
-    final response = await http.get(Uri.parse(chaoxingUserInfoUri), timeout: chaoxingAccountTimeout);
+    final data = await chaoxingEncryptedDeviceInfo(device, http.profile.packageName);
+    final response = data == null
+        ? await http.get(Uri.parse(chaoxingUserInfoUri), timeout: chaoxingAccountTimeout)
+        : await http.postForm(Uri.parse(chaoxingUserInfoUri), chaoxingFormBody({'data': data}), timeout: chaoxingAccountTimeout);
     final message = chaoxingJson(response.body)['msg'];
     if (message is! Map) {
       throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '登录已过期，请重新登录');
@@ -130,19 +151,40 @@ class ChaoxingClient {
     }
     final imAccount = (info['accountInfo'] as Map?)?['imAccount'] as Map?;
     final clientId = chaoxingString(info['clientId']);
+    final units = chaoxingUnits(info);
     return ChaoxingAccount(
       phoneNumber: phoneNumber,
       uid: uid,
       puid: chaoxingInt(info['puid'], fallback: uid),
-      fid: chaoxingInt(info['fid']),
+      fid: units.first.fid,
       name: chaoxingString(info['name'], fallback: phoneNumber),
       deviceCode: deviceCode,
-      schoolName: chaoxingString(info['schoolname']),
+      schoolName: units.first.name,
       photoUrl: chaoxingString(info['pic']).replaceFirst('http://', 'https://'),
       imPassword: chaoxingString(imAccount?['password']),
       clientId: clientId.isEmpty ? null : clientId,
+      units: units,
     );
   }
 
   void close() => http.close();
+}
+
+const chaoxingUnknownSchool = '未知学校';
+
+// 学校单位：主单位在最前（fid 与 schoolname），unitConfigInfos 里的其余单位按出现顺序跟在后面；
+// 同一个 fid 只留一条，主单位没名字时用后面给的名字补上。
+List<ChaoxingUnit> chaoxingUnits(Map<String, Object?> info) {
+  final names = <int, String>{};
+  String nameOf(Object? value) => chaoxingString(value).trim().isEmpty ? chaoxingUnknownSchool : chaoxingString(value).trim();
+  names[chaoxingInt(info['fid'])] = nameOf(info['schoolname']);
+  final configs = info['unitConfigInfos'];
+  if (configs is List) {
+    for (final config in configs) {
+      if (config is! Map || config['fid'] == null) continue;
+      final fid = chaoxingInt(config['fid']);
+      if (!names.containsKey(fid) || names[fid] == chaoxingUnknownSchool) names[fid] = nameOf(config['schoolname']);
+    }
+  }
+  return [for (final entry in names.entries) ChaoxingUnit(fid: entry.key, name: entry.value)];
 }

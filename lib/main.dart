@@ -175,6 +175,13 @@ class _SuperXdAppState extends State<SuperXdApp> {
     scanQrCode: (context, hint, accept) => Navigator.of(context).push<String>(
       CampusPageRoute(builder: (_) => QrScanPage(hint: hint, accept: accept)),
     ),
+    // 多人连签的二维码签到：取景页一直开着，签完所有人自动关。
+    watchQrCode: (context, {required hint, required accept, required onCode, required until, required status}) =>
+        Navigator.of(context).push<void>(
+          CampusPageRoute(
+            builder: (_) => QrScanPage(hint: hint, accept: accept, onCode: onCode, until: until, status: status),
+          ),
+        ),
     // 代签凭据包与私信共用同一个自建中转，地址同样只从构建参数来。
     chaoxingHub: relayBaseUrl.isEmpty ? null : ChaoxingPackHub(baseUrl: Uri.tryParse(relayBaseUrl)),
   );

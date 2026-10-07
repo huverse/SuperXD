@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 
@@ -8,14 +9,19 @@ import 'package:superxd/theme/campus_icons.dart';
 // 通用扫码页：相机取景（识别在本机完成，ML Kit 内置模型、不联网），也可从相册选一张截图识别。
 // 只把内容交给调用方的 accept 判断，认下的原样返回，不跳转、不打开链接；不认的原地提示后继续扫。
 // 好友二维码与课堂签到二维码共用这一页，accept 由调用方给（见 friend_add_page.dart 与 main.dart）。
+// 连续模式（onCode 非空）：认下的码交给 onCode 后接着扫，until 完成时自动关；status 是取景页上的进度文字。
+// 课堂二维码会定时刷新，给多人连签时要一直对着老师的屏幕，用的就是这个模式。
 typedef QrAccept = String? Function(String raw);
 
 class QrScanPage extends StatefulWidget {
-  const QrScanPage({super.key, this.hint, required this.accept});
+  const QrScanPage({super.key, this.hint, required this.accept, this.onCode, this.until, this.status});
   final String? hint;
 
   // 返回提示文案表示不认这个内容；返回 null 表示认下，页面随即关掉并把原文交给调用方。
   final QrAccept accept;
+  final void Function(String raw)? onCode;
+  final Future<void>? until;
+  final ValueListenable<String?>? status;
   @override
   State<QrScanPage> createState() => _QrScanPageState();
 }
@@ -24,6 +30,17 @@ class _QrScanPageState extends State<QrScanPage> {
   final _controller = MobileScannerController(formats: const [BarcodeFormat.qrCode], detectionSpeed: DetectionSpeed.noDuplicates);
   String? _hint;
   bool _done = false;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.until?.whenComplete(() {
+      if (mounted && !_done) {
+        _done = true;
+        Navigator.pop(context);
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -38,6 +55,12 @@ class _QrScanPageState extends State<QrScanPage> {
       if (raw.isEmpty) continue;
       final rejected = widget.accept(raw);
       if (rejected == null) {
+        final onCode = widget.onCode;
+        if (onCode != null) {
+          setState(() => _hint = null);
+          onCode(raw);
+          continue;
+        }
         _done = true;
         Navigator.pop(context, raw);
         return;
@@ -102,7 +125,14 @@ class _QrScanPageState extends State<QrScanPage> {
               decoration: BoxDecoration(color: Colors.black54, borderRadius: BorderRadius.circular(20)),
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                child: Text(_hint ?? widget.hint ?? '把二维码放入框内', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, color: onCamera)),
+                child: ValueListenableBuilder<String?>(
+                  valueListenable: widget.status ?? ValueNotifier<String?>(null),
+                  builder: (context, status, _) => Text(
+                    _hint ?? status ?? widget.hint ?? '把二维码放入框内',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(fontSize: 16, color: onCamera),
+                  ),
+                ),
               ),
             ),
           ),

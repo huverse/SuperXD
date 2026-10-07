@@ -11,7 +11,10 @@ const chaoxingActiveInfoUri = 'https://mobilelearn.chaoxing.com/v2/apis/active/g
 // 签到类活动的活动类型；其余类型（作业、讨论等）不在这里处理。
 const chaoxingSignActivityTypes = {2, 74};
 
-Future<List<ChaoxingCourse>> chaoxingCourses(ChaoxingClient client) async {
+Future<List<ChaoxingCourse>> chaoxingCourses(ChaoxingClient client) async =>
+    chaoxingCourseList(await _courseChannels(client));
+
+Future<List<Object?>> _courseChannels(ChaoxingClient client) async {
   final response = await client.http.get(Uri.parse(chaoxingCourseListUri));
   final result = chaoxingJson(response.body);
   chaoxingCheckSession(result);
@@ -19,9 +22,14 @@ Future<List<ChaoxingCourse>> chaoxingCourses(ChaoxingClient client) async {
   if (channelList is! List) {
     throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, '课程列表解析失败');
   }
+  return channelList;
+}
+
+// 课程频道里只认带 cataName 的「课程」条目（文件夹等别的频道没有），与学习通客户端一致。
+List<ChaoxingCourse> chaoxingCourseList(List<Object?> channelList) {
   final courses = <ChaoxingCourse>[];
   for (final channel in channelList) {
-    if (channel is! Map) continue;
+    if (channel is! Map || !channel.containsKey('cataName')) continue;
     final content = channel['content'];
     if (content is! Map) continue;
     final data = (content['course'] as Map?)?['data'];
@@ -38,10 +46,26 @@ Future<List<ChaoxingCourse>> chaoxingCourses(ChaoxingClient client) async {
         name: chaoxingString(course['name']),
         teacher: chaoxingString(course['teacherfactor']),
         cover: chaoxingString(course['imageurl']),
+        schools: chaoxingString(course['schools']),
       ),
     );
   }
   return courses;
+}
+
+// 签到前确认这个账号确实在该班级里：查不到课程列表（会话问题）时返回空，交给 preSign 去判断。
+Future<bool?> chaoxingClassValid(ChaoxingClient client, int classId) async {
+  final response = await client.http.get(Uri.parse(chaoxingCourseListUri));
+  final result = chaoxingJson(response.body);
+  final channelList = result['channelList'];
+  if (chaoxingInt(result['result']) == 0 || channelList is! List) return null;
+  return channelList.any((channel) => channel is Map && channel['content'] is Map && chaoxingInt((channel['content'] as Map)['id']) == classId);
+}
+
+// 强制签到给别的账号签时，按课程号找他自己所在的班级（同一门课可能分在不同班）；找不到返回空，沿用原班级。
+Future<int?> chaoxingClassIdOfCourse(ChaoxingClient client, int courseId) async {
+  final courses = chaoxingCourseList(await _courseChannels(client));
+  return courses.where((course) => course.courseId == courseId).firstOrNull?.classId;
 }
 
 Future<List<ChaoxingActivity>> chaoxingActivities(ChaoxingClient client, ChaoxingCourse course) async {
@@ -60,10 +84,12 @@ Future<List<ChaoxingActivity>> chaoxingActivities(ChaoxingClient client, Chaoxin
   if (activeList is! List) {
     throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, '活动列表解析失败');
   }
+  // preSign 要回传的 ext 是活动列表响应 data 级别的 ext（同一课程的全部活动共用），不是每条活动自己的字段。
+  final ext = chaoxingExtText(data['ext']);
   final activities = <ChaoxingActivity>[];
   for (final item in activeList) {
     if (item is! Map) continue;
-    final activity = chaoxingActivity(item.cast<String, Object?>(), course);
+    final activity = chaoxingActivity(item.cast<String, Object?>(), course, ext: ext);
     if (activity != null) activities.add(activity);
   }
   activities.sort((first, second) => second.startTime.compareTo(first.startTime));
@@ -71,7 +97,7 @@ Future<List<ChaoxingActivity>> chaoxingActivities(ChaoxingClient client, Chaoxin
 }
 
 // 认不出的签到类型直接不入列，界面不会出现点不动的条目。
-ChaoxingActivity? chaoxingActivity(Map<String, Object?> json, ChaoxingCourse course) {
+ChaoxingActivity? chaoxingActivity(Map<String, Object?> json, ChaoxingCourse course, {required String ext}) {
   if (!chaoxingSignActivityTypes.contains(chaoxingInt(json['type']))) return null;
   final signType = ChaoxingSignType.fromCode(chaoxingString(json['otherId']));
   final activeId = chaoxingInt(json['id']);
@@ -89,11 +115,11 @@ ChaoxingActivity? chaoxingActivity(Map<String, Object?> json, ChaoxingCourse cou
     endTime: chaoxingTimestamp(json['endTime']),
     status: chaoxingInt(json['status']),
     userStatus: chaoxingInt(json['userStatus']),
-    ext: chaoxingExtText(json['ext']),
+    ext: ext,
   );
 }
 
-// 活动的扩展字段要原样回传给 preSign；服务端有时给对象，有时给字符串。
+// 扩展字段要原样回传给 preSign；服务端有时给对象，有时给字符串。
 String chaoxingExtText(Object? value) => value is String ? value : jsonEncode(value ?? const <String, Object?>{});
 
 Future<ChaoxingActiveInfo> chaoxingActiveInfo(ChaoxingClient client, int activeId) async {

@@ -6,11 +6,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_course_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_group_page.dart';
@@ -77,6 +79,17 @@ Future<void> tapSign(WidgetTester tester) async {
   await tester.tap(button);
   await tester.pump();
 }
+
+// 首页底部的入口按钮在列表最下面，先滚到可见再点。
+Future<void> tapEntry(WidgetTester tester, String label) async {
+  final entry = find.widgetWithText(OutlinedButton, label);
+  await tester.ensureVisible(entry);
+  await tester.pump();
+  await tester.tap(entry);
+  await tester.pump();
+}
+
+Future<void> openGroups(WidgetTester tester) => tapEntry(tester, '群聊里的签到');
 
 // 造一条环信漫游消息：Meta.field6 里是 MessageBody，它的 ext 里 key=attachment 的那项是签到附件。
 List<int> _imVarint(int value) {
@@ -221,14 +234,18 @@ void main() {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
 
-    await openSignSheet(tester, button: '去签到');
-    await tester.tap(find.widgetWithText(OutlinedButton, '扫描签到二维码'));
+    await tester.tap(find.widgetWithText(FilledButton, '去签到'));
     await tester.pump();
-    await waitUntil(tester, () => find.widgetWithText(OutlinedButton, '重新扫描二维码').evaluate().isNotEmpty);
-    await tapSign(tester);
+    await waitUntil(tester, () => find.widgetWithText(FilledButton, '扫码签到').evaluate().isNotEmpty);
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.ensureVisible(find.widgetWithText(FilledButton, '扫码签到'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, '扫码签到'));
+    await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     expect(fake.signQuery!['enc'], 'ENCV');
     expect(fake.signQuery!['activeId'], '501');
+    expect(fake.signQuery!['latitude'], '-1');
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -244,7 +261,7 @@ void main() {
     await openSignSheet(tester, button: '去签到');
     expect(find.text('这次签到还发布了签退活动'), findsOneWidget);
     await tester.tap(find.widgetWithText(TextButton, '去签退'));
-    await waitUntil(tester, () => find.textContaining('· 签退').evaluate().isNotEmpty);
+    await waitUntil(tester, () => find.text('签退 · ').evaluate().isNotEmpty);
     await tester.enterText(find.widgetWithText(TextField, '签到码'), '1234');
     await tester.pump();
     await tapSign(tester);
@@ -422,16 +439,23 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('要人脸识别的签到会带上学习通里的人脸照片与 faceEnc', (tester) async {
+  testWidgets('要人脸识别的位置签到会带上学习通里的人脸照片与 faceEnc', (tester) async {
     usePhoneScreen(tester);
-    fake.activeInfo = {'numberCount': 4, 'openCheckFaceFlag': 1, 'signOutPublishTimeStamp': 4999};
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '4', 'nameOne': '签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0},
+    ];
+    fake.activeInfo = {
+      'openCheckFaceFlag': 1,
+      'ifopenAddress': 1,
+      'locationLatitude': 36.6,
+      'locationLongitude': 117.0,
+      'signOutPublishTimeStamp': 4999,
+    };
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
 
     await openSignSheet(tester, button: '去签到');
     expect(find.textContaining('人脸识别'), findsOneWidget);
-    await tester.enterText(find.widgetWithText(TextField, '签到码'), '1234');
-    await tester.pump();
     await tapSign(tester);
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     expect(fake.signQuery!['currentFaceId'], 'face-object-1');
@@ -452,9 +476,8 @@ void main() {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
 
-    await tester.tap(find.byTooltip('从群聊里找签到'));
-    await tester.pump();
-    await waitUntil(tester, () => find.text('群里签到 · 签到码签到').evaluate().isNotEmpty);
+    await openGroups(tester);
+    await waitUntil(tester, () => find.text('群里签到 · ').evaluate().isNotEmpty);
     // 等页面转场滑完再点，转场中途量到的坐标还在屏幕外。
     await tester.pump(const Duration(milliseconds: 400));
     // 群聊页是推上去的，底下主页面也有“去签到”，按页面类型限定一下。
@@ -488,10 +511,195 @@ void main() {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
 
-    await tester.tap(find.byTooltip('从群聊里找签到'));
-    await tester.pump();
-    await waitUntil(tester, () => find.text('群里签到 · 签到码签到').evaluate().isNotEmpty);
+    await openGroups(tester);
+    await waitUntil(tester, () => find.text('群里签到 · ').evaluate().isNotEmpty);
     expect(find.textContaining('认不出类型的签到'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('多个账号时可以一次给本人与代签账号连签', (tester) async {
+    usePhoneScreen(tester);
+    await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');
+    final accounts = runtime.chaoxing!;
+    await tester.runAsync(
+      () async => accounts.importOther(
+        ChaoxingCredentialPack(
+          phoneNumber: '13900139000',
+          encryptedPassword: await chaoxingEncrypt('otherPassword1'),
+          name: '同学乙',
+          deviceCode: 'device-of-b',
+        ),
+      ),
+    );
+    await tester.runAsync(() => accounts.signIn(phoneNumber: '13800138000', password: 'myPassword123'));
+    final callsBefore = fake.calls.length;
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    // 本机已有账号但没同意过当前版本的说明：先重新征得同意才联网。
+    await waitUntil(tester, () => find.text('学习通签到的说明更新了').evaluate().isNotEmpty);
+    expect(fake.calls.skip(callsBefore), isEmpty);
+    await tester.tap(find.widgetWithText(FilledButton, '同意'));
+    await tester.pump();
+    // 本人账号排在前面，打开就是本人；代签账号在签到对象里，默认不勾。
+    await waitUntil(tester, () => find.widgetWithText(FilledButton, '去签到').evaluate().isNotEmpty);
+    await openSignSheet(tester);
+    expect(find.text('签到对象'), findsOneWidget);
+    expect(find.text('同学乙'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, '签到码'), '1234');
+    await tester.pump();
+    final second = find.byType(Checkbox).last;
+    await tester.ensureVisible(second);
+    await tester.pump();
+    await tester.tap(second);
+    await tester.pump();
+    final button = find.widgetWithText(FilledButton, '签到（2 人）');
+    await tester.ensureVisible(button);
+    await tester.pump();
+    await tester.tap(button);
+    await tester.pump();
+    await waitUntil(tester, () => find.text('已为 2 人签到').evaluate().isNotEmpty);
+    // 最后签的是代签账号，带的是对方的设备码。
+    expect(fake.signQuery!['deviceCode'], 'device-of-b');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('往期签到照样能签，签到页提示可能记为迟到', (tester) async {
+    usePhoneScreen(tester);
+    fake.activities = [
+      {'id': 601, 'type': 2, 'otherId': '5', 'nameOne': '上周的签到', 'startTime': 1760000000000, 'endTime': 1760000600000, 'status': 2, 'userStatus': 0},
+    ];
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await waitUntil(tester, () => find.text('学习通手机号').evaluate().isNotEmpty);
+    await tester.enterText(find.byType(TextField).at(0), '13800138000');
+    await tester.enterText(find.byType(TextField).at(1), 'myPassword123');
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await waitUntil(tester, () => find.text('同意并登录').evaluate().isNotEmpty);
+    await tester.tap(find.text('同意并登录'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('往期签到（1）').evaluate().isNotEmpty);
+
+    await tapEntry(tester, '往期签到（1）');
+    await waitUntil(tester, () => find.text('往期签到').evaluate().isNotEmpty);
+    await tester.pump(const Duration(milliseconds: 400));
+    await openSignSheet(tester);
+    expect(find.textContaining('可能会记为迟到'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, '签到码'), '1234');
+    await tester.pump();
+    await tapSign(tester);
+    await waitUntil(tester, () => find.text('签到成功，不过已经迟到').evaluate().isNotEmpty);
+    expect(fake.signQuery!['activeId'], '601');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('签到前检查判定已签到时给强制签到，确认后跳过检查直接提交', (tester) async {
+    usePhoneScreen(tester);
+    fake.preSignHtml = '<script>signstatus = 1;</script>';
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await openSignSheet(tester);
+    await tester.enterText(find.widgetWithText(TextField, '签到码'), '1234');
+    await tester.pump();
+    await tapSign(tester);
+    await waitUntil(tester, () => find.widgetWithText(OutlinedButton, '强制签到').evaluate().isNotEmpty);
+    expect(find.text('这场签到已经完成了'), findsOneWidget);
+    expect(fake.signQuery, isNull);
+    await tester.ensureVisible(find.widgetWithText(OutlinedButton, '强制签到'));
+    await tester.pump();
+    await tester.tap(find.widgetWithText(OutlinedButton, '强制签到'));
+    await tester.pump();
+    await waitUntil(tester, () => find.widgetWithText(FilledButton, '强制签到').evaluate().isNotEmpty);
+    await tester.tap(find.widgetWithText(FilledButton, '强制签到'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    expect(fake.signQuery!['signCode'], '1234');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('按课程查看：同名课合并，进行中与已结束分开', (tester) async {
+    usePhoneScreen(tester);
+    // 同一门课两个班：假服务对两个班给回同一批活动，首页按活动号去重，不能出现重复条目。
+    fake.courses = [
+      for (final classId in [88, 89])
+        {
+          'content': {
+            'id': classId,
+            'course': {
+              'data': [
+                {'id': 9001, 'name': '高等数学', 'teacherfactor': '张老师'},
+              ],
+            },
+          },
+        },
+    ];
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '5', 'nameOne': '今天的签到', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0},
+      {'id': 502, 'type': 2, 'otherId': '5', 'nameOne': '上周的签到', 'startTime': 1759000000000, 'status': 2, 'userStatus': 0},
+    ];
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    expect(find.text('今天的签到 · '), findsOneWidget);
+    await tapEntry(tester, '按课程查看（1）');
+    await waitUntil(tester, () => find.text('搜索课程、老师或学校').evaluate().isNotEmpty);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('高等数学'), findsWidgets);
+    expect(find.text('张老师 · 2 个班'), findsOneWidget);
+    await tester.tap(find.descendant(of: find.byType(ChaoxingCoursePage), matching: find.text('高等数学')));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('进行中（1）').evaluate().isNotEmpty);
+    expect(find.text('已结束（1）'), findsOneWidget);
+    expect(find.text('这门课有 2 个班，签到已合并显示'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('按学习通课表推断正在上的课里刚发起的签到', (tester) async {
+    usePhoneScreen(tester);
+    final now = DateTime.now().toUtc();
+    final local = campusInstant(now);
+    fake.lessons = {
+      'curriculum': {'lessonTimeConfigArray': ['00:00-23:59'], 'firstWeekDate': now.millisecondsSinceEpoch},
+      'lessonArray': [
+        {'name': '高等数学（一）', 'dayOfWeek': local.weekday, 'beginNumber': 1, 'length': 1, 'weeks': '1', 'classId': 0, 'courseId': 0},
+      ],
+    };
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '5', 'nameOne': '刚发起的签到', 'startTime': now.subtract(const Duration(minutes: 2)).millisecondsSinceEpoch, 'status': 1, 'userStatus': 0},
+    ];
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    expect(find.text('可能正在签到（按学习通课表）'), findsOneWidget);
+    // 推断里已经列出的，不在「进行中」里重复。
+    expect(find.text('刚发起的签到 · '), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('本机已有账号时不同意新版说明就退出工具，不联网', (tester) async {
+    usePhoneScreen(tester);
+    await tester.runAsync(() => runtime.chaoxing!.signIn(phoneNumber: '13800138000', password: 'myPassword123'));
+    final callsBefore = fake.calls.length;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: campusTheme(),
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: Center(
+              child: TextButton(
+                onPressed: () => Navigator.of(context).push<void>(MaterialPageRoute(builder: (_) => ChaoxingPage(runtime: runtime))),
+                child: const Text('打开'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('打开'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('学习通签到的说明更新了').evaluate().isNotEmpty);
+    await tester.tap(find.widgetWithText(TextButton, '取消'));
+    await tester.pump();
+    await waitUntil(tester, () => find.byType(ChaoxingPage).evaluate().isEmpty);
+    expect(fake.calls.skip(callsBefore), isEmpty);
     await tester.pumpWidget(const SizedBox());
   });
 }

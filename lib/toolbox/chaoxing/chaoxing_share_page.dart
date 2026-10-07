@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -10,8 +11,10 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 
 // 出示代签码：二维码里只有一次性取件号与密钥，凭据密文放在自建中转，对方扫走即取即删。
+// 可以勾选附带几张人脸照片（只是学习通云盘里的 objectId），对方替你签人脸签到时用；默认不附带。
 Future<void> showChaoxingTicketPage(BuildContext context, {required ChaoxingController controller}) =>
     Navigator.of(context).push<void>(CampusPageRoute(builder: (_) => ChaoxingTicketPage(controller: controller)));
 
@@ -26,10 +29,30 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
   String? _ticket;
   String? _error;
   bool _creating = false;
+  List<ChaoxingFaceImage> _faces = const [];
+  final _attached = <String>{};
 
   @override
   void initState() {
     super.initState();
+    _loadFaces();
+    _create();
+  }
+
+  Future<void> _loadFaces() async {
+    final record = widget.controller.current;
+    if (record == null) return;
+    try {
+      final faces = await widget.controller.faceImages(record);
+      if (mounted) setState(() => _faces = faces);
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=ticket_faces errorType=${failure.runtimeType}\n$stack');
+    }
+  }
+
+  // 改了附带的照片就重新生成一张码（旧码里的包已经封好，改不了）。
+  void _toggleFace(String objectId) {
+    setState(() => _attached.contains(objectId) ? _attached.remove(objectId) : _attached.add(objectId));
     _create();
   }
 
@@ -40,7 +63,7 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
       _error = null;
     });
     try {
-      final ticket = await widget.controller.createCredentialTicket();
+      final ticket = await widget.controller.createCredentialTicket(faceObjectIds: _attached.toList());
       if (!mounted) return;
       setState(() => _ticket = ticket);
     } on ChaoxingFailure catch (failure) {
@@ -115,6 +138,23 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
                   ],
                 ),
               ),
+              if (_faces.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text('附带人脸照片（对方替你签人脸签到时用）', style: secondary),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (final (index, face) in _faces.indexed)
+                      CampusGlassChip(
+                        label: '第 ${index + 1} 张',
+                        selected: _attached.contains(face.objectId),
+                        onSelected: _creating ? null : (_) => _toggleFace(face.objectId),
+                      ),
+                  ],
+                ),
+              ],
               const SizedBox(height: 16),
               Text('让对方在“学习通签到”里选“扫别人的代签码”，扫到后本机就会保存你的账号替他签到', textAlign: TextAlign.center, style: secondary),
               const SizedBox(height: 8),

@@ -6,10 +6,15 @@ import 'package:cryptography/cryptography.dart';
 
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 
-// 代签凭据包：把「手机号 + 学习通密文密码 + 昵称 + 设备码」打成一个包，交给信得过的人。
+// 代签凭据包：把「手机号 + 学习通密文密码 + 昵称 + 设备码 + 人脸照片」打成一个包，交给信得过的人。
 // 包体用一次性随机密钥做 AES-256-GCM 加密：密钥不进服务器，也不跟密文放在一起（二维码里才有一份）。
-// 设备码跟着一起走，是为了让对方签到时用同一个设备号，避免学习通提示「更换了签到设备」。
-const chaoxingPackVersion = 1;
+// 设备码跟着一起走，是为了让对方签到时用同一个设备号，避免学习通提示「更换了签到设备」；
+// 人脸照片只带学习通云盘里的 objectId（最多 5 张），对方替你签人脸签到时用。
+// 第 2 版加了人脸照片；第 1 版的包照样能解（没有人脸照片）。
+const chaoxingPackVersion = 2;
+const chaoxingPackLegacyVersion = 1;
+const chaoxingPackFaceLimit = 5;
+const chaoxingPackObjectIdMaxLength = 64;
 const chaoxingPackKeyBytes = 32;
 const chaoxingPackMaxBytes = 2048;
 const chaoxingPackPhoneLength = 11;
@@ -22,6 +27,7 @@ class ChaoxingCredentialPack {
     required this.encryptedPassword,
     required this.name,
     required this.deviceCode,
+    this.faceObjectIds = const [],
   });
   final String phoneNumber;
 
@@ -29,6 +35,7 @@ class ChaoxingCredentialPack {
   final String encryptedPassword;
   final String name;
   final String deviceCode;
+  final List<String> faceObjectIds;
 }
 
 // 编好的包与给它用的密钥分开拿着：密钥随二维码给人，密文可以放服务器。
@@ -48,13 +55,19 @@ Uint8List chaoxingRandomBytes(int length) =>
 Uint8List encodeChaoxingCredentialPack(ChaoxingCredentialPack pack) {
   _checkPack(pack);
   final builder = BytesBuilder(copy: false)..addByte(chaoxingPackVersion);
-  for (final field in [pack.phoneNumber, pack.encryptedPassword, pack.name, pack.deviceCode]) {
+  void addString(String field) {
     final bytes = utf8.encode(field);
     builder
       ..addByte(bytes.length >> 8)
       ..addByte(bytes.length & 0xff)
       ..add(bytes);
   }
+
+  for (final field in [pack.phoneNumber, pack.encryptedPassword, pack.name, pack.deviceCode]) {
+    addString(field);
+  }
+  builder.addByte(pack.faceObjectIds.length);
+  pack.faceObjectIds.forEach(addString);
   final encoded = builder.toBytes();
   if (encoded.length > chaoxingPackMaxBytes) {
     throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '凭据包太大，无法分享');
@@ -68,15 +81,21 @@ ChaoxingCredentialPack decodeChaoxingCredentialPack(List<int> bytes) {
     throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '这个凭据包不完整');
   }
   final reader = _ByteReader(bytes);
-  if (reader.readByte() != chaoxingPackVersion) {
+  final version = reader.readByte();
+  if (version != chaoxingPackVersion && version != chaoxingPackLegacyVersion) {
     throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '凭据包版本不认识，请让对方更新应用');
   }
   final fields = [for (var index = 0; index < 4; index++) reader.readString()];
+  final faceCount = version == chaoxingPackLegacyVersion ? 0 : reader.readByte();
+  if (faceCount > chaoxingPackFaceLimit) {
+    throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '凭据包里的人脸照片过多');
+  }
   final pack = ChaoxingCredentialPack(
     phoneNumber: fields[0],
     encryptedPassword: fields[1],
     name: fields[2],
     deviceCode: fields[3],
+    faceObjectIds: [for (var index = 0; index < faceCount; index++) reader.readString()],
   );
   _checkPack(pack);
   return pack;
@@ -94,6 +113,10 @@ void _checkPack(ChaoxingCredentialPack pack) {
   }
   if (pack.deviceCode.length > chaoxingPackDeviceCodeMaxLength) {
     throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '凭据包里的设备码过长');
+  }
+  if (pack.faceObjectIds.length > chaoxingPackFaceLimit ||
+      pack.faceObjectIds.any((id) => id.isEmpty || id.length > chaoxingPackObjectIdMaxLength || !RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(id))) {
+    throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '凭据包里的人脸照片不对');
   }
 }
 

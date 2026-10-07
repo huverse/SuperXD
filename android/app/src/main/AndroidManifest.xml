@@ -7,6 +7,17 @@
     <!-- 课前提醒：开机后重新排定已安排的提醒；精确时刻须用户在系统设置中允许，未允许时改用可能延迟的普通调度。 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- 学习通签到取 OAID 的 Android_CN_OAID 会并入这些权限，应用用不到，一律移除，只走各厂商不需授权的标识服务。 -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove"/>
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove"/>
+    <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:node="remove"/>
+    <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove"/>
+    <!-- 学习通签到读取本机学习通客户端的版本与签名摘要（设备信息里要带），Android 11 起需声明包可见性。 -->
+    <queries>
+        <package android:name="com.chaoxing.mobile"/>
+        <package android:name="com.chaoxing.mobile.xuezaixidian"/>
+    </queries>
     <!-- [人工决策-2026-10-05 03:02:59] 启动图标暂用维护者指定的《Charlotte》角色画面（版权归原权利人），仅限测试期，已告知侵权风险由维护者承担；声明见 assets/third_party_notices.txt 第五节，正式版前换原创图标。 -->
     <application
         android:label="@string/app_name"

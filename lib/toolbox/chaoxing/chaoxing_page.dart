@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
@@ -12,13 +11,16 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_activity_card.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_course_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_face_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_group_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_history_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_settings_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_share_page.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_sign_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
@@ -43,7 +45,7 @@ Future<void> importChaoxingTicket(
   final agreed = await showCampusConfirm(
     context,
     title: '导入代签账号',
-    message: '导入后本机会保存对方的手机号、登录凭据与设备码，用来替他签到；对方改了密码要重新导入。你可以在账号菜单里随时删掉。',
+    message: '导入后本机会保存对方的手机号、登录凭据、设备码与附带的人脸照片记录，用来替他签到；对方改了密码时可以重新登录修复。你可以在账号菜单里随时删掉。',
     action: '导入',
   );
   if (!agreed || !context.mounted) return;
@@ -58,9 +60,9 @@ Future<void> importChaoxingTicket(
   }
 }
 
-// 首次登录前的第三方说明；条款版本变了要重新征得同意。
+// 首次登录前的第三方说明；条款版本变了要重新征得同意（第 2 版加了设备信息上传与 OAID）。
 const chaoxingConsentService = 'chaoxing';
-const chaoxingConsentVersion = 'chaoxing-sign-1';
+const chaoxingConsentVersion = 'chaoxing-sign-2';
 
 class ChaoxingPage extends StatefulWidget {
   const ChaoxingPage({super.key, required this.runtime});
@@ -96,6 +98,17 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
         controller.dispose();
         return;
       }
+      // 本机已有学习通账号、但还没同意过当前版本的说明（比如新加了设备信息上传）时，先重新征得同意再联网；
+      // 不同意就退出这个工具，已存的账号原样保留。
+      if ((await accounts.list()).isNotEmpty && !await _grantConsent(updated: true)) {
+        controller.dispose();
+        if (mounted) Navigator.of(context).maybePop();
+        return;
+      }
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
       setState(() => _controller = controller);
       await controller.initialize();
     } catch (failure, stack) {
@@ -104,17 +117,18 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     }
   }
 
-  Future<bool> _grantConsent() async {
+  Future<bool> _grantConsent({bool updated = false}) async {
     final store = widget.runtime.store;
     if (await store.consent(chaoxingConsentService, chaoxingConsentVersion)) return true;
     if (!mounted) return false;
     final agreed = await showCampusConfirm(
       context,
-      title: '登录学习通',
+      title: updated ? '学习通签到的说明更新了' : '登录学习通',
       message: 'SuperXD 会把你的学习通账号与密码保存在本机安全存储，用于登录超星学习通（chaoxing.com）并提交签到；'
-          '签到时的位置、照片与账号信息会发送给学习通。选签到位置时可以用高德地图（会打开高德 SDK 加载地图），'
-          '应用不申请定位权限。本功能与教务账号无关，也不会读取教务密码。',
-      action: '同意并登录',
+          '签到时的位置、照片与账号信息会发送给学习通。为了与学习通客户端一致（人脸签到的设备签名、避免被标「更换设备」），'
+          '登录时会把设备信息（型号、系统版本、ANDROID_ID、DRM 设备号等）加密后发给学习通，并读取系统的匿名设备标识（OAID）算出设备码。'
+          '选签到位置时可以用高德地图（会打开高德 SDK 加载地图），应用不申请定位权限。本功能与教务账号无关，也不会读取教务密码。',
+      action: updated ? '同意' : '同意并登录',
     );
     if (!agreed || !mounted) return false;
     await store.grantConsent(chaoxingConsentService, chaoxingConsentVersion);
@@ -130,19 +144,11 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     if (controller.error == null) showCampusToast(context, '已登录');
   }
 
-  Future<void> _sign(ChaoxingActivity activity) async {
-    final controller = _controller;
-    if (controller == null) return;
-    final result = await showChaoxingSignSheet(
-      context,
-      controller: controller,
-      activity: activity,
-      scanQrCode: widget.runtime.scanQrCode,
-    );
-    if (!mounted || result == null) return;
-    showCampusToast(context, result.late ? '签到成功，不过已经迟到' : '签到成功');
-    await controller.refresh();
-  }
+  ChaoxingSignLauncher _launcher(ChaoxingController controller) => ChaoxingSignLauncher(
+    controller: controller,
+    scanQrCode: widget.runtime.scanQrCode,
+    watchQrCode: widget.runtime.watchQrCode,
+  );
 
   Future<void> _accountMenu(BuildContext anchor) async {
     final controller = _controller;
@@ -156,6 +162,8 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
         if (controller.accountList.length > 1)
           const CampusMenuItem(value: 'switch', label: '切换账号', icon: CampusIcons.switchAccount),
         const CampusMenuItem(value: 'signIn', label: '登录其他账号', icon: CampusIcons.add),
+        const CampusMenuItem(value: 'faces', label: '人脸照片', icon: CampusIcons.scanFace),
+        const CampusMenuItem(value: 'settings', label: '签到设置', icon: CampusIcons.settings),
         if (canDelegate)
           const CampusMenuItem(value: 'ticket', label: '出示我的代签码', icon: CampusIcons.qrCode),
         if (canDelegate)
@@ -169,6 +177,10 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
         await _pickAccount(controller);
       case 'signIn':
         await _addAccount();
+      case 'faces':
+        await showChaoxingFaceSheet(context, controller: controller, record: record);
+      case 'settings':
+        await showChaoxingSettingsSheet(context, controller: controller);
       case 'ticket':
         await showChaoxingTicketPage(context, controller: controller);
       case 'import':
@@ -207,8 +219,14 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
               for (final item in controller.accountList)
                 ListTile(
                   title: Text(item.name, style: const TextStyle(fontSize: 16)),
+                  // 设备码与真实设备一致（本机 OAID 或对方代签码带来的）才不会被标「更换设备」；固定随机码要说清楚。
                   subtitle: Text(
-                    '${item.schoolName.isEmpty ? '学习通' : item.schoolName} · ${item.phoneNumber}${item.isOtherUser ? ' · 他人账号' : ''}',
+                    [
+                      item.schoolName.isEmpty ? '学习通' : item.schoolName,
+                      item.phoneNumber,
+                      if (item.isOtherUser) '他人账号',
+                      item.deviceCodeBound ? '设备码与真实设备一致' : '固定随机设备码',
+                    ].join(' · '),
                     style: const TextStyle(fontSize: 14),
                   ),
                   trailing: item.phoneNumber == controller.current?.phoneNumber ? const CampusIcon(CampusIcons.check) : null,
@@ -288,6 +306,9 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
 
   Widget _readyBody(BuildContext context, ChaoxingController controller) {
     final palette = CampusPalette.of(context);
+    final launcher = _launcher(controller);
+    final inferred = {for (final activity in controller.lessonActivities) activity.activeId};
+    final ongoing = [for (final activity in controller.activities) if (!inferred.contains(activity.activeId)) activity];
     return CampusScrollFade(
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
@@ -330,26 +351,18 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
             const SizedBox(height: 12),
             Text(controller.error!, style: TextStyle(fontSize: 14, color: palette.danger)),
           ],
-          const SizedBox(height: 20),
-          Row(
-            children: [
-              Expanded(
-                child: Text(
-                  '进行中的签到',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface),
-                ),
+          if (controller.lessonActivities.isNotEmpty) ...[
+            const ChaoxingSectionTitle('可能正在签到（按学习通课表）'),
+            for (final activity in controller.lessonActivities)
+              ChaoxingActivityCard(
+                key: ValueKey('lesson-${activity.activeId}'),
+                activity: activity,
+                onSign: () => launcher.open(context, activity),
               ),
-              IconButton(
-                tooltip: '从群聊里找签到',
-                onPressed: controller.busy
-                    ? null
-                    : () => showChaoxingGroupPage(
-                        context,
-                        controller: controller,
-                        scanQrCode: widget.runtime.scanQrCode,
-                      ),
-                icon: const CampusIcon(CampusIcons.messages),
-              ),
+          ],
+          ChaoxingSectionTitle(
+            '进行中的签到',
+            trailing: [
               IconButton(
                 tooltip: '刷新',
                 onPressed: controller.busy
@@ -365,68 +378,49 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
               ),
             ],
           ),
-          if (controller.activities.isEmpty)
+          // 课表推断里已经列出的不在这里重复。
+          if (ongoing.isEmpty && controller.loadingActivities)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: CampusLoading(label: '正在读取签到活动…', inline: true),
+            )
+          else if (ongoing.isEmpty)
             Padding(
-              padding: const EdgeInsets.symmetric(vertical: 24),
-              child: Text('现在没有可签到的活动', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                controller.lessonActivities.isEmpty ? '现在没有可签到的活动' : '其余课程现在没有可签到的活动',
+                style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
+              ),
             )
           else
-            for (final activity in controller.activities)
-              _ActivityCard(
+            for (final activity in ongoing)
+              ChaoxingActivityCard(
+                key: ValueKey(activity.activeId),
                 activity: activity,
-                busy: controller.signingActiveId == activity.activeId,
-                onSign: () => _sign(activity),
+                onSign: () => launcher.open(context, activity),
               ),
-          if (controller.pastActivities.isNotEmpty)
-            Padding(
-              padding: const EdgeInsets.only(top: 4),
-              child: OutlinedButton.icon(
-                onPressed: () => showChaoxingHistoryPage(context, controller: controller),
+          const SizedBox(height: 4),
+          // 找不到要签的那场时的三个去处：已结束的、按课程翻、群聊里发的。
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => showChaoxingHistoryPage(context, launcher: launcher),
                 icon: const CampusIcon(CampusIcons.history),
                 label: Text('往期签到（${controller.pastActivities.length}）'),
               ),
-            ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ActivityCard extends StatelessWidget {
-  const _ActivityCard({required this.activity, required this.busy, required this.onSign});
-  final ChaoxingActivity activity;
-  final bool busy;
-  final VoidCallback onSign;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = CampusPalette.of(context);
-    final endTime = activity.endTime;
-    return CampusSurface(
-      margin: const EdgeInsets.only(bottom: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(activity.subtitle, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
-                const SizedBox(height: 4),
-                Text(activity.displayTitle, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
-                const SizedBox(height: 2),
-                Text(
-                  endTime != null && activity.ended
-                      ? '已结束 ${formatCampusTimestamp(endTime.toIso8601String())}'
-                      : '开始 ${formatCampusTimestamp(activity.startTime.toIso8601String())}',
-                  style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(width: 12),
-          FilledButton(
-            onPressed: busy ? null : onSign,
-            child: CampusBusyContent(busy: busy, label: '去签到', busyLabel: '签到中'),
+              OutlinedButton.icon(
+                onPressed: () => showChaoxingCoursePage(context, launcher: launcher),
+                icon: const CampusIcon(CampusIcons.course),
+                label: Text('按课程查看（${controller.courseGroups().length}）'),
+              ),
+              OutlinedButton.icon(
+                onPressed: controller.busy ? null : () => showChaoxingGroupPage(context, launcher: launcher),
+                icon: const CampusIcon(CampusIcons.messages),
+                label: const Text('群聊里的签到'),
+              ),
+            ],
           ),
         ],
       ),

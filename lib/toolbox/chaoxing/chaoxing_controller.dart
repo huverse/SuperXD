@@ -3,11 +3,14 @@ import 'package:flutter/foundation.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_batch.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_captcha.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_face.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_im.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_face.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_im.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_lessons.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
@@ -17,6 +20,28 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_signer.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 
 enum ChaoxingStatus { loading, signedOut, ready }
+
+// 一次签到里所有人共用的输入：签到码、位置、二维码（每人各自的照片与人脸照片在 ChaoxingSignTarget 上）。
+class ChaoxingSignInputs {
+  const ChaoxingSignInputs({this.signCode, this.location, this.qrCode});
+  final String? signCode;
+  final ChaoxingLocation? location;
+  final ChaoxingQrCode? qrCode;
+}
+
+// 需要验证码时由界面弹出滑块，拿回 validate；返回空表示用户放弃。
+typedef ChaoxingCaptchaSolver = Future<String?> Function(ChaoxingClient client, ChaoxingActivity activity);
+
+// 二维码签到时拿最新扫到的码：传入刚过期的那个，返回一个不同的新码。
+typedef ChaoxingFreshQrCode = Future<ChaoxingQrCode> Function(ChaoxingQrCode expired);
+
+// 课程页的一组课：同名课程（多个班）合并成一组。
+class ChaoxingCourseGroup {
+  const ChaoxingCourseGroup({required this.name, required this.courses, required this.pinned});
+  final String name;
+  final List<ChaoxingCourse> courses;
+  final bool pinned;
+}
 
 class ChaoxingController extends ChangeNotifier {
   ChaoxingController({required this.accounts, this.hub});
@@ -28,30 +53,50 @@ class ChaoxingController extends ChangeNotifier {
   // 一次刷新最多并发三个课程请求，课程多时也不至于把刷新拖太久。
   static const refreshConcurrency = 3;
 
+  // 人脸照片预览只在内存里留最近几张。
+  static const faceImageCacheLimit = 10;
+
   ChaoxingStatus status = ChaoxingStatus.loading;
   List<ChaoxingAccountRecord> accountList = const [];
   ChaoxingAccountRecord? current;
   List<ChaoxingCourse> courses = const [];
 
-  // 还能签的活动（接口把课程的全部历史活动一起给回来，这里只留未结束的）。
+  // 进行中的签到（活动列表 status 为 1 的）。
   List<ChaoxingActivity> activities = const [];
 
-  // 已结束的活动，给「往期签到」入口用。
+  // 已结束的活动，给「往期签到」入口用；照样能签，签到页会提示可能记迟到。
   List<ChaoxingActivity> pastActivities = const [];
+
+  // 按学习通课表推断的「可能正在签到」：当前节次的课里刚发起（20 分钟内）的进行中签到。
+  List<ChaoxingActivity> lessonActivities = const [];
+  Set<int> pinnedClassIds = const {};
   List<ChaoxingSavedLocation> locations = const [];
   String? error;
   bool busy = false;
-  int? signingActiveId;
+
+  // 正在拉课程与活动：列表为空时显示加载中，而不是「没有可签到的活动」。
+  bool loadingActivities = false;
   ChaoxingClient? _client;
+  final _clients = <String, ChaoxingClient>{};
+  final _faceBytes = <String, Uint8List>{};
   bool _disposed = false;
 
   ChaoxingAccount? get account => _client?.account;
+  ChaoxingClientProfile get profile => accounts.profile;
+
+  // 签到对象：当前账号排第一并默认勾上，其余账号默认不勾。
+  List<ChaoxingSignTarget> signTargets() => [
+    if (current != null) ChaoxingSignTarget(current!, selected: true),
+    for (final record in accountList)
+      if (record.phoneNumber != current?.phoneNumber) ChaoxingSignTarget(record),
+  ];
 
   Future<void> initialize() async {
     status = ChaoxingStatus.loading;
     error = null;
     _notify();
     try {
+      await accounts.loadProfile();
       accountList = await accounts.list();
       locations = await accounts.store.locations();
       if (accountList.isEmpty) {
@@ -76,6 +121,7 @@ class ChaoxingController extends ChangeNotifier {
       if (stored == null) {
         throw const ChaoxingFailure(ChaoxingFailureCode.server, '账号保存失败，请重试');
       }
+      _dropClient(stored.phoneNumber);
       accountList = await accounts.list();
       await _open(stored);
     } catch (failure, stack) {
@@ -104,16 +150,19 @@ class ChaoxingController extends ChangeNotifier {
   Future<void> removeAccount(ChaoxingAccountRecord record) async {
     try {
       await accounts.forget(record.phoneNumber);
-      _client?.close();
-      _client = null;
-      current = null;
-      activities = const [];
-      pastActivities = const [];
-      courses = const [];
+      _dropClient(record.phoneNumber);
+      if (current?.phoneNumber == record.phoneNumber) {
+        _client = null;
+        current = null;
+        activities = const [];
+        pastActivities = const [];
+        lessonActivities = const [];
+        courses = const [];
+      }
       accountList = await accounts.list();
       if (accountList.isEmpty) {
         status = ChaoxingStatus.signedOut;
-      } else {
+      } else if (current == null) {
         await _open(accountList.first);
       }
     } catch (failure, stack) {
@@ -142,73 +191,119 @@ class ChaoxingController extends ChangeNotifier {
     return accounts.run(client, () => chaoxingActiveInfo(client, activity.activeId));
   }
 
-  // 拍照签到的照片先裁好传上云盘，拿 objectId；验证码重试时不用重传。
-  Future<String> uploadPhoto(List<int> photoBytes) async {
-    final client = _requireClient();
-    final photo = await compute(chaoxingStylizePhoto, Uint8List.fromList(photoBytes));
-    return accounts.run(client, () => chaoxingUploadPhoto(client, bytes: photo));
+  // 给签到对象开会话：当前账号直接用，其余账号按需打开并留着，整页关掉时一起关。
+  Future<ChaoxingClient> clientOf(ChaoxingAccountRecord record) async {
+    if (record.phoneNumber == current?.phoneNumber) return _requireClient();
+    final opened = _clients[record.phoneNumber];
+    if (opened != null) return opened;
+    final client = await accounts.clientFor(record.phoneNumber);
+    if (client == null) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '账号已不存在，请重新导入');
+    }
+    _clients[record.phoneNumber] = client;
+    return client;
   }
 
-  Future<ChaoxingSignResult> sign(
+  // 一个人的完整签到：签到前检查（可强制跳过）→ 拍照上传 → 人脸 → 提交（要验证码就弹、二维码过期就换新码、位置出界收紧重试一次）。
+  Future<ChaoxingSignResult> signTarget(
+    ChaoxingSignTarget target,
     ChaoxingActivity activity, {
-    String? signCode,
-    ChaoxingLocation? location,
-    String? photoObjectId,
-    ChaoxingQrCode? qrCode,
-    String? faceObjectId,
-    String? faceEnc,
-    String? captchaValidate,
-    String? enc2,
+    required ChaoxingActiveInfo info,
+    required ChaoxingSignInputs inputs,
+    required ChaoxingCaptchaSolver solveCaptcha,
+    ChaoxingFreshQrCode? freshQrCode,
+    bool force = false,
   }) async {
-    final client = _requireClient();
-    signingActiveId = activity.activeId;
-    _notify();
-    try {
-      final presign = await accounts.run(client, () => chaoxingPreSign(client, activity));
+    final client = await clientOf(target.record);
+    var signed = activity;
+    if (force) {
+      // 强制签到跳过全部签到前检查；给别的账号签时按课程号换成他自己所在的班级。
+      if (target.phoneNumber != current?.phoneNumber) {
+        final classId = await accounts.run(client, () => chaoxingClassIdOfCourse(client, activity.courseId));
+        if (classId != null) signed = activity.change(classId: classId);
+      }
+    } else {
+      final presign = await accounts.run(client, () => chaoxingPreSign(client, signed));
       if (presign == ChaoxingPreSignStatus.alreadySigned) {
-        throw const ChaoxingFailure(ChaoxingFailureCode.alreadySigned, '这场签到已经完成了');
+        throw const ChaoxingFailure(ChaoxingFailureCode.alreadySigned, '这场签到已经完成了', predicted: true);
       }
       if (presign == ChaoxingPreSignStatus.expired) {
-        throw const ChaoxingFailure(ChaoxingFailureCode.expired, '签到已截止');
+        throw const ChaoxingFailure(ChaoxingFailureCode.expired, '签到已截止', predicted: true);
       }
-      if (qrCode != null &&
-          await accounts.run(client, () => chaoxingQrCodeExpired(client, code: qrCode, activeId: activity.activeId))) {
-        throw const ChaoxingFailure(ChaoxingFailureCode.qrCodeExpired, '二维码已过期，请重新扫描');
+      if (await accounts.run(client, () => chaoxingClassValid(client, signed.classId)) == false) {
+        throw const ChaoxingFailure(ChaoxingFailureCode.noPermission, '这个账号不在该班级里', predicted: true);
       }
+    }
+    if (signed.signType == ChaoxingSignType.photo && info.needPhoto && target.photoObjectId == null) {
+      final bytes = target.photoBytes;
+      if (bytes == null) throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '这场签到要照片，请先选一张');
+      final photo = await compute(chaoxingStylizePhoto, Uint8List.fromList(bytes));
+      target.photoObjectId = await accounts.run(client, () => chaoxingUploadPhoto(client, bytes: photo));
+    }
+    final faceObjectId = chaoxingFaceApplies(signed.signType, info) ? await _faceFor(client, target) : null;
+    var qrCode = inputs.qrCode;
+    var tightened = false;
+    String? validate;
+    String? enc2;
+    for (var attempt = 0; ; attempt++) {
+      final faceEnc = faceObjectId == null
+          ? null
+          : await accounts.run(client, () => chaoxingFaceEnc(client, activeId: signed.activeId, objectId: faceObjectId));
       final submission = ChaoxingSignSubmission(
-        activity: activity,
+        activity: signed,
         activeId: qrCode?.activeId,
-        signCode: signCode,
-        location: location,
+        signCode: inputs.signCode,
+        location: inputs.location,
         enc: qrCode?.enc,
-        objectId: photoObjectId,
+        objectId: target.photoObjectId,
         faceObjectId: faceObjectId,
         faceEnc: faceEnc,
-        captchaValidate: captchaValidate,
+        captchaValidate: validate,
         enc2: enc2,
+        tightenLocation: tightened,
       );
-      late ChaoxingSignResult result;
       try {
-        result = await accounts.run(client, () => chaoxingSubmit(client, submission));
+        final result = await accounts.run(client, () => chaoxingSubmit(client, submission));
+        if (faceObjectId != null) await accounts.store.markFaceImageUsed(client.phoneNumber, faceObjectId, failed: false);
+        await accounts.store.addSignRecord(
+          ChaoxingSignRecord(
+            phoneNumber: client.phoneNumber,
+            activeId: signed.activeId,
+            courseId: signed.courseId,
+            signType: signed.signType,
+            result: result.late ? 'late' : 'success',
+            createdAt: DateTime.now().toUtc(),
+          ),
+        );
+        return result;
       } on ChaoxingFailure catch (failure) {
-        if (failure.code != ChaoxingFailureCode.wrongPosition || location == null) rethrow;
-        result = await accounts.run(client, () => chaoxingSubmit(client, submission.change(tightenLocation: true)));
+        switch (failure.code) {
+          case ChaoxingFailureCode.captchaRequired when attempt < 3:
+            final answer = await solveCaptcha(client, signed);
+            if (answer == null) {
+              throw const ChaoxingFailure(ChaoxingFailureCode.captchaRequired, '需要完成安全验证才能签到');
+            }
+            validate = answer;
+            enc2 = failure.payload ?? enc2;
+          case ChaoxingFailureCode.wrongPosition when !tightened && inputs.location != null:
+            tightened = true;
+          case ChaoxingFailureCode.qrCodeExpired when freshQrCode != null && qrCode != null:
+            await Future<void>.delayed(const Duration(milliseconds: 500));
+            qrCode = await freshQrCode(qrCode);
+          case ChaoxingFailureCode.faceRequired when faceObjectId != null:
+            await accounts.store.markFaceImageUsed(client.phoneNumber, faceObjectId, failed: true);
+            rethrow;
+          default:
+            rethrow;
+        }
       }
-      await accounts.store.addSignRecord(
-        ChaoxingSignRecord(
-          phoneNumber: client.phoneNumber,
-          activeId: activity.activeId,
-          courseId: activity.courseId,
-          signType: activity.signType,
-          result: result.late ? 'late' : 'success',
-          createdAt: DateTime.now().toUtc(),
-        ),
-      );
-      return result;
-    } finally {
-      signingActiveId = null;
-      _notify();
     }
+  }
+
+  // 扫到新码时先问一次是否还有效（用当前账号问，与学习通客户端一致）。
+  Future<bool> qrCodeExpired(ChaoxingQrCode code, ChaoxingActivity activity) async {
+    final client = _requireClient();
+    return accounts.run(client, () => chaoxingQrCodeExpired(client, code: code, activeId: activity.activeId));
   }
 
   // 从主签到跳到它关联的签退活动（或反过来）：详情里拿类型与时间重组一个活动。
@@ -228,37 +323,33 @@ class ChaoxingController extends ChangeNotifier {
       signType: signType,
       startTime: info.startTime ?? DateTime.now().toUtc(),
       endTime: info.endTime,
-      status: 0,
+      status: _statusOf(info.endTime),
       userStatus: 0,
-      ext: '',
+      ext: current.ext,
     );
   }
 
-  Future<ChaoxingCaptchaPuzzle> captchaPuzzle(ChaoxingActivity activity) async {
-    final client = _requireClient();
-    return accounts.run(
-      client,
-      () => chaoxingCaptchaPuzzle(client, referer: _preSignUri(client, activity)),
-    );
-  }
+  Future<ChaoxingCaptchaPuzzle> captchaPuzzle(ChaoxingClient client, ChaoxingActivity activity) =>
+      accounts.run(client, () => chaoxingCaptchaPuzzle(client, referer: chaoxingPreSignRequestUri(activity: activity, account: client.account!)));
 
   Future<ChaoxingCaptchaAnswer> solveCaptcha(
+    ChaoxingClient client,
     ChaoxingActivity activity,
     ChaoxingCaptchaPuzzle puzzle,
     double position,
-  ) async {
-    final client = _requireClient();
-    return accounts.run(
+  ) => accounts.run(
+    client,
+    () => chaoxingCaptchaVerify(
       client,
-      () => chaoxingCaptchaVerify(client, puzzle: puzzle, position: position, referer: _preSignUri(client, activity)),
-    );
-  }
+      puzzle: puzzle,
+      position: position,
+      referer: chaoxingPreSignRequestUri(activity: activity, account: client.account!),
+    ),
+  );
 
-  Future<Uint8List> captchaImage(String url) async {
-    final client = _requireClient();
-    return accounts.run(client, () => chaoxingCaptchaImage(client, url));
-  }
+  Future<Uint8List> captchaImage(ChaoxingClient client, String url) => accounts.run(client, () => chaoxingCaptchaImage(client, url));
 
+  // 签到码与手势码在开签之前用当前账号校验一次。
   Future<bool> checkSignCode(ChaoxingActivity activity, String signCode) async {
     final client = _requireClient();
     return accounts.run(client, () => chaoxingCheckSignCode(client, activeId: activity.activeId, signCode: signCode));
@@ -267,13 +358,8 @@ class ChaoxingController extends ChangeNotifier {
   // 群聊里的签到：先换环信令牌、列群、拉漫游，再按附件拼出活动；类型名认不出来的去详情里问。
   Future<List<ChaoxingActivity>> loadGroupActivities() async {
     final client = _requireClient();
-    // 群聊凭证只在登录响应里下发，恢复出来的账号要先补一次用户信息（这类密钥不落库）。
-    if (client.account!.imPassword.isEmpty) {
-      await accounts.run(client, () async {
-        client.account = await client.loadAccount();
-        return true;
-      });
-    }
+    // 群聊凭证只在用户信息里下发，恢复出来的账号要先补一次（这类密钥不落库）。
+    if (client.account!.imPassword.isEmpty) await accounts.refreshAccount(client);
     final found = await accounts.run(client, () => chaoxingImActivities(client, groupLimit: chaoxingImGroupLimit));
     final activities = <ChaoxingActivity>[];
     var failures = 0;
@@ -295,6 +381,7 @@ class ChaoxingController extends ChangeNotifier {
       }
       if (signType == null) continue;
       final resolved = signType;
+      // 类型名认得出的不去问详情，按进行中处理（学习通客户端同样不判迟到）；问过详情的按截止时间判断。
       activities.add(
         ChaoxingActivity(
           activeId: item.activeId,
@@ -302,10 +389,10 @@ class ChaoxingController extends ChangeNotifier {
           classId: item.classId,
           title: item.title.isEmpty ? resolved.label : item.title,
           subtitle: item.courseName.isEmpty ? item.groupName : item.courseName,
-          signType: signType,
+          signType: resolved,
           startTime: info?.startTime ?? DateTime.now().toUtc(),
           endTime: info?.endTime,
-          status: 0,
+          status: _statusOf(info?.endTime),
           userStatus: 0,
           ext: '',
         ),
@@ -318,44 +405,119 @@ class ChaoxingController extends ChangeNotifier {
     return activities;
   }
 
-  // 人脸识别：优先用本机记着的照片，其次用学习通里存的那张；都没有就让用户先选一张。
-  Future<({String objectId, String faceEnc})> prepareFace(ChaoxingActivity activity, {String? objectId}) async {
-    final client = _requireClient();
-    final chosen = objectId ?? await _preferredFaceObjectId(client);
-    if (chosen == null) {
-      throw const ChaoxingFailure(ChaoxingFailureCode.faceRequired, '这场签到要人脸照片，请先选一张');
+  // 课程页：同名课程合并成一组（一门课多个班），置顶的在前，其余保持课程列表原顺序。
+  List<ChaoxingCourseGroup> courseGroups({String query = ''}) {
+    final keyword = query.trim().toLowerCase();
+    final grouped = <String, List<ChaoxingCourse>>{};
+    for (final course in courses) {
+      final matched = keyword.isEmpty ||
+          course.name.toLowerCase().contains(keyword) ||
+          course.teacher.toLowerCase().contains(keyword) ||
+          course.schools.toLowerCase().contains(keyword);
+      if (matched) grouped.putIfAbsent(course.name, () => []).add(course);
     }
-    final faceEnc = await accounts.run(client, () => chaoxingFaceEnc(client, activeId: activity.activeId, objectId: chosen));
-    return (objectId: chosen, faceEnc: faceEnc);
+    final groups = [
+      for (final entry in grouped.entries)
+        ChaoxingCourseGroup(
+          name: entry.key,
+          courses: entry.value,
+          pinned: entry.value.any((course) => pinnedClassIds.contains(course.classId)),
+        ),
+    ];
+    return [...groups.where((group) => group.pinned), ...groups.where((group) => !group.pinned)];
   }
 
-  Future<String?> _preferredFaceObjectId(ChaoxingClient client) async {
-    final stored = await accounts.store.faceImages(client.phoneNumber);
-    if (stored.isNotEmpty) return stored.first;
-    // clientId 是签名要用的，库里没有就先补一次（会话过期时 run 会先重登）。
-    if ((client.account?.clientId ?? '').isEmpty) {
-      await accounts.run(client, () async {
-        client.account = await client.loadAccount();
-        return true;
-      });
-      await accounts.rememberClientId(client.phoneNumber, client.account?.clientId ?? '');
+  Future<void> setGroupPinned(ChaoxingCourseGroup group, {required bool pinned}) async {
+    final record = current;
+    if (record == null) return;
+    await accounts.store.setCoursesPinned(record.phoneNumber, group.courses.map((course) => course.classId), pinned: pinned);
+    pinnedClassIds = await accounts.store.pinnedCourses(record.phoneNumber);
+    _notify();
+  }
+
+  // 一组课的全部活动（多个班合并、按活动号去重、新的在前）；部分班级读不到时报个数，全读不到才报错。
+  Future<({List<ChaoxingActivity> activities, int failures})> groupActivities(ChaoxingCourseGroup group) async {
+    final client = _requireClient();
+    var failures = 0;
+    final merged = <int, ChaoxingActivity>{};
+    final results = await Future.wait(
+      group.courses.map((course) async {
+        try {
+          return await accounts.run(client, () => chaoxingActivities(client, course));
+        } catch (failure, stack) {
+          campusLog('[Chaoxing] action=course_activities errorType=${failure.runtimeType}\n$stack');
+          failures++;
+          return null;
+        }
+      }),
+    );
+    if (results.every((result) => result == null)) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.network, '这门课的签到活动没读到，请稍后重试');
     }
+    for (final result in results) {
+      for (final activity in result ?? const <ChaoxingActivity>[]) {
+        merged.putIfAbsent(activity.activeId, () => activity);
+      }
+    }
+    final activities = merged.values.toList()..sort((first, second) => second.startTime.compareTo(first.startTime));
+    return (activities: activities, failures: failures);
+  }
+
+  // 人脸照片：每个账号最多存 5 张（照片在学习通云盘，本机只记 objectId 与使用情况）。
+  Future<List<ChaoxingFaceImage>> faceImages(ChaoxingAccountRecord record) => accounts.store.faceImages(record.phoneNumber);
+
+  // 学习通里已经存着的人脸照片：取回来记进本机，之后签人脸签到默认用它。
+  Future<String?> importProfileFace(ChaoxingAccountRecord record) async {
+    final client = await clientOf(record);
+    final objectId = await accounts.run(client, () => chaoxingProfileFaceObjectId(client));
+    if (objectId != null) await accounts.store.putFaceImage(record.phoneNumber, objectId);
+    return objectId;
+  }
+
+  // 人脸照片不做裁剪旋转（要认得出人），上传到这个账号自己的云盘后记下来供以后复用。
+  Future<String> uploadFacePhoto(ChaoxingAccountRecord record, List<int> bytes) async {
+    final client = await clientOf(record);
+    final objectId = await accounts.run(client, () => chaoxingUploadPhoto(client, bytes: bytes));
+    await accounts.store.putFaceImage(record.phoneNumber, objectId);
+    return objectId;
+  }
+
+  Future<void> removeFaceImage(ChaoxingAccountRecord record, String objectId) async {
+    await accounts.store.removeFaceImage(record.phoneNumber, objectId);
+    _faceBytes.remove(objectId);
+    _notify();
+  }
+
+  // 人脸照片预览：从学习通云盘取原图，内存里留最近几张。
+  Future<Uint8List> faceImageBytes(String objectId) async {
+    final cached = _faceBytes.remove(objectId);
+    if (cached != null) return _faceBytes[objectId] = cached;
+    final bytes = await _requireClient().http.getBytes(Uri.parse(chaoxingFaceImageUrl(objectId)));
+    _faceBytes[objectId] = bytes;
+    while (_faceBytes.length > faceImageCacheLimit) {
+      _faceBytes.remove(_faceBytes.keys.first);
+    }
+    return bytes;
+  }
+
+  // 人脸照片：这次选了就用选的，其次本机记着的第一张，再其次学习通里存的那张；都没有就让用户先选一张。
+  Future<String> _faceFor(ChaoxingClient client, ChaoxingSignTarget target) async {
+    final chosen = target.faceObjectId;
+    if (chosen != null) return chosen;
+    final stored = await accounts.store.faceImages(client.phoneNumber);
+    if (stored.isNotEmpty) return stored.first.objectId;
+    // clientId 是签名要用的，库里没有就先补一次用户信息（会话过期时 run 会先重登）。
+    if ((client.account?.clientId ?? '').isEmpty) await accounts.refreshAccount(client);
     final profile = await accounts.run(client, () => chaoxingProfileFaceObjectId(client));
-    if (profile == null) return null;
+    if (profile == null) {
+      throw ChaoxingFailure(ChaoxingFailureCode.faceRequired, '${target.record.name} 还没有人脸照片，请先选一张');
+    }
     await accounts.store.putFaceImage(client.phoneNumber, profile);
     return profile;
   }
 
-  // 人脸照片不做裁剪旋转（要认得出人），上传后记下来供以后复用。
-  Future<String> uploadFacePhoto(List<int> bytes) async {
-    final client = _requireClient();
-    final objectId = await accounts.run(client, () => chaoxingUploadPhoto(client, bytes: bytes));
-    await accounts.store.putFaceImage(client.phoneNumber, objectId);
-    return objectId;
-  }
-
-  // 出示代签码：把当前账号封成凭据包，密文放到中转，二维码里只有取件号与一次性密钥。
-  Future<String> createCredentialTicket() async {
+  // 出示代签码：把当前账号封成凭据包（可附带人脸照片），密文放到中转，二维码里只有取件号与一次性密钥。
+  Future<String> createCredentialTicket({List<String> faceObjectIds = const []}) async {
     final client = _requireClient();
     final packHub = hub;
     if (packHub == null || !packHub.available) {
@@ -371,6 +533,7 @@ class ChaoxingController extends ChangeNotifier {
         encryptedPassword: password,
         name: client.account!.name,
         deviceCode: client.deviceCode,
+        faceObjectIds: faceObjectIds.take(chaoxingPackFaceLimit).toList(),
       ),
     );
     final pickupId = await packHub.submit(sealed.cipherText);
@@ -390,9 +553,39 @@ class ChaoxingController extends ChangeNotifier {
     final cipherText = await packHub.pickup(ticket.pickupId);
     final pack = await openChaoxingCredentialPack(ChaoxingSealedPack(key: ticket.key, cipherText: cipherText));
     final record = await accounts.importOther(pack);
+    _dropClient(record.phoneNumber);
     accountList = await accounts.list();
     _notify();
     return record;
+  }
+
+  // 会话彻底失效（对方改了密码等）时重新输密码修复；设备码与学校单位不变。
+  Future<void> repairAccount(ChaoxingAccountRecord record, String password) async {
+    final client = await clientOf(record);
+    await accounts.repair(client, password);
+    accountList = await accounts.list();
+    current = accountList.where((item) => item.phoneNumber == current?.phoneNumber).firstOrNull ?? current;
+    _notify();
+  }
+
+  // 切换学校单位：之后课程列表与签到都按这个单位走，切完重新拉一遍。
+  Future<void> selectUnit(ChaoxingUnit unit) async {
+    final client = _requireClient();
+    await accounts.selectUnit(client, unit);
+    accountList = await accounts.list();
+    current = await accounts.record(client.phoneNumber);
+    _notify();
+    await refresh();
+  }
+
+  // 换模拟的客户端：已开着的会话一起换 UA，再刷新一次。
+  Future<void> setProfile(ChaoxingClientProfile value) async {
+    await accounts.saveProfile(value);
+    for (final client in [?_client, ..._clients.values]) {
+      client.http.profile = value;
+    }
+    _notify();
+    await refresh();
   }
 
   Future<void> saveLocation(String label, ChaoxingLocation location) async {
@@ -410,22 +603,39 @@ class ChaoxingController extends ChangeNotifier {
   Future<void> _open(ChaoxingAccountRecord record) async {
     _client?.close();
     _client = null;
+    _dropClient(record.phoneNumber);
     final client = await accounts.clientFor(record.phoneNumber);
     if (client == null) {
       throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '账号已不存在，请重新登录');
     }
     _client = client;
     current = record;
+    pinnedClassIds = await accounts.store.pinnedCourses(record.phoneNumber);
+    activities = const [];
+    pastActivities = const [];
+    lessonActivities = const [];
     status = ChaoxingStatus.ready;
     _notify();
     await _loadActivities();
   }
 
   Future<void> _loadActivities() async {
+    loadingActivities = true;
+    _notify();
+    try {
+      await _fetchActivities();
+    } finally {
+      loadingActivities = false;
+      _notify();
+    }
+  }
+
+  Future<void> _fetchActivities() async {
     final client = _requireClient();
     courses = await accounts.run(client, () => chaoxingCourses(client));
     var failures = 0;
-    final collected = <ChaoxingActivity>[];
+    // 同一门课的多个班会给回同一场活动，按活动号只留一条（与学习通客户端合并时一样），列表的键才不会重复。
+    final merged = <int, ChaoxingActivity>{};
     for (var index = 0; index < courses.length; index += refreshConcurrency) {
       final chunk = courses.skip(index).take(refreshConcurrency);
       final results = await Future.wait(
@@ -440,25 +650,57 @@ class ChaoxingController extends ChangeNotifier {
         }),
       );
       for (final result in results) {
-        collected.addAll(result);
+        for (final activity in result) {
+          merged.putIfAbsent(activity.activeId, () => activity);
+        }
       }
     }
+    final collected = merged.values.toList();
     if (collected.isEmpty && failures > 0) {
       throw const ChaoxingFailure(ChaoxingFailureCode.network, '签到活动没读到，请稍后重试');
     }
-    // [人工决策-2026-10-06 23:24:35] 「进行中的签到」只列未结束的：接口会把课程的全部历史活动
-    // 一起给回来（实测 195 条里绝大多数已结束），已结束的点了也签不上，堆在这里既对不上标题、
-    // 又让人找不到真正能签的那一场。已结束的另走「往期签到」入口，不再混在同一个列表里。
+    // [人工决策-2026-10-07 12:32:57] 进行中与往期按活动列表的 status 分（1 为进行中，与学习通客户端一致），
+    // 两组分开展示、不混排；往期的活动照样能签（签到页提示可能记为迟到），签到前检查判定已截止/已签到时
+    // 还可以强制签到。取代 2026-10-06 23:24:35「往期只读、按截止时间分组」的决定。
     collected.sort((first, second) => second.startTime.compareTo(first.startTime));
-    activities = [for (final activity in collected) if (!activity.ended) activity];
-    pastActivities = [for (final activity in collected) if (activity.ended) activity];
+    activities = [for (final activity in collected) if (activity.ongoing) activity];
+    pastActivities = [for (final activity in collected) if (!activity.ongoing) activity];
+    lessonActivities = await _inferFromLessons(client, collected);
   }
 
-  Uri _preSignUri(ChaoxingClient client, ChaoxingActivity activity) =>
-      chaoxingPreSignRequestUri(activity: activity, account: client.account!);
+  // 课表推断只是提示，读不到学习通课表不影响主列表（记日志即可）。
+  Future<List<ChaoxingActivity>> _inferFromLessons(ChaoxingClient client, List<ChaoxingActivity> collected) async {
+    try {
+      final record = current!;
+      final cached = await accounts.store.lessonCache(record.phoneNumber);
+      final now = DateTime.now().toUtc();
+      final String payload;
+      if (cached == null || now.difference(cached.fetchedAt) > ChaoxingStore.lessonCacheLifetime) {
+        payload = await accounts.run(client, () => chaoxingFetchLessons(client));
+        await accounts.store.putLessonCache(record.phoneNumber, payload);
+      } else {
+        payload = cached.payload;
+      }
+      final table = chaoxingParseLessons(chaoxingJson(payload));
+      final lessonCourses = chaoxingLessonCourses(chaoxingCurrentLessons(table, now), courses);
+      final classIds = {for (final course in lessonCourses) course.classId};
+      return [
+        for (final activity in collected)
+          if (classIds.contains(activity.classId) && chaoxingFreshActivity(activity, now)) activity,
+      ];
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=lessons errorType=${failure.runtimeType}\n$stack');
+      return const [];
+    }
+  }
+
+  // 群聊与签退跳转拼出来的活动没有列表 status，按截止时间补：没截止的当进行中。
+  int _statusOf(DateTime? endTime) => endTime == null || DateTime.now().toUtc().isBefore(endTime) ? 1 : 2;
 
   ChaoxingClient _requireClient() =>
       _client ?? (throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '登录已过期，请重新登录'));
+
+  void _dropClient(String phoneNumber) => _clients.remove(phoneNumber)?.close();
 
   void _fail(String action, Object failure, StackTrace stack, String fallback) {
     if (failure is! ChaoxingFailure) {
@@ -477,6 +719,14 @@ class ChaoxingController extends ChangeNotifier {
   void dispose() {
     _disposed = true;
     _client?.close();
+    for (final client in _clients.values) {
+      client.close();
+    }
+    _clients.clear();
     super.dispose();
   }
 }
+
+// 人脸参数只在位置与二维码签到上带（学习通客户端只在这两类上做人脸）。
+bool chaoxingFaceApplies(ChaoxingSignType type, ChaoxingActiveInfo info) =>
+    info.needFace && (type == ChaoxingSignType.location || type == ChaoxingSignType.qrCode);

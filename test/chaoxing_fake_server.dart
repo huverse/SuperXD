@@ -56,6 +56,27 @@ class FakeChaoxing {
 
   final calls = <String>[];
   String? loginBody;
+  String? lastUserAgent;
+
+  // 用户信息：带了设备信息时是 POST（data=RSA 密文），否则 GET；clientId 与多个学校单位按需给。
+  String? userInfoMethod;
+  String? userInfoBody;
+  String? clientId;
+  List<Map<String, Object?>> unitConfigInfos = [];
+
+  // 活动列表响应 data 级别的 ext（preSign 回传的是它）。
+  Map<String, Object?> listExt = {'a': 1};
+
+  // preSign 之后的 analysis → analysis2。
+  String analysisPage = "var code='+'abc123ef'; ";
+  String? analysis2Code;
+  int preSignStatusCode = 200;
+
+  // 学习通课表（kb.chaoxing.com），默认一节课都没有。
+  Map<String, Object?> lessons = {
+    'curriculum': {'lessonTimeConfigArray': <String>[], 'firstWeekDate': 0},
+    'lessonArray': <Object?>[],
+  };
 
   // 支持多个学习通账号：手机号 → 手机号密文、密码密文与昵称（代签要两个账号）。
   final users = <String, ({String phoneCipher, String passwordCipher, String name})>{};
@@ -133,6 +154,7 @@ class FakeChaoxing {
 
   http.Client client() => MockClient((request) async {
     calls.add('${request.method} ${request.url.host}${request.url.path}');
+    lastUserAgent = request.headers['User-Agent'] ?? request.headers['user-agent'];
     final path = request.url.path;
     if (request.url.host == 'passport2.chaoxing.com' && path == '/fanyalogin') {
       loginBody = request.body;
@@ -152,6 +174,8 @@ class FakeChaoxing {
       );
     }
     if (request.url.host == 'sso.chaoxing.com') {
+      userInfoMethod = request.method;
+      userInfoBody = request.body;
       final phone = lastPhone ?? users.keys.first;
       return _json({
         'msg': {
@@ -162,6 +186,8 @@ class FakeChaoxing {
           'uname': phone,
           'pic': 'http://p.ananas.chaoxing.com/star3/photo.jpg',
           'schoolname': '示例大学',
+          'clientId': ?clientId,
+          'unitConfigInfos': unitConfigInfos,
           'accountInfo': {
             'imAccount': {'password': imPasswordHex},
           },
@@ -169,12 +195,22 @@ class FakeChaoxing {
       });
     }
     if (request.url.host == 'mooc1-api.chaoxing.com') {
-      return _json({'result': 1, 'channelList': courses});
+      // 真实的课程频道都带 cataName；测试夹具里省掉，这里统一补上。
+      return _json({
+        'result': 1,
+        'channelList': [for (final course in courses) {'cataName': '课程', ...course}],
+      });
+    }
+    if (request.url.host == 'kb.chaoxing.com') {
+      return _json({'data': lessons});
+    }
+    if (request.url.host == 'p.cldisk.com') {
+      return _image(picture.encodePng(picture.Image(width: 8, height: 8)));
     }
     if (request.url.host == 'mobilelearn.chaoxing.com') {
       switch (path) {
         case '/v2/apis/active/student/activelist':
-          return _json({'data': {'activeList': activities}});
+          return _json({'data': {'activeList': activities, 'ext': listExt}});
         case '/v2/apis/active/getPPTActiveInfo':
           final activeId = int.tryParse(request.url.queryParameters['activeId'] ?? '');
           if (activeId != null && failingActiveInfoIds.contains(activeId)) return _json({'result': 0});
@@ -188,7 +224,13 @@ class FakeChaoxing {
           return _json({'enc': faceEnc});
         case '/newsign/preSign':
           preSignBody = request.body;
+          if (preSignStatusCode != 200) return http.Response('', preSignStatusCode);
           return _text(preSignHtml);
+        case '/pptSign/analysis':
+          return _text(analysisPage);
+        case '/pptSign/analysis2':
+          analysis2Code = request.url.queryParameters['code'];
+          return _text('');
         case '/pptSign/stuSignajax':
           signQuery = request.url.queryParameters;
           return _text(signResponses.isEmpty ? signResponse : signResponses.removeAt(0), type: 'text/plain');

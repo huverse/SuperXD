@@ -100,6 +100,7 @@
    - 桌面小组件显示的是当前账号的课，跟着账号切换，退出登录即清空；只有它的配色跟随设备设置。
    - 百宝箱不读取教务凭据或 cookie。
    - 学习通账号、收藏位置与签到记录属于设备，切换教务账号保留；学习通密码与 cookie 只进系统安全存储，不进业务库。
+   - 学习通的设备信息（型号、系统版本、ANDROID_ID、DRM 设备号）与 OAID 只在学习通登录、补用户信息时现取，加密后只发给学习通，不落库；原生通道见 ChaoxingDevice.kt。
    - 私信身份、好友与会话属于设备，切换账号保留、退出登录不清；身份私钥只在系统安全存储，私钥与 social.db 都排除出云备份与设备迁移。只有用户“关闭私信”才删除（先删服务端设备，再清本机）。
    - 第三方解析来源逐个来源、按授权版本单独征得同意。自动模式只尝试已启用且已同意的来源。
 9. 对外网络
@@ -175,8 +176,8 @@
   - legal_page_test.dart、about_page_test.dart、course_clock_performance_test.dart
 - 主题与显示设置：atmosphere_test.dart、campus_glass_test.dart、campus_glass_button_test.dart、campus_motion_test.dart、dark_mode_test.dart、appearance_settings_test.dart、wallpaper_test.dart
 - 百宝箱：toolbox_widget_test.dart、toolbox_download_test.dart、toolbox_media_features_test.dart、short_video_parser_test.dart、media_image_test.dart
-  - 学习通签到：chaoxing_protocol_test.dart（协议与坐标转换）、chaoxing_store_test.dart（本机库与上限）、chaoxing_ui_test.dart（登录、签到、代签入口与导入流程，用 chaoxing_fake_server.dart 与 chaoxing_fake_hub.dart）
-  - 代签：chaoxing_pack_test.dart（凭据包编解码与封装）、chaoxing_delegate_test.dart（两台设备之间的出示与导入，chaoxing_fake_hub.dart 是内存中转）
+  - 学习通签到：chaoxing_protocol_test.dart（协议、设备信息与设备码、学校单位、课表推断与坐标转换）、chaoxing_store_test.dart（本机库与上限）、chaoxing_batch_test.dart（多人连签的顺序、间隔、停止与强制）、chaoxing_ui_test.dart（登录、签到、多人连签、往期补签、强制签到、按课程查看、课表推断、代签入口与导入流程，用 chaoxing_fake_server.dart 与 chaoxing_fake_hub.dart）
+  - 代签：chaoxing_pack_test.dart（凭据包编解码与封装，含第 1 版兼容）、chaoxing_delegate_test.dart（两台设备之间的出示与导入、带人脸照片、连签与强制签到、学校单位与模拟客户端，chaoxing_fake_hub.dart 是内存中转）
   - 人脸与群聊：chaoxing_im_test.dart（DES、protobuf 附件解析、环信链路与类型映射）、chaoxing_protocol_test.dart 里的人脸公钥与签名用例
 - 私信：
   - social_protocol_test.dart（与服务端共用测试向量、信封、二维码）、share_card_test.dart、social_service_test.dart、social_ui_test.dart
@@ -210,4 +211,4 @@
   - 结果页和下载页随进度通知整页重建
   - FrostTexture 逐点绘制颗粒
   - 成绩响应分块累加
-- 平台：只有 Android 宿主。验证只在模拟器（API 36、API 34）上做过，真机和 iOS 都未验收。原生导出通道见 MainActivity.kt、ToolboxFileExporter.kt 与 CalendarExporter.kt（日历文件只经 CalendarFileProvider 开放缓存 calendar_export 文件夹）；桌面小组件见 CourseWidgets.kt。
+- 平台：只有 Android 宿主。验证只在模拟器（API 36、API 34）上做过，真机和 iOS 都未验收。原生导出通道见 MainActivity.kt、ToolboxFileExporter.kt 与 CalendarExporter.kt（日历文件只经 CalendarFileProvider 开放缓存 calendar_export 文件夹）；桌面小组件见 CourseWidgets.kt；学习通签到的设备信息与 OAID 见 ChaoxingDevice.kt（OAID 库 Android_CN_OAID 来自 JitPack，其华为、荣耀依赖来自各自厂商仓库）。

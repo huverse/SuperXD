@@ -14,6 +14,52 @@ const chaoxingUserAgent =
     '(schild:2d97f7b9439f21333c946878fc4d6ccb) (device:SM-N9006) Language/zh_CN '
     'com.chaoxing.mobile/ChaoXingStudy_3_6.7.5_android_phone_10941_314 (@Kalimdor)_68f184fd763546c1a04ab3a09b3deebb';
 
+// 模拟的客户端：有的学校用的是定制版学习通（例如学在西电），课程列表只在对应客户端的身份下才对得上。
+// 包名用于设备信息（读本机该客户端的版本与签名、报 app_name），UA 用于每个请求。
+class ChaoxingClientProfile {
+  const ChaoxingClientProfile({required this.id, required this.label, required this.userAgent, required this.packageName});
+  final String id;
+  final String label;
+  final String userAgent;
+  final String packageName;
+
+  static const chaoxing = ChaoxingClientProfile(
+    id: 'chaoxing',
+    label: '学习通',
+    userAgent: chaoxingUserAgent,
+    packageName: 'com.chaoxing.mobile',
+  );
+
+  static const xuezaixidian = ChaoxingClientProfile(
+    id: 'xuezaixidian',
+    label: '学在西电',
+    userAgent:
+        'Mozilla/5.0 (Linux; Android 16; 23113RKC6C Build/BP2A.250605.031.A3; wv) AppleWebKit/537.36 (KHTML, like Gecko) '
+        'Version/4.0 Chrome/147.0.7727.137 Mobile Safari/537.36 (schild:be536573b69ec1ae359e359d11f7f3e3) (device:23113RKC6C) '
+        'Language/zh_CN com.chaoxing.mobile.xuezaixidian/ChaoXingStudy_1000149_6.3.7_android_phone_6005_249 '
+        '(@Kalimdor)_f8777230ca1e45b2831ec7e36a9da1ea',
+    packageName: 'com.chaoxing.mobile.xuezaixidian',
+  );
+
+  static const presets = [chaoxing, xuezaixidian];
+  static const customId = 'custom';
+
+  // 自定义 UA 只能是可打印 ASCII（请求头的限制）；包名可空，空时按学习通的包名算。
+  static String? userAgentProblem(String value) {
+    final text = value.trim();
+    if (text.isEmpty) return '请填写 UserAgent';
+    if (text.codeUnits.any((unit) => unit < 0x20 || unit > 0x7e)) return 'UserAgent 只能包含可打印的英文字符';
+    return null;
+  }
+
+  factory ChaoxingClientProfile.custom({required String userAgent, String packageName = ''}) => ChaoxingClientProfile(
+    id: customId,
+    label: '自定义',
+    userAgent: userAgent.trim(),
+    packageName: packageName.trim().isEmpty ? chaoxing.packageName : packageName.trim(),
+  );
+}
+
 class ChaoxingResponse {
   const ChaoxingResponse(this.statusCode, this.bytes);
   final int statusCode;
@@ -80,6 +126,7 @@ class ChaoxingHttp {
     http.Client? client,
     ChaoxingCookieJar? cookies,
     this.timeout = const Duration(seconds: 15),
+    this.profile = ChaoxingClientProfile.chaoxing,
   }) : _client = client ?? http.Client(),
        cookies = cookies ?? ChaoxingCookieJar();
 
@@ -88,6 +135,9 @@ class ChaoxingHttp {
   final http.Client _client;
   final ChaoxingCookieJar cookies;
   final Duration timeout;
+
+  // 模拟的客户端在设置里可换，换了之后已开着的会话也跟着换。
+  ChaoxingClientProfile profile;
 
   Future<ChaoxingResponse> get(Uri uri, {Duration? timeout, Map<String, String>? headers}) =>
       _send('GET', uri, headers: headers, timeout: timeout);
@@ -128,7 +178,7 @@ class ChaoxingHttp {
   }) async {
     final limit = timeout ?? this.timeout;
     final request = multipart ?? http.Request(method, uri);
-    request.headers['User-Agent'] = chaoxingUserAgent;
+    request.headers['User-Agent'] = profile.userAgent;
     request.headers['Accept'] = '*/*';
     if (headers != null) request.headers.addAll(headers);
     final loaded = cookies.load(uri);

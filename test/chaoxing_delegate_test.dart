@@ -5,6 +5,7 @@ import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_batch.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
@@ -95,10 +96,97 @@ void main() {
     // 导入后就能替他签，提交里带的是对方的设备码。
     await second.select(imported);
     expect(second.activities, isNotEmpty);
-    await second.sign(second.activities.first, signCode: '1234');
+    final target = second.signTargets().single;
+    await second.signTarget(
+      target,
+      second.activities.first,
+      info: await second.activeInfo(second.activities.first),
+      inputs: const ChaoxingSignInputs(signCode: '1234'),
+      solveCaptcha: (_, _) async => null,
+    );
     expect(fake.signQuery!['uid'], '7007');
     expect(fake.signQuery!['deviceCode'], deviceCode);
+    second.dispose();
     await otherStore.close();
+  });
+
+  test('代签码可以附带人脸照片，导入方记进本机', () async {
+    final first = controllerFor(store, vault, hub: hub());
+    await first.signIn('13800138000', 'myPassword123');
+    final ticket = await first.createCredentialTicket(faceObjectIds: ['face-a', 'face-b']);
+
+    final otherStore = await ChaoxingStore.open(path.join(directory.path, 'f.db'));
+    final second = controllerFor(otherStore, MemoryChaoxingVault(), hub: hub());
+    final imported = await second.importCredentialTicket(ticket);
+    expect((await second.faceImages(imported)).map((image) => image.objectId), ['face-a', 'face-b']);
+    await otherStore.close();
+  });
+
+  test('一次给本人与代签账号连签：按顺序逐个提交，各用各的设备码', () async {
+    await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');
+    final controller = controllerFor(store, vault, hub: hub());
+    // 先在另一台设备出示乙的代签码，再在本机导入。
+    final otherStore = await ChaoxingStore.open(path.join(directory.path, 'g.db'));
+    final owner = controllerFor(otherStore, MemoryChaoxingVault(), hub: hub());
+    await owner.signIn('13900139000', 'otherPassword1');
+    final ticket = await owner.createCredentialTicket();
+    final otherCode = owner.account!.deviceCode;
+
+    await controller.signIn('13800138000', 'myPassword123');
+    await controller.importCredentialTicket(ticket);
+    final targets = controller.signTargets();
+    expect(targets.map((target) => target.selected), [isTrue, isFalse]);
+    targets.last.selected = true;
+    final batch = ChaoxingBatchSigning(targets);
+    final activity = controller.activities.first;
+    final info = await controller.activeInfo(activity);
+    final codes = <String>[];
+    final done = await batch.run((target, {required force}) async {
+      final result = await controller.signTarget(
+        target,
+        activity,
+        info: info,
+        inputs: const ChaoxingSignInputs(signCode: '1234'),
+        solveCaptcha: (_, _) async => null,
+        force: force,
+      );
+      codes.add(fake.signQuery!['deviceCode']!);
+      return result;
+    }, interval: Duration.zero);
+    expect(done, isTrue);
+    expect(codes.last, otherCode);
+    expect(codes.first, isNot(otherCode));
+    controller.dispose();
+    await otherStore.close();
+  });
+
+  test('签到前检查判定已签到时可以强制签到，强制时不再走 preSign', () async {
+    final controller = controllerFor(store, vault);
+    await controller.signIn('13800138000', 'myPassword123');
+    final activity = controller.activities.first;
+    final info = await controller.activeInfo(activity);
+    final target = controller.signTargets().single;
+    final batch = ChaoxingBatchSigning([target]);
+    Future<ChaoxingSignResult> signer(ChaoxingSignTarget item, {required bool force}) => controller.signTarget(
+      item,
+      activity,
+      info: info,
+      inputs: const ChaoxingSignInputs(signCode: '1234'),
+      solveCaptcha: (_, _) async => null,
+      force: force,
+    );
+
+    fake.preSignHtml = '<script>signstatus = 1;</script>';
+    expect(await batch.run(signer), isFalse);
+    expect(target.state, ChaoxingTargetState.failed);
+    expect(target.forceAvailable, isTrue);
+    expect(fake.signQuery, isNull);
+
+    fake.preSignBody = null;
+    expect(await batch.retry(target, signer, force: true), isTrue);
+    expect(fake.preSignBody, isNull);
+    expect(fake.signQuery!['signCode'], '1234');
+    controller.dispose();
   });
 
   test('同一张代签码只能取一次', () async {
@@ -149,5 +237,49 @@ void main() {
         throwsA(isA<ChaoxingFailure>().having((failure) => failure.code, 'code', ChaoxingFailureCode.unavailable)),
       );
     }
+  });
+
+  test('切换学校单位后会话里的 fid 与签到提交都按所选单位走，重新登录也保留', () async {
+    fake.unitConfigInfos = [
+      {'fid': 1234, 'schoolname': '示例大学'},
+      {'fid': 5678, 'schoolname': '乙培训'},
+    ];
+    final controller = controllerFor(store, vault);
+    await controller.signIn('13800138000', 'myPassword123');
+    expect(controller.current!.units.map((unit) => unit.fid), [1234, 5678]);
+    await controller.selectUnit(const ChaoxingUnit(fid: 5678, name: '乙培训'));
+    expect(controller.current!.fid, 5678);
+    expect(controller.current!.schoolName, '乙培训');
+    expect((await vault.readCookies('13800138000'))!['fid'], '5678');
+
+    final activity = controller.activities.first;
+    await controller.signTarget(
+      controller.signTargets().single,
+      activity,
+      info: await controller.activeInfo(activity),
+      inputs: const ChaoxingSignInputs(signCode: '1234'),
+      solveCaptcha: (_, _) async => null,
+    );
+    expect(fake.signQuery!['fid'], '5678');
+
+    // 再登录一次（同一台设备），所选单位不丢。
+    await controller.signIn('13800138000', 'myPassword123');
+    expect(controller.current!.fid, 5678);
+    expect((await vault.readCookies('13800138000'))!['fid'], '5678');
+    controller.dispose();
+  });
+
+  test('换模拟的客户端后请求的 UA 跟着换，并记进设置', () async {
+    final controller = controllerFor(store, vault);
+    await controller.signIn('13800138000', 'myPassword123');
+    expect(fake.lastUserAgent, contains('com.chaoxing.mobile/'));
+    await controller.setProfile(ChaoxingClientProfile.xuezaixidian);
+    // 换完会刷新一次列表，这次请求带的就是学在西电的 UA。
+    expect(fake.lastUserAgent, contains('com.chaoxing.mobile.xuezaixidian/'));
+    expect(await store.preference(chaoxingProfileKey), 'xuezaixidian');
+    final accounts = ChaoxingAccounts(store: store, vault: vault);
+    await accounts.loadProfile();
+    expect(accounts.profile.id, 'xuezaixidian');
+    controller.dispose();
   });
 }
