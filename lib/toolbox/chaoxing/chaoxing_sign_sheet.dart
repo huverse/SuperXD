@@ -23,6 +23,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_face.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_face_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_gesture_field.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_image_pick.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_map_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
@@ -235,17 +236,15 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     });
   }
 
-  // 拍照签到每人一张照片（上传前各自随机裁剪旋转）。
-  Future<void> _pickPhoto(ChaoxingSignTarget target) async {
+  // 拍照签到每人一张照片（上传前各自随机裁剪旋转）：可以现场拍，也可以从相册选。
+  Future<void> _pickPhoto(ChaoxingSignTarget target, {ImageSource source = ImageSource.gallery}) async {
     try {
-      final file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1920, maxHeight: 1920, imageQuality: 95);
-      if (file == null || !mounted) return;
-      final bytes = await file.readAsBytes();
-      if (!mounted) return;
+      final bytes = await shootChaoxingPhoto(source: source);
+      if (bytes == null || !mounted) return;
       setState(() {
         target
           ..photoBytes = bytes
-          ..photoName = file.name
+          ..photoName = source == ImageSource.camera ? '现拍照片' : '相册照片'
           ..photoObjectId = null;
         _error = null;
       });
@@ -360,22 +359,77 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     return ChaoxingSignInputs(signCode: signCode, location: location);
   }
 
-  // 开签前把每个人要用的人脸照片备齐（选了的→本机存的→学习通里的），缺的现在就报，
+  // 开签前把每个人要用的人脸照片备齐（选了的→本机存的，随机挑一张并避开没通过过的），缺照片在这里补给：
+  // 先问用不用学习通存的默认照片（随机裁剪旋转一张再上传，直接反复用会被比对出来），再给现场拍摄（3:4 裁剪），
   // 别等提交那一刻才失败、连签半路停队（对齐参考项目的开签前补齐时机）。
   Future<bool> _prepareFaces() async {
     for (final target in _batch.pending) {
-      try {
-        await widget.controller.prepareFace(target, _activity, _info!);
-      } on ChaoxingFailure catch (failure) {
-        if (mounted) setState(() => _error = failure.message);
-        return false;
-      } catch (failure, stack) {
-        campusLog('[Chaoxing] action=prepare_face errorType=${failure.runtimeType}\n$stack');
-        if (mounted) setState(() => _error = '签到没完成，请稍后重试');
-        return false;
+      while (true) {
+        try {
+          await widget.controller.prepareFace(target, _activity, _info!);
+          break;
+        } on ChaoxingFailure catch (failure) {
+          if (failure.code != ChaoxingFailureCode.faceRequired || !mounted) {
+            if (mounted) setState(() => _error = failure.message);
+            return false;
+          }
+          if (!await _supplyMissingFace(target)) {
+            if (mounted) setState(() => _error = failure.message);
+            return false;
+          }
+        } catch (failure, stack) {
+          campusLog('[Chaoxing] action=prepare_face errorType=${failure.runtimeType}\n$stack');
+          if (mounted) setState(() => _error = '签到没完成，请稍后重试');
+          return false;
+        }
       }
     }
     return true;
+  }
+
+  // 补给缺的人脸照片：学习通里有默认照片时先给「重处理默认照片 / 拍摄新照片」的选择，
+  // 拍摄走相机并进 3:4 裁剪；补到的照片写回这个签到对象，取消返回 false。
+  Future<bool> _supplyMissingFace(ChaoxingSignTarget target) async {
+    String profileId = '';
+    try {
+      profileId = await widget.controller.profileFaceId(target.record);
+    } on ChaoxingFailure {
+      // 查不到就当学习通里没存过，直接进拍摄。
+    }
+    if (!mounted) return false;
+    if (profileId.isNotEmpty) {
+      final useProfile = await showCampusConfirm(
+        context,
+        title: '${target.record.name} 还没有人脸照片',
+        message: '学习通里存着一张默认人脸照片。直接反复用它容易被比对出来，会随机裁剪旋转一张再上传；也可以现在拍一张新的。',
+        action: '重处理默认照片',
+        cancel: '拍摄新照片',
+      );
+      if (!mounted) return false;
+      if (useProfile) {
+        try {
+          final objectId = await widget.controller.reprocessProfileFace(target.record);
+          if (objectId.isEmpty) {
+            if (mounted) setState(() => _error = '学习通里的默认照片没取到，请拍一张');
+            return false;
+          }
+          target.faceObjectId = objectId;
+          return true;
+        } on ChaoxingFailure catch (failure) {
+          if (mounted) setState(() => _error = failure.message);
+          return false;
+        }
+      }
+    }
+    final bytes = await pickChaoxingFacePhoto(context, source: ImageSource.camera);
+    if (bytes == null || !mounted) return false;
+    try {
+      target.faceObjectId = await widget.controller.uploadFaceImage(target.record, bytes);
+      return true;
+    } on ChaoxingFailure catch (failure) {
+      if (mounted) setState(() => _error = failure.message);
+    }
+    return false;
   }
 
   Future<void> _start() async {
@@ -665,10 +719,21 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         ] else ...[
           if (_needsPhoto) ...[
             const SizedBox(height: 16),
-            OutlinedButton.icon(
-              onPressed: _busy ? null : () => _pickPhoto(single),
-              icon: const CampusIcon(CampusIcons.image),
-              label: Text(single.photoName ?? '选择签到照片'),
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _pickPhoto(single, source: ImageSource.camera),
+                  icon: const CampusIcon(CampusIcons.camera),
+                  label: const Text('现拍一张'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _pickPhoto(single),
+                  icon: const CampusIcon(CampusIcons.image),
+                  label: Text(single.photoName ?? '从相册选'),
+                ),
+              ],
             ),
           ],
           if (_needsFace) ...[
@@ -762,12 +827,18 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
                 spacing: 8,
                 runSpacing: 8,
                 children: [
-                  if (_needsPhoto)
+                  if (_needsPhoto) ...[
+                    OutlinedButton.icon(
+                      onPressed: _busy ? null : () => _pickPhoto(target, source: ImageSource.camera),
+                      icon: const CampusIcon(CampusIcons.camera),
+                      label: const Text('现拍'),
+                    ),
                     OutlinedButton.icon(
                       onPressed: _busy ? null : () => _pickPhoto(target),
                       icon: const CampusIcon(CampusIcons.image),
-                      label: Text(target.photoName ?? '选签到照片'),
+                      label: Text(target.photoName ?? '选照片'),
                     ),
+                  ],
                   if (_needsFace)
                     OutlinedButton.icon(
                       onPressed: _busy ? null : () => _pickFace(target),

@@ -71,6 +71,7 @@ dependencies:
   x_amap_base: ^1.0.3
   pointycastle: ^4.0.0
   pool: ^1.5.3
+  image_cropper: ^12.2.1
 
 dev_dependencies:
   flutter_test:

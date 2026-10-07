@@ -207,7 +207,8 @@ class FakeChaoxing {
       return _json({'data': lessons});
     }
     if (request.url.host == 'p.cldisk.com') {
-      return _image(picture.encodePng(picture.Image(width: 8, height: 8)));
+      // 尺寸要不小于 16：人脸照片的重处理（随机裁剪旋转）对更小的图会按「照片读取失败」拒绝。
+      return _image(picture.encodePng(picture.Image(width: 64, height: 64)));
     }
     if (request.url.host == 'mobilelearn.chaoxing.com') {
       switch (path) {

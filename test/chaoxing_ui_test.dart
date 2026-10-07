@@ -515,8 +515,13 @@ void main() {
     await openSignSheet(tester, button: '去签到');
     expect(find.textContaining('人脸识别'), findsOneWidget);
     await tapSign(tester);
+    // 开签前补给：本机没存人脸照片时先问，选重处理学习通存的默认照片（下载→随机裁剪旋转→重新上传换新 id）。
+    await waitUntil(tester, () => find.text('重处理默认照片').evaluate().isNotEmpty);
+    await tester.tap(find.text('重处理默认照片'));
+    await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
-    expect(fake.signQuery!['currentFaceId'], 'face-object-1');
+    // 用的是重处理上传后的新 objectId（fake 的云盘上传固定回 obj-1），不再是学习通里那张的原 objectId。
+    expect(fake.signQuery!['currentFaceId'], 'obj-1');
     expect(fake.signQuery!['faceEnc'], 'FACE-ENC');
     expect(fake.signQuery!['ifCFP'], '0');
     expect(fake.faceQuery!['activeId'], '501');
@@ -541,6 +546,9 @@ void main() {
 
     await openSignSheet(tester, button: '去签到');
     await tapSign(tester);
+    await waitUntil(tester, () => find.text('重处理默认照片').evaluate().isNotEmpty);
+    await tester.tap(find.text('重处理默认照片'));
+    await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     // 第二次提交把 checkFace_ 的后缀作为 enc2 续传上去。
     expect(fake.signQuery!['enc2'], 'enc-next');

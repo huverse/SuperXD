@@ -1,3 +1,5 @@
+import 'dart:math';
+
 import 'package:flutter/foundation.dart';
 
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity.dart';
@@ -32,9 +34,7 @@ class ChaoxingSignContext {
     required this.currentPhone,
     required this.run,
     required this.faceImages,
-    required this.putFaceImage,
     required this.markFaceImageUsed,
-    required this.refreshAccount,
   });
   final Future<ChaoxingClient> Function(ChaoxingAccountRecord record) clientOf;
 
@@ -42,16 +42,14 @@ class ChaoxingSignContext {
   final String? Function() currentPhone;
   final Future<T> Function<T>(ChaoxingClient client, Future<T> Function() action) run;
   final Future<List<ChaoxingFaceImage>> Function(String phoneNumber) faceImages;
-  final Future<void> Function(String phoneNumber, String objectId) putFaceImage;
   final Future<void> Function(String phoneNumber, String objectId, {required bool failed}) markFaceImageUsed;
-  final Future<void> Function(ChaoxingClient client) refreshAccount;
 }
 
 // 一个人的完整签到流程：签到前检查（可强制跳过）→ 拍照上传 → 人脸 → 提交
 // （要验证码就弹、二维码过期就换新码、位置出界收紧重试一次）。从页面状态类抽出，页面只管状态与输入；
 // 打开签到页时的检查（check）与提交共用同一段判定。
 class ChaoxingSignFlow {
-  const ChaoxingSignFlow(this.context);
+  ChaoxingSignFlow(this.context);
   final ChaoxingSignContext context;
 
   Future<ChaoxingSignResult> sign(
@@ -184,19 +182,19 @@ class ChaoxingSignFlow {
     return null;
   }
 
-  // 人脸照片：这次选了就用选的，其次本机记着的第一张，再其次学习通里存的那张；都没有就让用户先选一张。
+  // 人脸照片：这次选了就用选的；否则从本机存的里随机挑一张（之前没通过过的先避开，都失败过才回头用，
+  // 对齐参考项目）。一张都没有时抛 faceRequired，由开签前的补给（默认照片重处理或现场拍摄）接手。
   Future<String> _faceFor(ChaoxingClient client, ChaoxingSignTarget target) async {
     final chosen = target.faceObjectId;
     if (chosen != null) return chosen;
     final stored = await context.faceImages(client.phoneNumber);
-    if (stored.isNotEmpty) return stored.first.objectId;
-    // clientId 是签名要用的，库里没有就先补一次用户信息（会话过期时 run 会先重登）。
-    if ((client.account?.clientId ?? '').isEmpty) await context.refreshAccount(client);
-    final profile = await context.run(client, () => chaoxingProfileFaceObjectId(client));
-    if (profile == null) {
+    if (stored.isEmpty) {
       throw ChaoxingFailure(ChaoxingFailureCode.faceRequired, '${target.record.name} 还没有人脸照片，请先选一张');
     }
-    await context.putFaceImage(client.phoneNumber, profile);
-    return profile;
+    final usable = stored.where((image) => !image.failedBefore).toList();
+    final pool = usable.isNotEmpty ? usable : stored;
+    return pool[_random.nextInt(pool.length)].objectId;
   }
+
+  final _random = Random();
 }

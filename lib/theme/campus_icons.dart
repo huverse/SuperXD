@@ -36,6 +36,7 @@ abstract final class CampusIcons {
   static const video = LucideIcons.video;
   static const image = LucideIcons.image;
   static const images = LucideIcons.images;
+  static const camera = LucideIcons.camera;
   static const audio = LucideIcons.music;
   static const pause = LucideIcons.pause;
   static const resume = LucideIcons.play;

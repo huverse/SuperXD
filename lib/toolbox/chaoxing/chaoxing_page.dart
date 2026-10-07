@@ -96,7 +96,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
       // 学习通的服务由本工具自己打开（框架只给目录与公共能力）。
       final service = await widget.runtime.service<ChaoxingService>(ChaoxingService.serviceId);
       _service = service;
-      final controller = ChaoxingController(accounts: service.accounts, hub: service.hub);
+      final controller = ChaoxingController(accounts: service.accounts, hub: service.hub, filePublisher: service.filePublisher);
       if (!mounted) {
         controller.dispose();
         return;

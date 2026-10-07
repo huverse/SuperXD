@@ -1,4 +1,7 @@
 import 'dart:async';
+import 'dart:io';
+
+import 'package:path/path.dart' as path;
 
 import 'package:flutter/foundation.dart';
 import 'package:pool/pool.dart';
@@ -22,6 +25,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_signer.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_sign_flow.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
+import 'package:superxd/toolbox/toolbox_models.dart';
 
 enum ChaoxingStatus { loading, signedOut, ready }
 
@@ -34,11 +38,14 @@ class ChaoxingCourseGroup {
 }
 
 class ChaoxingController extends ChangeNotifier {
-  ChaoxingController({required this.accounts, this.hub});
+  ChaoxingController({required this.accounts, this.hub, this.filePublisher});
   final ChaoxingAccounts accounts;
 
   // 代签凭据包的中转；没配中转时为 null，出示与扫码导入都不显示。
   final ChaoxingPackHub? hub;
+
+  // 公共下载目录的文件导出（人脸照片保存到本机用）；为空时保存入口不可用（测试环境）。
+  final ToolboxFilePublisher Function()? filePublisher;
 
   // 一次刷新最多并发三个课程请求，课程多时也不至于把刷新拖太久。
   static const refreshConcurrency = 3;
@@ -201,9 +208,7 @@ class ChaoxingController extends ChangeNotifier {
       currentPhone: () => current?.phoneNumber,
       run: accounts.run,
       faceImages: accounts.store.faceImages,
-      putFaceImage: (phoneNumber, objectId) => accounts.store.putFaceImage(phoneNumber, objectId),
       markFaceImageUsed: (phoneNumber, objectId, {required failed}) => accounts.store.markFaceImageUsed(phoneNumber, objectId, failed: failed),
-      refreshAccount: accounts.refreshAccount,
     ),
   );
 
@@ -241,6 +246,58 @@ class ChaoxingController extends ChangeNotifier {
   // 开签前预检人脸照片（选了的→本机存的→学习通里的），缺的现在就报。
   Future<void> prepareFace(ChaoxingSignTarget target, ChaoxingActivity activity, ChaoxingActiveInfo info) =>
       signFlow.prepareFace(target, activity, info);
+
+  // 学习通账号资料里存的人脸照片 objectId（补给缺照的人之前先问一声用不用它）；没有为空。
+  Future<String> profileFaceId(ChaoxingAccountRecord record) async {
+    final client = await clientOf(record);
+    return await accounts.run<String?>(client, () => chaoxingProfileFaceObjectId(client)) ?? '';
+  }
+
+  // 补拍或裁剪好的人脸照片上传云盘换 objectId，并记进本机的人脸照片索引。
+  Future<String> uploadFaceImage(ChaoxingAccountRecord record, List<int> bytes) async {
+    final client = await clientOf(record);
+    final objectId = await accounts.run(client, () => chaoxingUploadPhoto(client, bytes: Uint8List.fromList(bytes)));
+    await accounts.store.putFaceImage(record.phoneNumber, objectId);
+    return objectId;
+  }
+
+  // 把学习通里存的默认人脸照片重处理一张再上传换新的 objectId（同一张照片直接反复用会被教师端比对），
+  // 重处理后的记进本机索引，返回新 objectId；学习通里没存过时返回空。
+  Future<String> reprocessProfileFace(ChaoxingAccountRecord record) async {
+    final client = await clientOf(record);
+    final profile = await accounts.run(client, () => chaoxingProfileFaceObjectId(client));
+    if (profile == null) return '';
+    final bytes = await _requireClient().http.getBytes(Uri.parse(chaoxingFaceImageUrl(profile)), payloadLimit: chaoxingFacePreviewLimit);
+    final stylized = await compute(chaoxingStylizePhoto, Uint8List.fromList(bytes));
+    final objectId = await accounts.run(client, () => chaoxingUploadPhoto(client, bytes: stylized));
+    await accounts.store.putFaceImage(record.phoneNumber, objectId);
+    return objectId;
+  }
+
+  // 把云盘里的人脸照片原图导出到公共下载目录（JPEG 文件）。
+  Future<Uri> saveFaceImage(String objectId) async {
+    final makePublisher = filePublisher;
+    if (makePublisher == null) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.unavailable, '当前环境不能保存文件');
+    }
+    final publisher = makePublisher();
+    final bytes = await faceImageBytes(objectId);
+    final temp = File(path.join(Directory.systemTemp.path, 'chaoxing-face-$objectId.jpg'));
+    await temp.writeAsBytes(bytes, flush: true);
+    try {
+      final uri = await publisher.publish(id: 'face-$objectId', source: temp.path, filename: '人脸照片.jpg', mimeType: 'image/jpeg');
+      if (uri == null) {
+        throw const ChaoxingFailure(ChaoxingFailureCode.server, '保存失败，请重试');
+      }
+      return uri;
+    } finally {
+      unawaited(
+        temp.delete().then((_) {}, onError: (Object error, StackTrace stack) {
+          campusLog('[Chaoxing] action=face_temp_clean errorType=${error.runtimeType}\n$stack');
+        }),
+      );
+    }
+  }
 
   // 从主签到跳到它关联的签退活动（或反过来）：详情里拿类型与时间重组一个活动。
   Future<ChaoxingActivity> relatedActivity(ChaoxingActivity current, int activeId) async {
