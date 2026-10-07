@@ -322,7 +322,7 @@ void main() {
     expect(jsonDecode(location.payload(mock: false)) as Map, isNot(contains('mockData')));
   });
 
-  test('列表只收签到类活动，认不出的类型不入列', () {
+  test('列表只收签到类活动，认不出的类型保留为 unknown 待详情补认', () {
     final course = const ChaoxingCourse(courseId: 9001, classId: 88, name: '高等数学');
     final parsed = [
       {'id': 1, 'type': 2, 'otherId': '4', 'nameOne': '签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'ext': {'a': 1}},
@@ -331,7 +331,9 @@ void main() {
       {'id': 4, 'type': 2, 'otherId': '9', 'nameOne': '未知类型', 'startTime': 1760000000000},
       {'id': 0, 'type': 2, 'otherId': '4', 'nameOne': '缺 id', 'startTime': 1760000000000},
     ].map((json) => chaoxingActivity(json.cast<String, Object?>(), course, ext: '{"a":1}')).toList();
-    expect(parsed.whereType<ChaoxingActivity>().map((activity) => activity.activeId), [1, 2]);
+    // 非签到频道（type 3 是作业）与缺 id 的不入列；otherId 认不出的保留（unknown），点开时详情补认。
+    expect(parsed.whereType<ChaoxingActivity>().map((activity) => activity.activeId), [1, 2, 4]);
+    expect(parsed[3]!.signType, ChaoxingSignType.unknown);
     expect(parsed.first!.ext, '{"a":1}');
     expect(parsed.first!.subtitle, '高等数学');
     expect(parsed.first!.startTime.millisecondsSinceEpoch, 1760000000000);
