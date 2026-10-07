@@ -11,6 +11,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_captcha_dialog.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_code_cells.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_gesture_field.dart';
@@ -341,7 +342,7 @@ void main() {
     await enterCode(tester, '1234');
     await waitUntil(tester, () => find.text('安全验证').evaluate().isNotEmpty);
     await waitUntil(tester, () => find.byType(Image).evaluate().length >= 2);
-    await tester.drag(find.byType(Image).first, const Offset(60, 0));
+    await tester.drag(find.descendant(of: find.byType(ChaoxingCaptchaDialog), matching: find.byType(Image)).first, const Offset(60, 0));
     await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     expect(fake.signQuery!['validate'], 'captcha-validate');

@@ -5,6 +5,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_refresh.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
@@ -313,12 +314,28 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     final inferred = {for (final activity in controller.lessonActivities) activity.activeId};
     final ongoing = [for (final activity in controller.activities) if (!inferred.contains(activity.activeId)) activity];
     return CampusScrollFade(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-        children: [
+      child: CustomScrollView(
+        slivers: [
+          // 下拉刷新签到列表（同今天页的曲线动效指示器）。
+          CampusRefreshControl(onRefresh: () => controller.refresh()),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
           CampusSurface(
             child: Row(
               children: [
+                if (controller.currentPhoto.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: ClipOval(
+                      child: SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: Image.network(controller.currentPhoto, fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
@@ -352,7 +369,20 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
           ),
           if (controller.error != null) ...[
             const SizedBox(height: 12),
-            Text(controller.error!, style: TextStyle(fontSize: 14, color: palette.danger)),
+            Row(
+              children: [
+                Expanded(child: Text(controller.error!, style: TextStyle(fontSize: 14, color: palette.danger))),
+                OutlinedButton.icon(
+                  onPressed: controller.busy
+                      ? null
+                      : () => controller.refresh().catchError((Object error, StackTrace stack) {
+                        campusLog('[Chaoxing] action=retry errorType=${error.runtimeType}\n$stack');
+                      }),
+                  icon: const CampusIcon(CampusIcons.sync),
+                  label: const Text('重试'),
+                ),
+              ],
+            ),
           ],
           if (controller.lessonActivities.isNotEmpty) ...[
             const ChaoxingSectionTitle('可能正在签到（按学习通课表）'),
@@ -424,6 +454,9 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                 label: const Text('群聊里的签到'),
               ),
             ],
+          ),
+              ]),
+            ),
           ),
         ],
       ),

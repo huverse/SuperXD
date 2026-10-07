@@ -43,7 +43,6 @@ class ChaoxingController extends ChangeNotifier {
 
   // 代签凭据包的中转；没配中转时为 null，出示与扫码导入都不显示。
   final ChaoxingPackHub? hub;
-
   // 公共下载目录的文件导出（人脸照片保存到本机用）；为空时保存入口不可用（测试环境）。
   final ToolboxFilePublisher Function()? filePublisher;
 
@@ -167,6 +166,9 @@ class ChaoxingController extends ChangeNotifier {
     }
     _notify();
   }
+
+  // 当前账号的头像（用户信息里下发的云盘地址，只在内存；没有为空串）。
+  String get currentPhoto => _client?.account?.photoUrl ?? '';
 
   Future<void> refresh() async {
     if (busy || _client == null) return;

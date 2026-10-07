@@ -49,7 +49,10 @@ enum ChaoxingSignType {
   qrCode('2', '二维码签到'),
   gesture('3', '手势签到'),
   location('4', '位置签到'),
-  password('5', '签到码签到');
+  password('5', '签到码签到'),
+
+  // 活动列表里认不出的 otherId：先保留展示，点开签到时详情里通常能认出来（认不出就提示不支持）。
+  unknown('', '签到');
 
   const ChaoxingSignType(this.code, this.label);
   final String code;
@@ -157,13 +160,13 @@ class ChaoxingActivity {
 
   bool endedAt(DateTime now) => endTime != null && now.isAfter(endTime!);
 
-  ChaoxingActivity change({int? classId}) => ChaoxingActivity(
+  ChaoxingActivity change({int? classId, ChaoxingSignType? signType}) => ChaoxingActivity(
     activeId: activeId,
     courseId: courseId,
     classId: classId ?? this.classId,
+    signType: signType ?? this.signType,
     title: title,
     subtitle: subtitle,
-    signType: signType,
     startTime: startTime,
     status: status,
     userStatus: userStatus,

@@ -96,17 +96,18 @@ Future<List<ChaoxingActivity>> chaoxingActivities(ChaoxingClient client, Chaoxin
   return activities;
 }
 
-// 认不出的签到类型直接不入列，界面不会出现点不动的条目。
+// 认不出的签到类型（otherId 不在已知的 0/2/3/4/5）也保留入列、标成 unknown（对齐参考项目）：
+// 点开签到弹层时详情里通常能认出来（群聊那边就是这个路子），静默丢掉会让活动凭空消失。
 ChaoxingActivity? chaoxingActivity(Map<String, Object?> json, ChaoxingCourse course, {required String ext}) {
   if (!chaoxingSignActivityTypes.contains(chaoxingInt(json['type']))) return null;
-  final signType = ChaoxingSignType.fromCode(chaoxingString(json['otherId']));
+  final signType = ChaoxingSignType.fromCode(chaoxingString(json['otherId'])) ?? ChaoxingSignType.unknown;
   final activeId = chaoxingInt(json['id']);
-  if (signType == null || activeId == 0) return null;
+  if (activeId == 0) return null;
   return ChaoxingActivity(
     activeId: activeId,
     courseId: course.courseId,
     classId: course.classId,
-    title: chaoxingString(json['nameOne'], fallback: signType.label),
+    title: chaoxingString(json['nameOne'], fallback: '签到'),
     // 标题行用课程名：真实数据里 nameFour 是「09-23 14:22」这样的时间串，直接当标题会跟下面的
     // 结束时间重复，也看不出是哪门课；nameFour 只在拿不到课程名时兜底。
     subtitle: course.name.isNotEmpty ? course.name : chaoxingString(json['nameFour']),

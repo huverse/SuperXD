@@ -128,6 +128,10 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       if (!mounted) return;
       setState(() {
         _info = info;
+        // 列表里认不出的类型，用详情里认出的补上（对齐参考项目；详情也认不出就保持 unknown，提交前提示不支持）。
+        if (_activity.signType == ChaoxingSignType.unknown && info.signType != null) {
+          _activity = _activity.change(signType: info.signType);
+        }
         _loadError = null;
         // 地图用不了时直接摊开经纬度，别让人先去点一下「手动输入」。
         _manualLocation = !chaoxingMapAvailable || widget.controller.locations.isEmpty;
@@ -225,6 +229,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     final info = _info;
     final rangeLatitude = info?.locationLatitude;
     final rangeLongitude = info?.locationLongitude;
+    final range = info?.locationRange;
     final picked = await openChaoxingMapPicker(
       context,
       initial: _currentLocation() ?? (_manualLocation ? null : _savedLocation),
@@ -233,7 +238,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       rangeCenter: rangeLatitude == null || rangeLongitude == null
           ? null
           : ChaoxingLocation(latitude: rangeLatitude, longitude: rangeLongitude, address: '', system: ChaoxingCoordinateSystem.bd09),
-      rangeMeters: info?.locationRange?.toDouble(),
+      rangeMeters: range?.toDouble(),
     );
     if (!mounted || picked == null) return;
     await widget.controller.saveLocation(picked.address, picked);
@@ -346,6 +351,10 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
 
   // 开签前把所有人共用的输入与每个人的照片都核对一遍，缺什么原地提示。
   ChaoxingSignInputs? _inputs() {
+    if (_type == ChaoxingSignType.unknown) {
+      setState(() => _error = '这个活动的签到类型暂不支持');
+      return null;
+    }
     final location = _currentLocation();
     if (_needsLocation && location == null) {
       setState(() => _error = '这场签到要位置，请选一个位置或填写坐标');

@@ -171,6 +171,8 @@ Uri chaoxingSignRequestUri({
     ChaoxingSignType.location => _locationParameters(account, submission),
     ChaoxingSignType.photo => _photoParameters(account, submission),
     ChaoxingSignType.qrCode => _qrCodeParameters(account, submission),
+    // 详情也认不出的类型：提交前就被拦下（unsupported），到不了这里；真到了按无参数处理。
+    ChaoxingSignType.unknown => throw const ChaoxingFailure(ChaoxingFailureCode.unsupported, '这个活动的签到类型暂不支持'),
   };
   return Uri.parse(chaoxingSignUri).replace(queryParameters: query);
 }
