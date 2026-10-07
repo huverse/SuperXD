@@ -10,6 +10,8 @@ enum ChaoxingFailureCode {
   wrongPosition,
   captchaRequired,
   faceRequired,
+  // checkFace_ 前缀：人脸校验没完成但拿到了续传用的 enc2，带着它重发即可，不算人脸未通过。
+  faceCheck,
   qrCodeExpired,
   unsupported,
   unavailable,
@@ -23,7 +25,7 @@ enum ChaoxingFailureCode {
 }
 
 class ChaoxingFailure implements Exception {
-  const ChaoxingFailure(this.code, this.message, {this.retryAfter, this.payload, this.predicted = false});
+  const ChaoxingFailure(this.code, this.message, {this.retryAfter, this.payload, this.predicted = false, this.locationTightened = false});
   final ChaoxingFailureCode code;
   final String message;
   final Duration? retryAfter;
@@ -33,6 +35,10 @@ class ChaoxingFailure implements Exception {
 
   // 是签到前的检查（preSign 页面、班级检查）推断出来的，不是提交后学习通退回的；这类可以强制签到。
   final bool predicted;
+
+  // 位置出界失败时，这场签到是否已在收紧偏移档（对齐参考项目）：刚收紧的第一次出界不停队，
+  // 后面的人接着用收紧档签；收紧档仍出界才把余下的人全停。
+  final bool locationTightened;
 
   @override
   String toString() => message;

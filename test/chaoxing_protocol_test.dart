@@ -143,7 +143,7 @@ void main() {
       ('您已签到过了', ChaoxingFailureCode.alreadySigned),
       ('签到失败，请重新扫描。', ChaoxingFailureCode.qrCodeExpired),
       ('errorLocation_123.4', ChaoxingFailureCode.wrongPosition),
-      ('checkFace_abc', ChaoxingFailureCode.faceRequired),
+      ('checkFace_abc', ChaoxingFailureCode.faceCheck),
       ('[face]未检测到人脸', ChaoxingFailureCode.faceRequired),
       ('未知回复', ChaoxingFailureCode.server),
     ]) {
@@ -625,11 +625,13 @@ void main() {
           'LiveDetectionStatus': '1',
           'collectStatus': '1',
           'cxtime': '1700000000000',
+          // cxcid 也要参与拼串（与参考实现的 TreeMap 口径一致），只写进上报 JSON 会导致服务端校验签名不通过。
+          'cxcid': 'cid-value',
         },
         secret: 'secret-value',
       ),
       // 排序按 UTF-16 码元，大写字母在前，与参考实现的 TreeMap 一致。
-      'a01c25d2a610f669f972ae8a4b9c3761',
+      '665e15cb0025c2dd1acf6534e40bab17',
     );
   });
 

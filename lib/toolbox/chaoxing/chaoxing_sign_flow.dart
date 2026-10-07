@@ -62,6 +62,10 @@ class ChaoxingSignFlow {
     required ChaoxingCaptchaSolver solveCaptcha,
     ChaoxingFreshQrCode? freshQrCode,
     bool force = false,
+
+    // 这场签到里位置偏移是否已收紧过（收紧档跨人共享，对齐参考项目）；本次收紧时经 onTightened 告知调用方。
+    bool initialTightened = false,
+    void Function()? onTightened,
   }) async {
     final client = await context.clientOf(target.record);
     var signed = activity;
@@ -83,13 +87,13 @@ class ChaoxingSignFlow {
     }
     final faceObjectId = chaoxingFaceApplies(signed.signType, info) ? await _faceFor(client, target) : null;
     var qrCode = inputs.qrCode;
-    var tightened = false;
+    var tightened = initialTightened;
     String? validate;
     String? enc2;
     for (var attempt = 0; ; attempt++) {
       final faceEnc = faceObjectId == null
           ? null
-          : await context.run(client, () => chaoxingFaceEnc(client, activeId: signed.activeId, objectId: faceObjectId));
+          : await _faceEncCounted(client, signed.activeId, faceObjectId);
       final submission = ChaoxingSignSubmission(
         activity: signed,
         activeId: qrCode?.activeId,
@@ -118,9 +122,16 @@ class ChaoxingSignFlow {
             enc2 = failure.payload ?? enc2;
           case ChaoxingFailureCode.wrongPosition when !tightened && inputs.location != null:
             tightened = true;
+            onTightened?.call();
+          case ChaoxingFailureCode.wrongPosition:
+            // 收紧档仍出界：带标志抛出，连签据此停队（刚收紧的第一次出界不停，后面的人用收紧档接着签）。
+            throw ChaoxingFailure(failure.code, failure.message, payload: failure.payload, locationTightened: true);
           case ChaoxingFailureCode.qrCodeExpired when freshQrCode != null && qrCode != null:
             await Future<void>.delayed(const Duration(milliseconds: 500));
             qrCode = await freshQrCode(qrCode);
+          // checkFace_ 是「校验没完成」：后缀 enc2 续传重发即可，不算人脸未通过（不记照片失败）。
+          case ChaoxingFailureCode.faceCheck when attempt < 2:
+            enc2 = failure.payload ?? enc2;
           case ChaoxingFailureCode.faceRequired when faceObjectId != null:
             await context.markFaceImageUsed(client.phoneNumber, faceObjectId, failed: true);
             rethrow;
@@ -135,6 +146,26 @@ class ChaoxingSignFlow {
   Future<ChaoxingFailure?> check(ChaoxingSignTarget target, ChaoxingActivity activity) async {
     final client = await context.clientOf(target.record);
     return _presignFailure(client, activity);
+  }
+
+  // 开签前把这个人要用的人脸照片定下来（选了的→本机存的→学习通里的，写回 target），
+  // 缺照片在开签前就报出来，别等提交那一刻才失败、连签半路停队（对齐参考项目的开签前补齐时机）。
+  Future<void> prepareFace(ChaoxingSignTarget target, ChaoxingActivity activity, ChaoxingActiveInfo info) async {
+    if (!chaoxingFaceApplies(activity.signType, info) || target.faceObjectId != null) return;
+    final client = await context.clientOf(target.record);
+    target.faceObjectId = await _faceFor(client, target);
+  }
+
+  // faceEnc 的换取失败也计一次照片使用（参考项目对任何结局都记用量，只是不标失败）。
+  Future<String> _faceEncCounted(ChaoxingClient client, int activeId, String faceObjectId) async {
+    try {
+      return await context.run(client, () => chaoxingFaceEnc(client, activeId: activeId, objectId: faceObjectId));
+    } catch (failure) {
+      if (failure is! ChaoxingFailure || failure.code != ChaoxingFailureCode.cancelled) {
+        await context.markFaceImageUsed(client.phoneNumber, faceObjectId, failed: false);
+      }
+      rethrow;
+    }
   }
 
   // 签到前检查（preSign 与班级检查）：拦下时返回带 predicted 的失败，可签返回 null。

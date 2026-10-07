@@ -215,7 +215,19 @@ class ChaoxingController extends ChangeNotifier {
     required ChaoxingCaptchaSolver solveCaptcha,
     ChaoxingFreshQrCode? freshQrCode,
     bool force = false,
-  }) => signFlow.sign(target, activity, info: info, inputs: inputs, solveCaptcha: solveCaptcha, freshQrCode: freshQrCode, force: force);
+    bool initialTightened = false,
+    void Function()? onTightened,
+  }) => signFlow.sign(
+    target,
+    activity,
+    info: info,
+    inputs: inputs,
+    solveCaptcha: solveCaptcha,
+    freshQrCode: freshQrCode,
+    force: force,
+    initialTightened: initialTightened,
+    onTightened: onTightened,
+  );
 
   // 扫到新码时先问一次是否还有效（用当前账号问，与学习通客户端一致）。
   Future<bool> qrCodeExpired(ChaoxingQrCode code, ChaoxingActivity activity) async {
@@ -225,6 +237,10 @@ class ChaoxingController extends ChangeNotifier {
 
   // 打开签到页时的检查入口：按这个人的会话查，结果只用来提示与给三选，不产生副作用。
   Future<ChaoxingFailure?> presignCheck(ChaoxingSignTarget target, ChaoxingActivity activity) => signFlow.check(target, activity);
+
+  // 开签前预检人脸照片（选了的→本机存的→学习通里的），缺的现在就报。
+  Future<void> prepareFace(ChaoxingSignTarget target, ChaoxingActivity activity, ChaoxingActiveInfo info) =>
+      signFlow.prepareFace(target, activity, info);
 
   // 从主签到跳到它关联的签退活动（或反过来）：详情里拿类型与时间重组一个活动。
   Future<ChaoxingActivity> relatedActivity(ChaoxingActivity current, int activeId) async {
@@ -413,7 +429,7 @@ class ChaoxingController extends ChangeNotifier {
   Future<Uint8List> faceImageBytes(String objectId) async {
     final cached = _faceBytes.remove(objectId);
     if (cached != null) return _faceBytes[objectId] = cached;
-    final bytes = await _requireClient().http.getBytes(Uri.parse(chaoxingFaceImageUrl(objectId)));
+    final bytes = await _requireClient().http.getBytes(Uri.parse(chaoxingFaceImageUrl(objectId)), payloadLimit: chaoxingFacePreviewLimit);
     _faceBytes[objectId] = bytes;
     while (_faceBytes.length > faceImageCacheLimit) {
       _faceBytes.remove(_faceBytes.keys.first);
@@ -607,24 +623,45 @@ class ChaoxingController extends ChangeNotifier {
       final record = current!;
       final cached = await accounts.store.lessonCache(record.phoneNumber);
       final now = DateTime.now().toUtc();
-      final String payload;
+      var payload = cached?.payload ?? '';
       if (cached == null || now.difference(cached.fetchedAt) > ChaoxingStore.lessonCacheLifetime) {
         payload = await accounts.run(client, () => chaoxingFetchLessons(client));
         await accounts.store.putLessonCache(record.phoneNumber, payload);
-      } else {
-        payload = cached.payload;
+      } else if (chaoxingParseLessons(chaoxingJson(payload)).lessons.isEmpty) {
+        // 缓存在期但解析出零节课时视为不可信（对齐参考项目）：重新拉一次，别把空表照用到满 7 天。
+        payload = await accounts.run(client, () => chaoxingFetchLessons(client));
+        await accounts.store.putLessonCache(record.phoneNumber, payload);
       }
-      final table = chaoxingParseLessons(chaoxingJson(payload));
-      final lessonCourses = chaoxingLessonCourses(chaoxingCurrentLessons(table, now), courses);
-      final classIds = {for (final course in lessonCourses) course.classId};
-      return [
-        for (final activity in collected)
-          if (classIds.contains(activity.classId) && chaoxingFreshActivity(activity, now)) activity,
-      ];
+      return await _inferFromPayload(client, payload, collected, now);
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=lessons errorType=${failure.runtimeType}\n$stack');
       return const [];
     }
+  }
+
+  // 按课表正文推断：当前节次的课落到班级，班级的活动里挑 20 分钟内刚发起的进行中签到。
+  // 课表自带班级号的班可能不在课程列表里（对齐参考项目：这样的班直查一次活动列表补进候选，
+  // 而不是只过滤主列表，否则兜底出来的课程对象永远等不到它的活动）。
+  Future<List<ChaoxingActivity>> _inferFromPayload(ChaoxingClient client, String payload, List<ChaoxingActivity> collected, DateTime now) async {
+    final table = chaoxingParseLessons(chaoxingJson(payload));
+    final lessonCourses = chaoxingLessonCourses(chaoxingCurrentLessons(table, now), courses);
+    final classIds = {for (final course in lessonCourses) course.classId};
+    var candidates = collected;
+    final knownClassIds = {for (final course in courses) course.classId};
+    final outside = [for (final course in lessonCourses) if (course.classId > 0 && !knownClassIds.contains(course.classId)) course];
+    if (outside.isNotEmpty) {
+      final extra = <ChaoxingActivity>[];
+      for (final course in outside) {
+        try {
+          extra.addAll(await accounts.run(client, () => chaoxingActivities(client, course)));
+        } catch (failure, stack) {
+          // 单个班读不到不影响其余（与主列表同口径）。
+          campusLog('[Chaoxing] action=lessons_extra errorType=${failure.runtimeType} classId=${course.classId}\n$stack');
+        }
+      }
+      candidates = [...collected, ...extra];
+    }
+    return [for (final activity in candidates) if (classIds.contains(activity.classId) && chaoxingFreshActivity(activity, now)) activity];
   }
 
   // 群聊与签退跳转拼出来的活动没有列表 status，按截止时间补：没截止的当进行中。

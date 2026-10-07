@@ -62,9 +62,10 @@ class ChaoxingImGroup {
   const ChaoxingImGroup({required this.id, required this.name, required this.description});
   final String id;
   final String name;
+
+  // 群描述 JSON 信封里解析出的课程名（建群时写的），群名为空时用它，与参考项目同一处理。
   final String description;
 
-  // 实测大部分群的名称是空的，老师建群时把课程名写在了描述里（与参考项目同一处理）。
   String get displayName => name.isNotEmpty ? name : description;
 }
 
@@ -142,7 +143,22 @@ Future<List<ChaoxingImGroup>> chaoxingImGroups(ChaoxingClient client, ChaoxingIm
     if (item is! Map) continue;
     final id = chaoxingString(item['id']);
     if (id.isEmpty) continue;
-    groups.add(ChaoxingImGroup(id: id, name: chaoxingString(item['name']), description: chaoxingString(item['description'])));
+    final name = chaoxingString(item['name']);
+    // 群描述是 JSON 信封，课程名在 courseInfo.coursename（实测大部分群名是空的，老师建群时把课程名写在描述里）；
+    // 解析不出课程名（纯文本或空的描述）且群名也为空时，这个群没有可显示的标识，跳过（同参考项目）。
+    var courseName = '';
+    final description = chaoxingString(item['description']);
+    if (description.isNotEmpty) {
+      try {
+        final decoded = jsonDecode(description);
+        final courseInfo = decoded is Map ? decoded['courseInfo'] : null;
+        if (courseInfo is Map) courseName = chaoxingString(courseInfo['coursename']);
+      } on FormatException {
+        // 纯文本描述，取不到课程名。
+      }
+    }
+    if (name.isEmpty && courseName.isEmpty) continue;
+    groups.add(ChaoxingImGroup(id: id, name: name, description: courseName));
   }
   return groups;
 }

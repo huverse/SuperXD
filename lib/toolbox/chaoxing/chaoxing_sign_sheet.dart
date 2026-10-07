@@ -132,8 +132,10 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         final saved = widget.controller.locations;
         if (saved.isNotEmpty) _savedLocation = saved.first.location;
         if (info.locationLatitude != null && info.locationLongitude != null && _manualLocation) {
-          _latitude.text = info.locationLatitude!.toStringAsFixed(6);
-          _longitude.text = info.locationLongitude!.toStringAsFixed(6);
+          // 详情给的坐标是学习通的 BD-09 口径，输入框按高德 GCJ-02 解释，先转一层再预填（参考项目同样按 BD-09 使用）。
+          final asGcj = bd09ToGcj02(info.locationLatitude!, info.locationLongitude!);
+          _latitude.text = asGcj.latitude.toStringAsFixed(6);
+          _longitude.text = asGcj.longitude.toStringAsFixed(6);
         }
       });
     } on ChaoxingFailure catch (failure) {
@@ -318,16 +320,21 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     return answer;
   }
 
-  ChaoxingTargetSigner _signer(ChaoxingSignInputs inputs, {ChaoxingFreshQrCode? freshQrCode}) =>
-      (target, {required force}) => widget.controller.signTarget(
-        target,
-        _activity,
-        info: _info!,
-        inputs: inputs,
-        solveCaptcha: _solveCaptcha,
-        freshQrCode: freshQrCode,
-        force: force,
-      );
+  // 一场签到共享一次位置收紧（对齐参考项目）：某人出界收紧后，后面的人直接从收紧档开始。
+  ChaoxingTargetSigner _signer(ChaoxingSignInputs inputs, {ChaoxingFreshQrCode? freshQrCode}) {
+    var tightenedShared = false;
+    return (target, {required force}) => widget.controller.signTarget(
+      target,
+      _activity,
+      info: _info!,
+      inputs: inputs,
+      solveCaptcha: _solveCaptcha,
+      freshQrCode: freshQrCode,
+      force: force,
+      initialTightened: tightenedShared,
+      onTightened: () => tightenedShared = true,
+    );
+  }
 
   // 开签前把所有人共用的输入与每个人的照片都核对一遍，缺什么原地提示。
   ChaoxingSignInputs? _inputs() {
@@ -353,6 +360,24 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     return ChaoxingSignInputs(signCode: signCode, location: location);
   }
 
+  // 开签前把每个人要用的人脸照片备齐（选了的→本机存的→学习通里的），缺的现在就报，
+  // 别等提交那一刻才失败、连签半路停队（对齐参考项目的开签前补齐时机）。
+  Future<bool> _prepareFaces() async {
+    for (final target in _batch.pending) {
+      try {
+        await widget.controller.prepareFace(target, _activity, _info!);
+      } on ChaoxingFailure catch (failure) {
+        if (mounted) setState(() => _error = failure.message);
+        return false;
+      } catch (failure, stack) {
+        campusLog('[Chaoxing] action=prepare_face errorType=${failure.runtimeType}\n$stack');
+        if (mounted) setState(() => _error = '签到没完成，请稍后重试');
+        return false;
+      }
+    }
+    return true;
+  }
+
   Future<void> _start() async {
     final inputs = _inputs();
     if (inputs == null) return;
@@ -374,6 +399,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         return;
       }
       if (mounted) setState(() => _codeWrong = false);
+      if (!await _prepareFaces()) return;
     } on ChaoxingFailure catch (failure) {
       if (mounted) setState(() => _error = failure.message);
       return;
@@ -394,6 +420,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   Future<void> _startQr({ChaoxingSignTarget? only, bool force = false}) async {
     final base = _inputs();
     if (base == null) return;
+    if (!await _prepareFaces()) return;
     final watch = widget.watchQrCode;
     final scan = widget.scanQrCode;
     if (watch == null && scan == null) {
@@ -411,13 +438,30 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     }
 
     _batch.addListener(onBatch);
-    if (watch != null) {
+    // 每扫到一个新码就查一次是否过期（同一个 enc 只查一次），过早在取景页上提示对准新码。
+    var lastCheckedEnc = <String>{};
+    void checkFresh(String raw) {
+      final parsed = chaoxingParseQrCode(raw);
+      if (parsed == null || !lastCheckedEnc.add(parsed.enc)) return;
+      unawaited(
+        widget.controller.qrCodeExpired(parsed, _activity).then((expired) {
+          if (expired) status.value = '这个二维码已过期，请对准老师屏幕上的新码';
+        }).catchError((Object error, StackTrace stack) {
+          campusLog('[Chaoxing] action=qr_check errorType=${error.runtimeType}\n$stack');
+        }),
+      );
+    }
+
+    if (watch != null && mounted) {
       unawaited(
         watch(
           context,
-          hint: _multi ? '对准老师的签到二维码，签完所有人自动关闭' : '把课堂签到二维码放入框内',
+          hint: _multi ? '对准老师的二维码，签完所有人自动关闭' : '把课堂签到二维码放入框内',
           accept: (raw) => chaoxingParseQrCode(raw) == null ? '这不是课堂签到二维码' : null,
-          onCode: (raw) => feed.push(chaoxingParseQrCode(raw)!),
+          onCode: (raw) {
+            feed.push(chaoxingParseQrCode(raw)!);
+            checkFresh(raw);
+          },
           until: done.future,
           status: status,
         ).whenComplete(feed.close),
@@ -438,12 +482,20 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         code = await next(code);
       }
       if (!mounted) return;
-      final signer = _signer(
-        ChaoxingSignInputs(location: base.location, qrCode: code),
-        freshQrCode: (expired) {
-          status.value = '二维码过期了，正在等新的码';
-          return next(expired);
-        },
+      // 每个签到对象都从最新扫到的码开始（对齐参考项目：每人取 latestEnc），老师换了码后面的人立刻用上。
+      Future<ChaoxingQrCode> fresh(ChaoxingQrCode expired) {
+        status.value = '二维码过期了，正在等新的码';
+        return next(expired);
+      }
+
+      Future<ChaoxingSignResult> signer(ChaoxingSignTarget target, {required bool force}) => widget.controller.signTarget(
+        target,
+        _activity,
+        info: _info!,
+        inputs: ChaoxingSignInputs(location: base.location, qrCode: feed.latest ?? code),
+        solveCaptcha: _solveCaptcha,
+        freshQrCode: fresh,
+        force: force,
       );
       if (only == null) {
         // 连续扫码是逐码连签：任何一人失败就停（对齐参考项目），等新码也是为了当前这个人。
@@ -934,6 +986,9 @@ class _QrFeed {
   ChaoxingQrCode? _latest;
   final _waiters = <Completer<ChaoxingQrCode>>[];
   bool _closed = false;
+
+  // 最近扫到的码（不等待）：每个签到对象开始时都从这里取，老师换了码后面的人立刻用上新的。
+  ChaoxingQrCode? get latest => _latest;
 
   void push(ChaoxingQrCode code) {
     if (_closed) return;

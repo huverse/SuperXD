@@ -523,6 +523,33 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('checkFace_ 是校验没完成：带着 enc2 自动重发，不给人脸照片记失败', (tester) async {
+    usePhoneScreen(tester);
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '4', 'nameOne': '签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0},
+    ];
+    fake.activeInfo = {
+      'openCheckFaceFlag': 1,
+      'ifopenAddress': 1,
+      'locationLatitude': 36.6,
+      'locationLongitude': 117.0,
+      'signOutPublishTimeStamp': 4999,
+    };
+    fake.signResponses.addAll(['checkFace_enc-next', 'success']);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await openSignSheet(tester, button: '去签到');
+    await tapSign(tester);
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    // 第二次提交把 checkFace_ 的后缀作为 enc2 续传上去。
+    expect(fake.signQuery!['enc2'], 'enc-next');
+    // 校验没完成不算人脸未通过：照片不该被标失败（失败标记只在 [face] 时打）。
+    final faces = await tester.runAsync(() => store.faceImages('13800138000')) ?? [];
+    expect(faces.where((face) => face.failedBefore), isEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('群聊里的签到能从群聊页直接签', (tester) async {
     usePhoneScreen(tester);
     fake.imGroups.addAll([
@@ -555,8 +582,10 @@ void main() {
 
   testWidgets('群名是空的用描述里的课程名，群聊活动按发起时间排序', (tester) async {
     usePhoneScreen(tester);
+    // 群描述是 JSON 信封，课程名在 courseInfo.coursename；纯文本描述解析不出课程名、群名又为空时整群跳过。
     fake.imGroups.addAll([
-      {'id': 'g1', 'name': '', 'description': '高等数学（周二三四节）'},
+      {'id': 'g1', 'name': '', 'description': jsonEncode({'courseInfo': {'coursename': '高等数学（周二三四节）'}})},
+      {'id': 'g2', 'name': '', 'description': '不是 JSON 的纯文本'},
     ]);
     // 附件里没带课程名时，卡片说明行落到群名（这里是描述）上。
     List<int> messageOf(int activeId, String title) => _imBytesField(
@@ -767,6 +796,27 @@ void main() {
     expect(find.text('可能正在签到（按学习通课表）'), findsOneWidget);
     // 推断里已经列出的，不在「进行中」里重复。
     expect(find.text('刚发起的签到 · '), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('课表班级不在课程列表时，推断直查活动列表也能翻出来', (tester) async {
+    usePhoneScreen(tester);
+    final now = DateTime.now().toUtc();
+    final local = campusInstant(now);
+    // 课表自带的班级号不在课程列表里（隐藏班）：推断对这个班直查一次活动列表（对齐参考项目）。
+    fake.lessons = {
+      'curriculum': {'lessonTimeConfigArray': ['00:00-23:59'], 'firstWeekDate': now.millisecondsSinceEpoch},
+      'lessonArray': [
+        {'name': '体育', 'dayOfWeek': local.weekday, 'beginNumber': 1, 'length': 1, 'weeks': '1', 'classId': 999, 'courseId': 8001},
+      ],
+    };
+    fake.activities = [
+      {'id': 701, 'type': 2, 'otherId': '5', 'nameOne': '隐藏班刚发起的签到', 'startTime': now.subtract(const Duration(minutes: 2)).millisecondsSinceEpoch, 'status': 1, 'userStatus': 0},
+    ];
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    await waitUntil(tester, () => find.text('可能正在签到（按学习通课表）').evaluate().isNotEmpty);
+    expect(find.text('隐藏班刚发起的签到 · '), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
