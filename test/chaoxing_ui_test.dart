@@ -11,6 +11,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_captcha_dialog.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_code_cells.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_gesture_field.dart';
@@ -341,7 +342,7 @@ void main() {
     await enterCode(tester, '1234');
     await waitUntil(tester, () => find.text('安全验证').evaluate().isNotEmpty);
     await waitUntil(tester, () => find.byType(Image).evaluate().length >= 2);
-    await tester.drag(find.byType(Image).first, const Offset(60, 0));
+    await tester.drag(find.descendant(of: find.byType(ChaoxingCaptchaDialog), matching: find.byType(Image)).first, const Offset(60, 0));
     await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     expect(fake.signQuery!['validate'], 'captcha-validate');
@@ -369,6 +370,10 @@ void main() {
     // 没有收藏位置时直接是手输，坐标已按签到点预填。
     expect(find.widgetWithText(TextField, '纬度'), findsOneWidget);
     await tapSign(tester);
+    // 位置签到成功后先弹「收藏这次的位置？」（附近无收藏时），点取消后再等主页面的成功提示。
+    await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
+    await tester.tap(find.text('取消'));
+    await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     expect(fake.calls.where((call) => call.contains('stuSignajax')).length, 2);
     await tester.pumpWidget(const SizedBox());
@@ -410,6 +415,8 @@ void main() {
     await tester.pump();
     await tapSign(tester);
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    // 用的就是收藏里的位置（500 米内已有收藏），不会再问要不要收藏。
+    expect(find.text('收藏这次的位置？'), findsNothing);
     expect(fake.signQuery!['address'], '知敬楼402');
     await tester.pumpWidget(const SizedBox());
   });
@@ -515,11 +522,54 @@ void main() {
     await openSignSheet(tester, button: '去签到');
     expect(find.textContaining('人脸识别'), findsOneWidget);
     await tapSign(tester);
+    // 开签前补给：本机没存人脸照片时先问，选重处理学习通存的默认照片（下载→随机裁剪旋转→重新上传换新 id）。
+    await waitUntil(tester, () => find.text('重处理默认照片').evaluate().isNotEmpty);
+    await tester.tap(find.text('重处理默认照片'));
+    await tester.pump();
+    // 位置签到成功后先弹「收藏这次的位置？」（附近无收藏时），点取消后再等主页面的成功提示。
+    await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
+    await tester.tap(find.text('取消'));
+    await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
-    expect(fake.signQuery!['currentFaceId'], 'face-object-1');
+    // 用的是重处理上传后的新 objectId（fake 的云盘上传固定回 obj-1），不再是学习通里那张的原 objectId。
+    expect(fake.signQuery!['currentFaceId'], 'obj-1');
     expect(fake.signQuery!['faceEnc'], 'FACE-ENC');
     expect(fake.signQuery!['ifCFP'], '0');
     expect(fake.faceQuery!['activeId'], '501');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('checkFace_ 是校验没完成：带着 enc2 自动重发，不给人脸照片记失败', (tester) async {
+    usePhoneScreen(tester);
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '4', 'nameOne': '签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0},
+    ];
+    fake.activeInfo = {
+      'openCheckFaceFlag': 1,
+      'ifopenAddress': 1,
+      'locationLatitude': 36.6,
+      'locationLongitude': 117.0,
+      'signOutPublishTimeStamp': 4999,
+    };
+    fake.signResponses.addAll(['checkFace_enc-next', 'success']);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await openSignSheet(tester, button: '去签到');
+    await tapSign(tester);
+    await waitUntil(tester, () => find.text('重处理默认照片').evaluate().isNotEmpty);
+    await tester.tap(find.text('重处理默认照片'));
+    await tester.pump();
+    // 位置签到成功后先弹「收藏这次的位置？」（附近无收藏时），点取消后再等主页面的成功提示。
+    await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
+    await tester.tap(find.text('取消'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    // 第二次提交把 checkFace_ 的后缀作为 enc2 续传上去。
+    expect(fake.signQuery!['enc2'], 'enc-next');
+    // 校验没完成不算人脸未通过：照片不该被标失败（失败标记只在 [face] 时打）。
+    final faces = await tester.runAsync(() => store.faceImages('13800138000')) ?? [];
+    expect(faces.where((face) => face.failedBefore), isEmpty);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -555,8 +605,10 @@ void main() {
 
   testWidgets('群名是空的用描述里的课程名，群聊活动按发起时间排序', (tester) async {
     usePhoneScreen(tester);
+    // 群描述是 JSON 信封，课程名在 courseInfo.coursename；纯文本描述解析不出课程名、群名又为空时整群跳过。
     fake.imGroups.addAll([
-      {'id': 'g1', 'name': '', 'description': '高等数学（周二三四节）'},
+      {'id': 'g1', 'name': '', 'description': jsonEncode({'courseInfo': {'coursename': '高等数学（周二三四节）'}})},
+      {'id': 'g2', 'name': '', 'description': '不是 JSON 的纯文本'},
     ]);
     // 附件里没带课程名时，卡片说明行落到群名（这里是描述）上。
     List<int> messageOf(int activeId, String title) => _imBytesField(
@@ -767,6 +819,27 @@ void main() {
     expect(find.text('可能正在签到（按学习通课表）'), findsOneWidget);
     // 推断里已经列出的，不在「进行中」里重复。
     expect(find.text('刚发起的签到 · '), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('课表班级不在课程列表时，推断直查活动列表也能翻出来', (tester) async {
+    usePhoneScreen(tester);
+    final now = DateTime.now().toUtc();
+    final local = campusInstant(now);
+    // 课表自带的班级号不在课程列表里（隐藏班）：推断对这个班直查一次活动列表（对齐参考项目）。
+    fake.lessons = {
+      'curriculum': {'lessonTimeConfigArray': ['00:00-23:59'], 'firstWeekDate': now.millisecondsSinceEpoch},
+      'lessonArray': [
+        {'name': '体育', 'dayOfWeek': local.weekday, 'beginNumber': 1, 'length': 1, 'weeks': '1', 'classId': 999, 'courseId': 8001},
+      ],
+    };
+    fake.activities = [
+      {'id': 701, 'type': 2, 'otherId': '5', 'nameOne': '隐藏班刚发起的签到', 'startTime': now.subtract(const Duration(minutes: 2)).millisecondsSinceEpoch, 'status': 1, 'userStatus': 0},
+    ];
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    await waitUntil(tester, () => find.text('可能正在签到（按学习通课表）').evaluate().isNotEmpty);
+    expect(find.text('隐藏班刚发起的签到 · '), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 

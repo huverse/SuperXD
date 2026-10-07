@@ -67,17 +67,29 @@ void main() {
     expect(targets[0].forceAvailable, isFalse);
   });
 
-  test('位置收紧后仍超范围就停下，后面的人同样提示', () async {
+  test('位置刚出界不停队，后面的人接着签；收紧档仍出界才停下', () async {
     final targets = [_target('a'), _target('b'), _target('c')];
     final batch = ChaoxingBatchSigning(targets);
     final order = <String>[];
     await batch.run((target, {required force}) async {
       order.add(target.phoneNumber);
+      // 刚收紧的第一次出界：不带收紧标志，后面的人用收紧档接着签。
       throw const ChaoxingFailure(ChaoxingFailureCode.wrongPosition, '位置不在签到范围内');
     }, interval: Duration.zero);
-    expect(order, ['a']);
+    expect(order, ['a', 'b', 'c']);
     expect(targets.map((target) => target.state), everyElement(ChaoxingTargetState.failed));
-    expect(targets.last.message, '位置不在签到范围内');
+
+    final more = [_target('a'), _target('b'), _target('c')];
+    final batch2 = ChaoxingBatchSigning(more);
+    final order2 = <String>[];
+    await batch2.run((target, {required force}) async {
+      order2.add(target.phoneNumber);
+      // 收紧档仍出界（locationTightened）：位置本身选错了，余下的人全停。
+      throw const ChaoxingFailure(ChaoxingFailureCode.wrongPosition, '位置不在签到范围内', locationTightened: true);
+    }, interval: Duration.zero);
+    expect(order2, ['a']);
+    expect(more.map((target) => target.state), everyElement(ChaoxingTargetState.failed));
+    expect(more.last.message, '位置不在签到范围内');
   });
 
   test('连续扫码模式下一人失败就停，后面的人不再签', () async {

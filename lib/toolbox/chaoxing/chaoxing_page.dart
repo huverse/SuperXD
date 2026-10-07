@@ -5,6 +5,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_refresh.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
@@ -12,6 +13,7 @@ import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_account_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity_card.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
@@ -96,7 +98,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
       // 学习通的服务由本工具自己打开（框架只给目录与公共能力）。
       final service = await widget.runtime.service<ChaoxingService>(ChaoxingService.serviceId);
       _service = service;
-      final controller = ChaoxingController(accounts: service.accounts, hub: service.hub);
+      final controller = ChaoxingController(accounts: service.accounts, hub: service.hub, filePublisher: service.filePublisher);
       if (!mounted) {
         controller.dispose();
         return;
@@ -164,6 +166,8 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
       items: [
         if (controller.accountList.length > 1)
           const CampusMenuItem(value: 'switch', label: '切换账号', icon: CampusIcons.switchAccount),
+        if (controller.accountList.length > 1)
+          const CampusMenuItem(value: 'accounts', label: '账号管理', icon: CampusIcons.edit),
         const CampusMenuItem(value: 'signIn', label: '登录其他账号', icon: CampusIcons.add),
         const CampusMenuItem(value: 'faces', label: '人脸照片', icon: CampusIcons.scanFace),
         const CampusMenuItem(value: 'settings', label: '签到设置', icon: CampusIcons.settings),
@@ -171,6 +175,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
           const CampusMenuItem(value: 'ticket', label: '出示我的代签码', icon: CampusIcons.qrCode),
         if (canDelegate)
           const CampusMenuItem(value: 'import', label: '扫别人的代签码', icon: CampusIcons.scan),
+        const CampusMenuItem(value: 'signOut', label: '退出登录', icon: CampusIcons.logout),
         CampusMenuItem(value: 'remove', label: '删除该账号', icon: CampusIcons.delete, destructive: true),
       ],
     );
@@ -178,6 +183,8 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     switch (action) {
       case 'switch':
         await _pickAccount(controller);
+      case 'accounts':
+        await showChaoxingAccountSheet(context, controller: controller);
       case 'signIn':
         await _addAccount();
       case 'faces':
@@ -188,9 +195,23 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
         await showChaoxingTicketPage(context, controller: controller);
       case 'import':
         await _importTicket(controller);
+      case 'signOut':
+        await _signOut(controller);
       case 'remove':
         await _removeAccount(controller, record);
     }
+  }
+
+  // 退出登录：与删除不同，账号数据都保留（确认文案说清楚区别）。
+  Future<void> _signOut(ChaoxingController controller) async {
+    final agreed = await showCampusConfirm(
+      context,
+      title: '退出登录？',
+      message: '账号、密码、人脸照片与设置都保留在本机，下次登录或切换回来直接用；当前会话会关闭。',
+      action: '退出登录',
+    );
+    if (!agreed || !mounted) return;
+    await controller.signOut();
   }
 
   Future<void> _importTicket(ChaoxingController controller) =>
@@ -221,7 +242,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
               ),
               for (final item in controller.accountList)
                 ListTile(
-                  title: Text(item.name, style: const TextStyle(fontSize: 16)),
+                  title: Text(item.displayName, style: const TextStyle(fontSize: 16)),
                   // 设备码与真实设备一致（本机 OAID 或对方代签码带来的）才不会被标「更换设备」；固定随机码要说清楚。
                   subtitle: DotSeparatedText(
                     [
@@ -313,18 +334,34 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     final inferred = {for (final activity in controller.lessonActivities) activity.activeId};
     final ongoing = [for (final activity in controller.activities) if (!inferred.contains(activity.activeId)) activity];
     return CampusScrollFade(
-      child: ListView(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-        children: [
+      child: CustomScrollView(
+        slivers: [
+          // 下拉刷新签到列表（同今天页的曲线动效指示器）。
+          CampusRefreshControl(onRefresh: () => controller.refresh()),
+          SliverPadding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
           CampusSurface(
             child: Row(
               children: [
+                if (controller.currentPhoto.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 12),
+                    child: ClipOval(
+                      child: SizedBox(
+                        width: 44,
+                        height: 44,
+                        child: Image.network(controller.currentPhoto, fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+                      ),
+                    ),
+                  ),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        controller.current?.name ?? '学习通账号',
+                        controller.current?.displayName ?? '学习通账号',
                         style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface),
                       ),
                       const SizedBox(height: 4),
@@ -352,7 +389,20 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
           ),
           if (controller.error != null) ...[
             const SizedBox(height: 12),
-            Text(controller.error!, style: TextStyle(fontSize: 14, color: palette.danger)),
+            Row(
+              children: [
+                Expanded(child: Text(controller.error!, style: TextStyle(fontSize: 14, color: palette.danger))),
+                OutlinedButton.icon(
+                  onPressed: controller.busy
+                      ? null
+                      : () => controller.refresh().catchError((Object error, StackTrace stack) {
+                        campusLog('[Chaoxing] action=retry errorType=${error.runtimeType}\n$stack');
+                      }),
+                  icon: const CampusIcon(CampusIcons.sync),
+                  label: const Text('重试'),
+                ),
+              ],
+            ),
           ],
           if (controller.lessonActivities.isNotEmpty) ...[
             const ChaoxingSectionTitle('可能正在签到（按学习通课表）'),
@@ -424,6 +474,9 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                 label: const Text('群聊里的签到'),
               ),
             ],
+          ),
+              ]),
+            ),
           ),
         ],
       ),

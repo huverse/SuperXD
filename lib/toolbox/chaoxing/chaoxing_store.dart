@@ -19,6 +19,8 @@ class ChaoxingAccountRecord {
     this.clientId = '',
     this.units = const [],
     this.deviceCodeBound = false,
+    this.label = '',
+    this.sort = 0,
   });
   final String phoneNumber;
   final int uid;
@@ -44,6 +46,15 @@ class ChaoxingAccountRecord {
   // 本人在官方客户端签过到后再用这里签会被标「更换设备」。
   final bool deviceCodeBound;
 
+  // 手动起的备注名（多账号管理里改），空时显示昵称。
+  final String label;
+
+  // 手动排序的位置（多账号管理里拖），小在前；同为 0 时按登录时间倒序。
+  final int sort;
+
+  // 显示名：有备注用备注，否则昵称。
+  String get displayName => label.isNotEmpty ? label : name;
+
   ChaoxingAccountRecord change({int? fid, String? schoolName, String? clientId, List<ChaoxingUnit>? units}) => ChaoxingAccountRecord(
     phoneNumber: phoneNumber,
     uid: uid,
@@ -57,6 +68,8 @@ class ChaoxingAccountRecord {
     clientId: clientId ?? this.clientId,
     units: units ?? this.units,
     deviceCodeBound: deviceCodeBound,
+    label: label,
+    sort: sort,
   );
 }
 
@@ -101,13 +114,14 @@ class ChaoxingStore {
     final store = ChaoxingStore._(
       await openDatabase(
         path,
-        version: 4,
+        version: 5,
         onCreate: (database, _) async {
           await database.execute(
             'CREATE TABLE accounts (phone_number TEXT PRIMARY KEY, uid INTEGER NOT NULL, puid INTEGER NOT NULL, '
             'fid INTEGER NOT NULL, name TEXT NOT NULL, school_name TEXT NOT NULL, device_code TEXT NOT NULL, '
             'is_other_user INTEGER NOT NULL, created_at INTEGER NOT NULL, client_id TEXT NOT NULL DEFAULT \'\', '
-            'units TEXT NOT NULL DEFAULT \'[]\', device_code_bound INTEGER NOT NULL DEFAULT 0)',
+            'units TEXT NOT NULL DEFAULT \'[]\', device_code_bound INTEGER NOT NULL DEFAULT 0, '
+            'label TEXT NOT NULL DEFAULT \'\', sort INTEGER NOT NULL DEFAULT 0)',
           );
           await database.execute(
             'CREATE TABLE locations (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, address TEXT NOT NULL, '
@@ -133,6 +147,11 @@ class ChaoxingStore {
           }
           // 第 4 版去掉签到记录：只写不读，参考项目也不在本机留签到历史。
           if (oldVersion < 4) await database.execute('DROP TABLE IF EXISTS sign_records');
+          // 第 5 版：账号加备注名与手动排序（多账号管理用）。
+          if (oldVersion < 5) {
+            await database.execute("ALTER TABLE accounts ADD COLUMN label TEXT NOT NULL DEFAULT ''");
+            await database.execute('ALTER TABLE accounts ADD COLUMN sort INTEGER NOT NULL DEFAULT 0');
+          }
         },
       ),
     );
@@ -201,10 +220,24 @@ class ChaoxingStore {
   Future<List<ChaoxingAccountRecord>> accounts() async {
     final rows = await _database.query(
       'accounts',
-      orderBy: 'is_other_user, created_at DESC',
+      orderBy: 'is_other_user, sort, created_at DESC',
       limit: accountLimit,
     );
     return rows.map(_account).toList();
+  }
+
+  // 备注名（多账号管理里改）。
+  Future<void> renameAccount(String phoneNumber, String label) async {
+    await _database.update('accounts', {'label': label}, where: 'phone_number = ?', whereArgs: [phoneNumber]);
+  }
+
+  // 手动排序：把这次拖完的顺序整体写回（列表小，一次事务里的多条 UPDATE）。
+  Future<void> reorderAccounts(List<String> phoneNumbers) async {
+    final batch = _database.batch();
+    for (var index = 0; index < phoneNumbers.length; index++) {
+      batch.update('accounts', {'sort': index}, where: 'phone_number = ?', whereArgs: [phoneNumbers[index]]);
+    }
+    await batch.commit(noResult: true);
   }
 
   Future<List<ChaoxingFaceImage>> faceImages(String phoneNumber) async {
@@ -327,6 +360,8 @@ class ChaoxingStore {
     clientId: '${row['client_id'] ?? ''}',
     units: _units('${row['units'] ?? '[]'}'),
     deviceCodeBound: row['device_code_bound'] == 1,
+    label: '${row['label'] ?? ''}',
+    sort: row['sort'] == null ? 0 : row['sort']! as int,
   );
 
   // 库里的 JSON 列按外部输入解析，坏了就当没有。
@@ -358,6 +393,8 @@ class ChaoxingStore {
       'client_id': record.clientId,
       'units': jsonEncode([for (final unit in record.units) unit.toJson()]),
       'device_code_bound': record.deviceCodeBound ? 1 : 0,
+      'label': record.label,
+      'sort': record.sort,
     },
     conflictAlgorithm: ConflictAlgorithm.replace,
   );
@@ -404,6 +441,10 @@ class ChaoxingStore {
 
   Future<void> removeLocation(int id) async {
     await _database.delete('locations', where: 'id = ?', whereArgs: [id]);
+  }
+
+  Future<void> renameLocation(int id, String label) async {
+    await _database.update('locations', {'label': label}, where: 'id = ?', whereArgs: [id]);
   }
 
   Future<void> close() async {

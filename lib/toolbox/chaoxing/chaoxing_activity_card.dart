@@ -54,6 +54,8 @@ class ChaoxingActivityCard extends StatelessWidget {
     final time = activity.ongoing || endTime == null
         ? '开始 ${formatCampusTimestamp(activity.startTime.toIso8601String())}'
         : '截止 ${formatCampusTimestamp(endTime.toIso8601String())}';
+    // 十分钟内刚发起的签到给个橙点角标（对齐参考项目），一眼看出哪个是老师刚发的。
+    final fresh = activity.ongoing && DateTime.now().toUtc().difference(activity.startTime) <= const Duration(minutes: 10);
     return CampusSurface(
       margin: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -63,7 +65,15 @@ class ChaoxingActivityCard extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 if (showCourse)
-                  Text(activity.subtitle, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface))
+                  Row(
+                    children: [
+                      Flexible(child: Text(activity.subtitle, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface))),
+                      if (fresh) ...[
+                        const SizedBox(width: 6),
+                        _FreshBadge(),
+                      ],
+                    ],
+                  )
                 else
                   DotSeparatedText(activity.displayTitle, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
                 if (showCourse) ...[
@@ -103,6 +113,19 @@ class ChaoxingSectionTitle extends StatelessWidget {
           ...trailing,
         ],
       ),
+    );
+  }
+}
+
+// 刚发起的橙点：状态信息不用主色，橙色与主色区分开。
+class _FreshBadge extends StatelessWidget {
+  @override
+  Widget build(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    return Container(
+      width: 10,
+      height: 10,
+      decoration: BoxDecoration(color: const Color(0xFFF59E0B), shape: BoxShape.circle, border: Border.all(color: palette.surface, width: 2)),
     );
   }
 }

@@ -142,8 +142,9 @@ class ChaoxingHttp {
   Future<ChaoxingResponse> get(Uri uri, {Duration? timeout, Map<String, String>? headers}) =>
       _send('GET', uri, headers: headers, timeout: timeout);
 
-  Future<Uint8List> getBytes(Uri uri, {Duration? timeout}) async =>
-      (await _send('GET', uri, timeout: timeout)).bytes;
+  // payloadLimit 放宽响应上限：人脸照片原图预览这类大文件不受默认 1MB 约束。
+  Future<Uint8List> getBytes(Uri uri, {Duration? timeout, int? payloadLimit}) async =>
+      (await _send('GET', uri, timeout: timeout, payloadLimit: payloadLimit)).bytes;
 
   Future<ChaoxingResponse> postForm(
     Uri uri,
@@ -176,6 +177,7 @@ class ChaoxingHttp {
     Map<String, String>? headers,
     ({Map<String, String> fields, http.MultipartFile file})? multipart,
     Duration? timeout,
+    int? payloadLimit,
   }) async {
     final deadline = Completer<void>();
     final timer = Timer(timeout ?? this.timeout, deadline.complete);
@@ -202,9 +204,10 @@ class ChaoxingHttp {
     try {
       final response = await _client.send(request);
       final bytes = BytesBuilder(copy: false);
+      final limit = payloadLimit ?? ChaoxingHttp.payloadLimit;
       await for (final chunk in response.stream) {
         bytes.add(chunk);
-        if (bytes.length > payloadLimit) {
+        if (bytes.length > limit) {
           throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, '响应过大，已停止读取');
         }
       }

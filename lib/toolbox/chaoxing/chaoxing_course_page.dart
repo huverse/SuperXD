@@ -86,6 +86,15 @@ class _ChaoxingCoursePageState extends State<ChaoxingCoursePage> {
                       ),
                       child: Row(
                         children: [
+                          // 课程封面（学习通课程频道里带的图，没有就不占位）。
+                          if (group.courses.first.cover.isNotEmpty)
+                            Padding(
+                              padding: const EdgeInsets.only(right: 12),
+                              child: ClipRRect(
+                                borderRadius: BorderRadius.circular(8),
+                                child: Image.network(group.courses.first.cover, fit: BoxFit.cover, width: 44, height: 44, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+                              ),
+                            ),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,

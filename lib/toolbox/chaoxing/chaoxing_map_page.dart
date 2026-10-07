@@ -1,4 +1,5 @@
 import 'dart:ffi' show Abi;
+import 'dart:math';
 
 import 'package:amap_map/amap_map.dart';
 import 'package:flutter/material.dart';
@@ -30,18 +31,25 @@ String? get chaoxingMapUnavailableReason {
 }
 
 // 地图选点：点一下地图拿到坐标，配一个名称，返回给签到弹层。
+// rangeCenter 与 rangeMeters 给出时画出签到范围圈（详情里的签到点与半径，坐标系任意，会先换算）。
 Future<ChaoxingLocation?> openChaoxingMapPicker(
   BuildContext context, {
   ChaoxingLocation? initial,
   String? label,
+  ChaoxingLocation? rangeCenter,
+  double? rangeMeters,
 }) => Navigator.of(context).push<ChaoxingLocation>(
-  CampusPageRoute(builder: (_) => ChaoxingMapPage(initial: initial, initialLabel: label)),
+  CampusPageRoute(
+    builder: (_) => ChaoxingMapPage(initial: initial, initialLabel: label, rangeCenter: rangeCenter, rangeMeters: rangeMeters),
+  ),
 );
 
 class ChaoxingMapPage extends StatefulWidget {
-  const ChaoxingMapPage({super.key, this.initial, this.initialLabel});
+  const ChaoxingMapPage({super.key, this.initial, this.initialLabel, this.rangeCenter, this.rangeMeters});
   final ChaoxingLocation? initial;
   final String? initialLabel;
+  final ChaoxingLocation? rangeCenter;
+  final double? rangeMeters;
   @override
   State<ChaoxingMapPage> createState() => _ChaoxingMapPageState();
 }
@@ -83,6 +91,33 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
     return LatLng(gcj02.latitude, gcj02.longitude);
   }
 
+  // 范围圈的多边形逼近：36 个点连一圈（纬度每米约 1/111320 度，经度再除 cos 纬度）。
+  Set<Polygon> _rangePolygon() {
+    final center = widget.rangeCenter;
+    final meters = widget.rangeMeters;
+    if (center == null || meters == null) return const <Polygon>{};
+    final target = _target(center);
+    const edges = 36;
+    final points = <LatLng>[];
+    for (var index = 0; index < edges; index++) {
+      final angle = index / edges * 2 * pi;
+      points.add(
+        LatLng(
+          target.latitude + sin(angle) * meters / 111320,
+          target.longitude + cos(angle) * meters / (111320 * cos(target.latitude * pi / 180)),
+        ),
+      );
+    }
+    return {
+      Polygon(
+        points: points,
+        fillColor: const Color.fromARGB(31, 59, 130, 246),
+        strokeColor: const Color.fromARGB(178, 59, 130, 246),
+        strokeWidth: 2,
+      ),
+    };
+  }
+
   void _confirm() {
     final picked = _picked;
     if (picked == null) return;
@@ -116,8 +151,8 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
           Positioned.fill(
             child: AMapWidget(
               initialCameraPosition: CameraPosition(
-                target: _target(widget.initial),
-                zoom: widget.initial == null ? 4 : 17,
+                target: _target(widget.rangeCenter ?? widget.initial),
+                zoom: widget.rangeCenter != null || widget.initial != null ? 17 : 4,
               ),
               compassEnabled: false,
               scaleEnabled: false,
@@ -125,6 +160,8 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
               touchPoiEnabled: false,
               onTap: (point) => setState(() => _picked = point),
               markers: picked == null ? const <Marker>{} : {Marker(position: picked, infoWindowEnable: false)},
+              // 签到范围圈：老师定的签到点与半径画出来，选点时心里有数（没给范围就不画）。
+              polygons: _rangePolygon(),
             ),
           ),
           Align(

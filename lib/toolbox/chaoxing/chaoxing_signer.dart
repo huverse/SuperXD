@@ -118,7 +118,8 @@ ChaoxingSignOutcome chaoxingSignOutcome(String body) {
     throw const ChaoxingFailure(ChaoxingFailureCode.qrCodeExpired, '二维码已过期，请重新扫码');
   }
   if (text.startsWith('checkFace_')) {
-    throw ChaoxingFailure(ChaoxingFailureCode.faceRequired, '这次签到需要人脸识别', payload: text.substring('checkFace_'.length));
+    // 只有 [face] 才算人脸未通过（照片记失败标记）；checkFace_ 是「校验没完成」，后缀是续传用的 enc2，带着重发。
+    throw ChaoxingFailure(ChaoxingFailureCode.faceCheck, '人脸校验没完成，正在重试', payload: text.substring('checkFace_'.length));
   }
   if (text.startsWith('errorLocation')) {
     final parts = text.split('_');
@@ -170,6 +171,8 @@ Uri chaoxingSignRequestUri({
     ChaoxingSignType.location => _locationParameters(account, submission),
     ChaoxingSignType.photo => _photoParameters(account, submission),
     ChaoxingSignType.qrCode => _qrCodeParameters(account, submission),
+    // 详情也认不出的类型：提交前就被拦下（unsupported），到不了这里；真到了按无参数处理。
+    ChaoxingSignType.unknown => throw const ChaoxingFailure(ChaoxingFailureCode.unsupported, '这个活动的签到类型暂不支持'),
   };
   return Uri.parse(chaoxingSignUri).replace(queryParameters: query);
 }

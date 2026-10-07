@@ -16,6 +16,9 @@ const chaoxingProfileFaceUri = 'https://mobilelearn.chaoxing.com/v2/apis/sign/co
 // 学习通云盘里人脸照片的原图地址，预览用。
 String chaoxingFaceImageUrl(String objectId) => 'https://p.cldisk.com/star4/$objectId/origin.jpg';
 
+// 人脸照片原图的响应上限：比普通接口宽（参考项目下载原图无上限），默认 1MB 会把预览截断。
+const chaoxingFacePreviewLimit = 10 * 1024 * 1024;
+
 // 还原 clientId 里的设备信息（含 cid 与 sc）；解不出来返回空，人脸签到会退化成不带签名。
 Map<String, Object?>? chaoxingDecryptClientId(String clientId) {
   final modulus = chaoxingRsaModulus();
@@ -80,7 +83,9 @@ Future<Map<String, Object?>> chaoxingFaceResult(
   final secret = chaoxingString(deviceInfo?['sc']);
   if (cid.isNotEmpty && secret.isNotEmpty) {
     result['cxcid'] = cid;
-    result['signToken'] = chaoxingFaceSignToken(fields: {...fields, 'cxtime': cxtime}, secret: secret);
+    // signToken 的拼串里也要有 cxcid（与 fields、cxtime 一起排序拼接，对齐参考项目的 TreeMap 口径），
+    // 只把它写进上报 JSON 而不参与 md5 的话，服务端校验签名会不通过。
+    result['signToken'] = chaoxingFaceSignToken(fields: {...fields, 'cxtime': cxtime, 'cxcid': cid}, secret: secret);
   }
   return result;
 }

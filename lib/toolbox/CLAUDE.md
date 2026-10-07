@@ -84,6 +84,7 @@
   - chaoxing_captcha_dialog.dart：滑块验证弹窗，底图上拖缺口块，不通过自动换一张。
   - chaoxing_face.dart：人脸识别签到。用设备公钥对 clientId 做模幂还原出设备信息，按字段排序拼 sc 做 md5 得 signToken，换一次性的 faceEnc；也用来取学习通里存着的人脸照片 objectId 与云盘原图地址（预览用）。
   - chaoxing_code_cells.dart：签到码的格子输入 ChaoxingCodeCells：按位数显示空格、输满自动回调（校验与提交由签到弹层接手），真正的输入框藏在格子底下收键盘输入。
+  - chaoxing_image_pick.dart：人脸照片取图 pickChaoxingFacePhoto（相册或拍摄，选完进 3:4 裁剪页，image_cropper 实现）与现场拍摄 shootChaoxingPhoto（拍照签到与补拍，不裁剪）。
   - chaoxing_gesture_field.dart：手势签到的 3×3 图案输入 ChaoxingGestureField：原始指针事件画图案（不走手势竞技场，弹层里不会被拖动关闭抢走），抬起即回调序号串，校验失败清空标红。
   - chaoxing_face_sheet.dart：人脸照片弹层，预览（从学习通云盘取原图，内存里留最近 10 张）、用过几次、是否没通过过；管理模式可删，签到时选这次用哪张。
   - chaoxing_im.dart：群聊签到。学习通群聊走环信：DES 解出登录下发的环信密码（pointycastle 只有 3DES，三段同一把钥匙等价单 DES）换令牌，列群、拉漫游消息，用极简 protobuf 读 Meta/MessageBody/KeyValue 三段取 attachment 扩展，再挑 attachmentType 15 且 atype 为 2/74 的签到。
@@ -101,7 +102,9 @@
     - 地图渲染无法在 x86 模拟器上验证，只能在真机；手动入口见 tool/verify_chaoxing_map.dart。
   - chaoxing_accounts.dart：账号闭环，登录、恢复会话、补用户信息、切换学校单位、修复（重输密码）、删除与模拟客户端的设置；会话过期自动重登一次并重放该次请求。本人账号的设备码优先用本机 OAID 算的。
   - chaoxing_vault.dart：密码与 Cookie 的存放，Secure 版用系统安全存储（命名空间 superxd_chaoxing），测试用内存版。
-  - chaoxing_store.dart：chaoxing.db，账号索引（含学校单位与设备码来源）、收藏位置、人脸照片索引（含使用次数与失败标记）、设置、置顶课程与学习通课表缓存，打开时按上限裁剪，删账号时连带清掉它的置顶、课表缓存与人脸照片索引。
+  - chaoxing_store.dart：chaoxing.db（v5），账号索引（含学校单位、设备码来源、备注名与手动排序）、收藏位置（可改名）、人脸照片索引（含使用次数与失败标记）、设置、置顶课程与学习通课表缓存，打开时按上限裁剪，删账号时连带清掉它的置顶、课表缓存与人脸照片索引。
+  - chaoxing_location_sheet.dart：收藏位置的管理弹层（改名与删除；选择仍在签到弹层的 chip 里）。
+  - chaoxing_account_sheet.dart：多账号管理弹层（改备注名、拖动排序写回 sort 列）。
   - chaoxing_controller.dart：页面状态，账号切换、刷新（课程与活动，最多并发三个课程请求；进行中与往期按 status 分）、课表推断、每个签到对象的完整签到流程（检查、拍照上传、人脸、验证码、二维码换码、位置收紧）、课程分组与置顶、人脸照片、代签码、学校单位与模拟客户端；签到对象的会话按需打开、整页关掉时一起关。
   - chaoxing_page.dart：首页与登录表单，先取同意再登录；首页分「可能正在签到（按学习通课表）」与「进行中的签到」两组，底下是往期、按课程、群聊三个入口；账号操作用⋯菜单（切换、登录其他账号、人脸照片、签到设置、代签码、删除）。
   - chaoxing_sign_sheet.dart：签到弹层，先取活动详情再按类型要输入（签到码、位置）；有多个账号时列出签到对象可多选，每人一行原地显示状态，拍照与人脸按人选；失败的可重试、强制签到或重新登录；二维码签到用连续扫码，签完所有人自动关、码过期等新码接着签；已结束或发布太久的给时间提示；服务端要验证码时就地弹滑块，过了自动把这个人重发一遍。「甲 · 乙」说明行用 theme 的 DotSeparatedText。

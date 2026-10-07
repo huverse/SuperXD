@@ -20,19 +20,19 @@ Future<String?> showChaoxingCaptchaDialog(
 }) => showCampusDialog<String>(
   context: context,
   barrierDismissible: false,
-  builder: (_) => _ChaoxingCaptchaDialog(load: load, loadImage: loadImage, verify: verify),
+  builder: (_) => ChaoxingCaptchaDialog(load: load, loadImage: loadImage, verify: verify),
 );
 
-class _ChaoxingCaptchaDialog extends StatefulWidget {
-  const _ChaoxingCaptchaDialog({required this.load, required this.loadImage, required this.verify});
+class ChaoxingCaptchaDialog extends StatefulWidget {
+  const ChaoxingCaptchaDialog({super.key, required this.load, required this.loadImage, required this.verify});
   final Future<ChaoxingCaptchaPuzzle> Function() load;
   final Future<Uint8List> Function(String url) loadImage;
   final Future<ChaoxingCaptchaAnswer> Function(ChaoxingCaptchaPuzzle puzzle, double position) verify;
   @override
-  State<_ChaoxingCaptchaDialog> createState() => _ChaoxingCaptchaDialogState();
+  State<ChaoxingCaptchaDialog> createState() => _ChaoxingCaptchaDialogState();
 }
 
-class _ChaoxingCaptchaDialogState extends State<_ChaoxingCaptchaDialog> {
+class _ChaoxingCaptchaDialogState extends State<ChaoxingCaptchaDialog> {
   // 底图按验证码自己的 280 宽显示，拖动距离与提交坐标一一对应。
   static const _boardWidth = chaoxingCaptchaCanvasWidth;
 

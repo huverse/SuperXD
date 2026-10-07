@@ -3,6 +3,8 @@ import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'package:superxd/toolbox/chaoxing/chaoxing_image_pick.dart';
+
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -74,10 +76,11 @@ class _ChaoxingFaceSheetState extends State<_ChaoxingFaceSheet> {
     }
   }
 
-  Future<void> _upload() => _run(() async {
-    final file = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 1280, maxHeight: 1280, imageQuality: 90);
-    if (file == null) return;
-    await widget.controller.uploadFacePhoto(widget.record, await file.readAsBytes());
+  Future<void> _upload(ImageSource source) => _run(() async {
+    // 相册或现场拍摄都进 3:4 裁剪页（可旋转翻转，对齐参考项目）再上传。
+    final bytes = await pickChaoxingFacePhoto(context, source: source);
+    if (bytes == null || !mounted) return;
+    await widget.controller.uploadFacePhoto(widget.record, bytes);
   }, '人脸照片上传失败，请重试');
 
   Future<void> _fromProfile() => _run(() async {
@@ -156,9 +159,14 @@ class _ChaoxingFaceSheetState extends State<_ChaoxingFaceSheet> {
                         label: const Text('用学习通里存的那张'),
                       ),
                       OutlinedButton.icon(
-                        onPressed: _working || full ? null : () => _upload(),
+                        onPressed: _working || full ? null : () => _upload(ImageSource.camera),
+                        icon: const CampusIcon(CampusIcons.camera),
+                        label: const Text('现拍一张'),
+                      ),
+                      OutlinedButton.icon(
+                        onPressed: _working || full ? null : () => _upload(ImageSource.gallery),
                         icon: const CampusIcon(CampusIcons.image),
-                        label: Text(_working ? '处理中' : '上传新照片'),
+                        label: Text(_working ? '处理中' : '相册选一张'),
                       ),
                     ],
                   ),
@@ -189,6 +197,20 @@ class _FaceTile extends StatefulWidget {
 
 class _FaceTileState extends State<_FaceTile> {
   late Future<Uint8List> _bytes = widget.controller.faceImageBytes(widget.image.objectId);
+
+  // 保存到本机：把云盘里的原图导出成公共下载目录里的 JPEG 文件。
+  Future<void> _save() async {
+    try {
+      await widget.controller.saveFaceImage(widget.image.objectId);
+      if (!mounted) return;
+      await showCampusNotice(context, '已保存到下载目录');
+    } on ChaoxingFailure catch (failure) {
+      if (mounted) await showCampusNotice(context, failure.message);
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=face_save errorType=${failure.runtimeType}\n$stack');
+      if (mounted) await showCampusNotice(context, '保存失败，请重试');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -234,6 +256,7 @@ class _FaceTileState extends State<_FaceTile> {
             ),
           ),
           if (widget.onPick != null) const CampusIcon(CampusIcons.next),
+          IconButton(tooltip: '保存到本机', onPressed: _save, icon: const CampusIcon(CampusIcons.download)),
           if (widget.onRemove != null)
             IconButton(tooltip: '删除这张照片', onPressed: widget.onRemove, icon: const CampusIcon(CampusIcons.delete)),
         ],

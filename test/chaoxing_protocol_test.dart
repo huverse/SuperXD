@@ -143,7 +143,7 @@ void main() {
       ('您已签到过了', ChaoxingFailureCode.alreadySigned),
       ('签到失败，请重新扫描。', ChaoxingFailureCode.qrCodeExpired),
       ('errorLocation_123.4', ChaoxingFailureCode.wrongPosition),
-      ('checkFace_abc', ChaoxingFailureCode.faceRequired),
+      ('checkFace_abc', ChaoxingFailureCode.faceCheck),
       ('[face]未检测到人脸', ChaoxingFailureCode.faceRequired),
       ('未知回复', ChaoxingFailureCode.server),
     ]) {
@@ -322,7 +322,7 @@ void main() {
     expect(jsonDecode(location.payload(mock: false)) as Map, isNot(contains('mockData')));
   });
 
-  test('列表只收签到类活动，认不出的类型不入列', () {
+  test('列表只收签到类活动，认不出的类型保留为 unknown 待详情补认', () {
     final course = const ChaoxingCourse(courseId: 9001, classId: 88, name: '高等数学');
     final parsed = [
       {'id': 1, 'type': 2, 'otherId': '4', 'nameOne': '签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'ext': {'a': 1}},
@@ -331,7 +331,9 @@ void main() {
       {'id': 4, 'type': 2, 'otherId': '9', 'nameOne': '未知类型', 'startTime': 1760000000000},
       {'id': 0, 'type': 2, 'otherId': '4', 'nameOne': '缺 id', 'startTime': 1760000000000},
     ].map((json) => chaoxingActivity(json.cast<String, Object?>(), course, ext: '{"a":1}')).toList();
-    expect(parsed.whereType<ChaoxingActivity>().map((activity) => activity.activeId), [1, 2]);
+    // 非签到频道（type 3 是作业）与缺 id 的不入列；otherId 认不出的保留（unknown），点开时详情补认。
+    expect(parsed.whereType<ChaoxingActivity>().map((activity) => activity.activeId), [1, 2, 4]);
+    expect(parsed[3]!.signType, ChaoxingSignType.unknown);
     expect(parsed.first!.ext, '{"a":1}');
     expect(parsed.first!.subtitle, '高等数学');
     expect(parsed.first!.startTime.millisecondsSinceEpoch, 1760000000000);
@@ -625,11 +627,13 @@ void main() {
           'LiveDetectionStatus': '1',
           'collectStatus': '1',
           'cxtime': '1700000000000',
+          // cxcid 也要参与拼串（与参考实现的 TreeMap 口径一致），只写进上报 JSON 会导致服务端校验签名不通过。
+          'cxcid': 'cid-value',
         },
         secret: 'secret-value',
       ),
       // 排序按 UTF-16 码元，大写字母在前，与参考实现的 TreeMap 一致。
-      'a01c25d2a610f669f972ae8a4b9c3761',
+      '665e15cb0025c2dd1acf6534e40bab17',
     );
   });
 

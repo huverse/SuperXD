@@ -143,3 +143,16 @@ class ChaoxingLocation {
     if (mock) 'mockData': jsonEncode({'strategy': 0, 'probability': -1}),
   });
 }
+
+// 两个位置在地面上的直线距离（米）：先统一到同一坐标系再算，收藏提示「这次的位置离某个收藏很近」用。
+double chaoxingDistanceMeters(ChaoxingLocation first, ChaoxingLocation second) {
+  final a = toGcj02(first.latitude, first.longitude, first.system);
+  final b = toGcj02(second.latitude, second.longitude, second.system);
+  const earthRadius = 6371000.0;
+  final latRad = (a.latitude - b.latitude) * pi / 180;
+  final lngRad = (a.longitude - b.longitude) * pi / 180;
+  final sinLat = sin(latRad / 2);
+  final sinLng = sin(lngRad / 2);
+  final h = sinLat * sinLat + cos(a.latitude * pi / 180) * cos(b.latitude * pi / 180) * sinLng * sinLng;
+  return 2 * earthRadius * asin(sqrt(h));
+}

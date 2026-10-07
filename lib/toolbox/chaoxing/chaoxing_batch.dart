@@ -8,10 +8,13 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 // 规则照学习通客户端（参考项目）的连签：
 // - 相邻两人之间隔 200 毫秒；上一位刚过了人工验证码就不再等（人已经花了时间）；
 // - 二维码过期不算失败，等新扫到的码接着签当前这个人；
-// - 位置收紧偏移后仍超范围时，后面的人一律停下（位置本身选错了，继续签也是同样结果）；
-// - 签到前检查判定「已签到 / 已截止 / 不在班级」的人可以单独「强制签到」，跳过这些检查直接提交；
+// - 位置刚出界时收紧偏移（一场共享一次），后面的人用收紧档接着签；收紧档仍超范围才把余下的人全停；
+// - 签到前检查判定「已签到 / 不在班级」的人可以单独「强制签到」，跳过这些检查直接提交；
 // - 会话彻底失效（自动重登也失败）的人要重新输密码修复，修好后可单独重试。
 const chaoxingSignInterval = Duration(milliseconds: 200);
+
+// 单人签完后的队列处置：继续、把余下的人标失败停队、取消（余下的人回到待签）。
+enum _BatchStop { none, failed, cancelled }
 
 enum ChaoxingTargetState { idle, waiting, signing, succeeded, failed }
 
@@ -77,9 +80,15 @@ class ChaoxingBatchSigning extends ChangeNotifier {
         first = false;
         lastNeededCaptcha = false;
         final stop = await _signOne(target, signer, force: false);
-        if (stop || (stopOnFailure && !target.done)) {
+        if (stop != _BatchStop.none || (stopOnFailure && !target.done)) {
           for (final rest in queue) {
-            if (rest.state == ChaoxingTargetState.waiting) {
+            if (rest.state != ChaoxingTargetState.waiting) continue;
+            if (stop == _BatchStop.cancelled) {
+              // 扫码被取消：余下的人回到待签，不标「失败」（对齐参考项目）。
+              rest
+                ..state = ChaoxingTargetState.idle
+                ..message = null;
+            } else {
               rest
                 ..state = ChaoxingTargetState.failed
                 ..message = target.message;
@@ -110,8 +119,8 @@ class ChaoxingBatchSigning extends ChangeNotifier {
     return target.done;
   }
 
-  // 返回 true 表示后面的人不用再签了。
-  Future<bool> _signOne(ChaoxingSignTarget target, ChaoxingTargetSigner signer, {required bool force}) async {
+  // 返回这条签完后的队列处置：继续、停队标失败、取消复位。
+  Future<_BatchStop> _signOne(ChaoxingSignTarget target, ChaoxingTargetSigner signer, {required bool force}) async {
     currentPhone = target.phoneNumber;
     target
       ..state = ChaoxingTargetState.signing
@@ -125,20 +134,24 @@ class ChaoxingBatchSigning extends ChangeNotifier {
         ..state = ChaoxingTargetState.succeeded
         ..late = result.late
         ..message = result.late ? '签到成功，不过已经迟到' : '签到成功';
-      return false;
+      return _BatchStop.none;
     } on ChaoxingFailure catch (failure) {
       target
         ..state = ChaoxingTargetState.failed
         ..message = failure.message
-        ..forceAvailable = failure.predicted
+        // 已截止不给行内的强制签到（参考项目只给「已签到 / 不在班级」），打开页面的三选里仍可强制。
+        ..forceAvailable = failure.predicted && failure.code != ChaoxingFailureCode.expired
         ..needsRepair = failure.code == ChaoxingFailureCode.sessionExpired;
-      return failure.code == ChaoxingFailureCode.wrongPosition || failure.code == ChaoxingFailureCode.cancelled;
+      if (failure.code == ChaoxingFailureCode.cancelled) return _BatchStop.cancelled;
+      // 位置出界：刚收紧的第一次不停队（后面的人用收紧档接着签，对齐参考项目），收紧档仍出界才全停。
+      if (failure.code == ChaoxingFailureCode.wrongPosition && failure.locationTightened) return _BatchStop.failed;
+      return _BatchStop.none;
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=batch_sign errorType=${failure.runtimeType}\n$stack');
       target
         ..state = ChaoxingTargetState.failed
         ..message = '签到没完成，请稍后重试';
-      return false;
+      return _BatchStop.none;
     } finally {
       _notify();
     }
