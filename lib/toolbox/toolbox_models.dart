@@ -263,3 +263,9 @@ abstract interface class ToolboxFilePublisher {
   });
   Future<void> open(Uri uri, String mimeType);
 }
+
+// 工具自己的服务（学习通的账号闭环等）：框架不认识具体类型，只按这个接口在退出时统一关闭。
+// 打开函数由组合根注入 ToolboxRuntime，工具页面首次使用时经 runtime.service 取用并缓存。
+abstract interface class ToolboxService {
+  Future<void> close();
+}

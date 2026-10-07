@@ -117,3 +117,7 @@ Uint8List _intToFixedBytes(BigInt value, {int length = chaoxingRsaBlockBytes}) {
   }
   return bytes;
 }
+
+// 人脸参数只在位置与二维码签到上带（学习通客户端只在这两类上做人脸）。
+bool chaoxingFaceApplies(ChaoxingSignType type, ChaoxingActiveInfo info) =>
+    info.needFace && (type == ChaoxingSignType.location || type == ChaoxingSignType.qrCode);

@@ -142,8 +142,10 @@ class ChaoxingAccounts {
 
   // 补一次用户信息：clientId 与群聊密码都只在这里下发；clientId 记进库里，签人脸时要用。
   Future<void> refreshAccount(ChaoxingClient client) => run(client, () async {
-    final existing = await record(client.phoneNumber);
     client.account = await client.loadAccount();
+    // 记录在响应之后再读：后台刷新期间用户可能切换了学校单位，按最新的记录恢复所选单位，
+    // 别拿刷新前的快照把用户刚选的单位覆盖回去。
+    final existing = await record(client.phoneNumber);
     _keepUnit(client, existing);
     await vault.writeCookies(client.phoneNumber, client.http.cookies.session);
     if (existing == null) return;

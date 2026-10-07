@@ -20,23 +20,10 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_photo.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_signer.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_sign_flow.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 
 enum ChaoxingStatus { loading, signedOut, ready }
-
-// 一次签到里所有人共用的输入：签到码、位置、二维码（每人各自的照片与人脸照片在 ChaoxingSignTarget 上）。
-class ChaoxingSignInputs {
-  const ChaoxingSignInputs({this.signCode, this.location, this.qrCode});
-  final String? signCode;
-  final ChaoxingLocation? location;
-  final ChaoxingQrCode? qrCode;
-}
-
-// 需要验证码时由界面弹出滑块，拿回 validate；返回空表示用户放弃。
-typedef ChaoxingCaptchaSolver = Future<String?> Function(ChaoxingClient client, ChaoxingActivity activity);
-
-// 二维码签到时拿最新扫到的码：传入刚过期的那个，返回一个不同的新码。
-typedef ChaoxingFreshQrCode = Future<ChaoxingQrCode> Function(ChaoxingQrCode expired);
 
 // 课程页的一组课：同名课程（多个班）合并成一组。
 class ChaoxingCourseGroup {
@@ -207,7 +194,19 @@ class ChaoxingController extends ChangeNotifier {
     return client;
   }
 
-  // 一个人的完整签到：签到前检查（可强制跳过）→ 拍照上传 → 人脸 → 提交（要验证码就弹、二维码过期就换新码、位置出界收紧重试一次）。
+  // 完整签到流程在 chaoxing_sign_flow.dart：检查、拍照上传、人脸、提交与验证码/换码/位置收紧重试。
+  late final signFlow = ChaoxingSignFlow(
+    ChaoxingSignContext(
+      clientOf: clientOf,
+      currentPhone: () => current?.phoneNumber,
+      run: accounts.run,
+      faceImages: accounts.store.faceImages,
+      putFaceImage: (phoneNumber, objectId) => accounts.store.putFaceImage(phoneNumber, objectId),
+      markFaceImageUsed: (phoneNumber, objectId, {required failed}) => accounts.store.markFaceImageUsed(phoneNumber, objectId, failed: failed),
+      refreshAccount: accounts.refreshAccount,
+    ),
+  );
+
   Future<ChaoxingSignResult> signTarget(
     ChaoxingSignTarget target,
     ChaoxingActivity activity, {
@@ -216,74 +215,7 @@ class ChaoxingController extends ChangeNotifier {
     required ChaoxingCaptchaSolver solveCaptcha,
     ChaoxingFreshQrCode? freshQrCode,
     bool force = false,
-  }) async {
-    final client = await clientOf(target.record);
-    var signed = activity;
-    if (force) {
-      // 强制签到跳过全部签到前检查；给别的账号签时按课程号换成他自己所在的班级。
-      if (target.phoneNumber != current?.phoneNumber) {
-        final classId = await accounts.run(client, () => chaoxingClassIdOfCourse(client, activity.courseId));
-        if (classId != null) signed = activity.change(classId: classId);
-      }
-    } else {
-      final blocked = await _presignFailure(client, signed);
-      if (blocked != null) throw blocked;
-    }
-    if (signed.signType == ChaoxingSignType.photo && info.needPhoto && target.photoObjectId == null) {
-      final bytes = target.photoBytes;
-      if (bytes == null) throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '这场签到要照片，请先选一张');
-      final photo = await compute(chaoxingStylizePhoto, Uint8List.fromList(bytes));
-      target.photoObjectId = await accounts.run(client, () => chaoxingUploadPhoto(client, bytes: photo));
-    }
-    final faceObjectId = chaoxingFaceApplies(signed.signType, info) ? await _faceFor(client, target) : null;
-    var qrCode = inputs.qrCode;
-    var tightened = false;
-    String? validate;
-    String? enc2;
-    for (var attempt = 0; ; attempt++) {
-      final faceEnc = faceObjectId == null
-          ? null
-          : await accounts.run(client, () => chaoxingFaceEnc(client, activeId: signed.activeId, objectId: faceObjectId));
-      final submission = ChaoxingSignSubmission(
-        activity: signed,
-        activeId: qrCode?.activeId,
-        signCode: inputs.signCode,
-        location: inputs.location,
-        enc: qrCode?.enc,
-        objectId: target.photoObjectId,
-        faceObjectId: faceObjectId,
-        faceEnc: faceEnc,
-        captchaValidate: validate,
-        enc2: enc2,
-        tightenLocation: tightened,
-      );
-      try {
-        final result = await accounts.run(client, () => chaoxingSubmit(client, submission));
-        if (faceObjectId != null) await accounts.store.markFaceImageUsed(client.phoneNumber, faceObjectId, failed: false);
-        return result;
-      } on ChaoxingFailure catch (failure) {
-        switch (failure.code) {
-          case ChaoxingFailureCode.captchaRequired when attempt < 3:
-            final answer = await solveCaptcha(client, signed);
-            if (answer == null) {
-              throw const ChaoxingFailure(ChaoxingFailureCode.captchaRequired, '需要完成安全验证才能签到');
-            }
-            validate = answer;
-            enc2 = failure.payload ?? enc2;
-          case ChaoxingFailureCode.wrongPosition when !tightened && inputs.location != null:
-            tightened = true;
-          case ChaoxingFailureCode.qrCodeExpired when freshQrCode != null && qrCode != null:
-            await Future<void>.delayed(const Duration(milliseconds: 500));
-            qrCode = await freshQrCode(qrCode);
-          case ChaoxingFailureCode.faceRequired when faceObjectId != null:
-            await accounts.store.markFaceImageUsed(client.phoneNumber, faceObjectId, failed: true);
-            rethrow;
-          default:
-            rethrow;
-        }
-      }
-    }
-  }
+  }) => signFlow.sign(target, activity, info: info, inputs: inputs, solveCaptcha: solveCaptcha, freshQrCode: freshQrCode, force: force);
 
   // 扫到新码时先问一次是否还有效（用当前账号问，与学习通客户端一致）。
   Future<bool> qrCodeExpired(ChaoxingQrCode code, ChaoxingActivity activity) async {
@@ -291,27 +223,8 @@ class ChaoxingController extends ChangeNotifier {
     return accounts.run(client, () => chaoxingQrCodeExpired(client, code: code, activeId: activity.activeId));
   }
 
-  // 签到前检查（preSign 与班级检查）：拦下时返回带 predicted 的失败，可签返回 null。
-  // 提交前必查；打开签到页时也先查一次（对齐参考项目，别等提交后才知道已签到或已截止）。
-  Future<ChaoxingFailure?> _presignFailure(ChaoxingClient client, ChaoxingActivity activity) async {
-    final presign = await accounts.run(client, () => chaoxingPreSign(client, activity));
-    if (presign == ChaoxingPreSignStatus.alreadySigned) {
-      return const ChaoxingFailure(ChaoxingFailureCode.alreadySigned, '这场签到已经完成了', predicted: true);
-    }
-    if (presign == ChaoxingPreSignStatus.expired) {
-      return const ChaoxingFailure(ChaoxingFailureCode.expired, '签到已截止', predicted: true);
-    }
-    if (await accounts.run(client, () => chaoxingClassValid(client, activity.classId)) == false) {
-      return const ChaoxingFailure(ChaoxingFailureCode.noPermission, '这个账号不在该班级里', predicted: true);
-    }
-    return null;
-  }
-
   // 打开签到页时的检查入口：按这个人的会话查，结果只用来提示与给三选，不产生副作用。
-  Future<ChaoxingFailure?> presignCheck(ChaoxingSignTarget target, ChaoxingActivity activity) async {
-    final client = await clientOf(target.record);
-    return _presignFailure(client, activity);
-  }
+  Future<ChaoxingFailure?> presignCheck(ChaoxingSignTarget target, ChaoxingActivity activity) => signFlow.check(target, activity);
 
   // 从主签到跳到它关联的签退活动（或反过来）：详情里拿类型与时间重组一个活动。
   Future<ChaoxingActivity> relatedActivity(ChaoxingActivity current, int activeId) async {
@@ -508,22 +421,6 @@ class ChaoxingController extends ChangeNotifier {
     return bytes;
   }
 
-  // 人脸照片：这次选了就用选的，其次本机记着的第一张，再其次学习通里存的那张；都没有就让用户先选一张。
-  Future<String> _faceFor(ChaoxingClient client, ChaoxingSignTarget target) async {
-    final chosen = target.faceObjectId;
-    if (chosen != null) return chosen;
-    final stored = await accounts.store.faceImages(client.phoneNumber);
-    if (stored.isNotEmpty) return stored.first.objectId;
-    // clientId 是签名要用的，库里没有就先补一次用户信息（会话过期时 run 会先重登）。
-    if ((client.account?.clientId ?? '').isEmpty) await accounts.refreshAccount(client);
-    final profile = await accounts.run(client, () => chaoxingProfileFaceObjectId(client));
-    if (profile == null) {
-      throw ChaoxingFailure(ChaoxingFailureCode.faceRequired, '${target.record.name} 还没有人脸照片，请先选一张');
-    }
-    await accounts.store.putFaceImage(client.phoneNumber, profile);
-    return profile;
-  }
-
   // 出示代签码：把当前账号封成凭据包（可附带人脸照片），密文放到中转，二维码里只有取件号与一次性密钥。
   Future<String> createCredentialTicket({List<String> faceObjectIds = const []}) async {
     final client = _requireClient();
@@ -581,6 +478,8 @@ class ChaoxingController extends ChangeNotifier {
   // 切换学校单位：之后课程列表与签到都按这个单位走，切完重新拉一遍。
   Future<void> selectUnit(ChaoxingUnit unit) async {
     final client = _requireClient();
+    // 等后台刷新落定再切：刷新若读到切换前的记录，会把刚选的单位连同会话一起写回旧的。
+    await _maintenance;
     await accounts.selectUnit(client, unit);
     accountList = await accounts.list();
     current = await accounts.record(client.phoneNumber);
@@ -630,8 +529,12 @@ class ChaoxingController extends ChangeNotifier {
     // 打开账号就后台刷新一次用户信息（对齐参考项目：顺带验证会话、更新 clientId 与学校单位）。
     // [人工决策-2026-10-07 20:02:42] 不挡活动列表的加载——上游这个接口最慢要 30 秒，阻塞式刷新会让用户对着加载圈等；
     // 会话过期由列表请求经 accounts.run 自动重登一次兜底。等列表加载完再起，别跟推断缓存抢库锁。
-    unawaited(_refreshAccountInBackground(client));
+    _maintenance = _refreshAccountInBackground(client);
+    unawaited(_maintenance);
   }
+
+  // 后台刷新用户信息的链：切换单位等会改账号记录的操作要先等它落定，免得它拿旧记录把新选择覆盖回去。
+  Future<void> _maintenance = Future.value();
 
   Future<void> _refreshAccountInBackground(ChaoxingClient client) async {
     try {
@@ -757,6 +660,3 @@ class ChaoxingController extends ChangeNotifier {
   }
 }
 
-// 人脸参数只在位置与二维码签到上带（学习通客户端只在这两类上做人脸）。
-bool chaoxingFaceApplies(ChaoxingSignType type, ChaoxingActiveInfo info) =>
-    info.needFace && (type == ChaoxingSignType.location || type == ChaoxingSignType.qrCode);

@@ -9,6 +9,7 @@
     - 在应用支持目录的 toolbox 子目录下，打开 toolbox.db、资源目录和下载目录。
     - 组装 ParseCoordinator（当前只有 BugPK）、下载管理器、后台传输和文件导出。
     - 跟随应用前后台状态恢复下载。
+    - 框架不认识各工具的服务类型：工具经 serviceOpeners 注册自己的打开函数（实现 ToolboxService 接口），页面用 runtime.service 取用，退出时框架按接口统一关闭；学习通的服务见 chaoxing_service.dart，短视频的解析器仍由框架组装。
     - shareVideo（ToolboxVideoShare）：把作品分享给好友的回调，由组合根注入（接到私信的分享弹层）；为空时不显示分享入口。百宝箱不感知私信。
   - toolbox_catalog.dart：工具注册表 toolboxCatalog。路由按这里的 id 生成免登录的工具路由。
   - toolbox_module.dart：ToolboxModule 描述一个工具，字段有 id、名称、图标、页面构造器和可选的按需资源。
@@ -91,6 +92,8 @@
   - chaoxing_course_page.dart：按课程查看，课程可搜课名、老师与学校，可置顶；同名课程合并成一项，点进去看全部签到，进行中与已结束分两组。
   - chaoxing_activity_card.dart：各页共用的活动卡片、分组标题与签到入口 ChaoxingSignLauncher（开签到弹层、签完给提示并刷新）。
   - chaoxing_settings_sheet.dart：签到设置弹层（学校单位、模拟的客户端），以及修复账号时重新输密码的对话框。
+  - chaoxing_sign_flow.dart：一个人的完整签到流程 ChaoxingSignFlow（签到前检查可强制跳过、拍照上传、人脸、提交，验证码/换码/位置收紧重试），从页面状态类抽出；会话与存储经 ChaoxingSignContext 注入，controller 是现在的实现来源。签到输入与回调类型（ChaoxingSignInputs、ChaoxingCaptchaSolver、ChaoxingFreshQrCode）也定义在这里。
+  - chaoxing_service.dart：学习通签到的服务 ChaoxingService（实现 ToolboxService 接口）：自己打开与关闭库、安全存储、设备通道与代签中转客户端；组合根把它的 open 注册进 ToolboxRuntime 的 serviceOpeners，页面经 runtime.service 取用。
   - chaoxing_credential_pack.dart：代签凭据包（手机号、密文密码、昵称、对方设备码、最多 5 张人脸照片 objectId）的编解码与一次性密钥封装（AES-256-GCM），以及二维码取件票（SXDC1: 取件号 + 密钥）的编解码；第 2 版加了人脸照片，第 1 版照样能解；包来自别人的二维码，一律按外部输入逐项校验。
   - chaoxing_pack_client.dart：代签凭据包的自建中转客户端，投递换取件号、凭号取件（取走即删），地址由组合根从构建参数注入；没配中转时代签入口不显示。
   - chaoxing_share_page.dart：出示代签码页面，画二维码并说明「被扫走即失效」。

@@ -14,6 +14,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity_card.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_course_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_face_sheet.dart';
@@ -23,7 +24,6 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_settings_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_share_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
-import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 // 扫别人的代签码：扫到就导入，导入前把「本机会保存对方的账号与凭据」说清楚。
@@ -75,6 +75,7 @@ class ChaoxingPage extends StatefulWidget {
 class _ChaoxingPageState extends State<ChaoxingPage> {
   // 账号闭环要等运行时打开本机库之后才能建，所以先为空。
   ChaoxingController? _controller;
+  ChaoxingService? _service;
   String? _startError;
 
   @override
@@ -92,16 +93,17 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
   Future<void> _start() async {
     try {
       await widget.runtime.initialize();
-      final accounts = widget.runtime.chaoxing;
-      if (accounts == null) throw const ToolboxException('学习通签到暂不可用');
-      final controller = ChaoxingController(accounts: accounts, hub: widget.runtime.chaoxingHub);
+      // 学习通的服务由本工具自己打开（框架只给目录与公共能力）。
+      final service = await widget.runtime.service<ChaoxingService>(ChaoxingService.serviceId);
+      _service = service;
+      final controller = ChaoxingController(accounts: service.accounts, hub: service.hub);
       if (!mounted) {
         controller.dispose();
         return;
       }
       // 本机已有学习通账号、但还没同意过当前版本的说明（比如新加了设备信息上传）时，先重新征得同意再联网；
       // 不同意就退出这个工具，已存的账号原样保留。
-      if ((await accounts.list()).isNotEmpty && !await _grantConsent(updated: true)) {
+      if ((await service.accounts.list()).isNotEmpty && !await _grantConsent(updated: true)) {
         controller.dispose();
         if (mounted) Navigator.of(context).maybePop();
         return;
@@ -156,7 +158,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     final record = controller?.current;
     if (controller == null || record == null) return;
     // 代签要靠自建中转转交凭据包，没配中转时不显示这两项。
-    final canDelegate = widget.runtime.chaoxingHub?.available ?? false;
+    final canDelegate = _service?.hub?.available ?? false;
     final action = await showCampusMenu<String>(
       anchor,
       items: [

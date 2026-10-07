@@ -22,6 +22,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_page.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
@@ -159,12 +160,16 @@ void main() {
     downloads: fixture.manager,
     parser: fixture.parser,
     scanQrCode: scanQrCode,
-    chaoxingHub: hub,
-    chaoxing: ChaoxingAccounts(
-      store: store,
-      vault: MemoryChaoxingVault(),
-      transport: (cookies) => ChaoxingHttp(client: fake.client(), cookies: cookies),
-    ),
+    services: {
+      ChaoxingService.serviceId: ChaoxingService(
+        accounts: ChaoxingAccounts(
+          store: store,
+          vault: MemoryChaoxingVault(),
+          transport: (cookies) => ChaoxingHttp(client: fake.client(), cookies: cookies),
+        ),
+        hub: hub,
+      ),
+    },
   );
 
   setUp(() async {
@@ -607,7 +612,7 @@ void main() {
   testWidgets('多个账号时可以一次给本人与代签账号连签', (tester) async {
     usePhoneScreen(tester);
     await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');
-    final accounts = runtime.chaoxing!;
+    final accounts = (await runtime.service<ChaoxingService>(ChaoxingService.serviceId)).accounts;
     await tester.runAsync(
       () async => accounts.importOther(
         ChaoxingCredentialPack(
@@ -767,7 +772,8 @@ void main() {
 
   testWidgets('本机已有账号时不同意新版说明就退出工具，不联网', (tester) async {
     usePhoneScreen(tester);
-    await tester.runAsync(() => runtime.chaoxing!.signIn(phoneNumber: '13800138000', password: 'myPassword123'));
+    await tester.runAsync(() async => (await runtime.service<ChaoxingService>(ChaoxingService.serviceId)).accounts
+        .signIn(phoneNumber: '13800138000', password: 'myPassword123'));
     final callsBefore = fake.calls.length;
     await tester.pumpWidget(
       MaterialApp(

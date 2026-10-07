@@ -5,12 +5,8 @@ import 'package:flutter/widgets.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/share_card.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_device_channel.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
 import 'package:superxd/toolbox/download/android_file_publisher.dart';
 import 'package:superxd/toolbox/download/background_transfer.dart';
 import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
@@ -20,7 +16,6 @@ import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_resource_manager.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
-import 'package:superxd/domain/campus_log.dart';
 
 // 把作品分享给好友：百宝箱不感知私信，由组合根注入（为空时不显示分享入口）。
 typedef ToolboxVideoShare = Future<void> Function(BuildContext context, VideoShare video);
@@ -47,11 +42,8 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.shareVideo,
     this.scanQrCode,
     this.watchQrCode,
-    ChaoxingAccounts? chaoxing,
-    this.chaoxingHub,
-  }) : coordinator = ParseCoordinator([BugpkVideoParser()]) {
-    _chaoxing = chaoxing;
-  }
+    this.serviceOpeners = const {},
+  }) : coordinator = ParseCoordinator([BugpkVideoParser()]);
   ToolboxRuntime.testing({
     required ToolboxStore store,
     required ToolboxDownloadManager downloads,
@@ -59,11 +51,12 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.shareVideo,
     this.scanQrCode,
     this.watchQrCode,
-    ChaoxingAccounts? chaoxing,
-    this.chaoxingHub,
+    // 外部已经打开好的服务（测试直接给实例）：runtime 只代为转交，不负责关闭。
+    Map<String, ToolboxService>? services,
   }) : coordinator = ParseCoordinator([parser]),
-       resourceSpecifications = downloads.resources.specifications {
-    _chaoxing = chaoxing;
+       resourceSpecifications = downloads.resources.specifications,
+       serviceOpeners = const {} {
+    _external.addAll(services ?? const <String, ToolboxService>{});
     _store = store;
     _downloads = downloads;
     _initialization = SynchronousFuture<void>(null);
@@ -74,16 +67,32 @@ class ToolboxRuntime with WidgetsBindingObserver {
   final ToolboxQrScan? scanQrCode;
   final ToolboxQrWatch? watchQrCode;
 
-  // 代签凭据包的中转，与私信共用同一个自建服务（地址由组合根从构建参数取）；为空时代签码不可用。
-  final ChaoxingPackHub? chaoxingHub;
-  // 学习通签到的账号闭环，随应用支持目录一起打开；测试可直接注入。
-  ChaoxingAccounts? _chaoxing;
-  ChaoxingAccounts? get chaoxing => _chaoxing;
+  // 每个工具自己负责打开与关闭自己的服务：框架只提供目录与公共能力，打开函数由组合根注入，
+  // 工具页面首次使用时经 service 取用（打开一次后缓存到应用退出）。
+  final Map<String, Future<ToolboxService> Function(Directory base)> serviceOpeners;
+  final _external = <String, ToolboxService>{};
+  final _opened = <String, Future<ToolboxService>>{};
+  Directory? _base;
   ToolboxStore? _store;
   ToolboxDownloadManager? _downloads;
   Future<void>? _initialization;
   ToolboxStore get store => _store!;
   ToolboxDownloadManager get downloads => _downloads!;
+
+  Future<ToolboxService> _service(String id) => _opened.putIfAbsent(id, () {
+    final opener = serviceOpeners[id];
+    if (opener == null) throw ToolboxException('这个工具的服务还没有配置');
+    if (_base == null) throw const ToolboxException('百宝箱还没有准备好，稍后再试');
+    return opener(_base!);
+  });
+
+  // 取一个工具的服务：组合根没注册 opener 或还没初始化完成时抛错。
+  // 测试注入的服务同步可得（SynchronousFuture）：await 它不占事件循环一轮，widget 测试里裸 await 普通 Future 会挂死。
+  Future<T> service<T extends ToolboxService>(String id) {
+    final external = _external[id];
+    if (external != null) return SynchronousFuture<T>(external as T);
+    return _service(id).then((service) => service as T);
+  }
 
   // [人工决策-2026-09-27 20:12:08] 百宝箱免教务登录，设备级任务独立于账号；不读取教务凭据，切账号不销毁下载。
   Future<void> initialize() => _initialization ??= _initialize().catchError((
@@ -103,6 +112,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
       path.join((await getApplicationSupportDirectory()).path, 'toolbox'),
     );
     await base.create(recursive: true);
+    _base = base;
     final store = await ToolboxStore.open(path.join(base.path, 'toolbox.db'));
     final resources = ToolboxResourceManager(
       directory: Directory(path.join(base.path, 'resources')),
@@ -129,11 +139,6 @@ class ToolboxRuntime with WidgetsBindingObserver {
     }
     _store = store;
     _downloads = downloads;
-    _chaoxing ??= ChaoxingAccounts(
-      store: await ChaoxingStore.open(path.join(base.path, 'chaoxing.db')),
-      vault: SecureChaoxingVault(),
-      device: ChannelChaoxingDeviceProbe(),
-    );
     WidgetsBinding.instance.addObserver(this);
   }
 
@@ -156,7 +161,13 @@ class ToolboxRuntime with WidgetsBindingObserver {
     coordinator.close();
     await _downloads?.close();
     await _store?.close();
-    await _chaoxing?.store.close();
-    chaoxingHub?.close();
+    // 只关自己打开的服务；外部注入的（测试）由注入方关闭。
+    for (final pending in _opened.values) {
+      try {
+        await (await pending).close();
+      } catch (error, stack) {
+        campusLog('[Toolbox] action=service_close errorType=${error.runtimeType}\n$stack');
+      }
+    }
   }
 }

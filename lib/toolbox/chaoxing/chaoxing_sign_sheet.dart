@@ -20,6 +20,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_captcha_dialog.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_code_cells.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_face.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_face_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_gesture_field.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
@@ -27,6 +28,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_map_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_settings_sheet.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_sign_flow.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 // 发布超过这么久还没截止的签到，提醒确认没选错（与学习通客户端同一口径）。
