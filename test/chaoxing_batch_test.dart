@@ -80,6 +80,23 @@ void main() {
     expect(targets.last.message, '位置不在签到范围内');
   });
 
+  test('连续扫码模式下一人失败就停，后面的人不再签', () async {
+    final targets = [_target('a'), _target('b'), _target('c')];
+    final batch = ChaoxingBatchSigning(targets);
+    final order = <String>[];
+    await batch.run((target, {required force}) async {
+      order.add(target.phoneNumber);
+      if (target.phoneNumber == 'a') throw const ChaoxingFailure(ChaoxingFailureCode.captchaRequired, '需要完成安全验证');
+      return const ChaoxingSignResult();
+    }, interval: Duration.zero, stopOnFailure: true);
+    expect(order, ['a']);
+    expect(targets[0].state, ChaoxingTargetState.failed);
+    // 后面的人没轮到，与失败的人同样的提示，不算成功。
+    expect(targets[1].state, ChaoxingTargetState.failed);
+    expect(targets[1].message, targets[0].message);
+    expect(targets.every((target) => !target.done), isTrue);
+  });
+
   test('相邻两人之间隔开，刚过人工验证码的不再等', () async {
     final targets = [_target('a'), _target('b'), _target('c')];
     final batch = ChaoxingBatchSigning(targets);

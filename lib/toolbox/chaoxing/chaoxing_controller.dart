@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:pool/pool.dart';
 
@@ -224,16 +226,8 @@ class ChaoxingController extends ChangeNotifier {
         if (classId != null) signed = activity.change(classId: classId);
       }
     } else {
-      final presign = await accounts.run(client, () => chaoxingPreSign(client, signed));
-      if (presign == ChaoxingPreSignStatus.alreadySigned) {
-        throw const ChaoxingFailure(ChaoxingFailureCode.alreadySigned, '这场签到已经完成了', predicted: true);
-      }
-      if (presign == ChaoxingPreSignStatus.expired) {
-        throw const ChaoxingFailure(ChaoxingFailureCode.expired, '签到已截止', predicted: true);
-      }
-      if (await accounts.run(client, () => chaoxingClassValid(client, signed.classId)) == false) {
-        throw const ChaoxingFailure(ChaoxingFailureCode.noPermission, '这个账号不在该班级里', predicted: true);
-      }
+      final blocked = await _presignFailure(client, signed);
+      if (blocked != null) throw blocked;
     }
     if (signed.signType == ChaoxingSignType.photo && info.needPhoto && target.photoObjectId == null) {
       final bytes = target.photoBytes;
@@ -295,6 +289,28 @@ class ChaoxingController extends ChangeNotifier {
   Future<bool> qrCodeExpired(ChaoxingQrCode code, ChaoxingActivity activity) async {
     final client = _requireClient();
     return accounts.run(client, () => chaoxingQrCodeExpired(client, code: code, activeId: activity.activeId));
+  }
+
+  // 签到前检查（preSign 与班级检查）：拦下时返回带 predicted 的失败，可签返回 null。
+  // 提交前必查；打开签到页时也先查一次（对齐参考项目，别等提交后才知道已签到或已截止）。
+  Future<ChaoxingFailure?> _presignFailure(ChaoxingClient client, ChaoxingActivity activity) async {
+    final presign = await accounts.run(client, () => chaoxingPreSign(client, activity));
+    if (presign == ChaoxingPreSignStatus.alreadySigned) {
+      return const ChaoxingFailure(ChaoxingFailureCode.alreadySigned, '这场签到已经完成了', predicted: true);
+    }
+    if (presign == ChaoxingPreSignStatus.expired) {
+      return const ChaoxingFailure(ChaoxingFailureCode.expired, '签到已截止', predicted: true);
+    }
+    if (await accounts.run(client, () => chaoxingClassValid(client, activity.classId)) == false) {
+      return const ChaoxingFailure(ChaoxingFailureCode.noPermission, '这个账号不在该班级里', predicted: true);
+    }
+    return null;
+  }
+
+  // 打开签到页时的检查入口：按这个人的会话查，结果只用来提示与给三选，不产生副作用。
+  Future<ChaoxingFailure?> presignCheck(ChaoxingSignTarget target, ChaoxingActivity activity) async {
+    final client = await clientOf(target.record);
+    return _presignFailure(client, activity);
   }
 
   // 从主签到跳到它关联的签退活动（或反过来）：详情里拿类型与时间重组一个活动。
@@ -381,7 +397,8 @@ class ChaoxingController extends ChangeNotifier {
           title: item.title.isEmpty ? resolved.label : item.title,
           subtitle: item.courseName.isEmpty ? item.groupName : item.courseName,
           signType: resolved,
-          startTime: info?.startTime ?? DateTime.now().toUtc(),
+          // 发起时刻优先取消息里的（群列表按它排序），其次详情里的。
+          startTime: item.startTime ?? info?.startTime ?? DateTime.now().toUtc(),
           endTime: info?.endTime,
           status: _statusOf(info?.endTime),
           userStatus: 0,
@@ -610,6 +627,24 @@ class ChaoxingController extends ChangeNotifier {
     status = ChaoxingStatus.ready;
     _notify();
     await _loadActivities();
+    // 打开账号就后台刷新一次用户信息（对齐参考项目：顺带验证会话、更新 clientId 与学校单位）。
+    // [人工决策-2026-10-07 20:02:42] 不挡活动列表的加载——上游这个接口最慢要 30 秒，阻塞式刷新会让用户对着加载圈等；
+    // 会话过期由列表请求经 accounts.run 自动重登一次兜底。等列表加载完再起，别跟推断缓存抢库锁。
+    unawaited(_refreshAccountInBackground(client));
+  }
+
+  Future<void> _refreshAccountInBackground(ChaoxingClient client) async {
+    try {
+      await accounts.refreshAccount(client);
+      final refreshed = await accounts.record(client.phoneNumber);
+      if (refreshed != null && current?.phoneNumber == refreshed.phoneNumber) {
+        current = refreshed;
+        accountList = await accounts.list();
+        _notify();
+      }
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=refresh_account errorType=${failure.runtimeType}\n$stack');
+    }
   }
 
   Future<void> _loadActivities() async {

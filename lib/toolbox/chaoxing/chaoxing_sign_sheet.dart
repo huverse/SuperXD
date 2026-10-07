@@ -18,8 +18,10 @@ import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_batch.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_captcha_dialog.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_code_cells.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_face_sheet.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_gesture_field.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_map_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
@@ -78,6 +80,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   String? _error;
   bool _preparing = false;
   bool _loadingRelated = false;
+  // 手势或签到码校验没过：格子（图案）标红并清空，让人重画（重输）。
+  bool _codeWrong = false;
   bool _manualLocation = false;
   ChaoxingLocation? _savedLocation;
   _QrFeed? _feed;
@@ -135,6 +139,64 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=active_info errorType=${failure.runtimeType}\n$stack');
       if (mounted) setState(() => _loadError = '活动详情没读到，请稍后重试');
+    }
+    unawaited(_presignOnOpen());
+  }
+
+  // 打开签到页先检查一遍（对齐参考项目，别等提交后才知道）：已签到、已截止或不在班级的人原地标出
+  // 并取消勾选；全部被拦时给「为其他人签到 / 返回 / 强制」三选。检查不挡详情显示，也不挡提交（提交时会再查一次）。
+  Future<void> _presignOnOpen() async {
+    final checked = _activity.activeId;
+    final selected = [for (final target in _batch.targets) if (target.selected) target];
+    if (selected.isEmpty) return;
+    final blocked = <ChaoxingSignTarget, ChaoxingFailure>{};
+    for (final target in selected) {
+      try {
+        final failure = await widget.controller.presignCheck(target, _activity);
+        if (failure != null) blocked[target] = failure;
+      } on ChaoxingFailure {
+        // 会话过期等查不出结果的，留给提交时的检查处理。
+      } catch (failure, stack) {
+        campusLog('[Chaoxing] action=presign_open errorType=${failure.runtimeType}\n$stack');
+      }
+    }
+    if (!mounted || blocked.isEmpty || _busy || _activity.activeId != checked) return;
+    for (final entry in blocked.entries) {
+      entry.key
+        ..selected = false
+        ..state = ChaoxingTargetState.failed
+        ..message = entry.value.message
+        ..forceAvailable = true;
+    }
+    _batch.notifyChanged();
+    if (blocked.length != selected.length) return;
+    // 勾选的人全被拦：照参考项目给三选。
+    final first = blocked.keys.first;
+    final choice = await showCampusDialog<int>(
+      context: context,
+      builder: (context) => CampusGlassDialog(
+        title: const Text('这场签到检查没过'),
+        content: Text(blocked[first]!.message),
+        options: [
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 0), child: const Text('为其他人签到')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 1), child: const Text('返回')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 2), child: const Text('我认为是 BUG，强制签到')),
+        ],
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 1) {
+      Navigator.of(context).pop();
+    } else if (choice == 2) {
+      first.selected = true;
+      _batch.notifyChanged();
+      if (_type == ChaoxingSignType.qrCode) {
+        await _startQr(only: first, force: true);
+      } else {
+        final inputs = _inputs();
+        if (inputs != null) await _batch.retry(first, _signer(inputs), force: true);
+        _finishIfDone();
+      }
     }
   }
 
@@ -220,6 +282,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
             ..faceObjectId = null;
         }
         _code.clear();
+        _codeWrong = false;
       });
       await _load();
     } on ChaoxingFailure catch (failure) {
@@ -298,9 +361,17 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     try {
       final signCode = inputs.signCode;
       if (signCode != null && !await widget.controller.checkSignCode(_activity, signCode)) {
-        if (mounted) setState(() => _error = _type == ChaoxingSignType.password ? '签到码不对，核对后再试' : '手势码不对，核对后再试');
+        // 校验没过：格子（图案）清空标红，重新输入（重画）后自动再试。
+        if (mounted) {
+          setState(() {
+            _codeWrong = true;
+            _error = _type == ChaoxingSignType.password ? '签到码不对，请重输' : '手势码不对，请重画';
+          });
+        }
+        _code.clear();
         return;
       }
+      if (mounted) setState(() => _codeWrong = false);
     } on ChaoxingFailure catch (failure) {
       if (mounted) setState(() => _error = failure.message);
       return;
@@ -373,7 +444,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         },
       );
       if (only == null) {
-        await _batch.run(signer);
+        // 连续扫码是逐码连签：任何一人失败就停（对齐参考项目），等新码也是为了当前这个人。
+        await _batch.run(signer, stopOnFailure: true);
       } else {
         await _batch.retry(only, signer, force: force);
       }
@@ -509,15 +581,27 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         ],
         if (_needsCode) ...[
           SizedBox(height: campusFieldGap(context)),
-          TextField(
-            controller: _code,
-            keyboardType: _type == ChaoxingSignType.password ? TextInputType.number : TextInputType.text,
-            inputFormatters: _type == ChaoxingSignType.password ? [FilteringTextInputFormatter.digitsOnly] : null,
-            decoration: InputDecoration(
-              labelText: _type == ChaoxingSignType.password ? '签到码' : '手势码',
-              helperText: info.signCodeLength > 0 ? '${info.signCodeLength} 位' : null,
+          if (_type == ChaoxingSignType.gesture) ...[
+            // 手势签到画 3×3 图案（对齐学习通客户端），画完自动校验并提交。
+            ChaoxingGestureField(
+              onCompleted: (pattern) {
+                _code.text = pattern;
+                unawaited(_start());
+              },
+              error: _codeWrong ? '手势码不对' : null,
             ),
-          ),
+          ] else ...[
+            // 签到码按位数显示格子，输满自动校验并提交；位数未知时退回普通输入框。
+            if (info.signCodeLength > 0)
+              ChaoxingCodeCells(controller: _code, length: info.signCodeLength, onFilled: () => unawaited(_start()), error: _codeWrong ? '签到码不对' : null)
+            else
+              TextField(
+                controller: _code,
+                keyboardType: TextInputType.number,
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                decoration: const InputDecoration(labelText: '签到码'),
+              ),
+          ],
         ],
         if (_multi) ...[
           const SizedBox(height: 16),

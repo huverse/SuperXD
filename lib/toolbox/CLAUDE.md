@@ -82,6 +82,8 @@
   - chaoxing_captcha.dart：滑块验证码，取配置与底图、按 280 宽的坐标空间提交拖动位置、换成一次性 validate（按签到对象各自的会话取）。
   - chaoxing_captcha_dialog.dart：滑块验证弹窗，底图上拖缺口块，不通过自动换一张。
   - chaoxing_face.dart：人脸识别签到。用设备公钥对 clientId 做模幂还原出设备信息，按字段排序拼 sc 做 md5 得 signToken，换一次性的 faceEnc；也用来取学习通里存着的人脸照片 objectId 与云盘原图地址（预览用）。
+  - chaoxing_code_cells.dart：签到码的格子输入 ChaoxingCodeCells：按位数显示空格、输满自动回调（校验与提交由签到弹层接手），真正的输入框藏在格子底下收键盘输入。
+  - chaoxing_gesture_field.dart：手势签到的 3×3 图案输入 ChaoxingGestureField：原始指针事件画图案（不走手势竞技场，弹层里不会被拖动关闭抢走），抬起即回调序号串，校验失败清空标红。
   - chaoxing_face_sheet.dart：人脸照片弹层，预览（从学习通云盘取原图，内存里留最近 10 张）、用过几次、是否没通过过；管理模式可删，签到时选这次用哪张。
   - chaoxing_im.dart：群聊签到。学习通群聊走环信：DES 解出登录下发的环信密码（pointycastle 只有 3DES，三段同一把钥匙等价单 DES）换令牌，列群、拉漫游消息，用极简 protobuf 读 Meta/MessageBody/KeyValue 三段取 attachment 扩展，再挑 attachmentType 15 且 atype 为 2/74 的签到。
   - chaoxing_group_page.dart：群聊里的签到页，按群翻出只发在群里的签到，逐条走同一套签到弹层。
