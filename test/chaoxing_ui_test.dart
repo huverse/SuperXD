@@ -83,6 +83,8 @@ Future<void> tapSign(WidgetTester tester) async {
 // 首页底部的入口按钮在列表最下面，先滚到可见再点。
 Future<void> tapEntry(WidgetTester tester, String label) async {
   final entry = find.widgetWithText(OutlinedButton, label);
+  // 入口在 busy（登录后的收尾还没完）时是禁用的，直接点会静默落空，先等它可点。
+  await waitUntil(tester, () => tester.widget<OutlinedButton>(entry).enabled);
   await tester.ensureVisible(entry);
   await tester.pump();
   await tester.tap(entry);
@@ -644,7 +646,9 @@ void main() {
     await waitUntil(tester, () => find.text('搜索课程、老师或学校').evaluate().isNotEmpty);
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('高等数学'), findsWidgets);
-    expect(find.text('张老师 · 2 个班'), findsOneWidget);
+    // 说明行由 DotSeparatedText 按项拆开渲染，按拆分后的项断言。
+    expect(find.text('张老师 · '), findsOneWidget);
+    expect(find.text('2 个班'), findsOneWidget);
     await tester.tap(find.descendant(of: find.byType(ChaoxingCoursePage), matching: find.text('高等数学')));
     await tester.pump();
     await waitUntil(tester, () => find.text('进行中（1）').evaluate().isNotEmpty);
@@ -668,6 +672,8 @@ void main() {
     ];
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
+    // 推断是主列表之后的一步异步（拉课表再匹配），登录回来不保证已经算完，显式等它出现。
+    await waitUntil(tester, () => find.text('可能正在签到（按学习通课表）').evaluate().isNotEmpty);
     expect(find.text('可能正在签到（按学习通课表）'), findsOneWidget);
     // 推断里已经列出的，不在「进行中」里重复。
     expect(find.text('刚发起的签到 · '), findsOneWidget);

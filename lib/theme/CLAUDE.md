@@ -93,6 +93,7 @@
   - 满档时在手指处画径向高光。减少动画时不形变。
   - 弹簧令牌在 campus_motion.dart：campusGlassSpring 用于按压与松手，campusGlassTravelSpring 用于指示器跨格移动。
 - campus_surface.dart：CampusSurface 是通用卡片表面，可带点击。
+- dot_separated_text.dart：DotSeparatedText 是「甲 · 乙」式说明行：按「 · 」分项放进 Wrap 换行，学期名再在「学年」后切开，窄屏与大字号下不把「老师」「A201」这类词拆成孤字；读屏读整句。page 层与百宝箱共用。
 - campus_segmented.dart：CampusSegmented 是内容区的分段控件（同 iOS 分段控件、鸿蒙 Segment）：中性浅底胶囊槽，选中项是浮起的实色胶囊并滑动切换，可拖动（规则见文件内人工决策），文字加粗不着主色，整行 48dp 触区。二至三项的单选（课表范围、消息、成绩视图与学期）一律用它。
 - scroll_edge_fade.dart：ScrollEdgeFade 在浮动玻璃栏下只渐隐内容本身，露出真实背景；高对比度时不渐隐。它的子树里不能再放玻璃。
   - CampusScrollFade：页面滚动区的柔和边缘，透明顶栏下内容滚过上缘时自身渐隐（最多 24dp），下缘按底栏覆盖高度渐隐；遮罩常在，滚动不切换图层。顶栏页和 AppBar 页的滚动区都包一层；子树有玻璃开关或视频的页面（短视频解析、媒体预览）不包。
