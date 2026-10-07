@@ -68,7 +68,8 @@
   - 对接超星学习通的课堂签到，账号是学习通账号，与教务账号无关；协议按参考项目 ChaoxingSignFaker 的接口行为独立重写。
   - chaoxing_models.dart：活动、课程、活动详情、账号与错误码 ChaoxingFailure；otherId 到 ChaoxingSignType 的映射。
   - chaoxing_crypto.dart：学习通固定的传输加密（AES-128-CBC，IV 与密钥同为固定串）、MD5/SHA-256、设备公钥（SPKI 模数，用于设备信息 RSA 分块加密与 clientId 还原）与设备码的 AES-ECB。
-  - chaoxing_device.dart：设备信息端口 ChaoxingDeviceProbe（真机走原生通道 superxd/chaoxing_device，见 ChaoxingDevice.kt）。按学习通客户端的字段与顺序组设备信息并 RSA 加密；按 OAID 算本机设备码，取不到返回空由调用方退回固定随机码。
+  - chaoxing_device.dart：设备信息端口 ChaoxingDeviceProbe。按学习通客户端的字段与顺序组设备信息并 RSA 加密；按 OAID 算本机设备码，取不到返回空由调用方退回固定随机码。
+  - chaoxing_device_channel.dart：端口的原生实现 ChannelChaoxingDeviceProbe（通道 superxd/chaoxing_device，见 ChaoxingDevice.kt），由 toolbox_runtime.dart 注入。单独成文件是为了让协议链路不依赖 Flutter，tool/verify_chaoxing.dart 才能用纯 Dart 跑。
   - chaoxing_http.dart：请求封装与 Cookie 会话 ChaoxingCookieJar；模拟的客户端 ChaoxingClientProfile（学习通、学在西电、自定义 UA 与包名），UA 随它走；默认超时 15 秒（登录与用户信息另用 30 秒，见 chaoxing_client.dart 的人工决策）、响应上限 1MB，日志只记路径。
   - chaoxing_client.dart：登录、用户信息、重登与设备码。用户信息带得上设备信息就 POST data（clientId 靠它下发），否则 GET；解析学校单位（主单位在前），登录后把会话 fid 改回所选单位。登录与用户信息这两个上游最慢的接口用 chaoxingAccountTimeout（30 秒）。
   - chaoxing_activity.dart：课程列表（只认带 cataName 的频道）、活动列表与活动详情；preSign 回传活动列表 data 级别的 ext；签到前的班级检查与按课程号找班级（强制签到给别人签时用）。
@@ -127,7 +128,7 @@
   - 高德地图只用于选点：不申请定位权限、不读实时位置，隐私政策单列「地图选点」一节。
   - 代签：凭据包用一次性随机密钥加密，密钥只在二维码里、不进服务器；密文经自建中转暂存，取件号一次性、10 分钟过期、取走即删。导入的账号按他人账号对待（is_other_user），带对方的设备码，签到时不会提示「更换了签到设备」；本机库里已有本人账号时拒绝导入自己的码。附带人脸照片要出示方勾选，默认不带。
   - 上限：账号 21 个（本人 1 加他人 20）、收藏位置 50 条、签到记录 500 条且 90 天、每人人脸照片 objectId 5 条、每个账号置顶课程 100 个、学习通课表缓存每个账号一行且 7 天过期，打开库时裁剪。
-  - 人脸识别：照片本身存在学习通云盘，本机只记 objectId 与使用情况；默认用存着的第一张，其次学习通里存的那张，选新照片时不做裁剪旋转（要认得出人）。clientId 与环信密码都只在用户信息接口下发，环信密码不落库；参考项目是带设备信息 POST 拿到 clientId 的（2026-10-06 实测 GET 不给，二次对照后改为 POST，真机上是否下发待验证），缺失时人脸提交不带设备签名。
+  - 人脸识别：照片本身存在学习通云盘，本机只记 objectId 与使用情况；默认用存着的第一张，其次学习通里存的那张，选新照片时不做裁剪旋转（要认得出人）。clientId 与环信密码都只在用户信息接口下发，环信密码不落库；参考项目是带设备信息 POST 拿到 clientId 的（2026-10-07 用测试账号实测：GET 不给，POST 合成设备信息即下发，能还原出 sc、_t、cid；经原生通道取真机设备信息的路径还没验），缺失时人脸提交不带设备签名。
   - 群聊：环信令牌、群列表与漫游消息每次都现拉，不在本机存群消息。
 - 轻量逻辑随应用一起发布，只有重型纯资源才按需安装。解析器没有大资源，不显示假的下载安装过程。
 - 真实作品链接只在用户授权后联调；离线测试一律用合成数据。
