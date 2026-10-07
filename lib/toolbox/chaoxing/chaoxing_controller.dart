@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:pool/pool.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
@@ -265,16 +266,6 @@ class ChaoxingController extends ChangeNotifier {
       try {
         final result = await accounts.run(client, () => chaoxingSubmit(client, submission));
         if (faceObjectId != null) await accounts.store.markFaceImageUsed(client.phoneNumber, faceObjectId, failed: false);
-        await accounts.store.addSignRecord(
-          ChaoxingSignRecord(
-            phoneNumber: client.phoneNumber,
-            activeId: signed.activeId,
-            courseId: signed.courseId,
-            signType: signed.signType,
-            result: result.late ? 'late' : 'success',
-            createdAt: DateTime.now().toUtc(),
-          ),
-        );
         return result;
       } on ChaoxingFailure catch (failure) {
         switch (failure.code) {
@@ -550,6 +541,8 @@ class ChaoxingController extends ChangeNotifier {
     if (ticket == null) {
       throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '这不是学习通代签二维码');
     }
+    // 取件号取一次就作废：账号已满时在取件前拦下，免得对方还要重新生成。
+    if (accountList.length >= ChaoxingStore.accountLimit) throw ChaoxingAccounts.full;
     final cipherText = await packHub.pickup(ticket.pickupId);
     final pack = await openChaoxingCredentialPack(ChaoxingSealedPack(key: ticket.key, cipherText: cipherText));
     final record = await accounts.importOther(pack);
@@ -636,10 +629,11 @@ class ChaoxingController extends ChangeNotifier {
     var failures = 0;
     // 同一门课的多个班会给回同一场活动，按活动号只留一条（与学习通客户端合并时一样），列表的键才不会重复。
     final merged = <int, ChaoxingActivity>{};
-    for (var index = 0; index < courses.length; index += refreshConcurrency) {
-      final chunk = courses.skip(index).take(refreshConcurrency);
-      final results = await Future.wait(
-        chunk.map((course) async {
+    // 固定并发池：一门课回来就补上下一门，不等整批里最慢的那门。
+    final pool = Pool(refreshConcurrency);
+    final results = await Future.wait(
+      courses.map(
+        (course) => pool.withResource(() async {
           try {
             return await accounts.run(client, () => chaoxingActivities(client, course));
           } catch (failure, stack) {
@@ -648,11 +642,12 @@ class ChaoxingController extends ChangeNotifier {
             return const <ChaoxingActivity>[];
           }
         }),
-      );
-      for (final result in results) {
-        for (final activity in result) {
-          merged.putIfAbsent(activity.activeId, () => activity);
-        }
+      ),
+    );
+    await pool.close();
+    for (final result in results) {
+      for (final activity in result) {
+        merged.putIfAbsent(activity.activeId, () => activity);
       }
     }
     final collected = merged.values.toList();

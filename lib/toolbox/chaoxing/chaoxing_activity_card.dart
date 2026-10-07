@@ -7,6 +7,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_sign_sheet.dart';
@@ -64,10 +65,10 @@ class ChaoxingActivityCard extends StatelessWidget {
                 if (showCourse)
                   Text(activity.subtitle, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface))
                 else
-                  ChaoxingDotText(activity.displayTitle, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                  DotSeparatedText(activity.displayTitle, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
                 if (showCourse) ...[
                   const SizedBox(height: 4),
-                  ChaoxingDotText(activity.displayTitle, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+                  DotSeparatedText(activity.displayTitle, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
                 ],
                 const SizedBox(height: 2),
                 Text(time, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),

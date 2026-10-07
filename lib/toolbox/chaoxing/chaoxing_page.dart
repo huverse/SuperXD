@@ -11,6 +11,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity_card.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_course_page.dart';
@@ -220,7 +221,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                 ListTile(
                   title: Text(item.name, style: const TextStyle(fontSize: 16)),
                   // 设备码与真实设备一致（本机 OAID 或对方代签码带来的）才不会被标「更换设备」；固定随机码要说清楚。
-                  subtitle: Text(
+                  subtitle: DotSeparatedText(
                     [
                       item.schoolName.isEmpty ? '学习通' : item.schoolName,
                       item.phoneNumber,
@@ -258,7 +259,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     final agreed = await showCampusConfirm(
       context,
       title: '删除${record.name}？',
-      message: '会删除本机保存的账号、密码与签到记录，不影响学习通上的数据。',
+      message: '会删除本机保存的账号、密码与人脸照片记录，不影响学习通上的数据。',
       action: '删除',
       destructive: true,
     );
@@ -325,7 +326,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                         style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface),
                       ),
                       const SizedBox(height: 4),
-                      Text(
+                      DotSeparatedText(
                         [
                           if ((controller.current?.schoolName ?? '').isNotEmpty) controller.current!.schoolName,
                           controller.current?.phoneNumber ?? '',

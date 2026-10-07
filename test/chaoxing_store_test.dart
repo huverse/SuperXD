@@ -4,6 +4,9 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
@@ -22,14 +25,17 @@ ChaoxingAccountRecord _account(String phoneNumber, {bool isOtherUser = false, St
   clientId: clientId,
 );
 
-ChaoxingSignRecord _record({DateTime? createdAt}) => ChaoxingSignRecord(
-  phoneNumber: '13800138000',
-  activeId: 1,
-  courseId: 2,
-  signType: ChaoxingSignType.password,
-  result: 'success',
-  createdAt: createdAt ?? DateTime.now().toUtc(),
-);
+// 只数重登次数的会话：重登要等一拍，好让并发请求都撞上同一次。
+class _CountingClient extends ChaoxingClient {
+  _CountingClient() : super(http: ChaoxingHttp(), phoneNumber: '138', encryptedPassword: 'cipher', deviceCode: 'device');
+  int reLogins = 0;
+
+  @override
+  Future<void> reLogin() async {
+    reLogins++;
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+  }
+}
 
 void main() {
   late Directory directory;
@@ -84,15 +90,27 @@ void main() {
     expect(updated.first.location.system, ChaoxingCoordinateSystem.bd09);
   });
 
-  test('签到记录只增不删有上限，超期与超量都会裁剪', () async {
-    await store.addSignRecord(_record(createdAt: DateTime.now().toUtc().subtract(const Duration(days: 120))));
-    await store.addSignRecord(_record());
-    expect((await store.signRecords()).length, 1);
-
-    for (var index = 0; index < ChaoxingStore.signRecordLimit + 10; index++) {
-      await store.addSignRecord(_record());
+  test('账号满 21 个时拒绝写入新账号，已有的账号照常', () async {
+    final accounts = ChaoxingAccounts(store: store, vault: MemoryChaoxingVault());
+    for (var index = 0; index < ChaoxingStore.accountLimit; index++) {
+      await store.putAccount(_account('1380000${index.toString().padLeft(4, '0')}', isOtherUser: index > 0));
     }
-    expect((await store.signRecords(limit: ChaoxingStore.signRecordLimit + 100)).length, ChaoxingStore.signRecordLimit);
+    await expectLater(accounts.ensureRoomFor('13900000000'), throwsA(isA<ChaoxingFailure>()));
+    await accounts.ensureRoomFor('13800000005');
+  });
+
+  test('同一会话的并发请求一起过期时只重登一次，各自重放', () async {
+    final accounts = ChaoxingAccounts(store: store, vault: MemoryChaoxingVault());
+    final client = _CountingClient();
+    final attempts = <int, int>{};
+    Future<int> request(int id) => accounts.run(client, () async {
+      attempts[id] = (attempts[id] ?? 0) + 1;
+      if (attempts[id] == 1) throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '登录已过期');
+      return id;
+    });
+    expect(await Future.wait([request(1), request(2), request(3)]), [1, 2, 3]);
+    expect(client.reLogins, 1);
+    client.close();
   });
 
   test('安全存储里读写账号密码与 Cookie', () async {
@@ -238,5 +256,9 @@ void main() {
     expect(await upgraded.pinnedCourses('138'), isEmpty);
     expect(await upgraded.lessonCache('138'), isNull);
     await upgraded.close();
+    // 升到 v4 去掉只写不读的签到记录表。
+    final raw = await openDatabase(legacyPath);
+    expect(await raw.query('sqlite_master', where: 'type = ? AND name = ?', whereArgs: ['table', 'sign_records']), isEmpty);
+    await raw.close();
   });
 }

@@ -14,6 +14,7 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_batch.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_captcha_dialog.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
@@ -495,7 +496,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface),
         ),
         const SizedBox(height: 4),
-        ChaoxingDotText(_activity.displayTitle, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+        DotSeparatedText(_activity.displayTitle, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
         // 时间单独一行：完整的日期时间跟在活动名后面会被折断。
         Text(_windowText(), style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
         _timeNotice(palette),
@@ -682,6 +683,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   );
 
   // 已结束的活动照样能签，但可能记为迟到；发布太久的提醒确认没选错。
+  // [人工决策-2026-10-07 17:00:58] 测试阶段以参考项目为准：往期活动维持「照样能签、可能记为迟到」的提示，失败后仍给「重试」。
+  // 实测老师已结束的活动强制提交会被学习通拒绝（原样返回「签到已结束」），用户选定不为此改文案或收紧按钮（方案 A）。
   Widget _timeNotice(CampusPalette palette) {
     final now = DateTime.now().toUtc();
     final end = _activity.endTime;
@@ -829,7 +832,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
           ],
         ),
         const SizedBox(height: 8),
-        Text(
+        DotSeparatedText(
           _savedLocation == null
               ? '还没有收藏位置'
               : '${_savedLocation!.address} · ${_savedLocation!.formattedLatitude}, ${_savedLocation!.formattedLongitude}',
@@ -874,27 +877,5 @@ class _QrFeed {
       if (!waiter.isCompleted) waiter.completeError(const ChaoxingFailure(ChaoxingFailureCode.cancelled, '扫码已取消'));
     }
     _waiters.clear();
-  }
-}
-
-// 「甲 · 乙」这类说明行：窄处按项整体换行，分隔符挂在前一项末尾，不在句末折出孤字
-// （同 page 层 course_cards.dart 的 DotSeparatedText；百宝箱不依赖 page，这里单独放一个）。
-class ChaoxingDotText extends StatelessWidget {
-  const ChaoxingDotText(this.text, {super.key, required this.style});
-  final String text;
-  final TextStyle style;
-
-  @override
-  Widget build(BuildContext context) {
-    final parts = text.split(' · ');
-    return Semantics(
-      label: text,
-      excludeSemantics: true,
-      child: Wrap(
-        children: [
-          for (final (index, part) in parts.indexed) Text(index == parts.length - 1 ? part : '$part · ', style: style),
-        ],
-      ),
-    );
   }
 }

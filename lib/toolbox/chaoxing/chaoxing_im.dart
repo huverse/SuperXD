@@ -64,7 +64,7 @@ class ChaoxingImGroup {
   final String name;
 }
 
-// 群聊里announced的一场签到。
+// 群聊里发出的一场签到。
 class ChaoxingImActivity {
   const ChaoxingImActivity({
     required this.activeId,
@@ -167,10 +167,8 @@ Future<List<ChaoxingImActivity>> chaoxingImGroupActivities(
     headers: {'Authorization': 'Bearer ${config.token}', 'User-Agent': chaoxingImUserAgent},
     timeout: const Duration(seconds: 20),
   );
-  // 这一条接口的响应是 JSON，正文里每条消息的 msg 字段是 base64 的 protobuf。
-  final body = jsonDecode(response.body);
-  if (body is! Map) return const [];
-  final data = body['data'];
+  // 这一条接口的响应是 JSON，正文里每条消息的 msg 字段是 base64 的 protobuf；格式不对按统一的「未知格式」报错。
+  final data = chaoxingJson(response.body)['data'];
   final messages = data is Map ? data['msgs'] : null;
   if (messages is! List) return const [];
   final activities = <ChaoxingImActivity>[];

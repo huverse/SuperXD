@@ -81,34 +81,16 @@ class ChaoxingSavedLocation {
   final DateTime updatedAt;
 }
 
-class ChaoxingSignRecord {
-  const ChaoxingSignRecord({
-    required this.phoneNumber,
-    required this.activeId,
-    required this.courseId,
-    required this.signType,
-    required this.result,
-    required this.createdAt,
-  });
-  final String phoneNumber;
-  final int activeId;
-  final int courseId;
-  final ChaoxingSignType signType;
-  final String result;
-  final DateTime createdAt;
-}
-
-// 学习通签到的本机库：账号索引、收藏位置、签到记录、人脸照片索引、置顶课程、学习通课表缓存与设置。
+// 学习通签到的本机库：账号索引、收藏位置、人脸照片索引、置顶课程、学习通课表缓存与设置。
 // 密码与 Cookie 在安全存储里，不在库里。
 class ChaoxingStore {
   ChaoxingStore._(this._database);
   final Database _database;
   bool _closed = false;
 
+  // 本人 1 个加他人 20 个；写入新账号前由账号闭环检查，不靠读取时截断。
   static const accountLimit = 21;
   static const locationLimit = 50;
-  static const signRecordLimit = 500;
-  static const signRecordRetention = Duration(days: 90);
   static const faceImageLimit = 5;
   static const pinnedCourseLimit = 100;
 
@@ -119,7 +101,7 @@ class ChaoxingStore {
     final store = ChaoxingStore._(
       await openDatabase(
         path,
-        version: 3,
+        version: 4,
         onCreate: (database, _) async {
           await database.execute(
             'CREATE TABLE accounts (phone_number TEXT PRIMARY KEY, uid INTEGER NOT NULL, puid INTEGER NOT NULL, '
@@ -133,14 +115,6 @@ class ChaoxingStore {
           );
           await database.execute(
             'CREATE INDEX locations_used ON locations (updated_at DESC)',
-          );
-          await database.execute(
-            'CREATE TABLE sign_records (id INTEGER PRIMARY KEY AUTOINCREMENT, phone_number TEXT NOT NULL, '
-            'active_id INTEGER NOT NULL, course_id INTEGER NOT NULL, sign_type TEXT NOT NULL, result TEXT NOT NULL, '
-            'created_at INTEGER NOT NULL)',
-          );
-          await database.execute(
-            'CREATE INDEX sign_records_time ON sign_records (created_at DESC, id DESC)',
           );
           await _createFaceTables(database);
           await _addFaceStats(database);
@@ -157,10 +131,12 @@ class ChaoxingStore {
             await _addFaceStats(database);
             await _createVersion3Tables(database);
           }
+          // 第 4 版去掉签到记录：只写不读，参考项目也不在本机留签到历史。
+          if (oldVersion < 4) await database.execute('DROP TABLE IF EXISTS sign_records');
         },
       ),
     );
-    await store.prune();
+    await store._pruneAll();
     return store;
   }
 
@@ -190,25 +166,13 @@ class ChaoxingStore {
     );
   }
 
-  // 只增不删的数据都要有上限：账号、收藏位置与签到记录在每次打开时裁剪。
-  Future<void> prune() async {
-    await _database.delete(
-      'sign_records',
-      where: 'created_at < ?',
-      whereArgs: [
-        DateTime.now().toUtc().subtract(signRecordRetention).millisecondsSinceEpoch,
-      ],
-    );
-    await _database.rawDelete(
-      'DELETE FROM sign_records WHERE id NOT IN (SELECT id FROM sign_records ORDER BY created_at DESC, id DESC LIMIT $signRecordLimit)',
-    );
-    await _database.rawDelete(
-      'DELETE FROM locations WHERE id NOT IN (SELECT id FROM locations ORDER BY updated_at DESC, id DESC LIMIT $locationLimit)',
-    );
-    // 每个账号各自留最近几张人脸照片。
+  // 只增不删的数据都要有上限：打开时整库裁剪一次，之后每次写入只裁剪写到的那张表（或那个账号的那几行）。
+  Future<void> _pruneAll() async {
+    await _pruneLocations();
+    // 每个账号各自留最近几张人脸照片、最近置顶的课程。
     await _database.rawDelete(
       'DELETE FROM face_images WHERE id NOT IN ('
-      'SELECT id FROM (SELECT id, phone_number, ROW_NUMBER() OVER (PARTITION BY phone_number ORDER BY id DESC) AS rank FROM face_images) '
+      'SELECT id FROM (SELECT id, ROW_NUMBER() OVER (PARTITION BY phone_number ORDER BY id DESC) AS rank FROM face_images) '
       'WHERE rank <= $faceImageLimit)',
     );
     await _database.rawDelete(
@@ -217,6 +181,22 @@ class ChaoxingStore {
       'WHERE rank <= $pinnedCourseLimit)',
     );
   }
+
+  Future<void> _pruneLocations() => _database.rawDelete(
+    'DELETE FROM locations WHERE id NOT IN (SELECT id FROM locations ORDER BY updated_at DESC, id DESC LIMIT $locationLimit)',
+  );
+
+  Future<void> _pruneFaceImages(String phoneNumber) => _database.rawDelete(
+    'DELETE FROM face_images WHERE phone_number = ? AND id NOT IN '
+    '(SELECT id FROM face_images WHERE phone_number = ? ORDER BY id DESC LIMIT $faceImageLimit)',
+    [phoneNumber, phoneNumber],
+  );
+
+  Future<void> _prunePinnedCourses(String phoneNumber) => _database.rawDelete(
+    'DELETE FROM pinned_courses WHERE phone_number = ? AND rowid NOT IN '
+    '(SELECT rowid FROM pinned_courses WHERE phone_number = ? ORDER BY created_at DESC LIMIT $pinnedCourseLimit)',
+    [phoneNumber, phoneNumber],
+  );
 
   Future<List<ChaoxingAccountRecord>> accounts() async {
     final rows = await _database.query(
@@ -263,7 +243,7 @@ class ChaoxingStore {
       'use_count': existing.isEmpty ? 0 : existing.first['use_count'],
       'failed_before': existing.isEmpty ? 0 : existing.first['failed_before'],
     });
-    await prune();
+    await _pruneFaceImages(phoneNumber);
   }
 
   // 每次用这张照片签到后记一次；人脸识别没通过的标上，选照片时提示。
@@ -315,7 +295,7 @@ class ChaoxingStore {
       }
     }
     await batch.commit(noResult: true);
-    await prune();
+    await _prunePinnedCourses(phoneNumber);
   }
 
   // 学习通课表缓存：原样存接口里的 data 段，过期时间由调用方按 fetchedAt 判断。
@@ -419,43 +399,11 @@ class ChaoxingStore {
       'system': location.system.name,
       'updated_at': DateTime.now().toUtc().millisecondsSinceEpoch,
     });
-    await prune();
+    await _pruneLocations();
   }
 
   Future<void> removeLocation(int id) async {
     await _database.delete('locations', where: 'id = ?', whereArgs: [id]);
-  }
-
-  Future<void> addSignRecord(ChaoxingSignRecord record) async {
-    await _database.insert('sign_records', {
-      'phone_number': record.phoneNumber,
-      'active_id': record.activeId,
-      'course_id': record.courseId,
-      'sign_type': record.signType.name,
-      'result': record.result,
-      'created_at': record.createdAt.millisecondsSinceEpoch,
-    });
-    await prune();
-  }
-
-  Future<List<ChaoxingSignRecord>> signRecords({int limit = 100}) async {
-    final rows = await _database.query(
-      'sign_records',
-      orderBy: 'created_at DESC, id DESC',
-      limit: limit,
-    );
-    return rows
-        .map(
-          (row) => ChaoxingSignRecord(
-            phoneNumber: row['phone_number']! as String,
-            activeId: row['active_id']! as int,
-            courseId: row['course_id']! as int,
-            signType: ChaoxingSignType.values.byName(row['sign_type']! as String),
-            result: row['result']! as String,
-            createdAt: DateTime.fromMillisecondsSinceEpoch(row['created_at']! as int, isUtc: true),
-          ),
-        )
-        .toList();
   }
 
   Future<void> close() async {

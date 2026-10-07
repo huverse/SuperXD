@@ -160,24 +160,38 @@ class ChaoxingHttp {
     required List<int> bytes,
     required String contentType,
     Duration? timeout,
-  }) async {
-    final request = http.MultipartRequest('POST', uri)
-      ..fields.addAll(fields)
-      ..files.add(http.MultipartFile.fromBytes('file', bytes, filename: filename, contentType: http.MediaType.parse(contentType)));
-    return _send('POST', uri, multipart: request, timeout: timeout);
-  }
+  }) => _send(
+    'POST',
+    uri,
+    multipart: (fields: fields, file: http.MultipartFile.fromBytes('file', bytes, filename: filename, contentType: http.MediaType.parse(contentType))),
+    timeout: timeout,
+  );
 
+  // 超时管整个请求（连接、发送与读完响应体）：到点直接中断连接，慢速滴流的响应也拖不过上限。
   Future<ChaoxingResponse> _send(
     String method,
     Uri uri, {
     String? body,
     String? contentType,
     Map<String, String>? headers,
-    http.MultipartRequest? multipart,
+    ({Map<String, String> fields, http.MultipartFile file})? multipart,
     Duration? timeout,
   }) async {
-    final limit = timeout ?? this.timeout;
-    final request = multipart ?? http.Request(method, uri);
+    final deadline = Completer<void>();
+    final timer = Timer(timeout ?? this.timeout, deadline.complete);
+    final http.BaseRequest request;
+    if (multipart != null) {
+      request = http.AbortableMultipartRequest(method, uri, abortTrigger: deadline.future)
+        ..fields.addAll(multipart.fields)
+        ..files.add(multipart.file);
+    } else {
+      final plain = http.AbortableRequest(method, uri, abortTrigger: deadline.future);
+      if (body != null) {
+        if (contentType != null) plain.headers['Content-Type'] = contentType;
+        plain.body = body;
+      }
+      request = plain;
+    }
     request.headers['User-Agent'] = profile.userAgent;
     request.headers['Accept'] = '*/*';
     if (headers != null) request.headers.addAll(headers);
@@ -185,15 +199,11 @@ class ChaoxingHttp {
     if (loaded.isNotEmpty) {
       request.headers['Cookie'] = loaded.entries.map((entry) => '${entry.key}=${entry.value}').join('; ');
     }
-    if (multipart == null && body != null) {
-      if (contentType != null) request.headers['Content-Type'] = contentType;
-      (request as http.Request).body = body;
-    }
     try {
-      final response = await _client.send(request).timeout(limit);
-      final bytes = <int>[];
-      await for (final chunk in response.stream.timeout(limit)) {
-        bytes.addAll(chunk);
+      final response = await _client.send(request);
+      final bytes = BytesBuilder(copy: false);
+      await for (final chunk in response.stream) {
+        bytes.add(chunk);
         if (bytes.length > payloadLimit) {
           throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, '响应过大，已停止读取');
         }
@@ -202,10 +212,10 @@ class ChaoxingHttp {
       if (response.statusCode >= 400) {
         throw ChaoxingFailure(ChaoxingFailureCode.server, '学习通返回错误码 ${response.statusCode}');
       }
-      return ChaoxingResponse(response.statusCode, Uint8List.fromList(bytes));
+      return ChaoxingResponse(response.statusCode, bytes.takeBytes());
     } on ChaoxingFailure {
       rethrow;
-    } on TimeoutException catch (error, stack) {
+    } on http.RequestAbortedException catch (error, stack) {
       _log(uri, 'timeout', error, stack);
       throw const ChaoxingFailure(ChaoxingFailureCode.timeout, '请求超时，请稍后重试');
     } on SocketException catch (error, stack) {
@@ -214,6 +224,8 @@ class ChaoxingHttp {
     } on http.ClientException catch (error, stack) {
       _log(uri, 'network', error, stack);
       throw const ChaoxingFailure(ChaoxingFailureCode.network, '网络请求未完成，请稍后重试');
+    } finally {
+      timer.cancel();
     }
   }
 

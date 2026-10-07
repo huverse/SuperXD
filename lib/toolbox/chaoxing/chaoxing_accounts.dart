@@ -35,6 +35,15 @@ class ChaoxingAccounts {
   Future<ChaoxingAccountRecord?> record(String phoneNumber) async =>
       (await store.accounts()).where((item) => item.phoneNumber == phoneNumber).firstOrNull;
 
+  static const full = ChaoxingFailure(ChaoxingFailureCode.invalidInput, '最多保存 ${ChaoxingStore.accountLimit} 个学习通账号，请先删掉不用的');
+
+  // 新账号写入前检查上限：读取只取前 21 个，超出的会在列表里消失、凭据也删不掉，所以在写入前拦下。
+  Future<void> ensureRoomFor(String phoneNumber) async {
+    final existing = await store.accounts();
+    if (existing.any((item) => item.phoneNumber == phoneNumber.trim())) return;
+    if (existing.length >= ChaoxingStore.accountLimit) throw full;
+  }
+
   // 打开页面时读一次设置里的模拟客户端。
   Future<void> loadProfile() async {
     final id = await store.preference(chaoxingProfileKey);
@@ -65,6 +74,7 @@ class ChaoxingAccounts {
     if ((await store.accounts()).any((item) => item.isOtherUser && item.phoneNumber == phoneNumber.trim())) {
       throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '该账号已作为他人的账号存在');
     }
+    await ensureRoomFor(phoneNumber);
     final localCode = await chaoxingLocalDeviceCode(device);
     final client = await ChaoxingClient.signIn(
       http: _http(ChaoxingCookieJar()),
@@ -110,14 +120,25 @@ class ChaoxingAccounts {
     } on ChaoxingFailure catch (error, stack) {
       if (error.code != ChaoxingFailureCode.sessionExpired) rethrow;
       try {
-        await client.reLogin();
+        await _reLogin(client);
       } on ChaoxingFailure {
         Error.throwWithStackTrace(error, stack);
       }
-      await vault.writeCookies(client.phoneNumber, client.http.cookies.session);
       return await action();
     }
   }
+
+  // 同一会话的并发请求（刷新时几门课一起拉）同时过期时只重登一次，大家等同一次的结果。
+  final _reLogins = <ChaoxingClient, Future<void>>{};
+
+  Future<void> _reLogin(ChaoxingClient client) => _reLogins[client] ??= () async {
+    try {
+      await client.reLogin();
+      await vault.writeCookies(client.phoneNumber, client.http.cookies.session);
+    } finally {
+      _reLogins.remove(client);
+    }
+  }();
 
   // 补一次用户信息：clientId 与群聊密码都只在这里下发；clientId 记进库里，签人脸时要用。
   Future<void> refreshAccount(ChaoxingClient client) => run(client, () async {
@@ -180,6 +201,7 @@ class ChaoxingAccounts {
     if (existing != null && !existing.isOtherUser) {
       throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '这是你自己的账号，不用导入代签码');
     }
+    await ensureRoomFor(pack.phoneNumber);
     final client = ChaoxingClient(
       http: _http(ChaoxingCookieJar()),
       phoneNumber: pack.phoneNumber,

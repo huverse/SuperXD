@@ -32,11 +32,14 @@ export const registerPerHour = 20;
 // 兑换邀请限流：每设备每分钟 10 次，防止穷举。
 export const redeemPerMinute = 10;
 
-// 代签凭据包：单条不超过 2KB，取件号 10 分钟有效；同一 IP 每小时最多提交 20 个、取件 60 次（取件号随机、一次性，限流只为防刷）。
+// 代签凭据包：单条不超过 2KB，取件号 10 分钟有效。
+// [人工决策-2026-10-07 17:00:15] 限流采用极度宽松策略：同一 IP 每小时提交 1000 个、取件 3000 次。校园网出口多为 NAT，
+// 一栋楼甚至一所学校共用一个 IP，原来的每小时 20 次会让同学互相挡住；取件号是 96 位随机数且一次性、10 分钟过期，
+// 穷举不可行，限流只防脚本刷库撑爆存储（包本身 2KB、10 分钟后清理）。
 export const chaoxingPackMaxBytes = 2 * 1024;
 export const chaoxingPackTtlSeconds = 10 * 60;
-export const chaoxingPackPerHour = 20;
-export const chaoxingPackPickupPerHour = 60;
+export const chaoxingPackPerHour = 1000;
+export const chaoxingPackPickupPerHour = 3000;
 
 // 设备 400 天没有任何请求即删除，连同其好友关系与待取消息。
 export const deviceIdleDays = 400;

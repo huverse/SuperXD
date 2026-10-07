@@ -21,6 +21,7 @@ import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/page/term_start_dialog.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 import 'fixture_campus_gateway.dart';
 

@@ -39,17 +39,16 @@ class ChaoxingHistoryPage extends StatelessWidget {
               child: Text('还没有已结束的签到', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
             );
           }
+          // 已结束的活动会越积越多，按需构建，只建屏幕上的那几张。
           return CampusScrollFade(
-            child: ListView(
+            child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
-              children: [
-                for (final activity in activities)
-                  ChaoxingActivityCard(
-                    key: ValueKey(activity.activeId),
-                    activity: activity,
-                    onSign: () => launcher.open(context, activity),
-                  ),
-              ],
+              itemCount: activities.length,
+              itemBuilder: (context, index) => ChaoxingActivityCard(
+                key: ValueKey(activities[index].activeId),
+                activity: activities[index],
+                onSign: () => launcher.open(context, activities[index]),
+              ),
             ),
           );
         },
