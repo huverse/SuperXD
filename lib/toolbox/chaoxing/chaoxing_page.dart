@@ -13,6 +13,7 @@ import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_account_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity_card.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
@@ -165,6 +166,8 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
       items: [
         if (controller.accountList.length > 1)
           const CampusMenuItem(value: 'switch', label: '切换账号', icon: CampusIcons.switchAccount),
+        if (controller.accountList.length > 1)
+          const CampusMenuItem(value: 'accounts', label: '账号管理', icon: CampusIcons.edit),
         const CampusMenuItem(value: 'signIn', label: '登录其他账号', icon: CampusIcons.add),
         const CampusMenuItem(value: 'faces', label: '人脸照片', icon: CampusIcons.scanFace),
         const CampusMenuItem(value: 'settings', label: '签到设置', icon: CampusIcons.settings),
@@ -172,6 +175,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
           const CampusMenuItem(value: 'ticket', label: '出示我的代签码', icon: CampusIcons.qrCode),
         if (canDelegate)
           const CampusMenuItem(value: 'import', label: '扫别人的代签码', icon: CampusIcons.scan),
+        const CampusMenuItem(value: 'signOut', label: '退出登录', icon: CampusIcons.logout),
         CampusMenuItem(value: 'remove', label: '删除该账号', icon: CampusIcons.delete, destructive: true),
       ],
     );
@@ -179,6 +183,8 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     switch (action) {
       case 'switch':
         await _pickAccount(controller);
+      case 'accounts':
+        await showChaoxingAccountSheet(context, controller: controller);
       case 'signIn':
         await _addAccount();
       case 'faces':
@@ -189,9 +195,23 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
         await showChaoxingTicketPage(context, controller: controller);
       case 'import':
         await _importTicket(controller);
+      case 'signOut':
+        await _signOut(controller);
       case 'remove':
         await _removeAccount(controller, record);
     }
+  }
+
+  // 退出登录：与删除不同，账号数据都保留（确认文案说清楚区别）。
+  Future<void> _signOut(ChaoxingController controller) async {
+    final agreed = await showCampusConfirm(
+      context,
+      title: '退出登录？',
+      message: '账号、密码、人脸照片与设置都保留在本机，下次登录或切换回来直接用；当前会话会关闭。',
+      action: '退出登录',
+    );
+    if (!agreed || !mounted) return;
+    await controller.signOut();
   }
 
   Future<void> _importTicket(ChaoxingController controller) =>
@@ -222,7 +242,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
               ),
               for (final item in controller.accountList)
                 ListTile(
-                  title: Text(item.name, style: const TextStyle(fontSize: 16)),
+                  title: Text(item.displayName, style: const TextStyle(fontSize: 16)),
                   // 设备码与真实设备一致（本机 OAID 或对方代签码带来的）才不会被标「更换设备」；固定随机码要说清楚。
                   subtitle: DotSeparatedText(
                     [
@@ -341,7 +361,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        controller.current?.name ?? '学习通账号',
+                        controller.current?.displayName ?? '学习通账号',
                         style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface),
                       ),
                       const SizedBox(height: 4),

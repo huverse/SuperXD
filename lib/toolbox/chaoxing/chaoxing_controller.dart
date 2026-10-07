@@ -143,6 +143,40 @@ class ChaoxingController extends ChangeNotifier {
     }
   }
 
+  // 退出登录：只关当前会话回到登录页，账号数据（凭据、人脸照片、设置、收藏）全部保留，
+  // 与删除账号不同；下次登录同一账号（或切换回来）直接复用。
+  Future<void> signOut() async {
+    await _maintenance;
+    _client?.close();
+    _client = null;
+    for (final client in _clients.values) {
+      client.close();
+    }
+    _clients.clear();
+    current = null;
+    activities = const [];
+    pastActivities = const [];
+    lessonActivities = const [];
+    courses = const [];
+    status = ChaoxingStatus.signedOut;
+    _notify();
+  }
+
+  // 备注名（多账号管理里改，显示时优先于昵称）。
+  Future<void> renameAccount(ChaoxingAccountRecord record, String label) async {
+    await accounts.store.renameAccount(record.phoneNumber, label);
+    accountList = await accounts.list();
+    if (current?.phoneNumber == record.phoneNumber) current = await accounts.record(record.phoneNumber);
+    _notify();
+  }
+
+  // 手动排序：把拖完的顺序写回并刷新列表。
+  Future<void> reorderAccounts(List<ChaoxingAccountRecord> ordered) async {
+    await accounts.store.reorderAccounts([for (final record in ordered) record.phoneNumber]);
+    accountList = await accounts.list();
+    _notify();
+  }
+
   Future<void> removeAccount(ChaoxingAccountRecord record) async {
     try {
       await accounts.forget(record.phoneNumber);

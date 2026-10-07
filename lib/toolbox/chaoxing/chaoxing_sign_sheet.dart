@@ -747,7 +747,24 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         ],
         if (_multi) ...[
           const SizedBox(height: 16),
-          Text('签到对象', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+          Row(
+            children: [
+              Expanded(child: Text('签到对象', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))),
+              TextButton(
+                onPressed: _busy || _batch.targets.every((target) => target.done)
+                    ? null
+                    : () => setState(() {
+                      final allSelected = _batch.targets.where((target) => !target.done).every((target) => target.selected);
+                      for (final target in _batch.targets) {
+                        if (!target.done) target.selected = !allSelected;
+                      }
+                    }),
+                child: Text(
+                  _batch.targets.where((target) => !target.done).every((target) => target.selected) ? '全不选' : '全选',
+                ),
+              ),
+            ],
+          ),
           const SizedBox(height: 8),
           for (final target in _batch.targets) _targetRow(palette, target),
         ] else ...[
@@ -819,6 +836,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       ChaoxingTargetState.signing => '签到中',
       ChaoxingTargetState.succeeded || ChaoxingTargetState.failed => target.message ?? '',
     };
+    // 设备码与真实设备一致（本机 OAID 或对方代签码带来的）不会在官方端签过后被标「更换设备」，固定随机码要说清楚。
+    final deviceText = record.deviceCodeBound ? (record.isOtherUser ? '对方设备码' : '本机设备码') : '固定随机设备码';
     return CampusSurface(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.fromLTRB(4, 8, 12, 8),
@@ -836,7 +855,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(record.name, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                    Text(record.displayName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
                     Text(
                       statusText,
                       style: TextStyle(
@@ -844,6 +863,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
                         color: target.state == ChaoxingTargetState.failed ? palette.danger : palette.onSurfaceVariant,
                       ),
                     ),
+                    if (target.state == ChaoxingTargetState.idle)
+                      Text(deviceText, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
                   ],
                 ),
               ),
