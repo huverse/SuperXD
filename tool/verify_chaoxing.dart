@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_device.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_face.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_im.dart';
@@ -44,7 +45,12 @@ Future<void> main(List<String> args) async {
   try {
     _log('step=login');
     final watch = Stopwatch()..start();
-    final client = await ChaoxingClient.signIn(http: http, phoneNumber: phone, password: password);
+    final client = await ChaoxingClient.signIn(
+      http: http,
+      phoneNumber: phone,
+      password: password,
+      device: const _SyntheticDeviceProbe(),
+    );
     final account = client.account!;
     _log(
       'login=ok ms=${watch.elapsedMilliseconds} uid=${_digits(account.uid)} puid=${_digits(account.puid)} '
@@ -94,7 +100,10 @@ Future<void> main(List<String> args) async {
         _log('activities classId=${course.classId} failed code=${error.code.name} message=${error.message}');
       }
     }
-    _log('activities_total=${activities.length} types=${_typeCounts(activities)}');
+    _log(
+      'activities_total=${activities.length} ongoing=${activities.where((activity) => activity.status == 1).length} '
+      'types=${_typeCounts(activities)}',
+    );
 
     // preSign 与详情都不改状态：对已结束的活动，preSign 只会回「下次早点哦」或已签到。
     if (wants('presign')) {
@@ -167,6 +176,31 @@ Future<void> main(List<String> args) async {
   } finally {
     http.close();
   }
+}
+
+// 合成的设备信息：让用户信息接口走应用实际用的 POST（clientId 靠它下发）；sso 一步仍是 GET，两条路径一次对比。
+class _SyntheticDeviceProbe implements ChaoxingDeviceProbe {
+  const _SyntheticDeviceProbe();
+
+  @override
+  Future<ChaoxingDeviceFacts> facts(String packageName) async => const ChaoxingDeviceFacts(
+    androidId: '5f3a9c1e7b2d4a60',
+    fingerprint: 'google/panther/panther:14/UQ1A.240205.004/11269751:user/release-keys',
+    mediaDrmId: '6d1f0c3b9a7e5d2c4b8a6f1e3d5c7b9a0e2f4d6c8b1a3e5f7d9c0b2a4e6f8d1c',
+    osVersion: '14',
+    language: 'zh',
+    brand: 'google',
+    board: 'panther',
+    hardware: 'panther',
+    model: 'Pixel 7',
+    abis: 'arm64-v8a',
+    width: 1080,
+    height: 2400,
+    density: '420',
+  );
+
+  @override
+  Future<String> oaid() async => '';
 }
 
 // 只看响应结构，不看值：用来确认字段名（例如 clientId 到底在哪一层）。

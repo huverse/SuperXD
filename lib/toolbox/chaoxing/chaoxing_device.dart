@@ -1,7 +1,5 @@
 import 'dart:convert';
 
-import 'package:flutter/services.dart';
-
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
 
@@ -81,20 +79,6 @@ abstract interface class ChaoxingDeviceProbe {
 
   // 取不到返回空串。
   Future<String> oaid();
-}
-
-class ChannelChaoxingDeviceProbe implements ChaoxingDeviceProbe {
-  static const _channel = MethodChannel('superxd/chaoxing_device');
-
-  @override
-  Future<ChaoxingDeviceFacts> facts(String packageName) async {
-    final result = await _channel.invokeMapMethod<Object?, Object?>('deviceInfo', {'packageName': packageName});
-    if (result == null) throw StateError('设备信息为空');
-    return ChaoxingDeviceFacts.fromMap(result);
-  }
-
-  @override
-  Future<String> oaid() async => await _channel.invokeMethod<String>('oaid') ?? '';
 }
 
 // 学习通用户信息接口要的设备信息，字段与顺序照学习通客户端：设备唯一号由「客户端包名:ANDROID_ID:系统指纹」做 sha256。

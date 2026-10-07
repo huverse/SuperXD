@@ -7,7 +7,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_device.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_device_channel.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
