@@ -2,7 +2,7 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 
 import { DistributedLock } from 'src/common/redis/redis.module';
-import { cleanupBatch, deviceIdleDays } from 'src/common/relay_limits';
+import { cleanupBatch, deviceIdleDays, deviceRemovalChunk } from 'src/common/relay_limits';
 import { DeviceRepository } from 'src/modules/device/device.repository';
 import { MessageRepository } from 'src/modules/message/message.repository';
 import { DeviceRemovalService } from 'src/modules/pairing/device_removal.service';
@@ -43,7 +43,10 @@ export class RetentionTask {
     let idle = 0;
     for (let round = 0; round < 20; round++) {
       const deviceIds = await this.devices.idle(idleBefore, cleanupBatch);
-      await this.removal.remove(deviceIds);
+      // 每台设备连带它的好友关系与信箱一起删：按 10 台一个事务，单个事务的行数有界，不锁住在线请求。
+      for (let start = 0; start < deviceIds.length; start += deviceRemovalChunk) {
+        await this.removal.remove(deviceIds.slice(start, start + deviceRemovalChunk));
+      }
       idle += deviceIds.length;
       if (deviceIds.length < cleanupBatch) break;
     }

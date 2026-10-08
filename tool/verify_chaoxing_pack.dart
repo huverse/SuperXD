@@ -5,7 +5,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
 
 // 代签凭据包经真实中转服务的往返验证（手动，不进 CI）。只用合成凭据，不碰任何真实账号。
-// 覆盖：投递换取件号、二维码文本编解码、取件解封、取走即删（再取要 PACK_NOT_FOUND）。
+// 覆盖：投递换取件号与作废口令、二维码文本编解码、取件解封、取走即删（再取要 PACK_NOT_FOUND）、凭口令作废。
 // 运行：
 //   dart run tool/verify_chaoxing_pack.dart http://127.0.0.1:8790
 Future<void> main(List<String> args) async {
@@ -27,8 +27,9 @@ Future<void> main(List<String> args) async {
     _log('seal=ok cipher=${sealed.cipherText.length}B key=${sealed.key.length}B');
 
     final watch = Stopwatch()..start();
-    final pickupId = await hub.submit(sealed.cipherText);
-    _log('submit=ok pickupId=len=${pickupId.length} ms=${watch.elapsedMilliseconds}');
+    final submitted = await hub.submit(sealed.cipherText);
+    final pickupId = submitted.id;
+    _log('submit=ok pickupId=len=${pickupId.length} revokeToken=${submitted.revokeToken == null ? 'none' : 'ok'} ms=${watch.elapsedMilliseconds}');
     if (!RegExp(r'^[A-Za-z0-9_-]{16}$').hasMatch(pickupId)) {
       _log('submit=bad_format pickupId_len=${pickupId.length}');
       exitCode = 1;
@@ -58,6 +59,23 @@ Future<void> main(List<String> args) async {
     } on ChaoxingFailure catch (error) {
       _log('repickup=ok code=${error.code.name}${error.code == ChaoxingFailureCode.packNotFound ? '' : ' (预期 packNotFound)'}');
       if (error.code != ChaoxingFailureCode.packNotFound) exitCode = 1;
+    }
+
+    // 轮换即作废：再投一个包，凭口令作废后取不到。
+    final rotated = await hub.submit(sealed.cipherText);
+    final rotatedToken = rotated.revokeToken;
+    if (rotatedToken == null) {
+      _log('revoke=skipped 中转还没升级，没给作废口令');
+    } else {
+      await hub.revoke(rotated.id, rotatedToken);
+      try {
+        await hub.pickup(rotated.id);
+        _log('revoke=bad 作废后仍能取到');
+        exitCode = 1;
+      } on ChaoxingFailure catch (error) {
+        _log('revoke=ok code=${error.code.name}');
+        if (error.code != ChaoxingFailureCode.packNotFound) exitCode = 1;
+      }
     }
 
     // 不存在的取件号也要是 PACK_NOT_FOUND，不能是 500。

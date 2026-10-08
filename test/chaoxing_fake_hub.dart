@@ -3,10 +3,11 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-// 内存版代签中转：投递拿取件号、取走即删，规则与服务端一致。
+// 内存版代签中转：投递拿取件号与作废口令、取走即删、凭口令作废（不论在不在都回 204），规则与服务端一致。
 // 供客户端测试走完整条代签链路；服务端行为本身由 server/test 的 e2e 覆盖。
 class FakePackHub {
   final packs = <String, List<int>>{};
+  final revokeTokens = <String, String>{};
   final calls = <String>[];
   var _next = 0;
 
@@ -21,8 +22,18 @@ class FakePackHub {
       if (bytes.isEmpty) return _error(400, 'INVALID_REQUEST');
       if (bytes.length > maxBytes) return _error(413, 'ENVELOPE_TOO_LARGE');
       final id = 'pickup${(++_next).toString().padLeft(10, '0')}';
+      final token = 'revoke${_next.toString().padLeft(16, '0')}';
       packs[id] = bytes;
-      return _json({'id': id, 'expiresAt': DateTime.now().millisecondsSinceEpoch + 600000});
+      revokeTokens[id] = token;
+      return _json({'id': id, 'expiresAt': DateTime.now().millisecondsSinceEpoch + 600000, 'revokeToken': token});
+    }
+    if (request.method == 'POST' && segments.length == 5 && segments[4] == 'revoke') {
+      final token = '${(jsonDecode(request.body) as Map)['token'] ?? ''}';
+      if (revokeTokens[segments[3]] == token) {
+        packs.remove(segments[3]);
+        revokeTokens.remove(segments[3]);
+      }
+      return http.Response('', 204);
     }
     if (request.method == 'POST' && segments.length == 5 && segments[4] == 'pickup') {
       final bytes = packs.remove(segments[3]);

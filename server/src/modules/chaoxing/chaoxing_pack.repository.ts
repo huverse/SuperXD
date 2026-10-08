@@ -5,9 +5,11 @@ import { EntityManager, Repository } from 'typeorm';
 import { ChaoxingPackEntity } from 'src/modules/chaoxing/chaoxing_pack.entity';
 
 export abstract class ChaoxingPackRepository {
-  abstract insert(pickupId: string, data: Buffer, expireTime: Date): Promise<void>;
+  abstract insert(pickupId: string, data: Buffer, expireTime: Date, revokeHash: string): Promise<void>;
   // 取走即删：同一事务里锁定再删，两个请求同时取只会有一个人拿到；已过期的顺手删掉并返回空。
   abstract take(pickupId: string, now: Date): Promise<Buffer | null>;
+  // 出示方作废：取件号与口令哈希都对上才删，返回是否删掉了。
+  abstract revoke(pickupId: string, revokeHash: string): Promise<boolean>;
   // 删除最多 limit 条已过期的包，返回删除条数。
   abstract deleteExpired(now: Date, limit: number): Promise<number>;
 }
@@ -18,9 +20,14 @@ export class TypeormChaoxingPackRepository extends ChaoxingPackRepository {
     super();
   }
 
-  async insert(pickupId: string, data: Buffer, expireTime: Date) {
+  async insert(pickupId: string, data: Buffer, expireTime: Date, revokeHash: string) {
     const now = new Date();
-    await this.repository.insert({ pickupId, data, bytes: data.length, expireTime, createTime: now, updateTime: now });
+    await this.repository.insert({ pickupId, data, bytes: data.length, expireTime, revokeHash, createTime: now, updateTime: now });
+  }
+
+  async revoke(pickupId: string, revokeHash: string) {
+    const result = await this.repository.delete({ pickupId, revokeHash });
+    return (result.affected ?? 0) > 0;
   }
 
   async take(pickupId: string, now: Date) {

@@ -1,4 +1,4 @@
-// 中转服务的全部上限与保留期集中在这里；改动须同步 README 的“上限与保留”和客户端 lib/social/CLAUDE.md。
+// 中转服务的全部上限与保留期集中在这里；改动须同步 README 的“上限与保留”，以及客户端索引（私信见 lib/social/CLAUDE.md，代签见 lib/toolbox/CLAUDE.md 与根 CLAUDE.md 的数据保留）。
 
 // 请求签名：时间戳与服务器相差超过 5 分钟拒绝；随机数 10 分钟内不得重复（覆盖时间窗两侧）。
 export const clockSkewMs = 5 * 60 * 1000;
@@ -35,11 +35,15 @@ export const redeemPerMinute = 10;
 // 代签凭据包：单条不超过 2KB，取件号 10 分钟有效。
 // [人工决策-2026-10-07 17:00:15] 限流采用极度宽松策略：同一 IP 每小时提交 1000 个、取件 3000 次。校园网出口多为 NAT，
 // 一栋楼甚至一所学校共用一个 IP，原来的每小时 20 次会让同学互相挡住；取件号是 96 位随机数且一次性、10 分钟过期，
-// 穷举不可行，限流只防脚本刷库撑爆存储（包本身 2KB、10 分钟后清理）。
+// 穷举不可行，限流只防脚本刷库撑爆存储（包本身 2KB；10 分钟过期即取不到，清理任务每 10 分钟一轮，最迟约 20 分钟内删掉）。
+// 作废（出示方换码时作废上一张）与取件同一宽松档。
 export const chaoxingPackMaxBytes = 2 * 1024;
 export const chaoxingPackTtlSeconds = 10 * 60;
 export const chaoxingPackPerHour = 1000;
 export const chaoxingPackPickupPerHour = 3000;
+export const chaoxingPackRevokePerHour = 3000;
+// 代签接口的请求体上限：包 2KB 经 base64url 约 2.7KB，外加字段，8KB 足够；不签名的接口不该吃全局 400KB 的上限。
+export const chaoxingRequestMaxBytes = 8 * 1024;
 
 // 设备 400 天没有任何请求即删除，连同其好友关系与待取消息。
 export const deviceIdleDays = 400;
@@ -48,3 +52,5 @@ export const seenWriteSeconds = 60 * 60;
 
 // 清理任务每批删除 1000 行，避免长事务与大锁。
 export const cleanupBatch = 1000;
+// 不活跃设备按每 10 台一个事务删除：每台连带最多 1000 行好友关系（双向）与 1000 条待取消息，单个事务约 2 万行封顶。
+export const deviceRemovalChunk = 10;

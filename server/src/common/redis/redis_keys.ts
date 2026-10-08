@@ -1,7 +1,9 @@
 import { inviteTtlSeconds, nonceTtlSeconds, seenWriteSeconds } from 'src/common/relay_limits';
 
 // Redis key 注册表：所有 key 在此构造，service 不得硬编码 key 字符串。全局前缀由 REDIS_KEY_PREFIX 配置（ioredis keyPrefix）。
-// 这里全部是运行态或可丢的短期状态：丢了的后果是邀请失效需重新出示、限流窗口归零，均可自愈；权威数据只在 MySQL。
+// 这里全部是运行态或可丢的短期状态，权威数据只在 MySQL。丢了的后果：邀请失效需重新出示、限流窗口归零、
+// 进行中的清理任务锁释放（下一轮重抢），均可自愈；随机数丢了则 5 分钟校时窗口内截获的请求可被重放一次。
+// 部署用 maxmemory-policy volatile-ttl，内存满时先淘汰剩余寿命最短的 key，随机数与邀请首当其冲，所以 Redis 内存要留足余量。
 export const RedisKeyTTL = {
   nonce: nonceTtlSeconds,
   invite: inviteTtlSeconds,

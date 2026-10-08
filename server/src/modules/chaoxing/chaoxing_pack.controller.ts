@@ -16,6 +16,13 @@ export class ChaoxingPackController {
     return this.packs.submit(ip, body.data);
   }
 
+  // 出示方换码时作废上一张；无论包在不在都回 204，不透露是否存在。
+  @Post(':id/revoke')
+  @HttpCode(204)
+  revoke(@Param() param: dtos.PickupChaoxingPackParamDto, @Body() body: dtos.RevokeChaoxingPackDto, @Ip() ip: string): Promise<void> {
+    return this.packs.revoke(ip, param.id, body.token);
+  }
+
   @Post(':id/pickup')
   @HttpCode(200)
   pickup(@Param() param: dtos.PickupChaoxingPackParamDto, @Ip() ip: string): Promise<dtos.PickupChaoxingPackResultDto> {

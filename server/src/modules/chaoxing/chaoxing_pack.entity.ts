@@ -9,4 +9,6 @@ export class ChaoxingPackEntity extends BaseEntity {
   @Column({ name: 'data', type: 'varbinary', length: 2048 }) data: Buffer;
   @Column({ name: 'bytes', type: 'int', unsigned: true }) bytes: number;
   @Column({ name: 'expire_time', type: 'datetime', precision: 3 }) expireTime: Date;
+  // 作废口令的 sha256（十六进制）：口令只在投递响应里给出示方一次，库里不存原文。
+  @Column({ name: 'revoke_hash', type: 'varchar', length: 64 }) revokeHash: string;
 }

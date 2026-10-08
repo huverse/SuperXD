@@ -1,6 +1,7 @@
 import { HttpStatus } from '@nestjs/common';
 
-// 错误码登记表：客户端只按 code 分支，message 只用于日志与排查。新错误码先在这里登记，并同步客户端 relay_code.dart。
+// 错误码登记表：客户端只按 code 分支，message 只用于日志与排查。新错误码先在这里登记，并同步客户端：
+// 私信看 lib/social/relay_client.dart 的 RelayCode，代签看 lib/toolbox/chaoxing/chaoxing_pack_client.dart 的 _failure。
 export const RelayCode = {
   invalidRequest: 'INVALID_REQUEST', // 请求体或参数不合法
   unauthorized: 'UNAUTHORIZED', // 缺签名、签名错误或设备未注册

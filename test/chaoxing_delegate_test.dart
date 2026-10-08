@@ -1,15 +1,18 @@
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_batch.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_share_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_sign_flow.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
@@ -72,12 +75,40 @@ void main() {
 
   ChaoxingPackHub hub() => ChaoxingPackHub(baseUrl: Uri.parse('http://relay.test'), client: packs.client());
 
+  testWidgets('出示页重新生成会作废上一张码，离开页面后当前这张也作废', (tester) async {
+    final owner = controllerFor(store, vault, hub: hub());
+    await tester.runAsync(() => owner.signIn('13800138000', 'myPassword123'));
+    // 封包、投递都是真异步（加密库与网络桩），在假时钟里要靠 runAsync 让它们走完。
+    Future<void> settle(bool Function() done) async {
+      for (var round = 0; round < 100 && !done(); round++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+        await tester.pump();
+      }
+    }
+
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingTicketPage(controller: owner)));
+    await settle(() => find.textContaining('10 分钟内有效').evaluate().isNotEmpty);
+    final first = packs.packs.keys.single;
+
+    await tester.ensureVisible(find.text('重新生成'));
+    await tester.pump();
+    await tester.tap(find.text('重新生成'));
+    await settle(() => packs.packs.length == 1 && packs.packs.keys.single != first);
+    expect(packs.packs.keys.single, isNot(first));
+    expect(packs.calls.where((call) => call.endsWith('/revoke')), hasLength(1));
+
+    await tester.pumpWidget(const SizedBox());
+    await settle(() => packs.packs.isEmpty);
+    expect(packs.packs, isEmpty);
+    owner.dispose();
+  });
+
   test('出示的代签码能在另一台设备导入，并带着对方的设备码签到', () async {
     final first = controllerFor(store, vault, hub: hub());
     await first.signIn('13800138000', 'myPassword123');
     final deviceCode = first.account!.deviceCode;
 
-    final ticket = await first.delegate.createTicket();
+    final ticket = (await first.delegate.createTicket()).ticket;
     expect(ticket.startsWith('SXDC1:'), isTrue);
     expect(packs.packs, hasLength(1));
 
@@ -114,7 +145,7 @@ void main() {
   test('代签码可以附带人脸照片，导入方记进本机', () async {
     final first = controllerFor(store, vault, hub: hub());
     await first.signIn('13800138000', 'myPassword123');
-    final ticket = await first.delegate.createTicket(faceObjectIds: ['face-a', 'face-b']);
+    final ticket = (await first.delegate.createTicket(faceObjectIds: ['face-a', 'face-b'])).ticket;
 
     final otherStore = await ChaoxingStore.open(path.join(directory.path, 'f.db'));
     final second = controllerFor(otherStore, MemoryChaoxingVault(), hub: hub());
@@ -130,7 +161,7 @@ void main() {
     final otherStore = await ChaoxingStore.open(path.join(directory.path, 'g.db'));
     final owner = controllerFor(otherStore, MemoryChaoxingVault(), hub: hub());
     await owner.signIn('13900139000', 'otherPassword1');
-    final ticket = await owner.delegate.createTicket();
+    final ticket = (await owner.delegate.createTicket()).ticket;
     final otherCode = owner.account!.deviceCode;
 
     await controller.signIn('13800138000', 'myPassword123');
@@ -193,7 +224,7 @@ void main() {
   test('同一张代签码只能取一次', () async {
     final first = controllerFor(store, vault, hub: hub());
     await first.signIn('13800138000', 'myPassword123');
-    final ticket = await first.delegate.createTicket();
+    final ticket = (await first.delegate.createTicket()).ticket;
 
     final otherStore = await ChaoxingStore.open(path.join(directory.path, 'c.db'));
     final second = controllerFor(otherStore, MemoryChaoxingVault(), hub: hub());
@@ -218,7 +249,7 @@ void main() {
     final otherStore = await ChaoxingStore.open(path.join(directory.path, 'd.db'));
     final other = controllerFor(otherStore, MemoryChaoxingVault(), hub: hub());
     await other.signIn('13800138000', 'myPassword123');
-    final ticket = await other.delegate.createTicket();
+    final ticket = (await other.delegate.createTicket()).ticket;
     await expectLater(
       controller.importCredentialTicket(ticket),
       throwsA(isA<ChaoxingFailure>().having((failure) => failure.message, 'message', contains('你自己的账号'))),
