@@ -311,17 +311,21 @@ class ChaoxingController extends ChangeNotifier {
   }
 
   // 把云盘里的人脸照片原图导出到公共下载目录（JPEG 文件）。
+  // 文件名带 objectId：原生导出按文件名幂等，同一张照片重复保存直接返回已有文件，换照片不会互相覆盖。
   Future<Uri> saveFaceImage(String objectId) async {
     final makePublisher = filePublisher;
     if (makePublisher == null) {
       throw const ChaoxingFailure(ChaoxingFailureCode.unavailable, '当前环境不能保存文件');
     }
     final publisher = makePublisher();
+    // objectId 来自学习通云盘（外部输入），临时文件与导出文件名都只保留安全字符。
+    final safeId = objectId.replaceAll(RegExp('[^a-zA-Z0-9_-]'), '');
+    final suffix = safeId.length > 32 ? safeId.substring(0, 32) : safeId;
     final bytes = await faceImageBytes(objectId);
-    final temp = File(path.join(Directory.systemTemp.path, 'chaoxing-face-$objectId.jpg'));
+    final temp = File(path.join(Directory.systemTemp.path, 'chaoxing-face-$suffix.jpg'));
     await temp.writeAsBytes(bytes, flush: true);
     try {
-      final uri = await publisher.publish(id: 'face-$objectId', source: temp.path, filename: '人脸照片.jpg', mimeType: 'image/jpeg');
+      final uri = await publisher.publishExternal(source: temp.path, filename: '人脸照片${suffix.isEmpty ? '' : '-$suffix'}.jpg', mimeType: 'image/jpeg');
       if (uri == null) {
         throw const ChaoxingFailure(ChaoxingFailureCode.server, '保存失败，请重试');
       }

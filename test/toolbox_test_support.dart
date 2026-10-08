@@ -232,6 +232,9 @@ class FakePublisher implements ToolboxFilePublisher {
   // 拖住导出，模拟真机 MediaStore 写入与哈希校验慢、后续项排队等导出。
   Completer<void>? gate;
   final published = <String, Uri>{};
+  // publishExternal 的最近一次参数（人脸照片保存等一次性导出用）。
+  String? externalFilename;
+  String? externalSource;
   @override
   Future<Uri?> publish({
     required String id,
@@ -246,6 +249,24 @@ class FakePublisher implements ToolboxFilePublisher {
     return published.putIfAbsent(
       id,
       () => Uri.parse('content://media/downloads/$id'),
+    );
+  }
+
+  @override
+  Future<Uri?> publishExternal({
+    required String source,
+    required String filename,
+    required String mimeType,
+  }) async {
+    calls++;
+    externalSource = source;
+    externalFilename = filename;
+    await gate?.future;
+    if (fail) throw const ToolboxException('存储空间不足');
+    if (cancel) return null;
+    return published.putIfAbsent(
+      filename,
+      () => Uri.parse('content://media/external/$filename'),
     );
   }
 

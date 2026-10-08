@@ -113,6 +113,8 @@ class FakeChaoxing {
 
   // 人脸识别：学习通里存着的人脸照片与换回来的 faceEnc。
   String profileFaceObjectId = 'face-object-1';
+  // 云盘原图下载（p.cldisk.com）回的字节，任意 objectId 都给同一张 3:4 小图。
+  List<int> facePhotoBytes = picture.encodeJpg(picture.Image(width: 12, height: 16));
   String faceEnc = 'FACE-ENC';
   Map<String, String>? faceQuery;
 
@@ -280,6 +282,10 @@ class FakeChaoxing {
         uploadBody = String.fromCharCodes(request.bodyBytes);
         return _json({'objectId': 'obj-1'});
       }
+    }
+    // 学习通云盘的原图下载：人脸照片预览与保存到本机走这里。
+    if (request.url.host == 'p.cldisk.com') {
+      return http.Response.bytes(facePhotoBytes, 200, headers: {'content-type': 'image/jpeg'});
     }
     if (request.url.host == 'captcha.chaoxing.com') {
       captchaCalls.add(path);

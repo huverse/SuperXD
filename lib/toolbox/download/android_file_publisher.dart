@@ -21,6 +21,20 @@ class AndroidFilePublisher implements ToolboxFilePublisher {
   }
 
   @override
+  Future<Uri?> publishExternal({
+    required String source,
+    required String filename,
+    required String mimeType,
+  }) async {
+    final value = await _channel.invokeMethod<String>('publishExternal', {
+      'source': source,
+      'filename': filename,
+      'mimeType': mimeType,
+    });
+    return value == null ? null : Uri.parse(value);
+  }
+
+  @override
   Future<void> open(Uri uri, String mimeType) => _channel.invokeMethod<void>(
     'open',
     {'uri': uri.toString(), 'mimeType': mimeType},

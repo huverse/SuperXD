@@ -872,4 +872,27 @@ void main() {
     expect(fake.calls.skip(callsBefore), isEmpty);
     await tester.pumpWidget(const SizedBox());
   });
+
+  testWidgets('人脸照片保存到下载目录走一次性导出，文件名带净化的 objectId 且按名幂等', (tester) async {
+    final publisher = FakePublisher();
+    final controller = ChaoxingController(
+      accounts: ChaoxingAccounts(
+        store: store,
+        vault: MemoryChaoxingVault(),
+        transport: (cookies) => ChaoxingHttp(client: fake.client(), cookies: cookies),
+      ),
+      filePublisher: () => publisher,
+    );
+    await tester.runAsync(() => controller.signIn('13800138000', 'myPassword123'));
+
+    // objectId 是学习通云盘给的外部输入，路径分隔符等不安全字符不得进入导出文件名。
+    final uri = await tester.runAsync(() => controller.saveFaceImage('face/obj:1'));
+    expect(Uri.decodeComponent(uri.toString()), 'content://media/external/人脸照片-faceobj1.jpg');
+    expect(publisher.externalFilename, '人脸照片-faceobj1.jpg');
+
+    // 同一张照片重复保存：原生按文件名幂等，直接拿回同一个地址。
+    final again = await tester.runAsync(() => controller.saveFaceImage('face/obj:1'));
+    expect(again.toString(), uri.toString());
+    await tester.pumpWidget(const SizedBox());
+  });
 }

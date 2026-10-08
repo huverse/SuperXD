@@ -37,7 +37,7 @@
     - 每组 1–100 项；待处理任务组最多 10 个；同时传输最多 2 个。
     - 已结束的记录最多保留 100 项且 30 天。创建超过 24 小时仍未完成的任务，在启动时取消。
   - background_transfer.dart：基于 background_downloader 的后台传输 BackgroundTransfer。未授予通知权限时，改用普通 WorkManager 任务，避免 ANR。
-  - android_file_publisher.dart：通过 MethodChannel superxd/toolbox_files 调用原生 ToolboxFileExporter.kt，把文件导出到公共目录 Download/SuperXD。
+  - android_file_publisher.dart：通过 MethodChannel superxd/toolbox_files 调用原生 ToolboxFileExporter.kt，把文件导出到公共目录 Download/SuperXD。publish 是下载管理的导出（UUID 文件名幂等键，source 限定下载目录）；publishExternal 是一次性导出（人脸照片等，source 不限、语义化文件名按名幂等，原生仍校验文件存在与 mime 白名单）。
   - downloads_page.dart：下载管理页 DownloadsPage，按组展示任务。整组操作在⋯菜单里，条目顺序稳定。
   - download_status.dart：共享组件，包括状态文案、进度条 DownloadProgress 和操作按钮 downloadActions，供结果页和下载页共用。
 - short_video 短视频：
