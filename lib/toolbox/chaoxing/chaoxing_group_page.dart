@@ -61,7 +61,7 @@ class _ChaoxingGroupPageState extends State<ChaoxingGroupPage> {
         ),
         actions: [
           IconButton(
-            tooltip: '重新读取',
+            tooltip: '刷新',
             onPressed: _activities == null && _error == null ? null : () => _load(),
             icon: const CampusIcon(CampusIcons.sync),
           ),

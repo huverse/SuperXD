@@ -73,7 +73,7 @@ class ChaoxingAccounts {
     required String password,
   }) async {
     if ((await store.accounts()).any((item) => item.isOtherUser && item.phoneNumber == phoneNumber.trim())) {
-      throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '该账号已作为他人的账号存在');
+      throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '该账号已作为代签账号导入，不能再作为本人登录');
     }
     await ensureRoomFor(phoneNumber);
     final localCode = await chaoxingLocalDeviceCode(device);

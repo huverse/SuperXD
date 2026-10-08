@@ -260,7 +260,7 @@ class _FaceTileState extends State<_FaceTile> {
                     }),
                     icon: const CampusIcon(CampusIcons.sync),
                   ),
-                  _ => const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+                  _ => const Center(child: CampusLoader(size: 20, delay: Duration.zero)),
                 },
               ),
             ),

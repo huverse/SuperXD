@@ -5,7 +5,7 @@
 # 文件职责
 
 - campus_palette.dart：CampusPalette 是设备级的完整色彩角色，有苔灰（默认）、雾蓝、藕粉、暮紫、燕麦五套，每套分浅色和深色。
-  - accent 是控件激活色（开关开启轨道、滑杆已选段、复选框选中、强调按钮底色），同鸿蒙 component_activated、iOS 开关 onTintColor，与文字主色 primary 分开：primary 为文字可读压得深而灰，铺成大块轨道发闷。白字、白色滑块对 accent 都不低于 4.5:1。dangerFill 是破坏性按钮的红底（深色下的 danger 是给文字用的浅红）。
+  - accent 是控件激活色（开关开启轨道、滑杆已选段、复选框选中、强调按钮底色），同鸿蒙 component_activated、iOS 开关 onTintColor，与文字主色 primary 分开：primary 为文字可读压得深而灰，铺成大块轨道发闷。白字、白色滑块对 accent 都不低于 4.5:1。dangerFill 是破坏性按钮的红底（深色下的 danger 是给文字用的浅红）。attention 是只读状态标记的提醒色（如学习通「刚发起」小圆点），与主色、警示红区分，深色提亮一档。
 - campus_theme.dart：
   - campusTheme 按配色和字体生成 ThemeData。三类按钮的文字都显式带应用字体（按钮 textStyle 不带 fontFamily 时会回落成系统字体）。headlineMedium（26）是底栏根页的大标题，titleLarge（18）是二级页标题。AppBar 的 titleSpacing 为 0：返回图标与内容左边距 16 对齐，标题从 56 起；课表、成绩、协议的自绘顶栏按同样间距排（人工决策见文件内）。OutlinedButton 主题即次要按钮：内容区中性浅底胶囊配主色字、无描边。
   - campusFieldGap 给带浮动标签的输入框算上方间距，随字号缩放。

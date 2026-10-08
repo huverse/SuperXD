@@ -23,9 +23,20 @@ class _ChaoxingAccountSheet extends StatefulWidget {
 }
 
 class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
-  // 拖动期间先在内存里排，松手一次写回。
-  // 拷一份：拖动只改这里，不直接改 controller 的状态，松手写库后再从 controller 取回。
-  late List<ChaoxingAccountRecord> _ordered = List.of(widget.controller.accountList);
+  // [人工决策-2026-10-08 19:36:24] 本人固定排第一、不可拖；代签账号只在自己那一段里拖动排序。
+  // 库里的排序本来就是「本人在前」，界面与存储同一口径（以前能把代签账号拖到本人前面，松手又跳回去）；
+  // 启动时打开排第一的账号，本人在前也保证打开工具进的是自己的账号。
+  // 拖动期间先在内存里排（拷一份，不直接改 controller 的状态），松手一次写回。
+  late List<ChaoxingAccountRecord> _own = _ownOf(widget.controller.accountList);
+  late List<ChaoxingAccountRecord> _delegated = _delegatedOf(widget.controller.accountList);
+
+  static List<ChaoxingAccountRecord> _ownOf(List<ChaoxingAccountRecord> records) => [for (final record in records) if (!record.isOtherUser) record];
+  static List<ChaoxingAccountRecord> _delegatedOf(List<ChaoxingAccountRecord> records) => [for (final record in records) if (record.isOtherUser) record];
+
+  void _reload() {
+    _own = _ownOf(widget.controller.accountList);
+    _delegated = _delegatedOf(widget.controller.accountList);
+  }
 
   Future<void> _rename(ChaoxingAccountRecord record) async {
     final editor = TextEditingController(text: record.label);
@@ -44,7 +55,7 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
     if (label == null || label == record.label || !mounted) return;
     try {
       await widget.controller.renameAccount(record, label);
-      setState(() => _ordered = List.of(widget.controller.accountList));
+      if (mounted) setState(_reload);
     } on ChaoxingFailure catch (failure) {
       if (mounted) await showCampusNotice(context, failure.message);
     } catch (failure, stack) {
@@ -55,16 +66,53 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
 
   Future<void> _persist() async {
     try {
-      await widget.controller.reorderAccounts(_ordered);
+      await widget.controller.reorderAccounts([..._own, ..._delegated]);
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=account_reorder errorType=${failure.runtimeType}\n$stack');
       if (mounted) await showCampusNotice(context, '排序没保存，请重试');
     }
   }
 
+  Widget _tile(CampusPalette palette, ChaoxingAccountRecord record, {int? dragIndex}) => CampusSurface(
+    key: ValueKey(record.phoneNumber),
+    margin: const EdgeInsets.only(bottom: 8),
+    padding: const EdgeInsets.all(8),
+    radius: 16,
+    child: Row(
+      children: [
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.only(left: 8),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(record.displayName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                DotSeparatedText(
+                  [record.phoneNumber, record.ownerLabel, if (record.label.isNotEmpty) record.name].join(' · '),
+                  style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
+                ),
+              ],
+            ),
+          ),
+        ),
+        IconButton(tooltip: '改备注名', onPressed: () => _rename(record), icon: const CampusIcon(CampusIcons.edit)),
+        // 拖动手柄只是按住拖的把手，不是按钮：读屏给标签，不伪装成可点的按钮。
+        if (dragIndex != null)
+          ReorderableDragStartListener(
+            index: dragIndex,
+            child: Semantics(
+              label: '按住拖动排序',
+              child: const Padding(padding: EdgeInsets.all(12), child: CampusIcon(CampusIcons.dragHandle)),
+            ),
+          ),
+      ],
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
+    final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
     return CampusSheetPanel(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -80,50 +128,34 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
             ),
           ),
           Padding(
-            padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
-            child: Text('拖动排序（下次登录按这个顺序）；点备注图标改名。', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
-          ),
-          Flexible(
-            child: ReorderableListView.builder(
-              shrinkWrap: true,
-              padding: const EdgeInsets.fromLTRB(16, 0, 12, 20),
-              itemCount: _ordered.length,
-              onReorderItem: (oldIndex, newIndex) {
-                setState(() => _ordered.insert(newIndex, _ordered.removeAt(oldIndex)));
-                _persist();
-              },
-              itemBuilder: (context, index) {
-                final record = _ordered[index];
-                return CampusSurface(
-                  key: ValueKey(record.phoneNumber),
-                  margin: const EdgeInsets.only(bottom: 8),
-                  padding: const EdgeInsets.all(8),
-                  radius: 16,
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(record.displayName, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: palette.onSurface)),
-                            DotSeparatedText(
-                              [record.phoneNumber, record.isOtherUser ? '对方账号' : '本人账号', if (record.label.isNotEmpty) record.name].join(' · '),
-                              style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
-                            ),
-                          ],
-                        ),
-                      ),
-                      IconButton(tooltip: '改备注名', onPressed: () => _rename(record), icon: const CampusIcon(CampusIcons.edit)),
-                      ReorderableDragStartListener(
-                        index: index,
-                        child: IconButton(tooltip: '拖动排序', onPressed: () {}, icon: const CampusIcon(CampusIcons.dragHandle)),
-                      ),
-                    ],
-                  ),
-                );
-              },
+            padding: const EdgeInsets.fromLTRB(16, 0, 12, 0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [for (final record in _own) _tile(palette, record)],
             ),
           ),
+          if (_delegated.isNotEmpty) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
+              child: Text(_delegated.length > 1 ? '代签账号 · 按住右侧把手拖动排序' : '代签账号', style: secondary),
+            ),
+            Flexible(
+              child: ReorderableListView.builder(
+                shrinkWrap: true,
+                buildDefaultDragHandles: false,
+                padding: const EdgeInsets.fromLTRB(16, 0, 12, 20),
+                itemCount: _delegated.length,
+                onReorderItem: (oldIndex, newIndex) {
+                  setState(() => _delegated.insert(newIndex, _delegated.removeAt(oldIndex)));
+                  _persist().catchError((Object error, StackTrace stack) {
+                    campusLog('[Chaoxing] action=account_reorder errorType=${error.runtimeType}\n$stack');
+                  });
+                },
+                itemBuilder: (context, index) => _tile(palette, _delegated[index], dragIndex: _delegated.length > 1 ? index : null),
+              ),
+            ),
+          ] else
+            const SizedBox(height: 12),
         ],
       ),
     );

@@ -45,7 +45,8 @@ List<ChaoxingCourse> chaoxingCourseList(List<Object?> channelList) {
         classId: classId,
         name: chaoxingString(course['name']),
         teacher: chaoxingString(course['teacherfactor']),
-        cover: chaoxingString(course['imageurl']),
+        // 封面同头像一样升到 https（学习通的图片域名都支持），明文图片在新系统上默认加载不了。
+        cover: chaoxingString(course['imageurl']).replaceFirst('http://', 'https://'),
         schools: chaoxingString(course['schools']),
       ),
     );

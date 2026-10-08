@@ -94,6 +94,8 @@
   - chaoxing_course_page.dart：按课程查看，课程可搜课名、老师与学校，可置顶；同名课程合并成一项，点进去看全部签到，进行中与已结束分两组。
   - chaoxing_activity_card.dart：各页共用的活动卡片、分组标题与签到入口 ChaoxingSignLauncher（开签到弹层、签完给提示并刷新）。
   - chaoxing_settings_sheet.dart：签到设置弹层（学校单位、模拟的客户端），以及修复账号时重新输密码的对话框。
+  - chaoxing_sign_notices.dart：签到弹层里的时间提示 ChaoxingTimeNotice（已结束可能记迟到、发布超过 6 小时提醒没选错）与签退提示 ChaoxingSignOutNotice（去主签到或去签退）。
+  - chaoxing_qr_feed.dart：连续扫码时的最新二维码 ChaoxingQrFeed：签到要新码时有比过期那个新的就直接给，没有就等下一次扫到，取景页关掉以「已取消」结束。
   - chaoxing_sign_flow.dart：一个人的完整签到流程 ChaoxingSignFlow（签到前检查可强制跳过、拍照上传、人脸、提交，验证码/换码/位置收紧重试），从页面状态类抽出；会话与存储经 ChaoxingSignContext 注入，controller 是现在的实现来源。签到输入与回调类型（ChaoxingSignInputs、ChaoxingCaptchaSolver、ChaoxingFreshQrCode）也定义在这里。
   - chaoxing_service.dart：学习通签到的服务 ChaoxingService（实现 ToolboxService 接口）：自己打开与关闭库、安全存储、设备通道与代签中转客户端；组合根把它的 open 注册进 ToolboxRuntime 的 serviceOpeners，页面经 runtime.service 取用。
   - chaoxing_credential_pack.dart：代签凭据包（手机号、密文密码、昵称、对方设备码、最多 5 张人脸照片 objectId）的编解码与一次性密钥封装（AES-256-GCM），以及二维码取件票（SXDC1: 取件号 + 密钥）的编解码；第 2 版加了人脸照片，第 1 版照样能解；包来自别人的二维码，一律按外部输入逐项校验。
