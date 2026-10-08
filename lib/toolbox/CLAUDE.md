@@ -68,7 +68,7 @@
   - parse_history_page.dart：解析历史全部页 ParseHistoryPage 和条目组件 ParseHistoryTile，支持删除单条与清空。
 - chaoxing 学习通签到：
   - 对接超星学习通的课堂签到，账号是学习通账号，与教务账号无关；协议按参考项目 ChaoxingSignFaker 的接口行为独立重写。
-  - chaoxing_models.dart：活动、课程、活动详情、账号与错误码 ChaoxingFailure；otherId 到 ChaoxingSignType 的映射。
+  - chaoxing_models.dart：活动、课程、活动详情、账号与错误码 ChaoxingFailure；otherId 到 ChaoxingSignType 的映射。活动开始时间上游没给时为空（如实当未知，不拿现在顶替），列表统一按 chaoxingNewestFirst 排（新的在前、未知的在后、同时刻按活动号）。
   - chaoxing_crypto.dart：学习通固定的传输加密（AES-128-CBC，IV 与密钥同为固定串）、MD5/SHA-256、设备公钥（SPKI 模数，用于设备信息 RSA 分块加密与 clientId 还原）与设备码的 AES-ECB。
   - chaoxing_device.dart：设备信息端口 ChaoxingDeviceProbe。按学习通客户端的字段与顺序组设备信息并 RSA 加密；按 OAID 算本机设备码，取不到返回空由调用方退回固定随机码。
   - chaoxing_device_channel.dart：端口的原生实现 ChannelChaoxingDeviceProbe（通道 superxd/chaoxing_device，见 ChaoxingDevice.kt：设备信息与 OAID 在后台单线程取，结果回主线程），由 toolbox_runtime.dart 注入；两个调用各有 3 秒兜底超时，超时按取不到处理。单独成文件是为了让协议链路不依赖 Flutter，tool/verify_chaoxing.dart 才能用纯 Dart 跑。
@@ -77,7 +77,7 @@
   - chaoxing_activity.dart：课程列表（只认带 cataName 的频道）、活动列表与活动详情；preSign 回传活动列表 data 级别的 ext；签到前的班级检查与按课程号找班级（强制签到给别人签时用）。
   - chaoxing_signer.dart：preSign（302 或「校验失败」即不在班级；之后紧跟 analysis → analysis2）、各签到类型的提交参数（逐项照学习通客户端；签到码/手势的绕过模式同端点不带 signCode，[人工决策] 见 ChaoxingSignSubmission）、提交结果分支（success2 按失败处理，迟到按截止时间判断）。
   - chaoxing_batch.dart：多人连签 ChaoxingBatchSigning：勾选的人按顺序逐个签、相邻间隔 200 毫秒、逐人状态；签到前检查拦下的可强制签到，会话失效的要修复；位置刚出界时收紧偏移（一场共享一次，第一次不停队），后面的人用收紧档接着签，收紧档仍出界才把余下的人全停。
-  - chaoxing_lessons.dart：学习通课表（kb.chaoxing.com）的解析与推断：当前节次前后 30 分钟内的课，按课名归一化与二元组相似度对上课程，找 20 分钟内刚发起的进行中签到。周次与日界按校园时区算。
+  - chaoxing_lessons.dart：学习通课表（kb.chaoxing.com）的解析与推断：当前节次前后 30 分钟内的课，按课名归一化与二元组相似度对上课程，找 20 分钟内刚发起的进行中签到（不知道开始时间的不算）。周次与日界按校园时区算。
   - chaoxing_location.dart：坐标模型、坐标系转换（提交口径 BD-09）、随机偏移与 location/locationResult 负载。
   - chaoxing_photo.dart：拍照签到。上传前随机裁剪、旋转再按安全内接矩形裁齐（同一张照片反复用会被教师端比对出来），再传云盘拿 objectId。
   - chaoxing_qrcode.dart：课堂签到二维码的解析（SIGNIN: 内嵌串与带 enc 的链接两种）与过期查询（newsign/signDetail）。
@@ -92,9 +92,9 @@
   - chaoxing_group_page.dart：群聊里的签到页，按群翻出只发在群里的签到，逐条走同一套签到弹层。
   - chaoxing_history_page.dart：往期签到页，列已结束的活动（status 不为 1），照样能签、签到页提示可能记为迟到；复用主列表那一次拉取的数据，不额外请求。
   - chaoxing_course_page.dart：按课程查看，课程可搜课名、老师与学校，可置顶；同名课程合并成一项，点进去看全部签到，进行中与已结束分两组。
-  - chaoxing_activity_card.dart：各页共用的活动卡片、分组标题与签到入口 ChaoxingSignLauncher（开签到弹层、签完给提示并刷新）。
+  - chaoxing_activity_card.dart：各页共用的活动卡片、分组标题与签到入口 ChaoxingSignLauncher（开签到弹层、签完给提示并刷新）。不知道开始时间的不亮刚发起橙点，时间行有截止写截止、都没有就不显示。
   - chaoxing_settings_sheet.dart：签到设置弹层（学校单位、模拟的客户端），以及修复账号时重新输密码的对话框。
-  - chaoxing_sign_notices.dart：签到弹层里的时间提示 ChaoxingTimeNotice（已结束可能记迟到、发布超过 6 小时提醒没选错）与签退提示 ChaoxingSignOutNotice（去主签到或去签退）。
+  - chaoxing_sign_notices.dart：签到弹层里的时间提示 ChaoxingTimeNotice（已结束可能记迟到、发布超过 6 小时提醒没选错，不知道发布时间的不提醒）与签退提示 ChaoxingSignOutNotice（去主签到或去签退）。
   - chaoxing_qr_feed.dart：连续扫码时的最新二维码 ChaoxingQrFeed：签到要新码时有比过期那个新的就直接给，没有就等下一次扫到，取景页关掉以「已取消」结束。
   - chaoxing_sign_flow.dart：一个人的完整签到流程 ChaoxingSignFlow（签到前检查可强制跳过、拍照上传、人脸、提交，验证码/换码/位置收紧重试），从页面状态类抽出；会话与存储经 ChaoxingSignContext 注入，controller 是现在的实现来源。签到输入与回调类型（ChaoxingSignInputs、ChaoxingCaptchaSolver、ChaoxingFreshQrCode）也定义在这里。
   - chaoxing_service.dart：学习通签到的服务 ChaoxingService（实现 ToolboxService 接口）：自己打开与关闭库、安全存储、设备通道与代签中转客户端；组合根把它的 open 注册进 ToolboxRuntime 的 serviceOpeners，页面经 runtime.service 取用。
@@ -138,6 +138,8 @@
   - 扫码页在 page 层，百宝箱用组合根注入的 ToolboxQrScan（单次）与 ToolboxQrWatch（连续，多人连签的二维码签到用）取二维码原文（toolbox_runtime.dart），不依赖 page。
   - 签到流程与参数逐项对齐参考项目（2026-10-07 二次对照）：用户信息 POST 设备信息、preSign 用列表级 ext 并紧跟 analysis → analysis2、success2 按失败、迟到按截止时间、二维码坐标固定 -1、人脸只在位置与二维码签到上带、签到前查班级。参考项目里被关掉的「签到习惯推荐」（disableCode 空实现）不做。
   - 设备信息与 OAID：只在学习通签到时取，加密后只发给学习通，不在本机另存；OAID 库（Android_CN_OAID）自带的电话状态、存储、写设置与广告 ID 权限在清单里移除。
+  - OAID 库会带入闭源的华为、荣耀广告标识 SDK（com.huawei.hms、com.hihonor.mcs 的 ads-identifier，只读 OAID），隐私政策单列「学习通签到用到的第三方 SDK」；增删这类 SDK 时同步改隐私政策。
+  - 依赖仓库按组限定（android/build.gradle.kts 的 thirdPartyRepositoryGroups）：JitPack 只给 OAID 库与 uCrop、华为与荣耀仓库只给各自的组，插件再声明的同一仓库也一并限定；新增走这几个仓库的依赖要先登记它的组。
   - 位置签到的坐标提交口径是 BD-09，地图或定位给的 WGS-84、GCJ-02 先在 chaoxing_location.dart 转换；坐标系尚未用真账号校准。提交前一律先换算再按小范围随机偏移（超范围时收紧到 0.00001 重试一次），手输坐标按高德 GCJ-02 算。
   - 高德地图只用于选点：不申请定位权限、不读实时位置，隐私政策单列「地图选点」一节。
   - 代签：凭据包用一次性随机密钥加密，密钥只在二维码里、不进服务器；密文经自建中转暂存，取件号一次性、10 分钟过期、取走即删；出示方换码或离开出示页即作废上一张（凭投递时拿到的作废口令，[人工决策] 见服务端 chaoxing_pack.service.ts）。导入的账号按他人账号对待（is_other_user），带对方的设备码，签到时不会提示「更换了签到设备」；本机库里已有本人账号时拒绝导入自己的码。附带人脸照片要出示方勾选，默认不带。
