@@ -26,6 +26,7 @@ class ChaoxingSignSubmission {
     this.faceObjectId,
     this.faceEnc,
     this.tightenLocation = false,
+    this.bypassCodeCheck = false,
   });
   final ChaoxingActivity activity;
 
@@ -35,6 +36,12 @@ class ChaoxingSignSubmission {
   // 签到码或手势序列码。
   final String? signCode;
   final ChaoxingLocation? location;
+
+  // [人工决策-2026-10-08 16:39:31] 签到码与手势签到提供两种模式，用户可选：
+  // 标准=现状（checkSignCode 预检 + 提交带 signCode，需输正确的码）；
+  // 绕过=跳过预检且提交不带 signCode（提交端点同为 pptSign/stuSignajax，该参数不传时服务端不校验，
+  // 手法来自 cxOrz/chaoxing-signin 等项目的公开实现）。两条线路只在提交参数与预检上分岔，其余流程相同。
+  final bool bypassCodeCheck;
 
   // 二维码里的 enc。
   final String? enc;
@@ -68,6 +75,7 @@ class ChaoxingSignSubmission {
     faceObjectId: faceObjectId,
     faceEnc: faceEnc,
     tightenLocation: tightenLocation ?? this.tightenLocation,
+    bypassCodeCheck: bypassCodeCheck,
   );
 }
 
@@ -189,7 +197,8 @@ Map<String, String> _codeParameters(ChaoxingAccount account, ChaoxingSignSubmiss
     'appType': '15',
     'fid': '${account.fid}',
     'name': account.name,
-    'signCode': submission.signCode ?? _fail('请先填写签到码'),
+    // 绕过模式不带 signCode（服务端对缺省的码不校验）；标准模式必须有码（语义见类上的 [人工决策] 注释）。
+    if (!submission.bypassCodeCheck) 'signCode': submission.signCode ?? _fail('请先填写签到码'),
     'deviceCode': account.deviceCode,
     if (position != null) 'location': position.payload(mock: false),
     if (position != null) 'locationResult': position.payload(mock: true),

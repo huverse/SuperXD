@@ -74,7 +74,7 @@
   - chaoxing_http.dart：请求封装与 Cookie 会话 ChaoxingCookieJar；模拟的客户端 ChaoxingClientProfile（学习通、学在西电、自定义 UA 与包名），UA 随它走；默认超时 15 秒（登录与用户信息另用 30 秒，见 chaoxing_client.dart 的人工决策）、响应上限 1MB，日志只记路径。
   - chaoxing_client.dart：登录、用户信息、重登与设备码。用户信息带得上设备信息就 POST data（clientId 靠它下发），否则 GET；解析学校单位（主单位在前），登录后把会话 fid 改回所选单位。登录与用户信息这两个上游最慢的接口用 chaoxingAccountTimeout（30 秒）。
   - chaoxing_activity.dart：课程列表（只认带 cataName 的频道）、活动列表与活动详情；preSign 回传活动列表 data 级别的 ext；签到前的班级检查与按课程号找班级（强制签到给别人签时用）。
-  - chaoxing_signer.dart：preSign（302 或「校验失败」即不在班级；之后紧跟 analysis → analysis2）、各签到类型的提交参数（逐项照学习通客户端）、提交结果分支（success2 按失败处理，迟到按截止时间判断）。
+  - chaoxing_signer.dart：preSign（302 或「校验失败」即不在班级；之后紧跟 analysis → analysis2）、各签到类型的提交参数（逐项照学习通客户端；签到码/手势的绕过模式同端点不带 signCode，[人工决策] 见 ChaoxingSignSubmission）、提交结果分支（success2 按失败处理，迟到按截止时间判断）。
   - chaoxing_batch.dart：多人连签 ChaoxingBatchSigning：勾选的人按顺序逐个签、相邻间隔 200 毫秒、逐人状态；签到前检查拦下的可强制签到，会话失效的要修复；位置刚出界时收紧偏移（一场共享一次，第一次不停队），后面的人用收紧档接着签，收紧档仍出界才把余下的人全停。
   - chaoxing_lessons.dart：学习通课表（kb.chaoxing.com）的解析与推断：当前节次前后 30 分钟内的课，按课名归一化与二元组相似度对上课程，找 20 分钟内刚发起的进行中签到。周次与日界按校园时区算。
   - chaoxing_location.dart：坐标模型、坐标系转换（提交口径 BD-09）、随机偏移与 location/locationResult 负载。
@@ -107,7 +107,7 @@
   - chaoxing_account_sheet.dart：多账号管理弹层（改备注名、拖动排序写回 sort 列）。
   - chaoxing_controller.dart：页面状态，账号切换、刷新（课程与活动，最多并发三个课程请求；进行中与往期按 status 分）、课表推断、每个签到对象的完整签到流程（检查、拍照上传、人脸、验证码、二维码换码、位置收紧）、课程分组与置顶、人脸照片、代签码、学校单位与模拟客户端；签到对象的会话按需打开、整页关掉时一起关。
   - chaoxing_page.dart：首页与登录表单，先取同意再登录；首页分「可能正在签到（按学习通课表）」与「进行中的签到」两组，底下是往期、按课程、群聊三个入口；账号操作用⋯菜单（切换、账号管理、登录其他账号、人脸照片、签到设置、代签码、退出登录、删除）。
-  - chaoxing_sign_sheet.dart：签到弹层，先取活动详情再按类型要输入（签到码、位置）；有多个账号时列出签到对象可多选，每人一行原地显示状态，拍照与人脸按人选；失败的可重试、强制签到或重新登录；二维码签到用连续扫码，签完所有人自动关、码过期等新码接着签；已结束或发布太久的给时间提示；服务端要验证码时就地弹滑块，过了自动把这个人重发一遍。「甲 · 乙」说明行用 theme 的 DotSeparatedText。
+  - chaoxing_sign_sheet.dart：签到弹层，先取活动详情再按类型要输入（签到码、位置）；签到码与手势可选校验方式（普通=输码经服务端校验，绕过=不输码直接提交、提示可能失效，[人工决策] 见 chaoxing_signer.dart）；有多个账号时列出签到对象可多选，每人一行原地显示状态，拍照与人脸按人选；失败的可重试、强制签到或重新登录；二维码签到用连续扫码，签完所有人自动关、码过期等新码接着签；已结束或发布太久的给时间提示；服务端要验证码时就地弹滑块，过了自动把这个人重发一遍。「甲 · 乙」说明行用 theme 的 DotSeparatedText。
 
 # 关键规则
 

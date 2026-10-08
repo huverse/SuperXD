@@ -15,10 +15,13 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 
 // 一次签到里所有人共用的输入：签到码、位置、二维码（每人各自的照片与人脸照片在 ChaoxingSignTarget 上）。
 class ChaoxingSignInputs {
-  const ChaoxingSignInputs({this.signCode, this.location, this.qrCode});
+  const ChaoxingSignInputs({this.signCode, this.location, this.qrCode, this.bypassCodeCheck = false});
   final String? signCode;
   final ChaoxingLocation? location;
   final ChaoxingQrCode? qrCode;
+
+  // 签到码/手势的绕过模式（见 ChaoxingSignSubmission 上的 [人工决策] 注释）：不预检、提交不带码。
+  final bool bypassCodeCheck;
 }
 
 // 需要验证码时由界面弹出滑块，拿回 validate；返回空表示用户放弃。
@@ -104,6 +107,7 @@ class ChaoxingSignFlow {
         captchaValidate: validate,
         enc2: enc2,
         tightenLocation: tightened,
+        bypassCodeCheck: inputs.bypassCodeCheck,
       );
       try {
         final result = await context.run(client, () => chaoxingSubmit(client, submission));

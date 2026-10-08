@@ -11,6 +11,7 @@ import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -86,6 +87,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   bool _loadingRelated = false;
   // 手势或签到码校验没过：格子（图案）标红并清空，让人重画（重输）。
   bool _codeWrong = false;
+  // 签到码/手势的校验方式（[人工决策-2026-10-08 16:39:31]）：标准=输码经服务端校验；绕过=不输码直接提交。
+  bool _bypassCode = false;
   bool _manualLocation = false;
   ChaoxingLocation? _savedLocation;
   _QrFeed? _feed;
@@ -360,8 +363,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       setState(() => _error = '这场签到要位置，请选一个位置或填写坐标');
       return null;
     }
-    final signCode = _needsCode ? _code.text.trim() : null;
-    if (_needsCode && signCode!.isEmpty) {
+    final signCode = _needsCode && !_bypassCode ? _code.text.trim() : null;
+    if (_needsCode && !_bypassCode && signCode!.isEmpty) {
       setState(() => _error = _type == ChaoxingSignType.password ? '请填写签到码' : '请填写手势码');
       return null;
     }
@@ -374,7 +377,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       setState(() => _error = _multi ? '请给 ${missingPhoto.record.name} 选签到照片' : '这场签到要照片，请先选一张');
       return null;
     }
-    return ChaoxingSignInputs(signCode: signCode, location: location);
+    return ChaoxingSignInputs(signCode: signCode, location: location, bypassCodeCheck: _bypassCode);
   }
 
   // 开签前把每个人要用的人脸照片备齐（选了的→本机存的，随机挑一张并避开没通过过的），缺照片在这里补给：
@@ -723,26 +726,41 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         ],
         if (_needsCode) ...[
           SizedBox(height: campusFieldGap(context)),
-          if (_type == ChaoxingSignType.gesture) ...[
-            // 手势签到画 3×3 图案（对齐学习通客户端），画完自动校验并提交。
-            ChaoxingGestureField(
-              onCompleted: (pattern) {
-                _code.text = pattern;
-                unawaited(_start());
-              },
-              error: _codeWrong ? '手势码不对' : null,
-            ),
+          // 校验方式两档（[人工决策-2026-10-08 16:39:31]）：普通=输码经服务端校验；绕过=不输码直接提交。
+          CampusSegmented<bool>(
+            values: const [false, true],
+            label: (bypass) => bypass ? '绕过' : '普通',
+            selected: _bypassCode,
+            onSelected: (bypass) => setState(() {
+              _bypassCode = bypass;
+              _codeWrong = false;
+            }),
+          ),
+          if (_bypassCode) ...[
+            const SizedBox(height: 8),
+            Text('该模式可能失效，请不要过度依赖此模式', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
           ] else ...[
-            // 签到码按位数显示格子，输满自动校验并提交；位数未知时退回普通输入框。
-            if (info.signCodeLength > 0)
-              ChaoxingCodeCells(controller: _code, length: info.signCodeLength, onFilled: () => unawaited(_start()), error: _codeWrong ? '签到码不对' : null)
-            else
-              TextField(
-                controller: _code,
-                keyboardType: TextInputType.number,
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                decoration: const InputDecoration(labelText: '签到码'),
+            if (_type == ChaoxingSignType.gesture) ...[
+              // 手势签到画 3×3 图案（对齐学习通客户端），画完自动校验并提交。
+              ChaoxingGestureField(
+                onCompleted: (pattern) {
+                  _code.text = pattern;
+                  unawaited(_start());
+                },
+                error: _codeWrong ? '手势码不对' : null,
               ),
+            ] else ...[
+              // 签到码按位数显示格子，输满自动校验并提交；位数未知时退回普通输入框。
+              if (info.signCodeLength > 0)
+                ChaoxingCodeCells(controller: _code, length: info.signCodeLength, onFilled: () => unawaited(_start()), error: _codeWrong ? '签到码不对' : null)
+              else
+                TextField(
+                  controller: _code,
+                  keyboardType: TextInputType.number,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  decoration: const InputDecoration(labelText: '签到码'),
+                ),
+            ],
           ],
         ],
         if (_multi) ...[

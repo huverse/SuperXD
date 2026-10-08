@@ -203,6 +203,18 @@ void main() {
     expect((double.parse(gestureQuery['latitude']!) - 39.915).abs(), lessThanOrEqualTo(chaoxingLocationRange));
     expect(jsonDecode(gestureQuery['location']!) as Map, isNot(contains('mockData')));
 
+    // 绕过模式（[人工决策-2026-10-08 16:39:31]）：同一端点、其余参数不变，只是不带 signCode。
+    final bypassQuery = chaoxingSignRequestUri(
+      account: _account,
+      submission: ChaoxingSignSubmission(
+        activity: _activity(ChaoxingSignType.password),
+        bypassCodeCheck: true,
+      ),
+    ).queryParameters;
+    expect(bypassQuery.containsKey('signCode'), isFalse);
+    expect(bypassQuery['deviceCode'], 'device-code');
+    expect(bypassQuery['latitude'], '-1');
+
     final qrQuery = chaoxingSignRequestUri(
       account: _account,
       submission: ChaoxingSignSubmission(activity: _activity(ChaoxingSignType.qrCode), enc: 'ENCVALUE', location: location),
