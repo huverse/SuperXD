@@ -79,26 +79,28 @@ void main() {
     final owner = controllerFor(store, vault, hub: hub());
     await tester.runAsync(() => owner.signIn('13800138000', 'myPassword123'));
     // 封包、投递都是真异步（加密库与网络桩），在假时钟里要靠 runAsync 让它们走完。
-    Future<void> settle(bool Function() done) async {
-      for (var round = 0; round < 100 && !done(); round++) {
+    // 上限约 10 秒（CI 慢机器留余量，只在失败时用满）；等不到就带上 what 直接失败，不静默返回让后面的断言莫名失败。
+    Future<void> settle(String what, bool Function() done) async {
+      for (var round = 0; round < 500 && !done(); round++) {
         await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
         await tester.pump();
       }
+      if (!done()) fail('等待超时：$what');
     }
 
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingTicketPage(controller: owner)));
-    await settle(() => find.textContaining('10 分钟内有效').evaluate().isNotEmpty);
+    await settle('出示页投递完成并显示有效期', () => find.textContaining('10 分钟内有效').evaluate().isNotEmpty);
     final first = packs.packs.keys.single;
 
     await tester.ensureVisible(find.text('重新生成'));
     await tester.pump();
     await tester.tap(find.text('重新生成'));
-    await settle(() => packs.packs.length == 1 && packs.packs.keys.single != first);
+    await settle('重新生成：旧码作废、中转上只剩新码', () => packs.packs.length == 1 && packs.packs.keys.single != first);
     expect(packs.packs.keys.single, isNot(first));
     expect(packs.calls.where((call) => call.endsWith('/revoke')), hasLength(1));
 
     await tester.pumpWidget(const SizedBox());
-    await settle(() => packs.packs.isEmpty);
+    await settle('离开出示页：当前码作废', () => packs.packs.isEmpty);
     expect(packs.packs, isEmpty);
     owner.dispose();
   });
