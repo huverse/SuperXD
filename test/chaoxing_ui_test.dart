@@ -248,6 +248,27 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('签到码签到可选绕过模式，不输码直接提交', (tester) async {
+    usePhoneScreen(tester);
+    // 普通模式下这个码必然校验不过；绕过模式既不该调预检，也不该带码。
+    fake.checkSignCodeResult = 0;
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await openSignSheet(tester);
+    await waitUntil(tester, () => find.text('绕过').evaluate().isNotEmpty);
+    await tester.tap(find.text('绕过'));
+    await tester.pump();
+    expect(find.text('该模式可能失效，请不要过度依赖此模式'), findsOneWidget);
+    expect(find.byType(ChaoxingCodeCells), findsNothing);
+    final checksBefore = fake.calls.where((call) => call.contains('checkSignCode')).length;
+    await tester.tap(find.widgetWithText(FilledButton, '签到'));
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    expect(fake.signQuery!.containsKey('signCode'), isFalse);
+    expect(fake.calls.where((call) => call.contains('checkSignCode')).length, checksBefore);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('签到码格子输满自动校验并提交，不用点签到', (tester) async {
     usePhoneScreen(tester);
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
