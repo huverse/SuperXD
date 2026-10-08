@@ -127,7 +127,7 @@ class _FreshBadge extends StatelessWidget {
     return Container(
       width: 10,
       height: 10,
-      decoration: BoxDecoration(color: const Color(0xFFF59E0B), shape: BoxShape.circle, border: Border.all(color: palette.surface, width: 2)),
+      decoration: BoxDecoration(color: palette.attention, shape: BoxShape.circle, border: Border.all(color: palette.surface, width: 2)),
     );
   }
 }

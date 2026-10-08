@@ -178,7 +178,7 @@
 - 百宝箱：toolbox_widget_test.dart、toolbox_download_test.dart、toolbox_media_features_test.dart、short_video_parser_test.dart、media_image_test.dart
   - 学习通签到：chaoxing_protocol_test.dart（协议、设备信息与设备码、学校单位、课表推断与坐标转换）、chaoxing_store_test.dart（本机库与上限）、chaoxing_batch_test.dart（多人连签的顺序、间隔、停止与强制）、chaoxing_ui_test.dart（登录、签到、多人连签、往期补签、强制签到、按课程查看、课表推断、代签入口与导入流程，用 chaoxing_fake_server.dart 与 chaoxing_fake_hub.dart）
   - 代签：chaoxing_pack_test.dart（凭据包编解码与封装，含第 1 版兼容）、chaoxing_delegate_test.dart（两台设备之间的出示与导入、带人脸照片、连签与强制签到、学校单位与模拟客户端，chaoxing_fake_hub.dart 是内存中转）
-  - 审查整改回归：chaoxing_regression_test.dart（删账号与后台刷新竞态不留会话、删当前账号关会话、切账号代次、自动重登的错误口径、课表缓存裁剪、手势重画与签到码重复提交）
+  - 审查整改回归：chaoxing_regression_test.dart（删账号与后台刷新竞态不留会话、删当前账号关会话、切账号代次、自动重登的错误口径、课表缓存裁剪、弹层避让键盘、账号分段拖动、手势重画与签到码重复提交）
   - 人脸与群聊：chaoxing_im_test.dart（DES、protobuf 附件解析、环信链路与类型映射）、chaoxing_protocol_test.dart 里的人脸公钥与签名用例
 - 私信：
   - social_protocol_test.dart（与服务端共用测试向量、信封、二维码）、share_card_test.dart、social_service_test.dart、social_ui_test.dart

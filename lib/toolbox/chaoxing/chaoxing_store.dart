@@ -55,6 +55,9 @@ class ChaoxingAccountRecord {
   // 显示名：有备注用备注，否则昵称。
   String get displayName => label.isNotEmpty ? label : name;
 
+  // [人工决策-2026-10-08 19:35:54] 账号归属的称呼全处统一为「本人 / 代签账号」（取代「他人账号」「对方账号」「本人账号」）。
+  String get ownerLabel => isOtherUser ? '代签账号' : '本人';
+
   ChaoxingAccountRecord change({int? fid, String? schoolName, String? clientId, List<ChaoxingUnit>? units}) => ChaoxingAccountRecord(
     phoneNumber: phoneNumber,
     uid: uid,

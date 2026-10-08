@@ -249,7 +249,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                     [
                       item.schoolName.isEmpty ? '学习通' : item.schoolName,
                       item.phoneNumber,
-                      if (item.isOtherUser) '他人账号',
+                      item.ownerLabel,
                       item.deviceCodeBound ? '设备码与真实设备一致' : '固定随机设备码',
                     ].join(' · '),
                     style: const TextStyle(fontSize: 14),
@@ -353,7 +353,8 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                       child: SizedBox(
                         width: 44,
                         height: 44,
-                        child: Image.network(controller.currentPhoto, fit: BoxFit.cover, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+                        // 头像只是装饰：加载失败给占位图标，不留一块空白。
+                        child: Image.network(controller.currentPhoto, fit: BoxFit.cover, errorBuilder: (_, _, _) => const Center(child: CampusIcon(CampusIcons.account))),
                       ),
                     ),
                   ),
@@ -426,9 +427,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                           campusLog('[Chaoxing] action=refresh errorType=${error.runtimeType}\n$stack');
                         });
                       },
-                icon: controller.busy
-                    ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                    : const CampusIcon(CampusIcons.sync),
+                icon: controller.busy ? const CampusLoader(size: 20, delay: Duration.zero) : const CampusIcon(CampusIcons.sync),
               ),
             ],
           ),

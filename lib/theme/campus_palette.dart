@@ -41,6 +41,8 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
   bool get isDark => brightness == Brightness.dark;
   // 破坏性操作按钮的红底（白字不低于 4.5:1）；深色下的 danger 是给深底文字用的浅红，压不住白字。
   Color get dangerFill => isDark ? const Color(0xFFC63A31) : danger;
+  // 提醒色（如「刚发起」的小圆点）：只读状态标记，与主色、警示红都区分开；深色下提亮一档保证在深底上醒目。
+  Color get attention => isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B);
   final Color backgroundTop;
   final Color backgroundBottom;
   final Color surface;

@@ -52,7 +52,7 @@ class _ChaoxingFaceSheetState extends State<_ChaoxingFaceSheet> {
 
   Future<void> _load() async {
     try {
-      final images = await widget.controller.faceImages(widget.record);
+      final images = await widget.controller.faces.faceImages(widget.record);
       if (mounted) setState(() => _images = images);
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=face_list errorType=${failure.runtimeType}\n$stack');
@@ -83,11 +83,11 @@ class _ChaoxingFaceSheetState extends State<_ChaoxingFaceSheet> {
     // 相册或现场拍摄都进 3:4 裁剪页（可旋转翻转，对齐参考项目）再上传。
     final bytes = await pickChaoxingFacePhoto(widget.pickImage, source: source);
     if (bytes == null || !mounted) return;
-    await widget.controller.uploadFaceImage(widget.record, bytes);
+    await widget.controller.faces.uploadFaceImage(widget.record, bytes);
   }, '人脸照片上传失败，请重试');
 
   Future<void> _fromProfile() => _run(() async {
-    final objectId = await widget.controller.importProfileFace(widget.record);
+    final objectId = await widget.controller.faces.importProfileFace(widget.record);
     if (objectId == null) throw const ChaoxingFailure(ChaoxingFailureCode.faceRequired, '学习通里还没有存人脸照片');
   }, '学习通里的人脸照片没取到，请重试');
 
@@ -100,7 +100,7 @@ class _ChaoxingFaceSheetState extends State<_ChaoxingFaceSheet> {
       destructive: true,
     );
     if (!agreed || !mounted) return;
-    await _run(() => widget.controller.removeFaceImage(widget.record, image.objectId), '删除没完成，请重试');
+    await _run(() => widget.controller.faces.removeFaceImage(widget.record, image.objectId), '删除没完成，请重试');
   }
 
   @override
@@ -205,7 +205,7 @@ class _FaceTileState extends State<_FaceTile> {
   // 预览取图失败时格子里给重试，日志里留原因。
   Future<Uint8List> _fetch() async {
     try {
-      return await widget.controller.faceImageBytes(widget.image.objectId);
+      return await widget.controller.faces.faceImageBytes(widget.image.objectId);
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=face_preview errorType=${failure is ChaoxingFailure ? failure.code.name : failure.runtimeType}\n$stack');
       rethrow;
@@ -222,7 +222,7 @@ class _FaceTileState extends State<_FaceTile> {
   // 保存到本机：把云盘里的原图导出成公共下载目录里的 JPEG 文件。
   Future<void> _save() async {
     try {
-      await widget.controller.saveFaceImage(widget.image.objectId);
+      await widget.controller.faces.saveFaceImage(widget.image.objectId);
       if (!mounted) return;
       await showCampusNotice(context, '已保存到下载目录');
     } on ChaoxingFailure catch (failure) {
@@ -260,7 +260,7 @@ class _FaceTileState extends State<_FaceTile> {
                     }),
                     icon: const CampusIcon(CampusIcons.sync),
                   ),
-                  _ => const Center(child: SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))),
+                  _ => const Center(child: CampusLoader(size: 20, delay: Duration.zero)),
                 },
               ),
             ),

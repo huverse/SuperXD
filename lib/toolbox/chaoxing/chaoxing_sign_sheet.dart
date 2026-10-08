@@ -8,7 +8,6 @@ import 'package:pool/pool.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
-import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -27,16 +26,15 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_face_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_gesture_field.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_image_pick.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_location_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_map_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_qr_feed.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_settings_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_sign_flow.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_sign_location.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_sign_notices.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
-
-// 发布超过这么久还没截止的签到，提醒确认没选错（与学习通客户端同一口径）。
-const chaoxingStaleActivityAge = Duration(hours: 6);
 
 // 签到结果：成功了几个人、有没有迟到的；关弹层时页面按这个给提示。
 class ChaoxingSignSummary {
@@ -98,7 +96,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   bool _bypassCode = false;
   bool _manualLocation = false;
   ChaoxingLocation? _savedLocation;
-  _QrFeed? _feed;
+  ChaoxingQrFeed? _feed;
 
   ChaoxingSignType get _type => _activity.signType;
   bool get _needsLocation => _type == ChaoxingSignType.location || (_info?.needLocation ?? false);
@@ -260,8 +258,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       rangeMeters: range?.toDouble(),
     );
     if (!mounted || picked == null) return;
-    await widget.controller.saveLocation(picked.address, picked);
-    if (!mounted) return;
+    // [人工决策-2026-10-08 19:35:38] 地图选点只用于这次签到，不自动收藏（同高德、Google 地图：保存要用户明确点）；
+    // 收藏只走签到成功后的「收藏这次的位置？」询问（500 米内已有收藏不问）。取代选点即收藏的旧做法。
     setState(() {
       _savedLocation = picked;
       _manualLocation = false;
@@ -430,7 +428,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   Future<bool> _supplyMissingFace(ChaoxingSignTarget target) async {
     String? profileId;
     try {
-      profileId = await widget.controller.profileFaceId(target.record);
+      profileId = await widget.controller.faces.profileFaceId(target.record);
     } on ChaoxingFailure catch (failure) {
       // 查不到就当学习通里没存过，直接进拍摄。
       campusLog('[Chaoxing] action=profile_face errorType=${failure.code.name}');
@@ -447,7 +445,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       if (!mounted) return false;
       if (useProfile) {
         try {
-          final objectId = await widget.controller.reprocessProfileFace(target.record);
+          final objectId = await widget.controller.faces.reprocessProfileFace(target.record);
           if (objectId == null) {
             if (mounted) setState(() => _error = '学习通里的默认照片没取到，请拍一张');
             return false;
@@ -463,7 +461,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     try {
       final bytes = await pickChaoxingFacePhoto(widget.pickImage, source: ImageSource.camera);
       if (bytes == null || !mounted) return false;
-      target.faceObjectId = await widget.controller.uploadFaceImage(target.record, bytes);
+      target.faceObjectId = await widget.controller.faces.uploadFaceImage(target.record, bytes);
       return true;
     } on ChaoxingFailure catch (failure) {
       if (mounted) setState(() => _error = failure.message);
@@ -562,7 +560,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     required ChaoxingSignTarget? only,
     required bool force,
   }) async {
-    final feed = _feed = _QrFeed();
+    final feed = _feed = ChaoxingQrFeed();
     final done = Completer<void>();
     final status = ValueNotifier<String?>(null);
     void onBatch() {
@@ -754,13 +752,25 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         DotSeparatedText(_activity.displayTitle, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
         // 时间单独一行：完整的日期时间跟在活动名后面会被折断。
         Text(_windowText(), style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
-        _timeNotice(palette),
-        _signOutNotice(palette, info),
+        ChaoxingTimeNotice(activity: _activity),
+        ChaoxingSignOutNotice(info: info, onOpenRelated: _busy ? null : _openRelated),
         if (_needsLocation) ...[
           const SizedBox(height: 16),
           Text('位置', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
           const SizedBox(height: 8),
-          _locationPicker(palette),
+          ChaoxingSignLocation(
+            controller: widget.controller,
+            manual: _manualLocation,
+            selected: _savedLocation,
+            latitude: _latitude,
+            longitude: _longitude,
+            address: _address,
+            busy: _busy,
+            onManual: (manual) => setState(() => _manualLocation = manual),
+            onSelect: (location) => setState(() => _savedLocation = location),
+            onSave: () => unawaited(_saveLocation()),
+            onPickOnMap: () => unawaited(_pickOnMap()),
+          ),
         ],
         if (_needsCode) ...[
           SizedBox(height: campusFieldGap(context)),
@@ -775,9 +785,10 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
             }),
           ),
           if (_bypassCode) ...[
-            const SizedBox(height: 8),
+            const SizedBox(height: 12),
             Text('该模式可能失效，请不要过度依赖此模式', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
           ] else ...[
+            const SizedBox(height: 12),
             if (_type == ChaoxingSignType.gesture) ...[
               // 手势签到画 3×3 图案（对齐学习通客户端），画完自动校验并提交。
               ChaoxingGestureField(
@@ -806,7 +817,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
           Row(
             children: [
               Expanded(child: Text('签到对象', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))),
-              TextButton(
+              TextButton.icon(
                 onPressed: _busy || _batch.targets.every((target) => target.done)
                     ? null
                     : () => setState(() {
@@ -815,7 +826,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
                         if (!target.done) target.selected = !allSelected;
                       }
                     }),
-                child: Text(
+                icon: CampusIcon(_batch.targets.where((target) => !target.done).every((target) => target.selected) ? CampusIcons.close : CampusIcons.check),
+                label: Text(
                   _batch.targets.where((target) => !target.done).every((target) => target.selected) ? '全不选' : '全选',
                 ),
               ),
@@ -887,7 +899,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   Widget _targetRow(CampusPalette palette, ChaoxingSignTarget target) {
     final record = target.record;
     final statusText = switch (target.state) {
-      ChaoxingTargetState.idle => record.isOtherUser ? '代签账号' : '本人',
+      ChaoxingTargetState.idle => record.ownerLabel,
       ChaoxingTargetState.waiting => '等待中',
       ChaoxingTargetState.signing => '签到中',
       ChaoxingTargetState.succeeded || ChaoxingTargetState.failed => target.message ?? '',
@@ -925,7 +937,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
                 ),
               ),
               switch (target.state) {
-                ChaoxingTargetState.signing => const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2)),
+                ChaoxingTargetState.signing => const CampusLoader(size: 20, delay: Duration.zero),
                 ChaoxingTargetState.succeeded => const CampusIcon(CampusIcons.success),
                 _ => const SizedBox.shrink(),
               },
@@ -1002,205 +1014,9 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     ),
   );
 
-  // 已结束的活动照样能签，但可能记为迟到；发布太久的提醒确认没选错。
-  // [人工决策-2026-10-07 17:00:58] 测试阶段以参考项目为准：往期活动维持「照样能签、可能记为迟到」的提示，失败后仍给「重试」。
-  // 实测老师已结束的活动强制提交会被学习通拒绝（原样返回「签到已结束」），用户选定不为此改文案或收紧按钮（方案 A）。
-  Widget _timeNotice(CampusPalette palette) {
-    final now = DateTime.now().toUtc();
-    final end = _activity.endTime;
-    final String? message;
-    if (!_activity.ongoing) {
-      message = end == null
-          ? '这场签到已经结束或还没开始，现在签到可能会记为迟到'
-          : '这场签到已在 ${formatCampusTimestamp(end.toIso8601String())} 截止，现在签到可能会记为迟到';
-    } else if (now.difference(_activity.startTime) > chaoxingStaleActivityAge) {
-      message = '这场签到发布于 ${formatCampusTimestamp(_activity.startTime.toIso8601String())}，'
-          '已经过去 ${now.difference(_activity.startTime).inHours} 小时，确认没有选错';
-    } else {
-      message = null;
-    }
-    if (message == null) return const SizedBox.shrink();
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: CampusSurface(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        radius: 16,
-        child: Row(
-          children: [
-            CampusIcon(CampusIcons.warning, color: palette.onSurfaceVariant),
-            const SizedBox(width: 8),
-            Expanded(child: Text(message, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // 这个活动本身是签退活动，或它发布了签退活动时，给一条跳过去的入口。
-  Widget _signOutNotice(CampusPalette palette, ChaoxingActiveInfo info) {
-    final state = info.signOutState;
-    if (state == ChaoxingSignOutState.none) return const SizedBox.shrink();
-    final relatedActiveId = info.relatedActiveId;
-    final (message, action) = switch (state) {
-      ChaoxingSignOutState.signOutActivity => ('这是签退活动，先确认主签到已经完成', '去主签到'),
-      ChaoxingSignOutState.signOutPublished => ('这次签到还发布了签退活动', '去签退'),
-      _ => ('签退活动将在 ${info.signOutPublishTime == null ? '稍后' : formatCampusTimestamp(info.signOutPublishTime!.toIso8601String())} 发布，到时候再来签退', null),
-    };
-    return Padding(
-      padding: const EdgeInsets.only(top: 12),
-      child: CampusSurface(
-        padding: const EdgeInsets.fromLTRB(12, 10, 12, 10),
-        radius: 16,
-        child: Row(
-          children: [
-            Expanded(child: Text(message, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))),
-            if (action != null && relatedActiveId != null) ...[
-              const SizedBox(width: 8),
-              TextButton(
-                onPressed: _busy ? null : () => _openRelated(relatedActiveId),
-                child: Text(action),
-              ),
-            ],
-          ],
-        ),
-      ),
-    );
-  }
-
   String _windowText() {
     final end = _activity.endTime;
     if (end == null) return _activity.ongoing ? '进行中' : '已结束';
     return '截止 ${formatCampusTimestamp(end.toIso8601String())}';
-  }
-
-  Widget _locationPicker(CampusPalette palette) {
-    final saved = widget.controller.locations;
-    if (_manualLocation) {
-      final fallback = chaoxingMapUnavailableReason;
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (fallback != null) ...[
-            Text('$fallback，填经纬度或用收藏的位置', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
-            const SizedBox(height: 12),
-          ],
-          Row(
-            children: [
-              Expanded(child: TextField(controller: _latitude, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '纬度'))),
-              const SizedBox(width: 12),
-              Expanded(child: TextField(controller: _longitude, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '经度'))),
-            ],
-          ),
-          SizedBox(height: campusFieldGap(context)),
-          TextField(
-            controller: _address,
-            decoration: const InputDecoration(labelText: '位置名称', helperText: '坐标按高德（GCJ-02）算，例如教学楼名会一起提交'),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              OutlinedButton.icon(
-                onPressed: _busy ? null : () => _saveLocation(),
-                icon: const CampusIcon(CampusIcons.add),
-                label: const Text('收藏这个位置'),
-              ),
-              if (chaoxingMapAvailable) ...[
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _pickOnMap(),
-                  icon: const CampusIcon(CampusIcons.jumpToday),
-                  label: const Text('在地图上选点'),
-                ),
-              ],
-            ],
-          ),
-          if (saved.isNotEmpty)
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: TextButton(
-                onPressed: () => setState(() => _manualLocation = false),
-                child: const Text('用收藏的位置'),
-              ),
-            ),
-        ],
-      );
-    }
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (chaoxingMapAvailable) ...[
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _pickOnMap(),
-            icon: const CampusIcon(CampusIcons.jumpToday),
-            label: const Text('在地图上选点'),
-          ),
-          const SizedBox(height: 12),
-        ],
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final item in saved)
-              CampusGlassChip(
-                label: item.label,
-                selected: _savedLocation == item.location,
-                onSelected: (_) => setState(() => _savedLocation = item.location),
-              ),
-            CampusGlassChip(label: '手动输入', selected: false, onSelected: (_) => setState(() => _manualLocation = true)),
-            // 收藏的维护入口：改名与删除（选择在上面这些 chip 里做）。
-            CampusGlassChip(label: '管理收藏', selected: false, onSelected: (_) => showChaoxingLocationSheet(context, controller: widget.controller)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        DotSeparatedText(
-          _savedLocation == null
-              ? '还没有收藏位置'
-              : '${_savedLocation!.address} · ${_savedLocation!.formattedLatitude}, ${_savedLocation!.formattedLongitude}',
-          style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
-        ),
-      ],
-    );
-  }
-}
-
-// 连续扫码时的最新二维码：签到要新码时，有比过期那个新的就直接给，没有就等下一次扫到。
-class _QrFeed {
-  ChaoxingQrCode? _latest;
-  final _waiters = <Completer<ChaoxingQrCode>>[];
-  bool _closed = false;
-
-  // 最近扫到的码（不等待）：每个签到对象开始时都从这里取，老师换了码后面的人立刻用上新的。
-  ChaoxingQrCode? get latest => _latest;
-
-  void push(ChaoxingQrCode code) {
-    if (_closed) return;
-    _latest = code;
-    for (final waiter in _waiters) {
-      if (!waiter.isCompleted) waiter.complete(code);
-    }
-    _waiters.clear();
-  }
-
-  // 返回一个与 expired 不同的码；取景页被关掉时以「已取消」结束。
-  Future<ChaoxingQrCode> next(ChaoxingQrCode? expired) async {
-    while (true) {
-      final latest = _latest;
-      if (latest != null && latest.enc != expired?.enc) return latest;
-      if (_closed) throw const ChaoxingFailure(ChaoxingFailureCode.cancelled, chaoxingScanCancelledMessage);
-      final waiter = Completer<ChaoxingQrCode>();
-      _waiters.add(waiter);
-      await waiter.future;
-    }
-  }
-
-  void close() {
-    if (_closed) return;
-    _closed = true;
-    for (final waiter in _waiters) {
-      if (!waiter.isCompleted) waiter.completeError(const ChaoxingFailure(ChaoxingFailureCode.cancelled, chaoxingScanCancelledMessage));
-    }
-    _waiters.clear();
   }
 }

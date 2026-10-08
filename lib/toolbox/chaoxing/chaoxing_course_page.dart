@@ -92,7 +92,7 @@ class _ChaoxingCoursePageState extends State<ChaoxingCoursePage> {
                               padding: const EdgeInsets.only(right: 12),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: Image.network(group.courses.first.cover, fit: BoxFit.cover, width: 44, height: 44, errorBuilder: (_, _, _) => const SizedBox.shrink()),
+                                child: Image.network(group.courses.first.cover, fit: BoxFit.cover, width: 44, height: 44, errorBuilder: (_, _, _) => const SizedBox.square(dimension: 44, child: Center(child: CampusIcon(CampusIcons.course)))),
                               ),
                             ),
                           Expanded(
