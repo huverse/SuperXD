@@ -54,12 +54,20 @@ List<ChaoxingCourse> chaoxingCourseList(List<Object?> channelList) {
 }
 
 // 签到前确认这个账号确实在该班级里：查不到课程列表（会话问题）时返回空，交给 preSign 去判断。
+// 「在」的结论按会话缓存（同一场签到打开时查一次、提交时再查一次，多人时每人都查）；
+// 「不在」不缓存，照样重拉一次，免得刚加进班级的人被旧结果拦下。
 Future<bool?> chaoxingClassValid(ChaoxingClient client, int classId) async {
+  if (client.classIds?.contains(classId) ?? false) return true;
   final response = await client.http.get(Uri.parse(chaoxingCourseListUri));
   final result = chaoxingJson(response.body);
   final channelList = result['channelList'];
   if (chaoxingInt(result['result']) == 0 || channelList is! List) return null;
-  return channelList.any((channel) => channel is Map && channel['content'] is Map && chaoxingInt((channel['content'] as Map)['id']) == classId);
+  final classIds = {
+    for (final channel in channelList)
+      if (channel is Map && channel['content'] is Map) chaoxingInt((channel['content'] as Map)['id']),
+  };
+  client.classIds = classIds;
+  return classIds.contains(classId);
 }
 
 // 强制签到给别的账号签时，按课程号找他自己所在的班级（同一门课可能分在不同班）；找不到返回空，沿用原班级。
@@ -156,7 +164,7 @@ ChaoxingActiveInfo chaoxingActiveInfoFrom(Map<String, Object?> data) => Chaoxing
 // 课程与活动列表在会话失效时返回 result=0。
 void chaoxingCheckSession(Map<String, Object?> json) {
   if (json.containsKey('result') && chaoxingInt(json['result']) == 0) {
-    throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '登录已过期，请重新登录');
+    throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, chaoxingSessionExpiredMessage);
   }
 }
 

@@ -44,6 +44,19 @@ class ChaoxingFailure implements Exception {
   String toString() => message;
 }
 
+// 多处共用的提示文案，改一处即全处生效。
+const chaoxingSessionExpiredMessage = '登录已过期，请重新登录';
+const chaoxingSignRetryMessage = '签到没完成，请稍后重试';
+const chaoxingUnsupportedTypeMessage = '这个活动的签到类型暂不支持';
+const chaoxingPhotoRequiredMessage = '这场签到要照片，请先选一张';
+const chaoxingPhotoUnreadableMessage = '照片读取失败，请重新选择';
+const chaoxingCaptchaLoadFailedMessage = '验证码加载失败，请重试';
+const chaoxingNotPackTicketMessage = '这不是学习通代签二维码';
+const chaoxingScanCancelledMessage = '扫码已取消';
+
+// 一个人签到成功后的提示（迟到按截止时间判断）。
+String chaoxingSignedText({required bool late}) => late ? '签到成功，不过已经迟到' : '签到成功';
+
 enum ChaoxingSignType {
   photo('0', '拍照签到'),
   qrCode('2', '二维码签到'),
@@ -147,13 +160,12 @@ class ChaoxingActivity {
   final DateTime startTime;
   final DateTime? endTime;
   final int status;
+
+  // 列表给的签到状态只作参考：是否已签到只认 preSign 返回的页面状态。
   final int userStatus;
 
   // 原样回传给 preSign 的活动扩展字段。
   final String ext;
-
-  // 是否已签到只认 preSign 返回的页面状态，不看列表字段。
-  bool get ended => endedAt(DateTime.now().toUtc());
 
   // 进行中只认活动列表的 status（1 进行中），与学习通客户端一致；截止时间到了但老师没结束的仍算进行中。
   bool get ongoing => status == 1;

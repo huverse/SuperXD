@@ -1,6 +1,6 @@
 import 'dart:math';
-import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_log.dart';
@@ -52,20 +52,22 @@ class _ChaoxingCaptchaDialogState extends State<ChaoxingCaptchaDialog> {
     _reload();
   }
 
-  Future<void> _reload() async {
+  // keepError：没对齐自动换图时保留「没有对齐」的原因，让人看得到为什么换了一张。
+  Future<void> _reload({String? keepError}) async {
     setState(() {
       _puzzle = null;
       _shade = null;
       _piece = null;
-      _error = null;
+      _error = keepError;
       _pieceLeft = 0;
     });
     try {
       final puzzle = await widget.load();
       final shade = await widget.loadImage(puzzle.shadeImageUrl);
       final piece = await widget.loadImage(puzzle.cutoutImageUrl);
-      final shadeSize = _sizeOf(shade);
-      final pieceSize = _sizeOf(piece);
+      // 只为量尺寸也要整图解码，放到后台 isolate，不卡拖动与弹窗动画。
+      final shadeSize = await compute(_sizeOf, shade);
+      final pieceSize = await compute(_sizeOf, piece);
       if (!mounted) return;
       final boardHeight = shadeSize == null ? 160.0 : _boardWidth * shadeSize.height / shadeSize.width;
       final pieceWidth = pieceSize == null || pieceSize.height == 0 ? 56.0 : boardHeight * min(1.0, pieceSize.width / pieceSize.height);
@@ -81,7 +83,7 @@ class _ChaoxingCaptchaDialogState extends State<ChaoxingCaptchaDialog> {
       if (mounted) setState(() => _error = failure.message);
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=captcha errorType=${failure.runtimeType}\n$stack');
-      if (mounted) setState(() => _error = '验证码加载失败，请重试');
+      if (mounted) setState(() => _error = chaoxingCaptchaLoadFailedMessage);
     }
   }
 
@@ -104,8 +106,7 @@ class _ChaoxingCaptchaDialogState extends State<ChaoxingCaptchaDialog> {
         Navigator.pop(context, answer.validate);
         return;
       }
-      setState(() => _error = answer.message ?? '没有对齐，再来一次');
-      await _reload();
+      await _reload(keepError: answer.message ?? '没有对齐，再来一次');
     } on ChaoxingFailure catch (failure) {
       if (mounted) setState(() => _error = failure.message);
     } catch (failure, stack) {

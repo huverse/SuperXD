@@ -82,7 +82,7 @@ class ChaoxingSignFlow {
     }
     if (signed.signType == ChaoxingSignType.photo && info.needPhoto && target.photoObjectId == null) {
       final bytes = target.photoBytes;
-      if (bytes == null) throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '这场签到要照片，请先选一张');
+      if (bytes == null) throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, chaoxingPhotoRequiredMessage);
       final photo = await compute(chaoxingStylizePhoto, Uint8List.fromList(bytes));
       target.photoObjectId = await context.run(client, () => chaoxingUploadPhoto(client, bytes: photo));
     }

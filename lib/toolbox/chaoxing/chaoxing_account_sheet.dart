@@ -24,7 +24,8 @@ class _ChaoxingAccountSheet extends StatefulWidget {
 
 class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
   // 拖动期间先在内存里排，松手一次写回。
-  late List<ChaoxingAccountRecord> _ordered = widget.controller.accountList;
+  // 拷一份：拖动只改这里，不直接改 controller 的状态，松手写库后再从 controller 取回。
+  late List<ChaoxingAccountRecord> _ordered = List.of(widget.controller.accountList);
 
   Future<void> _rename(ChaoxingAccountRecord record) async {
     final editor = TextEditingController(text: record.label);
@@ -43,7 +44,7 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
     if (label == null || label == record.label || !mounted) return;
     try {
       await widget.controller.renameAccount(record, label);
-      setState(() => _ordered = widget.controller.accountList);
+      setState(() => _ordered = List.of(widget.controller.accountList));
     } on ChaoxingFailure catch (failure) {
       if (mounted) await showCampusNotice(context, failure.message);
     } catch (failure, stack) {

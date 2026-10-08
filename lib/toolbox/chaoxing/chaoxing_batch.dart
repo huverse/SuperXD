@@ -133,7 +133,7 @@ class ChaoxingBatchSigning extends ChangeNotifier {
       target
         ..state = ChaoxingTargetState.succeeded
         ..late = result.late
-        ..message = result.late ? '签到成功，不过已经迟到' : '签到成功';
+        ..message = chaoxingSignedText(late: result.late);
       return _BatchStop.none;
     } on ChaoxingFailure catch (failure) {
       target
@@ -150,7 +150,7 @@ class ChaoxingBatchSigning extends ChangeNotifier {
       campusLog('[Chaoxing] action=batch_sign errorType=${failure.runtimeType}\n$stack');
       target
         ..state = ChaoxingTargetState.failed
-        ..message = '签到没完成，请稍后重试';
+        ..message = chaoxingSignRetryMessage;
       return _BatchStop.none;
     } finally {
       _notify();

@@ -15,10 +15,11 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 // 打开签到弹层的统一入口：首页、往期、课程与群聊各页都从这里开，签完给同样的提示并刷新一次列表。
 class ChaoxingSignLauncher {
-  const ChaoxingSignLauncher({required this.controller, this.scanQrCode, this.watchQrCode});
+  const ChaoxingSignLauncher({required this.controller, this.scanQrCode, this.watchQrCode, this.pickImage});
   final ChaoxingController controller;
   final ToolboxQrScan? scanQrCode;
   final ToolboxQrWatch? watchQrCode;
+  final ToolboxImagePick? pickImage;
 
   Future<void> open(BuildContext context, ChaoxingActivity activity) async {
     final summary = await showChaoxingSignSheet(
@@ -27,6 +28,7 @@ class ChaoxingSignLauncher {
       activity: activity,
       scanQrCode: scanQrCode,
       watchQrCode: watchQrCode,
+      pickImage: pickImage,
     );
     if (!context.mounted || summary == null) return;
     showCampusToast(context, chaoxingSummaryText(summary));
@@ -37,7 +39,7 @@ class ChaoxingSignLauncher {
 }
 
 String chaoxingSummaryText(ChaoxingSignSummary summary) => summary.succeeded == 1
-    ? (summary.late ? '签到成功，不过已经迟到' : '签到成功')
+    ? chaoxingSignedText(late: summary.late)
     : '已为 ${summary.succeeded} 人签到${summary.late ? '，有人迟到' : ''}';
 
 // 活动卡片：标题行是课程名，下面是活动名与类型、时间。进行中的写开始时间，已结束的写截止时间（都用两个字的前缀，完整时间在卡片里不折行）。

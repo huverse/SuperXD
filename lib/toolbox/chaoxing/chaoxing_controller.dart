@@ -49,8 +49,8 @@ class ChaoxingController extends ChangeNotifier {
   // 一次刷新最多并发三个课程请求，课程多时也不至于把刷新拖太久。
   static const refreshConcurrency = 3;
 
-  // 人脸照片预览只在内存里留最近几张。
-  static const faceImageCacheLimit = 10;
+  // 人脸照片预览只在内存里留最近的，按总字节数封顶（单张原图最大 10MB，按张数限不住内存）。
+  static const faceImageCacheBytes = 20 * 1024 * 1024;
 
   ChaoxingStatus status = ChaoxingStatus.loading;
   List<ChaoxingAccountRecord> accountList = const [];
@@ -76,6 +76,10 @@ class ChaoxingController extends ChangeNotifier {
   final _clients = <String, ChaoxingClient>{};
   final _faceBytes = <String, Uint8List>{};
   bool _disposed = false;
+
+  // 账号代次：每打开一个账号加一。异步结果回来时代次已变（期间切了账号），就丢弃不写，
+  // 免得旧账号的列表或错误落到新账号的界面上（同今天页的 _readGeneration）。
+  int _generation = 0;
 
   ChaoxingAccount? get account => _client?.account;
   ChaoxingClientProfile get profile => accounts.profile;
@@ -147,12 +151,8 @@ class ChaoxingController extends ChangeNotifier {
   // 与删除账号不同；下次登录同一账号（或切换回来）直接复用。
   Future<void> signOut() async {
     await _maintenance;
-    _client?.close();
-    _client = null;
-    for (final client in _clients.values) {
-      client.close();
-    }
-    _clients.clear();
+    _generation++;
+    _closeSessions();
     current = null;
     activities = const [];
     pastActivities = const [];
@@ -179,9 +179,13 @@ class ChaoxingController extends ChangeNotifier {
 
   Future<void> removeAccount(ChaoxingAccountRecord record) async {
     try {
+      // 等后台刷新落定再删：它跨过删除会把这个账号的会话写回安全存储。
+      await _maintenance;
       await accounts.forget(record.phoneNumber);
       _dropClient(record.phoneNumber);
       if (current?.phoneNumber == record.phoneNumber) {
+        _generation++;
+        _client?.close();
         _client = null;
         current = null;
         activities = const [];
@@ -284,26 +288,27 @@ class ChaoxingController extends ChangeNotifier {
       signFlow.prepareFace(target, activity, info);
 
   // 学习通账号资料里存的人脸照片 objectId（补给缺照的人之前先问一声用不用它）；没有为空。
-  Future<String> profileFaceId(ChaoxingAccountRecord record) async {
+  Future<String?> profileFaceId(ChaoxingAccountRecord record) async {
     final client = await clientOf(record);
-    return await accounts.run<String?>(client, () => chaoxingProfileFaceObjectId(client)) ?? '';
+    return accounts.run(client, () => chaoxingProfileFaceObjectId(client));
   }
 
-  // 补拍或裁剪好的人脸照片上传云盘换 objectId，并记进本机的人脸照片索引。
+  // 人脸照片（补拍、相册选或裁剪好的，不做风格化，要认得出人）上传到这个账号自己的云盘换 objectId，
+  // 并记进本机的人脸照片索引供以后复用。
   Future<String> uploadFaceImage(ChaoxingAccountRecord record, List<int> bytes) async {
     final client = await clientOf(record);
-    final objectId = await accounts.run(client, () => chaoxingUploadPhoto(client, bytes: Uint8List.fromList(bytes)));
+    final objectId = await accounts.run(client, () => chaoxingUploadPhoto(client, bytes: bytes));
     await accounts.store.putFaceImage(record.phoneNumber, objectId);
     return objectId;
   }
 
   // 把学习通里存的默认人脸照片重处理一张再上传换新的 objectId（同一张照片直接反复用会被教师端比对），
   // 重处理后的记进本机索引，返回新 objectId；学习通里没存过时返回空。
-  Future<String> reprocessProfileFace(ChaoxingAccountRecord record) async {
+  Future<String?> reprocessProfileFace(ChaoxingAccountRecord record) async {
+    final profile = await profileFaceId(record);
+    if (profile == null) return null;
     final client = await clientOf(record);
-    final profile = await accounts.run(client, () => chaoxingProfileFaceObjectId(client));
-    if (profile == null) return '';
-    final bytes = await _requireClient().http.getBytes(Uri.parse(chaoxingFaceImageUrl(profile)), payloadLimit: chaoxingFacePreviewLimit);
+    final bytes = await client.http.getBytes(Uri.parse(chaoxingFaceImageUrl(profile)), payloadLimit: chaoxingFacePreviewLimit);
     final stylized = await compute(chaoxingStylizePhoto, Uint8List.fromList(bytes));
     final objectId = await accounts.run(client, () => chaoxingUploadPhoto(client, bytes: stylized));
     await accounts.store.putFaceImage(record.phoneNumber, objectId);
@@ -502,17 +507,8 @@ class ChaoxingController extends ChangeNotifier {
 
   // 学习通里已经存着的人脸照片：取回来记进本机，之后签人脸签到默认用它。
   Future<String?> importProfileFace(ChaoxingAccountRecord record) async {
-    final client = await clientOf(record);
-    final objectId = await accounts.run(client, () => chaoxingProfileFaceObjectId(client));
+    final objectId = await profileFaceId(record);
     if (objectId != null) await accounts.store.putFaceImage(record.phoneNumber, objectId);
-    return objectId;
-  }
-
-  // 人脸照片不做裁剪旋转（要认得出人），上传到这个账号自己的云盘后记下来供以后复用。
-  Future<String> uploadFacePhoto(ChaoxingAccountRecord record, List<int> bytes) async {
-    final client = await clientOf(record);
-    final objectId = await accounts.run(client, () => chaoxingUploadPhoto(client, bytes: bytes));
-    await accounts.store.putFaceImage(record.phoneNumber, objectId);
     return objectId;
   }
 
@@ -528,8 +524,10 @@ class ChaoxingController extends ChangeNotifier {
     if (cached != null) return _faceBytes[objectId] = cached;
     final bytes = await _requireClient().http.getBytes(Uri.parse(chaoxingFaceImageUrl(objectId)), payloadLimit: chaoxingFacePreviewLimit);
     _faceBytes[objectId] = bytes;
-    while (_faceBytes.length > faceImageCacheLimit) {
-      _faceBytes.remove(_faceBytes.keys.first);
+    var total = _faceBytes.values.fold<int>(0, (sum, item) => sum + item.length);
+    // 最新这张总是留着，超出的从最久没看的开始丢。
+    while (total > faceImageCacheBytes && _faceBytes.length > 1) {
+      total -= _faceBytes.remove(_faceBytes.keys.first)!.length;
     }
     return bytes;
   }
@@ -566,7 +564,7 @@ class ChaoxingController extends ChangeNotifier {
     }
     final ticket = decodeChaoxingPackTicket(raw);
     if (ticket == null) {
-      throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '这不是学习通代签二维码');
+      throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, chaoxingNotPackTicketMessage);
     }
     // 取件号取一次就作废：账号已满时在取件前拦下，免得对方还要重新生成。
     if (accountList.length >= ChaoxingStore.accountLimit) throw ChaoxingAccounts.full;
@@ -637,6 +635,7 @@ class ChaoxingController extends ChangeNotifier {
   }
 
   Future<void> _open(ChaoxingAccountRecord record) async {
+    final generation = ++_generation;
     _client?.close();
     _client = null;
     _dropClient(record.phoneNumber);
@@ -644,30 +643,36 @@ class ChaoxingController extends ChangeNotifier {
     if (client == null) {
       throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '账号已不存在，请重新登录');
     }
+    final pinned = await accounts.store.pinnedCourses(record.phoneNumber);
+    if (generation != _generation) {
+      client.close();
+      return;
+    }
     _client = client;
     current = record;
-    pinnedClassIds = await accounts.store.pinnedCourses(record.phoneNumber);
+    pinnedClassIds = pinned;
     activities = const [];
     pastActivities = const [];
     lessonActivities = const [];
     status = ChaoxingStatus.ready;
     _notify();
     await _loadActivities();
+    if (generation != _generation) return;
     // 打开账号就后台刷新一次用户信息（对齐参考项目：顺带验证会话、更新 clientId 与学校单位）。
     // [人工决策-2026-10-07 20:02:42] 不挡活动列表的加载——上游这个接口最慢要 30 秒，阻塞式刷新会让用户对着加载圈等；
     // 会话过期由列表请求经 accounts.run 自动重登一次兜底。等列表加载完再起，别跟推断缓存抢库锁。
-    _maintenance = _refreshAccountInBackground(client);
+    _maintenance = _refreshAccountInBackground(client, generation);
     unawaited(_maintenance);
   }
 
   // 后台刷新用户信息的链：切换单位等会改账号记录的操作要先等它落定，免得它拿旧记录把新选择覆盖回去。
   Future<void> _maintenance = Future.value();
 
-  Future<void> _refreshAccountInBackground(ChaoxingClient client) async {
+  Future<void> _refreshAccountInBackground(ChaoxingClient client, int generation) async {
     try {
       await accounts.refreshAccount(client);
       final refreshed = await accounts.record(client.phoneNumber);
-      if (refreshed != null && current?.phoneNumber == refreshed.phoneNumber) {
+      if (refreshed != null && generation == _generation) {
         current = refreshed;
         accountList = await accounts.list();
         _notify();
@@ -677,27 +682,43 @@ class ChaoxingController extends ChangeNotifier {
     }
   }
 
+  // 拉一遍课程与活动；拉的途中切了账号（代次变了）就整份丢弃，连错误也不报到新账号上。
   Future<void> _loadActivities() async {
+    final generation = _generation;
+    final client = _requireClient();
+    final record = current!;
     loadingActivities = true;
     _notify();
     try {
-      await _fetchActivities();
+      final loaded = await _fetchActivities(client, record);
+      if (generation != _generation) return;
+      courses = loaded.courses;
+      activities = [for (final activity in loaded.collected) if (activity.ongoing) activity];
+      pastActivities = [for (final activity in loaded.collected) if (!activity.ongoing) activity];
+      lessonActivities = loaded.lessons;
+    } catch (failure, stack) {
+      if (generation == _generation) rethrow;
+      campusLog('[Chaoxing] action=activities_stale errorType=${failure.runtimeType}\n$stack');
     } finally {
-      loadingActivities = false;
-      _notify();
+      if (generation == _generation) {
+        loadingActivities = false;
+        _notify();
+      }
     }
   }
 
-  Future<void> _fetchActivities() async {
-    final client = _requireClient();
-    courses = await accounts.run(client, () => chaoxingCourses(client));
+  Future<({List<ChaoxingCourse> courses, List<ChaoxingActivity> collected, List<ChaoxingActivity> lessons})> _fetchActivities(
+    ChaoxingClient client,
+    ChaoxingAccountRecord record,
+  ) async {
+    final loadedCourses = await accounts.run(client, () => chaoxingCourses(client));
     var failures = 0;
     // 同一门课的多个班会给回同一场活动，按活动号只留一条（与学习通客户端合并时一样），列表的键才不会重复。
     final merged = <int, ChaoxingActivity>{};
     // 固定并发池：一门课回来就补上下一门，不等整批里最慢的那门。
     final pool = Pool(refreshConcurrency);
     final results = await Future.wait(
-      courses.map(
+      loadedCourses.map(
         (course) => pool.withResource(() async {
           try {
             return await accounts.run(client, () => chaoxingActivities(client, course));
@@ -723,42 +744,52 @@ class ChaoxingController extends ChangeNotifier {
     // 两组分开展示、不混排；往期的活动照样能签（签到页提示可能记为迟到），签到前检查判定已截止/已签到时
     // 还可以强制签到。取代 2026-10-06 23:24:35「往期只读、按截止时间分组」的决定。
     collected.sort((first, second) => second.startTime.compareTo(first.startTime));
-    activities = [for (final activity in collected) if (activity.ongoing) activity];
-    pastActivities = [for (final activity in collected) if (!activity.ongoing) activity];
-    lessonActivities = await _inferFromLessons(client, collected);
+    return (
+      courses: loadedCourses,
+      collected: collected,
+      lessons: await _inferFromLessons(client, record, loadedCourses, collected),
+    );
   }
 
   // 课表推断只是提示，读不到学习通课表不影响主列表（记日志即可）。
-  Future<List<ChaoxingActivity>> _inferFromLessons(ChaoxingClient client, List<ChaoxingActivity> collected) async {
+  Future<List<ChaoxingActivity>> _inferFromLessons(
+    ChaoxingClient client,
+    ChaoxingAccountRecord record,
+    List<ChaoxingCourse> loadedCourses,
+    List<ChaoxingActivity> collected,
+  ) async {
     try {
-      final record = current!;
       final cached = await accounts.store.lessonCache(record.phoneNumber);
       final now = DateTime.now().toUtc();
       var payload = cached?.payload ?? '';
-      if (cached == null || now.difference(cached.fetchedAt) > ChaoxingStore.lessonCacheLifetime) {
+      var table = cached == null ? null : chaoxingParseLessons(chaoxingJson(payload));
+      // 缓存过期，或在期但解析出零节课（视为不可信，对齐参考项目），都重新拉一次，别把空表照用到满 7 天。
+      if (table == null || now.difference(cached!.fetchedAt) > ChaoxingStore.lessonCacheLifetime || table.lessons.isEmpty) {
         payload = await accounts.run(client, () => chaoxingFetchLessons(client));
         await accounts.store.putLessonCache(record.phoneNumber, payload);
-      } else if (chaoxingParseLessons(chaoxingJson(payload)).lessons.isEmpty) {
-        // 缓存在期但解析出零节课时视为不可信（对齐参考项目）：重新拉一次，别把空表照用到满 7 天。
-        payload = await accounts.run(client, () => chaoxingFetchLessons(client));
-        await accounts.store.putLessonCache(record.phoneNumber, payload);
+        table = chaoxingParseLessons(chaoxingJson(payload));
       }
-      return await _inferFromPayload(client, payload, collected, now);
+      return await _inferFromTable(client, table, loadedCourses, collected, now);
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=lessons errorType=${failure.runtimeType}\n$stack');
       return const [];
     }
   }
 
-  // 按课表正文推断：当前节次的课落到班级，班级的活动里挑 20 分钟内刚发起的进行中签到。
+  // 按课表推断：当前节次的课落到班级，班级的活动里挑 20 分钟内刚发起的进行中签到。
   // 课表自带班级号的班可能不在课程列表里（对齐参考项目：这样的班直查一次活动列表补进候选，
   // 而不是只过滤主列表，否则兜底出来的课程对象永远等不到它的活动）。
-  Future<List<ChaoxingActivity>> _inferFromPayload(ChaoxingClient client, String payload, List<ChaoxingActivity> collected, DateTime now) async {
-    final table = chaoxingParseLessons(chaoxingJson(payload));
-    final lessonCourses = chaoxingLessonCourses(chaoxingCurrentLessons(table, now), courses);
+  Future<List<ChaoxingActivity>> _inferFromTable(
+    ChaoxingClient client,
+    ChaoxingLessonTable table,
+    List<ChaoxingCourse> loadedCourses,
+    List<ChaoxingActivity> collected,
+    DateTime now,
+  ) async {
+    final lessonCourses = chaoxingLessonCourses(chaoxingCurrentLessons(table, now), loadedCourses);
     final classIds = {for (final course in lessonCourses) course.classId};
     var candidates = collected;
-    final knownClassIds = {for (final course in courses) course.classId};
+    final knownClassIds = {for (final course in loadedCourses) course.classId};
     final outside = [for (final course in lessonCourses) if (course.classId > 0 && !knownClassIds.contains(course.classId)) course];
     if (outside.isNotEmpty) {
       final extra = <ChaoxingActivity>[];
@@ -779,14 +810,17 @@ class ChaoxingController extends ChangeNotifier {
   int _statusOf(DateTime? endTime) => endTime == null || DateTime.now().toUtc().isBefore(endTime) ? 1 : 2;
 
   ChaoxingClient _requireClient() =>
-      _client ?? (throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '登录已过期，请重新登录'));
+      _client ?? (throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, chaoxingSessionExpiredMessage));
 
   void _dropClient(String phoneNumber) => _clients.remove(phoneNumber)?.close();
 
+  // 业务失败（ChaoxingFailure）只记错误码，学习通改版或会话异常时 logcat 里也有迹可查；其余带完整堆栈。
   void _fail(String action, Object failure, StackTrace stack, String fallback) {
-    if (failure is! ChaoxingFailure) {
-      campusLog('[Chaoxing] action=$action errorType=${failure.runtimeType}\n$stack');
-    }
+    campusLog(
+      failure is ChaoxingFailure
+          ? '[Chaoxing] action=$action errorType=${failure.code.name}'
+          : '[Chaoxing] action=$action errorType=${failure.runtimeType}\n$stack',
+    );
     error = failure is ChaoxingFailure ? failure.message : fallback;
     if (_client == null && accountList.isEmpty) status = ChaoxingStatus.signedOut;
     _notify();
@@ -796,14 +830,20 @@ class ChaoxingController extends ChangeNotifier {
     if (!_disposed) notifyListeners();
   }
 
-  @override
-  void dispose() {
-    _disposed = true;
+  // 关掉当前账号与其余签到对象的全部会话（退出登录、整页关闭共用）。
+  void _closeSessions() {
     _client?.close();
+    _client = null;
     for (final client in _clients.values) {
       client.close();
     }
     _clients.clear();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _closeSessions();
     super.dispose();
   }
 }

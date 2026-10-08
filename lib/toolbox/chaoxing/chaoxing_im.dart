@@ -13,7 +13,6 @@ const chaoxingImSecretKey = 'SL2(M/eD';
 const chaoxingImTokenUri = 'https://a1-vip6.easemob.com/cx-dev/cxstudy/token';
 const chaoxingImUserAgent = 'Easemob-SDK(Android) 4.9.0.1';
 const chaoxingImGroupLimit = 200;
-const chaoxingImMessageLimit = 20;
 
 // 登录响应里的环信密码是 DES/ECB/PKCS5 的十六进制密文。
 // pointycastle 只带 3DES，三段用同一把钥匙时 3DES 就等于单 DES，所以拿它当 DES 用（测试对着 openssl 的向量钉住）。

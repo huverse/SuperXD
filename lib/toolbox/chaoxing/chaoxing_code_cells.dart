@@ -19,6 +19,9 @@ class ChaoxingCodeCells extends StatefulWidget {
 class _ChaoxingCodeCellsState extends State<ChaoxingCodeCells> {
   final _focus = FocusNode();
 
+  // 上一次通知时的文本：controller 改光标位置也会通知，只有文本从不满变满才算输完，免得重复提交。
+  late String _lastText = widget.controller.text;
+
   @override
   void initState() {
     super.initState();
@@ -33,7 +36,13 @@ class _ChaoxingCodeCellsState extends State<ChaoxingCodeCells> {
   }
 
   void _onChanged() {
-    if (widget.controller.text.length == widget.length) widget.onFilled();
+    final text = widget.controller.text;
+    final filled = text.length == widget.length && _lastText.length != widget.length;
+    final changed = text != _lastText;
+    _lastText = text;
+    // 输入框藏在格子底下，格子里的数字要跟着文本重画。
+    if (changed) setState(() {});
+    if (filled) widget.onFilled();
   }
 
   @override
@@ -49,14 +58,20 @@ class _ChaoxingCodeCellsState extends State<ChaoxingCodeCells> {
       },
       child: Stack(
         children: [
-          // 输入框本体藏在格子底下（高度 0、不可见），只负责收键盘输入。
-          SizedBox(
-            height: 0,
-            child: TextField(
-              controller: widget.controller,
-              focusNode: _focus,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(widget.length)],
+          // 输入框本体藏在格子底下（透明、无边框无光标），只负责收键盘输入；数字由格子画。
+          // 只设高度 0 藏不住：TextField 会溢出画出文字、下划线与光标，叠在格子上方。
+          Positioned.fill(
+            child: Opacity(
+              opacity: 0,
+              child: TextField(
+                controller: widget.controller,
+                focusNode: _focus,
+                keyboardType: TextInputType.number,
+                showCursor: false,
+                enableInteractiveSelection: false,
+                decoration: const InputDecoration.collapsed(hintText: ''),
+                inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(widget.length)],
+              ),
             ),
           ),
           Row(

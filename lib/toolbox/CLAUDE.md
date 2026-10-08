@@ -11,6 +11,7 @@
     - 跟随应用前后台状态恢复下载。
     - 框架不认识各工具的服务类型：工具经 serviceOpeners 注册自己的打开函数（实现 ToolboxService 接口），页面用 runtime.service 取用，退出时框架按接口统一关闭；学习通的服务见 chaoxing_service.dart，短视频的解析器仍由框架组装。
     - shareVideo（ToolboxVideoShare）：把作品分享给好友的回调，由组合根注入（接到私信的分享弹层）；为空时不显示分享入口。百宝箱不感知私信。
+    - pickImage（ToolboxImagePick）：取图（相册或相机），由组合根注入 page 层的 pickImageCopy，缓存副本用完必须 discard；为空时（测试环境）取图返回空。
   - toolbox_catalog.dart：工具注册表 toolboxCatalog。路由按这里的 id 生成免登录的工具路由。
   - toolbox_module.dart：ToolboxModule 描述一个工具，字段有 id、名称、图标、页面构造器和可选的按需资源。
   - toolbox_page.dart：百宝箱首页 ToolboxPage，展示工具列表。右滑只揭示卸载按钮，卸载须点击确认。
@@ -84,7 +85,7 @@
   - chaoxing_captcha_dialog.dart：滑块验证弹窗，底图上拖缺口块，不通过自动换一张。
   - chaoxing_face.dart：人脸识别签到。用设备公钥对 clientId 做模幂还原出设备信息，按字段排序拼 sc 做 md5 得 signToken，换一次性的 faceEnc；也用来取学习通里存着的人脸照片 objectId 与云盘原图地址（预览用）。
   - chaoxing_code_cells.dart：签到码的格子输入 ChaoxingCodeCells：按位数显示空格、输满自动回调（校验与提交由签到弹层接手），真正的输入框藏在格子底下收键盘输入。
-  - chaoxing_image_pick.dart：人脸照片取图 pickChaoxingFacePhoto（相册或拍摄，选完进 3:4 裁剪页，image_cropper 实现）与现场拍摄 shootChaoxingPhoto（拍照签到与补拍，不裁剪）。
+  - chaoxing_image_pick.dart：人脸照片取图 pickChaoxingFacePhoto（相册或拍摄，选完进 3:4 裁剪页，image_cropper 实现）与现场拍摄 shootChaoxingPhoto（拍照签到与补拍，不裁剪）。取图用注入的 ToolboxImagePick；取图与裁剪留下的文件读成字节后即删（人脸属于生物特征，不在缓存留存）。
   - chaoxing_gesture_field.dart：手势签到的 3×3 图案输入 ChaoxingGestureField：原始指针事件画图案（不走手势竞技场，弹层里不会被拖动关闭抢走），抬起即回调序号串，校验失败清空标红。
   - chaoxing_face_sheet.dart：人脸照片弹层，预览（从学习通云盘取原图，内存里留最近 10 张）、用过几次、是否没通过过；管理模式可删，签到时选这次用哪张。
   - chaoxing_im.dart：群聊签到。学习通群聊走环信：DES 解出登录下发的环信密码（pointycastle 只有 3DES，三段同一把钥匙等价单 DES）换令牌，列群、拉漫游消息，用极简 protobuf 读 Meta/MessageBody/KeyValue 三段取 attachment 扩展，再挑 attachmentType 15 且 atype 为 2/74 的签到。

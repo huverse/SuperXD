@@ -38,7 +38,7 @@
   - CampusGlassDialog：统一的玻璃弹窗，版式同 AlertDialog。操作按钮一到两个等宽并排，三个及以上竖排且主操作在最上；操作区里的 FilledButton 自动是强调按钮（人工决策见文件内）。options 对应 SimpleDialog 的选项；solid 固定实色（验证码弹窗用）。全应用弹窗一律用它，日期选择器除外。
   - showCampusToast：提示条，可带一个操作（如撤销）。沿用 SnackBar 的排队、读屏与滑动关闭，内容是 overlay 玻璃胶囊。不用库的 GlassToast，因为它的操作触区只有 32。用固定样式，只做高度展开不淡入。
   - showCampusDialog 的 glassPanel 默认为真，表示内容是玻璃面板、由面板自己显隐；日期选择器等系统弹窗传 false，仍整体改不透明度。
-  - showCampusSheet、CampusSheetRoute：底部弹层，沿用系统弹层的拖动关闭、返回键与读屏，背景透明；内容放进 CampusSheetPanel（四周留 8 悬浮的 overlay 玻璃，圆角 24）。
+  - showCampusSheet、CampusSheetRoute：底部弹层，沿用系统弹层的拖动关闭、返回键与读屏，背景透明；内容放进 CampusSheetPanel（四周留 8 悬浮的 overlay 玻璃，圆角 24；键盘弹出时整块浮到键盘上方）。
   - CampusDialogRoute、CampusSheetRoute 经 CampusOverlayDepthRoute 登记 campusOverlayDepth。
 - campus_refresh.dart：CampusRefreshControl 下拉刷新（基于 CupertinoSliverRefreshControl，同 iOS：列表被拉下、拉够即刷新、完成后收起），放在 CustomScrollView 第一个 sliver。指示器是曲线动效：拉动时 CurveRevealPainter 按比例一笔描出玫瑰曲线，拉够轻震，刷新中换 CampusLoader 循环，完成后缩小淡出；指示至少停留 600ms。
 - campus_loading.dart：

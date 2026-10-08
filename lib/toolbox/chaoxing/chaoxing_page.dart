@@ -42,7 +42,7 @@ Future<void> importChaoxingTicket(
   final raw = await scan(
     context,
     '把对方的代签二维码放入框内',
-    (value) => decodeChaoxingPackTicket(value) == null ? '这不是学习通代签二维码' : null,
+    (value) => decodeChaoxingPackTicket(value) == null ? chaoxingNotPackTicketMessage : null,
   );
   if (raw == null || !context.mounted) return;
   final agreed = await showCampusConfirm(
@@ -153,6 +153,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     controller: controller,
     scanQrCode: widget.runtime.scanQrCode,
     watchQrCode: widget.runtime.watchQrCode,
+    pickImage: widget.runtime.pickImage,
   );
 
   Future<void> _accountMenu(BuildContext anchor) async {
@@ -188,7 +189,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
       case 'signIn':
         await _addAccount();
       case 'faces':
-        await showChaoxingFaceSheet(context, controller: controller, record: record);
+        await showChaoxingFaceSheet(context, controller: controller, record: record, pickImage: widget.runtime.pickImage);
       case 'settings':
         await showChaoxingSettingsSheet(context, controller: controller);
       case 'ticket':

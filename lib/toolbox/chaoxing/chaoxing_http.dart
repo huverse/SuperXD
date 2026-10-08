@@ -208,11 +208,13 @@ class ChaoxingHttp {
       await for (final chunk in response.stream) {
         bytes.add(chunk);
         if (bytes.length > limit) {
+          campusLog('[Chaoxing] action=http errorType=too_large path=${uri.path} limit=$limit');
           throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, '响应过大，已停止读取');
         }
       }
       cookies.save(uri, ChaoxingCookieJar.parseSetCookie(response.headersSplitValues['set-cookie'] ?? const []));
       if (response.statusCode >= 400) {
+        campusLog('[Chaoxing] action=http errorType=status path=${uri.path} status=${response.statusCode}');
         throw ChaoxingFailure(ChaoxingFailureCode.server, '学习通返回错误码 ${response.statusCode}');
       }
       return ChaoxingResponse(response.statusCode, bytes.takeBytes());
@@ -245,21 +247,26 @@ String chaoxingFormBody(Map<String, String> fields) => fields.entries
     .map((entry) => '${Uri.encodeQueryComponent(entry.key)}=${Uri.encodeQueryComponent(entry.value)}')
     .join('&');
 
+// 学习通改版时最先坏在这里：认不出的格式记一行（只记类型与长度，不记响应内容），排障能定位到哪类接口变了。
 Map<String, Object?> chaoxingJson(String body) {
   try {
     final decoded = jsonDecode(body);
     if (decoded is Map) return decoded.cast<String, Object?>();
-  } on FormatException {
-    // 落到下面的统一错误
+    campusLog('[Chaoxing] action=json errorType=not_object type=${decoded.runtimeType}');
+  } on FormatException catch (error) {
+    campusLog('[Chaoxing] action=json errorType=${error.runtimeType} length=${body.length}');
   }
-  throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, '学习通返回了未知格式');
+  throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, _unknownFormat);
 }
 
 Map<String, Object?> chaoxingData(String body) {
   final data = chaoxingJson(body)['data'];
   if (data is Map) return data.cast<String, Object?>();
-  throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, '学习通返回了未知格式');
+  campusLog('[Chaoxing] action=json errorType=no_data type=${data.runtimeType}');
+  throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, _unknownFormat);
 }
+
+const _unknownFormat = '学习通返回了未知格式';
 
 int chaoxingInt(Object? value, {int fallback = 0}) =>
     value is num ? value.toInt() : int.tryParse('$value') ?? fallback;

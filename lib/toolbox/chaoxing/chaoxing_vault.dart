@@ -2,6 +2,8 @@ import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'package:superxd/domain/campus_log.dart';
+
 // 学习通账号的密文密码与 Cookie：只进系统安全存储，业务库只存账号索引。
 abstract interface class ChaoxingVault {
   Future<String?> readPassword(String phoneNumber);
@@ -28,13 +30,19 @@ class SecureChaoxingVault implements ChaoxingVault {
   Future<void> writePassword(String phoneNumber, String encryptedPassword) =>
       _storage.write(key: _passwordKey(phoneNumber), value: encryptedPassword);
 
+  // 存储里的会话按外部输入读：坏了就当没有会话（记日志），由自动重登补上，不让整个账号打不开。
   @override
   Future<Map<String, String>?> readCookies(String phoneNumber) async {
     final raw = await _storage.read(key: _cookieKey(phoneNumber));
     if (raw == null) return null;
-    final data = jsonDecode(raw);
-    if (data is! Map) throw const FormatException('保存的学习通会话不可用');
-    return data.map((key, value) => MapEntry('$key', '$value'));
+    try {
+      final data = jsonDecode(raw);
+      if (data is Map) return data.map((key, value) => MapEntry('$key', '$value'));
+      campusLog('[Chaoxing] action=read_cookies errorType=not_object');
+    } on FormatException catch (error, stack) {
+      campusLog('[Chaoxing] action=read_cookies errorType=${error.runtimeType}\n$stack');
+    }
+    return null;
   }
 
   @override

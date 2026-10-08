@@ -24,6 +24,7 @@ class _ChaoxingGestureFieldState extends State<ChaoxingGestureField> {
   @override
   void didUpdateWidget(ChaoxingGestureField oldWidget) {
     super.didUpdateWidget(oldWidget);
+    // 校验没过时把画错的图案清掉（标红提示由 error 负责）。
     if (widget.error != null && oldWidget.error == null) _selected.clear();
   }
 
@@ -75,6 +76,8 @@ class _ChaoxingGestureFieldState extends State<ChaoxingGestureField> {
             child: Listener(
               behavior: HitTestBehavior.opaque,
               onPointerDown: (event) {
+                // 每次按下都从空图案开始：上一次画的（含校验没过的）不能接着连，否则提交的是旧点加新点。
+                _selected.clear();
                 _dragging = true;
                 _track(size, event.localPosition);
               },
