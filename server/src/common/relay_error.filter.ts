@@ -14,7 +14,7 @@ export class RelayErrorFilter implements ExceptionFilter {
       response.status(error.status).json({ code: error.code, message: error.message, ...error.extra });
       return;
     }
-    if (error instanceof HttpException) {
+    if (error instanceof HttpException && error.getStatus() < 500) {
       const status = error.getStatus();
       const code = status === HttpStatus.PAYLOAD_TOO_LARGE ? RelayCode.envelopeTooLarge : RelayCode.invalidRequest;
       response.status(status).json({ code, message: error.message });

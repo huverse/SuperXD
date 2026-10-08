@@ -42,13 +42,15 @@ CREATE TABLE IF NOT EXISTS message (
   KEY idx_expire (expire_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
--- 代签凭据包的临时信箱：只存客户端拿一次性密钥加过密的包（服务端没有密钥），取走即删，未取走的 10 分钟后由清理任务删除。
+-- 代签凭据包的临时信箱：只存客户端拿一次性密钥加过密的包（服务端没有密钥），取走即删；10 分钟过期即取不到，清理任务每 10 分钟一轮删除过期的。
+-- 已有的库按 sql/upgrade_2026_10_08.sql 加 revoke_hash 列。
 CREATE TABLE IF NOT EXISTS chaoxing_pack (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   pickup_id VARCHAR(32) NOT NULL COMMENT '取件号，12 字节随机数的 base64url',
   data VARBINARY(2048) NOT NULL COMMENT '一次性密钥加密后的代签凭据包',
   bytes INT UNSIGNED NOT NULL,
   expire_time DATETIME(3) NOT NULL,
+  revoke_hash VARCHAR(64) NOT NULL DEFAULT '' COMMENT '作废口令的 sha256 十六进制；口令只在投递响应里给出示方一次',
   create_time DATETIME(3) NOT NULL,
   update_time DATETIME(3) NOT NULL,
   PRIMARY KEY (id),

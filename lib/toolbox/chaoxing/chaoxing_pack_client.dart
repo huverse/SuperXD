@@ -25,13 +25,20 @@ class ChaoxingPackHub {
 
   bool get available => baseUrl != null;
 
-  Future<String> submit(List<int> cipherText) async {
+  // 投递换取件号，另拿一个作废口令（换码时凭它作废这张）；还没升级的中转不给口令，此时为空、作废跳过。
+  Future<({String id, String? revokeToken})> submit(List<int> cipherText) async {
     final json = await _post('/v1/chaoxing/packs', jsonEncode({'data': _encode(cipherText)}), route: 'submit');
     final id = '${json['id'] ?? ''}';
     if (!RegExp(r'^[A-Za-z0-9_-]{16}$').hasMatch(id)) {
       throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, _unknownResult);
     }
-    return id;
+    final token = json['revokeToken'];
+    return (id: id, revokeToken: token is String && RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(token) ? token : null);
+  }
+
+  // 出示方作废自己投递的包：服务端不论包在不在都回 204（不透露存在与否）。
+  Future<void> revoke(String pickupId, String revokeToken) async {
+    await _post('/v1/chaoxing/packs/$pickupId/revoke', jsonEncode({'token': revokeToken}), route: 'revoke');
   }
 
   Future<Uint8List> pickup(String pickupId) async {
@@ -74,7 +81,7 @@ class ChaoxingPackHub {
       final text = utf8.decode(bytes.takeBytes());
       final decoded = text.isEmpty ? null : jsonDecode(text);
       final json = decoded is Map ? decoded.cast<String, Object?>() : const <String, Object?>{};
-      if (response.statusCode == 200) return json;
+      if (response.statusCode == 200 || response.statusCode == 204) return json;
       campusLog('[ChaoxingPack] action=request errorType=status route=$route status=${response.statusCode} code=${json['code']}');
       throw _failure(response.statusCode, json);
     } on ChaoxingFailure {

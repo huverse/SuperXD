@@ -22,7 +22,8 @@ class ChaoxingDelegateController {
   }
 
   // 出示代签码：把当前账号封成凭据包（可附带人脸照片），密文放到中转，二维码里只有取件号与一次性密钥。
-  Future<String> createTicket({List<String> faceObjectIds = const []}) async {
+  // 返回二维码文本，以及作废这张码要用的取件号与口令（中转还没升级时口令为空）。
+  Future<({String ticket, String pickupId, String? revokeToken})> createTicket({List<String> faceObjectIds = const []}) async {
     final client = currentClient();
     final packHub = _requireHub();
     final password = await accounts.vault.readPassword(client.phoneNumber);
@@ -38,8 +39,18 @@ class ChaoxingDelegateController {
         faceObjectIds: faceObjectIds.take(chaoxingPackFaceLimit).toList(),
       ),
     );
-    final pickupId = await packHub.submit(sealed.cipherText);
-    return encodeChaoxingPackTicket(ChaoxingPackTicket(pickupId: pickupId, key: sealed.key));
+    final submitted = await packHub.submit(sealed.cipherText);
+    return (
+      ticket: encodeChaoxingPackTicket(ChaoxingPackTicket(pickupId: submitted.id, key: sealed.key)),
+      pickupId: submitted.id,
+      revokeToken: submitted.revokeToken,
+    );
+  }
+
+  // 作废出示过的码（换码、改附带照片、离开出示页时）：没有口令（中转还没升级）就跳过。
+  Future<void> revokeTicket({required String pickupId, required String? revokeToken}) async {
+    if (revokeToken == null) return;
+    await _requireHub().revoke(pickupId, revokeToken);
   }
 
   // 导入别人的代签码：取件、解密、用对方的设备码登录一次确认，再按代签账号存进本机。

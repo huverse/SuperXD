@@ -494,7 +494,7 @@ void main() {
         deviceCode: 'device-of-b',
       ),
     );
-    final pickupId = await hub.submit(sealed.cipherText);
+    final pickupId = (await hub.submit(sealed.cipherText)).id;
     final ticket = encodeChaoxingPackTicket(ChaoxingPackTicket(pickupId: pickupId, key: sealed.key));
 
     final controller = ChaoxingController(

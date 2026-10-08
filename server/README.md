@@ -20,7 +20,7 @@
 - POST /v1/invites：登记邀请号与邀请公钥，5 分钟有效，同时作废本设备旧邀请。DELETE /v1/invites/:id：作废。
 - POST /v1/friends/redeem：扫码方提交邀请号、凭证（邀请私钥对“SXD1-invite、邀请号、扫码方设备号”的签名）与给邀请人的问候密文；关系与问候同一事务写入。邀请有效期内可多人使用。
 - GET /v1/friends、DELETE /v1/friends/:peer（双向解除）。
-- POST /v1/chaoxing/packs：投递代签凭据包（一次性密钥加过密，base64url，≤2KB），返回取件号（12 字节随机数）；**不做设备签名**，拿到取件号的人就是收件人，靠取件号随机性、10 分钟过期与按 IP 限流防滥用。POST /v1/chaoxing/packs/:id/pickup：取件，取走即删，重复取或已过期返回 PACK_NOT_FOUND。
+- POST /v1/chaoxing/packs：投递代签凭据包（一次性密钥加过密，base64url，≤2KB），返回取件号（12 字节随机数）与作废口令（16 字节随机数，库里只存 sha256）；**不做设备签名**，拿到取件号的人就是收件人，靠取件号随机性、10 分钟过期与按 IP 限流防滥用。POST /v1/chaoxing/packs/:id/pickup：取件，取走即删，重复取或已过期返回 PACK_NOT_FOUND。POST /v1/chaoxing/packs/:id/revoke：出示方凭作废口令作废（换码时作废上一张），一律回 204，不透露包是否存在。代签接口的请求体在解析前按 8KB 封顶。
 - POST /v1/messages：投递密文，按（发送方, clientId）幂等，只能发给好友。GET /v1/messages?after=&limit=&wait=：按 id 游标取；wait（0–25 秒）为长轮询，没有消息时挂起到有新消息、到时或客户端断开。POST /v1/messages/ack：确认即删除。
 
 长轮询
@@ -34,15 +34,16 @@
 
 - 好友每设备 500；单条密文 256KB；每设备待取 1000 条，超出返回 MAILBOX_FULL。
 - 发送每设备每分钟 30 条、每天 500 条；同一 IP 每小时注册 20 台新设备；兑换邀请每设备每分钟 10 次。
-- 取走并确认的消息立即删除；未取走的 30 天后删除；设备 400 天不活跃连同关系与信箱删除。清理任务每 10 分钟一次，多实例抢分布式锁，每批 1000 行、每轮最多 20 批。
-- 代签凭据包：单条 ≤2KB，取件号 10 分钟有效，取走即删；同一 IP 每小时最多提交 20 个、取件 60 次。
-- Redis 只放可丢的运行态（邀请、随机数、限流计数、写库节流标记），丢了的后果是邀请需重新出示、限流归零；权威数据只在 MySQL。
+- 取走并确认的消息立即删除；未取走的 30 天后删除；设备 400 天不活跃连同关系与信箱删除。清理任务每 10 分钟一次，多实例抢分布式锁，消息每批 1000 行、每轮最多 20 批；不活跃设备每批最多 1000 台，按 10 台一个事务连带删除（每台最多约 2000 行好友关系与消息），单个事务行数有界。
+- 代签凭据包：单条 ≤2KB，取件号 10 分钟有效，取走即删；同一来源每小时最多提交 1000 个、取件与作废各 3000 次（校园网 NAT 共用出口，见 relay_limits.ts 的人工决策）。过期即取不到，清理任务每 10 分钟一轮删除过期的包（最迟约 20 分钟内删掉）。
+- 按 IP 限流的计数主体：IPv4 按完整地址，IPv6 按 /64 前缀（换地址绕不过去）。
+- Redis 只放可丢的运行态（邀请、随机数、限流计数、写库节流标记、清理任务锁），权威数据只在 MySQL。丢了的后果：邀请需重新出示、限流归零、锁释放后下一轮重抢；随机数丢了则 5 分钟校时窗口内截获的请求可被重放一次。部署用 maxmemory-policy volatile-ttl（内存满时先淘汰寿命最短的 key，随机数与邀请首当其冲），Redis 内存要留足余量。
 
 # 本地开发与测试
 
 - 环境变量见 .env.example，只在 src/config/env.ts 读取，缺必填项启动即失败。
 - 起测试库：docker compose -f docker-compose.test.yml up -d --wait（宿主机网络，MySQL 3307、Redis 6380，库在内存里）。
-- npm test：类型检查用 npm run typecheck；npm run build && npm run smoke 检查编译产物能在 Node ESM 下加载（类型导入被编译成运行时导入这类问题只在这里暴露，Vitest 测不到；Docker 构建与 CI 都会跑）；e2e 覆盖注册、签名、防重放、校时、扫码加好友（多人、凭证防盗用、作废）、收发幂等、分页、上限、关闭私信与数据保留。
+- npm test：类型检查用 npm run typecheck；npm run build && npm run smoke 检查编译产物能在 Node ESM 下加载（类型导入被编译成运行时导入这类问题只在这里暴露，Vitest 测不到；Docker 构建与 CI 都会跑）；e2e 覆盖注册、签名、防重放、校时、扫码加好友（多人、凭证防盗用、作废）、收发幂等、分页、上限、关闭私信与数据保留；代签凭据包（chaoxing_pack.e2e.test.ts）覆盖取走即删、并发只取到一份、大小与格式、2KB 边界与 8KB 请求体上限、提交与取件限流、作废口令、过期与清理不误删、IPv6 按 /64 聚合。
 - npm run dev：swc 监听编译，bun 运行并在产物变化时重启。
 - 客户端联调：仓库根目录 flutter test tool/verify_social.dart --dart-define=SUPERXD_RELAY=http://127.0.0.1:端口。
 
@@ -50,7 +51,7 @@
 
 1. 安装 Docker 与 Compose 插件。
 2. 复制本目录到服务器，cp .env.example .env，把三个密码换成随机长串（如 openssl rand -hex 24，只留在服务器上）；RELAY_PUBLIC_PORT 为对外端口。国内服务器：NPM_REGISTRY 改为 https://registry.npmmirror.com；Docker Hub 不通时在 /etc/docker/daemon.json 配 registry-mirrors（如 https://docker.m.daocloud.io、https://docker.1ms.run）。
-3. docker compose up -d --build。首次启动时 MySQL 自动执行 sql/schema.sql 建表；之后的表结构变更由人工执行，服务启动不做 DDL。
+3. docker compose up -d --build。首次启动时 MySQL 自动执行 sql/schema.sql 建表；之后的表结构变更由人工执行，服务启动不做 DDL。已有的库按日期执行 sql 下的 upgrade_*.sql（先执行升级再部署新版服务），例如 upgrade_2026_10_08.sql 给 chaoxing_pack 加作废口令哈希列。
 4. curl http://服务器:端口/v1/health 应返回 {"protocol":1,...}。防火墙（云服务器还有安全组）只放行中转端口，MySQL 与 Redis 不对外。
    小内存机器（2GB 以内）已按 compose 里的参数关闭 MySQL performance_schema、缓冲池 128MB。
 5. 客户端构建时传入地址：flutter build apk --flavor alpha --dart-define=SUPERXD_RELAY=http://服务器IP:端口。

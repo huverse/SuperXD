@@ -3,6 +3,7 @@ import Redis from 'ioredis';
 import { KeyObject } from 'node:crypto';
 import { LRUCache } from 'lru-cache';
 
+import { rateSubjectOf } from 'src/common/client_ip';
 import { RateLimiter, REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys, RedisKeyTTL } from 'src/common/redis/redis_keys';
 import { RelayCode, RelayError } from 'src/common/relay_error';
@@ -28,7 +29,7 @@ export class DeviceService {
     if (deviceIdOf(sign) !== deviceId) throw new RelayError(RelayCode.deviceMismatch, HttpStatus.BAD_REQUEST, '设备号与公钥不符');
     // 已注册的设备重复注册（重装前的同一密钥、换加密公钥）不计入限流。
     if ((await this.devices.find(deviceId)) === null) {
-      const retryAfter = await this.limiter.hit('register', ip, registerPerHour, 3600);
+      const retryAfter = await this.limiter.hit('register', rateSubjectOf(ip), registerPerHour, 3600);
       if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '注册过于频繁', { retryAfter });
     }
     const created = await this.devices.upsert(deviceId, signPublicKey, boxPublicKey);

@@ -26,7 +26,9 @@ class ChaoxingTicketPage extends StatefulWidget {
 }
 
 class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
-  String? _ticket;
+  // 当前出示的码；换码或离开页面时凭它的口令作废，旧码不再能被取走（轮换即作废，见服务端 revoke 的人工决策）。
+  ({String ticket, String pickupId, String? revokeToken})? _issued;
+  String? get _ticket => _issued?.ticket;
   String? _error;
   bool _creating = false;
   List<ChaoxingFaceImage> _faces = const [];
@@ -37,6 +39,20 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
     super.initState();
     _loadFaces();
     _create();
+  }
+
+  @override
+  void dispose() {
+    _revoke(_issued);
+    super.dispose();
+  }
+
+  // 作废只是收尾：没作废成功（断网等）也不挡界面，码 10 分钟后照样过期。
+  void _revoke(({String ticket, String pickupId, String? revokeToken})? issued) {
+    if (issued == null) return;
+    widget.controller.delegate.revokeTicket(pickupId: issued.pickupId, revokeToken: issued.revokeToken).catchError((Object error, StackTrace stack) {
+      campusLog('[Chaoxing] action=ticket_revoke errorType=${error is ChaoxingFailure ? error.code.name : error.runtimeType}\n$stack');
+    });
   }
 
   Future<void> _loadFaces() async {
@@ -63,9 +79,14 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
       _error = null;
     });
     try {
-      final ticket = await widget.controller.delegate.createTicket(faceObjectIds: _attached.toList());
-      if (!mounted) return;
-      setState(() => _ticket = ticket);
+      final issued = await widget.controller.delegate.createTicket(faceObjectIds: _attached.toList());
+      if (!mounted) {
+        _revoke(issued);
+        return;
+      }
+      final previous = _issued;
+      setState(() => _issued = issued);
+      _revoke(previous);
     } on ChaoxingFailure catch (failure) {
       if (mounted) setState(() => _error = failure.message);
     } catch (failure, stack) {
@@ -128,7 +149,7 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Text(ticket == null ? ' ' : '10 分钟内有效，被扫走即失效', style: secondary),
+                    Text(ticket == null ? ' ' : '10 分钟内有效，被扫走、重新生成或离开本页即失效', style: secondary),
                     const SizedBox(height: 8),
                     FilledButton.icon(
                       onPressed: _creating ? null : _create,
