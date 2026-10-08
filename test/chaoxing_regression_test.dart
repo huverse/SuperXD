@@ -157,9 +157,10 @@ void main() {
       ),
     );
     final loading = controller.initialize();
-    while (!_GatedClient.used) {
+    for (var attempt = 0; attempt < 2000 && !_GatedClient.used; attempt++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
+    if (!_GatedClient.used) fail('等待超时：首屏课程列表请求卡在闸门上');
     final first = controller.current!;
     final other = controller.accountList.firstWhere((record) => record.phoneNumber != first.phoneNumber);
     await controller.select(other);
@@ -235,9 +236,16 @@ void main() {
     }
     await drag.up();
     await tester.pumpAndSettle();
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
-    final ordered = await tester.runAsync(() => controller.accounts.list());
-    expect(ordered!.map((item) => item.phoneNumber), ['138', '137', '139']);
+    // 写库在松手后异步进行：等到排序真的落库，不按固定时长赌磁盘速度。
+    final ordered = await tester.runAsync(() async {
+      for (var attempt = 0; attempt < 500; attempt++) {
+        final current = await controller.accounts.list();
+        if (current.map((item) => item.phoneNumber).join(',') == '138,137,139') return current;
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+      }
+      return controller.accounts.list();
+    });
+    expect(ordered!.map((item) => item.phoneNumber), ['138', '137', '139'], reason: '拖动后的排序已写回库');
     controller.dispose();
   });
 
