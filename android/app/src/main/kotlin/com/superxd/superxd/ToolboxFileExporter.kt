@@ -1,10 +1,13 @@
 package com.superxd.superxd
 
 import android.app.Activity
+import android.content.ContentResolver
 import android.content.ContentValues
 import android.content.Intent
+import android.database.Cursor
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
@@ -25,6 +28,10 @@ class ToolboxFileExporter(private val activity: Activity) : MethodChannel.Method
     companion object {
         private val extensions = mapOf("video/mp4" to "mp4", "video/webm" to "webm", "video/quicktime" to "mov", "video/x-matroska" to "mkv", "video/x-msvideo" to "avi",
             "image/jpeg" to "jpg", "image/png" to "png", "image/webp" to "webp", "image/gif" to "gif", "audio/mpeg" to "mp3", "audio/mp4" to "m4a", "audio/aac" to "aac", "audio/ogg" to "ogg", "audio/wav" to "wav")
+        // 一次性导出只有图片（人脸照片等），不开放视频音频。
+        private val externalMimes = setOf("image/jpeg", "image/png", "image/webp")
+        // 一次性导出的文件名：不得含路径分隔符、冒号与控制字符，不得以点开头（隐藏文件），64 字以内且带扩展名。
+        private val externalName = Regex("^[^./\\\\:\\p{Cntrl}][^/\\\\:\\p{Cntrl}]{0,63}$")
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
@@ -42,15 +49,16 @@ class ToolboxFileExporter(private val activity: Activity) : MethodChannel.Method
                     require(extensions[mime] == filename.substringAfterLast('.'))
                     dispatch(Export(source, filename, mime, result))
                 }
-                // 一次性导出（人脸照片等）：来源不受下载目录限制、文件名用语义化名字；
-                // 防护不降级——文件必须真实存在、文件名不得含路径分隔符、mime 与扩展名仍走白名单。
+                // 一次性导出（人脸照片等）：文件名用语义化名字。来源只认应用缓存目录（Dart 侧的临时文件就在这里），
+                // 不能拿它把应用私有的库、密钥或配置导出到公共目录；mime 只放行图片且与扩展名对得上。
                 "publishExternal" -> {
                     val source = File(requireNotNull(call.argument<String>("source"))).canonicalFile
-                    require(source.isFile)
+                    val cache = activity.cacheDir.canonicalFile
+                    require(source.path.startsWith(cache.path + File.separator) && source.isFile)
                     val filename = requireNotNull(call.argument<String>("filename"))
-                    require(!filename.contains('/') && !filename.contains('\\') && filename.length <= 64 && filename.contains('.'))
+                    require(filename.matches(externalName) && filename.contains('.'))
                     val mime = requireNotNull(call.argument<String>("mimeType"))
-                    require(extensions[mime] == filename.substringAfterLast('.'))
+                    require(mime in externalMimes && extensions[mime] == filename.substringAfterLast('.'))
                     dispatch(Export(source, filename, mime, result))
                 }
                 "open" -> {
@@ -91,10 +99,8 @@ class ToolboxFileExporter(private val activity: Activity) : MethodChannel.Method
         try {
             val collection = MediaStore.Downloads.EXTERNAL_CONTENT_URI
             val relativePath = "Download/SuperXD/"
-            // UUID文件名是幂等键；只查本次导出，不枚举用户媒体库。
-            resolver.query(collection, arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.IS_PENDING),
-                "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND ${MediaStore.MediaColumns.RELATIVE_PATH} = ?",
-                arrayOf(export.filename, relativePath), null)?.use { cursor ->
+            // 文件名是幂等键；只查本次导出，不枚举用户媒体库。写入中（IS_PENDING）的残留要一起查出来删掉重写。
+            findByName(resolver, collection, export.filename, relativePath)?.use { cursor ->
                 if (cursor.moveToFirst()) {
                     val existing = Uri.withAppendedPath(collection, cursor.getLong(0).toString())
                     if (cursor.getInt(1) == 0) {
@@ -117,13 +123,31 @@ class ToolboxFileExporter(private val activity: Activity) : MethodChannel.Method
             check(resolver.update(created, ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }, null, null) == 1)
             val uri = created
             main.post { export.result.success(uri.toString()) }
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             Log.e("ToolboxFiles", "action=publish", error)
             created?.let { uri ->
                 try { resolver.delete(uri, null, null) }
                 catch (cleanup: Exception) { Log.e("ToolboxFiles", "action=cleanup", cleanup) }
             }
             main.post { export.result.error("SAVE_FAILED", "保存失败，请重试", null) }
+        }
+    }
+
+    // 媒体库查询默认排除写入中的条目：Android 11 起用 QUERY_ARG_MATCH_PENDING，10 用 setIncludePending，
+    // 上次中途失败留下的写入中条目才能被找到并清理，不会让新文件被系统改名成「(1)」。
+    private fun findByName(resolver: ContentResolver, collection: Uri, filename: String, relativePath: String): Cursor? {
+        val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.IS_PENDING)
+        val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND ${MediaStore.MediaColumns.RELATIVE_PATH} = ?"
+        val arguments = arrayOf(filename, relativePath)
+        return if (Build.VERSION.SDK_INT >= 30) {
+            resolver.query(collection, projection, Bundle().apply {
+                putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
+                putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, arguments)
+                putInt(MediaStore.QUERY_ARG_MATCH_PENDING, MediaStore.MATCH_INCLUDE)
+            }, null)
+        } else {
+            @Suppress("DEPRECATION")
+            resolver.query(MediaStore.setIncludePending(collection), projection, selection, arguments, null)
         }
     }
 
@@ -139,7 +163,7 @@ class ToolboxFileExporter(private val activity: Activity) : MethodChannel.Method
                     requireNotNull(activity.contentResolver.openOutputStream(uri, "w")).use { output -> input.copyTo(output) }
                 }
                 main.post { export.result.success(uri.toString()) }
-            } catch (error: Exception) {
+            } catch (error: Throwable) {
                 Log.e("ToolboxFiles", "action=save_document", error)
                 try { DocumentsContract.deleteDocument(activity.contentResolver, uri) }
                 catch (cleanup: Exception) { Log.e("ToolboxFiles", "action=cleanup_document", cleanup) }

@@ -3,16 +3,18 @@ import 'package:flutter/services.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_device.dart';
 
 // 设备信息端口的原生实现（ChaoxingDevice.kt）。单独成文件，协议链路才不带 Flutter，tool 下的联调入口能用纯 Dart 跑。
+// 两个调用都给兜底超时：原生侧万一没回复，超时抛出后由调用方退回（用户信息改 GET、设备码用固定随机码），不会一直挂着。
 class ChannelChaoxingDeviceProbe implements ChaoxingDeviceProbe {
   static const _channel = MethodChannel('superxd/chaoxing_device');
+  static const _timeout = Duration(seconds: 3);
 
   @override
   Future<ChaoxingDeviceFacts> facts(String packageName) async {
-    final result = await _channel.invokeMapMethod<Object?, Object?>('deviceInfo', {'packageName': packageName});
+    final result = await _channel.invokeMapMethod<Object?, Object?>('deviceInfo', {'packageName': packageName}).timeout(_timeout);
     if (result == null) throw StateError('设备信息为空');
     return ChaoxingDeviceFacts.fromMap(result);
   }
 
   @override
-  Future<String> oaid() async => await _channel.invokeMethod<String>('oaid') ?? '';
+  Future<String> oaid() async => await _channel.invokeMethod<String>('oaid').timeout(_timeout) ?? '';
 }
