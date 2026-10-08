@@ -55,7 +55,7 @@ class _CampusLicensesPageState extends State<CampusLicensesPage> {
             left.key.toLowerCase().compareTo(right.key.toLowerCase()),
       );
     } catch (error, stack) {
-      campusLog('[Licenses] action=load error=$error\n$stack');
+      campusLog('[Licenses] action=load errorType=${error.runtimeType}\n$stack');
       rethrow;
     }
   }

@@ -48,9 +48,10 @@ void main() {
   test('入队中取消必须等待入队完成，不能取消后复活下载', () async {
     fixture.transfer.enqueueGate = Completer<void>();
     final starting = fixture.downloadVideo(ToolboxFixture.video);
-    while (fixture.manager.forTool('short_video').isEmpty) {
+    for (var attempt = 0; attempt < 2000 && fixture.manager.forTool('short_video').isEmpty; attempt++) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
+    if (fixture.manager.forTool('short_video').isEmpty) fail('等待超时：下载任务登记到短视频工具');
     final id = fixture.manager.forTool('short_video').single.id;
     final cancelling = fixture.manager.cancel(id);
     fixture.transfer.enqueueGate!.complete();

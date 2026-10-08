@@ -101,7 +101,7 @@ Future<List<ChaoxingActivity>> chaoxingActivities(ChaoxingClient client, Chaoxin
     final activity = chaoxingActivity(item.cast<String, Object?>(), course, ext: ext);
     if (activity != null) activities.add(activity);
   }
-  activities.sort((first, second) => second.startTime.compareTo(first.startTime));
+  activities.sort(chaoxingNewestFirst);
   return activities;
 }
 
@@ -121,7 +121,7 @@ ChaoxingActivity? chaoxingActivity(Map<String, Object?> json, ChaoxingCourse cou
     // 结束时间重复，也看不出是哪门课；nameFour 只在拿不到课程名时兜底。
     subtitle: course.name.isNotEmpty ? course.name : chaoxingString(json['nameFour']),
     signType: signType,
-    startTime: chaoxingTimestamp(json['startTime']) ?? DateTime.now().toUtc(),
+    startTime: chaoxingTimestamp(json['startTime']),
     endTime: chaoxingTimestamp(json['endTime']),
     status: chaoxingInt(json['status']),
     userStatus: chaoxingInt(json['userStatus']),

@@ -156,7 +156,7 @@ class _AppearancePageState extends State<AppearancePage> {
     try {
       await operation();
     } catch (error, stack) {
-      campusLog('[Appearance] action=save error=$error\n$stack');
+      campusLog('[Appearance] action=save errorType=${error.runtimeType}\n$stack');
       if (mounted) setState(() => _error = '保存失败，请重试');
     } finally {
       if (mounted) setState(() => _saving = false);

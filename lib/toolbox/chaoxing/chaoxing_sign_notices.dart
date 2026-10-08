@@ -21,14 +21,16 @@ class ChaoxingTimeNotice extends StatelessWidget {
     final palette = CampusPalette.of(context);
     final now = DateTime.now().toUtc();
     final end = activity.endTime;
+    // 不知道发起时刻的不提示发布太久。
+    final start = activity.startTime;
     final String? message;
     if (!activity.ongoing) {
       message = end == null
           ? '这场签到已经结束或还没开始，现在签到可能会记为迟到'
           : '这场签到已在 ${formatCampusTimestamp(end.toIso8601String())} 截止，现在签到可能会记为迟到';
-    } else if (now.difference(activity.startTime) > chaoxingStaleActivityAge) {
-      message = '这场签到发布于 ${formatCampusTimestamp(activity.startTime.toIso8601String())}，'
-          '已经过去 ${now.difference(activity.startTime).inHours} 小时，确认没有选错';
+    } else if (start != null && now.difference(start) > chaoxingStaleActivityAge) {
+      message = '这场签到发布于 ${formatCampusTimestamp(start.toIso8601String())}，'
+          '已经过去 ${now.difference(start).inHours} 小时，确认没有选错';
     } else {
       message = null;
     }

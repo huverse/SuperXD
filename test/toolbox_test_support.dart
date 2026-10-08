@@ -151,6 +151,9 @@ class ToolboxFixture {
         watch.elapsed < const Duration(seconds: 5)) {
       await Future<void>.delayed(const Duration(milliseconds: 5));
     }
+    if (transfer.enqueueCount < count) {
+      fail('等待超时：入队数达到 $count（实际 ${transfer.enqueueCount}）');
+    }
   }
 
   Future<void> close() async {

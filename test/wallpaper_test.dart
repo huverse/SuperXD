@@ -43,10 +43,13 @@ WallpaperTone _tone(int columns, int rows, List<int> Function(int cell) darkest,
   brightest: Uint8List.fromList([for (var cell = 0; cell < columns * rows; cell++) ...brightest(cell)]),
 );
 
-Future<void> _until(WidgetTester tester, bool Function() done) async {
-  for (var attempt = 0; attempt < 1000 && !done(); attempt++) {
+// 在 runAsync 里按真实时间等条件成立；上限约 60 秒（CI 慢机器留余量），等不到就带上 what 直接失败，
+// 不静默返回让后面的断言莫名失败（CI 曾在导入壁纸后只报 Expected: false）。runAsync 会把失败交给测试框架报出。
+Future<void> _until(WidgetTester tester, String what, bool Function() done) async {
+  for (var attempt = 0; attempt < 3000 && !done(); attempt++) {
     await Future<void>.delayed(const Duration(milliseconds: 20));
   }
+  if (!done()) fail('等待超时（约 60 秒）：$what');
 }
 
 // 业务完成信号（设置已写入、文件已删除）先于页面“保存中/导入中”的收尾：继续让真实异步跑到加载提示消失，再按控件动画时长推进，
@@ -187,6 +190,7 @@ void main() {
       await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
       await tester.pump();
     }
+    if (find.byType(Image).evaluate().isEmpty) fail('等待超时：壁纸解码完成并换上图片');
     await tester.pump(const Duration(milliseconds: 200));
     expect([find.byType(Image).evaluate().length, fog.evaluate().length], [1, 1]);
     await tester.pumpAndSettle();
@@ -228,7 +232,7 @@ void main() {
     // 取消选图：不提示、不改设置。
     await tester.runAsync(() async {
       await tester.tap(find.text('自定义图片'));
-      await _until(tester, () => picks == 1);
+      await _until(tester, '取消选图：假选图被调用', () => picks == 1);
       await Future<void>.delayed(const Duration(milliseconds: 50));
     });
     await _settled(tester);
@@ -238,7 +242,7 @@ void main() {
     next = (await tester.runAsync(() => picked('broken.jpg', List.filled(64, 7))))!;
     await tester.runAsync(() async {
       await tester.tap(find.text('自定义图片'));
-      await _until(tester, () => !File(next!).existsSync());
+      await _until(tester, '坏图：页面清理掉选图缓存副本', () => !File(next!).existsSync());
     });
     await _settled(tester);
     expect(find.text('无法读取这张图片，请换一张'), findsOneWidget);
@@ -255,7 +259,7 @@ void main() {
     }))!;
     await tester.runAsync(() async {
       await tester.tap(find.text('自定义图片'));
-      await _until(tester, () => !File(next!).existsSync());
+      await _until(tester, '超过20MB：页面清理掉选图缓存副本', () => !File(next!).existsSync());
     });
     await _settled(tester);
     expect(find.text('图片超过20MB，请换一张'), findsOneWidget);
@@ -265,7 +269,7 @@ void main() {
       final before = settings.wallpaperFile;
       await tester.runAsync(() async {
         await tester.tap(find.text(before == null ? '自定义图片' : '更换图片'));
-        await _until(tester, () => settings.wallpaperFile != null && settings.wallpaperFile?.path != before?.path && !File(next!).existsSync());
+        await _until(tester, '导入 $name：设置换成新壁纸且选图缓存副本已删', () => settings.wallpaperFile != null && settings.wallpaperFile?.path != before?.path && !File(next!).existsSync());
       });
       await _settled(tester);
     }
@@ -308,7 +312,7 @@ void main() {
     await tester.scrollUntilVisible(find.text('默认云雾'), -120, scrollable: list);
     await tester.runAsync(() async {
       await tester.tap(find.text('默认云雾'));
-      await _until(tester, () => settings.wallpaperFile == null && wallpaperDirectory.listSync().isEmpty);
+      await _until(tester, '恢复云雾：设置清空且壁纸目录删空', () => settings.wallpaperFile == null && wallpaperDirectory.listSync().isEmpty);
     });
     await _settled(tester);
     expect(settings.wallpaperFile, isNull);

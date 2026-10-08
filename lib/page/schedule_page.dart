@@ -342,7 +342,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
   }
 
   Widget _content(double scale, Duration motion) {
-    if (!_knownSchedule) return Center(key: const ValueKey('not-synced'), child: TextButton(onPressed: () => _notice('该学期尚未同步，请在今天页选择这个学年同步。'), child: const Text('尚未同步此学期')));
+    if (!_knownSchedule) return Center(key: const ValueKey('not-synced'), child: TextButton.icon(onPressed: () => _notice('该学期尚未同步，请在今天页选择这个学年同步。'), icon: const CampusIcon(CampusIcons.info), label: const Text('尚未同步此学期')));
     if (_start == null) return Center(key: const ValueKey('start'), child: FilledButton.icon(style: campusProminent, onPressed: _editStart, icon: const CampusIcon(CampusIcons.termStart), label: const Text('设置开学日')));
     final showRail = _selection.showRail;
     return LayoutBuilder(key: const ValueKey('calendar-body'), builder: (context, constraints) {

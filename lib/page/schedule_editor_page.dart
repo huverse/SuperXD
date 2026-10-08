@@ -73,7 +73,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
         }
       }
     } catch (error, stack) {
-      campusLog('[ScheduleEditor] action=load error=$error\n$stack');
+      campusLog('[ScheduleEditor] action=load errorType=${error.runtimeType}\n$stack');
       if (mounted) {
         setState(() {
           _loading = false;
@@ -272,13 +272,13 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
             ));
             if (mounted && error != null) setState(() => _error = error);
           } catch (error, stack) {
-            campusLog('[ScheduleEditor] action=undo error=$error\n$stack');
+            campusLog('[ScheduleEditor] action=undo errorType=${error.runtimeType}\n$stack');
             if (mounted) setState(() => _error = '撤销未完成，请在历史版本中预览恢复');
           }
         },
       );
     } catch (error, stack) {
-      campusLog('[ScheduleEditor] action=delete error=$error\n$stack');
+      campusLog('[ScheduleEditor] action=delete errorType=${error.runtimeType}\n$stack');
       if (mounted) setState(() => _error = '删除未完成，请重试');
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -356,9 +356,10 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                         color: Theme.of(context).colorScheme.error,
                       ),
                     ),
-                    TextButton(
+                    TextButton.icon(
                       onPressed: _busy ? null : () => _load(),
-                      child: const Text('重新读取'),
+                      icon: const CampusIcon(CampusIcons.sync),
+                      label: const Text('重试'),
                     ),
                   ],
                   if (_view != null) ...[
@@ -390,7 +391,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                                   if (mounted) setState(() => _error = error);
                                 } catch (error, stack) {
                                   campusLog(
-                                    '[ScheduleEditor] action=create error=$error\n$stack',
+                                    '[ScheduleEditor] action=create errorType=${error.runtimeType}\n$stack',
                                   );
                                   if (mounted) {
                                     setState(() => _error = '建立课表失败');

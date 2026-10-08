@@ -253,10 +253,12 @@ void main() {
     await tester.pumpWidget(app(FriendSchedulePage(friendName: '小明', share: share, sharedAt: '2026-10-04T08:00:00.000Z', gateway: _MyScheduleGateway(mine, termStartDate: '2026-09-07'))));
     await advance(tester);
     // 第 1 周（今天在学期之后时取最后一周 2；先回到第 1 周）。
-    while (find.text('第 1 周').evaluate().isEmpty) {
+    // 学期只有两周，最多点一次就到；给个上限，翻不到时直接报出来，不让用例卡到整体超时。
+    for (var step = 0; step < 20 && find.text('第 1 周').evaluate().isEmpty; step++) {
       await tester.tap(find.byTooltip('上一周'));
       await tester.pump();
     }
+    expect(find.text('第 1 周'), findsOneWidget, reason: '翻回第 1 周');
     expect(find.text('本周共同空闲'), findsOneWidget);
     expect(find.text('周一 第4节 10:55–11:40'), findsOneWidget);
     expect(find.text('周二 第1–4节 08:00–11:40'), findsOneWidget);

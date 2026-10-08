@@ -65,7 +65,7 @@ Future<void> initializeCampusGlass() async {
       '[CampusGlass] ready=true shaderFilter=${ui.ImageFilter.isShaderFilterSupported}',
     );
   } catch (error, stack) {
-    campusLog('[CampusGlass] fallback=frosted error=$error\n$stack');
+    campusLog('[CampusGlass] fallback=frosted errorType=${error.runtimeType}\n$stack');
   }
 }
 

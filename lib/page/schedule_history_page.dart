@@ -60,7 +60,7 @@ class _ScheduleHistoryPageState extends State<ScheduleHistoryPage> {
         }
       });
     } catch (error, stack) {
-      campusLog('[ScheduleHistory] action=list error=$error\n$stack');
+      campusLog('[ScheduleHistory] action=list errorType=${error.runtimeType}\n$stack');
       if (mounted) setState(() => _error = '无法读取历史版本，请重试');
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -105,9 +105,10 @@ class _ScheduleHistoryPageState extends State<ScheduleHistoryPage> {
                 color: Theme.of(context).colorScheme.error,
               ),
             ),
-            TextButton(
+            TextButton.icon(
               onPressed: _loading ? null : () => _load(refresh: true),
-              child: const Text('重试'),
+              icon: const CampusIcon(CampusIcons.sync),
+              label: const Text('重试'),
             ),
           ],
           for (final row in _rows)
@@ -134,7 +135,7 @@ class _ScheduleHistoryPageState extends State<ScheduleHistoryPage> {
           if (_loading)
             const Center(child: CampusLoading(label: '正在读取历史版本'))
           else if (_more && _rows.isNotEmpty)
-            OutlinedButton(onPressed: _load, child: const Text('加载更早版本')),
+            OutlinedButton.icon(onPressed: _load, icon: const CampusIcon(CampusIcons.expand), label: const Text('加载更早版本')),
         ],
       ),
     )),
@@ -194,7 +195,7 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
             : scheduleChanges(_current!.courses, _target!.courses);
       });
     } catch (error, stack) {
-      campusLog('[ScheduleHistory] action=preview error=$error\n$stack');
+      campusLog('[ScheduleHistory] action=preview errorType=${error.runtimeType}\n$stack');
       if (mounted) setState(() => _error = '无法读取版本详情');
     } finally {
       if (mounted) setState(() => _loading = false);
@@ -229,7 +230,7 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
         });
       }
     } catch (error, stack) {
-      campusLog('[ScheduleHistory] action=restore error=$error\n$stack');
+      campusLog('[ScheduleHistory] action=restore errorType=${error.runtimeType}\n$stack');
       if (mounted) setState(() => _error = '恢复未完成，请重试');
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -261,9 +262,10 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
                         color: Theme.of(context).colorScheme.error,
                       ),
                     ),
-                    TextButton(
+                    TextButton.icon(
                       onPressed: _saving ? null : _load,
-                      child: const Text('重新预览'),
+                      icon: const CampusIcon(CampusIcons.sync),
+                      label: const Text('重试'),
                     ),
                   ],
                   if (_target != null && _current != null) ...[
