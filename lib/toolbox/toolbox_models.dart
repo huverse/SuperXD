@@ -261,6 +261,13 @@ abstract interface class ToolboxFilePublisher {
     required String filename,
     required String mimeType,
   });
+
+  // 一次性导出（人脸照片等）：来源不限下载目录、文件名用语义化名字（原生按文件名幂等，重复导出同名直接返回已有文件）。
+  Future<Uri?> publishExternal({
+    required String source,
+    required String filename,
+    required String mimeType,
+  });
   Future<void> open(Uri uri, String mimeType);
 }
 

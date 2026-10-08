@@ -22,6 +22,11 @@ class ToolboxFileExporter(private val activity: Activity) : MethodChannel.Method
     private val requestCode = 49210
     private data class Export(val source: File, val filename: String, val mime: String, val result: MethodChannel.Result)
 
+    companion object {
+        private val extensions = mapOf("video/mp4" to "mp4", "video/webm" to "webm", "video/quicktime" to "mov", "video/x-matroska" to "mkv", "video/x-msvideo" to "avi",
+            "image/jpeg" to "jpg", "image/png" to "png", "image/webp" to "webp", "image/gif" to "gif", "audio/mpeg" to "mp3", "audio/mp4" to "m4a", "audio/aac" to "aac", "audio/ogg" to "ogg", "audio/wav" to "wav")
+    }
+
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         try {
             when (call.method) {
@@ -34,21 +39,19 @@ class ToolboxFileExporter(private val activity: Activity) : MethodChannel.Method
                     val filename = requireNotNull(call.argument<String>("filename"))
                     require(filename.matches(Regex("SuperXD_${Regex.escape(id)}\\.(mp4|webm|mov|mkv|avi|jpg|png|webp|gif|mp3|m4a|aac|ogg|wav)")))
                     val mime = requireNotNull(call.argument<String>("mimeType"))
-                    val extensions = mapOf("video/mp4" to "mp4", "video/webm" to "webm", "video/quicktime" to "mov", "video/x-matroska" to "mkv", "video/x-msvideo" to "avi",
-                        "image/jpeg" to "jpg", "image/png" to "png", "image/webp" to "webp", "image/gif" to "gif", "audio/mpeg" to "mp3", "audio/mp4" to "m4a", "audio/aac" to "aac", "audio/ogg" to "ogg", "audio/wav" to "wav")
                     require(extensions[mime] == filename.substringAfterLast('.'))
-                    val export = Export(source, filename, mime, result)
-                    if (Build.VERSION.SDK_INT >= 29) {
-                        executor.execute { publishMedia(export) }
-                    } else {
-                        check(pending == null) { "已有保存操作" }
-                        pending = export
-                        activity.startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                            addCategory(Intent.CATEGORY_OPENABLE)
-                            type = mime
-                            putExtra(Intent.EXTRA_TITLE, filename)
-                        }, requestCode)
-                    }
+                    dispatch(Export(source, filename, mime, result))
+                }
+                // 一次性导出（人脸照片等）：来源不受下载目录限制、文件名用语义化名字；
+                // 防护不降级——文件必须真实存在、文件名不得含路径分隔符、mime 与扩展名仍走白名单。
+                "publishExternal" -> {
+                    val source = File(requireNotNull(call.argument<String>("source"))).canonicalFile
+                    require(source.isFile)
+                    val filename = requireNotNull(call.argument<String>("filename"))
+                    require(!filename.contains('/') && !filename.contains('\\') && filename.length <= 64 && filename.contains('.'))
+                    val mime = requireNotNull(call.argument<String>("mimeType"))
+                    require(extensions[mime] == filename.substringAfterLast('.'))
+                    dispatch(Export(source, filename, mime, result))
                 }
                 "open" -> {
                     val uri = Uri.parse(requireNotNull(call.argument<String>("uri")))
@@ -64,6 +67,20 @@ class ToolboxFileExporter(private val activity: Activity) : MethodChannel.Method
         } catch (error: Exception) {
             Log.e("ToolboxFiles", "action=${call.method}", error)
             result.error("FILE_OPERATION", "文件操作未完成", null)
+        }
+    }
+
+    private fun dispatch(export: Export) {
+        if (Build.VERSION.SDK_INT >= 29) {
+            executor.execute { publishMedia(export) }
+        } else {
+            check(pending == null) { "已有保存操作" }
+            pending = export
+            activity.startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                addCategory(Intent.CATEGORY_OPENABLE)
+                type = export.mime
+                putExtra(Intent.EXTRA_TITLE, export.filename)
+            }, requestCode)
         }
     }
 
