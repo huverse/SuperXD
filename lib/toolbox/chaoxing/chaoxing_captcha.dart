@@ -93,12 +93,12 @@ Future<ChaoxingCaptchaPuzzle> chaoxingCaptchaPuzzle(
   final json = chaoxingJson(chaoxingJsonp(response.body));
   final verification = json['imageVerificationVo'];
   if (verification is! Map) {
-    throw const ChaoxingFailure(ChaoxingFailureCode.captchaRequired, '验证码加载失败，请重试');
+    throw const ChaoxingFailure(ChaoxingFailureCode.captchaRequired, chaoxingCaptchaLoadFailedMessage);
   }
   final shadeImageUrl = chaoxingString(verification['shadeImage']);
   final cutoutImageUrl = chaoxingString(verification['cutoutImage']);
   if (shadeImageUrl.isEmpty || cutoutImageUrl.isEmpty) {
-    throw const ChaoxingFailure(ChaoxingFailureCode.captchaRequired, '验证码加载失败，请重试');
+    throw const ChaoxingFailure(ChaoxingFailureCode.captchaRequired, chaoxingCaptchaLoadFailedMessage);
   }
   return ChaoxingCaptchaPuzzle(
     token: chaoxingString(json['token'], fallback: token),
@@ -154,7 +154,7 @@ Future<int> _chaoxingCaptchaConf(ChaoxingClient client, int now) async {
   );
   final t = chaoxingInt(chaoxingJson(chaoxingJsonp(response.body))['t']);
   if (t == 0) {
-    throw const ChaoxingFailure(ChaoxingFailureCode.captchaRequired, '验证码加载失败，请重试');
+    throw const ChaoxingFailure(ChaoxingFailureCode.captchaRequired, chaoxingCaptchaLoadFailedMessage);
   }
   return t;
 }

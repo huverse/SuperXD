@@ -188,6 +188,12 @@ class ChaoxingStore {
   // 只增不删的数据都要有上限：打开时整库裁剪一次，之后每次写入只裁剪写到的那张表（或那个账号的那几行）。
   Future<void> _pruneAll() async {
     await _pruneLocations();
+    // 学习通课表缓存过期即删（读的时候也按 fetchedAt 判断，这里不让过期的原文一直躺在库里）。
+    await _database.delete(
+      'lesson_cache',
+      where: 'fetched_at < ?',
+      whereArgs: [DateTime.now().toUtc().subtract(lessonCacheLifetime).millisecondsSinceEpoch],
+    );
     // 每个账号各自留最近几张人脸照片、最近置顶的课程。
     await _database.rawDelete(
       'DELETE FROM face_images WHERE id NOT IN ('

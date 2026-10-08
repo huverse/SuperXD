@@ -65,6 +65,9 @@ class ChaoxingClient {
   String deviceCode;
   ChaoxingAccount? account;
 
+  // 本次会话里查到的所在班级号（签到前检查用，每人每次都拉整张课程表太重）；重新登录后作废。
+  Set<int>? classIds;
+
   static void validatePassword(String password) {
     if (password.isEmpty) {
       throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '密码不能为空');
@@ -112,6 +115,7 @@ class ChaoxingClient {
       final message = chaoxingString(result['msg2']).trim();
       throw ChaoxingFailure(ChaoxingFailureCode.login, message.isEmpty ? '登录失败，请核对账号密码' : message);
     }
+    classIds = null;
     // 登录响应会把 fid 换回主单位；选了别的学校单位时改回所选的，课程列表才对得上。
     final selected = account?.fid;
     if (selected != null && selected != 0) applyUnit(selected);
@@ -122,15 +126,14 @@ class ChaoxingClient {
     if (http.cookies['fid'] != null) http.cookies.set('fid', '$fid');
   }
 
-  // 会话过期后拿密文密码再登一次；这次仍失败就按过期处理，由用户重新登录。
+  // 会话过期后拿密文密码再登一次；账号密码不再被接受时按过期处理，由用户重新登录（修复）。
+  // 超时、断网等其余失败原样抛出，不能把「网络不好」说成「登录已过期」。
   Future<void> reLogin() async {
     try {
       await login();
-    } on ChaoxingFailure catch (error) {
-      throw ChaoxingFailure(
-        error.code == ChaoxingFailureCode.login ? ChaoxingFailureCode.sessionExpired : error.code,
-        '登录已过期，请重新登录',
-      );
+    } on ChaoxingFailure catch (error, stack) {
+      if (error.code != ChaoxingFailureCode.login) rethrow;
+      Error.throwWithStackTrace(const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, chaoxingSessionExpiredMessage), stack);
     }
   }
 
@@ -142,12 +145,12 @@ class ChaoxingClient {
         : await http.postForm(Uri.parse(chaoxingUserInfoUri), chaoxingFormBody({'data': data}), timeout: chaoxingAccountTimeout);
     final message = chaoxingJson(response.body)['msg'];
     if (message is! Map) {
-      throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '登录已过期，请重新登录');
+      throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, chaoxingSessionExpiredMessage);
     }
     final info = message.cast<String, Object?>();
     final uid = chaoxingInt(info['uid']);
     if (uid == 0) {
-      throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '登录已过期，请重新登录');
+      throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, chaoxingSessionExpiredMessage);
     }
     final imAccount = (info['accountInfo'] as Map?)?['imAccount'] as Map?;
     final clientId = chaoxingString(info['clientId']);

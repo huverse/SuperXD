@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
@@ -24,6 +25,14 @@ typedef ToolboxVideoShare = Future<void> Function(BuildContext context, VideoSha
 // hint 是取景页的提示语，accept 返回非空表示不认这个内容（原地提示），认下就把原文交回来；取消返回空。
 typedef ToolboxQrScan = Future<String?> Function(BuildContext context, String hint, String? Function(String raw) accept);
 
+// 取一张图（相册或相机）：取图与缓存副本清理在 page 层，百宝箱不依赖它，由组合根注入。
+// 返回压缩后的副本路径与 discard（删掉这次取图留在缓存里的副本），用完必须调用 discard；取消返回空。
+typedef ToolboxImagePick = Future<({String path, Future<void> Function() discard})?> Function({
+  required ImageSource source,
+  required double maxSide,
+  required int quality,
+});
+
 // 连续扫码：取景页一直开着，每认下一个新码就交给 onCode，until 完成后自动关上；status 是取景页上的进度文字。
 // 用户按返回提前关掉时，返回的 Future 完成。
 typedef ToolboxQrWatch =
@@ -42,6 +51,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.shareVideo,
     this.scanQrCode,
     this.watchQrCode,
+    this.pickImage,
     this.serviceOpeners = const {},
   }) : coordinator = ParseCoordinator([BugpkVideoParser()]);
   ToolboxRuntime.testing({
@@ -51,6 +61,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.shareVideo,
     this.scanQrCode,
     this.watchQrCode,
+    this.pickImage,
     // 外部已经打开好的服务（测试直接给实例）：runtime 只代为转交，不负责关闭。
     Map<String, ToolboxService>? services,
   }) : coordinator = ParseCoordinator([parser]),
@@ -66,6 +77,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
   final ToolboxVideoShare? shareVideo;
   final ToolboxQrScan? scanQrCode;
   final ToolboxQrWatch? watchQrCode;
+  final ToolboxImagePick? pickImage;
 
   // 每个工具自己负责打开与关闭自己的服务：框架只提供目录与公共能力，打开函数由组合根注入，
   // 工具页面首次使用时经 service 取用（打开一次后缓存到应用退出）。

@@ -1,3 +1,4 @@
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
@@ -121,7 +122,10 @@ class ChaoxingAccounts {
       if (error.code != ChaoxingFailureCode.sessionExpired) rethrow;
       try {
         await _reLogin(client);
-      } on ChaoxingFailure {
+      } on ChaoxingFailure catch (reLoginFailure) {
+        campusLog('[Chaoxing] action=re_login errorType=${reLoginFailure.code.name}');
+        // 密码不再被接受才是真的过期（要修复）；网络类失败照实报，稍后重试即可。
+        if (reLoginFailure.code != ChaoxingFailureCode.sessionExpired) rethrow;
         Error.throwWithStackTrace(error, stack);
       }
       return await action();
@@ -134,7 +138,8 @@ class ChaoxingAccounts {
   Future<void> _reLogin(ChaoxingClient client) => _reLogins[client] ??= () async {
     try {
       await client.reLogin();
-      await vault.writeCookies(client.phoneNumber, client.http.cookies.session);
+      // 与 refreshAccount 同理：重登途中账号被删了就不写回会话。
+      if (await record(client.phoneNumber) != null) await vault.writeCookies(client.phoneNumber, client.http.cookies.session);
     } finally {
       _reLogins.remove(client);
     }
@@ -146,9 +151,10 @@ class ChaoxingAccounts {
     // 记录在响应之后再读：后台刷新期间用户可能切换了学校单位，按最新的记录恢复所选单位，
     // 别拿刷新前的快照把用户刚选的单位覆盖回去。
     final existing = await record(client.phoneNumber);
+    // 刷新期间账号可能已被删除：先确认记录还在再写会话，不能把已删账号的 cookie 写回安全存储。
+    if (existing == null) return;
     _keepUnit(client, existing);
     await vault.writeCookies(client.phoneNumber, client.http.cookies.session);
-    if (existing == null) return;
     final account = client.account!;
     await store.putAccount(
       existing.change(

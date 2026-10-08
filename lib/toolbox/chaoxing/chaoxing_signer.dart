@@ -57,26 +57,6 @@ class ChaoxingSignSubmission {
 
   // 位置第一次被判超范围时收紧随机偏移再试一次：偏移量本身可能刚好把人推出边界。
   final bool tightenLocation;
-
-  ChaoxingSignSubmission change({
-    ChaoxingLocation? location,
-    String? captchaValidate,
-    String? enc2,
-    bool? tightenLocation,
-  }) => ChaoxingSignSubmission(
-    activity: activity,
-    activeId: activeId,
-    signCode: signCode,
-    location: location ?? this.location,
-    enc: enc,
-    objectId: objectId,
-    captchaValidate: captchaValidate ?? this.captchaValidate,
-    enc2: enc2 ?? this.enc2,
-    faceObjectId: faceObjectId,
-    faceEnc: faceEnc,
-    tightenLocation: tightenLocation ?? this.tightenLocation,
-    bypassCodeCheck: bypassCodeCheck,
-  );
 }
 
 sealed class ChaoxingSignOutcome {
@@ -179,8 +159,8 @@ Uri chaoxingSignRequestUri({
     ChaoxingSignType.location => _locationParameters(account, submission),
     ChaoxingSignType.photo => _photoParameters(account, submission),
     ChaoxingSignType.qrCode => _qrCodeParameters(account, submission),
-    // 详情也认不出的类型：提交前就被拦下（unsupported），到不了这里；真到了按无参数处理。
-    ChaoxingSignType.unknown => throw const ChaoxingFailure(ChaoxingFailureCode.unsupported, '这个活动的签到类型暂不支持'),
+    // 详情也认不出的类型：签到弹层提交前就拦下了，到不了这里；真到了也按「不支持」报错，不盲目提交。
+    ChaoxingSignType.unknown => throw const ChaoxingFailure(ChaoxingFailureCode.unsupported, chaoxingUnsupportedTypeMessage),
   };
   return Uri.parse(chaoxingSignUri).replace(queryParameters: query);
 }

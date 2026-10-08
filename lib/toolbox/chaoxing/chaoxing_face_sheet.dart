@@ -14,6 +14,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
+import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 // 人脸照片：每个账号最多 5 张，照片本身在学习通云盘，这里显示预览、用过几次、有没有被判失败过。
 // pick 为真时点一张就返回它的 objectId（签到时选这次用哪张）；否则是管理模式，可以删。
@@ -21,16 +22,18 @@ Future<String?> showChaoxingFaceSheet(
   BuildContext context, {
   required ChaoxingController controller,
   required ChaoxingAccountRecord record,
+  required ToolboxImagePick? pickImage,
   bool pick = false,
 }) => showCampusSheet<String>(
   context: context,
-  builder: (context) => _ChaoxingFaceSheet(controller: controller, record: record, pick: pick),
+  builder: (context) => _ChaoxingFaceSheet(controller: controller, record: record, pickImage: pickImage, pick: pick),
 );
 
 class _ChaoxingFaceSheet extends StatefulWidget {
-  const _ChaoxingFaceSheet({required this.controller, required this.record, required this.pick});
+  const _ChaoxingFaceSheet({required this.controller, required this.record, required this.pickImage, required this.pick});
   final ChaoxingController controller;
   final ChaoxingAccountRecord record;
+  final ToolboxImagePick? pickImage;
   final bool pick;
   @override
   State<_ChaoxingFaceSheet> createState() => _ChaoxingFaceSheetState();
@@ -78,9 +81,9 @@ class _ChaoxingFaceSheetState extends State<_ChaoxingFaceSheet> {
 
   Future<void> _upload(ImageSource source) => _run(() async {
     // 相册或现场拍摄都进 3:4 裁剪页（可旋转翻转，对齐参考项目）再上传。
-    final bytes = await pickChaoxingFacePhoto(context, source: source);
+    final bytes = await pickChaoxingFacePhoto(widget.pickImage, source: source);
     if (bytes == null || !mounted) return;
-    await widget.controller.uploadFacePhoto(widget.record, bytes);
+    await widget.controller.uploadFaceImage(widget.record, bytes);
   }, '人脸照片上传失败，请重试');
 
   Future<void> _fromProfile() => _run(() async {
@@ -139,6 +142,7 @@ class _ChaoxingFaceSheetState extends State<_ChaoxingFaceSheet> {
                   else
                     for (final image in images ?? const <ChaoxingFaceImage>[])
                       _FaceTile(
+                        key: ValueKey(image.objectId),
                         controller: widget.controller,
                         image: image,
                         onPick: widget.pick ? () => Navigator.pop(context, image.objectId) : null,
@@ -186,7 +190,7 @@ class _ChaoxingFaceSheetState extends State<_ChaoxingFaceSheet> {
 }
 
 class _FaceTile extends StatefulWidget {
-  const _FaceTile({required this.controller, required this.image, this.onPick, this.onRemove});
+  const _FaceTile({super.key, required this.controller, required this.image, this.onPick, this.onRemove});
   final ChaoxingController controller;
   final ChaoxingFaceImage image;
   final VoidCallback? onPick;
@@ -196,7 +200,24 @@ class _FaceTile extends StatefulWidget {
 }
 
 class _FaceTileState extends State<_FaceTile> {
-  late Future<Uint8List> _bytes = widget.controller.faceImageBytes(widget.image.objectId);
+  late Future<Uint8List> _bytes = _fetch();
+
+  // 预览取图失败时格子里给重试，日志里留原因。
+  Future<Uint8List> _fetch() async {
+    try {
+      return await widget.controller.faceImageBytes(widget.image.objectId);
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=face_preview errorType=${failure is ChaoxingFailure ? failure.code.name : failure.runtimeType}\n$stack');
+      rethrow;
+    }
+  }
+
+  @override
+  void didUpdateWidget(_FaceTile oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 行按 objectId 定键，正常不会换照片；万一换了要重取，不能接着显示上一张。
+    if (oldWidget.image.objectId != widget.image.objectId) _bytes = _fetch();
+  }
 
   // 保存到本机：把云盘里的原图导出成公共下载目录里的 JPEG 文件。
   Future<void> _save() async {
@@ -235,7 +256,7 @@ class _FaceTileState extends State<_FaceTile> {
                   AsyncSnapshot(hasError: true) => IconButton(
                     tooltip: '重新加载照片',
                     onPressed: () => setState(() {
-                      _bytes = widget.controller.faceImageBytes(image.objectId);
+                      _bytes = _fetch();
                     }),
                     icon: const CampusIcon(CampusIcons.sync),
                   ),

@@ -22,6 +22,7 @@ import 'package:superxd/local/credential_store.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/router.dart';
+import 'package:superxd/page/image_copy_pick.dart';
 import 'package:superxd/page/live_clock.dart';
 import 'package:superxd/page/qr_scan_page.dart';
 import 'package:superxd/page/share_target_sheet.dart';
@@ -182,6 +183,8 @@ class _SuperXdAppState extends State<SuperXdApp> {
             builder: (_) => QrScanPage(hint: hint, accept: accept, onCode: onCode, until: until, status: status),
           ),
         ),
+    // 人脸与签到照片的取图：与壁纸共用 page 层的取图，缓存副本用完即删。
+    pickImage: pickImageCopy,
     // 学习通签到的服务由它自己的模块打开与关闭（库、安全存储、设备通道、代签中转客户端），
     // 框架只给目录；代签凭据包与私信共用同一个自建中转，地址同样只从构建参数来。
     serviceOpeners: {

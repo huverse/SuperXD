@@ -27,7 +27,7 @@ picture.Image? decodeChaoxingPhoto(List<int> bytes) {
 Uint8List chaoxingStylizePhoto(List<int> bytes, {Random? random}) {
   final source = decodeChaoxingPhoto(bytes);
   if (source == null || source.width < 16 || source.height < 16) {
-    throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '照片读取失败，请重新选择');
+    throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, chaoxingPhotoUnreadableMessage);
   }
   final dice = random ?? Random();
   final cropRatio = 0.90 + dice.nextDouble() * 0.09;
@@ -63,7 +63,7 @@ Uint8List chaoxingStylizePhoto(List<int> bytes, {Random? random}) {
 // 拍照签到先把照片传到学习通云盘，拿 objectId 再提交。
 Future<String> chaoxingUploadPhoto(ChaoxingClient client, {required List<int> bytes}) async {
   if (bytes.isEmpty) {
-    throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '照片读取失败，请重新选择');
+    throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, chaoxingPhotoUnreadableMessage);
   }
   final token = await chaoxingCloudToken(client);
   final response = await client.http.postMultipart(

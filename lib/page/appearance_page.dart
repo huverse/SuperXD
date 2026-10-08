@@ -4,9 +4,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:path/path.dart' as path;
-import 'package:path_provider/path_provider.dart';
 
+import 'package:superxd/page/image_copy_pick.dart';
 import 'package:superxd/page/share_target_sheet.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
@@ -21,36 +20,11 @@ import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/wallpaper_tone.dart';
 import 'package:superxd/domain/campus_log.dart';
 
-// 选中的壁纸临时文件；discard 删除这次选图产生的临时副本，用完即删，不在缓存里累积。
-typedef PickedWallpaper = ({String path, Future<void> Function() discard});
+// 选中的壁纸临时文件；discard 删除这次选图产生的临时副本（见 image_copy_pick.dart）。
+typedef PickedWallpaper = PickedImage;
 
 // 系统照片选择器；长边压到3200像素、转成JPEG，导入和取色都不用处理几十兆或HEIC原图。
-// 插件把原图副本放进缓存下随机UUID命名的文件夹、压缩版放在缓存根目录，且自己不清理；
-// 选图前后对比UUID文件夹，只删这次新建的，再删返回的压缩文件，不碰其他插件的缓存。
-final _pickerCopyFolder = RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');
-
-Future<PickedWallpaper?> pickWallpaperFromGallery() async {
-  final cache = await getTemporaryDirectory();
-  Future<Set<String>> copyFolders() async => {
-    await for (final entity in cache.list())
-      if (entity is Directory && _pickerCopyFolder.hasMatch(path.basename(entity.path))) entity.path,
-  };
-  final before = await copyFolders();
-  final picked = await ImagePicker().pickImage(source: ImageSource.gallery, maxWidth: 3200, maxHeight: 3200, imageQuality: 90);
-  final created = (await copyFolders()).difference(before);
-  Future<void> discard() async {
-    for (final folder in created) {
-      await Directory(folder).delete(recursive: true);
-    }
-    if (picked != null && await File(picked.path).exists()) await File(picked.path).delete();
-  }
-
-  if (picked == null) {
-    await discard();
-    return null;
-  }
-  return (path: picked.path, discard: discard);
-}
+Future<PickedWallpaper?> pickWallpaperFromGallery() => pickImageCopy(source: ImageSource.gallery, maxSide: 3200, quality: 90);
 
 // 字体预览用预先画好的图（tool/font_previews.dart 按同样的文字样式生成），不为预览去加载没在用的字体：
 // 内置字体首次使用时要在主线程解析全部三个字重（Maple 约 470ms），界面页首帧会卡住，页面没有过渡直接出现。

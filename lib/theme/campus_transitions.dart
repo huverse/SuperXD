@@ -468,16 +468,20 @@ Future<T?> showCampusSheet<T>({required BuildContext context, required WidgetBui
   ));
 }
 
-// 弹层面板：与 iOS 26 一致，四周留 8 悬浮、圆角 24 的 overlay 玻璃，底部让出系统手势条。
+// 弹层面板：与 iOS 26 一致，四周留 8 悬浮、圆角 24 的 overlay 玻璃，底部让出系统手势条；
+// 键盘弹出时整块浮到键盘上方（弹层里的签到码、坐标、账号输入框不被键盘盖住）。
 class CampusSheetPanel extends StatelessWidget {
   const CampusSheetPanel({super.key, required this.child});
   final Widget child;
 
   @override
-  Widget build(BuildContext context) => Padding(
-    padding: EdgeInsets.fromLTRB(8, 0, 8, 8 + MediaQuery.paddingOf(context).bottom),
-    child: CampusOverlayGlass(radius: 24, child: child),
-  );
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    return Padding(
+      padding: EdgeInsets.fromLTRB(8, 0, 8, 8 + (media.viewInsets.bottom > 0 ? media.viewInsets.bottom : media.padding.bottom)),
+      child: CampusOverlayGlass(radius: 24, child: child),
+    );
+  }
 }
 
 // 只读提示：长文本可滚动，唯一按钮“知道了”。

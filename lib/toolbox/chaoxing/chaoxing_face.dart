@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
@@ -78,10 +79,14 @@ Future<Map<String, Object?>> chaoxingFaceResult(
     'collectStatus': 1,
     'cxtime': cxtime,
   };
-  final deviceInfo = chaoxingDecryptClientId(client.account?.clientId ?? '');
+  final clientId = client.account?.clientId ?? '';
+  final deviceInfo = chaoxingDecryptClientId(clientId);
   final cid = chaoxingString(deviceInfo?['cid']);
   final secret = chaoxingString(deviceInfo?['sc']);
-  if (cid.isNotEmpty && secret.isNotEmpty) {
+  // 没有签名时人脸签到照样提交，但通过率会受影响：留一条日志，区分「没下发」与「解不开」。
+  if (cid.isEmpty || secret.isEmpty) {
+    campusLog('[Chaoxing] action=face_sign errorType=${clientId.isEmpty ? 'no_client_id' : 'client_id_unreadable'}');
+  } else {
     result['cxcid'] = cid;
     // signToken 的拼串里也要有 cxcid（与 fields、cxtime 一起排序拼接，对齐参考项目的 TreeMap 口径），
     // 只把它写进上报 JSON 而不参与 md5 的话，服务端校验签名会不通过。
