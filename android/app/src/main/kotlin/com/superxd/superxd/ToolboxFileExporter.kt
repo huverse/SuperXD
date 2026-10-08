@@ -93,6 +93,7 @@ class ToolboxFileExporter(private val activity: Activity) : MethodChannel.Method
     }
 
     // [人工决策-2026-09-27 20:12:08] 默认保存公共Download/SuperXD，卸载工具不删除导出视频；旧Android通过用户选址，不申请全存储权限。
+    // [人工决策-2026-10-08 20:55:42] 用户复核：默认保存到 Download/SuperXD 仍有效（一次性导出的人脸照片同一目录）。
     private fun publishMedia(export: Export) {
         val resolver = activity.contentResolver
         var created: Uri? = null
