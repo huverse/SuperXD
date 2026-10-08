@@ -3,10 +3,12 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
+import 'package:path_provider/path_provider.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_face.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_photo.dart';
@@ -16,13 +18,22 @@ import 'package:superxd/toolbox/toolbox_models.dart';
 // 人脸照片：照片本身在学习通云盘，本机只记 objectId 与使用情况（每个账号最多 5 张）。
 // 这里管列表、上传、预览缓存、保存到本机与默认照片重处理；会话由页面控制器注入（clientOf 按账号取、currentClient 取当前账号）。
 class ChaoxingFaceController {
-  ChaoxingFaceController({required this.accounts, required this.clientOf, required this.currentClient, this.filePublisher});
+  ChaoxingFaceController({
+    required this.accounts,
+    required this.clientOf,
+    required this.currentClient,
+    this.filePublisher,
+    this.temporaryDirectory = getTemporaryDirectory,
+  });
   final ChaoxingAccounts accounts;
   final Future<ChaoxingClient> Function(ChaoxingAccountRecord record) clientOf;
   final ChaoxingClient Function() currentClient;
 
   // 公共下载目录的文件导出（保存到本机用）；为空时保存入口不可用（测试环境）。
   final ToolboxFilePublisher Function()? filePublisher;
+
+  // 导出前落盘的临时目录：Android 上是应用缓存目录，原生导出只接受这里的文件；测试注入系统临时目录。
+  final Future<Directory> Function() temporaryDirectory;
 
   // 预览只在内存里留最近的，按总字节数封顶（单张原图最大 10MB，按张数限不住内存）。
   static const faceImageCacheBytes = 20 * 1024 * 1024;
@@ -64,14 +75,14 @@ class ChaoxingFaceController {
       throw const ChaoxingFailure(ChaoxingFailureCode.unavailable, '当前环境不能保存文件');
     }
     final publisher = makePublisher();
-    // objectId 来自学习通云盘（外部输入），临时文件与导出文件名都只保留安全字符。
-    final safeId = objectId.replaceAll(RegExp('[^a-zA-Z0-9_-]'), '');
-    final suffix = safeId.length > 32 ? safeId.substring(0, 32) : safeId;
+    // objectId 来自学习通云盘（外部输入）：文件名用它的 md5 前 12 位，不同照片不会因过滤、截断撞成同名，
+    // 同一张照片（云盘 objectId 不可变）名字稳定，原生按名幂等。临时文件另加时间戳，并发保存不会互删。
+    final digest = chaoxingMd5(objectId).substring(0, 12);
     final bytes = await faceImageBytes(objectId);
-    final temp = File(path.join(Directory.systemTemp.path, 'chaoxing-face-$suffix.jpg'));
+    final temp = File(path.join((await temporaryDirectory()).path, 'chaoxing-face-$digest-${DateTime.now().microsecondsSinceEpoch}.jpg'));
     await temp.writeAsBytes(bytes, flush: true);
     try {
-      final uri = await publisher.publishExternal(source: temp.path, filename: '人脸照片${suffix.isEmpty ? '' : '-$suffix'}.jpg', mimeType: 'image/jpeg');
+      final uri = await publisher.publishExternal(source: temp.path, filename: '人脸照片-$digest.jpg', mimeType: 'image/jpeg');
       if (uri == null) {
         throw const ChaoxingFailure(ChaoxingFailureCode.server, '保存失败，请重试');
       }

@@ -7,6 +7,7 @@ import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var toolboxFiles: ToolboxFileExporter? = null
+    private var chaoxingDevice: ChaoxingDeviceChannel? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -19,8 +20,9 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler(CalendarExporter(this))
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/course_widget")
             .setMethodCallHandler(CourseWidgetChannel(applicationContext))
+        chaoxingDevice = ChaoxingDeviceChannel(applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/chaoxing_device")
-            .setMethodCallHandler(ChaoxingDeviceChannel(applicationContext))
+            .setMethodCallHandler(chaoxingDevice)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -31,6 +33,7 @@ class MainActivity : FlutterActivity() {
 
     override fun onDestroy() {
         toolboxFiles?.close()
+        chaoxingDevice?.close()
         super.onDestroy()
     }
 }

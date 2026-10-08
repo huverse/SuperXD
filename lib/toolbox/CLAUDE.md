@@ -38,7 +38,7 @@
     - 每组 1–100 项；待处理任务组最多 10 个；同时传输最多 2 个。
     - 已结束的记录最多保留 100 项且 30 天。创建超过 24 小时仍未完成的任务，在启动时取消。
   - background_transfer.dart：基于 background_downloader 的后台传输 BackgroundTransfer。未授予通知权限时，改用普通 WorkManager 任务，避免 ANR。
-  - android_file_publisher.dart：通过 MethodChannel superxd/toolbox_files 调用原生 ToolboxFileExporter.kt，把文件导出到公共目录 Download/SuperXD。publish 是下载管理的导出（UUID 文件名幂等键，source 限定下载目录）；publishExternal 是一次性导出（人脸照片等，source 不限、语义化文件名按名幂等，原生仍校验文件存在与 mime 白名单）。
+  - android_file_publisher.dart：通过 MethodChannel superxd/toolbox_files 调用原生 ToolboxFileExporter.kt，把文件导出到公共目录 Download/SuperXD。publish 是下载管理的导出（UUID 文件名幂等键，source 限定下载目录）；publishExternal 是一次性导出（人脸照片等，source 只认应用缓存目录、只放行图片 mime、语义化文件名按名幂等且不得含分隔符与控制字符、不以点开头）；按名查找时连写入中的残留一起查出删掉重写。
   - downloads_page.dart：下载管理页 DownloadsPage，按组展示任务。整组操作在⋯菜单里，条目顺序稳定。
   - download_status.dart：共享组件，包括状态文案、进度条 DownloadProgress 和操作按钮 downloadActions，供结果页和下载页共用。
 - short_video 短视频：
@@ -71,7 +71,7 @@
   - chaoxing_models.dart：活动、课程、活动详情、账号与错误码 ChaoxingFailure；otherId 到 ChaoxingSignType 的映射。
   - chaoxing_crypto.dart：学习通固定的传输加密（AES-128-CBC，IV 与密钥同为固定串）、MD5/SHA-256、设备公钥（SPKI 模数，用于设备信息 RSA 分块加密与 clientId 还原）与设备码的 AES-ECB。
   - chaoxing_device.dart：设备信息端口 ChaoxingDeviceProbe。按学习通客户端的字段与顺序组设备信息并 RSA 加密；按 OAID 算本机设备码，取不到返回空由调用方退回固定随机码。
-  - chaoxing_device_channel.dart：端口的原生实现 ChannelChaoxingDeviceProbe（通道 superxd/chaoxing_device，见 ChaoxingDevice.kt），由 toolbox_runtime.dart 注入。单独成文件是为了让协议链路不依赖 Flutter，tool/verify_chaoxing.dart 才能用纯 Dart 跑。
+  - chaoxing_device_channel.dart：端口的原生实现 ChannelChaoxingDeviceProbe（通道 superxd/chaoxing_device，见 ChaoxingDevice.kt：设备信息与 OAID 在后台单线程取，结果回主线程），由 toolbox_runtime.dart 注入；两个调用各有 3 秒兜底超时，超时按取不到处理。单独成文件是为了让协议链路不依赖 Flutter，tool/verify_chaoxing.dart 才能用纯 Dart 跑。
   - chaoxing_http.dart：请求封装与 Cookie 会话 ChaoxingCookieJar；模拟的客户端 ChaoxingClientProfile（学习通、学在西电、自定义 UA 与包名），UA 随它走；默认超时 15 秒（登录与用户信息另用 30 秒，见 chaoxing_client.dart 的人工决策）、响应上限 1MB，日志只记路径。
   - chaoxing_client.dart：登录、用户信息、重登与设备码。用户信息带得上设备信息就 POST data（clientId 靠它下发），否则 GET；解析学校单位（主单位在前），登录后把会话 fid 改回所选单位。登录与用户信息这两个上游最慢的接口用 chaoxingAccountTimeout（30 秒）。
   - chaoxing_activity.dart：课程列表（只认带 cataName 的频道）、活动列表与活动详情；preSign 回传活动列表 data 级别的 ext；签到前的班级检查与按课程号找班级（强制签到给别人签时用）。

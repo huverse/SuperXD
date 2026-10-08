@@ -1,6 +1,8 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:pool/pool.dart';
 
 import 'package:superxd/domain/campus_log.dart';
@@ -34,13 +36,15 @@ class ChaoxingCourseGroup {
 }
 
 class ChaoxingController extends ChangeNotifier {
-  ChaoxingController({required this.accounts, this.hub, this.filePublisher});
+  ChaoxingController({required this.accounts, this.hub, this.filePublisher, this.temporaryDirectory = getTemporaryDirectory});
   final ChaoxingAccounts accounts;
 
   // 代签凭据包的中转；没配中转时为 null，出示与扫码导入都不显示。
   final ChaoxingPackHub? hub;
   // 公共下载目录的文件导出（人脸照片保存到本机用）；为空时保存入口不可用（测试环境）。
   final ToolboxFilePublisher Function()? filePublisher;
+  // 人脸照片导出前落盘的临时目录（见 ChaoxingFaceController）。
+  final Future<Directory> Function() temporaryDirectory;
 
   // 一次刷新最多并发三个课程请求，课程多时也不至于把刷新拖太久。
   static const refreshConcurrency = 3;
@@ -236,7 +240,13 @@ class ChaoxingController extends ChangeNotifier {
 
   // 人脸照片（列表、上传、预览、保存到本机、默认照片重处理）与代签码（出示、取件导入）各自一块，
   // 按需拿会话，不反向依赖本页面状态。
-  late final faces = ChaoxingFaceController(accounts: accounts, clientOf: clientOf, currentClient: _requireClient, filePublisher: filePublisher);
+  late final faces = ChaoxingFaceController(
+    accounts: accounts,
+    clientOf: clientOf,
+    currentClient: _requireClient,
+    filePublisher: filePublisher,
+    temporaryDirectory: temporaryDirectory,
+  );
   late final delegate = ChaoxingDelegateController(accounts: accounts, hub: hub, currentClient: _requireClient);
 
   // 完整签到流程在 chaoxing_sign_flow.dart：检查、拍照上传、人脸、提交与验证码/换码/位置收紧重试。

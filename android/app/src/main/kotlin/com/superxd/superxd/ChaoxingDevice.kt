@@ -18,52 +18,71 @@ import io.flutter.plugin.common.MethodChannel
 import java.security.MessageDigest
 import java.util.Locale
 import java.util.UUID
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
 import java.util.concurrent.atomic.AtomicBoolean
 
 // 学习通签到要的设备信息：用户信息接口按这份信息下发人脸签名用的 clientId，设备码按 OAID 算出与官方客户端一致的值。
 // 只在用户使用学习通签到时由 Dart 侧按需取，原样交回，不在原生侧保存。
+// 取值都放到后台单线程：MediaDrm 要和 DRM 硬件层通信、几家厂商的 OAID 实现是同步的 ContentProvider 或 binder 调用，
+// 放在主线程会卡住界面（Flutter 的界面线程与平台线程是同一个），超时回调也排不上。结果回主线程交给 Dart。
 class ChaoxingDeviceChannel(private val context: Context) : MethodChannel.MethodCallHandler {
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val worker: ExecutorService = Executors.newSingleThreadExecutor { task -> Thread(task, "chaoxing-device").apply { isDaemon = true } }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         when (call.method) {
             "deviceInfo" -> {
                 val packageName = call.argument<String>("packageName").orEmpty()
-                try {
-                    result.success(deviceInfo(packageName))
-                } catch (error: Exception) {
-                    Log.e("ChaoxingDevice", "action=device_info errorType=${error.javaClass.simpleName}", error)
-                    result.error("DEVICE_INFO", error.javaClass.simpleName, null)
+                worker.execute {
+                    try {
+                        val info = deviceInfo(packageName)
+                        mainHandler.post { result.success(info) }
+                    } catch (error: Throwable) {
+                        Log.e("ChaoxingDevice", "action=device_info errorType=${error.javaClass.simpleName}", error)
+                        mainHandler.post { result.error("DEVICE_INFO", error.javaClass.simpleName, null) }
+                    }
                 }
             }
-            "oaid" -> oaid(result)
+            "oaid" -> worker.execute { oaid(result) }
             else -> result.notImplemented()
         }
     }
 
+    // 页面销毁时调用：不再接新任务，手上的取值照常结束。
+    fun close() = worker.shutdown()
+
     // 各厂商的 OAID 服务异步回调，1 秒没回就当取不到（与参考项目同一口径），由 Dart 侧退回固定随机设备码。
+    // 在后台线程发起，超时计时在主线程：厂商实现同步卡住时，计时照样能到点回复。
     private fun oaid(result: MethodChannel.Result) {
         val done = AtomicBoolean(false)
-        fun finish(value: String) {
-            if (done.compareAndSet(false, true)) mainHandler.post { result.success(value) }
+        val timeout = Runnable { finish(done, result, "") }
+        fun complete(value: String) {
+            mainHandler.removeCallbacks(timeout)
+            finish(done, result, value)
         }
-        mainHandler.postDelayed({ finish("") }, 1000)
+        mainHandler.postDelayed(timeout, 1000)
         try {
             if (!DeviceID.supportedOAID(context)) {
-                finish("")
+                complete("")
                 return
             }
             DeviceID.getOAID(context, object : IGetter {
-                override fun onOAIDGetComplete(oaid: String) = finish(oaid)
+                override fun onOAIDGetComplete(oaid: String) = complete(oaid)
                 override fun onOAIDGetError(error: Exception) {
                     Log.e("ChaoxingDevice", "action=oaid errorType=${error.javaClass.simpleName}", error)
-                    finish("")
+                    complete("")
                 }
             })
-        } catch (error: Exception) {
+        } catch (error: Throwable) {
             Log.e("ChaoxingDevice", "action=oaid errorType=${error.javaClass.simpleName}", error)
-            finish("")
+            complete("")
         }
+    }
+
+    // 只回复一次：超时与厂商回调谁先到算谁的。
+    private fun finish(done: AtomicBoolean, result: MethodChannel.Result, value: String) {
+        if (done.compareAndSet(false, true)) mainHandler.post { result.success(value) }
     }
 
     @SuppressLint("HardwareIds")
@@ -131,7 +150,7 @@ class ChaoxingDeviceChannel(private val context: Context) : MethodChannel.Method
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) drm.close() else @Suppress("DEPRECATION") drm.release()
             }
         }
-    } catch (error: Exception) {
+    } catch (error: Throwable) {
         Log.e("ChaoxingDevice", "action=media_drm errorType=${error.javaClass.simpleName}", error)
         ""
     }
