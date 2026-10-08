@@ -10,6 +10,8 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_account_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_code_cells.dart';
@@ -194,6 +196,49 @@ void main() {
     );
     final bottom = tester.getBottomLeft(find.byType(SizedBox).last).dy;
     expect(bottom, lessThanOrEqualTo(800 - 300));
+  });
+
+  testWidgets('账号管理分本人与代签账号两段，代签段内拖动排序并写回', (tester) async {
+    ChaoxingAccountRecord record(String phone, {required bool other, required int minutes}) => ChaoxingAccountRecord(
+      phoneNumber: phone,
+      uid: 1,
+      puid: 2,
+      fid: 3,
+      name: '同学$phone',
+      schoolName: '示例大学',
+      deviceCode: 'device-$phone',
+      isOtherUser: other,
+      createdAt: DateTime.utc(2026, 10, 8).add(Duration(minutes: minutes)),
+    );
+    final controller = ChaoxingController(accounts: accountsWith(MemoryChaoxingVault()));
+    await tester.runAsync(() async {
+      await store.putAccount(record('138', other: false, minutes: 0));
+      await store.putAccount(record('139', other: true, minutes: 2));
+      await store.putAccount(record('137', other: true, minutes: 1));
+      controller.accountList = await controller.accounts.list();
+    });
+    expect(controller.accountList.map((item) => item.phoneNumber), ['138', '139', '137']);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: const Scaffold(body: Center(child: Text('宿主')))));
+    unawaited(showChaoxingAccountSheet(tester.element(find.text('宿主')), controller: controller));
+    await tester.pumpAndSettle();
+    expect(find.text('本人'), findsOneWidget);
+    expect(find.textContaining('代签账号 · 按住右侧把手拖动排序'), findsOneWidget);
+    // 本人那行没有拖动把手，两个代签账号各一个。
+    final handles = find.byWidgetPredicate((widget) => widget is CampusIcon && widget.icon == CampusIcons.dragHandle);
+    expect(handles, findsNWidgets(2));
+
+    final drag = await tester.startGesture(tester.getCenter(handles.last));
+    await tester.pump(const Duration(milliseconds: 100));
+    for (var step = 0; step < 10; step++) {
+      await drag.moveBy(const Offset(0, -15));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    await drag.up();
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 200)));
+    final ordered = await tester.runAsync(() => controller.accounts.list());
+    expect(ordered!.map((item) => item.phoneNumber), ['138', '137', '139']);
+    controller.dispose();
   });
 
   testWidgets('手势连续画错后重画，提交的只是这一次的图案', (tester) async {

@@ -1,7 +1,4 @@
 import 'dart:async';
-import 'dart:io';
-
-import 'package:path/path.dart' as path;
 
 import 'package:flutter/foundation.dart';
 import 'package:pool/pool.dart';
@@ -12,15 +9,14 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_activity.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_batch.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_captcha.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_face.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_delegate_controller.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_face_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_im.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_lessons.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_photo.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_signer.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_sign_flow.dart';
@@ -49,8 +45,6 @@ class ChaoxingController extends ChangeNotifier {
   // 一次刷新最多并发三个课程请求，课程多时也不至于把刷新拖太久。
   static const refreshConcurrency = 3;
 
-  // 人脸照片预览只在内存里留最近的，按总字节数封顶（单张原图最大 10MB，按张数限不住内存）。
-  static const faceImageCacheBytes = 20 * 1024 * 1024;
 
   ChaoxingStatus status = ChaoxingStatus.loading;
   List<ChaoxingAccountRecord> accountList = const [];
@@ -74,7 +68,6 @@ class ChaoxingController extends ChangeNotifier {
   bool loadingActivities = false;
   ChaoxingClient? _client;
   final _clients = <String, ChaoxingClient>{};
-  final _faceBytes = <String, Uint8List>{};
   bool _disposed = false;
 
   // 账号代次：每打开一个账号加一。异步结果回来时代次已变（期间切了账号），就丢弃不写，
@@ -241,6 +234,11 @@ class ChaoxingController extends ChangeNotifier {
     return client;
   }
 
+  // 人脸照片（列表、上传、预览、保存到本机、默认照片重处理）与代签码（出示、取件导入）各自一块，
+  // 按需拿会话，不反向依赖本页面状态。
+  late final faces = ChaoxingFaceController(accounts: accounts, clientOf: clientOf, currentClient: _requireClient, filePublisher: filePublisher);
+  late final delegate = ChaoxingDelegateController(accounts: accounts, hub: hub, currentClient: _requireClient);
+
   // 完整签到流程在 chaoxing_sign_flow.dart：检查、拍照上传、人脸、提交与验证码/换码/位置收紧重试。
   late final signFlow = ChaoxingSignFlow(
     ChaoxingSignContext(
@@ -286,63 +284,6 @@ class ChaoxingController extends ChangeNotifier {
   // 开签前预检人脸照片（选了的→本机存的→学习通里的），缺的现在就报。
   Future<void> prepareFace(ChaoxingSignTarget target, ChaoxingActivity activity, ChaoxingActiveInfo info) =>
       signFlow.prepareFace(target, activity, info);
-
-  // 学习通账号资料里存的人脸照片 objectId（补给缺照的人之前先问一声用不用它）；没有为空。
-  Future<String?> profileFaceId(ChaoxingAccountRecord record) async {
-    final client = await clientOf(record);
-    return accounts.run(client, () => chaoxingProfileFaceObjectId(client));
-  }
-
-  // 人脸照片（补拍、相册选或裁剪好的，不做风格化，要认得出人）上传到这个账号自己的云盘换 objectId，
-  // 并记进本机的人脸照片索引供以后复用。
-  Future<String> uploadFaceImage(ChaoxingAccountRecord record, List<int> bytes) async {
-    final client = await clientOf(record);
-    final objectId = await accounts.run(client, () => chaoxingUploadPhoto(client, bytes: bytes));
-    await accounts.store.putFaceImage(record.phoneNumber, objectId);
-    return objectId;
-  }
-
-  // 把学习通里存的默认人脸照片重处理一张再上传换新的 objectId（同一张照片直接反复用会被教师端比对），
-  // 重处理后的记进本机索引，返回新 objectId；学习通里没存过时返回空。
-  Future<String?> reprocessProfileFace(ChaoxingAccountRecord record) async {
-    final profile = await profileFaceId(record);
-    if (profile == null) return null;
-    final client = await clientOf(record);
-    final bytes = await client.http.getBytes(Uri.parse(chaoxingFaceImageUrl(profile)), payloadLimit: chaoxingFacePreviewLimit);
-    final stylized = await compute(chaoxingStylizePhoto, Uint8List.fromList(bytes));
-    final objectId = await accounts.run(client, () => chaoxingUploadPhoto(client, bytes: stylized));
-    await accounts.store.putFaceImage(record.phoneNumber, objectId);
-    return objectId;
-  }
-
-  // 把云盘里的人脸照片原图导出到公共下载目录（JPEG 文件）。
-  // 文件名带 objectId：原生导出按文件名幂等，同一张照片重复保存直接返回已有文件，换照片不会互相覆盖。
-  Future<Uri> saveFaceImage(String objectId) async {
-    final makePublisher = filePublisher;
-    if (makePublisher == null) {
-      throw const ChaoxingFailure(ChaoxingFailureCode.unavailable, '当前环境不能保存文件');
-    }
-    final publisher = makePublisher();
-    // objectId 来自学习通云盘（外部输入），临时文件与导出文件名都只保留安全字符。
-    final safeId = objectId.replaceAll(RegExp('[^a-zA-Z0-9_-]'), '');
-    final suffix = safeId.length > 32 ? safeId.substring(0, 32) : safeId;
-    final bytes = await faceImageBytes(objectId);
-    final temp = File(path.join(Directory.systemTemp.path, 'chaoxing-face-$suffix.jpg'));
-    await temp.writeAsBytes(bytes, flush: true);
-    try {
-      final uri = await publisher.publishExternal(source: temp.path, filename: '人脸照片${suffix.isEmpty ? '' : '-$suffix'}.jpg', mimeType: 'image/jpeg');
-      if (uri == null) {
-        throw const ChaoxingFailure(ChaoxingFailureCode.server, '保存失败，请重试');
-      }
-      return uri;
-    } finally {
-      unawaited(
-        temp.delete().then((_) {}, onError: (Object error, StackTrace stack) {
-          campusLog('[Chaoxing] action=face_temp_clean errorType=${error.runtimeType}\n$stack');
-        }),
-      );
-    }
-  }
 
   // 从主签到跳到它关联的签退活动（或反过来）：详情里拿类型与时间重组一个活动。
   Future<ChaoxingActivity> relatedActivity(ChaoxingActivity current, int activeId) async {
@@ -502,75 +443,9 @@ class ChaoxingController extends ChangeNotifier {
     return (activities: activities, failures: failures);
   }
 
-  // 人脸照片：每个账号最多存 5 张（照片在学习通云盘，本机只记 objectId 与使用情况）。
-  Future<List<ChaoxingFaceImage>> faceImages(ChaoxingAccountRecord record) => accounts.store.faceImages(record.phoneNumber);
-
-  // 学习通里已经存着的人脸照片：取回来记进本机，之后签人脸签到默认用它。
-  Future<String?> importProfileFace(ChaoxingAccountRecord record) async {
-    final objectId = await profileFaceId(record);
-    if (objectId != null) await accounts.store.putFaceImage(record.phoneNumber, objectId);
-    return objectId;
-  }
-
-  Future<void> removeFaceImage(ChaoxingAccountRecord record, String objectId) async {
-    await accounts.store.removeFaceImage(record.phoneNumber, objectId);
-    _faceBytes.remove(objectId);
-    _notify();
-  }
-
-  // 人脸照片预览：从学习通云盘取原图，内存里留最近几张。
-  Future<Uint8List> faceImageBytes(String objectId) async {
-    final cached = _faceBytes.remove(objectId);
-    if (cached != null) return _faceBytes[objectId] = cached;
-    final bytes = await _requireClient().http.getBytes(Uri.parse(chaoxingFaceImageUrl(objectId)), payloadLimit: chaoxingFacePreviewLimit);
-    _faceBytes[objectId] = bytes;
-    var total = _faceBytes.values.fold<int>(0, (sum, item) => sum + item.length);
-    // 最新这张总是留着，超出的从最久没看的开始丢。
-    while (total > faceImageCacheBytes && _faceBytes.length > 1) {
-      total -= _faceBytes.remove(_faceBytes.keys.first)!.length;
-    }
-    return bytes;
-  }
-
-  // 出示代签码：把当前账号封成凭据包（可附带人脸照片），密文放到中转，二维码里只有取件号与一次性密钥。
-  Future<String> createCredentialTicket({List<String> faceObjectIds = const []}) async {
-    final client = _requireClient();
-    final packHub = hub;
-    if (packHub == null || !packHub.available) {
-      throw const ChaoxingFailure(ChaoxingFailureCode.unavailable, '还没有配置中转服务，代签码用不了');
-    }
-    final password = await accounts.vault.readPassword(client.phoneNumber);
-    if (password == null || password.isEmpty) {
-      throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '请先重新登录这个账号再出示代签码');
-    }
-    final sealed = await sealChaoxingCredentialPack(
-      ChaoxingCredentialPack(
-        phoneNumber: client.phoneNumber,
-        encryptedPassword: password,
-        name: client.account!.name,
-        deviceCode: client.deviceCode,
-        faceObjectIds: faceObjectIds.take(chaoxingPackFaceLimit).toList(),
-      ),
-    );
-    final pickupId = await packHub.submit(sealed.cipherText);
-    return encodeChaoxingPackTicket(ChaoxingPackTicket(pickupId: pickupId, key: sealed.key));
-  }
-
-  // 导入别人的代签码：取件、解密、用对方的设备码登录一次确认，再按他人账号存进本机。
+  // 导入别人的代签码（取件、解密、登录确认在 ChaoxingDelegateController），导入后刷新账号列表。
   Future<ChaoxingAccountRecord> importCredentialTicket(String raw) async {
-    final packHub = hub;
-    if (packHub == null || !packHub.available) {
-      throw const ChaoxingFailure(ChaoxingFailureCode.unavailable, '还没有配置中转服务，代签码用不了');
-    }
-    final ticket = decodeChaoxingPackTicket(raw);
-    if (ticket == null) {
-      throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, chaoxingNotPackTicketMessage);
-    }
-    // 取件号取一次就作废：账号已满时在取件前拦下，免得对方还要重新生成。
-    if (accountList.length >= ChaoxingStore.accountLimit) throw ChaoxingAccounts.full;
-    final cipherText = await packHub.pickup(ticket.pickupId);
-    final pack = await openChaoxingCredentialPack(ChaoxingSealedPack(key: ticket.key, cipherText: cipherText));
-    final record = await accounts.importOther(pack);
+    final record = await delegate.importTicket(raw, accountCount: accountList.length);
     _dropClient(record.phoneNumber);
     accountList = await accounts.list();
     _notify();

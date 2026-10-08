@@ -77,7 +77,7 @@ void main() {
     await first.signIn('13800138000', 'myPassword123');
     final deviceCode = first.account!.deviceCode;
 
-    final ticket = await first.createCredentialTicket();
+    final ticket = await first.delegate.createTicket();
     expect(ticket.startsWith('SXDC1:'), isTrue);
     expect(packs.packs, hasLength(1));
 
@@ -114,12 +114,12 @@ void main() {
   test('代签码可以附带人脸照片，导入方记进本机', () async {
     final first = controllerFor(store, vault, hub: hub());
     await first.signIn('13800138000', 'myPassword123');
-    final ticket = await first.createCredentialTicket(faceObjectIds: ['face-a', 'face-b']);
+    final ticket = await first.delegate.createTicket(faceObjectIds: ['face-a', 'face-b']);
 
     final otherStore = await ChaoxingStore.open(path.join(directory.path, 'f.db'));
     final second = controllerFor(otherStore, MemoryChaoxingVault(), hub: hub());
     final imported = await second.importCredentialTicket(ticket);
-    expect((await second.faceImages(imported)).map((image) => image.objectId), ['face-a', 'face-b']);
+    expect((await second.faces.faceImages(imported)).map((image) => image.objectId), ['face-a', 'face-b']);
     await otherStore.close();
   });
 
@@ -130,7 +130,7 @@ void main() {
     final otherStore = await ChaoxingStore.open(path.join(directory.path, 'g.db'));
     final owner = controllerFor(otherStore, MemoryChaoxingVault(), hub: hub());
     await owner.signIn('13900139000', 'otherPassword1');
-    final ticket = await owner.createCredentialTicket();
+    final ticket = await owner.delegate.createTicket();
     final otherCode = owner.account!.deviceCode;
 
     await controller.signIn('13800138000', 'myPassword123');
@@ -193,7 +193,7 @@ void main() {
   test('同一张代签码只能取一次', () async {
     final first = controllerFor(store, vault, hub: hub());
     await first.signIn('13800138000', 'myPassword123');
-    final ticket = await first.createCredentialTicket();
+    final ticket = await first.delegate.createTicket();
 
     final otherStore = await ChaoxingStore.open(path.join(directory.path, 'c.db'));
     final second = controllerFor(otherStore, MemoryChaoxingVault(), hub: hub());
@@ -218,7 +218,7 @@ void main() {
     final otherStore = await ChaoxingStore.open(path.join(directory.path, 'd.db'));
     final other = controllerFor(otherStore, MemoryChaoxingVault(), hub: hub());
     await other.signIn('13800138000', 'myPassword123');
-    final ticket = await other.createCredentialTicket();
+    final ticket = await other.delegate.createTicket();
     await expectLater(
       controller.importCredentialTicket(ticket),
       throwsA(isA<ChaoxingFailure>().having((failure) => failure.message, 'message', contains('你自己的账号'))),
@@ -230,7 +230,7 @@ void main() {
     final controller = controllerFor(store, vault);
     await controller.signIn('13800138000', 'myPassword123');
     for (final action in [
-      controller.createCredentialTicket,
+      controller.delegate.createTicket,
       () => controller.importCredentialTicket('SXDC1:pickup0000000000.abc'),
     ]) {
       await expectLater(

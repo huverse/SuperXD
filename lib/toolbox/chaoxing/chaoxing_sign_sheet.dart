@@ -8,7 +8,6 @@ import 'package:pool/pool.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
-import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -27,13 +26,13 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_face_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_gesture_field.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_image_pick.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
-import 'package:superxd/toolbox/chaoxing/chaoxing_location_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_map_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_qr_feed.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_settings_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_sign_flow.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_sign_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_sign_notices.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
@@ -429,7 +428,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   Future<bool> _supplyMissingFace(ChaoxingSignTarget target) async {
     String? profileId;
     try {
-      profileId = await widget.controller.profileFaceId(target.record);
+      profileId = await widget.controller.faces.profileFaceId(target.record);
     } on ChaoxingFailure catch (failure) {
       // 查不到就当学习通里没存过，直接进拍摄。
       campusLog('[Chaoxing] action=profile_face errorType=${failure.code.name}');
@@ -446,7 +445,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       if (!mounted) return false;
       if (useProfile) {
         try {
-          final objectId = await widget.controller.reprocessProfileFace(target.record);
+          final objectId = await widget.controller.faces.reprocessProfileFace(target.record);
           if (objectId == null) {
             if (mounted) setState(() => _error = '学习通里的默认照片没取到，请拍一张');
             return false;
@@ -462,7 +461,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     try {
       final bytes = await pickChaoxingFacePhoto(widget.pickImage, source: ImageSource.camera);
       if (bytes == null || !mounted) return false;
-      target.faceObjectId = await widget.controller.uploadFaceImage(target.record, bytes);
+      target.faceObjectId = await widget.controller.faces.uploadFaceImage(target.record, bytes);
       return true;
     } on ChaoxingFailure catch (failure) {
       if (mounted) setState(() => _error = failure.message);
@@ -759,7 +758,19 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
           const SizedBox(height: 16),
           Text('位置', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
           const SizedBox(height: 8),
-          _locationPicker(palette),
+          ChaoxingSignLocation(
+            controller: widget.controller,
+            manual: _manualLocation,
+            selected: _savedLocation,
+            latitude: _latitude,
+            longitude: _longitude,
+            address: _address,
+            busy: _busy,
+            onManual: (manual) => setState(() => _manualLocation = manual),
+            onSelect: (location) => setState(() => _savedLocation = location),
+            onSave: () => unawaited(_saveLocation()),
+            onPickOnMap: () => unawaited(_pickOnMap()),
+          ),
         ],
         if (_needsCode) ...[
           SizedBox(height: campusFieldGap(context)),
@@ -1007,97 +1018,5 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     final end = _activity.endTime;
     if (end == null) return _activity.ongoing ? '进行中' : '已结束';
     return '截止 ${formatCampusTimestamp(end.toIso8601String())}';
-  }
-
-  Widget _locationPicker(CampusPalette palette) {
-    final saved = widget.controller.locations;
-    if (_manualLocation) {
-      final fallback = chaoxingMapUnavailableReason;
-      return Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (fallback != null) ...[
-            Text('$fallback，填经纬度或用收藏的位置', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
-            const SizedBox(height: 12),
-          ],
-          Row(
-            children: [
-              Expanded(child: TextField(controller: _latitude, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '纬度'))),
-              const SizedBox(width: 12),
-              Expanded(child: TextField(controller: _longitude, keyboardType: TextInputType.number, decoration: const InputDecoration(labelText: '经度'))),
-            ],
-          ),
-          SizedBox(height: campusFieldGap(context)),
-          TextField(
-            controller: _address,
-            decoration: const InputDecoration(labelText: '位置名称', helperText: '坐标按高德（GCJ-02）算，例如教学楼名会一起提交'),
-          ),
-          const SizedBox(height: 8),
-          Row(
-            children: [
-              OutlinedButton.icon(
-                onPressed: _busy ? null : () => _saveLocation(),
-                icon: const CampusIcon(CampusIcons.add),
-                label: const Text('收藏这个位置'),
-              ),
-              if (chaoxingMapAvailable) ...[
-                const SizedBox(width: 8),
-                OutlinedButton.icon(
-                  onPressed: _busy ? null : () => _pickOnMap(),
-                  icon: const CampusIcon(CampusIcons.jumpToday),
-                  label: const Text('在地图上选点'),
-                ),
-              ],
-            ],
-          ),
-          if (saved.isNotEmpty)
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: TextButton.icon(
-                onPressed: () => setState(() => _manualLocation = false),
-                icon: const CampusIcon(CampusIcons.pin),
-                label: const Text('用收藏的位置'),
-              ),
-            ),
-        ],
-      );
-    }
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        if (chaoxingMapAvailable) ...[
-          OutlinedButton.icon(
-            onPressed: _busy ? null : () => _pickOnMap(),
-            icon: const CampusIcon(CampusIcons.jumpToday),
-            label: const Text('在地图上选点'),
-          ),
-          const SizedBox(height: 12),
-        ],
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            for (final item in saved)
-              CampusGlassChip(
-                label: item.label,
-                selected: _savedLocation == item.location,
-                onSelected: (_) => setState(() => _savedLocation = item.location),
-              ),
-            CampusGlassChip(label: '手动输入', selected: false, onSelected: (_) => setState(() => _manualLocation = true)),
-            // 收藏的维护入口：改名与删除（选择在上面这些 chip 里做）。
-            CampusGlassChip(label: '管理收藏', selected: false, onSelected: (_) => showChaoxingLocationSheet(context, controller: widget.controller)),
-          ],
-        ),
-        const SizedBox(height: 8),
-        DotSeparatedText(
-          _savedLocation == null
-              ? '还没有收藏位置'
-              : '${_savedLocation!.address} · ${_savedLocation!.formattedLatitude}, ${_savedLocation!.formattedLongitude}',
-          style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
-        ),
-      ],
-    );
   }
 }

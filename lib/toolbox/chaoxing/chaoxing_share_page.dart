@@ -43,7 +43,7 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
     final record = widget.controller.current;
     if (record == null) return;
     try {
-      final faces = await widget.controller.faceImages(record);
+      final faces = await widget.controller.faces.faceImages(record);
       if (mounted) setState(() => _faces = faces);
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=ticket_faces errorType=${failure.runtimeType}\n$stack');
@@ -63,7 +63,7 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
       _error = null;
     });
     try {
-      final ticket = await widget.controller.createCredentialTicket(faceObjectIds: _attached.toList());
+      final ticket = await widget.controller.delegate.createTicket(faceObjectIds: _attached.toList());
       if (!mounted) return;
       setState(() => _ticket = ticket);
     } on ChaoxingFailure catch (failure) {
