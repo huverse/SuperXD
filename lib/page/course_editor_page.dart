@@ -126,8 +126,9 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
         throw const ScheduleValidation('请至少添加一个上课时段');
       }
       validateSchedule([course]);
-    } on ScheduleValidation catch (error, stack) {
-      campusLog('[ScheduleEditor] action=validate error=$error\n$stack');
+    } on ScheduleValidation catch (error) {
+      // 校验不过是预期内的用户输入错误，只记类型不带堆栈
+      campusLog('[ScheduleEditor] action=validate errorType=${error.runtimeType}');
       setState(() => _error = error.message);
       return;
     }
@@ -170,7 +171,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
         setState(() => _error = error);
       }
     } catch (error, stack) {
-      campusLog('[ScheduleEditor] action=save error=$error\n$stack');
+      campusLog('[ScheduleEditor] action=save errorType=${error.runtimeType}\n$stack');
       if (mounted) setState(() => _error = '保存未完成，草稿仍在，请重试');
     } finally {
       if (mounted) setState(() => _saving = false);
@@ -567,9 +568,10 @@ class _MeetingDialogState extends State<_MeetingDialog> {
             if (widget.onlyWeek == null) ...[
               Wrap(
                 spacing: 4,
+                runSpacing: 8,
                 children: [
                   for (final choice in ['全选', '单周', '双周', '清空'])
-                    TextButton(
+                    TextButton.icon(
                       onPressed: () => setState(
                         () => _weeks = {
                           for (var week = 1; week <= _visibleWeeks; week++)
@@ -579,7 +581,8 @@ class _MeetingDialogState extends State<_MeetingDialog> {
                               week,
                         },
                       ),
-                      child: Text(choice),
+                      icon: CampusIcon(choice == '清空' ? CampusIcons.close : CampusIcons.check),
+                      label: Text(choice),
                     ),
                 ],
               ),
@@ -602,14 +605,15 @@ class _MeetingDialogState extends State<_MeetingDialog> {
                 ],
               ),
               if (_visibleWeeks < maxScheduleWeeks)
-                TextButton(
+                TextButton.icon(
                   onPressed: () => setState(
                     () => _visibleWeeks = (_visibleWeeks + 10).clamp(
                       1,
                       maxScheduleWeeks,
                     ),
                   ),
-                  child: const Text('显示更多周次'),
+                  icon: const CampusIcon(CampusIcons.expand),
+                  label: const Text('显示更多周次'),
                 ),
             ],
             if (_error != null)

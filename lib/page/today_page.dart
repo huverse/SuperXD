@@ -475,10 +475,11 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
               textAlign: TextAlign.center,
             ),
             if (_first != null)
-              TextButton(
+              TextButton.icon(
                 onPressed: () =>
                     _selectDay(day.compareTo(_first!) < 0 ? _first! : _last!),
-                child: const Text('查看已知课表'),
+                icon: const CampusIcon(CampusIcons.jumpToday),
+                label: const Text('查看已知课表'),
               ),
           ],
         ),

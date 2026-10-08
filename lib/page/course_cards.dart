@@ -333,7 +333,7 @@ class _CourseCardBody extends StatelessWidget {
         Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
           // 缺作息时提示并在节次同一行，不额外占一行。
           Text.rich(TextSpan(children: [
-            TextSpan(text: '第${span.start}–${span.end}节', style: TextStyle(color: palette.primary)),
+            TextSpan(text: '第${span.start}–${span.end}节', style: TextStyle(color: palette.onSurfaceVariant)),
             if (time == null) TextSpan(text: ' · 作息时间未设置', style: TextStyle(color: palette.onSurfaceVariant)),
           ]), style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3)),
           const SizedBox(height: 2),
