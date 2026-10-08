@@ -157,7 +157,9 @@ class ChaoxingActivity {
   final String title;
   final String subtitle;
   final ChaoxingSignType signType;
-  final DateTime startTime;
+
+  // 发起时刻；上游没给时为空，如实当作未知（不拿「现在」顶替，否则会被当成刚发起的签到）。
+  final DateTime? startTime;
   final DateTime? endTime;
   final int status;
 
@@ -189,6 +191,16 @@ class ChaoxingActivity {
   // [人工决策-2026-10-06 23:16:39] 活动名与签到类型名相同时只显示一个：真实数据里活动名常常
   // 就是「二维码签到」这类，和类型名叠一起会重复成「二维码签到 · 二维码签到」。
   String get displayTitle => title == signType.label ? title : '$title · ${signType.label}';
+}
+
+// 活动列表的顺序：发起时刻新的在前，不知道发起时刻的排在后面；同一时刻（含都未知）按活动号新的在前，顺序稳定。
+int chaoxingNewestFirst(ChaoxingActivity first, ChaoxingActivity second) {
+  final firstStart = first.startTime;
+  final secondStart = second.startTime;
+  if (firstStart != null && secondStart == null) return -1;
+  if (firstStart == null && secondStart != null) return 1;
+  final byStart = firstStart == null ? 0 : secondStart!.compareTo(firstStart);
+  return byStart != 0 ? byStart : second.activeId.compareTo(first.activeId);
 }
 
 class ChaoxingCourse {

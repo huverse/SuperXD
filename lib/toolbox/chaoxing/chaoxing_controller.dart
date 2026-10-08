@@ -310,7 +310,7 @@ class ChaoxingController extends ChangeNotifier {
       title: info.title.isEmpty ? signType.label : info.title,
       subtitle: current.subtitle,
       signType: signType,
-      startTime: info.startTime ?? DateTime.now().toUtc(),
+      startTime: info.startTime,
       endTime: info.endTime,
       status: _statusOf(info.endTime),
       userStatus: 0,
@@ -379,8 +379,8 @@ class ChaoxingController extends ChangeNotifier {
           title: item.title.isEmpty ? resolved.label : item.title,
           subtitle: item.courseName.isEmpty ? item.groupName : item.courseName,
           signType: resolved,
-          // 发起时刻优先取消息里的（群列表按它排序），其次详情里的。
-          startTime: item.startTime ?? info?.startTime ?? DateTime.now().toUtc(),
+          // 发起时刻优先取消息里的，其次详情里的；都没有就是未知。
+          startTime: item.startTime ?? info?.startTime,
           endTime: info?.endTime,
           status: _statusOf(info?.endTime),
           userStatus: 0,
@@ -392,7 +392,8 @@ class ChaoxingController extends ChangeNotifier {
     if (activities.isEmpty && failures > 0) {
       throw const ChaoxingFailure(ChaoxingFailureCode.network, '群聊里的签到没读全，请稍后重试');
     }
-    return activities;
+    // 消息里没时间、详情里补上了的要按补上的时间重排。
+    return activities..sort(chaoxingNewestFirst);
   }
 
   // 课程页：同名课程合并成一组（一门课多个班），置顶的在前，其余保持课程列表原顺序。
@@ -449,7 +450,7 @@ class ChaoxingController extends ChangeNotifier {
         merged.putIfAbsent(activity.activeId, () => activity);
       }
     }
-    final activities = merged.values.toList()..sort((first, second) => second.startTime.compareTo(first.startTime));
+    final activities = merged.values.toList()..sort(chaoxingNewestFirst);
     return (activities: activities, failures: failures);
   }
 
@@ -628,7 +629,7 @@ class ChaoxingController extends ChangeNotifier {
     // [人工决策-2026-10-07 12:32:57] 进行中与往期按活动列表的 status 分（1 为进行中，与学习通客户端一致），
     // 两组分开展示、不混排；往期的活动照样能签（签到页提示可能记为迟到），签到前检查判定已截止/已签到时
     // 还可以强制签到。取代 2026-10-06 23:24:35「往期只读、按截止时间分组」的决定。
-    collected.sort((first, second) => second.startTime.compareTo(first.startTime));
+    collected.sort(chaoxingNewestFirst);
     return (
       courses: loadedCourses,
       collected: collected,

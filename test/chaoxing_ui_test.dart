@@ -12,6 +12,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_activity_card.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_captcha_dialog.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_code_cells.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
@@ -22,6 +23,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_group_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
@@ -862,6 +864,51 @@ void main() {
     await login(tester);
     await waitUntil(tester, () => find.text('可能正在签到（按学习通课表）').evaluate().isNotEmpty);
     expect(find.text('隐藏班刚发起的签到 · '), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('缺开始时间的进行中签到不进课表推断，只留在进行中', (tester) async {
+    usePhoneScreen(tester);
+    final now = DateTime.now().toUtc();
+    final local = campusInstant(now);
+    fake.lessons = {
+      'curriculum': {'lessonTimeConfigArray': ['00:00-23:59'], 'firstWeekDate': now.millisecondsSinceEpoch},
+      'lessonArray': [
+        {'name': '高等数学（一）', 'dayOfWeek': local.weekday, 'beginNumber': 1, 'length': 1, 'weeks': '1', 'classId': 0, 'courseId': 0},
+      ],
+    };
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '5', 'nameOne': '刚发起的签到', 'startTime': now.subtract(const Duration(minutes: 2)).millisecondsSinceEpoch, 'status': 1, 'userStatus': 0},
+      {'id': 502, 'type': 2, 'otherId': '5', 'nameOne': '没时间的签到', 'status': 1, 'userStatus': 0},
+    ];
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    await waitUntil(tester, () => find.text('可能正在签到（按学习通课表）').evaluate().isNotEmpty);
+    // 推断那组在「进行中的签到」之上：没时间的那条要排在「进行中」标题下面，刚发起的在上面。
+    final ongoingTitle = tester.getTopLeft(find.text('进行中的签到')).dy;
+    expect(tester.getTopLeft(find.text('刚发起的签到 · ')).dy, lessThan(ongoingTitle));
+    expect(tester.getTopLeft(find.text('没时间的签到 · ')).dy, greaterThan(ongoingTitle));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('活动卡片：缺开始时间不亮刚发起，有截止写截止，都没有不显示时间行', (tester) async {
+    usePhoneScreen(tester);
+    final now = DateTime.now().toUtc();
+    ChaoxingActivity activity(DateTime? startTime, DateTime? endTime) => ChaoxingActivity(activeId: 1, courseId: 1, classId: 1, title: '签到', subtitle: '高等数学', signType: ChaoxingSignType.password, startTime: startTime, endTime: endTime, status: 1, userStatus: 0, ext: '');
+    Future<void> show(ChaoxingActivity activity) => tester.pumpWidget(
+      MaterialApp(theme: campusTheme(), home: Scaffold(body: ChaoxingActivityCard(activity: activity, onSign: () {}))),
+    );
+    final freshBadge = find.byWidgetPredicate((widget) => widget is Container && widget.decoration is BoxDecoration && (widget.decoration! as BoxDecoration).shape == BoxShape.circle);
+    await show(activity(now, null));
+    expect(freshBadge, findsOneWidget);
+    expect(find.textContaining('开始 '), findsOneWidget);
+    await show(activity(null, null));
+    expect(freshBadge, findsNothing);
+    expect(find.textContaining('开始 '), findsNothing);
+    expect(find.textContaining('截止 '), findsNothing);
+    await show(activity(null, now.add(const Duration(minutes: 10))));
+    expect(freshBadge, findsNothing);
+    expect(find.text('截止 ${formatCampusTimestamp(now.add(const Duration(minutes: 10)).toIso8601String())}'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 

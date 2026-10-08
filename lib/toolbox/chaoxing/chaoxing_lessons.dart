@@ -171,6 +171,6 @@ List<ChaoxingCourse> chaoxingLessonCourses(List<ChaoxingLesson> lessons, List<Ch
   return found.values.toList();
 }
 
-// 刚发起的进行中签到：status 为 1，且发起不超过 20 分钟。
+// 刚发起的进行中签到：status 为 1，且发起不超过 20 分钟；不知道发起时刻的不算。
 bool chaoxingFreshActivity(ChaoxingActivity activity, DateTime now) =>
-    activity.ongoing && activity.startTime.add(chaoxingFreshActivityWindow).isAfter(now);
+    activity.ongoing && (activity.startTime?.add(chaoxingFreshActivityWindow).isAfter(now) ?? false);

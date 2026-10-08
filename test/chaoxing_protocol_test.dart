@@ -348,7 +348,18 @@ void main() {
     expect(parsed[3]!.signType, ChaoxingSignType.unknown);
     expect(parsed.first!.ext, '{"a":1}');
     expect(parsed.first!.subtitle, '高等数学');
-    expect(parsed.first!.startTime.millisecondsSinceEpoch, 1760000000000);
+    expect(parsed.first!.startTime?.millisecondsSinceEpoch, 1760000000000);
+  });
+
+  test('缺开始时间的活动如实记为未知：不算刚发起、排在有时间的后面', () {
+    final course = const ChaoxingCourse(courseId: 9001, classId: 88, name: '高等数学');
+    final now = DateTime.utc(2026, 10, 7, 1);
+    final unknown = chaoxingActivity({'id': 7, 'type': 2, 'otherId': '5', 'nameOne': '没时间', 'status': 1}, course, ext: '')!;
+    expect(unknown.startTime, isNull);
+    expect(chaoxingFreshActivity(unknown, now), isFalse);
+    ChaoxingActivity at(int activeId, DateTime? startTime) => ChaoxingActivity(activeId: activeId, courseId: 1, classId: 88, title: '签到', subtitle: '', signType: ChaoxingSignType.password, startTime: startTime, status: 1, userStatus: 0, ext: '');
+    final sorted = [at(1, null), at(2, now.subtract(const Duration(hours: 1))), at(3, null), at(4, now)]..sort(chaoxingNewestFirst);
+    expect(sorted.map((activity) => activity.activeId), [4, 2, 3, 1]);
   });
 
   test('活动详情：签退状态与位置范围', () {

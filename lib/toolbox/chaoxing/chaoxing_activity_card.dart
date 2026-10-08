@@ -42,7 +42,8 @@ String chaoxingSummaryText(ChaoxingSignSummary summary) => summary.succeeded == 
     ? chaoxingSignedText(late: summary.late)
     : '已为 ${summary.succeeded} 人签到${summary.late ? '，有人迟到' : ''}';
 
-// 活动卡片：标题行是课程名，下面是活动名与类型、时间。进行中的写开始时间，已结束的写截止时间（都用两个字的前缀，完整时间在卡片里不折行）。
+// 活动卡片：标题行是课程名，下面是活动名与类型、时间。进行中的写开始时间，已结束的写截止时间（都用两个字的前缀，完整时间在卡片里不折行）；
+// 不知道开始时间的有截止就写截止，都没有就不显示时间行。
 class ChaoxingActivityCard extends StatelessWidget {
   const ChaoxingActivityCard({super.key, required this.activity, required this.onSign, this.showCourse = true});
   final ChaoxingActivity activity;
@@ -52,12 +53,15 @@ class ChaoxingActivityCard extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
+    final startTime = activity.startTime;
     final endTime = activity.endTime;
-    final time = activity.ongoing || endTime == null
-        ? '开始 ${formatCampusTimestamp(activity.startTime.toIso8601String())}'
-        : '截止 ${formatCampusTimestamp(endTime.toIso8601String())}';
-    // 十分钟内刚发起的签到给个橙点角标（对齐参考项目），一眼看出哪个是老师刚发的。
-    final fresh = activity.ongoing && DateTime.now().toUtc().difference(activity.startTime) <= const Duration(minutes: 10);
+    final time = startTime != null && (activity.ongoing || endTime == null)
+        ? '开始 ${formatCampusTimestamp(startTime.toIso8601String())}'
+        : endTime != null
+        ? '截止 ${formatCampusTimestamp(endTime.toIso8601String())}'
+        : null;
+    // 十分钟内刚发起的签到给个橙点角标（对齐参考项目），一眼看出哪个是老师刚发的；不知道开始时间的不算。
+    final fresh = activity.ongoing && startTime != null && DateTime.now().toUtc().difference(startTime) <= const Duration(minutes: 10);
     return CampusSurface(
       margin: const EdgeInsets.only(bottom: 12),
       child: Row(
@@ -82,8 +86,10 @@ class ChaoxingActivityCard extends StatelessWidget {
                   const SizedBox(height: 4),
                   DotSeparatedText(activity.displayTitle, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
                 ],
-                const SizedBox(height: 2),
-                Text(time, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+                if (time != null) ...[
+                  const SizedBox(height: 2),
+                  Text(time, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+                ],
               ],
             ),
           ),

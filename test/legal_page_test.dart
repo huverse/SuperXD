@@ -20,6 +20,7 @@ void main() {
     final scrollable = find.byType(Scrollable).first;
     for (final (title, fragment) in [
       ('好友与私信', '按 IP 地址计数限流'),
+      ('学习通签到用到的第三方 SDK', 'com.hihonor.mcs:ads-identifier'),
       ('系统权限', '相机：只在扫码加好友时使用'),
       ('你的权利', '你可以撤回同意'),
       ('未成年人', '未满 14 周岁'),
