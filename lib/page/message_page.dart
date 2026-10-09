@@ -207,11 +207,10 @@ class _SocialSetupState extends State<_SocialSetup> {
         Text('分享内容在本机加密，中转服务器只转交密文；对方未取走的 30 天后删除。好友与私信属于这台设备，切换教务账号不受影响。', style: secondary),
         Align(alignment: AlignmentDirectional.centerStart, child: TextButton(style: campusLink, onPressed: () => context.push('/legal/privacy'), child: const Text('隐私政策', style: TextStyle(fontSize: 14)))),
         const SizedBox(height: 8),
-        FilledButton.icon(
+        FilledButton(
           style: campusProminent,
           onPressed: _busy ? null : _enable,
-          icon: const CampusIcon(CampusIcons.check),
-          label: CampusBusyContent(busy: _busy, label: '同意并开启', busyLabel: '正在开启'),
+          child: CampusBusyContent(busy: _busy, label: '同意并开启', busyLabel: '正在开启', icon: const CampusIcon(CampusIcons.check)),
         ),
       ])),
     ]));

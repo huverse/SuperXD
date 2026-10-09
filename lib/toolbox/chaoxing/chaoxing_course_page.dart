@@ -91,7 +91,7 @@ class _ChaoxingCoursePageState extends State<ChaoxingCoursePage> {
                             Padding(
                               padding: const EdgeInsets.only(right: 12),
                               child: ClipRRect(
-                                borderRadius: BorderRadius.circular(8),
+                                borderRadius: BorderRadius.circular(12),
                                 child: Image.network(group.courses.first.cover, fit: BoxFit.cover, width: 44, height: 44, errorBuilder: (_, _, _) => const SizedBox.square(dimension: 44, child: Center(child: CampusIcon(CampusIcons.course)))),
                               ),
                             ),
@@ -146,6 +146,7 @@ class _ChaoxingCourseDetailPageState extends State<ChaoxingCourseDetailPage> {
   List<ChaoxingActivity>? _activities;
   int _failures = 0;
   String? _error;
+  bool _loading = false;
 
   @override
   void initState() {
@@ -153,9 +154,11 @@ class _ChaoxingCourseDetailPageState extends State<ChaoxingCourseDetailPage> {
     _load();
   }
 
+  // 刷新保留旧列表（局部刷新不清空、不丢滚动位置），只在顶栏按钮上原地转。
   Future<void> _load() async {
+    if (_loading) return;
     setState(() {
-      _activities = null;
+      _loading = true;
       _error = null;
     });
     try {
@@ -166,10 +169,22 @@ class _ChaoxingCourseDetailPageState extends State<ChaoxingCourseDetailPage> {
         _failures = result.failures;
       });
     } on ChaoxingFailure catch (failure) {
-      if (mounted) setState(() => _error = failure.message);
+      _failed(failure.message);
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=course_detail errorType=${failure.runtimeType}\n$stack');
-      if (mounted) setState(() => _error = '这门课的签到活动没读到，请稍后重试');
+      _failed('这门课的签到活动没读到，请稍后重试');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // 还没有内容时整页显示原因与重试；已有内容时只给提示条，旧列表留着。
+  void _failed(String message) {
+    if (!mounted) return;
+    if (_activities == null) {
+      setState(() => _error = message);
+    } else {
+      showCampusToast(context, message);
     }
   }
 
@@ -188,21 +203,10 @@ class _ChaoxingCourseDetailPageState extends State<ChaoxingCourseDetailPage> {
       appBar: AppBar(
         title: Text(widget.group.name),
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
-        actions: [
-          IconButton(
-            tooltip: '刷新',
-            onPressed: activities == null && _error == null ? null : () => _load(),
-            icon: const CampusIcon(CampusIcons.sync),
-          ),
-        ],
+        actions: [ChaoxingRefreshButton(loading: _loading, onRefresh: () => _load())],
       ),
       body: switch ((_error, activities)) {
-        (final String message, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(message, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: palette.danger)),
-          ),
-        ),
+        (final String message, null) => ChaoxingLoadError(message: message, onRetry: () => _load()),
         (_, null) => const CampusLoading(label: '正在读取签到活动…', network: true),
         _ => _lazyList([
               if (widget.group.courses.length > 1 || _failures > 0)

@@ -9,18 +9,21 @@
     - 在应用支持目录的 toolbox 子目录下，打开 toolbox.db、资源目录和下载目录。
     - 组装 ParseCoordinator（当前只有 BugPK）、下载管理器、后台传输和文件导出。
     - 跟随应用前后台状态恢复下载。
-    - 框架不认识各工具的服务类型：工具经 serviceOpeners 注册自己的打开函数（实现 ToolboxService 接口），页面用 runtime.service 取用，退出时框架按接口统一关闭；学习通的服务见 chaoxing_service.dart，短视频的解析器仍由框架组装。
+    - 注册表由组合根传入（catalog，一般是 toolboxCatalog），runtime.modules 是它给出的工具列表，路由与百宝箱首页都从这里取。
+    - 框架不认识各工具的服务类型：工具在注册表里登记自己的打开函数（ToolboxModule.openService，实现 ToolboxService 接口），页面用 runtime.service 取用，退出时框架按接口统一关闭；打开失败不留在缓存里，重试能再打开。学习通的服务见 chaoxing_service.dart，短视频的解析器仍由框架组装。
+    - clearData：清除一个工具在本机的全部数据，先由工具服务自己清（ToolboxService.clearData），再撤掉按工具 id 记的同意记录，并从缓存里拿掉服务。
+    - relayUrl：自建中转地址（私信与学习通代签共用），只从构建参数来，经 ToolboxServiceContext 交给工具服务；没配时为空。
     - shareVideo（ToolboxVideoShare）：把作品分享给好友的回调，由组合根注入（接到私信的分享弹层）；为空时不显示分享入口。百宝箱不感知私信。
     - pickImage（ToolboxImagePick）：取图（相册或相机），由组合根注入 page 层的 pickImageCopy，缓存副本用完必须 discard；为空时（测试环境）取图返回空。
-  - toolbox_catalog.dart：工具注册表 toolboxCatalog。路由按这里的 id 生成免登录的工具路由。
-  - toolbox_module.dart：ToolboxModule 描述一个工具，字段有 id、名称、图标、页面构造器和可选的按需资源。
-  - toolbox_page.dart：百宝箱首页 ToolboxPage，展示工具列表。右滑只揭示卸载按钮，卸载须点击确认。
+  - toolbox_catalog.dart：工具注册表 toolboxCatalog，工具只在这一处登记（名称、图标、页面、资源与服务），增删工具不改组合根。路由按这里的 id 生成免登录的工具路由；工具 id 全处统一（路由、服务、同意记录同一个 id，[人工决策] 在文件头）。
+  - toolbox_module.dart：ToolboxModule 描述一个工具，字段有 id、名称、图标、页面构造器、可选的按需资源与可选的服务打开函数 openService；ToolboxServiceContext 是框架交给工具服务的公共能力（目录、百宝箱库、中转地址）。登记了 openService 的工具有自己的本机数据，可清除。
+  - toolbox_page.dart：百宝箱首页 ToolboxPage，展示工具列表。有按需资源的工具右侧⋯与右滑揭示「卸载」；有本机数据的工具（登记了 openService）右侧⋯与右滑揭示「清除数据」，都须点击确认（人工决策见文件内）。
   - toolbox_models.dart：公共模型与接口。
     - 模型：ToolboxException、ToolboxCancellation、ToolboxResource、ToolboxDownload 及其状态机。
-    - 接口：ToolboxTransfer（传输）、ToolboxFilePublisher（导出）。
+    - 接口：ToolboxTransfer（传输）、ToolboxFilePublisher（导出）、ToolboxService（工具自己的服务：close 与 clearData）。
   - toolbox_store.dart：ToolboxStore 管理 toolbox.db，表如下：
     - downloads：下载记录，完整状态存在 payload 里。
-    - consent：按来源与版本记录用户同意。
+    - consent：按来源与版本记录用户同意；清除工具数据时按工具 id 撤销（revokeConsent）。
     - resources：已安装的按需资源。
     - toolbox_preferences：偏好设置，例如 parse_source、history_enabled。
     - parse_history：解析历史。
@@ -84,36 +87,36 @@
   - chaoxing_captcha.dart：滑块验证码，取配置与底图、按 280 宽的坐标空间提交拖动位置、换成一次性 validate（按签到对象各自的会话取）。
   - chaoxing_captcha_dialog.dart：滑块验证弹窗，底图上拖缺口块，不通过自动换一张。
   - chaoxing_face.dart：人脸识别签到。用设备公钥对 clientId 做模幂还原出设备信息，按字段排序拼 sc 做 md5 得 signToken，换一次性的 faceEnc；也用来取学习通里存着的人脸照片 objectId 与云盘原图地址（预览用）。
-  - chaoxing_code_cells.dart：签到码的格子输入 ChaoxingCodeCells：按位数显示空格、输满自动回调（校验与提交由签到弹层接手），真正的输入框藏在格子底下收键盘输入。
+  - chaoxing_code_cells.dart：签到码的格子输入 ChaoxingCodeCells：按位数显示空格（位数没有上限，窄屏放不下时按可用宽度等比收窄）、输满自动回调（校验与提交由签到弹层接手），真正的输入框藏在格子底下收键盘输入；输错时标红并重震一下，红色保留到重新输入第一位（[人工决策] 在文件头）。
   - chaoxing_image_pick.dart：人脸照片取图 pickChaoxingFacePhoto（相册或拍摄，选完进 3:4 裁剪页，image_cropper 实现）与现场拍摄 shootChaoxingPhoto（拍照签到与补拍，不裁剪）。取图用注入的 ToolboxImagePick；取图与裁剪留下的文件读成字节后即删（人脸属于生物特征，不在缓存留存）。
-  - chaoxing_gesture_field.dart：手势签到的 3×3 图案输入 ChaoxingGestureField：原始指针事件画图案（不走手势竞技场，弹层里不会被拖动关闭抢走），抬起即回调序号串，校验失败清空标红。
-  - chaoxing_face_sheet.dart：人脸照片弹层，预览（从学习通云盘取原图，内存里留最近 10 张）、用过几次、是否没通过过；管理模式可删，签到时选这次用哪张。
+  - chaoxing_gesture_field.dart：手势签到的 3×3 图案输入 ChaoxingGestureField：原始指针事件画图案（不走手势竞技场，弹层里不会被拖动关闭抢走），抬起即回调序号串；校验失败时画错的图案留在原处标红并重震一下，下一次按下才清空（[人工决策] 在文件头）。
+  - chaoxing_face_sheet.dart：人脸照片弹层，预览（从学习通云盘取原图，内存里留最近 10 张）、用过几次、是否没通过过；每张右侧⋯里保存到本机与删除（管理模式才有删除，警示色并确认），签到时整卡点按选这次用哪张；添加照片时忙碌状态只显示在点的那个按钮上。
   - chaoxing_im.dart：群聊签到。学习通群聊走环信：DES 解出登录下发的环信密码（pointycastle 只有 3DES，三段同一把钥匙等价单 DES）换令牌，列群、拉漫游消息，用极简 protobuf 读 Meta/MessageBody/KeyValue 三段取 attachment 扩展，再挑 attachmentType 15 且 atype 为 2/74 的签到。
-  - chaoxing_group_page.dart：群聊里的签到页，按群翻出只发在群里的签到，逐条走同一套签到弹层。
+  - chaoxing_group_page.dart：群聊里的签到页，按群翻出只发在群里的签到，逐条走同一套签到弹层；刷新保留旧列表、顶栏按钮原地转，首次读不到给原因与重试，已有内容时刷新失败只给提示条。
   - chaoxing_history_page.dart：往期签到页，列已结束的活动（status 不为 1），照样能签、签到页提示可能记为迟到；复用主列表那一次拉取的数据，不额外请求。
-  - chaoxing_course_page.dart：按课程查看，课程可搜课名、老师与学校，可置顶；同名课程合并成一项，点进去看全部签到，进行中与已结束分两组。
-  - chaoxing_activity_card.dart：各页共用的活动卡片、分组标题与签到入口 ChaoxingSignLauncher（开签到弹层、签完给提示并刷新）。不知道开始时间的不亮刚发起橙点，时间行有截止写截止、都没有就不显示。
+  - chaoxing_course_page.dart：按课程查看，课程可搜课名、老师与学校，可置顶；同名课程合并成一项，点进去看全部签到，进行中与已结束分两组；详情页刷新与出错的处理同群聊页。
+  - chaoxing_activity_card.dart：各页共用的活动卡片、分组标题与签到入口 ChaoxingSignLauncher（开签到弹层、签完给提示并刷新），以及整页读取失败的原因加重试 ChaoxingLoadError、二级页顶栏的刷新按钮 ChaoxingRefreshButton（刷新中原地转）。不知道开始时间的不亮刚发起橙点，时间行有截止写截止、都没有就不显示。
   - chaoxing_settings_sheet.dart：签到设置弹层（学校单位、模拟的客户端），以及修复账号时重新输密码的对话框。
   - chaoxing_sign_notices.dart：签到弹层里的时间提示 ChaoxingTimeNotice（已结束可能记迟到、发布超过 6 小时提醒没选错，不知道发布时间的不提醒）与签退提示 ChaoxingSignOutNotice（去主签到或去签退）。
   - chaoxing_qr_feed.dart：连续扫码时的最新二维码 ChaoxingQrFeed：签到要新码时有比过期那个新的就直接给，没有就等下一次扫到，取景页关掉以「已取消」结束。
   - chaoxing_sign_flow.dart：一个人的完整签到流程 ChaoxingSignFlow（签到前检查可强制跳过、拍照上传、人脸、提交，验证码/换码/位置收紧重试），从页面状态类抽出；会话与存储经 ChaoxingSignContext 注入，controller 是现在的实现来源。签到输入与回调类型（ChaoxingSignInputs、ChaoxingCaptchaSolver、ChaoxingFreshQrCode）也定义在这里。
-  - chaoxing_service.dart：学习通签到的服务 ChaoxingService（实现 ToolboxService 接口）：自己打开与关闭库、安全存储、设备通道与代签中转客户端；组合根把它的 open 注册进 ToolboxRuntime 的 serviceOpeners，页面经 runtime.service 取用。
+  - chaoxing_service.dart：学习通签到的服务 ChaoxingService（实现 ToolboxService 接口）：自己打开、关闭与清除库、安全存储、设备通道与代签中转客户端；open 登记在注册表，页面经 runtime.service 取用。清除数据删掉安全存储 superxd_chaoxing 命名空间的全部凭据与 chaoxing.db，不动学习通云盘与已导出的文件。serviceId（chaoxing）就是工具 id，也是同意记录的键。
   - chaoxing_credential_pack.dart：代签凭据包（手机号、密文密码、昵称、对方设备码、最多 5 张人脸照片 objectId）的编解码与一次性密钥封装（AES-256-GCM），以及二维码取件票（SXDC1: 取件号 + 密钥）的编解码；第 2 版加了人脸照片，第 1 版照样能解；包来自别人的二维码，一律按外部输入逐项校验。
-  - chaoxing_pack_client.dart：代签凭据包的自建中转客户端，投递换取件号与作废口令、凭号取件（取走即删）、凭口令作废（老版本中转不给口令时跳过作废），地址由组合根从构建参数注入；没配中转时代签入口不显示。
-  - chaoxing_share_page.dart：出示代签码页面，画二维码并说明有效期；重新生成、改附带照片或离开本页时作废上一张码（轮换即作废，作废失败只记日志）。
+  - chaoxing_pack_client.dart：代签凭据包的自建中转客户端，投递换取件号与作废口令、凭号取件（取走即删）、凭口令作废（老版本中转不给口令时跳过作废），地址由框架从构建参数给出；没配中转时代签入口不显示。chaoxingTicketLifetime 是码的有效期（与中转一致，10 分钟）。
+  - chaoxing_share_page.dart：出示代签码页面，画二维码并按 m:ss 倒计时（从发出投递请求时起算，只会比中转早到点），到点盖上「已失效」；重新生成、改附带照片或离开本页时作废上一张码（轮换即作废，作废失败只记日志）。
   - chaoxing_map_page.dart：高德地图选点。高德 key 走构建参数 SUPERXD_AMAP_KEY（Android 平台 key，不写进源码）；key 没配或不在 arm 设备上（高德只带 arm 原生库）时地图入口不出现，位置直接摊开经纬度并写明原因（回退路径，不让人对着空白找）。地图按 GCJ-02 画，收藏里的 BD-09 与 WGS-84 先换算；底部面板给高德 logo 留出位置。
     - 地图渲染无法在 x86 模拟器上验证，只能在真机；手动入口见 tool/verify_chaoxing_map.dart。
   - chaoxing_accounts.dart：账号闭环，登录、恢复会话、补用户信息、切换学校单位、修复（重输密码）、删除与模拟客户端的设置；会话过期自动重登一次并重放该次请求。本人账号的设备码优先用本机 OAID 算的。
-  - chaoxing_vault.dart：密码与 Cookie 的存放，Secure 版用系统安全存储（命名空间 superxd_chaoxing），测试用内存版。
-  - chaoxing_store.dart：chaoxing.db（v5），账号索引（含学校单位、设备码来源、备注名与手动排序）、收藏位置（可改名）、人脸照片索引（含使用次数与失败标记）、设置、置顶课程与学习通课表缓存，打开时按上限裁剪，删账号时连带清掉它的置顶、课表缓存与人脸照片索引。
-  - chaoxing_sign_location.dart：签到弹层里的位置选择 ChaoxingSignLocation：收藏位置 chip、手输经纬度（地图用不了时直接摊开并写明原因）、地图选点与管理收藏入口；状态归签到弹层，这里只画与回调。
-  - chaoxing_location_sheet.dart：收藏位置的管理弹层（改名与删除；选择仍在签到弹层的 chip 里）。
-  - chaoxing_account_sheet.dart：多账号管理弹层（改备注名、拖动排序写回 sort 列）。
+  - chaoxing_vault.dart：密码与 Cookie 的存放，Secure 版用系统安全存储（命名空间 superxd_chaoxing，deleteAll 只清这个命名空间），测试用内存版。
+  - chaoxing_store.dart：chaoxing.db（v5），账号索引（含学校单位、设备码来源、备注名与手动排序）、收藏位置（可改名）、人脸照片索引（含使用次数与失败标记）、设置、置顶课程与学习通课表缓存，打开时按上限裁剪，删账号时连带清掉它的置顶、课表缓存与人脸照片索引；destroy 关库并删库文件（清除数据用）。
+  - chaoxing_sign_location.dart：签到弹层里的位置选择 ChaoxingSignLocation：收藏位置是选择标签，地图选点、手动输入与管理收藏是带图标的按钮（整体换行）；手输经纬度时注明按高德 GCJ-02（地图用不了时直接摊开并写明原因）；状态归签到弹层，这里只画与回调。
+  - chaoxing_location_sheet.dart：收藏位置的管理弹层：整卡点按改名，右侧⋯里改名与删除（警示色并确认）；选择仍在签到弹层的选择标签里。
+  - chaoxing_account_sheet.dart：多账号管理弹层：整行点按改备注名，右侧⋯里改备注名与删除（警示色并确认，删代签账号不用先切过去，删光了关弹层回登录）；代签账号拖动排序写回 sort 列。
   - chaoxing_controller.dart：页面状态，账号切换（按代次丢弃切换前的异步结果）、刷新（课程与活动，最多并发三个课程请求；进行中与往期按 status 分）、课表推断、每个签到对象的完整签到流程入口、课程分组与置顶、学校单位与模拟客户端、收藏位置；签到对象的会话按需打开、整页关掉时一起关。人脸照片与代签码分别交给 faces、delegate 两个子控制器（构造注入 accounts 与会话，不反向依赖本类）。
   - chaoxing_face_controller.dart：人脸照片 ChaoxingFaceController：列表、上传、预览缓存（总字节封顶 20MB）、保存到本机（一次性导出）、学习通默认照片的读取与重处理。
   - chaoxing_delegate_controller.dart：代签码 ChaoxingDelegateController：出示（封包投递到中转换取件票）与取件导入（解封后用对方设备码登录确认，按代签账号存入）；没配中转时报不可用；出示时一并拿到作废口令，revokeTicket 凭它作废。
-  - chaoxing_page.dart：首页与登录表单，先取同意再登录；首页分「可能正在签到（按学习通课表）」与「进行中的签到」两组，底下是往期、按课程、群聊三个入口；账号操作用⋯菜单（切换、账号管理、登录其他账号、人脸照片、签到设置、代签码、退出登录、删除）。
-  - chaoxing_sign_sheet.dart：签到弹层，先取活动详情再按类型要输入（签到码、位置）；签到码与手势可选校验方式（普通=输码经服务端校验，绕过=不输码直接提交、提示可能失效，[人工决策] 见 chaoxing_signer.dart）；有多个账号时列出签到对象可多选，每人一行原地显示状态，拍照与人脸按人选；失败的可重试、强制签到或重新登录；二维码签到用连续扫码，签完所有人自动关、码过期等新码接着签；已结束或发布太久的给时间提示；服务端要验证码时就地弹滑块，过了自动把这个人重发一遍。「甲 · 乙」说明行用 theme 的 DotSeparatedText。
+  - chaoxing_page.dart：首页与登录表单，先取同意再登录；读取、登录与列表三态之间淡出淡入，打开失败给原因与重试；首页分「可能正在签到（按学习通课表）」与「进行中的签到」两组，底下是往期、按课程、群聊三个入口；账号操作用⋯菜单（切换、账号管理、登录其他账号、人脸照片、签到设置、代签码、退出登录、删除）。
+  - chaoxing_sign_sheet.dart：签到弹层，先取活动详情再按类型要输入（签到码、位置）；签到码与手势可选校验方式（普通=输码经服务端校验，绕过=不输码直接提交、提示可能失效，[人工决策] 见 chaoxing_signer.dart）；有多个账号时列出签到对象可多选，每人一行原地显示状态，拍照与人脸按人选；失败的可重试、强制签到或重新登录；二维码签到用连续扫码，签完所有人自动关、码过期等新码接着签；已结束或发布太久的给时间提示；服务端要验证码时就地弹滑块，过了自动把这个人重发一遍。「甲 · 乙」说明行用 theme 的 DotSeparatedText。读取、切换校验方式、出错与失败操作出现时弹层高度平滑过渡（AnimatedSize 250ms），每人一行的签到中与签好的图标交替淡入；没开签时归属与设备码合成一行。
 
 # 关键规则
 
@@ -155,8 +158,10 @@
 - 本目录的标记集中在以下几处：
   - 免登录与设备级归属
   - 注册表
-  - 卸载确认
+  - 卸载确认与清除数据（toolbox_page.dart）
   - 资源卸载范围
+  - 工具单点登记与 id 统一（toolbox_catalog.dart）
+  - 学习通：签到码与手势输错的反馈、账号管理每行⋯（chaoxing_code_cells.dart、chaoxing_gesture_field.dart、chaoxing_account_sheet.dart）
   - 来源选择
   - 历史默认开启
   - 下载汇总“进行中”含排队项（结果页与下载管理页）

@@ -4,7 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:superxd/theme/campus_palette.dart';
 
 // 手势签到的 3×3 图案输入，同学习通客户端：按下开始，滑过圆点依次连成图案，抬起即算画完，
-// 回调点的序号串（从 1 起）。少于两个点当误触，抬起即清空。校验失败由调用方把 error 置上来，图案清空并标红。
+// 回调点的序号串（从 1 起）。少于两个点当误触，抬起即清空。校验失败由调用方把 error 置上来：
+// [人工决策-2026-10-09 20:32:45] 画错的图案留在原处标红并轻震一下，到下一次按下才清空（同 Android 锁屏）；不加位移动画。用户选定。
 // 图案用原始指针事件画、不走手势竞技场：pan 的触发阈值（36 像素）比弹层拖动关闭的竖向拖动（18 像素）大，
 // 在弹层里竞技场会判给弹层；外面再包一层空的竖向拖动先把手势接走，图案区里拖动不会把弹层拖走。
 class ChaoxingGestureField extends StatefulWidget {
@@ -21,11 +22,17 @@ class _ChaoxingGestureFieldState extends State<ChaoxingGestureField> {
   Offset? _dragPosition;
   bool _dragging = false;
 
+  // 画错的图案是否还标着红：调用方给出错误时亮起，下一次按下时熄灭。
+  late bool _showError = widget.error != null;
+
   @override
   void didUpdateWidget(ChaoxingGestureField oldWidget) {
     super.didUpdateWidget(oldWidget);
-    // 校验没过时把画错的图案清掉（标红提示由 error 负责）。
-    if (widget.error != null && oldWidget.error == null) _selected.clear();
+    if (widget.error != null && oldWidget.error == null) {
+      _showError = true;
+      HapticFeedback.heavyImpact();
+    }
+    if (widget.error == null) _showError = false;
   }
 
   Offset _centerOf(Size size, int index) {
@@ -65,7 +72,7 @@ class _ChaoxingGestureFieldState extends State<ChaoxingGestureField> {
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
-    final color = widget.error == null ? palette.accent : palette.danger;
+    final color = _showError ? palette.danger : palette.accent;
     return AspectRatio(
       aspectRatio: 1,
       child: LayoutBuilder(
@@ -78,6 +85,7 @@ class _ChaoxingGestureFieldState extends State<ChaoxingGestureField> {
               onPointerDown: (event) {
                 // 每次按下都从空图案开始：上一次画的（含校验没过的）不能接着连，否则提交的是旧点加新点。
                 _selected.clear();
+                _showError = false;
                 _dragging = true;
                 _track(size, event.localPosition);
               },

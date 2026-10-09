@@ -491,9 +491,11 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     if (_busy) return;
     final inputs = _inputs();
     if (inputs == null) return;
+    // 每次校验前先熄掉上一次的输错标记：再错一次时格子（图案）要重新标红、重新震动。
     setState(() {
       _preparing = true;
       _error = null;
+      _codeWrong = false;
     });
     try {
       final signCode = inputs.signCode;
@@ -716,7 +718,13 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
                 ),
               ],
             ),
-            Padding(padding: const EdgeInsets.only(right: 12), child: _body(palette)),
+            // 读取、切换校验方式、出错与失败操作出现时，弹层高度平滑过渡而不是跳变（同成绩页的展开收起）。
+            AnimatedSize(
+              duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 250),
+              curve: Curves.easeInOutCubic,
+              alignment: Alignment.topCenter,
+              child: Padding(padding: const EdgeInsets.only(right: 12), child: _body(palette)),
+            ),
           ],
         ),
       ),
@@ -924,23 +932,29 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(record.displayName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
-                    Text(
-                      statusText,
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: target.state == ChaoxingTargetState.failed ? palette.danger : palette.onSurfaceVariant,
-                      ),
-                    ),
+                    // 没开签时归属与设备码合成一行（「本人 · 本机设备码」），开签后这一行换成状态。
                     if (target.state == ChaoxingTargetState.idle)
-                      Text(deviceText, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+                      DotSeparatedText('$statusText · $deviceText', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))
+                    else
+                      Text(
+                        statusText,
+                        style: TextStyle(
+                          fontSize: 14,
+                          color: target.state == ChaoxingTargetState.failed ? palette.danger : palette.onSurfaceVariant,
+                        ),
+                      ),
                   ],
                 ),
               ),
-              switch (target.state) {
-                ChaoxingTargetState.signing => const CampusLoader(size: 20, delay: Duration.zero),
-                ChaoxingTargetState.succeeded => const CampusIcon(CampusIcons.success),
-                _ => const SizedBox.shrink(),
-              },
+              // 签到中的加载与签好的勾原地交替淡入，不突然换图。
+              AnimatedSwitcher(
+                duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 200),
+                child: switch (target.state) {
+                  ChaoxingTargetState.signing => const CampusLoader(key: ValueKey('signing'), size: 20, delay: Duration.zero),
+                  ChaoxingTargetState.succeeded => const CampusIcon(CampusIcons.success, key: ValueKey('succeeded')),
+                  _ => const SizedBox.shrink(key: ValueKey('idle')),
+                },
+              ),
             ],
           ),
           if (target.selected && !target.done && (_needsPhoto || _needsFace))

@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_image_pick.dart';
 
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -43,6 +44,8 @@ class _ChaoxingFaceSheetState extends State<_ChaoxingFaceSheet> {
   List<ChaoxingFaceImage>? _images;
   String? _error;
   bool _working = false;
+  // 正在处理的是哪一个来源（学习通默认照片、拍摄、相册）：忙碌状态只显示在点的那个按钮上。
+  String? _busySource;
 
   @override
   void initState() {
@@ -60,10 +63,11 @@ class _ChaoxingFaceSheetState extends State<_ChaoxingFaceSheet> {
     }
   }
 
-  Future<void> _run(Future<void> Function() action, String fallback) async {
+  Future<void> _run(Future<void> Function() action, String fallback, {String? source}) async {
     if (_working) return;
     setState(() {
       _working = true;
+      _busySource = source;
       _error = null;
     });
     try {
@@ -75,7 +79,12 @@ class _ChaoxingFaceSheetState extends State<_ChaoxingFaceSheet> {
       campusLog('[Chaoxing] action=face_sheet errorType=${failure.runtimeType}\n$stack');
       if (mounted) setState(() => _error = fallback);
     } finally {
-      if (mounted) setState(() => _working = false);
+      if (mounted) {
+        setState(() {
+          _working = false;
+          _busySource = null;
+        });
+      }
     }
   }
 
@@ -84,12 +93,12 @@ class _ChaoxingFaceSheetState extends State<_ChaoxingFaceSheet> {
     final bytes = await pickChaoxingFacePhoto(widget.pickImage, source: source);
     if (bytes == null || !mounted) return;
     await widget.controller.faces.uploadFaceImage(widget.record, bytes);
-  }, '人脸照片上传失败，请重试');
+  }, '人脸照片上传失败，请重试', source: source.name);
 
   Future<void> _fromProfile() => _run(() async {
     final objectId = await widget.controller.faces.importProfileFace(widget.record);
     if (objectId == null) throw const ChaoxingFailure(ChaoxingFailureCode.faceRequired, '学习通里还没有存人脸照片');
-  }, '学习通里的人脸照片没取到，请重试');
+  }, '学习通里的人脸照片没取到，请重试', source: 'profile');
 
   Future<void> _remove(ChaoxingFaceImage image) async {
     final agreed = await showCampusConfirm(
@@ -157,21 +166,16 @@ class _ChaoxingFaceSheetState extends State<_ChaoxingFaceSheet> {
                     spacing: 8,
                     runSpacing: 8,
                     children: [
-                      OutlinedButton.icon(
-                        onPressed: _working || full ? null : () => _fromProfile(),
-                        icon: const CampusIcon(CampusIcons.scanFace),
-                        label: const Text('用学习通里存的那张'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: _working || full ? null : () => _upload(ImageSource.camera),
-                        icon: const CampusIcon(CampusIcons.camera),
-                        label: const Text('现拍一张'),
-                      ),
-                      OutlinedButton.icon(
-                        onPressed: _working || full ? null : () => _upload(ImageSource.gallery),
-                        icon: const CampusIcon(CampusIcons.image),
-                        label: Text(_working ? '处理中' : '相册选一张'),
-                      ),
+                      // 处理中只在点的那个按钮上原地转（取图、裁剪与上传都算），其余按钮一起禁用。
+                      for (final (source, icon, label, action) in [
+                        ('profile', CampusIcons.scanFace, '用学习通里存的那张', _fromProfile),
+                        (ImageSource.camera.name, CampusIcons.camera, '现拍一张', () => _upload(ImageSource.camera)),
+                        (ImageSource.gallery.name, CampusIcons.image, '相册选一张', () => _upload(ImageSource.gallery)),
+                      ])
+                        OutlinedButton(
+                          onPressed: _working || full ? null : action,
+                          child: CampusBusyContent(busy: _busySource == source, label: label, busyLabel: '处理中', icon: CampusIcon(icon)),
+                        ),
                     ],
                   ),
                   if (full)
@@ -219,6 +223,17 @@ class _FaceTileState extends State<_FaceTile> {
     if (oldWidget.image.objectId != widget.image.objectId) _bytes = _fetch();
   }
 
+  Future<void> _menu(BuildContext anchor) async {
+    final onRemove = widget.onRemove;
+    final action = await showCampusMenu<String>(anchor, items: [
+      const CampusMenuItem(value: 'save', label: '保存到本机', icon: CampusIcons.download),
+      if (onRemove != null) const CampusMenuItem(value: 'remove', label: '删除这张照片', icon: CampusIcons.delete, destructive: true),
+    ]);
+    if (!mounted) return;
+    if (action == 'save') await _save();
+    if (action == 'remove') onRemove?.call();
+  }
+
   // 保存到本机：把云盘里的原图导出成公共下载目录里的 JPEG 文件。
   Future<void> _save() async {
     try {
@@ -239,7 +254,7 @@ class _FaceTileState extends State<_FaceTile> {
     final image = widget.image;
     return CampusSurface(
       margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(8),
+      padding: const EdgeInsets.fromLTRB(8, 8, 4, 8),
       radius: 16,
       onTap: widget.onPick,
       child: Row(
@@ -276,10 +291,11 @@ class _FaceTileState extends State<_FaceTile> {
               ],
             ),
           ),
+          // 同课程管理卡片：低频操作收进右上⋯，删除标警示色并确认；选照片时整卡点按即选。
+          Builder(
+            builder: (anchor) => IconButton(tooltip: '照片操作', onPressed: () => _menu(anchor), icon: const CampusIcon(CampusIcons.manage)),
+          ),
           if (widget.onPick != null) const CampusIcon(CampusIcons.next),
-          IconButton(tooltip: '保存到本机', onPressed: _save, icon: const CampusIcon(CampusIcons.download)),
-          if (widget.onRemove != null)
-            IconButton(tooltip: '删除这张照片', onPressed: widget.onRemove, icon: const CampusIcon(CampusIcons.delete)),
         ],
       ),
     );

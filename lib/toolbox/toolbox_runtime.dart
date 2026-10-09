@@ -105,7 +105,11 @@ class ToolboxRuntime with WidgetsBindingObserver {
     final opener = modules.where((module) => module.id == id).firstOrNull?.openService;
     if (opener == null) throw const ToolboxException('这个工具的服务还没有配置');
     if (_base == null) throw const ToolboxException('百宝箱还没有准备好，稍后再试');
-    return opener(ToolboxServiceContext(base: _base!, store: store, relayUrl: relayUrl));
+    // 打开失败不留在缓存里，页面上点「重试」才能真的再打开一次。
+    return opener(ToolboxServiceContext(base: _base!, store: store, relayUrl: relayUrl)).catchError((Object error, StackTrace stack) {
+      _opened.remove(id);
+      Error.throwWithStackTrace(error, stack);
+    });
   });
 
   // 取一个工具的服务：注册表里没登记 openService 或还没初始化完成时抛错。

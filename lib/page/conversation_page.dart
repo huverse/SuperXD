@@ -299,10 +299,9 @@ class _ConversationPageState extends State<ConversationPage> {
                   // 两个操作等宽并排。
                   : Row(children: [
                       if (widget.gateway != null) ...[
-                        Expanded(child: Builder(builder: (anchor) => FilledButton.icon(
+                        Expanded(child: Builder(builder: (anchor) => FilledButton(
                           onPressed: _preparing ? null : () => _shareSchedule(anchor),
-                          icon: const CampusIcon(CampusIcons.todaySelected),
-                          label: CampusBusyContent(busy: _preparing, label: '分享课表', busyLabel: '读取课表'),
+                          child: CampusBusyContent(busy: _preparing, label: '分享课表', busyLabel: '读取课表', icon: const CampusIcon(CampusIcons.todaySelected)),
                         ))),
                         const SizedBox(width: 12),
                       ],

@@ -125,6 +125,42 @@ class ChaoxingSectionTitle extends StatelessWidget {
   }
 }
 
+// 整页读取失败（还没有可显示的内容）时的原因与原地重试，各页同一个样子；已有内容时刷新失败只给提示条、保留旧内容。
+class ChaoxingLoadError extends StatelessWidget {
+  const ChaoxingLoadError({super.key, required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(message, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: CampusPalette.of(context).danger)),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(onPressed: onRetry, icon: const CampusIcon(CampusIcons.sync), label: const Text('重试')),
+        ],
+      ),
+    ),
+  );
+}
+
+// 二级页顶栏的刷新按钮：刷新中原地转，不清掉页面上的旧内容。
+class ChaoxingRefreshButton extends StatelessWidget {
+  const ChaoxingRefreshButton({super.key, required this.loading, required this.onRefresh});
+  final bool loading;
+  final VoidCallback onRefresh;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    tooltip: loading ? '正在刷新' : '刷新',
+    onPressed: loading ? null : onRefresh,
+    icon: loading ? const CampusLoader(size: 20, delay: Duration.zero) : const CampusIcon(CampusIcons.sync),
+  );
+}
+
 // 刚发起的橙点：状态信息不用主色，橙色与主色区分开。
 class _FreshBadge extends StatelessWidget {
   @override

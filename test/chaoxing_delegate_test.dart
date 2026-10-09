@@ -88,9 +88,22 @@ void main() {
       if (!done()) fail('等待超时：$what');
     }
 
-    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingTicketPage(controller: owner)));
-    await settle('出示页投递完成并显示有效期', () => find.textContaining('10 分钟内有效').evaluate().isNotEmpty);
+    // 倒计时用可拨动的时钟：投递请求发出时起算 10 分钟，只会比中转早到点。
+    var now = DateTime.utc(2026, 10, 9, 12);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingTicketPage(controller: owner, now: () => now)));
+    await settle('出示页投递完成并显示倒计时', () => find.textContaining('后失效').evaluate().isNotEmpty);
+    expect(find.text('10:00 后失效 · '), findsOneWidget);
     final first = packs.packs.keys.single;
+
+    // 走到 9 分 59 秒还有效；过了 10 分钟盖上「已失效」，提示重新生成，别拿过期的码给人扫。
+    now = now.add(const Duration(minutes: 9, seconds: 59));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('0:01 后失效 · '), findsOneWidget);
+    expect(find.text('已失效'), findsNothing);
+    now = now.add(const Duration(seconds: 2));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('已失效'), findsOneWidget);
+    expect(find.text('代签码已失效，请重新生成'), findsOneWidget);
 
     await tester.ensureVisible(find.text('重新生成'));
     await tester.pump();
@@ -98,6 +111,9 @@ void main() {
     await settle('重新生成：旧码作废、中转上只剩新码', () => packs.packs.length == 1 && packs.packs.keys.single != first);
     expect(packs.packs.keys.single, isNot(first));
     expect(packs.calls.where((call) => call.endsWith('/revoke')), hasLength(1));
+    // 新码重新起算，遮罩揭开。
+    await settle('新码显示倒计时', () => find.text('10:00 后失效 · ').evaluate().isNotEmpty);
+    expect(find.text('已失效'), findsNothing);
 
     await tester.pumpWidget(const SizedBox());
     await settle('离开出示页：当前码作废', () => packs.packs.isEmpty);

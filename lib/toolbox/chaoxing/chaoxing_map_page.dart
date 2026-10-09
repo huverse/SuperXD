@@ -92,7 +92,7 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
   }
 
   // 范围圈的多边形逼近：36 个点连一圈（纬度每米约 1/111320 度，经度再除 cos 纬度）。
-  Set<Polygon> _rangePolygon() {
+  Set<Polygon> _rangePolygon(CampusPalette palette) {
     final center = widget.rangeCenter;
     final meters = widget.rangeMeters;
     if (center == null || meters == null) return const <Polygon>{};
@@ -111,8 +111,9 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
     return {
       Polygon(
         points: points,
-        fillColor: const Color.fromARGB(31, 59, 130, 246),
-        strokeColor: const Color.fromARGB(178, 59, 130, 246),
+        // 范围圈用当前配色的激活色（与开关、选中同一个色），不写死颜色。
+        fillColor: palette.accent.withValues(alpha: .12),
+        strokeColor: palette.accent.withValues(alpha: .7),
         strokeWidth: 2,
       ),
     };
@@ -161,7 +162,7 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
               onTap: (point) => setState(() => _picked = point),
               markers: picked == null ? const <Marker>{} : {Marker(position: picked, infoWindowEnable: false)},
               // 签到范围圈：老师定的签到点与半径画出来，选点时心里有数（没给范围就不画）。
-              polygons: _rangePolygon(),
+              polygons: _rangePolygon(palette),
             ),
           ),
           Align(
