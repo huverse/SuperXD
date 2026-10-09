@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
@@ -23,6 +24,7 @@ import 'package:superxd/social/social_store.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_refresh.dart';
+import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
 import 'fake_relay.dart';
@@ -208,6 +210,53 @@ void main() {
     await advance(tester);
     expect(find.text('对方已解除好友，无法发送'), findsOneWidget);
     expect(find.text('分享界面'), findsNothing);
+  });
+
+  testWidgets('会话卡片右上有可见的⋯：删除标警示色并确认，取消不删、确认后只删本机', (tester) async {
+    final relay = FakeRelay();
+    final (alice, bob) = (await tester.runAsync(() => friends(relay)))!;
+    await tester.runAsync(() async {
+      await bob.send(alice.deviceId!, const VideoShare(sourceUrl: 'https://v.example.com/9', title: '待删作品', author: '作者丙', platform: 'douyin', kind: 'video'));
+      await alice.refresh();
+    });
+    // 按 Android 的触区密度量（桌面测试平台默认紧凑密度，IconButton 只有 40）。
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    // 玻璃菜单的弹簧展开在测试时钟里收不住，关掉动画走静态路径（见验收记忆）。
+    await tester.pumpWidget(MediaQuery(data: MediaQueryData.fromView(tester.view).copyWith(disableAnimations: true), child: app(ConversationPage(social: alice, friendId: bob.deviceId!))));
+    await advanceUntil(tester, () => find.text('待删作品').evaluate().isNotEmpty);
+    final more = find.byTooltip('卡片操作');
+    expect(more, findsOneWidget);
+    final button = find.ancestor(of: more, matching: find.byType(IconButton));
+    expect(tester.getSize(button).height, greaterThanOrEqualTo(48));
+    // ⋯ 在卡片右上角：与卡片右缘、上缘贴齐，不压到卡片标题行的类型文字。
+    final card = find.ancestor(of: find.text('待删作品'), matching: find.byType(CampusSurface));
+    expect(tester.getTopRight(button).dx, closeTo(tester.getTopRight(card).dx - 2, 1));
+    expect(tester.getTopRight(button).dy, closeTo(tester.getTopRight(card).dy + 2, 1));
+    expect(tester.getRect(button).overlaps(tester.getRect(find.text('视频'))), isFalse);
+
+    Future<void> chooseDelete() async {
+      await tester.tap(more);
+      await advance(tester, 4);
+      final item = find.text('删除（仅本机）');
+      expect(item, findsOneWidget);
+      // 破坏性项用警示色。
+      expect(tester.widget<Text>(item).style?.color, CampusPalette.byId('sage').danger);
+      await tester.tap(item);
+      await advance(tester, 4);
+    }
+
+    await chooseDelete();
+    expect(find.text('删除这张卡片？'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await advance(tester, 4);
+    expect(find.text('待删作品'), findsOneWidget);
+
+    await chooseDelete();
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await advanceUntil(tester, () => find.text('待删作品').evaluate().isEmpty);
+    expect(relay.mailbox, isEmpty, reason: '删除只动本机，不发任何消息');
+    debugDefaultTargetPlatformOverride = null;
   });
 
   testWidgets('分享弹层：多选好友发送，每行原地显示已发送，按钮变为完成', (tester) async {
