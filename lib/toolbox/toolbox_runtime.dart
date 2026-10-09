@@ -15,6 +15,7 @@ import 'package:superxd/toolbox/short_video/bugpk_video_parser.dart';
 import 'package:superxd/toolbox/short_video/parse_coordinator.dart';
 import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
+import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_resource_manager.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
 
@@ -45,16 +46,21 @@ typedef ToolboxQrWatch =
       required ValueListenable<String?> status,
     });
 
+// 工具注册表：组合根传入（见 toolbox_catalog.dart），框架只按 ToolboxModule 认工具，不认识任何工具的类型。
+typedef ToolboxCatalog = List<ToolboxModule> Function(ToolboxRuntime runtime);
+
 class ToolboxRuntime with WidgetsBindingObserver {
   ToolboxRuntime({
+    required this.catalog,
     this.resourceSpecifications = const {},
     this.shareVideo,
     this.scanQrCode,
     this.watchQrCode,
     this.pickImage,
-    this.serviceOpeners = const {},
+    this.relayUrl,
   }) : coordinator = ParseCoordinator([BugpkVideoParser()]);
   ToolboxRuntime.testing({
+    required this.catalog,
     required ToolboxStore store,
     required ToolboxDownloadManager downloads,
     required ParseProvider parser,
@@ -66,7 +72,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     Map<String, ToolboxService>? services,
   }) : coordinator = ParseCoordinator([parser]),
        resourceSpecifications = downloads.resources.specifications,
-       serviceOpeners = const {} {
+       relayUrl = null {
     _external.addAll(services ?? const <String, ToolboxService>{});
     _store = store;
     _downloads = downloads;
@@ -78,10 +84,14 @@ class ToolboxRuntime with WidgetsBindingObserver {
   final ToolboxQrScan? scanQrCode;
   final ToolboxQrWatch? watchQrCode;
   final ToolboxImagePick? pickImage;
+  final ToolboxCatalog catalog;
+  late final List<ToolboxModule> modules = catalog(this);
 
-  // 每个工具自己负责打开与关闭自己的服务：框架只提供目录与公共能力，打开函数由组合根注入，
-  // 工具页面首次使用时经 service 取用（打开一次后缓存到应用退出）。
-  final Map<String, Future<ToolboxService> Function(Directory base)> serviceOpeners;
+  // 自建中转（私信与学习通代签共用）的地址，只从构建参数来；没配时为空，用到它的工具自己退化。
+  final Uri? relayUrl;
+
+  // 每个工具自己负责打开、关闭与清除自己的服务：框架只提供目录与公共能力，打开函数登记在注册表，
+  // 工具页面首次使用时经 service 取用（打开一次后缓存到应用退出，或清除数据时关掉）。
   final _external = <String, ToolboxService>{};
   final _opened = <String, Future<ToolboxService>>{};
   Directory? _base;
@@ -92,18 +102,28 @@ class ToolboxRuntime with WidgetsBindingObserver {
   ToolboxDownloadManager get downloads => _downloads!;
 
   Future<ToolboxService> _service(String id) => _opened.putIfAbsent(id, () {
-    final opener = serviceOpeners[id];
-    if (opener == null) throw ToolboxException('这个工具的服务还没有配置');
+    final opener = modules.where((module) => module.id == id).firstOrNull?.openService;
+    if (opener == null) throw const ToolboxException('这个工具的服务还没有配置');
     if (_base == null) throw const ToolboxException('百宝箱还没有准备好，稍后再试');
-    return opener(_base!);
+    return opener(ToolboxServiceContext(base: _base!, store: store, relayUrl: relayUrl));
   });
 
-  // 取一个工具的服务：组合根没注册 opener 或还没初始化完成时抛错。
+  // 取一个工具的服务：注册表里没登记 openService 或还没初始化完成时抛错。
   // 测试注入的服务同步可得（SynchronousFuture）：await 它不占事件循环一轮，widget 测试里裸 await 普通 Future 会挂死。
   Future<T> service<T extends ToolboxService>(String id) {
     final external = _external[id];
     if (external != null) return SynchronousFuture<T>(external as T);
     return _service(id).then((service) => service as T);
+  }
+
+  // 清除一个工具在本机的全部数据：服务自己清库与凭据并关闭，框架再撤掉它的同意记录（按工具 id 记）。
+  // 清完从缓存里拿掉，下次打开工具时重新打开一份空的服务。
+  Future<void> clearData(String id) async {
+    final service = await this.service<ToolboxService>(id);
+    _opened.remove(id);
+    _external.remove(id);
+    await service.clearData();
+    await store.revokeConsent(id);
   }
 
   // [人工决策-2026-09-27 20:12:08] 百宝箱免教务登录，设备级任务独立于账号；不读取教务凭据，切账号不销毁下载。

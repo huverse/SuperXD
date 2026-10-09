@@ -11,6 +11,9 @@ abstract interface class ChaoxingVault {
   Future<Map<String, String>?> readCookies(String phoneNumber);
   Future<void> writeCookies(String phoneNumber, Map<String, String> cookies);
   Future<void> delete(String phoneNumber);
+
+  // 清除本工具的全部凭据（清除数据时用）。
+  Future<void> deleteAll();
 }
 
 class SecureChaoxingVault implements ChaoxingVault {
@@ -54,6 +57,10 @@ class SecureChaoxingVault implements ChaoxingVault {
     await _storage.delete(key: _passwordKey(phoneNumber));
     await _storage.delete(key: _cookieKey(phoneNumber));
   }
+
+  // 只删 superxd_chaoxing 命名空间里的项（插件按命名空间隔离数据），不碰教务凭据与私信身份。
+  @override
+  Future<void> deleteAll() => _storage.deleteAll();
 }
 
 class MemoryChaoxingVault implements ChaoxingVault {
@@ -80,5 +87,11 @@ class MemoryChaoxingVault implements ChaoxingVault {
   Future<void> delete(String phoneNumber) async {
     passwords.remove(phoneNumber);
     cookies.remove(phoneNumber);
+  }
+
+  @override
+  Future<void> deleteAll() async {
+    passwords.clear();
+    cookies.clear();
   }
 }

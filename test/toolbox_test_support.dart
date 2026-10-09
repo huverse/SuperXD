@@ -12,6 +12,7 @@ import 'package:superxd/toolbox/short_video/parse_result.dart';
 import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_resource_manager.dart';
+import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
 
@@ -107,6 +108,7 @@ class ToolboxFixture {
     );
     await manager.initialize();
     runtime = ToolboxRuntime.testing(
+      catalog: toolboxCatalog,
       store: store,
       downloads: manager,
       parser: parser,

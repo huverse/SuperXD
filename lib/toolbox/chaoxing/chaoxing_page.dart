@@ -64,7 +64,8 @@ Future<void> importChaoxingTicket(
 }
 
 // 首次登录前的第三方说明；条款版本变了要重新征得同意（第 2 版加了设备信息上传与 OAID）。
-const chaoxingConsentService = 'chaoxing';
+// 同意记录按工具 id 存，清除数据时框架按同一个 id 撤掉。
+const chaoxingConsentService = ChaoxingService.serviceId;
 const chaoxingConsentVersion = 'chaoxing-sign-2';
 
 class ChaoxingPage extends StatefulWidget {

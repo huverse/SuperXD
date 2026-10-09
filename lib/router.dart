@@ -20,12 +20,11 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/toolbox/short_video/short_video_page.dart';
-import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, CampusReminders? reminders, SocialService? social}) {
-  final tools = toolboxCatalog(toolbox);
+  final tools = toolbox.modules;
   // 好友分享的视频在百宝箱短视频页打开并直接解析（页面层不依赖百宝箱，由这里接上）。
   void openVideo(BuildContext context, VideoShare video) => Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(
     builder: (_) => ShortVideoPage(runtime: toolbox, initialInput: video.sourceUrl, autoParse: true),

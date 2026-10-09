@@ -30,6 +30,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
+import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 import 'chaoxing_fake_hub.dart';
@@ -160,6 +161,7 @@ void main() {
 
 
   ToolboxRuntime buildRuntime({ToolboxQrScan? scanQrCode, ChaoxingPackHub? hub}) => ToolboxRuntime.testing(
+    catalog: toolboxCatalog,
     store: fixture.store,
     downloads: fixture.manager,
     parser: fixture.parser,
@@ -939,6 +941,43 @@ void main() {
     await tester.pump();
     await waitUntil(tester, () => find.byType(ChaoxingPage).evaluate().isEmpty);
     expect(fake.calls.skip(callsBefore), isEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('百宝箱首页清除学习通数据：右滑或⋯都只揭示入口，取消不动；确认后删库、删凭据、撤同意', (tester) async {
+    usePhoneScreen(tester);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    await tester.pumpWidget(const SizedBox());
+    final service = await runtime.service<ChaoxingService>(ChaoxingService.serviceId);
+    final vault = service.accounts.vault as MemoryChaoxingVault;
+    final database = File(path.join(fixture.directory.path, 'chaoxing.db'));
+    expect(vault.passwords, isNotEmpty);
+    expect(database.existsSync(), isTrue);
+    expect(await tester.runAsync(() => fixture.store.consent(chaoxingConsentService, chaoxingConsentVersion)), isTrue);
+
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ToolboxPage(runtime: runtime)));
+    await tester.pumpAndSettle();
+    // 右滑只揭示「清除数据」，点了先确认；取消什么都不删。
+    await tester.drag(find.text('学习通签到'), const Offset(260, 0));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('清除数据'));
+    await tester.pumpAndSettle();
+    expect(find.text('清除学习通签到的数据？'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, '取消'));
+    await tester.pumpAndSettle();
+    expect(vault.passwords, isNotEmpty);
+    expect(database.existsSync(), isTrue);
+
+    // 右侧⋯同样进确认；确认后清掉本工具在本机的全部数据。
+    await tester.tap(find.byTooltip('清除数据'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '清除'));
+    await waitUntil(tester, () => find.text('已清除学习通签到的数据').evaluate().isNotEmpty);
+    expect(vault.passwords, isEmpty);
+    expect(vault.cookies, isEmpty);
+    expect(database.existsSync(), isFalse);
+    expect(await tester.runAsync(() => fixture.store.consent(chaoxingConsentService, chaoxingConsentVersion)), isFalse);
     await tester.pumpWidget(const SizedBox());
   });
 

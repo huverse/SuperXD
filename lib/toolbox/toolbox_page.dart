@@ -8,7 +8,6 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
-import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
@@ -24,7 +23,7 @@ class ToolboxPage extends StatefulWidget {
 
 class _ToolboxPageState extends State<ToolboxPage> {
   late Future<void> _ready = widget.runtime.initialize();
-  late final _modules = widget.modules ?? toolboxCatalog(widget.runtime);
+  late final _modules = widget.modules ?? widget.runtime.modules;
   final _busy = <String>{};
   String? _error;
 
@@ -63,6 +62,21 @@ class _ToolboxPageState extends State<ToolboxPage> {
         module.id,
         () => widget.runtime.downloads.uninstall(module.id),
       );
+    }
+  }
+
+  // [人工决策-2026-10-09 20:32:45] 有自己本机数据的工具（登记了 openService）可「清除数据」：同 iOS 删除 App 时连数据一起删。
+  // 不叫卸载（轻量代码随应用发布，不伪装可卸载）；入口与资源卸载同形：右侧⋯与右滑揭示，都要点确认。用户选定「框架统一契约」。
+  Future<void> _clearData(ToolboxModule module) async {
+    final agreed = await showCampusConfirm(
+      context,
+      title: '清除${module.name}的数据？',
+      message: '会删除这个工具在本机保存的账号、密码与设置，再用时要重新登录；已保存到下载目录的文件保留。',
+      action: '清除', destructive: true,
+    );
+    if (agreed && mounted) {
+      await _operation(module.id, () => widget.runtime.clearData(module.id));
+      if (mounted && _error == null) showCampusToast(context, '已清除${module.name}的数据');
     }
   }
 
@@ -167,7 +181,13 @@ class _ToolboxPageState extends State<ToolboxPage> {
               ],
             ),
           ),
-          if (module.resource == null)
+          if (module.resource == null && module.openService != null)
+            IconButton(
+              tooltip: '清除数据',
+              onPressed: busy ? null : () => _clearData(module),
+              icon: const CampusIcon(CampusIcons.manage),
+            )
+          else if (module.resource == null)
             const CampusIcon(CampusIcons.next)
           else if (installed)
             IconButton(
@@ -196,8 +216,11 @@ class _ToolboxPageState extends State<ToolboxPage> {
         ],
       )),
     );
-    if (module.resource == null || !installed) return card;
+    final uninstallable = module.resource != null && installed;
+    final clearable = module.openService != null;
+    if (!uninstallable && !clearable) return card;
     // [人工决策-2026-09-27 20:12:08] 保留右滑但仅揭示卸载按钮，必须点击确认；不以滑动距离直接删除。
+    // 清除数据沿用同一规则：右滑只揭示按钮，点了还要确认。
     return Slidable(
       key: ValueKey(module.id),
       startActionPane: ActionPane(
@@ -205,11 +228,11 @@ class _ToolboxPageState extends State<ToolboxPage> {
         extentRatio: .28,
         children: [
           SlidableAction(
-            onPressed: busy ? null : (_) => _uninstall(module),
+            onPressed: busy ? null : (_) => uninstallable ? _uninstall(module) : _clearData(module),
             backgroundColor: colors.danger,
             foregroundColor: colors.onDanger,
             icon: CampusIcons.delete,
-            label: '卸载',
+            label: uninstallable ? '卸载' : '清除数据',
           ),
         ],
       ),

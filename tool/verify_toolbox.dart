@@ -18,6 +18,7 @@ import 'package:superxd/toolbox/media_resource.dart';
 import 'package:superxd/toolbox/short_video/parse_result.dart';
 import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/toolbox_resource_manager.dart';
+import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
 import 'package:superxd/domain/campus_log.dart';
@@ -48,6 +49,7 @@ Future<void> main() async {
   );
   await manager.initialize();
   final runtime = ToolboxRuntime.testing(
+    catalog: toolboxCatalog,
     store: store,
     downloads: manager,
     parser: _UnusedParser(),
