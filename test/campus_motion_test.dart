@@ -222,6 +222,27 @@ void main() {
     expect(tester.binding.hasScheduledFrame, isTrue);
     await tester.pumpWidget(const SizedBox());
   });
+  testWidgets('整页加载样式直接放进页面主体也在正中，行内样式不另居中', (tester) async {
+    await tester.pumpWidget(host(const CampusLoading(label: '正在翻群聊…', network: true), reduced: true));
+    final screen = tester.getRect(find.byType(Scaffold));
+    final loader = tester.getCenter(find.byType(CampusLoader));
+    expect(loader.dx, closeTo(screen.center.dx, 1));
+    // 加载曲线在文字上方，整块（曲线加文字）的中心落在页面正中。
+    final block = tester.getRect(find.descendant(of: find.byType(CampusLoading), matching: find.byType(Padding)).first);
+    expect(block.center.dy, closeTo(screen.center.dy, 1));
+    await tester.pumpWidget(host(const Align(alignment: Alignment.topLeft, child: CampusLoading(label: '正在读取…', inline: true)), reduced: true));
+    expect(tester.getTopLeft(find.byType(CampusLoading)), Offset.zero);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('长等待说明写清在等谁：默认教务，学习通与中转服务的页面各写各的', (tester) async {
+    await tester.pumpWidget(host(const CampusLoading(label: '正在翻群聊…', network: true, remote: '学习通'), reduced: true));
+    await tester.pump(const Duration(seconds: 9));
+    expect(find.textContaining('仍在等待学习通响应'), findsOneWidget);
+    expect(find.textContaining('教务'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('长等待是说明不是假失败，文案变化重置计时', (tester) async {
     await tester.pumpWidget(
       host(const CampusLoading(label: '读取教务', network: true), reduced: true),

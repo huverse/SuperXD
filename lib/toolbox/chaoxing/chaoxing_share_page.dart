@@ -156,7 +156,7 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
                         child: ticket == null
                             ? Center(
                                 child: _error == null
-                                    ? const CampusLoading(label: '正在生成代签码', network: true)
+                                    ? const CampusLoading(label: '正在生成代签码', network: true, remote: '中转服务')
                                     : Text(_error!, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: light.danger)),
                               )
                             : Stack(

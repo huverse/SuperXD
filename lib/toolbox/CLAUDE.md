@@ -97,7 +97,7 @@
   - chaoxing_group_page.dart：群聊里的签到页，按群翻出只发在群里的签到，逐条走同一套签到弹层；刷新保留旧列表、顶栏按钮原地转，首次读不到给原因与重试，已有内容时刷新失败只给提示条。
   - chaoxing_history_page.dart：往期签到页，列已结束的活动（status 不为 1），照样能签、签到页提示可能记为迟到；复用主列表那一次拉取的数据，不额外请求。
   - chaoxing_course_page.dart：按课程查看，课程可搜课名、老师与学校，可置顶；同名课程合并成一项，点进去看全部签到，进行中与已结束分两组；详情页刷新与出错的处理同群聊页。
-  - chaoxing_activity_card.dart：各页共用的活动卡片、分组标题与签到入口 ChaoxingSignLauncher（开签到弹层、签完给提示并刷新），以及整页读取失败的原因加重试 ChaoxingLoadError、二级页顶栏的刷新按钮 ChaoxingRefreshButton（刷新中原地转）。不知道开始时间的不亮刚发起橙点，时间行有截止写截止、都没有就不显示。
+  - chaoxing_activity_card.dart：各页共用的活动卡片、分组标题与签到入口 ChaoxingSignLauncher（开签到弹层、签完给提示并刷新），以及整页读取失败的原因加重试 ChaoxingLoadError、二级页顶栏的刷新按钮 ChaoxingRefreshButton（已有内容时刷新中原地转；首次读取时页面正中已在转，按钮只暂不可点，不让两段加载动画同时演）。不知道开始时间的不亮刚发起橙点，时间行有截止写截止、都没有就不显示。
   - chaoxing_settings_sheet.dart：签到设置弹层（学校单位、模拟的客户端），以及修复账号时重新输密码的对话框。
   - chaoxing_sign_notices.dart：签到弹层里的时间提示 ChaoxingTimeNotice（已结束可能记迟到、发布超过 6 小时提醒没选错，不知道发布时间的不提醒）与签退提示 ChaoxingSignOutNotice（去主签到或去签退）。
   - chaoxing_qr_feed.dart：连续扫码时的最新二维码 ChaoxingQrFeed：签到要新码时有比过期那个新的就直接给，没有就等下一次扫到，取景页关掉以「已取消」结束。

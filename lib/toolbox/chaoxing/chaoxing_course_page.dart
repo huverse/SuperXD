@@ -203,11 +203,12 @@ class _ChaoxingCourseDetailPageState extends State<ChaoxingCourseDetailPage> {
       appBar: AppBar(
         title: Text(widget.group.name),
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
-        actions: [ChaoxingRefreshButton(loading: _loading, onRefresh: () => _load())],
+        // 首次读取时页面中间已经在转，顶栏按钮不再同时转（不让两段加载动画同时演），只是暂不可点。
+        actions: [ChaoxingRefreshButton(loading: _loading && _activities != null, onRefresh: _loading ? null : () => _load())],
       ),
       body: switch ((_error, activities)) {
         (final String message, null) => ChaoxingLoadError(message: message, onRetry: () => _load()),
-        (_, null) => const CampusLoading(label: '正在读取签到活动…', network: true),
+        (_, null) => const CampusLoading(label: '正在读取签到活动…', network: true, remote: '学习通'),
         _ => _lazyList([
               if (widget.group.courses.length > 1 || _failures > 0)
                 () => Padding(
