@@ -64,7 +64,8 @@ Future<void> importChaoxingTicket(
 }
 
 // 首次登录前的第三方说明；条款版本变了要重新征得同意（第 2 版加了设备信息上传与 OAID）。
-const chaoxingConsentService = 'chaoxing';
+// 同意记录按工具 id 存，清除数据时框架按同一个 id 撤掉。
+const chaoxingConsentService = ChaoxingService.serviceId;
 const chaoxingConsentVersion = 'chaoxing-sign-2';
 
 class ChaoxingPage extends StatefulWidget {
@@ -310,19 +311,29 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
         ),
       ),
       body: switch ((controller, _startError)) {
+        // 读取、登录与列表三态之间淡出淡入（同成绩页切换），不整页突变；内容区没有玻璃，可以整体改不透明度。
         (final ChaoxingController value, _) => ListenableBuilder(
           listenable: value,
-          builder: (context, _) => switch (value.status) {
-            ChaoxingStatus.loading => const CampusLoading(label: '正在读取账号…'),
-            ChaoxingStatus.signedOut => ChaoxingLoginForm(onSubmit: _signIn, busy: value.busy),
-            ChaoxingStatus.ready => _readyBody(context, value),
-          },
-        ),
-        (null, final String message) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(message, style: const TextStyle(fontSize: 16)),
+          builder: (context, _) => AnimatedSwitcher(
+            duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 250),
+            switchInCurve: Curves.easeOutCubic,
+            switchOutCurve: Curves.easeInCubic,
+            child: KeyedSubtree(
+              key: ValueKey(value.status),
+              child: switch (value.status) {
+                ChaoxingStatus.loading => const CampusLoading(label: '正在读取账号…'),
+                ChaoxingStatus.signedOut => ChaoxingLoginForm(onSubmit: _signIn, busy: value.busy),
+                ChaoxingStatus.ready => _readyBody(context, value),
+              },
+            ),
           ),
+        ),
+        (null, final String message) => ChaoxingLoadError(
+          message: message,
+          onRetry: () {
+            setState(() => _startError = null);
+            _start();
+          },
         ),
         _ => const CampusLoading(label: '正在准备…'),
       },

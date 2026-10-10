@@ -14,6 +14,7 @@ import 'package:superxd/toolbox/short_video/short_video_page.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
+import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/toolbox/media_resource.dart';
 import 'package:superxd/toolbox/short_video/parse_result.dart';
 import 'package:superxd/toolbox/short_video/media_result_page.dart';
@@ -42,6 +43,16 @@ Future<void> waitUntil(WidgetTester tester, bool Function() done) async {
   expect(done(), isTrue);
 }
 
+// 记录打开与清除次数的工具服务，测框架的服务生命周期。
+class _CountingService implements ToolboxService {
+  var cleared = false;
+  var closed = false;
+  @override
+  Future<void> close() async => closed = true;
+  @override
+  Future<void> clearData() async => cleared = true;
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late ToolboxFixture fixture;
@@ -51,6 +62,42 @@ void main() {
   });
   tearDown(() async {
     await fixture.close();
+  });
+
+  test('清除数据：服务自己清、撤掉按工具 id 记的同意，下次取用重新打开一份；打开失败不留缓存，重试能再打开', () async {
+    final opened = <_CountingService>[];
+    var failNext = true;
+    Future<ToolboxService> open(ToolboxServiceContext context) async {
+      if (failNext) {
+        failNext = false;
+        throw const ToolboxException('打开失败');
+      }
+      final service = _CountingService();
+      opened.add(service);
+      return service;
+    }
+
+    final runtime = ToolboxRuntime.testing(
+      catalog: (_) => [ToolboxModule(id: 'counting', name: '计数工具', icon: CampusIcons.toolbox, builder: (_) => const SizedBox(), openService: open)],
+      store: fixture.store,
+      downloads: fixture.manager,
+      parser: fixture.parser,
+      base: fixture.directory,
+    );
+    // 第一次打开失败：不把失败的结果缓存住，再取一次就真的重新打开。
+    await expectLater(runtime.service<ToolboxService>('counting'), throwsA(isA<ToolboxException>()));
+    final first = await runtime.service<_CountingService>('counting');
+    expect(identical(await runtime.service<_CountingService>('counting'), first), isTrue);
+
+    await fixture.store.grantConsent('counting', 'v1');
+    await fixture.store.grantConsent('other', 'v1');
+    await runtime.clearData('counting');
+    expect(first.cleared, isTrue);
+    expect(await fixture.store.consent('counting', 'v1'), isFalse);
+    expect(await fixture.store.consent('other', 'v1'), isTrue, reason: '只撤本工具的同意');
+    final reopened = await runtime.service<_CountingService>('counting');
+    expect(identical(reopened, first), isFalse);
+    expect(opened, hasLength(2));
   });
 
   testWidgets('轻量工具直接可用，不显示虚假的资源下载安装', (tester) async {

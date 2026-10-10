@@ -23,6 +23,7 @@ class ChaoxingGroupPage extends StatefulWidget {
 class _ChaoxingGroupPageState extends State<ChaoxingGroupPage> {
   List<ChaoxingActivity>? _activities;
   String? _error;
+  bool _loading = false;
 
   @override
   void initState() {
@@ -30,9 +31,11 @@ class _ChaoxingGroupPageState extends State<ChaoxingGroupPage> {
     _load();
   }
 
+  // 刷新保留旧列表（局部刷新不清空、不丢滚动位置），只在顶栏按钮上原地转。
   Future<void> _load() async {
+    if (_loading) return;
     setState(() {
-      _activities = null;
+      _loading = true;
       _error = null;
     });
     try {
@@ -40,10 +43,22 @@ class _ChaoxingGroupPageState extends State<ChaoxingGroupPage> {
       if (!mounted) return;
       setState(() => _activities = activities);
     } on ChaoxingFailure catch (failure) {
-      if (mounted) setState(() => _error = failure.message);
+      _failed(failure.message);
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=group errorType=${failure.runtimeType}\n$stack');
-      if (mounted) setState(() => _error = '群聊没读到，请稍后重试');
+      _failed('群聊没读到，请稍后重试');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // 还没有内容时整页显示原因与重试；已有内容时只给提示条，旧列表留着。
+  void _failed(String message) {
+    if (!mounted) return;
+    if (_activities == null) {
+      setState(() => _error = message);
+    } else {
+      showCampusToast(context, message);
     }
   }
 
@@ -59,21 +74,10 @@ class _ChaoxingGroupPageState extends State<ChaoxingGroupPage> {
           onPressed: () => Navigator.pop(context),
           icon: const CampusIcon(CampusIcons.back),
         ),
-        actions: [
-          IconButton(
-            tooltip: '刷新',
-            onPressed: _activities == null && _error == null ? null : () => _load(),
-            icon: const CampusIcon(CampusIcons.sync),
-          ),
-        ],
+        actions: [ChaoxingRefreshButton(loading: _loading, onRefresh: () => _load())],
       ),
       body: switch ((_error, activities)) {
-        (final String message, _) => Center(
-          child: Padding(
-            padding: const EdgeInsets.all(24),
-            child: Text(message, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: palette.danger)),
-          ),
-        ),
+        (final String message, null) => ChaoxingLoadError(message: message, onRetry: () => _load()),
         (_, null) => const CampusLoading(label: '正在翻群聊…', network: true),
         (_, final List<ChaoxingActivity> items) => CampusScrollFade(
           child: ListView(

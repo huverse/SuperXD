@@ -121,6 +121,9 @@ class ToolboxStore {
       'version': version,
     }, conflictAlgorithm: ConflictAlgorithm.replace);
   }
+  Future<void> revokeConsent(String providerId) async {
+    await _database.delete('consent', where: 'service = ?', whereArgs: [providerId]);
+  }
 
   Future<String?> preference(String key) async =>
       (await _database.query(

@@ -157,7 +157,7 @@ class _ConversationPageState extends State<ConversationPage> {
   Future<void> _messageMenu(BuildContext anchor, SocialMessage message) async {
     final action = await showCampusMenu<String>(anchor, items: [
       if (message.state == MessageState.failed) const CampusMenuItem(value: 'retry', label: '重新发送', icon: CampusIcons.sync),
-      const CampusMenuItem(value: 'delete', label: '删除（仅本机）', icon: CampusIcons.delete),
+      const CampusMenuItem(value: 'delete', label: '删除（仅本机）', icon: CampusIcons.delete, destructive: true),
     ]);
     if (!mounted) return;
     try {
@@ -165,7 +165,8 @@ class _ConversationPageState extends State<ConversationPage> {
         case 'retry':
           await _social.retry(message.id);
         case 'delete':
-          await _social.deleteMessage(message.id);
+          final confirmed = await showCampusConfirm(context, title: '删除这张卡片？', message: '只删本机的记录，对方那边不受影响。', action: '删除', destructive: true);
+          if (confirmed && mounted) await _social.deleteMessage(message.id);
       }
     } catch (error, stack) {
       campusLog('[Conversation] action=message_menu errorType=${error.runtimeType}\n$stack');
@@ -228,22 +229,32 @@ class _ConversationPageState extends State<ConversationPage> {
       padding: const EdgeInsets.symmetric(vertical: 6),
       child: Column(crossAxisAlignment: alignment, children: [
         if (time != null) SizedBox(width: double.infinity, child: time),
-        Builder(builder: (anchor) => ConstrainedBox(
+        // [人工决策-2026-10-09 20:32:45] 卡片右上加可见的⋯（重新发送、删除），删除标警示色并确认；长按仍可打开同一菜单。
+        // 以前只能长按，入口看不见；用户选定在卡片角上加⋯（同课程管理卡片、iOS 与鸿蒙列表的更多按钮）。
+        ConstrainedBox(
           constraints: BoxConstraints(maxWidth: maxWidth),
-          child: GestureDetector(
+          child: Builder(builder: (anchor) => GestureDetector(
             onLongPress: () => _messageMenu(anchor, message),
-            child: CampusSurface(
-              radius: 20,
-              child: ShareCardView(
-                card: message.card!,
-                outgoing: message.outgoing,
-                onOpenSchedule: () => _open(message),
-                onApplyAppearance: () => _open(message),
-                onOpenVideo: () => _open(message),
+            child: Stack(children: [
+              CampusSurface(
+                radius: 20,
+                child: ShareCardView(
+                  card: message.card!,
+                  outgoing: message.outgoing,
+                  onOpenSchedule: () => _open(message),
+                  onApplyAppearance: () => _open(message),
+                  onOpenVideo: () => _open(message),
+                ),
               ),
-            ),
-          ),
-        )),
+              // 48 触区贴卡片右上角，图标与标题行同高；卡片标题行左对齐且很短，不会被盖住。
+              PositionedDirectional(top: 2, end: 2, child: Builder(builder: (menuAnchor) => IconButton(
+                tooltip: '卡片操作',
+                onPressed: () => _messageMenu(menuAnchor, message),
+                icon: CampusIcon(CampusIcons.manage, size: 20, color: colors.onSurfaceVariant),
+              ))),
+            ]),
+          )),
+        ),
         if (message.outgoing && message.state != MessageState.sent) Padding(padding: const EdgeInsets.only(top: 6, left: 4, right: 4), child: _status(message, colors)),
       ]),
     );
@@ -288,10 +299,9 @@ class _ConversationPageState extends State<ConversationPage> {
                   // 两个操作等宽并排。
                   : Row(children: [
                       if (widget.gateway != null) ...[
-                        Expanded(child: Builder(builder: (anchor) => FilledButton.icon(
+                        Expanded(child: Builder(builder: (anchor) => FilledButton(
                           onPressed: _preparing ? null : () => _shareSchedule(anchor),
-                          icon: const CampusIcon(CampusIcons.todaySelected),
-                          label: CampusBusyContent(busy: _preparing, label: '分享课表', busyLabel: '读取课表'),
+                          child: CampusBusyContent(busy: _preparing, label: '分享课表', busyLabel: '读取课表', icon: const CampusIcon(CampusIcons.todaySelected)),
                         ))),
                         const SizedBox(width: 12),
                       ],

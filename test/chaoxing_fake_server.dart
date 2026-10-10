@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:typed_data';
 
@@ -63,6 +64,9 @@ class FakeChaoxing {
   String? userInfoBody;
   String? clientId;
   List<Map<String, Object?>> unitConfigInfos = [];
+
+  // 设上时活动列表的响应卡在这里，测「刷新中」的中间状态；放行时 complete。
+  Completer<void>? activityListGate;
 
   // 活动列表响应 data 级别的 ext（preSign 回传的是它）。
   Map<String, Object?> listExt = {'a': 1};
@@ -215,6 +219,7 @@ class FakeChaoxing {
     if (request.url.host == 'mobilelearn.chaoxing.com') {
       switch (path) {
         case '/v2/apis/active/student/activelist':
+          await activityListGate?.future;
           return _json({'data': {'activeList': activities, 'ext': listExt}});
         case '/v2/apis/active/getPPTActiveInfo':
           final activeId = int.tryParse(request.url.queryParameters['activeId'] ?? '');

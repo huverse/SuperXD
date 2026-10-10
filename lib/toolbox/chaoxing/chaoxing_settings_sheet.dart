@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -208,10 +209,9 @@ class _ChaoxingSettingsSheetState extends State<_ChaoxingSettingsSheet> {
                         decoration: const InputDecoration(labelText: '客户端包名（可不填）'),
                       ),
                       const SizedBox(height: 12),
-                      FilledButton.icon(
+                      FilledButton(
                         onPressed: _saving ? null : () => _saveCustom(),
-                        icon: const CampusIcon(CampusIcons.check),
-                        label: Text(_saving ? '保存中' : '保存'),
+                        child: CampusBusyContent(busy: _saving, label: '保存', busyLabel: '保存中', icon: const CampusIcon(CampusIcons.check)),
                       ),
                     ],
                     if (_error != null) ...[

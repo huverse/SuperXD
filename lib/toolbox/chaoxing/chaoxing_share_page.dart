@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
@@ -8,9 +10,11 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 
 // 出示代签码：二维码里只有一次性取件号与密钥，凭据密文放在自建中转，对方扫走即取即删。
@@ -19,8 +23,10 @@ Future<void> showChaoxingTicketPage(BuildContext context, {required ChaoxingCont
     Navigator.of(context).push<void>(CampusPageRoute(builder: (_) => ChaoxingTicketPage(controller: controller)));
 
 class ChaoxingTicketPage extends StatefulWidget {
-  const ChaoxingTicketPage({super.key, required this.controller});
+  const ChaoxingTicketPage({super.key, required this.controller, this.now = DateTime.now});
   final ChaoxingController controller;
+  // 倒计时用的时钟，测试注入可拨动的时钟。
+  final DateTime Function() now;
   @override
   State<ChaoxingTicketPage> createState() => _ChaoxingTicketPageState();
 }
@@ -33,6 +39,11 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
   bool _creating = false;
   List<ChaoxingFaceImage> _faces = const [];
   final _attached = <String>{};
+  // 当前这张码在本地算的到期时刻（同加好友二维码：倒计时 m:ss，到点盖上「已失效」）。
+  DateTime? _expiresAt;
+  Timer? _ticker;
+
+  int get _remaining => _expiresAt == null ? 0 : (_expiresAt!.difference(widget.now()).inMilliseconds / 1000).ceil();
 
   @override
   void initState() {
@@ -43,6 +54,7 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
 
   @override
   void dispose() {
+    _ticker?.cancel();
     _revoke(_issued);
     super.dispose();
   }
@@ -79,13 +91,24 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
       _error = null;
     });
     try {
+      final issuedAt = widget.now();
       final issued = await widget.controller.delegate.createTicket(faceObjectIds: _attached.toList());
       if (!mounted) {
         _revoke(issued);
         return;
       }
       final previous = _issued;
-      setState(() => _issued = issued);
+      setState(() {
+        _issued = issued;
+        _expiresAt = issuedAt.add(chaoxingTicketLifetime);
+      });
+      _ticker?.cancel();
+      _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() {});
+        // 到点后不再每秒重画。
+        if (_remaining <= 0) _ticker?.cancel();
+      });
       _revoke(previous);
     } on ChaoxingFailure catch (failure) {
       if (mounted) setState(() => _error = failure.message);
@@ -103,6 +126,7 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
     // 二维码固定画在浅色配色的底上：深色模式下反色的二维码不少扫码器认不出。
     final light = CampusPalette.byId(colors.id);
     final ticket = _ticket;
+    final expired = ticket != null && _remaining <= 0;
     final secondary = TextStyle(fontSize: 14, color: colors.onSurfaceVariant);
     return Scaffold(
       appBar: AppBar(
@@ -112,7 +136,7 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
       body: CampusScrollFade(
         child: SafeArea(
           child: ListView(
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.fromLTRB(16, 20, 16, 20),
             children: [
               CampusSurface(
                 padding: const EdgeInsets.all(20),
@@ -135,26 +159,41 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
                                     ? const CampusLoading(label: '正在生成代签码', network: true)
                                     : Text(_error!, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: light.danger)),
                               )
-                            : Semantics(
-                                label: '我的代签二维码',
-                                image: true,
-                                child: PrettyQrView.data(
-                                  data: ticket,
-                                  decoration: PrettyQrDecoration(
-                                    shape: PrettyQrSmoothSymbol(color: light.onSurface, roundFactor: .5),
-                                    quietZone: PrettyQrQuietZone.standard,
+                            : Stack(
+                                fit: StackFit.expand,
+                                children: [
+                                  Semantics(
+                                    label: '我的代签二维码',
+                                    image: true,
+                                    child: PrettyQrView.data(
+                                      data: ticket,
+                                      decoration: PrettyQrDecoration(
+                                        shape: PrettyQrSmoothSymbol(color: light.onSurface, roundFactor: .5),
+                                        quietZone: PrettyQrQuietZone.standard,
+                                      ),
+                                    ),
                                   ),
-                                ),
+                                  // 过期的码盖住，别让人拿着失效的码给对方扫。
+                                  if (expired)
+                                    ColoredBox(
+                                      color: light.surface.withValues(alpha: .94),
+                                      child: Center(child: Text('已失效', style: TextStyle(fontSize: 16, color: light.onSurface))),
+                                    ),
+                                ],
                               ),
                       ),
                     ),
                     const SizedBox(height: 12),
-                    Text(ticket == null ? ' ' : '10 分钟内有效，被扫走、重新生成或离开本页即失效', style: secondary),
+                    if (ticket == null)
+                      Text(' ', style: secondary)
+                    else if (expired)
+                      Text('代签码已失效，请重新生成', style: secondary)
+                    else
+                      DotSeparatedText('${_remaining ~/ 60}:${(_remaining % 60).toString().padLeft(2, '0')} 后失效 · 被扫走或离开本页也会失效', style: secondary),
                     const SizedBox(height: 8),
-                    FilledButton.icon(
+                    FilledButton(
                       onPressed: _creating ? null : _create,
-                      icon: const CampusIcon(CampusIcons.sync),
-                      label: CampusBusyContent(busy: _creating, label: '重新生成', busyLabel: '正在生成'),
+                      child: CampusBusyContent(busy: _creating, label: '重新生成', busyLabel: '正在生成', icon: const CampusIcon(CampusIcons.sync)),
                     ),
                   ],
                 ),

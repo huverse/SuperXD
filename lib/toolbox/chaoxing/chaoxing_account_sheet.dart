@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
@@ -64,6 +65,37 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
     }
   }
 
+  // [人工决策-2026-10-09 20:32:45] 账号管理每行右侧⋯：改备注名、删除（警示色并确认），删代签账号不用先切过去；
+  // 整行点按改备注名。同课程管理卡片的规范，用户选定。
+  Future<void> _menu(BuildContext anchor, ChaoxingAccountRecord record) async {
+    final action = await showCampusMenu<String>(anchor, items: const [
+      CampusMenuItem(value: 'rename', label: '改备注名', icon: CampusIcons.edit),
+      CampusMenuItem(value: 'remove', label: '删除', icon: CampusIcons.delete, destructive: true),
+    ]);
+    if (!mounted) return;
+    if (action == 'rename') await _rename(record);
+    if (action == 'remove') await _remove(record);
+  }
+
+  Future<void> _remove(ChaoxingAccountRecord record) async {
+    final agreed = await showCampusConfirm(
+      context,
+      title: '删除${record.name}？',
+      message: '会删除本机保存的账号、密码与人脸照片记录，不影响学习通上的数据。',
+      action: '删除',
+      destructive: true,
+    );
+    if (!agreed || !mounted) return;
+    await widget.controller.removeAccount(record);
+    if (!mounted) return;
+    // 删光了就回到登录页，弹层没有可管的了。
+    if (widget.controller.accountList.isEmpty) {
+      Navigator.pop(context);
+      return;
+    }
+    setState(_reload);
+  }
+
   Future<void> _persist() async {
     try {
       await widget.controller.reorderAccounts([..._own, ..._delegated]);
@@ -76,13 +108,14 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
   Widget _tile(CampusPalette palette, ChaoxingAccountRecord record, {int? dragIndex}) => CampusSurface(
     key: ValueKey(record.phoneNumber),
     margin: const EdgeInsets.only(bottom: 8),
-    padding: const EdgeInsets.all(8),
+    padding: const EdgeInsets.fromLTRB(4, 4, 4, 4),
     radius: 16,
+    onTap: () => _rename(record),
     child: Row(
       children: [
         Expanded(
           child: Padding(
-            padding: const EdgeInsets.only(left: 8),
+            padding: const EdgeInsets.fromLTRB(8, 8, 0, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -95,7 +128,9 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
             ),
           ),
         ),
-        IconButton(tooltip: '改备注名', onPressed: () => _rename(record), icon: const CampusIcon(CampusIcons.edit)),
+        Builder(
+          builder: (anchor) => IconButton(tooltip: '更多操作', onPressed: () => _menu(anchor, record), icon: const CampusIcon(CampusIcons.manage)),
+        ),
         // 拖动手柄只是按住拖的把手，不是按钮：读屏给标签，不伪装成可点的按钮。
         if (dragIndex != null)
           ReorderableDragStartListener(

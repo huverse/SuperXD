@@ -183,21 +183,19 @@ class _FriendAddPageState extends State<FriendAddPage> {
           const SizedBox(height: 12),
           Text(code == null ? ' ' : expired ? '二维码已失效' : '${_remaining ~/ 60}:${(_remaining % 60).toString().padLeft(2, '0')} 后失效', style: secondary),
           const SizedBox(height: 8),
-          FilledButton.icon(
+          FilledButton(
             onPressed: _creating ? null : _create,
-            icon: const CampusIcon(CampusIcons.sync),
-            label: CampusBusyContent(busy: _creating, label: '刷新二维码', busyLabel: '正在生成'),
+            child: CampusBusyContent(busy: _creating, label: '刷新二维码', busyLabel: '正在生成', icon: const CampusIcon(CampusIcons.sync)),
           ),
           if (_added.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 12), child: Text('已添加：${_added.join('、')}', textAlign: TextAlign.center, style: secondary)),
         ])),
         const SizedBox(height: 16),
         Text('同学用 SuperXD 扫这个二维码，即互为好友', textAlign: TextAlign.center, style: secondary),
         const SizedBox(height: 20),
-        FilledButton.icon(
+        FilledButton(
           style: campusProminent,
           onPressed: _redeeming ? null : _scan,
-          icon: const CampusIcon(CampusIcons.scan),
-          label: CampusBusyContent(busy: _redeeming, label: '扫一扫', busyLabel: '正在添加'),
+          child: CampusBusyContent(busy: _redeeming, label: '扫一扫', busyLabel: '正在添加', icon: const CampusIcon(CampusIcons.scan)),
         ),
       ]))),
     );

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
@@ -54,6 +55,16 @@ class _ChaoxingLocationSheetState extends State<_ChaoxingLocationSheet> {
     await _run(() => widget.controller.forgetLocation(saved.id), '删除没完成，请重试');
   }
 
+  Future<void> _menu(BuildContext anchor, ChaoxingSavedLocation saved) async {
+    final action = await showCampusMenu<String>(anchor, items: const [
+      CampusMenuItem(value: 'rename', label: '改名', icon: CampusIcons.edit),
+      CampusMenuItem(value: 'remove', label: '删除', icon: CampusIcons.delete, destructive: true),
+    ]);
+    if (!mounted) return;
+    if (action == 'rename') await _rename(saved);
+    if (action == 'remove') await _remove(saved);
+  }
+
   Future<void> _run(Future<void> Function() action, String fallback) async {
     setState(() => _working = true);
     try {
@@ -96,34 +107,37 @@ class _ChaoxingLocationSheetState extends State<_ChaoxingLocationSheet> {
                       child: Text('还没有收藏位置，签到成功后会问要不要收藏', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
                     )
                   else
+                    // 同课程管理卡片：整卡点按改名，删除收进右上⋯（警示色并确认）。
                     for (final item in saved)
                       CampusSurface(
+                        key: ValueKey(item.id),
                         margin: const EdgeInsets.only(bottom: 8),
-                        padding: const EdgeInsets.all(8),
+                        padding: const EdgeInsets.fromLTRB(12, 4, 4, 4),
                         radius: 16,
+                        onTap: _working ? null : () => _rename(item),
                         child: Row(
                           children: [
                             Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(item.label, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: palette.onSurface)),
-                                  DotSeparatedText(
-                                    '${item.location.address} · ${item.location.formattedLatitude}, ${item.location.formattedLongitude}',
-                                    style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
-                                  ),
-                                ],
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(vertical: 8),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(item.label, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                                    DotSeparatedText(
+                                      '${item.location.address} · ${item.location.formattedLatitude}, ${item.location.formattedLongitude}',
+                                      style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
+                                    ),
+                                  ],
+                                ),
                               ),
                             ),
-                            IconButton(
-                              tooltip: '改名',
-                              onPressed: _working ? null : () => _rename(item),
-                              icon: const CampusIcon(CampusIcons.edit),
-                            ),
-                            IconButton(
-                              tooltip: '删除',
-                              onPressed: _working ? null : () => _remove(item),
-                              icon: const CampusIcon(CampusIcons.delete),
+                            Builder(
+                              builder: (anchor) => IconButton(
+                                tooltip: '收藏位置操作',
+                                onPressed: _working ? null : () => _menu(anchor, item),
+                                icon: const CampusIcon(CampusIcons.manage),
+                              ),
                             ),
                           ],
                         ),

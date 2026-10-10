@@ -461,4 +461,11 @@ class ChaoxingStore {
     _closed = true;
     await _database.close();
   }
+
+  // 清除数据时用：关库并删掉库文件（含日志文件），下次打开是一份空库。
+  Future<void> destroy() async {
+    final path = _database.path;
+    await close();
+    await deleteDatabase(path);
+  }
 }

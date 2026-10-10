@@ -4,12 +4,14 @@ import 'dart:io';
 
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
+import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity_card.dart';
@@ -30,6 +32,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
+import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 import 'chaoxing_fake_hub.dart';
@@ -160,6 +163,7 @@ void main() {
 
 
   ToolboxRuntime buildRuntime({ToolboxQrScan? scanQrCode, ChaoxingPackHub? hub}) => ToolboxRuntime.testing(
+    catalog: toolboxCatalog,
     store: fixture.store,
     downloads: fixture.manager,
     parser: fixture.parser,
@@ -427,14 +431,17 @@ void main() {
 
     await openSignSheet(tester, button: '去签到');
     // 没有地图 key（测试进程里也没有 arm 设备）时经纬度是默认路径，不是藏在「手动输入」后面。
-    expect(find.text('这个安装包没有带地图，填经纬度或用收藏的位置'), findsOneWidget);
+    expect(find.text('这个安装包没有带地图，填经纬度（按高德 GCJ-02）或用收藏的位置'), findsOneWidget);
     expect(find.widgetWithText(TextField, '纬度'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, '在地图上选点'), findsNothing);
-    expect(find.widgetWithText(TextButton, '用收藏的位置'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, '用收藏的位置'), findsOneWidget);
 
-    // 换成收藏的位置照样能签。
-    await tester.tap(find.widgetWithText(TextButton, '用收藏的位置'));
+    // 换成收藏的位置照样能签。收藏是选择标签，手动输入与管理收藏是带图标的按钮（操作不做成选择标签）。
+    await tester.tap(find.widgetWithText(OutlinedButton, '用收藏的位置'));
     await tester.pump();
+    expect(find.widgetWithText(OutlinedButton, '手动输入'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, '管理收藏'), findsOneWidget);
+    expect(find.widgetWithText(CampusGlassChip, '手动输入'), findsNothing);
     await tester.tap(find.widgetWithText(CampusGlassChip, '知敬楼402'));
     await tester.pump();
     await tapSign(tester);
@@ -725,6 +732,51 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('账号管理里直接删代签账号：行右侧⋯里删除标警示色并确认，不用先切过去', (tester) async {
+    usePhoneScreen(tester);
+    await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');
+    final accounts = (await runtime.service<ChaoxingService>(ChaoxingService.serviceId)).accounts;
+    await tester.runAsync(
+      () async => accounts.importOther(
+        ChaoxingCredentialPack(phoneNumber: '13900139000', encryptedPassword: await chaoxingEncrypt('otherPassword1'), name: '同学乙', deviceCode: 'device-of-b'),
+      ),
+    );
+    await tester.runAsync(() => accounts.signIn(phoneNumber: '13800138000', password: 'myPassword123'));
+    // 玻璃菜单的弹簧展开在测试时钟里收不住，关掉动画走静态路径。
+    await tester.pumpWidget(
+      MediaQuery(
+        data: MediaQueryData.fromView(tester.view).copyWith(disableAnimations: true),
+        child: MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)),
+      ),
+    );
+    await waitUntil(tester, () => find.text('学习通签到的说明更新了').evaluate().isNotEmpty);
+    await tester.tap(find.widgetWithText(FilledButton, '同意'));
+    await tester.pump();
+    await waitUntil(tester, () => find.widgetWithText(FilledButton, '去签到').evaluate().isNotEmpty);
+
+    await tester.tap(find.byTooltip('账号操作'));
+    await tester.pump();
+    await tester.tap(find.text('账号管理'));
+    await waitUntil(tester, () => find.text('代签账号').evaluate().isNotEmpty);
+    // 每行都有⋯（读屏标签「更多操作」）；代签账号那一行是第二个。
+    final rows = find.byTooltip('更多操作');
+    expect(rows, findsNWidgets(2));
+    await tester.tap(rows.last);
+    await tester.pump();
+    final remove = find.text('删除');
+    expect(tester.widget<Text>(remove).style?.color, CampusPalette.of(tester.element(remove)).danger);
+    await tester.tap(remove);
+    await tester.pump();
+    expect(find.text('删除同学乙？'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, '删除'));
+    await waitUntil(tester, () => find.byTooltip('更多操作').evaluate().length == 1);
+    final left = (await tester.runAsync(accounts.list))!;
+    expect([for (final record in left) record.phoneNumber], ['13800138000']);
+    // 当前账号没动：首页仍是本人的账号。
+    expect(find.text('代签账号'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('往期签到照样能签，签到页提示可能记为迟到', (tester) async {
     usePhoneScreen(tester);
     fake.activities = [
@@ -820,6 +872,112 @@ void main() {
     await waitUntil(tester, () => find.text('进行中（1）').evaluate().isNotEmpty);
     expect(find.text('已结束（1）'), findsOneWidget);
     expect(find.text('这门课有 2 个班，签到已合并显示'), findsOneWidget);
+
+    // 刷新保留旧列表、只在顶栏按钮上原地转，不整页换成加载圈（局部刷新保留同一范围旧内容）。
+    // 首页分组标题上也有「刷新」（在下面的页面里），限定在课程详情页里找。
+    Finder inDetail(Finder finder) => find.descendant(of: find.byType(ChaoxingCourseDetailPage), matching: finder);
+    // 推入转场走完再点，否则按钮还在滑动中，点按落空。让活动列表的响应先卡住，看得到刷新中的那一段。
+    await tester.pump(const Duration(milliseconds: 400));
+    fake.activityListGate = Completer<void>();
+    await tester.tap(inDetail(find.byTooltip('刷新')));
+    await waitUntil(tester, () => inDetail(find.byTooltip('正在刷新')).evaluate().isNotEmpty);
+    expect(find.text('进行中（1）'), findsOneWidget);
+    expect(find.text('正在读取签到活动…'), findsNothing);
+    fake.activityListGate!.complete();
+    await waitUntil(tester, () => inDetail(find.byTooltip('刷新')).evaluate().isNotEmpty);
+    expect(find.text('进行中（1）'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('签到码格子：位数多时按屏宽收窄不溢出；输错标红并震动，重新输入第一位才熄灭', (tester) async {
+    usePhoneScreen(tester);
+    final code = TextEditingController();
+    addTearDown(code.dispose);
+    final haptics = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'HapticFeedback.vibrate') haptics.add(call.arguments);
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    // 位数由学习通下发、没有上限：8 位码放进 360 宽屏幕里签到弹层的内容宽度（约 280）。
+    Future<void> show(String? error) => tester.pumpWidget(
+      MaterialApp(
+        theme: campusTheme(),
+        home: Scaffold(
+          body: Center(child: SizedBox(width: 280, child: ChaoxingCodeCells(controller: code, length: 8, onFilled: () {}, error: error))),
+        ),
+      ),
+    );
+    await show(null);
+    expect(tester.takeException(), isNull);
+    final cells = find.descendant(
+      of: find.byType(ChaoxingCodeCells),
+      matching: find.byWidgetPredicate((widget) => widget is Container && widget.decoration is BoxDecoration && (widget.decoration! as BoxDecoration).border != null),
+    );
+    expect(cells, findsNWidgets(8));
+    expect(tester.getRect(cells.last).right - tester.getRect(cells.first).left, lessThanOrEqualTo(280.5));
+    Color border(int index) => ((tester.widget<Container>(cells.at(index)).decoration! as BoxDecoration).border! as Border).top.color;
+    final palette = CampusPalette.of(tester.element(find.byType(ChaoxingCodeCells)));
+
+    await show('签到码不对');
+    expect(border(0), palette.danger);
+    expect(haptics, ['HapticFeedbackType.heavyImpact']);
+    // 调用方把码清空后仍是红的，直到重新输入第一位。
+    code.text = '';
+    await tester.pump();
+    expect(border(3), palette.danger);
+    code.text = '1';
+    await tester.pump();
+    expect(border(3), isNot(palette.danger));
+    // 再错一次（调用方先熄后亮）：重新标红、再震一次。
+    await show(null);
+    await show('签到码不对');
+    expect(border(0), palette.danger);
+    expect(haptics, hasLength(2));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('手势画错：图案留在原处标红并震动，下一次按下才清空', (tester) async {
+    usePhoneScreen(tester);
+    final drawn = <String>[];
+    final haptics = <Object?>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'HapticFeedback.vibrate') haptics.add(call.arguments);
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    Future<void> show(String? error) => tester.pumpWidget(
+      MaterialApp(
+        theme: campusTheme(),
+        home: Scaffold(body: Center(child: SizedBox(width: 300, child: ChaoxingGestureField(onCompleted: drawn.add, error: error)))),
+      ),
+    );
+    await show(null);
+    final field = find.byType(ChaoxingGestureField);
+    final topLeft = tester.getTopLeft(field);
+    Offset dot(int row, int col) => topLeft + Offset((col + 0.5) * 100, (row + 0.5) * 100);
+    final gesture = await tester.startGesture(dot(0, 0));
+    await gesture.moveBy(const Offset(20, 20));
+    await gesture.moveTo(dot(1, 1));
+    await gesture.moveTo(dot(2, 2));
+    await gesture.up();
+    await tester.pump();
+    expect(drawn, ['159']);
+
+    // 画错：图案不清空，整条连线与圆点标红（以前一标错就清空，红色根本看不到）。
+    dynamic painter() => tester.widget<CustomPaint>(find.descendant(of: field, matching: find.byType(CustomPaint)).last).painter;
+    final palette = CampusPalette.of(tester.element(field));
+    await show('手势码不对');
+    expect(painter().selected, [0, 4, 8]);
+    expect(painter().color, palette.danger);
+    // 滑过每个点有轻触感（selectionClick），画错多一次重震。
+    expect(haptics.where((type) => type == 'HapticFeedbackType.heavyImpact'), hasLength(1));
+    // 下一次按下才清空、回到正常颜色，从新的点开始。
+    final again = await tester.startGesture(dot(0, 2));
+    await tester.pump();
+    expect(painter().selected, [2]);
+    expect(painter().color, palette.accent);
+    await again.up();
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -939,6 +1097,43 @@ void main() {
     await tester.pump();
     await waitUntil(tester, () => find.byType(ChaoxingPage).evaluate().isEmpty);
     expect(fake.calls.skip(callsBefore), isEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('百宝箱首页清除学习通数据：右滑或⋯都只揭示入口，取消不动；确认后删库、删凭据、撤同意', (tester) async {
+    usePhoneScreen(tester);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    await tester.pumpWidget(const SizedBox());
+    final service = await runtime.service<ChaoxingService>(ChaoxingService.serviceId);
+    final vault = service.accounts.vault as MemoryChaoxingVault;
+    final database = File(path.join(fixture.directory.path, 'chaoxing.db'));
+    expect(vault.passwords, isNotEmpty);
+    expect(database.existsSync(), isTrue);
+    expect(await tester.runAsync(() => fixture.store.consent(chaoxingConsentService, chaoxingConsentVersion)), isTrue);
+
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ToolboxPage(runtime: runtime)));
+    await tester.pumpAndSettle();
+    // 右滑只揭示「清除数据」，点了先确认；取消什么都不删。
+    await tester.drag(find.text('学习通签到'), const Offset(260, 0));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('清除数据'));
+    await tester.pumpAndSettle();
+    expect(find.text('清除学习通签到的数据？'), findsOneWidget);
+    await tester.tap(find.widgetWithText(TextButton, '取消'));
+    await tester.pumpAndSettle();
+    expect(vault.passwords, isNotEmpty);
+    expect(database.existsSync(), isTrue);
+
+    // 右侧⋯同样进确认；确认后清掉本工具在本机的全部数据。
+    await tester.tap(find.byTooltip('清除数据'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '清除'));
+    await waitUntil(tester, () => find.text('已清除学习通签到的数据').evaluate().isNotEmpty);
+    expect(vault.passwords, isEmpty);
+    expect(vault.cookies, isEmpty);
+    expect(database.existsSync(), isFalse);
+    expect(await tester.runAsync(() => fixture.store.consent(chaoxingConsentService, chaoxingConsentVersion)), isFalse);
     await tester.pumpWidget(const SizedBox());
   });
 

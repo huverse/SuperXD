@@ -127,3 +127,7 @@ class ChaoxingPackHub {
 }
 
 const _unknownResult = '中转服务返回了未知结果';
+
+// 代签码的有效期，与中转的 chaoxingPackTtlSeconds 一致。出示页从发出投递请求时起倒计时：
+// 服务端收到请求后才开始计时，本地只会比它早到点，不会出现界面还显示有效、码其实已过期。
+const chaoxingTicketLifetime = Duration(minutes: 10);
