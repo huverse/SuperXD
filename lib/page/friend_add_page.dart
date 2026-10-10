@@ -164,7 +164,7 @@ class _FriendAddPageState extends State<FriendAddPage> {
             decoration: BoxDecoration(color: light.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: colors.outlineSubtle)),
             padding: const EdgeInsets.all(12),
             child: code == null
-                ? Center(child: _error == null ? const CampusLoading(label: '正在生成二维码', network: true) : Text(_error!, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: light.danger)))
+                ? Center(child: _error == null ? const CampusLoading(label: '正在生成二维码', network: true, remote: '中转服务') : Text(_error!, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: light.danger)))
                 : Stack(fit: StackFit.expand, children: [
                     Semantics(
                       label: '我的好友二维码',

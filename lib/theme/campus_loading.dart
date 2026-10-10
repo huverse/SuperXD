@@ -169,10 +169,13 @@ class CampusLoading extends StatefulWidget {
     this.network = false,
     this.animating = true,
     this.color,
+    this.remote = '教务',
   });
   final String label;
   final bool inline;
   final bool network;
+  // 联网等待超过 8 秒时说明在等谁（教务、学习通、中转服务），别让学习通页面说成在等教务。
+  final String remote;
   final bool animating;
   final Color? color;
   @override
@@ -215,7 +218,7 @@ class _CampusLoadingState extends State<CampusLoading> {
 
   @override
   Widget build(BuildContext context) {
-    final label = _longWait ? '${widget.label}\n仍在等待教务响应，请稍候' : widget.label;
+    final label = _longWait ? '${widget.label}\n仍在等待${widget.remote}响应，请稍候' : widget.label;
     final loader = CampusLoader(
       curve: widget.network ? CampusCurve.lissajous : CampusCurve.rose,
       size: widget.inline ? 36 : 56,
@@ -231,7 +234,9 @@ class _CampusLoadingState extends State<CampusLoading> {
         height: 1.5,
       ),
     );
-    return Semantics(
+    // 整页样式自己居中：直接放进页面主体也在正中（以前要调用方套 Center，漏套就落到左上角）；
+    // 放在列表或 Column 里时只在横向居中，高度仍随内容。行内样式由所在的行排版，不另居中。
+    final content = Semantics(
       label: label,
       liveRegion: true,
       child: ExcludeSemantics(
@@ -256,6 +261,7 @@ class _CampusLoadingState extends State<CampusLoading> {
         ),
       ),
     );
+    return widget.inline ? content : Center(child: content);
   }
 }
 

@@ -42,7 +42,7 @@
   - CampusDialogRoute、CampusSheetRoute 经 CampusOverlayDepthRoute 登记 campusOverlayDepth。
 - campus_refresh.dart：CampusRefreshControl 下拉刷新（基于 CupertinoSliverRefreshControl，同 iOS：列表被拉下、拉够即刷新、完成后收起），放在 CustomScrollView 第一个 sliver。指示器是曲线动效：拉动时 CurveRevealPainter 按比例一笔描出玫瑰曲线，拉够轻震，刷新中换 CampusLoader 循环，完成后缩小淡出；指示至少停留 600ms。
 - campus_loading.dart：
-  - CampusLoader 绘制曲线加载动画，CampusLoading 是带文字的加载状态。
+  - CampusLoader 绘制曲线加载动画，CampusLoading 是带文字的加载状态：整页样式自己居中（直接放进页面主体也在正中，不靠调用方套 Center），行内样式随所在的行排版；联网等待超过 8 秒时说明在等谁（remote，默认教务，学习通与中转服务的页面各传各的）。
   - CampusBusyContent 让按钮在操作期间原地切换为忙碌态。
   - showCampusWaiting：只在已有的异步操作期间显示等待弹窗（延迟 150ms 出现），不增加业务等待时间。
 - curve_geometry.dart：三种闭合曲线（无穷、玫瑰、李萨如）的几何与按弧长预采样。改编自 math-curve-loaders，不随项目以 GPL 再授权，授权说明见 assets/third_party_notices.txt 与文件内人工决策。

@@ -151,7 +151,8 @@ class ChaoxingLoadError extends StatelessWidget {
 class ChaoxingRefreshButton extends StatelessWidget {
   const ChaoxingRefreshButton({super.key, required this.loading, required this.onRefresh});
   final bool loading;
-  final VoidCallback onRefresh;
+  // 为空时按钮暂不可点（比如首次读取中）。
+  final VoidCallback? onRefresh;
 
   @override
   Widget build(BuildContext context) => IconButton(

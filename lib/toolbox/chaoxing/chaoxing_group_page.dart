@@ -74,11 +74,12 @@ class _ChaoxingGroupPageState extends State<ChaoxingGroupPage> {
           onPressed: () => Navigator.pop(context),
           icon: const CampusIcon(CampusIcons.back),
         ),
-        actions: [ChaoxingRefreshButton(loading: _loading, onRefresh: () => _load())],
+        // 首次读取时页面中间已经在转，顶栏按钮不再同时转（不让两段加载动画同时演），只是暂不可点。
+        actions: [ChaoxingRefreshButton(loading: _loading && _activities != null, onRefresh: _loading ? null : () => _load())],
       ),
       body: switch ((_error, activities)) {
         (final String message, null) => ChaoxingLoadError(message: message, onRetry: () => _load()),
-        (_, null) => const CampusLoading(label: '正在翻群聊…', network: true),
+        (_, null) => const CampusLoading(label: '正在翻群聊…', network: true, remote: '学习通'),
         (_, final List<ChaoxingActivity> items) => CampusScrollFade(
           child: ListView(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),

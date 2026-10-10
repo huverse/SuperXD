@@ -867,8 +867,12 @@ void main() {
     // 说明行由 DotSeparatedText 按项拆开渲染，按拆分后的项断言。
     expect(find.text('张老师 · '), findsOneWidget);
     expect(find.text('2 个班'), findsOneWidget);
+    // 首次读取：只有页面正中的加载在转，顶栏刷新按钮不同时转（不让两段加载动画同时演）。
+    fake.activityListGate = Completer<void>();
     await tester.tap(find.descendant(of: find.byType(ChaoxingCoursePage), matching: find.text('高等数学')));
-    await tester.pump();
+    await waitUntil(tester, () => find.text('正在读取签到活动…').evaluate().isNotEmpty);
+    expect(find.byTooltip('正在刷新'), findsNothing);
+    fake.activityListGate!.complete();
     await waitUntil(tester, () => find.text('进行中（1）').evaluate().isNotEmpty);
     expect(find.text('已结束（1）'), findsOneWidget);
     expect(find.text('这门课有 2 个班，签到已合并显示'), findsOneWidget);
