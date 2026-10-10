@@ -11,10 +11,11 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/download/download_status.dart';
 import 'package:superxd/toolbox/download/downloads_page.dart';
 import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
-import 'package:superxd/toolbox/media_resource.dart';
+import 'package:superxd/toolbox/short_video/media_resource.dart';
 import 'package:superxd/toolbox/short_video/media_preview.dart';
 import 'package:superxd/toolbox/short_video/media_image.dart';
 import 'package:superxd/toolbox/short_video/parse_result.dart';
+import 'package:superxd/toolbox/short_video/short_video_service.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/domain/campus_log.dart';
@@ -23,9 +24,11 @@ class MediaResultPage extends StatefulWidget {
   const MediaResultPage({
     super.key,
     required this.runtime,
+    required this.service,
     required this.outcome,
   });
   final ToolboxRuntime runtime;
+  final ShortVideoService service;
   final ParseOutcome outcome;
   @override
   State<MediaResultPage> createState() => _MediaResultPageState();
@@ -36,10 +39,10 @@ class _MediaResultPageState extends State<MediaResultPage> {
   bool _expanded = false;
   final _busy = <String>{};
   ParseResult get result => widget.outcome.result;
-  ToolboxDownloadManager get _manager => widget.runtime.downloads;
+  ToolboxDownloadManager get _manager => widget.service.downloads;
   // forTool已按进行中优先、再按新旧排序；倒序覆盖后每个资源只留最该展示的一条。
   Map<String, ToolboxDownload> _latest() => {
-    for (final item in _manager.forTool('short_video').reversed)
+    for (final item in widget.service.downloadTasks.reversed)
       if (item.identity == result.identity && item.resourceId != null)
         item.resourceId!: item,
   };
@@ -66,13 +69,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
     if (_enqueuing) return;
     setState(() => _enqueuing = true);
     try {
-      await _manager.downloadMedia(
-        title: result.title,
-        identity: result.identity,
-        sourceUrl: result.sourceUrl,
-        providerId: result.providerId,
-        media: media,
-      );
+      await widget.service.download(result, media);
     } catch (error, stack) {
       campusLog(
         '[MediaResult] action=download errorType=${error.runtimeType}\n$stack',
@@ -341,7 +338,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
                 final task = await Navigator.push<ToolboxDownload>(
                   context,
                   CampusPageRoute(
-                    builder: (_) => DownloadsPage(runtime: widget.runtime),
+                    builder: (_) => DownloadsPage(runtime: widget.runtime, toolId: ShortVideoService.serviceId, reopenLabel: '重新解析'),
                   ),
                 );
                 if (task != null && context.mounted) {
@@ -399,7 +396,7 @@ class _MediaResultPageState extends State<MediaResultPage> {
                                   ),
                                 const SizedBox(height: 8),
                                 Text(
-                                  '来源：${widget.runtime.coordinator.providers[result.providerId]!.source.name}${widget.outcome.fromCache ? ' · 最近缓存' : ''}',
+                                  '来源：${widget.service.coordinator.providers[result.providerId]!.source.name}${widget.outcome.fromCache ? ' · 最近缓存' : ''}',
                                   style: TextStyle(
                                     color: CampusPalette.of(context)
                                         .onSurfaceVariant,

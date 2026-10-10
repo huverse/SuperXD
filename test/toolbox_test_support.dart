@@ -7,9 +7,12 @@ import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
-import 'package:superxd/toolbox/media_resource.dart';
+import 'package:superxd/toolbox/short_video/media_resource.dart';
+import 'package:superxd/toolbox/short_video/parse_coordinator.dart';
 import 'package:superxd/toolbox/short_video/parse_result.dart';
 import 'package:superxd/toolbox/short_video/parse_source.dart';
+import 'package:superxd/toolbox/short_video/short_video_service.dart';
+import 'package:superxd/toolbox/short_video/short_video_store.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_resource_manager.dart';
 import 'package:superxd/toolbox/toolbox_catalog.dart';
@@ -22,6 +25,8 @@ class ToolboxFixture {
   late final ToolboxResourceManager resources;
   late final ToolboxDownloadManager manager;
   late final ToolboxRuntime runtime;
+  // 短视频的服务：解析来源换成假的，库与下载管理都是真的（测试目录里）。
+  late final ShortVideoService shortVideo;
   final transfer = FakeTransfer();
   final publisher = FakePublisher();
   final parser = FakeVideoParser();
@@ -41,13 +46,7 @@ class ToolboxFixture {
   );
   Future<String> downloadVideo([ParseResult? result]) async {
     final value = result ?? video;
-    return (await manager.downloadMedia(
-      title: value.title,
-      identity: value.identity,
-      sourceUrl: value.sourceUrl,
-      providerId: value.providerId,
-      media: value.resources,
-    )).first;
+    return (await shortVideo.download(value, value.resources)).first;
   }
 
   static const mp4 = [
@@ -107,11 +106,17 @@ class ToolboxFixture {
       resources: resources,
     );
     await manager.initialize();
+    shortVideo = ShortVideoService(
+      coordinator: ParseCoordinator([parser]),
+      store: await ShortVideoStore.open(path.join(directory.path, 'short_video.db'), legacy: store),
+      downloads: manager,
+      consents: store,
+    );
     runtime = ToolboxRuntime.testing(
       catalog: toolboxCatalog,
       store: store,
       downloads: manager,
-      parser: parser,
+      services: {ShortVideoService.serviceId: shortVideo},
     );
   }
 
@@ -161,6 +166,7 @@ class ToolboxFixture {
   Future<void> close() async {
     // 断言失败时导出闸门可能没放开，close 会一直等在途导出直到超时。
     if (publisher.gate case final gate? when !gate.isCompleted) gate.complete();
+    await shortVideo.close();
     await runtime.close();
     await directory.delete(recursive: true);
   }

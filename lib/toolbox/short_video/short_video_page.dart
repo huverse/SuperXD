@@ -17,6 +17,7 @@ import 'package:superxd/toolbox/short_video/media_result_page.dart';
 import 'package:superxd/toolbox/short_video/parse_coordinator.dart';
 import 'package:superxd/toolbox/short_video/parse_history_page.dart';
 import 'package:superxd/toolbox/short_video/short_video_controller.dart';
+import 'package:superxd/toolbox/short_video/short_video_service.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_url.dart';
@@ -42,6 +43,8 @@ class ShortVideoPage extends StatefulWidget {
 class _ShortVideoPageState extends State<ShortVideoPage> {
   late final _input = TextEditingController(text: widget.initialInput);
   ShortVideoController? _controller;
+  // 短视频的服务（解析、库与下载入口）由本工具自己打开，框架只给目录与公共能力。
+  late ShortVideoService _service;
   late Future<void> _ready = _initialize();
   bool _prompting = false;
   int _inputVersion = 0;
@@ -49,13 +52,11 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
   List<Map<String, Object?>> _recent = const [];
   Future<void> _initialize() async {
     await widget.runtime.initialize();
-    final controller = ShortVideoController(
-      widget.runtime.coordinator,
-      widget.runtime.store,
-    );
+    _service = await widget.runtime.service<ShortVideoService>(ShortVideoService.serviceId);
+    final controller = ShortVideoController(_service);
     await controller.initialize();
     if (widget.initialSource case final source?
-        when widget.runtime.coordinator.providers.containsKey(source)) {
+        when _service.coordinator.providers.containsKey(source)) {
       await controller.select(source);
     }
     if (!mounted) {
@@ -73,7 +74,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
 
   Future<void> _reloadRecent() async {
     try {
-      final rows = await widget.runtime.store.history(limit: 5);
+      final rows = await _service.store.history(limit: 5);
       if (mounted) setState(() => _recent = rows);
     } catch (error, stack) {
       campusLog(
@@ -98,7 +99,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
       );
       final needed = <String>[];
       for (final provider in candidates) {
-        if (!await widget.runtime.store.consent(
+        if (!await _service.consents.consent(
           provider.source.id,
           provider.source.consentVersion,
         )) {
@@ -116,7 +117,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
         if (!mounted || !agreed || version != _inputVersion) return;
         for (final id in needed) {
           final source = controller.coordinator.providers[id]!.source;
-          await widget.runtime.store.grantConsent(id, source.consentVersion);
+          await _service.consents.grantConsent(id, source.consentVersion);
         }
       }
       if (!mounted || version != _inputVersion) return;
@@ -130,14 +131,13 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
         CampusPageRoute(
           builder: (_) => MediaResultPage(
             runtime: widget.runtime,
+            service: _service,
             outcome: controller.outcome!,
           ),
         ),
       );
       await _reloadRecent();
-      if (again is ToolboxDownload && mounted) {
-        await _open(again.sourceUrl.toString(), again.providerId, refresh: true);
-      }
+      if (again is ToolboxDownload && mounted) await _reopen(again);
       if (again == true && mounted) await _parse(refresh: true, source: source);
     } catch (error, stack) {
       campusLog(
@@ -154,18 +154,23 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
     _replace(sourceUrl);
     await _parse(
       refresh: refresh,
-      source: widget.runtime.coordinator.providers.containsKey(providerId) ? providerId : null,
+      source: _service.coordinator.providers.containsKey(providerId) ? providerId : null,
     );
+  }
+
+  // 下载任务按记录里本工具的附加信息（作品链接与来源）重新解析。
+  Future<void> _reopen(ToolboxDownload task) async {
+    final sourceUrl = task.origin[ShortVideoService.originSourceUrl];
+    if (sourceUrl == null) return;
+    await _open(sourceUrl, task.origin[ShortVideoService.originProviderId], refresh: true);
   }
 
   Future<void> _downloads() async {
     final task = await Navigator.push<ToolboxDownload>(
       context,
-      CampusPageRoute(builder: (_) => DownloadsPage(runtime: widget.runtime)),
+      CampusPageRoute(builder: (_) => DownloadsPage(runtime: widget.runtime, toolId: ShortVideoService.serviceId, reopenLabel: '重新解析')),
     );
-    if (task != null && mounted) {
-      await _open(task.sourceUrl.toString(), task.providerId, refresh: true);
-    }
+    if (task != null && mounted) await _reopen(task);
   }
 
   Future<void> _history() async {
@@ -173,8 +178,8 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
       context,
       CampusPageRoute(
         builder: (_) => ParseHistoryPage(
-          store: widget.runtime.store,
-          providers: widget.runtime.coordinator.providers,
+          store: _service.store,
+          providers: _service.coordinator.providers,
         ),
       ),
     );
@@ -467,7 +472,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                         ListenableBuilder(
                           listenable: widget.runtime.downloads,
                           builder: (context, _) {
-                            final active = widget.runtime.downloads.forTool('short_video').where((item) => !item.terminal).length;
+                            final active = _service.downloadTasks.where((item) => !item.terminal).length;
                             return TextButton.icon(
                               onPressed: _downloads,
                               icon: const CampusIcon(CampusIcons.download),

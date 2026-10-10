@@ -7,7 +7,6 @@ import 'package:path/path.dart' as path;
 import 'package:synchronized/synchronized.dart';
 import 'package:uuid/uuid.dart';
 
-import 'package:superxd/toolbox/media_resource.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_resource_manager.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
@@ -165,25 +164,29 @@ class ToolboxDownloadManager extends ChangeNotifier {
     _notify();
   }
 
-  Future<List<String>> downloadMedia({
+  // [人工决策-2026-10-10 16:22:46] 下载管理是百宝箱的通用能力，不认识任何工具的数据（以前写死短视频与它的媒体模型）；用户选定「通用化」。
+  // 任何工具都可以下载：toolId 决定记录归谁（下载页、清除数据按它分），identity 加每项 id 去重，
+  // origin 是工具自己的附加信息（原样存取）。同一批 1–100 项，地址必须是公网 https。
+  Future<List<String>> enqueue({
+    required String toolId,
     required String title,
     required String identity,
-    required Uri sourceUrl,
-    required String providerId,
-    required List<MediaResource> media,
+    Map<String, String> origin = const {},
+    required List<ToolboxDownloadRequest> items,
   }) => _enqueueLock.synchronized(() async {
-    if (media.isEmpty || media.length > 100) {
+    if (items.isEmpty || items.length > 100) {
       throw const ToolboxException('每次请选择1至100项媒体');
     }
     final existing = <String>[];
-    final fresh = <MediaResource>[];
+    final fresh = <ToolboxDownloadRequest>[];
     final selected = <String>{};
-    for (final resource in media) {
+    for (final resource in items) {
       toolboxPublicUrl(resource.url.toString(), httpsOnly: true);
       if (!selected.add(resource.id)) continue;
       final duplicate = _downloads.values
           .where(
             (item) =>
+                item.toolId == toolId &&
                 item.identity == identity &&
                 item.resourceId == resource.id &&
                 (!item.terminal || item.state == ToolboxDownloadState.saved),
@@ -212,12 +215,8 @@ class ToolboxDownloadManager extends ChangeNotifier {
       final id = const Uuid().v4();
       final item = ToolboxDownload(
         id: id,
-        toolId: 'short_video',
-        kind: switch (resource.kind) {
-          MediaKind.video => ToolboxDownloadKind.video,
-          MediaKind.image => ToolboxDownloadKind.image,
-          MediaKind.audio => ToolboxDownloadKind.audio,
-        },
+        toolId: toolId,
+        kind: resource.kind,
         filename: '$id.part',
         createdAt: now,
         updatedAt: now,
@@ -228,8 +227,7 @@ class ToolboxDownloadManager extends ChangeNotifier {
         groupTotal: fresh.length,
         resourceId: resource.id,
         identity: identity,
-        sourceUrl: sourceUrl,
-        providerId: providerId,
+        origin: origin,
       );
       additions.add(item);
     }
@@ -658,6 +656,22 @@ class ToolboxDownloadManager extends ChangeNotifier {
       _locks.remove(item.id);
     }
     _notify();
+  });
+  // 清除一个工具的下载数据：先取消进行中的，再删掉它全部下载记录与未导出的临时文件；已导出到公共目录的文件归用户，不动。
+  // 按需资源的安装记录不在其列（卸载资源另走 uninstall）。
+  Future<void> clearTool(String toolId) => _enqueueLock.synchronized(() async {
+    final items = [for (final item in forTool(toolId)) if (item.kind != ToolboxDownloadKind.resource) item];
+    for (final item in items.where((item) => !item.terminal)) {
+      await cancel(item.id, dispatch: false);
+    }
+    for (final item in items) {
+      await _lock(item.id).synchronized(() => _clean(item));
+      _downloads.remove(item.id);
+      _locks.remove(item.id);
+    }
+    await store.removeDownloads([for (final item in items) item.id]);
+    _notify();
+    await _pump();
   });
   Future<void> uninstall(String toolId) => _enqueueLock.synchronized(() async {
     for (final item in forTool(toolId).where((item) => !item.terminal)) {

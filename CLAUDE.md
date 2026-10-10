@@ -42,7 +42,7 @@
 - main.dart 的启动顺序：
   1. 把日志出口注入为 debugPrint，再初始化时区库、图标与第三方许可。
   2. 打开 AccountStore，组装 AppSession（内含 AccountGateway 与 SecureCredentialStore）、DisplaySettings 与设备级 SocialService（social.db、安全存储里的身份、按 SUPERXD_RELAY 建的中转传输，未配置或格式不对时为不可用）。
-  3. runApp 之后，不等待地初始化玻璃渲染与私信服务，再恢复会话。百宝箱的 shareVideo 接到私信分享弹层，路由把 VideoOpener 接到百宝箱短视频页。
+  3. runApp 之后，不等待地初始化玻璃渲染与私信服务，再恢复会话。百宝箱的 shareVideo 接到私信分享弹层，路由把 VideoOpener 接到百宝箱注册表里认得这张卡片的工具（openShared）。
 - 账号代次：SuperXdApp 以 session.generation 作 key 重建内部账号应用。账号切换时，路由和页面内存状态整体丢弃，旧账号状态不会带入新账号。
 - router.dart 的门禁：
   - 会话恢复完成前停在 /boot。
@@ -115,7 +115,7 @@
    - 私信收取：应用在前台时持续长轮询（服务端没有消息时最多挂起 25 秒，有新消息经 Redis 发布订阅唤醒立即返回，客户端超时为挂起时长加 10 秒）；进入后台不再发起；网络失败 2 秒起指数退避、上限 60 秒，空响应快于 5 秒时等满 5 秒。没有推送，后台收不到（人工决策见 social_service.dart）。
 10. 数据保留
     - 课表版本：每学期 100 个。
-    - 解析历史：只存本机，最多 80 条且保留 30 天；默认开启，用户可关闭。
+    - 解析历史：只存本机（短视频自己的库），最多 80 条且保留 30 天；默认开启，用户可关闭；可随短视频一起在百宝箱首页清除。
     - 下载记录：已结束的最多保留 100 项且 30 天。创建超过 24 小时仍未完成的任务，在启动时取消。
     - 自定义壁纸：只保留当前一张，不超过 20MB；换图或恢复云雾时删除，启动时清理残留；选图插件留在缓存里的副本用完即删。
     - 成绩：单次载荷上限 4MB，课程上限 1000 条。
@@ -176,7 +176,7 @@
   - grades_ui_test.dart、form_spacing_test.dart、navigation_drag_test.dart、shell_layout_test.dart
   - legal_page_test.dart、about_page_test.dart、course_clock_performance_test.dart
 - 主题与显示设置：atmosphere_test.dart、campus_glass_test.dart、campus_glass_button_test.dart、campus_motion_test.dart、dark_mode_test.dart、appearance_settings_test.dart、wallpaper_test.dart
-- 百宝箱：toolbox_widget_test.dart、toolbox_download_test.dart、toolbox_media_features_test.dart、short_video_parser_test.dart、media_image_test.dart
+- 百宝箱：toolbox_widget_test.dart、toolbox_download_test.dart、toolbox_media_features_test.dart（含短视频库迁移、旧下载记录兼容、按工具清空下载、短视频清除数据、分享卡片按注册表打开）、short_video_parser_test.dart、media_image_test.dart
   - 学习通签到：chaoxing_protocol_test.dart（协议、设备信息与设备码、学校单位、课表推断与坐标转换）、chaoxing_store_test.dart（本机库与上限）、chaoxing_batch_test.dart（多人连签的顺序、间隔、停止与强制）、chaoxing_ui_test.dart（登录、签到、多人连签、往期补签、强制签到、按课程查看、课表推断、代签入口与导入流程，用 chaoxing_fake_server.dart 与 chaoxing_fake_hub.dart）
   - 代签：chaoxing_pack_test.dart（凭据包编解码与封装，含第 1 版兼容）、chaoxing_delegate_test.dart（两台设备之间的出示与导入、带人脸照片、连签与强制签到、学校单位与模拟客户端，chaoxing_fake_hub.dart 是内存中转）
   - 审查整改回归：chaoxing_regression_test.dart（删账号与后台刷新竞态不留会话、删当前账号关会话、切账号代次、自动重登的错误口径、课表缓存裁剪、弹层避让键盘、账号分段拖动、手势重画与签到码重复提交）

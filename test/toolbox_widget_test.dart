@@ -15,7 +15,7 @@ import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
-import 'package:superxd/toolbox/media_resource.dart';
+import 'package:superxd/toolbox/short_video/media_resource.dart';
 import 'package:superxd/toolbox/short_video/parse_result.dart';
 import 'package:superxd/toolbox/short_video/media_result_page.dart';
 
@@ -81,7 +81,6 @@ void main() {
       catalog: (_) => [ToolboxModule(id: 'counting', name: '计数工具', icon: CampusIcons.toolbox, builder: (_) => const SizedBox(), openService: open)],
       store: fixture.store,
       downloads: fixture.manager,
-      parser: fixture.parser,
       base: fixture.directory,
     );
     // 第一次打开失败：不把失败的结果缓存住，再取一次就真的重新打开。
@@ -204,7 +203,7 @@ void main() {
     String? saved;
     await tester.runAsync(
       () async =>
-          saved = await fixture.store.preference('parse_source'),
+          saved = await fixture.shortVideo.store.preference('parse_source'),
     );
     expect(saved, isNull);
     await tester.pumpWidget(const SizedBox());
@@ -213,7 +212,7 @@ void main() {
   testWidgets('解析历史逐条删除与清空后列表即时刷新，不误报失败', (tester) async {
     await tester.runAsync(() async {
       for (final name in ['甲', '乙']) {
-        await fixture.store.addHistory(
+        await fixture.shortVideo.store.addHistory(
           id: 'history_$name',
           sourceUrl: Uri.parse('https://example.com/$name'),
           providerId: 'bugpk',
@@ -226,8 +225,8 @@ void main() {
       MaterialApp(
         theme: campusTheme(),
         home: ParseHistoryPage(
-          store: fixture.store,
-          providers: fixture.runtime.coordinator.providers,
+          store: fixture.shortVideo.store,
+          providers: fixture.shortVideo.coordinator.providers,
         ),
       ),
     );
@@ -249,7 +248,7 @@ void main() {
     expect(find.text('删除未完成，请重试'), findsNothing);
     expect(find.text('合成历史乙'), findsOneWidget);
     List<Map<String, Object?>> rows = const [];
-    await tester.runAsync(() async => rows = await fixture.store.history());
+    await tester.runAsync(() async => rows = await fixture.shortVideo.store.history());
     expect(rows.map((row) => row['title']), ['合成历史乙']);
     await tester.tap(find.byTooltip('清空历史'));
     await tester.pumpAndSettle();
@@ -257,7 +256,7 @@ void main() {
     await waitForWidget(tester, find.text('暂无解析历史'));
     await tester.pumpAndSettle();
     expect(find.text('删除未完成，请重试'), findsNothing);
-    await tester.runAsync(() async => rows = await fixture.store.history());
+    await tester.runAsync(() async => rows = await fixture.shortVideo.store.history());
     expect(rows, isEmpty);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
@@ -268,6 +267,7 @@ void main() {
       MaterialApp(
         theme: campusTheme(),
         home: MediaResultPage(
+          service: fixture.shortVideo,
           runtime: fixture.runtime,
           outcome: ParseOutcome(ToolboxFixture.video, attempts: const []),
         ),
@@ -326,13 +326,7 @@ void main() {
       ),
     );
     await tester.runAsync(() async {
-      await fixture.manager.downloadMedia(
-        title: gallery.title,
-        identity: gallery.identity,
-        sourceUrl: gallery.sourceUrl,
-        providerId: gallery.providerId,
-        media: gallery.resources,
-      );
+      await fixture.shortVideo.download(gallery, gallery.resources);
       final failed = fixture.manager
           .forTool('short_video')
           .firstWhere((item) => item.resourceId == 'image_10');
@@ -355,7 +349,7 @@ void main() {
               .copyWith(textScaler: const TextScaler.linear(1.4)),
           child: child!,
         ),
-        home: DownloadsPage(runtime: fixture.runtime),
+        home: DownloadsPage(runtime: fixture.runtime, toolId: 'short_video', reopenLabel: '重新解析'),
       ),
     );
     await tester.pump();
@@ -479,6 +473,7 @@ void main() {
           child: child!,
         ),
         home: MediaResultPage(
+          service: fixture.shortVideo,
           runtime: fixture.runtime,
           outcome: ParseOutcome(result, attempts: const []),
         ),
@@ -529,6 +524,7 @@ void main() {
       MaterialApp(
         theme: campusTheme(),
         home: MediaResultPage(
+          service: fixture.shortVideo,
           runtime: fixture.runtime,
           outcome: ParseOutcome(result, attempts: const []),
         ),
@@ -569,7 +565,7 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: campusTheme(),
-        home: DownloadsPage(runtime: fixture.runtime),
+        home: DownloadsPage(runtime: fixture.runtime, toolId: 'short_video', reopenLabel: '重新解析'),
       ),
     );
     await tester.pump();

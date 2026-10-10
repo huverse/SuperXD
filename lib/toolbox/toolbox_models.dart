@@ -35,6 +35,14 @@ class ToolboxResource {
 
 enum ToolboxDownloadKind { video, resource, image, audio }
 
+// 工具交给下载管理的一项：同一批里的 id 唯一（也用来去重与排序），地址必须是公网 https。
+class ToolboxDownloadRequest {
+  const ToolboxDownloadRequest({required this.id, required this.url, required this.kind});
+  final String id;
+  final Uri url;
+  final ToolboxDownloadKind kind;
+}
+
 enum ToolboxDownloadState {
   queued,
   downloading,
@@ -73,8 +81,7 @@ class ToolboxDownload {
     this.groupTotal = 1,
     this.resourceId,
     this.identity,
-    this.sourceUrl,
-    this.providerId,
+    this.origin = const {},
     this.submitted = false,
   });
   final String id;
@@ -98,8 +105,8 @@ class ToolboxDownload {
   final int groupTotal;
   final String? resourceId;
   final String? identity;
-  final Uri? sourceUrl;
-  final String? providerId;
+  // 发起下载的工具自己定的附加信息（如短视频的作品链接与解析来源），下载管理只原样存取、不解释。
+  final Map<String, String> origin;
   final bool submitted;
   String get jobId => groupId ?? id;
   bool get terminal => const {
@@ -149,8 +156,7 @@ class ToolboxDownload {
     groupTotal: groupTotal,
     resourceId: resourceId,
     identity: identity,
-    sourceUrl: sourceUrl,
-    providerId: providerId,
+    origin: origin,
     submitted: submitted ?? this.submitted,
   );
 
@@ -176,8 +182,7 @@ class ToolboxDownload {
     'groupTotal': groupTotal,
     'resourceId': resourceId,
     'identity': identity,
-    'sourceUrl': sourceUrl?.toString(),
-    'providerId': providerId,
+    'origin': origin,
     'submitted': submitted,
   };
 
@@ -215,12 +220,22 @@ class ToolboxDownload {
       groupTotal: json['groupTotal'] as int? ?? 1,
       resourceId: json['resourceId'] as String?,
       identity: json['identity'] as String?,
-      sourceUrl: json['sourceUrl'] == null
-          ? null
-          : Uri.parse(json['sourceUrl'] as String),
-      providerId: json['providerId'] as String?,
+      origin: _origin(json),
       submitted: json['submitted'] as bool? ?? true,
     );
+  }
+
+  // 记录存在库里按外部输入读：新记录是 origin 对象；旧记录（下载管理通用化之前）是顶层的 sourceUrl 与 providerId，
+  // 原样搬进 origin，键名与短视频定的一致，旧任务照样能重新解析。
+  static Map<String, String> _origin(Map<String, dynamic> json) {
+    final origin = json['origin'];
+    if (origin is Map) {
+      return {for (final entry in origin.entries) if (entry.key is String && entry.value is String) entry.key as String: entry.value as String};
+    }
+    return {
+      if (json['sourceUrl'] case final String sourceUrl) 'sourceUrl': sourceUrl,
+      if (json['providerId'] case final String providerId) 'providerId': providerId,
+    };
   }
 }
 

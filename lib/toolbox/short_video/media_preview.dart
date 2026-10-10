@@ -6,7 +6,7 @@ import 'package:video_player/video_player.dart';
 
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
-import 'package:superxd/toolbox/media_resource.dart';
+import 'package:superxd/toolbox/short_video/media_resource.dart';
 import 'package:superxd/toolbox/short_video/media_image.dart';
 import 'package:superxd/domain/campus_log.dart';
 

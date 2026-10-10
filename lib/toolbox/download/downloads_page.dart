@@ -13,9 +13,13 @@ import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/domain/campus_log.dart';
 
+// 一个工具的下载管理：只列 toolId 的任务。reopenLabel 不为空时，带工具附加信息（origin）的失败任务给一个按钮，
+// 点了把任务交回给调用方去重做（如短视频的重新解析）；下载管理本身不懂怎么重做。
 class DownloadsPage extends StatefulWidget {
-  const DownloadsPage({super.key, required this.runtime});
+  const DownloadsPage({super.key, required this.runtime, required this.toolId, this.reopenLabel});
   final ToolboxRuntime runtime;
+  final String toolId;
+  final String? reopenLabel;
   @override
   State<DownloadsPage> createState() => _DownloadsPageState();
 }
@@ -92,9 +96,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
             listenable: widget.runtime.downloads,
             builder: (context, _) {
               final groups = <String, List<ToolboxDownload>>{};
-              for (final item in widget.runtime.downloads.forTool(
-                'short_video',
-              )) {
+              for (final item in widget.runtime.downloads.forTool(widget.toolId)) {
                 groups.putIfAbsent(item.jobId, () => []).add(item);
               }
               final running = groups.values
@@ -335,7 +337,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                         label: Text(expanded ? '收起' : '查看全部 ${items.length} 项'),
                       ),
                     ),
-                  if (failed > 0 && first.sourceUrl != null)
+                  if (widget.reopenLabel case final reopen? when failed > 0 && first.origin.isNotEmpty)
                     Padding(
                       padding: const EdgeInsets.only(top: 12),
                       child: Align(
@@ -343,7 +345,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                         child: FilledButton.icon(
                           onPressed: () => Navigator.pop(context, first),
                           icon: const CampusIcon(CampusIcons.sync),
-                          label: Text(single ? '重新解析' : '重新解析未完成项'),
+                          label: Text(single ? reopen : '$reopen未完成项'),
                         ),
                       ),
                     ),

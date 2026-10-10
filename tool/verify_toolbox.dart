@@ -14,14 +14,14 @@ import 'package:superxd/toolbox/download/downloads_page.dart';
 import 'package:superxd/toolbox/download/background_transfer.dart';
 import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
-import 'package:superxd/toolbox/media_resource.dart';
-import 'package:superxd/toolbox/short_video/parse_result.dart';
-import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/toolbox_resource_manager.dart';
 import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
 import 'package:superxd/domain/campus_log.dart';
+
+// 验证入口的下载记录单独归一个工具 id，不混进短视频的下载管理。
+const _verifyTool = 'verify_toolbox';
 
 // 仅手动运行的Android合成视频验证入口，不进入正式main或CI；不连接教务或第三方解析。
 // 主机端使用本地fixture_server.py监听8765，adb reverse tcp:8765 tcp:8765。
@@ -52,7 +52,6 @@ Future<void> main() async {
     catalog: toolboxCatalog,
     store: store,
     downloads: manager,
-    parser: _UnusedParser(),
   );
   WidgetsBinding.instance.addObserver(runtime);
   final display = await DisplaySettings.open();
@@ -90,19 +89,11 @@ class _VerifyPage extends StatelessWidget {
           FilledButton(
             onPressed: () async {
               try {
-                final id = await manager.downloadMedia(
+                final id = await manager.enqueue(
+                  toolId: _verifyTool,
                   title: '本机合成视频',
                   identity: 'synthetic',
-                  sourceUrl: Uri.parse('https://example.com/synthetic'),
-                  providerId: 'verify',
-                  media: [
-                    MediaResource(
-                      id: 'video',
-                      kind: MediaKind.video,
-                      url: Uri.parse('https://example.com/synthetic.mp4'),
-                      label: '合成视频',
-                    ),
-                  ],
+                  items: [ToolboxDownloadRequest(id: 'video', url: Uri.parse('https://example.com/synthetic.mp4'), kind: ToolboxDownloadKind.video)],
                 );
                 debugPrint('[VerifyToolbox] task=$id');
               } catch (error, stack) {
@@ -114,19 +105,13 @@ class _VerifyPage extends StatelessWidget {
           FilledButton(
             onPressed: () async {
               try {
-                await manager.downloadMedia(
+                await manager.enqueue(
+                  toolId: _verifyTool,
                   title: '本机合成图集',
                   identity: 'synthetic_images',
-                  sourceUrl: Uri.parse('https://example.com/images'),
-                  providerId: 'verify',
-                  media: List.generate(
+                  items: List.generate(
                     3,
-                    (index) => MediaResource(
-                      id: 'image_$index',
-                      kind: MediaKind.image,
-                      url: Uri.parse('https://example.com/synthetic.png'),
-                      label: '合成图片${index + 1}',
-                    ),
+                    (index) => ToolboxDownloadRequest(id: 'image_$index', url: Uri.parse('https://example.com/synthetic.png'), kind: ToolboxDownloadKind.image),
                   ),
                 );
               } catch (error, stack) {
@@ -139,12 +124,12 @@ class _VerifyPage extends StatelessWidget {
             onPressed: () => Navigator.push(
               context,
               CampusPageRoute<ToolboxDownload>(
-                builder: (_) => DownloadsPage(runtime: runtime),
+                builder: (_) => DownloadsPage(runtime: runtime, toolId: _verifyTool),
               ),
             ),
             child: const Text('下载管理'),
           ),
-          for (final task in manager.forTool('short_video'))
+          for (final task in manager.forTool(_verifyTool))
             ListTile(
               title: Text(task.state.name),
               subtitle: Text(
@@ -209,20 +194,3 @@ class _LocalTransfer implements ToolboxTransfer {
   Future<void> close() => inner.close();
 }
 
-class _UnusedParser implements ParseProvider {
-  @override
-  final source = const ParseSource(
-    id: 'verify',
-    name: '本机验证',
-    host: 'example.com',
-    version: '1',
-    consentVersion: '1',
-  );
-  @override
-  bool supports(Uri uri) => false;
-  @override
-  Future<ParseResult> resolve(Uri url, ToolboxCancellation cancellation) =>
-      throw UnsupportedError('此入口不解析第三方作品');
-  @override
-  void close() {}
-}

@@ -5,15 +5,17 @@ import 'package:flutter/foundation.dart';
 
 import 'package:superxd/toolbox/short_video/parse_coordinator.dart';
 import 'package:superxd/toolbox/short_video/parse_result.dart';
+import 'package:superxd/toolbox/short_video/short_video_service.dart';
+import 'package:superxd/toolbox/short_video/short_video_store.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
-import 'package:superxd/toolbox/toolbox_store.dart';
 import 'package:superxd/toolbox/toolbox_url.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 class ShortVideoController extends ChangeNotifier {
-  ShortVideoController(this.coordinator, this.store);
-  final ParseCoordinator coordinator;
-  final ToolboxStore store;
+  ShortVideoController(this.service);
+  final ShortVideoService service;
+  ParseCoordinator get coordinator => service.coordinator;
+  ShortVideoStore get store => service.store;
   ParseOutcome? outcome;
   String? error;
   String? attempting;
@@ -91,7 +93,7 @@ class ShortVideoController extends ChangeNotifier {
       final uri = shortVideoInput(input);
       final consented = <String>{};
       for (final provider in coordinator.candidates(selected, enabled)) {
-        if (await store.consent(
+        if (await service.consents.consent(
           provider.source.id,
           provider.source.consentVersion,
         )) {
