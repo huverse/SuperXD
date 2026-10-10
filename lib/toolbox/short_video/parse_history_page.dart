@@ -7,7 +7,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/short_video/parse_source.dart';
-import 'package:superxd/toolbox/toolbox_store.dart';
+import 'package:superxd/toolbox/short_video/short_video_store.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 // 首页最近解析与历史页共用：点击整行重开解析结果，只展示本机保存的链接、标题、类型和来源。
@@ -51,7 +51,7 @@ class ParseHistoryPage extends StatefulWidget {
     required this.store,
     required this.providers,
   });
-  final ToolboxStore store;
+  final ShortVideoStore store;
   final Map<String, ParseProvider> providers;
   @override
   State<ParseHistoryPage> createState() => _ParseHistoryPageState();

@@ -1,4 +1,4 @@
-import 'package:superxd/toolbox/media_resource.dart';
+import 'package:superxd/toolbox/short_video/media_resource.dart';
 
 class ParseResult {
   const ParseResult({

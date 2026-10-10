@@ -7,26 +7,25 @@
 - 框架：
   - toolbox_runtime.dart：ToolboxRuntime 是设备级组合根。
     - 在应用支持目录的 toolbox 子目录下，打开 toolbox.db、资源目录和下载目录。
-    - 组装 ParseCoordinator（当前只有 BugPK）、下载管理器、后台传输和文件导出。
+    - 组装下载管理器、后台传输和文件导出（框架的公共能力）；不替任何工具组装它的业务对象。
     - 跟随应用前后台状态恢复下载。
     - 注册表由组合根传入（catalog，一般是 toolboxCatalog），runtime.modules 是它给出的工具列表，路由与百宝箱首页都从这里取。
-    - 框架不认识各工具的服务类型：工具在注册表里登记自己的打开函数（ToolboxModule.openService，实现 ToolboxService 接口），页面用 runtime.service 取用，退出时框架按接口统一关闭；打开失败不留在缓存里，重试能再打开。学习通的服务见 chaoxing_service.dart，短视频的解析器仍由框架组装。
+    - 框架不认识各工具的服务类型：工具在注册表里登记自己的打开函数（ToolboxModule.openService，实现 ToolboxService 接口），页面用 runtime.service 取用，退出时框架按接口统一关闭；打开失败不留在缓存里，重试能再打开。学习通的服务见 chaoxing_service.dart，短视频的服务见 short_video_service.dart。
     - clearData：清除一个工具在本机的全部数据，先由工具服务自己清（ToolboxService.clearData），再撤掉按工具 id 记的同意记录，并从缓存里拿掉服务。
     - relayUrl：自建中转地址（私信与学习通代签共用），只从构建参数来，经 ToolboxServiceContext 交给工具服务；没配时为空。
     - shareVideo（ToolboxVideoShare）：把作品分享给好友的回调，由组合根注入（接到私信的分享弹层）；为空时不显示分享入口。百宝箱不感知私信。
     - pickImage（ToolboxImagePick）：取图（相册或相机），由组合根注入 page 层的 pickImageCopy，缓存副本用完必须 discard；为空时（测试环境）取图返回空。
   - toolbox_catalog.dart：工具注册表 toolboxCatalog，工具只在这一处登记（名称、图标、页面、资源与服务），增删工具不改组合根。路由按这里的 id 生成免登录的工具路由；工具 id 全处统一（路由、服务、同意记录同一个 id，[人工决策] 在文件头）。
-  - toolbox_module.dart：ToolboxModule 描述一个工具，字段有 id、名称、图标、页面构造器、可选的按需资源与可选的服务打开函数 openService；ToolboxServiceContext 是框架交给工具服务的公共能力（目录、百宝箱库、中转地址）。登记了 openService 的工具有自己的本机数据，可清除。
+  - toolbox_module.dart：ToolboxModule 描述一个工具，字段有 id、名称、图标、页面构造器、可选的按需资源、可选的服务打开函数 openService（登记了就要给 clearedData，写明清除数据会删什么，确认文案按工具各说各的）与可选的好友分享卡片入口 openShared（认得卡片就返回要推入的页面，组合根按注册表找，不直接认识工具页面）；ToolboxServiceContext 是框架交给工具服务的公共能力（目录、百宝箱库、下载管理、中转地址）。登记了 openService 的工具有自己的本机数据，可清除。
   - toolbox_page.dart：百宝箱首页 ToolboxPage，展示工具列表。有按需资源的工具右侧⋯与右滑揭示「卸载」；有本机数据的工具（登记了 openService）右侧⋯与右滑揭示「清除数据」，都须点击确认（人工决策见文件内）。
   - toolbox_models.dart：公共模型与接口。
-    - 模型：ToolboxException、ToolboxCancellation、ToolboxResource、ToolboxDownload 及其状态机。
+    - 模型：ToolboxException、ToolboxCancellation、ToolboxResource、ToolboxDownloadRequest（工具交给下载管理的一项）、ToolboxDownload 及其状态机。ToolboxDownload.origin 是发起工具自己的附加信息，下载管理原样存取；旧记录顶层的 sourceUrl、providerId 读入时搬进 origin。
     - 接口：ToolboxTransfer（传输）、ToolboxFilePublisher（导出）、ToolboxService（工具自己的服务：close 与 clearData）。
   - toolbox_store.dart：ToolboxStore 管理 toolbox.db，表如下：
     - downloads：下载记录，完整状态存在 payload 里。
-    - consent：按来源与版本记录用户同意；清除工具数据时按工具 id 撤销（revokeConsent）。
+    - consent：按来源与版本记录用户同意；清除工具数据时按工具 id 撤销（revokeConsent），工具按来源记的同意由工具自己撤。
     - resources：已安装的按需资源。
-    - toolbox_preferences：偏好设置，例如 parse_source、history_enabled。
-    - parse_history：解析历史。
+    - 旧版本留下的 toolbox_preferences、parse_history 两张表属于短视频：短视频库打开时经 legacyShortVideoData 搬走，再 dropLegacyShortVideoTables 删表；新装不再建。
   - toolbox_resource_manager.dart：重型按需资源的安装、校验与卸载。
     - 按版本、sha256 和字节数校验。
     - 每个工具只保留当前版本。
@@ -34,17 +33,20 @@
   - toolbox_url.dart：链接安全。
     - toolboxPublicUrl：只接受公开的 http 或 https 地址，拒绝本机、内网、带凭据或非标准端口的地址，长度上限 8192。
     - shortVideoInput：从分享文案中提取唯一的作品链接。
-  - media_resource.dart：解析结果里的单项媒体 MediaResource，类型分视频、图片、音频。
 - download 下载：
-  - toolbox_download_manager.dart：下载管理器 ToolboxDownloadManager。
-    - 负责入队、去重、暂停、继续、取消、校验、导出和清理。
+  - toolbox_download_manager.dart：下载管理器 ToolboxDownloadManager，百宝箱的通用能力，不认识任何工具的数据（[人工决策] 在 enqueue）。
+    - enqueue 由调用方给工具 id、标题、去重身份（identity）、附加信息 origin 与下载项；按工具 id 与 identity 加每项 id 去重。
+    - 负责入队、去重、暂停、继续、取消、校验、导出和清理；clearTool 清除一个工具的下载数据（取消进行中的、删记录与临时文件，已导出的文件与资源安装不动）。
     - 每组 1–100 项；待处理任务组最多 10 个；同时传输最多 2 个。
     - 已结束的记录最多保留 100 项且 30 天。创建超过 24 小时仍未完成的任务，在启动时取消。
   - background_transfer.dart：基于 background_downloader 的后台传输 BackgroundTransfer。未授予通知权限时，改用普通 WorkManager 任务，避免 ANR。
   - android_file_publisher.dart：通过 MethodChannel superxd/toolbox_files 调用原生 ToolboxFileExporter.kt，把文件导出到公共目录 Download/SuperXD。publish 是下载管理的导出（UUID 文件名幂等键，source 限定下载目录）；publishExternal 是一次性导出（人脸照片等，source 只认应用缓存目录、只放行图片 mime、语义化文件名按名幂等且不得含分隔符与控制字符、不以点开头）；按名查找时连写入中的残留一起查出删掉重写。
-  - downloads_page.dart：下载管理页 DownloadsPage，按组展示任务。整组操作在⋯菜单里，条目顺序稳定。
+  - downloads_page.dart：下载管理页 DownloadsPage，只列给定工具 id 的任务，按组展示。整组操作在⋯菜单里，条目顺序稳定。给了 reopenLabel 时，带附加信息的失败任务给一个按钮，把任务交回调用方去重做（短视频是「重新解析」）。
   - download_status.dart：共享组件，包括状态文案、进度条 DownloadProgress 和操作按钮 downloadActions，供结果页和下载页共用。
 - short_video 短视频：
+  - short_video_service.dart：短视频的服务 ShortVideoService（实现 ToolboxService）：自己组装解析来源（现在只有 BugPK）、打开自己的库、经框架的下载管理下载（toolId 为 short_video，origin 记作品链接与来源，重新解析按它重开）、经框架库记各来源的同意；清除数据取消并删掉本工具的下载记录、删库、撤各来源同意，已导出文件保留（[人工决策] 在文件内）。框架不认识这里的任何类型。
+  - short_video_store.dart：短视频的本机库 short_video.db：偏好（解析来源、参与自动解析的来源、历史开关）与解析历史；第一次打开从框架库搬旧数据（先写后删、已有的不覆盖）；destroy 删库（清除数据用）。
+  - media_resource.dart：解析结果里的单项媒体 MediaResource，类型分视频、图片、音频；下载时由服务转成通用下载项。
   - parse_source.dart：解析来源端口。
     - ParseSource 描述一个来源：id、域名、适配版本、授权版本、最小请求间隔。
     - ParseProvider 是来源的实现接口。
@@ -64,7 +66,7 @@
     - 页面有输入框、解析和取消。
     - 有最近解析与下载入口；历史或下载任务可直达结果页。
     - 解析设置（保存历史、来源参与自动解析、清除解析缓存）在底部弹层里。
-    - autoParse：打开好友分享的作品时带着链接直接开始解析；首次使用来源仍先征得本人同意。
+    - autoParse：打开好友分享的作品时带着链接直接开始解析；首次使用来源仍先征得本人同意。好友分享的视频卡片经注册表的 openShared 打开这一页（[人工决策] 在 toolbox_catalog.dart）。
   - media_result_page.dart：结果页 MediaResultPage，展示预览和逐项下载。下载按钮原地切换为进度、暂停继续，完成后变为打开。注入了 shareVideo 时顶栏有“分享给好友”，只发作品原链接与标题作者。
   - media_preview.dart：视频预览 MediaPreview 与图集预览 GalleryPreview。
   - media_image.dart：网络图片 MediaImage。加载失败后点按重试，不自动循环请求。
@@ -126,7 +128,7 @@
   - 接入新来源，或把链接发给新服务之前，必须先让用户确认。
 - 解析历史：
   - 默认开启。未设置时视为开启，用户手动关闭后保持关闭。
-  - 只存本机，最多 80 条且保留 30 天。
+  - 只存本机（short_video.db），最多 80 条且保留 30 天。
   - 不保存签名的媒体地址；删除历史不删除已下载的文件。
 - 下载与导出：
   - 媒体地址必须是公网 https。
@@ -163,7 +165,8 @@
   - 工具单点登记与 id 统一（toolbox_catalog.dart）
   - 学习通：签到码与手势输错的反馈、账号管理每行⋯（chaoxing_code_cells.dart、chaoxing_gesture_field.dart、chaoxing_account_sheet.dart）
   - 来源选择
-  - 历史默认开启
+  - 历史默认开启（short_video_store.dart）
+  - 下载管理通用化（toolbox_download_manager.dart）、短视频服务化与清除数据（short_video_service.dart）、好友分享入口走注册表（toolbox_catalog.dart）
   - 下载汇总“进行中”含排队项（结果页与下载管理页）
   - 解析设置底部弹层
 - 公共目录导出的决策在 ToolboxFileExporter.kt。

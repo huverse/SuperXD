@@ -5,13 +5,14 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
-import 'package:superxd/toolbox/media_resource.dart';
+import 'package:superxd/toolbox/short_video/media_resource.dart';
 import 'package:superxd/toolbox/short_video/bugpk_video_parser.dart';
 import 'package:superxd/toolbox/short_video/parse_coordinator.dart';
 import 'package:superxd/toolbox/short_video/parse_http.dart';
 import 'package:superxd/toolbox/short_video/parse_result.dart';
 import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/short_video/short_video_controller.dart';
+import 'package:superxd/toolbox/short_video/short_video_service.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_url.dart';
 
@@ -252,7 +253,9 @@ void main() {
     final provider = _Provider('first')..pending = Completer<ParseResult>();
     final coordinator = ParseCoordinator([provider]);
     await fixture.store.grantConsent('first', '1');
-    final controller = ShortVideoController(coordinator, fixture.store);
+    final controller = ShortVideoController(
+      ShortVideoService(coordinator: coordinator, store: fixture.shortVideo.store, downloads: fixture.manager, consents: fixture.store),
+    );
     await controller.initialize();
     final parsing = controller.parse(input.toString());
     await Future<void>.delayed(const Duration(milliseconds: 20));

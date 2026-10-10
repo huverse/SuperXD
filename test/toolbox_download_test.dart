@@ -4,7 +4,7 @@ import 'dart:io';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/toolbox/toolbox_models.dart';
-import 'package:superxd/toolbox/media_resource.dart';
+import 'package:superxd/toolbox/short_video/media_resource.dart';
 import 'package:superxd/toolbox/short_video/parse_result.dart';
 import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
 

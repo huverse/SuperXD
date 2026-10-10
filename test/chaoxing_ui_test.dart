@@ -12,6 +12,7 @@ import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity_card.dart';
@@ -166,7 +167,6 @@ void main() {
     catalog: toolboxCatalog,
     store: fixture.store,
     downloads: fixture.manager,
-    parser: fixture.parser,
     scanQrCode: scanQrCode,
     services: {
       ChaoxingService.serviceId: ChaoxingService(
@@ -1120,13 +1120,14 @@ void main() {
     await tester.tap(find.text('清除数据'));
     await tester.pumpAndSettle();
     expect(find.text('清除学习通签到的数据？'), findsOneWidget);
+    expect(find.textContaining('学习通账号、密码、收藏位置与设置'), findsOneWidget);
     await tester.tap(find.widgetWithText(TextButton, '取消'));
     await tester.pumpAndSettle();
     expect(vault.passwords, isNotEmpty);
     expect(database.existsSync(), isTrue);
 
-    // 右侧⋯同样进确认；确认后清掉本工具在本机的全部数据。
-    await tester.tap(find.byTooltip('清除数据'));
+    // 右侧⋯同样进确认；确认后清掉本工具在本机的全部数据。短视频那张卡也有⋯，限定在学习通这张卡里找。
+    await tester.tap(find.descendant(of: find.ancestor(of: find.text('学习通签到'), matching: find.byType(CampusSurface)), matching: find.byTooltip('清除数据')));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '清除'));
     await waitUntil(tester, () => find.text('已清除学习通签到的数据').evaluate().isNotEmpty);

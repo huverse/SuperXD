@@ -25,11 +25,9 @@ class ToolboxStore {
         await database.execute(
           'CREATE TABLE resources (tool_id TEXT PRIMARY KEY, version TEXT NOT NULL, hash TEXT NOT NULL, bytes INTEGER NOT NULL)',
         );
-        await _createMediaTables(database);
       },
       onUpgrade: (database, oldVersion, _) async {
         if (oldVersion < 2) {
-          await _createMediaTables(database);
           // 旧同意仅属于BugPK，不能扩大成对未来所有解析源的授权。
           await database.rawInsert(
             "INSERT OR IGNORE INTO consent(service,version) SELECT 'bugpk', version FROM consent WHERE service = 'short_video'",
@@ -43,18 +41,6 @@ class ToolboxStore {
       },
     ),
   );
-
-  static Future<void> _createMediaTables(Database database) async {
-    await database.execute(
-      'CREATE TABLE toolbox_preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)',
-    );
-    await database.execute(
-      'CREATE TABLE parse_history (id TEXT PRIMARY KEY, source_url TEXT NOT NULL, provider_id TEXT NOT NULL, title TEXT NOT NULL, kind TEXT NOT NULL, created_at INTEGER NOT NULL)',
-    );
-    await database.execute(
-      'CREATE INDEX parse_history_time ON parse_history (created_at DESC, id DESC)',
-    );
-  }
 
   Future<List<ToolboxDownload>> downloads() async {
     final rows = await _database.query(
@@ -125,74 +111,27 @@ class ToolboxStore {
     await _database.delete('consent', where: 'service = ?', whereArgs: [providerId]);
   }
 
-  Future<String?> preference(String key) async =>
-      (await _database.query(
-            'toolbox_preferences',
-            where: 'key = ?',
-            whereArgs: [key],
-            limit: 1,
-          )).firstOrNull?['value']
-          as String?;
-  Future<void> setPreference(String key, String value) async {
-    await _database.insert('toolbox_preferences', {
-      'key': key,
-      'value': value,
-    }, conflictAlgorithm: ConflictAlgorithm.replace);
+  // 短视频的解析历史与偏好以前放在本库（toolbox_preferences、parse_history 两张表），现在归短视频自己的库：
+  // 它打开时先读出旧表的行搬过去，搬完再删旧表（先搬后删，中途失败下次重搬，INSERT OR IGNORE 不重复）。
+  // 新装的库不再建这两张表。
+  Future<({List<Map<String, Object?>> preferences, List<Map<String, Object?>> history})?> legacyShortVideoData() async {
+    final tables = {
+      for (final row in await _database.query('sqlite_master', columns: ['name'], where: "type = 'table' AND name IN ('toolbox_preferences', 'parse_history')"))
+        row['name'] as String,
+    };
+    if (tables.isEmpty) return null;
+    return (
+      preferences: tables.contains('toolbox_preferences') ? await _database.query('toolbox_preferences') : const <Map<String, Object?>>[],
+      history: tables.contains('parse_history') ? await _database.query('parse_history', limit: 80) : const <Map<String, Object?>>[],
+    );
   }
 
-  // [人工决策-2026-09-29 16:41:32] 历史默认开启：未设置视为开启，用户手动关闭的保持关闭；仅本机80条/30天；不保存签名媒体地址，删历史不删下载文件。
-  Future<void> addHistory({
-    required String id,
-    required Uri sourceUrl,
-    required String providerId,
-    required String title,
-    required String kind,
-  }) async {
-    if (await preference('history_enabled') == 'false') return;
+  Future<void> dropLegacyShortVideoTables() async {
     await _database.transaction((transaction) async {
-      await transaction.insert('parse_history', {
-        'id': id,
-        'source_url': sourceUrl.toString(),
-        'provider_id': providerId,
-        'title': title,
-        'kind': kind,
-        'created_at': DateTime.now().toUtc().millisecondsSinceEpoch,
-      }, conflictAlgorithm: ConflictAlgorithm.replace);
-      await _pruneHistory(transaction);
+      await transaction.execute('DROP TABLE IF EXISTS toolbox_preferences');
+      await transaction.execute('DROP INDEX IF EXISTS parse_history_time');
+      await transaction.execute('DROP TABLE IF EXISTS parse_history');
     });
-  }
-
-  static Future<void> _pruneHistory(DatabaseExecutor database) async {
-    await database.delete(
-      'parse_history',
-      where: 'created_at < ?',
-      whereArgs: [
-        DateTime.now()
-            .toUtc()
-            .subtract(const Duration(days: 30))
-            .millisecondsSinceEpoch,
-      ],
-    );
-    await database.rawDelete(
-      'DELETE FROM parse_history WHERE id NOT IN (SELECT id FROM parse_history ORDER BY created_at DESC, id DESC LIMIT 80)',
-    );
-  }
-
-  Future<List<Map<String, Object?>>> history({int limit = 80}) async {
-    await _pruneHistory(_database);
-    return _database.query(
-      'parse_history',
-      orderBy: 'created_at DESC, id DESC',
-      limit: limit,
-    );
-  }
-
-  Future<void> deleteHistory(String id) async {
-    await _database.delete('parse_history', where: 'id = ?', whereArgs: [id]);
-  }
-
-  Future<void> clearHistory() async {
-    await _database.delete('parse_history');
   }
 
   Future<Map<String, Object?>?> resource(String toolId) async =>

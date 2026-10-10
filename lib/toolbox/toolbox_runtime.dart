@@ -11,9 +11,6 @@ import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/toolbox/download/android_file_publisher.dart';
 import 'package:superxd/toolbox/download/background_transfer.dart';
 import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
-import 'package:superxd/toolbox/short_video/bugpk_video_parser.dart';
-import 'package:superxd/toolbox/short_video/parse_coordinator.dart';
-import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_resource_manager.dart';
@@ -58,12 +55,11 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.watchQrCode,
     this.pickImage,
     this.relayUrl,
-  }) : coordinator = ParseCoordinator([BugpkVideoParser()]);
+  });
   ToolboxRuntime.testing({
     required this.catalog,
     required ToolboxStore store,
     required ToolboxDownloadManager downloads,
-    required ParseProvider parser,
     this.shareVideo,
     this.scanQrCode,
     this.watchQrCode,
@@ -72,8 +68,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     Map<String, ToolboxService>? services,
     // 给了目录时按注册表的 openService 真的打开服务（测清除后重开、打开失败重试）。
     Directory? base,
-  }) : coordinator = ParseCoordinator([parser]),
-       resourceSpecifications = downloads.resources.specifications,
+  }) : resourceSpecifications = downloads.resources.specifications,
        relayUrl = null {
     _base = base;
     _external.addAll(services ?? const <String, ToolboxService>{});
@@ -82,7 +77,6 @@ class ToolboxRuntime with WidgetsBindingObserver {
     _initialization = SynchronousFuture<void>(null);
   }
   final Map<String, ToolboxResource> resourceSpecifications;
-  final ParseCoordinator coordinator;
   final ToolboxVideoShare? shareVideo;
   final ToolboxQrScan? scanQrCode;
   final ToolboxQrWatch? watchQrCode;
@@ -109,7 +103,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     if (opener == null) throw const ToolboxException('这个工具的服务还没有配置');
     if (_base == null) throw const ToolboxException('百宝箱还没有准备好，稍后再试');
     // 打开失败不留在缓存里，页面上点「重试」才能真的再打开一次。
-    return opener(ToolboxServiceContext(base: _base!, store: store, relayUrl: relayUrl)).catchError((Object error, StackTrace stack) {
+    return opener(ToolboxServiceContext(base: _base!, store: store, downloads: downloads, relayUrl: relayUrl)).catchError((Object error, StackTrace stack) {
       _opened.remove(id);
       Error.throwWithStackTrace(error, stack);
     });
@@ -197,7 +191,6 @@ class ToolboxRuntime with WidgetsBindingObserver {
 
   Future<void> close() async {
     WidgetsBinding.instance.removeObserver(this);
-    coordinator.close();
     await _downloads?.close();
     await _store?.close();
     // 只关自己打开的服务；外部注入的（测试）由注入方关闭。
