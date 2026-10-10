@@ -70,9 +70,12 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.pickImage,
     // 外部已经打开好的服务（测试直接给实例）：runtime 只代为转交，不负责关闭。
     Map<String, ToolboxService>? services,
+    // 给了目录时按注册表的 openService 真的打开服务（测清除后重开、打开失败重试）。
+    Directory? base,
   }) : coordinator = ParseCoordinator([parser]),
        resourceSpecifications = downloads.resources.specifications,
        relayUrl = null {
+    _base = base;
     _external.addAll(services ?? const <String, ToolboxService>{});
     _store = store;
     _downloads = downloads;
