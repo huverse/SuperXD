@@ -1120,6 +1120,7 @@ void main() {
     await tester.tap(find.text('清除数据'));
     await tester.pumpAndSettle();
     expect(find.text('清除学习通签到的数据？'), findsOneWidget);
+    expect(find.textContaining('学习通账号、密码、收藏位置与设置'), findsOneWidget);
     await tester.tap(find.widgetWithText(TextButton, '取消'));
     await tester.pumpAndSettle();
     expect(vault.passwords, isNotEmpty);

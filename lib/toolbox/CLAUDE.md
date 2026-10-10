@@ -16,7 +16,7 @@
     - shareVideo（ToolboxVideoShare）：把作品分享给好友的回调，由组合根注入（接到私信的分享弹层）；为空时不显示分享入口。百宝箱不感知私信。
     - pickImage（ToolboxImagePick）：取图（相册或相机），由组合根注入 page 层的 pickImageCopy，缓存副本用完必须 discard；为空时（测试环境）取图返回空。
   - toolbox_catalog.dart：工具注册表 toolboxCatalog，工具只在这一处登记（名称、图标、页面、资源与服务），增删工具不改组合根。路由按这里的 id 生成免登录的工具路由；工具 id 全处统一（路由、服务、同意记录同一个 id，[人工决策] 在文件头）。
-  - toolbox_module.dart：ToolboxModule 描述一个工具，字段有 id、名称、图标、页面构造器、可选的按需资源、可选的服务打开函数 openService 与可选的好友分享卡片入口 openShared（认得卡片就返回要推入的页面，组合根按注册表找，不直接认识工具页面）；ToolboxServiceContext 是框架交给工具服务的公共能力（目录、百宝箱库、下载管理、中转地址）。登记了 openService 的工具有自己的本机数据，可清除。
+  - toolbox_module.dart：ToolboxModule 描述一个工具，字段有 id、名称、图标、页面构造器、可选的按需资源、可选的服务打开函数 openService（登记了就要给 clearedData，写明清除数据会删什么，确认文案按工具各说各的）与可选的好友分享卡片入口 openShared（认得卡片就返回要推入的页面，组合根按注册表找，不直接认识工具页面）；ToolboxServiceContext 是框架交给工具服务的公共能力（目录、百宝箱库、下载管理、中转地址）。登记了 openService 的工具有自己的本机数据，可清除。
   - toolbox_page.dart：百宝箱首页 ToolboxPage，展示工具列表。有按需资源的工具右侧⋯与右滑揭示「卸载」；有本机数据的工具（登记了 openService）右侧⋯与右滑揭示「清除数据」，都须点击确认（人工决策见文件内）。
   - toolbox_models.dart：公共模型与接口。
     - 模型：ToolboxException、ToolboxCancellation、ToolboxResource、ToolboxDownloadRequest（工具交给下载管理的一项）、ToolboxDownload 及其状态机。ToolboxDownload.origin 是发起工具自己的附加信息，下载管理原样存取；旧记录顶层的 sourceUrl、providerId 读入时搬进 origin。

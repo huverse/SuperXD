@@ -26,6 +26,7 @@ class ToolboxModule {
     required this.builder,
     this.resource,
     this.openService,
+    this.clearedData = '',
     this.openShared,
   });
   final String id;
@@ -34,6 +35,8 @@ class ToolboxModule {
   final WidgetBuilder builder;
   final ToolboxResource? resource;
   final Future<ToolboxService> Function(ToolboxServiceContext context)? openService;
+  // 「清除数据」确认里说清会删掉什么（各工具的数据不同，不能用一句通用话），登记了 openService 的工具必须给。
+  final String clearedData;
   // 好友分享的卡片由哪个工具打开：认得这张卡就返回要推入的页面，不认得返回空；组合根按注册表找，不直接认识工具页面。
   final Widget? Function(ShareCard card)? openShared;
 }

@@ -71,7 +71,7 @@ class _ToolboxPageState extends State<ToolboxPage> {
     final agreed = await showCampusConfirm(
       context,
       title: '清除${module.name}的数据？',
-      message: '会删除这个工具在本机保存的账号、密码与设置，再用时要重新登录；已保存到下载目录的文件保留。',
+      message: '会删除本机保存的${module.clearedData}；已保存到相册或下载目录的文件保留。',
       action: '清除', destructive: true,
     );
     if (agreed && mounted) {

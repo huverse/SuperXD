@@ -239,6 +239,12 @@ void main() {
     expect(database.existsSync(), isFalse);
   });
 
+  test('有本机数据的工具都写明清除数据会删什么（确认里不用一句通用话）', () {
+    for (final module in toolboxCatalog(fixture.runtime).where((module) => module.openService != null)) {
+      expect(module.clearedData, isNotEmpty, reason: module.id);
+    }
+  });
+
   test('好友分享的卡片按注册表找工具打开：短视频认视频卡，别的卡没人认', () {
     final modules = toolboxCatalog(fixture.runtime);
     Widget? open(ShareCard card) => modules.map((tool) => tool.openShared?.call(card)).nonNulls.firstOrNull;
