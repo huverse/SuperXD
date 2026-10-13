@@ -33,6 +33,14 @@ subprojects {
     val newSubprojectBuildDir: Directory = newBuildDir.dir(project.name)
     project.layout.buildDirectory.value(newSubprojectBuildDir)
 }
+// amap_map 1.0.15（已是最新）写死 compileSdk 35，而 flutter_plugin_android_lifecycle 要求 36，release 的 AAR 元数据检查会失败。
+subprojects {
+    if (name == "amap_map") {
+        afterEvaluate {
+            extensions.configure<com.android.build.api.dsl.LibraryExtension> { compileSdk = 36 }
+        }
+    }
+}
 subprojects {
     project.evaluationDependsOn(":app")
 }
