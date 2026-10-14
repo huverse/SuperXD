@@ -88,7 +88,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
           StatefulShellBranch(routes: [GoRoute(path: '/today', builder: (context, state) => TodayPage(gateway: gateway, onSessionExpired: () => session.expire(generation), isAccountCurrent: () => session.generation == generation && session.loggedIn))]),
           StatefulShellBranch(routes: [GoRoute(path: '/service', builder: (context, state) => const ServicePage())]),
           StatefulShellBranch(routes: [GoRoute(path: '/message', builder: (context, state) => MessagePage(social: social, gateway: gateway, openVideo: openVideo))]),
-          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(gateway: gateway, session: session, social: social))]),
+          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, social: social))]),
         ],
       ),
     ],

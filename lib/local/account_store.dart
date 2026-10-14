@@ -74,13 +74,15 @@ WHERE active_account.id = 1 LIMIT 1
     return AccountIdentity(source: rows.single['source'] as String, loginId: rows.single['login_id'] as String);
   }
 
+  // 显示名是教务姓名，只有同步课表时才知道；登录时不知道（传空）就保留已知的。会话失效时整行会话被清，
+  // 姓名靠这里在重新登录后补回。
   Future<void> activate(AccountIdentity identity, {String displayName = ''}) async {
     final normalized = _normalize(identity);
     final key = keyOf(normalized);
     await _index.transaction((transaction) async {
       await transaction.rawInsert('''
 INSERT INTO account (account_key, source, login_id, display_name) VALUES (?, ?, ?, ?)
-ON CONFLICT(account_key) DO UPDATE SET display_name = excluded.display_name
+ON CONFLICT(account_key) DO UPDATE SET display_name = CASE WHEN excluded.display_name = '' THEN account.display_name ELSE excluded.display_name END
 ''', [key, normalized.source, normalized.loginId, displayName]);
       await transaction.insert('active_account', {'id': 1, 'account_key': key}, conflictAlgorithm: ConflictAlgorithm.replace);
     });
@@ -88,6 +90,15 @@ ON CONFLICT(account_key) DO UPDATE SET display_name = excluded.display_name
 
   Future<void> clearCurrent() async {
     await _index.delete('active_account', where: 'id = 1');
+  }
+
+  Future<String> displayNameOf(AccountIdentity identity) async {
+    final rows = await _index.query('account', columns: ['display_name'], where: 'account_key = ?', whereArgs: [keyOf(identity)], limit: 1);
+    return rows.isEmpty ? '' : rows.single['display_name'] as String;
+  }
+
+  Future<void> saveDisplayName(AccountIdentity identity, String displayName) async {
+    await _index.update('account', {'display_name': displayName}, where: 'account_key = ?', whereArgs: [keyOf(identity)]);
   }
 
   // [人工决策-2026-09-24 21:10:42] 来源与教务确认账号共同归属独立库；切换保留数据，不认领无owner旧库。

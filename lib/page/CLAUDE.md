@@ -15,7 +15,7 @@
   - shell_page.dart 的底栏“消息”带私信未读角标（警示红底白字，读屏读出条数）。
   - section_pages.dart：
     - 服务页：课表、成绩、百宝箱三个入口。
-    - 我的页：头像卡（点按进入账号页）、界面、关于。
+    - 我的页：头像卡（点按进入账号页）、界面、关于。头像卡直接读当前会话（AccountAccess.activeSession），姓名未知时显示学号，网关学到姓名后随通知刷新。
     - SectionTitleBar：底栏根页的大标题顶栏（服务、消息、我的共用）。
 - 私信（功能性，只有分享卡片、没有文字聊天）：
   - message_page.dart：消息页 MessagePage，分段“通知 | 私信”，默认停在私信（通知尚未接入）。
@@ -74,6 +74,7 @@
   - appearance_page.dart：界面设置 AppearancePage，调整字号、配色、字体、深浅色、玻璃效果和背景；传入 SocialService 时顶栏有“分享给好友”（不含壁纸图片）。
     - 背景可选自定义图片：系统照片选择器选一张，取色后交给 DisplaySettings 保存；选图插件的缓存副本用完即删（取图见 image_copy_pick.dart）。
     - 选图函数可注入（pickWallpaper），测试用假选图。
+    - 玻璃效果限档时（见 theme 的 campus_glass_tier.dart）在分段控件下说明一行；点「完整」（已选中也算）先解除限档再保存。
     - 字体预览是 assets/font_previews 里预先画好的图（tool/font_previews.dart 生成，按配色着色、随字号缩放），不为预览加载没在用的字体：首次排版要在主线程解析全部字重，首帧卡近半秒、转场被吃掉。改预览文字或字体后重跑生成。
     - 模糊与透明度是两条滑杆（CampusSlider），拖动中只预览，正常松手立即保存；系统取消、读屏增减没有松手回调，停手 300ms 补存；离开页面时把没存的预览存掉。
   - image_copy_pick.dart：通用取图 pickImageCopy（相册走系统照片选择器、或相机现拍，长边压缩转 JPEG），返回副本路径与 discard。插件留在缓存里的 UUID 开头副本与压缩版，取图前后对比只删这次新出现的；壁纸、相册识别二维码共用，并经组合根注入百宝箱（人脸与签到照片）。

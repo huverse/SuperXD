@@ -126,4 +126,12 @@ void main() {
       contains('force-version-code-ignoring-abi=true'),
     );
   });
+
+  // release 才开 R8，CI 不打 release 包；高德 jar 不带混淆规则，删改类名后一开地图就崩。
+  test('release 混淆规则保住高德 SDK', () {
+    final rules = File('android/app/proguard-rules.pro').readAsStringSync();
+    for (final package in ['com.amap.api.maps', 'com.autonavi', 'com.amap.api.location', 'com.amap.api.services']) {
+      expect(rules, contains('-keep class $package.** { *; }'));
+    }
+  });
 }

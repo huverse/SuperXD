@@ -17,6 +17,8 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
+import 'package:superxd/theme/campus_glass_tier.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/wallpaper_tone.dart';
 import 'package:superxd/domain/campus_log.dart';
 
@@ -413,7 +415,20 @@ class _AppearancePageState extends State<AppearancePage> {
               values: const ['auto', 'full', 'reduced'],
               selected: settings.glassMode,
               label: (mode) => switch (mode) { 'full' => '完整', 'reduced' => '简化', _ => '自动' },
-              onSelected: _saving ? null : (mode) => _save(() => settings.setGlassMode(mode)),
+              // 限档时点「完整」（已选中也算）即解除限档重试，[人工决策] 见 campus_glass_tier.dart。
+              onSelected: _saving ? null : (mode) => _save(() async {
+                if (mode == 'full' && campusGlassCapped.value) await CampusGlassGuard.retry();
+                await settings.setGlassMode(mode);
+              }),
+            ),
+            ValueListenableBuilder(
+              valueListenable: campusGlassCapped,
+              builder: (context, capped, _) => capped && settings.glassMode != 'reduced'
+                  ? Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: DotSeparatedText('上次异常退出，已暂时降为标准效果 · 点「完整」重试', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
+                    )
+                  : const SizedBox.shrink(),
             ),
             if (_saving) const CampusLoading(label: '保存中', inline: true),
             if (_error != null)

@@ -732,6 +732,38 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('本人已签过、还有没勾的代签账号时，弹窗给「为其他账号签到」并留在签到页', (tester) async {
+    usePhoneScreen(tester);
+    fake.preSignHtml = '<script>signstatus = 1;</script>';
+    await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');
+    final accounts = (await runtime.service<ChaoxingService>(ChaoxingService.serviceId)).accounts;
+    await tester.runAsync(
+      () async => accounts.importOther(
+        ChaoxingCredentialPack(
+          phoneNumber: '13900139000',
+          encryptedPassword: await chaoxingEncrypt('otherPassword1'),
+          name: '同学乙',
+          deviceCode: 'device-of-b',
+        ),
+      ),
+    );
+    await tester.runAsync(() => accounts.signIn(phoneNumber: '13800138000', password: 'myPassword123'));
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await waitUntil(tester, () => find.text('学习通签到的说明更新了').evaluate().isNotEmpty);
+    await tester.tap(find.widgetWithText(FilledButton, '同意'));
+    await tester.pump();
+    await waitUntil(tester, () => find.widgetWithText(FilledButton, '去签到').evaluate().isNotEmpty);
+    await openSignSheet(tester);
+    await waitUntil(tester, () => find.text('为其他账号签到').evaluate().isNotEmpty);
+    expect(find.text('这场已经签过了'), findsOneWidget);
+    await tester.tap(find.text('为其他账号签到'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('为其他账号签到').evaluate().isEmpty);
+    expect(find.text('签到对象'), findsOneWidget);
+    expect(fake.signQuery, isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('账号管理里直接删代签账号：行右侧⋯里删除标警示色并确认，不用先切过去', (tester) async {
     usePhoneScreen(tester);
     await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');
@@ -804,22 +836,23 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('打开签到页就发现已签到，三选里能强制签到', (tester) async {
+  testWidgets('打开签到页就发现已签到，弹窗直说原因、能仍然签到', (tester) async {
     usePhoneScreen(tester);
     fake.preSignHtml = '<script>signstatus = 1;</script>';
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
 
     await openSignSheet(tester);
-    // 打开即检查：勾选的人全被拦时弹三选，本人原地标出原因并取消勾选。
-    await waitUntil(tester, () => find.text('我认为是 BUG，强制签到').evaluate().isNotEmpty);
-    expect(find.text('这场签到检查没过'), findsOneWidget);
-    expect(find.text('这场签到已经完成了'), findsOneWidget);
+    // 打开即检查：勾选的人全被拦时弹窗，标题按原因直说；只有一个账号时不给「为其他账号签到」。
+    await waitUntil(tester, () => find.text('仍然签到').evaluate().isNotEmpty);
+    expect(find.text('这场已经签过了'), findsOneWidget);
+    expect(find.text('关闭'), findsOneWidget);
+    expect(find.text('为其他账号签到'), findsNothing);
     expect(fake.signQuery, isNull);
-    // 没填签到码就选强制：先被要求补输入（对话框关闭、本人恢复勾选）。
-    await tester.tap(find.text('我认为是 BUG，强制签到'));
+    // 没填签到码就选仍然签到：先被要求补输入（对话框关闭、本人恢复勾选）。
+    await tester.tap(find.text('仍然签到'));
     await tester.pump();
-    await waitUntil(tester, () => find.text('我认为是 BUG，强制签到').evaluate().isEmpty);
+    await waitUntil(tester, () => find.text('仍然签到').evaluate().isEmpty);
     await waitUntil(tester, () => find.text('请填写签到码').evaluate().isNotEmpty);
     // 填码后普通提交仍会被拦，再走单人的强制签到。
     await enterCode(tester, '1234');

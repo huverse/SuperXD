@@ -2,9 +2,11 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/appearance_page.dart';
@@ -239,6 +241,34 @@ void main() {
     expect(settings.glassMode, 'reduced');
     expect(tester.widget<CampusSegmented<String>>(find.byType(CampusSegmented<String>)).selected, 'reduced');
     expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    settings.dispose();
+  });
+  testWidgets('限档时说明原因，点「完整」（已选中也算）即解除限档重试', (tester) async {
+    const channel = MethodChannel('superxd/glass');
+    final calls = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, (call) async {
+      calls.add(call.method);
+      return call.method == 'guard' ? true : null;
+    });
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(channel, null);
+      campusGlassCapped.value = false;
+    });
+    await CampusGlassGuard.load();
+    expect(campusGlassCapped.value, isTrue);
+    final settings = DisplaySettings.memory();
+    await settings.setGlassMode('full');
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => DisplayScope(settings: settings, child: child!), home: const AppearancePage()));
+    await tester.pumpAndSettle();
+    const notice = '点「完整」重试';
+    await tester.scrollUntilVisible(find.text(notice), 200, scrollable: find.byType(Scrollable).first);
+    await tester.tap(find.text('完整'));
+    await tester.pumpAndSettle();
+    expect(calls, ['guard', 'retry']);
+    expect(campusGlassCapped.value, isFalse);
+    expect(find.text(notice), findsNothing);
+    expect(settings.glassMode, 'full');
     await tester.pumpWidget(const SizedBox());
     settings.dispose();
   });

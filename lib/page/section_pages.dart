@@ -5,16 +5,13 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
-import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/app_session.dart';
-import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/page/about_page.dart';
 import 'package:superxd/page/account_page.dart';
 import 'package:superxd/page/appearance_page.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/theme/glass_panel.dart';
-import 'package:superxd/domain/campus_log.dart';
 
 class ServicePage extends StatelessWidget {
   const ServicePage({super.key});
@@ -37,38 +34,12 @@ class ServicePage extends StatelessWidget {
   }
 }
 
-class MinePage extends StatefulWidget {
-  const MinePage({super.key, required this.gateway, required this.session, this.social});
-  final CampusGateway gateway;
+class MinePage extends StatelessWidget {
+  const MinePage({super.key, required this.session, this.social});
   final AppSession session;
   final SocialService? social;
 
-  @override
-  State<MinePage> createState() => _MinePageState();
-}
-
-class _MinePageState extends State<MinePage> {
-  String _name = '';
-  bool _loadingAccount = true;
-
-  @override
-  void initState() {
-    super.initState();
-    _load();
-  }
-
-  Future<void> _load() async {
-    try {
-      final session = await widget.gateway.restoreSession();
-      if (!mounted) return;
-      final name = session.data?.name ?? '';
-      final loginId = session.data?.loginId ?? '';
-      setState(() => _name = name.isEmpty ? loginId : name);
-    } catch (error, stack) { campusLog('[MinePage] action=load errorType=${error.runtimeType}\n$stack'); }
-    finally { if (mounted) setState(() => _loadingAccount = false); }
-  }
-
-  void _push(Widget page) => Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => page));
+  void _push(BuildContext context, Widget page) => Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => page));
 
   @override
   Widget build(BuildContext context) {
@@ -80,17 +51,22 @@ class _MinePageState extends State<MinePage> {
         Expanded(child: CampusScrollFade(bottom: inset, child: SingleChildScrollView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), child: Center(child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             // 头像卡进入账号页（同 iOS Apple ID），账号操作都在那里，见 account_page.dart 的人工决策。
-            CampusSurface(padding: const EdgeInsets.all(20), onTap: _loadingAccount ? null : () => _push(AccountPage(session: widget.session, name: _name)), child: Row(children: [
-              CircleAvatar(radius: 28, backgroundColor: CampusPalette.of(context).surfaceSelected, child: CampusIcon(CampusIcons.account, color: CampusPalette.of(context).primary, size: 28)),
-              const SizedBox(width: 16),
-              Expanded(child: _loadingAccount ? const CampusLoading(label: '读取账号', inline: true) : Text(_name.isEmpty ? '我的账号' : _name, style: Theme.of(context).textTheme.titleLarge)),
-              const CampusIcon(CampusIcons.next),
-            ])),
+            // 直接读当前会话：姓名要等同步课表才知道（之前显示学号），网关学到后会通知，这里跟着刷新。
+            ListenableBuilder(listenable: session, builder: (context, _) {
+              final account = session.gateway.activeSession;
+              final name = account == null ? '' : account.name.isEmpty ? account.loginId : account.name;
+              return CampusSurface(padding: const EdgeInsets.all(20), onTap: () => _push(context, AccountPage(session: session, name: name)), child: Row(children: [
+                CircleAvatar(radius: 28, backgroundColor: CampusPalette.of(context).surfaceSelected, child: CampusIcon(CampusIcons.account, color: CampusPalette.of(context).primary, size: 28)),
+                const SizedBox(width: 16),
+                Expanded(child: Text(name.isEmpty ? '我的账号' : name, style: Theme.of(context).textTheme.titleLarge)),
+                const CampusIcon(CampusIcons.next),
+              ]));
+            }),
             const SizedBox(height: 16),
             // 多行卡片去掉横向内边距，行自带 20 边距：按下变暗时整行铺满卡片宽度，同 iOS 分组列表。
             CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
-              ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.palette), trailing: const CampusIcon(CampusIcons.next), title: const Text('界面'), onTap: () => _push(AppearancePage(social: widget.social))),
-              ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.info), trailing: const CampusIcon(CampusIcons.next), title: const Text('关于'), onTap: () => _push(const AboutPage())),
+              ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.palette), trailing: const CampusIcon(CampusIcons.next), title: const Text('界面'), onTap: () => _push(context, AppearancePage(social: social))),
+              ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.info), trailing: const CampusIcon(CampusIcons.next), title: const Text('关于'), onTap: () => _push(context, const AboutPage())),
             ])),
           ]),
         ))))),
