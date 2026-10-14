@@ -60,7 +60,7 @@ void main() async {
   // 选壁纸走系统照片选择器：不申请存储权限，只拿到用户选中的那一张（API 36 起插件默认如此，更低版本须显式打开）。
   final picker = ImagePickerPlatform.instance;
   if (picker is ImagePickerAndroid) picker.useAndroidPhotoPicker = true;
-  final glassCapped = await CampusGlassGuard.capped();
+  await CampusGlassGuard.load();
   final reminders = CampusReminders(gateway: session.gateway, port: NotificationReminders());
   final widgetPort = HomeWidgetPublisher();
   final widgets = CampusWidgets(gateway: session.gateway, port: widgetPort);
@@ -70,7 +70,7 @@ void main() async {
     transport: relayTransport(),
     polling: true,
   );
-  runApp(SuperXdApp(session: session, display: display, glassCapped: glassCapped, reminders: reminders, social: social));
+  runApp(SuperXdApp(session: session, display: display, reminders: reminders, social: social));
   unawaited(initializeCampusGlass());
   // 私信是设备级的，与教务会话无关；初始化失败只影响私信（状态 failed），不影响应用。
   unawaited(social.initialize());
@@ -151,14 +151,13 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.glassCapped = false, this.reminders, this.social});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social});
   final CampusReminders? reminders;
   // 设备级私信服务，切换账号不重建；为空时私信入口显示未配置。
   final SocialService? social;
   final ToolboxRuntime? toolbox;
   final AppSession session;
   final DisplaySettings? display;
-  final bool glassCapped;
   // 测试/截图固定装饰相位，不关闭业务转场或图标动画。
   final double? backgroundPhase;
 
@@ -203,20 +202,19 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, glassCapped: widget.glassCapped, reminders: widget.reminders, social: widget.social),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social),
     );
   }
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, required this.glassCapped, this.display, this.backgroundPhase, this.reminders, this.social});
+  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social});
   final CampusReminders? reminders;
   final SocialService? social;
   final ToolboxRuntime toolbox;
   final AppSession session;
   final DisplaySettings? display;
   final double? backgroundPhase;
-  final bool glassCapped;
 
   @override
   State<_AccountApp> createState() => _AccountAppState();
@@ -248,7 +246,7 @@ class _AccountAppState extends State<_AccountApp> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(listenable: _display, builder: (context, _) => MaterialApp.router(
+    return ListenableBuilder(listenable: Listenable.merge([_display, campusGlassCapped]), builder: (context, _) => MaterialApp.router(
       title: 'SuperXD', theme: campusTheme(palette: CampusPalette.byId(_display.paletteId), fontFamily: _display.fontFamily),
       darkTheme: campusTheme(palette: CampusPalette.byId(_display.paletteId, brightness: Brightness.dark), fontFamily: _display.fontFamily),
       themeMode: _display.themeMode, routerConfig: _router, scrollBehavior: const CampusScrollBehavior(),
@@ -257,7 +255,7 @@ class _AccountAppState extends State<_AccountApp> {
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       builder: (context, child) => DisplayScope(settings: _display, child: MediaQuery(
         data: MediaQuery.of(context).copyWith(textScaler: CampusTextScaler(MediaQuery.textScalerOf(context), _display.scale)),
-        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: widget.glassCapped, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, wallpaper: _wallpaper(), child: CampusEntryFade(child: LiveClock(child: child!)))))),
+        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: campusGlassCapped.value, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, wallpaper: _wallpaper(), child: CampusEntryFade(child: LiveClock(child: child!)))))),
       )),
     ));
   }

@@ -162,7 +162,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   }
 
   // 打开签到页先检查一遍（对齐参考项目，别等提交后才知道）：已签到、已截止或不在班级的人原地标出
-  // 并取消勾选；全部被拦时给「为其他人签到 / 返回 / 强制」三选。检查不挡详情显示，也不挡提交（提交时会再查一次）。
+  // 并取消勾选；全部被拦时弹窗给「关闭 / 仍然签到」，还有没勾的账号时多一个「为其他账号签到」。检查不挡详情显示，也不挡提交（提交时会再查一次）。
   Future<void> _presignOnOpen() async {
     final checked = _activity.activeId;
     final selected = [for (final target in _batch.targets) if (target.selected) target];
@@ -198,16 +198,26 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     if (blocked.length != selected.length) return;
     // 勾选的人全被拦：照参考项目给三选。
     // 并发检查的完成顺序不定，提示按勾选顺序取第一个被拦的人。
+    // [人工决策-2026-10-14 13:34:56] 原来统一叫「这场签到检查没过」、末项「我认为是 BUG，强制签到」，真机上看不懂：
+    // 标题按原因直说（同苹果、Material 弹窗规范），按钮用动作词；「为其他账号签到」只在还有没勾的账号时给。
     final first = selected.firstWhere(blocked.containsKey);
+    final failure = blocked[first]!;
+    final (title, detail) = switch (failure.code) {
+      ChaoxingFailureCode.alreadySigned => ('这场已经签过了', null),
+      ChaoxingFailureCode.expired => ('签到已经结束', '现在提交可能记为迟到或失败'),
+      ChaoxingFailureCode.noPermission => ('这个账号不在这门课的班级里', '可能已退课或换了班'),
+      _ => (failure.message, null),
+    };
+    final othersLeft = _batch.targets.any((target) => !blocked.containsKey(target));
     final choice = await showCampusDialog<int>(
       context: context,
       builder: (context) => CampusGlassDialog(
-        title: const Text('这场签到检查没过'),
-        content: Text(blocked[first]!.message),
+        title: Text(title),
+        content: detail == null ? null : Text(detail),
         options: [
-          SimpleDialogOption(onPressed: () => Navigator.pop(context, 0), child: const Text('为其他人签到')),
-          SimpleDialogOption(onPressed: () => Navigator.pop(context, 1), child: const Text('返回')),
-          SimpleDialogOption(onPressed: () => Navigator.pop(context, 2), child: const Text('我认为是 BUG，强制签到')),
+          if (othersLeft) SimpleDialogOption(onPressed: () => Navigator.pop(context, 0), child: const Text('为其他账号签到')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 1), child: const Text('关闭')),
+          SimpleDialogOption(onPressed: () => Navigator.pop(context, 2), child: const Text('仍然签到')),
         ],
       ),
     );

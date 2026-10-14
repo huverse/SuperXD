@@ -214,3 +214,4 @@
   - FrostTexture 逐点绘制颗粒
   - 成绩响应分块累加
 - 平台：只有 Android 宿主。验证只在模拟器（API 36、API 34）上做过，真机和 iOS 都未验收。原生导出通道见 MainActivity.kt、ToolboxFileExporter.kt 与 CalendarExporter.kt（日历文件只经 CalendarFileProvider 开放缓存 calendar_export 文件夹）；桌面小组件见 CourseWidgets.kt；学习通签到的设备信息与 OAID 见 ChaoxingDevice.kt（OAID 库 Android_CN_OAID 来自 JitPack，其华为、荣耀依赖来自各自厂商仓库）。
+- release 包开启 R8：不带混淆规则的原生 SDK（目前是高德）要在 android/app/proguard-rules.pro 写 keep 规则，test/legal_page_test.dart 守护；CI 只跑测试不打 release 包，发布前要在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。

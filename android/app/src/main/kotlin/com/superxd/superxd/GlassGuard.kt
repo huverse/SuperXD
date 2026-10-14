@@ -8,8 +8,8 @@ import android.util.Log
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
 
-// 满档玻璃的运行时守护：本进程用过满档且上一进程以崩溃、原生崩溃或 ANR 结束时，本版本内限档，升级后重试。
-// 档位规则见 lib/theme/campus_glass_tier.dart。
+// 满档玻璃的运行时守护：本进程用过满档且上一进程以崩溃、原生崩溃或 ANR 结束时，本版本内限档，升级后重试；
+// 用户在外观页点「完整」时 retry 解除限档。档位规则见 lib/theme/campus_glass_tier.dart。
 class GlassGuard(private val context: Context) : MethodChannel.MethodCallHandler {
     private val preferences = context.getSharedPreferences("glass_guard", Context.MODE_PRIVATE)
 
@@ -18,6 +18,11 @@ class GlassGuard(private val context: Context) : MethodChannel.MethodCallHandler
             "guard" -> result.success(capped())
             "markFull" -> {
                 preferences.edit().putBoolean(KEY_USED_FULL, true).apply()
+                result.success(null)
+            }
+            "retry" -> {
+                preferences.edit().remove(KEY_CAPPED_VERSION).apply()
+                Log.i("GlassGuard", "action=retry")
                 result.success(null)
             }
             else -> result.notImplemented()

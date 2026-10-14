@@ -204,6 +204,34 @@ void main() {
     expect(clients.where((client) => client.logins > 0), isEmpty);
   });
 
+  test('姓名只增不丢：同步课表学到后当前会话立即带上，自动重登与重新登录都沿用', () async {
+    final session = AppSession(gateway);
+    await gateway.loginRemembered('A', 'test-secret', remember: true);
+    // 登录页不给姓名，先显示学号。
+    expect(gateway.activeSession?.name, '');
+    var notified = 0;
+    session.addListener(() => notified++);
+    clients.single.name = '张三';
+    expect((await gateway.syncSchedule(_term)).ok, isTrue);
+    expect(gateway.activeSession?.name, '张三');
+    expect(notified, 1);
+    // 会话过期整行会话被清、自动重登（新客户端的课表不带姓名）：当前会话与重登后的会话行都留着姓名。
+    clients.single.failure = 'SESSION_EXPIRED';
+    expect((await gateway.syncSchedule(_term)).ok, isTrue);
+    expect(clients, hasLength(2));
+    expect(gateway.activeSession?.name, '张三');
+    session.dispose();
+    await gateway.close();
+    store = await AccountStore.open(directory: directory.path);
+    gateway = AccountGateway(store: store, credentials: credentials, clientFactory: _Client.new);
+    expect((await gateway.restoreSession()).data?.name, '张三');
+    // 退出登录清掉会话行后重新登录：姓名从账号索引补回。
+    await gateway.logout();
+    await gateway.login('A', 'test-secret');
+    expect(gateway.activeSession?.name, '张三');
+    expect((await gateway.readSchedule(const ScheduleScope.week(term: _term, week: 1))).data?.student.name, '张三');
+  });
+
   for (final failure in [null, 'PASSWORD_WRONG', 'captcha']) {
     test('冷启动缺本地会话时最多恢复一次：${failure ?? '成功'}', () async {
       await gateway.loginRemembered('A', 'test-secret', remember: true);
@@ -265,6 +293,7 @@ class _Client extends KingoClient {
   int reads = 0;
   String? failure;
   String? loginFailure;
+  String name = '';
   bool holdReads = false;
   bool holdLogin = false;
   final twoReads = Completer<void>();
@@ -291,6 +320,6 @@ class _Client extends KingoClient {
       throw KingoCallException(const LoginFailure(code: 'SESSION_EXPIRED', message: 'test expired'));
     }
     if (failure != null) throw KingoCallException(LoginFailure(code: failure!, message: 'test failure'));
-    return const ParsedSchedule(termLabel: '', loginId: 'A', name: '', className: '', courses: []);
+    return ParsedSchedule(termLabel: '', loginId: 'A', name: name, className: '', courses: const []);
   }
 }

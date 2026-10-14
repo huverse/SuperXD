@@ -68,7 +68,7 @@
   - 档位有四档：满档 full、标准 standard、磨砂 minimal、实色 solid。
   - resolveCampusGlassTier 按以下规则决定档位：无障碍条件走实色；简化模式或未就绪走磨砂；完整模式固定满档；自动模式跟随 GlassAdaptiveScope 的实测结果；限档时满档降为标准。
   - CampusGlassScope 向下传递模式与限档；外面常挂 GlassAdaptiveScope 采样帧耗时，只在自动模式下采用。按模式增减这一层会改变树结构，切换玻璃效果时整个应用被重建，所以不能这样做（test/campus_glass_test.dart 守护）。玻璃组件统一用 tierOf 取档位，并显式传给 AdaptiveGlass，不依赖库的隐式上限。
-  - CampusGlassGuard 通过通道 superxd/glass 读写原生的限档状态，原生实现见 GlassGuard.kt。
+  - CampusGlassGuard 通过通道 superxd/glass 读写原生的限档状态，原生实现见 GlassGuard.kt：启动时 load 把结果放进 campusGlassCapped，retry 解除本版本限档（用户在界面页点「完整」时调用，人工决策见文件内）。
 - campus_glass_blend.dart：CampusGlassBlend 是玻璃换档的过渡（满档、标准、磨砂、未就绪之间，以及与实色互换）。使用方在玻璃内容层最底下铺同形状实色盖板（不透明度 cover），盖板渐显到不透明后才换档、再渐隐；换到实色就停在盖满。中途目标再变时从当前值续接，减少动画时直接换。用于 GlassPanel 与 CampusGlassSurface。
 - campus_glass_material.dart：玻璃材质表。
   - 按角色区分：navigation（顶栏、底栏）、control（按钮、开关、标签）、overlay（菜单、弹层、弹窗、提示条）。

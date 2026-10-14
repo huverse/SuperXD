@@ -6,7 +6,7 @@
 
 - account_store.dart：账号索引与账号库定位。
   - account_index.db 有三张表：
-    - account：账号键、来源、学号、显示名、旧库暂缓标记。
+    - account：账号键、来源、学号、显示名、旧库暂缓标记。显示名是教务姓名，同步课表时记下（saveDisplayName），登录时传空不覆盖已知的；会话被清后靠它补回（displayNameOf）。
     - active_account：活动账号指针，只有一行。
     - legacy_claim：旧库认领记录，只有一行，状态从 claimed 变为 done。
   - 账号键：对规范化后的来源 URL 与学号取 sha256。

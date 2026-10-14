@@ -206,7 +206,12 @@ class AccountGateway extends AccountAccess {
       sessionWritten = true;
       await pending.auth.persistSession(database);
       checkAttempt();
-      await store.activate(identity, displayName: authenticated.displayName);
+      // 登录不给姓名（会话行按空写入）：取账号索引记着的（同步课表时记下），并写回会话。
+      final persisted = pending.auth.session!;
+      final name = persisted.displayName.isNotEmpty ? persisted.displayName : await store.displayNameOf(identity);
+      if (name != persisted.displayName) await database.updateSessionNames(name, persisted.className);
+      checkAttempt();
+      await store.activate(identity, displayName: name);
       indexWritten = true;
       checkAttempt();
       if (pending.remember != null) {
@@ -230,7 +235,7 @@ class AccountGateway extends AccountAccess {
       }
       checkAttempt();
       final gateway = KingoCampusGateway(database: database, client: pending.auth.client, now: _now);
-      _active = _AccountContext(identity: identity, session: result.data!.session!, gateway: gateway);
+      _active = _AccountContext(identity: identity, session: SessionView(loginId: persisted.loginId, name: name, className: persisted.className), gateway: gateway);
       _pending = null;
       _generation++;
       committed = true;
@@ -471,6 +476,9 @@ class AccountGateway extends AccountAccess {
         if (!active()) return _changed();
         final previous = await context.gateway.database.readSession();
         await auth.persistSession(context.gateway.database);
+        // 会话失效时整行会话已被清掉，重登落库后把当前会话已知的姓名与班级写回。
+        final known = context.session;
+        if (known.name.isNotEmpty && auth.session!.displayName.isEmpty) await context.gateway.database.updateSessionNames(known.name, known.className);
         if (!active()) {
           if (previous == null) { await context.gateway.database.clearSession(); } else { await context.gateway.database.writeSession(previous); }
           return _changed();
@@ -494,7 +502,27 @@ class AccountGateway extends AccountAccess {
   @override
   Future<GatewayResult<List<TermRef>>> syncTerms() => _notifyWrite(_dispatch((gateway) => gateway.syncTerms(), recover: true));
   @override
-  Future<GatewayResult<ScheduleView>> syncSchedule(TermRef term) => _notifyWrite(_dispatch((gateway) => gateway.syncSchedule(term), recover: true));
+  Future<GatewayResult<ScheduleView>> syncSchedule(TermRef term) async {
+    final context = _active;
+    final result = await _notifyWrite(_dispatch((gateway) => gateway.syncSchedule(term), recover: true));
+    await _learnStudent(context, result.data?.student);
+    return result;
+  }
+
+  // 姓名与班级只有同步课表时教务才给（已写进账号库）：记进账号索引（会话被清后靠它补回），
+  // 同一账号的活动会话跟着更新并通知，我的页不用等重启。
+  // 在切换锁里写，和退出、关闭互斥（关闭后账号索引已关）。
+  Future<void> _learnStudent(_AccountContext? context, SessionView? student) async {
+    if (context == null || student == null || student.name.isEmpty) return;
+    await _transition.synchronized(() async {
+      final current = context.session;
+      if (_closed || !identical(context, _active) || student.loginId != current.loginId) return;
+      await store.saveDisplayName(context.identity, student.name);
+      if (student.name == current.name && student.className == current.className) return;
+      context.session = student;
+      notifyListeners();
+    });
+  }
   @override
   Future<GatewayResult<ScheduleView>> readSchedule(ScheduleScope scope) => _dispatch((gateway) => gateway.readSchedule(scope));
   @override
@@ -558,7 +586,7 @@ class _PendingLogin {
 class _AccountContext {
   _AccountContext({required this.identity, required this.session, required this.gateway});
   final AccountIdentity identity;
-  final SessionView session;
+  SessionView session;
   KingoCampusGateway gateway;
   Future<GatewayResult<bool>>? recovery;
   bool recoveryBlocked = false;
