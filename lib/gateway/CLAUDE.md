@@ -6,7 +6,7 @@
 
 - account_access.dart：账号生命周期接口 AccountAccess。
   - 继承 ChangeNotifier，并实现 CampusGateway。
-  - 提供代次 generation、当前会话与身份、记住账号、登出与会话过期、旧库导入状态。
+  - 提供代次 generation、当前会话与身份、记住账号（含已登录时输密码重新开启 rememberWithPassword）、登出与会话过期、旧库导入状态。
   - 页面和 AppSession 只依赖这个接口。
   - scheduleChanges：学期、课表、作息、开学日或提醒设置在本机写入成功后通知，组合根据此重新对账课前提醒；默认实现从不通知。
 - account_gateway.dart：AccountAccess 的实现 AccountGateway。这个门面只负责选中固定的账号上下文。
@@ -18,6 +18,7 @@
   - 登录：
     - 每次尝试都新建一个 KingoAuth 和一个客户端，用尝试编号（epoch）防止旧尝试回写。
     - 成功后依次写会话、激活账号索引，再按用户选择写入或删除凭据。任何一步失败都回滚到原值。
+    - 只核对（rememberWithPassword，关闭后重新开启记住账号）：以当前学号走同一套尝试与验证码流程，认证成功只写凭据，不换会话与客户端、不加代次（[人工决策] 在方法上）。
   - 启动恢复：
     1. 先用本地会话恢复。
     2. 失败且保存了凭据时，自动登录一次。

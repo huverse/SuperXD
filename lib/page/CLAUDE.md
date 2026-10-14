@@ -69,8 +69,8 @@
     - 默认读取本地学期列表，用户点刷新时才联网刷新。
   - campus_sync_dialogs.dart：同步结果弹窗 showCampusSyncReport，展示结果和未处理项，可重新登录或重新同步。每项两层：状态 · 内容 · 学期（DotSeparatedText）在上，说明次要色在下。教务限流停下时只说明约 1 分钟后再同步，不提供立即重新同步。
 - 账号与设置：
-  - login_page.dart：登录页 LoginPage，也用于切换账号。包含验证码、记住账号确认，以及百宝箱和法务入口。
-  - account_dialogs.dart：旧版本数据导入确认 showLegacyImport，以及登录后自动提示导入的 LegacyImportGate。
+  - login_page.dart：登录页 LoginPage，也用于切换账号。包含验证码（弹窗见 account_dialogs.dart）、记住账号确认，以及百宝箱和法务入口。
+  - account_dialogs.dart：旧版本数据导入确认 showLegacyImport，以及登录后自动提示导入的 LegacyImportGate；教务登录验证码弹窗 LoginCaptchaDialog（登录页与开启记住账号共用，通过后自己关）；开启记住账号的输密码弹窗 askRememberPassword。
   - appearance_page.dart：界面设置 AppearancePage，调整字号、配色、字体、深浅色、玻璃效果和背景；传入 SocialService 时顶栏有“分享给好友”（不含壁纸图片）。
     - 背景可选自定义图片：系统照片选择器选一张，取色后交给 DisplaySettings 保存；选图插件的缓存副本用完即删（取图见 image_copy_pick.dart）。
     - 选图函数可注入（pickWallpaper），测试用假选图。
@@ -78,7 +78,7 @@
     - 字体预览是 assets/font_previews 里预先画好的图（tool/font_previews.dart 生成，按配色着色、随字号缩放），不为预览加载没在用的字体：首次排版要在主线程解析全部字重，首帧卡近半秒、转场被吃掉。改预览文字或字体后重跑生成。
     - 模糊与透明度是两条滑杆（CampusSlider），拖动中只预览，正常松手立即保存；系统取消、读屏增减没有松手回调，停手 300ms 补存；离开页面时把没存的预览存掉。
   - image_copy_pick.dart：通用取图 pickImageCopy（相册走系统照片选择器、或相机现拍，长边压缩转 JPEG），返回副本路径与 discard。插件留在缓存里的 UUID 开头副本与压缩版，取图前后对比只删这次新出现的；壁纸、相册识别二维码共用，并经组合根注入百宝箱（人脸与签到照片）。
-  - account_page.dart：账号页 AccountPage（同 iOS Apple ID）。记住账号（只能在这里关闭，开启要在登录时输入密码，未开启时只读显示状态）、切换账号、导入旧版本数据一组；退出登录单独一组、红字放最底。退出后账号代次变化，账号页随旧路由一起销毁。
+  - account_page.dart：账号页 AccountPage（同 iOS Apple ID）。记住账号（开着时点按关闭并删凭据；关着时点按输密码，后台登录一次核对、要验证码就弹，通过才保存并停在本页，不换代次）、切换账号、导入旧版本数据一组；退出登录单独一组、红字放最底。退出后账号代次变化，账号页随旧路由一起销毁。
   - about_page.dart：关于页 AboutPage。应用名与版本（package_info_plus 读安装包）、用户协议、隐私政策、开源许可、源代码与反馈问题（url_launcher 交给系统浏览器，打不开时原地提示链接），底部应用署名。版本信息与打开链接可注入，测试用假实现。
   - legal_page.dart：用户协议与隐私政策 LegalPage（路由 /legal/service、/legal/privacy），面向公开 Alpha，顶部显示更新日期 legalUpdated；改动数据处理时同步改隐私政策并更新日期。
   - licenses_page.dart：全部依赖许可列表 CampusLicensesPage 和应用署名 GalaxyousAttribution。
