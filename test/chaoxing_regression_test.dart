@@ -18,6 +18,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_code_cells.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_gesture_field.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
@@ -87,6 +88,18 @@ void main() {
     vault: vault,
     transport: (cookies) => ChaoxingHttp(client: fake.client(), cookies: cookies),
   );
+
+  test('地图落点：上次地图选点优先，没有就用最近用过的收藏，都没有为空（全国视角）', () async {
+    final controller = ChaoxingController(accounts: accountsWith(MemoryChaoxingVault()));
+    expect(await controller.mapStart(), isNull);
+    await controller.saveLocation('知敬楼', const ChaoxingLocation(latitude: 36.1, longitude: 117.1, address: '知敬楼'));
+    expect((await controller.mapStart())?.latitude, 36.1);
+    await controller.rememberMapPick(const ChaoxingLocation(latitude: 36.65, longitude: 117.03, address: '地图选点', system: ChaoxingCoordinateSystem.gcj02));
+    final start = await controller.mapStart();
+    expect([start?.latitude, start?.longitude, start?.system], [36.65, 117.03, ChaoxingCoordinateSystem.gcj02]);
+    // 只是落点，不进收藏。
+    expect(controller.locations.map((saved) => saved.label), ['知敬楼']);
+  });
 
   test('后台刷新跨过删除时，不把已删账号的会话写回安全存储', () async {
     final vault = MemoryChaoxingVault();

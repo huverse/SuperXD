@@ -7,6 +7,9 @@
     <!-- 课前提醒：开机后重新排定已安排的提醒；精确时刻须用户在系统设置中允许，未允许时改用可能延迟的普通调度。 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- 学习通位置签到的地图页点「定位到我」时才申请，仅使用期间（不要后台定位），由高德定位取一次当前位置。 -->
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <!-- 学习通签到取 OAID 的 Android_CN_OAID 会并入这些权限，应用用不到，一律移除，只走各厂商不需授权的标识服务。 -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
@@ -30,6 +33,8 @@
         android:dataExtractionRules="@xml/data_extraction_rules">
         <service android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync" tools:node="merge"/>
+        <!-- 高德定位（地图页「定位到我」）的定位服务；高德是 jar 不带清单，须自己声明，缺了定位直接失败。不做后台定位，不设前台服务类型。 -->
+        <service android:name="com.amap.api.location.APSService" android:exported="false"/>
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
             <intent-filter>

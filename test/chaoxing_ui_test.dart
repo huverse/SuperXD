@@ -755,6 +755,25 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('只有一个账号时打开即发现已签到：关掉弹窗再签不会要人去选（没有勾选框），照常报原因给强制签到', (tester) async {
+    usePhoneScreen(tester);
+    fake.preSignHtml = '<script>signstatus = 1;</script>';
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    await openSignSheet(tester);
+    await waitUntil(tester, () => find.text('这场已经签过了').evaluate().isNotEmpty);
+    // 点弹窗外关掉，留在签到页。
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('这场已经签过了').evaluate().isEmpty);
+    await enterCode(tester, '1234');
+    await waitUntil(tester, () => find.widgetWithText(OutlinedButton, '强制签到').evaluate().isNotEmpty);
+    expect(find.text('请先选要签到的人'), findsNothing);
+    expect(find.text('这场签到已经完成了'), findsOneWidget);
+    expect(fake.signQuery, isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('本人已签过、还有没勾的代签账号时，弹窗给「为其他账号签到」并留在签到页', (tester) async {
     usePhoneScreen(tester);
     fake.preSignHtml = '<script>signstatus = 1;</script>';
