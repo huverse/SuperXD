@@ -464,7 +464,10 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                 onSign: () => launcher.open(context, activity),
               ),
           const SizedBox(height: 4),
-          // 找不到要签的那场时的三个去处：已结束的、按课程翻、群聊里发的。
+          // 找不到要签的那场时的三个去处：已结束的、群聊里发的、按课程翻。
+          // [人工决策-2026-10-14 14:46:17] 原来「往期、按课程、群聊」一行放不下前两个，第一行右侧空着、群聊落到第二行右边；
+          // 用户选群聊排第二，与往期同一行左起并排，按课程在下一行左边；按钮叫「群聊签到」（同「往期签到」；默认字体下屏宽约 361dp 起
+          // 与「往期签到（三位数）」并排，原文字要约 399dp；群聊页标题仍是「群聊里的签到」）；放不下两个时照常一行一个。
           Wrap(
             spacing: 8,
             runSpacing: 8,
@@ -475,14 +478,14 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                 label: Text('往期签到（${controller.pastActivities.length}）'),
               ),
               OutlinedButton.icon(
+                onPressed: controller.busy ? null : () => showChaoxingGroupPage(context, launcher: launcher),
+                icon: const CampusIcon(CampusIcons.messages),
+                label: const Text('群聊签到'),
+              ),
+              OutlinedButton.icon(
                 onPressed: () => showChaoxingCoursePage(context, launcher: launcher),
                 icon: const CampusIcon(CampusIcons.course),
                 label: Text('按课程查看（${controller.courseGroups().length}）'),
-              ),
-              OutlinedButton.icon(
-                onPressed: controller.busy ? null : () => showChaoxingGroupPage(context, launcher: launcher),
-                icon: const CampusIcon(CampusIcons.messages),
-                label: const Text('群聊里的签到'),
               ),
             ],
           ),

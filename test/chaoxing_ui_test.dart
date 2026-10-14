@@ -120,7 +120,7 @@ Future<void> tapEntry(WidgetTester tester, String label) async {
   await tester.pump();
 }
 
-Future<void> openGroups(WidgetTester tester) => tapEntry(tester, '群聊里的签到');
+Future<void> openGroups(WidgetTester tester) => tapEntry(tester, '群聊签到');
 
 // 造一条环信漫游消息：Meta.field6 里是 MessageBody，它的 ext 里 key=attachment 的那项是签到附件。
 List<int> _imVarint(int value) {
@@ -237,6 +237,29 @@ void main() {
     expect(fake.signQuery!['signCode'], '1234');
     expect(fake.signQuery!['activeId'], '501');
     expect(fake.signQuery!['uid'], '7007');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 测试环境不加载应用字体，这里守的是顺序与折行关系；真实字体下的宽度在模拟器上量（见 chaoxing_page.dart 的人工决策）。
+  testWidgets('首页三个去处：群聊排第二，与往期同一行，按课程在下一行左起', (tester) async {
+    usePhoneScreen(tester);
+    fake.activities = [
+      ...fake.activities,
+      for (var index = 0; index < 120; index++)
+        {'id': 600 + index, 'type': 2, 'otherId': '2', 'nameOne': '签到', 'nameFour': '高等数学', 'startTime': 1750000000000 + index, 'status': 2, 'userStatus': 0, 'ext': {'a': 1}},
+    ];
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    Finder button(Finder label) => find.ancestor(of: label, matching: find.byWidgetPredicate((widget) => widget is OutlinedButton));
+    final past = button(find.text('往期签到（120）'));
+    final group = button(find.text('群聊签到'));
+    final course = button(find.textContaining('按课程查看'));
+    await tester.ensureVisible(course);
+    await tester.pump();
+    expect(tester.getTopLeft(group).dy, tester.getTopLeft(past).dy);
+    expect(tester.getTopLeft(group).dx, greaterThan(tester.getTopRight(past).dx));
+    expect(tester.getTopLeft(course).dx, tester.getTopLeft(past).dx);
+    expect(tester.getTopLeft(course).dy, greaterThan(tester.getBottomLeft(past).dy));
     await tester.pumpWidget(const SizedBox());
   });
 
