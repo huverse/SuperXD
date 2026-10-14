@@ -162,7 +162,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   }
 
   // 打开签到页先检查一遍（对齐参考项目，别等提交后才知道）：已签到、已截止或不在班级的人原地标出
-  // 并取消勾选；全部被拦时弹窗给「关闭 / 仍然签到」，还有没勾的账号时多一个「为其他账号签到」。检查不挡详情显示，也不挡提交（提交时会再查一次）。
+  // 并取消勾选（只有一个账号时不取消）；全部被拦时弹窗给「关闭 / 仍然签到」，还有没勾的账号时多一个「为其他账号签到」。检查不挡详情显示，也不挡提交（提交时会再查一次）。
   Future<void> _presignOnOpen() async {
     final checked = _activity.activeId;
     final selected = [for (final target in _batch.targets) if (target.selected) target];
@@ -188,8 +188,9 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     await pool.close();
     if (!mounted || blocked.isEmpty || _busy || _activity.activeId != checked) return;
     for (final entry in blocked.entries) {
+      // 只有一个账号时没有勾选框，取消勾选就再也选不回来，点签到只会提示「请先选要签到的人」（真机反馈），保持勾选。
+      if (_multi) entry.key.selected = false;
       entry.key
-        ..selected = false
         ..state = ChaoxingTargetState.failed
         ..message = entry.value.message
         ..forceAvailable = true;
@@ -257,9 +258,12 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     final rangeLatitude = info?.locationLatitude;
     final rangeLongitude = info?.locationLongitude;
     final range = info?.locationRange;
+    final recent = await widget.controller.mapStart();
+    if (!mounted) return;
     final picked = await openChaoxingMapPicker(
       context,
       initial: _currentLocation() ?? (_manualLocation ? null : _savedLocation),
+      recent: recent,
       label: _savedLocation?.address,
       // 详情里有签到点与范围时画出来（学习通给的是 BD-09 口径，地图内部会换算成 GCJ-02）。
       rangeCenter: rangeLatitude == null || rangeLongitude == null
@@ -275,6 +279,12 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       _manualLocation = false;
       _error = null;
     });
+    // 只记作下次打开地图的落点，不进收藏；记不下不影响这次签到。
+    try {
+      await widget.controller.rememberMapPick(picked);
+    } catch (error, stack) {
+      campusLog('[Chaoxing] action=remember_map errorType=${error.runtimeType}\n$stack');
+    }
   }
 
   // 拍照签到每人一张照片（上传前各自随机裁剪旋转）：可以现场拍，也可以从相册选。

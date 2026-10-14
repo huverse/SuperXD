@@ -21,7 +21,9 @@ void main() {
     for (final (title, fragment) in [
       ('好友与私信', '按 IP 地址计数限流'),
       ('学习通签到用到的第三方 SDK', 'com.hihonor.mcs:ads-identifier'),
+      ('地图选点', '只有你在地图页点「定位到我」时，应用才申请定位权限'),
       ('系统权限', '相机：扫码（加好友、课堂签到二维码、代签码）时识别在本机完成'),
+      ('系统权限', '位置：只在学习通位置签到的地图页点「定位到我」时申请'),
       ('你的权利', '你可以撤回同意'),
       ('未成年人', '未满 14 周岁'),
       ('政策更新与联系', '私下联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com'),
@@ -130,7 +132,7 @@ void main() {
   // release 才开 R8，CI 不打 release 包；高德 jar 不带混淆规则，删改类名后一开地图就崩。
   test('release 混淆规则保住高德 SDK', () {
     final rules = File('android/app/proguard-rules.pro').readAsStringSync();
-    for (final package in ['com.amap.api.maps', 'com.autonavi', 'com.amap.api.location', 'com.amap.api.services']) {
+    for (final package in ['com.amap.api', 'com.autonavi', 'com.loc']) {
       expect(rules, contains('-keep class $package.** { *; }'));
     }
   });

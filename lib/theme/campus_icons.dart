@@ -57,6 +57,7 @@ abstract final class CampusIcons {
   static const parse = LucideIcons.wandSparkles;
   static const termStart = LucideIcons.calendar1;
   static const jumpToday = LucideIcons.locateFixed;
+  static const locateMe = LucideIcons.navigation;
   static const login = LucideIcons.logIn;
   static const restore = LucideIcons.rotateCcw;
   static const share = LucideIcons.share2;

@@ -27,6 +27,9 @@ import 'package:superxd/toolbox/toolbox_models.dart';
 
 enum ChaoxingStatus { loading, signedOut, ready }
 
+// 偏好表里记上次地图选点（见 mapStart）。
+const chaoxingMapCenterKey = 'map_center';
+
 // 课程页的一组课：同名课程（多个班）合并成一组。
 class ChaoxingCourseGroup {
   const ChaoxingCourseGroup({required this.name, required this.courses, required this.pinned});
@@ -511,6 +514,21 @@ class ChaoxingController extends ChangeNotifier {
     locations = await accounts.store.locations();
     _notify();
   }
+
+  // 地图下次打开的落点：上次在地图上选的点（GCJ-02，只存本机偏好，清除数据随库删；不是收藏），没有就用最近用过的收藏。
+  Future<ChaoxingLocation?> mapStart() async {
+    final parts = (await accounts.store.preference(chaoxingMapCenterKey))?.split(',');
+    final latitude = parts?.length == 2 ? double.tryParse(parts!.first) : null;
+    final longitude = parts?.length == 2 ? double.tryParse(parts!.last) : null;
+    if (latitude != null && longitude != null) {
+      return ChaoxingLocation(latitude: latitude, longitude: longitude, address: '', system: ChaoxingCoordinateSystem.gcj02);
+    }
+    return locations.firstOrNull?.location;
+  }
+
+  // 地图选点返回的都是 GCJ-02。
+  Future<void> rememberMapPick(ChaoxingLocation picked) =>
+      accounts.store.setPreference(chaoxingMapCenterKey, '${picked.latitude},${picked.longitude}');
 
   // 离这个位置 withinMeters 米内已有的收藏（签完提示收藏时用它判断「附近已经收藏过了」，对齐参考项目）。
   ChaoxingSavedLocation? nearbyLocation(ChaoxingLocation location, {double withinMeters = 500}) {

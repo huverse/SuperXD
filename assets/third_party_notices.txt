@@ -67,8 +67,8 @@ GPL 的例外：下文第四节所述 math-curve-loaders 改编部分（lib/them
 
 7. 高德地图 SDK（Android）
    来源：https://lbs.amap.com/ ，随 amap_map 1.0.15 插件（Apache-2.0，https://github.com/kuloud/amap_flutter）打包，其 Flutter 与原生桥接代码同插件
-   版本：Android 地图 SDK 10.1.200（带定位与搜索库，本应用只用地图显示与选点）
-   说明：高德地图 SDK 是闭源商业 SDK，按高德开放平台的服务条款分发与使用，不是开源许可，也不随本项目的 GPL-3.0 授权。使用前须在构建时提供绑定了本应用包名与签名的高德 key（`--dart-define=SUPERXD_AMAP_KEY`），未提供或设备不是 arm 架构时地图入口不出现；应用不申请定位权限，也不读取实时位置。
+   版本：Android 地图 SDK 10.1.200（带定位与搜索库，本应用用地图显示、选点与「定位到我」，不用搜索）
+   说明：高德地图 SDK 是闭源商业 SDK，按高德开放平台的服务条款分发与使用，不是开源许可，也不随本项目的 GPL-3.0 授权。使用前须在构建时提供绑定了本应用包名与签名的高德 key（`--dart-define=SUPERXD_AMAP_KEY`），未提供或设备不是 arm 架构时地图入口不出现；只有在地图页点「定位到我」时才申请定位权限（仅使用期间），由高德定位取一次当前位置。
 
 8. Android_CN_OAID 4.2.17
    来源：https://github.com/gzu-liyujiang/Android_CN_OAID（经 JitPack 分发）
