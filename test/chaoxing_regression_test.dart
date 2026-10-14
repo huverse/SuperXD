@@ -8,6 +8,7 @@ import 'package:http/testing.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -20,6 +21,8 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_gesture_field.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_signer.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
 
@@ -89,16 +92,113 @@ void main() {
     transport: (cookies) => ChaoxingHttp(client: fake.client(), cookies: cookies),
   );
 
-  test('地图落点：上次地图选点优先，没有就用最近用过的收藏，都没有为空（全国视角）', () async {
+  test('位置签到默认选中的位置：这门课上次签到用的优先，没有就用上次签到用的，都没有为空；收藏不算', () async {
     final controller = ChaoxingController(accounts: accountsWith(MemoryChaoxingVault()));
-    expect(await controller.mapStart(), isNull);
+    ChaoxingActivity activityIn(int classId) => ChaoxingActivity(
+      activeId: classId,
+      courseId: classId,
+      classId: classId,
+      title: '位置签到',
+      subtitle: '课程',
+      signType: ChaoxingSignType.location,
+      startTime: null,
+      status: 1,
+      userStatus: 0,
+      ext: '',
+    );
     await controller.saveLocation('知敬楼', const ChaoxingLocation(latitude: 36.1, longitude: 117.1, address: '知敬楼'));
-    expect((await controller.mapStart())?.latitude, 36.1);
-    await controller.rememberMapPick(const ChaoxingLocation(latitude: 36.65, longitude: 117.03, address: '地图选点', system: ChaoxingCoordinateSystem.gcj02));
-    final start = await controller.mapStart();
-    expect([start?.latitude, start?.longitude, start?.system], [36.65, 117.03, ChaoxingCoordinateSystem.gcj02]);
-    // 只是落点，不进收藏。
+    expect(await controller.signedLocation(activityIn(1)), isNull);
+    await controller.rememberSignedLocation(activityIn(1), const ChaoxingLocation(latitude: 36.65, longitude: 117.03, address: '博学楼', system: ChaoxingCoordinateSystem.gcj02));
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await controller.rememberSignedLocation(activityIn(2), const ChaoxingLocation(latitude: 36.7, longitude: 117.1, address: '图书馆', system: ChaoxingCoordinateSystem.gcj02));
+    final own = await controller.signedLocation(activityIn(1));
+    expect([own?.latitude, own?.longitude, own?.system], [36.65, 117.03, ChaoxingCoordinateSystem.gcj02]);
+    expect((await controller.signedLocation(activityIn(3)))?.address, '图书馆');
+    // 只是默认位置，不进收藏。
     expect(controller.locations.map((saved) => saved.label), ['知敬楼']);
+  });
+
+  test('preSign 回 403 时重登一次再重发；重发还是 403 就按登录过期报（参考项目 1.19.2「访问被拒绝」）', () async {
+    final accounts = accountsWith(MemoryChaoxingVault());
+    await accounts.signIn(phoneNumber: '13800138000', password: 'myPassword123');
+    final client = (await accounts.clientFor('13800138000'))!;
+    const activity = ChaoxingActivity(
+      activeId: 501,
+      courseId: 9001,
+      classId: 88,
+      title: '签到',
+      subtitle: '高等数学',
+      signType: ChaoxingSignType.password,
+      startTime: null,
+      status: 1,
+      userStatus: 0,
+      ext: '{}',
+    );
+    int logins() => fake.calls.where((call) => call.endsWith('/fanyalogin')).length;
+    fake.preSignHtml = '<script>signstatus = 0;</script>';
+    final before = logins();
+    fake.forbiddenPreSigns = 1;
+    expect(await accounts.run(client, () => chaoxingPreSign(client, activity)), ChaoxingPreSignStatus.readyToSign);
+    expect(logins(), before + 1);
+    fake.forbiddenPreSigns = 2;
+    await expectLater(
+      accounts.run(client, () => chaoxingPreSign(client, activity)),
+      throwsA(isA<ChaoxingFailure>().having((failure) => failure.code, 'code', ChaoxingFailureCode.sessionExpired)),
+    );
+    client.close();
+  });
+
+  List<Map<String, Object?>> mathCourse() => [
+    {
+      'content': {
+        'id': 88,
+        'course': {
+          'data': [
+            {'id': 9001, 'name': '高等数学', 'teacherfactor': '张老师'},
+          ],
+        },
+      },
+    },
+  ];
+
+  test('课表推断轮询：正有课却还没推断到签到时隔一会儿重查这节课，老师后发起的签到也会冒出来（参考项目 1.19.2）', () async {
+    final now = DateTime.now().toUtc();
+    fake.courses = mathCourse();
+    fake.lessons = {
+      'curriculum': {'lessonTimeConfigArray': ['00:00-23:59'], 'firstWeekDate': now.millisecondsSinceEpoch},
+      'lessonArray': [
+        {'name': '高等数学（一）', 'dayOfWeek': campusInstant(now).weekday, 'beginNumber': 1, 'length': 1, 'weeks': '1', 'classId': 0, 'courseId': 0},
+      ],
+    };
+    final controller = ChaoxingController(accounts: accountsWith(MemoryChaoxingVault()), lessonPollInterval: const Duration(milliseconds: 20));
+    await controller.signIn('13800138000', 'myPassword123');
+    expect(controller.lessonActivities, isEmpty);
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '5', 'nameOne': '后发起的签到', 'startTime': DateTime.now().toUtc().millisecondsSinceEpoch, 'status': 1, 'userStatus': 0},
+    ];
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (controller.lessonActivities.isEmpty && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    expect(controller.lessonActivities.map((activity) => activity.activeId), [501]);
+    // 退出会先等登录后的后台刷新落定，免得测试收尾关库时它还在写。
+    await controller.signOut();
+    controller.dispose();
+  });
+
+  test('扫课堂签到二维码：按详情组出活动，课程号缺了按班级到课程列表里找，不在列表里的课也能签（参考项目 1.19.2）', () async {
+    fake.courses = mathCourse();
+    final controller = ChaoxingController(accounts: accountsWith(MemoryChaoxingVault()));
+    await controller.signIn('13800138000', 'myPassword123');
+    fake.activeInfos[777] = {'otherId': '2', 'nameOne': '二维码签到', 'clazzid': 88, 'courseId': 0};
+    final scanned = await controller.scannedActivity(chaoxingParseQrCode('SIGNIN:aid=777&source=15&Code=777&enc=ABC')!);
+    expect([scanned.activeId, scanned.classId, scanned.courseId, scanned.subtitle, scanned.signType], [777, 88, 9001, '高等数学', ChaoxingSignType.qrCode]);
+    fake.activeInfos[778] = {'otherId': '4', 'nameOne': '位置签到', 'clazzid': 55, 'courseId': 5005};
+    final outside = await controller.scannedActivity(const ChaoxingQrCode(enc: 'ABC', activeId: 778));
+    expect([outside.classId, outside.courseId, outside.subtitle, outside.ongoing], [55, 5005, '课堂签到', isTrue]);
+    await expectLater(controller.scannedActivity(const ChaoxingQrCode(enc: 'ABC')), throwsA(isA<ChaoxingFailure>()));
+    await controller.signOut();
+    controller.dispose();
   });
 
   test('后台刷新跨过删除时，不把已删账号的会话写回安全存储', () async {

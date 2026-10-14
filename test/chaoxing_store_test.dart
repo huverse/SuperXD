@@ -201,6 +201,46 @@ void main() {
     expect(await store.faceImages('138'), isEmpty);
   });
 
+  test('签到位置按班级记住：本班的优先，没有取最近一次签到的，同班覆盖，按最近使用裁剪到上限', () async {
+    expect(await store.signedLocation(1), isNull);
+    await store.putSignedLocation(1, const ChaoxingLocation(latitude: 36.1, longitude: 117.1, address: '知敬楼', system: ChaoxingCoordinateSystem.gcj02));
+    // 时间戳到毫秒，隔一拍才分得出先后。
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await store.putSignedLocation(2, const ChaoxingLocation(latitude: 36.6, longitude: 117.0, address: '图书馆'));
+    expect((await store.signedLocation(1))?.address, '知敬楼');
+    expect((await store.signedLocation(1))?.system, ChaoxingCoordinateSystem.gcj02);
+    expect((await store.signedLocation(3))?.address, '图书馆');
+    await store.putSignedLocation(1, const ChaoxingLocation(latitude: 36.2, longitude: 117.2, address: '博学楼'));
+    expect((await store.signedLocation(1))?.address, '博学楼');
+    // 收藏是另一回事：记住的签到位置不进收藏。
+    expect(await store.locations(), isEmpty);
+
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    for (var classId = 10; classId < 10 + ChaoxingStore.classLocationLimit; classId++) {
+      await store.putSignedLocation(classId, ChaoxingLocation(latitude: 30 + classId / 1000, longitude: 120, address: '教室$classId'));
+    }
+    // 最早签的 1、2 两个班被裁掉，本班没记录时退回最近签过的位置。
+    expect((await store.signedLocation(1))?.address, startsWith('教室'));
+    expect((await store.signedLocation(2))?.address, startsWith('教室'));
+    expect((await store.signedLocation(10))?.address, '教室10');
+  });
+
+  test('v5 的库升到 v6：建出按班级的签到位置表，删掉旧的「上次地图选点」偏好', () async {
+    final legacyPath = path.join(directory.path, 'v5.db');
+    await (await ChaoxingStore.open(legacyPath)).close();
+    final raw = await openDatabase(legacyPath);
+    await raw.execute('DROP TABLE class_locations');
+    await raw.insert('preferences', {'key': 'map_center', 'value': '36.65,117.03'});
+    await raw.setVersion(5);
+    await raw.close();
+
+    final upgraded = await ChaoxingStore.open(legacyPath);
+    expect(await upgraded.preference('map_center'), isNull);
+    await upgraded.putSignedLocation(1, const ChaoxingLocation(latitude: 36.1, longitude: 117.1, address: '知敬楼'));
+    expect((await upgraded.signedLocation(1))?.address, '知敬楼');
+    await upgraded.close();
+  });
+
   test('置顶课程每个账号有上限', () async {
     await store.setCoursesPinned('138', [for (var index = 0; index < ChaoxingStore.pinnedCourseLimit + 5; index++) index], pinned: true);
     expect(await store.pinnedCourses('138'), hasLength(ChaoxingStore.pinnedCourseLimit));

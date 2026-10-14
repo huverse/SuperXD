@@ -277,10 +277,13 @@ Never _fail(String message) => throw ChaoxingFailure(ChaoxingFailureCode.invalid
 
 // preSign 之后紧跟 analysis → analysis2（学习通客户端打开签到页时的必经请求），再判断签到状态。
 // 返回 302 或「校验失败」说明这个账号不在该班级。
+// 返回 403 是学习通新接口拒了这个会话（参考项目 1.19.2 修的「访问被拒绝」）：按会话过期报，
+// 由调用方的 accounts.run 重登一次再重发，重发仍是 403 就提示重新登录。
 Future<ChaoxingPreSignStatus> chaoxingPreSign(ChaoxingClient client, ChaoxingActivity activity) async {
   final response = await client.http.postForm(
     chaoxingPreSignRequestUri(activity: activity, account: client.account!),
     chaoxingFormBody({'ext': activity.ext}),
+    forbiddenExpired: true,
   );
   if (response.statusCode == 302) {
     throw const ChaoxingFailure(ChaoxingFailureCode.noPermission, '你的账号不在该班级里');

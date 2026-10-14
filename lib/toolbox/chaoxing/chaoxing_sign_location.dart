@@ -10,8 +10,8 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_map_page.dart';
 
-// 签到弹层里的位置选择：收藏的位置用 chip 选，或手输经纬度（地图用不了时直接摊开并写明原因），也可在地图上选点。
-// 选中与手输的状态归签到弹层管，这里只画与回调。
+// 签到弹层里的位置选择。地图能用时默认是嵌在这里的地图（点选、定位到我、全屏），下面是位置名称与收藏的位置；
+// 地图用不了时收藏的位置用 chip 选，或手输经纬度（直接摊开并写明原因）。选中与手输的状态归签到弹层管，这里只画与回调。
 class ChaoxingSignLocation extends StatelessWidget {
   const ChaoxingSignLocation({
     super.key,
@@ -26,6 +26,9 @@ class ChaoxingSignLocation extends StatelessWidget {
     required this.onSelect,
     required this.onSave,
     required this.onPickOnMap,
+    required this.onMapPicked,
+    this.rangeCenter,
+    this.rangeMeters,
   });
   final ChaoxingController controller;
   final bool manual;
@@ -38,6 +41,9 @@ class ChaoxingSignLocation extends StatelessWidget {
   final ValueChanged<ChaoxingLocation> onSelect;
   final VoidCallback onSave;
   final VoidCallback onPickOnMap;
+  final ValueChanged<ChaoxingLocation> onMapPicked;
+  final ChaoxingLocation? rangeCenter;
+  final double? rangeMeters;
 
   @override
   Widget build(BuildContext context) {
@@ -75,10 +81,7 @@ class ChaoxingSignLocation extends StatelessWidget {
             ],
           ),
           SizedBox(height: campusFieldGap(context)),
-          TextField(
-            controller: address,
-            decoration: const InputDecoration(labelText: '位置名称', helperText: '例如教学楼名，签到时一起提交', helperMaxLines: 2),
-          ),
+          _nameField(),
           const SizedBox(height: 12),
           // 按钮整体换行：大字号与窄屏下两三个按钮排不进一行。
           Wrap(
@@ -87,19 +90,32 @@ class ChaoxingSignLocation extends StatelessWidget {
             children: [
               OutlinedButton.icon(onPressed: busy ? null : onSave, icon: const CampusIcon(CampusIcons.add), label: const Text('收藏这个位置')),
               if (chaoxingMapAvailable)
-                OutlinedButton.icon(onPressed: busy ? null : onPickOnMap, icon: const CampusIcon(CampusIcons.jumpToday), label: const Text('在地图上选点')),
-              if (saved.isNotEmpty)
+                OutlinedButton.icon(onPressed: busy ? null : () => onManual(false), icon: const CampusIcon(CampusIcons.jumpToday), label: const Text('在地图上选点')),
+              if (!chaoxingMapAvailable && saved.isNotEmpty)
                 OutlinedButton.icon(onPressed: busy ? null : () => onManual(false), icon: const CampusIcon(CampusIcons.pin), label: const Text('用收藏的位置')),
             ],
           ),
         ],
       );
     }
+    final map = chaoxingMapAvailable;
     return Column(
       mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        // 收藏的位置是选项（选择标签）；地图选点、手动输入与管理收藏是操作（带图标的按钮），两类分开放。
+        if (map) ...[
+          ChaoxingInlineMap(
+            selected: selected,
+            onPicked: onMapPicked,
+            onExpand: busy ? null : onPickOnMap,
+            rangeCenter: rangeCenter,
+            rangeMeters: rangeMeters,
+          ),
+          SizedBox(height: campusFieldGap(context)),
+          _nameField(),
+          const SizedBox(height: 12),
+        ],
+        // 收藏的位置是选项（选择标签）；手动输入与管理收藏是操作（带图标的按钮），两类分开放。
         if (saved.isNotEmpty) ...[
           Wrap(
             spacing: 8,
@@ -110,17 +126,16 @@ class ChaoxingSignLocation extends StatelessWidget {
           ),
           const SizedBox(height: 8),
         ],
-        DotSeparatedText(
-          selected == null ? '还没有收藏位置' : '${selected!.address} · ${selected!.formattedLatitude}, ${selected!.formattedLongitude}',
-          style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
-        ),
-        const SizedBox(height: 12),
+        if (!map)
+          DotSeparatedText(
+            selected == null ? '还没有收藏位置' : '${selected!.address} · ${selected!.formattedLatitude}, ${selected!.formattedLongitude}',
+            style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
+          ),
+        if (!map) const SizedBox(height: 12),
         Wrap(
           spacing: 8,
           runSpacing: 8,
           children: [
-            if (chaoxingMapAvailable)
-              OutlinedButton.icon(onPressed: busy ? null : onPickOnMap, icon: const CampusIcon(CampusIcons.jumpToday), label: const Text('在地图上选点')),
             OutlinedButton.icon(onPressed: busy ? null : () => onManual(true), icon: const CampusIcon(CampusIcons.edit), label: const Text('手动输入')),
             // 收藏的维护入口：改名与删除（选择在上面这些选择标签里做）。
             if (saved.isNotEmpty)
@@ -134,4 +149,9 @@ class ChaoxingSignLocation extends StatelessWidget {
       ],
     );
   }
+
+  Widget _nameField() => TextField(
+    controller: address,
+    decoration: const InputDecoration(labelText: '位置名称', helperText: '例如教学楼名，签到时一起提交', helperMaxLines: 2),
+  );
 }

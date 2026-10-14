@@ -133,6 +133,9 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   Future<void> _load() async {
     try {
       final info = await widget.controller.activeInfo(_activity);
+      // 默认选中的位置（[人工决策-2026-10-14 21:26:16]，见 chaoxing_map_page.dart）：这门课上次签到用的 → 上次签到用的；
+      // 都没有时嵌着的地图拿当前位置。地图用不了时退回最近用过的收藏。
+      final remembered = await widget.controller.signedLocation(_activity);
       if (!mounted) return;
       setState(() {
         _info = info;
@@ -141,10 +144,10 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
           _activity = _activity.change(signType: info.signType);
         }
         _loadError = null;
-        // 地图用不了时直接摊开经纬度，别让人先去点一下「手动输入」。
-        _manualLocation = !chaoxingMapAvailable || widget.controller.locations.isEmpty;
-        final saved = widget.controller.locations;
-        if (saved.isNotEmpty) _savedLocation = saved.first.location;
+        // 地图用不了时直接摊开经纬度，别让人先去点一下「手动输入」；改用收藏时默认选中上面那个位置。
+        _manualLocation = !chaoxingMapAvailable;
+        _savedLocation = remembered ?? (chaoxingMapAvailable ? null : widget.controller.locations.firstOrNull?.location);
+        if (chaoxingMapAvailable) _address.text = remembered?.address ?? '';
         if (info.locationLatitude != null && info.locationLongitude != null && _manualLocation) {
           // 详情给的坐标是学习通的 BD-09 口径，输入框按高德 GCJ-02 解释，先转一层再预填（参考项目同样按 BD-09 使用）。
           final asGcj = bd09ToGcj02(info.locationLatitude!, info.locationLongitude!);
@@ -240,7 +243,18 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
 
   ChaoxingLocation? _currentLocation() {
     if (!_needsLocation) return null;
-    if (!_manualLocation && _savedLocation != null) return _savedLocation;
+    if (!_manualLocation) {
+      final selected = _savedLocation;
+      if (selected == null || !chaoxingMapAvailable) return selected;
+      // 地图模式下位置名称可改：没填就用选中位置自带的名称，地图点出来的没有名称，叫「地图选点」。
+      final name = _address.text.trim();
+      return ChaoxingLocation(
+        latitude: selected.latitude,
+        longitude: selected.longitude,
+        address: name.isNotEmpty ? name : (selected.address.isNotEmpty ? selected.address : '地图选点'),
+        system: selected.system,
+      );
+    }
     final latitude = double.tryParse(_latitude.text.trim());
     final longitude = double.tryParse(_longitude.text.trim());
     if (latitude == null || longitude == null) return null;
@@ -253,38 +267,40 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     );
   }
 
+  // 详情里有签到点与范围时在地图上画出来（学习通给的是 BD-09 口径，地图内部会换算成 GCJ-02）。
+  ChaoxingLocation? get _rangeCenter {
+    final latitude = _info?.locationLatitude;
+    final longitude = _info?.locationLongitude;
+    if (latitude == null || longitude == null) return null;
+    return ChaoxingLocation(latitude: latitude, longitude: longitude, address: '', system: ChaoxingCoordinateSystem.bd09);
+  }
+
+  // 全屏选点（嵌着的地图太小时用）：从当前选中的位置开始，名称框里的名称带过去。
   Future<void> _pickOnMap() async {
-    final info = _info;
-    final rangeLatitude = info?.locationLatitude;
-    final rangeLongitude = info?.locationLongitude;
-    final range = info?.locationRange;
-    final recent = await widget.controller.mapStart();
-    if (!mounted) return;
     final picked = await openChaoxingMapPicker(
       context,
-      initial: _currentLocation() ?? (_manualLocation ? null : _savedLocation),
-      recent: recent,
-      label: _savedLocation?.address,
-      // 详情里有签到点与范围时画出来（学习通给的是 BD-09 口径，地图内部会换算成 GCJ-02）。
-      rangeCenter: rangeLatitude == null || rangeLongitude == null
-          ? null
-          : ChaoxingLocation(latitude: rangeLatitude, longitude: rangeLongitude, address: '', system: ChaoxingCoordinateSystem.bd09),
-      rangeMeters: range?.toDouble(),
+      initial: _currentLocation() ?? _savedLocation,
+      label: _address.text.trim(),
+      rangeCenter: _rangeCenter,
+      rangeMeters: _info?.locationRange.toDouble(),
     );
     if (!mounted || picked == null) return;
     // [人工决策-2026-10-08 19:35:38] 地图选点只用于这次签到，不自动收藏（同高德、Google 地图：保存要用户明确点）；
     // 收藏只走签到成功后的「收藏这次的位置？」询问（500 米内已有收藏不问）。取代选点即收藏的旧做法。
     setState(() {
       _savedLocation = picked;
+      _address.text = picked.address;
       _manualLocation = false;
       _error = null;
     });
-    // 只记作下次打开地图的落点，不进收藏；记不下不影响这次签到。
-    try {
-      await widget.controller.rememberMapPick(picked);
-    } catch (error, stack) {
-      campusLog('[Chaoxing] action=remember_map errorType=${error.runtimeType}\n$stack');
-    }
+  }
+
+  // 有人签到成功后记下这门课用的位置，下次签这门课默认选它（只存本机、不算收藏）；记不下不影响签到。
+  void _rememberLocation(ChaoxingLocation? location) {
+    if (location == null) return;
+    widget.controller.rememberSignedLocation(_activity, location).catchError((Object error, StackTrace stack) {
+      campusLog('[Chaoxing] action=remember_location errorType=${error.runtimeType}\n$stack');
+    });
   }
 
   // 拍照签到每人一张照片（上传前各自随机裁剪旋转）：可以现场拍，也可以从相册选。
@@ -374,17 +390,22 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   // 输入按人现取：二维码签到每个人都从最新扫到的码开始。
   ChaoxingTargetSigner _signer(ChaoxingSignInputs Function() inputsOf, {ChaoxingFreshQrCode? freshQrCode}) {
     var tightenedShared = false;
-    return (target, {required force}) => widget.controller.signTarget(
-      target,
-      _activity,
-      info: _info!,
-      inputs: inputsOf(),
-      solveCaptcha: _solveCaptcha,
-      freshQrCode: freshQrCode,
-      force: force,
-      initialTightened: tightenedShared,
-      onTightened: () => tightenedShared = true,
-    );
+    return (target, {required force}) async {
+      final inputs = inputsOf();
+      final result = await widget.controller.signTarget(
+        target,
+        _activity,
+        info: _info!,
+        inputs: inputs,
+        solveCaptcha: _solveCaptcha,
+        freshQrCode: freshQrCode,
+        force: force,
+        initialTightened: tightenedShared,
+        onTightened: () => tightenedShared = true,
+      );
+      _rememberLocation(inputs.location);
+      return result;
+    };
   }
 
   // 开签前把所有人共用的输入与每个人的照片都核对一遍，缺什么原地提示。
@@ -648,7 +669,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       final firstCode = code;
       final signer = _signer(() => ChaoxingSignInputs(location: base.location, qrCode: feed.latest ?? firstCode), freshQrCode: fresh);
       if (only == null) {
-        // 连续扫码是逐码连签：任何一人失败就停（对齐参考项目），等新码也是为了当前这个人。
+        // 连续扫码是逐码连签：任何一人失败就停，已签过、不在班级、登录过期的跳过接着签（对齐参考项目），等新码也是为了当前这个人。
         await _batch.run(signer, stopOnFailure: true);
       } else {
         await _batch.retry(only, signer, force: force);
@@ -795,9 +816,19 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
             address: _address,
             busy: _busy,
             onManual: (manual) => setState(() => _manualLocation = manual),
-            onSelect: (location) => setState(() => _savedLocation = location),
+            onSelect: (location) => setState(() {
+              _savedLocation = location;
+              _address.text = location.address;
+            }),
             onSave: () => unawaited(_saveLocation()),
             onPickOnMap: () => unawaited(_pickOnMap()),
+            // 地图点出来的位置不带名称，名称框里写的照旧用。
+            onMapPicked: (location) => setState(() {
+              _savedLocation = location;
+              _error = null;
+            }),
+            rangeCenter: _rangeCenter,
+            rangeMeters: info.locationRange.toDouble(),
           ),
         ],
         if (_needsCode) ...[
@@ -866,6 +897,9 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         ] else ...[
           if (_needsPhoto) ...[
             const SizedBox(height: 16),
+            // 普通签到老师勾了拍照才要照片（列表里只叫「普通签到」），这里说清楚。
+            Text('这场签到要交一张照片', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+            const SizedBox(height: 8),
             Wrap(
               spacing: 8,
               runSpacing: 8,

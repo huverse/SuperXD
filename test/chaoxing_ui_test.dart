@@ -381,6 +381,45 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('首页扫课堂签到二维码直接打开那场签到（参考项目 1.19.2）', (tester) async {
+    usePhoneScreen(tester);
+    // 详情没给课程号：按班级到课程列表里找，课程名一起补上。
+    fake.activeInfos = {
+      777: {'otherId': '5', 'nameOne': '扫码打开的签到', 'clazzid': 88, 'courseId': 0, 'numberCount': 4, 'signOutPublishTimeStamp': 4999},
+    };
+    runtime = buildRuntime(scanQrCode: (context, hint, accept) async => 'SIGNIN:aid=777&source=15&Code=777&enc=ENC777');
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await tester.tap(find.byTooltip('扫签到二维码'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('扫码打开的签到 · ').evaluate().isNotEmpty);
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('高等数学'), findsWidgets);
+    await enterCode(tester, '1234');
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    expect(fake.signQuery!['activeId'], '777');
+    expect(fake.signQuery!['signCode'], '1234');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('otherId 0 在列表里只叫普通签到，老师要拍照时弹层里说明要交照片', (tester) async {
+    usePhoneScreen(tester);
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '0', 'nameOne': '普通签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0, 'ext': {'a': 1}},
+    ];
+    fake.activeInfo = {'otherId': '0', 'ifphoto': 1, 'signOutPublishTimeStamp': 4999};
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    // 活动名与类型名相同只显示一个，不再叠成「普通签到 · 拍照签到」（真机反馈看着像两种签到）。
+    expect(find.text('普通签到'), findsOneWidget);
+    expect(find.textContaining('拍照签到'), findsNothing);
+
+    await openSignSheet(tester, button: '去签到');
+    expect(find.text('这场签到要交一张照片'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('主签到能跳到它发布的签退活动', (tester) async {
     usePhoneScreen(tester);
     fake.activeInfo = {'numberCount': 4, 'signOutId': 503, 'signOutPublishTimeStamp': 1760000000000};
