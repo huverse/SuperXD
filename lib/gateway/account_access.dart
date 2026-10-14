@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 
 import 'package:superxd/domain/account.dart';
 import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/gateway_code.dart';
 
 // 账号生命周期属于应用层；页面不感知 SQLite 路径、教务客户端或 cookie。
 abstract class AccountAccess extends ChangeNotifier implements CampusGateway {
@@ -12,6 +13,13 @@ abstract class AccountAccess extends ChangeNotifier implements CampusGateway {
   Listenable get scheduleChanges => const _NoChanges();
   Future<GatewayResult<LoginView>> loginRemembered(String account, String password, {required bool remember}) => login(account, password);
   Future<bool> isRemembered() async => false;
+  // 已登录时用密码核对一次（要验证码时经 submitLoginCaptcha 接着交）后开启记住账号，不切换当前会话。
+  Future<GatewayResult<LoginView>> rememberWithPassword(String password) async => const GatewayResult(
+    ok: false,
+    source: 'local',
+    fetchedAt: '',
+    error: GatewayError(code: GatewayCode.operationFailed, message: '这里不能开启记住账号'),
+  );
   Future<void> forgetCredential() async {}
   Future<void> expireSession() => logout();
   String? takeAccountNotice() => null;

@@ -1,4 +1,3 @@
-import 'dart:convert';
 
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -9,11 +8,11 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/gateway/account_access.dart';
-import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/page/account_dialogs.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key, required this.gateway, required this.session, this.switching = false});
@@ -82,7 +81,7 @@ class _LoginPageState extends State<LoginPage> {
         final error = await showCampusDialog<String>(
           context: context,
           barrierDismissible: false,
-          builder: (context) => _CaptchaDialog(gateway: widget.gateway, captcha: result.data!.captcha!),
+          builder: (context) => LoginCaptchaDialog(gateway: widget.gateway, captcha: result.data!.captcha!),
         );
         if (!mounted) return;
         if (error != null) await _notice(error);
@@ -154,97 +153,4 @@ class _LoginPageState extends State<LoginPage> {
       ),
     );
   }
-}
-
-class _CaptchaDialog extends StatefulWidget {
-  const _CaptchaDialog({required this.gateway, required this.captcha});
-  final AccountAccess gateway;
-  final CaptchaView captcha;
-
-  @override
-  State<_CaptchaDialog> createState() => _CaptchaDialogState();
-}
-
-class _CaptchaDialogState extends State<_CaptchaDialog> {
-  late CaptchaView _captcha = widget.captcha;
-  final _code = TextEditingController();
-  bool _busy = false;
-  bool _refreshing = false;
-
-  @override
-  void dispose() {
-    _code.dispose();
-    super.dispose();
-  }
-
-  Future<void> _refresh() async {
-    if (_busy) return;
-    setState(() { _busy = true; _refreshing = true; });
-    try {
-      final result = await widget.gateway.refreshLoginCaptcha();
-      if (!mounted) return;
-      if (!result.ok || result.data == null) {
-        Navigator.pop(context, result.error?.message ?? '验证码刷新失败');
-        return;
-      }
-      setState(() {
-        _captcha = result.data!;
-        _code.clear();
-      });
-    } catch (error, stack) {
-      campusLog('[CaptchaDialog] action=refresh errorType=${error.runtimeType}\n$stack');
-      if (mounted) Navigator.pop(context, '验证码刷新失败，请重新登录');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _submit() async {
-    if (_busy || _code.text.trim().isEmpty) return;
-    setState(() { _busy = true; _refreshing = false; });
-    try {
-      final result = await widget.gateway.submitLoginCaptcha(_code.text.trim());
-      if (!mounted) return;
-      if (result.needsInput == 'captcha' && result.data?.captcha != null) {
-        setState(() {
-          _captcha = result.data!.captcha!;
-          _code.clear();
-        });
-      } else if (!result.ok) {
-        Navigator.pop(context, result.error?.message ?? '登录未完成');
-      }
-    } catch (error, stack) {
-      campusLog('[CaptchaDialog] action=submit errorType=${error.runtimeType}\n$stack');
-      if (mounted) Navigator.pop(context, '验证码提交未完成，请重新登录');
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) => PopScope<String>(
-    onPopInvokedWithResult: (didPop, result) {
-      if (didPop) {
-        widget.gateway.cancelLogin().catchError((Object error, StackTrace stack) {
-          campusLog('[CaptchaDialog] action=cancel errorType=${error.runtimeType}\n$stack');
-        });
-      }
-    },
-    child: CampusGlassDialog(
-      solid: true,
-      title: const Text('验证码'),
-      content: SingleChildScrollView(child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-        GestureDetector(onTap: _busy ? null : _refresh, child: Image.memory(base64Decode(_captcha.imageBase64), height: 64, gaplessPlayback: true)),
-        TextButton(onPressed: _busy ? null : _refresh, child: CampusBusyContent(busy: _busy && _refreshing, label: '刷新验证码', busyLabel: '刷新中', icon: const CampusIcon(CampusIcons.sync))),
-        const SizedBox(height: 8),
-        Text(_captcha.hint, style: const TextStyle(fontSize: 14)),
-        const SizedBox(height: 8),
-        TextField(controller: _code, enabled: !_busy, onChanged: (_) => setState(() {}), style: const TextStyle(fontSize: 16), decoration: const InputDecoration(hintText: '验证码')),
-      ])),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-        FilledButton(onPressed: _busy || _code.text.trim().isEmpty ? null : _submit, child: CampusBusyContent(busy: _busy && !_refreshing, label: '确定', busyLabel: '验证中')),
-      ],
-    ),
-  );
 }

@@ -357,18 +357,36 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
           CampusSurface(
             child: Row(
               children: [
-                if (controller.currentPhoto.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(right: 12),
-                    child: ClipOval(
-                      child: SizedBox(
-                        width: 44,
-                        height: 44,
-                        // 头像只是装饰：加载失败给占位图标，不留一块空白。
-                        child: Image.network(controller.currentPhoto, fit: BoxFit.cover, errorBuilder: (_, _, _) => const Center(child: CampusIcon(CampusIcons.account))),
+                // 头像位一开始就占好：照片地址要等后台刷新用户信息才到（慢时十几秒），以前到了才插进来，名字被挤得跳一下。
+                // 先放占位图标，照片加载好再淡入盖上；没有照片或加载失败就留着占位（头像只是装饰）。
+                Padding(
+                  padding: const EdgeInsets.only(right: 12),
+                  child: ClipOval(
+                    child: SizedBox(
+                      width: 44,
+                      height: 44,
+                      child: Stack(
+                        fit: StackFit.expand,
+                        children: [
+                          const Center(child: CampusIcon(CampusIcons.account)),
+                          if (controller.currentPhoto.isNotEmpty)
+                            Image.network(
+                              controller.currentPhoto,
+                              fit: BoxFit.cover,
+                              frameBuilder: (_, child, frame, synchronous) => synchronous
+                                  ? child
+                                  : AnimatedOpacity(
+                                      opacity: frame == null ? 0 : 1,
+                                      duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 200),
+                                      child: child,
+                                    ),
+                              errorBuilder: (_, _, _) => const SizedBox.shrink(),
+                            ),
+                        ],
                       ),
                     ),
                   ),
+                ),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,

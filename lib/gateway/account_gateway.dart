@@ -149,6 +149,31 @@ class AccountGateway extends AccountAccess {
     });
   }
 
+  // [人工决策-2026-10-14 16:45:55] 关闭后可在账号页重新开启记住账号（用户选定原地开启）：只输密码，后台以当前学号登录一次教务核对
+  // （要验证码时接着交），认证成功才写入安全存储（守住 credential_store.dart 的保存条件）；只核对不切换——不换会话与客户端、
+  // 不加代次，账号页和其他页面都不动。
+  @override
+  Future<GatewayResult<LoginView>> rememberWithPassword(String password) => _guard(() async {
+    if (credentials == null) return _fail(GatewayCode.localStorageFailed, '系统安全存储不可用，不能记住账号');
+    final pending = await _transition.synchronized(() {
+      final active = _active;
+      if (_closed || active == null) return null;
+      _cancelPending();
+      final candidate = _PendingLogin(
+        epoch: _attemptEpoch,
+        auth: KingoAuth(client: _newClient(source: active.identity.source), now: _now),
+        remember: true,
+        credential: RememberedCredential(account: active.identity.loginId, password: password),
+        expected: active.identity,
+        verifyOnly: true,
+      );
+      _pending = candidate;
+      return candidate;
+    });
+    if (pending == null) return _loginRequired();
+    return _finishLogin(pending, await pending.auth.login(pending.expected!.loginId, password));
+  });
+
   @override
   Future<GatewayResult<LoginView>> submitLoginCaptcha(String code) => _guard(() async {
     final pending = _pending;
@@ -180,6 +205,19 @@ class AccountGateway extends AccountAccess {
     }
     final identity = AccountIdentity(source: pending.auth.client.base, loginId: authenticated.loginId);
     if (pending.expected != null && store.keyOf(identity) != store.keyOf(pending.expected!)) { _cancelPending(); return _fail(GatewayCode.accountMismatch, '自动登录身份不一致，已停止'); }
+    if (pending.verifyOnly) {
+      try {
+        final active = _active;
+        if (active == null || store.keyOf(active.identity) != store.keyOf(identity)) return _changed();
+        await credentials!.write(store.keyOf(identity), pending.credential!);
+        return result;
+      } catch (error, stack) {
+        campusLog('[AccountGateway] action=remember_verified errorType=${error.runtimeType}\n$stack');
+        return _fail(GatewayCode.localStorageFailed, '记住账号未能保存，不会降级为明文保存');
+      } finally {
+        _cancelPending();
+      }
+    }
     final old = _active;
     final sameAccount = old != null && store.keyOf(old.identity) == store.keyOf(identity);
     AppDatabase? database;
@@ -575,12 +613,14 @@ class _CancelledAccountSwitch implements Exception {
 }
 
 class _PendingLogin {
-  _PendingLogin({required this.epoch, required this.auth, this.remember, this.credential, this.expected});
+  _PendingLogin({required this.epoch, required this.auth, this.remember, this.credential, this.expected, this.verifyOnly = false});
   final int epoch;
   final KingoAuth auth;
   final bool? remember;
   RememberedCredential? credential;
   final AccountIdentity? expected;
+  // 只核对密码以开启记住账号：成功只写凭据，不换会话、不加代次。
+  final bool verifyOnly;
 }
 
 class _AccountContext {

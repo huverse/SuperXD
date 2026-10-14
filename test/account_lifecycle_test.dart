@@ -121,7 +121,7 @@ void main() {
     expect(find.byType(GlassPanel), findsOneWidget);
     await tester.pumpWidget(const SizedBox()); session.dispose();
   });
-  testWidgets('记住账号必须先同意，取消不勾选；成功后可在我的立即清除', (tester) async {
+  testWidgets('记住账号必须先同意，取消不勾选；成功后可在我的立即清除，清除后可原地输密码重新开启', (tester) async {
     final gateway = _Accounts().._active = null;
     final session = AppSession(gateway);
     await session.restore();
@@ -158,11 +158,31 @@ void main() {
     await tester.tap(find.text('关闭并清除'));
     await tester.pumpAndSettle();
     expect(gateway.forgotten, 1);
-    // 关闭后只读显示“未开启”，不能在这里重新开启（要在登录时输入密码）。
+    // 关闭后可原地重新开启：输密码核对，错了说原因、不开启；对了显示已开启，停在账号页、不换代次。
+    expect(find.text('未开启'), findsOneWidget);
+    final generation = gateway.generation;
+    await tester.tap(find.text('记住账号'));
+    await tester.pumpAndSettle();
+    expect(find.text('开启记住账号'), findsOneWidget);
+    expect(find.text('关闭并清除'), findsNothing);
+    await tester.enterText(find.byType(TextField).last, 'wrong');
+    await tester.pump();
+    await tester.tap(find.text('开启'));
+    await tester.pumpAndSettle();
+    expect(find.text('密码不正确'), findsOneWidget);
+    await tester.tap(find.text('知道了'));
+    await tester.pumpAndSettle();
     expect(find.text('未开启'), findsOneWidget);
     await tester.tap(find.text('记住账号'));
     await tester.pumpAndSettle();
-    expect(find.text('关闭并清除'), findsNothing);
+    await tester.enterText(find.byType(TextField).last, 'ok');
+    await tester.pump();
+    await tester.tap(find.text('开启'));
+    await tester.pumpAndSettle();
+    expect(find.text('已开启'), findsOneWidget);
+    expect(gateway.verifyPasswords, ['wrong', 'ok']);
+    expect(gateway.generation, generation);
+    expect(find.text('账号'), findsOneWidget);
     expect(gateway.activeSession?.loginId, 'A');
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
@@ -356,6 +376,14 @@ class _Accounts extends AccountAccess {
   bool remembered = false;
   int forgotten = 0;
   final rememberRequests = <bool>[];
+  final verifyPasswords = <String>[];
+  @override
+  Future<GatewayResult<LoginView>> rememberWithPassword(String password) async {
+    verifyPasswords.add(password);
+    if (password == 'wrong') return const GatewayResult(ok: false, source: 'edu', fetchedAt: '', error: GatewayError(code: 'PASSWORD_WRONG', message: '密码不正确'));
+    remembered = true;
+    return GatewayResult(ok: true, source: 'edu', fetchedAt: '', data: LoginView(session: _active));
+  }
   @override
   Future<GatewayResult<LoginView>> loginRemembered(String account, String password, {required bool remember}) async {
     rememberRequests.add(remember);

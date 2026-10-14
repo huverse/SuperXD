@@ -241,6 +241,24 @@ void main() {
   });
 
   // 测试环境不加载应用字体，这里守的是顺序与折行关系；真实字体下的宽度在模拟器上量（见 chaoxing_page.dart 的人工决策）。
+  testWidgets('账号卡头像位一开始就占好：头像地址晚到或没有时，名字不跳位置', (tester) async {
+    usePhoneScreen(tester);
+    fake.photo = '';
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    final card = find.byType(CampusSurface).first;
+    Finder name() => find.descendant(of: card, matching: find.byType(Text)).first;
+    final withoutPhoto = tester.getTopLeft(name()).dx;
+    expect(find.descendant(of: card, matching: find.byType(Image)), findsNothing);
+    // 换成有头像，重新打开：照片随用户信息刷新晚到，名字位置不变。
+    fake.photo = 'http://p.ananas.chaoxing.com/star3/photo.jpg';
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await waitUntil(tester, () => find.byType(CampusSurface).evaluate().isNotEmpty && find.descendant(of: find.byType(CampusSurface).first, matching: find.byType(Image)).evaluate().isNotEmpty);
+    expect(tester.getTopLeft(name()).dx, withoutPhoto);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('首页三个去处：群聊排第二，与往期同一行，按课程在下一行左起', (tester) async {
     usePhoneScreen(tester);
     fake.activities = [

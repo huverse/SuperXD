@@ -204,6 +204,27 @@ void main() {
     expect(clients.where((client) => client.logins > 0), isEmpty);
   });
 
+  test('关闭后原地输密码重新开启：只核对不切换，错了不保存，要验证码时交了才保存', () async {
+    await gateway.loginRemembered('A', 'test-secret', remember: false);
+    final generation = gateway.generation;
+    final session = gateway.activeSession;
+    expect(await gateway.isRemembered(), isFalse);
+    expect((await gateway.rememberWithPassword('wrong')).error?.code, 'PASSWORD_WRONG');
+    expect(await gateway.isRemembered(), isFalse);
+    final captcha = await gateway.rememberWithPassword('captcha');
+    expect(captcha.needsInput, 'captcha');
+    expect(await gateway.isRemembered(), isFalse);
+    expect((await gateway.submitLoginCaptcha('1234')).ok, isTrue);
+    expect(await gateway.isRemembered(), isTrue);
+    expect(credentials.values.values.single.password, 'captcha');
+    // 不换会话、不加代次；核对用的客户端用完即弃，当前会话照常同步。
+    expect(gateway.generation, generation);
+    expect(identical(gateway.activeSession, session), isTrue);
+    expect((await gateway.syncSchedule(_term)).ok, isTrue);
+    expect(clients.first.reads, 1);
+    expect(clients.skip(1).every((client) => client.reads == 0), isTrue);
+  });
+
   test('姓名只增不丢：同步课表学到后当前会话立即带上，自动重登与重新登录都沿用', () async {
     final session = AppSession(gateway);
     await gateway.loginRemembered('A', 'test-secret', remember: true);
@@ -303,9 +324,9 @@ class _Client extends KingoClient {
   @override
   Future<KingoLoginResult> login(String username, String password, {String captcha = ''}) async {
     logins++;
-    loginStarted.complete();
+    if (!loginStarted.isCompleted) loginStarted.complete();
     if (holdLogin) await loginGate.future;
-    final rejected = loginFailure ?? (password == 'wrong' ? 'PASSWORD_WRONG' : password == 'captcha' ? 'captcha' : null);
+    final rejected = loginFailure ?? (password == 'wrong' ? 'PASSWORD_WRONG' : password == 'captcha' && captcha.isEmpty ? 'captcha' : null);
     if (rejected == 'captcha') return const KingoLoginResult(ok: false, needsCaptcha: true, failure: null, captcha: CaptchaViewData(prompt: '验证码', hint: '', contentType: 'image/png', imageBase64: ''), loginId: null);
     if (rejected != null) return KingoLoginResult(ok: false, needsCaptcha: false, failure: LoginFailure(code: rejected, message: '需要手动登录'), captcha: null, loginId: null);
     jar['JSESSIONID'] = 'test-cookie-$username';

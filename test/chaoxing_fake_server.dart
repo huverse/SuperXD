@@ -85,6 +85,8 @@ class FakeChaoxing {
   // 支持多个学习通账号：手机号 → 手机号密文、密码密文与昵称（代签要两个账号）。
   final users = <String, ({String phoneCipher, String passwordCipher, String name})>{};
   String? lastPhone;
+  // 用户信息里的头像地址，空串表示没有头像。
+  String photo = 'http://p.ananas.chaoxing.com/star3/photo.jpg';
   Map<String, String>? signQuery;
   String? preSignBody;
 
@@ -192,7 +194,7 @@ class FakeChaoxing {
           'fid': fid,
           'name': users[phone]?.name ?? name,
           'uname': phone,
-          'pic': 'http://p.ananas.chaoxing.com/star3/photo.jpg',
+          'pic': photo,
           'schoolname': '示例大学',
           'clientId': ?clientId,
           'unitConfigInfos': unitConfigInfos,

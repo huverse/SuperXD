@@ -49,6 +49,35 @@ class _AccountPageState extends State<AccountPage> {
     } finally { if (mounted) setState(() => _busy = false); }
   }
 
+  // 关闭后重新开启：输密码，后台登录一次核对（要验证码就弹），通过才保存；只核对不切换，停在本页（人工决策见 AccountGateway.rememberWithPassword）。
+  Future<void> _remember() async {
+    final password = await askRememberPassword(context);
+    if (!mounted || password == null) return;
+    final gateway = widget.session.gateway;
+    setState(() => _busy = true);
+    try {
+      final result = await showCampusWaiting(context, label: '正在核对密码', operation: () => gateway.rememberWithPassword(password));
+      if (!mounted) return;
+      if (result.needsInput == 'captcha' && result.data?.captcha != null) {
+        final error = await showCampusDialog<String>(context: context, barrierDismissible: false, builder: (context) => LoginCaptchaDialog(gateway: gateway, captcha: result.data!.captcha!));
+        if (!mounted) return;
+        if (error != null) return await showCampusNotice(context, error);
+      } else if (!result.ok) {
+        return await showCampusNotice(context, result.error?.message ?? '记住账号未开启，请重试。');
+      }
+      // 验证码弹窗取消也是空结果，以安全存储里有没有为准。
+      final remembered = await gateway.isRemembered();
+      if (!mounted) return;
+      setState(() => _remembered = remembered);
+      if (remembered) showCampusToast(context, '已开启记住账号');
+    } catch (error, stack) {
+      campusLog('[RememberAccount] action=enable errorType=${error.runtimeType}\n$stack');
+      if (mounted) await showCampusNotice(context, '记住账号未开启，请重试。');
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   Future<void> _logout() async {
     final confirmed = await showCampusConfirm(context, title: '退出登录？', message: '清除本机登录态和此账号保存的自动登录凭据，当前课表和自定义修改保留，历史版本按每学期最多100版保留。', action: '退出', destructive: true);
     if (!mounted || !confirmed) return;
@@ -84,15 +113,14 @@ class _AccountPageState extends State<AccountPage> {
           const SizedBox(height: 16),
           // 多行卡片去掉横向内边距，行自带 20 边距：按下变暗时整行铺满卡片宽度，同 iOS 分组列表。
           CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
-            // 记住账号只能在登录时开启（要密码），这里只能关闭；未开启时只读显示状态。
+            // 记住账号：开着时点按关闭（删凭据）；关着时点按输密码核对后开启。
             ListTile(
               contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.lock), title: const Text('记住账号'),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 Text(switch (remembered) { null => '', true => '已开启', false => '未开启' }, style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
-                if (remembered == true) ...[const SizedBox(width: 4), const CampusIcon(CampusIcons.next)],
+                if (remembered != null) ...[const SizedBox(width: 4), const CampusIcon(CampusIcons.next)],
               ]),
-              // 未开启时不可点但不置灰：这是状态，不是被禁用的操作。
-              enabled: !_busy, onTap: remembered == true ? _forget : null,
+              enabled: !_busy, onTap: switch (remembered) { null => null, true => _forget, false => _remember },
             ),
             ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.switchAccount), trailing: const CampusIcon(CampusIcons.next), title: const Text('切换账号'), enabled: !_busy, onTap: () => context.push('/switch-account')),
             ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.download), trailing: const CampusIcon(CampusIcons.next), title: const Text('导入旧版本数据'), enabled: !_busy, onTap: () => showLegacyImport(context, widget.session)),
