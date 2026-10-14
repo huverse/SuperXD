@@ -146,13 +146,15 @@ class ChaoxingHttp {
   Future<Uint8List> getBytes(Uri uri, {Duration? timeout, int? payloadLimit}) async =>
       (await _send('GET', uri, timeout: timeout, payloadLimit: payloadLimit)).bytes;
 
+  // forbiddenExpired：这个接口回 403 说明会话被学习通拒了（不是服务端出错），按会话过期报，交给自动重登。
   Future<ChaoxingResponse> postForm(
     Uri uri,
     String body, {
     String contentType = 'application/x-www-form-urlencoded; charset=UTF-8',
     Map<String, String>? headers,
     Duration? timeout,
-  }) => _send('POST', uri, body: body, contentType: contentType, headers: headers, timeout: timeout);
+    bool forbiddenExpired = false,
+  }) => _send('POST', uri, body: body, contentType: contentType, headers: headers, timeout: timeout, forbiddenExpired: forbiddenExpired);
 
   Future<ChaoxingResponse> postMultipart(
     Uri uri, {
@@ -178,6 +180,7 @@ class ChaoxingHttp {
     ({Map<String, String> fields, http.MultipartFile file})? multipart,
     Duration? timeout,
     int? payloadLimit,
+    bool forbiddenExpired = false,
   }) async {
     final deadline = Completer<void>();
     final timer = Timer(timeout ?? this.timeout, deadline.complete);
@@ -215,6 +218,9 @@ class ChaoxingHttp {
       cookies.save(uri, ChaoxingCookieJar.parseSetCookie(response.headersSplitValues['set-cookie'] ?? const []));
       if (response.statusCode >= 400) {
         campusLog('[Chaoxing] action=http errorType=status path=${uri.path} status=${response.statusCode}');
+        if (forbiddenExpired && response.statusCode == 403) {
+          throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, chaoxingSessionExpiredMessage);
+        }
         throw ChaoxingFailure(ChaoxingFailureCode.server, '学习通返回错误码 ${response.statusCode}');
       }
       return ChaoxingResponse(response.statusCode, bytes.takeBytes());

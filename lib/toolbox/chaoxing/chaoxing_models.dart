@@ -58,7 +58,9 @@ const chaoxingScanCancelledMessage = '扫码已取消';
 String chaoxingSignedText({required bool late}) => late ? '签到成功，不过已经迟到' : '签到成功';
 
 enum ChaoxingSignType {
-  photo('0', '拍照签到'),
+  // otherId 0 是学习通的「普通签到」：老师勾了拍照（详情 ifphoto=1）才要交照片，弹层里再按详情提示。
+  // 列表里叫「拍照签到」会和活动名「普通签到」叠成「普通签到 · 拍照签到」，看着像两种签到（真机反馈）。
+  photo('0', '普通签到'),
   qrCode('2', '二维码签到'),
   gesture('3', '手势签到'),
   location('4', '位置签到'),
@@ -235,6 +237,8 @@ class ChaoxingActiveInfo {
   const ChaoxingActiveInfo({
     this.signType,
     this.title = '',
+    this.classId = 0,
+    this.courseId = 0,
     this.startTime,
     this.endTime,
     this.needCaptcha = false,
@@ -254,6 +258,10 @@ class ChaoxingActiveInfo {
   // 详情里带的类型与时间：从签到码跳到关联的签退活动时，靠这几个字段组出那个活动。
   final ChaoxingSignType? signType;
   final String title;
+
+  // 活动所在的班级与课程（扫码签到时只有活动号，靠这两个组出活动）；没给时为 0。
+  final int classId;
+  final int courseId;
   final DateTime? startTime;
   final DateTime? endTime;
   final bool needCaptcha;

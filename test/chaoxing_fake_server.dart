@@ -75,6 +75,8 @@ class FakeChaoxing {
   String analysisPage = "var code='+'abc123ef'; ";
   String? analysis2Code;
   int preSignStatusCode = 200;
+  // 接下来这么多次 preSign 回 403（学习通新接口拒了会话），用完恢复正常。
+  int forbiddenPreSigns = 0;
 
   // 学习通课表（kb.chaoxing.com），默认一节课都没有。
   Map<String, Object?> lessons = {
@@ -236,6 +238,10 @@ class FakeChaoxing {
           return _json({'enc': faceEnc});
         case '/newsign/preSign':
           preSignBody = request.body;
+          if (forbiddenPreSigns > 0) {
+            forbiddenPreSigns--;
+            return http.Response('', 403);
+          }
           if (preSignStatusCode != 200) return http.Response('', preSignStatusCode);
           return _text(preSignHtml);
         case '/pptSign/analysis':

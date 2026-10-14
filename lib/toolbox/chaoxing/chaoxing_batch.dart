@@ -10,11 +10,15 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 // - 二维码过期不算失败，等新扫到的码接着签当前这个人；
 // - 位置刚出界时收紧偏移（一场共享一次），后面的人用收紧档接着签；收紧档仍超范围才把余下的人全停；
 // - 签到前检查判定「已签到 / 不在班级」的人可以单独「强制签到」，跳过这些检查直接提交；
-// - 会话彻底失效（自动重登也失败）的人要重新输密码修复，修好后可单独重试。
+// - 会话彻底失效（自动重登也失败）的人要重新输密码修复，修好后可单独重试；
+// - 连续扫码任何一人失败就停队，但已签过、不在班级、登录过期只是这个人的事，跳过他接着签（参考项目 1.19.2）。
 const chaoxingSignInterval = Duration(milliseconds: 200);
 
-// 单人签完后的队列处置：继续、把余下的人标失败停队、取消（余下的人回到待签）。
-enum _BatchStop { none, failed, cancelled }
+// 连续扫码时只跳过这个人、不停队的失败。
+const _personalFailures = {ChaoxingFailureCode.alreadySigned, ChaoxingFailureCode.noPermission, ChaoxingFailureCode.sessionExpired};
+
+// 单人签完后的队列处置：继续、跳过这个人接着签、把余下的人标失败停队、取消（余下的人回到待签）。
+enum _BatchStop { none, skipped, failed, cancelled }
 
 enum ChaoxingTargetState { idle, waiting, signing, succeeded, failed }
 
@@ -60,7 +64,7 @@ class ChaoxingBatchSigning extends ChangeNotifier {
   bool get allSucceeded => targets.where((target) => target.selected).every((target) => target.done);
 
   // 按顺序签所有勾选且还没成功的人；返回是否全部成功。stopOnFailure 用于连续扫码：任何一人失败就停，
-  // 后面的人不再签（对齐参考项目），而普通模式失败的人单独重试、其余照签。
+  // 后面的人不再签（对齐参考项目），只跳过已签过、不在班级、登录过期的人；普通模式失败的人单独重试、其余照签。
   Future<bool> run(ChaoxingTargetSigner signer, {Duration interval = chaoxingSignInterval, bool stopOnFailure = false}) async {
     if (running) return false;
     final queue = pending;
@@ -80,7 +84,7 @@ class ChaoxingBatchSigning extends ChangeNotifier {
         first = false;
         lastNeededCaptcha = false;
         final stop = await _signOne(target, signer, force: false);
-        if (stop != _BatchStop.none || (stopOnFailure && !target.done)) {
+        if (stop == _BatchStop.failed || stop == _BatchStop.cancelled || (stopOnFailure && stop == _BatchStop.none && !target.done)) {
           for (final rest in queue) {
             if (rest.state != ChaoxingTargetState.waiting) continue;
             if (stop == _BatchStop.cancelled) {
@@ -145,7 +149,7 @@ class ChaoxingBatchSigning extends ChangeNotifier {
       if (failure.code == ChaoxingFailureCode.cancelled) return _BatchStop.cancelled;
       // 位置出界：刚收紧的第一次不停队（后面的人用收紧档接着签，对齐参考项目），收紧档仍出界才全停。
       if (failure.code == ChaoxingFailureCode.wrongPosition && failure.locationTightened) return _BatchStop.failed;
-      return _BatchStop.none;
+      return _personalFailures.contains(failure.code) ? _BatchStop.skipped : _BatchStop.none;
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=batch_sign errorType=${failure.runtimeType}\n$stack');
       target

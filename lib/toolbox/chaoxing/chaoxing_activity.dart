@@ -143,6 +143,8 @@ Future<ChaoxingActiveInfo> chaoxingActiveInfo(ChaoxingClient client, int activeI
 ChaoxingActiveInfo chaoxingActiveInfoFrom(Map<String, Object?> data) => ChaoxingActiveInfo(
   signType: ChaoxingSignType.fromCode(chaoxingString(data['otherId'])),
   title: chaoxingString(data['nameOne']),
+  classId: chaoxingInt(data['clazzid']),
+  courseId: chaoxingInt(data['courseId']),
   startTime: chaoxingTimestamp(data['starttime']),
   endTime: chaoxingTimestamp(data['endTime']),
   needCaptcha: chaoxingInt(data['ifNeedVCode']) == 1,

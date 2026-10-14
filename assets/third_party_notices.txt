@@ -68,7 +68,7 @@ GPL 的例外：下文第四节所述 math-curve-loaders 改编部分（lib/them
 7. 高德地图 SDK（Android）
    来源：https://lbs.amap.com/ ，随 amap_map 1.0.15 插件（Apache-2.0，https://github.com/kuloud/amap_flutter）打包，其 Flutter 与原生桥接代码同插件
    版本：Android 地图 SDK 10.1.200（带定位与搜索库，本应用用地图显示、选点与「定位到我」，不用搜索）
-   说明：高德地图 SDK 是闭源商业 SDK，按高德开放平台的服务条款分发与使用，不是开源许可，也不随本项目的 GPL-3.0 授权。使用前须在构建时提供绑定了本应用包名与签名的高德 key（`--dart-define=SUPERXD_AMAP_KEY`），未提供或设备不是 arm 架构时地图入口不出现；只有在地图页点「定位到我」时才申请定位权限（仅使用期间），由高德定位取一次当前位置。
+   说明：高德地图 SDK 是闭源商业 SDK，按高德开放平台的服务条款分发与使用，不是开源许可，也不随本项目的 GPL-3.0 授权。使用前须在构建时提供绑定了本应用包名与签名的高德 key（`--dart-define=SUPERXD_AMAP_KEY`），未提供或设备不是 arm 架构时地图入口不出现；打开位置签到时申请定位权限（仅使用期间），由高德定位取当前位置作默认选点，不授权也能手动选。
 
 8. Android_CN_OAID 4.2.17
    来源：https://github.com/gzu-liyujiang/Android_CN_OAID（经 JitPack 分发）
@@ -84,9 +84,9 @@ flutter_video_parse（https://github.com/zhao004/flutter_video_parse，参考版
 许可：MIT，Copyright (c) 2026 zhao004
 用途：百宝箱短视频解析的媒体模型、来源适配与交互参考。本应用未内置它们的全部解析源；第三方服务和作品的授权不随代码许可授予。
 
-ChaoxingSignFaker（https://github.com/aquamarine5/ChaoxingSignFaker，参考版本 6116f8bf1932dad033c922342e456e110c4cdaab）
+ChaoxingSignFaker（https://github.com/aquamarine5/ChaoxingSignFaker，参考版本 30e1ebe43ff2b2f62fac721a7311e8ca3cfd5cdf）
 许可：AGPL-3.0
-用途：百宝箱「学习通签到」只参考它记录的接口地址、参数与响应语义（登录与设备信息、学校单位、活动列表、preSign 与 analysis、各类型提交、二维码与滑块验证码、学习通课表）以及多人连签的规则。实现（lib/toolbox/chaoxing）按这些行为用 Dart 重写，未复制其代码，也不依赖它的域名、CDN 或模型资产。
+用途：百宝箱「学习通签到」只参考它记录的接口地址、参数与响应语义（登录与设备信息、学校单位、活动列表、preSign 与 analysis、各类型提交、二维码与滑块验证码、学习通课表、扫码打开签到）以及多人连签与按班级记住签到位置的规则。实现（lib/toolbox/chaoxing）按这些行为用 Dart 重写，未复制其代码，也不依赖它的域名、CDN 或模型资产。
 
 
 四、经授权改编

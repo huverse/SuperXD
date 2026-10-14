@@ -27,9 +27,6 @@ import 'package:superxd/toolbox/toolbox_models.dart';
 
 enum ChaoxingStatus { loading, signedOut, ready }
 
-// 偏好表里记上次地图选点（见 mapStart）。
-const chaoxingMapCenterKey = 'map_center';
-
 // 课程页的一组课：同名课程（多个班）合并成一组。
 class ChaoxingCourseGroup {
   const ChaoxingCourseGroup({required this.name, required this.courses, required this.pinned});
@@ -39,7 +36,14 @@ class ChaoxingCourseGroup {
 }
 
 class ChaoxingController extends ChangeNotifier {
-  ChaoxingController({required this.accounts, this.hub, this.filePublisher, this.temporaryDirectory = getTemporaryDirectory});
+  ChaoxingController({
+    required this.accounts,
+    this.hub,
+    this.filePublisher,
+    this.temporaryDirectory = getTemporaryDirectory,
+    this.lessonPollInterval = const Duration(seconds: 5),
+    this.lessonPollWindow = const Duration(minutes: 2),
+  });
   final ChaoxingAccounts accounts;
 
   // 代签凭据包的中转；没配中转时为 null，出示与扫码导入都不显示。
@@ -52,6 +56,12 @@ class ChaoxingController extends ChangeNotifier {
   // 一次刷新最多并发三个课程请求，课程多时也不至于把刷新拖太久。
   static const refreshConcurrency = 3;
 
+  // 课表推断轮询（参考项目 1.19.2）：每次读完列表后，还没推断到签到就每隔 lessonPollInterval 重查当前这节课的签到，
+  // 最多 lessonPollWindow，查到就停；老师上课后才发起的签到不用手动刷新也会出现在「可能正在签到」里。
+  final Duration lessonPollInterval;
+  final Duration lessonPollWindow;
+  Timer? _lessonPoll;
+  ChaoxingLessonTable? _lessonTable;
 
   ChaoxingStatus status = ChaoxingStatus.loading;
   List<ChaoxingAccountRecord> accountList = const [];
@@ -152,6 +162,7 @@ class ChaoxingController extends ChangeNotifier {
   Future<void> signOut() async {
     await _maintenance;
     _generation++;
+    _lessonPoll?.cancel();
     _closeSessions();
     current = null;
     activities = const [];
@@ -185,6 +196,7 @@ class ChaoxingController extends ChangeNotifier {
       _dropClient(record.phoneNumber);
       if (current?.phoneNumber == record.phoneNumber) {
         _generation++;
+        _lessonPoll?.cancel();
         _client?.close();
         _client = null;
         current = null;
@@ -318,6 +330,36 @@ class ChaoxingController extends ChangeNotifier {
       status: _statusOf(info.endTime),
       userStatus: 0,
       ext: current.ext,
+    );
+  }
+
+  // 首页扫课堂签到二维码（参考项目 1.19.2）：码里只有活动号，按详情组出活动，课程列表里找不到这门课也能签。
+  // 班级与课程号取详情里的，详情没给课程号时按班级到课程列表里找；课程名同样从课程列表找，找不到用「课堂签到」。
+  Future<ChaoxingActivity> scannedActivity(ChaoxingQrCode code) async {
+    final activeId = code.activeId;
+    if (activeId == null) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '这个二维码里没有签到活动');
+    }
+    final client = _requireClient();
+    final info = await accounts.run(client, () => chaoxingActiveInfo(client, activeId));
+    final signType = info.signType;
+    if (signType == null) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.unsupported, chaoxingUnsupportedTypeMessage);
+    }
+    final course = courses.where((course) => course.classId == info.classId).firstOrNull;
+    campusLog('[Chaoxing] action=scan_activity type=${signType.name} knownCourse=${course != null}');
+    return ChaoxingActivity(
+      activeId: activeId,
+      courseId: info.courseId != 0 ? info.courseId : course?.courseId ?? 0,
+      classId: info.classId,
+      title: info.title.isEmpty ? signType.label : info.title,
+      subtitle: course?.name ?? '课堂签到',
+      signType: signType,
+      startTime: info.startTime,
+      endTime: info.endTime,
+      status: _statusOf(info.endTime),
+      userStatus: 0,
+      ext: '',
     );
   }
 
@@ -515,20 +557,12 @@ class ChaoxingController extends ChangeNotifier {
     _notify();
   }
 
-  // 地图下次打开的落点：上次在地图上选的点（GCJ-02，只存本机偏好，清除数据随库删；不是收藏），没有就用最近用过的收藏。
-  Future<ChaoxingLocation?> mapStart() async {
-    final parts = (await accounts.store.preference(chaoxingMapCenterKey))?.split(',');
-    final latitude = parts?.length == 2 ? double.tryParse(parts!.first) : null;
-    final longitude = parts?.length == 2 ? double.tryParse(parts!.last) : null;
-    if (latitude != null && longitude != null) {
-      return ChaoxingLocation(latitude: latitude, longitude: longitude, address: '', system: ChaoxingCoordinateSystem.gcj02);
-    }
-    return locations.firstOrNull?.location;
-  }
+  // 位置签到默认选中的位置：这门课上次签到用的，没有就用上次签到（任何课）用的；都没有为空，由弹层改用当前位置。
+  // 只存本机、不算收藏，清除数据随库删。
+  Future<ChaoxingLocation?> signedLocation(ChaoxingActivity activity) => accounts.store.signedLocation(activity.classId);
 
-  // 地图选点返回的都是 GCJ-02。
-  Future<void> rememberMapPick(ChaoxingLocation picked) =>
-      accounts.store.setPreference(chaoxingMapCenterKey, '${picked.latitude},${picked.longitude}');
+  Future<void> rememberSignedLocation(ChaoxingActivity activity, ChaoxingLocation location) =>
+      accounts.store.putSignedLocation(activity.classId, location);
 
   // 离这个位置 withinMeters 米内已有的收藏（签完提示收藏时用它判断「附近已经收藏过了」，对齐参考项目）。
   ChaoxingSavedLocation? nearbyLocation(ChaoxingLocation location, {double withinMeters = 500}) {
@@ -540,6 +574,7 @@ class ChaoxingController extends ChangeNotifier {
 
   Future<void> _open(ChaoxingAccountRecord record) async {
     final generation = ++_generation;
+    _lessonPoll?.cancel();
     _client?.close();
     _client = null;
     _dropClient(record.phoneNumber);
@@ -599,7 +634,9 @@ class ChaoxingController extends ChangeNotifier {
       courses = loaded.courses;
       activities = [for (final activity in loaded.collected) if (activity.ongoing) activity];
       pastActivities = [for (final activity in loaded.collected) if (!activity.ongoing) activity];
-      lessonActivities = loaded.lessons;
+      lessonActivities = loaded.lessons.activities;
+      _lessonTable = loaded.lessons.table;
+      _startLessonPoll(client, generation);
     } catch (failure, stack) {
       if (generation == _generation) rethrow;
       campusLog('[Chaoxing] action=activities_stale errorType=${failure.runtimeType}\n$stack');
@@ -611,7 +648,7 @@ class ChaoxingController extends ChangeNotifier {
     }
   }
 
-  Future<({List<ChaoxingCourse> courses, List<ChaoxingActivity> collected, List<ChaoxingActivity> lessons})> _fetchActivities(
+  Future<({List<ChaoxingCourse> courses, List<ChaoxingActivity> collected, _LessonInference lessons})> _fetchActivities(
     ChaoxingClient client,
     ChaoxingAccountRecord record,
   ) async {
@@ -655,8 +692,8 @@ class ChaoxingController extends ChangeNotifier {
     );
   }
 
-  // 课表推断只是提示，读不到学习通课表不影响主列表（记日志即可）。
-  Future<List<ChaoxingActivity>> _inferFromLessons(
+  // 课表推断只是提示，读不到学习通课表不影响主列表（记日志即可）。课表一并交回，给之后的轮询用。
+  Future<_LessonInference> _inferFromLessons(
     ChaoxingClient client,
     ChaoxingAccountRecord record,
     List<ChaoxingCourse> loadedCourses,
@@ -673,11 +710,57 @@ class ChaoxingController extends ChangeNotifier {
         await accounts.store.putLessonCache(record.phoneNumber, payload);
         table = chaoxingParseLessons(chaoxingJson(payload));
       }
-      return await _inferFromTable(client, table, loadedCourses, collected, now);
+      return (activities: await _inferFromTable(client, table, loadedCourses, collected, now), table: table);
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=lessons errorType=${failure.runtimeType}\n$stack');
-      return const [];
+      return (activities: const <ChaoxingActivity>[], table: null);
     }
+  }
+
+  // 读完列表还没推断到签到、而且现在正有课时开始轮询；换账号、退出、关页面、下课或查到了就停。
+  void _startLessonPoll(ChaoxingClient client, int generation) {
+    _lessonPoll?.cancel();
+    final deadline = DateTime.now().add(lessonPollWindow);
+    void schedule() {
+      if (_disposed || generation != _generation || lessonActivities.isNotEmpty || !DateTime.now().isBefore(deadline)) return;
+      final table = _lessonTable;
+      if (table == null || chaoxingCurrentLessons(table, DateTime.now().toUtc()).isEmpty) return;
+      _lessonPoll = Timer(lessonPollInterval, () {
+        _pollLessons(client).then((found) {
+          if (_disposed || generation != _generation) return;
+          if (found.isEmpty) {
+            schedule();
+            return;
+          }
+          campusLog('[Chaoxing] action=lessons_poll result=found count=${found.length}');
+          lessonActivities = found;
+          _notify();
+        }).catchError((Object error, StackTrace stack) {
+          campusLog('[Chaoxing] action=lessons_poll errorType=${error.runtimeType}\n$stack');
+        });
+      });
+    }
+
+    schedule();
+  }
+
+  // 一轮轮询：只查当前这节课对上的那几个班（与刷新时的推断同口径），某个班读不到只记日志，下一轮再试。
+  Future<List<ChaoxingActivity>> _pollLessons(ChaoxingClient client) async {
+    final table = _lessonTable;
+    if (table == null) return const [];
+    final now = DateTime.now().toUtc();
+    final lessonCourses = chaoxingLessonCourses(chaoxingCurrentLessons(table, now), courses);
+    final found = <int, ChaoxingActivity>{};
+    for (final course in lessonCourses) {
+      try {
+        for (final activity in await accounts.run(client, () => chaoxingActivities(client, course))) {
+          if (chaoxingFreshActivity(activity, now)) found.putIfAbsent(activity.activeId, () => activity);
+        }
+      } catch (failure, stack) {
+        campusLog('[Chaoxing] action=lessons_poll errorType=${failure.runtimeType} classId=${course.classId}\n$stack');
+      }
+    }
+    return found.values.toList()..sort(chaoxingNewestFirst);
   }
 
   // 按课表推断：当前节次的课落到班级，班级的活动里挑 20 分钟内刚发起的进行中签到。
@@ -747,8 +830,12 @@ class ChaoxingController extends ChangeNotifier {
   @override
   void dispose() {
     _disposed = true;
+    _lessonPoll?.cancel();
     _closeSessions();
     super.dispose();
   }
 }
+
+// 课表推断的结果与这次用的课表（轮询接着用它看当前是哪节课）；课表读不到时为空。
+typedef _LessonInference = ({List<ChaoxingActivity> activities, ChaoxingLessonTable? table});
 

@@ -58,6 +58,7 @@ abstract final class CampusIcons {
   static const termStart = LucideIcons.calendar1;
   static const jumpToday = LucideIcons.locateFixed;
   static const locateMe = LucideIcons.navigation;
+  static const fullscreen = LucideIcons.maximize2;
   static const login = LucideIcons.logIn;
   static const restore = LucideIcons.rotateCcw;
   static const share = LucideIcons.share2;

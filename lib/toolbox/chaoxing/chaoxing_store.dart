@@ -97,7 +97,7 @@ class ChaoxingSavedLocation {
   final DateTime updatedAt;
 }
 
-// 学习通签到的本机库：账号索引、收藏位置、人脸照片索引、置顶课程、学习通课表缓存与设置。
+// 学习通签到的本机库：账号索引、收藏位置、按班级记住的签到位置、人脸照片索引、置顶课程、学习通课表缓存与设置。
 // 密码与 Cookie 在安全存储里，不在库里。
 class ChaoxingStore {
   ChaoxingStore._(this._database);
@@ -110,6 +110,9 @@ class ChaoxingStore {
   static const faceImageLimit = 5;
   static const pinnedCourseLimit = 100;
 
+  // 按班级记住的签到位置：每个班一行，只留最近签过的 200 个班。
+  static const classLocationLimit = 200;
+
   // 学习通课表缓存 7 天，过期再拉（与学习通客户端同一口径）。
   static const lessonCacheLifetime = Duration(days: 7);
 
@@ -117,7 +120,7 @@ class ChaoxingStore {
     final store = ChaoxingStore._(
       await openDatabase(
         path,
-        version: 5,
+        version: 6,
         onCreate: (database, _) async {
           await database.execute(
             'CREATE TABLE accounts (phone_number TEXT PRIMARY KEY, uid INTEGER NOT NULL, puid INTEGER NOT NULL, '
@@ -136,6 +139,7 @@ class ChaoxingStore {
           await _createFaceTables(database);
           await _addFaceStats(database);
           await _createVersion3Tables(database);
+          await _createClassLocations(database);
         },
         onUpgrade: (database, oldVersion, _) async {
           if (oldVersion < 2) {
@@ -154,6 +158,11 @@ class ChaoxingStore {
           if (oldVersion < 5) {
             await database.execute("ALTER TABLE accounts ADD COLUMN label TEXT NOT NULL DEFAULT ''");
             await database.execute('ALTER TABLE accounts ADD COLUMN sort INTEGER NOT NULL DEFAULT 0');
+          }
+          // 第 6 版：按班级记住签到位置，取代偏好表里的「上次地图选点」（map_center）。
+          if (oldVersion < 6) {
+            await _createClassLocations(database);
+            await database.delete('preferences', where: 'key = ?', whereArgs: ['map_center']);
           }
         },
       ),
@@ -188,9 +197,19 @@ class ChaoxingStore {
     );
   }
 
+  // 每个班最近一次签到成功用的位置（班级号是学习通的，几个账号在同一个班时共用）。
+  static Future<void> _createClassLocations(Database database) async {
+    await database.execute(
+      'CREATE TABLE class_locations (class_id INTEGER PRIMARY KEY, address TEXT NOT NULL, '
+      'latitude REAL NOT NULL, longitude REAL NOT NULL, system TEXT NOT NULL, updated_at INTEGER NOT NULL)',
+    );
+    await database.execute('CREATE INDEX class_locations_used ON class_locations (updated_at DESC)');
+  }
+
   // 只增不删的数据都要有上限：打开时整库裁剪一次，之后每次写入只裁剪写到的那张表（或那个账号的那几行）。
   Future<void> _pruneAll() async {
     await _pruneLocations();
+    await _pruneClassLocations();
     // 学习通课表缓存过期即删（读的时候也按 fetchedAt 判断，这里不让过期的原文一直躺在库里）。
     await _database.delete(
       'lesson_cache',
@@ -212,6 +231,11 @@ class ChaoxingStore {
 
   Future<void> _pruneLocations() => _database.rawDelete(
     'DELETE FROM locations WHERE id NOT IN (SELECT id FROM locations ORDER BY updated_at DESC, id DESC LIMIT $locationLimit)',
+  );
+
+  Future<void> _pruneClassLocations() => _database.rawDelete(
+    'DELETE FROM class_locations WHERE class_id NOT IN '
+    '(SELECT class_id FROM class_locations ORDER BY updated_at DESC LIMIT $classLocationLimit)',
   );
 
   Future<void> _pruneFaceImages(String phoneNumber) => _database.rawDelete(
@@ -422,16 +446,41 @@ class ChaoxingStore {
           (row) => ChaoxingSavedLocation(
             id: row['id']! as int,
             label: row['label']! as String,
-            location: ChaoxingLocation(
-              latitude: (row['latitude']! as num).toDouble(),
-              longitude: (row['longitude']! as num).toDouble(),
-              address: row['address']! as String,
-              system: ChaoxingCoordinateSystem.values.byName(row['system']! as String),
-            ),
+            location: _location(row),
             updatedAt: DateTime.fromMillisecondsSinceEpoch(row['updated_at']! as int, isUtc: true),
           ),
         )
         .toList();
+  }
+
+  static ChaoxingLocation _location(Map<String, Object?> row) => ChaoxingLocation(
+    latitude: (row['latitude']! as num).toDouble(),
+    longitude: (row['longitude']! as num).toDouble(),
+    address: row['address']! as String,
+    system: ChaoxingCoordinateSystem.values.byName(row['system']! as String),
+  );
+
+  // 签到位置的落点：这个班上次签到用的位置，没有就用最近一次签到（任何班）用的位置；都没有为空。
+  // 表最多 200 行，先按是不是这个班、再按时间排，取第一条。
+  Future<ChaoxingLocation?> signedLocation(int classId) async {
+    final rows = await _database.rawQuery(
+      'SELECT address, latitude, longitude, system FROM class_locations ORDER BY class_id = ? DESC, updated_at DESC LIMIT 1',
+      [classId],
+    );
+    return rows.isEmpty ? null : _location(rows.first);
+  }
+
+  // 签到成功后记下这个班用的位置（同班覆盖），再裁到上限。
+  Future<void> putSignedLocation(int classId, ChaoxingLocation location) async {
+    await _database.insert('class_locations', {
+      'class_id': classId,
+      'address': location.address,
+      'latitude': location.latitude,
+      'longitude': location.longitude,
+      'system': location.system.name,
+      'updated_at': DateTime.now().toUtc().millisecondsSinceEpoch,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    await _pruneClassLocations();
   }
 
   // 同标签的位置直接覆盖，避免收藏里堆同一间教室的多条记录。

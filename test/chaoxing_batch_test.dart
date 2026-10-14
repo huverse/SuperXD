@@ -109,6 +109,30 @@ void main() {
     expect(targets.every((target) => !target.done), isTrue);
   });
 
+  test('连续扫码时已签过、不在班级、登录过期只跳过这个人，后面的人接着签（参考项目 1.19.2）', () async {
+    final targets = [_target('a'), _target('b'), _target('c'), _target('d')];
+    final batch = ChaoxingBatchSigning(targets);
+    final order = <String>[];
+    final done = await batch.run((target, {required force}) async {
+      order.add(target.phoneNumber);
+      switch (target.phoneNumber) {
+        case 'a':
+          throw const ChaoxingFailure(ChaoxingFailureCode.alreadySigned, '已经签过了', predicted: true);
+        case 'b':
+          throw const ChaoxingFailure(ChaoxingFailureCode.noPermission, '你的账号不在该班级里', predicted: true);
+        case 'c':
+          throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '登录已过期，请重新登录');
+      }
+      return const ChaoxingSignResult();
+    }, interval: Duration.zero, stopOnFailure: true);
+    expect(order, ['a', 'b', 'c', 'd']);
+    expect(targets.last.done, isTrue);
+    // 跳过的人照样标失败、给对应的操作，整轮不算全部成功。
+    expect(done, isFalse);
+    expect(targets[0].forceAvailable, isTrue);
+    expect(targets[2].needsRepair, isTrue);
+  });
+
   test('相邻两人之间隔开，刚过人工验证码的不再等', () async {
     final targets = [_target('a'), _target('b'), _target('c')];
     final batch = ChaoxingBatchSigning(targets);

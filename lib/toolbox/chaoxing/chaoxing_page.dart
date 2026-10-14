@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -23,6 +25,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_face_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_group_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_history_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_settings_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_share_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
@@ -63,10 +66,10 @@ Future<void> importChaoxingTicket(
   }
 }
 
-// 首次登录前的第三方说明；条款版本变了要重新征得同意（第 2 版加了设备信息上传与 OAID，第 3 版加了地图页「定位到我」按需申请定位权限）。
+// 首次登录前的第三方说明；条款版本变了要重新征得同意（第 2 版加了设备信息上传与 OAID，第 3 版加了地图页「定位到我」按需申请定位权限，第 4 版改为打开位置签到就申请定位权限）。
 // 同意记录按工具 id 存，清除数据时框架按同一个 id 撤掉。
 const chaoxingConsentService = ChaoxingService.serviceId;
-const chaoxingConsentVersion = 'chaoxing-sign-3';
+const chaoxingConsentVersion = 'chaoxing-sign-4';
 
 class ChaoxingPage extends StatefulWidget {
   const ChaoxingPage({super.key, required this.runtime});
@@ -133,7 +136,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
       message: 'SuperXD 会把你的学习通账号与密码保存在本机安全存储，用于登录超星学习通（chaoxing.com）并提交签到；'
           '签到时的位置、照片与账号信息会发送给学习通。为了与学习通客户端一致（人脸签到的设备签名、避免被标「更换设备」），'
           '登录时会把设备信息（型号、系统版本、ANDROID_ID、DRM 设备号等）加密后发给学习通，并读取系统的匿名设备标识（OAID）算出设备码。'
-          '选签到位置时可以用高德地图（会打开高德 SDK 加载地图）；只有你在地图上点「定位到我」时才申请定位权限，由高德定位取一次当前位置。本功能与教务账号无关，也不会读取教务密码。',
+          '选签到位置时用高德地图（会打开高德 SDK 加载地图）；打开位置签到时会申请定位权限，由高德定位取当前位置作默认选点，不授权也能手动选。本功能与教务账号无关，也不会读取教务密码。',
       action: updated ? '同意' : '同意并登录',
     );
     if (!agreed || !mounted) return false;
@@ -218,6 +221,28 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
 
   Future<void> _importTicket(ChaoxingController controller) =>
       importChaoxingTicket(context, controller: controller, scan: widget.runtime.scanQrCode);
+
+  // 扫课堂签到二维码直接打开那场签到（参考项目 1.19.2）：码里带活动号，课程列表里找不到这门课也能签；
+  // 二维码签到在弹层里照常连续扫码（同参考项目，不拿这一次扫到的码直接提交）。
+  Future<void> _scanSign(ChaoxingController controller) async {
+    final scan = widget.runtime.scanQrCode;
+    if (scan == null) {
+      await showCampusNotice(context, '当前版本不能扫码');
+      return;
+    }
+    final raw = await scan(context, '扫老师的课堂签到二维码', (value) => chaoxingParseQrCode(value)?.activeId == null ? '这不是课堂签到二维码' : null);
+    if (raw == null || !mounted) return;
+    try {
+      final activity = await showCampusWaiting(context, label: '正在打开这场签到', operation: () => controller.scannedActivity(chaoxingParseQrCode(raw)!));
+      if (!mounted) return;
+      await _launcher(controller).open(context, activity);
+    } on ChaoxingFailure catch (failure) {
+      if (mounted) showCampusToast(context, failure.message);
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=scan_sign errorType=${failure.runtimeType}\n$stack');
+      if (mounted) showCampusToast(context, '这场签到没打开，请稍后重试');
+    }
+  }
 
   Future<void> _pickAccount(ChaoxingController controller) async {
     await showCampusSheet<void>(
@@ -309,6 +334,20 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
           },
           icon: const CampusIcon(CampusIcons.back),
         ),
+        actions: [
+          // 登录后才有：扫码要用当前账号读活动详情。
+          if (controller != null)
+            ListenableBuilder(
+              listenable: controller,
+              builder: (context, _) => controller.status == ChaoxingStatus.ready
+                  ? IconButton(
+                      tooltip: '扫签到二维码',
+                      onPressed: () => unawaited(_scanSign(controller)),
+                      icon: const CampusIcon(CampusIcons.scan),
+                    )
+                  : const SizedBox.shrink(),
+            ),
+        ],
       ),
       body: switch ((controller, _startError)) {
         // 读取、登录与列表三态之间淡出淡入（同成绩页切换），不整页突变；内容区没有玻璃，可以整体改不透明度。
