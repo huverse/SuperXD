@@ -172,11 +172,18 @@ void main() {
   late ToolboxRuntime runtime;
 
 
-  ToolboxRuntime buildRuntime({ToolboxQrScan? scanQrCode, ChaoxingPackHub? hub}) => ToolboxRuntime.testing(
+  ToolboxRuntime buildRuntime({
+    ToolboxQrScan? scanQrCode,
+    ChaoxingPackHub? hub,
+    ToolboxImagePick? pickImage,
+    ToolboxImagesPick? pickImages,
+  }) => ToolboxRuntime.testing(
     catalog: toolboxCatalog,
     store: fixture.store,
     downloads: fixture.manager,
     scanQrCode: scanQrCode,
+    pickImage: pickImage,
+    pickImages: pickImages,
     services: {
       ChaoxingService.serviceId: ChaoxingService(
         accounts: ChaoxingAccounts(
@@ -487,9 +494,9 @@ void main() {
     // 没有收藏位置时直接是手输，坐标已按签到点预填。
     expect(find.widgetWithText(TextField, '纬度'), findsOneWidget);
     await tapSign(tester);
-    // 位置签到成功后先弹「收藏这次的位置？」（附近无收藏时），点取消后再等主页面的成功提示。
+    // 位置签到成功后先弹「收藏这次的位置？」（附近无收藏时），点不收藏后再等主页面的成功提示。
     await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
-    await tester.tap(find.text('取消'));
+    await tester.tap(find.text('不收藏'));
     await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     expect(fake.calls.where((call) => call.contains('stuSignajax')).length, 2);
@@ -538,6 +545,148 @@ void main() {
     // 用的就是收藏里的位置（500 米内已有收藏），不会再问要不要收藏。
     expect(find.text('收藏这次的位置？'), findsNothing);
     expect(fake.signQuery!['address'], '知敬楼402');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  void useLocationActivity({bool face = false}) {
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '4', 'nameOne': '签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0, 'ext': {'a': 1}},
+    ];
+    fake.activeInfo = {
+      if (face) 'openCheckFaceFlag': 1,
+      'ifopenAddress': 1,
+      'locationLatitude': 36.6,
+      'locationLongitude': 117.0,
+      'locationRange': 300,
+      'signOutPublishTimeStamp': 4999,
+    };
+  }
+
+  testWidgets('签完问收藏时收藏名当场可改，存下的就是改过的名字', (tester) async {
+    usePhoneScreen(tester);
+    useLocationActivity();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await openSignSheet(tester);
+    await tapSign(tester);
+    await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
+    expect(find.text('这附近不再问'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, '收藏名'), '一号楼');
+    await tester.tap(find.widgetWithText(FilledButton, '收藏'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    final saved = await tester.runAsync(() => store.locations()) ?? const <ChaoxingSavedLocation>[];
+    expect(saved.map((item) => item.label), ['一号楼']);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('签完问收藏时选「这附近不再问」：不收藏，之后在附近签到不再问', (tester) async {
+    usePhoneScreen(tester);
+    useLocationActivity();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await openSignSheet(tester);
+    await tapSign(tester);
+    await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
+    await tester.tap(find.text('这附近不再问'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    expect(await tester.runAsync(() => store.locations()), isEmpty);
+    expect(await tester.runAsync(() => store.quietPlaces()), hasLength(1));
+
+    // 同一个位置再签一次：签好就关，不再问。
+    await openSignSheet(tester);
+    await tapSign(tester);
+    await waitUntil(tester, () => fake.calls.where((call) => call.contains('stuSignajax')).length == 2);
+    await waitUntil(tester, () => find.widgetWithText(FilledButton, '签到').evaluate().isEmpty);
+    expect(find.text('收藏这次的位置？'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('开签前现拍的人脸照片签好后才问存不存：答应了才进人脸照片，并算用过一次', (tester) async {
+    usePhoneScreen(tester);
+    useLocationActivity(face: true);
+    // 学习通里没存人脸照片：开签前直接进拍摄。相机与裁剪页是原生的，取图给一张临时文件，裁剪原样交回。
+    fake.profileFaceObjectId = '';
+    final shot = File(path.join(fixture.directory.path, 'shot.jpg'))..writeAsBytesSync([1, 2, 3]);
+    const cropper = MethodChannel('plugins.hunghd.vn/image_cropper');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(cropper, (call) async => (call.arguments as Map)['source_path']);
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(cropper, null));
+    runtime = buildRuntime(pickImage: ({required source, required maxSide, required quality}) async => (path: shot.path, discard: () async {}));
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await openSignSheet(tester);
+    await tapSign(tester);
+    await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
+    await tester.tap(find.text('不收藏'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('保存刚拍的人脸照片？').evaluate().isNotEmpty);
+    // 签到用的是现拍上传的那张，但问之前还没进人脸照片列表。
+    expect(fake.signQuery!['currentFaceId'], 'obj-1');
+    expect(await tester.runAsync(() => store.faceImages('13800138000')), isEmpty);
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pump();
+    var faces = const <ChaoxingFaceImage>[];
+    // 存进列表与记用过一次是先后两步，等两步都落库再看。
+    for (var round = 0; round < 200 && !faces.any((face) => face.useCount > 0); round++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+      await tester.pump();
+      faces = await tester.runAsync(() => store.faceImages('13800138000')) ?? const [];
+    }
+    expect([for (final face in faces) (face.objectId, face.useCount)], [('obj-1', 1)]);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('多人拍照签到能从相册一次选多张，按签到对象的顺序分给还缺照片的人', (tester) async {
+    usePhoneScreen(tester);
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '0', 'nameOne': '普通签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0, 'ext': {'a': 1}},
+    ];
+    fake.activeInfo = {'otherId': '0', 'ifphoto': 1, 'signOutPublishTimeStamp': 4999};
+    int? requestedLimit;
+    var discarded = false;
+    // 选择器多给一张（老系统不认张数上限），多出来的不用。
+    final picks = [
+      for (var index = 0; index < 3; index++) (File(path.join(fixture.directory.path, 'pick-$index.jpg'))..writeAsBytesSync([index + 1])).path,
+    ];
+    runtime = buildRuntime(
+      pickImages: ({required maxSide, required quality, required limit}) async {
+        requestedLimit = limit;
+        return (paths: picks, discard: () async => discarded = true);
+      },
+    );
+    await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');
+    final accounts = (await runtime.service<ChaoxingService>(ChaoxingService.serviceId)).accounts;
+    await tester.runAsync(() async {
+      await accounts.importOther(
+        ChaoxingCredentialPack(phoneNumber: '13900139000', encryptedPassword: await chaoxingEncrypt('otherPassword1'), name: '同学乙', deviceCode: 'device-of-b'),
+      );
+      await accounts.signIn(phoneNumber: '13800138000', password: 'myPassword123');
+    });
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await waitUntil(tester, () => find.text('学习通签到的说明更新了').evaluate().isNotEmpty);
+    await tester.tap(find.widgetWithText(FilledButton, '同意'));
+    await tester.pump();
+    await waitUntil(tester, () => find.widgetWithText(FilledButton, '去签到').evaluate().isNotEmpty);
+    await openSignSheet(tester);
+    // 只勾了本人、只缺一张时不给一次多选。
+    expect(find.textContaining('从相册选'), findsNothing);
+    await tester.ensureVisible(find.byType(Checkbox).last);
+    await tester.pump();
+    await tester.tap(find.byType(Checkbox).last);
+    await tester.pump();
+    final pickMany = find.widgetWithText(OutlinedButton, '从相册选 2 张');
+    expect(pickMany, findsOneWidget);
+    await tester.tap(pickMany);
+    await tester.pump();
+    await waitUntil(tester, () => find.widgetWithText(OutlinedButton, '相册照片').evaluate().length == 2);
+    expect(requestedLimit, 2);
+    expect(discarded, isTrue);
+    // 都有照片了，一次多选的按钮收起。
+    expect(find.textContaining('从相册选'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -646,9 +795,9 @@ void main() {
     await waitUntil(tester, () => find.text('重处理默认照片').evaluate().isNotEmpty);
     await tester.tap(find.text('重处理默认照片'));
     await tester.pump();
-    // 位置签到成功后先弹「收藏这次的位置？」（附近无收藏时），点取消后再等主页面的成功提示。
+    // 位置签到成功后先弹「收藏这次的位置？」（附近无收藏时），点不收藏后再等主页面的成功提示。
     await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
-    await tester.tap(find.text('取消'));
+    await tester.tap(find.text('不收藏'));
     await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     // 用的是重处理上传后的新 objectId（fake 的云盘上传固定回 obj-1），不再是学习通里那张的原 objectId。
@@ -710,9 +859,9 @@ void main() {
     await waitUntil(tester, () => find.text('重处理默认照片').evaluate().isNotEmpty);
     await tester.tap(find.text('重处理默认照片'));
     await tester.pump();
-    // 位置签到成功后先弹「收藏这次的位置？」（附近无收藏时），点取消后再等主页面的成功提示。
+    // 位置签到成功后先弹「收藏这次的位置？」（附近无收藏时），点不收藏后再等主页面的成功提示。
     await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
-    await tester.tap(find.text('取消'));
+    await tester.tap(find.text('不收藏'));
     await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     // 第二次提交把 checkFace_ 的后缀作为 enc2 续传上去。

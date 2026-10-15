@@ -137,8 +137,8 @@ class ChaoxingSignLocation extends StatelessWidget {
           runSpacing: 8,
           children: [
             OutlinedButton.icon(onPressed: busy ? null : () => onManual(true), icon: const CampusIcon(CampusIcons.edit), label: const Text('手动输入')),
-            // 收藏的维护入口：改名与删除（选择在上面这些选择标签里做）。
-            if (saved.isNotEmpty)
+            // 收藏的维护入口：在地图上添加、改名与删除（选择在上面这些选择标签里做）；地图能用时没有收藏也给，好去添加。
+            if (saved.isNotEmpty || map)
               OutlinedButton.icon(
                 onPressed: busy ? null : () => showChaoxingLocationSheet(context, controller: controller),
                 icon: const CampusIcon(CampusIcons.settings),

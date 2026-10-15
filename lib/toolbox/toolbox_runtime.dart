@@ -31,6 +31,13 @@ typedef ToolboxImagePick = Future<({String path, Future<void> Function() discard
   required int quality,
 });
 
+// 从相册一次选多张（最多 limit 张），清理规矩同 ToolboxImagePick；一张没选返回空。
+typedef ToolboxImagesPick = Future<({List<String> paths, Future<void> Function() discard})?> Function({
+  required double maxSide,
+  required int quality,
+  required int limit,
+});
+
 // 连续扫码：取景页一直开着，每认下一个新码就交给 onCode，until 完成后自动关上；status 是取景页上的进度文字。
 // 用户按返回提前关掉时，返回的 Future 完成。
 typedef ToolboxQrWatch =
@@ -54,6 +61,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.scanQrCode,
     this.watchQrCode,
     this.pickImage,
+    this.pickImages,
     this.relayUrl,
   });
   ToolboxRuntime.testing({
@@ -64,6 +72,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.scanQrCode,
     this.watchQrCode,
     this.pickImage,
+    this.pickImages,
     // 外部已经打开好的服务（测试直接给实例）：runtime 只代为转交，不负责关闭。
     Map<String, ToolboxService>? services,
     // 给了目录时按注册表的 openService 真的打开服务（测清除后重开、打开失败重试）。
@@ -81,6 +90,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
   final ToolboxQrScan? scanQrCode;
   final ToolboxQrWatch? watchQrCode;
   final ToolboxImagePick? pickImage;
+  final ToolboxImagesPick? pickImages;
   final ToolboxCatalog catalog;
   late final List<ToolboxModule> modules = catalog(this);
 

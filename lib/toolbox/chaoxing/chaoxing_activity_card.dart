@@ -16,11 +16,12 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 // 打开签到弹层的统一入口：首页、往期、课程与群聊各页都从这里开，签完给同样的提示并刷新一次列表。
 class ChaoxingSignLauncher {
-  const ChaoxingSignLauncher({required this.controller, this.scanQrCode, this.watchQrCode, this.pickImage});
+  const ChaoxingSignLauncher({required this.controller, this.scanQrCode, this.watchQrCode, this.pickImage, this.pickImages});
   final ChaoxingController controller;
   final ToolboxQrScan? scanQrCode;
   final ToolboxQrWatch? watchQrCode;
   final ToolboxImagePick? pickImage;
+  final ToolboxImagesPick? pickImages;
 
   Future<void> open(BuildContext context, ChaoxingActivity activity) async {
     final summary = await showChaoxingSignSheet(
@@ -30,6 +31,7 @@ class ChaoxingSignLauncher {
       scanQrCode: scanQrCode,
       watchQrCode: watchQrCode,
       pickImage: pickImage,
+      pickImages: pickImages,
     );
     // 签到中可能有账号被标了「登录已失效」：弹层关掉就重读账号列表（本机库几十行），切换账号与账号管理里马上看得到。
     try {

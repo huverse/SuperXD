@@ -35,3 +35,33 @@ Future<PickedImage?> pickImageCopy({required ImageSource source, required double
   }
   return (path: picked.path, discard: discard);
 }
+
+// 从相册一次选多张（系统照片选择器，最多 limit 张）；副本与压缩版的清理同 pickImageCopy。一张没选返回空。
+Future<({List<String> paths, Future<void> Function() discard})?> pickImagesCopy({
+  required double maxSide,
+  required int quality,
+  required int limit,
+}) async {
+  final cache = await getTemporaryDirectory();
+  Future<Map<String, FileSystemEntity>> copies() async => {
+    await for (final entity in cache.list())
+      if (_pickerCopy.hasMatch(path.basename(entity.path))) entity.path: entity,
+  };
+  final before = await copies();
+  final picked = await ImagePicker().pickMultiImage(maxWidth: maxSide, maxHeight: maxSide, imageQuality: quality, limit: limit);
+  final created = (await copies())..removeWhere((key, _) => before.containsKey(key));
+  Future<void> discard() async {
+    for (final entity in created.values) {
+      if (await entity.exists()) await entity.delete(recursive: true);
+    }
+    for (final file in picked) {
+      if (await File(file.path).exists()) await File(file.path).delete();
+    }
+  }
+
+  if (picked.isEmpty) {
+    await discard();
+    return null;
+  }
+  return (paths: [for (final file in picked) file.path], discard: discard);
+}

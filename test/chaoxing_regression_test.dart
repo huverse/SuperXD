@@ -198,6 +198,12 @@ void main() {
     fake.activeInfos[778] = {'otherId': '4', 'nameOne': '位置签到', 'clazzid': 55, 'courseId': 5005};
     final outside = await controller.scannedActivity(const ChaoxingQrCode(enc: 'ABC', activeId: 778));
     expect([outside.classId, outside.courseId, outside.subtitle, outside.ongoing], [55, 5005, '课堂签到', isTrue]);
+    // 课程列表里没有、但按班级号查得到班级名的，标题用班级名（同参考项目）；查不到（上面那个）才写「课堂签到」。
+    fake.classNames[56] = '23级软件工程1班';
+    fake.activeInfos[779] = {'otherId': '4', 'nameOne': '位置签到', 'clazzid': 56, 'courseId': 5006};
+    final named = await controller.scannedActivity(const ChaoxingQrCode(enc: 'ABC', activeId: 779));
+    expect(named.subtitle, '23级软件工程1班');
+    expect(fake.calls, contains('GET mooc1-api.chaoxing.com/gas/clazz'));
     await expectLater(controller.scannedActivity(const ChaoxingQrCode(enc: 'ABC')), throwsA(isA<ChaoxingFailure>()));
     await controller.signOut();
     controller.dispose();

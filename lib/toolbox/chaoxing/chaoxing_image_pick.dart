@@ -46,6 +46,21 @@ Future<Uint8List?> shootChaoxingPhoto(ToolboxImagePick? pickImage, {required Ima
   }
 }
 
+// 多人拍照签到从相册一次选多张（最多 limit 张，同参考项目），读成字节后副本即删；没选或没注入多选能力时返回空列表。
+Future<List<Uint8List>> pickChaoxingPhotos(ToolboxImagesPick? pickImages, {required int limit}) async {
+  if (pickImages == null) {
+    campusLog('[Chaoxing] action=pick_images errorType=unavailable');
+    return const [];
+  }
+  final picked = await pickImages(maxSide: 1920, quality: 95, limit: limit);
+  if (picked == null) return const [];
+  try {
+    return [for (final path in picked.paths) await File(path).readAsBytes()];
+  } finally {
+    await picked.discard();
+  }
+}
+
 Future<({String path, Future<void> Function() discard})?> _pick(ToolboxImagePick? pickImage, ImageSource source) async {
   if (pickImage == null) {
     campusLog('[Chaoxing] action=pick_image errorType=unavailable');

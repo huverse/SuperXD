@@ -132,6 +132,30 @@ Set<Polygon> _rangePolygon(CampusPalette palette, ChaoxingLocation? center, doub
   };
 }
 
+// 平面图与卫星图（同参考项目，地图上一个按钮切换）：这次打开应用期间记住，嵌着的地图与全屏页共用，不落库。
+final _satellite = ValueNotifier<bool>(false);
+
+// 卫星图要在图上标出审图号（高德的合规要求）；号码随 SDK 固定，取到一次就留着。
+String? _satelliteApproval;
+
+Future<void> _loadSatelliteApproval(AMapController? map, VoidCallback onLoaded) async {
+  if (map == null || _satelliteApproval != null) return;
+  try {
+    final number = (await map.getSatelliteImageApprovalNumber()).trim();
+    if (number.isEmpty) return;
+    _satelliteApproval = number;
+    onLoaded();
+  } catch (error, stack) {
+    campusLog('[ChaoxingMap] action=approval_number errorType=${error.runtimeType}\n$stack');
+  }
+}
+
+Widget _mapTypeButton({required bool satellite, required VoidCallback onPressed}) => IconButton(
+  tooltip: satellite ? '平面地图' : '卫星地图',
+  onPressed: onPressed,
+  icon: CampusIcon(satellite ? CampusIcons.flatMap : CampusIcons.satelliteMap),
+);
+
 // 地图上的浮动小按钮与提示：地图是原生视图，不叠玻璃（模糊取不到地图内容），用近不透明的表面色。
 Widget _mapChip(CampusPalette palette, Widget child) => DecoratedBox(
   decoration: BoxDecoration(color: palette.surface.withValues(alpha: .92), borderRadius: BorderRadius.circular(16)),
@@ -181,12 +205,24 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
   Object? _polygonsFor;
 
   @override
+  void initState() {
+    super.initState();
+    _satellite.addListener(_onMapType);
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_initialized) return;
     _initAmap(context);
     _initialized = true;
     unawaited(_startLocating(explain: false));
+  }
+
+  void _onMapType() {
+    if (!mounted) return;
+    setState(() {});
+    if (_satellite.value) unawaited(_loadSatelliteApproval(_map, _onMapType));
   }
 
   @override
@@ -203,6 +239,7 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
 
   @override
   void dispose() {
+    _satellite.removeListener(_onMapType);
     _fixTimeout?.cancel();
     super.dispose();
   }
@@ -284,7 +321,11 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
             Positioned.fill(
               child: AMapWidget(
                 initialCameraPosition: CameraPosition(target: _target(start), zoom: start == null ? 4 : 17),
-                onMapCreated: (controller) => _map = controller,
+                onMapCreated: (controller) {
+                  _map = controller;
+                  if (_satellite.value) unawaited(_loadSatelliteApproval(controller, _onMapType));
+                },
+                mapType: _satellite.value ? MapType.satellite : MapType.normal,
                 myLocationStyleOptions: MyLocationStyleOptions(_locating),
                 onLocationChanged: _onLocation,
                 compassEnabled: false,
@@ -339,9 +380,14 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
                       IconButton(tooltip: '全屏选点', onPressed: widget.onExpand, icon: const CampusIcon(CampusIcons.fullscreen)),
                     ),
                   ],
+                  const SizedBox(height: 8),
+                  _mapChip(palette, _mapTypeButton(satellite: _satellite.value, onPressed: () => _satellite.value = !_satellite.value)),
                 ],
               ),
             ),
+            // 卫星图的审图号放右下角（左下角是高德 logo）。
+            if (_satellite.value && _satelliteApproval != null)
+              Positioned(right: 8, bottom: 8, child: _approvalChip(palette)),
           ],
         ),
       ),
@@ -349,26 +395,43 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
   }
 }
 
+Widget _approvalChip(CampusPalette palette) => _mapChip(
+  palette,
+  Padding(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+    child: Text(_satelliteApproval!, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+  ),
+);
+
 // 全屏地图选点：点一下地图拿到坐标，配一个名称，返回给签到弹层。
 // rangeCenter 与 rangeMeters 给出时画出签到范围圈（详情里的签到点与半径，坐标系任意，会先换算）。
+// favorite 为真时是在管理收藏里添加收藏位置：名称必填（同名收藏会被覆盖，不能都叫「地图选点」）。
 Future<ChaoxingLocation?> openChaoxingMapPicker(
   BuildContext context, {
   ChaoxingLocation? initial,
   String? label,
   ChaoxingLocation? rangeCenter,
   double? rangeMeters,
+  bool favorite = false,
 }) => Navigator.of(context).push<ChaoxingLocation>(
   CampusPageRoute(
-    builder: (_) => ChaoxingMapPage(initial: initial, initialLabel: label, rangeCenter: rangeCenter, rangeMeters: rangeMeters),
+    builder: (_) => ChaoxingMapPage(
+      initial: initial,
+      initialLabel: label,
+      rangeCenter: rangeCenter,
+      rangeMeters: rangeMeters,
+      favorite: favorite,
+    ),
   ),
 );
 
 class ChaoxingMapPage extends StatefulWidget {
-  const ChaoxingMapPage({super.key, this.initial, this.initialLabel, this.rangeCenter, this.rangeMeters});
+  const ChaoxingMapPage({super.key, this.initial, this.initialLabel, this.rangeCenter, this.rangeMeters, this.favorite = false});
   final ChaoxingLocation? initial;
   final String? initialLabel;
   final ChaoxingLocation? rangeCenter;
   final double? rangeMeters;
+  final bool favorite;
   @override
   State<ChaoxingMapPage> createState() => _ChaoxingMapPageState();
 }
@@ -389,6 +452,13 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
   void initState() {
     super.initState();
     _label.text = widget.initialLabel ?? '';
+    _satellite.addListener(_onMapType);
+  }
+
+  void _onMapType() {
+    if (!mounted) return;
+    setState(() {});
+    if (_satellite.value) unawaited(_loadSatelliteApproval(_map, _onMapType));
   }
 
   @override
@@ -401,6 +471,7 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
 
   @override
   void dispose() {
+    _satellite.removeListener(_onMapType);
     _fixTimeout?.cancel();
     _label.dispose();
     super.dispose();
@@ -439,8 +510,8 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
 
   void _confirm() {
     final picked = _picked;
-    if (picked == null) return;
     final label = _label.text.trim();
+    if (picked == null || widget.favorite && label.isEmpty) return;
     Navigator.pop(context, _gcjLocation(picked, label.isEmpty ? '地图选点' : label));
   }
 
@@ -452,13 +523,14 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
     final start = widget.rangeCenter ?? widget.initial;
     return Scaffold(
       appBar: AppBar(
-        title: const Text('在地图上选点'),
+        title: Text(widget.favorite ? '添加收藏位置' : '在地图上选点'),
         leading: IconButton(
           tooltip: '返回',
           onPressed: () => Navigator.pop(context),
           icon: const CampusIcon(CampusIcons.back),
         ),
         actions: [
+          _mapTypeButton(satellite: _satellite.value, onPressed: () => _satellite.value = !_satellite.value),
           IconButton(
             tooltip: _awaitingFix ? '正在定位' : '定位到我',
             onPressed: _awaitingFix ? null : () => unawaited(_locate()),
@@ -474,7 +546,11 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
                 target: _target(start),
                 zoom: start == null ? 4 : 17,
               ),
-              onMapCreated: (controller) => _map = controller,
+              onMapCreated: (controller) {
+                _map = controller;
+                if (_satellite.value) unawaited(_loadSatelliteApproval(controller, _onMapType));
+              },
+              mapType: _satellite.value ? MapType.satellite : MapType.normal,
               myLocationStyleOptions: MyLocationStyleOptions(_locating),
               onLocationChanged: _onLocation,
               compassEnabled: false,
@@ -496,15 +572,25 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
             alignment: AlignmentDirectional.topCenter,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 12, 16, 0),
-              child: _mapChip(
-                palette,
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  child: Text(
-                    picked == null ? '在教室的位置点一下地图' : '已选 ${picked.latitude.toStringAsFixed(6)}, ${picked.longitude.toStringAsFixed(6)}',
-                    style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  _mapChip(
+                    palette,
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                      child: Text(
+                        picked == null ? '在教室的位置点一下地图' : '已选 ${picked.latitude.toStringAsFixed(6)}, ${picked.longitude.toStringAsFixed(6)}',
+                        style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
+                      ),
+                    ),
                   ),
-                ),
+                  // 卫星图的审图号（底部面板压着地图下沿，放在顶上提示下面）。
+                  if (_satellite.value && _satelliteApproval != null) ...[
+                    const SizedBox(height: 8),
+                    _approvalChip(palette),
+                  ],
+                ],
               ),
             ),
           ),
@@ -521,14 +607,21 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
                     SizedBox(height: campusFieldGap(context)),
                     TextField(
                       controller: _label,
-                      decoration: const InputDecoration(labelText: '位置名称', helperText: '例如 知敬楼402，签到时会一起提交'),
+                      decoration: InputDecoration(
+                        labelText: widget.favorite ? '收藏名' : '位置名称',
+                        helperText: widget.favorite ? '例如 知敬楼402' : '例如 知敬楼402，签到时会一起提交',
+                      ),
                     ),
                     const SizedBox(height: 12),
-                    FilledButton.icon(
-                      style: campusProminent,
-                      onPressed: picked == null ? null : _confirm,
-                      icon: const CampusIcon(CampusIcons.check),
-                      label: const Text('用这个位置'),
+                    // 收藏要有名字才能存：名字随输入实时决定按钮能不能点。
+                    ListenableBuilder(
+                      listenable: _label,
+                      builder: (context, _) => FilledButton.icon(
+                        style: campusProminent,
+                        onPressed: picked == null || widget.favorite && _label.text.trim().isEmpty ? null : _confirm,
+                        icon: CampusIcon(widget.favorite ? CampusIcons.addPlace : CampusIcons.check),
+                        label: Text(widget.favorite ? '收藏这个位置' : '用这个位置'),
+                      ),
                     ),
                   ],
                 ),
