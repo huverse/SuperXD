@@ -16,10 +16,13 @@ class CampusGlassChip extends StatelessWidget {
     required this.label,
     required this.selected,
     required this.onSelected,
+    this.leading,
   });
   final String label;
   final bool selected;
   final ValueChanged<bool>? onSelected;
+  // 没选中时显示在名字前的小图标（如带颜色的标签图标）；选中时换成勾。
+  final Widget? leading;
 
   @override
   Widget build(BuildContext context) {
@@ -54,7 +57,9 @@ class CampusGlassChip extends StatelessWidget {
               icon: const CampusIcon(CampusIcons.check, size: 18),
               label: Text(label),
             )
-          : FilledButton(style: style, onPressed: onPressed, child: Text(label)),
+          : leading == null
+          ? FilledButton(style: style, onPressed: onPressed, child: Text(label))
+          : FilledButton.icon(style: style, onPressed: onPressed, icon: leading, label: Text(label)),
     ));
   }
 }

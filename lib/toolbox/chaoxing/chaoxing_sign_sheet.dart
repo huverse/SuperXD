@@ -10,6 +10,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
@@ -906,6 +907,10 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
               ),
             ],
           ),
+          if (_tagChips(palette) case final chips when chips.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            Wrap(spacing: 8, runSpacing: 8, children: chips),
+          ],
           const SizedBox(height: 8),
           for (final target in _batch.targets) _targetRow(palette, target),
         ] else ...[
@@ -944,7 +949,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
               label: Text(single.faceObjectId == null ? '换一张人脸照片' : '重新选择'),
             ),
           ],
-          if (single.state == ChaoxingTargetState.failed) _failureActions(palette, single, inline: false),
+          if (single.state == ChaoxingTargetState.failed || single.state == ChaoxingTargetState.idle && single.needsRepair)
+            _failureActions(palette, single, inline: false),
         ],
         if (_error != null) ...[
           const SizedBox(height: 12),
@@ -971,11 +977,30 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     return _multi && count > 1 ? '$base（$count 人）' : base;
   }
 
+  // 按标签一起勾选（同参考项目）：带这个标签、还没签好的人全勾上时标签算选中，再点一起取消；没人带的标签不列。
+  List<Widget> _tagChips(CampusPalette palette) {
+    final controller = widget.controller;
+    return [
+      for (final tag in controller.tags)
+        if (_batch.targets.where((target) => !target.done && controller.hasTag(target.record, tag)).toList() case final tagged when tagged.isNotEmpty)
+          CampusGlassChip(
+            label: tag.name,
+            selected: tagged.every((target) => target.selected),
+            leading: CampusIcon(CampusIcons.tag, size: 18, color: palette.tagColors[tag.colorIndex]),
+            onSelected: _busy ? null : (selected) => setState(() {
+              for (final target in tagged) {
+                target.selected = selected;
+              }
+            }),
+          ),
+    ];
+  }
+
   // 每个签到对象一行：勾选、名字与状态，拍照/人脸要的输入，失败时的操作。
   Widget _targetRow(CampusPalette palette, ChaoxingSignTarget target) {
     final record = target.record;
     final statusText = switch (target.state) {
-      ChaoxingTargetState.idle => [?widget.controller.ownerLabelOf(record), ?record.deviceCodeLabel].join(' · '),
+      ChaoxingTargetState.idle => [?widget.controller.ownerLabelOf(record), ?record.sessionLabel, ?record.deviceCodeLabel].join(' · '),
       ChaoxingTargetState.waiting => '等待中',
       ChaoxingTargetState.signing => '签到中',
       ChaoxingTargetState.succeeded || ChaoxingTargetState.failed => target.message ?? '',
@@ -1051,7 +1076,9 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
                 ],
               ),
             ),
-          if (target.state == ChaoxingTargetState.failed) _failureActions(palette, target, inline: true),
+          // 登录已失效的人还没开签就给「重新登录」，不用等提交失败。
+          if (target.state == ChaoxingTargetState.failed || target.state == ChaoxingTargetState.idle && target.needsRepair)
+            _failureActions(palette, target, inline: true),
         ],
       ),
     );
@@ -1063,7 +1090,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        if (!inline) Text(target.message ?? '', style: TextStyle(fontSize: 14, color: palette.danger)),
+        if (!inline) Text(target.message ?? target.record.sessionLabel ?? '', style: TextStyle(fontSize: 14, color: palette.danger)),
         if (!inline) const SizedBox(height: 8),
         Wrap(
           spacing: 8,

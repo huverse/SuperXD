@@ -24,6 +24,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_signer.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_tag_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
 
 import 'chaoxing_fake_server.dart';
@@ -230,6 +231,99 @@ void main() {
         .then<ChaoxingFailure?>((_) => null, onError: (Object error) => error as ChaoxingFailure);
     expect(failure!.code, ChaoxingFailureCode.network);
     expect(failure.message, isNot(chaoxingSessionExpiredMessage));
+  });
+
+  testWidgets('账号管理：登录已失效的标出来、一点就重新登录；能新建标签、给账号设标签并显示在行里', (tester) async {
+    final accounts = accountsWith(MemoryChaoxingVault());
+    final controller = ChaoxingController(accounts: accounts);
+    Future<void> waitFor(String what, Future<bool> Function() done) async {
+      for (var round = 0; round < 250; round++) {
+        // 读写库与假服务都是真异步：先让真实时间走一小段，再看结果。
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+        if (await tester.runAsync(done) == true) {
+          await tester.pumpAndSettle();
+          return;
+        }
+        await tester.pump();
+      }
+      fail('等待超时：$what');
+    }
+
+    await tester.runAsync(() async {
+      await accounts.signIn(phoneNumber: '13800138000', password: 'myPassword123');
+      await store.setSessionExpired('13800138000', expired: true);
+      await controller.reloadAccounts();
+    });
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: const Scaffold(body: Center(child: Text('宿主')))));
+    unawaited(showChaoxingAccountSheet(tester.element(find.text('宿主')), controller: controller));
+    await tester.pumpAndSettle();
+    expect(find.text('登录已失效'), findsOneWidget);
+
+    // 一点警示图标就重新输密码，修好后标记与图标一起消失。
+    await tester.tap(find.byTooltip('登录已失效，重新登录'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'myPassword123');
+    await tester.tap(find.text('登录'));
+    await waitFor('修复后列表刷新', () async => !controller.accountList.single.sessionExpired);
+    expect(find.byTooltip('登录已失效，重新登录'), findsNothing);
+    expect(find.text('登录已失效'), findsNothing);
+
+    // 新建一个蓝色的「室友」标签。
+    await tester.tap(find.byTooltip('标签'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('新建标签'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), '室友');
+    await tester.tap(find.byTooltip('蓝'));
+    await tester.tap(find.text('保存'));
+    await waitFor('新建标签写库', () async => (await store.tags()).length == 1);
+    final tag = (await tester.runAsync(store.tags))!.single;
+    expect((tag.name, tag.colorIndex), ('室友', 4));
+    await tester.tap(find.byTooltip('关闭').last);
+    await tester.pumpAndSettle();
+
+    // 给账号设上这个标签，行里显示出来。
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('设置标签'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byType(CheckboxListTile));
+    await tester.tap(find.text('保存'));
+    await waitFor('账号标签写库', () async => (await store.accountTags())['13800138000']?.contains(tag.id) == true);
+    expect(find.descendant(of: find.byType(ChaoxingTagLabel), matching: find.text('室友')), findsOneWidget);
+    controller.dispose();
+  });
+
+  test('自动重登被拒记下「登录已失效」，签到对象一打开就要修复；重登成功或修复后清掉', () async {
+    final vault = MemoryChaoxingVault();
+    final accounts = accountsWith(vault);
+    await accounts.signIn(phoneNumber: '13800138000', password: 'myPassword123');
+    final client = (await accounts.clientFor('13800138000'))!;
+    Future<void> expire() async => throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, chaoxingSessionExpiredMessage);
+    // 对方改了密码：自动重登被拒，记进本机库。
+    final original = fake.users['13800138000']!;
+    fake.users['13800138000'] = (phoneCipher: original.phoneCipher, passwordCipher: 'changed', name: original.name);
+    await expectLater(accounts.run<void>(client, expire), throwsA(isA<ChaoxingFailure>()));
+    final expired = (await accounts.record('13800138000'))!;
+    expect(expired.sessionExpired, isTrue);
+    expect(expired.sessionLabel, '登录已失效');
+    final controller = ChaoxingController(accounts: accounts)..accountList = [expired];
+    expect(controller.signTargets().single.needsRepair, isTrue);
+    controller.dispose();
+
+    // 密码改回来、自动重登成功：标记清掉。
+    fake.users['13800138000'] = original;
+    var attempts = 0;
+    await accounts.run<void>(client, () async {
+      if (attempts++ == 0) await expire();
+    });
+    expect((await accounts.record('13800138000'))!.sessionExpired, isFalse);
+
+    // 重输密码修复同样清掉。
+    await store.setSessionExpired('13800138000', expired: true);
+    await accounts.repair(client, 'myPassword123');
+    expect((await accounts.record('13800138000'))!.sessionExpired, isFalse);
+    client.close();
   });
 
   test('删除当前账号时关掉它的会话', () async {

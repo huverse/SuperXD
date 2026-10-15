@@ -66,6 +66,10 @@ class ChaoxingController extends ChangeNotifier {
   ChaoxingStatus status = ChaoxingStatus.loading;
   List<ChaoxingAccountRecord> accountList = const [];
   ChaoxingAccountRecord? current;
+
+  // 账号标签，以及每个账号挂的标签号。
+  List<ChaoxingAccountTag> tags = const [];
+  Map<String, Set<int>> accountTags = const {};
   List<ChaoxingCourse> courses = const [];
 
   // 进行中的签到（活动列表 status 为 1 的）。
@@ -103,12 +107,49 @@ class ChaoxingController extends ChangeNotifier {
   // 账号说明里的归属：主账号写「主账号」，代签账号写「代签账号」，其余不写（只标例外）。
   String? ownerLabelOf(ChaoxingAccountRecord record) => record.phoneNumber == mainPhoneNumber ? '主账号' : record.ownerLabel;
 
-  // 签到对象：当前账号排第一并默认勾上，其余账号默认不勾。
+  // 签到对象：当前账号排第一并默认勾上，其余账号默认不勾；登录已失效的一打开就给「重新登录」。
   List<ChaoxingSignTarget> signTargets() => [
-    if (current != null) ChaoxingSignTarget(current!, selected: true),
+    if (current != null) ChaoxingSignTarget(current!, selected: true)..needsRepair = current!.sessionExpired,
     for (final record in accountList)
-      if (record.phoneNumber != current?.phoneNumber) ChaoxingSignTarget(record),
+      if (record.phoneNumber != current?.phoneNumber) ChaoxingSignTarget(record)..needsRepair = record.sessionExpired,
   ];
+
+  List<ChaoxingAccountTag> tagsOf(ChaoxingAccountRecord record) {
+    final ids = accountTags[record.phoneNumber] ?? const <int>{};
+    return [for (final tag in tags) if (ids.contains(tag.id)) tag];
+  }
+
+  bool hasTag(ChaoxingAccountRecord record, ChaoxingAccountTag tag) => accountTags[record.phoneNumber]?.contains(tag.id) ?? false;
+
+  // 账号列表与标签重读一遍：签到弹层关掉后（期间可能有账号被标了登录已失效）、标签改动后。
+  Future<void> reloadAccounts() async {
+    accountList = await accounts.list();
+    await _loadTags();
+    _notify();
+  }
+
+  Future<void> _loadTags() async {
+    tags = await accounts.store.tags();
+    accountTags = await accounts.store.accountTags();
+  }
+
+  Future<void> saveTag({int? id, required String name, required int colorIndex}) async {
+    await accounts.saveTag(id: id, name: name, colorIndex: colorIndex);
+    await _loadTags();
+    _notify();
+  }
+
+  Future<void> removeTag(ChaoxingAccountTag tag) async {
+    await accounts.store.removeTag(tag.id);
+    await _loadTags();
+    _notify();
+  }
+
+  Future<void> setAccountTags(ChaoxingAccountRecord record, Set<int> tagIds) async {
+    await accounts.store.setAccountTags(record.phoneNumber, tagIds);
+    await _loadTags();
+    _notify();
+  }
 
   Future<void> initialize() async {
     status = ChaoxingStatus.loading;
@@ -117,6 +158,7 @@ class ChaoxingController extends ChangeNotifier {
     try {
       await accounts.loadProfile();
       accountList = await accounts.list();
+      await _loadTags();
       locations = await accounts.store.locations();
       if (accountList.isEmpty) {
         status = ChaoxingStatus.signedOut;
@@ -223,6 +265,7 @@ class ChaoxingController extends ChangeNotifier {
         courses = const [];
       }
       accountList = await accounts.list();
+      await _loadTags();
       if (accountList.isEmpty) {
         status = ChaoxingStatus.signedOut;
       } else if (current == null) {

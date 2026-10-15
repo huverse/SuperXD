@@ -859,6 +859,43 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('签到对象按标签一起勾选：带标签的人都勾上时标签算选中，再点一起取消', (tester) async {
+    usePhoneScreen(tester);
+    await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');
+    final accounts = (await runtime.service<ChaoxingService>(ChaoxingService.serviceId)).accounts;
+    await tester.runAsync(() async {
+      await accounts.importOther(
+        ChaoxingCredentialPack(phoneNumber: '13900139000', encryptedPassword: await chaoxingEncrypt('otherPassword1'), name: '同学乙', deviceCode: 'device-of-b'),
+      );
+      await accounts.signIn(phoneNumber: '13800138000', password: 'myPassword123');
+      await accounts.saveTag(name: '室友', colorIndex: 3);
+      await accounts.store.setAccountTags('13900139000', {(await accounts.store.tags()).single.id});
+    });
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await waitUntil(tester, () => find.text('学习通签到的说明更新了').evaluate().isNotEmpty);
+    await tester.tap(find.widgetWithText(FilledButton, '同意'));
+    await tester.pump();
+    await waitUntil(tester, () => find.widgetWithText(FilledButton, '去签到').evaluate().isNotEmpty);
+    await openSignSheet(tester);
+    final chip = find.widgetWithText(CampusGlassChip, '室友');
+    expect(chip, findsOneWidget);
+    expect(tester.widget<CampusGlassChip>(chip).selected, isFalse);
+    expect(tester.widget<Checkbox>(find.byType(Checkbox).last).value, isFalse);
+    await tester.ensureVisible(chip);
+    await tester.pump();
+    await tester.tap(chip);
+    await tester.pump();
+    expect(tester.widget<Checkbox>(find.byType(Checkbox).last).value, isTrue);
+    expect(tester.widget<CampusGlassChip>(chip).selected, isTrue);
+    // 本人不带这个标签，不受影响。
+    expect(tester.widget<Checkbox>(find.byType(Checkbox).first).value, isTrue);
+    await tester.tap(chip);
+    await tester.pump();
+    expect(tester.widget<Checkbox>(find.byType(Checkbox).last).value, isFalse);
+    expect(tester.widget<Checkbox>(find.byType(Checkbox).first).value, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('多个账号时可以一次给本人与代签账号连签', (tester) async {
     usePhoneScreen(tester);
     await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');

@@ -82,4 +82,16 @@ void main() {
       expect(campusSystemOverlay(palette).systemNavigationBarContrastEnforced,isFalse);
     });
   }
+
+  test('标签色在十套配色的卡片、选中底与磨砂底上都不低于 3:1（图形元素）', () {
+    double contrast(Color a,Color b){final left=a.computeLuminance(),right=b.computeLuminance();return (math.max(left,right)+.05)/(math.min(left,right)+.05);}
+    for(final palette in [...CampusPalette.values,...CampusPalette.darkValues]) {
+      expect(palette.tagColors,hasLength(6));
+      for(final (index,color) in palette.tagColors.indexed) {
+        for(final surface in [palette.surface,palette.surfaceSelected,palette.glassFallback]) {
+          expect(contrast(color,surface),greaterThanOrEqualTo(3),reason:'${palette.id} ${palette.brightness.name} #$index');
+        }
+      }
+    }
+  });
 }

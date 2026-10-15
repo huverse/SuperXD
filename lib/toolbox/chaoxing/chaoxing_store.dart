@@ -21,6 +21,7 @@ class ChaoxingAccountRecord {
     this.deviceCodeBound = false,
     this.label = '',
     this.sort = 0,
+    this.sessionExpired = false,
   });
   final String phoneNumber;
   final int uid;
@@ -52,6 +53,9 @@ class ChaoxingAccountRecord {
   // 手动排序的位置（多账号管理里拖），小在前；同为 0 时按登录时间倒序。
   final int sort;
 
+  // 登录已失效：自动重登时学习通不再认这个密码（多半是对方改了密码），要重新输密码修复；重登成功或修复后清掉。
+  final bool sessionExpired;
+
   // 显示名：有备注用备注，否则昵称。
   String get displayName => label.isNotEmpty ? label : name;
 
@@ -62,6 +66,8 @@ class ChaoxingAccountRecord {
 
   // [人工决策-2026-10-15 17:53:28] 设备码只在是固定随机码时提示（可能被标「更换设备」），真实设备码不写。
   String? get deviceCodeLabel => deviceCodeBound ? null : '固定随机设备码';
+
+  String? get sessionLabel => sessionExpired ? '登录已失效' : null;
 
   ChaoxingAccountRecord change({int? fid, String? schoolName, String? clientId, List<ChaoxingUnit>? units}) => ChaoxingAccountRecord(
     phoneNumber: phoneNumber,
@@ -78,7 +84,16 @@ class ChaoxingAccountRecord {
     deviceCodeBound: deviceCodeBound,
     label: label,
     sort: sort,
+    sessionExpired: sessionExpired,
   );
+}
+
+// 账号标签：名字加一种颜色（主题里的标签色，按序号存），签到时可以按标签一起勾选。
+class ChaoxingAccountTag {
+  const ChaoxingAccountTag({required this.id, required this.name, required this.colorIndex});
+  final int id;
+  final String name;
+  final int colorIndex;
 }
 
 // 人脸照片：照片本身在学习通云盘，本机只记 objectId、用过几次、有没有被判失败过。
@@ -118,6 +133,10 @@ class ChaoxingStore {
   // 置顶的群：每个账号最多与能列出的群一样多（环信一页 200 个）。
   static const pinnedChatLimit = 200;
 
+  // 账号标签最多 20 个，名字最长 12 个字；每个标签挂的账号不超过账号上限。
+  static const tagLimit = 20;
+  static const tagNameMaxLength = 12;
+
   // 按班级记住的签到位置：每个班一行，只留最近签过的 200 个班。
   static const classLocationLimit = 200;
 
@@ -128,14 +147,14 @@ class ChaoxingStore {
     final store = ChaoxingStore._(
       await openDatabase(
         path,
-        version: 8,
+        version: 9,
         onCreate: (database, _) async {
           await database.execute(
             'CREATE TABLE accounts (phone_number TEXT PRIMARY KEY, uid INTEGER NOT NULL, puid INTEGER NOT NULL, '
             'fid INTEGER NOT NULL, name TEXT NOT NULL, school_name TEXT NOT NULL, device_code TEXT NOT NULL, '
             'is_other_user INTEGER NOT NULL, created_at INTEGER NOT NULL, client_id TEXT NOT NULL DEFAULT \'\', '
             'units TEXT NOT NULL DEFAULT \'[]\', device_code_bound INTEGER NOT NULL DEFAULT 0, '
-            'label TEXT NOT NULL DEFAULT \'\', sort INTEGER NOT NULL DEFAULT 0)',
+            'label TEXT NOT NULL DEFAULT \'\', sort INTEGER NOT NULL DEFAULT 0, session_expired INTEGER NOT NULL DEFAULT 0)',
           );
           await database.execute(
             'CREATE TABLE locations (id INTEGER PRIMARY KEY AUTOINCREMENT, label TEXT NOT NULL, address TEXT NOT NULL, '
@@ -149,6 +168,7 @@ class ChaoxingStore {
           await _createVersion3Tables(database);
           await _createClassLocations(database);
           await _createPinnedChats(database);
+          await _createTagTables(database);
         },
         onUpgrade: (database, oldVersion, _) async {
           if (oldVersion < 2) {
@@ -183,6 +203,11 @@ class ChaoxingStore {
           }
           // 第 8 版：群聊列表可置顶（按账号存群号）。
           if (oldVersion < 8) await _createPinnedChats(database);
+          // 第 9 版：账号的「登录已失效」标记与账号标签。
+          if (oldVersion < 9) {
+            await _addColumn(database, 'accounts', 'session_expired', 'INTEGER NOT NULL DEFAULT 0');
+            await _createTagTables(database);
+          }
         },
       ),
     );
@@ -229,6 +254,22 @@ class ChaoxingStore {
     await database.execute(
       'CREATE TABLE IF NOT EXISTS pinned_chats (phone_number TEXT NOT NULL, group_id TEXT NOT NULL, created_at INTEGER NOT NULL, '
       'PRIMARY KEY (phone_number, group_id))',
+    );
+  }
+
+  // 加列前先看有没有：升级只该走一次，但测试与半途中断过的升级会遇到列已经在的库。
+  static Future<void> _addColumn(Database database, String table, String column, String definition) async {
+    final columns = await database.rawQuery('PRAGMA table_info($table)');
+    if (columns.any((row) => row['name'] == column)) return;
+    await database.execute('ALTER TABLE $table ADD COLUMN $column $definition');
+  }
+
+  static Future<void> _createTagTables(Database database) async {
+    await database.execute(
+      'CREATE TABLE IF NOT EXISTS tags (id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, color INTEGER NOT NULL, created_at INTEGER NOT NULL)',
+    );
+    await database.execute(
+      'CREATE TABLE IF NOT EXISTS account_tags (phone_number TEXT NOT NULL, tag_id INTEGER NOT NULL, PRIMARY KEY (phone_number, tag_id))',
     );
   }
 
@@ -289,6 +330,58 @@ class ChaoxingStore {
       limit: accountLimit,
     );
     return rows.map(_account).toList();
+  }
+
+  // 登录已失效的标记：自动重登被学习通拒绝时记下，重登成功时清掉（修复与重新登录会整条重写，也就清掉了）。
+  Future<void> setSessionExpired(String phoneNumber, {required bool expired}) async {
+    await _database.update(
+      'accounts',
+      {'session_expired': expired ? 1 : 0},
+      where: 'phone_number = ? AND session_expired = ?',
+      whereArgs: [phoneNumber, expired ? 0 : 1],
+    );
+  }
+
+  Future<List<ChaoxingAccountTag>> tags() async {
+    final rows = await _database.query('tags', orderBy: 'created_at, id', limit: tagLimit);
+    return [
+      for (final row in rows)
+        ChaoxingAccountTag(id: row['id']! as int, name: row['name']! as String, colorIndex: row['color']! as int),
+    ];
+  }
+
+  // 新建（id 为空）或改名、换颜色；上限与重名由账号闭环先查，这里只管写。
+  Future<void> putTag({int? id, required String name, required int colorIndex}) async {
+    if (id == null) {
+      await _database.insert('tags', {'name': name, 'color': colorIndex, 'created_at': DateTime.now().toUtc().millisecondsSinceEpoch});
+      return;
+    }
+    await _database.update('tags', {'name': name, 'color': colorIndex}, where: 'id = ?', whereArgs: [id]);
+  }
+
+  // 删标签连带拿掉所有账号上的这个标签，账号本身不动。
+  Future<void> removeTag(int id) async {
+    await _database.delete('account_tags', where: 'tag_id = ?', whereArgs: [id]);
+    await _database.delete('tags', where: 'id = ?', whereArgs: [id]);
+  }
+
+  // 每个账号挂的标签号（账号与标签都有上限，整表读也就几百行）。
+  Future<Map<String, Set<int>>> accountTags() async {
+    final rows = await _database.query('account_tags', limit: accountLimit * tagLimit);
+    final members = <String, Set<int>>{};
+    for (final row in rows) {
+      members.putIfAbsent(row['phone_number']! as String, () => {}).add(row['tag_id']! as int);
+    }
+    return members;
+  }
+
+  // 整体替换一个账号的标签（标签设置弹窗里勾完一次写回）。
+  Future<void> setAccountTags(String phoneNumber, Set<int> tagIds) async {
+    final batch = _database.batch()..delete('account_tags', where: 'phone_number = ?', whereArgs: [phoneNumber]);
+    for (final tagId in tagIds) {
+      batch.insert('account_tags', {'phone_number': phoneNumber, 'tag_id': tagId});
+    }
+    await batch.commit(noResult: true);
   }
 
   // 备注名（多账号管理里改）。
@@ -460,6 +553,7 @@ class ChaoxingStore {
     deviceCodeBound: row['device_code_bound'] == 1,
     label: '${row['label'] ?? ''}',
     sort: row['sort'] == null ? 0 : row['sort']! as int,
+    sessionExpired: row['session_expired'] == 1,
   );
 
   // 库里的 JSON 列按外部输入解析，坏了就当没有。
@@ -493,13 +587,14 @@ class ChaoxingStore {
       'device_code_bound': record.deviceCodeBound ? 1 : 0,
       'label': record.label,
       'sort': record.sort,
+      'session_expired': record.sessionExpired ? 1 : 0,
     },
     conflictAlgorithm: ConflictAlgorithm.replace,
   );
 
-  // 账号删掉后，它的置顶课程与群、课表缓存与人脸照片索引一起清掉。
+  // 账号删掉后，它的置顶课程与群、标签、课表缓存与人脸照片索引一起清掉。
   Future<void> removeAccount(String phoneNumber) async {
-    for (final table in ['accounts', 'pinned_courses', 'pinned_chats', 'lesson_cache', 'face_images']) {
+    for (final table in ['accounts', 'pinned_courses', 'pinned_chats', 'account_tags', 'lesson_cache', 'face_images']) {
       await _database.delete(table, where: 'phone_number = ?', whereArgs: [phoneNumber]);
     }
   }

@@ -154,6 +154,9 @@ class ChaoxingAccounts {
         campusLog('[Chaoxing] action=re_login errorType=${reLoginFailure.code.name}');
         // 密码不再被接受才是真的过期（要修复）；网络类失败照实报，稍后重试即可。
         if (reLoginFailure.code != ChaoxingFailureCode.sessionExpired) rethrow;
+        // [人工决策-2026-10-15 19:18:47] 登录失效记进本机库（同参考项目 isObsoleteSession），切换账号、账号管理与签到对象里一直标着，
+        // 点一下就能重新登录修复；以前只在这一次签到的那一行里提示，关掉弹层就看不到了。重登成功或修复后清掉。
+        await store.setSessionExpired(client.phoneNumber, expired: true);
         Error.throwWithStackTrace(error, stack);
       }
       return await action();
@@ -168,6 +171,7 @@ class ChaoxingAccounts {
       await client.reLogin();
       // 与 refreshAccount 同理：重登途中账号被删了就不写回会话。
       if (await record(client.phoneNumber) != null) await vault.writeCookies(client.phoneNumber, client.http.cookies.session);
+      await store.setSessionExpired(client.phoneNumber, expired: false);
     } finally {
       _reLogins.remove(client);
     }
@@ -268,6 +272,23 @@ class ChaoxingAccounts {
     }
     client.close();
     return (await record(pack.phoneNumber))!;
+  }
+
+  // 新建（id 为空）或改名、换颜色：名字去掉首尾空白后不能为空、不超过 12 个字、不重名；最多 20 个。
+  Future<void> saveTag({int? id, required String name, required int colorIndex}) async {
+    final trimmed = name.trim();
+    if (trimmed.isEmpty) throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '标签名不能为空');
+    if (trimmed.runes.length > ChaoxingStore.tagNameMaxLength) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '标签名最多 ${ChaoxingStore.tagNameMaxLength} 个字');
+    }
+    final existing = await store.tags();
+    if (existing.any((tag) => tag.name == trimmed && tag.id != id)) {
+      throw ChaoxingFailure(ChaoxingFailureCode.invalidInput, '已经有叫「$trimmed」的标签了');
+    }
+    if (id == null && existing.length >= ChaoxingStore.tagLimit) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '标签最多 ${ChaoxingStore.tagLimit} 个，先删掉不用的');
+    }
+    await store.putTag(id: id, name: trimmed, colorIndex: colorIndex);
   }
 
   Future<void> forget(String phoneNumber) async {
