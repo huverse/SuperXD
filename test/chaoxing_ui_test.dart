@@ -650,6 +650,36 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('人脸照片里「用学习通里存的那张」先重处理再上传，列表里是新照片而不是原图编号', (tester) async {
+    usePhoneScreen(tester);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await tester.tap(find.byTooltip('账号操作'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('人脸照片').evaluate().isNotEmpty);
+    await tester.tap(find.text('人脸照片'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('用学习通里存的那张').evaluate().isNotEmpty);
+    // 弹层入场滑完再点，转场中途量到的坐标还在屏幕外。
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.ensureVisible(find.text('用学习通里存的那张'));
+    await tester.pump();
+    await tester.tap(find.text('用学习通里存的那张'));
+    await tester.pump();
+    // 下载原图 → 随机裁剪旋转 → 上传到云盘换新编号（fake 的上传固定回 obj-1），与签到弹层的补给同一条路。
+    var stored = const <String>[];
+    for (var round = 0; round < 250 && stored.isEmpty; round++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+      stored = [for (final face in await tester.runAsync(() => store.faceImages('13800138000')) ?? const []) face.objectId];
+    }
+    expect(stored, ['obj-1']);
+    expect(stored, isNot(contains(fake.profileFaceObjectId)));
+    expect(fake.uploadQuery, isNotNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('checkFace_ 是校验没完成：带着 enc2 自动重发，不给人脸照片记失败', (tester) async {
     usePhoneScreen(tester);
     fake.activities = [

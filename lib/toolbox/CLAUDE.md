@@ -92,7 +92,7 @@
   - chaoxing_code_cells.dart：签到码的格子输入 ChaoxingCodeCells：按位数显示空格（位数没有上限，窄屏放不下时按可用宽度等比收窄）、输满自动回调（校验与提交由签到弹层接手），真正的输入框藏在格子底下收键盘输入；输错时标红并重震一下，红色保留到重新输入第一位（[人工决策] 在文件头）。
   - chaoxing_image_pick.dart：人脸照片取图 pickChaoxingFacePhoto（相册或拍摄，选完进 3:4 裁剪页，image_cropper 实现）与现场拍摄 shootChaoxingPhoto（拍照签到与补拍，不裁剪）。取图用注入的 ToolboxImagePick；取图与裁剪留下的文件读成字节后即删（人脸属于生物特征，不在缓存留存）。
   - chaoxing_gesture_field.dart：手势签到的 3×3 图案输入 ChaoxingGestureField：原始指针事件画图案（不走手势竞技场，弹层里不会被拖动关闭抢走），抬起即回调序号串；校验失败时画错的图案留在原处标红并重震一下，下一次按下才清空（[人工决策] 在文件头）。
-  - chaoxing_face_sheet.dart：人脸照片弹层，预览（从学习通云盘取原图，内存里留最近 10 张）、用过几次、是否没通过过；每张右侧⋯里保存到本机与删除（管理模式才有删除，警示色并确认），签到时整卡点按选这次用哪张；添加照片时忙碌状态只显示在点的那个按钮上。
+  - chaoxing_face_sheet.dart：人脸照片弹层，预览（从学习通云盘取原图，内存里留最近 10 张）、用过几次、是否没通过过；每张右侧⋯里保存到本机与删除（管理模式才有删除，警示色并确认），签到时整卡点按选这次用哪张；添加照片时忙碌状态只显示在点的那个按钮上。「用学习通里存的那张」与签到弹层的补给同一条路：下载原图、随机裁剪旋转后上传成新照片，不把原图编号直接拿去签（[人工决策] 在文件内）。
   - chaoxing_im.dart：群聊签到。学习通群聊走环信：DES 解出登录下发的环信密码（pointycastle 只有 3DES，三段同一把钥匙等价单 DES）换令牌，列群、拉漫游消息，用极简 protobuf 读 Meta/MessageBody/KeyValue 三段取 attachment 扩展，再挑 attachmentType 15 且 atype 为 2/74 的签到。
   - chaoxing_group_page.dart：群聊里的签到页，按群翻出只发在群里的签到，逐条走同一套签到弹层；刷新保留旧列表、顶栏按钮原地转，首次读不到给原因与重试，已有内容时刷新失败只给提示条。
   - chaoxing_history_page.dart：往期签到页，列已结束的活动（status 不为 1），照样能签、签到页提示可能记为迟到；复用主列表那一次拉取的数据，不额外请求。
@@ -163,7 +163,7 @@
   - 卸载确认与清除数据（toolbox_page.dart）
   - 资源卸载范围
   - 工具单点登记与 id 统一（toolbox_catalog.dart）
-  - 学习通：签到码与手势输错的反馈、账号管理每行⋯（chaoxing_code_cells.dart、chaoxing_gesture_field.dart、chaoxing_account_sheet.dart）
+  - 学习通：签到码与手势输错的反馈、账号管理每行⋯（chaoxing_code_cells.dart、chaoxing_gesture_field.dart、chaoxing_account_sheet.dart）；账号说明只标例外（chaoxing_store.dart）；代签码只带真实设备码（chaoxing_delegate_controller.dart）；学习通存的人脸照片先重处理（chaoxing_face_sheet.dart）
   - 来源选择
   - 历史默认开启（short_video_store.dart）
   - 下载管理通用化（toolbox_download_manager.dart）、短视频服务化与清除数据（short_video_service.dart）、好友分享入口走注册表（toolbox_catalog.dart）

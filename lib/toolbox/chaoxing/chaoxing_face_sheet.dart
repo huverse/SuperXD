@@ -95,8 +95,10 @@ class _ChaoxingFaceSheetState extends State<_ChaoxingFaceSheet> {
     await widget.controller.faces.uploadFaceImage(widget.record, bytes);
   }, '人脸照片上传失败，请重试', source: source.name);
 
+  // [人工决策-2026-10-15 18:24:15] 学习通里存的那张先重处理（下载、随机裁剪旋转、上传成新照片）再记进列表，
+  // 不再把原图编号直接拿去签（同签到弹层的补给与参考项目；同一张原图反复用会被教师端比对出来）。
   Future<void> _fromProfile() => _run(() async {
-    final objectId = await widget.controller.faces.importProfileFace(widget.record);
+    final objectId = await widget.controller.faces.reprocessProfileFace(widget.record);
     if (objectId == null) throw const ChaoxingFailure(ChaoxingFailureCode.faceRequired, '学习通里还没有存人脸照片');
   }, '学习通里的人脸照片没取到，请重试', source: 'profile');
 
