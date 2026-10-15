@@ -6,6 +6,7 @@ import 'package:amap_map/amap_map.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:x_amap_base/x_amap_base.dart';
 
@@ -38,6 +39,37 @@ String? get chaoxingMapUnavailableReason {
 
 // 定位结果慢于这个时间就提示可以先手动点选（高德联网定位不通时首次结果要半分钟才退回 GPS），但不停止等待。
 const _slowFix = Duration(seconds: 15);
+
+// [人工决策-2026-10-15 22:39:57] 定位来的选点跟着变准、不画精度圈（用户在 OPPO 真机上看到室内只有约 550 米的网络定位后选定，
+// 同钉钉打卡持续更新位置、微信发位置只画定位点）：嵌着的地图选中的是定位结果时，30 秒内来了更准的结果（精度数值更小）就换过去；
+// 自己点了地图、选了收藏或全屏选了点就不再动。高德默认的精度圈不画（粗定位时会把整张小地图染色），图上只留老师的签到范围圈。
+const _refineWindow = Duration(seconds: 30);
+
+typedef _Fix = ({LatLng point, double accuracy});
+
+MyLocationStyleOptions _myLocationStyle(bool enabled) =>
+    MyLocationStyleOptions(enabled, circleFillColor: Colors.transparent, circleStrokeColor: Colors.transparent, circleStrokeWidth: 0);
+
+// [人工决策-2026-10-15 22:39:57] 系统定位关着时（用户选定，同高德、美团、微信发位置）：嵌着的地图左上角写「手机定位没开」，
+// 给「去打开」跳到系统定位设置（原生见 LocationSettings.kt）；定位图层照常开着，打开回来一有定位结果就按原规则选中。
+// 嵌着的地图在签到弹层里，提示条会被弹层盖住，「去打开」放在地图左上角的提示上（等着定位时才出现）；全屏选点页用提示条。
+const _locationSettings = MethodChannel('superxd/location_settings');
+
+void _openLocationSettings() => unawaited(
+  _locationSettings.invokeMethod<void>('open').catchError((Object error, StackTrace stack) {
+    campusLog('[ChaoxingMap] action=open_location_settings errorType=${error.runtimeType}\n$stack');
+  }),
+);
+
+// 查不到系统定位开没开（原生调用出错）就按开着处理，照常等定位结果。
+Future<bool> _locationServiceOn() async {
+  try {
+    return await Permission.locationWhenInUse.serviceStatus != ServiceStatus.disabled;
+  } catch (error, stack) {
+    campusLog('[ChaoxingMap] action=service_status errorType=${error.runtimeType}\n$stack');
+    return true;
+  }
+}
 
 // [人工决策-2026-10-14 21:26:16] 位置签到默认选中的位置（用户选定参考项目同款，取代 10-14 15:58:13「落点按 签到点 → 已选 →
 // 上次地图选点 → 最近收藏、只在点「定位到我」时申请定位权限」）：签到弹层里直接嵌地图，默认选中 这门课上次签到用的位置 →
@@ -163,7 +195,7 @@ Widget _mapChip(CampusPalette palette, Widget child) => DecoratedBox(
 );
 
 // 签到弹层里嵌的地图（位置签到默认用它选点，见文件头的人工决策）：点一下地图选点；右上角「定位到我」与「全屏」。
-// 建好就申请定位权限并打开高德定位图层；没有选中的位置时，第一次定位结果就是默认选中（自己点过地图就不再覆盖）。
+// 建好就申请定位权限并打开高德定位图层；没有选中的位置时，第一次定位结果就是默认选中，之后 30 秒内更准的结果跟着换（自己点过地图就不再覆盖）。
 // 选中的位置从外面变了（选了收藏、全屏页选点）镜头跟过去；本组件报出去的点不再挪镜头，免得点哪儿跳哪儿。
 class ChaoxingInlineMap extends StatefulWidget {
   const ChaoxingInlineMap({
@@ -195,8 +227,13 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
   bool _wantFix = false;
   // 点了「定位到我」还在等结果：按钮原地转圈。
   bool _awaitingFix = false;
-  LatLng? _lastFix;
+  bool _serviceOff = false;
+  // 选中的是定位结果、还在跟随窗口内：更准的结果来了就换过去（见文件头的人工决策）。
+  bool _refining = false;
+  Timer? _refineTimer;
+  _Fix? _lastFix;
   LatLng? _reported;
+  double _reportedAccuracy = 0;
   Timer? _fixTimeout;
   // 覆盖物每建一次就是新 id，高德会删了重画；弹层别处一刷新（签到进度等）地图上的点就闪，所以按内容缓存。
   Set<Marker> _markers = const {};
@@ -232,8 +269,9 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
     if (selected == null || selected == oldWidget.selected) return;
     final target = _target(selected);
     if (target == _reported) return;
-    // 外面换了位置（收藏、全屏选点）：之前等着的定位结果不再覆盖它。
+    // 外面换了位置（收藏、全屏选点）：之前等着的定位结果不再覆盖它，也不再跟着变准。
     _wantFix = false;
+    _stopRefining();
     _moveCamera(_map, target);
   }
 
@@ -241,6 +279,7 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
   void dispose() {
     _satellite.removeListener(_onMapType);
     _fixTimeout?.cancel();
+    _refineTimer?.cancel();
     super.dispose();
   }
 
@@ -248,15 +287,19 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
     if (!await _locationPermitted(context, explain: explain) || !mounted) return;
     final known = _lastFix;
     if (explain && known != null) {
+      _startRefining();
       _report(known);
       return;
     }
+    final serviceOn = await _locationServiceOn();
+    if (!mounted) return;
     setState(() {
       _locating = true;
       _wantFix = explain || widget.selected == null;
-      _awaitingFix = explain;
+      _awaitingFix = explain && serviceOn;
+      _serviceOff = !serviceOn;
     });
-    if (!explain) return;
+    if (!explain || !serviceOn) return;
     _fixTimeout?.cancel();
     _fixTimeout = Timer(_slowFix, () {
       if (!mounted || !_awaitingFix) return;
@@ -266,23 +309,42 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
     });
   }
 
-  // 定位图层会持续回报位置；只有等着的那一次移镜头并选中，之后不跟着拽，免得打断手动选点。
+  // 定位图层会持续回报位置：等着的那一次移镜头并选中；之后只在跟随窗口内、精度更好时换过去，别的不跟着拽，免得打断手动选点。
   void _onLocation(AMapLocation location) {
     final point = _fixOf(location);
     if (point == null) return;
-    _lastFix = point;
-    if (_wantFix) _report(point);
+    final fix = (point: point, accuracy: location.accuracy);
+    _lastFix = fix;
+    if (_wantFix) {
+      _startRefining();
+      _report(fix);
+    } else if (_refining && fix.accuracy > 0 && fix.accuracy < _reportedAccuracy) {
+      _report(fix);
+    }
   }
 
-  void _report(LatLng point) {
+  void _startRefining() {
+    _refineTimer?.cancel();
+    _refining = true;
+    _refineTimer = Timer(_refineWindow, () => _refining = false);
+  }
+
+  void _stopRefining() {
+    _refineTimer?.cancel();
+    _refining = false;
+  }
+
+  void _report(_Fix fix) {
     _fixTimeout?.cancel();
     setState(() {
       _wantFix = false;
       _awaitingFix = false;
+      _serviceOff = false;
     });
-    _moveCamera(_map, point);
-    _reported = point;
-    widget.onPicked(_gcjLocation(point, ''));
+    _moveCamera(_map, fix.point);
+    _reported = fix.point;
+    _reportedAccuracy = fix.accuracy;
+    widget.onPicked(_gcjLocation(fix.point, ''));
   }
 
   Set<Marker> _markerSet(ChaoxingLocation? selected) {
@@ -307,7 +369,9 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
     final palette = CampusPalette.of(context);
     final selected = widget.selected;
     final start = selected ?? widget.rangeCenter;
-    final hint = selected != null
+    // 等着定位而系统定位没开：左上角写明并给「去打开」（见文件头的人工决策）；已有选中的位置时，点了「定位到我」才出现。
+    final locationOff = _wantFix && _serviceOff;
+    final hint = locationOff || selected != null
         ? null
         : _wantFix
         ? '正在定位…'
@@ -326,7 +390,7 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
                   if (_satellite.value) unawaited(_loadSatelliteApproval(controller, _onMapType));
                 },
                 mapType: _satellite.value ? MapType.satellite : MapType.normal,
-                myLocationStyleOptions: MyLocationStyleOptions(_locating),
+                myLocationStyleOptions: _myLocationStyle(_locating),
                 onLocationChanged: _onLocation,
                 compassEnabled: false,
                 scaleEnabled: false,
@@ -337,6 +401,7 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
                 // 自己点了就以点的为准，迟到的定位结果不再覆盖。
                 onTap: (point) {
                   _fixTimeout?.cancel();
+                  _stopRefining();
                   setState(() {
                     _wantFix = false;
                     _awaitingFix = false;
@@ -357,6 +422,31 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                     child: Text(hint, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+                  ),
+                ),
+              ),
+            if (locationOff)
+              // 右边让出按钮列，大字号时文字换行、按钮不被挤掉。
+              Positioned(
+                left: 8,
+                top: 8,
+                right: 64,
+                child: Align(
+                  alignment: Alignment.topLeft,
+                  child: _mapChip(
+                    palette,
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Padding(
+                            padding: const EdgeInsets.only(left: 12),
+                            child: Text('手机定位没开', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+                          ),
+                        ),
+                        TextButton.icon(onPressed: _openLocationSettings, icon: const CampusIcon(CampusIcons.settings), label: const Text('去打开')),
+                      ],
+                    ),
                   ),
                 ),
               ),
@@ -478,13 +568,20 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
   }
 
   // 全屏页不自动定位：从签到弹层进来时已有选中的位置，要当前位置点「定位到我」（权限规则见文件头的人工决策）。
+  // 系统定位关着时给「去打开」，按钮不转圈，打开回来的第一次定位结果照样选中。
   Future<void> _locate() async {
     if (!await _locationPermitted(context, explain: true) || !mounted) return;
+    final serviceOn = await _locationServiceOn();
+    if (!mounted) return;
     setState(() {
       _locating = true;
       _wantFix = true;
-      _awaitingFix = true;
+      _awaitingFix = serviceOn;
     });
+    if (!serviceOn) {
+      showCampusToast(context, '手机定位没开，可以先在地图上点选', action: '去打开', onAction: _openLocationSettings);
+      return;
+    }
     _fixTimeout?.cancel();
     _fixTimeout = Timer(_slowFix, () {
       if (!mounted || !_awaitingFix) return;
@@ -551,7 +648,7 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
                 if (_satellite.value) unawaited(_loadSatelliteApproval(controller, _onMapType));
               },
               mapType: _satellite.value ? MapType.satellite : MapType.normal,
-              myLocationStyleOptions: MyLocationStyleOptions(_locating),
+              myLocationStyleOptions: _myLocationStyle(_locating),
               onLocationChanged: _onLocation,
               compassEnabled: false,
               scaleEnabled: false,

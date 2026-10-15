@@ -25,6 +25,8 @@ class MainActivity : FlutterActivity() {
         chaoxingDevice = ChaoxingDeviceChannel(applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/chaoxing_device")
             .setMethodCallHandler(chaoxingDevice)
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/location_settings")
+            .setMethodCallHandler(LocationSettingsChannel(this))
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
