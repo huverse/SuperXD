@@ -50,7 +50,14 @@ void _initAmap(BuildContext context) {
 
 // 申请定位权限（仅使用期间）。explain 为真（用户点了「定位到我」）时没给就说原因；进签到页的自动申请不打扰。
 Future<bool> _locationPermitted(BuildContext context, {required bool explain}) async {
-  final status = await Permission.locationWhenInUse.request();
+  final PermissionStatus status;
+  try {
+    status = await Permission.locationWhenInUse.request();
+  } catch (error, stack) {
+    // 权限请求是原生调用，出错就按没有权限处理：照样能点选、选收藏或手输。
+    campusLog('[ChaoxingMap] action=locate errorType=${error.runtimeType}\n$stack');
+    return false;
+  }
   campusLog('[ChaoxingMap] action=locate permission=${status.name} explain=$explain');
   if (status.isGranted || status.isLimited) return true;
   if (explain && context.mounted) {
@@ -59,10 +66,23 @@ Future<bool> _locationPermitted(BuildContext context, {required bool explain}) a
       context,
       blocked ? '定位权限已关闭，可在系统设置里打开，也可以直接点选' : '没有定位权限，可以直接在地图上点选',
       action: blocked ? '去设置' : null,
-      onAction: blocked ? () => unawaited(openAppSettings()) : null,
+      onAction: blocked
+          ? () => unawaited(
+              openAppSettings().then((_) {}, onError: (Object error, StackTrace stack) {
+                campusLog('[ChaoxingMap] action=open_settings errorType=${error.runtimeType}\n$stack');
+              }),
+            )
+          : null,
     );
   }
   return false;
+}
+
+// 移镜头只是视觉跟随，原生侧失败不影响选点：记下来，不打断用户。
+void _moveCamera(AMapController? map, LatLng target) {
+  map?.moveCamera(CameraUpdate.newLatLngZoom(target, 17)).catchError((Object error, StackTrace stack) {
+    campusLog('[ChaoxingMap] action=move_camera errorType=${error.runtimeType}\n$stack');
+  });
 }
 
 // 高德定位图层回报的位置；定位失败时回报的是 0,0，当没有。日志不记坐标，只记来源与精度。
@@ -178,7 +198,7 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
     if (target == _reported) return;
     // 外面换了位置（收藏、全屏选点）：之前等着的定位结果不再覆盖它。
     _wantFix = false;
-    unawaited(_map?.moveCamera(CameraUpdate.newLatLngZoom(target, 17)));
+    _moveCamera(_map, target);
   }
 
   @override
@@ -223,7 +243,7 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
       _wantFix = false;
       _awaitingFix = false;
     });
-    unawaited(_map?.moveCamera(CameraUpdate.newLatLngZoom(point, 17)));
+    _moveCamera(_map, point);
     _reported = point;
     widget.onPicked(_gcjLocation(point, ''));
   }
@@ -414,7 +434,7 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
       _awaitingFix = false;
       _picked = point;
     });
-    unawaited(_map?.moveCamera(CameraUpdate.newLatLngZoom(point, 17)));
+    _moveCamera(_map, point);
   }
 
   void _confirm() {

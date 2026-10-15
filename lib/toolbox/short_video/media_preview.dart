@@ -118,13 +118,7 @@ class _MediaPreviewState extends State<MediaPreview>
         child: _loading
             ? const CampusLoading(label: '正在准备预览')
             : _error != null
-            ? Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Text(_error!),
-                  TextButton(onPressed: _load, child: const Text('重试')),
-                ],
-              )
+            ? CampusLoadError(message: _error!, onRetry: _load)
             : AspectRatio(
                 aspectRatio: _video!.value.aspectRatio,
                 child: Chewie(controller: _controls!),

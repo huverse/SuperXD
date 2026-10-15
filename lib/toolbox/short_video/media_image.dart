@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
 import 'package:mime/mime.dart';
 
+import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/toolbox/toolbox_url.dart';
 import 'package:superxd/domain/campus_log.dart';
@@ -139,7 +140,7 @@ class _MediaImageState extends State<MediaImage> {
       mainAxisSize: MainAxisSize.min,
       children: [
         const Text('图片不可用'),
-        TextButton(onPressed: _load, child: const Text('重试图片')),
+        TextButton.icon(onPressed: _load, icon: const CampusIcon(CampusIcons.sync), label: const Text('重试图片')),
       ],
     ),
   );

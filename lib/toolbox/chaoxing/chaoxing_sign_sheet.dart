@@ -278,19 +278,27 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
 
   // 全屏选点（嵌着的地图太小时用）：从当前选中的位置开始，名称框里的名称带过去。
   Future<void> _pickOnMap() async {
-    final picked = await openChaoxingMapPicker(
-      context,
-      initial: _currentLocation() ?? _savedLocation,
-      label: _address.text.trim(),
-      rangeCenter: _rangeCenter,
-      rangeMeters: _info?.locationRange.toDouble(),
-    );
+    final ChaoxingLocation? picked;
+    try {
+      picked = await openChaoxingMapPicker(
+        context,
+        initial: _currentLocation() ?? _savedLocation,
+        label: _address.text.trim(),
+        rangeCenter: _rangeCenter,
+        rangeMeters: _info?.locationRange.toDouble(),
+      );
+    } catch (error, stack) {
+      campusLog('[Chaoxing] action=pick_on_map errorType=${error.runtimeType}\n$stack');
+      if (mounted) setState(() => _error = '地图没打开，可以手动输入位置');
+      return;
+    }
     if (!mounted || picked == null) return;
+    final chosen = picked;
     // [人工决策-2026-10-08 19:35:38] 地图选点只用于这次签到，不自动收藏（同高德、Google 地图：保存要用户明确点）；
     // 收藏只走签到成功后的「收藏这次的位置？」询问（500 米内已有收藏不问）。取代选点即收藏的旧做法。
     setState(() {
-      _savedLocation = picked;
-      _address.text = picked.address;
+      _savedLocation = chosen;
+      _address.text = chosen.address;
       _manualLocation = false;
       _error = null;
     });
@@ -372,8 +380,13 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       setState(() => _error = '请先填写纬度与经度');
       return;
     }
-    await widget.controller.saveLocation(location.address, location);
-    if (mounted) setState(() => _error = null);
+    try {
+      await widget.controller.saveLocation(location.address, location);
+      if (mounted) setState(() => _error = null);
+    } catch (error, stack) {
+      campusLog('[Chaoxing] action=save_location errorType=${error.runtimeType}\n$stack');
+      if (mounted) setState(() => _error = '位置没收藏上，请重试');
+    }
   }
 
   Future<String?> _solveCaptcha(ChaoxingClient client, ChaoxingActivity activity) async {

@@ -366,7 +366,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
             ),
           ),
         ),
-        (null, final String message) => ChaoxingLoadError(
+        (null, final String message) => CampusLoadError(
           message: message,
           onRetry: () {
             setState(() => _startError = null);

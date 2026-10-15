@@ -50,25 +50,31 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
   int _inputVersion = 0;
   String? _message;
   List<Map<String, Object?>> _recent = const [];
+  // 失败交给页面上的「重试」，这里先带堆栈记一笔（FutureBuilder 只拿来显示）。
   Future<void> _initialize() async {
-    await widget.runtime.initialize();
-    _service = await widget.runtime.service<ShortVideoService>(ShortVideoService.serviceId);
-    final controller = ShortVideoController(_service);
-    await controller.initialize();
-    if (widget.initialSource case final source?
-        when _service.coordinator.providers.containsKey(source)) {
-      await controller.select(source);
-    }
-    if (!mounted) {
-      controller.dispose();
-      return;
-    }
-    _controller = controller;
-    await _reloadRecent();
-    if (widget.autoParse && widget.initialInput.isNotEmpty) {
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (mounted) _parse();
-      });
+    try {
+      await widget.runtime.initialize();
+      _service = await widget.runtime.service<ShortVideoService>(ShortVideoService.serviceId);
+      final controller = ShortVideoController(_service);
+      await controller.initialize();
+      if (widget.initialSource case final source?
+          when _service.coordinator.providers.containsKey(source)) {
+        await controller.select(source);
+      }
+      if (!mounted) {
+        controller.dispose();
+        return;
+      }
+      _controller = controller;
+      await _reloadRecent();
+      if (widget.autoParse && widget.initialInput.isNotEmpty) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) _parse();
+        });
+      }
+    } catch (error, stack) {
+      campusLog('[ShortVideo] action=initialize errorType=${error.runtimeType}\n$stack');
+      rethrow;
     }
   }
 
@@ -310,13 +316,11 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
         future: _ready,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(
-              child: TextButton(
-                onPressed: () => setState(() {
-                  _ready = _initialize();
-                }),
-                child: const Text('准备失败，点击重试'),
-              ),
+            return CampusLoadError(
+              message: '准备失败',
+              onRetry: () => setState(() {
+                _ready = _initialize();
+              }),
             );
           }
           final controller = _controller;

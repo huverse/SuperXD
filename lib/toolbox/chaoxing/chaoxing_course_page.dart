@@ -207,7 +207,7 @@ class _ChaoxingCourseDetailPageState extends State<ChaoxingCourseDetailPage> {
         actions: [ChaoxingRefreshButton(loading: _loading && _activities != null, onRefresh: _loading ? null : () => _load())],
       ),
       body: switch ((_error, activities)) {
-        (final String message, null) => ChaoxingLoadError(message: message, onRetry: () => _load()),
+        (final String message, null) => CampusLoadError(message: message, onRetry: () => _load()),
         (_, null) => const CampusLoading(label: '正在读取签到活动…', network: true, remote: '学习通'),
         _ => _lazyList([
               if (widget.group.courses.length > 1 || _failures > 0)

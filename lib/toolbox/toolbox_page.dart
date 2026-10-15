@@ -95,19 +95,11 @@ class _ToolboxPageState extends State<ToolboxPage> {
         future: _ready,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Text('百宝箱暂未就绪'),
-                  TextButton(
-                    onPressed: () => setState(() {
-                      _ready = widget.runtime.initialize();
-                    }),
-                    child: const Text('重试'),
-                  ),
-                ],
-              ),
+            return CampusLoadError(
+              message: '百宝箱暂未就绪',
+              onRetry: () => setState(() {
+                _ready = widget.runtime.initialize();
+              }),
             );
           }
           if (snapshot.connectionState != ConnectionState.done) {
