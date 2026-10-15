@@ -46,6 +46,7 @@
   - DisplayScope 负责向下传递；CampusTextScaler 在系统字号基础上叠加应用字号。
   - appearance 是当前界面配置（AppearanceShare，不含壁纸图片），用于分享与套用前的撤销点；applyAppearance 套用好友分享的配置，本版本支持的取值在保存锁内一并落库，不支持的保持不变并返回跳过的项名。
 - wallpaper_store.dart：WallpaperStore 管理壁纸文件，放在应用支持目录 display/wallpaper 下，只保留当前一份，单图上限 20MB；每次导入用新文件名。
+- app_update_memory.dart：FileAppUpdateMemory 实现应用更新的检查记录端口 AppUpdateMemory：应用支持目录下固定大小的 app_update.json（上次检查成功的时刻 UTC、跳过的版本、是否待必须更新），先写临时文件再改名；读到坏文件当没有记录。不放数据库：只有三个字段，不随数据增长。
 - legacy_import.dart：旧单库导入 importLegacyDatabase。
   - 旧库只读打开，只支持 user_version 1–2。
   - 按主键游标每批读取 200 行。发生冲突时一律保留目标数据，计为跳过。

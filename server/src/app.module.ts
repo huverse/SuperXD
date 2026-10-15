@@ -4,6 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { env } from 'src/config/env';
 import { RedisModule } from 'src/common/redis/redis.module';
+import { AppReleaseModule } from 'src/modules/app_release/app_release.module';
 import { ChaoxingPackEntity } from 'src/modules/chaoxing/chaoxing_pack.entity';
 import { ChaoxingPackModule } from 'src/modules/chaoxing/chaoxing_pack.module';
 import { DeviceEntity } from 'src/modules/device/device.entity';
@@ -44,6 +45,7 @@ import { PairingModule } from 'src/modules/pairing/pairing.module';
     MessageModule,
     ChaoxingPackModule,
     PairingModule,
+    AppReleaseModule,
   ],
   controllers: [HealthController],
 })

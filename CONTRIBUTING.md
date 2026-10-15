@@ -32,6 +32,8 @@ ORG_GRADLE_PROJECT_superxdSigningProperties=/仓库外的绝对路径/signing.pr
 - 签名配置只从上述外部properties读取，包含storeFile、keyAlias、storePassword、keyPassword；storeFile可相对配置文件。密钥文件和密码保存在仓库外、限制访问并离线备份，禁止写进命令行、日志、Git或Issue。release缺少有效配置直接失败，不回退debug签名。丢失密钥就无法覆盖升级，只能换签名并让用户卸载重装（1.0.0-alpha.2即因此更换）。
 - build/release_symbols随版本离线保存，用于还原崩溃堆栈，不打进APK、不上传Release。--analyze-size与--split-debug-info不能同次使用。
 - 发布前逐个用apksigner verify --verbose --print-certs验签，检查包名、版本号、ABI与debuggable=false；生成SHA256SUMS，发布后下载附件再校验。Release只上传APK与校验文件。
+- 应用内更新（从1.0.0-alpha.4起）：Release发布后，写一份面向用户的几行更新说明（不超过4000字），运行 dart run tool/release_manifest.dart --apks <安装包目录> --notes <说明文件> --out <输出目录> 生成 alpha.json。先把三个安装包传到中转服务器的releases目录（见server/README.md部署第6步），最后传alpha.json（清单一出现客户端就会来下载），再删掉旧版本安装包；用 curl <中转地址>/v1/app/releases/alpha?abi=arm64-v8a 核对版本号与SHA-256。客户端只认与已装应用同签名、同包名、版本号一致的安装包，换签名的版本无法应用内更新。
+- 强制更新：只有旧版已无法正常使用（服务端接口不兼容、严重问题）时才给生成工具加 --min-supported <版本号>，已装版本低于它的用户会看到关不掉的更新弹窗；平时为0，所有更新都可选。
 - 性能比较使用同设备、同构建模式、同数据与显示设置；真机profile才能作为性能验收。字体保持完整字符覆盖和实际字重，不以裁字或假粗体压缩体积。
 
 # 许可与第三方

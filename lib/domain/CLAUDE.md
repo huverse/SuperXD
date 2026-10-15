@@ -46,6 +46,10 @@
   - 卡片有类型名与版本号：ScheduleShare（课表快照：学期、开学日、课程、作息）、AppearanceShare（配色、字体、字号、深浅色、玻璃、壁纸模糊透明度，不含图片）、VideoShare（作品原链接、标题、作者、平台、类型，不含直链与封面）；不认识的类型或更高版本解成 UnknownShare，界面提示更新应用。
   - decodeShareCard 是外部输入的边界：结构、长度、范围逐项校验，课表再走 validateSchedule，失败抛 ShareCardException。shareCardSummary 给列表预览。
   - 新增卡片类型：这里加子类与编解码，页面 share_card_view.dart 加渲染。
+- app_update.dart：应用内更新的类型、规则与端口。
+  - 类型：AppRelease（版本号、版本名、发布时刻、最低可用版本号、更新说明、发布页、这个架构的安装包 AppReleaseApk）、AppPackageIdentity、AppUpdateException、AppUpdateCancelled。
+  - 规则：appUpdateUrgency（有更新版本才算，已装低于最低可用版本为必须更新）、appUpdateCheckDue（自动检查每个校园日一次，待必须更新时不限）、appUpdatePromptDue（跳过的版本不自动弹，必须更新不认跳过）。人工决策见文件内。
+  - 端口：AppReleaseFeed、AppPackageFiles（device 实现）、AppInstaller（device 实现，原生见 AppUpdateInstaller.kt）、AppUpdateMemory（local 实现），由 application/app_updates.dart 编排。
 - common_free.dart：好友课表与自己课表的共同空闲。compareWeek 按好友那一周的日期对齐双方周次（任一方缺开学日时按相同周次），busyPeriods 求某周每天占用的节次，commonFree 合并双方都空的连续节次并配上作息时刻；周末任一方有课才显示周末。
 
 # 关键规则

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:ffi';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -6,18 +7,25 @@ import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:image_picker_android/image_picker_android.dart';
 import 'package:image_picker_platform_interface/image_picker_platform_interface.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:superxd/app_session.dart';
+import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/application/campus_widgets.dart';
+import 'package:superxd/device/app_installer_channel.dart';
+import 'package:superxd/device/app_package_files.dart';
 import 'package:superxd/device/home_widget_publisher.dart';
 import 'package:superxd/device/notification_reminders.dart';
+import 'package:superxd/device/relay_release_feed.dart';
 import 'package:superxd/domain/course_widget.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
+import 'package:superxd/local/app_update_memory.dart';
+import 'package:superxd/page/app_update_dialog.dart';
 import 'package:superxd/local/credential_store.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/display_settings.dart';
@@ -70,7 +78,8 @@ void main() async {
     transport: relayTransport(),
     polling: true,
   );
-  runApp(SuperXdApp(session: session, display: display, reminders: reminders, social: social));
+  final updates = await appUpdates(support);
+  runApp(SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates));
   unawaited(initializeCampusGlass());
   // 私信是设备级的，与教务会话无关；初始化失败只影响私信（状态 failed），不影响应用。
   unawaited(social.initialize());
@@ -81,17 +90,47 @@ void main() async {
   }
   watchLocalSchedule(session, reminders: reminders, widgets: widgets);
   watchWidgetTheme(display, widgetPort);
+  if (updates != null) watchAppUpdates(updates);
 }
 
-// 中转服务地址来自构建参数 SUPERXD_RELAY；未配置或格式不对时私信不可用，不猜默认地址。
-RelayTransport? relayTransport() {
+// 中转服务地址来自构建参数 SUPERXD_RELAY；未配置或格式不对时私信与应用更新都不可用，不猜默认地址。
+String? relayBase() {
   if (relayBaseUrl.isEmpty) return null;
   final uri = Uri.tryParse(relayBaseUrl);
   if (uri == null || !uri.isScheme('http') && !uri.isScheme('https') || uri.host.isEmpty || relayBaseUrl.endsWith('/')) {
-    campusLog('[Social] action=config errorType=INVALID_RELAY_URL');
+    campusLog('[Relay] action=config errorType=INVALID_RELAY_URL');
     return null;
   }
-  return HttpRelayTransport(relayBaseUrl);
+  return relayBaseUrl;
+}
+
+RelayTransport? relayTransport() => switch (relayBase()) {
+  final base? => HttpRelayTransport(base),
+  null => null,
+};
+
+// 应用内更新走同一个自建中转，渠道就是构建渠道（appFlavor，如 alpha）；没配中转、不是渠道构建（测试）或认不出架构时不检查更新。
+Future<AppUpdates?> appUpdates(Directory support) async {
+  final base = relayBase(), channel = appFlavor, abi = appAbiName(Abi.current());
+  if (base == null || channel == null || abi == null) return null;
+  final installed = int.tryParse((await PackageInfo.fromPlatform()).buildNumber);
+  if (installed == null) return null;
+  return AppUpdates(
+    feed: RelayReleaseFeed(base, channel: channel, abi: abi),
+    files: CacheAppPackageFiles(),
+    installer: ChannelAppInstaller(),
+    memory: await FileAppUpdateMemory.open(File(path.join(support.path, 'app_update.json'))),
+    installedVersionCode: installed,
+    foreground: () => WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed,
+  );
+}
+
+// 应用更新：启动先清掉装好后的旧安装包，等首屏稳下来再自动检查（每个校园日一次，查到由账号应用弹窗）；
+// 回到前台时接着做被搁下的安装（去开启了授权，或下载在后台完成）。三者都自己兜住异常，只记日志。
+void watchAppUpdates(AppUpdates updates) {
+  unawaited(updates.prune());
+  AppLifecycleListener(onResume: () => unawaited(updates.resume()));
+  unawaited(Future<void>.delayed(appUpdateAutoCheckDelay, updates.autoCheck));
 }
 
 // 课前提醒与桌面小组件的对账时机：启动恢复会话后、回到前台、切换账号或退出登录、本机课表相关写入后；1秒防抖合并连续写入。
@@ -151,10 +190,12 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates});
   final CampusReminders? reminders;
   // 设备级私信服务，切换账号不重建；为空时私信入口显示未配置。
   final SocialService? social;
+  // 应用内更新（设备级）；为空时关于页不显示检查更新、也不弹更新。
+  final AppUpdates? updates;
   final ToolboxRuntime? toolbox;
   final AppSession session;
   final DisplaySettings? display;
@@ -202,15 +243,16 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates),
     );
   }
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social});
+  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates});
   final CampusReminders? reminders;
   final SocialService? social;
+  final AppUpdates? updates;
   final ToolboxRuntime toolbox;
   final AppSession session;
   final DisplaySettings? display;
@@ -221,11 +263,29 @@ class _AccountApp extends StatefulWidget {
 }
 
 class _AccountAppState extends State<_AccountApp> {
-  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, reminders: widget.reminders, social: widget.social);
+  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates);
   late final _display = widget.display ?? DisplaySettings.memory();
 
   @override
+  void initState() {
+    super.initState();
+    widget.updates?.addListener(_promptUpdate);
+    // 换了账号代次时，上一个账号应用没来得及弹的提示由这里接着弹。
+    WidgetsBinding.instance.addPostFrameCallback((_) => _promptUpdate());
+  }
+
+  // 自动检查查到新版时弹更新弹窗：挂在根导航器上，登录页与已登录页面都能弹；一个提示只弹一次。
+  void _promptUpdate() {
+    final updates = widget.updates;
+    final context = _router.routerDelegate.navigatorKey.currentContext;
+    if (updates == null || context == null || !mounted) return;
+    if (updates.takePrompt() == null) return;
+    unawaited(showAppUpdateDialog(context, updates));
+  }
+
+  @override
   void dispose() {
+    widget.updates?.removeListener(_promptUpdate);
     _router.dispose();
     if (widget.display == null) _display.dispose();
     super.dispose();
