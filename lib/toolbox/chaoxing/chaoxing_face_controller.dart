@@ -99,13 +99,6 @@ class ChaoxingFaceController {
   // 人脸照片：每个账号最多存 5 张（照片在学习通云盘，本机只记 objectId 与使用情况）。
   Future<List<ChaoxingFaceImage>> faceImages(ChaoxingAccountRecord record) => accounts.store.faceImages(record.phoneNumber);
 
-  // 学习通里已经存着的人脸照片：取回来记进本机，之后签人脸签到默认用它。
-  Future<String?> importProfileFace(ChaoxingAccountRecord record) async {
-    final objectId = await profileFaceId(record);
-    if (objectId != null) await accounts.store.putFaceImage(record.phoneNumber, objectId);
-    return objectId;
-  }
-
   Future<void> removeFaceImage(ChaoxingAccountRecord record, String objectId) async {
     await accounts.store.removeFaceImage(record.phoneNumber, objectId);
     _faceBytes.remove(objectId);
