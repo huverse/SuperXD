@@ -12,6 +12,7 @@ abstract final class CampusIcons {
   static const messages = LucideIcons.messageSquare;
   static const messagesSelected = LucideIcons.messagesSquare;
   static const account = LucideIcons.userRound;
+  static const mainAccount = LucideIcons.userRoundCheck;
   static const accountSelected = LucideIcons.contactRound;
   static const grades = LucideIcons.fileChartColumn;
   static const back = LucideIcons.arrowLeft;

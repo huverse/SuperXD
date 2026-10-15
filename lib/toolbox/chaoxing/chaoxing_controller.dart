@@ -94,6 +94,15 @@ class ChaoxingController extends ChangeNotifier {
   ChaoxingAccount? get account => _client?.account;
   ChaoxingClientProfile get profile => accounts.profile;
 
+  // 主账号：账号列表把它排在第一（见 ChaoxingAccounts.list），排第一的是自己登录的账号就是它；没有自己登录的账号时为空。
+  String? get mainPhoneNumber {
+    final first = accountList.firstOrNull;
+    return first == null || first.isOtherUser ? null : first.phoneNumber;
+  }
+
+  // 账号说明里的归属：主账号写「主账号」，代签账号写「代签账号」，其余不写（只标例外）。
+  String? ownerLabelOf(ChaoxingAccountRecord record) => record.phoneNumber == mainPhoneNumber ? '主账号' : record.ownerLabel;
+
   // 签到对象：当前账号排第一并默认勾上，其余账号默认不勾。
   List<ChaoxingSignTarget> signTargets() => [
     if (current != null) ChaoxingSignTarget(current!, selected: true),
@@ -114,6 +123,7 @@ class ChaoxingController extends ChangeNotifier {
         _notify();
         return;
       }
+      // 每次打开都进主账号（排第一），不记上次切到哪个，免得误用别人的账号签到。
       await _open(accountList.first);
     } catch (failure, stack) {
       _fail('load', failure, stack, '账号读取失败，请重试');
@@ -178,6 +188,13 @@ class ChaoxingController extends ChangeNotifier {
     await accounts.store.renameAccount(record.phoneNumber, label);
     accountList = await accounts.list();
     if (current?.phoneNumber == record.phoneNumber) current = await accounts.record(record.phoneNumber);
+    _notify();
+  }
+
+  // 设为主账号：之后打开工具都进它，账号列表里它排第一。
+  Future<void> setMainAccount(ChaoxingAccountRecord record) async {
+    await accounts.setMainAccount(record);
+    accountList = await accounts.list();
     _notify();
   }
 

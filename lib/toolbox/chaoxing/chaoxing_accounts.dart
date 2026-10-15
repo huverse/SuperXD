@@ -13,6 +13,9 @@ const chaoxingProfileKey = 'client_profile';
 const chaoxingCustomUserAgentKey = 'client_user_agent';
 const chaoxingCustomPackageKey = 'client_package';
 
+// 用户设的主账号（手机号）；没设过或已删掉时按最早登录的自己账号算。
+const chaoxingMainAccountKey = 'main_account';
+
 // 学习通账号的闭环：登录、恢复会话、切换学校单位、修复与删除。凭据在安全存储，账号索引在本机库。
 class ChaoxingAccounts {
   ChaoxingAccounts({
@@ -31,7 +34,26 @@ class ChaoxingAccounts {
 
   ChaoxingClientProfile profile = ChaoxingClientProfile.chaoxing;
 
-  Future<List<ChaoxingAccountRecord>> list() => store.accounts();
+  // [人工决策-2026-10-15 18:37:09] 主账号固定排第一（打开工具时进它）：用户设过且仍是自己登录的账号就用它，
+  // 否则取最早登录的自己账号；没有自己登录的账号时没有主账号，照库里的顺序。其余账号按手动排序（sort）。
+  // 取代 10-08 的「本人固定第一、代签账号只在段内拖」：自己登录的账号可以有好几个，靠主账号区分哪个是机主。
+  Future<List<ChaoxingAccountRecord>> list() async {
+    final records = await store.accounts();
+    final own = records.where((record) => !record.isOtherUser).toList();
+    if (own.isEmpty) return records;
+    final chosen = await store.preference(chaoxingMainAccountKey);
+    final main = own.where((record) => record.phoneNumber == chosen).firstOrNull ??
+        own.reduce((earliest, record) => record.createdAt.isBefore(earliest.createdAt) ? record : earliest);
+    return [main, for (final record in records) if (record.phoneNumber != main.phoneNumber) record];
+  }
+
+  // 设为主账号：只限自己登录的账号，代签账号是别人交来的。
+  Future<void> setMainAccount(ChaoxingAccountRecord record) async {
+    if (record.isOtherUser) {
+      throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '代签账号不能设为主账号');
+    }
+    await store.setPreference(chaoxingMainAccountKey, record.phoneNumber);
+  }
 
   Future<ChaoxingAccountRecord?> record(String phoneNumber) async =>
       (await store.accounts()).where((item) => item.phoneNumber == phoneNumber).firstOrNull;
@@ -90,7 +112,7 @@ class ChaoxingAccounts {
     await _persist(
       client,
       isOtherUser: false,
-      createdAt: existing?.createdAt,
+      existing: existing,
       deviceCodeBound: localCode.isNotEmpty || (existing?.deviceCodeBound ?? false),
     );
     return client.account!;
@@ -190,7 +212,7 @@ class ChaoxingAccounts {
       client,
       isOtherUser: existing?.isOtherUser ?? false,
       name: existing?.isOtherUser == true ? existing!.name : null,
-      createdAt: existing?.createdAt,
+      existing: existing,
       deviceCodeBound: existing?.deviceCodeBound ?? false,
     );
   }
@@ -238,7 +260,7 @@ class ChaoxingAccounts {
       client,
       isOtherUser: true,
       name: pack.name,
-      createdAt: existing?.createdAt,
+      existing: existing,
       deviceCodeBound: pack.deviceCode.isNotEmpty || (existing?.deviceCodeBound ?? false),
     );
     for (final objectId in pack.faceObjectIds.reversed) {
@@ -251,6 +273,8 @@ class ChaoxingAccounts {
   Future<void> forget(String phoneNumber) async {
     await store.removeAccount(phoneNumber);
     await vault.delete(phoneNumber);
+    // 删的是主账号就清掉设置，回到按最早登录的自己账号算；以后再登回这个号也不会悄悄变回主账号。
+    if (await store.preference(chaoxingMainAccountKey) == phoneNumber) await store.setPreference(chaoxingMainAccountKey, null);
   }
 
   // 重新登录或补用户信息后，所选学校单位还在账号的单位里就保留，不在了退回主单位。
@@ -267,7 +291,7 @@ class ChaoxingAccounts {
     required bool isOtherUser,
     required bool deviceCodeBound,
     String? name,
-    DateTime? createdAt,
+    ChaoxingAccountRecord? existing,
   }) async {
     final account = client.account!;
     await vault.writePassword(client.phoneNumber, client.encryptedPassword);
@@ -282,10 +306,13 @@ class ChaoxingAccounts {
         schoolName: account.schoolName,
         deviceCode: client.deviceCode,
         isOtherUser: isOtherUser,
-        createdAt: createdAt ?? DateTime.now().toUtc(),
+        createdAt: existing?.createdAt ?? DateTime.now().toUtc(),
         clientId: account.clientId ?? '',
         units: account.units,
         deviceCodeBound: deviceCodeBound,
+        // 重新登录、修复或再导入时备注名与手动排序照旧（以前会被清回默认）。
+        label: existing?.label ?? '',
+        sort: existing?.sort ?? 0,
       ),
     );
   }
