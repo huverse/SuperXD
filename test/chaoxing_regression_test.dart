@@ -335,7 +335,9 @@ void main() {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: const Scaffold(body: Center(child: Text('宿主')))));
     unawaited(showChaoxingAccountSheet(tester.element(find.text('宿主')), controller: controller));
     await tester.pumpAndSettle();
-    expect(find.text('本人'), findsOneWidget);
+    // 只标例外：自己的账号不写「本人」，代签账号靠分组标题区分，行里也不重复写。
+    expect(find.textContaining('本人'), findsNothing);
+    expect(find.textContaining('代签账号'), findsOneWidget);
     expect(find.textContaining('代签账号 · 按住右侧把手拖动排序'), findsOneWidget);
     // 本人那行没有拖动把手，两个代签账号各一个。
     final handles = find.byWidgetPredicate((widget) => widget is CampusIcon && widget.icon == CampusIcons.dragHandle);

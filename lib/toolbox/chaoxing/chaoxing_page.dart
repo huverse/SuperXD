@@ -270,13 +270,12 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
               for (final item in controller.accountList)
                 ListTile(
                   title: Text(item.displayName, style: const TextStyle(fontSize: 16)),
-                  // 设备码与真实设备一致（本机 OAID 或对方代签码带来的）才不会被标「更换设备」；固定随机码要说清楚。
                   subtitle: DotSeparatedText(
                     [
                       item.schoolName.isEmpty ? '学习通' : item.schoolName,
                       item.phoneNumber,
-                      item.ownerLabel,
-                      item.deviceCodeBound ? '设备码与真实设备一致' : '固定随机设备码',
+                      ?item.ownerLabel,
+                      ?item.deviceCodeLabel,
                     ].join(' · '),
                     style: const TextStyle(fontSize: 14),
                   ),

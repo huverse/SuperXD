@@ -55,8 +55,12 @@ class ChaoxingAccountRecord {
   // 显示名：有备注用备注，否则昵称。
   String get displayName => label.isNotEmpty ? label : name;
 
-  // [人工决策-2026-10-08 19:35:54] 账号归属的称呼全处统一为「本人 / 代签账号」（取代「他人账号」「对方账号」「本人账号」）。
-  String get ownerLabel => isOtherUser ? '代签账号' : '本人';
+  // [人工决策-2026-10-15 17:53:28] 账号说明只标例外：代签账号写「代签账号」，自己登录的账号不写归属
+  // （取代 10-08 的「本人 / 代签账号」全处统一：每行都是「本人」没有信息量）。
+  String? get ownerLabel => isOtherUser ? '代签账号' : null;
+
+  // [人工决策-2026-10-15 17:53:28] 设备码只在是固定随机码时提示（可能被标「更换设备」），真实设备码不写。
+  String? get deviceCodeLabel => deviceCodeBound ? null : '固定随机设备码';
 
   ChaoxingAccountRecord change({int? fid, String? schoolName, String? clientId, List<ChaoxingUnit>? units}) => ChaoxingAccountRecord(
     phoneNumber: phoneNumber,

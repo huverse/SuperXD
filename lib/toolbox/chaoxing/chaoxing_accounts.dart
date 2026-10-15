@@ -67,12 +67,14 @@ class ChaoxingAccounts {
 
   ChaoxingHttp _http(ChaoxingCookieJar cookies) => _transport(cookies)..profile = profile;
 
-  // 本人账号：本机能取到 OAID 就用与学习通客户端一致的设备码，取不到用固定随机码。
+  // 本人账号：本机能取到 OAID 就用与学习通客户端一致的设备码；取不到时沿用这个账号原来的码，新账号才生成固定随机码。
+  // 退出登录后再用密码登回来不换码（换了老师端会看到「更换了签到设备」），参考项目的随机码也是生成一次就存住。
   Future<ChaoxingAccount> signIn({
     required String phoneNumber,
     required String password,
   }) async {
-    if ((await store.accounts()).any((item) => item.isOtherUser && item.phoneNumber == phoneNumber.trim())) {
+    final existing = await record(phoneNumber.trim());
+    if (existing != null && existing.isOtherUser) {
       throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '该账号已作为代签账号导入，不能再作为本人登录');
     }
     await ensureRoomFor(phoneNumber);
@@ -81,12 +83,16 @@ class ChaoxingAccounts {
       http: _http(ChaoxingCookieJar()),
       phoneNumber: phoneNumber,
       password: password,
-      deviceCode: localCode.isEmpty ? chaoxingDeviceCode() : localCode,
+      deviceCode: localCode.isNotEmpty ? localCode : (existing?.deviceCode ?? chaoxingDeviceCode()),
       device: device,
     );
-    final existing = await record(client.phoneNumber);
     _keepUnit(client, existing);
-    await _persist(client, isOtherUser: false, createdAt: existing?.createdAt, deviceCodeBound: localCode.isNotEmpty);
+    await _persist(
+      client,
+      isOtherUser: false,
+      createdAt: existing?.createdAt,
+      deviceCodeBound: localCode.isNotEmpty || (existing?.deviceCodeBound ?? false),
+    );
     return client.account!;
   }
 

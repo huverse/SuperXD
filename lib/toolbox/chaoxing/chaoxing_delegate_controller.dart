@@ -30,12 +30,15 @@ class ChaoxingDelegateController {
     if (password == null || password.isEmpty) {
       throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, '请先重新登录这个账号再出示代签码');
     }
+    // [人工决策-2026-10-15 17:53:28] 只有真实设备码（本机 OAID 算的、或当初代签码带来的）才放进包里，固定随机码不放，
+    // 导入方自己生成并如实标成随机（同参考项目）；以前随机码也带过去，导入方会误标成真实设备码。
+    final bound = (await accounts.record(client.phoneNumber))?.deviceCodeBound == true;
     final sealed = await sealChaoxingCredentialPack(
       ChaoxingCredentialPack(
         phoneNumber: client.phoneNumber,
         encryptedPassword: password,
         name: client.account!.name,
-        deviceCode: client.deviceCode,
+        deviceCode: bound ? client.deviceCode : '',
         faceObjectIds: faceObjectIds.take(chaoxingPackFaceLimit).toList(),
       ),
     );

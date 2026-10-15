@@ -7,6 +7,7 @@ import 'package:http/testing.dart';
 import 'package:image/image.dart' as picture;
 
 import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_device.dart';
 
 // 内存版学习通服务：按协议规则校验登录、回课程与活动、按脚本给 preSign 页面与签到结果，
 // 供协议层测试走完整链路（真实接口的验证只在授权账号上做）。
@@ -328,4 +329,30 @@ class FakeChaoxing {
     }
     return http.Response('not found', 404);
   });
+}
+
+// 设备能力替身：固定的设备信息，OAID 按需给（空串表示取不到）。
+class FakeChaoxingDevice implements ChaoxingDeviceProbe {
+  FakeChaoxingDevice({this.oaidValue = ''});
+  final String oaidValue;
+
+  @override
+  Future<ChaoxingDeviceFacts> facts(String packageName) async => const ChaoxingDeviceFacts(
+    androidId: 'android-1',
+    fingerprint: 'fp/1',
+    mediaDrmId: 'drm',
+    osVersion: '14',
+    language: 'zh-CN',
+    brand: 'brand',
+    board: 'board',
+    hardware: 'hw',
+    model: 'model',
+    abis: 'arm64-v8a',
+    width: 1080,
+    height: 2400,
+    density: '3.0',
+  );
+
+  @override
+  Future<String> oaid() async => oaidValue;
 }

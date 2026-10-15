@@ -9,6 +9,8 @@ import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_batch.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_device.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
@@ -21,6 +23,8 @@ import 'chaoxing_fake_hub.dart';
 import 'chaoxing_fake_server.dart';
 
 // 代签是一条两台设备之间的链路：一台出示代签码，另一台扫码导入后替对方签到。
+const _oaid = 'c8b3a6e1-2f4d-4b7a-9e10-5d3f2a1b0c9e';
+
 void main() {
   late Directory directory;
   late ChaoxingStore store;
@@ -64,11 +68,12 @@ void main() {
     await directory.delete(recursive: true);
   });
 
-  ChaoxingController controllerFor(ChaoxingStore ownStore, ChaoxingVault ownVault, {ChaoxingPackHub? hub}) => ChaoxingController(
+  ChaoxingController controllerFor(ChaoxingStore ownStore, ChaoxingVault ownVault, {ChaoxingPackHub? hub, ChaoxingDeviceProbe? device}) => ChaoxingController(
     accounts: ChaoxingAccounts(
       store: ownStore,
       vault: ownVault,
       transport: (cookies) => ChaoxingHttp(client: fake.client(), cookies: cookies),
+      device: device,
     ),
     hub: hub,
   );
@@ -122,9 +127,10 @@ void main() {
   });
 
   test('出示的代签码能在另一台设备导入，并带着对方的设备码签到', () async {
-    final first = controllerFor(store, vault, hub: hub());
+    final first = controllerFor(store, vault, hub: hub(), device: FakeChaoxingDevice(oaidValue: _oaid));
     await first.signIn('13800138000', 'myPassword123');
     final deviceCode = first.account!.deviceCode;
+    expect(deviceCode, chaoxingDeviceCodeFromOaid(_oaid));
 
     final ticket = (await first.delegate.createTicket()).ticket;
     expect(ticket.startsWith('SXDC1:'), isTrue);
@@ -140,6 +146,8 @@ void main() {
     expect(imported.name, '同学甲');
     // 设备码跟着凭据包走：用对方的设备码签到时学习通不会提示「更换了签到设备」。
     expect(imported.deviceCode, deviceCode);
+    expect(imported.deviceCodeBound, isTrue);
+    expect(imported.deviceCodeLabel, isNull);
     expect(await otherVault.readPassword('13800138000'), isNotNull);
     expect(packs.packs, isEmpty);
 
@@ -160,6 +168,50 @@ void main() {
     await otherStore.close();
   });
 
+  test('出示人取不到 OAID 时代签码不带随机码，导入方自己生成并标成随机', () async {
+    final first = controllerFor(store, vault, hub: hub());
+    await first.signIn('13800138000', 'myPassword123');
+    final randomCode = first.account!.deviceCode;
+    expect((await first.accounts.record('13800138000'))!.deviceCodeBound, isFalse);
+    final ticket = (await first.delegate.createTicket()).ticket;
+
+    final otherStore = await ChaoxingStore.open(path.join(directory.path, 'r.db'));
+    final second = controllerFor(otherStore, MemoryChaoxingVault(), hub: hub());
+    final imported = await second.importCredentialTicket(ticket);
+    // 随机码不跟着走：导入方如实标成固定随机设备码，不冒充对方的真实设备。
+    expect(imported.deviceCode, isNotEmpty);
+    expect(imported.deviceCode, isNot(randomCode));
+    expect(imported.deviceCodeBound, isFalse);
+    expect(imported.deviceCodeLabel, '固定随机设备码');
+    second.dispose();
+    first.dispose();
+    await otherStore.close();
+  });
+
+  test('退出登录后用密码登回来不换设备码；取到 OAID 后换成真实设备码，之后取不到也不退回随机', () async {
+    Future<ChaoxingAccountRecord> signInWith(ChaoxingDeviceProbe? device) async {
+      final controller = controllerFor(store, vault, device: device);
+      await controller.signIn('13800138000', 'myPassword123');
+      await controller.signOut();
+      controller.dispose();
+      return (await controller.accounts.record('13800138000'))!;
+    }
+
+    final random = await signInWith(null);
+    expect(random.deviceCodeBound, isFalse);
+    // 以前每次登录都重新生成随机码，老师端会看到「更换了签到设备」。
+    expect((await signInWith(null)).deviceCode, random.deviceCode);
+
+    final bound = await signInWith(FakeChaoxingDevice(oaidValue: _oaid));
+    expect(bound.deviceCode, chaoxingDeviceCodeFromOaid(_oaid));
+    expect(bound.deviceCodeBound, isTrue);
+
+    // OAID 偶尔没取到（原生侧超时）时沿用已存的真实设备码。
+    final kept = await signInWith(FakeChaoxingDevice());
+    expect(kept.deviceCode, bound.deviceCode);
+    expect(kept.deviceCodeBound, isTrue);
+  });
+
   test('代签码可以附带人脸照片，导入方记进本机', () async {
     final first = controllerFor(store, vault, hub: hub());
     await first.signIn('13800138000', 'myPassword123');
@@ -177,7 +229,7 @@ void main() {
     final controller = controllerFor(store, vault, hub: hub());
     // 先在另一台设备出示乙的代签码，再在本机导入。
     final otherStore = await ChaoxingStore.open(path.join(directory.path, 'g.db'));
-    final owner = controllerFor(otherStore, MemoryChaoxingVault(), hub: hub());
+    final owner = controllerFor(otherStore, MemoryChaoxingVault(), hub: hub(), device: FakeChaoxingDevice(oaidValue: _oaid));
     await owner.signIn('13900139000', 'otherPassword1');
     final ticket = (await owner.delegate.createTicket()).ticket;
     final otherCode = owner.account!.deviceCode;

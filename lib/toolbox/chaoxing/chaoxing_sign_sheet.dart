@@ -962,13 +962,11 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   Widget _targetRow(CampusPalette palette, ChaoxingSignTarget target) {
     final record = target.record;
     final statusText = switch (target.state) {
-      ChaoxingTargetState.idle => record.ownerLabel,
+      ChaoxingTargetState.idle => [?record.ownerLabel, ?record.deviceCodeLabel].join(' · '),
       ChaoxingTargetState.waiting => '等待中',
       ChaoxingTargetState.signing => '签到中',
       ChaoxingTargetState.succeeded || ChaoxingTargetState.failed => target.message ?? '',
     };
-    // 设备码与真实设备一致（本机 OAID 或对方代签码带来的）不会在官方端签过后被标「更换设备」，固定随机码要说清楚。
-    final deviceText = record.deviceCodeBound ? (record.isOtherUser ? '对方设备码' : '本机设备码') : '固定随机设备码';
     return CampusSurface(
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.fromLTRB(4, 8, 12, 8),
@@ -987,10 +985,10 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(record.displayName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
-                    // 没开签时归属与设备码合成一行（「本人 · 本机设备码」），开签后这一行换成状态。
-                    if (target.state == ChaoxingTargetState.idle)
-                      DotSeparatedText('$statusText · $deviceText', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))
-                    else
+                    // 没开签时只写例外（「代签账号 · 固定随机设备码」，都没有就不占这一行），开签后这一行换成状态。
+                    if (target.state == ChaoxingTargetState.idle && statusText.isNotEmpty)
+                      DotSeparatedText(statusText, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))
+                    else if (target.state != ChaoxingTargetState.idle)
                       Text(
                         statusText,
                         style: TextStyle(

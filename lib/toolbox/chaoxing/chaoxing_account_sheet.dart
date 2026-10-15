@@ -121,7 +121,8 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
               children: [
                 Text(record.displayName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
                 DotSeparatedText(
-                  [record.phoneNumber, record.ownerLabel, if (record.label.isNotEmpty) record.name].join(' · '),
+                  // 归属不写：代签账号已在「代签账号」分组下。
+                  [record.phoneNumber, if (record.label.isNotEmpty) record.name].join(' · '),
                   style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
                 ),
               ],
