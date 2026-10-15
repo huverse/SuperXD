@@ -67,6 +67,20 @@ void main() {
     expect(targets[0].forceAvailable, isFalse);
   });
 
+  test('打开页面时选了仍然签到的人，普通连签也跳过签到前检查，别人照常检查', () async {
+    final targets = [_target('a')..forced = true, _target('b')];
+    final batch = ChaoxingBatchSigning(targets);
+    final forcedOf = <String, bool>{};
+    expect(
+      await batch.run((target, {required force}) async {
+        forcedOf[target.phoneNumber] = force;
+        return const ChaoxingSignResult();
+      }, interval: Duration.zero),
+      isTrue,
+    );
+    expect(forcedOf, {'a': true, 'b': false});
+  });
+
   test('位置刚出界不停队，后面的人接着签；收紧档仍出界才停下', () async {
     final targets = [_target('a'), _target('b'), _target('c')];
     final batch = ChaoxingBatchSigning(targets);
