@@ -93,11 +93,11 @@
   - chaoxing_image_pick.dart：人脸照片取图 pickChaoxingFacePhoto（相册或拍摄，选完进 3:4 裁剪页，image_cropper 实现）与现场拍摄 shootChaoxingPhoto（拍照签到与补拍，不裁剪）。取图用注入的 ToolboxImagePick；取图与裁剪留下的文件读成字节后即删（人脸属于生物特征，不在缓存留存）。
   - chaoxing_gesture_field.dart：手势签到的 3×3 图案输入 ChaoxingGestureField：原始指针事件画图案（不走手势竞技场，弹层里不会被拖动关闭抢走），抬起即回调序号串；校验失败时画错的图案留在原处标红并重震一下，下一次按下才清空（[人工决策] 在文件头）。
   - chaoxing_face_sheet.dart：人脸照片弹层，预览（从学习通云盘取原图，内存里留最近 10 张）、用过几次、是否没通过过；每张右侧⋯里保存到本机与删除（管理模式才有删除，警示色并确认），签到时整卡点按选这次用哪张；添加照片时忙碌状态只显示在点的那个按钮上。「用学习通里存的那张」与签到弹层的补给同一条路：下载原图、随机裁剪旋转后上传成新照片，不把原图编号直接拿去签（[人工决策] 在文件内）。
-  - chaoxing_im.dart：群聊签到。学习通群聊走环信：DES 解出登录下发的环信密码（pointycastle 只有 3DES，三段同一把钥匙等价单 DES）换令牌，列群、拉漫游消息，用极简 protobuf 读 Meta/MessageBody/KeyValue 三段取 attachment 扩展，再挑 attachmentType 15 且 atype 为 2/74 的签到。
-  - chaoxing_group_page.dart：群聊里的签到页，按群翻出只发在群里的签到，逐条走同一套签到弹层；刷新保留旧列表、顶栏按钮原地转，首次读不到给原因与重试，已有内容时刷新失败只给提示条。
+  - chaoxing_im.dart：群聊签到。学习通群聊走环信：DES 解出登录下发的环信密码（pointycastle 只有 3DES，三段同一把钥匙等价单 DES）换令牌，列群、拉漫游消息，用极简 protobuf 读 Meta/MessageBody/KeyValue 三段取 attachment 扩展，再挑 attachmentType 15 且 atype 为 2/74 的签到。ChaoxingChatGroup 与 chaoxingChatGroups 把群按名字合并、按关键字筛、置顶的在前；chaoxingImActivitiesOf 只拉给定几个群的漫游。
+  - chaoxing_group_page.dart：群聊里的签到：先列群（一次请求、最多 200 个；可搜群名、置顶，同名群合并成一项），点进某一项才拉那几个群的消息，在 ChaoxingActivitiesPage 里签（[人工决策] 在文件头）；刷新保留旧列表、顶栏按钮原地转，首次读不到给原因与重试，已有内容时刷新失败只给提示条。
   - chaoxing_history_page.dart：往期签到页，列已结束的活动（status 不为 1），照样能签、签到页提示可能记为迟到；复用主列表那一次拉取的数据，不额外请求。
-  - chaoxing_course_page.dart：按课程查看，课程可搜课名、老师与学校，可置顶；同名课程合并成一项，点进去看全部签到，进行中与已结束分两组；详情页刷新与出错的处理同群聊页。
-  - chaoxing_activity_card.dart：各页共用的活动卡片、分组标题与签到入口 ChaoxingSignLauncher（开签到弹层、签完给提示并刷新），整页读取失败用 theme 的 CampusLoadError；二级页顶栏的刷新按钮 ChaoxingRefreshButton（已有内容时刷新中原地转；首次读取时页面正中已在转，按钮只暂不可点，不让两段加载动画同时演）。不知道开始时间的不亮刚发起橙点，时间行有截止写截止、都没有就不显示。
+  - chaoxing_course_page.dart：按课程查看，课程可搜课名、老师与学校，可置顶；同名课程合并成一项，点进去在 ChaoxingActivitiesPage 看全部签到。
+  - chaoxing_activity_card.dart：各页共用的活动卡片、分组标题与签到入口 ChaoxingSignLauncher（开签到弹层、签完给提示并刷新），整页读取失败用 theme 的 CampusLoadError；一组签到的列表页 ChaoxingActivitiesPage（按课程与群聊点进去共用：进行中与已结束两组、合并与没读到的说明、刷新保留旧列表）；二级页顶栏的刷新按钮 ChaoxingRefreshButton（已有内容时刷新中原地转；首次读取时页面正中已在转，按钮只暂不可点，不让两段加载动画同时演）。不知道开始时间的不亮刚发起橙点，时间行有截止写截止、都没有就不显示。
   - chaoxing_settings_sheet.dart：签到设置弹层（学校单位、模拟的客户端），以及修复账号时重新输密码的对话框。
   - chaoxing_sign_notices.dart：签到弹层里的时间提示 ChaoxingTimeNotice（已结束可能记迟到、发布超过 6 小时提醒没选错，不知道发布时间的不提醒）与签退提示 ChaoxingSignOutNotice（去主签到或去签退）。
   - chaoxing_qr_feed.dart：连续扫码时的最新二维码 ChaoxingQrFeed：签到要新码时有比过期那个新的就直接给，没有就等下一次扫到，取景页关掉以「已取消」结束。
@@ -110,7 +110,7 @@
     - 地图渲染要 arm 原生库：真机，或 x86_64 模拟器（系统镜像带 ARM 转译）装 arm64 包时加 adb install --abi arm64-v8a；手动入口见 tool/verify_chaoxing_map.dart（转译下点按要稍长按住才认）。
   - chaoxing_accounts.dart：账号闭环，登录、恢复会话、补用户信息、切换学校单位、修复（重输密码）、删除、主账号与模拟客户端的设置；list 把主账号排第一（设过的自己账号，否则最早登录的自己账号；只有代签账号时没有主账号，[人工决策] 在 list），重新登录、修复与再导入保留备注名与手动排序；会话过期自动重登一次并重放该次请求。本人账号的设备码优先用本机 OAID 算的，取不到时沿用这个账号原来的码（退出登录后再登回来不换码），新账号才生成固定随机码。
   - chaoxing_vault.dart：密码与 Cookie 的存放，Secure 版用系统安全存储（命名空间 superxd_chaoxing，deleteAll 只清这个命名空间），测试用内存版。
-  - chaoxing_store.dart：chaoxing.db（v7），账号索引（含学校单位、设备码来源、备注名与手动排序；按 sort 再按登录时间新的在前，v7 升级时按原先「自己的在前」的顺序编号一次）、收藏位置（可改名）、按班级记住的签到位置（class_locations，每班一行，取本班的、没有取最近一次的；v6 起取代偏好表里的上次地图选点）、人脸照片索引（含使用次数与失败标记）、设置、置顶课程与学习通课表缓存，打开时按上限裁剪，删账号时连带清掉它的置顶、课表缓存与人脸照片索引；destroy 关库并删库文件（清除数据用）。
+  - chaoxing_store.dart：chaoxing.db（v8），账号索引（含学校单位、设备码来源、备注名与手动排序；按 sort 再按登录时间新的在前，v7 升级时按原先「自己的在前」的顺序编号一次）、收藏位置（可改名）、按班级记住的签到位置（class_locations，每班一行，取本班的、没有取最近一次的；v6 起取代偏好表里的上次地图选点）、人脸照片索引（含使用次数与失败标记）、设置、置顶课程、置顶的群（pinned_chats，v8 起，按账号存群号）与学习通课表缓存，打开时按上限裁剪，删账号时连带清掉它的置顶、课表缓存与人脸照片索引；destroy 关库并删库文件（清除数据用）。
   - chaoxing_sign_location.dart：签到弹层里的位置选择 ChaoxingSignLocation：地图能用时是嵌着的地图、位置名称与收藏的位置（选择标签），手动输入与管理收藏是带图标的按钮（整体换行）；地图用不了时收藏用选择标签或手输经纬度（直接摊开并写明原因）；手输时注明按高德 GCJ-02；状态归签到弹层，这里只画与回调。
   - chaoxing_location_sheet.dart：收藏位置的管理弹层：整卡点按改名，右侧⋯里改名与删除（警示色并确认）；选择仍在签到弹层的选择标签里。
   - chaoxing_account_sheet.dart：多账号管理弹层：主账号置顶不可拖，其余自己登录的与代签的账号合成一个列表拖动排序、写回 sort 列；整行点按改备注名，右侧⋯里改备注名、设为主账号（只有自己登录且不是主账号的行有）与删除（警示色并确认，删代签账号不用先切过去，删光了关弹层回登录）。说明行只标例外：主账号写「主账号」、代签账号写「代签账号」（ChaoxingController.ownerLabelOf）。
@@ -148,9 +148,9 @@
   - 位置签到的坐标提交口径是 BD-09，地图或定位给的 WGS-84、GCJ-02 先在 chaoxing_location.dart 转换；坐标系尚未用真账号校准。提交前一律先换算再按小范围随机偏移（超范围时收紧到 0.00001 重试一次），手输坐标按高德 GCJ-02 算。
   - 高德地图用于选点：打开位置签到时申请定位权限（仅使用期间、不后台定位），定位结果只标在地图上、作默认选点；本机按班级记住签到成功用的位置作下次的默认位置。隐私政策单列「地图选点」一节，学习通同意说明为第 4 版。
   - 代签：凭据包用一次性随机密钥加密，密钥只在二维码里、不进服务器；密文经自建中转暂存，取件号一次性、10 分钟过期、取走即删；出示方换码或离开出示页即作废上一张（凭投递时拿到的作废口令，[人工决策] 见服务端 chaoxing_pack.service.ts）。导入的账号按他人账号对待（is_other_user），带对方的设备码，签到时不会提示「更换了签到设备」；代签码只带真实设备码，固定随机码不放，导入方自己生成并标成随机（同参考项目，[人工决策] 在 chaoxing_delegate_controller.dart）；本机库里已有本人账号时拒绝导入自己的码。附带人脸照片要出示方勾选，默认不带。
-  - 上限：账号 21 个（自己登录的与代签的合计）、收藏位置 50 条、每人人脸照片 objectId 5 条、每个账号置顶课程 100 个、按班级记住的签到位置 200 个班、学习通课表缓存每个账号一行且 7 天过期，打开库时裁剪。
+  - 上限：账号 21 个（自己登录的与代签的合计）、收藏位置 50 条、每人人脸照片 objectId 5 条、每个账号置顶课程 100 个、置顶的群 200 个、按班级记住的签到位置 200 个班、学习通课表缓存每个账号一行且 7 天过期，打开库时裁剪。
   - 人脸识别：照片本身存在学习通云盘，本机只记 objectId 与使用情况；签到时这次选了就用选的，否则从本机存的里随机挑一张（之前没通过过的先避开，都失败过才回头用）；一张都没有时开签前补给——学习通里有默认照片先问重处理（随机裁剪旋转再上传），否则现场拍摄；相册选图与拍摄都进 3:4 裁剪页（要认得出人）。clientId 与环信密码都只在用户信息接口下发，环信密码不落库；参考项目是带设备信息 POST 拿到 clientId 的（2026-10-07 用测试账号实测：GET 不给，POST 合成设备信息即下发，能还原出 sc、_t、cid；经原生通道取真机设备信息的路径还没验），缺失时人脸提交不带设备签名。
-  - 群聊：环信令牌、群列表与漫游消息每次都现拉，不在本机存群消息。
+  - 群聊：环信令牌、群列表与漫游消息每次都现拉，不在本机存群消息；列群不拉消息，点进一项才拉那几个群的漫游（工作量只随这次看的群增长）。
 - 轻量逻辑随应用一起发布，只有重型纯资源才按需安装。解析器没有大资源，不显示假的下载安装过程。
 - 真实作品链接只在用户授权后联调；离线测试一律用合成数据。
 
@@ -163,7 +163,7 @@
   - 卸载确认与清除数据（toolbox_page.dart）
   - 资源卸载范围
   - 工具单点登记与 id 统一（toolbox_catalog.dart）
-  - 学习通：签到码与手势输错的反馈、账号管理每行⋯（chaoxing_code_cells.dart、chaoxing_gesture_field.dart、chaoxing_account_sheet.dart）；账号说明只标例外（chaoxing_store.dart）；代签码只带真实设备码（chaoxing_delegate_controller.dart）；学习通存的人脸照片先重处理（chaoxing_face_sheet.dart）；主账号与排序（chaoxing_accounts.dart 的 list、chaoxing_account_sheet.dart）
+  - 学习通：签到码与手势输错的反馈、账号管理每行⋯（chaoxing_code_cells.dart、chaoxing_gesture_field.dart、chaoxing_account_sheet.dart）；账号说明只标例外（chaoxing_store.dart）；群聊先列群（chaoxing_group_page.dart）；代签码只带真实设备码（chaoxing_delegate_controller.dart）；学习通存的人脸照片先重处理（chaoxing_face_sheet.dart）；主账号与排序（chaoxing_accounts.dart 的 list、chaoxing_account_sheet.dart）
   - 来源选择
   - 历史默认开启（short_video_store.dart）
   - 下载管理通用化（toolbox_download_manager.dart）、短视频服务化与清除数据（short_video_service.dart）、好友分享入口走注册表（toolbox_catalog.dart）

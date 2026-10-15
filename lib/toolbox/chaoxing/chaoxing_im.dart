@@ -162,11 +162,33 @@ Future<List<ChaoxingImGroup>> chaoxingImGroups(ChaoxingClient client, ChaoxingIm
   return groups;
 }
 
-// 把群里能签到的活动都找出来：所有群并发拉漫游（对齐参考项目），按发起时间去重后从新到旧排。
-Future<List<ChaoxingImActivity>> chaoxingImActivities(ChaoxingClient client, {int groupLimit = chaoxingImGroupLimit}) async {
-  final config = await chaoxingImConfig(client);
-  final groups = await chaoxingImGroups(client, config);
-  final results = await Future.wait([for (final group in groups.take(groupLimit)) chaoxingImGroupActivities(client, config: config, group: group)]);
+// 群聊列表的一项：同名的群合并成一项（一门课几个班各建一个群），置顶对整项生效。
+class ChaoxingChatGroup {
+  const ChaoxingChatGroup({required this.name, required this.groups, required this.pinned});
+  final String name;
+  final List<ChaoxingImGroup> groups;
+  final bool pinned;
+}
+
+// 按群名合并、按关键字筛（不分大小写），置顶的在前，其余保持环信给的顺序（同参考项目）。
+List<ChaoxingChatGroup> chaoxingChatGroups(List<ChaoxingImGroup> chats, Set<String> pinnedIds, {String query = ''}) {
+  final keyword = query.trim().toLowerCase();
+  final merged = <String, List<ChaoxingImGroup>>{};
+  for (final chat in chats) {
+    if (keyword.isNotEmpty && !chat.displayName.toLowerCase().contains(keyword)) continue;
+    merged.putIfAbsent(chat.displayName, () => []).add(chat);
+  }
+  final entries = [
+    for (final entry in merged.entries)
+      ChaoxingChatGroup(name: entry.key, groups: entry.value, pinned: entry.value.any((chat) => pinnedIds.contains(chat.id))),
+  ];
+  return [...entries.where((entry) => entry.pinned), ...entries.where((entry) => !entry.pinned)];
+}
+
+// 一项里几个群的签到：只拉这几个群的漫游（同名群通常就一两个），按活动号去重后从新到旧排。
+// 不再一打开就拉全部群（最多 200 个）：工作量只随这次点开的群增长，也不会一下子打出几百个请求。
+Future<List<ChaoxingImActivity>> chaoxingImActivitiesOf(ChaoxingClient client, ChaoxingImConfig config, List<ChaoxingImGroup> groups) async {
+  final results = await Future.wait([for (final group in groups) chaoxingImGroupActivities(client, config: config, group: group)]);
   final seen = <int>{};
   final activities = <ChaoxingImActivity>[];
   for (final result in results) {

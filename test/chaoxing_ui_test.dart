@@ -122,6 +122,15 @@ Future<void> tapEntry(WidgetTester tester, String label) async {
 
 Future<void> openGroups(WidgetTester tester) => tapEntry(tester, '群聊签到');
 
+// 群聊页先列群：等这一项出来、推入转场走完，再点进去看它的签到。
+Future<void> openChat(WidgetTester tester, String name) async {
+  final row = find.descendant(of: find.byType(ChaoxingGroupPage), matching: find.text(name));
+  await waitUntil(tester, () => row.evaluate().isNotEmpty);
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.tap(row);
+  await tester.pump();
+}
+
 // 造一条环信漫游消息：Meta.field6 里是 MessageBody，它的 ext 里 key=attachment 的那项是签到附件。
 List<int> _imVarint(int value) {
   final bytes = <int>[];
@@ -726,13 +735,14 @@ void main() {
     await login(tester);
 
     await openGroups(tester);
+    await openChat(tester, '高等数学群');
     await waitUntil(tester, () => find.text('群里签到 · ').evaluate().isNotEmpty);
     // 等页面转场滑完再点，转场中途量到的坐标还在屏幕外。
     await tester.pump(const Duration(milliseconds: 400));
-    // 群聊页是推上去的，底下主页面也有“去签到”，按页面类型限定一下。
+    // 群的签到页是推上去的，底下主页面也有“去签到”，按页面类型限定一下。
     await tester.tap(
       find.descendant(
-        of: find.byType(ChaoxingGroupPage),
+        of: find.byType(ChaoxingActivitiesPage),
         matching: find.widgetWithText(FilledButton, '去签到'),
       ),
     );
@@ -773,8 +783,11 @@ void main() {
     await login(tester);
 
     await openGroups(tester);
+    // 纯文本描述又没群名的那个群不列出来。
+    await waitUntil(tester, () => find.text('高等数学（周二三四节）').evaluate().isNotEmpty);
+    expect(find.descendant(of: find.byType(ChaoxingGroupPage), matching: find.byType(CampusSurface)), findsOneWidget);
+    await openChat(tester, '高等数学（周二三四节）');
     await waitUntil(tester, () => find.text('较早的签到 · ').evaluate().isNotEmpty);
-    expect(find.text('高等数学（周二三四节）'), findsWidgets);
     // 发起晚的排在上面。
     final recent = tester.getTopLeft(find.text('刚发起的签到 · '));
     final older = tester.getTopLeft(find.text('较早的签到 · '));
@@ -797,8 +810,52 @@ void main() {
     await login(tester);
 
     await openGroups(tester);
+    await openChat(tester, '高等数学群');
     await waitUntil(tester, () => find.text('群里签到 · ').evaluate().isNotEmpty);
     expect(find.textContaining('认不出类型的签到'), findsNothing);
+    expect(find.text('1 场签到没读到'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('群聊页只列群、点进一项才拉那几个群的消息；同名群合并，可置顶、可搜', (tester) async {
+    usePhoneScreen(tester);
+    fake.imGroups.addAll([
+      {'id': 'g1', 'name': '高等数学群'},
+      {'id': 'g2', 'name': '大学英语群'},
+      {'id': 'g3', 'name': '高等数学群'},
+    ]);
+    fake.imMessages.add(_imAttachmentMessage(activeId: 777, atype: 2, atypeName: '密码签到', title: '群里签到'));
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await openGroups(tester);
+    Finder inList(Finder finder) => find.descendant(of: find.byType(ChaoxingGroupPage), matching: finder);
+    await waitUntil(tester, () => inList(find.text('大学英语群')).evaluate().isNotEmpty);
+    // 只列群、不拉任何群的消息：工作量不随群数增长。
+    expect(fake.imRoamingQueues, isEmpty);
+    // 两个同名群合并成一项。
+    expect(inList(find.text('高等数学群')), findsOneWidget);
+    expect(inList(find.text('2 个群')), findsOneWidget);
+
+    // 置顶大学英语群：排到最前，按账号记进本机库。
+    await tester.pump(const Duration(milliseconds: 400));
+    final english = find.ancestor(of: inList(find.text('大学英语群')), matching: find.byType(CampusSurface));
+    await tester.tap(find.descendant(of: english, matching: find.byTooltip('置顶')));
+    await waitUntil(tester, () => find.descendant(of: english, matching: find.byTooltip('取消置顶')).evaluate().isNotEmpty);
+    expect(tester.getTopLeft(inList(find.text('大学英语群'))).dy, lessThan(tester.getTopLeft(inList(find.text('高等数学群'))).dy));
+    expect(await tester.runAsync(() => store.pinnedChats('13800138000')), {'g2'});
+
+    // 按群名搜。
+    await tester.enterText(inList(find.byType(TextField)), '数学');
+    await tester.pump();
+    expect(inList(find.text('大学英语群')), findsNothing);
+    expect(inList(find.text('高等数学群')), findsOneWidget);
+
+    // 点进合并的那一项：只拉这两个群。
+    await openChat(tester, '高等数学群');
+    await waitUntil(tester, () => find.text('群里签到 · ').evaluate().isNotEmpty);
+    expect(fake.imRoamingQueues.toSet(), {'g1@conference.easemob.com', 'g3@conference.easemob.com'});
+    expect(find.text('同名的有 2 个群，签到已合并显示'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -1037,7 +1094,7 @@ void main() {
 
     // 刷新保留旧列表、只在顶栏按钮上原地转，不整页换成加载圈（局部刷新保留同一范围旧内容）。
     // 首页分组标题上也有「刷新」（在下面的页面里），限定在课程详情页里找。
-    Finder inDetail(Finder finder) => find.descendant(of: find.byType(ChaoxingCourseDetailPage), matching: finder);
+    Finder inDetail(Finder finder) => find.descendant(of: find.byType(ChaoxingActivitiesPage), matching: finder);
     // 推入转场走完再点，否则按钮还在滑动中，点按落空。让活动列表的响应先卡住，看得到刷新中的那一段。
     await tester.pump(const Duration(milliseconds: 400));
     fake.activityListGate = Completer<void>();

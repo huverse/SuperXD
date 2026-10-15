@@ -119,6 +119,8 @@ class FakeChaoxing {
   final imTimestamps = <int?>[];
   String? imRoamingBody;
   String? imRoamingQueue;
+  // 每次拉漫游的群（按请求顺序），用来确认只拉了点开的那几个群。
+  final imRoamingQueues = <String>[];
 
   // 人脸识别：学习通里存着的人脸照片与换回来的 faceEnc。
   String profileFaceObjectId = 'face-object-1';
@@ -275,6 +277,7 @@ class FakeChaoxing {
       if (path.endsWith('/messageroaming')) {
         imRoamingBody = request.body;
         imRoamingQueue = '${(jsonDecode(request.body) as Map)['queue']}';
+        imRoamingQueues.add(imRoamingQueue!);
         return _json({
           'data': {
             'msgs': [

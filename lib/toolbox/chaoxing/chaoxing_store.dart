@@ -115,6 +115,9 @@ class ChaoxingStore {
   static const faceImageLimit = 5;
   static const pinnedCourseLimit = 100;
 
+  // 置顶的群：每个账号最多与能列出的群一样多（环信一页 200 个）。
+  static const pinnedChatLimit = 200;
+
   // 按班级记住的签到位置：每个班一行，只留最近签过的 200 个班。
   static const classLocationLimit = 200;
 
@@ -125,7 +128,7 @@ class ChaoxingStore {
     final store = ChaoxingStore._(
       await openDatabase(
         path,
-        version: 7,
+        version: 8,
         onCreate: (database, _) async {
           await database.execute(
             'CREATE TABLE accounts (phone_number TEXT PRIMARY KEY, uid INTEGER NOT NULL, puid INTEGER NOT NULL, '
@@ -145,6 +148,7 @@ class ChaoxingStore {
           await _addFaceStats(database);
           await _createVersion3Tables(database);
           await _createClassLocations(database);
+          await _createPinnedChats(database);
         },
         onUpgrade: (database, oldVersion, _) async {
           if (oldVersion < 2) {
@@ -177,6 +181,8 @@ class ChaoxingStore {
               'WHERE ranked.phone_number = accounts.phone_number)',
             );
           }
+          // 第 8 版：群聊列表可置顶（按账号存群号）。
+          if (oldVersion < 8) await _createPinnedChats(database);
         },
       ),
     );
@@ -219,6 +225,13 @@ class ChaoxingStore {
     await database.execute('CREATE INDEX class_locations_used ON class_locations (updated_at DESC)');
   }
 
+  static Future<void> _createPinnedChats(Database database) async {
+    await database.execute(
+      'CREATE TABLE IF NOT EXISTS pinned_chats (phone_number TEXT NOT NULL, group_id TEXT NOT NULL, created_at INTEGER NOT NULL, '
+      'PRIMARY KEY (phone_number, group_id))',
+    );
+  }
+
   // 只增不删的数据都要有上限：打开时整库裁剪一次，之后每次写入只裁剪写到的那张表（或那个账号的那几行）。
   Future<void> _pruneAll() async {
     await _pruneLocations();
@@ -239,6 +252,11 @@ class ChaoxingStore {
       'DELETE FROM pinned_courses WHERE rowid NOT IN ('
       'SELECT rowid FROM (SELECT rowid, ROW_NUMBER() OVER (PARTITION BY phone_number ORDER BY created_at DESC) AS rank FROM pinned_courses) '
       'WHERE rank <= $pinnedCourseLimit)',
+    );
+    await _database.rawDelete(
+      'DELETE FROM pinned_chats WHERE rowid NOT IN ('
+      'SELECT rowid FROM (SELECT rowid, ROW_NUMBER() OVER (PARTITION BY phone_number ORDER BY created_at DESC) AS rank FROM pinned_chats) '
+      'WHERE rank <= $pinnedChatLimit)',
     );
   }
 
@@ -378,6 +396,39 @@ class ChaoxingStore {
     await _prunePinnedCourses(phoneNumber);
   }
 
+  Future<Set<String>> pinnedChats(String phoneNumber) async {
+    final rows = await _database.query(
+      'pinned_chats',
+      columns: ['group_id'],
+      where: 'phone_number = ?',
+      whereArgs: [phoneNumber],
+      limit: pinnedChatLimit,
+    );
+    return {for (final row in rows) row['group_id']! as String};
+  }
+
+  Future<void> setChatsPinned(String phoneNumber, Iterable<String> groupIds, {required bool pinned}) async {
+    final batch = _database.batch();
+    final now = DateTime.now().toUtc().millisecondsSinceEpoch;
+    for (final groupId in groupIds) {
+      if (pinned) {
+        batch.insert(
+          'pinned_chats',
+          {'phone_number': phoneNumber, 'group_id': groupId, 'created_at': now},
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
+      } else {
+        batch.delete('pinned_chats', where: 'phone_number = ? AND group_id = ?', whereArgs: [phoneNumber, groupId]);
+      }
+    }
+    await batch.commit(noResult: true);
+    await _database.rawDelete(
+      'DELETE FROM pinned_chats WHERE phone_number = ? AND rowid NOT IN '
+      '(SELECT rowid FROM pinned_chats WHERE phone_number = ? ORDER BY created_at DESC LIMIT $pinnedChatLimit)',
+      [phoneNumber, phoneNumber],
+    );
+  }
+
   // 学习通课表缓存：原样存接口里的 data 段，过期时间由调用方按 fetchedAt 判断。
   Future<({String payload, DateTime fetchedAt})?> lessonCache(String phoneNumber) async {
     final rows = await _database.query('lesson_cache', where: 'phone_number = ?', whereArgs: [phoneNumber], limit: 1);
@@ -446,9 +497,9 @@ class ChaoxingStore {
     conflictAlgorithm: ConflictAlgorithm.replace,
   );
 
-  // 账号删掉后，它的置顶课程、课表缓存与人脸照片索引一起清掉。
+  // 账号删掉后，它的置顶课程与群、课表缓存与人脸照片索引一起清掉。
   Future<void> removeAccount(String phoneNumber) async {
-    for (final table in ['accounts', 'pinned_courses', 'lesson_cache', 'face_images']) {
+    for (final table in ['accounts', 'pinned_courses', 'pinned_chats', 'lesson_cache', 'face_images']) {
       await _database.delete(table, where: 'phone_number = ?', whereArgs: [phoneNumber]);
     }
   }
