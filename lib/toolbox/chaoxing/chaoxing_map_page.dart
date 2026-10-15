@@ -52,7 +52,8 @@ MyLocationStyleOptions _myLocationStyle(bool enabled) =>
 
 // [人工决策-2026-10-15 22:39:57] 系统定位关着时（用户选定，同高德、美团、微信发位置）：嵌着的地图左上角写「手机定位没开」，
 // 给「去打开」跳到系统定位设置（原生见 LocationSettings.kt）；定位图层照常开着，打开回来一有定位结果就按原规则选中。
-// 嵌着的地图在签到弹层里，提示条会被弹层盖住，「去打开」放在地图左上角的提示上（等着定位时才出现）；全屏选点页用提示条。
+// [人工决策-2026-10-15 23:29:29] 嵌着的地图把「去打开」放在地图左上角的提示上（等着定位时才出现；用户选定：定位没开期间一直在，
+// 比几秒就收起的提示条好找）；全屏选点页点「定位到我」用提示条。
 const _locationSettings = MethodChannel('superxd/location_settings');
 
 void _openLocationSettings() => unawaited(
