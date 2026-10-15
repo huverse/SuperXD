@@ -165,7 +165,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   }
 
   // 打开签到页先检查一遍（对齐参考项目，别等提交后才知道）：已签到、已截止或不在班级的人原地标出
-  // 并取消勾选（只有一个账号时不取消）；全部被拦时弹窗给「关闭 / 仍然签到」，还有没勾的账号时多一个「为其他账号签到」。检查不挡详情显示，也不挡提交（提交时会再查一次）。
+  // 并取消勾选（只有一个账号时不取消）；全部被拦时弹窗给「关闭 / 仍然签到」，还有没勾的账号时多一个「为其他账号签到」。检查不挡详情显示，也不挡提交（提交时会再查一次，
+  // 选了仍然签到的人不再查）。
   Future<void> _presignOnOpen() async {
     final checked = _activity.activeId;
     final selected = [for (final target in _batch.targets) if (target.selected) target];
@@ -229,15 +230,15 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     if (choice == 1) {
       Navigator.of(context).pop();
     } else if (choice == 2) {
-      first.selected = true;
+      // [人工决策-2026-10-14 23:36:00] 「仍然签到」只是放行，不直接提交：关掉弹窗留在签到页接着选位置、输码、拍照，
+      // 点签到（扫码）时这个人跳过签到前检查（同参考项目「我认为这是 BUG」只关掉提示）。以前点了就立刻强制提交，位置还没看就签出去了。
+      first
+        ..selected = true
+        ..forced = true
+        ..state = ChaoxingTargetState.idle
+        ..message = null
+        ..forceAvailable = false;
       _batch.notifyChanged();
-      if (_type == ChaoxingSignType.qrCode) {
-        await _startQr(only: first, force: true);
-      } else {
-        final inputs = _inputs();
-        if (inputs != null) await _batch.retry(first, _signer(() => inputs), force: true);
-        _finishIfDone();
-      }
     }
   }
 

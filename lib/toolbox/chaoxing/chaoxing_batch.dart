@@ -9,7 +9,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 // - 相邻两人之间隔 200 毫秒；上一位刚过了人工验证码就不再等（人已经花了时间）；
 // - 二维码过期不算失败，等新扫到的码接着签当前这个人；
 // - 位置刚出界时收紧偏移（一场共享一次），后面的人用收紧档接着签；收紧档仍超范围才把余下的人全停；
-// - 签到前检查判定「已签到 / 不在班级」的人可以单独「强制签到」，跳过这些检查直接提交；
+// - 签到前检查判定「已签到 / 不在班级」的人可以单独「强制签到」，跳过这些检查直接提交；打开页面时选了「仍然签到」的人，之后的提交都跳过检查；
 // - 会话彻底失效（自动重登也失败）的人要重新输密码修复，修好后可单独重试；
 // - 连续扫码任何一人失败就停队，但已签过、不在班级、登录过期只是这个人的事，跳过他接着签（参考项目 1.19.2）。
 const chaoxingSignInterval = Duration(milliseconds: 200);
@@ -32,6 +32,9 @@ class ChaoxingSignTarget {
 
   // 签到前检查拦下的，可以强制签到。
   bool forceAvailable = false;
+
+  // 打开签到页的检查拦下后选了「仍然签到」：之后这个人的提交都跳过签到前检查。
+  bool forced = false;
   bool needsRepair = false;
 
   // 拍照签到每人一张照片；上传后记下 objectId，验证码重试时不重传。
@@ -133,7 +136,7 @@ class ChaoxingBatchSigning extends ChangeNotifier {
       ..needsRepair = false;
     _notify();
     try {
-      final result = await signer(target, force: force);
+      final result = await signer(target, force: force || target.forced);
       target
         ..state = ChaoxingTargetState.succeeded
         ..late = result.late
