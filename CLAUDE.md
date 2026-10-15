@@ -188,7 +188,7 @@
 - 主题与显示设置：atmosphere_test.dart、campus_glass_test.dart、campus_glass_button_test.dart、campus_motion_test.dart、dark_mode_test.dart、appearance_settings_test.dart、wallpaper_test.dart
 - 百宝箱：toolbox_widget_test.dart、toolbox_download_test.dart、toolbox_media_features_test.dart（含短视频库迁移、旧下载记录兼容、按工具清空下载、短视频清除数据、分享卡片按注册表打开）、short_video_parser_test.dart、media_image_test.dart
   - 学习通签到：chaoxing_protocol_test.dart（协议、设备信息与设备码、学校单位、课表推断与坐标转换）、chaoxing_store_test.dart（本机库与上限）、chaoxing_batch_test.dart（多人连签的顺序、间隔、停止与强制）、chaoxing_ui_test.dart（登录、签到、多人连签、往期补签、强制签到、按课程查看、课表推断、代签入口与导入流程，用 chaoxing_fake_server.dart 与 chaoxing_fake_hub.dart）
-  - 代签：chaoxing_pack_test.dart（凭据包编解码与封装，含第 1 版兼容）、chaoxing_delegate_test.dart（两台设备之间的出示与导入、带人脸照片、连签与强制签到、学校单位与模拟客户端，chaoxing_fake_hub.dart 是内存中转）
+  - 代签：chaoxing_pack_test.dart（凭据包编解码与封装，含第 1 版兼容）、chaoxing_delegate_test.dart（两台设备之间的出示与导入、带人脸照片、连签与强制签到、学校单位与模拟客户端、设备码来源：重新登录不换码、代签码只带真实设备码，chaoxing_fake_hub.dart 是内存中转）
   - 审查整改回归：chaoxing_regression_test.dart（删账号与后台刷新竞态不留会话、删当前账号关会话、切账号代次、自动重登的错误口径、课表缓存裁剪、弹层避让键盘、账号分段拖动、手势重画与签到码重复提交）
   - 人脸与群聊：chaoxing_im_test.dart（DES、protobuf 附件解析、环信链路与类型映射）、chaoxing_protocol_test.dart 里的人脸公钥与签名用例
 - 应用更新：app_update_test.dart（规则与校园日界、编排的检查跳过强制下载核对授权后台、清单解析与外部输入校验、检查记录与安装包清理）、app_update_ui_test.dart（更新弹窗各状态、强制更新关不掉、关于页检查更新）、account_lifecycle_test.dart 的启动弹窗用例；替身在 app_update_fakes.dart。服务端见 server/test/app_release.e2e.test.ts。

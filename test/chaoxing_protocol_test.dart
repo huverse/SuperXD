@@ -20,31 +20,6 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_signer.dart';
 
 import 'chaoxing_fake_server.dart';
 
-class _FakeProbe implements ChaoxingDeviceProbe {
-  _FakeProbe({this.oaidValue = ''});
-  final String oaidValue;
-
-  @override
-  Future<ChaoxingDeviceFacts> facts(String packageName) async => const ChaoxingDeviceFacts(
-    androidId: 'android-1',
-    fingerprint: 'fp/1',
-    mediaDrmId: 'drm',
-    osVersion: '14',
-    language: 'zh-CN',
-    brand: 'brand',
-    board: 'board',
-    hardware: 'hw',
-    model: 'model',
-    abis: 'arm64-v8a',
-    width: 1080,
-    height: 2400,
-    density: '3.0',
-  );
-
-  @override
-  Future<String> oaid() async => oaidValue;
-}
-
 const _account = ChaoxingAccount(
   phoneNumber: '13800138000',
   uid: 777,
@@ -776,16 +751,16 @@ void main() {
       chaoxingDeviceCodeFromOaid('c8b3a6e1-2f4d-4b7a-9e10-5d3f2a1b0c9e'),
       'Dpl3RndTUkExstIDHs+8jXL69FRpyroc/Qy6m93xDqTDWqVMeZPr2+vbQ2U03Mt2',
     );
-    expect(await chaoxingLocalDeviceCode(_FakeProbe(oaidValue: 'c8b3a6e1-2f4d-4b7a-9e10-5d3f2a1b0c9e')), startsWith('Dpl3'));
+    expect(await chaoxingLocalDeviceCode(FakeChaoxingDevice(oaidValue: 'c8b3a6e1-2f4d-4b7a-9e10-5d3f2a1b0c9e')), startsWith('Dpl3'));
     // 取不到或全 0 占位的 OAID 不算，交给固定随机设备码。
-    expect(await chaoxingLocalDeviceCode(_FakeProbe(oaidValue: '00000000-0000-0000-0000-000000000000')), '');
-    expect(await chaoxingLocalDeviceCode(_FakeProbe()), '');
+    expect(await chaoxingLocalDeviceCode(FakeChaoxingDevice(oaidValue: '00000000-0000-0000-0000-000000000000')), '');
+    expect(await chaoxingLocalDeviceCode(FakeChaoxingDevice()), '');
     expect(await chaoxingLocalDeviceCode(null), '');
   });
 
   test('设备信息的字段与顺序照学习通客户端，RSA 按 117 字节分块', () async {
     final info = chaoxingDeviceInfo(
-      await _FakeProbe().facts('com.chaoxing.mobile'),
+      await FakeChaoxingDevice().facts('com.chaoxing.mobile'),
       packageName: 'com.chaoxing.mobile',
       now: DateTime.fromMillisecondsSinceEpoch(1700000000000),
     );
@@ -812,7 +787,7 @@ void main() {
       http: http,
       phoneNumber: '13800138000',
       password: 'myPassword123',
-      device: _FakeProbe(),
+      device: FakeChaoxingDevice(),
     );
     expect(fake.userInfoMethod, 'POST');
     expect(Uri.splitQueryString(fake.userInfoBody!)['data'], isNotEmpty);
