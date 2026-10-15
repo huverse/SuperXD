@@ -8,6 +8,7 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_sign_sheet.dart';
@@ -137,6 +138,123 @@ class ChaoxingRefreshButton extends StatelessWidget {
     tooltip: loading ? '正在刷新' : '刷新',
     onPressed: loading ? null : onRefresh,
     icon: loading ? const CampusLoader(size: 20, delay: Duration.zero) : const CampusIcon(CampusIcons.sync),
+  );
+}
+
+// 一组签到的列表页（按课程查看点进一门课、群聊点进一个群）：进行中与已结束分两组，顶栏刷新；
+// 刷新保留旧列表、只在顶栏按钮上原地转，首次读不到给原因与重试，已有内容时刷新失败只给提示条。
+class ChaoxingActivitiesPage extends StatefulWidget {
+  const ChaoxingActivitiesPage({super.key, required this.launcher, required this.title, required this.load, required this.notes});
+  final ChaoxingSignLauncher launcher;
+  final String title;
+
+  // 读这一页的签到：failures 是没读到、被跳过的部分（几个班或几场），全读不到时由 load 自己报错。
+  final Future<({List<ChaoxingActivity> activities, int failures})> Function() load;
+
+  // 列表上方的说明（合并了几个班或群、几处没读到），并成一行；没什么要说时返回空列表，不占行。
+  final List<String> Function(int failures) notes;
+
+  @override
+  State<ChaoxingActivitiesPage> createState() => _ChaoxingActivitiesPageState();
+}
+
+class _ChaoxingActivitiesPageState extends State<ChaoxingActivitiesPage> {
+  List<ChaoxingActivity>? _activities;
+  int _failures = 0;
+  String? _error;
+  bool _loading = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _load();
+  }
+
+  Future<void> _load() async {
+    if (_loading) return;
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    try {
+      final result = await widget.load();
+      if (!mounted) return;
+      setState(() {
+        _activities = result.activities;
+        _failures = result.failures;
+      });
+    } on ChaoxingFailure catch (failure) {
+      _failed(failure.message);
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=activities errorType=${failure.runtimeType}\n$stack');
+      _failed('签到活动没读到，请稍后重试');
+    } finally {
+      if (mounted) setState(() => _loading = false);
+    }
+  }
+
+  // 还没有内容时整页显示原因与重试；已有内容时只给提示条，旧列表留着。
+  void _failed(String message) {
+    if (!mounted) return;
+    if (_activities == null) {
+      setState(() => _error = message);
+    } else {
+      showCampusToast(context, message);
+    }
+  }
+
+  Future<void> _sign(ChaoxingActivity activity) async {
+    await widget.launcher.open(context, activity);
+    if (mounted) await _load();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    final activities = _activities;
+    final ongoing = [for (final activity in activities ?? const <ChaoxingActivity>[]) if (activity.ongoing) activity];
+    final ended = [for (final activity in activities ?? const <ChaoxingActivity>[]) if (!activity.ongoing) activity];
+    final notes = widget.notes(_failures);
+    return Scaffold(
+      appBar: AppBar(
+        title: Text(widget.title),
+        leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
+        // 首次读取时页面中间已经在转，顶栏按钮不再同时转（不让两段加载动画同时演），只是暂不可点。
+        actions: [ChaoxingRefreshButton(loading: _loading && _activities != null, onRefresh: _loading ? null : () => _load())],
+      ),
+      body: switch ((_error, activities)) {
+        (final String message, null) => CampusLoadError(message: message, onRetry: () => _load()),
+        (_, null) => const CampusLoading(label: '正在读取签到活动…', network: true, remote: '学习通'),
+        _ => _lazyList([
+              if (notes.isNotEmpty)
+                () => Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Text(notes.join('；'), style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+                ),
+              () => ChaoxingSectionTitle('进行中（${ongoing.length}）'),
+              if (ongoing.isEmpty)
+                () => Text('现在没有进行中的签到', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))
+              else
+                for (final activity in ongoing)
+                  () => ChaoxingActivityCard(key: ValueKey(activity.activeId), activity: activity, showCourse: false, onSign: () => _sign(activity)),
+              () => ChaoxingSectionTitle('已结束（${ended.length}）'),
+              if (ended.isEmpty)
+                () => Text('还没有已结束的签到', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))
+              else
+                for (final activity in ended)
+                  () => ChaoxingActivityCard(key: ValueKey(activity.activeId), activity: activity, showCourse: false, onSign: () => _sign(activity)),
+            ]),
+      },
+    );
+  }
+
+  // 签到会越积越多：按需构建，只建屏幕上的那几行。
+  Widget _lazyList(List<Widget Function()> rows) => CampusScrollFade(
+    child: ListView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+      itemCount: rows.length,
+      itemBuilder: (context, index) => rows[index](),
+    ),
   );
 }
 

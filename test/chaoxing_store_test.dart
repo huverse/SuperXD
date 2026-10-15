@@ -275,6 +275,30 @@ void main() {
     await upgraded.close();
   });
 
+  test('置顶的群按账号存，有上限，删账号一起清；v7 的库升到 v8 建出这张表', () async {
+    await store.setChatsPinned('138', ['g1', 'g2'], pinned: true);
+    await store.setChatsPinned('139', ['g1'], pinned: true);
+    expect(await store.pinnedChats('138'), {'g1', 'g2'});
+    await store.setChatsPinned('138', ['g1'], pinned: false);
+    expect(await store.pinnedChats('138'), {'g2'});
+    await store.setChatsPinned('139', [for (var index = 0; index < ChaoxingStore.pinnedChatLimit + 5; index++) 'group-$index'], pinned: true);
+    expect(await store.pinnedChats('139'), hasLength(ChaoxingStore.pinnedChatLimit));
+    await store.putAccount(_account('138'));
+    await store.removeAccount('138');
+    expect(await store.pinnedChats('138'), isEmpty);
+
+    final legacyPath = path.join(directory.path, 'v7.db');
+    await (await ChaoxingStore.open(legacyPath)).close();
+    final raw = await openDatabase(legacyPath);
+    await raw.execute('DROP TABLE pinned_chats');
+    await raw.setVersion(7);
+    await raw.close();
+    final upgraded = await ChaoxingStore.open(legacyPath);
+    await upgraded.setChatsPinned('138', ['g9'], pinned: true);
+    expect(await upgraded.pinnedChats('138'), {'g9'});
+    await upgraded.close();
+  });
+
   test('置顶课程每个账号有上限', () async {
     await store.setCoursesPinned('138', [for (var index = 0; index < ChaoxingStore.pinnedCourseLimit + 5; index++) index], pinned: true);
     expect(await store.pinnedCourses('138'), hasLength(ChaoxingStore.pinnedCourseLimit));

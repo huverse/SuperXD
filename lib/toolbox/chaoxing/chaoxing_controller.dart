@@ -406,12 +406,32 @@ class ChaoxingController extends ChangeNotifier {
     return accounts.run(client, () => chaoxingCheckSignCode(client, activeId: activity.activeId, signCode: signCode));
   }
 
-  // 群聊里的签到：先换环信令牌、列群、拉漫游，再按附件拼出活动；类型名认不出来的去详情里问。
-  Future<List<ChaoxingActivity>> loadGroupActivities() async {
+  // 群聊列表：换环信令牌、列出加入的群（一次请求，最多 chaoxingImGroupLimit 个），连同这个账号置顶的群；不拉消息。
+  Future<({List<ChaoxingImGroup> chats, Set<String> pinned})> loadChats() async {
+    final client = await _imClient();
+    final chats = await accounts.run(client, () async => chaoxingImGroups(client, await chaoxingImConfig(client)));
+    return (chats: chats, pinned: await accounts.store.pinnedChats(client.phoneNumber));
+  }
+
+  // 置顶或取消置顶一项（同名的几个群一起），返回这个账号现在置顶的群。
+  Future<Set<String>> setChatPinned(ChaoxingChatGroup group, {required bool pinned}) async {
+    final phoneNumber = _requireClient().phoneNumber;
+    await accounts.store.setChatsPinned(phoneNumber, group.groups.map((chat) => chat.id), pinned: pinned);
+    return accounts.store.pinnedChats(phoneNumber);
+  }
+
+  // 群聊凭证只在用户信息里下发，恢复出来的账号要先补一次（这类密钥不落库）。
+  Future<ChaoxingClient> _imClient() async {
     final client = _requireClient();
-    // 群聊凭证只在用户信息里下发，恢复出来的账号要先补一次（这类密钥不落库）。
     if (client.account!.imPassword.isEmpty) await accounts.refreshAccount(client);
-    final found = await accounts.run(client, () => chaoxingImActivities(client, groupLimit: chaoxingImGroupLimit));
+    return client;
+  }
+
+  // 一项（同名的几个群）里的签到：只拉这几个群的漫游，按附件拼出活动；类型名认不出来的去详情里问。
+  // failures 是详情没问到、被跳过的签到场数。
+  Future<({List<ChaoxingActivity> activities, int failures})> chatActivities(ChaoxingChatGroup group) async {
+    final client = await _imClient();
+    final found = await accounts.run(client, () async => chaoxingImActivitiesOf(client, await chaoxingImConfig(client), group.groups));
     final activities = <ChaoxingActivity>[];
     var failures = 0;
     for (final item in found) {
@@ -455,7 +475,7 @@ class ChaoxingController extends ChangeNotifier {
       throw const ChaoxingFailure(ChaoxingFailureCode.network, '群聊里的签到没读全，请稍后重试');
     }
     // 消息里没时间、详情里补上了的要按补上的时间重排。
-    return activities..sort(chaoxingNewestFirst);
+    return (activities: activities..sort(chaoxingNewestFirst), failures: failures);
   }
 
   // 课程页：同名课程合并成一组（一门课多个班），置顶的在前，其余保持课程列表原顺序。
