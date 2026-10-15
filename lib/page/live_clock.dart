@@ -6,6 +6,9 @@ class LiveClock extends StatefulWidget {
   const LiveClock({super.key, required this.child});
   final Widget child;
   static ValueNotifier<DateTime>? maybeOf(BuildContext context) => context.dependOnInheritedWidgetOfExactType<_ClockScope>()?.clock;
+  // 测试用：由调用方拨时间、不挂整分计时器。真实的 LiveClock 到整分会用 DateTime.now() 盖掉测试拨好的时间。
+  @visibleForTesting
+  static Widget fixed(ValueNotifier<DateTime> clock, {required Widget child}) => _ClockScope(clock: clock, child: child);
   @override
   State<LiveClock> createState() => _LiveClockState();
 }

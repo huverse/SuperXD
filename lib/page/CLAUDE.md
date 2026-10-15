@@ -41,7 +41,7 @@
   - today_day_navigation.dart：上下拖动切日的手势 TodayDayNavigation，拖动阈值 64，上限 120。
   - today_date_transition.dart：TodayDateTransition 让切日时的日期和正文按同一进度纵向交接。
   - course_cards.dart：当日节次卡片 CourseDayCards，有课卡与空档行，长按展开（课表页）；传入 onOpen 时单击有课卡回调（今天页弹只读详情）。今天的课按此刻分三态（classMoment）：上课中竖条按已过时间填满、已下课整卡内容淡到 55%；剩余时长只在今天页“此刻”卡显示，时长格式 classDuration（小时分钟）。有课卡左列开始与结束时刻（按本页最宽时刻对齐）、中间竖条、右列节次课名地点教师，高度按同样版式测量、只在有课卡间分剩余空间；空档是虚线空位框（_EmptySlot：与卡片同宽同圆角、尺子时刻列上开始下结束、虚线竖条、标题写空闲时长、副标题节次），高度随时长对数加高（_gapHeight），展开时框内渐显成选中卡。DotSeparatedText 是“甲 · 乙 · 丙”式说明行的统一写法：按“ · ”分项换行、学期名在“学年”后切开、分隔符挂在前一项末尾，读屏读整句；课程卡地点教师、上课时段、同步结果都用它，避免窄处与大字号下折出孤字。
-  - live_clock.dart：全局分钟时钟 LiveClock，在每个整分钟唤醒，应用进入后台时暂停。
+  - live_clock.dart：全局分钟时钟 LiveClock，在每个整分钟唤醒，应用进入后台时暂停。测试要拨时间时用 LiveClock.fixed（不挂整分计时器，否则真实时间到整分会盖掉拨好的时间）。
   - date_rail.dart：日期横条 DateRail。
 - 课表：
   - schedule_page.dart：课表页 SchedulePage。
