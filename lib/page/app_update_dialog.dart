@@ -51,12 +51,14 @@ class _AppUpdateDialog extends StatelessWidget {
     final palette = CampusPalette.of(context);
     final phase = updates.phase;
     final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
+    // 版本号放说明行不放标题：标题里的「1.0.0-alpha.4」会在连字符处折行。
     final summary = [
-      if (apk != null) '安装包 ${appPackageSize(apk.size)}',
-      if (forced) '当前版本已停止支持，更新后才能继续使用',
+      ['版本 ${release.versionName}', if (apk != null) '安装包 ${appPackageSize(apk.size)}'].join(' · '),
+      if (forced) '当前版本已停用，更新后才能使用',
     ];
-    Widget line(IconData icon, String text, {bool warning = false}) => Row(children: [
-      CampusIcon(icon, size: 18, color: warning ? palette.danger : palette.onSurfaceVariant),
+    // 图标对齐首行文字，多行时不悬在中间。
+    Widget line(IconData icon, String text, {bool warning = false}) => Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(padding: const EdgeInsets.only(top: 2), child: CampusIcon(icon, size: 18, color: warning ? palette.danger : palette.onSurfaceVariant)),
       const SizedBox(width: 6),
       Expanded(child: Text(text, style: TextStyle(color: warning ? palette.danger : palette.onSurfaceVariant, fontWeight: FontWeight.w600))),
     ]);
@@ -76,7 +78,7 @@ class _AppUpdateDialog extends StatelessWidget {
         const SizedBox(height: 8),
         LinearProgressIndicator(borderRadius: BorderRadius.circular(4)),
       ]),
-      AppUpdatePhase.needsPermission => line(CampusIcons.warning, '要先允许 SuperXD 安装应用：在打开的设置里开启后返回，会接着安装'),
+      AppUpdatePhase.needsPermission => line(CampusIcons.warning, '要先允许 SuperXD 安装应用，开启后返回会接着安装'),
       AppUpdatePhase.readyToInstall => line(CampusIcons.success, '安装包已核对，按系统提示完成安装'),
       AppUpdatePhase.failed => line(CampusIcons.warning, updates.error ?? '更新没完成，请重试', warning: true),
       _ => null,
@@ -108,7 +110,7 @@ class _AppUpdateDialog extends StatelessWidget {
       ],
     };
     return CampusGlassDialog(
-      title: Text(forced ? '需要更新到 ${release.versionName}' : '发现新版本 ${release.versionName}'),
+      title: Text(forced ? '需要更新' : '发现新版本'),
       content: SingleChildScrollView(
         child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           if (summary.isNotEmpty) Text(summary.join('\n'), style: secondary),

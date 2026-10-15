@@ -32,15 +32,15 @@ void main() {
     final fixture = UpdateFixture()..feed.next = fakeRelease();
     await fixture.updates.check();
     await openDialog(tester, fixture);
-    expect(find.text('发现新版本 1.0.0-alpha.5'), findsOneWidget);
-    expect(find.text('安装包 120 MB'), findsOneWidget);
+    expect(find.text('发现新版本'), findsOneWidget);
+    expect(find.text('版本 1.0.0-alpha.5 · 安装包 120 MB'), findsOneWidget);
     expect(find.text('修了一些问题'), findsOneWidget);
     // 三个按钮竖排，主操作在最上、跳过在最下。
     final update = tester.getCenter(find.text('更新')).dy, later = tester.getCenter(find.text('稍后')).dy, skip = tester.getCenter(find.text('跳过这个版本')).dy;
     expect(update < later && later < skip, isTrue);
     await tester.tap(find.text('跳过这个版本'));
     await tester.pumpAndSettle();
-    expect(find.text('发现新版本 1.0.0-alpha.5'), findsNothing);
+    expect(find.text('发现新版本'), findsNothing);
     expect(fixture.memory.skippedVersionCode, 5);
   });
 
@@ -73,15 +73,15 @@ void main() {
     final fixture = UpdateFixture()..feed.next = fakeRelease(minSupported: 5);
     await fixture.updates.check();
     await openDialog(tester, fixture);
-    expect(find.text('需要更新到 1.0.0-alpha.5'), findsOneWidget);
-    expect(find.text('安装包 120 MB\n当前版本已停止支持，更新后才能继续使用'), findsOneWidget);
+    expect(find.text('需要更新'), findsOneWidget);
+    expect(find.text('版本 1.0.0-alpha.5 · 安装包 120 MB\n当前版本已停用，更新后才能使用'), findsOneWidget);
     expect(find.text('稍后'), findsNothing);
     expect(find.text('跳过这个版本'), findsNothing);
     await tester.tapAt(const Offset(8, 8));
     await tester.pumpAndSettle();
     await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
-    expect(find.text('需要更新到 1.0.0-alpha.5'), findsOneWidget);
+    expect(find.text('需要更新'), findsOneWidget);
   });
 
   testWidgets('下载失败给原因，可重试或用浏览器打开发布页', (tester) async {
@@ -108,7 +108,7 @@ void main() {
     await openDialog(tester, fixture);
     await tester.tap(find.text('更新'));
     await tester.pumpAndSettle();
-    expect(find.text('要先允许 SuperXD 安装应用：在打开的设置里开启后返回，会接着安装'), findsOneWidget);
+    expect(find.text('要先允许 SuperXD 安装应用，开启后返回会接着安装'), findsOneWidget);
     await tester.tap(find.text('去开启'));
     await tester.pumpAndSettle();
     expect(fixture.installer.settingsOpened, 1);
@@ -149,7 +149,7 @@ void main() {
       ..next = fakeRelease();
     await tester.tap(find.text('检查更新'));
     await tester.pumpAndSettle();
-    expect(find.text('发现新版本 1.0.0-alpha.5'), findsOneWidget);
+    expect(find.text('发现新版本'), findsOneWidget);
     await tester.tap(find.text('稍后'));
     await tester.pumpAndSettle();
     expect(find.text('新版本 1.0.0-alpha.5'), findsOneWidget);

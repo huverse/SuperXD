@@ -97,13 +97,13 @@ void main() {
     final fixture = UpdateFixture()..feed.next = fakeRelease();
     await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, updates: fixture.updates)); await tester.pumpAndSettle();
     await fixture.updates.autoCheck(); await tester.pumpAndSettle();
-    expect(find.text('发现新版本 1.0.0-alpha.5'), findsOneWidget);
+    expect(find.text('发现新版本'), findsOneWidget);
     await tester.tap(find.text('稍后')); await tester.pumpAndSettle();
-    expect(find.text('发现新版本 1.0.0-alpha.5'), findsNothing);
+    expect(find.text('发现新版本'), findsNothing);
     // 同一校园日再自动检查不联网、不再弹。
     await fixture.updates.autoCheck(); await tester.pumpAndSettle();
     expect(fixture.feed.calls, 1);
-    expect(find.text('发现新版本 1.0.0-alpha.5'), findsNothing);
+    expect(find.text('发现新版本'), findsNothing);
     await tester.tap(find.text('我的').last); await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('关于')); await tester.pumpAndSettle();
     await tester.tap(find.text('关于')); await tester.pumpAndSettle();
