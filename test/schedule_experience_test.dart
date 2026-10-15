@@ -177,12 +177,10 @@ void main() {
     final spans = periodSpans([course(1, 2, name: '早课'), course(3, 4)]);
     final opened = <PeriodSpan>[];
     // 2026-09-21 周一 09:50（校园时区）：第1–2节已下课，第3–4节没开始。
-    ValueNotifier<DateTime>? clock;
-    await tester.pumpWidget(app(LiveClock(child: Builder(builder: (context) {
-      clock = LiveClock.maybeOf(context);
-      return CourseDayCards(spans: spans, bells: bells, date: '2026-09-21', onOpen: opened.add);
-    }))));
-    clock!.value = DateTime.utc(2026, 9, 21, 1, 50);
+    // 用固定时钟：真实 LiveClock 的整分计时器赶上 pumpAndSettle 时会把时间改回今天，曾在 CI 上偶发失败。
+    final clock = ValueNotifier(DateTime.utc(2026, 9, 21, 1, 50));
+    addTearDown(clock.dispose);
+    await tester.pumpWidget(app(LiveClock.fixed(clock, child: CourseDayCards(spans: spans, bells: bells, date: '2026-09-21', onOpen: opened.add))));
     await tester.pumpAndSettle();
     await tester.tap(find.text('课程'));
     expect(opened.map((span) => span.course!.courseName), ['课程']);
