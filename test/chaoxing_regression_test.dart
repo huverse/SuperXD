@@ -9,6 +9,7 @@ import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -289,8 +290,15 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byType(CheckboxListTile));
     await tester.tap(find.text('保存'));
-    await waitFor('账号标签写库', () async => (await store.accountTags())['13800138000']?.contains(tag.id) == true);
-    expect(find.descendant(of: find.byType(ChaoxingTagLabel), matching: find.text('室友')), findsOneWidget);
+    // 写库之后控制器还要重读标签、弹层再刷新一次，行里才显示：直接等看得见的结果，不拿写库当完成。
+    // 只认账号行（卡片）里的；设标签弹窗的勾选项里也有同样的标签，它关闭动画走完之前也找得到。
+    final label = find.descendant(
+      of: find.byType(CampusSurface),
+      matching: find.descendant(of: find.byType(ChaoxingTagLabel), matching: find.text('室友')),
+    );
+    await waitFor('行里显示标签', () async => label.evaluate().isNotEmpty);
+    expect(label, findsOneWidget);
+    expect((await tester.runAsync(store.accountTags))!['13800138000'], {tag.id});
     controller.dispose();
   });
 
