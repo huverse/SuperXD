@@ -54,13 +54,17 @@ Future<void> _until(WidgetTester tester, String what, bool Function() done) asyn
 
 // 业务完成信号（设置已写入、文件已删除）先于页面“保存中/导入中”的收尾：继续让真实异步跑到加载提示消失，再按控件动画时长推进，
 // 不用 pumpAndSettle 等“绝对静止”（慢机器上转圈还在播，CI 曾在清除壁纸后超时）。点按发生在真实异步里，先出一帧再看提示。
+// 加载提示连屏幕外的也要算（skipOffstage: false）：导入第一张后出现的更换按钮与两条滑杆把「正在导入图片」挤到可视区下面，
+// 默认的 find 跳过它，等待提前结束，接着去点仍在禁用中的「更换图片」，点击落空，CI 上等满 60 秒超时。
+final _loading = find.byType(CampusLoading, skipOffstage: false);
+
 Future<void> _settled(WidgetTester tester) async {
   await tester.pump();
-  for (var attempt = 0; attempt < 1000 && find.byType(CampusLoading).evaluate().isNotEmpty; attempt++) {
+  for (var attempt = 0; attempt < 1000 && _loading.evaluate().isNotEmpty; attempt++) {
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
     await tester.pump();
   }
-  expect(find.byType(CampusLoading), findsNothing);
+  expect(_loading, findsNothing);
   await tester.pump(const Duration(milliseconds: 400));
   await tester.pump(const Duration(milliseconds: 400));
 }
