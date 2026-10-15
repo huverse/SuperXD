@@ -46,6 +46,9 @@ ChaoxingActivity _activity(
   ext: ext,
 );
 
+// 随机偏移（不固定种子）取到范围边上时，坐标相减会多出 1e-15 量级的浮点误差，与上限精确比较会偶发失败（CI 上出现过）。
+Matcher _withinRange(double range) => lessThanOrEqualTo(range + 1e-9);
+
 void main() {
   test('登录密文与 openssl 的已知答案一致', () async {
     // key 与 IV 同为固定串 u2oh6Vu^HWe4_AES，AES-128-CBC + PKCS7 后 Base64。
@@ -147,7 +150,7 @@ void main() {
     expect(locationQuery['address'], '教学楼');
     expect(locationQuery['ifTiJiao'], '1');
     // 提交的坐标是换算后加了随机偏移的值，落在原点的偏移范围内。
-    expect((double.parse(locationQuery['latitude']!) - 39.915).abs(), lessThanOrEqualTo(chaoxingLocationRange));
+    expect((double.parse(locationQuery['latitude']!) - 39.915).abs(), _withinRange(chaoxingLocationRange));
     expect(locationQuery['deviceCode'], 'device-code');
     expect(locationQuery.containsKey('location'), isFalse);
     expect(jsonDecode(locationQuery['locationResult']!) as Map, contains('mockData'));
@@ -175,7 +178,7 @@ void main() {
       ),
     ).queryParameters;
     expect(gestureQuery['signCode'], '1235789');
-    expect((double.parse(gestureQuery['latitude']!) - 39.915).abs(), lessThanOrEqualTo(chaoxingLocationRange));
+    expect((double.parse(gestureQuery['latitude']!) - 39.915).abs(), _withinRange(chaoxingLocationRange));
     expect(jsonDecode(gestureQuery['location']!) as Map, isNot(contains('mockData')));
 
     // 绕过模式（[人工决策-2026-10-08 16:39:31]）：同一端点、其余参数不变，只是不带 signCode。
@@ -282,8 +285,8 @@ void main() {
     ).queryParameters;
     final latitude = double.parse(query['latitude']!);
     final longitude = double.parse(query['longitude']!);
-    expect((latitude - bd09.latitude).abs(), lessThanOrEqualTo(chaoxingLocationRange));
-    expect((longitude - bd09.longitude).abs(), lessThanOrEqualTo(chaoxingLocationRange));
+    expect((latitude - bd09.latitude).abs(), _withinRange(chaoxingLocationRange));
+    expect((longitude - bd09.longitude).abs(), _withinRange(chaoxingLocationRange));
     expect((latitude - 36.6).abs(), greaterThan(0.001));
     expect(query['address'], '知敬楼402');
     // latitude 参数是原值，locationResult 里的是保留 6 位小数的同一个点（与学习通客户端一致）。
@@ -293,7 +296,7 @@ void main() {
       account: _account,
       submission: ChaoxingSignSubmission(activity: _activity(ChaoxingSignType.location), location: picked, tightenLocation: true),
     ).queryParameters;
-    expect((double.parse(tight['latitude']!) - bd09.latitude).abs(), lessThanOrEqualTo(chaoxingLocationTightRange));
+    expect((double.parse(tight['latitude']!) - bd09.latitude).abs(), _withinRange(chaoxingLocationTightRange));
   });
 
   test('位置偏移落在设定范围内且不带偏移时原样提交', () {
