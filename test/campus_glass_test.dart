@@ -421,6 +421,53 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('弹层里发的提示浮在弹层上面：看得见、操作可点、到时收起、新的顶掉旧的，点遮罩照样关弹层', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      campusGlassReady.value = true;
+      late BuildContext sheet;
+      var opened = 0;
+      await tester.pumpWidget(host(Scaffold(body: Builder(builder: (context) => Center(child: TextButton(
+        onPressed: () => showCampusSheet<void>(context: context, builder: (context) {
+          sheet = context;
+          return const CampusSheetPanel(child: SizedBox(height: 300, child: Center(child: Text('签到'))));
+        }),
+        child: const Text('打开'),
+      ))))));
+      await tester.tap(find.text('打开'));
+      await tester.pumpAndSettle();
+
+      showCampusToast(sheet, '定位有点慢', action: '去打开', onAction: () => opened++);
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('定位有点慢').hitTestable(), findsOneWidget, reason: '提示在弹层上面，没被盖住');
+      expect(find.byType(SnackBar), findsNothing);
+      expectGlassUnfaded(find.ancestor(of: find.text('定位有点慢'), matching: find.byType(liquid.AdaptiveGlass)));
+      expect(tester.getSize(find.widgetWithText(TextButton, '去打开')).height, greaterThanOrEqualTo(48));
+      await tester.tap(find.text('去打开'));
+      await tester.pump();
+      expect(opened, 1);
+      expect(find.text('定位有点慢'), findsNothing);
+
+      showCampusToast(sheet, '第一条');
+      await tester.pump();
+      showCampusToast(sheet, '人脸照片没存上');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(find.text('第一条'), findsNothing, reason: '新的顶掉旧的');
+      expect(find.text('人脸照片没存上').hitTestable(), findsOneWidget);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(find.text('人脸照片没存上'), findsNothing, reason: '到时收起');
+
+      showCampusToast(sheet, '还在');
+      await tester.pump();
+      await tester.tapAt(const Offset(200, 40));
+      await tester.pumpAndSettle();
+      expect(find.text('签到'), findsNothing, reason: '提示不挡遮罩，点上面照样关弹层');
+      expect(tester.takeException(), isNull);
+    });
+
     testWidgets('玻璃控件出现消失走着色器可见度，不套半透明图层；实色档改不透明度', (tester) async {
       campusGlassReady.value = true;
       Widget button(bool visible, {CampusGlassMode mode = CampusGlassMode.full}) => host(Scaffold(body: Center(child: CampusGlassPresence(
