@@ -12,7 +12,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 
-// 多账号管理弹层：改备注名、拖动排序（切换账号仍在账号菜单里做）。
+// 多账号管理弹层：改备注名、设主账号、拖动排序（切换账号仍在账号菜单里做）。
 Future<void> showChaoxingAccountSheet(BuildContext context, {required ChaoxingController controller}) =>
     showCampusSheet<void>(context: context, builder: (context) => _ChaoxingAccountSheet(controller: controller));
 
@@ -24,20 +24,21 @@ class _ChaoxingAccountSheet extends StatefulWidget {
 }
 
 class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
-  // [人工决策-2026-10-08 19:36:24] 本人固定排第一、不可拖；代签账号只在自己那一段里拖动排序。
-  // 库里的排序本来就是「本人在前」，界面与存储同一口径（以前能把代签账号拖到本人前面，松手又跳回去）；
-  // 启动时打开排第一的账号，本人在前也保证打开工具进的是自己的账号。
+  // [人工决策-2026-10-15 18:37:09] 主账号固定排第一、不可拖（打开工具进它，只有自己登录的账号能设）；
+  // 其余账号（自己登录的与代签的）合成一个列表自由拖动，代签账号行里写「代签账号」。
+  // 取代 10-08 的「本人固定第一、代签账号只在自己那一段里拖」：自己登录的账号可以有好几个，靠主账号分清哪个是机主。
   // 拖动期间先在内存里排（拷一份，不直接改 controller 的状态），松手一次写回。
-  late List<ChaoxingAccountRecord> _own = _ownOf(widget.controller.accountList);
-  late List<ChaoxingAccountRecord> _delegated = _delegatedOf(widget.controller.accountList);
+  late List<ChaoxingAccountRecord> _others = _othersOf();
 
-  static List<ChaoxingAccountRecord> _ownOf(List<ChaoxingAccountRecord> records) => [for (final record in records) if (!record.isOtherUser) record];
-  static List<ChaoxingAccountRecord> _delegatedOf(List<ChaoxingAccountRecord> records) => [for (final record in records) if (record.isOtherUser) record];
+  ChaoxingAccountRecord? get _main =>
+      widget.controller.accountList.where((record) => record.phoneNumber == widget.controller.mainPhoneNumber).firstOrNull;
 
-  void _reload() {
-    _own = _ownOf(widget.controller.accountList);
-    _delegated = _delegatedOf(widget.controller.accountList);
-  }
+  List<ChaoxingAccountRecord> _othersOf() => [
+    for (final record in widget.controller.accountList)
+      if (record.phoneNumber != widget.controller.mainPhoneNumber) record,
+  ];
+
+  void _reload() => _others = _othersOf();
 
   Future<void> _rename(ChaoxingAccountRecord record) async {
     final editor = TextEditingController(text: record.label);
@@ -67,14 +68,30 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
 
   // [人工决策-2026-10-09 20:32:45] 账号管理每行右侧⋯：改备注名、删除（警示色并确认），删代签账号不用先切过去；
   // 整行点按改备注名。同课程管理卡片的规范，用户选定。
+  // [人工决策-2026-10-15 18:37:09] 自己登录、还不是主账号的那几行⋯里多一项「设为主账号」。
   Future<void> _menu(BuildContext anchor, ChaoxingAccountRecord record) async {
-    final action = await showCampusMenu<String>(anchor, items: const [
-      CampusMenuItem(value: 'rename', label: '改备注名', icon: CampusIcons.edit),
-      CampusMenuItem(value: 'remove', label: '删除', icon: CampusIcons.delete, destructive: true),
+    final action = await showCampusMenu<String>(anchor, items: [
+      const CampusMenuItem(value: 'rename', label: '改备注名', icon: CampusIcons.edit),
+      if (!record.isOtherUser && record.phoneNumber != widget.controller.mainPhoneNumber)
+        const CampusMenuItem(value: 'main', label: '设为主账号', icon: CampusIcons.mainAccount),
+      const CampusMenuItem(value: 'remove', label: '删除', icon: CampusIcons.delete, destructive: true),
     ]);
     if (!mounted) return;
     if (action == 'rename') await _rename(record);
+    if (action == 'main') await _setMain(record);
     if (action == 'remove') await _remove(record);
+  }
+
+  Future<void> _setMain(ChaoxingAccountRecord record) async {
+    try {
+      await widget.controller.setMainAccount(record);
+      if (mounted) setState(_reload);
+    } on ChaoxingFailure catch (failure) {
+      if (mounted) await showCampusNotice(context, failure.message);
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=account_main errorType=${failure.runtimeType}\n$stack');
+      if (mounted) await showCampusNotice(context, '没设成主账号，请重试');
+    }
   }
 
   Future<void> _remove(ChaoxingAccountRecord record) async {
@@ -98,7 +115,7 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
 
   Future<void> _persist() async {
     try {
-      await widget.controller.reorderAccounts([..._own, ..._delegated]);
+      await widget.controller.reorderAccounts([?_main, ..._others]);
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=account_reorder errorType=${failure.runtimeType}\n$stack');
       if (mounted) await showCampusNotice(context, '排序没保存，请重试');
@@ -121,8 +138,7 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
               children: [
                 Text(record.displayName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
                 DotSeparatedText(
-                  // 归属不写：代签账号已在「代签账号」分组下。
-                  [record.phoneNumber, if (record.label.isNotEmpty) record.name].join(' · '),
+                    [record.phoneNumber, ?widget.controller.ownerLabelOf(record), if (record.label.isNotEmpty) record.name].join(' · '),
                   style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
                 ),
               ],
@@ -163,31 +179,27 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
               ],
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 0, 12, 0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [for (final record in _own) _tile(palette, record)],
-            ),
-          ),
-          if (_delegated.isNotEmpty) ...[
-            Padding(
-              padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
-              child: Text(_delegated.length > 1 ? '代签账号 · 按住右侧把手拖动排序' : '代签账号', style: secondary),
-            ),
+          if (_main case final main?)
+            Padding(padding: const EdgeInsets.fromLTRB(16, 0, 12, 0), child: _tile(palette, main)),
+          if (_others.isNotEmpty) ...[
+            if (_main != null || _others.length > 1)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(24, 8, 24, 8),
+                child: Text([if (_main != null) '其他账号', if (_others.length > 1) '按住右侧把手拖动排序'].join(' · '), style: secondary),
+              ),
             Flexible(
               child: ReorderableListView.builder(
                 shrinkWrap: true,
                 buildDefaultDragHandles: false,
                 padding: const EdgeInsets.fromLTRB(16, 0, 12, 20),
-                itemCount: _delegated.length,
+                itemCount: _others.length,
                 onReorderItem: (oldIndex, newIndex) {
-                  setState(() => _delegated.insert(newIndex, _delegated.removeAt(oldIndex)));
+                  setState(() => _others.insert(newIndex, _others.removeAt(oldIndex)));
                   _persist().catchError((Object error, StackTrace stack) {
                     campusLog('[Chaoxing] action=account_reorder errorType=${error.runtimeType}\n$stack');
                   });
                 },
-                itemBuilder: (context, index) => _tile(palette, _delegated[index], dragIndex: _delegated.length > 1 ? index : null),
+                itemBuilder: (context, index) => _tile(palette, _others[index], dragIndex: _others.length > 1 ? index : null),
               ),
             ),
           ] else

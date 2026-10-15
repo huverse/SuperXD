@@ -962,7 +962,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   Widget _targetRow(CampusPalette palette, ChaoxingSignTarget target) {
     final record = target.record;
     final statusText = switch (target.state) {
-      ChaoxingTargetState.idle => [?record.ownerLabel, ?record.deviceCodeLabel].join(' · '),
+      ChaoxingTargetState.idle => [?widget.controller.ownerLabelOf(record), ?record.deviceCodeLabel].join(' · '),
       ChaoxingTargetState.waiting => '等待中',
       ChaoxingTargetState.signing => '签到中',
       ChaoxingTargetState.succeeded || ChaoxingTargetState.failed => target.message ?? '',
@@ -985,7 +985,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(record.displayName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
-                    // 没开签时只写例外（「代签账号 · 固定随机设备码」，都没有就不占这一行），开签后这一行换成状态。
+                    // 没开签时只写例外（「主账号」「代签账号 · 固定随机设备码」，都没有就不占这一行），开签后这一行换成状态。
                     if (target.state == ChaoxingTargetState.idle && statusText.isNotEmpty)
                       DotSeparatedText(statusText, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))
                     else if (target.state != ChaoxingTargetState.idle)

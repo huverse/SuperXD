@@ -57,8 +57,10 @@ void main() {
     await directory.delete(recursive: true);
   });
 
-  test('账号索引只存账号信息，本人账号排在前面', () async {
+  test('账号索引只存账号信息，同为默认排序时新登录的在前', () async {
     await store.putAccount(_account('139', isOtherUser: true));
+    // 登录时间精确到毫秒：隔开一点，免得同一毫秒里先后无从比较。
+    await Future<void>.delayed(const Duration(milliseconds: 5));
     await store.putAccount(_account('138'));
     final accounts = await store.accounts();
     expect(accounts.map((item) => item.phoneNumber), ['138', '139']);
@@ -238,6 +240,38 @@ void main() {
     expect(await upgraded.preference('map_center'), isNull);
     await upgraded.putSignedLocation(1, const ChaoxingLocation(latitude: 36.1, longitude: 117.1, address: '知敬楼'));
     expect((await upgraded.signedLocation(1))?.address, '知敬楼');
+    await upgraded.close();
+  });
+
+  test('v6 的库升到 v7：按升级前看到的顺序（自己的在前）给 sort 编号，升级后顺序不跳', () async {
+    final legacyPath = path.join(directory.path, 'v6.db');
+    final legacy = await ChaoxingStore.open(legacyPath);
+    ChaoxingAccountRecord at(String phoneNumber, {required bool other, required int minutes, int sort = 0}) => ChaoxingAccountRecord(
+      phoneNumber: phoneNumber,
+      uid: 1,
+      puid: 2,
+      fid: 3,
+      name: '同学$phoneNumber',
+      schoolName: '示例大学',
+      deviceCode: 'device-$phoneNumber',
+      isOtherUser: other,
+      createdAt: DateTime.utc(2026, 10, 1).add(Duration(minutes: minutes)),
+      sort: sort,
+    );
+    // v6 的顺序是「自己的在前，各段内按 sort、再按登录时间新的在前」：136、138、139、137。
+    await legacy.putAccount(at('138', other: false, minutes: 0));
+    await legacy.putAccount(at('136', other: false, minutes: 5));
+    await legacy.putAccount(at('137', other: true, minutes: 9, sort: 1));
+    await legacy.putAccount(at('139', other: true, minutes: 1));
+    await legacy.close();
+    final raw = await openDatabase(legacyPath);
+    await raw.setVersion(6);
+    await raw.close();
+
+    final upgraded = await ChaoxingStore.open(legacyPath);
+    final accounts = await upgraded.accounts();
+    expect(accounts.map((item) => item.phoneNumber), ['136', '138', '139', '137']);
+    expect(accounts.map((item) => item.sort), [0, 1, 2, 3]);
     await upgraded.close();
   });
 

@@ -312,7 +312,7 @@ void main() {
     expect(bottom, lessThanOrEqualTo(800 - 300));
   });
 
-  testWidgets('账号管理分本人与代签账号两段，代签段内拖动排序并写回', (tester) async {
+  testWidgets('账号管理：主账号置顶不可拖，其余自己的与代签账号一起拖动排序并写回；只有自己的账号能设为主账号', (tester) async {
     ChaoxingAccountRecord record(String phone, {required bool other, required int minutes}) => ChaoxingAccountRecord(
       phoneNumber: phone,
       uid: 1,
@@ -329,39 +329,124 @@ void main() {
       await store.putAccount(record('138', other: false, minutes: 0));
       await store.putAccount(record('139', other: true, minutes: 2));
       await store.putAccount(record('137', other: true, minutes: 1));
+      await store.putAccount(record('136', other: false, minutes: 3));
       controller.accountList = await controller.accounts.list();
     });
-    expect(controller.accountList.map((item) => item.phoneNumber), ['138', '139', '137']);
+    // 没设过主账号时取最早登录的自己账号（138），其余按登录时间新的在前。
+    expect(controller.accountList.map((item) => item.phoneNumber), ['138', '136', '139', '137']);
+    expect(controller.mainPhoneNumber, '138');
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: const Scaffold(body: Center(child: Text('宿主')))));
     unawaited(showChaoxingAccountSheet(tester.element(find.text('宿主')), controller: controller));
     await tester.pumpAndSettle();
-    // 只标例外：自己的账号不写「本人」，代签账号靠分组标题区分，行里也不重复写。
+    // 只标例外：主账号写「主账号」，代签账号写「代签账号」，其余自己的账号不写归属。
+    expect(find.text('主账号'), findsOneWidget);
+    expect(find.text('代签账号'), findsNWidgets(2));
     expect(find.textContaining('本人'), findsNothing);
-    expect(find.textContaining('代签账号'), findsOneWidget);
-    expect(find.textContaining('代签账号 · 按住右侧把手拖动排序'), findsOneWidget);
-    // 本人那行没有拖动把手，两个代签账号各一个。
+    expect(find.text('其他账号 · 按住右侧把手拖动排序'), findsOneWidget);
+    // 主账号那行没有拖动把手，其余三个各一个。
     final handles = find.byWidgetPredicate((widget) => widget is CampusIcon && widget.icon == CampusIcons.dragHandle);
-    expect(handles, findsNWidgets(2));
+    expect(handles, findsNWidgets(3));
 
+    // 把最后的代签账号（137）拖到其余账号的最前：代签账号可以排到自己的账号前面，但排不过主账号。
     final drag = await tester.startGesture(tester.getCenter(handles.last));
     await tester.pump(const Duration(milliseconds: 100));
-    for (var step = 0; step < 10; step++) {
-      await drag.moveBy(const Offset(0, -15));
+    for (var step = 0; step < 15; step++) {
+      await drag.moveBy(const Offset(0, -20));
       await tester.pump(const Duration(milliseconds: 16));
     }
     await drag.up();
     await tester.pumpAndSettle();
     // 写库在松手后异步进行：等到排序真的落库，不按固定时长赌磁盘速度。
-    final ordered = await tester.runAsync(() async {
+    Future<List<String>> storedOrder(String expected) async => (await tester.runAsync(() async {
       for (var attempt = 0; attempt < 500; attempt++) {
-        final current = await controller.accounts.list();
-        if (current.map((item) => item.phoneNumber).join(',') == '138,137,139') return current;
+        final current = [for (final item in await controller.accounts.list()) item.phoneNumber];
+        if (current.join(',') == expected) return current;
         await Future<void>.delayed(const Duration(milliseconds: 20));
       }
-      return controller.accounts.list();
-    });
-    expect(ordered!.map((item) => item.phoneNumber), ['138', '137', '139'], reason: '拖动后的排序已写回库');
+      return [for (final item in await controller.accounts.list()) item.phoneNumber];
+    }))!;
+    expect(await storedOrder('138,137,136,139'), ['138', '137', '136', '139'], reason: '拖动后的排序已写回库');
+
+    // ⋯ 按行序：138（主账号）、137、136、139。代签账号的⋯里没有「设为主账号」。
+    final menus = find.byTooltip('更多操作');
+    await tester.tap(menus.at(1));
+    await tester.pumpAndSettle();
+    expect(find.text('改备注名'), findsOneWidget);
+    expect(find.text('设为主账号'), findsNothing);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    // 自己的账号（136）设为主账号：置顶、标「主账号」，其余顺序不变。
+    await tester.tap(menus.at(2));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('设为主账号'));
+    await tester.pumpAndSettle();
+    expect(await storedOrder('136,138,137,139'), ['136', '138', '137', '139']);
+    // 控制器刷新列表也走真实的库读写：等它落定再看界面。
+    for (var round = 0; round < 250 && controller.mainPhoneNumber != '136'; round++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+      await tester.pump();
+    }
+    expect(controller.mainPhoneNumber, '136');
+    await tester.pumpAndSettle();
+    expect(find.text('136 · '), findsOneWidget);
+    expect(find.text('主账号'), findsOneWidget);
     controller.dispose();
+  });
+
+  test('主账号：没设过取最早登录的自己账号，打开工具进它；设了别的就进设的；代签账号不能设；删掉主账号退回最早登录的', () async {
+    await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');
+    final vault = MemoryChaoxingVault();
+    final accounts = accountsWith(vault);
+    await accounts.signIn(phoneNumber: '13800138000', password: 'myPassword123');
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await accounts.signIn(phoneNumber: '13900139000', password: 'otherPassword1');
+    // 更早登录的代签账号也不会被当成主账号。
+    await store.putAccount(
+      ChaoxingAccountRecord(
+        phoneNumber: '13700137000',
+        uid: 1,
+        puid: 2,
+        fid: 3,
+        name: '同学丙',
+        schoolName: '示例大学',
+        deviceCode: 'device-137',
+        isOtherUser: true,
+        createdAt: DateTime.utc(2020),
+      ),
+    );
+    Future<String> opened() async {
+      final controller = ChaoxingController(accounts: accountsWith(vault));
+      await controller.initialize();
+      final phoneNumber = controller.current!.phoneNumber;
+      controller.dispose();
+      return phoneNumber;
+    }
+
+    // 以前打开进的是排第一的「最近登录的自己账号」（同学乙），现在进主账号（最早登录的同学甲）。
+    expect((await accounts.list()).first.phoneNumber, '13800138000');
+    expect(await opened(), '13800138000');
+
+    await accounts.setMainAccount((await accounts.record('13900139000'))!);
+    expect((await accounts.list()).first.phoneNumber, '13900139000');
+    expect(await opened(), '13900139000');
+
+    await expectLater(accounts.setMainAccount((await accounts.record('13700137000'))!), throwsA(isA<ChaoxingFailure>()));
+    expect(await store.preference(chaoxingMainAccountKey), '13900139000');
+
+    await accounts.forget('13900139000');
+    expect(await store.preference(chaoxingMainAccountKey), isNull);
+    expect((await accounts.list()).first.phoneNumber, '13800138000');
+  });
+
+  test('重新登录不清掉备注名与手动排序', () async {
+    final accounts = accountsWith(MemoryChaoxingVault());
+    await accounts.signIn(phoneNumber: '13800138000', password: 'myPassword123');
+    await store.renameAccount('13800138000', '我自己');
+    await store.reorderAccounts(['13700137000', '13800138000']);
+    await accounts.signIn(phoneNumber: '13800138000', password: 'myPassword123');
+    final again = (await accounts.record('13800138000'))!;
+    expect(again.label, '我自己');
+    expect(again.sort, 1);
   });
 
   testWidgets('手势连续画错后重画，提交的只是这一次的图案', (tester) async {

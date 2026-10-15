@@ -57,6 +57,7 @@ class ChaoxingAccountRecord {
 
   // [人工决策-2026-10-15 17:53:28] 账号说明只标例外：代签账号写「代签账号」，自己登录的账号不写归属
   // （取代 10-08 的「本人 / 代签账号」全处统一：每行都是「本人」没有信息量）。
+  // [人工决策-2026-10-15 18:37:09] 主账号也是例外，写「主账号」；哪个是主账号只有账号列表知道，见 ChaoxingController.ownerLabelOf。
   String? get ownerLabel => isOtherUser ? '代签账号' : null;
 
   // [人工决策-2026-10-15 17:53:28] 设备码只在是固定随机码时提示（可能被标「更换设备」），真实设备码不写。
@@ -108,7 +109,7 @@ class ChaoxingStore {
   final Database _database;
   bool _closed = false;
 
-  // 本人 1 个加他人 20 个；写入新账号前由账号闭环检查，不靠读取时截断。
+  // 自己登录的与代签的合计 21 个；写入新账号前由账号闭环检查，不靠读取时截断。
   static const accountLimit = 21;
   static const locationLimit = 50;
   static const faceImageLimit = 5;
@@ -124,7 +125,7 @@ class ChaoxingStore {
     final store = ChaoxingStore._(
       await openDatabase(
         path,
-        version: 6,
+        version: 7,
         onCreate: (database, _) async {
           await database.execute(
             'CREATE TABLE accounts (phone_number TEXT PRIMARY KEY, uid INTEGER NOT NULL, puid INTEGER NOT NULL, '
@@ -167,6 +168,14 @@ class ChaoxingStore {
           if (oldVersion < 6) {
             await _createClassLocations(database);
             await database.delete('preferences', where: 'key = ?', whereArgs: ['map_center']);
+          }
+          // 第 7 版：账号不再按「自己的在前」分段排，全靠 sort；按升级前看到的顺序一次性编号，升级后顺序不跳。
+          if (oldVersion < 7) {
+            await database.execute(
+              'UPDATE accounts SET sort = (SELECT ranked.position FROM (SELECT phone_number, '
+              'ROW_NUMBER() OVER (ORDER BY is_other_user, sort, created_at DESC) - 1 AS position FROM accounts) ranked '
+              'WHERE ranked.phone_number = accounts.phone_number)',
+            );
           }
         },
       ),
@@ -257,7 +266,8 @@ class ChaoxingStore {
   Future<List<ChaoxingAccountRecord>> accounts() async {
     final rows = await _database.query(
       'accounts',
-      orderBy: 'is_other_user, sort, created_at DESC',
+      // 主账号置顶由账号闭环（ChaoxingAccounts.list）负责，这里只按手动排序；新登录或导入的 sort 为 0，排在前面。
+      orderBy: 'sort, created_at DESC',
       limit: accountLimit,
     );
     return rows.map(_account).toList();
