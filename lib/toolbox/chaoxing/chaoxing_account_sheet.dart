@@ -10,7 +10,9 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_settings_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_tag_sheet.dart';
 
 // 多账号管理弹层：改备注名、设主账号、拖动排序（切换账号仍在账号菜单里做）。
 Future<void> showChaoxingAccountSheet(BuildContext context, {required ChaoxingController controller}) =>
@@ -72,14 +74,36 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
   Future<void> _menu(BuildContext anchor, ChaoxingAccountRecord record) async {
     final action = await showCampusMenu<String>(anchor, items: [
       const CampusMenuItem(value: 'rename', label: '改备注名', icon: CampusIcons.edit),
+      const CampusMenuItem(value: 'tags', label: '设置标签', icon: CampusIcons.tag),
       if (!record.isOtherUser && record.phoneNumber != widget.controller.mainPhoneNumber)
         const CampusMenuItem(value: 'main', label: '设为主账号', icon: CampusIcons.mainAccount),
       const CampusMenuItem(value: 'remove', label: '删除', icon: CampusIcons.delete, destructive: true),
     ]);
     if (!mounted) return;
     if (action == 'rename') await _rename(record);
+    if (action == 'tags') await _setTags(record);
     if (action == 'main') await _setMain(record);
     if (action == 'remove') await _remove(record);
+  }
+
+  Future<void> _setTags(ChaoxingAccountRecord record) async {
+    await showChaoxingAccountTagsDialog(context, controller: widget.controller, record: record);
+    if (mounted) setState(_reload);
+  }
+
+  // 登录已失效的账号一点就重新输密码修复（同参考项目的警示按钮），修好后标记随之清掉。
+  Future<void> _repair(ChaoxingAccountRecord record) async {
+    final password = await showChaoxingPasswordPrompt(context, name: record.displayName);
+    if (password == null || !mounted) return;
+    try {
+      await widget.controller.repairAccount(record, password);
+      if (mounted) setState(_reload);
+    } on ChaoxingFailure catch (failure) {
+      if (mounted) await showCampusNotice(context, failure.message);
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=account_repair errorType=${failure.runtimeType}\n$stack');
+      if (mounted) await showCampusNotice(context, '重新登录没完成，请稍后重试');
+    }
   }
 
   Future<void> _setMain(ChaoxingAccountRecord record) async {
@@ -138,13 +162,23 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
               children: [
                 Text(record.displayName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
                 DotSeparatedText(
-                    [record.phoneNumber, ?widget.controller.ownerLabelOf(record), if (record.label.isNotEmpty) record.name].join(' · '),
+                  [record.phoneNumber, ?widget.controller.ownerLabelOf(record), ?record.sessionLabel, if (record.label.isNotEmpty) record.name].join(' · '),
                   style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
                 ),
+                if (widget.controller.tagsOf(record) case final tags when tags.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Wrap(spacing: 12, runSpacing: 4, children: [for (final tag in tags) ChaoxingTagLabel(tag: tag)]),
+                ],
               ],
             ),
           ),
         ),
+        if (record.sessionExpired)
+          IconButton(
+            tooltip: '登录已失效，重新登录',
+            onPressed: () => _repair(record),
+            icon: CampusIcon(CampusIcons.warning, color: palette.danger),
+          ),
         Builder(
           builder: (anchor) => IconButton(tooltip: '更多操作', onPressed: () => _menu(anchor, record), icon: const CampusIcon(CampusIcons.manage)),
         ),
@@ -175,6 +209,14 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
             child: Row(
               children: [
                 Expanded(child: Text('账号管理', style: Theme.of(context).textTheme.titleLarge)),
+                IconButton(
+                  tooltip: '标签',
+                  onPressed: () async {
+                    await showChaoxingTagSheet(context, controller: widget.controller);
+                    if (mounted) setState(_reload);
+                  },
+                  icon: const CampusIcon(CampusIcons.tags),
+                ),
                 IconButton(tooltip: '关闭', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.close)),
               ],
             ),

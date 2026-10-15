@@ -43,6 +43,11 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
   Color get dangerFill => isDark ? const Color(0xFFC63A31) : danger;
   // 提醒色（如「刚发起」的小圆点）：只读状态标记，与主色、警示红都区分开；深色下提亮一档保证在深底上醒目。
   Color get attention => isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B);
+  // 标签色（如学习通的账号标签）：只给标签小图标着色，名字仍用正文色；五套配色共用，浅色深、深色亮，
+  // 对卡片底都不低于 3:1（图形元素的对比度要求），由 test/dark_mode_test.dart 守护。顺序即存储里的序号，只能在末尾追加。
+  List<Color> get tagColors => isDark ? _darkTagColors : _lightTagColors;
+  static const _lightTagColors = [Color(0xFFDC2626), Color(0xFFC2410C), Color(0xFF15803D), Color(0xFF0F766E), Color(0xFF2563EB), Color(0xFF7C3AED)];
+  static const _darkTagColors = [Color(0xFFF87171), Color(0xFFFB923C), Color(0xFF4ADE80), Color(0xFF2DD4BF), Color(0xFF60A5FA), Color(0xFFA78BFA)];
   final Color backgroundTop;
   final Color backgroundBottom;
   final Color surface;

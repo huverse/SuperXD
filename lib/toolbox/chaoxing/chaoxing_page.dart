@@ -275,6 +275,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                       item.schoolName.isEmpty ? '学习通' : item.schoolName,
                       item.phoneNumber,
                       ?controller.ownerLabelOf(item),
+                      ?item.sessionLabel,
                       ?item.deviceCodeLabel,
                     ].join(' · '),
                     style: const TextStyle(fontSize: 14),

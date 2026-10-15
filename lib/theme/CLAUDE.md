@@ -4,7 +4,7 @@
 
 # 文件职责
 
-- campus_palette.dart：CampusPalette 是设备级的完整色彩角色，有苔灰（默认）、雾蓝、藕粉、暮紫、燕麦五套，每套分浅色和深色。
+- campus_palette.dart：CampusPalette 是设备级的完整色彩角色，有苔灰（默认）、雾蓝、藕粉、暮紫、燕麦五套，每套分浅色和深色。tagColors 是六种标签色（浅色、深色各一组，五套配色共用；只染标签小图标，对卡片、选中底与磨砂底不低于 3:1，test/dark_mode_test.dart 守护；顺序即存储序号，只能在末尾追加）。
   - accent 是控件激活色（开关开启轨道、滑杆已选段、复选框选中、强调按钮底色），同鸿蒙 component_activated、iOS 开关 onTintColor，与文字主色 primary 分开：primary 为文字可读压得深而灰，铺成大块轨道发闷。白字、白色滑块对 accent 都不低于 4.5:1。dangerFill 是破坏性按钮的红底（深色下的 danger 是给文字用的浅红）。attention 是只读状态标记的提醒色（如学习通「刚发起」小圆点），与主色、警示红区分，深色提亮一档。
 - campus_theme.dart：
   - campusTheme 按配色和字体生成 ThemeData。三类按钮的文字都显式带应用字体（按钮 textStyle 不带 fontFamily 时会回落成系统字体）。headlineMedium（26）是底栏根页的大标题，titleLarge（18）是二级页标题。AppBar 的 titleSpacing 为 0：返回图标与内容左边距 16 对齐，标题从 56 起；课表、成绩、协议的自绘顶栏按同样间距排（人工决策见文件内）。OutlinedButton 主题即次要按钮：内容区中性浅底胶囊配主色字、无描边。
@@ -56,7 +56,7 @@
   - campusOverlayDepth 是正在显示的弹窗层数。大于 0 时顶栏和底栏改实色，不让玻璃叠玻璃；改实色与恢复都经 CampusGlassBlend 过渡。
   - CampusOverlayDepthRoute：浮层路由装入时层数加一，开始关闭（didPop）就减一，没经过 pop 被移除时在 dispose 补减，只减一次。
 - campus_glass_controls.dart：
-  - CampusGlassChip 是选择标签，复用主按钮的背景（内容区为中性色调胶囊），选中时带勾，宽度变化平滑展开。两三项的单选用 CampusSegmented。
+  - CampusGlassChip 是选择标签，复用主按钮的背景（内容区为中性色调胶囊），选中时带勾，宽度变化平滑展开；可带 leading 小图标（如带颜色的标签图标），选中时换成勾。两三项的单选用 CampusSegmented。
   - CampusSwitchTile 是开关行，玻璃档用 GlassSwitch，实色档用系统 Switch；开启色都是 accent。
   - CampusSlider 是滑杆（0–1）：玻璃档用 GlassSlider（拖动时滑块化为玻璃透镜），实色档用系统 Slider 并合并读屏标签。GlassSlider 在系统取消与读屏增减时不回调 onChangeEnd，调用方要自行兜底保存。
   - 页面不再直接用 ChoiceChip、FilterChip、SwitchListTile、Slider。

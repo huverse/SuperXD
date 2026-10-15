@@ -31,6 +31,12 @@ class ChaoxingSignLauncher {
       watchQrCode: watchQrCode,
       pickImage: pickImage,
     );
+    // 签到中可能有账号被标了「登录已失效」：弹层关掉就重读账号列表（本机库几十行），切换账号与账号管理里马上看得到。
+    try {
+      await controller.reloadAccounts();
+    } catch (error, stack) {
+      campusLog('[Chaoxing] action=reload_accounts errorType=${error.runtimeType}\n$stack');
+    }
     if (!context.mounted || summary == null) return;
     showCampusToast(context, chaoxingSummaryText(summary));
     controller.refresh().catchError((Object error, StackTrace stack) {

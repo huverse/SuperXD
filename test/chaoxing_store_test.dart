@@ -299,6 +299,75 @@ void main() {
     await upgraded.close();
   });
 
+  test('账号标签：名字要有、不超过 12 个字、不重名，最多 20 个；删标签或删账号连带拿掉关联', () async {
+    final accounts = ChaoxingAccounts(store: store, vault: MemoryChaoxingVault());
+    Future<String?> failureOf(Future<void> Function() action) async {
+      try {
+        await action();
+        return null;
+      } on ChaoxingFailure catch (failure) {
+        return failure.message;
+      }
+    }
+
+    expect(await failureOf(() => accounts.saveTag(name: '  ', colorIndex: 0)), '标签名不能为空');
+    expect(await failureOf(() => accounts.saveTag(name: '一二三四五六七八九十十一十二', colorIndex: 0)), contains('最多'));
+    await accounts.saveTag(name: ' 室友 ', colorIndex: 2);
+    final tag = (await store.tags()).single;
+    expect((tag.name, tag.colorIndex), ('室友', 2));
+    expect(await failureOf(() => accounts.saveTag(name: '室友', colorIndex: 1)), contains('已经有'));
+    // 改名换色不算重名。
+    await accounts.saveTag(id: tag.id, name: '室友', colorIndex: 4);
+    expect((await store.tags()).single.colorIndex, 4);
+    for (var index = 1; index < ChaoxingStore.tagLimit; index++) {
+      await accounts.saveTag(name: '标签$index', colorIndex: index % 6);
+    }
+    expect(await failureOf(() => accounts.saveTag(name: '再来一个', colorIndex: 0)), contains('最多'));
+
+    await store.putAccount(_account('138'));
+    await store.putAccount(_account('139', isOtherUser: true));
+    final second = (await store.tags())[1];
+    await store.setAccountTags('138', {tag.id, second.id});
+    await store.setAccountTags('139', {tag.id});
+    expect((await store.accountTags())['138'], {tag.id, second.id});
+    await store.removeTag(tag.id);
+    expect((await store.accountTags())['138'], {second.id});
+    expect((await store.accountTags())['139'], isNull);
+    await store.removeAccount('138');
+    expect(await store.accountTags(), isEmpty);
+  });
+
+  test('v8 的库升到 v9：账号补出登录失效标记（默认没失效），建出标签表', () async {
+    final legacyPath = path.join(directory.path, 'v8.db');
+    await (await ChaoxingStore.open(legacyPath)).close();
+    final raw = await openDatabase(legacyPath);
+    await raw.execute('DROP TABLE tags');
+    await raw.execute('DROP TABLE account_tags');
+    // 旧库没有这一列：重建一张不带它的账号表。
+    await raw.execute('DROP TABLE accounts');
+    await raw.execute(
+      'CREATE TABLE accounts (phone_number TEXT PRIMARY KEY, uid INTEGER NOT NULL, puid INTEGER NOT NULL, '
+      'fid INTEGER NOT NULL, name TEXT NOT NULL, school_name TEXT NOT NULL, device_code TEXT NOT NULL, '
+      'is_other_user INTEGER NOT NULL, created_at INTEGER NOT NULL, client_id TEXT NOT NULL DEFAULT \'\', '
+      'units TEXT NOT NULL DEFAULT \'[]\', device_code_bound INTEGER NOT NULL DEFAULT 0, '
+      'label TEXT NOT NULL DEFAULT \'\', sort INTEGER NOT NULL DEFAULT 0)',
+    );
+    await raw.insert('accounts', {
+      'phone_number': '138', 'uid': 1, 'puid': 2, 'fid': 3, 'name': '同学甲', 'school_name': '示例大学',
+      'device_code': 'device', 'is_other_user': 0, 'created_at': 0,
+    });
+    await raw.setVersion(8);
+    await raw.close();
+
+    final upgraded = await ChaoxingStore.open(legacyPath);
+    expect((await upgraded.accounts()).single.sessionExpired, isFalse);
+    await upgraded.setSessionExpired('138', expired: true);
+    expect((await upgraded.accounts()).single.sessionExpired, isTrue);
+    await upgraded.putTag(name: '室友', colorIndex: 0);
+    expect((await upgraded.tags()).single.name, '室友');
+    await upgraded.close();
+  });
+
   test('置顶课程每个账号有上限', () async {
     await store.setCoursesPinned('138', [for (var index = 0; index < ChaoxingStore.pinnedCourseLimit + 5; index++) index], pinned: true);
     expect(await store.pinnedCourses('138'), hasLength(ChaoxingStore.pinnedCourseLimit));
