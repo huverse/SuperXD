@@ -140,6 +140,9 @@ class ChaoxingStore {
   // 按班级记住的签到位置：每个班一行，只留最近签过的 200 个班。
   static const classLocationLimit = 200;
 
+  // 「这附近不再问要不要收藏」的地点：只留最近 50 个（与收藏位置同一上限）。
+  static const quietPlaceLimit = 50;
+
   // 学习通课表缓存 7 天，过期再拉（与学习通客户端同一口径）。
   static const lessonCacheLifetime = Duration(days: 7);
 
@@ -147,7 +150,7 @@ class ChaoxingStore {
     final store = ChaoxingStore._(
       await openDatabase(
         path,
-        version: 9,
+        version: 10,
         onCreate: (database, _) async {
           await database.execute(
             'CREATE TABLE accounts (phone_number TEXT PRIMARY KEY, uid INTEGER NOT NULL, puid INTEGER NOT NULL, '
@@ -169,6 +172,7 @@ class ChaoxingStore {
           await _createClassLocations(database);
           await _createPinnedChats(database);
           await _createTagTables(database);
+          await _createQuietPlaces(database);
         },
         onUpgrade: (database, oldVersion, _) async {
           if (oldVersion < 2) {
@@ -208,6 +212,8 @@ class ChaoxingStore {
             await _addColumn(database, 'accounts', 'session_expired', 'INTEGER NOT NULL DEFAULT 0');
             await _createTagTables(database);
           }
+          // 第 10 版：签完问收藏时「这附近不再问」的地点。
+          if (oldVersion < 10) await _createQuietPlaces(database);
         },
       ),
     );
@@ -273,10 +279,18 @@ class ChaoxingStore {
     );
   }
 
+  static Future<void> _createQuietPlaces(Database database) async {
+    await database.execute(
+      'CREATE TABLE IF NOT EXISTS quiet_places (id INTEGER PRIMARY KEY AUTOINCREMENT, latitude REAL NOT NULL, '
+      'longitude REAL NOT NULL, system TEXT NOT NULL, created_at INTEGER NOT NULL)',
+    );
+  }
+
   // 只增不删的数据都要有上限：打开时整库裁剪一次，之后每次写入只裁剪写到的那张表（或那个账号的那几行）。
   Future<void> _pruneAll() async {
     await _pruneLocations();
     await _pruneClassLocations();
+    await _pruneQuietPlaces();
     // 学习通课表缓存过期即删（读的时候也按 fetchedAt 判断，这里不让过期的原文一直躺在库里）。
     await _database.delete(
       'lesson_cache',
@@ -308,6 +322,10 @@ class ChaoxingStore {
   Future<void> _pruneClassLocations() => _database.rawDelete(
     'DELETE FROM class_locations WHERE class_id NOT IN '
     '(SELECT class_id FROM class_locations ORDER BY updated_at DESC LIMIT $classLocationLimit)',
+  );
+
+  Future<void> _pruneQuietPlaces() => _database.rawDelete(
+    'DELETE FROM quiet_places WHERE id NOT IN (SELECT id FROM quiet_places ORDER BY id DESC LIMIT $quietPlaceLimit)',
   );
 
   Future<void> _pruneFaceImages(String phoneNumber) => _database.rawDelete(
@@ -655,6 +673,22 @@ class ChaoxingStore {
       'updated_at': DateTime.now().toUtc().millisecondsSinceEpoch,
     });
     await _pruneLocations();
+  }
+
+  // 「这附近不再问」的地点（只记坐标，名称用不着）。
+  Future<List<ChaoxingLocation>> quietPlaces() async {
+    final rows = await _database.query('quiet_places', orderBy: 'id DESC', limit: quietPlaceLimit);
+    return [for (final row in rows) _location({...row, 'address': ''})];
+  }
+
+  Future<void> putQuietPlace(ChaoxingLocation location) async {
+    await _database.insert('quiet_places', {
+      'latitude': location.latitude,
+      'longitude': location.longitude,
+      'system': location.system.name,
+      'created_at': DateTime.now().toUtc().millisecondsSinceEpoch,
+    });
+    await _pruneQuietPlaces();
   }
 
   Future<void> removeLocation(int id) async {

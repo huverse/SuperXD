@@ -82,6 +82,8 @@ class ChaoxingController extends ChangeNotifier {
   List<ChaoxingActivity> lessonActivities = const [];
   Set<int> pinnedClassIds = const {};
   List<ChaoxingSavedLocation> locations = const [];
+  // 签完问收藏时选了「这附近不再问」的地点。
+  List<ChaoxingLocation> quietPlaces = const [];
   String? error;
   bool busy = false;
 
@@ -160,6 +162,7 @@ class ChaoxingController extends ChangeNotifier {
       accountList = await accounts.list();
       await _loadTags();
       locations = await accounts.store.locations();
+      quietPlaces = await accounts.store.quietPlaces();
       if (accountList.isEmpty) {
         status = ChaoxingStatus.signedOut;
         _notify();
@@ -394,7 +397,8 @@ class ChaoxingController extends ChangeNotifier {
   }
 
   // 首页扫课堂签到二维码（参考项目 1.19.2）：码里只有活动号，按详情组出活动，课程列表里找不到这门课也能签。
-  // 班级与课程号取详情里的，详情没给课程号时按班级到课程列表里找；课程名同样从课程列表找，找不到用「课堂签到」。
+  // 班级与课程号取详情里的，详情没给课程号时按班级到课程列表里找；课程名同样从课程列表找，
+  // 找不到时按班级号查班级名（同参考项目），也查不到才用「课堂签到」。
   Future<ChaoxingActivity> scannedActivity(ChaoxingQrCode code) async {
     final activeId = code.activeId;
     if (activeId == null) {
@@ -413,7 +417,7 @@ class ChaoxingController extends ChangeNotifier {
       courseId: info.courseId != 0 ? info.courseId : course?.courseId ?? 0,
       classId: info.classId,
       title: info.title.isEmpty ? signType.label : info.title,
-      subtitle: course?.name ?? '课堂签到',
+      subtitle: course?.name ?? await _className(client, info.classId) ?? '课堂签到',
       signType: signType,
       startTime: info.startTime,
       endTime: info.endTime,
@@ -421,6 +425,17 @@ class ChaoxingController extends ChangeNotifier {
       userStatus: 0,
       ext: '',
     );
+  }
+
+  // 班级名只是标题，查不到不挡签到：记日志后返回空。
+  Future<String?> _className(ChaoxingClient client, int classId) async {
+    if (classId == 0) return null;
+    try {
+      return await accounts.run(client, () => chaoxingClassName(client, classId));
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=class_name errorType=${failure.runtimeType}\n$stack');
+      return null;
+    }
   }
 
   Future<ChaoxingCaptchaPuzzle> captchaPuzzle(ChaoxingClient client, ChaoxingActivity activity) =>
@@ -650,6 +665,16 @@ class ChaoxingController extends ChangeNotifier {
       if (chaoxingDistanceMeters(saved.location, location) <= withinMeters) return saved;
     }
     return null;
+  }
+
+  // 签完要不要问收藏（同参考项目）：500 米内已有收藏，或用户在附近选过「这附近不再问」，就不问。
+  bool shouldOfferSave(ChaoxingLocation location) =>
+      nearbyLocation(location) == null && !quietPlaces.any((place) => chaoxingDistanceMeters(place, location) <= 500);
+
+  Future<void> quietNearby(ChaoxingLocation location) async {
+    await accounts.store.putQuietPlace(location);
+    quietPlaces = await accounts.store.quietPlaces();
+    _notify();
   }
 
   Future<void> _open(ChaoxingAccountRecord record) async {

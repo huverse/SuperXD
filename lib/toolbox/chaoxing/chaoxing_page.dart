@@ -158,6 +158,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     scanQrCode: widget.runtime.scanQrCode,
     watchQrCode: widget.runtime.watchQrCode,
     pickImage: widget.runtime.pickImage,
+    pickImages: widget.runtime.pickImages,
   );
 
   Future<void> _accountMenu(BuildContext anchor) async {

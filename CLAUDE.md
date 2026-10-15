@@ -135,6 +135,7 @@
     - 学习通签到位置：按班级只记最近一次签到成功用的位置，最多 200 个班，打开库时裁剪，随「清除数据」删除。
     - 学习通置顶的群：每个账号最多 200 个，打开库与每次写入时裁剪，删账号或「清除数据」时删除。
     - 学习通账号标签：最多 20 个，账号与标签的关联随账号或标签删除，「清除数据」时一并删除。
+    - 学习通「这附近不再问要不要收藏」的地点：只记坐标，最多 50 个，打开库与每次写入时裁剪，随「清除数据」删除。
     - 应用更新：缓存 app_update 文件夹只留一个版本的安装包（新下载前删掉别的），版本号不高于已装版本的在启动时删除；检查记录是应用支持目录下固定大小的 app_update.json。服务端发布目录只放当前版本（见 server/README.md）。
     - 私信：好友 500；每个好友本机保留最近 200 条；邀请记录 31 天。服务端信箱单条密文 256KB、每设备待取 1000 条，取走确认即删、未取走 30 天删除，设备 400 天不活跃连同关系与信箱删除（见 server/README.md）。
     - 新增只增不删的数据时，必须同时给出上限或清理策略。
@@ -189,7 +190,7 @@
   - legal_page_test.dart、about_page_test.dart、course_clock_performance_test.dart
 - 主题与显示设置：atmosphere_test.dart、campus_glass_test.dart、campus_glass_button_test.dart、campus_motion_test.dart、dark_mode_test.dart、appearance_settings_test.dart、wallpaper_test.dart
 - 百宝箱：toolbox_widget_test.dart、toolbox_download_test.dart、toolbox_media_features_test.dart（含短视频库迁移、旧下载记录兼容、按工具清空下载、短视频清除数据、分享卡片按注册表打开）、short_video_parser_test.dart、media_image_test.dart
-  - 学习通签到：chaoxing_protocol_test.dart（协议、设备信息与设备码、学校单位、课表推断与坐标转换）、chaoxing_store_test.dart（本机库与上限、标签校验与 v9 升级）、chaoxing_batch_test.dart（多人连签的顺序、间隔、停止与强制）、chaoxing_ui_test.dart（登录、签到、多人连签、往期补签、强制签到、按课程查看、课表推断、代签入口与导入流程、群聊先列群再按群拉消息（置顶、搜索、同名合并）、签到对象按标签勾选、人脸照片里用学习通存的那张先重处理，用 chaoxing_fake_server.dart 与 chaoxing_fake_hub.dart）
+  - 学习通签到：chaoxing_protocol_test.dart（协议、设备信息与设备码、学校单位、课表推断与坐标转换）、chaoxing_store_test.dart（本机库与上限、标签校验与 v9 升级、不再问的地点与 v10 升级）、chaoxing_batch_test.dart（多人连签的顺序、间隔、停止与强制）、chaoxing_ui_test.dart（登录、签到、多人连签、往期补签、强制签到、按课程查看、课表推断、代签入口与导入流程、群聊先列群再按群拉消息（置顶、搜索、同名合并）、签到对象按标签勾选、人脸照片里用学习通存的那张先重处理、签完问收藏（改名、这附近不再问）、现拍人脸照片签完再问存不存、多人拍照签到一次多选，用 chaoxing_fake_server.dart 与 chaoxing_fake_hub.dart）
   - 代签：chaoxing_pack_test.dart（凭据包编解码与封装，含第 1 版兼容）、chaoxing_delegate_test.dart（两台设备之间的出示与导入、带人脸照片、连签与强制签到、学校单位与模拟客户端、设备码来源：重新登录不换码、代签码只带真实设备码，chaoxing_fake_hub.dart 是内存中转）
   - 审查整改回归：chaoxing_regression_test.dart（删账号与后台刷新竞态不留会话、删当前账号关会话、切账号代次、自动重登的错误口径、课表缓存裁剪、弹层避让键盘、主账号置顶与账号拖动排序、重新登录保留备注名与排序、登录已失效记库与一键修复、账号管理里的标签、手势重画与签到码重复提交）
   - 人脸与群聊：chaoxing_im_test.dart（DES、protobuf 附件解析、环信链路与类型映射）、chaoxing_protocol_test.dart 里的人脸公钥与签名用例

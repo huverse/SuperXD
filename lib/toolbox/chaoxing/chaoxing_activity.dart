@@ -5,6 +5,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 
 const chaoxingCourseListUri = 'https://mooc1-api.chaoxing.com/mycourse/backclazzdata?view=json&rss=1';
+const chaoxingClassNameUri = 'https://mooc1-api.chaoxing.com/gas/clazz';
 const chaoxingActiveListUri = 'https://mobilelearn.chaoxing.com/v2/apis/active/student/activelist';
 const chaoxingActiveInfoUri = 'https://mobilelearn.chaoxing.com/v2/apis/active/getPPTActiveInfo';
 
@@ -69,6 +70,17 @@ Future<bool?> chaoxingClassValid(ChaoxingClient client, int classId) async {
   };
   client.classIds = classIds;
   return classIds.contains(classId);
+}
+
+// 按班级号查班级名（同参考项目：扫码打开的签到不在课程列表里时，拿它当标题）；查不到返回空。
+Future<String?> chaoxingClassName(ChaoxingClient client, int classId) async {
+  final response = await client.http.get(
+    Uri.parse(chaoxingClassNameUri).replace(queryParameters: {'fields': 'name', 'view': 'json', 'id': '$classId'}),
+  );
+  final data = chaoxingJson(response.body)['data'];
+  if (data is! List || data.isEmpty || data.first is! Map) return null;
+  final name = chaoxingString((data.first as Map)['name']).trim();
+  return name.isEmpty ? null : name;
 }
 
 // 强制签到给别的账号签时，按课程号找他自己所在的班级（同一门课可能分在不同班）；找不到返回空，沿用原班级。

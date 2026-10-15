@@ -94,6 +94,8 @@ class FakeChaoxing {
   String? preSignBody;
 
   List<Map<String, Object?>> courses = [];
+  // 按班级号查班级名（gas/clazz），没登记的班查出来是空。
+  final classNames = <int, String>{};
   List<Map<String, Object?>> activities = [];
   Map<String, Object?> activeInfo = {};
 
@@ -210,6 +212,10 @@ class FakeChaoxing {
       });
     }
     if (request.url.host == 'mooc1-api.chaoxing.com') {
+      if (path == '/gas/clazz') {
+        final name = classNames[int.tryParse(request.url.queryParameters['id'] ?? '')];
+        return _json({'data': [if (name != null) {'name': name}]});
+      }
       // 真实的课程频道都带 cataName；测试夹具里省掉，这里统一补上。
       return _json({
         'result': 1,

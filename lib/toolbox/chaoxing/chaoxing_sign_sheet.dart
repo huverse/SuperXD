@@ -54,6 +54,7 @@ Future<ChaoxingSignSummary?> showChaoxingSignSheet(
   ToolboxQrScan? scanQrCode,
   ToolboxQrWatch? watchQrCode,
   ToolboxImagePick? pickImage,
+  ToolboxImagesPick? pickImages,
 }) => showCampusSheet<ChaoxingSignSummary>(
   context: context,
   builder: (context) => _ChaoxingSignSheet(
@@ -62,16 +63,25 @@ Future<ChaoxingSignSummary?> showChaoxingSignSheet(
     scanQrCode: scanQrCode,
     watchQrCode: watchQrCode,
     pickImage: pickImage,
+    pickImages: pickImages,
   ),
 );
 
 class _ChaoxingSignSheet extends StatefulWidget {
-  const _ChaoxingSignSheet({required this.controller, required this.activity, this.scanQrCode, this.watchQrCode, this.pickImage});
+  const _ChaoxingSignSheet({
+    required this.controller,
+    required this.activity,
+    this.scanQrCode,
+    this.watchQrCode,
+    this.pickImage,
+    this.pickImages,
+  });
   final ChaoxingController controller;
   final ChaoxingActivity activity;
   final ToolboxQrScan? scanQrCode;
   final ToolboxQrWatch? watchQrCode;
   final ToolboxImagePick? pickImage;
+  final ToolboxImagesPick? pickImages;
   @override
   State<_ChaoxingSignSheet> createState() => _ChaoxingSignSheetState();
 }
@@ -98,6 +108,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   bool _manualLocation = false;
   ChaoxingLocation? _savedLocation;
   ChaoxingQrFeed? _feed;
+  // 开签前现拍补给的人脸照片（只上传、还没进人脸照片列表）：签好后问存不存。
+  final _newFaces = <ChaoxingSignTarget, String>{};
 
   ChaoxingSignType get _type => _activity.signType;
   bool get _needsLocation => _type == ChaoxingSignType.location || (_info?.needLocation ?? false);
@@ -297,6 +309,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     final chosen = picked;
     // [人工决策-2026-10-08 19:35:38] 地图选点只用于这次签到，不自动收藏（同高德、Google 地图：保存要用户明确点）；
     // 收藏只走签到成功后的「收藏这次的位置？」询问（500 米内已有收藏不问）。取代选点即收藏的旧做法。
+    // [人工决策-2026-10-15 19:42:58] 用户选了补齐参考项目的两处：管理收藏里可以主动在地图上添加（见 chaoxing_location_sheet.dart），
+    // 签完的询问多一个「这附近不再问」（见 _offerSaveLocation）。这里地图选点仍然不自动收藏。
     setState(() {
       _savedLocation = chosen;
       _address.text = chosen.address;
@@ -331,11 +345,41 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     }
   }
 
+  // 多人拍照签到从相册一次选多张（同参考项目）：按签到对象的顺序分给还没有照片的人。
+  Future<void> _pickPhotos(List<ChaoxingSignTarget> missing) async {
+    try {
+      final photos = await pickChaoxingPhotos(widget.pickImages, limit: missing.length);
+      if (photos.isEmpty || !mounted) return;
+      setState(() {
+        // 老系统的选择器可能不认张数上限，多出来的不用。
+        for (final (index, bytes) in photos.take(missing.length).indexed) {
+          missing[index]
+            ..photoBytes = bytes
+            ..photoName = '相册照片'
+            ..photoObjectId = null;
+        }
+        _error = null;
+      });
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=photos errorType=${failure.runtimeType}\n$stack');
+      if (mounted) setState(() => _error = chaoxingPhotoUnreadableMessage);
+    }
+  }
+
+  // 勾选了、还没签好、也还没有照片的人。
+  List<ChaoxingSignTarget> _missingPhotos() => [
+    for (final target in _batch.pending)
+      if (target.photoBytes == null && target.photoObjectId == null) target,
+  ];
+
   // 人脸照片：默认用这个人存着的那张，也可以这次另选一张。
   Future<void> _pickFace(ChaoxingSignTarget target) async {
     final objectId = await showChaoxingFaceSheet(context, controller: widget.controller, record: target.record, pickImage: widget.pickImage, pick: true);
     if (!mounted || objectId == null) return;
-    setState(() => target.faceObjectId = objectId);
+    setState(() {
+      target.faceObjectId = objectId;
+      _newFaces.remove(target);
+    });
   }
 
   // 从主签到跳到它关联的签退活动，或从签退活动回到主签到；换活动后详情要重新取。
@@ -517,7 +561,10 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     try {
       final bytes = await pickChaoxingFacePhoto(widget.pickImage, source: ImageSource.camera);
       if (bytes == null || !mounted) return false;
-      target.faceObjectId = await widget.controller.faces.uploadFaceImage(target.record, bytes);
+      // 现拍的先只上传给这次签到用，签好后再问存不存（_offerSaveFaces），免得挤掉已经存着的照片。
+      final objectId = await widget.controller.faces.uploadFaceImage(target.record, bytes, remember: false);
+      target.faceObjectId = objectId;
+      _newFaces[target] = objectId;
       return true;
     } on ChaoxingFailure catch (failure) {
       if (mounted) setState(() => _error = failure.message);
@@ -528,19 +575,71 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     return false;
   }
 
-  // 位置签到成功后：附近 500 米内还没有收藏时问一句要不要收藏这次的位置（对齐参考项目，问了就不打扰）。
+  // 位置签到成功后：附近 500 米内没有收藏、也没选过「这附近不再问」时，问一句要不要收藏这次的位置，
+  // 收藏名当场可改（对齐参考项目）。
   Future<void> _offerSaveLocation(ChaoxingSignInputs inputs) async {
     final location = inputs.location;
     if (location == null || !_batch.targets.any((target) => target.selected && target.done)) return;
-    if (widget.controller.nearbyLocation(location) != null) return;
+    if (!widget.controller.shouldOfferSave(location)) return;
+    final name = TextEditingController(text: location.address);
+    final choice = await showCampusDialog<String>(
+      context: context,
+      builder: (dialog) => CampusGlassDialog(
+        title: const Text('收藏这次的位置？'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            SizedBox(height: campusFieldGap(dialog)),
+            TextField(controller: name, decoration: const InputDecoration(labelText: '收藏名')),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(dialog, 'quiet'), child: const Text('这附近不再问')),
+          TextButton(onPressed: () => Navigator.pop(dialog), child: const Text('不收藏')),
+          FilledButton(onPressed: () => Navigator.pop(dialog, 'save'), child: const Text('收藏')),
+        ],
+      ),
+    );
+    final label = name.text.trim();
+    name.dispose();
+    if (!mounted) return;
+    if (choice == 'quiet') await widget.controller.quietNearby(location);
+    if (choice == 'save') await widget.controller.saveLocation(label.isEmpty ? location.address : label, location);
+  }
+
+  // 开签前现拍的人脸照片：签好的人问一次要不要存进人脸照片（同参考项目），不存就只这次用；
+  // 没签好的先留着，重试签好后再问。
+  Future<void> _offerSaveFaces() async {
+    final fresh = {for (final entry in _newFaces.entries) if (entry.key.done) entry.key: entry.value};
+    if (fresh.isEmpty || !mounted) return;
+    _newFaces.removeWhere((target, _) => fresh.containsKey(target));
     final agreed = await showCampusConfirm(
       context,
-      title: '收藏这次的位置？',
-      message: '下次在这附近签到可以直接选；附近 500 米内已有收藏时不再问。',
-      action: '收藏',
+      title: '保存刚拍的人脸照片？',
+      message: fresh.length > 1 ? '共 ${fresh.length} 张，存下后下次签到可以直接用' : '存下后下次签到可以直接用',
+      action: '保存',
+      cancel: '不保存',
     );
-    if (!mounted || !agreed) return;
-    await widget.controller.saveLocation(location.address, location);
+    if (!agreed) return;
+    try {
+      for (final entry in fresh.entries) {
+        await widget.controller.faces.rememberFaceImage(entry.key.record, entry.value);
+      }
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=save_new_faces errorType=${failure.runtimeType}\n$stack');
+      if (mounted) showCampusToast(context, '人脸照片没存上');
+    }
+  }
+
+  // 一轮签完后的顺手询问（收藏位置、存现拍的人脸照片）：没存上不影响签到结果。
+  Future<void> _afterRun(ChaoxingSignInputs? inputs) async {
+    try {
+      if (inputs != null) await _offerSaveLocation(inputs);
+      await _offerSaveFaces();
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=after_run errorType=${failure.runtimeType}\n$stack');
+    }
   }
 
   Future<void> _start() async {
@@ -580,12 +679,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     }
     if (!mounted) return;
     await _batch.run(_signer(() => inputs));
-    try {
-      await _offerSaveLocation(inputs);
-    } catch (failure, stack) {
-      // 收藏只是顺手的事，没存上不影响签到结果。
-      campusLog('[Chaoxing] action=offer_save_location errorType=${failure.runtimeType}\n$stack');
-    }
+    await _afterRun(inputs);
     _finishIfDone();
   }
 
@@ -608,6 +702,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     } finally {
       if (mounted) setState(() => _scanning = false);
     }
+    await _afterRun(null);
     _finishIfDone();
   }
 
@@ -728,6 +823,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       return;
     }
     await _batch.retry(target, _signer(() => inputs), force: force);
+    await _afterRun(null);
     _finishIfDone();
   }
 
@@ -911,6 +1007,19 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
             const SizedBox(height: 8),
             Wrap(spacing: 8, runSpacing: 8, children: chips),
           ],
+          // 好几个人都还缺照片时，一次从相册选齐（每人一行的按钮照旧能单独换）。
+          if (_needsPhoto && widget.pickImages != null)
+            if (_missingPhotos() case final missing when missing.length > 1) ...[
+              const SizedBox(height: 8),
+              Align(
+                alignment: AlignmentDirectional.centerStart,
+                child: OutlinedButton.icon(
+                  onPressed: _busy ? null : () => _pickPhotos(missing),
+                  icon: const CampusIcon(CampusIcons.images),
+                  label: Text('从相册选 ${missing.length} 张'),
+                ),
+              ),
+            ],
           const SizedBox(height: 8),
           for (final target in _batch.targets) _targetRow(palette, target),
         ] else ...[

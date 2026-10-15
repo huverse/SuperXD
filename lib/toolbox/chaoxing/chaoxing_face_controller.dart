@@ -46,12 +46,18 @@ class ChaoxingFaceController {
   }
 
   // 人脸照片（补拍、相册选或裁剪好的，不做风格化，要认得出人）上传到这个账号自己的云盘换 objectId，
-  // 并记进本机的人脸照片索引供以后复用。
-  Future<String> uploadFaceImage(ChaoxingAccountRecord record, List<int> bytes) async {
+  // 并记进本机的人脸照片索引供以后复用；remember 为假时只上传（签到时现拍的，签完再问存不存）。
+  Future<String> uploadFaceImage(ChaoxingAccountRecord record, List<int> bytes, {bool remember = true}) async {
     final client = await clientOf(record);
     final objectId = await accounts.run(client, () => chaoxingUploadPhoto(client, bytes: bytes));
-    await accounts.store.putFaceImage(record.phoneNumber, objectId);
+    if (remember) await accounts.store.putFaceImage(record.phoneNumber, objectId);
     return objectId;
+  }
+
+  // 签完答应保存的现拍照片记进索引，并算上刚才签到用过的这一次（同参考项目）。
+  Future<void> rememberFaceImage(ChaoxingAccountRecord record, String objectId) async {
+    await accounts.store.putFaceImage(record.phoneNumber, objectId);
+    await accounts.store.markFaceImageUsed(record.phoneNumber, objectId, failed: false);
   }
 
   // 把学习通里存的默认人脸照片重处理一张再上传换新的 objectId（同一张照片直接反复用会被教师端比对），

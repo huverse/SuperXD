@@ -230,6 +230,8 @@ class _SuperXdAppState extends State<SuperXdApp> {
         ),
     // 人脸与签到照片的取图：与壁纸共用 page 层的取图，缓存副本用完即删。
     pickImage: pickImageCopy,
+    // 多人拍照签到从相册一次选多张。
+    pickImages: pickImagesCopy,
     // 工具与各自的服务都登记在注册表里；代签凭据包与私信共用同一个自建中转，地址同样只从构建参数来。
     catalog: toolboxCatalog,
     relayUrl: relayBaseUrl.isEmpty ? null : Uri.tryParse(relayBaseUrl),

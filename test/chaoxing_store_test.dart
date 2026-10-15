@@ -368,6 +368,29 @@ void main() {
     await upgraded.close();
   });
 
+  test('「这附近不再问」的地点只留最近 50 个；v9 的库升到 v10 建出这张表', () async {
+    for (var index = 0; index < ChaoxingStore.quietPlaceLimit + 3; index++) {
+      await store.putQuietPlace(ChaoxingLocation(latitude: 30 + index * .01, longitude: 117, address: '', system: ChaoxingCoordinateSystem.gcj02));
+    }
+    final places = await store.quietPlaces();
+    expect(places, hasLength(ChaoxingStore.quietPlaceLimit));
+    // 留下的是最近记的，最早那几个被裁掉。
+    expect(places.first.latitude, closeTo(30 + (ChaoxingStore.quietPlaceLimit + 2) * .01, 1e-9));
+    expect(places.first.system, ChaoxingCoordinateSystem.gcj02);
+
+    final legacyPath = path.join(directory.path, 'v9.db');
+    await (await ChaoxingStore.open(legacyPath)).close();
+    final raw = await openDatabase(legacyPath);
+    await raw.execute('DROP TABLE quiet_places');
+    await raw.setVersion(9);
+    await raw.close();
+    final upgraded = await ChaoxingStore.open(legacyPath);
+    expect(await upgraded.quietPlaces(), isEmpty);
+    await upgraded.putQuietPlace(const ChaoxingLocation(latitude: 36.6, longitude: 117, address: ''));
+    expect(await upgraded.quietPlaces(), hasLength(1));
+    await upgraded.close();
+  });
+
   test('置顶课程每个账号有上限', () async {
     await store.setCoursesPinned('138', [for (var index = 0; index < ChaoxingStore.pinnedCourseLimit + 5; index++) index], pinned: true);
     expect(await store.pinnedCourses('138'), hasLength(ChaoxingStore.pinnedCourseLimit));

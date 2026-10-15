@@ -8,10 +8,14 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_map_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 
-// 收藏位置的管理弹层：改名与删除（签到弹层里只管选，这里管维护）。
+// 收藏位置的管理弹层：在地图上添加、改名与删除（签到弹层里只管选，这里管维护）。
+// [人工决策-2026-10-15 19:42:58] 用户选了补齐参考项目：这里可以主动在地图上添加收藏（取代 10-08「收藏只走签到成功后的询问」）；
+// 地图用不了（没带 key 或不是 arm 设备）时没有这个入口。
 Future<void> showChaoxingLocationSheet(BuildContext context, {required ChaoxingController controller}) =>
     showCampusSheet<void>(context: context, builder: (context) => _ChaoxingLocationSheet(controller: controller));
 
@@ -65,6 +69,21 @@ class _ChaoxingLocationSheetState extends State<_ChaoxingLocationSheet> {
     if (action == 'remove') await _remove(saved);
   }
 
+  // 全屏地图选点并起名，从最近的收藏处开始（没有收藏时是全国视角，点「定位到我」）。
+  Future<void> _add() async {
+    final ChaoxingLocation? picked;
+    try {
+      picked = await openChaoxingMapPicker(context, initial: widget.controller.locations.firstOrNull?.location, favorite: true);
+    } catch (error, stack) {
+      campusLog('[Chaoxing] action=add_location_map errorType=${error.runtimeType}\n$stack');
+      if (mounted) await showCampusNotice(context, '地图没打开，请重试');
+      return;
+    }
+    if (picked == null || !mounted) return;
+    final chosen = picked;
+    await _run(() => widget.controller.saveLocation(chosen.address, chosen), '收藏没完成，请重试');
+  }
+
   Future<void> _run(Future<void> Function() action, String fallback) async {
     setState(() => _working = true);
     try {
@@ -104,7 +123,10 @@ class _ChaoxingLocationSheetState extends State<_ChaoxingLocationSheet> {
                   if (saved.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
-                      child: Text('还没有收藏位置，签到成功后会问要不要收藏', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+                      child: Text(
+                        chaoxingMapAvailable ? '还没有收藏位置' : '还没有收藏位置，签到成功后会问要不要收藏',
+                        style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
+                      ),
                     )
                   else
                     // 同课程管理卡片：整卡点按改名，删除收进右上⋯（警示色并确认）。
@@ -142,6 +164,17 @@ class _ChaoxingLocationSheetState extends State<_ChaoxingLocationSheet> {
                           ],
                         ),
                       ),
+                  if (chaoxingMapAvailable) ...[
+                    const SizedBox(height: 4),
+                    Align(
+                      alignment: AlignmentDirectional.centerStart,
+                      child: OutlinedButton.icon(
+                        onPressed: _working || saved.length >= ChaoxingStore.locationLimit ? null : _add,
+                        icon: const CampusIcon(CampusIcons.addPlace),
+                        label: Text(saved.length >= ChaoxingStore.locationLimit ? '最多 ${ChaoxingStore.locationLimit} 个收藏' : '在地图上添加'),
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
