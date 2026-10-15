@@ -147,6 +147,9 @@
     - 确认和提示统一使用 theme/campus_transitions.dart 的 showCampusConfirm 与 showCampusNotice。
     - setState 回调不得返回 Future；给 Future 字段赋值时用块体。由 test/code_conventions_test.dart 守护。
     - 只有图标的 IconButton 必须带 tooltip，作为读屏标签。由 test/code_conventions_test.dart 守护。
+13. 公开内容不出现实名
+    - [人工决策-2026-10-15 20:20:38] 仓库公开，代码、测试数据、文档、提交信息、PR 与 Issue 的正文和评论一律不写真实姓名、手机号、学号等实名信息（含真实课表里的教师名）。
+    - 写设备验证记录时，账号用「账号甲」「账号乙」等代称，测试数据用合成名字。
 
 # 界面约定（来自用户反馈，细节见自动记忆）
 

@@ -30,7 +30,7 @@ void main() {
         courseName: 'Java程序设计',
         sectionId: 'S',
         credit: 2,
-        teacherName: '董福宪',
+        teacherName: '合成教师',
         meetings: [CourseMeeting(weekday: 3, periodStart: 3, periodEnd: 4, place: '知勤庭311室', weeks: const [1])],
       ),
     ];
