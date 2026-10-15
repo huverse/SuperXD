@@ -382,11 +382,12 @@ class _MediaResultPageState extends State<MediaResultPage> {
                                 if (result.title.length > 60)
                                   Align(
                                     alignment: Alignment.centerRight,
-                                    child: TextButton(
+                                    child: TextButton.icon(
                                       onPressed: () => setState(
                                         () => _expanded = !_expanded,
                                       ),
-                                      child: Text(_expanded ? '收起' : '展开'),
+                                      icon: CampusIcon(_expanded ? CampusIcons.collapse : CampusIcons.expand),
+                                      label: Text(_expanded ? '收起' : '展开'),
                                     ),
                                   ),
                                 if (result.author.isNotEmpty)

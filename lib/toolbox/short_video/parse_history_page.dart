@@ -58,7 +58,17 @@ class ParseHistoryPage extends StatefulWidget {
 }
 
 class _ParseHistoryPageState extends State<ParseHistoryPage> {
-  late Future<List<Map<String, Object?>>> _rows = widget.store.history();
+  late Future<List<Map<String, Object?>>> _rows = _history();
+
+  // 失败交给页面上的「重试」，这里先带堆栈记一笔（FutureBuilder 只拿来显示）。
+  Future<List<Map<String, Object?>>> _history() async {
+    try {
+      return await widget.store.history();
+    } catch (error, stack) {
+      campusLog('[ShortVideo] action=history errorType=${error.runtimeType}\n$stack');
+      rethrow;
+    }
+  }
   Future<void> _remove([String? id]) async {
     if (!await showCampusConfirm(
       context,
@@ -76,7 +86,7 @@ class _ParseHistoryPageState extends State<ParseHistoryPage> {
       }
       if (mounted) {
         setState(() {
-          _rows = widget.store.history();
+          _rows = _history();
         });
       }
     } catch (error, stack) {
@@ -113,13 +123,11 @@ class _ParseHistoryPageState extends State<ParseHistoryPage> {
         future: _rows,
         builder: (context, snapshot) {
           if (snapshot.hasError) {
-            return Center(
-              child: TextButton(
-                onPressed: () => setState(() {
-                  _rows = widget.store.history();
-                }),
-                child: const Text('读取失败，重试'),
-              ),
+            return CampusLoadError(
+              message: '读取失败',
+              onRetry: () => setState(() {
+                _rows = _history();
+              }),
             );
           }
           if (!snapshot.hasData) {

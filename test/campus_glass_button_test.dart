@@ -155,6 +155,16 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('整块读取失败：原因用警示色，「重试」是带图标的按钮，点按回调', (tester) async {
+    var retried = 0;
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Scaffold(body: CampusLoadError(message: '读取失败', onRetry: () => retried++))));
+    expect(tester.widget<Text>(find.text('读取失败')).style?.color, CampusPalette.of(tester.element(find.text('读取失败'))).danger);
+    final button = find.ancestor(of: find.text('重试'), matching: find.byWidgetPredicate((widget) => widget is ButtonStyleButton));
+    expect(find.descendant(of: button, matching: find.byType(CampusIcon)), findsOneWidget);
+    await tester.tap(find.text('重试'));
+    expect(retried, 1);
+  });
+
   testWidgets('内容区按钮与标签为不透明色调胶囊不取背景；导航层与玻璃面板里仍是玻璃', (tester) async {
     campusGlassReady.value = true;
     final palette = CampusPalette.values.first;

@@ -41,7 +41,7 @@
 # 组合根与路由门禁
 
 - main.dart 的启动顺序：
-  1. 把日志出口注入为 debugPrint，再初始化时区库、图标与第三方许可。
+  1. 把日志出口注入为 debugPrint，接住没被处理的异步错误（带堆栈走 campusLog），再初始化时区库、图标与第三方许可。
   2. 打开 AccountStore，组装 AppSession（内含 AccountGateway 与 SecureCredentialStore）、DisplaySettings 与设备级 SocialService（social.db、安全存储里的身份、按 SUPERXD_RELAY 建的中转传输，未配置或格式不对时为不可用），以及设备级 AppUpdates（appUpdates：渠道取构建渠道 appFlavor、架构取正在运行的 ABI、已装版本取 buildNumber；没配中转或不是渠道构建时为空，不检查更新）。
   3. runApp 之后，不等待地初始化玻璃渲染与私信服务，再恢复会话。百宝箱的 shareVideo 接到私信分享弹层，路由把 VideoOpener 接到百宝箱注册表里认得这张卡片的工具（openShared）。
   4. 恢复会话后 watchAppUpdates：清掉装好后的旧安装包，延迟 3 秒自动检查更新，回到前台时接着做被搁下的安装；查到新版由账号应用（_AccountApp）挂在根导航器上弹更新弹窗，登录页也能弹，一个提示只弹一次。

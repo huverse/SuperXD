@@ -56,6 +56,11 @@ void main() async {
   // 日志出口注入debugPrint，Android上才进入logcat，见campus_log.dart。
   campusLog = debugPrint;
   WidgetsFlutterBinding.ensureInitialized();
+  // 没被接住的异步错误（火忘式调用漏了 catch）也带堆栈走 campusLog，不只由引擎打到控制台。
+  WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
+    campusLog('[App] action=uncaught errorType=${error.runtimeType}\n$stack');
+    return true;
+  };
   // Android 10–14默认不绘制到导航栏后，透明导航栏会露出原生窗口底色（浅色为白条）；15+系统已强制全面屏。
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   ensureCampusClock();

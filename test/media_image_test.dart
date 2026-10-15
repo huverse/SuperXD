@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/toolbox/short_video/media_image.dart';
 
 void main() {
@@ -30,6 +31,9 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.text('重试图片'), findsOneWidget);
+    // 可点的操作都带图标。
+    final retry = find.ancestor(of: find.text('重试图片'), matching: find.byWidgetPredicate((widget) => widget is ButtonStyleButton));
+    expect(find.descendant(of: retry, matching: find.byType(CampusIcon)), findsOneWidget);
     expect(calls, 1);
     await tester.tap(find.text('重试图片'));
     await tester.pumpAndSettle();

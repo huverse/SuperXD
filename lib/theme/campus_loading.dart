@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -263,6 +264,28 @@ class _CampusLoadingState extends State<CampusLoading> {
     );
     return widget.inline ? content : Center(child: content);
   }
+}
+
+// 整块读取失败：居中写原因（警示色），下面是带图标的「重试」，与 CampusLoading 成对使用。
+class CampusLoadError extends StatelessWidget {
+  const CampusLoadError({super.key, required this.message, required this.onRetry});
+  final String message;
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) => Center(
+    child: Padding(
+      padding: const EdgeInsets.all(24),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(message, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: CampusPalette.of(context).danger)),
+          const SizedBox(height: 12),
+          OutlinedButton.icon(onPressed: onRetry, icon: const CampusIcon(CampusIcons.sync), label: const Text('重试')),
+        ],
+      ),
+    ),
+  );
 }
 
 class CampusBusyContent extends StatelessWidget {
