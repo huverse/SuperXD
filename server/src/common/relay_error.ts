@@ -1,7 +1,8 @@
 import { HttpStatus } from '@nestjs/common';
 
 // 错误码登记表：客户端只按 code 分支，message 只用于日志与排查。新错误码先在这里登记，并同步客户端：
-// 私信看 lib/social/relay_client.dart 的 RelayCode，代签看 lib/toolbox/chaoxing/chaoxing_pack_client.dart 的 _failure。
+// 私信看 lib/social/relay_client.dart 的 RelayCode，代签看 lib/toolbox/chaoxing/chaoxing_pack_client.dart 的 _failure，
+// 应用更新看 lib/update/app_update_client.dart 的 _failure。
 export const RelayCode = {
   invalidRequest: 'INVALID_REQUEST', // 请求体或参数不合法
   unauthorized: 'UNAUTHORIZED', // 缺签名、签名错误或设备未注册
@@ -18,6 +19,7 @@ export const RelayCode = {
   envelopeTooLarge: 'ENVELOPE_TOO_LARGE', // 密文超过上限
   mailboxFull: 'MAILBOX_FULL', // 对方待取消息已满
   packNotFound: 'PACK_NOT_FOUND', // 代签凭据包不存在、已被取走或已过期
+  releaseNotFound: 'RELEASE_NOT_FOUND', // 这个渠道没有发布版本，或安装包文件不存在
   internal: 'INTERNAL', // 未预期的服务端错误
 } as const;
 

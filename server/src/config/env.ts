@@ -22,6 +22,8 @@ export const loadEnv = () => ({
   // 反向代理层数：部署在 Nginx 等之后时设为 1，按 X-Forwarded-For 取客户端 IP 做注册与代签接口的限流；前面没有代理时必须为 0，否则来源 IP 可被伪造。
   trustProxy: integer('RELAY_TRUST_PROXY'),
   swagger: flag('RELAY_SWAGGER'),
+  // 应用更新：版本清单（<渠道>.json）与安装包所在目录，发版时人工放入；容器里只读挂载。
+  releasesDir: required('RELAY_RELEASES_DIR'),
   mysql: {
     host: required('MYSQL_HOST'),
     port: integer('MYSQL_PORT'),

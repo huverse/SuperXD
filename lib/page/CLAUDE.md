@@ -1,8 +1,8 @@
 # page 页面
 
 定位：Flutter 页面与页面级组件。
-- 依赖范围：domain（端口与类型）、application（同步编排）、social（私信服务）、theme（视觉组件）和 app_session.dart。gateway 只用 account_access.dart，local 只用 display_settings.dart。
-- 页面只调用 CampusGateway、AccountAccess 和 SocialService，不直接读写数据库，也不直接调用教务客户端或中转服务。页面不依赖百宝箱，打开好友分享的视频经路由注入的 VideoOpener。
+- 依赖范围：domain（端口与类型）、application（同步编排、应用更新）、social（私信服务）、theme（视觉组件）和 app_session.dart。gateway 只用 account_access.dart，local 只用 display_settings.dart。
+- 页面只调用 CampusGateway、AccountAccess、SocialService 和 AppUpdates，不直接读写数据库，也不直接调用教务客户端或中转服务。页面不依赖百宝箱，打开好友分享的视频经路由注入的 VideoOpener。
 
 # 文件职责
 
@@ -79,7 +79,8 @@
     - 模糊与透明度是两条滑杆（CampusSlider），拖动中只预览，正常松手立即保存；系统取消、读屏增减没有松手回调，停手 300ms 补存；离开页面时把没存的预览存掉。
   - image_copy_pick.dart：通用取图 pickImageCopy（相册走系统照片选择器、或相机现拍，长边压缩转 JPEG），返回副本路径与 discard。插件留在缓存里的 UUID 开头副本与压缩版，取图前后对比只删这次新出现的；壁纸、相册识别二维码共用，并经组合根注入百宝箱（人脸与签到照片）。
   - account_page.dart：账号页 AccountPage（同 iOS Apple ID）。记住账号（开着时点按关闭并删凭据；关着时点按输密码，后台登录一次核对、要验证码就弹，通过才保存并停在本页，不换代次）、切换账号、导入旧版本数据一组；退出登录单独一组、红字放最底。退出后账号代次变化，账号页随旧路由一起销毁。
-  - about_page.dart：关于页 AboutPage。应用名与版本（package_info_plus 读安装包）、用户协议、隐私政策、开源许可、源代码与反馈问题（url_launcher 交给系统浏览器，打不开时原地提示链接），底部应用署名。版本信息与打开链接可注入，测试用假实现。
+  - about_page.dart：关于页 AboutPage。应用名与版本（package_info_plus 读安装包）、检查更新（传入 AppUpdates 时才有：行尾只读显示正在检查、已是最新、新版本或下载进度，点按手动检查，查到或正在更新就打开更新弹窗，查不到给原因）、用户协议、隐私政策、开源许可、源代码与反馈问题（url_launcher 交给系统浏览器，打不开时原地提示链接），底部应用署名。版本信息与打开链接可注入，测试用假实现。
+  - app_update_dialog.dart：更新弹窗 showAppUpdateDialog。版本、安装包大小与更新说明；可选更新给更新、稍后、跳过这个版本（竖排，更新在最上），点更新才下载，进度、核对、等授权（去开启）、安装都在弹窗里原地切换，下载中可后台下载收起或取消；失败给原因、重试与浏览器下载；没有这个架构的安装包只给去发布页下载；必须更新时遮罩与返回键都关不掉、没有稍后与跳过。启动查到新版由组合根弹，关于页手动检查也用它（人工决策见文件内）。
   - legal_page.dart：用户协议与隐私政策 LegalPage（路由 /legal/service、/legal/privacy），面向公开 Alpha，顶部显示更新日期 legalUpdated；改动数据处理时同步改隐私政策并更新日期。
   - licenses_page.dart：全部依赖许可列表 CampusLicensesPage 和应用署名 GalaxyousAttribution。
   - third_party_page.dart：开源许可页 ThirdPartyPage，读取 assets/third_party_notices.txt（本项目 GPL-3.0 与第三方组件），顶部进入全部依赖许可。
@@ -91,6 +92,7 @@
 - 页面平时只读本地（read 系列方法）。联网只能由用户显式触发：
   - 同步统一经 CampusSync 编排，成绩页只同步成绩。
   - 同步范围弹窗里的刷新学期，也需要用户点击才会联网。
+  - 应用更新例外：启动后的自动检查由组合根发起（每个校园日一次），页面里只有关于页的检查更新与弹窗里的下载由用户点按触发。
   - 私信例外：联系的是自建中转服务而非教务，新消息由 SocialService 的前台长轮询送达并通知，页面不自己定时拉取；进入私信时拉一次并核对好友，下拉可手动刷新。SocialService.refresh 会同步通知监听者，页面不能在构建期间调用（放到首帧之后）。
 - 好友分享的课表只读查看，不写进自己的课表；界面配置套用后提示条可撤销；视频交给百宝箱重新解析，首次使用来源仍由本人同意。
 - 今天页只读课表，编辑入口只在课表页。

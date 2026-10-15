@@ -12,6 +12,7 @@
 
 - 校园课表与成绩 Flutter 应用。当前只有 Android 宿主，对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱，目前提供短视频解析与下载、学习通签到。
 - 功能性私信：扫码互加好友后，在私信里分享课表、界面配置、短视频等功能卡片，没有文字聊天。经自建中转服务（server 目录，NestJS + MySQL + Redis）端到端加密转交，中转地址由构建参数 SUPERXD_RELAY 传入；学习通代签的凭据包也走这个中转（取件号一次性、10 分钟过期、取走即删）。
+- 应用内更新：版本清单与各架构安装包也放在这个中转（发版时上传，见 CONTRIBUTING.md）；启动后每个校园日自动检查一次、关于页可手动检查，有新版弹窗，点更新才下载，核对 SHA-256、包名、版本号与签名证书后交给系统安装；清单可设最低可用版本做强制更新。
 - 当前阶段为公开 Alpha 测试，仓库公开、以 GPL-3.0 开源（curve_geometry.dart 例外，见 README 许可一节）。Flutter 3.47.2 / Dart 3.13.2，依赖锁定在 pubspec.lock。
 - 相关文档：
   - 设计语言：UITEMP/design_language.md
@@ -41,8 +42,9 @@
 
 - main.dart 的启动顺序：
   1. 把日志出口注入为 debugPrint，再初始化时区库、图标与第三方许可。
-  2. 打开 AccountStore，组装 AppSession（内含 AccountGateway 与 SecureCredentialStore）、DisplaySettings 与设备级 SocialService（social.db、安全存储里的身份、按 SUPERXD_RELAY 建的中转传输，未配置或格式不对时为不可用）。
+  2. 打开 AccountStore，组装 AppSession（内含 AccountGateway 与 SecureCredentialStore）、DisplaySettings 与设备级 SocialService（social.db、安全存储里的身份、按 SUPERXD_RELAY 建的中转传输，未配置或格式不对时为不可用），以及设备级 AppUpdates（appUpdates：渠道取构建渠道 appFlavor、架构取正在运行的 ABI、已装版本取 buildNumber；没配中转或不是渠道构建时为空，不检查更新）。
   3. runApp 之后，不等待地初始化玻璃渲染与私信服务，再恢复会话。百宝箱的 shareVideo 接到私信分享弹层，路由把 VideoOpener 接到百宝箱注册表里认得这张卡片的工具（openShared）。
+  4. 恢复会话后 watchAppUpdates：清掉装好后的旧安装包，延迟 3 秒自动检查更新，回到前台时接着做被搁下的安装；查到新版由账号应用（_AccountApp）挂在根导航器上弹更新弹窗，登录页也能弹，一个提示只弹一次。
 - 账号代次：SuperXdApp 以 session.generation 作 key 重建内部账号应用。账号切换时，路由和页面内存状态整体丢弃，旧账号状态不会带入新账号。
 - router.dart 的门禁：
   - 会话恢复完成前停在 /boot。
@@ -66,6 +68,10 @@
   - 读本机的当前学期、课表与作息，展开今天起 7 天的课程实例交给小组件端口；只读本地，从不联网。对账时机与课前提醒相同。
   - 退出登录时发布空快照，小组件不显示上一个账号的课；缺开学日或作息时如实提示。
   - 配色由 main.dart 的 watchWidgetTheme 跟随“配色”和“深浅色”设置单独下发；原生侧见 CourseWidgets.kt。
+- application/app_updates.dart（AppUpdates）：应用内更新编排，设备级，切换账号不重建。
+  - 自动检查每个校园日一次（appUpdateCheckDue，按业务日界），查到必须更新时每次启动都查；手动检查不受限、不认跳过。
+  - 点更新才下载（缓存里已有且 SHA-256 对得上就不再下），核对 SHA-256、包名、版本号与签名证书，对不上就删包报原因；没有「安装未知应用」授权时引导开启，下载在后台完成时等回前台再拉起系统安装。
+  - 端口都在 domain/app_update.dart：清单（device/relay_release_feed.dart）、安装包文件（device/app_package_files.dart）、安装器（device/app_installer_channel.dart，原生见 AppUpdateInstaller.kt）、检查记录（local/app_update_memory.dart）。规则与弹窗的人工决策见 app_update.dart 与 page/app_update_dialog.dart。
 
 # 跨模块不变量（改动前逐条自查）
 
@@ -104,6 +110,7 @@
    - 学习通的设备信息（型号、系统版本、ANDROID_ID、DRM 设备号）与 OAID 只在学习通登录、补用户信息时现取，加密后只发给学习通，不落库；原生通道见 ChaoxingDevice.kt。
    - 私信身份、好友与会话属于设备，切换账号保留、退出登录不清；身份私钥只在系统安全存储，私钥与 social.db 都排除出云备份与设备迁移。只有用户“关闭私信”才删除（先删服务端设备，再清本机）。
    - 第三方解析来源逐个来源、按授权版本单独征得同意。自动模式只尝试已启用且已同意的来源。
+   - 应用更新的检查记录（上次检查时刻、跳过的版本、是否待必须更新）与下载中的安装包属于设备，切换账号保留。
 9. 对外网络
    - 教务请求：单次 25 秒超时，只允许同源地址。
    - 每个 CampusSync 实例内按顺序逐项请求；今天页和成绩页各持有一个实例。成绩同步与其他教务网络请求互斥，冲突时返回 SYNC_BUSY。
@@ -112,6 +119,7 @@
    - 百宝箱解析：总预算 30 秒，单次响应上限 1MB。媒体地址必须是公网 https，拒绝本机和内网地址。
    - 代签凭据包：投递、取件与作废各 15 秒超时，密文上限 2KB；取件号一次性、10 分钟过期，取走即删，出示方换码即作废旧码。除时钟偏差校正后的一次重发外不自动重试。
    - 私信中转：普通请求单次 15 秒超时；每个请求用设备私钥签名（防冒用与重放），不发会话令牌；内容端到端加密，服务端只见设备号、好友关系、密文大小与时间。除时钟偏差校正后的一次重发外不自动重试。
+   - 应用更新：版本清单单次 15 秒超时、响应上限 64KB，只发构建渠道与架构；启动后自动检查每个校园日一次（待必须更新时每次启动），其余只在用户点检查更新时联网，不自动重试。安装包下载由用户点更新触发，走 background_downloader 的独立命名空间，可退到后台、可取消，失败由用户重试。
    - 私信收取：应用在前台时持续长轮询（服务端没有消息时最多挂起 25 秒，有新消息经 Redis 发布订阅唤醒立即返回，客户端超时为挂起时长加 10 秒）；进入后台不再发起；网络失败 2 秒起指数退避、上限 60 秒，空响应快于 5 秒时等满 5 秒。没有推送，后台收不到（人工决策见 social_service.dart）。
 10. 数据保留
     - 课表版本：每学期 100 个。
@@ -125,6 +133,7 @@
     - 代签凭据包：密文只在中转上暂存 10 分钟（取走即删、未取走由服务端清理任务删除）；导入的账号凭据按学习通账号的规矩只进系统安全存储。
     - 人脸照片：只在本机记 objectId（照片在学习通云盘），每人保留 5 条，打开库时裁剪；群聊消息不在本机留存。
     - 学习通签到位置：按班级只记最近一次签到成功用的位置，最多 200 个班，打开库时裁剪，随「清除数据」删除。
+    - 应用更新：缓存 app_update 文件夹只留一个版本的安装包（新下载前删掉别的），版本号不高于已装版本的在启动时删除；检查记录是应用支持目录下固定大小的 app_update.json。服务端发布目录只放当前版本（见 server/README.md）。
     - 私信：好友 500；每个好友本机保留最近 200 条；邀请记录 31 天。服务端信箱单条密文 256KB、每设备待取 1000 条，取走确认即删、未取走 30 天删除，设备 400 天不活跃连同关系与信箱删除（见 server/README.md）。
     - 新增只增不删的数据时，必须同时给出上限或清理策略。
 11. 日志
@@ -182,6 +191,7 @@
   - 代签：chaoxing_pack_test.dart（凭据包编解码与封装，含第 1 版兼容）、chaoxing_delegate_test.dart（两台设备之间的出示与导入、带人脸照片、连签与强制签到、学校单位与模拟客户端，chaoxing_fake_hub.dart 是内存中转）
   - 审查整改回归：chaoxing_regression_test.dart（删账号与后台刷新竞态不留会话、删当前账号关会话、切账号代次、自动重登的错误口径、课表缓存裁剪、弹层避让键盘、账号分段拖动、手势重画与签到码重复提交）
   - 人脸与群聊：chaoxing_im_test.dart（DES、protobuf 附件解析、环信链路与类型映射）、chaoxing_protocol_test.dart 里的人脸公钥与签名用例
+- 应用更新：app_update_test.dart（规则与校园日界、编排的检查跳过强制下载核对授权后台、清单解析与外部输入校验、检查记录与安装包清理）、app_update_ui_test.dart（更新弹窗各状态、强制更新关不掉、关于页检查更新）、account_lifecycle_test.dart 的启动弹窗用例；替身在 app_update_fakes.dart。服务端见 server/test/app_release.e2e.test.ts。
 - 私信：
   - social_protocol_test.dart（与服务端共用测试向量、信封、二维码）、share_card_test.dart、social_service_test.dart、social_ui_test.dart
   - fake_relay.dart：按协议 v1 规则验签的内存假中转服务。
@@ -196,6 +206,7 @@
   - verify_chaoxing_map.dart：高德地图选点能不能出图与返回坐标，要带 --dart-define=SUPERXD_AMAP_KEY 跑，运行方式见文件头。
   - verify_chaoxing.dart：访问真实学习通，只在授权的测试账号上手动运行；凭据从参数指定的文件读入，输出一律脱敏，运行方式见文件头。
   - verify_chaoxing_pack.dart：代签凭据包经真实中转服务的往返（投递、取件、取走即删），只用合成凭据，运行方式见文件头。
+  - release_manifest.dart：发版时生成应用内更新的版本清单（<渠道>.json，算各架构安装包的大小与 SHA-256），运行方式见文件头与 CONTRIBUTING.md。
   - readme_demo.dart：README 截图入口，内存库合成课表与假登录。
   - font_previews.dart：生成界面页的字体预览图（assets/font_previews），改预览文字或内置字体后重跑。
   - schedule_smoke.dart、glass_preview.dart、motion_preview.dart
@@ -214,5 +225,5 @@
   - 结果页和下载页随进度通知整页重建
   - FrostTexture 逐点绘制颗粒
   - 成绩响应分块累加
-- 平台：只有 Android 宿主。验证只在模拟器（API 36、API 34）上做过，真机和 iOS 都未验收。原生导出通道见 MainActivity.kt、ToolboxFileExporter.kt 与 CalendarExporter.kt（日历文件只经 CalendarFileProvider 开放缓存 calendar_export 文件夹）；桌面小组件见 CourseWidgets.kt；学习通签到的设备信息与 OAID 见 ChaoxingDevice.kt（OAID 库 Android_CN_OAID 来自 JitPack，其华为、荣耀依赖来自各自厂商仓库）。
+- 平台：只有 Android 宿主。验证只在模拟器（API 36、API 34）上做过，真机和 iOS 都未验收。原生导出通道见 MainActivity.kt、ToolboxFileExporter.kt 与 CalendarExporter.kt（日历文件只经 CalendarFileProvider 开放缓存 calendar_export 文件夹）；桌面小组件见 CourseWidgets.kt；应用内更新的安装通道见 AppUpdateInstaller.kt（安装包只经 AppUpdateFileProvider 开放缓存 app_update 文件夹，清单声明 REQUEST_INSTALL_PACKAGES）；学习通签到的设备信息与 OAID 见 ChaoxingDevice.kt（OAID 库 Android_CN_OAID 来自 JitPack，其华为、荣耀依赖来自各自厂商仓库）。
 - release 包开启 R8：不带混淆规则的原生 SDK（目前是高德）要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件（如高德定位的 APSService）还要自己在清单里声明，test/legal_page_test.dart 守护规则；CI 只跑测试不打 release 包，发布前要在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。

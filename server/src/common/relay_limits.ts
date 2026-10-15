@@ -45,6 +45,15 @@ export const chaoxingPackRevokePerHour = 3000;
 // 代签接口的请求体上限：包 2KB 经 base64url 约 2.7KB，外加字段，8KB 足够；不签名的接口不该吃全局 400KB 的上限。
 export const chaoxingRequestMaxBytes = 8 * 1024;
 
+// 应用更新：客户端每天最多自动查一次清单，手动检查不限；同一 IP 每小时清单 600 次、安装包请求 300 次
+// （含断点续传的分段请求；校园网出口多为 NAT，与代签同样放宽，只防脚本刷流量）。
+// 安装包约 100MB，每个实例同时最多 32 个下载，超出回 503 让客户端稍后再试，保护带宽与连接。
+// 清单文件超过 64KB 视为放错文件，拒绝读取。
+export const appReleasePerHour = 600;
+export const appFilePerHour = 300;
+export const appDownloadsPerInstance = 32;
+export const appReleaseFileMaxBytes = 64 * 1024;
+
 // 设备 400 天没有任何请求即删除，连同其好友关系与待取消息。
 export const deviceIdleDays = 400;
 // 最后活跃时间每设备最多每小时写一次库。

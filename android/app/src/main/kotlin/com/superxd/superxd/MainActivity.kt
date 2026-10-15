@@ -20,6 +20,8 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler(CalendarExporter(this))
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/course_widget")
             .setMethodCallHandler(CourseWidgetChannel(applicationContext))
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/app_update")
+            .setMethodCallHandler(AppUpdateInstaller(this))
         chaoxingDevice = ChaoxingDeviceChannel(applicationContext)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/chaoxing_device")
             .setMethodCallHandler(chaoxingDevice)

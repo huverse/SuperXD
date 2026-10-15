@@ -10,6 +10,8 @@
     <!-- 学习通位置签到的地图页点「定位到我」时才申请，仅使用期间（不要后台定位），由高德定位取一次当前位置。 -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- 应用内更新：把下载并核对过的新版本安装包交给系统安装器；Android 8 起还要用户在设置里允许本应用「安装未知应用」。 -->
+    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <!-- 学习通签到取 OAID 的 Android_CN_OAID 会并入这些权限，应用用不到，一律移除，只走各厂商不需授权的标识服务。 -->
     <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
@@ -81,6 +83,16 @@
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/calendar_export_paths" />
+        </provider>
+        <!-- 应用内更新：把缓存里核对过的安装包以只读授权交给系统安装器。 -->
+        <provider
+            android:name=".AppUpdateFileProvider"
+            android:authorities="${applicationId}.app_update"
+            android:exported="false"
+            android:grantUriPermissions="true">
+            <meta-data
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/app_update_paths" />
         </provider>
         <activity
             android:name=".MainActivity"
