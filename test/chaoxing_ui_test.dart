@@ -1128,10 +1128,15 @@ void main() {
     await openSignSheet(tester);
     await waitUntil(tester, () => find.text('为其他账号签到').evaluate().isNotEmpty);
     expect(find.text('这场已经签过了'), findsOneWidget);
+    // 已签过不给「仍然签到」（重复签自己没意义），只给「为其他账号签到」和「关闭」。
+    expect(find.text('仍然签到'), findsNothing);
     await tester.tap(find.text('为其他账号签到'));
     await tester.pump();
     await waitUntil(tester, () => find.text('为其他账号签到').evaluate().isEmpty);
     expect(find.text('签到对象'), findsOneWidget);
+    // 「为其他账号签到」真的把没签的代签账号勾上（本人仍取消勾选），不再只是关掉弹窗。
+    final ticked = tester.widgetList<Checkbox>(find.byType(Checkbox)).where((box) => box.value == true).length;
+    expect(ticked, 1);
     expect(fake.signQuery, isNull);
     await tester.pumpWidget(const SizedBox());
   });
@@ -1208,16 +1213,39 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('打开签到页就发现已签到，弹窗直说原因；仍然签到只放行，留在签到页，签时跳过检查', (tester) async {
+  testWidgets('打开签到页就发现已签到，弹窗直说原因；单账号只给关闭，重复签自己没意义', (tester) async {
     usePhoneScreen(tester);
     fake.preSignHtml = '<script>signstatus = 1;</script>';
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
 
     await openSignSheet(tester);
-    // 打开即检查：勾选的人全被拦时弹窗，标题按原因直说；只有一个账号时不给「为其他账号签到」。
+    // 打开即检查：勾选的人全被拦时弹窗，标题按原因直说。单账号、已签过：没有其他账号可签、重复签自己也没意义，
+    // 所以只剩「关闭」（不给「仍然签到」，也不给「为其他账号签到」）。
+    await waitUntil(tester, () => find.text('这场已经签过了').evaluate().isNotEmpty);
+    expect(find.text('关闭'), findsOneWidget);
+    expect(find.text('仍然签到'), findsNothing);
+    expect(find.text('为其他账号签到'), findsNothing);
+    expect(fake.signQuery, isNull);
+    // 点关闭：整个签到弹层关掉（没有可做的事）。
+    await tester.tap(find.text('关闭'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('签到对象').evaluate().isEmpty && find.text('这场已经签过了').evaluate().isEmpty);
+    expect(fake.signQuery, isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('打开就发现已截止，给仍然签到；仍然签到只放行，留在签到页，签时跳过检查', (tester) async {
+    usePhoneScreen(tester);
+    // preSign 判定已截止（「下次早点哦」），活动本身未结束，强制签上仍算正常成功。
+    fake.preSignHtml = '<div>下次早点哦</div>';
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await openSignSheet(tester);
+    // 已截止给「仍然签到（强制试一次）」；单账号没有其他账号可签，不给「为其他账号签到」。
     await waitUntil(tester, () => find.text('仍然签到').evaluate().isNotEmpty);
-    expect(find.text('这场已经签过了'), findsOneWidget);
+    expect(find.text('签到已经结束'), findsOneWidget);
     expect(find.text('关闭'), findsOneWidget);
     expect(find.text('为其他账号签到'), findsNothing);
     expect(fake.signQuery, isNull);
@@ -1227,7 +1255,7 @@ void main() {
     await waitUntil(tester, () => find.text('仍然签到').evaluate().isEmpty);
     await tester.pump(const Duration(milliseconds: 300));
     expect(find.text('请填写签到码'), findsNothing);
-    expect(find.text('这场签到已经完成了'), findsNothing);
+    expect(find.text('签到已截止'), findsNothing);
     expect(find.widgetWithText(OutlinedButton, '强制签到'), findsNothing);
     expect(fake.signQuery, isNull);
     // 填满码自动提交：这个人跳过签到前检查，直接签上，不再被同一个检查拦一次。

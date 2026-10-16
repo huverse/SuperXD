@@ -178,8 +178,9 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   }
 
   // 打开签到页先检查一遍（对齐参考项目，别等提交后才知道）：已签到、已截止或不在班级的人原地标出
-  // 并取消勾选（只有一个账号时不取消）；全部被拦时弹窗给「关闭 / 仍然签到」，还有没勾的账号时多一个「为其他账号签到」。检查不挡详情显示，也不挡提交（提交时会再查一次，
-  // 选了仍然签到的人不再查）。
+  // 并取消勾选（只有一个账号时不取消）；全部被拦时按原因弹窗（见下方 [人工决策]）：有没勾的账号给「为其他账号签到」，
+  // 「已结束 / 不在班级」额外给「仍然签到」（强制），都没有就只「关闭」。检查不挡详情显示，也不挡提交
+  //（提交时会再查一次，选了仍然签到的人不再查）。
   Future<void> _presignOnOpen() async {
     final checked = _activity.activeId;
     final selected = [for (final target in _batch.targets) if (target.selected) target];
@@ -214,10 +215,14 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     }
     _batch.notifyChanged();
     if (blocked.length != selected.length) return;
-    // 勾选的人全被拦：照参考项目给三选。
+    // 勾选的人全被拦：按原因给动作。
     // 并发检查的完成顺序不定，提示按勾选顺序取第一个被拦的人。
     // [人工决策-2026-10-14 13:34:56] 原来统一叫「这场签到检查没过」、末项「我认为是 BUG，强制签到」，真机上看不懂：
-    // 标题按原因直说（同苹果、Material 弹窗规范），按钮用动作词；「为其他账号签到」只在还有没勾的账号时给。
+    // 标题按原因直说（同苹果、Material 弹窗规范），按钮用动作词。
+    // [人工决策-2026-10-16 20:23:52] 按钮按原因给，消除「为其他账号签到」与「仍然签到」的重叠（真机反馈二者效果看着一样）：
+    // - 「为其他账号签到」原来只是关掉弹窗留在页面、什么都不勾，改成真的把没被拦的账号勾上，再留在页面让用户点签到；
+    // - 「仍然签到」=强制再试一次，对「已经签过了」没意义（重复签自己），只在「已结束 / 不在班级」给，「已签过」不给。
+    // 都没有未签账号、又不该强制时（单个已签账号），只剩「关闭」。
     final first = selected.firstWhere(blocked.containsKey);
     final failure = blocked[first]!;
     final (title, detail) = switch (failure.code) {
@@ -226,21 +231,33 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       ChaoxingFailureCode.noPermission => ('这个账号不在这门课的班级里', '可能已退课或换了班'),
       _ => (failure.message, null),
     };
-    final othersLeft = _batch.targets.any((target) => !blocked.containsKey(target));
+    // 没被拦、还没签成功的账号：点「为其他账号签到」时把它们勾上。
+    final others = [for (final target in _batch.targets) if (!blocked.containsKey(target) && !target.done) target];
+    // 「仍然签到」=强制；重复签已经签过的人没意义，所以只在非「已签过」时给。
+    final canForce = failure.code != ChaoxingFailureCode.alreadySigned;
     final choice = await showCampusDialog<int>(
       context: context,
       builder: (context) => CampusGlassDialog(
         title: Text(title),
         content: detail == null ? null : Text(detail),
         options: [
-          if (othersLeft) SimpleDialogOption(onPressed: () => Navigator.pop(context, 0), child: const Text('为其他账号签到')),
+          if (others.isNotEmpty) SimpleDialogOption(onPressed: () => Navigator.pop(context, 0), child: const Text('为其他账号签到')),
+          if (canForce) SimpleDialogOption(onPressed: () => Navigator.pop(context, 2), child: const Text('仍然签到')),
           SimpleDialogOption(onPressed: () => Navigator.pop(context, 1), child: const Text('关闭')),
-          SimpleDialogOption(onPressed: () => Navigator.pop(context, 2), child: const Text('仍然签到')),
         ],
       ),
     );
     if (!mounted) return;
-    if (choice == 1) {
+    if (choice == 0) {
+      // 把没被拦的账号勾上，留在签到页让用户点签到（被拦的人仍保持取消勾选）。
+      for (final target in others) {
+        target
+          ..selected = true
+          ..state = ChaoxingTargetState.idle
+          ..message = null;
+      }
+      _batch.notifyChanged();
+    } else if (choice == 1) {
       Navigator.of(context).pop();
     } else if (choice == 2) {
       // [人工决策-2026-10-14 23:36:00] 「仍然签到」只是放行，不直接提交：关掉弹窗留在签到页接着选位置、输码、拍照，
