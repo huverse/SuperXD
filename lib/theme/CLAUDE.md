@@ -36,7 +36,7 @@
   - CampusEntryFade：账号应用的整体入场。它挂在按代次重建的账号应用内，所以应用启动和每次切换账号时都会触发。内容不套透明度，由盖在上面的背景副本（CampusBackdrop）淡出，玻璃从第一帧起取到真实背景。
   - 共享弹窗：showCampusNotice 用于只读提示，showCampusConfirm 用于二次确认；destructive 为真时主按钮是警示红（删除、清空、退出、覆盖、放弃修改等）。
   - CampusGlassDialog：统一的玻璃弹窗，版式同 AlertDialog。操作按钮一到两个等宽并排，三个及以上竖排且主操作在最上；操作区里的 FilledButton 自动是强调按钮（人工决策见文件内）。options 对应 SimpleDialog 的选项；solid 固定实色（验证码弹窗用）。全应用弹窗一律用它，日期选择器除外。
-  - showCampusToast：提示条，可带一个操作（如撤销）。沿用 SnackBar 的排队、读屏与滑动关闭，内容是 overlay 玻璃胶囊。不用库的 GlassToast，因为它的操作触区只有 32。用固定样式，只做高度展开不淡入。
+  - showCampusToast：提示条，可带一个操作（如撤销）。沿用 SnackBar 的排队、读屏与滑动关闭，内容是 overlay 玻璃胶囊。不用库的 GlassToast，因为它的操作触区只有 32。用固定样式，只做高度展开不淡入。在弹层、弹窗、菜单（PopupRoute）里调用时 SnackBar 会落进底下那页被盖住，改插进根 Overlay 浮在最上层，外观、时长、读屏与下滑关闭照旧，同一时刻只留一条（人工决策见文件内）；不给弹层套 Scaffold，它的 Material 会吃掉点按、点遮罩关不掉弹层。
   - showCampusDialog 的 glassPanel 默认为真，表示内容是玻璃面板、由面板自己显隐；日期选择器等系统弹窗传 false，仍整体改不透明度。
   - showCampusSheet、CampusSheetRoute：底部弹层，沿用系统弹层的拖动关闭、返回键与读屏，背景透明；内容放进 CampusSheetPanel（四周留 8 悬浮的 overlay 玻璃，圆角 24；键盘弹出时整块浮到键盘上方）。
   - CampusDialogRoute、CampusSheetRoute 经 CampusOverlayDepthRoute 登记 campusOverlayDepth。
