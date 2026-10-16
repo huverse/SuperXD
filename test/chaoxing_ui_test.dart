@@ -1128,8 +1128,8 @@ void main() {
     await openSignSheet(tester);
     await waitUntil(tester, () => find.text('为其他账号签到').evaluate().isNotEmpty);
     expect(find.text('这场已经签过了'), findsOneWidget);
-    // 已签过不给「仍然签到」（重复签自己没意义），只给「为其他账号签到」和「关闭」。
-    expect(find.text('仍然签到'), findsNothing);
+    // 全面对齐参考项目：已签过也保留「仍然签到」（放行强制，防 preSign 误判），与「为其他账号签到」行为上区分开。
+    expect(find.text('仍然签到'), findsOneWidget);
     await tester.tap(find.text('为其他账号签到'));
     await tester.pump();
     await waitUntil(tester, () => find.text('为其他账号签到').evaluate().isEmpty);
@@ -1213,25 +1213,33 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('打开签到页就发现已签到，弹窗直说原因；单账号只给关闭，重复签自己没意义', (tester) async {
+  testWidgets('打开签到页就发现已签到，弹窗直说原因；仍然签到只放行，留在签到页，签时跳过检查', (tester) async {
     usePhoneScreen(tester);
     fake.preSignHtml = '<script>signstatus = 1;</script>';
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
 
     await openSignSheet(tester);
-    // 打开即检查：勾选的人全被拦时弹窗，标题按原因直说。单账号、已签过：没有其他账号可签、重复签自己也没意义，
-    // 所以只剩「关闭」（不给「仍然签到」，也不给「为其他账号签到」）。
-    await waitUntil(tester, () => find.text('这场已经签过了').evaluate().isNotEmpty);
+    // 打开即检查：勾选的人全被拦时弹窗，标题按原因直说。单账号、已签过：没有其他账号可签，不给「为其他账号签到」；
+    // 全面对齐参考项目，仍然保留「仍然签到」（放行强制，防 preSign 误判）。
+    await waitUntil(tester, () => find.text('仍然签到').evaluate().isNotEmpty);
+    expect(find.text('这场已经签过了'), findsOneWidget);
     expect(find.text('关闭'), findsOneWidget);
-    expect(find.text('仍然签到'), findsNothing);
     expect(find.text('为其他账号签到'), findsNothing);
     expect(fake.signQuery, isNull);
-    // 点关闭：整个签到弹层关掉（没有可做的事）。
-    await tester.tap(find.text('关闭'));
+    // 仍然签到只关弹窗：不提交、不催输入，被拦的原因与行内强制签到也收起，留在签到页接着操作。
+    await tester.tap(find.text('仍然签到'));
     await tester.pump();
-    await waitUntil(tester, () => find.text('签到对象').evaluate().isEmpty && find.text('这场已经签过了').evaluate().isEmpty);
+    await waitUntil(tester, () => find.text('仍然签到').evaluate().isEmpty);
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('请填写签到码'), findsNothing);
+    expect(find.text('这场签到已经完成了'), findsNothing);
+    expect(find.widgetWithText(OutlinedButton, '强制签到'), findsNothing);
     expect(fake.signQuery, isNull);
+    // 填满码自动提交：这个人跳过签到前检查，直接签上，不再被同一个检查拦一次。
+    await enterCode(tester, '1234');
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    expect(fake.signQuery!['signCode'], '1234');
     await tester.pumpWidget(const SizedBox());
   });
 
