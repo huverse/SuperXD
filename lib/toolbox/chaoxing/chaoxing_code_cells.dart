@@ -4,7 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:superxd/theme/campus_palette.dart';
 
 // 签到码的格子输入，同学习通客户端：按位数显示空格、输满自动回调（校验与提交由调用方接手）。
-// 输入本体是一个藏起来的数字键盘输入框，点格子即聚焦；调用方清空 controller 时格子跟着清空。
+// 输入本体是一个藏起来的数字键盘输入框，点格子即叫出键盘；调用方清空 controller 时格子跟着清空。
 // [人工决策-2026-10-09 20:32:45] 输错时格子标红并轻震一下，红色保留到重新输入第一位（同 Android 锁屏）；不加位移动画。用户选定。
 class ChaoxingCodeCells extends StatefulWidget {
   const ChaoxingCodeCells({super.key, required this.controller, required this.length, required this.onFilled, this.error});
@@ -19,6 +19,7 @@ class ChaoxingCodeCells extends StatefulWidget {
 
 class _ChaoxingCodeCellsState extends State<ChaoxingCodeCells> {
   final _focus = FocusNode();
+  final _editable = GlobalKey<EditableTextState>();
 
   // 上一次通知时的文本：controller 改光标位置也会通知，只有文本从不满变满才算输完，免得重复提交。
   // 必须在 initState 里取：懒初始化会拖到第一次通知时才取值，取到的已是新文本，第一位数字就不重画。
@@ -72,24 +73,33 @@ class _ChaoxingCodeCellsState extends State<ChaoxingCodeCells> {
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
       onTap: () {
-        _focus.requestFocus();
+        // 不能只 requestFocus：按返回键或输入法的收起键收掉键盘后，输入框仍是聚焦的（安卓不通知应用失焦），
+        // 再要一次焦点什么也不发生，真机上就是点了没反应。requestKeyboard 已聚焦时重新叫出键盘、没聚焦时先要焦点，
+        // 与输入框自己被点时同一条路（参考项目的格子就画在输入框里，点哪都是点输入框）。
+        _editable.currentState!.requestKeyboard();
         // 点格子时把光标放到末尾，避免插入到中间。
         widget.controller.selection = TextSelection.collapsed(offset: widget.controller.text.length);
       },
       child: Stack(
         children: [
-          // 输入框本体藏在格子底下（透明、无边框无光标），只负责收键盘输入；数字由格子画。
-          // 只设高度 0 藏不住：TextField 会溢出画出文字、下划线与光标，叠在格子上方。
+          // 输入框本体藏在格子底下（透明、无光标），只负责收键盘输入；数字由格子画。
+          // 用 EditableText 而不是 TextField：要靠 key 拿到 requestKeyboard；它自己不接点按（rendererIgnoresPointer，同 TextField 内部），
+          // 格子上、缝隙里的点按都归上面的 onTap，走同一条路。
+          // 只设高度 0 藏不住：输入框会溢出画出文字与光标，叠在格子上方。
           Positioned.fill(
             child: Opacity(
               opacity: 0,
-              child: TextField(
+              child: EditableText(
+                key: _editable,
                 controller: widget.controller,
                 focusNode: _focus,
+                rendererIgnoresPointer: true,
+                style: TextStyle(fontSize: 20, color: palette.onSurface),
+                cursorColor: palette.accent,
+                backgroundCursorColor: palette.outline,
                 keyboardType: TextInputType.number,
                 showCursor: false,
                 enableInteractiveSelection: false,
-                decoration: const InputDecoration.collapsed(hintText: ''),
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(widget.length)],
               ),
             ),

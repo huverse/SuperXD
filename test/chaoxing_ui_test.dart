@@ -92,7 +92,7 @@ Future<void> enterCode(WidgetTester tester, String code) async {
   if (find.byType(ChaoxingCodeCells).evaluate().isNotEmpty) {
     await tester.tap(find.byType(ChaoxingCodeCells));
     await tester.pump();
-    await tester.enterText(find.descendant(of: find.byType(ChaoxingCodeCells), matching: find.byType(TextField)), code);
+    await tester.enterText(find.descendant(of: find.byType(ChaoxingCodeCells), matching: find.byType(EditableText)), code);
   } else {
     await tester.enterText(find.widgetWithText(TextField, '签到码'), code);
   }

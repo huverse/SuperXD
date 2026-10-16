@@ -609,7 +609,7 @@ void main() {
         home: Scaffold(body: ChaoxingCodeCells(controller: controller, length: 4, onFilled: () => filled++)),
       ),
     );
-    await tester.enterText(find.byType(TextField), '1234');
+    await tester.enterText(find.byType(EditableText), '1234');
     await tester.pump();
     expect(filled, 1);
     expect(find.text('1'), findsOneWidget);
@@ -620,9 +620,37 @@ void main() {
     expect(filled, 1);
     controller.clear();
     await tester.pump();
-    await tester.enterText(find.byType(TextField), '5678');
+    await tester.enterText(find.byType(EditableText), '5678');
     await tester.pump();
     expect(filled, 2);
     controller.dispose();
+  });
+
+  testWidgets('签到码格子：键盘收起后输入框仍聚焦，点哪一格都重新叫出键盘', (tester) async {
+    final controller = TextEditingController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: campusTheme(),
+        home: Scaffold(body: ChaoxingCodeCells(controller: controller, length: 4, onFilled: () {})),
+      ),
+    );
+    final cells = find.descendant(
+      of: find.byType(ChaoxingCodeCells),
+      matching: find.byWidgetPredicate((widget) => widget is Container && widget.decoration is BoxDecoration && (widget.decoration! as BoxDecoration).border != null),
+    );
+    expect(cells, findsNWidgets(4));
+    for (var index = 0; index < 4; index++) {
+      // 用户按返回键或输入法的收起键：键盘没了，安卓不通知应用失焦，输入框仍聚焦。
+      tester.testTextInput.hide();
+      await tester.tap(cells.at(index));
+      await tester.pump();
+      expect(tester.testTextInput.isVisible, isTrue, reason: '点第 ${index + 1} 格');
+    }
+    // 点格子之间的缝隙也一样。
+    tester.testTextInput.hide();
+    await tester.tapAt(Offset((tester.getRect(cells.at(0)).right + tester.getRect(cells.at(1)).left) / 2, tester.getCenter(cells.at(0)).dy));
+    await tester.pump();
+    expect(tester.testTextInput.isVisible, isTrue, reason: '点格子缝隙');
   });
 }

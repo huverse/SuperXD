@@ -90,7 +90,7 @@
   - chaoxing_captcha.dart：滑块验证码，取配置与底图、按 280 宽的坐标空间提交拖动位置、换成一次性 validate（按签到对象各自的会话取）。
   - chaoxing_captcha_dialog.dart：滑块验证弹窗，底图上拖缺口块，不通过自动换一张。
   - chaoxing_face.dart：人脸识别签到。用设备公钥对 clientId 做模幂还原出设备信息，按字段排序拼 sc 做 md5 得 signToken，换一次性的 faceEnc；也用来取学习通里存着的人脸照片 objectId 与云盘原图地址（预览用）。
-  - chaoxing_code_cells.dart：签到码的格子输入 ChaoxingCodeCells：按位数显示空格（位数没有上限，窄屏放不下时按可用宽度等比收窄）、输满自动回调（校验与提交由签到弹层接手），真正的输入框藏在格子底下收键盘输入；输错时标红并重震一下，红色保留到重新输入第一位（[人工决策] 在文件头）。
+  - chaoxing_code_cells.dart：签到码的格子输入 ChaoxingCodeCells：按位数显示空格（位数没有上限，窄屏放不下时按可用宽度等比收窄）、输满自动回调（校验与提交由签到弹层接手），真正的输入框（EditableText，自己不接点按）藏在格子底下收键盘输入，点格子或缝隙都经它的 requestKeyboard 叫键盘（键盘被收起后输入框仍聚焦，只要焦点不会再弹）；输错时标红并重震一下，红色保留到重新输入第一位（[人工决策] 在文件头）。
   - chaoxing_image_pick.dart：人脸照片取图 pickChaoxingFacePhoto（相册或拍摄，选完进 3:4 裁剪页，image_cropper 实现）、现场拍摄 shootChaoxingPhoto（拍照签到与补拍，不裁剪）与相册一次选多张 pickChaoxingPhotos（多人拍照签到）。取图用注入的 ToolboxImagePick；取图与裁剪留下的文件读成字节后即删（人脸属于生物特征，不在缓存留存）。
   - chaoxing_gesture_field.dart：手势签到的 3×3 图案输入 ChaoxingGestureField：原始指针事件画图案（不走手势竞技场，弹层里不会被拖动关闭抢走），抬起即回调序号串；校验失败时画错的图案留在原处标红并重震一下，下一次按下才清空（[人工决策] 在文件头）。
   - chaoxing_face_sheet.dart：人脸照片弹层，预览（从学习通云盘取原图，内存里留最近 10 张）、用过几次、是否没通过过；每张右侧⋯里保存到本机与删除（管理模式才有删除，警示色并确认），签到时整卡点按选这次用哪张；添加照片时忙碌状态只显示在点的那个按钮上。「用学习通里存的那张」与签到弹层的补给同一条路：下载原图、随机裁剪旋转后上传成新照片，不把原图编号直接拿去签（[人工决策] 在文件内）。
