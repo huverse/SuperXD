@@ -194,7 +194,7 @@
   - legal_page_test.dart、about_page_test.dart、course_clock_performance_test.dart
 - 主题与显示设置：atmosphere_test.dart、campus_glass_test.dart、campus_glass_button_test.dart、campus_motion_test.dart、dark_mode_test.dart、appearance_settings_test.dart、wallpaper_test.dart
 - 百宝箱：toolbox_widget_test.dart、toolbox_download_test.dart、toolbox_media_features_test.dart（含短视频库迁移、旧下载记录兼容、按工具清空下载、短视频清除数据、分享卡片按注册表打开）、short_video_parser_test.dart、media_image_test.dart
-  - 学习通签到：chaoxing_protocol_test.dart（协议、设备信息与设备码、学校单位、课表推断与坐标转换）、chaoxing_store_test.dart（本机库与上限、标签校验与 v9 升级、不再问的地点与 v10 升级）、chaoxing_batch_test.dart（多人连签的顺序、间隔、停止与强制）、chaoxing_ui_test.dart（登录、签到、多人连签、往期补签、强制签到、按课程查看、课表推断、代签入口与导入流程、群聊先列群再按群拉消息（置顶、搜索、同名合并）、签到对象按标签勾选、人脸照片里用学习通存的那张先重处理、签完问收藏（改名、这附近不再问）、现拍人脸照片签完再问存不存、多人拍照签到一次多选，用 chaoxing_fake_server.dart 与 chaoxing_fake_hub.dart）
+  - 学习通签到：chaoxing_protocol_test.dart（协议、设备信息与设备码、学校单位、课表推断与坐标转换）、chaoxing_store_test.dart（本机库与上限、标签校验与 v9 升级、不再问的地点与 v10 升级）、chaoxing_batch_test.dart（多人连签的顺序、间隔、停止与强制）、chaoxing_map_test.dart（嵌着的地图：系统定位没开的提示与去打开、默认选点跟着变准、精度圈不画）、chaoxing_ui_test.dart（登录、签到、多人连签、往期补签、强制签到、按课程查看、课表推断、代签入口与导入流程、群聊先列群再按群拉消息（置顶、搜索、同名合并）、签到对象按标签勾选、人脸照片里用学习通存的那张先重处理、签完问收藏（改名、这附近不再问）、现拍人脸照片签完再问存不存、多人拍照签到一次多选，用 chaoxing_fake_server.dart 与 chaoxing_fake_hub.dart）
   - 代签：chaoxing_pack_test.dart（凭据包编解码与封装，含第 1 版兼容）、chaoxing_delegate_test.dart（两台设备之间的出示与导入、带人脸照片、连签与强制签到、学校单位与模拟客户端、设备码来源：重新登录不换码、代签码只带真实设备码，chaoxing_fake_hub.dart 是内存中转）
   - 审查整改回归：chaoxing_regression_test.dart（删账号与后台刷新竞态不留会话、删当前账号关会话、切账号代次、自动重登的错误口径、课表缓存裁剪、弹层避让键盘、主账号置顶与账号拖动排序、重新登录保留备注名与排序、登录已失效记库与一键修复、账号管理里的标签、手势重画与签到码重复提交）
   - 人脸与群聊：chaoxing_im_test.dart（DES、protobuf 附件解析、环信链路与类型映射）、chaoxing_protocol_test.dart 里的人脸公钥与签名用例
@@ -232,5 +232,5 @@
   - 结果页和下载页随进度通知整页重建
   - FrostTexture 逐点绘制颗粒
   - 成绩响应分块累加
-- 平台：只有 Android 宿主。验证只在模拟器（API 36、API 34）上做过，真机和 iOS 都未验收。原生导出通道见 MainActivity.kt、ToolboxFileExporter.kt 与 CalendarExporter.kt（日历文件只经 CalendarFileProvider 开放缓存 calendar_export 文件夹）；桌面小组件见 CourseWidgets.kt；应用内更新的安装通道见 AppUpdateInstaller.kt（安装包只经 AppUpdateFileProvider 开放缓存 app_update 文件夹，清单声明 REQUEST_INSTALL_PACKAGES）；学习通签到的设备信息与 OAID 见 ChaoxingDevice.kt（OAID 库 Android_CN_OAID 来自 JitPack，其华为、荣耀依赖来自各自厂商仓库）。
+- 平台：只有 Android 宿主。验证只在模拟器（API 36、API 34）上做过，真机和 iOS 都未验收。原生导出通道见 MainActivity.kt、ToolboxFileExporter.kt 与 CalendarExporter.kt（日历文件只经 CalendarFileProvider 开放缓存 calendar_export 文件夹）；桌面小组件见 CourseWidgets.kt；应用内更新的安装通道见 AppUpdateInstaller.kt（安装包只经 AppUpdateFileProvider 开放缓存 app_update 文件夹，清单声明 REQUEST_INSTALL_PACKAGES）；学习通签到的设备信息与 OAID 见 ChaoxingDevice.kt（OAID 库 Android_CN_OAID 来自 JitPack，其华为、荣耀依赖来自各自厂商仓库）；学习通地图跳系统定位设置见 LocationSettings.kt。
 - release 包开启 R8：不带混淆规则的原生 SDK（目前是高德）要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件（如高德定位的 APSService）还要自己在清单里声明，test/legal_page_test.dart 守护规则；CI 只跑测试不打 release 包，发布前要在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
