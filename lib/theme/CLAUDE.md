@@ -73,7 +73,7 @@
 - campus_glass_blend.dart：CampusGlassBlend 是玻璃换档的过渡（满档、标准、磨砂、未就绪之间，以及与实色互换）。使用方在玻璃内容层最底下铺同形状实色盖板（不透明度 cover），盖板渐显到不透明后才换档、再渐隐；换到实色就停在盖满。中途目标再变时从当前值续接，减少动画时直接换。用于 GlassPanel 与 CampusGlassSurface。
 - campus_glass_material.dart：玻璃材质表。
   - 按角色区分：navigation（顶栏、底栏）、control（按钮、开关、标签）、overlay（菜单、弹层、弹窗、提示条）。
-  - campusGlassSettings 按配色、角色和档位生成参数。满档以 iOS 27 预设为底并按配色轻着色：底色减薄、不加色散，背景饱和浅色 1.4、深色不加；选中或按下的控件底色铺厚。标准档和磨砂档保持升级前的参数。
+  - campusGlassSettings 按配色、角色和档位生成参数。满档以 iOS 27 预设为底并按配色轻着色：底色减薄、不加色散，背景饱和浅色 1.4、深色不加；选中或按下的控件底色铺厚。标准档保持升级前的参数；磨砂档同标准档但不调饱和（饱和不为 1 时库会在背景模糊里再嵌一层做饱和的 BackdropFilter，OPPO 上键盘顶起的弹层会整块画黑，test/campus_glass_test.dart 守护）。
   - 浮层满档完全雾化，不透出底层文字；浅色浮层各档整块均匀提亮（满档 .8，其余 .65）。底色、饱和与提亮都按模拟器五套配色深浅色实测取，改动后要重测玻璃上文字的对比度（不低于 4.5:1）。
   - 浮层传 floating 时加 campusFloatingShadow 投影，其余角色保持原有阴影。
   - campusGlassQuality 把档位映射为库的 GlassQuality。
