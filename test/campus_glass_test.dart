@@ -424,13 +424,6 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    testWidgets('简化档的弹层只有一层背景模糊：嵌套的饱和滤镜在 OPPO 上会让键盘顶起的弹层整块变黑', (tester) async {
-      campusGlassReady.value = true;
-      await tester.pumpWidget(host(const Scaffold(body: Align(alignment: Alignment.bottomCenter, child: CampusSheetPanel(child: SizedBox(height: 300)))), mode: CampusGlassMode.reduced));
-      await tester.pump();
-      expect(find.descendant(of: find.byType(CampusSheetPanel), matching: find.byType(BackdropFilter)), findsOneWidget);
-    });
-
     testWidgets('玻璃控件出现消失走着色器可见度，不套半透明图层；实色档改不透明度', (tester) async {
       campusGlassReady.value = true;
       Widget button(bool visible, {CampusGlassMode mode = CampusGlassMode.full}) => host(Scaffold(body: Center(child: CampusGlassPresence(
@@ -728,6 +721,13 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(CampusOverlayGlass), findsNothing);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('简化档的弹层只有一层背景模糊：嵌套的饱和滤镜在 OPPO 上会让键盘顶起的弹层整块变黑', (tester) async {
+      campusGlassReady.value = true;
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: const CampusGlassScope(mode: CampusGlassMode.reduced, capped: false, child: Scaffold(body: Align(alignment: Alignment.bottomCenter, child: CampusSheetPanel(child: SizedBox(height: 300)))))));
+      await tester.pump();
+      expect(find.descendant(of: find.byType(CampusSheetPanel), matching: find.byType(BackdropFilter)), findsOneWidget);
     });
 
     testWidgets('底部弹层为悬浮玻璃面板，返回键关闭，期间栏改实色', (tester) async {
