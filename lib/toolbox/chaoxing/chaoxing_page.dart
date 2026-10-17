@@ -83,6 +83,8 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
   ChaoxingController? _controller;
   ChaoxingService? _service;
   String? _startError;
+  // 下拉刷新进行中：这时只有顶部的下拉指示在转，列表里不再另显示加载。
+  bool _pulling = false;
 
   @override
   void initState() {
@@ -151,6 +153,15 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     await controller.signIn(phoneNumber, password);
     if (!mounted) return;
     if (controller.error == null) showCampusToast(context, '已登录');
+  }
+
+  Future<void> _pull(ChaoxingController controller) async {
+    setState(() => _pulling = true);
+    try {
+      await controller.refresh();
+    } finally {
+      if (mounted) setState(() => _pulling = false);
+    }
   }
 
   ChaoxingSignLauncher _launcher(ChaoxingController controller) => ChaoxingSignLauncher(
@@ -388,8 +399,8 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     return CampusScrollFade(
       child: CustomScrollView(
         slivers: [
-          // 下拉刷新签到列表（同今天页的曲线动效指示器）。
-          CampusRefreshControl(onRefresh: () => controller.refresh()),
+          // 下拉刷新签到列表（同私信页的曲线动效指示器）。
+          CampusRefreshControl(onRefresh: () => _pull(controller)),
           SliverPadding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             sliver: SliverList(
@@ -484,29 +495,19 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                 onSign: () => launcher.open(context, activity),
               ),
           ],
-          ChaoxingSectionTitle(
-            '进行中的签到',
-            trailing: [
-              IconButton(
-                tooltip: '刷新',
-                onPressed: controller.busy
-                    ? null
-                    : () {
-                        controller.refresh().catchError((Object error, StackTrace stack) {
-                          campusLog('[Chaoxing] action=refresh errorType=${error.runtimeType}\n$stack');
-                        });
-                      },
-                icon: controller.busy ? const CampusLoader(size: 20, delay: Duration.zero) : const CampusIcon(CampusIcons.sync),
-              ),
-            ],
-          ),
+          // [人工决策-2026-10-17 16:16:34] 刷新只留下拉一个入口，同一时刻只转一个加载动画（用户反馈下拉时三个动画同时转、标题右边的刷新按钮与下拉重复）：
+          // 下拉时只有顶部指示，已有的列表与「没有活动」照常显示；列表还没读到过（刚打开、切了账号、改了单位或客户端、上次没读成）
+          // 且不是下拉时，才在这里显示加载；读取失败时上面有原因与「重试」，这里不写「没有活动」。签完后的刷新静默进行。
+          const ChaoxingSectionTitle('进行中的签到'),
           // 课表推断里已经列出的不在这里重复。
-          if (ongoing.isEmpty && controller.loadingActivities)
-            const Padding(
-              padding: EdgeInsets.symmetric(vertical: 24),
-              child: CampusLoading(label: '正在读取签到活动…', inline: true),
-            )
-          else if (ongoing.isEmpty)
+          if (ongoing.isNotEmpty)
+            for (final activity in ongoing)
+              ChaoxingActivityCard(
+                key: ValueKey(activity.activeId),
+                activity: activity,
+                onSign: () => launcher.open(context, activity),
+              )
+          else if (controller.activitiesLoaded)
             Padding(
               padding: const EdgeInsets.only(bottom: 12),
               child: Text(
@@ -514,13 +515,11 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                 style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
               ),
             )
-          else
-            for (final activity in ongoing)
-              ChaoxingActivityCard(
-                key: ValueKey(activity.activeId),
-                activity: activity,
-                onSign: () => launcher.open(context, activity),
-              ),
+          else if (controller.loadingActivities && !_pulling)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 24),
+              child: CampusLoading(label: '正在读取签到活动…', inline: true),
+            ),
           const SizedBox(height: 4),
           // 找不到要签的那场时的三个去处：已结束的、群聊里发的、按课程翻。
           // [人工决策-2026-10-14 14:46:17] 原来「往期、按课程、群聊」一行放不下前两个，第一行右侧空着、群聊落到第二行右边；

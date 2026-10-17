@@ -80,9 +80,15 @@ class _ChaoxingSettingsSheetState extends State<_ChaoxingSettingsSheet> {
   late final _packageName = TextEditingController(
     text: widget.controller.profile.id == ChaoxingClientProfile.customId ? widget.controller.profile.packageName : '',
   );
+  // 两组选项点了就在弹层里勾上，落库由控制器按点的顺序排队，首页列表随后自己重拉；存的时候哪一项都不变灰，
+  // 也不等列表（以前一点就把两组全禁用，直到整份列表拉完才恢复，切单位还要先等后台刷新用户信息才勾得上）。
+  late int? _unitFid = widget.controller.current?.fid;
   late String _profileId = widget.controller.profile.id;
+  // 最后一次交给控制器去存的客户端（排着队的也算）：先点「自定义」再点回它时不重复保存、不重拉列表。
+  late String _requestedProfileId = widget.controller.profile.id;
   String? _error;
-  bool _saving = false;
+  // 只有自定义 UA 的「保存」原地显示保存中。
+  bool _savingCustom = false;
 
   @override
   void dispose() {
@@ -92,11 +98,7 @@ class _ChaoxingSettingsSheetState extends State<_ChaoxingSettingsSheet> {
   }
 
   Future<void> _apply(Future<void> Function() action) async {
-    if (_saving) return;
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
+    setState(() => _error = null);
     try {
       await action();
     } on ChaoxingFailure catch (failure) {
@@ -104,9 +106,20 @@ class _ChaoxingSettingsSheetState extends State<_ChaoxingSettingsSheet> {
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=settings errorType=${failure.runtimeType}\n$stack');
       if (mounted) setState(() => _error = '设置没保存，请重试');
-    } finally {
-      if (mounted) setState(() => _saving = false);
     }
+  }
+
+  void _pickUnit(ChaoxingUnit unit) {
+    if (_unitFid == unit.fid) return;
+    setState(() => _unitFid = unit.fid);
+    _apply(() => widget.controller.selectUnit(unit));
+  }
+
+  void _pickPreset(ChaoxingClientProfile preset) {
+    setState(() => _profileId = preset.id);
+    if (_requestedProfileId == preset.id) return;
+    _requestedProfileId = preset.id;
+    _apply(() => widget.controller.setProfile(preset));
   }
 
   Future<void> _saveCustom() async {
@@ -115,11 +128,14 @@ class _ChaoxingSettingsSheetState extends State<_ChaoxingSettingsSheet> {
       setState(() => _error = problem);
       return;
     }
+    setState(() => _savingCustom = true);
+    _requestedProfileId = ChaoxingClientProfile.customId;
     await _apply(
       () => widget.controller.setProfile(
         ChaoxingClientProfile.custom(userAgent: _userAgent.text, packageName: _packageName.text),
       ),
     );
+    if (mounted) setState(() => _savingCustom = false);
   }
 
   @override
@@ -128,6 +144,35 @@ class _ChaoxingSettingsSheetState extends State<_ChaoxingSettingsSheet> {
     final controller = widget.controller;
     final record = controller.current;
     final units = record?.units ?? const <ChaoxingUnit>[];
+    final extra = Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (_profileId == ChaoxingClientProfile.customId) ...[
+          SizedBox(height: campusFieldGap(context)),
+          TextField(
+            controller: _userAgent,
+            maxLines: 3,
+            minLines: 1,
+            decoration: const InputDecoration(labelText: '完整的 UserAgent'),
+          ),
+          SizedBox(height: campusFieldGap(context)),
+          TextField(
+            controller: _packageName,
+            decoration: const InputDecoration(labelText: '客户端包名（可不填）'),
+          ),
+          const SizedBox(height: 12),
+          FilledButton(
+            onPressed: _savingCustom ? null : () => _saveCustom(),
+            child: CampusBusyContent(busy: _savingCustom, label: '保存', busyLabel: '保存中', icon: const CampusIcon(CampusIcons.check)),
+          ),
+        ],
+        if (_error != null) ...[
+          const SizedBox(height: 12),
+          Text(_error!, style: TextStyle(fontSize: 14, color: palette.danger)),
+        ],
+      ],
+    );
     return CampusSheetPanel(
       child: ListenableBuilder(
         listenable: controller,
@@ -157,11 +202,7 @@ class _ChaoxingSettingsSheetState extends State<_ChaoxingSettingsSheet> {
                         runSpacing: 8,
                         children: [
                           for (final unit in units)
-                            CampusGlassChip(
-                              label: unit.name,
-                              selected: controller.current?.fid == unit.fid,
-                              onSelected: _saving ? null : (_) => _apply(() => controller.selectUnit(unit)),
-                            ),
+                            CampusGlassChip(label: unit.name, selected: _unitFid == unit.fid, onSelected: (_) => _pickUnit(unit)),
                         ],
                       ),
                       const SizedBox(height: 20),
@@ -173,20 +214,11 @@ class _ChaoxingSettingsSheetState extends State<_ChaoxingSettingsSheet> {
                       runSpacing: 8,
                       children: [
                         for (final preset in ChaoxingClientProfile.presets)
-                          CampusGlassChip(
-                            label: preset.label,
-                            selected: _profileId == preset.id,
-                            onSelected: _saving
-                                ? null
-                                : (_) {
-                                    setState(() => _profileId = preset.id);
-                                    _apply(() => controller.setProfile(preset));
-                                  },
-                          ),
+                          CampusGlassChip(label: preset.label, selected: _profileId == preset.id, onSelected: (_) => _pickPreset(preset)),
                         CampusGlassChip(
                           label: '自定义',
                           selected: _profileId == ChaoxingClientProfile.customId,
-                          onSelected: _saving ? null : (_) => setState(() => _profileId = ChaoxingClientProfile.customId),
+                          onSelected: (_) => setState(() => _profileId = ChaoxingClientProfile.customId),
                         ),
                       ],
                     ),
@@ -195,29 +227,12 @@ class _ChaoxingSettingsSheetState extends State<_ChaoxingSettingsSheet> {
                       '学校用的是定制版学习通、课程列表对不上时才需要换，否则保持「学习通」',
                       style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
                     ),
-                    if (_profileId == ChaoxingClientProfile.customId) ...[
-                      SizedBox(height: campusFieldGap(context)),
-                      TextField(
-                        controller: _userAgent,
-                        maxLines: 3,
-                        minLines: 1,
-                        decoration: const InputDecoration(labelText: '完整的 UserAgent'),
-                      ),
-                      SizedBox(height: campusFieldGap(context)),
-                      TextField(
-                        controller: _packageName,
-                        decoration: const InputDecoration(labelText: '客户端包名（可不填）'),
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: _saving ? null : () => _saveCustom(),
-                        child: CampusBusyContent(busy: _saving, label: '保存', busyLabel: '保存中', icon: const CampusIcon(CampusIcons.check)),
-                      ),
-                    ],
-                    if (_error != null) ...[
-                      const SizedBox(height: 12),
-                      Text(_error!, style: TextStyle(fontSize: 14, color: palette.danger)),
-                    ],
+                    // 自定义的输入框与出错提示展开、收起时弹层高度平滑变化，不一下子跳高跳矮；减少动画时直接到位
+                    // （AnimatedSize 时长为 0 会在自己的布局里改自己，框架直接报错，所以不包）。
+                    if (MediaQuery.disableAnimationsOf(context))
+                      extra
+                    else
+                      AnimatedSize(duration: const Duration(milliseconds: 200), curve: Curves.easeOutCubic, alignment: Alignment.topCenter, child: extra),
                   ],
                 ),
               ),

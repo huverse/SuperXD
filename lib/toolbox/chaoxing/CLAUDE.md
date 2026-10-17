@@ -31,13 +31,13 @@
     - 会话过期自动重登一次并重放该次请求，重登被学习通拒绝时记「登录已失效」（[人工决策] 在 run）；主账号排第一（[人工决策] 在 list）。
     - 重新登录、修复与再导入保留备注名与排序；标签校验 saveTag；本人设备码优先用 OAID 算的，取不到沿用原码，新账号才生成固定随机码。
 - 状态与流程：
-  - chaoxing_controller.dart：页面状态：打开进主账号；账号切换按代次丢弃切换前的异步结果；刷新课程与活动（最多并发三个课程请求，进行中与往期按 status 分）；课表推断（有课时每 5 秒重查这节课，最多 2 分钟）；扫码打开签到；收藏位置与「这附近不再问」（500 米内有就不问）。人脸照片与代签码交给两个子控制器（构造注入，不反向依赖本类）。
+  - chaoxing_controller.dart：页面状态：打开进主账号；账号切换按代次丢弃切换前的异步结果；刷新课程与活动（最多并发三个课程请求，进行中与往期按 status 分；刷新不占账号忙，有一轮在拉就等它，只认最新一轮的结果）；改学校单位或客户端先存好就返回，再清空列表重拉（[人工决策] 在 _reloadActivities）；课表推断（有课时每 5 秒重查这节课，最多 2 分钟）；扫码打开签到；收藏位置与「这附近不再问」（500 米内有就不问）。人脸照片与代签码交给两个子控制器（构造注入，不反向依赖本类）。
   - chaoxing_face_controller.dart：人脸照片子控制器：列表、上传（可只上传给这次用）、预览缓存（总字节封顶 20MB）、保存到本机、学习通默认照片的读取与重处理。
   - chaoxing_delegate_controller.dart：代签码子控制器：出示（封包投递换取件票与作废口令）与取件导入（解封后用对方设备码登录确认，按代签账号存入）；代签码只带真实设备码（[人工决策] 在文件内）。
   - chaoxing_sign_flow.dart：一个人的完整签到流程 ChaoxingSignFlow（签到前检查、拍照上传、人脸、提交，验证码、换码与位置收紧重试）；会话与存储经 ChaoxingSignContext 注入。签到输入与回调类型也定义在这里。
   - chaoxing_qr_feed.dart：连续扫码时的最新二维码 ChaoxingQrFeed：要新码时有更新的就直接给，没有就等下一次扫到，取景页关掉以「已取消」结束。
 - 界面：
-  - chaoxing_page.dart：首页与登录表单（先取同意再登录）：首页分「可能正在签到」与「进行中的签到」两组，底下是往期、群聊签到、按课程三个入口（排列见文件内人工决策）；账号操作在⋯菜单；顶栏「扫签到二维码」直接打开那场签到（课程列表里没有也能签）。
+  - chaoxing_page.dart：首页与登录表单（先取同意再登录）：首页分「可能正在签到」与「进行中的签到」两组，底下是往期、群聊签到、按课程三个入口（排列见文件内人工决策）；账号操作在⋯菜单；顶栏「扫签到二维码」直接打开那场签到（课程列表里没有也能签）；刷新只有下拉一个入口，同一时刻只转一个加载（人工决策在文件内）。
   - chaoxing_sign_sheet.dart：签到弹层：
     - 先取详情再按类型要输入；签到码与手势可选校验方式；多个账号时可多选签到对象，每人一行原地显示状态。
     - 打开即检查，勾选的人全被拦时按原因弹窗：「仍然签到」放行并强制这个人、只关弹窗，「为其他账号签到」把没签的勾上、留在页面（[人工决策] 在文件内）。
@@ -53,7 +53,7 @@
   - chaoxing_tag_sheet.dart：账号标签的显示、管理与设置；颜色名与主题的 tagColors 一一对应（[人工决策] 在文件头）。
   - chaoxing_location_sheet.dart：收藏位置的管理弹层：地图能用时可在全屏地图上添加（起名必填，满 50 个不能再加，[人工决策] 在文件头），改名与删除。
   - chaoxing_share_page.dart：出示代签码页：二维码与倒计时（从发出投递时起算，只会比中转早到点）；重新生成、改附带照片或离开本页时作废上一张。
-  - chaoxing_settings_sheet.dart：签到设置弹层（学校单位、模拟的客户端）与修复账号时重输密码的对话框。
+  - chaoxing_settings_sheet.dart：签到设置弹层（学校单位、模拟的客户端；点了就勾上，存的时候两组都不禁用，也不等列表）与修复账号时重输密码的对话框。
   - chaoxing_sign_notices.dart：签到弹层里的时间提示与签退提示；往期活动照样能签、提示可能记为迟到（[人工决策] 在文件内）。
   - chaoxing_activity_card.dart：各页共用的活动卡片、签到入口 ChaoxingSignLauncher、一组签到的列表页 ChaoxingActivitiesPage 与二级页刷新按钮；整页读取失败用 theme 的 CampusLoadError。
   - chaoxing_group_page.dart：群聊签到：先列群（一次请求、最多 200 个，可搜、可置顶、同名合并），点进一项才拉那几个群的消息（[人工决策] 在文件头）。
@@ -91,4 +91,4 @@
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/toolbox/chaoxing
-- 标记位于：签到码与手势输错的反馈（chaoxing_code_cells.dart、chaoxing_gesture_field.dart）、绕过模式（chaoxing_signer.dart）、往期提示（chaoxing_sign_notices.dart）、预检弹窗与签完问收藏（chaoxing_sign_sheet.dart）、地图默认选点与定位提示（chaoxing_map_page.dart）、收藏管理（chaoxing_location_sheet.dart）、账号说明只标例外（chaoxing_store.dart）、主账号与登录已失效（chaoxing_accounts.dart）、账号管理（chaoxing_account_sheet.dart）、标签（chaoxing_tag_sheet.dart）、群聊先列群（chaoxing_group_page.dart）、人脸照片先重处理（chaoxing_face_sheet.dart）、代签码只带真实设备码（chaoxing_delegate_controller.dart）、首页入口排列（chaoxing_page.dart）、超时（chaoxing_client.dart）、刷新不挡活动列表与按 status 分进行中和往期（chaoxing_controller.dart）、活动名与类型名相同只显示一个（chaoxing_models.dart）。
+- 标记位于：签到码与手势输错的反馈（chaoxing_code_cells.dart、chaoxing_gesture_field.dart）、绕过模式（chaoxing_signer.dart）、往期提示（chaoxing_sign_notices.dart）、预检弹窗与签完问收藏（chaoxing_sign_sheet.dart）、地图默认选点与定位提示（chaoxing_map_page.dart）、收藏管理（chaoxing_location_sheet.dart）、账号说明只标例外（chaoxing_store.dart）、主账号与登录已失效（chaoxing_accounts.dart）、账号管理（chaoxing_account_sheet.dart）、标签（chaoxing_tag_sheet.dart）、群聊先列群（chaoxing_group_page.dart）、人脸照片先重处理（chaoxing_face_sheet.dart）、代签码只带真实设备码（chaoxing_delegate_controller.dart）、首页入口排列、刷新只留下拉与加载只显示一处（chaoxing_page.dart）、超时（chaoxing_client.dart）、刷新不挡活动列表、按 status 分进行中和往期、改单位或客户端清空重拉（chaoxing_controller.dart）、活动名与类型名相同只显示一个（chaoxing_models.dart）。

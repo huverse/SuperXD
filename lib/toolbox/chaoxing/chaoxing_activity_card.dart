@@ -115,21 +115,15 @@ class ChaoxingActivityCard extends StatelessWidget {
 
 // 分组标题：组名加条数，标题是只读信息，不用主色。
 class ChaoxingSectionTitle extends StatelessWidget {
-  const ChaoxingSectionTitle(this.title, {super.key, this.trailing = const []});
+  const ChaoxingSectionTitle(this.title, {super.key});
   final String title;
-  final List<Widget> trailing;
 
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
     return Padding(
       padding: const EdgeInsets.only(top: 20, bottom: 8),
-      child: Row(
-        children: [
-          Expanded(child: Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface))),
-          ...trailing,
-        ],
-      ),
+      child: Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
     );
   }
 }

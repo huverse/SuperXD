@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pool/pool.dart';
+import 'package:synchronized/synchronized.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
@@ -85,10 +86,13 @@ class ChaoxingController extends ChangeNotifier {
   // 签完问收藏时选了「这附近不再问」的地点。
   List<ChaoxingLocation> quietPlaces = const [];
   String? error;
+  // 登录、切换账号进行中。刷新列表不算在内：刷新时页面上别的按钮照常可点，也照常能切账号。
   bool busy = false;
 
   // 正在拉课程与活动：列表为空时显示加载中，而不是「没有可签到的活动」。
   bool loadingActivities = false;
+  // 当前账号与设置下的列表读到过。刚打开、刚改了学校单位或客户端、一直没读成时为否，这时列表为空不等于没有活动。
+  bool activitiesLoaded = false;
   ChaoxingClient? _client;
   final _clients = <String, ChaoxingClient>{};
   bool _disposed = false;
@@ -224,6 +228,7 @@ class ChaoxingController extends ChangeNotifier {
     pastActivities = const [];
     lessonActivities = const [];
     courses = const [];
+    activitiesLoaded = false;
     status = ChaoxingStatus.signedOut;
     _notify();
   }
@@ -266,6 +271,7 @@ class ChaoxingController extends ChangeNotifier {
         pastActivities = const [];
         lessonActivities = const [];
         courses = const [];
+        activitiesLoaded = false;
       }
       accountList = await accounts.list();
       await _loadTags();
@@ -283,18 +289,15 @@ class ChaoxingController extends ChangeNotifier {
   // 当前账号的头像（用户信息里下发的云盘地址，只在内存；没有为空串）。
   String get currentPhoto => _client?.account?.photoUrl ?? '';
 
+  // 刷新列表：已有一轮在拉就等那一轮（下拉、签完后的刷新不重复发请求）；登录、切换账号进行中时不刷新。
   Future<void> refresh() async {
     if (busy || _client == null) return;
-    busy = true;
     error = null;
     _notify();
     try {
-      await _loadActivities();
+      await (_listLoad ?? _loadActivities());
     } catch (failure, stack) {
       _fail('refresh', failure, stack, '刷新未完成，请检查网络后重试');
-    } finally {
-      busy = false;
-      _notify();
     }
   }
 
@@ -612,26 +615,53 @@ class ChaoxingController extends ChangeNotifier {
     _notify();
   }
 
-  // 切换学校单位：之后课程列表与签到都按这个单位走，切完重新拉一遍。
+  // 学校单位与客户端的改动排队落库：连着点了几项时按点的顺序一个个存，最后点的那项生效。
+  final _settingsLock = Lock();
+
+  // 切换学校单位：之后课程列表与签到都按这个单位走。存好就返回（设置弹层不等列表），列表随后清空重拉；
+  // 重拉的结果与错误由首页显示（_reloadActivities 自己接住错误）。
   Future<void> selectUnit(ChaoxingUnit unit) async {
     final client = _requireClient();
-    // 等后台刷新落定再切：刷新若读到切换前的记录，会把刚选的单位连同会话一起写回旧的。
-    await _maintenance;
-    await accounts.selectUnit(client, unit);
-    accountList = await accounts.list();
-    current = await accounts.record(client.phoneNumber);
-    _notify();
-    await refresh();
+    await _settingsLock.synchronized(() async {
+      // 等后台刷新落定再切：刷新若读到切换前的记录，会把刚选的单位连同会话一起写回旧的。
+      await _maintenance;
+      await accounts.selectUnit(client, unit);
+      accountList = await accounts.list();
+      current = await accounts.record(client.phoneNumber);
+      _notify();
+    });
+    unawaited(_reloadActivities());
   }
 
-  // 换模拟的客户端：已开着的会话一起换 UA，再刷新一次。
+  // 换模拟的客户端：已开着的会话一起换 UA；存好就返回，列表随后清空重拉（同切换学校单位）。
   Future<void> setProfile(ChaoxingClientProfile value) async {
-    await accounts.saveProfile(value);
-    for (final client in [?_client, ..._clients.values]) {
-      client.http.profile = value;
-    }
+    await _settingsLock.synchronized(() async {
+      await accounts.saveProfile(value);
+      for (final client in [?_client, ..._clients.values]) {
+        client.http.profile = value;
+      }
+    });
     _notify();
-    await refresh();
+    unawaited(_reloadActivities());
+  }
+
+  // [人工决策-2026-10-17 16:16:34] 改了学校单位或模拟的客户端，课程列表按新设置下发，旧列表不再作数：先清空，在列表位置显示加载，
+  // 再重新拉一遍（同切换账号）。用户从选项中选定，未选「保留旧列表静默刷新」「顶部出下拉刷新那个指示」；签完后的刷新照旧保留列表、静默进行。
+  // 改设置之前开始的那一轮读回来就丢弃（见 _loadActivities）。
+  Future<void> _reloadActivities() async {
+    if (busy || _client == null) return;
+    _lessonPoll?.cancel();
+    courses = const [];
+    activities = const [];
+    pastActivities = const [];
+    lessonActivities = const [];
+    activitiesLoaded = false;
+    error = null;
+    try {
+      await _loadActivities();
+    } catch (failure, stack) {
+      _fail('reload', failure, stack, '签到活动没读到，请稍后重试');
+    }
   }
 
   Future<void> saveLocation(String label, ChaoxingLocation location) async {
@@ -698,6 +728,7 @@ class ChaoxingController extends ChangeNotifier {
     activities = const [];
     pastActivities = const [];
     lessonActivities = const [];
+    activitiesLoaded = false;
     status = ChaoxingStatus.ready;
     _notify();
     await _loadActivities();
@@ -726,27 +757,42 @@ class ChaoxingController extends ChangeNotifier {
     }
   }
 
-  // 拉一遍课程与活动；拉的途中切了账号（代次变了）就整份丢弃，连错误也不报到新账号上。
-  Future<void> _loadActivities() async {
+  // 正在进行的那一轮列表读取，刷新时有就等它。每起一轮 _listGeneration 加一，只有最新的一轮写界面。
+  Future<void>? _listLoad;
+  int _listGeneration = 0;
+
+  Future<void> _loadActivities() {
+    final load = _loadActivitiesOnce();
+    _listLoad = load;
+    return load.whenComplete(() {
+      if (identical(_listLoad, load)) _listLoad = null;
+    });
+  }
+
+  // 拉一遍课程与活动；拉的途中切了账号（代次变了）或又起了一轮（改了单位或客户端），就整份丢弃，连错误也不报。
+  Future<void> _loadActivitiesOnce() async {
     final generation = _generation;
+    final listGeneration = ++_listGeneration;
+    bool latest() => generation == _generation && listGeneration == _listGeneration;
     final client = _requireClient();
     final record = current!;
     loadingActivities = true;
     _notify();
     try {
       final loaded = await _fetchActivities(client, record);
-      if (generation != _generation) return;
+      if (!latest()) return;
       courses = loaded.courses;
       activities = [for (final activity in loaded.collected) if (activity.ongoing) activity];
       pastActivities = [for (final activity in loaded.collected) if (!activity.ongoing) activity];
       lessonActivities = loaded.lessons.activities;
       _lessonTable = loaded.lessons.table;
-      _startLessonPoll(client, generation);
+      activitiesLoaded = true;
+      _startLessonPoll(client, latest);
     } catch (failure, stack) {
-      if (generation == _generation) rethrow;
+      if (latest()) rethrow;
       campusLog('[Chaoxing] action=activities_stale errorType=${failure.runtimeType}\n$stack');
     } finally {
-      if (generation == _generation) {
+      if (latest()) {
         loadingActivities = false;
         _notify();
       }
@@ -822,17 +868,17 @@ class ChaoxingController extends ChangeNotifier {
     }
   }
 
-  // 读完列表还没推断到签到、而且现在正有课时开始轮询；换账号、退出、关页面、下课或查到了就停。
-  void _startLessonPoll(ChaoxingClient client, int generation) {
+  // 读完列表还没推断到签到、而且现在正有课时开始轮询；换账号、退出、关页面、下课、查到了或列表又重拉了就停（latest 为否）。
+  void _startLessonPoll(ChaoxingClient client, bool Function() latest) {
     _lessonPoll?.cancel();
     final deadline = DateTime.now().add(lessonPollWindow);
     void schedule() {
-      if (_disposed || generation != _generation || lessonActivities.isNotEmpty || !DateTime.now().isBefore(deadline)) return;
+      if (_disposed || !latest() || lessonActivities.isNotEmpty || !DateTime.now().isBefore(deadline)) return;
       final table = _lessonTable;
       if (table == null || chaoxingCurrentLessons(table, DateTime.now().toUtc()).isEmpty) return;
       _lessonPoll = Timer(lessonPollInterval, () {
         _pollLessons(client).then((found) {
-          if (_disposed || generation != _generation) return;
+          if (_disposed || !latest()) return;
           if (found.isEmpty) {
             schedule();
             return;

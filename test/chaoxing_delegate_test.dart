@@ -354,6 +354,8 @@ void main() {
     expect(controller.current!.schoolName, '乙培训');
     expect((await vault.readCookies('13800138000'))!['fid'], '5678');
 
+    // 存好就返回，列表在后台清空重拉；刷新会等这一轮拉完。
+    await controller.refresh();
     final activity = controller.activities.first;
     await controller.signTarget(
       controller.signTargets().single,
@@ -376,7 +378,8 @@ void main() {
     await controller.signIn('13800138000', 'myPassword123');
     expect(fake.lastUserAgent, contains('com.chaoxing.mobile/'));
     await controller.setProfile(ChaoxingClientProfile.xuezaixidian);
-    // 换完会刷新一次列表，这次请求带的就是学在西电的 UA。
+    // 换完列表在后台重拉一遍（刷新会等这一轮），这次请求带的就是学在西电的 UA。
+    await controller.refresh();
     expect(fake.lastUserAgent, contains('com.chaoxing.mobile.xuezaixidian/'));
     expect(await store.preference(chaoxingProfileKey), 'xuezaixidian');
     final accounts = ChaoxingAccounts(store: store, vault: vault);
