@@ -44,9 +44,13 @@
 - 课表的课程门数按唯一课程代码核对。同一课程可能拆成多个教学班，全部保留。
 - 解析失败时抛 FormatException，或抛带 UPSTREAM_FORMAT 的 KingoCallException。网关据此报错，保留已有缓存。
 - 日志不写原始 HTML、链接、cookie 或凭据。
-- 修改解析规则时：
-  - 先在以下测试里加合成样本：test/kingo_client_response_test.dart、test/sync_boundary_regression_test.dart、test/contract_test.dart、test/grades_test.dart。
-  - 真实页面只在授权环境下用 tool/verify_edu.dart、tool/verify_grades.dart 手动核对，样本不入库。
+- 单校写死：教务地址是 kingoBase，作息解析里写死了校名。换校要把来源改成配置，并迁移账号身份键（身份键包含来源 URL）。
+- 性能观察项：成绩响应分块累加，没有真机 profile 证据前不要改。
+
+# 测试
+
+- 修改解析规则时先在这些测试里加合成样本：contract_test.dart、kingo_client_response_test.dart、sync_boundary_regression_test.dart、grades_test.dart。
+- 真实页面只在授权环境下用 tool/verify_edu.dart、tool/verify_grades.dart 手动核对，样本不入库。
 
 # 人工决策检索
 

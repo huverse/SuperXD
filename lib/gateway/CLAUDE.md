@@ -65,6 +65,11 @@
 - 旧上下文的迟到结果一律丢弃（返回 ACCOUNT_CHANGED），不得写入新账号的库，也不得改动新会话。
 - 登录密码只在 KingoAuth 里暂存到认证结束。认证成功后，只有用户选择了记住账号，才交给 CredentialStore。
 
+# 测试
+
+- account_isolation_test.dart、account_lifecycle_test.dart、remembered_session_test.dart、kingo_gateway_test.dart、sync_boundary_regression_test.dart。
+- 页面与同步用的合成数据网关是 test/fixture_campus_gateway.dart（读 assets/fixtures），新增端口方法时一并补齐。
+
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/gateway

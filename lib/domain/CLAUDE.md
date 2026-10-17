@@ -76,6 +76,12 @@
   - 结构不符时抛 GradeDataException，由网关转成 GRADE_DATA_INVALID 并保留原成绩。
 - 时间：今天、周次等业务日界只通过 campus_clock 和 week 计算；持久化的时间是 UTC ISO 字符串，展示时才转成校园时区。
 
+# 测试
+
+- 课表：schedule_edit_test.dart、schedule_version_test.dart、period_day_test.dart。
+- 课程实例与下游：reminder_test.dart、calendar_export_test.dart、home_widget_test.dart。
+- 成绩、卡片与更新规则：grades_test.dart、share_card_test.dart、app_update_test.dart。
+
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/domain

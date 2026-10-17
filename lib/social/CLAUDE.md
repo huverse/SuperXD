@@ -34,6 +34,12 @@
 - 隐私：私钥只在安全存储；服务端只见设备号、好友关系、密文大小与时间；昵称、课表、界面、作品链接都在密文里。视频卡片不带媒体直链与封面。
 - 身份丢失（安全存储被清）时清空本机私信库回到未开启，旧会话已无法解密。
 
+# 测试
+
+- social_protocol_test.dart（与服务端共用测试向量、信封、二维码）、share_card_test.dart、social_service_test.dart、social_ui_test.dart。
+- fake_relay.dart 是按协议 v1 规则验签的内存假中转。服务端：cd server 后 npm test（Vitest，需 docker-compose.test.yml 起的 MySQL 与 Redis）。
+- 手动入口：tool/verify_social.dart（两个真实客户端经真实中转联调，只用合成数据，运行方式见文件头）。
+
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/social server/src
