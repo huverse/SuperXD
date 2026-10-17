@@ -680,7 +680,11 @@ class ChaoxingController extends ChangeNotifier {
     _notify();
   }
 
+  // 改名不能改成另一个收藏的名字（同名会在签到页里出现两个一样的选项；添加时同名是覆盖，改名不悄悄删掉另一个）。
   Future<void> renameLocation(int id, String label) async {
+    if (locations.any((item) => item.label == label && item.id != id)) {
+      throw ChaoxingFailure(ChaoxingFailureCode.invalidInput, '已经有叫「$label」的收藏了');
+    }
     await accounts.store.renameLocation(id, label);
     locations = await accounts.store.locations();
     _notify();

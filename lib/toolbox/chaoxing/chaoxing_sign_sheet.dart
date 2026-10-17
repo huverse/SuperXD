@@ -144,6 +144,12 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   }
 
   Future<void> _load() async {
+    await _loadInfo();
+    unawaited(_presignOnOpen());
+  }
+
+  // 读活动详情；读不到时弹层里写原因并给「重试」（重试只重读详情，打开时的签到前检查不再重做）。
+  Future<void> _loadInfo() async {
     try {
       final info = await widget.controller.activeInfo(_activity);
       // 默认选中的位置（[人工决策-2026-10-14 21:26:16]，见 chaoxing_map_page.dart）：这门课上次签到用的 → 上次签到用的；
@@ -174,7 +180,6 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       campusLog('[Chaoxing] action=active_info errorType=${failure.runtimeType}\n$stack');
       if (mounted) setState(() => _loadError = '活动详情没读到，请稍后重试');
     }
-    unawaited(_presignOnOpen());
   }
 
   // 打开签到页先检查一遍（对齐参考项目，别等提交后才知道）：已签到、已截止或不在班级的人原地标出
@@ -747,7 +752,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       if (parsed == null || !checkedEncs.add(parsed.enc)) return;
       unawaited(
         widget.controller.qrCodeExpired(parsed, _activity).then((expired) {
-          if (expired) status.value = '这个二维码已过期，请对准老师屏幕上的新码';
+          // 签完收尾后 status 已经释放，晚回来的查询结果不再写它。
+          if (expired && !done.isCompleted) status.value = '这个二维码已过期，请对准老师屏幕上的新码';
         }).catchError((Object error, StackTrace stack) {
           campusLog('[Chaoxing] action=qr_check errorType=${error.runtimeType}\n$stack');
         }),
@@ -832,6 +838,9 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       );
       if (!agreed || !mounted) return;
     }
+    // 点了这一行的重试或强制签到就是要签这个人：打开时被检查拦下而取消了勾选的，这里重新勾上，
+    // 否则没有别人勾着时只会提示「请先选要签到的人」。
+    setState(() => target.selected = true);
     final inputs = _inputs();
     if (inputs == null) return;
     if (_type == ChaoxingSignType.qrCode) {
@@ -900,10 +909,25 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   }
 
   Widget _body(CampusPalette palette) {
+    // 详情读不到时原地给「重试」（以前只有一行红字，要关掉弹层重开）。
     if (_loadError != null) {
       return Padding(
         padding: const EdgeInsets.symmetric(vertical: 8),
-        child: Text(_loadError!, style: TextStyle(fontSize: 14, color: palette.danger)),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(_loadError!, style: TextStyle(fontSize: 14, color: palette.danger)),
+            const SizedBox(height: 12),
+            OutlinedButton.icon(
+              onPressed: () {
+                setState(() => _loadError = null);
+                unawaited(_loadInfo());
+              },
+              icon: const CampusIcon(CampusIcons.sync),
+              label: const Text('重试'),
+            ),
+          ],
+        ),
       );
     }
     final info = _info;

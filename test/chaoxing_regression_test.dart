@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -65,6 +66,19 @@ class _GatedClient extends http.BaseClient {
     }
     return _inner.send(request);
   }
+}
+
+// 记下会话有没有被关掉。
+class _CountingClient extends http.BaseClient {
+  _CountingClient(this._inner);
+  final http.Client _inner;
+  bool closed = false;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) => _inner.send(request);
+
+  @override
+  void close() => closed = true;
 }
 
 void main() {
@@ -541,6 +555,60 @@ void main() {
     // 以前列表一失败就整轮跳过，这次打开里 clientId、头像都补不上。
     expect(fake.calls.where((call) => call.contains('userLogin4Uname')), isNotEmpty);
     await controller.signOut();
+    controller.dispose();
+  });
+
+  test('账号登录用的会话用完就关，登录没成也关', () async {
+    final clients = <_CountingClient>[];
+    final accounts = ChaoxingAccounts(
+      store: store,
+      vault: MemoryChaoxingVault(),
+      transport: (cookies) {
+        final client = _CountingClient(fake.client());
+        clients.add(client);
+        return ChaoxingHttp(client: client, cookies: cookies);
+      },
+    );
+    await accounts.signIn(phoneNumber: '13800138000', password: 'myPassword123');
+    expect(clients.single.closed, isTrue);
+    await expectLater(accounts.signIn(phoneNumber: '13800138000', password: 'wrongPassword1'), throwsA(isA<ChaoxingFailure>()));
+    expect(clients, hasLength(2));
+    expect(clients.last.closed, isTrue);
+  });
+
+  test('TLS 握手中断按网络问题报；用户信息里 accountInfo 不是对象时照样能登录', () async {
+    final tls = ChaoxingHttp(client: MockClient((_) async => throw const HandshakeException('Connection terminated during handshake')));
+    await expectLater(
+      tls.get(Uri.parse('https://mooc1-api.chaoxing.com/mycourse')),
+      throwsA(isA<ChaoxingFailure>().having((failure) => failure.code, 'code', ChaoxingFailureCode.network)),
+    );
+    final odd = ChaoxingHttp(
+      client: MockClient(
+        (_) async => http.Response.bytes(
+          utf8.encode(jsonEncode({'msg': {'uid': 7, 'puid': 7, 'fid': 1234, 'schoolname': '示例大学', 'accountInfo': '不是对象'}})),
+          200,
+          headers: {'content-type': 'application/json; charset=utf-8'},
+        ),
+      ),
+    );
+    final account = await ChaoxingClient(http: odd, phoneNumber: '13800138000', encryptedPassword: '', deviceCode: 'code').loadAccount();
+    expect(account.uid, 7);
+    expect(account.imPassword, isEmpty);
+  });
+
+  test('收藏改名不能改成另一个收藏的名字', () async {
+    final controller = ChaoxingController(accounts: accountsWith(MemoryChaoxingVault()));
+    const location = ChaoxingLocation(latitude: 36.6, longitude: 117.0, address: '知敬楼');
+    await controller.saveLocation('知敬楼', location);
+    await controller.saveLocation('图书馆', location);
+    final library = controller.locations.firstWhere((item) => item.label == '图书馆');
+    await expectLater(
+      controller.renameLocation(library.id, '知敬楼'),
+      throwsA(isA<ChaoxingFailure>().having((failure) => failure.code, 'code', ChaoxingFailureCode.invalidInput)),
+    );
+    expect(controller.locations.map((item) => item.label), unorderedEquals(['知敬楼', '图书馆']));
+    await controller.renameLocation(library.id, '图书馆三楼');
+    expect(controller.locations.map((item) => item.label), unorderedEquals(['知敬楼', '图书馆三楼']));
     controller.dispose();
   });
 
