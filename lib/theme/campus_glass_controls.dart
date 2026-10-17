@@ -43,24 +43,35 @@ class CampusGlassChip extends StatelessWidget {
         child: child!,
       ),
     );
-    // 选中时多出勾号，宽度平滑展开而不是瞬间跳变；减少动画时直接到位。
-    return AnimatedSize(
-      duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 200),
-      curve: Curves.easeOutCubic,
-      alignment: AlignmentDirectional.centerStart,
-      child: Semantics(
+    // 选中前后是同一个按钮，只在按钮里给勾号让位：图标位宽度平滑展开、图标淡入，文字跟着滑开，胶囊两端始终是圆的。
+    // 以前整个按钮换成带图标的那种、外面包一层 AnimatedSize：勾号和文字一下子到位，胶囊右端在展开途中被裁成直边。
+    final icon = selected ? const CampusIcon(CampusIcons.check, size: 18) : leading;
+    // 图标与文字的间距同 FilledButton.icon：大字号时从 8 收到 4。
+    final gap = 8 - 4 * ((MediaQuery.textScalerOf(context).scale(14) / 14).clamp(1.0, 2.0) - 1);
+    final slot = icon == null ? const SizedBox.shrink() : Padding(key: ValueKey(selected), padding: EdgeInsetsDirectional.only(end: gap), child: icon);
+    return Semantics(
       selected: selected,
-      child: selected
-          ? FilledButton.icon(
-              style: style,
-              onPressed: onPressed,
-              icon: const CampusIcon(CampusIcons.check, size: 18),
-              label: Text(label),
-            )
-          : leading == null
-          ? FilledButton(style: style, onPressed: onPressed, child: Text(label))
-          : FilledButton.icon(style: style, onPressed: onPressed, icon: leading, label: Text(label)),
-    ));
+      child: FilledButton(
+        style: style,
+        onPressed: onPressed,
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // 减少动画时直接到位，不包动画（AnimatedSize 时长为 0 会在自己的布局里改自己，框架直接报错）。
+            if (MediaQuery.disableAnimationsOf(context))
+              slot
+            else
+              AnimatedSize(
+                duration: const Duration(milliseconds: 200),
+                curve: Curves.easeOutCubic,
+                alignment: AlignmentDirectional.centerStart,
+                child: AnimatedSwitcher(duration: const Duration(milliseconds: 160), child: slot),
+              ),
+            Flexible(child: Text(label)),
+          ],
+        ),
+      ),
+    );
   }
 }
 

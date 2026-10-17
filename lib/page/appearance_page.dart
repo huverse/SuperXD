@@ -61,7 +61,6 @@ class AppearancePage extends StatefulWidget {
 }
 
 class _AppearancePageState extends State<AppearancePage> {
-  bool _saving = false;
   String? _error;
   bool _importing = false;
   String? _wallpaperError;
@@ -111,7 +110,7 @@ class _AppearancePageState extends State<AppearancePage> {
 
   // 选图、取色、复制在发起处原地显示进度与错误；取消选图不提示。选图的缓存副本用完即删，不在缓存里累积。
   Future<void> _importWallpaper(DisplaySettings settings) async {
-    if (_saving || _importing) return;
+    if (_importing) return;
     setState(() {
       _importing = true;
       _wallpaperError = null;
@@ -149,24 +148,20 @@ class _AppearancePageState extends State<AppearancePage> {
     }
   }
 
+  // 点了就生效：落库在 DisplaySettings 的保存锁里排队、合并完整快照，连着点也不互相覆盖，所以存的时候页面上的选项不变灰，
+  // 也不在页尾插「保存中」（以前点一项整页选项闪一下灰、页尾多出一行）。只有导入壁纸这种要等的操作才原地显示进度。
   Future<void> _save(Future<void> Function() operation) async {
-    if (_saving) return;
-    setState(() {
-      _saving = true;
-      _error = null;
-    });
+    setState(() => _error = null);
     try {
       await operation();
     } catch (error, stack) {
       campusLog('[Appearance] action=save errorType=${error.runtimeType}\n$stack');
       if (mounted) setState(() => _error = '保存失败，请重试');
-    } finally {
-      if (mounted) setState(() => _saving = false);
     }
   }
 
   List<Widget> _wallpaperSection(BuildContext context, DisplaySettings settings) {
-    final busy = _saving || _importing;
+    final busy = _importing;
     final custom = settings.wallpaperFile != null;
     // [人工决策-2026-10-04 16:08:17] 壁纸模糊与透明度为连续滑杆，拖动实时预览、松手保存（取代三档标签）；用户实测确认。
     // 模糊与透明度连续可调（0–100%），拖动时背景实时变化；透明度只在保证文字可读的下限之上调，不会让文字看不清。
@@ -250,7 +245,7 @@ class _AppearancePageState extends State<AppearancePage> {
               values: const [ThemeMode.system, ThemeMode.light, ThemeMode.dark],
               selected: settings.themeMode,
               label: (mode) => switch (mode) { ThemeMode.system => '跟随系统', ThemeMode.light => '浅色', ThemeMode.dark => '深色' },
-              onSelected: _saving ? null : (mode) => _save(() => settings.setThemeMode(mode)),
+              onSelected: (mode) => _save(() => settings.setThemeMode(mode)),
             ),
             // [人工决策-2026-10-06 13:06:11] 按使用频率排：外观模式、配色、背景、字体、字号在前，玻璃效果（性能项、少用）放最后，用户选定。
             const SizedBox(height: 24),
@@ -282,11 +277,9 @@ class _AppearancePageState extends State<AppearancePage> {
                           child: CampusSurface(
                             padding: EdgeInsets.zero,
                             selected: settings.paletteId == palette.id,
-                            onTap: _saving
-                                ? null
-                                : () => _save(
-                                    () => settings.setPalette(palette.id),
-                                  ),
+                            onTap: () => _save(
+                              () => settings.setPalette(palette.id),
+                            ),
                             child: Container(
                               padding: const EdgeInsets.all(16),
                               decoration: BoxDecoration(
@@ -358,9 +351,7 @@ class _AppearancePageState extends State<AppearancePage> {
                   label: font.label,
                   child: CampusSurface(
                     selected: settings.fontId == font.id,
-                    onTap: _saving
-                        ? null
-                        : () => _save(() => settings.setFont(font.id)),
+                    onTap: () => _save(() => settings.setFont(font.id)),
                     child: Row(
                       children: [
                         Expanded(
@@ -398,13 +389,11 @@ class _AppearancePageState extends State<AppearancePage> {
                   CampusGlassChip(
                     label: DisplaySettings.labels[index],
                     selected: settings.scale == DisplaySettings.scales[index],
-                    onSelected: _saving
-                        ? null
-                        : (_) => _save(
-                            () => settings.setScale(
-                              DisplaySettings.scales[index],
-                            ),
-                          ),
+                    onSelected: (_) => _save(
+                      () => settings.setScale(
+                        DisplaySettings.scales[index],
+                      ),
+                    ),
                   ),
               ],
             ),
@@ -416,7 +405,7 @@ class _AppearancePageState extends State<AppearancePage> {
               selected: settings.glassMode,
               label: (mode) => switch (mode) { 'full' => '完整', 'reduced' => '简化', _ => '自动' },
               // 限档时点「完整」（已选中也算）即解除限档重试，[人工决策] 见 campus_glass_tier.dart。
-              onSelected: _saving ? null : (mode) => _save(() async {
+              onSelected: (mode) => _save(() async {
                 if (mode == 'full' && campusGlassCapped.value) await CampusGlassGuard.retry();
                 await settings.setGlassMode(mode);
               }),
@@ -430,7 +419,6 @@ class _AppearancePageState extends State<AppearancePage> {
                     )
                   : const SizedBox.shrink(),
             ),
-            if (_saving) const CampusLoading(label: '保存中', inline: true),
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 12),

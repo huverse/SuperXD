@@ -393,6 +393,99 @@ void main() {
     controller.dispose();
   });
 
+  void useOneActivity() {
+    fake.courses = mathCourse();
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '5', 'nameOne': '签到', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0},
+    ];
+  }
+
+  test('刷新列表不占「忙」：刷新途中照样能切账号，不再点了没反应', () async {
+    useOneActivity();
+    await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');
+    final vault = MemoryChaoxingVault();
+    await accountsWith(vault).signIn(phoneNumber: '13800138000', password: 'myPassword123');
+    await accountsWith(vault).signIn(phoneNumber: '13900139000', password: 'otherPassword1');
+    final controller = ChaoxingController(accounts: accountsWith(vault));
+    await controller.initialize();
+    final first = controller.current!;
+    final other = controller.accountList.firstWhere((record) => record.phoneNumber != first.phoneNumber);
+    fake.activityListGate = Completer<void>();
+    final refreshing = controller.refresh();
+    expect(controller.busy, isFalse);
+    final switching = controller.select(other);
+    fake.activityListGate!.complete();
+    await Future.wait([refreshing, switching]);
+    expect(controller.current!.phoneNumber, other.phoneNumber);
+    expect(controller.error, isNull);
+    expect(controller.loadingActivities, isFalse);
+    expect(controller.activities, isNotEmpty);
+    await controller.signOut();
+    controller.dispose();
+  });
+
+  test('改了学校单位或客户端：存好就返回、不等列表；旧列表清空，拉完再换上', () async {
+    useOneActivity();
+    fake.unitConfigInfos = [
+      {'fid': 1234, 'schoolname': '示例大学'},
+      {'fid': 5678, 'schoolname': '乙培训'},
+    ];
+    final controller = ChaoxingController(accounts: accountsWith(MemoryChaoxingVault()));
+    await controller.signIn('13800138000', 'myPassword123');
+    expect(controller.activities, isNotEmpty);
+    fake.activityListGate = Completer<void>();
+    // 以前要等整份列表拉完才返回（设置弹层一直灰着），闸门不放就卡住。
+    await controller.selectUnit(const ChaoxingUnit(fid: 5678, name: '乙培训')).timeout(const Duration(seconds: 5));
+    expect(controller.current!.fid, 5678);
+    expect(controller.activities, isEmpty);
+    expect(controller.activitiesLoaded, isFalse);
+    expect(controller.loadingActivities, isTrue);
+    await controller.setProfile(ChaoxingClientProfile.xuezaixidian).timeout(const Duration(seconds: 5));
+    expect(controller.loadingActivities, isTrue);
+    fake.activityListGate!.complete();
+    await controller.refresh();
+    expect(controller.activities, isNotEmpty);
+    expect(controller.activitiesLoaded, isTrue);
+    expect(controller.loadingActivities, isFalse);
+    expect(fake.lastUserAgent, contains('com.chaoxing.mobile.xuezaixidian/'));
+    await controller.signOut();
+    controller.dispose();
+  });
+
+  test('首屏列表还没回来时改了学校单位：改之前那一轮读回来（哪怕失败）就丢弃，不把错误报到新列表上', () async {
+    useOneActivity();
+    fake.unitConfigInfos = [
+      {'fid': 1234, 'schoolname': '示例大学'},
+      {'fid': 5678, 'schoolname': '乙培训'},
+    ];
+    final vault = MemoryChaoxingVault();
+    await accountsWith(vault).signIn(phoneNumber: '13800138000', password: 'myPassword123');
+    final gate = Completer<void>();
+    final controller = ChaoxingController(
+      accounts: ChaoxingAccounts(
+        store: store,
+        vault: vault,
+        transport: (cookies) => ChaoxingHttp(client: _GatedClient(fake.client(), gate), cookies: cookies),
+      ),
+    );
+    final loading = controller.initialize();
+    for (var attempt = 0; attempt < 2000 && !_GatedClient.used; attempt++) {
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+    }
+    if (!_GatedClient.used) fail('等待超时：首屏课程列表请求卡在闸门上');
+    await controller.selectUnit(const ChaoxingUnit(fid: 5678, name: '乙培训'));
+    await controller.refresh();
+    expect(controller.activities, isNotEmpty);
+    gate.complete();
+    await loading;
+    expect(controller.error, isNull);
+    expect(controller.activities, isNotEmpty);
+    expect(controller.activitiesLoaded, isTrue);
+    expect(controller.loadingActivities, isFalse);
+    await controller.signOut();
+    controller.dispose();
+  });
+
   test('打开库时裁掉过期的学习通课表缓存', () async {
     await store.putLessonCache('13800138000', '{}');
     await store.putLessonCache('13900139000', '{}');

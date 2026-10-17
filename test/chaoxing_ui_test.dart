@@ -11,6 +11,7 @@ import 'package:path/path.dart' as path;
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
+import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -1327,6 +1328,101 @@ void main() {
     fake.activityListGate!.complete();
     await waitUntil(tester, () => inDetail(find.byTooltip('刷新')).evaluate().isNotEmpty);
     expect(find.text('进行中（1）'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 用户反馈：下拉时三个加载动画同时转（顶部指示、标题旁的刷新按钮、列表里的加载），标题旁的刷新按钮与下拉重复。
+  testWidgets('首页下拉刷新只转顶部一个指示：标题旁没有刷新按钮，列表里不另显示加载，刷新中「群聊签到」照常可点', (tester) async {
+    usePhoneScreen(tester);
+    // 下拉刷新靠越界回弹，要挂应用的滚动行为（测试平台默认不回弹，拉不出指示）。
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), scrollBehavior: const CampusScrollBehavior(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    expect(find.byTooltip('刷新'), findsNothing);
+    Future<void> pull() async {
+      final gesture = await tester.startGesture(tester.getCenter(find.text('进行中的签到')));
+      await gesture.moveBy(const Offset(0, 20));
+      await gesture.moveBy(const Offset(0, 40));
+      await gesture.moveBy(const Offset(0, 160));
+      await tester.pump();
+      await gesture.up();
+      await tester.pump();
+    }
+
+    // 活动列表卡在闸门上：旧列表照常显示，只有顶部的下拉指示在转。
+    fake.activities = [];
+    fake.activityListGate = Completer<void>();
+    await pull();
+    await waitUntil(tester, () => find.byType(CampusLoader).evaluate().isNotEmpty);
+    expect(find.byType(CampusLoader), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, '去签到'), findsOneWidget);
+    expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '群聊签到')).enabled, isTrue);
+    fake.activityListGate!.complete();
+    await waitUntil(tester, () => find.text('现在没有可签到的活动').evaluate().isNotEmpty);
+    await waitUntil(tester, () => find.byType(CampusLoader).evaluate().isEmpty);
+
+    // 列表为空时再下拉：「没有活动」照常显示，不换成列表里的加载。
+    fake.activityListGate = Completer<void>();
+    await pull();
+    await waitUntil(tester, () => find.byType(CampusLoader).evaluate().isNotEmpty);
+    expect(find.byType(CampusLoader), findsOneWidget);
+    expect(find.text('现在没有可签到的活动'), findsOneWidget);
+    expect(find.text('正在读取签到活动…'), findsNothing);
+    fake.activityListGate!.complete();
+    await waitUntil(tester, () => find.byType(CampusLoader).evaluate().isEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 用户反馈：签到设置里切学校单位或客户端，别的选项也跟着变（整个弹层变灰到列表拉完），切换过程割裂、卡顿。
+  testWidgets('签到设置：点了就勾上，两组都不变灰也不等列表；切了单位首页清空并在列表位置显示加载；点回正在用的客户端不重拉', (tester) async {
+    usePhoneScreen(tester);
+    fake.unitConfigInfos = [
+      {'fid': 1234, 'schoolname': '示例大学'},
+      {'fid': 5678, 'schoolname': '乙培训'},
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: campusTheme(),
+        builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(disableAnimations: true), child: child!),
+        home: ChaoxingPage(runtime: runtime),
+      ),
+    );
+    await login(tester);
+    await tester.tap(find.byTooltip('账号操作'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('签到设置').evaluate().isNotEmpty);
+    await tester.tap(find.text('签到设置'));
+    await tester.pump();
+    await waitUntil(tester, () => find.widgetWithText(CampusGlassChip, '乙培训').evaluate().isNotEmpty);
+    CampusGlassChip chip(String label) => tester.widget<CampusGlassChip>(find.widgetWithText(CampusGlassChip, label));
+
+    fake.activityListGate = Completer<void>();
+    await tester.tap(find.widgetWithText(CampusGlassChip, '乙培训'));
+    await tester.pump();
+    expect(chip('乙培训').selected, isTrue);
+    expect(chip('示例大学').selected, isFalse);
+    for (final label in ['示例大学', '乙培训', '学习通', '学在西电', '自定义']) {
+      expect(chip(label).onSelected, isNotNull, reason: label);
+    }
+    // 存好后首页旧列表清空，列表位置显示加载（只此一处在转）；放行后换上新列表。
+    await waitUntil(tester, () => find.text('正在读取签到活动…').evaluate().isNotEmpty);
+    expect(find.widgetWithText(FilledButton, '去签到'), findsNothing);
+    expect(find.byType(CampusLoader), findsOneWidget);
+    expect(chip('学在西电').onSelected, isNotNull);
+    fake.activityListGate!.complete();
+    await waitUntil(tester, () => find.widgetWithText(FilledButton, '去签到').evaluate().isNotEmpty);
+    expect(find.text('正在读取签到活动…'), findsNothing);
+
+    // 先点「自定义」看一眼再点回正在用的「学习通」：不保存，首页列表不清空。
+    await tester.tap(find.widgetWithText(CampusGlassChip, '自定义'));
+    await tester.pump();
+    expect(find.widgetWithText(TextField, '完整的 UserAgent'), findsOneWidget);
+    await tester.tap(find.widgetWithText(CampusGlassChip, '学习通'));
+    await tester.pump();
+    expect(chip('学习通').selected, isTrue);
+    expect(find.widgetWithText(TextField, '完整的 UserAgent'), findsNothing);
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.widgetWithText(FilledButton, '去签到'), findsOneWidget);
+    expect(find.text('正在读取签到活动…'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
