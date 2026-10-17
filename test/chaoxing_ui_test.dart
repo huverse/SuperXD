@@ -25,6 +25,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_course_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_group_page.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_history_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
@@ -726,6 +727,97 @@ void main() {
     await waitUntil(tester, () => find.text('登录其他账号').evaluate().isNotEmpty);
     expect(find.text('出示我的代签码'), findsNothing);
     expect(find.text('扫别人的代签码'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('整页登录输错密码：学习通给的原因写在表单里，按钮回到可点', (tester) async {
+    usePhoneScreen(tester);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await waitUntil(tester, () => find.text('学习通手机号').evaluate().isNotEmpty);
+    await tester.enterText(find.byType(TextField).at(0), '13800138000');
+    await tester.enterText(find.byType(TextField).at(1), 'wrongPassword9');
+    await tester.pump();
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await waitUntil(tester, () => find.text('同意并登录').evaluate().isNotEmpty);
+    await tester.tap(find.text('同意并登录'));
+    await tester.pump();
+    // 以前原因只写在控制器上，整页表单不显示，输错密码界面上什么都没有。
+    await waitUntil(tester, () => find.text('用户名或密码错误').evaluate().isNotEmpty);
+    expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '登录')).enabled, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('登录其他账号：弹层开着等登录结果，失败原因写在弹层里，登录成功才关', (tester) async {
+    usePhoneScreen(tester);
+    await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: campusTheme(),
+        builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(disableAnimations: true), child: child!),
+        home: ChaoxingPage(runtime: runtime),
+      ),
+    );
+    await login(tester);
+    await tester.tap(find.byTooltip('账号操作'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('登录其他账号').evaluate().isNotEmpty);
+    await tester.tap(find.text('登录其他账号'));
+    await tester.pump();
+    final form = find.byType(ChaoxingLoginForm);
+    await waitUntil(tester, () => form.evaluate().isNotEmpty);
+    await tester.pump(const Duration(milliseconds: 400));
+    final fields = find.descendant(of: form, matching: find.byType(TextField));
+    final submit = find.descendant(of: form, matching: find.widgetWithText(FilledButton, '登录'));
+    await tester.enterText(fields.at(0), '13900139000');
+    await tester.enterText(fields.at(1), 'wrongPassword9');
+    await tester.pump();
+    await tester.tap(submit);
+    await tester.pump();
+    // 以前点了登录弹层就关，原因落到首页，旁边的「重试」重拉的是列表。
+    await waitUntil(tester, () => find.descendant(of: form, matching: find.text('用户名或密码错误')).evaluate().isNotEmpty);
+    await tester.enterText(fields.at(1), 'otherPassword1');
+    await tester.pump();
+    await tester.tap(submit);
+    await tester.pump();
+    await waitUntil(tester, () => form.evaluate().isEmpty);
+    await waitUntil(tester, () => find.text('同学乙').evaluate().isNotEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('往期签到与按课程查看：列表还没读到时显示加载，不写「还没有」「暂无课程」', (tester) async {
+    usePhoneScreen(tester);
+    final controller = ChaoxingController(
+      accounts: ChaoxingAccounts(
+        store: store,
+        vault: MemoryChaoxingVault(),
+        transport: (cookies) => ChaoxingHttp(client: fake.client(), cookies: cookies),
+      ),
+    );
+    await tester.runAsync(() async {
+      await controller.signIn('13800138000', 'myPassword123');
+      await controller.refresh();
+      // 换客户端会清空列表重拉；闸门卡住重拉，停在「还没读到」。
+      fake.activityListGate = Completer<void>();
+      await controller.setProfile(ChaoxingClientProfile.chaoxing);
+    });
+    final launcher = ChaoxingSignLauncher(controller: controller);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingHistoryPage(launcher: launcher)));
+    await tester.pump();
+    expect(find.text('正在读取签到活动…'), findsOneWidget);
+    expect(find.text('还没有已结束的签到'), findsNothing);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingCoursePage(launcher: launcher)));
+    await tester.pump();
+    expect(find.text('正在读取课程…'), findsOneWidget);
+    expect(find.textContaining('暂无课程'), findsNothing);
+    fake.activityListGate!.complete();
+    await tester.runAsync(() => controller.refresh());
+    await tester.pump();
+    expect(find.text('高等数学'), findsOneWidget);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingHistoryPage(launcher: launcher)));
+    await tester.pump();
+    expect(find.text('还没有已结束的签到'), findsOneWidget);
+    await tester.runAsync(() => controller.signOut());
+    controller.dispose();
     await tester.pumpWidget(const SizedBox());
   });
 

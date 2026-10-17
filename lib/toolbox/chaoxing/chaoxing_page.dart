@@ -146,13 +146,13 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     return true;
   }
 
-  Future<void> _signIn(String phoneNumber, String password) async {
+  // 返回登录失败的原因（交给表单原地显示）；登录成功或没同意说明时返回空。
+  Future<String?> _signIn(String phoneNumber, String password) async {
     final controller = _controller;
-    if (controller == null) return;
-    if (!await _grantConsent()) return;
-    await controller.signIn(phoneNumber, password);
-    if (!mounted) return;
-    if (controller.error == null) showCampusToast(context, '已登录');
+    if (controller == null || !await _grantConsent()) return null;
+    final message = await controller.signIn(phoneNumber, password);
+    if (message == null && mounted) showCampusToast(context, '已登录');
+    return message;
   }
 
   Future<void> _pull(ChaoxingController controller) async {
@@ -308,13 +308,24 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     );
   }
 
+  // 登录其他账号：弹层开着等登录结果（按钮原地显示「登录中」），成功才关、失败把原因写在弹层里；
+  // 以前点了登录弹层就关，之后几十秒看不到进度，失败的原因落到首页、旁边的「重试」重拉的是列表。
   Future<void> _addAccount() async {
-    final credentials = await showCampusSheet<({String phoneNumber, String password})>(
+    var open = true;
+    await showCampusSheet<void>(
       context: context,
-      builder: (context) => const ChaoxingLoginForm(compact: true),
+      builder: (sheet) => ChaoxingLoginForm(
+        compact: true,
+        onSubmit: (phoneNumber, password) async {
+          final message = await _signIn(phoneNumber, password);
+          if (message == null && open && sheet.mounted) Navigator.pop(sheet);
+          // 登录途中弹层被划掉了：原因改用提示条告诉用户，不悄悄丢掉。
+          if (message != null && !open && mounted) showCampusToast(context, message);
+          return message;
+        },
+      ),
     );
-    if (!mounted || credentials == null) return;
-    await _signIn(credentials.phoneNumber, credentials.password);
+    open = false;
   }
 
   Future<void> _removeAccount(ChaoxingController controller, ChaoxingAccountRecord record) async {
@@ -373,7 +384,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
               key: ValueKey(value.status),
               child: switch (value.status) {
                 ChaoxingStatus.loading => const CampusLoading(label: '正在读取账号…'),
-                ChaoxingStatus.signedOut => ChaoxingLoginForm(onSubmit: _signIn, busy: value.busy),
+                ChaoxingStatus.signedOut => ChaoxingLoginForm(onSubmit: _signIn),
                 ChaoxingStatus.ready => _readyBody(context, value),
               },
             ),
@@ -555,12 +566,12 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
   }
 }
 
-// 登录表单：整页登录与「登录其他账号」弹层共用；compact 时随弹层返回填好的账号密码。
+// 登录表单：整页登录与「登录其他账号」弹层共用（compact 是弹层里的排版）。onSubmit 返回失败原因，表单原地显示；
+// 登录进行中按钮原地显示「登录中」。
 class ChaoxingLoginForm extends StatefulWidget {
-  const ChaoxingLoginForm({super.key, this.onSubmit, this.compact = false, this.busy = false});
-  final Future<void> Function(String phoneNumber, String password)? onSubmit;
+  const ChaoxingLoginForm({super.key, required this.onSubmit, this.compact = false});
+  final Future<String?> Function(String phoneNumber, String password) onSubmit;
   final bool compact;
-  final bool busy;
   @override
   State<ChaoxingLoginForm> createState() => _ChaoxingLoginFormState();
 }
@@ -569,6 +580,7 @@ class _ChaoxingLoginFormState extends State<ChaoxingLoginForm> {
   final _phone = TextEditingController();
   final _password = TextEditingController();
   bool _obscure = true;
+  bool _submitting = false;
   String? _error;
 
   @override
@@ -578,21 +590,28 @@ class _ChaoxingLoginFormState extends State<ChaoxingLoginForm> {
     super.dispose();
   }
 
-  void _submit() {
+  Future<void> _submit() async {
     final phoneNumber = _phone.text.trim();
     final password = _password.text;
     if (phoneNumber.isEmpty || password.isEmpty) {
       setState(() => _error = '请填写手机号与密码');
       return;
     }
-    final onSubmit = widget.onSubmit;
-    if (onSubmit == null) {
-      Navigator.pop(context, (phoneNumber: phoneNumber, password: password));
-      return;
-    }
-    setState(() => _error = null);
-    onSubmit(phoneNumber, password).catchError((Object error, StackTrace stack) {
+    setState(() {
+      _submitting = true;
+      _error = null;
+    });
+    String? message;
+    try {
+      message = await widget.onSubmit(phoneNumber, password);
+    } catch (error, stack) {
       campusLog('[Chaoxing] action=sign_in errorType=${error.runtimeType}\n$stack');
+      message = '登录未完成，请检查网络后重试';
+    }
+    if (!mounted) return;
+    setState(() {
+      _submitting = false;
+      _error = message;
     });
   }
 
@@ -629,9 +648,9 @@ class _ChaoxingLoginFormState extends State<ChaoxingLoginForm> {
         const SizedBox(height: 20),
         FilledButton(
           style: campusProminent,
-          onPressed: widget.busy ? null : _submit,
+          onPressed: _submitting ? null : () => unawaited(_submit()),
           child: CampusBusyContent(
-            busy: widget.busy,
+            busy: _submitting,
             label: '登录',
             busyLabel: '登录中',
             icon: const CampusIcon(CampusIcons.login),

@@ -192,6 +192,8 @@ void main() {
     fake.courses = mathCourse();
     final controller = ChaoxingController(accounts: accountsWith(MemoryChaoxingVault()));
     await controller.signIn('13800138000', 'myPassword123');
+    // 登录在会话开好就返回，课程列表在后台拉；refresh 等那一轮拉完。
+    await controller.refresh();
     fake.activeInfos[777] = {'otherId': '2', 'nameOne': '二维码签到', 'clazzid': 88, 'courseId': 0};
     final scanned = await controller.scannedActivity(chaoxingParseQrCode('SIGNIN:aid=777&source=15&Code=777&enc=ABC')!);
     expect([scanned.activeId, scanned.classId, scanned.courseId, scanned.subtitle, scanned.signType], [777, 88, 9001, '高等数学', ChaoxingSignType.qrCode]);
@@ -387,6 +389,8 @@ void main() {
     await controller.select(other);
     gate.complete();
     await loading;
+    // 切换在会话开好就返回，新账号的列表在后台拉；refresh 等那一轮拉完。
+    await controller.refresh();
     expect(controller.current!.phoneNumber, other.phoneNumber);
     expect(controller.error, isNull);
     expect(controller.loadingActivities, isFalse);
@@ -416,6 +420,7 @@ void main() {
     final switching = controller.select(other);
     fake.activityListGate!.complete();
     await Future.wait([refreshing, switching]);
+    await controller.refresh();
     expect(controller.current!.phoneNumber, other.phoneNumber);
     expect(controller.error, isNull);
     expect(controller.loadingActivities, isFalse);
@@ -432,6 +437,7 @@ void main() {
     ];
     final controller = ChaoxingController(accounts: accountsWith(MemoryChaoxingVault()));
     await controller.signIn('13800138000', 'myPassword123');
+    await controller.refresh();
     expect(controller.activities, isNotEmpty);
     fake.activityListGate = Completer<void>();
     // 以前要等整份列表拉完才返回（设置弹层一直灰着），闸门不放就卡住。
@@ -482,6 +488,58 @@ void main() {
     expect(controller.activities, isNotEmpty);
     expect(controller.activitiesLoaded, isTrue);
     expect(controller.loadingActivities, isFalse);
+    await controller.signOut();
+    controller.dispose();
+  });
+
+  test('切换账号在会话开好就结束：新账号的列表还在拉时已经返回，上一个账号的课先清掉', () async {
+    useOneActivity();
+    await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');
+    final vault = MemoryChaoxingVault();
+    await accountsWith(vault).signIn(phoneNumber: '13800138000', password: 'myPassword123');
+    await accountsWith(vault).signIn(phoneNumber: '13900139000', password: 'otherPassword1');
+    final controller = ChaoxingController(accounts: accountsWith(vault));
+    await controller.initialize();
+    await controller.refresh();
+    expect(controller.courses, isNotEmpty);
+    final other = controller.accountList.firstWhere((record) => record.phoneNumber != controller.current!.phoneNumber);
+    fake.activityListGate = Completer<void>();
+    // 以前要等新账号整份列表拉完才返回（这期间群聊入口灰着、再切账号被忽略），闸门不放就卡住。
+    await controller.select(other).timeout(const Duration(seconds: 5));
+    expect(controller.current!.phoneNumber, other.phoneNumber);
+    expect(controller.busy, isFalse);
+    expect(controller.courses, isEmpty);
+    expect(controller.loadingActivities, isTrue);
+    fake.activityListGate!.complete();
+    await controller.refresh();
+    expect(controller.courses, isNotEmpty);
+    expect(controller.activities, isNotEmpty);
+    await controller.signOut();
+    controller.dispose();
+  });
+
+  test('打开账号时列表没读成：错误照常报出，后台刷新用户信息照样进行', () async {
+    useOneActivity();
+    final vault = MemoryChaoxingVault();
+    await accountsWith(vault).signIn(phoneNumber: '13800138000', password: 'myPassword123');
+    final controller = ChaoxingController(
+      accounts: ChaoxingAccounts(
+        store: store,
+        vault: vault,
+        // 第一个课程列表请求断网，之后正常。
+        transport: (cookies) => ChaoxingHttp(client: _GatedClient(fake.client(), Completer<void>()..complete()), cookies: cookies),
+      ),
+    );
+    fake.calls.clear();
+    await controller.initialize();
+    final deadline = DateTime.now().add(const Duration(seconds: 5));
+    while (!fake.calls.any((call) => call.contains('userLogin4Uname')) && DateTime.now().isBefore(deadline)) {
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
+    expect(controller.error, isNotNull);
+    expect(controller.activitiesLoaded, isFalse);
+    // 以前列表一失败就整轮跳过，这次打开里 clientId、头像都补不上。
+    expect(fake.calls.where((call) => call.contains('userLogin4Uname')), isNotEmpty);
     await controller.signOut();
     controller.dispose();
   });
