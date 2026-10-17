@@ -113,7 +113,7 @@ class ChaoxingDeviceChannel(private val context: Context) : MethodChannel.Method
     private fun targetPackage(packageName: String): PackageInfo? {
         if (packageName.isEmpty()) return null
         return try {
-            val flags = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) PackageManager.GET_SIGNING_CERTIFICATES else @Suppress("DEPRECATION") PackageManager.GET_SIGNATURES
+            val flags = PackageManager.GET_SIGNING_CERTIFICATES
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
                 context.packageManager.getPackageInfo(packageName, PackageManager.PackageInfoFlags.of(flags.toLong()))
             } else {
@@ -125,16 +125,10 @@ class ChaoxingDeviceChannel(private val context: Context) : MethodChannel.Method
         }
     }
 
-    private fun versionCode(info: PackageInfo): String =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode.toString() else @Suppress("DEPRECATION") info.versionCode.toString()
+    private fun versionCode(info: PackageInfo): String = info.longVersionCode.toString()
 
     private fun signatureDigest(info: PackageInfo): String? {
-        val signatures = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            info.signingInfo?.apkContentsSigners
-        } else {
-            @Suppress("DEPRECATION")
-            info.signatures
-        } ?: return null
+        val signatures = info.signingInfo?.apkContentsSigners ?: return null
         return signatures.joinToString(",") { signature ->
             MessageDigest.getInstance("SHA-256").digest(signature.toByteArray()).joinToString("") { "%02x".format(it) }
         }
@@ -147,7 +141,7 @@ class ChaoxingDeviceChannel(private val context: Context) : MethodChannel.Method
             try {
                 Base64.encodeToString(drm.getPropertyByteArray(MediaDrm.PROPERTY_DEVICE_UNIQUE_ID), Base64.NO_WRAP)
             } finally {
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) drm.close() else @Suppress("DEPRECATION") drm.release()
+                drm.close()
             }
         }
     } catch (error: Throwable) {

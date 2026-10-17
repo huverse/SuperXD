@@ -153,6 +153,8 @@ void main() {
 
     // 导入后就能替他签，提交里带的是对方的设备码。
     await second.select(imported);
+    // 切换在会话开好就返回，列表在后台拉；refresh 等那一轮拉完。
+    await second.refresh();
     expect(second.activities, isNotEmpty);
     final target = second.signTargets().single;
     await second.signTarget(
@@ -235,6 +237,8 @@ void main() {
     final otherCode = owner.account!.deviceCode;
 
     await controller.signIn('13800138000', 'myPassword123');
+    // 登录在会话开好就返回，列表在后台拉；refresh 等那一轮拉完。
+    await controller.refresh();
     await controller.importCredentialTicket(ticket);
     final targets = controller.signTargets();
     expect(targets.map((target) => target.selected), [isTrue, isFalse]);
@@ -265,6 +269,7 @@ void main() {
   test('签到前检查判定已签到时可以强制签到，强制时不再走 preSign', () async {
     final controller = controllerFor(store, vault);
     await controller.signIn('13800138000', 'myPassword123');
+    await controller.refresh();
     final activity = controller.activities.first;
     final info = await controller.activeInfo(activity);
     final target = controller.signTargets().single;

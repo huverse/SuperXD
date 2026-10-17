@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
@@ -34,6 +36,17 @@ class ChaoxingHistoryPage extends StatelessWidget {
         listenable: controller,
         builder: (context, _) {
           final activities = controller.pastActivities;
+          // 列表还没读到（刚打开、切了账号、改了单位或客户端、上次没读成）时为空不等于没有往期签到：加载中就转，没读成给原因与重试。
+          if (activities.isEmpty && !controller.activitiesLoaded) {
+            return controller.loadingActivities
+                ? const CampusLoading(label: '正在读取签到活动…', network: true, remote: '学习通')
+                : CampusLoadError(
+                    message: controller.error ?? '签到活动没读到，请稍后重试',
+                    onRetry: () => controller.refresh().catchError((Object error, StackTrace stack) {
+                      campusLog('[Chaoxing] action=history_retry errorType=${error.runtimeType}\n$stack');
+                    }),
+                  );
+          }
           if (activities.isEmpty) {
             return Center(
               child: Text('还没有已结束的签到', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),

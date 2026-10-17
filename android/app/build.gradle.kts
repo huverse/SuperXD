@@ -44,7 +44,10 @@ android {
         applicationId = "com.superxd.superxd"
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
-        minSdk = flutter.minSdkVersion
+        // [人工决策-2026-10-17 23:06:01] 最低 Android 11：本机库用了 UPSERT（SQLite 3.24 起）与窗口函数（3.25 起），
+        // 安卓 10 及以下系统自带 3.22 及更早，登录即报 SQL 语法错误（用 3.22.0 源码编的命令行逐句实测）；
+        // 用户选定提高最低版本（未选改写 SQL 保 Android 7、随包带新版 SQLite）。新写法的守护见 test/code_conventions_test.dart。
+        minSdk = 30
         targetSdk = flutter.targetSdkVersion
         // Uses the version code from pubspec.yaml. When using split APKs, 1000 * ABI_VERSION
         // is added automatically by Flutter. (https://developer.android.com/studio/build/configure-apk-splits#configure-APK-versions)

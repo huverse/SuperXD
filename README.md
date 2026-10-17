@@ -7,7 +7,7 @@
 开源、非官方的校园教务客户端，目前对接山东现代学院的 Kingo 教务系统；另附免登录的百宝箱（短视频解析、学习通签到）。
 
 [![Release](https://img.shields.io/github/v/release/huverse/SuperXD?include_prereleases&style=flat-square&color=2563eb&label=Release)](https://github.com/huverse/SuperXD/releases)
-[![Android 7.0+](https://img.shields.io/badge/Android-7.0%2B-34a853?style=flat-square&logo=android&logoColor=white)](https://github.com/huverse/SuperXD/releases)
+[![Android 11+](https://img.shields.io/badge/Android-11%2B-34a853?style=flat-square&logo=android&logoColor=white)](https://github.com/huverse/SuperXD/releases)
 [![Flutter 3.47](https://img.shields.io/badge/Flutter-3.47-02569b?style=flat-square&logo=flutter&logoColor=white)](https://flutter.dev)
 [![CI](https://img.shields.io/github/actions/workflow/status/huverse/SuperXD/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/huverse/SuperXD/actions/workflows/ci.yml)
 [![GPL v3](https://img.shields.io/badge/License-GPL%20v3-64748b?style=flat-square)](LICENSE)
