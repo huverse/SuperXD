@@ -134,6 +134,28 @@ void main() {
     expect(selected.value?.latitude, _school.latitude, reason: '自己点过地图就以点的为准');
   });
 
+  _mapTest('全屏选点带着签到页已选的位置进来：标记画上、可以直接用；点地图时范围圈不重建；添加收藏不预选', (tester) async {
+    const chosen = ChaoxingLocation(latitude: 36.68, longitude: 117.36, address: '知敬楼', system: ChaoxingCoordinateSystem.gcj02);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: const ChaoxingMapPage(initial: chosen, rangeCenter: chosen, rangeMeters: 100)));
+    await tester.pump();
+    // 以前进来是空的，标记不画、「用这个位置」灰着，要再点一次。
+    expect(find.text('已选 36.680000, 117.360000'), findsOneWidget);
+    final use = find.ancestor(of: find.text('用这个位置'), matching: find.byWidgetPredicate((widget) => widget is FilledButton));
+    expect(tester.widget<FilledButton>(use).enabled, isTrue);
+    expect(_map(tester).markers, hasLength(1));
+    final polygons = _map(tester).polygons;
+    expect(polygons, hasLength(1));
+    _map(tester).onTap!(_school);
+    await tester.pump();
+    expect(identical(_map(tester).polygons, polygons), isTrue, reason: '范围圈按内容缓存，点地图不重建（重建就是新 id，高德删了重画会闪）');
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: const ChaoxingMapPage(initial: chosen, favorite: true)));
+    await tester.pump();
+    expect(find.text('在教室的位置点一下地图'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   _mapTest('跟随最多 30 秒；外面换了位置（选收藏）也不再跟', (tester) async {
     final selected = await _pumpMap(tester, _Device());
     await _locate(tester, _fix(36.671, 550));

@@ -232,6 +232,10 @@ class ChaoxingHttp {
     } on SocketException catch (error, stack) {
       _log(uri, 'network', error, stack);
       throw const ChaoxingFailure(ChaoxingFailureCode.network, '网络连接失败，请检查网络');
+    } on TlsException catch (error, stack) {
+      // TLS 握手中断（代理、网络劫持或断网时会出现）也是网络问题；http 包不替它转成 ClientException，以前落成兜底文案。
+      _log(uri, 'tls', error, stack);
+      throw const ChaoxingFailure(ChaoxingFailureCode.network, '网络连接失败，请检查网络');
     } on http.ClientException catch (error, stack) {
       _log(uri, 'network', error, stack);
       throw const ChaoxingFailure(ChaoxingFailureCode.network, '网络请求未完成，请稍后重试');
