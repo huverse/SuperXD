@@ -23,3 +23,8 @@
 
 - 本层不做业务判断：要安排哪些提醒、小组件显示哪些课由 application 下的 campus_reminders.dart、campus_widgets.dart 决定，本层只负责整体替换；要不要更新、装不装由 app_updates.dart 决定。
 - 权限只在用户操作时申请（打开提醒、点“开启通知”或“准时提醒”），启动时不弹权限。
+
+# 测试
+
+- reminder_test.dart（课前提醒）、home_widget_test.dart（小组件）、app_update_test.dart（清单解析、安装包文件与清理）。
+- 原生侧（CourseWidgets.kt、AppUpdateInstaller.kt）只有设备实测，单测里的替身证明不了原生比对写对了。

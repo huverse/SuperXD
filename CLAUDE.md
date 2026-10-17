@@ -1,236 +1,115 @@
 # SuperXD 项目索引
 
-本文件与 lib 下各模块的 CLAUDE.md 共同组成项目索引。根文件记录全局结构、跨模块不变量和改动流程；模块文件记录文件职责、关键流程、库表和限额。具体细节以代码注释和带 [人工决策] 标记的注释为准，索引只提供地图和指针。
+本文件与各模块的 CLAUDE.md 共同组成项目索引。本文件只放每次会话都要遵守的全局结构、命令、跨模块不变量和改动流程；模块文件记文件职责、模块规则与测试，改那个目录时才加载。细节以代码注释和带 [人工决策] 标记的注释为准，索引只给地图和指针，同一事实只写一处。
 
 - [人工决策-2026-09-29 21:40:28] 索引采用仓库内分层 CLAUDE.md（根目录加 lib 各模块），授权 AI 创建，并在每次改动时同步维护。用户全局 CLAUDE.md 仍由 AI 只提建议、由人工修改。
-- 文件级登记由 test/project_structure_test.dart 兜底，有两条检查：
-  - lib 下每个 dart 文件都要在最近的模块 CLAUDE.md 里按文件名登记，所在模块没有 CLAUDE.md 时登记在本文件。
-  - 索引中提到的 dart 或 kt 文件必须真实存在。
-- 模块索引共 9 个：lib/domain、lib/edu、lib/local、lib/gateway、lib/device、lib/page、lib/theme、lib/toolbox、lib/social 下各一个 CLAUDE.md。lib/application 与根目录文件登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md。
+- [人工决策-2026-10-17 13:25:26] 索引按官方与大厂做法重整（用户四项都选推荐）：本文件控制在 200 行内，只放全局原则、命令与流程，具体超时、上限与测试清单下沉到模块文件；application 与学习通各建模块索引；守护测试按最近的 CLAUDE.md 登记；文件条目一两行，写职责、约束与人工决策位置，行为细节以代码为准。
+- 模块索引共 11 个：lib 下 domain、edu、local、gateway、device、application、page、theme、toolbox、social 各一个，外加 lib/toolbox/chaoxing。lib 根目录的 main.dart、router.dart、app_session.dart 登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md。
+- test/project_structure_test.dart 兜底两条：lib 下每个 dart 文件按文件名登记在最近的 CLAUDE.md（从所在目录往上找到 lib 为止，都没有就是本文件）；索引里提到的 dart 或 kt 文件必须真实存在。
+- 写法：纯文字，只用 # 标题、- 列表与 1. 编号；不写会随提交变化的数字（测试条数、提交号、库版本号），常量写名字或指到定义处。
 
 # 定位
 
-- 校园课表与成绩 Flutter 应用。当前只有 Android 宿主，对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱，目前提供短视频解析与下载、学习通签到。
-- 功能性私信：扫码互加好友后，在私信里分享课表、界面配置、短视频等功能卡片，没有文字聊天。经自建中转服务（server 目录，NestJS + MySQL + Redis）端到端加密转交，中转地址由构建参数 SUPERXD_RELAY 传入；学习通代签的凭据包也走这个中转（取件号一次性、10 分钟过期、取走即删）。
-- 应用内更新：版本清单与各架构安装包也放在这个中转（发版时上传，见 CONTRIBUTING.md）；启动后每个校园日自动检查一次、关于页可手动检查，有新版弹窗，点更新才下载，核对 SHA-256、包名、版本号与签名证书后交给系统安装；清单可设最低可用版本做强制更新。
-- 当前阶段为公开 Alpha 测试，仓库公开、以 GPL-3.0 开源（curve_geometry.dart 例外，见 README 许可一节）。Flutter 3.47.2 / Dart 3.13.2，依赖锁定在 pubspec.lock。
-- 相关文档：
-  - 设计语言：UITEMP/design_language.md
-  - 用户介绍、隐私摘要与从源码构建：README.md
-  - 发布、签名与贡献约定：CONTRIBUTING.md
-  - 变更记录：CHANGELOG.md
+- 校园课表与成绩 Flutter 应用。只有 Android 宿主，对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱（短视频解析与下载、学习通签到）。
+- 功能性私信：扫码互加好友后分享课表、界面配置、短视频等卡片，没有文字聊天；经自建中转（server 目录，NestJS + MySQL + Redis）端到端加密转交。学习通代签的凭据包与应用内更新的版本清单、安装包也放在这个中转。
+- 公开 Alpha 测试，仓库公开、以 GPL-3.0 开源（curve_geometry.dart 例外，见 README 许可一节）。Flutter 与 Dart 版本以 CI 配置和 pubspec.yaml 为准，依赖锁定在 pubspec.lock。
+- 相关文档：设计语言 UITEMP/design_language.md；用户介绍、隐私摘要与从源码构建 README.md；发布、签名与贡献约定 CONTRIBUTING.md；变更记录 CHANGELOG.md。
+
+# 常用命令
+
+- 静态检查与测试：PUB_HOSTED_URL=https://pub.dev flutter analyze；PUB_HOSTED_URL=https://pub.dev flutter test test/<文件>.dart，必要时去掉文件名跑全量。本机默认镜像会改写 pubspec.lock，所以 flutter 命令一律加这个前缀，提交前确认 pubspec.lock 没变。
+- 运行：flutter run 默认是 production flavor（开发包，与 Alpha 包并装、数据不共享）。私信与代签要 --dart-define=SUPERXD_RELAY=<中转地址>，地图要 --dart-define=SUPERXD_AMAP_KEY=<key>，两者都不写进源码。
+- 服务端：cd server，docker compose -f docker-compose.test.yml up -d --wait 起测试库后 npm test；npm run typecheck。
+- 打包与发版见 CONTRIBUTING.md，只在维护者明确批准后进行。
 
 # 分层与依赖方向
 
-目录即分层，依赖只许自上而下，由 test/project_structure_test.dart 守护。出现反向依赖时先重新划分职责，不要绕过检查。
+目录即分层，依赖只许自上而下，由 test/project_structure_test.dart 守护（[人工决策] 在文件内）。出现反向依赖时先重新划分职责，不要绕过检查。
 
 - 根目录组合根：main.dart、router.dart、app_session.dart，可依赖任何层。
-- page 页面：可依赖 domain、application、gateway、local、social、theme 与 app_session.dart。
-  - 页面只通过 domain 端口 CampusGateway 和账号接口 AccountAccess 访问业务，不直接接触 SQLite、KingoClient 或 cookie。
-  - 现有例外只有外观页读写 DisplaySettings。
-- toolbox 百宝箱：设备级、免登录，可依赖 domain、theme，不依赖教务相关任何层。分享给好友经组合根注入的回调，不依赖 social。
+- page 页面：可依赖 domain、application、gateway、local、social、theme 与 app_session.dart；只经 CampusGateway 与 AccountAccess 访问业务，不直接接触 SQLite、KingoClient 或 cookie（例外只有外观页读写 DisplaySettings）。
+- toolbox 百宝箱：设备级、免登录，可依赖 domain、theme，不依赖教务相关任何层；分享给好友经组合根注入的回调，不依赖 social。
 - social 私信：设备级的身份、好友、本机库与中转客户端，只依赖 domain；页面经 SocialService 使用。
 - application 应用编排：可依赖 domain、gateway。
-- device 设备能力：系统通知、桌面小组件等适配器，只实现 domain 端口、只依赖 domain，由组合根注入；页面不直接依赖。
-- gateway 网关：负责账号生命周期与教务网关实现，可依赖 domain、edu、local。
-- edu 教务协议与页面解析：可依赖 domain。
-- local 本地存储：可依赖 domain。
+- device 设备能力：系统通知、桌面小组件、应用更新等适配器，只实现 domain 端口、只依赖 domain，由组合根注入；页面不直接依赖。
+- gateway 网关：账号生命周期与教务网关实现，可依赖 domain、edu、local。
+- edu 教务协议与页面解析、local 本地存储：都只依赖 domain。
 - domain 领域核心：纯 Dart 的类型、端口与规则，只依赖自身。
 - theme 主题与通用视觉组件：只依赖自身，外加日志出口 domain/campus_log.dart。
 
 # 组合根与路由门禁
 
-- main.dart 的启动顺序：
+- main.dart 启动顺序：
   1. 把日志出口注入为 debugPrint，接住没被处理的异步错误（带堆栈走 campusLog），再初始化时区库、图标与第三方许可。
-  2. 打开 AccountStore，组装 AppSession（内含 AccountGateway 与 SecureCredentialStore）、DisplaySettings 与设备级 SocialService（social.db、安全存储里的身份、按 SUPERXD_RELAY 建的中转传输，未配置或格式不对时为不可用），以及设备级 AppUpdates（appUpdates：渠道取构建渠道 appFlavor、架构取正在运行的 ABI、已装版本取 buildNumber；没配中转或不是渠道构建时为空，不检查更新）。
-  3. runApp 之后，不等待地初始化玻璃渲染与私信服务，再恢复会话。百宝箱的 shareVideo 接到私信分享弹层，路由把 VideoOpener 接到百宝箱注册表里认得这张卡片的工具（openShared）。
-  4. 恢复会话后 watchAppUpdates：清掉装好后的旧安装包，延迟 3 秒自动检查更新，回到前台时接着做被搁下的安装；查到新版由账号应用（_AccountApp）挂在根导航器上弹更新弹窗，登录页也能弹，一个提示只弹一次。
-- 账号代次：SuperXdApp 以 session.generation 作 key 重建内部账号应用。账号切换时，路由和页面内存状态整体丢弃，旧账号状态不会带入新账号。
-- router.dart 的门禁：
-  - 会话恢复完成前停在 /boot。
-  - 未登录时只允许 /login、/legal 下的法务页、/toolbox 与已注册工具路由，其余都重定向到 /login。
-  - 已登录时访问 /login 回到 /today。
-  - 底栏壳有今天、服务、消息、我的 4 个分支，外面包 LegacyImportGate。
-  - /schedule、/grades、/switch-account、法务页和百宝箱都推入根导航器。
-- app_session.dart：
-  - 把 AccountAccess 的账号变化转成路由刷新，并暂存一次性提示。
-  - expire 只让发起时的那个代次失效，旧页面不能误登出新账号。
-- 页面从路由拿到两个回调：isAccountCurrent 判断异步结果是否仍属于当前账号，onSessionExpired 负责登出。异步结果回来后要先检查，再写界面。
-- application/campus_sync.dart（CampusSync）：显式同步的唯一编排入口。
-  - 先刷新学期列表，再按所选学年依次处理：先同步全部学期的课表，再逐学期同步作息和成绩。
-  - 页面离开、会话失效或教务限流时，在下一检查点停止，报告里带出已完成项、停下前已发生的失败与未处理项。
-  - 学年与数据项的选择、进度口径、未提交不报已同步，这几条规则都见该文件的人工决策注释。
-- application/campus_reminders.dart（CampusReminders）：课前提醒对账。
-  - 读本机的当前学期、提醒设置、课表与作息，展开未来 14 天的课程实例，整体替换系统里的提醒；只读本地，从不联网。
-  - 对账时机由 main.dart 的 watchLocalSchedule 决定：启动恢复会话后、回到前台、切换账号或退出、本机课表相关写入后（AccountAccess.scheduleChanges），1 秒防抖。
-  - 没有当前学期（含退出登录）、未开启或没有通知权限时，撤销本应用的全部课前提醒。
-- application/campus_widgets.dart（CampusWidgets）：桌面课表小组件的快照。
-  - 读本机的当前学期、课表与作息，展开今天起 7 天的课程实例交给小组件端口；只读本地，从不联网。对账时机与课前提醒相同。
-  - 退出登录时发布空快照，小组件不显示上一个账号的课；缺开学日或作息时如实提示。
-  - 配色由 main.dart 的 watchWidgetTheme 跟随“配色”和“深浅色”设置单独下发；原生侧见 CourseWidgets.kt。
-- application/app_updates.dart（AppUpdates）：应用内更新编排，设备级，切换账号不重建。
-  - 自动检查每个校园日一次（appUpdateCheckDue，按业务日界），查到必须更新时每次启动都查；手动检查不受限、不认跳过。
-  - 点更新才下载（缓存里已有且 SHA-256 对得上就不再下），核对 SHA-256、包名、版本号与签名证书，对不上就删包报原因；没有「安装未知应用」授权时引导开启，下载在后台完成时等回前台再拉起系统安装。
-  - 端口都在 domain/app_update.dart：清单（device/relay_release_feed.dart）、安装包文件（device/app_package_files.dart）、安装器（device/app_installer_channel.dart，原生见 AppUpdateInstaller.kt）、检查记录（local/app_update_memory.dart）。规则与弹窗的人工决策见 app_update.dart 与 page/app_update_dialog.dart。
+  2. 打开 AccountStore，组装 AppSession（含 AccountGateway 与 SecureCredentialStore）、DisplaySettings、设备级 SocialService（中转未配置或格式不对时为不可用）与 AppUpdates（没配中转或不是渠道构建时为空，渠道取 appFlavor）。
+  3. runApp 之后不等待地初始化玻璃渲染与私信服务，再恢复会话；百宝箱的 shareVideo 接到私信分享弹层，路由把好友分享的视频交给注册表里认得这张卡片的工具（openShared）。
+  4. 恢复会话后启动三个监听：watchLocalSchedule 对账课前提醒与小组件，watchWidgetTheme 下发小组件配色，watchAppUpdates 清旧安装包、延迟 3 秒自动检查更新并在回前台时续做安装；查到新版由 _AccountApp 在根导航器上弹窗，登录页也能弹，一个提示只弹一次。
+- 账号代次：SuperXdApp 以 session.generation 作 key 重建账号应用，切换账号时路由和页面内存状态整体丢弃（[人工决策] 在 main.dart）。
+- router.dart 门禁：会话恢复完成前停在 /boot；未登录只允许 /login、/legal 下的法务页、/toolbox 与已注册工具路由（[人工决策] 在文件内）；已登录访问 /login 回到 /today；底栏壳有今天、服务、消息、我的四个分支，外包 LegacyImportGate；课表、成绩、切换账号、法务页和百宝箱推入根导航器。
+- app_session.dart：把 AccountAccess 的账号变化转成路由刷新并暂存一次性提示；expire 只让发起时的那个代次失效，旧页面不能误登出新账号。
+- 页面从路由拿到 isAccountCurrent 与 onSessionExpired：异步结果回来后先确认仍属当前账号，再写界面。
+- 编排（CampusSync、CampusReminders、CampusWidgets、AppUpdates）见 lib/application/CLAUDE.md。
 
 # 跨模块不变量（改动前逐条自查）
 
-1. 账号隔离
-   - 账号身份由教务来源 URL 加教务确认的学号组成。每个账号按身份哈希使用独立的 SQLite 库，并校验库的 owner。
-   - 账号索引库只存账号列表、活动账号指针和旧库认领记录。
-   - 切换、退出、导入都要经过 AccountGateway 的切换锁。切换时旧上下文先停止接收新请求，并等在途请求全部结束。
-2. 网关不抛异常
-   - CampusGateway 的所有方法都返回 GatewayResult。失败时带一个在 domain/gateway_code.dart 登记过的错误码。
-   - 页面与同步只按错误码分支，message 只用来展示。新错误码要先登记再使用。
-3. 会话失效
-   - 任何环节拿到 SESSION_EXPIRED，都立即停止后续请求，并交给 onSessionExpired 处理。
-   - 用户开启了记住账号时，AccountGateway 自动恢复登录一次，并重放这次请求。恢复失败或重放后仍失效，就不再自动恢复。
-4. 同步不误覆盖
-   - 教务页面只有明确的无课、无成绩语义才当作空结果。权限、维护、截断或无法识别的页面一律报错，并保留本地数据。
-   - 本地已有自定义课表版本时，同步前要用户确认覆盖。
-   - 采用其他学期的作息须用户明确确认；普通同步不改变已有的作息绑定。
-5. 课表版本
-   - 编辑、恢复和确认覆盖都要带 expectedRevisionId，在同一事务里核对当前 head（乐观锁）。不一致时返回 REVISION_CONFLICT。
-   - 每学期最多保留 100 个版本，当前 head 和最近一次教务基线受保护，不会被清理。
-6. 时间
-   - 绝对时刻一律存为 UTC 的 ISO 字符串。
-   - 校园时区只在 domain/campus_clock.dart 的 campusTimeZone 一处定义。今天、周次、倒计时等业务日界都经 campus_clock 计算。
-   - 展示时间用 formatCampusTimestamp。
-7. 凭据
-   - 用户明确勾选记住账号且认证成功后，才把凭据写入系统安全存储；关闭后在账号页输密码重新开启时，也要先登录核对成功才写。
-   - 业务 SQLite、账号索引和日志一律不存密码。
-   - 用户关闭记住账号或主动退出时，立即删除凭据。
-8. 设备级数据
-   - 百宝箱、下载任务，以及配色、字体、字号、深浅色、玻璃效果和自定义壁纸都属于设备，切换账号时保留。
-   - 自定义壁纸只经系统照片选择器读取用户选中的一张，复制到应用私有目录，不上传、不申请存储权限。
+1. 账号隔离：账号身份是教务来源 URL 加教务确认的学号；每个账号按身份哈希用独立的 SQLite 库并校验 owner；账号索引库只存账号列表、活动账号指针和旧库认领记录。切换、退出、导入都经 AccountGateway 的切换锁，旧上下文先停止接收新请求并等在途请求结束。
+2. 网关不抛异常：CampusGateway 的所有方法都返回 GatewayResult，失败带一个在 domain/gateway_code.dart 登记过的错误码。页面与同步只按错误码分支，message 只用来展示；新错误码先登记再使用。
+3. 会话失效：拿到 SESSION_EXPIRED 立即停止后续请求并交给 onSessionExpired。开启了记住账号时 AccountGateway 自动恢复登录一次并重放这次请求，恢复失败或重放后仍失效就不再自动恢复。
+4. 同步不误覆盖：教务页面只有明确的无课、无成绩语义才当空结果，权限、维护、截断或无法识别的页面一律报错并保留本地数据；本地已有自定义课表版本时，同步前要用户确认覆盖；采用其他学期的作息须用户明确确认，普通同步不改变已有的作息绑定。
+5. 课表版本：编辑、恢复和确认覆盖都带 expectedRevisionId，在同一事务里核对当前 head，不一致返回 REVISION_CONFLICT；每学期版本数有上限，当前 head 与最近一次教务基线受保护（规则见 lib/domain/CLAUDE.md）。
+6. 时间：绝对时刻一律存 UTC 的 ISO 字符串；校园时区只在 domain/campus_clock.dart 的 campusTimeZone 一处定义，今天、周次、倒计时等业务日界都经 campus_clock 计算；展示时间用 formatCampusTimestamp。
+7. 凭据：用户明确勾选记住账号且认证成功后才写入系统安全存储（关闭后在账号页重新开启也要先登录核对成功）；业务 SQLite、账号索引和日志一律不存密码；用户关闭记住账号或主动退出时立即删除凭据。
+8. 设备级数据：百宝箱、下载任务、显示设置（配色、字体、字号、深浅色、玻璃、自定义壁纸）、私信身份与好友、学习通账号与收藏、应用更新的检查记录与下载中的安装包都属于设备，切换教务账号时保留。
    - 桌面小组件显示的是当前账号的课，跟着账号切换，退出登录即清空；只有它的配色跟随设备设置。
-   - 百宝箱不读取教务凭据或 cookie。
-   - 学习通账号与收藏位置属于设备，切换教务账号保留；学习通密码与 cookie 只进系统安全存储，不进业务库，本机不存签到记录。
-   - 百宝箱里有本机数据的工具（注册表登记了服务）可在百宝箱首页「清除数据」：工具自己删库与凭据，框架撤掉它的同意记录；已导出到下载目录的文件与上游服务器上的数据不动。工具只在 toolbox_catalog.dart 一处登记。
-   - 学习通的设备信息（型号、系统版本、ANDROID_ID、DRM 设备号）与 OAID 只在学习通登录、补用户信息时现取，加密后只发给学习通，不落库；原生通道见 ChaoxingDevice.kt。
-   - 私信身份、好友与会话属于设备，切换账号保留、退出登录不清；身份私钥只在系统安全存储，私钥与 social.db 都排除出云备份与设备迁移。只有用户“关闭私信”才删除（先删服务端设备，再清本机）。
-   - 第三方解析来源逐个来源、按授权版本单独征得同意。自动模式只尝试已启用且已同意的来源。
-   - 应用更新的检查记录（上次检查时刻、跳过的版本、是否待必须更新）与下载中的安装包属于设备，切换账号保留。
-9. 对外网络
-   - 教务请求：单次 25 秒超时，只允许同源地址。
-   - 每个 CampusSync 实例内按顺序逐项请求；今天页和成绩页各持有一个实例。成绩同步与其他教务网络请求互斥，冲突时返回 SYNC_BUSY。
-   - 除了会话自动恢复后的一次重放，其他请求都不自动重试。
-   - 教务限流：课表、成绩数据查询在任意 10 秒内最多发 6 次，超出的排队。教务仍提示“请求太过频繁”时报 RATE_LIMITED，本轮同步立即停止，由用户稍后再同步。
-   - 百宝箱解析：总预算 30 秒，单次响应上限 1MB。媒体地址必须是公网 https，拒绝本机和内网地址。
-   - 代签凭据包：投递、取件与作废各 15 秒超时，密文上限 2KB；取件号一次性、10 分钟过期，取走即删，出示方换码即作废旧码。除时钟偏差校正后的一次重发外不自动重试。
-   - 私信中转：普通请求单次 15 秒超时；每个请求用设备私钥签名（防冒用与重放），不发会话令牌；内容端到端加密，服务端只见设备号、好友关系、密文大小与时间。除时钟偏差校正后的一次重发外不自动重试。
-   - 应用更新：版本清单单次 15 秒超时、响应上限 64KB，只发构建渠道与架构；启动后自动检查每个校园日一次（待必须更新时每次启动），其余只在用户点检查更新时联网，不自动重试。安装包下载由用户点更新触发，走 background_downloader 的独立命名空间，可退到后台、可取消，失败由用户重试。
-   - 私信收取：应用在前台时持续长轮询（服务端没有消息时最多挂起 25 秒，有新消息经 Redis 发布订阅唤醒立即返回，客户端超时为挂起时长加 10 秒）；进入后台不再发起；网络失败 2 秒起指数退避、上限 60 秒，空响应快于 5 秒时等满 5 秒。没有推送，后台收不到（人工决策见 social_service.dart）。
-10. 数据保留
-    - 课表版本：每学期 100 个。
-    - 解析历史：只存本机（短视频自己的库），最多 80 条且保留 30 天；默认开启，用户可关闭；可随短视频一起在百宝箱首页清除。
-    - 下载记录：已结束的最多保留 100 项且 30 天。创建超过 24 小时仍未完成的任务，在启动时取消。
-    - 自定义壁纸：只保留当前一张，不超过 20MB；换图或恢复云雾时删除，启动时清理残留；选图插件留在缓存里的副本用完即删。
-    - 成绩：单次载荷上限 4MB，课程上限 1000 条。
-    - 课前提醒：只安排未来 14 天、最多 128 条，每次对账整体替换；提醒设置每学期一行。
-    - 日历导出：单次最多 5000 个事件；缓存里只留最近一次导出的文件，下次导出前清空。
-    - 桌面小组件：快照只覆盖今天起 7 天、最多 200 次课，每次整体替换；过期后提示打开应用。桌面上没有小组件时不留刷新闹钟。
-    - 代签凭据包：密文只在中转上暂存 10 分钟（取走即删、未取走由服务端清理任务删除）；导入的账号凭据按学习通账号的规矩只进系统安全存储。
-    - 人脸照片：只在本机记 objectId（照片在学习通云盘），每人保留 5 条，打开库时裁剪；群聊消息不在本机留存。
-    - 学习通签到位置：按班级只记最近一次签到成功用的位置，最多 200 个班，打开库时裁剪，随「清除数据」删除。
-    - 学习通置顶的群：每个账号最多 200 个，打开库与每次写入时裁剪，删账号或「清除数据」时删除。
-    - 学习通账号标签：最多 20 个，账号与标签的关联随账号或标签删除，「清除数据」时一并删除。
-    - 学习通「这附近不再问要不要收藏」的地点：只记坐标，最多 50 个，打开库与每次写入时裁剪，随「清除数据」删除。
-    - 应用更新：缓存 app_update 文件夹只留一个版本的安装包（新下载前删掉别的），版本号不高于已装版本的在启动时删除；检查记录是应用支持目录下固定大小的 app_update.json。服务端发布目录只放当前版本（见 server/README.md）。
-    - 私信：好友 500；每个好友本机保留最近 200 条；邀请记录 31 天。服务端信箱单条密文 256KB、每设备待取 1000 条，取走确认即删、未取走 30 天删除，设备 400 天不活跃连同关系与信箱删除（见 server/README.md）。
-    - 新增只增不删的数据时，必须同时给出上限或清理策略。
-11. 日志
-    - 只经 domain/campus_log.dart 的 campusLog 输出。应用入口必须注入 debugPrint，日志才会进入 logcat。
-    - 格式为 [模块] action=... errorType=...，错误附完整堆栈。不写原始 HTML、链接或凭据。
-    - 由 test/project_structure_test.dart 守护。
-12. 界面实现
-    - 确认和提示统一使用 theme/campus_transitions.dart 的 showCampusConfirm 与 showCampusNotice。
-    - setState 回调不得返回 Future；给 Future 字段赋值时用块体。由 test/code_conventions_test.dart 守护。
-    - 只有图标的 IconButton 必须带 tooltip，作为读屏标签。由 test/code_conventions_test.dart 守护。
-13. 公开内容不出现实名
+   - 自定义壁纸只经系统照片选择器读用户选中的一张，复制到应用私有目录，不上传、不申请存储权限。
+   - 百宝箱不读取教务凭据或 cookie；学习通密码与 cookie 只进系统安全存储，本机不存签到记录。学习通的设备信息与 OAID 只在登录、补用户信息时现取，加密后只发给学习通，不落库。
+   - 私信身份私钥只在系统安全存储，私钥与 social.db 都排除出云备份与设备迁移；只有用户「关闭私信」才删除（先删服务端设备，再清本机）。
+   - 百宝箱有本机数据的工具可在首页「清除数据」（工具自己删库与凭据，框架撤同意记录），已导出的文件与上游服务器上的数据不动；工具只在 toolbox_catalog.dart 一处登记。
+   - 第三方解析来源逐个来源、按授权版本单独征得同意，自动模式只尝试已启用且已同意的来源。
+9. 对外网络：
+   - 每个外部请求都有显式超时与响应上限，只发必要字段；具体数值写在所属模块（教务 edu、解析 toolbox、代签 chaoxing、私信 social、应用更新 device）。
+   - 除会话自动恢复后的一次重放、时钟偏差校正后的一次重发外，不自动重试；私信收取的长轮询是持续接收通道，失败后退避继续。
+   - CampusSync 每个实例内按顺序逐项请求，今天页和成绩页各持有一个实例；成绩同步与其他教务网络请求互斥（SYNC_BUSY）；教务限流时报 RATE_LIMITED，本轮立即停止。
+10. 数据保留：新增只增不删的数据，必须同时给出上限或清理策略，写进所属模块 CLAUDE.md；服务端信箱与设备的保留见 server/README.md。
+11. 日志：只经 domain/campus_log.dart 的 campusLog 输出，应用入口必须注入 debugPrint 才进 logcat；格式为 [模块] action=... errorType=...，错误附完整堆栈；不写原始 HTML、链接或凭据。由 test/project_structure_test.dart 守护。
+12. 界面实现：确认和提示统一用 theme/campus_transitions.dart 的 showCampusConfirm 与 showCampusNotice；setState 回调不得返回 Future，给 Future 字段赋值时用块体；只有图标的 IconButton 必须带 tooltip 作读屏标签。后两条由 test/code_conventions_test.dart 守护。
+13. 公开内容不出现实名：
     - [人工决策-2026-10-15 20:20:38] 仓库公开，代码、测试数据、文档、提交信息、PR 与 Issue 的正文和评论一律不写真实姓名、手机号、学号等实名信息（含真实课表里的教师名）。
     - 写设备验证记录时，账号用「账号甲」「账号乙」等代称，测试数据用合成名字。
     - [人工决策-2026-10-15 20:24:01] 发现时已在 git 历史里的（初始提交测试数据里的一个教师名）只改当前版本，不重写历史（用户选定：重写要强推 main 与标签、所有提交号变动）。
 
 # 界面约定（来自用户反馈，细节见自动记忆）
 
-- 耗时操作在发起位置原地显示状态：等待、进度、可暂停或取消，完成后原地切换为下一步动作（如“打开”）。
+- 耗时操作在发起位置原地显示状态：等待、进度、可暂停或取消，完成后原地切换为下一步动作（如「打开」）。
 - 可点击元素一律做成带图标的按钮。状态信息只读，不用主色；主色只留给按钮和图标。整组操作和破坏性操作收进⋯菜单，并保留确认。
 - 液态玻璃只用于导航层与浮层；内容区按钮与标签用色调胶囊，顶栏透明、内容滚动时自身渐隐（见 lib/theme/CLAUDE.md）。
 - 会变化的列表按稳定键排序，状态变化时条目不跳动。
-- 文案简洁，少放说明性文字。账号授权、旧数据归属、删除或覆盖确认以及必要的错误文案必须保留。
+- 文案简洁，少放说明性文字；账号授权、旧数据归属、删除或覆盖确认以及必要的错误文案必须保留。
 - 手势、方向等偏离常见习惯的要求，先提醒用户确认再实现。
-- 文字最小 14px。带浮动标签的输入框，上方间距要随字号缩放（campusFieldGap）。
+- 文字最小 14px；带浮动标签的输入框，上方间距随字号缩放（campusFieldGap）。
 
 # 改动前检查清单
 
 1. 读本文件和涉及目录的 CLAUDE.md，确认改动落在哪一层、依赖方向是否允许。
-2. 在涉及的文件及其调用方检索人工决策：grep -rn 人工决策- lib test android/app。
-   - 修改带标记的代码前，先请用户确认该决策仍然有效。
-   - 用户新确认的决策，在代码处加 [人工决策-北京时间] 注释，时间用 TZ=Asia/Shanghai date 获取，精确到秒。
-3. 查自动记忆（MEMORY.md 索引）里的相关主题：测试授权边界、验收证据边界、被否决的视觉方案、平台运行证据、百宝箱第三方结论、版本控制授权。
+2. 在涉及的文件及其调用方检索人工决策：grep -rn 人工决策- lib test android/app。修改带标记的代码前，先请用户确认该决策仍然有效；用户新确认的决策，在代码处加 [人工决策-北京时间] 注释（TZ=Asia/Shanghai date，精确到秒）。
+3. 查自动记忆（MEMORY.md 索引）里的相关主题：授权边界、验收证据、被否决的视觉方案、设备证据、百宝箱第三方结论、版本控制与发布。
 4. 对照上面的跨模块不变量逐条自查。遇到业务取舍，先向用户说明，并给出方案让用户选择。
-5. 改完后验证：
-   - 运行 flutter analyze 和受影响的测试，必要时跑全量 flutter test。
-   - 本机默认镜像会改写 pubspec.lock，所以 flutter 命令一律加 PUB_HOSTED_URL=https://pub.dev 前缀，提交前确认 pubspec.lock 没有变化。
-   - 影响界面或运行行为的改动，要在模拟器上查看实际效果。
-6. 同步索引：
-   - 新增、删除、搬迁文件，或改变职责、流程、库表、限额时，在同一提交里更新对应的 CLAUDE.md。
-   - 在 CHANGELOG 的 Unreleased 下记一条。
+5. 改完后验证：flutter analyze 加所涉模块 CLAUDE.md「测试」一节列的测试，必要时全量；影响界面或运行行为的改动要在模拟器上看实际效果；提交前确认 pubspec.lock 没变。
+6. 同步索引与记录：新增、删除、搬迁文件，或改变职责、流程、库表、限额时，在同一提交里更新最近的 CLAUDE.md；在 CHANGELOG 的 Unreleased 下记一条。
 
-# 测试地图（改哪里先跑哪些）
+# 测试
 
-- 结构与规范：project_structure_test.dart、code_conventions_test.dart
-- 账号与会话：
-  - account_isolation_test.dart、account_lifecycle_test.dart、account_store_test.dart
-  - remembered_session_test.dart、legacy_import_test.dart、kingo_gateway_test.dart
-- 教务协议与解析：contract_test.dart、kingo_client_response_test.dart、sync_boundary_regression_test.dart、grades_test.dart
-- 课表数据：schedule_edit_test.dart、schedule_version_test.dart、schedule_migration_test.dart、bells_persistence_test.dart、period_day_test.dart、schedule_calendar_test.dart
-- 同步编排与同步界面：campus_sync_test.dart、sync_ui_test.dart、transition_sync_test.dart
-- 课程实例、课前提醒、日历导出与桌面小组件：reminder_test.dart、calendar_export_test.dart、home_widget_test.dart
-- 页面交互：
-  - today_navigation_test.dart、today_date_transition_test.dart、schedule_experience_test.dart、schedule_editor_ui_test.dart
-  - grades_ui_test.dart、form_spacing_test.dart、navigation_drag_test.dart、shell_layout_test.dart
-  - legal_page_test.dart、about_page_test.dart、course_clock_performance_test.dart
-- 主题与显示设置：atmosphere_test.dart、campus_glass_test.dart、campus_glass_button_test.dart、campus_motion_test.dart、dark_mode_test.dart、appearance_settings_test.dart、wallpaper_test.dart
-- 百宝箱：toolbox_widget_test.dart、toolbox_download_test.dart、toolbox_media_features_test.dart（含短视频库迁移、旧下载记录兼容、按工具清空下载、短视频清除数据、分享卡片按注册表打开）、short_video_parser_test.dart、media_image_test.dart
-  - 学习通签到：chaoxing_protocol_test.dart（协议、设备信息与设备码、学校单位、课表推断与坐标转换）、chaoxing_store_test.dart（本机库与上限、标签校验与 v9 升级、不再问的地点与 v10 升级）、chaoxing_batch_test.dart（多人连签的顺序、间隔、停止与强制）、chaoxing_map_test.dart（嵌着的地图：系统定位没开的提示与去打开、默认选点跟着变准、精度圈不画）、chaoxing_ui_test.dart（登录、签到、多人连签、往期补签、强制签到、按课程查看、课表推断、代签入口与导入流程、群聊先列群再按群拉消息（置顶、搜索、同名合并）、签到对象按标签勾选、人脸照片里用学习通存的那张先重处理、签完问收藏（改名、这附近不再问）、现拍人脸照片签完再问存不存、多人拍照签到一次多选，用 chaoxing_fake_server.dart 与 chaoxing_fake_hub.dart）
-  - 代签：chaoxing_pack_test.dart（凭据包编解码与封装，含第 1 版兼容）、chaoxing_delegate_test.dart（两台设备之间的出示与导入、带人脸照片、连签与强制签到、学校单位与模拟客户端、设备码来源：重新登录不换码、代签码只带真实设备码，chaoxing_fake_hub.dart 是内存中转）
-  - 审查整改回归：chaoxing_regression_test.dart（删账号与后台刷新竞态不留会话、删当前账号关会话、切账号代次、自动重登的错误口径、课表缓存裁剪、弹层避让键盘、主账号置顶与账号拖动排序、重新登录保留备注名与排序、登录已失效记库与一键修复、账号管理里的标签、手势重画与签到码重复提交）
-  - 人脸与群聊：chaoxing_im_test.dart（DES、protobuf 附件解析、环信链路与类型映射）、chaoxing_protocol_test.dart 里的人脸公钥与签名用例
-- 应用更新：app_update_test.dart（规则与校园日界、编排的检查跳过强制下载核对授权后台、清单解析与外部输入校验、检查记录与安装包清理）、app_update_ui_test.dart（更新弹窗各状态、强制更新关不掉、关于页检查更新）、account_lifecycle_test.dart 的启动弹窗用例；替身在 app_update_fakes.dart。服务端见 server/test/app_release.e2e.test.ts。
-- 私信：
-  - social_protocol_test.dart（与服务端共用测试向量、信封、二维码）、share_card_test.dart、social_service_test.dart、social_ui_test.dart
-  - fake_relay.dart：按协议 v1 规则验签的内存假中转服务。
-  - 服务端：cd server 后 npm test（Vitest，需 docker-compose.test.yml 起的 MySQL 与 Redis）。
-- 测试支撑：
-  - fixture_campus_gateway.dart：合成数据教务网关，读取 assets/fixtures。
-  - toolbox_test_support.dart、form_layout_support.dart
-- tool 下的手动入口，不进 CI：
-  - verify_edu.dart、verify_grades.dart：访问真实教务，只在授权环境手动运行。
-  - verify_toolbox.dart：Android 原生下载验证。
-  - verify_social.dart：两个真实客户端经真实中转服务联调（合成数据），运行方式见文件头。
-  - verify_chaoxing_map.dart：高德地图选点能不能出图与返回坐标，要带 --dart-define=SUPERXD_AMAP_KEY 跑，运行方式见文件头。
-  - verify_chaoxing.dart：访问真实学习通，只在授权的测试账号上手动运行；凭据从参数指定的文件读入，输出一律脱敏，运行方式见文件头。
-  - verify_chaoxing_pack.dart：代签凭据包经真实中转服务的往返（投递、取件、取走即删），只用合成凭据，运行方式见文件头。
-  - release_manifest.dart：发版时生成应用内更新的版本清单（<渠道>.json，算各架构安装包的大小与 SHA-256），运行方式见文件头与 CONTRIBUTING.md。
-  - readme_demo.dart：README 截图入口，内存库合成课表与假登录。
-  - font_previews.dart：生成界面页的字体预览图（assets/font_previews），改预览文字或内置字体后重跑。
-  - schedule_smoke.dart、glass_preview.dart、motion_preview.dart
-  - motion_release_test.dart：检查发布包的图标字体。
+- 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由），每次都跑。
+- 共用的测试支撑：fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、toolbox_test_support.dart、form_layout_support.dart、app_update_fakes.dart、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
+- tool 下的手动入口不进 CI，运行方式见各文件头：
+  - 访问真实服务，只在授权环境与授权账号上手动运行：verify_edu.dart、verify_grades.dart（教务）、verify_chaoxing.dart（学习通，输出脱敏）。
+  - 经真实中转、只用合成数据：verify_social.dart、verify_chaoxing_pack.dart。
+  - 设备与原生验证：verify_toolbox.dart（原生下载导出）、verify_chaoxing_map.dart（高德选点，要 SUPERXD_AMAP_KEY）、motion_release_test.dart（发布包的图标字体）。
+  - 生成与演示：release_manifest.dart（发版生成更新清单）、readme_demo.dart（README 截图）、font_previews.dart（字体预览图）、schedule_smoke.dart、glass_preview.dart、motion_preview.dart。
 
-# 已知行为与约束（本轮只记录，不改动）
+# 已知约束
 
-- 单校写死：教务地址是 kingo_client.dart 的 kingoBase，作息解析里写死了校名（parse_bells.dart）。换校要把来源改成配置，并迁移账号身份键，因为身份键包含来源 URL。
-- CampusBackground 是空包装，背景统一由 CampusAtmosphere 绘制，保留它只是为了兼容现有调用点。
-- 以下公开方法只有测试或工具在用，删除前先改测试：
-  - AppDatabase 的 revisionSummaries、termStartDate、gradesPayload、insertRevision、openMemory
-  - schedule_calendar.dart 的 semesterDays、weekDates
-  - kingo_des.dart 的 strDec
-- 账号库开启了 SQLite 外键：schedule_head 引用 schedule_revision，所以裁剪版本时必须保护 head。
-- 性能观察项，没有真机 profile 证据前不要改动：
-  - 结果页和下载页随进度通知整页重建
-  - FrostTexture 逐点绘制颗粒
-  - 成绩响应分块累加
-- 平台：只有 Android 宿主。验证只在模拟器（API 36、API 34）上做过，真机和 iOS 都未验收。原生导出通道见 MainActivity.kt、ToolboxFileExporter.kt 与 CalendarExporter.kt（日历文件只经 CalendarFileProvider 开放缓存 calendar_export 文件夹）；桌面小组件见 CourseWidgets.kt；应用内更新的安装通道见 AppUpdateInstaller.kt（安装包只经 AppUpdateFileProvider 开放缓存 app_update 文件夹，清单声明 REQUEST_INSTALL_PACKAGES）；学习通签到的设备信息与 OAID 见 ChaoxingDevice.kt（OAID 库 Android_CN_OAID 来自 JitPack，其华为、荣耀依赖来自各自厂商仓库）；学习通地图跳系统定位设置见 LocationSettings.kt。
-- release 包开启 R8：不带混淆规则的原生 SDK（目前是高德）要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件（如高德定位的 APSService）还要自己在清单里声明，test/legal_page_test.dart 守护规则；CI 只跑测试不打 release 包，发布前要在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
+- 平台：只有 Android 宿主，验证以模拟器（API 36、API 34）为主，只在少数真机上走过部分功能，iOS 未验收。原生通道在 android/app/src 下（入口 MainActivity.kt），各自登记在使用它的模块 CLAUDE.md。
+- 对外开放文件只经两个 FileProvider：CalendarFileProvider（缓存 calendar_export 文件夹）与 AppUpdateFileProvider（缓存 app_update 文件夹，清单声明 REQUEST_INSTALL_PACKAGES）。
+- release 包开启 R8：不带混淆规则的原生 SDK（目前是高德）要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件（如高德定位的 APSService）还要自己在清单里声明，test/legal_page_test.dart 守护规则。CI 只跑测试不打 release 包，发布前要在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
+- 暂不改动的事项（只被测试使用的公开方法、性能观察项、单校写死）记在对应模块 CLAUDE.md 的关键规则里，改动前先看。

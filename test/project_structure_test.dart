@@ -60,13 +60,21 @@ void main() {
   });
 
   // 索引只在文件级兜底：新增、删除、搬迁都要同步登记；职责与不变量的变化靠改动前检查清单维护。
+  // [人工决策-2026-10-17 13:25:26] 按最近的 CLAUDE.md 登记（从文件所在目录往上找到 lib 为止，都没有就登记在根文件），
+  // 子目录可以有自己的索引（如 lib/toolbox/chaoxing），只在改那里时加载；以前只认 lib 下第一层目录。
   test('项目索引登记lib全部文件且无失效条目', () {
     String read(String index) => File(index).existsSync() ? File(index).readAsStringSync() : '';
+    String nearestIndex(String file) {
+      for (var dir = path.dirname(file); path.isWithin('lib', dir); dir = path.dirname(dir)) {
+        final index = path.join(dir, 'CLAUDE.md');
+        if (File(index).existsSync()) return index;
+      }
+      return 'CLAUDE.md';
+    }
+
     final problems = <String>[];
     for (final file in _dartFiles('lib')) {
-      final parts = path.split(path.relative(file.path, from: 'lib'));
-      final module = path.join('lib', parts.first, 'CLAUDE.md');
-      final index = parts.length > 1 && File(module).existsSync() ? module : 'CLAUDE.md';
+      final index = nearestIndex(file.path);
       if (!read(index).contains(path.basename(file.path))) problems.add('${file.path}未登记于$index');
     }
     final known = {

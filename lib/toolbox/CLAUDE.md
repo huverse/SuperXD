@@ -1,174 +1,62 @@
 # toolbox 百宝箱
 
-定位：设备级工具集，不需要教务登录，也不依赖教务相关的任何层（只依赖 domain 与 theme）。不读取教务凭据或 cookie；切换账号时，下载任务不销毁。当前注册了两个工具：短视频解析与下载、学习通签到。子目录 download、short_video 与 chaoxing 也登记在本文件。
+定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了两个工具：短视频解析与下载、学习通签到。学习通的文件与规则在 chaoxing/CLAUDE.md，download 与 short_video 两个子目录登记在本文件。
 
 # 文件职责
 
 - 框架：
-  - toolbox_runtime.dart：ToolboxRuntime 是设备级组合根。
-    - 在应用支持目录的 toolbox 子目录下，打开 toolbox.db、资源目录和下载目录。
-    - 组装下载管理器、后台传输和文件导出（框架的公共能力）；不替任何工具组装它的业务对象。
-    - 跟随应用前后台状态恢复下载。
-    - 注册表由组合根传入（catalog，一般是 toolboxCatalog），runtime.modules 是它给出的工具列表，路由与百宝箱首页都从这里取。
-    - 框架不认识各工具的服务类型：工具在注册表里登记自己的打开函数（ToolboxModule.openService，实现 ToolboxService 接口），页面用 runtime.service 取用，退出时框架按接口统一关闭；打开失败不留在缓存里，重试能再打开。学习通的服务见 chaoxing_service.dart，短视频的服务见 short_video_service.dart。
-    - clearData：清除一个工具在本机的全部数据，先由工具服务自己清（ToolboxService.clearData），再撤掉按工具 id 记的同意记录，并从缓存里拿掉服务。
-    - relayUrl：自建中转地址（私信与学习通代签共用），只从构建参数来，经 ToolboxServiceContext 交给工具服务；没配时为空。
-    - shareVideo（ToolboxVideoShare）：把作品分享给好友的回调，由组合根注入（接到私信的分享弹层）；为空时不显示分享入口。百宝箱不感知私信。
-    - pickImage（ToolboxImagePick）：取图（相册或相机），由组合根注入 page 层的 pickImageCopy，缓存副本用完必须 discard；为空时（测试环境）取图返回空。
-    - pickImages（ToolboxImagesPick）：从相册一次选多张（最多 limit 张），注入 page 层的 pickImagesCopy，清理规矩同上；多人拍照签到用。
-  - toolbox_catalog.dart：工具注册表 toolboxCatalog，工具只在这一处登记（名称、图标、页面、资源与服务），增删工具不改组合根。路由按这里的 id 生成免登录的工具路由；工具 id 全处统一（路由、服务、同意记录同一个 id，[人工决策] 在文件头）。
-  - toolbox_module.dart：ToolboxModule 描述一个工具，字段有 id、名称、图标、页面构造器、可选的按需资源、可选的服务打开函数 openService（登记了就要给 clearedData，写明清除数据会删什么，确认文案按工具各说各的）与可选的好友分享卡片入口 openShared（认得卡片就返回要推入的页面，组合根按注册表找，不直接认识工具页面）；ToolboxServiceContext 是框架交给工具服务的公共能力（目录、百宝箱库、下载管理、中转地址）。登记了 openService 的工具有自己的本机数据，可清除。
-  - toolbox_page.dart：百宝箱首页 ToolboxPage，展示工具列表。有按需资源的工具右侧⋯与右滑揭示「卸载」；有本机数据的工具（登记了 openService）右侧⋯与右滑揭示「清除数据」，都须点击确认（人工决策见文件内）。
-  - toolbox_models.dart：公共模型与接口。
-    - 模型：ToolboxException、ToolboxCancellation、ToolboxResource、ToolboxDownloadRequest（工具交给下载管理的一项）、ToolboxDownload 及其状态机。ToolboxDownload.origin 是发起工具自己的附加信息，下载管理原样存取；旧记录顶层的 sourceUrl、providerId 读入时搬进 origin。
-    - 接口：ToolboxTransfer（传输）、ToolboxFilePublisher（导出）、ToolboxService（工具自己的服务：close 与 clearData）。
-  - toolbox_store.dart：ToolboxStore 管理 toolbox.db，表如下：
-    - downloads：下载记录，完整状态存在 payload 里。
-    - consent：按来源与版本记录用户同意；清除工具数据时按工具 id 撤销（revokeConsent），工具按来源记的同意由工具自己撤。
-    - resources：已安装的按需资源。
-    - 旧版本留下的 toolbox_preferences、parse_history 两张表属于短视频：短视频库打开时经 legacyShortVideoData 搬走，再 dropLegacyShortVideoTables 删表；新装不再建。
-  - toolbox_resource_manager.dart：重型按需资源的安装、校验与卸载。
-    - 按版本、sha256 和字节数校验。
-    - 每个工具只保留当前版本。
-    - 卸载只删本工具的资源，不删用户已导出的文件。
-  - toolbox_url.dart：链接安全。
-    - toolboxPublicUrl：只接受公开的 http 或 https 地址，拒绝本机、内网、带凭据或非标准端口的地址，长度上限 8192。
-    - shortVideoInput：从分享文案中提取唯一的作品链接。
+  - toolbox_runtime.dart：设备级组合根 ToolboxRuntime。在应用支持目录的 toolbox 子目录下打开 toolbox.db、资源目录与下载目录；组装下载管理、后台传输与文件导出这些公共能力，不替任何工具组装业务对象；跟随前后台恢复下载。注册表由组合根传入，工具服务经 runtime.service 取用、退出时按接口统一关闭，打开失败不留缓存。组合根注入的能力：relayUrl（中转地址，只来自构建参数）、shareVideo（分享给好友，为空不显示入口，百宝箱不感知私信）、pickImage 与 pickImages（取图，缓存副本用完必须 discard）、扫码。
+  - toolbox_catalog.dart：工具注册表 toolboxCatalog，工具只在这一处登记（名称、图标、页面、资源与服务），路由按这里的 id 生成免登录的工具路由；工具 id 全处统一（路由、服务、同意记录同一个 id，[人工决策] 在文件头）。
+  - toolbox_module.dart：ToolboxModule 描述一个工具：id、名称、图标、页面构造器、可选的按需资源、可选的服务打开函数 openService（登记了就要给 clearedData 写明清除数据会删什么）与可选的好友分享卡片入口 openShared。ToolboxServiceContext 是框架交给工具服务的公共能力。
+  - toolbox_page.dart：百宝箱首页 ToolboxPage：有按需资源的工具可「卸载」，有本机数据的工具（登记了 openService）可「清除数据」，⋯与右滑揭示都须点击确认（人工决策见文件内）。
+  - toolbox_models.dart：公共模型与接口：ToolboxException、ToolboxCancellation、ToolboxResource、ToolboxDownloadRequest、ToolboxDownload 及其状态机（origin 是发起工具的附加信息，下载管理原样存取），接口 ToolboxTransfer、ToolboxFilePublisher、ToolboxService（close 与 clearData）。
+  - toolbox_store.dart：toolbox.db：downloads（下载记录）、consent（按来源与版本记录同意，清除工具数据时按工具 id 撤销）、resources（已装的按需资源）。旧版本的 toolbox_preferences、parse_history 属于短视频，由短视频库打开时搬走后删表。
+  - toolbox_resource_manager.dart：重型按需资源的安装、校验（版本、sha256、字节数）与卸载；每个工具只留当前版本，卸载只删本工具的资源、不删用户已导出的文件。
+  - toolbox_url.dart：toolboxPublicUrl 只接受公开的 http 或 https 地址（拒绝本机、内网、带凭据或非标准端口，长度上限 8192）；shortVideoInput 从分享文案中提取唯一的作品链接。
 - download 下载：
-  - toolbox_download_manager.dart：下载管理器 ToolboxDownloadManager，百宝箱的通用能力，不认识任何工具的数据（[人工决策] 在 enqueue）。
-    - enqueue 由调用方给工具 id、标题、去重身份（identity）、附加信息 origin 与下载项；按工具 id 与 identity 加每项 id 去重。
-    - 负责入队、去重、暂停、继续、取消、校验、导出和清理；clearTool 清除一个工具的下载数据（取消进行中的、删记录与临时文件，已导出的文件与资源安装不动）。
-    - 每组 1–100 项；待处理任务组最多 10 个；同时传输最多 2 个。
-    - 已结束的记录最多保留 100 项且 30 天。创建超过 24 小时仍未完成的任务，在启动时取消。
-  - background_transfer.dart：基于 background_downloader 的后台传输 BackgroundTransfer。未授予通知权限时，改用普通 WorkManager 任务，避免 ANR。
-  - android_file_publisher.dart：通过 MethodChannel superxd/toolbox_files 调用原生 ToolboxFileExporter.kt，把文件导出到公共目录 Download/SuperXD。publish 是下载管理的导出（UUID 文件名幂等键，source 限定下载目录）；publishExternal 是一次性导出（人脸照片等，source 只认应用缓存目录、只放行图片 mime、语义化文件名按名幂等且不得含分隔符与控制字符、不以点开头）；按名查找时连写入中的残留一起查出删掉重写。
-  - downloads_page.dart：下载管理页 DownloadsPage，只列给定工具 id 的任务，按组展示。整组操作在⋯菜单里，条目顺序稳定。给了 reopenLabel 时，带附加信息的失败任务给一个按钮，把任务交回调用方去重做（短视频是「重新解析」）。
-  - download_status.dart：共享组件，包括状态文案、进度条 DownloadProgress 和操作按钮 downloadActions，供结果页和下载页共用。
+  - toolbox_download_manager.dart：通用下载管理 ToolboxDownloadManager，不认识任何工具的数据（[人工决策] 在 enqueue）。按工具 id 与 identity 加每项 id 去重；负责入队、暂停、继续、取消、校验、导出与清理，clearTool 清除一个工具的下载数据（已导出的文件不动）。每组 1–100 项、待处理任务组最多 10 个、同时传输最多 2 个。
+  - background_transfer.dart：基于 background_downloader 的后台传输 BackgroundTransfer；没有通知权限时改用普通 WorkManager 任务，避免 ANR。
+  - android_file_publisher.dart：经通道 superxd/toolbox_files 调原生 ToolboxFileExporter.kt 导出到 Download/SuperXD。publish 是下载管理的导出（source 限定下载目录）；publishExternal 是一次性导出（source 只认应用缓存目录、只放行图片 mime、文件名按名幂等且不得含分隔符与控制字符）。
+  - downloads_page.dart：下载管理页 DownloadsPage，只列给定工具 id 的任务，按组展示，整组操作在⋯里，条目顺序稳定；给了 reopenLabel 时失败任务可交回调用方重做。
+  - download_status.dart：结果页与下载页共用的状态文案、进度条 DownloadProgress 与操作按钮 downloadActions。
 - short_video 短视频：
-  - short_video_service.dart：短视频的服务 ShortVideoService（实现 ToolboxService）：自己组装解析来源（现在只有 BugPK）、打开自己的库、经框架的下载管理下载（toolId 为 short_video，origin 记作品链接与来源，重新解析按它重开）、经框架库记各来源的同意；清除数据取消并删掉本工具的下载记录、删库、撤各来源同意，已导出文件保留（[人工决策] 在文件内）。框架不认识这里的任何类型。
-  - short_video_store.dart：短视频的本机库 short_video.db：偏好（解析来源、参与自动解析的来源、历史开关）与解析历史；第一次打开从框架库搬旧数据（先写后删、已有的不覆盖）；destroy 删库（清除数据用）。
-  - media_resource.dart：解析结果里的单项媒体 MediaResource，类型分视频、图片、音频；下载时由服务转成通用下载项。
-  - parse_source.dart：解析来源端口。
-    - ParseSource 描述一个来源：id、域名、适配版本、授权版本、最小请求间隔。
-    - ParseProvider 是来源的实现接口。
-  - parse_coordinator.dart：ParseCoordinator 负责解析编排。
-    - 总预算 30 秒，单次尝试最多 25 秒。
-    - 成功结果放进最多 20 条的 LRU 缓存，保留 2 分钟。
-    - 按来源限制请求间隔，遇到限流按对方返回的时间退避。
-    - 自动模式最多依次尝试 3 个已启用且已同意的来源。
+  - short_video_service.dart：短视频的服务 ShortVideoService：自己组装解析来源（现在只有 BugPK）、打开自己的库、经框架下载管理下载（toolId 为 short_video）；清除数据取消并删本工具的下载记录、删库、撤各来源同意，已导出文件保留（[人工决策] 在文件内）。
+  - short_video_store.dart：short_video.db：偏好（解析来源、参与自动解析的来源、历史开关）与解析历史；第一次打开从框架库搬旧数据（先写后删、不覆盖已有的）；destroy 删库。
+  - parse_source.dart：解析来源端口：ParseSource（id、域名、适配版本、授权版本、最小请求间隔）与实现接口 ParseProvider。
+  - parse_coordinator.dart：解析编排 ParseCoordinator：总预算 30 秒、单次最多 25 秒；成功结果进最多 20 条、保留 2 分钟的 LRU；按来源限制间隔，限流时按对方给的时间退避；自动模式最多依次试 3 个已启用且已同意的来源（[人工决策] 在文件内）。
+  - parse_http.dart：解析用的 HTTP 封装：25 秒超时、响应上限 1MB，识别限流，退避限制在 1–300 秒。
   - bugpk_video_parser.dart：BugPK 来源的实现。
-  - parse_http.dart：解析用的 HTTP 封装。25 秒超时，响应上限 1MB；识别限流，退避时间限制在 1–300 秒之间。
   - parse_result.dart：解析结果 ParseResult、失败类型 ParseFailure 与失败码、每次尝试的记录。
-  - short_video_controller.dart：短视频页状态 ShortVideoController。
-    - 管理来源选择与启用、历史开关、解析与取消。
-    - 从历史或下载任务重开时，按原来源解析，不改写用户保存的来源选择。
-  - short_video_page.dart：短视频页 ShortVideoPage。
-    - 首次使用来源前需要用户同意。
-    - 页面有输入框、解析和取消。
-    - 有最近解析与下载入口；历史或下载任务可直达结果页。
-    - 解析设置（保存历史、来源参与自动解析、清除解析缓存）在底部弹层里。
-    - autoParse：打开好友分享的作品时带着链接直接开始解析；首次使用来源仍先征得本人同意。好友分享的视频卡片经注册表的 openShared 打开这一页（[人工决策] 在 toolbox_catalog.dart）。
-  - media_result_page.dart：结果页 MediaResultPage，展示预览和逐项下载。下载按钮原地切换为进度、暂停继续，完成后变为打开。注入了 shareVideo 时顶栏有“分享给好友”，只发作品原链接与标题作者。
+  - media_resource.dart：结果里的单项媒体 MediaResource（视频、图片、音频），下载时由服务转成通用下载项。
+  - short_video_controller.dart：短视频页状态：来源选择与启用、历史开关、解析与取消；从历史或下载任务重开时按原来源解析，不改写用户保存的来源选择。
+  - short_video_page.dart：短视频页：首次使用来源前要用户同意；最近解析与下载入口可直达结果页；解析设置在底部弹层（[人工决策] 在文件内）。autoParse 打开好友分享的作品时直接开始解析，首次使用来源仍先征得本人同意。
+  - media_result_page.dart：结果页：预览与逐项下载，下载按钮原地切换为进度、暂停继续，完成后变为打开；注入了 shareVideo 时可分享给好友（只发作品原链接与标题作者）。汇总「进行中」含排队项（[人工决策] 在文件内）。
   - media_preview.dart：视频预览 MediaPreview 与图集预览 GalleryPreview。
-  - media_image.dart：网络图片 MediaImage。加载失败后点按重试，不自动循环请求。
-  - parse_history_page.dart：解析历史全部页 ParseHistoryPage 和条目组件 ParseHistoryTile，支持删除单条与清空。
-- chaoxing 学习通签到：
-  - 对接超星学习通的课堂签到，账号是学习通账号，与教务账号无关；协议按参考项目 ChaoxingSignFaker 的接口行为独立重写。
-  - chaoxing_models.dart：活动、课程、活动详情、账号与错误码 ChaoxingFailure；otherId 到 ChaoxingSignType 的映射（otherId 0 是「普通签到」，详情 ifphoto=1 才要照片，列表不叫「拍照签到」）。活动开始时间上游没给时为空（如实当未知，不拿现在顶替），列表统一按 chaoxingNewestFirst 排（新的在前、未知的在后、同时刻按活动号）。
-  - chaoxing_crypto.dart：学习通固定的传输加密（AES-128-CBC，IV 与密钥同为固定串）、MD5/SHA-256、设备公钥（SPKI 模数，用于设备信息 RSA 分块加密与 clientId 还原）与设备码的 AES-ECB。
-  - chaoxing_device.dart：设备信息端口 ChaoxingDeviceProbe。按学习通客户端的字段与顺序组设备信息并 RSA 加密；按 OAID 算本机设备码，取不到返回空由调用方退回固定随机码。
-  - chaoxing_device_channel.dart：端口的原生实现 ChannelChaoxingDeviceProbe（通道 superxd/chaoxing_device，见 ChaoxingDevice.kt：设备信息与 OAID 在后台单线程取，结果回主线程），由 toolbox_runtime.dart 注入；两个调用各有 3 秒兜底超时，超时按取不到处理。单独成文件是为了让协议链路不依赖 Flutter，tool/verify_chaoxing.dart 才能用纯 Dart 跑。
-  - chaoxing_http.dart：请求封装与 Cookie 会话 ChaoxingCookieJar；模拟的客户端 ChaoxingClientProfile（学习通、学在西电、自定义 UA 与包名），UA 随它走；默认超时 15 秒（登录与用户信息另用 30 秒，见 chaoxing_client.dart 的人工决策）、响应上限 1MB，日志只记路径；postForm 可声明 403 按会话过期报（preSign 用）。
-  - chaoxing_client.dart：登录、用户信息、重登与设备码。用户信息带得上设备信息就 POST data（clientId 靠它下发），否则 GET；解析学校单位（主单位在前），登录后把会话 fid 改回所选单位。登录与用户信息这两个上游最慢的接口用 chaoxingAccountTimeout（30 秒）。
-  - chaoxing_activity.dart：课程列表（只认带 cataName 的频道）、活动列表与活动详情、按班级号查班级名（gas/clazz）；preSign 回传活动列表 data 级别的 ext；签到前的班级检查与按课程号找班级（强制签到给别人签时用）。
-  - chaoxing_signer.dart：preSign（302 或「校验失败」即不在班级；403 按会话过期报，由 accounts.run 重登一次再重发，对齐参考项目 1.19.2；之后紧跟 analysis → analysis2）、各签到类型的提交参数（逐项照学习通客户端；签到码/手势的绕过模式同端点不带 signCode，[人工决策] 见 ChaoxingSignSubmission）、提交结果分支（success2 按失败处理，迟到按截止时间判断）。
-  - chaoxing_batch.dart：多人连签 ChaoxingBatchSigning：勾选的人按顺序逐个签、相邻间隔 200 毫秒、逐人状态；签到前检查拦下的可强制签到，打开时选了仍然签到的人（forced）之后的提交都跳过检查，会话失效的要修复；位置刚出界时收紧偏移（一场共享一次，第一次不停队），后面的人用收紧档接着签，收紧档仍出界才把余下的人全停；连续扫码任何一人失败就停队，但已签过、不在班级、登录过期只跳过这个人（参考项目 1.19.2）。
-  - chaoxing_lessons.dart：学习通课表（kb.chaoxing.com）的解析与推断：当前节次前后 30 分钟内的课，按课名归一化与二元组相似度对上课程，找 20 分钟内刚发起的进行中签到（不知道开始时间的不算）。周次与日界按校园时区算。
-  - chaoxing_location.dart：坐标模型、坐标系转换（提交口径 BD-09）、随机偏移与 location/locationResult 负载。
-  - chaoxing_photo.dart：拍照签到。上传前随机裁剪、旋转再按安全内接矩形裁齐（同一张照片反复用会被教师端比对出来），再传云盘拿 objectId。
-  - chaoxing_qrcode.dart：课堂签到二维码的解析（SIGNIN: 内嵌串与带 enc 的链接两种）与过期查询（newsign/signDetail）。
-  - chaoxing_captcha.dart：滑块验证码，取配置与底图、按 280 宽的坐标空间提交拖动位置、换成一次性 validate（按签到对象各自的会话取）。
-  - chaoxing_captcha_dialog.dart：滑块验证弹窗，底图上拖缺口块，不通过自动换一张。
-  - chaoxing_face.dart：人脸识别签到。用设备公钥对 clientId 做模幂还原出设备信息，按字段排序拼 sc 做 md5 得 signToken，换一次性的 faceEnc；也用来取学习通里存着的人脸照片 objectId 与云盘原图地址（预览用）。
-  - chaoxing_code_cells.dart：签到码的格子输入 ChaoxingCodeCells：按位数显示空格（位数没有上限，窄屏放不下时按可用宽度等比收窄）、输满自动回调（校验与提交由签到弹层接手），真正的输入框（EditableText，自己不接点按）藏在格子底下收键盘输入，点格子或缝隙都经它的 requestKeyboard 叫键盘（键盘被收起后输入框仍聚焦，只要焦点不会再弹）；输错时标红并重震一下，红色保留到重新输入第一位（[人工决策] 在文件头）。
-  - chaoxing_image_pick.dart：人脸照片取图 pickChaoxingFacePhoto（相册或拍摄，选完进 3:4 裁剪页，image_cropper 实现）、现场拍摄 shootChaoxingPhoto（拍照签到与补拍，不裁剪）与相册一次选多张 pickChaoxingPhotos（多人拍照签到）。取图用注入的 ToolboxImagePick；取图与裁剪留下的文件读成字节后即删（人脸属于生物特征，不在缓存留存）。
-  - chaoxing_gesture_field.dart：手势签到的 3×3 图案输入 ChaoxingGestureField：原始指针事件画图案（不走手势竞技场，弹层里不会被拖动关闭抢走），抬起即回调序号串；校验失败时画错的图案留在原处标红并重震一下，下一次按下才清空（[人工决策] 在文件头）。
-  - chaoxing_face_sheet.dart：人脸照片弹层，预览（从学习通云盘取原图，内存里留最近 10 张）、用过几次、是否没通过过；每张右侧⋯里保存到本机与删除（管理模式才有删除，警示色并确认），签到时整卡点按选这次用哪张；添加照片时忙碌状态只显示在点的那个按钮上。「用学习通里存的那张」与签到弹层的补给同一条路：下载原图、随机裁剪旋转后上传成新照片，不把原图编号直接拿去签（[人工决策] 在文件内）。
-  - chaoxing_im.dart：群聊签到。学习通群聊走环信：DES 解出登录下发的环信密码（pointycastle 只有 3DES，三段同一把钥匙等价单 DES）换令牌，列群、拉漫游消息，用极简 protobuf 读 Meta/MessageBody/KeyValue 三段取 attachment 扩展，再挑 attachmentType 15 且 atype 为 2/74 的签到。ChaoxingChatGroup 与 chaoxingChatGroups 把群按名字合并、按关键字筛、置顶的在前；chaoxingImActivitiesOf 只拉给定几个群的漫游。
-  - chaoxing_group_page.dart：群聊里的签到：先列群（一次请求、最多 200 个；可搜群名、置顶，同名群合并成一项），点进某一项才拉那几个群的消息，在 ChaoxingActivitiesPage 里签（[人工决策] 在文件头）；刷新保留旧列表、顶栏按钮原地转，首次读不到给原因与重试，已有内容时刷新失败只给提示条。
-  - chaoxing_history_page.dart：往期签到页，列已结束的活动（status 不为 1），照样能签、签到页提示可能记为迟到；复用主列表那一次拉取的数据，不额外请求。
-  - chaoxing_course_page.dart：按课程查看，课程可搜课名、老师与学校，可置顶；同名课程合并成一项，点进去在 ChaoxingActivitiesPage 看全部签到。
-  - chaoxing_activity_card.dart：各页共用的活动卡片、分组标题与签到入口 ChaoxingSignLauncher（开签到弹层、签完给提示并刷新），整页读取失败用 theme 的 CampusLoadError；一组签到的列表页 ChaoxingActivitiesPage（按课程与群聊点进去共用：进行中与已结束两组、合并与没读到的说明、刷新保留旧列表）；二级页顶栏的刷新按钮 ChaoxingRefreshButton（已有内容时刷新中原地转；首次读取时页面正中已在转，按钮只暂不可点，不让两段加载动画同时演）。不知道开始时间的不亮刚发起橙点，时间行有截止写截止、都没有就不显示。
-  - chaoxing_settings_sheet.dart：签到设置弹层（学校单位、模拟的客户端），以及修复账号时重新输密码的对话框。
-  - chaoxing_sign_notices.dart：签到弹层里的时间提示 ChaoxingTimeNotice（已结束可能记迟到、发布超过 6 小时提醒没选错，不知道发布时间的不提醒）与签退提示 ChaoxingSignOutNotice（去主签到或去签退）。
-  - chaoxing_qr_feed.dart：连续扫码时的最新二维码 ChaoxingQrFeed：签到要新码时有比过期那个新的就直接给，没有就等下一次扫到，取景页关掉以「已取消」结束。
-  - chaoxing_sign_flow.dart：一个人的完整签到流程 ChaoxingSignFlow（签到前检查可强制跳过、拍照上传、人脸、提交，验证码/换码/位置收紧重试），从页面状态类抽出；会话与存储经 ChaoxingSignContext 注入，controller 是现在的实现来源。签到输入与回调类型（ChaoxingSignInputs、ChaoxingCaptchaSolver、ChaoxingFreshQrCode）也定义在这里。
-  - chaoxing_service.dart：学习通签到的服务 ChaoxingService（实现 ToolboxService 接口）：自己打开、关闭与清除库、安全存储、设备通道与代签中转客户端；open 登记在注册表，页面经 runtime.service 取用。清除数据删掉安全存储 superxd_chaoxing 命名空间的全部凭据与 chaoxing.db，不动学习通云盘与已导出的文件。serviceId（chaoxing）就是工具 id，也是同意记录的键。
-  - chaoxing_credential_pack.dart：代签凭据包（手机号、密文密码、昵称、对方设备码、最多 5 张人脸照片 objectId）的编解码与一次性密钥封装（AES-256-GCM），以及二维码取件票（SXDC1: 取件号 + 密钥）的编解码；第 2 版加了人脸照片，第 1 版照样能解；包来自别人的二维码，一律按外部输入逐项校验。
-  - chaoxing_pack_client.dart：代签凭据包的自建中转客户端，投递换取件号与作废口令、凭号取件（取走即删）、凭口令作废（老版本中转不给口令时跳过作废），地址由框架从构建参数给出；没配中转时代签入口不显示。chaoxingTicketLifetime 是码的有效期（与中转一致，10 分钟）。
-  - chaoxing_share_page.dart：出示代签码页面，画二维码并按 m:ss 倒计时（从发出投递请求时起算，只会比中转早到点），到点盖上「已失效」；重新生成、改附带照片或离开本页时作废上一张码（轮换即作废，作废失败只记日志）。
-  - chaoxing_map_page.dart：高德地图选点。高德 key 走构建参数 SUPERXD_AMAP_KEY（Android 平台 key，不写进源码）；key 没配或不在 arm 设备上（高德只带 arm 原生库）时地图入口不出现，位置直接摊开经纬度并写明原因（回退路径，不让人对着空白找）。地图按 GCJ-02 画，收藏里的 BD-09 与 WGS-84 先换算。两种地图右上角都能切平面图与卫星图（同参考项目，这次打开应用期间记住、两处共用，不落库），卫星图在图上标出高德给的审图号。ChaoxingInlineMap 是嵌在签到弹层里的地图（位置签到默认用它选点，高 240）：建好就申请定位权限（permission_handler，仅使用期间）并打开高德定位图层，没有选中位置时第一次定位结果就是默认选中，之后 30 秒内更准的结果跟着换，自己点过地图、选了收藏或全屏选了点就不再动；不画高德的精度圈（[人工决策] 在文件内）；系统定位关着时左上角写明没开并给「去打开」跳到系统定位设置（原生见 LocationSettings.kt；已有选中位置时点了「定位到我」才出现；定位没开期间一直在，比几秒就收起的提示条好找，全屏页用提示条）；右上角「定位到我」（转圈最多 15 秒，过了只提示、不停止等待）与「全屏选点」；手指落在地图上时拖动归地图（EagerGestureRecognizer），外面换了选中位置镜头跟过去。默认选中的顺序见文件内的人工决策（这门课上次签到用的 → 上次签到用的 → 当前位置，取代 10-14 的落点规则）。全屏页 ChaoxingMapPage 落点为签到点 → 弹层里已选的位置 → 全国，「定位到我」点按才定位，底部面板给高德 logo 留出位置；favorite 模式（管理收藏里添加）标题与按钮换成收藏，名字必填。release 包开 R8，高德 SDK 是不带混淆规则的 jar，靠 android/app/proguard-rules.pro 保住整个 com.amap.api（它还反射调自己已混淆的内部类，缺了一开地图就闪退或设置失效）；高德定位的 APSService 要在清单里自己声明。
-    - 地图渲染要 arm 原生库：真机，或 x86_64 模拟器（系统镜像带 ARM 转译）装 arm64 包时加 adb install --abi arm64-v8a；手动入口见 tool/verify_chaoxing_map.dart（转译下点按要稍长按住才认）。
-  - chaoxing_accounts.dart：账号闭环，登录、恢复会话、补用户信息、切换学校单位、修复（重输密码）、删除、主账号与模拟客户端的设置；list 把主账号排第一（设过的自己账号，否则最早登录的自己账号；只有代签账号时没有主账号，[人工决策] 在 list），重新登录、修复与再导入保留备注名与手动排序；会话过期自动重登一次并重放该次请求；重登被学习通拒绝时在库里记「登录已失效」，重登成功或修复后清掉（[人工决策] 在 run）。账号标签的校验与保存（saveTag：名字非空、不超过 12 个字、不重名、最多 20 个）。本人账号的设备码优先用本机 OAID 算的，取不到时沿用这个账号原来的码（退出登录后再登回来不换码），新账号才生成固定随机码。
-  - chaoxing_vault.dart：密码与 Cookie 的存放，Secure 版用系统安全存储（命名空间 superxd_chaoxing，deleteAll 只清这个命名空间），测试用内存版。
-  - chaoxing_store.dart：chaoxing.db（v10），账号索引（含学校单位、设备码来源、备注名与手动排序、登录已失效标记 session_expired（v9）；按 sort 再按登录时间新的在前，v7 升级时按原先「自己的在前」的顺序编号一次）、收藏位置（可改名）、按班级记住的签到位置（class_locations，每班一行，取本班的、没有取最近一次的；v6 起取代偏好表里的上次地图选点）、人脸照片索引（含使用次数与失败标记）、设置、置顶课程、置顶的群（pinned_chats，v8 起，按账号存群号）、账号标签（tags 与 account_tags，v9 起）、签完问收藏时「这附近不再问」的地点（quiet_places，v10 起，只记坐标）与学习通课表缓存，打开时按上限裁剪，删账号时连带清掉它的置顶、课表缓存与人脸照片索引；destroy 关库并删库文件（清除数据用）。
-  - chaoxing_sign_location.dart：签到弹层里的位置选择 ChaoxingSignLocation：地图能用时是嵌着的地图、位置名称与收藏的位置（选择标签），手动输入与管理收藏是带图标的按钮（整体换行）；地图用不了时收藏用选择标签或手输经纬度（直接摊开并写明原因）；手输时注明按高德 GCJ-02；状态归签到弹层，这里只画与回调。
-  - chaoxing_location_sheet.dart：收藏位置的管理弹层：地图能用时可以在全屏地图上添加（起名必填，满 50 个不能再加，[人工决策] 在文件头），整卡点按改名，右侧⋯里改名与删除（警示色并确认）；选择仍在签到弹层的选择标签里。签到弹层里地图能用时没有收藏也给「管理收藏」入口。
-  - chaoxing_account_sheet.dart：多账号管理弹层：主账号置顶不可拖，其余自己登录的与代签的账号合成一个列表拖动排序、写回 sort 列；整行点按改备注名，右侧⋯里改备注名、设置标签、设为主账号（只有自己登录且不是主账号的行有）与删除（警示色并确认，删代签账号不用先切过去，删光了关弹层回登录）；顶栏「标签」进标签管理；登录已失效的行多一个警示色图标，点按重新输密码修复；行下列出这个账号的标签。说明行只标例外：主账号写「主账号」、代签账号写「代签账号」、登录已失效（ChaoxingController.ownerLabelOf 与记录上的 label）。
-  - chaoxing_tag_sheet.dart：账号标签：标签显示 ChaoxingTagLabel（带颜色的小图标加名字）、标签管理弹层（新建、改名换色、删除，删除确认写明从所有账号上拿掉）、给账号设标签的弹窗（勾选后一次写回）；颜色名与主题的 tagColors 一一对应（[人工决策] 在文件头）。
-  - chaoxing_controller.dart：页面状态，打开工具进主账号（mainPhoneNumber，排第一的自己登录账号），账号切换（按代次丢弃切换前的异步结果）、刷新（课程与活动，最多并发三个课程请求；进行中与往期按 status 分）、课表推断（读完列表还没推断到、且正有课时每 5 秒重查这节课的签到，最多 2 分钟，参考项目 1.19.2）、扫码打开签到（scannedActivity：按二维码里的活动号读详情组出活动，课程列表里没有这门课时按班级号查班级名当标题，查不到写「课堂签到」）、每个签到对象的完整签到流程入口、课程分组与置顶、学校单位与模拟客户端、收藏位置、按班级记住的签到位置与「这附近不再问」的地点（shouldOfferSave：500 米内有收藏或不再问的点就不问）；签到对象的会话按需打开、整页关掉时一起关。人脸照片与代签码分别交给 faces、delegate 两个子控制器（构造注入 accounts 与会话，不反向依赖本类）。
-  - chaoxing_face_controller.dart：人脸照片 ChaoxingFaceController：列表、上传（可只上传不记进列表，签到时现拍的签完再 rememberFaceImage）、预览缓存（总字节封顶 20MB）、保存到本机（一次性导出）、学习通默认照片的读取与重处理。
-  - chaoxing_delegate_controller.dart：代签码 ChaoxingDelegateController：出示（封包投递到中转换取件票）与取件导入（解封后用对方设备码登录确认，按代签账号存入）；没配中转时报不可用；出示时一并拿到作废口令，revokeTicket 凭它作废。
-  - chaoxing_page.dart：首页与登录表单，先取同意再登录；账号卡的头像位常驻（先放占位图标，照片随用户信息刷新晚到时淡入，名字不跳位置）；读取、登录与列表三态之间淡出淡入，打开失败给原因与重试；首页分「可能正在签到（按学习通课表）」与「进行中的签到」两组，底下是往期、群聊签到、按课程三个入口（群聊与往期同一行并排，放不下时一行一个，[人工决策] 在文件内）；账号操作用⋯菜单（切换、账号管理、登录其他账号、人脸照片、签到设置、代签码、退出登录、删除）；登录后顶栏有「扫签到二维码」，扫课堂签到二维码直接打开那场签到（课程列表里没有也能签）。
-  - chaoxing_sign_sheet.dart：签到弹层，先取活动详情再按类型要输入（签到码、位置）；签到码与手势可选校验方式（普通=输码经服务端校验，绕过=不输码直接提交、提示可能失效，[人工决策] 见 chaoxing_signer.dart）；有多个账号时列出签到对象可多选，每人一行原地显示状态，拍照与人脸按人选；失败的可重试、强制签到或重新登录；打开即检查，勾选的人全被拦时按原因弹窗（全面对齐参考项目，[人工决策] 在文件内）：三类原因都给「仍然签到」（放行强制，本人已签过也允许，可能是 preSign 误判），有没勾的账号再给「为其他账号签到」（把没签的勾上、留在页面），加「关闭」；两者行为区分开——一个强制这个人、一个去签别人；仍然签到只关弹窗、留在签到页接着操作，之后点签到时这个人跳过检查（同参考项目，[人工决策] 在文件内）；二维码签到用连续扫码，签完所有人自动关、码过期等新码接着签；已结束或发布太久的给时间提示；服务端要验证码时就地弹滑块，过了自动把这个人重发一遍。位置默认选中这门课上次签到用的位置（见 chaoxing_map_page.dart 的人工决策），有人签成功就记下这门课用的位置；签完附近没有收藏时问收藏，收藏名当场可改，也可选「这附近不再问」（[人工决策] 在 _pickOnMap）；开签前现拍补给的人脸照片只上传给这次用，签好的人问一次存不存；多人拍照签到时好几个人缺照片可以从相册一次选齐，按签到对象顺序分；老师要拍照时写明要交照片。「甲 · 乙」说明行用 theme 的 DotSeparatedText。读取、切换校验方式、出错与失败操作出现时弹层高度平滑过渡（AnimatedSize 250ms），每人一行的签到中与签好的图标交替淡入；签到对象上方按标签一起勾选（带这个标签、还没签好的人都勾上时标签算选中，再点一起取消）；登录已失效的人还没开签就给「重新登录」；没开签时只写例外（主账号、代签账号、登录已失效、固定随机设备码），都没有就不占这一行（[人工决策] 见 chaoxing_store.dart 的 ownerLabel）。
+  - media_image.dart：网络图片 MediaImage，加载失败后点按重试，不自动循环请求。
+  - parse_history_page.dart：解析历史全部页 ParseHistoryPage 与条目 ParseHistoryTile，可删除单条与清空。
 
 # 关键规则
 
-- 第三方来源：
-  - 每个来源、每个授权版本都要单独征得同意。旧的同意不会扩大到新来源或新版本。
-  - 自动模式只尝试已启用且已同意的来源，不并发广播链接。
-  - 接入新来源，或把链接发给新服务之前，必须先让用户确认。
-- 解析历史：
-  - 默认开启。未设置时视为开启，用户手动关闭后保持关闭。
-  - 只存本机（short_video.db），最多 80 条且保留 30 天。
-  - 不保存签名的媒体地址；删除历史不删除已下载的文件。
+- 第三方来源：每个来源、每个授权版本都单独征得同意，旧的同意不扩大到新来源或新版本；自动模式只试已启用且已同意的来源，不并发广播链接；接入新来源或把链接发给新服务之前，先让用户确认。
+- 网络：解析总预算 30 秒、单次响应上限 1MB；媒体地址必须是公网 https，拒绝本机和内网地址。真实作品链接只在用户授权后联调，离线测试一律用合成数据。
+- 解析历史：只存本机 short_video.db，最多 80 条且保留 30 天；默认开启（未设置视为开启，用户关了保持关闭）；不保存签名的媒体地址，删历史不删已下载的文件。
 - 下载与导出：
-  - 媒体地址必须是公网 https。
-  - 导出成功以原生侧 is_pending=0 且哈希一致为准。插件接受暂停请求不代表已经暂停，要等实际的状态事件。
-  - 导出前只按文件头识别类型：先查 mime 默认表，查不到再查下载管理器里补充的规则。不按 Content-Type 或链接后缀兜底。音频资源的 MP4 容器按 audio/mp4 导出。
-  - 待保存不带错误，表示排队等导出或等回前台自动导出，显示为中性等待；带错误（导出失败、旧系统取消选址）才显示重试保存，判定见 ToolboxDownload.saveFailed。
-  - 导出的视频归用户所有，卸载工具时不删除。
-- 学习通签到（chaoxing）：
-  - 协议按参考项目 ChaoxingSignFaker 的接口行为独立重写，不复制其代码，也不依赖它的任何域名与服务。
-  - 不碰教务凭据与 cookie；学习通账号的密码与 cookie 只进系统安全存储，业务库只存账号索引。
-  - 活动列表、preSign 与提交结果的解析集中在 chaoxing_activity.dart 与 chaoxing_signer.dart，学习通改版时只动这两处。
-  - 扫码页在 page 层，百宝箱用组合根注入的 ToolboxQrScan（单次）与 ToolboxQrWatch（连续，多人连签的二维码签到用）取二维码原文（toolbox_runtime.dart），不依赖 page。
-  - 签到流程与参数逐项对齐参考项目（2026-10-07 二次对照）：用户信息 POST 设备信息、preSign 用列表级 ext 并紧跟 analysis → analysis2、success2 按失败、迟到按截止时间、二维码坐标固定 -1、人脸只在位置与二维码签到上带、签到前查班级。参考项目里被关掉的「签到习惯推荐」（disableCode 空实现）不做。
-  - 设备信息与 OAID：只在学习通签到时取，加密后只发给学习通，不在本机另存；OAID 库（Android_CN_OAID）自带的电话状态、存储、写设置与广告 ID 权限在清单里移除。
-  - OAID 库会带入闭源的华为、荣耀广告标识 SDK（com.huawei.hms、com.hihonor.mcs 的 ads-identifier，只读 OAID），隐私政策单列「学习通签到用到的第三方 SDK」；增删这类 SDK 时同步改隐私政策。
-  - 依赖仓库按组限定（android/build.gradle.kts 的 thirdPartyRepositoryGroups）：JitPack 只给 OAID 库与 uCrop、华为与荣耀仓库只给各自的组，插件再声明的同一仓库也一并限定；新增走这几个仓库的依赖要先登记它的组。
-  - 位置签到的坐标提交口径是 BD-09，地图或定位给的 WGS-84、GCJ-02 先在 chaoxing_location.dart 转换；坐标系尚未用真账号校准。提交前一律先换算再按小范围随机偏移（超范围时收紧到 0.00001 重试一次），手输坐标按高德 GCJ-02 算。
-  - 高德地图用于选点：打开位置签到时申请定位权限（仅使用期间、不后台定位），定位结果只标在地图上、作默认选点；本机按班级记住签到成功用的位置作下次的默认位置。隐私政策单列「地图选点」一节，学习通同意说明为第 4 版。
-  - 代签：凭据包用一次性随机密钥加密，密钥只在二维码里、不进服务器；密文经自建中转暂存，取件号一次性、10 分钟过期、取走即删；出示方换码或离开出示页即作废上一张（凭投递时拿到的作废口令，[人工决策] 见服务端 chaoxing_pack.service.ts）。导入的账号按他人账号对待（is_other_user），带对方的设备码，签到时不会提示「更换了签到设备」；代签码只带真实设备码，固定随机码不放，导入方自己生成并标成随机（同参考项目，[人工决策] 在 chaoxing_delegate_controller.dart）；本机库里已有本人账号时拒绝导入自己的码。附带人脸照片要出示方勾选，默认不带。
-  - 上限：账号 21 个（自己登录的与代签的合计）、收藏位置 50 条、每人人脸照片 objectId 5 条、每个账号置顶课程 100 个、置顶的群 200 个、账号标签 20 个（名字 12 个字以内）、按班级记住的签到位置 200 个班、「这附近不再问」的地点 50 个、学习通课表缓存每个账号一行且 7 天过期，打开库时裁剪。
-  - 人脸识别：照片本身存在学习通云盘，本机只记 objectId 与使用情况；签到时这次选了就用选的，否则从本机存的里随机挑一张（之前没通过过的先避开，都失败过才回头用）；一张都没有时开签前补给——学习通里有默认照片先问重处理（随机裁剪旋转再上传），否则现场拍摄；相册选图与拍摄都进 3:4 裁剪页（要认得出人）。clientId 与环信密码都只在用户信息接口下发，环信密码不落库；参考项目是带设备信息 POST 拿到 clientId 的（2026-10-07 用测试账号实测：GET 不给，POST 合成设备信息即下发，能还原出 sc、_t、cid；经原生通道取真机设备信息的路径还没验），缺失时人脸提交不带设备签名。
-  - 群聊：环信令牌、群列表与漫游消息每次都现拉，不在本机存群消息；列群不拉消息，点进一项才拉那几个群的漫游（工作量只随这次看的群增长）。
-- 轻量逻辑随应用一起发布，只有重型纯资源才按需安装。解析器没有大资源，不显示假的下载安装过程。
-- 真实作品链接只在用户授权后联调；离线测试一律用合成数据。
+  - 导出成功以原生侧 is_pending=0 且哈希一致为准（background_downloader 在清除 pending 失败时仍报成功，所以自写 MediaStore 适配）；插件接受暂停请求不代表已暂停，要等实际的状态事件。
+  - 导出前只按文件头识别类型（先查 mime 默认表，再查下载管理补充的规则），不按 Content-Type 或链接后缀兜底；音频的 MP4 容器按 audio/mp4 导出。
+  - 待保存不带错误时是中性等待（排队导出或等回前台），带错误才显示重试保存，判定见 ToolboxDownload.saveFailed。
+  - 已结束的下载记录最多保留 100 项且 30 天；创建超过 24 小时仍未完成的任务在启动时取消。导出的文件归用户所有，卸载工具、清除数据都不删。
+- 清除数据：工具服务自己清（ToolboxService.clearData），框架再撤掉按工具 id 记的同意记录并从缓存拿掉服务；登记了 openService 的工具必须给 clearedData。
+- 轻量逻辑随应用发布，只有重型纯资源才按需安装；解析器没有大资源，不显示假的下载安装过程。
+- 性能观察项：结果页和下载页随进度通知整页重建，没有真机 profile 证据前不要改。
+
+# 测试
+
+- toolbox_widget_test.dart、toolbox_download_test.dart：首页、注册表与下载管理。
+- toolbox_media_features_test.dart：短视频库迁移、旧下载记录兼容、按工具清空下载、清除数据、分享卡片按注册表打开。
+- short_video_parser_test.dart、media_image_test.dart；支撑在 toolbox_test_support.dart。
+- 手动入口：tool/verify_toolbox.dart（Android 原生下载与导出）。
 
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/toolbox android/app/src
-- 本目录的标记集中在以下几处：
-  - 免登录与设备级归属
-  - 注册表
-  - 卸载确认与清除数据（toolbox_page.dart）
-  - 资源卸载范围
-  - 工具单点登记与 id 统一（toolbox_catalog.dart）
-  - 学习通：签到码与手势输错的反馈、账号管理每行⋯（chaoxing_code_cells.dart、chaoxing_gesture_field.dart、chaoxing_account_sheet.dart）；收藏补齐：管理收藏里在地图上添加与「这附近不再问」（chaoxing_location_sheet.dart、chaoxing_sign_sheet.dart 的 _pickOnMap）；账号说明只标例外（chaoxing_store.dart）；群聊先列群（chaoxing_group_page.dart）；登录已失效记库（chaoxing_accounts.dart 的 run）；账号标签（chaoxing_tag_sheet.dart）；代签码只带真实设备码（chaoxing_delegate_controller.dart）；学习通存的人脸照片先重处理（chaoxing_face_sheet.dart）；主账号与排序（chaoxing_accounts.dart 的 list、chaoxing_account_sheet.dart）
-  - 来源选择
-  - 历史默认开启（short_video_store.dart）
-  - 下载管理通用化（toolbox_download_manager.dart）、短视频服务化与清除数据（short_video_service.dart）、好友分享入口走注册表（toolbox_catalog.dart）
-  - 下载汇总“进行中”含排队项（结果页与下载管理页）
-  - 解析设置底部弹层
-- 公共目录导出的决策在 ToolboxFileExporter.kt。
+- 本目录（不含学习通）的标记位于：免登录与设备级归属（toolbox_runtime.dart）、资源卸载范围（toolbox_resource_manager.dart）、单点登记与工具 id 统一、好友分享走注册表（toolbox_catalog.dart）、卸载确认与清除数据（toolbox_page.dart）、下载管理通用化（toolbox_download_manager.dart）、短视频服务化与清除数据（short_video_service.dart）、历史默认开启（short_video_store.dart）、来源选择（parse_coordinator.dart）、汇总「进行中」含排队项（media_result_page.dart、downloads_page.dart）、解析设置底部弹层（short_video_page.dart）；公共目录导出在 ToolboxFileExporter.kt。

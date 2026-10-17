@@ -14,7 +14,7 @@
     - 拒绝带凭据、查询或片段的来源。
   - 账号库路径为 accounts/账号键.db，打开时校验 owner。
   - 旧版单库 superxd.db：用户确认归属后只认领一次，导入目标必须是该账号自己的库。
-- app_database.dart：单个账号的业务库 AppDatabase，schema 版本 6。
+- app_database.dart：单个账号的业务库 AppDatabase（版本号见 openDatabase 的 version）。
   - 表：
     - session：会话与 cookie，只有一行。
     - term：学期、当前学期标记、开学日。
@@ -40,7 +40,7 @@
   - CredentialStore：记住账号的凭据存取接口。
   - SecureCredentialStore：基于系统安全存储的实现，按账号键保存带版本号的 JSON。
 - display_settings.dart：设备级显示设置。
-  - DisplaySettings 存在 display_settings.db（schema 版本 6），包括字号、配色、字体、深浅色、玻璃效果（auto、full、reduced，默认 auto），以及自定义壁纸（文件名、色调网格、模糊与淡化 0–100）。v6 把旧的三档下标按原效果换算成连续量。
+  - DisplaySettings 存在 display_settings.db，包括字号、配色、字体、深浅色、玻璃效果（auto、full、reduced，默认 auto），以及自定义壁纸（文件名、色调网格、模糊与淡化 0–100）。v6 把旧的三档下标按原效果换算成连续量。
   - wallpaperLook 是壁纸模糊与淡化的当前外观：previewWallpaper 只改它、不落库，背景单独监听；setWallpaperLook 立即更新外观并在保存锁内落库，落库后不回写外观（保存期间继续拖动不会被拽回）。
   - 壁纸文件交给 WallpaperStore；复制、落库、删旧文件在保存锁内一次完成。启动时文件丢失则按未设置处理，并清理残留文件。
   - DisplayScope 负责向下传递；CampusTextScaler 在系统字号基础上叠加应用字号。
@@ -63,6 +63,13 @@
 - 新增表或列时：
   - 只在 onUpgrade 里按版本号迁移，并同步更新 test/schedule_migration_test.dart 或对应的迁移测试。
   - 只增不删的表，必须同时给出上限或清理策略。
+- AppDatabase 的 revisionSummaries、termStartDate、gradesPayload、insertRevision、openMemory 只有测试或工具在用，删除前先改测试。
+
+# 测试
+
+- 账号库与旧库：account_store_test.dart、account_isolation_test.dart、legacy_import_test.dart。
+- 课表与作息持久化：schedule_version_test.dart、schedule_migration_test.dart、bells_persistence_test.dart。
+- 显示设置与壁纸：appearance_settings_test.dart、wallpaper_test.dart；应用更新检查记录：app_update_test.dart。
 
 # 人工决策检索
 
