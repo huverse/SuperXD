@@ -65,9 +65,9 @@ void main() {
     expect((await gateway.setTermStart(term, '2026-02-30')).ok, isFalse);
     expect(changes, 1);
     expect((await gateway.readReminderSetting(term)).data, isA<ReminderSetting>().having((setting) => setting.enabled, 'enabled', isFalse).having((setting) => setting.leadMinutes, 'lead', 15));
-    expect((await gateway.saveReminderSetting(term, const ReminderSetting(enabled: true, leadMinutes: 30))).ok, isTrue);
+    expect((await gateway.saveReminderSetting(term, const ReminderSetting(enabled: true, leadMinutes: 30, live: false))).ok, isTrue);
     expect(changes, 2);
-    final invalid = await gateway.saveReminderSetting(term, const ReminderSetting(enabled: true, leadMinutes: 7));
+    final invalid = await gateway.saveReminderSetting(term, const ReminderSetting(enabled: true, leadMinutes: 7, live: false));
     expect(invalid.error?.code, 'INVALID_REMINDER');
     expect(changes, 2);
     expect((await gateway.readReminderSetting(term)).data?.leadMinutes, 30);

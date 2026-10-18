@@ -1,3 +1,6 @@
+import 'dart:convert';
+
+import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
@@ -6,9 +9,11 @@ import 'package:superxd/domain/course_reminder.dart';
 
 // 课前提醒的系统实现：flutter_local_notifications 定时通知，开机后由插件的接收器重新排定。
 // 只管理自己 id 段内的提醒，不调用 cancelAll，避免撤掉下载进度等其他通知。
+// 开了状态栏胶囊时改由原生侧 CourseLive.kt 发实时更新（插件不支持），两条路同一时刻只走一条。
 class NotificationReminders implements CourseReminderPort {
   NotificationReminders({FlutterLocalNotificationsPlugin? plugin}) : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
   final FlutterLocalNotificationsPlugin _plugin;
+  static const _live = MethodChannel('superxd/course_live');
   static const _idBase = 610000;
   static const _details = NotificationDetails(
     android: AndroidNotificationDetails(
@@ -32,9 +37,12 @@ class NotificationReminders implements CourseReminderPort {
     await _initialize();
     final android = _android;
     if (android == null) return const ReminderCapability(notifications: false, exact: false);
+    final live = (await _live.invokeMapMethod<String, bool>('capability'))!;
     return ReminderCapability(
       notifications: await android.areNotificationsEnabled() ?? false,
       exact: await android.canScheduleExactNotifications() ?? false,
+      live: live['live']!,
+      liveAllowed: live['allowed']!,
     );
   }
 
@@ -51,11 +59,31 @@ class NotificationReminders implements CourseReminderPort {
   }
 
   @override
-  Future<void> replace(List<PlannedReminder> reminders, {required bool exact}) async {
+  Future<void> requestLive() => _live.invokeMethod<void>('openSettings');
+
+  @override
+  Future<void> replace(List<PlannedReminder> reminders, {required bool exact, required bool live}) async {
     await _initialize();
     for (final pending in await _plugin.pendingNotificationRequests()) {
       if (pending.id >= _idBase && pending.id < _idBase + reminderLimit) await _plugin.cancel(id: pending.id);
     }
+    // 钟点在这里按校园时区写好，原生侧不算时区；上课中的正文换成下课时刻，人已在教室也留着地点方便核对。
+    await _live.invokeMethod<void>('replace', {
+      'items': jsonEncode([
+        if (live)
+          for (final reminder in reminders.take(reminderLimit))
+            {
+              'key': reminder.occurrence.key,
+              'fireAt': reminder.fireAt.millisecondsSinceEpoch,
+              'start': reminder.occurrence.start.millisecondsSinceEpoch,
+              'end': reminder.occurrence.end.millisecondsSinceEpoch,
+              'title': reminder.title,
+              'before': reminder.body,
+              'during': ['上课中 · 至${formatCampusClock(reminder.occurrence.end)}', if (reminder.occurrence.meeting.place.isNotEmpty) reminder.occurrence.meeting.place].join(' · '),
+            },
+      ]),
+    });
+    if (live) return;
     final campus = tz.getLocation(campusTimeZone);
     for (final (index, reminder) in reminders.take(reminderLimit).indexed) {
       await _plugin.zonedSchedule(

@@ -95,7 +95,7 @@ class _ReminderDialogState extends State<_ReminderDialog> {
                     title: const Text('上课前提醒我'),
                     subtitle: Text(term.label.isEmpty ? '本学期' : term.label),
                     value: status.setting.enabled,
-                    onChanged: _busy ? (_) {} : (value) => _save(term, ReminderSetting(enabled: value, leadMinutes: status.setting.leadMinutes)),
+                    onChanged: _busy ? (_) {} : (value) => _save(term, ReminderSetting(enabled: value, leadMinutes: status.setting.leadMinutes, live: status.setting.live)),
                   ),
                   if (status.setting.enabled) ...[
                     const SizedBox(height: 8),
@@ -106,9 +106,20 @@ class _ReminderDialogState extends State<_ReminderDialog> {
                         CampusGlassChip(
                           label: '$lead分钟',
                           selected: status.setting.leadMinutes == lead,
-                          onSelected: _busy ? null : (_) => _save(term, ReminderSetting(enabled: true, leadMinutes: lead)),
+                          onSelected: _busy ? null : (_) => _save(term, ReminderSetting(enabled: true, leadMinutes: lead, live: status.setting.live)),
                         ),
                     ]),
+                    // 系统有实时更新（Android 16 起）才给开关；OPPO 上显示为流体云。
+                    if (status.capability.live) ...[
+                      const SizedBox(height: 8),
+                      CampusSwitchTile(
+                        contentPadding: EdgeInsets.zero,
+                        title: const Text('状态栏胶囊'),
+                        subtitle: const Text('开课前到下课显示倒计时'),
+                        value: status.setting.live,
+                        onChanged: _busy ? (_) {} : (value) => _save(term, ReminderSetting(enabled: true, leadMinutes: status.setting.leadMinutes, live: value)),
+                      ),
+                    ],
                     const SizedBox(height: 12),
                     ..._state(status, note),
                   ],
@@ -146,6 +157,17 @@ class _ReminderDialogState extends State<_ReminderDialog> {
             onPressed: _busy ? null : () => widget.reminders.port.requestExact(),
             icon: const CampusIcon(CampusIcons.settings),
             label: const Text('准时提醒'),
+          ),
+        ],
+        // 用户在系统里关了本应用的实时更新：照常提醒，只是不进胶囊。
+        if (status.setting.live && status.capability.live && !status.capability.liveAllowed) ...[
+          const SizedBox(height: 8),
+          Text('系统未允许状态栏胶囊，只显示为普通通知。', style: note),
+          const SizedBox(height: 8),
+          FilledButton.icon(
+            onPressed: _busy ? null : () => widget.reminders.port.requestLive(),
+            icon: const CampusIcon(CampusIcons.settings),
+            label: const Text('开启胶囊'),
           ),
         ],
       ],

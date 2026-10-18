@@ -25,7 +25,7 @@
     - term_bells_source：作息的采用来源绑定。
     - account_owner：库的归属，只有一行。
     - legacy_import_marker：旧库导入完成标记。
-    - reminder_setting：课前提醒设置，每学期一行（v6 新增）。
+    - reminder_setting：课前提醒设置，每学期一行（v6 新增；v7 加状态栏胶囊开关 live，默认关闭）。
   - 课表写入（saveSchedule、syncSchedule、restoreRevision）在同一事务内完成：
     1. 读取 head，核对 expectedRevisionId。
     2. 写入新版本并更新 head。

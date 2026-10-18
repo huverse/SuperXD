@@ -29,7 +29,7 @@
 - 课表：
   - schedule_page.dart：课表页 SchedulePage：天、学期、学年三种范围，可设开学日；无课时段可新增课程或安排已有课程；顶栏只留「今天」胶囊、「管理课程」与⋯（开学日、课前提醒、导出到日历、分享给好友，后两项按注入的服务显示）。
   - calendar_export.dart：导出到日历 exportTermCalendar：当前所看学期写成 .ics 交给日历应用；缺开学日或作息时说明原因不导出，找不到的节次不猜时刻；文件只放缓存 calendar_export 文件夹（每次先清空），经原生 CalendarExporter.kt 交出。交付函数可注入（openCalendar）。
-  - reminder_dialog.dart：课前提醒设置 showReminderSettings：开关与提前时间按学期保存，状态行如实显示安排结果，需要处理的给「开启通知」「准时提醒」。
+  - reminder_dialog.dart：课前提醒设置 showReminderSettings：开关、提前时间与状态栏胶囊按学期保存（系统有实时更新才给胶囊开关），状态行如实显示安排结果，需要处理的给「开启通知」「准时提醒」「开启胶囊」。
   - schedule_calendar.dart：课表页月份轨道与周次轨道的纯函数。
   - schedule_editor_page.dart：课程管理 ScheduleEditorPage：新增、编辑、删除（可撤销）、清空、建空课表与历史版本入口；整卡点进编辑，编辑与删除在⋯里。
   - course_editor_page.dart：单门课程编辑 CourseEditorPage。
