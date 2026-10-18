@@ -49,7 +49,8 @@ class CampusGlassChip extends StatelessWidget {
     // 图标与文字的间距同 FilledButton.icon：大字号时从 8 收到 4。
     final gap = 8 - 4 * ((MediaQuery.textScalerOf(context).scale(14) / 14).clamp(1.0, 2.0) - 1);
     final slot = icon == null ? const SizedBox.shrink() : Padding(key: ValueKey(selected), padding: EdgeInsetsDirectional.only(end: gap), child: icon);
-    return Semantics(
+    // 按钮自成读屏节点，外层的选中状态不合并就落到祖先节点上，读屏听不到“已选中”。
+    return MergeSemantics(child: Semantics(
       selected: selected,
       child: FilledButton(
         style: style,
@@ -71,7 +72,7 @@ class CampusGlassChip extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ));
   }
 }
 

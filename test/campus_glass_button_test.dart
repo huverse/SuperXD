@@ -196,6 +196,21 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('读屏：可点卡片报按钮，选择标签的选中状态落在按钮节点上', (tester) async {
+    final handle = tester.ensureSemantics();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Scaffold(body: Column(children: [
+      CampusSurface(onTap: () {}, child: const Text('课表')),
+      const CampusSurface(child: Text('说明')),
+      CampusGlassChip(label: '标准', selected: true, onSelected: (_) {}),
+      CampusGlassChip(label: '较大', selected: false, onSelected: (_) {}),
+    ]))));
+    expect(tester.getSemantics(find.text('课表')), isSemantics(label: '课表', isButton: true, hasTapAction: true));
+    expect(tester.getSemantics(find.text('说明')), isNot(isSemantics(isButton: true)));
+    expect(tester.getSemantics(find.text('标准')), isSemantics(label: '标准', isButton: true, isSelected: true));
+    expect(tester.getSemantics(find.text('较大')), isSemantics(label: '较大', isButton: true, isSelected: false));
+    handle.dispose();
+  });
+
   testWidgets('按压反馈同 iOS：卡片按下整块变暗、无扩散水波，松手淡出', (tester) async {
     for (final palette in [CampusPalette.values.first, CampusPalette.darkValues.first]) {
       await tester.pumpWidget(MaterialApp(theme: campusTheme(palette: palette), home: Scaffold(body: Center(child: CampusSurface(onTap: () {}, child: const Text('界面'))))));

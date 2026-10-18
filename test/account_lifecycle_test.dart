@@ -17,6 +17,7 @@ import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/message_page.dart';
 import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/page/account_page.dart';
 import 'package:superxd/page/login_page.dart';
 import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -140,6 +141,45 @@ void main() {
     expect(find.byType(GlassPanel), findsOneWidget);
     await tester.pumpWidget(const SizedBox()); session.dispose();
   });
+  test('账号卡副标题：有姓名写学号 · 班级，姓名未知时标题已是学号只写班级', () {
+    expect(accountDetail(const SessionView(loginId: '20260001', name: '用户A', className: '示例班')), '20260001 · 示例班');
+    expect(accountDetail(const SessionView(loginId: '20260001', name: '', className: '示例班')), '示例班');
+    expect(accountDetail(const SessionView(loginId: '20260001', name: '用户A', className: '')), '20260001');
+    expect(accountDetail(null), '');
+  });
+
+  testWidgets('登录页同意勾选框读屏读整句、点文字也能勾选；登录后我的页账号卡写学号', (tester) async {
+    final gateway = _Accounts().._active = null;
+    final session = AppSession(gateway);
+    await session.restore();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18));
+    await tester.pumpAndSettle();
+    Checkbox agree() => tester.widget<Checkbox>(find.byKey(const ValueKey('agree-terms')));
+    expect(agree().semanticLabel, '我已阅读并同意用户协议和隐私政策');
+    // 整句只在勾选框上读一次，旁边的文字不再单独朗读。
+    final handle = tester.ensureSemantics();
+    expect(find.bySemanticsLabel('我已阅读并同意'), findsNothing);
+    expect(find.bySemanticsLabel('我已阅读并同意用户协议和隐私政策'), findsOneWidget);
+    handle.dispose();
+    await tester.tap(find.text('我已阅读并同意'));
+    await tester.pump();
+    expect(agree().value, isTrue);
+    await tester.tap(find.text('我已阅读并同意'));
+    await tester.pump();
+    expect(agree().value, isFalse);
+    await tester.tap(find.text('我已阅读并同意'));
+    await tester.enterText(find.byType(TextField).at(0), 'A');
+    await tester.enterText(find.byType(TextField).at(1), 'ok');
+    await tester.pump();
+    await tester.tap(find.text('登录'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('我的').last);
+    await tester.pumpAndSettle();
+    expect(find.text('用户A'), findsOneWidget);
+    expect(find.text('A'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('记住账号必须先同意，取消不勾选；成功后可在我的立即清除，清除后可原地输密码重新开启', (tester) async {
     final gateway = _Accounts().._active = null;
     final session = AppSession(gateway);

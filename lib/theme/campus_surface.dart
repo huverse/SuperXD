@@ -45,12 +45,16 @@ class CampusSurface extends StatelessWidget {
                 : CampusPalette.of(context).surfaceBorder,
           ),
         ),
+        // 可点的卡片读屏报“按钮”（同系统列表项），不只是一段能双击的文字。
         child: onTap == null
             ? content
-            : InkWell(
-                onTap: onTap,
-                borderRadius: BorderRadius.circular(radius),
-                child: content,
+            : Semantics(
+                button: true,
+                child: InkWell(
+                  onTap: onTap,
+                  borderRadius: BorderRadius.circular(radius),
+                  child: content,
+                ),
               ),
       ),
     );

@@ -319,7 +319,12 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
                       ])),
                     ),
             );
-            final labelled = open == null ? card : Semantics(button: true, label: _spoken(span, progress[key]), onTap: open, excludeSemantics: true, child: card);
+            // [人工决策-2026-10-18 15:18:41] 课表页有课卡（只认长按）读屏同样读整句，长按动作提示“展开详情”；展开后不再合并，编辑入口单独可达（用户从走查清单选定）。
+            final labelled = open != null
+                ? Semantics(button: true, label: _spoken(span, progress[key]), onTap: open, excludeSemantics: true, child: card)
+                : !span.empty && !selected && widget.onDetail != null
+                    ? Semantics(label: _spoken(span, progress[key]), onLongPress: () => widget.onDetail!(key), onLongPressHint: '展开详情', excludeSemantics: true, child: card)
+                    : card;
             return AnimatedBuilder(animation: _retainedDetail == null ? const AlwaysStoppedAnimation(1.0) : _curve, child: RepaintBoundary(child: labelled), builder: (context, child) => ClipRect(child: Align(
               alignment: Alignment.topCenter, heightFactor: _retainedDetail != null && !selected ? 1 - _curve.value : 1,
               child: Padding(padding: EdgeInsets.only(bottom: index == widget.spans.length - 1 ? 0 : 8), child: child),
