@@ -1589,6 +1589,23 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  // 用户反馈：签到设置里找不到学校单位（只挂一个单位时以前整组藏起来）。
+  testWidgets('签到设置：只挂一个学校单位时照样显示，只读写明是哪个', (tester) async {
+    usePhoneScreen(tester);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    await tester.tap(find.byTooltip('账号操作'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('签到设置').evaluate().isNotEmpty);
+    await tester.tap(find.text('签到设置'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('学校单位').evaluate().isNotEmpty);
+    expect(find.text('示例大学'), findsWidgets);
+    expect(find.text('这个学习通账号只在这一个单位下'), findsOneWidget);
+    expect(find.widgetWithText(CampusGlassChip, '示例大学'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('签到码格子：位数多时按屏宽收窄不溢出；输错标红并震动，重新输入第一位才熄灭', (tester) async {
     usePhoneScreen(tester);
     final code = TextEditingController();

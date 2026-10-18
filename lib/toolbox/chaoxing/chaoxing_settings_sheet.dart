@@ -63,7 +63,7 @@ class _PasswordPromptState extends State<_PasswordPrompt> {
   );
 }
 
-// 签到设置：学校单位（账号挂在多个单位下时可选）、推断正在上的课用哪份课表与模拟的客户端（定制版学习通的学校要换）。
+// 签到设置：学校单位（账号挂在多个单位下时可选，只有一个时只读）、推断正在上的课用哪份课表与模拟的客户端（定制版学习通的学校要换）。
 Future<void> showChaoxingSettingsSheet(BuildContext context, {required ChaoxingController controller}) =>
     showCampusSheet<void>(context: context, builder: (_) => _ChaoxingSettingsSheet(controller: controller));
 
@@ -195,9 +195,11 @@ class _ChaoxingSettingsSheetState extends State<_ChaoxingSettingsSheet> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
-                    if (units.length > 1) ...[
-                      Text('学校单位', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
-                      const SizedBox(height: 8),
+                    // [人工决策-2026-10-18 13:07:53] 学校单位始终显示（用户选定，未选「保持现状」：以前只挂一个单位时整组藏起来，用户找不到）：
+                    // 挂了几个单位才给选择标签；只有一个时只读写明是哪个、为什么不能换。
+                    Text('学校单位', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+                    const SizedBox(height: 8),
+                    if (units.length > 1)
                       Wrap(
                         spacing: 8,
                         runSpacing: 8,
@@ -205,9 +207,13 @@ class _ChaoxingSettingsSheetState extends State<_ChaoxingSettingsSheet> {
                           for (final unit in units)
                             CampusGlassChip(label: unit.name, selected: _unitFid == unit.fid, onSelected: (_) => _pickUnit(unit)),
                         ],
-                      ),
-                      const SizedBox(height: 20),
+                      )
+                    else ...[
+                      Text(record?.schoolName ?? '', style: TextStyle(fontSize: 16, color: palette.onSurface)),
+                      const SizedBox(height: 4),
+                      Text('这个学习通账号只在这一个单位下', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
                     ],
+                    const SizedBox(height: 20),
                     // 推断「可能正在签到」用的主课表，用不了时自动改用另一份；下面只读写明这次实际用的哪份（人工决策见 ChaoxingLessonSource）。
                     Text('按哪份课表推断正在上的课', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
                     const SizedBox(height: 8),
