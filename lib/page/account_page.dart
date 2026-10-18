@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:superxd/app_session.dart';
+import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/account_dialogs.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -9,7 +10,25 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+
+// 账号卡副标题：学号与班级（同微信“我”页的微信号），多账号时好区分；姓名未知时标题已是学号，只写班级。
+// [人工决策-2026-10-18 15:18:41] 账号卡加学号 · 班级（用户从走查清单选定）。
+String accountDetail(SessionView? account) => account == null ? '' : [if (account.name.isNotEmpty) account.loginId, account.className].where((part) => part.isNotEmpty).join(' · ');
+
+// 账号卡标题：姓名加次要色副标题，“我的”页与账号页共用。
+class AccountTitle extends StatelessWidget {
+  const AccountTitle({super.key, required this.name, required this.detail});
+  final String name;
+  final String detail;
+
+  @override
+  Widget build(BuildContext context) => Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+    Text(name.isEmpty ? '我的账号' : name, style: Theme.of(context).textTheme.titleLarge),
+    if (detail.isNotEmpty) ...[const SizedBox(height: 2), DotSeparatedText(detail, style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant))],
+  ]);
+}
 
 // [人工决策-2026-10-05 01:28:53] 账号操作收进“我的”头像卡进入的账号页（同 iOS Apple ID）：记住账号、切换账号、导入旧版本数据一组，退出登录单独一组、红字放最底。
 class AccountPage extends StatefulWidget {
@@ -108,7 +127,7 @@ class _AccountPageState extends State<AccountPage> {
           CampusSurface(padding: const EdgeInsets.all(20), child: Row(children: [
             CircleAvatar(radius: 28, backgroundColor: colors.surfaceSelected, child: CampusIcon(CampusIcons.account, color: colors.primary, size: 28)),
             const SizedBox(width: 16),
-            Expanded(child: Text(widget.name.isEmpty ? '我的账号' : widget.name, style: Theme.of(context).textTheme.titleLarge)),
+            Expanded(child: AccountTitle(name: widget.name, detail: accountDetail(widget.session.gateway.activeSession))),
           ])),
           const SizedBox(height: 16),
           // 多行卡片去掉横向内边距，行自带 20 边距：按下变暗时整行铺满卡片宽度，同 iOS 分组列表。

@@ -137,10 +137,12 @@ class _LoginPageState extends State<LoginPage> {
                 ])),
                 if (!widget.switching) Padding(padding: const EdgeInsets.only(top: 16), child: OutlinedButton.icon(
                   onPressed: _busy ? null : () => context.push('/toolbox'), icon: const CampusIcon(CampusIcons.toolbox), label: const Text('百宝箱'))),
+                // [人工决策-2026-10-18 15:18:41] 勾选框读屏读整句「我已阅读并同意用户协议和隐私政策」（以前只念“复选框”），
+                // 点「我已阅读并同意」几个字也能勾选（同常见 App 的同意行）；两个链接仍单独可点（用户从走查清单选定）。
                 Padding(padding: const EdgeInsets.only(top: 24), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  SizedBox(width: 48, height: 48, child: Checkbox(key: const ValueKey('agree-terms'), value: _agreed, onChanged: _busy ? null : (value) => setState(() => _agreed = value == true))),
+                  SizedBox(width: 48, height: 48, child: Checkbox(key: const ValueKey('agree-terms'), semanticLabel: '我已阅读并同意用户协议和隐私政策', value: _agreed, onChanged: _busy ? null : (value) => setState(() => _agreed = value == true))),
                   Expanded(child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-                    Text('我已阅读并同意', style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant)),
+                    GestureDetector(excludeFromSemantics: true, onTap: _busy ? null : () => setState(() => _agreed = !_agreed), child: Padding(padding: const EdgeInsets.symmetric(vertical: 14), child: Text('我已阅读并同意', style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant)))),
                     TextButton(style: campusLink, onPressed: _busy ? null : () => context.push('/legal/service'), child: const Text('用户协议', style: TextStyle(fontSize: 14))),
                     const Text('和', style: TextStyle(fontSize: 14)),
                     TextButton(style: campusLink, onPressed: _busy ? null : () => context.push('/legal/privacy'), child: const Text('隐私政策', style: TextStyle(fontSize: 14))),

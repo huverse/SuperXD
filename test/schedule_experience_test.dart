@@ -287,6 +287,28 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('读屏：日期栏每项可点；课表页有课卡读整句、长按展开，展开后编辑入口单独可达', (tester) async {
+    final picked = <String>[];
+    await tester.pumpWidget(app(Align(alignment: Alignment.topCenter, child: DateRail(first: '2026-09-01', last: '2026-12-31', selected: '2026-09-01', onSelect: picked.add))));
+    await tester.pumpAndSettle();
+    final day = find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '2026-09-02 周三');
+    tester.widget<Semantics>(day).properties.onTap!();
+    expect(picked, ['2026-09-02']);
+    final spans = periodSpans([course(3, 4)]);
+    final occupied = spans.firstWhere((span) => !span.empty);
+    String? detail;
+    await tester.pumpWidget(app(StatefulBuilder(builder: (context, setState) => CourseDayCards(spans: spans, bells: bells, date: '2026-09-22', detailKey: detail, onDetail: (key) => setState(() => detail = key), onEdit: (_) {}))));
+    await tester.pumpAndSettle();
+    final sentence = find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '课程，教室，10:00到11:40，第3–4节，老师');
+    expect(tester.widget<Semantics>(sentence).properties.hintOverrides?.onLongPressHint, '展开详情');
+    tester.widget<Semantics>(sentence).properties.onLongPress!();
+    await tester.pumpAndSettle();
+    expect(detail, spanIdentity(occupied));
+    expect(sentence, findsNothing);
+    expect(find.text('编辑课程'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('课表页长按无课卡安排已有课程，预填当天星期节次且仅本周', (tester) async {
     await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway())));
     await tester.pumpAndSettle();

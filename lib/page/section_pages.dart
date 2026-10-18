@@ -60,7 +60,7 @@ class MinePage extends StatelessWidget {
               return CampusSurface(padding: const EdgeInsets.all(20), onTap: () => _push(context, AccountPage(session: session, name: name)), child: Row(children: [
                 CircleAvatar(radius: 28, backgroundColor: CampusPalette.of(context).surfaceSelected, child: CampusIcon(CampusIcons.account, color: CampusPalette.of(context).primary, size: 28)),
                 const SizedBox(width: 16),
-                Expanded(child: Text(name.isEmpty ? '我的账号' : name, style: Theme.of(context).textTheme.titleLarge)),
+                Expanded(child: AccountTitle(name: name, detail: accountDetail(account))),
                 const CampusIcon(CampusIcons.next),
               ]));
             }),

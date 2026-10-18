@@ -56,7 +56,8 @@ class _DateRailState extends State<DateRail> {
           final iso = formatIsoDate(date);
           final selected = iso == widget.selected;
           final weekday = const ['周一', '周二', '周三', '周四', '周五', '周六', '周日'][date.weekday - 1];
-          return Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8), child: Semantics(selected: selected, button: true, label: '$iso $weekday', excludeSemantics: true,
+          // 读屏整项一句；excludeSemantics 会连里面 InkWell 的点按动作一起排除，所以点按要在这里再给一次，否则读屏下点不了。
+          return Padding(padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 8), child: Semantics(selected: selected, button: true, label: '$iso $weekday', onTap: () => widget.onSelect(iso), excludeSemantics: true,
             child: Material(color: selected ? CampusPalette.of(context).surfaceSelected : CampusPalette.of(context).surface, borderRadius: BorderRadius.circular(12),
               child: InkWell(borderRadius: BorderRadius.circular(12), onTap: () => widget.onSelect(iso), child: Center(child: Column(mainAxisSize: MainAxisSize.min, children: [Text('${date.month}/${date.day}', style: TextStyle(fontSize: 14, color: selected ? CampusPalette.of(context).primary : CampusPalette.of(context).onSurfaceVariant, fontWeight: selected ? FontWeight.w600 : FontWeight.w400)), const SizedBox(height: 2), Text(weekday, style: TextStyle(fontSize: 14, color: selected ? CampusPalette.of(context).primary : CampusPalette.of(context).onSurfaceVariant))]))),
             ),
