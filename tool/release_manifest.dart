@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 
-// 生成应用内更新的版本清单（发版时手动运行，不进 CI）：读 pubspec.yaml 的版本、目录里各架构的安装包（SuperXD-<版本名>-<架构>.apk）
+// 生成应用内更新的版本清单（发版流水线 .github/workflows/release.yml 调用，也可手动运行）：读 pubspec.yaml 的版本、目录里各架构的安装包（SuperXD-<版本名>-<架构>.apk）
 // 与一份面向用户的简短更新说明，算出大小与 SHA-256，写成 <渠道>.json。连同安装包传到中转服务器的 releases 目录，
 // 步骤见 CONTRIBUTING.md「版本与发布」。最低可用版本平时为 0，只有旧版已无法正常使用时才调高（会逼旧版必须更新）。
 // 运行：

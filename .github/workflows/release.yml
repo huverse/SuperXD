@@ -1,0 +1,252 @@
+name: Release
+
+# 发版流水线（步骤与约定见 CONTRIBUTING.md「版本与发布」）：升版本 PR（改 pubspec.yaml 的 version 与 CHANGELOG 版本节）合并到 main 即触发；
+# 构建要维护者在 release 环境批准，签名密钥、高德 key、中转地址只在这一步可用。之后发 GitHub Release，再经受限账号传到中转（先包后清单、删旧包）并在公网核对。
+# 手动运行默认试跑（dry_run）：构建、验签、生成清单并试连中转，不发 Release、不改中转。
+# [人工决策-2026-10-18 23:46:56] 发版自动化（用户选定）：全托管 CI（签名密钥等放受保护的 release 环境，中转经只能写发布目录的受限账号上传）；
+# 合并升版本 PR 即触发、仍要维护者网页批准一次；应用内更新说明取自 CHANGELOG 版本节的「### 更新说明」。
+on:
+  push:
+    branches: [main]
+    paths: [pubspec.yaml]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 只构建与核对，不发 Release、不传中转
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  # Alpha 签名证书（与 1.0.0-alpha.2 起各版相同）；构建出的安装包对不上就停。
+  RELEASE_CERT_SHA256: 83:7A:2E:88:57:13:1D:BC:E2:54:16:9D:C1:28:92:A6:AC:77:07:36:2C:71:BC:F5:91:EB:37:D0:B6:22:4A:3F
+  RELEASE_ABIS: arm64-v8a armeabi-v7a x86_64
+  # 最低可用构建号：平时为 0（所有更新可选）；只有旧版已无法正常使用时，在升版本 PR 里调高，低于它的会看到关不掉的更新弹窗。
+  RELEASE_MIN_SUPPORTED: 0
+
+jobs:
+  plan:
+    name: 判断是否发版
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      code: ${{ steps.version.outputs.code }}
+      build: ${{ steps.version.outputs.build }}
+      publish: ${{ steps.version.outputs.publish }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          fetch-depth: 0
+      # 新版本号还没有标签才发；改 pubspec 别的内容（依赖等）不发。构建号必须比上一版大，客户端不认降级。
+      - id: version
+        env:
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          line=$(grep -E '^version: [^+ ]+\+[0-9]+$' pubspec.yaml) || { echo "::error::pubspec.yaml 的 version 不是「版本名+构建号」"; exit 1; }
+          name=${line#version: }; name=${name%%+*}; code=${line##*+}
+          echo "version=$name" >> "$GITHUB_OUTPUT"
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          if [ "$DRY_RUN" = true ]; then
+            echo "build=true" >> "$GITHUB_OUTPUT"; echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "[Release] action=plan mode=dry_run version=$name code=$code"
+            exit 0
+          fi
+          if git rev-parse -q --verify "refs/tags/v$name" > /dev/null; then
+            if [ "$GITHUB_EVENT_NAME" = workflow_dispatch ]; then echo "::error::v$name 已经发过"; exit 1; fi
+            echo "build=false" >> "$GITHUB_OUTPUT"; echo "publish=false" >> "$GITHUB_OUTPUT"
+            echo "[Release] action=plan mode=skip version=$name reason=tag_exists"
+            exit 0
+          fi
+          previous=$(git tag --list 'v*' --sort=-v:refname | head -n 1)
+          previous_code=$(git show "$previous:pubspec.yaml" | grep -E '^version: ' | sed -E 's/.*\+([0-9]+)$/\1/')
+          if [ "$code" -le "$previous_code" ]; then echo "::error::构建号 $code 不大于上一版 $previous 的 $previous_code"; exit 1; fi
+          echo "build=true" >> "$GITHUB_OUTPUT"; echo "publish=true" >> "$GITHUB_OUTPUT"
+          echo "[Release] action=plan mode=publish version=$name code=$code previous=$previous"
+      - if: steps.version.outputs.build == 'true'
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+      - if: steps.version.outputs.build == 'true'
+        run: flutter pub get --enforce-lockfile
+      # 批准之前先核对 CHANGELOG，缺版本节或更新说明就不请维护者批准。
+      - if: steps.version.outputs.build == 'true'
+        run: dart run tool/release_changelog.dart --version "${{ steps.version.outputs.version }}" --commit "$GITHUB_SHA" --certificate "$RELEASE_CERT_SHA256" --notes-out "$RUNNER_TEMP/notes.txt" --body-out "$RUNNER_TEMP/body.md"
+
+  build:
+    name: 构建与核对
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: release
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      CODE: ${{ needs.plan.outputs.code }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: 写入签名配置
+        env:
+          SIGNING_KEYSTORE: ${{ secrets.SIGNING_KEYSTORE }}
+          SIGNING_PROPERTIES: ${{ secrets.SIGNING_PROPERTIES }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p "$RUNNER_TEMP/signing"
+          printf '%s' "$SIGNING_KEYSTORE" | base64 -d > "$RUNNER_TEMP/signing/alpha.jks"
+          printf '%s' "$SIGNING_PROPERTIES" | base64 -d > "$RUNNER_TEMP/signing/signing.properties"
+      - name: 构建三个架构
+        env:
+          ORG_GRADLE_PROJECT_superxdSigningProperties: ${{ runner.temp }}/signing/signing.properties
+          SUPERXD_RELAY: ${{ secrets.RELAY_URL }}
+          SUPERXD_AMAP_KEY: ${{ secrets.AMAP_KEY }}
+        run: |
+          flutter build apk --release --flavor alpha --split-per-abi --split-debug-info=build/release_symbols \
+            --dart-define=SUPERXD_RELAY="$SUPERXD_RELAY" --dart-define=SUPERXD_AMAP_KEY="$SUPERXD_AMAP_KEY"
+      - name: 删除签名配置
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/signing"
+      # 逐个核对：只有一个签名者且证书对得上、包名、版本号、不可调试、架构；再生成 SHA256SUMS。
+      - name: 改名、验签与校验和
+        run: |
+          set -euo pipefail
+          tools=$(find "$ANDROID_HOME/build-tools" -mindepth 1 -maxdepth 1 -type d | sort -V | tail -n 1)
+          expected=$(echo "$RELEASE_CERT_SHA256" | tr -d ':' | tr 'A-F' 'a-f')
+          mkdir -p dist
+          for abi in $RELEASE_ABIS; do
+            apk="dist/SuperXD-$VERSION-$abi.apk"
+            cp "build/app/outputs/flutter-apk/app-$abi-alpha-release.apk" "$apk"
+            signers=$("$tools/apksigner" verify --print-certs "$apk")
+            grep -qx "Signer #1 certificate SHA-256 digest: $expected" <<< "$signers" || { echo "::error::$abi 签名证书对不上"; exit 1; }
+            if grep -q '^Signer #2' <<< "$signers"; then echo "::error::$abi 有多个签名者"; exit 1; fi
+            badging=$("$tools/aapt2" dump badging "$apk")
+            grep -q "^package: name='com.superxd.superxd.alpha' versionCode='$CODE' versionName='$VERSION'" <<< "$badging" || { echo "::error::$abi 包名或版本号不对"; exit 1; }
+            if grep -q 'application-debuggable' <<< "$badging"; then echo "::error::$abi 是可调试包"; exit 1; fi
+            grep -qx "native-code: '$abi'" <<< "$badging" || { echo "::error::$abi 架构不对"; exit 1; }
+            echo "[Release] action=verify abi=$abi size=$(stat -c %s "$apk")"
+          done
+          (cd dist && sha256sum SuperXD-*.apk > SHA256SUMS)
+      - name: 更新说明、Release 正文与版本清单
+        run: |
+          set -euo pipefail
+          dart run tool/release_changelog.dart --version "$VERSION" --commit "$GITHUB_SHA" --certificate "$RELEASE_CERT_SHA256" --notes-out "$RUNNER_TEMP/notes.txt" --body-out dist/release_body.md
+          dart run tool/release_manifest.dart --apks dist --notes "$RUNNER_TEMP/notes.txt" --out dist --min-supported "$RELEASE_MIN_SUPPORTED"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: release
+          path: dist/
+          retention-days: 14
+      # 符号还原崩溃堆栈用，不进 Release；产物最多留 90 天，维护者下载到仓库外离线保存。
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: release-symbols
+          path: build/release_symbols/
+          retention-days: 90
+
+  github:
+    name: 发布 GitHub Release
+    needs: [plan, build]
+    if: needs.plan.outputs.publish == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: release
+          path: dist
+      # 重跑时已有这个 Release 就不再建；标签打在触发这次发版的提交上。
+      - name: 建 Release 并上传安装包
+        run: |
+          set -euo pipefail
+          if gh release view "v$VERSION" > /dev/null 2>&1; then echo "[Release] action=github skip=exists version=$VERSION"; exit 0; fi
+          prerelease=()
+          if [[ "$VERSION" == *-* ]]; then prerelease=(--prerelease); fi
+          gh release create "v$VERSION" --target "$GITHUB_SHA" "${prerelease[@]}" --title "SuperXD $VERSION · 公开测试版" \
+            --notes-file dist/release_body.md dist/SuperXD-*.apk dist/SHA256SUMS
+      - name: 下载回来校验
+        run: |
+          set -euo pipefail
+          gh release download "v$VERSION" --dir check --pattern 'SuperXD-*.apk' --pattern SHA256SUMS
+          (cd check && sha256sum -c SHA256SUMS)
+
+  relay:
+    name: 上传中转
+    needs: [plan, build, github]
+    if: ${{ !cancelled() && needs.build.result == 'success' && (needs.plan.outputs.publish != 'true' || needs.github.result == 'success') }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    environment: relay
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      CODE: ${{ needs.plan.outputs.code }}
+      PUBLISH: ${{ needs.plan.outputs.publish }}
+      RELAY_URL: ${{ secrets.RELAY_URL }}
+      RELAY_TARGET: ${{ secrets.RELAY_SSH_TARGET }}
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: release
+          path: dist
+      # 中转上的账号只能经 rrsync 读写发布目录（server/README.md 部署第 6 步），主机指纹事先固定。
+      - name: 准备连接
+        env:
+          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+          RELAY_KNOWN_HOSTS: ${{ secrets.RELAY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$RELAY_SSH_KEY" > ~/.ssh/relay
+          printf '%s\n' "$RELAY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          echo "RSYNC_RSH=ssh -i $HOME/.ssh/relay -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=30" >> "$GITHUB_ENV"
+      - name: 试连（试跑）
+        if: env.PUBLISH != 'true'
+        run: rsync --list-only "$RELAY_TARGET:"
+      # 先传安装包、最后传清单（清单一出现客户端就来下载），再删掉不在新清单里的旧安装包。
+      - name: 上传安装包与清单
+        if: env.PUBLISH == 'true'
+        run: |
+          set -euo pipefail
+          rsync -t --chmod=F644 dist/SuperXD-*.apk "$RELAY_TARGET:"
+          rsync -t --chmod=F644 dist/alpha.json "$RELAY_TARGET:"
+          mkdir keep
+          cp dist/SuperXD-*.apk dist/alpha.json keep/
+          rsync -r --delete --existing --ignore-existing --filter='P *.json' keep/ "$RELAY_TARGET:"
+          rsync --list-only "$RELAY_TARGET:"
+      - name: 公网核对清单与断点下载
+        if: env.PUBLISH == 'true'
+        run: |
+          set -euo pipefail
+          for abi in $RELEASE_ABIS; do
+            manifest=$(curl -fsS --max-time 30 "$RELAY_URL/v1/app/releases/alpha?abi=$abi")
+            expected=$(grep " SuperXD-$VERSION-$abi.apk\$" dist/SHA256SUMS | cut -d' ' -f1)
+            read -r code sha url < <(python3 -I -c 'import json, sys; release = json.loads(sys.argv[1]); print(release["versionCode"], release["apk"]["sha256"], release["apk"]["url"])' "$manifest")
+            if [ "$code" != "$CODE" ] || [ "$sha" != "$expected" ]; then echo "::error::$abi 中转清单对不上（versionCode=$code）"; exit 1; fi
+            status=$(curl -sS --max-time 30 -r 0-0 -o /dev/null -w '%{http_code}' "$RELAY_URL$url")
+            if [ "$status" != 206 ]; then echo "::error::$abi 安装包断点下载返回 $status"; exit 1; fi
+            echo "[Release] action=relay_check abi=$abi versionCode=$code"
+          done
+      - name: 删除连接凭据
+        if: always()
+        run: rm -f ~/.ssh/relay
