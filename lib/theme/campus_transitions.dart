@@ -56,6 +56,9 @@ class _CoverBackdrop extends StatefulWidget {
 
 class _CoverBackdropState extends State<_CoverBackdrop> {
   late bool _settled = widget.animation.isCompleted;
+  // 副本画一次就拍成图，之后每帧只贴图：弹窗开着时云雾停着（见 CampusAtmosphere 的 overlays），副本不会变；
+  // 直接画副本每帧要重画几层全屏大渐变，OPPO 上转场每帧多约 3ms。
+  final _snapshot = SnapshotController(allowSnapshotting: true);
 
   void _status(AnimationStatus status) {
     if (status.isCompleted != _settled) setState(() => _settled = status.isCompleted);
@@ -79,6 +82,7 @@ class _CoverBackdropState extends State<_CoverBackdrop> {
   @override
   void dispose() {
     widget.animation.removeStatusListener(_status);
+    _snapshot.dispose();
     super.dispose();
   }
 
@@ -87,7 +91,7 @@ class _CoverBackdropState extends State<_CoverBackdrop> {
   Widget build(BuildContext context) {
     final backdrop = CampusBackdrop.maybeOf(context);
     return Stack(fit: StackFit.expand, children: [
-      if (backdrop != null && !_settled) backdrop(context) else const SizedBox.shrink(),
+      if (backdrop != null && !_settled) SnapshotWidget(controller: _snapshot, child: backdrop(context)) else const SizedBox.shrink(),
       widget.child,
     ]);
   }

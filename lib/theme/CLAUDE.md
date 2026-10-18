@@ -14,7 +14,7 @@
 - 动效与转场：
   - campus_motion.dart：CampusMotion 管理装饰动效的生命周期（减少动画、后台、分支不可见、路由不在最上层时都不播）；玻璃控件专用的弹簧令牌；campusSpringCurve 是页面与分支转场曲线（临界阻尼、不回弹）；CampusFirstFrameVsync 让转场从新内容首帧画完后开始计时，首帧慢时转场不被吃掉。
   - campus_transitions.dart：统一时长（进入 360ms、返回 320ms、弹层 300ms）与全部路由、弹窗：
-    - campusPage 与 CampusPageRoute 是唯一的页面路由（不直接用 MaterialPageRoute，code_conventions_test.dart 守护）；页面转场新旧页整屏并排平移、不淡入淡出。页面推在弹窗或弹层之上时，进出转场期间垫一份同相位背景副本盖住弹窗（页面透明，不垫会叠成两层），停稳即撤。
+    - campusPage 与 CampusPageRoute 是唯一的页面路由（不直接用 MaterialPageRoute，code_conventions_test.dart 守护）；页面转场新旧页整屏并排平移、不淡入淡出。页面推在弹窗或弹层之上时，进出转场期间垫一份同相位背景副本盖住弹窗（页面透明，不垫会叠成两层），副本拍成快照只贴图（直接画每帧要重画几层全屏渐变），停稳即撤。
     - 跟手返回 _CampusBackGesture 只让最前面的页面响应，不用路由自带的 handleCommitBackGesture（它会把进度重置到 1 再倒放）。CampusEntryFade 是按代次重建的账号应用入场（盖背景副本淡出）。
     - 共享弹窗 showCampusNotice、showCampusConfirm（destructive 时主按钮警示红）与玻璃弹窗 CampusGlassDialog（按钮一到两个等宽并排、三个及以上竖排主操作在最上；全应用弹窗都用它，日期选择器除外）。
     - showCampusToast 提示条：在弹层、弹窗、菜单里调用时插进根 Overlay 浮在最上层（[人工决策] 在文件内；不给弹层套 Scaffold，它的 Material 会吃掉点按）。

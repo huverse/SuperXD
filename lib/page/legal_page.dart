@@ -236,9 +236,9 @@ Future<bool> askLegalConsent(BuildContext context) async {
             children: [
               const Text(
                 '使用前请阅读《用户协议》和《隐私政策》，要点：\n'
-                '1. 课表、成绩等数据主要存在本机，教务账号只在本机与学校教务系统之间使用。\n'
-                '2. 私信、代签凭据包与检查更新经开发者的自建中转，私信与凭据包在本机加密。\n'
-                '3. 百宝箱的第三方服务，在你使用并同意后才会收到必要信息。\n'
+                '1. 课表、成绩主要存在本机，教务账号只发给学校教务系统。\n'
+                '2. 私信、代签凭据包与检查更新经开发者的自建中转，私信和凭据包都先在本机加密。\n'
+                '3. 百宝箱的第三方服务，只在你使用并同意后收到必要信息。\n'
                 '点「同意」即表示你已阅读并同意这两份文件。',
               ),
               const SizedBox(height: 8),
@@ -259,7 +259,7 @@ Future<bool> askLegalConsent(BuildContext context) async {
       barrierDismissible: false,
       builder: (context) => CampusGlassDialog(
         title: const Text('需要你的同意'),
-        content: const SingleChildScrollView(child: Text('不同意将无法使用 SuperXD，下次打开会再询问。')),
+        content: const SingleChildScrollView(child: Text('不同意就无法使用，下次打开还会询问。')),
         actions: [
           TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('退出应用')),
           FilledButton(onPressed: () => Navigator.pop(context, false), child: const Text('再看看')),
