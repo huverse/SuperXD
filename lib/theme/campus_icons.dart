@@ -65,6 +65,7 @@ abstract final class CampusIcons {
   static const satelliteMap = LucideIcons.satellite;
   static const flatMap = LucideIcons.map;
   static const addPlace = LucideIcons.mapPinPlus;
+  static const place = LucideIcons.mapPin;
   static const login = LucideIcons.logIn;
   static const restore = LucideIcons.rotateCcw;
   static const share = LucideIcons.share2;

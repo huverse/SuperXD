@@ -498,6 +498,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
             parent: AlwaysScrollableScrollPhysics(),
           ),
           onOpen: _openCourse,
+          revealNow: true,
           header: day == _today || spans.isEmpty
               ? Padding(
                   padding: const EdgeInsets.only(bottom: 12),
@@ -591,7 +592,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
 
 }
 
-// 今天页顶部的“此刻”卡（同 iOS 实时活动、Google 日历的“下一项”）：上课中或下一节的课名、地点，
+// 今天页顶部的“此刻”卡（同 iOS 实时活动、Google 日历的“下一项”）：首行状态与节次，下面课名、教室（同课程卡的教室行）与教师，
 // 大号剩余时长（小时分钟）加起止时刻进度条；课间画上一节下课到下一节上课的进度，第一节课前只显示时长。
 // [人工决策-2026-10-06 13:06:11] 今天的课上完或今天没课时，此刻卡下方预告下一节（日子、开始时刻、课名、地点），用户选定。
 class _ClassNow extends StatelessWidget {
@@ -618,7 +619,7 @@ class _ClassNow extends StatelessWidget {
       child: Wrap(spacing: 8, children: [
         Text('下一节 · $day $time', style: style),
         Text(next.course.courseName, style: style),
-        if (place.isNotEmpty) Text(place, style: style),
+        if (place.isNotEmpty) CoursePlace(place, size: 14),
       ]),
     );
   }
@@ -668,11 +669,15 @@ class _ClassNow extends StatelessWidget {
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('${moment.ongoing ? '上课中' : '下一节'} · 第${focus.start}–${focus.end}节', style: secondary),
+          DotSeparatedText('${moment.ongoing ? '上课中' : '下一节'} · 第${focus.start}–${focus.end}节', style: secondary),
           const SizedBox(height: 4),
           Text(focus.course!.courseName, style: Theme.of(context).textTheme.titleLarge),
-          const SizedBox(height: 2),
-          Text('${focus.meeting!.place} · ${focus.course!.teacherName}', style: secondary),
+          const SizedBox(height: 4),
+          // 教师跟在教室后面（次要色）；首行不放教师，免得大字号下被右侧时长挤得折行。
+          Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.end, children: [
+            if (focus.meeting!.place.isNotEmpty) CoursePlace(focus.meeting!.place),
+            if (focus.course!.teacherName.isNotEmpty) Text(focus.course!.teacherName, style: secondary.copyWith(height: 1.5)),
+          ]),
         ])),
         const SizedBox(width: 12),
         Semantics(

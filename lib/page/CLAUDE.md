@@ -23,7 +23,7 @@
   - today_page.dart：今天页 TodayPage：读当前学期的课表与作息按日浏览；同步按钮走 chooseSyncSelection → CampusSync.run → showCampusSyncReport；含作息来源确认与缺开学日引导；同步中离开时结果暂存、回来再提示。顶部「此刻」卡（_ClassNow）显示上课中或下一节；看别的日子时底栏上方居中显示回「今天」胶囊（[人工决策] 见 _layout）；单击有课卡弹只读详情（_openCourse）。
   - today_day_navigation.dart：上下拖动切日的手势 TodayDayNavigation（阈值 64、上限 120）。
   - today_date_transition.dart：切日时日期与正文按同一进度纵向交接 TodayDateTransition。
-  - course_cards.dart：当日节次卡片 CourseDayCards：有课卡与空档（虚线空位框 _EmptySlot，高度随时长对数加高），课表页长按展开，今天页单击回调 onOpen；今天的课按 classMoment 分三态，时长格式 classDuration。
+  - course_cards.dart：当日节次卡片 CourseDayCards：有课卡（课名、教室行 CoursePlace、节次与教师；时刻列开始前上课时刻大、开始后下课时刻大）与空档（虚线空位框 _EmptySlot，高度随时长对数加高），课表页长按展开；今天页单击回调 onOpen（按下变暗、读屏整卡一句），revealNow 打开时把正在上或下一节滚进可见区；今天的课按 classMoment 分三态，时长格式 classDuration。人工决策见 _CourseCardBody 与 revealNow。
   - live_clock.dart：全局分钟时钟 LiveClock，整分钟唤醒、后台暂停；测试要拨时间时用 LiveClock.fixed（不挂计时器，否则真实时间到整分会盖掉拨好的时间）。
   - date_rail.dart：日期横条 DateRail。
 - 课表：
