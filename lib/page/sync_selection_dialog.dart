@@ -66,7 +66,7 @@ class _SyncSelectionDialogState extends State<_SyncSelectionDialog> {
         Row(children: [const Expanded(child: Text('选择学年')), TextButton.icon(onPressed: _loading ? null : () => _load(true), icon: const CampusIcon(CampusIcons.sync), label: const Text('刷新学年'))]),
         if (_loading) const CampusLoading(label: '正在读取学年', inline: true),
         if (_error != null) Text(_error!),
-        if (!_loading && _years.isEmpty) const Text('暂无学年，请先点“刷新学年”。不会自动同步课表。'),
+        if (!_loading && _years.isEmpty) const Text('暂无学年，请先点“刷新学年”。'),
         if (_years.isNotEmpty) ...[
           CheckboxListTile(contentPadding: EdgeInsets.zero, title: const Text('全部学年'),
             value: _selectedYears.length == _years.length, onChanged: _loading ? null : (value) => setState(() {

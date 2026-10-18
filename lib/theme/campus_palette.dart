@@ -41,6 +41,9 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
   bool get isDark => brightness == Brightness.dark;
   // 破坏性操作按钮的红底（白字不低于 4.5:1）；深色下的 danger 是给深底文字用的浅红，压不住白字。
   Color get dangerFill => isDark ? const Color(0xFFC63A31) : danger;
+  // 激活色作大号强调文字（如快开课时的倒计时数字）：浅色就是 accent；深色的 accent 是给白字垫底的，压在深卡片上只有约 2.8:1，
+  // 向正文色混 35% 后十套配色对卡片底都不低于 4.5:1（test/dark_mode_test.dart 守护）。
+  Color get accentText => isDark ? Color.lerp(accent, onSurface, .35)! : accent;
   // 提醒色（如「刚发起」的小圆点）：只读状态标记，与主色、警示红都区分开；深色下提亮一档保证在深底上醒目。
   Color get attention => isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B);
   // 标签色（如学习通的账号标签）：只给标签小图标着色，名字仍用正文色；五套配色共用，浅色深、深色亮，

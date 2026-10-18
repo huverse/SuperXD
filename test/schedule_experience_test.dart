@@ -475,11 +475,14 @@ void main() {
     expect(changes, [2]);
   });
 
-  testWidgets('无课标题与指定文案居中且大字号仍可读', (tester) async {
+  testWidgets('没课只说一次：没有顶部卡片时居中写“这天没课”，有顶部卡片时中间不再重复', (tester) async {
     await tester.pumpWidget(app(const CourseDayCards(spans: [], bells: [], date: '2026-09-24')));
     final title = find.text('这天没课');
     expect(tester.getCenter(title).dx, closeTo(400, 1));
-    expect(find.text('是放假了还是?反正今天一定很爽啦!'), findsOneWidget);
+    expect(find.textContaining('放假'), findsNothing);
+    await tester.pumpWidget(app(const CourseDayCards(spans: [], bells: [], date: '2026-09-24', header: Text('顶部卡片'))));
+    expect(find.text('顶部卡片'), findsOneWidget);
+    expect(find.text('这天没课'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -507,7 +510,7 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('开学日初始保存值，取消不改，保存显示成功', (tester) async {
+  testWidgets('开学日初始保存值，取消不改，保存后提示条写第1周从哪天开始', (tester) async {
     final gateway = _Gateway();
     await tester.pumpWidget(app(Builder(builder: (context) => TextButton(onPressed: () => editTermStart(context, gateway, term, '2026-08-31'), child: const Text('编辑')))));
     await tester.tap(find.text('编辑'));
@@ -517,7 +520,10 @@ void main() {
     await tester.tap(find.text('保存'));
     await tester.pumpAndSettle();
     expect(gateway.savedStart, '2026-08-31');
-    expect(find.text('开学日已保存'), findsOneWidget);
+    // 成功只出提示条、不弹要点“知道了”的弹窗，也不再附周次算法的长说明。
+    expect(find.text('开学日已保存 · 第1周从 8月31日 开始'), findsOneWidget);
+    expect(find.text('知道了'), findsNothing);
+    expect(find.textContaining('所在周的周一'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 

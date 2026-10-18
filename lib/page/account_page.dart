@@ -15,11 +15,12 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 
 // 账号卡副标题：学号与班级（同微信“我”页的微信号），多账号时好区分；姓名未知时标题已是学号，只写班级。
 // [人工决策-2026-10-18 15:18:41] 账号卡加学号 · 班级（用户从走查清单选定）。
+// [人工决策-2026-10-18 17:35:23] 学号 · 班级只在账号页写，“我的”页头像卡只写姓名、点进来再看（用户截图反馈，改上一条的“我的页也写”）。
 String accountDetail(SessionView? account) => account == null ? '' : [if (account.name.isNotEmpty) account.loginId, account.className].where((part) => part.isNotEmpty).join(' · ');
 
-// 账号卡标题：姓名加次要色副标题，“我的”页与账号页共用。
+// 账号卡标题：姓名加次要色副标题，“我的”页（只传姓名）与账号页共用。
 class AccountTitle extends StatelessWidget {
-  const AccountTitle({super.key, required this.name, required this.detail});
+  const AccountTitle({super.key, required this.name, this.detail = ''});
   final String name;
   final String detail;
 
@@ -98,7 +99,7 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _logout() async {
-    final confirmed = await showCampusConfirm(context, title: '退出登录？', message: '清除本机登录态和此账号保存的自动登录凭据，当前课表和自定义修改保留，历史版本按每学期最多100版保留。', action: '退出', destructive: true);
+    final confirmed = await showCampusConfirm(context, title: '退出登录？', message: '清除本机登录态和此账号保存的自动登录凭据，当前课表和自定义修改保留。', action: '退出', destructive: true);
     if (!mounted || !confirmed) return;
     setState(() => _busy = true);
     try {

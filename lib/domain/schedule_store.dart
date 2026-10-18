@@ -5,7 +5,7 @@ import 'package:superxd/domain/week.dart';
 import 'package:superxd/domain/gateway_code.dart';
 
 const scheduleRevisionLimit = 100;
-const syncOverwriteMessage = '继续同步将用教务课表替换当前自定义内容。每学期最多保留100个版本，保留范围内可恢复；开学日和作息不变。';
+const syncOverwriteMessage = '继续同步将用教务课表替换当前自定义内容，可在历史版本中恢复；开学日和作息不变。';
 
 class RevisionConflict implements Exception {
   const RevisionConflict();

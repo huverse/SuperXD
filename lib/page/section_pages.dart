@@ -52,7 +52,7 @@ class MinePage extends StatelessWidget {
         const SectionTitleBar(title: '我的'),
         Expanded(child: CampusScrollFade(bottom: inset, child: SingleChildScrollView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), child: Center(child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            // 头像卡进入账号页（同 iOS Apple ID），账号操作都在那里，见 account_page.dart 的人工决策。
+            // 头像卡进入账号页（同 iOS Apple ID），账号操作都在那里；卡上只写姓名，学号与班级在账号页，见 account_page.dart 的人工决策。
             // 直接读当前会话：姓名要等同步课表才知道（之前显示学号），网关学到后会通知，这里跟着刷新。
             ListenableBuilder(listenable: session, builder: (context, _) {
               final account = session.gateway.activeSession;
@@ -60,7 +60,7 @@ class MinePage extends StatelessWidget {
               return CampusSurface(padding: const EdgeInsets.all(20), onTap: () => _push(context, AccountPage(session: session, name: name)), child: Row(children: [
                 CircleAvatar(radius: 28, backgroundColor: CampusPalette.of(context).surfaceSelected, child: CampusIcon(CampusIcons.account, color: CampusPalette.of(context).primary, size: 28)),
                 const SizedBox(width: 16),
-                Expanded(child: AccountTitle(name: name, detail: accountDetail(account))),
+                Expanded(child: AccountTitle(name: name)),
                 const CampusIcon(CampusIcons.next),
               ]));
             }),
