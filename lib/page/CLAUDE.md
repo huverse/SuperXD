@@ -9,7 +9,7 @@
 - 壳层与导航：
   - shell_page.dart：底栏壳 ShellPage（今天、服务、消息、我的四个分支）与可拖动底栏 DragNavigationBar：悬浮在安全区之上，内容延伸到玻璃下方，底栏占位作为各页的底部安全区；拖动时的透镜是栏玻璃的兄弟层、不被栏裁剪；「消息」带私信未读角标。
   - animated_branches.dart：分支切换 AnimatedBranches，保留每个分支的 Navigator；进出两页整屏并排平移，不淡入淡出（页内玻璃在半透明图层下取不到背景）。
-  - section_pages.dart：服务页（课表、成绩、百宝箱入口）、我的页（头像卡读当前会话，姓名未知时显示学号，副标题学号与班级同账号页）与底栏根页的大标题顶栏 SectionTitleBar。
+  - section_pages.dart：服务页（课表、成绩、百宝箱入口）、我的页（头像卡读当前会话，只写姓名，姓名未知时显示学号；学号与班级在账号页）与底栏根页的大标题顶栏 SectionTitleBar。
 - 私信（只有分享卡片，没有文字聊天）：
   - message_page.dart：消息页，分段「通知 | 私信」，默认停在私信（通知尚未接入）；未开启时是开启卡片（含数据处理说明与隐私政策），开启后是添加好友与好友列表（按最近活动排序，下拉刷新并核对好友）。
   - friend_add_page.dart：添加好友：出示自己的二维码（浅色画，保证可扫）与倒计时，离开即作废；「扫一扫」扫对方的码。扫码函数可注入（InviteScanner）。
@@ -43,7 +43,7 @@
 - 账号与设置：
   - login_page.dart：登录页 LoginPage，也用于切换账号：验证码、记住账号确认、百宝箱与法务入口；同意行勾选框读屏读整句，点「我已阅读并同意」也能勾选（[人工决策] 在文件内）。
   - account_dialogs.dart：旧版本数据导入确认 showLegacyImport 与登录后自动提示的 LegacyImportGate；教务验证码弹窗 LoginCaptchaDialog；开启记住账号的输密码弹窗 askRememberPassword。
-  - account_page.dart：账号页 AccountPage（账号卡姓名下写学号 · 班级，accountDetail 与 AccountTitle 我的页共用）：记住账号（关闭即删凭据；重新开启要输密码、后台登录核对成功才保存，不换代次）、切换账号、导入旧版本数据；退出登录单独一组放最底。
+  - account_page.dart：账号页 AccountPage（账号卡姓名下写学号 · 班级，只在这里写；AccountTitle 我的页共用、只传姓名）：记住账号（关闭即删凭据；重新开启要输密码、后台登录核对成功才保存，不换代次）、切换账号、导入旧版本数据；退出登录单独一组放最底。
   - appearance_page.dart：界面设置 AppearancePage：字号、配色、字体、深浅色、玻璃效果与背景（自定义图片经系统照片选择器，选图函数可注入）；可分享给好友（不含壁纸图片）。字体预览用 assets/font_previews 里预先画好的图（tool/font_previews.dart 生成），不为预览加载没在用的字体。滑杆拖动中只预览、松手保存，系统取消与读屏增减停手 300ms 补存，离开页面时存掉没存的预览。选项点了就生效，落库在 DisplaySettings 的保存锁里排队，保存时不禁用页面上的其他选项。玻璃限档时点「完整」先解除限档。
   - image_copy_pick.dart：通用取图 pickImageCopy 与多选 pickImagesCopy，返回副本路径与 discard；只删插件这次新留在缓存里的副本。壁纸、相册识别二维码共用，并经组合根注入百宝箱。
   - about_page.dart：关于页 AboutPage：版本、检查更新（传入 AppUpdates 时才有）、用户协议、隐私政策、开源许可、源代码与反馈问题；版本信息与打开链接可注入。

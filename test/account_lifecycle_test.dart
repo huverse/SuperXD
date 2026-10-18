@@ -148,7 +148,7 @@ void main() {
     expect(accountDetail(null), '');
   });
 
-  testWidgets('登录页同意勾选框读屏读整句、点文字也能勾选；登录后我的页账号卡写学号', (tester) async {
+  testWidgets('登录页同意勾选框读屏读整句、点文字也能勾选；登录后我的页头像卡只写姓名，学号点进账号页才写', (tester) async {
     final gateway = _Accounts().._active = null;
     final session = AppSession(gateway);
     await session.restore();
@@ -176,6 +176,10 @@ void main() {
     await tester.tap(find.text('我的').last);
     await tester.pumpAndSettle();
     expect(find.text('用户A'), findsOneWidget);
+    expect(find.text('A'), findsNothing);
+    await tester.tap(find.text('用户A'));
+    await tester.pumpAndSettle();
+    expect(find.text('账号'), findsOneWidget);
     expect(find.text('A'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
