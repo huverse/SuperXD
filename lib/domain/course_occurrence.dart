@@ -39,6 +39,15 @@ class CourseOccurrences {
   final int unresolved;
 }
 
+// 本应用课表某一天的课，交给百宝箱的学习通签到推断正在上的课；用不了时给原因（未登录教务、没有学期、缺开学日或作息），不猜。
+enum TimetableGap { signedOut, noTerm, noTermStart, noBells }
+
+class CampusTimetable {
+  const CampusTimetable(this.items, {this.gap});
+  final List<CourseOccurrence> items;
+  final TimetableGap? gap;
+}
+
 // 展开 [from, to]（校园日期，含两端）内的课程实例，按开始时刻排序。
 // 按“时段 × 周次”直接定位日期，不逐天扫描，工作量只随课表大小与范围内周数增长。
 CourseOccurrences courseOccurrences({

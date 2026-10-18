@@ -4,6 +4,7 @@ import 'dart:math';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as picture;
 
+import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_captcha.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
@@ -334,7 +335,8 @@ void main() {
     final now = DateTime.utc(2026, 10, 7, 1);
     final unknown = chaoxingActivity({'id': 7, 'type': 2, 'otherId': '5', 'nameOne': '没时间', 'status': 1}, course, ext: '')!;
     expect(unknown.startTime, isNull);
-    expect(chaoxingFreshActivity(unknown, now), isFalse);
+    final slot = ChaoxingLessonSlot(courseName: '高等数学', start: now.subtract(const Duration(hours: 1)), end: now.add(const Duration(hours: 1)));
+    expect(chaoxingLessonActivity(unknown, slot), isFalse);
     ChaoxingActivity at(int activeId, DateTime? startTime) => ChaoxingActivity(activeId: activeId, courseId: 1, classId: 88, title: '签到', subtitle: '', signType: ChaoxingSignType.password, startTime: startTime, status: 1, userStatus: 0, ext: '');
     final sorted = [at(1, null), at(2, now.subtract(const Duration(hours: 1))), at(3, null), at(4, now)]..sort(chaoxingNewestFirst);
     expect(sorted.map((activity) => activity.activeId), [4, 2, 3, 1]);
@@ -825,11 +827,18 @@ void main() {
     expect(table.lessons, hasLength(1));
     expect(table.lessons.single.startMinute, 8 * 60);
     expect(table.lessons.single.endMinute, 9 * 60 + 40);
-    // 2026-10-07 是第 5 周的周三；北京时间 09:30 在课上，11:00 已过下课 30 分钟之外。
+    // 2026-10-07 是第 5 周的周三；这节课北京时间 08:00–09:40，09:30 在课上，11:11 已过下课 30 分钟之外。
     expect(chaoxingCurrentWeek(table.firstWeekDate, DateTime.utc(2026, 10, 7, 1, 30)), 5);
-    expect(chaoxingCurrentLessons(table, DateTime.utc(2026, 10, 7, 1, 30)), hasLength(1));
-    expect(chaoxingCurrentLessons(table, DateTime.utc(2026, 10, 7, 3, 11)), isEmpty);
-    expect(chaoxingCurrentLessons(table, DateTime.utc(2026, 10, 8, 1, 30)), isEmpty);
+    final slots = chaoxingTableSlots(table, DateTime.utc(2026, 10, 7, 1, 30));
+    expect(slots.map((slot) => [slot.start, slot.end]), [
+      [DateTime.utc(2026, 10, 7), DateTime.utc(2026, 10, 7, 1, 40)],
+    ]);
+    expect(chaoxingCurrentSlots(slots, DateTime.utc(2026, 10, 7, 1, 30)), hasLength(1));
+    // 开课前半小时起算、下课后半小时为止。
+    expect(chaoxingCurrentSlots(slots, DateTime.utc(2026, 10, 6, 23, 30)), hasLength(1));
+    expect(chaoxingCurrentSlots(slots, DateTime.utc(2026, 10, 6, 23, 29)), isEmpty);
+    expect(chaoxingCurrentSlots(slots, DateTime.utc(2026, 10, 7, 3, 11)), isEmpty);
+    expect(chaoxingTableSlots(table, DateTime.utc(2026, 10, 8, 1, 30)), isEmpty);
     expect(() => chaoxingParseLessons({'curriculum': 1}), throwsA(isA<ChaoxingFailure>()));
   });
 
@@ -844,11 +853,51 @@ void main() {
       ChaoxingCourse(courseId: 1, classId: 11, name: '高等数学A'),
       ChaoxingCourse(courseId: 2, classId: 22, name: '大学物理'),
     ];
-    const lesson = ChaoxingLesson(courseId: 0, classId: 0, courseName: '高等数学（一）', dayOfWeek: 1, startMinute: 0, endMinute: 1, weeks: {1});
-    expect(chaoxingLessonCourses([lesson], courses).map((course) => course.classId), [11]);
-    final now = DateTime.utc(2026, 10, 7, 1);
-    final fresh = ChaoxingActivity(activeId: 1, courseId: 1, classId: 11, title: '签到', subtitle: '', signType: ChaoxingSignType.password, startTime: now.subtract(const Duration(minutes: 5)), status: 1, userStatus: 0, ext: '');
-    expect(chaoxingFreshActivity(fresh, now), isTrue);
-    expect(chaoxingFreshActivity(fresh, now.add(const Duration(minutes: 30))), isFalse);
+    final start = DateTime.utc(2026, 10, 7);
+    final slot = ChaoxingLessonSlot(courseName: '高等数学（一）', start: start, end: start.add(const Duration(minutes: 100)));
+    expect(chaoxingSlotCourses([slot], courses).map((match) => match.course.classId), [11]);
+  });
+
+  test('同名课对上好几个班时老师也对得上的优先，都对不上就都算；课表自带班级号的直接用', () {
+    const courses = [
+      ChaoxingCourse(courseId: 1, classId: 11, name: '高等数学A', teacher: '王老师'),
+      ChaoxingCourse(courseId: 2, classId: 22, name: '高等数学A', teacher: '赵老师'),
+    ];
+    final start = DateTime.utc(2026, 10, 7);
+    ChaoxingLessonSlot slot(String teacher, {int classId = 0}) =>
+        ChaoxingLessonSlot(courseName: '高等数学', teacher: teacher, classId: classId, start: start, end: start.add(const Duration(minutes: 100)));
+    List<int> classIds(ChaoxingLessonSlot slot) => [for (final match in chaoxingSlotCourses([slot], courses)) match.course.classId];
+    expect(classIds(slot('王老师、钱老师')), [11]);
+    expect(classIds(slot('孙老师')), [11, 22]);
+    expect(classIds(slot('')), [11, 22]);
+    expect(classIds(slot('赵老师', classId: 99)), [99]);
+    expect(chaoxingTeacherOverlaps('王老师, 钱老师', '钱老师'), isTrue);
+    expect(chaoxingTeacherOverlaps('王老师', ''), isFalse);
+  });
+
+  test('可能正在签到按这节课算：开课前半小时到下课后半小时内发起、仍在进行的都算', () {
+    // 北京时间 08:00–09:40 的课。
+    final slot = ChaoxingLessonSlot(courseName: '高等数学', start: DateTime.utc(2026, 10, 7), end: DateTime.utc(2026, 10, 7, 1, 40));
+    ChaoxingActivity at(DateTime startTime, {int status = 1}) => ChaoxingActivity(activeId: 1, courseId: 1, classId: 11, title: '签到', subtitle: '', signType: ChaoxingSignType.password, startTime: startTime, status: status, userStatus: 0, ext: '');
+    expect(chaoxingLessonActivity(at(DateTime.utc(2026, 10, 6, 23, 35)), slot), isTrue);
+    expect(chaoxingLessonActivity(at(DateTime.utc(2026, 10, 6, 23, 20)), slot), isFalse);
+    // 开课后 40 分钟才发起的（以前只认发起后 20 分钟内，课上晚点发的、或发了一会儿才打开的都漏掉）。
+    expect(chaoxingLessonActivity(at(DateTime.utc(2026, 10, 7, 0, 40)), slot), isTrue);
+    expect(chaoxingLessonActivity(at(DateTime.utc(2026, 10, 7, 2, 5)), slot), isTrue);
+    expect(chaoxingLessonActivity(at(DateTime.utc(2026, 10, 7, 2, 15)), slot), isFalse);
+    expect(chaoxingLessonActivity(at(DateTime.utc(2026, 10, 7, 0, 40), status: 2), slot), isFalse);
+  });
+
+  test('推断用的课表：设置里的一行写明这次用的哪份，改用另一份时先说主源为什么用不了', () {
+    expect(chaoxingLessonPlanText(const ChaoxingLessonPlan(used: ChaoxingLessonSource.app), ChaoxingLessonSource.app), '这次按本应用课表推断');
+    expect(
+      chaoxingLessonPlanText(ChaoxingLessonPlan(used: ChaoxingLessonSource.chaoxing, appProblem: chaoxingTimetableProblem(TimetableGap.noBells)), ChaoxingLessonSource.app),
+      '本应用课表缺作息，这次按学习通课表推断',
+    );
+    expect(
+      chaoxingLessonPlanText(const ChaoxingLessonPlan(appProblem: '没登录教务', chaoxingProblem: '学习通里没有课表'), ChaoxingLessonSource.chaoxing),
+      '学习通里没有课表，没登录教务，推断不了正在上的课',
+    );
+    expect(chaoxingLessonPlanText(const ChaoxingLessonPlan(chaoxingProblem: '学习通课表没读到', otherUser: true), ChaoxingLessonSource.app), '代签账号用它自己的学习通课表：学习通课表没读到');
   });
 }

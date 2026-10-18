@@ -10,6 +10,7 @@
   - 学年与数据项的选择、进度口径、未提交不报已同步，见文件内人工决策。
 - campus_reminders.dart：课前提醒对账 CampusReminders。读本机的当前学期、提醒设置、课表与作息，展开未来 14 天的课程实例，整体替换系统里的提醒；没有当前学期（含退出登录）、未开启或没有通知权限时撤销本应用的全部课前提醒。
 - campus_widgets.dart：桌面课表小组件的快照 CampusWidgets。读本机的当前学期、课表与作息，展开今天起 7 天的课程实例交给小组件端口；退出登录时发布空快照，缺开学日或作息时如实提示。
+- campus_timetable.dart：campusTimetableToday 读本机的当前学期、课表与作息，展开今天的课程实例（CampusTimetable），由组合根经百宝箱运行时交给学习通签到推断正在上的课；未登录、没有学期、缺开学日或作息时给原因。只读本地、从不联网。
 - app_updates.dart：应用内更新编排 AppUpdates，设备级，切换账号不重建。
   - 自动检查每个校园日一次（appUpdateCheckDue，按业务日界），待必须更新时每次启动都查；手动检查不受限、不认跳过。
   - 点更新才下载（缓存里已有且 SHA-256 对得上就不再下），核对 SHA-256、包名、版本号与签名证书，对不上就删包报原因；没有「安装未知应用」授权时引导开启，下载在后台完成时等回前台再拉起系统安装。
@@ -24,7 +25,7 @@
 # 测试
 
 - campus_sync_test.dart、sync_ui_test.dart、transition_sync_test.dart（同步编排与同步界面）
-- reminder_test.dart、home_widget_test.dart（课前提醒、小组件）
+- reminder_test.dart、home_widget_test.dart（课前提醒、小组件）；campus_timetable_test.dart（本应用课表今天的课）
 - app_update_test.dart、app_update_ui_test.dart（应用更新，替身在 app_update_fakes.dart）
 
 # 人工决策检索

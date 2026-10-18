@@ -7,6 +7,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/toolbox/download/android_file_publisher.dart';
 import 'package:superxd/toolbox/download/background_transfer.dart';
@@ -18,6 +19,9 @@ import 'package:superxd/toolbox/toolbox_store.dart';
 
 // 把作品分享给好友：百宝箱不感知私信，由组合根注入（为空时不显示分享入口）。
 typedef ToolboxVideoShare = Future<void> Function(BuildContext context, VideoShare video);
+
+// 本应用课表今天的课（学习通签到按它推断正在上的课）：百宝箱不依赖教务相关的层，由组合根注入只读回调；只在本机比对课名，不发给任何人。
+typedef ToolboxTimetable = Future<CampusTimetable> Function();
 
 // 扫码：相机页面在 page 层，百宝箱不依赖它，由组合根注入。
 // hint 是取景页的提示语，accept 返回非空表示不认这个内容（原地提示），认下就把原文交回来；取消返回空。
@@ -63,6 +67,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.pickImage,
     this.pickImages,
     this.relayUrl,
+    this.campusTimetable,
   });
   ToolboxRuntime.testing({
     required this.catalog,
@@ -73,6 +78,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.watchQrCode,
     this.pickImage,
     this.pickImages,
+    this.campusTimetable,
     // 外部已经打开好的服务（测试直接给实例）：runtime 只代为转交，不负责关闭。
     Map<String, ToolboxService>? services,
     // 给了目录时按注册表的 openService 真的打开服务（测清除后重开、打开失败重试）。
@@ -91,6 +97,8 @@ class ToolboxRuntime with WidgetsBindingObserver {
   final ToolboxQrWatch? watchQrCode;
   final ToolboxImagePick? pickImage;
   final ToolboxImagesPick? pickImages;
+  // 为空时（测试、只装了百宝箱的入口）当没有本应用课表。
+  final ToolboxTimetable? campusTimetable;
   final ToolboxCatalog catalog;
   late final List<ToolboxModule> modules = catalog(this);
 

@@ -10,6 +10,8 @@ import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/course_occurrence.dart';
+import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -21,10 +23,12 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_code_cells.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_gesture_field.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_lessons.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_qrcode.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_signer.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_sign_flow.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_tag_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
@@ -200,6 +204,128 @@ void main() {
     // 退出会先等登录后的后台刷新落定，免得测试收尾关库时它还在写。
     await controller.signOut();
     controller.dispose();
+  });
+
+  // 本应用课表今天的一节课（合成数据）：从 start 起上 100 分钟。
+  CampusTimetable appTimetable(String name, DateTime start, {String teacher = ''}) => CampusTimetable([
+    CourseOccurrence(
+      date: formatCampusDate(campusInstant(start)),
+      start: start,
+      end: start.add(const Duration(minutes: 100)),
+      course: CourseRecord(courseCode: name, courseName: name, sectionId: name, credit: 2, teacherName: teacher, meetings: const []),
+      meeting: CourseMeeting(weekday: 1, periodStart: 1, periodEnd: 2, place: '', weeks: const [1]),
+    ),
+  ]);
+  int lessonFetches() => fake.calls.where((call) => call.endsWith('/getMyLessons')).length;
+  Future<void> settle(ChaoxingController controller) async {
+    await controller.refresh();
+    await controller.signOut();
+    controller.dispose();
+  }
+
+  test('课表推断默认按本应用课表：开课 40 分钟后发起的签到也算，不去拉学习通课表', () async {
+    final now = DateTime.now().toUtc();
+    fake.courses = mathCourse();
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '5', 'nameOne': '课上晚点发的签到', 'startTime': now.subtract(const Duration(minutes: 25)).millisecondsSinceEpoch, 'status': 1, 'userStatus': 0},
+    ];
+    final controller = ChaoxingController(
+      accounts: accountsWith(MemoryChaoxingVault()),
+      timetable: () async => appTimetable('高等数学', now.subtract(const Duration(minutes: 65))),
+    );
+    await controller.signIn('13800138000', 'myPassword123');
+    await controller.refresh();
+    // 以前只认发起后 20 分钟内的。
+    expect(controller.lessonActivities.map((activity) => activity.activeId), [501]);
+    expect(controller.lessonPlan!.used, ChaoxingLessonSource.app);
+    expect(lessonFetches(), 0);
+    await settle(controller);
+  });
+
+  test('本应用课表用不了（没登录教务）时自动改用学习通课表，设置里写明原因', () async {
+    final now = DateTime.now().toUtc();
+    fake.courses = mathCourse();
+    fake.lessons = {
+      'curriculum': {'lessonTimeConfigArray': ['00:00-23:59'], 'firstWeekDate': now.millisecondsSinceEpoch},
+      'lessonArray': [
+        {'name': '高等数学（一）', 'dayOfWeek': campusInstant(now).weekday, 'beginNumber': 1, 'length': 1, 'weeks': '1', 'classId': 0, 'courseId': 0},
+      ],
+    };
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '5', 'nameOne': '签到', 'startTime': now.millisecondsSinceEpoch, 'status': 1, 'userStatus': 0},
+    ];
+    final controller = ChaoxingController(
+      accounts: accountsWith(MemoryChaoxingVault()),
+      timetable: () async => const CampusTimetable([], gap: TimetableGap.signedOut),
+    );
+    await controller.signIn('13800138000', 'myPassword123');
+    await controller.refresh();
+    expect(controller.lessonActivities.map((activity) => activity.activeId), [501]);
+    expect(chaoxingLessonPlanText(controller.lessonPlan!, controller.lessonSource), '没登录教务，这次按学习通课表推断');
+    await settle(controller);
+  });
+
+  test('本应用课表今天没课不算用不了：不改用学习通课表，也不多发请求', () async {
+    final now = DateTime.now().toUtc();
+    fake.courses = mathCourse();
+    final controller = ChaoxingController(accounts: accountsWith(MemoryChaoxingVault()), timetable: () async => const CampusTimetable([]));
+    await controller.signIn('13800138000', 'myPassword123');
+    await controller.refresh();
+    expect(controller.lessonPlan!.used, ChaoxingLessonSource.app);
+    expect(lessonFetches(), 0);
+    // 改成学习通为主：存好后按已读到的活动重新推断，这时才拉学习通课表。
+    fake.lessons = {
+      'curriculum': {'lessonTimeConfigArray': ['00:00-23:59'], 'firstWeekDate': now.millisecondsSinceEpoch},
+      'lessonArray': [
+        {'name': '高等数学', 'dayOfWeek': campusInstant(now).weekday, 'beginNumber': 1, 'length': 1, 'weeks': '1', 'classId': 0, 'courseId': 0},
+      ],
+    };
+    await controller.setLessonSource(ChaoxingLessonSource.chaoxing);
+    expect(controller.lessonPlan!.used, ChaoxingLessonSource.chaoxing);
+    expect(lessonFetches(), 1);
+    expect(await store.preference(chaoxingLessonSourceKey), 'chaoxing');
+    await settle(controller);
+  });
+
+  test('学习通课表为空时不再每次刷新都重拉（隔几个小时才再拉）', () async {
+    fake.courses = mathCourse();
+    fake.lessons = {
+      'curriculum': {'lessonTimeConfigArray': ['08:00-08:45'], 'firstWeekDate': 0},
+      'lessonArray': <Object?>[],
+    };
+    final controller = ChaoxingController(accounts: accountsWith(MemoryChaoxingVault()));
+    await controller.signIn('13800138000', 'myPassword123');
+    await controller.refresh();
+    await controller.refresh();
+    await controller.refresh();
+    expect(lessonFetches(), 1);
+    expect(controller.lessonPlan!.chaoxingProblem, '学习通里没有课表');
+    await settle(controller);
+  });
+
+  test('本账号在本应用里签成功的移出「可能正在签到」，进行中的列表标已签到', () async {
+    final now = DateTime.now().toUtc();
+    fake.courses = mathCourse();
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '0', 'nameOne': '签到', 'startTime': now.millisecondsSinceEpoch, 'status': 1, 'userStatus': 0},
+    ];
+    final controller = ChaoxingController(
+      accounts: accountsWith(MemoryChaoxingVault()),
+      timetable: () async => appTimetable('高等数学', now.subtract(const Duration(minutes: 10))),
+    );
+    await controller.signIn('13800138000', 'myPassword123');
+    await controller.refresh();
+    final activity = controller.lessonActivities.single;
+    expect(controller.signedHere(activity), isFalse);
+    final target = controller.signTargets().firstWhere((target) => target.record.phoneNumber == '13800138000');
+    await controller.signTarget(target, activity, info: await controller.activeInfo(activity), inputs: const ChaoxingSignInputs(), solveCaptcha: (_, _) async => null);
+    expect(controller.lessonActivities, isEmpty);
+    expect(controller.signedHere(activity), isTrue);
+    // 刷新后学习通的列表还当它是进行中（userStatus 不可靠），照样不回到「可能正在签到」。
+    await controller.refresh();
+    expect(controller.lessonActivities, isEmpty);
+    expect(controller.activities.map((activity) => activity.activeId), [501]);
+    await settle(controller);
   });
 
   test('扫课堂签到二维码：按详情组出活动，课程号缺了按班级到课程列表里找，不在列表里的课也能签（参考项目 1.19.2）', () async {

@@ -14,7 +14,7 @@
   - chaoxing_activity.dart：课程列表（只认带 cataName 的频道）、活动列表与详情、按班级号查班级名（gas/clazz）、签到前的班级检查。
   - chaoxing_signer.dart：preSign（302 或「校验失败」即不在班级；403 按会话过期报，由 accounts.run 重登一次再重发）后紧跟 analysis → analysis2；各签到类型的提交参数逐项照学习通客户端（绕过模式同端点不带 signCode，[人工决策] 见 ChaoxingSignSubmission）；success2 按失败处理，迟到按截止时间判断。
   - chaoxing_batch.dart：多人连签 ChaoxingBatchSigning：按勾选顺序逐个签、相邻间隔 200 毫秒；选了「仍然签到」的人跳过检查；位置刚出界时收紧偏移再试；连续扫码一人失败就停队，但已签过、不在班级、登录过期只跳过这个人。
-  - chaoxing_lessons.dart：学习通课表（kb.chaoxing.com）的解析与推断：当前节次前后 30 分钟内的课按课名相似度对上课程，找 20 分钟内刚发起的进行中签到（不知道开始时间的不算）。周次与日界按校园时区。
+  - chaoxing_lessons.dart：课表推断：两份课表（本应用课表、学习通课表 kb.chaoxing.com）都换成今天的课 ChaoxingLessonSlot；用哪份见 ChaoxingLessonSource 的人工决策（主源加自动备用，默认本应用课表，代签账号只用它自己的学习通课表）；正在上的课（前后半小时）按课名相似度对上课程，同名多班老师对得上的优先；这节课时段里发起、仍在进行的签到算「可能正在签到」（人工决策在 chaoxingLessonActivity，不知道开始时间的不算）。周次与日界按校园时区。
   - chaoxing_location.dart：坐标模型、坐标系转换（提交口径 BD-09）、随机偏移与位置负载。
   - chaoxing_photo.dart：拍照签到：上传前随机裁剪、旋转再裁齐（同一张照片反复用会被教师端比对出来），再传云盘拿 objectId。
   - chaoxing_qrcode.dart：课堂签到二维码的解析（SIGNIN: 内嵌串与带 enc 的链接）与过期查询。
@@ -31,7 +31,7 @@
     - 会话过期自动重登一次并重放该次请求，重登被学习通拒绝时记「登录已失效」（[人工决策] 在 run）；主账号排第一（[人工决策] 在 list）。
     - 重新登录、修复与再导入保留备注名与排序；标签校验 saveTag；本人设备码优先用 OAID 算的，取不到沿用原码，新账号才生成固定随机码。
 - 状态与流程：
-  - chaoxing_controller.dart：页面状态：打开进主账号；账号切换按代次丢弃切换前的异步结果；登录与切换账号在会话开好就返回，列表在后台加载，加载完（成败都算）再后台刷新用户信息（人工决策在 _loadThenRefreshAccount）；登录失败返回原因交给表单显示，不写首页的 error；刷新课程与活动（最多并发三个课程请求，进行中与往期按 status 分；刷新不占账号忙，有一轮在拉就等它，只认最新一轮的结果）；签完只重拉这门课并合并进列表（refreshCourse，人工决策在方法上）；改学校单位或客户端先存好就返回，再清空列表重拉（[人工决策] 在 _reloadActivities）；课表推断（有课时每 5 秒重查这节课，最多 2 分钟）；扫码打开签到；收藏位置与「这附近不再问」（500 米内有就不问）。人脸照片与代签码交给两个子控制器（构造注入，不反向依赖本类）。
+  - chaoxing_controller.dart：页面状态：打开进主账号；账号切换按代次丢弃切换前的异步结果；登录与切换账号在会话开好就返回，列表在后台加载，加载完（成败都算）再后台刷新用户信息（人工决策在 _loadThenRefreshAccount）；登录失败返回原因交给表单显示，不写首页的 error；刷新课程与活动（最多并发三个课程请求，进行中与往期按 status 分；刷新不占账号忙，有一轮在拉就等它，只认最新一轮的结果）；签完只重拉这门课并合并进列表（refreshCourse，人工决策在方法上）；改学校单位或客户端先存好就返回，再清空列表重拉（[人工决策] 在 _reloadActivities）；课表推断（主课表存在设置 lesson_source，本应用课表经运行时注入的只读回调读；学习通课表为空隔 6 小时、读不到隔半小时才重拉；有课时每 5 秒重查这节课，最多 2 分钟；本账号在本应用里签成功或签到前检查说已签的只记内存，移出推断那组、在进行中标「已签到」，活动列表的 userStatus 实测不可靠）；扫码打开签到；收藏位置与「这附近不再问」（500 米内有就不问）。人脸照片与代签码交给两个子控制器（构造注入，不反向依赖本类）。
   - chaoxing_face_controller.dart：人脸照片子控制器：列表、上传（可只上传给这次用）、预览缓存（总字节封顶 20MB）、保存到本机、学习通默认照片的读取与重处理。
   - chaoxing_delegate_controller.dart：代签码子控制器：出示（封包投递换取件票与作废口令）与取件导入（解封后用对方设备码登录确认，按代签账号存入）；代签码只带真实设备码（[人工决策] 在文件内）。
   - chaoxing_sign_flow.dart：一个人的完整签到流程 ChaoxingSignFlow（签到前检查、拍照上传、人脸、提交，验证码、换码与位置收紧重试）；会话与存储经 ChaoxingSignContext 注入。签到输入与回调类型也定义在这里。
@@ -53,7 +53,7 @@
   - chaoxing_tag_sheet.dart：账号标签的显示、管理与设置；颜色名与主题的 tagColors 一一对应（[人工决策] 在文件头）。
   - chaoxing_location_sheet.dart：收藏位置的管理弹层：地图能用时可在全屏地图上添加（起名必填，满 50 个不能再加，[人工决策] 在文件头），改名与删除。
   - chaoxing_share_page.dart：出示代签码页：二维码与倒计时（从发出投递时起算，只会比中转早到点）；重新生成、改附带照片或离开本页时作废上一张。
-  - chaoxing_settings_sheet.dart：签到设置弹层（学校单位、模拟的客户端；点了就勾上，存的时候两组都不禁用，也不等列表）与修复账号时重输密码的对话框。
+  - chaoxing_settings_sheet.dart：签到设置弹层（学校单位、推断用哪份课表并只读写明这次实际用的哪份、模拟的客户端；点了就勾上，存的时候都不禁用，也不等列表）与修复账号时重输密码的对话框。
   - chaoxing_sign_notices.dart：签到弹层里的时间提示与签退提示；往期活动照样能签、提示可能记为迟到（[人工决策] 在文件内）。
   - chaoxing_activity_card.dart：各页共用的活动卡片、签到入口 ChaoxingSignLauncher、一组签到的列表页 ChaoxingActivitiesPage 与二级页刷新按钮；整页读取失败用 theme 的 CampusLoadError。
   - chaoxing_group_page.dart：群聊签到：先列群（一次请求、最多 200 个，可搜、可置顶、同名合并），点进一项才拉那几个群的消息（[人工决策] 在文件头）。
@@ -67,6 +67,7 @@
 - 签到流程与参数逐项对齐参考项目（2026-10-07 二次对照）：用户信息 POST 设备信息、preSign 用列表级 ext 并紧跟 analysis → analysis2、success2 按失败、迟到按截止时间、二维码坐标固定 -1、人脸只在位置与二维码签到上带、签到前查班级。参考项目里关掉的「签到习惯推荐」不做。
 - 凭据：不碰教务凭据与 cookie；学习通密码与 cookie 只进系统安全存储，业务库只存账号索引；本机不存签到记录与群消息。
 - 扫码页在 page 层，百宝箱用组合根注入的 ToolboxQrScan（单次）与 ToolboxQrWatch（连续）取二维码原文，不依赖 page。
+- 本应用课表经组合根注入的 ToolboxTimetable 读（application/campus_timetable.dart，只读本地、不联网），只在本机比对课名与时间，不发给学习通；不依赖教务相关的层。
 - 设备信息与 OAID 只在学习通签到时取，加密后只发给学习通，不在本机另存。OAID 库自带的电话状态、存储、写设置与广告 ID 权限在清单里移除；它带入的华为、荣耀广告标识 SDK 在隐私政策「学习通签到用到的第三方 SDK」单列，增删这类 SDK 时同步改隐私政策。
 - 依赖仓库按组限定（android/build.gradle.kts 的 thirdPartyRepositoryGroups）：JitPack 只给 OAID 库与 uCrop，华为、荣耀仓库只给各自的组；新增走这几个仓库的依赖先登记它的组。
 - 位置：提交口径 BD-09，WGS-84、GCJ-02 先在 chaoxing_location.dart 换算，再按小范围随机偏移（超范围时收紧到 0.00001 重试一次）；手输坐标按高德 GCJ-02；坐标系尚未用真账号校准。定位只在打开位置签到时申请（仅使用期间、不后台定位）；隐私政策有「地图选点」一节，学习通同意说明为第 4 版。
@@ -92,4 +93,4 @@
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/toolbox/chaoxing
-- 标记位于：签到码与手势输错的反馈（chaoxing_code_cells.dart、chaoxing_gesture_field.dart）、绕过模式（chaoxing_signer.dart）、往期提示（chaoxing_sign_notices.dart）、预检弹窗与签完问收藏（chaoxing_sign_sheet.dart）、地图默认选点与定位提示（chaoxing_map_page.dart）、收藏管理（chaoxing_location_sheet.dart）、账号说明只标例外（chaoxing_store.dart）、主账号与登录已失效（chaoxing_accounts.dart）、账号管理（chaoxing_account_sheet.dart）、标签（chaoxing_tag_sheet.dart）、群聊先列群（chaoxing_group_page.dart）、人脸照片先重处理（chaoxing_face_sheet.dart）、代签码只带真实设备码（chaoxing_delegate_controller.dart）、首页入口排列、刷新只留下拉与加载只显示一处（chaoxing_page.dart）、超时（chaoxing_client.dart）、刷新不挡活动列表、按 status 分进行中和往期、改单位或客户端清空重拉（chaoxing_controller.dart）、活动名与类型名相同只显示一个（chaoxing_models.dart）。
+- 标记位于：签到码与手势输错的反馈（chaoxing_code_cells.dart、chaoxing_gesture_field.dart）、绕过模式（chaoxing_signer.dart）、往期提示（chaoxing_sign_notices.dart）、预检弹窗与签完问收藏（chaoxing_sign_sheet.dart）、地图默认选点与定位提示（chaoxing_map_page.dart）、收藏管理（chaoxing_location_sheet.dart）、账号说明只标例外（chaoxing_store.dart）、主账号与登录已失效（chaoxing_accounts.dart）、账号管理（chaoxing_account_sheet.dart）、标签（chaoxing_tag_sheet.dart）、群聊先列群（chaoxing_group_page.dart）、人脸照片先重处理（chaoxing_face_sheet.dart）、代签码只带真实设备码（chaoxing_delegate_controller.dart）、首页入口排列、刷新只留下拉与加载只显示一处（chaoxing_page.dart）、超时（chaoxing_client.dart）、刷新不挡活动列表、按 status 分进行中和往期、改单位或客户端清空重拉、签完只重拉这门课（chaoxing_controller.dart）、推断用哪份课表与按这节课算（chaoxing_lessons.dart）、活动名与类型名相同只显示一个（chaoxing_models.dart）。

@@ -1,15 +1,33 @@
 import 'dart:convert';
 
 import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 
-// 按学习通课表推断「可能正在签到」：当前节次前后 30 分钟内的课，去它的课程里找刚发起（20 分钟内）的进行中签到。
-// 课表来自学习通自己的课表接口，与教务课表无关；本机缓存 7 天（见 chaoxing_store.dart）。
+// 按课表推断「可能正在签到」：先拿到今天的课（本应用课表或学习通课表，见 ChaoxingLessonSource），
+// 当前时刻在某节课前后半小时内时，这节课的时段里发起、仍在进行的签到就算（人工决策见 chaoxingLessonActivity）。
 const chaoxingLessonsUri = 'https://kb.chaoxing.com/pc/curriculum/getMyLessons';
 const chaoxingLessonWindowMinutes = 30;
-const chaoxingFreshActivityWindow = Duration(minutes: 20);
+const _lessonWindow = Duration(minutes: chaoxingLessonWindowMinutes);
+
+// 学习通课表为空（多半是没在学习通里导入课表）时，隔这么久才再拉一次，别每次刷新都多发一个请求；有课的照旧缓存 7 天。
+const chaoxingEmptyLessonsRetry = Duration(hours: 6);
+
+// 推断用哪份课表：设置里存的键与取值（主源；用不了时自动改用另一份）。
+const chaoxingLessonSourceKey = 'lesson_source';
+
+// [人工决策-2026-10-17 22:47:20] 课表推断「主源加自动备用」，默认本应用课表（用户选定，未选默认学习通、只用所选一份、两份合并）：
+// 主源用不了（本应用：没登录教务、没有学期、缺开学日或作息；学习通：读不到或为空）才改用另一份，主源今天没课不算用不了；
+// 代签账号不看设置，只用它自己的学习通课表（本应用课表是本人的，谁的数据跟着谁）。
+enum ChaoxingLessonSource {
+  app('本应用课表'),
+  chaoxing('学习通课表');
+
+  const ChaoxingLessonSource(this.label);
+  final String label;
+}
 
 class ChaoxingLesson {
   const ChaoxingLesson({
@@ -42,6 +60,57 @@ class ChaoxingLessonTable {
 
   // 第一周所在的绝对时刻（学习通给毫秒）；没有时按第一周算。
   final DateTime? firstWeekDate;
+}
+
+// 今天的一节课：哪门课（课名、老师，学习通课表还可能带班级号）与上课的起止时刻（UTC）。两份课表都换成它再推断。
+class ChaoxingLessonSlot {
+  const ChaoxingLessonSlot({
+    required this.courseName,
+    required this.start,
+    required this.end,
+    this.teacher = '',
+    this.classId = 0,
+    this.courseId = 0,
+  });
+  final String courseName;
+  final String teacher;
+  final int classId;
+  final int courseId;
+  final DateTime start;
+  final DateTime end;
+}
+
+// 一次推断的课表：实际用的那份（都用不了时为空）、它今天的课，以及读过但用不了的那份的原因。
+class ChaoxingLessonPlan {
+  const ChaoxingLessonPlan({this.used, this.slots = const [], this.appProblem, this.chaoxingProblem, this.otherUser = false});
+  final ChaoxingLessonSource? used;
+  final List<ChaoxingLessonSlot> slots;
+  final String? appProblem;
+  final String? chaoxingProblem;
+  // 代签账号：只用它自己的学习通课表，不看设置。
+  final bool otherUser;
+}
+
+// 本应用课表用不了的原因（签到设置里写给用户看）。
+String chaoxingTimetableProblem(TimetableGap gap) => switch (gap) {
+  TimetableGap.signedOut => '没登录教务',
+  TimetableGap.noTerm => '本应用里还没有课表',
+  TimetableGap.noTermStart => '本应用课表缺开学日',
+  TimetableGap.noBells => '本应用课表缺作息',
+};
+
+// 签到设置里只读的一行：这次按哪份课表推断；改用了另一份时先说主源为什么用不了。
+String chaoxingLessonPlanText(ChaoxingLessonPlan plan, ChaoxingLessonSource preferred) {
+  if (plan.otherUser) {
+    return plan.used == null ? '代签账号用它自己的学习通课表：${plan.chaoxingProblem}' : '代签账号用它自己的学习通课表';
+  }
+  final problems = {ChaoxingLessonSource.app: plan.appProblem, ChaoxingLessonSource.chaoxing: plan.chaoxingProblem};
+  final used = plan.used;
+  if (used == null) {
+    final other = ChaoxingLessonSource.values.firstWhere((source) => source != preferred);
+    return '${[?problems[preferred], ?problems[other]].join('，')}，推断不了正在上的课';
+  }
+  return used == preferred ? '这次按${used.label}推断' : '${problems[preferred]}，这次按${used.label}推断';
 }
 
 // 拉学习通课表，返回 data 段原文（缓存原文，解析在读的时候做，接口加字段不影响缓存）。
@@ -114,20 +183,36 @@ int chaoxingCurrentWeek(DateTime? firstWeekDate, DateTime now) {
   return days ~/ 7 + 1;
 }
 
-// 当前时刻前后半小时内在上的课（按校园时区的星期与钟点）。
-List<ChaoxingLesson> chaoxingCurrentLessons(ChaoxingLessonTable table, DateTime now) {
+// 学习通课表里今天（校园时区的星期与本周）的课，换成起止时刻。
+List<ChaoxingLessonSlot> chaoxingTableSlots(ChaoxingLessonTable table, DateTime now) {
   final local = campusInstant(now);
-  final minute = local.hour * 60 + local.minute;
+  final today = formatCampusDate(local);
   final week = chaoxingCurrentWeek(table.firstWeekDate, now);
   return [
     for (final lesson in table.lessons)
-      if (lesson.dayOfWeek == local.weekday &&
-          lesson.weeks.contains(week) &&
-          lesson.startMinute - chaoxingLessonWindowMinutes <= minute &&
-          minute <= lesson.endMinute + chaoxingLessonWindowMinutes)
-        lesson,
+      if (lesson.dayOfWeek == local.weekday && lesson.weeks.contains(week))
+        ChaoxingLessonSlot(
+          courseName: lesson.courseName,
+          teacher: lesson.teacher,
+          classId: lesson.classId,
+          courseId: lesson.courseId,
+          start: campusMoment(today, lesson.startMinute),
+          end: campusMoment(today, lesson.endMinute),
+        ),
   ];
 }
+
+// 本应用课表今天的课（组合根交来的课程实例）换成同样的时段；没有学习通的班级号，只能按课名对。
+List<ChaoxingLessonSlot> chaoxingTimetableSlots(CampusTimetable timetable) => [
+  for (final item in timetable.items)
+    ChaoxingLessonSlot(courseName: item.course.courseName, teacher: item.course.teacherName, start: item.start, end: item.end),
+];
+
+// 当前时刻在开课前半小时到下课后半小时之间的课。
+List<ChaoxingLessonSlot> chaoxingCurrentSlots(List<ChaoxingLessonSlot> slots, DateTime now) => [
+  for (final slot in slots)
+    if (!now.isBefore(slot.start.subtract(_lessonWindow)) && !now.isAfter(slot.end.add(_lessonWindow))) slot,
+];
 
 // 课程名归一化：全角转半角、去空白与常见括号标点、去掉末尾的「一/二/Ⅱ/2」这类序号。
 String chaoxingNormalizeCourseName(String name) {
@@ -154,23 +239,37 @@ bool chaoxingCourseNameMatches(String lessonName, String courseName) {
   return _bigramSimilarity(lesson, course) >= 0.5;
 }
 
-// 课表里的课落到哪些班级：课表自带班级号就直接用，否则按课名去课程列表里找（同名课可能有多个班）。
-List<ChaoxingCourse> chaoxingLessonCourses(List<ChaoxingLesson> lessons, List<ChaoxingCourse> courses) {
-  final found = <int, ChaoxingCourse>{};
-  for (final lesson in lessons) {
-    if (lesson.classId > 0) {
-      found[lesson.classId] =
-          courses.where((course) => course.classId == lesson.classId).firstOrNull ??
-          ChaoxingCourse(courseId: lesson.courseId, classId: lesson.classId, name: lesson.courseName, teacher: lesson.teacher);
-      continue;
-    }
-    for (final course in courses) {
-      if (chaoxingCourseNameMatches(lesson.courseName, course.name)) found[course.classId] = course;
-    }
-  }
-  return found.values.toList();
+// 两边写的老师有没有同一个人：按常见分隔符拆开，任一个名字出现在另一边就算（教务写「甲、乙」，学习通可能只写「甲」）。
+bool chaoxingTeacherOverlaps(String first, String second) {
+  final names = first.split(RegExp(r'[,，、;；/\s]+')).where((name) => name.isNotEmpty);
+  return second.trim().isNotEmpty && names.any(second.contains);
 }
 
-// 刚发起的进行中签到：status 为 1，且发起不超过 20 分钟；不知道发起时刻的不算。
-bool chaoxingFreshActivity(ChaoxingActivity activity, DateTime now) =>
-    activity.ongoing && (activity.startTime?.add(chaoxingFreshActivityWindow).isAfter(now) ?? false);
+// 今天的课落到哪些班级（连同这节课的时段）：课表自带班级号就直接用（课程列表里没有时组一个），
+// 否则按课名去课程列表里找；同名课对上好几个班时，老师也对得上的优先，都对不上就都算。
+List<({ChaoxingCourse course, ChaoxingLessonSlot slot})> chaoxingSlotCourses(List<ChaoxingLessonSlot> slots, List<ChaoxingCourse> courses) {
+  final found = <({ChaoxingCourse course, ChaoxingLessonSlot slot})>[];
+  for (final slot in slots) {
+    if (slot.classId > 0) {
+      found.add((
+        course: courses.where((course) => course.classId == slot.classId).firstOrNull ??
+            ChaoxingCourse(courseId: slot.courseId, classId: slot.classId, name: slot.courseName, teacher: slot.teacher),
+        slot: slot,
+      ));
+      continue;
+    }
+    final named = [for (final course in courses) if (chaoxingCourseNameMatches(slot.courseName, course.name)) course];
+    final taught = [for (final course in named) if (chaoxingTeacherOverlaps(slot.teacher, course.teacher)) course];
+    for (final course in taught.isNotEmpty ? taught : named) {
+      found.add((course: course, slot: slot));
+    }
+  }
+  return found;
+}
+
+// [人工决策-2026-10-17 22:47:20] 「可能正在签到」按这节课算（用户选定，取代参考项目的「发起后 20 分钟内」）：
+// 这节课的时段里（开课前半小时到下课后半小时）发起、仍在进行的签到都算，一直算到下课后半小时；不知道发起时刻的不算。
+bool chaoxingLessonActivity(ChaoxingActivity activity, ChaoxingLessonSlot slot) {
+  final start = activity.startTime;
+  return activity.ongoing && start != null && !start.isBefore(slot.start.subtract(_lessonWindow)) && !start.isAfter(slot.end.add(_lessonWindow));
+}

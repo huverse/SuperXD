@@ -5,7 +5,7 @@
 # 文件职责
 
 - 框架：
-  - toolbox_runtime.dart：设备级组合根 ToolboxRuntime。在应用支持目录的 toolbox 子目录下打开 toolbox.db、资源目录与下载目录；组装下载管理、后台传输与文件导出这些公共能力，不替任何工具组装业务对象；跟随前后台恢复下载。注册表由组合根传入，工具服务经 runtime.service 取用、退出时按接口统一关闭，打开失败不留缓存。组合根注入的能力：relayUrl（中转地址，只来自构建参数）、shareVideo（分享给好友，为空不显示入口，百宝箱不感知私信）、pickImage 与 pickImages（取图，缓存副本用完必须 discard）、扫码。
+  - toolbox_runtime.dart：设备级组合根 ToolboxRuntime。在应用支持目录的 toolbox 子目录下打开 toolbox.db、资源目录与下载目录；组装下载管理、后台传输与文件导出这些公共能力，不替任何工具组装业务对象；跟随前后台恢复下载。注册表由组合根传入，工具服务经 runtime.service 取用、退出时按接口统一关闭，打开失败不留缓存。组合根注入的能力：relayUrl（中转地址，只来自构建参数）、shareVideo（分享给好友，为空不显示入口，百宝箱不感知私信）、pickImage 与 pickImages（取图，缓存副本用完必须 discard）、扫码、campusTimetable（本应用课表今天的课，只读，给学习通推断正在上的课；为空当没有课表）。
   - toolbox_catalog.dart：工具注册表 toolboxCatalog，工具只在这一处登记（名称、图标、页面、资源与服务），路由按这里的 id 生成免登录的工具路由；工具 id 全处统一（路由、服务、同意记录同一个 id，[人工决策] 在文件头）。
   - toolbox_module.dart：ToolboxModule 描述一个工具：id、名称、图标、页面构造器、可选的按需资源、可选的服务打开函数 openService（登记了就要给 clearedData 写明清除数据会删什么）与可选的好友分享卡片入口 openShared。ToolboxServiceContext 是框架交给工具服务的公共能力。
   - toolbox_page.dart：百宝箱首页 ToolboxPage：有按需资源的工具可「卸载」，有本机数据的工具（登记了 openService）可「清除数据」，⋯与右滑揭示都须点击确认（人工决策见文件内）。

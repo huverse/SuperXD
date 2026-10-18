@@ -9,6 +9,7 @@ import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_lessons.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 
 // 修复账号：对方改了密码、或会话彻底失效时，重新输一次学习通密码。返回空表示取消。
@@ -62,7 +63,7 @@ class _PasswordPromptState extends State<_PasswordPrompt> {
   );
 }
 
-// 签到设置：学校单位（账号挂在多个单位下时可选）与模拟的客户端（定制版学习通的学校要换）。
+// 签到设置：学校单位（账号挂在多个单位下时可选）、推断正在上的课用哪份课表与模拟的客户端（定制版学习通的学校要换）。
 Future<void> showChaoxingSettingsSheet(BuildContext context, {required ChaoxingController controller}) =>
     showCampusSheet<void>(context: context, builder: (_) => _ChaoxingSettingsSheet(controller: controller));
 
@@ -207,6 +208,32 @@ class _ChaoxingSettingsSheetState extends State<_ChaoxingSettingsSheet> {
                       ),
                       const SizedBox(height: 20),
                     ],
+                    // 推断「可能正在签到」用的主课表，用不了时自动改用另一份；下面只读写明这次实际用的哪份（人工决策见 ChaoxingLessonSource）。
+                    Text('按哪份课表推断正在上的课', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 8,
+                      children: [
+                        for (final source in ChaoxingLessonSource.values)
+                          CampusGlassChip(
+                            label: source.label,
+                            selected: controller.lessonSource == source,
+                            onSelected: (_) {
+                              if (controller.lessonSource != source) _apply(() => controller.setLessonSource(source));
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      switch (controller.lessonPlan) {
+                        final plan? => chaoxingLessonPlanText(plan, controller.lessonSource),
+                        null => '选的那份用不了时自动改用另一份',
+                      },
+                      style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
+                    ),
+                    const SizedBox(height: 20),
                     Text('模拟的客户端', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
                     const SizedBox(height: 8),
                     Wrap(

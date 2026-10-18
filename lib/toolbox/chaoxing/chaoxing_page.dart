@@ -104,7 +104,12 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
       // 学习通的服务由本工具自己打开（框架只给目录与公共能力）。
       final service = await widget.runtime.service<ChaoxingService>(ChaoxingService.serviceId);
       _service = service;
-      final controller = ChaoxingController(accounts: service.accounts, hub: service.hub, filePublisher: service.filePublisher);
+      final controller = ChaoxingController(
+        accounts: service.accounts,
+        hub: service.hub,
+        filePublisher: service.filePublisher,
+        timetable: widget.runtime.campusTimetable,
+      );
       if (!mounted) {
         controller.dispose();
         return;
@@ -498,7 +503,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
             ),
           ],
           if (controller.lessonActivities.isNotEmpty) ...[
-            const ChaoxingSectionTitle('可能正在签到（按学习通课表）'),
+            ChaoxingSectionTitle('可能正在签到（按${controller.lessonPlan?.used?.label ?? '课表'}）'),
             for (final activity in controller.lessonActivities)
               ChaoxingActivityCard(
                 key: ValueKey('lesson-${activity.activeId}'),
@@ -510,12 +515,13 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
           // 下拉时只有顶部指示，已有的列表与「没有活动」照常显示；列表还没读到过（刚打开、切了账号、改了单位或客户端、上次没读成）
           // 且不是下拉时，才在这里显示加载；读取失败时上面有原因与「重试」，这里不写「没有活动」。签完后的刷新静默进行。
           const ChaoxingSectionTitle('进行中的签到'),
-          // 课表推断里已经列出的不在这里重复。
+          // 课表推断里已经列出的不在这里重复；本账号在本应用里签过的标「已签到」，照样能点进去给别的账号签。
           if (ongoing.isNotEmpty)
             for (final activity in ongoing)
               ChaoxingActivityCard(
                 key: ValueKey(activity.activeId),
                 activity: activity,
+                signed: controller.signedHere(activity),
                 onSign: () => launcher.open(context, activity),
               )
           else if (controller.activitiesLoaded)

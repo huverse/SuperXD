@@ -15,6 +15,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/campus_reminders.dart';
+import 'package:superxd/application/campus_timetable.dart';
 import 'package:superxd/application/campus_widgets.dart';
 import 'package:superxd/device/app_installer_channel.dart';
 import 'package:superxd/device/app_package_files.dart';
@@ -235,6 +236,8 @@ class _SuperXdAppState extends State<SuperXdApp> {
     // 工具与各自的服务都登记在注册表里；代签凭据包与私信共用同一个自建中转，地址同样只从构建参数来。
     catalog: toolboxCatalog,
     relayUrl: relayBaseUrl.isEmpty ? null : Uri.tryParse(relayBaseUrl),
+    // 学习通签到按课表推断正在上的课：默认用当前教务账号本机的课表（只读本地、不联网），百宝箱不依赖教务相关的层。
+    campusTimetable: () => campusTimetableToday(widget.session.gateway, signedIn: widget.session.loggedIn),
   );
   @override
   void dispose() {
