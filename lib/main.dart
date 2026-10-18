@@ -26,7 +26,9 @@ import 'package:superxd/domain/course_widget.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/app_update_memory.dart';
+import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/page/app_update_dialog.dart';
+import 'package:superxd/page/legal_page.dart';
 import 'package:superxd/local/credential_store.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/display_settings.dart';
@@ -85,7 +87,8 @@ void main() async {
     polling: true,
   );
   final updates = await appUpdates(support);
-  runApp(SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates));
+  final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
+  runApp(SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal));
   unawaited(initializeCampusGlass());
   // 私信是设备级的，与教务会话无关；初始化失败只影响私信（状态 failed），不影响应用。
   unawaited(social.initialize());
@@ -94,6 +97,7 @@ void main() async {
   } catch (error, stack) {
     campusLog('[AppSession] action=restore errorType=${error.runtimeType}\n$stack');
   }
+  unawaited(checkLegalNotice(legal));
   watchLocalSchedule(session, reminders: reminders, widgets: widgets);
   watchWidgetTheme(display, widgetPort);
   if (updates != null) watchAppUpdates(updates);
@@ -137,6 +141,18 @@ void watchAppUpdates(AppUpdates updates) {
   unawaited(updates.prune());
   AppLifecycleListener(onResume: () => unawaited(updates.resume()));
   unawaited(Future<void>.delayed(appUpdateAutoCheckDelay, updates.autoCheck));
+}
+
+// 协议与政策的更新提示：会话恢复之后再核对；新装与升级按系统记的首次安装、最近更新时刻区分。
+// 恢复会换账号代次、下一帧整个账号应用重建，所以先等这一帧过去：安装信息已缓存、立即返回，不等就弹在要被拆掉的旧应用上、跟着消失。
+Future<void> checkLegalNotice(LegalNoticeMemory legal) async {
+  try {
+    final package = await PackageInfo.fromPlatform();
+    await WidgetsBinding.instance.endOfFrame;
+    await legal.check(legalRevision, freshInstall: package.installTime == package.updateTime);
+  } catch (error, stack) {
+    campusLog('[Legal] action=check errorType=${error.runtimeType}\n$stack');
+  }
 }
 
 // 课前提醒与桌面小组件的对账时机：启动恢复会话后、回到前台、切换账号或退出登录、本机课表相关写入后；1秒防抖合并连续写入。
@@ -196,12 +212,14 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates, this.legal});
   final CampusReminders? reminders;
   // 设备级私信服务，切换账号不重建；为空时私信入口显示未配置。
   final SocialService? social;
   // 应用内更新（设备级）；为空时关于页不显示检查更新、也不弹更新。
   final AppUpdates? updates;
+  // 协议与政策看过哪一版（设备级）；为空时不做更新提示。
+  final LegalNoticeMemory? legal;
   final ToolboxRuntime? toolbox;
   final AppSession session;
   final DisplaySettings? display;
@@ -253,16 +271,17 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal),
     );
   }
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates});
+  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal});
   final CampusReminders? reminders;
   final SocialService? social;
   final AppUpdates? updates;
+  final LegalNoticeMemory? legal;
   final ToolboxRuntime toolbox;
   final AppSession session;
   final DisplaySettings? display;
@@ -276,19 +295,48 @@ class _AccountAppState extends State<_AccountApp> {
   late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates);
   late final _display = widget.display ?? DisplaySettings.memory();
 
+  // 协议与政策的更新提示开着时，更新弹窗先等它关掉再弹，不叠两层。
+  bool _legalOpen = false;
+
   @override
   void initState() {
     super.initState();
     widget.updates?.addListener(_promptUpdate);
+    widget.legal?.addListener(_onLegal);
     // 换了账号代次时，上一个账号应用没来得及弹的提示由这里接着弹。
-    WidgetsBinding.instance.addPostFrameCallback((_) => _promptUpdate());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _onLegal();
+      _promptUpdate();
+    });
+  }
+
+  void _onLegal() => unawaited(_promptLegal());
+
+  // 协议与政策有实质变化后提示一次：同更新弹窗挂在根导航器上；点「知道了」才记下，关掉后接着弹被搁下的更新。
+  Future<void> _promptLegal() async {
+    final legal = widget.legal;
+    final context = _router.routerDelegate.navigatorKey.currentContext;
+    if (legal == null || context == null || !mounted) return;
+    final revision = legal.takePending();
+    if (revision == null) return;
+    _legalOpen = true;
+    final seen = await showLegalUpdateNotice(context);
+    _legalOpen = false;
+    if (seen) {
+      try {
+        await legal.markSeen(revision);
+      } catch (error, stack) {
+        campusLog('[Legal] action=mark_seen errorType=${error.runtimeType}\n$stack');
+      }
+    }
+    _promptUpdate();
   }
 
   // 自动检查查到新版时弹更新弹窗：挂在根导航器上，登录页与已登录页面都能弹；一个提示只弹一次。
   void _promptUpdate() {
     final updates = widget.updates;
     final context = _router.routerDelegate.navigatorKey.currentContext;
-    if (updates == null || context == null || !mounted) return;
+    if (updates == null || context == null || !mounted || _legalOpen) return;
     if (updates.takePrompt() == null) return;
     unawaited(showAppUpdateDialog(context, updates));
   }
@@ -296,6 +344,7 @@ class _AccountAppState extends State<_AccountApp> {
   @override
   void dispose() {
     widget.updates?.removeListener(_promptUpdate);
+    widget.legal?.removeListener(_onLegal);
     _router.dispose();
     if (widget.display == null) _display.dispose();
     super.dispose();

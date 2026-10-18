@@ -6,7 +6,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/appearance_page.dart';
 import 'package:superxd/theme/campus_icons.dart';
 
-// 通用扫码页：相机取景（识别在本机完成，ML Kit 内置模型、不联网），也可从相册选一张截图识别。
+// 通用扫码页：相机取景（识别在本机完成，ML Kit 内置模型，画面不上传；ML Kit 另会向 Google 发匿名用量统计，见隐私政策附录一），也可从相册选一张截图识别。
 // 只把内容交给调用方的 accept 判断，认下的原样返回，不跳转、不打开链接；不认的原地提示后继续扫。
 // 好友二维码与课堂签到二维码共用这一页，accept 由调用方给（见 friend_add_page.dart 与 main.dart）。
 // 连续模式（onCode 非空）：认下的码交给 onCode 后接着扫，until 完成时自动关；status 是取景页上的进度文字。
