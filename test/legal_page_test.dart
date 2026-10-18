@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -122,17 +123,27 @@ void main() {
     router.dispose();
   });
 
-  test('协议更新提示的已读记录：写进文件、重开还在，坏文件当没看过', () async {
+  test('协议的同意与已读记录：写进文件、重开还在，alpha.4 只记了已读的仍要同意，坏文件当没同意过', () async {
     final directory = await Directory.systemTemp.createTemp('legal_notice');
     addTearDown(() => directory.delete(recursive: true));
     final file = File('${directory.path}/legal_notice.json');
     final memory = await LegalNoticeMemory.open(file);
-    expect(memory.seenRevision, isNull);
-    await memory.markSeen(legalRevision);
-    expect((await LegalNoticeMemory.open(file)).seenRevision, legalRevision);
+    expect(memory.agreedRevision, isNull);
+    var agreed = false;
+    unawaited(memory.agreed.then((_) => agreed = true));
+    await memory.markAgreed(legalRevision);
+    await Future<void>.delayed(Duration.zero);
+    expect(agreed, isTrue);
+    final reopened = await LegalNoticeMemory.open(file);
+    expect((reopened.agreedRevision, reopened.seenRevision), (legalRevision, legalRevision));
     expect(File('${file.path}.tmp').existsSync(), isFalse);
+    await file.writeAsString('{"seenRevision":$legalRevision}');
+    final older = await LegalNoticeMemory.open(file);
+    expect((older.agreedRevision, older.seenRevision), (null, legalRevision));
+    older.check(legalRevision);
+    expect(older.takePending(), (revision: legalRevision, consent: true));
     await file.writeAsString('{坏');
-    expect((await LegalNoticeMemory.open(file)).seenRevision, isNull);
+    expect((await LegalNoticeMemory.open(file)).agreedRevision, isNull);
   });
 
   test('Alpha版本、并装、默认开发与非debug发布配置一致', () {

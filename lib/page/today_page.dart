@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -16,6 +17,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_motion.dart';
+import 'package:superxd/theme/campus_rolling_text.dart';
 import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_clock.dart';
@@ -604,11 +606,14 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
 // 今天页顶部的“此刻”卡（同 iOS 实时活动、Google 日历的“下一项”）：首行状态与节次，下面课名、教室（同课程卡的教室行）与教师，
 // 大号剩余时长（小时分钟）加起止时刻进度条；课间画上一节下课到下一节上课的进度，第一节课前只显示时长。
 // [人工决策-2026-10-06 13:06:11] 今天的课上完或今天没课时，此刻卡下方预告下一节（日子、开始时刻、课名、地点），用户选定。
-// [人工决策-2026-10-18 16:37:59] 课上完与没课也用同一骨架：状态一行，下面左边大号课名、教室，右边大号开始时刻与哪天；没课只在这张卡里说一次，
-// 以后没课的日子也预告下一节（用户从同款此刻卡、下一节小卡、最小改动三种实物中选定同款此刻卡）。
+// [人工决策-2026-10-18 21:03:19] 课上完与没课改为「状态为主」（取代 16:37:59 的同一骨架）：大字写“今天没课”“今天的课上完了”，下面一行“下一节 · 哪天 时刻”、
+// 一行课名与教室，不放右侧大号时刻。用户反馈同一骨架像课程卡、容易误以为今天还有课，从状态为主、日期牌、分隔预告三种实物中选定状态为主
+// （同 Pixel“一览”、负一屏课程卡：先说今天，下一节只是预告）。没课只在这张卡里说一次、以后没课的日子也预告，这两条不变。
 // [人工决策-2026-10-18 16:37:59] 灵动化（用户选定）：到点换状态时卡片高度平滑过渡、内容先淡出再淡入（同灵动岛的形变），切日仍只由页面交接；
 // 开课前 15 分钟内倒计时数字转激活色（同 Pixel“一览”临近才强调）；点卡片看这节课的详情，预告的是别的日子的课时点了跳到那天；
 // 下一节是明天第 1 节时写“明天早八”。
+// [人工决策-2026-10-18 21:03:19] 再加三项灵动（用户选定）：倒计时换数字时滚动（同 iOS 实时活动的数字过渡）；开课前 5 分钟内倒计时精确到秒；
+// 上课中进度条末端的此刻点定时向外漾开一圈（同苹果地图的定位点），两次之间停一会儿、页面看不见或减少动画时不动。
 class _ClassNow extends StatelessWidget {
   const _ClassNow({required this.spans, required this.bells, required this.date, required this.today, required this.onOpen, required this.onJump, this.now, this.next});
   final List<PeriodSpan> spans;
@@ -622,6 +627,8 @@ class _ClassNow extends StatelessWidget {
 
   // 开课前这么多分钟内强调倒计时。
   static const _soonMinutes = 15;
+  // 开课前这么多秒内倒计时精确到秒。
+  static const _secondsWindow = 300;
 
   @override
   Widget build(BuildContext context) {
@@ -680,13 +687,14 @@ class _ClassNow extends StatelessWidget {
     if (occupied.any((span) => meetingTime(bells, span.meeting!) == null)) {
       return (key: 'bells', content: const Text('今日课程'), spoken: '今日课程', onTap: null);
     }
-    final moment = classMoment(spans, bells, date, now?.call() ?? LiveClock.maybeOf(context)?.value ?? DateTime.now());
+    final instant = now?.call() ?? LiveClock.maybeOf(context)?.value ?? DateTime.now();
+    final moment = classMoment(spans, bells, date, instant);
     final focus = moment.focus;
     if (focus == null) return _rest(context, '今天的课上完了', CampusIcons.success);
-    return _live(context, moment, focus);
+    return _live(context, moment, focus, instant);
   }
 
-  ({String key, Widget content, String spoken, VoidCallback? onTap}) _live(BuildContext context, ClassMoment moment, PeriodSpan focus) {
+  ({String key, Widget content, String spoken, VoidCallback? onTap}) _live(BuildContext context, ClassMoment moment, PeriodSpan focus, DateTime instant) {
     final palette = CampusPalette.of(context);
     final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
     final course = focus.course!;
@@ -696,7 +704,9 @@ class _ClassNow extends StatelessWidget {
     final suffix = moment.ongoing ? '后下课' : '后上课';
     final soon = !moment.ongoing && moment.remainingMinutes <= _soonMinutes;
     final fraction = moment.fraction;
+    final left = moment.target - moment.seconds;
     const figures = [FontFeature.tabularFigures()];
+    const figure = TextStyle(fontSize: 28, fontWeight: FontWeight.w600, height: 1.15, fontFeatures: figures);
     // 同 iOS 实时活动：课的信息在左，剩余时长在右上（数字大、单位小），起止时刻标在进度条两端。
     final content = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -717,12 +727,13 @@ class _ClassNow extends StatelessWidget {
           AnimatedDefaultTextStyle(
             style: DefaultTextStyle.of(context).style.merge(TextStyle(color: soon ? palette.accentText : palette.onSurface)),
             duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : campusEnter,
-            child: Text.rich(key: const ValueKey('class-now-remaining'), TextSpan(children: [
-              for (final (text, number) in classDurationParts(moment.remainingMinutes))
-                TextSpan(text: text, style: number
-                    ? const TextStyle(fontSize: 28, fontWeight: FontWeight.w600, height: 1.15, fontFeatures: figures)
-                    : TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.onSurface)),
-            ])),
+            // 开课前 5 分钟内按秒倒数（真实时钟下自己每秒走，到点由分钟时钟换成上课中）；其余按分钟，换数字时滚动。
+            child: !moment.ongoing && left <= _secondsWindow
+                ? _SecondsCountdown(key: const ValueKey('class-now-remaining'), deadline: instant.add(Duration(seconds: left)), left: left, live: now == null && LiveClock.liveOf(context), style: figure)
+                : Row(key: const ValueKey('class-now-remaining'), mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+                    for (final (text, number) in classDurationParts(moment.remainingMinutes))
+                      number ? CampusRollingText(text, style: figure, countsDown: true) : Text(text, style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: palette.onSurface)),
+                  ]),
           ),
           Text(suffix, style: secondary),
         ]),
@@ -732,7 +743,7 @@ class _ClassNow extends StatelessWidget {
         DefaultTextStyle.merge(style: secondary.copyWith(fontFeatures: figures), child: Row(children: [
           Text(moment.fromLabel),
           const SizedBox(width: 10),
-          Expanded(child: _TimeTrack(fraction: fraction)),
+          Expanded(child: _TimeTrack(fraction: fraction, pulse: moment.ongoing)),
           const SizedBox(width: 10),
           Text(moment.targetLabel),
         ])),
@@ -746,89 +757,172 @@ class _ClassNow extends StatelessWidget {
     );
   }
 
-  // 课上完或没课：状态一句；有下一节就预告，课名最突出，其次教室，右边大号开始时刻、下面写哪天。
+  // 课上完或没课：大字写状态，这是今天的主要信息；有下一节就在下面预告：一行“下一节 · 哪天 时刻”，一行课名（预告里最突出）与教室。
+  // 不放右侧大号时刻：那样和下面的课程卡一个样子，像今天还有这节课。
   // 哪天按离今天多远写：明天、后天，一周内写星期，更远写月日；作息缺这节时写节次。
   ({String key, Widget content, String spoken, VoidCallback? onTap}) _rest(BuildContext context, String status, IconData icon) {
     final palette = CampusPalette.of(context);
     final secondary = TextStyle(fontSize: 14, height: 1.3, color: palette.onSurfaceVariant);
     // 图标对齐状态行的首行（大字号下状态会折行，居中会悬在几行中间）。
-    double iconTop(double size, double fontSize) => ((MediaQuery.textScalerOf(context).scale(fontSize) * 1.3 - size) / 2).clamp(0.0, double.infinity);
+    final iconTop = ((MediaQuery.textScalerOf(context).scale(20) * 1.3 - 22) / 2).clamp(0.0, double.infinity);
+    final headline = Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Padding(padding: EdgeInsets.only(top: iconTop), child: CampusIcon(icon, color: palette.primary, size: 22)),
+      const SizedBox(width: 10),
+      Expanded(child: Text(status, style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface))),
+    ]);
     final next = this.next;
-    if (next == null) {
-      return (
-        key: 'rest:$status',
-        content: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Padding(padding: EdgeInsets.only(top: iconTop(20, 16)), child: CampusIcon(icon, color: palette.primary, size: 20)),
-          const SizedBox(width: 10),
-          Expanded(child: Text(status, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.3))),
-        ]),
-        spoken: status,
-        onTap: null,
-      );
-    }
+    if (next == null) return (key: 'rest:$status', content: headline, spoken: status, onTap: null);
     final target = parseIsoDate(next.date);
     final offset = target.difference(parseIsoDate(today)).inDays;
     final day = switch (offset) { 1 => '明天', 2 => '后天', < 7 => '周${weekdayLabel(target.weekday)}', _ => '${target.month}月${target.day}日' };
     final early = offset == 1 && next.meeting.periodStart == 1;
-    final start = meetingTime(bells, next.meeting)?.startLabel;
-    final time = start ?? '第${next.meeting.periodStart}–${next.meeting.periodEnd}节';
+    final time = meetingTime(bells, next.meeting)?.startLabel ?? '第${next.meeting.periodStart}–${next.meeting.periodEnd}节';
+    final when = '${early ? '明天早八' : day} $time';
     final place = next.meeting.place;
-    final teacher = next.course.teacherName;
-    // 状态行占满整行，下面左边课名与教室、右边大号开始时刻与哪天：大字号下右侧时刻会把左列挤窄，状态放左列会折出孤字。
     final content = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Padding(padding: EdgeInsets.only(top: iconTop(16, 14)), child: CampusIcon(icon, color: palette.onSurfaceVariant, size: 16)),
-        const SizedBox(width: 6),
-        Expanded(child: DotSeparatedText('$status · 下一节', style: secondary)),
-      ]),
-      const SizedBox(height: 4),
-      Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(next.course.courseName, style: Theme.of(context).textTheme.titleLarge),
-          if (place.isNotEmpty || teacher.isNotEmpty) ...[
-            const SizedBox(height: 4),
-            Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.end, children: [
-              if (place.isNotEmpty) CoursePlace(place),
-              if (teacher.isNotEmpty) Text(teacher, style: secondary.copyWith(height: 1.5)),
-            ]),
-          ],
-        ])),
-        const SizedBox(width: 12),
-        Column(crossAxisAlignment: CrossAxisAlignment.end, children: [
-          Text(time, style: TextStyle(fontSize: start == null ? 18 : 28, fontWeight: FontWeight.w600, height: 1.15, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()])),
-          Text(early ? '明天早八' : day, style: secondary),
-        ]),
+      headline,
+      const SizedBox(height: 10),
+      DotSeparatedText('下一节 · $when', style: secondary.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
+      const SizedBox(height: 2),
+      Wrap(spacing: 10, crossAxisAlignment: WrapCrossAlignment.end, children: [
+        Text(next.course.courseName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface)),
+        if (place.isNotEmpty) CoursePlace(place, size: 14),
       ]),
     ]);
     return (
       key: 'rest:$status:${next.date}:${courseKey(next.course)}:${next.meeting.periodStart}',
       content: content,
-      spoken: [status, '下一节${early ? '明天早八' : day} $time', next.course.courseName, place, teacher].where((part) => part.isNotEmpty).join('，'),
+      spoken: [status, '下一节$when', next.course.courseName, place].where((part) => part.isNotEmpty).join('，'),
       onTap: () => onJump(next.date),
     );
   }
 }
 
+// 开课前最后几分钟的秒级倒计时（同 iOS 实时活动的计时器）：“4:59”，换数字时滚动。真实时钟下按截止时刻每秒自己刷新，
+// 只在页面可见时走；测试拨好的时钟不走，停在拨好那一刻的剩余秒数。
+class _SecondsCountdown extends StatefulWidget {
+  const _SecondsCountdown({super.key, required this.deadline, required this.left, required this.live, required this.style});
+  final DateTime deadline;
+  final int left;
+  final bool live;
+  final TextStyle style;
+
+  @override
+  State<_SecondsCountdown> createState() => _SecondsCountdownState();
+}
+
+class _SecondsCountdownState extends State<_SecondsCountdown> {
+  Timer? _tick;
+
+  int get _left {
+    if (!widget.live) return widget.left;
+    final millis = widget.deadline.difference(DateTime.now()).inMilliseconds;
+    return millis <= 0 ? 0 : (millis / 1000).ceil();
+  }
+
+  // 下一次换数字时再醒：剩余毫秒越过下一个整秒的那一刻。
+  void _schedule() {
+    _tick?.cancel();
+    _tick = null;
+    if (!widget.live || !TickerMode.valuesOf(context).enabled) return;
+    final millis = widget.deadline.difference(DateTime.now()).inMilliseconds;
+    if (millis <= 0) return;
+    _tick = Timer(Duration(milliseconds: millis % 1000 + 5), () {
+      if (!mounted) return;
+      setState(() {});
+      _schedule();
+    });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _schedule();
+  }
+
+  @override
+  void didUpdateWidget(_SecondsCountdown oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.deadline != widget.deadline || oldWidget.live != widget.live) _schedule();
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final left = _left;
+    return CampusRollingText('${left ~/ 60}:${(left % 60).toString().padLeft(2, '0')}', style: widget.style, countsDown: true);
+  }
+}
+
 // 起止时刻进度条：浅轨道上填激活色，末端一个小圆点标出此刻；随分钟时钟平滑推进，减少动画时直接到位。
-class _TimeTrack extends StatelessWidget {
-  const _TimeTrack({required this.fraction});
+// 上课中此刻点定时向外漾开一圈淡去（同苹果地图的定位点）：一圈 1.4 秒、每 2.4 秒一次，中间停着不出帧；
+// 装饰动效不能动时（减少动画、后台、分支或页面不在最前）不漾。只重画这条进度条。
+class _TimeTrack extends StatefulWidget {
+  const _TimeTrack({required this.fraction, required this.pulse});
   final double fraction;
+  final bool pulse;
+
+  @override
+  State<_TimeTrack> createState() => _TimeTrackState();
+}
+
+class _TimeTrackState extends State<_TimeTrack> with SingleTickerProviderStateMixin {
+  late final _ripple = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400));
+  Timer? _beat;
+
+  void _sync() {
+    final run = widget.pulse && CampusMotion.allowed(context);
+    if (run == (_beat != null)) return;
+    _beat?.cancel();
+    _beat = null;
+    if (!run) {
+      _ripple.value = 0;
+      return;
+    }
+    _ripple.forward(from: 0);
+    _beat = Timer.periodic(const Duration(milliseconds: 2400), (_) => _ripple.forward(from: 0));
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _sync();
+  }
+
+  @override
+  void didUpdateWidget(_TimeTrack oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    _sync();
+  }
+
+  @override
+  void dispose() {
+    _beat?.cancel();
+    _ripple.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
-    return SizedBox(height: 10, child: TweenAnimationBuilder<double>(
-      tween: Tween(end: fraction),
+    return RepaintBoundary(child: SizedBox(height: 10, child: TweenAnimationBuilder<double>(
+      tween: Tween(end: widget.fraction),
       duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 600),
       curve: Curves.easeOutCubic,
-      builder: (context, value, _) => CustomPaint(size: Size.infinite, painter: _TimeTrackPainter(value: value, track: palette.primary.withValues(alpha: .18), fill: palette.accent, knob: palette.surface)),
-    ));
+      builder: (context, value, _) => CustomPaint(size: Size.infinite, painter: _TimeTrackPainter(value: value, ripple: _ripple, track: palette.primary.withValues(alpha: .18), fill: palette.accent, knob: palette.surface)),
+    )));
   }
 }
 
 class _TimeTrackPainter extends CustomPainter {
-  _TimeTrackPainter({required this.value, required this.track, required this.fill, required this.knob});
+  _TimeTrackPainter({required this.value, required this.ripple, required this.track, required this.fill, required this.knob}) : super(repaint: ripple);
   final double value;
+  final Animation<double> ripple;
   final Color track;
   final Color fill;
   final Color knob;
@@ -842,12 +936,15 @@ class _TimeTrackPainter extends CustomPainter {
     final end = size.width * value;
     if (end > 0) canvas.drawRRect(RRect.fromLTRBR(0, top, math.max(end, bar), top + bar, const Radius.circular(bar / 2)), paint..color = fill);
     final center = Offset(end.clamp(size.height / 2, size.width - size.height / 2), size.height / 2);
+    // 漾开的一圈：半径从此刻点向外扩到约 2.6 倍，同时淡到透明。
+    final spread = Curves.easeOutCubic.transform(ripple.value);
+    if (spread > 0 && spread < 1) canvas.drawCircle(center, size.height / 2 * (1 + 1.6 * spread), paint..color = fill.withValues(alpha: fill.a * .4 * (1 - spread)));
     canvas.drawCircle(center, size.height / 2, paint..color = fill);
     canvas.drawCircle(center, size.height / 2 - 2.5, paint..color = knob);
   }
 
   @override
-  bool shouldRepaint(_TimeTrackPainter oldDelegate) => oldDelegate.value != value || oldDelegate.track != track || oldDelegate.fill != fill || oldDelegate.knob != knob;
+  bool shouldRepaint(_TimeTrackPainter oldDelegate) => oldDelegate.value != value || oldDelegate.ripple != ripple || oldDelegate.track != track || oldDelegate.fill != fill || oldDelegate.knob != knob;
 }
 
 // 回今天胶囊：导航层玻璃胶囊（箭头加“今天”），隐藏时不可点、不进读屏；显隐用玻璃显形加 12dp 上浮，减少动画时直接切换。

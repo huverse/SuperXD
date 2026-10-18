@@ -26,10 +26,71 @@ Widget campusPageTransition(
   BuildContext context,
   Animation<double> animation,
   Animation<double> secondaryAnimation,
-  Widget child,
-) {
+  Widget child, {
+  bool coversPopup = false,
+}) {
   if (MediaQuery.disableAnimationsOf(context)) return child;
-  return _CampusPageSlide(animation: animation, secondaryAnimation: secondaryAnimation, child: child);
+  return _CampusPageSlide(animation: animation, secondaryAnimation: secondaryAnimation, child: coversPopup ? _CoverBackdrop(animation: animation, child: child) : child);
+}
+
+// 页面推在弹窗、弹层之上（如协议更新提示里点开政策）：页面透明，下面的弹窗不跟着退场，进出转场时会透过新页露出来、叠成两层，
+// 停稳后才被路由摘掉。这时转场期间给页面垫一份同相位的背景副本，像原生打开新页面那样整页盖住弹窗；停稳即撤，背景仍只画一份。
+mixin _CampusCoverRoute<T> on PageRoute<T> {
+  bool _coversPopup = false;
+
+  @override
+  void didChangePrevious(Route<dynamic>? previousRoute) {
+    _coversPopup = previousRoute is PopupRoute;
+    super.didChangePrevious(previousRoute);
+  }
+}
+
+class _CoverBackdrop extends StatefulWidget {
+  const _CoverBackdrop({required this.animation, required this.child});
+  final Animation<double> animation;
+  final Widget child;
+
+  @override
+  State<_CoverBackdrop> createState() => _CoverBackdropState();
+}
+
+class _CoverBackdropState extends State<_CoverBackdrop> {
+  late bool _settled = widget.animation.isCompleted;
+
+  void _status(AnimationStatus status) {
+    if (status.isCompleted != _settled) setState(() => _settled = status.isCompleted);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    widget.animation.addStatusListener(_status);
+  }
+
+  @override
+  void didUpdateWidget(_CoverBackdrop oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation == widget.animation) return;
+    oldWidget.animation.removeStatusListener(_status);
+    widget.animation.addStatusListener(_status);
+    _settled = widget.animation.isCompleted;
+  }
+
+  @override
+  void dispose() {
+    widget.animation.removeStatusListener(_status);
+    super.dispose();
+  }
+
+  // 副本与页面同在平移里；子树位置不变，换显隐时页面不重建。
+  @override
+  Widget build(BuildContext context) {
+    final backdrop = CampusBackdrop.maybeOf(context);
+    return Stack(fit: StackFit.expand, children: [
+      if (backdrop != null && !_settled) backdrop(context) else const SizedBox.shrink(),
+      widget.child,
+    ]);
+  }
 }
 
 // 页面透明、共用一份背景，新旧页整屏并排平移、互不重叠；不淡入淡出：玻璃在 Opacity 下取不到背景，
@@ -175,7 +236,7 @@ MaterialPage<void> campusPage({required LocalKey key, required Widget child}) =>
 
 // 全应用页面路由一律用它（GoRouter 页面经 campusPage），不直接用 MaterialPageRoute：契约与转场同 Material，
 // 只是转场计时从新页首帧画完后开始，首帧再慢也能完整滑入，不会硬切（见 CampusFirstFrameVsync）。
-class CampusPageRoute<T> extends MaterialPageRoute<T> {
+class CampusPageRoute<T> extends MaterialPageRoute<T> with _CampusCoverRoute<T> {
   CampusPageRoute({required super.builder, super.settings});
   @override
   AnimationController createAnimationController() => _firstFrameController(this);
@@ -194,7 +255,7 @@ class _CampusPage<T> extends MaterialPage<T> {
   Route<T> createRoute(BuildContext context) => _CampusPageBasedRoute<T>(page: this);
 }
 
-class _CampusPageBasedRoute<T> extends PageRoute<T> with MaterialRouteTransitionMixin<T> {
+class _CampusPageBasedRoute<T> extends PageRoute<T> with MaterialRouteTransitionMixin<T>, _CampusCoverRoute<T> {
   _CampusPageBasedRoute({required MaterialPage<T> page}) : super(settings: page);
   MaterialPage<T> get _page => settings as MaterialPage<T>;
   @override
@@ -222,7 +283,7 @@ class CampusPageTransitions extends PageTransitionsBuilder {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     Widget child,
-  ) => _CampusBackGesture(route: route, child: campusPageTransition(context, animation, secondaryAnimation, child));
+  ) => _CampusBackGesture(route: route, child: campusPageTransition(context, animation, secondaryAnimation, child, coversPopup: route is _CampusCoverRoute<T> && route._coversPopup));
 }
 
 class CampusEntryFade extends StatefulWidget {

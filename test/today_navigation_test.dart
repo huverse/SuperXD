@@ -11,6 +11,7 @@ import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/live_clock.dart';
 import 'package:superxd/page/today_page.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_rolling_text.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
@@ -529,14 +530,14 @@ void main() {
 
   testWidgets('空日只在顶部卡片说一次没课：今天与以后的日子预告下一节，过去的日子不预告、不伪造实时摘要', (tester) async {
     await _mount(tester, _Gateway()..emptyWeekdays = {4,5,6});
-    // 今天没课时预告下一节（课名最突出），跳过同样没课的周六；中间不再另写一遍没课。
-    expect(_spoken('今天没课，下一节后天 8:00，星期7的课，教室，老师'), findsOneWidget);
+    // 今天没课时大字写状态、下面预告下一节，跳过同样没课的周六；中间不再另写一遍没课。
+    expect(_spoken('今天没课，下一节后天 8:00，星期7的课，教室'), findsOneWidget);
     expect(find.text('星期7的课'), findsOneWidget);
     expect(find.textContaining('这天没课'), findsNothing);
     expect(find.textContaining('放假'), findsNothing);
     await _swipeDate(tester, '2026-09-25', 100);
     // 以后没课的日子也预告，哪天按离今天多远写。
-    expect(_spoken('这天没课，下一节后天 8:00，星期7的课，教室，老师'), findsOneWidget);
+    expect(_spoken('这天没课，下一节后天 8:00，星期7的课，教室'), findsOneWidget);
     expect(find.textContaining('今天没课'), findsNothing);
     await tester.tap(find.byKey(const ValueKey('today-reset')));await tester.pumpAndSettle();
     await _swipeDate(tester, '2026-09-25', -100);
@@ -569,11 +570,12 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     now = DateTime.utc(2026, 9, 25, 2);
     await _mount(tester, _Gateway(), now: () => now);
-    // 课上完后预告下一节：与上课中同一骨架，课名大号，右边大号开始时刻；明天第 1 节写“明天早八”。
-    expect(_spoken('今天的课上完了，下一节明天早八 8:00，星期6的课，教室，老师'), findsOneWidget);
-    expect(find.text('今天的课上完了 · '), findsOneWidget);
-    expect(tester.widget<Text>(find.text('星期6的课')).style!.fontSize, Theme.of(tester.element(find.byType(TodayPage))).textTheme.titleLarge!.fontSize);
-    expect(find.text('明天早八'), findsOneWidget);
+    // 课上完后大字写状态，下面一行“下一节 · 哪天 时刻”、一行课名与教室，不放右侧大号时刻（不像课程卡）；明天第 1 节写“明天早八”。
+    expect(_spoken('今天的课上完了，下一节明天早八 8:00，星期6的课，教室'), findsOneWidget);
+    expect(tester.widget<Text>(find.text('今天的课上完了')).style!.fontSize, 20);
+    expect(find.text('明天早八 8:00'), findsOneWidget);
+    expect(tester.widget<Text>(find.text('星期6的课')).style!.fontSize, 16);
+    expect(find.descendant(of: find.ancestor(of: find.text('今天的课上完了'), matching: find.byType(CampusSurface)).first, matching: find.text('老师')), findsNothing);
     // 单击课程卡弹只读详情：当天时段与这门课的全部上课时段，不出编辑入口。
     await tester.tap(find.text('星期5的课'));
     await tester.pumpAndSettle();
@@ -598,7 +600,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     now = DateTime.utc(2026, 9, 25, 2);
     await _mount(tester, _Gateway(), now: () => now);
-    await tester.tap(find.text('明天早八'));
+    await tester.tap(find.text('明天早八 8:00'));
     await tester.pumpAndSettle();
     expect(_date('2026-09-26'), findsOneWidget);
     expect(find.text('上课时段'), findsNothing);
@@ -617,6 +619,32 @@ void main() {
     await _mount(tester, _Gateway(), now: () => now);
     expect(_spoken('下一节，第1–2节，星期5的课，教室，老师，15分钟后上课'), findsOneWidget);
     expect(color(), palette.accentText);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('开课前 5 分钟内按秒倒数，更早按分钟（拨好的时钟不自己走）；上课中此刻点定时漾开，减少动画时不动', (tester) async {
+    String remaining() => tester.widget<CampusRollingText>(find.descendant(of: find.byKey(const ValueKey('class-now-remaining')), matching: find.byType(CampusRollingText)).first).text;
+    // 校园时间 7:56:30，8:00 开课：还剩 3 分 30 秒。
+    await _mount(tester, _Gateway(), now: () => DateTime.utc(2026, 9, 24, 23, 56, 30));
+    expect(remaining(), '3:30');
+    await tester.pump(const Duration(seconds: 5));
+    expect(remaining(), '3:30');
+    expect(_spoken('下一节，第1–2节，星期5的课，教室，老师，4分钟后上课'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    await _mount(tester, _Gateway(), now: () => DateTime.utc(2026, 9, 24, 23, 54, 30));
+    expect(remaining(), '6');
+    for (final reduced in [false, true]) {
+      await tester.pumpWidget(const SizedBox());
+      await _mount(tester, _Gateway(), now: () => DateTime.utc(2026, 9, 25, 0, 20), reduced: reduced);
+      // 停稳后只有此刻点的漾开还会定时出帧（每 2.4 秒一圈，中间停着，不拖住 pumpAndSettle）。
+      var rippled = false;
+      for (var step = 0; step < 30; step++) {
+        await tester.pump(const Duration(milliseconds: 100));
+        if (tester.binding.transientCallbackCount > 0) rippled = true;
+      }
+      expect(rippled, !reduced, reason: reduced ? '减少动画时此刻点不漾' : '上课中此刻点定时漾开');
+      await tester.pumpAndSettle();
+    }
     expect(tester.takeException(), isNull);
   });
 
@@ -639,17 +667,17 @@ void main() {
       await tester.pump();
       if (reduced) {
         expect(find.text('上课中 · '), findsNothing);
-        expect(find.text('今天的课上完了 · '), findsOneWidget);
+        expect(find.text('今天的课上完了'), findsOneWidget);
         continue;
       }
       await tester.pump(const Duration(milliseconds: 90));
       double opacity(String text) => tester.widget<FadeTransition>(find.ancestor(of: find.text(text), matching: find.byType(FadeTransition)).first).opacity.value;
       // 前半段只有旧内容在淡出，新内容还没出现，两段文字不同时可见。
       expect(opacity('上课中 · '), inExclusiveRange(0, 1));
-      expect(opacity('今天的课上完了 · '), 0);
+      expect(opacity('今天的课上完了'), 0);
       final middle = height();
       await tester.pump(const Duration(milliseconds: 180));
-      expect(opacity('今天的课上完了 · '), greaterThan(0));
+      expect(opacity('今天的课上完了'), greaterThan(0));
       await tester.pumpAndSettle();
       expect(find.text('上课中 · '), findsNothing);
       final after = height();

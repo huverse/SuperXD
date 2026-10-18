@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:superxd/theme/scroll_edge_fade.dart';
@@ -32,7 +33,7 @@ const legalChanges = '隐私政策改为先摘要、再按功能说明，补上�
 const _termsSections = [
   (
     title: '协议说明',
-    body: '本协议是你与 SuperXD 开发者 Galaxyous（个人开发者，下称“开发者”）之间关于使用 SuperXD 的约定。安装或使用本应用，即表示你已阅读并同意本协议和《隐私政策》；不同意请停止使用。',
+    body: '本协议是你与 SuperXD 开发者 Galaxyous（个人开发者，下称“开发者”）之间关于使用 SuperXD 的约定。首次打开时点「同意」，即表示你已阅读并同意本协议和《隐私政策》；不同意将无法使用本应用。',
   ),
   (
     title: '一、SuperXD 是什么',
@@ -134,7 +135,7 @@ const _privacySections = [
   ),
   (
     title: '五、检查更新与安装',
-    body: '应用启动后每天最多自动检查一次新版本，你也可以在“我的 › 关于”里手动检查。检查时只向开发者的自建中转服务器发送应用的构建渠道（如 Alpha）与处理器架构，不附带账号、设备号或其他个人信息；服务器能看到你的 IP 地址，只按 IP 计数限流（一小时后失效）。\n'
+    body: '你同意本政策后，应用启动时每天最多自动检查一次新版本，你也可以在“我的 › 关于”里手动检查。检查时只向开发者的自建中转服务器发送应用的构建渠道（如 Alpha）与处理器架构，不附带账号、设备号或其他个人信息；服务器能看到你的 IP 地址，只按 IP 计数限流（一小时后失效）。\n'
         '你点“更新”后才下载新版本安装包（约 100MB，建议在 Wi-Fi 下更新），下载时通知栏显示进度。安装包放在应用缓存里，核对完整性与签名后交给系统安装，由你在系统界面确认；装好后下次打开应用时删除。第一次更新时需要你在系统设置里允许 SuperXD“安装未知应用”。\n'
         '本机只记上次检查的时间、你跳过的版本和是否有必须安装的更新。',
   ),
@@ -209,12 +210,77 @@ const _privacySections = [
   ),
 ];
 
-// 协议与政策有实质变化后的更新提示：挂在根导航器上，可点开两份全文；只有点「知道了」才算看过，返回键关掉的下次打开再提示。
+// 弹窗正文下的两份全文链接（推在根导航器上，返回回到弹窗）。
+Widget _legalLinks(BuildContext context) => Wrap(
+  spacing: 8,
+  children: [
+    TextButton(style: campusLink, onPressed: () => context.push('/legal/service'), child: const Text('用户协议', style: TextStyle(fontSize: 14))),
+    TextButton(style: campusLink, onPressed: () => context.push('/legal/privacy'), child: const Text('隐私政策', style: TextStyle(fontSize: 14))),
+  ],
+);
+
+// [人工决策-2026-10-18 21:08:22] 首次启动弹窗（用户选定）：不同意先二次确认再退出应用、下次打开再问（同微信、支付宝）；登录页的勾选同意保留（登录另算一次处理账号信息，同淘宝、微信）。
+// 首次打开（含升级来、没在这里同意过的）先征得同意，同意之前组合根不联网：要点加两份全文链接，「不同意」「同意」等宽并排。
+// 不同意（含返回键）先再确认一次（同微信、支付宝）：「再看看」回到这里，「退出应用」才退出，下次打开再问。只有点「同意」才返回 true。
+Future<bool> askLegalConsent(BuildContext context) async {
+  while (true) {
+    final agreed = await showCampusDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => CampusGlassDialog(
+        title: const Text('用户协议与隐私政策'),
+        content: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                '使用前请阅读《用户协议》和《隐私政策》，要点：\n'
+                '1. 课表、成绩等数据主要存在本机，教务账号只在本机与学校教务系统之间使用。\n'
+                '2. 私信、代签凭据包与检查更新经开发者的自建中转，私信与凭据包在本机加密。\n'
+                '3. 百宝箱的第三方服务，在你使用并同意后才会收到必要信息。\n'
+                '点「同意」即表示你已阅读并同意这两份文件。',
+              ),
+              const SizedBox(height: 8),
+              _legalLinks(context),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('不同意')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('同意')),
+        ],
+      ),
+    );
+    if (agreed == true) return true;
+    if (!context.mounted) return false;
+    final quit = await showCampusDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => CampusGlassDialog(
+        title: const Text('需要你的同意'),
+        content: const SingleChildScrollView(child: Text('不同意将无法使用 SuperXD，下次打开会再询问。')),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('退出应用')),
+          FilledButton(onPressed: () => Navigator.pop(context, false), child: const Text('再看看')),
+        ],
+      ),
+    );
+    if (quit == true) {
+      await SystemNavigator.pop();
+      return false;
+    }
+    if (!context.mounted) return false;
+  }
+}
+
+// 协议与政策有实质变化后的更新提示（只给同意过的人）：挂在根导航器上，可点开两份全文；只有点「知道了」才算看过，返回键关掉的下次打开再提示。
+// 标题写短：「用户协议与隐私政策已更新」在约 331dp 宽的弹窗里会折出单独一个「新」字。
 Future<bool> showLegalUpdateNotice(BuildContext context) async => await showCampusDialog<bool>(
   context: context,
   barrierDismissible: false,
   builder: (context) => CampusGlassDialog(
-    title: const Text('用户协议与隐私政策已更新'),
+    title: const Text('协议与政策已更新'),
     content: SingleChildScrollView(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -222,13 +288,7 @@ Future<bool> showLegalUpdateNotice(BuildContext context) async => await showCamp
         children: [
           const Text('$legalUpdated更新。$legalChanges'),
           const SizedBox(height: 8),
-          Wrap(
-            spacing: 8,
-            children: [
-              TextButton(style: campusLink, onPressed: () => context.push('/legal/service'), child: const Text('用户协议', style: TextStyle(fontSize: 14))),
-              TextButton(style: campusLink, onPressed: () => context.push('/legal/privacy'), child: const Text('隐私政策', style: TextStyle(fontSize: 14))),
-            ],
-          ),
+          _legalLinks(context),
         ],
       ),
     ),
