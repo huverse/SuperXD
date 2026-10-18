@@ -98,7 +98,7 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _logout() async {
-    final confirmed = await showCampusConfirm(context, title: '退出登录？', message: '清除本机登录态和此账号保存的自动登录凭据，当前课表和自定义修改保留，历史版本按每学期最多100版保留。', action: '退出', destructive: true);
+    final confirmed = await showCampusConfirm(context, title: '退出登录？', message: '清除本机登录态和此账号保存的自动登录凭据，当前课表和自定义修改保留。', action: '退出', destructive: true);
     if (!mounted || !confirmed) return;
     setState(() => _busy = true);
     try {

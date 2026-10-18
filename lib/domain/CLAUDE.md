@@ -16,7 +16,7 @@
   - formatCampusTimestamp：把 UTC 字符串转成校园时间用于展示。
   - clockMinutes：把 HH:mm 转成分钟数。
   - campusMoment：校园日期加当天分钟换算成 UTC 绝对时刻。formatCampusClock：绝对时刻在校园时区的钟点 HH:mm。
-- week.dart：ISO 日期与周次计算。第几周从开学日所在周的周一起算（weekIndex、weekRange）。termStartHint 是开学日的说明文案。
+- week.dart：ISO 日期与周次计算。第几周从开学日所在周的周一起算（weekIndex、weekRange）。
 - schedule_store.dart：课表核心模型与版本规则。
   - 模型：CourseRecord、CourseMeeting、TermRef、ScheduleRevision、ScheduleScope。
   - ScheduleStore 负责 edit、planSync、commitSync、restore，以及内存中的版本裁剪。

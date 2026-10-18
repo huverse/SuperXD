@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/grades_page.dart';
+import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -118,7 +119,8 @@ void main() {
     await tester.tap(name);
     await tester.pumpAndSettle();
     expect(find.text('原始成绩记录 · 2'), findsOneWidget);
-    expect(find.textContaining('不推断重修替代关系'), findsOneWidget);
+    // 多条原始记录全部列出，不再加一句口径说明。
+    expect(find.textContaining('不推断重修替代关系'), findsNothing);
     expect(tester.takeException(), isNull);
     await tester.tap(find.byTooltip('关闭详情'));
     await tester.pumpAndSettle();
@@ -133,7 +135,8 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('学年概览'));
     await tester.pumpAndSettle();
-    expect(find.text('各学期独立展示，不计算未经教务提供的全年绩点。'), findsOneWidget);
+    expect(find.byIcon(CampusIcons.next), findsWidgets);
+    expect(find.textContaining('全年绩点'), findsNothing);
     expect(gateway.yearReads, 1);
     await tester.tap(find.text('学期详情'));
     await tester.pumpAndSettle();
@@ -184,7 +187,8 @@ void main() {
     }
     await tester.pumpAndSettle();
     expect(opacity(), 1);
-    expect(find.text('各学期独立展示，不计算未经教务提供的全年绩点。'), findsOneWidget);
+    expect(find.byIcon(CampusIcons.next), findsWidgets);
+    expect(find.textContaining('全年绩点'), findsNothing);
     expect(find.text('第一学期'), findsNothing);
     expect(tester.takeException(), isNull);
   });

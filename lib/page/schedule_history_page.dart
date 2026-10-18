@@ -96,7 +96,7 @@ class _ScheduleHistoryPageState extends State<ScheduleHistoryPage> {
       child: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          // 恢复的影响（新建本地版本、不改开学日与作息、最多 100 版）在恢复确认里说明，列表上方不重复。
+          // 恢复的影响（新建本地版本、不改开学日与作息）在恢复确认里说明，列表上方不重复。
           if (_error != null) ...[
             Text(
               _error!,
@@ -207,7 +207,7 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
     if (!await showCampusConfirm(
       context,
       title: '恢复这个版本？',
-      message: '将应用下方预览的${_changes.length}项课程变化并新建本地版本，不改变开学日和作息。每学期最多保留100版。',
+      message: '将应用下方预览的${_changes.length}项课程变化并新建本地版本，不改变开学日和作息。',
       action: '确认恢复',
     )) {
       return;

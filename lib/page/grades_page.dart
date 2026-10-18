@@ -314,8 +314,6 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
               '原始成绩记录 · ${originals.length}',
               style: Theme.of(context).textTheme.titleMedium,
             ),
-            if (originals.length > 1)
-              const Text('同课程代码存在多条记录，以下全部保留；不推断重修替代关系。'),
             if (originals.isEmpty) const Text('教务未提供可按课程代码关联的原始记录。'),
             for (var index = 0; index < originals.length; index++)
               _panel(
@@ -341,10 +339,6 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
                   ],
                 ),
               ),
-            const Text(
-              '展示教务原始字段，不推算分项权重，不把未公布当作0分。',
-              style: TextStyle(fontSize: 14),
-            ),
           ],
         )),
       ),
@@ -456,7 +450,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
       Text(
-        scope == 'term' ? '教务汇总 · 本学期（不随列表筛选变化）' : '旧缓存教务汇总 · 范围未核实',
+        scope == 'term' ? '教务汇总 · 本学期' : '旧缓存教务汇总 · 范围未核实',
         style: Theme.of(context).textTheme.titleMedium,
       ),
       if (scope != 'term') const Text('需重新同步核对范围，不将以下数值当作本学期指标。'),
@@ -660,11 +654,11 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
                               child: const Text('登录教务后重试（本地成绩保留）'),
                             ),
                           if (!_loading && _terms.isEmpty)
-                            _panel(child: const Text('尚无学期，请点击同步后刷新学年并选择范围。')),
+                            _panel(child: const Text('还没有学期，点「同步」获取')),
                           if (_yearMode && (_hasVisibleData || !_loading)) ...[
                             const SizedBox(height: 12),
                             // [人工决策-2026-09-25 01:48:56] 学年只并列教务学期汇总，不平均绩点、不累加来源不明的学分。
-                            const Text('各学期独立展示，不计算未经教务提供的全年绩点。'),
+                            // [人工决策-2026-10-18 16:37:59] 去掉界面上复述这条口径的说明句，行为不变（用户选定删冗长文案）。
                             for (final overview in _overview)
                               _panel(
                                 child: InkWell(
@@ -729,9 +723,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
                             ),
                             if (!_view!.cached)
                               _panel(
-                                child: const Text(
-                                  '可点击同步获取所选学年的成绩，或切换学年查看已有记录。',
-                                ),
+                                child: const Text('点「同步」获取成绩'),
                               )
                             else ...[
                               _panel(
@@ -764,9 +756,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
                                 ),
                                 if (_visible.isEmpty)
                                   _panel(
-                                    child: const Text(
-                                      '没有符合当前条件的记录，请切换类型或清空筛选。',
-                                    ),
+                                    child: const Text('没有符合筛选条件的成绩'),
                                   ),
                               ],
                             ],

@@ -22,10 +22,14 @@ Future<String?> editTermStart(BuildContext context, CampusGateway gateway, TermR
   try {
     final result = await showCampusWaiting(context, label: '正在保存开学日', operation: () => gateway.setTermStart(term, value));
     if (!context.mounted) return null;
-    await showCampusNotice(context, title: result.ok ? '开学日已保存' : '保存失败', result.ok
-        ? '${term.label}\n开学日：$value\n第1周从 ${mondayOf(value)} 开始。\n\n$termStartHint'
-        : result.error?.message ?? '保存未完成，请重试');
-    return result.ok ? value : null;
+    // [人工决策-2026-10-18 16:37:59] 保存成功只出提示条、写第1周从哪天开始（成功反馈不打断，同主流做法），删掉周次算法的长说明；失败仍弹窗（用户选定）。
+    if (result.ok) {
+      final monday = parseIsoDate(mondayOf(value));
+      showCampusToast(context, '开学日已保存 · 第1周从 ${monday.month}月${monday.day}日 开始');
+      return value;
+    }
+    await showCampusNotice(context, title: '保存失败', result.error?.message ?? '保存未完成，请重试');
+    return null;
   } catch (error, stack) {
     campusLog('[TermStart] action=save errorType=${error.runtimeType}\n$stack');
     if (context.mounted) await showCampusNotice(context, '保存开学日失败，请重试');

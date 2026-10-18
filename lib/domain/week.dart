@@ -1,5 +1,3 @@
-const termStartHint = '请选择课程正式开始的第一天。第几周从你选的这一天所在周的周一开始算。如果选的是某一周的周三，这一周的周一也算同一周，不会提前一周，也不会推后一周。';
-
 DateTime parseIsoDate(String value) {
   final matched = RegExp(r'^(\d{4})-(\d{2})-(\d{2})$').firstMatch(value);
   if (matched == null) throw FormatException('日期须为 YYYY-MM-DD');

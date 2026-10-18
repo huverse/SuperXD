@@ -260,14 +260,13 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
 
   @override
   Widget build(BuildContext context) {
+    // 没课只说一次：今天页由顶部卡片说，课表页没有顶部卡片才在中间写。
     if (widget.spans.isEmpty) {
       return Column(children: [
       if (widget.header != null) widget.header!,
-      Expanded(child: Padding(padding: EdgeInsets.only(bottom: widget.obscuredBottom), child: const Center(child: Padding(padding: EdgeInsets.all(24), child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Text('这天没课', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
-        SizedBox(height: 12),
-        Text('是放假了还是?反正今天一定很爽啦!', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, height: 1.5)),
-      ]))))),
+      Expanded(child: widget.header != null ? const SizedBox.expand() : Padding(padding: EdgeInsets.only(bottom: widget.obscuredBottom), child: const Center(child: Padding(padding: EdgeInsets.all(24),
+        child: Text('这天没课', textAlign: TextAlign.center, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+      )))),
       ]);
     }
     return Column(children: [

@@ -20,10 +20,10 @@
   - share_target_sheet.dart：分享弹层 showShareSheet：多选好友后逐个发送，每行原地显示状态，失败的可重发；课表页、界面页、百宝箱结果页共用。
   - social_dialogs.dart：错误码文案 socialErrorText、列表时间 socialShortTime、单行输入弹窗 showSocialTextInput。
 - 今天：
-  - today_page.dart：今天页 TodayPage：读当前学期的课表与作息按日浏览；同步按钮走 chooseSyncSelection → CampusSync.run → showCampusSyncReport；含作息来源确认与缺开学日引导；同步中离开时结果暂存、回来再提示。顶部「此刻」卡（_ClassNow）显示上课中或下一节；看别的日子时底栏上方居中显示回「今天」胶囊（[人工决策] 见 _layout）；单击有课卡弹只读详情（_openCourse）。
+  - today_page.dart：今天页 TodayPage：读当前学期的课表与作息按日浏览；同步按钮走 chooseSyncSelection → CampusSync.run → showCampusSyncReport；含作息来源确认与缺开学日引导；同步中离开时结果暂存、回来再提示。顶部「此刻」卡（_ClassNow）显示上课中或下一节，课上完或没课时用同一骨架预告下一节（以后没课的日子也预告），没课只在这张卡里说；到点换状态平滑过渡、开课前 15 分钟强调倒计时、整卡可点（[人工决策] 在 _ClassNow 上方）；看别的日子时底栏上方居中显示回「今天」胶囊（[人工决策] 见 _layout）；单击有课卡弹只读详情（_openCourse）。
   - today_day_navigation.dart：上下拖动切日的手势 TodayDayNavigation（阈值 64、上限 120）。
   - today_date_transition.dart：切日时日期与正文按同一进度纵向交接 TodayDateTransition。
-  - course_cards.dart：当日节次卡片 CourseDayCards：有课卡（课名、教室行 CoursePlace、节次与教师；时刻列开始前上课时刻大、开始后下课时刻大）与空档（虚线空位框 _EmptySlot，高度随时长对数加高），课表页长按展开（读屏整卡一句、长按提示展开详情）；今天页单击回调 onOpen（按下变暗、读屏整卡一句），revealNow 打开时把正在上或下一节滚进可见区；今天的课按 classMoment 分三态，时长格式 classDuration。人工决策见 _CourseCardBody 与 revealNow。
+  - course_cards.dart：当日节次卡片 CourseDayCards：有课卡（课名、教室行 CoursePlace、节次与教师；时刻列开始前上课时刻大、开始后下课时刻大）与空档（虚线空位框 _EmptySlot，高度随时长对数加高），课表页长按展开（读屏整卡一句、长按提示展开详情）；今天页单击回调 onOpen（按下变暗、读屏整卡一句），revealNow 打开时把正在上或下一节滚进可见区；今天的课按 classMoment 分三态，时长格式 classDuration。整天没课时有顶部卡片（今天页）就不在中间重复，没有才居中写「这天没课」。人工决策见 _CourseCardBody 与 revealNow。
   - live_clock.dart：全局分钟时钟 LiveClock，整分钟唤醒、后台暂停；测试要拨时间时用 LiveClock.fixed（不挂计时器，否则真实时间到整分会盖掉拨好的时间）。
   - date_rail.dart：日期横条 DateRail（读屏每项一句并可点选）。
 - 课表：
@@ -34,7 +34,7 @@
   - schedule_editor_page.dart：课程管理 ScheduleEditorPage：新增、编辑、删除（可撤销）、清空、建空课表与历史版本入口；整卡点进编辑，编辑与删除在⋯里。
   - course_editor_page.dart：单门课程编辑 CourseEditorPage。
   - schedule_history_page.dart：课表历史版本 ScheduleHistoryPage：按序号分页，可预览差异，恢复带乐观锁；恢复的影响只在恢复确认里说明。
-  - term_start_dialog.dart：开学日设置弹窗 editTermStart。
+  - term_start_dialog.dart：开学日设置弹窗 editTermStart，保存成功只出提示条写第1周从哪天开始，失败才弹窗。
 - 成绩：
   - grades_page.dart：成绩页 GradesPage：学年与学期汇总、有效成绩与原始成绩，可筛选、排序、搜索；本页只同步成绩；视图切换淡出淡入（旧内容淡出后才换数据）。筛选是一行「搜索框 + 筛选按钮」，类型、范围、排序在弹层里点了就生效；成绩按行列在一张分组卡里、分数在右（[人工决策] 在 _filterLabel 上方）。
 - 同步：
