@@ -482,6 +482,47 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('要求安全验证时先自动识别：认出来就不弹滑块，直接把签到重发一遍', (tester) async {
+    usePhoneScreen(tester);
+    fake.activeInfo = {'numberCount': 4, 'ifNeedVCode': 1, 'signOutPublishTimeStamp': 4999};
+    fake.signResponses.addAll(['validate_enc-two', 'success']);
+    final puzzle = syntheticCaptcha(gap: 150, decoy: 30);
+    fake
+      ..captchaShade = puzzle.shade
+      ..captchaCutout = puzzle.cutout;
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    await openSignSheet(tester, button: '去签到');
+    await enterCode(tester, '1234');
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    expect(find.text('安全验证'), findsNothing);
+    expect(fake.captchaResultQuery, contains('textClickArr=%5B%7B%22x%22%3A148%7D%5D'));
+    expect(fake.signQuery!['validate'], 'captcha-validate');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('自动识别没过时照旧弹滑块，手动拖过了再重发签到', (tester) async {
+    usePhoneScreen(tester);
+    fake.activeInfo = {'numberCount': 4, 'ifNeedVCode': 1, 'signOutPublishTimeStamp': 4999};
+    fake.signResponses.addAll(['validate_enc-two', 'success']);
+    final puzzle = syntheticCaptcha(gap: 150, decoy: 30);
+    fake
+      ..captchaShade = puzzle.shade
+      ..captchaCutout = puzzle.cutout
+      ..captchaRejections = 1;
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    await openSignSheet(tester, button: '去签到');
+    await enterCode(tester, '1234');
+    await waitUntil(tester, () => find.text('安全验证').evaluate().isNotEmpty);
+    await waitUntil(tester, () => find.byType(Image).evaluate().length >= 2);
+    await tester.drag(find.descendant(of: find.byType(ChaoxingCaptchaDialog), matching: find.byType(Image)).first, const Offset(60, 0));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    expect(fake.signQuery!['validate'], 'captcha-validate');
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('位置刚出界时收紧偏移自动重试一次', (tester) async {
     usePhoneScreen(tester);
     fake.activities = [

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:uuid/uuid.dart';
@@ -7,9 +8,11 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_crypto.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_photo.dart';
 
 // 学习通的滑块验证码：先取底图与缺口图，用户拖到位后换一次性的 validate，随签到提交回去。
-// 三个接口都是 JSONP，响应外面裹着 cx_captcha_function(...)。
+// 三个接口都是 JSONP，响应外面裹着 cx_captcha_function(...)；都要带 callback，不带时对方只回 {"10013":"CALLBACK ERROR"}
+// （2026-10-18 实测，以前取配置与提交校验两处漏了，验证码一出现就加载失败或永远「没有对齐」）。
 const chaoxingCaptchaId = 'Qt9FIw9o4pwRjOyqM6yizZBh682qN2TU';
 const chaoxingCaptchaType = 'slide';
 const chaoxingCaptchaVersion = '1.1.20';
@@ -118,6 +121,7 @@ Future<ChaoxingCaptchaAnswer> chaoxingCaptchaVerify(
   final response = await client.http.get(
     Uri.parse(chaoxingCaptchaResultUri).replace(
       queryParameters: {
+        'callback': 'cx_captcha_function',
         'captchaId': chaoxingCaptchaId,
         'type': chaoxingCaptchaType,
         'token': puzzle.token,
@@ -149,7 +153,7 @@ Future<ChaoxingCaptchaAnswer> chaoxingCaptchaVerify(
 Future<int> _chaoxingCaptchaConf(ChaoxingClient client, int now) async {
   final response = await client.http.get(
     Uri.parse(chaoxingCaptchaConfUri).replace(
-      queryParameters: {'captchaId': chaoxingCaptchaId, '_': '$now'},
+      queryParameters: {'callback': 'cx_captcha_function', 'captchaId': chaoxingCaptchaId, '_': '$now'},
     ),
   );
   final t = chaoxingInt(chaoxingJson(chaoxingJsonp(response.body))['t']);
@@ -157,4 +161,75 @@ Future<int> _chaoxingCaptchaConf(ChaoxingClient client, int now) async {
     throw const ChaoxingFailure(ChaoxingFailureCode.captchaRequired, chaoxingCaptchaLoadFailedMessage);
   }
   return t;
+}
+
+// [人工决策-2026-10-18 13:07:53] 滑块验证码先自动试一次，没过或认不准才弹手动滑块（用户选定，同参考项目的流程）；
+// 找缺口自写、不用模型：参考项目用的是第三方贡献的检测模型，没有单独许可、作者也不欢迎二次分发，不引入。
+// 做法：底图上有真缺口与一个形状不同的诱饵，真缺口里盖的是同一块原图，只是整体调亮或调暗了一层，缺口块里装的正是这块原图。
+// 缺口块已经放在正确的高度上，只需横向逐列比对：取缺口块内部（去掉描边）的像素，与底图同位置算归一化相关，
+// 整体调亮调暗不影响它；诱饵下面是别处的画面，对不上。2026-10-18 用真实题目验证：离线 30 张看图全对，提交校验 16 次全过。
+const _captchaMaskInset = 4;
+
+// 相关系数低于它就当认不准，直接交给手动（真实题目里正确位置最低约 0.77，平坦的草地、墙面分数偏低）。
+const chaoxingCaptchaMinScore = 0.6;
+
+// 缺口块在底图上的横向偏移（底图像素）与那里的相关系数；图片解不开或尺寸不对时返回空。
+({int offset, double score})? chaoxingCaptchaMatch(Uint8List shadeBytes, Uint8List cutoutBytes) {
+  final shade = decodeChaoxingPhoto(shadeBytes);
+  final cutout = decodeChaoxingPhoto(cutoutBytes);
+  if (shade == null || cutout == null || shade.height != cutout.height || cutout.width >= shade.width) return null;
+  final width = cutout.width;
+  final height = cutout.height;
+  final opaque = [for (var y = 0; y < height; y++) [for (var x = 0; x < width; x++) cutout.getPixel(x, y).a >= cutout.maxChannelValue]];
+  bool inside(int x, int y) {
+    for (var dy = -_captchaMaskInset; dy <= _captchaMaskInset; dy++) {
+      for (var dx = -_captchaMaskInset; dx <= _captchaMaskInset; dx++) {
+        final nx = x + dx;
+        final ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= width || ny >= height || !opaque[ny][nx]) return false;
+      }
+    }
+    return true;
+  }
+
+  final points = [for (var y = 0; y < height; y++) for (var x = 0; x < width; x++) if (inside(x, y)) (x, y)];
+  if (points.length < 100) return null;
+  // 三个通道并在一起当样本：调亮调暗对三个通道是同一个线性变换，相关性不受影响，比只看灰度分得更开。
+  final piece = <double>[];
+  for (final (x, y) in points) {
+    final pixel = cutout.getPixel(x, y);
+    piece..add(pixel.r.toDouble())..add(pixel.g.toDouble())..add(pixel.b.toDouble());
+  }
+  final count = piece.length;
+  final pieceMean = piece.reduce((sum, value) => sum + value) / count;
+  final centered = [for (final value in piece) value - pieceMean];
+  final pieceNorm = centered.fold(0.0, (sum, value) => sum + value * value);
+  if (pieceNorm == 0) return null;
+  var best = (offset: 0, score: -1.0);
+  for (var offset = 0; offset <= shade.width - width; offset++) {
+    var sum = 0.0;
+    var squares = 0.0;
+    var product = 0.0;
+    var index = 0;
+    for (final (x, y) in points) {
+      final pixel = shade.getPixel(offset + x, y);
+      for (final value in [pixel.r.toDouble(), pixel.g.toDouble(), pixel.b.toDouble()]) {
+        sum += value;
+        squares += value * value;
+        product += centered[index++] * value;
+      }
+    }
+    final variance = squares - sum * sum / count;
+    final score = variance <= 0 ? 0.0 : product / sqrt(pieceNorm * variance);
+    if (score > best.score) best = (offset: offset, score: score);
+  }
+  return best;
+}
+
+// 自动识别要提交的坐标；认不准时返回空。参数打包成一个，方便丢进后台 isolate（compute）。
+// 提交口径是缺口块偏移减 2（参考项目自动识别按缺口框左缘减 4，框比缺口块图左缘多 2），2026-10-18 实测 8 次全过；
+// 手动滑块按拖动比例换算（chaoxingCaptchaPosition），两种口径对方都认，靠右时差几个像素在容差内（同日实测 8 次全过）。
+double? chaoxingCaptchaAutoPosition(({Uint8List shade, Uint8List cutout}) images) {
+  final match = chaoxingCaptchaMatch(images.shade, images.cutout);
+  return match == null || match.score < chaoxingCaptchaMinScore ? null : match.offset - 2.0;
 }

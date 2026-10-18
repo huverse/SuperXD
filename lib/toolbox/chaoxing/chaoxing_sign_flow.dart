@@ -2,8 +2,10 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_batch.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_captcha.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_face.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
@@ -91,6 +93,7 @@ class ChaoxingSignFlow {
     var tightened = initialTightened;
     String? validate;
     String? enc2;
+    var autoCaptchaTried = false;
     for (var attempt = 0; ; attempt++) {
       final faceEnc = faceObjectId == null
           ? null
@@ -116,7 +119,10 @@ class ChaoxingSignFlow {
       } on ChaoxingFailure catch (failure) {
         switch (failure.code) {
           case ChaoxingFailureCode.captchaRequired when attempt < 3:
-            final answer = await solveCaptcha(client, signed);
+            // 先自动试一次，没过或认不准才弹手动滑块（人工决策见 chaoxing_captcha.dart）。
+            final automatic = autoCaptchaTried ? null : await _autoCaptcha(client, signed);
+            autoCaptchaTried = true;
+            final answer = automatic ?? await solveCaptcha(client, signed);
             if (answer == null) {
               throw const ChaoxingFailure(ChaoxingFailureCode.captchaRequired, '需要完成安全验证才能签到');
             }
@@ -172,6 +178,27 @@ class ChaoxingSignFlow {
 
   // 签到前检查（preSign 与班级检查）：拦下时返回带 predicted 的失败，可签返回 null。
   // 提交前必查；打开签到页时也先查一次（对齐参考项目，别等提交后才知道已签到或已截止）。
+  // 自动过滑块：取题、在本机找缺口（后台 isolate）、提交校验；认不准、没过或出错都返回空，交给手动滑块。
+  Future<String?> _autoCaptcha(ChaoxingClient client, ChaoxingActivity activity) async {
+    try {
+      final referer = chaoxingPreSignRequestUri(activity: activity, account: client.account!);
+      final puzzle = await context.run(client, () => chaoxingCaptchaPuzzle(client, referer: referer));
+      final shade = await context.run(client, () => chaoxingCaptchaImage(client, puzzle.shadeImageUrl));
+      final cutout = await context.run(client, () => chaoxingCaptchaImage(client, puzzle.cutoutImageUrl));
+      final position = await compute(chaoxingCaptchaAutoPosition, (shade: shade, cutout: cutout));
+      if (position == null) {
+        campusLog('[Chaoxing] action=captcha_auto result=unsure');
+        return null;
+      }
+      final answer = await context.run(client, () => chaoxingCaptchaVerify(client, puzzle: puzzle, position: position, referer: referer));
+      campusLog('[Chaoxing] action=captcha_auto result=${answer.passed ? 'passed' : 'rejected'}');
+      return answer.passed ? answer.validate : null;
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=captcha_auto errorType=${failure.runtimeType}\n$stack');
+      return null;
+    }
+  }
+
   Future<ChaoxingFailure?> _presignFailure(ChaoxingClient client, ChaoxingActivity activity) async {
     final presign = await context.run(client, () => chaoxingPreSign(client, activity));
     if (presign == ChaoxingPreSignStatus.alreadySigned) {

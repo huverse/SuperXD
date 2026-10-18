@@ -141,7 +141,12 @@ class FakeChaoxing {
   String captchaToken = 'captcha-image-token';
   String captchaValidate = 'captcha-validate';
   bool captchaPassed = true;
+  // 前几次校验不通过（看自动识别没过时转手动）。
+  int captchaRejections = 0;
   int captchaError = 0;
+  // 底图与缺口块；默认是空白图（自动识别认不准，直接转手动），syntheticCaptcha 给一张认得出的。
+  Uint8List captchaShade = picture.encodePng(picture.Image(width: 280, height: 160));
+  Uint8List captchaCutout = picture.encodePng(picture.Image(width: 56, height: 160));
   String? captchaResultQuery;
   String? captchaImageQuery;
   String? captchaReferer;
@@ -312,6 +317,10 @@ class FakeChaoxing {
     }
     if (request.url.host == 'captcha.chaoxing.com') {
       captchaCalls.add(path);
+      // 同真实接口：三个 JSONP 接口不带 callback 只回这一句（2026-10-18 实测）。
+      if (!path.endsWith('.png') && request.url.queryParameters['callback'] != 'cx_captcha_function') {
+        return _json({'10013': 'CALLBACK ERROR'});
+      }
       switch (path) {
         case '/captcha/get/conf':
           return _jsonp({'t': captchaTime});
@@ -325,14 +334,18 @@ class FakeChaoxing {
             },
           });
         case '/captcha/shade.png':
-          return _image(picture.encodePng(picture.Image(width: 280, height: 160)));
+          return _image(captchaShade);
         case '/captcha/cutout.png':
-          return _image(picture.encodePng(picture.Image(width: 56, height: 160)));
+          return _image(captchaCutout);
         case '/captcha/check/verification/result':
           captchaResultQuery = request.url.query;
           captchaReferer = request.headers['referer'] ?? request.headers['Referer'];
           if (captchaError == 1) return _jsonp({'error': 1, 'msg': '验证码已失效'});
           if (!captchaPassed) return _jsonp({'result': false});
+          if (captchaRejections > 0) {
+            captchaRejections--;
+            return _jsonp({'result': false});
+          }
           return _jsonp({'result': true, 'extraData': jsonEncode({'validate': captchaValidate})});
       }
     }
@@ -364,4 +377,30 @@ class FakeChaoxingDevice implements ChaoxingDeviceProbe {
 
   @override
   Future<String> oaid() async => oaidValue;
+}
+
+// 合成一张认得出的滑块题（同真实题目的样子）：320×160 的杂色底图，缺口块 56×160、块在 60–100 行；
+// 真缺口在 gap 处，是同一块画面整体调亮一层；诱饵在 decoy 处，是别处画面整体调暗一层。
+({Uint8List shade, Uint8List cutout}) syntheticCaptcha({required int gap, required int decoy}) {
+  var seed = 12345;
+  final texture = picture.Image(width: 320, height: 160);
+  for (final pixel in texture) {
+    seed = (seed * 1103515245 + 12345) & 0x7fffffff;
+    pixel
+      ..r = seed % 256
+      ..g = (seed >> 8) % 256
+      ..b = (seed >> 16) % 256;
+  }
+  final shade = picture.Image.from(texture);
+  final cutout = picture.Image(width: 56, height: 160, numChannels: 4);
+  for (var y = 60; y < 100; y++) {
+    for (var x = 8; x < 48; x++) {
+      final original = texture.getPixel(gap + x, y);
+      cutout.setPixelRgba(x, y, original.r, original.g, original.b, 255);
+      shade.setPixelRgb(gap + x, y, original.r ~/ 2 + 128, original.g ~/ 2 + 128, original.b ~/ 2 + 128);
+      final other = texture.getPixel(decoy + x, y);
+      shade.setPixelRgb(decoy + x, y, other.r ~/ 2, other.g ~/ 2, other.b ~/ 2);
+    }
+  }
+  return (shade: picture.encodeJpg(shade, quality: 90), cutout: picture.encodePng(cutout));
 }
