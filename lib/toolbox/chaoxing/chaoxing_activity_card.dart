@@ -14,7 +14,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_sign_sheet.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
-// 打开签到弹层的统一入口：首页、往期、课程与群聊各页都从这里开，签完给同样的提示并刷新一次列表。
+// 打开签到弹层的统一入口：首页、往期、课程与群聊各页都从这里开，签完给同样的提示，并重拉这门课的签到（人工决策见 ChaoxingController.refreshCourse）。
 class ChaoxingSignLauncher {
   const ChaoxingSignLauncher({required this.controller, this.scanQrCode, this.watchQrCode, this.pickImage, this.pickImages});
   final ChaoxingController controller;
@@ -41,7 +41,7 @@ class ChaoxingSignLauncher {
     }
     if (!context.mounted || summary == null) return;
     showCampusToast(context, chaoxingSummaryText(summary));
-    controller.refresh().catchError((Object error, StackTrace stack) {
+    controller.refreshCourse(activity).catchError((Object error, StackTrace stack) {
       campusLog('[Chaoxing] action=refresh errorType=${error.runtimeType}\n$stack');
     });
   }
