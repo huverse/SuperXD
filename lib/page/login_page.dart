@@ -142,9 +142,10 @@ class _LoginPageState extends State<LoginPage> {
                 Padding(padding: const EdgeInsets.only(top: 24), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   SizedBox(width: 48, height: 48, child: Checkbox(key: const ValueKey('agree-terms'), semanticLabel: '我已阅读并同意用户协议和隐私政策', value: _agreed, onChanged: _busy ? null : (value) => setState(() => _agreed = value == true))),
                   Expanded(child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-                    GestureDetector(excludeFromSemantics: true, onTap: _busy ? null : () => setState(() => _agreed = !_agreed), child: Padding(padding: const EdgeInsets.symmetric(vertical: 14), child: Text('我已阅读并同意', style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant)))),
+                    // 整句已在勾选框的读屏名里，这两段文字不再单独朗读；两个链接照常是按钮。
+                    ExcludeSemantics(child: GestureDetector(onTap: _busy ? null : () => setState(() => _agreed = !_agreed), child: Padding(padding: const EdgeInsets.symmetric(vertical: 14), child: Text('我已阅读并同意', style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant))))),
                     TextButton(style: campusLink, onPressed: _busy ? null : () => context.push('/legal/service'), child: const Text('用户协议', style: TextStyle(fontSize: 14))),
-                    const Text('和', style: TextStyle(fontSize: 14)),
+                    const ExcludeSemantics(child: Text('和', style: TextStyle(fontSize: 14))),
                     TextButton(style: campusLink, onPressed: _busy ? null : () => context.push('/legal/privacy'), child: const Text('隐私政策', style: TextStyle(fontSize: 14))),
                   ])),
                 ])),
