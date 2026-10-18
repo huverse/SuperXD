@@ -36,7 +36,7 @@
   - schedule_history_page.dart：课表历史版本 ScheduleHistoryPage：按序号分页，可预览差异，恢复带乐观锁；恢复的影响只在恢复确认里说明。
   - term_start_dialog.dart：开学日设置弹窗 editTermStart。
 - 成绩：
-  - grades_page.dart：成绩页 GradesPage：学年与学期汇总、有效成绩与原始成绩，可筛选、排序、搜索；本页只同步成绩；视图切换淡出淡入（旧内容淡出后才换数据）。
+  - grades_page.dart：成绩页 GradesPage：学年与学期汇总、有效成绩与原始成绩，可筛选、排序、搜索；本页只同步成绩；视图切换淡出淡入（旧内容淡出后才换数据）。筛选是一行「搜索框 + 筛选按钮」，类型、范围、排序在弹层里点了就生效；成绩按行列在一张分组卡里、分数在右（[人工决策] 在 _filterLabel 上方）。
 - 同步：
   - sync_selection_dialog.dart：同步范围选择 chooseSyncSelection：学年与内容都可多选，默认读本地学期列表，点刷新才联网。
   - campus_sync_dialogs.dart：同步结果弹窗 showCampusSyncReport：结果与未处理项，可重新登录或重新同步；教务限流停下时只说明约 1 分钟后再同步，不给立即重新同步。
