@@ -47,6 +47,7 @@
   - appearance 是当前界面配置（AppearanceShare，不含壁纸图片），用于分享与套用前的撤销点；applyAppearance 套用好友分享的配置，本版本支持的取值在保存锁内一并落库，不支持的保持不变并返回跳过的项名。
 - wallpaper_store.dart：WallpaperStore 管理壁纸文件，放在应用支持目录 display/wallpaper 下，只保留当前一份，单图上限 20MB；每次导入用新文件名。
 - app_update_memory.dart：FileAppUpdateMemory 实现应用更新的检查记录端口 AppUpdateMemory：应用支持目录下固定大小的 app_update.json（上次检查成功的时刻 UTC、跳过的版本、是否待必须更新），先写临时文件再改名；读到坏文件当没有记录。不放数据库：只有三个字段，不随数据增长。
+- legal_notice_memory.dart：LegalNoticeMemory 记用户协议与隐私政策看过哪一版：应用支持目录下固定大小的 legal_notice.json（只有已读修订号），写法同上；check 决定要不要提示（看过这一版不提示、新装直接记下、升级来的待提示一次，[人工决策] 在方法上），takePending 一次运行只取一次，点「知道了」后 markSeen。
 - legacy_import.dart：旧单库导入 importLegacyDatabase。
   - 旧库只读打开，只支持 user_version 1–2。
   - 按主键游标每批读取 200 行。发生冲突时一律保留目标数据，计为跳过。
@@ -69,7 +70,7 @@
 
 - 账号库与旧库：account_store_test.dart、account_isolation_test.dart、legacy_import_test.dart。
 - 课表与作息持久化：schedule_version_test.dart、schedule_migration_test.dart、bells_persistence_test.dart。
-- 显示设置与壁纸：appearance_settings_test.dart、wallpaper_test.dart；应用更新检查记录：app_update_test.dart。
+- 显示设置与壁纸：appearance_settings_test.dart、wallpaper_test.dart；应用更新检查记录：app_update_test.dart；协议已读记录：legal_page_test.dart。
 
 # 人工决策检索
 
@@ -79,3 +80,4 @@
   - 版本上限与裁剪
   - 凭据保存条件
   - 显示设置的设备归属与深浅色
+  - 协议更新提示的判定

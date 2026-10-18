@@ -1,4 +1,7 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:superxd/app_session.dart';
 import 'package:superxd/domain/account.dart';
@@ -20,13 +23,17 @@ import 'package:superxd/theme/third_party_licenses.dart';
 Future<void> main() async {
   campusLog = debugPrint;
   WidgetsFlutterBinding.ensureInitialized();
+  // 同 main.dart：内容画到导航栏下面，否则截图底部露出一条窗口底色。
+  await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   ensureCampusClock();
   configureCampusIcons();
   registerCampusLicenses();
   final database = await AppDatabase.openMemory();
   final gateway = KingoCampusGateway(database: database);
   const term = TermRef(xn: '2026', xq: '0', label: '2026-2027学年第一学期');
-  await database.saveTerms([term], currentXn: term.xn, currentXq: term.xq);
+  const previous = TermRef(xn: '2025', xq: '1', label: '2025-2026学年第二学期');
+  await database.saveTerms([term, previous], currentXn: term.xn, currentXq: term.xq);
+  await database.writeGrades(previous.xn, previous.xq, DateTime.now().toUtc().toIso8601String(), _gradesJson(previous));
   // 开学日取本周往前四周的周一，截图当天落在第 5 周。
   final today = DateTime.now();
   final monday = today.subtract(Duration(days: today.weekday - 1 + 28));
@@ -57,6 +64,28 @@ final _courses = [
   _course('D107', '体育', '郑老师', 1, [(1, 3, 4, '东区体育馆')]),
   _course('D108', '创新创业基础', '冯老师', 2, [(3, 9, 10, '综合楼 210')]),
 ];
+
+// 上一学期的合成成绩（成绩页截图用）：课程沿用演示课表，分数虚构，绩点按分数线性折算。
+String _gradesJson(TermRef term) {
+  const scores = [92, 86, 95, 78, 84, 90, 88, 81];
+  final rows = [for (final (index, course) in _courses.indexed) (course: course, score: scores[index])];
+  return jsonEncode({
+    'empty': false,
+    'message': '',
+    'term': {'xn': term.xn, 'xq': term.xq, 'label': term.label},
+    'student': {'loginId': '20260000001', 'name': '林同学', 'college': '示例学院', 'major': '示例专业', 'level': '本科', 'className': '示例计算机班'},
+    'summary': {'earnedCredit': 25, 'gpa': 3.75, 'averageScore': 86.75, 'weightedAverage': 87.52},
+    'summaryScope': 'term',
+    'effective': [
+      for (final row in rows)
+        {'courseCode': row.course.courseCode, 'courseName': row.course.courseName, 'credit': row.course.credit, 'score': row.score, 'earnedCredit': row.course.credit, 'gradePoint': (row.score - 50) / 10},
+    ],
+    'original': [
+      for (final row in rows)
+        {'courseCode': row.course.courseCode, 'courseName': row.course.courseName, 'credit': row.course.credit, 'usualScore': row.score, 'midtermScore': null, 'finalScore': row.score, 'skillScore': null, 'totalScore': row.score},
+    ],
+  });
+}
 
 // 假登录：账号固定为一个虚构学生，教务数据全部走内存库里的合成数据。
 class _DemoAccounts extends AccountAccess {

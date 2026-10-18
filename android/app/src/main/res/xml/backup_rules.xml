@@ -14,4 +14,7 @@
     <exclude domain="sharedpref" path="superxd_social.xml" />
     <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_social.xml" />
     <exclude domain="database" path="social.db" />
+    <!-- 学习通密码与 Cookie 同样只属于这台设备（库 chaoxing.db 在上面排除的 toolbox 目录里）。 -->
+    <exclude domain="sharedpref" path="superxd_chaoxing.xml" />
+    <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_chaoxing.xml" />
 </full-backup-content>
