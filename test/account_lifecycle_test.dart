@@ -156,6 +156,11 @@ void main() {
     await tester.pumpAndSettle();
     Checkbox agree() => tester.widget<Checkbox>(find.byKey(const ValueKey('agree-terms')));
     expect(agree().semanticLabel, '我已阅读并同意用户协议和隐私政策');
+    // 整句只在勾选框上读一次，旁边的文字不再单独朗读。
+    final handle = tester.ensureSemantics();
+    expect(find.bySemanticsLabel('我已阅读并同意'), findsNothing);
+    expect(find.bySemanticsLabel('我已阅读并同意用户协议和隐私政策'), findsOneWidget);
+    handle.dispose();
     await tester.tap(find.text('我已阅读并同意'));
     await tester.pump();
     expect(agree().value, isTrue);
