@@ -10,6 +10,7 @@ import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/grades_page.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 
 import 'form_layout_support.dart';
 
@@ -86,14 +87,18 @@ Future<void> reveal(WidgetTester tester, Finder finder) async {
 
 void main() {
   for (final scale in [1.0, 1.4, 2.8]) {
-    testWidgets('成绩筛选区 ×$scale：学年、搜索、排序标签不压筛选标签，筛选标签不裁切', (tester) async {
+    testWidgets('成绩筛选区 ×$scale：学年标签不压内容，搜索框与筛选按钮同一行，弹层里的选择标签不裁切', (tester) async {
       await tester.binding.setSurfaceSize(const Size(412, 2400));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       await loadCampusFonts(tester);
       await tester.pumpWidget(app(GradesPage(gateway: _Gateway()), scale: scale));
       await tester.pumpAndSettle();
-      expectFieldLabelsClear(tester, ['学年', '搜索课程名称或代码', '排序'], '成绩筛选');
-      expectChipLabelsUnclipped(tester, '成绩筛选');
+      expectFieldLabelsClear(tester, ['学年'], '成绩筛选');
+      final filter = find.widgetWithText(FilledButton, '筛选');
+      expect(tester.getCenter(filter).dy, closeTo(tester.getCenter(find.byType(TextField)).dy, 1));
+      await tester.tap(filter);
+      await tester.pumpAndSettle();
+      expectChipLabelsUnclipped(tester, '成绩筛选弹层', scope: find.byType(CampusSheetPanel));
       expect(tester.takeException(), isNull);
     });
   }
@@ -209,8 +214,39 @@ void main() {
     await reveal(tester, find.byType(TextField));
     await tester.enterText(find.byType(TextField), '零分');
     await tester.pumpAndSettle();
-    await reveal(tester, find.text('有效成绩：0'));
-    expect(find.text('有效成绩：0'), findsOneWidget);
+    await reveal(tester, find.text('测试零分'));
+    expect(find.text('0'), findsOneWidget);
+    expect(find.text('未公布'), findsNothing);
+    await tester.enterText(find.byType(TextField), 'C3');
+    await tester.pumpAndSettle();
+    await reveal(tester, find.text('测试未公布'));
+    expect(find.text('未公布'), findsOneWidget);
+    expect(find.text('0'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('成绩按行列出、分数在右、读屏整句；筛选弹层点了就生效，按钮写改过几项，原始成绩显示总评', (tester) async {
+    await tester.pumpWidget(app(GradesPage(gateway: _Gateway())));
+    await tester.pumpAndSettle();
+    Finder row(String label) => find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == label && widget.properties.button == true);
+    await reveal(tester, find.text('测试数学'));
+    expect(row('测试数学，成绩 90，学分 2，绩点 4'), findsOneWidget);
+    expect(tester.getCenter(find.text('90')).dx, greaterThan(tester.getCenter(find.text('测试数学')).dx));
+    // 课程代码只在详情里，列表不再单列一行。
+    expect(find.text('C1'), findsNothing);
+    await reveal(tester, find.widgetWithText(FilledButton, '筛选'));
+    await tester.tap(find.widgetWithText(FilledButton, '筛选'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.descendant(of: find.byType(CampusSheetPanel), matching: find.text('原始成绩')));
+    await tester.pumpAndSettle();
+    expect(find.descendant(of: find.byType(CampusSheetPanel), matching: find.text('原始成绩')), findsOneWidget);
+    await tester.tap(find.descendant(of: find.byType(CampusSheetPanel), matching: find.text('课程名称')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(FilledButton, '筛选 2'), findsOneWidget);
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '原始成绩 · 显示 2 条 · 点击课程查看分项'), findsOneWidget);
+    expect(row('测试数学，总评 92，学分 2'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
   testWidgets('未知缓存错误显示重试，不伪造暂无成绩', (tester) async {

@@ -27,6 +27,7 @@ abstract final class CampusIcons {
   static const eye = LucideIcons.eye;
   static const eyeClosed = LucideIcons.eyeClosed;
   static const search = LucideIcons.search;
+  static const filter = LucideIcons.slidersHorizontal;
   static const sync = LucideIcons.refreshCw;
   static const edit = LucideIcons.pencil;
   static const manageSchedule = LucideIcons.calendarCog;

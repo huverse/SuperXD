@@ -18,6 +18,7 @@ import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 class GradesPage extends StatefulWidget {
@@ -351,6 +352,106 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
   }
 
   Widget _panel({required Widget child}) => Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: CampusSurface(child: child));
+
+  // [人工决策-2026-10-18 15:32:24] 筛选收成一行「搜索框 + 筛选按钮」，成绩类型、显示范围与排序放进弹层、点了就生效，改过几项写在按钮上（同 iOS 文件、App Store）；
+  // 成绩按行列在一张分组卡里：课名与学分绩点在左、分数右侧大号（同银行流水、iOS 设置分组列表），课程代码只在详情里。
+  // 用户从实物截图中选定（未选横向标签条、每门一张两行卡）；以前筛选控件占满首屏，默认字号第一门课只露出一半。
+  String _filterLabel(grades.GradeFilter filter) => switch (filter) {
+    grades.GradeFilter.all => '全部',
+    grades.GradeFilter.numeric => '数值成绩',
+    grades.GradeFilter.text => '等级或状态',
+    grades.GradeFilter.unpublished => '未公布',
+  };
+
+  String _sortLabel(grades.GradeSort sort) => switch (sort) {
+    grades.GradeSort.original => '教务原始顺序',
+    grades.GradeSort.high => '数值成绩从高到低',
+    grades.GradeSort.low => '数值成绩从低到高',
+    grades.GradeSort.name => '课程名称',
+  };
+
+  Widget _filterBar() {
+    final changed = (_original ? 1 : 0) + (_filter == grades.GradeFilter.all ? 0 : 1) + (_sort == grades.GradeSort.original ? 0 : 1);
+    return Row(children: [
+      Expanded(child: TextField(
+        controller: _search,
+        decoration: InputDecoration(
+          hintText: '搜索课程名称或代码',
+          prefixIcon: const CampusIcon(CampusIcons.search),
+          suffixIcon: _search.text.isEmpty ? null : IconButton(tooltip: '清空搜索', onPressed: _search.clear, icon: const CampusIcon(CampusIcons.close)),
+        ),
+      )),
+      const SizedBox(width: 8),
+      FilledButton.icon(onPressed: _openFilters, icon: const CampusIcon(CampusIcons.filter, size: 20), label: Text(changed == 0 ? '筛选' : '筛选 $changed')),
+    ]);
+  }
+
+  // 筛选弹层：同设置类选项，点了就勾上并立即生效，页面跟着更新；弹层自己的 setState 只重画勾选。
+  Future<void> _openFilters() => showCampusSheet<void>(context: context, builder: (context) => StatefulBuilder(builder: (context, setSheet) {
+    void choose(VoidCallback change) {
+      setState(() {
+        change();
+        _updateRows();
+      });
+      setSheet(() {});
+    }
+    Widget group(String title, List<Widget> chips) => Padding(padding: const EdgeInsets.only(right: 12, bottom: 20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(title, style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 8),
+      Wrap(spacing: 8, runSpacing: 8, children: chips),
+    ]));
+    return CampusSheetPanel(child: SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 8, 4),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: Padding(padding: const EdgeInsets.only(top: 10), child: Text('筛选', style: Theme.of(context).textTheme.titleLarge))),
+          IconButton(tooltip: '关闭', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.close)),
+        ]),
+        const SizedBox(height: 8),
+        group('成绩', [
+          CampusGlassChip(label: '有效成绩', selected: !_original, onSelected: (_) => choose(() => _original = false)),
+          CampusGlassChip(label: '原始成绩', selected: _original, onSelected: (_) => choose(() => _original = true)),
+        ]),
+        group('显示', [for (final filter in grades.GradeFilter.values) CampusGlassChip(label: _filterLabel(filter), selected: _filter == filter, onSelected: (_) => choose(() => _filter = filter))]),
+        group('排序', [for (final sort in grades.GradeSort.values) CampusGlassChip(label: _sortLabel(sort), selected: _sort == sort, onSelected: (_) => choose(() => _sort = sort))]),
+      ]),
+    ));
+  }));
+
+  // 一学期的课不多（十几到几十门），整组一次画完；按下整行变暗，读屏读整句。
+  Widget _gradeList() => Padding(padding: const EdgeInsets.only(top: 8), child: CampusSurface(padding: const EdgeInsets.symmetric(vertical: 6), child: Column(children: [
+    for (final (index, course) in _visible.indexed) ...[
+      if (index > 0) Divider(height: 1, indent: 16, endIndent: 16, color: CampusPalette.of(context).outline.withValues(alpha: .3)),
+      _gradeRow(course),
+    ],
+  ])));
+
+  Widget _gradeRow(GradeCourse course) {
+    final palette = CampusPalette.of(context);
+    final score = grades.gradeText(_original ? course.totalScore : course.score, missing: '未公布');
+    final detail = '学分 ${grades.gradeText(course.credit)}${_original ? '' : ' · 绩点 ${grades.gradeText(course.gradePoint)}'}';
+    return Semantics(
+      button: true,
+      label: '${course.courseName}，${_original ? '总评' : '成绩'} $score，${detail.replaceAll(' · ', '，')}',
+      onTap: () => _details(course),
+      excludeSemantics: true,
+      child: InkWell(
+        onTap: () => _details(course),
+        child: Padding(padding: const EdgeInsets.fromLTRB(16, 10, 12, 10), child: Row(children: [
+          Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text(course.courseName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface)),
+            const SizedBox(height: 2),
+            DotSeparatedText(detail, style: TextStyle(fontSize: 14, height: 1.3, color: palette.onSurfaceVariant)),
+          ])),
+          const SizedBox(width: 12),
+          Text(score, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()])),
+          const SizedBox(width: 4),
+          CampusIcon(CampusIcons.next, color: palette.onSurfaceVariant),
+        ])),
+      ),
+    );
+  }
+
   Widget _summary(GradeSummary? summary, String scope) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
@@ -655,90 +756,10 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
                                   ],
                                 ),
                               if (!_view!.empty) ...[
-                                Wrap(
-                                  spacing: 8,
-                                  runSpacing: 8,
-                                  children: [
-                                    CampusGlassChip(
-                                      label: '有效成绩',
-                                      selected: !_original,
-                                      onSelected: (_) => setState(() {
-                                        _original = false;
-                                        _updateRows();
-                                      }),
-                                    ),
-                                    CampusGlassChip(
-                                      label: '原始成绩',
-                                      selected: _original,
-                                      onSelected: (_) => setState(() {
-                                        _original = true;
-                                        _updateRows();
-                                      }),
-                                    ),
-                                  ],
-                                ),
-                                SizedBox(height: campusFieldGap(context)),
-                                TextField(
-                                  controller: _search,
-                                  decoration: InputDecoration(
-                                    labelText: '搜索课程名称或代码',
-                                    prefixIcon: const CampusIcon(CampusIcons.search),
-                                    suffixIcon: _search.text.isEmpty
-                                        ? null
-                                        : IconButton(
-                                            tooltip: '清空搜索',
-                                            onPressed: _search.clear,
-                                            icon: const CampusIcon(CampusIcons.close),
-                                          ),
-                                  ),
-                                ),
-                                const SizedBox(height: 8),
-                                Wrap(
-                                  spacing: 6,
-                                  runSpacing: 8,
-                                  children: [
-                                    for (final filter
-                                        in grades.GradeFilter.values)
-                                      CampusGlassChip(
-                                        label: switch (filter) {
-                                          grades.GradeFilter.all => '全部',
-                                          grades.GradeFilter.numeric => '数值成绩',
-                                          grades.GradeFilter.text => '等级或状态',
-                                          grades.GradeFilter.unpublished =>
-                                            '未公布',
-                                        },
-                                        selected: _filter == filter,
-                                        onSelected: (_) => setState(() {
-                                          _filter = filter;
-                                          _updateRows();
-                                        }),
-                                      ),
-                                  ],
-                                ),
-                                SizedBox(height: campusFieldGap(context)),
-                                CampusMenuField<grades.GradeSort>(
-                                  label: '排序',
-                                  value: _sort,
-                                  items: [
-                                    for (final sort in grades.GradeSort.values)
-                                      CampusMenuItem(
-                                        value: sort,
-                                        label: switch (sort) {
-                                          grades.GradeSort.original => '教务原始顺序',
-                                          grades.GradeSort.high => '数值成绩从高到低',
-                                          grades.GradeSort.low => '数值成绩从低到高',
-                                          grades.GradeSort.name => '课程名称',
-                                        },
-                                      ),
-                                  ],
-                                  onChanged: (sort) => setState(() {
-                                    _sort = sort;
-                                    _updateRows();
-                                  }),
-                                ),
+                                _filterBar(),
                                 const SizedBox(height: 12),
-                                Text(
-                                  '显示 ${_visible.length} 条 · 点击课程查看分项',
+                                DotSeparatedText(
+                                  '${_original ? '原始成绩 · ' : ''}显示 ${_visible.length} 条 · 点击课程查看分项',
                                   style: const TextStyle(fontSize: 14),
                                 ),
                                 if (_visible.isEmpty)
@@ -760,51 +781,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
                       _view?.empty == false)
                     SliverFadeTransition(opacity: _content, sliver: SliverPadding(
                       padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
-                      sliver: SliverList.builder(
-                        itemCount: _visible.length,
-                        itemBuilder: (context, index) {
-                          final course = _visible[index];
-                          return _panel(
-                            child: InkWell(
-                              onTap: () => _details(course),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  Row(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Expanded(
-                                        child: Text(
-                                          course.courseName,
-                                          style: Theme.of(context)
-                                              .textTheme
-                                              .titleMedium,
-                                        ),
-                                      ),
-                                      const SizedBox(width: 8),
-                                      const CampusIcon(CampusIcons.next),
-                                    ],
-                                  ),
-                                  Text(
-                                    '${_original ? '总评' : '有效成绩'}：${grades.gradeText(_original ? course.totalScore : course.score, missing: '未公布')}',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.w600,
-                                      color: CampusPalette.of(context).onSurface,
-                                    ),
-                                  ),
-                                  Text(
-                                    '学分 ${grades.gradeText(course.credit)}${_original ? '' : ' · 绩点 ${grades.gradeText(course.gradePoint)}'}',
-                                  ),
-                                  if (course.courseCode.isNotEmpty)
-                                    Text(course.courseCode),
-                                ],
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+                      sliver: SliverToBoxAdapter(child: _gradeList()),
                     )),
                 ],
               )),
