@@ -179,8 +179,10 @@ class ChaoxingController extends ChangeNotifier {
     }
   }
 
-  Future<void> signIn(String phoneNumber, String password) async {
-    if (busy) return;
+  // 登录（整页登录与「登录其他账号」共用）：成功返回空，失败返回原因，由发起登录的表单原地显示，不写到首页的 error 上
+  // （以前写在 error 上：整页登录表单不显示它，输错密码界面上什么都没有；登录其他账号时错误落到首页，旁边的「重试」重拉的是列表）。
+  Future<String?> signIn(String phoneNumber, String password) async {
+    if (busy) return '正在登录或切换账号，请稍后再试';
     busy = true;
     error = null;
     _notify();
@@ -193,8 +195,10 @@ class ChaoxingController extends ChangeNotifier {
       _dropClient(stored.phoneNumber);
       accountList = await accounts.list();
       await _open(stored);
+      return null;
     } catch (failure, stack) {
-      _fail('sign_in', failure, stack, '登录未完成，请检查网络后重试');
+      _logFailure('sign_in', failure, stack);
+      return failure is ChaoxingFailure ? failure.message : '登录未完成，请检查网络后重试';
     } finally {
       busy = false;
       _notify();
@@ -725,19 +729,33 @@ class ChaoxingController extends ChangeNotifier {
     _client = client;
     current = record;
     pinnedClassIds = pinned;
+    // 课程也是上一个账号的，一起清掉（以前留着，新账号的列表回来前「按课程查看」里还是旧账号的课）。
+    courses = const [];
     activities = const [];
     pastActivities = const [];
     lessonActivities = const [];
     activitiesLoaded = false;
     status = ChaoxingStatus.ready;
     _notify();
-    await _loadActivities();
+    // 会话开好就算打开完成：登录、切换账号的「忙」到此为止，列表接着在后台加载（列表位置显示加载）。
+    // 以前要等整份列表拉完才放下「忙」，这期间群聊入口一直灰着、再切账号被静默忽略。
+    unawaited(_loadThenRefreshAccount(client, generation));
+  }
+
+  // 打开账号就后台刷新一次用户信息（对齐参考项目：顺带验证会话、更新 clientId 与学校单位）。
+  // [人工决策-2026-10-07 20:02:42] 不挡活动列表的加载——上游这个接口最慢要 30 秒，阻塞式刷新会让用户对着加载圈等；
+  // 会话过期由列表请求经 accounts.run 自动重登一次兜底。等列表加载完再起，别跟推断缓存抢库锁。
+  // [人工决策-2026-10-17 23:06:01] 用户确认上面这条仍有效；切换账号改为会话开好就返回后，这一步挪到后台接在列表之后，
+  // 列表没读成也照样刷新（以前列表失败就整轮跳过，这次打开里 clientId、头像都补不上）。
+  Future<void> _loadThenRefreshAccount(ChaoxingClient client, int generation) async {
+    try {
+      await _loadActivities();
+    } catch (failure, stack) {
+      if (generation == _generation) _fail('load', failure, stack, '签到活动没读到，请稍后重试');
+    }
     if (generation != _generation) return;
-    // 打开账号就后台刷新一次用户信息（对齐参考项目：顺带验证会话、更新 clientId 与学校单位）。
-    // [人工决策-2026-10-07 20:02:42] 不挡活动列表的加载——上游这个接口最慢要 30 秒，阻塞式刷新会让用户对着加载圈等；
-    // 会话过期由列表请求经 accounts.run 自动重登一次兜底。等列表加载完再起，别跟推断缓存抢库锁。
     _maintenance = _refreshAccountInBackground(client, generation);
-    unawaited(_maintenance);
+    await _maintenance;
   }
 
   // 后台刷新用户信息的链：切换单位等会改账号记录的操作要先等它落定，免得它拿旧记录把新选择覆盖回去。
@@ -952,17 +970,19 @@ class ChaoxingController extends ChangeNotifier {
 
   void _dropClient(String phoneNumber) => _clients.remove(phoneNumber)?.close();
 
-  // 业务失败（ChaoxingFailure）只记错误码，学习通改版或会话异常时 logcat 里也有迹可查；其余带完整堆栈。
   void _fail(String action, Object failure, StackTrace stack, String fallback) {
-    campusLog(
-      failure is ChaoxingFailure
-          ? '[Chaoxing] action=$action errorType=${failure.code.name}'
-          : '[Chaoxing] action=$action errorType=${failure.runtimeType}\n$stack',
-    );
+    _logFailure(action, failure, stack);
     error = failure is ChaoxingFailure ? failure.message : fallback;
     if (_client == null && accountList.isEmpty) status = ChaoxingStatus.signedOut;
     _notify();
   }
+
+  // 业务失败（ChaoxingFailure）只记错误码，学习通改版或会话异常时 logcat 里也有迹可查；其余带完整堆栈。
+  void _logFailure(String action, Object failure, StackTrace stack) => campusLog(
+    failure is ChaoxingFailure
+        ? '[Chaoxing] action=$action errorType=${failure.code.name}'
+        : '[Chaoxing] action=$action errorType=${failure.runtimeType}\n$stack',
+  );
 
   void _notify() {
     if (!_disposed) notifyListeners();

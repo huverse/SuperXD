@@ -67,6 +67,22 @@ void main() {
     expect(offenders, isEmpty);
   });
 
+  // 最低 Android 11，系统自带 SQLite 3.28（见 android/app/build.gradle.kts 的人工决策）。测试跑的是 sqflite_common_ffi 带的新版 SQLite，
+  // 3.28 之后才有的写法在测试里照样通过、到真机上是语法错误，这里按关键字拦下；要用先对照 SQLite 版本并改最低系统版本。
+  test('SQL不用SQLite 3.28之后才有的写法', () {
+    final newer = RegExp(
+      r'\bRETURNING\b|\bDROP COLUMN\b|\bIIF\(|\bNULLS (FIRST|LAST)\b|\bFILTER \(WHERE\b|\bGENERATED ALWAYS\b|\) STRICT\b|->>|\bUNIXEPOCH\(|\bMATERIALIZED\b',
+    );
+    final offenders = <String>[];
+    for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart'))) {
+      final lines = file.readAsLinesSync();
+      for (var index = 0; index < lines.length; index++) {
+        if (newer.hasMatch(lines[index])) offenders.add('${file.path}:${index + 1}');
+      }
+    }
+    expect(offenders, isEmpty);
+  });
+
   // Flutter 不会把 FontWeight 映射到可变字体的字重轴，可变字体一律按默认实例渲染（Noto Serif SC 默认为 ExtraLight 200，曾让衬线全应用发细、粗体变假粗）；内置字体只用静态字重文件。
   test('内置字体都是静态字重文件', () {
     final variable = <String>[];

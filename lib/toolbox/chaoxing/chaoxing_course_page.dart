@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -65,7 +66,17 @@ class _ChaoxingCoursePageState extends State<ChaoxingCoursePage> {
                 ),
               ),
             ),
-            if (groups.isEmpty)
+            // 课程列表还没读到（刚打开、切了账号、改了单位或客户端、上次没读成）时为空不等于没有课：加载中就转，没读成给原因与重试。
+            if (controller.courses.isEmpty && !controller.activitiesLoaded)
+              () => controller.loadingActivities
+                  ? const CampusLoading(label: '正在读取课程…', inline: true)
+                  : CampusLoadError(
+                      message: controller.error ?? '课程没读到，请稍后重试',
+                      onRetry: () => controller.refresh().catchError((Object error, StackTrace stack) {
+                        campusLog('[Chaoxing] action=course_retry errorType=${error.runtimeType}\n$stack');
+                      }),
+                    )
+            else if (groups.isEmpty)
               () => Padding(
                     padding: const EdgeInsets.symmetric(vertical: 24),
                     child: Text(

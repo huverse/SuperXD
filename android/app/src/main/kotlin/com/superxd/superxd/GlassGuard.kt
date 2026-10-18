@@ -3,7 +3,6 @@ package com.superxd.superxd
 import android.app.ActivityManager
 import android.app.ApplicationExitInfo
 import android.content.Context
-import android.os.Build
 import android.util.Log
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -40,7 +39,6 @@ class GlassGuard(private val context: Context) : MethodChannel.MethodCallHandler
     }
 
     private fun previousExitFailed(): Boolean {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return false
         val reason = context.getSystemService(ActivityManager::class.java)
             .getHistoricalProcessExitReasons(context.packageName, 0, 1)
             .firstOrNull()?.reason ?: return false
@@ -49,11 +47,7 @@ class GlassGuard(private val context: Context) : MethodChannel.MethodCallHandler
             reason == ApplicationExitInfo.REASON_ANR
     }
 
-    private fun versionCode(): Long {
-        val info = context.packageManager.getPackageInfo(context.packageName, 0)
-        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) info.longVersionCode
-        else @Suppress("DEPRECATION") info.versionCode.toLong()
-    }
+    private fun versionCode(): Long = context.packageManager.getPackageInfo(context.packageName, 0).longVersionCode
 
     private companion object {
         const val KEY_USED_FULL = "used_full"
