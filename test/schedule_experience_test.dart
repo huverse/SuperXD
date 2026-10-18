@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -19,6 +20,7 @@ import 'package:superxd/page/live_clock.dart';
 import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/page/term_start_dialog.dart';
+import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
@@ -194,6 +196,97 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('教室单独一行带定位图标；时刻列开始前上课时刻大、开始后下课时刻大，切换有过渡；不是今天上课时刻大', (tester) async {
+    final spans = periodSpans([course(1, 2, name: '早课'), course(3, 4)]);
+    // 2026-09-21 周一 09:50（校园时区）：第1–2节已下课，第3–4节没开始。
+    final clock = ValueNotifier(DateTime.utc(2026, 9, 21, 1, 50));
+    addTearDown(clock.dispose);
+    await tester.pumpWidget(app(LiveClock.fixed(clock, child: CourseDayCards(spans: spans, bells: bells, date: '2026-09-21'))));
+    await tester.pumpAndSettle();
+    double? sizeOf(String label) => tester.renderObject<RenderParagraph>(find.text(label)).text.style!.fontSize;
+    expect(find.byIcon(CampusIcons.place), findsNWidgets(2));
+    expect(tester.widget<Text>(find.text('教室').first).style!.fontSize, 16);
+    expect((sizeOf('08:00'), sizeOf('09:40')), (14, 20));
+    expect((sizeOf('10:00'), sizeOf('11:40')), (20, 14));
+    // 10:00 开课：下课时刻放大，中途是过渡值，不是一步跳变。
+    clock.value = DateTime.utc(2026, 9, 21, 2);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(sizeOf('11:40'), allOf(greaterThan(14), lessThan(20)));
+    await tester.pumpAndSettle();
+    expect((sizeOf('10:00'), sizeOf('11:40')), (14, 20));
+    await tester.pumpWidget(app(LiveClock.fixed(clock, child: CourseDayCards(spans: spans, bells: bells, date: '2026-09-22'))));
+    await tester.pumpAndSettle();
+    expect((sizeOf('08:00'), sizeOf('09:40')), (20, 14));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('刚开课（进度为 0）的卡片照常显示，不因竖条固有高度布局失败', (tester) async {
+    final clock = ValueNotifier(DateTime.utc(2026, 9, 21, 2));
+    addTearDown(clock.dispose);
+    await tester.pumpWidget(app(LiveClock.fixed(clock, child: CourseDayCards(spans: periodSpans([course(3, 4)]), bells: bells, date: '2026-09-21'))));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(tester.getSize(find.text('课程')).height, greaterThan(0));
+  });
+
+  testWidgets('今天页有课卡按下有反馈、读屏整卡一句并标为按钮；课表页不变', (tester) async {
+    final spans = periodSpans([course(1, 2, name: '早课'), course(3, 4)]);
+    final opened = <PeriodSpan>[];
+    // 10:20：第1–2节已下课，第3–4节上课中已过 20%。
+    final clock = ValueNotifier(DateTime.utc(2026, 9, 21, 2, 20));
+    addTearDown(clock.dispose);
+    await tester.pumpWidget(app(LiveClock.fixed(clock, child: CourseDayCards(spans: spans, bells: bells, date: '2026-09-21', onOpen: opened.add))));
+    await tester.pumpAndSettle();
+    Finder card(String label) => find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == label && widget.properties.button == true);
+    expect(card('早课，教室，08:00到09:40，第1–2节，老师，已下课'), findsOneWidget);
+    expect(card('课程，教室，10:00到11:40，第3–4节，老师，上课中，已过20%'), findsOneWidget);
+    tester.widget<Semantics>(card('早课，教室，08:00到09:40，第1–2节，老师，已下课')).properties.onTap!();
+    expect(opened.single.course!.courseName, '早课');
+    expect(find.descendant(of: find.byKey(ValueKey('course-card-${spanIdentity(spans.first)}')), matching: find.byType(InkWell)), findsOneWidget);
+    // 课表页不传 onOpen：仍只认长按，不加按压反馈与按钮语义。
+    await tester.pumpWidget(app(LiveClock.fixed(clock, child: CourseDayCards(spans: spans, bells: bells, date: '2026-09-21'))));
+    await tester.pumpAndSettle();
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.button == true && (widget.properties.label ?? '').startsWith('早课')), findsNothing);
+    expect(find.descendant(of: find.byKey(ValueKey('course-card-${spanIdentity(spans.first)}')), matching: find.byType(InkWell)), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('打开今天时正在上的课在可见区外就首帧停在它的上沿；放得下或不是今天页不动', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(380, 540));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    const evening = [
+      ...bells,
+      BellPeriod(period: 5, dayPart: '', dayPartCode: '', start: '14:00', end: '14:45'), BellPeriod(period: 6, dayPart: '', dayPartCode: '', start: '14:55', end: '15:40'),
+      BellPeriod(period: 7, dayPart: '', dayPartCode: '', start: '16:00', end: '16:45'), BellPeriod(period: 8, dayPart: '', dayPartCode: '', start: '16:55', end: '17:40'),
+      BellPeriod(period: 9, dayPart: '', dayPartCode: '', start: '19:00', end: '19:45'), BellPeriod(period: 10, dayPart: '', dayPartCode: '', start: '19:55', end: '20:40'),
+    ];
+    final spans = periodSpans([for (var start = 1; start <= 9; start += 2) course(start, start + 1, name: '课程$start')]);
+    final focus = find.byKey(ValueKey('course-card-${spanIdentity(spans[3])}'));
+    // 16:20：第7–8节上课中，排在第四张，540 高的屏放不下。
+    final clock = ValueNotifier(DateTime.utc(2026, 9, 21, 8, 20));
+    addTearDown(clock.dispose);
+    Widget cards({bool revealNow = true, List<PeriodSpan>? list}) => app(LiveClock.fixed(clock, child: CourseDayCards(spans: list ?? spans, bells: evening, date: '2026-09-21', obscuredBottom: 100, revealNow: revealNow)));
+    double offset() => tester.state<ScrollableState>(find.byType(Scrollable)).position.pixels;
+    await tester.pumpWidget(cards());
+    final opening = offset();
+    expect(opening, greaterThan(0));
+    expect(tester.getTopLeft(focus).dy, greaterThanOrEqualTo(0));
+    expect(tester.getBottomRight(focus).dy, lessThanOrEqualTo(540 - 100));
+    await tester.pumpAndSettle();
+    expect(offset(), opening);
+    // 课表页（不传 revealNow）照旧从顶部开始，这节课压在遮挡区里。
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(cards(revealNow: false));
+    expect(offset(), 0);
+    expect(tester.getBottomRight(focus).dy, greaterThan(540 - 100));
+    // 放得下时不动。
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(cards(list: spans.take(2).toList()));
+    expect(offset(), 0);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('课表页长按无课卡安排已有课程，预填当天星期节次且仅本周', (tester) async {
     await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway())));
     await tester.pumpAndSettle();
@@ -281,9 +374,9 @@ void main() {
     expect(heights.toSet(), hasLength(1));
     final position = tester.state<ScrollableState>(find.byType(Scrollable)).position;
     expect(position.maxScrollExtent, 0);
-    // 有课卡左列开始、结束时刻，右列节次；缺作息的节次在同一行注明。
+    // 有课卡左列开始、结束时刻，右列课名、教室与节次；缺作息的节次在同一行注明。
     expect(find.text('10:00'), findsOneWidget);
-    expect(tester.getTopLeft(find.text('10:00')).dx, lessThan(tester.getTopLeft(find.text('第3–4节', findRichText: true)).dx));
+    expect(tester.getTopLeft(find.text('10:00')).dx, lessThan(tester.getTopLeft(find.textContaining('第3–4节')).dx));
     // 空档沿用卡片三列网格：开始时刻与卡片时刻列左对齐，内容与课名同起点，写空闲时长与节次。
     expect(find.text('1小时40分 · 第1–2节'), findsOneWidget);
     expect(tester.getTopLeft(find.text('08:00')).dx, tester.getTopLeft(find.text('10:00')).dx);

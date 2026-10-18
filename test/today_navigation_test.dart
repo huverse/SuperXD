@@ -541,7 +541,7 @@ void main() {
   testWidgets('此刻卡：上课中按小时分钟显示剩余与起止进度条，课前显示下一节，下课后提示课上完了', (tester) async {
     var now = DateTime.utc(2026, 9, 25, 0, 20);
     await _mount(tester, _Gateway(), now: () => now);
-    expect(find.text('上课中 · 第1–2节'), findsOneWidget);
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '上课中 · 第1–2节'), findsOneWidget);
     expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '1小时25分后下课'), findsOneWidget);
     expect(find.text('8:00'), findsNWidgets(2));
     expect(find.text('9:45'), findsWidgets);
@@ -549,12 +549,12 @@ void main() {
     // 窄屏特大字号时右侧时长不挤爆课名。
     await tester.pumpWidget(const SizedBox());
     await _mount(tester, _Gateway(), now: () => now, size: const Size(320, 640), scale: 1.4);
-    expect(find.text('上课中 · 第1–2节'), findsOneWidget);
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '上课中 · 第1–2节'), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     now = DateTime.utc(2026, 9, 24, 23, 15);
     await _mount(tester, _Gateway(), now: () => now);
-    expect(find.text('下一节 · 第1–2节'), findsOneWidget);
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '下一节 · 第1–2节'), findsOneWidget);
     expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '45分钟后上课'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     now = DateTime.utc(2026, 9, 25, 2);
