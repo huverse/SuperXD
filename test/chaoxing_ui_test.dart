@@ -1793,6 +1793,9 @@ void main() {
     await tester.tap(find.text('打开'));
     await tester.pump();
     await waitUntil(tester, () => find.text('学习通签到的说明更新了').evaluate().isNotEmpty);
+    // 第 5 版写明在本机读本应用课表，不再说「与教务账号无关」。
+    expect(find.textContaining('在本机读取本应用里当前教务账号的课表'), findsOneWidget);
+    expect(find.textContaining('本功能与教务账号无关'), findsNothing);
     await tester.tap(find.widgetWithText(TextButton, '取消'));
     await tester.pump();
     await waitUntil(tester, () => find.byType(ChaoxingPage).evaluate().isEmpty);

@@ -30,6 +30,7 @@
 - course_occurrence.dart：courseOccurrences 把课表、开学日与作息展开成带 UTC 起止时刻的课程实例 CourseOccurrence，供课前提醒、日历导出、桌面小组件共用；节次文案统一用 CourseOccurrence.periods。
   - 按“时段 × 周次”直接定位日期，不逐天扫描。
   - 缺开学日或作息时返回空并带原因（OccurrenceGap），作息里找不到的节次计入 unresolved，不猜时刻。
+  - CampusTimetable 是本应用课表某一天的课与用不了的原因（TimetableGap），交给百宝箱学习通签到推断正在上的课。
 - course_reminder.dart：课前提醒规则与端口。
   - planReminders：未来 14 天、最多 128 条，提醒时刻已过的不安排。
   - CourseReminderPort：系统调度端口，由 device 层实现；ReminderCapability 表示通知与精确闹钟权限。

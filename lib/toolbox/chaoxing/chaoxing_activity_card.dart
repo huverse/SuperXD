@@ -54,10 +54,13 @@ String chaoxingSummaryText(ChaoxingSignSummary summary) => summary.succeeded == 
 // 活动卡片：标题行是课程名，下面是活动名与类型、时间。进行中的写开始时间，已结束的写截止时间（都用两个字的前缀，完整时间在卡片里不折行）；
 // 不知道开始时间的有截止就写截止，都没有就不显示时间行。
 class ChaoxingActivityCard extends StatelessWidget {
-  const ChaoxingActivityCard({super.key, required this.activity, required this.onSign, this.showCourse = true});
+  const ChaoxingActivityCard({super.key, required this.activity, required this.onSign, this.showCourse = true, this.signed = false});
   final ChaoxingActivity activity;
   final VoidCallback onSign;
   final bool showCourse;
+
+  // 当前账号在本应用里签过（见 ChaoxingController.signedHere）：时间行下面写「已签到」，只读不用主色。
+  final bool signed;
 
   @override
   Widget build(BuildContext context) {
@@ -98,6 +101,10 @@ class ChaoxingActivityCard extends StatelessWidget {
                 if (time != null) ...[
                   const SizedBox(height: 2),
                   Text(time, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+                ],
+                if (signed) ...[
+                  const SizedBox(height: 2),
+                  Text('已签到', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
                 ],
               ],
             ),

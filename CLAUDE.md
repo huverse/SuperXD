@@ -28,7 +28,7 @@
 
 - 根目录组合根：main.dart、router.dart、app_session.dart，可依赖任何层。
 - page 页面：可依赖 domain、application、gateway、local、social、theme 与 app_session.dart；只经 CampusGateway 与 AccountAccess 访问业务，不直接接触 SQLite、KingoClient 或 cookie（例外只有外观页读写 DisplaySettings）。
-- toolbox 百宝箱：设备级、免登录，可依赖 domain、theme，不依赖教务相关任何层；分享给好友经组合根注入的回调，不依赖 social。
+- toolbox 百宝箱：设备级、免登录，可依赖 domain、theme，不依赖教务相关任何层；分享给好友、读本应用课表（学习通推断正在上的课）都经组合根注入的回调，不依赖 social 与 application。
 - social 私信：设备级的身份、好友、本机库与中转客户端，只依赖 domain；页面经 SocialService 使用。
 - application 应用编排：可依赖 domain、gateway。
 - device 设备能力：系统通知、桌面小组件、应用更新等适配器，只实现 domain 端口、只依赖 domain，由组合根注入；页面不直接依赖。

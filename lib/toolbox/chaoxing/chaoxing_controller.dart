@@ -7,6 +7,7 @@ import 'package:pool/pool.dart';
 import 'package:synchronized/synchronized.dart';
 
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_accounts.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_batch.dart';
@@ -44,8 +45,12 @@ class ChaoxingController extends ChangeNotifier {
     this.temporaryDirectory = getTemporaryDirectory,
     this.lessonPollInterval = const Duration(seconds: 5),
     this.lessonPollWindow = const Duration(minutes: 2),
+    this.timetable,
   });
   final ChaoxingAccounts accounts;
+
+  // 本应用课表今天的课（组合根经百宝箱运行时注入，只读本地）；为空时当本应用课表用不了。
+  final Future<CampusTimetable> Function()? timetable;
 
   // 代签凭据包的中转；没配中转时为 null，出示与扫码导入都不显示。
   final ChaoxingPackHub? hub;
@@ -62,7 +67,23 @@ class ChaoxingController extends ChangeNotifier {
   final Duration lessonPollInterval;
   final Duration lessonPollWindow;
   Timer? _lessonPoll;
-  ChaoxingLessonTable? _lessonTable;
+
+  // 推断用哪份课表（设备级设置，主源；用不了时自动改用另一份），人工决策见 ChaoxingLessonSource。
+  ChaoxingLessonSource lessonSource = ChaoxingLessonSource.app;
+
+  // 这次推断实际用的课表与另一份用不了的原因（签到设置里只读显示），以及今天的课落到的班级与时段（轮询与签完后的重算用）。
+  ChaoxingLessonPlan? lessonPlan;
+  List<({ChaoxingCourse course, ChaoxingLessonSlot slot})> _lessonCourses = const [];
+
+  // 学习通课表读不到的时刻（按账号）：半小时内不再重拉，免得每次刷新都白发一个请求。
+  final _lessonFailures = <String, DateTime>{};
+  static const _lessonFailureRetry = Duration(minutes: 30);
+
+  // [人工决策-2026-10-17 22:47:20] 本账号已签的移出「可能正在签到」、在进行中的列表里标「已签到」（仍可点进去给别的账号签）；
+  // userStatus 核实不了就只认本应用里刚签成功的，只记内存、不落库（同「本机不存签到记录」）。用户选定。
+  // 核实结果：活动列表的 userStatus 不能用来判断，2026-10-18 用授权账号实测，已结束的活动不论签没签都是 1；
+  // 签到前检查（preSign）说已签过的是学习通给的结论，同样记下。
+  final _signedHere = <String, Set<int>>{};
 
   ChaoxingStatus status = ChaoxingStatus.loading;
   List<ChaoxingAccountRecord> accountList = const [];
@@ -79,7 +100,7 @@ class ChaoxingController extends ChangeNotifier {
   // 已结束的活动，给「往期签到」入口用；照样能签，签到页会提示可能记迟到。
   List<ChaoxingActivity> pastActivities = const [];
 
-  // 按学习通课表推断的「可能正在签到」：当前节次的课里刚发起（20 分钟内）的进行中签到。
+  // 按课表推断的「可能正在签到」：正在上的课的时段里发起、仍在进行、本账号还没在本应用里签过的签到。
   List<ChaoxingActivity> lessonActivities = const [];
   Set<int> pinnedClassIds = const {};
   List<ChaoxingSavedLocation> locations = const [];
@@ -163,6 +184,7 @@ class ChaoxingController extends ChangeNotifier {
     _notify();
     try {
       await accounts.loadProfile();
+      lessonSource = ChaoxingLessonSource.values.asNameMap()[await accounts.store.preference(chaoxingLessonSourceKey)] ?? ChaoxingLessonSource.app;
       accountList = await accounts.list();
       await _loadTags();
       locations = await accounts.store.locations();
@@ -231,6 +253,8 @@ class ChaoxingController extends ChangeNotifier {
     activities = const [];
     pastActivities = const [];
     lessonActivities = const [];
+    lessonPlan = null;
+    _lessonCourses = const [];
     courses = const [];
     activitiesLoaded = false;
     status = ChaoxingStatus.signedOut;
@@ -274,6 +298,8 @@ class ChaoxingController extends ChangeNotifier {
         activities = const [];
         pastActivities = const [];
         lessonActivities = const [];
+        lessonPlan = null;
+        _lessonCourses = const [];
         courses = const [];
         activitiesLoaded = false;
       }
@@ -320,8 +346,6 @@ class ChaoxingController extends ChangeNotifier {
     try {
       final fresh = await accounts.run(client, () => chaoxingActivities(client, known));
       if (generation != _generation || listGeneration != _listGeneration) return;
-      final now = DateTime.now().toUtc();
-      final freshById = {for (final activity in fresh) activity.activeId: activity};
       // 同一门课的几个班会给回同一场活动：其余班已有的那条留着（同整份刷新按活动号只留一条）。
       List<ChaoxingActivity> merge(List<ChaoxingActivity> current, bool Function(ChaoxingActivity) keep) {
         final merged = <int, ChaoxingActivity>{
@@ -336,13 +360,12 @@ class ChaoxingController extends ChangeNotifier {
 
       activities = merge(activities, (activity) => activity.ongoing);
       pastActivities = merge(pastActivities, (activity) => !activity.ongoing);
+      // 「可能正在签到」里这门课的部分按新读到的重算（规则同推断），别的课的留着。
       lessonActivities = [
         for (final activity in lessonActivities)
-          if (activity.classId != known.classId)
-            activity
-          else if (freshById[activity.activeId] case final updated? when chaoxingFreshActivity(updated, now))
-            updated,
-      ];
+          if (activity.classId != known.classId) activity,
+        ..._matchLessons(fresh, DateTime.now().toUtc()),
+      ]..sort(chaoxingNewestFirst);
       _notify();
     } catch (failure, stack) {
       if (generation == _generation && listGeneration == _listGeneration) _fail('refresh_course', failure, stack, '刷新未完成，请检查网络后重试');
@@ -399,17 +422,32 @@ class ChaoxingController extends ChangeNotifier {
     bool force = false,
     bool initialTightened = false,
     void Function()? onTightened,
-  }) => signFlow.sign(
-    target,
-    activity,
-    info: info,
-    inputs: inputs,
-    solveCaptcha: solveCaptcha,
-    freshQrCode: freshQrCode,
-    force: force,
-    initialTightened: initialTightened,
-    onTightened: onTightened,
-  );
+  }) async {
+    final result = await signFlow.sign(
+      target,
+      activity,
+      info: info,
+      inputs: inputs,
+      solveCaptcha: solveCaptcha,
+      freshQrCode: freshQrCode,
+      force: force,
+      initialTightened: initialTightened,
+      onTightened: onTightened,
+    );
+    _markSigned(target.record.phoneNumber, activity);
+    return result;
+  }
+
+  // 本账号在本应用里签成功了，或签到前检查说已经签过（学习通给的结论）：移出「可能正在签到」，在进行中的列表里标「已签到」。
+  void _markSigned(String phoneNumber, ChaoxingActivity activity) {
+    _signedHere.putIfAbsent(phoneNumber, () => {}).add(activity.activeId);
+    if (phoneNumber != current?.phoneNumber) return;
+    lessonActivities = [for (final item in lessonActivities) if (item.activeId != activity.activeId) item];
+    _notify();
+  }
+
+  // 当前账号在本应用里签过这场（只记内存，见 _signedHere）。
+  bool signedHere(ChaoxingActivity activity) => _signedHere[current?.phoneNumber]?.contains(activity.activeId) ?? false;
 
   // 扫到新码时先问一次是否还有效（用当前账号问，与学习通客户端一致）。
   Future<bool> qrCodeExpired(ChaoxingQrCode code, ChaoxingActivity activity) async {
@@ -418,7 +456,11 @@ class ChaoxingController extends ChangeNotifier {
   }
 
   // 打开签到页时的检查入口：按这个人的会话查，结果只用来提示与给三选，不产生副作用。
-  Future<ChaoxingFailure?> presignCheck(ChaoxingSignTarget target, ChaoxingActivity activity) => signFlow.check(target, activity);
+  Future<ChaoxingFailure?> presignCheck(ChaoxingSignTarget target, ChaoxingActivity activity) async {
+    final failure = await signFlow.check(target, activity);
+    if (failure?.code == ChaoxingFailureCode.alreadySigned) _markSigned(target.record.phoneNumber, activity);
+    return failure;
+  }
 
   // 开签前预检人脸照片（选了的→本机存的→学习通里的），缺的现在就报。
   Future<void> prepareFace(ChaoxingSignTarget target, ChaoxingActivity activity, ChaoxingActiveInfo info) =>
@@ -693,6 +735,25 @@ class ChaoxingController extends ChangeNotifier {
     unawaited(_reloadActivities());
   }
 
+  // 换推断用的主课表：存好后按已读到的活动重新推断（主源是本应用课表时不联网；要读学习通课表时最多一个请求，正在上的隐藏班各一个）。
+  Future<void> setLessonSource(ChaoxingLessonSource value) async {
+    lessonSource = value;
+    _notify();
+    await accounts.store.setPreference(chaoxingLessonSourceKey, value.name);
+    final client = _client;
+    final record = current;
+    if (client == null || record == null || !activitiesLoaded) return;
+    final generation = _generation;
+    final listGeneration = _listGeneration;
+    final inferred = await _inferFromLessons(client, record, courses, [...activities, ...pastActivities]);
+    if (generation != _generation || listGeneration != _listGeneration) return;
+    lessonActivities = inferred.activities;
+    lessonPlan = inferred.plan;
+    _lessonCourses = inferred.courses;
+    _notify();
+    _startLessonPoll(client, () => generation == _generation && listGeneration == _listGeneration);
+  }
+
   // [人工决策-2026-10-17 16:16:34] 改了学校单位或模拟的客户端，课程列表按新设置下发，旧列表不再作数：先清空，在列表位置显示加载，
   // 再重新拉一遍（同切换账号）。用户从选项中选定，未选「保留旧列表静默刷新」「顶部出下拉刷新那个指示」；签完后的刷新照旧保留列表、静默进行。
   // 改设置之前开始的那一轮读回来就丢弃（见 _loadActivities）。
@@ -703,6 +764,8 @@ class ChaoxingController extends ChangeNotifier {
     activities = const [];
     pastActivities = const [];
     lessonActivities = const [];
+    lessonPlan = null;
+    _lessonCourses = const [];
     activitiesLoaded = false;
     error = null;
     try {
@@ -782,6 +845,8 @@ class ChaoxingController extends ChangeNotifier {
     activities = const [];
     pastActivities = const [];
     lessonActivities = const [];
+    lessonPlan = null;
+    _lessonCourses = const [];
     activitiesLoaded = false;
     status = ChaoxingStatus.ready;
     _notify();
@@ -851,7 +916,8 @@ class ChaoxingController extends ChangeNotifier {
       activities = [for (final activity in loaded.collected) if (activity.ongoing) activity];
       pastActivities = [for (final activity in loaded.collected) if (!activity.ongoing) activity];
       lessonActivities = loaded.lessons.activities;
-      _lessonTable = loaded.lessons.table;
+      lessonPlan = loaded.lessons.plan;
+      _lessonCourses = loaded.lessons.courses;
       activitiesLoaded = true;
       _startLessonPoll(client, latest);
     } catch (failure, stack) {
@@ -909,7 +975,7 @@ class ChaoxingController extends ChangeNotifier {
     );
   }
 
-  // 课表推断只是提示，读不到学习通课表不影响主列表（记日志即可）。课表一并交回，给之后的轮询用。
+  // 课表推断只是提示，读不到课表不影响主列表（记日志即可）。今天的课落到的班级一并交回，给之后的轮询与签完后的重算用。
   Future<_LessonInference> _inferFromLessons(
     ChaoxingClient client,
     ChaoxingAccountRecord record,
@@ -917,21 +983,108 @@ class ChaoxingController extends ChangeNotifier {
     List<ChaoxingActivity> collected,
   ) async {
     try {
-      final cached = await accounts.store.lessonCache(record.phoneNumber);
       final now = DateTime.now().toUtc();
-      var payload = cached?.payload ?? '';
-      var table = cached == null ? null : chaoxingParseLessons(chaoxingJson(payload));
-      // 缓存过期，或在期但解析出零节课（视为不可信，对齐参考项目），都重新拉一次，别把空表照用到满 7 天。
-      if (table == null || now.difference(cached!.fetchedAt) > ChaoxingStore.lessonCacheLifetime || table.lessons.isEmpty) {
-        payload = await accounts.run(client, () => chaoxingFetchLessons(client));
-        await accounts.store.putLessonCache(record.phoneNumber, payload);
-        table = chaoxingParseLessons(chaoxingJson(payload));
+      final plan = await _lessonPlanFor(client, record, now);
+      final lessonCourses = chaoxingSlotCourses(plan.slots, loadedCourses);
+      // 课表自带班级号的班可能不在课程列表里（对齐参考项目）：正在上的这样的班直查一次活动列表补进候选。
+      final knownClassIds = {for (final course in loadedCourses) course.classId};
+      final extra = <ChaoxingActivity>[];
+      for (final (:course, :slot) in lessonCourses) {
+        if (knownClassIds.contains(course.classId) || chaoxingCurrentSlots([slot], now).isEmpty) continue;
+        try {
+          extra.addAll(await accounts.run(client, () => chaoxingActivities(client, course)));
+        } catch (failure, stack) {
+          // 单个班读不到不影响其余（与主列表同口径）。
+          campusLog('[Chaoxing] action=lessons_extra errorType=${failure.runtimeType} classId=${course.classId}\n$stack');
+        }
       }
-      return (activities: await _inferFromTable(client, table, loadedCourses, collected, now), table: table);
+      return (plan: plan, courses: lessonCourses, activities: _matchLessons([...collected, ...extra], now, lessonCourses: lessonCourses, record: record));
     } catch (failure, stack) {
       campusLog('[Chaoxing] action=lessons errorType=${failure.runtimeType}\n$stack');
-      return (activities: const <ChaoxingActivity>[], table: null);
+      return (plan: null, courses: const <({ChaoxingCourse course, ChaoxingLessonSlot slot})>[], activities: const <ChaoxingActivity>[]);
     }
+  }
+
+  // 这次推断用哪份课表（人工决策见 ChaoxingLessonSource）：主源能用就用（今天没课也算能用），用不了才读另一份；
+  // 只在要用时才读学习通课表，本应用课表能用时不多发请求。代签账号只用它自己的学习通课表。
+  Future<ChaoxingLessonPlan> _lessonPlanFor(ChaoxingClient client, ChaoxingAccountRecord record, DateTime now) async {
+    if (record.isOtherUser) {
+      final chaoxing = await _chaoxingSlots(client, record, now);
+      return ChaoxingLessonPlan(
+        used: chaoxing.problem == null ? ChaoxingLessonSource.chaoxing : null,
+        slots: chaoxing.slots,
+        chaoxingProblem: chaoxing.problem,
+        otherUser: true,
+      );
+    }
+    final problems = <ChaoxingLessonSource, String>{};
+    for (final source in [lessonSource, for (final source in ChaoxingLessonSource.values) if (source != lessonSource) source]) {
+      final read = switch (source) {
+        ChaoxingLessonSource.app => await _appSlots(),
+        ChaoxingLessonSource.chaoxing => await _chaoxingSlots(client, record, now),
+      };
+      final problem = read.problem;
+      if (problem == null) {
+        return ChaoxingLessonPlan(used: source, slots: read.slots, appProblem: problems[ChaoxingLessonSource.app], chaoxingProblem: problems[ChaoxingLessonSource.chaoxing]);
+      }
+      problems[source] = problem;
+    }
+    return ChaoxingLessonPlan(appProblem: problems[ChaoxingLessonSource.app], chaoxingProblem: problems[ChaoxingLessonSource.chaoxing]);
+  }
+
+  // 本应用课表今天的课：只读本机，没注入（只装了百宝箱的入口、测试）时当还没有课表。
+  Future<_LessonSlots> _appSlots() async {
+    final read = timetable;
+    if (read == null) return (slots: const <ChaoxingLessonSlot>[], problem: chaoxingTimetableProblem(TimetableGap.noTerm));
+    final today = await read();
+    final gap = today.gap;
+    return gap == null ? (slots: chaoxingTimetableSlots(today), problem: null) : (slots: const <ChaoxingLessonSlot>[], problem: chaoxingTimetableProblem(gap));
+  }
+
+  // 学习通课表今天的课：缓存 7 天；为空的（多半没在学习通里导入课表）隔 chaoxingEmptyLessonsRetry 才重拉，读不到的半小时内不再试，
+  // 免得每次刷新都白发一个请求（以前为空就每次都拉；2026-10-18 实测两个授权账号的学习通课表都为空）。
+  Future<_LessonSlots> _chaoxingSlots(ChaoxingClient client, ChaoxingAccountRecord record, DateTime now) async {
+    final cached = await accounts.store.lessonCache(record.phoneNumber);
+    final age = cached == null ? null : now.difference(cached.fetchedAt);
+    var table = age == null || age > ChaoxingStore.lessonCacheLifetime ? null : chaoxingParseLessons(chaoxingJson(cached!.payload));
+    final failedAt = _lessonFailures[record.phoneNumber];
+    final due = table == null || (table.lessons.isEmpty && age! > chaoxingEmptyLessonsRetry);
+    if (due && (failedAt == null || now.difference(failedAt) > _lessonFailureRetry)) {
+      try {
+        final payload = await accounts.run(client, () => chaoxingFetchLessons(client));
+        await accounts.store.putLessonCache(record.phoneNumber, payload);
+        table = chaoxingParseLessons(chaoxingJson(payload));
+        _lessonFailures.remove(record.phoneNumber);
+      } catch (failure, stack) {
+        _lessonFailures[record.phoneNumber] = now;
+        _logFailure('lessons', failure, stack);
+      }
+    }
+    if (table == null) return (slots: const <ChaoxingLessonSlot>[], problem: '学习通课表没读到');
+    if (table.lessons.isEmpty) return (slots: const <ChaoxingLessonSlot>[], problem: '学习通里没有课表');
+    return (slots: chaoxingTableSlots(table, now), problem: null);
+  }
+
+  // 候选活动里挑出正在上的课的签到（规则见 chaoxingLessonActivity），去掉本账号在本应用里签过的。
+  List<ChaoxingActivity> _matchLessons(
+    Iterable<ChaoxingActivity> candidates,
+    DateTime now, {
+    List<({ChaoxingCourse course, ChaoxingLessonSlot slot})>? lessonCourses,
+    ChaoxingAccountRecord? record,
+  }) {
+    final ongoingLessons = [
+      for (final (:course, :slot) in lessonCourses ?? _lessonCourses)
+        if (chaoxingCurrentSlots([slot], now).isNotEmpty) (course: course, slot: slot),
+    ];
+    final signed = _signedHere[(record ?? current)?.phoneNumber] ?? const <int>{};
+    final found = <int, ChaoxingActivity>{};
+    for (final activity in candidates) {
+      if (signed.contains(activity.activeId)) continue;
+      if (ongoingLessons.any((lesson) => lesson.course.classId == activity.classId && chaoxingLessonActivity(activity, lesson.slot))) {
+        found.putIfAbsent(activity.activeId, () => activity);
+      }
+    }
+    return found.values.toList()..sort(chaoxingNewestFirst);
   }
 
   // 读完列表还没推断到签到、而且现在正有课时开始轮询；换账号、退出、关页面、下课、查到了或列表又重拉了就停（latest 为否）。
@@ -940,8 +1093,7 @@ class ChaoxingController extends ChangeNotifier {
     final deadline = DateTime.now().add(lessonPollWindow);
     void schedule() {
       if (_disposed || !latest() || lessonActivities.isNotEmpty || !DateTime.now().isBefore(deadline)) return;
-      final table = _lessonTable;
-      if (table == null || chaoxingCurrentLessons(table, DateTime.now().toUtc()).isEmpty) return;
+      if (_currentLessonCourses(DateTime.now().toUtc()).isEmpty) return;
       _lessonPoll = Timer(lessonPollInterval, () {
         _pollLessons(client).then((found) {
           if (_disposed || !latest()) return;
@@ -961,53 +1113,24 @@ class ChaoxingController extends ChangeNotifier {
     schedule();
   }
 
-  // 一轮轮询：只查当前这节课对上的那几个班（与刷新时的推断同口径），某个班读不到只记日志，下一轮再试。
+  // 正在上的课落到的班级（同一个班只算一次）。
+  List<ChaoxingCourse> _currentLessonCourses(DateTime now) => {
+    for (final (:course, :slot) in _lessonCourses)
+      if (chaoxingCurrentSlots([slot], now).isNotEmpty) course.classId: course,
+  }.values.toList();
+
+  // 一轮轮询：只查正在上的课对上的那几个班（与刷新时的推断同口径），某个班读不到只记日志，下一轮再试。
   Future<List<ChaoxingActivity>> _pollLessons(ChaoxingClient client) async {
-    final table = _lessonTable;
-    if (table == null) return const [];
     final now = DateTime.now().toUtc();
-    final lessonCourses = chaoxingLessonCourses(chaoxingCurrentLessons(table, now), courses);
-    final found = <int, ChaoxingActivity>{};
-    for (final course in lessonCourses) {
+    final candidates = <ChaoxingActivity>[];
+    for (final course in _currentLessonCourses(now)) {
       try {
-        for (final activity in await accounts.run(client, () => chaoxingActivities(client, course))) {
-          if (chaoxingFreshActivity(activity, now)) found.putIfAbsent(activity.activeId, () => activity);
-        }
+        candidates.addAll(await accounts.run(client, () => chaoxingActivities(client, course)));
       } catch (failure, stack) {
         campusLog('[Chaoxing] action=lessons_poll errorType=${failure.runtimeType} classId=${course.classId}\n$stack');
       }
     }
-    return found.values.toList()..sort(chaoxingNewestFirst);
-  }
-
-  // 按课表推断：当前节次的课落到班级，班级的活动里挑 20 分钟内刚发起的进行中签到。
-  // 课表自带班级号的班可能不在课程列表里（对齐参考项目：这样的班直查一次活动列表补进候选，
-  // 而不是只过滤主列表，否则兜底出来的课程对象永远等不到它的活动）。
-  Future<List<ChaoxingActivity>> _inferFromTable(
-    ChaoxingClient client,
-    ChaoxingLessonTable table,
-    List<ChaoxingCourse> loadedCourses,
-    List<ChaoxingActivity> collected,
-    DateTime now,
-  ) async {
-    final lessonCourses = chaoxingLessonCourses(chaoxingCurrentLessons(table, now), loadedCourses);
-    final classIds = {for (final course in lessonCourses) course.classId};
-    var candidates = collected;
-    final knownClassIds = {for (final course in loadedCourses) course.classId};
-    final outside = [for (final course in lessonCourses) if (course.classId > 0 && !knownClassIds.contains(course.classId)) course];
-    if (outside.isNotEmpty) {
-      final extra = <ChaoxingActivity>[];
-      for (final course in outside) {
-        try {
-          extra.addAll(await accounts.run(client, () => chaoxingActivities(client, course)));
-        } catch (failure, stack) {
-          // 单个班读不到不影响其余（与主列表同口径）。
-          campusLog('[Chaoxing] action=lessons_extra errorType=${failure.runtimeType} classId=${course.classId}\n$stack');
-        }
-      }
-      candidates = [...collected, ...extra];
-    }
-    return [for (final activity in candidates) if (classIds.contains(activity.classId) && chaoxingFreshActivity(activity, now)) activity];
+    return _matchLessons(candidates, now);
   }
 
   // 群聊与签退跳转拼出来的活动没有列表 status，按截止时间补：没截止的当进行中。
@@ -1055,6 +1178,9 @@ class ChaoxingController extends ChangeNotifier {
   }
 }
 
-// 课表推断的结果与这次用的课表（轮询接着用它看当前是哪节课）；课表读不到时为空。
-typedef _LessonInference = ({List<ChaoxingActivity> activities, ChaoxingLessonTable? table});
+// 课表推断的结果：这次用的课表（读不到时为空）、今天的课落到的班级（轮询与签完后的重算接着用）与推断出的签到。
+typedef _LessonInference = ({ChaoxingLessonPlan? plan, List<({ChaoxingCourse course, ChaoxingLessonSlot slot})> courses, List<ChaoxingActivity> activities});
+
+// 一份课表今天的课；用不了时 problem 是写给用户看的原因。
+typedef _LessonSlots = ({List<ChaoxingLessonSlot> slots, String? problem});
 

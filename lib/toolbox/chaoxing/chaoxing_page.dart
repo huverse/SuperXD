@@ -67,9 +67,11 @@ Future<void> importChaoxingTicket(
 }
 
 // 首次登录前的第三方说明；条款版本变了要重新征得同意（第 2 版加了设备信息上传与 OAID，第 3 版加了地图页「定位到我」按需申请定位权限，第 4 版改为打开位置签到就申请定位权限）。
+// [人工决策-2026-10-18 13:07:53] 第 5 版：推断正在上的课会读本应用课表，原来的「本功能与教务账号无关」不再严格成立，
+// 改写成只在本机读本应用课表比对课名与时间、不发给任何人、不读教务密码；升版本让已同意过的人重新确认（用户选定）。
 // 同意记录按工具 id 存，清除数据时框架按同一个 id 撤掉。
 const chaoxingConsentService = ChaoxingService.serviceId;
-const chaoxingConsentVersion = 'chaoxing-sign-4';
+const chaoxingConsentVersion = 'chaoxing-sign-5';
 
 class ChaoxingPage extends StatefulWidget {
   const ChaoxingPage({super.key, required this.runtime});
@@ -104,7 +106,12 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
       // 学习通的服务由本工具自己打开（框架只给目录与公共能力）。
       final service = await widget.runtime.service<ChaoxingService>(ChaoxingService.serviceId);
       _service = service;
-      final controller = ChaoxingController(accounts: service.accounts, hub: service.hub, filePublisher: service.filePublisher);
+      final controller = ChaoxingController(
+        accounts: service.accounts,
+        hub: service.hub,
+        filePublisher: service.filePublisher,
+        timetable: widget.runtime.campusTimetable,
+      );
       if (!mounted) {
         controller.dispose();
         return;
@@ -138,7 +145,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
       message: 'SuperXD 会把你的学习通账号与密码保存在本机安全存储，用于登录超星学习通（chaoxing.com）并提交签到；'
           '签到时的位置、照片与账号信息会发送给学习通。为了与学习通客户端一致（人脸签到的设备签名、避免被标「更换设备」），'
           '登录时会把设备信息（型号、系统版本、ANDROID_ID、DRM 设备号等）加密后发给学习通，并读取系统的匿名设备标识（OAID）算出设备码。'
-          '选签到位置时用高德地图（会打开高德 SDK 加载地图）；打开位置签到时会申请定位权限，由高德定位取当前位置作默认选点，不授权也能手动选。本功能与教务账号无关，也不会读取教务密码。',
+          '选签到位置时用高德地图（会打开高德 SDK 加载地图）；打开位置签到时会申请定位权限，由高德定位取当前位置作默认选点，不授权也能手动选。推断正在上的课时，会在本机读取本应用里当前教务账号的课表比对课名与时间，不发给学习通或其他任何人，也不会读取教务密码。',
       action: updated ? '同意' : '同意并登录',
     );
     if (!agreed || !mounted) return false;
@@ -498,7 +505,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
             ),
           ],
           if (controller.lessonActivities.isNotEmpty) ...[
-            const ChaoxingSectionTitle('可能正在签到（按学习通课表）'),
+            ChaoxingSectionTitle('可能正在签到（按${controller.lessonPlan?.used?.label ?? '课表'}）'),
             for (final activity in controller.lessonActivities)
               ChaoxingActivityCard(
                 key: ValueKey('lesson-${activity.activeId}'),
@@ -510,12 +517,13 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
           // 下拉时只有顶部指示，已有的列表与「没有活动」照常显示；列表还没读到过（刚打开、切了账号、改了单位或客户端、上次没读成）
           // 且不是下拉时，才在这里显示加载；读取失败时上面有原因与「重试」，这里不写「没有活动」。签完后的刷新静默进行。
           const ChaoxingSectionTitle('进行中的签到'),
-          // 课表推断里已经列出的不在这里重复。
+          // 课表推断里已经列出的不在这里重复；本账号在本应用里签过的标「已签到」，照样能点进去给别的账号签。
           if (ongoing.isNotEmpty)
             for (final activity in ongoing)
               ChaoxingActivityCard(
                 key: ValueKey(activity.activeId),
                 activity: activity,
+                signed: controller.signedHere(activity),
                 onSign: () => launcher.open(context, activity),
               )
           else if (controller.activitiesLoaded)
