@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:math';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as picture;
@@ -535,6 +536,8 @@ void main() {
     final passed = await chaoxingCaptchaVerify(client, puzzle: puzzle, position: 123.4, referer: referer);
     expect(passed.passed, isTrue);
     expect(passed.validate, 'captcha-validate');
+    // 三个 JSONP 接口都要带 callback（真实接口不带时只回 CALLBACK ERROR，以前取配置与提交校验两处漏了）。
+    expect(fake.captchaResultQuery, contains('callback=cx_captcha_function'));
     expect(fake.captchaResultQuery, contains('textClickArr=%5B%7B%22x%22%3A123%7D%5D'));
     expect(fake.captchaResultQuery, contains('token=${fake.captchaToken}'));
     expect(fake.captchaReferer, referer.toString());
@@ -840,6 +843,19 @@ void main() {
     expect(chaoxingCurrentSlots(slots, DateTime.utc(2026, 10, 7, 3, 11)), isEmpty);
     expect(chaoxingTableSlots(table, DateTime.utc(2026, 10, 8, 1, 30)), isEmpty);
     expect(() => chaoxingParseLessons({'curriculum': 1}), throwsA(isA<ChaoxingFailure>()));
+  });
+
+  test('滑块验证码自动找缺口：认出调亮的真缺口、不认调暗的诱饵，提交缺口块偏移减 2；空白图认不准', () {
+    final puzzle = syntheticCaptcha(gap: 180, decoy: 60);
+    final match = chaoxingCaptchaMatch(puzzle.shade, puzzle.cutout)!;
+    expect(match.offset, 180);
+    expect(match.score, greaterThan(chaoxingCaptchaMinScore));
+    expect(chaoxingCaptchaAutoPosition(puzzle), 178);
+    final swapped = syntheticCaptcha(gap: 40, decoy: 220);
+    expect(chaoxingCaptchaMatch(swapped.shade, swapped.cutout)!.offset, 40);
+    final blank = (shade: picture.encodePng(picture.Image(width: 320, height: 160)), cutout: picture.encodePng(picture.Image(width: 56, height: 160)));
+    expect(chaoxingCaptchaAutoPosition(blank), isNull);
+    expect(chaoxingCaptchaAutoPosition((shade: Uint8List.fromList([1, 2, 3]), cutout: puzzle.cutout)), isNull);
   });
 
   test('课表课名与课程列表课名：归一化、互相包含或二元组相似', () {
