@@ -250,11 +250,17 @@ void main() {
     expect(find.textContaining('签到码签到'), findsOneWidget);
 
     await openSignSheet(tester);
+    int calls(String path) => fake.calls.where((call) => call.endsWith(path)).length;
+    final courseLists = calls('/backclazzdata');
+    final activityLists = calls('/activelist');
     await enterCode(tester, '1234');
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     expect(fake.signQuery!['signCode'], '1234');
     expect(fake.signQuery!['activeId'], '501');
     expect(fake.signQuery!['uid'], '7007');
+    // 签完只重拉这门课的签到，不再整份重拉（整份会连课程列表一起拉）。
+    await waitUntil(tester, () => calls('/activelist') > activityLists);
+    expect(calls('/backclazzdata'), courseLists);
     await tester.pumpWidget(const SizedBox());
   });
 

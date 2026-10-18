@@ -305,6 +305,50 @@ class ChaoxingController extends ChangeNotifier {
     }
   }
 
+  // [人工决策-2026-10-18 12:27:26] 签完后的刷新只重拉刚签的这门课（用户选定，未选「保持现状」「分层刷新」）：签到只改了这门课的活动状态；
+  // 打开与下拉仍整份刷新，才发现得了别的课新发的签到。实测每个账号 28 门课，整份刷新 29 个请求、约 2 秒，课每学年还在增加。
+  // 有整份刷新正在拉时就等它（它已包含这门课）；这一轮途中切了账号、改了设置或又起了整份刷新，结果丢弃。签完的刷新静默进行。
+  Future<void> refreshCourse(ChaoxingActivity signed) async {
+    if (busy || _client == null) return;
+    if (_listLoad != null) return refresh();
+    final known = courses.where((course) => course.classId == signed.classId).firstOrNull;
+    // 课程列表里没有的课（扫码打开、群聊里的）不在首页列表里，没什么可更新的。
+    if (known == null) return;
+    final generation = _generation;
+    final listGeneration = _listGeneration;
+    final client = _requireClient();
+    try {
+      final fresh = await accounts.run(client, () => chaoxingActivities(client, known));
+      if (generation != _generation || listGeneration != _listGeneration) return;
+      final now = DateTime.now().toUtc();
+      final freshById = {for (final activity in fresh) activity.activeId: activity};
+      // 同一门课的几个班会给回同一场活动：其余班已有的那条留着（同整份刷新按活动号只留一条）。
+      List<ChaoxingActivity> merge(List<ChaoxingActivity> current, bool Function(ChaoxingActivity) keep) {
+        final merged = <int, ChaoxingActivity>{
+          for (final activity in current)
+            if (activity.classId != known.classId) activity.activeId: activity,
+        };
+        for (final activity in fresh) {
+          if (keep(activity)) merged.putIfAbsent(activity.activeId, () => activity);
+        }
+        return merged.values.toList()..sort(chaoxingNewestFirst);
+      }
+
+      activities = merge(activities, (activity) => activity.ongoing);
+      pastActivities = merge(pastActivities, (activity) => !activity.ongoing);
+      lessonActivities = [
+        for (final activity in lessonActivities)
+          if (activity.classId != known.classId)
+            activity
+          else if (freshById[activity.activeId] case final updated? when chaoxingFreshActivity(updated, now))
+            updated,
+      ];
+      _notify();
+    } catch (failure, stack) {
+      if (generation == _generation && listGeneration == _listGeneration) _fail('refresh_course', failure, stack, '刷新未完成，请检查网络后重试');
+    }
+  }
+
   Future<ChaoxingActiveInfo> activeInfo(ChaoxingActivity activity) async {
     final client = _requireClient();
     return accounts.run(client, () => chaoxingActiveInfo(client, activity.activeId));

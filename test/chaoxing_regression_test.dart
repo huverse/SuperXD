@@ -558,6 +558,42 @@ void main() {
     controller.dispose();
   });
 
+  test('签完的刷新只重拉这门课：一个活动列表请求，状态变化合并进首页列表', () async {
+    fake.courses = [
+      ...mathCourse(),
+      {
+        'content': {
+          'id': 89,
+          'course': {
+            'data': [
+              {'id': 9002, 'name': '大学英语', 'teacherfactor': '李老师'},
+            ],
+          },
+        },
+      },
+    ];
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '5', 'nameOne': '签到', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0},
+    ];
+    final controller = ChaoxingController(accounts: accountsWith(MemoryChaoxingVault()));
+    await controller.signIn('13800138000', 'myPassword123');
+    await controller.refresh();
+    expect(controller.courses, hasLength(2));
+    final signed = controller.activities.single;
+    int activityLists() => fake.calls.where((call) => call.endsWith('/activelist')).length;
+    final before = activityLists();
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '5', 'nameOne': '签到', 'startTime': 1760000000000, 'status': 2, 'userStatus': 0},
+    ];
+    await controller.refreshCourse(signed);
+    // 以前签完整份重拉（这里是 1 + 2 门课 = 3 个请求，真实账号 29 个）。
+    expect(activityLists(), before + 1);
+    expect(controller.activities, isEmpty);
+    expect(controller.pastActivities.map((activity) => activity.activeId), [501]);
+    await controller.signOut();
+    controller.dispose();
+  });
+
   test('账号登录用的会话用完就关，登录没成也关', () async {
     final clients = <_CountingClient>[];
     final accounts = ChaoxingAccounts(
