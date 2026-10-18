@@ -9,6 +9,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_motion.dart';
+import 'package:superxd/theme/campus_rolling_text.dart';
 import 'package:superxd/theme/curve_geometry.dart';
 
 Widget host(Widget child, {bool reduced = false, bool ticker = true}) =>
@@ -39,6 +40,38 @@ void main() {
       expect(identical(geometry, CurveGeometry.of(curve)), isTrue);
     }
   });
+  testWidgets('数字滚动：只有变了的位滚动，倒数时新字从上方落下、旧字向下淡出；位数变少时按右对齐；减少动画直接换', (tester) async {
+    Widget rolling(String text, {bool reduced = false}) => MaterialApp(home: MediaQuery(
+      data: MediaQueryData(disableAnimations: reduced),
+      child: Center(child: CampusRollingText(text, countsDown: true, style: const TextStyle(fontSize: 28))),
+    ));
+    double top(String glyph) => tester.getTopLeft(find.text(glyph)).dy;
+    await tester.pumpWidget(rolling('4:59'));
+    final settled = top('4');
+    await tester.pumpWidget(rolling('4:58'));
+    await tester.pump(const Duration(milliseconds: 120));
+    // 新旧两个字同时在格子里，新字在上方往下落，旧字往下滑；没变的位不动。
+    expect(find.text('8'), findsOneWidget);
+    expect(find.text('9'), findsOneWidget);
+    expect(top('8'), lessThan(settled));
+    expect(top('9'), greaterThan(settled));
+    expect(top('4'), settled);
+    await tester.pumpAndSettle();
+    expect(find.text('9'), findsNothing);
+    expect(top('8'), settled);
+    // 10:00 → 9:59：个位、十位、分钟都滚，多出的那位淡出。
+    await tester.pumpWidget(rolling('10:00'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(rolling('9:59'));
+    await tester.pumpAndSettle();
+    expect(find.text('1'), findsNothing);
+    expect(tester.getTopLeft(find.text('9').first).dx, lessThan(tester.getTopLeft(find.text(':')).dx));
+    await tester.pumpWidget(rolling('9:58', reduced: true));
+    expect(find.text('9'), findsNWidgets(1));
+    expect(find.text('8'), findsOneWidget);
+    expect(find.byType(AnimatedSwitcher), findsNothing);
+  });
+
   testWidgets('真实Lucide打包字体产生矢量MorphPainter而非静态回退', (tester) async {
     configureCampusIcons();
     await tester.pumpWidget(

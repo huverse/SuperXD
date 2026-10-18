@@ -296,4 +296,25 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets('弹窗、弹层开着时云雾停在原处（不逼着整屏模糊逐帧重算），关掉后从原处接着流动', (tester) async {
+    final overlays = ValueNotifier(0);
+    addTearDown(overlays.dispose);
+    await tester.pumpWidget(MaterialApp(home: CampusMotion(child: CampusAtmosphere(overlays: overlays, child: const SizedBox.expand()))));
+    await tester.pump(const Duration(seconds: 3));
+    expect(tester.binding.hasScheduledFrame, isTrue);
+    Animation<double> progress() => (tester.widget<CustomPaint>(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter)).painter! as AtmospherePainter).progress;
+    overlays.value = 1;
+    await tester.pump();
+    final paused = progress().value;
+    await tester.pump(const Duration(seconds: 3));
+    expect(tester.binding.hasScheduledFrame, isFalse);
+    expect(progress().value, paused);
+    overlays.value = 0;
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(tester.binding.hasScheduledFrame, isTrue);
+    expect(progress().value, closeTo(paused + 1 / 24, .01));
+    await tester.pumpWidget(const SizedBox());
+  });
 }

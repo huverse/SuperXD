@@ -26,11 +26,14 @@ const _backgroundSwap = Duration(milliseconds: 420);
 const _lookFollow = Duration(milliseconds: 160);
 
 // 唯一背景循环，不随路由/列表项复制。纹理固定，不逐帧生成随机噪点。设了壁纸时改画静态壁纸，不再循环；高对比度时两者都不画。
+// overlays 是正在显示的弹窗、弹层层数，大于 0 时云雾停在原处：弹窗的全屏模糊压在流动的云雾上时，每一帧都要重算整屏模糊
+// （模拟器上弹窗静止时每帧栅格约 80ms），停下后弹窗不动就不出帧；关掉后从原处接着流动，不跳。
 class CampusAtmosphere extends StatefulWidget {
-  const CampusAtmosphere({super.key, required this.child, this.phase, this.wallpaper});
+  const CampusAtmosphere({super.key, required this.child, this.phase, this.wallpaper, this.overlays});
   final Widget child;
   final double? phase;
   final CampusWallpaper? wallpaper;
+  final ValueListenable<int>? overlays;
   @override
   State<CampusAtmosphere> createState() => _CampusAtmosphereState();
 }
@@ -72,7 +75,7 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   }
 
   void _updatePlayback() {
-    if (_allowed && widget.phase == null && _shown == null) {
+    if (_allowed && widget.phase == null && _shown == null && (widget.overlays?.value ?? 0) == 0) {
       if (!_controller.isAnimating) _controller.repeat();
     } else {
       _controller.stop();
@@ -80,14 +83,25 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   }
 
   @override
+  void initState() {
+    super.initState();
+    widget.overlays?.addListener(_updatePlayback);
+  }
+
+  @override
   void didUpdateWidget(CampusAtmosphere oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (oldWidget.wallpaper != widget.wallpaper) _syncWallpaper();
+    if (oldWidget.overlays != widget.overlays) {
+      oldWidget.overlays?.removeListener(_updatePlayback);
+      widget.overlays?.addListener(_updatePlayback);
+    }
     _updatePlayback();
   }
 
   @override
   void dispose() {
+    widget.overlays?.removeListener(_updatePlayback);
     _controller.dispose();
     super.dispose();
   }
@@ -131,8 +145,8 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   );
 }
 
-// 向下提供与背景同相位的一份副本。只给入场遮罩临时叠在内容之上：内容淡入改为盖在上面的背景淡出，
-// 玻璃不处在半透明图层里，从第一帧起就按真实背景绘制。
+// 向下提供与背景同相位的一份副本，只在两处临时用：入场遮罩叠在内容之上（内容淡入改为盖在上面的背景淡出，
+// 玻璃不处在半透明图层里，从第一帧起就按真实背景绘制）；页面推在弹窗上时转场期间垫在页面下面（见 campus_transitions.dart）。
 class CampusBackdrop extends InheritedWidget {
   const CampusBackdrop({super.key, required this.layer, required super.child});
   final WidgetBuilder layer;

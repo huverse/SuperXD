@@ -90,8 +90,8 @@ void main() async {
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
   runApp(SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal));
   unawaited(initializeCampusGlass());
-  // 私信是设备级的，与教务会话无关；初始化失败只影响私信（状态 failed），不影响应用。
-  unawaited(social.initialize());
+  // 私信是设备级的，与教务会话无关；初始化失败只影响私信（状态 failed），不影响应用。已开启私信的会立即联网收取，所以等用户同意协议与政策之后再初始化。
+  unawaited(legal.agreed.then((_) => social.initialize()));
   try {
     await session.restore();
   } catch (error, stack) {
@@ -100,7 +100,7 @@ void main() async {
   unawaited(checkLegalNotice(legal));
   watchLocalSchedule(session, reminders: reminders, widgets: widgets);
   watchWidgetTheme(display, widgetPort);
-  if (updates != null) watchAppUpdates(updates);
+  if (updates != null) watchAppUpdates(updates, agreed: legal.agreed);
 }
 
 // 中转服务地址来自构建参数 SUPERXD_RELAY；未配置或格式不对时私信与应用更新都不可用，不猜默认地址。
@@ -135,24 +135,19 @@ Future<AppUpdates?> appUpdates(Directory support) async {
   );
 }
 
-// 应用更新：启动先清掉装好后的旧安装包，等首屏稳下来再自动检查（每个校园日一次，查到由账号应用弹窗）；
+// 应用更新：启动先清掉装好后的旧安装包，用户同意协议与政策、首屏稳下来后再自动检查（每个校园日一次，查到由账号应用弹窗）；
 // 回到前台时接着做被搁下的安装（去开启了授权，或下载在后台完成）。三者都自己兜住异常，只记日志。
-void watchAppUpdates(AppUpdates updates) {
+void watchAppUpdates(AppUpdates updates, {required Future<void> agreed}) {
   unawaited(updates.prune());
   AppLifecycleListener(onResume: () => unawaited(updates.resume()));
-  unawaited(Future<void>.delayed(appUpdateAutoCheckDelay, updates.autoCheck));
+  unawaited(agreed.then((_) => Future<void>.delayed(appUpdateAutoCheckDelay, updates.autoCheck)));
 }
 
-// 协议与政策的更新提示：会话恢复之后再核对；新装与升级按系统记的首次安装、最近更新时刻区分。
-// 恢复会换账号代次、下一帧整个账号应用重建，所以先等这一帧过去：安装信息已缓存、立即返回，不等就弹在要被拆掉的旧应用上、跟着消失。
+// 协议与政策的同意与更新提示：会话恢复之后再核对（没同意过的先征得同意，同意过的有实质变化时提示一次）。
+// 恢复会换账号代次、下一帧整个账号应用重建，所以先等这一帧过去，不等就弹在要被拆掉的旧应用上、跟着消失。
 Future<void> checkLegalNotice(LegalNoticeMemory legal) async {
-  try {
-    final package = await PackageInfo.fromPlatform();
-    await WidgetsBinding.instance.endOfFrame;
-    await legal.check(legalRevision, freshInstall: package.installTime == package.updateTime);
-  } catch (error, stack) {
-    campusLog('[Legal] action=check errorType=${error.runtimeType}\n$stack');
-  }
+  await WidgetsBinding.instance.endOfFrame;
+  legal.check(legalRevision);
 }
 
 // 课前提醒与桌面小组件的对账时机：启动恢复会话后、回到前台、切换账号或退出登录、本机课表相关写入后；1秒防抖合并连续写入。
@@ -312,21 +307,23 @@ class _AccountAppState extends State<_AccountApp> {
 
   void _onLegal() => unawaited(_promptLegal());
 
-  // 协议与政策有实质变化后提示一次：同更新弹窗挂在根导航器上；点「知道了」才记下，关掉后接着弹被搁下的更新。
+  // 协议与政策：没同意过的先征得同意，同意过的有实质变化后提示一次；同更新弹窗挂在根导航器上。
+  // 点「同意」「知道了」才记下，关掉后接着弹被搁下的更新；选了退出应用就什么也不记。
   Future<void> _promptLegal() async {
     final legal = widget.legal;
     final context = _router.routerDelegate.navigatorKey.currentContext;
     if (legal == null || context == null || !mounted) return;
-    final revision = legal.takePending();
-    if (revision == null) return;
+    final pending = legal.takePending();
+    if (pending == null) return;
     _legalOpen = true;
-    final seen = await showLegalUpdateNotice(context);
+    final accepted = pending.consent ? await askLegalConsent(context) : await showLegalUpdateNotice(context);
     _legalOpen = false;
-    if (seen) {
+    if (pending.consent && !accepted) return;
+    if (accepted) {
       try {
-        await legal.markSeen(revision);
+        await (pending.consent ? legal.markAgreed(pending.revision) : legal.markSeen(pending.revision));
       } catch (error, stack) {
-        campusLog('[Legal] action=mark_seen errorType=${error.runtimeType}\n$stack');
+        campusLog('[Legal] action=mark errorType=${error.runtimeType}\n$stack');
       }
     }
     _promptUpdate();
@@ -374,7 +371,7 @@ class _AccountAppState extends State<_AccountApp> {
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       builder: (context, child) => DisplayScope(settings: _display, child: MediaQuery(
         data: MediaQuery.of(context).copyWith(textScaler: CampusTextScaler(MediaQuery.textScalerOf(context), _display.scale)),
-        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: campusGlassCapped.value, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, wallpaper: _wallpaper(), child: CampusEntryFade(child: LiveClock(child: child!)))))),
+        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: campusGlassCapped.value, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, wallpaper: _wallpaper(), overlays: campusOverlayDepth, child: CampusEntryFade(child: LiveClock(child: child!)))))),
       )),
     ));
   }

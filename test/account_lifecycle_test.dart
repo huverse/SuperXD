@@ -1,13 +1,14 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/app_session.dart';
+import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/domain/account.dart';
 import 'package:superxd/domain/campus_gateway.dart';
@@ -116,55 +117,101 @@ void main() {
     expect(find.text('新版本 1.0.0-alpha.5'), findsOneWidget);
     await tester.pumpWidget(const SizedBox()); session.dispose();
   });
-  testWidgets('协议与政策更新：升级来的提示一次、可点开全文，开着时更新弹窗等它关掉；看过与新装的不提示', (tester) async {
+  testWidgets('首次启动先征得同意：开着时不弹更新、可点开全文；不同意先二次确认，再看看回到协议，退出应用不记同意；同意后记下并接着弹更新', (tester) async {
+    var quits = 0;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'SystemNavigator.pop') quits++;
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
     final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
     final fixture = UpdateFixture()..feed.next = fakeRelease();
     final legal = LegalNoticeMemory.memory();
     await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, updates: fixture.updates, legal: legal)); await tester.pumpAndSettle();
-    await legal.check(legalRevision, freshInstall: false); await tester.pumpAndSettle();
-    expect(find.text('用户协议与隐私政策已更新'), findsOneWidget);
-    expect(find.textContaining(legalChanges), findsOneWidget);
-    // 点遮罩关不掉，只有「知道了」。
+    legal.check(legalRevision); await tester.pumpAndSettle();
+    expect(find.text('用户协议与隐私政策'), findsOneWidget);
+    // 点遮罩关不掉。
     await tester.tapAt(const Offset(4, 4)); await tester.pumpAndSettle();
-    expect(find.text('用户协议与隐私政策已更新'), findsOneWidget);
+    expect(find.text('用户协议与隐私政策'), findsOneWidget);
     await fixture.updates.autoCheck(); await tester.pumpAndSettle();
     expect(find.text('发现新版本'), findsNothing);
-    await tester.tap(find.text('隐私政策')); await tester.pumpAndSettle();
+    // 全文页推在弹窗上：进出转场期间页面垫一份背景副本盖住弹窗（页面透明，不垫会和弹窗叠成两层），停稳后撤掉，背景只剩一份。
+    int backdrops() => find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter).evaluate().length;
+    expect(backdrops(), 1);
+    await tester.tap(find.text('隐私政策')); await tester.pump(); await tester.pump(const Duration(milliseconds: 90));
+    expect(backdrops(), 2);
+    await tester.pumpAndSettle();
     expect(find.byType(LegalPage), findsOneWidget);
-    await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
+    expect(backdrops(), 1);
+    await tester.tap(find.byTooltip('返回')); await tester.pump(); await tester.pump(const Duration(milliseconds: 90));
+    expect(backdrops(), 2);
+    await tester.pumpAndSettle();
     expect(find.byType(LegalPage), findsNothing);
-    expect(find.text('用户协议与隐私政策已更新'), findsOneWidget);
-    expect(legal.seenRevision, isNull);
-    await tester.tap(find.text('知道了')); await tester.pumpAndSettle();
-    expect(legal.seenRevision, legalRevision);
-    expect(find.text('用户协议与隐私政策已更新'), findsNothing);
+    expect(backdrops(), 1);
+    expect(find.text('用户协议与隐私政策'), findsOneWidget);
+    await tester.tap(find.text('不同意')); await tester.pumpAndSettle();
+    expect(find.text('需要你的同意'), findsOneWidget);
+    await tester.tap(find.text('再看看')); await tester.pumpAndSettle();
+    expect(find.text('需要你的同意'), findsNothing);
+    expect(find.text('用户协议与隐私政策'), findsOneWidget);
+    await tester.tap(find.text('不同意')); await tester.pumpAndSettle();
+    await tester.tap(find.text('退出应用')); await tester.pumpAndSettle();
+    expect(quits, 1);
+    expect(legal.agreedRevision, isNull);
+    expect(find.text('发现新版本'), findsNothing);
+    // 下次打开再问；同意后两项都记下，接着弹被搁下的更新。
+    legal.check(legalRevision); await tester.pumpAndSettle();
+    expect(find.text('用户协议与隐私政策'), findsOneWidget);
+    var agreed = false;
+    unawaited(legal.agreed.then((_) => agreed = true));
+    await tester.tap(find.text('同意')); await tester.pumpAndSettle();
+    expect((legal.agreedRevision, legal.seenRevision), (legalRevision, legalRevision));
+    expect(agreed, isTrue);
+    expect(find.text('用户协议与隐私政策'), findsNothing);
     expect(find.text('发现新版本'), findsOneWidget);
     await tester.tap(find.text('稍后')); await tester.pumpAndSettle();
-    await legal.check(legalRevision, freshInstall: false); await tester.pumpAndSettle();
-    expect(find.text('用户协议与隐私政策已更新'), findsNothing);
-    final fresh = LegalNoticeMemory.memory();
-    await fresh.check(legalRevision, freshInstall: true);
-    expect(fresh.seenRevision, legalRevision);
-    expect(fresh.takePending(), isNull);
-    // 看过旧一版的，新装判定不管用，照样提示。
-    final older = LegalNoticeMemory.memory(seenRevision: legalRevision - 1);
-    await older.check(legalRevision, freshInstall: true);
-    expect(older.takePending(), legalRevision);
+    legal.check(legalRevision); await tester.pumpAndSettle();
+    expect(find.text('用户协议与隐私政策'), findsNothing);
+    expect(quits, 1);
     await tester.pumpWidget(const SizedBox()); session.dispose();
   });
-  testWidgets('按启动顺序：恢复会话换了代次后再核对，协议更新提示弹在新的账号应用上，不被重建拆掉', (tester) async {
-    PackageInfo.setMockInitialValues(appName: 'SuperXD', packageName: 'com.superxd.superxd', version: '1.0.0', buildNumber: '5', buildSignature: '', installTime: DateTime.utc(2026, 9, 29), updateTime: DateTime.utc(2026, 10, 18));
+  testWidgets('同意过的，协议与政策有实质变化时提示一次，只有「知道了」才记下，不再征得同意', (tester) async {
+    final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
+    final legal = LegalNoticeMemory.memory(agreedRevision: legalRevision - 1, seenRevision: legalRevision - 1);
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, legal: legal)); await tester.pumpAndSettle();
+    legal.check(legalRevision); await tester.pumpAndSettle();
+    expect(find.text('协议与政策已更新'), findsOneWidget);
+    expect(find.textContaining(legalChanges), findsOneWidget);
+    expect(find.text('不同意'), findsNothing);
+    await tester.tap(find.text('知道了')); await tester.pumpAndSettle();
+    expect((legal.agreedRevision, legal.seenRevision), (legalRevision - 1, legalRevision));
+    legal.check(legalRevision); await tester.pumpAndSettle();
+    expect(find.text('协议与政策已更新'), findsNothing);
+    await tester.pumpWidget(const SizedBox()); session.dispose();
+  });
+  testWidgets('自动检查更新等用户同意协议之后才开始', (tester) async {
+    final fixture = UpdateFixture();
+    final agreed = Completer<void>();
+    watchAppUpdates(fixture.updates, agreed: agreed.future);
+    await tester.pump(appUpdateAutoCheckDelay * 2);
+    expect(fixture.feed.calls, 0);
+    agreed.complete();
+    await tester.pump();
+    await tester.pump(appUpdateAutoCheckDelay);
+    expect(fixture.feed.calls, 1);
+  });
+  testWidgets('按启动顺序：恢复会话换了代次后再核对，同意弹窗弹在新的账号应用上，不被重建拆掉', (tester) async {
     final gateway = _Accounts(); final session = AppSession(gateway);
     final legal = LegalNoticeMemory.memory();
     await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, legal: legal)); await tester.pump();
-    // 同 main：恢复会话（换代次、下一帧整个账号应用重建）后紧接着核对，安装信息已缓存、立即返回。
+    // 同 main：恢复会话（换代次、下一帧整个账号应用重建）后紧接着核对。
     gateway._generation++;
     await session.restore();
     unawaited(checkLegalNotice(legal));
     await tester.pumpAndSettle();
-    expect(find.text('用户协议与隐私政策已更新'), findsOneWidget);
-    await tester.tap(find.text('知道了')); await tester.pumpAndSettle();
-    expect(legal.seenRevision, legalRevision);
+    expect(find.text('用户协议与隐私政策'), findsOneWidget);
+    await tester.tap(find.text('同意')); await tester.pumpAndSettle();
+    expect(legal.agreedRevision, legalRevision);
     await tester.pumpWidget(const SizedBox()); session.dispose();
   });
   testWidgets('切换账号登录页有进入与返回中间帧，取消保留原账号', (tester) async {
