@@ -93,7 +93,7 @@ void main() {
     );
   });
 
-  test('保存失败或取消选址保留私有源文件，不误报成功且可重试', () async {
+  test('保存失败或导出没交回地址时保留私有源文件，不误报成功且可重试', () async {
     fixture.publisher.fail = true;
     final id = await fixture.downloadVideo(ToolboxFixture.video);
     await fixture.finish(id, ToolboxFixture.mp4);

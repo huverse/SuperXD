@@ -6,12 +6,10 @@ import android.content.ContentValues
 import android.content.Intent
 import android.database.Cursor
 import android.net.Uri
-import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
-import android.provider.DocumentsContract
 import android.util.Log
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
@@ -21,8 +19,6 @@ import java.util.concurrent.Executors
 class ToolboxFileExporter(private val activity: Activity) : MethodChannel.MethodCallHandler {
     private val executor = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
-    private var pending: Export? = null
-    private val requestCode = 49210
     private data class Export(val source: File, val filename: String, val mime: String, val result: MethodChannel.Result)
 
     companion object {
@@ -78,22 +74,11 @@ class ToolboxFileExporter(private val activity: Activity) : MethodChannel.Method
         }
     }
 
-    private fun dispatch(export: Export) {
-        if (Build.VERSION.SDK_INT >= 29) {
-            executor.execute { publishMedia(export) }
-        } else {
-            check(pending == null) { "已有保存操作" }
-            pending = export
-            activity.startActivityForResult(Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                addCategory(Intent.CATEGORY_OPENABLE)
-                type = export.mime
-                putExtra(Intent.EXTRA_TITLE, export.filename)
-            }, requestCode)
-        }
-    }
+    private fun dispatch(export: Export) = executor.execute { publishMedia(export) }
 
-    // [人工决策-2026-09-27 20:12:08] 默认保存公共Download/SuperXD，卸载工具不删除导出视频；旧Android通过用户选址，不申请全存储权限。
+    // [人工决策-2026-09-27 20:12:08] 默认保存公共Download/SuperXD，卸载工具不删除导出视频；不申请全存储权限。
     // [人工决策-2026-10-08 20:55:42] 用户复核：默认保存到 Download/SuperXD 仍有效（一次性导出的人脸照片同一目录）。
+    // [人工决策-2026-10-18 12:27:26] 最低系统提到 Android 11 后，用户选定删掉旧 Android（9 及以下）让用户自己选保存位置的那条路径与它的结果回调。
     private fun publishMedia(export: Export) {
         val resolver = activity.contentResolver
         var created: Uri? = null
@@ -134,49 +119,17 @@ class ToolboxFileExporter(private val activity: Activity) : MethodChannel.Method
         }
     }
 
-    // 媒体库查询默认排除写入中的条目：Android 11 起用 QUERY_ARG_MATCH_PENDING，10 用 setIncludePending，
+    // 媒体库查询默认排除写入中的条目，用 QUERY_ARG_MATCH_PENDING 一起查出来：
     // 上次中途失败留下的写入中条目才能被找到并清理，不会让新文件被系统改名成「(1)」。
     private fun findByName(resolver: ContentResolver, collection: Uri, filename: String, relativePath: String): Cursor? {
         val projection = arrayOf(MediaStore.MediaColumns._ID, MediaStore.MediaColumns.IS_PENDING)
         val selection = "${MediaStore.MediaColumns.DISPLAY_NAME} = ? AND ${MediaStore.MediaColumns.RELATIVE_PATH} = ?"
-        val arguments = arrayOf(filename, relativePath)
-        return if (Build.VERSION.SDK_INT >= 30) {
-            resolver.query(collection, projection, Bundle().apply {
-                putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
-                putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, arguments)
-                putInt(MediaStore.QUERY_ARG_MATCH_PENDING, MediaStore.MATCH_INCLUDE)
-            }, null)
-        } else {
-            @Suppress("DEPRECATION")
-            resolver.query(MediaStore.setIncludePending(collection), projection, selection, arguments, null)
-        }
+        return resolver.query(collection, projection, Bundle().apply {
+            putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
+            putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, arrayOf(filename, relativePath))
+            putInt(MediaStore.QUERY_ARG_MATCH_PENDING, MediaStore.MATCH_INCLUDE)
+        }, null)
     }
 
-    fun onActivityResult(code: Int, resultCode: Int, data: Intent?): Boolean {
-        if (code != requestCode) return false
-        val export = pending ?: return true
-        pending = null
-        val uri = data?.data
-        if (resultCode != Activity.RESULT_OK || uri == null) { export.result.success(null); return true }
-        executor.execute {
-            try {
-                export.source.inputStream().use { input ->
-                    requireNotNull(activity.contentResolver.openOutputStream(uri, "w")).use { output -> input.copyTo(output) }
-                }
-                main.post { export.result.success(uri.toString()) }
-            } catch (error: Throwable) {
-                Log.e("ToolboxFiles", "action=save_document", error)
-                try { DocumentsContract.deleteDocument(activity.contentResolver, uri) }
-                catch (cleanup: Exception) { Log.e("ToolboxFiles", "action=cleanup_document", cleanup) }
-                main.post { export.result.error("SAVE_FAILED", "保存失败，请重试", null) }
-            }
-        }
-        return true
-    }
-
-    fun close() {
-        pending?.result?.error("ACTIVITY_CLOSED", "保存未完成，可重试", null)
-        pending = null
-        executor.shutdown()
-    }
+    fun close() = executor.shutdown()
 }

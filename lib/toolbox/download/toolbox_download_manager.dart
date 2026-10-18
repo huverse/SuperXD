@@ -507,7 +507,7 @@ class ToolboxDownloadManager extends ChangeNotifier {
         filename: 'SuperXD_${item.id}.$extension',
         mimeType: item.mimeType!,
       );
-      // 旧系统用户取消选址；带上错误才归为需用户重试，无错误的待保存会显示成排队等待。
+      // 导出没交回文件地址（平台通道的返回值，按外部输入对待）；带上错误才归为需用户重试，无错误的待保存会显示成排队等待。
       if (uri == null) {
         await _save(
           item.change(

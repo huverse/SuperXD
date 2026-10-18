@@ -1,6 +1,5 @@
 package com.superxd.superxd
 
-import android.content.Intent
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
@@ -27,12 +26,6 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler(chaoxingDevice)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/location_settings")
             .setMethodCallHandler(LocationSettingsChannel(this))
-    }
-
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (toolboxFiles?.onActivityResult(requestCode, resultCode, data) != true) {
-            super.onActivityResult(requestCode, resultCode, data)
-        }
     }
 
     override fun onDestroy() {
