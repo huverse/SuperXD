@@ -33,8 +33,8 @@
   - CampusTimetable 是本应用课表某一天的课与用不了的原因（TimetableGap），交给百宝箱学习通签到推断正在上的课。
 - course_reminder.dart：课前提醒规则与端口。
   - planReminders：未来 14 天、最多 128 条，提醒时刻已过的不安排。
-  - CourseReminderPort：系统调度端口，由 device 层实现；ReminderCapability 表示通知与精确闹钟权限。
-  - 提醒设置类型 ReminderSetting 定义在 campus_gateway.dart（默认关闭、提前 15 分钟，档位 5/10/15/30）。
+  - CourseReminderPort：系统调度端口，由 device 层实现；ReminderCapability 表示通知与精确闹钟权限、系统有没有实时更新与用户是否允许。
+  - 提醒设置类型 ReminderSetting 定义在 campus_gateway.dart（默认关闭、提前 15 分钟，档位 5/10/15/30；状态栏胶囊 live 默认关闭）。
 - course_widget.dart：桌面小组件快照与端口。
   - widgetSnapshot：今天起 7 天、最多 200 次课；缺开学日或作息时只给状态。今天已下课的也保留，供“今日课程”变淡显示。
   - WidgetStatus 区分未登录、没有学期、缺开学日、缺作息与正常；快照带过期时刻，过期后小组件提示打开应用。

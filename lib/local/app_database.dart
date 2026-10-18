@@ -31,12 +31,12 @@ class AppDatabase {
 
   static Future<AppDatabase> open({String? databasePath}) async {
     if (databasePath == null) throw ArgumentError('必须显式指定数据库路径；账号数据库请使用 AccountStore');
-    final db = await openDatabase(databasePath, version: 6, onConfigure: _configure, onCreate: _create, onUpgrade: _upgrade);
+    final db = await openDatabase(databasePath, version: 7, onConfigure: _configure, onCreate: _create, onUpgrade: _upgrade);
     return AppDatabase(db);
   }
 
   static Future<AppDatabase> openForAccount({required String databasePath, required AccountIdentity identity}) async {
-    final db = await openDatabase(databasePath, version: 6, singleInstance: false,
+    final db = await openDatabase(databasePath, version: 7, singleInstance: false,
       onConfigure: (db) async {
         await _configure(db);
         // Android 会先创建 android_metadata；它不是旧业务数据，不能阻止新账号库初始化。
@@ -104,6 +104,10 @@ class AppDatabase {
       await _pruneAllRevisions(db);
     }
     if (oldVersion < 6) await _createReminderSetting(db);
+    if (oldVersion < 7) {
+      final columns = await db.rawQuery('PRAGMA table_info(reminder_setting)');
+      if (!columns.any((row) => row['name'] == 'live')) await db.execute('ALTER TABLE reminder_setting ADD COLUMN live INTEGER NOT NULL DEFAULT 0');
+    }
   }
 
   static Future<void> _revisionIndexes(DatabaseExecutor db) async {
@@ -248,6 +252,7 @@ CREATE TABLE IF NOT EXISTS reminder_setting (
   enabled INTEGER NOT NULL,
   lead_minutes INTEGER NOT NULL,
   updated_at TEXT NOT NULL,
+  live INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (xn, xq)
 )''');
   }
@@ -255,12 +260,12 @@ CREATE TABLE IF NOT EXISTS reminder_setting (
   Future<ReminderSetting?> readReminderSetting(TermRef term) async {
     final rows = await _db.query('reminder_setting', where: 'xn = ? AND xq = ?', whereArgs: [term.xn, term.xq], limit: 1);
     final row = rows.firstOrNull;
-    return row == null ? null : ReminderSetting(enabled: row['enabled'] == 1, leadMinutes: row['lead_minutes'] as int);
+    return row == null ? null : ReminderSetting(enabled: row['enabled'] == 1, leadMinutes: row['lead_minutes'] as int, live: row['live'] == 1);
   }
 
   Future<void> saveReminderSetting(TermRef term, ReminderSetting setting, {required String now}) => _db.insert(
     'reminder_setting',
-    {'xn': term.xn, 'xq': term.xq, 'enabled': setting.enabled ? 1 : 0, 'lead_minutes': setting.leadMinutes, 'updated_at': now},
+    {'xn': term.xn, 'xq': term.xq, 'enabled': setting.enabled ? 1 : 0, 'lead_minutes': setting.leadMinutes, 'live': setting.live ? 1 : 0, 'updated_at': now},
     conflictAlgorithm: ConflictAlgorithm.replace,
   );
 

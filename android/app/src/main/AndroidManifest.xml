@@ -7,6 +7,8 @@
     <!-- 课前提醒：开机后重新排定已安排的提醒；精确时刻须用户在系统设置中允许，未允许时改用可能延迟的普通调度。 -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
+    <!-- 课前提醒开了状态栏胶囊时发成实时更新（Android 16 起，OPPO 流体云按它显示），见 CourseLive.kt；不是运行时权限，用户可在系统设置里按应用关掉。 -->
+    <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS"/>
     <!-- 学习通位置签到的地图页点「定位到我」时才申请，仅使用期间（不要后台定位），由高德定位取一次当前位置。 -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
@@ -66,6 +68,15 @@
         </receiver>
         <receiver android:name=".CourseWidgetRefresh" android:exported="false">
             <intent-filter>
+                <action android:name="android.intent.action.TIME_SET" />
+                <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+            </intent-filter>
+        </receiver>
+        <!-- 课前提醒的实时更新，见 CourseLive.kt：计划闹钟、开机与应用更新后重排、改时间或时区时重新处理、用户划掉时记下。 -->
+        <receiver android:name=".CourseLiveReceiver" android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
             </intent-filter>
@@ -137,6 +148,10 @@
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
+        </intent>
+        <!-- 课前提醒的状态栏胶囊：查系统有没有实时更新设置页（没有就不给开关），见 CourseLive.kt。 -->
+        <intent>
+            <action android:name="android.settings.APP_NOTIFICATION_PROMOTION_SETTINGS"/>
         </intent>
     </queries>
 </manifest>

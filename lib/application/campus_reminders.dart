@@ -28,6 +28,9 @@ class ReminderStatus {
 // 课前提醒编排：读本机的当前学期、提醒设置、课表与作息，展开未来 14 天的课程实例，整体替换系统里的提醒。
 // 只读本地数据，从不联网；串行执行，规划结果与上次相同时不重复替换。
 // 没有当前学期、未开启或没有通知权限时撤销本应用的全部课前提醒。
+// 开了状态栏胶囊且系统有实时更新（Android 16 起）时，提醒改发成实时更新；系统没有时照常是普通提醒。
+// [人工决策-2026-10-18 22:44:41] 适配 OPPO 流体云（用户四项都选推荐）：走 Android 16 原生实时更新，不接厂商 SDK；
+// 并入课前提醒（同一条通知、提前量沿用、先开提醒才能开胶囊），开课前 N 分钟到下课显示，课间不挂；胶囊上是系统倒计时，课名教室在展开的通知里。
 class CampusReminders {
   CampusReminders({required this.gateway, required this.port, DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
   final CampusGateway gateway;
@@ -60,8 +63,9 @@ class CampusReminders {
       from: today,
       to: formatIsoDate(parseIsoDate(today).add(const Duration(days: reminderWindowDays - 1))),
     );
-    final planned = planReminders(occurrences.items, leadMinutes: setting.leadMinutes, now: now);
-    await _apply(planned, capability);
+    final live = setting.live && capability.live;
+    final planned = planReminders(occurrences.items, leadMinutes: setting.leadMinutes, now: now, live: live);
+    await _apply(planned, capability, live: live);
     return ReminderStatus(
       term: term,
       setting: setting,
@@ -72,10 +76,14 @@ class CampusReminders {
     );
   });
 
-  Future<void> _apply(List<PlannedReminder> planned, ReminderCapability capability) async {
-    final signature = [capability.exact, for (final reminder in planned) '${reminder.fireAt.toIso8601String()}|${reminder.title}|${reminder.body}'].join('\n');
+  Future<void> _apply(List<PlannedReminder> planned, ReminderCapability capability, {bool live = false}) async {
+    final signature = [
+      capability.exact,
+      live,
+      for (final reminder in planned) '${reminder.fireAt.toIso8601String()}|${reminder.occurrence.end.toIso8601String()}|${reminder.title}|${reminder.body}',
+    ].join('\n');
     if (signature == _applied) return;
-    await port.replace(planned, exact: capability.exact);
+    await port.replace(planned, exact: capability.exact, live: live);
     _applied = signature;
   }
 }

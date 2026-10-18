@@ -185,13 +185,14 @@ class BellsView {
   final TermRef? sourceTerm;
 }
 
-// 课前提醒设置，按学期一条；默认关闭，提前 15 分钟。
+// 课前提醒设置，按学期一条；默认关闭，提前 15 分钟。live 为在状态栏胶囊（OPPO 流体云）显示倒计时，默认关闭。
 class ReminderSetting {
-  const ReminderSetting({required this.enabled, required this.leadMinutes});
+  const ReminderSetting({required this.enabled, required this.leadMinutes, required this.live});
   final bool enabled;
   final int leadMinutes;
+  final bool live;
   static const leads = [5, 10, 15, 30];
-  static const initial = ReminderSetting(enabled: false, leadMinutes: 15);
+  static const initial = ReminderSetting(enabled: false, leadMinutes: 15, live: false);
 }
 
 class RevisionView {
