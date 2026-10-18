@@ -495,6 +495,10 @@ void main() {
     await openSignSheet(tester, button: '去签到');
     // 没有收藏位置时直接是手输，坐标已按签到点预填。
     expect(find.widgetWithText(TextField, '纬度'), findsOneWidget);
+    // 经纬度要能输小数点与负号（有的输入法的纯数字键盘没有「.」）。
+    for (final label in ['纬度', '经度']) {
+      expect(tester.widget<TextField>(find.widgetWithText(TextField, label)).keyboardType, const TextInputType.numberWithOptions(decimal: true, signed: true));
+    }
     await tapSign(tester);
     // 位置签到成功后先弹「收藏这次的位置？」（附近无收藏时），点不收藏后再等主页面的成功提示。
     await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
@@ -1037,6 +1041,27 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('签到弹层读活动详情失败：原地给「重试」，重试读到就能接着签', (tester) async {
+    usePhoneScreen(tester);
+    fake.failingActiveInfoIds.add(501);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+    await tester.tap(find.widgetWithText(FilledButton, '去签到'));
+    await tester.pump();
+    final retry = find.widgetWithText(OutlinedButton, '重试');
+    // 以前只有一行红字，要关掉弹层重开。
+    await waitUntil(tester, () => retry.evaluate().isNotEmpty);
+    await tester.pump(const Duration(milliseconds: 400));
+    fake.failingActiveInfoIds.remove(501);
+    await tester.tap(retry);
+    await tester.pump();
+    await waitUntil(tester, () => find.widgetWithText(FilledButton, '签到').evaluate().isNotEmpty);
+    await tester.pump(const Duration(milliseconds: 400));
+    await enterCode(tester, '1234');
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('群聊里单条活动详情读不到时只跳过那一条', (tester) async {
     usePhoneScreen(tester);
     fake.imGroups.addAll([
@@ -1231,6 +1256,46 @@ void main() {
     final ticked = tester.widgetList<Checkbox>(find.byType(Checkbox)).where((box) => box.value == true).length;
     expect(ticked, 1);
     expect(fake.signQuery, isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('打开时被检查拦下、关掉提示后点这一行的「强制签到」：直接给这个人签，不再提示「请先选要签到的人」', (tester) async {
+    usePhoneScreen(tester);
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '0', 'nameOne': '签到', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0},
+    ];
+    fake.activeInfo = {'signOutPublishTimeStamp': 4999};
+    fake.preSignHtml = '<script>signstatus = 1;</script>';
+    await fake.addUser('13900139000', 'otherPassword1', name: '同学乙');
+    final accounts = (await runtime.service<ChaoxingService>(ChaoxingService.serviceId)).accounts;
+    await tester.runAsync(
+      () async => accounts.importOther(
+        ChaoxingCredentialPack(phoneNumber: '13900139000', encryptedPassword: await chaoxingEncrypt('otherPassword1'), name: '同学乙', deviceCode: 'device-of-b'),
+      ),
+    );
+    await tester.runAsync(() => accounts.signIn(phoneNumber: '13800138000', password: 'myPassword123'));
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await waitUntil(tester, () => find.text('学习通签到的说明更新了').evaluate().isNotEmpty);
+    await tester.tap(find.widgetWithText(FilledButton, '同意'));
+    await tester.pump();
+    await waitUntil(tester, () => find.widgetWithText(FilledButton, '去签到').evaluate().isNotEmpty);
+    await openSignSheet(tester);
+    await waitUntil(tester, () => find.text('这场已经签过了').evaluate().isNotEmpty);
+    // 用返回键关掉提示：本人已被取消勾选，代签账号默认也没勾，这时没有人勾着。
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    await waitUntil(tester, () => find.text('这场已经签过了').evaluate().isEmpty);
+    await tester.pump(const Duration(milliseconds: 400));
+    final force = find.widgetWithText(OutlinedButton, '强制签到');
+    await tester.ensureVisible(force);
+    await tester.pump();
+    await tester.tap(force);
+    await tester.pump();
+    await waitUntil(tester, () => find.widgetWithText(FilledButton, '强制签到').evaluate().isNotEmpty);
+    await tester.tap(find.widgetWithText(FilledButton, '强制签到'));
+    await tester.pump();
+    await waitUntil(tester, () => fake.signQuery != null);
+    expect(find.text('请先选要签到的人'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 

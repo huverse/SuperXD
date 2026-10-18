@@ -92,6 +92,10 @@ class ChaoxingPackHub {
     } on SocketException catch (error, stack) {
       _log(route, 'network', error, stack);
       throw const ChaoxingFailure(ChaoxingFailureCode.network, '连不上中转服务，请检查网络');
+    } on TlsException catch (error, stack) {
+      // TLS 握手中断同属网络问题（同 chaoxing_http）。
+      _log(route, 'tls', error, stack);
+      throw const ChaoxingFailure(ChaoxingFailureCode.network, '连不上中转服务，请检查网络');
     } on http.ClientException catch (error, stack) {
       _log(route, 'network', error, stack);
       throw const ChaoxingFailure(ChaoxingFailureCode.network, '中转请求没有完成，请稍后重试');

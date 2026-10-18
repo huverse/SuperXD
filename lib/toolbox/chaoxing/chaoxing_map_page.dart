@@ -118,13 +118,15 @@ void _moveCamera(AMapController? map, LatLng target) {
   });
 }
 
-// 高德定位图层回报的位置；定位失败时回报的是 0,0，当没有。日志不记坐标，只记来源与精度。
+// 高德定位图层回报的位置；定位失败时回报的是 0,0，当没有。
 LatLng? _fixOf(AMapLocation location) {
   final point = location.latLng;
-  final empty = point.latitude == 0 && point.longitude == 0;
-  campusLog('[ChaoxingMap] action=locate result=${empty ? 'empty' : 'fix'} provider=${location.provider} accuracy=${location.accuracy.round()}');
-  return empty ? null : point;
+  return point.latitude == 0 && point.longitude == 0 ? null : point;
 }
+
+// 定位图层大约每秒回报一次，只在结果真的拿来选点时记一行（以前每次回报都记，地图开着就每秒一条）。日志不记坐标，只记来源与精度。
+void _logFixUsed(AMapLocation location) =>
+    campusLog('[ChaoxingMap] action=locate result=fix provider=${location.provider} accuracy=${location.accuracy.round()}');
 
 // 地图按 GCJ-02 画：收藏里存的可能是 BD-09 或 WGS-84，先换算过来。没有位置时是全国视角的中心。
 LatLng _target(ChaoxingLocation? location) {
@@ -317,9 +319,11 @@ class _ChaoxingInlineMapState extends State<ChaoxingInlineMap> {
     final fix = (point: point, accuracy: location.accuracy);
     _lastFix = fix;
     if (_wantFix) {
+      _logFixUsed(location);
       _startRefining();
       _report(fix);
     } else if (_refining && fix.accuracy > 0 && fix.accuracy < _reportedAccuracy) {
+      _logFixUsed(location);
       _report(fix);
     }
   }
@@ -529,7 +533,12 @@ class ChaoxingMapPage extends StatefulWidget {
 
 class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
   final _label = TextEditingController();
-  LatLng? _picked;
+  // 从签到弹层进来时带着那边已选的位置：标记直接画上、「用这个位置」可点，不用再点一次（以前进来是空的）。
+  // 添加收藏时传进来的是最近一个收藏，只当镜头起点，不预选，免得一点就存出一个重复的收藏。
+  late LatLng? _picked = widget.favorite || widget.initial == null ? null : _target(widget.initial);
+  // 签到范围圈按内容缓存：覆盖物每建一次就是新 id，高德会删了重画，点一下地图范围圈就闪（同嵌着的地图）。
+  Set<Polygon> _polygons = const {};
+  Object? _polygonsFor;
   bool _initialized = false;
   AMapController? _map;
   // 点过「定位到我」并拿到权限后打开高德的定位图层。_wantFix：等下一次定位结果来移镜头并选中（自己点了地图就作罢）；
@@ -597,6 +606,7 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
     if (!_wantFix) return;
     final point = _fixOf(location);
     if (point == null) return;
+    _logFixUsed(location);
     _fixTimeout?.cancel();
     setState(() {
       _wantFix = false;
@@ -604,6 +614,15 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
       _picked = point;
     });
     _moveCamera(_map, point);
+  }
+
+  Set<Polygon> _polygonSet(CampusPalette palette) {
+    final key = (widget.rangeCenter, widget.rangeMeters, palette.accent);
+    if (key != _polygonsFor) {
+      _polygonsFor = key;
+      _polygons = _rangePolygon(palette, widget.rangeCenter, widget.rangeMeters);
+    }
+    return _polygons;
   }
 
   void _confirm() {
@@ -663,7 +682,7 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
               }),
               markers: picked == null ? const <Marker>{} : {Marker(position: picked, infoWindowEnable: false)},
               // 签到范围圈：老师定的签到点与半径画出来，选点时心里有数（没给范围就不画）。
-              polygons: _rangePolygon(palette, widget.rangeCenter, widget.rangeMeters),
+              polygons: _polygonSet(palette),
             ),
           ),
           Align(

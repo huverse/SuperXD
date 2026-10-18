@@ -108,14 +108,19 @@ class ChaoxingAccounts {
       deviceCode: localCode.isNotEmpty ? localCode : (existing?.deviceCode ?? chaoxingDeviceCode()),
       device: device,
     );
-    _keepUnit(client, existing);
-    await _persist(
-      client,
-      isOtherUser: false,
-      existing: existing,
-      deviceCodeBound: localCode.isNotEmpty || (existing?.deviceCodeBound ?? false),
-    );
-    return client.account!;
+    // 这个会话只用来登录与落库（页面随后按库里的记录另开会话），用完就关，以前每登录一次漏一个连接。
+    try {
+      _keepUnit(client, existing);
+      await _persist(
+        client,
+        isOtherUser: false,
+        existing: existing,
+        deviceCodeBound: localCode.isNotEmpty || (existing?.deviceCodeBound ?? false),
+      );
+      return client.account!;
+    } finally {
+      client.close();
+    }
   }
 
   Future<ChaoxingClient?> clientFor(String phoneNumber) async {

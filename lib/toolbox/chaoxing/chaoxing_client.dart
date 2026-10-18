@@ -96,9 +96,15 @@ class ChaoxingClient {
       deviceCode: deviceCode ?? chaoxingDeviceCode(),
       device: device,
     );
-    await client.login();
-    client.account = await client.loadAccount();
-    return client;
+    // 登录没成就把这次的连接关掉（调用方拿不到这个会话，以前就一直开着）。
+    try {
+      await client.login();
+      client.account = await client.loadAccount();
+      return client;
+    } catch (_) {
+      client.close();
+      rethrow;
+    }
   }
 
   Future<void> login() async {
@@ -152,7 +158,9 @@ class ChaoxingClient {
     if (uid == 0) {
       throw const ChaoxingFailure(ChaoxingFailureCode.sessionExpired, chaoxingSessionExpiredMessage);
     }
-    final imAccount = (info['accountInfo'] as Map?)?['imAccount'] as Map?;
+    // 外部响应按形状逐层判断（以前直接强转，accountInfo 不是对象时报类型错误，登录只给兜底文案）。
+    final accountInfo = info['accountInfo'];
+    final imAccount = accountInfo is Map ? accountInfo['imAccount'] : null;
     final clientId = chaoxingString(info['clientId']);
     final units = chaoxingUnits(info);
     return ChaoxingAccount(
@@ -164,7 +172,7 @@ class ChaoxingClient {
       deviceCode: deviceCode,
       schoolName: units.first.name,
       photoUrl: chaoxingString(info['pic']).replaceFirst('http://', 'https://'),
-      imPassword: chaoxingString(imAccount?['password']),
+      imPassword: imAccount is Map ? chaoxingString(imAccount['password']) : '',
       clientId: clientId.isEmpty ? null : clientId,
       units: units,
     );

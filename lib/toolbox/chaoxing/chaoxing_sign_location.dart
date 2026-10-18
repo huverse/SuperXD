@@ -64,9 +64,10 @@ class ChaoxingSignLocation extends StatelessWidget {
           Row(
             children: [
               Expanded(
+                // 要能输小数点（有的输入法的纯数字键盘没有「.」）；南纬、西经是负数，也要有负号。
                 child: TextField(
                   controller: latitude,
-                  keyboardType: TextInputType.number,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
                   decoration: const InputDecoration(labelText: '纬度'),
                 ),
               ),
@@ -74,7 +75,7 @@ class ChaoxingSignLocation extends StatelessWidget {
               Expanded(
                 child: TextField(
                   controller: longitude,
-                  keyboardType: TextInputType.number,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true, signed: true),
                   decoration: const InputDecoration(labelText: '经度'),
                 ),
               ),
