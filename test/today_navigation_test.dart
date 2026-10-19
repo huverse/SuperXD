@@ -552,6 +552,21 @@ void main() {
     expect(find.textContaining('后上课'), findsNothing);
   });
 
+  testWidgets('窄屏大字号下顶栏日期放不下一行时星期换到第二行，不截字', (tester) async {
+    await _mount(tester, _Gateway(), size: const Size(360, 740), scale: 1.6);
+    // 一行放不下「9月25日 周五」：日期一行、星期一行，两行都完整。
+    expect(find.text('9月25日'), findsOneWidget);
+    expect(find.text('周五'), findsOneWidget);
+    expect(find.text('9月25日 周五'), findsNothing);
+    await _swipeDate(tester, '2026-09-25', 100);
+    expect(find.text('周六 · 明天'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    // 放得下时照旧一行，离今天多远另起一行。
+    await _mount(tester, _Gateway());
+    expect(find.text('9月25日 周五'), findsOneWidget);
+  });
+
   testWidgets('预告跨到下周的课写「下周一」，不只写星期', (tester) async {
     // 今天周五，周六、周日也没课，下一节是下周一：以前写「周一」，分不清是哪周。
     await _mount(tester, _Gateway()..emptyWeekdays = {5, 6, 7});

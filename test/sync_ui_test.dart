@@ -52,6 +52,35 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('窄屏大字号下同步范围的「选择学年」不折行，放不下时「刷新学年」换到下一行', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 740));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.7)), child: child!), home: Scaffold(body: TodayPage(gateway: _Gateway()))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('同步'));
+    await tester.pumpAndSettle();
+    final label = tester.getRect(find.text('选择学年')), refresh = tester.getRect(find.widgetWithText(TextButton, '刷新学年'));
+    // 一行字的高度：不到两行。
+    expect(label.height, lessThan(14 * 1.7 * 2));
+    expect(refresh.top, greaterThanOrEqualTo(label.bottom - 1));
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+    // 放得下时同一行、「刷新学年」靠右（同改前的样子）。
+    await tester.binding.setSurfaceSize(const Size(411, 860));
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Scaffold(body: TodayPage(gateway: _Gateway()))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('同步'));
+    await tester.pumpAndSettle();
+    final wide = tester.getRect(find.text('选择学年')), right = tester.getRect(find.widgetWithText(TextButton, '刷新学年'));
+    expect(right.center.dy, closeTo(wide.center.dy, 2));
+    expect(right.right, closeTo(tester.getRect(find.text('全部学年')).left + tester.getSize(find.byType(CheckboxListTile).first).width, 2));
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('回到今天分支重新读取开学日，不联网', (tester) async {
     final gateway = _Gateway()..needsStart = true;
     final active = ValueNotifier(true);

@@ -553,10 +553,20 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
           if (_covered(formatIsoDate(date.add(const Duration(days: 1))))) const CustomSemanticsAction(label: '下一天') : () => _step(1),
         },
         // 日期快照保留布局状态，但颜色订阅当前主题，不能把创建快照时的明暗色固化。
-        child: ExcludeSemantics(child: Center(child: Builder(builder: (context) => Column(mainAxisSize: MainAxisSize.min, children: [
-          Text('$year${date.month}月${date.day}日 $weekday', textAlign: TextAlign.center, maxLines: 1, style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurface)),
-          if (relative != null) Text(relative, textAlign: TextAlign.center, maxLines: 1, style: TextStyle(fontSize: 14, height: 1.2, color: CampusPalette.of(context).onSurfaceVariant)),
-        ])))),
+        // 窄屏、大字号下「10月19日 周一」一行放不下时（以前被截成「周」），星期换到第二行、和离今天多远写在一起（「周二 · 明天」），最多两行。
+        child: ExcludeSemantics(child: Center(child: LayoutBuilder(builder: (context, constraints) {
+          final primary = TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurface);
+          final secondary = TextStyle(fontSize: 14, height: 1.2, color: CampusPalette.of(context).onSurfaceVariant);
+          final full = '$year${date.month}月${date.day}日 $weekday';
+          final painter = TextPainter(text: TextSpan(text: full, style: DefaultTextStyle.of(context).style.merge(primary)), textDirection: Directionality.of(context), textScaler: MediaQuery.textScalerOf(context), maxLines: 1)..layout();
+          final fits = painter.width <= constraints.maxWidth;
+          painter.dispose();
+          final second = fits ? relative : [weekday, ?relative].join(' · ');
+          return Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(fits ? full : '$year${date.month}月${date.day}日', textAlign: TextAlign.center, maxLines: 1, style: primary),
+            if (second != null) Text(second, textAlign: TextAlign.center, maxLines: 1, style: secondary),
+          ]);
+        }))),
     );
   }
 

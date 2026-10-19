@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
@@ -82,6 +83,28 @@ void main() {
     expect(top.width, closeTo(bottom.width, .5));
     await tester.tap(find.text('暂不采用'));
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('弹窗两个按钮在窄屏大字号下放不下时竖排、主操作在上，文字不折行', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 740));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    late BuildContext page;
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.7)), child: child!), home: Scaffold(body: Builder(builder: (context) {
+      page = context;
+      return const SizedBox.expand();
+    }))));
+    final confirm = showCampusConfirm(page, title: '开始同步？', message: '同步所选学年。', action: '开始同步');
+    await tester.pumpAndSettle();
+    final cancel = tester.getRect(find.widgetWithText(TextButton, '取消')), start = tester.getRect(find.widgetWithText(FilledButton, '开始同步'));
+    expect(start.bottom, lessThanOrEqualTo(cancel.top));
+    expect(start.width, closeTo(cancel.width, .5));
+    // 竖排后每个按钮的文字一行放下，不折出孤字。
+    final label = tester.renderObject<RenderParagraph>(find.descendant(of: find.widgetWithText(FilledButton, '开始同步'), matching: find.byType(RichText)));
+    expect(label.didExceedMaxLines || label.getBoxesForSelection(TextSelection(baseOffset: 0, extentOffset: 4)).map((box) => box.top).toSet().length > 1, isFalse);
+    await tester.tap(find.text('开始同步'));
+    await tester.pumpAndSettle();
+    expect(await confirm, isTrue);
     expect(tester.takeException(), isNull);
   });
 
