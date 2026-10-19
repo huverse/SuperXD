@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -28,6 +29,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
 import 'fake_relay.dart';
+import 'fixture_campus_gateway.dart';
 import 'share_card_test.dart' show sampleSchedule;
 
 late Directory temporary;
@@ -315,6 +317,58 @@ void main() {
     await tester.pump();
     expect(find.text('高等数学'), findsOneWidget);
     expect(find.text('本周共同空闲'), findsNothing);
+  });
+
+  group('好友课表导入', () {
+    const term = TermRef(xn: '2026', xq: '0', label: '2026-2027学年第一学期');
+    final fixtures = {for (final name in ['schedule.json', 'grades.json', 'grades.empty.json', 'bells.json', 'bells.empty.json']) name: File('assets/fixtures/$name').readAsStringSync()};
+    CourseRecord course(String code, String name, int weekday) => CourseRecord(courseCode: code, courseName: name, sectionId: 'S$code', credit: 2, teacherName: '合成教师', meetings: [
+      CourseMeeting(weekday: weekday, periodStart: 9, periodEnd: 10, place: '合成楼', weeks: [1, 2, 3]),
+    ]);
+    Future<FixtureCampusGateway> openPage(WidgetTester tester, ScheduleShare share) async {
+      final gateway = FixtureCampusGateway(readText: (name) async => fixtures[name]!);
+      await tester.binding.setSurfaceSize(const Size(400, 1600));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(app(FriendSchedulePage(friendName: '小明', share: share, sharedAt: '2026-10-04T08:00:00.000Z', gateway: gateway)));
+      await advance(tester);
+      await tester.tap(find.byTooltip('导入到我的课表'));
+      await advance(tester, 4);
+      return gateway;
+    }
+    Future<ScheduleView> mine(WidgetTester tester, FixtureCampusGateway gateway) async => (await tester.runAsync(() => gateway.readSchedule(const ScheduleScope.term(term))))!.data!;
+
+    testWidgets('整份替换：确认后存成新版本，原来的教务版本留在历史里', (tester) async {
+      final share = ScheduleShare(term: term, courses: [course('X1', '高等数学', 6), course('X2', '大学英语', 7)], bells: const []);
+      final gateway = await openPage(tester, share);
+      expect(find.text('导入小明的课表'), findsOneWidget);
+      await tester.tap(find.text('替换我这学期的课表'));
+      await advance(tester, 4);
+      expect(find.text('替换这学期的课表？'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, '替换'));
+      await advanceUntil(tester, () => find.textContaining('已换成小明的课表').evaluate().isNotEmpty);
+      final view = await mine(tester, gateway);
+      expect(view.courses.map((course) => course.courseName), ['高等数学', '大学英语']);
+      final history = (await tester.runAsync(() => gateway.listScheduleRevisions(term)))!.data!;
+      expect(history.map((row) => row.summary), ['导入小明分享的课表', '从教务同步']);
+    });
+
+    testWidgets('挑几门加进来：自己已有的教学班不列，整行点按勾选，加进自己的课表', (tester) async {
+      final owned = coursesFromJson((jsonDecode(fixtures['schedule.json']!) as Map)['data']['courses']).first;
+      final share = ScheduleShare(term: term, courses: [owned, course('X1', '高等数学', 6), course('X2', '大学英语', 7)], bells: const []);
+      final gateway = await openPage(tester, share);
+      final before = (await mine(tester, gateway)).courses.length;
+      await tester.tap(find.text('挑几门加进来'));
+      await advance(tester, 4);
+      expect(find.text('你已有的 1 门没有列出'), findsOneWidget);
+      expect(find.text(owned.courseName), findsNothing);
+      await tester.tap(find.text('高等数学'));
+      await tester.pump();
+      await tester.tap(find.text('加进来 1 门'));
+      await advanceUntil(tester, () => find.textContaining('已加进你的课表').evaluate().isNotEmpty);
+      final view = await mine(tester, gateway);
+      expect(view.courses, hasLength(before + 1));
+      expect(view.courses.last.courseName, '高等数学');
+    });
   });
 
   testWidgets('添加好友：出示二维码带倒计时；对方一扫原地提示已添加；扫对方码后返回新好友', (tester) async {

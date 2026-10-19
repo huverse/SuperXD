@@ -216,6 +216,8 @@ void main() {
     expect(find.byType(CampusGlassDialog), findsNothing);
     await tester.pump(const Duration(milliseconds: 250));
     expect(find.byType(CampusGlassDialog), findsOneWidget);
+    // 弹窗按内容高度（曲线、间距加一行字），不被整页样式的自居中撑满整屏。
+    expect(tester.getSize(find.descendant(of: find.byType(CampusGlassDialog), matching: find.byType(IntrinsicWidth))).height, lessThan(240));
     expect(calls, 1);
     task.complete(42);
     await tester.pumpAndSettle();

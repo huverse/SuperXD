@@ -8,6 +8,7 @@ import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/course_editor_page.dart';
 import 'package:superxd/page/schedule_editor_page.dart';
+import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
@@ -109,15 +110,27 @@ void main() {
     expect(find.text('手工数学新版'), findsOneWidget);
     await tester.tap(find.byTooltip('历史版本'));
     await tester.pumpAndSettle();
+    // 时间线按日期分组，当前在用的标「当前」；筛「教务同步」时这几条本地修改都不显示。
+    expect(find.text('今天'), findsOneWidget);
+    expect(find.text('当前'), findsOneWidget);
+    await tapVisible(tester, find.text('教务同步'));
+    expect(find.text('新增课程：手工数学'), findsNothing);
+    expect(find.text('这一类还没有版本'), findsOneWidget);
+    await tapVisible(tester, find.text('我的修改'));
     await tapVisible(tester, find.text('新增课程：手工数学'));
     await tester.runAsync(
       () async => await Future<void>.delayed(const Duration(milliseconds: 100)),
     );
     await tester.pumpAndSettle();
-    expect(find.text('变化：课程名称'), findsOneWidget);
-    await tapVisible(tester, find.text('恢复此版本'));
-    await tapVisible(tester, find.text('确认恢复'));
+    // 写清恢复后和现在比会怎样：改回课程名称，旧 → 新。
+    expect(find.text('恢复到这个版本，和现在相比：'), findsOneWidget);
+    expect(find.text('会改回 1 门'), findsOneWidget);
+    expect(find.text('课程名称：手工数学新版 → 手工数学'), findsOneWidget);
+    await tapVisible(tester, find.text('恢复到这个版本'));
+    await tapVisible(tester, find.widgetWithText(FilledButton, '恢复'));
     await tester.pumpAndSettle();
+    // 列表里多出一条恢复，写恢复到哪个时刻的样子，不写版本序号。
+    expect(find.textContaining(RegExp(r'^恢复到 \d+月\d+日 \d\d:\d\d 的样子$')), findsOneWidget);
     final restored = (await tester.runAsync(
       () => gateway.readSchedule(const ScheduleScope.term(term)),
     ))!.data!;
@@ -142,7 +155,7 @@ void main() {
     );
     await tester.pumpWidget(app(page(1)));
     await settle();
-    expect(find.text('周三 第5–6节 · 第7周'), findsOneWidget);
+    expect(find.bySemanticsLabel('周三 第5–6节 · 第7周'), findsOneWidget);
     await tester.tap(find.byTooltip('返回'));
     await tester.pumpAndSettle();
     expect(find.text('放弃未保存修改？'), findsNothing);
@@ -175,8 +188,9 @@ void main() {
     await tester.runAsync(() async => await Future<void>.delayed(const Duration(milliseconds: 100)));
     await tester.pumpAndSettle();
     expect(find.text('编辑课程'), findsOneWidget);
-    expect(find.text('周一 第1–2节 · 第1–3周 · 教室'), findsOneWidget);
-    expect(find.text('周三 第5–6节 · 第7周'), findsOneWidget);
+    // 预填的本周时段带上这门课的老师。
+    expect(find.bySemanticsLabel('周一 第1–2节 · 第1–3周 · 教室 · 王老师'), findsOneWidget);
+    expect(find.bySemanticsLabel('周三 第5–6节 · 第7周 · 王老师'), findsOneWidget);
     await tester.scrollUntilVisible(find.text('保存课程'), 200, scrollable: find.byType(Scrollable).first);
     await tapVisible(tester, find.text('保存课程'));
     await tester.runAsync(() async => await Future<void>.delayed(const Duration(milliseconds: 100)));
@@ -184,6 +198,66 @@ void main() {
     final saved = (await tester.runAsync(() => gateway.readSchedule(const ScheduleScope.term(term))))!.data!;
     expect(saved.courses.single.courseName, '数据结构');
     expect(saved.courses.single.meetings.map(meetingLabel), unorderedEquals(['周一 第1–2节 · 第1–3周 · 教室', '周三 第5–6节 · 第7周']));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('同名不同老师的教学班合成一门：一张卡、整门改名与删除，点时段直接改、范围在弹窗里选', (tester) async {
+    final fixtures = {
+      for (final name in ['schedule.json', 'bells.json', 'bells.empty.json'])
+        name: File('assets/fixtures/$name').readAsStringSync(),
+    };
+    final gateway = FixtureCampusGateway(readText: (name) async => fixtures[name]!);
+    Future<void> settle() async {
+      await tester.runAsync(() async => await Future<void>.delayed(const Duration(milliseconds: 100)));
+      await tester.pumpAndSettle();
+    }
+    final lecture = CourseRecord(courseCode: 'C1', courseName: '数据结构', sectionId: 'S1', credit: 3, teacherName: '甲老师', meetings: [
+      CourseMeeting(weekday: 1, periodStart: 1, periodEnd: 2, place: '一教', weeks: [1, 2, 3]),
+    ]);
+    final lab = CourseRecord(courseCode: 'C1', courseName: '数据结构', sectionId: 'S2', credit: 3, teacherName: '乙老师', meetings: [
+      CourseMeeting(weekday: 3, periodStart: 5, periodEnd: 6, place: '实验楼', weeks: [2, 4]),
+    ]);
+    await tester.runAsync(() => gateway.saveScheduleRevision(term, [lecture, lab], '种子', expectedRevisionId: null));
+    await tester.pumpWidget(app(ScheduleEditorPage(gateway: gateway, term: term)));
+    await settle();
+    // 一张卡，老师写在各自的时段后面；右侧只有⋯、没有箭头，⋯里只有删除。
+    expect(find.text('数据结构'), findsOneWidget);
+    expect(find.byTooltip('课程操作'), findsOneWidget);
+    // 整卡是一个按钮，读屏把课名与各时段合成一句。
+    expect(find.bySemanticsLabel(RegExp('数据结构.*周一 第1–2节 · 第1–3周 · 一教 · 甲老师.*周三 第5–6节 · 第2、4周 · 实验楼 · 乙老师', dotAll: true)), findsOneWidget);
+    expect(find.byIcon(CampusIcons.next), findsNothing);
+    await tapVisible(tester, find.byTooltip('课程操作'));
+    expect(find.text('编辑'), findsNothing);
+    expect(find.text('删除'), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    // 点卡片编辑整门课：改课名；点时段卡直接进弹窗，在顶部选「只改某一周」，把第 2 周挪到周五。
+    await tapVisible(tester, find.text('数据结构'));
+    expect(find.text('编辑课程'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, '课程名称'), '数据结构与算法');
+    await tapVisible(tester, find.bySemanticsLabel('周三 第5–6节 · 第2、4周 · 实验楼 · 乙老师'));
+    expect(find.text('全部周次'), findsOneWidget);
+    await tapVisible(tester, find.text('只改某一周'));
+    await tapVisible(tester, find.text('第2周'));
+    await tapVisible(tester, find.text('周五'));
+    await tapVisible(tester, find.text('确定时段'));
+    expect(find.bySemanticsLabel('周三 第5–6节 · 第4周 · 实验楼 · 乙老师'), findsOneWidget);
+    expect(find.bySemanticsLabel('周五 第5–6节 · 第2周 · 实验楼 · 乙老师'), findsOneWidget);
+    await tapVisible(tester, find.text('保存课程'));
+    await settle();
+    final saved = (await tester.runAsync(() => gateway.readSchedule(const ScheduleScope.term(term))))!.data!;
+    // 存储仍按教学班：两条都改了名，各自的老师与教学班标识不变。
+    expect(saved.courses.map((course) => course.sectionId), ['S1', 'S2']);
+    expect(saved.courses.map((course) => course.courseName).toSet(), {'数据结构与算法'});
+    expect(saved.courses.map((course) => course.teacherName), ['甲老师', '乙老师']);
+    expect(saved.courses.last.meetings.map(meetingLabel), unorderedEquals(['周三 第5–6节 · 第4周 · 实验楼', '周五 第5–6节 · 第2周 · 实验楼']));
+    // 删除整门课一次删掉两个教学班。
+    await tapVisible(tester, find.byTooltip('课程操作'));
+    await tapVisible(tester, find.text('删除'));
+    await tapVisible(tester, find.text('整门课程（所有时段和周次）'));
+    await tapVisible(tester, find.widgetWithText(FilledButton, '删除'));
+    await settle();
+    expect((await tester.runAsync(() => gateway.readSchedule(const ScheduleScope.term(term))))!.data!.courses, isEmpty);
     expect(tester.takeException(), isNull);
   });
 

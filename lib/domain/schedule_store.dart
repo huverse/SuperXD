@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:uuid/uuid.dart';
 
 import 'package:superxd/domain/week.dart';
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/gateway_code.dart';
 
 const scheduleRevisionLimit = 100;
@@ -272,7 +273,8 @@ class ScheduleStore {
     final current = head(term);
     if (current != null && fingerprint(current.courses) == fingerprint(target.courses)) return current;
     // [人工决策-2026-09-25 00:19:22] 人工恢复一律产生本地版本，后续教务替换必须确认，历史不倒退覆盖。
-    return _append(term, target.courses, 'user', '恢复版本 #${target.sequence}', now, operation: 'restore', restoredFromId: target.id);
+    // 说明写恢复到哪个时刻的样子，不写用户看不到的版本序号（历史版本页重做，用户选定）。
+    return _append(term, target.courses, 'user', '恢复到 ${formatCampusMoment(target.createdAt)} 的样子', now, operation: 'restore', restoredFromId: target.id);
   }
 
   ScheduleRevision _append(TermRef term, List<CourseRecord> courses, String source, String summary, String now, {String operation = 'edit', String? restoredFromId}) {

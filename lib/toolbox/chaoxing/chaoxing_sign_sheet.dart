@@ -1161,42 +1161,47 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Row(
-            children: [
-              Checkbox(
-                value: target.selected,
-                onChanged: _busy || target.done ? null : (value) => setState(() => target.selected = value ?? false),
-              ),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(record.displayName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
-                    // 没开签时只写例外（「主账号」「代签账号 · 固定随机设备码」，都没有就不占这一行），开签后这一行换成状态。
-                    if (target.state == ChaoxingTargetState.idle && statusText.isNotEmpty)
-                      DotSeparatedText(statusText, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))
-                    else if (target.state != ChaoxingTargetState.idle)
-                      Text(
-                        statusText,
-                        style: TextStyle(
-                          fontSize: 14,
-                          color: target.state == ChaoxingTargetState.failed ? palette.danger : palette.onSurfaceVariant,
-                        ),
-                      ),
-                  ],
+          // 整行点按切换勾选（同系统设置里的勾选列表），不只勾选框能点；读屏把勾选框与名字、状态合成一项。
+          MergeSemantics(child: InkWell(
+            onTap: _busy || target.done ? null : () => setState(() => target.selected = !target.selected),
+            borderRadius: BorderRadius.circular(12),
+            child: Row(
+              children: [
+                Checkbox(
+                  value: target.selected,
+                  onChanged: _busy || target.done ? null : (value) => setState(() => target.selected = value ?? false),
                 ),
-              ),
-              // 签到中的加载与签好的勾原地交替淡入，不突然换图。
-              AnimatedSwitcher(
-                duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 200),
-                child: switch (target.state) {
-                  ChaoxingTargetState.signing => const CampusLoader(key: ValueKey('signing'), size: 20, delay: Duration.zero),
-                  ChaoxingTargetState.succeeded => const CampusIcon(CampusIcons.success, key: ValueKey('succeeded')),
-                  _ => const SizedBox.shrink(key: ValueKey('idle')),
-                },
-              ),
-            ],
-          ),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(record.displayName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                      // 没开签时只写例外（「主账号」「代签账号 · 固定随机设备码」，都没有就不占这一行），开签后这一行换成状态。
+                      if (target.state == ChaoxingTargetState.idle && statusText.isNotEmpty)
+                        DotSeparatedText(statusText, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))
+                      else if (target.state != ChaoxingTargetState.idle)
+                        Text(
+                          statusText,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: target.state == ChaoxingTargetState.failed ? palette.danger : palette.onSurfaceVariant,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+                // 签到中的加载与签好的勾原地交替淡入，不突然换图。
+                AnimatedSwitcher(
+                  duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 200),
+                  child: switch (target.state) {
+                    ChaoxingTargetState.signing => const CampusLoader(key: ValueKey('signing'), size: 20, delay: Duration.zero),
+                    ChaoxingTargetState.succeeded => const CampusIcon(CampusIcons.success, key: ValueKey('succeeded')),
+                    _ => const SizedBox.shrink(key: ValueKey('idle')),
+                  },
+                ),
+              ],
+            ),
+          )),
           if (target.selected && !target.done && (_needsPhoto || _needsFace))
             Padding(
               padding: const EdgeInsets.only(left: 12, top: 4),

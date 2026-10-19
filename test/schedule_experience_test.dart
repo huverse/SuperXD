@@ -321,7 +321,8 @@ void main() {
     await tester.tap(find.text('课程 · 老师'));
     await tester.pumpAndSettle();
     expect(find.text('编辑课程'), findsOneWidget);
-    final slot = find.text('周${weekdayLabel(weekdayOf(date))} 第1–2节 · 第${weekIndex('2026-08-31', date)}周');
+    // 预填的本周时段带上这门课的老师（时段卡整卡是一个按钮，读屏读整句）。
+    final slot = find.bySemanticsLabel('周${weekdayLabel(weekdayOf(date))} 第1–2节 · 第${weekIndex('2026-08-31', date)}周 · 老师');
     await tester.scrollUntilVisible(slot, 200, scrollable: find.byType(Scrollable).first);
     expect(slot, findsOneWidget);
     expect(tester.takeException(), isNull);

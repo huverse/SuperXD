@@ -116,53 +116,119 @@ void validateSchedule(List<CourseRecord> courses) {
   }
 }
 
-// [人工决策-2026-09-25 00:19:22] 单周调整只移除原时段中的该周；全时段和整门课程操作必须由用户明确选择。
-CourseRecord? removeMeeting(CourseRecord course, int index, {int? week}) {
-  final meetings = course.meetings.map((meeting) => meeting.copy()).toList();
-  final original = meetings[index];
-  final remaining = week == null
-      ? <int>[]
-      : original.weeks.where((value) => value != week).toList();
-  if (remaining.isEmpty) {
-    meetings.removeAt(index);
-  } else {
-    meetings[index] = replaceMeeting(original, weeks: remaining);
+// [人工决策-2026-10-19 16:08:42] 管理课程按课名合并（用户选定，同 WakeUp 课程表、超级课程表）：教务把同一门课的不同老师拆成几个教学班，
+// 管理时同名的合成一门，老师写在每个时段上，改课名、删整门课一次作用于全部；存储仍按教学班一条记录，教务同步、提醒、小组件与私信分享都不变。
+List<List<CourseRecord>> courseGroups(List<CourseRecord> courses) {
+  final groups = <String, List<CourseRecord>>{};
+  for (final course in courses) {
+    groups.putIfAbsent(course.courseName.trim(), () => []).add(course);
   }
-  return meetings.isEmpty ? null : replaceCourse(course, meetings: meetings);
+  return groups.values.toList();
 }
 
-CourseRecord changeMeeting(
-  CourseRecord course,
-  int index,
-  CourseMeeting replacement, {
-  int? week,
-}) {
-  final meetings = course.meetings.map((meeting) => meeting.copy()).toList();
-  if (week == null) {
-    meetings[index] = replacement;
+// 合并后的一个上课时段：时段本身、这个时段的老师，以及原来属于哪个教学班（courseKey，新加的为空），保存时据此分回去。
+class CourseSlot {
+  const CourseSlot({required this.meeting, required this.teacher, this.origin});
+  final CourseMeeting meeting;
+  final String teacher;
+  final String? origin;
+
+  CourseSlot withMeeting(CourseMeeting meeting) => CourseSlot(meeting: meeting, teacher: teacher, origin: origin);
+}
+
+List<CourseSlot> courseSlots(List<CourseRecord> group) => [
+  for (final course in group)
+    for (final meeting in course.meetings) CourseSlot(meeting: meeting.copy(), teacher: course.teacherName, origin: courseKey(course)),
+];
+
+String slotLabel(CourseSlot slot) => slot.teacher.isEmpty ? meetingLabel(slot.meeting) : '${meetingLabel(slot.meeting)} · ${slot.teacher}';
+
+String _slotKey(CourseSlot slot) => '${meetingKey(slot.meeting)}\u0000${slot.teacher}';
+
+// [人工决策-2026-09-25 00:19:22] 单周调整只移除原时段中的该周；全时段和整门课程操作必须由用户明确选择。
+List<CourseSlot> removeSlot(List<CourseSlot> slots, int index, {int? week}) {
+  final next = [...slots];
+  final original = next[index];
+  final remaining = week == null ? <int>[] : original.meeting.weeks.where((value) => value != week).toList();
+  if (remaining.isEmpty) {
+    next.removeAt(index);
   } else {
-    final remaining = meetings[index].weeks
-        .where((value) => value != week)
-        .toList();
-    if (remaining.isEmpty) {
-      meetings.removeAt(index);
+    next[index] = original.withMeeting(replaceMeeting(original.meeting, weeks: remaining));
+  }
+  return next;
+}
+
+// 只改某一周：从原时段移出这一周，再并进同时段、同老师的那条，没有就新起一条。
+List<CourseSlot> changeSlot(List<CourseSlot> slots, int index, CourseSlot replacement, {int? week}) {
+  if (week == null) return [...slots]..[index] = replacement;
+  final next = removeSlot(slots, index, week: week);
+  final target = replacement.withMeeting(replaceMeeting(replacement.meeting, weeks: [week]));
+  final existing = next.indexWhere((slot) => _slotKey(slot) == _slotKey(target));
+  if (existing < 0) {
+    next.add(target);
+  } else {
+    next[existing] = next[existing].withMeeting(replaceMeeting(next[existing].meeting, weeks: {...next[existing].meeting.weeks, week}.toList()..sort()));
+  }
+  return next;
+}
+
+// 保存时按老师分回教学班：老师没变的时段回原教学班；改了老师的并进同老师的教学班，没有就先占用原来有时段、现在一个不剩的教学班
+// （保住教务的教学班标识），再没有才新建本地课程。原来有时段、现在一个不剩的教学班删掉，原本就没有时段的照旧保留。
+// 课名对整组生效；credit 为空表示没改学分，各教学班保留自己的。
+List<CourseRecord> regroupCourse(
+  List<CourseRecord> group, {
+  required String name,
+  required List<CourseSlot> slots,
+  required String Function() newLocalId,
+  ({num? value})? credit,
+}) {
+  final byKey = {for (final course in group) courseKey(course): course};
+  final targets = <String, ({CourseRecord base, String teacher, List<CourseMeeting> meetings})>{};
+  final pending = <CourseSlot>[];
+  for (final slot in slots) {
+    final origin = byKey[slot.origin];
+    if (origin != null && origin.teacherName == slot.teacher) {
+      targets.putIfAbsent(slot.origin!, () => (base: origin, teacher: slot.teacher, meetings: [])).meetings.add(slot.meeting);
     } else {
-      meetings[index] = replaceMeeting(meetings[index], weeks: remaining);
-    }
-    final target = replaceMeeting(replacement, weeks: [week]);
-    final existing = meetings.indexWhere(
-      (meeting) => meetingKey(meeting) == meetingKey(target),
-    );
-    if (existing < 0) {
-      meetings.add(target);
-    } else {
-      meetings[existing] = replaceMeeting(
-        meetings[existing],
-        weeks: {...meetings[existing].weeks, week}.toList()..sort(),
-      );
+      pending.add(slot);
     }
   }
-  return replaceCourse(course, meetings: meetings);
+  final created = <CourseRecord>[];
+  for (final slot in pending) {
+    final key = targets.entries.where((entry) => entry.value.teacher == slot.teacher).firstOrNull?.key ??
+        group.where((course) => !targets.containsKey(courseKey(course)) && course.teacherName == slot.teacher).map(courseKey).firstOrNull ??
+        group.where((course) => !targets.containsKey(courseKey(course)) && course.meetings.isNotEmpty).map(courseKey).firstOrNull;
+    if (key != null) {
+      targets.putIfAbsent(key, () => (base: byKey[key]!, teacher: slot.teacher, meetings: [])).meetings.add(slot.meeting);
+      continue;
+    }
+    final course = CourseRecord(
+      courseCode: group.firstOrNull?.courseCode ?? '',
+      courseName: name,
+      sectionId: '',
+      credit: group.firstOrNull?.credit,
+      teacherName: slot.teacher,
+      meetings: [],
+      localId: newLocalId(),
+    );
+    created.add(course);
+    targets[courseKey(course)] = (base: course, teacher: slot.teacher, meetings: [slot.meeting]);
+  }
+  CourseRecord finish(CourseRecord course, {String? teacher, List<CourseMeeting>? meetings}) => replaceCourse(
+    course,
+    name: name.trim(),
+    teacher: teacher,
+    credit: credit?.value,
+    clearCredit: credit != null && credit.value == null,
+    meetings: meetings,
+  );
+  return [
+    for (final course in [...group, ...created])
+      if (targets[courseKey(course)] case final target?)
+        finish(target.base, teacher: target.teacher, meetings: target.meetings)
+      else if (course.meetings.isEmpty)
+        finish(course),
+  ];
 }
 
 class CourseOverlap {

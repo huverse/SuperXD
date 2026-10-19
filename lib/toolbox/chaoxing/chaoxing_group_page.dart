@@ -4,6 +4,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_search_field.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
@@ -126,10 +127,7 @@ class _ChaoxingGroupPageState extends State<ChaoxingGroupPage> {
     final rows = <Widget Function()>[
       () => Padding(
         padding: const EdgeInsets.only(bottom: 12),
-        child: TextField(
-          controller: _query,
-          decoration: const InputDecoration(labelText: '搜索群聊', prefixIcon: CampusIcon(CampusIcons.search)),
-        ),
+        child: CampusSearchField(controller: _query, hint: '搜索群聊'),
       ),
       if (groups.isEmpty)
         () => Padding(

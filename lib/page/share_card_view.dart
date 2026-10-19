@@ -7,10 +7,12 @@ import 'package:superxd/theme/campus_palette.dart';
 
 // 私信里的分享卡片：标题行（图标 + 类型）、内容摘要、一个操作按钮。新增卡片类型在这里加一个分支。
 class ShareCardView extends StatelessWidget {
-  const ShareCardView({super.key, required this.card, required this.outgoing, this.onOpenSchedule, this.onApplyAppearance, this.onOpenVideo});
+  const ShareCardView({super.key, required this.card, required this.outgoing, this.onOpenSchedule, this.onImportSchedule, this.onApplyAppearance, this.onOpenVideo});
   final ShareCard card;
   final bool outgoing;
   final VoidCallback? onOpenSchedule;
+  // 收到的课表导入到自己的课表；为空（自己发出的、未登录）时不显示。
+  final VoidCallback? onImportSchedule;
   final VoidCallback? onApplyAppearance;
   final VoidCallback? onOpenVideo;
 
@@ -34,7 +36,13 @@ class ShareCardView extends StatelessWidget {
         Text(term.label.isEmpty ? term.key : term.label, style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),
         Text('${courses.length} 门课${termStartDate == null ? '' : ' · ${int.parse(termStartDate.substring(5, 7))}月${int.parse(termStartDate.substring(8))}日开学'}', style: secondary),
-        action(outgoing ? CampusIcons.open : CampusIcons.commonFree, outgoing ? '查看' : '查看与对比', onOpenSchedule),
+        Padding(
+          padding: const EdgeInsets.only(top: 12),
+          child: Wrap(spacing: 8, runSpacing: 8, children: [
+            FilledButton.icon(onPressed: onOpenSchedule, icon: CampusIcon(outgoing ? CampusIcons.open : CampusIcons.commonFree), label: Text(outgoing ? '查看' : '查看与对比')),
+            if (onImportSchedule != null) FilledButton.icon(onPressed: onImportSchedule, icon: const CampusIcon(CampusIcons.importSchedule), label: const Text('导入')),
+          ]),
+        ),
       ]),
       final AppearanceShare share => _AppearanceCard(share: share, header: header(CampusIcons.palette, '界面配置'), action: outgoing ? null : action(CampusIcons.check, '套用', onApplyAppearance)),
       VideoShare(:final title, :final author, :final kind) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

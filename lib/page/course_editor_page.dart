@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -16,70 +17,54 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
+import 'package:superxd/theme/campus_segmented.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/domain/campus_log.dart';
 
+// 编辑一门课：同名的几个教学班合在一起编辑（人工决策见 domain/schedule_edit.dart 的 courseGroups），
+// 课名与学分对整门生效，老师和地点写在每个时段上，保存时按老师分回教学班。
 class CourseEditorPage extends StatefulWidget {
   const CourseEditorPage({
     super.key,
-    this.course,
+    this.group = const [],
     this.slot,
     required this.courses,
     required this.bells,
     required this.onSave,
     this.selectedWeek,
   });
-  final CourseRecord? course;
-  final CourseMeeting? slot;
+  // 要编辑的这门课（同名的几个教学班）；新增课程时为空。
+  final List<CourseRecord> group;
+  // 从课表页无课时段进来时预填的时段。
+  final CourseSlot? slot;
   final List<CourseRecord> courses;
   final List<BellPeriod> bells;
   final int? selectedWeek;
-  final Future<String?> Function(CourseRecord course) onSave;
+  // 交出分回教学班后的记录（空表示整门删除），返回错误文案，成功为 null。
+  final Future<String?> Function(List<CourseRecord> records) onSave;
   @override
   State<CourseEditorPage> createState() => _CourseEditorPageState();
 }
 
 class _CourseEditorPageState extends State<CourseEditorPage> {
-  late final CourseRecord _original =
-      widget.course ??
-      CourseRecord(
-        courseCode: '',
-        courseName: '',
-        sectionId: '',
-        credit: null,
-        teacherName: '',
-        meetings: [],
-        localId: const Uuid().v4(),
-      );
-  late final _name = TextEditingController(text: _original.courseName);
-  late final _teacher = TextEditingController(text: _original.teacherName);
-  late final _credit = TextEditingController(
-    text: _original.credit?.toString() ?? '',
-  );
-  late List<CourseMeeting> _meetings = [
-    ..._original.meetings.map((meeting) => meeting.copy()),
-    if (widget.slot != null) widget.slot!.copy(),
-  ];
+  late final _initialName = widget.group.firstOrNull?.courseName ?? '';
+  late final _initialCredit = widget.group.firstOrNull?.credit?.toString() ?? '';
+  late final _name = TextEditingController(text: _initialName);
+  late final _credit = TextEditingController(text: _initialCredit);
+  late List<CourseSlot> _slots = [...courseSlots(widget.group), ?widget.slot];
   // 预填时段属于打开时的初始草稿：未改动返回不提示放弃，但仍须保存才生效。
-  late final _initialMeetings = fingerprint([
-    replaceCourse(
-      _original,
-      meetings: [..._original.meetings, if (widget.slot != null) widget.slot!],
-    ),
-  ]);
+  late final _initialSlots = _signature(_slots);
   bool _saving = false;
   bool _leaving = false;
   String? _error;
-  bool get _dirty =>
-      _name.text != _original.courseName ||
-      _teacher.text != _original.teacherName ||
-      _credit.text != (_original.credit?.toString() ?? '') ||
-      fingerprint([replaceCourse(_original, meetings: _meetings)]) !=
-          _initialMeetings;
+  bool get _dirty => _name.text != _initialName || _credit.text != _initialCredit || _signature(_slots) != _initialSlots;
+
+  static String _signature(List<CourseSlot> slots) =>
+      (slots.map((slot) => jsonEncode([meetingKey(slot.meeting), slot.meeting.weeks.toSet().toList()..sort(), slot.teacher])).toList()..sort()).join('\n');
 
   @override
   void dispose() {
     _name.dispose();
-    _teacher.dispose();
     _credit.dispose();
     super.dispose();
   }
@@ -109,23 +94,21 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
       setState(() => _error = '请输入有效学分');
       return;
     }
-    final course = normalizeSchedule([
-      replaceCourse(
-        _original,
-        name: _name.text,
-        teacher: _teacher.text,
-        credit: credit,
-        clearCredit: credit == null,
-        meetings: _meetings,
-      ),
-    ]).single;
+    final removing = widget.group.any((course) => course.meetings.isNotEmpty) && _slots.isEmpty;
+    final records = removing
+        ? <CourseRecord>[]
+        : normalizeSchedule(regroupCourse(
+            widget.group,
+            name: _name.text,
+            slots: _slots,
+            newLocalId: () => const Uuid().v4(),
+            credit: _credit.text == _initialCredit ? null : (value: credit),
+          ));
     try {
-      if (course.meetings.isEmpty &&
-          _original.meetings.isEmpty &&
-          widget.course == null) {
+      if (_slots.isEmpty && widget.group.isEmpty) {
         throw const ScheduleValidation('请至少添加一个上课时段');
       }
-      validateSchedule([course]);
+      validateSchedule(records);
     } on ScheduleValidation catch (error) {
       // 校验不过是预期内的用户输入错误，只记类型不带堆栈
       campusLog('[ScheduleEditor] action=validate errorType=${error.runtimeType}');
@@ -137,10 +120,6 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
       _error = null;
     });
     try {
-      final removing =
-          widget.course != null &&
-          _original.meetings.isNotEmpty &&
-          course.meetings.isEmpty;
       if (removing &&
           !await showCampusConfirm(
             context,
@@ -151,7 +130,9 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
         return;
       }
       if (!mounted) return;
-      final overlaps = courseOverlaps(course, widget.courses);
+      final keys = {for (final course in widget.group) courseKey(course)};
+      final others = widget.courses.where((course) => !keys.contains(courseKey(course))).toList();
+      final overlaps = [for (final record in records) ...courseOverlaps(record, others)];
       if (overlaps.isNotEmpty &&
           !await showCampusConfirm(
             context,
@@ -162,7 +143,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
         return;
       }
       if (!mounted) return;
-      final error = await widget.onSave(course);
+      final error = await widget.onSave(records);
       if (!mounted) return;
       if (error == null) {
         setState(() => _leaving = true);
@@ -178,68 +159,49 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
     }
   }
 
-  Future<void> _editMeeting({int? index, bool duplicate = false}) async {
-    final original = index == null ? null : _meetings[index];
-    int? onlyWeek;
-    if (original != null && !duplicate && original.weeks.length > 1) {
-      final choice = await showCampusDialog<String>(
-        context: context,
-        builder: (context) => CampusGlassDialog(
-          title: const Text('调整哪些周次？'),
-          options: [
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, 'all'),
-              child: const Text('此时段的全部周次'),
-            ),
-            SimpleDialogOption(
-              onPressed: () => Navigator.pop(context, 'one'),
-              child: const Text('仅某一周'),
-            ),
-          ],
-        ),
-      );
-      if (!mounted || choice == null) return;
-      if (choice == 'one') {
-        onlyWeek = await chooseMeetingWeek(
-          context,
-          original.weeks,
-          preferred: widget.selectedWeek,
-        );
-        if (!mounted || onlyWeek == null) return;
-      }
-    }
-    final edited = await showCampusDialog<CourseMeeting>(
+  // 点时段卡直接打开时段弹窗，改动范围在弹窗顶部选（人工决策见 _SlotDialog）；新加的时段默认沿用上一个时段的老师。
+  Future<void> _editSlot({int? index, bool duplicate = false}) async {
+    final original = index == null ? null : _slots[index];
+    final edited = await showCampusDialog<({CourseSlot slot, int? week})>(
       context: context,
-      builder: (context) => _MeetingDialog(
-        meeting: original,
+      builder: (context) => _SlotDialog(
+        slot: original,
+        teacher: original?.teacher ?? _slots.lastOrNull?.teacher ?? '',
+        singleWeek: original != null && !duplicate && original.meeting.weeks.length > 1,
+        preferredWeek: widget.selectedWeek,
         bells: widget.bells,
-        onlyWeek: onlyWeek,
         places: widget.courses
             .expand((course) => course.meetings)
             .map((meeting) => meeting.place)
             .where((place) => place.isNotEmpty)
             .toSet()
             .toList(),
+        teachers: widget.courses
+            .map((course) => course.teacherName)
+            .where((name) => name.isNotEmpty)
+            .toSet()
+            .toList(),
       ),
     );
     if (!mounted || edited == null) return;
     setState(() {
-      if (index == null || duplicate) {
-        _meetings.add(edited);
-      } else {
-        _meetings = changeMeeting(
-          replaceCourse(_original, meetings: _meetings),
-          index,
-          edited,
-          week: onlyWeek,
-        ).meetings;
-      }
+      _slots = index == null || duplicate ? [..._slots, edited.slot] : changeSlot(_slots, index, edited.slot, week: edited.week);
       _error = null;
     });
   }
 
-  Future<void> _deleteMeeting(int index) async {
-    final meeting = _meetings[index];
+  Future<void> _slotMenu(BuildContext anchor, int index) async {
+    final action = await showCampusMenu<String>(anchor, items: [
+      if (_slots.length < maxCourseMeetings) const CampusMenuItem(value: 'copy', label: '复制为新时段', icon: CampusIcons.copy),
+      const CampusMenuItem(value: 'remove', label: '移除', icon: CampusIcons.delete, destructive: true),
+    ]);
+    if (!mounted) return;
+    if (action == 'copy') await _editSlot(index: index, duplicate: true);
+    if (action == 'remove') await _deleteSlot(index);
+  }
+
+  Future<void> _deleteSlot(int index) async {
+    final meeting = _slots[index].meeting;
     final scope = await showCampusDialog<String>(
       context: context,
       builder: (context) => CampusGlassDialog(
@@ -274,15 +236,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
       return;
     }
     if (!mounted) return;
-    setState(
-      () => _meetings =
-          removeMeeting(
-            replaceCourse(_original, meetings: _meetings),
-            index,
-            week: week,
-          )?.meetings ??
-          [],
-    );
+    setState(() => _slots = removeSlot(_slots, index, week: week));
   }
 
   @override
@@ -298,7 +252,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
           onPressed: _saving ? null : _back,
           icon: const CampusIcon(CampusIcons.back),
         ),
-        title: Text(widget.course == null ? '新增课程' : '编辑课程'),
+        title: Text(widget.group.isEmpty ? '新增课程' : '编辑课程'),
       ),
       body: CampusScrollFade(child: SafeArea(
         child: ListView(
@@ -316,17 +270,6 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
               ),
             ),
             SizedBox(height: campusFieldGap(context)),
-            _SuggestionField(
-              controller: _teacher,
-              label: '教师（选填）',
-              enabled: !_saving,
-              options: widget.courses
-                  .map((course) => course.teacherName)
-                  .where((name) => name.isNotEmpty)
-                  .toSet()
-                  .toList(),
-            ),
-            SizedBox(height: campusFieldGap(context)),
             TextField(
               controller: _credit,
               enabled: !_saving,
@@ -340,58 +283,41 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
             ),
             const SizedBox(height: 20),
             Text(
-              '上课时段 · ${_meetings.length}',
+              '上课时段 · ${_slots.length}',
               style: Theme.of(context).textTheme.titleLarge,
             ),
-            for (var index = 0; index < _meetings.length; index++)
-              CampusSurface(padding: EdgeInsets.zero, margin: const EdgeInsets.symmetric(vertical: 8),
+            // 时段卡整卡点按调整这个时段，复制与移除在右上⋯里（同管理课程的课程卡）。
+            for (var index = 0; index < _slots.length; index++)
+              CampusSurface(
+                padding: EdgeInsets.zero,
+                margin: const EdgeInsets.symmetric(vertical: 8),
+                onTap: _saving ? null : () => _editSlot(index: index),
                 child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                  padding: const EdgeInsets.fromLTRB(16, 4, 4, 4),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(
-                        meetingLabel(_meetings[index]),
-                        style: const TextStyle(fontSize: 14, height: 1.5),
+                      Expanded(
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          child: DotSeparatedText(slotLabel(_slots[index]), style: const TextStyle(fontSize: 14, height: 1.5)),
+                        ),
                       ),
-                      Wrap(
-                        spacing: 8,
-                        children: [
-                          TextButton.icon(
-                            onPressed: _saving
-                                ? null
-                                : () => _editMeeting(index: index),
-                            icon: const CampusIcon(CampusIcons.edit),
-                            label: const Text('调整'),
-                          ),
-                          TextButton.icon(
-                            onPressed:
-                                _saving || _meetings.length >= maxCourseMeetings
-                                ? null
-                                : () => _editMeeting(
-                                    index: index,
-                                    duplicate: true,
-                                  ),
-                            icon: const CampusIcon(CampusIcons.copy),
-                            label: const Text('复制'),
-                          ),
-                          TextButton.icon(
-                            onPressed: _saving
-                                ? null
-                                : () => _deleteMeeting(index),
-                            icon: const CampusIcon(CampusIcons.delete),
-                            label: const Text('移除'),
-                          ),
-                        ],
+                      Builder(
+                        builder: (anchor) => IconButton(
+                          tooltip: '时段操作',
+                          onPressed: _saving ? null : () => _slotMenu(anchor, index),
+                          icon: const CampusIcon(CampusIcons.manage),
+                        ),
                       ),
                     ],
                   ),
                 ),
               ),
             OutlinedButton.icon(
-              onPressed: _saving || _meetings.length >= maxCourseMeetings
+              onPressed: _saving || _slots.length >= maxCourseMeetings
                   ? null
-                  : () => _editMeeting(),
+                  : () => _editSlot(),
               icon: const CampusIcon(CampusIcons.add),
               label: const Text('添加时段'),
             ),
@@ -453,38 +379,50 @@ Future<int?> chooseMeetingWeek(
   ),
 );
 
-class _MeetingDialog extends StatefulWidget {
-  const _MeetingDialog({
-    this.meeting,
-    this.onlyWeek,
+enum _Scope { all, one }
+
+class _SlotDialog extends StatefulWidget {
+  const _SlotDialog({
+    this.slot,
+    required this.teacher,
+    required this.singleWeek,
+    this.preferredWeek,
     required this.bells,
     required this.places,
+    required this.teachers,
   });
-  final CourseMeeting? meeting;
-  final int? onlyWeek;
+  final CourseSlot? slot;
+  final String teacher;
+  // 已有的多周时段才给「只改某一周」。
+  final bool singleWeek;
+  final int? preferredWeek;
   final List<BellPeriod> bells;
   final List<String> places;
+  final List<String> teachers;
   @override
-  State<_MeetingDialog> createState() => _MeetingDialogState();
+  State<_SlotDialog> createState() => _SlotDialogState();
 }
 
-class _MeetingDialogState extends State<_MeetingDialog> {
-  late int _weekday = widget.meeting?.weekday ?? 1;
-  late int _start = widget.meeting?.periodStart ?? 1;
-  late int _end = widget.meeting?.periodEnd ?? 2;
-  late final _place = TextEditingController(text: widget.meeting?.place ?? '');
-  late Set<int> _weeks = widget.onlyWeek != null
-      ? {widget.onlyWeek!}
-      : widget.meeting?.weeks.toSet() ??
-            {for (var week = 1; week <= 18; week++) week};
+class _SlotDialogState extends State<_SlotDialog> {
+  late final CourseMeeting? _meeting = widget.slot?.meeting;
+  late int _weekday = _meeting?.weekday ?? 1;
+  late int _start = _meeting?.periodStart ?? 1;
+  late int _end = _meeting?.periodEnd ?? 2;
+  late final _place = TextEditingController(text: _meeting?.place ?? '');
+  late final _teacher = TextEditingController(text: widget.teacher);
+  late Set<int> _weeks = _meeting?.weeks.toSet() ?? {for (var week = 1; week <= 18; week++) week};
   late int _visibleWeeks = _weeks.fold(
     20,
     (maximum, week) => week > maximum ? week : maximum,
   );
+  var _scope = _Scope.all;
+  // 只改某一周时改的是哪周：默认课表页正在看的那周（这个时段那周有课才算）。
+  late int? _onlyWeek = _meeting?.weeks.contains(widget.preferredWeek) == true ? widget.preferredWeek : null;
   String? _error;
   @override
   void dispose() {
     _place.dispose();
+    _teacher.dispose();
     super.dispose();
   }
 
@@ -496,25 +434,30 @@ class _MeetingDialogState extends State<_MeetingDialog> {
   }
 
   void _save() {
-    if (_end < _start || _weeks.isEmpty) {
-      setState(() => _error = _weeks.isEmpty ? '请至少选择一周' : '结束节次不能早于开始');
+    final one = _scope == _Scope.one;
+    if (one && _onlyWeek == null || _end < _start || !one && _weeks.isEmpty) {
+      setState(() => _error = one && _onlyWeek == null ? '请选择改哪一周' : _end < _start ? '结束节次不能早于开始' : '请至少选择一周');
       return;
     }
-    Navigator.pop(
-      context,
-      CourseMeeting(
-        weekday: _weekday,
-        periodStart: _start,
-        periodEnd: _end,
-        place: _place.text.trim(),
-        weeks: _weeks.toList()..sort(),
+    Navigator.pop(context, (
+      slot: CourseSlot(
+        meeting: CourseMeeting(
+          weekday: _weekday,
+          periodStart: _start,
+          periodEnd: _end,
+          place: _place.text.trim(),
+          weeks: one ? [_onlyWeek!] : (_weeks.toList()..sort()),
+        ),
+        teacher: _teacher.text.trim(),
+        origin: widget.slot?.origin,
       ),
-    );
+      week: one ? _onlyWeek : null,
+    ));
   }
 
   @override
   Widget build(BuildContext context) => CampusGlassDialog(
-    title: Text(widget.onlyWeek == null ? '上课时段' : '仅调整第${widget.onlyWeek}周'),
+    title: const Text('上课时段'),
     content: SizedBox(
       width: 480,
       child: SingleChildScrollView(
@@ -522,6 +465,40 @@ class _MeetingDialogState extends State<_MeetingDialog> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
+            // [人工决策-2026-10-19 16:08:42] 时段卡整卡点按直接打开本弹窗，改动范围在顶部分段里选（用户选定，取代先弹「此时段的全部周次 / 仅某一周」再进弹窗）：
+            // 默认「全部周次」、保存前看得见，范围仍由用户明确选择（09-25 的「改全部时段须明确选择」照旧）；复制与移除收进时段卡的⋯。
+            if (widget.singleWeek) ...[
+              CampusSegmented<_Scope>(
+                values: _Scope.values,
+                selected: _scope,
+                label: (scope) => scope == _Scope.all ? '全部周次' : '只改某一周',
+                onSelected: (scope) => setState(() {
+                  _scope = scope;
+                  _error = null;
+                }),
+              ),
+              const SizedBox(height: 16),
+              if (_scope == _Scope.one) ...[
+                Text('改哪一周', style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant)),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 8,
+                  children: [
+                    for (final week in _meeting!.weeks.toSet().toList()..sort())
+                      CampusGlassChip(
+                        label: '第$week周',
+                        selected: _onlyWeek == week,
+                        onSelected: (_) => setState(() {
+                          _onlyWeek = week;
+                          _error = null;
+                        }),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
+            ],
             Wrap(
               spacing: 6,
               runSpacing: 8,
@@ -560,12 +537,18 @@ class _MeetingDialogState extends State<_MeetingDialog> {
               label: '地点（选填）',
               options: widget.places,
             ),
-            const SizedBox(height: 16),
-            Text(
-              weeksLabel(_weeks.toList()),
-              style: const TextStyle(fontSize: 14),
+            SizedBox(height: campusFieldGap(context)),
+            _SuggestionField(
+              controller: _teacher,
+              label: '教师（选填）',
+              options: widget.teachers,
             ),
-            if (widget.onlyWeek == null) ...[
+            if (_scope == _Scope.all) ...[
+              const SizedBox(height: 16),
+              Text(
+                weeksLabel(_weeks.toList()),
+                style: const TextStyle(fontSize: 14),
+              ),
               Wrap(
                 spacing: 4,
                 runSpacing: 8,
@@ -643,12 +626,10 @@ class _SuggestionField extends StatelessWidget {
     required this.controller,
     required this.label,
     required this.options,
-    this.enabled = true,
   });
   final TextEditingController controller;
   final String label;
   final List<String> options;
-  final bool enabled;
   @override
   Widget build(BuildContext context) {
     // 横向候选栏高度随字号：按真实字形量出按钮文字行高再加按钮上下内边距，大字号不裁切，仍按需构建。
@@ -666,7 +647,6 @@ class _SuggestionField extends StatelessWidget {
     children: [
       TextField(
         controller: controller,
-        enabled: enabled,
         maxLength: 200,
         buildCounter: _nearLimitCounter,
         decoration: InputDecoration(
@@ -684,9 +664,7 @@ class _SuggestionField extends StatelessWidget {
             // 横向列表给子项的是行高的紧约束，居中放开后按钮保持约38的视觉高度、48的触区。
             itemBuilder: (context, index) => Center(
               child: FilledButton(
-                onPressed: enabled
-                    ? () => controller.text = options[index]
-                    : null,
+                onPressed: () => controller.text = options[index],
                 child: Text(options[index]),
               ),
             ),

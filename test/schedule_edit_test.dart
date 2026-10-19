@@ -37,32 +37,62 @@ void main() {
   });
   test('单周调课仅拆分该周，回到原地点时合并周次', () {
     final original = sample();
-    final target = CourseMeeting(
-      weekday: 2,
-      periodStart: 3,
-      periodEnd: 4,
-      place: '202',
-      weeks: [1, 2, 3],
+    final slots = courseSlots([original]);
+    final target = CourseSlot(
+      meeting: CourseMeeting(weekday: 2, periodStart: 3, periodEnd: 4, place: '202', weeks: [1, 2, 3]),
+      teacher: '老师',
+      origin: courseKey(original),
     );
-    final edited = changeMeeting(original, 0, target, week: 2);
-    expect(edited.meetings.first.weeks, [1, 3]);
-    expect(edited.meetings.last.weeks, [2]);
-    final restored = changeMeeting(
-      edited,
-      1,
-      original.meetings.single,
-      week: 2,
-    );
-    expect(restored.meetings, hasLength(1));
-    expect(fingerprint([restored]), fingerprint([original]));
+    final edited = changeSlot(slots, 0, target, week: 2);
+    expect(edited.first.meeting.weeks, [1, 3]);
+    expect(edited.last.meeting.weeks, [2]);
+    final restored = changeSlot(edited, 1, slots.single, week: 2);
+    expect(restored.single.meeting.weeks, [1, 2, 3]);
     expect(original.meetings.single.weeks, [1, 2, 3]);
+    // 这一周换了老师：不并进原老师的同一时段，另起一条。
+    final handedOver = changeSlot(edited, 1, CourseSlot(meeting: slots.single.meeting, teacher: '代课老师'), week: 2);
+    expect(handedOver.map((slot) => slot.teacher), ['老师', '代课老师']);
   });
   test('删除单次、重复时段、最后时段不会误删其他周', () {
-    final original = sample();
-    final edited = removeMeeting(original, 0, week: 2)!;
-    expect(edited.meetings.single.weeks, [1, 3]);
-    expect(removeMeeting(edited, 0), isNull);
-    expect(removeMeeting(sample(weeks: [2]), 0, week: 2), isNull);
+    final edited = removeSlot(courseSlots([sample()]), 0, week: 2);
+    expect(edited.single.meeting.weeks, [1, 3]);
+    expect(removeSlot(edited, 0), isEmpty);
+    expect(removeSlot(courseSlots([sample(weeks: [2])]), 0, week: 2), isEmpty);
+  });
+  test('同名教学班合成一门，保存时按老师分回原教学班', () {
+    CourseMeeting meeting(int weekday) => CourseMeeting(weekday: weekday, periodStart: 1, periodEnd: 2, place: '101', weeks: [1, 2]);
+    final a = CourseRecord(courseCode: 'C1', courseName: '数据结构', sectionId: 'S1', credit: 3, teacherName: '甲', meetings: [meeting(1)]);
+    final b = CourseRecord(courseCode: 'C1', courseName: '数据结构 ', sectionId: 'S2', credit: 3, teacherName: '乙', meetings: [meeting(3)]);
+    final groups = courseGroups([a, sample(), b]);
+    expect(groups.map((group) => group.length), [2, 1]);
+    final group = groups.first;
+    final slots = courseSlots(group);
+    expect(slots.map(slotLabel), ['周一 第1–2节 · 第1–2周 · 101 · 甲', '周三 第1–2节 · 第1–2周 · 101 · 乙']);
+    // 改课名对整组生效，时段各回原教学班。
+    final renamed = regroupCourse(group, name: '数据结构与算法', slots: slots, newLocalId: () => 'new');
+    expect(renamed.map(courseKey), [courseKey(a), courseKey(b)]);
+    expect(renamed.map((course) => course.courseName).toSet(), {'数据结构与算法'});
+    expect(renamed.map((course) => course.teacherName), ['甲', '乙']);
+    // 乙的时段改给甲：并进甲的教学班，乙的教学班没有时段了就删掉。
+    final moved = regroupCourse(group, name: '数据结构', slots: [slots[0], CourseSlot(meeting: slots[1].meeting, teacher: '甲', origin: slots[1].origin)], newLocalId: () => 'new');
+    expect(moved.single.sectionId, 'S1');
+    expect(moved.single.meetings, hasLength(2));
+    // 乙整班改成丙（改错字）：沿用乙的教学班标识，不新建课程。
+    final corrected = regroupCourse(group, name: '数据结构', slots: [slots[0], CourseSlot(meeting: slots[1].meeting, teacher: '丙', origin: slots[1].origin)], newLocalId: () => 'new');
+    expect(corrected.map((course) => course.sectionId), ['S1', 'S2']);
+    expect(corrected.last.teacherName, '丙');
+    // 新加一位老师的时段：新建本地课程、带上课程代码；改过的学分对整组生效。
+    final added = regroupCourse(group, name: '数据结构', slots: [...slots, CourseSlot(meeting: meeting(5), teacher: '丁')], newLocalId: () => 'new', credit: (value: 4));
+    expect(added.last.localId, 'new');
+    expect(added.last.courseCode, 'C1');
+    expect(added.last.teacherName, '丁');
+    expect(added.map((course) => course.credit).toSet(), {4});
+    // 没改学分时各教学班保留自己的。
+    expect(regroupCourse([a, replaceCourse(b, credit: 1)], name: '数据结构', slots: courseSlots([a, b]), newLocalId: () => 'new').map((course) => course.credit), [3, 1]);
+    // 原本就没有时段的教学班照旧保留；时段删光时原来有时段的都删掉。
+    final unscheduled = CourseRecord(courseCode: 'C1', courseName: '数据结构', sectionId: 'S3', credit: 3, teacherName: '戊', meetings: []);
+    expect(regroupCourse([a, unscheduled], name: '数据结构', slots: courseSlots([a]), newLocalId: () => 'new').map((course) => course.sectionId), ['S1', 'S3']);
+    expect(regroupCourse(group, name: '数据结构', slots: const [], newLocalId: () => 'new'), isEmpty);
   });
   test('规范化排序去重且单双周标记不制造虚假版本', () {
     final original = sample(weeks: [3, 1, 1]);

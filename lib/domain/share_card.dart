@@ -23,7 +23,8 @@ sealed class ShareCard {
 }
 
 // [人工决策-2026-10-04 16:44:36] 课表分享为一次性快照（之后改了要再发一次），不做持续共享；首批卡片为课表、界面配置、短视频。
-// 课表快照：发送时的某学期课表、开学日与作息。接收方只读查看，可与自己的课表对比共同空闲，不覆盖自己的课表。
+// 课表快照：发送时的某学期课表、开学日与作息。接收方可查看、与自己的课表对比共同空闲，也可导入自己的课表
+// （整份替换或挑几门加进来，10-19 用户选定，人工决策见 page/schedule_import.dart）。
 class ScheduleShare extends ShareCard {
   const ScheduleShare({required this.term, required this.courses, required this.bells, this.termStartDate});
   static const typeName = 'schedule';
