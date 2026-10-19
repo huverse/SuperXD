@@ -14,6 +14,7 @@ import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_store.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
+import 'package:superxd/theme/campus_animated_list.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -37,6 +38,8 @@ class ConversationPage extends StatefulWidget {
 
 class _ConversationPageState extends State<ConversationPage> {
   List<SocialMessage>? _messages;
+  // 第一次读到的卡片直接显示，之后新到（或自己刚发）的卡片展开淡入（人工决策见 campus_animated_list.dart）。
+  Set<String>? _known;
   int _loadVersion = 0;
   bool _preparing = false;
 
@@ -63,7 +66,10 @@ class _ConversationPageState extends State<ConversationPage> {
     try {
       final messages = await _social.conversation(widget.friendId);
       if (!mounted || version != _loadVersion) return;
-      setState(() => _messages = messages);
+      setState(() {
+        _messages = messages;
+        _known ??= {for (final message in messages) message.id};
+      });
       if ((_friend?.unread ?? 0) > 0) await _social.markRead(widget.friendId);
     } catch (error, stack) {
       campusLog('[Conversation] action=load errorType=${error.runtimeType}\n$stack');
@@ -180,7 +186,7 @@ class _ConversationPageState extends State<ConversationPage> {
     if (friend == null) return;
     final action = await showCampusMenu<String>(anchor, items: const [
       CampusMenuItem(value: 'remark', label: '修改备注', icon: CampusIcons.edit),
-      CampusMenuItem(value: 'remove', label: '删除好友', icon: CampusIcons.removeFriend),
+      CampusMenuItem(value: 'remove', label: '删除好友', icon: CampusIcons.removeFriend, destructive: true),
     ]);
     if (!mounted) return;
     switch (action) {
@@ -218,7 +224,7 @@ class _ConversationPageState extends State<ConversationPage> {
 
   Widget _item(SocialMessage message, SocialMessage? older, CampusPalette colors, double maxWidth) {
     final secondary = TextStyle(fontSize: 14, color: colors.onSurfaceVariant);
-    final time = _timeGap(message, older) ? Padding(padding: const EdgeInsets.only(top: 12, bottom: 4), child: Center(child: Text(formatCampusTimestamp(message.createTime), style: secondary))) : null;
+    final time = _timeGap(message, older) ? Padding(padding: const EdgeInsets.only(top: 12, bottom: 4), child: Center(child: Text(formatCampusRelative(message.createTime), style: secondary))) : null;
     if (message.system != null) {
       return Column(children: [
         ?time,
@@ -292,7 +298,10 @@ class _ConversationPageState extends State<ConversationPage> {
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
                   itemCount: messages.length,
                   // 列表倒序：index + 1 是更早的一条。
-                  itemBuilder: (context, index) => KeyedSubtree(key: ValueKey(messages[index].id), child: _item(messages[index], index + 1 < messages.length ? messages[index + 1] : null, colors, constraints.maxWidth * .82)),
+                  itemBuilder: (context, index) => KeyedSubtree(key: ValueKey(messages[index].id), child: CampusAppear(
+                    animate: _known?.add(messages[index].id) ?? false,
+                    child: _item(messages[index], index + 1 < messages.length ? messages[index + 1] : null, colors, constraints.maxWidth * .82),
+                  )),
                 ))),
           // 底部操作栏：实色、顶部分割线（同会话页输入栏规格），不模糊，铺满宽度。
           Container(

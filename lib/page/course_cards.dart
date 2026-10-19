@@ -3,14 +3,17 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/period_spans.dart';
+import 'package:superxd/theme/campus_field_table.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/meeting_time.dart';
+import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/live_clock.dart';
 
@@ -73,6 +76,48 @@ List<(String, bool)> classDurationParts(int minutes) {
 }
 
 String classDuration(int minutes) => classDurationParts(minutes).map((part) => part.$1).join();
+
+// 有课卡的只读详情（今天页与课表页单击有课卡都打开它）：当天节次与时段、地点、教师、学分与这门课的全部上课时段；
+// 给了 onEdit（课表页）时底部有「编辑课程」，点了先关详情再进编辑。次要色在弹层自己的 builder 里取，开着时切深浅色也跟着变。
+Future<void> showCourseDetail(BuildContext context, {required PeriodSpan span, required List<CourseRecord> courses, required List<BellPeriod> bells, VoidCallback? onEdit}) {
+  final key = courseKey(span.course!);
+  final course = courses.firstWhere((course) => courseKey(course) == key, orElse: () => span.course!);
+  final time = meetingTime(bells, span.meeting!);
+  return showCampusSheet<void>(context: context, builder: (context) {
+    final secondary = TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant);
+    return CampusSheetPanel(child: SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(20, 12, 8, 20),
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: Padding(padding: const EdgeInsets.only(top: 10), child: Text(course.courseName, style: Theme.of(context).textTheme.titleLarge))),
+          IconButton(tooltip: '关闭', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.close)),
+        ]),
+        Text('${periodLabel(span.start, span.end)}${time == null ? '' : ' · ${time.label}'}', style: secondary),
+        const SizedBox(height: 16),
+        Padding(padding: const EdgeInsets.only(right: 12), child: CampusFieldTable(rows: [
+          ('地点', span.meeting!.place),
+          ('教师', course.teacherName),
+          ('学分', switch (course.credit) { final credit? => creditLabel(credit), null => '' }),
+        ])),
+        const SizedBox(height: 16),
+        Text('上课时段', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        for (final meeting in course.meetings) Padding(padding: const EdgeInsets.fromLTRB(0, 4, 12, 4), child: DotSeparatedText(meetingLabel(meeting), style: const TextStyle(fontSize: 14, height: 1.5))),
+        if (onEdit != null) ...[
+          const SizedBox(height: 16),
+          Padding(padding: const EdgeInsets.only(right: 12), child: SizedBox(width: double.infinity, child: FilledButton.icon(
+            onPressed: () {
+              Navigator.pop(context);
+              onEdit();
+            },
+            icon: const CampusIcon(CampusIcons.edit),
+            label: const Text('编辑课程'),
+          ))),
+        ],
+      ]),
+    ));
+  });
+}
 
 class CourseDayCards extends StatefulWidget {
   const CourseDayCards({super.key, required this.spans, required this.bells, required this.date, this.detailKey, this.onDetail, this.onEdit, this.onCreate, this.onArrange, this.onOpen, this.header, this.physics, this.bottomInset = 0, this.obscuredBottom = 0, this.revealNow = false});
@@ -201,7 +246,7 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
   // 读屏整卡一句（同 iOS 日历事件）：课名、教室、时段、节次、教师、此刻状态。
   String _spoken(PeriodSpan span, double? progress) {
     final time = _timeOf(span);
-    return [span.course!.courseName, span.meeting!.place, if (time != null) '${time.startLabel}到${time.endLabel}', '第${span.start}–${span.end}节', span.course!.teacherName, if (progress == 1) '已下课' else if (progress != null) '上课中，已过${(progress * 100).round()}%'].where((part) => part.isNotEmpty).join('，');
+    return [span.course!.courseName, span.meeting!.place, if (time != null) '${time.startLabel}到${time.endLabel}', periodLabel(span.start, span.end), span.course!.teacherName, if (progress == 1) '已下课' else if (progress != null) '上课中，已过${(progress * 100).round()}%'].where((part) => part.isNotEmpty).join('，');
   }
 
   // 打开今天时正在上或下一节在可见区外（课多或字号大）：滚到它的上沿，已下课的课滚出上方；放得下就不动。
@@ -246,7 +291,7 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
         (span.course!.courseName, 17.0, FontWeight.w600, detailWidth),
         // 教室行左边让出定位图标与间距。
         if (place.isNotEmpty) (place, 16.0, FontWeight.w600, detailWidth - 20),
-        ('第${span.start}–${span.end}节${_timeOf(span) == null ? ' · 作息时间未设置' : ''} · ${span.course!.teacherName}', 14.0, FontWeight.w500, detailWidth),
+        ('${periodLabel(span.start, span.end)}${_timeOf(span) == null ? ' · 作息时间未设置' : ''} · ${span.course!.teacherName}', 14.0, FontWeight.w500, detailWidth),
       ]) {
         height += measure(field.$1, field.$2, field.$3, field.$4);
       }
@@ -292,13 +337,16 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
             final span = widget.spans[index];
             final key = spanIdentity(span);
             final selected = _retainedDetail == key;
-            // [人工决策-2026-09-29 16:10:53] 有课卡与无课卡一致：仅长按展开详情与编辑入口，展开后点击收起，单击不展开；无课卡展开后再选新增课程或安排已有课程。
-            // [人工决策-2026-10-06 13:06:11] 课表页仍按上条；今天页（只读、不传 onDetail）单击有课卡经 onOpen 弹只读详情（用户选定）。
+            // [人工决策-2026-09-29 16:10:53] 有课卡与无课卡一致：长按展开详情与编辑入口，展开后点击收起；无课卡展开后再选新增课程或安排已有课程。
+            // （原有「单击不展开」与 10-06 的「课表页仍按上条」已被下一条取代。）
+            // [人工决策-2026-10-06 13:06:11] 今天页（只读、不传 onDetail）单击有课卡经 onOpen 弹只读详情（用户选定）。
+            // [人工决策-2026-10-19 17:55:48] 课表页有课卡单击也经 onOpen 弹只读详情（同今天页，详情里有「编辑课程」），长按照旧展开（用户选定；
+            // 同一张卡两页手势一致，HIG：长按只做快捷方式、不能是唯一入口）。空档仍只认长按。
             final actions = selected ? SizeTransition(sizeFactor: _curve, alignment: Alignment.topLeft, child: Padding(padding: const EdgeInsets.only(top: 12), child: span.empty ? Wrap(spacing: 8, children: [
               if (widget.onCreate != null) TextButton.icon(onPressed: () => widget.onCreate!(span), icon: const CampusIcon(CampusIcons.add), label: const Text('新增课程')),
               if (widget.onArrange != null) TextButton.icon(onPressed: () => widget.onArrange!(span), icon: const CampusIcon(CampusIcons.edit), label: const Text('安排已有课程')),
             ]) : Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('学分 ${span.course?.credit ?? '—'}\n第${span.start}–${span.end}节', style: const TextStyle(fontSize: 14, height: 1.5)),
+              Text('学分 ${switch (span.course?.credit) { final credit? => creditLabel(credit), null => '—' }}\n${periodLabel(span.start, span.end)}', style: const TextStyle(fontSize: 14, height: 1.5)),
               if (widget.onEdit != null) TextButton.icon(onPressed: () => widget.onEdit!(span.course!), icon: const CampusIcon(CampusIcons.edit), label: const Text('编辑课程')),
             ]))) : null;
             // [人工决策-2026-10-18 14:49:51] 今天页有课卡按下整块变暗（同全应用列表行）、读屏整卡读成一句并标为按钮（用户选定）。
@@ -320,7 +368,7 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
             );
             // [人工决策-2026-10-18 15:18:41] 课表页有课卡（只认长按）读屏同样读整句，长按动作提示“展开详情”；展开后不再合并，编辑入口单独可达（用户从走查清单选定）。
             final labelled = open != null
-                ? Semantics(button: true, label: _spoken(span, progress[key]), onTap: open, excludeSemantics: true, child: card)
+                ? Semantics(button: true, label: _spoken(span, progress[key]), onTap: open, onLongPress: widget.onDetail == null ? null : () => widget.onDetail!(key), onLongPressHint: widget.onDetail == null ? null : '展开详情', excludeSemantics: true, child: card)
                 : !span.empty && !selected && widget.onDetail != null
                     ? Semantics(label: _spoken(span, progress[key]), onLongPress: () => widget.onDetail!(key), onLongPressHint: '展开详情', excludeSemantics: true, child: card)
                     : card;
@@ -384,7 +432,7 @@ class _CourseCardBody extends StatelessWidget {
           if (place.isNotEmpty) ...[const SizedBox(height: 4), CoursePlace(place)],
           const SizedBox(height: 4),
           // 缺作息时提示并在节次同一行，不额外占一行。
-          DotSeparatedText(['第${span.start}–${span.end}节', if (time == null) '作息时间未设置', span.course!.teacherName].where((part) => part.isNotEmpty).join(' · '), style: small),
+          DotSeparatedText([periodLabel(span.start, span.end), if (time == null) '作息时间未设置', span.course!.teacherName].where((part) => part.isNotEmpty).join(' · '), style: small),
         ])),
       ])),
     );
@@ -433,7 +481,7 @@ class _EmptySlot extends StatelessWidget {
     final duration = time == null ? null : classDuration(time.endMinute - time.startMinute);
     // 标题写空多久（“没课 1小时40分”），早八写彩蛋；节次与缺作息放副标题。
     final title = name == '没课' && duration != null ? '没课 $duration' : name;
-    final detail = [if (name != '没课' && duration != null) duration, '第${span.start}–${span.end}节', if (time == null) '作息时间未设置'].join(' · ');
+    final detail = [if (name != '没课' && duration != null) duration, periodLabel(span.start, span.end), if (time == null) '作息时间未设置'].join(' · ');
     return AnimatedBuilder(
       animation: reveal,
       builder: (context, child) => CustomPaint(

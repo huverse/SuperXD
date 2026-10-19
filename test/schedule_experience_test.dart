@@ -487,6 +487,39 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('课表页单击有课卡看只读详情、可进编辑；标题写第几周，学期视图展开本月并标出本周', (tester) async {
+    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway())));
+    await tester.pumpAndSettle();
+    // 所看日期：今天在学期里就是今天，否则是学期第一天（第 1 周）。
+    final today = campusToday();
+    final inTerm = today.compareTo('2026-08-31') >= 0 && today.compareTo(weekRange('2026-08-31', 18).end) <= 0;
+    final week = inTerm ? weekIndex('2026-08-31', today) : 1;
+    expect(find.text('第$week周'), findsOneWidget);
+    await tester.tap(find.text('课程').first);
+    await tester.pumpAndSettle();
+    expect(find.text('上课时段'), findsOneWidget);
+    expect(find.widgetWithText(FilledButton, '编辑课程'), findsOneWidget);
+    await tester.tap(find.byTooltip('关闭'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('学期'));
+    await tester.pumpAndSettle();
+    final selected = find.byWidgetPredicate((widget) => widget is Text && (widget.data ?? '').startsWith('第$week周\n'));
+    expect(selected, findsOneWidget);
+    expect(tester.widget<Text>(selected).data!.endsWith('\n本周'), inTerm);
+    // 自动展开的这一层不算钻取：返回键直接离开课表，不先收起它。
+    expect(tester.widget<PopScope>(find.byWidgetPredicate((widget) => widget is PopScope).first).canPop, isTrue);
+  });
+
+  testWidgets('没同步的学期原地给「去同步」，带上这一学年', (tester) async {
+    String? requested;
+    await tester.pumpWidget(app(SchedulePage(gateway: _UnsyncedGateway(), onSync: (year) => requested = year)));
+    await tester.pumpAndSettle();
+    expect(find.text('这个学期还没有同步'), findsOneWidget);
+    await tester.tap(find.widgetWithText(FilledButton, '去同步'));
+    await tester.pumpAndSettle();
+    expect(requested, '2026');
+  });
+
   testWidgets('12月选周不触发中间月份，日期栏节点高度稳定', (tester) async {
     final gateway = _Gateway();
     await tester.pumpWidget(app(SchedulePage(gateway: gateway)));
@@ -495,6 +528,11 @@ void main() {
     final element = tester.element(rail);
     final height = tester.getSize(rail).height;
     await tester.tap(find.text('学期'));
+    await tester.pumpAndSettle();
+    // 学期视图一打开就展开所看日期那个月，12 月可能被挤到下面。
+    // 月份列滚动时 9 月会滚出去，先把这个滚动区记成具体的控件（查找器是惰性的）。
+    final months = find.byWidget(tester.widget(find.ancestor(of: find.text('9月'), matching: find.byType(Scrollable)).first));
+    await tester.scrollUntilVisible(find.text('12月'), 80, scrollable: months);
     await tester.pumpAndSettle();
     await tester.tap(find.text('12月'));
     await tester.pumpAndSettle();
@@ -551,6 +589,12 @@ class _Gateway extends FixtureCampusGateway {
   Future<GatewayResult<BellsView>> readBells(TermRef term) async => GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: BellsView(empty: false, message: '', term: term, periods: bells));
   @override
   Future<GatewayResult<TermRef>> setTermStart(TermRef term, String date) async { savedStart = date; return GatewayResult(ok: true, source: 'user', fetchedAt: 'stamp', data: term); }
+}
+
+// 学期列表里有，但还没同步过课表（没有版本）。
+class _UnsyncedGateway extends _Gateway {
+  @override
+  Future<GatewayResult<ScheduleView>> readSchedule(ScheduleScope scope) async => GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: ScheduleView(term: term, student: const SessionView(loginId: 'test', name: '', className: ''), courses: const []));
 }
 
 // 每天第3–4节有课，任何运行日期都有第1–2节无课卡。

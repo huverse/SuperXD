@@ -68,9 +68,9 @@ class ChaoxingActivityCard extends StatelessWidget {
     final startTime = activity.startTime;
     final endTime = activity.endTime;
     final time = startTime != null && (activity.ongoing || endTime == null)
-        ? '开始 ${formatCampusTimestamp(startTime.toIso8601String())}'
+        ? '开始 ${formatCampusRelative(startTime.toIso8601String())}'
         : endTime != null
-        ? '截止 ${formatCampusTimestamp(endTime.toIso8601String())}'
+        ? '截止 ${formatCampusRelative(endTime.toIso8601String())}'
         : null;
     // 十分钟内刚发起的签到给个橙点角标（对齐参考项目），一眼看出哪个是老师刚发的；不知道开始时间的不算。
     final fresh = activity.ongoing && startTime != null && DateTime.now().toUtc().difference(startTime) <= const Duration(minutes: 10);

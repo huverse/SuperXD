@@ -253,7 +253,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                       ),
                       const SizedBox(height: 2),
                       Text(
-                        '${single ? _kindLabel(first.kind) : '${items.length} 项'} · ${formatCampusTimestamp(first.createdAt.toIso8601String())}',
+                        '${single ? _kindLabel(first.kind) : '${items.length} 项'} · ${formatCampusRelative(first.createdAt.toIso8601String())}',
                         style: textTheme.bodySmall,
                       ),
                     ],
@@ -275,6 +275,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                                       value: entry.$1,
                                       label: entry.$2,
                                       icon: entry.$3,
+                                      destructive: entry.$1 == 'delete',
                                     ),
                                 ],
                               );

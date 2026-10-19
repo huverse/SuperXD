@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:superxd/domain/schedule_store.dart';
 
 // 表单的单次工作量有界，周次是实际发生周的唯一依据。
@@ -118,12 +120,18 @@ void validateSchedule(List<CourseRecord> courses) {
 
 // [人工决策-2026-10-19 16:08:42] 管理课程按课名合并（用户选定，同 WakeUp 课程表、超级课程表）：教务把同一门课的不同老师拆成几个教学班，
 // 管理时同名的合成一门，老师写在每个时段上，改课名、删整门课一次作用于全部；存储仍按教学班一条记录，教务同步、提醒、小组件与私信分享都不变。
+// [人工决策-2026-10-19 17:55:48] 合并后的各门课按最早的上课时段排（星期、再节次，同课表的阅读顺序），没有时段的排最后，同一时刻按课名（用户选定）；
+// 以前按教务原始顺序、新增的排最后，找一门课要从头翻。
 List<List<CourseRecord>> courseGroups(List<CourseRecord> courses) {
   final groups = <String, List<CourseRecord>>{};
   for (final course in courses) {
     groups.putIfAbsent(course.courseName.trim(), () => []).add(course);
   }
-  return groups.values.toList();
+  int earliest(List<CourseRecord> group) => group.expand((course) => course.meetings).fold(1 << 20, (first, meeting) => math.min(first, meeting.weekday * 100 + meeting.periodStart));
+  return groups.values.toList()..sort((left, right) {
+    final order = earliest(left).compareTo(earliest(right));
+    return order != 0 ? order : left.first.courseName.compareTo(right.first.courseName);
+  });
 }
 
 // 合并后的一个上课时段：时段本身、这个时段的老师，以及原来属于哪个教学班（courseKey，新加的为空），保存时据此分回去。
@@ -308,8 +316,14 @@ String weeksLabel(List<int> weeks) {
   return '第${parts.join('、')}周';
 }
 
+// 节次文案的唯一写法：“第1–2节”，只有一节时“第3节”（不写“第3–3节”）；页面、提醒、小组件与读屏都经这里。
+String periodLabel(int start, int end) => start == end ? '第$start节' : '第$start–$end节';
+
+// 学分文案：整数不带小数（“5”不写“5.0”），其余照原样（“2.5”）。
+String creditLabel(num credit) => credit == credit.truncate() ? '${credit.toInt()}' : '$credit';
+
 String meetingLabel(CourseMeeting meeting) =>
-    '周${weekdayLabel(meeting.weekday)} 第${meeting.periodStart}–${meeting.periodEnd}节 · ${weeksLabel(meeting.weeks)}${meeting.place.isEmpty ? '' : ' · ${meeting.place}'}';
+    '周${weekdayLabel(meeting.weekday)} ${periodLabel(meeting.periodStart, meeting.periodEnd)} · ${weeksLabel(meeting.weeks)}${meeting.place.isEmpty ? '' : ' · ${meeting.place}'}';
 
 class CourseChange {
   const CourseChange({

@@ -13,7 +13,7 @@
 - campus_clock.dart：
   - campusTimeZone：校园时区的唯一定义。
   - campusToday：校园时区的今天。campusNow：校园时区今天的零点。
-  - formatCampusTimestamp：把 UTC 字符串转成校园时间用于展示。formatCampusMoment：短写「10月17日 09:12」，历史版本按时刻指代某一版时用。
+  - formatCampusRelative：展示时刻按远近写到分钟（今天、昨天、明天、今年写月日、跨年带年份，[人工决策] 在函数上），页面展示时刻都用它。formatCampusMoment：短写「10月17日 09:12」，历史版本按时刻指代某一版时用。
   - clockMinutes：把 HH:mm 转成分钟数。
   - campusMoment：校园日期加当天分钟换算成 UTC 绝对时刻。formatCampusClock：绝对时刻在校园时区的钟点 HH:mm。
 - week.dart：ISO 日期与周次计算。第几周从开学日所在周的周一起算（weekIndex、weekRange）。
@@ -24,8 +24,9 @@
 - schedule_edit.dart：课表编辑规则。
   - 校验与规范化：validateSchedule、normalizeSchedule。
   - 管理课程按课名合并：courseGroups 把同名教学班合成一门，CourseSlot 是带老师与原教学班的时段（courseSlots、slotLabel），regroupCourse 保存时按老师分回教学班（人工决策在 courseGroups 上方）。
+  - 管理课程里各门课按最早的上课时段排（[人工决策] 在 courseGroups 上方）。
   - 单时段与单周调整 changeSlot、removeSlot，冲突检测 courseOverlaps。
-  - 变更对比 scheduleChanges，以及时段、周次的显示文案。
+  - 变更对比 scheduleChanges，以及时段、周次的显示文案；节次文案只经 periodLabel（一节写「第3节」），学分只经 creditLabel（整数不带小数）。
 - period_spans.dart：把当日课程按节次展开成 PeriodSpan（有课段与空档段），并决定补齐哪些节次。
 - meeting_time.dart：按作息把节次换算成上课时刻 MeetingTime。
 - course_occurrence.dart：courseOccurrences 把课表、开学日与作息展开成带 UTC 起止时刻的课程实例 CourseOccurrence，供课前提醒、日历导出、桌面小组件共用；节次文案统一用 CourseOccurrence.periods。
@@ -43,7 +44,7 @@
 - ical.dart：buildIcal 把课程实例写成 iCalendar 文本（RFC 5545 最小子集，手写）。
   - 每次上课一个事件，时刻一律 UTC；转义、CRLF、75 八位组折行且不切断多字节字符。
   - UID 由学期、课程、日期、节次哈希而来，重复导入时更新同一事件；不含账号信息。单次最多 icalEventLimit（5000）个事件。
-- grades.dart：成绩 JSON 的编解码与边界校验（GradeDataException）、学年摘要，以及筛选与排序（GradeFilter、GradeSort、selectGrades）。
+- grades.dart：成绩 JSON 的编解码与边界校验（GradeDataException）、学年摘要，以及筛选与排序（GradeFilter、GradeSort、selectGrades）；不及格的口径 gradeFailing（[人工决策] 在函数上）。
 - share_card.dart：功能性私信的分享卡片协议。
   - 卡片有类型名与版本号：ScheduleShare（课表快照：学期、开学日、课程、作息）、AppearanceShare（配色、字体、字号、深浅色、玻璃、壁纸模糊透明度，不含图片）、VideoShare（作品原链接、标题、作者、平台、类型，不含直链与封面）；不认识的类型或更高版本解成 UnknownShare，界面提示更新应用。
   - decodeShareCard 是外部输入的边界：结构、长度、范围逐项校验，课表再走 validateSchedule，失败抛 ShareCardException。shareCardSummary 给列表预览。
@@ -85,6 +86,7 @@
 - 课表：schedule_edit_test.dart、schedule_version_test.dart、period_day_test.dart。
 - 课程实例与下游：reminder_test.dart、calendar_export_test.dart、home_widget_test.dart。
 - 成绩、卡片与更新规则：grades_test.dart、share_card_test.dart、app_update_test.dart。
+- 面向用户的文案写法（节次、学分、按远近写的时刻、不及格）：campus_text_test.dart。
 
 # 人工决策检索
 

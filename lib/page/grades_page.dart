@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_segmented.dart';
+import 'package:superxd/theme/campus_field_table.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -271,79 +272,54 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
     }
   }
 
+  // [人工决策-2026-10-19 18:51:59] 成绩详情同课程详情的写法（用户从冒号行、每项一行、原始成绩压一行三种实物中选定每项一行）：
+  // 弹层按内容高（以前固定占屏 75%，内容少时下面空一大块）；顶部大号分数，不及格用警示色并写明；下面两列行，原始成绩每条一组、每项一行。
   void _details(GradeCourse course) {
-    final originals = _original
-        ? [course]
-        : _originalByCode[course.courseCode] ?? [];
-    showCampusSheet<void>(
-      context: context,
-      builder: (context) => DraggableScrollableSheet(
-        expand: false,
-        initialChildSize: .75,
-        maxChildSize: .95,
-        minChildSize: .35,
-        builder: (context, controller) => CampusSheetPanel(child: ListView(
-          controller: controller,
-          padding: const EdgeInsets.all(20),
-          children: [
-            Row(
-              children: [
-                Expanded(
-                  child: Text(
-                    course.courseName,
-                    style: Theme.of(context).textTheme.titleLarge,
-                  ),
-                ),
-                IconButton(
-                  tooltip: '关闭详情',
-                  onPressed: () => Navigator.pop(context),
-                  icon: const CampusIcon(CampusIcons.close),
-                ),
-              ],
-            ),
-            SelectableText(
-              '课程代码：${course.courseCode.isEmpty ? '教务未提供' : course.courseCode}\n学分：${grades.gradeText(course.credit)}',
-            ),
-            if (!_original)
-              SelectableText(
-                '有效成绩：${grades.gradeText(course.score, missing: '未公布')}\n已获学分：${grades.gradeText(course.earnedCredit)}\n绩点：${grades.gradeText(course.gradePoint)}',
-              ),
-            for (final entry in course.attributes.entries)
-              Text('${entry.key}：${entry.value}'),
-            const SizedBox(height: 16),
-            Text(
-              '原始成绩记录 · ${originals.length}',
-              style: Theme.of(context).textTheme.titleMedium,
-            ),
-            if (originals.isEmpty) const Text('教务未提供可按课程代码关联的原始记录。'),
-            for (var index = 0; index < originals.length; index++)
-              _panel(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Text(
-                      '记录 ${index + 1} · ${originals[index].courseName}',
-                      style: Theme.of(context).textTheme.titleMedium,
-                    ),
-                    for (final value in <String, Object?>{
-                      '平时成绩': originals[index].usualScore,
-                      '期中成绩': originals[index].midtermScore,
-                      '期末成绩': originals[index].finalScore,
-                      '技能成绩': originals[index].skillScore,
-                      '总评成绩': originals[index].totalScore,
-                    }.entries)
-                      SelectableText(
-                        '${value.key}：${grades.gradeText(value.value, missing: '未公布 / 未提供')}',
-                      ),
-                    for (final entry in originals[index].attributes.entries)
-                      Text('${entry.key}：${entry.value}'),
-                  ],
-                ),
-              ),
+    final originals = _original ? [course] : _originalByCode[course.courseCode] ?? [];
+    showCampusSheet<void>(context: context, builder: (context) {
+      final palette = CampusPalette.of(context);
+      final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
+      final value = _original ? course.totalScore : course.score;
+      final failing = grades.gradeFailing(value);
+      String text(Object? value) => grades.gradeText(value, missing: '未公布');
+      return CampusSheetPanel(child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(20, 12, 8, 20),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Expanded(child: Padding(padding: const EdgeInsets.only(top: 10), child: Text(course.courseName, style: Theme.of(context).textTheme.titleLarge))),
+            IconButton(tooltip: '关闭详情', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.close)),
+          ]),
+          Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+            Text(text(value), style: TextStyle(fontSize: 40, fontWeight: FontWeight.w600, height: 1.15, color: failing ? palette.danger : palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()])),
+            const SizedBox(width: 8),
+            Flexible(child: Text('${_original ? '总评' : '有效成绩'}${failing ? ' · 不及格' : ''}', style: secondary)),
+          ]),
+          const SizedBox(height: 12),
+          Padding(padding: const EdgeInsets.only(right: 12), child: CampusFieldTable(rows: [
+            ('课程代码', course.courseCode.isEmpty ? '教务未提供' : course.courseCode),
+            ('学分', grades.gradeText(course.credit)),
+            if (!_original) ('已获学分', grades.gradeText(course.earnedCredit)),
+            if (!_original) ('绩点', grades.gradeText(course.gradePoint)),
+            for (final entry in course.attributes.entries) (entry.key, entry.value),
+          ])),
+          const SizedBox(height: 16),
+          Text('原始成绩', style: Theme.of(context).textTheme.titleMedium),
+          const SizedBox(height: 4),
+          if (originals.isEmpty) Padding(padding: const EdgeInsets.only(right: 12), child: Text('教务没给能按课程代码对上的原始记录', style: secondary)),
+          for (final (index, original) in originals.indexed) ...[
+            if (originals.length > 1) Padding(padding: const EdgeInsets.only(top: 8), child: Text('第 ${index + 1} 条', style: secondary)),
+            Padding(padding: const EdgeInsets.only(right: 12), child: CampusFieldTable(rows: [
+              ('平时成绩', text(original.usualScore)),
+              ('期中成绩', text(original.midtermScore)),
+              ('期末成绩', text(original.finalScore)),
+              ('技能成绩', text(original.skillScore)),
+              ('总评成绩', text(original.totalScore)),
+              for (final entry in original.attributes.entries) (entry.key, entry.value),
+            ])),
           ],
-        )),
-      ),
-    );
+        ]),
+      ));
+    });
   }
 
   Widget _panel({required Widget child}) => Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: CampusSurface(child: child));
@@ -360,9 +336,9 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
 
   String _sortLabel(grades.GradeSort sort) => switch (sort) {
     grades.GradeSort.original => '教务原始顺序',
-    grades.GradeSort.high => '数值成绩从高到低',
-    grades.GradeSort.low => '数值成绩从低到高',
-    grades.GradeSort.name => '课程名称',
+    grades.GradeSort.high => '分数从高到低',
+    grades.GradeSort.low => '分数从低到高',
+    grades.GradeSort.name => '按课程名',
   };
 
   Widget _filterBar() {
@@ -416,8 +392,10 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
 
   Widget _gradeRow(GradeCourse course) {
     final palette = CampusPalette.of(context);
-    final score = grades.gradeText(_original ? course.totalScore : course.score, missing: '未公布');
-    final detail = '学分 ${grades.gradeText(course.credit)}${_original ? '' : ' · 绩点 ${grades.gradeText(course.gradePoint)}'}';
+    final value = _original ? course.totalScore : course.score;
+    final score = grades.gradeText(value, missing: '未公布');
+    final failing = grades.gradeFailing(value);
+    final detail = '学分 ${grades.gradeText(course.credit)}${_original ? '' : ' · 绩点 ${grades.gradeText(course.gradePoint)}'}${failing ? ' · 不及格' : ''}';
     return Semantics(
       button: true,
       label: '${course.courseName}，${_original ? '总评' : '成绩'} $score，${detail.replaceAll(' · ', '，')}',
@@ -432,7 +410,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
             DotSeparatedText(detail, style: TextStyle(fontSize: 14, height: 1.3, color: palette.onSurfaceVariant)),
           ])),
           const SizedBox(width: 12),
-          Text(score, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()])),
+          Text(score, style: TextStyle(fontSize: 24, fontWeight: FontWeight.w600, color: failing ? palette.danger : palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()])),
           const SizedBox(width: 4),
           CampusIcon(CampusIcons.next, color: palette.onSurfaceVariant),
         ])),
@@ -449,47 +427,29 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
       ),
       if (scope != 'term') const Text('需重新同步核对范围，不将以下数值当作本学期指标。'),
       const SizedBox(height: 12),
-      LayoutBuilder(
-        builder: (context, constraints) {
-          final width = constraints.maxWidth >= 440
-              ? (constraints.maxWidth - 12) / 2
-              : constraints.maxWidth;
-          return Wrap(
-            spacing: 12,
-            runSpacing: 12,
-            children: [
-              for (final value in <String, Object?>{
-                '绩点': summary?.gpa,
-                '平均分': summary?.averageScore,
-                '加权平均分': summary?.weightedAverage,
-                '已获学分': summary?.earnedCredit,
-              }.entries)
-                SizedBox(
-                  width: width,
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Expanded(child: Text(value.key)),
-                      Flexible(
-                        child: Text(
-                          grades.gradeText(value.value),
-                          textAlign: TextAlign.end,
-                          style: TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
-                            color: CampusPalette.of(context).onSurface,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-            ],
-          );
-        },
-      ),
+      _summaryFigures(summary),
     ],
   );
+
+  // [人工决策-2026-10-19 18:51:59] 教务汇总改成绩点大字在左（这一学期最常看的一个数），平均分、加权平均分与已获学分三行小字在右（用户从两列表、
+  // 两行两列数据格、绩点大字三种实物中选定）；窄处与大字号下上下排。以前标签与数值两列表格挤在左半边，绩点不突出。
+  Widget _summaryFigures(GradeSummary? summary) {
+    final palette = CampusPalette.of(context);
+    final figures = [('绩点', summary?.gpa), ('平均分', summary?.averageScore), ('加权平均分', summary?.weightedAverage), ('已获学分', summary?.earnedCredit)];
+    final hero = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      Text(grades.gradeText(figures.first.$2), style: TextStyle(fontSize: 40, fontWeight: FontWeight.w600, height: 1.1, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()])),
+      Text(figures.first.$1, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+    ]);
+    final rest = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      for (final (label, value) in figures.skip(1)) Padding(padding: const EdgeInsets.symmetric(vertical: 3), child: Row(children: [
+        Expanded(child: Text(label, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))),
+        Text(grades.gradeText(value), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()])),
+      ])),
+    ]);
+    return LayoutBuilder(builder: (context, constraints) => constraints.maxWidth >= 300 * MediaQuery.textScalerOf(context).scale(14) / 14
+        ? Row(crossAxisAlignment: CrossAxisAlignment.center, children: [hero, const SizedBox(width: 24), Expanded(child: rest)])
+        : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [hero, const SizedBox(height: 12), rest]));
+  }
 
   Widget _controls() {
     final yearTerms = _terms.where((term) => term.xn == _year).toList()
@@ -577,6 +537,111 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
 
   String _termLabel(TermRef term) => term.xq == '0' ? '第一学期' : term.xq == '1' ? '第二学期' : term.label;
 
+  // 学年概览里的一个学期（点了切到这个学期的详情）。
+  Widget _overviewPanel(GradeTermOverview overview) =>
+    _panel(
+      child: InkWell(
+        onTap: () => _chooseTerm(overview.term),
+        child: Column(
+          crossAxisAlignment:
+              CrossAxisAlignment.stretch,
+          children: [
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    overview.term.label.isEmpty
+                        ? overview.term.key
+                        : overview.term.label,
+                    style: Theme.of(context)
+                        .textTheme
+                        .titleMedium,
+                  ),
+                ),
+                const CampusIcon(CampusIcons.next),
+              ],
+            ),
+            Text(
+              overview.error ??
+                  (!overview.cached
+                      ? '尚未同步'
+                      : overview.empty
+                      ? '教务明确暂无成绩'
+                      : '${overview.effectiveCount} 门课${overview.originalCount > overview.effectiveCount ? ' · 另有 ${overview.originalCount - overview.effectiveCount} 条原始记录' : ''}'),
+            ),
+            if (overview.fetchedAt != null)
+              Text(
+                '${formatCampusRelative(overview.fetchedAt!)} 同步',
+              ),
+            if (overview.cached &&
+                overview.error == null) ...[
+              const SizedBox(height: 12),
+              if (overview.summaryScope == 'term')
+                _summary(
+                  overview.summary,
+                  overview.summaryScope,
+                )
+              else
+                const Text('旧汇总范围未核实，请同步后查看学期指标。'),
+            ],
+          ],
+        ),
+      ),
+    );
+
+  // 学期详情：学期名与同步时刻、教务汇总、汇总明细与筛选行（成绩列表另在下面一个 sliver 里）。
+  List<Widget> _termContent() => [
+    const SizedBox(height: 12),
+    Text(
+      _term!.label.isEmpty ? _term!.key : _term!.label,
+      style: Theme.of(context).textTheme.titleMedium,
+    ),
+    Text(
+      _view!.cached
+          ? '${formatCampusRelative(_fetchedAt!)} 同步'
+          : '尚未同步此学期',
+    ),
+    if (!_view!.cached)
+      _panel(
+        child: const Text('点「同步」获取成绩'),
+      )
+    else ...[
+      _panel(
+        child: _summary(
+          _view!.summary,
+          _view!.summaryScope,
+        ),
+      ),
+      if (_view!.summaries.isNotEmpty)
+        ExpansionTile(
+          onExpansionChanged: (expanded) => setState(() => _summaryExpanded = expanded),
+          trailing: CampusMorphIcon(from: CampusIcons.expand, to: CampusIcons.collapse, selected: _summaryExpanded),
+          title: const Text('教务汇总明细'),
+          children: [
+            for (final row in _view!.summaries)
+              Padding(
+                padding: const EdgeInsets.all(12),
+                child: Text(
+                  '${row.category} · 已获学分 ${grades.gradeText(row.earnedCredit)} · 绩点 ${grades.gradeText(row.gpa)} · 平均分 ${grades.gradeText(row.averageScore)} · 加权平均分 ${grades.gradeText(row.weightedAverage)}',
+                ),
+              ),
+          ],
+        ),
+      if (!_view!.empty) ...[
+        _filterBar(),
+        const SizedBox(height: 12),
+        DotSeparatedText(
+          '${_original ? '原始成绩 · ' : ''}显示 ${_visible.length} 条',
+          style: const TextStyle(fontSize: 14),
+        ),
+        if (_visible.isEmpty)
+          _panel(
+            child: const Text('没有符合筛选条件的成绩'),
+          ),
+      ],
+    ],
+  ];
+
   @override
   Widget build(BuildContext context) => CampusBackground(
     child: Scaffold(
@@ -653,108 +718,9 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
                             const SizedBox(height: 12),
                             // [人工决策-2026-09-25 01:48:56] 学年只并列教务学期汇总，不平均绩点、不累加来源不明的学分。
                             // [人工决策-2026-10-18 16:37:59] 去掉界面上复述这条口径的说明句，行为不变（用户选定删冗长文案）。
-                            for (final overview in _overview)
-                              _panel(
-                                child: InkWell(
-                                  onTap: () => _chooseTerm(overview.term),
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.stretch,
-                                    children: [
-                                      Row(
-                                        children: [
-                                          Expanded(
-                                            child: Text(
-                                              overview.term.label.isEmpty
-                                                  ? overview.term.key
-                                                  : overview.term.label,
-                                              style: Theme.of(context)
-                                                  .textTheme
-                                                  .titleMedium,
-                                            ),
-                                          ),
-                                          const CampusIcon(CampusIcons.next),
-                                        ],
-                                      ),
-                                      Text(
-                                        overview.error ??
-                                            (!overview.cached
-                                                ? '尚未同步'
-                                                : overview.empty
-                                                ? '教务明确暂无成绩'
-                                                : '有效记录 ${overview.effectiveCount} 条 · 原始记录 ${overview.originalCount} 条'),
-                                      ),
-                                      if (overview.fetchedAt != null)
-                                        Text(
-                                          '上次同步：${formatCampusTimestamp(overview.fetchedAt!)}',
-                                        ),
-                                      if (overview.cached &&
-                                          overview.error == null) ...[
-                                        const SizedBox(height: 12),
-                                        if (overview.summaryScope == 'term')
-                                          _summary(
-                                            overview.summary,
-                                            overview.summaryScope,
-                                          )
-                                        else
-                                          const Text('旧汇总范围未核实，请同步后查看学期指标。'),
-                                      ],
-                                    ],
-                                  ),
-                                ),
-                              ),
+                            for (final overview in _overview) _overviewPanel(overview),
                           ],
-                          if (!_yearMode && _hasVisibleData) ...[
-                            const SizedBox(height: 12),
-                            Text(
-                              _term!.label.isEmpty ? _term!.key : _term!.label,
-                              style: Theme.of(context).textTheme.titleMedium,
-                            ),
-                            Text(
-                              _view!.cached
-                                  ? '上次成功同步：${formatCampusTimestamp(_fetchedAt!)}'
-                                  : '尚未同步此学期',
-                            ),
-                            if (!_view!.cached)
-                              _panel(
-                                child: const Text('点「同步」获取成绩'),
-                              )
-                            else ...[
-                              _panel(
-                                child: _summary(
-                                  _view!.summary,
-                                  _view!.summaryScope,
-                                ),
-                              ),
-                              if (_view!.summaries.isNotEmpty)
-                                ExpansionTile(
-                                  onExpansionChanged: (expanded) => setState(() => _summaryExpanded = expanded),
-                                  trailing: CampusMorphIcon(from: CampusIcons.expand, to: CampusIcons.collapse, selected: _summaryExpanded),
-                                  title: const Text('教务汇总明细'),
-                                  children: [
-                                    for (final row in _view!.summaries)
-                                      Padding(
-                                        padding: const EdgeInsets.all(12),
-                                        child: Text(
-                                          '${row.category} · 已获学分 ${grades.gradeText(row.earnedCredit)} · 绩点 ${grades.gradeText(row.gpa)} · 平均分 ${grades.gradeText(row.averageScore)} · 加权平均分 ${grades.gradeText(row.weightedAverage)}',
-                                        ),
-                                      ),
-                                  ],
-                                ),
-                              if (!_view!.empty) ...[
-                                _filterBar(),
-                                const SizedBox(height: 12),
-                                DotSeparatedText(
-                                  '${_original ? '原始成绩 · ' : ''}显示 ${_visible.length} 条 · 点击课程查看分项',
-                                  style: const TextStyle(fontSize: 14),
-                                ),
-                                if (_visible.isEmpty)
-                                  _panel(
-                                    child: const Text('没有符合筛选条件的成绩'),
-                                  ),
-                              ],
-                            ],
-                          ],
+                          if (!_yearMode && _hasVisibleData) ..._termContent(),
                         ],
                       ),
                     ),

@@ -4,6 +4,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
+import 'package:superxd/theme/campus_animated_list.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
@@ -207,7 +208,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
       records = regroupCourse(group, name: name, slots: removeSlot(slots, index, week: week), newLocalId: () => throw StateError('删除时段不新建课程'));
       label = week == null
           ? meetingLabel(meeting)
-          : '第$week周 · 周${weekdayLabel(meeting.weekday)} 第${meeting.periodStart}–${meeting.periodEnd}节';
+          : '第$week周 · 周${weekdayLabel(meeting.weekday)} ${periodLabel(meeting.periodStart, meeting.periodEnd)}';
     }
     if (!await showCampusConfirm(
       context,
@@ -428,7 +429,10 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                     // [人工决策-2026-10-19 16:08:42] 取代 10-06 的「整卡点进编辑（右侧箭头），编辑与删除收进右上⋯」（用户选定，同学习通账号管理、收藏位置）：
                     // 点卡片就是编辑，⋯里只留删除（警示色、仍要确认、可撤销），去掉右侧箭头；⋯与课名同一行，时段文字占满卡片宽度，卡片高度随内容
                     // （以前右侧一列放⋯、箭头和占位，把只有一个时段的卡撑出一大块空白）。同名的教学班合成一张卡（见 courseGroups）。
-                    for (final group in courseGroups(_view!.courses)) _courseCard(group),
+                    // 增删课程时卡片原地展开、收起（人工决策见 campus_animated_list.dart）。
+                    CampusAnimatedColumn(children: [
+                      for (final group in courseGroups(_view!.courses)) KeyedSubtree(key: ValueKey('course-${group.first.courseName.trim()}'), child: _courseCard(group)),
+                    ]),
                     if (_view!.courses.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 24),

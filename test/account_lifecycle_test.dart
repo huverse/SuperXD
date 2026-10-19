@@ -43,7 +43,7 @@ void main() {
     await tester.tap(find.text('百宝箱'));
     await tester.pumpAndSettle();
     expect(find.byType(ToolboxPage), findsOneWidget);
-    await tester.tap(find.text('短视频去水印解析【聚合】'));
+    await tester.tap(find.text('短视频解析'));
     for(var tick=0;tick<100&&find.byType(TextField).evaluate().isEmpty;tick++){
       await tester.runAsync(()=>Future<void>.delayed(const Duration(milliseconds:10)));
       await tester.pump(const Duration(milliseconds:16));
@@ -80,9 +80,11 @@ void main() {
     expect(dateText.style!.color, CampusPalette.of(today).onSurface);
     expect(identical(today, tester.element(find.byType(TodayPage))), isTrue);
     await display.setThemeMode(ThemeMode.light);await tester.pumpAndSettle();expect(Theme.of(today).brightness, Brightness.light);
-    // 消息页默认停在私信；选中非默认的“通知”，换深浅色后仍停在通知。
-    await tester.tap(find.text('消息').last);await tester.pumpAndSettle();await tester.tap(find.text('通知'));await tester.pumpAndSettle();
-    await display.setThemeMode(ThemeMode.dark);await tester.pumpAndSettle();expect(find.text('还没有通知'), findsOneWidget);
+    // 切到消息页再换深浅色：仍停在消息页，页面不重建。
+    await tester.tap(find.text('消息').last);await tester.pumpAndSettle();
+    final message = tester.element(find.byType(MessagePage));
+    await display.setThemeMode(ThemeMode.dark);await tester.pumpAndSettle();
+    expect(identical(message, tester.element(find.byType(MessagePage))), isTrue);
     expect(gateway.activeSession?.loginId, 'A');
     await tester.pumpWidget(const SizedBox());display.dispose();session.dispose();
   });
@@ -287,6 +289,67 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('登录按钮常亮：没填的项原地写明，没勾同意先提示并给同意行衬色、不发起登录；勾上后键盘「完成」直接登录', (tester) async {
+    final gateway = _Accounts().._active = null;
+    final session = AppSession(gateway);
+    await session.restore();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18));
+    await tester.pumpAndSettle();
+    expect(find.text('学号'), findsOneWidget);
+    expect(find.byTooltip('显示密码'), findsOneWidget);
+    final button = find.widgetWithText(FilledButton, '登录');
+    expect(tester.widget<FilledButton>(button).onPressed, isNotNull);
+    await tester.tap(button);
+    await tester.pump();
+    expect(find.text('请输入学号'), findsOneWidget);
+    expect(find.text('请输入密码'), findsOneWidget);
+    await tester.enterText(find.byType(TextField).at(0), 'A');
+    await tester.enterText(find.byType(TextField).at(1), 'ok');
+    await tester.pump();
+    expect(find.text('请输入学号'), findsNothing);
+    await tester.tap(button);
+    await tester.pump();
+    expect(find.text('请先阅读并同意用户协议和隐私政策'), findsOneWidget);
+    BoxDecoration row() => tester.widget<AnimatedContainer>(find.ancestor(of: find.text('我已阅读并同意'), matching: find.byType(AnimatedContainer)).first).decoration! as BoxDecoration;
+    expect(row().color!.a, greaterThan(0));
+    expect(gateway.activeSession, isNull);
+    await tester.pumpAndSettle(const Duration(seconds: 5));
+    expect(row().color!.a, 0);
+    await tester.tap(find.text('我已阅读并同意'));
+    await tester.pump();
+    await tester.showKeyboard(find.byType(TextField).at(1));
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    expect(gateway.activeSession?.loginId, 'A');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('在服务、消息、我的按返回键先回到今天，账号页只在有旧数据时显示导入一行', (tester) async {
+    final gateway = _Accounts()..deferred = true;
+    final session = AppSession(gateway);
+    await session.restore();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('我的').last);
+    await tester.pumpAndSettle();
+    expect(find.byType(TodayPage), findsNothing);
+    await tester.binding.handlePopRoute();
+    await tester.pumpAndSettle();
+    expect(find.byType(TodayPage), findsOneWidget);
+    await tester.tap(find.text('我的').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('用户A'));
+    await tester.pumpAndSettle();
+    expect(find.text('导入旧版本数据'), findsNothing);
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pumpAndSettle();
+    gateway.legacyAvailable = true;
+    await tester.tap(find.text('用户A'));
+    await tester.pumpAndSettle();
+    expect(find.text('导入旧版本数据'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('记住账号必须先同意，取消不勾选；成功后可在我的立即清除，清除后可原地输密码重新开启', (tester) async {
     final gateway = _Accounts().._active = null;
     final session = AppSession(gateway);
@@ -402,14 +465,13 @@ void main() {
     expectSliding(tester, find.byType(MessagePage));
     expectSliding(tester, find.byType(TodayPage));
     await tester.pumpAndSettle();
-    // 选中非默认的“通知”，切走再回来仍停在通知（分支状态保留）。
-    await tester.tap(find.text('通知'));
-    await tester.pumpAndSettle();
+    // 切走再回来，消息页还是原来那一个（分支状态保留，不重建）。
+    final message = tester.element(find.byType(MessagePage));
     await tester.tap(find.text('服务').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('消息').last);
     await tester.pumpAndSettle();
-    expect(find.text('还没有通知'), findsOneWidget);
+    expect(identical(message, tester.element(find.byType(MessagePage))), isTrue);
     await tester.tap(find.text('服务').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('课表'));

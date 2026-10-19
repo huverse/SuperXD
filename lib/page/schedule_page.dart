@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:superxd/theme/campus_glass_button.dart';
@@ -53,8 +54,10 @@ class ScheduleSelection {
 }
 
 class SchedulePage extends StatefulWidget {
-  const SchedulePage({super.key, required this.gateway, this.reminders, this.openCalendar = openCalendarFile, this.social});
+  const SchedulePage({super.key, required this.gateway, this.reminders, this.openCalendar = openCalendarFile, this.social, this.onSync});
   final CampusGateway gateway;
+  // 「去同步」：回到今天页打开同步范围并预选这一学年（人工决策见 today_page.dart 的 TodaySyncRequest）；为空时只提示去今天页。
+  final void Function(String? year)? onSync;
   // 为空时不显示“分享给好友”（未接入私信的环境）。
   final SocialService? social;
   // 为空时不显示课前提醒入口（测试与未接入提醒的环境）。
@@ -100,7 +103,11 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
       if (!mounted) return;
       if (!listed.ok || listed.data?.isNotEmpty != true) {
         setState(() => _loading = false);
-        await _notice(listed.error?.message ?? '尚未同步课表，请先在今天页选择同步范围。');
+        if (listed.ok) {
+          await _offerSync('还没有同步课表');
+        } else {
+          await _notice(listed.error?.message ?? '课表读取失败');
+        }
         return;
       }
       _terms = listed.data!;
@@ -126,6 +133,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
       _bells = bells.data?.periods ?? [];
       _selection = _selection.copy(year: term.xn, date: date ?? _selection.date, clearDrill: true, clearDetail: true);
       _rebuildCalendar();
+      _selection = _drilled(_selection);
       setState(() => _loading = false);
       if (!bells.ok) await _notice(bells.error?.message ?? '作息读取失败');
     } catch (error, stack) {
@@ -182,8 +190,17 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
 
   void _selectRange(ScheduleRange range) {
     if (range == _selection.range) return;
-    setState(() => _selection = _selection.copy(range: range, inYearTerm: false, clearDetail: true, clearDrill: true));
+    setState(() => _selection = _drilled(_selection.copy(range: range, inYearTerm: false, clearDetail: true, clearDrill: true)));
   }
+
+  // [人工决策-2026-10-19 17:55:48] 学期视图一打开就展开所看日期的月份、选中那一周，本周的周次卡写「本周」；天视图标题旁写第几周（用户选定，
+  // 同超级课表、WakeUp 把周次放在最显眼处）。自动展开的这一层不算钻取：返回键照常离开，不先收起它。
+  int _monthOf(String date) => parseIsoDate(mondayOf(date)).month;
+  ScheduleSelection _drilled(ScheduleSelection selection) => selection.range == ScheduleRange.day || selection.yearOverview || _start == null
+      ? selection
+      : selection.copy(month: _monthOf(selection.date), week: weekIndex(_start!, selection.date));
+  bool get _atHomeDrill => _start != null && _selection.month == _monthOf(_selection.date) && (_selection.week == null || _selection.week == weekIndex(_start!, _selection.date));
+  int? get _shownWeek => _start == null || _first == null || _selection.date.compareTo(_first!) < 0 || _selection.date.compareTo(_last!) > 0 ? null : weekIndex(_start!, _selection.date);
 
   Future<void> _openTerm(TermRef term) async {
     setState(() => _selection = _selection.copy(inYearTerm: true, year: term.xn, clearDrill: true, clearDetail: true));
@@ -244,16 +261,26 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     if (mounted && chosen != null) await _manage(course: chosen, slot: _slot(date, span));
   }
 
-  bool get _canPop => _selection.detailKey == null && (_selection.range == ScheduleRange.day || _selection.month == null) && !_selection.inYearTerm;
+  bool get _canPop => _selection.detailKey == null && (_selection.range == ScheduleRange.day || _selection.month == null || _atHomeDrill) && !_selection.inYearTerm;
   void _back() {
     if (_selection.detailKey != null) { setState(() => _selection = _selection.copy(clearDetail: true)); return; }
-    if (_selection.range != ScheduleRange.day && _selection.month != null) { setState(() => _selection = _selection.copy(clearDrill: true)); return; }
+    if (_selection.range != ScheduleRange.day && _selection.month != null && !_atHomeDrill) { setState(() => _selection = _drilled(_selection.copy(clearDrill: true))); return; }
     if (_selection.inYearTerm) { setState(() => _selection = _selection.copy(inYearTerm: false)); return; }
     context.pop();
   }
 
   Future<void> _notice(String text) async {
     if (mounted) await showCampusNotice(context, text);
+  }
+
+  // 没同步时给去处：能回今天页同步的给「去同步」（预选这一学年），否则只说明去哪同步。
+  Future<void> _offerSync(String title, {String? year}) async {
+    final onSync = widget.onSync;
+    if (onSync == null) {
+      await _notice('$title，请在今天页同步。');
+      return;
+    }
+    if (await showCampusConfirm(context, title: title, message: '回到今天页同步${year == null ? '' : '这一学年'}？', action: '去同步') && mounted) onSync(year);
   }
 
   Future<void> _more(BuildContext anchor) async {
@@ -270,12 +297,12 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
       case 'reminder':
         await showReminderSettings(context, gateway: widget.gateway, reminders: widget.reminders!);
       case 'export' when !_knownSchedule:
-        await _notice('该学期尚未同步，请在今天页选择这个学年同步。');
+        await _offerSync('这个学期还没有同步', year: _term?.xn);
       case 'export':
         await exportTermCalendar(context, term: _term!, termStartDate: _start, bells: _bells, courses: _courses, open: widget.openCalendar);
       case 'share' when !_knownSchedule:
-        await _notice('该学期尚未同步，请在今天页选择这个学年同步。');
-      // 分享当前所看学期的课表快照（含开学日与作息），好友只读查看与对比，不覆盖其课表。
+        await _offerSync('这个学期还没有同步', year: _term?.xn);
+      // 分享当前所看学期的课表快照（含开学日与作息）：好友可查看、对比，确认后也能导入自己的课表（见 schedule_import.dart）。
       case 'share':
         await showShareSheet(context, social: widget.social!, card: ScheduleShare(term: _term!, termStartDate: _start, courses: _courses, bells: _bells));
     }
@@ -293,7 +320,9 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
           const SizedBox(width: 4),
           IconButton(tooltip: '返回', onPressed: _back, icon: const CampusIcon(CampusIcons.back)),
           const SizedBox(width: 4),
-          Expanded(child: Text(_selection.yearOverview && _selection.year.isNotEmpty ? '${_selection.year}–${int.parse(_selection.year)+1}' : '课表', style: Theme.of(context).textTheme.titleLarge)),
+          Expanded(child: _selection.yearOverview && _selection.year.isNotEmpty
+              ? Text('${_selection.year}–${int.parse(_selection.year)+1}', style: Theme.of(context).textTheme.titleLarge)
+              : _titleWithWeek(context)),
           // [人工决策-2026-10-04 16:08:17] 课表顶栏只留“今天”胶囊与“管理课程”“⋯”玻璃圆按钮，开学日移入⋯菜单；用户实测确认。
           // 标题栏只留高频操作（同 iOS、鸿蒙标题栏）：“今天”是带图标的胶囊；每学期只设一次的开学日收进⋯菜单，空课表时页面里仍有“设置开学日”。
           TextButton.icon(onPressed: _loading ? null : _today, icon: const CampusIcon(CampusIcons.jumpToday), label: const Text('今天')),
@@ -319,6 +348,27 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     )));
   }
 
+  // 标题旁写第几周；窄屏、大字号下并排放不下时换到标题下面一行，不截成「第5」。
+  Widget _titleWithWeek(BuildContext context) {
+    final title = Text('课表', maxLines: 1, style: Theme.of(context).textTheme.titleLarge);
+    final week = _shownWeek;
+    if (week == null || _loading) return title;
+    final style = TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant);
+    final label = Text('第$week周', maxLines: 1, softWrap: false, style: style);
+    return LayoutBuilder(builder: (context, constraints) {
+      double width(String text, TextStyle? style) {
+        final painter = TextPainter(text: TextSpan(text: text, style: DefaultTextStyle.of(context).style.merge(style)), textDirection: Directionality.of(context), textScaler: MediaQuery.textScalerOf(context), maxLines: 1)..layout();
+        final result = painter.width;
+        painter.dispose();
+        return result;
+      }
+      final fits = width('课表', Theme.of(context).textTheme.titleLarge) + 8 + width('第$week周', style) <= constraints.maxWidth;
+      return fits
+          ? Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [title, const SizedBox(width: 8), label])
+          : Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [title, label]);
+    });
+  }
+
   Widget _years() {
     final years = _terms.map((term) => term.xn).toSet().toList()..sort();
     final index = years.indexOf(_selection.year);
@@ -342,7 +392,14 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
   }
 
   Widget _content(double scale, Duration motion) {
-    if (!_knownSchedule) return Center(key: const ValueKey('not-synced'), child: TextButton.icon(onPressed: () => _notice('该学期尚未同步，请在今天页选择这个学年同步。'), icon: const CampusIcon(CampusIcons.info), label: const Text('尚未同步此学期')));
+    // 没同步的学期原地给下一步：回今天页同步这一学年（以前是只弹提示的按钮，提示又让人自己去今天页）。
+    if (!_knownSchedule) {
+      return Center(key: const ValueKey('not-synced'), child: Column(mainAxisSize: MainAxisSize.min, children: [
+        const Text('这个学期还没有同步'),
+        const SizedBox(height: 12),
+        FilledButton.icon(style: campusProminent, onPressed: () => widget.onSync == null ? _notice('请在今天页同步这个学年。') : widget.onSync!(_term?.xn), icon: const CampusIcon(CampusIcons.sync), label: const Text('去同步')),
+      ]));
+    }
     if (_start == null) return Center(key: const ValueKey('start'), child: FilledButton.icon(style: campusProminent, onPressed: _editStart, icon: const CampusIcon(CampusIcons.termStart), label: const Text('设置开学日')));
     final showRail = _selection.showRail;
     return LayoutBuilder(key: const ValueKey('calendar-body'), builder: (context, constraints) {
@@ -362,6 +419,11 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
               detailKey: date == _selection.date ? _selection.detailKey : null,
               onDetail: (key) => setState(() => _selection = _selection.copy(detailKey: key, clearDetail: key == null)),
               onEdit: (course) => _manage(course: course),
+              // 单击有课卡看只读详情（同今天页），详情里可直接进编辑；长按照旧展开（人工决策见 course_cards.dart）。
+              onOpen: (span) {
+                HapticFeedback.selectionClick();
+                showCourseDetail(context, span: span, courses: _courses, bells: _bells, onEdit: () => _manage(course: span.course!));
+              },
               onCreate: (span) => _manage(slot: _slot(date, span)),
               onArrange: _courses.isEmpty ? null : (span) => _arrange(date, span),
             );
@@ -382,7 +444,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
         _selection = month == _selection.month ? _selection.copy(clearDrill: true) : _selection.copy(month: month, clearDetail: true);
       }), minHeight: 48 * scale)),
       AnimatedSize(duration: motion, curve: Curves.easeInOutCubic, alignment: Alignment.topCenter, child: month != _selection.month ? const SizedBox(width: double.infinity) : Column(children: [
-        for (final week in weeksOfMonth(_start!, _weekCount, month)) Padding(padding: EdgeInsets.only(bottom: gap), child: _tile(weekRailLabel(_start!, week), week == _selection.week, () => _selectDate(dayInWeek(termStartDate: _start!, week: week, today: campusToday())), minHeight: 64 * scale)),
+        for (final week in weeksOfMonth(_start!, _weekCount, month)) Padding(padding: EdgeInsets.only(bottom: gap), child: _tile('${weekRailLabel(_start!, week)}${week == weekIndex(_start!, campusToday()) ? '\n本周' : ''}', week == _selection.week, () => _selectDate(dayInWeek(termStartDate: _start!, week: week, today: campusToday())), minHeight: 64 * scale)),
       ])),
     ]]);
   }

@@ -30,7 +30,11 @@ void main() {
     final opened = await pumpAbout(tester);
     expect(find.text('SuperXD Alpha'), findsOneWidget);
     expect(find.text('版本 1.0.0-alpha.2（3）'), findsOneWidget);
+    // 名称上方有应用图标，署名可能在第一屏下面。
+    expect(find.bySemanticsLabel('应用图标'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('Powered&Design By Galaxyous'), 100);
     expect(find.text('Powered&Design By Galaxyous'), findsOneWidget);
+    await tester.scrollUntilVisible(find.text('用户协议'), -100);
     for (final (label, title) in [('用户协议', '协议说明'), ('隐私政策', '摘要')]) {
       await tester.tap(find.text(label)); await tester.pumpAndSettle();
       expect(find.text(title), findsOneWidget);

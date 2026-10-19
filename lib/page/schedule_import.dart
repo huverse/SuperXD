@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_log.dart';
@@ -77,6 +78,8 @@ Future<void> importSharedSchedule(BuildContext context, {required CampusGateway 
       await showCampusNotice(context, saved.error?.message ?? '导入未完成，课表没有改动');
       return;
     }
+    // 成功轻触一次（人工决策见 chaoxing_sign_sheet.dart 的 _finishIfDone）。
+    HapticFeedback.successNotification();
     showCampusToast(context, mode == 'replace' ? '已换成$friendName的课表，可在历史版本恢复' : '已加进你的课表，可在历史版本恢复');
   } catch (error, stack) {
     campusLog('[ScheduleImport] action=$mode errorType=${error.runtimeType}\n$stack');

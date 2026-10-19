@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:superxd/domain/campus_log.dart';
@@ -10,6 +11,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_refresh.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_prose.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -139,15 +141,26 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     final store = widget.runtime.store;
     if (await store.consent(chaoxingConsentService, chaoxingConsentVersion)) return true;
     if (!mounted) return false;
-    final agreed = await showCampusConfirm(
-      context,
-      title: updated ? '学习通签到的说明更新了' : '登录学习通',
-      message: 'SuperXD 会把你的学习通账号与密码保存在本机安全存储，用于登录超星学习通（chaoxing.com）并提交签到；'
-          '签到时的位置、照片与账号信息会发送给学习通。为了与学习通客户端一致（人脸签到的设备签名、避免被标「更换设备」），'
-          '登录时会把设备信息（型号、系统版本、ANDROID_ID、DRM 设备号等）加密后发给学习通，并读取系统的匿名设备标识（OAID）算出设备码。'
-          '选签到位置时用高德地图（会打开高德 SDK 加载地图）；打开位置签到时会申请定位权限，由高德定位取当前位置作默认选点，不授权也能手动选。推断正在上的课时，会在本机读取本应用里当前教务账号的课表比对课名与时间，不发给学习通或其他任何人，也不会读取教务密码。',
-      action: updated ? '同意' : '同意并登录',
-    );
+    // [人工决策-2026-10-19 17:55:48] 说明的文字不变，按存在哪、发给谁、设备信息、地图与定位、读本应用课表拆成分点（用户选定）；
+    // 只改排版，同意版本不升，不用重新征得同意。
+    final agreed = await showCampusDialog<bool>(
+      context: context,
+      builder: (context) => CampusGlassDialog(
+        title: Text(updated ? '学习通签到的说明更新了' : '登录学习通'),
+        content: const SingleChildScrollView(child: CampusProse(
+          '1. SuperXD 会把你的学习通账号与密码保存在本机安全存储，用于登录超星学习通（chaoxing.com）并提交签到。\n'
+          '2. 签到时的位置、照片与账号信息会发送给学习通。\n'
+          '3. 为了与学习通客户端一致（人脸签到的设备签名、避免被标「更换设备」），登录时会把设备信息（型号、系统版本、ANDROID_ID、DRM 设备号等）加密后发给学习通，并读取系统的匿名设备标识（OAID）算出设备码。\n'
+          '4. 选签到位置时用高德地图（会打开高德 SDK 加载地图）；打开位置签到时会申请定位权限，由高德定位取当前位置作默认选点，不授权也能手动选。\n'
+          '5. 推断正在上的课时，会在本机读取本应用里当前教务账号的课表比对课名与时间，不发给学习通或其他任何人，也不会读取教务密码。',
+          gap: 6,
+        )),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('取消')),
+          FilledButton(onPressed: () => Navigator.pop(context, true), child: Text(updated ? '同意' : '同意并登录')),
+        ],
+      ),
+    ) == true;
     if (!agreed || !mounted) return false;
     await store.grantConsent(chaoxingConsentService, chaoxingConsentVersion);
     return true;
@@ -292,7 +305,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                   subtitle: DotSeparatedText(
                     [
                       item.schoolName.isEmpty ? '学习通' : item.schoolName,
-                      item.phoneNumber,
+                      chaoxingMaskedPhone(item.phoneNumber),
                       ?controller.ownerLabelOf(item),
                       ?item.sessionLabel,
                       ?item.deviceCodeLabel,
@@ -468,7 +481,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                       DotSeparatedText(
                         [
                           if ((controller.current?.schoolName ?? '').isNotEmpty) controller.current!.schoolName,
-                          controller.current?.phoneNumber ?? '',
+                          chaoxingMaskedPhone(controller.current?.phoneNumber ?? ''),
                         ].join(' · '),
                         style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
                       ),
@@ -617,6 +630,7 @@ class _ChaoxingLoginFormState extends State<ChaoxingLoginForm> {
       message = '登录未完成，请检查网络后重试';
     }
     if (!mounted) return;
+    if (message == null) TextInput.finishAutofillContext();
     setState(() {
       _submitting = false;
       _error = message;
@@ -626,19 +640,27 @@ class _ChaoxingLoginFormState extends State<ChaoxingLoginForm> {
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
-    final fields = Column(
+    final fields = AutofillGroup(onDisposeAction: AutofillContextAction.cancel, child: Column(
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // 接系统自动填充（密码管理器），键盘「下一项」跳到密码、「完成」直接登录。
         TextField(
           controller: _phone,
           keyboardType: TextInputType.phone,
+          autofillHints: const [AutofillHints.telephoneNumber, AutofillHints.username],
+          textInputAction: TextInputAction.next,
           decoration: const InputDecoration(labelText: '学习通手机号'),
         ),
         SizedBox(height: campusFieldGap(context)),
         TextField(
           controller: _password,
           obscureText: _obscure,
+          autofillHints: const [AutofillHints.password],
+          textInputAction: TextInputAction.done,
+          onSubmitted: (_) {
+            if (!_submitting) unawaited(_submit());
+          },
           decoration: InputDecoration(
             labelText: '密码',
             helperText: '8-16 位，与学习通登录一致',
@@ -665,7 +687,7 @@ class _ChaoxingLoginFormState extends State<ChaoxingLoginForm> {
           ),
         ),
       ],
-    );
+    ));
     if (widget.compact) {
       return CampusSheetPanel(
         child: Padding(
@@ -686,8 +708,9 @@ class _ChaoxingLoginFormState extends State<ChaoxingLoginForm> {
       child: ListView(
         padding: const EdgeInsets.fromLTRB(16, 24, 16, 32),
         children: [
+          // 只留用户真正关心的一句，360dp 宽也是一行；以前两句在末尾折出孤字「关。」。
           Text(
-            '用学习通账号登录后，就能在这里查看并完成课堂签到。账号只保存在本机安全存储，与教务账号无关。',
+            '账号只保存在本机，与教务账号无关。',
             style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
           ),
           const SizedBox(height: 24),

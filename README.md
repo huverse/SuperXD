@@ -172,7 +172,7 @@ SuperXD 以 [GNU GPL v3.0](LICENSE) 开源，版权所有 (C) 2026 Galaxyous。�
 
 - `lib/theme/curve_geometry.dart` 中的曲线加载动画改编自 [Paidax01/math-curve-loaders](https://github.com/Paidax01/math-curve-loaders)，上游未附开源许可，本项目已获作者授权使用。再分发本项目或其修改版时，请自行取得授权，或移除、替换这部分代码。
 - 内置字体 Maple Mono NF CN 与 Noto Serif SC 按 SIL Open Font License 1.1 分发。
-- 测试期临时启动图标（android/app/src/main/res 下的 ic_launcher 与 ic_launcher_background）使用动画《Charlotte》角色画面，版权归原权利人所有（©VisualArt's/Key/Charlotte Project），仅供测试期间临时使用，正式版前替换为原创图标。
+- 测试期临时图标（android/app/src/main/res 下的 ic_launcher 与 ic_launcher_background，以及“关于”页用的 assets/app_icon.png）使用动画《Charlotte》角色画面，版权归原权利人所有（©VisualArt's/Key/Charlotte Project），仅供测试期间临时使用，正式版前替换为原创图标。
 - 其他第三方组件按各自许可使用，清单见 [assets/third_party_notices.txt](assets/third_party_notices.txt)，或应用内「我的 › 关于 › 开源许可」。
 
 本项目与学校、Kingo 教务系统、超星学习通及短视频平台均无关联。短视频解析依赖第三方服务，请只处理本人或已获授权的作品；学习通签到请只用于本人或已获授权的账号，代签会替代他人出勤，是否合规由你和学校的规定决定。

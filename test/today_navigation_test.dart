@@ -516,6 +516,12 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await _mount(tester, _Gateway()..known = false);
     expect(find.text('尚未同步课表'), findsOneWidget);
+    // 空状态原地给下一步：正中的「同步课表」打开同步范围。
+    await tester.tap(find.widgetWithText(FilledButton, '同步课表'));
+    await tester.pumpAndSettle();
+    expect(find.text('同步范围'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
     await tester.pumpWidget(const SizedBox());
     await _mount(tester, _Gateway(empty: true));
     expect(find.text('当前学期暂无课程'), findsOneWidget);
@@ -544,6 +550,12 @@ void main() {
     expect(_spoken('这天没课'), findsOneWidget);
     expect(find.textContaining('下一节'), findsNothing);
     expect(find.textContaining('后上课'), findsNothing);
+  });
+
+  testWidgets('预告跨到下周的课写「下周一」，不只写星期', (tester) async {
+    // 今天周五，周六、周日也没课，下一节是下周一：以前写「周一」，分不清是哪周。
+    await _mount(tester, _Gateway()..emptyWeekdays = {5, 6, 7});
+    expect(_spoken('今天没课，下一节下周一 8:00，星期1的课，教室'), findsOneWidget);
   });
 
   testWidgets('此刻卡：上课中按小时分钟显示剩余与起止进度条，课前显示下一节，下课后提示课上完了', (tester) async {

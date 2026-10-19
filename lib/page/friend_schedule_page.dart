@@ -18,6 +18,7 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
 enum _View { theirs, common }
@@ -133,7 +134,7 @@ class _FriendSchedulePageState extends State<FriendSchedulePage> {
         ],
       ),
       body: CampusScrollFade(child: SafeArea(child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
-        Text('${term.label.isEmpty ? term.key : term.label} · ${formatCampusTimestamp(widget.sharedAt)} 分享', style: secondary),
+        DotSeparatedText('${term.label.isEmpty ? term.key : term.label} · ${formatCampusRelative(widget.sharedAt)} 分享', style: secondary),
         const SizedBox(height: 12),
         if (!widget.outgoing) ...[
           CampusSegmented<_View>(values: _View.values, selected: _view, label: (view) => view == _View.theirs ? 'TA的课表' : '共同空闲', onSelected: (view) => setState(() => _view = view)),
@@ -184,6 +185,7 @@ class _WeekGrid extends StatelessWidget {
     final days = comparison.weekdays;
     final periods = comparison.periodCount;
     final cell = TextStyle(fontSize: 14, color: colors.onSurfaceVariant, height: 1.15);
+    final blockText = TextStyle(fontSize: 14, color: colors.onSurface, height: 1.15);
     return LayoutBuilder(builder: (context, constraints) {
       final columnWidth = (constraints.maxWidth - labelWidth) / days.length;
       Widget block({required int day, required int start, required int end, required Color color, required Widget child, VoidCallback? onTap, String? semantics}) => Positioned(
@@ -209,7 +211,7 @@ class _WeekGrid extends StatelessWidget {
               color: colors.surfaceSelected,
               onTap: () => onCourse(course, meeting),
               semantics: '周${weekdayLabel(meeting.weekday)} ${course.courseName}',
-              child: Text(course.courseName, overflow: TextOverflow.fade, style: TextStyle(fontSize: 14, color: colors.onSurface, height: 1.15)),
+              child: Text(_balanced(context, course.courseName, DefaultTextStyle.of(context).style.merge(blockText), columnWidth - 9), overflow: TextOverflow.fade, style: blockText),
             ));
           }
         }
@@ -249,4 +251,27 @@ class _WeekGrid extends StatelessWidget {
       ]);
     });
   }
+}
+
+// 格子里的课名按字数均分到几行（「数据/结构」，不是「数据结/构」）：窄格里逐字贪心折行会把最后一个字甩到下一行。
+// 只处理全是汉字的课名；带括号、字母或数字的照常折行，免得把词或括号拆开。
+final _hanOnly = RegExp(r'^[\u3400-\u9fff]+$');
+String _balanced(BuildContext context, String name, TextStyle style, double width) {
+  if (!_hanOnly.hasMatch(name) || width <= 0) return name;
+  final painter = TextPainter(text: TextSpan(text: name, style: style), textDirection: Directionality.of(context), textScaler: MediaQuery.textScalerOf(context))..layout();
+  final chars = name.characters.toList();
+  // 一行放得下几个字按实际字宽算，再按这个上限分行，每行都不超过上限，不会被再折一次。
+  final perLine = (width / (painter.width / chars.length)).floor();
+  painter.dispose();
+  if (perLine < 1 || perLine >= chars.length) return name;
+  final lines = (chars.length / perLine).ceil();
+  final base = chars.length ~/ lines, extra = chars.length % lines;
+  final rows = <String>[];
+  var start = 0;
+  for (var line = 0; line < lines; line++) {
+    final count = base + (line < extra ? 1 : 0);
+    rows.add(chars.sublist(start, start + count).join());
+    start += count;
+  }
+  return rows.join('\n');
 }

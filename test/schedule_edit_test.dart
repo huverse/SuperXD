@@ -59,13 +59,21 @@ void main() {
     expect(removeSlot(edited, 0), isEmpty);
     expect(removeSlot(courseSlots([sample(weeks: [2])]), 0, week: 2), isEmpty);
   });
+  test('管理课程按最早的上课时段排，没有时段的排最后', () {
+    CourseRecord course(String name, List<(int, int)> meetings) => CourseRecord(courseCode: '', courseName: name, sectionId: '', credit: 2, teacherName: '', localId: name,
+      meetings: [for (final (weekday, period) in meetings) CourseMeeting(weekday: weekday, periodStart: period, periodEnd: period + 1, place: '', weeks: const [1])]);
+    final groups = courseGroups([course('空课', []), course('周三早', [(3, 1)]), course('周一下午', [(1, 5), (4, 1)]), course('周一早', [(2, 3), (1, 1)])]);
+    expect(groups.map((group) => group.single.courseName), ['周一早', '周一下午', '周三早', '空课']);
+  });
   test('同名教学班合成一门，保存时按老师分回原教学班', () {
     CourseMeeting meeting(int weekday) => CourseMeeting(weekday: weekday, periodStart: 1, periodEnd: 2, place: '101', weeks: [1, 2]);
     final a = CourseRecord(courseCode: 'C1', courseName: '数据结构', sectionId: 'S1', credit: 3, teacherName: '甲', meetings: [meeting(1)]);
     final b = CourseRecord(courseCode: 'C1', courseName: '数据结构 ', sectionId: 'S2', credit: 3, teacherName: '乙', meetings: [meeting(3)]);
     final groups = courseGroups([a, sample(), b]);
-    expect(groups.map((group) => group.length), [2, 1]);
-    final group = groups.first;
+    // 按最早的上课时段排，同一时刻（都在周一第 1 节）按课名。
+    expect(groups.map((group) => group.first.courseName.trim()), ['数学', '数据结构']);
+    expect(groups.map((group) => group.length), [1, 2]);
+    final group = groups.last;
     final slots = courseSlots(group);
     expect(slots.map(slotLabel), ['周一 第1–2节 · 第1–2周 · 101 · 甲', '周三 第1–2节 · 第1–2周 · 101 · 乙']);
     // 改课名对整组生效，时段各回原教学班。

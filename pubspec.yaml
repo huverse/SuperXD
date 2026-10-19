@@ -73,6 +73,7 @@ dependencies:
   pool: ^1.5.3
   image_cropper: ^12.2.1
   permission_handler: ^12.0.3
+  screen_brightness: ^2.1.11
 
 dev_dependencies:
   flutter_test:
@@ -120,6 +121,7 @@ flutter:
     - assets/fonts/LICENSE.txt
     - assets/fonts/noto_serif_sc_license.txt
     - assets/third_party_notices.txt
+    - assets/app_icon.png
     - assets/font_previews/
 
   # An image asset can refer to one or more resolution-specific "variants", see

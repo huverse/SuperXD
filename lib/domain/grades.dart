@@ -29,6 +29,11 @@ String gradeText(Object? value, {String missing = '教务未提供'}) => value =
     : value is double && value == value.truncateToDouble()
     ? value.toInt().toString()
     : '$value';
+// [人工决策-2026-10-19 17:55:48] 不及格的口径（用户选定）：数值低于 60，或教务写着「不及格」「不合格」；成绩页用警示色并写明「不及格」，不只靠颜色。
+bool gradeFailing(Object? value) => switch (gradeNumber(value)) {
+  final number? => number < 60,
+  null => value is String && const {'不及格', '不合格'}.contains(value.trim()),
+};
 num? gradeNumber(Object? value) => value is num && value.isFinite
     ? value
     : value is String && RegExp(r'^-?\d+(?:\.\d+)?$').hasMatch(value.trim())

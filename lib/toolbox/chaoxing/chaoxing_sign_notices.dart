@@ -27,9 +27,9 @@ class ChaoxingTimeNotice extends StatelessWidget {
     if (!activity.ongoing) {
       message = end == null
           ? '这场签到已经结束或还没开始，现在签到可能会记为迟到'
-          : '这场签到已在 ${formatCampusTimestamp(end.toIso8601String())} 截止，现在签到可能会记为迟到';
+          : '这场签到已在 ${formatCampusRelative(end.toIso8601String())} 截止，现在签到可能会记为迟到';
     } else if (start != null && now.difference(start) > chaoxingStaleActivityAge) {
-      message = '这场签到发布于 ${formatCampusTimestamp(start.toIso8601String())}，'
+      message = '这场签到发布于 ${formatCampusRelative(start.toIso8601String())}，'
           '已经过去 ${now.difference(start).inHours} 小时，确认没有选错';
     } else {
       message = null;
@@ -63,7 +63,7 @@ class ChaoxingSignOutNotice extends StatelessWidget {
     final (message, action) = switch (state) {
       ChaoxingSignOutState.signOutActivity => ('这是签退活动，先确认主签到已经完成', '去主签到'),
       ChaoxingSignOutState.signOutPublished => ('这次签到还发布了签退活动', '去签退'),
-      _ => ('签退活动将在 ${info.signOutPublishTime == null ? '稍后' : formatCampusTimestamp(info.signOutPublishTime!.toIso8601String())} 发布，到时候再来签退', null),
+      _ => ('签退活动将在 ${info.signOutPublishTime == null ? '稍后' : formatCampusRelative(info.signOutPublishTime!.toIso8601String())} 发布，到时候再来签退', null),
     };
     return _NoticeCard(
       children: [

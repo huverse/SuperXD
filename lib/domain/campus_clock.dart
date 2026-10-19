@@ -29,11 +29,21 @@ String formatCampusDate(DateTime date) {
   return '${date.year}-$month-$day';
 }
 
-String formatCampusTimestamp(String value) {
+// [人工决策-2026-10-19 17:55:48] 展示的时刻按远近写（用户选定，同微信、iMessage；本项目不沿用全局规则里 Vue 前端一节的 YYYY-MM-DD HH:mm:ss）：
+// 今天「今天 17:12」、昨天「昨天 17:12」、明天「明天 17:12」、今年「10月18日 17:12」、跨年「2025年10月18日 17:12」，都不带秒；哪天按校园时区算。
+String formatCampusRelative(String value, {DateTime? now}) {
   final parsed = DateTime.tryParse(value);
   if (parsed == null) return value;
-  final date = campusInstant(parsed);
-  return '${formatCampusDate(date)} ${date.hour.toString().padLeft(2, '0')}:${date.minute.toString().padLeft(2, '0')}:${date.second.toString().padLeft(2, '0')}';
+  final local = campusInstant(parsed), today = campusInstant(now);
+  final clock = formatCampusClock(parsed);
+  final days = DateTime.utc(today.year, today.month, today.day).difference(DateTime.utc(local.year, local.month, local.day)).inDays;
+  return switch (days) {
+    0 => '今天 $clock',
+    1 => '昨天 $clock',
+    -1 => '明天 $clock',
+    _ when local.year == today.year => '${local.month}月${local.day}日 $clock',
+    _ => '${local.year}年${local.month}月${local.day}日 $clock',
+  };
 }
 
 // 绝对时刻在校园时区的钟点 HH:mm。

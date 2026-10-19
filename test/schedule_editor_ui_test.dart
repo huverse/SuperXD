@@ -8,6 +8,7 @@ import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/course_editor_page.dart';
 import 'package:superxd/page/schedule_editor_page.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -65,7 +66,7 @@ void main() {
     await tester.enterText(find.widgetWithText(TextField, '课程名称'), '手工数学');
     await tapVisible(tester, find.text('添加时段'));
     await tapVisible(tester, find.text('单周'));
-    await tapVisible(tester, find.text('确定时段'));
+    await tapVisible(tester, find.widgetWithText(FilledButton, '确定'));
     await tapVisible(tester, find.text('保存课程'));
     await tester.runAsync(
       () async => await Future<void>.delayed(const Duration(milliseconds: 100)),
@@ -240,7 +241,7 @@ void main() {
     await tapVisible(tester, find.text('只改某一周'));
     await tapVisible(tester, find.text('第2周'));
     await tapVisible(tester, find.text('周五'));
-    await tapVisible(tester, find.text('确定时段'));
+    await tapVisible(tester, find.widgetWithText(FilledButton, '确定'));
     expect(find.bySemanticsLabel('周三 第5–6节 · 第4周 · 实验楼 · 乙老师'), findsOneWidget);
     expect(find.bySemanticsLabel('周五 第5–6节 · 第2周 · 实验楼 · 乙老师'), findsOneWidget);
     await tapVisible(tester, find.text('保存课程'));
@@ -259,6 +260,26 @@ void main() {
     await settle();
     expect((await tester.runAsync(() => gateway.readSchedule(const ScheduleScope.term(term))))!.data!.courses, isEmpty);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('周次是等宽网格；快捷选周只亮正好匹配的一项，点格子单独增减', (tester) async {
+    await tester.pumpWidget(app(Builder(builder: (context) => Scaffold(body: TextButton(
+      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CourseEditorPage(courses: const [], bells: const [], onSave: (course) async => null))),
+      child: const Text('打开编辑'),
+    )))));
+    await tapVisible(tester, find.text('打开编辑'));
+    await tapVisible(tester, find.text('添加时段'));
+    bool preset(String label) => tester.widget<CampusGlassChip>(find.widgetWithText(CampusGlassChip, label)).selected;
+    Finder cell(int number) => find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '第$number周');
+    bool week(int number) => tester.widget<Semantics>(cell(number)).properties.selected == true;
+    await tapVisible(tester, find.text('单周'));
+    expect([preset('全选'), preset('单周'), preset('双周'), preset('清空')], [false, true, false, false]);
+    expect([week(1), week(2), week(3)], [true, false, true]);
+    // 各格同宽，一行一行对齐。
+    expect(tester.getSize(cell(1)), tester.getSize(cell(2)));
+    await tapVisible(tester, cell(2));
+    expect(week(2), isTrue);
+    expect(preset('单周'), isFalse);
   });
 
   testWidgets('窄屏大字周次表单可滚动，失败保留草稿，返回须确认', (tester) async {
@@ -293,7 +314,7 @@ void main() {
     await tapVisible(tester, find.text('打开编辑'));
     await tester.enterText(find.widgetWithText(TextField, '课程名称'), '保留草稿');
     await tapVisible(tester, find.text('添加时段'));
-    await tapVisible(tester, find.text('确定时段'));
+    await tapVisible(tester, find.widgetWithText(FilledButton, '确定'));
     await tapVisible(tester, find.text('保存课程'));
     expect(calls, 1);
     expect(find.text('测试存储失败'), findsOneWidget);
