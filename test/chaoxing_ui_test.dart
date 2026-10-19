@@ -1207,6 +1207,16 @@ void main() {
     await tester.pump();
     expect(tester.widget<Checkbox>(find.byType(Checkbox).last).value, isFalse);
     expect(tester.widget<Checkbox>(find.byType(Checkbox).first).value, isTrue);
+    // 点名字那一行也能勾选、再点取消，不只勾选框能点。
+    final otherName = find.descendant(of: find.byType(MergeSemantics), matching: find.text('同学乙'));
+    await tester.ensureVisible(otherName);
+    await tester.pump();
+    await tester.tap(otherName);
+    await tester.pump();
+    expect(tester.widget<Checkbox>(find.byType(Checkbox).last).value, isTrue);
+    await tester.tap(otherName);
+    await tester.pump();
+    expect(tester.widget<Checkbox>(find.byType(Checkbox).last).value, isFalse);
     await tester.pumpWidget(const SizedBox());
   });
 

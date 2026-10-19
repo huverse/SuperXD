@@ -843,6 +843,9 @@ void main() {
       await drag.moveBy(const Offset(0, -20));
       await tester.pump(const Duration(milliseconds: 16));
     }
+    // 拖起的卡片仍是 16 圆角：不套默认那层带投影的直角 Material（长按生效时卡片变成直角长方形）。
+    expect(find.byWidgetPredicate((widget) => widget is Material && widget.elevation > 0), findsNothing);
+    expect(find.byWidgetPredicate((widget) => widget is DecoratedBox && widget.decoration is BoxDecoration && (widget.decoration as BoxDecoration).borderRadius == BorderRadius.circular(16)), findsOneWidget);
     await drag.up();
     await tester.pumpAndSettle();
     // 写库在松手后异步进行：等到排序真的落库，不按固定时长赌磁盘速度。

@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/theme/campus_glass_material.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -233,6 +234,15 @@ class _ChaoxingAccountSheetState extends State<_ChaoxingAccountSheet> {
               child: ReorderableListView.builder(
                 shrinkWrap: true,
                 buildDefaultDragHandles: false,
+                // 拖起的卡片保持圆角：默认装饰会给整项（连卡片下边距）套一层直角投影，长按生效时卡片变成直角长方形。
+                // 投影只画在卡片本身（让出下边距 8）、同 16 圆角，随拖起进度渐显。
+                proxyDecorator: (child, index, animation) => Stack(children: [
+                  Positioned.fill(bottom: 8, child: FadeTransition(
+                    opacity: animation,
+                    child: DecoratedBox(decoration: BoxDecoration(borderRadius: BorderRadius.circular(16), boxShadow: campusFloatingShadow)),
+                  )),
+                  child,
+                ]),
                 padding: const EdgeInsets.fromLTRB(16, 0, 12, 20),
                 itemCount: _others.length,
                 onReorderItem: (oldIndex, newIndex) {

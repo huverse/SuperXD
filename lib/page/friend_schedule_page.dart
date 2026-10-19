@@ -10,6 +10,8 @@ import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/domain/week.dart';
+import 'package:superxd/page/schedule_import.dart';
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -116,6 +118,19 @@ class _FriendSchedulePageState extends State<FriendSchedulePage> {
       appBar: AppBar(
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
         title: Text('${widget.friendName}的课表'),
+        actions: [
+          // 看完、对比完直接导入（人工决策见 schedule_import.dart）；自己发出的与未登录时不给。
+          if (widget.gateway case final gateway? when !widget.outgoing)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: CampusGlassCircleButton(
+                label: '导入到我的课表',
+                size: 44,
+                onPressed: () => importSharedSchedule(context, gateway: gateway, share: widget.share, friendName: widget.friendName),
+                icon: const CampusIcon(CampusIcons.importSchedule),
+              ),
+            ),
+        ],
       ),
       body: CampusScrollFade(child: SafeArea(child: ListView(padding: const EdgeInsets.fromLTRB(16, 8, 16, 24), children: [
         Text('${term.label.isEmpty ? term.key : term.label} · ${formatCampusTimestamp(widget.sharedAt)} 分享', style: secondary),

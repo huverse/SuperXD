@@ -42,6 +42,14 @@ String formatCampusClock(DateTime instant) {
   return '${local.hour.toString().padLeft(2, '0')}:${local.minute.toString().padLeft(2, '0')}';
 }
 
+// 绝对时刻在校园时区的短写「10月17日 09:12」：历史版本里按时刻指代某一版时用。
+String formatCampusMoment(String value) {
+  final parsed = DateTime.tryParse(value);
+  if (parsed == null) return value;
+  final local = campusInstant(parsed);
+  return '${local.month}月${local.day}日 ${formatCampusClock(parsed)}';
+}
+
 // 校园日期（YYYY-MM-DD）当天第 minuteOfDay 分钟对应的绝对时刻（UTC）。
 DateTime campusMoment(String isoDate, int minuteOfDay) {
   ensureCampusClock();

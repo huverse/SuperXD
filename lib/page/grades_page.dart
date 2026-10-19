@@ -7,6 +7,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_search_field.dart';
 import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_clock.dart';
@@ -367,14 +368,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
   Widget _filterBar() {
     final changed = (_original ? 1 : 0) + (_filter == grades.GradeFilter.all ? 0 : 1) + (_sort == grades.GradeSort.original ? 0 : 1);
     return Row(children: [
-      Expanded(child: TextField(
-        controller: _search,
-        decoration: InputDecoration(
-          hintText: '搜索课程名称或代码',
-          prefixIcon: const CampusIcon(CampusIcons.search),
-          suffixIcon: _search.text.isEmpty ? null : IconButton(tooltip: '清空搜索', onPressed: _search.clear, icon: const CampusIcon(CampusIcons.close)),
-        ),
-      )),
+      Expanded(child: CampusSearchField(controller: _search, hint: '搜索课程名称或代码')),
       const SizedBox(width: 8),
       FilledButton.icon(onPressed: _openFilters, icon: const CampusIcon(CampusIcons.filter, size: 20), label: Text(changed == 0 ? '筛选' : '筛选 $changed')),
     ]);

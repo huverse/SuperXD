@@ -29,7 +29,7 @@ Widget _editor(String font, double scale) => MaterialApp(
   supportedLocales: const [Locale('zh', 'CN')],
   localizationsDelegates: GlobalMaterialLocalizations.delegates,
   builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)), child: child!),
-  home: CourseEditorPage(course: _courses.first, courses: _courses, bells: _bells, onSave: (_) async => null),
+  home: CourseEditorPage(group: [_courses.first], courses: _courses, bells: _bells, onSave: (_) async => null),
 );
 
 void main() {
@@ -42,15 +42,24 @@ void main() {
         await loadCampusFonts(tester);
         await tester.pumpWidget(_editor(font, scale));
         await tester.pumpAndSettle();
-        expectFieldLabelsClear(tester, ['课程名称', '教师（选填）', '学分（选填）'], '课程表单');
+        expectFieldLabelsClear(tester, ['课程名称', '学分（选填）'], '课程表单');
         expectChipLabelsUnclipped(tester, '课程表单');
         await tester.ensureVisible(find.text('添加时段'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('添加时段'));
         await tester.pumpAndSettle();
         final dialog = find.byType(CampusGlassDialog);
-        expectFieldLabelsClear(tester, ['开始节次', '结束节次', '地点（选填）'], '上课时段弹窗', scope: dialog);
+        expectFieldLabelsClear(tester, ['开始节次', '结束节次', '地点（选填）', '教师（选填）'], '上课时段弹窗', scope: dialog);
         expectChipLabelsUnclipped(tester, '上课时段弹窗', scope: dialog);
+        await tester.tap(find.text('取消'));
+        await tester.pumpAndSettle();
+        // 点已有时段直接进弹窗，切到「只改某一周」后周次标签同样不裁切。
+        await tester.tap(find.bySemanticsLabel(RegExp('^周三 第1–2节')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('只改某一周'));
+        await tester.pumpAndSettle();
+        expect(find.text('改哪一周'), findsOneWidget);
+        expectChipLabelsUnclipped(tester, '只改某一周', scope: dialog);
         expect(tester.takeException(), isNull);
       });
     }

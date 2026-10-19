@@ -4,6 +4,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_search_field.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
@@ -58,13 +59,7 @@ class _ChaoxingCoursePageState extends State<ChaoxingCoursePage> {
           final rows = <Widget Function()>[
             () => Padding(
               padding: const EdgeInsets.only(bottom: 12),
-              child: TextField(
-                controller: _query,
-                decoration: const InputDecoration(
-                  labelText: '搜索课程、老师或学校',
-                  prefixIcon: CampusIcon(CampusIcons.search),
-                ),
-              ),
+              child: CampusSearchField(controller: _query, hint: '搜索课程、老师或学校'),
             ),
             // 课程列表还没读到（刚打开、切了账号、改了单位或客户端、上次没读成）时为空不等于没有课：加载中就转，没读成给原因与重试。
             if (controller.courses.isEmpty && !controller.activitiesLoaded)

@@ -13,7 +13,7 @@
 - campus_clock.dart：
   - campusTimeZone：校园时区的唯一定义。
   - campusToday：校园时区的今天。campusNow：校园时区今天的零点。
-  - formatCampusTimestamp：把 UTC 字符串转成校园时间用于展示。
+  - formatCampusTimestamp：把 UTC 字符串转成校园时间用于展示。formatCampusMoment：短写「10月17日 09:12」，历史版本按时刻指代某一版时用。
   - clockMinutes：把 HH:mm 转成分钟数。
   - campusMoment：校园日期加当天分钟换算成 UTC 绝对时刻。formatCampusClock：绝对时刻在校园时区的钟点 HH:mm。
 - week.dart：ISO 日期与周次计算。第几周从开学日所在周的周一起算（weekIndex、weekRange）。
@@ -23,7 +23,8 @@
   - fingerprint 判断内容是否变化；visibleCourses 按日或按周筛选课程。
 - schedule_edit.dart：课表编辑规则。
   - 校验与规范化：validateSchedule、normalizeSchedule。
-  - 单时段与单周调整，冲突检测 courseOverlaps。
+  - 管理课程按课名合并：courseGroups 把同名教学班合成一门，CourseSlot 是带老师与原教学班的时段（courseSlots、slotLabel），regroupCourse 保存时按老师分回教学班（人工决策在 courseGroups 上方）。
+  - 单时段与单周调整 changeSlot、removeSlot，冲突检测 courseOverlaps。
   - 变更对比 scheduleChanges，以及时段、周次的显示文案。
 - period_spans.dart：把当日课程按节次展开成 PeriodSpan（有课段与空档段），并决定补齐哪些节次。
 - meeting_time.dart：按作息把节次换算成上课时刻 MeetingTime。
@@ -71,6 +72,8 @@
   - 课程名称 1–200 字，教师和地点各不超过 200 字，学分 0–100。
   - 同一课程不得出现重复的“时段加周次”。
 - 单周调整只移除原时段中的这一周。调整全部时段或整门课程，必须由用户明确选择。
+- 按课名合并只在管理课程里：存储仍是每个教学班一条记录，保存时老师没变的时段回原教学班，改了老师的先并进同老师的、再占用没有时段了的教学班，都没有才新建本地课程。
+- 恢复版本的说明写恢复到哪个时刻的样子（formatCampusMoment），不写版本序号。
 - 节次展开：白天按采用的作息补齐节次，晚课只按当日课程延伸。全天没课时仍是空日，不补出不存在的钟点。
 - 成绩：
   - 载荷上限 4MB，课程上限 1000 条，单个文本上限 2000 字。
@@ -86,4 +89,4 @@
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/domain
-- 本目录的标记位于日志出口、节次展开、单周调整、版本恢复四处。
+- 本目录的标记位于日志出口、节次展开、单周调整、按课名合并、版本恢复五处。

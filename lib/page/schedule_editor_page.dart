@@ -7,7 +7,6 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
-import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
@@ -69,7 +68,11 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
             .where((course) => courseKey(course) == widget.courseId)
             .firstOrNull;
         if (course != null || widget.courseId == null && widget.slot != null) {
-          await _edit(course, widget.slot);
+          // 从课表页进来：打开这个教学班所在的整门课，预填的时段带上这个教学班的老师。
+          await _edit(
+            course == null ? const [] : courseGroups(_view!.courses).firstWhere((group) => group.contains(course)),
+            widget.slot == null ? null : CourseSlot(meeting: widget.slot!, teacher: course?.teacherName ?? '', origin: course == null ? null : courseKey(course)),
+          );
         }
       }
     } catch (error, stack) {
@@ -100,7 +103,15 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
     return null;
   }
 
-  Future<void> _edit([CourseRecord? course, CourseMeeting? slot]) async {
+  // 一门课（同名的几个教学班）保存后的记录换掉原来那几条，放在原来第一条的位置，新增的放最后。
+  List<CourseRecord> _replaceGroup(List<CourseRecord> courses, List<CourseRecord> group, List<CourseRecord> records) {
+    final keys = {for (final course in group) courseKey(course)};
+    final at = courses.indexWhere((course) => keys.contains(courseKey(course)));
+    final rest = [for (final course in courses) if (!keys.contains(courseKey(course))) course.copy()];
+    return rest..insertAll(at < 0 ? rest.length : at, records);
+  }
+
+  Future<void> _edit([List<CourseRecord> group = const [], CourseSlot? slot]) async {
     if (_busy || _view == null) return;
     final base = _view!;
     setState(() => _busy = true);
@@ -109,39 +120,20 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
         context,
         CampusPageRoute(
           builder: (context) => CourseEditorPage(
-            course: course,
+            group: group,
             slot: slot,
             courses: base.courses,
             bells: _bells,
             selectedWeek: widget.selectedWeek,
-            onSave: (edited) async {
-              final courses = base.courses.map((item) => item.copy()).toList();
-              final index = course == null
-                  ? -1
-                  : courses.indexWhere(
-                      (item) => courseKey(item) == courseKey(course),
-                    );
-              final removing =
-                  course != null &&
-                  course.meetings.isNotEmpty &&
-                  edited.meetings.isEmpty;
-              if (removing) {
-                courses.removeAt(index);
-              } else if (index < 0) {
-                courses.add(edited);
-              } else {
-                courses[index] = edited;
-              }
-              return _save(
-                courses,
-                '${removing
-                    ? '删除'
-                    : course == null
-                    ? '新增'
-                    : '修改'}课程：${edited.courseName}',
-                base.revisionId,
-              );
-            },
+            onSave: (records) => _save(
+              _replaceGroup(base.courses, group, records),
+              '${records.isEmpty
+                  ? '删除'
+                  : group.isEmpty
+                  ? '新增'
+                  : '修改'}课程：${records.firstOrNull?.courseName ?? group.first.courseName}',
+              base.revisionId,
+            ),
           ),
         ),
       );
@@ -150,34 +142,33 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
     }
   }
 
-  Future<void> _courseMenu(BuildContext anchor, CourseRecord course) async {
+  Future<void> _courseMenu(BuildContext anchor, List<CourseRecord> group) async {
     final action = await showCampusMenu<String>(anchor, items: const [
-      CampusMenuItem(value: 'edit', label: '编辑', icon: CampusIcons.edit),
       CampusMenuItem(value: 'delete', label: '删除', icon: CampusIcons.delete, destructive: true),
     ]);
-    if (!mounted) return;
-    if (action == 'edit') await _edit(course);
-    if (action == 'delete') await _delete(course);
+    if (mounted && action == 'delete') await _delete(group);
   }
 
-  Future<void> _delete(CourseRecord course) async {
+  Future<void> _delete(List<CourseRecord> group) async {
     if (_busy || _view == null) return;
     final base = _view!;
+    final name = group.first.courseName;
+    final slots = courseSlots(group);
     final scope = await showCampusDialog<String>(
       context: context,
       builder: (context) => CampusGlassDialog(
-        title: Text('删除：${course.courseName}'),
+        title: Text('删除：$name'),
         options: [
           SimpleDialogOption(
             onPressed: () => Navigator.pop(context, 'course'),
             child: const Text('整门课程（所有时段和周次）'),
           ),
-          if (course.meetings.isNotEmpty)
+          if (slots.isNotEmpty)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, 'meeting'),
               child: const Text('某个重复时段'),
             ),
-          if (course.meetings.isNotEmpty)
+          if (slots.isNotEmpty)
             SimpleDialogOption(
               onPressed: () => Navigator.pop(context, 'once'),
               child: const Text('某周的一次课程'),
@@ -186,7 +177,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
       ),
     );
     if (!mounted || scope == null) return;
-    CourseRecord? replacement;
+    var records = <CourseRecord>[];
     var label = '整门课程及所有上课时段';
     if (scope != 'course') {
       final index = await showCampusDialog<int>(
@@ -194,16 +185,16 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
         builder: (context) => CampusGlassDialog(
           title: const Text('选择时段'),
           options: [
-            for (var index = 0; index < course.meetings.length; index++)
+            for (var index = 0; index < slots.length; index++)
               SimpleDialogOption(
                 onPressed: () => Navigator.pop(context, index),
-                child: Text(meetingLabel(course.meetings[index])),
+                child: Text(slotLabel(slots[index])),
               ),
           ],
         ),
       );
       if (!mounted || index == null) return;
-      final meeting = course.meetings[index];
+      final meeting = slots[index].meeting;
       final week = scope == 'once'
           ? await chooseMeetingWeek(
               context,
@@ -212,7 +203,8 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
             )
           : null;
       if (!mounted || (scope == 'once' && week == null)) return;
-      replacement = removeMeeting(course, index, week: week);
+      // 只删时段不换老师，分回教学班时不会新建课程。
+      records = regroupCourse(group, name: name, slots: removeSlot(slots, index, week: week), newLocalId: () => throw StateError('删除时段不新建课程'));
       label = week == null
           ? meetingLabel(meeting)
           : '第$week周 · 周${weekdayLabel(meeting.weekday)} 第${meeting.periodStart}–${meeting.periodEnd}节';
@@ -220,22 +212,13 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
     if (!await showCampusConfirm(
       context,
       title: '确认删除？',
-      message: '${course.courseName}\n$label\n\n会保存新版本，可撤销或在历史版本中恢复。',
+      message: '$name\n$label\n\n会保存新版本，可撤销或在历史版本中恢复。',
       action: '删除', destructive: true,
     )) {
       return;
     }
     if (!mounted) return;
-    final courses = base.courses.map((item) => item.copy()).toList();
-    final index = courses.indexWhere(
-      (item) => courseKey(item) == courseKey(course),
-    );
-    if (replacement == null) {
-      courses.removeAt(index);
-    } else {
-      courses[index] = replacement;
-    }
-    await _commitDeletion(base, courses, '删除：${course.courseName} · $label');
+    await _commitDeletion(base, _replaceGroup(base.courses, group, records), '删除：$name · $label');
   }
 
   Future<void> _commitDeletion(
@@ -308,6 +291,46 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
     );
     if (changed == true) _changed = true;
     if (mounted) await _load();
+  }
+
+  // 整门课只有一位老师时写在课名下面一次，几位老师时写在各自的时段后面。
+  Widget _courseCard(List<CourseRecord> group) {
+    final slots = courseSlots(group);
+    final teachers = slots.isEmpty ? {for (final course in group) course.teacherName} : {for (final slot in slots) slot.teacher};
+    final sharedTeacher = teachers.length == 1 ? teachers.single : null;
+    return CampusSurface(
+      padding: const EdgeInsets.fromLTRB(16, 4, 4, 12),
+      margin: const EdgeInsets.symmetric(vertical: 8),
+      onTap: _busy ? null : () => _edit(group),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(children: [
+            Expanded(child: Text(group.first.courseName, style: Theme.of(context).textTheme.titleMedium)),
+            Builder(builder: (anchor) => IconButton(
+              tooltip: '课程操作',
+              onPressed: _busy ? null : () => _courseMenu(anchor, group),
+              icon: const CampusIcon(CampusIcons.manage),
+            )),
+          ]),
+          Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                if (sharedTeacher != null && sharedTeacher.isNotEmpty) Text(sharedTeacher),
+                if (slots.isEmpty) const Text('暂无上课时间'),
+                for (final slot in slots)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: DotSeparatedText(sharedTeacher == null ? slotLabel(slot) : meetingLabel(slot.meeting), style: const TextStyle(fontSize: 14, height: 1.5)),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -402,42 +425,10 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                               },
                         label: const Text('建立空课表'),
                       ),
-                    // [人工决策-2026-10-06 15:46:09] 课程卡整卡可点进编辑（右侧箭头），编辑与删除收进右上 ⋯ 菜单，删除标警示色并保留确认与撤销；用户选定（同 iOS、鸿蒙列表）。
-                    for (final course in _view!.courses)
-                      CampusSurface(padding: EdgeInsets.zero, margin: const EdgeInsets.symmetric(vertical: 8),
-                        onTap: _busy ? null : () => _edit(course),
-                        child: Padding(
-                          padding: const EdgeInsets.fromLTRB(16, 12, 4, 12),
-                          child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                            Expanded(child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.stretch,
-                              children: [
-                                Text(
-                                  course.courseName,
-                                  style: Theme.of(context).textTheme.titleMedium,
-                                ),
-                                if (course.teacherName.isNotEmpty)
-                                  Text(course.teacherName),
-                                if (course.meetings.isEmpty) const Text('暂无上课时间'),
-                                for (final meeting in course.meetings)
-                                  Padding(
-                                    padding: const EdgeInsets.only(top: 6),
-                                    child: DotSeparatedText(meetingLabel(meeting), style: const TextStyle(fontSize: 14, height: 1.5)),
-                                  ),
-                              ],
-                            )),
-                            Column(children: [
-                              Builder(builder: (anchor) => IconButton(
-                                tooltip: '课程操作',
-                                onPressed: _busy ? null : () => _courseMenu(anchor, course),
-                                icon: const CampusIcon(CampusIcons.manage),
-                              )),
-                              Expanded(child: Center(child: CampusIcon(CampusIcons.next, color: CampusPalette.of(context).onSurfaceVariant))),
-                              const SizedBox(height: 48),
-                            ]),
-                          ])),
-                        ),
-                      ),
+                    // [人工决策-2026-10-19 16:08:42] 取代 10-06 的「整卡点进编辑（右侧箭头），编辑与删除收进右上⋯」（用户选定，同学习通账号管理、收藏位置）：
+                    // 点卡片就是编辑，⋯里只留删除（警示色、仍要确认、可撤销），去掉右侧箭头；⋯与课名同一行，时段文字占满卡片宽度，卡片高度随内容
+                    // （以前右侧一列放⋯、箭头和占位，把只有一个时段的卡撑出一大块空白）。同名的教学班合成一张卡（见 courseGroups）。
+                    for (final group in courseGroups(_view!.courses)) _courseCard(group),
                     if (_view!.courses.isNotEmpty)
                       Padding(
                         padding: const EdgeInsets.only(top: 24),

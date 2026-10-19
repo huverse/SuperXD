@@ -7,6 +7,7 @@ import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/friend_schedule_page.dart';
+import 'package:superxd/page/schedule_import.dart';
 import 'package:superxd/page/share_card_view.dart';
 import 'package:superxd/page/social_dialogs.dart';
 import 'package:superxd/social/social_service.dart';
@@ -242,6 +243,11 @@ class _ConversationPageState extends State<ConversationPage> {
                   card: message.card!,
                   outgoing: message.outgoing,
                   onOpenSchedule: () => _open(message),
+                  onImportSchedule: switch (message.card) {
+                    final ScheduleShare share when !message.outgoing && widget.gateway != null =>
+                      () => importSharedSchedule(context, gateway: widget.gateway!, share: share, friendName: _friend?.displayName ?? '好友'),
+                    _ => null,
+                  },
                   onApplyAppearance: () => _open(message),
                   onOpenVideo: () => _open(message),
                 ),

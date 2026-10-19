@@ -78,6 +78,9 @@ abstract final class CampusIcons {
   static const removeFriend = LucideIcons.userMinus;
   static const palette = LucideIcons.palette;
   static const commonFree = LucideIcons.calendarCheck2;
+  static const importSchedule = LucideIcons.import;
+  static const replaceSchedule = LucideIcons.replace;
+  static const addCourses = LucideIcons.listPlus;
   static const scanImage = LucideIcons.imageUp;
   static const flashlight = LucideIcons.flashlight;
   static const terms = LucideIcons.fileText;

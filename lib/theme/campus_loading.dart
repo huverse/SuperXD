@@ -351,7 +351,8 @@ Future<T> showCampusWaiting<T>(
   required Future<T> Function() operation,
 }) async {
   final navigator = Navigator.of(context, rootNavigator: true);
-  final route = CampusDialogRoute<void>(context: context, barrierDismissible: false, builder: (context) => PopScope(canPop: false, child: CampusGlassDialog(content: CampusLoading(label: label))));
+  // 弹窗按内容高度：整页样式的 CampusLoading 自己居中，在弹窗的有界高度里会撑满整屏，放进可滚动内容才只占自身高度。
+  final route = CampusDialogRoute<void>(context: context, barrierDismissible: false, builder: (context) => PopScope(canPop: false, child: CampusGlassDialog(scrollable: true, content: CampusLoading(label: label))));
   final delay = Timer(const Duration(milliseconds: 150), () {
     if (context.mounted &&
         navigator.mounted &&

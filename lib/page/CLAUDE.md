@@ -15,8 +15,9 @@
   - friend_add_page.dart：添加好友：出示自己的二维码（浅色画，保证可扫）与倒计时，离开即作废；「扫一扫」扫对方的码。扫码函数可注入（InviteScanner）。
   - qr_scan_page.dart：通用扫码页 QrScanPage：相机只认 QR、识别在本机，也可从相册识别；内容交给调用方的 accept 判断，认下就返回原文，不打开任何链接。好友二维码与课堂签到二维码共用。
   - conversation_page.dart：会话页：卡片列表最新在下，自己的卡片原地显示发送中、失败与重发；卡片⋯可重发或删除（仅本机，[人工决策] 在 _item）；底部分享课表与界面；对方解除好友后改为提示。
-  - share_card_view.dart：卡片渲染：课表（查看与对比）、界面配置（预览、套用）、视频（打开）、未知类型（提示更新应用）。
-  - friend_schedule_page.dart：好友课表与「共同空闲」（读本机同学期课表按日期对齐）；没有同学期课表或缺开学日时如实说明。
+  - share_card_view.dart：卡片渲染：课表（查看与对比，收到的可导入）、界面配置（预览、套用）、视频（打开）、未知类型（提示更新应用）。
+  - friend_schedule_page.dart：好友课表与「共同空闲」（读本机同学期课表按日期对齐）；没有同学期课表或缺开学日时如实说明；顶栏可导入到自己的课表。
+  - schedule_import.dart：好友课表导入 importSharedSchedule：整份替换这学期的课表，或挑几门加进来（自己已有的教学班不列）；都存成当前账号的新版本、可在历史版本恢复，开学日与作息不动；本机没有那个学期时说明原因、不联网（[人工决策] 在文件内）。会话卡片与好友课表页共用。
   - share_target_sheet.dart：分享弹层 showShareSheet：多选好友后逐个发送，每行原地显示状态，失败的可重发；课表页、界面页、百宝箱结果页共用。
   - social_dialogs.dart：错误码文案 socialErrorText、列表时间 socialShortTime、单行输入弹窗 showSocialTextInput。
 - 今天：
@@ -31,9 +32,9 @@
   - calendar_export.dart：导出到日历 exportTermCalendar：当前所看学期写成 .ics 交给日历应用；缺开学日或作息时说明原因不导出，找不到的节次不猜时刻；文件只放缓存 calendar_export 文件夹（每次先清空），经原生 CalendarExporter.kt 交出。交付函数可注入（openCalendar）。
   - reminder_dialog.dart：课前提醒设置 showReminderSettings：开关、提前时间与状态栏胶囊按学期保存（系统有实时更新才给胶囊开关），状态行如实显示安排结果，需要处理的给「开启通知」「准时提醒」「开启胶囊」。
   - schedule_calendar.dart：课表页月份轨道与周次轨道的纯函数。
-  - schedule_editor_page.dart：课程管理 ScheduleEditorPage：新增、编辑、删除（可撤销）、清空、建空课表与历史版本入口；整卡点进编辑，编辑与删除在⋯里。
-  - course_editor_page.dart：单门课程编辑 CourseEditorPage。
-  - schedule_history_page.dart：课表历史版本 ScheduleHistoryPage：按序号分页，可预览差异，恢复带乐观锁；恢复的影响只在恢复确认里说明。
+  - schedule_editor_page.dart：课程管理 ScheduleEditorPage：同名的教学班合成一门显示（一位老师写在课名下，几位写在各自时段后）；新增、编辑、删除（可撤销）、清空、建空课表与历史版本入口；点卡片编辑，⋯里只有删除（[人工决策] 在课程卡列表上方）。
+  - course_editor_page.dart：课程编辑 CourseEditorPage：一门课（同名的几个教学班）一起编辑，课名与学分对整门生效，老师和地点写在每个时段上，保存时按老师分回教学班；时段卡点按直接改、范围在弹窗顶部选，复制与移除在⋯里（[人工决策] 在 _SlotDialog）。
+  - schedule_history_page.dart：课表历史版本 ScheduleHistoryPage：按日期分组的时间线，图标分教务同步、我的修改、恢复，可筛「全部 / 我的修改 / 教务同步」，按序号游标分页；点开写恢复后和现在比会加回、会删掉、会改回，恢复带乐观锁（[人工决策] 在文件内）。
   - term_start_dialog.dart：开学日设置弹窗 editTermStart，保存成功只出提示条写第1周从哪天开始，失败才弹窗。
 - 成绩：
   - grades_page.dart：成绩页 GradesPage：学年与学期汇总、有效成绩与原始成绩，可筛选、排序、搜索；本页只同步成绩；视图切换淡出淡入（旧内容淡出后才换数据）。筛选是一行「搜索框 + 筛选按钮」，类型、范围、排序在弹层里点了就生效；成绩按行列在一张分组卡里、分数在右（[人工决策] 在 _filterLabel 上方）。
@@ -57,7 +58,7 @@
 - 异步结果写界面前先检查 mounted，涉及账号的再检查 isAccountCurrent；遇到 SESSION_EXPIRED 交给 onSessionExpired。
 - 分支页用 TickerMode 判断是否可见；今天分支重新可见时只刷新本地数据、不联网，并展示暂存的同步报告。
 - 页面平时只读本地（read 系列方法），联网只由用户显式触发：同步统一经 CampusSync，成绩页只同步成绩，同步范围弹窗里的刷新学期也要用户点。例外：应用更新的自动检查由组合根发起；私信由 SocialService 的前台长轮询送达，页面不自己定时拉取，SocialService.refresh 会同步通知监听者，不能在构建期间调用。
-- 好友分享的课表只读查看，不写进自己的课表；套用界面配置后提示条可撤销；视频交给百宝箱重新解析，首次使用来源仍由本人同意。
+- 好友分享的课表可查看、对比，写进自己的课表只经 schedule_import.dart（用户确认后存成新版本）；套用界面配置后提示条可撤销；视频交给百宝箱重新解析，首次使用来源仍由本人同意。
 - 今天页只读课表，编辑入口只在课表页；课表页的有课卡与空档只在长按时展开，今天页单击有课卡看详情。
 - 弹窗统一走 showCampusDialog 系列：确认用 showCampusConfirm，提示用 showCampusNotice，耗时操作用 showCampusWaiting。setState 回调不得返回 Future。
 - 切日、底栏拖动等手势：拖动中只预览不提交，正常松手和系统取消分别处理；方向或手势类改动先对照 today_page.dart、today_day_navigation.dart 的人工决策，以及记忆里被否决的视觉方案。
@@ -76,4 +77,4 @@
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/page
-- 本目录的标记集中在：切日方向与交接、回今天胶囊、底栏拖动与安全区、课程卡长按、无课时段新增、成绩同步范围与学年汇总、旧库导入确认、法务说明、我的页与账号页和关于页的归类、同步中止提示、壁纸滑杆、课表顶栏精简、成绩页切换淡出淡入、会话卡片⋯、应用更新弹窗。
+- 本目录的标记集中在：切日方向与交接、回今天胶囊、底栏拖动与安全区、课程卡长按、无课时段新增、管理课程的课程卡与时段弹窗、历史版本时间线、好友课表导入、成绩同步范围与学年汇总、旧库导入确认、法务说明、我的页与账号页和关于页的归类、同步中止提示、壁纸滑杆、课表顶栏精简、成绩页切换淡出淡入、会话卡片⋯、应用更新弹窗。
