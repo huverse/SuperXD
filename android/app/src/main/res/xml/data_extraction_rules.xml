@@ -19,6 +19,9 @@
         <!-- 学习通密码与 Cookie 同样只属于这台设备（库 chaoxing.db 在上面排除的 toolbox 目录里）。 -->
         <exclude domain="sharedpref" path="superxd_chaoxing.xml" />
         <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_chaoxing.xml" />
+        <!-- 拼多多登录会话（身份码取件凭证）同样只属于这台设备，不随备份与换机迁移。 -->
+        <exclude domain="sharedpref" path="superxd_pdd.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_pdd.xml" />
     </cloud-backup>
     <device-transfer>
         <exclude domain="sharedpref" path="superxd_credentials.xml" />
@@ -39,5 +42,8 @@
         <!-- 学习通密码与 Cookie 同样只属于这台设备（库 chaoxing.db 在上面排除的 toolbox 目录里）。 -->
         <exclude domain="sharedpref" path="superxd_chaoxing.xml" />
         <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_chaoxing.xml" />
+        <!-- 拼多多登录会话（身份码取件凭证）同样只属于这台设备，不随备份与换机迁移。 -->
+        <exclude domain="sharedpref" path="superxd_pdd.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_pdd.xml" />
     </device-transfer>
 </data-extraction-rules>

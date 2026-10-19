@@ -169,7 +169,7 @@ void main() {
       for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart')))
         for (final match in RegExp(r"storageNamespace: '(\w+)'").allMatches(file.readAsStringSync())) match.group(1)!,
     };
-    expect(namespaces, containsAll(['superxd_credentials', 'superxd_social', 'superxd_chaoxing']));
+    expect(namespaces, containsAll(['superxd_credentials', 'superxd_social', 'superxd_chaoxing', 'superxd_pdd']));
     final backup = File('android/app/src/main/res/xml/backup_rules.xml').readAsStringSync();
     final extraction = File('android/app/src/main/res/xml/data_extraction_rules.xml').readAsStringSync();
     for (final namespace in namespaces) {
