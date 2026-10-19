@@ -121,7 +121,8 @@ jobs:
       - name: 删除签名配置
         if: always()
         run: rm -rf "$RUNNER_TEMP/signing"
-      # 逐个核对：只有一个签名者且证书对得上、包名、版本号、不可调试、架构；再生成 SHA256SUMS。
+      # 逐个核对：签名证书只有一个且对得上、包名、版本号、不可调试、架构；再生成 SHA256SUMS。
+      # 最低 Android 11 起只有 v3 签名，apksigner 打印「V3.0 Signer: certificate SHA-256 digest」，所以按摘要行取值、不认签名者编号。
       - name: 改名、验签与校验和
         run: |
           set -euo pipefail
@@ -132,8 +133,8 @@ jobs:
             apk="dist/SuperXD-$VERSION-$abi.apk"
             cp "build/app/outputs/flutter-apk/app-$abi-alpha-release.apk" "$apk"
             signers=$("$tools/apksigner" verify --print-certs "$apk")
-            grep -qx "Signer #1 certificate SHA-256 digest: $expected" <<< "$signers" || { echo "::error::$abi 签名证书对不上"; exit 1; }
-            if grep -q '^Signer #2' <<< "$signers"; then echo "::error::$abi 有多个签名者"; exit 1; fi
+            digests=$(sed -n 's/^.*certificate SHA-256 digest: \([0-9a-f]*\)$/\1/p' <<< "$signers" | sort -u)
+            [ "$digests" = "$expected" ] || { echo "::error::$abi 签名证书对不上：$digests"; exit 1; }
             badging=$("$tools/aapt2" dump badging "$apk")
             grep -q "^package: name='com.superxd.superxd.alpha' versionCode='$CODE' versionName='$VERSION'" <<< "$badging" || { echo "::error::$abi 包名或版本号不对"; exit 1; }
             if grep -q 'application-debuggable' <<< "$badging"; then echo "::error::$abi 是可调试包"; exit 1; fi
