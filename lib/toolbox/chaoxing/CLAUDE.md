@@ -12,7 +12,7 @@
   - chaoxing_http.dart：请求封装与 Cookie 会话 ChaoxingCookieJar；模拟的客户端 ChaoxingClientProfile（学习通、学在西电、自定义 UA 与包名），UA 随它走。默认超时 15 秒（登录与用户信息 30 秒，见 chaoxing_client.dart 的人工决策）、响应上限 1MB、日志只记路径。
   - chaoxing_client.dart：登录、用户信息、重登与设备码。带得上设备信息就 POST（clientId 靠它下发），否则 GET；解析学校单位，登录后把会话 fid 改回所选单位。
   - chaoxing_activity.dart：课程列表（只认带 cataName 的频道）、活动列表与详情、按班级号查班级名（gas/clazz）、签到前的班级检查。
-  - chaoxing_signer.dart：preSign（302 或「校验失败」即不在班级；403 按会话过期报，由 accounts.run 重登一次再重发）后紧跟 analysis → analysis2；各签到类型的提交参数逐项照学习通客户端（绕过模式同端点不带 signCode，[人工决策] 见 ChaoxingSignSubmission）；success2 按失败处理，迟到按截止时间判断。
+  - chaoxing_signer.dart：preSign（302 或「校验失败」即不在班级；403 按会话过期报，由 accounts.run 重登一次再重发）后紧跟 analysis → analysis2；各签到类型的提交参数逐项照学习通客户端；success2 按失败处理，迟到按截止时间判断。
   - chaoxing_batch.dart：多人连签 ChaoxingBatchSigning：按勾选顺序逐个签、相邻间隔 200 毫秒；选了「仍然签到」的人跳过检查；位置刚出界时收紧偏移再试；连续扫码一人失败就停队，但已签过、不在班级、登录过期只跳过这个人。
   - chaoxing_lessons.dart：课表推断：两份课表（本应用课表、学习通课表 kb.chaoxing.com）都换成今天的课 ChaoxingLessonSlot；用哪份见 ChaoxingLessonSource 的人工决策（主源加自动备用，默认本应用课表，代签账号只用它自己的学习通课表）；正在上的课（前后半小时）按课名相似度对上课程，同名多班老师对得上的优先；这节课时段里发起、仍在进行的签到算「可能正在签到」（人工决策在 chaoxingLessonActivity，不知道开始时间的不算）。周次与日界按校园时区。
   - chaoxing_location.dart：坐标模型、坐标系转换（提交口径 BD-09）、随机偏移与位置负载。
@@ -39,7 +39,7 @@
 - 界面：
   - chaoxing_page.dart：首页与登录表单（先取同意再登录，同意说明按条分点、文字不变；登录表单接系统自动填充；首页账号卡与切换账号列表的手机号打码 chaoxingMaskedPhone，[人工决策] 在 chaoxing_models.dart；失败原因在表单里原地显示，「登录其他账号」的弹层等登录结果、成功才关）：首页分「可能正在签到」与「进行中的签到」两组，底下是往期、群聊签到、按课程三个入口（排列见文件内人工决策）；账号操作在⋯菜单；顶栏「扫签到二维码」直接打开那场签到（课程列表里没有也能签）；刷新只有下拉一个入口，同一时刻只转一个加载（人工决策在文件内）。
   - chaoxing_sign_sheet.dart：签到弹层：
-    - 先取详情再按类型要输入（详情读不到时原地给重试，只重读详情）；签到码与手势可选校验方式；多个账号时可多选签到对象，每人一行原地显示状态（点名字那一行也能勾选，不只勾选框），点某一行的重试或强制签到会先把这个人勾上。
+    - 先取详情再按类型要输入（详情读不到时原地给重试，只重读详情）；多个账号时可多选签到对象，每人一行原地显示状态（点名字那一行也能勾选，不只勾选框），点某一行的重试或强制签到会先把这个人勾上。
     - 打开即检查，勾选的人全被拦时按原因弹窗：「仍然签到」放行并强制这个人、只关弹窗，「为其他账号签到」把没签的勾上、留在页面（[人工决策] 在文件内）。
     - 二维码签到连续扫码；位置默认与签完问收藏见人工决策；开签前现拍的人脸只给这次用，签好再问存不存。
     - 时间行写「截止 今天 17:45 · 还剩 9 分钟」，一天以内才写还剩多久，弹层开着时每 30 秒自己刷新（_SignWindow）；全部签成功时轻触一次。
@@ -94,4 +94,4 @@
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/toolbox/chaoxing
-- 标记位于：签到码与手势输错的反馈（chaoxing_code_cells.dart、chaoxing_gesture_field.dart）、绕过模式（chaoxing_signer.dart）、往期提示（chaoxing_sign_notices.dart）、预检弹窗与签完问收藏（chaoxing_sign_sheet.dart）、地图默认选点与定位提示（chaoxing_map_page.dart）、收藏管理（chaoxing_location_sheet.dart）、账号说明只标例外（chaoxing_store.dart）、学校单位始终显示（chaoxing_settings_sheet.dart）、主账号与登录已失效（chaoxing_accounts.dart）、账号管理（chaoxing_account_sheet.dart）、标签（chaoxing_tag_sheet.dart）、群聊先列群（chaoxing_group_page.dart）、人脸照片先重处理（chaoxing_face_sheet.dart）、代签码只带真实设备码（chaoxing_delegate_controller.dart）、首页入口排列、刷新只留下拉与加载只显示一处（chaoxing_page.dart）、超时（chaoxing_client.dart）、验证码先自动试一次（chaoxing_captcha.dart）、刷新不挡活动列表、按 status 分进行中和往期、改单位或客户端清空重拉、签完只重拉这门课（chaoxing_controller.dart）、推断用哪份课表与按这节课算（chaoxing_lessons.dart）、活动名与类型名相同只显示一个（chaoxing_models.dart）。
+- 标记位于：签到码与手势输错的反馈（chaoxing_code_cells.dart、chaoxing_gesture_field.dart）、往期提示（chaoxing_sign_notices.dart）、预检弹窗与签完问收藏（chaoxing_sign_sheet.dart）、地图默认选点与定位提示（chaoxing_map_page.dart）、收藏管理（chaoxing_location_sheet.dart）、账号说明只标例外（chaoxing_store.dart）、学校单位始终显示（chaoxing_settings_sheet.dart）、主账号与登录已失效（chaoxing_accounts.dart）、账号管理（chaoxing_account_sheet.dart）、标签（chaoxing_tag_sheet.dart）、群聊先列群（chaoxing_group_page.dart）、人脸照片先重处理（chaoxing_face_sheet.dart）、代签码只带真实设备码（chaoxing_delegate_controller.dart）、首页入口排列、刷新只留下拉与加载只显示一处（chaoxing_page.dart）、超时（chaoxing_client.dart）、验证码先自动试一次（chaoxing_captcha.dart）、刷新不挡活动列表、按 status 分进行中和往期、改单位或客户端清空重拉、签完只重拉这门课（chaoxing_controller.dart）、推断用哪份课表与按这节课算（chaoxing_lessons.dart）、活动名与类型名相同只显示一个（chaoxing_models.dart）。
