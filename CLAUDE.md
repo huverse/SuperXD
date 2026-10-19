@@ -20,7 +20,7 @@
 - 静态检查与测试：PUB_HOSTED_URL=https://pub.dev flutter analyze；PUB_HOSTED_URL=https://pub.dev flutter test test/<文件>.dart，必要时去掉文件名跑全量。本机默认镜像会改写 pubspec.lock，所以 flutter 命令一律加这个前缀，提交前确认 pubspec.lock 没变。
 - 运行：flutter run 默认是 production flavor（开发包，与 Alpha 包并装、数据不共享）。私信与代签要 --dart-define=SUPERXD_RELAY=<中转地址>，地图要 --dart-define=SUPERXD_AMAP_KEY=<key>，两者都不写进源码。
 - 服务端：cd server，docker compose -f docker-compose.test.yml up -d --wait 起测试库后 npm test；npm run typecheck。
-- 打包与发版见 CONTRIBUTING.md，只在维护者明确批准后进行。
+- 发版由流水线 .github/workflows/release.yml 完成：升版本 PR 合并到 main 触发，维护者在网页批准后才构建与发布；约定与本机构建见 CONTRIBUTING.md。
 
 # 分层与依赖方向
 
@@ -100,17 +100,18 @@
 
 # 测试
 
-- 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由），每次都跑。
+- 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
 - 共用的测试支撑：fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、toolbox_test_support.dart、form_layout_support.dart、app_update_fakes.dart、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
-- tool 下的手动入口不进 CI，运行方式见各文件头：
+- tool 下的手动入口不进 CI（发版两个工具由发版流水线调用），运行方式见各文件头：
   - 访问真实服务，只在授权环境与授权账号上手动运行：verify_edu.dart、verify_grades.dart（教务）、verify_chaoxing.dart（学习通，输出脱敏）。
   - 经真实中转、只用合成数据：verify_social.dart、verify_chaoxing_pack.dart。
   - 设备与原生验证：verify_toolbox.dart（原生下载导出）、verify_chaoxing_map.dart（高德选点，要 SUPERXD_AMAP_KEY）、motion_release_test.dart（发布包的图标字体）。
-  - 生成与演示：release_manifest.dart（发版生成更新清单）、readme_demo.dart（README 截图）、font_previews.dart（字体预览图）、schedule_smoke.dart、glass_preview.dart、motion_preview.dart。
+  - 发版：release_changelog.dart（从 CHANGELOG 取更新说明与 Release 正文，正文模板 release_body.md）、release_manifest.dart（生成更新清单）。
+  - 生成与演示：readme_demo.dart（README 截图）、font_previews.dart（字体预览图）、schedule_smoke.dart、glass_preview.dart、motion_preview.dart。
 
 # 已知约束
 
 - 平台：只有 Android 宿主，最低 Android 11（系统 SQLite 3.28，原因与守护见 android/app/build.gradle.kts 的人工决策），验证以模拟器（API 36、API 34）为主，只在少数真机上走过部分功能，iOS 未验收。原生通道在 android/app/src 下（入口 MainActivity.kt），各自登记在使用它的模块 CLAUDE.md。
 - 对外开放文件只经两个 FileProvider：CalendarFileProvider（缓存 calendar_export 文件夹）与 AppUpdateFileProvider（缓存 app_update 文件夹，清单声明 REQUEST_INSTALL_PACKAGES）。
-- release 包开启 R8：不带混淆规则的原生 SDK（目前是高德）要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件（如高德定位的 APSService）还要自己在清单里声明，test/legal_page_test.dart 守护规则。CI 只跑测试不打 release 包，发布前要在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
+- release 包开启 R8：不带混淆规则的原生 SDK（目前是高德）要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件（如高德定位的 APSService）还要自己在清单里声明，test/legal_page_test.dart 守护规则。CI 只跑测试；release 包由发版流水线构建，正式发版前可先试跑，用试跑产物在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
 - 暂不改动的事项（只被测试使用的公开方法、性能观察项、单校写死）记在对应模块 CLAUDE.md 的关键规则里，改动前先看。
