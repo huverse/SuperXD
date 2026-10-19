@@ -247,6 +247,9 @@ void main() {
     expect(find.text('密码'), findsOneWidget);
     await login(tester);
     expect(find.text('高等数学'), findsOneWidget);
+    // 首页账号卡的手机号打码（人工决策见 chaoxingMaskedPhone）。
+    expect(find.bySemanticsLabel(RegExp(r'138\*\*\*\*8000')), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('13800138000')), findsNothing);
     expect(find.textContaining('签到码签到'), findsOneWidget);
 
     await openSignSheet(tester);
@@ -1834,7 +1837,7 @@ void main() {
     expect(find.textContaining('截止 '), findsNothing);
     await show(activity(null, now.add(const Duration(minutes: 10))));
     expect(freshBadge, findsNothing);
-    expect(find.text('截止 ${formatCampusTimestamp(now.add(const Duration(minutes: 10)).toIso8601String())}'), findsOneWidget);
+    expect(find.text('截止 ${formatCampusRelative(now.add(const Duration(minutes: 10)).toIso8601String())}'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 

@@ -635,8 +635,10 @@ class CampusSheetRoute<T> extends ModalBottomSheetRoute<T> with CampusOverlayDep
   }) : super(isScrollControlled: true, useSafeArea: true, backgroundColor: Colors.transparent, elevation: 0);
 }
 
+// 同弹窗与菜单挂根导航器：遮罩盖住底栏，弹层开着时切不了分支，返回键先关弹层
+// （挂在分支导航器上时遮罩盖不到底栏，开着弹层切走再切回，返回键会直接退出应用）。
 Future<T?> showCampusSheet<T>({required BuildContext context, required WidgetBuilder builder}) {
-  final navigator = Navigator.of(context);
+  final navigator = Navigator.of(context, rootNavigator: true);
   final localizations = MaterialLocalizations.of(context);
   return navigator.push(CampusSheetRoute<T>(
     builder: builder,

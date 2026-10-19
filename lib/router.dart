@@ -33,7 +33,10 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
   }
   final rootKey = GlobalKey<NavigatorState>();
   final generation = session.generation;
-  return GoRouter(
+  // 课表页「去同步」：回到今天页、由今天页打开同步范围（人工决策见 today_page.dart 的 TodaySyncRequest）。
+  final todaySync = TodaySyncRequest();
+  late final GoRouter router;
+  return router = GoRouter(
     navigatorKey: rootKey,
     initialLocation: '/boot',
     refreshListenable: session,
@@ -75,7 +78,10 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       GoRoute(
         path: '/schedule',
         parentNavigatorKey: rootKey,
-        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: SchedulePage(gateway: gateway, reminders: reminders, social: social)),
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: SchedulePage(gateway: gateway, reminders: reminders, social: social, onSync: (year) {
+          todaySync.request(year: year);
+          router.go('/today');
+        })),
       ),
       GoRoute(
         path: '/grades', parentNavigatorKey: rootKey,
@@ -86,7 +92,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
         navigatorContainerBuilder: (context, shell, children) => AnimatedBranches(index: shell.currentIndex, children: children),
         pageBuilder: (context, state, navigationShell) => campusPage(key: state.pageKey, child: LegacyImportGate(session: session, child: ShellPage(navigationShell: navigationShell, social: social))),
         branches: [
-          StatefulShellBranch(routes: [GoRoute(path: '/today', builder: (context, state) => TodayPage(gateway: gateway, onSessionExpired: () => session.expire(generation), isAccountCurrent: () => session.generation == generation && session.loggedIn))]),
+          StatefulShellBranch(routes: [GoRoute(path: '/today', builder: (context, state) => TodayPage(gateway: gateway, onSessionExpired: () => session.expire(generation), isAccountCurrent: () => session.generation == generation && session.loggedIn, syncRequest: todaySync))]),
           StatefulShellBranch(routes: [GoRoute(path: '/service', builder: (context, state) => const ServicePage())]),
           StatefulShellBranch(routes: [GoRoute(path: '/message', builder: (context, state) => MessagePage(social: social, gateway: gateway, openVideo: openVideo))]),
           StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, social: social, updates: updates))]),

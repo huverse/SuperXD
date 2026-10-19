@@ -34,6 +34,25 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/gateway_code.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 
+// [人工决策-2026-10-19 17:55:48] 别的页面要同步时（课表页「去同步」）只把人带回今天页、在这里打开同步范围并预选那一学年（用户选定）：
+// 同步入口仍只有今天页与成绩页，不另起同步实例。由组合根（router.dart）创建、交给两个页面。
+class TodaySyncRequest extends ChangeNotifier {
+  String? _year;
+  bool _pending = false;
+
+  void request({String? year}) {
+    _year = year;
+    _pending = true;
+    notifyListeners();
+  }
+
+  ({String? year})? take() {
+    if (!_pending) return null;
+    _pending = false;
+    return (year: _year);
+  }
+}
+
 class TodayPage extends StatefulWidget {
   const TodayPage({
     super.key,
@@ -41,11 +60,13 @@ class TodayPage extends StatefulWidget {
     this.onSessionExpired,
     this.isAccountCurrent,
     this.now,
+    this.syncRequest,
   });
   final CampusGateway gateway;
   final Future<void> Function()? onSessionExpired;
   final bool Function()? isAccountCurrent;
   final DateTime Function()? now;
+  final TodaySyncRequest? syncRequest;
 
   @override
   State<TodayPage> createState() => _TodayPageState();
@@ -176,48 +197,25 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     return _nexts[after] = next;
   }
 
-  // 今天页单击有课卡：只读详情（当天时段、地点、教师、学分与这门课的全部上课时段）；编辑仍只在课表页。
-  Future<void> _openCourse(PeriodSpan span) async {
+  // 今天页单击有课卡：只读详情（见 course_cards.dart 的 showCourseDetail）；编辑只在课表页。
+  Future<void> _openCourse(PeriodSpan span) {
     HapticFeedback.selectionClick();
-    final key = courseKey(span.course!);
-    final course = _schedule!.courses.firstWhere((course) => courseKey(course) == key, orElse: () => span.course!);
-    final time = meetingTime(_bells, span.meeting!);
-    // 次要色在弹层自己的 builder 里取，弹层开着时切深浅色也跟着变。
-    await showCampusSheet<void>(context: context, builder: (context) {
-      final secondary = TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant);
-      return CampusSheetPanel(child: SingleChildScrollView(
-      padding: const EdgeInsets.fromLTRB(20, 12, 8, 20),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
-        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(child: Padding(padding: const EdgeInsets.only(top: 10), child: Text(course.courseName, style: Theme.of(context).textTheme.titleLarge))),
-          IconButton(tooltip: '关闭', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.close)),
-        ]),
-        Text('第${span.start}–${span.end}节${time == null ? '' : ' · ${time.label}'}', style: secondary),
-        const SizedBox(height: 16),
-        Padding(padding: const EdgeInsets.only(right: 12), child: Table(
-          columnWidths: const {0: IntrinsicColumnWidth(), 1: FlexColumnWidth()},
-          children: [
-            for (final (label, value) in [('地点', span.meeting!.place), ('教师', course.teacherName), ('学分', '${course.credit}')])
-              if (value.isNotEmpty) TableRow(children: [
-                Padding(padding: const EdgeInsets.fromLTRB(0, 6, 16, 6), child: Text(label, style: secondary)),
-                Padding(padding: const EdgeInsets.symmetric(vertical: 6), child: Text(value, style: const TextStyle(fontSize: 16))),
-              ]),
-          ],
-        )),
-        const SizedBox(height: 16),
-        Text('上课时段', style: Theme.of(context).textTheme.titleMedium),
-        const SizedBox(height: 4),
-        for (final meeting in course.meetings) Padding(padding: const EdgeInsets.fromLTRB(0, 4, 12, 4), child: DotSeparatedText(meetingLabel(meeting), style: const TextStyle(fontSize: 14, height: 1.5))),
-      ]),
-    ));
-    });
+    return showCourseDetail(context, span: span, courses: _schedule!.courses, bells: _bells);
   }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.syncRequest?.addListener(_onSyncRequest);
     _refresh();
+  }
+
+  // 只在今天页看得见时接请求；切回来之前到的，由重新可见时接着处理。
+  void _onSyncRequest() {
+    if (!mounted || _branchActive != true) return;
+    final request = widget.syncRequest?.take();
+    if (request != null) unawaited(_chooseSync(initialYear: request.year));
   }
 
   @override
@@ -235,6 +233,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     if (reactivated) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
         if (!mounted) return;
+        _onSyncRequest();
         if (!_syncing) await _refresh();
         await _showPendingReport();
       });
@@ -252,6 +251,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
   @override
   void dispose() {
     _clock?.removeListener(_tick);
+    widget.syncRequest?.removeListener(_onSyncRequest);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -357,11 +357,11 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     if (saved != null && mounted) await _refresh();
   }
 
-  Future<void> _chooseSync() async {
+  Future<void> _chooseSync({String? initialYear}) async {
     if (_syncing || _choosing) return;
     _choosing = true;
     try {
-      final selected = await chooseSyncSelection(context, widget.gateway);
+      final selected = await chooseSyncSelection(context, widget.gateway, initialYear: initialYear);
       if (selected != null && mounted) await _sync(selected);
     } finally {
       _choosing = false;
@@ -466,7 +466,17 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         child: FilledButton.icon(style: campusProminent, onPressed: _pickStart, icon: const CampusIcon(CampusIcons.termStart), label: const Text('设置开学日')),
       );
     } else if (!_knownSchedule) {
-      content = const Center(child: Text('尚未同步课表'));
+      // 空状态原地给下一步（HIG、Material 的空状态写法）：顶栏的「同步」离得远，第一次打开的人不一定看得到。
+      content = Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Text('尚未同步课表'),
+            const SizedBox(height: 12),
+            FilledButton.icon(style: campusProminent, onPressed: _syncing || _choosing ? null : _chooseSync, icon: const CampusIcon(CampusIcons.sync), label: const Text('同步课表')),
+          ],
+        ),
+      );
     } else if (!_covered(day)) {
       content = Center(
         child: Column(
@@ -699,7 +709,7 @@ class _ClassNow extends StatelessWidget {
     final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
     final course = focus.course!;
     final place = focus.meeting!.place;
-    final status = '${moment.ongoing ? '上课中' : '下一节'} · 第${focus.start}–${focus.end}节';
+    final status = '${moment.ongoing ? '上课中' : '下一节'} · ${periodLabel(focus.start, focus.end)}';
     final remaining = classDuration(moment.remainingMinutes);
     final suffix = moment.ongoing ? '后下课' : '后上课';
     final soon = !moment.ongoing && moment.remainingMinutes <= _soonMinutes;
@@ -774,9 +784,11 @@ class _ClassNow extends StatelessWidget {
     if (next == null) return (key: 'rest:$status', content: headline, spoken: status, onTap: null);
     final target = parseIsoDate(next.date);
     final offset = target.difference(parseIsoDate(today)).inDays;
-    final day = switch (offset) { 1 => '明天', 2 => '后天', < 7 => '周${weekdayLabel(target.weekday)}', _ => '${target.month}月${target.day}日' };
+    // [人工决策-2026-10-19 17:55:48] 跨到下周的写「下周一」（用户选定）：以前按离今天几天算，周六看到「10月26日」其实就是后天周一、周五看到「周一」分不清是哪周。
+    final week = parseIsoDate(mondayOf(next.date)).difference(parseIsoDate(mondayOf(today))).inDays ~/ 7;
+    final day = switch (offset) { 1 => '明天', 2 => '后天', _ when week == 0 => '周${weekdayLabel(target.weekday)}', _ when week == 1 => '下周${weekdayLabel(target.weekday)}', _ => '${target.month}月${target.day}日' };
     final early = offset == 1 && next.meeting.periodStart == 1;
-    final time = meetingTime(bells, next.meeting)?.startLabel ?? '第${next.meeting.periodStart}–${next.meeting.periodEnd}节';
+    final time = meetingTime(bells, next.meeting)?.startLabel ?? periodLabel(next.meeting.periodStart, next.meeting.periodEnd);
     final when = '${early ? '明天早八' : day} $time';
     final place = next.meeting.place;
     final content = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

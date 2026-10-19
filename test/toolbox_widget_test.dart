@@ -107,7 +107,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('短视频去水印解析【聚合】'), findsOneWidget);
+    expect(find.text('短视频解析'), findsOneWidget);
     expect(find.byTooltip('下载资源'), findsNothing);
     expect(find.byTooltip('管理资源'), findsNothing);
     await tester.pumpWidget(const SizedBox());
@@ -611,7 +611,7 @@ void main() {
       MaterialApp.router(theme: campusTheme(), routerConfig: router),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('短视频去水印解析【聚合】'));
+    await tester.tap(find.text('短视频解析'));
     await tester.pump();
     await waitForWidget(tester, find.byType(TextField));
     await tester.pumpAndSettle();

@@ -55,6 +55,10 @@ const chaoxingNotPackTicketMessage = '这不是学习通代签二维码';
 const chaoxingScanCancelledMessage = '扫码已取消';
 
 // 一个人签到成功后的提示（迟到按截止时间判断）。
+// [人工决策-2026-10-19 17:55:48] 首页账号卡与切换账号列表里的手机号打码（用户选定，同微信、支付宝）：帮同学签到时屏幕常给别人看、被截图；
+// 账号管理弹层里仍写完整号码。
+String chaoxingMaskedPhone(String phone) => phone.length >= 7 ? '${phone.substring(0, 3)}****${phone.substring(phone.length - 4)}' : phone;
+
 String chaoxingSignedText({required bool late}) => late ? '签到成功，不过已经迟到' : '签到成功';
 
 enum ChaoxingSignType {

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
+import 'package:screen_brightness/screen_brightness.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/qr_scan_page.dart';
@@ -74,12 +75,20 @@ class _FriendAddPageState extends State<FriendAddPage> {
     _known = {for (final friend in _social.friends) friend.deviceId};
     _social.addListener(_detectNew);
     _create();
+    // [人工决策-2026-10-19 17:55:48] 出示二维码时把本页屏幕亮度调到最高、离开恢复（用户选定，同微信付款码；只改本应用窗口，不需要权限）：
+    // 手机亮度低或环境暗时对方不容易扫出来。调不了（测试、系统不支持）只记日志。
+    _brightness(() => ScreenBrightness.instance.setApplicationScreenBrightness(1));
   }
+
+  void _brightness(Future<void> Function() change) => change().catchError((Object error, StackTrace stack) {
+    campusLog('[FriendAdd] action=brightness errorType=${error.runtimeType}\n$stack');
+  });
 
   @override
   void dispose() {
     _social.removeListener(_detectNew);
     _ticker?.cancel();
+    _brightness(ScreenBrightness.instance.resetApplicationScreenBrightness);
     final code = _code;
     if (code != null && _remaining > 0) unawaited(_social.revokeInvite(code.inviteId));
     super.dispose();

@@ -8,6 +8,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/grades_page.dart';
+import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -118,7 +119,9 @@ void main() {
     await reveal(tester, name);
     await tester.tap(name);
     await tester.pumpAndSettle();
-    expect(find.text('原始成绩记录 · 2'), findsOneWidget);
+    // 原始成绩每条一组（第 1 条、第 2 条），每项一行。
+    expect(find.text('原始成绩'), findsOneWidget);
+    expect(find.text('第 2 条'), findsOneWidget);
     // 多条原始记录全部列出，不再加一句口径说明。
     expect(find.textContaining('不推断重修替代关系'), findsNothing);
     expect(tester.takeException(), isNull);
@@ -236,6 +239,12 @@ void main() {
     await reveal(tester, find.text('测试数学'));
     expect(row('测试数学，成绩 90，学分 2，绩点 4'), findsOneWidget);
     expect(tester.getCenter(find.text('90')).dx, greaterThan(tester.getCenter(find.text('测试数学')).dx));
+    // 不及格：分数用警示色并写明「不及格」，不只靠颜色；「合格」不算。
+    await reveal(tester, find.text('测试零分'));
+    expect(row('测试零分，成绩 0，学分 1，绩点 教务未提供，不及格'), findsOneWidget);
+    expect(tester.widget<Text>(find.text('0')).style!.color, CampusPalette.of(tester.element(find.text('0'))).danger);
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && (widget.properties.label ?? '').startsWith('测试体育') && (widget.properties.label ?? '').contains('不及格')), findsNothing);
+    await reveal(tester, find.text('测试数学'));
     // 课程代码只在详情里，列表不再单列一行。
     expect(find.text('C1'), findsNothing);
     await reveal(tester, find.widgetWithText(FilledButton, '筛选'));
@@ -244,12 +253,12 @@ void main() {
     await tester.tap(find.descendant(of: find.byType(CampusSheetPanel), matching: find.text('原始成绩')));
     await tester.pumpAndSettle();
     expect(find.descendant(of: find.byType(CampusSheetPanel), matching: find.text('原始成绩')), findsOneWidget);
-    await tester.tap(find.descendant(of: find.byType(CampusSheetPanel), matching: find.text('课程名称')));
+    await tester.tap(find.descendant(of: find.byType(CampusSheetPanel), matching: find.text('按课程名')));
     await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('关闭'));
     await tester.pumpAndSettle();
     expect(find.widgetWithText(FilledButton, '筛选 2'), findsOneWidget);
-    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '原始成绩 · 显示 2 条 · 点击课程查看分项'), findsOneWidget);
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '原始成绩 · 显示 2 条'), findsOneWidget);
     expect(row('测试数学，总评 92，学分 2'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

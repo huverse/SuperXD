@@ -37,7 +37,7 @@ class ParseHistoryTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        '${gallery ? '图集' : '视频'} · ${providers[providerId]?.source.name ?? providerId} · ${formatCampusTimestamp(DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int, isUtc: true).toIso8601String())}',
+        '${gallery ? '图集' : '视频'} · ${providers[providerId]?.source.name ?? providerId} · ${formatCampusRelative(DateTime.fromMillisecondsSinceEpoch(row['created_at'] as int, isUtc: true).toIso8601String())}',
       ),
       trailing: trailing ?? const CampusIcon(CampusIcons.next),
       onTap: onTap,

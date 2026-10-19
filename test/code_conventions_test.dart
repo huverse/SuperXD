@@ -67,6 +67,30 @@ void main() {
     expect(offenders, isEmpty);
   });
 
+  // ⋯菜单里的破坏性项（删除、移除、清空、关闭私信）图标与文字用警示色，见设计语言第 9 节；曾漏标「删除好友」「关闭私信」与下载记录的「删除」。
+  // 选项来自列表、按值决定颜色的（下载管理）要在构造处写 destructive，这里只能查字面量。
+  test('⋯菜单里的破坏性项标了警示色', () {
+    final offenders = <String>[];
+    for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart'))) {
+      final source = file.readAsStringSync();
+      for (final match in RegExp(r'\bCampusMenuItem\(').allMatches(source)) {
+        var depth = 1;
+        var end = match.end;
+        while (depth > 0) {
+          final char = source[end++];
+          if (char == '(') depth++;
+          if (char == ')') depth--;
+        }
+        final item = source.substring(match.end, end);
+        final label = RegExp(r"label: '([^']*)'").firstMatch(item)?[1] ?? '';
+        if (RegExp('删除|移除|清空|关闭私信').hasMatch(label) && !item.contains('destructive: true')) {
+          offenders.add('${file.path}:${'\n'.allMatches(source.substring(0, match.start)).length + 1} $label');
+        }
+      }
+    }
+    expect(offenders, isEmpty);
+  });
+
   // 最低 Android 11，系统自带 SQLite 3.28（见 android/app/build.gradle.kts 的人工决策）。测试跑的是 sqflite_common_ffi 带的新版 SQLite，
   // 3.28 之后才有的写法在测试里照样通过、到真机上是语法错误，这里按关键字拦下；要用先对照 SQLite 版本并改最低系统版本。
   test('SQL不用SQLite 3.28之后才有的写法', () {

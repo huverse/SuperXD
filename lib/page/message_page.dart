@@ -12,17 +12,18 @@ import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_store.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
+import 'package:superxd/theme/campus_animated_list.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_refresh.dart';
-import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
-// 消息页：通知（暂未接入）与私信。私信是功能性的：只有好友之间的分享卡片，没有文字聊天。
+// 消息页：私信。私信是功能性的：只有好友之间的分享卡片，没有文字聊天。
+// [人工决策-2026-10-19 17:55:48] 去掉还没接入的「通知」分段，消息页只放私信，等真有通知来源再加回（用户选定：一直空着的入口像功能坏了）。
 class MessagePage extends StatefulWidget {
   const MessagePage({super.key, this.social, this.gateway, this.openVideo, this.scan = scanInviteWithCamera});
   // 为空表示本次运行未接入私信（测试或未配置中转服务）。
@@ -35,8 +36,6 @@ class MessagePage extends StatefulWidget {
 }
 
 class _MessagePageState extends State<MessagePage> {
-  // 通知尚未接入，默认停在私信。
-  int _index = 1;
   bool _visible = false;
 
   SocialService get _social => widget.social!;
@@ -81,7 +80,7 @@ class _MessagePageState extends State<MessagePage> {
   Future<void> _more(BuildContext anchor) async {
     final action = await showCampusMenu<String>(anchor, items: const [
       CampusMenuItem(value: 'rename', label: '修改昵称', icon: CampusIcons.edit),
-      CampusMenuItem(value: 'disable', label: '关闭私信', icon: CampusIcons.logout),
+      CampusMenuItem(value: 'disable', label: '关闭私信', icon: CampusIcons.logout, destructive: true),
     ]);
     if (!mounted) return;
     switch (action) {
@@ -105,19 +104,7 @@ class _MessagePageState extends State<MessagePage> {
     final social = widget.social;
     return Column(children: [
       const SectionTitleBar(title: '消息'),
-      Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: ListenableBuilder(
-        listenable: social ?? const AlwaysStoppedAnimation(0),
-        builder: (context, _) => CampusSegmented<int>(
-          values: const [0, 1], selected: _index, onSelected: (index) => setState(() => _index = index),
-          label: (index) => index == 0 ? '通知' : (social?.unread ?? 0) > 0 ? '私信 ${social!.unread > 99 ? '99+' : social.unread}' : '私信',
-        ),
-      )),
-      Expanded(child: _index == 0
-          ? Padding(
-              padding: EdgeInsets.only(bottom: MediaQuery.paddingOf(context).bottom),
-              child: Center(child: Text('还没有通知', style: TextStyle(fontSize: 16, color: CampusPalette.of(context).onSurface))),
-            )
-          : social == null
+      Expanded(child: social == null
           ? const _CenteredText('当前版本未配置私信服务')
           : ListenableBuilder(listenable: social, builder: (context, _) => switch (social.status) {
               SocialStatus.loading => const Center(child: CampusLoading(label: '读取私信')),
@@ -247,8 +234,9 @@ class _FriendList extends StatelessWidget {
             Padding(padding: const EdgeInsets.only(top: 48), child: Center(child: Text('还没有好友，点“添加好友”面对面扫码', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: colors.onSurface))))
           else
             // 多行卡片去掉横向内边距，行自带 20 边距：按下变暗时整行铺满卡片宽度（同“我的”页）。
-            CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
-              for (final friend in friends) _FriendRow(friend: friend, onTap: () => onOpen(friend.deviceId)),
+            // 加了或删了好友时那一行原地展开、收起（人工决策见 campus_animated_list.dart）。
+            CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: CampusAnimatedColumn(children: [
+              for (final friend in friends) KeyedSubtree(key: ValueKey(friend.deviceId), child: _FriendRow(friend: friend, onTap: () => onOpen(friend.deviceId))),
             ])),
         ])),
       ],

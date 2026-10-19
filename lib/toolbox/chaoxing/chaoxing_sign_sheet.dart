@@ -824,6 +824,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     if (!mounted || !_batch.allSucceeded) return;
     final succeeded = _batch.targets.where((target) => target.selected && target.done).toList();
     if (succeeded.isEmpty) return;
+    // [人工决策-2026-10-19 17:55:48] 签到成功、保存课程、导入课表这几个关键结果轻触一次（用户选定，同 iOS 的成功触感；Android 11 起是系统的确认触感）。
+    HapticFeedback.successNotification();
     Navigator.pop(context, ChaoxingSignSummary(succeeded: succeeded.length, late: succeeded.any((target) => target.late)));
   }
 
@@ -951,7 +953,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         const SizedBox(height: 4),
         DotSeparatedText(_activity.displayTitle, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
         // 时间单独一行：完整的日期时间跟在活动名后面会被折断。
-        Text(_windowText(), style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+        _SignWindow(activity: _activity, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
         ChaoxingTimeNotice(activity: _activity),
         ChaoxingSignOutNotice(info: info, onOpenRelated: _busy ? null : _openRelated),
         if (_needsLocation) ...[
@@ -1274,10 +1276,45 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       ],
     ),
   );
+}
 
-  String _windowText() {
-    final end = _activity.endTime;
-    if (end == null) return _activity.ongoing ? '进行中' : '已结束';
-    return '截止 ${formatCampusTimestamp(end.toIso8601String())}';
+// 签到的时间行：「截止 今天 17:45 · 还剩 9 分钟」（同此刻卡的倒计时）；一天以内才写还剩多久，弹层开着时每 30 秒自己刷新，不重建整个弹层。
+class _SignWindow extends StatefulWidget {
+  const _SignWindow({required this.activity, required this.style});
+  final ChaoxingActivity activity;
+  final TextStyle style;
+
+  @override
+  State<_SignWindow> createState() => _SignWindowState();
+}
+
+class _SignWindowState extends State<_SignWindow> {
+  Timer? _tick;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.activity.endTime != null) _tick = Timer.periodic(const Duration(seconds: 30), (_) => setState(() {}));
+  }
+
+  @override
+  void dispose() {
+    _tick?.cancel();
+    super.dispose();
+  }
+
+  static String _left(Duration left) {
+    final minutes = (left.inSeconds / 60).ceil();
+    if (minutes < 60) return '$minutes 分钟';
+    return minutes % 60 == 0 ? '${minutes ~/ 60} 小时' : '${minutes ~/ 60} 小时 ${minutes % 60} 分钟';
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final end = widget.activity.endTime;
+    if (end == null) return Text(widget.activity.ongoing ? '进行中' : '已结束', style: widget.style);
+    final left = end.difference(DateTime.now().toUtc());
+    final deadline = '截止 ${formatCampusRelative(end.toIso8601String())}';
+    return DotSeparatedText(left > Duration.zero && left < const Duration(days: 1) ? '$deadline · 还剩 ${_left(left)}' : deadline, style: widget.style);
   }
 }

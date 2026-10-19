@@ -44,6 +44,8 @@ class AccountPage extends StatefulWidget {
 class _AccountPageState extends State<AccountPage> {
   bool _busy = false;
   bool? _remembered;
+  // [人工决策-2026-10-19 17:55:48] 「导入旧版本数据」只在本机检测到可导入的旧数据时显示（用户选定；位置仍按 10-05 那条，在这一组里）。
+  bool _legacy = false;
 
   @override
   void initState() {
@@ -52,10 +54,12 @@ class _AccountPageState extends State<AccountPage> {
   }
 
   Future<void> _load() async {
-    var remembered = false;
+    var remembered = false, legacy = false;
     try { remembered = await widget.session.gateway.isRemembered(); }
     catch (error, stack) { campusLog('[RememberAccount] action=read errorType=${error.runtimeType}\n$stack'); }
-    if (mounted) setState(() => _remembered = remembered);
+    try { legacy = (await widget.session.gateway.legacyImportState()).available; }
+    catch (error, stack) { campusLog('[LegacyImport] action=state errorType=${error.runtimeType}\n$stack'); }
+    if (mounted) setState(() { _remembered = remembered; _legacy = legacy; });
   }
 
   Future<void> _forget() async {
@@ -143,7 +147,15 @@ class _AccountPageState extends State<AccountPage> {
               enabled: !_busy, onTap: switch (remembered) { null => null, true => _forget, false => _remember },
             ),
             ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.switchAccount), trailing: const CampusIcon(CampusIcons.next), title: const Text('切换账号'), enabled: !_busy, onTap: () => context.push('/switch-account')),
-            ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.download), trailing: const CampusIcon(CampusIcons.next), title: const Text('导入旧版本数据'), enabled: !_busy, onTap: () => showLegacyImport(context, widget.session)),
+            // 读到有旧数据才展开这一行，导入后收起（不在到达时突然把下面的内容顶下去）。
+            AnimatedSize(
+              duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 200),
+              curve: Curves.easeOutCubic,
+              child: !_legacy ? const SizedBox(width: double.infinity) : ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.download), trailing: const CampusIcon(CampusIcons.next), title: const Text('导入旧版本数据'), enabled: !_busy, onTap: () async {
+                await showLegacyImport(context, widget.session);
+                if (mounted) await _load();
+              }),
+            ),
           ])),
           const SizedBox(height: 16),
           CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: ListTile(

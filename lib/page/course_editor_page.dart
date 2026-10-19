@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
 
 import 'package:superxd/theme/campus_glass_button.dart';
@@ -48,7 +49,7 @@ class CourseEditorPage extends StatefulWidget {
 
 class _CourseEditorPageState extends State<CourseEditorPage> {
   late final _initialName = widget.group.firstOrNull?.courseName ?? '';
-  late final _initialCredit = widget.group.firstOrNull?.credit?.toString() ?? '';
+  late final _initialCredit = switch (widget.group.firstOrNull?.credit) { final credit? => creditLabel(credit), null => '' };
   late final _name = TextEditingController(text: _initialName);
   late final _credit = TextEditingController(text: _initialCredit);
   late List<CourseSlot> _slots = [...courseSlots(widget.group), ?widget.slot];
@@ -146,6 +147,8 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
       final error = await widget.onSave(records);
       if (!mounted) return;
       if (error == null) {
+        // 成功轻触一次（人工决策见 chaoxing_sign_sheet.dart 的 _finishIfDone）。
+        HapticFeedback.successNotification();
         setState(() => _leaving = true);
         Navigator.pop(context, true);
       } else {
@@ -455,6 +458,58 @@ class _SlotDialogState extends State<_SlotDialog> {
     ));
   }
 
+  // 快捷选周：当前选择正好是全部、单周、双周或一周没选时，那一项显示选中（同一时刻最多一项，不像以前三个都带勾）。
+  Set<int> _preset(String choice) => {
+    for (var week = 1; week <= _visibleWeeks; week++)
+      if (choice == '全选' || choice == '单周' && week.isOdd || choice == '双周' && week.isEven) week,
+  };
+
+  Widget _weekPresets() => Wrap(spacing: 8, runSpacing: 8, children: [
+    for (final choice in ['全选', '单周', '双周', '清空'])
+      CampusGlassChip(
+        label: choice,
+        selected: _weeks.length == _preset(choice).length && _weeks.containsAll(_preset(choice)),
+        onSelected: (_) => setState(() => _weeks = _preset(choice)),
+      ),
+  ]);
+
+  // [人工决策-2026-10-19 18:51:59] 周次改等宽网格、选中填激活色，快捷选周不带勾、只亮正好匹配的那一项（用户从带勾标签、网格填色、网格描边三种实物中选定）：
+  // 以前「全选、单周、双周」的勾号与已选周次一模一样、三个看着同时选中，周次选中后多出勾号变宽，一行 4 个、一行 5 个对不齐。
+  // 周次网格：等宽格子按列对齐（每格至少 40 宽、48 高），一眼数得出第几周；选中只改底色，不加勾号、不变宽。
+  Widget _weekGrid() => LayoutBuilder(builder: (context, constraints) {
+    final palette = CampusPalette.of(context);
+    final scale = MediaQuery.textScalerOf(context).scale(14) / 14;
+    const gap = 6.0;
+    final columns = ((constraints.maxWidth + gap) / (40 * scale + gap)).floor().clamp(4, 10);
+    final width = (constraints.maxWidth - gap * (columns - 1)) / columns;
+    return Wrap(spacing: gap, runSpacing: gap, children: [
+      for (var week = 1; week <= _visibleWeeks; week++)
+        Builder(builder: (context) {
+          final selected = _weeks.contains(week);
+          return Semantics(
+            button: true,
+            selected: selected,
+            label: '第$week周',
+            excludeSemantics: true,
+            child: Material(
+              color: selected ? palette.accent : palette.onSurface.withValues(alpha: .06),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              child: InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => setState(() => selected ? _weeks.remove(week) : _weeks.add(week)),
+                child: SizedBox(width: width, height: 48, child: Center(child: Text('$week', style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: selected ? FontWeight.w600 : FontWeight.w500,
+                  color: selected ? Colors.white : palette.onSurface,
+                  fontFeatures: const [FontFeature.tabularFigures()],
+                )))),
+              ),
+            ),
+          );
+        }),
+    ]);
+  });
+
   @override
   Widget build(BuildContext context) => CampusGlassDialog(
     title: const Text('上课时段'),
@@ -549,44 +604,10 @@ class _SlotDialogState extends State<_SlotDialog> {
                 weeksLabel(_weeks.toList()),
                 style: const TextStyle(fontSize: 14),
               ),
-              Wrap(
-                spacing: 4,
-                runSpacing: 8,
-                children: [
-                  for (final choice in ['全选', '单周', '双周', '清空'])
-                    TextButton.icon(
-                      onPressed: () => setState(
-                        () => _weeks = {
-                          for (var week = 1; week <= _visibleWeeks; week++)
-                            if (choice == '全选' ||
-                                choice == '单周' && week.isOdd ||
-                                choice == '双周' && week.isEven)
-                              week,
-                        },
-                      ),
-                      icon: CampusIcon(choice == '清空' ? CampusIcons.close : CampusIcons.check),
-                      label: Text(choice),
-                    ),
-                ],
-              ),
-              Wrap(
-                spacing: 6,
-                runSpacing: 8,
-                children: [
-                  for (var week = 1; week <= _visibleWeeks; week++)
-                    CampusGlassChip(
-                      label: '$week',
-                      selected: _weeks.contains(week),
-                      onSelected: (selected) => setState(() {
-                        if (selected) {
-                          _weeks.add(week);
-                        } else {
-                          _weeks.remove(week);
-                        }
-                      }),
-                    ),
-                ],
-              ),
+              const SizedBox(height: 8),
+              _weekPresets(),
+              const SizedBox(height: 12),
+              _weekGrid(),
               if (_visibleWeeks < maxScheduleWeeks)
                 TextButton.icon(
                   onPressed: () => setState(
@@ -616,7 +637,8 @@ class _SlotDialogState extends State<_SlotDialog> {
         onPressed: () => Navigator.pop(context),
         child: const Text('取消'),
       ),
-      FilledButton(onPressed: _save, child: const Text('确定时段')),
+      // 只写「确定」：标题已是「上课时段」，四个字在 360dp、大字号下会折出孤字「段」。
+      FilledButton(onPressed: _save, child: const Text('确定')),
     ],
   );
 }

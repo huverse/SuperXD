@@ -100,7 +100,7 @@ math-curve-loaders（曲线加载动画设计）
 
 五、测试期临时图标
 
-应用启动图标使用动画《Charlotte》角色友利奈绪的画面，版权归原权利人所有（©VisualArt's/Key/Charlotte Project）。仅供测试期间临时使用，不随本项目以 GPL 授权，也不得从本项目中单独取用；正式版前替换为原创图标。如权利人要求，将立即移除。
+应用启动图标与“关于”页的图标（assets/app_icon.png）使用动画《Charlotte》角色友利奈绪的画面，版权归原权利人所有（©VisualArt's/Key/Charlotte Project）。仅供测试期间临时使用，不随本项目以 GPL 授权，也不得从本项目中单独取用；正式版前替换为原创图标。如权利人要求，将立即移除。
 
 
 六、许可证全文

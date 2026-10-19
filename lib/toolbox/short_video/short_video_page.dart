@@ -253,7 +253,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                           title: Text('${source.source.name} 参与自动解析'),
                           subtitle: Text(switch (controller.coordinator.statuses[source.source.id]) {
                             null => '本次运行尚未解析',
-                            final status => '${status.success ? '最近一次成功' : '最近一次未完成'} · ${formatCampusTimestamp(status.checkedAt.toUtc().toIso8601String())}',
+                            final status => '${status.success ? '最近一次成功' : '最近一次未完成'} · ${formatCampusRelative(status.checkedAt.toUtc().toIso8601String())}',
                           }),
                           value: controller.enabled.contains(source.source.id),
                           onChanged: (value) => controller

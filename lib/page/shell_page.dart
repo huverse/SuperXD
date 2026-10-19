@@ -24,44 +24,51 @@ class ShellPage extends StatelessWidget {
     final bottom = media.padding.bottom + 12;
     final reserved = keyboard ? 0.0 : barHeight + bottom + 12;
     // [人工决策-2026-09-29 04:01:38] 四项底栏悬浮于安全区之上；内容层延伸到玻璃下方透出，底栏占位作为底部安全区交给各页，末项滚到底仍停在底栏上方；拖动仍仅预览，松手提交一次。
-    return Scaffold(
-      backgroundColor: Colors.transparent,
-      body: Stack(
-        children: [
-          // 结构固定只换数据，键盘弹出时不重建分支导航状态。
-          Positioned.fill(
-            child: Builder(builder: (context) {
-              final body = MediaQuery.of(context);
-              return MediaQuery(
-                data: keyboard ? body : body.copyWith(padding: body.padding.copyWith(bottom: reserved), viewPadding: body.viewPadding.copyWith(bottom: reserved)),
-                child: navigationShell,
-              );
-            }),
-          ),
-          if (!keyboard)
-            Positioned(
-              left: 16,
-              right: 16,
-              bottom: bottom,
-              child: Center(
-                child: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 620),
-                  child: ListenableBuilder(
-                    listenable: social ?? const AlwaysStoppedAnimation(0),
-                    builder: (context, _) => DragNavigationBar(
-                      selected: navigationShell.currentIndex,
-                      badges: [0, 0, social?.unread ?? 0, 0],
-                      onSelected: (index) {
-                        if (index != navigationShell.currentIndex) {
-                          navigationShell.goBranch(index);
-                        }
-                      },
+    // [人工决策-2026-10-19 17:55:48] 在服务、消息、我的按返回键先回到「今天」，在「今天」再按才退出（用户选定，同 Material 底部导航与 Google 相册、YouTube）。
+    return PopScope(
+      canPop: navigationShell.currentIndex == 0,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) navigationShell.goBranch(0);
+      },
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          children: [
+            // 结构固定只换数据，键盘弹出时不重建分支导航状态。
+            Positioned.fill(
+              child: Builder(builder: (context) {
+                final body = MediaQuery.of(context);
+                return MediaQuery(
+                  data: keyboard ? body : body.copyWith(padding: body.padding.copyWith(bottom: reserved), viewPadding: body.viewPadding.copyWith(bottom: reserved)),
+                  child: navigationShell,
+                );
+              }),
+            ),
+            if (!keyboard)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: bottom,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 620),
+                    child: ListenableBuilder(
+                      listenable: social ?? const AlwaysStoppedAnimation(0),
+                      builder: (context, _) => DragNavigationBar(
+                        selected: navigationShell.currentIndex,
+                        badges: [0, 0, social?.unread ?? 0, 0],
+                        onSelected: (index) {
+                          if (index != navigationShell.currentIndex) {
+                            navigationShell.goBranch(index);
+                          }
+                        },
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-        ],
+          ],
+        ),
       ),
     );
   }

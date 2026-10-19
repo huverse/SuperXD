@@ -6,6 +6,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_prose.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/glass_panel.dart';
@@ -237,14 +238,16 @@ Future<bool> askLegalConsent(BuildContext context) async {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
+              // 编号要点悬挂缩进，折行后与正文对齐（CampusProse）。
+              const CampusProse(
                 '使用前请阅读《用户协议》和《隐私政策》，要点：\n'
                 '1. 课表、成绩主要存在本机，教务账号只发给学校教务系统。\n'
                 '2. 私信、代签凭据包与检查更新经开发者的自建中转，私信和凭据包都先在本机加密。\n'
                 '3. 百宝箱的第三方服务，只在你使用并同意后收到必要信息。\n'
                 '点「同意」即表示你已阅读并同意这两份文件。',
+                gap: 4,
               ),
-              const SizedBox(height: 8),
+              const SizedBox(height: 4),
               _legalLinks(context),
             ],
           ),
@@ -360,8 +363,11 @@ class LegalPage extends StatelessWidget {
                               style: Theme.of(context).textTheme.titleMedium,
                             ),
                             const SizedBox(height: 10),
-                            Text(
+                            // [人工决策-2026-10-19 18:51:59] 正文按行排版：段内小标题半粗、行间留白、编号悬挂缩进，文字不变（用户从整段文字、
+                            // 这一种与再分卡片三种实物中选定；分卡片后每行字数变少、折行更多）。
+                            CampusProse(
                               sections[index - 1].body,
+                              gap: 10,
                               style: TextStyle(
                                 fontSize: 16,
                                 height: 1.6,

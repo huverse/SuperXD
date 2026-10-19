@@ -131,7 +131,6 @@ void main() {
     expect(find.text('小明'), findsOneWidget);
     expect(find.text('[视频] 合成作品'), findsOneWidget);
     expect(find.text('2'), findsOneWidget);
-    expect(find.text('私信 2'), findsOneWidget);
     await tester.tap(find.text('小明'));
     // 进入会话后标记已读要写库，CI 曾在固定帧数内没写完（未读仍为 2）。
     await advanceUntil(tester, () => alice.unread == 0);
@@ -315,7 +314,8 @@ void main() {
     expect(find.text('周二 第1–4节 08:00–11:40'), findsOneWidget);
     await tester.tap(find.text('TA的课表'));
     await tester.pump();
-    expect(find.text('高等数学'), findsOneWidget);
+    // 格子窄时课名按字数均分到两行（「高等／数学」），不逐字甩出最后一个字。
+    expect(find.byWidgetPredicate((widget) => widget is Text && widget.data?.replaceAll('\n', '') == '高等数学'), findsOneWidget);
     expect(find.text('本周共同空闲'), findsNothing);
   });
 

@@ -102,7 +102,7 @@ class _ScheduleHistoryPageState extends State<ScheduleHistoryPage> {
   }
 
   String _dayLabel(String createdAt) {
-    final day = formatCampusTimestamp(createdAt).substring(0, 10);
+    final day = formatCampusDate(campusInstant(DateTime.parse(createdAt)));
     if (day == campusToday()) return '今天';
     if (day == formatCampusDate(campusNow().subtract(const Duration(days: 1)))) return '昨天';
     final parts = day.split('-').map(int.parse).toList();
@@ -114,7 +114,7 @@ class _ScheduleHistoryPageState extends State<ScheduleHistoryPage> {
     onTap: _loading ? null : () => _preview(row),
     leading: CampusIcon(_revisionIcon(row), color: palette.onSurfaceVariant),
     title: Text(_title(row)),
-    subtitle: Text(formatCampusTimestamp(row.createdAt).substring(11, 16), style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+    subtitle: Text(formatCampusClock(DateTime.parse(row.createdAt)), style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
     trailing: Row(mainAxisSize: MainAxisSize.min, children: [
       if (row.current) Text('当前', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
       const SizedBox(width: 4),
@@ -311,7 +311,7 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
     return [
       if (before.courseName != after.courseName) '课程名称：${before.courseName} → ${after.courseName}',
       if (before.teacherName != after.teacherName) '教师：${orEmpty(before.teacherName)} → ${orEmpty(after.teacherName)}',
-      if (before.credit != after.credit) '学分：${before.credit ?? '未填'} → ${after.credit ?? '未填'}',
+      if (before.credit != after.credit) '学分：${switch (before.credit) { final credit? => creditLabel(credit), null => '未填' }} → ${switch (after.credit) { final credit? => creditLabel(credit), null => '未填' }}',
       for (final label in beforeMeetings.difference(afterMeetings)) '去掉 $label',
       for (final label in afterMeetings.difference(beforeMeetings)) '加上 $label',
     ];

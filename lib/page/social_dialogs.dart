@@ -24,7 +24,7 @@ String socialErrorText(String? code) => switch (code) {
   _ => '操作未完成，请重试',
 };
 
-// 列表行里的时间：校园时区今天只显示钟点，其余显示月-日；会话里用完整时间 formatCampusTimestamp。
+// 列表行里的时间：校园时区今天只显示钟点，其余显示月-日；会话里按远近写到分钟（formatCampusRelative）。
 String socialShortTime(String iso) {
   final instant = DateTime.parse(iso);
   final day = formatCampusDate(campusInstant(instant));
