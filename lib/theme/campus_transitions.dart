@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import 'package:superxd/theme/campus_background.dart';
@@ -378,6 +379,103 @@ Future<T?> showCampusDialog<T>({required BuildContext context, required WidgetBu
 
 // 统一的玻璃弹窗：版式同 AlertDialog（标题、可滚动内容、右下操作），面板为 overlay 玻璃、圆角 24。
 // options 对应 SimpleDialog 的选项行，贴边排列、整体可滚动；solid 为真时固定实色（如验证码需要稳定底色）。
+// 弹窗操作区：两个以内按钮等宽并排；三个及以上，或并排时任一个按钮的文字在自己那一半里放不下，就竖排、主操作在最上
+// （调用处仍按“取消在前”书写，竖排时倒过来摆；读屏与焦点顺序照写的顺序）。放不放得下按按钮的最大固有宽度判断。
+class _CampusDialogActions extends MultiChildRenderObjectWidget {
+  const _CampusDialogActions({required this.stacked, required super.children});
+  final bool stacked;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderCampusDialogActions(stacked);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderCampusDialogActions renderObject) => renderObject.stacked = stacked;
+}
+
+class _DialogActionData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderCampusDialogActions extends RenderBox with ContainerRenderObjectMixin<RenderBox, _DialogActionData>, RenderBoxContainerDefaultsMixin<RenderBox, _DialogActionData> {
+  _RenderCampusDialogActions(this._stacked);
+  static const _rowGap = 12.0, _columnGap = 8.0;
+  bool _stacked;
+  set stacked(bool value) {
+    if (value == _stacked) return;
+    _stacked = value;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _DialogActionData) child.parentData = _DialogActionData();
+  }
+
+  List<RenderBox> get _children {
+    final children = <RenderBox>[];
+    var child = firstChild;
+    while (child != null) {
+      children.add(child);
+      child = childAfter(child);
+    }
+    return children;
+  }
+
+  bool _fitsRow(double width) {
+    if (_stacked || childCount == 0) return !_stacked;
+    final each = (width - _rowGap * (childCount - 1)) / childCount;
+    return _children.every((child) => child.getMaxIntrinsicWidth(double.infinity) <= each);
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) => _children.fold(0.0, (widest, child) => math.max(widest, child.getMinIntrinsicWidth(height)));
+
+  @override
+  double computeMaxIntrinsicWidth(double height) => _children.fold(0.0, (sum, child) => sum + child.getMaxIntrinsicWidth(height)) + _rowGap * math.max(0, childCount - 1);
+
+  @override
+  double computeMinIntrinsicHeight(double width) => _fitsRow(width)
+      ? _children.fold(0.0, (tallest, child) => math.max(tallest, child.getMinIntrinsicHeight((width - _rowGap * (childCount - 1)) / childCount)))
+      : _children.fold(0.0, (sum, child) => sum + child.getMinIntrinsicHeight(width)) + _columnGap * math.max(0, childCount - 1);
+
+  @override
+  double computeMaxIntrinsicHeight(double width) => computeMinIntrinsicHeight(width);
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) => _layout(constraints, dry: true);
+
+  @override
+  void performLayout() => size = _layout(constraints, dry: false);
+
+  Size _layout(BoxConstraints constraints, {required bool dry}) {
+    final width = constraints.maxWidth;
+    final children = _children;
+    if (children.isEmpty) return constraints.smallest;
+    if (_fitsRow(width)) {
+      final each = (width - _rowGap * (children.length - 1)) / children.length;
+      final sizes = [for (final child in children) dry ? child.getDryLayout(BoxConstraints.tightFor(width: each)) : (child..layout(BoxConstraints.tightFor(width: each), parentUsesSize: true)).size];
+      final height = sizes.fold(0.0, (tallest, size) => math.max(tallest, size.height));
+      if (!dry) {
+        for (final (index, child) in children.indexed) {
+          (child.parentData! as _DialogActionData).offset = Offset(index * (each + _rowGap), (height - child.size.height) / 2);
+        }
+      }
+      return constraints.constrain(Size(width, height));
+    }
+    var y = 0.0;
+    for (final child in children.reversed) {
+      final size = dry ? child.getDryLayout(BoxConstraints.tightFor(width: width)) : (child..layout(BoxConstraints.tightFor(width: width), parentUsesSize: true)).size;
+      if (!dry) (child.parentData! as _DialogActionData).offset = Offset(0, y);
+      y += size.height + _columnGap;
+    }
+    return constraints.constrain(Size(width, y - _columnGap));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) => defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) => defaultHitTestChildren(result, position: position);
+}
+
 class CampusGlassDialog extends StatelessWidget {
   const CampusGlassDialog({
     super.key,
@@ -443,25 +541,14 @@ class CampusGlassDialog extends StatelessWidget {
                   ),
                 // [人工决策-2026-10-04 15:29:32] 操作按钮同鸿蒙对话框、iOS 26 弹窗：一到两个等宽并排铺满（取消在左、主操作在右），
                 // 三个及以上竖排；操作区的 FilledButton 即本弹窗主操作，自动为强调按钮，TextButton 为中性胶囊。
+                // [人工决策-2026-10-19 19:22:39] 两个按钮并排时任一个的文字在半宽里放不下（窄屏、大字号），改为竖排（用户选定，同 iOS、鸿蒙放不下时的做法）：
+                // 以前硬并排，「开始同步」在 360dp、1.3 倍字号下折出单独一个「步」。竖排同三个及以上：主操作在最上。
                 if (actions.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
                     child: FilledButtonTheme(
                       data: FilledButtonThemeData(style: campusProminent.merge(Theme.of(context).filledButtonTheme.style)),
-                      child: actions.length <= 2
-                          ? Row(children: [
-                              for (var index = 0; index < actions.length; index++) ...[
-                                if (index > 0) const SizedBox(width: 12),
-                                Expanded(child: actions[index]),
-                              ],
-                            ])
-                          : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-                              // 竖排时主操作在最上、取消在最下（同 iOS、鸿蒙），调用处仍按“取消在前”书写。
-                              for (final (index, action) in actions.reversed.indexed) ...[
-                                if (index > 0) const SizedBox(height: 8),
-                                action,
-                              ],
-                            ]),
+                      child: _CampusDialogActions(stacked: actions.length > 2, children: actions),
                     ),
                   ),
               ],
