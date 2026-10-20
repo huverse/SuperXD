@@ -1,6 +1,6 @@
 # toolbox 百宝箱
 
-定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了两个工具：短视频解析与下载、学习通签到。学习通的文件与规则在 chaoxing/CLAUDE.md，download 与 short_video 两个子目录登记在本文件。
+定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了三个工具：短视频解析与下载、学习通签到、快递（拼多多身份码与快递查询）。学习通的文件与规则在 chaoxing/CLAUDE.md，快递在 express/CLAUDE.md，download 与 short_video 两个子目录登记在本文件。
 
 # 文件职责
 

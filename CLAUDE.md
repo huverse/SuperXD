@@ -4,7 +4,7 @@
 
 - [人工决策-2026-09-29 21:40:28] 索引采用仓库内分层 CLAUDE.md（根目录加 lib 各模块），授权 AI 创建，并在每次改动时同步维护。用户全局 CLAUDE.md 仍由 AI 只提建议、由人工修改。
 - [人工决策-2026-10-17 13:25:26] 索引按官方与大厂做法重整（用户四项都选推荐）：本文件控制在 200 行内，只放全局原则、命令与流程，具体超时、上限与测试清单下沉到模块文件；application 与学习通各建模块索引；守护测试按最近的 CLAUDE.md 登记；文件条目一两行，写职责、约束与人工决策位置，行为细节以代码为准。
-- 模块索引共 11 个：lib 下 domain、edu、local、gateway、device、application、page、theme、toolbox、social 各一个，外加 lib/toolbox/chaoxing。lib 根目录的 main.dart、router.dart、app_session.dart 登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md。
+- 模块索引共 12 个：lib 下 domain、edu、local、gateway、device、application、page、theme、toolbox、social 各一个，外加 lib/toolbox/chaoxing 与 lib/toolbox/express。lib 根目录的 main.dart、router.dart、app_session.dart 登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md。
 - test/project_structure_test.dart 兜底两条：lib 下每个 dart 文件按文件名登记在最近的 CLAUDE.md（从所在目录往上找到 lib 为止，都没有就是本文件）；索引里提到的 dart 或 kt 文件必须真实存在。
 - 写法：纯文字，只用 # 标题、- 列表与 1. 编号；不写会随提交变化的数字（测试条数、提交号、库版本号），常量写名字或指到定义处。
 

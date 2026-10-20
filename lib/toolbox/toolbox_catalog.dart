@@ -2,6 +2,8 @@ import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
+import 'package:superxd/toolbox/express/express_page.dart';
+import 'package:superxd/toolbox/express/express_service.dart';
 import 'package:superxd/toolbox/short_video/short_video_page.dart';
 import 'package:superxd/toolbox/short_video/short_video_service.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
@@ -30,5 +32,15 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
     builder: (context) => ChaoxingPage(runtime: runtime),
     openService: ChaoxingService.open,
     clearedData: '学习通账号、密码、收藏位置与设置（再用要重新登录）',
+  ),
+  // [人工决策-2026-10-19 23:35:59] 新增快递工具（拼多多身份码与快递查询）：用户选定照做并接受公开仓库接入私有接口的风险、
+  // 由移交 SDK 源码改造进 lib/toolbox/express（不原样引入）、复用项目已有 http 与 pretty_qr_code 只补 webview_flutter 与 barcode_widget。
+  ToolboxModule(
+    id: ExpressService.serviceId,
+    name: '快递',
+    icon: CampusIcons.parcel,
+    builder: (context) => ExpressPage(runtime: runtime),
+    openService: ExpressService.open,
+    clearedData: '拼多多登录会话与来源同意（再用要重新登录并同意）',
   ),
 ];

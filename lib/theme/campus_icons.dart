@@ -91,6 +91,8 @@ abstract final class CampusIcons {
   static const unpin = LucideIcons.pinOff;
   static const course = LucideIcons.bookOpen;
   static const dayOff = LucideIcons.coffee;
+  static const parcel = LucideIcons.package;
+  static const phone = LucideIcons.smartphone;
 }
 
 void configureCampusIcons() =>
