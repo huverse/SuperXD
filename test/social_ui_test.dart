@@ -18,6 +18,7 @@ import 'package:superxd/page/friend_schedule_page.dart';
 import 'package:superxd/page/message_page.dart';
 import 'package:superxd/page/share_target_sheet.dart';
 import 'package:superxd/page/shell_page.dart';
+import 'package:superxd/page/social_dialogs.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/invite_code.dart';
 import 'package:superxd/social/social_service.dart';
@@ -193,6 +194,30 @@ void main() {
     await advance(tester, 4);
     expect([display.paletteId, display.fontId, display.scale, display.themeMode], ['sage', 'maple', 1.0, ThemeMode.system]);
   });
+
+  for (final scale in [1.3, 2.0]) {
+    testWidgets('好友列表 360dp ×$scale：时间与名字同一行、未读角标与预览同一行，大字号不溢出', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 780));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final relay = FakeRelay();
+      final (alice, bob) = (await tester.runAsync(() => friends(relay)))!;
+      await tester.runAsync(() async {
+        await bob.send(alice.deviceId!, const VideoShare(sourceUrl: 'https://v.example.com/7', title: '合成作品', author: '作者乙', platform: 'douyin', kind: 'video'));
+        await alice.refresh();
+      });
+      await tester.pumpWidget(MediaQuery(data: MediaQueryData.fromView(tester.view).copyWith(textScaler: TextScaler.linear(scale)), child: app(Scaffold(body: MessagePage(social: alice)))));
+      await advanceUntil(tester, () => find.text('1').evaluate().isNotEmpty);
+      expect(tester.takeException(), isNull);
+      final name = tester.getRect(find.text('小明'));
+      final time = tester.getRect(find.text(socialShortTime(alice.friends.single.lastActivity)));
+      final preview = tester.getRect(find.text('[视频] 合成作品'));
+      final badge = tester.getRect(find.text('1'));
+      expect(time.left, greaterThan(name.right));
+      expect(time.center.dy, closeTo(name.center.dy, name.height / 2));
+      expect(badge.center.dy, closeTo(preview.center.dy, preview.height / 2));
+      expect(badge.top, greaterThanOrEqualTo(time.bottom));
+    });
+  }
 
   testWidgets('会话卡片：对方的贴左、自己的贴右，有没有时间行都一样，不被居中', (tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 780));

@@ -100,7 +100,7 @@
 
 # 测试
 
-- 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
+- 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由、页面滚动区渐隐），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
 - 共用的测试支撑：fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、toolbox_test_support.dart、form_layout_support.dart、app_update_fakes.dart、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
 - tool 下的手动入口不进 CI（发版两个工具由发版流水线调用），运行方式见各文件头：
   - 访问真实服务，只在授权环境与授权账号上手动运行：verify_edu.dart、verify_grades.dart（教务）、verify_chaoxing.dart（学习通，输出脱敏）。

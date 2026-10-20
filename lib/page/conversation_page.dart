@@ -20,6 +20,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/scroll_edge_fade.dart';
 
 // 打开好友分享的视频：由组合根接到百宝箱的短视频页（页面层不依赖百宝箱）。
 typedef VideoOpener = void Function(BuildContext context, VideoShare video);
@@ -292,9 +293,10 @@ class _ConversationPageState extends State<ConversationPage> {
           ],
         ),
         body: Column(children: [
+          // 卡片滚到透明顶栏下时自身渐隐（倒序列表看末端，见 theme 的 CampusScrollFade）。
           Expanded(child: messages == null
               ? const Center(child: CampusLoading(label: '读取会话'))
-              : LayoutBuilder(builder: (context, constraints) => ListView.builder(
+              : CampusScrollFade(child: LayoutBuilder(builder: (context, constraints) => ListView.builder(
                   // 最新的在最下面，打开即停在底部。
                   reverse: true,
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -304,7 +306,7 @@ class _ConversationPageState extends State<ConversationPage> {
                     animate: _known?.add(messages[index].id) ?? false,
                     child: _item(messages[index], index + 1 < messages.length ? messages[index + 1] : null, colors, constraints.maxWidth * .82),
                   )),
-                ))),
+                )))),
           // 底部操作栏：实色、顶部分割线（同会话页输入栏规格），不模糊，铺满宽度。
           Container(
             width: double.infinity,

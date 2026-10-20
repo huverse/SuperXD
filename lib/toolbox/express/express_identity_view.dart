@@ -177,10 +177,15 @@ class _ExpressIdentityViewState extends State<ExpressIdentityView> {
           }),
         ),
         const SizedBox(height: 12),
+        // 码值保持一行（大字号、窄屏放不下时整体等比缩小），不在数字中间折行。
         Center(
-          child: SelectableText(
-            code,
-            style: const TextStyle(fontFamily: 'monospace', fontSize: 16, fontWeight: FontWeight.w600),
+          child: FittedBox(
+            fit: BoxFit.scaleDown,
+            child: SelectableText(
+              code,
+              maxLines: 1,
+              style: const TextStyle(fontFamily: 'monospace', fontSize: 16, fontWeight: FontWeight.w600),
+            ),
           ),
         ),
         if (mobileDesc.isNotEmpty) ...[

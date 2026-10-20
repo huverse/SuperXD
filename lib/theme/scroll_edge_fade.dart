@@ -71,16 +71,20 @@ class CampusScrollFade extends StatefulWidget {
 class _CampusScrollFadeState extends State<CampusScrollFade> {
   double _top = 0;
 
-  bool _scrolled(ScrollNotification notification) {
-    if (notification.metrics.axis != Axis.vertical) return false;
-    final top = notification.metrics.extentBefore.clamp(0.0, 24.0);
+  // 倒序列表（会话页最新在下）视觉上缘是列表的末端，看 extentAfter；首次排版的尺寸通知也算，打开时上方已有内容就渐隐。
+  bool _scrolled(ScrollMetrics metrics) {
+    if (metrics.axis != Axis.vertical) return false;
+    final top = (metrics.axisDirection == AxisDirection.up ? metrics.extentAfter : metrics.extentBefore).clamp(0.0, 24.0);
     if (top != _top) setState(() => _top = top);
     return false;
   }
 
   @override
-  Widget build(BuildContext context) => NotificationListener<ScrollNotification>(
-    onNotification: _scrolled,
-    child: ScrollEdgeFade(top: _top, bottom: widget.bottom, keep: true, child: widget.child),
+  Widget build(BuildContext context) => NotificationListener<ScrollMetricsNotification>(
+    onNotification: (notification) => _scrolled(notification.metrics),
+    child: NotificationListener<ScrollNotification>(
+      onNotification: (notification) => _scrolled(notification.metrics),
+      child: ScrollEdgeFade(top: _top, bottom: widget.bottom, keep: true, child: widget.child),
+    ),
   );
 }

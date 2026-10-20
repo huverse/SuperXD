@@ -5,6 +5,7 @@ import 'package:superxd/theme/campus_animated_list.dart';
 import 'package:superxd/theme/campus_prose.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/scroll_edge_fade.dart';
 
 void main() {
   testWidgets('长说明：编号与正文两列悬挂缩进，段内小标题与小节标题半粗', (tester) async {
@@ -57,6 +58,26 @@ void main() {
     expect(tester.getTopRight(find.text('乙')).dx, 400);
     await tester.pumpAndSettle();
     expect(tester.getTopRight(find.text('右')).dx, 400);
+  });
+
+  testWidgets('滚动边缘渐隐：正序列表滚过上缘才渐隐，倒序列表（最新在下）打开时上方已有内容就渐隐', (tester) async {
+    double top() => tester.widget<ScrollEdgeFade>(find.byType(ScrollEdgeFade)).top;
+    Widget list({required bool reverse}) => MaterialApp(home: Scaffold(body: CampusScrollFade(child: ListView(reverse: reverse, children: [for (var index = 0; index < 40; index++) SizedBox(height: 60, child: Text('第$index行'))]))));
+    await tester.pumpWidget(list(reverse: false));
+    await tester.pump();
+    expect(top(), 0);
+    await tester.drag(find.byType(ListView), const Offset(0, -200));
+    await tester.pump();
+    expect(top(), 24);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(list(reverse: true));
+    await tester.pump();
+    expect(top(), 24, reason: '倒序列表停在最新处，上面还有更早的内容');
+    // 滚到最早一条（视觉上缘）就不再渐隐。
+    await tester.drag(find.byType(ListView), const Offset(0, 4000));
+    await tester.pumpAndSettle();
+    expect(top(), 0);
   });
 
   testWidgets('底部弹层挂根导航器：从嵌套导航器里打开也盖住外层，返回键先关弹层', (tester) async {

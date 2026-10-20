@@ -13,6 +13,7 @@ import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/account_dialogs.dart';
 
@@ -142,7 +143,7 @@ class _LoginPageState extends State<LoginPage> {
       child: Scaffold(
         backgroundColor: Colors.transparent,
         appBar: widget.switching ? AppBar(leading: IconButton(tooltip: '返回', onPressed: () => context.pop(), icon: const CampusIcon(CampusIcons.back)), title: const Text('切换账号'), backgroundColor: Colors.transparent) : null,
-        body: SafeArea(
+        body: CampusScrollFade(child: SafeArea(
           child: LayoutBuilder(builder: (context, constraints) => SingleChildScrollView(
             padding: const EdgeInsets.all(16),
             child: ConstrainedBox(
@@ -199,7 +200,7 @@ class _LoginPageState extends State<LoginPage> {
               ]),
             ),
           )),
-        ),
+        )),
       ),
     );
   }

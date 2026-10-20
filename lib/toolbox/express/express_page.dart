@@ -9,6 +9,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/express/express_controller.dart';
 import 'package:superxd/toolbox/express/express_identity_view.dart';
 import 'package:superxd/toolbox/express/express_login_webview.dart';
@@ -123,7 +124,8 @@ class _ExpressPageState extends State<ExpressPage> {
           IconButton(tooltip: '更多', onPressed: _menu, icon: const CampusIcon(CampusIcons.manage)),
       ],
     ),
-    body: SafeArea(
+    // 内容滚到透明顶栏下时自身渐隐，同百宝箱其他页（theme 的 CampusScrollFade）。
+    body: CampusScrollFade(child: SafeArea(
       child: FutureBuilder<void>(
         future: _ready,
         builder: (context, snapshot) {
@@ -145,7 +147,7 @@ class _ExpressPageState extends State<ExpressPage> {
           );
         },
       ),
-    ),
+    )),
   );
 
   Widget _buildLogin() {

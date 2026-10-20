@@ -9,6 +9,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -311,7 +312,8 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
         icon: const CampusIcon(CampusIcons.back),
       ),
     ),
-    body: SafeArea(
+    // 内容滚到透明顶栏下时自身渐隐，同百宝箱其他页（theme 的 CampusScrollFade）。
+    body: CampusScrollFade(child: SafeArea(
       child: FutureBuilder<void>(
         future: _ready,
         builder: (context, snapshot) {
@@ -527,6 +529,6 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
           );
         },
       ),
-    ),
+    )),
   );
 }

@@ -29,6 +29,17 @@ void main() {
     expect(offenders, isEmpty);
   });
 
+  // 页面滚动区一律包 CampusScrollFade（或 ScrollEdgeFade）：内容滚到透明顶栏下时自身渐隐，不被顶栏下缘硬切。
+  // 10-20 用户截图指出快递、短视频解析两页是硬切、只有学习通有过渡。弹层、弹窗是玻璃面板（遮罩下玻璃取不到背景），没有 Scaffold，不在此列。
+  test('有滚动区的页面都包了滚动边缘渐隐', () {
+    final offenders = <String>[];
+    for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart'))) {
+      final source = file.readAsStringSync();
+      if (source.contains('Scaffold(') && RegExp(r'\b(ListView|CustomScrollView|SingleChildScrollView|GridView)\b').hasMatch(source) && !RegExp(r'\b(CampusScrollFade|ScrollEdgeFade)\b').hasMatch(source)) offenders.add(file.path);
+    }
+    expect(offenders, isEmpty);
+  });
+
   // 页面路由一律用 CampusPageRoute（GoRouter 经 campusPage）：转场计时从新页首帧画完后开始，
   // 直接用 MaterialPageRoute 时首帧一慢（首次加载字体、编译着色器）整段转场就被吃掉，看起来是硬切。
   test('页面路由不直接用MaterialPageRoute或MaterialPage', () {

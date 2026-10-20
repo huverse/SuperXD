@@ -193,6 +193,22 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('卡片里的码值 360dp ×1.3 保持一行，放不下就整体缩小，不超出卡片', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 780));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.3)), child: child!), home: ExpressPage(runtime: buildRuntime())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('身份码'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    final code = find.byType(SelectableText);
+    expect(tester.getSize(code).height, lessThan(16 * 1.3 * 2));
+    expect(tester.getRect(code).width, lessThanOrEqualTo(360 - 64.0));
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('二维码全屏只放大不旋转，返回键关闭', (tester) async {
     await vault.save(_session);
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
