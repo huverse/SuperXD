@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
@@ -11,8 +12,10 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/express/express_controller.dart';
+import 'package:superxd/toolbox/express/express_cookies.dart';
 import 'package:superxd/toolbox/express/express_identity_view.dart';
 import 'package:superxd/toolbox/express/express_login_webview.dart';
+import 'package:superxd/toolbox/express/express_mobile_sheet.dart';
 import 'package:superxd/toolbox/express/express_service.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
@@ -57,7 +60,9 @@ class _ExpressPageState extends State<ExpressPage> {
       final agreed = await showCampusConfirm(
         context,
         title: '使用拼多多快递',
-        message: '将打开拼多多官方页面登录你本人的账号，登录态只保存在本机安全存储，仅用于查询你的快递与生成取件身份码。\n\n身份码是取件凭证、短时有效，请勿分享或截图外传。请遵守拼多多的服务条款，仅用于本人已授权的账号。',
+        message: '将打开拼多多官方页面登录你本人的账号，登录态只保存在本机安全存储，仅用于查询你的快递与生成取件身份码。\n\n'
+            '拼多多同一账号不支持多设备同时在线：在这里登录后，你其他设备上的拼多多会被挤下线。建议用小号登录，再用「绑定手机号」把大号的手机号绑进来，就能用小号的身份码取大号的快递。\n\n'
+            '身份码是取件凭证、短时有效，请勿分享或截图外传。请遵守拼多多的服务条款，仅用于本人已授权的账号。',
         action: '同意并登录',
       );
       if (!agreed || !mounted) return;
@@ -79,11 +84,29 @@ class _ExpressPageState extends State<ExpressPage> {
   Future<void> _logout() async {
     final controller = _controller!;
     final confirmed = await showCampusConfirm(context, title: '退出登录', message: '退出后再次查询需要重新登录拼多多。', action: '退出', destructive: true);
-    if (confirmed) await controller.logout();
+    if (!confirmed) return;
+    await controller.logout();
+    // 退出时把 WebView 残留的会话 Cookie 也清掉，下次登录从干净状态开始（登录态等同凭据，退出即删）。
+    await clearExpressWebCookies();
+  }
+
+  Future<void> _manageMobiles() async => showExpressMobileSheet(context, controller: _controller!);
+
+  // anti_content 的隐藏 WebView：只建一次、常驻且一直被绘制（页面稳定位置、不随列表或控制器重建），
+  // 这样 window.__sxdGen 能常驻、现取 anti_content 不用每次重载（被盖住重置时还有重载兜底，见 express_anti_content.dart）。
+  // 1px、IgnorePointer，不显示拼多多页面也不吃点按；测试里假实现无 controller 则不挂。
+  Widget? _antiHost;
+  Widget _antiHostWidget() {
+    final webController = _service.antiContent?.webViewController;
+    if (webController == null) return const SizedBox.shrink();
+    return _antiHost ??= IgnorePointer(child: SizedBox(width: 1, height: 1, child: WebViewWidget(controller: webController)));
   }
 
   // [人工决策-2026-10-19 23:35:59] 功能范围为核心四项（登录、绑定手机号、驿站待取件、身份码）加驿站扫码进入；
-  // 订单驿站柜、取件码搜索、短信登录高级接口不做（无真实样本且偏离身份码聚焦）。
+  // 订单驿站柜、取件码搜索不做（无真实样本且偏离身份码聚焦）。
+  // [人工决策-2026-10-20 15:36:10] 用户确认把「绑定手机号」从只查列表扩成真正的取件手机号管理（列表 + 短信验证绑新号 + 快速绑本账号已有号 + 解绑）：
+  // 绑定短信走 francis 端点（属绑定不属登录、按反编译不需 anti_content），仍不做需 anti_content 的短信登录高级接口（sigerus）。
+  // 绑定/解绑是账号状态变更，逐步由用户点击确认（见 express_mobile_sheet.dart），不后台自动做。移交包未真机验证过绑定/解绑，实际风控与解绑参数待真机核实。
   // 扫驿站二维码进入：带着驿站码查这家驿站的待取件。真实驿站码格式未取到样本，原文非空即原样作为 station_code 传。
   Future<void> _scanStation() async {
     final scan = widget.runtime.scanQrCode;
@@ -139,14 +162,20 @@ class _ExpressPageState extends State<ExpressPage> {
           }
           final controller = _controller;
           if (controller == null) return const Center(child: CampusLoading(label: '正在准备'));
-          return ListenableBuilder(
-            listenable: controller,
-            builder: (context, _) => Center(
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 800),
-                child: controller.loggedIn ? _buildMain(controller) : _buildLogin(controller),
+          // 内容作非定位子项（Stack 按它定尺寸、填满），隐藏 WebView 作 1px 定位子项（不影响尺寸、常驻绘制）。
+          return Stack(
+            children: [
+              ListenableBuilder(
+                listenable: controller,
+                builder: (context, _) => Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 800),
+                    child: controller.loggedIn ? _buildMain(controller) : _buildLogin(controller),
+                  ),
+                ),
               ),
-            ),
+              Positioned(left: 0, top: 0, width: 1, height: 1, child: _antiHostWidget()),
+            ],
           );
         },
       ),
@@ -170,6 +199,22 @@ class _ExpressPageState extends State<ExpressPage> {
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: palette.onSurfaceVariant),
           ),
         ),
+        const SizedBox(height: 24),
+        // 多端登录提醒：拼多多不支持多端同时在线，这里登录会把其他设备挤下线；引导用小号登录、绑大号。只读说明，不用主色。
+        CampusSurface(
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(padding: const EdgeInsets.only(right: 12), child: CampusIcon(CampusIcons.info, size: 20, color: palette.onSurfaceVariant)),
+              Expanded(
+                child: Text(
+                  '拼多多不支持多端同时登录，这里登录会让你其他设备上的拼多多下线。建议用小号登录，再用「绑定手机号」绑定大号的手机号。',
+                  style: TextStyle(fontSize: 14, height: 1.5, color: palette.onSurfaceVariant),
+                ),
+              ),
+            ],
+          ),
+        ),
         // 登录失效被退回这里时写明原因（以前原因只写在已登录视图里，退回后看不到）。
         if (controller.error != null) ...[
           const SizedBox(height: 16),
@@ -190,11 +235,11 @@ class _ExpressPageState extends State<ExpressPage> {
 
   // [人工决策-2026-10-20 14:38:25] 首页同学习通：账号卡（人形头像、拼多多账号、⋯ 里退出登录），四个操作在卡下方单独一组，
   // 点哪个哪个原地转圈（不再出 Material 进度条、全组变灰）；结果卡标题与全应用同字号（用户选定的百宝箱统一性整改）。
+  // [人工决策-2026-10-20 15:36:10] 「绑定手机号」改为打开取件手机号管理弹层（增删绑定），不再在卡下方画列表结果卡；其余三项仍是原地查询。
   Widget _buildMain(ExpressController controller) {
     final palette = CampusPalette.of(context);
     final textTheme = Theme.of(context).textTheme;
     final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
-    final mobiles = controller.mobiles;
     final packages = controller.packages;
     final identityCode = controller.identityCode;
     final locked = controller.busy || controller.refreshing;
@@ -242,20 +287,16 @@ class _ExpressPageState extends State<ExpressPage> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            action(ExpressAction.mobiles, CampusIcons.phone, '绑定手机号', '正在查询', () => _act(controller.queryBoundMobiles)),
+            // 绑定手机号是增删管理，点开弹层做，不占「正在查询」的原地转圈。
+            OutlinedButton(
+              onPressed: locked ? null : _manageMobiles,
+              child: const CampusBusyContent(busy: false, label: '绑定手机号', busyLabel: '绑定手机号', icon: CampusIcon(CampusIcons.phone)),
+            ),
             action(ExpressAction.packages, CampusIcons.parcel, '驿站快递', '正在查询', () => _act(controller.queryStationPackages)),
             action(ExpressAction.scan, CampusIcons.scan, '扫驿站码', '正在查询', _scanStation),
             action(ExpressAction.identity, CampusIcons.qrCode, '身份码', '生成中', () => _act(controller.generateIdentityCode), prominent: true),
           ],
         ),
-        if (mobiles != null)
-          result('绑定的取件手机号', [
-            if (mobiles.isEmpty)
-              Text('未绑定取件手机号', style: secondary)
-            else
-              for (final mobile in mobiles)
-                Text(mobile.alias.isEmpty ? mobile.maskedMobile : '${mobile.maskedMobile}（${mobile.alias}）', style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface)),
-          ]),
         if (packages != null)
           result('驿站待取件', [
             Text(packages.count == 0 ? '没有待取件' : '${packages.count} 件待取', style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface)),

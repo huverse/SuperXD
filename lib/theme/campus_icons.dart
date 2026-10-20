@@ -93,6 +93,7 @@ abstract final class CampusIcons {
   static const dayOff = LucideIcons.coffee;
   static const parcel = LucideIcons.package;
   static const phone = LucideIcons.smartphone;
+  static const unbind = LucideIcons.unlink;
 }
 
 void configureCampusIcons() =>

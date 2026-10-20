@@ -12,6 +12,23 @@ abstract final class PddConstants {
   static const entryScan = 4;
   static const entryOther = 8;
 
+  // 绑定取件手机号的流程常量（mdkd 绑定弹窗）：protocol_code 与 scene 固定，mobile_type 区分「输入新号」与「用已有 mobile_id」。
+  // [人工决策-2026-10-20 17:22:42] 实测绑定/解绑的 francis、apoc、lobit 接口都经风控，缺 anti_content 会 403/参数错；
+  // 逆向确认 anti_content 只能在 WebView 里由拼多多自己的反爬 JS 现场生成（纯 Dart 生成不了）。用户选「原生绑定 + 隐藏 WebView 取 anti_content」，
+  // 原模块「不生成也不绕过反爬字段」在此让步——仅用于本人已授权账号的取件手机号绑定/解绑，用官方 JS 产出合法 anti_content、不自行重写风控。
+  // anti_content 有时效：每次请求前现生成、不缓存（见 express_anti_content.dart）。多数接口放 anti-content 请求头；解绑/别名另在 body 的 anti_content 再带一份。
+  static const antiContentHeader = 'anti-content';
+  static const bindProtocolCode = 'QJXXJSFWTK1_1';
+  static const bindSmsScene = '1000123';
+  static const bindBoxPopupService = 'express_assistant';
+  // entry_source 派生（逆向结论）：身份码入口的快速绑定发 "4"；新绑定（cellPhoneList 口径）发 "APP"。
+  static const fastBindEntrySource = '4';
+  static const newBindEntrySource = 'APP';
+  static const mobileTypeMobile = 1;
+  static const mobileTypeMobileId = 2;
+  // 生成 anti_content 用的官方页（已加载反爬 bundle）。
+  static const antiContentPage = 'https://m.pinduoduo.net/mdkd/package?pr_page_from=scheme';
+
   // 接口没返回 expire_mills 时按页面同款缺省值刷新。
   static const defaultExpireMills = 600000;
 
@@ -119,17 +136,38 @@ class IdentityCodeResult {
   }
 }
 
-// 已绑定的取件手机号（服务端返回打码后的号码）。
+// 已绑定的取件手机号（服务端返回打码后的号码）。mobileIdScene 解绑时要回传。
 class PddBoundMobile {
-  const PddBoundMobile({this.mobileId = '', this.maskedMobile = '', this.alias = ''});
+  const PddBoundMobile({this.mobileId = '', this.maskedMobile = '', this.alias = '', this.mobileIdScene});
   final String mobileId;
   final String maskedMobile;
   final String alias;
+  final int? mobileIdScene;
 
   factory PddBoundMobile.fromJson(Map<String, Object?> json) => PddBoundMobile(
     mobileId: '${json['mobile_id'] ?? ''}',
     maskedMobile: '${json['mock_mobile'] ?? ''}',
     alias: '${json['alias'] ?? ''}',
+    mobileIdScene: (json['mobile_id_scene'] as num?)?.toInt(),
+  );
+}
+
+// 绑定取件手机号的预检查结果（只读）：是否已绑定、可一键快速绑定的已有号 mobileId 与场景、脱敏展示。
+class PddBindPreCheck {
+  const PddBindPreCheck({this.hasBound = false, this.mobileId = '', this.mobileIdScene, this.mobileDesc = ''});
+  final bool hasBound;
+  final String mobileId;
+  final int? mobileIdScene;
+  final String mobileDesc;
+
+  // 预检查给了已有号 mobileId 就能走免短信的快速绑定。
+  bool get canFastBind => mobileId.isNotEmpty;
+
+  factory PddBindPreCheck.fromJson(Map<String, Object?> json) => PddBindPreCheck(
+    hasBound: json['has_binding_express_mobile'] == true,
+    mobileId: '${json['mobile_id'] ?? ''}',
+    mobileIdScene: (json['mobile_id_scene'] as num?)?.toInt(),
+    mobileDesc: '${json['mobile_info_desc'] ?? ''}',
   );
 }
 
