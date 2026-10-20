@@ -6,7 +6,7 @@ import 'package:superxd/toolbox/express/express_models.dart';
 import 'package:superxd/toolbox/express/express_service.dart';
 
 // 正在跑的是哪个查询：发起它的按钮原地转圈，其余按钮暂不可点。
-enum ExpressAction { mobiles, packages, scan, identity }
+enum ExpressAction { packages, scan, identity }
 
 // 快递页的状态：会话恢复、绑定手机号与待取件查询、身份码生成与到期刷新。
 // 一次只跑一个请求（busy）；拿到「未登录」就清掉会话，由页面回到登录态并写明原因。
@@ -16,7 +16,6 @@ class ExpressController extends ChangeNotifier {
 
   ExpressClient? _client;
   PddSession? _session;
-  List<PddBoundMobile>? _mobiles;
   StationPackagesResult? _packages;
   IdentityCodeResult? _identityCode;
   ExpressAction? _running;
@@ -25,7 +24,6 @@ class ExpressController extends ChangeNotifier {
 
   PddSession? get session => _session;
   bool get loggedIn => _session != null;
-  List<PddBoundMobile>? get mobiles => _mobiles;
   StationPackagesResult? get packages => _packages;
   IdentityCodeResult? get identityCode => _identityCode;
   ExpressAction? get running => _running;
@@ -54,10 +52,6 @@ class ExpressController extends ChangeNotifier {
     _session = session;
   }
 
-  Future<void> queryBoundMobiles() => _run(ExpressAction.mobiles, () async {
-    _mobiles = await _client!.queryBoundMobiles();
-  });
-
   Future<void> queryStationPackages({String stationCode = ''}) => _run(stationCode.isEmpty ? ExpressAction.packages : ExpressAction.scan, () async {
     _packages = await _client!.queryStationPackages(
       stationCode: stationCode,
@@ -85,6 +79,36 @@ class ExpressController extends ChangeNotifier {
     } finally {
       _refreshing = false;
       notifyListeners();
+    }
+  }
+
+  // 绑定取件手机号（在管理弹层里逐步做，不占页面 busy）：拿到未登录照样清会话回登录页，其余失败交弹层原地说明。
+  // 除只读的预检查/列表外，每次请求前现取一个 anti_content 过风控（隐藏 WebView 跑官方反爬 JS，不缓存）。
+  Future<List<PddBoundMobile>> fetchBoundMobiles() => _binding(() => _client!.queryBoundMobiles());
+  Future<PddBindPreCheck> preCheckBind() => _binding(() => _client!.preCheckBindMobile());
+  Future<void> fastBind(PddBindPreCheck pre) => _binding(() async => _client!.fastBindMobile(mobileId: pre.mobileId, mobileIdScene: pre.mobileIdScene, antiContent: await _anti()));
+  Future<String> sendBindSms(String mobile) => _binding(() async => _client!.sendBindSmsCode(mobile, antiContent: await _anti()));
+  Future<String> verifyBindSms(String mobileId, String code) => _binding(() async => _client!.verifyBindSmsCode(mobileId: mobileId, code: code, antiContent: await _anti()));
+  Future<void> completeBind(String sessionId) => _binding(() async => _client!.newBindMobile(sessionId, antiContent: await _anti()));
+  Future<void> unbind(PddBoundMobile mobile) => _binding(() async => _client!.unbindMobile(mobileId: mobile.mobileId, mobileIdScene: mobile.mobileIdScene, antiContent: await _anti()));
+
+  // 绑定类请求前现取 anti_content；生成器没就绪就报错让用户重试。
+  Future<String> _anti() async {
+    final provider = _service.antiContent;
+    if (provider == null) throw const ExpressFailure(ExpressFailureCode.server, '风控组件未就绪，请重试');
+    return provider.generate();
+  }
+
+  Future<T> _binding<T>(Future<T> Function() op) async {
+    if (_client == null) throw const ExpressFailure(ExpressFailureCode.notLoggedIn, '登录已失效，请重新登录');
+    try {
+      return await op();
+    } on ExpressFailure catch (failure) {
+      if (failure.isNotLoggedIn) {
+        await _onFailure(failure);
+        notifyListeners();
+      }
+      rethrow;
     }
   }
 
@@ -125,7 +149,6 @@ class ExpressController extends ChangeNotifier {
     _client?.close();
     _client = null;
     _session = null;
-    _mobiles = null;
     _packages = null;
     _identityCode = null;
   }

@@ -10,8 +10,11 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:pretty_qr_code/pretty_qr_code.dart';
 
+import 'package:webview_flutter/webview_flutter.dart';
+
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/toolbox/express/express_anti_content.dart';
 import 'package:superxd/toolbox/express/express_client.dart';
 import 'package:superxd/toolbox/express/express_controller.dart';
 import 'package:superxd/toolbox/express/express_http.dart';
@@ -26,7 +29,7 @@ import 'toolbox_test_support.dart';
 
 const _session = PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', userId: '7209');
 
-// 合成拼多多服务：按路径回合成数据，身份码固定一串 dd 码。
+// 合成拼多多服务：按路径回合成数据，身份码固定一串 dd 码，绑定链路全部回成功。
 http.Client _fakeClient() => MockClient((request) async {
   final path = request.url.path;
   Map<String, Object?> body;
@@ -34,11 +37,27 @@ http.Client _fakeClient() => MockClient((request) async {
     body = {'success': true, 'error_code': '0', 'new_binding_list': [{'mobile_id': 'm1', 'mock_mobile': '138****8888', 'alias': '自己'}]};
   } else if (path.endsWith('station/package')) {
     body = {'success': true, 'error_code': '0', 'result': {'count': 0, 'no_package_mobile_info': {'mobileList': ['8888']}}};
+  } else if (path.endsWith('pre/check')) {
+    body = {'has_binding_express_mobile': true, 'mobile_id': 'm1', 'mobile_info_desc': '138****8888'};
+  } else if (path.endsWith('code/auth/query')) {
+    body = {'success': true, 'mobile_id': 'MID'};
+  } else if (path.endsWith('code/auth/verify')) {
+    body = {'success': true, 'session_id': 'SID'};
+  } else if (path.endsWith('new/express/mobile') || path.endsWith('fast/bind/c/mobile') || path.endsWith('mobile/unbind')) {
+    body = {'success': true};
   } else {
     body = {'success': true, 'error_code': '0', 'result': {'identification_code': 'dd202610190000000000001', 'expire_mills': 132000, 'mobile_info': {'mobile_info_desc': '已绑定常用手机号：138****8888'}}};
   }
   return http.Response(jsonEncode(body), 200, headers: {'content-type': 'application/json;charset=UTF-8'});
 });
+
+// 假 anti_content：绑定测试用，不起真实 WebView（webViewController 为空，页面不挂 WebViewWidget）。
+class _FakeAnti implements PddAntiContent {
+  @override
+  Future<String> generate() async => 'anti';
+  @override
+  WebViewController? get webViewController => null;
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -60,6 +79,7 @@ void main() {
       ExpressService.serviceId: ExpressService(
         vault: vault,
         clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: _fakeClient())),
+        antiContent: _FakeAnti(),
       ),
     },
   );
@@ -80,21 +100,120 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('已登录可查绑定手机号与驿站待取件', (tester) async {
+  testWidgets('已登录可查驿站待取件；绑定手机号打开管理弹层列出已绑号', (tester) async {
     await vault.save(_session);
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
     await tester.pumpAndSettle();
     expect(find.text('拼多多账号'), findsOneWidget);
-
-    await tester.tap(find.text('绑定手机号'));
-    await tester.pumpAndSettle();
-    expect(find.textContaining('138****8888'), findsOneWidget);
 
     await tester.tap(find.text('驿站快递'));
     await tester.pumpAndSettle();
     expect(find.text('驿站待取件'), findsOneWidget);
     expect(find.text('没有待取件'), findsOneWidget);
     expect(find.textContaining('8888'), findsWidgets);
+
+    // 绑定手机号打开取件手机号管理弹层：列出已绑号，并有「绑定其他手机号」。
+    await tester.tap(find.text('绑定手机号'));
+    await tester.pumpAndSettle();
+    expect(find.text('取件手机号'), findsOneWidget);
+    expect(find.textContaining('138****8888'), findsOneWidget);
+    expect(find.text('绑定其他手机号'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('绑定其他手机号：输手机号发验证码、输验证码完成绑定，弹层回到列表并提示已绑定', (tester) async {
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('绑定手机号'));
+    await tester.pumpAndSettle();
+
+    await tester.tap(find.text('绑定其他手机号'));
+    await tester.pumpAndSettle();
+    expect(find.text('绑定其他手机号'), findsWidgets);
+    // 没发验证码前不进验证码步骤。
+    expect(find.widgetWithText(TextField, '验证码'), findsNothing);
+    await tester.enterText(find.widgetWithText(TextField, '手机号'), '13800000000');
+    await tester.tap(find.text('发送验证码'));
+    await tester.pumpAndSettle();
+    // 进入验证码步骤。
+    expect(find.textContaining('验证码已发送至 13800000000'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, '验证码'), '123456');
+    await tester.tap(find.text('确认绑定'));
+    await tester.pumpAndSettle();
+    // 回到弹层列表，提示已绑定。
+    expect(find.text('取件手机号'), findsOneWidget);
+    expect(find.text('已绑定'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('手机号格式不对先拦下，不发验证码', (tester) async {
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('绑定手机号'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('绑定其他手机号'));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.widgetWithText(TextField, '手机号'), '139');
+    await tester.tap(find.text('发送验证码'));
+    await tester.pumpAndSettle();
+    expect(find.text('请输入 11 位手机号'), findsOneWidget);
+    expect(find.widgetWithText(TextField, '验证码'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('解绑在行内⋯里、要确认，确认后提示已解绑', (tester) async {
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('绑定手机号'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('解绑'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('解绑'), findsWidgets);
+    await tester.tap(find.widgetWithText(FilledButton, '解绑'));
+    await tester.pumpAndSettle();
+    expect(find.text('已解绑'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('预检查给了未绑定的已有号时出现「绑定本账号手机号」快速绑定', (tester) async {
+    await vault.save(_session);
+    final runtime = ToolboxRuntime.testing(
+      catalog: toolboxCatalog,
+      store: fixture.store,
+      downloads: fixture.manager,
+      services: {
+        ExpressService.serviceId: ExpressService(
+          vault: vault,
+          clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: MockClient((request) async {
+            final path = request.url.path;
+            Map<String, Object?> body;
+            if (path.endsWith('express/detail')) {
+              body = {'success': true, 'error_code': '0', 'new_binding_list': const []};
+            } else if (path.endsWith('pre/check')) {
+              body = {'has_binding_express_mobile': false, 'mobile_id': 'mNew', 'mobile_info_desc': '199****0000'};
+            } else {
+              body = {'success': true};
+            }
+            return http.Response(jsonEncode(body), 200, headers: {'content-type': 'application/json;charset=UTF-8'});
+          }))),
+          antiContent: _FakeAnti(),
+        ),
+      },
+    );
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtime)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('绑定手机号'));
+    await tester.pumpAndSettle();
+    expect(find.text('还没有绑定取件手机号'), findsOneWidget);
+    expect(find.textContaining('绑定本账号手机号'), findsOneWidget);
+    await tester.tap(find.textContaining('绑定本账号手机号'));
+    await tester.pumpAndSettle();
+    expect(find.text('已绑定本账号手机号'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -251,11 +370,11 @@ void main() {
       return http.Response('', 500);
     })))));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('绑定手机号'));
+    await tester.tap(find.text('驿站快递'));
     await tester.pump();
     expect(find.text('正在查询'), findsOneWidget);
     expect(find.byType(LinearProgressIndicator), findsNothing);
-    expect(tester.widget<OutlinedButton>(find.ancestor(of: find.text('驿站快递'), matching: find.byType(OutlinedButton))).onPressed, isNull);
+    expect(tester.widget<OutlinedButton>(find.ancestor(of: find.text('扫驿站码'), matching: find.byType(OutlinedButton))).onPressed, isNull);
     gate.complete();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
@@ -334,5 +453,35 @@ void main() {
     expect(controller.loggedIn, isFalse);
     expect(await vault.load(), isNull);
     controller.dispose();
+  });
+
+  test('会话失效文案（非 40001）也回到登录态并清掉会话', () async {
+    await vault.save(const PddSession(accessToken: 'stale'));
+    final service = ExpressService(
+      vault: vault,
+      clientFactory: (session) => ExpressClient(
+        session: session,
+        http: ExpressHttp(client: MockClient((request) async => http.Response(jsonEncode({'error_code': '43001', 'error_msg': '登录状态已失效，请重新登录'}), 200, headers: {'content-type': 'application/json'}))),
+      ),
+    );
+    final controller = ExpressController(service);
+    await controller.initialize();
+    expect(controller.loggedIn, isTrue);
+    await expectLater(controller.fetchBoundMobiles(), throwsA(isA<ExpressFailure>()));
+    expect(controller.loggedIn, isFalse);
+    expect(await vault.load(), isNull);
+    controller.dispose();
+  });
+
+  testWidgets('绑定管理打开时会话已失效：弹层关闭、回到登录页写明原因', (tester) async {
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtimeWith(MockClient((request) async => http.Response(jsonEncode({'error_code': 40001}), 200, headers: {'content-type': 'application/json'}))))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('绑定手机号'));
+    await tester.pumpAndSettle();
+    expect(find.text('取件手机号'), findsNothing);
+    expect(find.text('登录拼多多'), findsOneWidget);
+    expect(find.text('登录已失效，请重新登录'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
   });
 }

@@ -49,6 +49,11 @@ class ExpressHttp {
       }
       if (response.statusCode >= 400) {
         campusLog('[Express] action=http errorType=status path=${uri.path} status=${response.statusCode}');
+        // 401/424：异地登录等把会话顶掉时拼多多返回的 HTTP 状态（真机实测 station/package 在被挤下线后回 424），
+        // 归未登录、回到登录页，而不是弹原始状态码。其余 4xx/5xx 仍按服务器错误。
+        if (response.statusCode == 401 || response.statusCode == 424) {
+          throw const ExpressFailure(ExpressFailureCode.notLoggedIn, '登录已失效，请重新登录');
+        }
         throw ExpressFailure(ExpressFailureCode.server, '拼多多返回错误码 ${response.statusCode}');
       }
       return ExpressResponse(response.statusCode, builder.takeBytes());

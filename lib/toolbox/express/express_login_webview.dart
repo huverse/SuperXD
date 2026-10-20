@@ -6,6 +6,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
+import 'package:superxd/toolbox/express/express_cookies.dart';
 import 'package:superxd/toolbox/express/express_models.dart';
 
 // 拼多多官方 H5 登录页（WebView）：用户在官方页面完成短信/扫码登录，组件从原生 Cookie 读 PDDAccessToken 组装会话。
@@ -46,8 +47,16 @@ class _ExpressLoginWebViewState extends State<ExpressLoginWebView> {
           },
           onNavigationRequest: _decideNavigation,
         ),
-      )
-      ..loadRequest(Uri.parse(PddConstants.loginPage));
+      );
+    _begin();
+  }
+
+  // 重新登录必须从干净的 Cookie 开始：先清掉残留的旧会话 Cookie，再加载登录页，再启动兜底轮询。
+  // 否则登录页一加载就被 _checkSession 读到作废的旧 PDDAccessToken，直接判「已登录」关页返回、功能照样失效。
+  Future<void> _begin() async {
+    await clearExpressWebCookies();
+    if (!mounted) return;
+    await _controller.loadRequest(Uri.parse(PddConstants.loginPage));
     // 登录成功后页面不一定触发 onPageFinished，轮询兜底。
     _poll = Timer.periodic(const Duration(seconds: 2), (_) => _checkSession());
   }
