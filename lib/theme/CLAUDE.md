@@ -39,7 +39,7 @@
   - campus_search_field.dart：搜索框 CampusSearchField：胶囊形、底色描边同卡片，占位文字不用浮动标签，有字时出「清空搜索」；成绩页与学习通群聊签到、按课程共用，页面不再自己拼搜索用的 TextField。
   - campus_field_table.dart：详情里的「标签 值」两列行 CampusFieldTable（左列次要色按最宽标签对齐，值可选中复制，空值的行不画）；课程详情与成绩详情共用。
   - campus_prose.dart：按行排版的长说明 CampusProse：「1. 正文」编号悬挂缩进，「登录：正文」冒号前的段内小标题半粗，以冒号结尾的整行是小节标题；协议、隐私政策、首次同意弹窗与学习通同意说明共用，文字原样显示。
-  - campus_animated_list.dart：列表增删的过渡（[人工决策] 在文件头）：CampusAnimatedColumn 按 key 比对前后子项，新的展开淡入、去掉的原地收起；CampusAppear 给按需建的长列表里新到的一项展开。第一次显示不动画、减少动画时直接换，只用于没有玻璃的内容区列表。
+  - campus_animated_list.dart：列表增删的过渡（[人工决策] 在文件头）：CampusAnimatedColumn 按 key 比对前后子项，新的展开淡入、去掉的原地收起；CampusAppear 给按需建的长列表里新到的一项展开。第一次显示不动画、减少动画时直接换，只用于没有玻璃的内容区列表。过渡不改条目的横向排布：条目始终铺满列表宽度，按内容收窄的条目（会话卡片）照旧靠左或靠右，不被居中。
   - dot_separated_text.dart：「甲 · 乙」式说明行 DotSeparatedText：按「 · 」分项放进 Wrap 换行，不把词拆成孤字，读屏读整句；page 层与百宝箱共用。
   - scroll_edge_fade.dart：ScrollEdgeFade 在浮动玻璃栏下只渐隐内容本身（子树里不能再放玻璃）；CampusScrollFade 是页面滚动区的柔和边缘，子树有玻璃开关或视频的页面不包。
   - third_party_licenses.dart：registerCampusLicenses 把本项目 GPL-3.0 全文、第三方声明和两套字体许可注册进 LicenseRegistry。

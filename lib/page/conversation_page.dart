@@ -238,6 +238,8 @@ class _ConversationPageState extends State<ConversationPage> {
         if (time != null) SizedBox(width: double.infinity, child: time),
         // [人工决策-2026-10-09 20:32:45] 卡片右上加可见的⋯（重新发送、删除），删除标警示色并确认；长按仍可打开同一菜单。
         // 以前只能长按，入口看不见；用户选定在卡片角上加⋯（同课程管理卡片、iOS 与鸿蒙列表的更多按钮）。
+        // [人工决策-2026-10-20 13:57:06] 卡片排法保持原设计：对方的贴左、自己的贴右、最宽 82%（用户从「修好错位」「自己发的卡片淡色底」
+        // 「全部同宽并写明谁分享」三种实物中选第一种）。没有时间行的卡片曾被列表过渡层居中，根因见 theme/campus_animated_list.dart 的 _transition。
         ConstrainedBox(
           constraints: BoxConstraints(maxWidth: maxWidth),
           child: Builder(builder: (anchor) => GestureDetector(

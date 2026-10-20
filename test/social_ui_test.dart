@@ -194,6 +194,25 @@ void main() {
     expect([display.paletteId, display.fontId, display.scale, display.themeMode], ['sage', 'maple', 1.0, ThemeMode.system]);
   });
 
+  testWidgets('会话卡片：对方的贴左、自己的贴右，有没有时间行都一样，不被居中', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 780));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final relay = FakeRelay();
+    final (alice, bob) = (await tester.runAsync(() => friends(relay)))!;
+    // 都在加好友后 5 分钟内：两张卡片上方都没有时间行（以前正是这种卡片被收窄后居中）。
+    await tester.runAsync(() async {
+      await bob.send(alice.deviceId!, sampleSchedule());
+      await alice.send(bob.deviceId!, DisplaySettings.memory().appearance);
+      await alice.refresh();
+    });
+    await tester.pumpWidget(app(ConversationPage(social: alice, friendId: bob.deviceId!)));
+    await advanceUntil(tester, () => find.text('界面配置').evaluate().isNotEmpty && find.text('查看与对比').evaluate().isNotEmpty);
+    final received = tester.getRect(find.ancestor(of: find.text('查看与对比'), matching: find.byType(CampusSurface)).first);
+    final sent = tester.getRect(find.ancestor(of: find.text('界面配置'), matching: find.byType(CampusSurface)).first);
+    expect(received.left, 16);
+    expect(sent.right, 360 - 16);
+  });
+
   testWidgets('会话底栏分享界面：卡片原地显示已发送；对方删除好友后底栏禁用', (tester) async {
     final relay = FakeRelay();
     final (alice, bob) = (await tester.runAsync(() => friends(relay)))!;

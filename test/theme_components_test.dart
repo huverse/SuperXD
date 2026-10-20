@@ -41,6 +41,24 @@ void main() {
     expect(tester.getSize(find.byType(CampusAnimatedColumn)).height, 80);
   });
 
+  testWidgets('列表过渡不改条目的横向排布：按内容收窄的条目照旧靠左、靠右，展开途中也不被居中', (tester) async {
+    Widget item(CrossAxisAlignment alignment, String label) => Column(crossAxisAlignment: alignment, children: [SizedBox(width: 100, height: 20, child: Text(label))]);
+    Widget list(List<String> items) => MaterialApp(home: Align(alignment: Alignment.topLeft, child: SizedBox(width: 400, height: 300, child: ListView(children: [
+      CampusAppear(animate: false, child: item(CrossAxisAlignment.start, '左')),
+      CampusAppear(animate: true, child: item(CrossAxisAlignment.end, '右')),
+      CampusAnimatedColumn(children: [for (final label in items) KeyedSubtree(key: ValueKey(label), child: item(CrossAxisAlignment.end, label))]),
+    ]))));
+    await tester.pumpWidget(list(['甲']));
+    await tester.pumpWidget(list(['甲', '乙']));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(tester.getTopLeft(find.text('左')).dx, 0);
+    expect(tester.getTopRight(find.text('右')).dx, 400);
+    expect(tester.getTopRight(find.text('甲')).dx, 400);
+    expect(tester.getTopRight(find.text('乙')).dx, 400);
+    await tester.pumpAndSettle();
+    expect(tester.getTopRight(find.text('右')).dx, 400);
+  });
+
   testWidgets('底部弹层挂根导航器：从嵌套导航器里打开也盖住外层，返回键先关弹层', (tester) async {
     final root = GlobalKey<NavigatorState>();
     await tester.pumpWidget(MaterialApp(navigatorKey: root, theme: campusTheme(), home: Scaffold(body: Navigator(onGenerateRoute: (_) => MaterialPageRoute<void>(builder: (context) => Center(child: TextButton(

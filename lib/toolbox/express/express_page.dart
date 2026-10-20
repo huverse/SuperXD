@@ -279,11 +279,7 @@ class _ExpressPageState extends State<ExpressPage> {
           const SizedBox(height: 16),
           CampusSurface(
             padding: const EdgeInsets.all(16),
-            child: ExpressIdentityView(
-              result: identityCode,
-              refreshing: controller.busy,
-              onRefresh: controller.refreshIdentityCode,
-            ),
+            child: ExpressIdentityView(controller: controller),
           ),
         ],
       ],
