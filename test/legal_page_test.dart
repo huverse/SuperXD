@@ -149,7 +149,7 @@ void main() {
   test('Alpha版本、并装、默认开发与非debug发布配置一致', () {
     final pubspec = File('pubspec.yaml').readAsStringSync();
     final gradle = File('android/app/build.gradle.kts').readAsStringSync();
-    expect(pubspec, contains('version: 1.0.0-alpha.4+5'));
+    expect(pubspec, contains('version: 1.0.0-alpha.5+6'));
     expect(pubspec, contains('default-flavor: production'));
     expect(gradle, contains('applicationIdSuffix = ".alpha"'));
     expect(gradle, contains('Release signing is required'));
