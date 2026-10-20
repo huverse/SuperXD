@@ -264,18 +264,23 @@ class _FriendRow extends StatelessWidget {
           backgroundColor: colors.surfaceSelected,
           child: Text(friend.displayName.characters.first, style: TextStyle(fontSize: 16, color: colors.primary, fontWeight: FontWeight.w600)),
         ),
-        title: Text(friend.displayName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, color: colors.onSurface, fontWeight: unread > 0 ? FontWeight.w600 : FontWeight.w400)),
-        subtitle: Text(friend.removed ? '对方已解除好友' : friend.lastPreview, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
-        trailing: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.end, children: [
+        // 时间在名字一行的右端、未读角标在预览一行的右端（同常见 IM 列表）：两行各自随字号长高。
+        // 以前两者叠成 trailing 一列，ListTile 把 trailing 限高 56，1.3 倍字号起就溢出。
+        title: Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+          Expanded(child: Text(friend.displayName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 16, color: colors.onSurface, fontWeight: unread > 0 ? FontWeight.w600 : FontWeight.w400))),
+          const SizedBox(width: 8),
           Text(socialShortTime(friend.lastActivity), style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
+        ]),
+        subtitle: Padding(padding: const EdgeInsets.only(top: 2), child: Row(children: [
+          Expanded(child: Text(friend.removed ? '对方已解除好友' : friend.lastPreview, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant))),
           if (unread > 0) Container(
-            margin: const EdgeInsets.only(top: 4),
+            margin: const EdgeInsetsDirectional.only(start: 8),
             padding: const EdgeInsets.symmetric(horizontal: 6),
             constraints: const BoxConstraints(minWidth: 20),
             decoration: BoxDecoration(color: colors.dangerFill, borderRadius: BorderRadius.circular(10)),
             child: Text(unread > 99 ? '99+' : '$unread', textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, color: Colors.white, height: 1.4)),
           ),
-        ]),
+        ])),
       ),
     );
   }

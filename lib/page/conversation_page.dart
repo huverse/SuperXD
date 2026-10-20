@@ -20,6 +20,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/scroll_edge_fade.dart';
 
 // 打开好友分享的视频：由组合根接到百宝箱的短视频页（页面层不依赖百宝箱）。
 typedef VideoOpener = void Function(BuildContext context, VideoShare video);
@@ -238,6 +239,8 @@ class _ConversationPageState extends State<ConversationPage> {
         if (time != null) SizedBox(width: double.infinity, child: time),
         // [人工决策-2026-10-09 20:32:45] 卡片右上加可见的⋯（重新发送、删除），删除标警示色并确认；长按仍可打开同一菜单。
         // 以前只能长按，入口看不见；用户选定在卡片角上加⋯（同课程管理卡片、iOS 与鸿蒙列表的更多按钮）。
+        // [人工决策-2026-10-20 13:57:06] 卡片排法保持原设计：对方的贴左、自己的贴右、最宽 82%（用户从「修好错位」「自己发的卡片淡色底」
+        // 「全部同宽并写明谁分享」三种实物中选第一种）。没有时间行的卡片曾被列表过渡层居中，根因见 theme/campus_animated_list.dart 的 _transition。
         ConstrainedBox(
           constraints: BoxConstraints(maxWidth: maxWidth),
           child: Builder(builder: (anchor) => GestureDetector(
@@ -290,9 +293,10 @@ class _ConversationPageState extends State<ConversationPage> {
           ],
         ),
         body: Column(children: [
+          // 卡片滚到透明顶栏下时自身渐隐（倒序列表看末端，见 theme 的 CampusScrollFade）。
           Expanded(child: messages == null
               ? const Center(child: CampusLoading(label: '读取会话'))
-              : LayoutBuilder(builder: (context, constraints) => ListView.builder(
+              : CampusScrollFade(child: LayoutBuilder(builder: (context, constraints) => ListView.builder(
                   // 最新的在最下面，打开即停在底部。
                   reverse: true,
                   padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
@@ -302,7 +306,7 @@ class _ConversationPageState extends State<ConversationPage> {
                     animate: _known?.add(messages[index].id) ?? false,
                     child: _item(messages[index], index + 1 < messages.length ? messages[index + 1] : null, colors, constraints.maxWidth * .82),
                   )),
-                ))),
+                )))),
           // 底部操作栏：实色、顶部分割线（同会话页输入栏规格），不模糊，铺满宽度。
           Container(
             width: double.infinity,

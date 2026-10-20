@@ -5,9 +5,10 @@ import 'package:flutter/widgets.dart';
 // 只用在没有玻璃的内容区列表上（淡入淡出的祖先图层下玻璃取不到背景）。
 const _duration = Duration(milliseconds: 200);
 
+// 条目照旧铺满列表宽度：SizeTransition 内部是 Align，会把宽度放松成「最多这么宽」，按内容收窄的条目（会话卡片）就被居中了。
 Widget _transition(Animation<double> animation, Widget child) {
   final curved = CurvedAnimation(parent: animation, curve: Curves.easeInOutCubic);
-  return SizeTransition(sizeFactor: curved, alignment: Alignment.topCenter, child: FadeTransition(opacity: curved, child: child));
+  return SizeTransition(sizeFactor: curved, alignment: Alignment.topCenter, child: FadeTransition(opacity: curved, child: SizedBox(width: double.infinity, child: child)));
 }
 
 // 按 key 比对前后两次的子项：新 key 展开，消失的 key 留在原位收起后再移除。子项必须各带唯一 key。

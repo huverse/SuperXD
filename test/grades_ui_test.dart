@@ -11,6 +11,7 @@ import 'package:superxd/page/grades_page.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_segmented.dart';
+import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 
@@ -262,6 +263,61 @@ void main() {
     expect(row('测试数学，总评 92，学分 2'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+  testWidgets('教务明确没有成绩：空状态卡代替全是空值的汇总，学年概览也不画汇总', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 740));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final gateway = _Gateway()
+      ..custom = ((term) => GradesView(empty: true, message: '教务明确暂无成绩记录', term: term, student: student, summary: null, effective: const [], original: const []))
+      ..overviewEmpty = true;
+    await tester.pumpWidget(app(GradesPage(gateway: gateway)));
+    await tester.pumpAndSettle();
+    expect(find.text('这学期还没有成绩'), findsOneWidget);
+    // 图标与说明在卡片里水平居中（卡片内容默认按自身宽度靠左）。
+    final emptyCard = tester.getRect(find.ancestor(of: find.text('这学期还没有成绩'), matching: find.byType(CampusSurface)).first);
+    expect(tester.getCenter(find.text('这学期还没有成绩')).dx, closeTo(emptyCard.center.dx, 1));
+    expect(tester.getCenter(find.byType(CampusIcon).last).dx, closeTo(emptyCard.center.dx, 1));
+    expect(find.text('教务汇总 · 本学期'), findsNothing);
+    expect(find.text('教务未提供'), findsNothing);
+    expect(find.byType(TextField), findsNothing, reason: '没有成绩时不给搜索筛选');
+    await tester.tap(find.text('学年概览'));
+    await tester.pumpAndSettle();
+    expect(find.text('教务明确暂无成绩'), findsOneWidget);
+    expect(find.text('教务汇总 · 本学期'), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final (width, scale) in [(360.0, 1.0), (411.0, 1.0), (411.0, 1.4)]) {
+    testWidgets('教务汇总缺项 ${width.toInt()}dp ×$scale：缺的写「—」，长文字不把标签挤成一字一行；整份没给时写一行', (tester) async {
+      await tester.binding.setSurfaceSize(Size(width, 740));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final gateway = _Gateway()..custom = (term) => GradesView(empty: false, message: '', term: term, student: student, summary: const GradeSummary(earnedCredit: null, gpa: '教务未单独给出绩点', averageScore: 81.5, weightedAverage: '教务未提供加权平均分'), effective: courses, original: original);
+      await tester.pumpWidget(app(GradesPage(gateway: gateway), scale: scale));
+      await tester.pumpAndSettle();
+      expect(find.text('—'), findsOneWidget);
+      expect(find.text('81.5'), findsOneWidget);
+      for (final label in ['平均分', '加权平均分', '已获学分']) {
+        final size = tester.getSize(find.text(label));
+        expect(size.width, greaterThan(size.height * label.length * .6), reason: '$label 被挤成竖排');
+      }
+      // 绩点大字并排时最宽占一小半、再长按比例缩小，上下排时不超出卡片；两种排法都不压到其余三项。
+      final card = tester.getRect(find.ancestor(of: find.text('绩点'), matching: find.byType(CampusSurface)).first);
+      final hero = tester.getRect(find.text('教务未单独给出绩点'));
+      final label = tester.getRect(find.text('平均分'));
+      expect(hero.right <= label.left || hero.bottom <= label.top, isTrue);
+      expect(hero.right, lessThanOrEqualTo(card.right));
+      if (hero.right <= label.left) expect(hero.width, lessThan(card.width * .5));
+      expect(tester.takeException(), isNull);
+
+      gateway.custom = (term) => GradesView(empty: false, message: '', term: term, student: student, summary: null, effective: courses, original: original);
+      await tester.tap(find.text('第二学期'));
+      await tester.pumpAndSettle();
+      expect(find.text('教务汇总 · 本学期'), findsOneWidget);
+      expect(find.text('教务没给本学期汇总'), findsOneWidget);
+      expect(find.text('绩点'), findsNothing);
+      expect(find.text('—'), findsNothing);
+    });
+  }
+
   testWidgets('未知缓存错误显示重试，不伪造暂无成绩', (tester) async {
     final gateway = _Gateway()..failed = true;
     await tester.pumpWidget(app(GradesPage(gateway: gateway)));
@@ -279,6 +335,9 @@ class _Gateway implements CampusGateway {
   // 新学年刚开学时教务只公布了第一学期。
   bool onlyFirst = false;
   Completer<GatewayResult<GradesView>>? hold;
+  // 换掉默认的学期成绩（空学期、汇总缺项）；overviewEmpty 时学年概览里第一学期是教务明确无成绩。
+  GradesView Function(TermRef term)? custom;
+  bool overviewEmpty = false;
   @override
   Future<GatewayResult<List<TermRef>>> listTerms() async => ok(onlyFirst ? [first] : [first, second]);
   @override
@@ -292,7 +351,7 @@ class _Gateway implements CampusGateway {
       );
     }
     if (term.key == first.key && hold != null) return hold!.future;
-    return ok(view(term));
+    return ok(custom?.call(term) ?? view(term));
   }
 
   @override
@@ -304,7 +363,8 @@ class _Gateway implements CampusGateway {
       GradeTermOverview(
         term: first,
         cached: true,
-        summary: summary,
+        empty: overviewEmpty,
+        summary: overviewEmpty ? const GradeSummary(earnedCredit: null, gpa: null, averageScore: null, weightedAverage: null) : summary,
         summaryScope: 'term',
       ),
       const GradeTermOverview(term: second, cached: false),

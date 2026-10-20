@@ -426,29 +426,49 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
         style: Theme.of(context).textTheme.titleMedium,
       ),
       if (scope != 'term') const Text('需重新同步核对范围，不将以下数值当作本学期指标。'),
-      const SizedBox(height: 12),
-      _summaryFigures(summary),
+      if (summary == null)
+        Padding(padding: const EdgeInsets.only(top: 4), child: Text('教务没给本学期汇总', style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant)))
+      else ...[
+        const SizedBox(height: 12),
+        _summaryFigures(summary),
+      ],
     ],
   );
 
   // [人工决策-2026-10-19 18:51:59] 教务汇总改成绩点大字在左（这一学期最常看的一个数），平均分、加权平均分与已获学分三行小字在右（用户从两列表、
   // 两行两列数据格、绩点大字三种实物中选定）；窄处与大字号下上下排。以前标签与数值两列表格挤在左半边，绩点不突出。
-  Widget _summaryFigures(GradeSummary? summary) {
+  // [人工决策-2026-10-20 13:03:42] 缺的那一项写「—」（用户选定，同银行、健康类应用的缺值），不再写「教务未提供」：长文字放进 40 号大字会占满整行，
+  // 右边标签被挤成一字一行。标签按自身宽度、数值占剩下的并靠右，教务给了长文字时折行而不挤标签；大字最宽占 45%，再长按比例缩小。
+  Widget _summaryFigures(GradeSummary summary) {
     final palette = CampusPalette.of(context);
-    final figures = [('绩点', summary?.gpa), ('平均分', summary?.averageScore), ('加权平均分', summary?.weightedAverage), ('已获学分', summary?.earnedCredit)];
-    final hero = Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(grades.gradeText(figures.first.$2), style: TextStyle(fontSize: 40, fontWeight: FontWeight.w600, height: 1.1, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()])),
+    final figures = [('绩点', summary.gpa), ('平均分', summary.averageScore), ('加权平均分', summary.weightedAverage), ('已获学分', summary.earnedCredit)];
+    Widget hero(double maxWidth) => ConstrainedBox(constraints: BoxConstraints(maxWidth: maxWidth), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      FittedBox(fit: BoxFit.scaleDown, alignment: AlignmentDirectional.centerStart, child: Text(grades.gradeText(figures.first.$2, missing: '—'), maxLines: 1, style: TextStyle(fontSize: 40, fontWeight: FontWeight.w600, height: 1.1, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()]))),
       Text(figures.first.$1, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
-    ]);
+    ]));
     final rest = Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      for (final (label, value) in figures.skip(1)) Padding(padding: const EdgeInsets.symmetric(vertical: 3), child: Row(children: [
-        Expanded(child: Text(label, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))),
-        Text(grades.gradeText(value), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()])),
+      for (final (label, value) in figures.skip(1)) Padding(padding: const EdgeInsets.symmetric(vertical: 3), child: Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+        Text(label, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+        const SizedBox(width: 12),
+        Expanded(child: Text(grades.gradeText(value, missing: '—'), textAlign: TextAlign.end, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()]))),
       ])),
     ]);
     return LayoutBuilder(builder: (context, constraints) => constraints.maxWidth >= 300 * MediaQuery.textScalerOf(context).scale(14) / 14
-        ? Row(crossAxisAlignment: CrossAxisAlignment.center, children: [hero, const SizedBox(width: 24), Expanded(child: rest)])
-        : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [hero, const SizedBox(height: 12), rest]));
+        ? Row(crossAxisAlignment: CrossAxisAlignment.center, children: [hero(constraints.maxWidth * .45), const SizedBox(width: 24), Expanded(child: rest)])
+        : Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [hero(constraints.maxWidth), const SizedBox(height: 12), rest]));
+  }
+
+  // [人工决策-2026-10-20 13:03:42] 教务明确这学期没有成绩：只画一张空状态卡，不画全是空值的汇总，学年概览里也不画（用户选定）；
+  // 有成绩但教务整份汇总都没给时，汇总卡只写一行「教务没给本学期汇总」（见 _summary）。
+  Widget _emptyGrades() {
+    final palette = CampusPalette.of(context);
+    return _panel(child: Container(width: double.infinity, padding: const EdgeInsets.symmetric(vertical: 16), child: Column(children: [
+      CampusIcon(CampusIcons.grades, size: 40, color: palette.onSurfaceVariant),
+      const SizedBox(height: 12),
+      Text('这学期还没有成绩', textAlign: TextAlign.center, style: Theme.of(context).textTheme.titleMedium),
+      const SizedBox(height: 4),
+      Text('教务暂无成绩记录', textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+    ])));
   }
 
   Widget _controls() {
@@ -574,7 +594,8 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
                 '${formatCampusRelative(overview.fetchedAt!)} 同步',
               ),
             if (overview.cached &&
-                overview.error == null) ...[
+                overview.error == null &&
+                !overview.empty) ...[
               const SizedBox(height: 12),
               if (overview.summaryScope == 'term')
                 _summary(
@@ -605,6 +626,8 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
       _panel(
         child: const Text('点「同步」获取成绩'),
       )
+    else if (_view!.empty)
+      _emptyGrades()
     else ...[
       _panel(
         child: _summary(
@@ -627,18 +650,16 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
               ),
           ],
         ),
-      if (!_view!.empty) ...[
-        _filterBar(),
-        const SizedBox(height: 12),
-        DotSeparatedText(
-          '${_original ? '原始成绩 · ' : ''}显示 ${_visible.length} 条',
-          style: const TextStyle(fontSize: 14),
+      _filterBar(),
+      const SizedBox(height: 12),
+      DotSeparatedText(
+        '${_original ? '原始成绩 · ' : ''}显示 ${_visible.length} 条',
+        style: const TextStyle(fontSize: 14),
+      ),
+      if (_visible.isEmpty)
+        _panel(
+          child: const Text('没有符合筛选条件的成绩'),
         ),
-        if (_visible.isEmpty)
-          _panel(
-            child: const Text('没有符合筛选条件的成绩'),
-          ),
-      ],
     ],
   ];
 

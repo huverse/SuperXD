@@ -14,6 +14,7 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_rolling_text.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/scroll_edge_fade.dart';
 
 import 'fixture_campus_gateway.dart';
 
@@ -226,6 +227,9 @@ void main() {
     // 回今天是底栏上方水平居中的胶囊，箭头指向今天所在方向；日期下注明相对天数。
     final width = tester.getSize(find.byType(TodayPage)).width;
     expect(tester.getCenter(find.byKey(const ValueKey('today-reset'))).dx, closeTo(width / 2, 1));
+    // 正文包滚动边缘渐隐（同另外三个根页），「今天」玻璃胶囊不在遮罩里（遮罩下玻璃取不到背景）。
+    expect(find.ancestor(of: find.text('星期6的课'), matching: find.byType(ScrollEdgeFade)), findsOneWidget);
+    expect(find.ancestor(of: find.byKey(const ValueKey('today-reset')), matching: find.byType(ScrollEdgeFade)), findsNothing);
     expect(find.text('明天'), findsOneWidget);
     expect(tester.widget<AnimatedRotation>(find.descendant(of: find.byKey(const ValueKey('today-reset')), matching: find.byType(AnimatedRotation))).turns, 0);
     await _swipeDate(tester, '2026-09-26', 100);

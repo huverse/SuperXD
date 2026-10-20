@@ -9,6 +9,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/express/express_controller.dart';
 import 'package:superxd/toolbox/express/express_identity_view.dart';
 import 'package:superxd/toolbox/express/express_login_webview.dart';
@@ -92,12 +93,19 @@ class _ExpressPageState extends State<ExpressPage> {
     }
     final raw = await scan(context, '把驿站的二维码放入框内', (value) => value.trim().isEmpty ? '没有识别到驿站码' : null);
     if (raw == null || !mounted) return;
-    await _controller!.queryStationPackages(stationCode: raw.trim());
+    await _act(() => _controller!.queryStationPackages(stationCode: raw.trim()));
   }
 
-  Future<void> _menu() async {
+  // 查询失败用提示条说明（同学习通、成绩页），不在卡片里留一行不会消失的红字；登录失效时控制器已回到登录态，原因写在登录页上。
+  Future<void> _act(Future<void> Function() action) async {
+    await action();
+    final controller = _controller!;
+    if (mounted && controller.loggedIn && controller.error != null) showCampusToast(context, controller.error!);
+  }
+
+  Future<void> _accountMenu(BuildContext anchor) async {
     final choice = await showCampusMenu<String>(
-      context,
+      anchor,
       items: const [CampusMenuItem(value: 'logout', label: '退出登录', icon: CampusIcons.logout, destructive: true)],
     );
     if (choice == 'logout' && mounted) await _logout();
@@ -118,12 +126,9 @@ class _ExpressPageState extends State<ExpressPage> {
         onPressed: () => context.canPop() ? context.pop() : Navigator.pop(context),
         icon: const CampusIcon(CampusIcons.back),
       ),
-      actions: [
-        if (_controller?.loggedIn ?? false)
-          IconButton(tooltip: '更多', onPressed: _menu, icon: const CampusIcon(CampusIcons.manage)),
-      ],
     ),
-    body: SafeArea(
+    // 内容滚到透明顶栏下时自身渐隐，同百宝箱其他页（theme 的 CampusScrollFade）。
+    body: CampusScrollFade(child: SafeArea(
       child: FutureBuilder<void>(
         future: _ready,
         builder: (context, snapshot) {
@@ -139,16 +144,16 @@ class _ExpressPageState extends State<ExpressPage> {
             builder: (context, _) => Center(
               child: ConstrainedBox(
                 constraints: const BoxConstraints(maxWidth: 800),
-                child: controller.loggedIn ? _buildMain(controller) : _buildLogin(),
+                child: controller.loggedIn ? _buildMain(controller) : _buildLogin(controller),
               ),
             ),
           );
         },
       ),
-    ),
+    )),
   );
 
-  Widget _buildLogin() {
+  Widget _buildLogin(ExpressController controller) {
     final palette = CampusPalette.of(context);
     return ListView(
       padding: const EdgeInsets.all(24),
@@ -165,6 +170,11 @@ class _ExpressPageState extends State<ExpressPage> {
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: palette.onSurfaceVariant),
           ),
         ),
+        // 登录失效被退回这里时写明原因（以前原因只写在已登录视图里，退回后看不到）。
+        if (controller.error != null) ...[
+          const SizedBox(height: 16),
+          Center(child: Text(controller.error!, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: palette.danger))),
+        ],
         const SizedBox(height: 24),
         Center(
           child: FilledButton.icon(
@@ -178,114 +188,85 @@ class _ExpressPageState extends State<ExpressPage> {
     );
   }
 
+  // [人工决策-2026-10-20 14:38:25] 首页同学习通：账号卡（人形头像、拼多多账号、⋯ 里退出登录），四个操作在卡下方单独一组，
+  // 点哪个哪个原地转圈（不再出 Material 进度条、全组变灰）；结果卡标题与全应用同字号（用户选定的百宝箱统一性整改）。
   Widget _buildMain(ExpressController controller) {
     final palette = CampusPalette.of(context);
     final textTheme = Theme.of(context).textTheme;
+    final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
     final mobiles = controller.mobiles;
     final packages = controller.packages;
     final identityCode = controller.identityCode;
+    final locked = controller.busy || controller.refreshing;
+    final userId = controller.session!.userId;
+    Widget action(ExpressAction kind, IconData icon, String label, String busyLabel, VoidCallback onPressed, {bool prominent = false}) {
+      final content = CampusBusyContent(busy: controller.running == kind, label: label, busyLabel: busyLabel, icon: CampusIcon(icon));
+      return prominent
+          ? FilledButton(style: campusProminent, onPressed: locked ? null : onPressed, child: content)
+          : OutlinedButton(onPressed: locked ? null : onPressed, child: content);
+    }
+    Widget result(String title, List<Widget> children) => Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: CampusSurface(
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(title, style: textTheme.titleMedium),
+          const SizedBox(height: 4),
+          ...children,
+        ]),
+      ),
+    );
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
         CampusSurface(
-          padding: const EdgeInsets.all(16),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
+          child: Row(
             children: [
-              Text('已登录拼多多', style: textTheme.titleMedium),
-              if (controller.session!.userId.isNotEmpty) ...[
-                const SizedBox(height: 4),
-                Text('账号 ${controller.session!.userId}', style: textTheme.bodyMedium?.copyWith(color: palette.onSurfaceVariant)),
-              ],
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  FilledButton.tonalIcon(
-                    onPressed: controller.busy ? null : controller.queryBoundMobiles,
-                    icon: const CampusIcon(CampusIcons.phone),
-                    label: const Text('绑定手机号'),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed: controller.busy ? null : () => controller.queryStationPackages(),
-                    icon: const CampusIcon(CampusIcons.parcel),
-                    label: const Text('驿站快递'),
-                  ),
-                  FilledButton.tonalIcon(
-                    onPressed: controller.busy ? null : _scanStation,
-                    icon: const CampusIcon(CampusIcons.scan),
-                    label: const Text('扫驿站码'),
-                  ),
-                  FilledButton.icon(
-                    style: campusProminent,
-                    onPressed: controller.busy ? null : controller.generateIdentityCode,
-                    icon: const CampusIcon(CampusIcons.qrCode),
-                    label: const Text('身份码'),
-                  ),
-                ],
-              ),
-              if (controller.busy) const Padding(padding: EdgeInsets.only(top: 12), child: LinearProgressIndicator()),
-              if (controller.error != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 12),
-                  child: Text(controller.error!, style: textTheme.bodyMedium?.copyWith(color: palette.danger)),
+              const Padding(padding: EdgeInsets.only(right: 12), child: SizedBox.square(dimension: 44, child: Center(child: CampusIcon(CampusIcons.account)))),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text('拼多多账号', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                    const SizedBox(height: 4),
+                    Text(userId.isEmpty ? '已登录' : '账号 $userId', style: secondary),
+                  ],
                 ),
+              ),
+              // 菜单按按钮自己的 context 定位（同学习通账号卡）。
+              Builder(builder: (menuAnchor) => IconButton(tooltip: '账号操作', onPressed: () => _accountMenu(menuAnchor), icon: const CampusIcon(CampusIcons.manage))),
             ],
           ),
         ),
-        if (mobiles != null) ...[
-          const SizedBox(height: 16),
-          CampusSurface(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('绑定的取件手机号', style: textTheme.titleSmall),
-                const SizedBox(height: 8),
-                if (mobiles.isEmpty)
-                  Text('未绑定取件手机号', style: textTheme.bodyMedium?.copyWith(color: palette.onSurfaceVariant))
-                else
-                  for (final mobile in mobiles)
-                    Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 2),
-                      child: Text(mobile.alias.isEmpty ? mobile.maskedMobile : '${mobile.maskedMobile}（${mobile.alias}）'),
-                    ),
-              ],
-            ),
+        const SizedBox(height: 12),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            action(ExpressAction.mobiles, CampusIcons.phone, '绑定手机号', '正在查询', () => _act(controller.queryBoundMobiles)),
+            action(ExpressAction.packages, CampusIcons.parcel, '驿站快递', '正在查询', () => _act(controller.queryStationPackages)),
+            action(ExpressAction.scan, CampusIcons.scan, '扫驿站码', '正在查询', _scanStation),
+            action(ExpressAction.identity, CampusIcons.qrCode, '身份码', '生成中', () => _act(controller.generateIdentityCode), prominent: true),
+          ],
+        ),
+        if (mobiles != null)
+          result('绑定的取件手机号', [
+            if (mobiles.isEmpty)
+              Text('未绑定取件手机号', style: secondary)
+            else
+              for (final mobile in mobiles)
+                Text(mobile.alias.isEmpty ? mobile.maskedMobile : '${mobile.maskedMobile}（${mobile.alias}）', style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface)),
+          ]),
+        if (packages != null)
+          result('驿站待取件', [
+            Text(packages.count == 0 ? '没有待取件' : '${packages.count} 件待取', style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface)),
+            if (packages.count == 0 && (packages.noPackageMobileInfo?.mobileList.isNotEmpty ?? false))
+              Text('手机尾号 ${packages.noPackageMobileInfo!.mobileList.join('、')}', style: secondary),
+          ]),
+        if (identityCode != null)
+          Padding(
+            padding: const EdgeInsets.only(top: 16),
+            child: CampusSurface(child: ExpressIdentityView(controller: controller)),
           ),
-        ],
-        if (packages != null) ...[
-          const SizedBox(height: 16),
-          CampusSurface(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text('驿站待取件 ${packages.count} 件', style: textTheme.titleSmall),
-                if (packages.count == 0 && (packages.noPackageMobileInfo?.mobileList.isNotEmpty ?? false)) ...[
-                  const SizedBox(height: 4),
-                  Text('手机尾号：${packages.noPackageMobileInfo!.mobileList.join('、')}', style: textTheme.bodyMedium?.copyWith(color: palette.onSurfaceVariant)),
-                ],
-                if (packages.packages.isNotEmpty) ...[
-                  const SizedBox(height: 4),
-                  Text('共有 ${packages.packages.length} 件待取', style: textTheme.bodyMedium?.copyWith(color: palette.onSurfaceVariant)),
-                ],
-              ],
-            ),
-          ),
-        ],
-        if (identityCode != null) ...[
-          const SizedBox(height: 16),
-          CampusSurface(
-            padding: const EdgeInsets.all(16),
-            child: ExpressIdentityView(
-              result: identityCode,
-              refreshing: controller.busy,
-              onRefresh: controller.refreshIdentityCode,
-            ),
-          ),
-        ],
       ],
     );
   }
