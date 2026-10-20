@@ -383,10 +383,15 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
             ListenableBuilder(
               listenable: controller,
               builder: (context, _) => controller.status == ChaoxingStatus.ready
-                  ? IconButton(
-                      tooltip: '扫签到二维码',
-                      onPressed: () => unawaited(_scanSign(controller)),
-                      icon: const CampusIcon(CampusIcons.scan),
+                  // 顶栏操作同应用其他页：玻璃圆钮（theme 的 CampusGlassCircleButton）。
+                  ? Padding(
+                      padding: const EdgeInsets.only(right: 12),
+                      child: CampusGlassCircleButton(
+                        label: '扫签到二维码',
+                        size: 44,
+                        onPressed: () => unawaited(_scanSign(controller)),
+                        icon: const CampusIcon(CampusIcons.scan),
+                      ),
                     )
                   : const SizedBox.shrink(),
             ),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -142,11 +143,16 @@ class ChaoxingRefreshButton extends StatelessWidget {
   // 为空时按钮暂不可点（比如首次读取中）。
   final VoidCallback? onRefresh;
 
+  // 顶栏操作同应用其他页：玻璃圆钮，刷新中在圆钮里原地转。
   @override
-  Widget build(BuildContext context) => IconButton(
-    tooltip: loading ? '正在刷新' : '刷新',
-    onPressed: loading ? null : onRefresh,
-    icon: loading ? const CampusLoader(size: 20, delay: Duration.zero) : const CampusIcon(CampusIcons.sync),
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.only(right: 12),
+    child: CampusGlassCircleButton(
+      label: loading ? '正在刷新' : '刷新',
+      size: 44,
+      onPressed: loading ? null : onRefresh,
+      icon: loading ? const CampusLoader(size: 20, delay: Duration.zero) : const CampusIcon(CampusIcons.sync),
+    ),
   );
 }
 

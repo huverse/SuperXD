@@ -28,6 +28,13 @@ const _zoomPadding = 24.0;
 const _zoomRadius = 20.0;
 const _zoomMargin = 24.0;
 
+// 倒计时那一行：卡片与全屏页共用。到期自动刷新没成功时停在「已过期」，卡片里原地给「刷新」。
+String _identityStatus(ExpressController controller, int remaining) => controller.refreshing || controller.running == ExpressAction.identity
+    ? '正在刷新身份码'
+    : remaining > 0
+    ? '有效期剩余 $remaining 秒'
+    : '身份码已过期';
+
 void _brightness(Future<void> Function() change) => change().catchError((Object error, StackTrace stack) {
   campusLog('[Express] action=brightness errorType=${error.runtimeType}\n$stack');
 });
@@ -88,6 +95,13 @@ class _ExpressIdentityViewState extends State<ExpressIdentityView> {
         campusLog('[Express] action=refresh_code errorType=${error.runtimeType}\n$stack');
       });
     });
+  }
+
+  // 到期自动刷新没成功时手动再取一次；失败原因用提示条（登录失效时页面已回到登录态，原因写在登录页）。
+  Future<void> _refresh() async {
+    final controller = widget.controller;
+    await controller.refreshIdentityCode();
+    if (mounted && controller.loggedIn && controller.error != null) showCampusToast(context, controller.error!);
   }
 
   // [人工决策-2026-10-20 13:03:42] 点码牌全屏出示（用户选定，同支付宝、微信付款码）：码牌从卡片里原地放大进整屏白底，条码转 90° 沿屏幕长边铺开、
@@ -193,14 +207,17 @@ class _ExpressIdentityViewState extends State<ExpressIdentityView> {
           Center(child: Text(mobileDesc, style: textTheme.bodyMedium?.copyWith(color: palette.onSurfaceVariant))),
         ],
         const SizedBox(height: 8),
-        Center(
-          child: ValueListenableBuilder<int>(
-            valueListenable: _remaining,
-            builder: (context, remaining, _) => Text(
-              widget.controller.busy ? '正在刷新身份码' : '有效期剩余 $remaining 秒',
-              style: textTheme.bodyMedium?.copyWith(color: palette.attention),
-            ),
-          ),
+        ValueListenableBuilder<int>(
+          valueListenable: _remaining,
+          builder: (context, remaining, _) {
+            final controller = widget.controller;
+            final expired = remaining <= 0 && !controller.refreshing && controller.running != ExpressAction.identity;
+            return Column(children: [
+              Text(_identityStatus(controller, remaining), style: textTheme.bodyMedium?.copyWith(color: palette.attention)),
+              if (expired)
+                Padding(padding: const EdgeInsets.only(top: 8), child: OutlinedButton.icon(onPressed: controller.busy ? null : _refresh, icon: const CampusIcon(CampusIcons.sync), label: const Text('刷新'))),
+            ]);
+          },
         ),
         const SizedBox(height: 4),
         Center(
@@ -355,7 +372,7 @@ class _IdentityZoomState extends State<_IdentityZoom> {
                     ValueListenableBuilder<int>(
                       valueListenable: route.remaining,
                       builder: (context, remaining, _) => Text(
-                        route.express.busy ? '正在刷新身份码' : '有效期剩余 $remaining 秒',
+                        _identityStatus(route.express, remaining),
                         style: TextStyle(fontSize: 14, color: light.attention),
                       ),
                     ),

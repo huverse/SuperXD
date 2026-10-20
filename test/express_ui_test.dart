@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -44,6 +45,13 @@ void main() {
   late ToolboxFixture fixture;
   late MemoryExpressVault vault;
 
+  ToolboxRuntime runtimeWith(http.Client client) => ToolboxRuntime.testing(
+    catalog: toolboxCatalog,
+    store: fixture.store,
+    downloads: fixture.manager,
+    services: {ExpressService.serviceId: ExpressService(vault: vault, clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: client)))},
+  );
+
   ToolboxRuntime buildRuntime() => ToolboxRuntime.testing(
     catalog: toolboxCatalog,
     store: fixture.store,
@@ -68,7 +76,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
     await tester.pumpAndSettle();
     expect(find.text('登录拼多多'), findsOneWidget);
-    expect(find.text('已登录拼多多'), findsNothing);
+    expect(find.text('拼多多账号'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -76,7 +84,7 @@ void main() {
     await vault.save(_session);
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
     await tester.pumpAndSettle();
-    expect(find.text('已登录拼多多'), findsOneWidget);
+    expect(find.text('拼多多账号'), findsOneWidget);
 
     await tester.tap(find.text('绑定手机号'));
     await tester.pumpAndSettle();
@@ -84,7 +92,8 @@ void main() {
 
     await tester.tap(find.text('驿站快递'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('驿站待取件 0 件'), findsOneWidget);
+    expect(find.text('驿站待取件'), findsOneWidget);
+    expect(find.text('没有待取件'), findsOneWidget);
     expect(find.textContaining('8888'), findsWidgets);
     await tester.pumpWidget(const SizedBox());
   });
@@ -230,7 +239,75 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byType(PrettyQrView), findsOneWidget);
-    expect(find.text('已登录拼多多'), findsOneWidget);
+    expect(find.text('拼多多账号'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('查询时只有点的那个按钮原地转圈、其余暂不可点，不出进度条；失败用提示条，不在卡片里留红字', (tester) async {
+    final gate = Completer<void>();
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtimeWith(MockClient((request) async {
+      await gate.future;
+      return http.Response('', 500);
+    })))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('绑定手机号'));
+    await tester.pump();
+    expect(find.text('正在查询'), findsOneWidget);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(tester.widget<OutlinedButton>(find.ancestor(of: find.text('驿站快递'), matching: find.byType(OutlinedButton))).onPressed, isNull);
+    gate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('正在查询'), findsNothing);
+    expect(find.text('拼多多返回错误码 500'), findsOneWidget, reason: '只在提示条里出现一次');
+    expect(find.ancestor(of: find.text('拼多多返回错误码 500'), matching: find.byType(SnackBar)), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('登录失效回到登录页并写明原因；退出登录在账号卡的⋯里，顶栏不再放', (tester) async {
+    await vault.save(_session);
+    await tester.pumpWidget(MediaQuery(data: MediaQueryData.fromView(tester.view).copyWith(disableAnimations: true), child: MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime()))));
+    await tester.pumpAndSettle();
+    expect(find.byTooltip('更多'), findsNothing);
+    await tester.tap(find.byTooltip('账号操作'));
+    await tester.pumpAndSettle();
+    expect(find.text('退出登录'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtimeWith(MockClient((request) async => http.Response(jsonEncode({'error_code': 40001}), 200, headers: {'content-type': 'application/json'}))))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('身份码'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('登录拼多多'), findsOneWidget);
+    expect(find.text('登录已失效，请重新登录'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('码到期自动刷新没成功：原地写「身份码已过期」并给「刷新」，再失败用提示条', (tester) async {
+    var issued = 0;
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtimeWith(MockClient((request) async {
+      if (++issued > 1) return http.Response('', 503);
+      return http.Response(jsonEncode({'success': true, 'error_code': '0', 'result': {'identification_code': 'dd202610200000000000009', 'expire_mills': 1000}}), 200, headers: {'content-type': 'application/json;charset=UTF-8'});
+    })))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('身份码'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('有效期剩余 1 秒'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(issued, 2);
+    expect(find.text('身份码已过期'), findsOneWidget);
+    await tester.tap(find.widgetWithText(OutlinedButton, '刷新'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(issued, 3);
+    expect(find.text('拼多多返回错误码 503'), findsOneWidget);
+    expect(find.text('身份码已过期'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 

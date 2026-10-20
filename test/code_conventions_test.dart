@@ -40,6 +40,30 @@ void main() {
     expect(offenders, isEmpty);
   });
 
+  // 顶栏右侧操作一律用玻璃圆钮 CampusGlassCircleButton（主题规则：圆形玻璃按钮只用于顶栏操作与悬浮按钮）；10-20 统一性审查发现学习通、快递用的是普通图标。
+  // 例外：地图选点页同屏有高德原生地图，玻璃与地图同屏曾闪退（玻璃限档的由来），顶栏保持普通图标。
+  test('顶栏右侧操作用玻璃圆钮', () {
+    final offenders = <String>[];
+    for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart') && !file.path.endsWith('chaoxing_map_page.dart'))) {
+      final source = file.readAsStringSync();
+      for (final match in RegExp(r'AppBar\(').allMatches(source)) {
+        final actions = source.indexOf('actions: [', match.end);
+        // 只看这个 AppBar 自己的 actions：下一个 AppBar 之前、括号配平的那一段。
+        final next = source.indexOf('AppBar(', match.end);
+        if (actions < 0 || (next >= 0 && actions > next)) continue;
+        var depth = 0, end = actions + 'actions: '.length;
+        for (; end < source.length; end++) {
+          final char = source[end];
+          if (char == '[' || char == '(' || char == '{') depth++;
+          if (char == ']' || char == ')' || char == '}') depth--;
+          if (depth == 0) break;
+        }
+        if (source.substring(actions, end).contains('IconButton(')) offenders.add('${file.path}:${'\n'.allMatches(source.substring(0, actions)).length + 1}');
+      }
+    }
+    expect(offenders, isEmpty);
+  });
+
   // 页面路由一律用 CampusPageRoute（GoRouter 经 campusPage）：转场计时从新页首帧画完后开始，
   // 直接用 MaterialPageRoute 时首帧一慢（首次加载字体、编译着色器）整段转场就被吃掉，看起来是硬切。
   test('页面路由不直接用MaterialPageRoute或MaterialPage', () {

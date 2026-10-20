@@ -5,8 +5,11 @@ import 'package:superxd/toolbox/express/express_client.dart';
 import 'package:superxd/toolbox/express/express_models.dart';
 import 'package:superxd/toolbox/express/express_service.dart';
 
+// 正在跑的是哪个查询：发起它的按钮原地转圈，其余按钮暂不可点。
+enum ExpressAction { mobiles, packages, scan, identity }
+
 // 快递页的状态：会话恢复、绑定手机号与待取件查询、身份码生成与到期刷新。
-// 一次只跑一个请求（busy）；拿到「未登录」就清掉会话，由页面回到登录态。
+// 一次只跑一个请求（busy）；拿到「未登录」就清掉会话，由页面回到登录态并写明原因。
 class ExpressController extends ChangeNotifier {
   ExpressController(this._service);
   final ExpressService _service;
@@ -16,7 +19,8 @@ class ExpressController extends ChangeNotifier {
   List<PddBoundMobile>? _mobiles;
   StationPackagesResult? _packages;
   IdentityCodeResult? _identityCode;
-  bool _busy = false;
+  ExpressAction? _running;
+  bool _refreshing = false;
   String? _error;
 
   PddSession? get session => _session;
@@ -24,7 +28,10 @@ class ExpressController extends ChangeNotifier {
   List<PddBoundMobile>? get mobiles => _mobiles;
   StationPackagesResult? get packages => _packages;
   IdentityCodeResult? get identityCode => _identityCode;
-  bool get busy => _busy;
+  ExpressAction? get running => _running;
+  bool get busy => _running != null;
+  // 身份码到期后的自动刷新进行中（不占 busy，查询按钮照常可点）。
+  bool get refreshing => _refreshing;
   String? get error => _error;
 
   Future<void> initialize() async {
@@ -47,33 +54,37 @@ class ExpressController extends ChangeNotifier {
     _session = session;
   }
 
-  Future<void> queryBoundMobiles() => _run(() async {
+  Future<void> queryBoundMobiles() => _run(ExpressAction.mobiles, () async {
     _mobiles = await _client!.queryBoundMobiles();
   });
 
-  Future<void> queryStationPackages({String stationCode = ''}) => _run(() async {
+  Future<void> queryStationPackages({String stationCode = ''}) => _run(stationCode.isEmpty ? ExpressAction.packages : ExpressAction.scan, () async {
     _packages = await _client!.queryStationPackages(
       stationCode: stationCode,
       entrySource: stationCode.isEmpty ? PddConstants.entryOther : PddConstants.entryScan,
     );
   });
 
-  Future<void> generateIdentityCode() => _run(() async {
+  Future<void> generateIdentityCode() => _run(ExpressAction.identity, () async {
     _identityCode = await _client!.generateIdentityCode();
   });
 
   // 身份码到期自动刷新：失败不清掉当前码，只记一笔，倒计时组件会在下次到期再试。
   Future<void> refreshIdentityCode() async {
-    if (_client == null || _busy) return;
+    if (_client == null || busy || _refreshing) return;
+    _refreshing = true;
+    notifyListeners();
     try {
       _identityCode = await _client!.generateIdentityCode();
       _error = null;
-      notifyListeners();
     } on ExpressFailure catch (failure) {
       await _onFailure(failure);
-      notifyListeners();
     } catch (error, stack) {
       campusLog('[Express] action=refresh_code errorType=${error.runtimeType}\n$stack');
+      _error = '出错了，请稍后重试';
+    } finally {
+      _refreshing = false;
+      notifyListeners();
     }
   }
 
@@ -83,9 +94,9 @@ class ExpressController extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> _run(Future<void> Function() action) async {
-    if (_client == null || _busy) return;
-    _busy = true;
+  Future<void> _run(ExpressAction running, Future<void> Function() action) async {
+    if (_client == null || busy || _refreshing) return;
+    _running = running;
     _error = null;
     notifyListeners();
     try {
@@ -96,7 +107,7 @@ class ExpressController extends ChangeNotifier {
       campusLog('[Express] action=request errorType=${error.runtimeType}\n$stack');
       _error = '出错了，请稍后重试';
     } finally {
-      _busy = false;
+      _running = null;
       notifyListeners();
     }
   }
