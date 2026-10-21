@@ -14,29 +14,27 @@ import 'package:superxd/toolbox/express/express_models.dart';
 
 // 取件手机号管理弹层：列已绑定的号（⋯里解绑）、一键快速绑定本账号已有号、短信验证绑定其他手机号。
 // 绑定/解绑都是账号状态变更，逐步由用户点击确认，不后台自动做。登录失效时控制器回到登录页、本弹层随之关闭。
-Future<void> showExpressMobileSheet(BuildContext context, {required ExpressController controller}) =>
-    showCampusSheet<void>(context: context, builder: (context) => _ExpressMobileSheet(controller: controller));
+// 数据由页面先读好再打开（ExpressController.loadMobiles），弹层一出来就是最终内容，不先撑满再缩回。
+Future<void> showExpressMobileSheet(BuildContext context, {required ExpressController controller, required ExpressMobiles initial}) =>
+    showCampusSheet<void>(context: context, builder: (context) => _ExpressMobileSheet(controller: controller, initial: initial));
 
 class _ExpressMobileSheet extends StatefulWidget {
-  const _ExpressMobileSheet({required this.controller});
+  const _ExpressMobileSheet({required this.controller, required this.initial});
   final ExpressController controller;
+  final ExpressMobiles initial;
 
   @override
   State<_ExpressMobileSheet> createState() => _ExpressMobileSheetState();
 }
 
 class _ExpressMobileSheetState extends State<_ExpressMobileSheet> {
-  List<PddBoundMobile>? _mobiles;
-  PddBindPreCheck? _pre;
-  bool _loading = true;
+  late ExpressMobiles _data = widget.initial;
   bool _working = false;
-  String? _error;
 
   @override
   void initState() {
     super.initState();
     widget.controller.addListener(_onController);
-    _reload();
   }
 
   // 任何绑定操作拿到未登录时，控制器会清会话、回到登录页：此时把弹层关掉，别悬在登录页上。
@@ -51,45 +49,17 @@ class _ExpressMobileSheetState extends State<_ExpressMobileSheet> {
     super.dispose();
   }
 
-  Future<void> _reload() async {
-    setState(() {
-      _loading = true;
-      _error = null;
-    });
-    try {
-      final pre = await widget.controller.preCheckBind();
-      final mobiles = await widget.controller.fetchBoundMobiles();
-      if (!mounted) return;
-      setState(() {
-        _pre = pre;
-        _mobiles = mobiles;
-        _loading = false;
-      });
-    } on ExpressFailure catch (failure) {
-      if (!mounted || failure.isNotLoggedIn) return;
-      setState(() {
-        _loading = false;
-        _error = failure.message;
-      });
-    } catch (error, stack) {
-      campusLog('[Express] action=bind_reload errorType=${error.runtimeType}\n$stack');
-      if (!mounted) return;
-      setState(() {
-        _loading = false;
-        _error = '出错了，请稍后重试';
-      });
-    }
-  }
-
-  // 一次只跑一个绑定操作：失败用提示条说明（未登录由控制器带回登录页，这里不再提示），成功后重载列表。
-  Future<void> _guard(Future<void> Function() op, {String? done}) async {
+  // 一次只跑一个绑定操作：失败用提示条说明（未登录由控制器带回登录页，这里不再提示）。
+  // 成功后保留现有列表、原地换成重读的结果（不切回加载态），再提示。
+  Future<void> _guard(Future<void> Function() op, {required String done}) async {
     if (_working) return;
     setState(() => _working = true);
     try {
       await op();
+      final data = await widget.controller.reloadMobiles();
       if (!mounted) return;
-      await _reload();
-      if (mounted && done != null) showCampusToast(context, done);
+      setState(() => _data = data);
+      showCampusToast(context, done);
     } on ExpressFailure catch (failure) {
       if (mounted && !failure.isNotLoggedIn) showCampusToast(context, failure.message);
     } catch (error, stack) {
@@ -110,10 +80,8 @@ class _ExpressMobileSheetState extends State<_ExpressMobileSheet> {
       Navigator.of(context).pop();
       return;
     }
-    if (bound == true) {
-      await _reload();
-      if (mounted) showCampusToast(context, '已绑定');
-    }
+    // 绑定已在对话框里做完，这里只原地重读列表。
+    if (bound == true) await _guard(() async {}, done: '已绑定');
   }
 
   Future<void> _unbind(BuildContext anchor, PddBoundMobile mobile) async {
@@ -129,10 +97,52 @@ class _ExpressMobileSheetState extends State<_ExpressMobileSheet> {
     final palette = CampusPalette.of(context);
     final textTheme = Theme.of(context).textTheme;
     final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
-    final mobiles = _mobiles;
-    final pre = _pre;
+    final (:pre, :mobiles) = _data;
     // 快速绑定只在预检查给了已有号、且它还没在列表里时才提示。
-    final showFastBind = pre != null && pre.canFastBind && (mobiles?.every((mobile) => mobile.mobileId != pre.mobileId) ?? false);
+    final showFastBind = pre.canFastBind && mobiles.every((mobile) => mobile.mobileId != pre.mobileId);
+    final list = ListView(
+      shrinkWrap: true,
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
+      children: [
+        if (mobiles.isEmpty)
+          Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text('还没有绑定取件手机号', style: secondary))
+        else
+          for (final mobile in mobiles)
+            CampusSurface(
+              margin: const EdgeInsets.only(bottom: 8),
+              padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
+              radius: 16,
+              child: Row(
+                children: [
+                  const Padding(padding: EdgeInsets.only(right: 12), child: CampusIcon(CampusIcons.phone)),
+                  Expanded(
+                    child: Text(
+                      mobile.alias.isEmpty ? mobile.maskedMobile : '${mobile.maskedMobile}（${mobile.alias}）',
+                      style: TextStyle(fontSize: 16, color: palette.onSurface),
+                    ),
+                  ),
+                  Builder(builder: (anchor) => IconButton(tooltip: '更多操作', onPressed: _working ? null : () => _unbind(anchor, mobile), icon: const CampusIcon(CampusIcons.manage))),
+                ],
+              ),
+            ),
+        const SizedBox(height: 8),
+        Text('绑定后，寄到该手机号的快递都能用这个账号的身份码取件。拼多多不支持多端登录，建议用小号登录后把大号的手机号绑进来。', style: secondary),
+        const SizedBox(height: 16),
+        if (showFastBind)
+          Padding(
+            padding: const EdgeInsets.only(bottom: 8),
+            child: OutlinedButton(
+              onPressed: _working ? null : () => _fastBind(pre),
+              child: CampusBusyContent(busy: _working, label: pre.mobileDesc.isEmpty ? '绑定本账号手机号' : '绑定本账号手机号（${pre.mobileDesc}）', busyLabel: '绑定中', icon: const CampusIcon(CampusIcons.add)),
+            ),
+          ),
+        FilledButton(
+          style: campusProminent,
+          onPressed: _working ? null : _bindNew,
+          child: const CampusBusyContent(busy: false, label: '绑定其他手机号', busyLabel: '绑定中', icon: CampusIcon(CampusIcons.add)),
+        ),
+      ],
+    );
     return CampusSheetPanel(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -147,54 +157,11 @@ class _ExpressMobileSheetState extends State<_ExpressMobileSheet> {
               ],
             ),
           ),
+          // 绑定、解绑后列表增减时高度平滑过渡；减少动画时直接换（AnimatedSize 时长为 0 会在自己的布局里报错）。
           Flexible(
-            child: _loading
-                ? const Padding(padding: EdgeInsets.all(32), child: CampusLoading(label: '正在读取'))
-                : _error != null
-                ? Padding(padding: const EdgeInsets.all(16), child: CampusLoadError(message: _error!, onRetry: _reload))
-                : ListView(
-                    shrinkWrap: true,
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 20),
-                    children: [
-                      if (mobiles != null && mobiles.isEmpty)
-                        Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text('还没有绑定取件手机号', style: secondary))
-                      else
-                        for (final mobile in mobiles ?? const <PddBoundMobile>[])
-                          CampusSurface(
-                            margin: const EdgeInsets.only(bottom: 8),
-                            padding: const EdgeInsets.fromLTRB(16, 8, 4, 8),
-                            radius: 16,
-                            child: Row(
-                              children: [
-                                const Padding(padding: EdgeInsets.only(right: 12), child: CampusIcon(CampusIcons.phone)),
-                                Expanded(
-                                  child: Text(
-                                    mobile.alias.isEmpty ? mobile.maskedMobile : '${mobile.maskedMobile}（${mobile.alias}）',
-                                    style: TextStyle(fontSize: 16, color: palette.onSurface),
-                                  ),
-                                ),
-                                Builder(builder: (anchor) => IconButton(tooltip: '更多操作', onPressed: _working ? null : () => _unbind(anchor, mobile), icon: const CampusIcon(CampusIcons.manage))),
-                              ],
-                            ),
-                          ),
-                      const SizedBox(height: 8),
-                      Text('绑定后，寄到该手机号的快递都能用这个账号的身份码取件。拼多多不支持多端登录，建议用小号登录后把大号的手机号绑进来。', style: secondary),
-                      const SizedBox(height: 16),
-                      if (showFastBind)
-                        Padding(
-                          padding: const EdgeInsets.only(bottom: 8),
-                          child: OutlinedButton(
-                            onPressed: _working ? null : () => _fastBind(pre),
-                            child: CampusBusyContent(busy: _working, label: pre.mobileDesc.isEmpty ? '绑定本账号手机号' : '绑定本账号手机号（${pre.mobileDesc}）', busyLabel: '绑定中', icon: const CampusIcon(CampusIcons.add)),
-                          ),
-                        ),
-                      FilledButton(
-                        style: campusProminent,
-                        onPressed: _working ? null : _bindNew,
-                        child: const CampusBusyContent(busy: false, label: '绑定其他手机号', busyLabel: '绑定中', icon: CampusIcon(CampusIcons.add)),
-                      ),
-                    ],
-                  ),
+            child: MediaQuery.disableAnimationsOf(context)
+                ? list
+                : AnimatedSize(duration: campusEnter, curve: Curves.easeInOutCubic, alignment: Alignment.topCenter, child: list),
           ),
         ],
       ),

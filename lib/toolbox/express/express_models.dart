@@ -5,6 +5,8 @@ import 'dart:convert';
 abstract final class PddConstants {
   static const apiBase = 'https://api.pinduoduo.com';
   static const loginPage = 'https://mobile.yangkeduo.com/login.html';
+  // 拉起微信用公开的 weixin:// 链接（只能打开微信首页，打不开指定网页：那要接微信开放平台 SDK 并登记 AppID）。
+  static const weChatScheme = 'weixin://';
   static const mdkdReferer = 'https://m.pinduoduo.net/mdkd/package?pr_page_from=scheme';
   static const idCodeReferer = 'https://m.pinduoduo.net/mdkd/package?pr_page_from=scheme&tab=ID_CODE';
 
@@ -186,31 +188,164 @@ class PddNoPackageMobileInfo {
   }
 }
 
-// 驿站待取件查询结果。测试账号当时无待取件，非空包裹列表的真实结构未实测，
-// 故保留 raw 供调用方按真实返回读取，count 与手机尾号两处已核对。
+List<Map<String, Object?>> _mapList(Object? value) =>
+    value is List ? value.whereType<Map>().map((entry) => entry.cast<String, Object?>()).toList() : const [];
+
+// 查一件包裹物流要的参数：官方物流页（/track）发 tracking_number、shipping_id、entry_source=9 与可选的 source_type。
+typedef ExpressTrackQuery = ({String trackingNumber, String shippingId, String sourceType});
+
+// 驿站里的一件待取包裹（combine_track_list 的一项），字段按官方 mdkd 包裹卡片的渲染取。
+class StationPackage {
+  const StationPackage({this.pickCode = '', this.shippingName = '', this.trackingNumber = '', this.mobileAlias = '', this.shippingId = ''});
+  final String pickCode;
+  final String shippingName;
+  final String trackingNumber;
+  final String mobileAlias;
+  final String shippingId;
+
+  ExpressTrackQuery get trackQuery => (trackingNumber: trackingNumber, shippingId: shippingId, sourceType: '');
+
+  // 取件码有时带「取件码」前缀，官方页面去掉前缀再显示。
+  factory StationPackage.fromJson(Map<String, Object?> json) => StationPackage(
+    pickCode: '${json['pick_code'] ?? ''}'.replaceAll('取件码', '').trim(),
+    shippingName: '${json['shipping_name'] ?? ''}',
+    trackingNumber: '${json['tracking_number'] ?? ''}',
+    mobileAlias: '${json['mobile_alias'] ?? ''}',
+    shippingId: '${json['shipping_id'] ?? ''}',
+  );
+}
+
+// 近一周已取出的一件（package_out_list 的一项）：官方弹层写取件地址、取件时间（服务端给好的文字）、快递公司与运单号，
+// 点一项经它的 jump_url 进物流页，所以查物流的参数优先取 jump_url 里的，没有再用条目自己的字段。
+class StationOutPackage {
+  const StationOutPackage({this.address = '', this.operateTime = '', this.shippingName = '', this.trackingNumber = '', required this.trackQuery});
+  final String address;
+  final String operateTime;
+  final String shippingName;
+  final String trackingNumber;
+  final ExpressTrackQuery trackQuery;
+
+  factory StationOutPackage.fromJson(Map<String, Object?> json) {
+    final jump = Uri.tryParse('${json['jump_url'] ?? ''}')?.queryParameters ?? const <String, String>{};
+    final trackingNumber = '${json['tracking_number'] ?? ''}';
+    return StationOutPackage(
+      address: '${json['address'] ?? ''}',
+      operateTime: '${json['operate_time'] ?? ''}',
+      shippingName: '${json['shipping_name'] ?? ''}',
+      trackingNumber: trackingNumber,
+      trackQuery: (
+        trackingNumber: jump['tracking_number'] ?? trackingNumber,
+        shippingId: jump['shipping_id'] ?? '${json['shipping_id'] ?? ''}',
+        sourceType: jump['source_type'] ?? '',
+      ),
+    );
+  }
+}
+
+// 一条物流轨迹：info 是描述、time 是服务端给好的时间文字；官方按返回顺序列出，第一条是最新的。
+class ShippingTrace {
+  const ShippingTrace({this.info = '', this.time = ''});
+  final String info;
+  final String time;
+
+  factory ShippingTrace.fromJson(Map<String, Object?> json) => ShippingTrace(info: '${json['info'] ?? ''}', time: '${json['time'] ?? ''}');
+}
+
+// 物流详情（/api/express/shipping/track 返回的 shipping）：快递公司、运单号、预计送达说明与轨迹。
+// 派件员姓名电话（postman_info/postman_contact）是第三方个人信息，不读。
+class ShippingTrack {
+  const ShippingTrack({this.shippingName = '', this.trackingNumber = '', this.forecast = '', this.traces = const []});
+  final String shippingName;
+  final String trackingNumber;
+  final String forecast;
+  final List<ShippingTrace> traces;
+
+  factory ShippingTrack.fromJson(Map<String, Object?> json) {
+    final forecast = json['time_forecast'];
+    return ShippingTrack(
+      shippingName: '${json['shipping_name'] ?? ''}',
+      trackingNumber: '${json['tracking_number'] ?? ''}',
+      forecast: forecast is Map ? '${forecast['time_forecast_desc'] ?? ''}' : '',
+      traces: _mapList(json['traces']).map(ShippingTrace.fromJson).toList(),
+    );
+  }
+}
+
+// 一家驿站的待取件（combine_list 的一项）：company_name 是站名；station_delivery_track_list 是已安排送货上门的件，官方只显示件数。
+// 组里的包裹在官方 H5 里是 combine_track_list；10-21 审阅移交包说 App 版是 list。两边都没有真实非空样本，所以先读前者、没有再读后者。
+class StationPackageGroup {
+  const StationPackageGroup({this.stationName = '', this.address = '', this.packages = const [], this.deliveryCount = 0});
+  final String stationName;
+  final String address;
+  final List<StationPackage> packages;
+  final int deliveryCount;
+
+  factory StationPackageGroup.fromJson(Map<String, Object?> json) {
+    final tracks = _mapList(json['combine_track_list']);
+    return StationPackageGroup(
+      stationName: '${json['company_name'] ?? ''}',
+      address: '${json['address'] ?? ''}',
+      packages: (tracks.isNotEmpty ? tracks : _mapList(json['list'])).map(StationPackage.fromJson).toList(),
+      deliveryCount: _mapList(json['station_delivery_track_list']).length,
+    );
+  }
+}
+
+// 驿站待取件查询结果，字段按官方 mdkd 包裹页取：combine_list 按驿站分组，count 是待取件数；
+// 没有待取件时 no_package_mobile_info 给查过的手机尾号（官方只显示前两个，largerThan2 表示还有更多）。
+// 带驿站码查时有 station_name；only_wx_scan 为真表示拼多多把这个账号划进了只能微信扫码取件的实验组（账号级，官方此时整页只提示用微信扫码）。
 class StationPackagesResult {
-  const StationPackagesResult({this.count = 0, this.noPackageMobileInfo, this.packages = const [], this.raw = const {}});
+  const StationPackagesResult({this.count = 0, this.groups = const [], this.recentPackages = const [], this.noPackageMobileInfo, this.stationName = '', this.onlyWxScan = false});
   final int count;
+  final List<StationPackageGroup> groups;
+  // 近一周已取出（package_out_list），不算进待取件数。
+  final List<StationOutPackage> recentPackages;
   final PddNoPackageMobileInfo? noPackageMobileInfo;
-  final List<Map<String, Object?>> packages;
-  final Map<String, Object?> raw;
+  final String stationName;
+  final bool onlyWxScan;
+
+  // 外部响应按边界容错：count 缺失时按列表里的件数算。
+  int get total => count > 0 ? count : groups.fold(0, (sum, group) => sum + group.packages.length + group.deliveryCount);
 
   factory StationPackagesResult.fromJson(Map<String, Object?> json) {
-    List<Map<String, Object?>> parseList(Object? value) =>
-        value is List ? value.whereType<Map>().map((entry) => entry.cast<String, Object?>()).toList() : const [];
-    final packages = [
-      ...parseList(json['list']),
-      ...parseList(json['package_list']),
-      ...parseList(json['recently_packages']),
-      ...parseList(json['packages']),
-    ];
     final noPackage = json['no_package_mobile_info'];
     final count = json['count'];
     return StationPackagesResult(
       count: count is num ? count.toInt() : 0,
+      groups: _mapList(json['combine_list']).map(StationPackageGroup.fromJson).toList(),
+      recentPackages: _mapList(json['package_out_list']).map(StationOutPackage.fromJson).toList(),
       noPackageMobileInfo: noPackage is Map ? PddNoPackageMobileInfo.fromJson(noPackage.cast<String, Object?>()) : null,
-      packages: packages,
-      raw: json,
+      stationName: '${json['station_name'] ?? ''}',
+      onlyWxScan: json['only_wx_scan'] == true || json['only_wx_scan'] == 1,
     );
   }
 }
+
+// 扫到的驿站码。真实驿站二维码是带 station_code 参数的链接（https://mdkd.pinduoduo.com/weixin/package?station_code=…，
+// 拼多多与微信扫同一张码）；官方页面从链接参数取 station_code，链接带 t 参数（动态码）时查询带 dynamic_qrcode=true。
+typedef StationScan = ({String code, bool dynamicQr});
+
+// 从链接、App 内链、JSON 或裸码里取站点码；取不到返回空——带协议头却没有 station_code 的链接不能当码发给服务端。
+StationScan? parseStationScan(String raw) {
+  final text = raw.trim();
+  if (text.isEmpty) return null;
+  if (text.startsWith('{')) {
+    try {
+      final decoded = jsonDecode(text);
+      final code = decoded is Map ? decoded['station_code'] ?? decoded['stationCode'] : null;
+      return code is String && code.isNotEmpty ? (code: code, dynamicQr: false) : null;
+    } on FormatException {
+      return null;
+    }
+  }
+  final uri = Uri.tryParse(text);
+  if (uri != null && uri.hasScheme) {
+    final code = uri.queryParameters['station_code'] ?? '';
+    return code.isEmpty ? null : (code: code, dynamicQr: uri.queryParameters.containsKey('t'));
+  }
+  // 裸码只认字母、数字、下划线与连字符，别把随便一段文字当站点码发出去。
+  return RegExp(r'^[A-Za-z0-9_-]{4,64}$').hasMatch(text) ? (code: text, dynamicQr: false) : null;
+}
+
+// 驿站的微信取件页（驿站二维码里的链接），给只能微信取件的账号生成二维码存相册用。
+String weChatStationUrl(String stationCode) => Uri.https('mdkd.pinduoduo.com', '/weixin/package', {'station_code': stationCode}).toString();

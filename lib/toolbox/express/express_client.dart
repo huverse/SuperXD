@@ -20,7 +20,8 @@ class ExpressClient {
     final codeOk = code == '0' || code == '1000000';
     final hasErrorCode = data.containsKey('error_code') && !codeOk;
     if (data['success'] != false && (data['success'] == true || !hasErrorCode)) return data;
-    final message = '${data['error_msg'] ?? ''}';
+    // 文案多数接口叫 error_msg，物流接口叫 error_message。
+    final message = '${data['error_msg'] ?? data['error_message'] ?? ''}';
     // 错误码记一行（不记文案与响应体）：异地登录真实返回的码可在真机 logcat 看到，用来精确对齐未登录判定。
     campusLog('[Express] action=server_error code=$code');
     if (_looksLikeAuthExpired(message)) throw const ExpressFailure(ExpressFailureCode.notLoggedIn, '登录已失效，请重新登录');
@@ -28,8 +29,9 @@ class ExpressClient {
   }
 
   // 文案同时点到「登录/身份」与「失效/过期/重新」，或直接说未登录，才判为会话失效——
-  // 避免把「验证码已失效」这类非鉴权错误误判成登录失效、把人误踢回登录页。
+  // 避免把「验证码已失效」这类非鉴权错误误判成登录失效、把人误踢回登录页；说的是验证码的（如「登录验证码已失效」）一律不算。
   bool _looksLikeAuthExpired(String message) {
+    if (message.contains('验证码')) return false;
     if (message.contains('未登录') || message.contains('请先登录') || message.contains('重新登录') || message.contains('重新登陆')) return true;
     const subject = ['登录', '登陆', '身份', '登陆态', '登录态', '账号'];
     const expiry = ['失效', '过期', '已退出', '不存在'];
@@ -52,11 +54,11 @@ class ExpressClient {
     return list.whereType<Map>().map((entry) => PddBoundMobile.fromJson(entry.cast<String, Object?>())).toList();
   }
 
-  // 查询驿站/快递柜待取件。普通入口 entrySource=8；扫驿站二维码进入时传 stationCode 且 entrySource=4。
-  Future<StationPackagesResult> queryStationPackages({String stationCode = '', int entrySource = PddConstants.entryOther}) async {
+  // 查询驿站/快递柜待取件。普通入口 entrySource=8；扫驿站二维码进入时传 stationCode 且 entrySource=4，动态码另带 dynamic_qrcode。
+  Future<StationPackagesResult> queryStationPackages({String stationCode = '', bool dynamicQr = false, int entrySource = PddConstants.entryOther}) async {
     final body = <String, Object?>{
       'entry_source': entrySource.toString(),
-      'dynamic_qrcode': false,
+      'dynamic_qrcode': dynamicQr,
       'install_token': session.installToken,
       'dp_source': '',
       'redirect_app': false,
@@ -65,6 +67,25 @@ class ExpressClient {
     final data = await _postJson('/api/express_trackbox/station/package', referer: PddConstants.mdkdReferer, body: body);
     final result = data['result'];
     return StationPackagesResult.fromJson(result is Map ? result.cast<String, Object?>() : const {});
+  }
+
+  // 把已绑号在绑定前就已到驿站的包裹关联进本账号：官方在绑定成功后紧接着调、body 为空，不调就查不到这些包裹。
+  // 官方请求封装对 express_trackbox 一律带 anti-content；这是状态变更接口，照样带。
+  Future<void> linkStationPackages({required String antiContent}) async {
+    await _postJson('/api/express_trackbox/bind/mobile/station/package', referer: PddConstants.mdkdReferer, antiContent: antiContent, body: const {});
+  }
+
+  // 查一件包裹的实时物流：官方物流页（/track）用的同一接口，GET、entry_source 固定 9，只读；结果在 shipping 里。
+  Future<ShippingTrack> queryShippingTrack(ExpressTrackQuery query) async {
+    final uri = _api('/api/express/shipping/track').replace(queryParameters: {
+      'tracking_number': query.trackingNumber,
+      if (query.shippingId.isNotEmpty) 'shipping_id': query.shippingId,
+      'entry_source': '9',
+      if (query.sourceType.isNotEmpty) 'source_type': query.sourceType,
+    });
+    final data = _unwrap(await _http.getJson(uri, headers: session.headers(referer: PddConstants.mdkdReferer)));
+    final shipping = data['shipping'];
+    return ShippingTrack.fromJson(shipping is Map ? shipping.cast<String, Object?>() : const {});
   }
 
   // 生成/获取身份码：返回的 expireMills 是当前码剩余有效期，到期后再次调用即可拿到新码。

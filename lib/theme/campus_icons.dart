@@ -94,6 +94,7 @@ abstract final class CampusIcons {
   static const parcel = LucideIcons.package;
   static const phone = LucideIcons.smartphone;
   static const unbind = LucideIcons.unlink;
+  static const logistics = LucideIcons.truck;
 }
 
 void configureCampusIcons() =>

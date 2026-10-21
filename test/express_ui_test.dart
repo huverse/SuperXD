@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:barcode_widget/barcode_widget.dart';
@@ -12,6 +13,7 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/express/express_anti_content.dart';
@@ -23,20 +25,41 @@ import 'package:superxd/toolbox/express/express_page.dart';
 import 'package:superxd/toolbox/express/express_service.dart';
 import 'package:superxd/toolbox/express/express_vault.dart';
 import 'package:superxd/toolbox/toolbox_catalog.dart';
+import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 import 'toolbox_test_support.dart';
 
 const _session = PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', userId: '7209');
 
-// 合成拼多多服务：按路径回合成数据，身份码固定一串 dd 码，绑定链路全部回成功。
-http.Client _fakeClient() => MockClient((request) async {
+http.Response _json(Map<String, Object?> body) => http.Response(jsonEncode(body), 200, headers: {'content-type': 'application/json;charset=UTF-8'});
+
+// 合成拼多多服务：按路径回合成数据，身份码固定一串 dd 码，绑定链路全部回成功；calls 按顺序记下请求路径，station 换驿站查询的结果。
+http.Client _fakeClient({List<String>? calls, Map<String, Object?>? station, List<http.Request>? requests, Future<void>? trackGate}) => MockClient((request) async {
   final path = request.url.path;
+  calls?.add(path);
+  requests?.add(request);
+  if (path.endsWith('shipping/track')) {
+    await trackGate;
+    return _json({
+      'shipping': {
+        'shipping_name': '合成快递',
+        'tracking_number': request.url.queryParameters['tracking_number'],
+        'time_forecast': {'time_forecast_desc': '预计明天送达'},
+        'traces': [
+          {'info': '【合成市】快件已到达合成驿站', 'time': '2026-10-20 15:30:00'},
+          {'info': '【合成市】快件已发出', 'time': '2026-10-19 08:00:00'},
+        ],
+      },
+    });
+  }
   Map<String, Object?> body;
   if (path.endsWith('express/detail')) {
     body = {'success': true, 'error_code': '0', 'new_binding_list': [{'mobile_id': 'm1', 'mock_mobile': '138****8888', 'alias': '自己'}]};
+  } else if (path.endsWith('bind/mobile/station/package')) {
+    body = {'success': true, 'error_code': '0'};
   } else if (path.endsWith('station/package')) {
-    body = {'success': true, 'error_code': '0', 'result': {'count': 0, 'no_package_mobile_info': {'mobileList': ['8888']}}};
+    body = {'success': true, 'error_code': '0', 'result': station ?? {'count': 0, 'no_package_mobile_info': {'mobileList': ['8888']}}};
   } else if (path.endsWith('pre/check')) {
     body = {'has_binding_express_mobile': true, 'mobile_id': 'm1', 'mobile_info_desc': '138****8888'};
   } else if (path.endsWith('code/auth/query')) {
@@ -48,8 +71,38 @@ http.Client _fakeClient() => MockClient((request) async {
   } else {
     body = {'success': true, 'error_code': '0', 'result': {'identification_code': 'dd202610190000000000001', 'expire_mills': 132000, 'mobile_info': {'mobile_info_desc': '已绑定常用手机号：138****8888'}}};
   }
-  return http.Response(jsonEncode(body), 200, headers: {'content-type': 'application/json;charset=UTF-8'});
+  return _json(body);
 });
+
+bool _isLink(String path) => path.endsWith('bind/mobile/station/package');
+
+// 合成驿站码（真实格式：带 station_code 参数的链接，拼多多与微信扫同一张码）。
+const _stationUrl = 'https://mdkd.pinduoduo.com/weixin/package?station_code=S000000001';
+
+// 最近一次发到某接口的请求体。
+Map<String, Object?> _lastBody(List<http.Request> requests, String pathSuffix) =>
+    jsonDecode(requests.lastWhere((request) => request.url.path.endsWith(pathSuffix)).body) as Map<String, Object?>;
+
+// 记下一次性导出的图片字节与类型（驿站码存相册用）；临时文件导出后就删，所以导出当场读。
+class _ImagePublisher extends FakePublisher {
+  List<int>? bytes;
+  String? mimeType;
+
+  @override
+  Future<Uri?> publishExternal({required String source, required String filename, required String mimeType}) {
+    bytes = File(source).readAsBytesSync();
+    this.mimeType = mimeType;
+    return super.publishExternal(source: source, filename: filename, mimeType: mimeType);
+  }
+}
+
+// 存驿站码要真实出图与写文件，假时钟里不会自己走完：交替让出真实事件循环与推一帧，直到条件满足。
+Future<void> _settleReal(WidgetTester tester, bool Function() done) async {
+  for (var i = 0; i < 200 && !done(); i++) {
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+    await tester.pump();
+  }
+}
 
 // 假 anti_content：绑定测试用，不起真实 WebView（webViewController 为空，页面不挂 WebViewWidget）。
 class _FakeAnti implements PddAntiContent {
@@ -63,6 +116,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late ToolboxFixture fixture;
   late MemoryExpressVault vault;
+  late Directory temp;
 
   ToolboxRuntime runtimeWith(http.Client client) => ToolboxRuntime.testing(
     catalog: toolboxCatalog,
@@ -71,15 +125,27 @@ void main() {
     services: {ExpressService.serviceId: ExpressService(vault: vault, clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: client)))},
   );
 
-  ToolboxRuntime buildRuntime() => ToolboxRuntime.testing(
+  ToolboxRuntime buildRuntime({
+    List<String>? calls,
+    Map<String, Object?>? station,
+    List<http.Request>? requests,
+    ToolboxQrScan? scan,
+    ToolboxFilePublisher? publisher,
+    Future<bool> Function(Uri uri)? launch,
+    Future<void>? trackGate,
+  }) => ToolboxRuntime.testing(
     catalog: toolboxCatalog,
     store: fixture.store,
     downloads: fixture.manager,
+    scanQrCode: scan,
     services: {
       ExpressService.serviceId: ExpressService(
         vault: vault,
-        clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: _fakeClient())),
+        clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: _fakeClient(calls: calls, station: station, requests: requests, trackGate: trackGate))),
         antiContent: _FakeAnti(),
+        filePublisher: () => publisher ?? FakePublisher(),
+        temporaryDirectory: () async => temp,
+        launchExternal: launch ?? (uri) async => true,
       ),
     },
   );
@@ -88,9 +154,13 @@ void main() {
     fixture = ToolboxFixture();
     await fixture.initialize();
     vault = MemoryExpressVault();
+    temp = Directory.systemTemp.createTempSync('express_ui_test');
   });
 
-  tearDown(() async => fixture.close());
+  tearDown(() async {
+    await fixture.close();
+    temp.deleteSync(recursive: true);
+  });
 
   testWidgets('未登录显示登录入口', (tester) async {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
@@ -121,9 +191,307 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('绑定其他手机号：输手机号发验证码、输验证码完成绑定，弹层回到列表并提示已绑定', (tester) async {
+  // 真机反馈：弹层先放整页加载动画撑到接近全屏、读完再缩回内容高度（突闪）。改为先读后开，弹层一出来就是最终高度。
+  testWidgets('绑定手机号先读后开：读取时按钮原地转圈、弹层还没出；弹出那一帧就是列表与最终高度', (tester) async {
+    final gate = Completer<void>();
     await vault.save(_session);
-    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtimeWith(MockClient((request) async {
+      if (request.url.path.endsWith('pre/check')) return _json({'has_binding_express_mobile': true});
+      await gate.future;
+      return _json({'success': true, 'error_code': '0', 'new_binding_list': [{'mobile_id': 'm1', 'mock_mobile': '138****8888'}]});
+    })))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('绑定手机号'));
+    await tester.pump();
+    expect(find.text('读取中'), findsOneWidget);
+    expect(find.text('取件手机号'), findsNothing);
+    expect(tester.widget<OutlinedButton>(find.ancestor(of: find.text('驿站快递'), matching: find.byType(OutlinedButton))).onPressed, isNull);
+
+    gate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(find.textContaining('138****8888'), findsOneWidget);
+    expect(find.byType(CampusLoading), findsNothing);
+    final opening = tester.getSize(find.byType(CampusSheetPanel));
+    await tester.pumpAndSettle();
+    expect(tester.getSize(find.byType(CampusSheetPanel)), opening);
+    expect(find.text('读取中'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('第一次查驿站先补关联一次并记在本机，再查不再补；包裹按驿站列出取件码与快递信息', (tester) async {
+    final calls = <String>[];
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(calls: calls, station: const {
+      'count': 1,
+      'combine_list': [
+        {'company_name': '合成驿站一号', 'address': '测试路 1 号', 'combine_track_list': [{'pick_code': '取件码 3-2-1001', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000001'}]},
+      ],
+    }))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(calls.where(_isLink).length, 1);
+    expect(calls.indexWhere(_isLink), lessThan(calls.lastIndexWhere((path) => path.endsWith('station/package') && !_isLink(path))));
+    expect(await vault.stationLinked(), isTrue);
+    expect(find.text('1 件待取'), findsOneWidget);
+    expect(find.text('合成驿站一号'), findsOneWidget);
+    expect(find.text('测试路 1 号'), findsOneWidget);
+    expect(find.text('取件码 3-2-1001'), findsOneWidget);
+    expect(find.textContaining('SX0000000001'), findsOneWidget);
+
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(calls.where(_isLink).length, 1);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('补关联失败不挡查询，不记已关联，下次查询再补', (tester) async {
+    var links = 0;
+    await vault.save(_session);
+    final runtime = ToolboxRuntime.testing(
+      catalog: toolboxCatalog,
+      store: fixture.store,
+      downloads: fixture.manager,
+      services: {
+        ExpressService.serviceId: ExpressService(
+          vault: vault,
+          clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: MockClient((request) async {
+            if (_isLink(request.url.path)) {
+              links++;
+              return http.Response('', 403);
+            }
+            return _json({'success': true, 'error_code': '0', 'result': {'count': 0}});
+          }))),
+          antiContent: _FakeAnti(),
+        ),
+      },
+    );
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtime)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(find.text('没有待取件'), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
+    expect(await vault.stationLinked(), isFalse);
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(links, 2);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('没有待取件时手机尾号同官方只写前两个，还有更多补「等」', (tester) async {
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(station: const {
+      'count': 0,
+      'no_package_mobile_info': {'mobileList': ['8888', '6666'], 'largerThan2': true},
+    }))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(find.text('手机尾号 8888、6666等'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('扫驿站码从链接里取站点码去查并写当前站点；扫过驿站码后身份码带上这个站，普通查询后不再带', (tester) async {
+    final requests = <http.Request>[];
+    String? Function(String raw)? accept;
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(
+      requests: requests,
+      station: const {'count': 0, 'station_name': '合成驿站'},
+      scan: (context, hint, check) async {
+        accept = check;
+        return _stationUrl;
+      },
+    ))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('扫驿站码'));
+    await tester.pumpAndSettle();
+    // 扫码页按同一规则当场拦下不是驿站码的二维码。
+    expect(accept!('https://example.com/station?foo=bar'), '不是驿站的二维码');
+    expect(accept!(_stationUrl), isNull);
+    expect(_lastBody(requests, 'express_trackbox/station/package')['station_code'], 'S000000001');
+    expect(_lastBody(requests, 'express_trackbox/station/package')['entry_source'], '4');
+    expect(find.text('当前站点：合成驿站'), findsOneWidget);
+
+    await tester.tap(find.text('身份码'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(_lastBody(requests, 'generate_identification_code')['station_code'], 'S000000001');
+
+    await tester.tap(find.text('驿站快递'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(_lastBody(requests, 'express_trackbox/station/package').containsKey('station_code'), isFalse);
+    await tester.tap(find.text('身份码'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(_lastBody(requests, 'generate_identification_code').containsKey('station_code'), isFalse);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('只能微信扫码取件：不写没有待取件；扫过驿站码时「去微信取件」把驿站码存进相册、提示从相册选，再拉起微信', (tester) async {
+    final publisher = _ImagePublisher();
+    final launched = <Uri>[];
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(
+      station: const {'count': 0, 'station_name': '合成驿站', 'only_wx_scan': true},
+      scan: (context, hint, check) async => _stationUrl,
+      publisher: publisher,
+      launch: (uri) async {
+        launched.add(uri);
+        return true;
+      },
+    ))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('扫驿站码'));
+    await tester.pumpAndSettle();
+    expect(find.text('这个账号目前只能用微信查询待取件'), findsOneWidget);
+    expect(find.textContaining('拼多多暂停'), findsNothing);
+    expect(find.text('没有待取件'), findsNothing);
+
+    await tester.tap(find.text('去微信取件'));
+    await _settleReal(tester, () => find.text('驿站码已存到相册').evaluate().isNotEmpty);
+    await tester.pumpAndSettle();
+    expect(find.text('驿站码已存到相册'), findsOneWidget);
+    expect(find.textContaining('选这张驿站码查询取件'), findsOneWidget);
+    expect(publisher.externalFilename, '驿站码-S000000001.png');
+    expect(publisher.mimeType, 'image/png');
+    expect(publisher.bytes!.take(4), [0x89, 0x50, 0x4E, 0x47]);
+    await tester.tap(find.widgetWithText(FilledButton, '打开微信'));
+    await tester.pumpAndSettle();
+    expect(launched, [Uri.parse('weixin://')]);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('只能微信取件但没扫过驿站码：不存图，提示扫驿站的码查询取件；拉不起微信时说明；身份码照常生成', (tester) async {
+    final publisher = _ImagePublisher();
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(
+      station: const {'count': 0, 'only_wx_scan': true},
+      publisher: publisher,
+      launch: (uri) async => false,
+    ))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('去微信取件'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('扫驿站的二维码查询取件'), findsOneWidget);
+    expect(publisher.calls, 0);
+    await tester.tap(find.widgetWithText(FilledButton, '打开微信'));
+    await tester.pumpAndSettle();
+    expect(find.text('没有找到微信'), findsOneWidget);
+
+    await tester.tap(find.text('身份码'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('dd202610190000000000001'), findsOneWidget);
+    expect(find.textContaining('驿站可能不认'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('近一周已取出列在驿站卡片里；点「物流」先读后开：读取时只有那一行转圈、弹层未出，读完弹出物流详情', (tester) async {
+    final gate = Completer<void>();
+    final requests = <http.Request>[];
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(
+      requests: requests,
+      trackGate: gate.future,
+      station: const {
+        'count': 0,
+        'package_out_list': [
+          {'address': '测试路 1 号', 'operate_time': '10-20 15:30', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000002', 'jump_url': '/track?tracking_number=SX0000000002&shipping_id=102&source_type=3'},
+          {'address': '测试路 1 号', 'operate_time': '10-19 09:10', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000003', 'shipping_id': '103'},
+        ],
+      },
+    ))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(find.text('没有待取件'), findsOneWidget);
+    expect(find.text('近一周已取出 2 件'), findsOneWidget);
+    expect(find.text('取件时间 10-20 15:30'), findsOneWidget);
+    expect(find.textContaining('SX0000000002'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '物流').first);
+    await tester.pump();
+    expect(find.text('物流详情'), findsNothing);
+    expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '物流').last).onPressed, isNull, reason: '查询中其他行不能再点');
+    final track = requests.lastWhere((request) => request.url.path.endsWith('shipping/track'));
+    expect(track.url.queryParameters, {'tracking_number': 'SX0000000002', 'shipping_id': '102', 'entry_source': '9', 'source_type': '3'});
+
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('物流详情'), findsOneWidget);
+    expect(find.text('预计明天送达'), findsOneWidget);
+    expect(find.text('【合成市】快件已到达合成驿站'), findsOneWidget);
+    expect(find.text('2026-10-19 08:00:00'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('待取件也能查物流（带包裹的 shipping_id）；查不到用提示条，不弹空弹层', (tester) async {
+    final requests = <http.Request>[];
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(
+      requests: requests,
+      station: const {
+        'count': 1,
+        'combine_list': [
+          {'company_name': '合成驿站一号', 'combine_track_list': [{'pick_code': '1-1-0001', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000001', 'shipping_id': 101}]},
+        ],
+      },
+    ))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(OutlinedButton, '物流'));
+    await tester.pumpAndSettle();
+    expect(requests.lastWhere((request) => request.url.path.endsWith('shipping/track')).url.queryParameters['shipping_id'], '101');
+    expect(find.text('物流详情'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtimeWith(MockClient((request) async {
+      if (request.url.path.endsWith('shipping/track')) return _json({'error_code': 1000101, 'error_message': '暂无该运单号物流轨迹信息'});
+      return _json({'success': true, 'error_code': '0', 'result': {'count': 1, 'combine_list': [{'combine_track_list': [{'pick_code': '1-1-0001', 'tracking_number': 'SX0000000001'}]}]}});
+    })))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(OutlinedButton, '物流'));
+    await tester.pumpAndSettle();
+    expect(find.text('暂无该运单号物流轨迹信息'), findsOneWidget);
+    expect(find.text('物流详情'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  test('登录校验：只读接口明确回未登录才拦，网络与服务器错误不拦', () async {
+    Future<bool> verify(http.Response Function() respond) async {
+      final controller = ExpressController(ExpressService(
+        vault: vault,
+        clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: MockClient((request) async => respond()))),
+      ));
+      final usable = await controller.verifySession(_session);
+      controller.dispose();
+      return usable;
+    }
+
+    expect(await verify(() => _json({'has_binding_express_mobile': true})), isTrue);
+    expect(await verify(() => _json({'error_code': 40001})), isFalse);
+    expect(await verify(() => http.Response('', 424)), isFalse);
+    expect(await verify(() => http.Response('', 500)), isTrue);
+  });
+
+  testWidgets('绑定其他手机号：输手机号发验证码、输验证码完成绑定，弹层回到列表并提示已绑定；绑定后紧接着关联驿站包裹', (tester) async {
+    final calls = <String>[];
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(calls: calls))));
     await tester.pumpAndSettle();
     await tester.tap(find.text('绑定手机号'));
     await tester.pumpAndSettle();
@@ -144,6 +512,11 @@ void main() {
     // 回到弹层列表，提示已绑定。
     expect(find.text('取件手机号'), findsOneWidget);
     expect(find.text('已绑定'), findsOneWidget);
+    // 同官方：绑定成功后紧接着把这个号已到站的包裹关联进本账号。
+    final bindAt = calls.indexWhere((path) => path.endsWith('new/express/mobile'));
+    expect(bindAt, isNonNegative);
+    expect(calls.indexWhere(_isLink), greaterThan(bindAt));
+    expect(await vault.stationLinked(), isTrue);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -467,7 +840,7 @@ void main() {
     final controller = ExpressController(service);
     await controller.initialize();
     expect(controller.loggedIn, isTrue);
-    await expectLater(controller.fetchBoundMobiles(), throwsA(isA<ExpressFailure>()));
+    await expectLater(controller.reloadMobiles(), throwsA(isA<ExpressFailure>()));
     expect(controller.loggedIn, isFalse);
     expect(await vault.load(), isNull);
     controller.dispose();
