@@ -88,6 +88,18 @@ Future<void> openSignSheet(WidgetTester tester, {String button = '去签到'}) a
   await tester.pump(const Duration(milliseconds: 400));
 }
 
+// 二维码签到的弹层没有「签到」主按钮，等「扫码签到」出现、入场动画走完再点。
+Future<void> startQrSign(WidgetTester tester) async {
+  await tester.tap(find.widgetWithText(FilledButton, '去签到'));
+  await tester.pump();
+  await waitUntil(tester, () => find.widgetWithText(FilledButton, '扫码签到').evaluate().isNotEmpty);
+  await tester.pump(const Duration(milliseconds: 400));
+  await tester.ensureVisible(find.widgetWithText(FilledButton, '扫码签到'));
+  await tester.pump();
+  await tester.tap(find.widgetWithText(FilledButton, '扫码签到'));
+  await tester.pump();
+}
+
 // 签到码是格子输入：先点格子聚焦（真正的输入框藏在格子底下），输满自动校验并提交；
 // 详情里没给位数时退回普通输入框，直接往里输。
 Future<void> enterCode(WidgetTester tester, String code) async {
@@ -176,6 +188,7 @@ void main() {
 
   ToolboxRuntime buildRuntime({
     ToolboxQrScan? scanQrCode,
+    ToolboxQrWatch? watchQrCode,
     ChaoxingPackHub? hub,
     ToolboxImagePick? pickImage,
     ToolboxImagesPick? pickImages,
@@ -184,6 +197,7 @@ void main() {
     store: fixture.store,
     downloads: fixture.manager,
     scanQrCode: scanQrCode,
+    watchQrCode: watchQrCode,
     pickImage: pickImage,
     pickImages: pickImages,
     services: {
@@ -367,24 +381,84 @@ void main() {
     fake.activities = [
       {'id': 501, 'type': 2, 'otherId': '2', 'nameOne': '签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0, 'ext': {'a': 1}},
     ];
-    fake.signDetail = {'isOver': 0, 'signCode': '501'};
     runtime = buildRuntime(scanQrCode: (context, hint, accept) async => 'SIGNIN:id=501&enc=ENCV-1.2.3');
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
 
-    await tester.tap(find.widgetWithText(FilledButton, '去签到'));
-    await tester.pump();
-    await waitUntil(tester, () => find.widgetWithText(FilledButton, '扫码签到').evaluate().isNotEmpty);
-    await tester.pump(const Duration(milliseconds: 400));
-    await tester.ensureVisible(find.widgetWithText(FilledButton, '扫码签到'));
-    await tester.pump();
-    await tester.tap(find.widgetWithText(FilledButton, '扫码签到'));
-    await tester.pump();
+    await startQrSign(tester);
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     expect(fake.signQuery!['enc'], 'ENCV');
     expect(fake.signQuery!['activeId'], '501');
     expect(fake.signQuery!['latitude'], '-1');
     await tester.pumpWidget(const SizedBox());
+  });
+
+  group('二维码连续扫码的过期检查只作提示', () {
+    // 假取景页：打开就认下 first，之后测试经 push 递新码；所有人签完（until）自己关，status 的每次变化记进 statuses。
+    late void Function(String raw) push;
+    late List<String?> statuses;
+    ToolboxQrWatch watchWith(String first) => (context, {required hint, required accept, required onCode, required until, required status}) async {
+      push = onCode;
+      status.addListener(() => statuses.add(status.value));
+      onCode(first);
+      await until;
+    };
+
+    setUp(() {
+      statuses = [];
+      fake.activities = [
+        {'id': 501, 'type': 2, 'otherId': '2', 'nameOne': '签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0, 'ext': {'a': 1}},
+      ];
+    });
+
+    testWidgets('新格式的 c 就是活动号：不查过期，扫到就提交', (tester) async {
+      usePhoneScreen(tester);
+      // 拿 c 比 signCode 永远对不上：以前每张新码都判过期、一直等新码，签不上。
+      fake.signDetail = {'isOver': 0, 'signCode': '7788'};
+      runtime = buildRuntime(watchQrCode: watchWith('https://mobilelearn.chaoxing.com/widget/sign/e?id=501&c=501&enc=ENCNEW'));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+      await login(tester);
+
+      await startQrSign(tester);
+      await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+      expect(fake.signQuery!['enc'], 'ENCNEW');
+      expect(fake.signDetailQueries, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('老格式查出过期只在取景页提示，照常提交；提交说过期再等新码', (tester) async {
+      usePhoneScreen(tester);
+      fake.signDetail = {'isOver': 0, 'signCode': '0000'};
+      fake.signResponses.add('签到失败，请重新扫描。');
+      runtime = buildRuntime(watchQrCode: watchWith('SIGNIN:aid=501&source=15&Code=7788&enc=ENC1'));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+      await login(tester);
+
+      await startQrSign(tester);
+      await waitUntil(tester, () => fake.signQuery?['enc'] == 'ENC1');
+      await waitUntil(tester, () => statuses.contains('二维码过期了，正在等新的码'));
+      expect(statuses, contains('这个二维码已过期，请对准老师屏幕上的新码'));
+      expect(fake.signDetailQueries.first['msg'], '7788');
+      push('SIGNIN:aid=501&source=15&Code=7789&enc=ENC2');
+      await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+      expect(fake.signQuery!['enc'], 'ENC2');
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('过期查询出错算不确定，照常提交', (tester) async {
+      usePhoneScreen(tester);
+      fake.signDetail = null;
+      runtime = buildRuntime(watchQrCode: watchWith('SIGNIN:aid=501&source=15&Code=7788&enc=ENC1'));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+      await login(tester);
+
+      await startQrSign(tester);
+      await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+      expect(fake.signQuery!['enc'], 'ENC1');
+      expect(fake.signDetailQueries, hasLength(1));
+      expect(statuses, isNot(contains('这个二维码已过期，请对准老师屏幕上的新码')));
+      await tester.pumpWidget(const SizedBox());
+    });
   });
 
   testWidgets('首页扫课堂签到二维码直接打开那场签到（参考项目 1.19.2）', (tester) async {

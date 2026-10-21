@@ -464,20 +464,34 @@ void main() {
     }
   });
 
-  test('二维码过期按 signDetail 判定', () async {
+  test('二维码过期：码里带着轮换签到码才查 signDetail，c 就是活动号或没有 c 时不查、算不确定', () async {
     final fake = await FakeChaoxing.create();
     final client = await ChaoxingClient.signIn(
       http: ChaoxingHttp(client: fake.client()),
       phoneNumber: '13800138000',
       password: 'myPassword123',
     );
-    const code = ChaoxingQrCode(enc: 'E', activeId: 501, code: '501');
-    fake.signDetail = {'isOver': 0, 'signCode': '501'};
-    expect(await chaoxingQrCodeExpired(client, code: code, activeId: 501), isFalse);
-    fake.signDetail = {'isOver': 1, 'signCode': '501'};
-    expect(await chaoxingQrCodeExpired(client, code: code, activeId: 501), isTrue);
+    // 老格式 SIGNIN 的 Code 是轮换的签到码：拿它比 signCode。
+    final rotating = chaoxingParseQrCode('SIGNIN:aid=501&source=15&Code=7788&enc=E')!;
+    fake.signDetail = {'isOver': 0, 'signCode': '7788'};
+    expect(await chaoxingQrCodeExpired(client, code: rotating, activeId: 501), isFalse);
+    fake.signDetail = {'isOver': 1, 'signCode': '7788'};
+    expect(await chaoxingQrCodeExpired(client, code: rotating, activeId: 501), isTrue);
     fake.signDetail = {'isOver': 0, 'signCode': '999'};
-    expect(await chaoxingQrCodeExpired(client, code: code, activeId: 501), isTrue);
+    expect(await chaoxingQrCodeExpired(client, code: rotating, activeId: 501), isTrue);
+    expect(fake.signDetailQueries.last['msg'], '7788');
+
+    // 新格式的 c 就是活动号（随刷新只换 enc），拿它比永远对不上；没有 c 的也无从比。
+    final queried = fake.signDetailQueries.length;
+    for (final raw in [
+      'https://mobilelearn.chaoxing.com/widget/sign/e?id=501&c=501&enc=E',
+      'https://mobilelearn.chaoxing.com/widget/sign/e?id=501&enc=E',
+      'SIGNIN:id=501&enc=E',
+    ]) {
+      expect(await chaoxingQrCodeExpired(client, code: chaoxingParseQrCode(raw)!, activeId: 501), isNull, reason: raw);
+    }
+    expect(await chaoxingQrCodeExpired(client, code: const ChaoxingQrCode(enc: 'E', code: '501'), activeId: 501), isNull);
+    expect(fake.signDetailQueries, hasLength(queried));
   });
 
   test('二维码签到带 enc，活动号以二维码为准', () async {

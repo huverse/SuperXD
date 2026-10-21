@@ -742,7 +742,9 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     }
 
     _batch.addListener(onBatch);
-    // 每扫到一个新码就查一次是否过期（同一个 enc 只查一次），过早在取景页上提示对准新码。
+    // 每扫到一个新码就查一次是否过期（同一个 enc 只查一次），过期就在取景页上提示对准新码；查询出错算不确定，只记日志。
+    // [人工决策-2026-10-21 19:40:00] 检查只作提示、不等它的结果才提交（用户选定，同参考项目扫到码就签）：
+    // 以前判过期就一直等新码，误报时每张码都判过期、卡死签不上；过期与否以提交返回的「请重新扫描」为准，那时再等新码。
     final checkedEncs = <String>{};
     void checkFresh(String raw) {
       final parsed = chaoxingParseQrCode(raw);
@@ -750,7 +752,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       unawaited(
         widget.controller.qrCodeExpired(parsed, _activity).then((expired) {
           // 签完收尾后 status 已经释放，晚回来的查询结果不再写它。
-          if (expired && !done.isCompleted) status.value = '这个二维码已过期，请对准老师屏幕上的新码';
+          if (expired == true && !done.isCompleted) status.value = '这个二维码已过期，请对准老师屏幕上的新码';
         }).catchError((Object error, StackTrace stack) {
           campusLog('[Chaoxing] action=qr_check errorType=${error.runtimeType}\n$stack');
         }),
@@ -782,12 +784,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     }
 
     try {
-      // 扫到的第一个码先问一次是否过期，过期就提示对准新的码。
-      var code = await next(null);
-      while (await widget.controller.qrCodeExpired(code, _activity)) {
-        status.value = '这个二维码已过期，请对准老师屏幕上的新码';
-        code = await next(code);
-      }
+      final firstCode = await next(null);
       if (!mounted) return;
       // 每个签到对象都从最新扫到的码开始（对齐参考项目：每人取 latestEnc），老师换了码后面的人立刻用上。
       Future<ChaoxingQrCode> fresh(ChaoxingQrCode expired) {
@@ -795,7 +792,6 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         return next(expired);
       }
 
-      final firstCode = code;
       final signer = _signer(() => ChaoxingSignInputs(location: base.location, qrCode: feed.latest ?? firstCode), freshQrCode: fresh);
       if (only == null) {
         // 连续扫码是逐码连签：任何一人失败就停，已签过、不在班级、登录过期的跳过接着签（对齐参考项目），等新码也是为了当前这个人。
