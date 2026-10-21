@@ -68,8 +68,12 @@ class ChaoxingPackHub {
     final request = http.AbortableRequest('POST', base.replace(path: path), abortTrigger: deadline.future)
       ..headers['content-type'] = 'application/json'
       ..body = body;
+    // 开发者模式下记一条状态、耗时与字节数；路径只写路由模板（取件号是一次性凭据，不进日志）。
+    final watch = Stopwatch()..start();
+    int? status, size;
     try {
       final response = await _client.send(request);
+      status = response.statusCode;
       final bytes = BytesBuilder(copy: false);
       await for (final chunk in response.stream) {
         bytes.add(chunk);
@@ -78,6 +82,7 @@ class ChaoxingPackHub {
           throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, _unknownResult);
         }
       }
+      size = bytes.length;
       final text = utf8.decode(bytes.takeBytes());
       final decoded = text.isEmpty ? null : jsonDecode(text);
       final json = decoded is Map ? decoded.cast<String, Object?>() : const <String, Object?>{};
@@ -104,6 +109,7 @@ class ChaoxingPackHub {
       throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, _unknownResult);
     } finally {
       timer.cancel();
+      campusRequestLog('chaoxing_pack', 'POST', Uri(path: '/$route'), status: status, elapsed: watch.elapsed, bytes: size, error: size == null ? 'no_response' : null);
     }
   }
 

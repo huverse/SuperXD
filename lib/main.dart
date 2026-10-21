@@ -12,6 +12,7 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
+import 'package:superxd/app_diagnostics.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/campus_reminders.dart';
@@ -19,6 +20,7 @@ import 'package:superxd/application/campus_timetable.dart';
 import 'package:superxd/application/campus_widgets.dart';
 import 'package:superxd/device/app_installer_channel.dart';
 import 'package:superxd/device/app_package_files.dart';
+import 'package:superxd/device/diagnostic_device.dart';
 import 'package:superxd/device/home_widget_publisher.dart';
 import 'package:superxd/device/notification_reminders.dart';
 import 'package:superxd/device/relay_release_feed.dart';
@@ -26,6 +28,8 @@ import 'package:superxd/domain/course_widget.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/app_update_memory.dart';
+import 'package:superxd/local/developer_settings.dart';
+import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/page/app_update_dialog.dart';
 import 'package:superxd/page/legal_page.dart';
@@ -56,6 +60,7 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 void main() async {
+  final launch = Stopwatch()..start();
   // 日志出口注入debugPrint，Android上才进入logcat，见campus_log.dart。
   campusLog = debugPrint;
   WidgetsFlutterBinding.ensureInitialized();
@@ -64,6 +69,21 @@ void main() async {
     campusLog('[App] action=uncaught errorType=${error.runtimeType}\n$stack');
     return true;
   };
+  // 框架报的错（构建、布局、绘制）同样带堆栈走 campusLog、进本机错误记录；控制台照旧打印详情。
+  FlutterError.onError = (details) {
+    campusLog('[App] action=flutter_error errorType=${details.exception.runtimeType}\n${details.stack ?? StackTrace.current}');
+    FlutterError.presentError(details);
+  };
+  // 本机诊断日志（见 local/diagnostic_log.dart）：尽早接上，之后的 campusLog 同时进 logcat 与文件；应用专属外部目录取不到时退回应用支持目录。
+  final support = await getApplicationSupportDirectory();
+  final logs = await DiagnosticLog.open(
+    directory: Directory(path.join(((await getExternalStorageDirectory()) ?? support).path, 'logs')),
+    exports: Directory(path.join((await getTemporaryDirectory()).path, 'diagnostics_export')),
+    publish: publishDiagnosticArchive,
+  );
+  campusLog = logs.tee(debugPrint);
+  final developer = await DeveloperSettings.open(File(path.join(support.path, 'developer.json')));
+  watchDeveloperMode(developer, logs, environment: appEnvironment());
   // Android 10–14默认不绘制到导航栏后，透明导航栏会露出原生窗口底色（浅色为白条）；15+系统已强制全面屏。
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   ensureCampusClock();
@@ -71,7 +91,6 @@ void main() async {
   registerCampusLicenses();
   final store = await AccountStore.open();
   final session = AppSession(AccountGateway(store: store, credentials: SecureCredentialStore()));
-  final support = await getApplicationSupportDirectory();
   final display = await DisplaySettings.open(wallpaperDirectory: Directory(path.join(support.path, 'display', 'wallpaper')));
   // 选壁纸走系统照片选择器：不申请存储权限，只拿到用户选中的那一张（API 36 起插件默认如此，更低版本须显式打开）。
   final picker = ImagePickerPlatform.instance;
@@ -88,7 +107,10 @@ void main() async {
   );
   final updates = await appUpdates(support);
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
-  runApp(SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal));
+  runApp(SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs));
+  unawaited(WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
+    if (campusDiagnostics) campusLog('[App] action=first_frame ms=${launch.elapsedMilliseconds}');
+  }));
   unawaited(initializeCampusGlass());
   // 私信是设备级的，与教务会话无关；初始化失败只影响私信（状态 failed），不影响应用。已开启私信的会立即联网收取，所以等用户同意协议与政策之后再初始化。
   unawaited(legal.agreed.then((_) => social.initialize()));
@@ -207,7 +229,7 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates, this.legal});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs});
   final CampusReminders? reminders;
   // 设备级私信服务，切换账号不重建；为空时私信入口显示未配置。
   final SocialService? social;
@@ -215,6 +237,9 @@ class SuperXdApp extends StatefulWidget {
   final AppUpdates? updates;
   // 协议与政策看过哪一版（设备级）；为空时不做更新提示。
   final LegalNoticeMemory? legal;
+  // 开发者模式与本机日志（设备级）；为空时关于页不能开启开发者模式。
+  final DeveloperSettings? developer;
+  final DiagnosticLog? logs;
   final ToolboxRuntime? toolbox;
   final AppSession session;
   final DisplaySettings? display;
@@ -266,17 +291,19 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs),
     );
   }
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal});
+  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs});
   final CampusReminders? reminders;
   final SocialService? social;
   final AppUpdates? updates;
   final LegalNoticeMemory? legal;
+  final DeveloperSettings? developer;
+  final DiagnosticLog? logs;
   final ToolboxRuntime toolbox;
   final AppSession session;
   final DisplaySettings? display;
@@ -287,7 +314,8 @@ class _AccountApp extends StatefulWidget {
 }
 
 class _AccountAppState extends State<_AccountApp> {
-  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates);
+  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs);
+  late final VoidCallback _unwatchRoutes;
   late final _display = widget.display ?? DisplaySettings.memory();
 
   // 协议与政策的更新提示开着时，更新弹窗先等它关掉再弹，不叠两层。
@@ -298,6 +326,7 @@ class _AccountAppState extends State<_AccountApp> {
     super.initState();
     widget.updates?.addListener(_promptUpdate);
     widget.legal?.addListener(_onLegal);
+    _unwatchRoutes = watchRoutes(_router);
     // 换了账号代次时，上一个账号应用没来得及弹的提示由这里接着弹。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _onLegal();
@@ -342,6 +371,7 @@ class _AccountAppState extends State<_AccountApp> {
   void dispose() {
     widget.updates?.removeListener(_promptUpdate);
     widget.legal?.removeListener(_onLegal);
+    _unwatchRoutes();
     _router.dispose();
     if (widget.display == null) _display.dispose();
     super.dispose();
@@ -362,8 +392,8 @@ class _AccountAppState extends State<_AccountApp> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(listenable: Listenable.merge([_display, campusGlassCapped]), builder: (context, _) => MaterialApp.router(
-      title: 'SuperXD', theme: campusTheme(palette: CampusPalette.byId(_display.paletteId), fontFamily: _display.fontFamily),
+    return ListenableBuilder(listenable: Listenable.merge([_display, campusGlassCapped, ?widget.developer]), builder: (context, _) => MaterialApp.router(
+      title: 'SuperXD', showPerformanceOverlay: widget.developer?.performanceOverlay ?? false, theme: campusTheme(palette: CampusPalette.byId(_display.paletteId), fontFamily: _display.fontFamily),
       darkTheme: campusTheme(palette: CampusPalette.byId(_display.paletteId, brightness: Brightness.dark), fontFamily: _display.fontFamily),
       themeMode: _display.themeMode, routerConfig: _router, scrollBehavior: const CampusScrollBehavior(),
       themeAnimationDuration: WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations || WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.reduceMotion ? Duration.zero : const Duration(milliseconds: 260),

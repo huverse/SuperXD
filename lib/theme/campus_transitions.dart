@@ -574,8 +574,10 @@ void showCampusToast(BuildContext context, String message, {String? action, Void
   }
   final messenger = ScaffoldMessenger.of(context);
   final palette = CampusPalette.of(context);
+  // 同一时刻一条、新的顶掉旧的：连着发几条时（如连点版本号）hideCurrentSnackBar 只收起正在显示的那条，其余排队各放 4 秒，
+  // 最新的那条要等很久才出来；clearSnackBars 连排队的一起清掉。
   messenger
-    ..hideCurrentSnackBar()
+    ..clearSnackBars()
     ..showSnackBar(SnackBar(
       behavior: SnackBarBehavior.fixed,
       hitTestBehavior: HitTestBehavior.deferToChild,

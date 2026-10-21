@@ -48,6 +48,12 @@
 - wallpaper_store.dart：WallpaperStore 管理壁纸文件，放在应用支持目录 display/wallpaper 下，只保留当前一份，单图上限 20MB；每次导入用新文件名。
 - app_update_memory.dart：FileAppUpdateMemory 实现应用更新的检查记录端口 AppUpdateMemory：应用支持目录下固定大小的 app_update.json（上次检查成功的时刻 UTC、跳过的版本、是否待必须更新），先写临时文件再改名；读到坏文件当没有记录。不放数据库：只有三个字段，不随数据增长。
 - legal_notice_memory.dart：LegalNoticeMemory 记用户协议与隐私政策同意过、看过哪一版：应用支持目录下固定大小的 legal_notice.json（同意与已读两个修订号），写法同上；check 决定弹什么（没在首次启动弹窗里同意过的先征得同意，新装与老用户都算；同意过的有实质变化时提示一次，[人工决策] 在方法上），takePending 一次运行只取一次，点「同意」后 markAgreed、点「知道了」后 markSeen；agreed 在同意后完成，组合根等它再联网。
+- diagnostic_log.dart：本机诊断日志 DiagnosticLog，campusLog 的第二份输出（组合根用 tee 接上），写进应用专属外部目录的 logs（Android/data/包名/files/logs，连电脑可 adb pull，其他应用读不到，卸载即删，已排除备份与换机迁移；取不到时退回应用支持目录）。
+  - 平时只记错误（消息带 errorType= 或堆栈），开发者模式记全部；先进内存缓冲，每 2 秒或切到后台时批量追加，写入排队不并发，写盘出错只报到控制台。
+  - 上限（常量在文件头）：错误记录 errors.log 写满 diagnosticErrorLimit 改名成 errors.1.log，两份合计约 1MB；开发者模式日志按校园日分文件、单个超过 diagnosticFileLimit 另起分卷，保留 diagnosticKeepDays 天、总量不超过 diagnosticTotalLimit，打开与每次写入后从最旧的删起。
+  - 落盘前把链接与手机号掩掉（日志可能被导出、贴进公开 Issue）；recent 只读最新的一段（diagnosticViewBytes、最多 diagnosticViewLimit 条）给查看页；clearDiagnostics 只删开发者模式日志，clear 全删。
+  - export 把全部日志加 about.txt（运行环境、导出时刻）在后台 isolate 里打成 zip，经组合根注入的 publish 存进 Download/SuperXD，临时包放缓存的 diagnostics_export、用完即删。
+- developer_settings.dart：DeveloperSettings 记开发者模式与性能浮层两个开关：应用支持目录下固定大小的 developer.json，写法同 legal_notice.json；关掉开发者模式时性能浮层一起关，读到坏文件当都关着。
 - legacy_import.dart：旧单库导入 importLegacyDatabase。
   - 旧库只读打开，只支持 user_version 1–2。
   - 按主键游标每批读取 200 行。发生冲突时一律保留目标数据，计为跳过。
@@ -60,7 +66,7 @@
 - 每个账号独立一个库。库内 owner 与当前身份不一致时直接拒绝打开；不认领没有 owner 的旧库。
 - 切换账号时保留各账号的数据；退出登录只清会话，不删除缓存。
 - 凭据只在用户明确同意记住账号且认证成功后写入系统安全存储；业务库、账号索引和日志都不存密码。
-- 显示设置属于设备，切换账号时保留。保存时在锁内合并完整快照，快速连续修改不会互相覆盖。
+- 显示设置、开发者设置与本机日志属于设备，切换账号时保留。显示设置保存时在锁内合并完整快照，快速连续修改不会互相覆盖。
 - 新增表或列时：
   - 只在 onUpgrade 里按版本号迁移，并同步更新 test/schedule_migration_test.dart 或对应的迁移测试。
   - 只增不删的表，必须同时给出上限或清理策略。
@@ -70,7 +76,7 @@
 
 - 账号库与旧库：account_store_test.dart、account_isolation_test.dart、legacy_import_test.dart。
 - 课表与作息持久化：schedule_version_test.dart、schedule_migration_test.dart、bells_persistence_test.dart。
-- 显示设置与壁纸：appearance_settings_test.dart、wallpaper_test.dart；应用更新检查记录：app_update_test.dart；协议已读记录：legal_page_test.dart。
+- 显示设置与壁纸：appearance_settings_test.dart、wallpaper_test.dart；应用更新检查记录：app_update_test.dart；协议已读记录：legal_page_test.dart；本机日志与开发者设置：diagnostic_log_test.dart。
 
 # 人工决策检索
 

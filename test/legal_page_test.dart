@@ -26,16 +26,23 @@ void main() {
       ('二、私信', '按 IP 地址计数限流'),
       ('四、百宝箱：学习通签到', '打开位置签到时申请定位权限（仅使用期间）'),
       ('四、百宝箱：学习通签到', '本机不保存签到记录与群消息'),
-      ('五、检查更新与安装', '只向开发者的自建中转服务器发送应用的构建渠道（如 Alpha）与处理器架构'),
-      ('七、你的权利', '撤回同意'),
-      ('八、未成年人', '未满 14 周岁'),
-      ('九、政策更新与联系', '私下联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com'),
+      ('五、百宝箱：快递（拼多多）', '会让你其他设备上的拼多多下线'),
+      ('五、百宝箱：快递（拼多多）', '身份码是取件凭证，不写入文件，也不进日志'),
+      ('六、检查更新与安装', '只向开发者的自建中转服务器发送应用的构建渠道（如 Alpha）与处理器架构'),
+      ('七、本机存储、备份与日志', '另在本机留一份约 1MB 的错误记录'),
+      ('七、本机存储、备份与日志', '最多保留 7 天、20MB，关闭开发者模式即删除'),
+      ('七、本机存储、备份与日志', '不上传，只在你点「导出日志」时打包保存到 Download/SuperXD'),
+      ('八、你的权利', '撤回同意'),
+      ('九、未成年人', '未满 14 周岁'),
+      ('十、政策更新与联系', '私下联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com'),
       ('附录一 第三方 SDK 与服务', 'https://lbs.amap.com/pages/privacy/'),
       ('附录一 第三方 SDK 与服务', 'mobile_scanner'),
       ('附录一 第三方 SDK 与服务', 'com.hihonor.mcs:ads-identifier'),
+      ('附录一 第三方 SDK 与服务', '拼多多（pinduoduo.com、yangkeduo.com'),
       ('附录二 系统权限', '相机：扫码（加好友、课堂签到二维码、代签码）时识别在本机完成'),
       ('附录二 系统权限', '位置：打开学习通位置签到时申请'),
       ('附录三 保存期限', '课表编辑历史：每学期最多 100 版'),
+      ('附录三 保存期限', '开发者模式日志最多 7 天、20MB'),
     ]) {
       await tester.scrollUntilVisible(find.text(title), 300, scrollable: scrollable);
       await tester.pumpAndSettle();
@@ -45,7 +52,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('用户协议窄屏大字深浅色可读，写明非官方、开源许可、私信规范与应用更新', (tester) async {
+  testWidgets('用户协议窄屏大字深浅色可读，写明非官方、开源许可、私信规范、快递与应用更新', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 640));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     for (final theme in [ThemeData.light(), ThemeData.dark()]) {
@@ -69,7 +76,9 @@ void main() {
       expect(find.textContaining('GNU GPL v3.0'), findsOneWidget);
       await tester.scrollUntilVisible(find.text('四、私信使用规范'), 300, scrollable: scrollable);
       expect(find.textContaining('开发者无法查看'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('七、应用更新'), 300, scrollable: scrollable);
+      await tester.scrollUntilVisible(find.text('七、快递'), 300, scrollable: scrollable);
+      expect(find.textContaining('遵守拼多多的服务条款'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('八、应用更新'), 300, scrollable: scrollable);
       expect(find.textContaining('可能要求先更新再继续使用'), findsOneWidget);
       expect(find.textContaining('待替换'), findsNothing);
       expect(tester.takeException(), isNull);
@@ -164,7 +173,7 @@ void main() {
   });
 
   // 隐私政策写明记住账号的凭据、私信密钥与学习通密码不随系统备份与换机迁移：安全存储的每个命名空间（数据与密钥两份）都要在两份规则里排除。
-  test('安全存储的每个命名空间都排除出系统备份与换机迁移', () {
+  test('安全存储的每个命名空间与本机日志都排除出系统备份与换机迁移', () {
     final namespaces = {
       for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart')))
         for (final match in RegExp(r"storageNamespace: '(\w+)'").allMatches(file.readAsStringSync())) match.group(1)!,
@@ -179,6 +188,10 @@ void main() {
         expect(rule.allMatches(extraction).length, 2, reason: 'data_extraction_rules 的云备份与换机迁移都要排除 $prefs');
       }
     }
+    // 本机诊断日志（应用专属外部目录的 logs）同样只属于这台设备。
+    const logs = '<exclude domain="external" path="logs/" />';
+    expect(backup, contains(logs));
+    expect(logs.allMatches(extraction).length, 2);
   });
 
   // release 才开 R8，CI 不打 release 包；高德 jar 不带混淆规则，删改类名后一开地图就崩。

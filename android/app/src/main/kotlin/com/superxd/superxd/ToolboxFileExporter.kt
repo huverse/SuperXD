@@ -23,9 +23,10 @@ class ToolboxFileExporter(private val activity: Activity) : MethodChannel.Method
 
     companion object {
         private val extensions = mapOf("video/mp4" to "mp4", "video/webm" to "webm", "video/quicktime" to "mov", "video/x-matroska" to "mkv", "video/x-msvideo" to "avi",
-            "image/jpeg" to "jpg", "image/png" to "png", "image/webp" to "webp", "image/gif" to "gif", "audio/mpeg" to "mp3", "audio/mp4" to "m4a", "audio/aac" to "aac", "audio/ogg" to "ogg", "audio/wav" to "wav")
-        // 一次性导出只有图片（人脸照片等），不开放视频音频。
-        private val externalMimes = setOf("image/jpeg", "image/png", "image/webp")
+            "image/jpeg" to "jpg", "image/png" to "png", "image/webp" to "webp", "image/gif" to "gif", "audio/mpeg" to "mp3", "audio/mp4" to "m4a", "audio/aac" to "aac", "audio/ogg" to "ogg", "audio/wav" to "wav",
+            "application/zip" to "zip")
+        // 一次性导出只有图片（人脸照片、驿站码等）与诊断日志包（zip），不开放视频音频。
+        private val externalMimes = setOf("image/jpeg", "image/png", "image/webp", "application/zip")
         // 一次性导出的文件名：不得含路径分隔符、冒号与控制字符，不得以点开头（隐藏文件），64 字以内且带扩展名。
         private val externalName = Regex("^[^./\\\\:\\p{Cntrl}][^/\\\\:\\p{Cntrl}]{0,63}$")
     }
@@ -46,7 +47,7 @@ class ToolboxFileExporter(private val activity: Activity) : MethodChannel.Method
                     dispatch(Export(source, filename, mime, result))
                 }
                 // 一次性导出（人脸照片等）：文件名用语义化名字。来源只认应用缓存目录（Dart 侧的临时文件就在这里），
-                // 不能拿它把应用私有的库、密钥或配置导出到公共目录；mime 只放行图片且与扩展名对得上。
+                // 不能拿它把应用私有的库、密钥或配置导出到公共目录；mime 只放行图片与诊断日志包且与扩展名对得上。
                 "publishExternal" -> {
                     val source = File(requireNotNull(call.argument<String>("source"))).canonicalFile
                     val cache = activity.cacheDir.canonicalFile

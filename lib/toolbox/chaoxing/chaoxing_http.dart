@@ -204,8 +204,12 @@ class ChaoxingHttp {
     if (loaded.isNotEmpty) {
       request.headers['Cookie'] = loaded.entries.map((entry) => '${entry.key}=${entry.value}').join('; ');
     }
+    // 开发者模式下每个请求记一条路径、状态、耗时与字节数（见 campusRequestLog）；出错的原因另有上面带 errorType 的日志。
+    final watch = Stopwatch()..start();
+    int? status, size;
     try {
       final response = await _client.send(request);
+      status = response.statusCode;
       final bytes = BytesBuilder(copy: false);
       final limit = payloadLimit ?? ChaoxingHttp.payloadLimit;
       await for (final chunk in response.stream) {
@@ -215,6 +219,7 @@ class ChaoxingHttp {
           throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, '响应过大，已停止读取');
         }
       }
+      size = bytes.length;
       cookies.save(uri, ChaoxingCookieJar.parseSetCookie(response.headersSplitValues['set-cookie'] ?? const []));
       if (response.statusCode >= 400) {
         campusLog('[Chaoxing] action=http errorType=status path=${uri.path} status=${response.statusCode}');
@@ -241,6 +246,7 @@ class ChaoxingHttp {
       throw const ChaoxingFailure(ChaoxingFailureCode.network, '网络请求未完成，请稍后重试');
     } finally {
       timer.cancel();
+      campusRequestLog('chaoxing', method, uri, status: status, elapsed: watch.elapsed, bytes: size, error: size == null ? 'no_response' : null);
     }
   }
 

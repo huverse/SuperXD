@@ -8,6 +8,8 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_updates.dart';
+import 'package:superxd/local/developer_settings.dart';
+import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/page/about_page.dart';
 import 'package:superxd/page/account_page.dart';
 import 'package:superxd/page/appearance_page.dart';
@@ -36,10 +38,12 @@ class ServicePage extends StatelessWidget {
 }
 
 class MinePage extends StatelessWidget {
-  const MinePage({super.key, required this.session, this.social, this.updates});
+  const MinePage({super.key, required this.session, this.social, this.updates, this.developer, this.logs});
   final AppSession session;
   final SocialService? social;
   final AppUpdates? updates;
+  final DeveloperSettings? developer;
+  final DiagnosticLog? logs;
 
   void _push(BuildContext context, Widget page) => Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => page));
 
@@ -68,7 +72,7 @@ class MinePage extends StatelessWidget {
             // 多行卡片去掉横向内边距，行自带 20 边距：按下变暗时整行铺满卡片宽度，同 iOS 分组列表。
             CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
               ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.palette), trailing: const CampusIcon(CampusIcons.next), title: const Text('界面'), onTap: () => _push(context, AppearancePage(social: social))),
-              ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.info), trailing: const CampusIcon(CampusIcons.next), title: const Text('关于'), onTap: () => _push(context, AboutPage(updates: updates))),
+              ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.info), trailing: const CampusIcon(CampusIcons.next), title: const Text('关于'), onTap: () => _push(context, AboutPage(updates: updates, developer: developer, logs: logs))),
             ])),
           ]),
         ))))),

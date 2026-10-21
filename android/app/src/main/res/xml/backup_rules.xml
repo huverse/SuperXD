@@ -21,4 +21,6 @@
     <!-- 拼多多登录会话（身份码取件凭证）同样只属于这台设备，不随备份与换机迁移。 -->
     <exclude domain="sharedpref" path="superxd_pdd.xml" />
     <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_pdd.xml" />
+    <!-- 本机诊断日志（应用专属外部目录的 logs，平时的错误记录与开发者模式日志）只属于这台设备，不随备份与换机迁移。 -->
+    <exclude domain="external" path="logs/" />
 </full-backup-content>

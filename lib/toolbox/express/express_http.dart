@@ -37,8 +37,12 @@ class ExpressHttp {
     final timer = Timer(timeout, deadline.complete);
     final request = http.AbortableRequest(method, uri, abortTrigger: deadline.future)..headers.addAll(headers);
     if (body != null) request.body = body;
+    // 开发者模式下每个请求记一条路径、状态、耗时与字节数（见 campusRequestLog）；出错的原因另有带 errorType 的日志。
+    final watch = Stopwatch()..start();
+    int? status, size;
     try {
       final response = await _client.send(request);
+      status = response.statusCode;
       final builder = BytesBuilder(copy: false);
       await for (final chunk in response.stream) {
         builder.add(chunk);
@@ -47,6 +51,7 @@ class ExpressHttp {
           throw const ExpressFailure(ExpressFailureCode.tooLarge, '响应过大，已停止读取');
         }
       }
+      size = builder.length;
       if (response.statusCode >= 400) {
         campusLog('[Express] action=http errorType=status path=${uri.path} status=${response.statusCode}');
         // 401/424：异地登录等把会话顶掉时拼多多返回的 HTTP 状态（真机实测 station/package 在被挤下线后回 424），
@@ -73,6 +78,7 @@ class ExpressHttp {
       throw const ExpressFailure(ExpressFailureCode.network, '网络请求未完成，请稍后重试');
     } finally {
       timer.cancel();
+      campusRequestLog('express', method, uri, status: status, elapsed: watch.elapsed, bytes: size, error: size == null ? 'no_response' : null);
     }
   }
 

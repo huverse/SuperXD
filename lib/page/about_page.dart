@@ -6,7 +6,10 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/domain/app_update.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/local/developer_settings.dart';
+import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/page/app_update_dialog.dart';
+import 'package:superxd/page/developer_page.dart';
 import 'package:superxd/page/licenses_page.dart';
 import 'package:superxd/page/third_party_page.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -19,12 +22,15 @@ const sourceRepositoryUrl = 'https://github.com/huverse/SuperXD';
 
 // [人工决策-2026-10-05 01:28:53] “我的”只留“关于”一个入口：版本、用户协议、隐私政策、开源许可（原“开源与第三方声明”并入）、源代码与反馈都在关于页。
 class AboutPage extends StatefulWidget {
-  const AboutPage({super.key, this.packageInfo, this.openUrl, this.updates});
+  const AboutPage({super.key, this.packageInfo, this.openUrl, this.updates, this.developer, this.logs});
   // 测试注入版本信息与打开链接，默认读安装包、交给系统浏览器。
   final Future<PackageInfo>? packageInfo;
   final Future<bool> Function(Uri url)? openUrl;
   // 应用内更新；没配中转或不是发布渠道的构建为空，不显示检查更新。
   final AppUpdates? updates;
+  // 开发者模式与本机日志（设备级）；为空时连点版本号不开启开发者模式。
+  final DeveloperSettings? developer;
+  final DiagnosticLog? logs;
 
   @override
   State<AboutPage> createState() => _AboutPageState();
@@ -52,6 +58,36 @@ class _AboutPageState extends State<AboutPage> {
     } else if (updates.phase == AppUpdatePhase.failed) {
       await showCampusNotice(context, updates.error ?? '检查更新没完成，请稍后再试');
     }
+  }
+
+  // 连点版本号 7 次开启开发者模式（同 Android 系统的开发者选项，开工前已向用户说明的默认做法）：两次点按隔 2 秒以上重新数，
+  // 第 4 次起提示还差几次，第 7 次先说明会记什么、确认了才开；已经开着时点一下提示一次。开启后本页多一项「开发者选项」。
+  int _taps = 0;
+  DateTime? _lastTap;
+  Future<void> _tapVersion() async {
+    final developer = widget.developer;
+    if (developer == null) return;
+    if (developer.enabled) {
+      showCampusToast(context, '已处于开发者模式');
+      return;
+    }
+    final now = DateTime.now(), last = _lastTap;
+    _taps = last != null && now.difference(last) < const Duration(seconds: 2) ? _taps + 1 : 1;
+    _lastTap = now;
+    if (_taps < 7) {
+      if (_taps >= 4) showCampusToast(context, '再点 ${7 - _taps} 次进入开发者模式');
+      return;
+    }
+    _taps = 0;
+    final agreed = await showCampusConfirm(
+      context,
+      title: '开启开发者模式',
+      message: '开启后会把运行日志写进本机文件：页面切换、网络请求的接口与耗时、卡顿与内存等，最多保留 7 天、20MB，不上传，可在开发者选项里导出或清除。日志不记录密码、Cookie、链接与请求内容。',
+      action: '开启',
+    );
+    if (!agreed || !mounted) return;
+    await developer.setEnabled(true);
+    if (mounted) showCampusToast(context, '已开启开发者模式');
   }
 
   // 行尾只读状态，不用主色。
@@ -92,7 +128,11 @@ class _AboutPageState extends State<AboutPage> {
                 const SizedBox(height: 16),
                 Text(info?.appName ?? 'SuperXD', style: Theme.of(context).textTheme.headlineMedium),
                 const SizedBox(height: 8),
-                Text(info == null ? ' ' : '版本 ${info.version}（${info.buildNumber}）', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
+                GestureDetector(
+                  behavior: HitTestBehavior.opaque,
+                  onTap: _tapVersion,
+                  child: Text(info == null ? ' ' : '版本 ${info.version}（${info.buildNumber}）', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
+                ),
               ]);
             },
           )),
@@ -120,6 +160,21 @@ class _AboutPageState extends State<AboutPage> {
             row(CampusIcons.sourceCode, '源代码', () => _open(sourceRepositoryUrl), external: true),
             row(CampusIcons.feedback, '反馈问题', () => _open('$sourceRepositoryUrl/issues'), external: true),
           ])),
+          if (widget.developer case final developer?)
+            if (widget.logs case final logs?)
+              ListenableBuilder(
+                listenable: developer,
+                builder: (context, _) => developer.enabled
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 16),
+                        child: CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: row(
+                          CampusIcons.developer,
+                          '开发者选项',
+                          () => Navigator.push(context, CampusPageRoute<void>(builder: (context) => DeveloperPage(developer: developer, logs: logs))),
+                        )),
+                      )
+                    : const SizedBox.shrink(),
+              ),
           const GalaxyousAttribution(),
         ],
       ))))),

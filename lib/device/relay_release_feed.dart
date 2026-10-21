@@ -32,16 +32,21 @@ class RelayReleaseFeed implements AppReleaseFeed {
     final uri = Uri.parse('$baseUrl/v1/app/releases/$channel').replace(queryParameters: {'abi': abi});
     final int status;
     final List<int> body;
+    // 开发者模式下记一条路径、状态、耗时与字节数（见 campusRequestLog）。
+    final watch = Stopwatch()..start();
     try {
       final response = await _client.send(http.Request('GET', uri)).timeout(timeout);
       status = response.statusCode;
       body = await _read(response.stream).timeout(timeout);
+      campusRequestLog('app_update', 'GET', uri, status: status, elapsed: watch.elapsed, bytes: body.length);
     } on TimeoutException catch (error, stack) {
+      campusRequestLog('app_update', 'GET', uri, elapsed: watch.elapsed, error: 'timeout');
       campusLog('[AppUpdate] action=feed errorType=${error.runtimeType}\n$stack');
       throw const AppUpdateException('连不上更新服务器，请稍后再试');
     } on AppUpdateException {
       rethrow;
     } catch (error, stack) {
+      campusRequestLog('app_update', 'GET', uri, elapsed: watch.elapsed, error: error.runtimeType.toString());
       campusLog('[AppUpdate] action=feed errorType=${error.runtimeType}\n$stack');
       throw const AppUpdateException('连不上更新服务器，请检查网络后再试');
     }

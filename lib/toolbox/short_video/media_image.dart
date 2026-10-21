@@ -65,6 +65,8 @@ class _MediaImageState extends State<MediaImage> {
     _abort = abort;
     setState(() => _failed = false);
     final url = widget.url;
+    // 开发者模式下记一条状态、耗时与字节数（见 campusRequestLog，路径不带域名与查询串）。
+    final watch = Stopwatch()..start();
     try {
       final bytes = await (() async {
         var uri = toolboxPublicUrl(url.toString(), httpsOnly: true);
@@ -104,6 +106,7 @@ class _MediaImageState extends State<MediaImage> {
           if (type == null || !type.startsWith('image/')) {
             throw const FormatException('响应不是图片');
           }
+          campusRequestLog('short_video_image', 'GET', uri, status: response.statusCode, elapsed: watch.elapsed, bytes: data.length);
           return data;
         }
         throw const FormatException('图片跳转过多');
@@ -118,6 +121,7 @@ class _MediaImageState extends State<MediaImage> {
         );
       }
     } catch (error, stack) {
+      campusRequestLog('short_video_image', 'GET', url, elapsed: watch.elapsed, error: error.runtimeType.toString());
       campusLog(
         '[MediaImage] action=load errorType=${error.runtimeType}\n$stack',
       );

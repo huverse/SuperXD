@@ -21,6 +21,8 @@
   - app_package_files.dart：CacheAppPackageFiles 实现 AppPackageFiles。安装包放在缓存的 app_update 文件夹（原生 FileProvider 只开放这里），只留一个版本；background_downloader 的独立命名空间 superxd_update 下载（回调与百宝箱的下载互不相干），有通知权限时以前台任务跑并在通知栏显示进度（规则同百宝箱 background_transfer.dart）；SHA-256 在后台 isolate 里算；prune 删掉版本号不高于已装版本的包与残留。
   - app_installer_channel.dart：ChannelAppInstaller 实现 AppInstaller，经通道 superxd/app_update 调原生 AppUpdateInstaller.kt：能否安装（Android 8 起要用户允许「安装未知应用」）、打开授权设置、读安装包的包名版本号并比对签名证书、以只读授权交给系统安装器。
 
+- diagnostic_device.dart：本机诊断日志用到的两项系统能力，由组合根交给 local/diagnostic_log.dart：readDeviceEnvironment 经 device_info_plus 读系统版本与机型（写进日志包的运行环境）；publishDiagnosticArchive 把缓存里打好的 zip 经原生一次性导出（ToolboxFileExporter.kt，与百宝箱共用通道 superxd/toolbox_files）存进 Download/SuperXD。
+
 # 关键规则
 
 - 本层不做业务判断：要安排哪些提醒、小组件显示哪些课由 application 下的 campus_reminders.dart、campus_widgets.dart 决定，本层只负责整体替换；要不要更新、装不装由 app_updates.dart 决定。
