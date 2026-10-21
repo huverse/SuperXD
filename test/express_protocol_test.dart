@@ -58,24 +58,104 @@ void main() {
       expect(IdentityCodeResult.fromJson(const {'identification_code': 'dd1'}).expireMills, PddConstants.defaultExpireMills);
     });
 
-    test('驿站空列表解析手机尾号', () {
+    test('驿站空列表解析手机尾号与「还有更多」', () {
       final result = StationPackagesResult.fromJson(const {
         'count': 0,
-        'no_package_mobile_info': {'mobileList': ['8888', '6666'], 'largerThan2': false},
+        'no_package_mobile_info': {'mobileList': ['8888', '6666'], 'largerThan2': true},
       });
-      expect(result.count, 0);
+      expect(result.total, 0);
       expect(result.noPackageMobileInfo?.mobileList, ['8888', '6666']);
-      expect(result.packages, isEmpty);
+      expect(result.noPackageMobileInfo?.largerThanTwo, isTrue);
+      expect(result.groups, isEmpty);
     });
 
-    test('驿站非空列表从任一常见键取并保留 raw', () {
+    // 字段按官方 mdkd 包裹页的渲染取（combine_list 按驿站分组），数据是合成的。
+    test('驿站非空列表按 combine_list 分组：站名、地址、取件码去掉前缀、快递公司、运单号、送货上门件数', () {
       final result = StationPackagesResult.fromJson(const {
         'count': 2,
-        'package_list': [{'a': 1}, {'b': 2}],
+        'combine_list': [
+          {
+            'company_name': '合成驿站一号',
+            'address': '测试路 1 号',
+            'combine_track_list': [{'pick_code': '取件码 3-2-1001', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000001', 'mobile_alias': '自己'}],
+            'station_delivery_track_list': [{'tracking_number': 'SX0000000002'}],
+          },
+        ],
       });
-      expect(result.count, 2);
-      expect(result.packages.length, 2);
-      expect(result.raw['count'], 2);
+      expect(result.total, 2);
+      final group = result.groups.single;
+      expect(group.stationName, '合成驿站一号');
+      expect(group.address, '测试路 1 号');
+      expect(group.deliveryCount, 1);
+      final parcel = group.packages.single;
+      expect(parcel.pickCode, '3-2-1001');
+      expect(parcel.shippingName, '合成快递');
+      expect(parcel.trackingNumber, 'SX0000000001');
+      expect(parcel.mobileAlias, '自己');
+      // count 缺失时按列表里的件数算。
+      expect(StationPackagesResult.fromJson(const {'combine_list': [{'combine_track_list': [{'pick_code': '1'}, {'pick_code': '2'}]}]}).total, 2);
+    });
+
+    // 结构取自 10-21 审阅移交包的真实响应（已脱敏），站名与站点码换成合成值。
+    test('带驿站码查的结果读出站名与「只能微信扫码取件」（true 或 1 都算）', () {
+      const body = {'count': 0, 'show_mobile_alias': true, 'can_add_package': true, 'station_name': '合成驿站', 'only_wx_scan': true, 'no_package_mobile_info': {'mobileList': [], 'largerThan2': false}};
+      final result = StationPackagesResult.fromJson(body);
+      expect(result.stationName, '合成驿站');
+      expect(result.onlyWxScan, isTrue);
+      expect(StationPackagesResult.fromJson(const {'count': 0, 'only_wx_scan': 1}).onlyWxScan, isTrue);
+      expect(StationPackagesResult.fromJson(const {'count': 0, 'station_name': '合成驿站'}).onlyWxScan, isFalse);
+    });
+
+    // 字段按官方取快递页「近一周已取出」弹层的渲染取；查物流参数优先取 jump_url（官方点一项就是带着它进物流页）。数据合成。
+    test('近一周已取出解析取件地址、时间、快递公司与运单号，物流参数先取 jump_url 再用条目字段；待取件带 shipping_id', () {
+      final result = StationPackagesResult.fromJson(const {
+        'count': 1,
+        'combine_list': [
+          {'combine_track_list': [{'pick_code': '1-1-0001', 'tracking_number': 'SX0000000001', 'shipping_id': 101}]},
+        ],
+        'package_out_list': [
+          {'address': '测试路 1 号', 'operate_time': '10-20 15:30', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000002', 'jump_url': '/track?tracking_number=SX0000000002&shipping_id=102&source_type=3'},
+          {'tracking_number': 'SX0000000003', 'shipping_id': '103'},
+        ],
+      });
+      expect(result.total, 1, reason: '已取出的不算待取件');
+      expect(result.groups.single.packages.single.trackQuery, (trackingNumber: 'SX0000000001', shippingId: '101', sourceType: ''));
+      final recent = result.recentPackages;
+      expect(recent.first.address, '测试路 1 号');
+      expect(recent.first.operateTime, '10-20 15:30');
+      expect(recent.first.shippingName, '合成快递');
+      expect(recent.first.trackQuery, (trackingNumber: 'SX0000000002', shippingId: '102', sourceType: '3'));
+      expect(recent.last.trackQuery, (trackingNumber: 'SX0000000003', shippingId: '103', sourceType: ''));
+    });
+
+    // 审阅移交包说 App 版分组里的包裹键是 list（官方 H5 是 combine_track_list），两种都认。
+    test('分组里的包裹在 list 键下也能读出', () {
+      final result = StationPackagesResult.fromJson(const {
+        'count': 1,
+        'combine_list': [
+          {'station_code': 'S000000001', 'list': [{'pick_code': '1-1-0001', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000009'}]},
+        ],
+      });
+      expect(result.groups.single.packages.single.pickCode, '1-1-0001');
+      expect(result.groups.single.packages.single.trackingNumber, 'SX0000000009');
+    });
+
+    test('驿站码从链接、App 内链、JSON 与裸码里取，取不到返回空；带 t 参数的是动态码', () {
+      const code = 'S000000001';
+      for (final raw in [
+        'https://mdkd.pinduoduo.com/weixin/package?station_code=$code',
+        'https://m.pinduoduo.net/mdkd/package?pr_page_from=scheme&station_code=$code',
+        'pinduoduo://com.xunmeng.pinduoduo/mdkd/package?station_code=$code',
+        '{"station_code":"$code"}',
+        '  $code  ',
+      ]) {
+        expect(parseStationScan(raw), (code: code, dynamicQr: false), reason: raw);
+      }
+      expect(parseStationScan('https://mdkd.pinduoduo.com/weixin/package?station_code=$code&t=123'), (code: code, dynamicQr: true));
+      for (final raw in ['https://example.com/station?foo=bar', '{"foo":"bar"}', '{坏的 JSON', '这不是驿站码', '']) {
+        expect(parseStationScan(raw), isNull, reason: raw);
+      }
+      expect(weChatStationUrl(code), 'https://mdkd.pinduoduo.com/weixin/package?station_code=$code');
     });
 
     test('绑定手机号解析打码号与别名', () {
@@ -133,6 +213,56 @@ void main() {
       await client.queryStationPackages(stationCode: 'STATION-9', entrySource: PddConstants.entryScan);
       expect((body! as Map)['station_code'], 'STATION-9');
       expect((body! as Map)['entry_source'], '4');
+      expect((body! as Map)['dynamic_qrcode'], isFalse);
+      await client.queryStationPackages(stationCode: 'STATION-9', dynamicQr: true, entrySource: PddConstants.entryScan);
+      expect((body! as Map)['dynamic_qrcode'], isTrue);
+      client.close();
+    });
+
+    // 同官方物流页（/track）：GET、entry_source=9，shipping_id 与 source_type 有才带；结果在 shipping 里。数据合成。
+    test('查物流走 GET shipping/track 带运单号等参数，解析快递公司、预计送达与轨迹；失败带回 error_message', () async {
+      http.Request? sent;
+      final client = buildClient(
+        session: session,
+        onRequest: (request) => sent = request,
+        respond: (_) => {
+          'shipping': {
+            'shipping_name': '合成快递',
+            'tracking_number': 'SX0000000002',
+            'time_forecast': {'time_forecast_desc': '预计明天送达'},
+            'traces': [
+              {'info': '【合成市】快件已到达合成驿站', 'time': '2026-10-20 15:30:00'},
+              {'info': '【合成市】快件已发出', 'time': '2026-10-19 08:00:00'},
+            ],
+          },
+        },
+      );
+      final track = await client.queryShippingTrack((trackingNumber: 'SX0000000002', shippingId: '102', sourceType: '3'));
+      expect(sent!.method, 'GET');
+      expect(sent!.url.path, '/api/express/shipping/track');
+      expect(sent!.url.queryParameters, {'tracking_number': 'SX0000000002', 'shipping_id': '102', 'entry_source': '9', 'source_type': '3'});
+      expect(track.shippingName, '合成快递');
+      expect(track.forecast, '预计明天送达');
+      expect(track.traces.map((trace) => trace.info), ['【合成市】快件已到达合成驿站', '【合成市】快件已发出']);
+      expect(track.traces.first.time, '2026-10-20 15:30:00');
+      await client.queryShippingTrack((trackingNumber: 'SX0000000002', shippingId: '', sourceType: ''));
+      expect(sent!.url.queryParameters, {'tracking_number': 'SX0000000002', 'entry_source': '9'});
+      client.close();
+
+      final failing = buildClient(session: session, respond: (_) => {'error_code': 1000101, 'error_message': '暂无该运单号物流轨迹信息'});
+      await expectLater(
+        failing.queryShippingTrack((trackingNumber: 'SX0000000009', shippingId: '', sourceType: '')),
+        throwsA(isA<ExpressFailure>().having((failure) => failure.message, 'message', '暂无该运单号物流轨迹信息')),
+      );
+      failing.close();
+    });
+
+    test('「登录验证码已失效」说的是验证码，不判为登录失效', () async {
+      final client = buildClient(session: session, respond: (_) => {'success': false, 'error_code': '600', 'error_msg': '登录验证码已失效'});
+      await expectLater(
+        client.verifyBindSmsCode(mobileId: 'm', code: '000000', antiContent: 'anti'),
+        throwsA(isA<ExpressFailure>().having((failure) => failure.isNotLoggedIn, 'isNotLoggedIn', isFalse)),
+      );
       client.close();
     });
 
@@ -274,6 +404,27 @@ void main() {
       expect((body! as Map)['protocol_code'], PddConstants.bindProtocolCode);
       expect((body! as Map)['entry_source'], PddConstants.fastBindEntrySource);
       expect((body! as Map).containsKey('mobile_id_scene'), isFalse);
+      client.close();
+    });
+
+    // 官方在绑定成功后紧接着调它，把绑定前就已到站的包裹关联进本账号；body 为空，带 anti-content 头。
+    test('关联驿站包裹走 bind/mobile/station/package，空 body、带 anti-content 头', () async {
+      String? path;
+      Object? body;
+      String? antiHeader;
+      final client = buildClient(
+        session: session,
+        onRequest: (request) {
+          path = request.url.path;
+          body = jsonDecode(request.body);
+          antiHeader = request.headers['anti-content'];
+        },
+        respond: (_) => {'success': true},
+      );
+      await client.linkStationPackages(antiContent: 'ANTI');
+      expect(path, endsWith('/api/express_trackbox/bind/mobile/station/package'));
+      expect(body, isEmpty);
+      expect(antiHeader, 'ANTI');
       client.close();
     });
 

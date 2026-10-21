@@ -1,5 +1,10 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path/path.dart' as path;
+import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'package:superxd/domain/campus_log.dart';
@@ -10,13 +15,16 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/express/express_controller.dart';
 import 'package:superxd/toolbox/express/express_cookies.dart';
 import 'package:superxd/toolbox/express/express_identity_view.dart';
 import 'package:superxd/toolbox/express/express_login_webview.dart';
 import 'package:superxd/toolbox/express/express_mobile_sheet.dart';
+import 'package:superxd/toolbox/express/express_models.dart';
 import 'package:superxd/toolbox/express/express_service.dart';
+import 'package:superxd/toolbox/express/express_track_sheet.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 // 首次使用拼多多这个来源要单独征得同意；说明版本变了就加一档，旧同意失效、再次征询。
@@ -72,6 +80,7 @@ class _ExpressPageState extends State<ExpressPage> {
     await Navigator.of(context).push<void>(
       CampusPageRoute(
         builder: (_) => ExpressLoginWebView(
+          verify: controller.verifySession,
           onLogin: (session) {
             controller.onLoggedIn(session);
             Navigator.of(context).pop();
@@ -90,7 +99,30 @@ class _ExpressPageState extends State<ExpressPage> {
     await clearExpressWebCookies();
   }
 
-  Future<void> _manageMobiles() async => showExpressMobileSheet(context, controller: _controller!);
+  // [人工决策-2026-10-21 12:53:40] 用户选「先读后开」：按钮原地转圈读好预检查与列表再弹出弹层，弹层一出来就是最终高度，
+  // 不再先放整页加载动画撑满、读完缩回（真机上的突闪）；没读到用提示条说明，登录失效时控制器已回到登录页。
+  Future<void> _manageMobiles() async {
+    final controller = _controller!;
+    final loaded = await controller.loadMobiles();
+    if (!mounted) return;
+    if (loaded == null) {
+      if (controller.loggedIn && controller.error != null) showCampusToast(context, controller.error!);
+      return;
+    }
+    await showExpressMobileSheet(context, controller: controller, initial: loaded);
+  }
+
+  // 包裹的实时物流同样先读后开：那一行的「物流」按钮原地转圈，读好再弹物流详情。
+  Future<void> _showTrack(ExpressTrackQuery query) async {
+    final controller = _controller!;
+    final track = await controller.loadTrack(query);
+    if (!mounted) return;
+    if (track == null) {
+      if (controller.loggedIn && controller.error != null) showCampusToast(context, controller.error!);
+      return;
+    }
+    await showExpressTrackSheet(context, track);
+  }
 
   // anti_content 的隐藏 WebView：只建一次、常驻且一直被绘制（页面稳定位置、不随列表或控制器重建），
   // 这样 window.__sxdGen 能常驻、现取 anti_content 不用每次重载（被盖住重置时还有重载兜底，见 express_anti_content.dart）。
@@ -107,16 +139,68 @@ class _ExpressPageState extends State<ExpressPage> {
   // [人工决策-2026-10-20 15:36:10] 用户确认把「绑定手机号」从只查列表扩成真正的取件手机号管理（列表 + 短信验证绑新号 + 快速绑本账号已有号 + 解绑）：
   // 绑定短信走 francis 端点（属绑定不属登录、按反编译不需 anti_content），仍不做需 anti_content 的短信登录高级接口（sigerus）。
   // 绑定/解绑是账号状态变更，逐步由用户点击确认（见 express_mobile_sheet.dart），不后台自动做。移交包未真机验证过绑定/解绑，实际风控与解绑参数待真机核实。
-  // 扫驿站二维码进入：带着驿站码查这家驿站的待取件。真实驿站码格式未取到样本，原文非空即原样作为 station_code 传。
+  // [人工决策-2026-10-21 17:49:44] 扫驿站二维码进入：真实驿站码是带 station_code 参数的链接（10-21 拿到样本），
+  // 用户确认改为从链接、JSON 或裸码里取 station_code（parseStationScan），取不到就在扫码页提示，不再把原文发给服务端（原「原文非空即原样传」作废）。
   Future<void> _scanStation() async {
     final scan = widget.runtime.scanQrCode;
     if (scan == null) {
       await showCampusNotice(context, '当前版本不能扫码');
       return;
     }
-    final raw = await scan(context, '把驿站的二维码放入框内', (value) => value.trim().isEmpty ? '没有识别到驿站码' : null);
+    final raw = await scan(context, '把驿站的二维码放入框内', (value) => parseStationScan(value) == null ? '不是驿站的二维码' : null);
     if (raw == null || !mounted) return;
-    await _act(() => _controller!.queryStationPackages(stationCode: raw.trim()));
+    await _act(() => _controller!.queryStationPackages(station: parseStationScan(raw)));
+  }
+
+  // [人工决策-2026-10-21 17:49:44] 只能微信扫码取件的账号（only_wx_scan）：用户选「提示但保留身份码」，并加「去微信取件」——
+  // 第三方 App 让微信打开指定网页要接微信开放平台 SDK，做不到；改为扫过驿站码时把这个站的微信取件链接生成纯二维码存进相册，
+  // 提示在微信「扫一扫」里从相册选它，再用公开的 weixin:// 拉起微信；没扫过驿站码就提示扫驿站墙上的码。
+  // [人工决策-2026-10-21 18:55:20] 用户看真机后定文案：微信是用来「查询待取件、查询取件」的，标题写「这个账号目前只能用微信查询待取件」，
+  // 弹窗写「查询取件」；删去「拼多多暂停了它在 App 里取件」说明行与身份码上方的「驿站可能不认」提醒（身份码照常可生成）。
+  Future<void> _toWeChat() async {
+    final stationCode = _controller!.stationCode;
+    final saved = stationCode.isNotEmpty && await _saveStationQr(stationCode);
+    if (!mounted) return;
+    final go = await showCampusConfirm(
+      context,
+      title: saved ? '驿站码已存到相册' : '去微信取件',
+      // 按步骤分行写：整句在窄弹窗里会把「扫一扫」拆到两行。
+      message: saved ? '打开微信，点右上角＋\n→「扫一扫」→ 相册\n选这张驿站码查询取件。' : '打开微信，点右上角＋\n→「扫一扫」\n扫驿站的二维码查询取件。',
+      action: '打开微信',
+    );
+    if (!go || !mounted) return;
+    final opened = await _service.launchExternal(Uri.parse(PddConstants.weChatScheme)).catchError((Object error, StackTrace stack) {
+      campusLog('[Express] action=open_wechat errorType=${error.runtimeType}\n$stack');
+      return false;
+    });
+    if (!opened && mounted) showCampusToast(context, '没有找到微信');
+  }
+
+  // 驿站的微信取件链接画成纯黑白二维码（四周留白），经百宝箱的一次性导出存进公共目录（相册里可见，同名不重复存）；临时文件用完即删。
+  Future<bool> _saveStationQr(String stationCode) async {
+    final temp = File(path.join((await _service.temporaryDirectory()).path, 'express-station-${DateTime.now().microsecondsSinceEpoch}.png'));
+    try {
+      final image = QrImage(QrCode.fromData(data: weChatStationUrl(stationCode), errorCorrectLevel: QrErrorCorrectLevel.M));
+      final bytes = await image.toImageAsBytes(
+        size: 1024,
+        decoration: const PrettyQrDecoration(
+          shape: PrettyQrSmoothSymbol(color: Colors.black, roundFactor: 0),
+          background: Colors.white,
+          quietZone: PrettyQrQuietZone.standard,
+        ),
+      );
+      if (bytes == null) return false;
+      await temp.writeAsBytes(bytes.buffer.asUint8List(), flush: true);
+      final filename = '驿站码-${stationCode.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '')}.png';
+      return await _service.filePublisher().publishExternal(source: temp.path, filename: filename, mimeType: 'image/png') != null;
+    } catch (error, stack) {
+      campusLog('[Express] action=save_station_qr errorType=${error.runtimeType}\n$stack');
+      return false;
+    } finally {
+      unawaited(temp.delete().then((_) {}, onError: (Object error, StackTrace stack) {
+        if (error is! PathNotFoundException) campusLog('[Express] action=station_qr_clean errorType=${error.runtimeType}\n$stack');
+      }));
+    }
   }
 
   // 查询失败用提示条说明（同学习通、成绩页），不在卡片里留一行不会消失的红字；登录失效时控制器已回到登录态，原因写在登录页上。
@@ -241,6 +325,11 @@ class _ExpressPageState extends State<ExpressPage> {
     final textTheme = Theme.of(context).textTheme;
     final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
     final packages = controller.packages;
+    // 没有待取件时写查过的手机尾号：同官方只写前两个，还有更多时补「等」（服务端也只给前几个）。
+    final noPackage = packages?.noPackageMobileInfo;
+    final tails = noPackage == null || noPackage.mobileList.isEmpty
+        ? ''
+        : '${noPackage.mobileList.take(2).join('、')}${noPackage.largerThanTwo || noPackage.mobileList.length > 2 ? '等' : ''}';
     final identityCode = controller.identityCode;
     final locked = controller.busy || controller.refreshing;
     final userId = controller.session!.userId;
@@ -250,6 +339,16 @@ class _ExpressPageState extends State<ExpressPage> {
           ? FilledButton(style: campusProminent, onPressed: locked ? null : onPressed, child: content)
           : OutlinedButton(onPressed: locked ? null : onPressed, child: content);
     }
+    // 每件包裹行尾的「物流」：查询进行中只有发起的那一行原地转圈；没有运单号的不能查。
+    Widget trackButton(ExpressTrackQuery query) => OutlinedButton(
+      onPressed: locked || query.trackingNumber.isEmpty ? null : () => _showTrack(query),
+      child: CampusBusyContent(
+        busy: controller.running == ExpressAction.track && controller.trackingKey == query.trackingNumber,
+        label: '物流',
+        busyLabel: '物流',
+        icon: const CampusIcon(CampusIcons.logistics),
+      ),
+    );
     Widget result(String title, List<Widget> children) => Padding(
       padding: const EdgeInsets.only(top: 16),
       child: CampusSurface(
@@ -287,11 +386,8 @@ class _ExpressPageState extends State<ExpressPage> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            // 绑定手机号是增删管理，点开弹层做，不占「正在查询」的原地转圈。
-            OutlinedButton(
-              onPressed: locked ? null : _manageMobiles,
-              child: const CampusBusyContent(busy: false, label: '绑定手机号', busyLabel: '绑定手机号', icon: CampusIcon(CampusIcons.phone)),
-            ),
+            // 绑定手机号是增删管理：原地转圈读好再打开弹层，增删在弹层里做。
+            action(ExpressAction.mobiles, CampusIcons.phone, '绑定手机号', '读取中', _manageMobiles),
             action(ExpressAction.packages, CampusIcons.parcel, '驿站快递', '正在查询', () => _act(controller.queryStationPackages)),
             action(ExpressAction.scan, CampusIcons.scan, '扫驿站码', '正在查询', _scanStation),
             action(ExpressAction.identity, CampusIcons.qrCode, '身份码', '生成中', () => _act(controller.generateIdentityCode), prominent: true),
@@ -299,9 +395,65 @@ class _ExpressPageState extends State<ExpressPage> {
         ),
         if (packages != null)
           result('驿站待取件', [
-            Text(packages.count == 0 ? '没有待取件' : '${packages.count} 件待取', style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface)),
-            if (packages.count == 0 && (packages.noPackageMobileInfo?.mobileList.isNotEmpty ?? false))
-              Text('手机尾号 ${packages.noPackageMobileInfo!.mobileList.join('、')}', style: secondary),
+            if (packages.stationName.isNotEmpty) Text('当前站点：${packages.stationName}', style: secondary),
+            // 只能微信扫码取件的账号不写「没有待取件」（那会让人以为只是没快递），写明只能用微信查询并给「去微信取件」。
+            if (packages.onlyWxScan) ...[
+              Text('这个账号目前只能用微信查询待取件', style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface)),
+              const SizedBox(height: 12),
+              OutlinedButton.icon(onPressed: locked ? null : _toWeChat, icon: const CampusIcon(CampusIcons.open), label: const Text('去微信取件')),
+            ] else ...[
+              Text(packages.total == 0 ? '没有待取件' : '${packages.total} 件待取', style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface)),
+              if (packages.total == 0 && tails.isNotEmpty) Text('手机尾号 $tails', style: secondary),
+            ],
+            // 按驿站分组列出，取件码最醒目（到驿站报的就是它），下面一行快递公司、运单号与收件人备注。
+            for (final group in packages.groups) ...[
+              const SizedBox(height: 12),
+              Text(group.stationName.isEmpty ? '驿站' : group.stationName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+              if (group.address.isNotEmpty) Text(group.address, style: secondary),
+              for (final parcel in group.packages)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(parcel.pickCode.isEmpty ? '取件码未知' : '取件码 ${parcel.pickCode}', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                            DotSeparatedText([parcel.shippingName, parcel.trackingNumber, parcel.mobileAlias].where((part) => part.isNotEmpty).join(' · '), style: secondary),
+                          ],
+                        ),
+                      ),
+                      trackButton(parcel.trackQuery),
+                    ],
+                  ),
+                ),
+              if (group.deliveryCount > 0) Padding(padding: const EdgeInsets.only(top: 8), child: Text('${group.deliveryCount} 个快递已安排送货上门', style: secondary)),
+            ],
+            // 近一周已取出（官方放在取快递页底部一行，点开列取件地址、取件时间、快递公司与运单号）：直接列在卡片里，每件可查物流。
+            if (packages.recentPackages.isNotEmpty) ...[
+              const SizedBox(height: 16),
+              Text('近一周已取出 ${packages.recentPackages.length} 件', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+              for (final parcel in packages.recentPackages)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            DotSeparatedText([parcel.shippingName, parcel.trackingNumber].where((part) => part.isNotEmpty).join(' · '), style: TextStyle(fontSize: 15, color: palette.onSurface)),
+                            if (parcel.operateTime.isNotEmpty) Text('取件时间 ${parcel.operateTime}', style: secondary),
+                            if (parcel.address.isNotEmpty) Text(parcel.address, style: secondary),
+                          ],
+                        ),
+                      ),
+                      trackButton(parcel.trackQuery),
+                    ],
+                  ),
+                ),
+            ],
           ]),
         if (identityCode != null)
           Padding(
