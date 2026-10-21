@@ -17,7 +17,7 @@
     - campusPage 与 CampusPageRoute 是唯一的页面路由（不直接用 MaterialPageRoute，code_conventions_test.dart 守护）；页面转场新旧页整屏并排平移、不淡入淡出。页面推在弹窗或弹层之上时，进出转场期间垫一份同相位背景副本盖住弹窗（页面透明，不垫会叠成两层），副本拍成快照只贴图（直接画每帧要重画几层全屏渐变），停稳即撤。
     - 跟手返回 _CampusBackGesture 只让最前面的页面响应，不用路由自带的 handleCommitBackGesture（它会把进度重置到 1 再倒放）。CampusEntryFade 是按代次重建的账号应用入场（盖背景副本淡出）。
     - 共享弹窗 showCampusNotice、showCampusConfirm（destructive 时主按钮警示红）与玻璃弹窗 CampusGlassDialog（按钮一到两个等宽并排，任一个放不下半宽或三个及以上时竖排、主操作在最上，[人工决策] 在操作区；全应用弹窗都用它，日期选择器除外）。
-    - showCampusToast 提示条：在弹层、弹窗、菜单里调用时插进根 Overlay 浮在最上层（[人工决策] 在文件内；不给弹层套 Scaffold，它的 Material 会吃掉点按）。
+    - showCampusToast 提示条：同一时刻一条，新的顶掉旧的（排队的一起清掉）；在弹层、弹窗、菜单里调用时插进根 Overlay 浮在最上层（[人工决策] 在文件内；不给弹层套 Scaffold，它的 Material 会吃掉点按）。
     - showCampusSheet 与 CampusSheetPanel 是底部弹层（键盘弹出时整块浮到键盘上方）；弹窗与弹层都经 CampusOverlayDepthRoute 登记层数。
   - campus_rolling_text.dart：数字滚动 CampusRollingText（同 iOS 实时活动的数字过渡）：只有变了的位滚动，倒数时方向相反，位按右对齐，减少动画时直接换。
   - campus_refresh.dart：下拉刷新 CampusRefreshControl（基于 CupertinoSliverRefreshControl），放在 CustomScrollView 第一个 sliver，指示器是曲线动效、至少停留 600ms。

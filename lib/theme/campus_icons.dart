@@ -95,6 +95,9 @@ abstract final class CampusIcons {
   static const phone = LucideIcons.smartphone;
   static const unbind = LucideIcons.unlink;
   static const logistics = LucideIcons.truck;
+  static const developer = LucideIcons.bug;
+  static const logs = LucideIcons.scrollText;
+  static const exportLogs = LucideIcons.fileArchive;
 }
 
 void configureCampusIcons() =>

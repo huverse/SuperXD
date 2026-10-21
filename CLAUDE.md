@@ -4,7 +4,7 @@
 
 - [人工决策-2026-09-29 21:40:28] 索引采用仓库内分层 CLAUDE.md（根目录加 lib 各模块），授权 AI 创建，并在每次改动时同步维护。用户全局 CLAUDE.md 仍由 AI 只提建议、由人工修改。
 - [人工决策-2026-10-17 13:25:26] 索引按官方与大厂做法重整（用户四项都选推荐）：本文件控制在 200 行内，只放全局原则、命令与流程，具体超时、上限与测试清单下沉到模块文件；application 与学习通各建模块索引；守护测试按最近的 CLAUDE.md 登记；文件条目一两行，写职责、约束与人工决策位置，行为细节以代码为准。
-- 模块索引共 12 个：lib 下 domain、edu、local、gateway、device、application、page、theme、toolbox、social 各一个，外加 lib/toolbox/chaoxing 与 lib/toolbox/express。lib 根目录的 main.dart、router.dart、app_session.dart 登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md。
+- 模块索引共 12 个：lib 下 domain、edu、local、gateway、device、application、page、theme、toolbox、social 各一个，外加 lib/toolbox/chaoxing 与 lib/toolbox/express。lib 根目录的 main.dart、router.dart、app_session.dart、app_diagnostics.dart 登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md。
 - test/project_structure_test.dart 兜底两条：lib 下每个 dart 文件按文件名登记在最近的 CLAUDE.md（从所在目录往上找到 lib 为止，都没有就是本文件）；索引里提到的 dart 或 kt 文件必须真实存在。
 - 写法：纯文字，只用 # 标题、- 列表与 1. 编号；不写会随提交变化的数字（测试条数、提交号、库版本号），常量写名字或指到定义处。
 
@@ -26,8 +26,8 @@
 
 目录即分层，依赖只许自上而下，由 test/project_structure_test.dart 守护（[人工决策] 在文件内）。出现反向依赖时先重新划分职责，不要绕过检查。
 
-- 根目录组合根：main.dart、router.dart、app_session.dart，可依赖任何层。
-- page 页面：可依赖 domain、application、gateway、local、social、theme 与 app_session.dart；只经 CampusGateway 与 AccountAccess 访问业务，不直接接触 SQLite、KingoClient 或 cookie（例外只有外观页读写 DisplaySettings）。
+- 根目录组合根：main.dart、router.dart、app_session.dart、app_diagnostics.dart，可依赖任何层。
+- page 页面：可依赖 domain、application、gateway、local、social、theme 与 app_session.dart；只经 CampusGateway 与 AccountAccess 访问业务，不直接接触 SQLite、KingoClient 或 cookie（例外只有外观页读写 DisplaySettings、开发者选项页读写开发者设置与本机日志）。
 - toolbox 百宝箱：设备级、免登录，可依赖 domain、theme，不依赖教务相关任何层；分享给好友、读本应用课表（学习通推断正在上的课）都经组合根注入的回调，不依赖 social 与 application。
 - social 私信：设备级的身份、好友、本机库与中转客户端，只依赖 domain；页面经 SocialService 使用。
 - application 应用编排：可依赖 domain、gateway。
@@ -40,13 +40,14 @@
 # 组合根与路由门禁
 
 - main.dart 启动顺序：
-  1. 把日志出口注入为 debugPrint，接住没被处理的异步错误（带堆栈走 campusLog），再初始化时区库、图标与第三方许可。
+  1. 把日志出口注入为 debugPrint，接住没被处理的异步错误与框架报错（带堆栈走 campusLog）；打开本机诊断日志与开发者设置，把出口接成 logcat 加文件两份，按开发者模式切换诊断记录（app_diagnostics.dart 的 watchDeveloperMode）；再初始化时区库、图标与第三方许可。
   2. 打开 AccountStore，组装 AppSession（含 AccountGateway 与 SecureCredentialStore）、DisplaySettings、设备级 SocialService（中转未配置或格式不对时为不可用）与 AppUpdates（没配中转或不是渠道构建时为空，渠道取 appFlavor）。
   3. runApp 之后不等待地初始化玻璃渲染，私信服务等用户同意协议与政策后再初始化（已开启私信的会立即联网），再恢复会话；百宝箱的 shareVideo 接到私信分享弹层，路由把好友分享的视频交给注册表里认得这张卡片的工具（openShared）。
   4. 恢复会话后核对协议与政策（checkLegalNotice：没在首次启动弹窗里同意过的先征得同意，同意之前不联网；同意过的有实质变化时提示一次），再启动三个监听：watchLocalSchedule 对账课前提醒与小组件，watchWidgetTheme 下发小组件配色，watchAppUpdates 清旧安装包、同意后延迟 3 秒自动检查更新并在回前台时续做安装；协议弹窗与新版弹窗都由 _AccountApp 在根导航器上弹，登录页也能弹，一个提示只弹一次，协议弹窗开着时更新弹窗等它关掉。
 - 账号代次：SuperXdApp 以 session.generation 作 key 重建账号应用，切换账号时路由和页面内存状态整体丢弃（[人工决策] 在 main.dart）。
 - router.dart 门禁：会话恢复完成前停在 /boot；未登录只允许 /login、/legal 下的法务页、/toolbox 与已注册工具路由（[人工决策] 在文件内）；已登录访问 /login 回到 /today；底栏壳有今天、服务、消息、我的四个分支，外包 LegacyImportGate；课表、成绩、切换账号、法务页和百宝箱推入根导航器。
 - app_session.dart：把 AccountAccess 的账号变化转成路由刷新并暂存一次性提示；expire 只让发起时的那个代次失效，旧页面不能误登出新账号。
+- app_diagnostics.dart：开发者模式的接线（[人工决策] 在文件头）：运行环境 appEnvironment、按设置切换 campusDiagnostics 与卡顿内存统计（每 10 秒汇总、有慢帧才记）、前后台与页面切换记录（watchRoutes，只记路径），切到后台时把日志写盘。开发者模式只多记日志、多给调试工具，不改任何业务行为。
 - 页面从路由拿到 isAccountCurrent 与 onSessionExpired：异步结果回来后先确认仍属当前账号，再写界面。
 - 编排（CampusSync、CampusReminders、CampusWidgets、AppUpdates）见 lib/application/CLAUDE.md。
 
@@ -59,8 +60,8 @@
 5. 课表版本：编辑、恢复和确认覆盖都带 expectedRevisionId，在同一事务里核对当前 head，不一致返回 REVISION_CONFLICT；每学期版本数有上限，当前 head 与最近一次教务基线受保护（规则见 lib/domain/CLAUDE.md）。
 6. 时间：绝对时刻一律存 UTC 的 ISO 字符串；校园时区只在 domain/campus_clock.dart 的 campusTimeZone 一处定义，今天、周次、倒计时等业务日界都经 campus_clock 计算；展示时间用 formatCampusRelative（按远近写到分钟）。
 7. 凭据：用户明确勾选记住账号且认证成功后才写入系统安全存储（关闭后在账号页重新开启也要先登录核对成功）；业务 SQLite、账号索引和日志一律不存密码；用户关闭记住账号或主动退出时立即删除凭据。
-8. 设备级数据：百宝箱、下载任务、显示设置（配色、字体、字号、深浅色、玻璃、自定义壁纸）、私信身份与好友、学习通账号与收藏、应用更新的检查记录与下载中的安装包、协议与政策的同意与已读修订号都属于设备，切换教务账号时保留。
-   - 系统安全存储的每个命名空间（记住账号、私信身份、学习通）都排除出云备份与设备迁移，新增命名空间要同时加进两份备份规则，test/legal_page_test.dart 守护。
+8. 设备级数据：百宝箱、下载任务、显示设置（配色、字体、字号、深浅色、玻璃、自定义壁纸）、私信身份与好友、学习通账号与收藏、应用更新的检查记录与下载中的安装包、协议与政策的同意与已读修订号、开发者设置与本机日志都属于设备，切换教务账号时保留。
+   - 系统安全存储的每个命名空间（记住账号、私信身份、学习通、拼多多）与本机日志目录都排除出云备份与设备迁移，新增命名空间要同时加进两份备份规则，test/legal_page_test.dart 守护。
    - 桌面小组件显示的是当前账号的课，跟着账号切换，退出登录即清空；只有它的配色跟随设备设置。
    - 自定义壁纸只经系统照片选择器读用户选中的一张，复制到应用私有目录，不上传、不申请存储权限。
    - 百宝箱不读取教务凭据或 cookie；学习通密码与 cookie 只进系统安全存储，本机不存签到记录。学习通的设备信息与 OAID 只在登录、补用户信息时现取，加密后只发给学习通，不落库。
@@ -72,7 +73,9 @@
    - 除会话自动恢复后的一次重放、时钟偏差校正后的一次重发外，不自动重试；私信收取的长轮询是持续接收通道，失败后退避继续。
    - CampusSync 每个实例内按顺序逐项请求，今天页和成绩页各持有一个实例；成绩同步与其他教务网络请求互斥（SYNC_BUSY）；教务限流时报 RATE_LIMITED，本轮立即停止。
 10. 数据保留：新增只增不删的数据，必须同时给出上限或清理策略，写进所属模块 CLAUDE.md；服务端信箱与设备的保留见 server/README.md。
-11. 日志：只经 domain/campus_log.dart 的 campusLog 输出，应用入口必须注入 debugPrint 才进 logcat；格式为 [模块] action=... errorType=...，错误附完整堆栈；不写原始 HTML、链接或凭据。由 test/project_structure_test.dart 守护。
+11. 日志：只经 domain/campus_log.dart 的 campusLog 输出，应用入口必须注入 debugPrint 才进 logcat；格式为 [模块] action=... errorType=...，错误附完整堆栈；不写原始 HTML、链接、凭据与实名信息。由 test/project_structure_test.dart 守护。
+    - 同一份输出另写进本机文件（local/diagnostic_log.dart）：平时只记错误，开发者模式记全部；保存期限与掩码规则见 lib/local/CLAUDE.md，隐私政策第七节与附录三同步写明。
+    - 只在开发者模式下才有意义的诊断记录（请求耗时、页面切换、卡顿内存）先看 campusDiagnostics，对外请求统一经 campusRequestLog 记，只记路径、不记域名与查询串。
 12. 界面实现：确认和提示统一用 theme/campus_transitions.dart 的 showCampusConfirm 与 showCampusNotice；setState 回调不得返回 Future，给 Future 字段赋值时用块体；只有图标的 IconButton 必须带 tooltip 作读屏标签。后两条由 test/code_conventions_test.dart 守护。
 13. 公开内容不出现实名：
     - [人工决策-2026-10-15 20:20:38] 仓库公开，代码、测试数据、文档、提交信息、PR 与 Issue 的正文和评论一律不写真实姓名、手机号、学号等实名信息（含真实课表里的教师名）。

@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/short_video/parse_result.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 
@@ -25,10 +26,14 @@ class ParseHttp {
         http.AbortableRequest('GET', uri, abortTrigger: abort.future)
           ..followRedirects = false
           ..headers['Accept'] = 'application/json';
+    // 开发者模式下记一条路径、状态、耗时与字节数（见 campusRequestLog，不记查询串里的作品链接）。
+    final watch = Stopwatch()..start();
+    int? status, size;
     try {
       return await Future.any([
         (() async {
           final response = await _client.send(request);
+          status = response.statusCode;
           if (response.statusCode == 429) {
             final seconds = int.tryParse(response.headers['retry-after'] ?? '');
             throw ParseFailure(
@@ -53,6 +58,7 @@ class ParseHttp {
             }
             bytes.addAll(chunk);
           }
+          size = bytes.length;
           final result = jsonDecode(utf8.decode(bytes));
           if (result is! Map<String, dynamic>) {
             throw const ParseFailure(ParseFailureCode.provider, '解析服务返回了未知格式');
@@ -79,6 +85,7 @@ class ParseHttp {
       );
     } finally {
       if (!abort.isCompleted) abort.complete();
+      campusRequestLog('short_video', 'GET', uri, status: status, elapsed: watch.elapsed, bytes: size, error: size == null ? 'no_response' : null);
     }
   }
 

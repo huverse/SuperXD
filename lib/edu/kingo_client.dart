@@ -272,6 +272,8 @@ class KingoClient {
         request.headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
         request.body = body;
       }
+      // 开发者模式下记这次请求的路径、状态与耗时（从真正发出算起，不含限流排队）。
+      final watch = Stopwatch()..start();
       response = await Future.any([
         (() async {
           final streamed = await _client.send(request);
@@ -291,7 +293,11 @@ class KingoClient {
       ]).timeout(requestTimeout, onTimeout: () {
         if (!abort.isCompleted) abort.complete();
         throw TimeoutException('教务请求超时', requestTimeout);
+      }).catchError((Object error, StackTrace stack) {
+        campusRequestLog('edu', method, uri, elapsed: watch.elapsed, error: error.runtimeType.toString());
+        Error.throwWithStackTrace(error, stack);
       });
+      campusRequestLog('edu', method, uri, status: response.statusCode, elapsed: watch.elapsed, bytes: response.bodyBytes.length);
     } finally {
       _requests.remove(abort);
     }

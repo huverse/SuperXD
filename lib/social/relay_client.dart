@@ -68,19 +68,25 @@ class HttpRelayTransport implements RelayTransport {
     final limit = timeout ?? this.timeout;
     // 日志只记方法与路径（不含服务器地址与查询参数），原始异常与堆栈留在日志里，往上只抛错误码。
     final route = '$method ${pathWithQuery.split('?').first}';
+    // 开发者模式下每个请求记一条路径、状态、耗时与字节数（见 campusRequestLog）。
+    final watch = Stopwatch()..start();
     final http.Response response;
     try {
       response = await http.Response.fromStream(await _client.send(request).timeout(limit)).timeout(limit);
     } on TimeoutException catch (error, stack) {
+      campusRequestLog('relay', method, request.url, elapsed: watch.elapsed, error: RelayCode.timeout);
       _log(route, RelayCode.timeout, error, stack);
       throw const RelayException(RelayCode.timeout);
     } on SocketException catch (error, stack) {
+      campusRequestLog('relay', method, request.url, elapsed: watch.elapsed, error: RelayCode.network);
       _log(route, RelayCode.network, error, stack);
       throw const RelayException(RelayCode.network);
     } on http.ClientException catch (error, stack) {
+      campusRequestLog('relay', method, request.url, elapsed: watch.elapsed, error: RelayCode.network);
       _log(route, RelayCode.network, error, stack);
       throw const RelayException(RelayCode.network);
     }
+    campusRequestLog('relay', method, request.url, status: response.statusCode, elapsed: watch.elapsed, bytes: response.bodyBytes.length);
     if (response.statusCode == 204 || response.bodyBytes.isEmpty) return RelayResponse(response.statusCode, const {});
     try {
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
