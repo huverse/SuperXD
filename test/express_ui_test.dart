@@ -14,12 +14,14 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
 import 'package:superxd/theme/campus_loading.dart';
+import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/express/express_anti_content.dart';
 import 'package:superxd/toolbox/express/express_client.dart';
 import 'package:superxd/toolbox/express/express_controller.dart';
 import 'package:superxd/toolbox/express/express_http.dart';
+import 'package:superxd/toolbox/express/express_identity_view.dart';
 import 'package:superxd/toolbox/express/express_models.dart';
 import 'package:superxd/toolbox/express/express_page.dart';
 import 'package:superxd/toolbox/express/express_service.dart';
@@ -321,6 +323,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(_lastBody(requests, 'generate_identification_code')['station_code'], 'S000000001');
 
+    // 身份码卡滚进可视区后按钮可能被滚出屏幕：等滚动走完、滚回按钮再点（滚动途中不接点按）。
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.ensureVisible(find.text('驿站快递'));
+    await tester.pump();
     await tester.tap(find.text('驿站快递'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
@@ -605,6 +611,49 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  // 真机反馈：先查驿站（有快递时驿站卡很长）再点身份码，身份码画在驿站卡下面、落在屏幕外，要自己下滑才看到。
+  testWidgets('点了按钮的结果卡滚进可视区：驿站卡已在按钮下方就不动，身份码在屏幕外时滚到整张露出；到期自动换码不滚', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 780));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(station: {
+      'count': 8,
+      'combine_list': [
+        {
+          'company_name': '合成驿站一号',
+          'address': '测试路 1 号',
+          'combine_track_list': [for (var index = 1; index <= 8; index++) {'pick_code': '取件码 3-2-100$index', 'shipping_name': '合成快递', 'tracking_number': 'SX000000000$index'}],
+        },
+      ],
+    }))));
+    await tester.pumpAndSettle();
+    final scrollable = find.ancestor(of: find.text('拼多多账号'), matching: find.byType(Scrollable)).first;
+    ScrollPosition position() => tester.state<ScrollableState>(scrollable).position;
+
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(find.text('取件码 3-2-1001'), findsOneWidget);
+    expect(position().pixels, 0);
+
+    await tester.tap(find.text('身份码'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 400));
+    final view = tester.getRect(scrollable);
+    final card = tester.getRect(find.ancestor(of: find.byType(ExpressIdentityView), matching: find.byType(CampusSurface)));
+    expect(card.top, greaterThanOrEqualTo(view.top));
+    expect(card.bottom, lessThanOrEqualTo(view.bottom));
+    expect(position().pixels, greaterThan(0));
+
+    // 自己滑回顶部后，身份码到期自动换码（不是点按钮）不把页面拉走。
+    position().jumpTo(0);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 133));
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(position().pixels, 0);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('点码牌全屏出示：码牌原地放大进整屏白底，条码转 90° 铺满长边、亮度调到最高；点一下缩回卡片、亮度复原', (tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 780));
     addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -717,6 +766,8 @@ void main() {
     await tester.tap(find.text('身份码'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
+    // 等身份码卡滚进可视区的滚动走完（滚动途中不接点按）。
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('二维码'));
     await tester.pump(const Duration(milliseconds: 400));
     final inline = tester.getSize(find.byType(PrettyQrView));

@@ -149,7 +149,7 @@ class _ExpressPageState extends State<ExpressPage> {
     }
     final raw = await scan(context, '把驿站的二维码放入框内', (value) => parseStationScan(value) == null ? '不是驿站的二维码' : null);
     if (raw == null || !mounted) return;
-    await _act(() => _controller!.queryStationPackages(station: parseStationScan(raw)));
+    await _act(() => _controller!.queryStationPackages(station: parseStationScan(raw)), reveal: _stationCard);
   }
 
   // [人工决策-2026-10-21 17:49:44] 只能微信扫码取件的账号（only_wx_scan）：用户选「提示但保留身份码」，并加「去微信取件」——
@@ -204,11 +204,44 @@ class _ExpressPageState extends State<ExpressPage> {
   }
 
   // 查询失败用提示条说明（同学习通、成绩页），不在卡片里留一行不会消失的红字；登录失效时控制器已回到登录态，原因写在登录页上。
-  Future<void> _act(Future<void> Function() action) async {
+  // 成功了把这次的结果卡滚进可视区（见 _reveal）。
+  Future<void> _act(Future<void> Function() action, {required GlobalKey reveal}) async {
     await action();
     final controller = _controller!;
-    if (mounted && controller.loggedIn && controller.error != null) showCampusToast(context, controller.error!);
+    if (!mounted || !controller.loggedIn) return;
+    if (controller.error != null) {
+      showCampusToast(context, controller.error!);
+    } else {
+      _reveal(reveal);
+    }
   }
+
+  final _stationCard = GlobalKey();
+  final _identityCard = GlobalKey();
+
+  // [人工决策-2026-10-21 20:04:39] 点了按钮出来的结果卡滚进可视区（用户选定，未选「身份码移到最上面」「一次只显示一张」）：
+  // 先查驿站（有快递时驿站卡很长）再点身份码，身份码画在驿站卡下面、落在屏幕外，要自己下滑才看到。卡片顺序不变，只滚最少的距离：
+  // 整张放得下就让它整张露出，比屏幕高就让卡顶露出、至少占半屏，已经满足就不动；只在点按钮后做，身份码到期自动换码不滚。
+  void _reveal(GlobalKey key) => WidgetsBinding.instance.addPostFrameCallback((_) {
+    final card = key.currentContext;
+    if (!mounted || card == null) return;
+    final scrollable = Scrollable.of(card);
+    final position = scrollable.position;
+    final box = card.findRenderObject()! as RenderBox;
+    final viewport = position.viewportDimension;
+    // 卡顶对齐可视区顶时的滚动位置；顶边留出内容渐隐的高度，不让卡顶压在渐隐里。
+    final top = position.pixels + box.localToGlobal(Offset.zero, ancestor: scrollable.context.findRenderObject()).dy;
+    const margin = 24.0;
+    final height = box.size.height;
+    final shown = height + 2 * margin <= viewport ? height + margin : viewport / 2;
+    final goal = position.pixels.clamp(top - viewport + shown, top - margin).clamp(position.minScrollExtent, position.maxScrollExtent);
+    if ((goal - position.pixels).abs() < 1) return;
+    if (MediaQuery.disableAnimationsOf(context)) {
+      position.jumpTo(goal);
+    } else {
+      position.animateTo(goal, duration: const Duration(milliseconds: 300), curve: Curves.easeOutCubic);
+    }
+  });
 
   Future<void> _accountMenu(BuildContext anchor) async {
     final choice = await showCampusMenu<String>(
@@ -349,9 +382,10 @@ class _ExpressPageState extends State<ExpressPage> {
         icon: const CampusIcon(CampusIcons.logistics),
       ),
     );
-    Widget result(String title, List<Widget> children) => Padding(
+    Widget result(GlobalKey key, String title, List<Widget> children) => Padding(
       padding: const EdgeInsets.only(top: 16),
       child: CampusSurface(
+        key: key,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text(title, style: textTheme.titleMedium),
           const SizedBox(height: 4),
@@ -359,108 +393,112 @@ class _ExpressPageState extends State<ExpressPage> {
         ]),
       ),
     );
-    return ListView(
+    // 整页一次排完（只有几张卡）：按需建的 ListView 不建屏幕外远处的卡，结果卡就没法定位滚进可视区（见 _reveal）。
+    return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
-      children: [
-        CampusSurface(
-          child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          CampusSurface(
+            child: Row(
+              children: [
+                const Padding(padding: EdgeInsets.only(right: 12), child: SizedBox.square(dimension: 44, child: Center(child: CampusIcon(CampusIcons.account)))),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text('拼多多账号', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                      const SizedBox(height: 4),
+                      Text(userId.isEmpty ? '已登录' : '账号 $userId', style: secondary),
+                    ],
+                  ),
+                ),
+                // 菜单按按钮自己的 context 定位（同学习通账号卡）。
+                Builder(builder: (menuAnchor) => IconButton(tooltip: '账号操作', onPressed: () => _accountMenu(menuAnchor), icon: const CampusIcon(CampusIcons.manage))),
+              ],
+            ),
+          ),
+          const SizedBox(height: 12),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
-              const Padding(padding: EdgeInsets.only(right: 12), child: SizedBox.square(dimension: 44, child: Center(child: CampusIcon(CampusIcons.account)))),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('拼多多账号', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
-                    const SizedBox(height: 4),
-                    Text(userId.isEmpty ? '已登录' : '账号 $userId', style: secondary),
-                  ],
-                ),
-              ),
-              // 菜单按按钮自己的 context 定位（同学习通账号卡）。
-              Builder(builder: (menuAnchor) => IconButton(tooltip: '账号操作', onPressed: () => _accountMenu(menuAnchor), icon: const CampusIcon(CampusIcons.manage))),
+              // 绑定手机号是增删管理：原地转圈读好再打开弹层，增删在弹层里做。
+              action(ExpressAction.mobiles, CampusIcons.phone, '绑定手机号', '读取中', _manageMobiles),
+              action(ExpressAction.packages, CampusIcons.parcel, '驿站快递', '正在查询', () => _act(controller.queryStationPackages, reveal: _stationCard)),
+              action(ExpressAction.scan, CampusIcons.scan, '扫驿站码', '正在查询', _scanStation),
+              action(ExpressAction.identity, CampusIcons.qrCode, '身份码', '生成中', () => _act(controller.generateIdentityCode, reveal: _identityCard), prominent: true),
             ],
           ),
-        ),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            // 绑定手机号是增删管理：原地转圈读好再打开弹层，增删在弹层里做。
-            action(ExpressAction.mobiles, CampusIcons.phone, '绑定手机号', '读取中', _manageMobiles),
-            action(ExpressAction.packages, CampusIcons.parcel, '驿站快递', '正在查询', () => _act(controller.queryStationPackages)),
-            action(ExpressAction.scan, CampusIcons.scan, '扫驿站码', '正在查询', _scanStation),
-            action(ExpressAction.identity, CampusIcons.qrCode, '身份码', '生成中', () => _act(controller.generateIdentityCode), prominent: true),
-          ],
-        ),
-        if (packages != null)
-          result('驿站待取件', [
-            if (packages.stationName.isNotEmpty) Text('当前站点：${packages.stationName}', style: secondary),
-            // 只能微信扫码取件的账号不写「没有待取件」（那会让人以为只是没快递），写明只能用微信查询并给「去微信取件」。
-            if (packages.onlyWxScan) ...[
-              Text('这个账号目前只能用微信查询待取件', style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface)),
-              const SizedBox(height: 12),
-              OutlinedButton.icon(onPressed: locked ? null : _toWeChat, icon: const CampusIcon(CampusIcons.open), label: const Text('去微信取件')),
-            ] else ...[
-              Text(packages.total == 0 ? '没有待取件' : '${packages.total} 件待取', style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface)),
-              if (packages.total == 0 && tails.isNotEmpty) Text('手机尾号 $tails', style: secondary),
-            ],
-            // 按驿站分组列出，取件码最醒目（到驿站报的就是它），下面一行快递公司、运单号与收件人备注。
-            for (final group in packages.groups) ...[
-              const SizedBox(height: 12),
-              Text(group.stationName.isEmpty ? '驿站' : group.stationName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
-              if (group.address.isNotEmpty) Text(group.address, style: secondary),
-              for (final parcel in group.packages)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(parcel.pickCode.isEmpty ? '取件码未知' : '取件码 ${parcel.pickCode}', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: palette.onSurface)),
-                            DotSeparatedText([parcel.shippingName, parcel.trackingNumber, parcel.mobileAlias].where((part) => part.isNotEmpty).join(' · '), style: secondary),
-                          ],
+          if (packages != null)
+            result(_stationCard, '驿站待取件', [
+              if (packages.stationName.isNotEmpty) Text('当前站点：${packages.stationName}', style: secondary),
+              // 只能微信扫码取件的账号不写「没有待取件」（那会让人以为只是没快递），写明只能用微信查询并给「去微信取件」。
+              if (packages.onlyWxScan) ...[
+                Text('这个账号目前只能用微信查询待取件', style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface)),
+                const SizedBox(height: 12),
+                OutlinedButton.icon(onPressed: locked ? null : _toWeChat, icon: const CampusIcon(CampusIcons.open), label: const Text('去微信取件')),
+              ] else ...[
+                Text(packages.total == 0 ? '没有待取件' : '${packages.total} 件待取', style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface)),
+                if (packages.total == 0 && tails.isNotEmpty) Text('手机尾号 $tails', style: secondary),
+              ],
+              // 按驿站分组列出，取件码最醒目（到驿站报的就是它），下面一行快递公司、运单号与收件人备注。
+              for (final group in packages.groups) ...[
+                const SizedBox(height: 12),
+                Text(group.stationName.isEmpty ? '驿站' : group.stationName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                if (group.address.isNotEmpty) Text(group.address, style: secondary),
+                for (final parcel in group.packages)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(parcel.pickCode.isEmpty ? '取件码未知' : '取件码 ${parcel.pickCode}', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                              DotSeparatedText([parcel.shippingName, parcel.trackingNumber, parcel.mobileAlias].where((part) => part.isNotEmpty).join(' · '), style: secondary),
+                            ],
+                          ),
                         ),
-                      ),
-                      trackButton(parcel.trackQuery),
-                    ],
+                        trackButton(parcel.trackQuery),
+                      ],
+                    ),
                   ),
-                ),
-              if (group.deliveryCount > 0) Padding(padding: const EdgeInsets.only(top: 8), child: Text('${group.deliveryCount} 个快递已安排送货上门', style: secondary)),
-            ],
-            // 近一周已取出（官方放在取快递页底部一行，点开列取件地址、取件时间、快递公司与运单号）：直接列在卡片里，每件可查物流。
-            if (packages.recentPackages.isNotEmpty) ...[
-              const SizedBox(height: 16),
-              Text('近一周已取出 ${packages.recentPackages.length} 件', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
-              for (final parcel in packages.recentPackages)
-                Padding(
-                  padding: const EdgeInsets.only(top: 8),
-                  child: Row(
-                    children: [
-                      Expanded(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            DotSeparatedText([parcel.shippingName, parcel.trackingNumber].where((part) => part.isNotEmpty).join(' · '), style: TextStyle(fontSize: 15, color: palette.onSurface)),
-                            if (parcel.operateTime.isNotEmpty) Text('取件时间 ${parcel.operateTime}', style: secondary),
-                            if (parcel.address.isNotEmpty) Text(parcel.address, style: secondary),
-                          ],
+                if (group.deliveryCount > 0) Padding(padding: const EdgeInsets.only(top: 8), child: Text('${group.deliveryCount} 个快递已安排送货上门', style: secondary)),
+              ],
+              // 近一周已取出（官方放在取快递页底部一行，点开列取件地址、取件时间、快递公司与运单号）：直接列在卡片里，每件可查物流。
+              if (packages.recentPackages.isNotEmpty) ...[
+                const SizedBox(height: 16),
+                Text('近一周已取出 ${packages.recentPackages.length} 件', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                for (final parcel in packages.recentPackages)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              DotSeparatedText([parcel.shippingName, parcel.trackingNumber].where((part) => part.isNotEmpty).join(' · '), style: TextStyle(fontSize: 15, color: palette.onSurface)),
+                              if (parcel.operateTime.isNotEmpty) Text('取件时间 ${parcel.operateTime}', style: secondary),
+                              if (parcel.address.isNotEmpty) Text(parcel.address, style: secondary),
+                            ],
+                          ),
                         ),
-                      ),
-                      trackButton(parcel.trackQuery),
-                    ],
+                        trackButton(parcel.trackQuery),
+                      ],
+                    ),
                   ),
-                ),
-            ],
-          ]),
-        if (identityCode != null)
-          Padding(
-            padding: const EdgeInsets.only(top: 16),
-            child: CampusSurface(child: ExpressIdentityView(controller: controller)),
-          ),
-      ],
+              ],
+            ]),
+          if (identityCode != null)
+            Padding(
+              padding: const EdgeInsets.only(top: 16),
+              child: CampusSurface(key: _identityCard, child: ExpressIdentityView(controller: controller)),
+            ),
+        ],
+      ),
     );
   }
 }
