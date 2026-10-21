@@ -110,7 +110,9 @@ class FakeChaoxing {
   // 按顺序取用的签到结果，取完回到 signResponse。
   final signResponses = <String>[];
   int? checkSignCodeResult = 1;
-  Map<String, Object?> signDetail = {'isOver': 0};
+  // 二维码过期查询的结果，为空时回一段认不出的内容（查询出错）；每次查询的参数按顺序记下。
+  Map<String, Object?>? signDetail = {'isOver': 0};
+  final signDetailQueries = <Map<String, String>>[];
 
   // 群聊：环信令牌、群列表与漫游消息。
   String imPasswordHex = '9523f40340818f573b71a58235f15865';
@@ -244,7 +246,9 @@ class FakeChaoxing {
           if (activeId != null && failingActiveInfoIds.contains(activeId)) return _json({'result': 0});
           return _json({'data': activeInfos[activeId] ?? activeInfo});
         case '/newsign/signDetail':
-          return _json(signDetail);
+          signDetailQueries.add(request.url.queryParameters);
+          final detail = signDetail;
+          return detail == null ? http.Response('<html></html>', 200) : _json(detail);
         case '/v2/apis/sign/collectionfilephotoEnc':
           return _json({'data': {'oldObjectId': profileFaceObjectId}});
         case '/pptSign/check-face-result':

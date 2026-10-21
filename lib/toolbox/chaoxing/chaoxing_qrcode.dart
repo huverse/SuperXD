@@ -52,23 +52,23 @@ String? _valueAfter(String pair) {
 
 int? _intOrNull(String? value) => value == null ? null : int.tryParse(value);
 
-// 二维码会随老师刷新，提交前先问一次是否还有效。
-Future<bool> chaoxingQrCodeExpired(
+// 二维码会随老师刷新，扫到新码时问一次是否还有效：过期为真、有效为假、无从判断为空（查询出错由调用方按不确定处理）。
+// [人工决策-2026-10-21 19:40:00] 只有码里带着轮换签到码（c/Code 且不等于活动号）才查（用户选定）：
+// 新格式链接 widget/sign/e?id=活动号&c=活动号 的 c 就是活动号（随刷新只换 enc），拿它比 signCode 永远对不上，
+// 每张新码都判过期；没有 c 的同参考项目不发请求。结果只用来在取景页提示，过期与否以提交结果为准（见 chaoxing_sign_sheet.dart）。
+Future<bool?> chaoxingQrCodeExpired(
   ChaoxingClient client, {
   required ChaoxingQrCode code,
   required int activeId,
 }) async {
+  final activePrimaryId = '${code.activeId ?? activeId}';
+  final signCode = code.code;
+  if (signCode == null || signCode == activePrimaryId) return null;
   final response = await client.http.get(
     Uri.parse(chaoxingSignDetailUri).replace(
-      queryParameters: {
-        'activePrimaryId': '${code.activeId ?? activeId}',
-        'type': '1',
-        'msg': code.code ?? '',
-      },
+      queryParameters: {'activePrimaryId': activePrimaryId, 'type': '1', 'msg': signCode},
     ),
   );
   final json = chaoxingJson(response.body);
-  if (chaoxingInt(json['isOver']) == 1) return true;
-  final expected = code.code;
-  return expected != null && chaoxingString(json['signCode']) != expected;
+  return chaoxingInt(json['isOver']) == 1 || chaoxingString(json['signCode']) != signCode;
 }

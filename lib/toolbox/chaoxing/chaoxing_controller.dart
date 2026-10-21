@@ -449,8 +449,8 @@ class ChaoxingController extends ChangeNotifier {
   // 当前账号在本应用里签过这场（只记内存，见 _signedHere）。
   bool signedHere(ChaoxingActivity activity) => _signedHere[current?.phoneNumber]?.contains(activity.activeId) ?? false;
 
-  // 扫到新码时先问一次是否还有效（用当前账号问，与学习通客户端一致）。
-  Future<bool> qrCodeExpired(ChaoxingQrCode code, ChaoxingActivity activity) async {
+  // 扫到新码时问一次是否还有效（用当前账号问，与学习通客户端一致）；为空表示无从判断。
+  Future<bool?> qrCodeExpired(ChaoxingQrCode code, ChaoxingActivity activity) async {
     final client = _requireClient();
     return accounts.run(client, () => chaoxingQrCodeExpired(client, code: code, activeId: activity.activeId));
   }
