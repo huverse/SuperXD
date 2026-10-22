@@ -13,8 +13,8 @@ import 'package:superxd/toolbox/express/express_models.dart';
 // 不生成、不绕过 anti_content 与风控指纹，这些由拼多多官方页面自己处理。
 class ExpressLoginWebView extends StatefulWidget {
   const ExpressLoginWebView({super.key, required this.verify, required this.onLogin});
-  // 拿到凭据后先确认会话真的能用（ExpressController.verifySession），确认了才关页；返回 null 是没登录完，否则是要存下的会话（带上本账号手机号）。
-  final Future<PddSession?> Function(PddSession session) verify;
+  // 拿到凭据后先确认会话真的能用（ExpressController.verifySession），确认了才关页。
+  final Future<bool> Function(PddSession session) verify;
   final ValueChanged<PddSession> onLogin;
 
   @override
@@ -82,17 +82,17 @@ class _ExpressLoginWebViewState extends State<ExpressLoginWebView> {
     final session = await _readSession();
     if (session == null || session.accessToken == _rejected || !mounted) return;
     _verifying = true;
-    final verified = await widget.verify(session);
+    final usable = await widget.verify(session);
     _verifying = false;
     if (_found || !mounted) return;
-    if (verified == null) {
+    if (!usable) {
       _rejected = session.accessToken;
       campusLog('[Express] action=login_verify result=not_logged_in');
       return;
     }
     _found = true;
     _poll?.cancel();
-    widget.onLogin(verified);
+    widget.onLogin(session);
   }
 
   // PDDAccessToken 是 HttpOnly Cookie，JS 读不到，经原生 CookieManager 可读。

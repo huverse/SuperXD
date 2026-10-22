@@ -32,8 +32,8 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 import 'toolbox_test_support.dart';
 
-// 默认已读过本账号手机号（不触发打开页面时的补读）；补读与读不到的情形在各自的用例里另建会话。
-const _session = PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', userId: '7209', mobile: '150****0000');
+// 默认已读过昵称与取件号（不触发打开页面时的补读）；补读与读不到的情形在各自的用例里另建会话。
+const _session = PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', userId: '7209', nickname: '合成昵称', pickupMobile: '150****0000');
 
 http.Response _json(Map<String, Object?> body) => http.Response(jsonEncode(body), 200, headers: {'content-type': 'application/json;charset=UTF-8'});
 
@@ -42,10 +42,13 @@ http.Client _fakeClient({List<String>? calls, Map<String, Object?>? station, Lis
   final path = request.url.path;
   calls?.add(path);
   requests?.add(request);
+  // 物流接口照 10-22 真机的返回形状：不带 success、error_code 是 null；package_info 写这件寄到的手机尾号。
   if (path.endsWith('shipping/track')) {
     await trackGate;
     return _json({
+      'error_code': null,
       'shipping': {
+        'package_info': '尾号8888 的快递',
         'shipping_name': '合成快递',
         'tracking_number': request.url.queryParameters['tracking_number'],
         'time_forecast': {'time_forecast_desc': '预计明天送达'},
@@ -58,7 +61,9 @@ http.Client _fakeClient({List<String>? calls, Map<String, Object?>? station, Lis
   }
   Map<String, Object?> body;
   if (path.endsWith('express/detail')) {
-    body = {'success': true, 'error_code': '0', 'new_binding_list': [{'mobile_id': 'm1', 'mock_mobile': '138****8888', 'alias': '自己'}]};
+    body = {'success': true, 'error_code': '0', 'new_binding_list': [{'mobile_id': 'm1', 'mock_mobile': '138****8888', 'alias': '自己', 'commonly_used': true}]};
+  } else if (path.endsWith('nickname/query')) {
+    body = {'success': true, 'error_code': '0', 'result': {'nickname': '合成小号', 'avatar': ''}};
   } else if (path.endsWith('bind/mobile/station/package')) {
     body = {'success': true, 'error_code': '0'};
   } else if (path.endsWith('station/package')) {
@@ -115,6 +120,24 @@ class _FakeAnti implements PddAntiContent {
   WebViewController? get webViewController => null;
 }
 
+// 假的官方安全验证页：不起真实 WebView，点「通过」或「放弃」就关页返回结果；记下打开时带的令牌。
+class _FakeVerifyPage extends StatelessWidget {
+  const _FakeVerifyPage(this.token);
+  final String token;
+  static final opened = <String>[];
+
+  @override
+  Widget build(BuildContext context) {
+    opened.add(token);
+    return Scaffold(
+      body: Column(children: [
+        TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('通过')),
+        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('放弃')),
+      ]),
+    );
+  }
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late ToolboxFixture fixture;
@@ -136,6 +159,7 @@ void main() {
     ToolboxFilePublisher? publisher,
     Future<bool> Function(Uri uri)? launch,
     Future<void>? trackGate,
+    Widget Function(String token)? verifyPage,
   }) => ToolboxRuntime.testing(
     catalog: toolboxCatalog,
     store: fixture.store,
@@ -149,6 +173,7 @@ void main() {
         filePublisher: () => publisher ?? FakePublisher(),
         temporaryDirectory: () async => temp,
         launchExternal: launch ?? (uri) async => true,
+        verifyPage: verifyPage ?? _FakeVerifyPage.new,
       ),
     },
   );
@@ -177,7 +202,7 @@ void main() {
     await vault.save(_session);
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
     await tester.pumpAndSettle();
-    expect(find.text('拼多多账号'), findsOneWidget);
+    expect(find.text('合成昵称'), findsOneWidget);
 
     await tester.tap(find.text('驿站快递'));
     await tester.pumpAndSettle();
@@ -189,7 +214,7 @@ void main() {
     await tester.tap(find.text('绑定手机号'));
     await tester.pumpAndSettle();
     expect(find.text('取件手机号'), findsOneWidget);
-    expect(find.textContaining('138****8888'), findsOneWidget);
+    expect(find.text('138****8888（自己）'), findsOneWidget);
     expect(find.text('绑定其他手机号'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
@@ -202,7 +227,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
     await tester.pumpAndSettle();
     final appBar = tester.getRect(find.byType(AppBar));
-    double accountTop() => tester.getRect(find.ancestor(of: find.text('拼多多账号'), matching: find.byType(CampusSurface)).first).top;
+    double accountTop() => tester.getRect(find.ancestor(of: find.text('合成昵称'), matching: find.byType(CampusSurface)).first).top;
     expect(accountTop() - appBar.bottom, lessThanOrEqualTo(24));
 
     await tester.tap(find.text('驿站快递'));
@@ -231,7 +256,7 @@ void main() {
     gate.complete();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 16));
-    expect(find.textContaining('138****8888'), findsOneWidget);
+    expect(find.text('138****8888'), findsOneWidget);
     expect(find.byType(CampusLoading), findsNothing);
     final opening = tester.getSize(find.byType(CampusSheetPanel));
     await tester.pumpAndSettle();
@@ -496,41 +521,41 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  test('登录校验：只读接口明确回未登录才拦，网络与服务器错误不拦；顺带记下本账号手机号', () async {
-    const fresh = PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', userId: '7209');
-    Future<PddSession?> verify(http.Response Function() respond) async {
+  test('登录校验：只读接口明确回未登录才拦，网络与服务器错误不拦', () async {
+    Future<bool> verify(http.Response Function() respond) async {
       final controller = ExpressController(ExpressService(
         vault: vault,
         clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: MockClient((request) async => respond()))),
       ));
-      final verified = await controller.verifySession(fresh);
+      final usable = await controller.verifySession(_session);
       controller.dispose();
-      return verified;
+      return usable;
     }
 
-    final verified = await verify(() => _json({'has_binding_express_mobile': true, 'mobile_des': '138****8888'}));
-    expect((verified?.accessToken, verified?.mobile), ('tok', '138****8888'));
-    // 拼多多没给手机号：记成读过（空串），之后不再补读。
-    expect((await verify(() => _json({'has_binding_express_mobile': true})))?.mobile, '');
-    expect(await verify(() => _json({'error_code': 40001})), isNull);
-    expect(await verify(() => http.Response('', 424)), isNull);
-    // 服务器错误照常登录，手机号留作没读过，打开快递页时补读。
-    final unread = await verify(() => http.Response('', 500));
-    expect((unread?.accessToken, unread?.mobile), ('tok', null));
+    expect(await verify(() => _json({'has_binding_express_mobile': true})), isTrue);
+    expect(await verify(() => _json({'error_code': 40001})), isFalse);
+    expect(await verify(() => http.Response('', 424)), isFalse);
+    expect(await verify(() => http.Response('', 500)), isTrue);
   });
 
-  // 真机反馈：账号卡只写「拼多多账号」，认不出登的是哪个账号。
-  testWidgets('账号卡标题写本账号手机号、下面写「拼多多账号」；拼多多没给手机号时照旧写账号号', (tester) async {
-    await vault.save(_session);
+  // 真机反馈：账号卡只写「拼多多账号」，认不出登的是哪个账号；已绑号的账号拿不到登录手机号，改写昵称与常用取件号。
+  testWidgets('账号卡标题写拼多多昵称、下面写常用取件号（还绑了别的号补「等」）；都没读到时照旧写「拼多多账号」与账号号', (tester) async {
+    await vault.save(_session.withAccount(pickupMore: true));
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
     await tester.pumpAndSettle();
-    final title = find.text('150****0000');
+    final title = find.text('合成昵称');
     expect(title, findsOneWidget);
-    expect(tester.getRect(title).top, lessThan(tester.getRect(find.text('拼多多账号')).top));
+    expect(tester.getRect(title).top, lessThan(tester.getRect(find.text('取件号 150****0000 等')).top));
     expect(find.textContaining('7209'), findsNothing);
     await tester.pumpWidget(const SizedBox());
 
-    await vault.save(_session.withMobile(''));
+    await vault.save(const PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', userId: '7209', nickname: '合成昵称', pickupMobile: ''));
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
+    await tester.pumpAndSettle();
+    expect(find.text('拼多多账号'), findsOneWidget, reason: '有昵称、没绑取件号');
+    await tester.pumpWidget(const SizedBox());
+
+    await vault.save(const PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', userId: '7209', nickname: '', pickupMobile: ''));
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
     await tester.pumpAndSettle();
     expect(find.text('拼多多账号'), findsOneWidget);
@@ -538,33 +563,52 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('之前登录的会话没读过手机号：打开快递页补读一次并存回会话，再打开不再读', (tester) async {
+  testWidgets('之前登录的会话没读过昵称与取件号：打开快递页补读一次并存回会话，再打开不再读；登录后同样读一次', (tester) async {
     final calls = <String>[];
-    await vault.save(const PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', userId: '7209'));
+    const fresh = PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', userId: '7209');
+    await vault.save(fresh);
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(calls: calls))));
     await tester.pumpAndSettle();
-    expect(calls.where((path) => path.endsWith('pre/check')), hasLength(1));
-    expect(find.text('138****8888'), findsOneWidget);
+    expect(calls.where((path) => path.endsWith('nickname/query')), hasLength(1));
+    expect(calls.where((path) => path.endsWith('express/detail')), hasLength(1));
+    expect(find.text('合成小号'), findsOneWidget);
+    expect(find.text('取件号 138****8888'), findsOneWidget);
     final saved = await vault.load();
-    expect((saved?.accessToken, saved?.mobile), ('tok', '138****8888'));
+    expect((saved?.accessToken, saved?.nickname, saved?.pickupMobile, saved?.pickupMore), ('tok', '合成小号', '138****8888', false));
     await tester.pumpWidget(const SizedBox());
 
     calls.clear();
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(calls: calls))));
     await tester.pumpAndSettle();
     expect(calls, isEmpty);
-    expect(find.text('138****8888'), findsOneWidget);
+    expect(find.text('合成小号'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
+
+    // 登录（登录页确认会话后交来的是没读过的会话）：存好会话后读一次。
+    await vault.deleteAll();
+    final controller = ExpressController(ExpressService(
+      vault: vault,
+      clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: _fakeClient())),
+    ));
+    await controller.initialize();
+    await controller.onLoggedIn(fresh);
+    // 假时钟里不能用 pumpEventQueue（它靠计时器让出）：推几帧让后台读完。
+    for (var i = 0; i < 5; i++) {
+      await tester.pump();
+    }
+    expect((controller.session?.nickname, (await vault.load())?.pickupMobile), ('合成小号', '138****8888'));
+    controller.dispose();
   });
 
-  test('补读手机号途中退出登录：读完不把会话写回存储', () async {
+  test('补读昵称与取件号途中退出登录：读完不把会话写回存储', () async {
     final gate = Completer<void>();
     await vault.save(const PddSession(accessToken: 'tok', userId: '7209'));
     final controller = ExpressController(ExpressService(
       vault: vault,
       clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: MockClient((request) async {
         await gate.future;
-        return _json({'has_binding_express_mobile': true, 'mobile_des': '138****8888'});
+        if (request.url.path.endsWith('nickname/query')) return _json({'success': true, 'error_code': '0', 'result': {'nickname': '合成小号'}});
+        return _json({'success': true, 'error_code': '0', 'new_binding_list': [{'mobile_id': 'm1', 'mock_mobile': '138****8888'}]});
       }))),
     ));
     await controller.initialize();
@@ -574,6 +618,189 @@ void main() {
     expect(controller.loggedIn, isFalse);
     expect(await vault.load(), isNull);
     controller.dispose();
+  });
+
+  testWidgets('打开取件手机号管理读到列表后，账号卡的取件号跟着更新（常用号优先，多个补「等」）', (tester) async {
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtimeWith(MockClient((request) async {
+      if (request.url.path.endsWith('pre/check')) return _json({'has_binding_express_mobile': true});
+      return _json({'success': true, 'error_code': '0', 'new_binding_list': [
+        {'mobile_id': 'm1', 'mock_mobile': '138****1111'},
+        {'mobile_id': 'm2', 'mock_mobile': '139****2222', 'commonly_used': true},
+      ]});
+    })))));
+    await tester.pumpAndSettle();
+    expect(find.text('取件号 150****0000'), findsOneWidget);
+    await tester.tap(find.text('绑定手机号'));
+    await tester.pumpAndSettle();
+    expect(find.text('取件号 139****2222 等'), findsOneWidget);
+    expect((await vault.load())?.pickupMobile, '139****2222');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 真机反馈：待取件看不出是寄给哪个手机号的；快递公司太显眼。驿站查询不给手机号，按件补查物流接口的 package_info 取尾号。
+  testWidgets('待取件按寄到的手机尾号分组：组按尾号排、未知的放最后；首屏不写快递公司；同一件页面开着时只补查一次', (tester) async {
+    final tracks = <String>[];
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtimeWith(MockClient((request) async {
+      if (request.url.path.endsWith('shipping/track')) {
+        final number = request.url.queryParameters['tracking_number']!;
+        tracks.add(number);
+        if (number == 'SX0000000003') return http.Response('', 500);
+        return _json({'error_code': null, 'shipping': {'shipping_name': '合成快递', 'package_info': number == 'SX0000000002' ? '尾号1234 的快递' : '尾号5678 的快递'}});
+      }
+      return _json({'success': true, 'error_code': '0', 'result': {
+        'count': 3,
+        'combine_list': [
+          {
+            'company_name': '合成驿站一号',
+            'address': '合成驿站一号',
+            'combine_track_list': [
+              {'pick_code': '取件码 6-1-0101', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000001', 'shipping_id': 1},
+              {'pick_code': '取件码 B2-1-0102', 'shipping_name': '其他', 'tracking_number': 'SX0000000002', 'shipping_id': 999999},
+              {'pick_code': '取件码 5-2-0001', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000003', 'shipping_id': 1},
+            ],
+          },
+        ],
+      }});
+    })))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(tracks.toSet(), {'SX0000000001', 'SX0000000002', 'SX0000000003'});
+    double top(String text) => tester.getRect(find.text(text)).top;
+    expect(find.text('尾号 1234 · 1 件'), findsOneWidget);
+    expect(find.text('尾号 5678 · 1 件'), findsOneWidget);
+    expect(find.text('尾号未知 · 1 件'), findsOneWidget);
+    expect(top('尾号 1234 · 1 件'), lessThan(top('取件码 B2-1-0102')));
+    expect(top('取件码 B2-1-0102'), lessThan(top('尾号 5678 · 1 件')));
+    expect(top('尾号 5678 · 1 件'), lessThan(top('取件码 6-1-0101')));
+    expect(top('取件码 6-1-0101'), lessThan(top('尾号未知 · 1 件')));
+    expect(find.text('合成驿站一号'), findsOneWidget, reason: '站址与站名一样时不重复写');
+    expect(find.textContaining('合成快递'), findsNothing, reason: '首屏不写快递公司');
+    expect(find.text('SX0000000001'), findsOneWidget);
+
+    // 再查一次：查到过尾号的不再补查，没查到的再试一次。
+    tracks.clear();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(tracks, ['SX0000000003']);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 真机上短时间反复查物流触发了拼多多风控（54001），用户选「尾号存本机、同一件只查一次」。
+  testWidgets('尾号存本机：重开快递页不再补查；取走的件（不在待取件里了）尾号随之删掉', (tester) async {
+    final tracks = <String>[];
+    var parcels = ['SX0000000001', 'SX0000000002'];
+    ToolboxRuntime runtime() => runtimeWith(MockClient((request) async {
+      if (request.url.path.endsWith('shipping/track')) {
+        tracks.add(request.url.queryParameters['tracking_number']!);
+        return _json({'error_code': null, 'shipping': {'package_info': '尾号5678 的快递'}});
+      }
+      return _json({'success': true, 'error_code': '0', 'result': {
+        'count': parcels.length,
+        'combine_list': [
+          {'company_name': '合成驿站一号', 'combine_track_list': [for (final number in parcels) {'pick_code': '1-1-$number', 'tracking_number': number, 'shipping_id': 1}]},
+        ],
+      }});
+    }));
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtime())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(tracks, hasLength(2));
+    expect(await vault.ownerTails(), {'1|SX0000000001': '5678', '1|SX0000000002': '5678'});
+    await tester.pumpWidget(const SizedBox());
+
+    tracks.clear();
+    parcels = ['SX0000000002'];
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtime())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(tracks, isEmpty, reason: '重开页面后已存的尾号不再补查');
+    expect(find.text('尾号 5678 · 1 件'), findsOneWidget);
+    expect(await vault.ownerTails(), {'1|SX0000000002': '5678'});
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 真机：反复查物流后拼多多回 54001 并带 verify_auth_token（带不带 anti-content 都一样）；官方页面这时跳官方安全验证页。
+  testWidgets('点「物流」碰到拼多多要求安全验证：打开官方验证页，通过后带上令牌再查一次；放弃就用提示条说明', (tester) async {
+    _FakeVerifyPage.opened.clear();
+    final tokens = <String?>[];
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: ToolboxRuntime.testing(
+      catalog: toolboxCatalog,
+      store: fixture.store,
+      downloads: fixture.manager,
+      services: {
+        ExpressService.serviceId: ExpressService(
+          vault: vault,
+          verifyPage: _FakeVerifyPage.new,
+          clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: MockClient((request) async {
+            if (request.url.path.endsWith('shipping/track')) {
+              final token = request.headers['VerifyAuthToken'];
+              tokens.add(token);
+              if (token == null) return _json({'error_code': 54001, 'verify_auth_token': 'VT-1', 'shipping': null});
+              return _json({'error_code': null, 'shipping': {'shipping_name': '合成快递', 'package_info': '尾号5678 的快递', 'traces': [{'info': '【合成市】快件已到达合成驿站', 'time': '2026-10-20 15:30:00'}]}});
+            }
+            return _json({'success': true, 'error_code': '0', 'result': {'count': 1, 'combine_list': [{'company_name': '合成驿站一号', 'combine_track_list': [{'pick_code': '1-1-0001', 'tracking_number': 'SX0000000001', 'shipping_id': 1}]}]}});
+          }))),
+        ),
+      },
+    ))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    // 查驿站后的自动补查碰到它不弹验证页，归尾号未知。
+    expect(_FakeVerifyPage.opened, isEmpty);
+    expect(find.text('尾号未知 · 1 件'), findsOneWidget);
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '物流'));
+    await tester.pumpAndSettle();
+    expect(_FakeVerifyPage.opened, ['VT-1']);
+    await tester.tap(find.text('放弃'));
+    await tester.pumpAndSettle();
+    expect(find.text('物流详情'), findsNothing);
+    expect(find.text('拼多多要求先完成安全验证'), findsOneWidget);
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.tap(find.widgetWithText(OutlinedButton, '物流'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('通过'));
+    await tester.pumpAndSettle();
+    expect(find.text('物流详情'), findsOneWidget);
+    expect(tokens.last, 'VT-1', reason: '通过后同官方带上验证令牌再查');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('自动补查尾号碰到安全验证就停：这一轮剩下的件不再请求', (tester) async {
+    final tracks = <String>[];
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtimeWith(MockClient((request) async {
+      if (request.url.path.endsWith('shipping/track')) {
+        tracks.add(request.url.queryParameters['tracking_number']!);
+        return _json({'error_code': 54001, 'verify_auth_token': 'VT-1'});
+      }
+      return _json({'success': true, 'error_code': '0', 'result': {
+        'count': 7,
+        'combine_list': [
+          {'company_name': '合成驿站一号', 'combine_track_list': [for (var index = 1; index <= 7; index++) {'pick_code': '1-1-000$index', 'tracking_number': 'SX000000000$index', 'shipping_id': 1}]},
+        ],
+      }});
+    })))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(tracks, hasLength(5), reason: '第一批 5 件都要求验证，第二批不再发');
+    expect(find.text('尾号未知 · 7 件'), findsOneWidget);
+    expect(find.text('拼多多要求先完成安全验证'), findsNothing, reason: '自动补查不打扰');
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('绑定其他手机号：输手机号发验证码、输验证码完成绑定，弹层回到列表并提示已绑定；绑定后紧接着关联驿站包裹', (tester) async {
@@ -709,7 +936,7 @@ void main() {
       ],
     }))));
     await tester.pumpAndSettle();
-    final scrollable = find.ancestor(of: find.text('拼多多账号'), matching: find.byType(Scrollable)).first;
+    final scrollable = find.ancestor(of: find.text('合成昵称'), matching: find.byType(Scrollable)).first;
     ScrollPosition position() => tester.state<ScrollableState>(scrollable).position;
 
     await tester.tap(find.text('驿站快递'));
@@ -864,7 +1091,7 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byType(PrettyQrView), findsOneWidget);
-    expect(find.text('拼多多账号'), findsOneWidget);
+    expect(find.text('合成昵称'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 

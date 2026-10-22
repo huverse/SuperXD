@@ -29,6 +29,10 @@ class ExpressController extends ChangeNotifier {
   String _stationCode = '';
   String _trackingKey = '';
   bool _disposed = false;
+  // 每件寄到的手机尾号（运单号与快递公司为键，见 _fillOwners），存在本机、同一件只查一次；退出或失效时清空。
+  final _owners = <String, String>{};
+  // 拼多多要求先过安全验证时的令牌，页面取走后打开官方验证页（见 takeVerifyToken）。
+  String? _verifyToken;
 
   PddSession? get session => _session;
   bool get loggedIn => _session != null;
@@ -43,42 +47,70 @@ class ExpressController extends ChangeNotifier {
   // 身份码到期后的自动刷新进行中（不占 busy，查询按钮照常可点）。
   bool get refreshing => _refreshing;
   String? get error => _error;
+  // 这件寄到的手机尾号，没查到是空串（页面归到「尾号未知」）。
+  String ownerOf(StationPackage parcel) => _owners[_ownerKey(parcel)] ?? '';
 
   Future<void> initialize() async {
     final session = await _service.vault.load();
     if (session != null) {
       _bind(session);
-      // 还没读过本账号手机号的会话（加这个字段之前登录的）补读一次，不挡页面打开。
-      if (session.mobile == null) unawaited(_fillMobile(session));
+      _owners.addAll(await _service.vault.ownerTails());
+      // 还没读过昵称与取件号的会话（加这两项之前登录的）补读一次，不挡页面打开。
+      if (session.nickname == null) unawaited(_fillAccount(session));
     }
     notifyListeners();
   }
 
-  // 补读本账号手机号：读到（拼多多没给就记空串，不再反复读）就随会话存回安全存储、账号卡换成手机号；失败只记日志，下次打开再读。
-  // 读的时候退出登录或换了账号就不存：退出与失效都先清内存里的会话再删存储，这里核对过才写，不会在删除之后又把会话写回去。
-  Future<void> _fillMobile(PddSession session) async {
+  // 账号卡的昵称与常用取件号：刚登录、或会话还没读过时，并发读昵称与已绑号列表，读到就随会话存回安全存储（拼多多没给的记空串，不再反复读）；
+  // 失败只记日志，下次打开再读。读的时候退出登录或换了账号就不存：退出与失效都先清内存里的会话再删存储，这里核对过才写，不会在删除之后又把会话写回去。
+  Future<void> _fillAccount(PddSession session) async {
     final client = _service.clientFactory(session);
     try {
-      final filled = session.withMobile((await client.preCheckBindMobile()).mobileDesc);
-      if (!identical(_session, session)) return;
+      final nickname = client.queryNickname();
+      final mobiles = client.queryBoundMobiles();
+      await Future.wait([nickname, mobiles]);
+      final current = _session;
+      if (current == null || current.accessToken != session.accessToken || current.cookie != session.cookie) return;
+      final pickup = _pickupOf(await mobiles);
+      final filled = current.withAccount(nickname: await nickname, pickupMobile: pickup.mobile, pickupMore: pickup.more);
       _session = filled;
       await _service.vault.save(filled);
       if (!_disposed) notifyListeners();
     } on ExpressFailure catch (failure, stack) {
-      campusLog('[Express] action=account_mobile errorType=${failure.code.name}\n$stack');
+      campusLog('[Express] action=account_info errorType=${failure.code.name}\n$stack');
     } catch (error, stack) {
-      campusLog('[Express] action=account_mobile errorType=${error.runtimeType}\n$stack');
+      campusLog('[Express] action=account_info errorType=${error.runtimeType}\n$stack');
     } finally {
       client.close();
     }
   }
 
-  // 登录成功：存会话并建客户端。
+  // 账号卡写的取件号：拼多多标为常用的那个，没有就第一个；还绑了别的号时补「等」。
+  ({String mobile, bool more}) _pickupOf(List<PddBoundMobile> mobiles) {
+    if (mobiles.isEmpty) return (mobile: '', more: false);
+    final main = mobiles.firstWhere((mobile) => mobile.commonlyUsed, orElse: () => mobiles.first);
+    return (mobile: main.maskedMobile, more: mobiles.length > 1);
+  }
+
+  // 读到了已绑号列表（打开取件手机号管理、绑定或解绑后重读）就顺手更新账号卡的取件号，变了才存。
+  Future<void> _savePickup(List<PddBoundMobile> mobiles) async {
+    final current = _session;
+    if (current == null) return;
+    final pickup = _pickupOf(mobiles);
+    if (current.pickupMobile == pickup.mobile && current.pickupMore == pickup.more) return;
+    final next = current.withAccount(pickupMobile: pickup.mobile, pickupMore: pickup.more);
+    _session = next;
+    await _service.vault.save(next);
+    if (!_disposed) notifyListeners();
+  }
+
+  // 登录成功：存会话并建客户端，再读账号卡的昵称与取件号。
   Future<void> onLoggedIn(PddSession session) async {
     await _service.vault.save(session);
     _bind(session);
     _error = null;
     notifyListeners();
+    unawaited(_fillAccount(session));
   }
 
   void _bind(PddSession session) {
@@ -96,9 +128,50 @@ class ExpressController extends ChangeNotifier {
       dynamicQr: station?.dynamicQr ?? false,
       entrySource: station == null ? PddConstants.entryOther : PddConstants.entryScan,
     );
+    final before = {..._owners};
+    await _fillOwners(result);
+    // 普通查询是全部待取件：不在里面的件（取走了）的尾号删掉，存的条数不超过待取件数；扫码查只是一个站，只增不删。
+    if (station == null) _owners.removeWhere((key, _) => !result.groups.any((group) => group.packages.any((parcel) => _ownerKey(parcel) == key)));
+    if (!mapEquals(before, _owners)) await _service.vault.saveOwnerTails(_owners);
     _packages = result;
     _stationCode = station?.code ?? '';
   });
+
+  String _ownerKey(StationPackage parcel) => '${parcel.shippingId}|${parcel.trackingNumber}';
+
+  // [人工决策-2026-10-22 23:46:24] 每件寄到的手机尾号：驿站查询不给（10-22 真机），只有物流接口的 package_info 写着，所以按件补查一次物流（只读），
+  // 尾号都到了再一起交给页面，条目不跳。真机上短时间反复查物流触发了拼多多风控（54001），用户选「尾号存本机、同一件只查一次」：
+  // 查到就存进安全存储，以后重开也不重查，只有新到的件发一次请求；5 件一批并发。
+  // 查不到的归「尾号未知」、下次查驿站再试，不挡这次查询；碰到 54001 这一轮停止补查、不弹验证页（只有用户点按钮时才弹）；登录失效照常上抛回登录页。
+  Future<void> _fillOwners(StationPackagesResult result) async {
+    final pending = [
+      for (final group in result.groups)
+        for (final parcel in group.packages)
+          if (parcel.trackingNumber.isNotEmpty && !_owners.containsKey(_ownerKey(parcel))) parcel,
+    ];
+    var blocked = false;
+    for (var start = 0; start < pending.length && !blocked; start += 5) {
+      await Future.wait(pending.skip(start).take(5).map((parcel) async {
+        try {
+          _owners[_ownerKey(parcel)] = (await _client!.queryShippingTrack(parcel.trackQuery)).ownerTail;
+        } catch (error, stack) {
+          if (error is ExpressFailure && error.isNotLoggedIn) rethrow;
+          if (error is ExpressFailure && error.code == ExpressFailureCode.verifyRequired) blocked = true;
+          campusLog('[Express] action=package_owner errorType=${error is ExpressFailure ? error.code.name : error.runtimeType}\n$stack');
+        }
+      }));
+    }
+  }
+
+  // 用户点的操作碰到拼多多要求安全验证时的令牌，页面取走一次（打开官方验证页由用户本人完成）。
+  String? takeVerifyToken() {
+    final token = _verifyToken;
+    _verifyToken = null;
+    return token;
+  }
+
+  // 用户在官方验证页完成了验证：之后的请求同官方带上这个令牌。
+  void acceptVerify(String token) => _client?.verifyToken = token;
 
   // 查一件包裹的实时物流，同取件手机号管理先读后开：那一行的「物流」按钮原地转圈，读好再由页面弹出；失败记 error 交页面提示条。
   Future<ShippingTrack?> loadTrack(ExpressTrackQuery query) async {
@@ -113,17 +186,17 @@ class ExpressController extends ChangeNotifier {
     _identityCode = await _client!.generateIdentityCode(stationCode: _stationCode);
   });
 
-  // 登录页拿到凭据后先用只读的绑定预检查确认会话真的能用：明确未登录才返回 null（登录页不关、等用户走完验证），网络等其他失败不拦。
-  // 预检查顺带给出本账号手机号，记进返回的会话；没读成的留作没读过，打开快递页时再补读。
-  Future<PddSession?> verifySession(PddSession session) async {
+  // 登录页拿到凭据后先用只读接口确认会话真的能用：明确未登录才返回 false（登录页不关、等用户走完验证），网络等其他失败不拦。
+  Future<bool> verifySession(PddSession session) async {
     final client = _service.clientFactory(session);
     try {
-      return session.withMobile((await client.preCheckBindMobile()).mobileDesc);
+      await client.preCheckBindMobile();
+      return true;
     } on ExpressFailure catch (failure) {
-      return failure.isNotLoggedIn ? null : session;
+      return !failure.isNotLoggedIn;
     } catch (error, stack) {
       campusLog('[Express] action=verify_session errorType=${error.runtimeType}\n$stack');
-      return session;
+      return true;
     } finally {
       client.close();
     }
@@ -159,6 +232,7 @@ class ExpressController extends ChangeNotifier {
     final pre = _client!.preCheckBindMobile();
     final mobiles = _client!.queryBoundMobiles();
     await Future.wait([pre, mobiles]);
+    await _savePickup(await mobiles);
     return (pre: await pre, mobiles: await mobiles);
   }
 
@@ -216,7 +290,7 @@ class ExpressController extends ChangeNotifier {
     }
   }
 
-  // 先清内存里的会话再删存储（同 _onFailure）：补读手机号的后台请求据此知道会话没了，见 _fillMobile。
+  // 先清内存里的会话再删存储（同 _onFailure）：读昵称与取件号的后台请求据此知道会话没了，见 _fillAccount。
   Future<void> logout() async {
     _reset();
     await _service.vault.deleteAll();
@@ -247,6 +321,7 @@ class ExpressController extends ChangeNotifier {
       _reset();
       await _service.vault.deleteAll();
     }
+    if (failure.code == ExpressFailureCode.verifyRequired && failure.verifyToken.isNotEmpty) _verifyToken = failure.verifyToken;
     _error = failure.message;
   }
 
@@ -257,6 +332,8 @@ class ExpressController extends ChangeNotifier {
     _packages = null;
     _identityCode = null;
     _stationCode = '';
+    _owners.clear();
+    _verifyToken = null;
   }
 
   @override

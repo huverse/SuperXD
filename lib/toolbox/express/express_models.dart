@@ -31,6 +31,10 @@ abstract final class PddConstants {
   // 生成 anti_content 用的官方页（已加载反爬 bundle）。
   static const antiContentPage = 'https://m.pinduoduo.net/mdkd/package?pr_page_from=scheme';
 
+  // 官方安全验证页（接口回 54001 时官方 mdkd 页面跳去的同一个页面），验证完跳回 from 指定的地址；from 填官方 mdkd 页，跳到它就算通过。
+  static const verifyPage = 'https://m.yangkeduo.com/psnl_verification.html';
+  static const verifyReturn = 'https://m.pinduoduo.net/mdkd/package';
+
   // 接口没返回 expire_mills 时按页面同款缺省值刷新。
   static const defaultExpireMills = 600000;
 
@@ -43,21 +47,40 @@ abstract final class PddConstants {
 // 账号会话：登录态等同账号，只进系统安全存储（见 express_vault.dart），不打印、不进业务库。
 // PDDAccessToken 是 HttpOnly Cookie，JS 读不到，但原生 CookieManager 可读（见 express_login_webview.dart）。
 class PddSession {
-  const PddSession({this.accessToken = '', this.cookie = '', this.installToken = '', this.etag = '', this.userId = '', this.mobile});
+  const PddSession({
+    this.accessToken = '',
+    this.cookie = '',
+    this.installToken = '',
+    this.etag = '',
+    this.userId = '',
+    this.nickname,
+    this.pickupMobile,
+    this.pickupMore = false,
+  });
 
   final String accessToken;
   final String cookie;
   final String installToken;
   final String etag;
   final String userId;
-  // 本账号手机号（拼多多只给打码的号），只给账号卡显示是哪个账号；登录时经绑定预检查读。
-  // 空串是读过但拼多多没给，null 是还没读过（加这个字段之前登录的会话，打开快递页时补读一次）。
-  final String? mobile;
+  // 账号卡用来认出是哪个账号的两项（见 ExpressController._fillAccount）：拼多多昵称与常用取件手机号（拼多多只给打码的号），
+  // pickupMore 表示还绑了别的号。null 是还没读过（刚登录，或加这两项之前登录的会话），空串是读过但拼多多没给（没昵称、没绑号）。
+  final String? nickname;
+  final String? pickupMobile;
+  final bool pickupMore;
 
   bool get isValid => accessToken.isNotEmpty || cookie.isNotEmpty;
 
-  PddSession withMobile(String mobile) =>
-      PddSession(accessToken: accessToken, cookie: cookie, installToken: installToken, etag: etag, userId: userId, mobile: mobile);
+  PddSession withAccount({String? nickname, String? pickupMobile, bool? pickupMore}) => PddSession(
+    accessToken: accessToken,
+    cookie: cookie,
+    installToken: installToken,
+    etag: etag,
+    userId: userId,
+    nickname: nickname ?? this.nickname,
+    pickupMobile: pickupMobile ?? this.pickupMobile,
+    pickupMore: pickupMore ?? this.pickupMore,
+  );
 
   // 身份码与快递接口的请求头：AccessToken 或账号 Cookie 二者其一即可（实测不强制 anti-token）。
   Map<String, String> headers({required String referer}) {
@@ -78,7 +101,9 @@ class PddSession {
     'installToken': installToken,
     'etag': etag,
     'userId': userId,
-    'mobile': mobile,
+    'nickname': nickname,
+    'pickupMobile': pickupMobile,
+    'pickupMore': pickupMore,
   };
 
   // 存储里的会话按外部输入读：字段缺失当空串，坏了由上层当作未登录处理。
@@ -88,7 +113,9 @@ class PddSession {
     installToken: '${json['installToken'] ?? ''}',
     etag: '${json['etag'] ?? ''}',
     userId: '${json['userId'] ?? ''}',
-    mobile: json['mobile'] is String ? '${json['mobile']}' : null,
+    nickname: json['nickname'] is String ? '${json['nickname']}' : null,
+    pickupMobile: json['pickupMobile'] is String ? '${json['pickupMobile']}' : null,
+    pickupMore: json['pickupMore'] == true,
   );
 
   String encode() => jsonEncode(toJson());
@@ -97,12 +124,14 @@ class PddSession {
 }
 
 // 快递接口失败分类：页面只按 code 分支，message 只用来展示。
-enum ExpressFailureCode { notLoggedIn, network, timeout, tooLarge, server, invalidResponse }
+// verifyRequired 是拼多多风控要用户本人先过一次官方安全验证（错误码 54001，带 verify_auth_token），verifyToken 就是这个令牌。
+enum ExpressFailureCode { notLoggedIn, verifyRequired, network, timeout, tooLarge, server, invalidResponse }
 
 class ExpressFailure implements Exception {
-  const ExpressFailure(this.code, this.message);
+  const ExpressFailure(this.code, this.message, {this.verifyToken = ''});
   final ExpressFailureCode code;
   final String message;
+  final String verifyToken;
 
   bool get isNotLoggedIn => code == ExpressFailureCode.notLoggedIn;
 
@@ -146,19 +175,21 @@ class IdentityCodeResult {
   }
 }
 
-// 已绑定的取件手机号（服务端返回打码后的号码）。mobileIdScene 解绑时要回传。
+// 已绑定的取件手机号（服务端返回打码后的号码）。mobileIdScene 解绑时要回传；commonlyUsed 是拼多多标的常用号。
 class PddBoundMobile {
-  const PddBoundMobile({this.mobileId = '', this.maskedMobile = '', this.alias = '', this.mobileIdScene});
+  const PddBoundMobile({this.mobileId = '', this.maskedMobile = '', this.alias = '', this.mobileIdScene, this.commonlyUsed = false});
   final String mobileId;
   final String maskedMobile;
   final String alias;
   final int? mobileIdScene;
+  final bool commonlyUsed;
 
   factory PddBoundMobile.fromJson(Map<String, Object?> json) => PddBoundMobile(
     mobileId: '${json['mobile_id'] ?? ''}',
     maskedMobile: '${json['mock_mobile'] ?? ''}',
     alias: '${json['alias'] ?? ''}',
     mobileIdScene: (json['mobile_id_scene'] as num?)?.toInt(),
+    commonlyUsed: json['commonly_used'] == true,
   );
 }
 
@@ -260,14 +291,16 @@ class ShippingTrace {
   factory ShippingTrace.fromJson(Map<String, Object?> json) => ShippingTrace(info: '${json['info'] ?? ''}', time: '${json['time'] ?? ''}');
 }
 
-// 物流详情（/api/express/shipping/track 返回的 shipping）：快递公司、运单号、预计送达说明与轨迹。
+// 物流详情（/api/express/shipping/track 返回的 shipping）：快递公司、运单号、预计送达说明、轨迹与这件寄到的手机尾号。
 // 派件员姓名电话（postman_info/postman_contact）是第三方个人信息，不读。
 class ShippingTrack {
-  const ShippingTrack({this.shippingName = '', this.trackingNumber = '', this.forecast = '', this.traces = const []});
+  const ShippingTrack({this.shippingName = '', this.trackingNumber = '', this.forecast = '', this.traces = const [], this.ownerTail = ''});
   final String shippingName;
   final String trackingNumber;
   final String forecast;
   final List<ShippingTrace> traces;
+  // 这件寄到哪个手机号的尾号：驿站查询不给，只有物流接口的 package_info 写「尾号5678 的快递」（10-22 真机），取出数字；格式对不上就当不知道。
+  final String ownerTail;
 
   factory ShippingTrack.fromJson(Map<String, Object?> json) {
     final forecast = json['time_forecast'];
@@ -276,6 +309,7 @@ class ShippingTrack {
       trackingNumber: '${json['tracking_number'] ?? ''}',
       forecast: forecast is Map ? '${forecast['time_forecast_desc'] ?? ''}' : '',
       traces: _mapList(json['traces']).map(ShippingTrace.fromJson).toList(),
+      ownerTail: RegExp(r'尾号\s*(\d{3,4})').firstMatch('${json['package_info'] ?? ''}')?.group(1) ?? '',
     );
   }
 }
