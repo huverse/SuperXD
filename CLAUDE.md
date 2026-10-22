@@ -47,7 +47,7 @@
 - 账号代次：SuperXdApp 以 session.generation 作 key 重建账号应用，切换账号时路由和页面内存状态整体丢弃（[人工决策] 在 main.dart）。
 - router.dart 门禁：会话恢复完成前停在 /boot；未登录只允许 /login、/legal 下的法务页、/toolbox 与已注册工具路由（[人工决策] 在文件内）；已登录访问 /login 回到 /today；底栏壳有今天、服务、消息、我的四个分支，外包 LegacyImportGate；课表、成绩、切换账号、法务页和百宝箱推入根导航器。
 - app_session.dart：把 AccountAccess 的账号变化转成路由刷新并暂存一次性提示；expire 只让发起时的那个代次失效，旧页面不能误登出新账号。
-- app_diagnostics.dart：开发者模式的接线（[人工决策] 在文件头）：运行环境 appEnvironment、按设置切换 campusDiagnostics 与卡顿内存统计（每 10 秒汇总、有慢帧才记）、前后台与页面切换记录（watchRoutes，只记路径），切到后台时把日志写盘；recordExitReasons 每次启动记系统给的上次退出原因（异常的平时也进错误记录）。悬浮开发者工具由 main.dart 的账号应用外壳套上（page/developer_page.dart 的 DeveloperOverlay）。开发者模式只多记日志、多给调试工具，不改任何业务行为。
+- app_diagnostics.dart：开发者模式的接线（[人工决策] 在文件头）：运行环境 appEnvironment（开发者模式第一次开着时才读）、按设置切换 campusDiagnostics 与卡顿内存统计（每 10 秒汇总、有慢帧才记）、前后台与页面切换记录（watchRoutes，只记路径），切到后台时把日志写盘；recordExitReasons 每次启动记系统给的上次退出原因（异常的平时也进错误记录）。悬浮开发者工具由 main.dart 的账号应用外壳套上（page/developer_page.dart 的 DeveloperOverlay）。开发者模式只多记日志、多给调试工具，不改任何业务行为。
 - 页面从路由拿到 isAccountCurrent 与 onSessionExpired：异步结果回来后先确认仍属当前账号，再写界面。
 - 编排（CampusSync、CampusReminders、CampusWidgets、AppUpdates）见 lib/application/CLAUDE.md。
 
@@ -61,7 +61,7 @@
 6. 时间：绝对时刻一律存 UTC 的 ISO 字符串；校园时区只在 domain/campus_clock.dart 的 campusTimeZone 一处定义，今天、周次、倒计时等业务日界都经 campus_clock 计算；展示时间用 formatCampusRelative（按远近写到分钟）。
 7. 凭据：用户明确勾选记住账号且认证成功后才写入系统安全存储（关闭后在账号页重新开启也要先登录核对成功）；业务 SQLite、账号索引和日志一律不存密码；用户关闭记住账号或主动退出时立即删除凭据。
 8. 设备级数据：百宝箱、下载任务、显示设置（配色、字体、字号、深浅色、玻璃、自定义壁纸）、私信身份与好友、学习通账号与收藏、应用更新的检查记录与下载中的安装包、协议与政策的同意与已读修订号、开发者设置与本机日志都属于设备，切换教务账号时保留。
-   - 系统安全存储的每个命名空间（记住账号、私信身份、学习通、拼多多）与本机日志目录都排除出云备份与设备迁移，新增命名空间要同时加进两份备份规则，test/legal_page_test.dart 守护。
+   - 系统安全存储的每个命名空间（记住账号、私信身份、学习通、拼多多）、本机日志目录与开发者设置 developer.json 都排除出云备份与设备迁移，新增命名空间要同时加进两份备份规则，test/legal_page_test.dart 守护。
    - 桌面小组件显示的是当前账号的课，跟着账号切换，退出登录即清空；只有它的配色跟随设备设置。
    - 自定义壁纸只经系统照片选择器读用户选中的一张，复制到应用私有目录，不上传、不申请存储权限。
    - 百宝箱不读取教务凭据或 cookie；学习通密码与 cookie 只进系统安全存储，本机不存签到记录。学习通的设备信息与 OAID 只在登录、补用户信息时现取，加密后只发给学习通，不落库。
@@ -76,6 +76,7 @@
 11. 日志：只经 domain/campus_log.dart 的 campusLog 输出，应用入口必须注入 debugPrint 才进 logcat；格式为 [模块] action=... errorType=...，错误附完整堆栈；不写原始 HTML、链接、凭据与实名信息。由 test/project_structure_test.dart 守护。
     - 同一份输出另写进本机文件（local/diagnostic_log.dart）：平时只记错误，开发者模式记全部；保存期限与掩码规则见 lib/local/CLAUDE.md，隐私政策第七节与附录三同步写明。
     - 只在开发者模式下才有意义的诊断记录（请求耗时、页面切换、卡顿内存）先看 campusDiagnostics，对外请求统一经 campusRequestLog 记，只记路径、不记域名与查询串。
+    - 新模块接入开发者模式：日志照常走 campusLog、错误带 errorType= 或堆栈即自动进本机日志与错误记录；自写 HTTP 封装的发请求处必须调 campusRequestLog（test/project_structure_test.dart 守护）；新页面优先挂 go_router 路由，命令式推入的页面不进页面切换记录。
 12. 界面实现：确认和提示统一用 theme/campus_transitions.dart 的 showCampusConfirm 与 showCampusNotice；setState 回调不得返回 Future，给 Future 字段赋值时用块体；只有图标的 IconButton 必须带 tooltip 作读屏标签。后两条由 test/code_conventions_test.dart 守护。
 13. 公开内容不出现实名：
     - [人工决策-2026-10-15 20:20:38] 仓库公开，代码、测试数据、文档、提交信息、PR 与 Issue 的正文和评论一律不写真实姓名、手机号、学号等实名信息（含真实课表里的教师名）。
@@ -103,7 +104,7 @@
 
 # 测试
 
-- 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由、页面滚动区渐隐、顶栏玻璃圆钮），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
+- 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、请求记录、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由、页面滚动区渐隐、顶栏玻璃圆钮），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
 - 共用的测试支撑：fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、toolbox_test_support.dart、form_layout_support.dart、app_update_fakes.dart、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
 - tool 下的手动入口不进 CI（发版两个工具由发版流水线调用），运行方式见各文件头：
   - 访问真实服务，只在授权环境与授权账号上手动运行：verify_edu.dart、verify_grades.dart（教务）、verify_chaoxing.dart（学习通，输出脱敏）。

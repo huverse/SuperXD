@@ -8,10 +8,12 @@ bool campusDiagnostics = false;
 
 // 对外请求的诊断记录：模块、方法、路径、状态码、耗时与响应字节数，只在开发者模式下记。
 // 不记域名、查询串、请求与响应内容；路径里像编号的段（含数字且 8 位以上、或 4 位以上纯数字）掩成 :id，免得拼出能打开的地址。
+// 路径按原样（仍是百分号编码）切段，不用 pathSegments：它会解码，遇到非 UTF-8 的编码（如 GBK 的中文路径）直接抛异常，
+// 而各处都在 finally 或 catch 里调这里，抛出来就改写了请求本身的结果；解出来的中文段也会绕过上面的掩码。
 void campusRequestLog(String module, String method, Uri uri, {int? status, required Duration elapsed, int? bytes, String? error}) {
   if (!campusDiagnostics) return;
-  final path = uri.pathSegments.map((segment) => _identifier.hasMatch(segment) ? ':id' : segment).join('/');
-  campusLog('[Http] module=$module method=$method path=/$path status=${status ?? '-'} ms=${elapsed.inMilliseconds} bytes=${bytes ?? '-'}${error == null ? '' : ' error=$error'}');
+  final path = [for (final segment in uri.path.split('/')) _identifier.hasMatch(segment) ? ':id' : segment].join('/');
+  campusLog('[Http] module=$module method=$method path=${path.isEmpty ? '/' : path} status=${status ?? '-'} ms=${elapsed.inMilliseconds} bytes=${bytes ?? '-'}${error == null ? '' : ' error=$error'}');
 }
 
 final _identifier = RegExp(r'^(?=[^.]*\d)[^.]{8,}|^\d{4,}');

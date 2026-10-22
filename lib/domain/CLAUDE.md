@@ -9,7 +9,7 @@
   - 业务端口 CampusGateway，覆盖会话、学期、课表、成绩、作息、开学日和课表版本的读取、同步与写入。所有方法都返回 GatewayResult，不抛异常。
   - 视图类型：GatewayResult、GatewayError、ScheduleView、GradesView、BellsView、RevisionView 等。
 - gateway_code.dart：错误码登记表 GatewayCode，每个常量配一行语义注释。新错误码先在这里登记再使用；测试里保留字面量，用来钉住线上取值。
-- campus_log.dart：日志出口 campusLog。默认写 stderr；应用入口和设备端工具入口要注入 debugPrint，日志才会进入 logcat。campusDiagnostics 是开发者模式开关（组合根切换），campusRequestLog 是对外请求的诊断记录（只在开发者模式下记，只记路径，像编号的段掩成 :id）。
+- campus_log.dart：日志出口 campusLog。默认写 stderr；应用入口和设备端工具入口要注入 debugPrint，日志才会进入 logcat。campusDiagnostics 是开发者模式开关（组合根切换），campusRequestLog 是对外请求的诊断记录（只在开发者模式下记，只记路径，按原样不解码切段，像编号的段掩成 :id）。
 - campus_clock.dart：
   - campusTimeZone：校园时区的唯一定义。
   - campusToday：校园时区的今天。campusNow：校园时区今天的零点。

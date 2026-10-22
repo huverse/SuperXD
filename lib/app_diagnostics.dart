@@ -22,9 +22,14 @@ import 'package:superxd/local/diagnostic_log.dart';
 // 同类错误聚合与旧日志压缩（见 local/diagnostic_log.dart）、悬浮按钮打标记与复制诊断摘要（见 page/developer_page.dart）；登录页加「关于」入口。
 // 未选「按启动分段与启动耗时」「网络面板」「查看日志实时跟随」。
 
-// 上次进程为什么结束（系统记下的，Android 11 起）：每次启动读一次，只记上回读过之后的。异常结束（崩溃、原生崩溃、无响应、内存不足、被信号杀等）
-// 按错误记，平时也进错误记录，无响应附系统给的线程堆栈摘要；正常结束（自己退出、用户划掉、升级等）只在开发者模式下记一行。读到的最新时刻存进 marker。
-const _abnormalExits = {'SIGNALED', 'LOW_MEMORY', 'CRASH', 'CRASH_NATIVE', 'ANR', 'INITIALIZATION_FAILURE', 'EXCESSIVE_RESOURCE_USAGE', 'DEPENDENCY_DIED'};
+// 上次进程为什么结束（系统记下的，Android 11 起）：每次启动读一次，只记上回读过之后的。异常结束按错误记，平时也进错误记录，无响应附系统给的线程堆栈摘要；
+// 其余（自己退出、用户划掉、升级、后台被回收等）只在开发者模式下记一行。读到的最新时刻存进 marker。
+// [人工决策-2026-10-22 16:24:03] 用户选定后台被回收不算错误（同 Android vitals、Crashlytics 只把崩溃与无响应当错误）：崩溃、原生崩溃、无响应、初始化失败任何时候都算；
+// 内存不足、被信号杀、资源超限、依赖进程退出只在当时在前台或可见时才算，切到后台后被系统或国产系统的后台清理杀掉很常见，不是应用的问题，平时记成错误会刷满错误记录。
+const _abnormalExits = {'CRASH', 'CRASH_NATIVE', 'ANR', 'INITIALIZATION_FAILURE'};
+const _abnormalWhenVisible = {'SIGNALED', 'LOW_MEMORY', 'EXCESSIVE_RESOURCE_USAGE', 'DEPENDENCY_DIED'};
+// 系统的进程重要度（RunningAppProcessInfo）：越小越靠前台，前台 100、前台服务 125、可见 200，再往后是用户看不见的后台与缓存。
+const _visibleImportance = 200;
 
 Future<void> recordExitReasons({required File marker, required Future<List<ProcessExit>> Function(int since) read}) async {
   try {
@@ -33,11 +38,11 @@ Future<void> recordExitReasons({required File marker, required Future<List<Proce
     if (exits.isEmpty) return;
     // 系统按新到旧给，按发生先后记。
     for (final exit in exits.reversed) {
-      final abnormal = _abnormalExits.contains(exit.reason);
+      final abnormal = _abnormalExits.contains(exit.reason) || _abnormalWhenVisible.contains(exit.reason) && exit.importance <= _visibleImportance;
       if (!abnormal && !campusDiagnostics) continue;
       final at = DateTime.fromMillisecondsSinceEpoch(exit.timestamp, isUtc: true).toIso8601String();
       final description = exit.description.replaceAll(RegExp(r'\s+'), '_');
-      final line = '[App] action=last_exit ${abnormal ? 'errorType' : 'reason'}=${exit.reason} at=$at status=${exit.status} importance=${exit.importance} pssMb=${exit.pssKb ~/ 1024} rssMb=${exit.rssKb ~/ 1024}${description.isEmpty ? '' : ' description=$description'}';
+      final line = '$diagnosticExitHead ${abnormal ? 'errorType' : 'reason'}=${exit.reason} at=$at status=${exit.status} importance=${exit.importance} pssMb=${exit.pssKb ~/ 1024} rssMb=${exit.rssKb ~/ 1024}${description.isEmpty ? '' : ' description=$description'}';
       campusLog(exit.trace.isEmpty ? line : '$line\n${exit.trace}');
     }
     await marker.writeAsString('${exits.map((exit) => exit.timestamp).reduce((left, right) => left > right ? left : right)}', flush: true);
@@ -61,9 +66,11 @@ Future<Map<String, String>> appEnvironment() async {
 }
 
 // 开发者模式接线：按设置切换诊断记录与卡顿统计；开着时记启动环境与前后台；切到后台时把缓冲的日志写盘（平时的错误记录也靠它及时落盘）。
-void watchDeveloperMode(DeveloperSettings developer, DiagnosticLog logs, {required Future<Map<String, String>> environment}) {
+// 运行环境到开发者模式第一次开着时才读、只读一次：普通用户用不到它，不在启动时为它多调系统接口（机型信息要在主线程上收集一大份）。
+void watchDeveloperMode(DeveloperSettings developer, DiagnosticLog logs, {required Future<Map<String, String>> Function() environment}) {
   final frames = _FrameWatch();
   bool? enabled;
+  Future<void>? reading;
   void apply() {
     if (developer.enabled == enabled) return;
     final started = enabled == null;
@@ -71,15 +78,17 @@ void watchDeveloperMode(DeveloperSettings developer, DiagnosticLog logs, {requir
     campusDiagnostics = developer.enabled;
     logs.developer = developer.enabled;
     developer.enabled ? frames.start() : frames.stop();
-    if (!started) campusLog('[App] action=diagnostics state=${developer.enabled ? 'on' : 'off'} ${_line(logs.environment)}');
+    if (!started) campusLog(['[App] action=diagnostics state=${developer.enabled ? 'on' : 'off'}', if (logs.environment.isNotEmpty) _line(logs.environment)].join(' '));
+    if (developer.enabled) {
+      reading ??= environment().then((value) {
+        logs.environment = value;
+        if (campusDiagnostics) campusLog('[App] action=${started ? 'start' : 'environment'} ${_line(value)}');
+      });
+    }
   }
 
   developer.addListener(apply);
   apply();
-  unawaited(environment.then((value) {
-    logs.environment = value;
-    if (campusDiagnostics) campusLog('[App] action=start ${_line(value)}');
-  }));
   AppLifecycleListener(onStateChange: (state) {
     if (campusDiagnostics) campusLog('[App] action=lifecycle state=${state.name} rssMb=${_rssMb()}');
     if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused || state == AppLifecycleState.detached) unawaited(logs.flush(settle: true));
@@ -107,9 +116,10 @@ int _rssMb() => ProcessInfo.currentRss ~/ (1024 * 1024);
 
 // 卡顿与内存：每 10 秒汇总一次，窗口里有构建或栅格超出一帧预算的才记一条（帧数、慢帧数、最慢的两项耗时、内存），不逐帧刷日志。
 class _FrameWatch {
+  static const _window = Duration(seconds: 10);
   var _frames = 0, _slow = 0;
-  var _build = Duration.zero, _raster = Duration.zero;
-  DateTime? _since;
+  var _build = Duration.zero, _raster = Duration.zero, _budget = Duration.zero;
+  DateTime? _since, _last;
   // 只在真开着时注销：启动时开发者模式关着也会走 stop，注销没注册过的回调在调试包里断言失败、main 后面都不执行。
   var _running = false;
 
@@ -123,32 +133,40 @@ class _FrameWatch {
     if (!_running) return;
     _running = false;
     SchedulerBinding.instance.removeTimingsCallback(_onTimings);
-    _reset(null);
+    _reset();
+    _last = null;
   }
 
-  void _reset(DateTime? since) {
+  // 下一个窗口从下一次回报算起。
+  void _reset() {
     _frames = 0;
     _slow = 0;
     _build = Duration.zero;
     _raster = Duration.zero;
-    _since = since;
+    _since = null;
   }
 
   void _onTimings(List<FrameTiming> timings) {
+    final now = DateTime.now();
+    // 停过一阵没出帧（页面静止时不出帧也不回报）：上一个窗口按它最后一次回报结掉，不把空闲时长和之后别的页面的帧并进同一条。
+    if (_last case final last? when now.difference(last) >= _window) _summarize(last);
+    _last = now;
     final rate = WidgetsBinding.instance.platformDispatcher.views.firstOrNull?.display.refreshRate ?? 60;
-    final budget = Duration(microseconds: (1000000 / (rate > 0 ? rate : 60)).round());
+    _budget = Duration(microseconds: (1000000 / (rate > 0 ? rate : 60)).round());
     for (final timing in timings) {
       _frames++;
-      if (timing.buildDuration > budget || timing.rasterDuration > budget) _slow++;
+      if (timing.buildDuration > _budget || timing.rasterDuration > _budget) _slow++;
       if (timing.buildDuration > _build) _build = timing.buildDuration;
       if (timing.rasterDuration > _raster) _raster = timing.rasterDuration;
     }
-    final now = DateTime.now(), since = _since ??= now;
-    final window = now.difference(since);
-    if (window < const Duration(seconds: 10)) return;
-    if (_slow > 0) {
-      campusLog('[Frame] action=summary seconds=${window.inSeconds} frames=$_frames slow=$_slow worstBuildMs=${_build.inMilliseconds} worstRasterMs=${_raster.inMilliseconds} budgetMs=${(budget.inMicroseconds / 1000).toStringAsFixed(1)} rssMb=${_rssMb()}');
+    final since = _since ??= now;
+    if (now.difference(since) >= _window) _summarize(now);
+  }
+
+  void _summarize(DateTime end) {
+    if (_since case final since? when _slow > 0) {
+      campusLog('[Frame] action=summary seconds=${end.difference(since).inSeconds} frames=$_frames slow=$_slow worstBuildMs=${_build.inMilliseconds} worstRasterMs=${_raster.inMilliseconds} budgetMs=${(_budget.inMicroseconds / 1000).toStringAsFixed(1)} rssMb=${_rssMb()}');
     }
-    _reset(now);
+    _reset();
   }
 }

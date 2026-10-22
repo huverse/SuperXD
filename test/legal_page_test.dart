@@ -188,10 +188,11 @@ void main() {
         expect(rule.allMatches(extraction).length, 2, reason: 'data_extraction_rules 的云备份与换机迁移都要排除 $prefs');
       }
     }
-    // 本机诊断日志（应用专属外部目录的 logs）同样只属于这台设备。
-    const logs = '<exclude domain="external" path="logs/" />';
-    expect(backup, contains(logs));
-    expect(logs.allMatches(extraction).length, 2);
+    // 本机诊断日志（应用专属外部目录的 logs，取不到时退回应用支持目录的 logs）与开发者设置同样只属于这台设备。
+    for (final rule in ['<exclude domain="external" path="logs/" />', '<exclude domain="file" path="logs/" />', '<exclude domain="file" path="developer.json" />']) {
+      expect(backup, contains(rule));
+      expect(rule.allMatches(extraction).length, 2, reason: 'data_extraction_rules 的云备份与换机迁移都要有 $rule');
+    }
   });
 
   // release 才开 R8，CI 不打 release 包；高德 jar 不带混淆规则，删改类名后一开地图就崩。
