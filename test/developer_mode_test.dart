@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -62,17 +63,50 @@ void main() {
       campusDiagnostics = false;
     });
     final developer = DeveloperSettings.memory();
-    watchDeveloperMode(developer, logs, environment: Future.value(const {'version': '1.0.0-alpha.6', 'device': 'Google Pixel 8'}));
+    logs.environment = const {};
+    var reads = 0;
+    Future<Map<String, String>> environment() async {
+      reads++;
+      return const {'version': '1.0.0-alpha.6', 'device': 'Google Pixel 8'};
+    }
+
+    watchDeveloperMode(developer, logs, environment: environment);
     await tester.pump();
     expect((campusDiagnostics, logs.developer), (false, false));
     expect(records, isEmpty);
+    // 关着时不读运行环境：普通用户启动不为它调系统接口。
+    expect(reads, 0);
 
     await developer.setEnabled(true);
+    await tester.pump();
     expect((campusDiagnostics, logs.developer), (true, true));
-    expect(records.single, '[App] action=diagnostics state=on version=1.0.0-alpha.6 device=Google_Pixel_8');
+    expect(records, ['[App] action=diagnostics state=on', '[App] action=environment version=1.0.0-alpha.6 device=Google_Pixel_8']);
     await developer.setEnabled(false);
     expect((campusDiagnostics, logs.developer), (false, false));
-    expect(records.last, startsWith('[App] action=diagnostics state=off'));
+    expect(records.last, '[App] action=diagnostics state=off version=1.0.0-alpha.6 device=Google_Pixel_8');
+    // 再开不重读，开启记录里直接带上运行环境。
+    await developer.setEnabled(true);
+    await tester.pump();
+    expect(records.last, '[App] action=diagnostics state=on version=1.0.0-alpha.6 device=Google_Pixel_8');
+    expect(reads, 1);
+    await developer.setEnabled(false);
+  });
+
+  testWidgets('开着开发者模式启动：读一次运行环境，记一条带运行环境的启动记录', (tester) async {
+    final records = <String>[];
+    final previous = campusLog;
+    campusLog = records.add;
+    addTearDown(() {
+      campusLog = previous;
+      campusDiagnostics = false;
+    });
+    final developer = DeveloperSettings.memory(enabled: true);
+    watchDeveloperMode(developer, logs, environment: () async => const {'version': '1.0.0-alpha.6'});
+    await tester.pump();
+    expect(records, ['[App] action=start version=1.0.0-alpha.6']);
+    expect(logs.environment, {'version': '1.0.0-alpha.6'});
+    // 关掉，撤下卡顿统计的帧回调，不留给后面的用例。
+    await developer.setEnabled(false);
   });
 
   testWidgets('关于页连点版本号 7 次开启开发者模式：第 4 次起提示还差几次，说明会记什么、确认了才开，开了多出开发者选项', (tester) async {
@@ -204,6 +238,34 @@ void main() {
     await tester.tap(button);
     await tester.pumpAndSettle();
     expect(find.text('当前页面 /today'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 审查发现：落盘要几十毫秒，弹层退场时还算挂着，连点两下「标记这里」会走两遍、第二遍把底下的页面也关掉。
+  testWidgets('连点两下「标记这里」只记一次，底下的页面不被关掉', (tester) async {
+    final navigator = GlobalKey<NavigatorState>();
+    // 同真机：标记进本机日志、立即落盘（真实文件读写，假时钟里两下点按都落在写完之前）。
+    final records = <String>[];
+    final previous = campusLog;
+    logs.developer = true;
+    campusLog = logs.tee(records.add);
+    addTearDown(() => campusLog = previous);
+    await tester.pumpWidget(MaterialApp(
+      theme: campusTheme(),
+      navigatorKey: navigator,
+      builder: (context, child) => DeveloperOverlay(developer: DeveloperSettings.memory(enabled: true), logs: logs, navigator: navigator, location: () => '/mine', child: child!),
+      home: const Scaffold(body: Text('首页')),
+    ));
+    unawaited(navigator.currentState!.push(MaterialPageRoute<void>(builder: (_) => const Scaffold(body: Text('二级页')))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('开发者工具'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('标记这里'));
+    await tester.tap(find.text('标记这里'));
+    await settle(tester, () => find.text('已标记').evaluate().isNotEmpty);
+    await tester.pumpAndSettle();
+    expect(find.text('二级页'), findsOneWidget);
+    expect(records.where((record) => record.startsWith('[Mark]')), hasLength(1));
     await tester.pumpWidget(const SizedBox());
   });
 

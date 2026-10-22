@@ -6,9 +6,10 @@ import android.content.Context
 import android.util.Log
 import io.flutter.plugin.common.MethodCall
 import io.flutter.plugin.common.MethodChannel
+import java.io.IOException
 
 // 本机诊断日志用的「上次进程为什么结束」：系统记下的最近几次退出原因（Android 11 起，同 Crashlytics 与 Play 的 ANR、原生崩溃来源），
-// 只返回 since（毫秒）之后的；应用无响应（ANR）附系统给的线程堆栈前 80 行、最多 8KB。哪些算异常由 Dart 侧（lib/app_diagnostics.dart）判断。
+// 只返回 since（毫秒）之后的；应用无响应（ANR）附系统给的主线程堆栈，从「"main"」那行起 80 行、最多 8KB。哪些算异常由 Dart 侧（lib/app_diagnostics.dart）判断。
 class ProcessExitReasons(private val context: Context) : MethodChannel.MethodCallHandler {
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
         if (call.method != "exitReasons") return result.notImplemented()
@@ -36,9 +37,17 @@ class ProcessExitReasons(private val context: Context) : MethodChannel.MethodCal
         }
     }
 
-    private fun anrTrace(exit: ApplicationExitInfo): String = exit.traceInputStream?.bufferedReader()?.use { reader ->
-        reader.lineSequence().take(80).joinToString("\n").take(8 * 1024)
-    } ?: ""
+    // 从「"main"」线程那一段取（无响应时主线程卡在哪）：前面的进程头部在不同系统上长短不一，从头取可能截不到它；找不到就从头取。
+    // 一条读不出来只把这条的堆栈置空并记下原因，不让整次读取失败（否则不写 marker，之后每次启动都重读重败）。
+    private fun anrTrace(exit: ApplicationExitInfo): String = try {
+        exit.traceInputStream?.bufferedReader()?.use { reader ->
+            val lines = reader.lineSequence().take(2000).toList()
+            lines.drop(maxOf(lines.indexOfFirst { it.startsWith("\"main\"") }, 0)).take(80).joinToString("\n").take(8 * 1024)
+        } ?: ""
+    } catch (error: IOException) {
+        Log.e("ProcessExitReasons", "action=trace", error)
+        ""
+    }
 
     private fun reasonName(reason: Int): String = when (reason) {
         ApplicationExitInfo.REASON_EXIT_SELF -> "EXIT_SELF"

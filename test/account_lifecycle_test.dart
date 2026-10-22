@@ -112,6 +112,30 @@ void main() {
     await tester.pumpWidget(const SizedBox()); session.dispose();
   });
 
+  // 审查发现：性能浮层用 MaterialApp 的开关时，开关一下整个页面外面多一层 Stack、换了父级要重建：入场淡入重放，悬浮按钮回到默认位置。
+  testWidgets('开关性能浮层不重建页面：悬浮按钮留在拖到的位置，浮层画在最上面', (tester) async {
+    final temp = (await tester.runAsync(() => Directory.systemTemp.createTemp('lifecycle_logs')))!;
+    final logs = (await tester.runAsync(() => DiagnosticLog.open(directory: Directory(path.join(temp.path, 'logs')), exports: Directory(path.join(temp.path, 'cache')), publish: (archive, filename) async => true)))!;
+    addTearDown(() => temp.deleteSync(recursive: true));
+    final developer = DeveloperSettings.memory(enabled: true);
+    final gateway = _Accounts().._active = null;
+    final session = AppSession(gateway); await session.restore();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, developer: developer, logs: logs));
+    await tester.pumpAndSettle();
+    final button = find.byTooltip('开发者工具');
+    await tester.drag(button, const Offset(0, -200));
+    await tester.pumpAndSettle();
+    final moved = tester.getRect(button);
+
+    await developer.setPerformanceOverlay(true); await tester.pumpAndSettle();
+    expect(find.byType(PerformanceOverlay), findsOneWidget);
+    expect(tester.getRect(button), moved);
+    await developer.setPerformanceOverlay(false); await tester.pumpAndSettle();
+    expect(find.byType(PerformanceOverlay), findsNothing);
+    expect(tester.getRect(button), moved);
+    await tester.pumpWidget(const SizedBox()); session.dispose();
+  });
+
   testWidgets('应用跟随系统与手动明暗切换保留页面上下文', (tester) async {
     final gateway = _Accounts();final session = AppSession(gateway);await session.restore();
     final display = DisplaySettings.memory();

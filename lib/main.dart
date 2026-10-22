@@ -84,7 +84,7 @@ void main() async {
   );
   campusLog = logs.tee(debugPrint);
   final developer = await DeveloperSettings.open(File(path.join(support.path, 'developer.json')));
-  watchDeveloperMode(developer, logs, environment: appEnvironment());
+  watchDeveloperMode(developer, logs, environment: appEnvironment);
   unawaited(recordExitReasons(marker: File(path.join(support.path, 'last_exit_seen')), read: readExitReasons));
   // Android 10–14默认不绘制到导航栏后，透明导航栏会露出原生窗口底色（浅色为白条）；15+系统已强制全面屏。
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
@@ -394,8 +394,8 @@ class _AccountAppState extends State<_AccountApp> {
 
   @override
   Widget build(BuildContext context) {
-    return ListenableBuilder(listenable: Listenable.merge([_display, campusGlassCapped, ?widget.developer]), builder: (context, _) => MaterialApp.router(
-      title: 'SuperXD', showPerformanceOverlay: widget.developer?.performanceOverlay ?? false, theme: campusTheme(palette: CampusPalette.byId(_display.paletteId), fontFamily: _display.fontFamily),
+    return ListenableBuilder(listenable: Listenable.merge([_display, campusGlassCapped]), builder: (context, _) => MaterialApp.router(
+      title: 'SuperXD', theme: campusTheme(palette: CampusPalette.byId(_display.paletteId), fontFamily: _display.fontFamily),
       darkTheme: campusTheme(palette: CampusPalette.byId(_display.paletteId, brightness: Brightness.dark), fontFamily: _display.fontFamily),
       themeMode: _display.themeMode, routerConfig: _router, scrollBehavior: const CampusScrollBehavior(),
       themeAnimationDuration: WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations || WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.reduceMotion ? Duration.zero : const Duration(milliseconds: 260),

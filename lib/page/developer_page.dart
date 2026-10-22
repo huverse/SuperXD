@@ -221,7 +221,9 @@ class _DeveloperLogPageState extends State<DeveloperLogPage> {
   @override
   Widget build(BuildContext context) {
     final colors = CampusPalette.of(context);
-    final query = _search.text.trim().toLowerCase();
+    final query = _search.text.trim();
+    // 不分大小写的正则直接找：每按一个键都要把上千条（不少带堆栈）过一遍，比逐条转小写再找快一倍以上，没找到时快得更多。
+    final pattern = RegExp(RegExp.escape(query), caseSensitive: false);
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
@@ -253,7 +255,7 @@ class _DeveloperLogPageState extends State<DeveloperLogPage> {
             if (snapshot.hasError) return CampusLoadError(message: '日志读取没完成', onRetry: _reload);
             final records = snapshot.data;
             if (records == null) return const Center(child: CampusLoading(label: '正在读取'));
-            final shown = query.isEmpty ? records : [for (final record in records) if (record.text.toLowerCase().contains(query)) record];
+            final shown = query.isEmpty ? records : [for (final record in records) if (pattern.hasMatch(record.text)) record];
             if (shown.isEmpty) return Center(child: Text(records.isEmpty ? '还没有日志' : '没有匹配的日志', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)));
             return CampusScrollFade(child: ListView.builder(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
@@ -331,6 +333,9 @@ class _DeveloperOverlayState extends State<DeveloperOverlay> {
   @override
   void dispose() {
     widget.developer.removeListener(_entry.markNeedsBuild);
+    _entry
+      ..remove()
+      ..dispose();
     super.dispose();
   }
 
@@ -356,6 +361,9 @@ class _DeveloperOverlayState extends State<DeveloperOverlay> {
     }
 
     return Stack(children: [
+      // 性能浮层也画在这层里，不用 MaterialApp 的 showPerformanceOverlay：那个开关会在整个页面外面加一层 Stack，
+      // 页面换了父级要整个重建（入场淡入重放一次、悬浮按钮回到默认位置）。浮层不接点按，点按照样落到下面的页面。
+      if (widget.developer.performanceOverlay) Positioned(top: 0, left: 0, right: 0, child: PerformanceOverlay.allEnabled()),
       Positioned(
         left: clampX(position.dx),
         top: clampY(position.dy),
@@ -391,6 +399,7 @@ class _DeveloperTools extends StatefulWidget {
 class _DeveloperToolsState extends State<_DeveloperTools> {
   final _note = TextEditingController();
   bool _exporting = false;
+  bool _marking = false;
 
   @override
   void dispose() {
@@ -399,7 +408,10 @@ class _DeveloperToolsState extends State<_DeveloperTools> {
   }
 
   // 标记写成一条 [Mark] 日志并立即落盘，事后按它定位出问题的那一段；说明是本人写的，落盘时同样掩码。
+  // 落盘要几十毫秒，弹层退场时还算挂着：连点两下会走两遍、第二遍把底下的页面也关掉，所以标记中不再响应。
   Future<void> _mark() async {
+    if (_marking) return;
+    _marking = true;
     final note = _note.text.trim().replaceAll(RegExp(r'\s+'), ' ');
     campusLog('[Mark] action=mark path=${widget.path}${note.isEmpty ? '' : ' note=$note'}');
     await widget.logs.flush();

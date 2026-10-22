@@ -3,6 +3,7 @@ package com.superxd.superxd
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
+import io.flutter.plugin.common.StandardMethodCodec
 
 class MainActivity : FlutterActivity() {
     private var toolboxFiles: ToolboxFileExporter? = null
@@ -28,7 +29,9 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler(chaoxingDevice)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/location_settings")
             .setMethodCallHandler(LocationSettingsChannel(this))
-        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/diagnostics")
+        // 启动时人人都调一次：查系统记录（跨进程）、读 ANR 堆栈文件，放后台线程，不占主线程（主线程卡住会推迟出帧）。
+        val messenger = flutterEngine.dartExecutor.binaryMessenger
+        MethodChannel(messenger, "superxd/diagnostics", StandardMethodCodec.INSTANCE, messenger.makeBackgroundTaskQueue())
             .setMethodCallHandler(ProcessExitReasons(applicationContext))
     }
 
