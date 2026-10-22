@@ -1,10 +1,12 @@
 name: Release
 
 # 发版流水线（步骤与约定见 CONTRIBUTING.md「版本与发布」）：升版本 PR（改 pubspec.yaml 的 version 与 CHANGELOG 版本节）合并到 main 即触发；
-# 构建要维护者在 release 环境批准，签名密钥、高德 key、中转地址只在这一步可用。之后发 GitHub Release，再经受限账号传到中转（先包后清单、删旧包）并在公网核对。
+# 签名密钥、高德 key、中转地址只在构建这一步（release 环境）可用。之后发 GitHub Release，再经受限账号传到中转（先包后清单、删旧包）并在公网核对。
 # 手动运行默认试跑（dry_run）：构建、验签、生成清单并试连中转，不发 Release、不改中转。
 # [人工决策-2026-10-18 23:46:56] 发版自动化（用户选定）：全托管 CI（签名密钥等放受保护的 release 环境，中转经只能写发布目录的受限账号上传）；
-# 合并升版本 PR 即触发、仍要维护者网页批准一次；应用内更新说明取自 CHANGELOG 版本节的「### 更新说明」。
+# 合并升版本 PR 即触发；应用内更新说明取自 CHANGELOG 版本节的「### 更新说明」。
+# [人工决策-2026-10-22 18:59:16] 全自动发版（用户选定，替代原「仍要维护者网页批准一次」）：release 环境去掉必需审批人、保留只限受保护分支，
+# 合并升版本 PR 即自动构建与发布；发版的关口是合并本身（升版本 PR 只在维护者明确要求发版时开）。
 on:
   push:
     branches: [main]
@@ -29,7 +31,8 @@ env:
   RELEASE_ABIS: arm64-v8a armeabi-v7a x86_64
   # 最低可用构建号：低于它的会看到关不掉的更新弹窗。只在旧版已无法正常使用或维护者明确要求时，在升版本 PR 里调高；只升不降，平时不动。
   # [人工决策-2026-10-22 18:27:38] 1.0.0-alpha.7 应维护者要求强制更新，调到 8（alpha.7 的构建号），之后发版保持不回调（规则见 lib/domain/app_update.dart）。
-  RELEASE_MIN_SUPPORTED: 8
+  # [人工决策-2026-10-22 18:59:16] 1.0.0-alpha.7 换成构建号 9 重发（修快递页布局，用户选定替换并强制），调到 9，装着构建号 8 的也要更新。
+  RELEASE_MIN_SUPPORTED: 9
 
 jobs:
   plan:
@@ -79,7 +82,7 @@ jobs:
           cache: true
       - if: steps.version.outputs.build == 'true'
         run: flutter pub get --enforce-lockfile
-      # 批准之前先核对 CHANGELOG，缺版本节或更新说明就不请维护者批准。
+      # 构建之前先核对 CHANGELOG，缺版本节或更新说明就不构建。
       - if: steps.version.outputs.build == 'true'
         run: dart run tool/release_changelog.dart --version "${{ steps.version.outputs.version }}" --commit "$GITHUB_SHA" --certificate "$RELEASE_CERT_SHA256" --notes-out "$RUNNER_TEMP/notes.txt" --body-out "$RUNNER_TEMP/body.md"
 
