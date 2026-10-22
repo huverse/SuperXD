@@ -59,6 +59,23 @@ void main() {
     expect(offenders, isEmpty);
   });
 
+  // 对外请求都进开发者模式的请求记录（domain/campus_log.dart 的 campusRequestLog）：用 package:http 或 dart:io 真正发请求的文件必须调它，
+  // 否则新模块自写的 HTTP 封装在开发者模式里看不到请求路径、状态与耗时，也不会有任何提示。只拿 http 的异常或参数类型的文件不算；原生下载与 WebView 不经 Dart，不在此列。
+  test('lib发请求的地方都接上开发者模式的请求记录', () {
+    final sends = RegExp(r'\.send\(|\bhttp\.Client\(\)|(?<![\w.])http\.(get|post|put|patch|delete|head|read|readBytes)\(');
+    final ioClient = RegExp(r'\bHttpClient\(');
+    final senders = <String>[], offenders = <String>[];
+    for (final file in _dartFiles('lib')) {
+      final text = file.readAsStringSync();
+      if (!(text.contains('package:http/http.dart') && sends.hasMatch(text)) && !ioClient.hasMatch(text)) continue;
+      senders.add(file.path);
+      if (!text.contains('campusRequestLog(')) offenders.add(file.path);
+    }
+    // 规则本身没失效：现有的教务客户端要能被认出来。
+    expect(senders, contains(path.join('lib', 'edu', 'kingo_client.dart')));
+    expect(offenders, isEmpty, reason: '这些文件发了对外请求，却没调 campusRequestLog 记进开发者模式');
+  });
+
   // 索引只在文件级兜底：新增、删除、搬迁都要同步登记；职责与不变量的变化靠改动前检查清单维护。
   // [人工决策-2026-10-17 13:25:26] 按最近的 CLAUDE.md 登记（从文件所在目录往上找到 lib 为止，都没有就登记在根文件），
   // 子目录可以有自己的索引（如 lib/toolbox/chaoxing），只在改那里时加载；以前只认 lib 下第一层目录。
