@@ -8,17 +8,32 @@ class ExpressClient {
   ExpressClient({required this.session, ExpressHttp? http}) : _http = http ?? ExpressHttp();
   final PddSession session;
   final ExpressHttp _http;
+  // 用户在官方页面过了安全验证后的令牌（见 ExpressFailureCode.verifyRequired），之后的请求同官方带上；只在内存里。
+  String verifyToken = '';
 
   Uri _api(String path) => Uri.parse('${PddConstants.apiBase}$path');
 
+  Map<String, String> _headers(String referer) {
+    final headers = session.headers(referer: referer);
+    if (verifyToken.isNotEmpty) headers['VerifyAuthToken'] = verifyToken;
+    return headers;
+  }
+
   // 解析通用响应壳：success 为真、error_code 为 0 / 1000000，或根本没带 error_code（如绑定预检查成功）都算成功；
+  // error_code 为 null 也当没带：物流接口成功时不带 success、error_code 是 null（10-22 真机），以前误判成失败、只提示「拼多多返回失败」。
   // 40001 当未登录；异地登录等会话失效不一定回 40001，服务端文案点出登录失效时也归未登录；其余按服务端错误。
   Map<String, Object?> _unwrap(ExpressResponse response) {
     final data = expressJson(response.body);
     final code = '${data['error_code']}';
     if (code == '40001') throw const ExpressFailure(ExpressFailureCode.notLoggedIn, '登录已失效，请重新登录');
+    // 54001：拼多多风控要用户本人先过一次官方安全验证（10-22 真机：短时间里反复查物流后，带不带 anti-content 都回它并带 verify_auth_token）。
+    // 官方 mdkd 页面遇到它就跳官方验证页；令牌不进日志。
+    if (code == '54001') {
+      campusLog('[Express] action=verify_required');
+      throw ExpressFailure(ExpressFailureCode.verifyRequired, '拼多多要求先完成安全验证', verifyToken: '${data['verify_auth_token'] ?? data['verifyAuthToken'] ?? ''}');
+    }
     final codeOk = code == '0' || code == '1000000';
-    final hasErrorCode = data.containsKey('error_code') && !codeOk;
+    final hasErrorCode = data['error_code'] != null && !codeOk;
     if (data['success'] != false && (data['success'] == true || !hasErrorCode)) return data;
     // 文案多数接口叫 error_msg，物流接口叫 error_message。
     final message = '${data['error_msg'] ?? data['error_message'] ?? ''}';
@@ -40,7 +55,7 @@ class ExpressClient {
 
   // antiContent 非空时加 anti-content 请求头（绑定类接口要过风控，见 express_anti_content.dart）。
   Future<Map<String, Object?>> _postJson(String path, {required String referer, required Map<String, Object?> body, String? antiContent}) async {
-    final headers = session.headers(referer: referer);
+    final headers = _headers(referer);
     if (antiContent != null) headers[PddConstants.antiContentHeader] = antiContent;
     final response = await _http.postJson(_api(path), headers: headers, body: body);
     return _unwrap(response);
@@ -52,6 +67,13 @@ class ExpressClient {
     final list = data['new_binding_list'];
     if (list is! List) return const [];
     return list.whereType<Map>().map((entry) => PddBoundMobile.fromJson(entry.cast<String, Object?>())).toList();
+  }
+
+  // 本账号的拼多多昵称（只读，同官方 mdkd「我的」一栏的同一接口与 scene），只给账号卡认出是哪个账号。
+  Future<String> queryNickname() async {
+    final data = await _postJson('/api/express_trackbox/base/nickname/query', referer: PddConstants.mdkdReferer, body: const {'scene': 'dsd.usercenter'});
+    final result = data['result'];
+    return result is Map ? '${result['nickname'] ?? ''}' : '';
   }
 
   // 查询驿站/快递柜待取件。普通入口 entrySource=8；扫驿站二维码进入时传 stationCode 且 entrySource=4，动态码另带 dynamic_qrcode。
@@ -83,7 +105,7 @@ class ExpressClient {
       'entry_source': '9',
       if (query.sourceType.isNotEmpty) 'source_type': query.sourceType,
     });
-    final data = _unwrap(await _http.getJson(uri, headers: session.headers(referer: PddConstants.mdkdReferer)));
+    final data = _unwrap(await _http.getJson(uri, headers: _headers(PddConstants.mdkdReferer)));
     final shipping = data['shipping'];
     return ShippingTrack.fromJson(shipping is Map ? shipping.cast<String, Object?>() : const {});
   }

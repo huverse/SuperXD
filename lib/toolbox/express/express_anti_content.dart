@@ -17,8 +17,10 @@ abstract interface class PddAntiContent {
 }
 
 // 隐藏 WebView 实现：加载官方 mdkd 页，注入官方 chunk 把反爬 SDK（模块 89320→28828/25039）的生成器捕获到 window.__sxdGen，再调它取 anti_content。
-// 真机实测：这个离屏 WebView 被弹层/对话框盖住后，Next.js 的 webpack 运行时会失效、window 全局丢失、.push 退化成普通数组追加不再执行模块；
-// 恢复只能靠重新加载页面。故自适应：生成器不在（页面被重置）就重载官方页重建，一次没取到再重载重试一次。
+// 10-22 真机（OPPO）查清生成器丢失的主因：这个隐藏页没有登录态，加载完几秒后会自己跳去 login.html、再试图拉起拼多多 App，
+// 一跳走 window 全局（含 __sxdGen）就没了——每次生成都要先等满 8 秒、再重载重试，约 10 秒，偶尔两次都失败。
+// （10-20 记的「被弹层盖住后 webpack 失效」多半也是它。）所以只许主框架停在官方 mdkd 页，跳走的导航一律拦下；
+// 仍保留自适应兜底：生成器不在就重载官方页重建，一次没取到再重载重试一次。
 class WebViewAntiContent implements PddAntiContent {
   WebViewAntiContent() {
     _controller = WebViewController()
@@ -26,6 +28,7 @@ class WebViewAntiContent implements PddAntiContent {
       ..setUserAgent(PddConstants.userAgent)
       ..setNavigationDelegate(
         NavigationDelegate(
+          onNavigationRequest: antiPageNavigation,
           onPageFinished: (_) {
             final loaded = _loaded;
             if (loaded != null && !loaded.isCompleted) loaded.complete();
@@ -119,4 +122,13 @@ class WebViewAntiContent implements PddAntiContent {
     }
     return text;
   }
+}
+
+// 隐藏页的导航规则（见 WebViewAntiContent 类注释）：主框架只许停在官方 mdkd 页，跳登录页、拉起 App 的外部 scheme 一律拦下；子框架只放行网页地址。
+NavigationDecision antiPageNavigation(NavigationRequest request) {
+  final page = Uri.parse(PddConstants.antiContentPage);
+  final uri = Uri.tryParse(request.url);
+  final web = uri != null && (uri.scheme == 'https' || uri.scheme == 'http');
+  final stays = request.isMainFrame ? web && uri.host == page.host && uri.path == page.path : web;
+  return stays ? NavigationDecision.navigate : NavigationDecision.prevent;
 }

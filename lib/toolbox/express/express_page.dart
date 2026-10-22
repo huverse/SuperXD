@@ -103,7 +103,8 @@ class _ExpressPageState extends State<ExpressPage> {
   // 不再先放整页加载动画撑满、读完缩回（真机上的突闪）；没读到用提示条说明，登录失效时控制器已回到登录页。
   Future<void> _manageMobiles() async {
     final controller = _controller!;
-    final loaded = await controller.loadMobiles();
+    var loaded = await controller.loadMobiles();
+    if (loaded == null && await _verifyIfAsked()) loaded = await controller.loadMobiles();
     if (!mounted) return;
     if (loaded == null) {
       if (controller.loggedIn && controller.error != null) showCampusToast(context, controller.error!);
@@ -115,7 +116,8 @@ class _ExpressPageState extends State<ExpressPage> {
   // 包裹的实时物流同样先读后开：那一行的「物流」按钮原地转圈，读好再弹物流详情。
   Future<void> _showTrack(ExpressTrackQuery query) async {
     final controller = _controller!;
-    final track = await controller.loadTrack(query);
+    var track = await controller.loadTrack(query);
+    if (track == null && await _verifyIfAsked()) track = await controller.loadTrack(query);
     if (!mounted) return;
     if (track == null) {
       if (controller.loggedIn && controller.error != null) showCampusToast(context, controller.error!);
@@ -203,10 +205,24 @@ class _ExpressPageState extends State<ExpressPage> {
     }
   }
 
+  // [人工决策-2026-10-22 23:46:24] 拼多多风控要求先做安全验证（54001）时，用户选「同官方：打开官方验证页」：
+  // 点的按钮碰到它就在应用内打开拼多多官方验证页，由用户本人完成，通过后带上验证令牌把这一步再做一次；没通过或返回就照常用提示条说明。
+  // 查驿站后的自动补查尾号碰到它不弹（见 ExpressController._fillOwners）。应用不替用户做验证，符合「只在官方页面完成」的合规口径。
+  Future<bool> _verifyIfAsked() async {
+    final controller = _controller!;
+    final token = controller.takeVerifyToken();
+    if (token == null || !mounted) return false;
+    final passed = await Navigator.of(context).push<bool>(CampusPageRoute(builder: (_) => _service.verifyPage(token))) ?? false;
+    if (!passed || !mounted || !controller.loggedIn) return false;
+    controller.acceptVerify(token);
+    return true;
+  }
+
   // 查询失败用提示条说明（同学习通、成绩页），不在卡片里留一行不会消失的红字；登录失效时控制器已回到登录态，原因写在登录页上。
   // 成功了把这次的结果卡滚进可视区（见 _reveal）。
   Future<void> _act(Future<void> Function() action, {required GlobalKey reveal}) async {
     await action();
+    if (await _verifyIfAsked()) await action();
     final controller = _controller!;
     if (!mounted || !controller.loggedIn) return;
     if (controller.error != null) {
@@ -355,9 +371,12 @@ class _ExpressPageState extends State<ExpressPage> {
   // [人工决策-2026-10-20 14:38:25] 首页同学习通：账号卡（人形头像、拼多多账号、⋯ 里退出登录），四个操作在卡下方单独一组，
   // 点哪个哪个原地转圈（不再出 Material 进度条、全组变灰）；结果卡标题与全应用同字号（用户选定的百宝箱统一性整改）。
   // [人工决策-2026-10-20 15:36:10] 「绑定手机号」改为打开取件手机号管理弹层（增删绑定），不再在卡下方画列表结果卡；其余三项仍是原地查询。
-  // [人工决策-2026-10-22 20:51:17] 用户反馈只写「拼多多账号」认不出是哪个账号：账号卡标题改写本账号手机号（拼多多只给打码的号），
-  // 下面一行写「拼多多账号」；读不到手机号时照旧，标题「拼多多账号」、下面写账号号。手机号登录时读一次、随会话存进安全存储（用户选定，
-  // 未选「每次打开读一次、不存」），之前登录的会话打开快递页时补读一次（见 ExpressController.initialize）。
+  // [人工决策-2026-10-22 20:51:17] 用户反馈只写「拼多多账号」认不出是哪个账号，要求显示手机号；用户选「登录时读一次、存进安全存储」（未选「每次打开读、不存」）。
+  // [人工决策-2026-10-22 23:15:35] 真机查实：已绑过取件号的账号，绑定预检查不给本账号手机号，只读接口也都不给登录手机号（只有昵称、头像）。
+  // 用户改选账号卡标题写拼多多昵称（同拼多多 App「我的」页）、下面写常用取件号（还绑了别的号补「等」），读不到时照旧写「拼多多账号」与账号号；
+  // 仍是登录时读一次、随会话存进安全存储，之前登录的会话打开快递页时补读一次，绑定或解绑后跟着重读的列表更新（见 ExpressController._fillAccount）。
+  // 同日用户选定驿站待取件「按手机号分组」：每个驿站下按「尾号 5678 · 2 件」分组，组内只写取件码与运单号，快递公司从首屏去掉（物流详情里仍有）；
+  // 尾号来自物流接口（驿站查询不给，见 ExpressController._fillOwners），查不到的归「尾号未知」。
   Widget _buildMain(ExpressController controller) {
     final palette = CampusPalette.of(context);
     final textTheme = Theme.of(context).textTheme;
@@ -371,7 +390,15 @@ class _ExpressPageState extends State<ExpressPage> {
     final identityCode = controller.identityCode;
     final locked = controller.busy || controller.refreshing;
     final session = controller.session!;
-    final mobile = session.mobile ?? '';
+    final nickname = session.nickname ?? '';
+    final pickup = session.pickupMobile ?? '';
+    final accountLine = pickup.isNotEmpty
+        ? '取件号 $pickup${session.pickupMore ? ' 等' : ''}'
+        : nickname.isNotEmpty
+        ? '拼多多账号'
+        : session.userId.isEmpty
+        ? '已登录'
+        : '账号 ${session.userId}';
     Widget action(ExpressAction kind, IconData icon, String label, String busyLabel, VoidCallback onPressed, {bool prominent = false}) {
       final content = CampusBusyContent(busy: controller.running == kind, label: label, busyLabel: busyLabel, icon: CampusIcon(icon));
       return prominent
@@ -388,6 +415,15 @@ class _ExpressPageState extends State<ExpressPage> {
         icon: const CampusIcon(CampusIcons.logistics),
       ),
     );
+    // 同一驿站里按寄到的手机尾号分组：组按尾号排（稳定，不随补查先后跳动），尾号未知的放最后，组内保持服务端顺序。
+    List<(String, List<StationPackage>)> byOwner(StationPackageGroup group) {
+      final owners = <String, List<StationPackage>>{};
+      for (final parcel in group.packages) {
+        owners.putIfAbsent(controller.ownerOf(parcel), () => []).add(parcel);
+      }
+      final tails = owners.keys.toList()..sort((a, b) => a.isEmpty == b.isEmpty ? a.compareTo(b) : (a.isEmpty ? 1 : -1));
+      return [for (final tail in tails) (tail, owners[tail]!)];
+    }
     Widget result(GlobalKey key, String title, List<Widget> children) => Padding(
       padding: const EdgeInsets.only(top: 16),
       child: CampusSurface(
@@ -413,9 +449,9 @@ class _ExpressPageState extends State<ExpressPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(mobile.isEmpty ? '拼多多账号' : mobile, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                      Text(nickname.isEmpty ? '拼多多账号' : nickname, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
                       const SizedBox(height: 4),
-                      Text(mobile.isNotEmpty ? '拼多多账号' : session.userId.isEmpty ? '已登录' : '账号 ${session.userId}', style: secondary),
+                      Text(accountLine, style: secondary),
                     ],
                   ),
                 ),
@@ -448,29 +484,46 @@ class _ExpressPageState extends State<ExpressPage> {
                 Text(packages.total == 0 ? '没有待取件' : '${packages.total} 件待取', style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface)),
                 if (packages.total == 0 && tails.isNotEmpty) Text('手机尾号 $tails', style: secondary),
               ],
-              // 按驿站分组列出，取件码最醒目（到驿站报的就是它），下面一行快递公司、运单号与收件人备注。
+              // 按驿站列出，驿站里再按寄到的手机尾号分组（一眼看出是谁的快递）；取件码最醒目（到驿站报的就是它），下面一行运单号与收件人备注，
+              // 快递公司不放首屏（物流详情里有）。站址与站名一样时不重复写。
               for (final group in packages.groups) ...[
                 const SizedBox(height: 12),
                 Text(group.stationName.isEmpty ? '驿站' : group.stationName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
-                if (group.address.isNotEmpty) Text(group.address, style: secondary),
-                for (final parcel in group.packages)
+                if (group.address.isNotEmpty && group.address != group.stationName) Text(group.address, style: secondary),
+                for (final (tail, parcels) in byOwner(group)) ...[
                   Padding(
-                    padding: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.only(top: 12),
                     child: Row(
                       children: [
+                        Padding(padding: const EdgeInsets.only(right: 6), child: CampusIcon(CampusIcons.phone, size: 18, color: palette.onSurfaceVariant)),
                         Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(parcel.pickCode.isEmpty ? '取件码未知' : '取件码 ${parcel.pickCode}', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: palette.onSurface)),
-                              DotSeparatedText([parcel.shippingName, parcel.trackingNumber, parcel.mobileAlias].where((part) => part.isNotEmpty).join(' · '), style: secondary),
-                            ],
+                          child: Text(
+                            tail.isEmpty ? '尾号未知 · ${parcels.length} 件' : '尾号 $tail · ${parcels.length} 件',
+                            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: palette.onSurface),
                           ),
                         ),
-                        trackButton(parcel.trackQuery),
                       ],
                     ),
                   ),
+                  for (final parcel in parcels)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 8),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(parcel.pickCode.isEmpty ? '取件码未知' : '取件码 ${parcel.pickCode}', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                                DotSeparatedText([parcel.trackingNumber, parcel.mobileAlias].where((part) => part.isNotEmpty).join(' · '), style: secondary),
+                              ],
+                            ),
+                          ),
+                          trackButton(parcel.trackQuery),
+                        ],
+                      ),
+                    ),
+                ],
                 if (group.deliveryCount > 0) Padding(padding: const EdgeInsets.only(top: 8), child: Text('${group.deliveryCount} 个快递已安排送货上门', style: secondary)),
               ],
               // 近一周已取出（官方放在取快递页底部一行，点开列取件地址、取件时间、快递公司与运单号）：直接列在卡片里，每件可查物流。

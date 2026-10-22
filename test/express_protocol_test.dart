@@ -3,7 +3,9 @@ import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
+import 'package:superxd/toolbox/express/express_anti_content.dart';
 import 'package:superxd/toolbox/express/express_client.dart';
 import 'package:superxd/toolbox/express/express_http.dart';
 import 'package:superxd/toolbox/express/express_models.dart';
@@ -43,14 +45,17 @@ void main() {
       expect(PddSession.fromJson(const {}).accessToken, '');
     });
 
-    // 本账号手机号：null 是还没读过（老会话要补读），空串是读过但拼多多没给（不再反复读），两者编解码后要分得开。
-    test('本账号手机号编解码往返，区分没读过与读过但没给', () {
-      expect(PddSession.decode(session.encode()).mobile, isNull);
-      expect(PddSession.decode(session.withMobile('').encode()).mobile, '');
-      final filled = PddSession.decode(session.withMobile('138****8888').encode());
-      expect(filled.mobile, '138****8888');
+    // 账号卡的昵称与取件号：null 是还没读过（要补读），空串是读过但拼多多没给（不再反复读），两者编解码后要分得开。
+    test('昵称与常用取件号编解码往返，区分没读过与读过但没给', () {
+      final plain = PddSession.decode(session.encode());
+      expect((plain.nickname, plain.pickupMobile, plain.pickupMore), (null, null, false));
+      expect(PddSession.decode(session.withAccount(nickname: '', pickupMobile: '').encode()).nickname, '');
+      final filled = PddSession.decode(session.withAccount(nickname: '合成昵称', pickupMobile: '138****8888', pickupMore: true).encode());
+      expect((filled.nickname, filled.pickupMobile, filled.pickupMore), ('合成昵称', '138****8888', true));
       expect((filled.accessToken, filled.cookie, filled.userId), (session.accessToken, session.cookie, session.userId));
-      expect(PddSession.fromJson(const {'mobile': 138}).mobile, isNull);
+      // 只改取件号时昵称保留。
+      expect(filled.withAccount(pickupMobile: '139****2222').nickname, '合成昵称');
+      expect(PddSession.fromJson(const {'nickname': 138, 'pickupMore': 'yes'}).nickname, isNull);
     });
   });
 
@@ -168,11 +173,33 @@ void main() {
       expect(weChatStationUrl(code), 'https://mdkd.pinduoduo.com/weixin/package?station_code=$code');
     });
 
-    test('绑定手机号解析打码号与别名', () {
-      final mobile = PddBoundMobile.fromJson(const {'mobile_id': 'm1', 'mock_mobile': '138****8888', 'alias': '自己'});
+    test('绑定手机号解析打码号、别名与常用标记', () {
+      final mobile = PddBoundMobile.fromJson(const {'mobile_id': 'm1', 'mock_mobile': '138****8888', 'alias': '自己', 'commonly_used': true});
       expect(mobile.mobileId, 'm1');
       expect(mobile.maskedMobile, '138****8888');
       expect(mobile.alias, '自己');
+      expect(mobile.commonlyUsed, isTrue);
+      expect(PddBoundMobile.fromJson(const {'mobile_id': 'm2'}).commonlyUsed, isFalse);
+    });
+
+    // 驿站查询不给包裹寄到哪个号，物流接口的 package_info 写「尾号5678 的快递」（10-22 真机形状，数字合成）。
+    test('物流详情从 package_info 取这件寄到的手机尾号，格式对不上当不知道', () {
+      expect(ShippingTrack.fromJson(const {'package_info': '尾号1234 的快递'}).ownerTail, '1234');
+      expect(ShippingTrack.fromJson(const {'package_info': '尾号 5678 的快递'}).ownerTail, '5678');
+      expect(ShippingTrack.fromJson(const {'package_info': '寄给本人'}).ownerTail, '');
+      expect(ShippingTrack.fromJson(const {}).ownerTail, '');
+    });
+
+    // 10-22 真机：隐藏页没登录态，加载几秒后自己跳 login.html、再试图拉起拼多多 App，跳走就丢了生成器（每次约 10 秒、偶尔失败）。
+    test('anti_content 隐藏页的主框架只许停在官方 mdkd 页，跳登录页与外部 scheme 一律拦下', () {
+      NavigationDecision decide(String url, {bool main = true}) => antiPageNavigation(NavigationRequest(url: url, isMainFrame: main));
+      expect(decide(PddConstants.antiContentPage), NavigationDecision.navigate);
+      expect(decide('https://m.pinduoduo.net/mdkd/package?other=1'), NavigationDecision.navigate);
+      expect(decide('https://m.pinduoduo.net/login.html?from=x'), NavigationDecision.prevent);
+      expect(decide('pinduoduo://com.xunmeng.pinduoduo/mdkd/package'), NavigationDecision.prevent);
+      expect(decide('https://mobile.yangkeduo.com/mdkd/package'), NavigationDecision.prevent);
+      expect(decide('https://static.pddpic.com/frame.html', main: false), NavigationDecision.navigate);
+      expect(decide('pinduoduo://x', main: false), NavigationDecision.prevent);
     });
 
     test('认不出的返回抛 invalidResponse', () {
@@ -210,6 +237,19 @@ void main() {
       expect(code.identificationCode, 'dd202610190000000000001');
       expect(identityReferer, PddConstants.idCodeReferer);
       expect((identityBody! as Map)['entry_source'], 'APP');
+      client.close();
+    });
+
+    test('昵称走官方 mdkd 同款接口与 scene，读 result.nickname', () async {
+      http.Request? sent;
+      final client = buildClient(
+        session: session,
+        onRequest: (request) => sent = request,
+        respond: (_) => {'success': true, 'error_code': '0', 'result': {'nickname': '合成昵称', 'avatar': ''}},
+      );
+      expect(await client.queryNickname(), '合成昵称');
+      expect(sent!.url.path, '/api/express_trackbox/base/nickname/query');
+      expect(jsonDecode(sent!.body), {'scene': 'dsd.usercenter'});
       client.close();
     });
 
@@ -259,6 +299,12 @@ void main() {
       expect(sent!.url.queryParameters, {'tracking_number': 'SX0000000002', 'entry_source': '9'});
       client.close();
 
+      // 10-22 真机：成功的物流返回不带 success、error_code 是 null，以前被当成失败只提示「拼多多返回失败」。
+      final realShape = buildClient(session: session, respond: (_) => {'error_code': null, 'verify_auth_token': null, 'is_support': true, 'shipping': {'shipping_name': '合成快递', 'package_info': '尾号1234 的快递'}});
+      final real = await realShape.queryShippingTrack((trackingNumber: 'SX0000000002', shippingId: '1', sourceType: ''));
+      expect((real.shippingName, real.ownerTail), ('合成快递', '1234'));
+      realShape.close();
+
       final failing = buildClient(session: session, respond: (_) => {'error_code': 1000101, 'error_message': '暂无该运单号物流轨迹信息'});
       await expectLater(
         failing.queryShippingTrack((trackingNumber: 'SX0000000009', shippingId: '', sourceType: '')),
@@ -276,6 +322,24 @@ void main() {
       client.close();
     });
 
+    // 10-22 真机：反复查物流后拼多多回 54001 并带 verify_auth_token，官方页面这时跳官方安全验证页；过了之后的请求带 VerifyAuthToken。
+    test('error_code=54001 映射为要先过安全验证并带回令牌；设了令牌之后的请求带 VerifyAuthToken 头', () async {
+      final headers = <String?>[];
+      final client = buildClient(
+        session: session,
+        onRequest: (request) => headers.add(request.headers['VerifyAuthToken']),
+        respond: (_) => {'error_code': 54001, 'verify_auth_token': 'VT-1', 'shipping': null},
+      );
+      await expectLater(
+        client.queryShippingTrack((trackingNumber: 'SX0000000001', shippingId: '1', sourceType: '')),
+        throwsA(isA<ExpressFailure>().having((failure) => (failure.code, failure.verifyToken), 'code', (ExpressFailureCode.verifyRequired, 'VT-1'))),
+      );
+      client.verifyToken = 'VT-1';
+      await expectLater(client.queryStationPackages(), throwsA(isA<ExpressFailure>()));
+      expect(headers, [null, 'VT-1']);
+      client.close();
+    });
+
     test('error_code=40001 映射为未登录', () async {
       final client = buildClient(session: session, respond: (_) => {'success': false, 'error_code': 40001, 'error_msg': ''});
       await expectLater(
@@ -286,7 +350,7 @@ void main() {
     });
 
     test('其他失败码按服务端错误，带 error_msg', () async {
-      final client = buildClient(session: session, respond: (_) => {'success': false, 'error_code': '54001', 'error_msg': '请稍后再试'});
+      final client = buildClient(session: session, respond: (_) => {'success': false, 'error_code': '50000', 'error_msg': '请稍后再试'});
       await expectLater(
         client.queryBoundMobiles(),
         throwsA(isA<ExpressFailure>().having((failure) => failure.message, 'message', '请稍后再试')),
@@ -338,7 +402,8 @@ void main() {
   });
 
   group('绑定取件手机号', () {
-    // 本账号手机号按官方绑定弹窗读 mobile_des；mobile_info_desc 是身份码接口的说明文字，不能当手机号。
+    // 本账号手机号按官方绑定弹窗读 mobile_des（没绑过号时才给，10-22 真机已绑号的账号只回 has_binding_express_mobile）；
+    // mobile_info_desc 是身份码接口的说明文字，不能当手机号。
     test('预检查成功即使不带 success/error_code 也解析，给出可快速绑定的已有号与本账号手机号', () async {
       final client = buildClient(session: session, respond: (_) => {'has_binding_express_mobile': false, 'mobile_id': 'mid1', 'mobile_id_scene': 1, 'mobile_des': '138****8888', 'mobile_info_desc': '已绑定常用手机号：138****8888'});
       final pre = await client.preCheckBindMobile();
