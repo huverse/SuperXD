@@ -430,7 +430,8 @@ void main() {
       child: const Text('打开'),
     )))));
     await tester.tap(find.text('打开'));
-    await advance(tester);
+    // 生成邀请是真实异步（签名密钥、写库），CI 慢磁盘上固定帧数等不到（10-22 #108 的 CI 偶发过一次），等到二维码出来为止。
+    await advanceUntil(tester, () => find.bySemanticsLabel(RegExp('我的好友二维码')).evaluate().isNotEmpty);
     expect(find.bySemanticsLabel(RegExp('我的好友二维码')), findsOneWidget);
     expect(find.byType(PrettyQrView), findsOneWidget);
     expect(find.textContaining('后失效'), findsOneWidget);
