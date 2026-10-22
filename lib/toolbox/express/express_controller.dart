@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import 'package:superxd/domain/campus_log.dart';
@@ -26,6 +28,7 @@ class ExpressController extends ChangeNotifier {
   String? _error;
   String _stationCode = '';
   String _trackingKey = '';
+  bool _disposed = false;
 
   PddSession? get session => _session;
   bool get loggedIn => _session != null;
@@ -43,8 +46,31 @@ class ExpressController extends ChangeNotifier {
 
   Future<void> initialize() async {
     final session = await _service.vault.load();
-    if (session != null) _bind(session);
+    if (session != null) {
+      _bind(session);
+      // 还没读过本账号手机号的会话（加这个字段之前登录的）补读一次，不挡页面打开。
+      if (session.mobile == null) unawaited(_fillMobile(session));
+    }
     notifyListeners();
+  }
+
+  // 补读本账号手机号：读到（拼多多没给就记空串，不再反复读）就随会话存回安全存储、账号卡换成手机号；失败只记日志，下次打开再读。
+  // 读的时候退出登录或换了账号就不存：退出与失效都先清内存里的会话再删存储，这里核对过才写，不会在删除之后又把会话写回去。
+  Future<void> _fillMobile(PddSession session) async {
+    final client = _service.clientFactory(session);
+    try {
+      final filled = session.withMobile((await client.preCheckBindMobile()).mobileDesc);
+      if (!identical(_session, session)) return;
+      _session = filled;
+      await _service.vault.save(filled);
+      if (!_disposed) notifyListeners();
+    } on ExpressFailure catch (failure, stack) {
+      campusLog('[Express] action=account_mobile errorType=${failure.code.name}\n$stack');
+    } catch (error, stack) {
+      campusLog('[Express] action=account_mobile errorType=${error.runtimeType}\n$stack');
+    } finally {
+      client.close();
+    }
   }
 
   // 登录成功：存会话并建客户端。
@@ -87,17 +113,17 @@ class ExpressController extends ChangeNotifier {
     _identityCode = await _client!.generateIdentityCode(stationCode: _stationCode);
   });
 
-  // 登录页拿到凭据后先用只读接口确认会话真的能用：明确未登录才返回 false（登录页不关、等用户走完验证），网络等其他失败不拦。
-  Future<bool> verifySession(PddSession session) async {
+  // 登录页拿到凭据后先用只读的绑定预检查确认会话真的能用：明确未登录才返回 null（登录页不关、等用户走完验证），网络等其他失败不拦。
+  // 预检查顺带给出本账号手机号，记进返回的会话；没读成的留作没读过，打开快递页时再补读。
+  Future<PddSession?> verifySession(PddSession session) async {
     final client = _service.clientFactory(session);
     try {
-      await client.preCheckBindMobile();
-      return true;
+      return session.withMobile((await client.preCheckBindMobile()).mobileDesc);
     } on ExpressFailure catch (failure) {
-      return !failure.isNotLoggedIn;
+      return failure.isNotLoggedIn ? null : session;
     } catch (error, stack) {
       campusLog('[Express] action=verify_session errorType=${error.runtimeType}\n$stack');
-      return true;
+      return session;
     } finally {
       client.close();
     }
@@ -190,9 +216,10 @@ class ExpressController extends ChangeNotifier {
     }
   }
 
+  // 先清内存里的会话再删存储（同 _onFailure）：补读手机号的后台请求据此知道会话没了，见 _fillMobile。
   Future<void> logout() async {
-    await _service.vault.deleteAll();
     _reset();
+    await _service.vault.deleteAll();
     notifyListeners();
   }
 
@@ -217,8 +244,8 @@ class ExpressController extends ChangeNotifier {
   // 拿到「未登录」就回到登录态：清掉过期会话（存储也删，免得下次打开又拿到它），其余只在页面展示原因。
   Future<void> _onFailure(ExpressFailure failure) async {
     if (failure.isNotLoggedIn) {
-      await _service.vault.deleteAll();
       _reset();
+      await _service.vault.deleteAll();
     }
     _error = failure.message;
   }
@@ -234,6 +261,7 @@ class ExpressController extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _client?.close();
     super.dispose();
   }

@@ -355,6 +355,9 @@ class _ExpressPageState extends State<ExpressPage> {
   // [人工决策-2026-10-20 14:38:25] 首页同学习通：账号卡（人形头像、拼多多账号、⋯ 里退出登录），四个操作在卡下方单独一组，
   // 点哪个哪个原地转圈（不再出 Material 进度条、全组变灰）；结果卡标题与全应用同字号（用户选定的百宝箱统一性整改）。
   // [人工决策-2026-10-20 15:36:10] 「绑定手机号」改为打开取件手机号管理弹层（增删绑定），不再在卡下方画列表结果卡；其余三项仍是原地查询。
+  // [人工决策-2026-10-22 20:51:17] 用户反馈只写「拼多多账号」认不出是哪个账号：账号卡标题改写本账号手机号（拼多多只给打码的号），
+  // 下面一行写「拼多多账号」；读不到手机号时照旧，标题「拼多多账号」、下面写账号号。手机号登录时读一次、随会话存进安全存储（用户选定，
+  // 未选「每次打开读一次、不存」），之前登录的会话打开快递页时补读一次（见 ExpressController.initialize）。
   Widget _buildMain(ExpressController controller) {
     final palette = CampusPalette.of(context);
     final textTheme = Theme.of(context).textTheme;
@@ -367,7 +370,8 @@ class _ExpressPageState extends State<ExpressPage> {
         : '${noPackage.mobileList.take(2).join('、')}${noPackage.largerThanTwo || noPackage.mobileList.length > 2 ? '等' : ''}';
     final identityCode = controller.identityCode;
     final locked = controller.busy || controller.refreshing;
-    final userId = controller.session!.userId;
+    final session = controller.session!;
+    final mobile = session.mobile ?? '';
     Widget action(ExpressAction kind, IconData icon, String label, String busyLabel, VoidCallback onPressed, {bool prominent = false}) {
       final content = CampusBusyContent(busy: controller.running == kind, label: label, busyLabel: busyLabel, icon: CampusIcon(icon));
       return prominent
@@ -409,9 +413,9 @@ class _ExpressPageState extends State<ExpressPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('拼多多账号', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                      Text(mobile.isEmpty ? '拼多多账号' : mobile, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
                       const SizedBox(height: 4),
-                      Text(userId.isEmpty ? '已登录' : '账号 $userId', style: secondary),
+                      Text(mobile.isNotEmpty ? '拼多多账号' : session.userId.isEmpty ? '已登录' : '账号 ${session.userId}', style: secondary),
                     ],
                   ),
                 ),
