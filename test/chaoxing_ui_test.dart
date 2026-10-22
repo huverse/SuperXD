@@ -695,6 +695,10 @@ void main() {
     useLocationActivity();
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
+    // 弹层关掉后还有一串收尾：重读账号（本机库）、出提示，最后只重拉这门课（请求一次活动列表）。
+    // 等这次请求发出再往下走：库的查询没走完测试就结束，sqflite 的加锁计时器还挂着（CI 偶发）。
+    int listCalls() => fake.calls.where((call) => call.contains('/active/student/activelist')).length;
+    final loaded = listCalls();
 
     await openSignSheet(tester);
     await tapSign(tester);
@@ -702,6 +706,7 @@ void main() {
     await tester.tap(find.text('这附近不再问'));
     await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    await waitUntil(tester, () => listCalls() == loaded + 1);
     expect(await tester.runAsync(() => store.locations()), isEmpty);
     expect(await tester.runAsync(() => store.quietPlaces()), hasLength(1));
 
@@ -711,6 +716,7 @@ void main() {
     await waitUntil(tester, () => fake.calls.where((call) => call.contains('stuSignajax')).length == 2);
     await waitUntil(tester, () => find.widgetWithText(FilledButton, '签到').evaluate().isEmpty);
     expect(find.text('收藏这次的位置？'), findsNothing);
+    await waitUntil(tester, () => listCalls() == loaded + 2);
     await tester.pumpWidget(const SizedBox());
   });
 
