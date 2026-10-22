@@ -32,6 +32,7 @@ void main() {
     await old.close();
     var settings = await DisplaySettings.open(databasePath: path);
     expect(settings.scale, 1.25);
+    // 存过设置的老安装保持当时的苔灰，默认改成雾蓝不覆盖它。
     expect(settings.paletteId, 'sage');
     expect(settings.fontId, 'maple');
     await Future.wait([
@@ -46,6 +47,32 @@ void main() {
     expect(settings.scale, 1.4);
     await settings.close();
     await directory.delete(recursive: true);
+  });
+  // 用户要求默认配色改为雾蓝：只改默认值，存过显示设置的保持原样；启动窗口底色跟着默认配色，冷启动不闪别的颜色。
+  test('默认配色是雾蓝：新装与没存过显示设置的都是雾蓝，存过的保持原值；启动窗口浅深底色同默认配色', () async {
+    expect(DisplaySettings.defaultPaletteId, 'mist');
+    expect(DisplaySettings.memory().paletteId, 'mist');
+    final directory = await Directory.systemTemp.createTemp('appearance-');
+    final path = '${directory.path}/display.db';
+    var settings = await DisplaySettings.open(databasePath: path);
+    expect(settings.paletteId, 'mist');
+    await settings.close();
+    // 打开过、但一项都没改的老安装（库里没有行）重开也是雾蓝。
+    settings = await DisplaySettings.open(databasePath: path);
+    expect(settings.paletteId, 'mist');
+    await settings.close();
+    final saved = await openDatabase(path);
+    await saved.insert('display_settings', {'id': 1, 'text_scale': 1.1, 'palette_id': 'sage'});
+    await saved.close();
+    settings = await DisplaySettings.open(databasePath: path);
+    expect(settings.paletteId, 'sage');
+    await settings.close();
+    await directory.delete(recursive: true);
+
+    String launch(String folder) => RegExp(r'name="launch_background">(#[0-9A-F]{6})<').firstMatch(File('android/app/src/main/res/$folder/colors.xml').readAsStringSync())!.group(1)!;
+    String hex(Color color) => '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
+    expect(launch('values'), hex(CampusPalette.byId(DisplaySettings.defaultPaletteId).backgroundTop));
+    expect(launch('values-night'), hex(CampusPalette.byId(DisplaySettings.defaultPaletteId, brightness: Brightness.dark).backgroundTop));
   });
   test('设备设置v3迁移默认玻璃自动，玻璃模式与其他设置并发保存后重开保留', () async {
     final directory = await Directory.systemTemp.createTemp('appearance-');

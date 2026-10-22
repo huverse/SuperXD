@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- 深色下同苔灰的深色底（campus_palette.dart 的 darkValues 苔灰 backgroundTop）。 -->
-    <color name="launch_background">#141B18</color>
+    <!-- 深色下同雾蓝的深色底（campus_palette.dart 的 darkValues 雾蓝 backgroundTop）。 -->
+    <color name="launch_background">#141A22</color>
 </resources>
