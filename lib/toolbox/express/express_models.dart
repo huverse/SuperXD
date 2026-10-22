@@ -43,15 +43,21 @@ abstract final class PddConstants {
 // 账号会话：登录态等同账号，只进系统安全存储（见 express_vault.dart），不打印、不进业务库。
 // PDDAccessToken 是 HttpOnly Cookie，JS 读不到，但原生 CookieManager 可读（见 express_login_webview.dart）。
 class PddSession {
-  const PddSession({this.accessToken = '', this.cookie = '', this.installToken = '', this.etag = '', this.userId = ''});
+  const PddSession({this.accessToken = '', this.cookie = '', this.installToken = '', this.etag = '', this.userId = '', this.mobile});
 
   final String accessToken;
   final String cookie;
   final String installToken;
   final String etag;
   final String userId;
+  // 本账号手机号（拼多多只给打码的号），只给账号卡显示是哪个账号；登录时经绑定预检查读。
+  // 空串是读过但拼多多没给，null 是还没读过（加这个字段之前登录的会话，打开快递页时补读一次）。
+  final String? mobile;
 
   bool get isValid => accessToken.isNotEmpty || cookie.isNotEmpty;
+
+  PddSession withMobile(String mobile) =>
+      PddSession(accessToken: accessToken, cookie: cookie, installToken: installToken, etag: etag, userId: userId, mobile: mobile);
 
   // 身份码与快递接口的请求头：AccessToken 或账号 Cookie 二者其一即可（实测不强制 anti-token）。
   Map<String, String> headers({required String referer}) {
@@ -72,6 +78,7 @@ class PddSession {
     'installToken': installToken,
     'etag': etag,
     'userId': userId,
+    'mobile': mobile,
   };
 
   // 存储里的会话按外部输入读：字段缺失当空串，坏了由上层当作未登录处理。
@@ -81,6 +88,7 @@ class PddSession {
     installToken: '${json['installToken'] ?? ''}',
     etag: '${json['etag'] ?? ''}',
     userId: '${json['userId'] ?? ''}',
+    mobile: json['mobile'] is String ? '${json['mobile']}' : null,
   );
 
   String encode() => jsonEncode(toJson());
@@ -154,7 +162,8 @@ class PddBoundMobile {
   );
 }
 
-// 绑定取件手机号的预检查结果（只读）：是否已绑定、可一键快速绑定的已有号 mobileId 与场景、脱敏展示。
+// 绑定取件手机号的预检查结果（只读）：是否已绑定、可一键快速绑定的已有号 mobileId 与场景、本账号手机号。
+// 本账号手机号按官方绑定弹窗读 mobile_des（打码，弹窗里写成本账号的号）；身份码接口的 mobile_info_desc 是另一段说明文字，预检查里没有。
 class PddBindPreCheck {
   const PddBindPreCheck({this.hasBound = false, this.mobileId = '', this.mobileIdScene, this.mobileDesc = ''});
   final bool hasBound;
@@ -169,7 +178,7 @@ class PddBindPreCheck {
     hasBound: json['has_binding_express_mobile'] == true,
     mobileId: '${json['mobile_id'] ?? ''}',
     mobileIdScene: (json['mobile_id_scene'] as num?)?.toInt(),
-    mobileDesc: '${json['mobile_info_desc'] ?? ''}',
+    mobileDesc: '${json['mobile_des'] ?? ''}',
   );
 }
 

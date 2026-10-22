@@ -32,7 +32,8 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 import 'toolbox_test_support.dart';
 
-const _session = PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', userId: '7209');
+// 默认已读过本账号手机号（不触发打开页面时的补读）；补读与读不到的情形在各自的用例里另建会话。
+const _session = PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', userId: '7209', mobile: '150****0000');
 
 http.Response _json(Map<String, Object?> body) => http.Response(jsonEncode(body), 200, headers: {'content-type': 'application/json;charset=UTF-8'});
 
@@ -63,7 +64,7 @@ http.Client _fakeClient({List<String>? calls, Map<String, Object?>? station, Lis
   } else if (path.endsWith('station/package')) {
     body = {'success': true, 'error_code': '0', 'result': station ?? {'count': 0, 'no_package_mobile_info': {'mobileList': ['8888']}}};
   } else if (path.endsWith('pre/check')) {
-    body = {'has_binding_express_mobile': true, 'mobile_id': 'm1', 'mobile_info_desc': '138****8888'};
+    body = {'has_binding_express_mobile': true, 'mobile_id': 'm1', 'mobile_des': '138****8888'};
   } else if (path.endsWith('code/auth/query')) {
     body = {'success': true, 'mobile_id': 'MID'};
   } else if (path.endsWith('code/auth/verify')) {
@@ -495,21 +496,84 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  test('登录校验：只读接口明确回未登录才拦，网络与服务器错误不拦', () async {
-    Future<bool> verify(http.Response Function() respond) async {
+  test('登录校验：只读接口明确回未登录才拦，网络与服务器错误不拦；顺带记下本账号手机号', () async {
+    const fresh = PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', userId: '7209');
+    Future<PddSession?> verify(http.Response Function() respond) async {
       final controller = ExpressController(ExpressService(
         vault: vault,
         clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: MockClient((request) async => respond()))),
       ));
-      final usable = await controller.verifySession(_session);
+      final verified = await controller.verifySession(fresh);
       controller.dispose();
-      return usable;
+      return verified;
     }
 
-    expect(await verify(() => _json({'has_binding_express_mobile': true})), isTrue);
-    expect(await verify(() => _json({'error_code': 40001})), isFalse);
-    expect(await verify(() => http.Response('', 424)), isFalse);
-    expect(await verify(() => http.Response('', 500)), isTrue);
+    final verified = await verify(() => _json({'has_binding_express_mobile': true, 'mobile_des': '138****8888'}));
+    expect((verified?.accessToken, verified?.mobile), ('tok', '138****8888'));
+    // 拼多多没给手机号：记成读过（空串），之后不再补读。
+    expect((await verify(() => _json({'has_binding_express_mobile': true})))?.mobile, '');
+    expect(await verify(() => _json({'error_code': 40001})), isNull);
+    expect(await verify(() => http.Response('', 424)), isNull);
+    // 服务器错误照常登录，手机号留作没读过，打开快递页时补读。
+    final unread = await verify(() => http.Response('', 500));
+    expect((unread?.accessToken, unread?.mobile), ('tok', null));
+  });
+
+  // 真机反馈：账号卡只写「拼多多账号」，认不出登的是哪个账号。
+  testWidgets('账号卡标题写本账号手机号、下面写「拼多多账号」；拼多多没给手机号时照旧写账号号', (tester) async {
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
+    await tester.pumpAndSettle();
+    final title = find.text('150****0000');
+    expect(title, findsOneWidget);
+    expect(tester.getRect(title).top, lessThan(tester.getRect(find.text('拼多多账号')).top));
+    expect(find.textContaining('7209'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+
+    await vault.save(_session.withMobile(''));
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
+    await tester.pumpAndSettle();
+    expect(find.text('拼多多账号'), findsOneWidget);
+    expect(find.text('账号 7209'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('之前登录的会话没读过手机号：打开快递页补读一次并存回会话，再打开不再读', (tester) async {
+    final calls = <String>[];
+    await vault.save(const PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', userId: '7209'));
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(calls: calls))));
+    await tester.pumpAndSettle();
+    expect(calls.where((path) => path.endsWith('pre/check')), hasLength(1));
+    expect(find.text('138****8888'), findsOneWidget);
+    final saved = await vault.load();
+    expect((saved?.accessToken, saved?.mobile), ('tok', '138****8888'));
+    await tester.pumpWidget(const SizedBox());
+
+    calls.clear();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(calls: calls))));
+    await tester.pumpAndSettle();
+    expect(calls, isEmpty);
+    expect(find.text('138****8888'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  test('补读手机号途中退出登录：读完不把会话写回存储', () async {
+    final gate = Completer<void>();
+    await vault.save(const PddSession(accessToken: 'tok', userId: '7209'));
+    final controller = ExpressController(ExpressService(
+      vault: vault,
+      clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: MockClient((request) async {
+        await gate.future;
+        return _json({'has_binding_express_mobile': true, 'mobile_des': '138****8888'});
+      }))),
+    ));
+    await controller.initialize();
+    await controller.logout();
+    gate.complete();
+    await pumpEventQueue();
+    expect(controller.loggedIn, isFalse);
+    expect(await vault.load(), isNull);
+    controller.dispose();
   });
 
   testWidgets('绑定其他手机号：输手机号发验证码、输验证码完成绑定，弹层回到列表并提示已绑定；绑定后紧接着关联驿站包裹', (tester) async {
@@ -592,7 +656,7 @@ void main() {
             if (path.endsWith('express/detail')) {
               body = {'success': true, 'error_code': '0', 'new_binding_list': const []};
             } else if (path.endsWith('pre/check')) {
-              body = {'has_binding_express_mobile': false, 'mobile_id': 'mNew', 'mobile_info_desc': '199****0000'};
+              body = {'has_binding_express_mobile': false, 'mobile_id': 'mNew', 'mobile_des': '199****0000'};
             } else {
               body = {'success': true};
             }
@@ -607,7 +671,7 @@ void main() {
     await tester.tap(find.text('绑定手机号'));
     await tester.pumpAndSettle();
     expect(find.text('还没有绑定取件手机号'), findsOneWidget);
-    expect(find.textContaining('绑定本账号手机号'), findsOneWidget);
+    expect(find.text('绑定本账号手机号（199****0000）'), findsOneWidget);
     await tester.tap(find.textContaining('绑定本账号手机号'));
     await tester.pumpAndSettle();
     expect(find.text('已绑定本账号手机号'), findsOneWidget);

@@ -42,6 +42,16 @@ void main() {
       expect(decoded.userId, '7209');
       expect(PddSession.fromJson(const {}).accessToken, '');
     });
+
+    // 本账号手机号：null 是还没读过（老会话要补读），空串是读过但拼多多没给（不再反复读），两者编解码后要分得开。
+    test('本账号手机号编解码往返，区分没读过与读过但没给', () {
+      expect(PddSession.decode(session.encode()).mobile, isNull);
+      expect(PddSession.decode(session.withMobile('').encode()).mobile, '');
+      final filled = PddSession.decode(session.withMobile('138****8888').encode());
+      expect(filled.mobile, '138****8888');
+      expect((filled.accessToken, filled.cookie, filled.userId), (session.accessToken, session.cookie, session.userId));
+      expect(PddSession.fromJson(const {'mobile': 138}).mobile, isNull);
+    });
   });
 
   group('响应解析', () {
@@ -328,8 +338,9 @@ void main() {
   });
 
   group('绑定取件手机号', () {
-    test('预检查成功即使不带 success/error_code 也解析，给出可快速绑定的已有号', () async {
-      final client = buildClient(session: session, respond: (_) => {'has_binding_express_mobile': false, 'mobile_id': 'mid1', 'mobile_id_scene': 1, 'mobile_info_desc': '138****8888'});
+    // 本账号手机号按官方绑定弹窗读 mobile_des；mobile_info_desc 是身份码接口的说明文字，不能当手机号。
+    test('预检查成功即使不带 success/error_code 也解析，给出可快速绑定的已有号与本账号手机号', () async {
+      final client = buildClient(session: session, respond: (_) => {'has_binding_express_mobile': false, 'mobile_id': 'mid1', 'mobile_id_scene': 1, 'mobile_des': '138****8888', 'mobile_info_desc': '已绑定常用手机号：138****8888'});
       final pre = await client.preCheckBindMobile();
       expect(pre.hasBound, isFalse);
       expect(pre.canFastBind, isTrue);
