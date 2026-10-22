@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 
 // [人工决策-2026-09-25 17:43:48] 配色是设备级完整色彩角色，默认苔灰；允许雾蓝、藕粉、暮紫、燕麦，不只替换按钮。
+// [人工决策-2026-10-22 21:44:49] 默认配色改为雾蓝，取代上一条的「默认苔灰」（只改默认值、不动已存的设置，见 local/display_settings.dart 的 defaultPaletteId）；
+// 五套配色与选择顺序不变，values.first 只是没有主题扩展时（测试）的兜底。
 class CampusPalette extends ThemeExtension<CampusPalette> {
   const CampusPalette({
     required this.id,

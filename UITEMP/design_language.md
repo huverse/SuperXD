@@ -2,12 +2,12 @@
 
 状态：2026-09-25用户确认暖珍珠灰、分层玻璃与柔和分级动效；2026-10-02用户确认液态玻璃全面升级（自动分档加设置项）；2026-10-03用户确认玻璃收窄到导航层与浮层、内容区用色调胶囊、顶栏透明，按压改iOS变暗；记住账号规则见第15节。
 2026-10-19 全应用走查（用户选定）：按代码对齐了圆角与服务页写法，消息页去掉空的通知分段，补了时间写法、列表增删过渡、成功触感与返回键的规则。
-更新时间：2026-10-19 18:51:59（北京时间）
+更新时间：2026-10-22 21:44:49（北京时间）
 
 # 1. 已拍板
 
 - 受众：大学生校园生活
-- 色调：默认苔灰，可选雾蓝、藕粉、暮紫、燕麦；配色在我的-界面选择，所有颜色取当前CampusPalette主题角色，禁止静态旧色残留。
+- 色调：默认雾蓝（2026-10-22 起，此前默认苔灰；存过显示设置的保持原值），可选苔灰、藕粉、暮紫、燕麦；配色在我的-界面选择，所有颜色取当前CampusPalette主题角色，禁止静态旧色残留。
 - 玻璃：只用于导航层与浮层（悬浮底栏、顶栏里的按钮、悬浮按钮、开关、弹窗、底部弹层、菜单、提示条），同苹果HIG与鸿蒙7沉浸光感的使用范围；内容区按钮与选择标签用色调胶囊，业务卡片与列表采用高不透明细磨砂与固定肌理，不逐项折射或扭曲文字。顶栏透明，内容滚到栏下时自身渐隐。
 - 密度：工具型
 - 亮暗：跟随系统、浅色、深色三档，新旧安装默认跟随系统；属于设备显示设置，切账号保留。五套配色分别提供亮暗完整角色，不反色。
@@ -43,14 +43,14 @@
 
 # 4. 颜色角色
 
-完整配色角色以lib/theme/campus_palette.dart为准。以下为默认苔灰，不用于覆盖用户其他选项：
-- backgroundTop #F1F0ED，backgroundBottom #E8E7E3
-- surface #F9F8F5，surfaceSelected #E1E5DC
-- onSurface #292B2A，onSurfaceVariant #565B57
-- primary #49584E，onPrimary #FFFFFF
-- glassTint #F0F0E9，glassFallback #ECECE6
-- outline #7C827A，outlineSubtle #D5D8CF
-- fogSage #AFBDA9，fogChampagne #D8C7AE
+完整配色角色以lib/theme/campus_palette.dart为准。以下为默认雾蓝（浅色），不用于覆盖用户其他选项：
+- backgroundTop #EFF3F5，backgroundBottom #DFE7EE
+- surface #F6F9FC，surfaceSelected #D7E4F0
+- onSurface #252D36，onSurfaceVariant #4F5D6A
+- primary #3F566C，accent #3377BE，onPrimary #FFFFFF
+- glassTint #EDF3F9，glassFallback #E5ECF3
+- outline #778794，outlineSubtle #CDD8E2
+- fogSage #9DCBE0，fogChampagne #E2BDD0，fogPearl #BEC1E4
 - danger #BA1A1A
 
 正文和必要辅助文字对比度至少4.5，图形状态不能只靠颜色。暗色使用独立的低亮度基底、分层提亮表面、柔白文字与低饱和行动色；玻璃、云雾和系统栏同步适配，取当前色彩角色而非静态反色。

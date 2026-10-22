@@ -5,7 +5,7 @@
 # 文件职责
 
 - 色彩与主题：
-  - campus_palette.dart：设备级色彩角色 CampusPalette，五套配色（苔灰默认、雾蓝、藕粉、暮紫、燕麦）各分浅深。accent 是控件激活色（开关轨道、滑杆、强调按钮底），与文字主色 primary 分开（primary 为可读压得深而灰，铺成大块会发闷）；dangerFill 是破坏性按钮的红底；accentText 是激活色作大号强调文字时用的颜色（深色提亮，对卡片底不低于 4.5:1）；attention 是只读状态的提醒色；tagColors 是六种标签色，顺序即存储序号，只能在末尾追加。
+  - campus_palette.dart：设备级色彩角色 CampusPalette，五套配色（苔灰、雾蓝、藕粉、暮紫、燕麦）各分浅深，默认雾蓝（默认值在 local/display_settings.dart 的 defaultPaletteId，Android 启动窗口底色 launch_background 跟着它，[人工决策] 在两处文件头与常量处）。accent 是控件激活色（开关轨道、滑杆、强调按钮底），与文字主色 primary 分开（primary 为可读压得深而灰，铺成大块会发闷）；dangerFill 是破坏性按钮的红底；accentText 是激活色作大号强调文字时用的颜色（深色提亮，对卡片底不低于 4.5:1）；attention 是只读状态的提醒色；tagColors 是六种标签色，顺序即存储序号，只能在末尾追加。
   - campus_theme.dart：campusTheme 按配色和字体生成 ThemeData：按钮 textStyle 显式带应用字体（不带会回落系统字体）；AppBar 返回图标与内容左边距 16 对齐、标题从 56 起（人工决策见文件内）；OutlinedButton 与 TextButton 是中性胶囊。另有 campusFieldGap（带浮动标签输入框的上方间距，随字号缩放）、campusSystemOverlay（系统栏透明）、CampusScrollBehavior（弹性回弹、不加拉伸效果，拉伸会让里面的玻璃退成底色）；按压反馈不用水波、按下整块变暗。CampusBackground 是空包装，只为兼容现有调用点。
   - campus_icons.dart：CampusIcons 统一映射 Lucide 图标，CampusIcon 渲染，CampusMorphIcon 做导航图标形变，configureCampusIcons 启动时配置。
 - 背景：

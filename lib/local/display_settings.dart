@@ -31,7 +31,7 @@ class DisplaySettings extends ChangeNotifier {
   final WallpaperStore? _wallpaper;
   final Lock _saveLock = Lock();
   double _scale = 1;
-  String _paletteId = 'sage';
+  String _paletteId = defaultPaletteId;
   String _fontId = 'maple';
   ThemeMode _themeMode = ThemeMode.system;
   String _glassMode = 'auto';
@@ -57,6 +57,10 @@ class DisplaySettings extends ChangeNotifier {
   static const scales = [1.0, 1.1, 1.25, 1.4];
   static const labels = ['标准', '较大', '大', '特大'];
   static const paletteIds = ['sage', 'mist', 'rose', 'dusk', 'oat'];
+  // [人工决策-2026-10-22 21:44:49] 默认配色由苔灰改为雾蓝（用户要求）：只改默认值、不动已存的设置——新装与从没存过显示设置的升级后是雾蓝，
+  // 存过任何一项显示设置的（整份快照连当时的苔灰一起存了）保持原样（用户选定，未选「只给新装」「苔灰的全换成雾蓝」）。
+  // 启动窗口底色（android res 的 launch_background）跟着默认配色走。
+  static const defaultPaletteId = 'mist';
   static const glassModes = ['auto', 'full', 'reduced'];
   // 壁纸模糊与淡化为 0–100 的连续量（v6 起；此前是三档下标，升级时按原效果换算）；默认轻度模糊、不额外淡化。
   static const wallpaperMax = 100;
@@ -74,7 +78,7 @@ class DisplaySettings extends ChangeNotifier {
       version: 6,
       onCreate: (db, _) async {
         await db.execute(
-          "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT 'sage', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system', glass_mode TEXT NOT NULL DEFAULT 'auto', wallpaper_file TEXT, wallpaper_tone TEXT, wallpaper_blur INTEGER NOT NULL DEFAULT $defaultWallpaperBlur, wallpaper_fade INTEGER NOT NULL DEFAULT 0)",
+          "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT '$defaultPaletteId', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system', glass_mode TEXT NOT NULL DEFAULT 'auto', wallpaper_file TEXT, wallpaper_tone TEXT, wallpaper_blur INTEGER NOT NULL DEFAULT $defaultWallpaperBlur, wallpaper_fade INTEGER NOT NULL DEFAULT 0)",
         );
       },
       onUpgrade: (db, oldVersion, _) async {
@@ -127,7 +131,7 @@ class DisplaySettings extends ChangeNotifier {
       db,
       wallpaper,
       scale is num && scales.contains(scale.toDouble()) ? scale.toDouble() : 1,
-      palette is String && paletteIds.contains(palette) ? palette : 'sage',
+      palette is String && paletteIds.contains(palette) ? palette : defaultPaletteId,
       font is String && fontFamilies.containsKey(font) ? font : 'maple',
       ThemeMode.values.where((value) => value.name == mode).firstOrNull ??
           ThemeMode.system,
