@@ -82,7 +82,7 @@ class _AboutPageState extends State<AboutPage> {
     final agreed = await showCampusConfirm(
       context,
       title: '开启开发者模式',
-      message: '开启后会把运行日志写进本机文件：页面切换、网络请求的接口与耗时、卡顿与内存等，最多保留 7 天、20MB，不上传，可在开发者选项里导出或清除。日志不记录密码、Cookie、链接与请求内容。',
+      message: '开启后会把运行日志写进本机文件：页面切换、网络请求的接口与耗时、卡顿与内存等，最多保留 7 天、20MB，不上传，可在开发者选项里导出或清除。日志不记录密码、Cookie、链接与请求内容。屏幕边上会多一个可拖动的开发者工具按钮。',
       action: '开启',
     );
     if (!agreed || !mounted) return;

@@ -18,6 +18,33 @@ import 'package:superxd/local/diagnostic_log.dart';
 // 开着时凡是有利于排查与优化的都记（现有日志、启动环境、页面切换、前后台、每个对外请求的接口路径状态耗时与字节数、卡顿与内存），
 // 仍不记密码、Cookie、链接、查询串、请求与响应内容和实名信息；平时也在本机留约 1MB 的错误记录；隐私政策连同快递段落一起改、提示一次。
 // 未选「只放私有目录」「上传到自建中转」「基础记录」「只在开启后记录」「只改文字不提示」。
+// [人工决策-2026-10-21 23:48:00] 第二轮（用户参照 DoKit、vConsole、Sentry、Crashlytics、微信 xlog 选定五项）：上次退出原因（下面的 recordExitReasons）、
+// 同类错误聚合与旧日志压缩（见 local/diagnostic_log.dart）、悬浮按钮打标记与复制诊断摘要（见 page/developer_page.dart）；登录页加「关于」入口。
+// 未选「按启动分段与启动耗时」「网络面板」「查看日志实时跟随」。
+
+// 上次进程为什么结束（系统记下的，Android 11 起）：每次启动读一次，只记上回读过之后的。异常结束（崩溃、原生崩溃、无响应、内存不足、被信号杀等）
+// 按错误记，平时也进错误记录，无响应附系统给的线程堆栈摘要；正常结束（自己退出、用户划掉、升级等）只在开发者模式下记一行。读到的最新时刻存进 marker。
+const _abnormalExits = {'SIGNALED', 'LOW_MEMORY', 'CRASH', 'CRASH_NATIVE', 'ANR', 'INITIALIZATION_FAILURE', 'EXCESSIVE_RESOURCE_USAGE', 'DEPENDENCY_DIED'};
+
+Future<void> recordExitReasons({required File marker, required Future<List<ProcessExit>> Function(int since) read}) async {
+  try {
+    final since = await marker.exists() ? int.tryParse((await marker.readAsString()).trim()) ?? 0 : 0;
+    final exits = await read(since);
+    if (exits.isEmpty) return;
+    // 系统按新到旧给，按发生先后记。
+    for (final exit in exits.reversed) {
+      final abnormal = _abnormalExits.contains(exit.reason);
+      if (!abnormal && !campusDiagnostics) continue;
+      final at = DateTime.fromMillisecondsSinceEpoch(exit.timestamp, isUtc: true).toIso8601String();
+      final description = exit.description.replaceAll(RegExp(r'\s+'), '_');
+      final line = '[App] action=last_exit ${abnormal ? 'errorType' : 'reason'}=${exit.reason} at=$at status=${exit.status} importance=${exit.importance} pssMb=${exit.pssKb ~/ 1024} rssMb=${exit.rssKb ~/ 1024}${description.isEmpty ? '' : ' description=$description'}';
+      campusLog(exit.trace.isEmpty ? line : '$line\n${exit.trace}');
+    }
+    await marker.writeAsString('${exits.map((exit) => exit.timestamp).reduce((left, right) => left > right ? left : right)}', flush: true);
+  } catch (error, stack) {
+    campusLog('[Diagnostics] action=exit_reasons errorType=${error.runtimeType}\n$stack');
+  }
+}
 
 // 运行环境：版本、构建号、渠道、系统、机型与处理器架构；读不到的项不写，不挡启动。
 Future<Map<String, String>> appEnvironment() async {
@@ -55,7 +82,7 @@ void watchDeveloperMode(DeveloperSettings developer, DiagnosticLog logs, {requir
   }));
   AppLifecycleListener(onStateChange: (state) {
     if (campusDiagnostics) campusLog('[App] action=lifecycle state=${state.name} rssMb=${_rssMb()}');
-    if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused || state == AppLifecycleState.detached) unawaited(logs.flush());
+    if (state == AppLifecycleState.hidden || state == AppLifecycleState.paused || state == AppLifecycleState.detached) unawaited(logs.flush(settle: true));
   });
 }
 

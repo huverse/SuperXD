@@ -52,6 +52,8 @@
   - 平时只记错误（消息带 errorType= 或堆栈），开发者模式记全部；先进内存缓冲，每 2 秒或切到后台时批量追加，写入排队不并发，写盘出错只报到控制台。
   - 上限（常量在文件头）：错误记录 errors.log 写满 diagnosticErrorLimit 改名成 errors.1.log，两份合计约 1MB；开发者模式日志按校园日分文件、单个超过 diagnosticFileLimit 另起分卷，保留 diagnosticKeepDays 天、总量不超过 diagnosticTotalLimit，打开与每次写入后从最旧的删起。
   - 落盘前把链接与手机号掩掉（日志可能被导出、贴进公开 Issue）；recent 只读最新的一段（diagnosticViewBytes、最多 diagnosticViewLimit 条）给查看页；clearDiagnostics 只删开发者模式日志，clear 全删。
+  - 同类错误聚合（[人工决策] 在类上）：签名 diagnosticErrorSignature 是掩码后首行再掩掉编号与数字，同一签名 diagnosticRepeatWindow 内只记第一条全文、其余计数，窗口到了补一条 action=repeat（count、seconds、last），同时记着的签名不超过 diagnosticRepeatKinds；flush(settle) 在导出、切到后台与按种类汇总前全部结算。errorKinds 按种类汇总错误、summary 拼诊断摘要。
+  - 早于今天的开发者模式日志在后台 isolate 里压成 .log.gz（超过保留天数的先删、不压），查看时解开读、导出原样放进 zip。
   - export 把全部日志加 about.txt（运行环境、导出时刻）在后台 isolate 里打成 zip，经组合根注入的 publish 存进 Download/SuperXD，临时包放缓存的 diagnostics_export、用完即删。
 - developer_settings.dart：DeveloperSettings 记开发者模式与性能浮层两个开关：应用支持目录下固定大小的 developer.json，写法同 legal_notice.json；关掉开发者模式时性能浮层一起关，读到坏文件当都关着。
 - legacy_import.dart：旧单库导入 importLegacyDatabase。

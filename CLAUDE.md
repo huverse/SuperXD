@@ -47,7 +47,7 @@
 - 账号代次：SuperXdApp 以 session.generation 作 key 重建账号应用，切换账号时路由和页面内存状态整体丢弃（[人工决策] 在 main.dart）。
 - router.dart 门禁：会话恢复完成前停在 /boot；未登录只允许 /login、/legal 下的法务页、/toolbox 与已注册工具路由（[人工决策] 在文件内）；已登录访问 /login 回到 /today；底栏壳有今天、服务、消息、我的四个分支，外包 LegacyImportGate；课表、成绩、切换账号、法务页和百宝箱推入根导航器。
 - app_session.dart：把 AccountAccess 的账号变化转成路由刷新并暂存一次性提示；expire 只让发起时的那个代次失效，旧页面不能误登出新账号。
-- app_diagnostics.dart：开发者模式的接线（[人工决策] 在文件头）：运行环境 appEnvironment、按设置切换 campusDiagnostics 与卡顿内存统计（每 10 秒汇总、有慢帧才记）、前后台与页面切换记录（watchRoutes，只记路径），切到后台时把日志写盘。开发者模式只多记日志、多给调试工具，不改任何业务行为。
+- app_diagnostics.dart：开发者模式的接线（[人工决策] 在文件头）：运行环境 appEnvironment、按设置切换 campusDiagnostics 与卡顿内存统计（每 10 秒汇总、有慢帧才记）、前后台与页面切换记录（watchRoutes，只记路径），切到后台时把日志写盘；recordExitReasons 每次启动记系统给的上次退出原因（异常的平时也进错误记录）。悬浮开发者工具由 main.dart 的账号应用外壳套上（page/developer_page.dart 的 DeveloperOverlay）。开发者模式只多记日志、多给调试工具，不改任何业务行为。
 - 页面从路由拿到 isAccountCurrent 与 onSessionExpired：异步结果回来后先确认仍属当前账号，再写界面。
 - 编排（CampusSync、CampusReminders、CampusWidgets、AppUpdates）见 lib/application/CLAUDE.md。
 

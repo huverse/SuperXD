@@ -9,7 +9,11 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/app_session.dart';
+import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/gateway/account_access.dart';
+import 'package:superxd/local/developer_settings.dart';
+import 'package:superxd/local/diagnostic_log.dart';
+import 'package:superxd/page/about_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -18,10 +22,14 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/account_dialogs.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, required this.gateway, required this.session, this.switching = false});
+  const LoginPage({super.key, required this.gateway, required this.session, this.switching = false, this.updates, this.developer, this.logs});
   final AccountAccess gateway;
   final AppSession session;
   final bool switching;
+  // 关于页要的应用更新、开发者模式与本机日志（设备级），没登录也能检查更新、开开发者模式。
+  final AppUpdates? updates;
+  final DeveloperSettings? developer;
+  final DiagnosticLog? logs;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -180,8 +188,16 @@ class _LoginPageState extends State<LoginPage> {
                     child: CampusBusyContent(busy: _busy, label: widget.switching ? '登录并切换' : '登录', busyLabel: widget.switching ? '正在登录并切换' : '正在登录', icon: const CampusIcon(CampusIcons.login)),
                   )),
                 ])),
-                if (!widget.switching) Padding(padding: const EdgeInsets.only(top: 16), child: OutlinedButton.icon(
-                  onPressed: _busy ? null : () => context.push('/toolbox'), icon: const CampusIcon(CampusIcons.toolbox), label: const Text('百宝箱'))),
+                // [人工决策-2026-10-21 23:48:00] 登录页加「关于」入口（用户要求未登录也能进开发者模式）：进的是同一个关于页，
+                // 连点版本号开启、开着时有开发者选项，只有一种开启方式；未登录时也能检查更新、看协议。切换账号页不显示，同百宝箱。
+                if (!widget.switching) Padding(padding: const EdgeInsets.only(top: 16), child: Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
+                  OutlinedButton.icon(onPressed: _busy ? null : () => context.push('/toolbox'), icon: const CampusIcon(CampusIcons.toolbox), label: const Text('百宝箱')),
+                  OutlinedButton.icon(
+                    onPressed: _busy ? null : () => Navigator.push(context, CampusPageRoute<void>(builder: (_) => AboutPage(updates: widget.updates, developer: widget.developer, logs: widget.logs))),
+                    icon: const CampusIcon(CampusIcons.info),
+                    label: const Text('关于'),
+                  ),
+                ])),
                 // [人工决策-2026-10-18 15:18:41] 勾选框读屏读整句「我已阅读并同意用户协议和隐私政策」（以前只念“复选框”），
                 // 点「我已阅读并同意」几个字也能勾选（同常见 App 的同意行）；两个链接仍单独可点（用户从走查清单选定）。
                 Padding(padding: const EdgeInsets.only(top: 24), child: AnimatedContainer(

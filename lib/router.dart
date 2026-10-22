@@ -61,7 +61,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       ),
       GoRoute(
         path: '/login',
-        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: LoginPage(gateway: session.gateway, session: session)),
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: LoginPage(gateway: session.gateway, session: session, updates: updates, developer: developer, logs: logs)),
       ),
       GoRoute(
         path: '/switch-account',

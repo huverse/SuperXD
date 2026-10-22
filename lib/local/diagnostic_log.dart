@@ -17,9 +17,15 @@ const diagnosticKeepDays = 7;
 // 查看日志只读最新的这么多字节、最多这么多条，不把整份日志读进内存。
 const diagnosticViewBytes = 512 * 1024;
 const diagnosticViewLimit = 1000;
+// 同类错误聚合：同一签名在窗口内只记第一条全文，其余只计数；同时记着的签名最多这么多种，超了先结掉最早的。
+const diagnosticRepeatWindow = Duration(minutes: 1);
+const diagnosticRepeatKinds = 200;
 
 // 一条日志：写入时刻（UTC）与正文（首行是 [模块] key=value，错误带堆栈）。
 typedef DiagnosticRecord = ({DateTime time, String text});
+
+// 一种错误：签名、一共出现几次（含聚合掉的）、最近一次的时刻与全文。
+typedef DiagnosticErrorKind = ({String signature, int count, DateTime last, String text});
 
 // 把打好的日志包交给系统保存（组合根注入 device 层的导出），成功返回真。
 typedef DiagnosticPublish = Future<bool> Function(File archive, String filename);
@@ -27,6 +33,8 @@ typedef DiagnosticPublish = Future<bool> Function(File archive, String filename)
 // 本机诊断日志：campusLog 的另一份输出，写进应用专属外部目录（Android/data/包名/files/logs，连电脑可 adb pull，其他应用读不到，卸载即删）。
 // 平时只记错误（带 errorType= 或堆栈的那些），开发者模式下记全部；写入先进内存缓冲，每 2 秒或切到后台时批量追加，不阻塞调用方。
 // 落盘前把链接与手机号掩掉：日志可能被导出、贴到公开的 Issue 里，各处 campusLog 本就不该写这些，这里再兜一层。
+// [人工决策-2026-10-21 23:48:00] 用户选定加三项（同 Sentry 的错误分组、微信 xlog 的旧日志压缩）：同类错误一分钟内只记一次并计数，
+// 免得周期性的错误（如断网时私信长轮询）刷满 1MB 错误记录、挤掉真正有用的；早于今天的开发者模式日志压成 .gz；错误可按种类汇总（查看页与诊断摘要）。
 class DiagnosticLog {
   DiagnosticLog._(this.directory, this._exports, this._publish, this._clock);
   final Directory directory;
@@ -35,7 +43,9 @@ class DiagnosticLog {
   final DateTime Function() _clock;
   final _errors = <String>[];
   final _all = <String>[];
+  final _repeats = <String, ({DateTime since, DateTime last, int count})>{};
   Timer? _timer;
+  Timer? _repeatTimer;
   Future<void> _writing = Future.value();
   void Function(String message)? _console;
 
@@ -64,16 +74,59 @@ class DiagnosticLog {
   void record(String message) {
     final error = message.contains('errorType=') || message.contains('\n#0');
     if (!error && !developer) return;
-    final line = '${_clock().toUtc().toIso8601String()} ${_scrub(message)}\n';
+    final now = _clock();
+    _closeRepeats(now);
+    if (error) {
+      // 签名按落盘后的样子算（先掩码），和查看时从文件里算的一致。
+      final signature = diagnosticErrorSignature(_scrub(message));
+      final open = _repeats[signature];
+      if (open != null) {
+        _repeats[signature] = (since: open.since, last: now, count: open.count + 1);
+        _repeatTimer ??= Timer(diagnosticRepeatWindow, () {
+          _repeatTimer = null;
+          unawaited(flush());
+        });
+        return;
+      }
+      if (_repeats.length >= diagnosticRepeatKinds) _closeRepeat(_repeats.keys.first, now);
+      _repeats[signature] = (since: now, last: now, count: 0);
+    }
+    final line = '${now.toUtc().toIso8601String()} ${_scrub(message)}\n';
     if (error) _errors.add(line);
     if (developer) _all.add(line);
     _timer ??= Timer(const Duration(seconds: 2), () => unawaited(flush()));
   }
 
-  // 把缓冲写进文件；写入一个接一个排队，不会两次同时追加同一个文件。
-  Future<void> flush() {
+  // 窗口到了的签名补一条「又出现 N 次」（all 为真时全部结掉，导出与切到后台时用）；只出现过一次的不补。
+  void _closeRepeats(DateTime now, {bool all = false}) {
+    for (final MapEntry(:key, :value) in _repeats.entries.toList()) {
+      if (all || now.difference(value.since) >= diagnosticRepeatWindow) _closeRepeat(key, now);
+    }
+  }
+
+  void _closeRepeat(String signature, DateTime now) {
+    final open = _repeats.remove(signature)!;
+    if (open.count == 0) return;
+    // 行首是结算的时刻（文件里按时间先后），最后一次真正出现的时刻另记在 last。
+    final line = '${now.toUtc().toIso8601String()} $_repeatHead count=${open.count} seconds=${open.last.difference(open.since).inSeconds} last=${open.last.toUtc().toIso8601String()} | $signature\n';
+    _errors.add(line);
+    if (developer) _all.add(line);
+  }
+
+  // 把缓冲写进文件；写入一个接一个排队，不会两次同时追加同一个文件。settle 为真时先把聚合中的计数全部写出（导出、切到后台）。
+  Future<void> flush({bool settle = false}) {
     _timer?.cancel();
     _timer = null;
+    _closeRepeats(_clock(), all: settle);
+    if (_repeats.values.any((open) => open.count > 0)) {
+      _repeatTimer ??= Timer(diagnosticRepeatWindow, () {
+        _repeatTimer = null;
+        unawaited(flush());
+      });
+    } else {
+      _repeatTimer?.cancel();
+      _repeatTimer = null;
+    }
     final errors = _errors.join(), all = _all.join();
     _errors.clear();
     _all.clear();
@@ -112,9 +165,9 @@ class DiagnosticLog {
     await file().writeAsBytes(bytes, mode: FileMode.append, flush: true);
   }
 
-  // 开发者模式日志按日期与分卷从旧到新；超过保留天数的删掉，总量超了从最旧的删起。
+  // 开发者模式日志按日期与分卷从旧到新（早于今天的是压缩过的 .log.gz）；超过保留天数的删掉，总量超了从最旧的删起。
   Future<List<(File, String, int)>> _diagnosticFiles() async {
-    final pattern = RegExp(r'^diagnostics-(\d{4}-\d{2}-\d{2})(?:\.(\d+))?\.log$');
+    final pattern = RegExp(r'^diagnostics-(\d{4}-\d{2}-\d{2})(?:\.(\d+))?\.log(?:\.gz)?$');
     final files = <(File, String, int)>[];
     if (!await directory.exists()) return files;
     await for (final entity in directory.list()) {
@@ -126,13 +179,23 @@ class DiagnosticLog {
   }
 
   Future<void> _prune() async {
-    final files = await _diagnosticFiles();
     final today = campusInstant(_clock());
+    final day = formatCampusDate(today);
     final oldest = formatCampusDate(DateTime.utc(today.year, today.month, today.day - (diagnosticKeepDays - 1)));
+    // 超过保留天数的直接删；其余早于今天的不会再追加，在后台 isolate 里压成 .gz（日志文本约能压到十分之一），同样 20MB 能留更多。
+    for (final (file, fileDay, _) in await _diagnosticFiles()) {
+      if (fileDay.compareTo(oldest) < 0) {
+        await file.delete();
+      } else if (fileDay.compareTo(day) < 0 && !file.path.endsWith('.gz')) {
+        final source = file.path;
+        await Isolate.run(() => _gzip(source));
+      }
+    }
+    final files = await _diagnosticFiles();
     final sizes = [for (final (file, _, _) in files) await file.length()];
     var total = sizes.fold(0, (sum, size) => sum + size);
-    for (final (index, (file, day, _)) in files.indexed) {
-      if (day.compareTo(oldest) >= 0 && total <= diagnosticTotalLimit) break;
+    for (final (index, (file, _, _)) in files.indexed) {
+      if (total <= diagnosticTotalLimit) break;
       total -= sizes[index];
       await file.delete();
     }
@@ -160,6 +223,16 @@ class DiagnosticLog {
     for (final file in files.reversed) {
       if (budget <= 0) break;
       if (!await file.exists()) continue;
+      final List<int> bytes;
+      if (file.path.endsWith('.gz')) {
+        // 压缩过的整份解开（单份解开后不超过 diagnosticFileLimit），再取末尾一段。
+        final whole = GZipDecoder().decodeBytes(await file.readAsBytes());
+        bytes = whole.length > budget ? whole.sublist(whole.length - budget) : whole;
+        budget -= bytes.length;
+        final text = utf8.decode(bytes, allowMalformed: true);
+        chunks.insert(0, bytes.length == whole.length ? text : text.substring(text.indexOf('\n') + 1));
+        continue;
+      }
       final handle = await file.open();
       try {
         final length = await handle.length();
@@ -187,6 +260,43 @@ class DiagnosticLog {
     return records.reversed.take(diagnosticViewLimit).toList();
   }
 
+  // 错误按种类汇总，最近出过的在前：聚合补的「又出现 N 次」计进同一种，全文取最近那条。先把聚合中的计数结算写出，次数才是准的。
+  Future<List<DiagnosticErrorKind>> errorKinds() async {
+    await flush(settle: true);
+    final kinds = <String, DiagnosticErrorKind>{};
+    for (final record in (await recent(errorsOnly: true)).reversed) {
+      final repeat = record.text.startsWith(_repeatHead);
+      final signature = repeat ? record.text.substring(record.text.indexOf(' | ') + 3) : diagnosticErrorSignature(record.text);
+      final count = repeat ? int.tryParse(RegExp(r'count=(\d+)').firstMatch(record.text)?[1] ?? '') ?? 0 : 1;
+      final known = kinds[signature];
+      final last = repeat ? DateTime.tryParse(RegExp(r' last=(\S+)').firstMatch(record.text)?[1] ?? '') ?? record.time : record.time;
+      kinds[signature] = (
+        signature: signature,
+        count: (known?.count ?? 0) + count,
+        last: known != null && known.last.isAfter(last) ? known.last : last,
+        text: repeat ? known?.text ?? signature : record.text,
+      );
+    }
+    return kinds.values.toList()..sort((left, right) => right.last.compareTo(left.last));
+  }
+
+  // 诊断摘要：运行环境加最近的十种错误（已掩码），一段纯文字，粘贴进聊天或 Issue 用，不用传整个日志包。
+  Future<String> summary() async {
+    final kinds = await errorKinds();
+    String moment(DateTime time) {
+      final local = campusInstant(time);
+      String two(int value) => value.toString().padLeft(2, '0');
+      return '${local.month}月${local.day}日 ${two(local.hour)}:${two(local.minute)}';
+    }
+    return [
+      'SuperXD 诊断摘要',
+      for (final MapEntry(:key, :value) in environment.entries) '$key: $value',
+      '',
+      kinds.isEmpty ? '最近没有错误' : '最近的错误（共 ${kinds.length} 种，按最近出现排）：',
+      for (final (index, kind) in kinds.take(10).indexed) '${index + 1}. ${kind.signature} × ${kind.count}（最近 ${moment(kind.last)}）',
+    ].join('\n');
+  }
+
   // 清除开发者模式日志（关闭开发者模式时），错误记录保留。
   Future<void> clearDiagnostics() async {
     await flush();
@@ -207,7 +317,7 @@ class DiagnosticLog {
   // 导出：全部日志加 about.txt（运行环境与导出时刻）打成 zip（在后台 isolate 里打，不卡界面），交给系统存进公共目录；临时包用完即删。
   // 成功返回文件名，没有日志或没存成返回空。
   Future<String?> export() async {
-    await flush();
+    await flush(settle: true);
     if (!await directory.exists()) return null;
     final sources = [await for (final entity in directory.list()) if (entity is File) entity.path]..sort();
     if (sources.isEmpty) return null;
@@ -218,6 +328,7 @@ class DiagnosticLog {
       for (final MapEntry(:key, :value) in environment.entries) '$key: $value',
       'exportedAt: ${_clock().toUtc().toIso8601String()}',
       'developer: $developer',
+      'note: 早于导出当天的开发者模式日志是 .log.gz，用 gunzip 解开',
     ].join('\n');
     await _exports.create(recursive: true);
     final archive = File(path.join(_exports.path, filename));
@@ -240,6 +351,22 @@ Future<void> _zip(String target, List<String> sources, String about) async {
   await encoder.close();
 }
 
+Future<void> _gzip(String source) async {
+  final file = File(source);
+  await File('$source.gz').writeAsBytes(GZipEncoder().encodeBytes(await file.readAsBytes()), flush: true);
+  await file.delete();
+}
+
+const _repeatHead = '[Diagnostics] action=repeat errorType=Repeated';
+
+// 错误的签名：首行（[模块] action=… errorType=…）掩掉像编号的段与数字，同一处错误换了编号、时长也算同一种，签名种类因此有界。
+String diagnosticErrorSignature(String message) {
+  final head = message.split('\n').first.replaceAll(_identifier, '#').replaceAll(_digits, '#');
+  return head.length > 200 ? head.substring(0, 200) : head;
+}
+
+final _identifier = RegExp(r'(?<![A-Za-z0-9_-])(?=[A-Za-z_-]*\d)[A-Za-z0-9_-]{8,}');
+final _digits = RegExp(r'\d+');
 final _link = RegExp(r'https?://\S+');
 final _phone = RegExp(r'(?<!\d)1[3-9]\d{9}(?!\d)');
 

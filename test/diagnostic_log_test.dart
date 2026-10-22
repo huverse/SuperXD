@@ -1,11 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:archive/archive_io.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 
+import 'package:superxd/app_diagnostics.dart';
+import 'package:superxd/device/diagnostic_device.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
@@ -55,27 +58,31 @@ void main() {
   test('错误记录写满 512KB 改名成 errors.1.log 接着写，两份合计约 1MB，最旧的被覆盖', () async {
     final logs = await open();
     final padding = 'x' * 1000;
+    // 每条都是不同种类的错误（签名掩掉数字，所以用字母区分），不被聚合。
+    String letters(int value) => String.fromCharCodes([97 + value ~/ 676 % 26, 97 + value ~/ 26 % 26, 97 + value % 26]);
     for (var batch = 0; batch < 12; batch++) {
       for (var index = 0; index < 100; index++) {
-        logs.record('[Test] action=fill errorType=batch$batch index=$index $padding');
+        logs.record('[Test] action=fill errorType=batch${letters(batch)}${letters(index)} $padding');
       }
       await logs.flush();
     }
     expect(names(), ['errors.1.log', 'errors.log']);
     expect(log('errors.log').lengthSync(), lessThanOrEqualTo(diagnosticErrorLimit));
     expect(log('errors.1.log').lengthSync(), lessThanOrEqualTo(diagnosticErrorLimit));
-    expect(log('errors.1.log').readAsStringSync(), isNot(contains('errorType=batch0 ')));
-    expect(log('errors.log').readAsStringSync(), contains('errorType=batch11 index=99'));
+    expect(log('errors.1.log').readAsStringSync(), isNot(contains('errorType=batch${letters(0)}${letters(0)} ')));
+    expect(log('errors.log').readAsStringSync(), contains('errorType=batch${letters(11)}${letters(99)} '));
   });
 
   test('开发者模式日志按校园日分文件、单个超过 4MB 另起一份；超过 7 天的与总量超过 20MB 的从最旧删起', () async {
     final directory = log('x').parent..createSync(recursive: true);
-    void fill(String name, int bytes) => File(path.join(directory.path, name)).writeAsBytesSync(Uint8List(bytes));
+    // 随机字节压不小，旧文件压成 .gz 后照样占地方，才测得到总量上限。
+    final random = Random(1);
+    void fill(String name, int bytes) => File(path.join(directory.path, name)).writeAsBytesSync(Uint8List.fromList([for (var index = 0; index < bytes; index++) random.nextInt(256)]));
     fill('diagnostics-2026-10-14.log', 10);
     fill('diagnostics-2026-10-15.log', 10);
     fill('errors.log', 10);
     final logs = await open();
-    expect(names(), ['diagnostics-2026-10-15.log', 'errors.log']);
+    expect(names(), ['diagnostics-2026-10-15.log.gz', 'errors.log']);
 
     // 校园时区 10-22 凌晨 1 点：已是新的一天。
     final late = await open(now: DateTime.utc(2026, 10, 21, 17));
@@ -98,7 +105,7 @@ void main() {
     final kept = names().where((name) => name.startsWith('diagnostics-'));
     final total = kept.fold(0, (sum, name) => sum + log(name).lengthSync());
     expect(total, lessThanOrEqualTo(diagnosticTotalLimit));
-    expect(kept.first, isNot('diagnostics-2026-10-15.log'));
+    expect(kept.first, isNot('diagnostics-2026-10-15.log.gz'));
     expect(kept, contains('diagnostics-2026-10-21.2.log'));
   });
 
@@ -196,5 +203,99 @@ void main() {
     file.writeAsStringSync('{坏');
     final broken = await DeveloperSettings.open(file);
     expect((broken.enabled, broken.performanceOverlay), (false, false));
+  });
+
+  test('同类错误一分钟内只记第一条全文，其余计数，窗口到了补一条「又出现 N 次」；按种类汇总、诊断摘要都计进去', () async {
+    var now = DateTime.utc(2026, 10, 21, 4);
+    final logs = await DiagnosticLog.open(
+      directory: Directory(path.join(temp.path, 'logs')),
+      exports: Directory(path.join(temp.path, 'cache')),
+      publish: (archive, filename) async => true,
+      clock: () => now,
+    );
+    logs.environment = {'version': '1.0.0-alpha.6'};
+    // 换了编号与耗时的同一处错误算同一种。
+    for (var index = 0; index < 30; index++) {
+      logs.record('[RelayTransport] action=request route=GET /v1/messages code=TIMEOUT waited=${index * 25}ms errorType=TimeoutException\n#0      main (file:///x.dart:$index)');
+      now = now.add(const Duration(seconds: 1));
+    }
+    logs.record('[Sync] action=run errorType=StateError\n#0 main');
+    await logs.flush();
+    var errors = log('errors.log').readAsStringSync();
+    expect('[RelayTransport]'.allMatches(errors).length, 1);
+    expect(errors, isNot(contains('action=repeat')));
+
+    now = now.add(const Duration(minutes: 1));
+    await logs.flush();
+    errors = log('errors.log').readAsStringSync();
+    expect(errors, contains('[Diagnostics] action=repeat errorType=Repeated count=29 seconds=29 last=2026-10-21T04:00:29.000Z'));
+    expect(errors, contains('| [RelayTransport] action=request route=GET /v#/messages code=TIMEOUT waited=#ms errorType=TimeoutException'));
+
+    final kinds = await logs.errorKinds();
+    expect(kinds.map((kind) => (kind.signature.split(' ').first, kind.count)), [('[Sync]', 1), ('[RelayTransport]', 30)]);
+    expect(kinds.last.text, contains('#0      main'));
+    final summary = await logs.summary();
+    expect(summary, contains('version: 1.0.0-alpha.6'));
+    expect(summary, contains('最近的错误（共 2 种'));
+    expect(summary, contains('[RelayTransport] action=request route=GET /v#/messages code=TIMEOUT waited=#ms errorType=TimeoutException × 30'));
+  });
+
+  test('导出与切到后台前把聚合中的计数结算写出；签名掩掉编号、截到 200 字，种类有界', () async {
+    final logs = await open();
+    logs.record('[Chaoxing] action=http errorType=timeout path=/a');
+    logs.record('[Chaoxing] action=http errorType=timeout path=/a');
+    await logs.flush(settle: true);
+    final settled = log('errors.log').readAsStringSync();
+    expect(settled, contains('[Diagnostics] action=repeat errorType=Repeated count=1 seconds=0 last=2026-10-21T04:00:00.000Z | [Chaoxing] action=http errorType=timeout path=/a'));
+    expect(diagnosticErrorSignature('[Relay] route=DELETE /v1/friends/Ab3dEf9hIjKlMnOp errorType=X\n#0 main'), '[Relay] route=DELETE /v# /friends/# errorType=X'.replaceAll('/v# /', '/v#/'));
+    expect(diagnosticErrorSignature('[X] ${'很长' * 200}').length, 200);
+  });
+
+  test('早于今天的开发者模式日志压成 .gz，查看时解开照样读到，导出里也在', () async {
+    final directory = log('x').parent..createSync(recursive: true);
+    File(path.join(directory.path, 'diagnostics-2026-10-20.log')).writeAsStringSync('2026-10-20T08:00:00.000Z [Route] action=change path=/yesterday\n');
+    final logs = await open();
+    expect(names(), ['diagnostics-2026-10-20.log.gz']);
+    final restored = utf8.decode(GZipDecoder().decodeBytes(log('diagnostics-2026-10-20.log.gz').readAsBytesSync()));
+    expect(restored, contains('path=/yesterday'));
+    logs.developer = true;
+    logs.record('[Route] action=change path=/today');
+    final records = await logs.recent(errorsOnly: false);
+    expect(records.map((record) => record.text), ['[Route] action=change path=/today', '[Route] action=change path=/yesterday']);
+  });
+
+  test('上次退出原因：异常结束按错误记（ANR 附线程堆栈），正常结束只在开发者模式记；读过的最新时刻存下，不重复记', () async {
+    final records = <String>[];
+    final previous = campusLog;
+    campusLog = records.add;
+    addTearDown(() {
+      campusLog = previous;
+      campusDiagnostics = false;
+    });
+    final marker = File(path.join(temp.path, 'last_exit_seen'));
+    final asked = <int>[];
+    ProcessExit exit(int timestamp, String reason, {String trace = ''}) =>
+        (timestamp: timestamp, reason: reason, status: 0, importance: 100, pssKb: 204800, rssKb: 409600, description: reason == 'ANR' ? 'Input dispatching timed out' : '', trace: trace);
+    Future<List<ProcessExit>> read(int since) async {
+      asked.add(since);
+      return [exit(3000, 'ANR', trace: '"main" prio=5 tid=1 Blocked'), exit(2000, 'USER_REQUESTED'), exit(1000, 'CRASH_NATIVE')].where((item) => item.timestamp > since).toList();
+    }
+
+    await recordExitReasons(marker: marker, read: read);
+    expect(records, hasLength(2));
+    expect(records.first, startsWith('[App] action=last_exit errorType=CRASH_NATIVE at=1970-01-01T00:00:01.000Z'));
+    expect(records.last, contains('errorType=ANR'));
+    expect(records.last, contains('pssMb=200 rssMb=400 description=Input_dispatching_timed_out\n"main" prio=5 tid=1 Blocked'));
+    expect(marker.readAsStringSync(), '3000');
+
+    await recordExitReasons(marker: marker, read: read);
+    expect(asked, [0, 3000]);
+    expect(records, hasLength(2));
+
+    marker.deleteSync();
+    records.clear();
+    campusDiagnostics = true;
+    await recordExitReasons(marker: marker, read: read);
+    expect(records.map((record) => record.split(' ')[2]), ['errorType=CRASH_NATIVE', 'reason=USER_REQUESTED', 'errorType=ANR']);
   });
 }

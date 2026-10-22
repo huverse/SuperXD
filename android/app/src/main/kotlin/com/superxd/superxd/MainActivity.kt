@@ -28,6 +28,8 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler(chaoxingDevice)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/location_settings")
             .setMethodCallHandler(LocationSettingsChannel(this))
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/diagnostics")
+            .setMethodCallHandler(ProcessExitReasons(applicationContext))
     }
 
     override fun onDestroy() {

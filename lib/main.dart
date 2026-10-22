@@ -32,6 +32,7 @@ import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/page/app_update_dialog.dart';
+import 'package:superxd/page/developer_page.dart';
 import 'package:superxd/page/legal_page.dart';
 import 'package:superxd/local/credential_store.dart';
 import 'package:superxd/domain/campus_clock.dart';
@@ -84,6 +85,7 @@ void main() async {
   campusLog = logs.tee(debugPrint);
   final developer = await DeveloperSettings.open(File(path.join(support.path, 'developer.json')));
   watchDeveloperMode(developer, logs, environment: appEnvironment());
+  unawaited(recordExitReasons(marker: File(path.join(support.path, 'last_exit_seen')), read: readExitReasons));
   // Android 10–14默认不绘制到导航栏后，透明导航栏会露出原生窗口底色（浅色为白条）；15+系统已强制全面屏。
   await SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
   ensureCampusClock();
@@ -401,7 +403,11 @@ class _AccountAppState extends State<_AccountApp> {
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       builder: (context, child) => DisplayScope(settings: _display, child: MediaQuery(
         data: MediaQuery.of(context).copyWith(textScaler: CampusTextScaler(MediaQuery.textScalerOf(context), _display.scale)),
-        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: campusGlassCapped.value, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, wallpaper: _wallpaper(), overlays: campusOverlayDepth, child: CampusEntryFade(child: LiveClock(child: child!)))))),
+        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: campusGlassCapped.value, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, wallpaper: _wallpaper(), overlays: campusOverlayDepth, child: CampusEntryFade(child: LiveClock(child: switch ((widget.developer, widget.logs)) {
+        // 开发者模式下浮在所有页面上的开发者工具按钮（见 page/developer_page.dart 的 DeveloperOverlay）。
+        (final developer?, final logs?) => DeveloperOverlay(developer: developer, logs: logs, navigator: _router.routerDelegate.navigatorKey, location: () => _router.routerDelegate.currentConfiguration.uri.path, child: child!),
+        _ => child!,
+      })))))),
       )),
     ));
   }
