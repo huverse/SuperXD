@@ -1,3 +1,4 @@
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -15,6 +16,7 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_search_field.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
@@ -58,6 +60,13 @@ class _DeveloperPageState extends State<DeveloperPage> {
     if (!mounted) return;
     setState(() => _exporting = false);
     showCampusToast(context, filename == null ? '导出没完成，请重试' : '已保存到 Download/SuperXD：$filename');
+  }
+
+  // 诊断摘要（运行环境加最近的几种错误，已掩码）复制成纯文字，粘贴进聊天或 Issue，不用传整个日志包。
+  Future<void> _copySummary() async {
+    final text = await widget.logs.summary();
+    await Clipboard.setData(ClipboardData(text: text));
+    if (mounted) showCampusToast(context, '已复制诊断摘要');
   }
 
   Future<void> _more(BuildContext anchor) async {
@@ -120,6 +129,7 @@ class _DeveloperPageState extends State<DeveloperPage> {
                   icon: const CampusIcon(CampusIcons.logs),
                   label: const Text('查看日志'),
                 ),
+                OutlinedButton.icon(onPressed: _copySummary, icon: const CampusIcon(CampusIcons.copy), label: const Text('复制摘要')),
                 FilledButton(
                   style: campusProminent,
                   onPressed: _exporting ? null : _export,
@@ -163,7 +173,10 @@ class _DeveloperPageState extends State<DeveloperPage> {
   }
 }
 
-// 查看日志：最新的在上，可在「全部」（开发者模式日志）与「错误」（平时也记的错误记录）之间切换、按内容搜索；点一条展开全文，可复制。
+// 查看页的一行：时刻、全文与出现次数（「错误」按种类汇总时大于 1）。
+typedef _LogEntry = ({DateTime time, String text, int count});
+
+// 查看日志：最新的在上，可在「全部」（开发者模式日志）与「错误」（平时也记的错误记录，按种类汇总、写出现几次）之间切换、按内容搜索；点一条展开全文，可复制。
 class DeveloperLogPage extends StatefulWidget {
   const DeveloperLogPage({super.key, required this.logs});
   final DiagnosticLog logs;
@@ -175,12 +188,16 @@ class DeveloperLogPage extends StatefulWidget {
 class _DeveloperLogPageState extends State<DeveloperLogPage> {
   final _search = TextEditingController();
   bool _errorsOnly = false;
-  late Future<List<DiagnosticRecord>> _records = widget.logs.recent(errorsOnly: _errorsOnly);
-  final _expanded = <DiagnosticRecord>{};
+  late Future<List<_LogEntry>> _records = _load();
+  final _expanded = <_LogEntry>{};
+
+  Future<List<_LogEntry>> _load() async => _errorsOnly
+      ? [for (final kind in await widget.logs.errorKinds()) (time: kind.last, text: kind.text, count: kind.count)]
+      : [for (final record in await widget.logs.recent(errorsOnly: false)) (time: record.time, text: record.text, count: 1)];
 
   void _reload() => setState(() {
     _expanded.clear();
-    _records = widget.logs.recent(errorsOnly: _errorsOnly);
+    _records = _load();
   });
 
   @override
@@ -230,7 +247,7 @@ class _DeveloperLogPageState extends State<DeveloperLogPage> {
           ),
         ),
         Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 4), child: CampusSearchField(controller: _search, hint: '搜索模块或内容')),
-        Expanded(child: FutureBuilder<List<DiagnosticRecord>>(
+        Expanded(child: FutureBuilder<List<_LogEntry>>(
           future: _records,
           builder: (context, snapshot) {
             if (snapshot.hasError) return CampusLoadError(message: '日志读取没完成', onRetry: _reload);
@@ -252,7 +269,7 @@ class _DeveloperLogPageState extends State<DeveloperLogPage> {
                     padding: const EdgeInsets.symmetric(vertical: 8),
                     child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                        Text(_time(record.time), style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
+                        Text(record.count > 1 ? '共 ${record.count} 次 · 最近 ${_time(record.time)}' : _time(record.time), style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
                         open
                             ? SelectableText(record.text, style: TextStyle(fontSize: 14, fontFamily: 'monospace', color: colors.onSurface))
                             : Text(record.text, maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, fontFamily: 'monospace', color: colors.onSurface)),
@@ -276,6 +293,163 @@ class _DeveloperLogPageState extends State<DeveloperLogPage> {
           },
         )),
       ])))),
+    );
+  }
+}
+
+// [人工决策-2026-10-21 23:48:00] 悬浮按钮打标记（用户选定，同 DoKit、vConsole 的悬浮入口）：开发者模式下浮在所有页面上的小按钮，
+// 可拖到屏幕任一处、松手贴到最近的左右边（让开系统的边缘返回手势区）；点开是开发者工具：在日志里标记「这里出问题了」（记当前页面路径与可选的一句说明），
+// 以及查看日志、导出、开发者选项。只在开发者模式开着时出现，关掉即消失。
+class DeveloperOverlay extends StatefulWidget {
+  const DeveloperOverlay({super.key, required this.developer, required this.logs, required this.navigator, required this.location, required this.child});
+  final DeveloperSettings developer;
+  final DiagnosticLog logs;
+  // 弹工具面板、推页面用的根导航器（悬浮按钮在导航器之外）。
+  final GlobalKey<NavigatorState> navigator;
+  // 当前路由路径（标记时记下）。
+  final String Function() location;
+  final Widget child;
+
+  @override
+  State<DeveloperOverlay> createState() => _DeveloperOverlayState();
+}
+
+class _DeveloperOverlayState extends State<DeveloperOverlay> {
+  // 圆钮看着 44，触区按规范至少 48：贴边与拖动的范围按 48 的实际占位算。
+  static const _size = 48.0;
+  Offset? _position;
+  // 按钮在导航器之外，自带一层 Overlay（圆钮的 Tooltip 要它）；这层与外面的 Stack 一直在，开关开发者模式只重画按钮，
+  // 不改页面的父级结构，否则整个导航器会被重建、页面状态全丢。没开时这层什么都不画，点按穿透到下面的页面。
+  late final _entry = OverlayEntry(builder: _button);
+
+  @override
+  void initState() {
+    super.initState();
+    widget.developer.addListener(_entry.markNeedsBuild);
+  }
+
+  @override
+  void dispose() {
+    widget.developer.removeListener(_entry.markNeedsBuild);
+    super.dispose();
+  }
+
+  void _open() {
+    final context = widget.navigator.currentContext;
+    if (context == null) return;
+    showCampusSheet<void>(context: context, builder: (_) => CampusSheetPanel(child: _DeveloperTools(developer: widget.developer, logs: widget.logs, navigator: widget.navigator, path: widget.location())));
+  }
+
+  Widget _button(BuildContext context) => !widget.developer.enabled ? const SizedBox.shrink() : LayoutBuilder(builder: (context, constraints) {
+    final padding = MediaQuery.paddingOf(context);
+    // 左右让开系统手势区：全面屏的边缘返回手势在这一窄条里优先，按钮贴太近时一拖就成了返回（模拟器上拖它把应用退出了）。
+    final gestures = MediaQuery.systemGestureInsetsOf(context);
+    final leftEdge = 8 + gestures.left, rightEdge = constraints.maxWidth - _size - 8 - gestures.right;
+    double clampX(double x) => x.clamp(leftEdge, rightEdge);
+    double clampY(double y) => y.clamp(padding.top + 8, constraints.maxHeight - padding.bottom - _size - 8);
+    // 默认贴右边、在屏幕高度六成处，避开顶栏操作与底栏。
+    final position = _position ?? Offset(rightEdge, constraints.maxHeight * .6);
+    // 位移累加在最新的位置上：一帧里会来好几个移动事件，拿这一帧开始时的位置去加，按钮只跟上手指的几分之一（模拟器上拖不动）。
+    void move(Offset Function(Offset current) next) {
+      _position = next(_position ?? position);
+      _entry.markNeedsBuild();
+    }
+
+    return Stack(children: [
+      Positioned(
+        left: clampX(position.dx),
+        top: clampY(position.dy),
+        child: GestureDetector(
+          // 从按下处算位移（默认从认出拖动时算，会丢掉开头那一小段），按钮一直跟在手指下面。
+          dragStartBehavior: DragStartBehavior.down,
+          onPanUpdate: (details) => move((current) => Offset(clampX(current.dx + details.delta.dx), clampY(current.dy + details.delta.dy))),
+          onPanEnd: (_) => move((current) => Offset(current.dx + _size / 2 < constraints.maxWidth / 2 ? leftEdge : rightEdge, clampY(current.dy))),
+          child: CampusGlassCircleButton(label: '开发者工具', size: 44, onPressed: _open, icon: const CampusIcon(CampusIcons.developer)),
+        ),
+      ),
+    ]);
+  });
+
+  @override
+  Widget build(BuildContext context) => Stack(children: [
+    widget.child,
+    Positioned.fill(child: Overlay(initialEntries: [_entry])),
+  ]);
+}
+
+class _DeveloperTools extends StatefulWidget {
+  const _DeveloperTools({required this.developer, required this.logs, required this.navigator, required this.path});
+  final DeveloperSettings developer;
+  final DiagnosticLog logs;
+  final GlobalKey<NavigatorState> navigator;
+  final String path;
+
+  @override
+  State<_DeveloperTools> createState() => _DeveloperToolsState();
+}
+
+class _DeveloperToolsState extends State<_DeveloperTools> {
+  final _note = TextEditingController();
+  bool _exporting = false;
+
+  @override
+  void dispose() {
+    _note.dispose();
+    super.dispose();
+  }
+
+  // 标记写成一条 [Mark] 日志并立即落盘，事后按它定位出问题的那一段；说明是本人写的，落盘时同样掩码。
+  Future<void> _mark() async {
+    final note = _note.text.trim().replaceAll(RegExp(r'\s+'), ' ');
+    campusLog('[Mark] action=mark path=${widget.path}${note.isEmpty ? '' : ' note=$note'}');
+    await widget.logs.flush();
+    if (!mounted) return;
+    Navigator.pop(context);
+    final root = widget.navigator.currentContext;
+    if (root != null && root.mounted) showCampusToast(root, '已标记');
+  }
+
+  void _push(Widget page) {
+    Navigator.pop(context);
+    widget.navigator.currentState?.push(CampusPageRoute<void>(builder: (_) => page));
+  }
+
+  Future<void> _export() async {
+    setState(() => _exporting = true);
+    String? filename;
+    try {
+      filename = await widget.logs.export();
+    } catch (error, stack) {
+      campusLog('[Developer] action=export errorType=${error.runtimeType}\n$stack');
+    }
+    if (!mounted) return;
+    setState(() => _exporting = false);
+    showCampusToast(context, filename == null ? '导出没完成，请重试' : '已保存到 Download/SuperXD：$filename');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final colors = CampusPalette.of(context);
+    return Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('开发者工具', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 4),
+        Text('当前页面 ${widget.path}', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
+        SizedBox(height: campusFieldGap(context)),
+        TextField(controller: _note, maxLength: 100, style: const TextStyle(fontSize: 16), decoration: const InputDecoration(labelText: '说明（可不填）', counterText: '')),
+        const SizedBox(height: 12),
+        FilledButton.icon(style: campusProminent, onPressed: _mark, icon: const CampusIcon(CampusIcons.pin), label: const Text('标记这里')),
+        const SizedBox(height: 12),
+        Wrap(spacing: 8, runSpacing: 8, children: [
+          OutlinedButton.icon(onPressed: () => _push(DeveloperLogPage(logs: widget.logs)), icon: const CampusIcon(CampusIcons.logs), label: const Text('查看日志')),
+          OutlinedButton(
+            onPressed: _exporting ? null : _export,
+            child: CampusBusyContent(busy: _exporting, label: '导出日志', busyLabel: '导出中', icon: const CampusIcon(CampusIcons.exportLogs)),
+          ),
+          OutlinedButton.icon(onPressed: () => _push(DeveloperPage(developer: widget.developer, logs: widget.logs)), icon: const CampusIcon(CampusIcons.developer), label: const Text('开发者选项')),
+        ]),
+      ]),
     );
   }
 }

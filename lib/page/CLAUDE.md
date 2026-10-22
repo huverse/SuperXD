@@ -42,12 +42,12 @@
   - sync_selection_dialog.dart：同步范围选择 chooseSyncSelection：学年与内容都可多选，默认读本地学期列表，点刷新才联网。
   - campus_sync_dialogs.dart：同步结果弹窗 showCampusSyncReport：结果与未处理项，可重新登录或重新同步；教务限流停下时只说明约 1 分钟后再同步，不给立即重新同步。
 - 账号与设置：
-  - login_page.dart：登录页 LoginPage，也用于切换账号：验证码、记住账号确认、百宝箱与法务入口；同意行勾选框读屏读整句，点「我已阅读并同意」也能勾选；登录按钮常亮，没填或没勾同意时原地说明，接系统自动填充（[人工决策] 在文件内）。
+  - login_page.dart：登录页 LoginPage，也用于切换账号：验证码、记住账号确认、百宝箱、关于（进同一个关于页，未登录也能开开发者模式、检查更新，[人工决策] 在按钮处）与法务入口；同意行勾选框读屏读整句，点「我已阅读并同意」也能勾选；登录按钮常亮，没填或没勾同意时原地说明，接系统自动填充（[人工决策] 在文件内）。
   - account_dialogs.dart：旧版本数据导入确认 showLegacyImport 与登录后自动提示的 LegacyImportGate；教务验证码弹窗 LoginCaptchaDialog；开启记住账号的输密码弹窗 askRememberPassword。
   - account_page.dart：账号页 AccountPage（账号卡姓名下写学号 · 班级，只在这里写；AccountTitle 我的页共用、只传姓名）：记住账号（关闭即删凭据；重新开启要输密码、后台登录核对成功才保存，不换代次）、切换账号、导入旧版本数据（本机有旧数据才显示）；退出登录单独一组放最底。
   - appearance_page.dart：界面设置 AppearancePage：字号、配色、字体、深浅色、玻璃效果与背景（自定义图片经系统照片选择器，选图函数可注入）；可分享给好友（不含壁纸图片）。字体预览用 assets/font_previews 里预先画好的图（tool/font_previews.dart 生成），不为预览加载没在用的字体。滑杆拖动中只预览、松手保存，系统取消与读屏增减停手 300ms 补存，离开页面时存掉没存的预览。选项点了就生效，落库在 DisplaySettings 的保存锁里排队，保存时不禁用页面上的其他选项。玻璃限档时点「完整」先解除限档。
   - image_copy_pick.dart：通用取图 pickImageCopy 与多选 pickImagesCopy，返回副本路径与 discard；只删插件这次新留在缓存里的副本。壁纸、相册识别二维码共用，并经组合根注入百宝箱。
-  - developer_page.dart：开发者选项 DeveloperPage（开关、日志导出与清除、连电脑的 adb 命令、性能浮层、运行环境；关闭开发者模式删开发者模式日志）与日志查看 DeveloperLogPage（全部或错误、搜索、点开看全文与复制）。
+  - developer_page.dart：开发者选项 DeveloperPage（开关、日志导出与清除、复制诊断摘要、连电脑的 adb 命令、性能浮层、运行环境；关闭开发者模式删开发者模式日志）、日志查看 DeveloperLogPage（全部或错误、错误按种类合并写出现几次、搜索、点开看全文与复制）与悬浮开发者工具 DeveloperOverlay（开发者模式下浮在所有页面上、可拖动贴边，点开可标记当前页面与一句说明、查看日志、导出、进开发者选项；自带一层 Overlay，开关时不改页面的父级结构，[人工决策] 在类上）。
   - about_page.dart：关于页 AboutPage（连点版本号 7 次开启开发者模式，开着时多一项开发者选项）：应用图标（assets/app_icon.png，测试期临时图，见开源许可第五节）、版本、检查更新（传入 AppUpdates 时才有）、用户协议、隐私政策、开源许可、源代码与反馈问题；版本信息与打开链接可注入。
   - app_update_dialog.dart：更新弹窗 showAppUpdateDialog：可选更新给更新、稍后、跳过这个版本，点更新才下载，下载、核对、等授权、安装都在弹窗里原地切换；必须更新时关不掉（人工决策见文件内）。
   - legal_page.dart：用户协议与隐私政策 LegalPage（/legal/service、/legal/privacy），顶部显示更新日期 legalUpdated；正文经 theme 的 CampusProse 按行排版。隐私政策先摘要、再按功能分节，末尾附第三方 SDK 与服务、系统权限、保存期限三份清单（[人工决策] 在文件头）；改动数据处理、新增 SDK 或权限、改上限时同步改对应一节与清单并更新日期。首次打开（含没在弹窗里同意过的老用户）由组合根弹 askLegalConsent 征得同意，不同意先二次确认再退出应用（[人工决策] 在函数上）；同意过的，有实质变化时 legalRevision 加一并改写 legalChanges，打开后弹一次 showLegalUpdateNotice（只有「知道了」才算看过）。

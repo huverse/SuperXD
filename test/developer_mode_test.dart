@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -170,6 +171,67 @@ void main() {
     await tester.pump();
     await settle(tester, () => find.text('已清除日志').evaluate().isNotEmpty);
     expect(await tester.runAsync(() async => logs.directory.listSync()), isEmpty);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 模拟器上发现：按钮贴边太近，一拖就成了系统的边缘返回手势，把应用退出了。
+  testWidgets('悬浮按钮让开系统的边缘返回手势区；拖到左半边松手贴左边，同样在手势区以外', (tester) async {
+    tester.view.systemGestureInsets = FakeViewPadding(left: 30 * tester.view.devicePixelRatio, right: 30 * tester.view.devicePixelRatio);
+    addTearDown(tester.view.resetSystemGestureInsets);
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(
+      theme: campusTheme(),
+      navigatorKey: navigator,
+      builder: (context, child) => DeveloperOverlay(developer: DeveloperSettings.memory(enabled: true), logs: logs, navigator: navigator, location: () => '/today', child: child!),
+      home: const Scaffold(),
+    ));
+    await tester.pump();
+    final button = find.byTooltip('开发者工具');
+    final width = tester.view.physicalSize.width / tester.view.devicePixelRatio;
+    expect(tester.getRect(button).right, lessThanOrEqualTo(width - 30 - 8));
+    // 同真机：一帧里会来好几个移动事件（以前每个事件都拿上一帧的位置加位移，按钮只跟上手指的几分之一，模拟器上拖不动）。
+    final gesture = await tester.startGesture(tester.getCenter(button));
+    for (var step = 0; step < 40; step++) {
+      await gesture.moveBy(Offset(-width * .7 / 40, -2.5));
+      if (step % 5 == 4) await tester.pump(const Duration(milliseconds: 16));
+    }
+    await tester.pump(const Duration(milliseconds: 16));
+    expect(tester.getCenter(button).dx, closeTo(width - 30 - 8 - 24 - width * .7, 2));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect(tester.getRect(button).left, greaterThanOrEqualTo(30 + 8));
+    expect(tester.getRect(button).right, lessThan(width / 2));
+    await tester.tap(button);
+    await tester.pumpAndSettle();
+    expect(find.text('当前页面 /today'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('错误记录按种类合并、写出现几次；复制摘要把运行环境与几种错误放进剪贴板', (tester) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String;
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    for (var index = 0; index < 3; index++) {
+      logs.record('[RelayTransport] action=request code=TIMEOUT waited=${index}ms errorType=TimeoutException');
+    }
+    logs.record('[Sync] action=run errorType=StateError\n#0 main');
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: DeveloperLogPage(logs: logs)));
+    await tester.pump();
+    await tester.tap(find.text('错误'));
+    await tester.pump();
+    await settle(tester, () => find.textContaining('共 3 次').evaluate().isNotEmpty);
+    expect(find.textContaining('[RelayTransport]'), findsOneWidget);
+    expect(find.textContaining('[Sync]'), findsOneWidget);
+
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: DeveloperPage(developer: DeveloperSettings.memory(enabled: true), logs: logs)));
+    await settle(tester, () => find.textContaining('本机共').evaluate().isNotEmpty);
+    await tester.tap(find.text('复制摘要'));
+    await tester.pump();
+    await settle(tester, () => copied != null);
+    expect(copied, allOf(contains('device: Google Pixel 8'), contains('最近的错误（共 2 种'), contains('waited=#ms errorType=TimeoutException × 3')));
     await tester.pumpWidget(const SizedBox());
   });
 

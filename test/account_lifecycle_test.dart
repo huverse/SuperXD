@@ -1,9 +1,11 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:path/path.dart' as path;
 
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
@@ -11,6 +13,10 @@ import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/domain/account.dart';
+import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/local/developer_settings.dart';
+import 'package:superxd/local/diagnostic_log.dart';
+import 'package:superxd/page/about_page.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/local/display_settings.dart';
@@ -64,6 +70,46 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     session.dispose();
     await tester.runAsync(fixture.close);
+  });
+
+  // 用户要求未登录也能进开发者模式：登录页有「关于」，进的是同一个关于页；开发者模式开着时每个页面边上浮着开发者工具按钮。
+  testWidgets('登录页有关于入口；开发者模式开着时悬浮按钮浮在页面上，标记连同当前页面路径与说明写进日志', (tester) async {
+    final temp = (await tester.runAsync(() => Directory.systemTemp.createTemp('lifecycle_logs')))!;
+    final logs = (await tester.runAsync(() => DiagnosticLog.open(directory: Directory(path.join(temp.path, 'logs')), exports: Directory(path.join(temp.path, 'cache')), publish: (archive, filename) async => true)))!;
+    final previous = campusLog;
+    campusLog = logs.tee(previous);
+    addTearDown(() {
+      campusLog = previous;
+      temp.deleteSync(recursive: true);
+    });
+    final developer = DeveloperSettings.memory();
+    final gateway = _Accounts().._active = null;
+    final session = AppSession(gateway); await session.restore();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, developer: developer, logs: logs));
+    await tester.pumpAndSettle();
+    expect(find.byType(LoginPage), findsOneWidget);
+    expect(find.byTooltip('开发者工具'), findsNothing);
+    await tester.tap(find.text('关于')); await tester.pumpAndSettle();
+    expect(find.byType(AboutPage), findsOneWidget);
+    await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
+
+    logs.developer = true;
+    await developer.setEnabled(true); await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('开发者工具')); await tester.pumpAndSettle();
+    expect(find.text('当前页面 /login'), findsOneWidget);
+    await tester.enterText(find.widgetWithText(TextField, '说明（可不填）'), '登录按钮 没反应');
+    await tester.tap(find.text('标记这里'));
+    for (var tick = 0; tick < 100 && find.text('已标记').evaluate().isEmpty; tick++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(find.text('已标记'), findsOneWidget);
+    final records = (await tester.runAsync(() => logs.recent(errorsOnly: false)))!;
+    expect(records.first.text, '[Mark] action=mark path=/login note=登录按钮 没反应');
+
+    await developer.setEnabled(false); await tester.pumpAndSettle();
+    expect(find.byTooltip('开发者工具'), findsNothing);
+    await tester.pumpWidget(const SizedBox()); session.dispose();
   });
 
   testWidgets('应用跟随系统与手动明暗切换保留页面上下文', (tester) async {
