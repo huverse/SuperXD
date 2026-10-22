@@ -39,7 +39,7 @@ ORG_GRADLE_PROJECT_superxdSigningProperties=/仓库外的绝对路径/signing.pr
 - 符号文件build/release_symbols用于还原崩溃堆栈，不打进APK、不上传Release；流水线把它存为Actions产物release-symbols（保留90天），发版后下载到仓库外离线保存。--analyze-size与--split-debug-info不能同次使用。
 - 本机发版时照流水线的核对逐项手做：apksigner verify --print-certs验签，检查包名、版本号、ABI与debuggable=false；生成SHA256SUMS，发布后下载附件再校验；dart run tool/release_changelog.dart取更新说明与Release正文，dart run tool/release_manifest.dart生成alpha.json，先传安装包、最后传清单、再删旧包，用 curl <中转地址>/v1/app/releases/alpha?abi=arm64-v8a 核对。
 - 应用内更新（从1.0.0-alpha.4起）：客户端只认与已装应用同签名、同包名、版本号一致的安装包，换签名的版本无法应用内更新。
-- 强制更新：只有旧版已无法正常使用（服务端接口不兼容、严重问题）时，才在升版本PR里调高工作流的RELEASE_MIN_SUPPORTED（最低可用构建号），已装版本低于它的用户会看到关不掉的更新弹窗；平时为0，所有更新都可选。
+- 强制更新：只有旧版已无法正常使用（服务端接口不兼容、严重问题）或维护者明确要求时，才在升版本PR里调高工作流的RELEASE_MIN_SUPPORTED（最低可用构建号），已装版本低于它的用户会看到关不掉的更新弹窗。这个值只升不降、平时不动，不低于它的版本之间的更新都可选。
 - 性能比较使用同设备、同构建模式、同数据与显示设置；真机profile才能作为性能验收。字体保持完整字符覆盖和实际字重，不以裁字或假粗体压缩体积。
 
 # 许可与第三方

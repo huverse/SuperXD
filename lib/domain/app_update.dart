@@ -36,6 +36,8 @@ enum AppUpdateUrgency { none, optional, forced }
 
 // [人工决策-2026-10-15 14:06:35] 强制更新只认清单的最低可用版本：已装版本低于它且确有更新版本时必须更新，弹窗不可关闭；
 // 平时一律可选（同大厂做法：强制只用于旧版已无法正常工作，如服务端接口不兼容、严重问题）。
+// [人工决策-2026-10-22 18:27:38] 强制的适用条件加一条「维护者明确要求」（1.0.0-alpha.7 起用）；最低可用版本只升不降，
+// 之后发版不调回，晚打开应用的旧版用户仍须更新。
 AppUpdateUrgency appUpdateUrgency(int installedVersionCode, AppRelease release) {
   if (release.versionCode <= installedVersionCode) return AppUpdateUrgency.none;
   return installedVersionCode < release.minSupportedVersionCode ? AppUpdateUrgency.forced : AppUpdateUrgency.optional;
