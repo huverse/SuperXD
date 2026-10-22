@@ -280,11 +280,13 @@ class _ExpressPageState extends State<ExpressPage> {
           final controller = _controller;
           if (controller == null) return const Center(child: CampusLoading(label: '正在准备'));
           // 内容作非定位子项（Stack 按它定尺寸、填满），隐藏 WebView 作 1px 定位子项（不影响尺寸、常驻绘制）。
+          // 靠上对齐：已登录的 SingleChildScrollView 按内容收缩高度，居中会把不满一屏的内容整块挤到屏幕中间。
           return Stack(
             children: [
               ListenableBuilder(
                 listenable: controller,
-                builder: (context, _) => Center(
+                builder: (context, _) => Align(
+                  alignment: Alignment.topCenter,
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 800),
                     child: controller.loggedIn ? _buildMain(controller) : _buildLogin(controller),

@@ -193,6 +193,24 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  // 真机反馈（1.0.0-alpha.7 构建号 8）：内容不满一屏时账号卡与按钮整块挤在屏幕中间。整页滚动区按内容收缩高度，外层不能居中。
+  testWidgets('已登录内容不满一屏时从顶栏下面开始排，不挤到屏幕中间', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 780));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
+    await tester.pumpAndSettle();
+    final appBar = tester.getRect(find.byType(AppBar));
+    double accountTop() => tester.getRect(find.ancestor(of: find.text('拼多多账号'), matching: find.byType(CampusSurface)).first).top;
+    expect(accountTop() - appBar.bottom, lessThanOrEqualTo(24));
+
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(find.text('没有待取件'), findsOneWidget);
+    expect(accountTop() - appBar.bottom, lessThanOrEqualTo(24));
+    await tester.pumpWidget(const SizedBox());
+  });
+
   // 真机反馈：弹层先放整页加载动画撑到接近全屏、读完再缩回内容高度（突闪）。改为先读后开，弹层一出来就是最终高度。
   testWidgets('绑定手机号先读后开：读取时按钮原地转圈、弹层还没出；弹出那一帧就是列表与最终高度', (tester) async {
     final gate = Completer<void>();
