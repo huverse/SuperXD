@@ -54,6 +54,10 @@ typedef ToolboxQrWatch =
       required ValueListenable<String?> status,
     });
 
+// 把工具登记的一个快捷入口放到桌面（同支付宝付款码页的「添加到桌面」）：由组合根注入（系统不支持或测试时为空，页面不显示这个按钮）。
+// 桌面弹窗请用户确认；桌面不支持时返回 false。
+typedef ToolboxShortcutPin = Future<bool> Function(String toolId, String shortcutId);
+
 // 工具注册表：组合根传入（见 toolbox_catalog.dart），框架只按 ToolboxModule 认工具，不认识任何工具的类型。
 typedef ToolboxCatalog = List<ToolboxModule> Function(ToolboxRuntime runtime);
 
@@ -68,6 +72,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.pickImages,
     this.relayUrl,
     this.campusTimetable,
+    this.pinShortcut,
   });
   ToolboxRuntime.testing({
     required this.catalog,
@@ -79,6 +84,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.pickImage,
     this.pickImages,
     this.campusTimetable,
+    this.pinShortcut,
     // 外部已经打开好的服务（测试直接给实例）：runtime 只代为转交，不负责关闭。
     Map<String, ToolboxService>? services,
     // 给了目录时按注册表的 openService 真的打开服务（测清除后重开、打开失败重试）。
@@ -99,6 +105,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
   final ToolboxImagesPick? pickImages;
   // 为空时（测试、只装了百宝箱的入口）当没有本应用课表。
   final ToolboxTimetable? campusTimetable;
+  final ToolboxShortcutPin? pinShortcut;
   final ToolboxCatalog catalog;
   late final List<ToolboxModule> modules = catalog(this);
 

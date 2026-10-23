@@ -55,6 +55,7 @@
   - 类型：AppRelease（版本号、版本名、发布时刻、最低可用版本号、更新说明、发布页、这个架构的安装包 AppReleaseApk）、AppPackageIdentity、AppUpdateException、AppUpdateCancelled。
   - 规则：appUpdateUrgency（有更新版本才算，已装低于最低可用版本为必须更新）、appUpdateCheckDue（自动检查每个校园日一次，待必须更新时不限）、appUpdatePromptDue（跳过的版本不自动弹，必须更新不认跳过）。人工决策见文件内。
   - 端口：AppReleaseFeed、AppPackageFiles（device 实现）、AppInstaller（device 实现，原生见 AppUpdateInstaller.kt）、AppUpdateMemory（local 实现），由 application/app_updates.dart 编排。
+- app_shortcut.dart：常用功能快捷入口 AppShortcut（id、名字、自适应图标 PNG）与系统端口 AppShortcutPort（发布到长按应用图标的菜单、请求添加到桌面、取这次冷启动的入口、应用在后台时点入口的流）；device/app_shortcuts.dart 实现，组合根 app_shortcuts.dart 接线。
 - common_free.dart：好友课表与自己课表的共同空闲。compareWeek 按好友那一周的日期对齐双方周次（任一方缺开学日时按相同周次），busyPeriods 求某周每天占用的节次，commonFree 合并双方都空的连续节次并配上作息时刻；周末任一方有课才显示周末。
 
 # 关键规则

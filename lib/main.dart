@@ -14,17 +14,20 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:superxd/app_diagnostics.dart';
 import 'package:superxd/app_session.dart';
+import 'package:superxd/app_shortcuts.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/application/campus_timetable.dart';
 import 'package:superxd/application/campus_widgets.dart';
 import 'package:superxd/device/app_installer_channel.dart';
+import 'package:superxd/device/app_shortcuts.dart';
 import 'package:superxd/device/app_package_files.dart';
 import 'package:superxd/device/diagnostic_device.dart';
 import 'package:superxd/device/home_widget_publisher.dart';
 import 'package:superxd/device/notification_reminders.dart';
 import 'package:superxd/device/picture_export.dart';
 import 'package:superxd/device/relay_release_feed.dart';
+import 'package:superxd/domain/app_shortcut.dart';
 import 'package:superxd/domain/course_widget.dart';
 import 'package:superxd/domain/painting.dart';
 import 'package:superxd/gateway/account_gateway.dart';
@@ -94,7 +97,13 @@ void main() async {
     temporary: Directory(path.join((await getTemporaryDirectory()).path, 'paintings')),
     publish: publishPicture,
   );
-  final painting = paintings.next();
+  // 从快捷入口冷启动：跳过开屏画作直达（人工决策见 toolbox/express/express_page.dart 的 _openIdentity），这次也不轮换画作。
+  final shortcuts = AndroidAppShortcuts();
+  final launched = await shortcuts.takeLaunch().catchError((Object error, StackTrace stack) {
+    campusLog('[Shortcuts] action=take_launch errorType=${error.runtimeType}\n$stack');
+    return null;
+  });
+  final painting = launched == null ? paintings.next() : null;
   final view = WidgetsBinding.instance.platformDispatcher.views.first;
   final splashImage = painting == null ? null : paintingSplashImage(painting, view.physicalSize / view.devicePixelRatio, view.devicePixelRatio);
   if (splashImage != null) {
@@ -133,7 +142,7 @@ void main() async {
   final updates = await appUpdates(support);
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
   final restored = Completer<void>();
-  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings);
+  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, launch: launched);
   runApp(painting == null || splashImage == null ? app : PaintingSplash(painting: painting, image: splashImage, ready: restored.future, child: app));
   unawaited(WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
     if (campusDiagnostics) campusLog('[App] action=first_frame ms=${launch.elapsedMilliseconds}');
@@ -257,7 +266,10 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch});
+  // 常用功能的快捷入口（设备级，见 app_shortcuts.dart）；为空时不发布入口、页面不显示「添加到桌面」。launch 是这次冷启动点的入口 id。
+  final AppShortcutPort? shortcuts;
+  final String? launch;
   final CampusReminders? reminders;
   // 设备级私信服务，切换账号不重建；为空时私信入口显示未配置。
   final SocialService? social;
@@ -306,9 +318,30 @@ class _SuperXdAppState extends State<SuperXdApp> {
     relayUrl: relayBaseUrl.isEmpty ? null : Uri.tryParse(relayBaseUrl),
     // 学习通签到按课表推断正在上的课：默认用当前教务账号本机的课表（只读本地、不联网），百宝箱不依赖教务相关的层。
     campusTimetable: () => campusTimetableToday(widget.session.gateway, signedIn: widget.session.loggedIn),
+    // 工具页的「添加到桌面」：入口登记在注册表里，图标与名字由快捷入口接线统一给。
+    pinShortcut: widget.shortcuts == null ? null : (toolId, shortcutId) => _shortcuts!.pin(toolId, shortcutId),
   );
+  late final AppShortcuts? _shortcuts = switch (widget.shortcuts) {
+    final port? => AppShortcuts(port: port, tools: _toolbox.modules, pixelRatio: WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio),
+    null => null,
+  };
+
+  @override
+  void initState() {
+    super.initState();
+    final shortcuts = _shortcuts;
+    if (shortcuts == null) return;
+    final launch = widget.launch;
+    if (launch != null) shortcuts.open(launch);
+    // 图标在首帧之后再画、再发布，不和启动抢主线程。
+    WidgetsBinding.instance.addPostFrameCallback((_) => shortcuts.start().catchError((Object error, StackTrace stack) {
+      campusLog('[Shortcuts] action=publish errorType=${error.runtimeType}\n$stack');
+    }));
+  }
+
   @override
   void dispose() {
+    _shortcuts?.dispose();
     if (widget.toolbox == null) {
       _toolbox.close().catchError((Object error, StackTrace stack) {
         campusLog('[Toolbox] action=close errorType=${error.runtimeType}\n$stack');
@@ -321,13 +354,14 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts),
     );
   }
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings});
+  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts});
+  final AppShortcuts? shortcuts;
   final CampusReminders? reminders;
   final SocialService? social;
   final AppUpdates? updates;
@@ -357,6 +391,9 @@ class _AccountAppState extends State<_AccountApp> {
     super.initState();
     widget.updates?.addListener(_promptUpdate);
     widget.legal?.addListener(_onLegal);
+    widget.shortcuts?.pending.addListener(_onShortcut);
+    _router.routerDelegate.addListener(_onShortcut);
+    _onShortcut();
     _unwatchRoutes = watchRoutes(_router);
     // 换了账号代次时，上一个账号应用没来得及弹的提示由这里接着弹。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -366,6 +403,16 @@ class _AccountAppState extends State<_AccountApp> {
   }
 
   void _onLegal() => unawaited(_promptLegal());
+
+  // 快捷入口要去的页面（见 app_shortcuts.dart 的 openShortcut）：入口来了、路由变了都看一眼；在这一帧之后做，不在路由的通知里改路由。
+  void _onShortcut() {
+    final shortcuts = widget.shortcuts;
+    if (shortcuts?.pending.value == null) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) openShortcut(_router, shortcuts!.pending, home: widget.session.loggedIn ? '/today' : '/login');
+    });
+    WidgetsBinding.instance.ensureVisualUpdate();
+  }
 
   // 协议与政策：没同意过的先征得同意，同意过的有实质变化后提示一次；同更新弹窗挂在根导航器上。
   // 点「同意」「知道了」才记下，关掉后接着弹被搁下的更新；选了退出应用就什么也不记。
@@ -402,6 +449,8 @@ class _AccountAppState extends State<_AccountApp> {
   void dispose() {
     widget.updates?.removeListener(_promptUpdate);
     widget.legal?.removeListener(_onLegal);
+    widget.shortcuts?.pending.removeListener(_onShortcut);
+    _router.routerDelegate.removeListener(_onShortcut);
     _unwatchRoutes();
     _router.dispose();
     if (widget.display == null) _display.dispose();

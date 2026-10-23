@@ -13,6 +13,7 @@ import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/domain/account.dart';
+import 'package:superxd/domain/app_shortcut.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
@@ -33,7 +34,12 @@ import 'package:superxd/page/account_page.dart';
 import 'package:superxd/page/login_page.dart';
 import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/toolbox/express/express_page.dart';
+import 'package:superxd/toolbox/express/express_service.dart';
+import 'package:superxd/toolbox/express/express_vault.dart';
 import 'package:superxd/toolbox/short_video/short_video_page.dart';
+import 'package:superxd/toolbox/toolbox_catalog.dart';
+import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'app_update_fakes.dart';
 import 'toolbox_test_support.dart';
@@ -67,6 +73,34 @@ void main() {
       await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
       expect(find.byType(LoginPage), findsOneWidget);
     }
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+    await tester.runAsync(fixture.close);
+  });
+
+  // 快捷入口直达（人工决策见 toolbox/express/express_page.dart 的 _openIdentity）。
+  testWidgets('从快捷入口冷启动：会话恢复好后先到首页再推入入口页（属于百宝箱，没登录教务也能进），返回回到首页', (tester) async {
+    final fixture = ToolboxFixture();
+    await tester.runAsync(fixture.initialize);
+    final gateway = _Accounts().._active = null;
+    final session = AppSession(gateway);
+    // 快递服务用内存会话存储（没登录拼多多），不会联网。
+    final toolbox = ToolboxRuntime.testing(
+      catalog: toolboxCatalog,
+      store: fixture.store,
+      downloads: fixture.manager,
+      services: {ExpressService.serviceId: ExpressService(vault: MemoryExpressVault(), clientFactory: (session) => throw StateError('没登录不该建客户端'))},
+    );
+    await tester.pumpWidget(SuperXdApp(session: session, toolbox: toolbox, backgroundPhase: .18, shortcuts: _Shortcuts(), launch: 'express.identity'));
+    await tester.pump();
+    expect(find.byType(ExpressPage), findsNothing, reason: '会话还没恢复好');
+    await session.restore();
+    await tester.pumpAndSettle();
+    expect(find.byType(ExpressPage), findsOneWidget);
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pumpAndSettle();
+    expect(find.byType(ExpressPage), findsNothing);
+    expect(find.byType(LoginPage), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     session.dispose();
     await tester.runAsync(fixture.close);
@@ -662,6 +696,18 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     session.dispose();
   });
+}
+
+// 快捷入口的系统端口：测试只用冷启动带来的入口，发布与添加到桌面什么也不做。
+class _Shortcuts implements AppShortcutPort {
+  @override
+  Future<void> publish(List<AppShortcut> shortcuts) async {}
+  @override
+  Future<bool> pin(AppShortcut shortcut) async => false;
+  @override
+  Future<String?> takeLaunch() async => null;
+  @override
+  Stream<String> get launches => const Stream.empty();
 }
 
 class _Accounts extends AccountAccess {
