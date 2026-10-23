@@ -48,6 +48,9 @@ class LegalNoticeMemory extends ChangeNotifier {
     notifyListeners();
   }
 
+  // 有待弹的提示还没取走：打扰时机（节日动画、新信）等它先弹。
+  bool get pending => _pending != null;
+
   // 取走待弹的提示：一次运行只弹一次。consent 为真时要征得同意，否则只是更新提示。
   ({int revision, bool consent})? takePending() {
     final pending = _pending;

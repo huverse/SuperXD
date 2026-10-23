@@ -56,6 +56,8 @@
   - 规则：appUpdateUrgency（有更新版本才算，已装低于最低可用版本为必须更新）、appUpdateCheckDue（自动检查每个校园日一次，待必须更新时不限）、appUpdatePromptDue（跳过的版本不自动弹，必须更新不认跳过）。人工决策见文件内。
   - 端口：AppReleaseFeed、AppPackageFiles（device 实现）、AppInstaller（device 实现，原生见 AppUpdateInstaller.kt）、AppUpdateMemory（local 实现），由 application/app_updates.dart 编排。
 - app_shortcut.dart：常用功能快捷入口 AppShortcut（id、名字、自适应图标 PNG）与系统端口 AppShortcutPort（发布到长按应用图标的菜单、请求添加到桌面、取这次冷启动的入口、应用在后台时点入口的流）；device/app_shortcuts.dart 实现，组合根 app_shortcuts.dart 接线。
+- developer_note.dart：开发者的话 DeveloperNote（编号即 notes 目录里的文件名、标题、发出时刻、正文）与上限（最近 developerNoteLimit 封、标题与正文字数）；decodeDeveloperNotes 是清单的外部输入边界；developerNoteLetter 决定该弹哪封（最新一封、没弹过、发出不满 14 天）；端口 DeveloperNoteFeed（device 实现）与 DeveloperNoteMemory（local 实现）。人工决策在文件头。
+- interruption.dart：打扰时机的上下课安静期 classQuietUntil（开课前 20 分钟到开课后 5 分钟、下课前 5 分钟到下课后 10 分钟，相连的并成一段，返回这段结束的时刻）；人工决策在文件头，其余条件见 application/app_moments.dart。
 - common_free.dart：好友课表与自己课表的共同空闲。compareWeek 按好友那一周的日期对齐双方周次（任一方缺开学日时按相同周次），busyPeriods 求某周每天占用的节次，commonFree 合并双方都空的连续节次并配上作息时刻；周末任一方有课才显示周末。
 
 # 关键规则
@@ -89,9 +91,10 @@
 - 课表：schedule_edit_test.dart、schedule_merge_test.dart、schedule_version_test.dart、period_day_test.dart。
 - 课程实例与下游：reminder_test.dart、calendar_export_test.dart、home_widget_test.dart。
 - 成绩、卡片与更新规则：grades_test.dart、share_card_test.dart、app_update_test.dart；开屏画作清单与轮换：painting_test.dart。
+- 开发者的话与打扰时机（清单解析、弹信规则、安静期）：developer_notes_test.dart。
 - 面向用户的文案写法（节次、学分、按远近写的时刻、不及格）：campus_text_test.dart。
 
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/domain
-- 本目录的标记位于日志出口、节次展开、单周调整、按课名合并、版本恢复五处。
+- 本目录的标记位于日志出口、节次展开、单周调整、按课名合并、版本恢复、开发者的话（developer_note.dart 文件头）、打扰时机的安静期（interruption.dart 文件头）。

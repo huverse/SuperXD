@@ -17,7 +17,7 @@ import 'package:superxd/page/splash_signature.dart';
 // （同苹果开机的 hello，见 splash_signature.dart）。用户选「写完再溶解」（未选保持 1.2 秒、字写得急）：上屏后 0.1 秒起笔、约 1.6 秒写完、停 0.3 秒，
 // 开屏至少约 2 秒；点一下随时进入。减少动画时不写、直接显示写好的字，至少 1.2 秒。
 class PaintingSplash extends StatefulWidget {
-  const PaintingSplash({super.key, required this.painting, required this.image, required this.ready, required this.child, this.shown});
+  const PaintingSplash({super.key, required this.painting, required this.image, required this.ready, required this.child, this.shown, this.onGone});
   final Painting painting;
   // 组合根在 runApp 之前就开始解码的同一个图片（见 paintingSplashImage），开屏第一帧多半已经有图。
   final ImageProvider image;
@@ -26,6 +26,8 @@ class PaintingSplash extends StatefulWidget {
   final Widget child;
   // 开屏第一帧真正上屏（栅格化完）；为空用引擎报的首帧（WidgetsBinding.waitUntilFirstFrameRasterized），测试里引擎不报帧耗时，传一个已完成的。
   final Future<void>? shown;
+  // 溶解完、从树上拿掉之后：打扰时机等它（节日动画、新信不压在开屏下面），见 application/app_moments.dart。
+  final VoidCallback? onGone;
 
   static const writeDelay = Duration(milliseconds: 100);
   static const writing = Duration(milliseconds: 1600);
@@ -122,6 +124,7 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
     _exit.forward().whenCompleteOrCancel(() {
       _drift.stop();
       if (mounted) setState(() => _gone = true);
+      widget.onGone?.call();
     });
     setState(() {});
   }

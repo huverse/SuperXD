@@ -1,0 +1,62 @@
+name: Notes
+
+# 开发者的话（人工决策见 lib/domain/developer_note.dart）：notes 目录有改动合并到 main，就把 tool/developer_notes.dart 生成的
+# developer_notes.json 经受限账号传到中转的发布目录（与发版同一个 relay 环境与账号），客户端联网拉取，不用发版。
+# 只在信（notes/*.txt）有改动时触发，改说明或工具不触发；格式在 PR 的 CI 里已经由 test/developer_notes_test.dart 校验过。手动运行同样上传当前 main 的内容。
+on:
+  push:
+    branches: [main]
+    paths: ['notes/*.txt']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: notes
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: 上传开发者的话
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: relay
+    env:
+      RELAY_URL: ${{ secrets.RELAY_URL }}
+      RELAY_TARGET: ${{ secrets.RELAY_SSH_TARGET }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: 生成清单
+        run: dart run tool/developer_notes.dart --out "$RUNNER_TEMP/developer_notes.json"
+      # 中转上的账号只能经 rrsync 读写发布目录（server/README.md 部署第 6 步），主机指纹事先固定。
+      - name: 准备连接
+        env:
+          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+          RELAY_KNOWN_HOSTS: ${{ secrets.RELAY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$RELAY_SSH_KEY" > ~/.ssh/relay
+          printf '%s\n' "$RELAY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          echo "RSYNC_RSH=ssh -i $HOME/.ssh/relay -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=30" >> "$GITHUB_ENV"
+      - name: 上传
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP/developer_notes.json" developer_notes.json
+          rsync -t --chmod=F644 developer_notes.json "$RELAY_TARGET:"
+      - name: 公网核对
+        run: |
+          set -euo pipefail
+          served=$(curl -fsS --max-time 30 "$RELAY_URL/v1/app/notes")
+          python3 -I -c 'import json, sys; built = json.load(open(sys.argv[1], encoding="utf-8")); served = json.loads(sys.argv[2]); assert built == served, "中转上的开发者的话与生成的不一致"; print("[Notes] action=relay_check count=%d" % len(served["notes"]))' "$RUNNER_TEMP/developer_notes.json" "$served"
+      - name: 删除连接凭据
+        if: always()
+        run: rm -f ~/.ssh/relay

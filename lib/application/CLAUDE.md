@@ -16,6 +16,9 @@
   - 点更新才下载（缓存里已有且 SHA-256 对得上就不再下），核对 SHA-256、包名、版本号与签名证书，对不上就删包报原因；没有「安装未知应用」授权时引导开启，下载在后台完成时等回前台再拉起系统安装。
   - 端口都在 domain/app_update.dart，实现在 device 与 local（见各自 CLAUDE.md）；规则与弹窗的人工决策见 app_update.dart 与 page/app_update_dialog.dart。
 
+- developer_notes.dart：开发者的话的编排 DeveloperNotes（设备级）：自动拉取间隔至少 developerNoteRefreshGap（一小时，下拉刷新不受限）、同一时刻只拉一次、失败照旧显示上次拉到的；已读与弹过记在本机（弹出一封时当时所有的信都记成弹过、只有这封记成读过）。人工决策见 domain/developer_note.dart。
+- app_moments.dart：打扰时机 AppMoments（设备级）：决定节日动画、新信这类不是用户要的内容什么时候出现。业务条件在这里：每次回到前台最多一件、从快捷入口进来的那次前台不出现、上下课安静期里不出现（安静期结束时提醒组合根再看一眼）；界面条件在组合根 main.dart 的 _promptMoment。next 只看不记，真的弹出来了再 begin。人工决策在类上方。
+
 # 关键规则
 
 - 课前提醒与小组件只读本地、从不联网；对账时机由 main.dart 的 watchLocalSchedule 决定（启动恢复会话后、回到前台、切换账号或退出、本机课表相关写入后 AccountAccess.scheduleChanges），1 秒防抖。小组件配色由 main.dart 的 watchWidgetTheme 跟随显示设置单独下发。
@@ -27,9 +30,11 @@
 - campus_sync_test.dart、sync_ui_test.dart、transition_sync_test.dart（同步编排与同步界面）
 - reminder_test.dart、home_widget_test.dart（课前提醒、小组件）；campus_timetable_test.dart（本应用课表今天的课）
 - app_update_test.dart、app_update_ui_test.dart（应用更新，替身在 app_update_fakes.dart）
+- developer_notes_test.dart（开发者的话的拉取、已读与打扰时机）；account_lifecycle_test.dart（「我的」页入口与小圆点、新信在什么界面条件下弹）
 
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/application
 - campus_sync.dart：学年与数据项统一范围、进度只报已有阶段、未提交不报已同步、离开前的失败照常写入报告、限流立即停止。
 - campus_reminders.dart：状态栏胶囊（流体云）的接入方式、显示时段与胶囊内容。
+- app_moments.dart：打扰时机的业务条件。

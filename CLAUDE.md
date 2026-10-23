@@ -41,9 +41,9 @@
 
 - main.dart 启动顺序：
   1. 把日志出口注入为 debugPrint，接住没被处理的异步错误与框架报错（带堆栈走 campusLog）；打开本机诊断日志与开发者设置，把出口接成 logcat 加文件两份，按开发者模式切换诊断记录（app_diagnostics.dart 的 watchDeveloperMode）；再初始化时区库、图标与第三方许可。
-  2. 先问这次是不是从快捷入口冷启动（是的话跳过开屏画作、这次也不轮换）；打开开屏画作库（local/painting_library.dart，按清单顺序取这次的一幅并马上开始解码）；打开 AccountStore，组装 AppSession（含 AccountGateway 与 SecureCredentialStore）、DisplaySettings、设备级 SocialService（中转未配置或格式不对时为不可用）与 AppUpdates（没配中转或不是渠道构建时为空，渠道取 appFlavor）。
-  3. runApp 时外面套开屏画作 PaintingSplash（page/painting_splash.dart：天空里一笔写出应用名，写完、会话恢复、转场走完才溶解，点一下立即进入，[人工决策] 在文件内），开屏画作库也交给关于页；runApp 之后不等待地初始化玻璃渲染，私信服务等用户同意协议与政策后再初始化（已开启私信的会立即联网），再恢复会话；百宝箱的 shareVideo 接到私信分享弹层，路由把好友分享的视频交给注册表里认得这张卡片的工具（openShared）。
-  4. 恢复会话后核对协议与政策（checkLegalNotice：没在首次启动弹窗里同意过的先征得同意，同意之前不联网；同意过的有实质变化时提示一次），再启动三个监听：watchLocalSchedule 对账课前提醒与小组件，watchWidgetTheme 下发小组件配色，watchAppUpdates 清旧安装包、同意后延迟 3 秒自动检查更新并在回前台时续做安装；协议弹窗与新版弹窗都由 _AccountApp 在根导航器上弹，登录页也能弹，一个提示只弹一次，协议弹窗开着时更新弹窗等它关掉。
+  2. 先问这次是不是从快捷入口冷启动（是的话跳过开屏画作、这次也不轮换）；打开开屏画作库（local/painting_library.dart，按清单顺序取这次的一幅并马上开始解码）；打开 AccountStore，组装 AppSession（含 AccountGateway 与 SecureCredentialStore）、DisplaySettings、设备级 SocialService（中转未配置或格式不对时为不可用）、AppUpdates（没配中转或不是渠道构建时为空，渠道取 appFlavor）、开发者的话 DeveloperNotes（没配中转时为空）与打扰时机 AppMoments。
+  3. runApp 时外面套开屏画作 PaintingSplash（page/painting_splash.dart：天空里一笔写出应用名，写完、会话恢复、转场走完才溶解，点一下立即进入，[人工决策] 在文件内；溶解完置 splashGone，打扰时机等它），开屏画作库也交给关于页；runApp 之后不等待地初始化玻璃渲染，私信服务等用户同意协议与政策后再初始化（已开启私信的会立即联网），再恢复会话；百宝箱的 shareVideo 接到私信分享弹层，路由把好友分享的视频交给注册表里认得这张卡片的工具（openShared）。
+  4. 恢复会话后核对协议与政策（checkLegalNotice：没在首次启动弹窗里同意过的先征得同意，同意之前不联网；同意过的有实质变化时提示一次），再启动四个监听：watchLocalSchedule 对账课前提醒与小组件，watchWidgetTheme 下发小组件配色，watchAppUpdates 清旧安装包、同意后延迟 3 秒自动检查更新并在回前台时续做安装，watchMoments 同意后拉一次开发者的话、每次回到前台重新计这一次前台并再看一眼（间隔不到一小时不联网）；协议弹窗与新版弹窗都由 _AccountApp 在根导航器上弹，登录页也能弹，一个提示只弹一次，协议弹窗开着时更新弹窗等它关掉。新信等打扰时机的内容也由 _AccountApp 弹（_promptMoment：只在首页（底栏四个根页，未登录时是登录页）且上面没有推入页面、没有弹窗、协议已同意且没有待弹的提示、开屏走完时，停稳再弹）。
 - 账号代次：SuperXdApp 以 session.generation 作 key 重建账号应用，切换账号时路由和页面内存状态整体丢弃（[人工决策] 在 main.dart）。
 - router.dart 门禁：会话恢复完成前停在 /boot；未登录只允许 /login、/legal 下的法务页、/toolbox 与已注册工具及其快捷入口的路由（[人工决策] 在文件内）；已登录访问 /login 回到 /today；底栏壳有今天、服务、消息、我的四个分支，外包 LegacyImportGate；课表、成绩、切换账号、法务页和百宝箱推入根导航器。
 - app_session.dart：把 AccountAccess 的账号变化转成路由刷新并暂存一次性提示；expire 只让发起时的那个代次失效，旧页面不能误登出新账号。
@@ -69,8 +69,9 @@
    - 私信身份私钥只在系统安全存储，私钥与 social.db 都排除出云备份与设备迁移；只有用户「关闭私信」才删除（先删服务端设备，再清本机）。
    - 百宝箱有本机数据的工具可在首页「清除数据」（工具自己删库与凭据，框架撤同意记录），已导出的文件与上游服务器上的数据不动；工具只在 toolbox_catalog.dart 一处登记。
    - 第三方解析来源逐个来源、按授权版本单独征得同意，自动模式只尝试已启用且已同意的来源。
+   - 开发者的话的本机记录（最近的信、读过与弹过的编号）属于设备。
 9. 对外网络：
-   - 每个外部请求都有显式超时与响应上限，只发必要字段；具体数值写在所属模块（教务 edu、解析 toolbox、代签 chaoxing、私信 social、应用更新 device）。
+   - 每个外部请求都有显式超时与响应上限，只发必要字段；具体数值写在所属模块（教务 edu、解析 toolbox、代签 chaoxing、私信 social、应用更新与开发者的话 device）。
    - 除会话自动恢复后的一次重放、时钟偏差校正后的一次重发外，不自动重试；私信收取的长轮询是持续接收通道，失败后退避继续。
    - CampusSync 每个实例内按顺序逐项请求，今天页和成绩页各持有一个实例；成绩同步与其他教务网络请求互斥（SYNC_BUSY）；教务限流时报 RATE_LIMITED，本轮立即停止。
 10. 数据保留：新增只增不删的数据，必须同时给出上限或清理策略，写进所属模块 CLAUDE.md；服务端信箱与设备的保留见 server/README.md。
@@ -93,6 +94,7 @@
 - 文案简洁，少放说明性文字；账号授权、旧数据归属、删除或覆盖确认以及必要的错误文案必须保留。
 - 手势、方向等偏离常见习惯的要求，先提醒用户确认再实现。
 - 文字最小 14px；带浮动标签的输入框，上方间距随字号缩放（campusFieldGap）。
+- 节日动画、新信这类不是用户要的内容只在打扰时机出现：上下课前后的安静期、从快捷入口进来的那次前台都不出现，每次回到前台最多一件（规则见 domain/interruption.dart 与 application/app_moments.dart）。
 
 # 改动前检查清单
 

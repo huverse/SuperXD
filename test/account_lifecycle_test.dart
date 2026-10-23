@@ -10,7 +10,12 @@ import 'package:path/path.dart' as path;
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/app_session.dart';
+import 'package:superxd/application/app_moments.dart';
 import 'package:superxd/application/app_updates.dart';
+import 'package:superxd/application/developer_notes.dart';
+import 'package:superxd/domain/course_occurrence.dart';
+import 'package:superxd/domain/developer_note.dart';
+import 'package:superxd/local/developer_note_memory.dart';
 import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/domain/account.dart';
 import 'package:superxd/domain/app_shortcut.dart';
@@ -696,6 +701,63 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     session.dispose();
   });
+  testWidgets('开发者的话：有没读的信时「我的」页那一行与底栏「我的」各一个小圆点，点开读过就消；没有信时不显示这一行', (tester) async {
+    final semantics = tester.ensureSemantics();
+    final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
+    final feed = _NoteFeed();
+    final notes = DeveloperNotes(feed: feed, memory: FileDeveloperNoteMemory.memory());
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, notes: notes)); await tester.pumpAndSettle();
+    await tester.tap(find.text('我的')); await tester.pumpAndSettle();
+    expect(find.text('开发者的话'), findsNothing);
+    await tester.runAsync(notes.refresh); await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel(RegExp(r'^我的，有新的')), findsOneWidget);
+    expect(find.text('开发者的话'), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('有新的')), findsNWidgets(2));
+    await tester.tap(find.text('开发者的话')); await tester.pumpAndSettle();
+    // 从新到旧；没读的标出来。
+    expect(tester.getTopLeft(find.text('第二封')).dy, lessThan(tester.getTopLeft(find.text('第一封')).dy));
+    expect(find.bySemanticsLabel(RegExp(r'^没读，第二封')), findsOneWidget);
+    await tester.tap(find.text('第二封')); await tester.pumpAndSettle();
+    expect(find.text('第二封的正文\n\n第二段'), findsOneWidget);
+    await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
+    expect(find.bySemanticsLabel(RegExp(r'^没读，第二封')), findsNothing);
+    await tester.tap(find.text('第一封')); await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
+    expect(find.text('开发者的话'), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('有新的')), findsNothing);
+    semantics.dispose();
+    await tester.pumpWidget(const SizedBox()); session.dispose();
+  });
+  testWidgets('新信在不迫切的时候弹出：开屏走完、停在底栏根页且上面没有别的页面；从别的页面回到根页时立即看一眼；每次前台最多一次', (tester) async {
+    final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
+    final notes = DeveloperNotes(feed: _NoteFeed(), memory: FileDeveloperNoteMemory.memory());
+    await tester.runAsync(notes.refresh);
+    final moments = AppMoments(notes: notes, timetable: () async => const CampusTimetable([]));
+    final splashGone = ValueNotifier(false);
+    final legal = LegalNoticeMemory.memory(agreedRevision: legalRevision, seenRevision: legalRevision);
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, legal: legal, notes: notes, moments: moments, splashGone: splashGone)); await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 2)); await tester.pumpAndSettle();
+    expect(find.text('知道了'), findsNothing, reason: '开屏还没走完');
+    await tester.tap(find.text('我的')); await tester.pumpAndSettle();
+    await tester.tap(find.text('关于')); await tester.pumpAndSettle();
+    splashGone.value = true;
+    await tester.pump(const Duration(seconds: 2)); await tester.pumpAndSettle();
+    expect(find.text('知道了'), findsNothing, reason: '根页上面推着关于页');
+    await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1)); await tester.pumpAndSettle();
+    expect(find.text('第二封'), findsOneWidget);
+    expect(find.text('第二封的正文\n\n第二段'), findsOneWidget);
+    expect(find.text('查看全部'), findsOneWidget, reason: '还有一封没读');
+    await tester.tap(find.text('知道了')); await tester.pumpAndSettle();
+    expect(find.text('第二封'), findsNothing);
+    expect(notes.letter, isNull);
+    // 弹过的信回到前台也不再弹。
+    moments.foreground();
+    await tester.pump(const Duration(seconds: 1)); await tester.pumpAndSettle();
+    expect(find.text('知道了'), findsNothing);
+    await tester.pumpWidget(const SizedBox()); session.dispose(); moments.dispose();
+  });
 }
 
 // 快捷入口的系统端口：测试只用冷启动带来的入口，发布与添加到桌面什么也不做。
@@ -789,4 +851,16 @@ void expectSliding(WidgetTester tester, Finder page) {
     if (widget is FadeTransition) expect(widget.opacity.value, 1);
     return true;
   });
+}
+
+// 开发者的话的合成清单：两封，第二封刚发出（会弹）。
+class _NoteFeed implements DeveloperNoteFeed {
+  @override
+  Future<List<DeveloperNote>> fetch() async {
+    final now = DateTime.now().toUtc();
+    return [
+      DeveloperNote(id: 'b', title: '第二封', publishedAt: now, body: '第二封的正文\n\n第二段'),
+      DeveloperNote(id: 'a', title: '第一封', publishedAt: now.subtract(const Duration(days: 30)), body: '第一封的正文'),
+    ];
+  }
 }

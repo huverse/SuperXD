@@ -3,6 +3,7 @@ import 'package:flutter/physics.dart';
 import 'package:go_router/go_router.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
+import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -12,10 +13,12 @@ import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/glass_panel.dart';
 
 class ShellPage extends StatelessWidget {
-  const ShellPage({super.key, required this.navigationShell, this.social});
+  const ShellPage({super.key, required this.navigationShell, this.social, this.notes});
   final StatefulNavigationShell navigationShell;
   // 私信未读数显示在“消息”上；为空时不显示。
   final SocialService? social;
+  // 开发者的话有没读的信时“我的”上一个小圆点（人工决策见 domain/developer_note.dart）。
+  final DeveloperNotes? notes;
   @override
   Widget build(BuildContext context) {
     final media = MediaQuery.of(context);
@@ -53,10 +56,11 @@ class ShellPage extends StatelessWidget {
                   child: ConstrainedBox(
                     constraints: const BoxConstraints(maxWidth: 620),
                     child: ListenableBuilder(
-                      listenable: social ?? const AlwaysStoppedAnimation(0),
+                      listenable: Listenable.merge([social, notes]),
                       builder: (context, _) => DragNavigationBar(
                         selected: navigationShell.currentIndex,
                         badges: [0, 0, social?.unread ?? 0, 0],
+                        dots: [false, false, false, notes?.unread ?? false],
                         onSelected: (index) {
                           if (index != navigationShell.currentIndex) {
                             navigationShell.goBranch(index);
@@ -80,11 +84,14 @@ class DragNavigationBar extends StatefulWidget {
     required this.selected,
     required this.onSelected,
     this.badges = const [],
+    this.dots = const [],
   });
   final int selected;
   final ValueChanged<int> onSelected;
   // 各项的未读角标数，0 或缺省不显示。
   final List<int> badges;
+  // 各项有没有不计数的新内容（小圆点），有角标时不画。
+  final List<bool> dots;
   @override
   State<DragNavigationBar> createState() => _DragNavigationBarState();
 }
@@ -94,6 +101,7 @@ class _DragNavigationBarState extends State<DragNavigationBar>
     with TickerProviderStateMixin, WidgetsBindingObserver {
   static const labels = ['今天', '服务', '消息', '我的'];
   int _badge(int index) => index < widget.badges.length ? widget.badges[index] : 0;
+  bool _dot(int index) => _badge(index) == 0 && index < widget.dots.length && widget.dots[index];
   static const icons = [
     CampusIcons.today,
     CampusIcons.services,
@@ -370,7 +378,7 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                                 child: Semantics(
                                   button: true,
                                   selected: index == widget.selected,
-                                  label: _badge(index) > 0 ? '${labels[index]}，${_badge(index)} 条未读' : labels[index],
+                                  label: _badge(index) > 0 ? '${labels[index]}，${_badge(index)} 条未读' : _dot(index) ? '${labels[index]}，有新的' : labels[index],
                                   child: InkWell(
                                     borderRadius: BorderRadius.circular(24),
                                     // 底栏的按压反馈由玻璃透镜承担，不再叠按下变暗，否则会被透镜折射成镜内色块。
@@ -403,6 +411,13 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                                                 decoration: BoxDecoration(color: CampusPalette.of(context).dangerFill, borderRadius: BorderRadius.circular(9)),
                                                 child: Text(_badge(index) > 99 ? '99+' : '${_badge(index)}', textAlign: TextAlign.center, style: const TextStyle(fontSize: 14, height: 1.3, color: Colors.white)),
                                               )),
+                                            ),
+                                          // 不计数的新内容：同色小圆点，落在角标的位置上（图标右上）。
+                                          if (_dot(index))
+                                            PositionedDirectional(
+                                              start: 20,
+                                              top: -2,
+                                              child: SizedBox.square(dimension: 8, child: DecoratedBox(decoration: BoxDecoration(color: CampusPalette.of(context).dangerFill, shape: BoxShape.circle))),
                                             ),
                                         ]),
                                         const SizedBox(height: 4),

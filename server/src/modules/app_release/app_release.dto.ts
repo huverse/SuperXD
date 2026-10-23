@@ -1,6 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsIn, IsInt, IsISO8601, IsString, Matches, MaxLength, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsISO8601, IsString, Matches, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+
+import { developerNoteBodyMax, developerNoteLimit, developerNoteTitleMax } from 'src/common/relay_limits';
 
 // 客户端按自己正在运行的 CPU 架构取安装包，与发布附件的三种分包一致。
 export const appAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64'] as const;
@@ -52,4 +54,16 @@ export class AppReleaseFile {
   @IsString() @MaxLength(4000) notes: string;
   @Matches(/^https:\/\/\S{1,500}$/) releasePage: string;
   @ValidateNested({ each: true }) @Type(() => AppReleaseFileApk) @ArrayMaxSize(appAbis.length) apks: AppReleaseFileApk[];
+}
+
+// 开发者的话：流水线由仓库 notes 目录生成的 developer_notes.json（tool/developer_notes.dart），读入时逐项校验，写坏了不往外发。
+export class DeveloperNoteDto {
+  @ApiProperty({ description: '编号，即仓库 notes 目录里的文件名，发出后不改' }) @Matches(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/) id: string;
+  @ApiProperty({ description: '标题' }) @IsString() @MinLength(1) @MaxLength(developerNoteTitleMax) title: string;
+  @ApiProperty({ description: '发出时刻，ISO 8601 带时区' }) @IsISO8601({ strict: true }) publishedAt: string;
+  @ApiProperty({ description: '正文，原样显示' }) @IsString() @MinLength(1) @MaxLength(developerNoteBodyMax) body: string;
+}
+
+export class DeveloperNotesDto {
+  @ApiProperty({ description: '最近的信，从新到旧', type: [DeveloperNoteDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => DeveloperNoteDto) @ArrayMaxSize(developerNoteLimit) notes: DeveloperNoteDto[];
 }
