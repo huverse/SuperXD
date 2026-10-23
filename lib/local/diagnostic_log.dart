@@ -425,7 +425,8 @@ final _frameLocation = RegExp(r'^\s*#\d+\s+(?:abs [0-9a-f]+ )?(.+)$', multiLine:
 final _identifier = RegExp(r'(?<![A-Za-z0-9_-])(?=[A-Za-z_-]*\d)[A-Za-z0-9_-]{8,}');
 final _digits = RegExp(r'\d+');
 // 链接：带协议或 www. 开头的，以及不带协议但有域名加路径的（如 jw.example.edu.cn/xx）。
-final _link = RegExp(r'(?:https?://|www\.)\S+|[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?:com|cn|net|org)/\S*');
+// 不带协议的只从一串字母数字的开头起匹配（结果不变）：从串中间每一位起头都要扫到串尾，耗时随长度平方涨，4000 字的一串要约 0.2 秒，记日志在主线程上。
+final _link = RegExp(r'(?:https?://|www\.)\S+|(?<![A-Za-z0-9-])[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*\.(?:com|cn|net|org)/\S*');
 // 手机号：可带 +86 或 86 前缀，号码中间可用空格或短横分成 3-4-4。
 final _phone = RegExp(r'(?<!\d)(?:\+?86[\s-]?)?1[3-9]\d(?:[\s-]?\d{4}){2}(?!\d)');
 
