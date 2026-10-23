@@ -17,7 +17,7 @@
   - conversation_page.dart：会话页：卡片列表最新在下，自己的卡片原地显示发送中、失败与重发；对方的卡片贴左、自己的贴右、最宽 82%；卡片⋯可重发或删除（仅本机）；两处 [人工决策] 都在 _item；底部分享课表与界面；对方解除好友后改为提示。
   - share_card_view.dart：卡片渲染：课表（查看与对比，收到的可导入）、界面配置（预览、套用）、视频（打开）、未知类型（提示更新应用）。
   - friend_schedule_page.dart：好友课表与「共同空闲」（读本机同学期课表按日期对齐）；没有同学期课表或缺开学日时如实说明；顶栏可导入到自己的课表。
-  - schedule_import.dart：好友课表导入 importSharedSchedule：整份替换这学期的课表，或挑几门加进来（自己已有的教学班不列）；都存成当前账号的新版本、可在历史版本恢复，开学日与作息不动；本机没有那个学期时说明原因、不联网（[人工决策] 在文件内）。会话卡片与好友课表页共用。
+  - schedule_import.dart：好友课表导入 importSharedSchedule：先读好本机课表再打开导入页（推入根导航器），顶部分段「逐项合并 / 整份替换」：逐项合并按 domain 的 planScheduleMerge 列出有改动的课（每处差异一行、原来的划掉，整门可半选）、TA有你没有的课、你有TA没有的课（勾上会删掉），默认只勾有同一个教学班的那几门课的改动；应用按钮原地转圈，与其余课重叠时先确认；都存成当前账号的新版本、可在历史版本恢复，开学日与作息不动，成功的提示条回到发起页显示；本机没有那个学期时说明原因、不联网（[人工决策] 在文件内）。会话卡片与好友课表页共用。
   - share_target_sheet.dart：分享弹层 showShareSheet：多选好友后逐个发送，每行原地显示状态，失败的可重发；课表页、界面页、百宝箱结果页共用。
   - social_dialogs.dart：错误码文案 socialErrorText、列表时间 socialShortTime、单行输入弹窗 showSocialTextInput。
 - 今天：
@@ -45,7 +45,7 @@
   - login_page.dart：登录页 LoginPage，也用于切换账号：验证码、记住账号确认、百宝箱、关于（进同一个关于页，未登录也能开开发者模式、检查更新，[人工决策] 在按钮处）与法务入口；同意行勾选框读屏读整句，点「我已阅读并同意」也能勾选；登录按钮常亮，没填或没勾同意时原地说明，接系统自动填充（[人工决策] 在文件内）。
   - account_dialogs.dart：旧版本数据导入确认 showLegacyImport 与登录后自动提示的 LegacyImportGate；教务验证码弹窗 LoginCaptchaDialog；开启记住账号的输密码弹窗 askRememberPassword。
   - account_page.dart：账号页 AccountPage（账号卡姓名下写学号 · 班级，只在这里写；AccountTitle 我的页共用、只传姓名）：记住账号（关闭即删凭据；重新开启要输密码、后台登录核对成功才保存，不换代次）、切换账号、导入旧版本数据（本机有旧数据才显示）；退出登录单独一组放最底。
-  - appearance_page.dart：界面设置 AppearancePage：字号、配色、字体、深浅色、玻璃效果与背景（自定义图片经系统照片选择器，选图函数可注入）；可分享给好友（不含壁纸图片）。字体预览用 assets/font_previews 里预先画好的图（tool/font_previews.dart 生成），不为预览加载没在用的字体。滑杆拖动中只预览、松手保存，系统取消与读屏增减停手 300ms 补存，离开页面时存掉没存的预览。选项点了就生效，落库在 DisplaySettings 的保存锁里排队，保存时不禁用页面上的其他选项。玻璃限档时点「完整」先解除限档。
+  - appearance_page.dart：界面设置 AppearancePage：字号、配色、字体、深浅色、玻璃效果与背景（自定义图片经系统照片选择器，选图函数可注入）；可分享给好友（不含壁纸图片）。字体预览用 assets/font_previews 里预先画好的图（tool/font_previews.dart 生成），不为预览加载没在用的字体。滑杆拖动中只预览、松手保存，系统取消与读屏增减停手 300ms 补存，离开页面时存掉没存的预览。选项点了就生效，落库在 DisplaySettings 的保存锁里排队，保存时不禁用页面上的其他选项。改字号、换字体时整页重新排版，点的那一行经 theme 的 CampusAnchoredScrollController 停在手指下（字号另有连续过渡，见 local 的 CampusTextScale）。玻璃限档时点「完整」先解除限档。
   - image_copy_pick.dart：通用取图 pickImageCopy 与多选 pickImagesCopy，返回副本路径与 discard；只删插件这次新留在缓存里的副本。壁纸、相册识别二维码共用，并经组合根注入百宝箱。
   - developer_page.dart：开发者选项 DeveloperPage（开关、日志导出与清除、复制诊断摘要、连电脑的 adb 命令、性能浮层、运行环境；关闭开发者模式删开发者模式日志）、日志查看 DeveloperLogPage（全部或错误、错误按种类合并写出现几次、搜索、点开看全文与复制）与悬浮开发者工具 DeveloperOverlay（开发者模式下浮在所有页面上、可拖动贴边，点开可标记当前页面与一句说明、查看日志、导出、进开发者选项；自带一层 Overlay，开关时不改页面的父级结构，性能浮层也画在这层里、不用 MaterialApp 的开关（那个会给整页加一层 Stack、换父级重建），[人工决策] 在类上）。
   - about_page.dart：关于页 AboutPage（连点版本号 7 次开启开发者模式，开着时多一项开发者选项）：应用图标（assets/app_icon.png，测试期临时图，见开源许可第五节）、版本、检查更新（传入 AppUpdates 时才有）、用户协议、隐私政策、开屏画作（传入 PaintingGallery 时才有）、开源许可、源代码与反馈问题；版本信息与打开链接可注入。
@@ -75,7 +75,7 @@
 - 成绩与同步：grades_ui_test.dart、sync_ui_test.dart。
 - 壳层与表单：navigation_drag_test.dart、shell_layout_test.dart、form_spacing_test.dart（支撑 form_layout_support.dart）。
 - 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart；开屏与画作页：painting_ui_test.dart。
-- 私信页面：social_ui_test.dart、share_card_test.dart。
+- 私信页面：social_ui_test.dart（含好友课表导入的整份替换与逐项合并）、share_card_test.dart；合并规则在 schedule_merge_test.dart。
 - 开发者模式：developer_mode_test.dart。
 - 页面测试的合成数据网关是 fixture_campus_gateway.dart（读 assets/fixtures）。
 

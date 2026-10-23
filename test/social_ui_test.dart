@@ -385,7 +385,9 @@ void main() {
       final share = ScheduleShare(term: term, courses: [course('X1', '高等数学', 6), course('X2', '大学英语', 7)], bells: const []);
       final gateway = await openPage(tester, share);
       expect(find.text('导入小明的课表'), findsOneWidget);
-      await tester.tap(find.text('替换我这学期的课表'));
+      await tester.tap(find.text('整份替换'));
+      await advance(tester, 4);
+      await tester.tap(find.text('替换这学期的课表'));
       await advance(tester, 4);
       expect(find.text('替换这学期的课表？'), findsOneWidget);
       await tester.tap(find.widgetWithText(FilledButton, '替换'));
@@ -396,22 +398,60 @@ void main() {
       expect(history.map((row) => row.summary), ['导入小明分享的课表', '从教务同步']);
     });
 
-    testWidgets('挑几门加进来：自己已有的教学班不列，整行点按勾选，加进自己的课表', (tester) async {
+    testWidgets('逐项合并：TA有你没有的课默认不勾，勾上一门加进来；一样的课只写有几门', (tester) async {
       final owned = coursesFromJson((jsonDecode(fixtures['schedule.json']!) as Map)['data']['courses']).first;
       final share = ScheduleShare(term: term, courses: [owned, course('X1', '高等数学', 6), course('X2', '大学英语', 7)], bells: const []);
       final gateway = await openPage(tester, share);
-      final before = (await mine(tester, gateway)).courses.length;
-      await tester.tap(find.text('挑几门加进来'));
-      await advance(tester, 4);
-      expect(find.text('你已有的 1 门没有列出'), findsOneWidget);
-      expect(find.text(owned.courseName), findsNothing);
+      final before = (await mine(tester, gateway)).courses;
+      expect(find.text('小明有你没有 · 2 门'), findsOneWidget);
+      expect(tester.widget<FilledButton>(find.ancestor(of: find.text('应用改动'), matching: find.byType(FilledButton))).onPressed, isNull, reason: '什么都没勾时不能应用');
       await tester.tap(find.text('高等数学'));
       await tester.pump();
-      await tester.tap(find.text('加进来 1 门'));
-      await advanceUntil(tester, () => find.textContaining('已加进你的课表').evaluate().isNotEmpty);
+      // 两边一样的课不逐门列出，只在最下面写有几门。
+      await tester.scrollUntilVisible(find.text('其余 1 门两边一样'), 300, scrollable: find.byType(Scrollable).last);
+      await tester.tap(find.text('应用 1 项改动'));
+      await advanceUntil(tester, () => find.textContaining('已合并小明的课表').evaluate().isNotEmpty);
       final view = await mine(tester, gateway);
-      expect(view.courses, hasLength(before + 1));
+      expect(view.courses, hasLength(before.length + 1));
       expect(view.courses.last.courseName, '高等数学');
+      final history = (await tester.runAsync(() => gateway.listScheduleRevisions(term)))!.data!;
+      expect(history.first.summary, '合并小明分享的课表：加 1 门');
+    });
+
+    testWidgets('逐项合并：同一个教学班的改动默认勾上，可只改教室不改教师；勾上你有TA没有的课会删掉', (tester) async {
+      final courses = coursesFromJson((jsonDecode(fixtures['schedule.json']!) as Map)['data']['courses']);
+      final owned = courses.first;
+      final moved = CourseRecord(
+        courseCode: owned.courseCode,
+        courseName: owned.courseName,
+        sectionId: owned.sectionId,
+        credit: owned.credit,
+        teacherName: '合成新教师',
+        meetings: [for (final meeting in owned.meetings) CourseMeeting(weekday: meeting.weekday, periodStart: meeting.periodStart, periodEnd: meeting.periodEnd, place: '合成新教室', weeks: meeting.weeks)],
+      );
+      // TA的课表少了最后一门，其余一样。
+      final share = ScheduleShare(term: term, courses: [moved, ...courses.skip(1).take(courses.length - 2)], bells: const []);
+      final gateway = await openPage(tester, share);
+      expect(find.text('有改动 · 1 门'), findsOneWidget);
+      expect(find.text('同一个教学班'), findsOneWidget);
+      expect(find.text('合成新教室'), findsOneWidget);
+      expect(find.text('应用 2 项改动'), findsOneWidget, reason: '同一个教学班的改动默认都勾上');
+      await tester.tap(find.text('合成新教师'));
+      await tester.pump();
+      expect(find.text('应用 1 项改动'), findsOneWidget);
+      final last = courses.last.courseName;
+      await tester.scrollUntilVisible(find.text(last), 200, scrollable: find.byType(Scrollable).last);
+      await tester.tap(find.text(last));
+      await tester.pump();
+      expect(find.text('会从你的课表删掉'), findsOneWidget);
+      await tester.tap(find.text('应用 2 项改动'));
+      await advanceUntil(tester, () => find.textContaining('已合并小明的课表').evaluate().isNotEmpty);
+      final view = await mine(tester, gateway);
+      final updated = view.courses.firstWhere((course) => courseKey(course) == courseKey(owned));
+      expect(updated.meetings.map((meeting) => meeting.place).toSet(), {'合成新教室'});
+      expect(updated.teacherName, owned.teacherName);
+      expect(view.courses.map((course) => course.courseName), isNot(contains(last)));
+      expect(view.courses, hasLength(courses.length - 1));
     });
   });
 

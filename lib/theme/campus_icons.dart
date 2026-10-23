@@ -80,7 +80,7 @@ abstract final class CampusIcons {
   static const commonFree = LucideIcons.calendarCheck2;
   static const importSchedule = LucideIcons.import;
   static const replaceSchedule = LucideIcons.replace;
-  static const addCourses = LucideIcons.listPlus;
+  static const mergeSchedule = LucideIcons.gitMerge;
   static const scanImage = LucideIcons.imageUp;
   static const flashlight = LucideIcons.flashlight;
   static const terms = LucideIcons.fileText;

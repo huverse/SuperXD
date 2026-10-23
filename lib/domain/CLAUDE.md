@@ -27,6 +27,7 @@
   - 管理课程里各门课按最早的上课时段排（[人工决策] 在 courseGroups 上方）。
   - 单时段与单周调整 changeSlot、removeSlot，冲突检测 courseOverlaps。
   - 变更对比 scheduleChanges，以及时段、周次的显示文案；节次文案只经 periodLabel（一节写「第3节」），学分只经 creditLabel（整数不带小数）。
+- schedule_merge.dart：好友课表逐项合并的规则：planScheduleMerge 按课名配对（同管理课程），配上的那门课按时段比出差异（同一上课时间比周次、教室、教师，一样的改动合成一项；两边各剩的时段配成上课时间改动，多出来的是加上、去掉；学分对整门课），记下有没有同一个教学班；applyScheduleMerge 把勾了的套到自己的时段上再经 regroupCourse 分回教学班，加进来的课和自己课程标识撞了另起本地课程。人工决策在 page/schedule_import.dart。
 - period_spans.dart：把当日课程按节次展开成 PeriodSpan（有课段与空档段），并决定补齐哪些节次。
 - meeting_time.dart：按作息把节次换算成上课时刻 MeetingTime。
 - course_occurrence.dart：courseOccurrences 把课表、开学日与作息展开成带 UTC 起止时刻的课程实例 CourseOccurrence，供课前提醒、日历导出、桌面小组件共用；节次文案统一用 CourseOccurrence.periods。
@@ -84,7 +85,7 @@
 
 # 测试
 
-- 课表：schedule_edit_test.dart、schedule_version_test.dart、period_day_test.dart。
+- 课表：schedule_edit_test.dart、schedule_merge_test.dart、schedule_version_test.dart、period_day_test.dart。
 - 课程实例与下游：reminder_test.dart、calendar_export_test.dart、home_widget_test.dart。
 - 成绩、卡片与更新规则：grades_test.dart、share_card_test.dart、app_update_test.dart；开屏画作清单与轮换：painting_test.dart。
 - 面向用户的文案写法（节次、学分、按远近写的时刻、不及格）：campus_text_test.dart。
