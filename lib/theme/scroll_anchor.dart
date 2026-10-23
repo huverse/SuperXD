@@ -95,4 +95,11 @@ class _AnchoredScrollPosition extends ScrollPositionWithSingleContext {
     if (newActivity is HoldScrollActivity || newActivity is DragScrollActivity || newActivity is DrivenScrollActivity) controller.release();
     super.beginActivity(newActivity);
   }
+
+  // 代码直接跳到某处（读屏聚焦、显示到可见区默认就是跳）不经过上面那几种活动，同样放开，不然下一次排版又被校正拽回锚点。
+  @override
+  void jumpTo(double value) {
+    controller.release();
+    super.jumpTo(value);
+  }
 }

@@ -247,7 +247,9 @@ void main() {
     await tester.tap(find.text('雾蓝'));
     await tester.pumpAndSettle();
     expect(settings.paletteId, 'mist');
+    // 要找的那一项已经露出一角时 scrollUntilVisible 不拖、只直接跳，跳完不排版，不等一帧就按跳之前的位置点，可能点到屏幕外。
     await tester.scrollUntilVisible(find.text('文学衬线'), 200, scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('文学衬线'));
     await tester.pumpAndSettle();
     expect(settings.fontId, 'serif');
@@ -259,6 +261,7 @@ void main() {
     );
     // 换字体时那张卡锚定在原位，列表按需建、更远的字号行还没建出来，要滚过去。
     await tester.scrollUntilVisible(find.text('特大'), 200, scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('特大'));
     await tester.pumpAndSettle();
     expect(settings.scale, 1.4);
