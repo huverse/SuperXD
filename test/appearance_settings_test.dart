@@ -257,11 +257,14 @@ void main() {
       CampusPalette.of(context).primary,
       CampusPalette.byId('mist').primary,
     );
-    await tester.ensureVisible(find.text('特大'));
+    // 换字体时那张卡锚定在原位，列表按需建、更远的字号行还没建出来，要滚过去。
+    await tester.scrollUntilVisible(find.text('特大'), 200, scrollable: find.byType(Scrollable).first);
     await tester.tap(find.text('特大'));
     await tester.pumpAndSettle();
     expect(settings.scale, 1.4);
-    await tester.scrollUntilVisible(find.text('简化'), -200, scrollable: find.byType(Scrollable).first);
+    // 切字号时字号那一行锚定在原位，玻璃效果可能已建出来但在屏幕外：滚到它露出再点。
+    await tester.ensureVisible(find.text('简化'));
+    await tester.pumpAndSettle();
     expect(tester.widget<CampusSegmented<String>>(find.byType(CampusSegmented<String>)).selected, 'auto');
     await tester.tap(find.text('简化'));
     await tester.pumpAndSettle();
@@ -270,6 +273,81 @@ void main() {
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     settings.dispose();
+  });
+  // 用户反馈：从大字号切到小字号时整页跳动、按钮变形。改为字号连续过渡（人工决策见 display_settings.dart 的 CampusTextScale），点的那一行停在手指下。
+  testWidgets('改字号连续过渡：途中是中间字号、一路单调变化，字号那一行每一帧都停在原位', (tester) async {
+    // 视口矮一些，切到标准字号后下面仍有可滚的余量（到底时校正不了的那部分照常移动，见 scroll_anchor.dart）。
+    await tester.binding.setSurfaceSize(const Size(400, 560));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final settings = DisplaySettings.memory();
+    await settings.setScale(1.4);
+    await tester.pumpWidget(ListenableBuilder(
+      listenable: settings,
+      builder: (context, _) => MaterialApp(
+        theme: campusTheme(fontFamily: settings.fontFamily),
+        builder: (context, child) => DisplayScope(settings: settings, child: CampusTextScale(multiplier: settings.scale, child: child!)),
+        home: const AppearancePage(),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    final scrollable = find.byType(Scrollable).first;
+    await tester.scrollUntilVisible(find.text('标准'), 200, scrollable: scrollable);
+    await tester.pumpAndSettle();
+    // 往回滚一点：下面留出余量（滚到底时，下面的内容变矮那一点校正不了，见本用例后半段）。
+    await tester.drag(scrollable, const Offset(0, 120));
+    await tester.pumpAndSettle();
+    double scaleNow() => MediaQuery.textScalerOf(tester.element(find.text('标准'))).scale(14) / 14;
+    expect(scaleNow(), closeTo(1.4, 1e-6));
+    final row = find.ancestor(of: find.text('标准'), matching: find.byType(Wrap)).first;
+    Future<List<double>> morph(String label, {required List<double> scales}) async {
+      final tops = [tester.getTopLeft(row).dy];
+      await tester.tap(find.text(label));
+      for (var frame = 0; frame < 24; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        scales.add(scaleNow());
+        tops.add(tester.getTopLeft(row).dy);
+      }
+      await tester.pumpAndSettle();
+      return [...tops, tester.getTopLeft(row).dy];
+    }
+    final scales = <double>[];
+    final tops = await morph('标准', scales: scales);
+    expect(settings.scale, 1.0);
+    expect(scaleNow(), closeTo(1.0, 1e-6));
+    expect(scales.where((scale) => scale > 1.02 && scale < 1.38), isNotEmpty, reason: '途中有中间字号，不是一帧跳过去');
+    for (var index = 1; index < scales.length; index++) {
+      expect(scales[index], lessThanOrEqualTo(scales[index - 1] + 1e-9));
+    }
+    for (final top in tops) {
+      expect(top, closeTo(tops.first, 1), reason: '上面的内容变矮时字号这一行不跟着往上跳');
+    }
+
+    // 滚到最底再切到特大：底边贴着屏幕底，这一行跟着下面内容的变化平滑移动，每一帧只挪一点、不跳。
+    await tester.drag(scrollable, const Offset(0, -2000));
+    await tester.pumpAndSettle();
+    final bottomTops = await morph('特大', scales: <double>[]);
+    expect(settings.scale, 1.4);
+    for (var index = 1; index < bottomTops.length; index++) {
+      expect((bottomTops[index] - bottomTops[index - 1]).abs(), lessThan(8), reason: '第 $index 帧');
+    }
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    settings.dispose();
+  });
+  testWidgets('减少动画时字号直接换成新值', (tester) async {
+    var multiplier = 1.4;
+    late StateSetter update;
+    await tester.pumpWidget(MediaQuery(
+      data: const MediaQueryData(disableAnimations: true),
+      child: StatefulBuilder(builder: (context, setState) {
+        update = setState;
+        return CampusTextScale(multiplier: multiplier, child: Builder(builder: (context) => Text('${MediaQuery.textScalerOf(context).scale(10)}', textDirection: TextDirection.ltr)));
+      }),
+    ));
+    expect(find.text('14.0'), findsOneWidget);
+    update(() => multiplier = 1.0);
+    await tester.pump();
+    expect(find.text('10.0'), findsOneWidget);
   });
   testWidgets('限档时说明原因，点「完整」（已选中也算）即解除限档重试', (tester) async {
     const channel = MethodChannel('superxd/glass');

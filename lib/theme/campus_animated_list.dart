@@ -3,7 +3,7 @@ import 'package:flutter/widgets.dart';
 // [人工决策-2026-10-19 17:55:48] 列表条目增删有过渡（用户选定，同 iOS 表格、Material 列表的增删）：新出现的条目展开并淡入，
 // 去掉的条目原地收起并淡出，下面的内容顺着移动、不一下跳上去；约 200ms。第一次显示不动画（设计语言禁止逐项飞入），减少动画时直接换。
 // 只用在没有玻璃的内容区列表上（淡入淡出的祖先图层下玻璃取不到背景）。
-const _duration = Duration(milliseconds: 200);
+const campusListDuration = Duration(milliseconds: 200);
 
 // 条目照旧铺满列表宽度：SizeTransition 内部是 Align，会把宽度放松成「最多这么宽」，按内容收窄的条目（会话卡片）就被居中了。
 Widget _transition(Animation<double> animation, Widget child) {
@@ -29,7 +29,7 @@ class _Entry {
 }
 
 class _CampusAnimatedColumnState extends State<CampusAnimatedColumn> with TickerProviderStateMixin {
-  late List<_Entry> _entries = [for (final child in widget.children) _Entry(child, AnimationController(vsync: this, duration: _duration, value: 1))];
+  late List<_Entry> _entries = [for (final child in widget.children) _Entry(child, AnimationController(vsync: this, duration: campusListDuration, value: 1))];
 
   @override
   void didUpdateWidget(CampusAnimatedColumn oldWidget) {
@@ -40,7 +40,7 @@ class _CampusAnimatedColumnState extends State<CampusAnimatedColumn> with Ticker
     for (final child in widget.children) {
       final entry = old.remove(child.key);
       if (entry == null) {
-        next.add(_Entry(child, AnimationController(vsync: this, duration: _duration, value: instant ? 1 : 0))..controller.forward());
+        next.add(_Entry(child, AnimationController(vsync: this, duration: campusListDuration, value: instant ? 1 : 0))..controller.forward());
       } else {
         entry
           ..child = child
@@ -99,7 +99,7 @@ class CampusAppear extends StatefulWidget {
 }
 
 class _CampusAppearState extends State<CampusAppear> with SingleTickerProviderStateMixin {
-  late final _controller = AnimationController(vsync: this, duration: _duration, value: widget.animate ? 0 : 1)..forward();
+  late final _controller = AnimationController(vsync: this, duration: campusListDuration, value: widget.animate ? 0 : 1)..forward();
 
   @override
   void didChangeDependencies() {
