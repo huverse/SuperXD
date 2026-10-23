@@ -10,6 +10,7 @@ import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
@@ -135,7 +136,8 @@ class _PaintingsPageState extends State<PaintingsPage> {
                       Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                         Text('《${painting.title}》', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
                         const SizedBox(height: 2),
-                        Text(painting.id == current ? '${painting.note} · 这次开屏' : painting.note, style: secondary),
+                        // 说明与「这次开屏」按项换行，不在窄处折出孤字。
+                        DotSeparatedText(painting.id == current ? '${painting.note} · 这次开屏' : painting.note, style: secondary),
                       ])),
                       _SaveButton(painting: painting, state: _state, onSave: () => _save(context, painting)),
                     ]),
@@ -178,7 +180,7 @@ class _SaveButton extends StatelessWidget {
   }
 }
 
-// 全屏看画的路由：黑底渐显，画作从卡片里那张的位置按页面转场同一条弹簧曲线飞到屏幕正中（完整显示、不裁），停稳后可双指缩放。
+// 全屏看画的路由：黑底渐显到不透明（半透明时下面卡片的标题、按钮会和全屏页的说明叠在一起），画作从卡片里那张的位置按页面转场同一条弹簧曲线飞到屏幕正中（完整显示、不裁），停稳后可双指缩放。
 // 是浮层（登记层数，背景动效停住）；返回键、点一下都原路缩回。
 class _PaintingZoomRoute extends PopupRoute<void> with CampusOverlayDepthRoute<void> {
   _PaintingZoomRoute({required this.painting, required this.source, required this.origin, required this.state, required this.onSave, required this.instant});
@@ -259,7 +261,7 @@ class _PaintingZoomState extends State<_PaintingZoom> {
             final chrome = Curves.easeOut.transform(((progress - .5) / .5).clamp(0.0, 1.0));
             final settled = widget.animation.status == AnimationStatus.completed;
             return Stack(children: [
-              Positioned.fill(child: GestureDetector(onTap: _close, child: ColoredBox(color: Colors.black.withValues(alpha: .92 * progress)))),
+              Positioned.fill(child: GestureDetector(onTap: _close, child: ColoredBox(color: Colors.black.withValues(alpha: progress)))),
               Positioned.fromRect(
                 rect: rect,
                 child: Semantics(

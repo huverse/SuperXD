@@ -14,7 +14,7 @@ class Painting {
   final int height;
   // 画作比屏幕宽、要裁两边时保留哪一处：0 最左、1 最右。
   final double focus;
-  // 顶边从左到右几段的平均色（ARGB），画作上方的天空按它横向铺开，与画作顶边逐段接上。
+  // 画作顶边从左到右几段背后的天空色（ARGB），画作上方的天空按它横向铺开，与画作顶边逐段接上；工具按顶边平均色给建议，前景挡住天空的段在清单里手改。
   final List<int> horizon;
   // 屏幕顶端的天空色（ARGB），应用名写在它上面。
   final int sky;

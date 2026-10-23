@@ -12,6 +12,7 @@ import 'package:superxd/page/about_page.dart';
 import 'package:superxd/page/painting_splash.dart';
 import 'package:superxd/page/paintings_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 final _png = Uint8List.fromList(img.encodePng(img.Image(width: 16, height: 9)..clear(img.ColorRgb8(120, 140, 180))));
 
@@ -43,6 +44,7 @@ void main() {
     image: MemoryImage(_png),
     ready: ready,
     fontFamily: 'Maple Mono NF CN',
+    shown: Future<void>.value(),
     child: const _Probe(),
   );
   // 开屏这层还接手势，就是还没开始溶解（溶解途中手指已能点到下面的页面）。
@@ -94,6 +96,25 @@ void main() {
     await tester.pump(PaintingSplash.longest);
   });
 
+  // 模拟器调试包实测：首帧上屏比建好晚约 2 秒，从建好起算的话开屏一出现就满了 1.2 秒、紧接着溶解。
+  testWidgets('开屏：计时从第一帧真正上屏起，上屏之前不算；入场动画也等上屏才开始', (tester) async {
+    final shown = Completer<void>();
+    await tester.pumpWidget(PaintingSplash(painting: _painting, image: MemoryImage(_png), ready: Future<void>.value(), fontFamily: 'Maple Mono NF CN', shown: shown.future, child: const _Probe()));
+    await tester.pump(const Duration(seconds: 3));
+    expect(leaving(tester), isFalse, reason: '还没上屏，不算时长');
+    expect(tester.widget<Opacity>(find.ancestor(of: find.text('SuperXD'), matching: find.byType(Opacity)).first).opacity, 0, reason: '入场动画还没开始');
+    shown.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 1100));
+    expect(leaving(tester), isFalse, reason: '上屏后还没满 1.2 秒');
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(leaving(tester), isTrue);
+    await tester.pump(const Duration(milliseconds: 600));
+    await tester.pump();
+    expect(find.text('SuperXD'), findsNothing);
+    await tester.pump(PaintingSplash.longest);
+  });
+
   testWidgets('开屏：一直恢复不完时最多停几秒，之后照常溶解', (tester) async {
     await tester.pumpWidget(splash(Completer<void>().future, GlobalKey()));
     await tester.pump(PaintingSplash.longest - const Duration(milliseconds: 100));
@@ -137,7 +158,7 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('《合成画作》'), findsOneWidget);
     expect(find.text('《合成第二幅》'), findsOneWidget);
-    expect(find.text('测试说明 · 这次开屏'), findsOneWidget, reason: '上次是第二幅，这次轮到第一幅');
+    expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text == '测试说明 · 这次开屏'), findsOneWidget, reason: '上次是第二幅，这次轮到第一幅');
     await tester.runAsync(() async {
       await tester.tap(find.text('保存到相册').first);
       await tester.pump();
@@ -170,6 +191,8 @@ void main() {
     expect(tester.widget<Visibility>(find.descendant(of: find.byType(AspectRatio), matching: find.byType(Visibility))).visible, isFalse);
     await tester.pumpAndSettle();
     expect(find.byTooltip('关闭'), findsOneWidget);
+    // 停稳后黑底不透明：半透明时下面卡片的标题、按钮会和全屏页的说明叠在一起（模拟器上看到过）。
+    expect(find.byWidgetPredicate((widget) => widget is ColoredBox && widget.color == Colors.black), findsOneWidget);
     final zoomed = tester.getRect(find.descendant(of: find.byType(InteractiveViewer), matching: find.byType(Image)));
     expect(zoomed.width, greaterThan(card.width - 1));
     await tester.tap(find.byTooltip('关闭'));

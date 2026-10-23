@@ -13,7 +13,7 @@ import 'package:superxd/domain/painting.dart';
 // 往上过渡到 sky 色，应用名与画名写在天空里（像画册封面）。系统启动图（应用图标）淡出后，天空先在，画作从下方浮起淡入、极慢地推近，
 // 应用名与画名依次淡入；离开时整层淡出、画作再推近一点。减少动画时只淡入淡出，不位移不缩放。
 class PaintingSplash extends StatefulWidget {
-  const PaintingSplash({super.key, required this.painting, required this.image, required this.ready, required this.fontFamily, required this.child});
+  const PaintingSplash({super.key, required this.painting, required this.image, required this.ready, required this.fontFamily, required this.child, this.shown});
   final Painting painting;
   // 组合根在 runApp 之前就开始解码的同一个图片（见 paintingSplashImage），开屏第一帧多半已经有图。
   final ImageProvider image;
@@ -21,6 +21,8 @@ class PaintingSplash extends StatefulWidget {
   final Future<void> ready;
   final String fontFamily;
   final Widget child;
+  // 开屏第一帧真正上屏（栅格化完）；为空用引擎报的首帧（WidgetsBinding.waitUntilFirstFrameRasterized），测试里引擎不报帧耗时，传一个已完成的。
+  final Future<void>? shown;
 
   static const minimum = Duration(milliseconds: 1200);
   static const settle = Duration(milliseconds: 450);
@@ -67,14 +69,22 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
     if (_reduced) {
       _entry.value = 1;
       _exit.duration = const Duration(milliseconds: 240);
-    } else {
-      _entry.forward();
-      _drift.forward();
     }
-    _timers.add(Timer(PaintingSplash.minimum, () {
-      _minimumPassed = true;
-      if (_settled) _leave();
-    }));
+    // 计时与入场动画都从开屏第一帧真正上屏之后开始：首帧要编译着色器、runApp 之后还有初始化，上屏可能比建好晚一两秒（模拟器调试包实测），
+    // 从 initState 或建好那一帧起算的话，开屏一出现就已经满了 1.2 秒、紧接着溶解，入场动画也在上屏之前就走完了。
+    (widget.shown ?? WidgetsBinding.instance.waitUntilFirstFrameRasterized).then((_) {
+      if (!mounted) return;
+      if (!_reduced) {
+        _entry.forward();
+        _drift.forward();
+      }
+      _timers
+        ..add(Timer(PaintingSplash.minimum, () {
+          _minimumPassed = true;
+          if (_settled) _leave();
+        }))
+        ..add(Timer(PaintingSplash.longest, _leave));
+    });
     widget.ready.then((_) {
       if (!mounted) return;
       _timers.add(Timer(PaintingSplash.settle, () {
@@ -82,7 +92,6 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
         if (_minimumPassed) _leave();
       }));
     }, onError: (Object error, StackTrace stack) => _leave());
-    _timers.add(Timer(PaintingSplash.longest, _leave));
   }
 
   // 溶解进应用：只走一次；途中手指已能点到下面的页面。走完从树上拿掉（子树位置不变，下面的应用不重建）。
@@ -170,7 +179,7 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
                     DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: Alignment(from, 0), end: Alignment(to, 0), colors: [for (final color in painting.horizon) Color(color)]))),
                     DecoratedBox(
                       decoration: BoxDecoration(
-                        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment(0, top), colors: [sky, sky, sky.withValues(alpha: 0)], stops: const [0, .4, 1]),
+                        gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment(0, top), colors: [sky, sky, sky.withValues(alpha: 0)], stops: const [0, .3, 1]),
                       ),
                     ),
                     Positioned(
