@@ -114,6 +114,27 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
   });
 
+  // 界面页换字体后马上「滚到字号那一行」（ensureVisible 是直接跳）曾被锚定拽回原处，点到了屏幕外。
+  testWidgets('滚动锚定：锚定期间代码直接跳到某处也放开，之后的排版不把位置拽回', (tester) async {
+    final controller = CampusAnchoredScrollController();
+    addTearDown(controller.dispose);
+    final anchor = GlobalKey();
+    var above = 300.0;
+    late StateSetter update;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StatefulBuilder(builder: (context, setState) {
+      update = setState;
+      return ListView(controller: controller, children: [SizedBox(height: above), SizedBox(key: anchor, height: 60), const SizedBox(height: 2000)]);
+    }))));
+    controller.jumpTo(200);
+    await tester.pump();
+    controller.hold(anchor, const Duration(seconds: 1));
+    controller.jumpTo(500);
+    update(() => above = 280);
+    await tester.pump();
+    expect(controller.offset, 500);
+    await tester.pump(const Duration(seconds: 1));
+  });
+
   testWidgets('滚动锚定：过了最短时长还有晚到的排版变化照样校正，稳下来才放开（慢设备上过渡的最后一帧会晚到）', (tester) async {
     final controller = CampusAnchoredScrollController();
     addTearDown(controller.dispose);
