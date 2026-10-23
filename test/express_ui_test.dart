@@ -38,10 +38,11 @@ const _session = PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', us
 http.Response _json(Map<String, Object?> body) => http.Response(jsonEncode(body), 200, headers: {'content-type': 'application/json;charset=UTF-8'});
 
 // 合成拼多多服务：按路径回合成数据，身份码固定一串 dd 码，绑定链路全部回成功；calls 按顺序记下请求路径，station 换驿站查询的结果。
-http.Client _fakeClient({List<String>? calls, Map<String, Object?>? station, List<http.Request>? requests, Future<void>? trackGate, Future<void>? stationGate}) => MockClient((request) async {
+http.Client _fakeClient({List<String>? calls, Map<String, Object?>? station, List<http.Request>? requests, Future<void>? trackGate, Future<void>? stationGate, Future<void>? identityGate}) => MockClient((request) async {
   final path = request.url.path;
   calls?.add(path);
   requests?.add(request);
+  if (path.endsWith('generate_identification_code')) await identityGate;
   // 物流接口照 10-22 真机的返回形状：不带 success、error_code 是 null；package_info 写这件寄到的手机尾号。
   if (path.endsWith('shipping/track')) {
     await trackGate;
@@ -172,16 +173,19 @@ void main() {
     Future<bool> Function(Uri uri)? launch,
     Future<void>? trackGate,
     Future<void>? stationGate,
+    Future<void>? identityGate,
     Widget Function(String token)? verifyPage,
+    ToolboxShortcutPin? pin,
   }) => ToolboxRuntime.testing(
     catalog: toolboxCatalog,
     store: fixture.store,
     downloads: fixture.manager,
     scanQrCode: scan,
+    pinShortcut: pin,
     services: {
       ExpressService.serviceId: ExpressService(
         vault: vault,
-        clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: _fakeClient(calls: calls, station: station, requests: requests, trackGate: trackGate, stationGate: stationGate))),
+        clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: _fakeClient(calls: calls, station: station, requests: requests, trackGate: trackGate, stationGate: stationGate, identityGate: identityGate))),
         antiContent: _FakeAnti(),
         filePublisher: () => publisher ?? FakePublisher(),
         temporaryDirectory: () async => temp,
@@ -1110,6 +1114,111 @@ void main() {
     await tester.pump();
     expect(find.byType(BarcodeWidget), findsOneWidget);
     expect(tester.getRect(find.byType(BarcodeWidget)), inline);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 「取件身份码」快捷入口（人工决策见 express_page.dart 的 _openIdentity）。
+  testWidgets('快捷入口打开：先盖白底原地生成，码到了直接全屏出示（不飞入、亮度调高）、白底拿掉；关掉缩回快递首页的身份码卡', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 780));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final brightness = <String>[];
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('github.com/aaassseee/screen_brightness'), (call) async {
+      brightness.add(call.method);
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('github.com/aaassseee/screen_brightness'), null));
+    await vault.save(_session);
+    final gate = Completer<void>();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(identityGate: gate.future), openIdentity: true)));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(ExpressIdentityPending), findsOneWidget);
+    expect(find.text('正在生成身份码'), findsOneWidget);
+
+    gate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump();
+    await tester.pump();
+    // 码到了：全屏页一出来就在终点（条码已转 90° 沿长边铺开），白底拿掉，亮度调到最高。
+    expect(find.byType(ExpressIdentityPending), findsNothing);
+    final zoomed = tester.getRect(find.byType(BarcodeWidget).last);
+    expect(zoomed.height, greaterThan(780 * .6));
+    expect(zoomed.height, greaterThan(zoomed.width * 2));
+    expect(find.text('dd202610190000000000001'), findsNWidgets(2));
+    expect(brightness, ['setApplicationScreenBrightness']);
+
+    // 关掉全屏：缩回快递首页的身份码卡，亮度复原。
+    await tester.tapAt(const Offset(30, 400));
+    await tester.pump();
+    await tester.pump(campusExit);
+    await tester.pump(const Duration(milliseconds: 16));
+    await tester.pump();
+    expect(find.byType(BarcodeWidget), findsOneWidget);
+    expect(find.text('合成昵称'), findsOneWidget);
+    expect(brightness, ['setApplicationScreenBrightness', 'resetApplicationScreenBrightness']);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('快捷入口打开但没登录拼多多：不盖白底，停在登录入口', (tester) async {
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(), openIdentity: true)));
+    await tester.pumpAndSettle();
+    expect(find.byType(ExpressIdentityPending), findsNothing);
+    expect(find.text('登录拼多多'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('快捷入口打开、码还在生成时按返回：只拿掉白底、留在快递首页，码到了不再自动全屏', (tester) async {
+    await vault.save(_session);
+    final gate = Completer<void>();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(identityGate: gate.future), openIdentity: true)));
+    await tester.pump();
+    await tester.pump();
+    expect(find.byType(ExpressIdentityPending), findsOneWidget);
+    await tester.binding.handlePopRoute();
+    await tester.pump();
+    expect(find.byType(ExpressIdentityPending), findsNothing);
+    expect(find.byType(ExpressPage), findsOneWidget);
+    expect(find.text('合成昵称'), findsOneWidget);
+
+    gate.complete();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('dd202610190000000000001'), findsOneWidget, reason: '只在卡片里，没有全屏');
+    expect(find.byType(BarcodeWidget), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('身份码卡的「添加到桌面」：注入了 pinShortcut 才有，点了按工具 id 与入口 id 请求；桌面不支持时提示条说明', (tester) async {
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('身份码'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(find.text('添加到桌面'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+
+    final pins = <String>[];
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(pin: (toolId, shortcutId) async {
+      pins.add('$toolId.$shortcutId');
+      return false;
+    }))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('身份码'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.ensureVisible(find.text('添加到桌面'));
+    await tester.pump(const Duration(milliseconds: 400));
+    await tester.tap(find.text('添加到桌面'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 50));
+    expect(pins, ['express.identity']);
+    expect(find.text('当前桌面不支持添加快捷方式'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 5));
     await tester.pumpWidget(const SizedBox());
   });
 

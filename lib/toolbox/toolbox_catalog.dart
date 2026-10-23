@@ -42,5 +42,9 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
     builder: (context) => ExpressPage(runtime: runtime),
     openService: ExpressService.open,
     clearedData: '拼多多登录会话与来源同意（再用要重新登录并同意）',
+    // 取件身份码天天用、要快：长按应用图标或桌面快捷方式直达全屏身份码，返回是快递首页（人工决策见 express_page.dart 的 _openIdentity）。
+    shortcuts: [
+      ToolboxShortcut(id: ExpressPage.identityShortcut, label: '取件身份码', icon: CampusIcons.qrCode, builder: (context) => ExpressPage(runtime: runtime, openIdentity: true)),
+    ],
   ),
 ];

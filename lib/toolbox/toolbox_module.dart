@@ -16,7 +16,18 @@ class ToolboxServiceContext {
   final Uri? relayUrl;
 }
 
-// 一个工具的全部登记：名称、图标、页面、按需资源与自己的服务都写在这一处，增删工具只改注册表。
+// 工具的常用功能快捷入口：长按应用图标的菜单与「添加到桌面」都按它生成，点了直达 builder 给的页面
+// （路由 /toolbox/工具 id/入口 id，同工具页一样免教务登录）。id 在工具内唯一且不要改（桌面上的快捷方式按它找回页面），
+// label 是菜单与桌面上的名字，icon 画成快捷方式的图标。
+class ToolboxShortcut {
+  const ToolboxShortcut({required this.id, required this.label, required this.icon, required this.builder});
+  final String id;
+  final String label;
+  final IconData icon;
+  final WidgetBuilder builder;
+}
+
+// 一个工具的全部登记：名称、图标、页面、按需资源、自己的服务与快捷入口都写在这一处，增删工具只改注册表。
 // openService 不为空表示工具有自己的本机数据，百宝箱首页据此给出「清除数据」（经 ToolboxService.clearData）。
 class ToolboxModule {
   const ToolboxModule({
@@ -28,6 +39,7 @@ class ToolboxModule {
     this.openService,
     this.clearedData = '',
     this.openShared,
+    this.shortcuts = const [],
   });
   final String id;
   final String name;
@@ -39,4 +51,5 @@ class ToolboxModule {
   final String clearedData;
   // 好友分享的卡片由哪个工具打开：认得这张卡就返回要推入的页面，不认得返回空；组合根按注册表找，不直接认识工具页面。
   final Widget? Function(ShareCard card)? openShared;
+  final List<ToolboxShortcut> shortcuts;
 }
