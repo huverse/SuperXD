@@ -41,6 +41,7 @@
   - campus_prose.dart：按行排版的长说明 CampusProse：「1. 正文」编号悬挂缩进，「登录：正文」冒号前的段内小标题半粗，以冒号结尾的整行是小节标题；协议、隐私政策、首次同意弹窗与学习通同意说明共用，文字原样显示。
   - campus_animated_list.dart：列表增删的过渡（[人工决策] 在文件头，时长 campusListDuration，要等过渡走完再定位的调用方用它）：CampusAnimatedColumn 按 key 比对前后子项，新的展开淡入、去掉的原地收起；CampusAppear 给按需建的长列表里新到的一项展开。第一次显示不动画、减少动画时直接换，只用于没有玻璃的内容区列表。过渡不改条目的横向排布：条目始终铺满列表宽度，按内容收窄的条目（会话卡片）照旧靠左或靠右，不被居中。
   - dot_separated_text.dart：「甲 · 乙」式说明行 DotSeparatedText：按「 · 」分项放进 Wrap 换行，不把词拆成孤字，读屏读整句；page 层与百宝箱共用。
+  - scroll_anchor.dart：滚动锚定 CampusAnchoredScrollController：hold 之后，整页重新排版（字号过渡、换字体）时在滚动区排版的同一帧里校正滚动位置，锚点停在原来的屏幕位置；过了最短时长还要等到一次不用校正、内容尺寸不再变的排版才放开（慢设备上过渡的最后一帧会晚到），最晚 settleLimit；手指一按或代码滚动就放开，到顶或到底校正不了的部分照常移动。界面页的字号与字体选项在用。
   - scroll_edge_fade.dart：ScrollEdgeFade 在浮动玻璃栏下只渐隐内容本身（子树里不能再放玻璃）；CampusScrollFade 是页面滚动区的柔和边缘：有滚动区的页面都包（code_conventions_test.dart 守护；弹层、弹窗是玻璃面板不包），子树有玻璃开关或视频的页面不包；倒序列表（会话页最新在下）按视觉上缘那一端算，首次排版就按位置渐隐。
   - third_party_licenses.dart：registerCampusLicenses 把本项目 GPL-3.0 全文、第三方声明和两套字体许可注册进 LicenseRegistry。
 
@@ -62,7 +63,7 @@
 - 玻璃与按钮：campus_glass_test.dart、campus_glass_button_test.dart。
 - 背景、配色与深色：atmosphere_test.dart、dark_mode_test.dart、wallpaper_test.dart。
 - 动效与转场：campus_motion_test.dart、transition_sync_test.dart、account_lifecycle_test.dart（入场与转场中间帧）。
-- 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、底部弹层挂根导航器）。
+- 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器）。
 - 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
 
 # 人工决策检索

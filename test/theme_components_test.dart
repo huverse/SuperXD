@@ -5,6 +5,7 @@ import 'package:superxd/theme/campus_animated_list.dart';
 import 'package:superxd/theme/campus_prose.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/scroll_anchor.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
 void main() {
@@ -78,6 +79,69 @@ void main() {
     await tester.drag(find.byType(ListView), const Offset(0, 4000));
     await tester.pumpAndSettle();
     expect(top(), 0);
+  });
+
+  testWidgets('滚动锚定：锚点上方变高变矮时锚点停在原位；放开后或有别的滚动时不再拉回', (tester) async {
+    final controller = CampusAnchoredScrollController();
+    addTearDown(controller.dispose);
+    final anchor = GlobalKey();
+    var above = 300.0;
+    late StateSetter update;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StatefulBuilder(builder: (context, setState) {
+      update = setState;
+      return ListView(controller: controller, children: [
+        SizedBox(height: above),
+        SizedBox(key: anchor, height: 60),
+        const SizedBox(height: 2000),
+      ]);
+    }))));
+    controller.jumpTo(200);
+    await tester.pump();
+    final before = tester.getTopLeft(find.byKey(anchor)).dy;
+    controller.hold(anchor, const Duration(seconds: 1));
+    for (final height in [280.0, 240.0, 330.0]) {
+      update(() => above = height);
+      await tester.pump();
+      expect(tester.getTopLeft(find.byKey(anchor)).dy, closeTo(before, .5));
+    }
+    // 锚定期间代码发起的滚动照常滚到位，不被拉回。
+    controller.animateTo(500, duration: const Duration(milliseconds: 100), curve: Curves.linear);
+    await tester.pumpAndSettle();
+    expect(controller.offset, 500);
+    update(() => above = 200);
+    await tester.pump();
+    expect(controller.offset, 500, reason: '放开后照常排版，不再按锚点校正');
+    await tester.pump(const Duration(seconds: 1));
+  });
+
+  testWidgets('滚动锚定：过了最短时长还有晚到的排版变化照样校正，稳下来才放开（慢设备上过渡的最后一帧会晚到）', (tester) async {
+    final controller = CampusAnchoredScrollController();
+    addTearDown(controller.dispose);
+    final anchor = GlobalKey();
+    var above = 300.0;
+    late StateSetter update;
+    await tester.pumpWidget(MaterialApp(home: Scaffold(body: StatefulBuilder(builder: (context, setState) {
+      update = setState;
+      return ListView(controller: controller, children: [SizedBox(height: above), SizedBox(key: anchor, height: 60), const SizedBox(height: 2000)]);
+    }))));
+    controller.jumpTo(200);
+    await tester.pump();
+    final before = tester.getTopLeft(find.byKey(anchor)).dy;
+    controller.hold(anchor, const Duration(milliseconds: 300));
+    // 最短时长过去时一帧也没排（慢设备），之后才来的大变化照样校正。
+    await tester.binding.delayed(const Duration(milliseconds: 400));
+    update(() => above = 600);
+    await tester.pump();
+    expect(tester.getTopLeft(find.byKey(anchor)).dy, closeTo(before, .5));
+    // 再排一次、内容尺寸不变（只改宽度，各项高度固定）：稳下来了，放开；之后的变化不再按锚点校正。
+    await tester.binding.setSurfaceSize(const Size(700, 600));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pump();
+    final offset = controller.offset;
+    update(() => above = 200);
+    await tester.pump();
+    expect(controller.offset, offset);
+    await tester.pump(CampusAnchoredScrollController.settleLimit);
   });
 
   testWidgets('底部弹层挂根导航器：从嵌套导航器里打开也盖住外层，返回键先关弹层', (tester) async {

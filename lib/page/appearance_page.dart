@@ -19,6 +19,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
+import 'package:superxd/theme/scroll_anchor.dart';
 import 'package:superxd/theme/wallpaper_tone.dart';
 import 'package:superxd/domain/campus_log.dart';
 
@@ -67,6 +68,10 @@ class _AppearancePageState extends State<AppearancePage> {
   // 滑杆预览后待保存的定时器：系统取消拖动、读屏增减都没有松手回调，停手 300ms 后补存。
   Timer? _lookSave;
   DisplaySettings? _settings;
+  // 改字号、换字体会让整页重新排版：点的那一项在过渡期间停在手指下（人工决策见 local/display_settings.dart 的 CampusTextScale）。
+  final _scroll = CampusAnchoredScrollController();
+  final _scaleAnchor = GlobalKey();
+  final _fontAnchors = {for (final id in DisplaySettings.fontFamilies.keys) id: GlobalKey()};
 
   @override
   void didChangeDependencies() {
@@ -77,6 +82,7 @@ class _AppearancePageState extends State<AppearancePage> {
   // 离开页面时还没存的预览立即保存，页面已不在，失败只记日志。
   @override
   void dispose() {
+    _scroll.dispose();
     if (_lookSave?.isActive == true) {
       _lookSave!.cancel();
       _storeLook(_settings!).catchError((Object error, StackTrace stack) {
@@ -236,6 +242,7 @@ class _AppearancePageState extends State<AppearancePage> {
       ),
       body: CampusScrollFade(child: SafeArea(
         child: ListView(
+          controller: _scroll,
           padding: const EdgeInsets.all(20),
           children: [
             Text('外观模式', style: Theme.of(context).textTheme.titleLarge),
@@ -350,8 +357,13 @@ class _AppearancePageState extends State<AppearancePage> {
                   button: true,
                   label: font.label,
                   child: CampusSurface(
+                    key: _fontAnchors[font.id],
                     selected: settings.fontId == font.id,
-                    onTap: () => _save(() => settings.setFont(font.id)),
+                    // 换字体：第一次用到要解析字形，新字体可能晚几百毫秒才排上，锚定得久一些。
+                    onTap: () {
+                      _scroll.hold(_fontAnchors[font.id]!, const Duration(milliseconds: 900));
+                      _save(() => settings.setFont(font.id));
+                    },
                     child: Row(
                       children: [
                         Expanded(
@@ -378,6 +390,7 @@ class _AppearancePageState extends State<AppearancePage> {
             Text('字号', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 12),
             Wrap(
+              key: _scaleAnchor,
               spacing: 8,
               runSpacing: 8,
               children: [
@@ -389,11 +402,11 @@ class _AppearancePageState extends State<AppearancePage> {
                   CampusGlassChip(
                     label: DisplaySettings.labels[index],
                     selected: settings.scale == DisplaySettings.scales[index],
-                    onSelected: (_) => _save(
-                      () => settings.setScale(
-                        DisplaySettings.scales[index],
-                      ),
-                    ),
+                    onSelected: (_) {
+                      // 字号过渡期间这一行标签停在手指下，上面的内容变矮变高不把它带走；多留一帧余量。
+                      _scroll.hold(_scaleAnchor, CampusTextScale.duration + const Duration(milliseconds: 100));
+                      _save(() => settings.setScale(DisplaySettings.scales[index]));
+                    },
                   ),
               ],
             ),

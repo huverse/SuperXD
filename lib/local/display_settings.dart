@@ -354,3 +354,26 @@ class CampusTextScaler extends TextScaler {
   @override
   double get textScaleFactor => system.scale(14) / 14 * multiplier;
 }
+
+// [人工决策-2026-10-23 16:48:13] 改应用字号时连续过渡（用户反馈从大字号切到小字号整页跳动、按钮变形，要「流畅优雅的自然变形」）：
+// 以前新字号在一帧里整体生效，内容一下变矮、滚动位置被截断，按钮里的文字瞬间变小而勾号让位动画还按旧尺寸在播。
+// 现在把倍数在 duration 内平滑插值，全应用的文字、按钮、卡片跟着一起连续缩放（同 iOS 改文字大小时界面连续变化）；
+// 界面页另用 theme 的 CampusAnchoredScrollController 让点的那一项停在手指下。减少动画时直接换。
+class CampusTextScale extends StatelessWidget {
+  const CampusTextScale({super.key, required this.multiplier, required this.child});
+  final double multiplier;
+  final Widget child;
+  static const duration = Duration(milliseconds: 280);
+
+  @override
+  Widget build(BuildContext context) {
+    final media = MediaQuery.of(context);
+    return TweenAnimationBuilder<double>(
+      tween: Tween(end: multiplier),
+      duration: media.disableAnimations ? Duration.zero : duration,
+      curve: Curves.easeInOutCubic,
+      builder: (context, value, child) => MediaQuery(data: media.copyWith(textScaler: CampusTextScaler(media.textScaler, value)), child: child!),
+      child: child,
+    );
+  }
+}
