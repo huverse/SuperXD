@@ -5,26 +5,33 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:superxd/domain/painting.dart';
+import 'package:superxd/page/splash_signature.dart';
 
 // [人工决策-2026-10-23 16:48:13] 开屏画作（用户要求用自己以莫奈风格 AI 生成的画作做开屏背景，视觉交给助手；四项都选推荐）：
-// 每次冷启动显示，至少 1.2 秒、恢复好账号再溶解进应用，点任意处立即进入，从后台切回不出现；画作随安装包内置、按清单驱动（不写死，加画只加图与清单一行），
+// 每次冷启动显示，恢复好账号再溶解进应用，点任意处立即进入，从后台切回不出现；画作随安装包内置、按清单驱动（不写死，加画只加图与清单一行），
 // 按清单顺序轮换；画作单独声明保留所有权利、不随 GPL（README 许可一节与开源许可页）。
 // 构图：画作贴底铺满屏宽（不够高时放大到约四成屏高、按 focus 裁两边，不把小图拉满整屏发糊），顶边渐隐融进上方的天空；天空横向按画作顶边的分段色铺开、
-// 往上过渡到 sky 色，应用名与画名写在天空里（像画册封面）。系统启动图（只有底色，不画应用图标，[人工决策] 在 android res/values-v31/styles.xml）淡出后，天空先在，画作从下方浮起淡入、极慢地推近，
-// 应用名与画名依次淡入；离开时整层淡出、画作再推近一点。减少动画时只淡入淡出，不位移不缩放。
+// 往上过渡到 sky 色。系统启动图（只有底色，不画应用图标，[人工决策] 在 android res/values-v31/styles.xml）淡出后，天空先在，画作从下方浮起淡入、极慢地推近；
+// 离开时整层淡出、画作再推近一点。减少动画时只淡入淡出，不位移不缩放。
+// [人工决策-2026-10-23 21:12:25] 天空里只写应用名，不写画名与「仿莫奈风格 · AI 生成」（画名与说明只在关于页的开屏画作里看）；应用名改成一笔写出的手写体
+// （同苹果开机的 hello，见 splash_signature.dart）。用户选「写完再溶解」（未选保持 1.2 秒、字写得急）：上屏后 0.1 秒起笔、约 1.6 秒写完、停 0.3 秒，
+// 开屏至少约 2 秒；点一下随时进入。减少动画时不写、直接显示写好的字，至少 1.2 秒。
 class PaintingSplash extends StatefulWidget {
-  const PaintingSplash({super.key, required this.painting, required this.image, required this.ready, required this.fontFamily, required this.child, this.shown});
+  const PaintingSplash({super.key, required this.painting, required this.image, required this.ready, required this.child, this.shown});
   final Painting painting;
   // 组合根在 runApp 之前就开始解码的同一个图片（见 paintingSplashImage），开屏第一帧多半已经有图。
   final ImageProvider image;
   // 账号恢复完成：之后页面从启动页换到今天或登录页，等这段转场走完再溶解。
   final Future<void> ready;
-  final String fontFamily;
   final Widget child;
   // 开屏第一帧真正上屏（栅格化完）；为空用引擎报的首帧（WidgetsBinding.waitUntilFirstFrameRasterized），测试里引擎不报帧耗时，传一个已完成的。
   final Future<void>? shown;
 
-  static const minimum = Duration(milliseconds: 1200);
+  static const writeDelay = Duration(milliseconds: 100);
+  static const writing = Duration(milliseconds: 1600);
+  // 起笔前 0.1 秒、书写 1.6 秒，再停 0.3 秒。
+  static const minimum = Duration(milliseconds: 2000);
+  static const reducedMinimum = Duration(milliseconds: 1200);
   static const settle = Duration(milliseconds: 450);
   // 恢复一直不完成时最多等这么久，之后照常溶解（下面是启动页的加载动画）。
   static const longest = Duration(seconds: 4);
@@ -42,16 +49,16 @@ ImageProvider paintingSplashImage(Painting painting, Size screen, double deviceP
   return ResizeImage.resizeIfNeeded(math.min(width.round(), painting.width), null, ExactAssetImage(painting.asset));
 }
 
-// 天空上应用名的颜色：亮天空用同色相的深墨色，暗天空用浅色；次要文字对天空也不低于 4.5:1。
-({Color ink, Color soft, Brightness icons}) _inkOn(Color sky) {
+// 天空上应用名的颜色：亮天空用同色相的深墨色，暗天空用浅色。
+({Color ink, Brightness icons}) _inkOn(Color sky) {
   final light = sky.computeLuminance() > .3;
-  return light
-      ? (ink: Color.lerp(sky, Colors.black, .8)!, soft: Color.lerp(sky, Colors.black, .66)!, icons: Brightness.dark)
-      : (ink: Color.lerp(sky, Colors.white, .9)!, soft: Color.lerp(sky, Colors.white, .74)!, icons: Brightness.light);
+  return light ? (ink: Color.lerp(sky, Colors.black, .8)!, icons: Brightness.dark) : (ink: Color.lerp(sky, Colors.white, .9)!, icons: Brightness.light);
 }
 
 class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStateMixin {
   late final _entry = AnimationController(vsync: this, duration: const Duration(milliseconds: 1100));
+  // 一笔写出应用名；书写的快慢（转弯慢、直线快、提笔停顿）在 SplashSignature 里按进度换算，这里匀速走进度。
+  late final _write = AnimationController(vsync: this, duration: PaintingSplash.writing);
   // 极慢的推近（Ken Burns），整段开屏都在动，不停在一帧静止画面上。
   late final _drift = AnimationController(vsync: this, duration: const Duration(seconds: 6));
   late final _exit = AnimationController(vsync: this, duration: const Duration(milliseconds: 520));
@@ -68,6 +75,7 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
     super.initState();
     if (_reduced) {
       _entry.value = 1;
+      _write.value = 1;
       _exit.duration = const Duration(milliseconds: 240);
     }
     // 计时与入场动画都从开屏第一帧真正上屏之后开始：首帧要编译着色器、runApp 之后还有初始化，上屏可能比建好晚一两秒（模拟器调试包实测），
@@ -77,9 +85,10 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
       if (!_reduced) {
         _entry.forward();
         _drift.forward();
+        _timers.add(Timer(PaintingSplash.writeDelay, _write.forward));
       }
       _timers
-        ..add(Timer(PaintingSplash.minimum, () {
+        ..add(Timer(_reduced ? PaintingSplash.reducedMinimum : PaintingSplash.minimum, () {
           _minimumPassed = true;
           if (_settled) _leave();
         }))
@@ -113,6 +122,7 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
       timer.cancel();
     }
     _entry.dispose();
+    _write.dispose();
     _drift.dispose();
     _exit.dispose();
     super.dispose();
@@ -148,7 +158,10 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
     final from = left / screen.width * 2 - 1, to = (left + shown) / screen.width * 2 - 1;
     final top = (screen.height - height) / screen.height * 2 - 1;
     final reduced = _reduced;
-    final textScaler = media.textScaler.clamp(maxScaleFactor: 1.3);
+    // 签名宽约屏宽的七成（宽屏不超过 340），高按字形比例。
+    final signatureWidth = math.min(screen.width * .7, 340.0);
+    final signatureBounds = SplashSignature.shared.bounds;
+    final signatureHeight = signatureWidth * signatureBounds.height / signatureBounds.width;
     return AnnotatedRegion<SystemUiOverlayStyle>(
       value: SystemUiOverlayStyle(
         statusBarColor: Colors.transparent,
@@ -166,10 +179,9 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
           onTap: _leave,
           child: ExcludeSemantics(
             child: AnimatedBuilder(
-              animation: Listenable.merge([_entry, _drift, _exit]),
+              animation: Listenable.merge([_entry, _write, _drift, _exit]),
               builder: (context, _) {
-                double phase(double begin, double end) => Curves.easeOutCubic.transform(((_entry.value - begin) / (end - begin)).clamp(0.0, 1.0));
-                final rise = phase(0, .78), title = phase(.14, .66), caption = phase(.3, .86);
+                final rise = Curves.easeOutCubic.transform((_entry.value / .78).clamp(0.0, 1.0));
                 final leave = Curves.easeInOutCubic.transform(_exit.value);
                 final zoom = reduced ? 1.0 : 1 + .05 * (1 - rise) + .035 * _drift.value + .02 * leave;
                 return Opacity(
@@ -206,36 +218,16 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
                         ),
                       ),
                     ),
-                    // 应用名与画名：写在天空里约三成高的地方，依次淡入、略微上浮。
+                    // 应用名一笔写出，写在天空里约四成高的地方；离开时随整层淡出、略微上浮。
                     Positioned(
-                      left: 32,
-                      right: 32,
-                      top: media.padding.top + (screen.height - height - media.padding.top) * .36,
-                      child: MediaQuery(
-                        data: media.copyWith(textScaler: textScaler),
-                        child: Column(mainAxisSize: MainAxisSize.min, children: [
-                          Opacity(
-                            opacity: title,
-                            child: Transform.translate(
-                              offset: Offset(0, reduced ? 0 : 10 * (1 - title) - 8 * leave),
-                              child: Text('SuperXD', textAlign: TextAlign.center, textDirection: TextDirection.ltr, style: TextStyle(fontFamily: widget.fontFamily, fontSize: 34, fontWeight: FontWeight.w500, letterSpacing: 3, color: ink.ink, decoration: TextDecoration.none)),
-                            ),
-                          ),
-                          const SizedBox(height: 16),
-                          Opacity(
-                            opacity: caption,
-                            child: Transform.translate(
-                              offset: Offset(0, reduced ? 0 : 8 * (1 - caption) - 6 * leave),
-                              child: Column(mainAxisSize: MainAxisSize.min, children: [
-                                Container(width: 28, height: 1, color: ink.soft),
-                                const SizedBox(height: 14),
-                                Text('《${painting.title}》', textAlign: TextAlign.center, textDirection: TextDirection.ltr, style: TextStyle(fontFamily: widget.fontFamily, fontSize: 16, letterSpacing: 1, color: ink.ink, decoration: TextDecoration.none)),
-                                const SizedBox(height: 4),
-                                Text(painting.note, textAlign: TextAlign.center, textDirection: TextDirection.ltr, style: TextStyle(fontFamily: widget.fontFamily, fontSize: 14, color: ink.soft, decoration: TextDecoration.none)),
-                              ]),
-                            ),
-                          ),
-                        ]),
+                      left: 0,
+                      right: 0,
+                      top: media.padding.top + (screen.height - height - media.padding.top) * .4 - signatureHeight / 2,
+                      child: Center(
+                        child: Transform.translate(
+                          offset: Offset(0, reduced ? 0 : -8 * leave),
+                          child: CustomPaint(size: Size(signatureWidth, signatureHeight), painter: SplashSignaturePainter(progress: _write.value, color: ink.ink, strokeWidth: 2.4)),
+                        ),
                       ),
                     ),
                   ]),

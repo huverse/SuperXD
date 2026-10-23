@@ -134,7 +134,7 @@ void main() async {
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
   final restored = Completer<void>();
   final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings);
-  runApp(painting == null || splashImage == null ? app : PaintingSplash(painting: painting, image: splashImage, ready: restored.future, fontFamily: display.fontFamily, child: app));
+  runApp(painting == null || splashImage == null ? app : PaintingSplash(painting: painting, image: splashImage, ready: restored.future, child: app));
   unawaited(WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
     if (campusDiagnostics) campusLog('[App] action=first_frame ms=${launch.elapsedMilliseconds}');
   }));

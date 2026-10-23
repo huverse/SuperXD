@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' show PictureRecorder;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,6 +12,7 @@ import 'package:superxd/local/painting_library.dart';
 import 'package:superxd/page/about_page.dart';
 import 'package:superxd/page/painting_splash.dart';
 import 'package:superxd/page/paintings_page.dart';
+import 'package:superxd/page/splash_signature.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 
@@ -43,75 +45,100 @@ void main() {
     painting: _painting,
     image: MemoryImage(_png),
     ready: ready,
-    fontFamily: 'Maple Mono NF CN',
     shown: Future<void>.value(),
     child: const _Probe(),
   );
+  final signature = find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is SplashSignaturePainter);
+  double written(WidgetTester tester) => (tester.widget<CustomPaint>(signature).painter! as SplashSignaturePainter).progress;
   // 开屏这层还接手势，就是还没开始溶解（溶解途中手指已能点到下面的页面）。
-  bool leaving(WidgetTester tester) => tester.widget<IgnorePointer>(find.ancestor(of: find.text('SuperXD'), matching: find.byType(IgnorePointer)).first).ignoring;
+  bool leaving(WidgetTester tester) => tester.widget<IgnorePointer>(find.ancestor(of: signature, matching: find.byType(IgnorePointer)).first).ignoring;
 
-  testWidgets('开屏：满 1.2 秒且恢复好账号、转场走完才溶解；溶解完从树上拿掉，下面的应用一直在、不重建', (tester) async {
+  testWidgets('开屏：写完、恢复好账号、转场走完才溶解；溶解完从树上拿掉，下面的应用一直在、不重建', (tester) async {
     final ready = Completer<void>();
     _Probe.created = 0;
     await tester.pumpWidget(splash(ready.future, GlobalKey()));
-    expect(find.text('SuperXD'), findsOneWidget);
-    expect(find.text('《合成画作》'), findsOneWidget);
-    expect(find.text('测试说明'), findsOneWidget);
+    expect(signature, findsOneWidget);
     expect(find.text('应用'), findsOneWidget, reason: '应用在下面照常启动');
     await tester.pump(const Duration(milliseconds: 200));
     ready.complete();
-    await tester.pump(const Duration(milliseconds: 900));
-    expect(leaving(tester), isFalse, reason: '还没满 1.2 秒');
+    await tester.pump(const Duration(milliseconds: 1700));
+    expect(leaving(tester), isFalse, reason: '还没写完再停一会儿（2 秒）');
     await tester.pump(const Duration(milliseconds: 200));
     expect(leaving(tester), isTrue);
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
-    expect(find.text('SuperXD'), findsNothing);
+    expect(signature, findsNothing);
     expect(find.text('应用'), findsOneWidget);
     expect(_Probe.created, 1);
+  });
+
+  testWidgets('开屏只写应用名：一笔写出，起笔前不画、途中画到一半、写完是整个签名；画名与说明不在开屏上', (tester) async {
+    await tester.pumpWidget(splash(Completer<void>().future, GlobalKey()));
+    expect(find.text('《合成画作》'), findsNothing);
+    expect(find.text('测试说明'), findsNothing);
+    expect(find.text('SuperXD'), findsNothing, reason: '应用名是画出来的，不是文字');
+    await tester.pump();
+    expect(written(tester), 0);
+    // 到点起笔（这一帧是书写的第一帧），再过一半书写时长。
+    await tester.pump(PaintingSplash.writeDelay);
+    await tester.pump(PaintingSplash.writing ~/ 2);
+    expect(written(tester), closeTo(.5, .02));
+    await tester.pump(PaintingSplash.writing ~/ 2);
+    expect(written(tester), 1);
+    // 签名按比例放进给定的大小、线宽固定：几种大小、几种进度都画得出来、不报错。
+    for (final size in [const Size(120, 36), const Size(340, 102)]) {
+      for (final progress in [0.0, .3, .77, 1.0]) {
+        final recorder = PictureRecorder();
+        SplashSignaturePainter(progress: progress, color: const Color(0xFF223344), strokeWidth: 2.4).paint(Canvas(recorder), size);
+        recorder.endRecording().dispose();
+      }
+    }
+    // 一直没恢复好：到最长时间照常溶解，等溶解走完再结束。
+    await tester.pump(PaintingSplash.longest);
+    await tester.pump(const Duration(milliseconds: 600));
   });
 
   testWidgets('开屏：账号恢复得慢就等恢复完再过转场的时间；点一下立即溶解', (tester) async {
     final ready = Completer<void>();
     await tester.pumpWidget(splash(ready.future, GlobalKey()));
-    await tester.pump(const Duration(milliseconds: 1600));
-    expect(leaving(tester), isFalse, reason: '满了 1.2 秒但还没恢复好');
+    await tester.pump(const Duration(milliseconds: 2100));
+    expect(leaving(tester), isFalse, reason: '写完了但还没恢复好');
     ready.complete();
     await tester.pump(const Duration(milliseconds: 300));
     expect(leaving(tester), isFalse, reason: '恢复好了还要等页面转场走完');
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
-    expect(find.text('SuperXD'), findsNothing);
+    expect(signature, findsNothing);
 
     await tester.pumpWidget(const SizedBox());
     await tester.pumpWidget(splash(Completer<void>().future, GlobalKey()));
     await tester.pump(const Duration(milliseconds: 100));
-    await tester.tap(find.text('SuperXD'));
+    await tester.tap(signature);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
-    expect(find.text('SuperXD'), findsNothing);
+    expect(signature, findsNothing);
     // 一直恢复不完也不卡在开屏：最多等几秒（这里已经点掉了，等计时器都走完）。
     await tester.pump(PaintingSplash.longest);
   });
 
-  // 模拟器调试包实测：首帧上屏比建好晚约 2 秒，从建好起算的话开屏一出现就满了 1.2 秒、紧接着溶解。
-  testWidgets('开屏：计时从第一帧真正上屏起，上屏之前不算；入场动画也等上屏才开始', (tester) async {
+  // 模拟器调试包实测：首帧上屏比建好晚约 2 秒，从建好起算的话开屏一出现就到了时长、紧接着溶解。
+  testWidgets('开屏：计时从第一帧真正上屏起，上屏之前不算；入场与书写也等上屏才开始', (tester) async {
     final shown = Completer<void>();
-    await tester.pumpWidget(PaintingSplash(painting: _painting, image: MemoryImage(_png), ready: Future<void>.value(), fontFamily: 'Maple Mono NF CN', shown: shown.future, child: const _Probe()));
+    await tester.pumpWidget(PaintingSplash(painting: _painting, image: MemoryImage(_png), ready: Future<void>.value(), shown: shown.future, child: const _Probe()));
     await tester.pump(const Duration(seconds: 3));
     expect(leaving(tester), isFalse, reason: '还没上屏，不算时长');
-    expect(tester.widget<Opacity>(find.ancestor(of: find.text('SuperXD'), matching: find.byType(Opacity)).first).opacity, 0, reason: '入场动画还没开始');
+    expect(written(tester), 0, reason: '还没起笔');
     shown.complete();
     await tester.pump();
-    await tester.pump(const Duration(milliseconds: 1100));
-    expect(leaving(tester), isFalse, reason: '上屏后还没满 1.2 秒');
+    await tester.pump(const Duration(milliseconds: 1900));
+    expect(leaving(tester), isFalse, reason: '上屏后还没写完再停一会儿');
     await tester.pump(const Duration(milliseconds: 200));
     expect(leaving(tester), isTrue);
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
-    expect(find.text('SuperXD'), findsNothing);
+    expect(signature, findsNothing);
     await tester.pump(PaintingSplash.longest);
   });
 
@@ -122,21 +149,28 @@ void main() {
     await tester.pump(const Duration(milliseconds: 200));
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
-    expect(find.text('SuperXD'), findsNothing);
+    expect(signature, findsNothing);
   });
 
-  testWidgets('开屏：减少动画时第一帧就是完整画面，不位移不缩放', (tester) async {
+  testWidgets('开屏：减少动画时第一帧就是写好的字，不位移不缩放；不等书写，满 1.2 秒就溶解', (tester) async {
     tester.platformDispatcher.accessibilityFeaturesTestValue = FakeAccessibilityFeatures.allOn;
     addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
     await tester.pumpWidget(splash(Completer<void>().future, GlobalKey()));
-    final title = tester.widget<Opacity>(find.ancestor(of: find.text('SuperXD'), matching: find.byType(Opacity)).first);
-    expect(title.opacity, 1);
+    expect(written(tester), 1);
     expect(find.descendant(of: find.byType(PaintingSplash), matching: find.byWidgetPredicate((widget) => widget is Transform && widget.transform.getMaxScaleOnAxis() != 1)), findsNothing);
-    await tester.tap(find.text('SuperXD'));
+    await tester.tap(signature);
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump();
-    expect(find.text('SuperXD'), findsNothing);
+    expect(signature, findsNothing);
+    await tester.pump(PaintingSplash.longest);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(splash(Future<void>.value(), GlobalKey()));
+    await tester.pump(const Duration(milliseconds: 1100));
+    expect(leaving(tester), isFalse);
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(leaving(tester), isTrue);
     await tester.pump(PaintingSplash.longest);
   });
 
