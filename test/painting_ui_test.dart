@@ -85,11 +85,11 @@ void main() {
     expect(written(tester), closeTo(.5, .02));
     await tester.pump(PaintingSplash.writing ~/ 2);
     expect(written(tester), 1);
-    // 签名按比例放进给定的大小、线宽固定：几种大小、几种进度都画得出来、不报错。
+    // 签名按比例放进给定的大小、线宽随签名缩放：几种大小、几种进度都画得出来、不报错。
     for (final size in [const Size(120, 36), const Size(340, 102)]) {
       for (final progress in [0.0, .3, .77, 1.0]) {
         final recorder = PictureRecorder();
-        SplashSignaturePainter(progress: progress, color: const Color(0xFF223344), strokeWidth: 2.4).paint(Canvas(recorder), size);
+        SplashSignaturePainter(progress: progress, ink: (const Color(0xFF223344), const Color(0xFF442233))).paint(Canvas(recorder), size);
         recorder.endRecording().dispose();
       }
     }

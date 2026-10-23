@@ -49,10 +49,20 @@ ImageProvider paintingSplashImage(Painting painting, Size screen, double deviceP
   return ResizeImage.resizeIfNeeded(math.min(width.round(), painting.width), null, ExactAssetImage(painting.asset));
 }
 
-// 天空上应用名的颜色：亮天空用同色相的深墨色，暗天空用浅色。
-({Color ink, Brightness icons}) _inkOn(Color sky) {
-  final light = sky.computeLuminance() > .3;
-  return light ? (ink: Color.lerp(sky, Colors.black, .8)!, icons: Brightness.dark) : (ink: Color.lerp(sky, Colors.white, .9)!, icons: Brightness.light);
+// 天空上应用名的墨色从画里调：取画作顶边最冷、最暖的两色，亮天空压成深色（红橙黄压暗发脏，色相转到梅紫），暗天空提成浅色；
+// 沿书写方向从冷到暖渐变（雾城日出是靛蓝到梅紫，河畔树影两端都是蓝、几乎看不出渐变）。
+({(Color, Color) ink, Brightness icons}) _inkOn(Painting painting) {
+  final light = Color(painting.sky).computeLuminance() > .3;
+  final horizon = [for (final color in painting.horizon) Color(color)];
+  double warmth(Color color) => color.r - color.b;
+  Color ink(Color color) {
+    final hsl = HSLColor.fromColor(color);
+    final hue = hsl.hue <= 75 ? 330 + hsl.hue * .3 : hsl.hue;
+    return light ? HSLColor.fromAHSL(1, hue, (hsl.saturation * 2).clamp(.3, .65), .22).toColor() : HSLColor.fromAHSL(1, hue, hsl.saturation.clamp(.2, .5), .9).toColor();
+  }
+
+  final cool = horizon.reduce((a, b) => warmth(a) <= warmth(b) ? a : b), warm = horizon.reduce((a, b) => warmth(a) >= warmth(b) ? a : b);
+  return (ink: (ink(cool), ink(warm)), icons: light ? Brightness.dark : Brightness.light);
 }
 
 class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStateMixin {
@@ -149,7 +159,7 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
     final screen = media.size;
     final painting = widget.painting;
     final sky = Color(painting.sky);
-    final ink = _inkOn(sky);
+    final ink = _inkOn(painting);
     final height = _paintingHeight(painting, screen);
     final focus = painting.focus * 2 - 1;
     // 画作按 cover 铺进「屏宽 × height」时左右边缘在屏幕上的位置（换成 Alignment 的 -1 到 1），天空的分段色按同样的位置铺，和画作顶边逐段对上。
@@ -158,8 +168,8 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
     final from = left / screen.width * 2 - 1, to = (left + shown) / screen.width * 2 - 1;
     final top = (screen.height - height) / screen.height * 2 - 1;
     final reduced = _reduced;
-    // 签名宽约屏宽的七成（宽屏不超过 340），高按字形比例。
-    final signatureWidth = math.min(screen.width * .7, 340.0);
+    // 签名宽约屏宽的八成（宽屏不超过 360），高按字形比例。
+    final signatureWidth = math.min(screen.width * .8, 360.0);
     final signatureBounds = SplashSignature.shared.bounds;
     final signatureHeight = signatureWidth * signatureBounds.height / signatureBounds.width;
     return AnnotatedRegion<SystemUiOverlayStyle>(
@@ -226,7 +236,7 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
                       child: Center(
                         child: Transform.translate(
                           offset: Offset(0, reduced ? 0 : -8 * leave),
-                          child: CustomPaint(size: Size(signatureWidth, signatureHeight), painter: SplashSignaturePainter(progress: _write.value, color: ink.ink, strokeWidth: 2.4)),
+                          child: CustomPaint(size: Size(signatureWidth, signatureHeight), painter: SplashSignaturePainter(progress: _write.value, ink: ink.ink)),
                         ),
                       ),
                     ),
