@@ -353,6 +353,17 @@ void main() {
     expect(text, isNot(anyOf(contains('0013'), contains('example'), contains('token'))));
   });
 
+  test('很长的一串字母数字照样很快掩完（耗时不随长度平方涨），后面跟的链接照样掩掉', () async {
+    final logs = await open();
+    final watch = Stopwatch()..start();
+    logs.record('[Test] action=long errorType=Long ${'x' * 20000} jw.example.edu.cn/jwweb/x');
+    expect(watch.elapsed, lessThan(const Duration(milliseconds: 500)));
+    await logs.flush();
+    final text = log('errors.log').readAsStringSync();
+    expect(text, contains('<链接>'));
+    expect(text, isNot(contains('example')));
+  });
+
   test('两处同时导出共用一次：只打一个包、交给系统一次', () async {
     var published = 0;
     final logs = await open(publish: (archive, filename) async {
