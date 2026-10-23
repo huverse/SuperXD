@@ -2,29 +2,41 @@ import 'dart:async';
 
 import 'package:flutter/widgets.dart';
 
-// 滚动锚定（同浏览器的 overflow-anchor、iOS 设置里改文字大小时手指下的控件不动）：hold 之后的一小段时间里，
+// 滚动锚定（同浏览器的 overflow-anchor、iOS 设置里改文字大小时手指下的控件不动）：hold 之后，
 // 整页重新排版（字号过渡、换字体）让锚点上方的内容变高变矮时，在滚动区排版的同一帧里把滚动位置校正回去，
 // 锚点停在原来的屏幕位置，不晚一帧、不抖；手指一按或代码滚到某处就放开。到顶或到底校正不动的部分照常移动。
+// 过了 duration 不立刻放开，等到一次不用校正、内容尺寸也不再变的排版才放开（慢的设备上过渡的最后一帧会晚到，
+// 调试包在模拟器上实测约 100ms 一帧，按时放开就漏掉了变化最大的那一帧）；最晚 settleLimit 一定放开。
 class CampusAnchoredScrollController extends ScrollController {
+  static const settleLimit = Duration(seconds: 2);
   GlobalKey? _anchor;
   double? _anchorTop;
-  Timer? _release;
+  bool _expired = false;
+  (double, double)? _extent;
+  final _timers = <Timer>[];
 
-  // 记下锚点此刻在滚动区里的纵向位置，duration 之内保持它不动。
+  // 记下锚点此刻在滚动区里的纵向位置，至少 duration 之内保持它不动。
   void hold(GlobalKey anchor, Duration duration) {
     if (!hasClients) return;
     final top = (position as _AnchoredScrollPosition)._topOf(anchor);
     if (top == null) return;
+    release();
     _anchor = anchor;
     _anchorTop = top;
-    _release?.cancel();
-    _release = Timer(duration, release);
+    _timers
+      ..add(Timer(duration, () => _expired = true))
+      ..add(Timer(duration + settleLimit, release));
   }
 
   void release() {
-    _release?.cancel();
+    for (final timer in _timers) {
+      timer.cancel();
+    }
+    _timers.clear();
     _anchor = null;
     _anchorTop = null;
+    _expired = false;
+    _extent = null;
   }
 
   @override
@@ -40,7 +52,7 @@ class CampusAnchoredScrollController extends ScrollController {
 
   @override
   void dispose() {
-    _release?.cancel();
+    release();
     super.dispose();
   }
 }
@@ -69,6 +81,10 @@ class _AnchoredScrollPosition extends ScrollPositionWithSingleContext {
         correctPixels(corrected);
         return false;
       }
+      // 过了最短时长、这次不用校正且内容尺寸和上一次一样：排版稳下来了，放开。
+      final extent = (minScrollExtent, maxScrollExtent);
+      if (controller._expired && controller._extent == extent) controller.release();
+      controller._extent = extent;
     }
     return super.applyContentDimensions(minScrollExtent, maxScrollExtent);
   }
