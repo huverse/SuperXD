@@ -17,7 +17,7 @@
   - conversation_page.dart：会话页：卡片列表最新在下，自己的卡片原地显示发送中、失败与重发；对方的卡片贴左、自己的贴右、最宽 82%；卡片⋯可重发或删除（仅本机）；两处 [人工决策] 都在 _item；底部分享课表与界面；对方解除好友后改为提示。
   - share_card_view.dart：卡片渲染：课表（查看与对比，收到的可导入）、界面配置（预览、套用）、视频（打开）、未知类型（提示更新应用）。
   - friend_schedule_page.dart：好友课表与「共同空闲」（读本机同学期课表按日期对齐）；没有同学期课表或缺开学日时如实说明；顶栏可导入到自己的课表。
-  - schedule_import.dart：好友课表导入 importSharedSchedule：整份替换这学期的课表，或挑几门加进来（自己已有的教学班不列）；都存成当前账号的新版本、可在历史版本恢复，开学日与作息不动；本机没有那个学期时说明原因、不联网（[人工决策] 在文件内）。会话卡片与好友课表页共用。
+  - schedule_import.dart：好友课表导入 importSharedSchedule：先读好本机课表再打开导入页（推入根导航器），顶部分段「逐项合并 / 整份替换」：逐项合并按 domain 的 planScheduleMerge 列出有改动的课（每处差异一行、原来的划掉，整门可半选）、TA有你没有的课、你有TA没有的课（勾上会删掉），默认只勾有同一个教学班的那几门课的改动；应用按钮原地转圈，与其余课重叠时先确认；都存成当前账号的新版本、可在历史版本恢复，开学日与作息不动，成功的提示条回到发起页显示；本机没有那个学期时说明原因、不联网（[人工决策] 在文件内）。会话卡片与好友课表页共用。
   - share_target_sheet.dart：分享弹层 showShareSheet：多选好友后逐个发送，每行原地显示状态，失败的可重发；课表页、界面页、百宝箱结果页共用。
   - social_dialogs.dart：错误码文案 socialErrorText、列表时间 socialShortTime、单行输入弹窗 showSocialTextInput。
 - 今天：
@@ -73,7 +73,7 @@
 - 成绩与同步：grades_ui_test.dart、sync_ui_test.dart。
 - 壳层与表单：navigation_drag_test.dart、shell_layout_test.dart、form_spacing_test.dart（支撑 form_layout_support.dart）。
 - 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart。
-- 私信页面：social_ui_test.dart、share_card_test.dart。
+- 私信页面：social_ui_test.dart（含好友课表导入的整份替换与逐项合并）、share_card_test.dart；合并规则在 schedule_merge_test.dart。
 - 开发者模式：developer_mode_test.dart。
 - 页面测试的合成数据网关是 fixture_campus_gateway.dart（读 assets/fixtures）。
 
