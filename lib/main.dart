@@ -23,14 +23,17 @@ import 'package:superxd/device/app_package_files.dart';
 import 'package:superxd/device/diagnostic_device.dart';
 import 'package:superxd/device/home_widget_publisher.dart';
 import 'package:superxd/device/notification_reminders.dart';
+import 'package:superxd/device/picture_export.dart';
 import 'package:superxd/device/relay_release_feed.dart';
 import 'package:superxd/domain/course_widget.dart';
+import 'package:superxd/domain/painting.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/app_update_memory.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
+import 'package:superxd/local/painting_library.dart';
 import 'package:superxd/page/app_update_dialog.dart';
 import 'package:superxd/page/developer_page.dart';
 import 'package:superxd/page/legal_page.dart';
@@ -40,6 +43,7 @@ import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/router.dart';
 import 'package:superxd/page/image_copy_pick.dart';
 import 'package:superxd/page/live_clock.dart';
+import 'package:superxd/page/painting_splash.dart';
 import 'package:superxd/page/qr_scan_page.dart';
 import 'package:superxd/page/share_target_sheet.dart';
 import 'package:superxd/social/identity_vault.dart';
@@ -83,6 +87,25 @@ void main() async {
     publish: publishDiagnosticArchive,
   );
   campusLog = logs.tee(debugPrint);
+  // 开屏画作（人工决策见 page/painting_splash.dart）：按清单顺序取这次的一幅，马上开始解码（和下面几步初始化同时进行），开屏第一帧多半就有图。
+  final paintings = await PaintingLibrary.open(
+    bundle: rootBundle,
+    memory: File(path.join(support.path, 'splash_painting.json')),
+    temporary: Directory(path.join((await getTemporaryDirectory()).path, 'paintings')),
+    publish: publishPicture,
+  );
+  final painting = paintings.next();
+  final view = WidgetsBinding.instance.platformDispatcher.views.first;
+  final splashImage = painting == null ? null : paintingSplashImage(painting, view.physicalSize / view.devicePixelRatio, view.devicePixelRatio);
+  if (splashImage != null) {
+    final stream = splashImage.resolve(ImageConfiguration.empty);
+    late final ImageStreamListener decoded;
+    decoded = ImageStreamListener((_, _) => stream.removeListener(decoded), onError: (Object error, StackTrace? stack) {
+      stream.removeListener(decoded);
+      campusLog('[Painting] action=decode errorType=${error.runtimeType}\n$stack');
+    });
+    stream.addListener(decoded);
+  }
   final developer = await DeveloperSettings.open(File(path.join(support.path, 'developer.json')));
   watchDeveloperMode(developer, logs, environment: appEnvironment);
   unawaited(recordExitReasons(marker: File(path.join(support.path, 'last_exit_seen')), read: readExitReasons));
@@ -109,7 +132,9 @@ void main() async {
   );
   final updates = await appUpdates(support);
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
-  runApp(SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs));
+  final restored = Completer<void>();
+  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings);
+  runApp(painting == null || splashImage == null ? app : PaintingSplash(painting: painting, image: splashImage, ready: restored.future, fontFamily: display.fontFamily, child: app));
   unawaited(WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
     if (campusDiagnostics) campusLog('[App] action=first_frame ms=${launch.elapsedMilliseconds}');
   }));
@@ -121,6 +146,7 @@ void main() async {
   } catch (error, stack) {
     campusLog('[AppSession] action=restore errorType=${error.runtimeType}\n$stack');
   }
+  restored.complete();
   unawaited(checkLegalNotice(legal));
   watchLocalSchedule(session, reminders: reminders, widgets: widgets);
   watchWidgetTheme(display, widgetPort);
@@ -231,7 +257,7 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings});
   final CampusReminders? reminders;
   // 设备级私信服务，切换账号不重建；为空时私信入口显示未配置。
   final SocialService? social;
@@ -242,6 +268,8 @@ class SuperXdApp extends StatefulWidget {
   // 开发者模式与本机日志（设备级）；为空时关于页不能开启开发者模式。
   final DeveloperSettings? developer;
   final DiagnosticLog? logs;
+  // 开屏画作（设备级）；为空时关于页不显示「开屏画作」。
+  final PaintingGallery? paintings;
   final ToolboxRuntime? toolbox;
   final AppSession session;
   final DisplaySettings? display;
@@ -293,19 +321,20 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings),
     );
   }
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs});
+  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings});
   final CampusReminders? reminders;
   final SocialService? social;
   final AppUpdates? updates;
   final LegalNoticeMemory? legal;
   final DeveloperSettings? developer;
   final DiagnosticLog? logs;
+  final PaintingGallery? paintings;
   final ToolboxRuntime toolbox;
   final AppSession session;
   final DisplaySettings? display;
@@ -316,7 +345,7 @@ class _AccountApp extends StatefulWidget {
 }
 
 class _AccountAppState extends State<_AccountApp> {
-  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs);
+  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings);
   late final VoidCallback _unwatchRoutes;
   late final _display = widget.display ?? DisplaySettings.memory();
 

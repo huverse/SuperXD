@@ -48,7 +48,9 @@
   - appearance_page.dart：界面设置 AppearancePage：字号、配色、字体、深浅色、玻璃效果与背景（自定义图片经系统照片选择器，选图函数可注入）；可分享给好友（不含壁纸图片）。字体预览用 assets/font_previews 里预先画好的图（tool/font_previews.dart 生成），不为预览加载没在用的字体。滑杆拖动中只预览、松手保存，系统取消与读屏增减停手 300ms 补存，离开页面时存掉没存的预览。选项点了就生效，落库在 DisplaySettings 的保存锁里排队，保存时不禁用页面上的其他选项。玻璃限档时点「完整」先解除限档。
   - image_copy_pick.dart：通用取图 pickImageCopy 与多选 pickImagesCopy，返回副本路径与 discard；只删插件这次新留在缓存里的副本。壁纸、相册识别二维码共用，并经组合根注入百宝箱。
   - developer_page.dart：开发者选项 DeveloperPage（开关、日志导出与清除、复制诊断摘要、连电脑的 adb 命令、性能浮层、运行环境；关闭开发者模式删开发者模式日志）、日志查看 DeveloperLogPage（全部或错误、错误按种类合并写出现几次、搜索、点开看全文与复制）与悬浮开发者工具 DeveloperOverlay（开发者模式下浮在所有页面上、可拖动贴边，点开可标记当前页面与一句说明、查看日志、导出、进开发者选项；自带一层 Overlay，开关时不改页面的父级结构，性能浮层也画在这层里、不用 MaterialApp 的开关（那个会给整页加一层 Stack、换父级重建），[人工决策] 在类上）。
-  - about_page.dart：关于页 AboutPage（连点版本号 7 次开启开发者模式，开着时多一项开发者选项）：应用图标（assets/app_icon.png，测试期临时图，见开源许可第五节）、版本、检查更新（传入 AppUpdates 时才有）、用户协议、隐私政策、开源许可、源代码与反馈问题；版本信息与打开链接可注入。
+  - about_page.dart：关于页 AboutPage（连点版本号 7 次开启开发者模式，开着时多一项开发者选项）：应用图标（assets/app_icon.png，测试期临时图，见开源许可第五节）、版本、检查更新（传入 AppUpdates 时才有）、用户协议、隐私政策、开屏画作（传入 PaintingGallery 时才有）、开源许可、源代码与反馈问题；版本信息与打开链接可注入。
+  - painting_splash.dart：开屏画作 PaintingSplash（组合根套在 runApp 外面，自带 MediaQuery 与文字方向）：画作贴底铺满屏宽、顶边渐隐融进按顶边分段色铺开的天空，应用名与画名写在天空里；满 1.2 秒且会话恢复后再过 450ms 转场才溶解，点一下立即溶解，最多等 4 秒；溶解完从树上拿掉、下面的应用不重建；减少动画时只淡入淡出。paintingSplashImage 按屏幕实际像素解码（组合根在 runApp 前就开始解码）。系统启动图的淡出在 MainActivity.kt（Android 12 起）。人工决策在类上。
+  - paintings_page.dart：开屏画作页 PaintingsPage：按清单列出全部画作、标出这次开屏的那幅；「保存到相册」原地转圈、存好原地变成「已保存」；点画作从卡片里原地放大成全屏（浮层路由，同快递身份码的全屏出示），可双指缩放，点一下或返回原路缩回。
   - app_update_dialog.dart：更新弹窗 showAppUpdateDialog：可选更新给更新、稍后、跳过这个版本，点更新才下载，下载、核对、等授权、安装都在弹窗里原地切换；必须更新时关不掉（人工决策见文件内）。
   - legal_page.dart：用户协议与隐私政策 LegalPage（/legal/service、/legal/privacy），顶部显示更新日期 legalUpdated；正文经 theme 的 CampusProse 按行排版。隐私政策先摘要、再按功能分节，末尾附第三方 SDK 与服务、系统权限、保存期限三份清单（[人工决策] 在文件头）；改动数据处理、新增 SDK 或权限、改上限时同步改对应一节与清单并更新日期。首次打开（含没在弹窗里同意过的老用户）由组合根弹 askLegalConsent 征得同意，不同意先二次确认再退出应用（[人工决策] 在函数上）；同意过的，有实质变化时 legalRevision 加一并改写 legalChanges，打开后弹一次 showLegalUpdateNotice（只有「知道了」才算看过）。
   - licenses_page.dart：全部依赖许可 CampusLicensesPage 与应用署名 GalaxyousAttribution。
@@ -72,7 +74,7 @@
 - 今天与课表：today_navigation_test.dart、today_date_transition_test.dart、schedule_experience_test.dart、schedule_editor_ui_test.dart、schedule_calendar_test.dart、course_clock_performance_test.dart、calendar_export_test.dart。
 - 成绩与同步：grades_ui_test.dart、sync_ui_test.dart。
 - 壳层与表单：navigation_drag_test.dart、shell_layout_test.dart、form_spacing_test.dart（支撑 form_layout_support.dart）。
-- 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart。
+- 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart；开屏与画作页：painting_ui_test.dart。
 - 私信页面：social_ui_test.dart、share_card_test.dart。
 - 开发者模式：developer_mode_test.dart。
 - 页面测试的合成数据网关是 fixture_campus_gateway.dart（读 assets/fixtures）。

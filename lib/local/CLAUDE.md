@@ -57,6 +57,7 @@
   - 同类错误聚合（[人工决策] 在类上）：签名 diagnosticErrorSignature 是掩码后首行再掩掉编号与数字，带堆栈的再接上前三帧出错位置的短摘要（正式包用 virt 偏移），上次退出原因（diagnosticExitHead）不参与合并；同一签名 diagnosticRepeatWindow 内只记第一条全文、其余计数，窗口到了补一条 action=repeat（count、seconds、last），同时记着的签名不超过 diagnosticRepeatKinds；flush(settle) 在导出、切到后台与按种类汇总前全部结算，clear 时一并忘掉。errorKinds 按种类汇总错误、summary 拼诊断摘要。
   - 早于今天的开发者模式日志在后台 isolate 里压成 .log.gz（超过保留天数的先删、不压），查看时解开读、导出原样放进 zip。
   - export 把全部日志加 about.txt（运行环境、导出时刻）在后台 isolate 里打成 zip，经组合根注入的 publish 存进 Download/SuperXD，临时包放缓存的 diagnostics_export、用完即删。
+- painting_library.dart：PaintingLibrary 实现 domain 的 PaintingGallery：启动时读随安装包的画作清单，按清单顺序接着上次取这次开屏的一幅（next，一次运行只取一次）；轮换记录是应用支持目录下固定大小的 splash_painting.json（只记上次那幅的 id，写法同 legal_notice.json，读到坏文件从第一幅起）；save 把原图拷到缓存、经组合根注入的 publish（device/picture_export.dart）存进 Download/SuperXD，用完即删。
 - developer_settings.dart：DeveloperSettings 记开发者模式与性能浮层两个开关：应用支持目录下固定大小的 developer.json，写法同 legal_notice.json，写入经锁一个接一个（连点开关不交错）；已排除备份与换机迁移（[人工决策] 在类上）；关掉开发者模式时性能浮层一起关，读到坏文件当都关着。
 - legacy_import.dart：旧单库导入 importLegacyDatabase。
   - 旧库只读打开，只支持 user_version 1–2。
@@ -80,7 +81,7 @@
 
 - 账号库与旧库：account_store_test.dart、account_isolation_test.dart、legacy_import_test.dart。
 - 课表与作息持久化：schedule_version_test.dart、schedule_migration_test.dart、bells_persistence_test.dart。
-- 显示设置与壁纸：appearance_settings_test.dart、wallpaper_test.dart；应用更新检查记录：app_update_test.dart；协议已读记录：legal_page_test.dart；本机日志与开发者设置：diagnostic_log_test.dart。
+- 显示设置与壁纸：appearance_settings_test.dart、wallpaper_test.dart；开屏画作的轮换与保存：painting_test.dart；应用更新检查记录：app_update_test.dart；协议已读记录：legal_page_test.dart；本机日志与开发者设置：diagnostic_log_test.dart。
 
 # 人工决策检索
 

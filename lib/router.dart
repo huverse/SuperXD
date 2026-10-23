@@ -6,6 +6,7 @@ import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/painting.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/page/account_dialogs.dart';
@@ -25,7 +26,7 @@ import 'package:superxd/social/social_service.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
-GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, CampusReminders? reminders, SocialService? social, AppUpdates? updates, DeveloperSettings? developer, DiagnosticLog? logs}) {
+GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, CampusReminders? reminders, SocialService? social, AppUpdates? updates, DeveloperSettings? developer, DiagnosticLog? logs, PaintingGallery? paintings}) {
   final tools = toolbox.modules;
   // 好友分享的卡片交给注册表里认得它的工具打开（页面层不依赖百宝箱，由这里接上；路由不认识具体工具页面）。
   void openVideo(BuildContext context, VideoShare video) {
@@ -61,7 +62,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       ),
       GoRoute(
         path: '/login',
-        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: LoginPage(gateway: session.gateway, session: session, updates: updates, developer: developer, logs: logs)),
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: LoginPage(gateway: session.gateway, session: session, updates: updates, developer: developer, logs: logs, paintings: paintings)),
       ),
       GoRoute(
         path: '/switch-account',
@@ -97,7 +98,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
           StatefulShellBranch(routes: [GoRoute(path: '/today', builder: (context, state) => TodayPage(gateway: gateway, onSessionExpired: () => session.expire(generation), isAccountCurrent: () => session.generation == generation && session.loggedIn, syncRequest: todaySync))]),
           StatefulShellBranch(routes: [GoRoute(path: '/service', builder: (context, state) => const ServicePage())]),
           StatefulShellBranch(routes: [GoRoute(path: '/message', builder: (context, state) => MessagePage(social: social, gateway: gateway, openVideo: openVideo))]),
-          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, social: social, updates: updates, developer: developer, logs: logs))]),
+          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, social: social, updates: updates, developer: developer, logs: logs, paintings: paintings))]),
         ],
       ),
     ],
