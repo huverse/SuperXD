@@ -11,7 +11,7 @@ class MainActivity : FlutterActivity() {
     private var toolboxFiles: ToolboxFileExporter? = null
     private var chaoxingDevice: ChaoxingDeviceChannel? = null
 
-    // 系统启动图（Android 12 起由系统画应用图标）在 Flutter 画出第一帧时淡出，露出下面的开屏画作（lib/page/painting_splash.dart），不一下切走。
+    // 系统启动图（Android 12 起由系统画，图标设成透明、只有底色，见 res/values-v31/styles.xml）在 Flutter 画出第一帧时淡出，露出下面的开屏画作（lib/page/painting_splash.dart），不一下切走。
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {

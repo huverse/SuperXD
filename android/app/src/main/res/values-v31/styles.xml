@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Android 12 起系统启动画面的底色另取 windowSplashScreenBackground，同样用应用底色（见 values/colors.xml）。 -->
+    <!-- [人工决策-2026-10-23 20:04:27] 系统启动画面不画应用图标（图标设透明），冷启动只见一层应用底色、接着淡入开屏画作，不出现「图标页 + 开屏画作」两段（用户选「只去掉图标」，未选连开屏画作一起去掉）。系统启动画面本身是 Android 12 起强制的，关不掉；Android 11 本来就只有底色。深色同 values-night-v31。 -->
     <style name="LaunchTheme" parent="@android:style/Theme.Light.NoTitleBar">
         <item name="android:windowBackground">@drawable/launch_background</item>
         <item name="android:windowSplashScreenBackground">@color/launch_background</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>
     </style>
 </resources>

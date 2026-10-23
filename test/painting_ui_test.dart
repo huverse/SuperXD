@@ -140,6 +140,12 @@ void main() {
     await tester.pump(PaintingSplash.longest);
   });
 
+  test('系统启动图（Android 12 起）不画应用图标，浅深色两份启动主题都是透明图标、只剩底色', () {
+    for (final folder in ['values-v31', 'values-night-v31']) {
+      expect(File('android/app/src/main/res/$folder/styles.xml').readAsStringSync(), contains('<item name="android:windowSplashScreenAnimatedIcon">@android:color/transparent</item>'), reason: folder);
+    }
+  });
+
   testWidgets('关于页有「开屏画作」，列出全部画作并标出这次开屏的那幅；保存原地转圈、存好原地变成已保存', (tester) async {
     final temp = Directory.systemTemp.createTempSync('painting_ui');
     addTearDown(() => temp.deleteSync(recursive: true));
