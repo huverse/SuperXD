@@ -10,7 +10,7 @@ import 'package:superxd/domain/painting.dart';
 // 每次冷启动显示，至少 1.2 秒、恢复好账号再溶解进应用，点任意处立即进入，从后台切回不出现；画作随安装包内置、按清单驱动（不写死，加画只加图与清单一行），
 // 按清单顺序轮换；画作单独声明保留所有权利、不随 GPL（README 许可一节与开源许可页）。
 // 构图：画作贴底铺满屏宽（不够高时放大到约四成屏高、按 focus 裁两边，不把小图拉满整屏发糊），顶边渐隐融进上方的天空；天空横向按画作顶边的分段色铺开、
-// 往上过渡到 sky 色，应用名与画名写在天空里（像画册封面）。系统启动图（应用图标）淡出后，天空先在，画作从下方浮起淡入、极慢地推近，
+// 往上过渡到 sky 色，应用名与画名写在天空里（像画册封面）。系统启动图（只有底色，不画应用图标，[人工决策] 在 android res/values-v31/styles.xml）淡出后，天空先在，画作从下方浮起淡入、极慢地推近，
 // 应用名与画名依次淡入；离开时整层淡出、画作再推近一点。减少动画时只淡入淡出，不位移不缩放。
 class PaintingSplash extends StatefulWidget {
   const PaintingSplash({super.key, required this.painting, required this.image, required this.ready, required this.fontFamily, required this.child, this.shown});
