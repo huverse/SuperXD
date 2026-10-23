@@ -4,6 +4,7 @@ import 'dart:io';
 
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
@@ -1933,7 +1934,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('百宝箱首页清除学习通数据：右滑或⋯都只揭示入口，取消不动；确认后删库、删凭据、撤同意', (tester) async {
+  testWidgets('百宝箱首页清除学习通数据：左滑只揭示入口（读屏菜单里也有），取消不动；确认后删库、删凭据、撤同意', (tester) async {
     usePhoneScreen(tester);
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
@@ -1947,8 +1948,9 @@ void main() {
 
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ToolboxPage(runtime: runtime)));
     await tester.pumpAndSettle();
-    // 右滑只揭示「清除数据」，点了先确认；取消什么都不删。
-    await tester.drag(find.text('学习通签到'), const Offset(260, 0));
+    // 卡片右侧不再有⋯；左滑只揭示「清除数据」，点了先确认；取消什么都不删。
+    expect(find.byTooltip('清除数据'), findsNothing);
+    await tester.drag(find.text('学习通签到'), const Offset(-260, 0));
     await tester.pumpAndSettle();
     await tester.tap(find.text('清除数据'));
     await tester.pumpAndSettle();
@@ -1959,8 +1961,11 @@ void main() {
     expect(vault.passwords, isNotEmpty);
     expect(database.existsSync(), isTrue);
 
-    // 右侧⋯同样进确认；确认后清掉本工具在本机的全部数据。短视频那张卡也有⋯，限定在学习通这张卡里找。
-    await tester.tap(find.descendant(of: find.ancestor(of: find.text('学习通签到'), matching: find.byType(CampusSurface)), matching: find.byTooltip('清除数据')));
+    // 读屏用户经卡片的读屏操作菜单进同一个确认；确认后清掉本工具在本机的全部数据。
+    final semantics = tester.ensureSemantics();
+    final node = tester.getSemantics(find.text('学习通签到'));
+    node.owner!.performAction(node.id, SemanticsAction.customAction, CustomSemanticsAction.getIdentifier(const CustomSemanticsAction(label: '清除数据')));
+    semantics.dispose();
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '清除'));
     await waitUntil(tester, () => find.text('已清除学习通签到的数据').evaluate().isNotEmpty);
