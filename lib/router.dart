@@ -50,7 +50,8 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       final atLogin = location == '/login';
       final legal = location.startsWith('/legal');
       // [人工决策-2026-09-27 20:12:08] 仅百宝箱及注册工具免教务登录，其他业务门禁不变。
-      final publicTool = location == '/toolbox' || tools.any((tool) => location == '/toolbox/${tool.id}');
+      // 工具登记的快捷入口属于这个工具，同样免登录。
+      final publicTool = location == '/toolbox' || tools.any((tool) => location == '/toolbox/${tool.id}' || tool.shortcuts.any((shortcut) => location == '/toolbox/${tool.id}/${shortcut.id}'));
       if (!session.loggedIn && !atLogin && !legal && !publicTool) return '/login';
       if (session.loggedIn && atLogin) return '/today';
       return null;
@@ -78,6 +79,9 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
         pageBuilder: (context, state) => campusPage(key: state.pageKey, child: ToolboxPage(runtime: toolbox))),
       for (final tool in tools) GoRoute(path: '/toolbox/${tool.id}', parentNavigatorKey: rootKey,
         pageBuilder: (context, state) => campusPage(key: state.pageKey, child: tool.builder(context))),
+      for (final tool in tools)
+        for (final shortcut in tool.shortcuts) GoRoute(path: '/toolbox/${tool.id}/${shortcut.id}', parentNavigatorKey: rootKey,
+          pageBuilder: (context, state) => campusPage(key: state.pageKey, child: shortcut.builder(context))),
       GoRoute(
         path: '/schedule',
         parentNavigatorKey: rootKey,

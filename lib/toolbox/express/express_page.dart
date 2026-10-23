@@ -33,8 +33,13 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 const expressConsentVersion = 'pdd-1';
 
 class ExpressPage extends StatefulWidget {
-  const ExpressPage({super.key, required this.runtime});
+  const ExpressPage({super.key, required this.runtime, this.openIdentity = false});
   final ToolboxRuntime runtime;
+  // 从「取件身份码」快捷入口打开：直接全屏出示身份码（见 _openIdentity）。
+  final bool openIdentity;
+
+  // 「取件身份码」快捷入口在注册表里的 id（toolbox_catalog.dart 登记，「添加到桌面」也用它）。
+  static const identityShortcut = 'identity';
 
   @override
   State<ExpressPage> createState() => _ExpressPageState();
@@ -44,6 +49,10 @@ class _ExpressPageState extends State<ExpressPage> {
   ExpressController? _controller;
   late ExpressService _service;
   late Future<void> _ready = _initialize();
+  // 快捷入口打开时盖在页面上的白底「正在生成身份码」，码生成好、全屏出示之后拿掉。
+  bool _identityCover = false;
+  // 下一张身份码卡出现时直接全屏出示（只用一次）。
+  bool _zoomIdentity = false;
 
   Future<void> _initialize() async {
     try {
@@ -56,6 +65,7 @@ class _ExpressPageState extends State<ExpressPage> {
         return;
       }
       _controller = controller;
+      if (widget.openIdentity) WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_openIdentity()));
     } catch (error, stack) {
       campusLog('[Express] action=initialize errorType=${error.runtimeType}\n$stack');
       rethrow;
@@ -239,6 +249,36 @@ class _ExpressPageState extends State<ExpressPage> {
   final _stationCard = GlobalKey();
   final _identityCard = GlobalKey();
 
+  // [人工决策-2026-10-23 21:35:00] 取件身份码天天用、要快（同支付宝长按图标的「付钱」、付款码页的「添加到桌面」），用户四项都选推荐：
+  // 快捷入口放长按应用图标的菜单与「添加到桌面」（入口登记在百宝箱注册表，以后别的功能要短步骤也只登记一行）；从入口冷启动跳过开屏画作直达；
+  // 打开就是全屏身份码——先盖白底原地转圈生成，生成好直接全屏出示（不从卡片飞入），返回是快递首页。没登录拼多多就停在登录页，生成失败用提示条，
+  // 等待时按返回只拿掉白底、留在快递首页。
+  Future<void> _openIdentity() async {
+    final controller = _controller;
+    if (!mounted || controller == null || !controller.loggedIn) return;
+    setState(() => _identityCover = true);
+    await _act(controller.generateIdentityCode, reveal: _identityCard);
+    if (!mounted || !_identityCover) return;
+    setState(() {
+      if (controller.identityCode == null) {
+        _identityCover = false;
+      } else {
+        _zoomIdentity = true;
+      }
+    });
+  }
+
+  // 「添加到桌面」（同支付宝付款码页）：桌面会弹窗请用户确认，这里只在桌面不支持或出错时说明。
+  Future<void> _pinIdentity() async {
+    try {
+      final pinned = await widget.runtime.pinShortcut!(ExpressService.serviceId, ExpressPage.identityShortcut);
+      if (!pinned && mounted) showCampusToast(context, '当前桌面不支持添加快捷方式');
+    } catch (error, stack) {
+      campusLog('[Express] action=pin_shortcut errorType=${error.runtimeType}\n$stack');
+      if (mounted) showCampusToast(context, '添加失败，请重试');
+    }
+  }
+
   // [人工决策-2026-10-21 20:04:39] 点了按钮出来的结果卡滚进可视区（用户选定，未选「身份码移到最上面」「一次只显示一张」）：
   // 先查驿站（有快递时驿站卡很长）再点身份码，身份码画在驿站卡下面、落在屏幕外，要自己下滑才看到。卡片顺序不变，只滚最少的距离：
   // 整张放得下就让它整张露出，比屏幕高就让卡顶露出、至少占半屏，已经满足就不动；只在点按钮后做，身份码到期自动换码不滚。
@@ -288,7 +328,18 @@ class _ExpressPageState extends State<ExpressPage> {
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
+  Widget build(BuildContext context) => PopScope(
+    canPop: !_identityCover,
+    onPopInvokedWithResult: (didPop, _) {
+      if (!didPop) setState(() => _identityCover = false);
+    },
+    child: Stack(children: [
+      _page(context),
+      if (_identityCover) const Positioned.fill(child: ExpressIdentityPending()),
+    ]),
+  );
+
+  Widget _page(BuildContext context) => Scaffold(
     appBar: AppBar(
       title: const Text('快递'),
       leading: IconButton(
@@ -621,7 +672,18 @@ class _ExpressPageState extends State<ExpressPage> {
                       Padding(
                         key: const ValueKey('identity'),
                         padding: const EdgeInsets.only(top: 16),
-                        child: CampusSurface(key: _identityCard, child: ExpressIdentityView(controller: controller)),
+                        child: CampusSurface(
+                          key: _identityCard,
+                          child: ExpressIdentityView(
+                            controller: controller,
+                            zoomOnOpen: _zoomIdentity,
+                            onZoomed: () => setState(() {
+                              _zoomIdentity = false;
+                              _identityCover = false;
+                            }),
+                            onPin: widget.runtime.pinShortcut == null ? null : _pinIdentity,
+                          ),
+                        ),
                       ),
                   ],
                 ),

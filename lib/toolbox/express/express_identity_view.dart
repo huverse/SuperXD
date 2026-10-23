@@ -10,6 +10,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_segmented.dart';
@@ -44,9 +45,14 @@ void _brightness(Future<void> Function() change) => change().catchError((Object 
 // [人工决策-2026-10-19 23:35:59] 本轮不给身份码页加截屏/录屏保护（FLAG_SECURE）：只做不落盘、不打印与「请勿分享」提示；
 // 用户选定本轮不加（FLAG_SECURE 需改原生 MainActivity 做按页开关，属额外工程）。
 class ExpressIdentityView extends StatefulWidget {
-  const ExpressIdentityView({super.key, required this.controller});
+  const ExpressIdentityView({super.key, required this.controller, this.zoomOnOpen = false, this.onZoomed, this.onPin});
   // 身份码、刷新中与到期刷新都取自控制器；全屏页也直接听它，码到期换新时跟着换。
   final ExpressController controller;
+  // 从快捷入口来：卡片一出现就直接全屏出示（不从卡片飞入），全屏页推上去后调 onZoomed（人工决策见 express_page.dart 的 _openIdentity）。
+  final bool zoomOnOpen;
+  final VoidCallback? onZoomed;
+  // 「添加到桌面」：为空（系统不支持、测试）时不显示这个按钮。
+  final VoidCallback? onPin;
 
   @override
   State<ExpressIdentityView> createState() => _ExpressIdentityViewState();
@@ -66,6 +72,7 @@ class _ExpressIdentityViewState extends State<ExpressIdentityView> {
     super.initState();
     widget.controller.addListener(_follow);
     _resetCountdown();
+    if (widget.zoomOnOpen) WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_zoomIn(appear: true)));
   }
 
   @override
@@ -107,7 +114,8 @@ class _ExpressIdentityViewState extends State<ExpressIdentityView> {
   // [人工决策-2026-10-20 13:03:42] 点码牌全屏出示（用户选定，同支付宝、微信付款码）：码牌从卡片里原地放大进整屏白底，条码转 90° 沿屏幕长边铺开、
   // 码值与倒计时随码牌一起转，二维码只放大；全屏期间本页屏幕亮度调到最高、关掉即恢复（只改本应用窗口，同添加好友页）。
   // 点任意处或返回关闭，码牌原路缩回卡片；时长与曲线同页面转场。白底不随深色模式变：高拍仪要扫，对比度优先。
-  Future<void> _zoomIn() async {
+  // appear：从快捷入口来时直接出现在全屏（不从卡片飞入），推上去后告诉页面（onZoomed）；关掉时照样缩回卡片。
+  Future<void> _zoomIn({bool appear = false}) async {
     final box = _plate.currentContext?.findRenderObject();
     if (_zoom != null || box is! RenderBox || !box.hasSize) return;
     final route = _IdentityZoomRoute(
@@ -117,10 +125,12 @@ class _ExpressIdentityViewState extends State<ExpressIdentityView> {
       source: _plate,
       origin: box.localToGlobal(Offset.zero) & box.size,
       instant: MediaQuery.disableAnimationsOf(context),
+      appear: appear,
     );
     setState(() => _zoom = route);
     _brightness(() => ScreenBrightness.instance.setApplicationScreenBrightness(1));
     final popped = Navigator.of(context).push(route);
+    if (appear) widget.onZoomed?.call();
     // 飞行期间只画一张：缩回动画结束的同一帧卡片里那张重新露出来；等路由销毁再换要晚一帧，中间会空一下。
     late final AnimationStatusListener landed;
     landed = (status) {
@@ -226,7 +236,35 @@ class _ExpressIdentityViewState extends State<ExpressIdentityView> {
             style: textTheme.bodyMedium?.copyWith(color: palette.onSurfaceVariant),
           ),
         ),
+        if (widget.onPin != null) ...[
+          const SizedBox(height: 8),
+          Center(child: TextButton.icon(onPressed: widget.onPin, icon: const CampusIcon(CampusIcons.pin), label: const Text('添加到桌面'))),
+        ],
       ],
+    );
+  }
+}
+
+// 从快捷入口打开、身份码还在生成时盖住快递页的白底（同全屏出示的白底，生成好直接换成全屏码），原地转圈。
+// 白底不随深色模式变，转圈与文字取浅色配色。
+class ExpressIdentityPending extends StatelessWidget {
+  const ExpressIdentityPending({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    final light = CampusPalette.byId(CampusPalette.of(context).id);
+    return AnnotatedRegion<SystemUiOverlayStyle>(
+      value: campusSystemOverlay(light),
+      child: Material(
+        color: Colors.white,
+        child: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            CampusLoader(color: light.primary),
+            const SizedBox(height: 12),
+            Text('正在生成身份码', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: light.onSurfaceVariant)),
+          ]),
+        ),
+      ),
     );
   }
 }
@@ -276,7 +314,7 @@ class _CodePlate extends StatelessWidget {
 // 全屏出示的路由：不透明度、位置、大小、旋转都按同一条路由进度插值，码牌从卡片里那张的位置飞到屏幕正中。
 // 是浮层（登记层数，背景动效停住）；返回键、点任意处都关闭。
 class _IdentityZoomRoute extends PopupRoute<void> with CampusOverlayDepthRoute<void> {
-  _IdentityZoomRoute({required this.express, required this.remaining, required this.style, required this.source, required this.origin, required this.instant});
+  _IdentityZoomRoute({required this.express, required this.remaining, required this.style, required this.source, required this.origin, required this.instant, required this.appear});
   final ExpressController express;
   final ValueListenable<int> remaining;
   final _IdentityStyle style;
@@ -284,6 +322,8 @@ class _IdentityZoomRoute extends PopupRoute<void> with CampusOverlayDepthRoute<v
   final Rect origin;
   // 减少动画时直接出现、直接消失。
   final bool instant;
+  // 从快捷入口来：直接出现（关掉时照样缩回卡片）。
+  final bool appear;
 
   @override
   Color? get barrierColor => null;
@@ -292,7 +332,7 @@ class _IdentityZoomRoute extends PopupRoute<void> with CampusOverlayDepthRoute<v
   @override
   String? get barrierLabel => null;
   @override
-  Duration get transitionDuration => instant ? Duration.zero : campusEnter;
+  Duration get transitionDuration => instant || appear ? Duration.zero : campusEnter;
   @override
   Duration get reverseTransitionDuration => instant ? Duration.zero : campusExit;
 
