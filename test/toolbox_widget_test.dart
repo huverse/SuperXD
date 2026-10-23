@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
@@ -382,7 +383,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('右滑只是揭示卸载，取消确认保持安装', (tester) async {
+  testWidgets('左滑只是揭示卸载，取消确认保持安装；卡片右侧没有⋯，读屏菜单里有同一个操作', (tester) async {
     await tester.runAsync(() async {
       final id = await fixture.manager.downloadResource('large_tool');
       await fixture.finish(id, ToolboxFixture.resourceBytes);
@@ -402,7 +403,12 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
+    expect(find.byTooltip('管理资源'), findsNothing);
+    // 右滑不再揭示（Android 左边缘右滑是返回手势）。
     await tester.drag(find.text('测试资源工具'), const Offset(260, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('卸载'), findsNothing);
+    await tester.drag(find.text('测试资源工具'), const Offset(-260, 0));
     await tester.pumpAndSettle();
     expect(fixture.resources.installed('large_tool'), isTrue);
     await tester.tap(find.text('卸载').first);
@@ -411,7 +417,14 @@ void main() {
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(fixture.resources.installed('large_tool'), isTrue);
-    await tester.tap(find.byTooltip('管理资源'));
+    // 点了按钮滑块就合上，不停在半开。
+    expect(find.text('卸载'), findsNothing);
+    final semantics = tester.ensureSemantics();
+    final node = tester.getSemantics(find.text('测试资源工具'));
+    const action = CustomSemanticsAction(label: '卸载');
+    expect(node.getSemanticsData().customSemanticsActionIds, contains(CustomSemanticsAction.getIdentifier(action)));
+    node.owner!.performAction(node.id, SemanticsAction.customAction, CustomSemanticsAction.getIdentifier(action));
+    semantics.dispose();
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '卸载'));
     await tester.pumpAndSettle();
