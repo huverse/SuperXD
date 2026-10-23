@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -15,10 +16,12 @@ import 'package:sqflite/sqflite.dart';
 import 'package:superxd/app_diagnostics.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/app_shortcuts.dart';
+import 'package:superxd/application/app_moments.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/application/campus_timetable.dart';
 import 'package:superxd/application/campus_widgets.dart';
+import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/device/app_installer_channel.dart';
 import 'package:superxd/device/app_shortcuts.dart';
 import 'package:superxd/device/app_package_files.dart';
@@ -26,6 +29,7 @@ import 'package:superxd/device/diagnostic_device.dart';
 import 'package:superxd/device/home_widget_publisher.dart';
 import 'package:superxd/device/notification_reminders.dart';
 import 'package:superxd/device/picture_export.dart';
+import 'package:superxd/device/relay_note_feed.dart';
 import 'package:superxd/device/relay_release_feed.dart';
 import 'package:superxd/domain/app_shortcut.dart';
 import 'package:superxd/domain/course_widget.dart';
@@ -33,11 +37,13 @@ import 'package:superxd/domain/painting.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/app_update_memory.dart';
+import 'package:superxd/local/developer_note_memory.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/local/painting_library.dart';
 import 'package:superxd/page/app_update_dialog.dart';
+import 'package:superxd/page/developer_notes_page.dart';
 import 'package:superxd/page/developer_page.dart';
 import 'package:superxd/page/legal_page.dart';
 import 'package:superxd/local/credential_store.dart';
@@ -141,9 +147,14 @@ void main() async {
   );
   final updates = await appUpdates(support);
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
+  final notes = await developerNotes(support);
+  // 打扰时机（人工决策见 application/app_moments.dart）：上下课的安静期按当前账号本机今天的课算，只读本地。
+  final moments = AppMoments(notes: notes, timetable: () => campusTimetableToday(session.gateway, signedIn: session.loggedIn));
+  final splashed = painting != null && splashImage != null;
+  final splashGone = ValueNotifier(!splashed);
   final restored = Completer<void>();
-  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, launch: launched);
-  runApp(painting == null || splashImage == null ? app : PaintingSplash(painting: painting, image: splashImage, ready: restored.future, child: app));
+  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, launch: launched, notes: notes, moments: moments, splashGone: splashGone);
+  runApp(splashed ? PaintingSplash(painting: painting, image: splashImage, ready: restored.future, onGone: () => splashGone.value = true, child: app) : app);
   unawaited(WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
     if (campusDiagnostics) campusLog('[App] action=first_frame ms=${launch.elapsedMilliseconds}');
   }));
@@ -160,6 +171,7 @@ void main() async {
   watchLocalSchedule(session, reminders: reminders, widgets: widgets);
   watchWidgetTheme(display, widgetPort);
   if (updates != null) watchAppUpdates(updates, agreed: legal.agreed);
+  watchMoments(moments, notes: notes, agreed: legal.agreed);
 }
 
 // 中转服务地址来自构建参数 SUPERXD_RELAY；未配置或格式不对时私信与应用更新都不可用，不猜默认地址。
@@ -200,6 +212,26 @@ void watchAppUpdates(AppUpdates updates, {required Future<void> agreed}) {
   unawaited(updates.prune());
   AppLifecycleListener(onResume: () => unawaited(updates.resume()));
   unawaited(agreed.then((_) => Future<void>.delayed(appUpdateAutoCheckDelay, updates.autoCheck)));
+}
+
+// 开发者的话走同一个自建中转；没配中转时为空，「我的」页不显示这一行。
+Future<DeveloperNotes?> developerNotes(Directory support) async {
+  final base = relayBase();
+  if (base == null) return null;
+  return DeveloperNotes(feed: RelayNoteFeed(base), memory: await FileDeveloperNoteMemory.open(File(path.join(support.path, 'developer_notes.json'))));
+}
+
+// 开发者的话与打扰时机：同意协议与政策之后拉一次信，之后每次回到前台再看一眼（距上次不到一小时不联网）；回到前台重新计这一次前台。
+void watchMoments(AppMoments moments, {DeveloperNotes? notes, required Future<void> agreed}) {
+  var ready = false;
+  unawaited(agreed.then((_) {
+    ready = true;
+    return notes?.autoRefresh();
+  }));
+  AppLifecycleListener(onShow: () {
+    moments.foreground();
+    if (ready) unawaited(notes?.autoRefresh());
+  });
 }
 
 // 协议与政策的同意与更新提示：会话恢复之后再核对（没同意过的先征得同意，同意过的有实质变化时提示一次）。
@@ -266,7 +298,12 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch, this.notes, this.moments, this.splashGone});
+  // 开发者的话（设备级）；为空时「我的」页不显示这一行。
+  final DeveloperNotes? notes;
+  // 打扰时机（设备级，人工决策见 application/app_moments.dart）；为空时节日动画、新信都不出现。splashGone 为开屏是否走完，为空当作没有开屏。
+  final AppMoments? moments;
+  final ValueListenable<bool>? splashGone;
   // 常用功能的快捷入口（设备级，见 app_shortcuts.dart）；为空时不发布入口、页面不显示「添加到桌面」。launch 是这次冷启动点的入口 id。
   final AppShortcutPort? shortcuts;
   final String? launch;
@@ -331,6 +368,8 @@ class _SuperXdAppState extends State<SuperXdApp> {
     super.initState();
     final shortcuts = _shortcuts;
     if (shortcuts == null) return;
+    // 从快捷入口进来的这次前台不打扰（见 application/app_moments.dart）。
+    shortcuts.pending.addListener(_onShortcutLaunch);
     final launch = widget.launch;
     if (launch != null) shortcuts.open(launch);
     // 图标在首帧之后再画、再发布，不和启动抢主线程。
@@ -339,8 +378,13 @@ class _SuperXdAppState extends State<SuperXdApp> {
     }));
   }
 
+  void _onShortcutLaunch() {
+    if (_shortcuts?.pending.value != null) widget.moments?.taskLaunch();
+  }
+
   @override
   void dispose() {
+    _shortcuts?.pending.removeListener(_onShortcutLaunch);
     _shortcuts?.dispose();
     if (widget.toolbox == null) {
       _toolbox.close().catchError((Object error, StackTrace stack) {
@@ -354,14 +398,31 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts, notes: widget.notes, moments: widget.moments, splashGone: widget.splashGone),
     );
   }
 }
 
+// 根导航器上推入、退出页面（含命令式推入的二级页，路由配置看不到它们）时提醒打扰时机重看一眼。
+class _MomentObserver extends NavigatorObserver {
+  _MomentObserver(this.changed);
+  final VoidCallback changed;
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) => changed();
+  @override
+  void didPop(Route<dynamic> route, Route<dynamic>? previousRoute) => changed();
+  @override
+  void didRemove(Route<dynamic> route, Route<dynamic>? previousRoute) => changed();
+  @override
+  void didReplace({Route<dynamic>? newRoute, Route<dynamic>? oldRoute}) => changed();
+}
+
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts});
+  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.moments, this.splashGone});
   final AppShortcuts? shortcuts;
+  final DeveloperNotes? notes;
+  final AppMoments? moments;
+  final ValueListenable<bool>? splashGone;
   final CampusReminders? reminders;
   final SocialService? social;
   final AppUpdates? updates;
@@ -379,7 +440,7 @@ class _AccountApp extends StatefulWidget {
 }
 
 class _AccountAppState extends State<_AccountApp> {
-  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings);
+  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, notes: widget.notes, observers: [_MomentObserver(_onMoment)]);
   late final VoidCallback _unwatchRoutes;
   late final _display = widget.display ?? DisplaySettings.memory();
 
@@ -395,11 +456,56 @@ class _AccountAppState extends State<_AccountApp> {
     _router.routerDelegate.addListener(_onShortcut);
     _onShortcut();
     _unwatchRoutes = watchRoutes(_router);
+    for (final source in _momentSources) {
+      source?.addListener(_onMoment);
+    }
     // 换了账号代次时，上一个账号应用没来得及弹的提示由这里接着弹。
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _onLegal();
       _promptUpdate();
+      _onMoment();
     });
+  }
+
+  // 打扰时机的界面条件（业务条件与人工决策见 application/app_moments.dart）：只在首页（底栏四个根页，未登录时是登录页）且上面没有推入别的页面
+  // （各页都推在根导航器上）、没有弹窗弹层、协议与政策已同意且没有待弹的提示、开屏走完、应用在前台；这些一有变化就重新计时，
+  // 停稳 _momentSettle（转场、弹窗收起都走完）再看。
+  static const _homes = {'/today', '/service', '/message', '/mine', '/login'};
+  static const _momentSettle = Duration(milliseconds: 900);
+  late final _momentSources = <Listenable?>[widget.moments, _router.routerDelegate, campusOverlayDepth, widget.splashGone, widget.legal];
+  Timer? _momentTimer;
+  bool _momentOpen = false;
+
+  void _onMoment() {
+    if (widget.moments == null) return;
+    _momentTimer?.cancel();
+    _momentTimer = Timer(_momentSettle, () => unawaited(_promptMoment()));
+  }
+
+  bool get _momentIdle {
+    final legal = widget.legal, lifecycle = WidgetsBinding.instance.lifecycleState;
+    return mounted && !_legalOpen && !_momentOpen && campusOverlayDepth.value == 0 && (widget.splashGone?.value ?? true) &&
+        (legal == null || legal.agreedRevision != null && !legal.pending) &&
+        (lifecycle == null || lifecycle == AppLifecycleState.resumed) &&
+        _homes.contains(_router.routerDelegate.currentConfiguration.uri.path) && !(_router.routerDelegate.navigatorKey.currentState?.canPop() ?? true);
+  }
+
+  Future<void> _promptMoment() async {
+    final moments = widget.moments;
+    if (moments == null || !_momentIdle) return;
+    final moment = await moments.next();
+    final context = _router.routerDelegate.navigatorKey.currentContext;
+    if (moment == null || context == null || !context.mounted || !_momentIdle) return;
+    moments.begin(moment);
+    _momentOpen = true;
+    try {
+      switch (moment) {
+        case NoteLetterMoment(:final note):
+          await showDeveloperNoteLetter(context, notes: widget.notes!, note: note);
+      }
+    } finally {
+      _momentOpen = false;
+    }
   }
 
   void _onLegal() => unawaited(_promptLegal());
@@ -434,6 +540,7 @@ class _AccountAppState extends State<_AccountApp> {
       }
     }
     _promptUpdate();
+    _onMoment();
   }
 
   // 自动检查查到新版时弹更新弹窗：挂在根导航器上，登录页与已登录页面都能弹；一个提示只弹一次。
@@ -451,6 +558,10 @@ class _AccountAppState extends State<_AccountApp> {
     widget.legal?.removeListener(_onLegal);
     widget.shortcuts?.pending.removeListener(_onShortcut);
     _router.routerDelegate.removeListener(_onShortcut);
+    for (final source in _momentSources) {
+      source?.removeListener(_onMoment);
+    }
+    _momentTimer?.cancel();
     _unwatchRoutes();
     _router.dispose();
     if (widget.display == null) _display.dispose();

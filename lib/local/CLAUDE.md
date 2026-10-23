@@ -47,7 +47,7 @@
   - appearance 是当前界面配置（AppearanceShare，不含壁纸图片），用于分享与套用前的撤销点；applyAppearance 套用好友分享的配置，本版本支持的取值在保存锁内一并落库，不支持的保持不变并返回跳过的项名。
 - wallpaper_store.dart：WallpaperStore 管理壁纸文件，放在应用支持目录 display/wallpaper 下，只保留当前一份，单图上限 20MB；每次导入用新文件名。
 - app_update_memory.dart：FileAppUpdateMemory 实现应用更新的检查记录端口 AppUpdateMemory：应用支持目录下固定大小的 app_update.json（上次检查成功的时刻 UTC、跳过的版本、是否待必须更新），先写临时文件再改名；读到坏文件当没有记录。不放数据库：只有三个字段，不随数据增长。
-- legal_notice_memory.dart：LegalNoticeMemory 记用户协议与隐私政策同意过、看过哪一版：应用支持目录下固定大小的 legal_notice.json（同意与已读两个修订号），写法同上；check 决定弹什么（没在首次启动弹窗里同意过的先征得同意，新装与老用户都算；同意过的有实质变化时提示一次，[人工决策] 在方法上），takePending 一次运行只取一次，点「同意」后 markAgreed、点「知道了」后 markSeen；agreed 在同意后完成，组合根等它再联网。
+- legal_notice_memory.dart：LegalNoticeMemory 记用户协议与隐私政策同意过、看过哪一版：应用支持目录下固定大小的 legal_notice.json（同意与已读两个修订号），写法同上；check 决定弹什么（没在首次启动弹窗里同意过的先征得同意，新装与老用户都算；同意过的有实质变化时提示一次，[人工决策] 在方法上），takePending 一次运行只取一次（pending 表示还有没取走的，打扰时机等它先弹），点「同意」后 markAgreed、点「知道了」后 markSeen；agreed 在同意后完成，组合根等它再联网。
 - diagnostic_log.dart：本机诊断日志 DiagnosticLog，campusLog 的第二份输出（组合根用 tee 接上），写进应用专属外部目录的 logs（Android/data/包名/files/logs，连电脑可 adb pull，其他应用读不到，卸载即删；取不到时退回应用支持目录的 logs；两处都已排除备份与换机迁移）。
   - 平时只记错误（消息带 errorType= 或堆栈，堆栈的调试包写法与 --split-debug-info 正式包的写法都认），开发者模式记全部；先进内存缓冲，每 2 秒或切到后台时批量追加，写盘出错只报到控制台。
   - 日志目录上的读写（追加、轮换改名、清理压缩、读取、打包、删除）都排在同一把锁上（synchronized 的 Lock），读到一半不会撞上改名；两处同时导出共用一次。
@@ -57,6 +57,7 @@
   - 同类错误聚合（[人工决策] 在类上）：签名 diagnosticErrorSignature 是掩码后首行再掩掉编号与数字，带堆栈的再接上前三帧出错位置的短摘要（正式包用 virt 偏移），上次退出原因（diagnosticExitHead）不参与合并；同一签名 diagnosticRepeatWindow 内只记第一条全文、其余计数，窗口到了补一条 action=repeat（count、seconds、last），同时记着的签名不超过 diagnosticRepeatKinds；flush(settle) 在导出、切到后台与按种类汇总前全部结算，clear 时一并忘掉。errorKinds 按种类汇总错误、summary 拼诊断摘要。
   - 早于今天的开发者模式日志在后台 isolate 里压成 .log.gz（超过保留天数的先删、不压），查看时解开读、导出原样放进 zip。
   - export 把全部日志加 about.txt（运行环境、导出时刻）在后台 isolate 里打成 zip，经组合根注入的 publish 存进 Download/SuperXD，临时包放缓存的 diagnostics_export、用完即删。
+- developer_note_memory.dart：FileDeveloperNoteMemory 实现开发者的话的本机记录 DeveloperNoteMemory：应用支持目录下的 developer_notes.json（上次拉到的信、读过与弹过的编号、上次拉取成功的时刻 UTC），信最多 developerNoteLimit 封、编号只留还在清单里的，大小有上限；写法同 legal_notice.json，写入经锁一个接一个，读到坏文件当没有记录。
 - painting_library.dart：PaintingLibrary 实现 domain 的 PaintingGallery：启动时读随安装包的画作清单，按清单顺序接着上次取这次开屏的一幅（next，一次运行只取一次）；轮换记录是应用支持目录下固定大小的 splash_painting.json（只记上次那幅的 id，写法同 legal_notice.json，读到坏文件从第一幅起）；save 把原图拷到缓存、经组合根注入的 publish（device/picture_export.dart）存进 Download/SuperXD，用完即删。
 - developer_settings.dart：DeveloperSettings 记开发者模式与性能浮层两个开关：应用支持目录下固定大小的 developer.json，写法同 legal_notice.json，写入经锁一个接一个（连点开关不交错）；已排除备份与换机迁移（[人工决策] 在类上）；关掉开发者模式时性能浮层一起关，读到坏文件当都关着。
 - legacy_import.dart：旧单库导入 importLegacyDatabase。
@@ -81,7 +82,7 @@
 
 - 账号库与旧库：account_store_test.dart、account_isolation_test.dart、legacy_import_test.dart。
 - 课表与作息持久化：schedule_version_test.dart、schedule_migration_test.dart、bells_persistence_test.dart。
-- 显示设置与壁纸：appearance_settings_test.dart、wallpaper_test.dart；开屏画作的轮换与保存：painting_test.dart；应用更新检查记录：app_update_test.dart；协议已读记录：legal_page_test.dart；本机日志与开发者设置：diagnostic_log_test.dart。
+- 显示设置与壁纸：appearance_settings_test.dart、wallpaper_test.dart；开屏画作的轮换与保存：painting_test.dart；应用更新检查记录：app_update_test.dart；开发者的话的本机记录：developer_notes_test.dart；协议已读记录：legal_page_test.dart；本机日志与开发者设置：diagnostic_log_test.dart。
 
 # 人工决策检索
 

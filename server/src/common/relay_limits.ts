@@ -54,6 +54,15 @@ export const appFilePerHour = 300;
 export const appDownloadsPerInstance = 32;
 export const appReleaseFileMaxBytes = 64 * 1024;
 
+// 开发者的话：维护者写的信由流水线放进发布目录（developer_notes.json），客户端启动与回到前台时看一眼（间隔不到一小时不联网），
+// 同一 IP 每小时 600 次（与查清单同档）。只下发最近 30 封，标题不超过 40 字、正文不超过 4000 字（与客户端 lib/domain/developer_note.dart 一致），
+// 文件超过 512KB 视为放错文件，拒绝读取。
+export const developerNotesPerHour = 600;
+export const developerNoteLimit = 30;
+export const developerNoteTitleMax = 40;
+export const developerNoteBodyMax = 4000;
+export const developerNotesFileMaxBytes = 512 * 1024;
+
 // 设备 400 天没有任何请求即删除，连同其好友关系与待取消息。
 export const deviceIdleDays = 400;
 // 最后活跃时间每设备最多每小时写一次库。

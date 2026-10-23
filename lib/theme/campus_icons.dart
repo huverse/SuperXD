@@ -98,6 +98,7 @@ abstract final class CampusIcons {
   static const developer = LucideIcons.bug;
   static const logs = LucideIcons.scrollText;
   static const exportLogs = LucideIcons.fileArchive;
+  static const letter = LucideIcons.mailOpen;
 }
 
 void configureCampusIcons() =>

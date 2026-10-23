@@ -9,7 +9,7 @@ import { env } from 'src/config/env';
 import { rateSubjectOf } from 'src/common/client_ip';
 import { RateLimiter } from 'src/common/redis/redis.module';
 import { RelayCode, RelayError } from 'src/common/relay_error';
-import { appDownloadsPerInstance, appFilePerHour, appReleaseFileMaxBytes, appReleasePerHour } from 'src/common/relay_limits';
+import { appDownloadsPerInstance, appFilePerHour, appReleaseFileMaxBytes, appReleasePerHour, developerNotesFileMaxBytes, developerNotesPerHour } from 'src/common/relay_limits';
 import * as dtos from 'src/modules/app_release/app_release.dto';
 
 // 应用更新：发版时把清单（<渠道>.json）与各架构安装包放进 RELAY_RELEASES_DIR，这里只读不写。
@@ -19,6 +19,8 @@ export class AppReleaseService {
   private readonly logger = new Logger('AppRelease');
   // 按渠道缓存解析好的清单，文件的修改时间或大小变了才重读；只缓存目录里真实存在的文件，条目数有界。
   private readonly cache = new Map<string, { mtimeMs: number; size: number; release: dtos.AppReleaseFile }>();
+  // 开发者的话同样按修改时间与大小缓存，只有一份。
+  private notesCache: { mtimeMs: number; size: number; notes: dtos.DeveloperNotesDto } | undefined;
   private downloads = 0;
 
   constructor(private readonly limiter: RateLimiter) {}
@@ -38,6 +40,30 @@ export class AppReleaseService {
       releasePage: release.releasePage,
       apk: apk === undefined ? null : { url: `/v1/app/files/${apk.file}`, size: apk.size, sha256: apk.sha256 },
     };
+  }
+
+  // 开发者的话：发布目录里的 developer_notes.json，还没放时给空列表（客户端什么也不显示）。
+  async notes(ip: string): Promise<dtos.DeveloperNotesDto> {
+    const retryAfter = await this.limiter.hit('developer_notes', rateSubjectOf(ip), developerNotesPerHour, 3600);
+    if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '请求过于频繁', { retryAfter });
+    const path = join(env().releasesDir, 'developer_notes.json');
+    let info: Awaited<ReturnType<typeof stat>>;
+    try {
+      info = await stat(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      this.notesCache = undefined;
+      return { notes: [] };
+    }
+    const cached = this.notesCache;
+    if (cached !== undefined && cached.mtimeMs === info.mtimeMs && cached.size === info.size) return cached.notes;
+    if (info.size > developerNotesFileMaxBytes) throw new Error(`developer_notes.json 超过 ${developerNotesFileMaxBytes} 字节`);
+    const notes = plainToInstance(dtos.DeveloperNotesDto, JSON.parse(await readFile(path, 'utf8')) as object);
+    const errors = validateSync(notes, { whitelist: true, forbidNonWhitelisted: true });
+    if (errors.length > 0) throw new Error(`developer_notes.json 格式不对：${errors.map((item) => item.property).join(',')}`);
+    this.notesCache = { mtimeMs: info.mtimeMs, size: info.size, notes };
+    this.logger.log(`[AppRelease] action=load_notes count=${notes.notes.length}`);
+    return notes;
   }
 
   // 交给 express 的 sendFile：支持 Range 断点续传与条件请求，按流发送不占内存；根目录限定在发布目录。

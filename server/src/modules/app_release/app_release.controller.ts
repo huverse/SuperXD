@@ -16,6 +16,12 @@ export class AppReleaseController {
     return this.releases.latest(ip, param.channel, query.abi);
   }
 
+  // 开发者的话：免签名、不带任何标识。
+  @Get('notes')
+  notes(@Ip() ip: string): Promise<dtos.DeveloperNotesDto> {
+    return this.releases.notes(ip);
+  }
+
   @Get('files/:name')
   file(@Param() param: dtos.AppFileParamDto, @Ip() ip: string, @Res() response: Response): Promise<void> {
     return this.releases.send(ip, param.name, response);

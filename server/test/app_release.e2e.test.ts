@@ -8,7 +8,7 @@ import { createRelayApp } from 'src/relay_app';
 import { env } from 'src/config/env';
 import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
-import { appFilePerHour, appReleasePerHour } from 'src/common/relay_limits';
+import { appFilePerHour, appReleasePerHour, developerNotesPerHour } from 'src/common/relay_limits';
 
 let app: NestExpressApplication;
 let server: string;
@@ -168,6 +168,43 @@ describe('安装包下载', () => {
     await request(server).get(`/v1/app/files/${file}`);
     await fillRate('app_file', appFilePerHour);
     const response = await request(server).get(`/v1/app/files/${file}`);
+    expect(response.status).toBe(429);
+    expect(response.body.code).toBe('RATE_LIMITED');
+  });
+});
+
+describe('开发者的话', () => {
+  const note = (id: string, overrides: Record<string, unknown> = {}) => ({ id, title: '近况', publishedAt: '2026-10-24T13:30:00.000Z', body: '第一段\n\n第二段', ...overrides });
+
+  it('还没放清单时给空列表', async () => {
+    const response = await request(server).get('/v1/app/notes');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ notes: [] });
+  });
+
+  it('原样给出清单里的信，换了文件立即生效', async () => {
+    await putManifest('developer_notes', { notes: [note('2026-10-24-hello')] });
+    expect((await request(server).get('/v1/app/notes')).body).toEqual({ notes: [note('2026-10-24-hello')] });
+    await putManifest('developer_notes', { notes: [note('2026-10-25-again', { title: '又来了' }), note('2026-10-24-hello')] });
+    expect((await request(server).get('/v1/app/notes')).body.notes.map((item: { id: string }) => item.id)).toEqual(['2026-10-25-again', '2026-10-24-hello']);
+  });
+
+  it('清单写坏了不往外发，回 INTERNAL 并打印堆栈', async () => {
+    const printed = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    for (const body of [{ notes: [note('../escape')] }, { notes: [note('long', { body: '字'.repeat(4001) })] }, { notes: Array.from({ length: 31 }, (_, index) => note(`n${index}`)) }, { notes: [note('extra', { secret: 1 })] }, '{not json']) {
+      await putManifest('developer_notes', body);
+      const response = await request(server).get('/v1/app/notes');
+      expect(response.status).toBe(500);
+      expect(response.body.code).toBe('INTERNAL');
+    }
+    expect(printed).toHaveBeenCalled();
+  });
+
+  it('同一 IP 每小时超过上限回 RATE_LIMITED', async () => {
+    pinClock();
+    await request(server).get('/v1/app/notes');
+    await fillRate('developer_notes', developerNotesPerHour);
+    const response = await request(server).get('/v1/app/notes');
     expect(response.status).toBe(429);
     expect(response.body.code).toBe('RATE_LIMITED');
   });

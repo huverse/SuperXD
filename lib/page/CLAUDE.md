@@ -7,9 +7,9 @@
 # 文件职责
 
 - 壳层与导航：
-  - shell_page.dart：底栏壳 ShellPage（今天、服务、消息、我的四个分支；在别的分支按返回先回今天，[人工决策] 在文件内）与可拖动底栏 DragNavigationBar：悬浮在安全区之上，内容延伸到玻璃下方，底栏占位作为各页的底部安全区；拖动时的透镜是栏玻璃的兄弟层、不被栏裁剪；「消息」带私信未读角标。
+  - shell_page.dart：底栏壳 ShellPage（今天、服务、消息、我的四个分支；在别的分支按返回先回今天，[人工决策] 在文件内）与可拖动底栏 DragNavigationBar：悬浮在安全区之上，内容延伸到玻璃下方，底栏占位作为各页的底部安全区；拖动时的透镜是栏玻璃的兄弟层、不被栏裁剪；「消息」带私信未读角标，「我的」在有没读的开发者的话时带一个不计数的小圆点（dots）。
   - animated_branches.dart：分支切换 AnimatedBranches，保留每个分支的 Navigator；进出两页整屏并排平移，不淡入淡出（页内玻璃在半透明图层下取不到背景）。
-  - section_pages.dart：服务页（课表、成绩、百宝箱入口）、我的页（头像卡读当前会话，只写姓名，姓名未知时显示学号；学号与班级在账号页）与底栏根页的大标题顶栏 SectionTitleBar。
+  - section_pages.dart：服务页（课表、成绩、百宝箱入口）、我的页（头像卡读当前会话，只写姓名，姓名未知时显示学号；学号与班级在账号页；有开发者的话时在界面与关于之间多一行，有没读的信时行尾一个小圆点）与底栏根页的大标题顶栏 SectionTitleBar。
 - 私信（只有分享卡片，没有文字聊天）：
   - message_page.dart：消息页，只放私信（还没有通知来源，不放空的「通知」分段，[人工决策] 在文件头）；未开启时是开启卡片（含数据处理说明与隐私政策），开启后是添加好友与好友列表（按最近活动排序，下拉刷新并核对好友，增删好友时那一行原地展开、收起；时间在名字一行右端、未读角标在预览一行右端，大字号下各自长高不溢出）。
   - friend_add_page.dart：添加好友：出示自己的二维码（浅色画，保证可扫）与倒计时，离开即作废；出示时本页屏幕亮度调到最高、离开恢复（screen_brightness，只改本应用窗口，[人工决策] 在 initState）；「扫一扫」扫对方的码。扫码函数可注入（InviteScanner）。
@@ -48,8 +48,9 @@
   - appearance_page.dart：界面设置 AppearancePage：字号、配色、字体、深浅色、玻璃效果与背景（自定义图片经系统照片选择器，选图函数可注入）；可分享给好友（不含壁纸图片）。字体预览用 assets/font_previews 里预先画好的图（tool/font_previews.dart 生成），不为预览加载没在用的字体。滑杆拖动中只预览、松手保存，系统取消与读屏增减停手 300ms 补存，离开页面时存掉没存的预览。选项点了就生效，落库在 DisplaySettings 的保存锁里排队，保存时不禁用页面上的其他选项。改字号、换字体时整页重新排版，点的那一行经 theme 的 CampusAnchoredScrollController 停在手指下（字号另有连续过渡，见 local 的 CampusTextScale）。玻璃限档时点「完整」先解除限档。
   - image_copy_pick.dart：通用取图 pickImageCopy 与多选 pickImagesCopy，返回副本路径与 discard；只删插件这次新留在缓存里的副本。壁纸、相册识别二维码共用，并经组合根注入百宝箱。
   - developer_page.dart：开发者选项 DeveloperPage（开关、日志导出与清除、复制诊断摘要、连电脑的 adb 命令、性能浮层、运行环境；关闭开发者模式删开发者模式日志）、日志查看 DeveloperLogPage（全部或错误、错误按种类合并写出现几次、搜索、点开看全文与复制）与悬浮开发者工具 DeveloperOverlay（开发者模式下浮在所有页面上、可拖动贴边，点开可标记当前页面与一句说明、查看日志、导出、进开发者选项；自带一层 Overlay，开关时不改页面的父级结构，性能浮层也画在这层里、不用 MaterialApp 的开关（那个会给整页加一层 Stack、换父级重建），[人工决策] 在类上）。
+  - developer_notes_page.dart：开发者的话（人工决策见 domain/developer_note.dart）：列表页 DeveloperNotesPage（从新到旧、没读的标小圆点、下拉刷新、没有信时写「还没有内容」）、读信页（标题、正文原样显示可复制、落款写日期）与弹出的信 showDeveloperNoteLetter（玻璃弹窗里读全文，还有别的没读时多一个「查看全部」）；点开一封即记成读过。什么时候弹由组合根按打扰时机决定（application/app_moments.dart）。
   - about_page.dart：关于页 AboutPage（连点版本号 7 次开启开发者模式，开着时多一项开发者选项）：应用图标（assets/app_icon.png，测试期临时图，见开源许可第五节）、版本、检查更新（传入 AppUpdates 时才有）、用户协议、隐私政策、开屏画作（传入 PaintingGallery 时才有）、开源许可、源代码与反馈问题；版本信息与打开链接可注入。
-  - painting_splash.dart：开屏画作 PaintingSplash（组合根套在 runApp 外面，自带 MediaQuery 与文字方向）：画作贴底铺满屏宽、顶边渐隐融进按顶边分段色铺开的天空，天空里只有一笔写出的应用名（splash_signature.dart，不写画名与说明；宽约屏宽八成、最宽 360，墨色取画作顶边最冷与最暖两色压深、沿书写方向渐变，暗天空用浅色）；从第一帧真正上屏（引擎报的首帧栅格化完）起，写完再停一会儿（约 2 秒，减少动画时不写、1.2 秒）且会话恢复后再过 450ms 转场才溶解，点一下立即溶解，最多等 4 秒；溶解完从树上拿掉、下面的应用不重建；减少动画时只淡入淡出。paintingSplashImage 按屏幕实际像素解码（组合根在 runApp 前就开始解码）。系统启动图的淡出在 MainActivity.kt（Android 12 起）；系统启动图不画应用图标、只有底色，在 android res 的 values-v31 与 values-night-v31 两份 styles.xml（[人工决策] 在 values-v31）。人工决策在类上。
+  - painting_splash.dart：开屏画作 PaintingSplash（组合根套在 runApp 外面，自带 MediaQuery 与文字方向）：画作贴底铺满屏宽、顶边渐隐融进按顶边分段色铺开的天空，天空里只有一笔写出的应用名（splash_signature.dart，不写画名与说明；宽约屏宽八成、最宽 360，墨色取画作顶边最冷与最暖两色压深、沿书写方向渐变，暗天空用浅色）；从第一帧真正上屏（引擎报的首帧栅格化完）起，写完再停一会儿（约 2 秒，减少动画时不写、1.2 秒）且会话恢复后再过 450ms 转场才溶解，点一下立即溶解，最多等 4 秒；溶解完从树上拿掉、下面的应用不重建，并调 onGone（打扰时机等开屏走完）；减少动画时只淡入淡出。paintingSplashImage 按屏幕实际像素解码（组合根在 runApp 前就开始解码）。系统启动图的淡出在 MainActivity.kt（Android 12 起）；系统启动图不画应用图标、只有底色，在 android res 的 values-v31 与 values-night-v31 两份 styles.xml（[人工决策] 在 values-v31）。人工决策在类上。
   - splash_signature.dart：开屏一笔写出的「SuperXD」（同苹果开机的 hello）：连笔草书，Super 一笔、X 两笔、D 一笔；字形是文件顶部的节点（自由点与带笔尖方向的点，同一点写两次是尖角），运行时按 Hobby 曲线（METAFONT 同法）生成、右斜 15°，自由节点处曲率连续；书写节奏按三分之二幂律（弯越急越慢）、起笔收笔与尖角处减速、笔画间提笔（停顿加空中移动），进度 0–1 换成每笔画到的长度；SplashSignaturePainter 按比例放进给定大小，单线圆头、线宽随签名缩放，墨色两色渐变。改字形只改节点。
   - paintings_page.dart：开屏画作页 PaintingsPage：按清单列出全部画作、标出这次开屏的那幅；「保存到相册」原地转圈、存好原地变成「已保存」；点画作从卡片里原地放大成全屏（浮层路由，同快递身份码的全屏出示，黑底渐显到不透明），可双指缩放，点一下或返回原路缩回。
   - app_update_dialog.dart：更新弹窗 showAppUpdateDialog：可选更新给更新、稍后、跳过这个版本，点更新才下载，下载、核对、等授权、安装都在弹窗里原地切换；必须更新时关不掉（人工决策见文件内）。
@@ -76,6 +77,7 @@
 - 成绩与同步：grades_ui_test.dart、sync_ui_test.dart。
 - 壳层与表单：navigation_drag_test.dart、shell_layout_test.dart、form_spacing_test.dart（支撑 form_layout_support.dart）。
 - 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart；开屏与画作页：painting_ui_test.dart。
+- 开发者的话：account_lifecycle_test.dart（「我的」页入口、小圆点与读信、新信在什么界面条件下弹）。
 - 私信页面：social_ui_test.dart（含好友课表导入的整份替换与逐项合并）、share_card_test.dart；合并规则在 schedule_merge_test.dart。
 - 开发者模式：developer_mode_test.dart。
 - 页面测试的合成数据网关是 fixture_campus_gateway.dart（读 assets/fixtures）。
