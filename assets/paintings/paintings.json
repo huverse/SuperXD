@@ -1,0 +1,26 @@
+{
+  "paintings": [
+    {
+      "id": "misty_sunrise",
+      "file": "misty_sunrise.jpg",
+      "title": "雾城日出",
+      "note": "仿莫奈风格 · AI 生成",
+      "width": 1280,
+      "height": 720,
+      "focus": 0.65,
+      "horizon": ["#8C9CBB", "#A7B0BF", "#ACB2BF", "#C5B3AC", "#CAC2BF", "#BCBDC2"],
+      "sky": "#CCD3E1"
+    },
+    {
+      "id": "riverside_tree",
+      "file": "riverside_tree.jpg",
+      "title": "河畔树影",
+      "note": "仿莫奈风格 · AI 生成",
+      "width": 1280,
+      "height": 1280,
+      "focus": 0.5,
+      "horizon": ["#B1C5D9", "#C1D1DB", "#BCCDD9", "#B3C6D4", "#A8BED0", "#95AFC5"],
+      "sky": "#CAD7E2"
+    }
+  ]
+}

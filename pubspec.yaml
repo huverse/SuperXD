@@ -127,6 +127,7 @@ flutter:
     - assets/third_party_notices.txt
     - assets/app_icon.png
     - assets/font_previews/
+    - assets/paintings/
 
   # An image asset can refer to one or more resolution-specific "variants", see
   # https://flutter.dev/to/resolution-aware-images

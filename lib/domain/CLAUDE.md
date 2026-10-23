@@ -50,6 +50,7 @@
   - 卡片有类型名与版本号：ScheduleShare（课表快照：学期、开学日、课程、作息）、AppearanceShare（配色、字体、字号、深浅色、玻璃、壁纸模糊透明度，不含图片）、VideoShare（作品原链接、标题、作者、平台、类型，不含直链与封面）；不认识的类型或更高版本解成 UnknownShare，界面提示更新应用。
   - decodeShareCard 是外部输入的边界：结构、长度、范围逐项校验，课表再走 validateSchedule，失败抛 ShareCardException。shareCardSummary 给列表预览。
   - 新增卡片类型：这里加子类与编解码，页面 share_card_view.dart 加渲染。
+- painting.dart：开屏画作 Painting（标题、说明、图片路径、尺寸、裁切焦点、顶边分段色与天空色）与来源端口 PaintingGallery（全部画作、这次开屏的那幅、存原图）；decodePaintings 逐项校验清单 assets/paintings/paintings.json（画作不写死在代码里，清单顺序即轮换顺序）。实现在 local/painting_library.dart，人工决策在 page/painting_splash.dart。
 - app_update.dart：应用内更新的类型、规则与端口。
   - 类型：AppRelease（版本号、版本名、发布时刻、最低可用版本号、更新说明、发布页、这个架构的安装包 AppReleaseApk）、AppPackageIdentity、AppUpdateException、AppUpdateCancelled。
   - 规则：appUpdateUrgency（有更新版本才算，已装低于最低可用版本为必须更新）、appUpdateCheckDue（自动检查每个校园日一次，待必须更新时不限）、appUpdatePromptDue（跳过的版本不自动弹，必须更新不认跳过）。人工决策见文件内。
@@ -86,7 +87,7 @@
 
 - 课表：schedule_edit_test.dart、schedule_merge_test.dart、schedule_version_test.dart、period_day_test.dart。
 - 课程实例与下游：reminder_test.dart、calendar_export_test.dart、home_widget_test.dart。
-- 成绩、卡片与更新规则：grades_test.dart、share_card_test.dart、app_update_test.dart。
+- 成绩、卡片与更新规则：grades_test.dart、share_card_test.dart、app_update_test.dart；开屏画作清单与轮换：painting_test.dart。
 - 面向用户的文案写法（节次、学分、按远近写的时刻、不及格）：campus_text_test.dart。
 
 # 人工决策检索

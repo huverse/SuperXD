@@ -10,6 +10,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_updates.dart';
+import 'package:superxd/domain/painting.dart';
 import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
@@ -22,7 +23,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/account_dialogs.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, required this.gateway, required this.session, this.switching = false, this.updates, this.developer, this.logs});
+  const LoginPage({super.key, required this.gateway, required this.session, this.switching = false, this.updates, this.developer, this.logs, this.paintings});
   final AccountAccess gateway;
   final AppSession session;
   final bool switching;
@@ -30,6 +31,7 @@ class LoginPage extends StatefulWidget {
   final AppUpdates? updates;
   final DeveloperSettings? developer;
   final DiagnosticLog? logs;
+  final PaintingGallery? paintings;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -193,7 +195,7 @@ class _LoginPageState extends State<LoginPage> {
                 if (!widget.switching) Padding(padding: const EdgeInsets.only(top: 16), child: Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
                   OutlinedButton.icon(onPressed: _busy ? null : () => context.push('/toolbox'), icon: const CampusIcon(CampusIcons.toolbox), label: const Text('百宝箱')),
                   OutlinedButton.icon(
-                    onPressed: _busy ? null : () => Navigator.push(context, CampusPageRoute<void>(builder: (_) => AboutPage(updates: widget.updates, developer: widget.developer, logs: widget.logs))),
+                    onPressed: _busy ? null : () => Navigator.push(context, CampusPageRoute<void>(builder: (_) => AboutPage(updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings))),
                     icon: const CampusIcon(CampusIcons.info),
                     label: const Text('关于'),
                   ),
