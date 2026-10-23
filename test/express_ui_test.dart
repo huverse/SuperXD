@@ -38,7 +38,7 @@ const _session = PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok', us
 http.Response _json(Map<String, Object?> body) => http.Response(jsonEncode(body), 200, headers: {'content-type': 'application/json;charset=UTF-8'});
 
 // 合成拼多多服务：按路径回合成数据，身份码固定一串 dd 码，绑定链路全部回成功；calls 按顺序记下请求路径，station 换驿站查询的结果。
-http.Client _fakeClient({List<String>? calls, Map<String, Object?>? station, List<http.Request>? requests, Future<void>? trackGate}) => MockClient((request) async {
+http.Client _fakeClient({List<String>? calls, Map<String, Object?>? station, List<http.Request>? requests, Future<void>? trackGate, Future<void>? stationGate}) => MockClient((request) async {
   final path = request.url.path;
   calls?.add(path);
   requests?.add(request);
@@ -67,6 +67,7 @@ http.Client _fakeClient({List<String>? calls, Map<String, Object?>? station, Lis
   } else if (path.endsWith('bind/mobile/station/package')) {
     body = {'success': true, 'error_code': '0'};
   } else if (path.endsWith('station/package')) {
+    await stationGate;
     body = {'success': true, 'error_code': '0', 'result': station ?? {'count': 0, 'no_package_mobile_info': {'mobileList': ['8888']}}};
   } else if (path.endsWith('pre/check')) {
     body = {'has_binding_express_mobile': true, 'mobile_id': 'm1', 'mobile_des': '138****8888'};
@@ -138,6 +139,17 @@ class _FakeVerifyPage extends StatelessWidget {
   }
 }
 
+// 从某一点往下拉过下拉刷新的阈值再松手（分几步拉，同真实手势）；越界回弹要挂应用的滚动行为 CampusScrollBehavior。
+Future<void> _pull(WidgetTester tester, Offset from) async {
+  final gesture = await tester.startGesture(from);
+  await gesture.moveBy(const Offset(0, 20));
+  await gesture.moveBy(const Offset(0, 40));
+  await gesture.moveBy(const Offset(0, 160));
+  await tester.pump();
+  await gesture.up();
+  await tester.pump();
+}
+
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
   late ToolboxFixture fixture;
@@ -159,6 +171,7 @@ void main() {
     ToolboxFilePublisher? publisher,
     Future<bool> Function(Uri uri)? launch,
     Future<void>? trackGate,
+    Future<void>? stationGate,
     Widget Function(String token)? verifyPage,
   }) => ToolboxRuntime.testing(
     catalog: toolboxCatalog,
@@ -168,7 +181,7 @@ void main() {
     services: {
       ExpressService.serviceId: ExpressService(
         vault: vault,
-        clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: _fakeClient(calls: calls, station: station, requests: requests, trackGate: trackGate))),
+        clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: _fakeClient(calls: calls, station: station, requests: requests, trackGate: trackGate, stationGate: stationGate))),
         antiContent: _FakeAnti(),
         filePublisher: () => publisher ?? FakePublisher(),
         temporaryDirectory: () async => temp,
@@ -234,6 +247,86 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('没有待取件'), findsOneWidget);
     expect(accountTop() - appBar.bottom, lessThanOrEqualTo(24));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 用户反馈：快递页下拉没有任何反馈（以前已登录内容是按内容收缩的滚动区，不满一屏时空白处拉不动）。
+  testWidgets('整页可下拉：空白处也能拉，下拉重查驿站快递、按钮不跟着转；扫过驿站码的重查同一站点', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 780));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final requests = <http.Request>[];
+    final gate = Completer<void>();
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), scrollBehavior: const CampusScrollBehavior(), home: ExpressPage(runtime: buildRuntime(
+      requests: requests,
+      stationGate: gate.future,
+      station: const {'count': 0, 'station_name': '合成驿站'},
+      scan: (context, hint, check) async => _stationUrl,
+    ))));
+    await tester.pumpAndSettle();
+    int stationQueries() => requests.where((request) => request.url.path.endsWith('express_trackbox/station/package')).length;
+
+    // 从按钮下面的空白处往下拉：拉过阈值松手即开始刷新。
+    await _pull(tester, const Offset(180, 650));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(stationQueries(), 1);
+    // 刷新中只转下拉指示：按钮不写「正在查询」，但都暂不可点（一次只跑一个请求）。
+    expect(find.text('正在查询'), findsNothing);
+    expect(tester.widget<OutlinedButton>(find.ancestor(of: find.text('驿站快递'), matching: find.byType(OutlinedButton))).onPressed, isNull);
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('没有待取件'), findsOneWidget);
+    expect(_lastBody(requests, 'express_trackbox/station/package').containsKey('station_code'), isFalse);
+
+    // 扫过驿站码后再下拉：重查同一个站点，不退回全部驿站。
+    await tester.tap(find.text('扫驿站码'));
+    await tester.pumpAndSettle();
+    expect(find.text('当前站点：合成驿站'), findsOneWidget);
+    await _pull(tester, const Offset(180, 300));
+    await tester.pumpAndSettle();
+    expect(stationQueries(), 3);
+    expect(_lastBody(requests, 'express_trackbox/station/package')['station_code'], 'S000000001');
+    expect(find.text('当前站点：合成驿站'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('下拉刷新后取走的件原地收起、没取走的不动；尾号查过的件不再补查', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(360, 780));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final requests = <http.Request>[];
+    final parcels = [
+      {'pick_code': '取件码 3-2-1001', 'shipping_name': '合成快递', 'shipping_id': 1, 'tracking_number': 'SX0000000001'},
+      {'pick_code': '取件码 3-2-1002', 'shipping_name': '合成快递', 'shipping_id': 1, 'tracking_number': 'SX0000000002'},
+    ];
+    final station = <String, Object?>{
+      'count': 2,
+      'combine_list': [{'company_name': '合成驿站一号', 'address': '测试路 1 号', 'combine_track_list': parcels}],
+    };
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), scrollBehavior: const CampusScrollBehavior(), home: ExpressPage(runtime: buildRuntime(requests: requests, station: station))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(find.text('取件码 3-2-1001'), findsOneWidget);
+    expect(find.text('取件码 3-2-1002'), findsOneWidget);
+    int tracks() => requests.where((request) => request.url.path.endsWith('shipping/track')).length;
+    expect(tracks(), 2);
+    final kept = tester.element(find.text('取件码 3-2-1001'));
+
+    // 第二件取走了：下拉后那一行原地收起淡出，再从列表里移除；留下的那一行还是原来那个，不重建、不跳。
+    parcels.removeAt(1);
+    station['count'] = 1;
+    await _pull(tester, const Offset(180, 200));
+    await tester.pump(const Duration(milliseconds: 100));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('1 件待取'), findsOneWidget);
+    expect(find.text('取件码 3-2-1002'), findsOneWidget, reason: '收起途中还在原位');
+    await tester.pumpAndSettle();
+    expect(find.text('取件码 3-2-1002'), findsNothing);
+    expect(identical(tester.element(find.text('取件码 3-2-1001')), kept), isTrue);
+    expect(tracks(), 2, reason: '留下的件尾号已存本机，下拉不再补查');
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -947,6 +1040,9 @@ void main() {
     await tester.tap(find.text('身份码'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
+    // 身份码卡第一次出现：先展开（200ms），展开完的下一帧开始滚（300ms）。
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     final view = tester.getRect(scrollable);
     final card = tester.getRect(find.ancestor(of: find.byType(ExpressIdentityView), matching: find.byType(CampusSurface)));
@@ -978,6 +1074,8 @@ void main() {
     await tester.tap(find.text('身份码'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
+    // 等身份码卡展开完（结果卡出现时展开淡入）。
+    await tester.pump(const Duration(milliseconds: 250));
 
     final inline = tester.getRect(find.byType(BarcodeWidget));
     double angle() => math.atan2(tester.widget<Transform>(find.ancestor(of: find.byType(BarcodeWidget).last, matching: find.byType(Transform)).first).transform.entry(1, 0), tester.widget<Transform>(find.ancestor(of: find.byType(BarcodeWidget).last, matching: find.byType(Transform)).first).transform.entry(0, 0));
@@ -1038,6 +1136,8 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.text('有效期剩余 2 秒'), findsOneWidget);
+    // 等身份码卡展开完（结果卡出现时展开淡入）。
+    await tester.pump(const Duration(milliseconds: 250));
     await tester.tap(find.byType(BarcodeWidget));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
@@ -1075,7 +1175,9 @@ void main() {
     await tester.tap(find.text('身份码'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    // 等身份码卡滚进可视区的滚动走完（滚动途中不接点按）。
+    // 等身份码卡展开、再滚进可视区（滚动途中不接点按）。
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.text('二维码'));
     await tester.pump(const Duration(milliseconds: 400));
@@ -1154,6 +1256,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(issued, 2);
     expect(find.text('身份码已过期'), findsOneWidget);
+    // 等身份码卡展开后滚进可视区的滚动走完（滚动途中不接点按）。
+    await tester.pump(const Duration(milliseconds: 400));
     await tester.tap(find.widgetWithText(OutlinedButton, '刷新'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
