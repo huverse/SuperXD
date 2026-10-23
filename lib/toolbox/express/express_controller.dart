@@ -7,8 +7,8 @@ import 'package:superxd/toolbox/express/express_client.dart';
 import 'package:superxd/toolbox/express/express_models.dart';
 import 'package:superxd/toolbox/express/express_service.dart';
 
-// 正在跑的是哪个查询：发起它的按钮原地转圈，其余按钮暂不可点。
-enum ExpressAction { mobiles, packages, scan, identity, track }
+// 正在跑的是哪个查询：发起它的按钮原地转圈，其余按钮暂不可点；refresh 是下拉刷新，由下拉指示转圈、不占任何按钮。
+enum ExpressAction { mobiles, packages, scan, identity, track, refresh }
 
 // 取件手机号管理要的两项只读数据：绑定预检查与已绑定列表。
 typedef ExpressMobiles = ({PddBindPreCheck pre, List<PddBoundMobile> mobiles});
@@ -26,7 +26,7 @@ class ExpressController extends ChangeNotifier {
   ExpressAction? _running;
   bool _refreshing = false;
   String? _error;
-  String _stationCode = '';
+  StationScan? _station;
   String _trackingKey = '';
   bool _disposed = false;
   // 每件寄到的手机尾号（运单号与快递公司为键，见 _fillOwners），存在本机、同一件只查一次；退出或失效时清空。
@@ -39,7 +39,7 @@ class ExpressController extends ChangeNotifier {
   StationPackagesResult? get packages => _packages;
   IdentityCodeResult? get identityCode => _identityCode;
   // 最近一次扫到的驿站码：身份码同官方带上它；普通「驿站快递」查询后清空，身份码回到不限站点。
-  String get stationCode => _stationCode;
+  String get stationCode => _station?.code ?? '';
   // 最近一次查物流的那件（运单号）：查询进行中时它那一行的「物流」按钮原地转圈。
   String get trackingKey => _trackingKey;
   ExpressAction? get running => _running;
@@ -121,7 +121,12 @@ class ExpressController extends ChangeNotifier {
 
   // [人工决策-2026-10-21 12:53:40] 1.0.0-alpha.6 的绑定漏了官方紧随其后的「关联驿站包裹」，那时绑的号在绑定前就到站的件查不到。
   // 用户选「自动补一次」：本账号第一次查驿站时先补关联一次、记在本机，之后不再做（重新登录后会再补一次）；补关联失败不挡查询，下次再补。
-  Future<void> queryStationPackages({StationScan? station}) => _run(station == null ? ExpressAction.packages : ExpressAction.scan, () async {
+  Future<void> queryStationPackages({StationScan? station}) => _queryPackages(station, station == null ? ExpressAction.packages : ExpressAction.scan);
+
+  // 下拉刷新：重做上一次的驿站查询（扫过驿站码的重查同一站点，没查过的等于点「驿站快递」），见 express_page.dart 的 _buildMain。
+  Future<void> refreshPackages() => _queryPackages(_station, ExpressAction.refresh);
+
+  Future<void> _queryPackages(StationScan? station, ExpressAction running) => _run(running, () async {
     if (!await _service.vault.stationLinked()) await _linkStationPackages();
     final result = await _client!.queryStationPackages(
       stationCode: station?.code ?? '',
@@ -134,7 +139,7 @@ class ExpressController extends ChangeNotifier {
     if (station == null) _owners.removeWhere((key, _) => !result.groups.any((group) => group.packages.any((parcel) => _ownerKey(parcel) == key)));
     if (!mapEquals(before, _owners)) await _service.vault.saveOwnerTails(_owners);
     _packages = result;
-    _stationCode = station?.code ?? '';
+    _station = station;
   });
 
   String _ownerKey(StationPackage parcel) => '${parcel.shippingId}|${parcel.trackingNumber}';
@@ -183,7 +188,7 @@ class ExpressController extends ChangeNotifier {
 
   // 同官方：从驿站进来（扫过驿站码）时生成身份码带上这个站的 station_code。
   Future<void> generateIdentityCode() => _run(ExpressAction.identity, () async {
-    _identityCode = await _client!.generateIdentityCode(stationCode: _stationCode);
+    _identityCode = await _client!.generateIdentityCode(stationCode: stationCode);
   });
 
   // 登录页拿到凭据后先用只读接口确认会话真的能用：明确未登录才返回 false（登录页不关、等用户走完验证），网络等其他失败不拦。
@@ -208,7 +213,7 @@ class ExpressController extends ChangeNotifier {
     _refreshing = true;
     notifyListeners();
     try {
-      _identityCode = await _client!.generateIdentityCode(stationCode: _stationCode);
+      _identityCode = await _client!.generateIdentityCode(stationCode: stationCode);
       _error = null;
     } on ExpressFailure catch (failure) {
       await _onFailure(failure);
@@ -331,7 +336,7 @@ class ExpressController extends ChangeNotifier {
     _session = null;
     _packages = null;
     _identityCode = null;
-    _stationCode = '';
+    _station = null;
     _owners.clear();
     _verifyToken = null;
   }
