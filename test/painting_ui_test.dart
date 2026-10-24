@@ -180,6 +180,12 @@ void main() {
     }
   });
 
+  test('窗口主题默认关掉导航栏对比度遮罩：开屏的系统栏样式不写这一项，靠窗口默认值才不在画作底部垫白条', () {
+    for (final folder in ['values', 'values-night']) {
+      expect(File('android/app/src/main/res/$folder/styles.xml').readAsStringSync(), contains('<item name="android:enforceNavigationBarContrast">false</item>'), reason: folder);
+    }
+  });
+
   testWidgets('关于页有「开屏画作」，列出全部画作并标出这次开屏的那幅；保存原地转圈、存好原地变成已保存', (tester) async {
     final temp = Directory.systemTemp.createTempSync('painting_ui');
     addTearDown(() => temp.deleteSync(recursive: true));
