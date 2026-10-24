@@ -202,7 +202,7 @@ void main() {
       home: Builder(builder: (context) => Scaffold(body: Center(child: TextButton(onPressed: () => open(context), child: const Text('打开'))))),
     );
 
-    testWidgets('节日动画放完自己关；点一下立即关；减少动画时显示问候、一会儿自己关', (tester) async {
+    testWidgets('节日动画放完自己关；点一下立即关；减少动画时显示问候、一会儿自己关；导航栏透明、不涂成黑条', (tester) async {
       var built = 0.0;
       final scene = FestivalScene(occasion: spring, length: const Duration(seconds: 2), builder: (context, progress) => AnimatedBuilder(animation: progress, builder: (context, _) {
         built = progress.value;
@@ -213,6 +213,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(seconds: 1));
       expect(find.text('场景'), findsOneWidget);
+      expect(SystemChrome.latestStyle?.systemNavigationBarColor, Colors.transparent);
+      expect(SystemChrome.latestStyle?.systemNavigationBarIconBrightness, Brightness.light);
       await tester.pump(const Duration(milliseconds: 1100));
       await tester.pumpAndSettle();
       expect(built, 1);
@@ -233,7 +235,7 @@ void main() {
       expect(find.text('新春快乐'), findsNothing);
     });
 
-    testWidgets('拆红包：点开星核后卡片出来；口令复制并打开支付宝；「收下了」关闭', (tester) async {
+    testWidgets('拆红包：点开星核后卡片出来；口令复制并打开支付宝；「收下了」关闭；导航栏透明、不涂成黑条', (tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.75;
       addTearDown(tester.view.reset);
@@ -253,6 +255,8 @@ void main() {
       await tester.pump(const Duration(seconds: 1));
       expect(find.text('复制口令，去支付宝'), findsNothing, reason: '还没拆');
       expect(find.bySemanticsLabel('拆开红包'), findsOneWidget);
+      expect(SystemChrome.latestStyle?.systemNavigationBarColor, Colors.transparent);
+      expect(SystemChrome.latestStyle?.systemNavigationBarIconBrightness, Brightness.light);
       await tester.tap(find.bySemanticsLabel('拆开红包'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 2200));
