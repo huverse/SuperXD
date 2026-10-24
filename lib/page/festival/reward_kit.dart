@@ -11,22 +11,17 @@ import 'package:superxd/domain/campus_log.dart';
 // 一帧的状态 RewardScene、开启动效的接口 RewardLook、着色器缓存 RewardShaders、粒子贴图 RewardSprites。
 
 // 在 OKLCH 里取色（同 CSS Color 4 的 oklch()）：明度、彩度、色相分开调，换色相时看起来一样亮（HSL 换色相忽明忽暗，黄比蓝亮得多）。
-// 默认主题的颜色都从应用配色的激活色（种子）按明度、彩度、色相偏移取；节日主题可以用 oklch 直接写定色相。
+// 默认主题的颜色都从应用配色的激活色（种子）的色相出发，按明度、彩度、色相偏移取。
 class RewardTone {
   factory RewardTone(Color seed) {
-    final (lightness, a, b) = _toOklab(seed);
-    return RewardTone._(lightness, math.sqrt(a * a + b * b), math.atan2(b, a));
+    final (_, a, b) = _toOklab(seed);
+    return RewardTone._(math.atan2(b, a));
   }
-  const RewardTone._(this.lightness, this.chroma, this.hue);
-  final double lightness;
-  final double chroma;
+  const RewardTone._(this.hue);
   final double hue;
 
   // 明度 0–1、彩度（OKLCH 的 C，常用 0–0.3）、相对种子的色相偏移（度）。
   Color pick(double lightness, double chroma, {double turn = 0, double alpha = 1}) => _pick(lightness, chroma, hue + turn * math.pi / 180, alpha);
-
-  // 直接按色相（度）取色。
-  static Color oklch(double lightness, double chroma, double hue, {double alpha = 1}) => _pick(lightness, chroma, hue * math.pi / 180, alpha);
 
   // 超出 sRGB 时逐步降彩度直到能显示。
   static Color _pick(double lightness, double chroma, double angle, double alpha) {
