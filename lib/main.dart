@@ -22,6 +22,7 @@ import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/application/campus_timetable.dart';
 import 'package:superxd/application/campus_widgets.dart';
 import 'package:superxd/application/developer_notes.dart';
+import 'package:superxd/application/festivals.dart';
 import 'package:superxd/device/app_installer_channel.dart';
 import 'package:superxd/device/app_shortcuts.dart';
 import 'package:superxd/device/app_package_files.dart';
@@ -31,8 +32,10 @@ import 'package:superxd/device/notification_reminders.dart';
 import 'package:superxd/device/picture_export.dart';
 import 'package:superxd/device/relay_note_feed.dart';
 import 'package:superxd/device/relay_release_feed.dart';
+import 'package:superxd/device/relay_reward_client.dart';
 import 'package:superxd/domain/app_shortcut.dart';
 import 'package:superxd/domain/course_widget.dart';
+import 'package:superxd/domain/festival.dart';
 import 'package:superxd/domain/painting.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
@@ -40,11 +43,15 @@ import 'package:superxd/local/app_update_memory.dart';
 import 'package:superxd/local/developer_note_memory.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
+import 'package:superxd/local/festival_memory.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/local/painting_library.dart';
 import 'package:superxd/page/app_update_dialog.dart';
 import 'package:superxd/page/developer_notes_page.dart';
 import 'package:superxd/page/developer_page.dart';
+import 'package:superxd/page/festival/festival_catalog.dart';
+import 'package:superxd/page/festival/festival_reward.dart';
+import 'package:superxd/page/festival/festival_stage.dart';
 import 'package:superxd/page/legal_page.dart';
 import 'package:superxd/local/credential_store.dart';
 import 'package:superxd/domain/campus_clock.dart';
@@ -148,12 +155,13 @@ void main() async {
   final updates = await appUpdates(support);
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
   final notes = await developerNotes(support);
+  final festivals = await festivalsOf(support);
   // 打扰时机（人工决策见 application/app_moments.dart）：上下课的安静期按当前账号本机今天的课算，只读本地。
-  final moments = AppMoments(notes: notes, timetable: () => campusTimetableToday(session.gateway, signedIn: session.loggedIn));
+  final moments = AppMoments(notes: notes, festivals: festivals, timetable: () => campusTimetableToday(session.gateway, signedIn: session.loggedIn));
   final splashed = painting != null && splashImage != null;
   final splashGone = ValueNotifier(!splashed);
   final restored = Completer<void>();
-  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, launch: launched, notes: notes, moments: moments, splashGone: splashGone);
+  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, launch: launched, notes: notes, festivals: festivals, moments: moments, splashGone: splashGone);
   runApp(splashed ? PaintingSplash(painting: painting, image: splashImage, ready: restored.future, onGone: () => splashGone.value = true, child: app) : app);
   unawaited(WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
     if (campusDiagnostics) campusLog('[App] action=first_frame ms=${launch.elapsedMilliseconds}');
@@ -171,7 +179,7 @@ void main() async {
   watchLocalSchedule(session, reminders: reminders, widgets: widgets);
   watchWidgetTheme(display, widgetPort);
   if (updates != null) watchAppUpdates(updates, agreed: legal.agreed);
-  watchMoments(moments, notes: notes, agreed: legal.agreed);
+  watchMoments(moments, notes: notes, festivals: festivals, agreed: legal.agreed);
 }
 
 // 中转服务地址来自构建参数 SUPERXD_RELAY；未配置或格式不对时私信与应用更新都不可用，不猜默认地址。
@@ -221,16 +229,46 @@ Future<DeveloperNotes?> developerNotes(Directory support) async {
   return DeveloperNotes(feed: RelayNoteFeed(base), memory: await FileDeveloperNoteMemory.open(File(path.join(support.path, 'developer_notes.json'))));
 }
 
-// 开发者的话与打扰时机：同意协议与政策之后拉一次信，之后每次回到前台再看一眼（距上次不到一小时不联网）；回到前台重新计这一次前台。
-void watchMoments(AppMoments moments, {DeveloperNotes? notes, required Future<void> agreed}) {
+// 节日（人工决策见 domain/festival.dart）：登记在 page/festival/festival_catalog.dart；没配中转时只播动画、不抽签。
+Future<Festivals> festivalsOf(Directory support) async => Festivals(
+  occasions: [for (final scene in festivalCatalog) scene.occasion],
+  memory: await FileFestivalMemory.open(File(path.join(support.path, 'festival.json'))),
+  client: switch (relayBase()) {
+    final base? => RelayRewardClient(base),
+    null => null,
+  },
+);
+
+// 奖品二维码存进相册（Download/SuperXD），用支付宝扫一扫从相册识别；临时文件放缓存、用完即删。
+Future<bool> saveRewardPicture(Uint8List png) async {
+  final file = File(path.join((await getTemporaryDirectory()).path, 'festival_reward.png'));
+  try {
+    await file.writeAsBytes(png, flush: true);
+    return await publishPicture(file, 'SuperXD-reward-${DateTime.now().millisecondsSinceEpoch}.png');
+  } catch (error, stack) {
+    campusLog('[Festival] action=save_qr errorType=${error.runtimeType}\n$stack');
+    return false;
+  } finally {
+    if (await file.exists()) await file.delete();
+  }
+}
+
+// 开发者的话、节日与打扰时机：同意协议与政策之后拉一次信、补抽上次没连上的签，之后每次回到前台再看一眼（信距上次不到一小时不联网）；
+// 启动与回到前台记今天打开过（活跃天数只在本机）；回到前台重新计这一次前台。
+void watchMoments(AppMoments moments, {DeveloperNotes? notes, Festivals? festivals, required Future<void> agreed}) {
   var ready = false;
+  unawaited(festivals?.recordActive());
   unawaited(agreed.then((_) {
     ready = true;
+    unawaited(festivals?.drawPending());
     return notes?.autoRefresh();
   }));
   AppLifecycleListener(onShow: () {
     moments.foreground();
-    if (ready) unawaited(notes?.autoRefresh());
+    unawaited(festivals?.recordActive());
+    if (!ready) return;
+    unawaited(notes?.autoRefresh());
+    unawaited(festivals?.drawPending());
   });
 }
 
@@ -298,9 +336,11 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch, this.notes, this.moments, this.splashGone});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch, this.notes, this.festivals, this.moments, this.splashGone});
   // 开发者的话（设备级）；为空时「我的」页不显示这一行。
   final DeveloperNotes? notes;
+  // 节日（设备级）；为空时不播节日动画、「我的」页没有节日红包。
+  final Festivals? festivals;
   // 打扰时机（设备级，人工决策见 application/app_moments.dart）；为空时节日动画、新信都不出现。splashGone 为开屏是否走完，为空当作没有开屏。
   final AppMoments? moments;
   final ValueListenable<bool>? splashGone;
@@ -398,7 +438,7 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts, notes: widget.notes, moments: widget.moments, splashGone: widget.splashGone),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts, notes: widget.notes, festivals: widget.festivals, moments: widget.moments, splashGone: widget.splashGone),
     );
   }
 }
@@ -418,9 +458,10 @@ class _MomentObserver extends NavigatorObserver {
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.moments, this.splashGone});
+  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.moments, this.splashGone});
   final AppShortcuts? shortcuts;
   final DeveloperNotes? notes;
+  final Festivals? festivals;
   final AppMoments? moments;
   final ValueListenable<bool>? splashGone;
   final CampusReminders? reminders;
@@ -440,7 +481,7 @@ class _AccountApp extends StatefulWidget {
 }
 
 class _AccountAppState extends State<_AccountApp> {
-  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, notes: widget.notes, observers: [_MomentObserver(_onMoment)]);
+  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, notes: widget.notes, festivals: widget.festivals, saveRewardPicture: saveRewardPicture, observers: [_MomentObserver(_onMoment)]);
   late final VoidCallback _unwatchRoutes;
   late final _display = widget.display ?? DisplaySettings.memory();
 
@@ -500,12 +541,37 @@ class _AccountAppState extends State<_AccountApp> {
     _momentOpen = true;
     try {
       switch (moment) {
+        case CelebrationMoment(:final occasion):
+          await _celebrate(context, occasion);
+        case RewardMoment(:final prize):
+          await _reveal(context, prize);
         case NoteLetterMoment(:final note):
           await showDeveloperNoteLetter(context, notes: widget.notes!, note: note);
       }
     } finally {
       _momentOpen = false;
     }
+  }
+
+  // 节日：边播动画边抽签，抽中的放完动画接着揭晓；动画放完时结果还没回来的最多再等 _drawWait，等不到的抽中了下次回到前台再揭晓。
+  static const _drawWait = Duration(seconds: 3);
+
+  Future<void> _celebrate(BuildContext context, FestivalOccasion occasion) async {
+    final festivals = widget.festivals!;
+    final drawing = festivals.draw(occasion).catchError((Object error, StackTrace stack) {
+      campusLog('[Festival] action=draw errorType=${error.runtimeType}\n$stack');
+      return null;
+    });
+    final scene = festivalCatalog.where((item) => item.occasion.id == occasion.id).firstOrNull;
+    if (scene != null) await showFestivalCelebration(context, scene);
+    final result = await drawing.timeout(_drawWait, onTimeout: () => null);
+    if (result case FestivalWon(:final prize) when context.mounted) await _reveal(context, prize);
+  }
+
+  Future<void> _reveal(BuildContext context, FestivalPrize prize) {
+    final festivals = widget.festivals!;
+    unawaited(festivals.markRevealed(prize));
+    return showFestivalReward(context, prize: prize, title: festivals.occasionName(prize.occasion), saveQrCode: saveRewardPicture);
   }
 
   void _onLegal() => unawaited(_promptLegal());

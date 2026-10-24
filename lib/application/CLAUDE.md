@@ -17,7 +17,8 @@
   - 端口都在 domain/app_update.dart，实现在 device 与 local（见各自 CLAUDE.md）；规则与弹窗的人工决策见 app_update.dart 与 page/app_update_dialog.dart。
 
 - developer_notes.dart：开发者的话的编排 DeveloperNotes（设备级）：自动拉取间隔至少 developerNoteRefreshGap（一小时，下拉刷新不受限）、同一时刻只拉一次、失败照旧显示上次拉到的；已读与弹过记在本机（弹出一封时当时所有的信都记成弹过、只有这封记成读过）。人工决策见 domain/developer_note.dart。
-- app_moments.dart：打扰时机 AppMoments（设备级）：决定节日动画、新信这类不是用户要的内容什么时候出现。业务条件在这里：每次回到前台最多一件、从快捷入口进来的那次前台不出现、上下课安静期里不出现（安静期结束时提醒组合根再看一眼）；界面条件在组合根 main.dart 的 _promptMoment。next 只看不记，真的弹出来了再 begin。人工决策在类上方。
+- festivals.dart：节日的编排 Festivals（设备级）：今天该播哪一次（在节日里、没播过）、启动与回到前台记今天打开过（只留近 30 天）、抽签（有抽奖、配了中转、结果没定时才抽，同一时刻只发一次；连不上不记、回到前台补抽播过的）、抽中的奖品（没揭晓的等打扰时机揭晓，节日结束后 3 天删）。参与号第一次抽签时生成。人工决策见 domain/festival.dart。
+- app_moments.dart：打扰时机 AppMoments（设备级）：一次只出现一件，先后是节日动画、没揭晓的奖品、新信；决定节日动画、新信这类不是用户要的内容什么时候出现。业务条件在这里：每次回到前台最多一件、从快捷入口进来的那次前台不出现、上下课安静期里不出现（安静期结束时提醒组合根再看一眼）；界面条件在组合根 main.dart 的 _promptMoment。next 只看不记，真的弹出来了再 begin。人工决策在类上方。
 
 # 关键规则
 
@@ -30,7 +31,7 @@
 - campus_sync_test.dart、sync_ui_test.dart、transition_sync_test.dart（同步编排与同步界面）
 - reminder_test.dart、home_widget_test.dart（课前提醒、小组件）；campus_timetable_test.dart（本应用课表今天的课）
 - app_update_test.dart、app_update_ui_test.dart（应用更新，替身在 app_update_fakes.dart）
-- developer_notes_test.dart（开发者的话的拉取、已读与打扰时机）；account_lifecycle_test.dart（「我的」页入口与小圆点、新信在什么界面条件下弹）
+- developer_notes_test.dart（开发者的话的拉取、已读与打扰时机）；festival_test.dart（节日编排、抽签与打扰时机的先后）；account_lifecycle_test.dart（「我的」页入口与小圆点、新信在什么界面条件下弹）
 
 # 人工决策检索
 

@@ -19,6 +19,7 @@
     - 共享弹窗 showCampusNotice、showCampusConfirm（destructive 时主按钮警示红）与玻璃弹窗 CampusGlassDialog（按钮一到两个等宽并排，任一个放不下半宽或三个及以上时竖排、主操作在最上，[人工决策] 在操作区；全应用弹窗都用它，日期选择器除外）。
     - showCampusToast 提示条：同一时刻一条，新的顶掉旧的（排队的一起清掉）；在弹层、弹窗、菜单里调用时插进根 Overlay 浮在最上层（[人工决策] 在文件内；不给弹层套 Scaffold，它的 Material 会吃掉点按）。
     - showCampusSheet 与 CampusSheetPanel 是底部弹层（键盘弹出时整块浮到键盘上方）；弹窗与弹层都经 CampusOverlayDepthRoute 登记层数。
+  - campus_confetti.dart：礼花 ConfettiShow 与 ConfettiPainter：每片纸正反两面不同色，线性空气阻力加重力的闭式解（与帧率无关、任意时刻可画）、越慢越飘摆、绕斜轴翻转、迎光提亮，全部纸片合成一次 drawVertices；喷发 ConfettiBurst 与颜色由调用方给，时间由调用方的动画驱动。节日奖品揭晓在用，节日场景也可以用。
   - campus_rolling_text.dart：数字滚动 CampusRollingText（同 iOS 实时活动的数字过渡）：只有变了的位滚动，倒数时方向相反，位按右对齐，减少动画时直接换。
   - campus_refresh.dart：下拉刷新 CampusRefreshControl（基于 CupertinoSliverRefreshControl），放在 CustomScrollView 第一个 sliver，指示器是曲线动效、至少停留 600ms。
   - campus_loading.dart：曲线加载 CampusLoader 与带文字的加载状态 CampusLoading（整页样式自己居中；联网等待超过 8 秒说明在等谁）；CampusLoadError 是整块读取失败（原因加带图标的「重试」）；CampusBusyContent 让按钮原地切换忙碌态；showCampusWaiting 只在已有的异步操作期间显示等待弹窗。

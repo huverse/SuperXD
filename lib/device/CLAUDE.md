@@ -22,7 +22,8 @@
   - app_installer_channel.dart：ChannelAppInstaller 实现 AppInstaller，经通道 superxd/app_update 调原生 AppUpdateInstaller.kt：能否安装（Android 8 起要用户允许「安装未知应用」）、打开授权设置、读安装包的包名版本号并比对签名证书、以只读授权交给系统安装器。
 
 - relay_note_feed.dart：RelayNoteFeed 实现开发者的话的拉取端口 DeveloperNoteFeed：GET 自建中转的 /v1/app/notes（免签名、不带任何标识），单次 15 秒超时、响应上限 512KB、不重试；清单交给 domain 的 decodeDeveloperNotes 校验。
-- picture_export.dart：publishPicture 把缓存里的一张图经原生一次性导出（ToolboxFileExporter.kt，通道 superxd/toolbox_files）存进 Download/SuperXD，同名已存过直接算存好；开屏画作的「保存到相册」用，由组合根交给 local/painting_library.dart。
+- relay_reward_client.dart：RelayRewardClient 实现节日抽签端口 FestivalRewardClient：POST 自建中转的 /v1/rewards/<活动>/draw（免签名），只发参与号与近 30 天打开过的天数，单次 15 秒超时、响应上限 8KB、不重试；parseFestivalDraw 把结果当外部输入校验。
+- picture_export.dart：publishPicture 把缓存里的一张图经原生一次性导出（ToolboxFileExporter.kt，通道 superxd/toolbox_files）存进 Download/SuperXD，同名已存过直接算存好；开屏画作的「保存到相册」用，由组合根交给 local/painting_library.dart；节日奖品的「保存二维码」也经它（组合根的 saveRewardPicture）。
 - app_shortcuts.dart：AndroidAppShortcuts 实现 AppShortcutPort，经通道 superxd/app_shortcuts 调原生 AppShortcuts.kt（ShortcutManager）：动态快捷方式整份替换（同 id 的桌面快捷方式跟着换名字与图标）；requestPinShortcut 由桌面弹窗请用户确认，桌面不支持返回 false；冷启动带来的入口 id 由 MainActivity 先记下、Dart 取一次；应用在后台时经 onNewIntent 调 launch 交回。启动标志用 CLEAR_TOP 加 SINGLE_TOP，只把已有界面拉到前台，不加 CLEAR_TASK（那会整个冷启动）。
 - diagnostic_device.dart：本机诊断日志用到的系统能力，由组合根交给 local/diagnostic_log.dart 与 app_diagnostics.dart：readDeviceEnvironment 经 device_info_plus 读系统版本与机型（写进日志包的运行环境）；publishDiagnosticArchive 把缓存里打好的 zip 经原生一次性导出（ToolboxFileExporter.kt，与百宝箱共用通道 superxd/toolbox_files）存进 Download/SuperXD；readExitReasons 经通道 superxd/diagnostics 调原生 ProcessExitReasons.kt，读系统记下的最近几次进程退出原因（Android 11 起的 ApplicationExitInfo，只返回给定时刻之后的，ANR 附主线程堆栈，从 "main" 那行起 80 行、最多 8KB，一条读不出只把这条置空）；每次启动都调，通道处理放在后台线程（MainActivity.kt 的 makeBackgroundTaskQueue），不占主线程。
 

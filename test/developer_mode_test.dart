@@ -175,7 +175,9 @@ void main() {
     await tester.pump();
     expect(developer.performanceOverlay, isTrue);
 
-    await tester.scrollUntilVisible(find.text('开发者模式'), -100, scrollable: scrollable);
+    // 回到页顶再点开关：按步长往回滚只滚到刚露出就停，页面变长后停的位置可能压在顶栏下面。
+    await tester.drag(scrollable, const Offset(0, 4000));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('开发者模式'));
     await tester.pumpAndSettle();
     expect(find.text('关闭开发者模式'), findsOneWidget);

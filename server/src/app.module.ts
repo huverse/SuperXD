@@ -16,6 +16,8 @@ import { InviteModule } from 'src/modules/invite/invite.module';
 import { MessageEntity } from 'src/modules/message/message.entity';
 import { MessageModule } from 'src/modules/message/message.module';
 import { PairingModule } from 'src/modules/pairing/pairing.module';
+import { RewardCampaignEntity, RewardDrawEntity, RewardPrizeEntity } from 'src/modules/reward/reward.entity';
+import { RewardModule } from 'src/modules/reward/reward.module';
 
 @Module({
   imports: [
@@ -23,7 +25,7 @@ import { PairingModule } from 'src/modules/pairing/pairing.module';
       useFactory: () => ({
         type: 'mysql',
         ...env().mysql,
-        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity],
+        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity, RewardCampaignEntity, RewardPrizeEntity, RewardDrawEntity],
         // 表结构由人工执行 sql/schema.sql 管理，启动不做 DDL。
         synchronize: false,
         migrationsRun: false,
@@ -46,6 +48,7 @@ import { PairingModule } from 'src/modules/pairing/pairing.module';
     ChaoxingPackModule,
     PairingModule,
     AppReleaseModule,
+    RewardModule,
   ],
   controllers: [HealthController],
 })
