@@ -5,7 +5,11 @@ import 'package:flutter/services.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/local/developer_settings.dart';
+import 'package:superxd/domain/festival.dart';
 import 'package:superxd/local/diagnostic_log.dart';
+import 'package:superxd/page/festival/festival_catalog.dart';
+import 'package:superxd/page/festival/festival_reward.dart';
+import 'package:superxd/page/festival/festival_stage.dart';
 import 'package:superxd/theme/campus_field_table.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
@@ -166,6 +170,25 @@ class _DeveloperPageState extends State<DeveloperPage> {
                 CampusFieldTable(rows: environment),
               ])),
             ],
+            const SizedBox(height: 16),
+            // 节日预览（人工决策见 domain/festival.dart）：维护者验收每一次节日的动画与红包揭晓，不看日期、不抽签、不记播过。
+            // 红包用合成的口令与二维码，按钮照常去拉起支付宝（顺便在设备上验应用链接）。
+            CampusSurface(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Text('节日预览', style: Theme.of(context).textTheme.titleMedium),
+              const SizedBox(height: 4),
+              Text(festivalCatalog.isEmpty ? '还没有登记节日，可以先看红包揭晓' : '点一项播放，不改日期、不抽签', style: secondary),
+              const SizedBox(height: 12),
+              Wrap(spacing: 8, runSpacing: 8, children: [
+                for (final scene in festivalCatalog)
+                  OutlinedButton.icon(onPressed: () => showFestivalCelebration(context, scene), icon: const CampusIcon(CampusIcons.celebrate), label: Text(scene.occasion.name)),
+                for (final (kind, label, content) in [(FestivalPrizeKind.password, '红包 · 口令', '88662027'), (FestivalPrizeKind.qrCode, '红包 · 二维码', 'https://qr.alipay.com/superxd-preview')])
+                  OutlinedButton.icon(
+                    onPressed: () => showFestivalReward(context, title: '节日快乐', prize: FestivalPrize(occasion: 'preview', kind: kind, content: content, note: '预览用的合成奖品', wonAt: DateTime.now().toUtc())),
+                    icon: const CampusIcon(CampusIcons.gift),
+                    label: Text(label),
+                  ),
+              ]),
+            ])),
           ],
         ),
       ))))),

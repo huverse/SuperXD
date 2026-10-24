@@ -13,9 +13,15 @@ import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_moments.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/developer_notes.dart';
+import 'package:superxd/application/festivals.dart';
 import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/domain/developer_note.dart';
+import 'package:superxd/domain/festival.dart';
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/developer_note_memory.dart';
+import 'package:superxd/local/festival_memory.dart';
+import 'package:superxd/page/festival/festival_catalog.dart';
+import 'package:superxd/page/festival/festival_stage.dart';
 import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/domain/account.dart';
 import 'package:superxd/domain/app_shortcut.dart';
@@ -729,6 +735,29 @@ void main() {
     semantics.dispose();
     await tester.pumpWidget(const SizedBox()); session.dispose();
   });
+  testWidgets('节日当天：停在首页时播这次节日的动画，同时抽签，抽中的放完动画接着拆红包；播过就不再播', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+    final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
+    final today = formatCampusDate(campusInstant());
+    final occasion = FestivalOccasion(id: 'test-day', name: '合成节日', from: today, to: today, campaign: 'test-day');
+    final scene = FestivalScene(occasion: occasion, length: const Duration(seconds: 2), builder: (context, progress) => const Center(child: Text('合成场景')));
+    festivalCatalog.add(scene);
+    addTearDown(() => festivalCatalog.remove(scene));
+    final festivals = Festivals(occasions: [occasion], memory: FileFestivalMemory.memory(), client: _Reward());
+    final moments = AppMoments(festivals: festivals, timetable: () async => const CampusTimetable([]));
+    final legal = LegalNoticeMemory.memory(agreedRevision: legalRevision, seenRevision: legalRevision);
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, legal: legal, festivals: festivals, moments: moments)); await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1)); await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('合成场景'), findsOneWidget);
+    expect(festivals.due, isNull, reason: '开始播就记下，不再播');
+    await tester.pump(const Duration(seconds: 2)); await tester.pump(const Duration(milliseconds: 500)); await tester.pump(const Duration(seconds: 1));
+    expect(find.text('合成场景'), findsNothing);
+    expect(find.bySemanticsLabel('拆开红包'), findsOneWidget);
+    expect(festivals.unrevealed, isNull, reason: '揭晓了就记下');
+    await tester.pumpWidget(const SizedBox()); session.dispose(); moments.dispose();
+  });
   testWidgets('新信在不迫切的时候弹出：开屏走完、停在底栏根页且上面没有别的页面；从别的页面回到根页时立即看一眼；每次前台最多一次', (tester) async {
     final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
     final notes = DeveloperNotes(feed: _NoteFeed(), memory: FileDeveloperNoteMemory.memory());
@@ -851,6 +880,13 @@ void expectSliding(WidgetTester tester, Finder page) {
     if (widget is FadeTransition) expect(widget.opacity.value, 1);
     return true;
   });
+}
+
+// 合成的抽签：一律抽中一个合成口令。
+class _Reward implements FestivalRewardClient {
+  @override
+  Future<FestivalDraw> draw(String campaign, {required String occasion, required String participant, required int activeDays}) async =>
+      FestivalWon(FestivalPrize(occasion: occasion, kind: FestivalPrizeKind.password, content: '合成口令', note: '', wonAt: DateTime.now().toUtc()));
 }
 
 // 开发者的话的合成清单：两封，第二封刚发出（会弹）。

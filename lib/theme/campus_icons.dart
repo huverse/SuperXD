@@ -99,6 +99,8 @@ abstract final class CampusIcons {
   static const logs = LucideIcons.scrollText;
   static const exportLogs = LucideIcons.fileArchive;
   static const letter = LucideIcons.mailOpen;
+  static const gift = LucideIcons.gift;
+  static const celebrate = LucideIcons.partyPopper;
 }
 
 void configureCampusIcons() =>

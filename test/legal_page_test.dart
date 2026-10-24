@@ -30,12 +30,14 @@ void main() {
       ('五、百宝箱：快递（拼多多）', '身份码是取件凭证，不写入文件，也不进日志'),
       ('六、检查更新、开发者的话与安装', '只向开发者的自建中转服务器发送应用的构建渠道（如 Alpha）与处理器架构'),
       ('六、检查更新、开发者的话与安装', '获取开发者写的「开发者的话」，请求不附带任何信息'),
-      ('七、本机存储、备份与日志', '另在本机留一份约 1MB 的错误记录'),
-      ('七、本机存储、备份与日志', '最多保留 7 天、20MB，关闭开发者模式即删除'),
-      ('七、本机存储、备份与日志', '不上传，只在你点「导出日志」时打包保存到 Download/SuperXD'),
-      ('八、你的权利', '撤回同意'),
-      ('九、未成年人', '未满 14 周岁'),
-      ('十、政策更新与联系', '私下联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com'),
+      ('七、节日活动与抽奖', '本机第一次参与时随机生成的参与号（不关联教务账号、私信身份或设备标识）'),
+      ('七、节日活动与抽奖', '服务器只保存参与号的哈希、这个天数与抽签结果，活动结束 30 天后删除'),
+      ('八、本机存储、备份与日志', '另在本机留一份约 1MB 的错误记录'),
+      ('八、本机存储、备份与日志', '最多保留 7 天、20MB，关闭开发者模式即删除'),
+      ('八、本机存储、备份与日志', '不上传，只在你点「导出日志」时打包保存到 Download/SuperXD'),
+      ('九、你的权利', '撤回同意'),
+      ('十、未成年人', '未满 14 周岁'),
+      ('十一、政策更新与联系', '私下联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com'),
       ('附录一 第三方 SDK 与服务', 'https://lbs.amap.com/pages/privacy/'),
       ('附录一 第三方 SDK 与服务', 'mobile_scanner'),
       ('附录一 第三方 SDK 与服务', 'com.hihonor.mcs:ads-identifier'),
@@ -81,6 +83,8 @@ void main() {
       expect(find.textContaining('遵守拼多多的服务条款'), findsOneWidget);
       await tester.scrollUntilVisible(find.text('八、应用更新'), 300, scrollable: scrollable);
       expect(find.textContaining('可能要求先更新再继续使用'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('九、节日活动与奖励'), 300, scrollable: scrollable);
+      expect(find.textContaining('不是商业抽奖'), findsOneWidget);
       expect(find.textContaining('待替换'), findsNothing);
       expect(tester.takeException(), isNull);
       // 换主题前卸载，否则复用的列表停在上一轮的滚动位置。
