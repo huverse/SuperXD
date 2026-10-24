@@ -10,6 +10,14 @@ import 'reward_kit.dart';
 // builder 拿到 0→1 的进度（走完 length），自己决定每个时刻画什么；场景铺满全屏、背景透明，下面是用户正在看的页面。
 // still 是减少动画时的静态画面，为空时用通用的问候（节日名字居中）。
 // reward 是这一次节日抽中红包时奖品卡的主题（配色与卡面），为空时用默认的流光卡。
+// 节日浮层（动画与拆红包）压暗了下面的页面，系统栏用浅色图标；导航栏透明（SystemUiOverlayStyle.light 会把它涂成不透明黑色，Android 11–14 底部一条黑条）。
+const festivalSystemOverlay = SystemUiOverlayStyle(
+  systemNavigationBarColor: Colors.transparent,
+  systemNavigationBarIconBrightness: Brightness.light,
+  statusBarIconBrightness: Brightness.light,
+  statusBarBrightness: Brightness.dark,
+);
+
 class FestivalScene {
   const FestivalScene({required this.occasion, required this.length, required this.builder, this.still, this.reward});
   final FestivalOccasion occasion;
@@ -94,7 +102,7 @@ class _StageState extends State<_Stage> with SingleTickerProviderStateMixin {
     final scene = widget.scene;
     final reduced = MediaQuery.disableAnimationsOf(context);
     return AnnotatedRegion<SystemUiOverlayStyle>(
-      value: SystemUiOverlayStyle.light,
+      value: festivalSystemOverlay,
       child: Semantics(
         liveRegion: true,
         label: scene.occasion.name,

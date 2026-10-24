@@ -12,6 +12,7 @@ import 'package:superxd/domain/festival.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'festival_catalog.dart';
+import 'festival_stage.dart';
 import 'reward_card.dart';
 import 'reward_kit.dart';
 import 'reward_stardust.dart';
@@ -256,7 +257,7 @@ class _RewardRevealState extends State<_RewardReveal> with TickerProviderStateMi
         if (!didPop) unawaited(_close());
       },
       child: AnnotatedRegion<SystemUiOverlayStyle>(
-        value: SystemUiOverlayStyle.light,
+        value: festivalSystemOverlay,
         // 浮层路由不在任何 Material 之下：垫一层透明的，文字照常取应用字体，按钮有墨水层。
         child: Material(type: MaterialType.transparency, child: LayoutBuilder(builder: (context, constraints) {
           final screen = constraints.biggest;
