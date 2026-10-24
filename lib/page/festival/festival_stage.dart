@@ -4,16 +4,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:superxd/domain/festival.dart';
+import 'reward_kit.dart';
 
 // 一次节日的定制动画（人工决策见 domain/festival.dart）：每一次各写一个场景，登记在 festival_catalog.dart。
 // builder 拿到 0→1 的进度（走完 length），自己决定每个时刻画什么；场景铺满全屏、背景透明，下面是用户正在看的页面。
 // still 是减少动画时的静态画面，为空时用通用的问候（节日名字居中）。
+// reward 是这一次节日抽中红包时奖品卡的主题（配色与卡面），为空时用默认的流光卡。
 class FestivalScene {
-  const FestivalScene({required this.occasion, required this.length, required this.builder, this.still});
+  const FestivalScene({required this.occasion, required this.length, required this.builder, this.still, this.reward});
   final FestivalOccasion occasion;
   final Duration length;
   final Widget Function(BuildContext context, Animation<double> progress) builder;
   final WidgetBuilder? still;
+  final RewardTheme? reward;
 }
 
 // 减少动画时静态画面停留多久（点一下随时关）。

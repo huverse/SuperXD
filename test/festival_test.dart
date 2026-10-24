@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
-import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -21,7 +20,6 @@ import 'package:superxd/local/developer_note_memory.dart';
 import 'package:superxd/local/festival_memory.dart';
 import 'package:superxd/page/festival/festival_reward.dart';
 import 'package:superxd/page/festival/festival_stage.dart';
-import 'package:superxd/theme/campus_confetti.dart';
 
 // 合成的抽签：按给定结果回，calls 记次数；gate 不为空时等它完成才回（测并发只抽一次）。
 class FakeRewardClient implements FestivalRewardClient {
@@ -197,34 +195,6 @@ void main() {
     });
   });
 
-  group('礼花', () {
-    test('位置是时间的闭式解：同一时刻画两次一样；喷出后先升后落；全部落完后什么都不画', () async {
-      final show = ConfettiShow(bursts: const [ConfettiBurst(origin: Offset(.5, .5), angle: -1.57, count: 30)], papers: const [ConfettiPaper(Color(0xFFFFD700), Color(0xFFB8860B))]);
-      Future<ByteData> frame(double seconds) async {
-        final recorder = ui.PictureRecorder();
-        show.paint(Canvas(recorder), const Size(400, 800), seconds);
-        final image = await recorder.endRecording().toImage(400, 800);
-        final bytes = await image.toByteData();
-        image.dispose();
-        return bytes!;
-      }
-      // 每一行有没有纸片：返回最上面一行有内容的行号。
-      int top(ByteData data) {
-        for (var row = 0; row < 800; row++) {
-          for (var column = 0; column < 400; column++) {
-            if (data.getUint8((row * 400 + column) * 4 + 3) != 0) return row;
-          }
-        }
-        return -1;
-      }
-      final early = await frame(.15), again = await frame(.15), peak = await frame(.6), late = await frame(1.3);
-      expect(early.buffer.asUint8List(), again.buffer.asUint8List());
-      expect(top(peak), lessThan(top(early)), reason: '向上喷');
-      expect(top(late), greaterThan(top(peak)), reason: '之后落下');
-      expect(top(await frame(show.length.inMicroseconds / 1e6 + .1)), -1);
-    });
-  });
-
   group('界面', () {
     // 减少动画要套在整个应用外面：浮层路由不在首页的子树里。
     Widget host(void Function(BuildContext context) open, {bool reduced = false}) => MaterialApp(
@@ -263,7 +233,7 @@ void main() {
       expect(find.text('新春快乐'), findsNothing);
     });
 
-    testWidgets('拆红包：点「開」后卡片出来；口令复制并打开支付宝；「收下了」关闭', (tester) async {
+    testWidgets('拆红包：点开星核后卡片出来；口令复制并打开支付宝；「收下了」关闭', (tester) async {
       tester.view.physicalSize = const Size(1080, 2400);
       tester.view.devicePixelRatio = 2.75;
       addTearDown(tester.view.reset);

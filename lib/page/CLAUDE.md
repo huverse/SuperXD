@@ -49,9 +49,13 @@
   - image_copy_pick.dart：通用取图 pickImageCopy 与多选 pickImagesCopy，返回副本路径与 discard；只删插件这次新留在缓存里的副本。壁纸、相册识别二维码共用，并经组合根注入百宝箱。
   - developer_page.dart：开发者选项 DeveloperPage（开关、日志导出与清除、复制诊断摘要、连电脑的 adb 命令、性能浮层、节日预览（播登记的每一次节日动画与两种红包揭晓，不改日期、不抽签）、运行环境；关闭开发者模式删开发者模式日志）、日志查看 DeveloperLogPage（全部或错误、错误按种类合并写出现几次、搜索、点开看全文与复制）与悬浮开发者工具 DeveloperOverlay（开发者模式下浮在所有页面上、可拖动贴边，点开可标记当前页面与一句说明、查看日志、导出、进开发者选项；自带一层 Overlay，开关时不改页面的父级结构，性能浮层也画在这层里、不用 MaterialApp 的开关（那个会给整页加一层 Stack、换父级重建），[人工决策] 在类上）。
   - developer_notes_page.dart：开发者的话（人工决策见 domain/developer_note.dart）：列表页 DeveloperNotesPage（从新到旧、没读的标小圆点、下拉刷新、没有信时写「还没有内容」）、读信页（标题、正文原样显示可复制、落款写日期）与弹出的信 showDeveloperNoteLetter（玻璃弹窗里读全文，还有别的没读时多一个「查看全部」）；点开一封即记成读过。什么时候弹由组合根按打扰时机决定（application/app_moments.dart）。
-  - festival/festival_stage.dart：节日动画的舞台 showFestivalCelebration 与场景类型 FestivalScene（这一次节日、长度、按 0–1 进度画的 builder、减少动画时的静态画面）：浮层路由（下面的页面不做转场、不登记弹窗层数），放完自己淡出，点一下或返回立即淡出；减少动画时显示静态画面或通用问候、festivalStillLength 后关。人工决策见 domain/festival.dart。
-  - festival/festival_catalog.dart：节日登记 festivalCatalog：每一次节日一项、一次一段单独设计的动画（场景文件放本目录），编号发出后不改；现在一项也没有，维护者点名哪个节日再加。
-  - festival/festival_reward.dart：奖品揭晓 showFestivalReward（预制，所有节日共用）：红包从下方浮起、金色「開」呼吸与掠光，点开后「開」绕竖轴转两圈消失、封口向后翻开、卡片从红包里升起、红包沉下，卡片停在正中，同时喷礼花（theme/campus_confetti.dart）、卡片后亮起慢转的光；卡头同封口，口令（复制并打开支付宝）或二维码（在支付宝里打开、保存二维码），「收下了」关闭。红包与卡片固定中国红、金与象牙白；减少动画或从「我的」再打开时直接是卡片、不喷礼花。支付宝应用链接还没在真机上验过（见文件头）。
+  - festival/festival_stage.dart：节日动画的舞台 showFestivalCelebration 与场景类型 FestivalScene（这一次节日、长度、按 0–1 进度画的 builder、减少动画时的静态画面、这一次红包的主题 reward）：浮层路由（下面的页面不做转场、不登记弹窗层数），放完自己淡出，点一下或返回立即淡出；减少动画时显示静态画面或通用问候、festivalStillLength 后关。人工决策见 domain/festival.dart。
+  - festival/festival_catalog.dart：节日登记 festivalCatalog：每一次节日一项、一次一段单独设计的动画（场景文件放本目录），编号发出后不改；现在一项也没有，维护者点名哪个节日再加。festivalRewardTheme 按奖品的节日编号找这一次的红包主题，没登记用默认的流光卡；加一个节日主题只动两处：本目录照 reward_glow.dart 写一个 RewardTheme、场景的 reward 指向它。
+  - festival/festival_reward.dart：奖品揭晓 showFestivalReward（预制，所有节日共用；卡的主题按奖品的节日找）的入口、时间线与操作：等点的那件东西浮起，点开（读屏「拆开红包」）走完开启动效的时间线，奖品卡停在正中；口令（复制并打开支付宝）或二维码（在支付宝里打开、保存二维码），「收下了」关闭；停稳的卡跟手倾斜；减少动画或从「我的」再打开时直接是卡片、不放光效与粒子、不震。画面分开启动效（reward_stardust）与奖品卡容器（reward_card）。定稿的选择（星尘、流光卡、镭射卡与春节主题没选）是 [人工决策]，在文件头。支付宝应用链接还没在真机上验过（见文件头）。
+  - festival/reward_kit.dart：揭晓共用的部件：OKLCH 取色 RewardTone、主题接口 RewardTheme（配色 palette、卡面 paintCard）与配色 RewardPalette、流光卡面 RewardSurface（shaders/reward_aurora.frag：近黑玻璃卡、卡头流动的网格渐变、边上的发丝流光与外面一圈光，卡形从一团光长出来）、一帧的状态 RewardScene、开启动效接口 RewardLook、压暗程度 rewardScrim、着色器缓存 RewardShaders（没加载好时画退路）、粒子贴图与一次画完的粒子批 RewardSprites、RewardParticles。
+  - festival/reward_card.dart：奖品卡容器 RewardContainer（整体一块不分卡头：主题画的卡面不裁切、外面那圈光可以画到卡外，上面是内容层；口令落在半透明白框里、二维码在白底上）与内容 RewardCard（至少宽的 1.3 倍高）、按钮 RewardButton、RewardQuietButton；节日名用随包的宋体。
+  - festival/reward_glow.dart：默认主题 RewardGlowTheme：第一轮流光方向的卡（用户认可的奖品卡样子），颜色全从种子取，渐变与流光是种子色与两侧相邻的色相；相对第一轮改了什么写在文件头。
+  - festival/reward_stardust.dart：开启动效「星尘」：几百颗星尘绕中间一粒光转成斜看的盘（开普勒转速、迎着转来的一侧略亮、沿旋度噪声轻轻流动），光是白芯、柔晕与淡星芒（不画环），背后稀疏的远景星；点开盘收紧加速、拖出光尾（蓄力），放开时那粒光长成卡，星尘顺着旋转流出去描出卡边、落进卡里。浮层的底 RewardDustStage。粒子一次 drawRawAtlas。
   - about_page.dart：关于页 AboutPage（连点版本号 7 次开启开发者模式，开着时多一项开发者选项）：应用图标（assets/app_icon.png，测试期临时图，见开源许可第五节）、版本、检查更新（传入 AppUpdates 时才有）、用户协议、隐私政策、开屏画作（传入 PaintingGallery 时才有）、开源许可、源代码与反馈问题；版本信息与打开链接可注入。
   - painting_splash.dart：开屏画作 PaintingSplash（组合根套在 runApp 外面，自带 MediaQuery 与文字方向）：画作贴底铺满屏宽、顶边渐隐融进按顶边分段色铺开的天空，天空里只有一笔写出的应用名（splash_signature.dart，不写画名与说明；宽约屏宽八成、最宽 360，墨色取画作顶边最冷与最暖两色压深、沿书写方向渐变，暗天空用浅色）；从第一帧真正上屏（引擎报的首帧栅格化完）起，写完再停一会儿（约 2 秒，减少动画时不写、1.2 秒）且会话恢复后再过 450ms 转场才溶解，点一下立即溶解，最多等 4 秒；溶解完从树上拿掉、下面的应用不重建，并调 onGone（打扰时机等开屏走完）；减少动画时只淡入淡出。paintingSplashImage 按屏幕实际像素解码（组合根在 runApp 前就开始解码）。系统启动图的淡出在 MainActivity.kt（Android 12 起）；系统启动图不画应用图标、只有底色，在 android res 的 values-v31 与 values-night-v31 两份 styles.xml（[人工决策] 在 values-v31）。人工决策在类上。
   - splash_signature.dart：开屏一笔写出的「SuperXD」（同苹果开机的 hello）：连笔草书，Super 一笔、X 两笔、D 一笔；字形是文件顶部的节点（自由点与带笔尖方向的点，同一点写两次是尖角），运行时按 Hobby 曲线（METAFONT 同法）生成、右斜 15°，自由节点处曲率连续；书写节奏按三分之二幂律（弯越急越慢）、起笔收笔与尖角处减速、笔画间提笔（停顿加空中移动），进度 0–1 换成每笔画到的长度；SplashSignaturePainter 按比例放进给定大小，单线圆头、线宽随签名缩放，墨色两色渐变。改字形只改节点。
@@ -81,7 +85,7 @@
 - 壳层与表单：navigation_drag_test.dart、shell_layout_test.dart、form_spacing_test.dart（支撑 form_layout_support.dart）。
 - 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart；开屏与画作页：painting_ui_test.dart。
 - 开发者的话：account_lifecycle_test.dart（「我的」页入口、小圆点与读信、新信在什么界面条件下弹）。
-- 节日：festival_test.dart（舞台、红包揭晓与按钮、礼花）与 account_lifecycle_test.dart（节日当天播动画、抽中接着拆红包）。
+- 节日：festival_test.dart（舞台、红包揭晓与按钮）与 account_lifecycle_test.dart（节日当天播动画、抽中接着拆红包）。
 - 私信页面：social_ui_test.dart（含好友课表导入的整份替换与逐项合并）、share_card_test.dart；合并规则在 schedule_merge_test.dart。
 - 开发者模式：developer_mode_test.dart。
 - 页面测试的合成数据网关是 fixture_campus_gateway.dart（读 assets/fixtures）。
@@ -89,4 +93,4 @@
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/page
-- 本目录的标记集中在：切日方向与交接、回今天胶囊、底栏拖动与安全区、课程卡长按、无课时段新增、管理课程的课程卡与时段弹窗、历史版本时间线、好友课表导入、成绩同步范围与学年汇总、旧库导入确认、法务说明、我的页与账号页和关于页的归类、同步中止提示、壁纸滑杆、课表顶栏精简、成绩页切换淡出淡入、成绩汇总缺值写法、会话卡片⋯与排法、应用更新弹窗。
+- 本目录的标记集中在：切日方向与交接、回今天胶囊、底栏拖动与安全区、课程卡长按、无课时段新增、管理课程的课程卡与时段弹窗、历史版本时间线、好友课表导入、成绩同步范围与学年汇总、旧库导入确认、法务说明、我的页与账号页和关于页的归类、同步中止提示、壁纸滑杆、课表顶栏精简、成绩页切换淡出淡入、成绩汇总缺值写法、会话卡片⋯与排法、应用更新弹窗、节日红包揭晓的定稿。

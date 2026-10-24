@@ -38,7 +38,7 @@ class Festivals extends ChangeNotifier {
 
   Iterable<FestivalPrize> get _kept => _memory.record.prizes.where((prize) => festivalPrizeKept(prize, occasions, _today));
 
-  // 奖品卡与红包封口上写的节日名。
+  // 奖品卡与开启动效上写的节日名。
   String occasionName(String id) => occasions.where((occasion) => occasion.id == id).firstOrNull?.name ?? '节日红包';
 
   // 记今天打开过应用（启动、回到前台时调）；只留近 30 天，同一天只写一次。

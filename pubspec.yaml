@@ -120,6 +120,9 @@ flutter:
         - asset: assets/fonts/noto_serif_sc_semibold.ttf
           weight: 600
 
+  shaders:
+    - shaders/reward_aurora.frag
+
   assets:
     - LICENSE
     - assets/fonts/LICENSE.txt
