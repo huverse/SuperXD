@@ -16,5 +16,7 @@
         <item name="android:windowBackground">@color/launch_background</item>
         <!-- Android 15+全面屏下未指定导航栏色且窗口底色为浅色时，系统强制深色导航键并覆盖应用按主题请求的按键明暗。 -->
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <!-- 透明导航栏默认会垫一层系统半透明遮罩（三键导航，厂商系统手势导航也有，浅色是白条）；主题的系统栏样式会关掉它（人工决策见 lib/theme/campus_theme.dart），但盖在应用上的开屏画作等浮层不写这一项，窗口默认就关掉。 -->
+        <item name="android:enforceNavigationBarContrast">false</item>
     </style>
 </resources>
