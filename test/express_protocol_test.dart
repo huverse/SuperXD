@@ -134,13 +134,27 @@ void main() {
         ],
       });
       expect(result.total, 1, reason: '已取出的不算待取件');
-      expect(result.groups.single.packages.single.trackQuery, (trackingNumber: 'SX0000000001', shippingId: '101', sourceType: ''));
+      expect(result.groups.single.packages.single.trackQuery, (trackingNumber: 'SX0000000001', shippingId: '101', sourceType: '', orderSn: '', entrySource: ''));
       final recent = result.recentPackages;
       expect(recent.first.address, '测试路 1 号');
       expect(recent.first.operateTime, '10-20 15:30');
       expect(recent.first.shippingName, '合成快递');
-      expect(recent.first.trackQuery, (trackingNumber: 'SX0000000002', shippingId: '102', sourceType: '3'));
-      expect(recent.last.trackQuery, (trackingNumber: 'SX0000000003', shippingId: '103', sourceType: ''));
+      expect(recent.first.trackQuery, (trackingNumber: 'SX0000000002', shippingId: '102', sourceType: '3', orderSn: '', entrySource: ''));
+      expect(recent.last.trackQuery, (trackingNumber: 'SX0000000003', shippingId: '103', sourceType: '', orderSn: '', entrySource: ''));
+    });
+
+    // 10-25：官方物流页对链接里带 order_sn 的件（驿站里的件）按 order_sn 查驿站物流，不按运单号查通用物流；字段名照官方代码，数据合成。
+    test('驿站里的件物流参数先取 jump_url 里的 order_sn 与 source_type，查物流走 POST dsd/trackbox/shipping/track', () async {
+      final parcel = StationPackage.fromJson(const {'tracking_number': 'SX0000000004', 'shipping_id': 104, 'order_sn': 'SN0000000009', 'jump_url': '/track?order_sn=SN0000000004&source_type=2'});
+      expect(parcel.trackQuery, (trackingNumber: 'SX0000000004', shippingId: '104', sourceType: '2', orderSn: 'SN0000000004', entrySource: ''));
+      http.Request? sent;
+      final client = buildClient(session: session, onRequest: (request) => sent = request, respond: (_) => {'error_code': null, 'shipping': {'shipping_name': '合成快递', 'package_info': '尾号4321 的快递'}});
+      final track = await client.queryShippingTrack(parcel.trackQuery);
+      expect(sent!.method, 'POST');
+      expect(sent!.url.path, '/api/express/dsd/trackbox/shipping/track');
+      expect(jsonDecode(sent!.body), {'order_sn': 'SN0000000004', 'source_type': 2, 'entry_source': null, 'query_type': 1});
+      expect(track.ownerTail, '4321');
+      client.close();
     });
 
     // 审阅移交包说 App 版分组里的包裹键是 list（官方 H5 是 combine_track_list），两种都认。
@@ -287,7 +301,7 @@ void main() {
           },
         },
       );
-      final track = await client.queryShippingTrack((trackingNumber: 'SX0000000002', shippingId: '102', sourceType: '3'));
+      final track = await client.queryShippingTrack((trackingNumber: 'SX0000000002', shippingId: '102', sourceType: '3', orderSn: '', entrySource: ''));
       expect(sent!.method, 'GET');
       expect(sent!.url.path, '/api/express/shipping/track');
       expect(sent!.url.queryParameters, {'tracking_number': 'SX0000000002', 'shipping_id': '102', 'entry_source': '9', 'source_type': '3'});
@@ -295,19 +309,19 @@ void main() {
       expect(track.forecast, '预计明天送达');
       expect(track.traces.map((trace) => trace.info), ['【合成市】快件已到达合成驿站', '【合成市】快件已发出']);
       expect(track.traces.first.time, '2026-10-20 15:30:00');
-      await client.queryShippingTrack((trackingNumber: 'SX0000000002', shippingId: '', sourceType: ''));
+      await client.queryShippingTrack((trackingNumber: 'SX0000000002', shippingId: '', sourceType: '', orderSn: '', entrySource: ''));
       expect(sent!.url.queryParameters, {'tracking_number': 'SX0000000002', 'entry_source': '9'});
       client.close();
 
       // 10-22 真机：成功的物流返回不带 success、error_code 是 null，以前被当成失败只提示「拼多多返回失败」。
       final realShape = buildClient(session: session, respond: (_) => {'error_code': null, 'verify_auth_token': null, 'is_support': true, 'shipping': {'shipping_name': '合成快递', 'package_info': '尾号1234 的快递'}});
-      final real = await realShape.queryShippingTrack((trackingNumber: 'SX0000000002', shippingId: '1', sourceType: ''));
+      final real = await realShape.queryShippingTrack((trackingNumber: 'SX0000000002', shippingId: '1', sourceType: '', orderSn: '', entrySource: ''));
       expect((real.shippingName, real.ownerTail), ('合成快递', '1234'));
       realShape.close();
 
       final failing = buildClient(session: session, respond: (_) => {'error_code': 1000101, 'error_message': '暂无该运单号物流轨迹信息'});
       await expectLater(
-        failing.queryShippingTrack((trackingNumber: 'SX0000000009', shippingId: '', sourceType: '')),
+        failing.queryShippingTrack((trackingNumber: 'SX0000000009', shippingId: '', sourceType: '', orderSn: '', entrySource: '')),
         throwsA(isA<ExpressFailure>().having((failure) => failure.message, 'message', '暂无该运单号物流轨迹信息')),
       );
       failing.close();
@@ -331,7 +345,7 @@ void main() {
         respond: (_) => {'error_code': 54001, 'verify_auth_token': 'VT-1', 'shipping': null},
       );
       await expectLater(
-        client.queryShippingTrack((trackingNumber: 'SX0000000001', shippingId: '1', sourceType: '')),
+        client.queryShippingTrack((trackingNumber: 'SX0000000001', shippingId: '1', sourceType: '', orderSn: '', entrySource: '')),
         throwsA(isA<ExpressFailure>().having((failure) => (failure.code, failure.verifyToken), 'code', (ExpressFailureCode.verifyRequired, 'VT-1'))),
       );
       client.verifyToken = 'VT-1';
