@@ -70,6 +70,14 @@ void main() {
       publish: publish ?? (_, _) async => true,
     );
 
+    // 记录在后台写：等文件里写着这一幅再往下走。以前固定等 20ms，慢的 CI 上记录还没落盘就「重开」，读到旧记录（10-25 main CI 偶发红）。
+    Future<void> written(String id) async {
+      final memory = File('${temp.path}/splash_painting.json');
+      while (!memory.existsSync() || !memory.readAsStringSync().contains('"$id"')) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+    }
+
     test('按清单顺序每次冷启动换下一幅，到最后一幅回到第一幅；一次运行只取一次', () async {
       final seen = <String>[];
       for (var launch = 0; launch < 4; launch++) {
@@ -77,8 +85,7 @@ void main() {
         seen.add(library.next()!.id);
         expect(library.next()!.id, seen.last, reason: '同一次运行再取还是这一幅');
         expect(library.current!.id, seen.last);
-        // 记录在后台写，等它落盘再「重开」。
-        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await written(seen.last);
       }
       expect(seen, ['a', 'b', 'c', 'a']);
     });
@@ -86,11 +93,11 @@ void main() {
     test('记录坏了或上次那幅已不在清单里，从第一幅开始', () async {
       File('${temp.path}/splash_painting.json').writeAsStringSync('{坏的');
       expect((await open()).next()!.id, 'a');
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await written('a');
       File('${temp.path}/splash_painting.json').writeAsStringSync('{"last":"gone"}');
       expect((await open()).next()!.id, 'a');
       // 等后台记录写完再删临时目录。
-      await Future<void>.delayed(const Duration(milliseconds: 20));
+      await written('a');
     });
 
     test('保存：原图拷到缓存交给导出，文件名写画作名，临时文件用完即删；没存上返回 false', () async {
