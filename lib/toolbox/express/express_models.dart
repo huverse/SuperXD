@@ -231,19 +231,26 @@ class PddNoPackageMobileInfo {
 List<Map<String, Object?>> _mapList(Object? value) =>
     value is List ? value.whereType<Map>().map((entry) => entry.cast<String, Object?>()).toList() : const [];
 
-// 查一件包裹物流要的参数：官方物流页（/track）发 tracking_number、shipping_id、entry_source=9 与可选的 source_type。
-typedef ExpressTrackQuery = ({String trackingNumber, String shippingId, String sourceType});
+// 查一件包裹物流要的参数，同官方物流页（/track）读它链接里的：带 order_sn（驿站包裹的记录号）的查驿站物流，按 order_sn、source_type 与 entry_source；
+// 没有的按 tracking_number、shipping_id 与可选的 source_type 查（见 ExpressClient.queryShippingTrack）。
+typedef ExpressTrackQuery = ({String trackingNumber, String shippingId, String sourceType, String orderSn, String entrySource});
+
+// 官方点一件包裹是带着它的 jump_url（/track?order_sn=…&source_type=…）进物流页，所以参数先取 jump_url 里的，没有再用条目自己的字段。
+ExpressTrackQuery _trackQueryOf(Map<String, Object?> json) {
+  final jump = Uri.tryParse('${json['jump_url'] ?? ''}')?.queryParameters ?? const <String, String>{};
+  String field(String key) => jump[key] ?? '${json[key] ?? ''}';
+  return (trackingNumber: field('tracking_number'), shippingId: field('shipping_id'), sourceType: field('source_type'), orderSn: field('order_sn'), entrySource: field('entry_source'));
+}
 
 // 驿站里的一件待取包裹（combine_track_list 的一项），字段按官方 mdkd 包裹卡片的渲染取。
 class StationPackage {
-  const StationPackage({this.pickCode = '', this.shippingName = '', this.trackingNumber = '', this.mobileAlias = '', this.shippingId = ''});
+  const StationPackage({this.pickCode = '', this.shippingName = '', this.trackingNumber = '', this.mobileAlias = '', this.shippingId = '', required this.trackQuery});
   final String pickCode;
   final String shippingName;
   final String trackingNumber;
   final String mobileAlias;
   final String shippingId;
-
-  ExpressTrackQuery get trackQuery => (trackingNumber: trackingNumber, shippingId: shippingId, sourceType: '');
+  final ExpressTrackQuery trackQuery;
 
   // 取件码有时带「取件码」前缀，官方页面去掉前缀再显示。
   factory StationPackage.fromJson(Map<String, Object?> json) => StationPackage(
@@ -252,11 +259,11 @@ class StationPackage {
     trackingNumber: '${json['tracking_number'] ?? ''}',
     mobileAlias: '${json['mobile_alias'] ?? ''}',
     shippingId: '${json['shipping_id'] ?? ''}',
+    trackQuery: _trackQueryOf(json),
   );
 }
 
-// 近一周已取出的一件（package_out_list 的一项）：官方弹层写取件地址、取件时间（服务端给好的文字）、快递公司与运单号，
-// 点一项经它的 jump_url 进物流页，所以查物流的参数优先取 jump_url 里的，没有再用条目自己的字段。
+// 近一周已取出的一件（package_out_list 的一项）：官方弹层写取件地址、取件时间（服务端给好的文字）、快递公司与运单号，点一项同样经它的 jump_url 进物流页。
 class StationOutPackage {
   const StationOutPackage({this.address = '', this.operateTime = '', this.shippingName = '', this.trackingNumber = '', required this.trackQuery});
   final String address;
@@ -265,21 +272,13 @@ class StationOutPackage {
   final String trackingNumber;
   final ExpressTrackQuery trackQuery;
 
-  factory StationOutPackage.fromJson(Map<String, Object?> json) {
-    final jump = Uri.tryParse('${json['jump_url'] ?? ''}')?.queryParameters ?? const <String, String>{};
-    final trackingNumber = '${json['tracking_number'] ?? ''}';
-    return StationOutPackage(
-      address: '${json['address'] ?? ''}',
-      operateTime: '${json['operate_time'] ?? ''}',
-      shippingName: '${json['shipping_name'] ?? ''}',
-      trackingNumber: trackingNumber,
-      trackQuery: (
-        trackingNumber: jump['tracking_number'] ?? trackingNumber,
-        shippingId: jump['shipping_id'] ?? '${json['shipping_id'] ?? ''}',
-        sourceType: jump['source_type'] ?? '',
-      ),
-    );
-  }
+  factory StationOutPackage.fromJson(Map<String, Object?> json) => StationOutPackage(
+    address: '${json['address'] ?? ''}',
+    operateTime: '${json['operate_time'] ?? ''}',
+    shippingName: '${json['shipping_name'] ?? ''}',
+    trackingNumber: '${json['tracking_number'] ?? ''}',
+    trackQuery: _trackQueryOf(json),
+  );
 }
 
 // 一条物流轨迹：info 是描述、time 是服务端给好的时间文字；官方按返回顺序列出，第一条是最新的。
@@ -291,7 +290,7 @@ class ShippingTrace {
   factory ShippingTrace.fromJson(Map<String, Object?> json) => ShippingTrace(info: '${json['info'] ?? ''}', time: '${json['time'] ?? ''}');
 }
 
-// 物流详情（/api/express/shipping/track 返回的 shipping）：快递公司、运单号、预计送达说明、轨迹与这件寄到的手机尾号。
+// 物流详情（两个物流接口返回的 shipping，字段一样）：快递公司、运单号、预计送达说明、轨迹与这件寄到的手机尾号。
 // 派件员姓名电话（postman_info/postman_contact）是第三方个人信息，不读。
 class ShippingTrack {
   const ShippingTrack({this.shippingName = '', this.trackingNumber = '', this.forecast = '', this.traces = const [], this.ownerTail = ''});

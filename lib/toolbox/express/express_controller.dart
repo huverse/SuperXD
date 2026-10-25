@@ -148,17 +148,25 @@ class ExpressController extends ChangeNotifier {
   // 尾号都到了再一起交给页面，条目不跳。真机上短时间反复查物流触发了拼多多风控（54001），用户选「尾号存本机、同一件只查一次」：
   // 查到就存进安全存储，以后重开也不重查，只有新到的件发一次请求；5 件一批并发。
   // 查不到的归「尾号未知」、下次查驿站再试，不挡这次查询；碰到 54001 这一轮停止补查、不弹验证页（只有用户点按钮时才弹）；登录失效照常上抛回登录页。
+  // [人工决策-2026-10-25 15:17:41] 用户反馈在拼多多里自己添加的快递在这里写「尾号未知」：补查一律走了按运单号查的通用物流接口，官方物流页对驿站里的件
+  // 是按 order_sn 查驿站物流（见 ExpressClient.queryShippingTrack），改成同官方（按官方代码推断，真机待核对）；以前查成功但没给尾号的也存成了空串、再也不查。
+  // 用户选「每次查驿站都重查尾号未知的件」（未选「空的不存本机、下次打开再查」「空的也存、只清一次旧记录」）：没给尾号的不存，下次查驿站再查。
   Future<void> _fillOwners(StationPackagesResult result) async {
     final pending = [
       for (final group in result.groups)
         for (final parcel in group.packages)
-          if (parcel.trackingNumber.isNotEmpty && !_owners.containsKey(_ownerKey(parcel))) parcel,
+          if (parcel.trackingNumber.isNotEmpty && (_owners[_ownerKey(parcel)] ?? '').isEmpty) parcel,
     ];
     var blocked = false;
     for (var start = 0; start < pending.length && !blocked; start += 5) {
       await Future.wait(pending.skip(start).take(5).map((parcel) async {
         try {
-          _owners[_ownerKey(parcel)] = (await _client!.queryShippingTrack(parcel.trackQuery)).ownerTail;
+          final tail = (await _client!.queryShippingTrack(parcel.trackQuery)).ownerTail;
+          if (tail.isEmpty) {
+            _owners.remove(_ownerKey(parcel));
+          } else {
+            _owners[_ownerKey(parcel)] = tail;
+          }
         } catch (error, stack) {
           if (error is ExpressFailure && error.isNotLoggedIn) rethrow;
           if (error is ExpressFailure && error.code == ExpressFailureCode.verifyRequired) blocked = true;

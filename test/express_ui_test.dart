@@ -824,6 +824,45 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  // 10-25 用户反馈：在拼多多里自己添加的件写「尾号未知」。官方物流页对驿站里的件按 order_sn 查驿站物流；用户选「每次查驿站都重查尾号未知的件」。数据合成。
+  testWidgets('驿站里带 order_sn 的件按 order_sn 补查尾号；查成功但没给尾号的不存本机，下次查驿站再查', (tester) async {
+    final tracks = <String>[];
+    var tail = '';
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    // 旧版本把查成功但没给尾号的件存成了空串。
+    await vault.saveOwnerTails({'1|SX0000000005': ''});
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtimeWith(MockClient((request) async {
+      if (request.url.path.endsWith('shipping/track')) {
+        tracks.add(request.url.path);
+        return _json({'error_code': null, 'shipping': {'shipping_name': '合成快递', if (tail.isNotEmpty) 'package_info': '尾号$tail 的快递'}});
+      }
+      return _json({'success': true, 'error_code': '0', 'result': {
+        'count': 1,
+        'combine_list': [
+          {'company_name': '合成驿站一号', 'combine_track_list': [
+            {'pick_code': '取件码 7-1-0001', 'tracking_number': 'SX0000000005', 'shipping_id': 1, 'order_sn': 'SN0000000005', 'jump_url': '/track?order_sn=SN0000000005&source_type=2'},
+          ]},
+        ],
+      }});
+    })))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(tracks, ['/api/express/dsd/trackbox/shipping/track'], reason: '旧版存下的空尾号不算查到过');
+    expect(find.text('尾号未知 · 1 件'), findsOneWidget);
+    expect(await vault.ownerTails(), isEmpty, reason: '没给尾号的不存本机');
+
+    tracks.clear();
+    tail = '4321';
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(tracks, hasLength(1), reason: '下次查驿站再查');
+    expect(find.text('尾号 4321 · 1 件'), findsOneWidget);
+    expect(await vault.ownerTails(), {'1|SX0000000005': '4321'});
+    await tester.pumpWidget(const SizedBox());
+  });
+
   // 真机：反复查物流后拼多多回 54001 并带 verify_auth_token（带不带 anti-content 都一样）；官方页面这时跳官方安全验证页。
   testWidgets('点「物流」碰到拼多多要求安全验证：打开官方验证页，通过后带上令牌再查一次；放弃就用提示条说明', (tester) async {
     _FakeVerifyPage.opened.clear();

@@ -97,15 +97,27 @@ class ExpressClient {
     await _postJson('/api/express_trackbox/bind/mobile/station/package', referer: PddConstants.mdkdReferer, antiContent: antiContent, body: const {});
   }
 
-  // 查一件包裹的实时物流：官方物流页（/track）用的同一接口，GET、entry_source 固定 9，只读；结果在 shipping 里。
+  // 查一件包裹的实时物流，同官方物流页（/track）按参数选接口，只读，结果都在 shipping 里：
+  // 带 order_sn 的（驿站里的件）POST 驿站物流 dsd/trackbox/shipping/track，source_type 与 entry_source 同官方转成数字（没有就是 null）、query_type 固定 1；
+  // 没有的 GET 通用物流 shipping/track，entry_source 固定 9。
   Future<ShippingTrack> queryShippingTrack(ExpressTrackQuery query) async {
-    final uri = _api('/api/express/shipping/track').replace(queryParameters: {
-      'tracking_number': query.trackingNumber,
-      if (query.shippingId.isNotEmpty) 'shipping_id': query.shippingId,
-      'entry_source': '9',
-      if (query.sourceType.isNotEmpty) 'source_type': query.sourceType,
-    });
-    final data = _unwrap(await _http.getJson(uri, headers: _headers(PddConstants.mdkdReferer)));
+    final Map<String, Object?> data;
+    if (query.orderSn.isNotEmpty) {
+      data = await _postJson('/api/express/dsd/trackbox/shipping/track', referer: PddConstants.mdkdReferer, body: {
+        'order_sn': query.orderSn,
+        'source_type': int.tryParse(query.sourceType),
+        'entry_source': int.tryParse(query.entrySource),
+        'query_type': 1,
+      });
+    } else {
+      final uri = _api('/api/express/shipping/track').replace(queryParameters: {
+        'tracking_number': query.trackingNumber,
+        if (query.shippingId.isNotEmpty) 'shipping_id': query.shippingId,
+        'entry_source': '9',
+        if (query.sourceType.isNotEmpty) 'source_type': query.sourceType,
+      });
+      data = _unwrap(await _http.getJson(uri, headers: _headers(PddConstants.mdkdReferer)));
+    }
     final shipping = data['shipping'];
     return ShippingTrack.fromJson(shipping is Map ? shipping.cast<String, Object?>() : const {});
   }
