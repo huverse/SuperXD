@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/theme/campus_animated_list.dart';
@@ -8,6 +9,7 @@ import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_anchor.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/theme/status_bar_scroll.dart';
 
 void main() {
   testWidgets('长说明：编号与正文两列悬挂缩进，段内小标题与小节标题半粗', (tester) async {
@@ -179,6 +181,31 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('弹层内容'), findsNothing);
     expect(find.text('打开'), findsOneWidget);
+  });
+
+  // iOS 点状态栏回顶：系统经 flutter/status_bar 发 handleScrollToTop；回到顶的是最近拖过的那个竖向滚动区（倒序列表回到视觉上的顶端）。
+  testWidgets('点状态栏把最近拖过的列表滚回顶部，没拖过的不动', (tester) async {
+    Future<void> statusBarTap() async {
+      await tester.binding.defaultBinaryMessenger.handlePlatformMessage('flutter/status_bar', const JSONMethodCodec().encodeMethodCall(const MethodCall('handleScrollToTop')), (_) {});
+      await tester.pumpAndSettle();
+    }
+    final list = ScrollController(), reversed = ScrollController();
+    addTearDown(list.dispose);
+    addTearDown(reversed.dispose);
+    Widget items(ScrollController controller, {bool reverse = false}) => Expanded(child: ListView(controller: controller, reverse: reverse, children: [for (var index = 0; index < 60; index++) SizedBox(height: 48, child: Text('第$index行'))]));
+    await tester.pumpWidget(MaterialApp(home: CampusStatusBarScroll(child: Row(children: [items(list), items(reversed, reverse: true)]))));
+    await statusBarTap();
+    expect(list.offset, 0);
+    await tester.drag(find.byType(ListView).first, const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(list.offset, greaterThan(0));
+    await statusBarTap();
+    expect(list.offset, 0);
+    await tester.drag(find.byType(ListView).last, const Offset(0, 600));
+    await tester.pumpAndSettle();
+    expect(reversed.offset, greaterThan(0));
+    await statusBarTap();
+    expect(reversed.offset, reversed.position.maxScrollExtent);
   });
 
   // iOS 惯例：拖动滚动区收起键盘；安卓照旧（CampusScrollBehavior）。
