@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
@@ -565,6 +566,37 @@ void main() {
     expect(find.textContaining('所在周的周一'), findsNothing);
     expect(tester.takeException(), isNull);
   });
+
+  // iOS 上开学日用系统日期选择（theme/native_glass.dart 的 showNativeDatePicker）：交给原生的是保存值与校园时区，取消不改，原生回的日期照样保存。
+  testWidgets('iOS 开学日用系统日期选择，取消不改，选好照样保存', (tester) async {
+    const nativeUi = MethodChannel('superxd/native_ui');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    final dates = <Object?>[];
+    String? reply;
+    messenger.setMockMethodCallHandler(nativeUi, (call) async {
+      if (call.method != 'date') return null;
+      dates.add(call.arguments);
+      return reply;
+    });
+    messenger.setMockMethodCallHandler(SystemChannels.platform_views, (call) async => null);
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(nativeUi, null);
+      messenger.setMockMethodCallHandler(SystemChannels.platform_views, null);
+    });
+    final gateway = _Gateway();
+    await tester.pumpWidget(app(Builder(builder: (context) => TextButton(onPressed: () => editTermStart(context, gateway, term, '2026-08-31'), child: const Text('编辑')))));
+    await tester.tap(find.text('编辑'));
+    await tester.pumpAndSettle();
+    expect(dates.single, {'title': '选择开学日', 'confirm': '保存', 'initial': '2026-08-31', 'first': '2000-01-01', 'last': '2100-01-01', 'timeZone': campusTimeZone});
+    expect(find.byType(DatePickerDialog), findsNothing);
+    expect(gateway.savedStart, isNull);
+    reply = '2026-09-07';
+    await tester.tap(find.text('编辑'));
+    await tester.pumpAndSettle();
+    expect(gateway.savedStart, '2026-09-07');
+    expect(find.text('开学日已保存 · 第1周从 9月7日 开始'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
   test('字号设置关闭重开仍保留', () async {
     sqfliteFfiInit(); databaseFactory = databaseFactoryFfi;

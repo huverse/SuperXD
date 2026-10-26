@@ -70,6 +70,27 @@ Future<int?> showNativeMenu(Rect rect, List<NativeMenuEntry> entries) async {
   }
 }
 
+String _isoDay(DateTime day) => '${day.year.toString().padLeft(4, '0')}-${day.month.toString().padLeft(2, '0')}-${day.day.toString().padLeft(2, '0')}';
+
+// 系统日期选择：从底部弹出的系统面板里是系统日历（UIDatePicker 的 inline 样式），导航栏左边「取消」、右边 confirm。
+// 只取年月日：按 timeZone（IANA 名）的公历换算，日历里标的「今天」也按它；返回选中那天（本地零点，同 Material 日期选择），取消为空。
+Future<DateTime?> showNativeDatePicker({required String title, required String confirm, required DateTime initial, required DateTime first, required DateTime last, required String timeZone}) async {
+  try {
+    final picked = await _nativeUi.invokeMethod<String>('date', {
+      'title': title,
+      'confirm': confirm,
+      'initial': _isoDay(initial),
+      'first': _isoDay(first),
+      'last': _isoDay(last),
+      'timeZone': timeZone,
+    });
+    return picked == null ? null : DateTime.parse(picked);
+  } catch (error, stack) {
+    campusLog('[NativeUi] action=date errorType=${error.runtimeType}\n$stack');
+    return null;
+  }
+}
+
 // 让系统组件（弹窗、菜单、玻璃、分享面板）跟应用的深浅色与控件激活色走，而不是跟系统：应用可以固定浅色或深色。
 // 组合根套在 MaterialApp.builder 里，配色或深浅色一变就同步一次。
 class NativeAppearanceSync extends StatefulWidget {

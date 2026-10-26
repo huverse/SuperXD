@@ -14,6 +14,10 @@ class CampusScrollBehavior extends MaterialScrollBehavior {
   ScrollPhysics getScrollPhysics(BuildContext context) => const BouncingScrollPhysics();
   @override
   Widget buildOverscrollIndicator(BuildContext context, Widget child, ScrollableDetails details) => child;
+  // iOS 惯例：拖动滚动区时收起键盘（同系统的设置与信息）；安卓照旧不收。
+  @override
+  ScrollViewKeyboardDismissBehavior getKeyboardDismissBehavior(BuildContext context) =>
+      getPlatform(context) == TargetPlatform.iOS ? ScrollViewKeyboardDismissBehavior.onDrag : ScrollViewKeyboardDismissBehavior.manual;
 }
 
 // fontFamily 为空是系统字体（iOS 的「系统字体」）。
