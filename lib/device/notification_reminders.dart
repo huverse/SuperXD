@@ -25,6 +25,9 @@ class NotificationReminders implements CourseReminderPort {
       category: AndroidNotificationCategory.reminder,
       icon: 'ic_stat_reminder',
     ),
+    // [人工决策-2026-10-26 23:16:31] iOS 的课前提醒是「时间敏感」级别（用户选定）：专注模式与定时推送摘要里照样立即显示、锁屏上停留更久。
+    // 要签名描述文件带 time-sensitive 权限（用户的证书带）；没有这项权限时系统按普通级别发，用户也可以在系统设置里给本应用关掉。
+    iOS: DarwinNotificationDetails(interruptionLevel: InterruptionLevel.timeSensitive),
   );
   // iOS 每个应用最多挂 64 条待发的本地通知，多排的系统直接丢掉（安排时就按 capability 的 limit 只排这么多）。
   static const _iosPendingLimit = 64;

@@ -8,7 +8,7 @@
   - 用 flutter_local_notifications 按校园时区定时通知；开机后由插件的接收器重新排定（清单里的 ScheduledNotificationBootReceiver）。
   - 只管理自己 id 段内的提醒（最多 reminderLimit 条），不调用 cancelAll，避免撤掉下载进度等其他通知。
   - 有精确闹钟权限时准时调度，没有时改用可能延迟的普通调度；通知渠道 course_reminder，状态栏图标 ic_stat_reminder。
-  - iOS：启动时不弹通知权限，用户打开提醒时再申请；本地通知本来就准时；每个应用最多挂 64 条待发通知，capability 报 limit 64，编排按它只排最近的 64 条；前台也弹由 AppDelegate.swift 把通知中心回调交给插件。
+  - iOS：启动时不弹通知权限，用户打开提醒时再申请；本地通知本来就准时；每个应用最多挂 64 条待发通知，capability 报 limit 64，编排按它只排最近的 64 条；前台也弹由 AppDelegate.swift 把通知中心回调交给插件；课前通知是「时间敏感」级别（专注模式下也显示，要描述文件带这项权限，[人工决策] 在 _details）。
   - iOS 的胶囊是实时活动（ios/Runner/CourseBridge.swift 的 CourseLive，iOS 16.2 起，[人工决策] 在那里）：应用在后台时系统不让自己开始，所以开着胶囊也照常发课前通知；每次打开或回到前台交来计划时，正处在提醒时刻到下课之间的那节课开始或更新实时活动，其余的结束。画面在小组件扩展 ios/CourseWidgets/CourseLiveActivity.swift（锁屏与灵动岛，课前倒数到上课、上课中倒数到下课并画进度），两边共用 ios/Shared/CourseActivity.swift。
   - 开了状态栏胶囊（live）时不经插件定时，改经通道 superxd/course_live 把计划（钟点按校园时区写好）交给原生 CourseLive.kt 发 Android 16 实时更新（OPPO 流体云按同一接口显示；插件不支持「请求提升」）。两条路同一时刻只走一条，切换时另一条交空计划。
   - CourseLive.kt：计划存私有的 superxd_course_live 偏好（已排除系统备份），条数同 reminderLimit；只排下一个时刻的一个闹钟（有精确闹钟权限时准时），到点发出或改写再排下一个；开课前倒数到开课、上课中倒数到下课（系统按 when 显示剩余分钟），setTimeoutAfter 下课自动消失；只在首次发出时响铃；用户划掉的这节不再补发；开机、应用更新、改时间或时区时由 CourseLiveReceiver 重新处理。能力查询给用户是否允许（canPostPromotedNotifications）与系统有没有实时更新（允许，或有实时更新设置页可去开；Android 16 首版没有这一页，不给开关），「开启胶囊」打开这个设置页（清单 queries 里声明了它）。
