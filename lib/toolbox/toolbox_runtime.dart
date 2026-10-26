@@ -9,7 +9,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/domain/share_card.dart';
-import 'package:superxd/toolbox/download/android_file_publisher.dart';
+import 'package:superxd/toolbox/download/channel_file_publisher.dart';
 import 'package:superxd/toolbox/download/background_transfer.dart';
 import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
@@ -165,7 +165,6 @@ class ToolboxRuntime with WidgetsBindingObserver {
   });
 
   Future<void> _initialize() async {
-    if (!Platform.isAndroid) throw const ToolboxException('当前版本仅支持 Android 下载');
     final base = Directory(
       path.join((await getApplicationSupportDirectory()).path, 'toolbox'),
     );
@@ -181,7 +180,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     final downloads = ToolboxDownloadManager(
       store: store,
       transfer: BackgroundTransfer(directory.path),
-      publisher: AndroidFilePublisher(),
+      publisher: ChannelFilePublisher(),
       directory: directory,
       resources: resources,
     );

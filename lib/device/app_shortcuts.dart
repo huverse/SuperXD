@@ -6,8 +6,8 @@ import 'package:superxd/domain/app_shortcut.dart';
 
 // 快捷入口的系统实现：经通道 superxd/app_shortcuts 交给原生 AppShortcuts.kt（ShortcutManager 的动态快捷方式与桌面快捷方式）。
 // 应用在后台时点了入口，原生侧调 launch 带回入口 id。
-class AndroidAppShortcuts implements AppShortcutPort {
-  AndroidAppShortcuts() {
+class ChannelAppShortcuts implements AppShortcutPort {
+  ChannelAppShortcuts() {
     _channel.setMethodCallHandler((call) async {
       if (call.method == 'launch') _launches.add(call.arguments as String);
     });

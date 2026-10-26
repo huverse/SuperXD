@@ -5,14 +5,14 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_device_channel.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_vault.dart';
-import 'package:superxd/toolbox/download/android_file_publisher.dart';
+import 'package:superxd/toolbox/download/channel_file_publisher.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 
 // 学习通签到的服务：自己打开、关闭与清除库、安全存储、设备通道和中转客户端；框架（ToolboxRuntime）只提供
 // 目录与公共能力，不认识这里的任何类型。打开函数登记在注册表（toolbox_catalog.dart），页面经 runtime.service 取用。
 class ChaoxingService implements ToolboxService {
-  ChaoxingService({required this.accounts, required this.hub, this.filePublisher = AndroidFilePublisher.new});
+  ChaoxingService({required this.accounts, required this.hub, this.filePublisher = ChannelFilePublisher.new});
   final ChaoxingAccounts accounts;
 
   // 代签凭据包的中转，与私信共用同一个自建服务（地址由框架从构建参数给出）；为空时代签码不可用。

@@ -8,7 +8,7 @@
   - chaoxing_models.dart：活动、课程、详情、账号模型与错误码 ChaoxingFailure；otherId 到 ChaoxingSignType 的映射（0 是「普通签到」，详情 ifphoto=1 才要照片）。上游没给开始时间时为空，如实当未知、不拿现在顶替，列表统一按 chaoxingNewestFirst 排。
   - chaoxing_crypto.dart：学习通固定的传输加密（AES-128-CBC）、MD5/SHA-256、设备公钥（设备信息 RSA 分块加密与 clientId 还原）与设备码的 AES-ECB。
   - chaoxing_device.dart：设备信息端口 ChaoxingDeviceProbe，按学习通客户端的字段与顺序组设备信息并 RSA 加密；按 OAID 算设备码，取不到返回空，由调用方退回固定随机码。
-  - chaoxing_device_channel.dart：端口的原生实现（通道 superxd/chaoxing_device，见 ChaoxingDevice.kt，两个调用各有 3 秒兜底超时），由 toolbox_runtime.dart 注入。单独成文件是为了让协议链路不依赖 Flutter，tool/verify_chaoxing.dart 才能用纯 Dart 跑。
+  - chaoxing_device_channel.dart：端口的原生实现（通道 superxd/chaoxing_device，见 ChaoxingDevice.kt；iOS 是 ChaoxingDevice.swift，按安卓字段报 iPhone 的真实机型与系统、OAID 给空，[人工决策] 在文件头；两个调用各有 3 秒兜底超时），由 toolbox_runtime.dart 注入。单独成文件是为了让协议链路不依赖 Flutter，tool/verify_chaoxing.dart 才能用纯 Dart 跑。
   - chaoxing_http.dart：请求封装与 Cookie 会话 ChaoxingCookieJar；模拟的客户端 ChaoxingClientProfile（学习通、学在西电、自定义 UA 与包名），UA 随它走。默认超时 15 秒（登录与用户信息 30 秒，见 chaoxing_client.dart 的人工决策）、响应上限 1MB、日志只记路径。
   - chaoxing_client.dart：登录、用户信息、重登与设备码。带得上设备信息就 POST（clientId 靠它下发），否则 GET；解析学校单位，登录后把会话 fid 改回所选单位。
   - chaoxing_activity.dart：课程列表（只认带 cataName 的频道）、活动列表与详情、按班级号查班级名（gas/clazz）、签到前的班级检查。
@@ -44,7 +44,7 @@
     - 二维码签到连续扫码，扫到就提交，过期检查只在取景页提示，过期以提交结果为准、那时再等新码（[人工决策] 在 _scanAndSign）；位置默认与签完问收藏见人工决策；开签前现拍的人脸只给这次用，签好再问存不存。
     - 时间行写「截止 今天 17:45 · 还剩 9 分钟」，一天以内才写还剩多久，弹层开着时每 30 秒自己刷新（_SignWindow）；全部签成功时轻触一次。
   - chaoxing_sign_location.dart：签到弹层里的位置选择（嵌着的地图、位置名称、收藏的选择标签、手动输入与管理收藏）；地图用不了时直接摊开经纬度并写明原因；状态归签到弹层。
-  - chaoxing_map_page.dart：高德地图选点：嵌在签到弹层里的 ChaoxingInlineMap 与全屏页 ChaoxingMapPage（带着弹层已选的位置打开即选中；favorite 模式给管理收藏添加用，不预选）。范围圈按内容缓存，定位回报只在拿来选点时记日志。key 走构建参数 SUPERXD_AMAP_KEY，不写进源码；key 没配或不在 arm 设备上时不出地图入口。地图按 GCJ-02 画；默认选中顺序、不画精度圈、系统定位没开的提示（「去打开」经原生 LocationSettings.kt 跳系统定位设置）与平面卫星切换见文件内人工决策。
+  - chaoxing_map_page.dart：高德地图选点：嵌在签到弹层里的 ChaoxingInlineMap 与全屏页 ChaoxingMapPage（带着弹层已选的位置打开即选中；favorite 模式给管理收藏添加用，不预选）。范围圈按内容缓存，定位回报只在拿来选点时记日志。key 走构建参数 SUPERXD_AMAP_KEY，不写进源码；key 没配或不在 arm 设备上时不出地图入口。地图按 GCJ-02 画；默认选中顺序、不画精度圈、系统定位没开的提示（「去打开」经原生 LocationSettings.kt 跳系统定位设置，iOS 的 LocationSettings.swift 只能跳到本应用的设置页）与平面卫星切换见文件内人工决策。
   - chaoxing_code_cells.dart：签到码格子 ChaoxingCodeCells：真正的输入框（EditableText，自己不接点按）藏在格子底下，点格子或缝隙都经 requestKeyboard 叫键盘（键盘被收起后输入框仍聚焦，只 requestFocus 不会再弹）；输错标红保留到重新输入（[人工决策] 在文件头）。
   - chaoxing_gesture_field.dart：手势签到的 3×3 图案输入：用原始指针事件，不走手势竞技场（弹层的拖动关闭抢不走）；画错的图案标红留到下一次按下（[人工决策] 在文件头）。
   - chaoxing_captcha_dialog.dart：滑块验证弹窗，底图上拖缺口块，不通过自动换一张。

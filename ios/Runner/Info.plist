@@ -30,10 +30,14 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>扫好友二维码、签到二维码与驿站码，以及拍照签到时使用相机。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>学习通位置签到时读取当前位置，只在签到时使用。</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>把下载的视频图片、开屏画作、驿站码与红包二维码存进相册。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>读取你选中的照片，用作壁纸、签到照片或识别其中的二维码。</string>
 	<key>UIApplicationSceneManifest</key>
@@ -58,6 +62,8 @@
 		</dict>
 	</dict>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UIFileSharingEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>

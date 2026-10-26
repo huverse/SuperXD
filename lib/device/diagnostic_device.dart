@@ -30,6 +30,10 @@ Future<List<ProcessExit>> readExitReasons(int since) async {
 }
 
 Future<Map<String, String>> readDeviceEnvironment() async {
+  if (Platform.isIOS) {
+    final info = await DeviceInfoPlugin().iosInfo;
+    return {'os': '${info.systemName} ${info.systemVersion}', 'device': 'Apple ${info.utsname.machine}'};
+  }
   final info = await DeviceInfoPlugin().androidInfo;
   return {'os': 'Android ${info.version.release}', 'sdk': '${info.version.sdkInt}', 'device': '${info.manufacturer} ${info.model}'};
 }

@@ -2,7 +2,7 @@ import 'package:flutter/services.dart';
 
 import 'package:superxd/toolbox/toolbox_models.dart';
 
-class AndroidFilePublisher implements ToolboxFilePublisher {
+class ChannelFilePublisher implements ToolboxFilePublisher {
   static const _channel = MethodChannel('superxd/toolbox_files');
   @override
   Future<Uri?> publish({

@@ -4,7 +4,7 @@ import 'package:flutter/widgets.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:superxd/toolbox/download/android_file_publisher.dart';
+import 'package:superxd/toolbox/download/channel_file_publisher.dart';
 import 'package:superxd/toolbox/express/express_anti_content.dart';
 import 'package:superxd/toolbox/express/express_client.dart';
 import 'package:superxd/toolbox/express/express_cookies.dart';
@@ -21,7 +21,7 @@ class ExpressService implements ToolboxService {
     required this.vault,
     ExpressClient Function(PddSession session)? clientFactory,
     this.antiContent,
-    this.filePublisher = AndroidFilePublisher.new,
+    this.filePublisher = ChannelFilePublisher.new,
     this.temporaryDirectory = getTemporaryDirectory,
     this.launchExternal = _launchExternal,
     this.verifyPage = _verifyPage,

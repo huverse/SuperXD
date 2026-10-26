@@ -16,7 +16,7 @@
 - download 下载：
   - toolbox_download_manager.dart：通用下载管理 ToolboxDownloadManager，不认识任何工具的数据（[人工决策] 在 enqueue）。按工具 id 与 identity 加每项 id 去重；负责入队、暂停、继续、取消、校验、导出与清理，clearTool 清除一个工具的下载数据（已导出的文件不动）。每组 1–100 项、待处理任务组最多 10 个、同时传输最多 2 个。
   - background_transfer.dart：基于 background_downloader 的后台传输 BackgroundTransfer；没有通知权限时改用普通 WorkManager 任务，避免 ANR。
-  - android_file_publisher.dart：经通道 superxd/toolbox_files 调原生 ToolboxFileExporter.kt 导出到 Download/SuperXD。publish 是下载管理的导出（source 限定下载目录）；publishExternal 是一次性导出（source 只认应用缓存目录、只放行图片与诊断日志包 zip 的 mime（日志包由 device/diagnostic_device.dart 经同一原生通道导出）、文件名按名幂等且不得含分隔符与控制字符）。
+  - channel_file_publisher.dart：经通道 superxd/toolbox_files 调原生导出：安卓 ToolboxFileExporter.kt 导出到 Download/SuperXD；iOS ToolboxFileExporter.swift 把图片与视频存进相册（只申请添加，webp 先转 JPEG，返回 ph:// 条目号，打开时进相册），其余进「文件」App 的 SuperXD（同名即算存好），日志包弹系统分享面板（[人工决策] 在文件头）。publish 是下载管理的导出（source 限定下载目录）；publishExternal 是一次性导出（source 只认应用缓存目录、只放行图片与诊断日志包 zip 的 mime（日志包由 device/diagnostic_device.dart 经同一原生通道导出）、文件名按名幂等且不得含分隔符与控制字符）。
   - downloads_page.dart：下载管理页 DownloadsPage，只列给定工具 id 的任务，按组展示，整组操作在⋯里，条目顺序稳定；给了 reopenLabel 时失败任务可交回调用方重做。
   - download_status.dart：结果页与下载页共用的状态文案、进度条 DownloadProgress 与操作按钮 downloadActions。
 - short_video 短视频：

@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -23,6 +24,9 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+
+// 导出日志包的结果：安卓存进 Download/SuperXD，iOS 弹系统分享面板（取消也算没完成）。
+String _exportedText(String? filename) => filename == null ? '导出没完成，请重试' : defaultTargetPlatform == TargetPlatform.iOS ? '已导出：$filename' : '已保存到 Download/SuperXD：$filename';
 
 // 运行环境各项的显示名（键见组合根 app_diagnostics.dart 的 appEnvironment）。
 const _environmentLabels = {'version': '版本', 'build': '构建号', 'flavor': '渠道', 'os': '系统', 'sdk': 'API 级别', 'device': '机型', 'abi': '处理器架构'};
@@ -63,7 +67,7 @@ class _DeveloperPageState extends State<DeveloperPage> {
     }
     if (!mounted) return;
     setState(() => _exporting = false);
-    showCampusToast(context, filename == null ? '导出没完成，请重试' : '已保存到 Download/SuperXD：$filename');
+    showCampusToast(context, _exportedText(filename));
   }
 
   // 诊断摘要（运行环境加最近的几种错误，已掩码）复制成纯文字，粘贴进聊天或 Issue，不用传整个日志包。
@@ -459,7 +463,7 @@ class _DeveloperToolsState extends State<_DeveloperTools> {
     }
     if (!mounted) return;
     setState(() => _exporting = false);
-    showCampusToast(context, filename == null ? '导出没完成，请重试' : '已保存到 Download/SuperXD：$filename');
+    showCampusToast(context, _exportedText(filename));
   }
 
   @override
