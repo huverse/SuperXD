@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
@@ -380,5 +381,34 @@ void main() {
     expect(plugin.where((call) => call.method == 'zonedSchedule'), hasLength(1));
     await NotificationReminders().requestLive();
     expect(live.last.method, 'openSettings');
+  });
+
+  // [人工决策] 见 lib/device/notification_reminders.dart：iOS 的课前提醒按「时间敏感」级别发；开着实时活动也照常排通知。
+  test('适配器：iOS 的课前提醒是时间敏感级别，开着实时活动也照常排', () async {
+    ensureCampusClock();
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    addTearDown(() => debugDefaultTargetPlatformOverride = null);
+    IOSFlutterLocalNotificationsPlugin.registerWith();
+    final plugin = <MethodCall>[];
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    const pluginChannel = MethodChannel('dexterous.com/flutter/local_notifications'), liveChannel = MethodChannel('superxd/course_live');
+    messenger.setMockMethodCallHandler(pluginChannel, (call) async {
+      plugin.add(call);
+      return switch (call.method) {
+        'initialize' => true,
+        'pendingNotificationRequests' => <Object?>[],
+        _ => null,
+      };
+    });
+    messenger.setMockMethodCallHandler(liveChannel, (call) async => null);
+    addTearDown(() {
+      messenger.setMockMethodCallHandler(pluginChannel, null);
+      messenger.setMockMethodCallHandler(liveChannel, null);
+    });
+    final course = _courses.first;
+    final occurrence = CourseOccurrence(date: '2099-09-07', start: DateTime.utc(2099, 9, 7), end: DateTime.utc(2099, 9, 7, 1, 40), course: course, meeting: course.meetings.first);
+    await NotificationReminders().replace(planReminders([occurrence], leadMinutes: 10, now: DateTime.utc(2026, 9, 13)), exact: true, live: true);
+    final scheduled = plugin.singleWhere((call) => call.method == 'zonedSchedule').arguments as Map;
+    expect((scheduled['platformSpecifics'] as Map)['interruptionLevel'], InterruptionLevel.timeSensitive.index);
   });
 }
