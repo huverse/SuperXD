@@ -13,7 +13,7 @@
 - 校园课表与成绩 Flutter 应用。只有 Android 宿主，对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱（短视频解析与下载、学习通签到）。
 - 功能性私信：扫码互加好友后分享课表、界面配置、短视频等卡片，没有文字聊天；经自建中转（server 目录，NestJS + MySQL + Redis）端到端加密转交。学习通代签的凭据包与应用内更新的版本清单、安装包也放在这个中转。
 - 公开 Alpha 测试，仓库公开、以 GPL-3.0 开源（curve_geometry.dart 例外，见 README 许可一节）。Flutter 与 Dart 版本以 CI 配置和 pubspec.yaml 为准，依赖锁定在 pubspec.lock。
-- 相关文档：设计语言 UITEMP/design_language.md；用户介绍、隐私摘要与从源码构建 README.md；发布、签名与贡献约定 CONTRIBUTING.md；变更记录 CHANGELOG.md。
+- 相关文档：设计语言 UITEMP/design_language.md；用户介绍、隐私摘要与从源码构建 README.md（只放首页要的，细节链到 docs）；百宝箱说明 docs/toolbox.md、常见问题 docs/faq.md，README 截图在 docs/images（tool/readme_demo.dart 的合成数据拍）；发布、签名与贡献约定 CONTRIBUTING.md；变更记录 CHANGELOG.md。功能、数据流向或隐私政策变了，README 的亮点与隐私要点、docs 两页一起看要不要改。
 
 # 常用命令
 
