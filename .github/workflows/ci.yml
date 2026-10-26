@@ -29,6 +29,34 @@ jobs:
       - run: flutter analyze
       - run: flutter test --reporter expanded
 
+  # [人工决策-2026-10-26 20:18:03] iOS 只出未签名 ipa，测试者在手机上用全能签加自己的证书签名安装（用户选定，不买开发者账号、不走 TestFlight）。
+  # 本机是 Linux、没有 Mac，iOS 只能在这里编译；PR 包不带中转地址与高德 key，私信、代签、更新与地图不可用。
+  ios-build:
+    name: iOS build
+    runs-on: macos-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - run: flutter build ios --release --no-codesign --flavor alpha
+      - name: Package unsigned ipa
+        run: |
+          mkdir -p build/ios-ipa/Payload
+          cp -R build/ios/iphoneos/Runner.app build/ios-ipa/Payload/
+          cd build/ios-ipa && zip -qry SuperXD-alpha-unsigned.ipa Payload
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ios-unsigned-ipa
+          path: |
+            build/ios-ipa/SuperXD-alpha-unsigned.ipa
+            ios/Podfile.lock
+          retention-days: 14
+
   relay-check:
     name: Relay server test
     runs-on: ubuntu-latest

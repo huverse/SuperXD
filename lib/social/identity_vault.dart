@@ -13,7 +13,7 @@ abstract interface class IdentityVault {
 
 // 系统安全存储（Android Keystore 加密）。命名空间已排除出云备份与设备迁移（backup_rules.xml），身份不随备份搬到别的设备。
 class SecureIdentityVault implements IdentityVault {
-  SecureIdentityVault() : _storage = const FlutterSecureStorage(aOptions: AndroidOptions(storageNamespace: 'superxd_social', resetOnError: false));
+  SecureIdentityVault() : _storage = const FlutterSecureStorage(aOptions: AndroidOptions(storageNamespace: 'superxd_social', resetOnError: false), iOptions: IOSOptions(accountName: 'superxd_social', accessibility: KeychainAccessibility.first_unlock_this_device));
   final FlutterSecureStorage _storage;
   static const _key = 'identity';
 

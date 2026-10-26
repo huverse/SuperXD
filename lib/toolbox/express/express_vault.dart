@@ -26,6 +26,7 @@ class SecureExpressVault implements ExpressVault {
   SecureExpressVault()
     : _storage = const FlutterSecureStorage(
         aOptions: AndroidOptions(storageNamespace: 'superxd_pdd', resetOnError: false),
+        iOptions: IOSOptions(accountName: 'superxd_pdd', accessibility: KeychainAccessibility.first_unlock_this_device),
       );
   final FlutterSecureStorage _storage;
 

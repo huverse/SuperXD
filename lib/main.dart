@@ -26,6 +26,7 @@ import 'package:superxd/application/festivals.dart';
 import 'package:superxd/device/app_installer_channel.dart';
 import 'package:superxd/device/app_shortcuts.dart';
 import 'package:superxd/device/app_package_files.dart';
+import 'package:superxd/device/backup_exclusion.dart';
 import 'package:superxd/device/diagnostic_device.dart';
 import 'package:superxd/device/home_widget_publisher.dart';
 import 'package:superxd/device/notification_reminders.dart';
@@ -96,9 +97,12 @@ void main() async {
     FlutterError.presentError(details);
   };
   // 本机诊断日志（见 local/diagnostic_log.dart）：尽早接上，之后的 campusLog 同时进 logcat 与文件；应用专属外部目录取不到时退回应用支持目录。
+  // iOS 没有应用专属外部目录：日志与开发者设置放进只属于这台设备的 device_only（启动后排除出备份，见下面的 excludeFromBackup）。
   final support = await getApplicationSupportDirectory();
+  final deviceOnly = Platform.isIOS ? Directory(path.join(support.path, 'device_only')) : support;
+  final external = Platform.isAndroid ? await getExternalStorageDirectory() : null;
   final logs = await DiagnosticLog.open(
-    directory: Directory(path.join(((await getExternalStorageDirectory()) ?? support).path, 'logs')),
+    directory: Directory(path.join((external ?? deviceOnly).path, 'logs')),
     exports: Directory(path.join((await getTemporaryDirectory()).path, 'diagnostics_export')),
     publish: publishDiagnosticArchive,
   );
@@ -128,7 +132,7 @@ void main() async {
     });
     stream.addListener(decoded);
   }
-  final developer = await DeveloperSettings.open(File(path.join(support.path, 'developer.json')));
+  final developer = await DeveloperSettings.open(File(path.join(deviceOnly.path, 'developer.json')));
   watchDeveloperMode(developer, logs, environment: appEnvironment);
   unawaited(recordExitReasons(marker: File(path.join(support.path, 'last_exit_seen')), read: readExitReasons));
   // Android 10–14默认不绘制到导航栏后，透明导航栏会露出原生窗口底色（浅色为白条）；15+系统已强制全面屏。
@@ -146,12 +150,23 @@ void main() async {
   final reminders = CampusReminders(gateway: session.gateway, port: NotificationReminders());
   final widgetPort = HomeWidgetPublisher();
   final widgets = CampusWidgets(gateway: session.gateway, port: widgetPort);
+  final socialDatabase = path.join(await getDatabasesPath(), 'social.db');
   final social = SocialService(
-    store: await SocialStore.open(path.join(await getDatabasesPath(), 'social.db')),
+    store: await SocialStore.open(socialDatabase),
     vault: SecureIdentityVault(),
     transport: relayTransport(),
     polling: true,
   );
+  // iOS 默认把应用数据带进 iCloud 备份与换机迁移：与安卓 data_extraction_rules.xml 排除的同一批（百宝箱、下载记录、日志与开发者设置、私信库）在这里标记排除；钥匙串见 ios/Runner/DeviceOnlyData.swift。
+  if (Platform.isIOS) {
+    unawaited(excludeFromBackup(
+      folders: [
+        for (final folder in ['toolbox', 'backgroundDownloaderTaskRecords', 'backgroundDownloaderResumeData', 'backgroundDownloaderDatabase']) Directory(path.join(support.path, folder)),
+        deviceOnly,
+      ],
+      files: [File(socialDatabase)],
+    ));
+  }
   final updates = await appUpdates(support);
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
   final notes = await developerNotes(support);

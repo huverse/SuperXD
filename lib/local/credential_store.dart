@@ -17,8 +17,10 @@ abstract interface class CredentialStore {
 // [人工决策-2026-09-24 23:39:30] 仅明确同意记住且认证成功后加密保存鉴权数据；未开启不保存，关闭或主动退出即删除。
 // 系统安全存储管理密钥与密文；业务SQLite、日志和账号索引不存登录密码。
 class SecureCredentialStore implements CredentialStore {
+  // iOS 钥匙串按命名空间分服务名（deleteAll 只清自己这一份），只在本机可读，不进备份、不随换机迁移。
   SecureCredentialStore() : _storage = const FlutterSecureStorage(
     aOptions: AndroidOptions(storageNamespace: 'superxd_credentials', resetOnError: false),
+    iOptions: IOSOptions(accountName: 'superxd_credentials', accessibility: KeychainAccessibility.first_unlock_this_device),
   );
   final FlutterSecureStorage _storage;
   String _key(String accountKey) => 'remembered_$accountKey';
