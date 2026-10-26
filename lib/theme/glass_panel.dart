@@ -9,6 +9,7 @@ import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/campus_glass_blend.dart';
 import 'package:superxd/theme/campus_glass_material.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
+import 'package:superxd/theme/native_glass.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 final campusGlassReady = ValueNotifier(false);
@@ -58,6 +59,11 @@ mixin CampusOverlayDepthRoute<T> on Route<T> {
 }
 
 Future<void> initializeCampusGlass() async {
+  // iOS 用系统玻璃，不预热着色器。
+  if (campusNativeGlass) {
+    campusGlassReady.value = true;
+    return;
+  }
   try {
     await liquid.LiquidGlassWidgets.initialize(enablePerformanceMonitor: false);
     campusGlassReady.value = true;

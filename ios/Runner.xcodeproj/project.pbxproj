@@ -17,12 +17,14 @@
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
+		8BC599F188E9698597E12906 /* NativeDialogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = F09BF0B9070A15EB9E94412A /* NativeDialogs.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
 		B5C9D063684DC2BB94351B38 /* CalendarExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF4F0B680F9823847CC462E0 /* CalendarExporter.swift */; };
 		D21678C30236D9818E1120C8 /* LocationSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35771B27AC830862F1F2E053 /* LocationSettings.swift */; };
 		DDEC21553CFAB68DB9CFAF24 /* ProcessExitReasons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C68715E693EAACEA41AE8E1 /* ProcessExitReasons.swift */; };
+		DE98FC23B7F6DF774CDCF8BB /* NativeGlassViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20CB456A4CECD964F2CEBC3 /* NativeGlassViews.swift */; };
 		EB576B15990C6C4684206D7E /* AppShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C61EC48F12A8AA380008769 /* AppShortcuts.swift */; };
 		EFAC180E9A141478305BC1F1 /* MetricKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 47CE26B4D512D96051AE6C83 /* MetricKit.framework */; };
 		F290C3E0194E33BAF3B52108 /* ChaoxingDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70551FB05EEA5E54BB9DD94 /* ChaoxingDevice.swift */; };
@@ -85,6 +87,8 @@
 		CB883510AE2ECEC10042FE2B /* Release-alpha.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Release-alpha.xcconfig"; path = "Flutter/Release-alpha.xcconfig"; sourceTree = "<group>"; };
 		DAAFD733B516874AB3246624 /* Profile-production.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Profile-production.xcconfig"; path = "Flutter/Profile-production.xcconfig"; sourceTree = "<group>"; };
 		DFB3590BCBB514C755A2197C /* DeviceOnlyData.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceOnlyData.swift; sourceTree = "<group>"; };
+		E20CB456A4CECD964F2CEBC3 /* NativeGlassViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeGlassViews.swift; sourceTree = "<group>"; };
+		F09BF0B9070A15EB9E94412A /* NativeDialogs.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeDialogs.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -167,6 +171,8 @@
 				35771B27AC830862F1F2E053 /* LocationSettings.swift */,
 				8C61EC48F12A8AA380008769 /* AppShortcuts.swift */,
 				B233E6F0EE2391C06CD75BD1 /* CourseStubs.swift */,
+				F09BF0B9070A15EB9E94412A /* NativeDialogs.swift */,
+				E20CB456A4CECD964F2CEBC3 /* NativeGlassViews.swift */,
 			);
 			path = Runner;
 			sourceTree = "<group>";
@@ -352,6 +358,8 @@
 				D21678C30236D9818E1120C8 /* LocationSettings.swift in Sources */,
 				EB576B15990C6C4684206D7E /* AppShortcuts.swift in Sources */,
 				3844350EFCC428AFDB06BB06 /* CourseStubs.swift in Sources */,
+				8BC599F188E9698597E12906 /* NativeDialogs.swift in Sources */,
+				DE98FC23B7F6DF774CDCF8BB /* NativeGlassViews.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

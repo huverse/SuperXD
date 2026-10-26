@@ -19,6 +19,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
+import 'package:superxd/theme/native_glass.dart';
 import 'package:superxd/theme/scroll_anchor.dart';
 import 'package:superxd/theme/wallpaper_tone.dart';
 import 'package:superxd/domain/campus_log.dart';
@@ -41,8 +42,11 @@ class _FontPreview extends StatelessWidget {
   final String fontId;
   final Color color;
 
+  // 系统字体本来就在系统里，直接用文字预览；内置字体用预先画好的图。
   @override
-  Widget build(BuildContext context) => Image.asset(
+  Widget build(BuildContext context) => fontId == DisplaySettings.systemFont
+      ? Text(fontPreviewText, style: const TextStyle(fontFamily: null, fontWeight: FontWeight.w500, fontSize: 16, height: 1.6).copyWith(color: color))
+      : Image.asset(
     'assets/font_previews/$fontId.png',
     scale: fontPreviewScale * 16 / MediaQuery.textScalerOf(context).scale(16),
     color: color,
@@ -71,7 +75,7 @@ class _AppearancePageState extends State<AppearancePage> {
   // 改字号、换字体会让整页重新排版：点的那一项在过渡期间停在手指下（人工决策见 local/display_settings.dart 的 CampusTextScale）。
   final _scroll = CampusAnchoredScrollController();
   final _scaleAnchor = GlobalKey();
-  final _fontAnchors = {for (final id in DisplaySettings.fontFamilies.keys) id: GlobalKey()};
+  final _fontAnchors = {for (final id in [DisplaySettings.systemFont, ...DisplaySettings.fontFamilies.keys]) id: GlobalKey()};
 
   @override
   void didChangeDependencies() {
@@ -347,6 +351,8 @@ class _AppearancePageState extends State<AppearancePage> {
             Text('字体', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
             for (final font in [
+              // 系统字体只在 iOS 上有（[人工决策] 见 local/display_settings.dart 的 systemFont）。
+              if (DisplaySettings.supportsSystemFont) (id: DisplaySettings.systemFont, label: '系统字体'),
               (id: 'maple', label: 'Maple'),
               (id: 'serif', label: '文学衬线'),
             ])
@@ -410,28 +416,31 @@ class _AppearancePageState extends State<AppearancePage> {
                   ),
               ],
             ),
-            const SizedBox(height: 24),
-            Text('玻璃效果', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
-            CampusSegmented<String>(
-              values: const ['auto', 'full', 'reduced'],
-              selected: settings.glassMode,
-              label: (mode) => switch (mode) { 'full' => '完整', 'reduced' => '简化', _ => '自动' },
-              // 限档时点「完整」（已选中也算）即解除限档重试，[人工决策] 见 campus_glass_tier.dart。
-              onSelected: (mode) => _save(() async {
-                if (mode == 'full' && campusGlassCapped.value) await CampusGlassGuard.retry();
-                await settings.setGlassMode(mode);
-              }),
-            ),
-            ValueListenableBuilder(
-              valueListenable: campusGlassCapped,
-              builder: (context, capped, _) => capped && settings.glassMode != 'reduced'
-                  ? Padding(
-                      padding: const EdgeInsets.only(top: 8),
-                      child: DotSeparatedText('上次异常退出，已暂时降为标准效果 · 点「完整」重试', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
-                    )
-                  : const SizedBox.shrink(),
-            ),
+            // iOS 的玻璃是系统的，跟随系统设置（显示与亮度里的液态玻璃、辅助功能里的降低透明度），不在这里调（[人工决策] 见 theme/native_glass.dart）。
+            if (!campusNativeGlass) ...[
+              const SizedBox(height: 24),
+              Text('玻璃效果', style: Theme.of(context).textTheme.titleLarge),
+              const SizedBox(height: 12),
+              CampusSegmented<String>(
+                values: const ['auto', 'full', 'reduced'],
+                selected: settings.glassMode,
+                label: (mode) => switch (mode) { 'full' => '完整', 'reduced' => '简化', _ => '自动' },
+                // 限档时点「完整」（已选中也算）即解除限档重试，[人工决策] 见 campus_glass_tier.dart。
+                onSelected: (mode) => _save(() async {
+                  if (mode == 'full' && campusGlassCapped.value) await CampusGlassGuard.retry();
+                  await settings.setGlassMode(mode);
+                }),
+              ),
+              ValueListenableBuilder(
+                valueListenable: campusGlassCapped,
+                builder: (context, capped, _) => capped && settings.glassMode != 'reduced'
+                    ? Padding(
+                        padding: const EdgeInsets.only(top: 8),
+                        child: DotSeparatedText('上次异常退出，已暂时降为标准效果 · 点「完整」重试', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
+                      )
+                    : const SizedBox.shrink(),
+              ),
+            ],
             if (_error != null)
               Padding(
                 padding: const EdgeInsets.only(top: 12),

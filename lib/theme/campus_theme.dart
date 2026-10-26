@@ -16,7 +16,8 @@ class CampusScrollBehavior extends MaterialScrollBehavior {
   Widget buildOverscrollIndicator(BuildContext context, Widget child, ScrollableDetails details) => child;
 }
 
-ThemeData campusTheme({CampusPalette? palette, String fontFamily = 'Maple Mono NF CN'}) {
+// fontFamily 为空是系统字体（iOS 的「系统字体」）。
+ThemeData campusTheme({CampusPalette? palette, String? fontFamily = 'Maple Mono NF CN'}) {
   final colors = palette ?? CampusPalette.values.first;
   final scheme = ColorScheme.fromSeed(
     seedColor: colors.primary,

@@ -75,6 +75,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/native_glass.dart';
 import 'package:superxd/theme/third_party_licenses.dart';
 import 'package:superxd/theme/wallpaper_tone.dart';
 import 'package:superxd/toolbox/toolbox_catalog.dart';
@@ -676,11 +677,11 @@ class _AccountAppState extends State<_AccountApp> {
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       builder: (context, child) => DisplayScope(settings: _display, child: CampusTextScale(
         multiplier: _display.scale,
-        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: campusGlassCapped.value, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, wallpaper: _wallpaper(), overlays: campusOverlayDepth, child: CampusEntryFade(child: LiveClock(child: switch ((widget.developer, widget.logs)) {
+        child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: NativeAppearanceSync(child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: campusGlassCapped.value, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, wallpaper: _wallpaper(), overlays: campusOverlayDepth, child: CampusEntryFade(child: LiveClock(child: switch ((widget.developer, widget.logs)) {
         // 开发者模式下浮在所有页面上的开发者工具按钮（见 page/developer_page.dart 的 DeveloperOverlay）。
         (final developer?, final logs?) => DeveloperOverlay(developer: developer, logs: logs, navigator: _router.routerDelegate.navigatorKey, location: () => _router.routerDelegate.currentConfiguration.uri.path, child: child!),
         _ => child!,
-      })))))),
+      }))))))),
       )),
     ));
   }
