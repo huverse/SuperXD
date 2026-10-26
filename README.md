@@ -2,9 +2,9 @@
 
 # SuperXD
 
-在手机上看课表、查成绩，和同学互看课表找共同空闲。
+课表、成绩一屏看清，和同学互看课表找共同空闲。
 
-开源、非官方的校园教务客户端，目前对接山东现代学院的 Kingo 教务系统；另附免教务登录的百宝箱（短视频解析、学习通签到）。
+非官方的开源校园应用，对接山东现代学院的 Kingo 教务系统；另带不用登录教务的百宝箱：驿站取件、学习通签到、短视频解析。
 
 [![Release](https://img.shields.io/github/v/release/huverse/SuperXD?include_prereleases&style=flat-square&color=2563eb&label=Release)](https://github.com/huverse/SuperXD/releases)
 [![Android 11+](https://img.shields.io/badge/Android-11%2B-34a853?style=flat-square&logo=android&logoColor=white)](https://github.com/huverse/SuperXD/releases)
@@ -12,95 +12,70 @@
 [![CI](https://img.shields.io/github/actions/workflow/status/huverse/SuperXD/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/huverse/SuperXD/actions/workflows/ci.yml)
 [![GPL v3](https://img.shields.io/badge/License-GPL%20v3-64748b?style=flat-square)](LICENSE)
 
-**[下载 APK](https://github.com/huverse/SuperXD/releases) · [反馈问题](https://github.com/huverse/SuperXD/issues) · [更新记录](CHANGELOG.md)**
-
-[界面预览](#界面预览) · [功能](#功能) · [开始使用](#开始使用) · [隐私与安全](#隐私与安全) · [从源码构建](#从源码构建) · [许可](#许可)
+**[下载 APK](https://github.com/huverse/SuperXD/releases) · [常见问题](docs/faq.md) · [反馈问题](https://github.com/huverse/SuperXD/issues) · [更新记录](CHANGELOG.md)**
 
 </div>
 
 > [!WARNING]
 > 当前是 **Alpha 测试版**：功能和数据可能出错，课表与成绩请以学校系统为准。本应用不是学校官方应用，与学校没有隶属或合作关系。
 
-## 界面预览
-
-截图来自 Android 模拟器，课程、教师、教室、姓名和成绩均为虚构的演示数据（[tool/readme_demo.dart](tool/readme_demo.dart)）。
-
 <table>
   <tr>
     <th>此刻在上哪节课</th>
-    <th>成绩一屏看全</th>
-    <th>深色与自定义外观</th>
+    <th>按学期翻周看课表</th>
+    <th>绩点与每门成绩</th>
   </tr>
   <tr>
-    <td><img src="docs/images/today.jpg" width="260" alt="今天页：顶部此刻卡显示正在上的课、教室与下课时刻，下面按节次列出当天课程" /></td>
-    <td><img src="docs/images/grades.jpg" width="260" alt="成绩页：学期汇总，一行搜索加筛选，成绩按行列出、分数在右" /></td>
-    <td><img src="docs/images/appearance-dark.jpg" width="260" alt="界面设置：深色模式下的字号、配色、字体、玻璃效果与背景" /></td>
+    <td><img src="docs/images/today.jpg" width="260" alt="今天页：顶部卡片写着正在上的高等数学、教室与 1 小时 20 分后下课，下面按节次列出当天课程" /></td>
+    <td><img src="docs/images/schedule.jpg" width="260" alt="课表学期视图：左侧月份与周次，本周高亮，右侧是所选日期的课程" /></td>
+    <td><img src="docs/images/grades.jpg" width="260" alt="成绩页：学期绩点、平均分与已获学分，下面一行搜索加筛选，成绩按行列出、分数在右" /></td>
   </tr>
   <tr>
-    <th>课程自己管，改错可恢复</th>
-    <th>我的</th>
-    <th>关于</th>
+    <th>和好友找共同空闲</th>
+    <th>驿站待取件按手机尾号分组</th>
+    <th>深色与五套配色</th>
   </tr>
   <tr>
-    <td><img src="docs/images/editor.jpg" width="260" alt="管理课程：每门课的上课时段、周次与教室，可新增、编辑、删除" /></td>
-    <td><img src="docs/images/mine.jpg" width="260" alt="我的页：头像卡只写姓名，下面是界面与关于" /></td>
-    <td><img src="docs/images/about.jpg" width="260" alt="关于页：版本、用户协议、隐私政策、开源许可、源代码与反馈" /></td>
+    <td><img src="docs/images/friend.jpg" width="260" alt="好友课表的共同空闲：一周课表网格标出我有课、TA 有课与都有课，两人都没课的格子高亮，下面列出本周共同空闲时段" /></td>
+    <td><img src="docs/images/express.jpg" width="260" alt="快递页：账号卡写昵称与取件号，驿站待取件按手机尾号分组列出取件码与运单号，每件可看物流，下面是近一周已取出" /></td>
+    <td><img src="docs/images/appearance-dark.jpg" width="260" alt="界面设置的深色模式：外观模式、五套配色、两种字体与字号" /></td>
   </tr>
 </table>
 
-## 功能
+截图来自 Android 模拟器，课程、教师、成绩、好友、快递与取件码都是虚构的演示数据（[tool/readme_demo.dart](tool/readme_demo.dart)）。
 
-| 功能 | 内容 |
-| --- | --- |
-| 今天 | 顶部卡片显示正在上的课或下一节，到点平滑切换；课上完或没课时预告下一节（明天第 1 节写「明天早八」）；当天课程按节次排列，点课程看详情，上下滑动切换日期 |
-| 课表 | 天、学期、学年三种视图；手动增删改课程、历史版本可恢复；导出到系统日历；课前提醒 |
-| 成绩 | 按学年或学期查看成绩、学分与绩点；一行搜索加筛选，成绩按行列出、分数在右 |
-| 桌面小组件 | 下一节课、接下来两节、今日课程三种尺寸，不打开应用也能看 |
-| 私信 | 扫码互加好友，分享课表、界面配置和短视频卡片；查看好友课表并列出共同空闲时段，也可导入到自己的课表。内容端到端加密，不做文字聊天 |
-| 百宝箱 | 免教务登录：短视频与图集解析、预览和下载（依赖第三方解析服务），以及超星学习通签到 |
-| 外观 | 五套配色、浅色与深色、两种字体、字号、液态玻璃效果和自定义背景 |
-| 应用内更新 | 每天检查一次新版本，在应用内下载，核对签名后交给系统安装 |
+## 亮点
 
-同步只在你点击时进行，平时只读本机数据。教务限流时自动排队，失败时保留本机数据、不会误清空。
+- **此刻在上哪节课**：打开就是今天，顶部写着正在上的课、教室和几点下课，到点自动切到下一节；课上完了预告下一节在哪天几点。
+- **课表自己能改，改错能恢复**：天、学期、学年三种视图；增删改课程，每次改动都留历史版本；导出到系统日历、课前提醒，桌面小组件不打开应用也能看。
+- **成绩一屏看全**：按学年或学期看成绩、学分与绩点，搜索加筛选。
+- **和同学互看课表**：扫码加好友，分享课表后直接列出两人的共同空闲，也能分享界面配置和短视频；内容端到端加密，不做文字聊天。
+- **百宝箱**：不用登录教务。拼多多驿站待取件与取件身份码、学习通签到、短视频解析与下载，详见 [百宝箱说明](docs/toolbox.md)。
+- **好看也好调**：五套配色、浅色与深色、两种字体、四档字号、液态玻璃和自定义背景。
+- **教务只在你点的时候同步**：平时只读本机数据；同步失败时保留本机数据，不会误清空。
 
-## 学习通签到（百宝箱内）
+## 下载与安装
 
-用你自己的学习通账号登录后，在应用里完成课堂签到：签到码、手势、位置、拍照、二维码五种，另有签退、人脸识别、群聊签到、多人连签、往期补签与按课程查看。
+1. 从 [Releases](https://github.com/huverse/SuperXD/releases) 下载最新的 APK：大多数手机选 `arm64-v8a`，较老的 32 位手机选 `armeabi-v7a`。需要 Android 11 或更高版本。
+2. 想确认安装包没被篡改：用同页的 `SHA256SUMS` 核对文件，再用 `apksigner verify --print-certs SuperXD-<版本>-arm64-v8a.apk` 查看签名，证书的 SHA-256 指纹应为：
 
-- 需要滑块验证时先在本机自动识别缺口，认不准再请你手动拖。
-- 位置签到在签到页的高德地图上点选，默认选中这门课上次签到用的位置，没有就用当前位置（打开位置签到时申请定位权限，仅使用期间）；也可以收藏常用位置或手输坐标，不配置地图 key 时只能用后两种。
-- 「可能正在签到」默认按本应用里的课表推断正在上的课，只在本机比对，不发给学习通；没有课表时改用学习通课表。
-- 多个账号可设主账号、加标签、拖动排序；代签要在两台设备之间转交凭据包：出示方生成代签码（二维码 10 分钟有效、被扫走即失效），凭据包用一次性密钥加密后经自建中转暂存、取走即删，服务端看不到内容。这条功能需要配置中转地址（见下）。
-- 账号密码只存在本机安全存储；签到数据直接发给超星学习通，开发者不经手。
-- 签到只是把你在学习通上要做的事搬到本应用里做，**不改变学习通的判定**：迟到、超范围的签到依旧按学习通的规则来，因签到或代签产生的后果由使用者自行承担。
+   ```text
+   83:7A:2E:88:57:13:1D:BC:E2:54:16:9D:C1:28:92:A6:AC:77:07:36:2C:71:BC:F5:91:EB:37:D0:B6:22:4A:3F
+   ```
 
-## 开始使用
+3. 第一次打开先阅读并同意用户协议与隐私政策（同意之前应用不联网），再用本人的教务账号登录，在「今天」页点「同步」，按提示设置开学日。
+4. 之后应用每天检查一次新版本，点「更新」在应用内下载，核对签名后交给系统安装。
 
-1. 从 [Releases](https://github.com/huverse/SuperXD/releases) 下载 APK。大多数手机选 `arm64-v8a`，较老的 32 位手机选 `armeabi-v7a`；下载后可用同页的 `SHA256SUMS` 校验。需要 Android 11 或更高版本。
-2. 安装后用本人的教务账号登录，在「今天」页点「同步」拉取课表与成绩，按提示设置开学日。
-3. 想和同学互看课表：在「消息 › 私信」开启私信，扫码加好友后分享。
-
-<details>
-<summary><strong>常见问题</strong></summary>
-
-- **能用在其他学校吗？** 暂时不能。教务地址和作息解析目前只适配山东现代学院，换校需要改源码（见 [lib/edu](lib/edu)）。
-- **为什么要 Android 11？** 本机数据库用到的写法需要较新的 SQLite，Android 10 及以下系统自带的版本太旧，装上也登录不了，所以从 1.0.0-alpha.4 起不再允许安装。
-- **课表日期不对：** 检查开学日和作息；作息里没有的节次不会猜时间。
-- **提醒不准时：** 在课表 ⋯ 菜单的「课前提醒」里按提示开启通知和「闹钟和提醒」权限。
-- **私信收不到：** 目前只在应用打开时收取，没有后台推送。
-- **怎么升级：** 从 1.0.0-alpha.4 起应用会自己检查更新（每天一次，也可在「我的 › 关于 › 检查更新」手动查），点更新即在应用内下载并交给系统安装，第一次要允许 SuperXD「安装未知应用」。已装 1.0.0-alpha.3 的请从 Releases 手动下载覆盖安装这一次，签名相同，数据保留。
-- **从 1.0.0-alpha.1 升级：** alpha.2 换了签名，需要先卸载旧版再安装，旧版本机数据不保留。
-
-</details>
+遇到问题先看 [常见问题](docs/faq.md)。
 
 ## 隐私与安全
 
-- 不含广告和崩溃上报，开发者不做行为统计。扫码用的 Google ML Kit 会向 Google 发送匿名的用量统计（设备型号、系统版本、应用版本、耗时与错误码等），扫码画面与内容不上传。
-- 教务账号、课表和成绩只在本机与学校教务系统之间传输，开发者收不到。学校教务系统目前只提供 HTTP 明文连接，请只在可信网络登录。勾选「记住账号」后，凭据加密保存在系统安全存储，可随时关闭。
-- 开发者只运营一台自建中转服务器，用于私信、代签凭据包暂存和检查更新。私信内容在本机加密（X25519 + AES-256-GCM），服务器只看得到密文、设备号、好友关系和时间；测试期中转为 HTTP 明文，这些元数据对网络中间方可见。服务端源码在 [server](server)。
-- 检查更新只发送构建渠道与处理器架构，不带账号与设备信息；安装包核对完整性与签名后才交给系统安装。
-- 学习通签到为算设备码会读取匿名设备标识 OAID，为此集成了开源的 Android_CN_OAID 及它带入的华为、荣耀广告标识 SDK（闭源，只读 OAID，不用于广告）；只在使用学习通签到时调用。
-- 隐私政策先摘要、再按功能说明，末尾列出第三方 SDK、系统权限与保存期限，见应用内「我的 › 关于 › 隐私政策」（源文件 [lib/page/legal_page.dart](lib/page/legal_page.dart)）。第一次打开先请你同意用户协议与隐私政策，同意之前应用不联网；之后政策有实质变化时，升级后打开应用会提示一次。
+- 不含广告和崩溃上报，开发者不做行为统计。扫码用的 Google ML Kit 会向 Google 发送匿名的用量统计（设备型号、系统版本、耗时与错误码等），扫码画面与内容不上传。
+- 教务账号、课表和成绩只在本机与学校教务系统之间传输，开发者收不到。学校教务系统目前只有 HTTP 明文连接，请只在可信网络登录。勾选「记住账号」后，凭据加密存进系统安全存储，可随时关闭。
+- 开发者只运营一台自建中转服务器，用于私信、学习通代签凭据包暂存、检查更新、「开发者的话」和节日抽奖。私信在本机加密（X25519 + AES-256-GCM），代签凭据包用一次性密钥加密，服务器只看得到密文；抽奖只用随机生成的参与号。测试期中转为 HTTP 明文，设备号、好友关系等元数据对网络中间方可见。服务端源码在 [server](server)。
+- 百宝箱的工具会把必要的信息交给第三方（解析服务、超星学习通、拼多多、高德等），每个工具第一次使用前单独征得你的同意。学习通签到为算设备码会读取匿名设备标识 OAID，为此集成了开源的 Android_CN_OAID 及它带入的华为、荣耀广告标识 SDK（闭源，只读 OAID，不用于广告）。
+- 日志只存在本机、不上传；打开开发者模式后才详细记录，导出由你自己操作。
+- 完整的隐私政策在应用内「我的 › 关于 › 隐私政策」，先摘要、再按功能说明，末尾列出第三方 SDK、系统权限与保存期限（源文件 [lib/page/legal_page.dart](lib/page/legal_page.dart)）。政策有实质变化时，升级后打开应用会提示一次。
 
 安全问题请不要公开提交 Issue，使用 GitHub 的 [私密漏洞报告](https://github.com/huverse/SuperXD/security/advisories/new)。
 
@@ -117,21 +92,14 @@ flutter test
 flutter run
 ```
 
-默认构建开发包（包名 `com.superxd.superxd`）。私信、代签与应用内更新需要在构建时指定中转服务地址，不指定时私信显示「未配置」、关于页没有检查更新，其余功能不受影响：
+默认构建开发包（包名 `com.superxd.superxd`），可以和 Releases 里的 SuperXD Alpha 同时安装，数据不共享。两个可选的构建参数，不传时对应功能不可用，其余不受影响：
 
-```sh
-flutter run --dart-define=SUPERXD_RELAY=http://你的中转地址:端口
-```
+| 参数 | 用途 |
+| --- | --- |
+| `--dart-define=SUPERXD_RELAY=http://地址:端口` | 中转服务：私信、学习通代签、应用内更新等 |
+| `--dart-define=SUPERXD_AMAP_KEY=<key>` | 学习通位置签到的高德地图；key 要绑定本机调试签名的 SHA1 与包名，调试与发布签名各申请一个 |
 
-百宝箱的学习通签到可以用高德地图选签到位置，key 同样在构建时传入，不指定时位置只能用收藏或手输坐标：
-
-```sh
-flutter run --dart-define=SUPERXD_AMAP_KEY=你的高德Android平台key
-```
-
-高德 key 要绑定本机调试签名的 SHA1 与包名（`com.superxd.superxd`），调试与发布签名不同要各申请一个。
-
-中转服务（NestJS + MySQL + Redis）的开发、测试与 Docker 部署见 [server/README.md](server/README.md)。发布签名、版本与发行流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+中转服务（NestJS + MySQL + Redis）的开发、测试与部署见 [server/README.md](server/README.md)；发布签名、版本与发行流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 <details>
 <summary><strong>仓库目录</strong></summary>
@@ -140,18 +108,19 @@ flutter run --dart-define=SUPERXD_AMAP_KEY=你的高德Android平台key
 lib/
   domain/       领域类型、端口与规则（纯 Dart）
   edu/          教务协议与页面解析
-  local/        本机存储（SQLite、显示设置、更新与协议记录）
+  local/        本机存储（SQLite、显示设置、更新与协议记录、本机日志）
   gateway/      账号生命周期与教务网关
   application/  同步、课前提醒、小组件、应用更新编排
-  device/       系统通知、桌面小组件、应用更新适配
+  device/       系统通知、桌面小组件、应用更新等适配
   social/       私信身份、好友与中转客户端
-  toolbox/      百宝箱（短视频解析、学习通签到）
+  toolbox/      百宝箱（短视频解析、学习通签到、快递）
   page/         页面
   theme/        主题、玻璃与动效组件
-server/         中转服务（私信、代签暂存、应用更新）
+server/         中转服务（私信、代签暂存、应用更新、开发者的话、节日抽奖）
 android/        Android 宿主（小组件、导出与安装通道）
 test/           自动化测试（只用合成数据）
-tool/           手动验证、截图与发版清单入口，不进 CI
+tool/           手动验证、截图与发版入口，不进 CI
+docs/           百宝箱说明、常见问题与 README 截图
 ```
 
 依赖只许自上而下，由 `test/project_structure_test.dart` 检查。各目录的 `CLAUDE.md` 是项目索引，记录文件职责与跨模块约定。
@@ -162,9 +131,9 @@ tool/           手动验证、截图与发版清单入口，不进 CI
 
 欢迎提交 [Issue](https://github.com/huverse/SuperXD/issues) 和 Pull Request。改动前请读 [CONTRIBUTING.md](CONTRIBUTING.md)：功能在短分支开发、通过 CI 后合并；测试与截图只用合成数据，不要提交真实账号、课表、成绩、Cookie 或日志。
 
-反馈问题时请写明应用版本、手机型号与系统版本、操作步骤和看到的提示，截图记得遮住学号姓名。也可以联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com（涉及个人信息的请求请走这里，不要发在公开 Issue）。
+反馈问题时请写明应用版本、手机型号与系统版本、操作步骤和看到的提示，截图记得遮住学号姓名；可以附上开发者模式导出的日志（做法见 [常见问题](docs/faq.md)）。也可以联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com（涉及个人信息的请求请走这里，不要发在公开 Issue）。
 
-## 许可
+## 许可与声明
 
 SuperXD 以 [GNU GPL v3.0](LICENSE) 开源，版权所有 (C) 2026 Galaxyous。修改和再分发时请保留版权与许可说明，并按 GPL 提供对应源码。
 
@@ -176,4 +145,4 @@ SuperXD 以 [GNU GPL v3.0](LICENSE) 开源，版权所有 (C) 2026 Galaxyous。�
 - 开屏画作（assets/paintings 下的图片）由本项目作者用 AI 生成（仿莫奈风格），版权所有 (C) 2026 Galaxyous，保留所有权利，仅随本应用分发，可在应用里存作个人壁纸；再分发本项目或其修改版时，请移除或替换这些画作。
 - 其他第三方组件按各自许可使用，清单见 [assets/third_party_notices.txt](assets/third_party_notices.txt)，或应用内「我的 › 关于 › 开源许可」。
 
-本项目与学校、Kingo 教务系统、超星学习通及短视频平台均无关联。短视频解析依赖第三方服务，请只处理本人或已获授权的作品；学习通签到请只用于本人或已获授权的账号，代签会替代他人出勤，是否合规由你和学校的规定决定。
+本项目与学校、Kingo 教务系统、超星学习通、拼多多及短视频平台均无关联。短视频解析依赖第三方服务，请只处理本人或已获授权的作品；学习通签到与快递请只用于本人或已获授权的账号，代签会替代他人出勤，是否合规由你和学校的规定决定。
