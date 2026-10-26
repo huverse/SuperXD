@@ -217,13 +217,15 @@ RelayTransport? relayTransport() => switch (relayBase()) {
 };
 
 // 应用内更新走同一个自建中转，渠道就是构建渠道（appFlavor，如 alpha）；没配中转、不是渠道构建（测试）或认不出架构时不检查更新。
+// [人工决策-2026-10-26 22:08:25] iOS 不能在应用里安装（用户选定「检查新版后去下载页」）：按 arm64 取同一份清单，只看版本与更新说明、不要安装包，
+// 弹窗里给「去发布页下载」，由用户下载未签名包后自己重新签名安装。
 Future<AppUpdates?> appUpdates(Directory support) async {
-  final base = relayBase(), channel = appFlavor, abi = appAbiName(Abi.current());
+  final base = relayBase(), channel = appFlavor, abi = Platform.isIOS ? 'arm64-v8a' : appAbiName(Abi.current());
   if (base == null || channel == null || abi == null) return null;
   final installed = int.tryParse((await PackageInfo.fromPlatform()).buildNumber);
   if (installed == null) return null;
   return AppUpdates(
-    feed: RelayReleaseFeed(base, channel: channel, abi: abi),
+    feed: RelayReleaseFeed(base, channel: channel, abi: abi, packages: !Platform.isIOS),
     files: CacheAppPackageFiles(),
     installer: ChannelAppInstaller(),
     memory: await FileAppUpdateMemory.open(File(path.join(support.path, 'app_update.json'))),

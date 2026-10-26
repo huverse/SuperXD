@@ -19,11 +19,13 @@ String? appAbiName(Abi abi) => switch (abi) {
 };
 
 // 版本清单的自建中转实现：GET /v1/app/releases/<渠道>?abi=，免签名，单次 15 秒超时、不自动重试。
+// packages 为假时不要安装包（iOS 不能在应用里安装，只看有没有新版本，下载去发布页）。
 class RelayReleaseFeed implements AppReleaseFeed {
-  RelayReleaseFeed(this.baseUrl, {required this.channel, required this.abi, http.Client? client, this.timeout = const Duration(seconds: 15)}) : _client = client ?? http.Client();
+  RelayReleaseFeed(this.baseUrl, {required this.channel, required this.abi, this.packages = true, http.Client? client, this.timeout = const Duration(seconds: 15)}) : _client = client ?? http.Client();
   final String baseUrl;
   final String channel;
   final String abi;
+  final bool packages;
   final Duration timeout;
   final http.Client _client;
 
@@ -64,7 +66,7 @@ class RelayReleaseFeed implements AppReleaseFeed {
       throw const AppUpdateException('更新服务器暂时不可用，请稍后再试');
     }
     try {
-      return parseAppRelease(json, baseUrl);
+      return parseAppRelease(json, baseUrl, packages: packages);
     } on FormatException catch (error, stack) {
       campusLog('[AppUpdate] action=feed errorType=${error.runtimeType} message=${error.message}\n$stack');
       throw const AppUpdateException('更新信息格式不对，请稍后再试');
@@ -82,7 +84,7 @@ class RelayReleaseFeed implements AppReleaseFeed {
 }
 
 // 清单是外部输入：逐项校验，不合格抛 FormatException。安装包地址只认本服务的下载路径，拼在中转地址后面。
-AppRelease parseAppRelease(Object? json, String baseUrl) {
+AppRelease parseAppRelease(Object? json, String baseUrl, {bool packages = true}) {
   if (json is! Map) throw const FormatException('清单不是对象');
   int integer(String key, int min) => switch (json[key]) {
     final int value when value >= min => value,
@@ -99,6 +101,7 @@ AppRelease parseAppRelease(Object? json, String baseUrl) {
   final versionName = text('versionName', 64);
   if (versionName.isEmpty) throw const FormatException('versionName 为空');
   final apk = switch (json['apk']) {
+    _ when !packages => null,
     null => null,
     {'url': final String url, 'size': final int size, 'sha256': final String sha256}
         when RegExp(r'^/v1/app/files/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.apk$').hasMatch(url) && size > 0 && RegExp(r'^[0-9a-f]{64}$').hasMatch(sha256) =>
