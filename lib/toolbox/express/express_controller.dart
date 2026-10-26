@@ -151,6 +151,8 @@ class ExpressController extends ChangeNotifier {
   // [人工决策-2026-10-25 15:17:41] 用户反馈在拼多多里自己添加的快递在这里写「尾号未知」：补查一律走了按运单号查的通用物流接口，官方物流页对驿站里的件
   // 是按 order_sn 查驿站物流（见 ExpressClient.queryShippingTrack），改成同官方（按官方代码推断，真机待核对）；以前查成功但没给尾号的也存成了空串、再也不查。
   // 用户选「每次查驿站都重查尾号未知的件」（未选「空的不存本机、下次打开再查」「空的也存、只清一次旧记录」）：没给尾号的不存，下次查驿站再查。
+  // [人工决策-2026-10-26 17:23:51] 用户真机装上这一版后，自己添加的那件仍是「尾号未知」，拼多多官方 App 里这件也看不到手机号（官方添加快递须知写着仅供隐私面单用户），
+  // 即拼多多本来就不给这类件的尾号。用户仍选每次查驿站都重查（未选「查成功没给尾号的记住、不再查」「每天最多重查一次」），分组照旧写「尾号未知」。
   Future<void> _fillOwners(StationPackagesResult result) async {
     final pending = [
       for (final group in result.groups)
