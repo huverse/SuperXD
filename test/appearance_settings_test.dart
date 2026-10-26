@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -73,6 +74,15 @@ void main() {
     String hex(Color color) => '#${(color.toARGB32() & 0xFFFFFF).toRadixString(16).padLeft(6, '0').toUpperCase()}';
     expect(launch('values'), hex(CampusPalette.byId(DisplaySettings.defaultPaletteId).backgroundTop));
     expect(launch('values-night'), hex(CampusPalette.byId(DisplaySettings.defaultPaletteId, brightness: Brightness.dark).backgroundTop));
+    // iOS 的系统启动图底色（LaunchBackground 颜色集，浅深两份）同样跟着默认配色。
+    final colors = (jsonDecode(File('ios/Runner/Assets.xcassets/LaunchBackground.colorset/Contents.json').readAsStringSync())['colors'] as List).cast<Map<String, dynamic>>();
+    String ios(Map<String, dynamic> entry) {
+      final components = entry['color']['components'] as Map<String, dynamic>;
+      return '#${[for (final channel in ['red', 'green', 'blue']) (components[channel] as String).substring(2)].join()}';
+    }
+    expect(ios(colors.firstWhere((entry) => entry['appearances'] == null)), launch('values'));
+    expect(ios(colors.firstWhere((entry) => entry['appearances'] != null)), launch('values-night'));
+    expect(File('ios/Runner/Base.lproj/LaunchScreen.storyboard').readAsStringSync(), contains('<color key="backgroundColor" name="LaunchBackground"/>'));
   });
   test('设备设置v3迁移默认玻璃自动，玻璃模式与其他设置并发保存后重开保留', () async {
     final directory = await Directory.systemTemp.createTemp('appearance-');

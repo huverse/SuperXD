@@ -5,9 +5,9 @@
 # 文件职责
 
 - 色彩与主题：
-  - campus_palette.dart：设备级色彩角色 CampusPalette，五套配色（苔灰、雾蓝、藕粉、暮紫、燕麦）各分浅深，默认雾蓝（默认值在 local/display_settings.dart 的 defaultPaletteId，Android 启动窗口底色 launch_background 跟着它，[人工决策] 在两处文件头与常量处）。accent 是控件激活色（开关轨道、滑杆、强调按钮底），与文字主色 primary 分开（primary 为可读压得深而灰，铺成大块会发闷）；dangerFill 是破坏性按钮的红底；accentText 是激活色作大号强调文字时用的颜色（深色提亮，对卡片底不低于 4.5:1）；attention 是只读状态的提醒色；tagColors 是六种标签色，顺序即存储序号，只能在末尾追加。
+  - campus_palette.dart：设备级色彩角色 CampusPalette，五套配色（苔灰、雾蓝、藕粉、暮紫、燕麦）各分浅深，默认雾蓝（默认值在 local/display_settings.dart 的 defaultPaletteId，Android 启动窗口底色 launch_background 与 iOS 启动图的 LaunchBackground 颜色集都跟着它（appearance_settings_test.dart 守护），[人工决策] 在两处文件头与常量处）。accent 是控件激活色（开关轨道、滑杆、强调按钮底），与文字主色 primary 分开（primary 为可读压得深而灰，铺成大块会发闷）；dangerFill 是破坏性按钮的红底；accentText 是激活色作大号强调文字时用的颜色（深色提亮，对卡片底不低于 4.5:1）；attention 是只读状态的提醒色；tagColors 是六种标签色，顺序即存储序号，只能在末尾追加。
   - campus_theme.dart：campusTheme 按配色和字体生成 ThemeData：按钮 textStyle 显式带应用字体（不带会回落系统字体）；AppBar 返回图标与内容左边距 16 对齐、标题从 56 起（人工决策见文件内）；OutlinedButton 与 TextButton 是中性胶囊。另有 campusFieldGap（带浮动标签输入框的上方间距，随字号缩放）、campusSystemOverlay（系统栏透明）、CampusScrollBehavior（弹性回弹、不加拉伸效果，拉伸会让里面的玻璃退成底色）；按压反馈不用水波、按下整块变暗。CampusBackground 是空包装，只为兼容现有调用点。
-  - campus_icons.dart：CampusIcons 统一映射 Lucide 图标，CampusIcon 渲染，CampusMorphIcon 做导航图标形变，configureCampusIcons 启动时配置。
+  - campus_icons.dart：CampusIcons 统一映射 Lucide 图标，CampusIcon 渲染（iOS 上返回画成向左尖角，同系统导航栏），CampusMorphIcon 做导航图标形变，configureCampusIcons 启动时配置。
 - 背景：
   - campus_background.dart：CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，弹窗、弹层开着时停在原处（overlays 由组合根传 campusOverlayDepth，不然整屏模糊每帧重算）；CampusWallpaper 是可选的自定义壁纸（静态图，按色调网格逐格铺淡化保证文字可读，高对比度时不显示）；FrostTexture 是固定颗粒纹理；CampusBackdrop 提供同相位的背景副本，只给入场遮罩和压在弹窗上的页面转场用。换背景前先按屏幕尺寸解码（precacheImage），再交叉淡化。
   - wallpaper_tone.dart：壁纸色调网格 WallpaperTone（导入时解码成小图记每格最暗最亮像素）与可读下限 wallpaperVeilAlphas、wallpaperVeilAlpha：叠在最不利的像素上，正文、次要文字和主色文字都不低于 4.8:1。改动后要在模拟器上用高反差测试图复测。
