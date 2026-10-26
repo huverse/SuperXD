@@ -99,6 +99,8 @@ void main() async {
   // 本机诊断日志（见 local/diagnostic_log.dart）：尽早接上，之后的 campusLog 同时进 logcat 与文件；应用专属外部目录取不到时退回应用支持目录。
   // iOS 没有应用专属外部目录：日志与开发者设置放进只属于这台设备的 device_only（启动后排除出备份，见下面的 excludeFromBackup）。
   final support = await getApplicationSupportDirectory();
+  // iOS 上 sqflite 默认把库放在 Documents，那里开放给「文件」App 放导出的文件（会话 Cookie 在账号库里，不能露出去）：库改放应用支持目录的 databases。
+  if (Platform.isIOS) await databaseFactory.setDatabasesPath(path.join(support.path, 'databases'));
   final deviceOnly = Platform.isIOS ? Directory(path.join(support.path, 'device_only')) : support;
   final external = Platform.isAndroid ? await getExternalStorageDirectory() : null;
   final logs = await DiagnosticLog.open(
@@ -115,7 +117,7 @@ void main() async {
     publish: publishPicture,
   );
   // 从快捷入口冷启动：跳过开屏画作直达（人工决策见 toolbox/express/express_page.dart 的 _openIdentity），这次也不轮换画作。
-  final shortcuts = AndroidAppShortcuts();
+  final shortcuts = ChannelAppShortcuts();
   final launched = await shortcuts.takeLaunch().catchError((Object error, StackTrace stack) {
     campusLog('[Shortcuts] action=take_launch errorType=${error.runtimeType}\n$stack');
     return null;
@@ -411,7 +413,8 @@ class _SuperXdAppState extends State<SuperXdApp> {
     // 学习通签到按课表推断正在上的课：默认用当前教务账号本机的课表（只读本地、不联网），百宝箱不依赖教务相关的层。
     campusTimetable: () => campusTimetableToday(widget.session.gateway, signedIn: widget.session.loggedIn),
     // 工具页的「添加到桌面」：入口登记在注册表里，图标与名字由快捷入口接线统一给。
-    pinShortcut: widget.shortcuts == null ? null : (toolId, shortcutId) => _shortcuts!.pin(toolId, shortcutId),
+    // iOS 没有「添加到桌面」的接口，不给入口。
+    pinShortcut: widget.shortcuts == null || Platform.isIOS ? null : (toolId, shortcutId) => _shortcuts!.pin(toolId, shortcutId),
   );
   late final AppShortcuts? _shortcuts = switch (widget.shortcuts) {
     final port? => AppShortcuts(port: port, tools: _toolbox.modules, pixelRatio: WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio),

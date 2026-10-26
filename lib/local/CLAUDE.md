@@ -1,6 +1,6 @@
 # local 本地存储
 
-定位：设备上的持久化，只依赖 domain，不访问网络，也不感知页面。数据库文件都放在应用数据库目录（getDatabasesPath）下。
+定位：设备上的持久化，只依赖 domain，不访问网络，也不感知页面。数据库文件都放在应用数据库目录（getDatabasesPath）下；iOS 上组合根把它改到应用支持目录的 databases（默认的 Documents 开放给「文件」App 放导出的文件）。
 
 # 文件职责
 

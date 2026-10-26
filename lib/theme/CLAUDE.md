@@ -25,7 +25,7 @@
   - curve_geometry.dart：三种闭合曲线的几何与按弧长预采样。改编自 math-curve-loaders，不随项目以 GPL 再授权，见 assets/third_party_notices.txt 与文件内人工决策。
 - 玻璃：
   - glass_panel.dart：液态玻璃面板 GlassPanel（现只用于悬浮底栏）、透明顶栏 CampusTopBar、导航层标记 CampusChrome、玻璃初始化 initializeCampusGlass（失败退回磨砂）；campusOverlayDepth 是正在显示的弹窗层数，大于 0 时顶栏和底栏改实色，不让玻璃叠玻璃。
-  - campus_glass_tier.dart：四档（满档、标准、磨砂、实色）与 resolveCampusGlassTier（无障碍走实色，简化或未就绪走磨砂，完整固定满档，自动跟随实测，限档时满档降为标准）。CampusGlassScope 向下传模式与限档，按模式增减树层会让整个应用重建，所以不能这样做（campus_glass_test.dart 守护）；玻璃组件统一用 tierOf 取档位。CampusGlassGuard 经通道 superxd/glass 读写原生限档状态（GlassGuard.kt），点「完整」解除本版本限档（人工决策见文件内）。
+  - campus_glass_tier.dart：四档（满档、标准、磨砂、实色）与 resolveCampusGlassTier（无障碍走实色，简化或未就绪走磨砂，完整固定满档，自动跟随实测，限档时满档降为标准）。CampusGlassScope 向下传模式与限档，按模式增减树层会让整个应用重建，所以不能这样做（campus_glass_test.dart 守护）；玻璃组件统一用 tierOf 取档位。CampusGlassGuard 经通道 superxd/glass 读写原生限档状态（安卓 GlassGuard.kt；iOS GlassGuard.swift 读不到退出原因，改记切后台前是否还在前台，前台时异常结束才算），点「完整」解除本版本限档（人工决策见文件内）。
   - campus_glass_material.dart：玻璃材质表，按角色（navigation、control、overlay）、配色与档位生成参数 campusGlassSettings。磨砂档不调饱和：饱和不为 1 时库会在背景模糊里再嵌一层 BackdropFilter，OPPO 上键盘顶起的弹层会整块画黑（campus_glass_test.dart 守护「简化档弹层只有一层 BackdropFilter」）。底色、饱和与提亮都按五套配色深浅色实测取，改动后重测玻璃上文字的对比度（不低于 4.5:1）。
   - campus_glass_blend.dart：玻璃换档的过渡 CampusGlassBlend：玻璃内容层最底下铺同形状实色盖板，渐显到不透明后才换档、再渐隐。
   - campus_glass_surface.dart：按钮与手势反馈共用的玻璃材质 CampusGlassSurface、浮层面板 CampusOverlayGlass、浮层显隐 CampusOverlayReveal 与控件出现消失 CampusGlassPresence（AnimatedOpacity 的玻璃版）。

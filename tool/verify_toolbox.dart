@@ -9,7 +9,7 @@ import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
-import 'package:superxd/toolbox/download/android_file_publisher.dart';
+import 'package:superxd/toolbox/download/channel_file_publisher.dart';
 import 'package:superxd/toolbox/download/downloads_page.dart';
 import 'package:superxd/toolbox/download/background_transfer.dart';
 import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
@@ -43,7 +43,7 @@ Future<void> main() async {
   final manager = ToolboxDownloadManager(
     store: store,
     transfer: transfer,
-    publisher: AndroidFilePublisher(),
+    publisher: ChannelFilePublisher(),
     directory: directory,
     resources: resources,
   );

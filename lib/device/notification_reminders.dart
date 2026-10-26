@@ -26,21 +26,32 @@ class NotificationReminders implements CourseReminderPort {
       icon: 'ic_stat_reminder',
     ),
   );
+  // iOS 每个应用最多挂 64 条待发的本地通知，多排的系统直接丢掉。
+  static const _iosPendingLimit = 64;
   Future<void>? _ready;
 
-  Future<void> _initialize() => _ready ??= _plugin.initialize(settings: const InitializationSettings(android: AndroidInitializationSettings('ic_stat_reminder')));
+  // iOS 启动时不弹通知权限（权限只在用户打开提醒时申请）。
+  Future<void> _initialize() => _ready ??= _plugin.initialize(
+    settings: const InitializationSettings(
+      android: AndroidInitializationSettings('ic_stat_reminder'),
+      iOS: DarwinInitializationSettings(requestAlertPermission: false, requestSoundPermission: false, requestBadgePermission: false),
+    ),
+  );
 
   AndroidFlutterLocalNotificationsPlugin? get _android => _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+
+  IOSFlutterLocalNotificationsPlugin? get _ios => _plugin.resolvePlatformSpecificImplementation<IOSFlutterLocalNotificationsPlugin>();
 
   @override
   Future<ReminderCapability> capability() async {
     await _initialize();
-    final android = _android;
-    if (android == null) return const ReminderCapability(notifications: false, exact: false);
+    final android = _android, ios = _ios;
+    if (android == null && ios == null) return const ReminderCapability(notifications: false, exact: false);
     final live = (await _live.invokeMapMethod<String, bool>('capability'))!;
     return ReminderCapability(
-      notifications: await android.areNotificationsEnabled() ?? false,
-      exact: await android.canScheduleExactNotifications() ?? false,
+      // iOS 的本地通知本来就准时，没有精确闹钟权限这一说。
+      notifications: android != null ? await android.areNotificationsEnabled() ?? false : (await ios!.checkPermissions())?.isEnabled ?? false,
+      exact: android != null ? await android.canScheduleExactNotifications() ?? false : true,
       live: live['live']!,
       liveAllowed: live['allowed']!,
     );
@@ -49,7 +60,7 @@ class NotificationReminders implements CourseReminderPort {
   @override
   Future<bool> requestNotifications() async {
     await _initialize();
-    return await _android?.requestNotificationsPermission() ?? false;
+    return await (_android?.requestNotificationsPermission() ?? _ios?.requestPermissions(alert: true, sound: true)) ?? false;
   }
 
   @override
@@ -85,7 +96,7 @@ class NotificationReminders implements CourseReminderPort {
     });
     if (live) return;
     final campus = tz.getLocation(campusTimeZone);
-    for (final (index, reminder) in reminders.take(reminderLimit).indexed) {
+    for (final (index, reminder) in reminders.take(_ios == null ? reminderLimit : _iosPendingLimit).indexed) {
       await _plugin.zonedSchedule(
         id: _idBase + index,
         title: reminder.title,
