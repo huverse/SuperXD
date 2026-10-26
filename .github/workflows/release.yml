@@ -163,9 +163,51 @@ jobs:
           path: build/release_symbols/
           retention-days: 90
 
+  # iOS 只出未签名包（[人工决策] 见 ci.yml 的 ios-build），附在 Release 上，用户下载后用自己的证书签名安装；不传中转，iOS 检查到新版本时打开发布页。
+  # 只带中转地址，不带高德 key（安卓的 key 绑安卓包名与签名，iOS 用不了）。iOS 的版本名只认数字，Flutter 写成 1.0.0，所以只核对构建号与包名。
+  ios:
+    name: 构建 iOS 未签名包
+    needs: plan
+    if: needs.plan.outputs.build == 'true'
+    runs-on: macos-26
+    timeout-minutes: 60
+    environment: release
+    env:
+      VERSION: ${{ needs.plan.outputs.version }}
+      CODE: ${{ needs.plan.outputs.code }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - name: 构建
+        env:
+          SUPERXD_RELAY: ${{ secrets.RELAY_URL }}
+        run: flutter build ios --release --no-codesign --flavor alpha --dart-define=SUPERXD_RELAY="$SUPERXD_RELAY"
+      - name: 核对与打包
+        run: |
+          set -euo pipefail
+          app=build/ios/iphoneos/Runner.app
+          info() { /usr/libexec/PlistBuddy -c "Print :$1" "$app/Info.plist"; }
+          [ "$(info CFBundleIdentifier)" = com.superxd.superxd.alpha ] || { echo "::error::iOS 包名不对"; exit 1; }
+          [ "$(info CFBundleVersion)" = "$CODE" ] || { echo "::error::iOS 构建号不对"; exit 1; }
+          [ -d "$app/PlugIns/CourseWidgets.appex" ] || { echo "::error::iOS 包里没有小组件扩展"; exit 1; }
+          mkdir -p ipa/Payload dist
+          cp -R "$app" ipa/Payload/
+          (cd ipa && zip -qry "../dist/SuperXD-$VERSION-ios-unsigned.ipa" Payload)
+          echo "[Release] action=verify platform=ios size=$(stat -f %z "dist/SuperXD-$VERSION-ios-unsigned.ipa")"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: release-ios
+          path: dist/
+          retention-days: 14
+
   github:
     name: 发布 GitHub Release
-    needs: [plan, build]
+    needs: [plan, build, ios]
     if: needs.plan.outputs.publish == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
@@ -180,19 +222,24 @@ jobs:
         with:
           name: release
           path: dist
-      # 重跑时已有这个 Release 就不再建；标签打在触发这次发版的提交上。
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        with:
+          name: release-ios
+          path: dist
+      # 重跑时已有这个 Release 就不再建；标签打在触发这次发版的提交上。iOS 包的校验和接在 SHA256SUMS 后面。
       - name: 建 Release 并上传安装包
         run: |
           set -euo pipefail
           if gh release view "v$VERSION" > /dev/null 2>&1; then echo "[Release] action=github skip=exists version=$VERSION"; exit 0; fi
+          (cd dist && sha256sum SuperXD-*.ipa >> SHA256SUMS)
           prerelease=()
           if [[ "$VERSION" == *-* ]]; then prerelease=(--prerelease); fi
           gh release create "v$VERSION" --target "$GITHUB_SHA" "${prerelease[@]}" --title "SuperXD $VERSION · 公开测试版" \
-            --notes-file dist/release_body.md dist/SuperXD-*.apk dist/SHA256SUMS
+            --notes-file dist/release_body.md dist/SuperXD-*.apk dist/SuperXD-*.ipa dist/SHA256SUMS
       - name: 下载回来校验
         run: |
           set -euo pipefail
-          gh release download "v$VERSION" --dir check --pattern 'SuperXD-*.apk' --pattern SHA256SUMS
+          gh release download "v$VERSION" --dir check --pattern 'SuperXD-*.apk' --pattern 'SuperXD-*.ipa' --pattern SHA256SUMS
           (cd check && sha256sum -c SHA256SUMS)
 
   relay:
