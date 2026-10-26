@@ -1,7 +1,7 @@
 import Flutter
 import UIKit
 
-// 系统弹窗、系统菜单与外观同步（lib/theme/native_glass.dart 的 showNativeAlert、showNativeMenu、NativeAppearanceSync）。
+// 系统弹窗、系统菜单、系统日期选择与外观同步（lib/theme/native_glass.dart 的 showNativeAlert、showNativeMenu、showNativeDatePicker、NativeAppearanceSync）。
 // [人工决策-2026-10-26 21:47:04] iOS 上的玻璃换成苹果官方组件（用户选定「换成系统组件」）：确认与提示用 UIAlertController，⋯ 菜单用系统 UIMenu，
 // 都由系统画 Liquid Glass、跟随系统的清透或着色与降低透明度等设置；应用里不再有玻璃档位。
 final class NativeDialogs: NSObject {
@@ -19,6 +19,8 @@ final class NativeDialogs: NSObject {
         self.alert(arguments, result: result)
       case "menu":
         self.menu(arguments, result: result)
+      case "date":
+        self.date(arguments, result: result)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -112,6 +114,102 @@ final class NativeDialogs: NSObject {
     sheet.popoverPresentationController?.sourceView = host
     sheet.popoverPresentationController?.sourceRect = frame
     presenter.present(sheet, animated: true)
+  }
+
+  // 系统日期选择：底部面板里是系统日历，高度刚好放下导航栏与日历。只取年月日，按 Dart 侧给的时区的公历换算，来回都是 yyyy-MM-dd。
+  private func date(_ arguments: [String: Any], result: @escaping FlutterResult) {
+    guard let presenter = UIApplication.shared.topViewController, let zone = (arguments["timeZone"] as? String).flatMap(TimeZone.init(identifier:)) else {
+      result(FlutterError(code: "NO_WINDOW", message: nil, details: nil))
+      return
+    }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = zone
+    let formatter = DateFormatter()
+    formatter.calendar = calendar
+    formatter.timeZone = zone
+    formatter.locale = Locale(identifier: "en_US_POSIX")
+    formatter.dateFormat = "yyyy-MM-dd"
+    guard let initial = (arguments["initial"] as? String).flatMap(formatter.date(from:)), let first = (arguments["first"] as? String).flatMap(formatter.date(from:)),
+          let last = (arguments["last"] as? String).flatMap(formatter.date(from:))
+    else {
+      result(FlutterError(code: "BAD_ARGUMENTS", message: nil, details: nil))
+      return
+    }
+    let sheet = DatePickerSheet(title: arguments["title"] as? String, confirm: arguments["confirm"] as? String ?? "完成", initial: initial, first: first, last: last, formatter: formatter, width: presenter.view.bounds.width) { result($0) }
+    let navigation = UINavigationController(rootViewController: sheet)
+    navigation.presentationController?.delegate = sheet
+    navigation.sheetPresentationController?.detents = [.custom { [weak sheet] context in min(context.maximumDetentValue, sheet?.fittedHeight ?? context.maximumDetentValue) }]
+    presenter.present(navigation, animated: true)
+  }
+}
+
+// 系统日期选择的面板：导航栏左边系统的取消、右边确认，下面是系统日历（UIDatePicker 的 inline 样式）。点按钮或拉下面板都只回复一次，拉下算取消。
+final class DatePickerSheet: UIViewController, UIAdaptivePresentationControllerDelegate {
+  private let picker = UIDatePicker()
+  private let confirmTitle: String
+  private let formatter: DateFormatter
+  private var reply: ((String?) -> Void)?
+  // 面板高度：先按日历的估计高度加标准导航栏弹出，排版后按实际的导航栏与日历校正。
+  private(set) var fittedHeight: CGFloat
+
+  init(title: String?, confirm: String, initial: Date, first: Date, last: Date, formatter: DateFormatter, width: CGFloat, reply: @escaping (String?) -> Void) {
+    confirmTitle = confirm
+    self.formatter = formatter
+    self.reply = reply
+    picker.datePickerMode = .date
+    picker.preferredDatePickerStyle = .inline
+    picker.calendar = formatter.calendar
+    picker.timeZone = formatter.timeZone
+    // 应用只有简体中文，日历的月份与星期跟应用一致，不跟系统语言。
+    picker.locale = Locale(identifier: "zh_Hans_CN")
+    picker.minimumDate = first
+    picker.maximumDate = last
+    picker.date = initial
+    fittedHeight = 56 + 8 + picker.systemLayoutSizeFitting(CGSize(width: width - 40, height: 0), withHorizontalFittingPriority: .required, verticalFittingPriority: .fittingSizeLevel).height + 8
+    super.init(nibName: nil, bundle: nil)
+    self.title = title
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+  override func viewDidLoad() {
+    super.viewDidLoad()
+    // iOS 26 起面板本身是系统玻璃，不铺底色；更早的系统铺系统底色。
+    if #unavailable(iOS 26.0) { view.backgroundColor = .systemBackground }
+    navigationItem.leftBarButtonItem = UIBarButtonItem(systemItem: .cancel, primaryAction: UIAction { [weak self] _ in self?.finish(nil) })
+    let confirm = UIBarButtonItem(title: confirmTitle, primaryAction: UIAction(title: confirmTitle) { [weak self] _ in
+      guard let self else { return }
+      self.finish(self.formatter.string(from: self.picker.date))
+    })
+    confirm.style = .done
+    navigationItem.rightBarButtonItem = confirm
+    picker.translatesAutoresizingMaskIntoConstraints = false
+    view.addSubview(picker)
+    NSLayoutConstraint.activate([
+      picker.topAnchor.constraint(equalTo: view.safeAreaLayoutGuide.topAnchor, constant: 8),
+      picker.leadingAnchor.constraint(equalTo: view.layoutMarginsGuide.leadingAnchor),
+      picker.trailingAnchor.constraint(equalTo: view.layoutMarginsGuide.trailingAnchor),
+    ])
+  }
+
+  override func viewDidLayoutSubviews() {
+    super.viewDidLayoutSubviews()
+    let height = view.safeAreaInsets.top + 8 + picker.frame.height + 8
+    guard picker.frame.height > 0, abs(height - fittedHeight) > 0.5, let presentation = navigationController?.sheetPresentationController else { return }
+    fittedHeight = height
+    presentation.animateChanges { presentation.invalidateDetents() }
+  }
+
+  func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+    reply?(nil)
+    reply = nil
+  }
+
+  private func finish(_ value: String?) {
+    guard let reply else { return }
+    self.reply = nil
+    reply(value)
+    dismiss(animated: true)
   }
 }
 

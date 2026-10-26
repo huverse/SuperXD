@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -179,4 +180,19 @@ void main() {
     expect(find.text('弹层内容'), findsNothing);
     expect(find.text('打开'), findsOneWidget);
   });
+
+  // iOS 惯例：拖动滚动区收起键盘；安卓照旧（CampusScrollBehavior）。
+  testWidgets('iOS 拖动滚动区收起键盘，安卓不收', (tester) async {
+    final focus = FocusNode();
+    addTearDown(focus.dispose);
+    await tester.pumpWidget(MaterialApp(scrollBehavior: const CampusScrollBehavior(), home: Scaffold(body: ListView(children: [
+      TextField(focusNode: focus),
+      for (var index = 0; index < 40; index++) SizedBox(height: 48, child: Text('第$index行')),
+    ]))));
+    await tester.showKeyboard(find.byType(TextField));
+    expect(focus.hasFocus, isTrue);
+    await tester.drag(find.text('第3行'), const Offset(0, -200));
+    await tester.pumpAndSettle();
+    expect(focus.hasFocus, debugDefaultTargetPlatformOverride == TargetPlatform.android);
+  }, variant: const TargetPlatformVariant({TargetPlatform.android, TargetPlatform.iOS}));
 }
