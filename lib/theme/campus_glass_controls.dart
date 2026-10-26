@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
 import 'package:superxd/theme/campus_glass_button.dart';
@@ -29,7 +30,13 @@ class CampusGlassChip extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
     final onSelected = this.onSelected;
-    final onPressed = onSelected == null ? null : () => onSelected(!selected);
+    // iOS 点选标签有系统的选择触感（同系统分段控件）。
+    final onPressed = onSelected == null
+        ? null
+        : () {
+            if (campusNativeGlass) HapticFeedback.selectionClick();
+            onSelected(!selected);
+          };
     final style = FilledButton.styleFrom(
       foregroundColor: palette.onSurface,
       iconColor: palette.primary,

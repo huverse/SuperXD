@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:morphnext/morphnext.dart';
@@ -120,8 +121,10 @@ class CampusIcon extends StatelessWidget {
   final String? semanticLabel;
   @override
   Widget build(BuildContext context) {
+    // iOS 的返回是向左的尖角（同系统导航栏），安卓是箭头。
+    final glyph = icon == CampusIcons.back && defaultTargetPlatform == TargetPlatform.iOS ? CampusIcons.previous : icon;
     final child = Icon(
-      icon,
+      glyph,
       size: size,
       color: color,
       semanticLabel: semanticLabel,
