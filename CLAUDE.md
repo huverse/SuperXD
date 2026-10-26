@@ -10,7 +10,7 @@
 
 # 定位
 
-- 校园课表与成绩 Flutter 应用。只有 Android 宿主，对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱（短视频解析与下载、学习通签到）。
+- 校园课表与成绩 Flutter 应用。以 Android 为主，iOS 宿主移植中（见「已知约束」），对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱（短视频解析与下载、学习通签到）。
 - 功能性私信：扫码互加好友后分享课表、界面配置、短视频等卡片，没有文字聊天；经自建中转（server 目录，NestJS + MySQL + Redis）端到端加密转交。学习通代签的凭据包与应用内更新的版本清单、安装包也放在这个中转。
 - 公开 Alpha 测试，仓库公开、以 GPL-3.0 开源（curve_geometry.dart 例外，见 README 许可一节）。Flutter 与 Dart 版本以 CI 配置和 pubspec.yaml 为准，依赖锁定在 pubspec.lock。
 - 相关文档：设计语言 UITEMP/design_language.md；用户介绍、隐私摘要与从源码构建 README.md（只放首页要的，细节链到 docs）；百宝箱说明 docs/toolbox.md、常见问题 docs/faq.md，README 截图在 docs/images（tool/readme_demo.dart 的合成数据拍）；发布、签名与贡献约定 CONTRIBUTING.md；变更记录 CHANGELOG.md。功能、数据流向或隐私政策变了，README 的亮点与隐私要点、docs 两页一起看要不要改。
@@ -62,7 +62,7 @@
 6. 时间：绝对时刻一律存 UTC 的 ISO 字符串；校园时区只在 domain/campus_clock.dart 的 campusTimeZone 一处定义，今天、周次、倒计时等业务日界都经 campus_clock 计算；展示时间用 formatCampusRelative（按远近写到分钟）。
 7. 凭据：用户明确勾选记住账号且认证成功后才写入系统安全存储（关闭后在账号页重新开启也要先登录核对成功）；业务 SQLite、账号索引和日志一律不存密码；用户关闭记住账号或主动退出时立即删除凭据。
 8. 设备级数据：百宝箱、下载任务、显示设置（配色、字体、字号、深浅色、玻璃、自定义壁纸）、私信身份与好友、学习通账号与收藏、应用更新的检查记录与下载中的安装包、协议与政策的同意与已读修订号、开发者设置与本机日志都属于设备，切换教务账号时保留。
-   - 系统安全存储的每个命名空间（记住账号、私信身份、学习通、拼多多）、本机日志目录与开发者设置 developer.json 都排除出云备份与设备迁移，新增命名空间要同时加进两份备份规则，test/legal_page_test.dart 守护。
+   - 系统安全存储的每个命名空间（记住账号、私信身份、学习通、拼多多）、本机日志目录与开发者设置 developer.json 都排除出云备份与设备迁移，新增命名空间要同时加进两份备份规则，iOS 上还要给同名的 IOSOptions（仅本机级别），排除的目录同步加进 main.dart 的 excludeFromBackup，test/legal_page_test.dart 守护。
    - 桌面小组件显示的是当前账号的课，跟着账号切换，退出登录即清空；只有它的配色跟随设备设置。
    - 自定义壁纸只经系统照片选择器读用户选中的一张，复制到应用私有目录，不上传、不申请存储权限。
    - 百宝箱不读取教务凭据或 cookie；学习通密码与 cookie 只进系统安全存储，本机不存签到记录。学习通的设备信息与 OAID 只在登录、补用户信息时现取，加密后只发给学习通，不落库。
@@ -118,7 +118,8 @@
 
 # 已知约束
 
-- 平台：只有 Android 宿主，最低 Android 11（系统 SQLite 3.28，原因与守护见 android/app/build.gradle.kts 的人工决策），验证以模拟器（API 36、API 34）为主，只在少数真机上走过部分功能，iOS 未验收。原生通道在 android/app/src 下（入口 MainActivity.kt），各自登记在使用它的模块 CLAUDE.md。
+- 平台：Android 最低 Android 11（系统 SQLite 3.28，原因与守护见 android/app/build.gradle.kts 的人工决策），验证以模拟器（API 36、API 34）为主，只在少数真机上走过部分功能。原生通道在 android/app/src 下（入口 MainActivity.kt），各自登记在使用它的模块 CLAUDE.md。
+- iOS：宿主在 ios 目录（入口 ios/Runner/AppDelegate.swift，最低 iOS 16 与渠道配置的人工决策在 ios/Podfile），原生代码同样登记在使用它的模块 CLAUDE.md。本机是 Linux、没有 Mac，iOS 只在 CI 的 ios-build 作业里编译，产物是未签名 ipa，测试者用全能签加自己的证书签名安装（人工决策在 ci.yml）；没有模拟器与本机调试，iOS 结论只认用户 iPhone 上的结果。各项原生能力还在补，补齐前 iOS 未验收。
 - 对外开放文件只经两个 FileProvider：CalendarFileProvider（缓存 calendar_export 文件夹）与 AppUpdateFileProvider（缓存 app_update 文件夹，清单声明 REQUEST_INSTALL_PACKAGES）。
 - release 包开启 R8：不带混淆规则的原生 SDK（目前是高德）要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件（如高德定位的 APSService）还要自己在清单里声明，test/legal_page_test.dart 守护规则。CI 只跑测试；release 包由发版流水线构建，正式发版前可先试跑，用试跑产物在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
 - 暂不改动的事项（只被测试使用的公开方法、性能观察项、单校写死）记在对应模块 CLAUDE.md 的关键规则里，改动前先看。

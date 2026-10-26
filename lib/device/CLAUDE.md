@@ -26,6 +26,7 @@
 - picture_export.dart：publishPicture 把缓存里的一张图经原生一次性导出（ToolboxFileExporter.kt，通道 superxd/toolbox_files）存进 Download/SuperXD，同名已存过直接算存好；开屏画作的「保存到相册」用，由组合根交给 local/painting_library.dart；节日奖品的「保存二维码」也经它（组合根的 saveRewardPicture）。
 - app_shortcuts.dart：AndroidAppShortcuts 实现 AppShortcutPort，经通道 superxd/app_shortcuts 调原生 AppShortcuts.kt（ShortcutManager）：动态快捷方式整份替换（同 id 的桌面快捷方式跟着换名字与图标）；requestPinShortcut 由桌面弹窗请用户确认，桌面不支持返回 false；冷启动带来的入口 id 由 MainActivity 先记下、Dart 取一次；应用在后台时经 onNewIntent 调 launch 交回。启动标志用 CLEAR_TOP 加 SINGLE_TOP，只把已有界面拉到前台，不加 CLEAR_TASK（那会整个冷启动）。
 - diagnostic_device.dart：本机诊断日志用到的系统能力，由组合根交给 local/diagnostic_log.dart 与 app_diagnostics.dart：readDeviceEnvironment 经 device_info_plus 读系统版本与机型（写进日志包的运行环境）；publishDiagnosticArchive 把缓存里打好的 zip 经原生一次性导出（ToolboxFileExporter.kt，与百宝箱共用通道 superxd/toolbox_files）存进 Download/SuperXD；readExitReasons 经通道 superxd/diagnostics 调原生 ProcessExitReasons.kt，读系统记下的最近几次进程退出原因（Android 11 起的 ApplicationExitInfo，只返回给定时刻之后的，ANR 附主线程堆栈，从 "main" 那行起 80 行、最多 8KB，一条读不出只把这条置空）；每次启动都调，通道处理放在后台线程（MainActivity.kt 的 makeBackgroundTaskQueue），不占主线程。
+- backup_exclusion.dart：excludeFromBackup 只在 iOS 由组合根调用：iOS 没有安卓 data_extraction_rules.xml 那样的规则文件，组合根把同一批只属于本机的目录（先建好）与私信库交给原生 ios/Runner/DeviceOnlyData.swift（通道 superxd/backup）标记不进 iCloud 备份与换机迁移；会被整个替换的文件（开发者设置）放进标记过的 device_only 目录。DeviceOnlyData.swift 另在每次新装后第一次启动时清掉钥匙串里上次安装留下的条目（iOS 卸载不删钥匙串），要赶在 Dart 读钥匙串之前，由 AppDelegate.swift 调用。
 
 # 关键规则
 

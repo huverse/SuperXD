@@ -200,6 +200,30 @@ void main() {
     }
   });
 
+  // iOS 没有备份规则文件：钥匙串每个命名空间单独的服务名（deleteAll 只清自己）、仅本机级别；安卓排除的目录在组合根逐个标记排除，日志与开发者设置放进 device_only。
+  test('iOS 上同样排除安全存储、百宝箱、下载记录、本机日志与私信库', () {
+    final sources = [
+      for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart'))) file.readAsStringSync(),
+    ];
+    final namespaces = {for (final source in sources) for (final match in RegExp(r"storageNamespace: '(\w+)'").allMatches(source)) match.group(1)!};
+    for (final namespace in namespaces) {
+      expect(sources.join('\n'), contains("IOSOptions(accountName: '$namespace', accessibility: KeychainAccessibility.first_unlock_this_device)"), reason: '$namespace 在 iOS 上要单独的服务名与仅本机级别');
+    }
+    final extraction = File('android/app/src/main/res/xml/data_extraction_rules.xml').readAsStringSync();
+    final main = File('lib/main.dart').readAsStringSync();
+    final excluded = RegExp(r'excludeFromBackup\(([\s\S]*?)\)\);').firstMatch(main)!.group(1)!;
+    for (final match in RegExp(r'<exclude domain="file" path="(\w+)/" />').allMatches(extraction)) {
+      final folder = match.group(1)!;
+      if (folder == 'logs') continue;
+      expect(excluded, contains("'$folder'"), reason: 'iOS 漏了排除 $folder');
+    }
+    expect(excluded, contains('deviceOnly'));
+    expect(main, contains("File(path.join(deviceOnly.path, 'developer.json'))"));
+    expect(main, contains("Directory(path.join((external ?? deviceOnly).path, 'logs'))"));
+    expect(excluded, contains('File(socialDatabase)'));
+    expect(File('ios/Runner/AppDelegate.swift').readAsStringSync(), contains('DeviceOnlyData.claimKeychain()'));
+  });
+
   // release 才开 R8，CI 不打 release 包；高德 jar 不带混淆规则，删改类名后一开地图就崩。
   test('release 混淆规则保住高德 SDK', () {
     final rules = File('android/app/proguard-rules.pro').readAsStringSync();

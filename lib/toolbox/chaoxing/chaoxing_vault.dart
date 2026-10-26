@@ -20,6 +20,7 @@ class SecureChaoxingVault implements ChaoxingVault {
   SecureChaoxingVault()
     : _storage = const FlutterSecureStorage(
         aOptions: AndroidOptions(storageNamespace: 'superxd_chaoxing', resetOnError: false),
+        iOptions: IOSOptions(accountName: 'superxd_chaoxing', accessibility: KeychainAccessibility.first_unlock_this_device),
       );
   final FlutterSecureStorage _storage;
 
