@@ -64,7 +64,7 @@ class CampusReminders {
       to: formatIsoDate(parseIsoDate(today).add(const Duration(days: reminderWindowDays - 1))),
     );
     final live = setting.live && capability.live;
-    final planned = planReminders(occurrences.items, leadMinutes: setting.leadMinutes, now: now, live: live);
+    final planned = planReminders(occurrences.items, leadMinutes: setting.leadMinutes, now: now, live: live, limit: capability.limit);
     await _apply(planned, capability, live: live);
     return ReminderStatus(
       term: term,

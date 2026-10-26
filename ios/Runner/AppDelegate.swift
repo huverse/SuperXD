@@ -32,7 +32,7 @@ import UserNotifications
     calendar.register(messenger: messenger)
     ChaoxingDevice.register(messenger: messenger)
     LocationSettings.register(messenger: messenger)
-    CourseStubs.register(messenger: messenger)
+    CourseBridge.register(messenger: messenger)
     dialogs.register(messenger: messenger)
     // 快捷入口要收场景回调（冷启动带来的入口、后台时点的入口），按插件登记。
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "SuperXDAppShortcuts") {

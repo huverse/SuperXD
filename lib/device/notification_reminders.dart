@@ -26,7 +26,7 @@ class NotificationReminders implements CourseReminderPort {
       icon: 'ic_stat_reminder',
     ),
   );
-  // iOS 每个应用最多挂 64 条待发的本地通知，多排的系统直接丢掉。
+  // iOS 每个应用最多挂 64 条待发的本地通知，多排的系统直接丢掉（安排时就按 capability 的 limit 只排这么多）。
   static const _iosPendingLimit = 64;
   Future<void>? _ready;
 
@@ -54,6 +54,7 @@ class NotificationReminders implements CourseReminderPort {
       exact: android != null ? await android.canScheduleExactNotifications() ?? false : true,
       live: live['live']!,
       liveAllowed: live['allowed']!,
+      limit: ios != null ? _iosPendingLimit : reminderLimit,
     );
   }
 
@@ -94,9 +95,11 @@ class NotificationReminders implements CourseReminderPort {
             },
       ]),
     });
-    if (live) return;
+    // iOS 的实时活动只在打开应用时出现（[人工决策] 见 ios/Runner/CourseBridge.swift），开着胶囊也照常发课前通知；已过提醒时刻、还没下课的那节只进实时活动。
+    if (live && _ios == null) return;
     final campus = tz.getLocation(campusTimeZone);
-    for (final (index, reminder) in reminders.take(_ios == null ? reminderLimit : _iosPendingLimit).indexed) {
+    final now = DateTime.now();
+    for (final (index, reminder) in reminders.where((reminder) => reminder.fireAt.isAfter(now)).take(reminderLimit).indexed) {
       await _plugin.zonedSchedule(
         id: _idBase + index,
         title: reminder.title,

@@ -8,7 +8,8 @@
   - 用 flutter_local_notifications 按校园时区定时通知；开机后由插件的接收器重新排定（清单里的 ScheduledNotificationBootReceiver）。
   - 只管理自己 id 段内的提醒（最多 reminderLimit 条），不调用 cancelAll，避免撤掉下载进度等其他通知。
   - 有精确闹钟权限时准时调度，没有时改用可能延迟的普通调度；通知渠道 course_reminder，状态栏图标 ic_stat_reminder。
-  - iOS：启动时不弹通知权限，用户打开提醒时再申请；本地通知本来就准时；每个应用最多挂 64 条待发通知，只排最近的 64 条；前台也弹由 AppDelegate.swift 把通知中心回调交给插件。胶囊与小组件的 iOS 通道（CourseStubs.swift）暂时回「没有胶囊」、收下快照不做事。
+  - iOS：启动时不弹通知权限，用户打开提醒时再申请；本地通知本来就准时；每个应用最多挂 64 条待发通知，capability 报 limit 64，编排按它只排最近的 64 条；前台也弹由 AppDelegate.swift 把通知中心回调交给插件。
+  - iOS 的胶囊是实时活动（ios/Runner/CourseBridge.swift 的 CourseLive，iOS 16.2 起，[人工决策] 在那里）：应用在后台时系统不让自己开始，所以开着胶囊也照常发课前通知；每次打开或回到前台交来计划时，正处在提醒时刻到下课之间的那节课开始或更新实时活动，其余的结束。画面在小组件扩展 ios/CourseWidgets/CourseLiveActivity.swift（锁屏与灵动岛，课前倒数到上课、上课中倒数到下课并画进度），两边共用 ios/Shared/CourseActivity.swift。
   - 开了状态栏胶囊（live）时不经插件定时，改经通道 superxd/course_live 把计划（钟点按校园时区写好）交给原生 CourseLive.kt 发 Android 16 实时更新（OPPO 流体云按同一接口显示；插件不支持「请求提升」）。两条路同一时刻只走一条，切换时另一条交空计划。
   - CourseLive.kt：计划存私有的 superxd_course_live 偏好（已排除系统备份），条数同 reminderLimit；只排下一个时刻的一个闹钟（有精确闹钟权限时准时），到点发出或改写再排下一个；开课前倒数到开课、上课中倒数到下课（系统按 when 显示剩余分钟），setTimeoutAfter 下课自动消失；只在首次发出时响铃；用户划掉的这节不再补发；开机、应用更新、改时间或时区时由 CourseLiveReceiver 重新处理。能力查询给用户是否允许（canPostPromotedNotifications）与系统有没有实时更新（允许，或有实时更新设置页可去开；Android 16 首版没有这一页，不给开关），「开启胶囊」打开这个设置页（清单 queries 里声明了它）。
 - home_widget_publisher.dart：HomeWidgetPublisher 实现桌面小组件端口 CourseWidgetPort。
@@ -16,6 +17,7 @@
   - 钟点、日期在这里按校园时区算好；原生侧只用快照带的 campusTimeZone 判断“今天”，按系统时间挑当前与下一节。
   - 原生侧在上下课时刻与校园日界用非精确闹钟（不需要权限，系统可能推迟最多约 10 分钟）刷新；改系统时间或时区时也重画；桌面上没有小组件时撤销闹钟。
   - 没用 home_widget 插件：它强制引入 Glance 与 Compose 运行时，而这里只需保存快照与刷新 RemoteViews。
+  - iOS：CourseBridge.swift 把同一份快照与配色存进 App Group 再让系统重排时间线；小组件在扩展 ios/CourseWidgets（WidgetKit，最低 iOS 16.2）：下一节（小号与锁屏）、接下来两节（中号）、今日课程（大号），规则与提示文案同安卓（home_widget_test.dart 守护文案一致），时间线排到 24 小时内的上下课、校园日界与快照过期时刻。App Group 名不写死，由 ios/Shared/SharedGroup.swift 从安装包的描述文件读（自签证书各人不同）。
 
 - 应用内更新的三个适配器，由 application/app_updates.dart 编排：
   - relay_release_feed.dart：RelayReleaseFeed 实现 AppReleaseFeed，GET 自建中转的 /v1/app/releases/<渠道>?abi=（免签名），单次 15 秒超时、响应上限 64KB、不重试；RELEASE_NOT_FOUND 当这个渠道还没有发布。parseAppRelease 把清单当外部输入逐项校验，安装包地址只认本服务的下载路径。appAbiName 把正在运行的架构映射成安装包架构名。

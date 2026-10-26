@@ -40,6 +40,8 @@
 	<string>把下载的视频图片、开屏画作、驿站码与红包二维码存进相册。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>读取你选中的照片，用作壁纸、签到照片或识别其中的二维码。</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>

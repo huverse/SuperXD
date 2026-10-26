@@ -14,7 +14,8 @@ class PlannedReminder {
 }
 
 // 提醒时刻已过的不安排；发成实时更新时（live）留到下课，期间重新对账不会撤掉正在显示的那条。按时间先后取前 reminderLimit 条。
-List<PlannedReminder> planReminders(List<CourseOccurrence> occurrences, {required int leadMinutes, required DateTime now, bool live = false}) {
+// limit 是系统最多能挂的待发提醒数（见 ReminderCapability.limit）。
+List<PlannedReminder> planReminders(List<CourseOccurrence> occurrences, {required int leadMinutes, required DateTime now, bool live = false, int limit = reminderLimit}) {
   final planned = <PlannedReminder>[];
   for (final occurrence in occurrences) {
     final fireAt = occurrence.start.subtract(Duration(minutes: leadMinutes));
@@ -26,13 +27,13 @@ List<PlannedReminder> planReminders(List<CourseOccurrence> occurrences, {require
       body: [formatCampusClock(occurrence.start), occurrence.periods, if (place.isNotEmpty) place].join(' · '),
       occurrence: occurrence,
     ));
-    if (planned.length == reminderLimit) break;
+    if (planned.length == limit) break;
   }
   return planned;
 }
 
 class ReminderCapability {
-  const ReminderCapability({required this.notifications, required this.exact, this.live = false, this.liveAllowed = false});
+  const ReminderCapability({required this.notifications, required this.exact, this.live = false, this.liveAllowed = false, this.limit = reminderLimit});
   // 系统是否允许本应用发通知。
   final bool notifications;
   // 是否允许精确闹钟；不允许时提醒可能延迟几分钟。
@@ -41,6 +42,8 @@ class ReminderCapability {
   final bool live;
   // 用户是否在系统设置里允许本应用的实时更新；不允许时照常发，只显示为普通通知。
   final bool liveAllowed;
+  // 系统最多能挂多少条待发的提醒：iOS 每个应用 64 条，多排的系统直接丢掉，安排时就只排这么多，状态行写的「至哪天」才对得上。
+  final int limit;
 }
 
 // 课前提醒的系统调度端口，由 device 层实现，编排在 application/campus_reminders.dart。

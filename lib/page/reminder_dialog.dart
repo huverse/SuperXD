@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
 import 'package:superxd/application/campus_reminders.dart';
@@ -11,6 +12,9 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+
+// iOS 的「胶囊」是锁屏与灵动岛的实时活动，文案按 iOS 的叫法。
+bool get _ios => defaultTargetPlatform == TargetPlatform.iOS;
 
 Future<void> showReminderSettings(BuildContext context, {required CampusGateway gateway, required CampusReminders reminders}) =>
     showCampusDialog<void>(context: context, builder: (context) => _ReminderDialog(gateway: gateway, reminders: reminders));
@@ -109,13 +113,13 @@ class _ReminderDialogState extends State<_ReminderDialog> {
                           onSelected: _busy ? null : (_) => _save(term, ReminderSetting(enabled: true, leadMinutes: lead, live: status.setting.live)),
                         ),
                     ]),
-                    // 系统有实时更新（Android 16 起）才给开关；OPPO 上显示为流体云。
+                    // 系统有实时更新（Android 16 起）才给开关；OPPO 上显示为流体云。iOS 是锁屏与灵动岛的实时活动，打开应用时才出现、课前通知照发。
                     if (status.capability.live) ...[
                       const SizedBox(height: 8),
                       CampusSwitchTile(
                         contentPadding: EdgeInsets.zero,
-                        title: const Text('状态栏胶囊'),
-                        subtitle: const Text('开课前到下课显示倒计时'),
+                        title: Text(_ios ? '实时活动' : '状态栏胶囊'),
+                        subtitle: Text(_ios ? '打开应用后，开课前到下课在锁屏与灵动岛显示倒计时' : '开课前到下课显示倒计时'),
                         value: status.setting.live,
                         onChanged: _busy ? (_) {} : (value) => _save(term, ReminderSetting(enabled: true, leadMinutes: status.setting.leadMinutes, live: value)),
                       ),
@@ -162,12 +166,12 @@ class _ReminderDialogState extends State<_ReminderDialog> {
         // 用户在系统里关了本应用的实时更新：照常提醒，只是不进胶囊。
         if (status.setting.live && status.capability.live && !status.capability.liveAllowed) ...[
           const SizedBox(height: 8),
-          Text('系统未允许状态栏胶囊，只显示为普通通知。', style: note),
+          Text(_ios ? '系统未允许实时活动，只发普通通知。' : '系统未允许状态栏胶囊，只显示为普通通知。', style: note),
           const SizedBox(height: 8),
           FilledButton.icon(
             onPressed: _busy ? null : () => widget.reminders.port.requestLive(),
             icon: const CampusIcon(CampusIcons.settings),
-            label: const Text('开启胶囊'),
+            label: Text(_ios ? '开启实时活动' : '开启胶囊'),
           ),
         ],
       ],
