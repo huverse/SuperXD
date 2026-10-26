@@ -75,7 +75,7 @@ class _AppearanceCard extends StatelessWidget {
     final scaleIndex = DisplaySettings.scales.indexOf(share.scale);
     final details = [
       palette?.label ?? '新配色',
-      share.fontId == 'serif' ? '文学衬线' : share.fontId == 'maple' ? 'Maple' : '新字体',
+      switch (share.fontId) { 'serif' => '文学衬线', 'maple' => 'Maple', DisplaySettings.systemFont => '系统字体', _ => '新字体' },
       if (scaleIndex >= 0) '字号${DisplaySettings.labels[scaleIndex]}',
       switch (share.themeMode) { 'light' => '浅色', 'dark' => '深色', _ => '跟随系统' },
     ];

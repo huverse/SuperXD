@@ -12,6 +12,7 @@ import 'package:superxd/theme/campus_glass_surface.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/theme/native_glass.dart';
 
 // [人工决策-2026-09-25 16:24:31] 全应用页面360ms进入/320ms返回、弹层300ms，保留即时操作与减少动画，不保留旧账号截图。
 const campusEnter = Duration(milliseconds: 360);
@@ -365,7 +366,8 @@ class CampusDialogRoute<T> extends DialogRoute<T> with CampusOverlayDepthRoute<T
     // 玻璃面板的显隐同样取这条进度，只是交给面板自己做（见 CampusOverlayReveal），外层不再套 Opacity。
     return AnimatedBuilder(animation: animation, child: glassPanel ? CampusOverlayReveal(animation: _reveal, child: child) : child, builder: (context, child) {
       final progress = Curves.easeInOutCubic.transform(animation.value);
-      final sigma = media.highContrast || media.accessibleNavigation ? 0.0 : 5 * progress;
+      // iOS 不模糊整屏：系统组件（底栏、顶栏按钮）是平台视图，模糊不到，只压暗（同系统弹窗）。
+      final sigma = campusNativeGlass || media.highContrast || media.accessibleNavigation ? 0.0 : 5 * progress;
       final moved = Transform.translate(offset: Offset(0, 8 * (1 - progress)), child: child);
       return Stack(children: [
         if (sigma > 0) Positioned.fill(child: IgnorePointer(child: BackdropFilter(filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma), child: const SizedBox.expand()))),
@@ -543,6 +545,7 @@ class CampusGlassDialog extends StatelessWidget {
                 // 三个及以上竖排；操作区的 FilledButton 即本弹窗主操作，自动为强调按钮，TextButton 为中性胶囊。
                 // [人工决策-2026-10-19 19:22:39] 两个按钮并排时任一个的文字在半宽里放不下（窄屏、大字号），改为竖排（用户选定，同 iOS、鸿蒙放不下时的做法）：
                 // 以前硬并排，「开始同步」在 360dp、1.3 倍字号下折出单独一个「步」。竖排同三个及以上：主操作在最上。
+                // iOS 上确认与提示改用系统弹窗、按系统排布（[人工决策] 见 native_glass.dart），带自定义内容的弹窗仍按上两条。
                 if (actions.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 20, 16, 16),
@@ -754,19 +757,28 @@ class CampusSheetPanel extends StatelessWidget {
   }
 }
 
-// 只读提示：长文本可滚动，唯一按钮“知道了”。
-Future<void> showCampusNotice(BuildContext context, String message, {String? title}) => showCampusDialog<void>(
-  context: context,
-  builder: (context) => CampusGlassDialog(
-    title: title == null ? null : Text(title),
-    content: SingleChildScrollView(child: Text(message)),
-    actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
-  ),
-);
+// 只读提示：长文本可滚动，唯一按钮“知道了”。iOS 是系统弹窗（[人工决策] 见 native_glass.dart）。
+Future<void> showCampusNotice(BuildContext context, String message, {String? title}) async {
+  if (campusNativeGlass) {
+    await showNativeAlert(title: title, message: message, actions: const [NativeAlertAction('知道了', preferred: true)]);
+    return;
+  }
+  await showCampusDialog<void>(
+    context: context,
+    builder: (context) => CampusGlassDialog(
+      title: title == null ? null : Text(title),
+      content: SingleChildScrollView(child: Text(message)),
+      actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
+    ),
+  );
+}
 
 // 二次确认：仅点确认按钮返回true，取消、点遮罩或系统返回都视为不确认。
 // destructive 为真时主按钮是警示红（删除、清空、退出、覆盖、放弃修改等不可撤销的操作）。
-Future<bool> showCampusConfirm(BuildContext context, {required String title, required String message, required String action, String cancel = '取消', bool barrierDismissible = true, bool destructive = false}) async => await showCampusDialog<bool>(
+// iOS 是系统弹窗：取消在系统给的位置，确认按钮是主操作（警示时为系统警示红）；系统弹窗点空白关不掉。
+Future<bool> showCampusConfirm(BuildContext context, {required String title, required String message, required String action, String cancel = '取消', bool barrierDismissible = true, bool destructive = false}) async => campusNativeGlass
+    ? await showNativeAlert(title: title, message: message, actions: [NativeAlertAction(cancel, cancel: true), NativeAlertAction(action, destructive: destructive, preferred: !destructive)]) == 1
+    : await showCampusDialog<bool>(
   context: context,
   barrierDismissible: barrierDismissible,
   builder: (context) => CampusGlassDialog(

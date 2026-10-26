@@ -24,6 +24,8 @@
   - campus_loading.dart：曲线加载 CampusLoader 与带文字的加载状态 CampusLoading（整页样式自己居中；联网等待超过 8 秒说明在等谁）；CampusLoadError 是整块读取失败（原因加带图标的「重试」）；CampusBusyContent 让按钮原地切换忙碌态；showCampusWaiting 只在已有的异步操作期间显示等待弹窗。
   - curve_geometry.dart：三种闭合曲线的几何与按弧长预采样。改编自 math-curve-loaders，不随项目以 GPL 再授权，见 assets/third_party_notices.txt 与文件内人工决策。
 - 玻璃：
+  - native_glass.dart：iOS 上的玻璃全部换成苹果官方组件（[人工决策] 在文件头，安卓照旧用下面这些自绘玻璃）：campusNativeGlass 判断是不是 iOS；系统弹窗 showNativeAlert（showCampusConfirm、showCampusNotice 走它）、从控件处弹出的系统菜单 showNativeMenu（showCampusMenu 走它，iOS 17.4 起是 UIMenu，更早是 action sheet）、外观同步 NativeAppearanceSync（系统组件跟应用的深浅色与控件激活色，组合根套在 MaterialApp.builder 里）；平台视图 NativeGlassBackground（系统玻璃底，垫在弹窗、弹层、提示条与导航层文字按钮下面，透明命中）、NativeGlassButton（顶栏圆钮）、NativeSwitch、NativeSlider、NativeTabBar（底栏，高度由原生量好报上来）。原生侧在 ios/Runner/NativeDialogs.swift 与 NativeGlassViews.swift。iOS 上玻璃跟随系统设置、没有档位与限档，外观页不显示玻璃效果；弹窗、弹层里的按钮画色调胶囊不叠玻璃；带自定义内容的弹窗不模糊整屏（平台视图模糊不到）。平台视图在屏时整屏合成更费，只用在导航层与浮层，不要放进长列表。
+  - campus_symbols.dart：系统组件用的 SF Symbols 对照 campusSymbol（CampusIcons 到 SF Symbols 名）；新增会进系统菜单、底栏或顶栏圆钮的图标时在这里登记，没登记的在系统组件里不画图标。
   - glass_panel.dart：液态玻璃面板 GlassPanel（现只用于悬浮底栏）、透明顶栏 CampusTopBar、导航层标记 CampusChrome、玻璃初始化 initializeCampusGlass（失败退回磨砂）；campusOverlayDepth 是正在显示的弹窗层数，大于 0 时顶栏和底栏改实色，不让玻璃叠玻璃。
   - campus_glass_tier.dart：四档（满档、标准、磨砂、实色）与 resolveCampusGlassTier（无障碍走实色，简化或未就绪走磨砂，完整固定满档，自动跟随实测，限档时满档降为标准）。CampusGlassScope 向下传模式与限档，按模式增减树层会让整个应用重建，所以不能这样做（campus_glass_test.dart 守护）；玻璃组件统一用 tierOf 取档位。CampusGlassGuard 经通道 superxd/glass 读写原生限档状态（安卓 GlassGuard.kt；iOS GlassGuard.swift 读不到退出原因，改记切后台前是否还在前台，前台时异常结束才算），点「完整」解除本版本限档（人工决策见文件内）。
   - campus_glass_material.dart：玻璃材质表，按角色（navigation、control、overlay）、配色与档位生成参数 campusGlassSettings。磨砂档不调饱和：饱和不为 1 时库会在背景模糊里再嵌一层 BackdropFilter，OPPO 上键盘顶起的弹层会整块画黑（campus_glass_test.dart 守护「简化档弹层只有一层 BackdropFilter」）。底色、饱和与提亮都按五套配色深浅色实测取，改动后重测玻璃上文字的对比度（不低于 4.5:1）。
@@ -60,7 +62,7 @@
 
 # 测试
 
-- 玻璃与按钮：campus_glass_test.dart、campus_glass_button_test.dart。
+- 玻璃与按钮：campus_glass_test.dart、campus_glass_button_test.dart；iOS 的系统组件分支：native_glass_test.dart（按 iOS 跑，查交给原生的参数与原生回调，原生长什么样只能在 iPhone 上看）。
 - 背景、配色与深色：atmosphere_test.dart、dark_mode_test.dart、wallpaper_test.dart。
 - 动效与转场：campus_motion_test.dart、transition_sync_test.dart、account_lifecycle_test.dart（入场与转场中间帧）。
 - 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器）。

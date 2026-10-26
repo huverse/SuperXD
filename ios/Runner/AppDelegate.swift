@@ -9,6 +9,7 @@ import UserNotifications
   private let glass = GlassGuard()
   private let calendar = CalendarExporter()
   private let shortcuts = AppShortcuts()
+  private let dialogs = NativeDialogs()
 
   override func application(
     _ application: UIApplication,
@@ -32,9 +33,14 @@ import UserNotifications
     ChaoxingDevice.register(messenger: messenger)
     LocationSettings.register(messenger: messenger)
     CourseStubs.register(messenger: messenger)
+    dialogs.register(messenger: messenger)
     // 快捷入口要收场景回调（冷启动带来的入口、后台时点的入口），按插件登记。
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "SuperXDAppShortcuts") {
       shortcuts.register(with: registrar)
+    }
+    // 系统组件的平台视图（底栏、玻璃按钮、开关、滑杆、玻璃底）。
+    if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "SuperXDNativeGlass") {
+      NativeGlassViews.register(with: registrar)
     }
   }
 }

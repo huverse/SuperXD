@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
@@ -32,7 +33,7 @@ class DisplaySettings extends ChangeNotifier {
   final Lock _saveLock = Lock();
   double _scale = 1;
   String _paletteId = defaultPaletteId;
-  String _fontId = 'maple';
+  String _fontId = defaultFontId;
   ThemeMode _themeMode = ThemeMode.system;
   String _glassMode = 'auto';
   String? _wallpaperFile;
@@ -46,7 +47,8 @@ class DisplaySettings extends ChangeNotifier {
   double get scale => _scale;
   String get paletteId => _paletteId;
   String get fontId => _fontId;
-  String get fontFamily => fontFamilies[_fontId]!;
+  // 为空是系统字体（交给平台默认：iOS 西文 SF、中文苹方）。
+  String? get fontFamily => _fontId == systemFont ? null : fontFamilies[_fontId]!;
   String get glassMode => _glassMode;
   bool get supportsWallpaper => _wallpaper != null;
   File? get wallpaperFile => _wallpaperFile == null ? null : _wallpaper?.file(_wallpaperFile!);
@@ -70,6 +72,12 @@ class DisplaySettings extends ChangeNotifier {
     'maple': 'Maple Mono NF CN',
     'serif': 'Noto Serif SC',
   };
+  // [人工决策-2026-10-26 21:40:32] iOS 可用系统字体（西文 SF、中文苹方），且 iOS 新装默认就是系统字体（用户选定，同苹果 HIG 推荐的系统字体）；
+  // 已经存过显示设置的保持原样，字体列表多一项「系统字体」。安卓不变：没有这一项，默认仍是 Maple。
+  static const systemFont = 'system';
+  static bool get supportsSystemFont => defaultTargetPlatform == TargetPlatform.iOS;
+  static String get defaultFontId => supportsSystemFont ? systemFont : 'maple';
+  static bool knownFont(String id) => fontFamilies.containsKey(id) || id == systemFont && supportsSystemFont;
 
   static Future<DisplaySettings> open({String? databasePath, Directory? wallpaperDirectory}) async {
     final db = await openDatabase(
@@ -132,7 +140,7 @@ class DisplaySettings extends ChangeNotifier {
       wallpaper,
       scale is num && scales.contains(scale.toDouble()) ? scale.toDouble() : 1,
       palette is String && paletteIds.contains(palette) ? palette : defaultPaletteId,
-      font is String && fontFamilies.containsKey(font) ? font : 'maple',
+      font is String && knownFont(font) ? font : defaultFontId,
       ThemeMode.values.where((value) => value.name == mode).firstOrNull ??
           ThemeMode.system,
       glass is String && glassModes.contains(glass) ? glass : 'auto',
@@ -164,7 +172,7 @@ class DisplaySettings extends ChangeNotifier {
   }
 
   Future<void> setFont(String value) {
-    if (!fontFamilies.containsKey(value)) {
+    if (!knownFont(value)) {
       throw ArgumentError.value(value, 'font');
     }
     return _save(fontId: value);
@@ -221,7 +229,7 @@ class DisplaySettings extends ChangeNotifier {
     final mode = ThemeMode.values.where((value) => value.name == shared.themeMode).firstOrNull;
     await _save(
       paletteId: pick(paletteIds.contains(shared.paletteId), shared.paletteId, '配色'),
-      fontId: pick(fontFamilies.containsKey(shared.fontId), shared.fontId, '字体'),
+      fontId: pick(knownFont(shared.fontId), shared.fontId, '字体'),
       scale: pick(scales.contains(shared.scale), shared.scale, '字号'),
       themeMode: pick<ThemeMode?>(mode != null, mode, '深浅色'),
       glassMode: pick(glassModes.contains(shared.glassMode), shared.glassMode, '玻璃效果'),

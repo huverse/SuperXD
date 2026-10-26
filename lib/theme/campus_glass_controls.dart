@@ -7,6 +7,7 @@ import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/theme/native_glass.dart';
 
 // 选择标签：复用主按钮的背景（导航层与浮层里是玻璃，内容区是中性色调胶囊）；选中时着 surfaceSelected 色并带勾。
 // 未选、选中都用可读深色文字，禁用为 onSurfaceVariant，不用 primary，避免和按钮混淆。
@@ -108,7 +109,10 @@ class CampusSwitchTile extends StatelessWidget {
               subtitle: subtitle,
               onTap: () => onChanged(!value),
               trailing: ExcludeSemantics(
-                child: tier == CampusGlassTier.solid || !ready
+                // iOS 是系统开关（拨动时滑块变成玻璃）；读屏由整行的 toggled 报。
+                child: campusNativeGlass
+                    ? NativeSwitch(value: value, onChanged: onChanged, tint: palette.accent)
+                    : tier == CampusGlassTier.solid || !ready
                     ? Switch(value: value, onChanged: onChanged, activeTrackColor: palette.accent, activeThumbColor: Colors.white)
                     : liquid.GlassSwitch(
                         value: value,
@@ -157,7 +161,10 @@ class CampusSlider extends StatelessWidget {
         return SizedBox(
           height: 48,
           child: Center(
-            child: tier == CampusGlassTier.solid || !ready
+            // iOS 是系统滑杆：松手与系统取消都回 onChangeEnd。
+            child: campusNativeGlass
+                ? NativeSlider(value: value, onChanged: onChanged, onChangeEnd: onChangeEnd, label: label, tint: palette.accent)
+                : tier == CampusGlassTier.solid || !ready
                 ? MergeSemantics(child: Semantics(label: label, child: Slider(value: value, onChanged: onChanged, onChangeEnd: onChangeEnd, activeColor: palette.accent)))
                 : liquid.GlassSlider(
                     value: value,

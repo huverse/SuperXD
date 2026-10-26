@@ -9,6 +9,7 @@ import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/glass_panel.dart';
+import 'package:superxd/theme/native_glass.dart';
 
 class CampusMenuItem<T> {
   const CampusMenuItem({required this.value, required this.label, this.icon, this.destructive = false});
@@ -30,9 +31,16 @@ const _minMenuWidth = 200.0;
 // 从 anchor 所在控件弹出玻璃菜单，返回点选的值；点空白或按返回键关闭时为 null。
 // 用路由而不是库的 GlassMenu：GlassMenu 直接插 OverlayEntry，返回键会退出底下的页面，读屏也不是模态。
 // matchWidth 为真时菜单与触发控件等宽（下拉字段），否则至少 200 并按内容伸展。
-Future<T?> showCampusMenu<T>(BuildContext anchor, {required List<CampusMenuItem<T>> items, T? selected, bool matchWidth = false}) {
-  final navigator = Navigator.of(anchor, rootNavigator: true);
+// iOS 弹系统菜单（从同一个控件弹出，选中项带勾，见 native_glass.dart）。
+Future<T?> showCampusMenu<T>(BuildContext anchor, {required List<CampusMenuItem<T>> items, T? selected, bool matchWidth = false}) async {
   final box = anchor.findRenderObject()! as RenderBox;
+  if (campusNativeGlass) {
+    final index = await showNativeMenu(box.localToGlobal(Offset.zero) & box.size, [
+      for (final item in items) NativeMenuEntry(item.label, icon: item.icon, destructive: item.destructive, checked: selected != null && item.value == selected),
+    ]);
+    return index == null ? null : items[index].value;
+  }
+  final navigator = Navigator.of(anchor, rootNavigator: true);
   final overlay = navigator.overlay!.context.findRenderObject()! as RenderBox;
   return navigator.push(_CampusMenuRoute<T>(
     anchor: box.localToGlobal(Offset.zero, ancestor: overlay) & box.size,
