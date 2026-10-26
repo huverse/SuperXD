@@ -6,7 +6,6 @@ import 'package:superxd/theme/campus_glass_material.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/glass_panel.dart';
-import 'package:superxd/theme/native_glass.dart';
 
 // 强调按钮底色：按下叠一层黑加深，禁用为四成透明（同鸿蒙禁用态）。
 Color campusProminentFill(Color color, {required bool pressed, required bool disabled}) => disabled
@@ -51,17 +50,6 @@ class CampusGlassSurface extends StatelessWidget {
         : disabled || pressed
         ? palette.surfaceSelected
         : palette.glassFallback;
-    // iOS 垫系统玻璃（禁用照旧实色）；面板里的按钮在 campus_glass_button.dart 已改成色调胶囊，不叠玻璃。
-    if (campusNativeGlass && !disabled) {
-      return Stack(children: [
-        Positioned.fill(child: NativeGlassBackground(radius: radius, tint: tint == null ? null : solidColor)),
-        DecoratedBox(
-          position: DecorationPosition.foreground,
-          decoration: BoxDecoration(borderRadius: BorderRadius.circular(radius), border: focused ? Border.all(color: palette.primary, width: 2) : null),
-          child: child,
-        ),
-      ]);
-    }
     return ValueListenableBuilder<bool>(
       valueListenable: campusGlassReady,
       child: child,
@@ -136,12 +124,11 @@ class CampusGlassPresence extends StatelessWidget {
   final bool visible;
   final Widget child;
 
-  // iOS 的系统玻璃是平台视图，直接改不透明度即可。
   @override
   Widget build(BuildContext context) => ValueListenableBuilder<bool>(
     valueListenable: campusGlassReady,
     child: child,
-    builder: (context, ready, child) => campusNativeGlass || !ready || CampusGlassScope.tierOf(context, ready: ready) == CampusGlassTier.solid
+    builder: (context, ready, child) => !ready || CampusGlassScope.tierOf(context, ready: ready) == CampusGlassTier.solid
         ? AnimatedOpacity(
             opacity: visible ? 1 : 0,
             duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 180),
@@ -183,20 +170,6 @@ class CampusOverlayGlass extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
     final reveal = CampusOverlayReveal.maybeOf(context);
-    // iOS 垫系统玻璃（solid 的面板照旧实色）：显隐直接改不透明度，系统玻璃是平台视图，不会像着色器玻璃那样淡入时显成底色。
-    if (campusNativeGlass && !solid) {
-      final panel = Stack(children: [
-        Positioned.fill(child: NativeGlassBackground(radius: radius)),
-        GlassPanelScope(
-          opaque: false,
-          child: ClipRSuperellipse(
-            borderRadius: BorderRadius.circular(radius),
-            child: Material(type: MaterialType.transparency, child: child),
-          ),
-        ),
-      ]);
-      return reveal == null ? panel : FadeTransition(opacity: reveal, child: panel);
-    }
     return ValueListenableBuilder<bool>(
       valueListenable: campusGlassReady,
       builder: (context, ready, _) {

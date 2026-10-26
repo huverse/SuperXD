@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
@@ -7,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/native_glass.dart';
 import 'package:superxd/theme/wallpaper_tone.dart';
 
 // 自定义壁纸：静态图替代云雾（云雾仍是默认），按色调网格逐格淡化，直接压在背景上的文字和状态栏图标照旧可读。
@@ -45,6 +47,10 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
     duration: const Duration(seconds: 24),
   );
   bool _allowed = false;
+  // [人工决策-2026-10-27 00:26:51] iOS 上云雾每秒只更新约 20 次（用户选定「降帧流动」，取代 09-25 那条在 iOS 上的逐帧流动）：一圈 24 秒、走得很慢，
+  // 按屏幕刷新率（ProMotion 每秒 120 次）整屏重画看不出区别，却让手机发烫；低电量模式下停（见 CampusMotion）。停下再开从原处接着走。
+  Timer? _iosTick;
+  static const _iosStep = Duration(milliseconds: 50);
   // 正在显示的壁纸。换上新图时先按铺满屏幕的尺寸解码好再换，交叉淡化直接从旧背景到新图，
   // 不会先淡到底色、等解码完图片再冒出来；恢复云雾和同一张图的外观变化立即生效。
   late CampusWallpaper? _shown = widget.wallpaper;
@@ -75,7 +81,17 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   }
 
   void _updatePlayback() {
-    if (_allowed && widget.phase == null && _shown == null && (widget.overlays?.value ?? 0) == 0) {
+    final play = _allowed && widget.phase == null && _shown == null && (widget.overlays?.value ?? 0) == 0;
+    if (campusIos) {
+      if (!play) {
+        _iosTick?.cancel();
+        _iosTick = null;
+      } else {
+        _iosTick ??= Timer.periodic(_iosStep, (_) => _controller.value = (_controller.value + _iosStep.inMicroseconds / _controller.duration!.inMicroseconds) % 1);
+      }
+      return;
+    }
+    if (play) {
       if (!_controller.isAnimating) _controller.repeat();
     } else {
       _controller.stop();
@@ -102,6 +118,7 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   @override
   void dispose() {
     widget.overlays?.removeListener(_updatePlayback);
+    _iosTick?.cancel();
     _controller.dispose();
     super.dispose();
   }

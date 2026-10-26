@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
 import 'package:go_router/go_router.dart';
@@ -12,26 +13,32 @@ import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/native_glass.dart';
+import 'package:superxd/theme/status_bar_scroll.dart';
 
 class ShellPage extends StatelessWidget {
-  const ShellPage({super.key, required this.navigationShell, this.social, this.notes});
+  const ShellPage({super.key, required this.navigationShell, this.social, this.notes, this.revealed});
   final StatefulNavigationShell navigationShell;
   // 私信未读数显示在“消息”上；为空时不显示。
   final SocialService? social;
   // 开发者的话有没读的信时“我的”上一个小圆点（人工决策见 domain/developer_note.dart）。
   final DeveloperNotes? notes;
+  // 开屏是否走完（iOS 的系统底栏在 Flutter 之上，开屏没走完时不出现）；为空当作没有开屏。
+  final ValueListenable<bool>? revealed;
   @override
-  Widget build(BuildContext context) => campusNativeGlass ? ValueListenableBuilder(valueListenable: _nativeBarHeight, builder: (context, height, _) => _layout(context, nativeHeight: height)) : _layout(context);
+  Widget build(BuildContext context) => campusIos
+      ? ValueListenableBuilder(valueListenable: _nativeBarHeight, builder: (context, height, _) => _layout(context, nativeHeight: height ?? 49 + MediaQuery.paddingOf(context).bottom))
+      : _layout(context);
 
   Widget _layout(BuildContext context, {double? nativeHeight}) {
     final media = MediaQuery.of(context);
     final keyboard = media.viewInsets.bottom > 0;
     final barHeight = 72.0 * media.textScaler.scale(14) / 14 + 8;
     final bottom = media.padding.bottom + 12;
-    final reserved = keyboard ? 0.0 : nativeHeight != null ? nativeHeight + media.padding.bottom : barHeight + bottom + 12;
+    final reserved = keyboard ? 0.0 : nativeHeight ?? barHeight + bottom + 12;
     // [人工决策-2026-09-29 04:01:38] 四项底栏悬浮于安全区之上；内容层延伸到玻璃下方透出，底栏占位作为底部安全区交给各页，末项滚到底仍停在底栏上方；拖动仍仅预览，松手提交一次。
     // [人工决策-2026-10-19 17:55:48] 在服务、消息、我的按返回键先回到「今天」，在「今天」再按才退出（用户选定，同 Material 底部导航与 Google 相册、YouTube）。
-    // iOS 上底栏是系统 UITabBar（悬浮、按住拖动的放大镜都由系统做，[人工决策] 见 theme/native_glass.dart），内容照样延伸到栏下、留出栏的高度。
+    // iOS 上底栏是挂在 Flutter 视图上的系统 UITabBar（悬浮、按住拖动的放大镜都由系统做，[人工决策] 见 theme/native_glass.dart），内容照样延伸到栏下、留出栏的总高；
+    // 键盘弹出时系统键盘盖住它，不拆掉重建。
     return PopScope(
       canPop: navigationShell.currentIndex == 0,
       onPopInvokedWithResult: (didPop, _) {
@@ -51,12 +58,12 @@ class ShellPage extends StatelessWidget {
                 );
               }),
             ),
-            if (!keyboard && nativeHeight != null)
+            if (nativeHeight != null)
               Positioned(
                 left: 0,
                 right: 0,
                 bottom: 0,
-                height: nativeHeight + media.padding.bottom,
+                height: nativeHeight,
                 child: ListenableBuilder(
                   listenable: Listenable.merge([social, notes]),
                   builder: (context, _) => NativeTabBar(
@@ -73,10 +80,18 @@ class ShellPage extends StatelessWidget {
                           accessibilityValue: index == 2 && (social?.unread ?? 0) > 0 ? '${social!.unread} 条未读' : index == 3 && (notes?.unread ?? false) ? '有新的' : null,
                         ),
                     ],
+                    // [人工决策-2026-10-27 00:45:04] 再点当前项（同 iOS 系统）：这一栏有推入的页面时回到这一栏首页，已在首页时滚回顶部（用户选定「同系统：直接切」）。
                     onSelected: (index) {
-                      if (index != navigationShell.currentIndex) navigationShell.goBranch(index);
+                      if (index != navigationShell.currentIndex) {
+                        navigationShell.goBranch(index);
+                      } else if (navigationShell.route.branches[index].navigatorKey.currentState?.canPop() ?? false) {
+                        navigationShell.goBranch(index, initialLocation: true);
+                      } else {
+                        CampusStatusBarScroll.scrollToTop();
+                      }
                     },
                     onHeight: (height) => _nativeBarHeight.value = height,
+                    revealed: revealed,
                   ),
                 ),
               ),
@@ -111,8 +126,8 @@ class ShellPage extends StatelessWidget {
   }
 }
 
-// iOS 系统底栏的高度（不含底部安全区），由原生量好报上来；量到之前按系统常见的 49 留位置。
-final _nativeBarHeight = ValueNotifier(49.0);
+// iOS 系统底栏的总高（含底部安全区），由原生按系统排好的样子量好报上来；量到之前按 49 加底部安全区留位置。
+final _nativeBarHeight = ValueNotifier<double?>(null);
 
 class DragNavigationBar extends StatefulWidget {
   const DragNavigationBar({

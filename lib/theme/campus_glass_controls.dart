@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
@@ -34,7 +35,7 @@ class CampusGlassChip extends StatelessWidget {
     final onPressed = onSelected == null
         ? null
         : () {
-            if (campusNativeGlass) HapticFeedback.selectionClick();
+            if (campusIos) HapticFeedback.selectionClick();
             onSelected(!selected);
           };
     final style = FilledButton.styleFrom(
@@ -116,9 +117,9 @@ class CampusSwitchTile extends StatelessWidget {
               subtitle: subtitle,
               onTap: () => onChanged(!value),
               trailing: ExcludeSemantics(
-                // iOS 是系统开关（拨动时滑块变成玻璃）；读屏由整行的 toggled 报。
-                child: campusNativeGlass
-                    ? NativeSwitch(value: value, onChanged: onChanged, tint: palette.accent)
+                // iOS 是 Flutter 的 iOS 样式开关（[人工决策] 见 native_glass.dart）；读屏由整行的 toggled 报。
+                child: campusIos
+                    ? CupertinoSwitch(value: value, onChanged: onChanged, activeTrackColor: palette.accent)
                     : tier == CampusGlassTier.solid || !ready
                     ? Switch(value: value, onChanged: onChanged, activeTrackColor: palette.accent, activeThumbColor: Colors.white)
                     : liquid.GlassSwitch(
@@ -168,9 +169,9 @@ class CampusSlider extends StatelessWidget {
         return SizedBox(
           height: 48,
           child: Center(
-            // iOS 是系统滑杆：松手与系统取消都回 onChangeEnd。
-            child: campusNativeGlass
-                ? NativeSlider(value: value, onChanged: onChanged, onChangeEnd: onChangeEnd, label: label, tint: palette.accent)
+            // iOS 是 Flutter 的 iOS 样式滑杆（[人工决策] 见 native_glass.dart）。
+            child: campusIos
+                ? MergeSemantics(child: Semantics(label: label, child: CupertinoSlider(value: value, onChanged: onChanged, onChangeEnd: onChangeEnd, activeColor: palette.accent)))
                 : tier == CampusGlassTier.solid || !ready
                 ? MergeSemantics(child: Semantics(label: label, child: Slider(value: value, onChanged: onChanged, onChangeEnd: onChangeEnd, activeColor: palette.accent)))
                 : liquid.GlassSlider(

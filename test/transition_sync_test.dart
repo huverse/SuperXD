@@ -204,6 +204,90 @@ void main() {
     expect(find.text('分支二级页'), findsOneWidget);
     expect(nested.currentState!.canPop(), isTrue);
   });
+  // [人工决策] 见 lib/theme/campus_transitions.dart 的 _IosPageSlide：iOS 同系统推入，新页面盖进来、旧页面左移三分之一，500ms。
+  testWidgets('iOS 推入与返回：新页面从右边盖进来，旧页面左移三分之一，500ms 走完', (tester) async {
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), navigatorKey: navigator, home: const SizedBox.expand(child: Text('旧页面'))));
+    final width = tester.getSize(find.byType(MaterialApp)).width;
+    navigator.currentState!.push(CampusPageRoute<void>(builder: (context) => const SizedBox.expand(child: Text('新页面'))));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    final previous = tester.getTopLeft(find.text('旧页面')).dx, next = tester.getTopLeft(find.text('新页面')).dx;
+    expect(previous, inExclusiveRange(-width / 3, 0));
+    expect(next, inExclusiveRange(0, width));
+    // 新页面盖在旧页面上（不是并排），旧页面只退三分之一。
+    expect(next - previous, lessThan(width));
+    expectUnfaded(find.text('新页面'));
+    await tester.pump(const Duration(milliseconds: 310));
+    expect(tester.getTopLeft(find.text('新页面')).dx, 0);
+    await tester.pumpAndSettle();
+    navigator.currentState!.pop();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(tester.getTopLeft(find.text('新页面')).dx, inExclusiveRange(0, width));
+    expect(tester.getTopLeft(find.text('旧页面')).dx, inExclusiveRange(-width / 3, 0));
+    await tester.pumpAndSettle();
+    expect(find.text('新页面'), findsNothing);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('iOS 跟手返回：页面任意位置右滑跟手，过半或快甩返回，不到一半慢慢松手弹回，首页不接', (tester) async {
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), navigatorKey: navigator, home: const SizedBox.expand(child: Text('旧页面'))));
+    final width = tester.getSize(find.byType(MaterialApp)).width;
+    // 首页没有可返回的，右滑什么也不发生。
+    await tester.timedDragFrom(Offset(width / 2, 300), Offset(width * .6, 0), const Duration(milliseconds: 600));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('旧页面')).dx, 0);
+    Future<void> push() async {
+      navigator.currentState!.push(CampusPageRoute<void>(builder: (context) => const SizedBox.expand(child: Text('新页面'))));
+      await tester.pumpAndSettle();
+    }
+    await push();
+    // 从屏幕中间开始拖：页面跟着手指，旧页面按同一进度从左边三分之一处回来。
+    final gesture = await tester.startGesture(Offset(width / 2, 300));
+    await gesture.moveBy(Offset(width * .25, 0));
+    await tester.pump();
+    expect(tester.getTopLeft(find.text('新页面')).dx, closeTo(width * .25, 1));
+    expect(tester.getTopLeft(find.text('旧页面')).dx, closeTo(-width / 3 * .75, 1));
+    expect(navigator.currentState!.userGestureInProgress, isTrue);
+    await gesture.moveBy(Offset(-width * .05, 0));
+    await tester.pump();
+    expect(tester.getTopLeft(find.text('新页面')).dx, closeTo(width * .2, 1));
+    await gesture.up();
+    await tester.pumpAndSettle();
+    // 拖了两成、松手时已经停住：弹回原位。
+    expect(tester.getTopLeft(find.text('新页面')).dx, 0);
+    expect(navigator.currentState!.userGestureInProgress, isFalse);
+    // 慢慢拖过一半：返回。
+    await tester.timedDragFrom(Offset(width / 2, 300), Offset(width * .6, 0), const Duration(seconds: 2));
+    await tester.pumpAndSettle();
+    expect(find.text('新页面'), findsNothing);
+    expect(navigator.currentState!.userGestureInProgress, isFalse);
+    // 只拖两成但快甩（超过每秒一屏宽）：也返回。
+    await push();
+    await tester.flingFrom(Offset(width / 2, 300), Offset(width * .2, 0), width * 2);
+    await tester.pumpAndSettle();
+    expect(find.text('新页面'), findsNothing);
+    expect(tester.takeException(), isNull);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  testWidgets('iOS 跟手返回让给里层横向滚动的列表', (tester) async {
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), navigatorKey: navigator, home: const SizedBox.expand(child: Text('旧页面'))));
+    final width = tester.getSize(find.byType(MaterialApp)).width;
+    final list = ScrollController(initialScrollOffset: 400);
+    addTearDown(list.dispose);
+    navigator.currentState!.push(CampusPageRoute<void>(builder: (context) => Column(children: [
+      SizedBox(height: 100, child: ListView(controller: list, scrollDirection: Axis.horizontal, children: [for (var index = 0; index < 30; index++) SizedBox(width: 100, child: Text('第$index项'))])),
+      const Expanded(child: Text('新页面')),
+    ])));
+    await tester.pumpAndSettle();
+    await tester.timedDragFrom(const Offset(400, 50), Offset(width * .6, 0), const Duration(seconds: 1));
+    await tester.pumpAndSettle();
+    expect(find.text('新页面'), findsOneWidget);
+    expect(list.offset, lessThan(400));
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
   testWidgets('日期与星期同显，周日跨年正确且文学字体大字不溢出', (tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 300));
     addTearDown(() => tester.binding.setSurfaceSize(null));

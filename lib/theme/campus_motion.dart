@@ -3,6 +3,8 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 
+import 'package:superxd/theme/native_glass.dart';
+
 // [人工决策-2026-10-02 16:43:38] 只有玻璃控件用物理弹簧：按下近临界阻尼快速到位不回弹，松手低阻尼过冲一次再回位；页面转场、列表、切日、课表形变仍不回弹；减少动画时不用弹簧，直接到位。
 SpringDescription? campusGlassSpring(BuildContext context, {required bool release}) =>
     MediaQuery.disableAnimationsOf(context) ? null : release ? _glassRelease : _glassPress;
@@ -64,16 +66,19 @@ class _FirstFrameClock {
   }
 }
 
-// 仅视觉生命周期；后台暂停不代表取消业务请求。
+// 仅视觉生命周期；后台暂停不代表取消业务请求。低电量模式下装饰动效也停（只有 iOS 报，同苹果建议低电量时减少动画）。
 class CampusMotion extends StatefulWidget {
   const CampusMotion({super.key, required this.child});
   final Widget child;
-  static bool allowed(BuildContext context) =>
-      !MediaQuery.disableAnimationsOf(context) &&
-      !WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.reduceMotion &&
-      TickerMode.valuesOf(context).enabled &&
-      (_MotionScope.maybeOf(context)?.foreground ?? true) &&
-      (ModalRoute.of(context)?.isCurrent ?? true);
+  static bool allowed(BuildContext context) {
+    final scope = _MotionScope.maybeOf(context);
+    return !MediaQuery.disableAnimationsOf(context) &&
+        !WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.reduceMotion &&
+        TickerMode.valuesOf(context).enabled &&
+        (scope?.foreground ?? true) &&
+        !(scope?.lowPower ?? false) &&
+        (ModalRoute.of(context)?.isCurrent ?? true);
+  }
   @override
   State<CampusMotion> createState() => _CampusMotionState();
 }
@@ -88,10 +93,13 @@ class _CampusMotionState extends State<CampusMotion>
   bool _foreground =
       WidgetsBinding.instance.lifecycleState == null ||
       WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
+  bool _lowPower = nativeLowPower.value;
+  void _power() => setState(() => _lowPower = nativeLowPower.value);
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    nativeLowPower.addListener(_power);
   }
 
   @override
@@ -103,20 +111,22 @@ class _CampusMotionState extends State<CampusMotion>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    nativeLowPower.removeListener(_power);
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) =>
-      _MotionScope(foreground: _foreground, child: MediaQuery(data: MediaQuery.of(context).copyWith(disableAnimations: MediaQuery.disableAnimationsOf(context) || _reduceMotion), child: widget.child));
+      _MotionScope(foreground: _foreground, lowPower: _lowPower, child: MediaQuery(data: MediaQuery.of(context).copyWith(disableAnimations: MediaQuery.disableAnimationsOf(context) || _reduceMotion), child: widget.child));
 }
 
 class _MotionScope extends InheritedWidget {
-  const _MotionScope({required this.foreground, required super.child});
+  const _MotionScope({required this.foreground, required this.lowPower, required super.child});
   final bool foreground;
+  final bool lowPower;
   static _MotionScope? maybeOf(BuildContext context) =>
       context.dependOnInheritedWidgetOfExactType<_MotionScope>();
   @override
   bool updateShouldNotify(_MotionScope oldWidget) =>
-      foreground != oldWidget.foreground;
+      foreground != oldWidget.foreground || lowPower != oldWidget.lowPower;
 }

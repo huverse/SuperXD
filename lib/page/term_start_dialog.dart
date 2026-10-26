@@ -13,7 +13,7 @@ import 'package:superxd/domain/campus_log.dart';
 Future<String?> editTermStart(BuildContext context, CampusGateway gateway, TermRef term, String? savedDate) async {
   final date = savedDate == null ? campusNow() : parseIsoDate(savedDate);
   // iOS 上是系统日期选择（theme/native_glass.dart 的 showNativeDatePicker）。
-  final picked = campusNativeGlass
+  final picked = campusIos
       ? await showNativeDatePicker(title: '选择开学日', confirm: '保存', initial: date, first: DateTime(2000), last: DateTime(2100), timeZone: campusTimeZone)
       : await showCampusDialog<DateTime>(context: context, glassPanel: false, builder: (context) => DatePickerDialog(
           initialDate: date, currentDate: campusNow(),
