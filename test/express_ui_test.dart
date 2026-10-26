@@ -537,7 +537,7 @@ void main() {
     await tester.tap(find.text('身份码'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    expect(find.text('dd202610190000000000001'), findsOneWidget);
+    expect(find.byType(ExpressIdentityView), findsOneWidget);
     expect(find.textContaining('驿站可能不认'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
@@ -1041,7 +1041,8 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('生成身份码显示码值与勿分享提示', (tester) async {
+  // 身份码默认盖遮罩（人工决策见 express_identity_view.dart 的 build）。
+  testWidgets('生成身份码后卡片里默认盖遮罩写「点击展开」：码与码值都不露出，勿分享提示照旧', (tester) async {
     await vault.save(_session);
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
     await tester.pumpAndSettle();
@@ -1050,7 +1051,10 @@ void main() {
     // 身份码视图带 1 秒周期倒计时，不能 pumpAndSettle；用定长 pump 让请求完成。
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    expect(find.text('dd202610190000000000001'), findsOneWidget);
+    expect(find.text('点击展开'), findsOneWidget);
+    expect(find.text('dd202610190000000000001'), findsNothing);
+    expect(tester.widget<Visibility>(find.ancestor(of: find.byType(BarcodeWidget), matching: find.byType(Visibility))).visible, isFalse);
+    expect(find.textContaining('有效期剩余'), findsOneWidget);
     expect(find.textContaining('请勿随意分享身份码'), findsOneWidget);
     // 销毁页面取消倒计时定时器，避免 pending timer 报错。
     await tester.pumpWidget(const SizedBox());
@@ -1102,7 +1106,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('点码牌全屏出示：码牌原地放大进整屏白底，条码转 90° 铺满长边、亮度调到最高；点一下缩回卡片、亮度复原', (tester) async {
+  testWidgets('点遮罩直接全屏出示：码牌从遮罩处淡入放大进整屏白底，条码转 90° 铺满长边、亮度调到最高；点一下缩回、卡片仍盖着遮罩、亮度复原', (tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 780));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final brightness = <String>[];
@@ -1122,10 +1126,10 @@ void main() {
 
     final inline = tester.getRect(find.byType(BarcodeWidget));
     double angle() => math.atan2(tester.widget<Transform>(find.ancestor(of: find.byType(BarcodeWidget).last, matching: find.byType(Transform)).first).transform.entry(1, 0), tester.widget<Transform>(find.ancestor(of: find.byType(BarcodeWidget).last, matching: find.byType(Transform)).first).transform.entry(0, 0));
-    await tester.tap(find.byType(BarcodeWidget));
+    await tester.tap(find.text('点击展开'));
     await tester.pump();
     expect(brightness, ['setApplicationScreenBrightness']);
-    // 飞行途中只看得到一张：卡片里那张隐藏、位置保留；飞的那张转到一半、已离开原位。
+    // 飞行途中只看得到一张：卡片里那张一直不画（上面是遮罩）、位置保留；飞的那张转到一半、已离开原位。
     await tester.pump(const Duration(milliseconds: 120));
     expect(tester.widget<Visibility>(find.ancestor(of: find.byType(BarcodeWidget).first, matching: find.byType(Visibility))).visible, isFalse);
     expect(angle(), inExclusiveRange(0.05, math.pi / 2 - .05));
@@ -1136,7 +1140,7 @@ void main() {
     final zoomed = tester.getRect(find.byType(BarcodeWidget).last);
     expect(zoomed.height, greaterThan(780 * .6));
     expect(zoomed.height, greaterThan(zoomed.width * 2));
-    expect(find.text('dd202610190000000000001'), findsNWidgets(2));
+    expect(find.text('dd202610190000000000001'), findsOneWidget, reason: '码值只在全屏页里');
     expect(find.textContaining('有效期剩余'), findsNWidgets(2));
     // 全屏页有自己的透明 Material：文字取应用的默认样式，不是框架兜底的黄色双下划线样式。
     expect(DefaultTextStyle.of(tester.element(find.textContaining('有效期剩余').last)).style.debugLabel ?? '', isNot(contains('fallback')));
@@ -1145,14 +1149,17 @@ void main() {
     await tester.tapAt(const Offset(30, 400));
     await tester.pump();
     expect(brightness, ['setApplicationScreenBrightness', 'resetApplicationScreenBrightness']);
-    // 缩回到点的那一帧飞的那张正好落在原位；下一帧动画报结束，卡片里那张就露出来，中间不空一帧。
+    // 缩回到底的那一帧飞的那张正好落在原位、已经淡出，露出底下的遮罩；路由拿掉后卡片里仍是遮罩，码不露出。
     await tester.pump(campusExit);
     expect(tester.getRect(find.byType(BarcodeWidget).last), inline);
+    expect(tester.widget<Opacity>(find.ancestor(of: find.byType(BarcodeWidget).last, matching: find.byType(Opacity)).first).opacity, 0);
     await tester.pump(const Duration(milliseconds: 16));
-    expect(tester.widget<Visibility>(find.ancestor(of: find.byType(BarcodeWidget).first, matching: find.byType(Visibility))).visible, isTrue);
     await tester.pump();
     expect(find.byType(BarcodeWidget), findsOneWidget);
     expect(tester.getRect(find.byType(BarcodeWidget)), inline);
+    expect(tester.widget<Visibility>(find.ancestor(of: find.byType(BarcodeWidget), matching: find.byType(Visibility))).visible, isFalse);
+    expect(find.text('点击展开'), findsOneWidget);
+    expect(find.text('dd202610190000000000001'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -1184,7 +1191,7 @@ void main() {
     final zoomed = tester.getRect(find.byType(BarcodeWidget).last);
     expect(zoomed.height, greaterThan(780 * .6));
     expect(zoomed.height, greaterThan(zoomed.width * 2));
-    expect(find.text('dd202610190000000000001'), findsNWidgets(2));
+    expect(find.text('dd202610190000000000001'), findsOneWidget);
     expect(brightness, ['setApplicationScreenBrightness']);
 
     // 关掉全屏：缩回快递首页的身份码卡，亮度复原。
@@ -1194,6 +1201,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 16));
     await tester.pump();
     expect(find.byType(BarcodeWidget), findsOneWidget);
+    expect(find.text('点击展开'), findsOneWidget, reason: '缩回的身份码卡照样盖着遮罩');
     expect(find.text('合成昵称'), findsOneWidget);
     expect(brightness, ['setApplicationScreenBrightness', 'resetApplicationScreenBrightness']);
     await tester.pumpWidget(const SizedBox());
@@ -1225,7 +1233,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     await tester.pump();
     await tester.pump();
-    expect(find.text('dd202610190000000000001'), findsOneWidget, reason: '只在卡片里，没有全屏');
+    expect(find.text('dd202610190000000000001'), findsNothing, reason: '没有全屏，卡片里盖着遮罩');
+    expect(find.text('点击展开'), findsOneWidget);
     expect(find.byType(BarcodeWidget), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
@@ -1286,21 +1295,21 @@ void main() {
     expect(find.text('有效期剩余 2 秒'), findsOneWidget);
     // 等身份码卡展开完（结果卡出现时展开淡入）。
     await tester.pump(const Duration(milliseconds: 250));
-    await tester.tap(find.byType(BarcodeWidget));
+    await tester.tap(find.text('点击展开'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
-    expect(find.text('dd202610200000000000001'), findsNWidgets(2));
+    expect(find.text('dd202610200000000000001'), findsOneWidget);
     // 两秒后到期：自动请求新码，卡片与全屏页都换成新码，倒计时从头开始。
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(seconds: 1));
     await tester.pump(const Duration(milliseconds: 50));
     expect(issued, 2);
-    expect(find.text('dd202610200000000000002'), findsNWidgets(2));
+    expect(find.text('dd202610200000000000002'), findsOneWidget);
     expect(find.text('有效期剩余 2 秒'), findsNWidgets(2));
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('卡片里的码值 360dp ×1.3 保持一行，放不下就整体缩小，不超出卡片', (tester) async {
+  testWidgets('360dp ×1.3：卡片里遮罩的「点击展开」与全屏页的码值都保持一行，不溢出', (tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 780));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await vault.save(_session);
@@ -1309,9 +1318,15 @@ void main() {
     await tester.tap(find.text('身份码'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    final code = find.byType(SelectableText);
-    expect(tester.getSize(code).height, lessThan(16 * 1.3 * 2));
-    expect(tester.getRect(code).width, lessThanOrEqualTo(360 - 64.0));
+    await tester.pump(const Duration(milliseconds: 250));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    final mask = find.text('点击展开');
+    expect(tester.getSize(mask).height, lessThan(16 * 1.3 * 2));
+    await tester.tap(mask);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(tester.getSize(find.text('dd202610190000000000001')).height, lessThan(20 * 1.3 * 2));
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
@@ -1330,7 +1345,7 @@ void main() {
     await tester.tap(find.text('二维码'));
     await tester.pump(const Duration(milliseconds: 400));
     final inline = tester.getSize(find.byType(PrettyQrView));
-    await tester.tap(find.byType(PrettyQrView));
+    await tester.tap(find.text('点击展开'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.byType(BarcodeWidget), findsNothing);
