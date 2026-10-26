@@ -6,7 +6,7 @@
 
 - 色彩与主题：
   - campus_palette.dart：设备级色彩角色 CampusPalette，五套配色（苔灰、雾蓝、藕粉、暮紫、燕麦）各分浅深，默认雾蓝（默认值在 local/display_settings.dart 的 defaultPaletteId，Android 启动窗口底色 launch_background 与 iOS 启动图的 LaunchBackground 颜色集都跟着它（appearance_settings_test.dart 守护），[人工决策] 在两处文件头与常量处）。accent 是控件激活色（开关轨道、滑杆、强调按钮底），与文字主色 primary 分开（primary 为可读压得深而灰，铺成大块会发闷）；dangerFill 是破坏性按钮的红底；accentText 是激活色作大号强调文字时用的颜色（深色提亮，对卡片底不低于 4.5:1）；attention 是只读状态的提醒色；tagColors 是六种标签色，顺序即存储序号，只能在末尾追加。
-  - campus_theme.dart：campusTheme 按配色和字体生成 ThemeData：按钮 textStyle 显式带应用字体（不带会回落系统字体）；AppBar 返回图标与内容左边距 16 对齐、标题从 56 起（人工决策见文件内）；OutlinedButton 与 TextButton 是中性胶囊。另有 campusFieldGap（带浮动标签输入框的上方间距，随字号缩放）、campusSystemOverlay（系统栏透明）、CampusScrollBehavior（弹性回弹、不加拉伸效果，拉伸会让里面的玻璃退成底色）；按压反馈不用水波、按下整块变暗。CampusBackground 是空包装，只为兼容现有调用点。
+  - campus_theme.dart：campusTheme 按配色和字体生成 ThemeData：按钮 textStyle 显式带应用字体（不带会回落系统字体）；AppBar 返回图标与内容左边距 16 对齐、标题从 56 起（人工决策见文件内）；OutlinedButton 与 TextButton 是中性胶囊。另有 campusFieldGap（带浮动标签输入框的上方间距，随字号缩放）、campusSystemOverlay（系统栏透明）、CampusScrollBehavior（弹性回弹、不加拉伸效果，拉伸会让里面的玻璃退成底色；iOS 上拖动滚动区收起键盘）；按压反馈不用水波、按下整块变暗。CampusBackground 是空包装，只为兼容现有调用点。
   - campus_icons.dart：CampusIcons 统一映射 Lucide 图标，CampusIcon 渲染（iOS 上返回画成向左尖角，同系统导航栏），CampusMorphIcon 做导航图标形变，configureCampusIcons 启动时配置。
 - 背景：
   - campus_background.dart：CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，弹窗、弹层开着时停在原处（overlays 由组合根传 campusOverlayDepth，不然整屏模糊每帧重算）；CampusWallpaper 是可选的自定义壁纸（静态图，按色调网格逐格铺淡化保证文字可读，高对比度时不显示）；FrostTexture 是固定颗粒纹理；CampusBackdrop 提供同相位的背景副本，只给入场遮罩和压在弹窗上的页面转场用。换背景前先按屏幕尺寸解码（precacheImage），再交叉淡化。
@@ -24,7 +24,7 @@
   - campus_loading.dart：曲线加载 CampusLoader 与带文字的加载状态 CampusLoading（整页样式自己居中；联网等待超过 8 秒说明在等谁）；CampusLoadError 是整块读取失败（原因加带图标的「重试」）；CampusBusyContent 让按钮原地切换忙碌态；showCampusWaiting 只在已有的异步操作期间显示等待弹窗。
   - curve_geometry.dart：三种闭合曲线的几何与按弧长预采样。改编自 math-curve-loaders，不随项目以 GPL 再授权，见 assets/third_party_notices.txt 与文件内人工决策。
 - 玻璃：
-  - native_glass.dart：iOS 上的玻璃全部换成苹果官方组件（[人工决策] 在文件头，安卓照旧用下面这些自绘玻璃）：campusNativeGlass 判断是不是 iOS；系统弹窗 showNativeAlert（showCampusConfirm、showCampusNotice 走它）、从控件处弹出的系统菜单 showNativeMenu（showCampusMenu 走它，iOS 17.4 起是 UIMenu，更早是 action sheet）、外观同步 NativeAppearanceSync（系统组件跟应用的深浅色与控件激活色，组合根套在 MaterialApp.builder 里）；平台视图 NativeGlassBackground（系统玻璃底，垫在弹窗、弹层、提示条与导航层文字按钮下面，透明命中）、NativeGlassButton（顶栏圆钮）、NativeSwitch、NativeSlider、NativeTabBar（底栏，高度由原生量好报上来）。原生侧在 ios/Runner/NativeDialogs.swift 与 NativeGlassViews.swift。iOS 上玻璃跟随系统设置、没有档位与限档，外观页不显示玻璃效果；弹窗、弹层里的按钮画色调胶囊不叠玻璃；带自定义内容的弹窗不模糊整屏（平台视图模糊不到）。平台视图在屏时整屏合成更费，只用在导航层与浮层，不要放进长列表。
+  - native_glass.dart：iOS 上的玻璃全部换成苹果官方组件（[人工决策] 在文件头，安卓照旧用下面这些自绘玻璃）：campusNativeGlass 判断是不是 iOS；系统弹窗 showNativeAlert（showCampusConfirm、showCampusNotice 走它）、从控件处弹出的系统菜单 showNativeMenu（showCampusMenu 走它，iOS 17.4 起是 UIMenu，更早是 action sheet）、系统日期选择 showNativeDatePicker（底部面板里的系统日历，只取年月日、按给的时区换算）、外观同步 NativeAppearanceSync（系统组件跟应用的深浅色与控件激活色，组合根套在 MaterialApp.builder 里）；平台视图 NativeGlassBackground（系统玻璃底，垫在弹窗、弹层、提示条与导航层文字按钮下面，透明命中）、NativeGlassButton（顶栏圆钮）、NativeSwitch、NativeSlider、NativeTabBar（底栏，高度由原生量好报上来）。原生侧在 ios/Runner/NativeDialogs.swift 与 NativeGlassViews.swift。iOS 上玻璃跟随系统设置、没有档位与限档，外观页不显示玻璃效果；弹窗、弹层里的按钮画色调胶囊不叠玻璃；带自定义内容的弹窗不模糊整屏（平台视图模糊不到）。平台视图在屏时整屏合成更费，只用在导航层与浮层，不要放进长列表。
   - campus_symbols.dart：系统组件用的 SF Symbols 对照 campusSymbol（CampusIcons 到 SF Symbols 名）；新增会进系统菜单、底栏或顶栏圆钮的图标时在这里登记，没登记的在系统组件里不画图标。
   - glass_panel.dart：液态玻璃面板 GlassPanel（现只用于悬浮底栏）、透明顶栏 CampusTopBar、导航层标记 CampusChrome、玻璃初始化 initializeCampusGlass（失败退回磨砂）；campusOverlayDepth 是正在显示的弹窗层数，大于 0 时顶栏和底栏改实色，不让玻璃叠玻璃。
   - campus_glass_tier.dart：四档（满档、标准、磨砂、实色）与 resolveCampusGlassTier（无障碍走实色，简化或未就绪走磨砂，完整固定满档，自动跟随实测，限档时满档降为标准）。CampusGlassScope 向下传模式与限档，按模式增减树层会让整个应用重建，所以不能这样做（campus_glass_test.dart 守护）；玻璃组件统一用 tierOf 取档位。CampusGlassGuard 经通道 superxd/glass 读写原生限档状态（安卓 GlassGuard.kt；iOS GlassGuard.swift 读不到退出原因，改记切后台前是否还在前台，前台时异常结束才算），点「完整」解除本版本限档（人工决策见文件内）。
@@ -66,7 +66,7 @@
 - 玻璃与按钮：campus_glass_test.dart、campus_glass_button_test.dart；iOS 的系统组件分支：native_glass_test.dart（按 iOS 跑，查交给原生的参数与原生回调，原生长什么样只能在 iPhone 上看）。
 - 背景、配色与深色：atmosphere_test.dart、dark_mode_test.dart、wallpaper_test.dart。
 - 动效与转场：campus_motion_test.dart、transition_sync_test.dart、account_lifecycle_test.dart（入场与转场中间帧）。
-- 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器、点状态栏回顶）。
+- 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器、点状态栏回顶、iOS 拖动收起键盘）。
 - 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
 
 # 人工决策检索

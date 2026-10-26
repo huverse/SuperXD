@@ -7,16 +7,20 @@ import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/week.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
+import 'package:superxd/theme/native_glass.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 Future<String?> editTermStart(BuildContext context, CampusGateway gateway, TermRef term, String? savedDate) async {
   final date = savedDate == null ? campusNow() : parseIsoDate(savedDate);
-  final picked = await showCampusDialog<DateTime>(context: context, glassPanel: false, builder: (context) => DatePickerDialog(
-    initialDate: date, currentDate: campusNow(),
-    firstDate: DateTime(2000), lastDate: DateTime(2100), helpText: '选择开学日',
-    cancelText: '取消', confirmText: '保存',
-    switchToInputEntryModeIcon: const Icon(CampusIcons.edit), switchToCalendarEntryModeIcon: const Icon(CampusIcons.todaySelected),
-  ));
+  // iOS 上是系统日期选择（theme/native_glass.dart 的 showNativeDatePicker）。
+  final picked = campusNativeGlass
+      ? await showNativeDatePicker(title: '选择开学日', confirm: '保存', initial: date, first: DateTime(2000), last: DateTime(2100), timeZone: campusTimeZone)
+      : await showCampusDialog<DateTime>(context: context, glassPanel: false, builder: (context) => DatePickerDialog(
+          initialDate: date, currentDate: campusNow(),
+          firstDate: DateTime(2000), lastDate: DateTime(2100), helpText: '选择开学日',
+          cancelText: '取消', confirmText: '保存',
+          switchToInputEntryModeIcon: const Icon(CampusIcons.edit), switchToCalendarEntryModeIcon: const Icon(CampusIcons.todaySelected),
+        ));
   if (picked == null || !context.mounted) return null;
   final value = formatIsoDate(picked);
   try {

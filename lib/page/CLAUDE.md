@@ -35,7 +35,7 @@
   - schedule_editor_page.dart：课程管理 ScheduleEditorPage：同名的教学班合成一门显示（一位老师写在课名下，几位写在各自时段后）；新增、编辑、删除（可撤销）、清空、建空课表与历史版本入口；点卡片编辑，⋯里只有删除（[人工决策] 在课程卡列表上方）。
   - course_editor_page.dart：课程编辑 CourseEditorPage：一门课（同名的几个教学班）一起编辑，课名与学分对整门生效，老师和地点写在每个时段上，保存时按老师分回教学班；时段卡点按直接改、范围在弹窗顶部选，复制与移除在⋯里（[人工决策] 在 _SlotDialog）；周次是等宽网格、快捷选周只亮正好匹配的一项（[人工决策] 在 _weekGrid）。
   - schedule_history_page.dart：课表历史版本 ScheduleHistoryPage：按日期分组的时间线，图标分教务同步、我的修改、恢复，可筛「全部 / 我的修改 / 教务同步」，按序号游标分页；点开写恢复后和现在比会加回、会删掉、会改回，恢复带乐观锁（[人工决策] 在文件内）。
-  - term_start_dialog.dart：开学日设置弹窗 editTermStart，保存成功只出提示条写第1周从哪天开始，失败才弹窗。
+  - term_start_dialog.dart：开学日设置弹窗 editTermStart（iOS 上是系统日期选择），保存成功只出提示条写第1周从哪天开始，失败才弹窗。
 - 成绩：
   - grades_page.dart：成绩页 GradesPage：学年与学期汇总、有效成绩与原始成绩，可筛选、排序、搜索；本页只同步成绩；视图切换淡出淡入（旧内容淡出后才换数据）。筛选是一行「搜索框 + 筛选按钮」，类型、范围、排序在弹层里点了就生效；成绩按行列在一张分组卡里、分数在右，不及格警示色并写明（[人工决策] 在 _filterLabel 上方与 domain/grades.dart 的 gradeFailing）；教务汇总绩点大字（_summaryFigures，缺的那一项写「—」），教务明确这学期没有成绩时只画空状态卡（_emptyGrades）、不画汇总；详情按内容高（_details）；人工决策在方法上。
 - 同步：
