@@ -7,25 +7,33 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		03C0C1314359EA56482B7D91 /* SharedGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC219C160454024ECBB18AB4 /* SharedGroup.swift */; };
 		08C744DABA53A5F69DD8AA7C /* DeviceOnlyData.swift in Sources */ = {isa = PBXBuildFile; fileRef = DFB3590BCBB514C755A2197C /* DeviceOnlyData.swift */; };
 		1498D2341E8E89220040F4C2 /* GeneratedPluginRegistrant.m in Sources */ = {isa = PBXBuildFile; fileRef = 1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */; };
+		153254024E044459E72B8980 /* CourseActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = C74FB374CA367D6948418B8C /* CourseActivity.swift */; };
 		197CBB12137F8E9916B17BCD /* ToolboxFileExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = 776C6F39DBC107FA212D064F /* ToolboxFileExporter.swift */; };
 		3232E37616B2476D09A9989A /* GlassGuard.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84E6026C8098EFD324842E9E /* GlassGuard.swift */; };
 		331C808B294A63AB00263BE5 /* RunnerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 331C807B294A618700263BE5 /* RunnerTests.swift */; };
-		3844350EFCC428AFDB06BB06 /* CourseStubs.swift in Sources */ = {isa = PBXBuildFile; fileRef = B233E6F0EE2391C06CD75BD1 /* CourseStubs.swift */; };
 		3B3967161E833CAA004F5970 /* AppFrameworkInfo.plist in Resources */ = {isa = PBXBuildFile; fileRef = 3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */; };
+		468E5F09DD5FDAB301F45B32 /* Foundation.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = A58D755C0D8F890CC8BFC18A /* Foundation.framework */; };
+		6A69DAD28A2AB535E073BE2F /* CourseWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = F7F61E2E91B8CC7D0A781AA1 /* CourseWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		74858FAF1ED2DC5600515810 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74858FAE1ED2DC5600515810 /* AppDelegate.swift */; };
 		7884E8682EC3CC0700C636F2 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7884E8672EC3CC0400C636F2 /* SceneDelegate.swift */; };
 		78A318202AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage in Frameworks */ = {isa = PBXBuildFile; productRef = 78A3181F2AECB46A00862997 /* FlutterGeneratedPluginSwiftPackage */; };
+		8820A3FE7654882A749D235D /* CourseLiveActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = 19B879900200FDE9DA0B9E83 /* CourseLiveActivity.swift */; };
 		8B1A6882904F3D337EF96998 /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = A2F53F7654457E5E35BAABE4 /* PrivacyInfo.xcprivacy */; };
 		8BC599F188E9698597E12906 /* NativeDialogs.swift in Sources */ = {isa = PBXBuildFile; fileRef = F09BF0B9070A15EB9E94412A /* NativeDialogs.swift */; };
 		97C146FC1CF9000F007C117D /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FA1CF9000F007C117D /* Main.storyboard */; };
 		97C146FE1CF9000F007C117D /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FD1CF9000F007C117D /* Assets.xcassets */; };
 		97C147011CF9000F007C117D /* LaunchScreen.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = 97C146FF1CF9000F007C117D /* LaunchScreen.storyboard */; };
+		985C2A1D235B9C4041C6F623 /* CourseBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = E64D7E3D307FF193A075E937 /* CourseBridge.swift */; };
+		A2DC14757EB1598FF6793B42 /* CourseActivity.swift in Sources */ = {isa = PBXBuildFile; fileRef = C74FB374CA367D6948418B8C /* CourseActivity.swift */; };
 		B5C9D063684DC2BB94351B38 /* CalendarExporter.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF4F0B680F9823847CC462E0 /* CalendarExporter.swift */; };
+		C9BE459D6C32827CBD7FFCFF /* CourseWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 254296F3BCFBC8A6C4C21DD5 /* CourseWidgets.swift */; };
 		D21678C30236D9818E1120C8 /* LocationSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35771B27AC830862F1F2E053 /* LocationSettings.swift */; };
 		DDEC21553CFAB68DB9CFAF24 /* ProcessExitReasons.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6C68715E693EAACEA41AE8E1 /* ProcessExitReasons.swift */; };
 		DE98FC23B7F6DF774CDCF8BB /* NativeGlassViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = E20CB456A4CECD964F2CEBC3 /* NativeGlassViews.swift */; };
+		E4BD0DCA083DD12082CDC364 /* SharedGroup.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC219C160454024ECBB18AB4 /* SharedGroup.swift */; };
 		EB576B15990C6C4684206D7E /* AppShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8C61EC48F12A8AA380008769 /* AppShortcuts.swift */; };
 		EFAC180E9A141478305BC1F1 /* MetricKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = 47CE26B4D512D96051AE6C83 /* MetricKit.framework */; };
 		F290C3E0194E33BAF3B52108 /* ChaoxingDevice.swift in Sources */ = {isa = PBXBuildFile; fileRef = A70551FB05EEA5E54BB9DD94 /* ChaoxingDevice.swift */; };
@@ -39,9 +47,27 @@
 			remoteGlobalIDString = 97C146ED1CF9000F007C117D;
 			remoteInfo = Runner;
 		};
+		ABFDD9603BE539122DC51254 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 97C146E61CF9000F007C117D /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = 101DD456ACBB328FCBA2F6B6;
+			remoteInfo = CourseWidgets;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXCopyFilesBuildPhase section */
+		67F4D70C83F0B05DBCDCC649 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				6A69DAD28A2AB535E073BE2F /* CourseWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		9705A1C41CF9048500538489 /* Embed Frameworks */ = {
 			isa = PBXCopyFilesBuildPhase;
 			buildActionMask = 2147483647;
@@ -57,12 +83,15 @@
 /* Begin PBXFileReference section */
 		1498D2321E8E86230040F4C2 /* GeneratedPluginRegistrant.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = GeneratedPluginRegistrant.h; sourceTree = "<group>"; };
 		1498D2331E8E89220040F4C2 /* GeneratedPluginRegistrant.m */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.c.objc; path = GeneratedPluginRegistrant.m; sourceTree = "<group>"; };
+		19B879900200FDE9DA0B9E83 /* CourseLiveActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CourseLiveActivity.swift; sourceTree = "<group>"; };
+		254296F3BCFBC8A6C4C21DD5 /* CourseWidgets.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CourseWidgets.swift; sourceTree = "<group>"; };
 		331C807B294A618700263BE5 /* RunnerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RunnerTests.swift; sourceTree = "<group>"; };
 		331C8081294A63A400263BE5 /* RunnerTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = RunnerTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		35771B27AC830862F1F2E053 /* LocationSettings.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = LocationSettings.swift; sourceTree = "<group>"; };
 		3B3967151E833CAA004F5970 /* AppFrameworkInfo.plist */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = text.plist.xml; name = AppFrameworkInfo.plist; path = Flutter/AppFrameworkInfo.plist; sourceTree = "<group>"; };
 		466F8030E68501F4A367B560 /* Release-production.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Release-production.xcconfig"; path = "Flutter/Release-production.xcconfig"; sourceTree = "<group>"; };
 		47CE26B4D512D96051AE6C83 /* MetricKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = MetricKit.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/MetricKit.framework; sourceTree = DEVELOPER_DIR; };
+		48E159600693979AB382AC21 /* Info.plist */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		6C68715E693EAACEA41AE8E1 /* ProcessExitReasons.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ProcessExitReasons.swift; sourceTree = "<group>"; };
 		74858FAD1ED2DC5600515810 /* Runner-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "Runner-Bridging-Header.h"; sourceTree = "<group>"; };
 		74858FAE1ED2DC5600515810 /* AppDelegate.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
@@ -82,18 +111,30 @@
 		97C147001CF9000F007C117D /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.storyboard; name = Base; path = Base.lproj/LaunchScreen.storyboard; sourceTree = "<group>"; };
 		97C147021CF9000F007C117D /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		A2F53F7654457E5E35BAABE4 /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; includeInIndex = 1; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
+		A58D755C0D8F890CC8BFC18A /* Foundation.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = Foundation.framework; path = Platforms/iPhoneOS.platform/Developer/SDKs/iPhoneOS26.0.sdk/System/Library/Frameworks/Foundation.framework; sourceTree = DEVELOPER_DIR; };
 		A70551FB05EEA5E54BB9DD94 /* ChaoxingDevice.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = ChaoxingDevice.swift; sourceTree = "<group>"; };
 		AA98F061F11F1405B02E9BB7 /* Debug-production.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Debug-production.xcconfig"; path = "Flutter/Debug-production.xcconfig"; sourceTree = "<group>"; };
 		AF4F0B680F9823847CC462E0 /* CalendarExporter.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CalendarExporter.swift; sourceTree = "<group>"; };
-		B233E6F0EE2391C06CD75BD1 /* CourseStubs.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CourseStubs.swift; sourceTree = "<group>"; };
+		C74FB374CA367D6948418B8C /* CourseActivity.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CourseActivity.swift; sourceTree = "<group>"; };
 		CB883510AE2ECEC10042FE2B /* Release-alpha.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Release-alpha.xcconfig"; path = "Flutter/Release-alpha.xcconfig"; sourceTree = "<group>"; };
+		CC219C160454024ECBB18AB4 /* SharedGroup.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = SharedGroup.swift; sourceTree = "<group>"; };
 		DAAFD733B516874AB3246624 /* Profile-production.xcconfig */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = text.xcconfig; name = "Profile-production.xcconfig"; path = "Flutter/Profile-production.xcconfig"; sourceTree = "<group>"; };
 		DFB3590BCBB514C755A2197C /* DeviceOnlyData.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = DeviceOnlyData.swift; sourceTree = "<group>"; };
 		E20CB456A4CECD964F2CEBC3 /* NativeGlassViews.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeGlassViews.swift; sourceTree = "<group>"; };
+		E64D7E3D307FF193A075E937 /* CourseBridge.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = CourseBridge.swift; sourceTree = "<group>"; };
 		F09BF0B9070A15EB9E94412A /* NativeDialogs.swift */ = {isa = PBXFileReference; includeInIndex = 1; lastKnownFileType = sourcecode.swift; path = NativeDialogs.swift; sourceTree = "<group>"; };
+		F7F61E2E91B8CC7D0A781AA1 /* CourseWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CourseWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
+		54E9462F3C9CD9B67D01BECD /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				468E5F09DD5FDAB301F45B32 /* Foundation.framework in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 		97C146EB1CF9000F007C117D /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
@@ -106,6 +147,17 @@
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
+		1616C321E41418C611F73533 /* CourseWidgets */ = {
+			isa = PBXGroup;
+			children = (
+				254296F3BCFBC8A6C4C21DD5 /* CourseWidgets.swift */,
+				19B879900200FDE9DA0B9E83 /* CourseLiveActivity.swift */,
+				48E159600693979AB382AC21 /* Info.plist */,
+			);
+			name = CourseWidgets;
+			path = CourseWidgets;
+			sourceTree = "<group>";
+		};
 		331C8082294A63A400263BE5 /* RunnerTests */ = {
 			isa = PBXGroup;
 			children = (
@@ -140,6 +192,8 @@
 				97C146EF1CF9000F007C117D /* Products */,
 				331C8082294A63A400263BE5 /* RunnerTests */,
 				DFFD7A0F1F57A96351EC4723 /* Frameworks */,
+				ACDC77E7E91146B0A09ACB22 /* Shared */,
+				1616C321E41418C611F73533 /* CourseWidgets */,
 			);
 			sourceTree = "<group>";
 		};
@@ -148,6 +202,7 @@
 			children = (
 				97C146EE1CF9000F007C117D /* Runner.app */,
 				331C8081294A63A400263BE5 /* RunnerTests.xctest */,
+				F7F61E2E91B8CC7D0A781AA1 /* CourseWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -172,18 +227,29 @@
 				A70551FB05EEA5E54BB9DD94 /* ChaoxingDevice.swift */,
 				35771B27AC830862F1F2E053 /* LocationSettings.swift */,
 				8C61EC48F12A8AA380008769 /* AppShortcuts.swift */,
-				B233E6F0EE2391C06CD75BD1 /* CourseStubs.swift */,
 				F09BF0B9070A15EB9E94412A /* NativeDialogs.swift */,
 				E20CB456A4CECD964F2CEBC3 /* NativeGlassViews.swift */,
 				A2F53F7654457E5E35BAABE4 /* PrivacyInfo.xcprivacy */,
+				E64D7E3D307FF193A075E937 /* CourseBridge.swift */,
 			);
 			path = Runner;
+			sourceTree = "<group>";
+		};
+		ACDC77E7E91146B0A09ACB22 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				CC219C160454024ECBB18AB4 /* SharedGroup.swift */,
+				C74FB374CA367D6948418B8C /* CourseActivity.swift */,
+			);
+			name = Shared;
+			path = Shared;
 			sourceTree = "<group>";
 		};
 		B7E2E2ACC78FB8E42F23C260 /* iOS */ = {
 			isa = PBXGroup;
 			children = (
 				47CE26B4D512D96051AE6C83 /* MetricKit.framework */,
+				A58D755C0D8F890CC8BFC18A /* Foundation.framework */,
 			);
 			name = iOS;
 			sourceTree = "<group>";
@@ -199,6 +265,23 @@
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		101DD456ACBB328FCBA2F6B6 /* CourseWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 9090C9392402722C14600410 /* Build configuration list for PBXNativeTarget "CourseWidgets" */;
+			buildPhases = (
+				E6ACCBE82EB6D706134877EE /* Sources */,
+				54E9462F3C9CD9B67D01BECD /* Frameworks */,
+				52511F2D7AB73EB33803EA23 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = CourseWidgets;
+			productName = CourseWidgets;
+			productReference = F7F61E2E91B8CC7D0A781AA1 /* CourseWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
 		331C8080294A63A400263BE5 /* RunnerTests */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 331C8087294A63A400263BE5 /* Build configuration list for PBXNativeTarget "RunnerTests" */;
@@ -225,11 +308,13 @@
 				97C146EB1CF9000F007C117D /* Frameworks */,
 				97C146EC1CF9000F007C117D /* Resources */,
 				9705A1C41CF9048500538489 /* Embed Frameworks */,
+				67F4D70C83F0B05DBCDCC649 /* Embed Foundation Extensions */,
 				3B06AD1E1E4923F5004D2608 /* Thin Binary */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				F69F8C51657FABF55D188D91 /* PBXTargetDependency */,
 			);
 			name = Runner;
 			packageProductDependencies = (
@@ -277,12 +362,20 @@
 			targets = (
 				97C146ED1CF9000F007C117D /* Runner */,
 				331C8080294A63A400263BE5 /* RunnerTests */,
+				101DD456ACBB328FCBA2F6B6 /* CourseWidgets */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		331C807F294A63A400263BE5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		52511F2D7AB73EB33803EA23 /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -361,9 +454,22 @@
 				F290C3E0194E33BAF3B52108 /* ChaoxingDevice.swift in Sources */,
 				D21678C30236D9818E1120C8 /* LocationSettings.swift in Sources */,
 				EB576B15990C6C4684206D7E /* AppShortcuts.swift in Sources */,
-				3844350EFCC428AFDB06BB06 /* CourseStubs.swift in Sources */,
 				8BC599F188E9698597E12906 /* NativeDialogs.swift in Sources */,
 				DE98FC23B7F6DF774CDCF8BB /* NativeGlassViews.swift in Sources */,
+				985C2A1D235B9C4041C6F623 /* CourseBridge.swift in Sources */,
+				E4BD0DCA083DD12082CDC364 /* SharedGroup.swift in Sources */,
+				A2DC14757EB1598FF6793B42 /* CourseActivity.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		E6ACCBE82EB6D706134877EE /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C9BE459D6C32827CBD7FFCFF /* CourseWidgets.swift in Sources */,
+				8820A3FE7654882A749D235D /* CourseLiveActivity.swift in Sources */,
+				03C0C1314359EA56482B7D91 /* SharedGroup.swift in Sources */,
+				153254024E044459E72B8980 /* CourseActivity.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -374,6 +480,12 @@
 			isa = PBXTargetDependency;
 			target = 97C146ED1CF9000F007C117D /* Runner */;
 			targetProxy = 331C8085294A63A400263BE5 /* PBXContainerItemProxy */;
+		};
+		F69F8C51657FABF55D188D91 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			name = CourseWidgets;
+			target = 101DD456ACBB328FCBA2F6B6 /* CourseWidgets */;
+			targetProxy = ABFDD9603BE539122DC51254 /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -397,6 +509,30 @@
 /* End PBXVariantGroup section */
 
 /* Begin XCBuildConfiguration section */
+		086439BA5C2C5A2C46C60962 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				APP_DISPLAY_NAME = SuperXD;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CourseWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.superxd.superxd.CourseWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = Release;
+		};
 		11C0D2E5DA5929F656F9CD36 /* Release-alpha */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -510,6 +646,29 @@
 			};
 			name = "Profile-production";
 		};
+		23946B947D6E46C78EE3874D /* Debug-alpha */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				APP_DISPLAY_NAME = "SuperXD Alpha";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CourseWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.superxd.superxd.alpha.CourseWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = "Debug-alpha";
+		};
 		249021D3217E4FDB00AE95B9 /* Profile */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -582,6 +741,30 @@
 				SWIFT_OBJC_BRIDGING_HEADER = "Runner/Runner-Bridging-Header.h";
 				SWIFT_VERSION = 5.0;
 				VERSIONING_SYSTEM = "apple-generic";
+			};
+			name = Profile;
+		};
+		2DD61B9B0A058F144B12DA9F /* Profile */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				APP_DISPLAY_NAME = SuperXD;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CourseWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.superxd.superxd.CourseWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
 			};
 			name = Profile;
 		};
@@ -835,6 +1018,29 @@
 			};
 			name = "Debug-alpha";
 		};
+		686290D4EF4EC9F535FE1968 /* Debug-production */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				APP_DISPLAY_NAME = SuperXD;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CourseWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.superxd.superxd.CourseWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = "Debug-production";
+		};
 		6DB0530015D20CCD46968961 /* Profile-alpha */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -862,6 +1068,30 @@
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SWIFT_VERSION = 5.0;
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Runner.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Runner";
+			};
+			name = "Profile-production";
+		};
+		7BBB94557353BA690AC0F3A0 /* Profile-production */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				APP_DISPLAY_NAME = SuperXD;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CourseWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.superxd.superxd.CourseWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
 			};
 			name = "Profile-production";
 		};
@@ -1118,6 +1348,78 @@
 			};
 			name = "Debug-alpha";
 		};
+		AE278B0F34A30FCA30601E63 /* Release-production */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				APP_DISPLAY_NAME = SuperXD;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CourseWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.superxd.superxd.CourseWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = "Release-production";
+		};
+		D4D1FF9A28A36FFE9481D630 /* Profile-alpha */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				APP_DISPLAY_NAME = "SuperXD Alpha";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CourseWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.superxd.superxd.alpha.CourseWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = "Profile-alpha";
+		};
+		DADACA3ECA0BAED9704AFA55 /* Release-alpha */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				APP_DISPLAY_NAME = "SuperXD Alpha";
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CourseWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.superxd.superxd.alpha.CourseWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				VALIDATE_PRODUCT = YES;
+			};
+			name = "Release-alpha";
+		};
 		DC47BFC7BAF4519C990E344A /* Debug-production */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -1178,6 +1480,29 @@
 				VERSIONING_SYSTEM = "apple-generic";
 			};
 			name = "Profile-alpha";
+		};
+		FD7A4DEA9E731860195017DF /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 9740EEB31CF90195004384FC /* Generated.xcconfig */;
+			buildSettings = {
+				APP_DISPLAY_NAME = SuperXD;
+				CLANG_ENABLE_OBJC_WEAK = NO;
+				GENERATE_INFOPLIST_FILE = NO;
+				INFOPLIST_FILE = CourseWidgets/Info.plist;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.2;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@executable_path/../../Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.superxd.superxd.CourseWidgets;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SKIP_INSTALL = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Debug;
 		};
 		FDBE04BB3F18ECB60AF22871 /* Debug-production */ = {
 			isa = XCBuildConfiguration;
@@ -1252,6 +1577,22 @@
 				9B4DBAF8900B35B168B8FE3D /* Debug-alpha */,
 				6DB0530015D20CCD46968961 /* Profile-alpha */,
 				11C0D2E5DA5929F656F9CD36 /* Release-alpha */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		9090C9392402722C14600410 /* Build configuration list for PBXNativeTarget "CourseWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				086439BA5C2C5A2C46C60962 /* Release */,
+				FD7A4DEA9E731860195017DF /* Debug */,
+				2DD61B9B0A058F144B12DA9F /* Profile */,
+				686290D4EF4EC9F535FE1968 /* Debug-production */,
+				7BBB94557353BA690AC0F3A0 /* Profile-production */,
+				AE278B0F34A30FCA30601E63 /* Release-production */,
+				23946B947D6E46C78EE3874D /* Debug-alpha */,
+				D4D1FF9A28A36FFE9481D630 /* Profile-alpha */,
+				DADACA3ECA0BAED9704AFA55 /* Release-alpha */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;

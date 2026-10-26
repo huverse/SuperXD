@@ -141,6 +141,17 @@ void main() {
         CourseOccurrence(date: '2026-09-07', start: DateTime.utc(2026, 9, 7).add(Duration(hours: day)), end: DateTime.utc(2026, 9, 7, 1).add(Duration(hours: day)), course: _courses.first, meeting: _courses.first.meetings.first),
     ];
     expect(planReminders(many, leadMinutes: 5, now: DateTime.utc(2026, 9, 1)), hasLength(reminderLimit));
+    // iOS 每个应用最多挂 64 条待发通知：按系统给的上限只排这么多。
+    expect(planReminders(many, leadMinutes: 5, now: DateTime.utc(2026, 9, 1), limit: 64), hasLength(64));
+  });
+
+  test('对账：按系统的待发上限安排，状态行的条数与截止日对得上', () async {
+    final gateway = _Gateway(), port = _Port()..current = const ReminderCapability(notifications: true, exact: true, limit: 2);
+    final reminders = CampusReminders(gateway: gateway, port: port, clock: () => DateTime.utc(2026, 9, 13, 4));
+    gateway.setting = const ReminderSetting(enabled: true, leadMinutes: 10, live: false);
+    final status = await reminders.reconcile();
+    expect(port.replaced.last.$1.map((reminder) => reminder.occurrence.date), ['2026-09-14', '2026-09-16']);
+    expect([status.scheduled, status.lastDate], [2, '2026-09-16']);
   });
 
   test('对账：无学期、未开启或无通知权限时撤销；开启后安排未来14天，结果相同不重复替换，权限决定是否准时', () async {

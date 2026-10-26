@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -150,5 +151,15 @@ void main() {
     await display.setPalette(CampusPalette.values.last.id);
     expect(port.themes, hasLength(3));
     expect(port.themes.last.light.text, CampusPalette.values.last.onSurface.toARGB32());
+  });
+
+  // iOS 的小组件（ios/CourseWidgets/CourseWidgets.swift）照安卓的规则重写：提示文案与小组件名字两端要一样。
+  test('iOS 小组件的提示与名字同安卓', () {
+    final android = File('android/app/src/main/res/values/course_widget.xml').readAsStringSync();
+    final ios = File('ios/CourseWidgets/CourseWidgets.swift').readAsStringSync();
+    final strings = {for (final match in RegExp(r'<string name="course_widget_(\w+)">([^<]+)</string>').allMatches(android)) match.group(1)!: match.group(2)!};
+    for (final key in ['signed_out', 'no_term', 'no_term_start', 'no_bells', 'stale', 'empty', 'next_label', 'next_description', 'pair_label', 'pair_description', 'day_label', 'day_description']) {
+      expect(ios, contains('"${strings[key]}"'), reason: key);
+    }
   });
 }
