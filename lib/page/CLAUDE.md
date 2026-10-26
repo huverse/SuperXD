@@ -61,7 +61,7 @@
   - splash_signature.dart：开屏一笔写出的「SuperXD」（同苹果开机的 hello）：连笔草书，Super 一笔、X 两笔、D 一笔；字形是文件顶部的节点（自由点与带笔尖方向的点，同一点写两次是尖角），运行时按 Hobby 曲线（METAFONT 同法）生成、右斜 15°，自由节点处曲率连续；书写节奏按三分之二幂律（弯越急越慢）、起笔收笔与尖角处减速、笔画间提笔（停顿加空中移动），进度 0–1 换成每笔画到的长度；SplashSignaturePainter 按比例放进给定大小，单线圆头、线宽随签名缩放，墨色两色渐变。改字形只改节点。
   - paintings_page.dart：开屏画作页 PaintingsPage：按清单列出全部画作、标出这次开屏的那幅；「保存到相册」原地转圈、存好原地变成「已保存」；点画作从卡片里原地放大成全屏（浮层路由，同快递身份码的全屏出示，黑底渐显到不透明），可双指缩放，点一下或返回原路缩回。
   - app_update_dialog.dart：更新弹窗 showAppUpdateDialog：可选更新给更新、稍后、跳过这个版本，点更新才下载，下载、核对、等授权、安装都在弹窗里原地切换；必须更新时关不掉（人工决策见文件内）。
-  - legal_page.dart：用户协议与隐私政策 LegalPage（/legal/service、/legal/privacy），顶部显示更新日期 legalUpdated；正文经 theme 的 CampusProse 按行排版。隐私政策先摘要、再按功能分节，末尾附第三方 SDK 与服务、系统权限、保存期限三份清单（[人工决策] 在文件头）；改动数据处理、新增 SDK 或权限、改上限时同步改对应一节与清单并更新日期。首次打开（含没在弹窗里同意过的老用户）由组合根弹 askLegalConsent 征得同意，不同意先二次确认再退出应用（[人工决策] 在函数上）；同意过的，有实质变化时 legalRevision 加一并改写 legalChanges，打开后弹一次 showLegalUpdateNotice（只有「知道了」才算看过）。
+  - legal_page.dart：用户协议与隐私政策 LegalPage（/legal/service、/legal/privacy），顶部显示更新日期 legalUpdated；正文经 theme 的 CampusProse 按行排版。隐私政策先摘要、再按功能分节，末尾附第三方 SDK 与服务、系统权限、保存期限三份清单与 iOS 版的不同之处（[人工决策] 在文件头；iOS 上的做法变了改附录四）；改动数据处理、新增 SDK 或权限、改上限时同步改对应一节与清单并更新日期。首次打开（含没在弹窗里同意过的老用户）由组合根弹 askLegalConsent 征得同意，不同意先二次确认再退出应用（[人工决策] 在函数上）；同意过的，有实质变化时 legalRevision 加一并改写 legalChanges，打开后弹一次 showLegalUpdateNotice（只有「知道了」才算看过）。
   - licenses_page.dart：全部依赖许可 CampusLicensesPage 与应用署名 GalaxyousAttribution。
   - third_party_page.dart：开源许可页 ThirdPartyPage，读 assets/third_party_notices.txt。
 

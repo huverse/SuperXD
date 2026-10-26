@@ -252,6 +252,12 @@ void main() {
       expect((await feed(MockClient((_) async => reply(jsonEncode({...valid, 'apk': null}), 200))).latest())!.apk, isNull);
     });
 
+    // iOS 不能在应用里安装（[人工决策] 见 main.dart 的 appUpdates）：只看版本与更新说明，弹窗给「去发布页下载」。
+    test('不要安装包时清单照样有效，只是没有安装包', () async {
+      final release = await RelayReleaseFeed('http://relay.test:8080', channel: 'alpha', abi: 'arm64-v8a', packages: false, client: MockClient((_) async => reply(jsonEncode(valid), 200))).latest();
+      expect([release!.versionCode, release.apk, release.releasePage.toString()], [5, isNull, 'https://github.com/huverse/SuperXD/releases/tag/v1.0.0-alpha.4']);
+    });
+
     test('连不上或超时给原因，不自动重试', () async {
       var calls = 0;
       await expectLater(
