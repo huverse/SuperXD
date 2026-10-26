@@ -44,14 +44,12 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get --enforce-lockfile
-      # CocoaPods 依赖（高德 SDK 很大）每次现下载容易碰上网络偶发失败（10-26 一次 curl HTTP2 报错让 pod install 失败）：按 pubspec.lock 与 Podfile 缓存。
+      # CocoaPods 的下载（高德 SDK 很大）每次现下容易碰上网络偶发失败（10-26 一次 curl HTTP2 报错让 pod install 失败）：只缓存下载，依赖版本照旧每次解析，不因缓存在不在而变。
       - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: |
-            ~/Library/Caches/CocoaPods
-            ios/Pods
-            ios/Podfile.lock
+          path: ~/Library/Caches/CocoaPods
           key: pods-${{ runner.os }}-${{ hashFiles('pubspec.lock', 'ios/Podfile') }}
+          restore-keys: pods-${{ runner.os }}-
       - run: flutter build ios --release --no-codesign --flavor alpha
       - name: Package unsigned ipa
         run: |
