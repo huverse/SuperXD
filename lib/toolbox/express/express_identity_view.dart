@@ -127,16 +127,16 @@ class _ExpressIdentityViewState extends State<ExpressIdentityView> {
       instant: MediaQuery.disableAnimationsOf(context),
       appear: appear,
     );
-    setState(() => _zoom = route);
+    _zoom = route;
     _brightness(() => ScreenBrightness.instance.setApplicationScreenBrightness(1));
     final popped = Navigator.of(context).push(route);
     if (appear) widget.onZoomed?.call();
-    // 飞行期间只画一张：缩回动画结束的同一帧卡片里那张重新露出来；等路由销毁再换要晚一帧，中间会空一下。
+    // 缩回动画走完才算关掉，之后才能再点开。
     late final AnimationStatusListener landed;
     landed = (status) {
       if (!status.isDismissed) return;
       route.animation!.removeStatusListener(landed);
-      if (mounted) setState(() => _zoom = null);
+      _zoom = null;
     };
     route.animation!.addStatusListener(landed);
     await popped;
@@ -162,8 +162,6 @@ class _ExpressIdentityViewState extends State<ExpressIdentityView> {
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
-    // 码牌固定白底，上面的小图标取浅色配色，深色模式下也看得清。
-    final light = CampusPalette.byId(palette.id);
     final code = _result.identificationCode;
     final mobileDesc = _result.mobileInfo?.desc ?? '';
     final textTheme = Theme.of(context).textTheme;
@@ -177,41 +175,28 @@ class _ExpressIdentityViewState extends State<ExpressIdentityView> {
           onSelected: (value) => setState(() => _style = value),
         ),
         const SizedBox(height: 16),
-        // 条码与二维码固定黑白：取件高拍仪要扫，底色与前景必须高对比，不随主题配色变。
-        // 整张码牌可点（右下角留白处的放大图标提示），点了全屏出示；全屏期间卡片里这张隐藏、位置保留。
+        // [人工决策-2026-10-26 18:57:10] 身份码默认盖遮罩（用户选定，同微信付款码的数字平时打码）：卡片里只画一块与码牌同大的色调盖板、写「点击展开」，
+        // 码与码值都不在卡片里露出；点一下直接全屏出示（见 _zoomIn），缩回后仍盖着。快捷入口照旧直接全屏（见 express_page.dart 的 _openIdentity）。
+        // 未选「只揭开遮罩、码留在卡片里」「模糊的码」「快捷入口也先盖遮罩」。码牌照原尺寸排在盖板下面但不画，只给全屏的飞出与缩回定位。
         Center(
           child: LayoutBuilder(builder: (context, constraints) {
             final size = _style == _IdentityStyle.qr ? const Size.square(220) : Size(math.min(260, constraints.maxWidth - 2 * _inlinePadding), 120);
             return Semantics(
               button: true,
-              label: '全屏出示身份码',
+              label: '展开身份码',
               onTap: _zoomIn,
               excludeSemantics: true,
-              child: GestureDetector(
-                onTap: _zoomIn,
-                child: Visibility.maintain(
-                  visible: _zoom == null,
-                  child: Stack(children: [
-                    _CodePlate(key: _plate, code: code, style: _style, size: size, padding: _inlinePadding, radius: _inlineRadius),
-                    PositionedDirectional(end: 2, bottom: 2, child: CampusIcon(CampusIcons.fullscreen, size: 14, color: light.onSurfaceVariant)),
-                  ]),
+              child: Stack(children: [
+                Visibility.maintain(
+                  visible: false,
+                  child: _CodePlate(key: _plate, code: code, style: _style, size: size, padding: _inlinePadding, radius: _inlineRadius),
                 ),
-              ),
+                Positioned.fill(child: _IdentityMask(onTap: _zoomIn)),
+              ]),
             );
           }),
         ),
-        const SizedBox(height: 12),
-        // 码值保持一行（大字号、窄屏放不下时整体等比缩小），不在数字中间折行。
-        Center(
-          child: FittedBox(
-            fit: BoxFit.scaleDown,
-            child: SelectableText(
-              code,
-              maxLines: 1,
-              style: const TextStyle(fontFamily: 'monospace', fontSize: 16, fontWeight: FontWeight.w600),
-            ),
-          ),
-        ),
+        const SizedBox(height: 4),
         if (mobileDesc.isNotEmpty) ...[
           const SizedBox(height: 8),
           Center(child: Text(mobileDesc, style: textTheme.bodyMedium?.copyWith(color: palette.onSurfaceVariant))),
@@ -262,6 +247,43 @@ class ExpressIdentityPending extends StatelessWidget {
             CampusLoader(color: light.primary),
             const SizedBox(height: 12),
             Text('正在生成身份码', style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: light.onSurfaceVariant)),
+          ]),
+        ),
+      ),
+    );
+  }
+}
+
+// 卡片里盖住身份码的盖板：色调底（同内容区按钮的色调胶囊，按下加深一档）、眼睛图标加「点击展开」，看不出码。
+class _IdentityMask extends StatefulWidget {
+  const _IdentityMask({required this.onTap});
+  final VoidCallback onTap;
+
+  @override
+  State<_IdentityMask> createState() => _IdentityMaskState();
+}
+
+class _IdentityMaskState extends State<_IdentityMask> {
+  bool _pressed = false;
+
+  void _press(bool pressed) => setState(() => _pressed = pressed);
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    final alpha = palette.isDark ? (_pressed ? .22 : .14) : (_pressed ? .14 : .08);
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => _press(true),
+      onTapUp: (_) => _press(false),
+      onTapCancel: () => _press(false),
+      child: DecoratedBox(
+        decoration: BoxDecoration(color: palette.primary.withValues(alpha: alpha), borderRadius: BorderRadius.circular(_inlineRadius)),
+        child: Center(
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            CampusIcon(CampusIcons.eye, size: 28, color: palette.primary),
+            const SizedBox(height: 8),
+            Text('点击展开', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: palette.primary)),
           ]),
         ),
       ),
@@ -426,16 +448,20 @@ class _IdentityZoomState extends State<_IdentityZoom> {
                       top: center.dy,
                       child: FractionalTranslation(
                         translation: const Offset(-.5, -.5),
-                        child: Transform.rotate(
-                          angle: rotated ? progress * math.pi / 2 : 0,
-                          child: _CodePlate(
-                            code: result.identificationCode,
-                            style: route.style,
-                            size: size,
-                            padding: _inlinePadding + (_zoomPadding - _inlinePadding) * progress,
-                            radius: _inlineRadius + (_zoomRadius - _inlineRadius) * progress,
-                            footer: footer,
-                            footerFactor: const Interval(.4, 1).transform(progress),
+                        // 卡片里是盖板：码牌出发时从盖板上淡入、缩回到底前淡出，不在盖板上突然闪出一块白。
+                        child: Opacity(
+                          opacity: const Interval(0, .2).transform(progress),
+                          child: Transform.rotate(
+                            angle: rotated ? progress * math.pi / 2 : 0,
+                            child: _CodePlate(
+                              code: result.identificationCode,
+                              style: route.style,
+                              size: size,
+                              padding: _inlinePadding + (_zoomPadding - _inlinePadding) * progress,
+                              radius: _inlineRadius + (_zoomRadius - _inlineRadius) * progress,
+                              footer: footer,
+                              footerFactor: const Interval(.4, 1).transform(progress),
+                            ),
                           ),
                         ),
                       ),
