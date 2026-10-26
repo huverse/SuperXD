@@ -6,7 +6,7 @@ import WidgetKit
 // 桌面小组件与课程实时活动的主应用一侧，对应安卓 CourseWidgets.kt（通道 superxd/course_widget）与 CourseLive.kt（通道 superxd/course_live）。
 enum CourseBridge {
   static func register(messenger: FlutterBinaryMessenger) {
-    // 快照与配色（JSON，钟点已按校园时区写好）原样存进 App Group，小组件扩展读同一份；存完让系统重排小组件的时间线。
+    // 快照与配色（JSON，钟点已按校园时区写好）原样存进 App Group 的 widget 目录（排除备份），小组件扩展读同一份；存完让系统重排小组件的时间线。
     FlutterMethodChannel(name: "superxd/course_widget", binaryMessenger: messenger).setMethodCallHandler { call, result in
       let key = switch call.method {
       case "publish": "snapshot"
@@ -17,13 +17,21 @@ enum CourseBridge {
         result(FlutterMethodNotImplemented)
         return
       }
-      guard let defaults = SharedGroup.defaults else {
+      guard var directory = SharedGroup.widgetDirectory else {
         NSLog("[CourseWidget] action=%@ group=none", call.method)
         result(nil)
         return
       }
-      defaults.set(value, forKey: key)
-      WidgetCenter.shared.reloadAllTimelines()
+      do {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try directory.setResourceValues(values)
+        try Data(value.utf8).write(to: directory.appendingPathComponent("\(key).json"), options: .atomic)
+        WidgetCenter.shared.reloadAllTimelines()
+      } catch {
+        NSLog("[CourseWidget] action=%@ errorType=%@", call.method, String(describing: type(of: error)))
+      }
       result(nil)
     }
     FlutterMethodChannel(name: "superxd/course_live", binaryMessenger: messenger).setMethodCallHandler { call, result in

@@ -17,7 +17,11 @@ enum SharedGroup {
     return groups.contains(preferred) ? preferred : groups[0]
   }()
 
-  static var defaults: UserDefaults? { identifier.flatMap(UserDefaults.init(suiteName:)) }
+  // 小组件的快照与配色放在共享容器的 widget 目录里（不用共享的 UserDefaults：那份会进 iCloud 备份），目录排除出备份与换机迁移，同安卓。
+  static var widgetDirectory: URL? {
+    guard let identifier, let container = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: identifier) else { return nil }
+    return container.appendingPathComponent("widget", isDirectory: true)
+  }
 
   // 扩展的包名是「主应用包名.扩展名」。
   private static var mainBundleIdentifier: String {

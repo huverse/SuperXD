@@ -17,7 +17,7 @@
   - 钟点、日期在这里按校园时区算好；原生侧只用快照带的 campusTimeZone 判断“今天”，按系统时间挑当前与下一节。
   - 原生侧在上下课时刻与校园日界用非精确闹钟（不需要权限，系统可能推迟最多约 10 分钟）刷新；改系统时间或时区时也重画；桌面上没有小组件时撤销闹钟。
   - 没用 home_widget 插件：它强制引入 Glance 与 Compose 运行时，而这里只需保存快照与刷新 RemoteViews。
-  - iOS：CourseBridge.swift 把同一份快照与配色存进 App Group 再让系统重排时间线；小组件在扩展 ios/CourseWidgets（WidgetKit，最低 iOS 16.2）：下一节（小号与锁屏）、接下来两节（中号）、今日课程（大号），规则与提示文案同安卓（home_widget_test.dart 守护文案一致），时间线排到 24 小时内的上下课、校园日界与快照过期时刻。App Group 名不写死，由 ios/Shared/SharedGroup.swift 从安装包的描述文件读（自签证书各人不同）。
+  - iOS：CourseBridge.swift 把同一份快照与配色写进 App Group 共享容器的 widget 目录（排除 iCloud 备份，同安卓不备份小组件数据；不用共享的 UserDefaults，那份会进备份）再让系统重排时间线；小组件在扩展 ios/CourseWidgets（WidgetKit，最低 iOS 16.2）：下一节（小号与锁屏）、接下来两节（中号）、今日课程（大号），规则与提示文案同安卓（home_widget_test.dart 守护文案一致），时间线排到 24 小时内的上下课、校园日界与快照过期时刻。App Group 名不写死，由 ios/Shared/SharedGroup.swift 从安装包的描述文件读（自签证书各人不同）。
 
 - 应用内更新的三个适配器，由 application/app_updates.dart 编排：
   - relay_release_feed.dart：RelayReleaseFeed 实现 AppReleaseFeed，GET 自建中转的 /v1/app/releases/<渠道>?abi=（免签名），单次 15 秒超时、响应上限 64KB、不重试；RELEASE_NOT_FOUND 当这个渠道还没有发布。parseAppRelease 把清单当外部输入逐项校验，安装包地址只认本服务的下载路径。appAbiName 把正在运行的架构映射成安装包架构名。

@@ -54,13 +54,17 @@ struct WidgetState {
 
   static func read() -> WidgetState {
     var state = WidgetState()
-    let defaults = SharedGroup.defaults
-    if let theme = (defaults?.string(forKey: "theme")).flatMap(json) {
+    let directory = SharedGroup.widgetDirectory
+    func file(_ key: String) -> [String: Any]? {
+      guard let url = directory?.appendingPathComponent("\(key).json"), let data = try? Data(contentsOf: url) else { return nil }
+      return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+    }
+    if let theme = file("theme") {
       state.mode = theme["mode"] as? String ?? "system"
       state.light = WidgetColors(theme["light"] as? [String: Any], fallback: (0xEBFFFFFF, 0xFF1F1F1F, 0xFF5F5F5F))
       state.dark = WidgetColors(theme["dark"] as? [String: Any], fallback: (0xEB1F1F1F, 0xFFF2F2F2, 0xFFBDBDBD))
     }
-    guard let snapshot = (defaults?.string(forKey: "snapshot")).flatMap(json) else { return state }
+    guard let snapshot = file("snapshot") else { return state }
     state.status = snapshot["status"] as? String ?? "signedOut"
     state.zone = (snapshot["timeZone"] as? String).flatMap(TimeZone.init(identifier:)) ?? .current
     state.until = Date(timeIntervalSince1970: (snapshot["until"] as? Double ?? 0) / 1000)
@@ -71,10 +75,6 @@ struct WidgetState {
                           name: item["name"] as? String ?? "", place: item["place"] as? String ?? "")
     }
     return state
-  }
-
-  private static func json(_ text: String) -> [String: Any]? {
-    (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any]
   }
 
   private var calendar: Calendar {
