@@ -35,7 +35,7 @@
   - campus_glass_surface.dart：按钮与手势反馈共用的玻璃材质 CampusGlassSurface、浮层面板 CampusOverlayGlass、浮层显隐 CampusOverlayReveal 与控件出现消失 CampusGlassPresence（AnimatedOpacity 的玻璃版）。
   - campus_glass_button.dart：全局 FilledButton 背景 CampusGlassButtonSurface：视觉约 38dp、触区至少 48dp；在导航层或玻璃面板里是玻璃胶囊，内容区画色调胶囊 CampusTonalSurface；圆形按钮 CampusGlassCircleButton 只用于顶栏操作与悬浮按钮。按钮四级：强调 campusProminent（每屏、每个弹窗一个主操作）、警示 campusDestructive、普通、中性；句中链接用 campusLink（规则见文件内人工决策）。色调胶囊底色改动后重测按钮文字对比度（不低于 4.5:1）。
   - campus_glass_press.dart：玻璃控件的按压物理 CampusGlassPress（按下鼓起、松手过冲一次回位，减少动画时不形变）。
-  - campus_glass_controls.dart：选择标签 CampusGlassChip（选中前后是同一个按钮，只在按钮里给勾号让位、淡入；选中状态与按钮合成一个读屏节点，否则读屏听不到“已选中”；减少动画时不包 AnimatedSize，它时长为 0 会在自己的布局里报错）、开关行 CampusSwitchTile、滑杆 CampusSlider（GlassSlider 在系统取消与读屏增减时不回调 onChangeEnd，调用方要兜底保存；iOS 上两者是 Flutter 的 CupertinoSwitch、CupertinoSlider）。页面不再直接用 ChoiceChip、FilterChip、SwitchListTile、Slider。
+  - campus_glass_controls.dart：选择标签 CampusGlassChip（选中前后是同一个按钮，只在按钮里给勾号让位、淡入；选中状态与按钮合成一个读屏节点，否则读屏听不到“已选中”；减少动画时不包 AnimatedSize，它时长为 0 会在自己的布局里报错）、开关行 CampusSwitchTile、滑杆 CampusSlider（GlassSlider 在系统取消与读屏增减时不回调 onChangeEnd，调用方要兜底保存；iOS 上两者是 Flutter 的 CupertinoSwitch、CupertinoSlider，iOS 样式滑杆要撑满整行；可带 CampusSliderMarks 在下方画一段带名字的色条与带名字的刻度，按这一种滑杆的拇指行程对齐，名字挤时色条的名字换到下一行）。页面不再直接用 ChoiceChip、FilterChip、SwitchListTile、Slider。
   - campus_glass_menu.dart：玻璃菜单 showCampusMenu（是路由：返回键关闭、读屏模态、登记层数；不用库的 GlassMenu，它直接插 OverlayEntry，返回键会退出底下的页面）与下拉字段 CampusMenuField。页面不再直接用 DropdownButtonFormField、PopupMenuButton、showModalBottomSheet。
 - 通用组件：
   - campus_surface.dart：通用卡片表面 CampusSurface，可带点击（带点击时读屏报按钮）。
@@ -48,7 +48,7 @@
   - campus_typesetting.dart：排版口径（10-27 iPhone 系统字体下时刻被裁后加）：campusTextPainter、campusTextWidth 按 Text 实际排版的口径量文字（合并默认样式的字距、系统粗体文本时加粗、字号缩放、语言），凡按文字尺寸决定布局的都用它，不自己 new TextPainter；BalancedText 是短句均衡换行（同 CSS text-wrap: balance，行数不变取最窄宽度，只管四行以内，支持外层 IntrinsicHeight），课名、教室、短提示与弹窗正文用它避免末行剩一两个字。
   - scroll_anchor.dart：滚动锚定 CampusAnchoredScrollController：hold 之后，整页重新排版（字号过渡、换字体）时在滚动区排版的同一帧里校正滚动位置，锚点停在原来的屏幕位置；过了最短时长还要等到一次不用校正、内容尺寸不再变的排版才放开（慢设备上过渡的最后一帧会晚到），最晚 settleLimit；手指一按或代码滚动就放开，到顶或到底校正不了的部分照常移动。界面页的字号与字体选项在用。
   - status_bar_scroll.dart：iOS 点状态栏回顶 CampusStatusBarScroll（组合根套在 MaterialApp.builder 里）：系统经 WidgetsBindingObserver.handleStatusBarTap 交来点按，分支页的滚动区挂在各自路由上、壳层 Scaffold 收不到，所以记住最近拖过的竖向滚动区，把它滚回开头（倒序列表是视觉上的顶端）；它不在最上层路由或分支不可见时不动。scrollToTop 给 iOS 再点当前底栏项时用。
-  - scroll_edge_fade.dart：ScrollEdgeFade 在浮动玻璃栏下只渐隐内容本身（子树里不能再放玻璃）；CampusScrollFade 是页面滚动区的柔和边缘：有滚动区的页面都包（code_conventions_test.dart 守护；弹层、弹窗是玻璃面板不包），子树有玻璃开关或视频的页面不包；倒序列表（会话页最新在下）按视觉上缘那一端算，首次排版就按位置渐隐。
+  - scroll_edge_fade.dart：ScrollEdgeFade 在浮动玻璃栏下只渐隐内容本身（子树里不能再放玻璃）；CampusScrollFade 是页面滚动区的柔和边缘：有滚动区的页面都包（code_conventions_test.dart 守护；弹层、弹窗是玻璃面板不包），子树有玻璃开关或视频的页面不包；倒序列表（会话页最新在下）按视觉上缘那一端算，首次排版就按位置渐隐；没有浮动栏时下面还有内容就同样让下缘自身淡出（最多 24，滚到底不淡，ScrollEdgeFade 的 tail），滚动位置在排版当中被校正时等这一帧画完再改。
   - third_party_licenses.dart：registerCampusLicenses 把本项目 GPL-3.0 全文、第三方声明和两套字体许可注册进 LicenseRegistry。
 
 # 关键规则

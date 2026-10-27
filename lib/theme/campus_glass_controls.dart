@@ -8,6 +8,7 @@ import 'package:superxd/theme/campus_glass_material.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/native_glass.dart';
 
@@ -152,12 +153,15 @@ class CampusSwitchTile extends StatelessWidget {
 
 // 滑杆：同 iOS 26 滑杆，细轨道、白色滑块，拖动时滑块化为玻璃透镜，已选段着主色；实色档沿用系统 Slider。
 // 值域 0–1。onChanged 在拖动中连续回调；onChangeEnd 只在正常松手时回调，系统取消与读屏增减不回调，调用方要自行兜底保存。
+// marks 画在滑杆下方（推荐范围的色条与带名字的刻度），按这一种滑杆的拇指行程对齐：玻璃滑杆离两端 15（拇指半径），
+// iOS 样式 22（内边距 8 加拇指半径 14），实色档的系统滑杆 24（按压光圈半径）。
 class CampusSlider extends StatelessWidget {
-  const CampusSlider({super.key, required this.value, required this.label, required this.onChanged, this.onChangeEnd});
+  const CampusSlider({super.key, required this.value, required this.label, required this.onChanged, this.onChangeEnd, this.marks});
   final double value;
   final String label;
   final ValueChanged<double>? onChanged;
   final ValueChanged<double>? onChangeEnd;
+  final CampusSliderMarks? marks;
 
   @override
   Widget build(BuildContext context) {
@@ -166,13 +170,15 @@ class CampusSlider extends StatelessWidget {
       valueListenable: campusGlassReady,
       builder: (context, ready, _) {
         final tier = CampusGlassScope.tierOf(context, ready: ready);
-        return SizedBox(
+        final solid = tier == CampusGlassTier.solid || !ready;
+        final slider = SizedBox(
           height: 48,
           child: Center(
             // iOS 是 Flutter 的 iOS 样式滑杆（[人工决策] 见 native_glass.dart）。
+            // iOS 样式滑杆在宽松约束下只取自己的最小宽度（约 176），要撑满整行。
             child: campusIos
-                ? MergeSemantics(child: Semantics(label: label, child: CupertinoSlider(value: value, onChanged: onChanged, onChangeEnd: onChangeEnd, activeColor: palette.accent)))
-                : tier == CampusGlassTier.solid || !ready
+                ? SizedBox(width: double.infinity, child: MergeSemantics(child: Semantics(label: label, child: CupertinoSlider(value: value, onChanged: onChanged, onChangeEnd: onChangeEnd, activeColor: palette.accent))))
+                : solid
                 ? MergeSemantics(child: Semantics(label: label, child: Slider(value: value, onChanged: onChanged, onChangeEnd: onChangeEnd, activeColor: palette.accent)))
                 : liquid.GlassSlider(
                     value: value,
@@ -186,7 +192,70 @@ class CampusSlider extends StatelessWidget {
                   ),
           ),
         );
+        final marks = this.marks;
+        if (marks == null) return slider;
+        return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          slider,
+          Padding(padding: EdgeInsets.symmetric(horizontal: campusIos ? 22 : solid ? 24 : 15), child: _SliderMarks(marks)),
+        ]);
       },
     );
+  }
+}
+
+// 滑杆下方的刻度：band 是一段色条（如推荐范围）、bandLabel 是它的名字，ticks 是带名字的刻度（如系统字号），位置都是 0–1 的比例。
+// 名字互相挤时刻度优先，色条的名字依次试居中、靠起点、靠终点，都和刻度的名字挤就放到下一行居中。只画给眼睛看，读屏由调用方的说明文字讲。
+class CampusSliderMarks {
+  const CampusSliderMarks({this.band, this.bandLabel, this.ticks = const []});
+  final (double, double)? band;
+  final String? bandLabel;
+  final List<(double, String)> ticks;
+}
+
+class _SliderMarks extends StatelessWidget {
+  const _SliderMarks(this.marks);
+  final CampusSliderMarks marks;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    final style = TextStyle(fontSize: 14, height: 1.3, color: palette.onSurfaceVariant);
+    final line = campusTextPainter(context, '国', style: style);
+    final labelHeight = line.height;
+    line.dispose();
+    final band = marks.band;
+    final bandColor = palette.accent.withValues(alpha: palette.isDark ? .55 : .4);
+    return ExcludeSemantics(child: LayoutBuilder(builder: (context, constraints) {
+      final width = constraints.maxWidth;
+      // 名字的左缘：以 x 为中心，靠边时收在滑杆范围里不出界。
+      double centered(double x, double labelWidth) => (x - labelWidth / 2).clamp(0.0, (width - labelWidth).clamp(0.0, double.infinity));
+      final placed = <(double, double)>[];
+      bool free(double left, double labelWidth) => placed.every((range) => left + labelWidth + 8 <= range.$1 || left >= range.$2 + 8);
+      final labels = <Widget>[];
+      for (final (position, label) in marks.ticks) {
+        final labelWidth = campusTextWidth(context, label, style: style);
+        final left = centered(position * width, labelWidth);
+        placed.add((left, left + labelWidth));
+        labels.add(Positioned(top: 10, left: left, child: Text(label, maxLines: 1, softWrap: false, style: style)));
+      }
+      final bandLabel = marks.bandLabel;
+      var rows = 1;
+      if (band != null && bandLabel != null) {
+        final labelWidth = campusTextWidth(context, bandLabel, style: style);
+        final start = band.$1 * width, end = band.$2 * width;
+        final left = [centered((start + end) / 2, labelWidth), start, end - labelWidth].where((left) => left >= start - .5 && left + labelWidth <= end + .5 && free(left, labelWidth)).firstOrNull;
+        if (left == null) rows = 2;
+        labels.add(Positioned(top: 10 + (rows - 1) * labelHeight, left: left ?? centered((start + end) / 2, labelWidth), child: Text(bandLabel, maxLines: 1, softWrap: false, style: style.copyWith(color: palette.accentText))));
+      }
+      return SizedBox(height: 10 + labelHeight * rows, child: Stack(clipBehavior: Clip.none, children: [
+        if (band != null) Positioned(
+          left: band.$1 * width, width: (band.$2 - band.$1) * width, top: 1, height: 4,
+          child: DecoratedBox(decoration: BoxDecoration(color: bandColor, borderRadius: BorderRadius.circular(2))),
+        ),
+        for (final (position, _) in marks.ticks)
+          Positioned(left: position * width - 1, top: 0, width: 2, height: 7, child: DecoratedBox(decoration: BoxDecoration(color: palette.onSurfaceVariant, borderRadius: BorderRadius.circular(1)))),
+        ...labels,
+      ]));
+    }));
   }
 }

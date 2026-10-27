@@ -54,6 +54,11 @@ class TodaySyncRequest extends ChangeNotifier {
   }
 }
 
+// 今天页顶栏放得下「同步」胶囊的标准：减去大标题「今天」、间距与胶囊（图标 20、间距 8、左右内边距 28 再加文字）后，
+// 留给日期的宽度写得下「12月30日」；放不下时「同步」只留图标。界面页按它算推荐字号的上限（text_size_range.dart）。
+bool todayHeaderFits(BuildContext context, double width, {String label = '同步', TextScaler? textScaler}) =>
+    width - campusTextWidth(context, '今天', style: Theme.of(context).textTheme.headlineMedium, textScaler: textScaler) - 16 - (campusTextWidth(context, label, style: const TextStyle(fontSize: 16), textScaler: textScaler) + 56) >= campusTextWidth(context, '12月30日', style: const TextStyle(fontSize: 14), textScaler: textScaler);
+
 class TodayPage extends StatefulWidget {
   const TodayPage({
     super.key,
@@ -592,7 +597,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
           final label = _syncing ? '同步中' : '同步';
           final title = Theme.of(context).textTheme.headlineMedium;
           // 窄屏、大字号下日期连「10月27日」一行都放不下时，「同步」只留图标（同课表顶栏的圆钮），不把日期截掉一半。
-          final compact = constraints.maxWidth - campusTextWidth(context, '今天', style: title) - 16 - (campusTextWidth(context, label, style: const TextStyle(fontSize: 16)) + 56) < campusTextWidth(context, '12月30日', style: const TextStyle(fontSize: 14));
+          final compact = !todayHeaderFits(context, constraints.maxWidth, label: label);
           final onSync = _syncing || _choosing ? null : _chooseSync;
           return Row(children: [
             Text('今天', style: title),

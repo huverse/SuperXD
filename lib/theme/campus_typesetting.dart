@@ -5,22 +5,22 @@ import 'package:flutter/rendering.dart';
 
 // 按 Text 实际排版的口径量文字：合并 DefaultTextStyle（主题给正文带了字距）、系统「粗体文本」时同样加粗（Text 自己会加粗），
 // 带上字号缩放、语言与方向。少了任何一项，量出来就比画出来的窄，按它定宽的格子会把末字裁掉（10-27 iPhone 系统字体下「09:40」缺半个 0）。
-// 凡按文字尺寸决定布局的都用它，不自己 new TextPainter；用完调用方 dispose。
-TextPainter campusTextPainter(BuildContext context, String text, {TextStyle? style, int? maxLines, double maxWidth = double.infinity}) {
+// 凡按文字尺寸决定布局的都用它，不自己 new TextPainter；用完调用方 dispose。textScaler 给了就按它量（界面页算别的字号下排不排得开），默认是当前字号。
+TextPainter campusTextPainter(BuildContext context, String text, {TextStyle? style, int? maxLines, double maxWidth = double.infinity, TextScaler? textScaler}) {
   var effective = DefaultTextStyle.of(context).style.merge(style);
   if (MediaQuery.boldTextOf(context)) effective = effective.merge(const TextStyle(fontWeight: FontWeight.bold));
   return TextPainter(
     text: TextSpan(text: text, style: effective),
     textDirection: Directionality.of(context),
     locale: Localizations.maybeLocaleOf(context),
-    textScaler: MediaQuery.textScalerOf(context),
+    textScaler: textScaler ?? MediaQuery.textScalerOf(context),
     textHeightBehavior: DefaultTextStyle.of(context).textHeightBehavior,
     maxLines: maxLines,
   )..layout(maxWidth: maxWidth);
 }
 
-double campusTextWidth(BuildContext context, String text, {TextStyle? style}) {
-  final painter = campusTextPainter(context, text, style: style, maxLines: 1);
+double campusTextWidth(BuildContext context, String text, {TextStyle? style, TextScaler? textScaler}) {
+  final painter = campusTextPainter(context, text, style: style, maxLines: 1, textScaler: textScaler);
   final width = painter.width;
   painter.dispose();
   return width;

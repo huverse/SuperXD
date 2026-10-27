@@ -72,11 +72,12 @@ class _AppearanceCard extends StatelessWidget {
     final colors = CampusPalette.of(context);
     final known = DisplaySettings.paletteIds.contains(share.paletteId);
     final palette = known ? CampusPalette.byId(share.paletteId, brightness: Theme.of(context).brightness) : null;
-    final scaleIndex = DisplaySettings.scales.indexOf(share.scale);
+    // 字号 0 是跟随系统，其余是实际显示大小（人工决策见 local/display_settings.dart 的 textSizeMin）。
+    final textSize = share.scale == 0 ? '字号跟随系统' : DisplaySettings.knownTextSize(share.scale) ? '字号 ${(share.scale * 100).round()}%' : null;
     final details = [
       palette?.label ?? '新配色',
       switch (share.fontId) { 'serif' => '文学衬线', 'maple' => 'Maple', DisplaySettings.systemFont => '系统字体', _ => '新字体' },
-      if (scaleIndex >= 0) '字号${DisplaySettings.labels[scaleIndex]}',
+      ?textSize,
       switch (share.themeMode) { 'light' => '浅色', 'dark' => '深色', _ => '跟随系统' },
     ];
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [

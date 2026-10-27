@@ -37,6 +37,11 @@ import 'package:superxd/domain/campus_log.dart';
 
 enum ScheduleRange { day, term, year }
 
+// 课表顶栏放得下「今天」胶囊的标准：除标题外固定占 160（返回 48、两个圆钮 44 与间距），胶囊是图标 24、间距 8 与左右内边距 28 再加文字，
+// 剩下的写得下标题；放不下时「今天」只留图标。界面页按它算推荐字号的上限（text_size_range.dart），textScaler 给了就按那个字号量。
+bool scheduleTitleFits(BuildContext context, double width, {String title = '课表', TextScaler? textScaler}) =>
+    width - 160 - (campusTextWidth(context, '今天', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500), textScaler: textScaler) + 60) >= campusTextWidth(context, title, style: Theme.of(context).textTheme.titleLarge, textScaler: textScaler);
+
 class ScheduleSelection {
   const ScheduleSelection({required this.range, required this.year, required this.date, this.month, this.week, this.inYearTerm = false, this.detailKey});
   final ScheduleRange range;
@@ -174,7 +179,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     if (_first == null || _last == null || date.compareTo(_first!) < 0 || date.compareTo(_last!) > 0) return;
     final week = weekIndex(_start!, date);
     if (date != _selection.date && !fromSwipe && !MediaQuery.disableAnimationsOf(context)) {
-      _outgoingDay = IgnorePointer(child: CourseDayCards(key: ValueKey('outgoing-${_selection.date}'), spans: _spans(_selection.date), bells: _bells, date: _selection.date));
+      _outgoingDay = IgnorePointer(child: CourseDayCards(key: ValueKey('outgoing-${_selection.date}'), spans: _spans(_selection.date), bells: _bells, date: _selection.date, bottomInset: 16 + MediaQuery.paddingOf(context).bottom));
       _dayTransition.forward(from: 0);
     }
     setState(() => _selection = _selection.copy(date: date, month: parseIsoDate(mondayOf(date)).month, week: week, clearDetail: true));
@@ -316,14 +321,14 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     final motion = MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 300);
     return PopScope(canPop: _canPop, onPopInvokedWithResult: (didPop, _) { if (!didPop) _back(); }, child: CampusBackground(child: Scaffold(
       backgroundColor: Colors.transparent,
-      body: SafeArea(bottom: true, top: false, child: Column(children: [
+      // 滚动区一直铺到屏幕底边（同 iOS 列表滚到 Home 指示条下面），底部安全区留在各列表的末尾，不在指示条上方截成一条直线。
+      body: SafeArea(bottom: false, top: false, child: Column(children: [
         // 返回图标对齐 16、标题从 56 起，同 AppBar（见 campus_theme.dart 的顶栏人工决策）。
         CampusTopBar(child: SizedBox(height: 56 * scale, child: LayoutBuilder(builder: (context, constraints) {
           final years = _selection.yearOverview && _selection.year.isNotEmpty ? '${_selection.year}–${int.parse(_selection.year)+1}' : null;
           final titleStyle = Theme.of(context).textTheme.titleLarge;
           // 窄屏、大字号下标题放不下时「今天」只留图标（同右边两个圆钮），不把「课表」挤折行、不截掉第几周。
-          // 顶栏除标题外固定占 160（返回 48、两个圆钮 44 与间距），「今天」胶囊是图标 24、间距 8 与左右内边距 28 再加文字。
-          final compact = constraints.maxWidth - 160 - (campusTextWidth(context, '今天', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)) + 60) < campusTextWidth(context, years ?? '课表', style: titleStyle);
+          final compact = !scheduleTitleFits(context, constraints.maxWidth, title: years ?? '课表');
           return Row(children: [
           const SizedBox(width: 4),
           IconButton(tooltip: '返回', onPressed: _back, icon: const CampusIcon(CampusIcons.back)),
@@ -352,9 +357,9 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
             ? Center(child: Text(_term?.label ?? '课表', style: const TextStyle(fontSize: 14)))
             : DateRail(first: _first!, last: _last!, selected: _selection.date, recenterRequest: _recenterRequest, onSelect: _selectDate)),
         if (_loading && _refreshingCurrent) const CampusLoading(label: '正在更新课表', inline: true),
-        Expanded(child: _loading && !_refreshingCurrent ? const Center(child: CampusLoading(label: '正在读取课表')) : CampusScrollFade(child: AnimatedSwitcher(duration: motion,
+        Expanded(child: _loading && !_refreshingCurrent ? const Center(child: CampusLoading(label: '正在读取课表')) : AnimatedSwitcher(duration: motion,
           child: _selection.yearOverview ? _years() : _content(scale, motion),
-        ))),
+        )),
       ])),
     )));
   }
@@ -377,7 +382,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
   Widget _years() {
     final years = _terms.map((term) => term.xn).toSet().toList()..sort();
     final index = years.indexOf(_selection.year);
-    return ListView(key: const ValueKey('years'), padding: const EdgeInsets.all(16), children: [
+    return CampusScrollFade(key: const ValueKey('years'), child: ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + MediaQuery.paddingOf(context).bottom), children: [
       Row(children: [
         TextButton.icon(onPressed: index <= 0 ? null : () => setState(() => _selection = _selection.copy(year: years[index-1])), icon: const CampusIcon(CampusIcons.previous), label: const Text('上一年')),
         const Spacer(),
@@ -393,7 +398,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
           CampusIcon(CampusIcons.next, color: CampusPalette.of(context).onSurfaceVariant),
         ]),
       )),
-    ]);
+    ]));
   }
 
   Widget _content(double scale, Duration motion) {
@@ -407,21 +412,22 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     }
     if (_start == null) return Center(key: const ValueKey('start'), child: FilledButton.icon(style: campusProminent, onPressed: _editStart, icon: const CampusIcon(CampusIcons.termStart), label: const Text('设置开学日')));
     final showRail = _selection.showRail;
+    // 各列表末尾留出底部安全区与 16 的边距：列表铺到屏幕底边，最后一项能滚到 Home 指示条上方。
+    final bottom = 16 + MediaQuery.paddingOf(context).bottom;
     return LayoutBuilder(key: const ValueKey('calendar-body'), builder: (context, constraints) {
       final railWidth = math.min(112 * scale, constraints.maxWidth * .34);
       // [人工决策-2026-10-27 20:11:01] 窄屏、大字号下左边的月份周次栏会把课程卡挤得放不下「时刻列 + 课名」（用户 360dp 真机截图：课名一两个字一行）：
       // 栏改成卡片上方的一行横条，结构同竖栏（点月份展开各周、所看的那周选中并滚到中间），卡片吃满整宽、保留时刻列（用户从两种实物中选定，
       // 未选「保留左侧栏、卡片把时刻挪到内容第一行」）。放得下的标准是卡片内容区能并排时刻列与六个课名字（同 course_cards.dart 的三栏判断），放得下照旧竖栏。
-      final cardNeed = 28 + campusTextWidth(context, '00:00', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)) + 1 + 25 + campusTextWidth(context, '国国国国国国', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600));
-      final strip = showRail && constraints.maxWidth - 32 - railWidth - 12 < cardNeed;
-      final cards = Stack(children: [
+      final strip = showRail && !courseCardColumnsFit(context, constraints.maxWidth - 32 - railWidth - 12);
+      final cards = CampusScrollFade(child: Stack(children: [
           FadeTransition(opacity: _dayCurve, child: PageView.builder(
           key: ValueKey('days-${_term!.key}-$_start'), controller: _pager,
           itemCount: _indexOf(_last!) + 1,
           onPageChanged: (index) { final date = _dateAt(index); if (date != _selection.date) _selectDate(date, fromSwipe: true); },
           itemBuilder: (context, index) {
             final date = _dateAt(index);
-            return CourseDayCards(key: ValueKey(date), spans: _spans(date), bells: _bells, date: date,
+            return CourseDayCards(key: ValueKey(date), spans: _spans(date), bells: _bells, date: date, bottomInset: bottom,
               detailKey: date == _selection.date ? _selection.detailKey : null,
               onDetail: (key) => setState(() => _selection = _selection.copy(detailKey: key, clearDetail: key == null)),
               onEdit: (course) => _manage(course: course),
@@ -436,17 +442,17 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
           },
         )),
           if (_outgoingDay != null) Positioned.fill(child: FadeTransition(opacity: ReverseAnimation(_dayCurve), child: _outgoingDay)),
-        ]);
+        ]));
       if (strip) {
-        return Padding(padding: const EdgeInsets.fromLTRB(0, 12, 0, 16), child: Column(children: [
+        return Padding(padding: const EdgeInsets.only(top: 12), child: Column(children: [
           SizedBox(height: 44 * scale, child: _monthStrip()),
           const SizedBox(height: 12),
           Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: cards)),
         ]));
       }
-      return Padding(padding: const EdgeInsets.all(16), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      return Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 0), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         AnimatedContainer(duration: motion, curve: Curves.easeInOutCubic, width: showRail ? railWidth : 0,
-          child: ClipRect(child: OverflowBox(alignment: Alignment.topLeft, minWidth: railWidth, maxWidth: railWidth, child: IgnorePointer(ignoring: !showRail, child: _months(scale, constraints.maxHeight))))),
+          child: ClipRect(child: OverflowBox(alignment: Alignment.topLeft, minWidth: railWidth, maxWidth: railWidth, child: IgnorePointer(ignoring: !showRail, child: CampusScrollFade(child: _months(scale, constraints.maxHeight, bottom)))))),
         AnimatedContainer(duration: motion, width: showRail ? 12 : 0),
         Expanded(child: cards),
       ]));
@@ -482,11 +488,11 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     ]));
   }
 
-  Widget _months(double scale, double availableHeight) {
+  Widget _months(double scale, double availableHeight, double bottom) {
     final months = monthsOfTerm(_start!, _weekCount);
     final gap = (availableHeight / 90).clamp(6.0, 12.0);
     final motion = MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 300);
-    return ListView(padding: EdgeInsets.zero, children: [for (final month in months) ...[
+    return ListView(padding: EdgeInsets.only(bottom: bottom), children: [for (final month in months) ...[
       Padding(padding: EdgeInsets.only(bottom: gap), child: _tile('$month月', month == _selection.month, () => setState(() {
         _selection = month == _selection.month ? _selection.copy(clearDrill: true) : _selection.copy(month: month, clearDetail: true);
       }), minHeight: 48 * scale)),

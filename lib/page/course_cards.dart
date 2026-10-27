@@ -18,6 +18,13 @@ import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/page/live_clock.dart';
 
+// 课程卡三栏（时刻列 │ 竖条 │ 内容）放得下的标准：内容一栏能并排六个课名字，放不下改两栏（见 _cardHeight）；
+// 学期视图按它决定左侧栏还是横条，界面页按它算推荐字号的上限（text_size_range.dart）。textScaler 给了就按那个字号量。
+bool courseCardColumnsFit(BuildContext context, double cardWidth, {double? timeWidth, TextScaler? textScaler}) {
+  final time = timeWidth ?? campusTextWidth(context, '00:00', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()]), textScaler: textScaler).ceilToDouble() + 1;
+  return cardWidth - 28 - time - 25 >= campusTextWidth(context, '国国国国国国', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600), textScaler: textScaler);
+}
+
 String spanIdentity(PeriodSpan span) => span.empty ? span.key : '${span.key}:${span.meeting!.weekday}:${span.meeting!.place}';
 
 // 今天此刻的上课状态（同 iOS 实时活动：有明确起止就画进度）。只对今天计算，其他日子为空。
@@ -284,7 +291,7 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
     // 三栏（时刻列 │ 竖条 │ 内容）里内容一栏放不下六个课名字时改两栏：时刻挪到内容第一行（「08:00–09:40」），课名、教室吃满竖条右边的整宽。
     // 学期视图左边还有月份周次栏，窄屏大字号下内容一栏曾只剩两个字宽，课名、教室一两个字一行。正常宽度照旧三栏。
     final columns = width - 28 - _timeWidth - 25;
-    _stacked = columns < measure('国国国国国国', 17, FontWeight.w600, double.infinity);
+    _stacked = !courseCardColumnsFit(context, width, timeWidth: _timeWidth);
     final detailWidth = _stacked ? width - 28 - 15 : math.max(48.0, columns);
     final timeColumn = _stacked ? 0.0 : measure('00:00', 20, FontWeight.w600, 200) + measure('00:00', 14, FontWeight.w500, 200);
     final timeRow = _stacked ? measure('00:00–00:00', 16, FontWeight.w600, detailWidth) + 2 : 0.0;
@@ -455,6 +462,28 @@ class _CourseCardBody extends StatelessWidget {
       ])),
     );
   }
+}
+
+// 字号条上方的预览：一张课程卡，排法同课表（内容一栏放不下同样改两栏），按给的字号排。界面页拖字号条时只改它，松手才改全应用。
+// 课名、教室、教师都是合成的。
+class CourseCardPreview extends StatelessWidget {
+  const CourseCardPreview({super.key, required this.textSize});
+  final double textSize;
+  static final _meeting = CourseMeeting(weekday: 1, periodStart: 3, periodEnd: 4, place: '明德楼 A201', weeks: const [1]);
+  static final _span = PeriodSpan(start: 3, end: 4, course: CourseRecord(courseCode: 'PREVIEW', courseName: '马克思主义基本原理', sectionId: 'PREVIEW', credit: 3, teacherName: '林老师', meetings: [_meeting]), meeting: _meeting);
+  static const _time = MeetingTime(600, 700, '10:00', '11:40');
+
+  @override
+  Widget build(BuildContext context) => MediaQuery(
+    data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(textSize)),
+    child: LayoutBuilder(builder: (context, constraints) {
+      final time = campusTextWidth(context, '00:00', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()])).ceilToDouble() + 1;
+      return CampusSurface(
+        padding: const EdgeInsets.fromLTRB(14, 12, 14, 12),
+        child: _CourseCardBody(span: _span, time: _time, progress: null, timeWidth: time, stacked: !courseCardColumnsFit(context, constraints.maxWidth, timeWidth: time)),
+      );
+    }),
+  );
 }
 
 // 教室行：定位图标加正文色半粗教室名，课程卡、此刻卡与下一节预告共用。图标对齐首行，长教室名在图标右侧换行。

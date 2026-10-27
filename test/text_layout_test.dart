@@ -121,7 +121,8 @@ void main() {
       await inner.setTermStart(_term, formatIsoDate(today.subtract(Duration(days: today.weekday - 1 + 56))));
       final display = DisplaySettings.memory();
       await display.setFont(font);
-      await display.setScale(app);
+      // 应用字号是实际显示大小：标准时跟随系统（系统字号照常生效），其余直接给大小（人工决策见 display_settings.dart 的 textSizeMin）。
+      await display.setTextSize(app == 1 ? null : app);
       final wide = width > 400;
 
       final loggedOut = AppSession(_Accounts(inner, signedIn: false));

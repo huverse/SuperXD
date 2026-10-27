@@ -8,6 +8,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/appearance_page.dart';
+import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -22,10 +23,10 @@ void main() {
       await db.insert('display_settings',{'id':1,'text_scale':1.25,'palette_id':'rose','font_id':'serif'});
     });await old.close();
     var settings=await DisplaySettings.open(databasePath:path);
-    expect(settings.themeMode,ThemeMode.system);expect(settings.scale,1.25);expect(settings.paletteId,'rose');expect(settings.fontId,'serif');
-    await Future.wait([settings.setThemeMode(ThemeMode.dark),settings.setPalette('mist'),settings.setScale(1.4)]);
+    expect(settings.themeMode,ThemeMode.system);expect(settings.textSize,1.25);expect(settings.paletteId,'rose');expect(settings.fontId,'serif');
+    await Future.wait([settings.setThemeMode(ThemeMode.dark),settings.setPalette('mist'),settings.setTextSize(1.4)]);
     await settings.close();settings=await DisplaySettings.open(databasePath:path);
-    expect(settings.themeMode,ThemeMode.dark);expect(settings.paletteId,'mist');expect(settings.scale,1.4);expect(settings.fontId,'serif');
+    expect(settings.themeMode,ThemeMode.dark);expect(settings.paletteId,'mist');expect(settings.textSize,1.4);expect(settings.fontId,'serif');
     await settings.close();
     final raw=await openDatabase(path);await raw.update('display_settings',{'theme_mode':'invalid'});await raw.close();
     settings=await DisplaySettings.open(databasePath:path);expect(settings.themeMode,ThemeMode.system);await settings.close();
@@ -46,7 +47,7 @@ void main() {
     await tester.tap(find.text('浅色'));await tester.pumpAndSettle();expect(settings.themeMode,ThemeMode.light);expect(Theme.of(element).brightness,Brightness.light);
     tester.platformDispatcher.platformBrightnessTestValue=Brightness.light;await tester.pumpAndSettle();
     await tester.tap(find.text('深色'));await tester.pumpAndSettle();expect(Theme.of(element).brightness,Brightness.dark);
-    await tester.tap(find.text('跟随系统'));await tester.pumpAndSettle();expect(Theme.of(element).brightness,Brightness.light);
+    await tester.tap(find.descendant(of:find.byType(CampusSegmented<ThemeMode>),matching:find.text('跟随系统')));await tester.pumpAndSettle();expect(Theme.of(element).brightness,Brightness.light);
     expect(identical(element,tester.element(find.byType(AppearancePage))),isTrue);
     await tester.pumpWidget(const SizedBox());settings.dispose();
   });
