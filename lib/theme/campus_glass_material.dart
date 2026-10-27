@@ -11,13 +11,12 @@ enum CampusGlassRole { navigation, control, overlay }
 
 liquid.GlassQuality campusGlassQuality(CampusGlassTier tier) => switch (tier) {
   CampusGlassTier.full => liquid.GlassQuality.premium,
-  CampusGlassTier.standard => liquid.GlassQuality.standard,
   CampusGlassTier.minimal ||
   CampusGlassTier.solid => liquid.GlassQuality.minimal,
 };
 
 // 满档以 iOS 27 常规材质为底（frost 雾化、rimShade 轮廓、rimLight 高光），再按当前配色轻着色，不加色散。
-// 标准与磨砂档保持升级前参数，观感不变。
+// 磨砂档保持升级前参数，观感不变。
 liquid.LiquidGlassSettings campusGlassSettings(
   CampusPalette palette,
   CampusGlassRole role,
@@ -78,8 +77,8 @@ liquid.LiquidGlassSettings campusGlassSettings(
     blur: navigation ? (floating ? 10 : 8) : 6,
     // 磨砂档（实色档在库里也走磨砂）不调饱和：饱和不为 1 时库会在背景模糊里再嵌一层做饱和的 BackdropFilter，
     // OPPO（ColorOS、Android 17、Vulkan）上弹层被键盘顶起时整块画成黑色，签到码与位置名称都输不了（真机探针确认，
-    // 去掉这层即正常）。浮层底色厚、透出的背景少，原先 .9 的去饱和看不出差别；标准档在着色器里调饱和，不受影响。
-    saturation: tier == CampusGlassTier.standard ? .9 : 1,
+    // 去掉这层即正常）。浮层底色厚、透出的背景少，原先 .9 的去饱和看不出差别。
+    saturation: 1,
     refractiveIndex: navigation && floating ? 1.15 : 1.10,
     lightIntensity: navigation ? (floating ? .40 : .25) : .35,
     ambientStrength: navigation ? .12 : .16,
