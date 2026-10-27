@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
@@ -44,82 +46,86 @@ class ShellPage extends StatelessWidget {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) navigationShell.goBranch(0);
       },
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Stack(
-          children: [
-            // 结构固定只换数据，键盘弹出时不重建分支导航状态。
-            Positioned.fill(
-              child: Builder(builder: (context) {
-                final body = MediaQuery.of(context);
-                return MediaQuery(
-                  data: keyboard ? body : body.copyWith(padding: body.padding.copyWith(bottom: reserved), viewPadding: body.viewPadding.copyWith(bottom: reserved)),
-                  child: navigationShell,
-                );
-              }),
-            ),
-            if (nativeHeight != null)
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: nativeHeight,
-                child: ListenableBuilder(
-                  listenable: Listenable.merge([social, notes]),
-                  builder: (context, _) => NativeTabBar(
-                    selected: navigationShell.currentIndex,
-                    tint: CampusPalette.of(context).primary,
-                    items: [
-                      for (final (index, label) in _DragNavigationBarState.labels.indexed)
-                        NativeTabItem(
-                          title: label,
-                          icon: _DragNavigationBarState.icons[index],
-                          selectedIcon: _DragNavigationBarState.selectedIcons[index],
-                          badge: index == 2 ? social?.unread ?? 0 : 0,
-                          dot: index == 3 && (notes?.unread ?? false),
-                          accessibilityValue: index == 2 && (social?.unread ?? 0) > 0 ? '${social!.unread} 条未读' : index == 3 && (notes?.unread ?? false) ? '有新的' : null,
-                        ),
-                    ],
-                    // [人工决策-2026-10-27 00:45:04] 再点当前项（同 iOS 系统）：这一栏有推入的页面时回到这一栏首页，已在首页时滚回顶部（用户选定「同系统：直接切」）。
-                    onSelected: (index) {
-                      if (index != navigationShell.currentIndex) {
-                        navigationShell.goBranch(index);
-                      } else if (navigationShell.route.branches[index].navigatorKey.currentState?.canPop() ?? false) {
-                        navigationShell.goBranch(index, initialLocation: true);
-                      } else {
-                        CampusStatusBarScroll.scrollToTop();
-                      }
-                    },
-                    onHeight: (height) => _nativeBarHeight.value = height,
-                    revealed: revealed,
+      // iOS 的系统底栏在 Flutter 之上：提示条（SnackBar 只在最外层这个 Scaffold 里出）按底栏总高留出底部，浮在底栏上面，不被它挡住。
+      child: MediaQuery(
+        data: nativeHeight == null ? media : media.copyWith(padding: media.padding.copyWith(bottom: math.max(media.padding.bottom, reserved)), viewPadding: media.viewPadding.copyWith(bottom: math.max(media.viewPadding.bottom, reserved))),
+        child: Scaffold(
+          backgroundColor: Colors.transparent,
+          body: Stack(
+            children: [
+              // 结构固定只换数据，键盘弹出时不重建分支导航状态。
+              Positioned.fill(
+                child: Builder(builder: (context) {
+                  final body = MediaQuery.of(context);
+                  return MediaQuery(
+                    data: keyboard ? body : body.copyWith(padding: body.padding.copyWith(bottom: reserved), viewPadding: body.viewPadding.copyWith(bottom: reserved)),
+                    child: navigationShell,
+                  );
+                }),
+              ),
+              if (nativeHeight != null)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  height: nativeHeight,
+                  child: ListenableBuilder(
+                    listenable: Listenable.merge([social, notes]),
+                    builder: (context, _) => NativeTabBar(
+                      selected: navigationShell.currentIndex,
+                      tint: CampusPalette.of(context).primary,
+                      items: [
+                        for (final (index, label) in _DragNavigationBarState.labels.indexed)
+                          NativeTabItem(
+                            title: label,
+                            icon: _DragNavigationBarState.icons[index],
+                            selectedIcon: _DragNavigationBarState.selectedIcons[index],
+                            badge: index == 2 ? social?.unread ?? 0 : 0,
+                            dot: index == 3 && (notes?.unread ?? false),
+                            accessibilityValue: index == 2 && (social?.unread ?? 0) > 0 ? '${social!.unread} 条未读' : index == 3 && (notes?.unread ?? false) ? '有新的' : null,
+                          ),
+                      ],
+                      // [人工决策-2026-10-27 00:45:04] 再点当前项（同 iOS 系统）：这一栏有推入的页面时回到这一栏首页，已在首页时滚回顶部（用户选定「同系统：直接切」）。
+                      onSelected: (index) {
+                        if (index != navigationShell.currentIndex) {
+                          navigationShell.goBranch(index);
+                        } else if (navigationShell.route.branches[index].navigatorKey.currentState?.canPop() ?? false) {
+                          navigationShell.goBranch(index, initialLocation: true);
+                        } else {
+                          CampusStatusBarScroll.scrollToTop();
+                        }
+                      },
+                      onHeight: (height) => _nativeBarHeight.value = height,
+                      revealed: revealed,
+                    ),
                   ),
                 ),
-              ),
-            if (!keyboard && nativeHeight == null)
-              Positioned(
-                left: 16,
-                right: 16,
-                bottom: bottom,
-                child: Center(
-                  child: ConstrainedBox(
-                    constraints: const BoxConstraints(maxWidth: 620),
-                    child: ListenableBuilder(
-                      listenable: Listenable.merge([social, notes]),
-                      builder: (context, _) => DragNavigationBar(
-                        selected: navigationShell.currentIndex,
-                        badges: [0, 0, social?.unread ?? 0, 0],
-                        dots: [false, false, false, notes?.unread ?? false],
-                        onSelected: (index) {
-                          if (index != navigationShell.currentIndex) {
-                            navigationShell.goBranch(index);
-                          }
-                        },
+              if (!keyboard && nativeHeight == null)
+                Positioned(
+                  left: 16,
+                  right: 16,
+                  bottom: bottom,
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 620),
+                      child: ListenableBuilder(
+                        listenable: Listenable.merge([social, notes]),
+                        builder: (context, _) => DragNavigationBar(
+                          selected: navigationShell.currentIndex,
+                          badges: [0, 0, social?.unread ?? 0, 0],
+                          dots: [false, false, false, notes?.unread ?? false],
+                          onSelected: (index) {
+                            if (index != navigationShell.currentIndex) {
+                              navigationShell.goBranch(index);
+                            }
+                          },
+                        ),
                       ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
       ),
     );

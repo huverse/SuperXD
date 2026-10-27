@@ -322,7 +322,10 @@ void main() {
   // [人工决策] 见 lib/theme/campus_background.dart 的 _iosTick：iOS 上云雾每秒只更新约 20 次，低电量模式下停住；安卓照旧逐帧。
   testWidgets('iOS 云雾每秒只更新约 20 次，低电量模式下停住，关掉后从原处接着走', (tester) async {
     await tester.pumpWidget(MaterialApp(home: CampusMotion(child: CampusAtmosphere(child: const SizedBox.expand()))));
-    final progress = (tester.widget<CustomPaint>(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter)).painter! as AtmospherePainter).progress;
+    final painter = tester.widget<CustomPaint>(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter)).painter! as AtmospherePainter;
+    final progress = painter.progress;
+    // iOS 先画成半分辨率贴图再贴（见 AtmosphereCache），安卓照旧直接画。
+    expect(painter.cache != null, debugDefaultTargetPlatformOverride == TargetPlatform.iOS);
     var changes = 0;
     void count() => changes++;
     progress.addListener(count);
@@ -379,6 +382,36 @@ void main() {
     expect(differs, 0);
     expect(expected.any((value) => value > 0), isTrue);
   });
+  // iOS 的云雾先画成半分辨率贴图再整屏贴上（见 AtmosphereCache）：同直接画对照，按像素密度 3 渲染，差别不到肉眼可辨的程度。
+  for (final palette in [...CampusPalette.values, ...CampusPalette.darkValues]) {
+    test('${palette.label}${palette.isDark ? '（深色）' : ''}云雾半分辨率贴图同直接画看不出差别', () async {
+      const size = Size(130, 280), ratio = 3.0;
+      Future<Uint8List> render(AtmosphereCache? cache, double phase) async {
+        final recorder = ui.PictureRecorder();
+        AtmospherePainter(progress: AlwaysStoppedAnimation(phase), highContrast: false, palette: palette, cache: cache, ratio: ratio).paint(Canvas(recorder)..scale(ratio), size);
+        final picture = recorder.endRecording();
+        final image = await picture.toImage((size.width * ratio).toInt(), (size.height * ratio).toInt());
+        final bytes = (await image.toByteData(format: ui.ImageByteFormat.rawRgba))!.buffer.asUint8List();
+        image.dispose();
+        picture.dispose();
+        return bytes;
+      }
+      final cache = AtmosphereCache();
+      addTearDown(cache.dispose);
+      for (final phase in const [0.0, .37, .81]) {
+        final direct = await render(null, phase), cached = await render(cache, phase);
+        var total = 0, worst = 0;
+        for (var index = 0; index < direct.length; index++) {
+          final difference = (direct[index] - cached[index]).abs();
+          total += difference;
+          if (difference > worst) worst = difference;
+        }
+        debugPrint('[AtmosphereTest] palette=${palette.id} phase=$phase cacheMean=${(total / direct.length).toStringAsFixed(3)} cacheMax=$worst');
+        expect(total / direct.length, lessThan(1));
+        expect(worst, lessThanOrEqualTo(6));
+      }
+    });
+  }
 }
 
 // 原来的逐点画法，作对照。
