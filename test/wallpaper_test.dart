@@ -8,6 +8,7 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/appearance_page.dart';
@@ -287,7 +288,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('${DisplaySettings.defaultWallpaperBlur}%'), findsOneWidget);
     // 拖动中只预览（背景与百分比实时变化），松手才落库。
-    final fade = find.byType(Slider).last;
+    // 字号那一节也有滑杆，按名字找透明度这一条。
+    final fade = find.descendant(of: find.byWidgetPredicate((widget) => widget is CampusSlider && widget.label == '透明度'), matching: find.byType(Slider));
     final gesture = await tester.startGesture(tester.getCenter(fade) - Offset(tester.getSize(fade).width / 2 - 24, 0));
     await gesture.moveBy(const Offset(40, 0));
     await tester.pump();
@@ -305,7 +307,8 @@ void main() {
     addTearDown(() => campusGlassReady.value = false);
     final handle = tester.ensureSemantics();
     await tester.pump();
-    expect(find.byType(liquid.GlassSlider), findsNWidgets(2));
+    // 模糊、透明度两条，加字号那一节的一条。
+    expect(find.byType(liquid.GlassSlider), findsNWidgets(3));
     tester.semantics.increase(find.semantics.byPredicate((node) => node.label == '模糊' && node.getSemanticsData().hasAction(SemanticsAction.increase)));
     await tester.pump();
     expect(settings.wallpaperBlur, DisplaySettings.defaultWallpaperBlur);

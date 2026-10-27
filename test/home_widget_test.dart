@@ -144,7 +144,7 @@ void main() {
     final display = DisplaySettings.memory(), port = _Port();
     watchWidgetTheme(display, port);
     expect(port.themes.single.mode, 'system');
-    await display.setScale(1.25);
+    await display.setTextSize(1.25);
     expect(port.themes, hasLength(1));
     await display.setThemeMode(ThemeMode.dark);
     expect(port.themes.last.mode, 'dark');

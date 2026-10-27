@@ -3,9 +3,12 @@ import 'dart:io';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
 import 'package:superxd/page/image_copy_pick.dart';
+import 'package:superxd/page/text_size_range.dart';
+import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/share_target_sheet.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
@@ -76,6 +79,13 @@ class _AppearancePageState extends State<AppearancePage> {
   // 改字号、换字体会让整页重新排版：点的那一项在过渡期间停在手指下（人工决策见 local/display_settings.dart 的 CampusTextScale）。
   final _scroll = CampusAnchoredScrollController();
   final _scaleAnchor = GlobalKey();
+  // 字号条拖动中的大小：只改预览卡与数值，手指抬起（或被系统取消）才改全应用；读屏增减没有手指，停手 300ms 补存。
+  // 不靠滑杆的松手回调判断：玻璃滑杆在系统取消时不回调，而按住停一会儿又不能当成松手（会在手指下整页重排）。
+  double? _draftSize;
+  Timer? _sizeSave;
+  bool _pressing = false;
+  // 最近一次排版时的系统字号；离开页面时补存要用，那时已不能再从 context 取。
+  double _system = 1;
   final _fontAnchors = {for (final id in [DisplaySettings.systemFont, ...DisplaySettings.fontFamilies.keys]) id: GlobalKey()};
 
   @override
@@ -88,6 +98,12 @@ class _AppearancePageState extends State<AppearancePage> {
   @override
   void dispose() {
     _scroll.dispose();
+    if (_sizeSave?.isActive == true) {
+      _sizeSave!.cancel();
+      _settings!.setTextSize(_followsAt(_draftSize!, _system) ? null : _draftSize).catchError((Object error, StackTrace stack) {
+        campusLog('[Appearance] action=save_text_size errorType=${error.runtimeType}\n$stack');
+      });
+    }
     if (_lookSave?.isActive == true) {
       _lookSave!.cancel();
       _storeLook(_settings!).catchError((Object error, StackTrace stack) {
@@ -161,6 +177,39 @@ class _AppearancePageState extends State<AppearancePage> {
 
   // 点了就生效：落库在 DisplaySettings 的保存锁里排队、合并完整快照，连着点也不互相覆盖，所以存的时候页面上的选项不变灰，
   // 也不在页尾插「保存中」（以前点一项整页选项闪一下灰、页尾多出一行）。只有导入壁纸这种要等的操作才原地显示进度。
+  static double _fraction(double size) => ((size - DisplaySettings.textSizeMin) / (DisplaySettings.textSizeMax - DisplaySettings.textSizeMin)).clamp(0.0, 1.0);
+  // 松在「系统」那一档上就回到跟随系统（同 iOS 文字大小的默认档）。
+  static bool _followsAt(double size, double system) => size == DisplaySettings.snapTextSize(system);
+
+  // 拖动中每过一档轻震一下，越过推荐上限（进出都算）重震一下，提醒再往大会改排。
+  void _dragSize(DisplaySettings settings, double fraction, double current, double comfortable, double system) {
+    final size = DisplaySettings.snapTextSize(DisplaySettings.textSizeMin + fraction * (DisplaySettings.textSizeMax - DisplaySettings.textSizeMin));
+    final previous = _draftSize ?? current;
+    if (size != previous) {
+      (previous <= comfortable) != (size <= comfortable) ? HapticFeedback.mediumImpact() : HapticFeedback.selectionClick();
+      // 下面的预览卡变高变矮时（贴着页底时滚动位置会被夹住）字号条也停在手指下。
+      _scroll.hold(_scaleAnchor, const Duration(milliseconds: 300));
+      setState(() => _draftSize = size);
+    }
+    _sizeSave?.cancel();
+    if (!_pressing) _sizeSave = Timer(const Duration(milliseconds: 300), () => _commitSize(settings, system));
+  }
+
+  void _releaseSize(DisplaySettings settings, double system) {
+    _pressing = false;
+    _commitSize(settings, system);
+  }
+
+  // 松手：全应用连续过渡到新字号，这一节在过渡期间停在手指下；保存完才撤掉拖动中的值，滑杆不先跳回旧位置。
+  Future<void> _commitSize(DisplaySettings settings, double system) async {
+    _sizeSave?.cancel();
+    final size = _draftSize;
+    if (size == null) return;
+    _scroll.hold(_scaleAnchor, CampusTextScale.duration + const Duration(milliseconds: 100));
+    await _save(() => settings.setTextSize(_followsAt(size, system) ? null : size));
+    if (mounted) setState(() => _draftSize = null);
+  }
+
   Future<void> _save(Future<void> Function() operation) async {
     setState(() => _error = null);
     try {
@@ -169,6 +218,67 @@ class _AppearancePageState extends State<AppearancePage> {
       campusLog('[Appearance] action=save errorType=${error.runtimeType}\n$stack');
       if (mounted) setState(() => _error = '保存失败，请重试');
     }
+  }
+
+  // 字号条（人工决策见 local/display_settings.dart 的 textSizeMin）：条上是实际显示大小，下方色条是这台手机的推荐范围、刻度是系统字号；
+  // 再下面的预览卡按拖到的大小排；超出推荐时说明哪些页面会改排（同一套规则见 text_size_range.dart）。
+  Widget _textSizeSection(BuildContext context, DisplaySettings settings, CampusPalette colors) {
+    final system = _system = CampusTextScale.systemOf(context);
+    final current = DisplaySettings.effectiveTextSize(settings.textSize, system);
+    final shown = _draftSize ?? current;
+    final width = MediaQuery.sizeOf(context).width;
+    final comfortable = comfortableTextSize(context, width);
+    final adaptations = textSizeAdaptations(context, width, shown);
+    final following = settings.textSize == null && _draftSize == null;
+    final secondary = TextStyle(fontSize: 14, color: colors.onSurfaceVariant);
+    String percent(double size) => '${(size * 100).round()}%';
+    final range = '${percent(DisplaySettings.textSizeMin)}–${percent(comfortable)}';
+    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      Wrap(alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center, spacing: 12, runSpacing: 8, children: [
+        Text.rich(TextSpan(children: [
+          const TextSpan(text: '字号  '),
+          TextSpan(text: percent(shown), style: TextStyle(color: colors.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()])),
+        ]), style: Theme.of(context).textTheme.titleLarge),
+        CampusGlassChip(
+          label: '跟随系统',
+          selected: following,
+          onSelected: (_) {
+            if (following) return;
+            _scroll.hold(_scaleAnchor, CampusTextScale.duration + const Duration(milliseconds: 100));
+            _save(() => settings.setTextSize(null));
+          },
+        ),
+      ]),
+      const SizedBox(height: 8),
+      // 改字号时整页重新排版，锚定的是字号条本身：上面的标题行随字号变高变矮也不把手指下的滑杆带走。
+      KeyedSubtree(key: _scaleAnchor, child: Listener(
+        onPointerDown: (_) => _pressing = true,
+        onPointerUp: (_) => _releaseSize(settings, system),
+        onPointerCancel: (_) => _releaseSize(settings, system),
+        child: CampusSlider(
+        value: _fraction(shown),
+        label: '字号',
+        onChanged: (fraction) => _dragSize(settings, fraction, current, comfortable, system),
+        onChangeEnd: (_) => _commitSize(settings, system),
+        marks: CampusSliderMarks(
+          band: (0, _fraction(comfortable)),
+          bandLabel: '推荐',
+          ticks: [(_fraction(system), system > DisplaySettings.textSizeMax ? '系统 ${percent(system)}' : '系统')],
+        ),
+      ))),
+      const SizedBox(height: 8),
+      // 读屏读这一句：推荐范围，或超出时哪些地方会改排。
+      adaptations.isEmpty
+          ? BalancedText('这台手机推荐 $range', style: secondary)
+          : Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              Padding(padding: EdgeInsets.only(top: ((MediaQuery.textScalerOf(context).scale(14) * 1.43 - 16) / 2).clamp(0.0, double.infinity)), child: CampusIcon(CampusIcons.warning, size: 16, color: colors.attention)),
+              const SizedBox(width: 6),
+              Expanded(child: BalancedText('超出推荐：${adaptations.join('、')}', style: secondary)),
+            ]),
+      // 预览卡在字号条下面：拖动时它变高只把下面的内容往下推，手指下的字号条不动。
+      const SizedBox(height: 12),
+      CourseCardPreview(textSize: shown),
+    ]);
   }
 
   List<Widget> _wallpaperSection(BuildContext context, DisplaySettings settings) {
@@ -389,29 +499,8 @@ class _AppearancePageState extends State<AppearancePage> {
                 ),
               ),
             const SizedBox(height: 12),
-            Text('字号', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 12),
-            Wrap(
-              key: _scaleAnchor,
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (
-                  var index = 0;
-                  index < DisplaySettings.scales.length;
-                  index++
-                )
-                  CampusGlassChip(
-                    label: DisplaySettings.labels[index],
-                    selected: settings.scale == DisplaySettings.scales[index],
-                    onSelected: (_) {
-                      // 字号过渡期间这一行标签停在手指下，上面的内容变矮变高不把它带走；多留一帧余量。
-                      _scroll.hold(_scaleAnchor, CampusTextScale.duration + const Duration(milliseconds: 100));
-                      _save(() => settings.setScale(DisplaySettings.scales[index]));
-                    },
-                  ),
-              ],
-            ),
+            // 推荐范围按页面里的默认文字样式量（当前字体与正文字距），要用 Scaffold 里面的 context，页面自己的 context 在它外面。
+            Builder(builder: (context) => _textSizeSection(context, settings, colors)),
             // iOS 上固定磨砂档（底栏是系统的，跟随系统设置），没有档位可调（[人工决策] 见 theme/native_glass.dart）。
             if (!campusIos) ...[
               const SizedBox(height: 24),

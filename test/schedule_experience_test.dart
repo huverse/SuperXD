@@ -619,9 +619,9 @@ void main() {
     final dir = await Directory.systemTemp.createTemp('display-setting-');
     final path = '${dir.path}/display.db';
     var settings = await DisplaySettings.open(databasePath: path);
-    await settings.setScale(1.25); await settings.close();
+    await settings.setTextSize(1.25); await settings.close();
     settings = await DisplaySettings.open(databasePath: path);
-    expect(settings.scale, 1.25);
+    expect(settings.textSize, 1.25);
     await settings.close(); await dir.delete(recursive: true);
   });
 }

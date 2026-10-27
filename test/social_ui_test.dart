@@ -188,11 +188,11 @@ void main() {
     expect(find.textContaining('藕粉'), findsOneWidget);
     await tester.tap(find.text('套用'));
     await advance(tester, 4);
-    expect([display.paletteId, display.fontId, display.scale, display.themeMode, display.glassMode], ['rose', 'serif', 1.1, ThemeMode.light, 'reduced']);
+    expect([display.paletteId, display.fontId, display.textSize, display.themeMode, display.glassMode], ['rose', 'serif', 1.1, ThemeMode.light, 'reduced']);
     expect(find.text('已套用'), findsOneWidget);
     await tester.tap(find.text('撤销'));
     await advance(tester, 4);
-    expect([display.paletteId, display.fontId, display.scale, display.themeMode], [DisplaySettings.defaultPaletteId, 'maple', 1.0, ThemeMode.system]);
+    expect([display.paletteId, display.fontId, display.textSize, display.themeMode], [DisplaySettings.defaultPaletteId, 'maple', null, ThemeMode.system]);
   });
 
   for (final scale in [1.3, 2.0]) {
