@@ -120,20 +120,24 @@ class _NativeAppearanceSyncState extends State<NativeAppearanceSync> {
   Widget build(BuildContext context) => widget.child;
 }
 
-// 低电量模式（只有 iOS 报）：开着时装饰动效停下（见 campus_motion.dart 的 CampusMotion，同苹果建议低电量时减少动画）。
-// 第一次读时向原生要一次，之后原生在开关时发 lowPower 过来。
-final ValueListenable<bool> nativeLowPower = _watchLowPower();
-
-ValueNotifier<bool> _watchLowPower() {
+// 低电量模式（iOS 的低电量模式、安卓的省电模式）：开着时装饰动效停下（见 campus_motion.dart 的 CampusMotion，同苹果建议低电量时减少动画）。
+// 原生在开关时发 lowPower 过来；当前状态由组合根启动时经 watchNativeLowPower 要一次（测试里不向原生要）。
+final ValueNotifier<bool> _lowPower = () {
   final lowPower = ValueNotifier(false);
   _nativeUi.setMethodCallHandler((call) async {
     if (call.method == 'lowPower') lowPower.value = call.arguments == true;
   });
-  if (!campusIos) return lowPower;
-  _nativeUi.invokeMethod<bool>('lowPower').then((value) => lowPower.value = value == true, onError: (Object error, StackTrace stack) {
-    campusLog('[NativeUi] action=lowPower errorType=${error.runtimeType}\n$stack');
-  });
   return lowPower;
+}();
+
+ValueListenable<bool> get nativeLowPower => _lowPower;
+
+Future<void> watchNativeLowPower() async {
+  try {
+    _lowPower.value = await _nativeUi.invokeMethod<bool>('lowPower') == true;
+  } catch (error, stack) {
+    campusLog('[NativeUi] action=lowPower errorType=${error.runtimeType}\n$stack');
+  }
 }
 
 // 系统底栏的一项。

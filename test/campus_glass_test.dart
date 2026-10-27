@@ -90,18 +90,26 @@ void main() {
         ),
       ),
     );
+    // 云雾按定时器一拍一拍地走（见 campus_background.dart 的 _tick），流动与否看进度变没变。
+    Future<bool> flowing() async {
+      final progress = (tester.widget<CustomPaint>(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter)).painter! as AtmospherePainter).progress;
+      final before = progress.value;
+      await tester.pump(const Duration(milliseconds: 200));
+      return progress.value != before;
+    }
     await tester.pumpWidget(host());
-    await tester.pump(const Duration(milliseconds: 200));
-    expect(tester.binding.hasScheduledFrame, isTrue);
+    expect(await flowing(), isTrue);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
     await tester.pump();
     expect(tester.binding.hasScheduledFrame, isFalse);
+    expect(await flowing(), isFalse);
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
     await tester.pump();
-    expect(tester.binding.hasScheduledFrame, isTrue);
+    expect(await flowing(), isTrue);
     await tester.pumpWidget(host(reduced: true));
     await tester.pump();
     expect(tester.binding.hasScheduledFrame, isFalse);
+    expect(await flowing(), isFalse);
     await tester.pumpWidget(const SizedBox());
     await tester.pumpWidget(host(phase: .5));
     await tester.pumpAndSettle();

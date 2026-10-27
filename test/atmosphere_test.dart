@@ -288,8 +288,11 @@ void main() {
     update(() => phase = null);
     await tester.pump();
     final count = builds;
+    // 云雾按定时器一拍一拍地走（见 campus_background.dart 的 _tick），流动与否看进度变没变。
+    final flowing = (tester.widget<CustomPaint>(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter)).painter! as AtmospherePainter).progress;
+    final before = flowing.value;
     await tester.pump(const Duration(seconds: 3));
-    expect(tester.binding.hasScheduledFrame, isTrue);
+    expect(flowing.value, isNot(before));
     expect(builds, count);
     update(() => phase = .5);
     await tester.pumpAndSettle();
@@ -302,9 +305,9 @@ void main() {
     final overlays = ValueNotifier(0);
     addTearDown(overlays.dispose);
     await tester.pumpWidget(MaterialApp(home: CampusMotion(child: CampusAtmosphere(overlays: overlays, child: const SizedBox.expand()))));
-    await tester.pump(const Duration(seconds: 3));
-    expect(tester.binding.hasScheduledFrame, isTrue);
     Animation<double> progress() => (tester.widget<CustomPaint>(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter)).painter! as AtmospherePainter).progress;
+    await tester.pump(const Duration(seconds: 3));
+    expect(progress().value, closeTo(3 / 24, .01));
     overlays.value = 1;
     await tester.pump();
     final paused = progress().value;
@@ -314,18 +317,16 @@ void main() {
     overlays.value = 0;
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    expect(tester.binding.hasScheduledFrame, isTrue);
     expect(progress().value, closeTo(paused + 1 / 24, .01));
     await tester.pumpWidget(const SizedBox());
   });
 
-  // [人工决策] 见 lib/theme/campus_background.dart 的 _iosTick：iOS 上云雾每秒只更新约 20 次，低电量模式下停住；安卓照旧逐帧。
-  testWidgets('iOS 云雾每秒只更新约 20 次，低电量模式下停住，关掉后从原处接着走', (tester) async {
+  // [人工决策] 见 lib/theme/campus_background.dart 的 _tick：云雾每秒只更新约 20 次、先画成半分辨率贴图，低电量（iOS）与省电模式（安卓）下停住。
+  testWidgets('云雾每秒只更新约 20 次、用半分辨率贴图，低电量与省电模式下停住，关掉后从原处接着走', (tester) async {
     await tester.pumpWidget(MaterialApp(home: CampusMotion(child: CampusAtmosphere(child: const SizedBox.expand()))));
     final painter = tester.widget<CustomPaint>(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter)).painter! as AtmospherePainter;
     final progress = painter.progress;
-    // iOS 先画成半分辨率贴图再贴（见 AtmosphereCache），安卓照旧直接画。
-    expect(painter.cache != null, debugDefaultTargetPlatformOverride == TargetPlatform.iOS);
+    expect(painter.cache, isNotNull);
     var changes = 0;
     void count() => changes++;
     progress.addListener(count);
@@ -333,23 +334,19 @@ void main() {
     for (var frame = 0; frame < 120; frame++) {
       await tester.pump(const Duration(microseconds: 8333));
     }
-    if (debugDefaultTargetPlatformOverride == TargetPlatform.iOS) {
-      expect(changes, inInclusiveRange(18, 21));
-      expect(progress.value, closeTo(1 / 24, .01));
-      Future<void> lowPower(bool on) => tester.binding.defaultBinaryMessenger.handlePlatformMessage('superxd/native_ui', const StandardMethodCodec().encodeMethodCall(MethodCall('lowPower', on)), (_) {});
-      await lowPower(true);
-      await tester.pump();
-      final paused = progress.value;
-      await tester.pump(const Duration(seconds: 2));
-      expect(progress.value, paused);
-      expect(tester.binding.hasScheduledFrame, isFalse);
-      await lowPower(false);
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 1));
-      expect(progress.value, closeTo(paused + 1 / 24, .01));
-    } else {
-      expect(changes, greaterThan(100));
-    }
+    expect(changes, inInclusiveRange(18, 21));
+    expect(progress.value, closeTo(1 / 24, .01));
+    Future<void> lowPower(bool on) => tester.binding.defaultBinaryMessenger.handlePlatformMessage('superxd/native_ui', const StandardMethodCodec().encodeMethodCall(MethodCall('lowPower', on)), (_) {});
+    await lowPower(true);
+    await tester.pump();
+    final paused = progress.value;
+    await tester.pump(const Duration(seconds: 2));
+    expect(progress.value, paused);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+    await lowPower(false);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(progress.value, closeTo(paused + 1 / 24, .01));
     progress.removeListener(count);
     await tester.pumpWidget(const SizedBox());
   }, variant: const TargetPlatformVariant({TargetPlatform.android, TargetPlatform.iOS}));
@@ -382,7 +379,7 @@ void main() {
     expect(differs, 0);
     expect(expected.any((value) => value > 0), isTrue);
   });
-  // iOS 的云雾先画成半分辨率贴图再整屏贴上（见 AtmosphereCache）：同直接画对照，按像素密度 3 渲染，差别不到肉眼可辨的程度。
+  // 云雾先画成半分辨率贴图再整屏贴上（见 AtmosphereCache）：同直接画对照，按像素密度 3 渲染，差别不到肉眼可辨的程度。
   for (final palette in [...CampusPalette.values, ...CampusPalette.darkValues]) {
     test('${palette.label}${palette.isDark ? '（深色）' : ''}云雾半分辨率贴图同直接画看不出差别', () async {
       const size = Size(130, 280), ratio = 3.0;

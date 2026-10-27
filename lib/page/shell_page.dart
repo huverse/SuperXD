@@ -36,7 +36,9 @@ class ShellPage extends StatelessWidget {
     final keyboard = media.viewInsets.bottom > 0;
     final barHeight = 72.0 * media.textScaler.scale(14) / 14 + 8;
     final bottom = media.padding.bottom + 12;
-    final reserved = keyboard ? 0.0 : nativeHeight ?? barHeight + bottom + 12;
+    // 底栏上方都多留 12：回今天胶囊、列表末项与提示条同底栏之间的间隙（today_page.dart 10-05 的人工决策：可见间隙约 18dp）；
+    // iOS 原来只留系统底栏的总高，胶囊几乎贴着底栏（10-27 真机截图约 6pt）。
+    final reserved = keyboard ? 0.0 : (nativeHeight ?? barHeight + bottom) + 12;
     // [人工决策-2026-09-29 04:01:38] 四项底栏悬浮于安全区之上；内容层延伸到玻璃下方透出，底栏占位作为底部安全区交给各页，末项滚到底仍停在底栏上方；拖动仍仅预览，松手提交一次。
     // [人工决策-2026-10-19 17:55:48] 在服务、消息、我的按返回键先回到「今天」，在「今天」再按才退出（用户选定，同 Material 底部导航与 Google 相册、YouTube）。
     // iOS 上底栏是挂在 Flutter 视图上的系统 UITabBar（悬浮、按住拖动的放大镜都由系统做，[人工决策] 见 theme/native_glass.dart），内容照样延伸到栏下、留出栏的总高；
