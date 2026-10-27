@@ -9,7 +9,7 @@
   - campus_theme.dart：campusTheme 按配色和字体生成 ThemeData：按钮 textStyle 显式带应用字体（不带会回落系统字体）；AppBar 返回图标与内容左边距 16 对齐、标题从 56 起（人工决策见文件内）；OutlinedButton 与 TextButton 是中性胶囊。另有 campusFieldGap（带浮动标签输入框的上方间距，随字号缩放）、campusSystemOverlay（系统栏透明）、CampusScrollBehavior（弹性回弹、不加拉伸效果，拉伸会让里面的玻璃退成底色；iOS 上拖动滚动区收起键盘）；按压反馈不用水波、按下整块变暗。CampusBackground 是空包装，只为兼容现有调用点。
   - campus_icons.dart：CampusIcons 统一映射 Lucide 图标，CampusIcon 渲染（iOS 上返回画成向左尖角，同系统导航栏），CampusMorphIcon 做导航图标形变，configureCampusIcons 启动时配置。
 - 背景：
-  - campus_background.dart：CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，弹窗、弹层开着时停在原处（overlays 由组合根传 campusOverlayDepth，不然整屏模糊每帧重算）；CampusWallpaper 是可选的自定义壁纸（静态图，按色调网格逐格铺淡化保证文字可读，高对比度时不显示）；FrostTexture 是固定颗粒纹理（预先按设备像素画成一块拼贴，每张表面一次铺满：Impeller 没有栅格缓存，逐点画的上千个小圆每帧都要重新提交）；CampusBackdrop 提供同相位的背景副本，只给入场遮罩和页面转场用（安卓只在压在弹窗上时，iOS 新页面盖在旧页面上时都垫）。换背景前先按屏幕尺寸解码（precacheImage），再交叉淡化。云雾不跟屏幕刷新逐帧走，由定时器每秒推约 20 次（[人工决策] 在 _tick 上方，先 iOS 后安卓），每次更新先画成半分辨率贴图 AtmosphereCache、每帧只贴图；自己监听前后台，离开前台立即停（后台不出帧不重建，等不到 CampusMotion 传过来）。
+  - campus_background.dart：CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，弹窗、弹层开着时停在原处（overlays 由组合根传 campusOverlayDepth，不然整屏模糊每帧重算）；CampusWallpaper 是可选的自定义壁纸（静态图，按色调网格逐格铺淡化保证文字可读，高对比度时不显示）；FrostTexture 是固定颗粒纹理（全部小圆点拼成一组一次画完：Impeller 没有栅格缓存，逐个画的上千个小圆每帧都要重新提交；不经离屏贴图，见关键规则）；CampusBackdrop 提供同相位的背景副本，只给入场遮罩和页面转场用（安卓只在压在弹窗上时，iOS 新页面盖在旧页面上时都垫）。换背景前先按屏幕尺寸解码（precacheImage），再交叉淡化。云雾不跟屏幕刷新逐帧走，由定时器每秒推约 20 次（[人工决策] 在 _tick 上方，先 iOS 后安卓），每次更新先画成半分辨率贴图 AtmosphereCache、每帧只贴图；自己监听前后台，离开前台立即停（后台不出帧不重建，等不到 CampusMotion 传过来）。
   - wallpaper_tone.dart：壁纸色调网格 WallpaperTone（导入时解码成小图记每格最暗最亮像素）与可读下限 wallpaperVeilAlphas、wallpaperVeilAlpha：叠在最不利的像素上，正文、次要文字和主色文字都不低于 4.8:1。改动后要在模拟器上用高反差测试图复测。
 - 动效与转场：
   - campus_motion.dart：CampusMotion 管理装饰动效的生命周期（减少动画、后台、分支不可见、路由不在最上层、iOS 低电量模式与安卓省电模式时都不播）；玻璃控件专用的弹簧令牌；campusSpringCurve 是页面与分支转场曲线（临界阻尼、不回弹）；CampusFirstFrameVsync 让转场从新内容首帧画完后开始计时，首帧慢时转场不被吃掉。
@@ -63,7 +63,8 @@
 - 页面、弹窗和转场的时长以 campus_transitions.dart 为准，不在页面里另设。本层不写业务文案，也不做业务判断。
 - 改视觉之前先读本目录的人工决策注释，以及自动记忆里被否决的方案（切日胶囊、云雾、字体压缩、玻璃滚动边缘），不要重提。
 - 排版：按文字宽度定宽或决定排法的地方一律经 campus_typesetting.dart 量（测量口径与 Text 不一致时末字会被裁掉，iOS 粗体文本下最明显）；会在窄处折行的短句用 BalancedText，「甲 · 乙」用 DotSeparatedText；新页面在 360dp 加 1.3 倍、411dp 标准两种条件下看过 Maple 与宋体再交。
-- 自绘图案不在 paint 里循环逐个画小图形（Impeller 没有栅格缓存，每帧都要重新提交）：固定图案预先画成拼贴、虚线拼成一条路径一次画完（10-27 iPhone 卡顿日志后改的颗粒与空档虚线）。
+- 自绘图案不在 paint 里循环逐个画小图形（Impeller 没有栅格缓存，每帧都要重新提交）：小点拼成一组 drawRawPoints、虚线拼成一条路径，一次画完（10-27 iPhone 卡顿日志后改的颗粒与空档虚线）。
+- 不用 toImageSync 画大半透明的离屏贴图：10-27 vivo V2408A（骁龙、2K 屏）上颗粒拼贴让每张卡片整排冒出绿黑虚线（推测没画到的像素拿到的是脏内存，细节在 FrostTexture 的注释）。云雾贴图先铺满底色，不受影响；红包粒子的贴图集（page/festival/reward_kit.dart）还是这样画的，没在那类手机上看过。
 
 # 测试
 

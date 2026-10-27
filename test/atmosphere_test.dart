@@ -351,18 +351,16 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   }, variant: const TargetPlatformVariant({TargetPlatform.android, TargetPlatform.iOS}));
 
-  // 颗粒是预先画好的一块拼贴（见 FrostTexture）：一张表面只画一次，图案同原来逐点画的小圆一样。
-  testWidgets('颗粒每张表面只画一次，图案同逐点画的一样', (tester) async {
-    await tester.pumpWidget(const MaterialApp(home: Center(child: SizedBox(width: 150, height: 100, child: FrostTexture(radius: 0)))));
-    final painter = tester.widget<CustomPaint>(find.descendant(of: find.byType(FrostTexture), matching: find.byType(CustomPaint))).painter!;
-    final canvas = _CountingCanvas();
-    painter.paint(canvas, const Size(390, 800));
-    expect([canvas.circles, canvas.shapes], [0, 1]);
-    // 直接画进录制再转成图片（不对渲染树截图），按测试的像素密度 3 对比。
-    final reference = _DottedGrain(CampusPalette.of(tester.element(find.byType(FrostTexture))).onSurfaceVariant);
-    Future<List<int>> pixels(CustomPainter painter) async {
+  // 颗粒的小圆点拼成一组一次画完（见 FrostTexture）：不逐个画圆，也不经离屏贴图，图案同原来逐点画的小圆一样。
+  testWidgets('颗粒每张表面一次画完，图案同逐点画的一样', (tester) async {
+    // 直接画进录制再转成图片（不对渲染树截图），按测试的像素密度 3 对比；两边都按卡片的圆角裁剪（原来的颗粒自带圆角裁剪，现在由卡片裁）。
+    Future<List<int>> pixels(CustomPainter painter, double radius) async {
       final recorder = ui.PictureRecorder();
-      painter.paint(Canvas(recorder)..scale(3), const Size(150, 100));
+      const size = Size(150, 100);
+      final canvas = Canvas(recorder)
+        ..scale(3)
+        ..clipRRect(RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)));
+      painter.paint(canvas, size);
       final picture = recorder.endRecording();
       final image = await picture.toImage(450, 300);
       final bytes = (await image.toByteData())!.buffer.asUint8List().toList();
@@ -370,14 +368,22 @@ void main() {
       picture.dispose();
       return bytes;
     }
-    final (drawn, expected) = (await tester.runAsync(() async => (await pixels(painter), await pixels(reference))))!;
-    expect(drawn.length, expected.length);
-    var differs = 0;
-    for (var index = 0; index < drawn.length; index++) {
-      if ((drawn[index] - expected[index]).abs() > 2) differs++;
+    for (final radius in const [0.0, 24.0]) {
+      await tester.pumpWidget(MaterialApp(home: Center(child: SizedBox(width: 150, height: 100, child: FrostTexture(radius: radius)))));
+      final painter = tester.widget<CustomPaint>(find.descendant(of: find.byType(FrostTexture), matching: find.byType(CustomPaint))).painter!;
+      final canvas = _CountingCanvas();
+      painter.paint(canvas, const Size(390, 800));
+      expect([canvas.circles, canvas.shapes, canvas.points], [0, 0, 1]);
+      final reference = _DottedGrain(CampusPalette.of(tester.element(find.byType(FrostTexture))).onSurfaceVariant);
+      final (drawn, expected) = (await tester.runAsync(() async => (await pixels(painter, radius), await pixels(reference, radius))))!;
+      expect(drawn.length, expected.length);
+      var differs = 0;
+      for (var index = 0; index < drawn.length; index++) {
+        if ((drawn[index] - expected[index]).abs() > 2) differs++;
+      }
+      expect(differs, 0, reason: 'radius=$radius');
+      expect(expected.any((value) => value > 0), isTrue);
     }
-    expect(differs, 0);
-    expect(expected.any((value) => value > 0), isTrue);
   });
   // 云雾先画成半分辨率贴图再整屏贴上（见 AtmosphereCache）：同直接画对照，按像素密度 3 渲染，差别不到肉眼可辨的程度。
   for (final palette in [...CampusPalette.values, ...CampusPalette.darkValues]) {
@@ -430,9 +436,11 @@ class _DottedGrain extends CustomPainter {
 }
 
 class _CountingCanvas implements Canvas {
-  int circles = 0, shapes = 0;
+  int circles = 0, shapes = 0, points = 0;
   @override
   void drawCircle(Offset center, double radius, Paint paint) => circles++;
+  @override
+  void drawRawPoints(ui.PointMode pointMode, Float32List points, Paint paint) => this.points++;
   @override
   void drawRRect(RRect rrect, Paint paint) => shapes++;
   @override
