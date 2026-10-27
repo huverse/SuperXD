@@ -40,7 +40,7 @@
   - CredentialStore：记住账号的凭据存取接口。
   - SecureCredentialStore：基于系统安全存储的实现，按账号键保存带版本号的 JSON。
 - display_settings.dart：设备级显示设置。
-  - DisplaySettings 存在 display_settings.db，包括字号、配色（默认 defaultPaletteId 雾蓝；改任何一项都整份快照落库，存过的保持原值，[人工决策] 在常量处）、字体（iOS 多一项系统字体 systemFont、新装默认它，fontFamily 为空即系统字体，[人工决策] 在 systemFont 处）、深浅色、玻璃效果（auto、full、reduced，默认 auto），以及自定义壁纸（文件名、色调网格、模糊与淡化 0–100）。v6 把旧的三档下标按原效果换算成连续量。
+  - DisplaySettings 存在 display_settings.db，包括字号、配色（四套，默认 defaultPaletteId 雾蓝；改任何一项都整份快照落库，存过的保持原值，[人工决策] 在常量处）、字体（默认 Maple；iOS 多一项系统字体 systemFont，fontFamily 为空即系统字体，[人工决策] 在 systemFont 处）、深浅色、玻璃效果（auto、full、reduced，默认 auto），以及自定义壁纸（文件名、色调网格、模糊与淡化 0–100）。v6 把旧的三档下标按原效果换算成连续量；v7 把删掉的苔灰换成雾蓝、iOS 存着的系统字体一次性换成 Maple。
   - wallpaperLook 是壁纸模糊与淡化的当前外观：previewWallpaper 只改它、不落库，背景单独监听；setWallpaperLook 立即更新外观并在保存锁内落库，落库后不回写外观（保存期间继续拖动不会被拽回）。
   - 壁纸文件交给 WallpaperStore；复制、落库、删旧文件在保存锁内一次完成。启动时文件丢失则按未设置处理，并清理残留文件。
   - DisplayScope 负责向下传递；CampusTextScaler 在系统字号基础上叠加应用字号；CampusTextScale 让应用字号的变化在 duration 内连续过渡（组合根套在 MaterialApp.builder 里，减少动画时直接换，[人工决策] 在类上）。
@@ -93,6 +93,7 @@
   - 版本上限与裁剪
   - 凭据保存条件
   - 显示设置的设备归属与深浅色
+  - 配色（删苔灰）与字体默认值（iOS 默认 Maple、系统字体可选，v7 一次性迁移）
   - 协议的同意与更新提示的判定
   - 本机日志的同类错误聚合口径（diagnostic_log.dart 类上）
   - 开发者设置排除备份（developer_settings.dart 类上）

@@ -286,7 +286,7 @@ void main() {
       final item = find.text('删除（仅本机）');
       expect(item, findsOneWidget);
       // 破坏性项用警示色。
-      expect(tester.widget<Text>(item).style?.color, CampusPalette.byId('sage').danger);
+      expect(tester.widget<Text>(item).style?.color, CampusPalette.byId('mist').danger);
       await tester.tap(item);
       await advance(tester, 4);
     }

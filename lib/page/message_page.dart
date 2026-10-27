@@ -12,6 +12,7 @@ import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_store.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/campus_animated_list.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -125,7 +126,7 @@ class _CenteredText extends StatelessWidget {
   @override
   Widget build(BuildContext context) => Padding(
     padding: EdgeInsets.fromLTRB(32, 0, 32, MediaQuery.paddingOf(context).bottom),
-    child: Center(child: Text(text, textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: CampusPalette.of(context).onSurface))),
+    child: Center(child: BalancedText(text, textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: CampusPalette.of(context).onSurface))),
   );
 }
 

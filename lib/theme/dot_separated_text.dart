@@ -11,10 +11,11 @@ class DotSeparatedText extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // 分隔的“ · ”挂在前一项末尾，换行后每行左缘对齐；Wrap 不另加间距，同一行里学年与学期紧挨着。
+    // 点前用不换行空格：窄处一项自己折行时“·”跟着末字走，不单独落到下一行（学期视图课程卡曾折出一行只有“·”）。
     final parts = text.split(' · ');
     final items = <String>[];
     for (final (index, part) in parts.indexed) {
-      final tail = index == parts.length - 1 ? '' : ' · ';
+      final tail = index == parts.length - 1 ? '' : '\u00A0· ';
       final match = _term.firstMatch(part);
       if (match == null) {
         items.add('$part$tail');

@@ -57,7 +57,9 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.7)), child: child!), home: Scaffold(body: TodayPage(gateway: _Gateway()))));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('同步'));
+    // 这么窄、这么大的字，顶栏放不下日期时「同步」只留图标（同课表顶栏的圆钮）。
+    expect(find.text('同步'), findsNothing);
+    await tester.tap(find.byTooltip('同步'));
     await tester.pumpAndSettle();
     final label = tester.getRect(find.text('选择学年')), refresh = tester.getRect(find.widgetWithText(TextButton, '刷新学年'));
     // 一行字的高度：不到两行。

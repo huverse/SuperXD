@@ -2,7 +2,8 @@ import 'package:flutter/material.dart';
 
 // [人工决策-2026-09-25 17:43:48] 配色是设备级完整色彩角色，默认苔灰；允许雾蓝、藕粉、暮紫、燕麦，不只替换按钮。
 // [人工决策-2026-10-22 21:44:49] 默认配色改为雾蓝，取代上一条的「默认苔灰」（只改默认值、不动已存的设置，见 local/display_settings.dart 的 defaultPaletteId）；
-// 五套配色与选择顺序不变，values.first 只是没有主题扩展时（测试）的兜底。
+// values.first 只是没有主题扩展时（测试）的兜底。
+// [人工决策-2026-10-27 20:11:01] 删掉苔灰（用户要求），剩四套，选择顺序不变；存着苔灰的换成雾蓝，见 local/display_settings.dart 的 paletteIds。
 class CampusPalette extends ThemeExtension<CampusPalette> {
   const CampusPalette({
     required this.id,
@@ -44,11 +45,11 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
   // 破坏性操作按钮的红底（白字不低于 4.5:1）；深色下的 danger 是给深底文字用的浅红，压不住白字。
   Color get dangerFill => isDark ? const Color(0xFFC63A31) : danger;
   // 激活色作大号强调文字（如快开课时的倒计时数字）：浅色就是 accent；深色的 accent 是给白字垫底的，压在深卡片上只有约 2.8:1，
-  // 向正文色混 35% 后十套配色对卡片底都不低于 4.5:1（test/dark_mode_test.dart 守护）。
+  // 向正文色混 35% 后八套配色（四套各分浅深）对卡片底都不低于 4.5:1（test/dark_mode_test.dart 守护）。
   Color get accentText => isDark ? Color.lerp(accent, onSurface, .35)! : accent;
   // 提醒色（如「刚发起」的小圆点）：只读状态标记，与主色、警示红都区分开；深色下提亮一档保证在深底上醒目。
   Color get attention => isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B);
-  // 标签色（如学习通的账号标签）：只给标签小图标着色，名字仍用正文色；五套配色共用，浅色深、深色亮，
+  // 标签色（如学习通的账号标签）：只给标签小图标着色，名字仍用正文色；各套配色共用，浅色深、深色亮，
   // 对卡片底都不低于 3:1（图形元素的对比度要求），由 test/dark_mode_test.dart 守护。顺序即存储里的序号，只能在末尾追加。
   List<Color> get tagColors => isDark ? _darkTagColors : _lightTagColors;
   static const _lightTagColors = [Color(0xFFDC2626), Color(0xFFC2410C), Color(0xFF15803D), Color(0xFF0F766E), Color(0xFF2563EB), Color(0xFF7C3AED)];
@@ -78,25 +79,6 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
   static List<CampusPalette> forBrightness(Brightness brightness) =>
       brightness == Brightness.dark ? darkValues : values;
   static const values = [
-    CampusPalette(
-      id: 'sage',
-      label: '苔灰',
-      primary: Color(0xFF49584E),
-      accent: Color(0xFF39825A),
-      backgroundTop: Color(0xFFF1F0ED),
-      backgroundBottom: Color(0xFFE8E7E3),
-      surface: Color(0xFFF9F8F5),
-      surfaceSelected: Color(0xFFE1E5DC),
-      onSurface: Color(0xFF292B2A),
-      onSurfaceVariant: Color(0xFF565B57),
-      outline: Color(0xFF7C827A),
-      outlineSubtle: Color(0xFFD5D8CF),
-      glassTint: Color(0xFFF0F0E9),
-      glassFallback: Color(0xFFECECE6),
-      fogSage: Color(0xFFA9C8BA),
-      fogChampagne: Color(0xFFE3C4A6),
-      fogPearl: Color(0xFFC6BDDB),
-    ),
     CampusPalette(
       id: 'mist',
       label: '雾蓝',
@@ -176,30 +158,6 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
   ];
   // [人工决策-2026-09-27 18:22:49] 五套暗色独立设计基底、抬升面与低亮度雾光，不反色；完整显示设置仍属设备。
   static const darkValues = [
-    CampusPalette(
-      id: 'sage',
-      label: '苔灰',
-      brightness: Brightness.dark,
-      onPrimary: Color(0xFF15201A),
-      danger: Color(0xFFFFB4AB),
-      onDanger: Color(0xFF4B1814),
-      surfaceBorder: Color(0x385C7082),
-      primary: Color(0xFFB7D0BD),
-      accent: Color(0xFF37825B),
-      backgroundTop: Color(0xFF141B18),
-      backgroundBottom: Color(0xFF1B2420),
-      surface: Color(0xFF27322C),
-      surfaceSelected: Color(0xFF34463B),
-      onSurface: Color(0xFFE4EBE5),
-      onSurfaceVariant: Color(0xFFB7C6BC),
-      outline: Color(0xFF819A88),
-      outlineSubtle: Color(0xFF43564A),
-      glassTint: Color(0xFF303F36),
-      glassFallback: Color(0xFF2C3931),
-      fogSage: Color(0xFF365949),
-      fogChampagne: Color(0xFF61503B),
-      fogPearl: Color(0xFF4A445C),
-    ),
     CampusPalette(
       id: 'mist',
       label: '雾蓝',

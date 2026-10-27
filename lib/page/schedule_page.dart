@@ -13,11 +13,13 @@ import 'package:superxd/page/share_target_sheet.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/domain/campus_gateway.dart';
@@ -316,22 +318,31 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
       backgroundColor: Colors.transparent,
       body: SafeArea(bottom: true, top: false, child: Column(children: [
         // 返回图标对齐 16、标题从 56 起，同 AppBar（见 campus_theme.dart 的顶栏人工决策）。
-        CampusTopBar(child: SizedBox(height: 56 * scale, child: Row(children: [
+        CampusTopBar(child: SizedBox(height: 56 * scale, child: LayoutBuilder(builder: (context, constraints) {
+          final years = _selection.yearOverview && _selection.year.isNotEmpty ? '${_selection.year}–${int.parse(_selection.year)+1}' : null;
+          final titleStyle = Theme.of(context).textTheme.titleLarge;
+          // 窄屏、大字号下标题放不下时「今天」只留图标（同右边两个圆钮），不把「课表」挤折行、不截掉第几周。
+          // 顶栏除标题外固定占 160（返回 48、两个圆钮 44 与间距），「今天」胶囊是图标 24、间距 8 与左右内边距 28 再加文字。
+          final compact = constraints.maxWidth - 160 - (campusTextWidth(context, '今天', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)) + 60) < campusTextWidth(context, years ?? '课表', style: titleStyle);
+          return Row(children: [
           const SizedBox(width: 4),
           IconButton(tooltip: '返回', onPressed: _back, icon: const CampusIcon(CampusIcons.back)),
           const SizedBox(width: 4),
-          Expanded(child: _selection.yearOverview && _selection.year.isNotEmpty
-              ? Text('${_selection.year}–${int.parse(_selection.year)+1}', style: Theme.of(context).textTheme.titleLarge)
+          Expanded(child: years != null
+              ? Text(years, maxLines: 2, style: titleStyle)
               : _titleWithWeek(context)),
           // [人工决策-2026-10-04 16:08:17] 课表顶栏只留“今天”胶囊与“管理课程”“⋯”玻璃圆按钮，开学日移入⋯菜单；用户实测确认。
           // 标题栏只留高频操作（同 iOS、鸿蒙标题栏）：“今天”是带图标的胶囊；每学期只设一次的开学日收进⋯菜单，空课表时页面里仍有“设置开学日”。
-          TextButton.icon(onPressed: _loading ? null : _today, icon: const CampusIcon(CampusIcons.jumpToday), label: const Text('今天')),
+          compact
+              ? CampusGlassCircleButton(label: '今天', size: 44, onPressed: _loading ? null : _today, icon: const CampusIcon(CampusIcons.jumpToday))
+              : TextButton.icon(onPressed: _loading ? null : _today, icon: const CampusIcon(CampusIcons.jumpToday), label: const Text('今天')),
           const SizedBox(width: 4),
           CampusGlassCircleButton(label: '管理课程', size: 44, onPressed: _term == null || _loading ? null : _manage, icon: const CampusIcon(CampusIcons.manageSchedule)),
           const SizedBox(width: 4),
           Builder(builder: (anchor) => CampusGlassCircleButton(label: '更多操作', size: 44, onPressed: _loading || _term == null && widget.reminders == null ? null : () => _more(anchor), icon: const CampusIcon(CampusIcons.manage))),
           const SizedBox(width: 8),
-        ]))),
+          ]);
+        }))),
         Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: CampusSegmented<ScheduleRange>(
           values: ScheduleRange.values, selected: _selection.range, onSelected: _selectRange,
           label: (range) => switch (range) { ScheduleRange.day => '天', ScheduleRange.term => '学期', ScheduleRange.year => '学年' },
@@ -356,13 +367,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     final style = TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant);
     final label = Text('第$week周', maxLines: 1, softWrap: false, style: style);
     return LayoutBuilder(builder: (context, constraints) {
-      double width(String text, TextStyle? style) {
-        final painter = TextPainter(text: TextSpan(text: text, style: DefaultTextStyle.of(context).style.merge(style)), textDirection: Directionality.of(context), textScaler: MediaQuery.textScalerOf(context), maxLines: 1)..layout();
-        final result = painter.width;
-        painter.dispose();
-        return result;
-      }
-      final fits = width('课表', Theme.of(context).textTheme.titleLarge) + 8 + width('第$week周', style) <= constraints.maxWidth;
+      final fits = campusTextWidth(context, '课表', style: Theme.of(context).textTheme.titleLarge) + 8 + campusTextWidth(context, '第$week周', style: style) <= constraints.maxWidth;
       return fits
           ? Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [title, const SizedBox(width: 8), label])
           : Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [title, label]);
@@ -384,7 +389,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
       for (final term in _terms.where((term) => term.xn == _selection.year)) Padding(padding: const EdgeInsets.only(bottom: 12), child: CampusSurface(
         onTap: () => _openTerm(term), padding: const EdgeInsets.all(20),
         child: Row(children: [
-          Expanded(child: Text(term.label.isEmpty ? term.key : term.label, style: TextStyle(fontSize: 16, color: CampusPalette.of(context).onSurface))),
+          Expanded(child: DotSeparatedText(term.label.isEmpty ? term.key : term.label, style: TextStyle(fontSize: 16, color: CampusPalette.of(context).onSurface))),
           CampusIcon(CampusIcons.next, color: CampusPalette.of(context).onSurfaceVariant),
         ]),
       )),
@@ -404,11 +409,12 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     final showRail = _selection.showRail;
     return LayoutBuilder(key: const ValueKey('calendar-body'), builder: (context, constraints) {
       final railWidth = math.min(112 * scale, constraints.maxWidth * .34);
-      return Padding(padding: const EdgeInsets.all(16), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        AnimatedContainer(duration: motion, curve: Curves.easeInOutCubic, width: showRail ? railWidth : 0,
-          child: ClipRect(child: OverflowBox(alignment: Alignment.topLeft, minWidth: railWidth, maxWidth: railWidth, child: IgnorePointer(ignoring: !showRail, child: _months(scale, constraints.maxHeight))))),
-        AnimatedContainer(duration: motion, width: showRail ? 12 : 0),
-        Expanded(child: Stack(children: [
+      // [人工决策-2026-10-27 20:11:01] 窄屏、大字号下左边的月份周次栏会把课程卡挤得放不下「时刻列 + 课名」（用户 360dp 真机截图：课名一两个字一行）：
+      // 栏改成卡片上方的一行横条，结构同竖栏（点月份展开各周、所看的那周选中并滚到中间），卡片吃满整宽、保留时刻列（用户从两种实物中选定，
+      // 未选「保留左侧栏、卡片把时刻挪到内容第一行」）。放得下的标准是卡片内容区能并排时刻列与六个课名字（同 course_cards.dart 的三栏判断），放得下照旧竖栏。
+      final cardNeed = 28 + campusTextWidth(context, '00:00', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w600)) + 1 + 25 + campusTextWidth(context, '国国国国国国', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600));
+      final strip = showRail && constraints.maxWidth - 32 - railWidth - 12 < cardNeed;
+      final cards = Stack(children: [
           FadeTransition(opacity: _dayCurve, child: PageView.builder(
           key: ValueKey('days-${_term!.key}-$_start'), controller: _pager,
           itemCount: _indexOf(_last!) + 1,
@@ -430,9 +436,50 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
           },
         )),
           if (_outgoingDay != null) Positioned.fill(child: FadeTransition(opacity: ReverseAnimation(_dayCurve), child: _outgoingDay)),
-        ])),
+        ]);
+      if (strip) {
+        return Padding(padding: const EdgeInsets.fromLTRB(0, 12, 0, 16), child: Column(children: [
+          SizedBox(height: 44 * scale, child: _monthStrip()),
+          const SizedBox(height: 12),
+          Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: cards)),
+        ]));
+      }
+      return Padding(padding: const EdgeInsets.all(16), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        AnimatedContainer(duration: motion, curve: Curves.easeInOutCubic, width: showRail ? railWidth : 0,
+          child: ClipRect(child: OverflowBox(alignment: Alignment.topLeft, minWidth: railWidth, maxWidth: railWidth, child: IgnorePointer(ignoring: !showRail, child: _months(scale, constraints.maxHeight))))),
+        AnimatedContainer(duration: motion, width: showRail ? 12 : 0),
+        Expanded(child: cards),
       ]));
     });
+  }
+
+  // 横条版的月份周次栏：同竖栏的结构（点月份展开这个月的各周、所看的那周选中），每项一行，打开时把选中的周滚进可见区。
+  final _stripWeek = GlobalKey();
+  int? _stripShown;
+  Widget _monthStrip() {
+    final months = monthsOfTerm(_start!, _weekCount);
+    final thisWeek = weekIndex(_start!, campusToday());
+    if (_stripShown != _selection.week) {
+      _stripShown = _selection.week;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        final target = _stripWeek.currentContext;
+        if (target != null && target.mounted) Scrollable.ensureVisible(target, alignment: .5);
+      });
+    }
+    // 全部建出来（每学期不过十来项），选中的周才能滚进可见区；按需建的列表里离得远的项还没建。
+    return SingleChildScrollView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+      for (final month in months) ...[
+        Padding(padding: const EdgeInsets.only(right: 8), child: _tile('$month月', month == _selection.month, () => setState(() {
+          _selection = month == _selection.month ? _selection.copy(clearDrill: true) : _selection.copy(month: month, clearDetail: true);
+        }), minHeight: 0)),
+        if (month == _selection.month)
+          for (final week in weeksOfMonth(_start!, _weekCount, month)) Padding(
+            key: week == _selection.week ? _stripWeek : null,
+            padding: const EdgeInsets.only(right: 8),
+            child: _tile('${weekRailLabel(_start!, week).replaceAll('\n', ' ')}${week == thisWeek ? ' · 本周' : ''}', week == _selection.week, () => _selectDate(dayInWeek(termStartDate: _start!, week: week, today: campusToday())), minHeight: 0),
+          ),
+      ],
+    ]));
   }
 
   Widget _months(double scale, double availableHeight) {
