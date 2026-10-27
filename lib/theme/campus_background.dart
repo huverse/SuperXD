@@ -467,44 +467,41 @@ class FrostTexture extends StatelessWidget {
   Widget build(BuildContext context) => IgnorePointer(
     child: RepaintBoundary(
       child: CustomPaint(
-        painter: _GrainPainter(CampusPalette.of(context).onSurfaceVariant, MediaQuery.devicePixelRatioOf(context), radius),
+        painter: _GrainPainter(CampusPalette.of(context).onSurfaceVariant, radius),
       ),
     ),
   );
 }
 
-// 颗粒先按设备像素画成一块拼贴（12×84：每行横向错开 y % 7，7 行一个循环），每张表面只铺一次，图案同逐点画的一样。
-// Impeller 没有栅格缓存，逐点画的几百上千个小圆每帧都要重新细分、提交（10-27 iPhone 日志：只有背景在动的帧也要栅格约 9ms，滑动时更慢）。
-// 拼贴按颜色与像素密度缓存，个数受配色数限制。
-final _grainTiles = <(Color, double), ui.Image>{};
-
-ui.Image _grainTile(Color color, double ratio) => _grainTiles.putIfAbsent((color, ratio), () {
-  final recorder = ui.PictureRecorder();
-  final canvas = Canvas(recorder)..scale(ratio);
-  final paint = Paint()..color = color.withValues(alpha: .016);
-  for (var y = 3.0; y < 84; y += 12) {
-    canvas.drawCircle(Offset(3 + (y.toInt() % 7), y), .55, paint);
-  }
-  final picture = recorder.endRecording();
-  final tile = picture.toImageSync((12 * ratio).ceil(), (84 * ratio).ceil());
-  picture.dispose();
-  return tile;
-});
-
+// 颗粒：每 12 一格一个小圆点，每行横向错开 y % 7；全部点拼成一组，一次 drawRawPoints 画完。
+// Impeller 没有栅格缓存，逐个 drawCircle 的几百上千个小圆每帧都要重新细分、提交（10-27 iPhone 日志：只有背景在动的帧也要栅格约 9ms，滑动时更慢）。
+// 不用离屏贴图：#153 改成 toImageSync 画的 12×84 拼贴加图像着色器后，vivo V2408A（骁龙、2K 屏）上拼贴里有几行是绿黑相间的脏像素，
+// 每张卡片按拼贴周期（横 12、竖 84）整排冒出虚线（10-27 用户截图）。推测是拼贴几乎全透明、没画到的像素拿到了脏内存（云雾贴图先铺满底色，没出问题）。
 class _GrainPainter extends CustomPainter {
-  const _GrainPainter(this.color, this.ratio, this.radius);
+  const _GrainPainter(this.color, this.radius);
   final Color color;
-  final double ratio;
   final double radius;
   @override
   void paint(Canvas canvas, Size size) {
-    final tile = _grainTile(color, ratio);
-    canvas.drawRRect(
-      RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)),
-      Paint()..shader = ImageShader(tile, TileMode.repeated, TileMode.repeated, Matrix4.diagonal3Values(12 / tile.width, 84 / tile.height, 1).storage),
+    // 圆角外的点不画，跨在边上的照画（露出圆角的不到半个点，卡片的 Material 还会裁掉）；点数随表面面积增长，不随业务数据增长。
+    final shape = RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)).inflate(.55);
+    final points = <double>[];
+    for (var y = 3.0; y < size.height; y += 12) {
+      for (var x = 3.0; x < size.width; x += 12) {
+        final center = Offset(x + (y.toInt() % 7), y);
+        if (shape.contains(center)) points.addAll([center.dx, center.dy]);
+      }
+    }
+    canvas.drawRawPoints(
+      ui.PointMode.points,
+      Float32List.fromList(points),
+      Paint()
+        ..color = color.withValues(alpha: .016)
+        ..strokeWidth = 1.1
+        ..strokeCap = StrokeCap.round,
     );
   }
 
   @override
-  bool shouldRepaint(_GrainPainter oldDelegate) => oldDelegate.color != color || oldDelegate.ratio != ratio || oldDelegate.radius != radius;
+  bool shouldRepaint(_GrainPainter oldDelegate) => oldDelegate.color != color || oldDelegate.radius != radius;
 }
