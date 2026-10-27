@@ -353,22 +353,24 @@ void main() {
 
   // 颗粒是预先画好的一块拼贴（见 FrostTexture）：一张表面只画一次，图案同原来逐点画的小圆一样。
   testWidgets('颗粒每张表面只画一次，图案同逐点画的一样', (tester) async {
-    final key = GlobalKey(), reference = GlobalKey();
-    await tester.pumpWidget(MaterialApp(home: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
-      RepaintBoundary(key: key, child: const SizedBox(width: 150, height: 100, child: FrostTexture(radius: 0))),
-      RepaintBoundary(key: reference, child: SizedBox(width: 150, height: 100, child: Builder(builder: (context) => CustomPaint(painter: _DottedGrain(CampusPalette.of(context).onSurfaceVariant))))),
-    ]))));
+    await tester.pumpWidget(const MaterialApp(home: Center(child: SizedBox(width: 150, height: 100, child: FrostTexture(radius: 0)))));
     final painter = tester.widget<CustomPaint>(find.descendant(of: find.byType(FrostTexture), matching: find.byType(CustomPaint))).painter!;
     final canvas = _CountingCanvas();
     painter.paint(canvas, const Size(390, 800));
     expect([canvas.circles, canvas.shapes], [0, 1]);
-    Future<List<int>> pixels(GlobalKey boundary) async {
-      final image = await (boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary).toImage(pixelRatio: 3);
-      final bytes = await image.toByteData();
+    // 直接画进录制再转成图片（不对渲染树截图），按测试的像素密度 3 对比。
+    final reference = _DottedGrain(CampusPalette.of(tester.element(find.byType(FrostTexture))).onSurfaceVariant);
+    Future<List<int>> pixels(CustomPainter painter) async {
+      final recorder = ui.PictureRecorder();
+      painter.paint(Canvas(recorder)..scale(3), const Size(150, 100));
+      final picture = recorder.endRecording();
+      final image = await picture.toImage(450, 300);
+      final bytes = (await image.toByteData())!.buffer.asUint8List().toList();
       image.dispose();
-      return bytes!.buffer.asUint8List().toList();
+      picture.dispose();
+      return bytes;
     }
-    final (drawn, expected) = (await tester.runAsync(() async => (await pixels(key), await pixels(reference))))!;
+    final (drawn, expected) = (await tester.runAsync(() async => (await pixels(painter), await pixels(reference))))!;
     expect(drawn.length, expected.length);
     var differs = 0;
     for (var index = 0; index < drawn.length; index++) {
