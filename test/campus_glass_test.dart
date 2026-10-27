@@ -183,15 +183,28 @@ void main() {
     }
     expect(tier(CampusGlassMode.reduced), CampusGlassTier.minimal);
     expect(tier(CampusGlassMode.full, adaptive: liquid.GlassQuality.minimal), CampusGlassTier.full);
-    expect(tier(CampusGlassMode.full, capped: true), CampusGlassTier.standard);
+    // 只有完整与简化两档：库报标准也画磨砂，限档限到磨砂。
+    expect(tier(CampusGlassMode.full, capped: true), CampusGlassTier.minimal);
     expect(tier(CampusGlassMode.auto), CampusGlassTier.full);
     expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.premium), CampusGlassTier.full);
-    expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.standard), CampusGlassTier.standard);
+    expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.standard), CampusGlassTier.minimal);
     expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.minimal), CampusGlassTier.minimal);
-    expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.premium, capped: true), CampusGlassTier.standard);
+    expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.premium, capped: true), CampusGlassTier.minimal);
     expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.minimal, capped: true), CampusGlassTier.minimal);
   });
-  test('满档以iOS 27材质按配色轻着色、不加色散，饱和按明暗收敛，选中铺厚；标准档保持升级前参数', () {
+  // 自动档运行中降档按屏幕刷新率算预算：120Hz 是 8ms（最慢 5% 超过 12ms 降），60Hz 仍是库默认的 16ms。
+  test('自动档的帧预算跟屏幕刷新率走', () {
+    expect([campusGlassBudgetMs(60), campusGlassBudgetMs(59.94), campusGlassBudgetMs(90), campusGlassBudgetMs(120), campusGlassBudgetMs(0)], [16, 16, 11, 8, 16]);
+  });
+  testWidgets('自动档按这块屏的刷新率交给库', (tester) async {
+    addTearDown(tester.view.display.resetRefreshRate);
+    for (final (rate, budget) in const [(120.0, 8), (60.0, 16)]) {
+      tester.view.display.refreshRate = rate;
+      await tester.pumpWidget(CampusGlassScope.wrap(mode: CampusGlassMode.auto, capped: false, child: const SizedBox()));
+      expect(tester.widget<liquid.GlassAdaptiveScope>(find.byType(liquid.GlassAdaptiveScope)).targetFrameMs, budget);
+    }
+  });
+  test('满档以iOS 27材质按配色轻着色、不加色散，饱和按明暗收敛，选中铺厚；磨砂档保持升级前参数', () {
     for (final palette in [...CampusPalette.values, ...CampusPalette.darkValues]) {
       for (final role in CampusGlassRole.values) {
         final full = campusGlassSettings(palette, role, CampusGlassTier.full);
@@ -205,24 +218,23 @@ void main() {
         // 预设饱和压在带色云雾上会把玻璃染艳：浅色 1.4、深色不加；底色只轻铺，不盖住雾化与高光。
         expect(full.saturation, palette.isDark ? 1 : 1.4);
         expect(full.glassColor.a, lessThanOrEqualTo(.56));
-        final standard = campusGlassSettings(palette, role, CampusGlassTier.standard);
-        expect(standard.saturation, .9);
+        final minimal = campusGlassSettings(palette, role, CampusGlassTier.minimal);
         // 磨砂档不调饱和：不然库会嵌第二层 BackdropFilter，OPPO 上弹层被键盘顶起时整块变黑。
-        expect(campusGlassSettings(palette, role, CampusGlassTier.minimal).saturation, 1);
-        expect(standard.chromaticAberration, 0);
-        expect(standard.frost, 0);
-        expect(standard.glowIntensity, 0);
+        expect(minimal.saturation, 1);
+        expect(minimal.chromaticAberration, 0);
+        expect(minimal.frost, 0);
+        expect(minimal.glowIntensity, 0);
         // 浮层：完全雾化不透底层清晰副本；浅色在遮罩上整块均匀提亮（取值见模拟器实测），导航与控件不提亮。
         final overlay = role == CampusGlassRole.overlay;
         expect(full.frostOpacity, overlay ? 1 : preset.frostOpacity);
-        for (final settings in [full, standard, campusGlassSettings(palette, role, CampusGlassTier.minimal)]) {
+        for (final settings in [full, minimal]) {
           // 满档浅色浮层的雾化透出遮罩发灰，提亮多一些；其余档沿用实测的 .65。
           expect(settings.whitenStrength, overlay && !palette.isDark ? (settings == full ? .8 : .65) : 0, reason: '${palette.id} $role');
           expect(settings.whitenGated, isFalse);
         }
         // 无遮罩的浮层（菜单、提示条）带柔和投影；其余保持原有阴影。
         expect(full.shadow, preset.shadow);
-        for (final tier in [CampusGlassTier.full, CampusGlassTier.standard, CampusGlassTier.minimal]) {
+        for (final tier in [CampusGlassTier.full, CampusGlassTier.minimal]) {
           final floating = campusGlassSettings(palette, role, tier, floating: true);
           if (overlay) expect(floating.shadow, campusFloatingShadow);
           if (!overlay && tier != CampusGlassTier.full) expect(floating.shadow, isNull);
@@ -233,13 +245,13 @@ void main() {
       // 选中、按下的控件铺厚，与未选中的透明玻璃一眼可分。
       expect(pressed.glassColor.a, greaterThan(campusGlassSettings(palette, CampusGlassRole.control, CampusGlassTier.full).glassColor.a * 2));
     }
-    final bar = campusGlassSettings(CampusPalette.values.first, CampusGlassRole.navigation, CampusGlassTier.standard, floating: true);
+    final bar = campusGlassSettings(CampusPalette.values.first, CampusGlassRole.navigation, CampusGlassTier.minimal, floating: true);
     expect([bar.thickness, bar.blur, bar.refractiveIndex, bar.lightIntensity, bar.shadowElevation], [16, 10, 1.15, .40, 1]);
-    final button = campusGlassSettings(CampusPalette.values.first, CampusGlassRole.control, CampusGlassTier.standard);
+    final button = campusGlassSettings(CampusPalette.values.first, CampusGlassRole.control, CampusGlassTier.minimal);
     expect([button.thickness, button.blur, button.refractiveIndex, button.lightIntensity, button.ambientStrength], [8, 6, 1.10, .35, .16]);
     expect(campusGlassQuality(CampusGlassTier.full), liquid.GlassQuality.premium);
-    expect(campusGlassQuality(CampusGlassTier.standard), liquid.GlassQuality.standard);
     expect(campusGlassQuality(CampusGlassTier.minimal), liquid.GlassQuality.minimal);
+    expect(campusGlassQuality(CampusGlassTier.solid), liquid.GlassQuality.minimal);
   });
   testWidgets('玻璃档位读取所在作用域的模式与限档，高对比和减少动画时实色', (tester) async {
     final tiers = <CampusGlassTier>[];
@@ -260,7 +272,7 @@ void main() {
     await pump(CampusGlassMode.full, capped: true);
     await pump(CampusGlassMode.full, media: const MediaQueryData(highContrast: true));
     await pump(CampusGlassMode.auto, media: const MediaQueryData(disableAnimations: true));
-    expect(tiers, [CampusGlassTier.minimal, CampusGlassTier.standard, CampusGlassTier.solid, CampusGlassTier.solid]);
+    expect(tiers, [CampusGlassTier.minimal, CampusGlassTier.minimal, CampusGlassTier.solid, CampusGlassTier.solid]);
   });
   testWidgets('切换玻璃模式不重建下面的应用：背景、入场与页面状态保留', (tester) async {
     var created = 0;
@@ -381,7 +393,7 @@ void main() {
       }
       await pump(CampusGlassTier.full);
       expect(shown(), ('full', 0));
-      await pump(CampusGlassTier.standard);
+      await pump(CampusGlassTier.minimal);
       await tester.pump(const Duration(milliseconds: 120));
       final (name, half) = shown();
       expect([name, half > 0 && half < 1], ['full', true]);
@@ -391,12 +403,12 @@ void main() {
       expect(shown().$2, allOf(greaterThan(0), lessThan(half)));
       await tester.pumpAndSettle();
       expect(shown(), ('full', 0));
-      await pump(CampusGlassTier.standard);
+      await pump(CampusGlassTier.minimal);
       await tester.pump(const Duration(milliseconds: 240));
       await tester.pump(const Duration(milliseconds: 16));
-      expect(shown().$1, 'standard');
+      expect(shown().$1, 'minimal');
       await tester.pumpAndSettle();
-      expect(shown(), ('standard', 0));
+      expect(shown(), ('minimal', 0));
       await pump(CampusGlassTier.solid, reduce: true);
       expect(shown(), ('solid', 1));
     });

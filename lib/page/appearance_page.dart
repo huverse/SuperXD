@@ -521,7 +521,7 @@ class _AppearancePageState extends State<AppearancePage> {
                 builder: (context, capped, _) => capped && settings.glassMode != 'reduced'
                     ? Padding(
                         padding: const EdgeInsets.only(top: 8),
-                        child: DotSeparatedText('上次异常退出，已暂时降为标准效果 · 点「完整」重试', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
+                        child: DotSeparatedText('上次异常退出，已暂时降为简化效果 · 点「完整」重试', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
                       )
                     : const SizedBox.shrink(),
               ),

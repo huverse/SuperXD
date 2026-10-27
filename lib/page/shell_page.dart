@@ -292,7 +292,7 @@ class _DragNavigationBarState extends State<DragNavigationBar>
     final tier = CampusGlassScope.tierOf(context, ready: campusGlassReady.value);
     return _lift.value > .01 &&
         campusOverlayDepth.value == 0 &&
-        (tier == CampusGlassTier.full || tier == CampusGlassTier.standard);
+        tier == CampusGlassTier.full;
   }
 
   // 透镜与栏是兄弟层而非栏玻璃的子节点：栏的玻璃按自身形状裁剪，透镜放在里面就被限制在栏内。
