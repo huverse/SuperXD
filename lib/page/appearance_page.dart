@@ -232,7 +232,7 @@ class _AppearancePageState extends State<AppearancePage> {
     final following = settings.textSize == null && _draftSize == null;
     final secondary = TextStyle(fontSize: 14, color: colors.onSurfaceVariant);
     String percent(double size) => '${(size * 100).round()}%';
-    final range = '${percent(DisplaySettings.textSizeMin)}–${percent(comfortable)}';
+    final range = '${percent(comfortableTextSizeMin)}–${percent(comfortable)}';
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Wrap(alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center, spacing: 12, runSpacing: 8, children: [
         Text.rich(TextSpan(children: [
@@ -261,7 +261,7 @@ class _AppearancePageState extends State<AppearancePage> {
         onChanged: (fraction) => _dragSize(settings, fraction, current, comfortable, system),
         onChangeEnd: (_) => _commitSize(settings, system),
         marks: CampusSliderMarks(
-          band: (0, _fraction(comfortable)),
+          band: (_fraction(comfortableTextSizeMin), _fraction(comfortable)),
           bandLabel: '推荐',
           ticks: [(_fraction(system), system > DisplaySettings.textSizeMax ? '系统 ${percent(system)}' : '系统')],
         ),

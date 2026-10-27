@@ -103,6 +103,8 @@ void main() {
     ('maple', 360.0, 1.3, 1.0, false),
     ('serif', 360.0, 1.0, 1.4, true),
     ('maple', 411.0, 1.0, 1.0, false),
+    ('maple', 360.0, 1.0, 1.0, false),
+    ('maple', 360.0, 1.0, .8, false),
   ]) {
     testWidgets('排版：$font ${width.toInt()}dp 系统×$system 应用×$app${bold ? ' 粗体文本' : ''}：不裁字、不剩一行标点、课名与提示不留孤字', (tester) async {
       tester.view.devicePixelRatio = 3;
@@ -123,7 +125,8 @@ void main() {
       await display.setFont(font);
       // 应用字号是实际显示大小：标准时跟随系统（系统字号照常生效），其余直接给大小（人工决策见 display_settings.dart 的 textSizeMin）。
       await display.setTextSize(app == 1 ? null : app);
-      final wide = width > 400;
+      // 学期视图左侧栏按最宽的一项定宽，Maple 标准字号在 360dp 上放得下（人工决策见 schedule_page.dart 的 _content），再大就收成横条。
+      final rail = system * app <= 1;
 
       final loggedOut = AppSession(_Accounts(inner, signedIn: false));
       await loggedOut.restore();
@@ -152,8 +155,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(_problems(tester), isEmpty, reason: '课表·学期');
       // [人工决策] 见 lib/page/schedule_page.dart 的 _content：窄屏大字号下月份周次收成卡片上方的一行横条，宽屏照旧竖栏。
-      expect(find.textContaining(RegExp(r'^第\d+周 \d+/\d+ · 本周$')), wide ? findsNothing : findsOneWidget);
-      expect(find.textContaining(RegExp(r'^第\d+周\n\d+/\d+\n本周$')), wide ? findsOneWidget : findsNothing);
+      expect(find.textContaining(RegExp(r'^第\d+周 \d+/\d+ · 本周$')), rail ? findsNothing : findsOneWidget);
+      expect(find.textContaining(RegExp(r'^第\d+周\n\d+/\d+\n本周$')), rail ? findsOneWidget : findsNothing);
       await tester.tap(find.byTooltip('返回'));
       await tester.pumpAndSettle();
       unawaited(router.push('/grades'));

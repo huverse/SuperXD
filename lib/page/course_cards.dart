@@ -529,7 +529,8 @@ class _EmptySlot extends StatelessWidget {
     final time = this.time;
     final duration = time == null ? null : classDuration(time.endMinute - time.startMinute);
     // 标题写空多久（“没课 1小时40分”），早八写彩蛋；节次与缺作息放副标题。
-    final title = name == '没课' && duration != null ? '没课 $duration' : name;
+    // 窄处只在「没课」与时长之间折行，不把时长拆开（360dp 学期视图左侧栏收窄后曾折成「没课 1小时40 / 分」）；读屏读整句。
+    final title = name == '没课' && duration != null ? ['没课 ', duration] : [name];
     final detail = [if (name != '没课' && duration != null) duration, periodLabel(span.start, span.end), if (time == null) '作息时间未设置'].join(' · ');
     return AnimatedBuilder(
       animation: reveal,
@@ -558,7 +559,9 @@ class _EmptySlot extends StatelessWidget {
                   Text(time == null ? '--:--' : '${time.startLabel}–${time.endLabel}', style: secondary),
                   const SizedBox(height: 2),
                 ],
-                Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurfaceVariant, fontFeatures: figures)),
+                Semantics(label: title.join(), excludeSemantics: true, child: Wrap(children: [
+                  for (final part in title) Text(part, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurfaceVariant, fontFeatures: figures)),
+                ])),
                 const SizedBox(height: 2),
                 Text(detail, style: secondary),
               ])),

@@ -415,7 +415,9 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     // 各列表末尾留出底部安全区与 16 的边距：列表铺到屏幕底边，最后一项能滚到 Home 指示条上方。
     final bottom = 16 + MediaQuery.paddingOf(context).bottom;
     return LayoutBuilder(key: const ValueKey('calendar-body'), builder: (context, constraints) {
-      final railWidth = math.min(112 * scale, constraints.maxWidth * .34);
+      // [人工决策-2026-10-28 00:18:15] 左侧栏收窄到刚好放得下最宽的一项（用户要求，取代固定的 112×字号）：按两位数周次「第88周」与四位数日期「88/88」
+      // 在当前字号、字体与粗体文本下量（月份与「本周」都比它们短），左右各留 12 的内边距（同 _tile）；同样的屏宽与字号下更多手机保留竖栏，最宽仍不超过屏宽的 34%。
+      final railWidth = math.min(24 + math.max(campusTextWidth(context, '第88周', style: const TextStyle(fontSize: 14)), campusTextWidth(context, '88/88', style: const TextStyle(fontSize: 14))).ceilToDouble(), constraints.maxWidth * .34);
       // [人工决策-2026-10-27 20:11:01] 窄屏、大字号下左边的月份周次栏会把课程卡挤得放不下「时刻列 + 课名」（用户 360dp 真机截图：课名一两个字一行）：
       // 栏改成卡片上方的一行横条，结构同竖栏（点月份展开各周、所看的那周选中并滚到中间），卡片吃满整宽、保留时刻列（用户从两种实物中选定，
       // 未选「保留左侧栏、卡片把时刻挪到内容第一行」）。放得下的标准是卡片内容区能并排时刻列与六个课名字（同 course_cards.dart 的三栏判断），放得下照旧竖栏。

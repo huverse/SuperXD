@@ -414,11 +414,12 @@ void main() {
       await settings.close();
     }
     await directory.delete(recursive: true);
-    // 跟随系统时最小也按 100%；选的大小按 5% 一档夹在 100%–200%。
-    expect(DisplaySettings.effectiveTextSize(null, .85), 1.0);
+    // 跟随系统时系统字号比标准小也照着来，最小按 80%；选的大小按 5% 一档夹在 80%–200%。
+    expect(DisplaySettings.effectiveTextSize(null, .85), .85);
+    expect(DisplaySettings.effectiveTextSize(null, .7), .8);
     expect(DisplaySettings.effectiveTextSize(null, 1.3), 1.3);
     expect(DisplaySettings.effectiveTextSize(1.2, 1.6), 1.2);
-    expect([DisplaySettings.snapTextSize(1.23), DisplaySettings.snapTextSize(2.4), DisplaySettings.snapTextSize(.8)], [1.25, 2.0, 1.0]);
+    expect([DisplaySettings.snapTextSize(1.23), DisplaySettings.snapTextSize(2.4), DisplaySettings.snapTextSize(.83), DisplaySettings.snapTextSize(.6)], [1.25, 2.0, .85, .8]);
   });
 
   // 推荐上限按屏宽与字体量（同 text_size_range.dart 文件头记的 10-27 扫描结果）：课程卡还带时刻列、今天页与课表顶栏的按钮还带字的最大字号。
@@ -480,7 +481,7 @@ void main() {
     await tester.scrollUntilVisible(find.byType(Slider), 200, scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
     final rect = tester.getRect(find.byType(Slider));
-    double x(double size) => rect.left + 24 + (size - 1) * (rect.width - 48);
+    double x(double size) => rect.left + 24 + (size - DisplaySettings.textSizeMin) / (DisplaySettings.textSizeMax - DisplaySettings.textSizeMin) * (rect.width - 48);
     final gesture = await tester.startGesture(Offset(x(1.9), rect.center.dy));
     await gesture.moveTo(Offset(x(1.6), rect.center.dy));
     await tester.pump();
@@ -503,6 +504,13 @@ void main() {
     await _slideTextSize(tester, 1.15);
     await tester.pumpAndSettle();
     expect(settings.textSize, 1.15);
+    // 可以拖到比标准小（最小 80%），推荐范围仍从标准 100% 标起。
+    await tester.scrollUntilVisible(find.byType(Slider), 200, scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+    await _slideTextSize(tester, .8);
+    await tester.pumpAndSettle();
+    expect(settings.textSize, .8);
+    expect(find.text('这台手机推荐 100%–145%'), findsOneWidget);
     // 外观模式的分段控件里也有「跟随系统」，点字号这一节的那个按钮。
     await tester.tap(find.widgetWithText(CampusGlassChip, '跟随系统'));
     await tester.pumpAndSettle();

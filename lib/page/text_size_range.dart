@@ -19,10 +19,13 @@ List<String> textSizeAdaptations(BuildContext context, double screenWidth, doubl
   ];
 }
 
+// 推荐范围的下限是标准 100%：字号条最小到 80%（人工决策见 display_settings.dart 的 textSizeMin），比标准小的字低于设计尺寸 14px，不标推荐。
+const comfortableTextSizeMin = 1.0;
+
 // 推荐上限：字号越大越挤，按 5% 一档二分找最后一个不改排的；最窄的屏也至少是标准 100%。
 double comfortableTextSize(BuildContext context, double screenWidth) {
-  double sizeAt(int step) => DisplaySettings.snapTextSize(DisplaySettings.textSizeMin + step * DisplaySettings.textSizeStep);
-  var low = 0, high = ((DisplaySettings.textSizeMax - DisplaySettings.textSizeMin) / DisplaySettings.textSizeStep).round();
+  double sizeAt(int step) => DisplaySettings.snapTextSize(comfortableTextSizeMin + step * DisplaySettings.textSizeStep);
+  var low = 0, high = ((DisplaySettings.textSizeMax - comfortableTextSizeMin) / DisplaySettings.textSizeStep).round();
   if (textSizeAdaptations(context, screenWidth, sizeAt(high)).isEmpty) return sizeAt(high);
   while (high - low > 1) {
     final middle = (low + high) ~/ 2;
