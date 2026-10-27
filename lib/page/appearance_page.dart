@@ -416,7 +416,7 @@ class _AppearancePageState extends State<AppearancePage> {
                   ),
               ],
             ),
-            // iOS 的玻璃是系统的，跟随系统设置（显示与亮度里的液态玻璃、辅助功能里的降低透明度），不在这里调（[人工决策] 见 theme/native_glass.dart）。
+            // iOS 上固定磨砂档（底栏是系统的，跟随系统设置），没有档位可调（[人工决策] 见 theme/native_glass.dart）。
             if (!campusIos) ...[
               const SizedBox(height: 24),
               Text('玻璃效果', style: Theme.of(context).textTheme.titleLarge),
