@@ -20,7 +20,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 
 void main() {
   tearDown(() => campusGlassReady.value = false);
-  test('强调按钮：五套配色深浅两色白字对强调色与警示红实底不低于4.5:1', () {
+  test('强调按钮：四套配色深浅两色白字对强调色与警示红实底不低于4.5:1', () {
     double contrast(Color color) => 1.05 / (color.computeLuminance() + .05);
     for (final palette in [...CampusPalette.values, ...CampusPalette.darkValues]) {
       expect(contrast(palette.accent), greaterThanOrEqualTo(4.5), reason: '${palette.id} ${palette.isDark}');

@@ -16,6 +16,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
@@ -266,12 +267,7 @@ class _AppearancePageState extends State<AppearancePage> {
               builder: (context, constraints) {
                 // 两列放不下“色点 + 名称 + 勾”时改单列，大字号下名称不折出孤字；按当前字体与字号实测最长名称。
                 final palettes = CampusPalette.forBrightness(Theme.of(context).brightness);
-                final labelWidth = palettes.map((palette) {
-                  final painter = TextPainter(text: TextSpan(text: palette.label, style: DefaultTextStyle.of(context).style.copyWith(fontSize: 16)), textDirection: Directionality.of(context), textScaler: MediaQuery.textScalerOf(context))..layout();
-                  final width = painter.width;
-                  painter.dispose();
-                  return width;
-                }).reduce(math.max);
+                final labelWidth = palettes.map((palette) => campusTextWidth(context, palette.label, style: const TextStyle(fontSize: 16))).reduce(math.max);
                 final half = (constraints.maxWidth - 12) / 2;
                 final width = half >= 32 + 3 * 24 + 8 + labelWidth + 24 ? half : constraints.maxWidth;
                 return Wrap(

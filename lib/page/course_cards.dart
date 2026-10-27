@@ -8,6 +8,7 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/domain/campus_gateway.dart';
@@ -89,7 +90,7 @@ Future<void> showCourseDetail(BuildContext context, {required PeriodSpan span, r
       padding: const EdgeInsets.fromLTRB(20, 12, 8, 20),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Expanded(child: Padding(padding: const EdgeInsets.only(top: 10), child: Text(course.courseName, style: Theme.of(context).textTheme.titleLarge))),
+          Expanded(child: Padding(padding: const EdgeInsets.only(top: 10), child: BalancedText(course.courseName, style: Theme.of(context).textTheme.titleLarge))),
           IconButton(tooltip: '关闭', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.close)),
         ]),
         Text('${periodLabel(span.start, span.end)}${time == null ? '' : ' · ${time.label}'}', style: secondary),
@@ -168,6 +169,8 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
   double _rowHeight = 48;
   // 左侧时间列宽：按当前字体与字号量“00:00”，各卡对齐。
   double _timeWidth = 56;
+  // 内容一栏太窄时改两栏，时刻写在内容第一行（见 _cardHeight）。
+  bool _stacked = false;
 
   @override
   void initState() {
@@ -263,13 +266,14 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
 
   double _cardHeight(BuildContext context, double width, double available) {
     final scaler = MediaQuery.textScalerOf(context);
-    final font = Theme.of(context).textTheme.bodyMedium!.fontFamily;
+    final base = DefaultTextStyle.of(context).style;
     _dataStamp ??= widget.spans.map((span) => '${span.key}:${span.course?.courseName}:${span.meeting?.place}:${span.course?.teacherName}:${_timeOf(span)?.label}').join('|');
-    final stamp = '$font:${Localizations.localeOf(context)}:${Directionality.of(context)}:$width:$available:${scaler.scale(14)}:${scaler.scale(16)}:$_dataStamp';
+    final stamp = '${base.fontFamily}:${base.letterSpacing}:${MediaQuery.boldTextOf(context)}:${Localizations.localeOf(context)}:${Directionality.of(context)}:$width:$available:${scaler.scale(14)}:${scaler.scale(16)}:$_dataStamp';
     if (_measureKey == stamp) return _height;
     _measureKey = stamp;
+    // 与卡片里的 Text 同一口径（默认样式的字距、系统粗体文本），见 theme/campus_typesetting.dart。
     double measure(String text, double size, FontWeight weight, double maxWidth) {
-      final painter = TextPainter(text: TextSpan(text: text, style: TextStyle(fontFamily: font, fontSize: size, fontWeight: weight, height: 1.3, fontFeatures: const [FontFeature.tabularFigures()])), textDirection: Directionality.of(context), locale: Localizations.localeOf(context), textScaler: scaler)..layout(maxWidth: maxWidth);
+      final painter = campusTextPainter(context, text, style: TextStyle(fontSize: size, fontWeight: weight, height: 1.3, fontFeatures: const [FontFeature.tabularFigures()]), maxWidth: maxWidth);
       final height = maxWidth == double.infinity ? painter.width : painter.height;
       painter.dispose();
       return height;
@@ -277,16 +281,21 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
     // 字体不一定带等宽数字（衬线体没有 tnum），按本页实际出现的开始时间取最宽，避免“08:00”折行。
     // 开始前开始时刻大、开始后下课时刻大，两个都按大号量。
     _timeWidth = [for (final span in widget.spans) ...[_timeOf(span)?.startLabel ?? '--:--', ?_timeOf(span)?.endLabel], '00:00'].map((label) => measure(label, 20, FontWeight.w600, double.infinity)).reduce(math.max).ceilToDouble() + 1;
-    final timeColumn = measure('00:00', 20, FontWeight.w600, 200) + measure('00:00', 14, FontWeight.w500, 200);
-    final detailWidth = math.max(48.0, width - 28 - _timeWidth - 25);
+    // 三栏（时刻列 │ 竖条 │ 内容）里内容一栏放不下六个课名字时改两栏：时刻挪到内容第一行（「08:00–09:40」），课名、教室吃满竖条右边的整宽。
+    // 学期视图左边还有月份周次栏，窄屏大字号下内容一栏曾只剩两个字宽，课名、教室一两个字一行。正常宽度照旧三栏。
+    final columns = width - 28 - _timeWidth - 25;
+    _stacked = columns < measure('国国国国国国', 17, FontWeight.w600, double.infinity);
+    final detailWidth = _stacked ? width - 28 - 15 : math.max(48.0, columns);
+    final timeColumn = _stacked ? 0.0 : measure('00:00', 20, FontWeight.w600, 200) + measure('00:00', 14, FontWeight.w500, 200);
+    final timeRow = _stacked ? measure('00:00–00:00', 16, FontWeight.w600, detailWidth) + 2 : 0.0;
     // 空档是一行（触区不低于 48），只有有课卡分剩余高度。
-    // 空档两行（时长标题 16、节次 14）的基础高度，触区不低于 48；再按时长加高，见 _gapHeight。
-    _rowHeight = math.max(48.0, measure('00:00', 16, FontWeight.w600, 200) + measure('00:00', 14, FontWeight.w500, 200) + 18);
+    // 空档两行（时长标题 16、节次 14）的基础高度，触区不低于 48；再按时长加高，见 _gapHeight。两栏时上面多一行时刻。
+    _rowHeight = math.max(48.0, timeRow + measure('00:00', 16, FontWeight.w600, 200) + measure('00:00', 14, FontWeight.w500, 200) + 18);
     final occupied = widget.spans.where((span) => !span.empty).toList();
     var contentHeight = timeColumn;
     for (final span in occupied) {
       final place = span.meeting!.place;
-      var height = place.isEmpty ? 4.0 : 8.0;
+      var height = (place.isEmpty ? 4.0 : 8.0) + timeRow;
       for (final field in [
         (span.course!.courseName, 17.0, FontWeight.w600, detailWidth),
         // 教室行左边让出定位图标与间距。
@@ -355,13 +364,13 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
               onTap: selected ? () => widget.onDetail?.call(null) : open == null ? () {} : null,
               onLongPress: widget.onDetail == null || span.empty && widget.onCreate == null ? null : () => widget.onDetail!(key),
               child: span.empty
-                  ? _EmptySlot(key: ValueKey('course-card-$key'), span: span, time: _timeOf(span), name: _emptyName(span), minHeight: _gapHeight(span), timeWidth: _timeWidth, reveal: selected ? _curve : const AlwaysStoppedAnimation(0.0), actions: actions)
+                  ? _EmptySlot(key: ValueKey('course-card-$key'), span: span, time: _timeOf(span), name: _emptyName(span), minHeight: _gapHeight(span), timeWidth: _timeWidth, stacked: _stacked, reveal: selected ? _curve : const AlwaysStoppedAnimation(0.0), actions: actions)
                   : CampusSurface(
                       key: ValueKey('course-card-$key'), selected: selected, padding: const EdgeInsets.fromLTRB(14, 12, 14, 12), onTap: open,
                       child: AnimatedBuilder(animation: selected ? _curve : const AlwaysStoppedAnimation(0.0),
                       builder: (context, child) => ConstrainedBox(constraints: BoxConstraints(minWidth: double.infinity, minHeight: height - 24 + (selected ? _curve.value * 80 : 0)), child: child),
                       child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisAlignment: MainAxisAlignment.center, children: [
-                        _CourseCardBody(span: span, time: _timeOf(span), progress: progress[key], timeWidth: _timeWidth),
+                        _CourseCardBody(span: span, time: _timeOf(span), progress: progress[key], timeWidth: _timeWidth, stacked: _stacked),
                         ?actions,
                       ])),
                     ),
@@ -392,13 +401,15 @@ class _CourseDayCardsState extends State<CourseDayCards> with SingleTickerProvid
 // [人工决策-2026-10-06 13:06:11] 已下课改为整卡内容淡化（取代只把课名转次要色），用户选定。
 // [人工决策-2026-10-18 14:49:51] 教室单独一行带定位图标、节次与教师并到末行（用户从图标行、右侧大号房间号、节次进左列三种实物中选定图标行）；
 // 时刻列开始前上课时刻大、开始后下课时刻大，已下课也是下课时刻大（用户选定，未选“只有上课中放大下课”）。
+// 内容一栏太窄时（stacked）去掉时刻列，时刻写在内容第一行「08:00–09:40」，该放大的那个时刻用正文色半粗、另一个次要色，规则同时刻列。
 class _CourseCardBody extends StatelessWidget {
-  const _CourseCardBody({required this.span, required this.time, required this.progress, required this.timeWidth});
+  const _CourseCardBody({required this.span, required this.time, required this.progress, required this.timeWidth, required this.stacked});
   final PeriodSpan span;
   final MeetingTime? time;
   // 今天已开始的课：1 为已下课，其余为上课中已过的比例；没开始或不是今天为空。
   final double? progress;
   final double timeWidth;
+  final bool stacked;
 
   @override
   Widget build(BuildContext context) {
@@ -412,23 +423,30 @@ class _CourseCardBody extends StatelessWidget {
     final small = TextStyle(fontSize: 14, fontWeight: FontWeight.w500, height: 1.3, fontFeatures: figures, color: palette.onSurfaceVariant);
     // 动画样式整体替换默认样式，先合并上默认样式，不丢应用字体。
     Widget clock(String label, bool emphasized) => AnimatedDefaultTextStyle(style: DefaultTextStyle.of(context).style.merge(emphasized ? big : small), duration: duration, curve: Curves.easeOutCubic, maxLines: 1, softWrap: false, child: Text(label));
+    TextSpan inline(String label, bool emphasized) => TextSpan(text: label, style: emphasized ? small.copyWith(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface) : small);
     final place = span.meeting!.place;
     return AnimatedOpacity(
       opacity: done ? .55 : 1,
       duration: duration,
       curve: Curves.easeOutCubic,
       child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        SizedBox(width: timeWidth, child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          clock(time?.startLabel ?? '--:--', time == null || progress == null),
-          if (time != null) clock(time.endLabel, progress != null),
-        ])),
-        const SizedBox(width: 10),
+        if (!stacked) ...[
+          SizedBox(width: timeWidth, child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+            clock(time?.startLabel ?? '--:--', time == null || progress == null),
+            if (time != null) clock(time.endLabel, progress != null),
+          ])),
+          const SizedBox(width: 10),
+        ],
         progress != null && !done
             ? _ProgressStripe(progress: progress)
             : DecoratedBox(decoration: BoxDecoration(color: palette.primary, borderRadius: BorderRadius.circular(2)), child: const SizedBox(width: 3)),
         const SizedBox(width: 12),
         Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(span.course!.courseName, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface)),
+          if (stacked) ...[
+            Text.rich(TextSpan(children: [inline(time?.startLabel ?? '--:--', time == null || progress == null), if (time != null) ...[TextSpan(text: '–', style: small), inline(time.endLabel, progress != null)]]), style: const TextStyle(height: 1.3)),
+            const SizedBox(height: 2),
+          ],
+          BalancedText(span.course!.courseName, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface)),
           if (place.isNotEmpty) ...[const SizedBox(height: 4), CoursePlace(place)],
           const SizedBox(height: 4),
           // 缺作息时提示并在节次同一行，不额外占一行。
@@ -451,7 +469,7 @@ class CoursePlace extends StatelessWidget {
     return Row(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
       Padding(padding: EdgeInsets.only(top: ((MediaQuery.textScalerOf(context).scale(size) * 1.3 - size) / 2).clamp(0.0, double.infinity)), child: CampusIcon(CampusIcons.place, size: size, color: palette.onSurfaceVariant)),
       const SizedBox(width: 4),
-      Flexible(child: Text(place, style: TextStyle(fontSize: size, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface))),
+      Flexible(child: BalancedText(place, style: TextStyle(fontSize: size, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface))),
     ]);
   }
 }
@@ -463,8 +481,10 @@ class CoursePlace extends StatelessWidget {
 // [人工决策-2026-10-06 13:06:11] 空档由与正课等高的整卡改为细行（取代 09-24“正课空课等宽等高”），用户选定；今天页相邻空档合并，课表页按节次分行以便新增课程。
 // [人工决策-2026-10-06 14:20:54] 空档定为虚线空位框（取代 13:31:50 的无容器时间轴连接）：尺子时刻列、按时长加高、标题写时长；用户从时间带、虚线空位框、斜纹带三种实物中选定。斜纹在日历里常表示忙碌，未采用。
 class _EmptySlot extends StatelessWidget {
-  const _EmptySlot({super.key, required this.span, required this.time, required this.name, required this.minHeight, required this.timeWidth, required this.reveal, this.actions});
+  const _EmptySlot({super.key, required this.span, required this.time, required this.name, required this.minHeight, required this.timeWidth, required this.stacked, required this.reveal, this.actions});
   final double timeWidth;
+  // 同有课卡：内容一栏太窄时去掉尺子时刻列，起止写在内容第一行。
+  final bool stacked;
   final PeriodSpan span;
   final MeetingTime? time;
   final String name;
@@ -495,14 +515,20 @@ class _EmptySlot extends StatelessWidget {
             constraints: BoxConstraints(minWidth: double.infinity, minHeight: minHeight - 16),
             child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
               // 时刻列像尺子：上沿写开始、下沿写结束，与中间虚线两端对齐，一眼读出“从几点到几点”。
-              SizedBox(width: timeWidth, child: Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text(time?.startLabel ?? '--:--', maxLines: 1, softWrap: false, style: secondary.copyWith(fontSize: 16)),
-                if (time != null) Text(time.endLabel, maxLines: 1, softWrap: false, style: secondary),
-              ])),
-              const SizedBox(width: 10),
+              if (!stacked) ...[
+                SizedBox(width: timeWidth, child: Column(mainAxisAlignment: MainAxisAlignment.spaceBetween, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Text(time?.startLabel ?? '--:--', maxLines: 1, softWrap: false, style: secondary.copyWith(fontSize: 16)),
+                  if (time != null) Text(time.endLabel, maxLines: 1, softWrap: false, style: secondary),
+                ])),
+                const SizedBox(width: 10),
+              ],
               SizedBox(width: 3, child: CustomPaint(painter: _DashPainter(palette.outline.withValues(alpha: .5)))),
               const SizedBox(width: 12),
               Expanded(child: Column(mainAxisAlignment: MainAxisAlignment.center, crossAxisAlignment: CrossAxisAlignment.start, children: [
+                if (stacked) ...[
+                  Text(time == null ? '--:--' : '${time.startLabel}–${time.endLabel}', style: secondary),
+                  const SizedBox(height: 2),
+                ],
                 Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurfaceVariant, fontFeatures: figures)),
                 const SizedBox(height: 2),
                 Text(detail, style: secondary),

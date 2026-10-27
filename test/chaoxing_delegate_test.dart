@@ -97,13 +97,13 @@ void main() {
     var now = DateTime.utc(2026, 10, 9, 12);
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingTicketPage(controller: owner, now: () => now)));
     await settle('出示页投递完成并显示倒计时', () => find.textContaining('后失效').evaluate().isNotEmpty);
-    expect(find.text('10:00 后失效 · '), findsOneWidget);
+    expect(find.text('10:00 后失效\u00A0· '), findsOneWidget);
     final first = packs.packs.keys.single;
 
     // 走到 9 分 59 秒还有效；过了 10 分钟盖上「已失效」，提示重新生成，别拿过期的码给人扫。
     now = now.add(const Duration(minutes: 9, seconds: 59));
     await tester.pump(const Duration(seconds: 1));
-    expect(find.text('0:01 后失效 · '), findsOneWidget);
+    expect(find.text('0:01 后失效\u00A0· '), findsOneWidget);
     expect(find.text('已失效'), findsNothing);
     now = now.add(const Duration(seconds: 2));
     await tester.pump(const Duration(seconds: 1));
@@ -117,7 +117,7 @@ void main() {
     expect(packs.packs.keys.single, isNot(first));
     expect(packs.calls.where((call) => call.endsWith('/revoke')), hasLength(1));
     // 新码重新起算，遮罩揭开。
-    await settle('新码显示倒计时', () => find.text('10:00 后失效 · ').evaluate().isNotEmpty);
+    await settle('新码显示倒计时', () => find.text('10:00 后失效\u00A0· ').evaluate().isNotEmpty);
     expect(find.text('已失效'), findsNothing);
 
     await tester.pumpWidget(const SizedBox());

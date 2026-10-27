@@ -18,6 +18,7 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
@@ -258,11 +259,9 @@ class _WeekGrid extends StatelessWidget {
 final _hanOnly = RegExp(r'^[\u3400-\u9fff]+$');
 String _balanced(BuildContext context, String name, TextStyle style, double width) {
   if (!_hanOnly.hasMatch(name) || width <= 0) return name;
-  final painter = TextPainter(text: TextSpan(text: name, style: style), textDirection: Directionality.of(context), textScaler: MediaQuery.textScalerOf(context))..layout();
   final chars = name.characters.toList();
   // 一行放得下几个字按实际字宽算，再按这个上限分行，每行都不超过上限，不会被再折一次。
-  final perLine = (width / (painter.width / chars.length)).floor();
-  painter.dispose();
+  final perLine = (width / (campusTextWidth(context, name, style: style) / chars.length)).floor();
   if (perLine < 1 || perLine >= chars.length) return name;
   final lines = (chars.length / perLine).ceil();
   final base = chars.length ~/ lines, extra = chars.length % lines;

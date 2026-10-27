@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_field_table.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -286,7 +287,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
         padding: const EdgeInsets.fromLTRB(20, 12, 8, 20),
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, mainAxisSize: MainAxisSize.min, children: [
           Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Expanded(child: Padding(padding: const EdgeInsets.only(top: 10), child: Text(course.courseName, style: Theme.of(context).textTheme.titleLarge))),
+            Expanded(child: Padding(padding: const EdgeInsets.only(top: 10), child: BalancedText(course.courseName, style: Theme.of(context).textTheme.titleLarge))),
             IconButton(tooltip: '关闭详情', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.close)),
           ]),
           Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
@@ -405,7 +406,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
         onTap: () => _details(course),
         child: Padding(padding: const EdgeInsets.fromLTRB(16, 10, 12, 10), child: Row(children: [
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(course.courseName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface)),
+            BalancedText(course.courseName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface)),
             const SizedBox(height: 2),
             DotSeparatedText(detail, style: TextStyle(fontSize: 14, height: 1.3, color: palette.onSurfaceVariant)),
           ])),
@@ -421,9 +422,9 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
   Widget _summary(GradeSummary? summary, String scope) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Text(
+      DotSeparatedText(
         scope == 'term' ? '教务汇总 · 本学期' : '旧缓存教务汇总 · 范围未核实',
-        style: Theme.of(context).textTheme.titleMedium,
+        style: Theme.of(context).textTheme.titleMedium!,
       ),
       if (scope != 'term') const Text('需重新同步核对范围，不将以下数值当作本学期指标。'),
       if (summary == null)
@@ -569,13 +570,13 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
             Row(
               children: [
                 Expanded(
-                  child: Text(
+                  child: DotSeparatedText(
                     overview.term.label.isEmpty
                         ? overview.term.key
                         : overview.term.label,
                     style: Theme.of(context)
                         .textTheme
-                        .titleMedium,
+                        .titleMedium!,
                   ),
                 ),
                 const CampusIcon(CampusIcons.next),
@@ -613,9 +614,9 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
   // 学期详情：学期名与同步时刻、教务汇总、汇总明细与筛选行（成绩列表另在下面一个 sliver 里）。
   List<Widget> _termContent() => [
     const SizedBox(height: 12),
-    Text(
+    DotSeparatedText(
       _term!.label.isEmpty ? _term!.key : _term!.label,
-      style: Theme.of(context).textTheme.titleMedium,
+      style: Theme.of(context).textTheme.titleMedium!,
     ),
     Text(
       _view!.cached

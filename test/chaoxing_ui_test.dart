@@ -474,7 +474,7 @@ void main() {
 
     await tester.tap(find.byTooltip('扫签到二维码'));
     await tester.pump();
-    await waitUntil(tester, () => find.text('扫码打开的签到 · ').evaluate().isNotEmpty);
+    await waitUntil(tester, () => find.text('扫码打开的签到\u00A0· ').evaluate().isNotEmpty);
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('高等数学'), findsWidgets);
     await enterCode(tester, '1234');
@@ -513,7 +513,7 @@ void main() {
     await openSignSheet(tester, button: '去签到');
     expect(find.text('这次签到还发布了签退活动'), findsOneWidget);
     await tester.tap(find.widgetWithText(TextButton, '去签退'));
-    await waitUntil(tester, () => find.text('签退 · ').evaluate().isNotEmpty);
+    await waitUntil(tester, () => find.text('签退\u00A0· ').evaluate().isNotEmpty);
     await enterCode(tester, '1234');
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     expect(fake.signQuery!['activeId'], '503');
@@ -1092,7 +1092,7 @@ void main() {
 
     await openGroups(tester);
     await openChat(tester, '高等数学群');
-    await waitUntil(tester, () => find.text('群里签到 · ').evaluate().isNotEmpty);
+    await waitUntil(tester, () => find.text('群里签到\u00A0· ').evaluate().isNotEmpty);
     // 等页面转场滑完再点，转场中途量到的坐标还在屏幕外。
     await tester.pump(const Duration(milliseconds: 400));
     // 群的签到页是推上去的，底下主页面也有“去签到”，按页面类型限定一下。
@@ -1143,10 +1143,10 @@ void main() {
     await waitUntil(tester, () => find.text('高等数学（周二三四节）').evaluate().isNotEmpty);
     expect(find.descendant(of: find.byType(ChaoxingGroupPage), matching: find.byType(CampusSurface)), findsOneWidget);
     await openChat(tester, '高等数学（周二三四节）');
-    await waitUntil(tester, () => find.text('较早的签到 · ').evaluate().isNotEmpty);
+    await waitUntil(tester, () => find.text('较早的签到\u00A0· ').evaluate().isNotEmpty);
     // 发起晚的排在上面。
-    final recent = tester.getTopLeft(find.text('刚发起的签到 · '));
-    final older = tester.getTopLeft(find.text('较早的签到 · '));
+    final recent = tester.getTopLeft(find.text('刚发起的签到\u00A0· '));
+    final older = tester.getTopLeft(find.text('较早的签到\u00A0· '));
     expect(recent.dy < older.dy, isTrue);
     await tester.pumpWidget(const SizedBox());
   });
@@ -1188,7 +1188,7 @@ void main() {
 
     await openGroups(tester);
     await openChat(tester, '高等数学群');
-    await waitUntil(tester, () => find.text('群里签到 · ').evaluate().isNotEmpty);
+    await waitUntil(tester, () => find.text('群里签到\u00A0· ').evaluate().isNotEmpty);
     expect(find.textContaining('认不出类型的签到'), findsNothing);
     expect(find.text('1 场签到没读到'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -1230,7 +1230,7 @@ void main() {
 
     // 点进合并的那一项：只拉这两个群。
     await openChat(tester, '高等数学群');
-    await waitUntil(tester, () => find.text('群里签到 · ').evaluate().isNotEmpty);
+    await waitUntil(tester, () => find.text('群里签到\u00A0· ').evaluate().isNotEmpty);
     expect(fake.imRoamingQueues.toSet(), {'g1@conference.easemob.com', 'g3@conference.easemob.com'});
     expect(find.text('同名的有 2 个群，签到已合并显示'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
@@ -1574,13 +1574,13 @@ void main() {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
 
-    expect(find.text('今天的签到 · '), findsOneWidget);
+    expect(find.text('今天的签到\u00A0· '), findsOneWidget);
     await tapEntry(tester, '按课程查看（1）');
     await waitUntil(tester, () => find.text('搜索课程、老师或学校').evaluate().isNotEmpty);
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('高等数学'), findsWidgets);
     // 说明行由 DotSeparatedText 按项拆开渲染，按拆分后的项断言。
-    expect(find.text('张老师 · '), findsOneWidget);
+    expect(find.text('张老师\u00A0· '), findsOneWidget);
     expect(find.text('2 个班'), findsOneWidget);
     // 首次读取：只有页面正中的加载在转，顶栏刷新按钮不同时转（不让两段加载动画同时演）。
     fake.activityListGate = Completer<void>();
@@ -1831,7 +1831,7 @@ void main() {
     await waitUntil(tester, () => find.text('可能正在签到（按学习通课表）').evaluate().isNotEmpty);
     expect(find.text('可能正在签到（按学习通课表）'), findsOneWidget);
     // 推断里已经列出的，不在「进行中」里重复。
-    expect(find.text('刚发起的签到 · '), findsOneWidget);
+    expect(find.text('刚发起的签到\u00A0· '), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -1852,7 +1852,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
     await waitUntil(tester, () => find.text('可能正在签到（按学习通课表）').evaluate().isNotEmpty);
-    expect(find.text('隐藏班刚发起的签到 · '), findsOneWidget);
+    expect(find.text('隐藏班刚发起的签到\u00A0· '), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -1875,8 +1875,8 @@ void main() {
     await waitUntil(tester, () => find.text('可能正在签到（按学习通课表）').evaluate().isNotEmpty);
     // 推断那组在「进行中的签到」之上：没时间的那条要排在「进行中」标题下面，刚发起的在上面。
     final ongoingTitle = tester.getTopLeft(find.text('进行中的签到')).dy;
-    expect(tester.getTopLeft(find.text('刚发起的签到 · ')).dy, lessThan(ongoingTitle));
-    expect(tester.getTopLeft(find.text('没时间的签到 · ')).dy, greaterThan(ongoingTitle));
+    expect(tester.getTopLeft(find.text('刚发起的签到\u00A0· ')).dy, lessThan(ongoingTitle));
+    expect(tester.getTopLeft(find.text('没时间的签到\u00A0· ')).dy, greaterThan(ongoingTitle));
     await tester.pumpWidget(const SizedBox());
   });
 

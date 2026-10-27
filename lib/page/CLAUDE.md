@@ -21,14 +21,14 @@
   - share_target_sheet.dart：分享弹层 showShareSheet：多选好友后逐个发送，每行原地显示状态，失败的可重发；课表页、界面页、百宝箱结果页共用。
   - social_dialogs.dart：错误码文案 socialErrorText、列表时间 socialShortTime、单行输入弹窗 showSocialTextInput。
 - 今天：
-  - today_page.dart：今天页 TodayPage：读当前学期的课表与作息按日浏览；同步按钮走 chooseSyncSelection → CampusSync.run → showCampusSyncReport，没同步时正中给「同步课表」；课表页的「去同步」经 TodaySyncRequest 回到这里打开同步范围（组合根创建，[人工决策] 在类上）；含作息来源确认与缺开学日引导；同步中离开时结果暂存、回来再提示；切回本页或回到前台重读本地，学期、课表版本、开学日与作息都没变时不刷新内容（不整页重排）。顶部「此刻」卡（_ClassNow）显示上课中或下一节，课上完或没课时大字写状态、下面一行预告下一节（以后没课的日子也预告，不放右侧大号时刻，免得像课程卡），没课只在这张卡里说；到点换状态平滑过渡、开课前 15 分钟强调倒计时、5 分钟内按秒倒数、倒计时换数字时滚动、上课中此刻点定时漾开、整卡可点（[人工决策] 在 _ClassNow 上方）；看别的日子时底栏上方居中显示回「今天」胶囊（[人工决策] 见 _layout）；单击有课卡弹只读详情（_openCourse）。
+  - today_page.dart：今天页 TodayPage（顶栏放不下日期时「同步」只留图标）：读当前学期的课表与作息按日浏览；同步按钮走 chooseSyncSelection → CampusSync.run → showCampusSyncReport，没同步时正中给「同步课表」；课表页的「去同步」经 TodaySyncRequest 回到这里打开同步范围（组合根创建，[人工决策] 在类上）；含作息来源确认与缺开学日引导；同步中离开时结果暂存、回来再提示；切回本页或回到前台重读本地，学期、课表版本、开学日与作息都没变时不刷新内容（不整页重排）。顶部「此刻」卡（_ClassNow）显示上课中或下一节，课上完或没课时大字写状态、下面一行预告下一节（以后没课的日子也预告，不放右侧大号时刻，免得像课程卡），没课只在这张卡里说；到点换状态平滑过渡、开课前 15 分钟强调倒计时、5 分钟内按秒倒数、倒计时换数字时滚动、上课中此刻点定时漾开、整卡可点（[人工决策] 在 _ClassNow 上方）；看别的日子时底栏上方居中显示回「今天」胶囊（[人工决策] 见 _layout）；单击有课卡弹只读详情（_openCourse）。
   - today_day_navigation.dart：上下拖动切日的手势 TodayDayNavigation（阈值 64、上限 120）。
   - today_date_transition.dart：切日时日期与正文按同一进度纵向交接 TodayDateTransition。
-  - course_cards.dart：有课卡的只读详情 showCourseDetail（今天页与课表页共用，课表页带「编辑课程」）；当日节次卡片 CourseDayCards：有课卡（课名、教室行 CoursePlace、节次与教师；时刻列开始前上课时刻大、开始后下课时刻大）与空档（虚线空位框 _EmptySlot，高度随时长对数加高；虚线拼成一条路径一次画完），课表页长按展开（读屏整卡一句、长按提示展开详情）；今天页单击回调 onOpen（按下变暗、读屏整卡一句），revealNow 打开时把正在上或下一节滚进可见区；今天的课按 classMoment 分三态，时长格式 classDuration。整天没课时有顶部卡片（今天页）就不在中间重复，没有才居中写「这天没课」。人工决策见 _CourseCardBody 与 revealNow。
+  - course_cards.dart：有课卡的只读详情 showCourseDetail（今天页与课表页共用，课表页带「编辑课程」）；当日节次卡片 CourseDayCards：有课卡（课名、教室行 CoursePlace、节次与教师；时刻列开始前上课时刻大、开始后下课时刻大；内容一栏放不下六个课名字时去掉时刻列、时刻写在内容第一行，空档同理）与空档（虚线空位框 _EmptySlot，高度随时长对数加高；虚线拼成一条路径一次画完），课表页长按展开（读屏整卡一句、长按提示展开详情）；今天页单击回调 onOpen（按下变暗、读屏整卡一句），revealNow 打开时把正在上或下一节滚进可见区；今天的课按 classMoment 分三态，时长格式 classDuration。整天没课时有顶部卡片（今天页）就不在中间重复，没有才居中写「这天没课」。人工决策见 _CourseCardBody 与 revealNow。
   - live_clock.dart：全局分钟时钟 LiveClock，整分钟唤醒、后台暂停；测试要拨时间时用 LiveClock.fixed（不挂计时器，否则真实时间到整分会盖掉拨好的时间）。liveOf 说明是否真实时钟，要秒级刷新的界面只在真实时钟下自己计时。
   - date_rail.dart：日期横条 DateRail（读屏每项一句并可点选）。
 - 课表：
-  - schedule_page.dart：课表页 SchedulePage：天、学期、学年三种范围，可设开学日；标题旁写第几周，学期视图打开即展开所看日期的月与周、本周写「本周」（[人工决策] 在 _drilled）；单击有课卡看只读详情、长按展开；无课时段可新增课程或安排已有课程；没同步的学期给「去同步」（onSync）；顶栏只留「今天」胶囊、「管理课程」与⋯（开学日、课前提醒、导出到日历、分享给好友，后两项按注入的服务显示）。
+  - schedule_page.dart：课表页 SchedulePage：天、学期、学年三种范围，可设开学日；标题旁写第几周，学期视图打开即展开所看日期的月与周、本周写「本周」（[人工决策] 在 _drilled）；窄屏、大字号下左侧月份周次栏放不下时收成卡片上方的一行横条（[人工决策] 在 _content），顶栏放不下标题时「今天」只留图标；单击有课卡看只读详情、长按展开；无课时段可新增课程或安排已有课程；没同步的学期给「去同步」（onSync）；顶栏只留「今天」胶囊、「管理课程」与⋯（开学日、课前提醒、导出到日历、分享给好友，后两项按注入的服务显示）。
   - calendar_export.dart：导出到日历 exportTermCalendar：当前所看学期写成 .ics 交给日历应用；缺开学日或作息时说明原因不导出，找不到的节次不猜时刻；文件只放缓存 calendar_export 文件夹（每次先清空），经原生 CalendarExporter.kt 交出（iOS 是 CalendarExporter.swift：快速查看预览这份日历，在里面「全部添加」导入，是否给出这个按钮要真机确认）。交付函数可注入（openCalendar）。
   - reminder_dialog.dart：课前提醒设置 showReminderSettings：开关、提前时间与状态栏胶囊按学期保存（系统有实时更新才给胶囊开关），状态行如实显示安排结果，需要处理的给「开启通知」「准时提醒」「开启胶囊」。
   - schedule_calendar.dart：课表页月份轨道与周次轨道的纯函数。
@@ -42,10 +42,10 @@
   - sync_selection_dialog.dart：同步范围选择 chooseSyncSelection：学年与内容都可多选，默认读本地学期列表，点刷新才联网。
   - campus_sync_dialogs.dart：同步结果弹窗 showCampusSyncReport：结果与未处理项，可重新登录或重新同步；教务限流停下时只说明约 1 分钟后再同步，不给立即重新同步。
 - 账号与设置：
-  - login_page.dart：登录页 LoginPage，也用于切换账号：验证码、记住账号确认、百宝箱、关于（进同一个关于页，未登录也能开开发者模式、检查更新，[人工决策] 在按钮处）与法务入口；同意行勾选框读屏读整句，点「我已阅读并同意」也能勾选；登录按钮常亮，没填或没勾同意时原地说明，接系统自动填充（[人工决策] 在文件内）。
+  - login_page.dart：登录页 LoginPage，也用于切换账号：验证码、记住账号确认、百宝箱、关于（进同一个关于页，未登录也能开开发者模式、检查更新，[人工决策] 在按钮处）与法务入口；同意行勾选框读屏读整句，点「我已阅读并同意」也能勾选，放不下一行时「用户协议 和 隐私政策」整组换行、行距按文字排（_agreement）；登录按钮常亮，没填或没勾同意时原地说明，接系统自动填充（[人工决策] 在文件内）。
   - account_dialogs.dart：旧版本数据导入确认 showLegacyImport 与登录后自动提示的 LegacyImportGate；教务验证码弹窗 LoginCaptchaDialog；开启记住账号的输密码弹窗 askRememberPassword。
   - account_page.dart：账号页 AccountPage（账号卡姓名下写学号 · 班级，只在这里写；AccountTitle 我的页共用、只传姓名）：记住账号（关闭即删凭据；重新开启要输密码、后台登录核对成功才保存，不换代次）、切换账号、导入旧版本数据（本机有旧数据才显示）；退出登录单独一组放最底。
-  - appearance_page.dart：界面设置 AppearancePage：字号、配色、字体、深浅色、玻璃效果与背景（自定义图片经系统照片选择器，选图函数可注入）；可分享给好友（不含壁纸图片）。字体预览用 assets/font_previews 里预先画好的图（tool/font_previews.dart 生成），不为预览加载没在用的字体。滑杆拖动中只预览、松手保存，系统取消与读屏增减停手 300ms 补存，离开页面时存掉没存的预览。选项点了就生效，落库在 DisplaySettings 的保存锁里排队，保存时不禁用页面上的其他选项。改字号、换字体时整页重新排版，点的那一行经 theme 的 CampusAnchoredScrollController 停在手指下（字号另有连续过渡，见 local 的 CampusTextScale）。玻璃限档时点「完整」先解除限档。iOS 上字体多一项「系统字体」（文字直接预览），不显示玻璃效果（iOS 固定磨砂档，底栏是系统的）。
+  - appearance_page.dart：界面设置 AppearancePage：字号、配色、字体、深浅色、玻璃效果与背景（自定义图片经系统照片选择器，选图函数可注入）；可分享给好友（不含壁纸图片）。字体预览用 assets/font_previews 里预先画好的图（tool/font_previews.dart 生成），不为预览加载没在用的字体。滑杆拖动中只预览、松手保存，系统取消与读屏增减停手 300ms 补存，离开页面时存掉没存的预览。选项点了就生效，落库在 DisplaySettings 的保存锁里排队，保存时不禁用页面上的其他选项。改字号、换字体时整页重新排版，点的那一行经 theme 的 CampusAnchoredScrollController 停在手指下（字号另有连续过渡，见 local 的 CampusTextScale）。玻璃限档时点「完整」先解除限档。iOS 上字体多一项「系统字体」（文字直接预览，默认仍是 Maple），不显示玻璃效果（iOS 固定磨砂档，底栏是系统的）。
   - image_copy_pick.dart：通用取图 pickImageCopy 与多选 pickImagesCopy，返回副本路径与 discard；只删插件这次新留在缓存里的副本。壁纸、相册识别二维码共用，并经组合根注入百宝箱。
   - developer_page.dart：开发者选项 DeveloperPage（开关、日志导出与清除、复制诊断摘要、连电脑的 adb 命令、性能浮层、节日预览（播登记的每一次节日动画与两种红包揭晓，不改日期、不抽签）、运行环境；关闭开发者模式删开发者模式日志）、日志查看 DeveloperLogPage（全部或错误、错误按种类合并写出现几次、搜索、点开看全文与复制）与悬浮开发者工具 DeveloperOverlay（开发者模式下浮在所有页面上、可拖动贴边，点开可标记当前页面与一句说明、查看日志、导出、进开发者选项；自带一层 Overlay，开关时不改页面的父级结构，性能浮层也画在这层里、不用 MaterialApp 的开关（那个会给整页加一层 Stack、换父级重建），[人工决策] 在类上）。
   - developer_notes_page.dart：开发者的话（人工决策见 domain/developer_note.dart）：列表页 DeveloperNotesPage（从新到旧、没读的标小圆点、下拉刷新、没有信时写「还没有内容」）、读信页（标题、正文原样显示可复制、落款写日期）与弹出的信 showDeveloperNoteLetter（玻璃弹窗里读全文，还有别的没读时多一个「查看全部」）；点开一封即记成读过。什么时候弹由组合根按打扰时机决定（application/app_moments.dart）。
@@ -83,6 +83,7 @@
 - 今天与课表：today_navigation_test.dart、today_date_transition_test.dart、schedule_experience_test.dart、schedule_editor_ui_test.dart、schedule_calendar_test.dart、course_clock_performance_test.dart、calendar_export_test.dart。
 - 成绩与同步：grades_ui_test.dart、sync_ui_test.dart。
 - 壳层与表单：navigation_drag_test.dart、shell_layout_test.dart（含 iOS 系统底栏的留位、直接切换与再点当前项）、form_spacing_test.dart（支撑 form_layout_support.dart）。
+- 排版：text_layout_test.dart（登录、今天、课表三种范围与成绩在 360dp 大字号、宋体加粗体文本、411dp 标准下不裁字、不剩一行标点、不留孤字，同意行与登录按钮、学期视图横条；扫描在 text_fit_support.dart）。改了页面排版、文案长短或字号相关的布局都跑它。
 - 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart；开屏与画作页：painting_ui_test.dart。
 - 开发者的话：account_lifecycle_test.dart（「我的」页入口、小圆点与读信、新信在什么界面条件下弹）。
 - 节日：festival_test.dart（舞台、红包揭晓与按钮）与 account_lifecycle_test.dart（节日当天播动画、抽中接着拆红包）。
@@ -93,4 +94,4 @@
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/page
-- 本目录的标记集中在：切日方向与交接、回今天胶囊、底栏拖动与安全区、课程卡长按、无课时段新增、管理课程的课程卡与时段弹窗、历史版本时间线、好友课表导入、成绩同步范围与学年汇总、旧库导入确认、法务说明、我的页与账号页和关于页的归类、同步中止提示、壁纸滑杆、课表顶栏精简、成绩页切换淡出淡入、成绩汇总缺值写法、会话卡片⋯与排法、应用更新弹窗、节日红包揭晓的定稿。
+- 本目录的标记集中在：切日方向与交接、回今天胶囊、底栏拖动与安全区、课程卡长按、无课时段新增、管理课程的课程卡与时段弹窗、历史版本时间线、好友课表导入、成绩同步范围与学年汇总、旧库导入确认、法务说明、我的页与账号页和关于页的归类、同步中止提示、壁纸滑杆、课表顶栏精简、学期视图窄屏收成横条、成绩页切换淡出淡入、成绩汇总缺值写法、会话卡片⋯与排法、应用更新弹窗、节日红包揭晓的定稿。

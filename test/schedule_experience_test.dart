@@ -188,7 +188,7 @@ void main() {
 
   testWidgets('说明行按“ · ”分项、学期名在“学年”后切开，读屏读整句', (tester) async {
     await tester.pumpWidget(app(const DotSeparatedText('完成 · 课表 · 2026-2027学年第一学期', style: TextStyle(fontSize: 14))));
-    expect(tester.widgetList<Text>(find.byType(Text)).map((text) => text.data), ['完成 · ', '课表 · ', '2026-2027学年', '第一学期']);
+    expect(tester.widgetList<Text>(find.byType(Text)).map((text) => text.data), ['完成\u00A0· ', '课表\u00A0· ', '2026-2027学年', '第一学期']);
     expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '完成 · 课表 · 2026-2027学年第一学期'), findsOneWidget);
   });
 

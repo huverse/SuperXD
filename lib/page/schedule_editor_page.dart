@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -307,7 +308,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           Row(children: [
-            Expanded(child: Text(group.first.courseName, style: Theme.of(context).textTheme.titleMedium)),
+            Expanded(child: BalancedText(group.first.courseName, style: Theme.of(context).textTheme.titleMedium)),
             Builder(builder: (anchor) => IconButton(
               tooltip: '课程操作',
               onPressed: _busy ? null : () => _courseMenu(anchor, group),
@@ -365,11 +366,11 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                 padding: const EdgeInsets.all(16),
                 children: [
                   if (_loading) const CampusLoading(label: '正在更新课程', inline: true),
-                  Text(
+                  DotSeparatedText(
                     widget.term.label.isEmpty
                         ? widget.term.key
                         : widget.term.label,
-                    style: Theme.of(context).textTheme.titleMedium,
+                    style: Theme.of(context).textTheme.titleMedium!,
                   ),
                   const SizedBox(height: 16),
                   if (_error != null) ...[

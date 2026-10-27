@@ -609,14 +609,14 @@ void main() {
     final node = tester.getSemantics(find.bySemanticsLabel('上课中，第1–2节，星期5的课，教室，老师，1小时25分后下课'));
     expect(node, isSemantics(isButton: true, hasTapAction: true));
     // 整卡一句自成节点，范围就是这张卡，不并进外层列表。
-    expect(node.rect.size, tester.getSize(find.ancestor(of: find.text('上课中 · '), matching: find.byType(CampusSurface))));
+    expect(node.rect.size, tester.getSize(find.ancestor(of: find.text('上课中\u00A0· '), matching: find.byType(CampusSurface))));
     expect(find.text('8:00'), findsNWidgets(2));
     expect(find.text('9:45'), findsWidgets);
     expect(find.textContaining('距离'), findsNothing);
     // 窄屏特大字号时右侧时长不挤爆课名。
     await tester.pumpWidget(const SizedBox());
     await _mount(tester, _Gateway(), now: () => now, size: const Size(320, 640), scale: 1.4);
-    expect(find.text('上课中 · '), findsOneWidget);
+    expect(find.text('上课中\u00A0· '), findsOneWidget);
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
     now = DateTime.utc(2026, 9, 24, 23, 15);
@@ -646,7 +646,7 @@ void main() {
   testWidgets('此刻卡可点：上课中点开这节课的只读详情，课上完后点了跳到下一节那天', (tester) async {
     var now = DateTime.utc(2026, 9, 25, 0, 20);
     await _mount(tester, _Gateway(), now: () => now);
-    await tester.tap(find.text('上课中 · '));
+    await tester.tap(find.text('上课中\u00A0· '));
     await tester.pumpAndSettle();
     expect(find.text('上课时段'), findsOneWidget);
     expect(find.text('编辑课程'), findsNothing);
@@ -721,20 +721,20 @@ void main() {
       clock.value = DateTime.utc(2026, 9, 25, 1, 46);
       await tester.pump();
       if (reduced) {
-        expect(find.text('上课中 · '), findsNothing);
+        expect(find.text('上课中\u00A0· '), findsNothing);
         expect(find.text('今天的课上完了'), findsOneWidget);
         continue;
       }
       await tester.pump(const Duration(milliseconds: 90));
       double opacity(String text) => tester.widget<FadeTransition>(find.ancestor(of: find.text(text), matching: find.byType(FadeTransition)).first).opacity.value;
       // 前半段只有旧内容在淡出，新内容还没出现，两段文字不同时可见。
-      expect(opacity('上课中 · '), inExclusiveRange(0, 1));
+      expect(opacity('上课中\u00A0· '), inExclusiveRange(0, 1));
       expect(opacity('今天的课上完了'), 0);
       final middle = height();
       await tester.pump(const Duration(milliseconds: 180));
       expect(opacity('今天的课上完了'), greaterThan(0));
       await tester.pumpAndSettle();
-      expect(find.text('上课中 · '), findsNothing);
+      expect(find.text('上课中\u00A0· '), findsNothing);
       final after = height();
       expect(after, lessThan(before));
       expect(middle, lessThan(before));

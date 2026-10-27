@@ -5,7 +5,7 @@
 # 文件职责
 
 - 色彩与主题：
-  - campus_palette.dart：设备级色彩角色 CampusPalette，五套配色（苔灰、雾蓝、藕粉、暮紫、燕麦）各分浅深，默认雾蓝（默认值在 local/display_settings.dart 的 defaultPaletteId，Android 启动窗口底色 launch_background 与 iOS 启动图的 LaunchBackground 颜色集都跟着它（appearance_settings_test.dart 守护），[人工决策] 在两处文件头与常量处）。accent 是控件激活色（开关轨道、滑杆、强调按钮底），与文字主色 primary 分开（primary 为可读压得深而灰，铺成大块会发闷）；dangerFill 是破坏性按钮的红底；accentText 是激活色作大号强调文字时用的颜色（深色提亮，对卡片底不低于 4.5:1）；attention 是只读状态的提醒色；tagColors 是六种标签色，顺序即存储序号，只能在末尾追加。
+  - campus_palette.dart：设备级色彩角色 CampusPalette，四套配色（雾蓝、藕粉、暮紫、燕麦）各分浅深（苔灰 10-27 删掉），默认雾蓝（默认值在 local/display_settings.dart 的 defaultPaletteId，Android 启动窗口底色 launch_background 与 iOS 启动图的 LaunchBackground 颜色集都跟着它（appearance_settings_test.dart 守护），[人工决策] 在两处文件头与常量处）。accent 是控件激活色（开关轨道、滑杆、强调按钮底），与文字主色 primary 分开（primary 为可读压得深而灰，铺成大块会发闷）；dangerFill 是破坏性按钮的红底；accentText 是激活色作大号强调文字时用的颜色（深色提亮，对卡片底不低于 4.5:1）；attention 是只读状态的提醒色；tagColors 是六种标签色，顺序即存储序号，只能在末尾追加。
   - campus_theme.dart：campusTheme 按配色和字体生成 ThemeData：按钮 textStyle 显式带应用字体（不带会回落系统字体）；AppBar 返回图标与内容左边距 16 对齐、标题从 56 起（人工决策见文件内）；OutlinedButton 与 TextButton 是中性胶囊。另有 campusFieldGap（带浮动标签输入框的上方间距，随字号缩放）、campusSystemOverlay（系统栏透明）、CampusScrollBehavior（弹性回弹、不加拉伸效果，拉伸会让里面的玻璃退成底色；iOS 上拖动滚动区收起键盘）；按压反馈不用水波、按下整块变暗。CampusBackground 是空包装，只为兼容现有调用点。
   - campus_icons.dart：CampusIcons 统一映射 Lucide 图标，CampusIcon 渲染（iOS 上返回画成向左尖角，同系统导航栏），CampusMorphIcon 做导航图标形变，configureCampusIcons 启动时配置。
 - 背景：
@@ -39,12 +39,13 @@
   - campus_glass_menu.dart：玻璃菜单 showCampusMenu（是路由：返回键关闭、读屏模态、登记层数；不用库的 GlassMenu，它直接插 OverlayEntry，返回键会退出底下的页面）与下拉字段 CampusMenuField。页面不再直接用 DropdownButtonFormField、PopupMenuButton、showModalBottomSheet。
 - 通用组件：
   - campus_surface.dart：通用卡片表面 CampusSurface，可带点击（带点击时读屏报按钮）。
-  - campus_segmented.dart：内容区分段控件 CampusSegmented，二至三项的单选一律用它（规则见文件内人工决策）。
+  - campus_segmented.dart：内容区分段控件 CampusSegmented，二至三项的单选一律用它（规则见文件内人工决策）；等分放不下最长的文字时按文字宽度分配各段（同 iOS 的按内容分宽），连按文字分都放不下才等分加省略。
   - campus_search_field.dart：搜索框 CampusSearchField：胶囊形、底色描边同卡片，占位文字不用浮动标签，有字时出「清空搜索」；成绩页与学习通群聊签到、按课程共用，页面不再自己拼搜索用的 TextField。
   - campus_field_table.dart：详情里的「标签 值」两列行 CampusFieldTable（左列次要色按最宽标签对齐，值可选中复制，空值的行不画）；课程详情与成绩详情共用。
   - campus_prose.dart：按行排版的长说明 CampusProse：「1. 正文」编号悬挂缩进，「登录：正文」冒号前的段内小标题半粗，以冒号结尾的整行是小节标题；协议、隐私政策、首次同意弹窗与学习通同意说明共用，文字原样显示。
   - campus_animated_list.dart：列表增删的过渡（[人工决策] 在文件头，时长 campusListDuration，要等过渡走完再定位的调用方用它）：CampusAnimatedColumn 按 key 比对前后子项，新的展开淡入、去掉的原地收起；CampusAppear 给按需建的长列表里新到的一项展开。第一次显示不动画、减少动画时直接换，只用于没有玻璃的内容区列表。过渡不改条目的横向排布：条目始终铺满列表宽度，按内容收窄的条目（会话卡片）照旧靠左或靠右，不被居中。
-  - dot_separated_text.dart：「甲 · 乙」式说明行 DotSeparatedText：按「 · 」分项放进 Wrap 换行，不把词拆成孤字，读屏读整句；page 层与百宝箱共用。
+  - dot_separated_text.dart：「甲 · 乙」式说明行 DotSeparatedText：按「 · 」分项放进 Wrap 换行，不把词拆成孤字，点前是不换行空格（一项自己折行时「·」不单独成行），读屏读整句；page 层与百宝箱共用。
+  - campus_typesetting.dart：排版口径（10-27 iPhone 系统字体下时刻被裁后加）：campusTextPainter、campusTextWidth 按 Text 实际排版的口径量文字（合并默认样式的字距、系统粗体文本时加粗、字号缩放、语言），凡按文字尺寸决定布局的都用它，不自己 new TextPainter；BalancedText 是短句均衡换行（同 CSS text-wrap: balance，行数不变取最窄宽度，只管四行以内，支持外层 IntrinsicHeight），课名、教室、短提示与弹窗正文用它避免末行剩一两个字。
   - scroll_anchor.dart：滚动锚定 CampusAnchoredScrollController：hold 之后，整页重新排版（字号过渡、换字体）时在滚动区排版的同一帧里校正滚动位置，锚点停在原来的屏幕位置；过了最短时长还要等到一次不用校正、内容尺寸不再变的排版才放开（慢设备上过渡的最后一帧会晚到），最晚 settleLimit；手指一按或代码滚动就放开，到顶或到底校正不了的部分照常移动。界面页的字号与字体选项在用。
   - status_bar_scroll.dart：iOS 点状态栏回顶 CampusStatusBarScroll（组合根套在 MaterialApp.builder 里）：系统经 WidgetsBindingObserver.handleStatusBarTap 交来点按，分支页的滚动区挂在各自路由上、壳层 Scaffold 收不到，所以记住最近拖过的竖向滚动区，把它滚回开头（倒序列表是视觉上的顶端）；它不在最上层路由或分支不可见时不动。scrollToTop 给 iOS 再点当前底栏项时用。
   - scroll_edge_fade.dart：ScrollEdgeFade 在浮动玻璃栏下只渐隐内容本身（子树里不能再放玻璃）；CampusScrollFade 是页面滚动区的柔和边缘：有滚动区的页面都包（code_conventions_test.dart 守护；弹层、弹窗是玻璃面板不包），子树有玻璃开关或视频的页面不包；倒序列表（会话页最新在下）按视觉上缘那一端算，首次排版就按位置渐隐。
@@ -61,6 +62,7 @@
 - 背景只画一份：新页面不单独铺背景，也不给整页包遮罩（离屏遮罩会让玻璃取不到外层背景）；例外只有两处背景副本：账号应用入场的 360ms，以及页面推在弹窗、弹层上时的进出转场期间。
 - 页面、弹窗和转场的时长以 campus_transitions.dart 为准，不在页面里另设。本层不写业务文案，也不做业务判断。
 - 改视觉之前先读本目录的人工决策注释，以及自动记忆里被否决的方案（切日胶囊、云雾、字体压缩、玻璃滚动边缘），不要重提。
+- 排版：按文字宽度定宽或决定排法的地方一律经 campus_typesetting.dart 量（测量口径与 Text 不一致时末字会被裁掉，iOS 粗体文本下最明显）；会在窄处折行的短句用 BalancedText，「甲 · 乙」用 DotSeparatedText；新页面在 360dp 加 1.3 倍、411dp 标准两种条件下看过 Maple 与宋体再交。
 - 自绘图案不在 paint 里循环逐个画小图形（Impeller 没有栅格缓存，每帧都要重新提交）：固定图案预先画成拼贴、虚线拼成一条路径一次画完（10-27 iPhone 卡顿日志后改的颗粒与空档虚线）。
 
 # 测试
@@ -68,7 +70,7 @@
 - 玻璃与按钮：campus_glass_test.dart、campus_glass_button_test.dart；iOS 的系统组件分支：native_glass_test.dart（按 iOS 跑：系统弹窗、菜单的参数，开关滑杆与磨砂档、不建平台视图，系统底栏随推入与浮层交给原生的位置与显隐；原生长什么样只能在 iPhone 上看）。
 - 背景、配色与深色：atmosphere_test.dart（含 iOS 云雾每秒约 20 次、低电量停住、半分辨率贴图同直接画对照、颗粒拼贴同逐点画对照）、dark_mode_test.dart、wallpaper_test.dart。
 - 动效与转场：campus_motion_test.dart、transition_sync_test.dart（含 iOS 推入与任意位置右滑返回）、account_lifecycle_test.dart（入场与转场中间帧）。
-- 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器、点状态栏回顶、iOS 拖动收起键盘）。
+- 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器、点状态栏回顶、iOS 拖动收起键盘）；typesetting_test.dart（测量与 Text 同口径含粗体文本与字距、均衡换行、分段控件按字分宽、说明行的点不单独成行）。
 - 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
 
 # 人工决策检索

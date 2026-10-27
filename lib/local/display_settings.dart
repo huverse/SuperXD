@@ -58,9 +58,11 @@ class DisplaySettings extends ChangeNotifier {
   int get wallpaperFade => _wallpaperFade;
   static const scales = [1.0, 1.1, 1.25, 1.4];
   static const labels = ['标准', '较大', '大', '特大'];
-  static const paletteIds = ['sage', 'mist', 'rose', 'dusk', 'oat'];
+  // [人工决策-2026-10-27 20:11:01] 删掉苔灰配色（用户要求），剩雾蓝、藕粉、暮紫、燕麦四套；存着苔灰的在 v7 升级时换成默认的雾蓝，
+  // 好友分享的界面配置里是苔灰时按不支持的配色跳过。
+  static const paletteIds = ['mist', 'rose', 'dusk', 'oat'];
   // [人工决策-2026-10-22 21:44:49] 默认配色由苔灰改为雾蓝（用户要求）：只改默认值、不动已存的设置——新装与从没存过显示设置的升级后是雾蓝，
-  // 存过任何一项显示设置的（整份快照连当时的苔灰一起存了）保持原样（用户选定，未选「只给新装」「苔灰的全换成雾蓝」）。
+  // 存过任何一项显示设置的（整份快照连当时的苔灰一起存了）保持原样（用户选定，未选「只给新装」「苔灰的全换成雾蓝」）。苔灰本身已在 10-27 删掉（见上一条）。
   // 启动窗口底色（android res 的 launch_background）跟着默认配色走。
   static const defaultPaletteId = 'mist';
   static const glassModes = ['auto', 'full', 'reduced'];
@@ -72,18 +74,20 @@ class DisplaySettings extends ChangeNotifier {
     'maple': 'Maple Mono NF CN',
     'serif': 'Noto Serif SC',
   };
-  // [人工决策-2026-10-26 21:40:32] iOS 可用系统字体（西文 SF、中文苹方），且 iOS 新装默认就是系统字体（用户选定，同苹果 HIG 推荐的系统字体）；
-  // 已经存过显示设置的保持原样，字体列表多一项「系统字体」。安卓不变：没有这一项，默认仍是 Maple。
+  // [人工决策-2026-10-26 21:40:32] iOS 可用系统字体（西文 SF、中文苹方），字体列表多一项「系统字体」；安卓没有这一项。
+  // [人工决策-2026-10-27 20:11:01] iOS 默认字体改回 Maple（用户要求，取代上一条的「iOS 新装默认系统字体」），系统字体仍可选；
+  // iOS 上存着系统字体的在 v7 升级时一次性换成 Maple（用户选定：iOS 测试包 10-26 才有，存着的系统字体基本是默认值、分不清谁主动选的；未选「只改默认值」），
+  // 之后再选系统字体的不再改动。
   static const systemFont = 'system';
   static bool get supportsSystemFont => defaultTargetPlatform == TargetPlatform.iOS;
-  static String get defaultFontId => supportsSystemFont ? systemFont : 'maple';
+  static const defaultFontId = 'maple';
   static bool knownFont(String id) => fontFamilies.containsKey(id) || id == systemFont && supportsSystemFont;
 
   static Future<DisplaySettings> open({String? databasePath, Directory? wallpaperDirectory}) async {
     final db = await openDatabase(
       databasePath ??
           path.join(await getDatabasesPath(), 'display_settings.db'),
-      version: 6,
+      version: 7,
       onCreate: (db, _) async {
         await db.execute(
           "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT '$defaultPaletteId', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system', glass_mode TEXT NOT NULL DEFAULT 'auto', wallpaper_file TEXT, wallpaper_tone TEXT, wallpaper_blur INTEGER NOT NULL DEFAULT $defaultWallpaperBlur, wallpaper_fade INTEGER NOT NULL DEFAULT 0)",
@@ -120,6 +124,11 @@ class DisplaySettings extends ChangeNotifier {
             'UPDATE display_settings SET wallpaper_blur = CASE wallpaper_blur WHEN 0 THEN 0 WHEN 2 THEN 67 ELSE $defaultWallpaperBlur END, '
             'wallpaper_fade = CASE wallpaper_fade WHEN 1 THEN 33 WHEN 2 THEN 67 ELSE 0 END',
           );
+        }
+        if (oldVersion < 7) {
+          // 苔灰删掉后换成默认的雾蓝；iOS 上存着的系统字体一次性换成 Maple（安卓存不进系统字体，这句不影响安卓），人工决策见常量处。
+          await db.execute("UPDATE display_settings SET palette_id = '$defaultPaletteId' WHERE palette_id = 'sage'");
+          await db.execute("UPDATE display_settings SET font_id = 'maple' WHERE font_id = '$systemFont'");
         }
       },
     );

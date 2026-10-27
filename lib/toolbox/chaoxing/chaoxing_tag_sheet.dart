@@ -12,7 +12,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 
 // [人工决策-2026-10-15 19:18:47] 账号标签（同参考项目）：名字加一种颜色，账号管理里给账号打标签，签到时按标签一起勾选。
-// 颜色用主题里的标签色（五套配色共用、对比度有测试守护），只染名字前的小图标，名字仍用正文色；用户选了要配颜色。
+// 颜色用主题里的标签色（各套配色共用、对比度有测试守护），只染名字前的小图标，名字仍用正文色；用户选了要配颜色。
 // 标签色的名字（换色按钮的读屏与提示），与 CampusPalette.tagColors 一一对应。
 const chaoxingTagColorNames = ['红', '橙', '绿', '青', '蓝', '紫'];
 

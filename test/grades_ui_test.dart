@@ -14,8 +14,13 @@ import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 import 'form_layout_support.dart';
+
+// 学期名与「教务汇总 · 本学期」按分项排（DotSeparatedText，窄处在「学年」后、「·」后换行），按整句找要找这个组件；学期分段里的按钮另找。
+Finder _dotText(String text) => find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text == text);
+Finder _segment(String label) => find.descendant(of: find.byType(CampusSegmented<String>), matching: find.text(label));
 
 const first = TermRef(xn: '2025', xq: '0', label: '2025-2026学年第一学期');
 const second = TermRef(xn: '2025', xq: '1', label: '2025-2026学年第二学期');
@@ -145,21 +150,21 @@ void main() {
     await tester.tap(find.text('学期详情'));
     await tester.pumpAndSettle();
     gateway.hold = Completer<GatewayResult<GradesView>>();
-    await tester.tap(find.text('第一学期'));
+    await tester.tap(_segment('第一学期'));
     await tester.pump();
-    await tester.tap(find.text('第二学期'));
+    await tester.tap(_segment('第二学期'));
     await tester.pumpAndSettle();
-    expect(find.text(second.label), findsOneWidget);
+    expect(_dotText(second.label), findsOneWidget);
     gateway.hold!.complete(ok(view(first)));
     await tester.pumpAndSettle();
-    expect(find.text(second.label), findsOneWidget);
+    expect(_dotText(second.label), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
   testWidgets('学年只有一个学期时不画单项分段，学期名在标题里', (tester) async {
     await tester.pumpWidget(app(GradesPage(gateway: _Gateway()..onlyFirst = true)));
     await tester.pumpAndSettle();
     expect(find.byType(CampusSegmented<String>), findsNothing);
-    expect(find.text(first.label), findsOneWidget);
+    expect(_dotText(first.label), findsOneWidget);
     // 自绘顶栏与 AppBar 一致：标题从 56 起。
     expect(tester.getTopLeft(find.text('成绩')).dx, 56);
     await tester.pumpWidget(app(GradesPage(key: const ValueKey('two'), gateway: _Gateway())));
@@ -193,7 +198,7 @@ void main() {
     expect(opacity(), 1);
     expect(find.byIcon(CampusIcons.next), findsWidgets);
     expect(find.textContaining('全年绩点'), findsNothing);
-    expect(find.text('第一学期'), findsNothing);
+    expect(_segment('第一学期'), findsNothing);
     expect(tester.takeException(), isNull);
   });
   testWidgets('成绩专页同步默认当前年且不展示课表作息，取消不联网', (tester) async {
@@ -276,13 +281,13 @@ void main() {
     final emptyCard = tester.getRect(find.ancestor(of: find.text('这学期还没有成绩'), matching: find.byType(CampusSurface)).first);
     expect(tester.getCenter(find.text('这学期还没有成绩')).dx, closeTo(emptyCard.center.dx, 1));
     expect(tester.getCenter(find.byType(CampusIcon).last).dx, closeTo(emptyCard.center.dx, 1));
-    expect(find.text('教务汇总 · 本学期'), findsNothing);
+    expect(_dotText('教务汇总 · 本学期'), findsNothing);
     expect(find.text('教务未提供'), findsNothing);
     expect(find.byType(TextField), findsNothing, reason: '没有成绩时不给搜索筛选');
     await tester.tap(find.text('学年概览'));
     await tester.pumpAndSettle();
     expect(find.text('教务明确暂无成绩'), findsOneWidget);
-    expect(find.text('教务汇总 · 本学期'), findsNothing);
+    expect(_dotText('教务汇总 · 本学期'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -309,9 +314,9 @@ void main() {
       expect(tester.takeException(), isNull);
 
       gateway.custom = (term) => GradesView(empty: false, message: '', term: term, student: student, summary: null, effective: courses, original: original);
-      await tester.tap(find.text('第二学期'));
+      await tester.tap(_segment('第二学期'));
       await tester.pumpAndSettle();
-      expect(find.text('教务汇总 · 本学期'), findsOneWidget);
+      expect(_dotText('教务汇总 · 本学期'), findsOneWidget);
       expect(find.text('教务没给本学期汇总'), findsOneWidget);
       expect(find.text('绩点'), findsNothing);
       expect(find.text('—'), findsNothing);

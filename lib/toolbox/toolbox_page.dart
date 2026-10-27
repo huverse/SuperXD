@@ -9,6 +9,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
@@ -245,15 +246,7 @@ class _SwipeAction extends StatelessWidget {
 
   // 按钮宽度按文字实际宽度算（大字号下不折行），再加左右内边距与那道缝。
   static double widthFor(BuildContext context, String label) {
-    final painter = TextPainter(
-      text: TextSpan(text: label, style: DefaultTextStyle.of(context).style.merge(_style)),
-      textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context),
-      maxLines: 1,
-    )..layout();
-    final width = painter.width;
-    painter.dispose();
-    return gap + width + 2 * 20;
+    return gap + campusTextWidth(context, label, style: _style) + 2 * 20;
   }
 
   @override

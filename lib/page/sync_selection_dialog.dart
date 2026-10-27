@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -90,7 +91,7 @@ class _SyncSelectionDialogState extends State<_SyncSelectionDialog> {
             title: Text(switch (content) { SyncContent.schedule => '课表', SyncContent.bells => '作息', SyncContent.grades => '成绩' }),
             onChanged: (value) => setState(() { if (value == true) { _contents.add(content); } else { _contents.remove(content); } }),
           ),
-        const Text('覆盖所选学年已公布的学期', style: TextStyle(fontSize: 14)),
+        const BalancedText('覆盖所选学年已公布的学期', style: TextStyle(fontSize: 14)),
       ],
     ))),
     actions: [

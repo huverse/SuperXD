@@ -100,7 +100,7 @@ Future<WallpaperTone> measureWallpaper(Uint8List bytes) async {
   return WallpaperTone(width: width, height: height, columns: columns, rows: rows, darkest: darkest, brightest: brightest);
 }
 
-// 淡化衬底色取 backgroundTop：五套配色深浅两色下它对正文、次要文字和主色文字都在 5.9:1 以上，每格总能淡化达标。
+// 淡化衬底色取 backgroundTop：各套配色深浅两色下它对正文、次要文字和主色文字都在 5.9:1 以上，每格总能淡化达标。
 ui.Color wallpaperVeilColor(CampusPalette palette) => palette.backgroundTop;
 
 // 每格最小淡化透明度：衬底色叠在该格最不利的像素上（浅色看最暗、深色看最亮），正文、次要文字和主色文字都不低于 4.8:1。

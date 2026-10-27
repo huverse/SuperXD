@@ -15,6 +15,7 @@ import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/native_glass.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 
 // [人工决策-2026-09-25 16:24:31] 全应用页面360ms进入/320ms返回、弹层300ms，保留即时操作与减少动画，不保留旧账号截图。
 // iOS 的页面推入与返回改用系统的 500ms（[人工决策] 见 _IosPageSlide），弹层照旧。
@@ -966,7 +967,7 @@ Future<void> showCampusNotice(BuildContext context, String message, {String? tit
     context: context,
     builder: (context) => CampusGlassDialog(
       title: title == null ? null : Text(title),
-      content: SingleChildScrollView(child: Text(message)),
+      content: SingleChildScrollView(child: BalancedText(message)),
       actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('知道了'))],
     ),
   );
@@ -982,7 +983,7 @@ Future<bool> showCampusConfirm(BuildContext context, {required String title, req
   barrierDismissible: barrierDismissible,
   builder: (context) => CampusGlassDialog(
     title: Text(title),
-    content: SingleChildScrollView(child: Text(message)),
+    content: SingleChildScrollView(child: BalancedText(message)),
     actions: [
       TextButton(onPressed: () => Navigator.pop(context, false), child: Text(cancel)),
       FilledButton(style: destructive ? campusDestructive : null, onPressed: () => Navigator.pop(context, true), child: Text(action)),

@@ -14,6 +14,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_motion.dart';
@@ -572,9 +573,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
           final primary = TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurface);
           final secondary = TextStyle(fontSize: 14, height: 1.2, color: CampusPalette.of(context).onSurfaceVariant);
           final full = '$year${date.month}月${date.day}日 $weekday';
-          final painter = TextPainter(text: TextSpan(text: full, style: DefaultTextStyle.of(context).style.merge(primary)), textDirection: Directionality.of(context), textScaler: MediaQuery.textScalerOf(context), maxLines: 1)..layout();
-          final fits = painter.width <= constraints.maxWidth;
-          painter.dispose();
+          final fits = campusTextWidth(context, full, style: primary) <= constraints.maxWidth;
           final second = fits ? relative : [weekday, ?relative].join(' · ');
           return Column(mainAxisSize: MainAxisSize.min, children: [
             Text(fits ? full : '$year${date.month}月${date.day}日', textAlign: TextAlign.center, maxLines: 1, style: primary),
@@ -589,18 +588,27 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     return Column(children: [
       CampusTopBar(child: SizedBox(
         height: 56 * scale,
-        child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), child: Row(children: [
-          Text('今天', style: Theme.of(context).textTheme.headlineMedium),
-          const SizedBox(width: 8),
-          Expanded(child: date),
-          const SizedBox(width: 8),
-          FilledButton.icon(
-            onPressed: _syncing || _choosing ? null : _chooseSync,
-            onLongPress: _syncing || _choosing ? null : _chooseSync,
-            icon: const CampusIcon(CampusIcons.sync, size: 20),
-            label: Text(_syncing ? '同步中' : '同步', style: const TextStyle(fontSize: 16)),
-          ),
-        ])),
+        child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4), child: LayoutBuilder(builder: (context, constraints) {
+          final label = _syncing ? '同步中' : '同步';
+          final title = Theme.of(context).textTheme.headlineMedium;
+          // 窄屏、大字号下日期连「10月27日」一行都放不下时，「同步」只留图标（同课表顶栏的圆钮），不把日期截掉一半。
+          final compact = constraints.maxWidth - campusTextWidth(context, '今天', style: title) - 16 - (campusTextWidth(context, label, style: const TextStyle(fontSize: 16)) + 56) < campusTextWidth(context, '12月30日', style: const TextStyle(fontSize: 14));
+          final onSync = _syncing || _choosing ? null : _chooseSync;
+          return Row(children: [
+            Text('今天', style: title),
+            const SizedBox(width: 8),
+            Expanded(child: date),
+            const SizedBox(width: 8),
+            compact
+                ? CampusGlassCircleButton(label: label, size: 44, onPressed: onSync, icon: const CampusIcon(CampusIcons.sync, size: 20))
+                : FilledButton.icon(
+                    onPressed: onSync,
+                    onLongPress: onSync,
+                    icon: const CampusIcon(CampusIcons.sync, size: 20),
+                    label: Text(label, style: const TextStyle(fontSize: 16)),
+                  ),
+          ]);
+        })),
       )),
       if (_syncing) CampusLoading(label: _syncProgress.label, inline: true, network: true, animating: !_syncProgress.waitingForInput),
       // [人工决策-2026-09-27 17:28:58] 切日只保留页面直接交接，不再叠胶囊让位与回位动画；状态胶囊、归位按钮保持。
@@ -747,12 +755,12 @@ class _ClassNow extends StatelessWidget {
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           DotSeparatedText(status, style: secondary),
           const SizedBox(height: 4),
-          Text(course.courseName, style: Theme.of(context).textTheme.titleLarge),
+          BalancedText(course.courseName, style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 4),
           // 教师跟在教室后面（次要色）；首行不放教师，免得大字号下被右侧时长挤得折行。
           Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.end, children: [
             if (place.isNotEmpty) CoursePlace(place),
-            if (course.teacherName.isNotEmpty) Text(course.teacherName, style: secondary.copyWith(height: 1.5)),
+            if (course.teacherName.isNotEmpty) BalancedText(course.teacherName, style: secondary.copyWith(height: 1.5)),
           ]),
         ])),
         const SizedBox(width: 12),
@@ -821,7 +829,7 @@ class _ClassNow extends StatelessWidget {
       DotSeparatedText('下一节 · $when', style: secondary.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
       const SizedBox(height: 2),
       Wrap(spacing: 10, crossAxisAlignment: WrapCrossAlignment.end, children: [
-        Text(next.course.courseName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface)),
+        BalancedText(next.course.courseName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface)),
         if (place.isNotEmpty) CoursePlace(place, size: 14),
       ]),
     ]);

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,6 +9,7 @@ import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/domain/painting.dart';
@@ -147,6 +149,26 @@ class _LoginPageState extends State<LoginPage> {
     }
   }
 
+  // 同意行：「我已阅读并同意」一段、「用户协议 和 隐私政策」一组，一行放不下时整组换到第二行，不把链接拆开、不留单独一个链接；
+  // 行距按文字排（每项上下各 4、链接的触区也是这么高），不再按链接 48 的触区撑开（以前换行后两行相隔一个按钮高、第二行还缩进一截）。
+  // 首行与左边的勾选框居中对齐。
+  Widget _agreement(BuildContext context) {
+    const style = TextStyle(fontSize: 14);
+    final line = campusTextPainter(context, '我', style: style);
+    final top = math.max(0.0, (48 - line.height - 8) / 2);
+    line.dispose();
+    final link = campusLink.copyWith(padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)), minimumSize: const WidgetStatePropertyAll(Size.zero), tapTargetSize: MaterialTapTargetSize.shrinkWrap);
+    return Padding(padding: EdgeInsets.only(top: top), child: Wrap(spacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+      // 整句已在勾选框的读屏名里，这两段文字不再单独朗读；两个链接照常是按钮。
+      ExcludeSemantics(child: GestureDetector(onTap: _busy ? null : () => setState(() => _agreed = !_agreed), child: Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Text('我已阅读并同意', style: style.copyWith(color: CampusPalette.of(context).onSurfaceVariant))))),
+      Wrap(spacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+        TextButton(style: link, onPressed: _busy ? null : () => context.push('/legal/service'), child: const Text('用户协议', style: style)),
+        const ExcludeSemantics(child: Text('和', style: style)),
+        TextButton(style: link, onPressed: _busy ? null : () => context.push('/legal/privacy'), child: const Text('隐私政策', style: style)),
+      ]),
+    ]));
+  }
+
   @override
   Widget build(BuildContext context) {
     return CampusBackground(
@@ -180,7 +202,8 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                   ])),
-                  CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading,
+                  // 文字紧跟勾选框（同下面的同意行），不按列表行默认的 16 再空一截。
+                  CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, horizontalTitleGap: 0,
                     title: const Text('记住账号', style: TextStyle(fontSize: 14)), value: _remember,
                     onChanged: _busy ? null : (value) => _chooseRemember(value == true)),
                   const SizedBox(height: 8),
@@ -207,13 +230,7 @@ class _LoginPageState extends State<LoginPage> {
                   decoration: BoxDecoration(color: _nudged ? CampusPalette.of(context).surfaceSelected : CampusPalette.of(context).surfaceSelected.withValues(alpha: 0), borderRadius: BorderRadius.circular(12)),
                   child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
                   SizedBox(width: 48, height: 48, child: Checkbox(key: const ValueKey('agree-terms'), semanticLabel: '我已阅读并同意用户协议和隐私政策', value: _agreed, onChanged: _busy ? null : (value) => setState(() => _agreed = value == true))),
-                  Expanded(child: Wrap(crossAxisAlignment: WrapCrossAlignment.center, children: [
-                    // 整句已在勾选框的读屏名里，这两段文字不再单独朗读；两个链接照常是按钮。
-                    ExcludeSemantics(child: GestureDetector(onTap: _busy ? null : () => setState(() => _agreed = !_agreed), child: Padding(padding: const EdgeInsets.symmetric(vertical: 14), child: Text('我已阅读并同意', style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant))))),
-                    TextButton(style: campusLink, onPressed: _busy ? null : () => context.push('/legal/service'), child: const Text('用户协议', style: TextStyle(fontSize: 14))),
-                    const ExcludeSemantics(child: Text('和', style: TextStyle(fontSize: 14))),
-                    TextButton(style: campusLink, onPressed: _busy ? null : () => context.push('/legal/privacy'), child: const Text('隐私政策', style: TextStyle(fontSize: 14))),
-                  ])),
+                  Expanded(child: _agreement(context)),
                 ]))),
               ]),
             ),

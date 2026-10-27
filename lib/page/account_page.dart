@@ -10,6 +10,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
@@ -139,7 +140,7 @@ class _AccountPageState extends State<AccountPage> {
           CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
             // 记住账号：开着时点按关闭（删凭据）；关着时点按输密码核对后开启。
             ListTile(
-              contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.lock), title: const Text('记住账号'),
+              contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.lock), title: const BalancedText('记住账号'),
               trailing: Row(mainAxisSize: MainAxisSize.min, children: [
                 Text(switch (remembered) { null => '', true => '已开启', false => '未开启' }, style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
                 if (remembered != null) ...[const SizedBox(width: 4), const CampusIcon(CampusIcons.next)],

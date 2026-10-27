@@ -880,7 +880,7 @@ void main() {
     }
     expect(controller.mainPhoneNumber, '136');
     await tester.pumpAndSettle();
-    expect(find.text('136 · '), findsOneWidget);
+    expect(find.text('136\u00A0· '), findsOneWidget);
     expect(find.text('主账号'), findsOneWidget);
     controller.dispose();
   });

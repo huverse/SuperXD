@@ -9,6 +9,7 @@ import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/domain/campus_gateway.dart';
@@ -656,12 +657,7 @@ class _SuggestionField extends StatelessWidget {
   Widget build(BuildContext context) {
     // 横向候选栏高度随字号：按真实字形量出按钮文字行高再加按钮上下内边距，大字号不裁切，仍按需构建。
     // 候选是“点一下填入”的动作，用全局玻璃胶囊按钮，不用带选中语义的选择标签。
-    final painter = TextPainter(
-      text: TextSpan(text: '国', style: FilledButtonTheme.of(context).style!.textStyle!.resolve(const {})),
-      textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context),
-      maxLines: 1,
-    )..layout();
+    final painter = campusTextPainter(context, '国', style: FilledButtonTheme.of(context).style!.textStyle!.resolve(const {}), maxLines: 1);
     final rowHeight = math.max(48.0, painter.height + 14);
     painter.dispose();
     return Column(

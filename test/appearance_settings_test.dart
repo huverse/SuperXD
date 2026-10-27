@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -33,8 +34,8 @@ void main() {
     await old.close();
     var settings = await DisplaySettings.open(databasePath: path);
     expect(settings.scale, 1.25);
-    // 存过设置的老安装保持当时的苔灰，默认改成雾蓝不覆盖它。
-    expect(settings.paletteId, 'sage');
+    // v1 升上来时配色列默认是苔灰；苔灰删掉后（10-27）在 v7 换成默认的雾蓝。
+    expect(settings.paletteId, 'mist');
     expect(settings.fontId, 'maple');
     await Future.wait([
       settings.setPalette('rose'),
@@ -63,10 +64,10 @@ void main() {
     expect(settings.paletteId, 'mist');
     await settings.close();
     final saved = await openDatabase(path);
-    await saved.insert('display_settings', {'id': 1, 'text_scale': 1.1, 'palette_id': 'sage'});
+    await saved.insert('display_settings', {'id': 1, 'text_scale': 1.1, 'palette_id': 'rose'});
     await saved.close();
     settings = await DisplaySettings.open(databasePath: path);
-    expect(settings.paletteId, 'sage');
+    expect(settings.paletteId, 'rose');
     await settings.close();
     await directory.delete(recursive: true);
 
@@ -169,7 +170,35 @@ void main() {
     }
     await directory.delete(recursive: true);
   });
-  test('五套配色在所有表面角色上均可读', () {
+  // [人工决策] 见 local/display_settings.dart 的 paletteIds 与 systemFont（10-27 删苔灰、iOS 默认改回 Maple）。
+  test('设备设置v7迁移：苔灰换成雾蓝，iOS 存着的系统字体一次性换成 Maple，之后再选系统字体不再改', () async {
+    final directory = await Directory.systemTemp.createTemp('appearance-');
+    final path = '${directory.path}/display.db';
+    final old = await openDatabase(
+      path,
+      version: 6,
+      onCreate: (db, _) => db.execute(
+        "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT 'sage', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system', glass_mode TEXT NOT NULL DEFAULT 'auto', wallpaper_file TEXT, wallpaper_tone TEXT, wallpaper_blur INTEGER NOT NULL DEFAULT 27, wallpaper_fade INTEGER NOT NULL DEFAULT 0)",
+      ),
+    );
+    await old.insert('display_settings', {'id': 1, 'text_scale': 1.25, 'palette_id': 'sage', 'font_id': 'system', 'theme_mode': 'dark'});
+    await old.close();
+    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+    try {
+      var settings = await DisplaySettings.open(databasePath: path);
+      expect([settings.paletteId, settings.fontId, settings.scale, settings.themeMode], ['mist', 'maple', 1.25, ThemeMode.dark]);
+      await settings.setFont(DisplaySettings.systemFont);
+      await settings.close();
+      settings = await DisplaySettings.open(databasePath: path);
+      expect(settings.fontId, DisplaySettings.systemFont);
+      await settings.close();
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
+    expect(DisplaySettings.paletteIds, isNot(contains('sage')));
+    await directory.delete(recursive: true);
+  });
+  test('各套配色在所有表面角色上均可读', () {
     double contrast(Color a, Color b) {
       final first = a.computeLuminance(), second = b.computeLuminance();
       return (first > second ? first + .05 : second + .05) /
@@ -205,7 +234,7 @@ void main() {
       );
     }
   });
-  testWidgets('五套配色与两种字体在窄屏特大字号均无溢出', (tester) async {
+  testWidgets('四套配色与两种字体在窄屏特大字号均无溢出', (tester) async {
     await tester.binding.setSurfaceSize(const Size(320, 700)); addTearDown(() => tester.binding.setSurfaceSize(null));
     for (final palette in CampusPalette.values) {
       for (final font in DisplaySettings.fontFamilies.keys) {

@@ -7,6 +7,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/curve_geometry.dart';
 
 class CampusLoader extends StatefulWidget {
@@ -304,18 +305,10 @@ class CampusBusyContent extends StatelessWidget {
   final Color? color;
   @override
   Widget build(BuildContext context) {
-    final painter = TextPainter(
-      textDirection: Directionality.of(context),
-      textScaler: MediaQuery.textScalerOf(context),
-    );
     final style = DefaultTextStyle.of(context).style;
-    var width = 0.0;
-    for (final value in [label, busyLabel]) {
-      painter.text = TextSpan(text: value, style: style);
-      painter.layout();
-      width = math.max(width, painter.width);
-    }
-    painter.dispose();
+    // 按常态与忙碌两段文案里较宽的预留宽度（切换时按钮不变宽变窄）；图标与文字作为一组居中，
+    // 常态文案短时两侧留白，不在图标和字之间空一截（登录按钮「登录」按「正在登录」占位时曾空出两个字宽）。
+    final width = math.max(campusTextWidth(context, label), campusTextWidth(context, busyLabel)).ceilToDouble();
     return Semantics(
       label: busy ? busyLabel : label,
       liveRegion: busy,
@@ -335,7 +328,7 @@ class CampusBusyContent extends StatelessWidget {
                 ),
                 const SizedBox(width: 8),
               ],
-              Flexible(child: SizedBox(width: width, child: Text(busy ? busyLabel : label, textAlign: TextAlign.center))),
+              Flexible(child: Text(busy ? busyLabel : label, textAlign: TextAlign.center)),
             ],
           ),
         ),
