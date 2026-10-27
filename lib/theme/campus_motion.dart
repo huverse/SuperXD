@@ -66,7 +66,7 @@ class _FirstFrameClock {
   }
 }
 
-// 仅视觉生命周期；后台暂停不代表取消业务请求。低电量模式下装饰动效也停（只有 iOS 报，同苹果建议低电量时减少动画）。
+// 仅视觉生命周期；后台暂停不代表取消业务请求。低电量模式（iOS）与省电模式（安卓）下装饰动效也停（同苹果建议低电量时减少动画）。
 class CampusMotion extends StatefulWidget {
   const CampusMotion({super.key, required this.child});
   final Widget child;

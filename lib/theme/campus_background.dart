@@ -8,7 +8,6 @@ import 'package:flutter/material.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_palette.dart';
-import 'package:superxd/theme/native_glass.dart';
 import 'package:superxd/theme/wallpaper_tone.dart';
 
 // 自定义壁纸：静态图替代云雾（云雾仍是默认），按色调网格逐格淡化，直接压在背景上的文字和状态栏图标照旧可读。
@@ -41,7 +40,7 @@ class CampusAtmosphere extends StatefulWidget {
 }
 
 class _CampusAtmosphereState extends State<CampusAtmosphere>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   late final _controller = AnimationController(
     vsync: this,
     duration: const Duration(seconds: 24),
@@ -49,10 +48,13 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   bool _allowed = false;
   // [人工决策-2026-10-27 00:26:51] iOS 上云雾每秒只更新约 20 次（用户选定「降帧流动」，取代 09-25 那条在 iOS 上的逐帧流动）：一圈 24 秒、走得很慢，
   // 按屏幕刷新率（ProMotion 每秒 120 次）整屏重画看不出区别，却让手机发烫；低电量模式下停（见 CampusMotion）。停下再开从原处接着走。
-  Timer? _iosTick;
-  static const _iosStep = Duration(milliseconds: 50);
+  // [人工决策-2026-10-27 17:42:49] 安卓也照此（用户「按照建议做」：安卓同样没有栅格缓存、手上的 OPPO 与 vivo 都是高刷屏）：每秒约 20 次、半分辨率贴图、省电模式下停。
+  Timer? _tick;
+  static const _step = Duration(milliseconds: 50);
   // 每一拍先画成半分辨率贴图，每帧只贴图（见 AtmosphereCache）。
   final _fogCache = AtmosphereCache();
+  // 离开前台立即停：后台不出帧、不重建，等 CampusMotion 经重建传过来要到回前台，定时器会在后台一直空转。
+  bool _foreground = WidgetsBinding.instance.lifecycleState == null || WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
   // 正在显示的壁纸。换上新图时先按铺满屏幕的尺寸解码好再换，交叉淡化直接从旧背景到新图，
   // 不会先淡到底色、等解码完图片再冒出来；恢复云雾和同一张图的外观变化立即生效。
   late CampusWallpaper? _shown = widget.wallpaper;
@@ -82,27 +84,25 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
     });
   }
 
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _foreground = state == AppLifecycleState.resumed;
+    _updatePlayback();
+  }
+
   void _updatePlayback() {
-    final play = _allowed && widget.phase == null && _shown == null && (widget.overlays?.value ?? 0) == 0;
-    if (campusIos) {
-      if (!play) {
-        _iosTick?.cancel();
-        _iosTick = null;
-      } else {
-        _iosTick ??= Timer.periodic(_iosStep, (_) => _controller.value = (_controller.value + _iosStep.inMicroseconds / _controller.duration!.inMicroseconds) % 1);
-      }
-      return;
-    }
-    if (play) {
-      if (!_controller.isAnimating) _controller.repeat();
+    if (_allowed && _foreground && widget.phase == null && _shown == null && (widget.overlays?.value ?? 0) == 0) {
+      _tick ??= Timer.periodic(_step, (_) => _controller.value = (_controller.value + _step.inMicroseconds / _controller.duration!.inMicroseconds) % 1);
     } else {
-      _controller.stop();
+      _tick?.cancel();
+      _tick = null;
     }
   }
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     widget.overlays?.addListener(_updatePlayback);
   }
 
@@ -119,8 +119,9 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     widget.overlays?.removeListener(_updatePlayback);
-    _iosTick?.cancel();
+    _tick?.cancel();
     _fogCache.dispose();
     _controller.dispose();
     super.dispose();
@@ -147,7 +148,7 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
                           ? _controller
                           : AlwaysStoppedAnimation(widget.phase ?? .18),
                       highContrast: highContrast,
-                      cache: campusIos ? _fogCache : null,
+                      cache: _fogCache,
                       ratio: MediaQuery.devicePixelRatioOf(context),
                     ),
                   ),
@@ -304,7 +305,7 @@ class AtmospherePainter extends CustomPainter {
   final Animation<double> progress;
   final bool highContrast;
   final CampusPalette palette;
-  // 给了就先画进半分辨率贴图再整屏贴上（iOS，见 AtmosphereCache）；ratio 是设备像素密度。
+  // 给了就先画进半分辨率贴图再整屏贴上（见 AtmosphereCache）；ratio 是设备像素密度。
   final AtmosphereCache? cache;
   final double ratio;
   final _paint = Paint();
@@ -427,7 +428,7 @@ class AtmospherePainter extends CustomPainter {
       oldDelegate.ratio != ratio;
 }
 
-// 云雾的半分辨率贴图（iOS，[人工决策] 见 _CampusAtmosphereState 的 _iosTick）：每一拍按一半设备像素画一次，之后每帧只贴这一张图。
+// 云雾的半分辨率贴图（[人工决策] 见 _CampusAtmosphereState 的 _tick）：每一拍按一半设备像素画一次，之后每帧只贴这一张图。
 // Impeller 没有栅格缓存，直接画的话滑动时每帧都要重叠十层整屏大渐变；云雾是大片柔和渐变，半分辨率放大看不出差别（atmosphere_test.dart 对照）。
 class AtmosphereCache {
   ui.Image? _image;

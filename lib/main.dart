@@ -186,6 +186,8 @@ void main() async {
     if (campusDiagnostics) campusLog('[App] action=first_frame ms=${launch.elapsedMilliseconds}');
   }));
   unawaited(initializeCampusGlass());
+  // 低电量（iOS）与省电模式（安卓）时装饰动效停下，先要一次当前状态（见 theme/native_glass.dart 的 nativeLowPower）。
+  unawaited(watchNativeLowPower());
   // 私信是设备级的，与教务会话无关；初始化失败只影响私信（状态 failed），不影响应用。已开启私信的会立即联网收取，所以等用户同意协议与政策之后再初始化。
   unawaited(legal.agreed.then((_) => social.initialize()));
   try {

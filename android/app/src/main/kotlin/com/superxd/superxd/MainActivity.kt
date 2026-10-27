@@ -13,6 +13,7 @@ class MainActivity : FlutterActivity() {
     private var chaoxingDevice: ChaoxingDeviceChannel? = null
     private var shortcuts: AppShortcuts? = null
     private var shortcutChannel: MethodChannel? = null
+    private var powerSave: PowerSaveChannel? = null
 
     // 系统启动图（Android 12 起由系统画，图标设成透明、只有底色，见 res/values-v31/styles.xml）在 Flutter 画出第一帧时淡出，露出下面的开屏画作（lib/page/painting_splash.dart），不一下切走。
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -51,6 +52,9 @@ class MainActivity : FlutterActivity() {
         val messenger = flutterEngine.dartExecutor.binaryMessenger
         MethodChannel(messenger, "superxd/diagnostics", StandardMethodCodec.INSTANCE, messenger.makeBackgroundTaskQueue())
             .setMethodCallHandler(ProcessExitReasons(applicationContext))
+        // 同 iOS 的系统界面通道 superxd/native_ui，安卓上只有省电模式这一项。
+        val nativeUi = MethodChannel(messenger, "superxd/native_ui")
+        powerSave = PowerSaveChannel(this, nativeUi).also { nativeUi.setMethodCallHandler(it) }
     }
 
     // 应用在后台时点了快捷入口：界面不重建，把入口 id 交给 Dart 跳过去。
@@ -62,6 +66,7 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         toolboxFiles?.close()
         chaoxingDevice?.close()
+        powerSave?.close()
         super.onDestroy()
     }
 }

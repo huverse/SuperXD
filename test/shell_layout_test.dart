@@ -95,10 +95,10 @@ void main() {
     addTearDown(router.dispose);
     await tester.pumpWidget(MaterialApp.router(theme: campusTheme(), routerConfig: router, builder: (context, child) => CampusStatusBarScroll(child: child!)));
     await tester.pumpAndSettle();
-    // 量到之前按 49 加底部安全区（测试里为 0）留位置，原生报来总高后照它留。
-    expect(_Probe.inset, 49);
+    // 量到之前按 49 加底部安全区（测试里为 0）留位置，原生报来总高后照它留；底栏上方都多留 12（同安卓，回今天胶囊与底栏的间隙）。
+    expect(_Probe.inset, 49 + 12);
     await native('height', 83.0);
-    expect(_Probe.inset, 83);
+    expect(_Probe.inset, 83 + 12);
     // 提示条（SnackBar 出在最外层的壳 Scaffold 里）整个浮在系统底栏上面，不被挡住。
     ScaffoldMessenger.of(tester.element(find.byKey(const ValueKey('probe')))).showSnackBar(const SnackBar(content: Text('已复制')));
     await tester.pumpAndSettle();
