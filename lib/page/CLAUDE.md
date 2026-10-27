@@ -21,10 +21,10 @@
   - share_target_sheet.dart：分享弹层 showShareSheet：多选好友后逐个发送，每行原地显示状态，失败的可重发；课表页、界面页、百宝箱结果页共用。
   - social_dialogs.dart：错误码文案 socialErrorText、列表时间 socialShortTime、单行输入弹窗 showSocialTextInput。
 - 今天：
-  - today_page.dart：今天页 TodayPage：读当前学期的课表与作息按日浏览；同步按钮走 chooseSyncSelection → CampusSync.run → showCampusSyncReport，没同步时正中给「同步课表」；课表页的「去同步」经 TodaySyncRequest 回到这里打开同步范围（组合根创建，[人工决策] 在类上）；含作息来源确认与缺开学日引导；同步中离开时结果暂存、回来再提示。顶部「此刻」卡（_ClassNow）显示上课中或下一节，课上完或没课时大字写状态、下面一行预告下一节（以后没课的日子也预告，不放右侧大号时刻，免得像课程卡），没课只在这张卡里说；到点换状态平滑过渡、开课前 15 分钟强调倒计时、5 分钟内按秒倒数、倒计时换数字时滚动、上课中此刻点定时漾开、整卡可点（[人工决策] 在 _ClassNow 上方）；看别的日子时底栏上方居中显示回「今天」胶囊（[人工决策] 见 _layout）；单击有课卡弹只读详情（_openCourse）。
+  - today_page.dart：今天页 TodayPage：读当前学期的课表与作息按日浏览；同步按钮走 chooseSyncSelection → CampusSync.run → showCampusSyncReport，没同步时正中给「同步课表」；课表页的「去同步」经 TodaySyncRequest 回到这里打开同步范围（组合根创建，[人工决策] 在类上）；含作息来源确认与缺开学日引导；同步中离开时结果暂存、回来再提示；切回本页或回到前台重读本地，学期、课表版本、开学日与作息都没变时不刷新内容（不整页重排）。顶部「此刻」卡（_ClassNow）显示上课中或下一节，课上完或没课时大字写状态、下面一行预告下一节（以后没课的日子也预告，不放右侧大号时刻，免得像课程卡），没课只在这张卡里说；到点换状态平滑过渡、开课前 15 分钟强调倒计时、5 分钟内按秒倒数、倒计时换数字时滚动、上课中此刻点定时漾开、整卡可点（[人工决策] 在 _ClassNow 上方）；看别的日子时底栏上方居中显示回「今天」胶囊（[人工决策] 见 _layout）；单击有课卡弹只读详情（_openCourse）。
   - today_day_navigation.dart：上下拖动切日的手势 TodayDayNavigation（阈值 64、上限 120）。
   - today_date_transition.dart：切日时日期与正文按同一进度纵向交接 TodayDateTransition。
-  - course_cards.dart：有课卡的只读详情 showCourseDetail（今天页与课表页共用，课表页带「编辑课程」）；当日节次卡片 CourseDayCards：有课卡（课名、教室行 CoursePlace、节次与教师；时刻列开始前上课时刻大、开始后下课时刻大）与空档（虚线空位框 _EmptySlot，高度随时长对数加高），课表页长按展开（读屏整卡一句、长按提示展开详情）；今天页单击回调 onOpen（按下变暗、读屏整卡一句），revealNow 打开时把正在上或下一节滚进可见区；今天的课按 classMoment 分三态，时长格式 classDuration。整天没课时有顶部卡片（今天页）就不在中间重复，没有才居中写「这天没课」。人工决策见 _CourseCardBody 与 revealNow。
+  - course_cards.dart：有课卡的只读详情 showCourseDetail（今天页与课表页共用，课表页带「编辑课程」）；当日节次卡片 CourseDayCards：有课卡（课名、教室行 CoursePlace、节次与教师；时刻列开始前上课时刻大、开始后下课时刻大）与空档（虚线空位框 _EmptySlot，高度随时长对数加高；虚线拼成一条路径一次画完），课表页长按展开（读屏整卡一句、长按提示展开详情）；今天页单击回调 onOpen（按下变暗、读屏整卡一句），revealNow 打开时把正在上或下一节滚进可见区；今天的课按 classMoment 分三态，时长格式 classDuration。整天没课时有顶部卡片（今天页）就不在中间重复，没有才居中写「这天没课」。人工决策见 _CourseCardBody 与 revealNow。
   - live_clock.dart：全局分钟时钟 LiveClock，整分钟唤醒、后台暂停；测试要拨时间时用 LiveClock.fixed（不挂计时器，否则真实时间到整分会盖掉拨好的时间）。liveOf 说明是否真实时钟，要秒级刷新的界面只在真实时钟下自己计时。
   - date_rail.dart：日期横条 DateRail（读屏每项一句并可点选）。
 - 课表：

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_surface.dart';
@@ -250,8 +251,26 @@ MaterialPage<void> campusPage({required LocalKey key, required Widget child}) =>
 // 只是转场计时从新页首帧画完后开始，首帧再慢也能完整滑入，不会硬切（见 CampusFirstFrameVsync）。
 class CampusPageRoute<T> extends MaterialPageRoute<T> with _CampusCoverRoute<T> {
   CampusPageRoute({required super.builder, super.settings});
+  // 开发者模式下记一笔命令式推入与返回的页面（go_router 的页面按路径另记，见 app_diagnostics.dart 的 watchRoutes），
+  // 卡顿统计才对得上是哪个页面（10-27 iPhone 日志里卡得最重的两段落在这类页面上，看不出是哪页）。
+  String? _page;
   @override
   AnimationController createAnimationController() => _campusController = _firstFrameController(this);
+  @override
+  Widget buildContent(BuildContext context) {
+    final page = super.buildContent(context);
+    if (_page == null) {
+      _page = page.runtimeType.toString();
+      if (campusDiagnostics) campusLog('[Route] action=push page=$_page');
+    }
+    return page;
+  }
+
+  @override
+  bool didPop(T? result) {
+    if (campusDiagnostics && _page != null) campusLog('[Route] action=pop page=$_page');
+    return super.didPop(result);
+  }
 }
 
 AnimationController _firstFrameController(PageRoute<dynamic> route) => AnimationController(

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -287,6 +288,30 @@ void main() {
     expect(find.text('新页面'), findsOneWidget);
     expect(list.offset, lessThan(400));
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  // 命令式推入的页面在开发者模式下记一笔推入与返回，卡顿统计才对得上页面；平时不记。
+  testWidgets('开发者模式下记下命令式推入与返回的页面', (tester) async {
+    final logs = <String>[];
+    final previous = campusLog;
+    campusLog = logs.add;
+    addTearDown(() {
+      campusLog = previous;
+      campusDiagnostics = false;
+    });
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), navigatorKey: navigator, home: const SizedBox.expand()));
+    navigator.currentState!.push(CampusPageRoute<void>(builder: (context) => const Placeholder()));
+    await tester.pumpAndSettle();
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(logs.where((line) => line.startsWith('[Route]')), isEmpty);
+    campusDiagnostics = true;
+    navigator.currentState!.push(CampusPageRoute<void>(builder: (context) => const Placeholder()));
+    await tester.pumpAndSettle();
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+    expect(logs.where((line) => line.startsWith('[Route]')), ['[Route] action=push page=Placeholder', '[Route] action=pop page=Placeholder']);
+  });
 
   testWidgets('日期与星期同显，周日跨年正确且文学字体大字不溢出', (tester) async {
     await tester.binding.setSurfaceSize(const Size(360, 300));

@@ -9,12 +9,12 @@
   - campus_theme.dart：campusTheme 按配色和字体生成 ThemeData：按钮 textStyle 显式带应用字体（不带会回落系统字体）；AppBar 返回图标与内容左边距 16 对齐、标题从 56 起（人工决策见文件内）；OutlinedButton 与 TextButton 是中性胶囊。另有 campusFieldGap（带浮动标签输入框的上方间距，随字号缩放）、campusSystemOverlay（系统栏透明）、CampusScrollBehavior（弹性回弹、不加拉伸效果，拉伸会让里面的玻璃退成底色；iOS 上拖动滚动区收起键盘）；按压反馈不用水波、按下整块变暗。CampusBackground 是空包装，只为兼容现有调用点。
   - campus_icons.dart：CampusIcons 统一映射 Lucide 图标，CampusIcon 渲染（iOS 上返回画成向左尖角，同系统导航栏），CampusMorphIcon 做导航图标形变，configureCampusIcons 启动时配置。
 - 背景：
-  - campus_background.dart：CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，弹窗、弹层开着时停在原处（overlays 由组合根传 campusOverlayDepth，不然整屏模糊每帧重算）；CampusWallpaper 是可选的自定义壁纸（静态图，按色调网格逐格铺淡化保证文字可读，高对比度时不显示）；FrostTexture 是固定颗粒纹理；CampusBackdrop 提供同相位的背景副本，只给入场遮罩和页面转场用（安卓只在压在弹窗上时，iOS 新页面盖在旧页面上时都垫）。换背景前先按屏幕尺寸解码（precacheImage），再交叉淡化。iOS 上云雾不跟屏幕刷新逐帧走，每秒只更新约 20 次（[人工决策] 在 _iosTick 上方）。
+  - campus_background.dart：CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，弹窗、弹层开着时停在原处（overlays 由组合根传 campusOverlayDepth，不然整屏模糊每帧重算）；CampusWallpaper 是可选的自定义壁纸（静态图，按色调网格逐格铺淡化保证文字可读，高对比度时不显示）；FrostTexture 是固定颗粒纹理（预先按设备像素画成一块拼贴，每张表面一次铺满：Impeller 没有栅格缓存，逐点画的上千个小圆每帧都要重新提交）；CampusBackdrop 提供同相位的背景副本，只给入场遮罩和页面转场用（安卓只在压在弹窗上时，iOS 新页面盖在旧页面上时都垫）。换背景前先按屏幕尺寸解码（precacheImage），再交叉淡化。iOS 上云雾不跟屏幕刷新逐帧走，每秒只更新约 20 次（[人工决策] 在 _iosTick 上方）。
   - wallpaper_tone.dart：壁纸色调网格 WallpaperTone（导入时解码成小图记每格最暗最亮像素）与可读下限 wallpaperVeilAlphas、wallpaperVeilAlpha：叠在最不利的像素上，正文、次要文字和主色文字都不低于 4.8:1。改动后要在模拟器上用高反差测试图复测。
 - 动效与转场：
   - campus_motion.dart：CampusMotion 管理装饰动效的生命周期（减少动画、后台、分支不可见、路由不在最上层、iOS 低电量模式时都不播）；玻璃控件专用的弹簧令牌；campusSpringCurve 是页面与分支转场曲线（临界阻尼、不回弹）；CampusFirstFrameVsync 让转场从新内容首帧画完后开始计时，首帧慢时转场不被吃掉。
   - campus_transitions.dart：统一时长（进入 360ms、返回 320ms、弹层 300ms；iOS 的页面推入与返回是系统的 500ms）与全部路由、弹窗：
-    - campusPage 与 CampusPageRoute 是唯一的页面路由（不直接用 MaterialPageRoute，code_conventions_test.dart 守护）；页面转场新旧页整屏并排平移、不淡入淡出。页面推在弹窗或弹层之上时，进出转场期间垫一份同相位背景副本盖住弹窗（页面透明，不垫会叠成两层），副本拍成快照只贴图（直接画每帧要重画几层全屏渐变），停稳即撤。
+    - campusPage 与 CampusPageRoute 是唯一的页面路由（不直接用 MaterialPageRoute，code_conventions_test.dart 守护；CampusPageRoute 在开发者模式下按页面类名记推入与返回）；页面转场新旧页整屏并排平移、不淡入淡出。页面推在弹窗或弹层之上时，进出转场期间垫一份同相位背景副本盖住弹窗（页面透明，不垫会叠成两层），副本拍成快照只贴图（直接画每帧要重画几层全屏渐变），停稳即撤。
     - 跟手返回 _CampusBackGesture 只让最前面的页面响应，不用路由自带的 handleCommitBackGesture（它会把进度重置到 1 再倒放）。
     - iOS 的页面转场同系统推入（_IosPageSlide：新页面盖进来带左边缘阴影、旧页面左移三分之一并变暗，新页面转场期间垫背景副本；曲线同 CupertinoPageRoute，底栏跟着走用同一对曲线），跟手返回是页面任意位置右滑（_IosBackSwipe，松手按速度与位置决定，收尾 350ms，里层横向手势优先）；[人工决策] 在 _IosPageSlide 上方。
     - CampusEntryFade 是按代次重建的账号应用入场（盖背景副本淡出）。
@@ -61,7 +61,7 @@
 - 背景只画一份：新页面不单独铺背景，也不给整页包遮罩（离屏遮罩会让玻璃取不到外层背景）；例外只有两处背景副本：账号应用入场的 360ms，以及页面推在弹窗、弹层上时的进出转场期间。
 - 页面、弹窗和转场的时长以 campus_transitions.dart 为准，不在页面里另设。本层不写业务文案，也不做业务判断。
 - 改视觉之前先读本目录的人工决策注释，以及自动记忆里被否决的方案（切日胶囊、云雾、字体压缩、玻璃滚动边缘），不要重提。
-- 性能观察项：FrostTexture 逐点绘制颗粒，没有真机 profile 证据前不要改。
+- 自绘图案不在 paint 里循环逐个画小图形（Impeller 没有栅格缓存，每帧都要重新提交）：固定图案预先画成拼贴、虚线拼成一条路径一次画完（10-27 iPhone 卡顿日志后改的颗粒与空档虚线）。
 
 # 测试
 
