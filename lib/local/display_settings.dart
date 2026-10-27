@@ -63,7 +63,9 @@ class DisplaySettings extends ChangeNotifier {
   // 默认跟随系统、拖动后改用自己选的大小（用户选定，同 iOS「仅限此应用」的文字大小；没选「仍是系统字号上的倍数」「固定大小、完全不看系统」）；
   // 最小 100%，跟随系统时系统字号比标准还小也按 100%（用户选定，同项目「文字最小 14px」）；每 5% 一档，最大 200%。
   // 老设置在 v8 换算成看起来不变的值：原来的「标准」跟随系统，较大及以上换成当时的实际大小（系统字号 × 原倍数）。
-  static const textSizeMin = 1.0;
+  // [人工决策-2026-10-28 00:18:15] 最小改为 80%（用户要求，取代上一条的「最小 100%」）：可以拖到比标准小，跟随系统时系统字号比 80% 还小也按 80%；
+  // 「文字最小 14px」指标准字号下的设计尺寸，用户自己调小时按比例缩小。推荐范围仍从标准 100% 标起（见 page/text_size_range.dart）。
+  static const textSizeMin = .8;
   static const textSizeMax = 2.0;
   static const textSizeStep = .05;
   static double effectiveTextSize(double? chosen, double system) => chosen ?? math.max(textSizeMin, system);
@@ -384,7 +386,7 @@ class DisplayScope extends InheritedNotifier<DisplaySettings> {
 // 以前新字号在一帧里整体生效，内容一下变矮、滚动位置被截断，按钮里的文字瞬间变小而勾号让位动画还按旧尺寸在播。
 // 现在把字号在 duration 内平滑插值，全应用的文字、按钮、卡片跟着一起连续缩放（同 iOS 改文字大小时界面连续变化）；
 // 界面页另用 theme 的 CampusAnchoredScrollController 让点的那一项停在手指下。减少动画时直接换。
-// 字号条上选的大小（为空跟随系统，最小 100%）按线性缩放交给全应用，人工决策见 DisplaySettings.textSizeMin。
+// 字号条上选的大小（为空跟随系统，最小 80%）按线性缩放交给全应用，人工决策见 DisplaySettings.textSizeMin。
 class CampusTextScale extends StatelessWidget {
   const CampusTextScale({super.key, required this.textSize, required this.child});
   final double? textSize;

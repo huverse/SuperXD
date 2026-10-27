@@ -185,6 +185,15 @@ void main() {
     expect(long, greaterThan(short));
     expect(tester.takeException(), isNull);
   });
+  testWidgets('空档标题窄处只在「没课」与时长之间折行，时长不拆开，读屏读整句', (tester) async {
+    await tester.pumpWidget(app(Center(child: SizedBox(width: 270, height: 800, child: CourseDayCards(spans: periodSpans([course(1, 2), course(5, 6)]), bells: bells, date: '2026-09-21')))));
+    await tester.pumpAndSettle();
+    expect(find.text('1小时40分'), findsOneWidget);
+    expect(tester.getTopLeft(find.text('1小时40分')).dx, tester.getTopLeft(find.text('没课 ')).dx);
+    expect(tester.getTopLeft(find.text('1小时40分')).dy, greaterThan(tester.getTopLeft(find.text('没课 ')).dy));
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '没课 1小时40分'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets('说明行按“ · ”分项、学期名在“学年”后切开，读屏读整句', (tester) async {
     await tester.pumpWidget(app(const DotSeparatedText('完成 · 课表 · 2026-2027学年第一学期', style: TextStyle(fontSize: 14))));
