@@ -99,6 +99,12 @@ void main() {
     expect(_Probe.inset, 49);
     await native('height', 83.0);
     expect(_Probe.inset, 83);
+    // 提示条（SnackBar 出在最外层的壳 Scaffold 里）整个浮在系统底栏上面，不被挡住。
+    ScaffoldMessenger.of(tester.element(find.byKey(const ValueKey('probe')))).showSnackBar(const SnackBar(content: Text('已复制')));
+    await tester.pumpAndSettle();
+    expect(tester.getBottomLeft(find.text('已复制')).dy, lessThanOrEqualTo(tester.getSize(find.byType(MaterialApp)).height - 83));
+    ScaffoldMessenger.of(tester.element(find.byKey(const ValueKey('probe')))).removeCurrentSnackBar();
+    await tester.pumpAndSettle();
     await native('select', 1);
     expect(router.routerDelegate.currentConfiguration.uri.path, '/1');
     expect(tester.getTopLeft(find.text('第0行')).dx, 0);

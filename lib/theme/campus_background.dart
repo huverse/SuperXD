@@ -51,6 +51,8 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   // 按屏幕刷新率（ProMotion 每秒 120 次）整屏重画看不出区别，却让手机发烫；低电量模式下停（见 CampusMotion）。停下再开从原处接着走。
   Timer? _iosTick;
   static const _iosStep = Duration(milliseconds: 50);
+  // 每一拍先画成半分辨率贴图，每帧只贴图（见 AtmosphereCache）。
+  final _fogCache = AtmosphereCache();
   // 正在显示的壁纸。换上新图时先按铺满屏幕的尺寸解码好再换，交叉淡化直接从旧背景到新图，
   // 不会先淡到底色、等解码完图片再冒出来；恢复云雾和同一张图的外观变化立即生效。
   late CampusWallpaper? _shown = widget.wallpaper;
@@ -119,6 +121,7 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   void dispose() {
     widget.overlays?.removeListener(_updatePlayback);
     _iosTick?.cancel();
+    _fogCache.dispose();
     _controller.dispose();
     super.dispose();
   }
@@ -144,6 +147,8 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
                           ? _controller
                           : AlwaysStoppedAnimation(widget.phase ?? .18),
                       highContrast: highContrast,
+                      cache: campusIos ? _fogCache : null,
+                      ratio: MediaQuery.devicePixelRatioOf(context),
                     ),
                   ),
           ),
@@ -293,10 +298,15 @@ class AtmospherePainter extends CustomPainter {
     required this.progress,
     required this.highContrast,
     required this.palette,
+    this.cache,
+    this.ratio = 1,
   }) : super(repaint: progress);
   final Animation<double> progress;
   final bool highContrast;
   final CampusPalette palette;
+  // 给了就先画进半分辨率贴图再整屏贴上（iOS，见 AtmosphereCache）；ratio 是设备像素密度。
+  final AtmosphereCache? cache;
+  final double ratio;
   final _paint = Paint();
   static const _unitBounds = Rect.fromLTRB(-1, -1, 1, 1);
   static const _clouds = [
@@ -343,6 +353,12 @@ class AtmospherePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    final cache = this.cache;
+    if (cache == null) return _paintFog(canvas, size);
+    cache.paint(canvas, size, ratio, (progress.value, size, palette, highContrast, ratio), _paintFog);
+  }
+
+  void _paintFog(Canvas canvas, Size size) {
     final bounds = Offset.zero & size;
     canvas.save();
     canvas.scale(size.width, size.height);
@@ -406,7 +422,41 @@ class AtmospherePainter extends CustomPainter {
   bool shouldRepaint(AtmospherePainter oldDelegate) =>
       oldDelegate.progress != progress ||
       oldDelegate.highContrast != highContrast ||
-      oldDelegate.palette != palette;
+      oldDelegate.palette != palette ||
+      oldDelegate.cache != cache ||
+      oldDelegate.ratio != ratio;
+}
+
+// 云雾的半分辨率贴图（iOS，[人工决策] 见 _CampusAtmosphereState 的 _iosTick）：每一拍按一半设备像素画一次，之后每帧只贴这一张图。
+// Impeller 没有栅格缓存，直接画的话滑动时每帧都要重叠十层整屏大渐变；云雾是大片柔和渐变，半分辨率放大看不出差别（atmosphere_test.dart 对照）。
+class AtmosphereCache {
+  ui.Image? _image;
+  Object? _key;
+
+  void paint(Canvas canvas, Size size, double ratio, Object key, void Function(Canvas canvas, Size size) draw) {
+    final scale = ratio / 2;
+    if (_image == null || key != _key) {
+      final recorder = ui.PictureRecorder();
+      draw(Canvas(recorder)..scale(scale), size);
+      final picture = recorder.endRecording();
+      _image?.dispose();
+      _image = picture.toImageSync(math.max(1, (size.width * scale).ceil()), math.max(1, (size.height * scale).ceil()));
+      picture.dispose();
+      _key = key;
+    }
+    final image = _image!;
+    canvas.drawImageRect(
+      image,
+      Rect.fromLTWH(0, 0, image.width.toDouble(), image.height.toDouble()),
+      Rect.fromLTWH(0, 0, image.width / scale, image.height / scale),
+      Paint()..filterQuality = FilterQuality.medium,
+    );
+  }
+
+  void dispose() {
+    _image?.dispose();
+    _image = null;
+  }
 }
 
 class FrostTexture extends StatelessWidget {

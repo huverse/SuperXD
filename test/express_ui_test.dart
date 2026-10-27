@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:barcode_widget/barcode_widget.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +16,7 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/express/express_anti_content.dart';
@@ -1042,7 +1044,7 @@ void main() {
   });
 
   // 身份码默认盖遮罩（人工决策见 express_identity_view.dart 的 build）。
-  testWidgets('生成身份码后卡片里默认盖遮罩写「点击展开」：码与码值都不露出，勿分享提示照旧', (tester) async {
+  testWidgets('生成身份码后卡片里默认盖朦胧遮罩写「点击展开」：码糊到认不出、码值不露出、没有眼睛图标，勿分享提示照旧', (tester) async {
     await vault.save(_session);
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
     await tester.pumpAndSettle();
@@ -1053,7 +1055,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 50));
     expect(find.text('点击展开'), findsOneWidget);
     expect(find.text('dd202610190000000000001'), findsNothing);
-    expect(tester.widget<Visibility>(find.ancestor(of: find.byType(BarcodeWidget), matching: find.byType(Visibility))).visible, isFalse);
+    expect(_blurred(tester, find.byType(BarcodeWidget)), isTrue);
+    expect(find.byIcon(CampusIcons.eye), findsNothing);
     expect(find.textContaining('有效期剩余'), findsOneWidget);
     expect(find.textContaining('请勿随意分享身份码'), findsOneWidget);
     // 销毁页面取消倒计时定时器，避免 pending timer 报错。
@@ -1129,9 +1132,9 @@ void main() {
     await tester.tap(find.text('点击展开'));
     await tester.pump();
     expect(brightness, ['setApplicationScreenBrightness']);
-    // 飞行途中只看得到一张：卡片里那张一直不画（上面是遮罩）、位置保留；飞的那张转到一半、已离开原位。
+    // 飞行途中卡片里那张一直糊着（上面是遮罩）、位置保留；飞的那张转到一半、已离开原位。
     await tester.pump(const Duration(milliseconds: 120));
-    expect(tester.widget<Visibility>(find.ancestor(of: find.byType(BarcodeWidget).first, matching: find.byType(Visibility))).visible, isFalse);
+    expect(_blurred(tester, find.byType(BarcodeWidget).first), isTrue);
     expect(angle(), inExclusiveRange(0.05, math.pi / 2 - .05));
     expect(tester.getCenter(find.byType(BarcodeWidget).last), isNot(inline.center));
     await tester.pump(const Duration(milliseconds: 400));
@@ -1157,7 +1160,7 @@ void main() {
     await tester.pump();
     expect(find.byType(BarcodeWidget), findsOneWidget);
     expect(tester.getRect(find.byType(BarcodeWidget)), inline);
-    expect(tester.widget<Visibility>(find.ancestor(of: find.byType(BarcodeWidget), matching: find.byType(Visibility))).visible, isFalse);
+    expect(_blurred(tester, find.byType(BarcodeWidget)), isTrue);
     expect(find.text('点击展开'), findsOneWidget);
     expect(find.text('dd202610190000000000001'), findsNothing);
     await tester.pumpWidget(const SizedBox());
@@ -1485,3 +1488,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 }
+
+// 卡片里的码牌糊到认不出（σ 16，[人工决策] 见 express_identity_view.dart 的 build）。
+bool _blurred(WidgetTester tester, Finder code) =>
+    tester.widget<ImageFiltered>(find.ancestor(of: code, matching: find.byType(ImageFiltered))).imageFilter == ui.ImageFilter.blur(sigmaX: 16, sigmaY: 16, tileMode: TileMode.clamp);

@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:barcode_widget/barcode_widget.dart';
 import 'package:flutter/foundation.dart';
@@ -25,6 +26,8 @@ enum _IdentityStyle { barcode, qr }
 // 码牌白底的留白与圆角：卡片里一份、全屏一份，放大过程中在两者之间插值；全屏码牌离安全区边缘 _zoomMargin。
 const _inlinePadding = 16.0;
 const _inlineRadius = 12.0;
+// 卡片里身份码的模糊：二维码一格约 7–9 像素、条码一根约 1–2 像素，σ 16（模糊半径约 48 像素）糊成一片，扫不出也认不出。
+const _maskBlur = 16.0;
 const _zoomPadding = 24.0;
 const _zoomRadius = 20.0;
 const _zoomMargin = 24.0;
@@ -178,6 +181,8 @@ class _ExpressIdentityViewState extends State<ExpressIdentityView> {
         // [人工决策-2026-10-26 18:57:10] 身份码默认盖遮罩（用户选定，同微信付款码的数字平时打码）：卡片里只画一块与码牌同大的色调盖板、写「点击展开」，
         // 码与码值都不在卡片里露出；点一下直接全屏出示（见 _zoomIn），缩回后仍盖着。快捷入口照旧直接全屏（见 express_page.dart 的 _openIdentity）。
         // 未选「只揭开遮罩、码留在卡片里」「模糊的码」「快捷入口也先盖遮罩」。码牌照原尺寸排在盖板下面但不画，只给全屏的飞出与缩回定位。
+        // [人工决策-2026-10-27 16:11:04] 遮罩改成朦胧的（用户要求「优化为朦胧状态，而非实心态，去掉眼睛图标」，取代上一条的色调实心盖板）：
+        // 码牌照原尺寸画在卡片里但糊到认不出（_maskBlur），上面一层薄雾写「点击展开」，不再有眼睛图标；码值仍不在卡片里，点一下全屏出示与快捷入口照旧。
         Center(
           child: LayoutBuilder(builder: (context, constraints) {
             final size = _style == _IdentityStyle.qr ? const Size.square(220) : Size(math.min(260, constraints.maxWidth - 2 * _inlinePadding), 120);
@@ -187,9 +192,13 @@ class _ExpressIdentityViewState extends State<ExpressIdentityView> {
               onTap: _zoomIn,
               excludeSemantics: true,
               child: Stack(children: [
-                Visibility.maintain(
-                  visible: false,
-                  child: _CodePlate(key: _plate, code: code, style: _style, size: size, padding: _inlinePadding, radius: _inlineRadius),
+                // 码牌照原尺寸画、糊到认不出；全屏的飞出与缩回也按它定位。
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(_inlineRadius),
+                  child: ImageFiltered(
+                    imageFilter: ui.ImageFilter.blur(sigmaX: _maskBlur, sigmaY: _maskBlur, tileMode: TileMode.clamp),
+                    child: _CodePlate(key: _plate, code: code, style: _style, size: size, padding: _inlinePadding, radius: _inlineRadius),
+                  ),
                 ),
                 Positioned.fill(child: _IdentityMask(onTap: _zoomIn)),
               ]),
@@ -254,7 +263,8 @@ class ExpressIdentityPending extends StatelessWidget {
   }
 }
 
-// 卡片里盖住身份码的盖板：色调底（同内容区按钮的色调胶囊，按下加深一档）、眼睛图标加「点击展开」，看不出码。
+// 卡片里盖在糊掉的码牌上的一层薄雾：半透明白底微带主色（按下加深一档）、写「点击展开」（[人工决策] 见 build）。
+// 码牌固定白底、不随深色模式变，雾与文字取浅色配色，深色模式下照样看得清。
 class _IdentityMask extends StatefulWidget {
   const _IdentityMask({required this.onTap});
   final VoidCallback onTap;
@@ -270,22 +280,18 @@ class _IdentityMaskState extends State<_IdentityMask> {
 
   @override
   Widget build(BuildContext context) {
-    final palette = CampusPalette.of(context);
-    final alpha = palette.isDark ? (_pressed ? .22 : .14) : (_pressed ? .14 : .08);
+    final light = CampusPalette.byId(CampusPalette.of(context).id);
     return GestureDetector(
       onTap: widget.onTap,
       onTapDown: (_) => _press(true),
       onTapUp: (_) => _press(false),
       onTapCancel: () => _press(false),
       child: DecoratedBox(
-        decoration: BoxDecoration(color: palette.primary.withValues(alpha: alpha), borderRadius: BorderRadius.circular(_inlineRadius)),
-        child: Center(
-          child: Column(mainAxisSize: MainAxisSize.min, children: [
-            CampusIcon(CampusIcons.eye, size: 28, color: palette.primary),
-            const SizedBox(height: 8),
-            Text('点击展开', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: palette.primary)),
-          ]),
+        decoration: BoxDecoration(
+          color: Color.alphaBlend(light.primary.withValues(alpha: _pressed ? .16 : .06), Colors.white.withValues(alpha: .45)),
+          borderRadius: BorderRadius.circular(_inlineRadius),
         ),
+        child: Center(child: Text('点击展开', style: Theme.of(context).textTheme.labelLarge?.copyWith(color: light.primary))),
       ),
     );
   }
