@@ -12,6 +12,8 @@ final class NativeTabBar: NSObject, UITabBarDelegate {
   private let bar = UITabBar()
   private let host = TabBarHost()
   private var reportedHeight: CGFloat = 0
+  // 现有各项的标题与图标：变了才整组重建。
+  private var itemLooks: [[String?]] = []
 
   func register(messenger: FlutterBinaryMessenger) {
     let channel = FlutterMethodChannel(name: "superxd/tab_bar", binaryMessenger: messenger)
@@ -50,14 +52,19 @@ final class NativeTabBar: NSObject, UITabBarDelegate {
       flutterView.addSubview(host)
     }
     let items = arguments["items"] as? [[String: Any]] ?? []
-    if bar.items?.count != items.count {
-      bar.items = items.indices.map { UITabBarItem(title: nil, image: nil, tag: $0) }
+    // 每一项建的时候就给齐标题与图标，之后只改角标：先建空项再补标题与图标时，系统只给选中的那一项重新排版，
+    // 其余各项的标题停在空项时的位置（10-27 真机截图：没选中的标题比图标低一截、往左偏）。
+    let looks = items.map { [$0["title"] as? String, $0["symbol"] as? String, $0["selectedSymbol"] as? String] }
+    if looks != itemLooks {
+      itemLooks = looks
+      bar.setItems(looks.enumerated().map { index, look in
+        let item = UITabBarItem(title: look[0], image: look[1].flatMap { UIImage(systemName: $0) }, selectedImage: look[2].flatMap { UIImage(systemName: $0) })
+        item.tag = index
+        return item
+      }, animated: false)
     }
     for (index, item) in items.enumerated() {
       guard let tabItem = bar.items?[safe: index] else { continue }
-      tabItem.title = item["title"] as? String
-      tabItem.image = (item["symbol"] as? String).flatMap { UIImage(systemName: $0) }
-      tabItem.selectedImage = (item["selectedSymbol"] as? String).flatMap { UIImage(systemName: $0) }
       let badge = item["badge"] as? Int ?? 0
       tabItem.badgeValue = badge > 0 ? (badge > 99 ? "99+" : String(badge)) : item["dot"] as? Bool == true ? "" : nil
     }
