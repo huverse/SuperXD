@@ -2,6 +2,7 @@ import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -317,4 +318,36 @@ void main() {
     expect(progress().value, closeTo(paused + 1 / 24, .01));
     await tester.pumpWidget(const SizedBox());
   });
+
+  // [人工决策] 见 lib/theme/campus_background.dart 的 _iosTick：iOS 上云雾每秒只更新约 20 次，低电量模式下停住；安卓照旧逐帧。
+  testWidgets('iOS 云雾每秒只更新约 20 次，低电量模式下停住，关掉后从原处接着走', (tester) async {
+    await tester.pumpWidget(MaterialApp(home: CampusMotion(child: CampusAtmosphere(child: const SizedBox.expand()))));
+    final progress = (tester.widget<CustomPaint>(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter)).painter! as AtmospherePainter).progress;
+    var changes = 0;
+    void count() => changes++;
+    progress.addListener(count);
+    // 按 120Hz 的屏幕逐帧推进一秒。
+    for (var frame = 0; frame < 120; frame++) {
+      await tester.pump(const Duration(microseconds: 8333));
+    }
+    if (debugDefaultTargetPlatformOverride == TargetPlatform.iOS) {
+      expect(changes, inInclusiveRange(18, 21));
+      expect(progress.value, closeTo(1 / 24, .01));
+      Future<void> lowPower(bool on) => tester.binding.defaultBinaryMessenger.handlePlatformMessage('superxd/native_ui', const StandardMethodCodec().encodeMethodCall(MethodCall('lowPower', on)), (_) {});
+      await lowPower(true);
+      await tester.pump();
+      final paused = progress.value;
+      await tester.pump(const Duration(seconds: 2));
+      expect(progress.value, paused);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+      await lowPower(false);
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(progress.value, closeTo(paused + 1 / 24, .01));
+    } else {
+      expect(changes, greaterThan(100));
+    }
+    progress.removeListener(count);
+    await tester.pumpWidget(const SizedBox());
+  }, variant: const TargetPlatformVariant({TargetPlatform.android, TargetPlatform.iOS}));
 }

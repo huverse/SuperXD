@@ -9,13 +9,15 @@
   - campus_theme.dart：campusTheme 按配色和字体生成 ThemeData：按钮 textStyle 显式带应用字体（不带会回落系统字体）；AppBar 返回图标与内容左边距 16 对齐、标题从 56 起（人工决策见文件内）；OutlinedButton 与 TextButton 是中性胶囊。另有 campusFieldGap（带浮动标签输入框的上方间距，随字号缩放）、campusSystemOverlay（系统栏透明）、CampusScrollBehavior（弹性回弹、不加拉伸效果，拉伸会让里面的玻璃退成底色；iOS 上拖动滚动区收起键盘）；按压反馈不用水波、按下整块变暗。CampusBackground 是空包装，只为兼容现有调用点。
   - campus_icons.dart：CampusIcons 统一映射 Lucide 图标，CampusIcon 渲染（iOS 上返回画成向左尖角，同系统导航栏），CampusMorphIcon 做导航图标形变，configureCampusIcons 启动时配置。
 - 背景：
-  - campus_background.dart：CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，弹窗、弹层开着时停在原处（overlays 由组合根传 campusOverlayDepth，不然整屏模糊每帧重算）；CampusWallpaper 是可选的自定义壁纸（静态图，按色调网格逐格铺淡化保证文字可读，高对比度时不显示）；FrostTexture 是固定颗粒纹理；CampusBackdrop 提供同相位的背景副本，只给入场遮罩和压在弹窗上的页面转场用。换背景前先按屏幕尺寸解码（precacheImage），再交叉淡化。
+  - campus_background.dart：CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，弹窗、弹层开着时停在原处（overlays 由组合根传 campusOverlayDepth，不然整屏模糊每帧重算）；CampusWallpaper 是可选的自定义壁纸（静态图，按色调网格逐格铺淡化保证文字可读，高对比度时不显示）；FrostTexture 是固定颗粒纹理；CampusBackdrop 提供同相位的背景副本，只给入场遮罩和页面转场用（安卓只在压在弹窗上时，iOS 新页面盖在旧页面上时都垫）。换背景前先按屏幕尺寸解码（precacheImage），再交叉淡化。iOS 上云雾不跟屏幕刷新逐帧走，每秒只更新约 20 次（[人工决策] 在 _iosTick 上方）。
   - wallpaper_tone.dart：壁纸色调网格 WallpaperTone（导入时解码成小图记每格最暗最亮像素）与可读下限 wallpaperVeilAlphas、wallpaperVeilAlpha：叠在最不利的像素上，正文、次要文字和主色文字都不低于 4.8:1。改动后要在模拟器上用高反差测试图复测。
 - 动效与转场：
-  - campus_motion.dart：CampusMotion 管理装饰动效的生命周期（减少动画、后台、分支不可见、路由不在最上层时都不播）；玻璃控件专用的弹簧令牌；campusSpringCurve 是页面与分支转场曲线（临界阻尼、不回弹）；CampusFirstFrameVsync 让转场从新内容首帧画完后开始计时，首帧慢时转场不被吃掉。
-  - campus_transitions.dart：统一时长（进入 360ms、返回 320ms、弹层 300ms）与全部路由、弹窗：
+  - campus_motion.dart：CampusMotion 管理装饰动效的生命周期（减少动画、后台、分支不可见、路由不在最上层、iOS 低电量模式时都不播）；玻璃控件专用的弹簧令牌；campusSpringCurve 是页面与分支转场曲线（临界阻尼、不回弹）；CampusFirstFrameVsync 让转场从新内容首帧画完后开始计时，首帧慢时转场不被吃掉。
+  - campus_transitions.dart：统一时长（进入 360ms、返回 320ms、弹层 300ms；iOS 的页面推入与返回是系统的 500ms）与全部路由、弹窗：
     - campusPage 与 CampusPageRoute 是唯一的页面路由（不直接用 MaterialPageRoute，code_conventions_test.dart 守护）；页面转场新旧页整屏并排平移、不淡入淡出。页面推在弹窗或弹层之上时，进出转场期间垫一份同相位背景副本盖住弹窗（页面透明，不垫会叠成两层），副本拍成快照只贴图（直接画每帧要重画几层全屏渐变），停稳即撤。
-    - 跟手返回 _CampusBackGesture 只让最前面的页面响应，不用路由自带的 handleCommitBackGesture（它会把进度重置到 1 再倒放）。CampusEntryFade 是按代次重建的账号应用入场（盖背景副本淡出）。
+    - 跟手返回 _CampusBackGesture 只让最前面的页面响应，不用路由自带的 handleCommitBackGesture（它会把进度重置到 1 再倒放）。
+    - iOS 的页面转场同系统推入（_IosPageSlide：新页面盖进来带左边缘阴影、旧页面左移三分之一并变暗，新页面转场期间垫背景副本；曲线同 CupertinoPageRoute，底栏跟着走用同一对曲线），跟手返回是页面任意位置右滑（_IosBackSwipe，松手按速度与位置决定，收尾 350ms，里层横向手势优先）；[人工决策] 在 _IosPageSlide 上方。
+    - CampusEntryFade 是按代次重建的账号应用入场（盖背景副本淡出）。
     - 共享弹窗 showCampusNotice、showCampusConfirm（destructive 时主按钮警示红）与玻璃弹窗 CampusGlassDialog（按钮一到两个等宽并排，任一个放不下半宽或三个及以上时竖排、主操作在最上，[人工决策] 在操作区；全应用弹窗都用它，日期选择器除外）。
     - showCampusToast 提示条：同一时刻一条，新的顶掉旧的（排队的一起清掉）；在弹层、弹窗、菜单里调用时插进根 Overlay 浮在最上层（[人工决策] 在文件内；不给弹层套 Scaffold，它的 Material 会吃掉点按）。
     - showCampusSheet 与 CampusSheetPanel 是底部弹层（键盘弹出时整块浮到键盘上方）；弹窗与弹层都经 CampusOverlayDepthRoute 登记层数。
@@ -24,16 +26,16 @@
   - campus_loading.dart：曲线加载 CampusLoader 与带文字的加载状态 CampusLoading（整页样式自己居中；联网等待超过 8 秒说明在等谁）；CampusLoadError 是整块读取失败（原因加带图标的「重试」）；CampusBusyContent 让按钮原地切换忙碌态；showCampusWaiting 只在已有的异步操作期间显示等待弹窗。
   - curve_geometry.dart：三种闭合曲线的几何与按弧长预采样。改编自 math-curve-loaders，不随项目以 GPL 再授权，见 assets/third_party_notices.txt 与文件内人工决策。
 - 玻璃：
-  - native_glass.dart：iOS 上的玻璃全部换成苹果官方组件（[人工决策] 在文件头，安卓照旧用下面这些自绘玻璃）：campusNativeGlass 判断是不是 iOS；系统弹窗 showNativeAlert（showCampusConfirm、showCampusNotice 走它）、从控件处弹出的系统菜单 showNativeMenu（showCampusMenu 走它，iOS 17.4 起是 UIMenu，更早是 action sheet）、系统日期选择 showNativeDatePicker（底部面板里的系统日历，只取年月日、按给的时区换算）、外观同步 NativeAppearanceSync（系统组件跟应用的深浅色与控件激活色，组合根套在 MaterialApp.builder 里）；平台视图 NativeGlassBackground（系统玻璃底，垫在弹窗、弹层、提示条与导航层文字按钮下面，透明命中）、NativeGlassButton（顶栏圆钮）、NativeSwitch、NativeSlider、NativeTabBar（底栏，高度由原生量好报上来）。原生侧在 ios/Runner/NativeDialogs.swift 与 NativeGlassViews.swift。iOS 上玻璃跟随系统设置、没有档位与限档，外观页不显示玻璃效果；弹窗、弹层里的按钮画色调胶囊不叠玻璃；带自定义内容的弹窗不模糊整屏（平台视图模糊不到）。平台视图在屏时整屏合成更费，只用在导航层与浮层，不要放进长列表。
+  - native_glass.dart：iOS 上的系统组件（[人工决策] 在文件头：10-26 换成系统组件，10-27 真机后改成只留底栏与系统弹出的组件，其余由 Flutter 画）：campusIos 判断是不是 iOS；系统弹窗 showNativeAlert（showCampusConfirm、showCampusNotice 走它）、从控件处弹出的系统菜单 showNativeMenu（showCampusMenu 走它，iOS 17.4 起是 UIMenu，更早是 action sheet）、系统日期选择 showNativeDatePicker（底部面板里的系统日历，只取年月日、按给的时区换算）、外观同步 NativeAppearanceSync（系统组件跟应用的深浅色与控件激活色，组合根套在 MaterialApp.builder 里）、低电量模式 nativeLowPower；系统底栏 NativeTabBar：原生 UITabBar 直接挂在 Flutter 视图上（不是平台视图，玻璃取样的是下面 Flutter 画的内容），本组件逐帧把壳页的位移、新页面左边缘与显隐交给原生，自己只放一排读屏按钮，高度由原生排好后报上来。原生侧在 ios/Runner/NativeDialogs.swift 与 NativeGlassViews.swift。iOS 上不用平台视图做常驻组件（每帧多合成一层、转场时跟着挪位置掉帧、里面的系统玻璃取不到 Flutter 的背景）；没有玻璃档位，外观页不显示玻璃效果；带自定义内容的弹窗只压暗、不模糊整屏。
   - campus_symbols.dart：系统组件用的 SF Symbols 对照 campusSymbol（CampusIcons 到 SF Symbols 名）；新增会进系统菜单、底栏或顶栏圆钮的图标时在这里登记，没登记的在系统组件里不画图标。
   - glass_panel.dart：液态玻璃面板 GlassPanel（现只用于悬浮底栏）、透明顶栏 CampusTopBar、导航层标记 CampusChrome、玻璃初始化 initializeCampusGlass（失败退回磨砂）；campusOverlayDepth 是正在显示的弹窗层数，大于 0 时顶栏和底栏改实色，不让玻璃叠玻璃。
-  - campus_glass_tier.dart：四档（满档、标准、磨砂、实色）与 resolveCampusGlassTier（无障碍走实色，简化或未就绪走磨砂，完整固定满档，自动跟随实测，限档时满档降为标准）。CampusGlassScope 向下传模式与限档，按模式增减树层会让整个应用重建，所以不能这样做（campus_glass_test.dart 守护）；玻璃组件统一用 tierOf 取档位。CampusGlassGuard 经通道 superxd/glass 读写原生限档状态（安卓 GlassGuard.kt；iOS GlassGuard.swift 读不到退出原因，改记切后台前是否还在前台，前台时异常结束才算），点「完整」解除本版本限档（人工决策见文件内）。
+  - campus_glass_tier.dart：四档（满档、标准、磨砂、实色）与 resolveCampusGlassTier（无障碍走实色，简化或未就绪走磨砂，完整固定满档，自动跟随实测，限档时满档降为标准）。CampusGlassScope 向下传模式与限档，按模式增减树层会让整个应用重建，所以不能这样做（campus_glass_test.dart 守护）；玻璃组件统一用 tierOf 取档位。CampusGlassGuard 经通道 superxd/glass 读写原生限档状态（安卓 GlassGuard.kt；iOS GlassGuard.swift 读不到退出原因，改记切后台前是否还在前台，前台时异常结束才算），点「完整」解除本版本限档（人工决策见文件内）。iOS 固定磨砂档（无障碍时实色），不按帧耗时升降、没有限档。
   - campus_glass_material.dart：玻璃材质表，按角色（navigation、control、overlay）、配色与档位生成参数 campusGlassSettings。磨砂档不调饱和：饱和不为 1 时库会在背景模糊里再嵌一层 BackdropFilter，OPPO 上键盘顶起的弹层会整块画黑（campus_glass_test.dart 守护「简化档弹层只有一层 BackdropFilter」）。底色、饱和与提亮都按五套配色深浅色实测取，改动后重测玻璃上文字的对比度（不低于 4.5:1）。
   - campus_glass_blend.dart：玻璃换档的过渡 CampusGlassBlend：玻璃内容层最底下铺同形状实色盖板，渐显到不透明后才换档、再渐隐。
   - campus_glass_surface.dart：按钮与手势反馈共用的玻璃材质 CampusGlassSurface、浮层面板 CampusOverlayGlass、浮层显隐 CampusOverlayReveal 与控件出现消失 CampusGlassPresence（AnimatedOpacity 的玻璃版）。
   - campus_glass_button.dart：全局 FilledButton 背景 CampusGlassButtonSurface：视觉约 38dp、触区至少 48dp；在导航层或玻璃面板里是玻璃胶囊，内容区画色调胶囊 CampusTonalSurface；圆形按钮 CampusGlassCircleButton 只用于顶栏操作与悬浮按钮。按钮四级：强调 campusProminent（每屏、每个弹窗一个主操作）、警示 campusDestructive、普通、中性；句中链接用 campusLink（规则见文件内人工决策）。色调胶囊底色改动后重测按钮文字对比度（不低于 4.5:1）。
   - campus_glass_press.dart：玻璃控件的按压物理 CampusGlassPress（按下鼓起、松手过冲一次回位，减少动画时不形变）。
-  - campus_glass_controls.dart：选择标签 CampusGlassChip（选中前后是同一个按钮，只在按钮里给勾号让位、淡入；选中状态与按钮合成一个读屏节点，否则读屏听不到“已选中”；减少动画时不包 AnimatedSize，它时长为 0 会在自己的布局里报错）、开关行 CampusSwitchTile、滑杆 CampusSlider（GlassSlider 在系统取消与读屏增减时不回调 onChangeEnd，调用方要兜底保存）。页面不再直接用 ChoiceChip、FilterChip、SwitchListTile、Slider。
+  - campus_glass_controls.dart：选择标签 CampusGlassChip（选中前后是同一个按钮，只在按钮里给勾号让位、淡入；选中状态与按钮合成一个读屏节点，否则读屏听不到“已选中”；减少动画时不包 AnimatedSize，它时长为 0 会在自己的布局里报错）、开关行 CampusSwitchTile、滑杆 CampusSlider（GlassSlider 在系统取消与读屏增减时不回调 onChangeEnd，调用方要兜底保存；iOS 上两者是 Flutter 的 CupertinoSwitch、CupertinoSlider）。页面不再直接用 ChoiceChip、FilterChip、SwitchListTile、Slider。
   - campus_glass_menu.dart：玻璃菜单 showCampusMenu（是路由：返回键关闭、读屏模态、登记层数；不用库的 GlassMenu，它直接插 OverlayEntry，返回键会退出底下的页面）与下拉字段 CampusMenuField。页面不再直接用 DropdownButtonFormField、PopupMenuButton、showModalBottomSheet。
 - 通用组件：
   - campus_surface.dart：通用卡片表面 CampusSurface，可带点击（带点击时读屏报按钮）。
@@ -44,7 +46,7 @@
   - campus_animated_list.dart：列表增删的过渡（[人工决策] 在文件头，时长 campusListDuration，要等过渡走完再定位的调用方用它）：CampusAnimatedColumn 按 key 比对前后子项，新的展开淡入、去掉的原地收起；CampusAppear 给按需建的长列表里新到的一项展开。第一次显示不动画、减少动画时直接换，只用于没有玻璃的内容区列表。过渡不改条目的横向排布：条目始终铺满列表宽度，按内容收窄的条目（会话卡片）照旧靠左或靠右，不被居中。
   - dot_separated_text.dart：「甲 · 乙」式说明行 DotSeparatedText：按「 · 」分项放进 Wrap 换行，不把词拆成孤字，读屏读整句；page 层与百宝箱共用。
   - scroll_anchor.dart：滚动锚定 CampusAnchoredScrollController：hold 之后，整页重新排版（字号过渡、换字体）时在滚动区排版的同一帧里校正滚动位置，锚点停在原来的屏幕位置；过了最短时长还要等到一次不用校正、内容尺寸不再变的排版才放开（慢设备上过渡的最后一帧会晚到），最晚 settleLimit；手指一按或代码滚动就放开，到顶或到底校正不了的部分照常移动。界面页的字号与字体选项在用。
-  - status_bar_scroll.dart：iOS 点状态栏回顶 CampusStatusBarScroll（组合根套在 MaterialApp.builder 里）：系统经 WidgetsBindingObserver.handleStatusBarTap 交来点按，分支页的滚动区挂在各自路由上、壳层 Scaffold 收不到，所以记住最近拖过的竖向滚动区，把它滚回开头（倒序列表是视觉上的顶端）；它不在最上层路由或分支不可见时不动。
+  - status_bar_scroll.dart：iOS 点状态栏回顶 CampusStatusBarScroll（组合根套在 MaterialApp.builder 里）：系统经 WidgetsBindingObserver.handleStatusBarTap 交来点按，分支页的滚动区挂在各自路由上、壳层 Scaffold 收不到，所以记住最近拖过的竖向滚动区，把它滚回开头（倒序列表是视觉上的顶端）；它不在最上层路由或分支不可见时不动。scrollToTop 给 iOS 再点当前底栏项时用。
   - scroll_edge_fade.dart：ScrollEdgeFade 在浮动玻璃栏下只渐隐内容本身（子树里不能再放玻璃）；CampusScrollFade 是页面滚动区的柔和边缘：有滚动区的页面都包（code_conventions_test.dart 守护；弹层、弹窗是玻璃面板不包），子树有玻璃开关或视频的页面不包；倒序列表（会话页最新在下）按视觉上缘那一端算，首次排版就按位置渐隐。
   - third_party_licenses.dart：registerCampusLicenses 把本项目 GPL-3.0 全文、第三方声明和两套字体许可注册进 LicenseRegistry。
 
@@ -63,9 +65,9 @@
 
 # 测试
 
-- 玻璃与按钮：campus_glass_test.dart、campus_glass_button_test.dart；iOS 的系统组件分支：native_glass_test.dart（按 iOS 跑，查交给原生的参数与原生回调，原生长什么样只能在 iPhone 上看）。
-- 背景、配色与深色：atmosphere_test.dart、dark_mode_test.dart、wallpaper_test.dart。
-- 动效与转场：campus_motion_test.dart、transition_sync_test.dart、account_lifecycle_test.dart（入场与转场中间帧）。
+- 玻璃与按钮：campus_glass_test.dart、campus_glass_button_test.dart；iOS 的系统组件分支：native_glass_test.dart（按 iOS 跑：系统弹窗、菜单的参数，开关滑杆与磨砂档、不建平台视图，系统底栏随推入与浮层交给原生的位置与显隐；原生长什么样只能在 iPhone 上看）。
+- 背景、配色与深色：atmosphere_test.dart（含 iOS 云雾每秒约 20 次、低电量停住）、dark_mode_test.dart、wallpaper_test.dart。
+- 动效与转场：campus_motion_test.dart、transition_sync_test.dart（含 iOS 推入与任意位置右滑返回）、account_lifecycle_test.dart（入场与转场中间帧）。
 - 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器、点状态栏回顶、iOS 拖动收起键盘）。
 - 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
 

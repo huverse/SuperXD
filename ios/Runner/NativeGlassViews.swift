@@ -1,229 +1,155 @@
 import Flutter
 import UIKit
 
-// 嵌进 Flutter 的系统组件（平台视图），Dart 侧在 lib/theme/native_glass.dart。iOS 26 起是 Liquid Glass，更早的系统是同一组件的旧样式或标准材质。
-// 每个视图有自己的通道 superxd/<类型>/<视图号>：Dart 发 update 改参数，原生发回点按、选择与数值。
-// 只用在导航层与浮层（底栏、顶栏按钮、弹层与弹窗的底、开关与滑杆），内容层不用玻璃（苹果 HIG Materials）。
-enum NativeGlassViews {
-  static func register(with registrar: FlutterPluginRegistrar) {
-    let messenger = registrar.messenger()
-    registrar.register(NativeViewFactory(messenger) { GlassContainerView(arguments: $0) }, withId: "superxd/glass_view")
-    registrar.register(NativeViewFactory(messenger) { GlassButtonView(arguments: $0) }, withId: "superxd/glass_button")
-    registrar.register(NativeViewFactory(messenger) { NativeSwitchView(arguments: $0) }, withId: "superxd/switch")
-    registrar.register(NativeViewFactory(messenger) { NativeSliderView(arguments: $0) }, withId: "superxd/slider")
-    registrar.register(NativeViewFactory(messenger) { NativeTabBarView(arguments: $0) }, withId: "superxd/tab_bar")
-  }
-}
+// 系统底栏（lib/theme/native_glass.dart 的 NativeTabBar）。iOS 26 起是悬浮的 Liquid Glass 底栏，更早的系统是同一组件的旧样式。
+// [人工决策-2026-10-27 00:26:51] 底栏不再做成平台视图，直接挂在 Flutter 视图之上（用户选定「底栏真玻璃，其余自绘」）：
+// 平台视图里的系统玻璃取不到 Flutter 画出的背景（10-27 真机截图上底栏比背景还暗），高度又要 Dart 侧去量（安全区算了两次，底栏被拉高变形），
+// 每一帧还要多合成一层。挂在 Flutter 视图上之后，玻璃取样的就是下面 Flutter 画出的内容，高度与悬浮位置由系统排。
+// 它总在 Flutter 内容之上、系统弹窗之下，所以 Dart 侧逐帧交来底栏该在的样子：壳页被推入的页面盖住时跟着左移，只露出新页面左边缘以左的部分；
+// 壳页上开着弹窗、弹层或开屏没走完时淡出；只有完全露出时才接点按。读屏由 Flutter 侧的语义节点负责，系统底栏对读屏隐藏，免得读两遍。
+final class NativeTabBar: NSObject, UITabBarDelegate {
+  private var channel: FlutterMethodChannel?
+  private let bar = UITabBar()
+  private let host = TabBarHost()
+  private var reportedHeight: CGFloat = 0
 
-final class NativeViewFactory: NSObject, FlutterPlatformViewFactory {
-  private let messenger: FlutterBinaryMessenger
-  private let make: ([String: Any]) -> NativeView
-
-  init(_ messenger: FlutterBinaryMessenger, make: @escaping ([String: Any]) -> NativeView) {
-    self.messenger = messenger
-    self.make = make
-  }
-
-  func createArgsCodec() -> FlutterMessageCodec & NSObjectProtocol { FlutterStandardMessageCodec.sharedInstance() }
-
-  func create(withFrame frame: CGRect, viewIdentifier viewId: Int64, arguments args: Any?) -> FlutterPlatformView {
-    let view = make(args as? [String: Any] ?? [:])
-    view.attach(FlutterMethodChannel(name: "superxd/\(view.kind)/\(viewId)", binaryMessenger: messenger))
-    return view
-  }
-}
-
-class NativeView: NSObject, FlutterPlatformView {
-  var kind: String { "" }
-  let root = UIView()
-  private(set) var channel: FlutterMethodChannel?
-
-  func attach(_ channel: FlutterMethodChannel) {
+  func register(messenger: FlutterBinaryMessenger) {
+    let channel = FlutterMethodChannel(name: "superxd/tab_bar", binaryMessenger: messenger)
     self.channel = channel
+    bar.delegate = self
+    bar.accessibilityElementsHidden = true
+    host.bar = bar
+    host.onHeight = { [weak self] height in self?.report(height) }
+    host.addSubview(bar)
     channel.setMethodCallHandler { [weak self] call, result in
-      if call.method == "update", let arguments = call.arguments as? [String: Any] { self?.update(arguments) }
+      guard let self else { return }
+      let arguments = call.arguments as? [String: Any] ?? [:]
+      switch call.method {
+      case "show":
+        self.show(arguments)
+      case "geometry":
+        self.geometry(arguments)
+      case "hide":
+        self.host.removeFromSuperview()
+        self.reportedHeight = 0
+      default:
+        result(FlutterMethodNotImplemented)
+        return
+      }
       result(nil)
     }
   }
 
-  func update(_ arguments: [String: Any]) {}
-
-  func view() -> UIView { root }
-
-  func pin(_ child: UIView) {
-    child.translatesAutoresizingMaskIntoConstraints = false
-    root.addSubview(child)
-    NSLayoutConstraint.activate([
-      child.leadingAnchor.constraint(equalTo: root.leadingAnchor),
-      child.trailingAnchor.constraint(equalTo: root.trailingAnchor),
-      child.topAnchor.constraint(equalTo: root.topAnchor),
-      child.bottomAnchor.constraint(equalTo: root.bottomAnchor),
-    ])
-  }
-}
-
-// 玻璃底：垫在 Flutter 内容下面（弹层、弹窗、提示条、导航层里的文字按钮）。radius 大于等于 1000 是胶囊；tint 是着色（强调按钮）。
-// 不接点按：Flutter 侧按透明命中处理，点按交给上面的 Flutter 内容。
-final class GlassContainerView: NativeView {
-  override var kind: String { "glass_view" }
-  private let effectView = UIVisualEffectView()
-
-  init(arguments: [String: Any]) {
-    super.init()
-    root.backgroundColor = .clear
-    root.isUserInteractionEnabled = false
-    effectView.clipsToBounds = true
-    pin(effectView)
-    update(arguments)
-  }
-
-  override func update(_ arguments: [String: Any]) {
-    let radius = arguments["radius"] as? Double ?? 0
-    let tint = (arguments["tint"] as? Int).map(UIColor.init(argb:))
-    if #available(iOS 26.0, *) {
-      let effect = UIGlassEffect(style: arguments["clear"] as? Bool == true ? .clear : .regular)
-      effect.tintColor = tint
-      effectView.effect = effect
-      effectView.cornerConfiguration = radius >= 1000 ? .capsule() : .corners(radius: .fixed(radius))
-    } else {
-      effectView.effect = UIBlurEffect(style: .systemThinMaterial)
-      effectView.contentView.backgroundColor = tint
-      // 系统把超过短边一半的圆角按一半画，胶囊直接给个大数。
-      effectView.layer.cornerRadius = radius >= 1000 ? 9999 : radius
-      effectView.layer.cornerCurve = .continuous
+  // 挂到 Flutter 视图上（第一次或换了窗口时），再更新各项、选中与着色。
+  private func show(_ arguments: [String: Any]) {
+    // 刚挂上时先透明，等 Dart 交来第一份样子再淡入（开屏还没走完时就一直不出现）。
+    if host.superview == nil, let flutterView = (UIApplication.shared.keyWindowRoot as? FlutterViewController)?.view {
+      host.frame = flutterView.bounds
+      host.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+      host.alpha = 0
+      flutterView.addSubview(host)
     }
-  }
-}
-
-// 顶栏与悬浮的圆形玻璃按钮：SF Symbols 图标，按下有系统的玻璃形变；点按交回 Dart。prominent 时按主题色着色。
-final class GlassButtonView: NativeView {
-  override var kind: String { "glass_button" }
-  private let button = UIButton(type: .system)
-
-  init(arguments: [String: Any]) {
-    super.init()
-    root.backgroundColor = .clear
-    pin(button)
-    button.addAction(UIAction { [weak self] _ in self?.channel?.invokeMethod("tap", arguments: nil) }, for: .primaryActionTriggered)
-    update(arguments)
-  }
-
-  override func update(_ arguments: [String: Any]) {
-    let prominent = arguments["prominent"] as? Bool == true
-    var configuration: UIButton.Configuration
-    if #available(iOS 26.0, *) {
-      configuration = prominent ? .prominentGlass() : .glass()
-    } else {
-      configuration = prominent ? .filled() : .gray()
-    }
-    configuration.cornerStyle = .capsule
-    configuration.image = (arguments["symbol"] as? String).flatMap { UIImage(systemName: $0) }
-    configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(pointSize: arguments["iconSize"] as? Double ?? 17, weight: .medium)
-    if let title = arguments["title"] as? String { configuration.title = title }
-    if let tint = (arguments["tint"] as? Int).map(UIColor.init(argb:)) { button.tintColor = tint }
-    button.configuration = configuration
-    button.isEnabled = arguments["enabled"] as? Bool != false
-    button.accessibilityLabel = arguments["label"] as? String
-  }
-}
-
-// 系统开关：iOS 26 起拨动时滑块变成玻璃；onTint 是控件激活色。
-final class NativeSwitchView: NativeView {
-  override var kind: String { "switch" }
-  private let toggle = UISwitch()
-
-  init(arguments: [String: Any]) {
-    super.init()
-    root.backgroundColor = .clear
-    toggle.translatesAutoresizingMaskIntoConstraints = false
-    root.addSubview(toggle)
-    NSLayoutConstraint.activate([toggle.centerXAnchor.constraint(equalTo: root.centerXAnchor), toggle.centerYAnchor.constraint(equalTo: root.centerYAnchor)])
-    toggle.addAction(UIAction { [weak self] _ in
-      guard let self else { return }
-      self.channel?.invokeMethod("changed", arguments: self.toggle.isOn)
-    }, for: .valueChanged)
-    update(arguments)
-  }
-
-  override func update(_ arguments: [String: Any]) {
-    let value = arguments["value"] as? Bool == true
-    if toggle.isOn != value { toggle.setOn(value, animated: true) }
-    toggle.isEnabled = arguments["enabled"] as? Bool != false
-    toggle.onTintColor = (arguments["tint"] as? Int).map(UIColor.init(argb:))
-    toggle.accessibilityLabel = arguments["label"] as? String
-  }
-}
-
-// 系统滑杆，值域 0–1：拖动中连续回 changed，松手（含系统取消）回 ended。
-final class NativeSliderView: NativeView {
-  override var kind: String { "slider" }
-  private let slider = UISlider()
-
-  init(arguments: [String: Any]) {
-    super.init()
-    root.backgroundColor = .clear
-    pin(slider)
-    slider.addAction(UIAction { [weak self] _ in
-      guard let self else { return }
-      self.channel?.invokeMethod("changed", arguments: Double(self.slider.value))
-    }, for: .valueChanged)
-    slider.addAction(UIAction { [weak self] _ in
-      guard let self else { return }
-      self.channel?.invokeMethod("ended", arguments: Double(self.slider.value))
-    }, for: [.touchUpInside, .touchUpOutside, .touchCancel])
-    update(arguments)
-  }
-
-  override func update(_ arguments: [String: Any]) {
-    let value = Float(arguments["value"] as? Double ?? 0)
-    if !slider.isTracking && slider.value != value { slider.setValue(value, animated: false) }
-    slider.isEnabled = arguments["enabled"] as? Bool != false
-    slider.minimumTrackTintColor = (arguments["tint"] as? Int).map(UIColor.init(argb:))
-    slider.accessibilityLabel = arguments["label"] as? String
-  }
-}
-
-// 系统底栏：iOS 26 起悬浮的 Liquid Glass 底栏，按住拖动有系统的放大镜；角标是未读数，dot 为真时是不计数的小圆点。
-// 选中交回 Dart，由 Dart 切分支后再把 selected 发回来（Dart 是选中状态的唯一来源）。
-final class NativeTabBarView: NativeView, UITabBarDelegate {
-  override var kind: String { "tab_bar" }
-  private let bar = UITabBar()
-
-  init(arguments: [String: Any]) {
-    super.init()
-    root.backgroundColor = .clear
-    bar.delegate = self
-    pin(bar)
-    update(arguments)
-  }
-
-  override func update(_ arguments: [String: Any]) {
     let items = arguments["items"] as? [[String: Any]] ?? []
     if bar.items?.count != items.count {
-      bar.items = items.enumerated().map { index, _ in UITabBarItem(title: nil, image: nil, tag: index) }
+      bar.items = items.indices.map { UITabBarItem(title: nil, image: nil, tag: $0) }
     }
     for (index, item) in items.enumerated() {
-      guard let tabItem = bar.items?[index] else { continue }
+      guard let tabItem = bar.items?[safe: index] else { continue }
       tabItem.title = item["title"] as? String
       tabItem.image = (item["symbol"] as? String).flatMap { UIImage(systemName: $0) }
       tabItem.selectedImage = (item["selectedSymbol"] as? String).flatMap { UIImage(systemName: $0) }
       let badge = item["badge"] as? Int ?? 0
       tabItem.badgeValue = badge > 0 ? (badge > 99 ? "99+" : String(badge)) : item["dot"] as? Bool == true ? "" : nil
-      tabItem.accessibilityValue = item["accessibilityValue"] as? String
     }
     if let tint = (arguments["tint"] as? Int).map(UIColor.init(argb:)) { bar.tintColor = tint }
-    let selected = arguments["selected"] as? Int ?? 0
-    if let item = bar.items?[safe: selected], bar.selectedItem !== item { bar.selectedItem = item }
-    // 底栏多高由系统定（各版本不同）：量好不含底部安全区的高度交给 Dart，Dart 再加上安全区给内容留位置。
-    DispatchQueue.main.async { [weak self] in
-      guard let self else { return }
-      let height = self.bar.sizeThatFits(CGSize(width: UIScreen.main.bounds.width, height: .greatestFiniteMagnitude)).height - self.bar.safeAreaInsets.bottom
-      self.channel?.invokeMethod("height", arguments: Double(max(height, 49)))
+    if let item = bar.items?[safe: arguments["selected"] as? Int ?? 0], bar.selectedItem !== item { bar.selectedItem = item }
+    host.setNeedsLayout()
+  }
+
+  // shift 是壳页此刻的横向位移，cover 是盖上来的新页面左边缘（都是逻辑像素、相对屏幕左边）；visible 为假时淡出。
+  private func geometry(_ arguments: [String: Any]) {
+    let shift = CGFloat(arguments["shift"] as? Double ?? 0)
+    let cover = CGFloat(arguments["cover"] as? Double ?? .greatestFiniteMagnitude)
+    let visible = arguments["visible"] as? Bool != false
+    CATransaction.begin()
+    CATransaction.setDisableActions(true)
+    bar.transform = CGAffineTransform(translationX: shift, y: 0)
+    host.cover = cover
+    CATransaction.commit()
+    bar.isUserInteractionEnabled = visible && arguments["interactive"] as? Bool == true
+    let alpha: CGFloat = visible ? 1 : 0
+    if host.alpha != alpha {
+      UIView.animate(withDuration: 0.2, delay: 0, options: [.beginFromCurrentState, .allowUserInteraction]) { self.host.alpha = alpha }
     }
+  }
+
+  private func report(_ height: CGFloat) {
+    guard abs(height - reportedHeight) > 0.5 else { return }
+    reportedHeight = height
+    channel?.invokeMethod("height", arguments: Double(height))
   }
 
   func tabBar(_ tabBar: UITabBar, didSelect item: UITabBarItem) {
     channel?.invokeMethod("select", arguments: item.tag)
+  }
+}
+
+// 铺满 Flutter 视图的透明容器：只有点在底栏上才接，其余点按落到下面的 Flutter。
+// 新页面盖上来时按它的左边缘裁掉右边（矩形裁剪，不用遮罩：遮罩会让里面的系统玻璃取不到背景）。
+final class TabBarHost: UIView {
+  weak var bar: UITabBar?
+  var onHeight: ((CGFloat) -> Void)?
+  private let clip = UIView()
+
+  var cover: CGFloat = .greatestFiniteMagnitude {
+    didSet { if cover != oldValue { layoutClip() } }
+  }
+
+  override init(frame: CGRect) {
+    super.init(frame: frame)
+    backgroundColor = .clear
+    clip.clipsToBounds = true
+    clip.backgroundColor = .clear
+    addSubview(clip)
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
+
+  override func addSubview(_ view: UIView) {
+    view === clip ? super.addSubview(view) : clip.addSubview(view)
+  }
+
+  // 底栏多高由系统定（各版本、有没有底部安全区都不同）：按铺满宽度贴底排好后量出的总高（含底部安全区）报给 Dart。
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    layoutClip()
+    guard let bar else { return }
+    let transform = bar.transform
+    bar.transform = .identity
+    // 贴底之后底栏才拿得到底部安全区，再量一次。
+    for _ in 0..<2 {
+      let height = bar.sizeThatFits(CGSize(width: bounds.width, height: .greatestFiniteMagnitude)).height
+      bar.frame = CGRect(x: 0, y: bounds.height - height, width: bounds.width, height: height)
+    }
+    bar.transform = transform
+    onHeight?(bar.bounds.height)
+  }
+
+  private func layoutClip() {
+    clip.frame = CGRect(x: 0, y: 0, width: max(0, min(cover, bounds.width)), height: bounds.height)
+  }
+
+  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    guard alpha > 0.01, let bar, bar.isUserInteractionEnabled else { return nil }
+    let hit = super.hitTest(point, with: event)
+    return hit === self || hit === clip ? nil : hit
+  }
+}
+
+extension UIApplication {
+  // 主窗口的根界面（Flutter 视图所在的那个），不往上找弹出的界面。
+  var keyWindowRoot: UIViewController? {
+    connectedScenes.compactMap { $0 as? UIWindowScene }.flatMap(\.windows).first { $0.isKeyWindow }?.rootViewController
   }
 }
 

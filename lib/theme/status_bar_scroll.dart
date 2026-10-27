@@ -8,27 +8,35 @@ class CampusStatusBarScroll extends StatefulWidget {
   const CampusStatusBarScroll({super.key, required this.child});
   final Widget child;
 
+  // 同点状态栏：把最近拖过的竖向滚动区滚回开头（iOS 再点当前底栏项、已在这一栏首页时也用它）。
+  static void scrollToTop() => _CampusStatusBarScrollState._active?._scrollToTop();
+
   @override
   State<CampusStatusBarScroll> createState() => _CampusStatusBarScrollState();
 }
 
 class _CampusStatusBarScrollState extends State<CampusStatusBarScroll> with WidgetsBindingObserver {
+  static _CampusStatusBarScrollState? _active;
   ScrollPosition? _last;
 
   @override
   void initState() {
     super.initState();
+    _active = this;
     WidgetsBinding.instance.addObserver(this);
   }
 
   @override
   void dispose() {
+    if (_active == this) _active = null;
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
 
   @override
-  void handleStatusBarTap() {
+  void handleStatusBarTap() => _scrollToTop();
+
+  void _scrollToTop() {
     final position = _last;
     final context = position?.context.notificationContext;
     if (position == null || context == null || !context.mounted || !position.hasPixels) return;

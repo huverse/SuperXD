@@ -59,8 +59,8 @@ mixin CampusOverlayDepthRoute<T> on Route<T> {
 }
 
 Future<void> initializeCampusGlass() async {
-  // iOS 用系统玻璃，不预热着色器。
-  if (campusNativeGlass) {
+  // iOS 只画磨砂档（见 native_glass.dart），用不到着色器，不预热。
+  if (campusIos) {
     campusGlassReady.value = true;
     return;
   }

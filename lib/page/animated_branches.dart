@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/campus_motion.dart';
+import 'package:superxd/theme/native_glass.dart';
 
 // 保留每个分支Navigator实例，只对进出分支做转场，不用截图或重建页面伪装动画。
 class AnimatedBranches extends StatefulWidget {
@@ -29,7 +30,8 @@ class _AnimatedBranchesState extends State<AnimatedBranches> with SingleTickerPr
     if (oldWidget.index == widget.index) return;
     _previous = oldWidget.index;
     _direction = widget.index > oldWidget.index ? 1 : -1;
-    if (MediaQuery.disableAnimationsOf(context)) { _controller.value = 1; _previous = null; }
+    // [人工决策-2026-10-27 00:45:04] iOS 上点底栏直接切过去、不滑动（用户选定「同系统：直接切」，取代 10-04 底栏切换弹簧曲线在 iOS 上的做法，安卓照旧）。
+    if (MediaQuery.disableAnimationsOf(context) || campusIos) { _controller.value = 1; _previous = null; }
     else { _controller.forward(from: 0); }
   }
   @override

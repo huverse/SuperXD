@@ -1,14 +1,19 @@
 import Flutter
 import UIKit
 
-// 系统弹窗、系统菜单、系统日期选择与外观同步（lib/theme/native_glass.dart 的 showNativeAlert、showNativeMenu、showNativeDatePicker、NativeAppearanceSync）。
+// 系统弹窗、系统菜单、系统日期选择、外观同步与低电量模式（lib/theme/native_glass.dart 的 showNativeAlert、showNativeMenu、showNativeDatePicker、NativeAppearanceSync、nativeLowPower）。
 // [人工决策-2026-10-26 21:47:04] iOS 上的玻璃换成苹果官方组件（用户选定「换成系统组件」）：确认与提示用 UIAlertController，⋯ 菜单用系统 UIMenu，
 // 都由系统画 Liquid Glass、跟随系统的清透或着色与降低透明度等设置；应用里不再有玻璃档位。
 final class NativeDialogs: NSObject {
   private var pendingMenu: MenuAnchorButton?
 
   func register(messenger: FlutterBinaryMessenger) {
-    FlutterMethodChannel(name: "superxd/native_ui", binaryMessenger: messenger).setMethodCallHandler { [weak self] call, result in
+    let channel = FlutterMethodChannel(name: "superxd/native_ui", binaryMessenger: messenger)
+    // 低电量模式开关时告诉 Dart，装饰动效（云雾流动等）跟着停下或恢复。
+    _ = NotificationCenter.default.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { _ in
+      channel.invokeMethod("lowPower", arguments: ProcessInfo.processInfo.isLowPowerModeEnabled)
+    }
+    channel.setMethodCallHandler { [weak self] call, result in
       guard let self else { return }
       let arguments = call.arguments as? [String: Any] ?? [:]
       switch call.method {
@@ -21,6 +26,8 @@ final class NativeDialogs: NSObject {
         self.menu(arguments, result: result)
       case "date":
         self.date(arguments, result: result)
+      case "lowPower":
+        result(ProcessInfo.processInfo.isLowPowerModeEnabled)
       default:
         result(FlutterMethodNotImplemented)
       }

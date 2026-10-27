@@ -3,10 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:superxd/theme/campus_glass_press.dart';
 import 'package:superxd/theme/campus_glass_surface.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
-import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/glass_panel.dart';
-import 'package:superxd/theme/native_glass.dart';
 
 // [人工决策-2026-10-02 16:43:38] 主按钮紧凑玻璃胶囊、轻描边，视觉约38dp但触区至少48dp；按下液态鼓起、松手轻过冲回位（取代09-27的按压轻收缩），满档时手指处有高光；父玻璃内仍只做vibrancy，原生交互不变。
 // [人工决策-2026-10-03 17:37:24] 上条的玻璃胶囊与鼓起只用于导航层和浮层（顶栏、底栏、悬浮按钮、弹窗、菜单、弹层、提示条）；
@@ -62,9 +60,7 @@ class CampusGlassButtonSurface extends StatelessWidget {
   Widget build(BuildContext context) {
     final disabled = states.contains(WidgetState.disabled);
     final pressed = states.contains(WidgetState.pressed) && !disabled;
-    // iOS 的弹窗、弹层本身就是系统玻璃，里面的按钮同内容区画色调胶囊，不叠玻璃（苹果 HIG：不要玻璃叠玻璃）。
-    final nestedNative = campusNativeGlass && GlassPanelScope.maybeOf(context) != null;
-    if (nestedNative || GlassPanelScope.maybeOf(context) == null && !CampusChrome.of(context)) {
+    if (GlassPanelScope.maybeOf(context) == null && !CampusChrome.of(context)) {
       final tint = this.tint;
       return tint != null ? CampusProminentSurface(states: states, color: tint, child: child) : CampusTonalSurface(states: states, neutral: neutral, child: child);
     }
@@ -106,11 +102,8 @@ class CampusGlassCircleButton extends StatelessWidget {
   final double size;
   @override
   // 读屏标签由按钮内的 Semantics 提供，提示框不再重复生成一个同名节点，避免读两遍。
-  // 圆形按钮只用于顶栏操作和悬浮按钮，属于导航层，始终画玻璃。iOS 上图标是 CampusIcon 时整个换成系统玻璃按钮（按下有系统的形变）；
-  // 图标是别的组件（如刷新中的转圈）时照旧由 Flutter 画内容、垫系统玻璃。
-  Widget build(BuildContext context) => campusNativeGlass && icon is CampusIcon
-      ? NativeGlassButton(icon: (icon as CampusIcon).icon, label: label, onPressed: onPressed, size: size)
-      : CampusChrome(child: Tooltip(
+  // 圆形按钮只用于顶栏操作和悬浮按钮，属于导航层，始终画玻璃（iOS 上是磨砂，见 native_glass.dart）。
+  Widget build(BuildContext context) => CampusChrome(child: Tooltip(
     message: label,
     excludeFromSemantics: true,
     child: FilledButton(

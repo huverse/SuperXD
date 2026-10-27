@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
@@ -15,8 +16,10 @@ import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/native_glass.dart';
 
 // [人工决策-2026-09-25 16:24:31] 全应用页面360ms进入/320ms返回、弹层300ms，保留即时操作与减少动画，不保留旧账号截图。
+// iOS 的页面推入与返回改用系统的 500ms（[人工决策] 见 _IosPageSlide），弹层照旧。
 const campusEnter = Duration(milliseconds: 360);
 const campusExit = Duration(milliseconds: 320);
+const _iosPush = Duration(milliseconds: 500);
 const campusOverlay = AnimationStyle(
   duration: Duration(milliseconds: 300),
   reverseDuration: Duration(milliseconds: 260),
@@ -31,6 +34,7 @@ Widget campusPageTransition(
   Widget child, {
   bool coversPopup = false,
 }) {
+  if (campusIos) return _IosPageSlide(animation: animation, secondaryAnimation: secondaryAnimation, child: _CoverBackdrop(animation: animation, child: child));
   if (MediaQuery.disableAnimationsOf(context)) return child;
   return _CampusPageSlide(animation: animation, secondaryAnimation: secondaryAnimation, child: coversPopup ? _CoverBackdrop(animation: animation, child: child) : child);
 }
@@ -39,6 +43,8 @@ Widget campusPageTransition(
 // 停稳后才被路由摘掉。这时转场期间给页面垫一份同相位的背景副本，像原生打开新页面那样整页盖住弹窗；停稳即撤，背景仍只画一份。
 mixin _CampusCoverRoute<T> on PageRoute<T> {
   bool _coversPopup = false;
+  // 路由自己的动画控制器：iOS 跟手返回松手后要按系统的收尾曲线续接（见 _IosBackSwipe）。
+  AnimationController? _campusController;
 
   @override
   void didChangePrevious(Route<dynamic>? previousRoute) {
@@ -245,7 +251,7 @@ MaterialPage<void> campusPage({required LocalKey key, required Widget child}) =>
 class CampusPageRoute<T> extends MaterialPageRoute<T> with _CampusCoverRoute<T> {
   CampusPageRoute({required super.builder, super.settings});
   @override
-  AnimationController createAnimationController() => _firstFrameController(this);
+  AnimationController createAnimationController() => _campusController = _firstFrameController(this);
 }
 
 AnimationController _firstFrameController(PageRoute<dynamic> route) => AnimationController(
@@ -273,15 +279,15 @@ class _CampusPageBasedRoute<T> extends PageRoute<T> with MaterialRouteTransition
   @override
   String get debugLabel => '${super.debugLabel}(${_page.name})';
   @override
-  AnimationController createAnimationController() => _firstFrameController(this);
+  AnimationController createAnimationController() => _campusController = _firstFrameController(this);
 }
 
 class CampusPageTransitions extends PageTransitionsBuilder {
   const CampusPageTransitions();
   @override
-  Duration get transitionDuration => campusEnter;
+  Duration get transitionDuration => campusIos ? _iosPush : campusEnter;
   @override
-  Duration get reverseTransitionDuration => campusExit;
+  Duration get reverseTransitionDuration => campusIos ? _iosPush : campusExit;
   @override
   Widget buildTransitions<T>(
     PageRoute<T> route,
@@ -289,7 +295,181 @@ class CampusPageTransitions extends PageTransitionsBuilder {
     Animation<double> animation,
     Animation<double> secondaryAnimation,
     Widget child,
-  ) => _CampusBackGesture(route: route, child: campusPageTransition(context, animation, secondaryAnimation, child, coversPopup: route is _CampusCoverRoute<T> && route._coversPopup));
+  ) => campusIos
+      ? _IosBackSwipe(route: route, child: campusPageTransition(context, animation, secondaryAnimation, child))
+      : _CampusBackGesture(route: route, child: campusPageTransition(context, animation, secondaryAnimation, child, coversPopup: route is _CampusCoverRoute<T> && route._coversPopup));
+}
+
+// [人工决策-2026-10-27 00:26:51] iOS 的页面转场同系统推入（用户选定「iOS 系统推入样式」，取代 09-25「整屏并排平移」与 360/320ms 在 iOS 上的做法，安卓照旧）：
+// 新页面从右边盖进来、左边缘带一道阴影，旧页面左移三分之一并略微变暗；两页的曲线与 500ms 时长同 Flutter 的 CupertinoPageRoute，
+// 系统底栏跟着壳页走用的是同一对曲线（见 native_glass.dart 的 NativeTabBar）。页面透明、共用一份背景，所以新页面在转场期间垫一份背景副本
+// （_CoverBackdrop，停稳即撤），盖住下面的旧页面。变暗是画在旧页面上的一层，不用祖先 Opacity（玻璃在半透明图层下取不到背景）。
+// 跟手返回期间按进度线性平移；减少动画时推入与返回直接到位，跟手返回照样跟手。
+class _IosPageSlide extends StatefulWidget {
+  const _IosPageSlide({required this.animation, required this.secondaryAnimation, required this.child});
+  final Animation<double> animation;
+  final Animation<double> secondaryAnimation;
+  final Widget child;
+
+  @override
+  State<_IosPageSlide> createState() => _IosPageSlideState();
+}
+
+class _IosPageSlideState extends State<_IosPageSlide> {
+  late CurvedAnimation _enter = NativeTabBar.enterCurve(widget.animation);
+  late CurvedAnimation _leave = NativeTabBar.leaveCurve(widget.secondaryAnimation);
+
+  @override
+  void didUpdateWidget(_IosPageSlide oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.animation != widget.animation) {
+      _enter.dispose();
+      _enter = NativeTabBar.enterCurve(widget.animation);
+    }
+    if (oldWidget.secondaryAnimation != widget.secondaryAnimation) {
+      _leave.dispose();
+      _leave = NativeTabBar.leaveCurve(widget.secondaryAnimation);
+    }
+  }
+
+  @override
+  void dispose() {
+    _enter.dispose();
+    _leave.dispose();
+    super.dispose();
+  }
+
+  Widget _slide(BuildContext context, bool following) {
+    if (MediaQuery.disableAnimationsOf(context) && !following) return widget.child;
+    final direction = Directionality.of(context) == TextDirection.rtl ? -1.0 : 1.0;
+    final enter = following ? widget.animation : _enter, leave = following ? widget.secondaryAnimation : _leave;
+    return SlideTransition(
+      position: leave.drive(Tween(begin: Offset.zero, end: Offset(-direction / 3, 0))),
+      transformHitTests: false,
+      child: Stack(fit: StackFit.expand, children: [
+        SlideTransition(
+          position: enter.drive(Tween(begin: Offset(direction, 0), end: Offset.zero)),
+          child: CustomPaint(painter: _IosEdgeShadow(enter, direction), child: widget.child),
+        ),
+        Positioned.fill(
+          child: IgnorePointer(
+            child: AnimatedBuilder(
+              animation: leave,
+              builder: (context, _) => leave.value <= 0 ? const SizedBox.shrink() : ColoredBox(color: Colors.black.withValues(alpha: .094 * leave.value)),
+            ),
+          ),
+        ),
+      ]),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final gesture = Navigator.maybeOf(context)?.userGestureInProgressNotifier;
+    return gesture == null
+        ? _slide(context, false)
+        : ValueListenableBuilder<bool>(valueListenable: gesture, builder: (context, following, _) => _slide(context, following));
+  }
+}
+
+// 新页面左边缘外的阴影（同 Flutter 的 CupertinoPageTransition）：宽为页面的 5%，随进入的进度加深；停稳时在屏幕外。
+class _IosEdgeShadow extends CustomPainter {
+  _IosEdgeShadow(this.progress, this.direction) : super(repaint: progress);
+  final Animation<double> progress;
+  final double direction;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final strength = progress.value;
+    if (strength <= 0 || strength >= 1) return;
+    final width = size.width * .05;
+    final rect = direction > 0 ? Rect.fromLTWH(-width, 0, width, size.height) : Rect.fromLTWH(size.width, 0, width, size.height);
+    canvas.drawRect(rect, Paint()..shader = LinearGradient(
+      begin: direction > 0 ? Alignment.centerLeft : Alignment.centerRight,
+      end: direction > 0 ? Alignment.centerRight : Alignment.centerLeft,
+      colors: [for (final alpha in const [0, 4, 18, 56]) Color.fromARGB((alpha * strength).round(), 0, 0, 0)],
+      stops: const [0, .3, .6, 1],
+    ).createShader(rect));
+  }
+
+  @override
+  bool shouldRepaint(_IosEdgeShadow oldDelegate) => oldDelegate.progress != progress || oldDelegate.direction != direction;
+}
+
+// [人工决策] 见 _IosPageSlide：iOS 跟手返回在页面任意位置向右滑都能返回（同 iOS 26 的系统导航），页面随手指平移，
+// 松手按速度与位置决定返回还是弹回（同 CupertinoPageRoute：快甩超过每秒一屏宽按方向，否则过半返回），收尾 350ms。
+// 只有最前面的页面响应；首页与有未保存编辑（PopScope 不许返回）的页面不接；横向滚动的列表、滑杆、输入框等里层手势优先。
+class _IosBackSwipe extends StatefulWidget {
+  const _IosBackSwipe({required this.route, required this.child});
+  final PageRoute<dynamic> route;
+  final Widget child;
+
+  @override
+  State<_IosBackSwipe> createState() => _IosBackSwipeState();
+}
+
+class _IosBackSwipeState extends State<_IosBackSwipe> {
+  static const _settle = Duration(milliseconds: 350);
+  bool _tracking = false;
+
+  void _start(DragStartDetails details) {
+    final route = widget.route;
+    if (!route.isCurrent || !route.popGestureEnabled || !TickerMode.valuesOf(context).enabled) return;
+    _tracking = true;
+    route.handleStartBackGesture(progress: 1);
+  }
+
+  double get _width => context.size?.width ?? 1;
+
+  double get _direction => Directionality.of(context) == TextDirection.rtl ? -1 : 1;
+
+  void _update(DragUpdateDetails details) {
+    if (!_tracking) return;
+    widget.route.handleUpdateBackGestureProgress(progress: (widget.route.animation!.value - _direction * details.primaryDelta! / _width).clamp(0.0, 1.0));
+  }
+
+  void _end(double velocity) {
+    if (!_tracking) return;
+    _tracking = false;
+    final route = widget.route;
+    final navigator = route.navigator!;
+    final controller = route is _CampusCoverRoute ? route._campusController : null;
+    if (controller == null || !route.isCurrent) {
+      route.handleCommitBackGesture();
+      return;
+    }
+    final back = velocity.abs() >= 1 ? velocity > 0 : controller.value < .5;
+    if (back) {
+      navigator.pop();
+      if (controller.isAnimating) controller.animateBack(0, duration: _settle, curve: Curves.fastEaseInToSlowEaseOut);
+    } else {
+      controller.animateTo(1, duration: _settle, curve: Curves.fastEaseInToSlowEaseOut);
+    }
+    if (!controller.isAnimating) {
+      navigator.didStopUserGesture();
+      return;
+    }
+    // 收尾期间保持跟手状态，页面按进度线性走，不中途换曲线。
+    late final AnimationStatusListener settled;
+    settled = (status) {
+      controller.removeStatusListener(settled);
+      navigator.didStopUserGesture();
+    };
+    controller.addStatusListener(settled);
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.route.isFirst
+      ? widget.child
+      : GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          dragStartBehavior: DragStartBehavior.down,
+          onHorizontalDragStart: _start,
+          onHorizontalDragUpdate: _update,
+          onHorizontalDragEnd: (details) => _end(_direction * details.velocity.pixelsPerSecond.dx / _width),
+          onHorizontalDragCancel: () => _end(0),
+          child: widget.child,
+        );
 }
 
 class CampusEntryFade extends StatefulWidget {
@@ -366,8 +546,8 @@ class CampusDialogRoute<T> extends DialogRoute<T> with CampusOverlayDepthRoute<T
     // 玻璃面板的显隐同样取这条进度，只是交给面板自己做（见 CampusOverlayReveal），外层不再套 Opacity。
     return AnimatedBuilder(animation: animation, child: glassPanel ? CampusOverlayReveal(animation: _reveal, child: child) : child, builder: (context, child) {
       final progress = Curves.easeInOutCubic.transform(animation.value);
-      // iOS 不模糊整屏：系统组件（底栏、顶栏按钮）是平台视图，模糊不到，只压暗（同系统弹窗）。
-      final sigma = campusNativeGlass || media.highContrast || media.accessibleNavigation ? 0.0 : 5 * progress;
+      // iOS 不模糊整屏、只压暗（同系统弹窗；整屏模糊在转场里每帧都要重算，更费电）。
+      final sigma = campusIos || media.highContrast || media.accessibleNavigation ? 0.0 : 5 * progress;
       final moved = Transform.translate(offset: Offset(0, 8 * (1 - progress)), child: child);
       return Stack(children: [
         if (sigma > 0) Positioned.fill(child: IgnorePointer(child: BackdropFilter(filter: ui.ImageFilter.blur(sigmaX: sigma, sigmaY: sigma), child: const SizedBox.expand()))),
@@ -759,7 +939,7 @@ class CampusSheetPanel extends StatelessWidget {
 
 // 只读提示：长文本可滚动，唯一按钮“知道了”。iOS 是系统弹窗（[人工决策] 见 native_glass.dart）。
 Future<void> showCampusNotice(BuildContext context, String message, {String? title}) async {
-  if (campusNativeGlass) {
+  if (campusIos) {
     await showNativeAlert(title: title, message: message, actions: const [NativeAlertAction('知道了', preferred: true)]);
     return;
   }
@@ -776,7 +956,7 @@ Future<void> showCampusNotice(BuildContext context, String message, {String? tit
 // 二次确认：仅点确认按钮返回true，取消、点遮罩或系统返回都视为不确认。
 // destructive 为真时主按钮是警示红（删除、清空、退出、覆盖、放弃修改等不可撤销的操作）。
 // iOS 是系统弹窗：取消在系统给的位置，确认按钮是主操作（警示时为系统警示红）；系统弹窗点空白关不掉。
-Future<bool> showCampusConfirm(BuildContext context, {required String title, required String message, required String action, String cancel = '取消', bool barrierDismissible = true, bool destructive = false}) async => campusNativeGlass
+Future<bool> showCampusConfirm(BuildContext context, {required String title, required String message, required String action, String cancel = '取消', bool barrierDismissible = true, bool destructive = false}) async => campusIos
     ? await showNativeAlert(title: title, message: message, actions: [NativeAlertAction(cancel, cancel: true), NativeAlertAction(action, destructive: destructive, preferred: !destructive)]) == 1
     : await showCampusDialog<bool>(
   context: context,

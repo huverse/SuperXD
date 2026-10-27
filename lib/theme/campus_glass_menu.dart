@@ -34,7 +34,7 @@ const _minMenuWidth = 200.0;
 // iOS 弹系统菜单（从同一个控件弹出，选中项带勾，见 native_glass.dart）。
 Future<T?> showCampusMenu<T>(BuildContext anchor, {required List<CampusMenuItem<T>> items, T? selected, bool matchWidth = false}) async {
   final box = anchor.findRenderObject()! as RenderBox;
-  if (campusNativeGlass) {
+  if (campusIos) {
     final index = await showNativeMenu(box.localToGlobal(Offset.zero) & box.size, [
       for (final item in items) NativeMenuEntry(item.label, icon: item.icon, destructive: item.destructive, checked: selected != null && item.value == selected),
     ]);
