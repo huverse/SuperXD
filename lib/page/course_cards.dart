@@ -528,11 +528,14 @@ class _GapBackdropPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final shape = RRect.fromRectAndRadius(Offset.zero & size, const Radius.circular(24));
     final paint = Paint()..color = line.withValues(alpha: line.a * (1 - reveal))..style = PaintingStyle.stroke..strokeWidth = 1.2;
+    // 各段虚线拼进一条路径一次画完：Impeller 没有栅格缓存，逐段画每帧都要提交上百次（滑动时更明显）。
+    final dashes = Path();
     for (final metric in (Path()..addRRect(shape.deflate(.6))).computeMetrics()) {
       for (var distance = 0.0; distance < metric.length; distance += 9) {
-        canvas.drawPath(metric.extractPath(distance, distance + 5), paint);
+        dashes.addPath(metric.extractPath(distance, distance + 5), Offset.zero);
       }
     }
+    canvas.drawPath(dashes, paint);
     if (reveal > 0) {
       canvas.drawRRect(shape, Paint()..color = selectedFill.withValues(alpha: selectedFill.a * reveal));
       canvas.drawRRect(shape.deflate(.5), Paint()..color = selectedBorder.withValues(alpha: selectedBorder.a * reveal)..style = PaintingStyle.stroke);
@@ -550,12 +553,15 @@ class _DashPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color..strokeWidth = size.width..strokeCap = StrokeCap.round;
+    final paint = Paint()..color = color..strokeWidth = size.width..strokeCap = StrokeCap.round..style = PaintingStyle.stroke;
     const dash = 3.0, gap = 5.0;
     final x = size.width / 2;
+    // 各段拼成一条路径一次画完（同上，逐段画每帧都要多次提交）。
+    final dashes = Path();
     for (var y = size.width / 2; y < size.height - size.width / 2; y += dash + gap) {
-      canvas.drawLine(Offset(x, y), Offset(x, math.min(y + dash, size.height - size.width / 2)), paint);
+      dashes..moveTo(x, y)..lineTo(x, math.min(y + dash, size.height - size.width / 2));
     }
+    canvas.drawPath(dashes, paint);
   }
 
   @override

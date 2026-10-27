@@ -415,30 +415,45 @@ class FrostTexture extends StatelessWidget {
   @override
   Widget build(BuildContext context) => IgnorePointer(
     child: RepaintBoundary(
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(radius),
-        child: CustomPaint(
-          painter: _GrainPainter(CampusPalette.of(context).onSurfaceVariant),
-        ),
+      child: CustomPaint(
+        painter: _GrainPainter(CampusPalette.of(context).onSurfaceVariant, MediaQuery.devicePixelRatioOf(context), radius),
       ),
     ),
   );
 }
 
+// 颗粒先按设备像素画成一块拼贴（12×84：每行横向错开 y % 7，7 行一个循环），每张表面只铺一次，图案同逐点画的一样。
+// Impeller 没有栅格缓存，逐点画的几百上千个小圆每帧都要重新细分、提交（10-27 iPhone 日志：只有背景在动的帧也要栅格约 9ms，滑动时更慢）。
+// 拼贴按颜色与像素密度缓存，个数受配色数限制。
+final _grainTiles = <(Color, double), ui.Image>{};
+
+ui.Image _grainTile(Color color, double ratio) => _grainTiles.putIfAbsent((color, ratio), () {
+  final recorder = ui.PictureRecorder();
+  final canvas = Canvas(recorder)..scale(ratio);
+  final paint = Paint()..color = color.withValues(alpha: .016);
+  for (var y = 3.0; y < 84; y += 12) {
+    canvas.drawCircle(Offset(3 + (y.toInt() % 7), y), .55, paint);
+  }
+  final picture = recorder.endRecording();
+  final tile = picture.toImageSync((12 * ratio).ceil(), (84 * ratio).ceil());
+  picture.dispose();
+  return tile;
+});
+
 class _GrainPainter extends CustomPainter {
-  const _GrainPainter(this.color);
+  const _GrainPainter(this.color, this.ratio, this.radius);
   final Color color;
+  final double ratio;
+  final double radius;
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()..color = color.withValues(alpha: .016);
-    // 固定12px纹理单元，每帧不变；随当前表面像素面积增长，不随业务数据增长。
-    for (var y = 3.0; y < size.height; y += 12) {
-      for (var x = 3.0; x < size.width; x += 12) {
-        canvas.drawCircle(Offset(x + (y.toInt() % 7), y), .55, paint);
-      }
-    }
+    final tile = _grainTile(color, ratio);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(Offset.zero & size, Radius.circular(radius)),
+      Paint()..shader = ImageShader(tile, TileMode.repeated, TileMode.repeated, Matrix4.diagonal3Values(12 / tile.width, 84 / tile.height, 1).storage),
+    );
   }
 
   @override
-  bool shouldRepaint(_GrainPainter oldDelegate) => oldDelegate.color != color;
+  bool shouldRepaint(_GrainPainter oldDelegate) => oldDelegate.color != color || oldDelegate.ratio != ratio || oldDelegate.radius != radius;
 }

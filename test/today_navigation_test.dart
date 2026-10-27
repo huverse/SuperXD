@@ -9,6 +9,7 @@ import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/week.dart';
 import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/live_clock.dart';
+import 'package:superxd/page/today_date_transition.dart';
 import 'package:superxd/page/today_page.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_rolling_text.dart';
@@ -36,6 +37,7 @@ class _Gateway extends FixtureCampusGateway {
   final int weeks;
   final int periods;
   bool known = true;
+  String revision = 'rev-test';
   bool failed = false;
   int? emptyWeekday;
   Set<int> emptyWeekdays = {};
@@ -70,7 +72,7 @@ class _Gateway extends FixtureCampusGateway {
       student: _student,
       termStartDate: start,
       message: known ? '' : '还没有课表',
-      revisionId: known ? 'rev-test' : null,
+      revisionId: known ? revision : null,
       courses: [
         if (!empty && known)
           for (var weekday = 1; weekday <= 7; weekday++)
@@ -389,6 +391,28 @@ void main() {
     expect(_date('2026-09-26'), findsOneWidget);
     expect(find.text('这天不在已知课表范围内'), findsOneWidget);
     expect(find.textContaining('这天没课'), findsNothing);
+  });
+
+  // 切回今天页会重读本地；读到的课表版本、开学日与作息都没变时不换内容版本（不整页重排），版本变了照常刷新。
+  testWidgets('切回今天页：本地数据没变不刷新内容，课表出了新版本照常刷新', (tester) async {
+    final active = ValueNotifier(true);
+    addTearDown(active.dispose);
+    final gateway = _Gateway();
+    await _mount(tester, gateway, active: active);
+    int revision() => tester.widget<TodayDateTransition>(find.byType(TodayDateTransition)).revision;
+    Future<void> reactivate() async {
+      active.value = false;
+      await tester.pump();
+      active.value = true;
+      await tester.pumpAndSettle();
+    }
+    final shown = revision(), reads = gateway.reads;
+    await reactivate();
+    expect(gateway.reads, reads + 1);
+    expect(revision(), shown);
+    gateway.revision = 'rev-edited';
+    await reactivate();
+    expect(revision(), greaterThan(shown));
   });
 
   testWidgets('转场保持出场列表的滚动位置，反向拖回不误切日', (tester) async {

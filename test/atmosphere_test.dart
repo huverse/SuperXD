@@ -350,4 +350,61 @@ void main() {
     progress.removeListener(count);
     await tester.pumpWidget(const SizedBox());
   }, variant: const TargetPlatformVariant({TargetPlatform.android, TargetPlatform.iOS}));
+
+  // 颗粒是预先画好的一块拼贴（见 FrostTexture）：一张表面只画一次，图案同原来逐点画的小圆一样。
+  testWidgets('颗粒每张表面只画一次，图案同逐点画的一样', (tester) async {
+    final key = GlobalKey(), reference = GlobalKey();
+    await tester.pumpWidget(MaterialApp(home: Center(child: Row(mainAxisSize: MainAxisSize.min, children: [
+      RepaintBoundary(key: key, child: const SizedBox(width: 150, height: 100, child: FrostTexture(radius: 0))),
+      RepaintBoundary(key: reference, child: SizedBox(width: 150, height: 100, child: Builder(builder: (context) => CustomPaint(painter: _DottedGrain(CampusPalette.of(context).onSurfaceVariant))))),
+    ]))));
+    final painter = tester.widget<CustomPaint>(find.descendant(of: find.byType(FrostTexture), matching: find.byType(CustomPaint))).painter!;
+    final canvas = _CountingCanvas();
+    painter.paint(canvas, const Size(390, 800));
+    expect([canvas.circles, canvas.shapes], [0, 1]);
+    Future<List<int>> pixels(GlobalKey boundary) async {
+      final image = await (boundary.currentContext!.findRenderObject()! as RenderRepaintBoundary).toImage(pixelRatio: 3);
+      final bytes = await image.toByteData();
+      image.dispose();
+      return bytes!.buffer.asUint8List().toList();
+    }
+    final (drawn, expected) = (await tester.runAsync(() async => (await pixels(key), await pixels(reference))))!;
+    expect(drawn.length, expected.length);
+    var differs = 0;
+    for (var index = 0; index < drawn.length; index++) {
+      if ((drawn[index] - expected[index]).abs() > 2) differs++;
+    }
+    expect(differs, 0);
+    expect(expected.any((value) => value > 0), isTrue);
+  });
+}
+
+// 原来的逐点画法，作对照。
+class _DottedGrain extends CustomPainter {
+  const _DottedGrain(this.color);
+  final Color color;
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = color.withValues(alpha: .016);
+    for (var y = 3.0; y < size.height; y += 12) {
+      for (var x = 3.0; x < size.width; x += 12) {
+        canvas.drawCircle(Offset(x + (y.toInt() % 7), y), .55, paint);
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(_DottedGrain oldDelegate) => false;
+}
+
+class _CountingCanvas implements Canvas {
+  int circles = 0, shapes = 0;
+  @override
+  void drawCircle(Offset center, double radius, Paint paint) => circles++;
+  @override
+  void drawRRect(RRect rrect, Paint paint) => shapes++;
+  @override
+  void drawRect(Rect rect, Paint paint) => shapes++;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
 }

@@ -47,7 +47,7 @@
 - 账号代次：SuperXdApp 以 session.generation 作 key 重建账号应用，切换账号时路由和页面内存状态整体丢弃（[人工决策] 在 main.dart）。
 - router.dart 门禁：会话恢复完成前停在 /boot；未登录只允许 /login、/legal 下的法务页、/toolbox 与已注册工具及其快捷入口的路由（[人工决策] 在文件内）；已登录访问 /login 回到 /today；底栏壳有今天、服务、消息、我的四个分支，外包 LegacyImportGate；课表、成绩、切换账号、法务页和百宝箱推入根导航器。
 - app_session.dart：把 AccountAccess 的账号变化转成路由刷新并暂存一次性提示；expire 只让发起时的那个代次失效，旧页面不能误登出新账号。
-- app_diagnostics.dart：开发者模式的接线（[人工决策] 在文件头）：运行环境 appEnvironment（开发者模式第一次开着时才读）、按设置切换 campusDiagnostics 与卡顿内存统计（每 10 秒汇总、有慢帧才记）、前后台与页面切换记录（watchRoutes，只记路径），切到后台时把日志写盘；recordExitReasons 每次启动记系统给的上次退出原因（异常的平时也进错误记录）。悬浮开发者工具由 main.dart 的账号应用外壳套上（page/developer_page.dart 的 DeveloperOverlay）。开发者模式只多记日志、多给调试工具，不改任何业务行为。
+- app_diagnostics.dart：开发者模式的接线（[人工决策] 在文件头）：运行环境 appEnvironment（开发者模式第一次开着时才读）、按设置切换 campusDiagnostics 与卡顿内存统计（每 10 秒汇总、有慢帧才记）、前后台与页面切换记录（watchRoutes 只记 go_router 的路径；命令式推入的页面由 theme 的 CampusPageRoute 按页面类名记推入与返回），切到后台时把日志写盘；recordExitReasons 每次启动记系统给的上次退出原因（异常的平时也进错误记录）。悬浮开发者工具由 main.dart 的账号应用外壳套上（page/developer_page.dart 的 DeveloperOverlay）。开发者模式只多记日志、多给调试工具，不改任何业务行为。
 - app_shortcuts.dart：常用功能快捷入口的接线（人工决策在 toolbox/express/express_page.dart 的 _openIdentity）：把百宝箱注册表里登记的入口（ToolboxShortcut）画成自适应图标，经 device/app_shortcuts.dart 交给系统（长按应用图标的菜单、添加到桌面）；点了入口要去的页面记在 pending，账号应用等会话恢复好、先回首页（今天或登录页）再推入，返回就回到首页。入口 id 是「工具 id.入口 id」、页面是 /toolbox/工具 id/入口 id，已发布的 id 不要改（桌面上的快捷方式按它找回页面）。测试在 app_shortcuts_test.dart（发布、后台点入口、添加到桌面、先回首页再推入）与 account_lifecycle_test.dart（冷启动直达与门禁）；原生 AppShortcuts.kt 只有设备实测。
 - 页面从路由拿到 isAccountCurrent 与 onSessionExpired：异步结果回来后先确认仍属当前账号，再写界面。
 - 编排（CampusSync、CampusReminders、CampusWidgets、AppUpdates）见 lib/application/CLAUDE.md。
@@ -78,7 +78,7 @@
 11. 日志：只经 domain/campus_log.dart 的 campusLog 输出，应用入口必须注入 debugPrint 才进 logcat；格式为 [模块] action=... errorType=...，错误附完整堆栈；不写原始 HTML、链接、凭据与实名信息。由 test/project_structure_test.dart 守护。
     - 同一份输出另写进本机文件（local/diagnostic_log.dart）：平时只记错误，开发者模式记全部；保存期限与掩码规则见 lib/local/CLAUDE.md，隐私政策第八节与附录三同步写明。
     - 只在开发者模式下才有意义的诊断记录（请求耗时、页面切换、卡顿内存）先看 campusDiagnostics，对外请求统一经 campusRequestLog 记，只记路径、不记域名与查询串。
-    - 新模块接入开发者模式：日志照常走 campusLog、错误带 errorType= 或堆栈即自动进本机日志与错误记录；自写 HTTP 封装的发请求处必须调 campusRequestLog（test/project_structure_test.dart 守护）；新页面优先挂 go_router 路由，命令式推入的页面不进页面切换记录。
+    - 新模块接入开发者模式：日志照常走 campusLog、错误带 errorType= 或堆栈即自动进本机日志与错误记录；自写 HTTP 封装的发请求处必须调 campusRequestLog（test/project_structure_test.dart 守护）；新页面优先挂 go_router 路由（按路径记），命令式推入的页面经 CampusPageRoute 按页面类名记推入与返回。
 12. 界面实现：确认和提示统一用 theme/campus_transitions.dart 的 showCampusConfirm 与 showCampusNotice；setState 回调不得返回 Future，给 Future 字段赋值时用块体；只有图标的 IconButton 必须带 tooltip 作读屏标签。后两条由 test/code_conventions_test.dart 守护。
 13. 公开内容不出现实名：
     - [人工决策-2026-10-15 20:20:38] 仓库公开，代码、测试数据、文档、提交信息、PR 与 Issue 的正文和评论一律不写真实姓名、手机号、学号等实名信息（含真实课表里的教师名）。

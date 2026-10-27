@@ -83,6 +83,22 @@ void main() {
     expect([1, 45, 60, 65, 125].map(classDuration), ['1分钟', '45分钟', '1小时', '1小时05分', '2小时05分']);
   });
 
+  // 虚线拼成一条路径一次画完：Impeller 没有栅格缓存，逐段画每帧都要多次提交（10-27 iPhone 日志里滑动卡顿）。
+  testWidgets('空档的虚线框与虚线竖条每个只画一次', (tester) async {
+    await tester.pumpWidget(app(CourseDayCards(spans: periodSpans([course(3, 4)]), bells: bells, date: '2026-09-21')));
+    await tester.pumpAndSettle();
+    final painters = [
+      for (final paint in tester.widgetList<CustomPaint>(find.byType(CustomPaint)))
+        if (paint.painter case final painter? when ['_GapBackdropPainter', '_DashPainter'].contains(painter.runtimeType.toString())) painter,
+    ];
+    expect(painters.map((painter) => painter.runtimeType.toString()).toSet(), {'_GapBackdropPainter', '_DashPainter'});
+    for (final painter in painters) {
+      final canvas = _CountingCanvas();
+      painter.paint(canvas, const Size(343, 120));
+      expect([canvas.paths, canvas.lines], [1, 0], reason: '${painter.runtimeType}');
+    }
+  });
+
   testWidgets('空档与正课同宽（触区不低于48、比正课矮），大字不溢出，详情可点空白关闭', (tester) async {
     final spans = periodSpans([course(3, 4)]);
     String? detail;
@@ -637,4 +653,14 @@ class _EveryDayGateway extends _Gateway {
       for (var weekday = 1; weekday <= 7; weekday++) CourseMeeting(weekday: weekday, periodStart: 3, periodEnd: 4, place: '教室', weeks: [for (var week = 1; week <= 18; week++) week]),
     ]),
   ]));
+}
+
+class _CountingCanvas implements Canvas {
+  int paths = 0, lines = 0;
+  @override
+  void drawPath(Path path, Paint paint) => paths++;
+  @override
+  void drawLine(Offset p1, Offset p2, Paint paint) => lines++;
+  @override
+  dynamic noSuchMethod(Invocation invocation) => null;
 }

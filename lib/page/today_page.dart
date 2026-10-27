@@ -93,6 +93,9 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
   final Map<String, List<PeriodSpan>> _days = {};
   int _termLastPeriod = 0;
   int _contentRevision = 0;
+  // 上次读到的本地数据签名：切回今天页、回到前台都会重读本地，读到的跟上次一样时不刷新内容（不清日程缓存、不换内容版本，
+  // 免得整页重排；10-27 iPhone 日志里每次切回今天构建 24–34ms）。课表按版本号认（编辑、同步、恢复都会出新版本），没有版本号时照常刷新。
+  String? _signature;
   ValueNotifier<DateTime>? _clock;
   bool? _branchActive;
   int _readGeneration = 0;
@@ -277,6 +280,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
       if (!_current(generation)) return;
       final term = terms.data?.firstOrNull;
       if (!terms.ok || term == null) {
+        _signature = null;
         setState(() {
           _loading = false;
           _term = null;
@@ -297,6 +301,15 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
       if (!_current(generation)) return;
       final schedule = view.data;
       final start = schedule?.termStartDate;
+      final revision = schedule?.revisionId;
+      final signature = revision == null || !bells.ok
+          ? null
+          : [term.key, revision, start, schedule!.termLastPeriod, for (final period in bells.data?.periods ?? const <BellPeriod>[]) '${period.period}/${period.dayPart}/${period.dayPartCode}/${period.start}/${period.end}'].join('\u0000');
+      if (signature != null && signature == _signature && !_loading && _readError == null) {
+        campusLog('[TodayPage] action=read_local generation=$generation state=unchanged');
+        return;
+      }
+      _signature = signature;
       final hasWeeks =
           schedule?.courses.any(
             (course) =>
@@ -339,6 +352,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         '[TodayPage] action=read_local errorType=${error.runtimeType}\n$stack',
       );
       if (!_current(generation)) return;
+      _signature = null;
       setState(() {
         _loading = false;
         _readError = '本地数据读取失败，请重试';
