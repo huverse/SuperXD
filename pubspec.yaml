@@ -65,7 +65,8 @@ dependencies:
   pretty_qr_code: ^3.6.0
   barcode_widget: ^2.0.4
   webview_flutter: ^4.10.0
-  mobile_scanner: ^7.4.2
+  flutter_zxing: ^3.1.0
+  camera: ^0.12.2
   package_info_plus: ^10.2.2
   url_launcher: ^6.3.3
   image: ^4.10.1
