@@ -64,7 +64,7 @@
 - 改视觉之前先读本目录的人工决策注释，以及自动记忆里被否决的方案（切日胶囊、云雾、字体压缩、玻璃滚动边缘），不要重提。
 - 排版：按文字宽度定宽或决定排法的地方一律经 campus_typesetting.dart 量（测量口径与 Text 不一致时末字会被裁掉，iOS 粗体文本下最明显）；会在窄处折行的短句用 BalancedText，「甲 · 乙」用 DotSeparatedText；新页面在 360dp 加 1.3 倍、411dp 标准两种条件下看过 Maple 与宋体再交。
 - 自绘图案不在 paint 里循环逐个画小图形（Impeller 没有栅格缓存，每帧都要重新提交）：小点拼成一组 drawRawPoints、虚线拼成一条路径，一次画完（10-27 iPhone 卡顿日志后改的颗粒与空档虚线）。
-- 不用 toImageSync 画大半透明的离屏贴图：10-27 vivo V2408A（骁龙、2K 屏）上颗粒拼贴让每张卡片整排冒出绿黑虚线（推测没画到的像素拿到的是脏内存，细节在 FrostTexture 的注释）。云雾贴图先铺满底色，不受影响；红包粒子的贴图集（page/festival/reward_kit.dart）还是这样画的，没在那类手机上看过。
+- 不用 toImageSync 画大半透明的离屏贴图：10-27 vivo V2408A（骁龙、2K 屏）上颗粒拼贴让每张卡片整排冒出绿黑虚线（推测没画到的像素拿到的是脏内存，细节在 FrostTexture 的注释）。云雾贴图先铺满底色，不受影响；红包粒子的贴图集（page/festival/reward_kit.dart）改成在 CPU 上算好像素再上传。只有云雾贴图能用 toImageSync，由 code_conventions_test.dart 守护。
 
 # 测试
 
@@ -72,7 +72,7 @@
 - 背景、配色与深色：atmosphere_test.dart（含 iOS 云雾每秒约 20 次、低电量停住、半分辨率贴图同直接画对照、颗粒拼贴同逐点画对照）、dark_mode_test.dart、wallpaper_test.dart。
 - 动效与转场：campus_motion_test.dart、transition_sync_test.dart（含 iOS 推入与任意位置右滑返回）、account_lifecycle_test.dart（入场与转场中间帧）。
 - 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器、点状态栏回顶、iOS 拖动收起键盘）；typesetting_test.dart（测量与 Text 同口径含粗体文本与字距、均衡换行、分段控件按字分宽、说明行的点不单独成行）。
-- 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
+- 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、toImageSync 只用于云雾贴图、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
 
 # 人工决策检索
 

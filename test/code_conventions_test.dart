@@ -77,6 +77,19 @@ void main() {
     expect(offenders, isEmpty);
   });
 
+  // 大半透明的离屏贴图在部分安卓驱动上有脏像素（10-27 vivo 骁龙 2K 屏上卡片颗粒整排冒出绿黑虚线，见 theme 的 FrostTexture）：
+  // toImageSync 只留给先铺满底色的云雾贴图（campus_background.dart）；小图改成一次画完或在 CPU 上算好像素再上传（粒子贴图 RewardSprites）。
+  test('toImageSync只用于铺满底色的云雾贴图', () {
+    final offenders = <String>[];
+    for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart') && !file.path.endsWith('campus_background.dart'))) {
+      final lines = file.readAsLinesSync();
+      for (var index = 0; index < lines.length; index++) {
+        if (lines[index].contains('toImageSync(')) offenders.add('${file.path}:${index + 1}');
+      }
+    }
+    expect(offenders, isEmpty);
+  });
+
   // 只有图标的按钮没有文字，读屏只能读出“按钮”；tooltip同时提供读屏标签和长按提示。
   test('IconButton都带tooltip', () {
     final offenders = <String>[];
