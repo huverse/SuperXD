@@ -66,7 +66,7 @@ void main() {
     await tester.tap(find.text('百宝箱'));
     await tester.pumpAndSettle();
     expect(find.byType(ToolboxPage), findsOneWidget);
-    await tester.tap(find.text('短视频解析'));
+    await tester.tap(find.text('视频解析'));
     for(var tick=0;tick<100&&find.byType(TextField).evaluate().isEmpty;tick++){
       await tester.runAsync(()=>Future<void>.delayed(const Duration(milliseconds:10)));
       await tester.pump(const Duration(milliseconds:16));

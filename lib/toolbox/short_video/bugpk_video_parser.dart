@@ -80,6 +80,11 @@ class BugpkVideoParser implements ParseProvider {
       String id,
       String label, {
       String? pairedImageId,
+      String? quality,
+      int? bytes,
+      Duration? duration,
+      int? width,
+      int? height,
     }) {
       if (raw is! String || raw.trim().isEmpty) return;
       final uri = toolboxPublicUrl(raw, httpsOnly: true);
@@ -94,17 +99,37 @@ class BugpkVideoParser implements ParseProvider {
             url: uri,
             label: label,
             pairedImageId: pairedImageId,
+            quality: quality,
+            bytes: bytes,
+            duration: duration,
+            width: width,
+            height: height,
           ),
         );
       }
     }
+
+    // 外部输入：只认范围内的正数，不对就当没给。
+    num? positive(Object? value, num max) => value is num && value > 0 && value <= max ? value : null;
 
     String text(Object? value, int length) => value is String
         ? value.substring(0, value.length.clamp(0, length))
         : '';
     final type = text(data['type'], 20).toLowerCase();
     if (type != 'image' && type != 'live') {
-      append(data['url'], MediaKind.video, 'video', '视频');
+      // 顶层的画质、大小（字节）、时长（秒）与宽高说的是主视频；quality 为 original 表示经 vid 跳转拿到的原画，其余档名不展示。
+      final seconds = positive(data['duration'], 86400);
+      append(
+        data['url'],
+        MediaKind.video,
+        'video',
+        '视频',
+        quality: data['quality'] == 'original' ? '原画' : null,
+        bytes: positive(data['size'], 1 << 40)?.round(),
+        duration: seconds == null ? null : Duration(milliseconds: (seconds * 1000).round()),
+        width: positive(data['width'], 20000)?.round(),
+        height: positive(data['height'], 20000)?.round(),
+      );
     }
     final backups = data['video_backup'];
     if (backups is List) {

@@ -84,6 +84,33 @@ void main() {
     expect(result.audio, hasLength(1));
     parser.close();
   });
+  test('主视频带上来源给的原画、大小、时长与分辨率，越界或类型不对的当没给', () {
+    final parser = BugpkVideoParser();
+    final result = parser.normalize({
+      'type': 'video',
+      'url': 'https://cdn.example.com/a.mp4',
+      'video_backup': ['https://cdn.example.com/b.mp4'],
+      'quality': 'original',
+      'size': 1238455,
+      'duration': 12.736,
+      'width': 1080,
+      'height': 1920,
+    }, input);
+    final [main, backup] = result.videos.toList();
+    expect((main.quality, main.bytes, main.duration, main.width, main.height), ('原画', 1238455, const Duration(milliseconds: 12736), 1080, 1920));
+    expect((backup.quality, backup.bytes, backup.duration, backup.width), (null, null, null, null), reason: '顶层字段只说主视频');
+    final odd = parser.normalize({
+      'type': 'video',
+      'url': 'https://cdn.example.com/a.mp4',
+      'quality': 'normal_720_0',
+      'size': -1,
+      'duration': '12',
+      'width': 0,
+      'height': 99999,
+    }, input).videos.single;
+    expect((odd.quality, odd.bytes, odd.duration, odd.width, odd.height), (null, null, null, null, null));
+    parser.close();
+  });
   test('陌生响应、业务错误、非HTTPS、内网及清单拒绝', () async {
     for (final body in [
       '<html>blocked</html>',

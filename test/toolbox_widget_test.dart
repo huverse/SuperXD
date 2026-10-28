@@ -118,6 +118,24 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('结果页在视频下面写来源给的画质、大小、时长与分辨率，没给的那项不占行', (tester) async {
+    final result = ParseResult(
+      sourceUrl: Uri.parse('https://example.com/detail'),
+      providerId: 'bugpk',
+      title: '带画质的视频',
+      author: '',
+      resources: [
+        MediaResource(id: 'video', kind: MediaKind.video, url: Uri.parse('https://cdn.example.com/a.mp4'), label: '视频', quality: '原画', bytes: 1238455, duration: const Duration(milliseconds: 12736), width: 1080, height: 1920),
+        MediaResource(id: 'backup_0', kind: MediaKind.video, url: Uri.parse('https://cdn.example.com/b.mp4'), label: '备用1'),
+      ],
+    );
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: MediaResultPage(service: fixture.shortVideo, runtime: fixture.runtime, outcome: ParseOutcome(result, attempts: const []))));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(find.text('原画 · 1.2 MB · 0:13 · 1080×1920'), findsOneWidget);
+    expect(find.textContaining(' MB'), findsOneWidget, reason: '备用那项来源没给信息，不多一行');
+    await tester.pumpWidget(const SizedBox());
+  });
+
   test('原生导出失败时记下错误码与系统错误号再抛给下载管理', () async {
     const channel = MethodChannel('superxd/toolbox_files');
     final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
@@ -145,7 +163,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    expect(find.text('短视频解析'), findsOneWidget);
+    expect(find.text('视频解析'), findsOneWidget);
     expect(find.byTooltip('下载资源'), findsNothing);
     expect(find.byTooltip('管理资源'), findsNothing);
     await tester.pumpWidget(const SizedBox());
@@ -661,7 +679,7 @@ void main() {
       MaterialApp.router(theme: campusTheme(), routerConfig: router),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.text('短视频解析'));
+    await tester.tap(find.text('视频解析'));
     await tester.pump();
     await waitForWidget(tester, find.byType(TextField));
     await tester.pumpAndSettle();
