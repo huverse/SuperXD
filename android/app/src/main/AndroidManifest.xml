@@ -20,6 +20,10 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" tools:node="remove"/>
     <uses-permission android:name="android.permission.WRITE_SETTINGS" tools:node="remove"/>
     <uses-permission android:name="com.google.android.gms.permission.AD_ID" tools:node="remove"/>
+    <!-- 扫码取景（flutter_zxing 经 camera 插件）只拍画面、不录音：camera 插件会并入录音权限，移除；也不要求设备一定有摄像头（没有时从相册识别）。 -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" tools:node="remove"/>
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" tools:replace="android:required"/>
+    <uses-feature android:name="android.hardware.camera" android:required="false"/>
     <!-- 学习通签到读取本机学习通客户端的版本与签名摘要（设备信息里要带），Android 11 起需声明包可见性。 -->
     <queries>
         <package android:name="com.chaoxing.mobile"/>
