@@ -53,7 +53,7 @@
   - festival/festival_stage.dart：节日动画的舞台 showFestivalCelebration 与场景类型 FestivalScene（这一次节日、长度、按 0–1 进度画的 builder、减少动画时的静态画面、这一次红包的主题 reward）：浮层路由（下面的页面不做转场、不登记弹窗层数），放完自己淡出，点一下或返回立即淡出；减少动画时显示静态画面或通用问候、festivalStillLength 后关。节日浮层（动画与拆红包）共用系统栏样式 festivalSystemOverlay（浅色图标、导航栏透明，不用 SystemUiOverlayStyle.light，它把导航栏涂成黑条）。人工决策见 domain/festival.dart。
   - festival/festival_catalog.dart：节日登记 festivalCatalog：每一次节日一项、一次一段单独设计的动画（场景文件放本目录），编号发出后不改；现在一项也没有，维护者点名哪个节日再加。festivalRewardTheme 按奖品的节日编号找这一次的红包主题，没登记用默认的流光卡；加一个节日主题只动两处：本目录照 reward_glow.dart 写一个 RewardTheme、场景的 reward 指向它。
   - festival/festival_reward.dart：奖品揭晓 showFestivalReward（预制，所有节日共用；卡的主题按奖品的节日找）的入口、时间线与操作：等点的那件东西浮起，点开（读屏「拆开红包」）走完开启动效的时间线，奖品卡停在正中；口令（复制并打开支付宝）或二维码（在支付宝里打开、保存二维码），「收下了」关闭；停稳的卡跟手倾斜；减少动画或从「我的」再打开时直接是卡片、不放光效与粒子、不震。画面分开启动效（reward_stardust）与奖品卡容器（reward_card）。定稿的选择（星尘、流光卡、镭射卡与春节主题没选）是 [人工决策]，在文件头。支付宝应用链接还没在真机上验过（见文件头）。
-  - festival/reward_kit.dart：揭晓共用的部件：OKLCH 取色 RewardTone、主题接口 RewardTheme（配色 palette、卡面 paintCard）与配色 RewardPalette、流光卡面 RewardSurface（shaders/reward_aurora.frag：近黑玻璃卡、卡头流动的网格渐变、边上的发丝流光与外面一圈光，卡形从一团光长出来）、一帧的状态 RewardScene、开启动效接口 RewardLook、压暗程度 rewardScrim、着色器缓存 RewardShaders（没加载好时画退路）、粒子贴图与一次画完的粒子批 RewardSprites、RewardParticles。
+  - festival/reward_kit.dart：揭晓共用的部件：OKLCH 取色 RewardTone、主题接口 RewardTheme（配色 palette、卡面 paintCard）与配色 RewardPalette、流光卡面 RewardSurface（shaders/reward_aurora.frag：近黑玻璃卡、卡头流动的网格渐变、边上的发丝流光与外面一圈光，卡形从一团光长出来）、一帧的状态 RewardScene、开启动效接口 RewardLook、压暗程度 rewardScrim、着色器缓存 RewardShaders（没加载好时画退路）、粒子贴图与一次画完的粒子批 RewardSprites、RewardParticles（贴图在 CPU 上算好像素再上传，不经离屏渲染，揭晓开始时 load，好之前不画粒子）。
   - festival/reward_card.dart：奖品卡容器 RewardContainer（整体一块不分卡头：主题画的卡面不裁切、外面那圈光可以画到卡外，上面是内容层；口令落在半透明白框里、二维码在白底上）与内容 RewardCard（至少宽的 1.3 倍高）、按钮 RewardButton、RewardQuietButton；节日名用随包的宋体。
   - festival/reward_glow.dart：默认主题 RewardGlowTheme：第一轮流光方向的卡（用户认可的奖品卡样子），颜色全从种子取，渐变与流光是种子色与两侧相邻的色相；相对第一轮改了什么写在文件头。
   - festival/reward_stardust.dart：开启动效「星尘」：几百颗星尘绕中间一粒光转成斜看的盘（开普勒转速、迎着转来的一侧略亮、沿旋度噪声轻轻流动），光是白芯、柔晕与淡星芒（不画环），背后稀疏的远景星；点开盘收紧加速、拖出光尾（蓄力），放开时那粒光长成卡，星尘顺着旋转流出去描出卡边、落进卡里。浮层的底 RewardDustStage。粒子一次 drawRawAtlas。
@@ -87,7 +87,7 @@
 - 排版：text_layout_test.dart（登录、今天、课表三种范围与成绩在 360dp 大字号、宋体加粗体文本、411dp 标准下不裁字、不剩一行标点、不留孤字，同意行与登录按钮、学期视图横条；扫描在 text_fit_support.dart）。改了页面排版、文案长短或字号相关的布局都跑它。
 - 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart；开屏与画作页：painting_ui_test.dart。
 - 开发者的话：account_lifecycle_test.dart（「我的」页入口、小圆点与读信、新信在什么界面条件下弹）。
-- 节日：festival_test.dart（舞台、红包揭晓与按钮）与 account_lifecycle_test.dart（节日当天播动画、抽中接着拆红包）。
+- 节日：festival_test.dart（舞台、红包揭晓与按钮）、reward_sprites_test.dart（粒子贴图同原来画布画的对照；单独一个文件，因为贴图的加载全局缓存）与 account_lifecycle_test.dart（节日当天播动画、抽中接着拆红包）。
 - 私信页面：social_ui_test.dart（含好友课表导入的整份替换与逐项合并）、share_card_test.dart；合并规则在 schedule_merge_test.dart。
 - 开发者模式：developer_mode_test.dart。
 - 页面测试的合成数据网关是 fixture_campus_gateway.dart（读 assets/fixtures）。

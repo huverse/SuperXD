@@ -206,40 +206,79 @@ int setShaderColor(ui.FragmentShader shader, int index, Color color) {
   return index + 3;
 }
 
-// 粒子贴图（只画一次）：一张 192×64 的图上三格，依次是柔光点、四角星、拖尾（朝右）；
+// 粒子贴图（只生成一次）：一张 192×64 的图上三格，依次是柔光点、四角星、拖尾（朝右）；
 // 粒子用 drawRawAtlas 按颜色调制、加色叠加，一次画完。
+// 像素在 CPU 上逐个算好，像普通图片一样上传，不用 toImageSync 离屏画：大半透明的离屏贴图在部分安卓驱动上有脏像素
+// （10-27 vivo 骁龙 2K 屏上卡片颗粒整排冒出绿黑虚线，见 theme 的 FrostTexture）。上传是异步的：揭晓开始时 load，好之前那几帧不画粒子。
 class RewardSprites {
-  static ui.Image? _image;
+  static ui.Image? image;
+  static Future<void>? _loading;
   static const dot = Rect.fromLTWH(0, 0, 64, 64);
   static const star = Rect.fromLTWH(64, 0, 64, 64);
   static const streak = Rect.fromLTWH(128, 0, 64, 64);
 
-  static ui.Image get image => _image ??= _draw();
+  static Future<void> load() => _loading ??= () async {
+    final buffer = await ui.ImmutableBuffer.fromUint8List(_pixels());
+    final codec = await ui.ImageDescriptor.raw(buffer, width: 192, height: 64, pixelFormat: ui.PixelFormat.rgba8888).instantiateCodec();
+    image = (await codec.getNextFrame()).image;
+    codec.dispose();
+  }().catchError((Object error, StackTrace stack) => campusLog('[festival] action=loadSprites errorType=${error.runtimeType}\n$error\n$stack'));
 
-  static ui.Image _draw() {
-    final recorder = ui.PictureRecorder();
-    final canvas = Canvas(recorder);
-    const white = Color(0xFFFFFFFF);
-    canvas.drawCircle(const Offset(32, 32), 32, Paint()..shader = ui.Gradient.radial(const Offset(32, 32), 32, [white, white.withValues(alpha: .42), white.withValues(alpha: .1), white.withValues(alpha: 0)], [0, .18, .5, 1]));
-    // 四角星：细长的十字光芒（中间亮、往外收尖）加一团小光晕。
-    canvas.drawCircle(const Offset(96, 32), 14, Paint()..shader = ui.Gradient.radial(const Offset(96, 32), 14, [white.withValues(alpha: .7), white.withValues(alpha: 0)]));
-    final star = Path();
-    for (var arm = 0; arm < 4; arm++) {
-      final angle = arm * math.pi / 2;
-      final tip = Offset(96 + math.cos(angle) * 30, 32 + math.sin(angle) * 30);
-      final side = Offset(math.cos(angle + math.pi / 2), math.sin(angle + math.pi / 2)) * 2.6;
-      star
-        ..moveTo(96 + side.dx, 32 + side.dy)
-        ..lineTo(tip.dx, tip.dy)
-        ..lineTo(96 - side.dx, 32 - side.dy)
-        ..close();
+  // 白色、透明度预乘（rgba8888 的约定）。每个像素取 4×4 个采样点平均，边缘自然抗锯齿；形状与渐变同原来用画布画的一样。
+  static Uint8List _pixels() {
+    const width = 192, height = 64, samples = 4;
+    // 渐变：t 在相邻两个停靠点之间线性插值，超出两端取端点。
+    double ramp(double t, List<double> stops, List<double> alphas) {
+      if (t <= stops.first) return alphas.first;
+      for (var index = 1; index < stops.length; index++) {
+        if (t <= stops[index]) return alphas[index - 1] + (alphas[index] - alphas[index - 1]) * (t - stops[index - 1]) / (stops[index] - stops[index - 1]);
+      }
+      return alphas.last;
     }
-    canvas.drawPath(star, Paint()..shader = ui.Gradient.radial(const Offset(96, 32), 30, [white, white.withValues(alpha: .55), white.withValues(alpha: 0)], [0, .35, 1]));
-    canvas.drawRRect(RRect.fromLTRBR(132, 27, 188, 37, const Radius.circular(5)), Paint()..shader = ui.Gradient.linear(const Offset(132, 0), const Offset(188, 0), [white.withValues(alpha: 0), white.withValues(alpha: .45), white], [0, .7, 1]));
-    final picture = recorder.endRecording();
-    final image = picture.toImageSync(192, 64);
-    picture.dispose();
-    return image;
+    // 四角星的四条光芒：底边宽 5.2、长 30 的细三角形（中间亮、往外收尖）。
+    final arms = [
+      for (var arm = 0; arm < 4; arm++)
+        (
+          const Offset(96, 32) + Offset(math.cos(arm * math.pi / 2 + math.pi / 2), math.sin(arm * math.pi / 2 + math.pi / 2)) * 2.6,
+          Offset(96 + math.cos(arm * math.pi / 2) * 30, 32 + math.sin(arm * math.pi / 2) * 30),
+          const Offset(96, 32) - Offset(math.cos(arm * math.pi / 2 + math.pi / 2), math.sin(arm * math.pi / 2 + math.pi / 2)) * 2.6,
+        ),
+    ];
+    double cross(Offset a, Offset b, Offset point) => (b.dx - a.dx) * (point.dy - a.dy) - (b.dy - a.dy) * (point.dx - a.dx);
+    bool inArm((Offset, Offset, Offset) arm, Offset point) {
+      final (a, b, c) = arm;
+      final turns = [cross(a, b, point), cross(b, c, point), cross(c, a, point)];
+      return turns.every((turn) => turn >= 0) || turns.every((turn) => turn <= 0);
+    }
+    final trail = RRect.fromLTRBR(132, 27, 188, 37, const Radius.circular(5));
+    double alphaAt(Offset point) {
+      if (point.dx < 64) {
+        final distance = (point - const Offset(32, 32)).distance;
+        return distance >= 32 ? 0 : ramp(distance / 32, const [0, .18, .5, 1], const [1, .42, .1, 0]);
+      }
+      if (point.dx < 128) {
+        // 光芒压在一团小光晕上（先画光晕、再画光芒的叠加）。
+        final distance = (point - const Offset(96, 32)).distance;
+        final glow = distance >= 14 ? 0.0 : .7 * (1 - distance / 14);
+        final ray = arms.any((arm) => inArm(arm, point)) ? ramp(distance / 30, const [0, .35, 1], const [1, .55, 0]) : 0.0;
+        return ray + glow * (1 - ray);
+      }
+      return trail.contains(point) ? ramp((point.dx - 132) / 56, const [0, .7, 1], const [0, .45, 1]) : 0;
+    }
+    final pixels = Uint8List(width * height * 4);
+    for (var y = 0; y < height; y++) {
+      for (var x = 0; x < width; x++) {
+        var sum = 0.0;
+        for (var row = 0; row < samples; row++) {
+          for (var column = 0; column < samples; column++) {
+            sum += alphaAt(Offset(x + (column + .5) / samples, y + (row + .5) / samples));
+          }
+        }
+        final index = (y * width + x) * 4;
+        pixels.fillRange(index, index + 4, (sum / (samples * samples) * 255).round());
+      }
+    }
+    return pixels;
   }
 }
 
@@ -262,10 +301,11 @@ class RewardParticles {
     _colors.add(color.toARGB32());
   }
 
-  // 加色叠加（光在暗处）。
+  // 加色叠加（光在暗处）；贴图还没上传好时这一帧不画。
   void paint(Canvas canvas) {
-    if (isEmpty) return;
-    canvas.drawRawAtlas(RewardSprites.image, Float32List.fromList(_transforms), Float32List.fromList(_rects), Int32List.fromList(_colors), BlendMode.modulate, null, Paint()..blendMode = BlendMode.plus);
+    final sprites = RewardSprites.image;
+    if (isEmpty || sprites == null) return;
+    canvas.drawRawAtlas(sprites, Float32List.fromList(_transforms), Float32List.fromList(_rects), Int32List.fromList(_colors), BlendMode.modulate, null, Paint()..blendMode = BlendMode.plus);
   }
 }
 

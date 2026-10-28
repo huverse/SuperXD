@@ -108,6 +108,8 @@ class _RewardRevealState extends State<_RewardReveal> with TickerProviderStateMi
     unawaited(widget.theme.prepare().then((_) {
       if (mounted) setState(() {});
     }));
+    // 粒子贴图上传好之前那几帧不画粒子；各层随时钟逐帧重画，好了自然画上，不用重建。
+    unawaited(RewardSprites.load());
   }
 
   @override
