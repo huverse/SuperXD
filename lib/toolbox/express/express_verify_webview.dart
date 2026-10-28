@@ -1,3 +1,5 @@
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -70,7 +72,8 @@ class _ExpressVerifyWebViewState extends State<ExpressVerifyWebView> {
       body: SafeArea(
         child: Stack(
           children: [
-            WebViewWidget(controller: _controller),
+            // 手指落在网页上时拖动全归网页：不然 iOS 页面任意位置右滑返回会抢走横向拖动，滑块验证码拖不动、整页跟着滑走（10-28 iPhone 截图）。
+            WebViewWidget(controller: _controller, gestureRecognizers: {Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new)}),
             if (_loading) const Align(alignment: Alignment.topCenter, child: LinearProgressIndicator(minHeight: 2)),
             if (_error != null)
               Positioned(

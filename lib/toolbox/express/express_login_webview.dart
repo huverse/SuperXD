@@ -1,5 +1,7 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -150,7 +152,8 @@ class _ExpressLoginWebViewState extends State<ExpressLoginWebView> {
       body: SafeArea(
         child: Stack(
           children: [
-            WebViewWidget(controller: _controller),
+            // 拖动全归网页（登录页也会出滑块验证），同 express_verify_webview.dart。
+            WebViewWidget(controller: _controller, gestureRecognizers: {Factory<OneSequenceGestureRecognizer>(EagerGestureRecognizer.new)}),
             if (_loading) const Align(alignment: Alignment.topCenter, child: LinearProgressIndicator(minHeight: 2)),
             if (_error != null)
               Positioned(

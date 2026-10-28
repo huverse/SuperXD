@@ -90,6 +90,20 @@ void main() {
     expect(offenders, isEmpty);
   });
 
+  // 内嵌网页是原生视图，不声明手势时 iOS 的页面任意位置右滑返回（campus_transitions.dart 的 _IosBackSwipe）会抢走网页里的横向拖动：
+  // 10-28 拼多多安全验证的滑块拖不动、整页跟着滑走。用户能操作的网页一律带 EagerGestureRecognizer（取指纹的 1px 隐藏网页套着 IgnorePointer，不算）。
+  test('用户能操作的内嵌网页把拖动交给网页', () {
+    final offenders = <String>[];
+    for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart'))) {
+      final lines = file.readAsLinesSync();
+      for (var index = 0; index < lines.length; index++) {
+        final line = lines[index];
+        if (line.contains('WebViewWidget(') && !line.contains('IgnorePointer(') && !line.contains('EagerGestureRecognizer')) offenders.add('${file.path}:${index + 1}');
+      }
+    }
+    expect(offenders, isEmpty);
+  });
+
   // 只有图标的按钮没有文字，读屏只能读出“按钮”；tooltip同时提供读屏标签和长按提示。
   test('IconButton都带tooltip', () {
     final offenders = <String>[];
