@@ -44,7 +44,7 @@ class BackgroundTransfer implements ToolboxTransfer {
     _downloader.registerCallbacks(
       group: group,
       taskStatusCallback: (update) {
-        // 带上插件给的原因：只记种类分不清是网络、证书还是被系统拦下（iOS 的系统报错都归在 TaskException）。
+        // 带上插件给的原因：只记种类分不清是网络、证书还是被系统拦下。
         // HTTP 错误的描述是响应正文（可能是网页），只记状态码；404 插件不给异常，单独记一条。
         if (update.exception case final exception?) {
           campusLog(
