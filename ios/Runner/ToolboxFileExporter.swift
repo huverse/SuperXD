@@ -2,7 +2,6 @@ import Flutter
 import Photos
 import QuickLook
 import UIKit
-import UniformTypeIdentifiers
 
 // 百宝箱下载的导出、一次性导出（图片与诊断日志包）与打开，对应安卓 ToolboxFileExporter.kt（通道 superxd/toolbox_files）。
 // [人工决策-2026-10-26 20:27:41] iOS 没有公共的 Download 文件夹（用户选定）：图片与视频存进系统相册，只申请「添加到相册」；
@@ -90,33 +89,40 @@ final class ToolboxFileExporter: NSObject, QLPreviewControllerDataSource {
         return
       }
       worker.async {
-        var converted: URL?
+        // 交给相册的文件放进临时目录下的一个文件夹，存完（成败都）连夹删掉。
+        let staging = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer { try? FileManager.default.removeItem(at: staging) }
         do {
-          var file = source
+          try FileManager.default.createDirectory(at: staging, withIntermediateDirectories: true)
           var name = filename
+          let file: URL
           if mime == "image/webp" {
             guard let data = UIImage(contentsOfFile: source.path)?.jpegData(compressionQuality: 0.95) else { throw ExportError.invalid }
             name = (filename as NSString).deletingPathExtension + ".jpg"
-            file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".jpg")
+            file = staging.appendingPathComponent(name)
             try data.write(to: file, options: .atomic)
-            converted = file
+          } else {
+            // 下载的临时文件扩展名是 .part，相册按文件扩展名认资源：只用 uniformTypeIdentifier 指明类型照样报
+            // PHPhotosErrorDomain 3302（资源无效，10-28 iPhone 日志）。换成带正确扩展名的文件名再交出去：
+            // 同一个应用容器里硬链接不复制数据，大视频也是瞬间；系统不让链接时退回复制。
+            file = staging.appendingPathComponent(filename)
+            do {
+              try FileManager.default.linkItem(at: source, to: file)
+            } catch {
+              try FileManager.default.copyItem(at: source, to: file)
+            }
           }
           var placeholder: PHObjectPlaceholder?
-          // 下载的临时文件扩展名是 .part，相册不告诉它类型就按扩展名猜、认不出（10-28 iPhone 上图片视频全存不进去），按 mime 明说。
-          let contentType = UTType(mimeType: mime == "image/webp" ? "image/jpeg" : mime)?.identifier
           try PHPhotoLibrary.shared().performChangesAndWait {
             let request = PHAssetCreationRequest.forAsset()
             let options = PHAssetResourceCreationOptions()
             options.originalFilename = name
-            options.uniformTypeIdentifier = contentType
             request.addResource(with: Self.videoMimes.contains(mime) ? .video : .photo, fileURL: file, options: options)
             placeholder = request.placeholderForCreatedAsset
           }
-          if let converted { try? FileManager.default.removeItem(at: converted) }
           let identifier = placeholder?.localIdentifier ?? ""
           DispatchQueue.main.async { result("ph://\(identifier)") }
         } catch {
-          if let converted { try? FileManager.default.removeItem(at: converted) }
           // 系统错误域与错误号交回 Dart 记进本机日志（NSLog 只进系统控制台，用户导不出来）。
           let failure = error as NSError
           NSLog("[ToolboxFiles] action=save_photo errorType=%@ code=%ld", failure.domain, failure.code)
