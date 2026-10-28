@@ -11,6 +11,7 @@ import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/toolbox/download/channel_file_publisher.dart';
 import 'package:superxd/toolbox/download/background_transfer.dart';
+import 'package:superxd/toolbox/download/http_transfer.dart';
 import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
@@ -179,7 +180,8 @@ class ToolboxRuntime with WidgetsBindingObserver {
     final directory = Directory(path.join(base.path, 'downloads'));
     final downloads = ToolboxDownloadManager(
       store: store,
-      transfer: BackgroundTransfer(directory.path),
+      // iOS 自签包里系统后台下载建不了文件，改在进程内下载（人工决策见 http_transfer.dart）。
+      transfer: Platform.isIOS ? HttpTransfer(directory.path) : BackgroundTransfer(directory.path),
       publisher: ChannelFilePublisher(),
       directory: directory,
       resources: resources,
