@@ -15,7 +15,7 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
   ToolboxModule(
     id: ShortVideoService.serviceId,
-    name: '短视频解析',
+    name: '视频解析',
     icon: CampusIcons.video,
     resource: runtime.resourceSpecifications[ShortVideoService.serviceId],
     builder: (context) => ShortVideoPage(runtime: runtime),

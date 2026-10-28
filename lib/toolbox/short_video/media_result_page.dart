@@ -80,6 +80,20 @@ class _MediaResultPageState extends State<MediaResultPage> {
     }
   }
 
+  // [人工决策-2026-10-28 23:02:10] 用户选「结果页显示画质与大小」（BugPK 抖音接口多给的字段，解析逻辑不变）：
+  // 来源给了哪项写哪项（如「原画 · 1.2 MB · 0:13 · 1080×1920」），都没给就不占一行。
+  String? _details(MediaResource media) {
+    final parts = [
+      ?media.quality,
+      if (media.bytes case final bytes?) '${(bytes / 1048576).toStringAsFixed(1)} MB',
+      if (media.duration case final duration?) _clock((duration.inMilliseconds / 1000).round()),
+      if ((media.width, media.height) case (final int width, final int height)) '$width×$height',
+    ];
+    return parts.isEmpty ? null : parts.join(' · ');
+  }
+
+  String _clock(int seconds) => '${seconds ~/ 60}:${(seconds % 60).toString().padLeft(2, '0')}';
+
   Future<void> _copy(Uri uri) async {
     try {
       await Clipboard.setData(ClipboardData(text: uri.toString()));
@@ -457,6 +471,14 @@ class _MediaResultPageState extends State<MediaResultPage> {
                                           .textTheme
                                           .titleMedium,
                                     ),
+                                    if (_details(media) case final details?)
+                                      Padding(
+                                        padding: const EdgeInsets.only(top: 4),
+                                        child: Text(
+                                          details,
+                                          style: TextStyle(color: CampusPalette.of(context).onSurfaceVariant),
+                                        ),
+                                      ),
                                     _controls(
                                       media,
                                       latest[media.id],

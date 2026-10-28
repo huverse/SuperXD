@@ -299,7 +299,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
   @override
   Widget build(BuildContext context) => Scaffold(
     appBar: AppBar(
-      title: const Text('短视频解析'),
+      title: const Text('视频解析'),
       leading: IconButton(
         tooltip: '返回',
         onPressed: () {

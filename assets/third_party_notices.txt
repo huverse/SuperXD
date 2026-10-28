@@ -88,7 +88,7 @@ GPL 的例外：下文第四节所述 math-curve-loaders 改编部分（lib/them
 
 flutter_video_parse（https://github.com/zhao004/flutter_video_parse，参考版本 b9ffe59ae4c9fe4b3e9c75b047538a267fed8ee9）与 dart_video_parse（https://github.com/zhao004/dart_video_parse，参考版本 191e42cf08b20663e65c00a02f706c0b9ecf0ffc）
 许可：MIT，Copyright (c) 2026 zhao004
-用途：百宝箱短视频解析的媒体模型、来源适配与交互参考。本应用未内置它们的全部解析源；第三方服务和作品的授权不随代码许可授予。
+用途：百宝箱视频解析的媒体模型、来源适配与交互参考。本应用未内置它们的全部解析源；第三方服务和作品的授权不随代码许可授予。
 
 ChaoxingSignFaker（https://github.com/aquamarine5/ChaoxingSignFaker，参考版本 30e1ebe43ff2b2f62fac721a7311e8ca3cfd5cdf）
 许可：AGPL-3.0

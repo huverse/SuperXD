@@ -1,6 +1,6 @@
 # toolbox 百宝箱
 
-定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了三个工具：短视频解析与下载、学习通签到、快递（拼多多身份码与快递查询）。学习通的文件与规则在 chaoxing/CLAUDE.md，快递在 express/CLAUDE.md，download 与 short_video 两个子目录登记在本文件。
+定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了三个工具：视频解析与下载、学习通签到、快递（拼多多身份码与快递查询）。学习通的文件与规则在 chaoxing/CLAUDE.md，快递在 express/CLAUDE.md，download 与 short_video 两个子目录登记在本文件。
 
 # 文件职责
 
@@ -26,12 +26,12 @@
   - parse_source.dart：解析来源端口：ParseSource（id、域名、适配版本、授权版本、最小请求间隔）与实现接口 ParseProvider。
   - parse_coordinator.dart：解析编排 ParseCoordinator：总预算 30 秒、单次最多 25 秒；成功结果进最多 20 条、保留 2 分钟的 LRU；按来源限制间隔，限流时按对方给的时间退避；自动模式最多依次试 3 个已启用且已同意的来源（[人工决策] 在文件内）。
   - parse_http.dart：解析用的 HTTP 封装：25 秒超时、响应上限 1MB，识别限流，退避限制在 1–300 秒。
-  - bugpk_video_parser.dart：BugPK 来源的实现。
+  - bugpk_video_parser.dart：BugPK 来源的实现：抖音链接先调 /api/douyin，失败再退回聚合接口 /api/short_videos；顶层的画质（original 记为原画）、大小、时长与宽高按外部输入核对范围后只挂在主视频上。
   - parse_result.dart：解析结果 ParseResult、失败类型 ParseFailure 与失败码、每次尝试的记录。
-  - media_resource.dart：结果里的单项媒体 MediaResource（视频、图片、音频），下载时由服务转成通用下载项。
+  - media_resource.dart：结果里的单项媒体 MediaResource（视频、图片、音频，可带来源给的画质、大小、时长与分辨率），下载时由服务转成通用下载项。
   - short_video_controller.dart：短视频页状态：来源选择与启用、历史开关、解析与取消；从历史或下载任务重开时按原来源解析，不改写用户保存的来源选择。
   - short_video_page.dart：短视频页：首次使用来源前要用户同意；最近解析与下载入口可直达结果页；解析设置在底部弹层（[人工决策] 在文件内）。autoParse 打开好友分享的作品时直接开始解析，首次使用来源仍先征得本人同意。
-  - media_result_page.dart：结果页：预览与逐项下载，下载按钮原地切换为进度、暂停继续，完成后变为打开；注入了 shareVideo 时可分享给好友（只发作品原链接与标题作者）。汇总「进行中」含排队项（[人工决策] 在文件内）。
+  - media_result_page.dart：结果页：预览与逐项下载，下载按钮原地切换为进度、暂停继续，完成后变为打开；注入了 shareVideo 时可分享给好友（只发作品原链接与标题作者）。汇总「进行中」含排队项；视频那项下面写来源给的画质、大小、时长与分辨率（两条 [人工决策] 都在文件内）。
   - media_preview.dart：视频预览 MediaPreview 与图集预览 GalleryPreview。
   - media_image.dart：网络图片 MediaImage，加载失败后点按重试，不自动循环请求。
   - parse_history_page.dart：解析历史全部页 ParseHistoryPage 与条目 ParseHistoryTile，可删除单条与清空。
@@ -61,4 +61,4 @@
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/toolbox android/app/src
-- 本目录（不含学习通）的标记位于：免登录与设备级归属（toolbox_runtime.dart）、资源卸载范围（toolbox_resource_manager.dart）、单点登记与工具 id 统一、好友分享走注册表（toolbox_catalog.dart）、卸载确认与清除数据（toolbox_page.dart）、下载管理通用化（toolbox_download_manager.dart）、iOS 改在进程内下载（http_transfer.dart）、短视频服务化与清除数据（short_video_service.dart）、历史默认开启（short_video_store.dart）、来源选择（parse_coordinator.dart）、汇总「进行中」含排队项（media_result_page.dart、downloads_page.dart）、解析设置底部弹层（short_video_page.dart）；公共目录导出在 ToolboxFileExporter.kt。
+- 本目录（不含学习通）的标记位于：免登录与设备级归属（toolbox_runtime.dart）、资源卸载范围（toolbox_resource_manager.dart）、单点登记与工具 id 统一、好友分享走注册表（toolbox_catalog.dart）、卸载确认与清除数据（toolbox_page.dart）、下载管理通用化（toolbox_download_manager.dart）、iOS 改在进程内下载（http_transfer.dart）、短视频服务化与清除数据（short_video_service.dart）、历史默认开启（short_video_store.dart）、来源选择（parse_coordinator.dart）、汇总「进行中」含排队项（media_result_page.dart、downloads_page.dart）、结果页显示画质与大小（media_result_page.dart）、解析设置底部弹层（short_video_page.dart）；公共目录导出在 ToolboxFileExporter.kt。
