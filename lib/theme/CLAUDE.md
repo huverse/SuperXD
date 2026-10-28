@@ -16,7 +16,7 @@
   - campus_transitions.dart：统一时长（进入 360ms、返回 320ms、弹层 300ms；iOS 的页面推入与返回是系统的 500ms）与全部路由、弹窗：
     - campusPage 与 CampusPageRoute 是唯一的页面路由（不直接用 MaterialPageRoute，code_conventions_test.dart 守护；CampusPageRoute 在开发者模式下按页面类名记推入与返回）；页面转场新旧页整屏并排平移、不淡入淡出。页面推在弹窗或弹层之上时，进出转场期间垫一份同相位背景副本盖住弹窗（页面透明，不垫会叠成两层），副本拍成快照只贴图（直接画每帧要重画几层全屏渐变），停稳即撤。
     - 跟手返回 _CampusBackGesture 只让最前面的页面响应，不用路由自带的 handleCommitBackGesture（它会把进度重置到 1 再倒放）。
-    - iOS 的页面转场同系统推入（_IosPageSlide：新页面盖进来带左边缘阴影、旧页面左移三分之一并变暗，新页面转场期间垫背景副本；曲线同 CupertinoPageRoute，底栏跟着走用同一对曲线），跟手返回是页面任意位置右滑（_IosBackSwipe，松手按速度与位置决定，收尾 350ms，里层横向手势优先）；[人工决策] 在 _IosPageSlide 上方。
+    - iOS 的页面转场同系统推入（_IosPageSlide：新页面盖进来带左边缘阴影、旧页面左移三分之一并变暗，新页面转场期间垫背景副本；曲线同 CupertinoPageRoute，底栏跟着走用同一对曲线），跟手返回是页面任意位置右滑（_IosBackSwipe，松手按速度与位置决定，收尾 350ms，里层横向手势优先；内嵌网页、地图这类原生视图不进 Flutter 的手势竞争，要自己带 EagerGestureRecognizer，code_conventions_test.dart 守护网页）；[人工决策] 在 _IosPageSlide 上方。
     - CampusEntryFade 是按代次重建的账号应用入场（盖背景副本淡出）。
     - 共享弹窗 showCampusNotice、showCampusConfirm（destructive 时主按钮警示红）与玻璃弹窗 CampusGlassDialog（按钮一到两个等宽并排，任一个放不下半宽或三个及以上时竖排、主操作在最上，[人工决策] 在操作区；全应用弹窗都用它，日期选择器除外）。
     - showCampusToast 提示条：同一时刻一条，新的顶掉旧的（排队的一起清掉）；在弹层、弹窗、菜单里调用时插进根 Overlay 浮在最上层（[人工决策] 在文件内；不给弹层套 Scaffold，它的 Material 会吃掉点按）。
@@ -72,7 +72,7 @@
 - 背景、配色与深色：atmosphere_test.dart（含 iOS 云雾每秒约 20 次、低电量停住、半分辨率贴图同直接画对照、颗粒拼贴同逐点画对照）、dark_mode_test.dart、wallpaper_test.dart。
 - 动效与转场：campus_motion_test.dart、transition_sync_test.dart（含 iOS 推入与任意位置右滑返回）、account_lifecycle_test.dart（入场与转场中间帧）。
 - 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器、点状态栏回顶、iOS 拖动收起键盘）；typesetting_test.dart（测量与 Text 同口径含粗体文本与字距、均衡换行、分段控件按字分宽、说明行的点不单独成行）。
-- 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、toImageSync 只用于云雾贴图、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
+- 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
 
 # 人工决策检索
 
