@@ -94,12 +94,13 @@ flutter test
 flutter run
 ```
 
-默认构建开发包（包名 `com.superxd.superxd`），可以和 Releases 里的 SuperXD Alpha 同时安装，数据不共享。两个可选的构建参数，不传时对应功能不可用，其余不受影响：
+默认构建开发包（包名 `com.superxd.superxd`），可以和 Releases 里的 SuperXD Alpha 同时安装，数据不共享。三个可选的构建参数，不传时对应功能不可用，其余不受影响：
 
 | 参数 | 用途 |
 | --- | --- |
 | `--dart-define=SUPERXD_RELAY=http://地址:端口` | 中转服务：私信、学习通代签、应用内更新等 |
 | `--dart-define=SUPERXD_AMAP_KEY=<key>` | 学习通位置签到的高德地图；key 要绑定本机调试签名的 SHA1 与包名，调试与发布签名各申请一个 |
+| `--dart-define=SUPERXD_SVPARSE_KEY=<key>` | 视频解析的 BugPK 新版来源（api-new.ifphp.com），不传时只有 BugPK 一个来源 |
 
 中转服务（NestJS + MySQL + Redis）的开发、测试与部署见 [server/README.md](server/README.md)；发布签名、版本与发行流程见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
