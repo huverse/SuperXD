@@ -11,7 +11,7 @@
 
 # 百宝箱媒体验证
 
-当前只接入BugPK；自动/手动是可插拔编排能力，不表示已经集成第二家服务。新增来源实现lib/toolbox/short_video/parse_source.dart端口并在设备级组合根注册；设置服务域名、适配版本和授权版本，不复用教务Cookie。只在用户明确授权后用真实作品联调，离线测试使用合成数据。
+当前接入两个来源：BugPK 新版（api-new.ifphp.com 的 svparse，要密钥，构建时传 --dart-define=SUPERXD_SVPARSE_KEY，没传的包不登记它）与 BugPK（api.bugpk.com），两者回同一种统一 JSON 格式，归一化共用 lib/toolbox/short_video/media_json.dart。新增来源实现lib/toolbox/short_video/parse_source.dart端口并在 ShortVideoService.providers 按顺序登记；设置服务域名、适配版本和授权版本，不复用教务Cookie。只在用户明确授权后用真实作品联调，离线测试使用合成数据。
 
 tool/verify_toolbox.dart为手动Android原生下载验证入口，不进入正式main或CI。视频播放若使本机Android Emulator在libcuda.so崩溃，可只对模拟器进程设置ANDROID_EMU_MEDIA_DECODER_CUDA=0；这一环境规避不代表真机性能验收。
 
@@ -33,7 +33,7 @@ tool/verify_toolbox.dart为手动Android原生下载验证入口，不进入正�
 ```sh
 ORG_GRADLE_PROJECT_superxdSigningProperties=/仓库外的绝对路径/signing.properties \
   flutter build apk --release --flavor alpha --split-per-abi --split-debug-info=build/release_symbols \
-  --dart-define=SUPERXD_RELAY=http://中转服务器地址:端口 --dart-define=SUPERXD_AMAP_KEY=<高德key>
+  --dart-define=SUPERXD_RELAY=http://中转服务器地址:端口 --dart-define=SUPERXD_AMAP_KEY=<高德key> --dart-define=SUPERXD_SVPARSE_KEY=<svparse密钥>
 ```
 
 - 签名配置只从上述外部properties读取，包含storeFile、keyAlias、storePassword、keyPassword；storeFile可相对配置文件。密钥文件和密码在仓库外限制访问并离线备份（流水线用的是release环境里的副本），禁止写进命令行、日志、Git或Issue。release缺少有效配置直接失败，不回退debug签名。丢失密钥就无法覆盖升级，只能换签名并让用户卸载重装（1.0.0-alpha.2即因此更换）；换签名时同步改工作流的RELEASE_CERT_SHA256与release环境的机密。

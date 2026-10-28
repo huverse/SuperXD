@@ -119,9 +119,10 @@ jobs:
           ORG_GRADLE_PROJECT_superxdSigningProperties: ${{ runner.temp }}/signing/signing.properties
           SUPERXD_RELAY: ${{ secrets.RELAY_URL }}
           SUPERXD_AMAP_KEY: ${{ secrets.AMAP_KEY }}
+          SUPERXD_SVPARSE_KEY: ${{ secrets.SVPARSE_KEY }}
         run: |
           flutter build apk --release --flavor alpha --split-per-abi --split-debug-info=build/release_symbols \
-            --dart-define=SUPERXD_RELAY="$SUPERXD_RELAY" --dart-define=SUPERXD_AMAP_KEY="$SUPERXD_AMAP_KEY"
+            --dart-define=SUPERXD_RELAY="$SUPERXD_RELAY" --dart-define=SUPERXD_AMAP_KEY="$SUPERXD_AMAP_KEY" --dart-define=SUPERXD_SVPARSE_KEY="$SUPERXD_SVPARSE_KEY"
       - name: 删除签名配置
         if: always()
         run: rm -rf "$RUNNER_TEMP/signing"
@@ -192,7 +193,8 @@ jobs:
       - name: 构建
         env:
           SUPERXD_RELAY: ${{ secrets.RELAY_URL }}
-        run: flutter build ios --release --no-codesign --flavor alpha --dart-define=SUPERXD_RELAY="$SUPERXD_RELAY"
+          SUPERXD_SVPARSE_KEY: ${{ secrets.SVPARSE_KEY }}
+        run: flutter build ios --release --no-codesign --flavor alpha --dart-define=SUPERXD_RELAY="$SUPERXD_RELAY" --dart-define=SUPERXD_SVPARSE_KEY="$SUPERXD_SVPARSE_KEY"
       - name: 核对与打包
         run: |
           set -euo pipefail

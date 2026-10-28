@@ -5,8 +5,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
+import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/toolbox/short_video/media_json.dart';
 import 'package:superxd/toolbox/short_video/media_resource.dart';
 import 'package:superxd/toolbox/short_video/bugpk_video_parser.dart';
+import 'package:superxd/toolbox/short_video/svparse_video_parser.dart';
 import 'package:superxd/toolbox/short_video/parse_coordinator.dart';
 import 'package:superxd/toolbox/short_video/parse_http.dart';
 import 'package:superxd/toolbox/short_video/parse_result.dart';
@@ -110,6 +113,73 @@ void main() {
     }, input).videos.single;
     expect((odd.quality, odd.bytes, odd.duration, odd.width, odd.height), (null, null, null, null, null));
     parser.close();
+  });
+  test('备用视频各带自己的画质、大小与宽高；画质只认原画、1080p 这类与 2K/4K', () {
+    final result = normalizeMediaJson({
+      'type': 'video',
+      'url': 'https://cdn.example.com/a.mp4',
+      'quality': '4k',
+      'video_backup': [
+        {'url': 'https://cdn.example.com/b.mp4', 'label': '1080P高清', 'quality': '1080P', 'size': 1238455, 'width': 1080, 'height': 1920},
+        {'url': 'https://cdn.example.com/c.mp4', 'quality': 'normal_720_0', 'size': 0},
+      ],
+    }, input, 'svparse');
+    final [main, first, second] = result.videos.toList();
+    expect(main.quality, '4K');
+    expect((first.label, first.quality, first.bytes, first.width, first.height), ('备用1', '1080p', 1238455, 1080, 1920));
+    expect((second.quality, second.bytes), (null, null));
+    expect(result.providerId, 'svparse');
+  });
+  test('BugPK 新版带密钥请求 svparse，业务成功看 JSON 里的 code', () async {
+    late Uri requested;
+    final parser = SvparseVideoParser(
+      key: 'test-key',
+      client: MockClient((request) async {
+        requested = request.url;
+        expect(request.headers.containsKey('cookie'), isFalse);
+        return http.Response(jsonEncode({'code': 200, 'data': {'type': 'video', 'url': 'https://cdn.example.com/a.mp4', 'quality': 'original'}}), 200);
+      }),
+    );
+    final result = await parser.resolve(input, ToolboxCancellation());
+    expect((requested.host, requested.path), ('api-new.ifphp.com', '/api/svparse'));
+    expect(requested.queryParameters, {'key': 'test-key', 'url': input.toString()});
+    expect((result.providerId, result.videos.single.quality), ('svparse', '原画'));
+    parser.close();
+  });
+  test('BugPK 新版 HTTP 200 里的业务失败不当成功：429 退避，其余提示无法解析，日志只记业务码', () async {
+    final logs = <String>[];
+    final previousLog = campusLog;
+    campusLog = logs.add;
+    addTearDown(() => campusLog = previousLog);
+    Future<ParseFailure> failure(int code) async {
+      final parser = SvparseVideoParser(
+        key: 'test-key',
+        client: MockClient((_) async => http.Response.bytes(utf8.encode(jsonEncode({'code': code, 'msg': '没有找到有效内容', 'data': []})), 200)),
+      );
+      try {
+        await parser.resolve(input, ToolboxCancellation());
+        fail('业务失败不该当成功');
+      } on ParseFailure catch (error) {
+        return error;
+      } finally {
+        parser.close();
+      }
+    }
+
+    final limited = await failure(429);
+    expect((limited.code, limited.retryAfter), (ParseFailureCode.rateLimited, const Duration(seconds: 30)));
+    expect((await failure(404)).code, ParseFailureCode.provider);
+    expect(logs, ['[Svparse] action=resolve errorType=BusinessCode code=429', '[Svparse] action=resolve errorType=BusinessCode code=404']);
+    expect(logs.join(), isNot(contains('test-key')));
+  });
+  test('来源按顺序登记：带密钥时 BugPK 新版在前，没带只有 BugPK', () {
+    final withKey = ShortVideoService.providers('test-key');
+    final withoutKey = ShortVideoService.providers('');
+    expect([for (final provider in withKey) provider.source.id], ['svparse', 'bugpk']);
+    expect([for (final provider in withoutKey) provider.source.id], ['bugpk']);
+    for (final provider in [...withKey, ...withoutKey]) {
+      provider.close();
+    }
   });
   test('陌生响应、业务错误、非HTTPS、内网及清单拒绝', () async {
     for (final body in [

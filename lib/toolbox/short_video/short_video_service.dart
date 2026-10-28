@@ -5,14 +5,16 @@ import 'package:superxd/toolbox/short_video/bugpk_video_parser.dart';
 import 'package:superxd/toolbox/short_video/media_resource.dart';
 import 'package:superxd/toolbox/short_video/parse_coordinator.dart';
 import 'package:superxd/toolbox/short_video/parse_result.dart';
+import 'package:superxd/toolbox/short_video/parse_source.dart';
 import 'package:superxd/toolbox/short_video/short_video_store.dart';
+import 'package:superxd/toolbox/short_video/svparse_video_parser.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_store.dart';
 
 // [人工决策-2026-10-10 16:22:46] 短视频与学习通同构：解析来源、偏好与历史都归它自己（独立库 short_video.db，从框架库一次性迁移），
 // 框架不再替它组装解析器；用户选定「服务化，数据迁独立库」。
-// 短视频的服务：自己组装解析来源（现在只有 BugPK）、打开自己的库（偏好与解析历史），经框架的下载管理下载、
+// 短视频的服务：自己组装解析来源（BugPK 新版与 BugPK）、打开自己的库（偏好与解析历史），经框架的下载管理下载、
 // 经框架库记各来源的同意。框架（ToolboxRuntime）不认识这里的任何类型。
 class ShortVideoService implements ToolboxService {
   ShortVideoService({required this.coordinator, required this.store, required this.downloads, required this.consents});
@@ -29,8 +31,14 @@ class ShortVideoService implements ToolboxService {
   static const originSourceUrl = 'sourceUrl';
   static const originProviderId = 'providerId';
 
+  // 解析来源按顺序登记，自动解析也按这个顺序试：带了 svparse 密钥的包先试 BugPK 新版，再试 BugPK（人工决策见 svparse_video_parser.dart）。
+  static List<ParseProvider> providers(String svparse) => [
+    if (svparse.isNotEmpty) SvparseVideoParser(key: svparse),
+    BugpkVideoParser(),
+  ];
+
   static Future<ShortVideoService> open(ToolboxServiceContext context) async => ShortVideoService(
-    coordinator: ParseCoordinator([BugpkVideoParser()]),
+    coordinator: ParseCoordinator(providers(svparseKey)),
     store: await ShortVideoStore.open(path.join(context.base.path, 'short_video.db'), legacy: context.store),
     downloads: context.downloads,
     consents: context.store,

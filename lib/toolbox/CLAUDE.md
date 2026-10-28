@@ -21,12 +21,14 @@
   - downloads_page.dart：下载管理页 DownloadsPage，只列给定工具 id 的任务，按组展示，整组操作在⋯里，条目顺序稳定；给了 reopenLabel 时失败任务可交回调用方重做。
   - download_status.dart：结果页与下载页共用的状态文案、进度条 DownloadProgress 与操作按钮 downloadActions。
 - short_video 短视频：
-  - short_video_service.dart：短视频的服务 ShortVideoService：自己组装解析来源（现在只有 BugPK）、打开自己的库、经框架下载管理下载（toolId 为 short_video）；清除数据取消并删本工具的下载记录、删库、撤各来源同意，已导出文件保留（[人工决策] 在文件内）。
+  - short_video_service.dart：短视频的服务 ShortVideoService：自己组装解析来源（providers 按顺序登记，带密钥时 BugPK 新版在前、BugPK 在后，自动解析也按这个顺序）、打开自己的库、经框架下载管理下载（toolId 为 short_video）；清除数据取消并删本工具的下载记录、删库、撤各来源同意，已导出文件保留（[人工决策] 在文件内）。
   - short_video_store.dart：short_video.db：偏好（解析来源、参与自动解析的来源、历史开关）与解析历史；第一次打开从框架库搬旧数据（先写后删、不覆盖已有的）；destroy 删库。
   - parse_source.dart：解析来源端口：ParseSource（id、域名、适配版本、授权版本、最小请求间隔）与实现接口 ParseProvider。
   - parse_coordinator.dart：解析编排 ParseCoordinator：总预算 30 秒、单次最多 25 秒；成功结果进最多 20 条、保留 2 分钟的 LRU；按来源限制间隔，限流时按对方给的时间退避；自动模式最多依次试 3 个已启用且已同意的来源（[人工决策] 在文件内）。
   - parse_http.dart：解析用的 HTTP 封装：25 秒超时、响应上限 1MB，识别限流，退避限制在 1–300 秒。
-  - bugpk_video_parser.dart：BugPK 来源的实现：抖音链接先调 /api/douyin，失败再退回聚合接口 /api/short_videos；顶层的画质（original 记为原画）、大小、时长与宽高按外部输入核对范围后只挂在主视频上。
+  - bugpk_video_parser.dart：BugPK 来源的实现：抖音链接先调 /api/douyin，失败再退回聚合接口 /api/short_videos。
+  - svparse_video_parser.dart：BugPK 新版来源（api-new.ifphp.com 的 svparse，30 多个平台）：密钥 svparseKey 只在构建时经 --dart-define=SUPERXD_SVPARSE_KEY 注入、不进仓库，没带的包不登记；业务成功看 JSON 的 code（200），429 按限流退避（[人工决策] 在文件头）。
+  - media_json.dart：两个来源共用的统一 JSON 格式归一化 normalizeMediaJson：主视频与每个备用视频带上来源给的画质（原画、1080p 这类，其余档名不展示）、大小、时长与宽高，按外部输入核对范围；媒体地址只认公网 https。
   - parse_result.dart：解析结果 ParseResult、失败类型 ParseFailure 与失败码、每次尝试的记录。
   - media_resource.dart：结果里的单项媒体 MediaResource（视频、图片、音频，可带来源给的画质、大小、时长与分辨率），下载时由服务转成通用下载项。
   - short_video_controller.dart：短视频页状态：来源选择与启用、历史开关、解析与取消；从历史或下载任务重开时按原来源解析，不改写用户保存的来源选择。
@@ -61,4 +63,4 @@
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/toolbox android/app/src
-- 本目录（不含学习通）的标记位于：免登录与设备级归属（toolbox_runtime.dart）、资源卸载范围（toolbox_resource_manager.dart）、单点登记与工具 id 统一、好友分享走注册表（toolbox_catalog.dart）、卸载确认与清除数据（toolbox_page.dart）、下载管理通用化（toolbox_download_manager.dart）、iOS 改在进程内下载（http_transfer.dart）、短视频服务化与清除数据（short_video_service.dart）、历史默认开启（short_video_store.dart）、来源选择（parse_coordinator.dart）、汇总「进行中」含排队项（media_result_page.dart、downloads_page.dart）、结果页显示画质与大小（media_result_page.dart）、解析设置底部弹层（short_video_page.dart）；公共目录导出在 ToolboxFileExporter.kt。
+- 本目录（不含学习通）的标记位于：免登录与设备级归属（toolbox_runtime.dart）、资源卸载范围（toolbox_resource_manager.dart）、单点登记与工具 id 统一、好友分享走注册表（toolbox_catalog.dart）、卸载确认与清除数据（toolbox_page.dart）、下载管理通用化（toolbox_download_manager.dart）、iOS 改在进程内下载（http_transfer.dart）、短视频服务化与清除数据（short_video_service.dart）、历史默认开启（short_video_store.dart）、来源选择（parse_coordinator.dart）、接入 BugPK 新版（svparse_video_parser.dart）、汇总「进行中」含排队项（media_result_page.dart、downloads_page.dart）、结果页显示画质与大小（media_result_page.dart）、解析设置底部弹层（short_video_page.dart）；公共目录导出在 ToolboxFileExporter.kt。
