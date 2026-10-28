@@ -2,6 +2,7 @@ import Flutter
 import Photos
 import QuickLook
 import UIKit
+import UniformTypeIdentifiers
 
 // 百宝箱下载的导出、一次性导出（图片与诊断日志包）与打开，对应安卓 ToolboxFileExporter.kt（通道 superxd/toolbox_files）。
 // [人工决策-2026-10-26 20:27:41] iOS 没有公共的 Download 文件夹（用户选定）：图片与视频存进系统相册，只申请「添加到相册」；
@@ -101,10 +102,13 @@ final class ToolboxFileExporter: NSObject, QLPreviewControllerDataSource {
             converted = file
           }
           var placeholder: PHObjectPlaceholder?
+          // 下载的临时文件扩展名是 .part，相册不告诉它类型就按扩展名猜、认不出（10-28 iPhone 上图片视频全存不进去），按 mime 明说。
+          let contentType = UTType(mimeType: mime == "image/webp" ? "image/jpeg" : mime)?.identifier
           try PHPhotoLibrary.shared().performChangesAndWait {
             let request = PHAssetCreationRequest.forAsset()
             let options = PHAssetResourceCreationOptions()
             options.originalFilename = name
+            options.uniformTypeIdentifier = contentType
             request.addResource(with: Self.videoMimes.contains(mime) ? .video : .photo, fileURL: file, options: options)
             placeholder = request.placeholderForCreatedAsset
           }
@@ -113,8 +117,10 @@ final class ToolboxFileExporter: NSObject, QLPreviewControllerDataSource {
           DispatchQueue.main.async { result("ph://\(identifier)") }
         } catch {
           if let converted { try? FileManager.default.removeItem(at: converted) }
-          NSLog("[ToolboxFiles] action=save_photo errorType=%@", String(describing: type(of: error)))
-          DispatchQueue.main.async { result(FlutterError(code: "SAVE_FAILED", message: "保存失败，请重试", details: nil)) }
+          // 系统错误域与错误号交回 Dart 记进本机日志（NSLog 只进系统控制台，用户导不出来）。
+          let failure = error as NSError
+          NSLog("[ToolboxFiles] action=save_photo errorType=%@ code=%ld", failure.domain, failure.code)
+          DispatchQueue.main.async { result(FlutterError(code: "SAVE_FAILED", message: "保存失败，请重试", details: "\(failure.domain) \(failure.code)")) }
         }
       }
     }
