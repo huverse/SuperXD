@@ -1,6 +1,7 @@
 import 'package:flutter/services.dart';
 
 import 'package:superxd/toolbox/toolbox_models.dart';
+import 'package:superxd/domain/campus_log.dart';
 
 class ChannelFilePublisher implements ToolboxFilePublisher {
   static const _channel = MethodChannel('superxd/toolbox_files');
@@ -11,13 +12,19 @@ class ChannelFilePublisher implements ToolboxFilePublisher {
     required String filename,
     required String mimeType,
   }) async {
-    final value = await _channel.invokeMethod<String>('publish', {
-      'id': id,
-      'source': source,
-      'filename': filename,
-      'mimeType': mimeType,
-    });
-    return value == null ? null : Uri.parse(value);
+    try {
+      final value = await _channel.invokeMethod<String>('publish', {
+        'id': id,
+        'source': source,
+        'filename': filename,
+        'mimeType': mimeType,
+      });
+      return value == null ? null : Uri.parse(value);
+    } on PlatformException catch (error) {
+      // 原生的错误码（没权限、相册拒收、参数不对）与系统错误号记下来，堆栈由下载管理记；只记种类分不清为什么存不进去。
+      campusLog('[ToolboxFiles] action=publish errorType=${error.code} details=${error.details}');
+      rethrow;
+    }
   }
 
   @override

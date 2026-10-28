@@ -158,7 +158,8 @@ class _ToolboxPageState extends State<ToolboxPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(module.name, style: const TextStyle(fontSize: 16)),
-                if (task != null) ...[
+                // 只在排队或传输时显示：保存失败待重试、暂停这些不在走的，进度停在原处，挂一条线说明不了什么。
+                if (task != null && task.transferring) ...[
                   const SizedBox(height: 8),
                   LinearProgressIndicator(
                     value: task.totalBytes > 0 ? task.progress : null,

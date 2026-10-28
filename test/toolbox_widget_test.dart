@@ -2,12 +2,15 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/toolbox/download/channel_file_publisher.dart';
 import 'package:superxd/toolbox/download/download_status.dart';
 import 'package:superxd/toolbox/download/downloads_page.dart';
 import 'package:superxd/toolbox/short_video/parse_history_page.dart';
@@ -98,6 +101,40 @@ void main() {
     final reopened = await runtime.service<_CountingService>('counting');
     expect(identical(reopened, first), isFalse);
     expect(opened, hasLength(2));
+  });
+
+  testWidgets('首页卡片只在下载中显示进度条，保存失败待重试时不挂一条满格的线', (tester) async {
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ToolboxPage(runtime: fixture.runtime)));
+    await tester.pumpAndSettle();
+    late String id;
+    await tester.runAsync(() async => id = await fixture.downloadVideo());
+    await tester.pump();
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    fixture.publisher.fail = true;
+    await tester.runAsync(() => fixture.finish(id, ToolboxFixture.mp4));
+    // 下载完先进不带错误的待保存、再导出失败，要等到真的失败。
+    await waitUntil(tester, () => fixture.manager.byId(id)!.saveFailed);
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  test('原生导出失败时记下错误码与系统错误号再抛给下载管理', () async {
+    const channel = MethodChannel('superxd/toolbox_files');
+    final messenger = TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger;
+    messenger.setMockMethodCallHandler(channel, (_) async => throw PlatformException(code: 'SAVE_FAILED', message: '保存失败，请重试', details: 'PHPhotosErrorDomain 3302'));
+    final previousLog = campusLog;
+    final logs = <String>[];
+    campusLog = logs.add;
+    try {
+      await expectLater(
+        ChannelFilePublisher().publish(id: 'a', source: '/tmp/a.part', filename: 'SuperXD_a.jpg', mimeType: 'image/jpeg'),
+        throwsA(isA<PlatformException>()),
+      );
+    } finally {
+      campusLog = previousLog;
+      messenger.setMockMethodCallHandler(channel, null);
+    }
+    expect(logs, ['[ToolboxFiles] action=publish errorType=SAVE_FAILED details=PHPhotosErrorDomain 3302']);
   });
 
   testWidgets('轻量工具直接可用，不显示虚假的资源下载安装', (tester) async {
