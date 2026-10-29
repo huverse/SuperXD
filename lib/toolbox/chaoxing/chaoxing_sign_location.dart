@@ -11,7 +11,8 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_location_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_map_page.dart';
 
 // 签到弹层里的位置选择。地图能用时默认是嵌在这里的地图（点选、定位到我、全屏），下面是位置名称与收藏的位置；
-// 地图用不了时收藏的位置用 chip 选，或手输经纬度（直接摊开并写明原因）。选中与手输的状态归签到弹层管，这里只画与回调。
+// 地图用不了时收藏的位置用 chip 选，或手输经纬度（直接摊开并写明原因）。老师设了签到点时两种都多一个「签到点附近」
+// （每点一次在签到点 10 米内重新随机一点）。选中与手输的状态归签到弹层管，这里只画与回调。
 class ChaoxingSignLocation extends StatelessWidget {
   const ChaoxingSignLocation({
     super.key,
@@ -27,6 +28,7 @@ class ChaoxingSignLocation extends StatelessWidget {
     required this.onSave,
     required this.onPickOnMap,
     required this.onMapPicked,
+    this.onNearby,
     this.rangeCenter,
     this.rangeMeters,
   });
@@ -42,6 +44,8 @@ class ChaoxingSignLocation extends StatelessWidget {
   final VoidCallback onSave;
   final VoidCallback onPickOnMap;
   final ValueChanged<ChaoxingLocation> onMapPicked;
+  // 老师没设签到点时为空，不出按钮。
+  final VoidCallback? onNearby;
   final ChaoxingLocation? rangeCenter;
   final double? rangeMeters;
 
@@ -89,6 +93,7 @@ class ChaoxingSignLocation extends StatelessWidget {
             spacing: 8,
             runSpacing: 8,
             children: [
+              if (onNearby != null) _nearbyButton(),
               OutlinedButton.icon(onPressed: busy ? null : onSave, icon: const CampusIcon(CampusIcons.add), label: const Text('收藏这个位置')),
               if (chaoxingMapAvailable)
                 OutlinedButton.icon(onPressed: busy ? null : () => onManual(false), icon: const CampusIcon(CampusIcons.jumpToday), label: const Text('在地图上选点')),
@@ -137,6 +142,7 @@ class ChaoxingSignLocation extends StatelessWidget {
           spacing: 8,
           runSpacing: 8,
           children: [
+            if (onNearby != null) _nearbyButton(),
             OutlinedButton.icon(onPressed: busy ? null : () => onManual(true), icon: const CampusIcon(CampusIcons.edit), label: const Text('手动输入')),
             // 收藏的维护入口：在地图上添加、改名与删除（选择在上面这些选择标签里做）；地图能用时没有收藏也给，好去添加。
             if (saved.isNotEmpty || map)
@@ -150,6 +156,9 @@ class ChaoxingSignLocation extends StatelessWidget {
       ],
     );
   }
+
+  Widget _nearbyButton() =>
+      OutlinedButton.icon(onPressed: busy ? null : onNearby, icon: const CampusIcon(CampusIcons.nearby), label: const Text('签到点附近'));
 
   Widget _nameField() => TextField(
     controller: address,

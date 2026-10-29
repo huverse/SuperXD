@@ -98,6 +98,9 @@ double _transformLongitude(double x, double y) {
 const chaoxingLocationRange = 0.00005;
 const chaoxingLocationTightRange = 0.00001;
 
+// 「签到点附近」取点的半径（米）：老师签到点这么远以内随机一点，提交时再照常叠加上面的偏移。
+const chaoxingNearbyMeters = 10.0;
+
 class ChaoxingLocation {
   const ChaoxingLocation({
     required this.latitude,
@@ -118,6 +121,20 @@ class ChaoxingLocation {
       latitude: bd09.latitude + (source.nextDouble() * 2 - 1) * range,
       longitude: bd09.longitude + (source.nextDouble() * 2 - 1) * range,
       address: address,
+    );
+  }
+
+  // 这个位置 meters 米以内的随机一点：圆内按面积均匀（半径取随机数的平方根，不往圆心扎堆），坐标系与名称不变。
+  // 老师的签到点是学习通给的口径，就在这个口径里取点、原样交回去，不经坐标系换算。
+  ChaoxingLocation nearby({double meters = chaoxingNearbyMeters, Random? random}) {
+    final source = random ?? Random();
+    final distance = meters * sqrt(source.nextDouble());
+    final angle = source.nextDouble() * 2 * pi;
+    return ChaoxingLocation(
+      latitude: latitude + distance * sin(angle) / 111320,
+      longitude: longitude + distance * cos(angle) / (111320 * cos(latitude * pi / 180)),
+      address: address,
+      system: system,
     );
   }
 

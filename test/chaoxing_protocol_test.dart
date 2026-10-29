@@ -302,6 +302,32 @@ void main() {
     expect(jsonDecode(location.payload(mock: false)) as Map, isNot(contains('mockData')));
   });
 
+  test('签到点附近的点落在 10 米内、按面积均匀，坐标系与名称不变', () {
+    // 学习通详情给的签到点按 BD-09 口径存，取点不换算、原样交回。
+    const signPoint = ChaoxingLocation(latitude: 36.6, longitude: 117.0, address: '', system: ChaoxingCoordinateSystem.bd09);
+    final random = Random(7);
+    final distances = <double>[];
+    // 在同一口径里直接量：BD-09 换算成 GCJ-02 本身会把距离拉长零点几个百分点（chaoxingDistanceMeters 先换算），学习通比的是原口径。
+    double rawMeters(ChaoxingLocation point) {
+      final north = (point.latitude - signPoint.latitude) * 111320;
+      final east = (point.longitude - signPoint.longitude) * 111320 * cos(signPoint.latitude * pi / 180);
+      return sqrt(north * north + east * east);
+    }
+
+    for (var index = 0; index < 2000; index++) {
+      final nearby = signPoint.nearby(random: random);
+      expect(nearby.system, ChaoxingCoordinateSystem.bd09);
+      expect(nearby.address, '');
+      distances.add(rawMeters(nearby));
+    }
+    expect(distances.reduce(max), lessThanOrEqualTo(chaoxingNearbyMeters));
+    // 圆内按面积均匀时，离圆心超过 5 米的约占四分之三；半径直接取随机数（往圆心扎堆）时只有一半。
+    final outer = distances.where((distance) => distance > chaoxingNearbyMeters / 2).length / distances.length;
+    expect(outer, closeTo(0.75, 0.05));
+    // 每次都换一个点。
+    expect({for (final distance in distances) distance.toStringAsFixed(6)}.length, greaterThan(1990));
+  });
+
   test('列表只收签到类活动，认不出的类型保留为 unknown 待详情补认', () {
     final course = const ChaoxingCourse(courseId: 9001, classId: 88, name: '高等数学');
     final parsed = [

@@ -149,8 +149,9 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   Future<void> _loadInfo() async {
     try {
       final info = await widget.controller.activeInfo(_activity);
-      // 默认选中的位置（[人工决策-2026-10-14 21:26:16]，见 chaoxing_map_page.dart）：这门课上次签到用的 → 上次签到用的；
-      // 都没有时嵌着的地图拿当前位置。地图用不了时退回最近用过的收藏。
+      // 默认选中的位置（[人工决策-2026-10-14 21:26:16] 与 [人工决策-2026-10-29 15:55:56]，见 chaoxing_map_page.dart）：
+      // 老师设了签到点就选它 10 米内随机一点 → 这门课上次签到用的 → 上次签到用的；都没有时嵌着的地图拿当前位置。
+      // 地图用不了时签到点附近预填进经纬度框，收藏退回最近用过的那个。
       final remembered = await widget.controller.signedLocation(_activity);
       if (!mounted) return;
       setState(() {
@@ -161,15 +162,11 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
         }
         _loadError = null;
         // 地图用不了时直接摊开经纬度，别让人先去点一下「手动输入」；改用收藏时默认选中上面那个位置。
+        final nearby = _rangeCenter?.nearby();
         _manualLocation = !chaoxingMapAvailable;
-        _savedLocation = remembered ?? (chaoxingMapAvailable ? null : widget.controller.locations.firstOrNull?.location);
+        _savedLocation = chaoxingMapAvailable ? nearby ?? remembered : remembered ?? widget.controller.locations.firstOrNull?.location;
         if (chaoxingMapAvailable) _address.text = remembered?.address ?? '';
-        if (info.locationLatitude != null && info.locationLongitude != null && _manualLocation) {
-          // 详情给的坐标是学习通的 BD-09 口径，输入框按高德 GCJ-02 解释，先转一层再预填（参考项目同样按 BD-09 使用）。
-          final asGcj = bd09ToGcj02(info.locationLatitude!, info.locationLongitude!);
-          _latitude.text = asGcj.latitude.toStringAsFixed(6);
-          _longitude.text = asGcj.longitude.toStringAsFixed(6);
-        }
+        if (nearby != null && _manualLocation) _fillManual(nearby);
       });
     } on ChaoxingFailure catch (failure) {
       if (mounted) setState(() => _loadError = failure.message);
@@ -305,6 +302,29 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     final longitude = _info?.locationLongitude;
     if (latitude == null || longitude == null) return null;
     return ChaoxingLocation(latitude: latitude, longitude: longitude, address: '', system: ChaoxingCoordinateSystem.bd09);
+  }
+
+  // 详情给的坐标是学习通的 BD-09 口径，输入框按高德 GCJ-02 解释，先转一层再填（参考项目同样按 BD-09 使用）。
+  void _fillManual(ChaoxingLocation location) {
+    final asGcj = toGcj02(location.latitude, location.longitude, location.system);
+    _latitude.text = asGcj.latitude.toStringAsFixed(6);
+    _longitude.text = asGcj.longitude.toStringAsFixed(6);
+  }
+
+  // 「签到点附近」：在老师签到点 10 米内重新随机一点。地图上直接选中（镜头跟过去），手动输入时填进经纬度框；
+  // 地图用不了、正在选收藏时切回手输再填。名称框不动。
+  void _pickNearby() {
+    final nearby = _rangeCenter?.nearby();
+    if (nearby == null) return;
+    setState(() {
+      if (_manualLocation || !chaoxingMapAvailable) {
+        _manualLocation = true;
+        _fillManual(nearby);
+      } else {
+        _savedLocation = nearby;
+      }
+      _error = null;
+    });
   }
 
   // 全屏选点（嵌着的地图太小时用）：从当前选中的位置开始，名称框里的名称带过去。
@@ -968,6 +988,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
             }),
             onSave: () => unawaited(_saveLocation()),
             onPickOnMap: () => unawaited(_pickOnMap()),
+            onNearby: _rangeCenter == null ? null : _pickNearby,
             // 地图点出来的位置不带名称，名称框里写的照旧用。
             onMapPicked: (location) => setState(() {
               _savedLocation = location;
