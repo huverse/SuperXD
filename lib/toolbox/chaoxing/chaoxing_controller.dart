@@ -377,6 +377,12 @@ class ChaoxingController extends ChangeNotifier {
     return accounts.run(client, () => chaoxingActiveInfo(client, activity.activeId));
   }
 
+  // 详情没给老师坐标时，从签到前检查的网页读一次（见 chaoxing_signer.dart），画范围圈与「签到点附近」用。
+  Future<ChaoxingLocation?> activeLocation(ChaoxingActivity activity) async {
+    final client = _requireClient();
+    return accounts.run(client, () => chaoxingActiveLocation(client, activity));
+  }
+
   // 给签到对象开会话：当前账号直接用，其余账号按需打开并留着，整页关掉时一起关。
   Future<ChaoxingClient> clientOf(ChaoxingAccountRecord record) async {
     if (record.phoneNumber == current?.phoneNumber) return _requireClient();

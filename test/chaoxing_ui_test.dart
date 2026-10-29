@@ -774,6 +774,31 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  testWidgets('详情没给坐标、老师坐标在签到前检查网页里：照样预填签到点附近', (tester) async {
+    usePhoneScreen(tester);
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '4', 'nameOne': '位置签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0, 'ext': {'a': 1}},
+    ];
+    // 老师设了位置（ifopenAddress=1、有范围），但详情不回坐标——真机实测的那种按地址设的位置签到。
+    fake.activeInfo = {'ifopenAddress': 1, 'locationRange': 100, 'signOutPublishTimeStamp': 4999};
+    // 坐标藏在签到前检查的网页的隐藏输入框里（学习通的 BD-09 口径），signstatus=0 表示还没签。
+    fake.preSignHtml = '<script>signstatus = 0;</script>'
+        '<input type="hidden" id="latitude" value="36.600000">'
+        '<input type="hidden" id="longitude" value="117.000000">';
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await openSignSheet(tester, button: '去签到');
+    // 详情没坐标也认出了老师的点：经纬度框预填了签到点 10 米内一点，「签到点附近」按钮也在。
+    expect(find.widgetWithText(OutlinedButton, '签到点附近'), findsOneWidget);
+    double field(String label) => double.parse(tester.widget<TextField>(find.widgetWithText(TextField, label)).controller!.text);
+    final filled = gcj02ToBd09(field('纬度'), field('经度'));
+    final north = (filled.latitude - 36.6) * 111320;
+    final east = (filled.longitude - 117.0) * 111320 * cos(36.6 * pi / 180);
+    expect(sqrt(north * north + east * east), lessThanOrEqualTo(10.2));
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('开签前现拍的人脸照片签好后才问存不存：答应了才进人脸照片，并算用过一次', (tester) async {
     usePhoneScreen(tester);
     useLocationActivity(face: true);

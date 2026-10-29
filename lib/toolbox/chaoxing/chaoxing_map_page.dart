@@ -79,6 +79,10 @@ Future<bool> _locationServiceOn() async {
 // 默认选中签到点 10 米内的随机一点，排在上面三项之前；签到弹层另有「签到点附近」，每点一次重新随机（地图与手动输入都能用）。
 // 用户选「选点在 10 米内，提交照旧加偏移」：提交时照常叠加 chaoxingLocationRange 的小偏移，离签到点最远约 18 米。
 // 签到点附近的点在学习通给的口径里取、原样交回，不经换算，所以不受坐标系是否校准影响。没跟它做的：被判出界后连续提交探测距离的「三角定位」（违反不自动重试）。
+// [人工决策-2026-10-29 19:10:00] 真机实测（授权账号只读探针）发现有一类位置签到：老师按地址设位置，详情接口 getPPTActiveInfo 的
+// locationLatitude/Longitude/_gd 全空，只有 locationText 与 locationRange，真实坐标只渲染在签到前检查网页的隐藏输入框 #latitude/#longitude 里
+//（口径同详情的 locationLatitude，即提交口径 BD-09）。用户选「读，作为后备」：详情没坐标、又是位置签到时，从那张网页读老师坐标（chaoxingActiveLocation），
+// 这类课才画得出范围圈、用得上「签到点附近」。详情本来就有坐标时不多打这张网页。没跟 Superstar-checkin 做的「按地址文字反查坐标」：要另申请高德 Web key，且不如直接用网页里的真实坐标准。
 // 高德 SDK 的合规声明与 key：地图是它唯一的用武之地，每次建地图前先按用户已同意的口径声明一次再初始化。
 void _initAmap(BuildContext context) {
   AMapInitializer.updatePrivacyAgree(const AMapPrivacyStatement(hasContains: true, hasShow: true, hasAgree: true));

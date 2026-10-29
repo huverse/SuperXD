@@ -285,6 +285,29 @@ Future<ChaoxingPreSignStatus> chaoxingPreSign(ChaoxingClient client, ChaoxingAct
   return status;
 }
 
+// 老师设了位置、但详情接口（getPPTActiveInfo）把 locationLatitude/Longitude 留空的那种活动
+//（老师按地址设的位置，学习通只把坐标渲染进签到前检查的网页、不回填详情字段，真机实测见 chaoxing_map_page.dart 的人工决策）：
+// 从这张网页的隐藏输入框 #latitude、#longitude 抠出老师坐标，供画范围圈与「签到点附近」用。坐标口径同详情的 locationLatitude——
+// 都是提交口径 BD-09（网页里拿它和学生提交的 BD-09 坐标算距离）。抠不到（页面改版、0,0、不在班级）就返回空，退回手动选点。
+// 只读页面、不动签到状态，也不走 analysis。
+Future<ChaoxingLocation?> chaoxingActiveLocation(ChaoxingClient client, ChaoxingActivity activity) async {
+  final response = await client.http.postForm(
+    chaoxingPreSignRequestUri(activity: activity, account: client.account!),
+    chaoxingFormBody({'ext': activity.ext}),
+    forbiddenExpired: true,
+  );
+  final latitude = double.tryParse(_preSignInputValue(response.body, 'latitude') ?? '');
+  final longitude = double.tryParse(_preSignInputValue(response.body, 'longitude') ?? '');
+  if (latitude == null || longitude == null || (latitude == 0 && longitude == 0)) return null;
+  return ChaoxingLocation(latitude: latitude, longitude: longitude, address: '', system: ChaoxingCoordinateSystem.bd09);
+}
+
+// 取隐藏输入框的 value，id 与 value 谁先谁后都认（学习通模板两种都出现过）。
+String? _preSignInputValue(String html, String id) {
+  final element = RegExp('<input[^>]*\\bid=["\']$id["\'][^>]*>', caseSensitive: false).firstMatch(html)?.group(0);
+  return element == null ? null : RegExp('''value\\s*=\\s*["']([^"']*)["']''').firstMatch(element)?.group(1);
+}
+
 // analysis 页面里抠不到 code 时只记日志不拦签到：这两步不返回业务结果，学习通改版换了页面也不该让签到整体失败。
 Future<void> chaoxingAnalysis(ChaoxingClient client, int activeId) async {
   final page = await client.http.get(Uri.parse(chaoxingAnalysisUri).replace(
