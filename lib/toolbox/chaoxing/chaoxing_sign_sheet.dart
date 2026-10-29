@@ -104,6 +104,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   bool _codeWrong = false;
   bool _manualLocation = false;
   ChaoxingLocation? _savedLocation;
+  // 详情没给坐标、但老师设了位置时，从签到前检查的网页读到的老师坐标（见 chaoxing_signer.dart）。
+  ChaoxingLocation? _teacherPoint;
   ChaoxingQrFeed? _feed;
   // 开签前现拍补给的人脸照片（只上传、还没进人脸照片列表）：签好后问存不存。
   final _newFaces = <ChaoxingSignTarget, String>{};
@@ -153,9 +155,12 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       // 老师设了签到点就选它 10 米内随机一点 → 这门课上次签到用的 → 上次签到用的；都没有时嵌着的地图拿当前位置。
       // 地图用不了时签到点附近预填进经纬度框，收藏退回最近用过的那个。
       final remembered = await widget.controller.signedLocation(_activity);
+      // 老师设了位置但详情没回坐标：去签到前检查的网页读一次（这类课的坐标只在那张网页里）。读不到就当没有，退回手动选点。
+      final teacherPoint = info.needLocation && info.locationLatitude == null ? await _teacherLocation() : null;
       if (!mounted) return;
       setState(() {
         _info = info;
+        _teacherPoint = teacherPoint;
         // 列表里认不出的类型，用详情里认出的补上（对齐参考项目；详情也认不出就保持 unknown，提交前提示不支持）。
         if (_activity.signType == ChaoxingSignType.unknown && info.signType != null) {
           _activity = _activity.change(signType: info.signType);
@@ -297,11 +302,23 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   }
 
   // 详情里有签到点与范围时在地图上画出来（学习通给的是 BD-09 口径，地图内部会换算成 GCJ-02）。
+  // 详情没给坐标、但从签到前检查网页读到老师坐标时用那个（_teacherPoint）。
   ChaoxingLocation? get _rangeCenter {
+    if (_teacherPoint != null) return _teacherPoint;
     final latitude = _info?.locationLatitude;
     final longitude = _info?.locationLongitude;
     if (latitude == null || longitude == null) return null;
     return ChaoxingLocation(latitude: latitude, longitude: longitude, address: '', system: ChaoxingCoordinateSystem.bd09);
+  }
+
+  // 从签到前检查的网页读老师坐标；只记日志、不打断打开签到页（读不到就退回手动选点）。
+  Future<ChaoxingLocation?> _teacherLocation() async {
+    try {
+      return await widget.controller.activeLocation(_activity);
+    } catch (failure, stack) {
+      campusLog('[Chaoxing] action=presign_location errorType=${failure.runtimeType}\n$stack');
+      return null;
+    }
   }
 
   // 详情给的坐标是学习通的 BD-09 口径，输入框按高德 GCJ-02 解释，先转一层再填（参考项目同样按 BD-09 使用）。
@@ -433,6 +450,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       setState(() {
         _activity = related;
         _info = null;
+        _teacherPoint = null;
         _loadError = null;
         for (final target in _batch.targets) {
           target
