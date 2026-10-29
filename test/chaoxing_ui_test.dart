@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math';
 
 
 import 'package:flutter/material.dart';
@@ -718,6 +719,58 @@ void main() {
     await waitUntil(tester, () => find.widgetWithText(FilledButton, '签到').evaluate().isEmpty);
     expect(find.text('收藏这次的位置？'), findsNothing);
     await waitUntil(tester, () => listCalls() == loaded + 2);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('老师设了签到点：默认填签到点 10 米内一点，「签到点附近」每点一次换一个，选收藏时点它切回手输', (tester) async {
+    usePhoneScreen(tester);
+    useLocationActivity();
+    await tester.runAsync(
+      () => store.putLocation(
+        '图书馆',
+        const ChaoxingLocation(latitude: 36.7, longitude: 117.1, address: '图书馆', system: ChaoxingCoordinateSystem.gcj02),
+      ),
+    );
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await openSignSheet(tester);
+    // 详情里的签到点是学习通的 BD-09 口径；经纬度框按高德 GCJ-02 填，换回 BD-09 再在同一口径里量离签到点多远
+    //（换算来回与保留 6 位小数各差不到 0.1 米）。
+    double field(String label) => double.parse(tester.widget<TextField>(find.widgetWithText(TextField, label)).controller!.text);
+    double fromSignPoint(double latitude, double longitude) {
+      final north = (latitude - 36.6) * 111320;
+      final east = (longitude - 117.0) * 111320 * cos(36.6 * pi / 180);
+      return sqrt(north * north + east * east);
+    }
+
+    ({double latitude, double longitude}) typed() => gcj02ToBd09(field('纬度'), field('经度'));
+    final first = typed();
+    expect(fromSignPoint(first.latitude, first.longitude), lessThanOrEqualTo(10.2));
+
+    await tester.tap(find.widgetWithText(OutlinedButton, '签到点附近'));
+    await tester.pump();
+    final second = typed();
+    expect(second, isNot(first));
+    expect(fromSignPoint(second.latitude, second.longitude), lessThanOrEqualTo(10.2));
+
+    // 正在选收藏时点它：切回经纬度框并填上新的一点。
+    await tester.tap(find.widgetWithText(OutlinedButton, '用收藏的位置'));
+    await tester.pump();
+    expect(find.widgetWithText(TextField, '纬度'), findsNothing);
+    await tester.tap(find.widgetWithText(OutlinedButton, '签到点附近'));
+    await tester.pump();
+    final third = typed();
+    expect(third, isNot(second));
+    expect(fromSignPoint(third.latitude, third.longitude), lessThanOrEqualTo(10.2));
+
+    await tapSign(tester);
+    await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
+    await tester.tap(find.text('不收藏'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    // 提交的是 BD-09，照常叠加小偏移，离签到点最远约 18 米。
+    expect(fromSignPoint(double.parse(fake.signQuery!['latitude']!), double.parse(fake.signQuery!['longitude']!)), lessThan(18.5));
     await tester.pumpWidget(const SizedBox());
   });
 
