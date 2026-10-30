@@ -19,6 +19,9 @@ abstract final class PddConstants {
   // 逆向确认 anti_content 只能在 WebView 里由拼多多自己的反爬 JS 现场生成（纯 Dart 生成不了）。用户选「原生绑定 + 隐藏 WebView 取 anti_content」，
   // 原模块「不生成也不绕过反爬字段」在此让步——仅用于本人已授权账号的取件手机号绑定/解绑，用官方 JS 产出合法 anti_content、不自行重写风控。
   // anti_content 有时效：每次请求前现生成、不缓存（见 express_anti_content.dart）。多数接口放 anti-content 请求头；解绑/别名另在 body 的 anti_content 再带一份。
+  // [人工决策-2026-10-30 18:03:16] 10-29 起用户账号查物流（点「物流」与按件补查尾号）一律回 1011「网络繁忙」，以前不带也能查；
+  // 官方 mdkd 的请求封装对每个请求都带 anti-content，我们查物流没带。用户选「查物流也带 anti-content」（未选「先打诊断包确认原因」「只修点物流、补查不带」）：
+  // 用途扩成取件手机号绑定/解绑与查物流（只读），驿站、身份码等其余查询仍不带。
   static const antiContentHeader = 'anti-content';
   static const bindProtocolCode = 'QJXXJSFWTK1_1';
   static const bindSmsScene = '1000123';

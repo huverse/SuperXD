@@ -71,7 +71,7 @@
 - 本应用课表经组合根注入的 ToolboxTimetable 读（application/campus_timetable.dart，只读本地、不联网），只在本机比对课名与时间，不发给学习通；不依赖教务相关的层。
 - 设备信息与 OAID 只在学习通签到时取，加密后只发给学习通，不在本机另存。OAID 库自带的电话状态、存储、写设置与广告 ID 权限在清单里移除；它带入的华为、荣耀广告标识 SDK 列在隐私政策附录一（第三方 SDK 与服务），增删这类 SDK 时同步改隐私政策。
 - 依赖仓库按组限定（android/build.gradle.kts 的 thirdPartyRepositoryGroups）：JitPack 只给 OAID 库与 uCrop，华为、荣耀仓库只给各自的组；新增走这几个仓库的依赖先登记它的组。
-- 位置：提交口径 BD-09，WGS-84、GCJ-02 先在 chaoxing_location.dart 换算，再按小范围随机偏移（超范围时收紧到 0.00001 重试一次）；手输坐标按高德 GCJ-02；坐标系尚未用真账号校准。老师设了签到点（详情的 locationLatitude、locationLongitude）时默认选中签到点 10 米内随机一点，这个点在详情给的口径里取、原样交回，不受校准影响（人工决策在 chaoxing_map_page.dart）；不做被判出界后连续提交探测距离。详情没给坐标、又是位置签到时，从签到前检查网页读老师坐标当后备（chaoxingActiveLocation，真机实测有一类按地址设的位置签到只在网页里带坐标）。定位只在打开位置签到时申请（仅使用期间、不后台定位）；隐私政策第四节写位置签到与记住的位置、附录一列高德 SDK，学习通同意说明为第 5 版（第 5 版写明在本机读本应用课表，人工决策在 chaoxing_page.dart 的 chaoxingConsentVersion）。
+- 位置：提交口径 BD-09，WGS-84、GCJ-02 先在 chaoxing_location.dart 换算，再按小范围随机偏移（超范围时收紧到 0.00001 重试一次）；手输坐标按高德 GCJ-02；坐标系尚未用真账号校准。老师设了签到点（详情的 locationLatitude、locationLongitude）时默认选中签到点 10 米内随机一点，这个点在详情给的口径里取、原样交回，不受校准影响（人工决策在 chaoxing_map_page.dart）；不做被判出界后连续提交探测距离。详情没给坐标、又是位置签到时，从签到前检查网页读老师坐标当后备（chaoxingActiveLocation，真机实测有一类按地址设的位置签到只在网页里带坐标）。10-30 用户用 1.0.0-alpha.12 构建号 20 在真实课堂签到，确认可用。定位只在打开位置签到时申请（仅使用期间、不后台定位）；隐私政策第四节写位置签到与记住的位置、附录一列高德 SDK，学习通同意说明为第 5 版（第 5 版写明在本机读本应用课表，人工决策在 chaoxing_page.dart 的 chaoxingConsentVersion）。
 - 代签：
   - 凭据包用一次性随机密钥加密，密钥只在二维码里、不进服务器；密文经自建中转暂存，取件号一次性、10 分钟过期、取走即删；出示方换码或离开出示页即作废上一张（[人工决策] 见服务端 chaoxing_pack.service.ts）。
   - 投递、取件与作废各 15 秒超时、密文上限 2KB，除时钟偏差校正后的一次重发外不重试。

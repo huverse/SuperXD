@@ -116,7 +116,7 @@ Future<void> _settleReal(WidgetTester tester, bool Function() done) async {
   }
 }
 
-// 假 anti_content：绑定测试用，不起真实 WebView（webViewController 为空，页面不挂 WebViewWidget）。
+// 假 anti_content：绑定与查物流测试用，不起真实 WebView（webViewController 为空，页面不挂 WebViewWidget）。
 class _FakeAnti implements PddAntiContent {
   @override
   Future<String> generate() async => 'anti';
@@ -163,7 +163,7 @@ void main() {
     catalog: toolboxCatalog,
     store: fixture.store,
     downloads: fixture.manager,
-    services: {ExpressService.serviceId: ExpressService(vault: vault, clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: client)))},
+    services: {ExpressService.serviceId: ExpressService(vault: vault, clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: client)), antiContent: _FakeAnti())},
   );
 
   ToolboxRuntime buildRuntime({
@@ -574,6 +574,7 @@ void main() {
     expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '物流').last).onPressed, isNull, reason: '查询中其他行不能再点');
     final track = requests.lastWhere((request) => request.url.path.endsWith('shipping/track'));
     expect(track.url.queryParameters, {'tracking_number': 'SX0000000002', 'shipping_id': '102', 'entry_source': '9', 'source_type': '3'});
+    expect(track.headers[PddConstants.antiContentHeader], 'anti', reason: '10-30 起查物流不带 anti-content 会回 1011');
 
     gate.complete();
     await tester.pumpAndSettle();
@@ -836,6 +837,7 @@ void main() {
     await vault.saveOwnerTails({'1|SX0000000005': ''});
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtimeWith(MockClient((request) async {
       if (request.url.path.endsWith('shipping/track')) {
+        expect(request.headers[PddConstants.antiContentHeader], 'anti');
         tracks.add(request.url.path);
         return _json({'error_code': null, 'shipping': {'shipping_name': '合成快递', if (tail.isNotEmpty) 'package_info': '尾号$tail 的快递'}});
       }
@@ -879,6 +881,7 @@ void main() {
         ExpressService.serviceId: ExpressService(
           vault: vault,
           verifyPage: _FakeVerifyPage.new,
+          antiContent: _FakeAnti(),
           clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: MockClient((request) async {
             if (request.url.path.endsWith('shipping/track')) {
               final token = request.headers['VerifyAuthToken'];
