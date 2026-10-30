@@ -23,7 +23,7 @@ abstract final class PddConstants {
   // 用户选「查物流也带 anti-content」（未选「先打诊断包确认原因」「只修点物流、补查不带」），用途扩成取件手机号绑定/解绑与查物流（只读）。
   // [人工决策-2026-10-30 18:43:18] 真机三轮诊断推翻了上面的推断：失败的是「近一周已取出」的件（链接里 order_sn、source_type 为空，走 GET 通用物流），
   // 带不带 anti-content、带不带空的 source_type 都回 1011，官方 App 里同一件能看（走 App 原生网络层）。用户选「保留，照官方每个请求都带」（未选撤回）：
-  // 查物流照旧带，不再当成 1011 的修法；驿站、身份码等其余查询仍不带。已取出的件怎么办用户在自己做逆向，先不改。
+  // 查物流照旧带，不再当成 1011 的修法；驿站、身份码等其余查询仍不带。已取出的件的处理见 express_page.dart 的 [人工决策-2026-10-30 19:19:49]。
   static const antiContentHeader = 'anti-content';
   static const bindProtocolCode = 'QJXXJSFWTK1_1';
   static const bindSmsScene = '1000123';

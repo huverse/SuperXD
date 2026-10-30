@@ -578,7 +578,10 @@ class _ExpressPageState extends State<ExpressPage> {
           if (group.deliveryCount > 0)
             Padding(key: rowKey('delivery|${group.stationName}|${group.address}'), padding: const EdgeInsets.only(top: 8), child: Text('${group.deliveryCount} 个快递已安排送货上门', style: secondary)),
         ],
-        // 近一周已取出（官方放在取快递页底部一行，点开列取件地址、取件时间、快递公司与运单号）：直接列在卡片里，每件可查物流。
+        // 近一周已取出（官方放在取快递页底部一行，点开列取件地址、取件时间、快递公司与运单号）：直接列在卡片里。
+        // [人工决策-2026-10-30 19:19:49] 已取出的件链接里没有 order_sn 时只能按运单号查通用物流，用户在官方 App 抓包确认官方这里也回 1011、
+        // 页面写「暂未查询到相关物流信息」（不是缺 anti-content 或参数）。用户选「去掉按钮」（未选「改成在拼多多查看」——deeplink 落到的正是那个空页，
+        // 也未选「保留按钮只提示」）：没有 order_sn 的已取出件不给「物流」、不发请求；带 order_sn 的照旧可查。
         if (packages.recentPackages.isNotEmpty) ...[
           Padding(
             key: rowKey('recent'),
@@ -601,7 +604,7 @@ class _ExpressPageState extends State<ExpressPage> {
                       ],
                     ),
                   ),
-                  trackButton(parcel.trackQuery),
+                  if (parcel.trackQuery.orderSn.isNotEmpty) trackButton(parcel.trackQuery),
                 ],
               ),
             ),
