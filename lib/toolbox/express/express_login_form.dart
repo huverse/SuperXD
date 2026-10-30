@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -10,16 +11,19 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/toolbox/express/express_controller.dart';
 import 'package:superxd/toolbox/express/express_models.dart';
 
 // 拼多多短信登录表单（[人工决策] 见 express_models.dart 的登录常量）：手机号加短信验证码，在应用里直接发给拼多多，号码与验证码不保存。
-// 发码与登录前都经 consent 取同意（同意过的直接过）；拼多多要求验证时经 verify 打开官方验证页，本人过了再用令牌完成登录。失败原因在表单里原地写。
+// 发码与登录前都经 consent 取同意（同意过的直接过）；登录前要勾选拼多多自己的服务协议与隐私政策（openTerms 打开官方条款页）；
+// 拼多多要求验证时经 verify 打开官方验证页，本人过了再用令牌完成登录。失败原因在表单里原地写。
 class ExpressLoginForm extends StatefulWidget {
-  const ExpressLoginForm({super.key, required this.controller, required this.consent, required this.verify});
+  const ExpressLoginForm({super.key, required this.controller, required this.consent, required this.verify, required this.openTerms});
   final ExpressController controller;
   final Future<bool> Function() consent;
   final Future<bool> Function(Uri page) verify;
+  final VoidCallback openTerms;
 
   @override
   State<ExpressLoginForm> createState() => _ExpressLoginFormState();
@@ -35,7 +39,10 @@ class _ExpressLoginFormState extends State<ExpressLoginForm> {
   Timer? _ticker;
   bool _sending = false;
   bool _submitting = false;
+  bool _agreed = false;
   String? _error;
+
+  static const _agreementHint = '请先勾选同意拼多多服务协议与隐私政策';
 
   @override
   void dispose() {
@@ -47,15 +54,19 @@ class _ExpressLoginFormState extends State<ExpressLoginForm> {
 
   String? _invalidMobile() => RegExp(r'^1\d{10}$').hasMatch(_mobile.text.trim()) ? null : '请输入 11 位手机号';
 
+  bool get _busy => _sending || _submitting;
+
   Future<void> _send() async {
+    if (_busy) return;
     final invalid = _invalidMobile();
     if (invalid != null) {
       setState(() => _error = invalid);
       return;
     }
-    if (!await widget.consent() || !mounted) return;
     final mobile = _mobile.text.trim();
+    // 等同意弹窗的那段也算忙：一帧里连点两下不会弹两个同意、发两次码。
     await _guard(() => _sending = true, () => _sending = false, () async {
+      if (!await widget.consent() || !mounted) return;
       final needCall = await widget.controller.sendLoginSms(mobile, requestTimes: _requestTimes);
       _requestTimes++;
       if (needCall) {
@@ -80,16 +91,18 @@ class _ExpressLoginFormState extends State<ExpressLoginForm> {
   }
 
   Future<void> _submit() async {
+    if (_busy) return;
     final code = _code.text.trim();
-    final invalid = _invalidMobile() ?? (code.length < 4 ? '请输入收到的验证码' : null);
+    // 同官方登录页的检查顺序：手机号、验证码、拼多多协议。
+    final invalid = _invalidMobile() ?? (code.length < 4 ? '请输入收到的验证码' : null) ?? (_agreed ? null : _agreementHint);
     if (invalid != null) {
       setState(() => _error = invalid);
       return;
     }
-    if (!await widget.consent() || !mounted) return;
     final mobile = _mobile.text.trim();
     // 登录成功后页面换成已登录视图、本表单随之销毁。
     await _guard(() => _submitting = true, () => _submitting = false, () async {
+      if (!await widget.consent() || !mounted) return;
       try {
         await widget.controller.loginWithSms(mobile, code);
       } on ExpressFailure catch (failure) {
@@ -121,9 +134,15 @@ class _ExpressLoginFormState extends State<ExpressLoginForm> {
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
-    final busy = _sending || _submitting;
+    final busy = _busy;
     // CampusBusyContent 按两段文案里较宽的留宽：两段都放最宽的「重新发送(60)」，倒数和发送中时验证码框都不跟着变宽变窄。
     const widest = '重新发送(60)';
+    // 协议行的首行与左边 48 的勾选框居中对齐（同登录页的同意行）。
+    const agreementStyle = TextStyle(fontSize: 14);
+    final line = campusTextPainter(context, '我', style: agreementStyle);
+    final agreementTop = math.max(0.0, (48 - line.height - 8) / 2);
+    line.dispose();
+    final link = campusLink.copyWith(padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)), minimumSize: const WidgetStatePropertyAll(Size.zero), tapTargetSize: MaterialTapTargetSize.shrinkWrap);
     return AutofillGroup(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -165,6 +184,20 @@ class _ExpressLoginFormState extends State<ExpressLoginForm> {
               ),
             ],
           ),
+          const SizedBox(height: 8),
+          // [人工决策-2026-10-30 23:07:44] 复审查到原生表单跳过了拼多多自己的协议确认：官方登录页默认要勾选「同意服务协议与隐私政策」才让登录
+          //（未注册的号码可能被直接注册成拼多多账号）。用户选「勾选框」（未选「只写一行登录即表示同意」「不加」）：同官方默认不勾、点登录时检查，
+          // 点「同意拼多多」几个字也能勾选、读屏读整句；「服务协议与隐私政策」用系统浏览器打开拼多多官方条款页（terms_list.html）。
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SizedBox(width: 48, height: 48, child: Checkbox(semanticLabel: '同意拼多多服务协议与隐私政策', value: _agreed, onChanged: busy ? null : (value) => setState(() => _agreed = value == true))),
+            Expanded(child: Padding(padding: EdgeInsets.only(top: agreementTop), child: Wrap(spacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              ExcludeSemantics(child: GestureDetector(
+                onTap: busy ? null : () => setState(() => _agreed = !_agreed),
+                child: Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Text('同意拼多多', style: agreementStyle.copyWith(color: palette.onSurfaceVariant))),
+              )),
+              TextButton(style: link, onPressed: widget.openTerms, child: const Text('服务协议与隐私政策', style: agreementStyle)),
+            ]))),
+          ]),
           if (_error != null) ...[
             const SizedBox(height: 12),
             Text(_error!, style: TextStyle(fontSize: 14, color: palette.danger)),

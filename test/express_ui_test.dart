@@ -232,7 +232,7 @@ void main() {
     return _json({'success': true, 'error_code': '0'});
   });
 
-  ToolboxRuntime loginRuntime(http.Client client, {Widget Function(Uri page)? verifyPage}) => ToolboxRuntime.testing(
+  ToolboxRuntime loginRuntime(http.Client client, {Widget Function(Uri page)? verifyPage, Future<bool> Function(Uri uri)? launch}) => ToolboxRuntime.testing(
     catalog: toolboxCatalog,
     store: fixture.store,
     downloads: fixture.manager,
@@ -242,6 +242,7 @@ void main() {
         clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: client)),
         antiContent: _FakeAnti(),
         verifyPage: verifyPage ?? _FakeVerifyPage.new,
+        launchExternal: launch ?? (uri) async => true,
       ),
     },
   );
@@ -254,17 +255,60 @@ void main() {
     }
   }
 
-  // 输手机号、发验证码（首次会弹同意，点同意）、输码、登录。发码成功后按钮倒数「重新发送」，据此等发码完成。
-  Future<void> signInWith(WidgetTester tester, {String code = '123456'}) async {
+  // 输手机号、发验证码（首次会弹同意，点同意）、输码、勾选拼多多协议（agree 为假时不勾）、登录。发码成功后按钮倒数「重新发送」，据此等发码完成。
+  Future<void> signInWith(WidgetTester tester, {String code = '123456', bool agree = true}) async {
     await tester.enterText(find.byType(TextField).at(0), '13900000000');
     await tester.tap(find.widgetWithText(FilledButton, '获取验证码'));
     await waitUntil(tester, () => find.text('同意并登录').evaluate().isNotEmpty);
     await tester.tap(find.text('同意并登录'));
     await waitUntil(tester, () => find.textContaining('重新发送').evaluate().isNotEmpty);
     await tester.enterText(find.byType(TextField).at(1), code);
+    if (agree) await tester.tap(find.byType(Checkbox));
     await tester.tap(find.widgetWithText(FilledButton, '登录'));
     await tester.pump();
   }
+
+  testWidgets('没勾选拼多多协议点登录：原地提示、不发登录请求；点「服务协议与隐私政策」用浏览器打开拼多多官方条款页', (tester) async {
+    final requests = <http.Request>[];
+    final launched = <Uri>[];
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: loginRuntime(
+      loginClient(loginStatus: 200, loginBody: const {'success': true}, loginCookie: 'PDDAccessToken=AT1; Path=/', requests: requests),
+      launch: (uri) async {
+        launched.add(uri);
+        return true;
+      },
+    ))));
+    await tester.pumpAndSettle();
+    await signInWith(tester, agree: false);
+    await waitUntil(tester, () => find.text('请先勾选同意拼多多服务协议与隐私政策').evaluate().isNotEmpty);
+    expect(find.text('请先勾选同意拼多多服务协议与隐私政策'), findsOneWidget);
+    expect(requests.where((request) => request.url.path.endsWith('login_mobile')), isEmpty);
+    expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isFalse, reason: '同官方默认不勾');
+
+    await tester.tap(find.text('服务协议与隐私政策'));
+    await tester.pump();
+    expect(launched, [Uri.parse(PddConstants.termsPage)]);
+    // 点「同意拼多多」几个字也能勾选。
+    await tester.tap(find.text('同意拼多多'));
+    await tester.pump();
+    expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('一帧里连点两下「获取验证码」：只弹一个同意弹窗、只发一次码', (tester) async {
+    final requests = <http.Request>[];
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: loginRuntime(loginClient(loginStatus: 200, loginBody: const {'success': true}, requests: requests)))));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), '13900000000');
+    await tester.tap(find.widgetWithText(FilledButton, '获取验证码'));
+    await tester.tap(find.widgetWithText(FilledButton, '获取验证码'));
+    await waitUntil(tester, () => find.text('同意并登录').evaluate().isNotEmpty);
+    expect(find.text('同意并登录'), findsOneWidget);
+    await tester.tap(find.text('同意并登录'));
+    await waitUntil(tester, () => find.textContaining('重新发送').evaluate().isNotEmpty);
+    expect(requests.where((request) => request.url.path.endsWith('mobile/code/request')), hasLength(1));
+    await tester.pumpWidget(const SizedBox());
+  });
 
   testWidgets('短信登录成功：输手机号与验证码后进入已登录视图', (tester) async {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: loginRuntime(loginClient(loginStatus: 200, loginBody: const {'success': true}, loginCookie: 'PDDAccessToken=AT1; Path=/')))));

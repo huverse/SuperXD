@@ -252,7 +252,14 @@ class ExpressClient {
   // 登录接口的响应：成功同 _unwrap 的判定；要验证的两种带上官方验证页（验证完跳回登录页），其余用拼多多给的文案。
   // 每次记一行形状（状态、错误码、字段名与下发的 Cookie 名，不记值）：拼多多认不认空的行为字段，要从真机上的这一行看。
   Map<String, Object?> _unwrapLogin(ExpressResponse response, String action) {
-    final data = expressJson(response.body);
+    final Map<String, Object?> data;
+    try {
+      data = expressJson(response.body);
+    } on ExpressFailure {
+      // 回的不是 JSON（如风控直接拒绝给的网页）：记下状态码，引导改用网页登录。
+      campusLog('[Express] action=$action errorType=not_json status=${response.statusCode}');
+      throw const ExpressFailure(ExpressFailureCode.server, '拼多多没有接受这次登录，可以改用拼多多网页登录');
+    }
     final code = '${data['error_code']}';
     final shape = 'status=${response.statusCode} code=$code keys=${data.keys.join(',')} cookies=${_setCookies(response).keys.join(',')}';
     final failed = response.statusCode >= 400 || data['success'] == false || (data['error_code'] != null && code != '0' && code != '1000000');

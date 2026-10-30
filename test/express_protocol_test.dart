@@ -711,6 +711,20 @@ void main() {
       client.close();
     });
 
+    // 风控直接拒绝时可能回的不是 JSON（如 403 网页），原来只说「无法识别」。
+    test('登录回的不是 JSON（如 403 网页）：抛服务端错误、提示改用网页登录', () async {
+      final client = ExpressClient(session: const PddSession(), http: ExpressHttp(client: MockClient((request) async => http.Response('<html>forbidden</html>', 403, headers: {'content-type': 'text/html'}))));
+      ExpressFailure? failure;
+      try {
+        await client.loginWithSms(mobile: '13900000000', code: '123456', antiContent: 'ANTI');
+      } on ExpressFailure catch (error) {
+        failure = error;
+      }
+      expect(failure!.code, ExpressFailureCode.server);
+      expect(failure.message, contains('网页登录'));
+      client.close();
+    });
+
     test('登录成功但没下发 PDDAccessToken：抛没拿到会话', () async {
       final client = buildLoginClient(status: 200, body: const {'success': true});
       ExpressFailure? failure;

@@ -5,6 +5,8 @@ import 'dart:convert';
 abstract final class PddConstants {
   static const apiBase = 'https://api.pinduoduo.com';
   static const loginPage = 'https://mobile.yangkeduo.com/login.html';
+  // 拼多多的服务协议与隐私政策列表页（官方登录页「服务协议与隐私政策」链接去的同一页）。
+  static const termsPage = 'https://mobile.yangkeduo.com/terms_list.html';
   // 拉起微信用公开的 weixin:// 链接（只能打开微信首页，打不开指定网页：那要接微信开放平台 SDK 并登记 AppID）。
   static const weChatScheme = 'weixin://';
   // 拉起拼多多 App 打开它自己的页面：同官方网页的「打开 App」，这个前缀后面接页面路径与查询串。

@@ -246,6 +246,15 @@ class _ExpressPageState extends State<ExpressPage> {
     return true;
   }
 
+  // 登录表单里「服务协议与隐私政策」：用系统浏览器打开拼多多官方条款页（人工决策见 express_login_form.dart 的协议行）。
+  Future<void> _openPddTerms() async {
+    final opened = await _service.launchExternal(Uri.parse(PddConstants.termsPage)).catchError((Object error, StackTrace stack) {
+      campusLog('[Express] action=open_terms errorType=${error.runtimeType}\n$stack');
+      return false;
+    });
+    if (!opened && mounted) showCampusToast(context, '没有找到浏览器');
+  }
+
   // 打开带好令牌与跳回地址的官方验证页（查询时的 54001、登录时的 54002 与 54015 共用），返回本人是否通过。
   Future<bool> _openVerify(Uri page) async => await Navigator.of(context).push<bool>(CampusPageRoute(builder: (_) => _service.verifyPage(page))) ?? false;
 
@@ -448,7 +457,7 @@ class _ExpressPageState extends State<ExpressPage> {
           Center(child: Text(controller.error!, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: palette.danger))),
         ],
         const SizedBox(height: 24),
-        ExpressLoginForm(controller: controller, consent: _consent, verify: _openVerify),
+        ExpressLoginForm(controller: controller, consent: _consent, verify: _openVerify, openTerms: _openPddTerms),
         const SizedBox(height: 12),
         // 后备：拼多多不认短信登录时还能在官方网页里登（用户选保留）。
         Center(
