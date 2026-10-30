@@ -571,7 +571,8 @@ void main() {
     expect(find.text('取件时间 10-20 15:30'), findsOneWidget);
     expect(find.textContaining('SX0000000002'), findsOneWidget);
     expect(find.textContaining('SX0000000004'), findsOneWidget);
-    expect(find.widgetWithText(OutlinedButton, '物流'), findsNWidgets(2), reason: '没有 order_sn 的已取出件不给「物流」');
+    expect(find.widgetWithText(OutlinedButton, '物流'), findsNWidgets(2), reason: '没有 order_sn 的已取出件不在应用里查物流');
+    expect(find.text('在拼多多看'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(OutlinedButton, '物流').first);
     await tester.pump();
@@ -588,6 +589,45 @@ void main() {
     expect(find.text('预计明天送达'), findsOneWidget);
     expect(find.text('【合成市】快件已到达合成驿站'), findsOneWidget);
     expect(find.text('2026-10-19 08:00:00'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 10-30 用户真机：已取出的件只有拼多多 App 出得了物流，点「在拼多多看」拉起 App 的物流页，不发查物流请求。数据合成。
+  testWidgets('没有 order_sn 的已取出件点「在拼多多看」拉起拼多多 App 的物流页、不发查物流请求；没装拼多多用提示条', (tester) async {
+    final requests = <http.Request>[];
+    final launched = <Uri>[];
+    var installed = true;
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(
+      requests: requests,
+      station: const {
+        'count': 0,
+        'package_out_list': [
+          {'address': '测试路 1 号', 'operate_time': '10-18 18:00', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000004', 'shipping_id': 104, 'jump_url': '/track?order_sn=&source_type=&entry_source=9&shipping_id=104&tracking_number=SX0000000004&partial_shipment_period='},
+        ],
+      },
+      launch: (uri) async {
+        launched.add(uri);
+        return installed;
+      },
+    ))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(OutlinedButton, '物流'), findsNothing);
+    await tester.tap(find.text('在拼多多看'));
+    await tester.pumpAndSettle();
+    expect(launched.single.toString(), startsWith('pinduoduo://com.xunmeng.pinduoduo/mdkd/track?'));
+    expect(launched.single.queryParameters['tracking_number'], 'SX0000000004');
+    expect(launched.single.queryParameters.containsKey('station_code'), isFalse, reason: '没扫过驿站码就不带');
+    expect(requests.where((request) => request.url.path.endsWith('shipping/track')), isEmpty, reason: '这类件不调查物流接口');
+    expect(find.text('没有找到拼多多'), findsNothing);
+
+    installed = false;
+    await tester.tap(find.text('在拼多多看'));
+    await tester.pumpAndSettle();
+    expect(find.text('没有找到拼多多'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 

@@ -143,6 +143,20 @@ void main() {
       expect(recent.last.trackQuery, (trackingNumber: 'SX0000000003', shippingId: '103', sourceType: '', orderSn: '', entrySource: ''));
     });
 
+    // 10-30 用户真机：已取出的件只有拼多多 App 的原生通道出得了物流，同官方网页的「打开 App」拼 pinduoduo:// 链接。数据合成。
+    test('已取出的件在拼多多 App 里看物流：/mdkd 接上 jump_url，扫过驿站码时加 station_code；jump_url 不是相对路径就不给', () {
+      const jump = '/track?order_sn=&source_type=&entry_source=9&shipping_id=104&tracking_number=SX0000000004&partial_shipment_period=';
+      expect(StationOutPackage.fromJson(const {'jump_url': jump}).jumpUrl, jump);
+      expect(
+        pddAppTrackLink(jump).toString(),
+        'pinduoduo://com.xunmeng.pinduoduo/mdkd/track?order_sn=&source_type=&entry_source=9&shipping_id=104&tracking_number=SX0000000004&partial_shipment_period=',
+      );
+      expect(pddAppTrackLink(jump, stationCode: 'S000000001')!.queryParameters['station_code'], 'S000000001');
+      expect(pddAppTrackLink(''), isNull);
+      expect(pddAppTrackLink('https://example.com/track?tracking_number=SX0000000004'), isNull);
+      expect(pddAppTrackLink('//example.com/track'), isNull);
+    });
+
     // 10-25：官方物流页对链接里带 order_sn 的件（驿站里的件）按 order_sn 查驿站物流，不按运单号查通用物流；字段名照官方代码，数据合成。
     // 10-30 起同官方请求封装带 anti-content（见 express_models.dart 的人工决策）。
     test('驿站里的件物流参数先取 jump_url 里的 order_sn 与 source_type，查物流走 POST dsd/trackbox/shipping/track 并带 anti-content', () async {

@@ -7,6 +7,8 @@ abstract final class PddConstants {
   static const loginPage = 'https://mobile.yangkeduo.com/login.html';
   // 拉起微信用公开的 weixin:// 链接（只能打开微信首页，打不开指定网页：那要接微信开放平台 SDK 并登记 AppID）。
   static const weChatScheme = 'weixin://';
+  // 拉起拼多多 App 打开它自己的页面：同官方网页的「打开 App」，这个前缀后面接页面路径与查询串。
+  static const pddAppBase = 'pinduoduo://com.xunmeng.pinduoduo';
   static const mdkdReferer = 'https://m.pinduoduo.net/mdkd/package?pr_page_from=scheme';
   static const idCodeReferer = 'https://m.pinduoduo.net/mdkd/package?pr_page_from=scheme&tab=ID_CODE';
 
@@ -23,7 +25,7 @@ abstract final class PddConstants {
   // 用户选「查物流也带 anti-content」（未选「先打诊断包确认原因」「只修点物流、补查不带」），用途扩成取件手机号绑定/解绑与查物流（只读）。
   // [人工决策-2026-10-30 18:43:18] 真机三轮诊断推翻了上面的推断：失败的是「近一周已取出」的件（链接里 order_sn、source_type 为空，走 GET 通用物流），
   // 带不带 anti-content、带不带空的 source_type 都回 1011，官方 App 里同一件能看（走 App 原生网络层）。用户选「保留，照官方每个请求都带」（未选撤回）：
-  // 查物流照旧带，不再当成 1011 的修法；驿站、身份码等其余查询仍不带。已取出的件的处理见 express_page.dart 的 [人工决策-2026-10-30 19:19:49]。
+  // 查物流照旧带，不再当成 1011 的修法；驿站、身份码等其余查询仍不带。已取出的件的处理见 express_page.dart 里 recentPackages 处的人工决策。
   static const antiContentHeader = 'anti-content';
   static const bindProtocolCode = 'QJXXJSFWTK1_1';
   static const bindSmsScene = '1000123';
@@ -270,11 +272,13 @@ class StationPackage {
 
 // 近一周已取出的一件（package_out_list 的一项）：官方弹层写取件地址、取件时间（服务端给好的文字）、快递公司与运单号，点一项同样经它的 jump_url 进物流页。
 class StationOutPackage {
-  const StationOutPackage({this.address = '', this.operateTime = '', this.shippingName = '', this.trackingNumber = '', required this.trackQuery});
+  const StationOutPackage({this.address = '', this.operateTime = '', this.shippingName = '', this.trackingNumber = '', this.jumpUrl = '', required this.trackQuery});
   final String address;
   final String operateTime;
   final String shippingName;
   final String trackingNumber;
+  // 官方物流页的相对链接（/track?…），在拼多多 App 里打开这件的物流用（见 pddAppTrackLink）。
+  final String jumpUrl;
   final ExpressTrackQuery trackQuery;
 
   factory StationOutPackage.fromJson(Map<String, Object?> json) => StationOutPackage(
@@ -282,8 +286,19 @@ class StationOutPackage {
     operateTime: '${json['operate_time'] ?? ''}',
     shippingName: '${json['shipping_name'] ?? ''}',
     trackingNumber: '${json['tracking_number'] ?? ''}',
+    jumpUrl: '${json['jump_url'] ?? ''}',
     trackQuery: _trackQueryOf(json),
   );
+}
+
+// 已取出的件在拼多多 App 里的物流页：同官方弹层点一件（/mdkd 接上它的 jump_url，扫过驿站码时加 station_code），换成拉起 App 的链接。
+// jump_url 是外部数据，只认 / 开头的相对路径；不像就返回 null（不给按钮）。
+Uri? pddAppTrackLink(String jumpUrl, {String stationCode = ''}) {
+  final jump = Uri.tryParse(jumpUrl);
+  if (jump == null || jump.hasScheme || jump.hasAuthority || !jump.path.startsWith('/')) return null;
+  // 查询串原样接上（Uri.replace 会把 order_sn= 这类空值写成 order_sn），站点码编码后追加。
+  final query = [if (jump.query.isNotEmpty) jump.query, if (stationCode.isNotEmpty) 'station_code=${Uri.encodeQueryComponent(stationCode)}'].join('&');
+  return Uri.parse('${PddConstants.pddAppBase}/mdkd${jump.path}${query.isEmpty ? '' : '?$query'}');
 }
 
 // 一条物流轨迹：info 是描述、time 是服务端给好的时间文字；官方按返回顺序列出，第一条是最新的。

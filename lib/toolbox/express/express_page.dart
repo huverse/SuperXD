@@ -190,6 +190,15 @@ class _ExpressPageState extends State<ExpressPage> {
     if (!opened && mounted) showCampusToast(context, '没有找到微信');
   }
 
+  // 已取出的件在拼多多 App 里看物流（见 _buildMain 里 recentPackages 处的人工决策）。
+  Future<void> _openInPdd(Uri link) async {
+    final opened = await _service.launchExternal(link).catchError((Object error, StackTrace stack) {
+      campusLog('[Express] action=open_pdd errorType=${error.runtimeType}\n$stack');
+      return false;
+    });
+    if (!opened && mounted) showCampusToast(context, '没有找到拼多多');
+  }
+
   // 驿站的微信取件链接画成纯黑白二维码（四周留白），经百宝箱的一次性导出存进公共目录（相册里可见，同名不重复存）；临时文件用完即删。
   Future<bool> _saveStationQr(String stationCode) async {
     final temp = File(path.join((await _service.temporaryDirectory()).path, 'express-station-${DateTime.now().microsecondsSinceEpoch}.png'));
@@ -579,9 +588,11 @@ class _ExpressPageState extends State<ExpressPage> {
             Padding(key: rowKey('delivery|${group.stationName}|${group.address}'), padding: const EdgeInsets.only(top: 8), child: Text('${group.deliveryCount} 个快递已安排送货上门', style: secondary)),
         ],
         // 近一周已取出（官方放在取快递页底部一行，点开列取件地址、取件时间、快递公司与运单号）：直接列在卡片里。
-        // [人工决策-2026-10-30 19:19:49] 已取出的件链接里没有 order_sn 时只能按运单号查通用物流，用户在官方 App 抓包确认官方这里也回 1011、
-        // 页面写「暂未查询到相关物流信息」（不是缺 anti-content 或参数）。用户选「去掉按钮」（未选「改成在拼多多查看」——deeplink 落到的正是那个空页，
-        // 也未选「保留按钮只提示」）：没有 order_sn 的已取出件不给「物流」、不发请求；带 order_sn 的照旧可查。
+        // [人工决策-2026-10-30 19:19:49] 已取出的件链接里没有 order_sn 时只能按运单号查通用物流，一律回 1011（不是缺 anti-content 或参数）。
+        // 当时以为官方 App 从这个入口也看不到，用户选「去掉按钮」：没有 order_sn 的已取出件不发请求。
+        // [人工决策-2026-10-30 19:46:13] 用户真机再验：网页通道（含官方 H5 在浏览器里）都拿不到，只有拼多多 App 的原生通道出得了轨迹。
+        // 用户要求改成在拼多多 App 里打开：没有 order_sn 的件给「在拼多多看」，拉起 App 的物流页（pddAppTrackLink，同官方网页的打开 App，无闪屏），
+        // 仍不为这类件调 shipping/track；没装拼多多用提示条说明。带 order_sn 的照旧在应用里查。
         if (packages.recentPackages.isNotEmpty) ...[
           Padding(
             key: rowKey('recent'),
@@ -604,7 +615,10 @@ class _ExpressPageState extends State<ExpressPage> {
                       ],
                     ),
                   ),
-                  if (parcel.trackQuery.orderSn.isNotEmpty) trackButton(parcel.trackQuery),
+                  if (parcel.trackQuery.orderSn.isNotEmpty)
+                    trackButton(parcel.trackQuery)
+                  else if (pddAppTrackLink(parcel.jumpUrl, stationCode: controller.stationCode) case final link?)
+                    OutlinedButton.icon(onPressed: locked ? null : () => _openInPdd(link), icon: const CampusIcon(CampusIcons.open), label: const Text('在拼多多看')),
                 ],
               ),
             ),
