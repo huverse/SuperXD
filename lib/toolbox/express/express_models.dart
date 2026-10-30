@@ -5,6 +5,8 @@ import 'dart:convert';
 abstract final class PddConstants {
   static const apiBase = 'https://api.pinduoduo.com';
   static const loginPage = 'https://mobile.yangkeduo.com/login.html';
+  // 拼多多的服务协议与隐私政策列表页（官方登录页「服务协议与隐私政策」链接去的同一页）。
+  static const termsPage = 'https://mobile.yangkeduo.com/terms_list.html';
   // 拉起微信用公开的 weixin:// 链接（只能打开微信首页，打不开指定网页：那要接微信开放平台 SDK 并登记 AppID）。
   static const weChatScheme = 'weixin://';
   static const mdkdReferer = 'https://m.pinduoduo.net/mdkd/package?pr_page_from=scheme';
@@ -37,9 +39,25 @@ abstract final class PddConstants {
   // 生成 anti_content 用的官方页（已加载反爬 bundle）。
   static const antiContentPage = 'https://m.pinduoduo.net/mdkd/package?pr_page_from=scheme';
 
+  // 短信登录：同官方 H5 登录页（login.html）的 sigerus 接口，参数照官方登录页代码（移交包 login-js，10-30 读）。
+  // [人工决策-2026-10-30 21:41:32] 用户觉得内嵌网页登录看着不舒服，选「原生表单直连接口」（未选「包装官方网页」「原生表单代填官方页」）：
+  // 推翻 10-19 起「不做 sigerus 短信登录」的决定，10-20 的 anti_content 让步扩到登录——发码的 screen_token 与登录的 anti_content 照样由隐藏页的官方 JS 现生成。
+  // 官方页面在用户打字、点按时采集的行为字段（fingerprint、touchevent）不伪造、发空值，platform 如实报「其他」；拼多多要求验证时仍打开官方验证页由本人完成。
+  // 用户选保留官方网页登录作后备（express_login_webview.dart），拼多多认不认空的行为字段，要在真机上走过一次才知道。
+  static const loginAppId = 155;
+  static const loginEnhanceType = 6;
+  static const loginCountryId = 1;
+  static const loginTelCode = 86;
+  // 官方风控采集里的 platformType：1 拼多多 iOS、2 拼多多安卓、4 其他（浏览器）；本应用不是拼多多 App，如实报 4。
+  static const loginPlatformOther = 4;
+  // 登录回 54015 时官方去的「本人验证」页（选收货人、曾用头像这类），同安全验证页验证完跳回 from。
+  static const ownerVerifyPage = 'https://mobile.yangkeduo.com/login_verification_owner.html';
+
   // 官方安全验证页（接口回 54001 时官方 mdkd 页面跳去的同一个页面），验证完跳回 from 指定的地址；from 填官方 mdkd 页，跳到它就算通过。
   static const verifyPage = 'https://m.yangkeduo.com/psnl_verification.html';
   static const verifyReturn = 'https://m.pinduoduo.net/mdkd/package';
+  // 登录时要验证则同官方登录页：验证页开在登录页的域名下，验证完跳回登录页。
+  static const loginVerifyPage = 'https://mobile.yangkeduo.com/psnl_verification.html';
 
   // 接口没返回 expire_mills 时按页面同款缺省值刷新。
   static const defaultExpireMills = 600000;
@@ -130,14 +148,16 @@ class PddSession {
 }
 
 // 快递接口失败分类：页面只按 code 分支，message 只用来展示。
-// verifyRequired 是拼多多风控要用户本人先过一次官方安全验证（错误码 54001，带 verify_auth_token），verifyToken 就是这个令牌。
+// verifyRequired 是拼多多风控要用户本人先过一次官方安全验证（错误码 54001，带 verify_auth_token），verifyToken 就是这个令牌；
+// 登录时要验证（54002、54015）另带 verifyPage：要打开的官方验证页，已带上令牌与跳回的登录页。
 enum ExpressFailureCode { notLoggedIn, verifyRequired, network, timeout, tooLarge, server, invalidResponse }
 
 class ExpressFailure implements Exception {
-  const ExpressFailure(this.code, this.message, {this.verifyToken = ''});
+  const ExpressFailure(this.code, this.message, {this.verifyToken = '', this.verifyPage});
   final ExpressFailureCode code;
   final String message;
   final String verifyToken;
+  final Uri? verifyPage;
 
   bool get isNotLoggedIn => code == ExpressFailureCode.notLoggedIn;
 

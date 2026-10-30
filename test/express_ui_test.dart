@@ -124,15 +124,17 @@ class _FakeAnti implements PddAntiContent {
   WebViewController? get webViewController => null;
 }
 
-// 假的官方安全验证页：不起真实 WebView，点「通过」或「放弃」就关页返回结果；记下打开时带的令牌。
+// 假的官方验证页：不起真实 WebView，点「通过」或「放弃」就关页返回结果；记下打开时带的令牌（安全验证页叫 VerifyAuthToken，本人验证页叫 verify_auth_token）与页面。
 class _FakeVerifyPage extends StatelessWidget {
-  const _FakeVerifyPage(this.token);
-  final String token;
+  const _FakeVerifyPage(this.page);
+  final Uri page;
   static final opened = <String>[];
+  static final pages = <Uri>[];
 
   @override
   Widget build(BuildContext context) {
-    opened.add(token);
+    opened.add(page.queryParameters['VerifyAuthToken'] ?? page.queryParameters['verify_auth_token']!);
+    pages.add(page);
     return Scaffold(
       body: Column(children: [
         TextButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('通过')),
@@ -176,7 +178,7 @@ void main() {
     Future<void>? trackGate,
     Future<void>? stationGate,
     Future<void>? identityGate,
-    Widget Function(String token)? verifyPage,
+    Widget Function(Uri page)? verifyPage,
     ToolboxShortcutPin? pin,
   }) => ToolboxRuntime.testing(
     catalog: toolboxCatalog,
@@ -212,8 +214,164 @@ void main() {
   testWidgets('未登录显示登录入口', (tester) async {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
     await tester.pumpAndSettle();
-    expect(find.text('登录拼多多'), findsOneWidget);
+    expect(find.text('获取验证码'), findsOneWidget);
     expect(find.text('拼多多账号'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 短信登录：发码与登录直连 sigerus，登录成功经 Set-Cookie 下发会话；登录后页面读账号卡的昵称。
+  http.Client loginClient({required int loginStatus, required Map<String, Object?> loginBody, String? loginCookie, List<http.Request>? requests}) => MockClient((request) async {
+    requests?.add(request);
+    final path = request.url.path;
+    if (path.endsWith('mobile/code/request')) return _json({'success': true});
+    if (path.endsWith('login_mobile') || path.endsWith('verify/login')) {
+      return http.Response(jsonEncode(loginBody), loginStatus, headers: {'content-type': 'application/json;charset=UTF-8', 'set-cookie': ?loginCookie});
+    }
+    if (path.endsWith('nickname/query')) return _json({'success': true, 'result': {'nickname': '合成昵称'}});
+    if (path.endsWith('express/detail')) return _json({'success': true, 'new_binding_list': const []});
+    return _json({'success': true, 'error_code': '0'});
+  });
+
+  ToolboxRuntime loginRuntime(http.Client client, {Widget Function(Uri page)? verifyPage, Future<bool> Function(Uri uri)? launch}) => ToolboxRuntime.testing(
+    catalog: toolboxCatalog,
+    store: fixture.store,
+    downloads: fixture.manager,
+    services: {
+      ExpressService.serviceId: ExpressService(
+        vault: vault,
+        clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: client)),
+        antiContent: _FakeAnti(),
+        verifyPage: verifyPage ?? _FakeVerifyPage.new,
+        launchExternal: launch ?? (uri) async => true,
+      ),
+    },
+  );
+
+  // 等到条件满足：用 runAsync 推进真实异步（sqflite 同意记录、MockClient 回包要它才走），再推一帧让界面重建；发验证码的 60 秒倒计时是假时钟定时器，pump(16ms) 慢慢走、不挡。
+  Future<void> waitUntil(WidgetTester tester, bool Function() done) async {
+    for (var i = 0; i < 200 && !done(); i++) {
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+  }
+
+  // 输手机号、发验证码（首次会弹同意，点同意）、输码、勾选拼多多协议（agree 为假时不勾）、登录。发码成功后按钮倒数「重新发送」，据此等发码完成。
+  Future<void> signInWith(WidgetTester tester, {String code = '123456', bool agree = true}) async {
+    await tester.enterText(find.byType(TextField).at(0), '13900000000');
+    await tester.tap(find.widgetWithText(FilledButton, '获取验证码'));
+    await waitUntil(tester, () => find.text('同意并登录').evaluate().isNotEmpty);
+    await tester.tap(find.text('同意并登录'));
+    await waitUntil(tester, () => find.textContaining('重新发送').evaluate().isNotEmpty);
+    await tester.enterText(find.byType(TextField).at(1), code);
+    if (agree) await tester.tap(find.byType(Checkbox));
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pump();
+  }
+
+  testWidgets('没勾选拼多多协议点登录：原地提示、不发登录请求；点「服务协议与隐私政策」用浏览器打开拼多多官方条款页', (tester) async {
+    final requests = <http.Request>[];
+    final launched = <Uri>[];
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: loginRuntime(
+      loginClient(loginStatus: 200, loginBody: const {'success': true}, loginCookie: 'PDDAccessToken=AT1; Path=/', requests: requests),
+      launch: (uri) async {
+        launched.add(uri);
+        return true;
+      },
+    ))));
+    await tester.pumpAndSettle();
+    await signInWith(tester, agree: false);
+    await waitUntil(tester, () => find.text('请先勾选同意拼多多服务协议与隐私政策').evaluate().isNotEmpty);
+    expect(find.text('请先勾选同意拼多多服务协议与隐私政策'), findsOneWidget);
+    expect(requests.where((request) => request.url.path.endsWith('login_mobile')), isEmpty);
+    expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isFalse, reason: '同官方默认不勾');
+
+    await tester.tap(find.text('服务协议与隐私政策'));
+    await tester.pump();
+    expect(launched, [Uri.parse(PddConstants.termsPage)]);
+    // 点「同意拼多多」几个字也能勾选。
+    await tester.tap(find.text('同意拼多多'));
+    await tester.pump();
+    expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('一帧里连点两下「获取验证码」：只弹一个同意弹窗、只发一次码', (tester) async {
+    final requests = <http.Request>[];
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: loginRuntime(loginClient(loginStatus: 200, loginBody: const {'success': true}, requests: requests)))));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), '13900000000');
+    await tester.tap(find.widgetWithText(FilledButton, '获取验证码'));
+    await tester.tap(find.widgetWithText(FilledButton, '获取验证码'));
+    await waitUntil(tester, () => find.text('同意并登录').evaluate().isNotEmpty);
+    expect(find.text('同意并登录'), findsOneWidget);
+    await tester.tap(find.text('同意并登录'));
+    await waitUntil(tester, () => find.textContaining('重新发送').evaluate().isNotEmpty);
+    expect(requests.where((request) => request.url.path.endsWith('mobile/code/request')), hasLength(1));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('短信登录成功：输手机号与验证码后进入已登录视图', (tester) async {
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: loginRuntime(loginClient(loginStatus: 200, loginBody: const {'success': true}, loginCookie: 'PDDAccessToken=AT1; Path=/')))));
+    await tester.pumpAndSettle();
+    expect(find.text('获取验证码'), findsOneWidget);
+    await signInWith(tester);
+    await waitUntil(tester, () => find.text('合成昵称').evaluate().isNotEmpty);
+    expect(find.text('合成昵称'), findsOneWidget);
+    expect(find.text('驿站快递'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('没授权过时发验证码先弹同意', (tester) async {
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: loginRuntime(loginClient(loginStatus: 200, loginBody: const {'success': true})))));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField).at(0), '13900000000');
+    await tester.tap(find.widgetWithText(FilledButton, '获取验证码'));
+    await waitUntil(tester, () => find.text('同意并登录').evaluate().isNotEmpty);
+    expect(find.text('同意并登录'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('登录碰到安全验证：打开官方验证页，通过后带令牌完成登录', (tester) async {
+    _FakeVerifyPage.opened.clear();
+    _FakeVerifyPage.pages.clear();
+    var attempt = 0;
+    final client = MockClient((request) async {
+      final path = request.url.path;
+      if (path.endsWith('mobile/code/request')) return _json({'success': true});
+      if (path.endsWith('login_mobile')) {
+        attempt++;
+        return http.Response(jsonEncode(const {'error_code': 54002, 'verify_auth_token': 'VT-9'}), 400, headers: {'content-type': 'application/json;charset=UTF-8'});
+      }
+      if (path.endsWith('verify/login')) {
+        return http.Response(jsonEncode(const {'success': true}), 200, headers: {'content-type': 'application/json;charset=UTF-8', 'set-cookie': 'PDDAccessToken=AT-R; Path=/'});
+      }
+      if (path.endsWith('nickname/query')) return _json({'success': true, 'result': {'nickname': '合成昵称'}});
+      if (path.endsWith('express/detail')) return _json({'success': true, 'new_binding_list': const []});
+      return _json({'success': true, 'error_code': '0'});
+    });
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: loginRuntime(client))));
+    await tester.pumpAndSettle();
+    await signInWith(tester);
+    await waitUntil(tester, () => find.text('通过').evaluate().isNotEmpty);
+    // 等验证页推入转场落定再点，不然点在还在滑入的按钮上会落空（倒计时是假时钟定时器，pump 不挂）。
+    await tester.pump(const Duration(milliseconds: 500));
+    // 登录回 54002 → 打开官方验证页（令牌与跳回登录页都带上）。
+    expect(_FakeVerifyPage.opened, ['VT-9']);
+    expect(_FakeVerifyPage.pages.single.queryParameters['from'], PddConstants.loginPage);
+    await tester.tap(find.text('通过'));
+    await waitUntil(tester, () => find.text('合成昵称').evaluate().isNotEmpty);
+    expect(attempt, 1, reason: '过了验证走 verify/login，不再重发 login_mobile');
+    expect(find.text('合成昵称'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('登录失败：原地写明拼多多给的原因', (tester) async {
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: loginRuntime(loginClient(loginStatus: 200, loginBody: const {'error_code': 60005, 'error_msg': '验证码错误'})))));
+    await tester.pumpAndSettle();
+    await signInWith(tester, code: '000000');
+    await waitUntil(tester, () => find.text('验证码错误').evaluate().isNotEmpty);
+    expect(find.text('验证码错误'), findsOneWidget);
+    expect(find.textContaining('重新发送'), findsOneWidget, reason: '还停在登录表单（验证码已发出、按钮在倒数）');
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -1298,7 +1456,7 @@ void main() {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(), openIdentity: true)));
     await tester.pumpAndSettle();
     expect(find.byType(ExpressIdentityPending), findsNothing);
-    expect(find.text('登录拼多多'), findsOneWidget);
+    expect(find.text('获取验证码'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -1485,7 +1643,7 @@ void main() {
     await tester.tap(find.text('身份码'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
-    expect(find.text('登录拼多多'), findsOneWidget);
+    expect(find.text('获取验证码'), findsOneWidget);
     expect(find.text('登录已失效，请重新登录'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
@@ -1567,7 +1725,7 @@ void main() {
     await tester.tap(find.text('绑定手机号'));
     await tester.pumpAndSettle();
     expect(find.text('取件手机号'), findsNothing);
-    expect(find.text('登录拼多多'), findsOneWidget);
+    expect(find.text('获取验证码'), findsOneWidget);
     expect(find.text('登录已失效，请重新登录'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });

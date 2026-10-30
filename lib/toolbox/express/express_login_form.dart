@@ -1,0 +1,215 @@
+import 'dart:async';
+import 'dart:math' as math;
+
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+
+import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/theme/campus_glass_button.dart';
+import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_loading.dart';
+import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
+import 'package:superxd/toolbox/express/express_controller.dart';
+import 'package:superxd/toolbox/express/express_models.dart';
+
+// 拼多多短信登录表单（[人工决策] 见 express_models.dart 的登录常量）：手机号加短信验证码，在应用里直接发给拼多多，号码与验证码不保存。
+// 发码与登录前都经 consent 取同意（同意过的直接过）；登录前要勾选拼多多自己的服务协议与隐私政策（openTerms 打开官方条款页）；
+// 拼多多要求验证时经 verify 打开官方验证页，本人过了再用令牌完成登录。失败原因在表单里原地写。
+class ExpressLoginForm extends StatefulWidget {
+  const ExpressLoginForm({super.key, required this.controller, required this.consent, required this.verify, required this.openTerms});
+  final ExpressController controller;
+  final Future<bool> Function() consent;
+  final Future<bool> Function(Uri page) verify;
+  final VoidCallback openTerms;
+
+  @override
+  State<ExpressLoginForm> createState() => _ExpressLoginFormState();
+}
+
+class _ExpressLoginFormState extends State<ExpressLoginForm> {
+  final _mobile = TextEditingController();
+  final _code = TextEditingController();
+  // 同官方：这次已成功发过几次验证码，随发码请求带上。
+  var _requestTimes = 0;
+  // 发出后 60 秒内不能重发（同官方），按钮上倒数；0 表示可以发。
+  var _countdown = 0;
+  Timer? _ticker;
+  bool _sending = false;
+  bool _submitting = false;
+  bool _agreed = false;
+  String? _error;
+
+  static const _agreementHint = '请先勾选同意拼多多服务协议与隐私政策';
+
+  @override
+  void dispose() {
+    _ticker?.cancel();
+    _mobile.dispose();
+    _code.dispose();
+    super.dispose();
+  }
+
+  String? _invalidMobile() => RegExp(r'^1\d{10}$').hasMatch(_mobile.text.trim()) ? null : '请输入 11 位手机号';
+
+  bool get _busy => _sending || _submitting;
+
+  Future<void> _send() async {
+    if (_busy) return;
+    final invalid = _invalidMobile();
+    if (invalid != null) {
+      setState(() => _error = invalid);
+      return;
+    }
+    final mobile = _mobile.text.trim();
+    // 等同意弹窗的那段也算忙：一帧里连点两下不会弹两个同意、发两次码。
+    await _guard(() => _sending = true, () => _sending = false, () async {
+      if (!await widget.consent() || !mounted) return;
+      final needCall = await widget.controller.sendLoginSms(mobile, requestTimes: _requestTimes);
+      _requestTimes++;
+      if (needCall) {
+        // 拼多多这次没发短信、改要电话告知验证码（同官方的语音验证码弹窗）：本人同意了再发一次。
+        if (!mounted) return;
+        final call = await showCampusConfirm(context, title: '改用电话接收验证码', message: '拼多多这次要打电话告诉你验证码，请留意来电。', action: '接听电话');
+        if (!call || !mounted) return;
+        await widget.controller.sendLoginSms(mobile, requestTimes: _requestTimes, voice: true);
+        _requestTimes++;
+      }
+      if (mounted) _startCountdown();
+    });
+  }
+
+  void _startCountdown() {
+    _ticker?.cancel();
+    setState(() => _countdown = 60);
+    _ticker = Timer.periodic(const Duration(seconds: 1), (timer) {
+      setState(() => _countdown--);
+      if (_countdown == 0) timer.cancel();
+    });
+  }
+
+  Future<void> _submit() async {
+    if (_busy) return;
+    final code = _code.text.trim();
+    // 同官方登录页的检查顺序：手机号、验证码、拼多多协议。
+    final invalid = _invalidMobile() ?? (code.length < 4 ? '请输入收到的验证码' : null) ?? (_agreed ? null : _agreementHint);
+    if (invalid != null) {
+      setState(() => _error = invalid);
+      return;
+    }
+    final mobile = _mobile.text.trim();
+    // 登录成功后页面换成已登录视图、本表单随之销毁。
+    await _guard(() => _submitting = true, () => _submitting = false, () async {
+      if (!await widget.consent() || !mounted) return;
+      try {
+        await widget.controller.loginWithSms(mobile, code);
+      } on ExpressFailure catch (failure) {
+        final page = failure.verifyPage;
+        if (page == null || !await widget.verify(page)) rethrow;
+        await widget.controller.verifiedLogin(failure.verifyToken);
+      }
+    });
+  }
+
+  // 一次只跑一个请求，发起的按钮原地转圈；失败原因写在表单里。
+  Future<void> _guard(VoidCallback start, VoidCallback end, Future<void> Function() action) async {
+    setState(() {
+      start();
+      _error = null;
+    });
+    try {
+      await action();
+    } on ExpressFailure catch (failure) {
+      if (mounted) setState(() => _error = failure.message);
+    } catch (error, stack) {
+      campusLog('[Express] action=login_form errorType=${error.runtimeType}\n$stack');
+      if (mounted) setState(() => _error = '出错了，请稍后重试');
+    } finally {
+      if (mounted) setState(end);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    final busy = _busy;
+    // CampusBusyContent 按两段文案里较宽的留宽：两段都放最宽的「重新发送(60)」，倒数和发送中时验证码框都不跟着变宽变窄。
+    const widest = '重新发送(60)';
+    // 协议行的首行与左边 48 的勾选框居中对齐（同登录页的同意行）。
+    const agreementStyle = TextStyle(fontSize: 14);
+    final line = campusTextPainter(context, '我', style: agreementStyle);
+    final agreementTop = math.max(0.0, (48 - line.height - 8) / 2);
+    line.dispose();
+    final link = campusLink.copyWith(padding: const WidgetStatePropertyAll(EdgeInsets.symmetric(vertical: 4)), minimumSize: const WidgetStatePropertyAll(Size.zero), tapTargetSize: MaterialTapTargetSize.shrinkWrap);
+    return AutofillGroup(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          TextField(
+            controller: _mobile,
+            keyboardType: TextInputType.phone,
+            autofillHints: const [AutofillHints.telephoneNumberNational],
+            textInputAction: TextInputAction.next,
+            inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(11)],
+            decoration: const InputDecoration(labelText: '手机号', prefixText: '+86 '),
+          ),
+          SizedBox(height: campusFieldGap(context)),
+          Row(
+            children: [
+              Expanded(
+                child: TextField(
+                  controller: _code,
+                  keyboardType: TextInputType.number,
+                  autofillHints: const [AutofillHints.oneTimeCode],
+                  textInputAction: TextInputAction.done,
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(6)],
+                  onSubmitted: (_) {
+                    if (!busy) unawaited(_submit());
+                  },
+                  decoration: const InputDecoration(labelText: '验证码'),
+                ),
+              ),
+              const SizedBox(width: 12),
+              FilledButton(
+                onPressed: busy || _countdown > 0 ? null : () => unawaited(_send()),
+                child: CampusBusyContent(
+                  busy: _sending,
+                  label: _sending ? widest : (_countdown > 0 ? '重新发送($_countdown)' : '获取验证码'),
+                  busyLabel: _sending ? '发送中' : widest,
+                  icon: const CampusIcon(CampusIcons.send),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // [人工决策-2026-10-30 23:07:44] 复审查到原生表单跳过了拼多多自己的协议确认：官方登录页默认要勾选「同意服务协议与隐私政策」才让登录
+          //（未注册的号码可能被直接注册成拼多多账号）。用户选「勾选框」（未选「只写一行登录即表示同意」「不加」）：同官方默认不勾、点登录时检查，
+          // 点「同意拼多多」几个字也能勾选、读屏读整句；「服务协议与隐私政策」用系统浏览器打开拼多多官方条款页（terms_list.html）。
+          Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            SizedBox(width: 48, height: 48, child: Checkbox(semanticLabel: '同意拼多多服务协议与隐私政策', value: _agreed, onChanged: busy ? null : (value) => setState(() => _agreed = value == true))),
+            Expanded(child: Padding(padding: EdgeInsets.only(top: agreementTop), child: Wrap(spacing: 4, crossAxisAlignment: WrapCrossAlignment.center, children: [
+              ExcludeSemantics(child: GestureDetector(
+                onTap: busy ? null : () => setState(() => _agreed = !_agreed),
+                child: Padding(padding: const EdgeInsets.symmetric(vertical: 4), child: Text('同意拼多多', style: agreementStyle.copyWith(color: palette.onSurfaceVariant))),
+              )),
+              TextButton(style: link, onPressed: widget.openTerms, child: const Text('服务协议与隐私政策', style: agreementStyle)),
+            ]))),
+          ]),
+          if (_error != null) ...[
+            const SizedBox(height: 12),
+            Text(_error!, style: TextStyle(fontSize: 14, color: palette.danger)),
+          ],
+          const SizedBox(height: 20),
+          FilledButton(
+            style: campusProminent,
+            onPressed: busy ? null : () => unawaited(_submit()),
+            child: CampusBusyContent(busy: _submitting, label: '登录', busyLabel: '登录中', icon: const CampusIcon(CampusIcons.login)),
+          ),
+        ],
+      ),
+    );
+  }
+}

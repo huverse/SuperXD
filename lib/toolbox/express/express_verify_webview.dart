@@ -5,13 +5,13 @@ import 'package:webview_flutter/webview_flutter.dart';
 
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
-import 'package:superxd/toolbox/express/express_models.dart';
 
-// 拼多多官方安全验证页（接口回 54001 时打开，同官方 mdkd 页面的做法）：由用户本人在官方页面完成验证，
-// 页面验证完跳回 from 指定的官方 mdkd 页，跳到那里就算通过、关页返回 true；中途返回算没通过。应用不替用户做验证、不读页面内容。
+// 拼多多官方验证页（查询回 54001 时开在 mdkd 之上，登录回 54002、54015 时开在登录页之上，同官方页面的做法）：由用户本人在官方页面完成验证，
+// 页面验证完跳回 from 指定的官方页，跳到那里就算通过、关页返回 true；中途返回算没通过。应用不替用户做验证、不读页面内容。
 class ExpressVerifyWebView extends StatefulWidget {
-  const ExpressVerifyWebView({super.key, required this.token});
-  final String token;
+  const ExpressVerifyWebView({super.key, required this.page});
+  // 已带上验证令牌与 from（验证完跳回的地址）的官方验证页。
+  final Uri page;
 
   @override
   State<ExpressVerifyWebView> createState() => _ExpressVerifyWebViewState();
@@ -43,14 +43,14 @@ class _ExpressVerifyWebViewState extends State<ExpressVerifyWebView> {
           onNavigationRequest: _decideNavigation,
         ),
       )
-      ..loadRequest(Uri.parse(PddConstants.verifyPage).replace(queryParameters: {'VerifyAuthToken': widget.token, 'from': PddConstants.verifyReturn}));
+      ..loadRequest(widget.page);
   }
 
-  // 跳回 from（官方 mdkd 页）就是验证通过；其余只许拼多多相关域名，拦下拉起 App 的外部 scheme。
+  // 跳回 from 就是验证通过；其余只许拼多多相关域名，拦下拉起 App 的外部 scheme。
   NavigationDecision _decideNavigation(NavigationRequest request) {
     final uri = Uri.tryParse(request.url);
     if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) return NavigationDecision.prevent;
-    if (request.isMainFrame && request.url.startsWith(PddConstants.verifyReturn)) {
+    if (request.isMainFrame && request.url.startsWith(widget.page.queryParameters['from']!)) {
       if (!_done && mounted) {
         _done = true;
         Navigator.of(context).pop(true);

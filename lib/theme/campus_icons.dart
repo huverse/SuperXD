@@ -47,6 +47,7 @@ abstract final class CampusIcons {
   static const pause = LucideIcons.pause;
   static const resume = LucideIcons.play;
   static const open = LucideIcons.externalLink;
+  static const web = LucideIcons.globe;
   static const settings = LucideIcons.settings;
   static const paste = LucideIcons.clipboardPaste;
   static const copy = LucideIcons.copy;

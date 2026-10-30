@@ -41,10 +41,10 @@ class ExpressService implements ToolboxService {
 
   static Future<bool> _launchExternal(Uri uri) => launchUrl(uri, mode: LaunchMode.externalApplication);
 
-  // 拼多多要求先过安全验证时打开的官方验证页（关页时返回是否通过）；测试注入不起 WebView 的假页面。
-  final Widget Function(String token) verifyPage;
+  // 拼多多要求先过验证时打开的官方验证页（带好令牌与跳回地址，关页时返回是否通过）；测试注入不起 WebView 的假页面。
+  final Widget Function(Uri page) verifyPage;
 
-  static Widget _verifyPage(String token) => ExpressVerifyWebView(token: token);
+  static Widget _verifyPage(Uri page) => ExpressVerifyWebView(page: page);
 
   // 工具 id：路由、服务与同意记录共用（同意记录里存的就是它，不能改）。
   static const serviceId = 'express';
