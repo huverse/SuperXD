@@ -78,7 +78,7 @@ http.Client _fakeClient({List<String>? calls, Map<String, Object?>? station, Lis
     body = {'success': true, 'mobile_id': 'MID'};
   } else if (path.endsWith('code/auth/verify')) {
     body = {'success': true, 'session_id': 'SID'};
-  } else if (path.endsWith('new/express/mobile') || path.endsWith('fast/bind/c/mobile') || path.endsWith('mobile/unbind')) {
+  } else if (path.endsWith('new/express/mobile') || path.endsWith('fast/bind/c/mobile') || path.endsWith('mobile/unbind') || path.endsWith('mobile/alias')) {
     body = {'success': true};
   } else {
     body = {'success': true, 'error_code': '0', 'result': {'identification_code': 'dd202610190000000000001', 'expire_mills': 132000, 'mobile_info': {'mobile_info_desc': '已绑定常用手机号：138****8888'}}};
@@ -990,10 +990,11 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('绑定其他手机号：输手机号发验证码、输验证码完成绑定，弹层回到列表并提示已绑定；绑定后紧接着关联驿站包裹', (tester) async {
+  testWidgets('绑定其他手机号：输手机号（可点快捷备注）发验证码、输验证码完成绑定，弹层回到列表并提示已绑定；绑定后紧接着关联驿站包裹', (tester) async {
     final calls = <String>[];
+    final requests = <http.Request>[];
     await vault.save(_session);
-    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(calls: calls))));
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(calls: calls, requests: requests))));
     await tester.pumpAndSettle();
     await tester.tap(find.text('绑定手机号'));
     await tester.pumpAndSettle();
@@ -1004,6 +1005,9 @@ void main() {
     // 没发验证码前不进验证码步骤。
     expect(find.widgetWithText(TextField, '验证码'), findsNothing);
     await tester.enterText(find.widgetWithText(TextField, '手机号'), '13800000000');
+    await tester.tap(find.text('妈妈'));
+    await tester.pump();
+    expect(tester.widget<TextField>(find.widgetWithText(TextField, '备注（选填）')).controller!.text, '妈妈');
     await tester.tap(find.text('发送验证码'));
     await tester.pumpAndSettle();
     // 进入验证码步骤。
@@ -1017,6 +1021,7 @@ void main() {
     // 同官方：绑定成功后紧接着把这个号已到站的包裹关联进本账号。
     final bindAt = calls.indexWhere((path) => path.endsWith('new/express/mobile'));
     expect(bindAt, isNonNegative);
+    expect(_lastBody(requests, 'new/express/mobile')['alias'], '妈妈', reason: '绑定时填的备注同官方随绑定一起发');
     expect(calls.indexWhere(_isLink), greaterThan(bindAt));
     expect(await vault.stationLinked(), isTrue);
     await tester.pumpWidget(const SizedBox());
@@ -1052,6 +1057,47 @@ void main() {
     await tester.tap(find.widgetWithText(FilledButton, '解绑'));
     await tester.pumpAndSettle();
     expect(find.text('已解绑'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 同官方「修改备注」：输入框预填当前备注，三个快捷选项点了直接填上，最多 5 个字，可清空；没改就不发请求。数据合成。
+  testWidgets('修改备注在行内⋯里：预填当前备注、快捷选项、最多 5 个字，保存后带 anti_content 发出并提示；没改不发请求', (tester) async {
+    final requests = <http.Request>[];
+    await vault.save(_session);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(requests: requests))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('绑定手机号'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('修改备注'));
+    await tester.pumpAndSettle();
+    final field = find.widgetWithText(TextField, '备注');
+    TextEditingController controller() => tester.widget<TextField>(field).controller!;
+    expect(find.text('138****8888'), findsOneWidget);
+    expect(controller().text, '自己', reason: '预填当前备注');
+    await tester.enterText(field, '一二三四五六');
+    await tester.pump();
+    expect(controller().text, '一二三四五', reason: '最多 5 个字');
+    await tester.tap(find.text('爸爸'));
+    await tester.pump();
+    expect(controller().text, '爸爸');
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+    expect(_lastBody(requests, 'mobile/alias'), {'mobile_id': 'm1', 'alias': '爸爸', 'anti_content': 'anti'});
+    expect(requests.lastWhere((request) => request.url.path.endsWith('mobile/alias')).headers[PddConstants.antiContentHeader], 'anti');
+    expect(find.text('已修改备注'), findsOneWidget);
+
+    // 没改备注就保存：不发请求。
+    final sent = requests.where((request) => request.url.path.endsWith('mobile/alias')).length;
+    await tester.pump(const Duration(seconds: 5));
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('修改备注'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '保存'));
+    await tester.pumpAndSettle();
+    expect(requests.where((request) => request.url.path.endsWith('mobile/alias')), hasLength(sent));
     await tester.pumpWidget(const SizedBox());
   });
 

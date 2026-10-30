@@ -535,6 +535,29 @@ void main() {
       client.close();
     });
 
+    // 官方「修改备注」弹窗：body 带 mobile_id、alias（最多 5 个字，清空发空串）、anti_content 与 mobile_id_scene，请求封装另加 anti-content 头。
+    test('修改备注发 mobile_id/alias/anti_content/mobile_id_scene + 头；清空时 alias 是空串', () async {
+      String? path;
+      Object? body;
+      String? antiHeader;
+      final client = buildClient(
+        session: session,
+        onRequest: (request) {
+          path = request.url.path;
+          body = jsonDecode(request.body);
+          antiHeader = request.headers['anti-content'];
+        },
+        respond: (_) => {'success': true},
+      );
+      await client.updateMobileAlias(mobileId: 'mid1', mobileIdScene: 1, alias: '爸爸', antiContent: 'ANTI');
+      expect(path, endsWith('/api/apoc/express/mobile/alias'));
+      expect(antiHeader, 'ANTI');
+      expect(body, {'mobile_id': 'mid1', 'alias': '爸爸', 'anti_content': 'ANTI', 'mobile_id_scene': 1});
+      await client.updateMobileAlias(mobileId: 'mid1', alias: '', antiContent: 'ANTI');
+      expect(body, {'mobile_id': 'mid1', 'alias': '', 'anti_content': 'ANTI'});
+      client.close();
+    });
+
     // 逆向结论：解绑 body 字段名是 mobile（值 mobileId），带 box_popup_service、mobile_id_scene 与 body 里的 anti_content，anti-content 头也带。
     test('解绑按修正后的字段发：mobile/box_popup_service/mobile_id_scene/anti_content + 头', () async {
       String? path;

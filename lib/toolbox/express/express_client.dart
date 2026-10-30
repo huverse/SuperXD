@@ -194,6 +194,16 @@ class ExpressClient {
     });
   }
 
+  // 修改取件手机号的备注（同官方「修改备注」弹窗，最多 5 个字，空串即清掉）：body 带 mobile_id、alias、mobile_id_scene 与 anti_content，anti-content 头也带。
+  Future<void> updateMobileAlias({required String mobileId, int? mobileIdScene, required String alias, required String antiContent}) async {
+    await _postJson('/api/apoc/express/mobile/alias', referer: PddConstants.mdkdReferer, antiContent: antiContent, body: {
+      'mobile_id': mobileId,
+      'alias': alias,
+      'anti_content': antiContent,
+      'mobile_id_scene': ?mobileIdScene,
+    });
+  }
+
   // 字段可能在顶层，也可能裹在 result 里，两处都找。
   String _pickField(Map<String, Object?> data, String key) {
     final top = data[key];
