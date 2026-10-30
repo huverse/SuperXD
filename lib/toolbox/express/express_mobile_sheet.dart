@@ -3,16 +3,18 @@ import 'package:flutter/services.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/express/express_controller.dart';
 import 'package:superxd/toolbox/express/express_models.dart';
 
-// 取件手机号管理弹层：列已绑定的号（⋯里解绑）、一键快速绑定本账号已有号、短信验证绑定其他手机号。
+// 取件手机号管理弹层：列已绑定的号（⋯里修改备注与解绑）、一键快速绑定本账号已有号、短信验证绑定其他手机号。
 // 绑定/解绑都是账号状态变更，逐步由用户点击确认，不后台自动做。登录失效时控制器回到登录页、本弹层随之关闭。
 // 数据由页面先读好再打开（ExpressController.loadMobiles），弹层一出来就是最终内容，不先撑满再缩回。
 Future<void> showExpressMobileSheet(BuildContext context, {required ExpressController controller, required ExpressMobiles initial}) =>
@@ -84,9 +86,29 @@ class _ExpressMobileSheetState extends State<_ExpressMobileSheet> {
     if (bound == true) await _guard(() async {}, done: '已绑定');
   }
 
-  Future<void> _unbind(BuildContext anchor, PddBoundMobile mobile) async {
-    final choice = await showCampusMenu<String>(anchor, items: const [CampusMenuItem(value: 'unbind', label: '解绑', icon: CampusIcons.unbind, destructive: true)]);
-    if (choice != 'unbind' || !mounted) return;
+  // [人工决策-2026-10-30 20:03:10] 取件手机号备注（用户选「修改备注加绑新号可填」，同官方 mdkd）：每一行⋯里「修改备注」，
+  // 绑其他手机号的第一步可顺手填；最多 5 个字、可清空，给爱人、爸爸、妈妈三个快捷选项。修改备注同官方带 anti_content（见 express_client.dart）。
+  // 隐私政策第五节补写发给拼多多的还有备注，用户选修订号不加。
+  Future<void> _more(BuildContext anchor, PddBoundMobile mobile) async {
+    final choice = await showCampusMenu<String>(
+      anchor,
+      items: const [
+        CampusMenuItem(value: 'alias', label: '修改备注', icon: CampusIcons.edit),
+        CampusMenuItem(value: 'unbind', label: '解绑', icon: CampusIcons.unbind, destructive: true),
+      ],
+    );
+    if (!mounted) return;
+    if (choice == 'alias') await _editAlias(mobile);
+    if (choice == 'unbind') await _unbind(mobile);
+  }
+
+  Future<void> _editAlias(PddBoundMobile mobile) async {
+    final alias = await showCampusDialog<String>(context: context, builder: (_) => _AliasDialog(mobile: mobile));
+    if (alias == null || alias == mobile.alias || !mounted) return;
+    await _guard(() => widget.controller.updateAlias(mobile, alias), done: '已修改备注');
+  }
+
+  Future<void> _unbind(PddBoundMobile mobile) async {
     final name = mobile.alias.isEmpty ? mobile.maskedMobile : '${mobile.maskedMobile}（${mobile.alias}）';
     final agreed = await showCampusConfirm(context, title: '解绑 $name？', message: '解绑后，寄到这个手机号的快递就不能用本账号的身份码取件了。', action: '解绑', destructive: true);
     if (agreed && mounted) await _guard(() => widget.controller.unbind(mobile), done: '已解绑');
@@ -121,7 +143,7 @@ class _ExpressMobileSheetState extends State<_ExpressMobileSheet> {
                       style: TextStyle(fontSize: 16, color: palette.onSurface),
                     ),
                   ),
-                  Builder(builder: (anchor) => IconButton(tooltip: '更多操作', onPressed: _working ? null : () => _unbind(anchor, mobile), icon: const CampusIcon(CampusIcons.manage))),
+                  Builder(builder: (anchor) => IconButton(tooltip: '更多操作', onPressed: _working ? null : () => _more(anchor, mobile), icon: const CampusIcon(CampusIcons.manage))),
                 ],
               ),
             ),
@@ -181,6 +203,7 @@ class _BindMobileDialog extends StatefulWidget {
 class _BindMobileDialogState extends State<_BindMobileDialog> {
   final _mobile = TextEditingController();
   final _code = TextEditingController();
+  final _alias = TextEditingController();
   String _mobileId = '';
   bool _sent = false;
   bool _busy = false;
@@ -190,6 +213,7 @@ class _BindMobileDialogState extends State<_BindMobileDialog> {
   void dispose() {
     _mobile.dispose();
     _code.dispose();
+    _alias.dispose();
     super.dispose();
   }
 
@@ -250,7 +274,7 @@ class _BindMobileDialogState extends State<_BindMobileDialog> {
         setState(() => _error = '验证码不正确或已过期');
         return;
       }
-      await widget.controller.completeBind(sessionId);
+      await widget.controller.completeBind(sessionId, alias: _alias.text.trim());
       if (mounted) Navigator.pop(context, true);
     });
   }
@@ -265,15 +289,17 @@ class _BindMobileDialogState extends State<_BindMobileDialog> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (!_sent)
+          if (!_sent) ...[
             TextField(
               controller: _mobile,
               autofocus: true,
               keyboardType: TextInputType.phone,
               inputFormatters: [FilteringTextInputFormatter.digitsOnly, LengthLimitingTextInputFormatter(11)],
               decoration: const InputDecoration(labelText: '手机号', counterText: ''),
-            )
-          else ...[
+            ),
+            SizedBox(height: campusFieldGap(context)),
+            _AliasField(controller: _alias, label: '备注（选填）'),
+          ] else ...[
             Text('验证码已发送至 ${_mobile.text.trim()}', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
             const SizedBox(height: 12),
             TextField(
@@ -303,4 +329,84 @@ class _BindMobileDialogState extends State<_BindMobileDialog> {
       ],
     );
   }
+}
+
+// 取件手机号备注的输入：最多 5 个字（同官方；拼音还没选字时不截，选完再截），下面三个快捷选项点了直接填上，和输入框一致时显示选中。
+class _AliasField extends StatelessWidget {
+  const _AliasField({required this.controller, required this.label, this.autofocus = false});
+  final TextEditingController controller;
+  final String label;
+  final bool autofocus;
+
+  static const maxLength = 5;
+  static const presets = ['爱人', '爸爸', '妈妈'];
+
+  @override
+  Widget build(BuildContext context) => Column(
+    mainAxisSize: MainAxisSize.min,
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: [
+      TextField(
+        controller: controller,
+        autofocus: autofocus,
+        maxLength: maxLength,
+        maxLengthEnforcement: MaxLengthEnforcement.truncateAfterCompositionEnds,
+        decoration: InputDecoration(labelText: label),
+      ),
+      const SizedBox(height: 4),
+      ValueListenableBuilder(
+        valueListenable: controller,
+        builder: (context, value, _) => Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: [
+            for (final preset in presets)
+              CampusGlassChip(
+                label: preset,
+                selected: value.text.trim() == preset,
+                onSelected: (_) => controller.value = TextEditingValue(text: preset, selection: TextSelection.collapsed(offset: preset.length)),
+              ),
+          ],
+        ),
+      ),
+    ],
+  );
+}
+
+// 修改一个已绑号的备注：标题下写打码号码，输入框预填当前备注，可清空；保存返回新备注，取消返回 null。
+class _AliasDialog extends StatefulWidget {
+  const _AliasDialog({required this.mobile});
+  final PddBoundMobile mobile;
+
+  @override
+  State<_AliasDialog> createState() => _AliasDialogState();
+}
+
+class _AliasDialogState extends State<_AliasDialog> {
+  late final _alias = TextEditingController(text: widget.mobile.alias);
+
+  @override
+  void dispose() {
+    _alias.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => CampusGlassDialog(
+    title: const Text('修改备注'),
+    scrollable: true,
+    content: Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Text(widget.mobile.maskedMobile, style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant)),
+        SizedBox(height: campusFieldGap(context)),
+        _AliasField(controller: _alias, label: '备注', autofocus: true),
+      ],
+    ),
+    actions: [
+      TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
+      FilledButton(onPressed: () => Navigator.pop(context, _alias.text.trim()), child: const Text('保存')),
+    ],
+  );
 }

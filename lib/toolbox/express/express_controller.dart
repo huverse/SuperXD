@@ -261,11 +261,13 @@ class ExpressController extends ChangeNotifier {
   });
   Future<String> sendBindSms(String mobile) => _binding(() async => _client!.sendBindSmsCode(mobile, antiContent: await _anti()));
   Future<String> verifyBindSms(String mobileId, String code) => _binding(() async => _client!.verifyBindSmsCode(mobileId: mobileId, code: code, antiContent: await _anti()));
-  Future<void> completeBind(String sessionId) => _binding(() async {
-    await _client!.newBindMobile(sessionId, antiContent: await _anti());
+  Future<void> completeBind(String sessionId, {String alias = ''}) => _binding(() async {
+    await _client!.newBindMobile(sessionId, antiContent: await _anti(), alias: alias);
     await _relinkStationPackages();
   });
   Future<void> unbind(PddBoundMobile mobile) => _binding(() async => _client!.unbindMobile(mobileId: mobile.mobileId, mobileIdScene: mobile.mobileIdScene, antiContent: await _anti()));
+  Future<void> updateAlias(PddBoundMobile mobile, String alias) =>
+      _binding(() async => _client!.updateMobileAlias(mobileId: mobile.mobileId, mobileIdScene: mobile.mobileIdScene, alias: alias, antiContent: await _anti()));
 
   // 新绑了号，已关联的标记作废，再按官方在绑定成功后紧接着关联一次；这次没成，下次查驿站时补。
   Future<void> _relinkStationPackages() async {
