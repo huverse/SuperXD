@@ -99,7 +99,7 @@ class ExpressClient {
 
   // 查一件包裹的实时物流，同官方物流页（/track）按参数选接口，只读，结果都在 shipping 里：
   // 带 order_sn 的（驿站里的件）POST 驿站物流 dsd/trackbox/shipping/track，source_type 与 entry_source 同官方转成数字（没有就是 null）、query_type 固定 1；
-  // 没有的 GET 通用物流 shipping/track，entry_source 固定 9。两个都同官方带 anti-content 请求头（10-30 起不带就回 1011，见 express_models.dart）。
+  // 没有的 GET 通用物流 shipping/track，entry_source 固定 9。两个都同官方带 anti-content 请求头（见 express_models.dart）。
   Future<ShippingTrack> queryShippingTrack(ExpressTrackQuery query, {required String antiContent}) async {
     final Map<String, Object?> data;
     if (query.orderSn.isNotEmpty) {

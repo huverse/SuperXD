@@ -144,7 +144,7 @@ void main() {
     });
 
     // 10-25：官方物流页对链接里带 order_sn 的件（驿站里的件）按 order_sn 查驿站物流，不按运单号查通用物流；字段名照官方代码，数据合成。
-    // 10-30：不带 anti-content 时拼多多回 1011，同官方请求封装带上。
+    // 10-30 起同官方请求封装带 anti-content（见 express_models.dart 的人工决策）。
     test('驿站里的件物流参数先取 jump_url 里的 order_sn 与 source_type，查物流走 POST dsd/trackbox/shipping/track 并带 anti-content', () async {
       final parcel = StationPackage.fromJson(const {'tracking_number': 'SX0000000004', 'shipping_id': 104, 'order_sn': 'SN0000000009', 'jump_url': '/track?order_sn=SN0000000004&source_type=2'});
       expect(parcel.trackQuery, (trackingNumber: 'SX0000000004', shippingId: '104', sourceType: '2', orderSn: 'SN0000000004', entrySource: ''));

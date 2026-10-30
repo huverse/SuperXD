@@ -574,7 +574,7 @@ void main() {
     expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '物流').last).onPressed, isNull, reason: '查询中其他行不能再点');
     final track = requests.lastWhere((request) => request.url.path.endsWith('shipping/track'));
     expect(track.url.queryParameters, {'tracking_number': 'SX0000000002', 'shipping_id': '102', 'entry_source': '9', 'source_type': '3'});
-    expect(track.headers[PddConstants.antiContentHeader], 'anti', reason: '10-30 起查物流不带 anti-content 会回 1011');
+    expect(track.headers[PddConstants.antiContentHeader], 'anti', reason: '查物流同官方带 anti-content');
 
     gate.complete();
     await tester.pumpAndSettle();
