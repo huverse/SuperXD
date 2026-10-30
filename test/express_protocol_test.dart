@@ -19,6 +19,18 @@ ExpressClient buildClient({required PddSession session, required Map<String, Obj
   return ExpressClient(session: session, http: ExpressHttp(client: client));
 }
 
+// 登录用的假服务：可指定状态码、响应体与 Set-Cookie（多条用 ", " 拼成一行，同 http 包合并同名头的做法）；登录还没有会话，用空会话建客户端。
+ExpressClient buildLoginClient({required int status, required Map<String, Object?> body, String? setCookie, void Function(http.Request request)? onRequest}) {
+  final client = MockClient((request) async {
+    onRequest?.call(request);
+    return http.Response(jsonEncode(body), status, headers: {
+      'content-type': 'application/json;charset=UTF-8',
+      'set-cookie': ?setCookie,
+    });
+  });
+  return ExpressClient(session: const PddSession(), http: ExpressHttp(client: client));
+}
+
 void main() {
   const session = PddSession(accessToken: 'tok', cookie: 'PDDAccessToken=tok; pdd_user_id=7209', installToken: 'inst', etag: 'et', userId: '7209');
 
@@ -580,6 +592,154 @@ void main() {
       expect((body! as Map)['box_popup_service'], PddConstants.bindBoxPopupService);
       expect((body! as Map)['anti_content'], 'ANTI');
       expect((body! as Map)['mobile_id_scene'], 1);
+      client.close();
+    });
+  });
+
+  // 短信登录（[人工决策] 见 express_models.dart 的登录常量）：发码与登录直连 sigerus，失败原因与验证令牌在响应体里（可能 4xx），成功从 Set-Cookie 取会话。
+  group('短信登录', () {
+    test('发码按官方参数发：platform=4、行为字段空、screen_token 是 anti_content、带 request_times 与国家/区号', () async {
+      String? path;
+      Map<String, Object?>? body;
+      final client = buildLoginClient(
+        status: 200,
+        body: const {'success': true},
+        onRequest: (request) {
+          path = request.url.path;
+          body = jsonDecode(request.body) as Map<String, Object?>;
+        },
+      );
+      final needCall = await client.sendLoginSms('13900000000', antiContent: 'ANTI', requestTimes: 2);
+      expect(needCall, isFalse);
+      expect(path, endsWith('/api/sigerus/mobile/code/request'));
+      expect(body!['platform'], '4');
+      expect(body!['fingerprint'], '{}');
+      expect(body!['touchevent'], '{}');
+      expect(body!['mobile'], '13900000000');
+      expect(body!['screen_token'], 'ANTI');
+      expect(body!['request_times'], 2);
+      expect(body!['country_id'], PddConstants.loginCountryId);
+      expect(body!['tel_code'], PddConstants.loginTelCode);
+      expect(body!.containsKey('send_voice_code'), isFalse);
+      client.close();
+    });
+
+    test('发码回 need_call 为真：返回 true（改电话告知验证码）；选语音时带 send_voice_code', () async {
+      Map<String, Object?>? body;
+      final client = buildLoginClient(status: 200, body: const {'need_call': true}, onRequest: (request) => body = jsonDecode(request.body) as Map<String, Object?>);
+      expect(await client.sendLoginSms('13900000000', antiContent: 'ANTI', requestTimes: 0, voice: true), isTrue);
+      expect(body!['send_voice_code'], true);
+      client.close();
+    });
+
+    test('登录成功：从 Set-Cookie 取 PDDAccessToken 等拼成会话 Cookie 头；请求带 anti_content 与 login_app_id', () async {
+      Map<String, Object?>? body;
+      final client = buildLoginClient(
+        status: 200,
+        body: const {'success': true},
+        setCookie: 'PDDAccessToken=AT123; Path=/; HttpOnly, pdd_user_id=u99; Path=/, install_token=it9; Path=/',
+        onRequest: (request) => body = jsonDecode(request.body) as Map<String, Object?>,
+      );
+      final loggedIn = await client.loginWithSms(mobile: '13900000000', code: '123456', antiContent: 'ANTI');
+      expect(loggedIn.accessToken, 'AT123');
+      expect(loggedIn.userId, 'u99');
+      expect(loggedIn.installToken, 'it9');
+      expect(loggedIn.cookie, contains('PDDAccessToken=AT123'));
+      expect(loggedIn.cookie, contains('pdd_user_id=u99'));
+      expect(body!['anti_content'], 'ANTI');
+      expect(body!['code'], '123456');
+      expect(body!['add_cookie'], true);
+      expect(body!['login_app_id'], PddConstants.loginAppId);
+      client.close();
+    });
+
+    test('Set-Cookie 里 Expires 的逗号不被当成分隔；删 Cookie 的空值不计入', () async {
+      final client = buildLoginClient(
+        status: 200,
+        body: const {'success': true},
+        setCookie: 'PDDAccessToken=AT1; Expires=Wed, 21 Oct 2026 07:28:00 GMT; Path=/, old_cookie=; Expires=Thu, 01 Jan 1970 00:00:00 GMT',
+      );
+      final loggedIn = await client.loginWithSms(mobile: '13900000000', code: '123456', antiContent: 'ANTI');
+      expect(loggedIn.accessToken, 'AT1');
+      expect(loggedIn.cookie, isNot(contains('old_cookie')));
+      expect(loggedIn.cookie, isNot(contains('Expires')));
+      client.close();
+    });
+
+    test('登录回 54002 带令牌：抛要安全验证，验证页是登录域名的 psnl_verification、带令牌与跳回登录页', () async {
+      final client = buildLoginClient(status: 400, body: const {'error_code': 54002, 'verify_auth_token': 'VT-9'});
+      ExpressFailure? failure;
+      try {
+        await client.loginWithSms(mobile: '13900000000', code: '123456', antiContent: 'ANTI');
+      } on ExpressFailure catch (error) {
+        failure = error;
+      }
+      expect(failure!.code, ExpressFailureCode.verifyRequired);
+      expect(failure.verifyToken, 'VT-9');
+      expect(failure.verifyPage!.path, endsWith('/psnl_verification.html'));
+      expect(failure.verifyPage!.queryParameters['VerifyAuthToken'], 'VT-9');
+      expect(failure.verifyPage!.queryParameters['from'], PddConstants.loginPage);
+      client.close();
+    });
+
+    test('登录回 54015：抛要本人确认，去 login_verification_owner 页、带打码手机号等', () async {
+      final client = buildLoginClient(status: 400, body: const {'error_code': 54015, 'verify_auth_token': 'VT-15', 'mobile_des': '138****8888', 'nick_name': '合成昵称'});
+      ExpressFailure? failure;
+      try {
+        await client.loginWithSms(mobile: '13900000000', code: '123456', antiContent: 'ANTI');
+      } on ExpressFailure catch (error) {
+        failure = error;
+      }
+      expect(failure!.code, ExpressFailureCode.verifyRequired);
+      expect(failure.verifyPage!.path, endsWith('/login_verification_owner.html'));
+      expect(failure.verifyPage!.queryParameters['verify_auth_token'], 'VT-15');
+      expect(failure.verifyPage!.queryParameters['mobile_des'], '138****8888');
+      expect(failure.verifyPage!.queryParameters['nick_name'], '合成昵称');
+      client.close();
+    });
+
+    test('登录回普通错误码：抛服务端错误、带拼多多文案', () async {
+      final client = buildLoginClient(status: 200, body: const {'error_code': 60005, 'error_msg': '验证码错误'});
+      ExpressFailure? failure;
+      try {
+        await client.loginWithSms(mobile: '13900000000', code: '000000', antiContent: 'ANTI');
+      } on ExpressFailure catch (error) {
+        failure = error;
+      }
+      expect(failure!.code, ExpressFailureCode.server);
+      expect(failure.message, '验证码错误');
+      client.close();
+    });
+
+    test('登录成功但没下发 PDDAccessToken：抛没拿到会话', () async {
+      final client = buildLoginClient(status: 200, body: const {'success': true});
+      ExpressFailure? failure;
+      try {
+        await client.loginWithSms(mobile: '13900000000', code: '123456', antiContent: 'ANTI');
+      } on ExpressFailure catch (error) {
+        failure = error;
+      }
+      expect(failure!.code, ExpressFailureCode.invalidResponse);
+      client.close();
+    });
+
+    test('过了验证后 verifiedLogin：带令牌与 add_cookie 调 verify/login，从 Set-Cookie 取会话', () async {
+      String? path;
+      Map<String, Object?>? body;
+      final client = buildLoginClient(
+        status: 200,
+        body: const {'success': true},
+        setCookie: 'PDDAccessToken=AT-R; Path=/',
+        onRequest: (request) {
+          path = request.url.path;
+          body = jsonDecode(request.body) as Map<String, Object?>;
+        },
+      );
+      final loggedIn = await client.verifiedLogin('VT-9');
+      expect(path, endsWith('/api/sigerus/verify/login'));
+      expect(body!['verify_auth_token'], 'VT-9');
+      expect(body!['add_cookie'], true);
+      expect(loggedIn.accessToken, 'AT-R');
       client.close();
     });
   });

@@ -204,6 +204,109 @@ class ExpressClient {
     });
   }
 
+  // --- 短信登录（还没有会话，用空会话建客户端；[人工决策] 见 express_models.dart 的登录常量）---
+  // 同官方登录页：发码与登录都 POST 到 sigerus，失败原因与验证令牌在响应体里（可能是 4xx），成功后拼多多经 Set-Cookie 下发 PDDAccessToken。
+
+  // 发登录验证码：screen_token 是现生成的 anti_content，requestTimes 是这次已发过几次（同官方）；行为字段不伪造，发空值。
+  // 返回 need_call：拼多多改要电话告知验证码（这次没发短信），同意后带 send_voice_code 再发一次。
+  Future<bool> sendLoginSms(String mobile, {required String antiContent, required int requestTimes, bool voice = false}) async {
+    final response = await _http.postJson(_api('/api/sigerus/mobile/code/request'), headers: _headers(PddConstants.loginPage), errorBody: true, body: {
+      // 官方是 JSON.stringify(platformType)，数字 4 即 "4"。
+      'platform': '${PddConstants.loginPlatformOther}',
+      'fingerprint': '{}',
+      'touchevent': '{}',
+      'mobile': mobile,
+      'screen_token': antiContent,
+      'request_times': requestTimes,
+      if (voice) 'send_voice_code': true,
+      'country_id': PddConstants.loginCountryId,
+      'tel_code': PddConstants.loginTelCode,
+    });
+    return _unwrapLogin(response, 'login_sms')['need_call'] == true;
+  }
+
+  // 手机号加验证码登录，成功返回会话。
+  Future<PddSession> loginWithSms({required String mobile, required String code, required String antiContent}) async {
+    final response = await _http.postJson(_api('/api/sigerus/login_mobile'), headers: _headers(PddConstants.loginPage), errorBody: true, body: {
+      'mobile': mobile,
+      'code': code,
+      'anti_content': antiContent,
+      'add_cookie': true,
+      'support_enhance_type': PddConstants.loginEnhanceType,
+      'login_app_id': PddConstants.loginAppId,
+      'country_id': PddConstants.loginCountryId,
+      'tel_code': PddConstants.loginTelCode,
+    });
+    return _loginSession(response, _unwrapLogin(response, 'login'));
+  }
+
+  // 用户在官方验证页过了验证，拿登录时给的令牌完成登录（同官方登录页的 riskLogin）。
+  Future<PddSession> verifiedLogin(String verifyToken) async {
+    final response = await _http.postJson(_api('/api/sigerus/verify/login'), headers: _headers(PddConstants.loginPage), errorBody: true, body: {
+      'verify_auth_token': verifyToken,
+      'add_cookie': true,
+    });
+    return _loginSession(response, _unwrapLogin(response, 'verified_login'));
+  }
+
+  // 登录接口的响应：成功同 _unwrap 的判定；要验证的两种带上官方验证页（验证完跳回登录页），其余用拼多多给的文案。
+  // 每次记一行形状（状态、错误码、字段名与下发的 Cookie 名，不记值）：拼多多认不认空的行为字段，要从真机上的这一行看。
+  Map<String, Object?> _unwrapLogin(ExpressResponse response, String action) {
+    final data = expressJson(response.body);
+    final code = '${data['error_code']}';
+    final shape = 'status=${response.statusCode} code=$code keys=${data.keys.join(',')} cookies=${_setCookies(response).keys.join(',')}';
+    final failed = response.statusCode >= 400 || data['success'] == false || (data['error_code'] != null && code != '0' && code != '1000000');
+    if (!failed) {
+      campusLog('[Express] action=$action $shape');
+      return data;
+    }
+    campusLog('[Express] action=$action errorType=server $shape');
+    final token = '${data['verify_auth_token'] ?? ''}';
+    if (token.isNotEmpty && (code == '54001' || code == '54002')) {
+      final page = Uri.parse(PddConstants.loginVerifyPage).replace(queryParameters: {'VerifyAuthToken': token, 'from': PddConstants.loginPage});
+      throw ExpressFailure(ExpressFailureCode.verifyRequired, '拼多多要求先完成安全验证', verifyToken: token, verifyPage: page);
+    }
+    // 本人验证页同官方带上打码手机号、头像与昵称（页面上让本人认），空的不带。
+    if (token.isNotEmpty && code == '54015') {
+      final page = Uri.parse(PddConstants.ownerVerifyPage).replace(queryParameters: {
+        'verify_auth_token': token,
+        'from': PddConstants.loginPage,
+        for (final (key, field) in const [('mobile_des', 'mobile_des'), ('n_pic', 'avatar'), ('nick_name', 'nick_name')])
+          if ('${data[field] ?? ''}'.isNotEmpty) key: '${data[field]}',
+      });
+      throw ExpressFailure(ExpressFailureCode.verifyRequired, '拼多多要求先确认是本人', verifyToken: token, verifyPage: page);
+    }
+    final message = '${data['error_msg'] ?? ''}';
+    throw ExpressFailure(ExpressFailureCode.server, message.isEmpty ? '登录没有成功，请稍后重试' : message);
+  }
+
+  // 登录成功后的会话：拼多多经 Set-Cookie 下发 PDDAccessToken 等，全部 Cookie 拼成之后请求带的 Cookie 头；
+  // 没下发时再看响应体的 access_token（真实返回还没见过，两处都认）。
+  PddSession _loginSession(ExpressResponse response, Map<String, Object?> data) {
+    final cookies = _setCookies(response);
+    final token = cookies['PDDAccessToken'] ?? '${data['access_token'] ?? ''}';
+    if (token.isEmpty) throw const ExpressFailure(ExpressFailureCode.invalidResponse, '登录没有拿到会话，请改用网页登录');
+    cookies['PDDAccessToken'] = token;
+    return PddSession(
+      accessToken: token,
+      cookie: cookies.entries.map((entry) => '${entry.key}=${entry.value}').join('; '),
+      installToken: cookies['install_token'] ?? '',
+      etag: cookies['ETag'] ?? '',
+      userId: cookies['pdd_user_id'] ?? '${data['uid'] ?? ''}',
+    );
+  }
+
+  // 同名响应头合成一行时以逗号隔开，Expires 里也有逗号：只在逗号后紧跟「名字=」处断开；每条取第一段的名字与值，空值（删 Cookie）不要。
+  Map<String, String> _setCookies(ExpressResponse response) {
+    final cookies = <String, String>{};
+    for (final entry in (response.headers['set-cookie'] ?? '').split(RegExp(r',(?=\s*[^;,=\s]+=)'))) {
+      final pair = entry.split(';').first.trim();
+      final split = pair.indexOf('=');
+      if (split > 0 && split < pair.length - 1) cookies[pair.substring(0, split)] = pair.substring(split + 1);
+    }
+    return cookies;
+  }
+
   // 字段可能在顶层，也可能裹在 result 里，两处都找。
   String _pickField(Map<String, Object?> data, String key) {
     final top = data[key];

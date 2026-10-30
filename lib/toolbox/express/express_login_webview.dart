@@ -11,7 +11,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/toolbox/express/express_cookies.dart';
 import 'package:superxd/toolbox/express/express_models.dart';
 
-// 拼多多官方 H5 登录页（WebView）：用户在官方页面完成短信/扫码登录，组件从原生 Cookie 读 PDDAccessToken 组装会话。
+// 拼多多官方 H5 登录页（WebView），是短信登录表单之外的后备入口（express_login_form.dart）：用户在官方页面完成登录，组件从原生 Cookie 读 PDDAccessToken 组装会话。
 // 不生成、不绕过 anti_content 与风控指纹，这些由拼多多官方页面自己处理。
 class ExpressLoginWebView extends StatefulWidget {
   const ExpressLoginWebView({super.key, required this.verify, required this.onLogin});

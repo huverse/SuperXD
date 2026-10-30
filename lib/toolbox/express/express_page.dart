@@ -22,6 +22,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/express/express_controller.dart';
 import 'package:superxd/toolbox/express/express_cookies.dart';
 import 'package:superxd/toolbox/express/express_identity_view.dart';
+import 'package:superxd/toolbox/express/express_login_form.dart';
 import 'package:superxd/toolbox/express/express_login_webview.dart';
 import 'package:superxd/toolbox/express/express_mobile_sheet.dart';
 import 'package:superxd/toolbox/express/express_models.dart';
@@ -30,7 +31,8 @@ import 'package:superxd/toolbox/express/express_track_sheet.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 // 首次使用拼多多这个来源要单独征得同意；说明版本变了就加一档，旧同意失效、再次征询。
-const expressConsentVersion = 'pdd-1';
+// pdd-2：登录改成在应用里输手机号与验证码（[人工决策] 见 express_models.dart 的登录常量），用户选升一档，同意过的下次登录前再问一次。
+const expressConsentVersion = 'pdd-2';
 
 class ExpressPage extends StatefulWidget {
   const ExpressPage({super.key, required this.runtime, this.openIdentity = false});
@@ -72,23 +74,27 @@ class _ExpressPageState extends State<ExpressPage> {
     }
   }
 
-  // 登录前先取同意（拼多多是新来源），同意后打开官方 H5 登录页；登录态只从原生 Cookie 读、只存本机安全存储。
-  Future<void> _login() async {
+  // 登录前先取同意（拼多多是新来源），短信登录与网页登录共用；同意过这一版的直接过。
+  Future<bool> _consent() async {
+    if (await widget.runtime.store.consent(ExpressService.serviceId, expressConsentVersion)) return true;
+    if (!mounted) return false;
+    final agreed = await showCampusConfirm(
+      context,
+      title: '使用拼多多快递',
+      message: '用你本人拼多多账号的手机号和短信验证码登录，应用把它们直接发给拼多多、不保存；登录态只保存在本机安全存储，仅用于查询你的快递与生成取件身份码。\n\n'
+          '拼多多同一账号不支持多设备同时在线：在这里登录后，你其他设备上的拼多多会被挤下线。建议用小号登录，再用「绑定手机号」把大号的手机号绑进来，就能用小号的身份码取大号的快递。\n\n'
+          '身份码是取件凭证、短时有效，请勿分享或截图外传。请遵守拼多多的服务条款，仅用于本人已授权的账号。',
+      action: '同意并登录',
+    );
+    if (!agreed) return false;
+    await widget.runtime.store.grantConsent(ExpressService.serviceId, expressConsentVersion);
+    return true;
+  }
+
+  // 后备入口：打开拼多多官方 H5 登录页（用户选保留，见 express_models.dart 的登录常量）；登录态只从原生 Cookie 读、只存本机安全存储。
+  Future<void> _webLogin() async {
     final controller = _controller!;
-    if (!await widget.runtime.store.consent(ExpressService.serviceId, expressConsentVersion)) {
-      if (!mounted) return;
-      final agreed = await showCampusConfirm(
-        context,
-        title: '使用拼多多快递',
-        message: '将打开拼多多官方页面登录你本人的账号，登录态只保存在本机安全存储，仅用于查询你的快递与生成取件身份码。\n\n'
-            '拼多多同一账号不支持多设备同时在线：在这里登录后，你其他设备上的拼多多会被挤下线。建议用小号登录，再用「绑定手机号」把大号的手机号绑进来，就能用小号的身份码取大号的快递。\n\n'
-            '身份码是取件凭证、短时有效，请勿分享或截图外传。请遵守拼多多的服务条款，仅用于本人已授权的账号。',
-        action: '同意并登录',
-      );
-      if (!agreed || !mounted) return;
-      await widget.runtime.store.grantConsent(ExpressService.serviceId, expressConsentVersion);
-    }
-    if (!mounted) return;
+    if (!await _consent() || !mounted) return;
     await Navigator.of(context).push<void>(
       CampusPageRoute(
         builder: (_) => ExpressLoginWebView(
@@ -152,6 +158,7 @@ class _ExpressPageState extends State<ExpressPage> {
   // 订单驿站柜、取件码搜索不做（无真实样本且偏离身份码聚焦）。
   // [人工决策-2026-10-20 15:36:10] 用户确认把「绑定手机号」从只查列表扩成真正的取件手机号管理（列表 + 短信验证绑新号 + 快速绑本账号已有号 + 解绑）：
   // 绑定短信走 francis 端点（属绑定不属登录、按反编译不需 anti_content），仍不做需 anti_content 的短信登录高级接口（sigerus）。
+  // [人工决策-2026-10-30 21:41:32] 上一句「不做 sigerus 短信登录」已由用户推翻：登录改成原生表单直连 sigerus（见 express_models.dart 的登录常量）。
   // 绑定/解绑是账号状态变更，逐步由用户点击确认（见 express_mobile_sheet.dart），不后台自动做。移交包未真机验证过绑定/解绑，实际风控与解绑参数待真机核实。
   // [人工决策-2026-10-21 17:49:44] 扫驿站二维码进入：真实驿站码是带 station_code 参数的链接（10-21 拿到样本），
   // 用户确认改为从链接、JSON 或裸码里取 station_code（parseStationScan），取不到就在扫码页提示，不再把原文发给服务端（原「原文非空即原样传」作废）。
@@ -233,11 +240,14 @@ class _ExpressPageState extends State<ExpressPage> {
     final controller = _controller!;
     final token = controller.takeVerifyToken();
     if (token == null || !mounted) return false;
-    final passed = await Navigator.of(context).push<bool>(CampusPageRoute(builder: (_) => _service.verifyPage(token))) ?? false;
+    final passed = await _openVerify(Uri.parse(PddConstants.verifyPage).replace(queryParameters: {'VerifyAuthToken': token, 'from': PddConstants.verifyReturn}));
     if (!passed || !mounted || !controller.loggedIn) return false;
     controller.acceptVerify(token);
     return true;
   }
+
+  // 打开带好令牌与跳回地址的官方验证页（查询时的 54001、登录时的 54002 与 54015 共用），返回本人是否通过。
+  Future<bool> _openVerify(Uri page) async => await Navigator.of(context).push<bool>(CampusPageRoute(builder: (_) => _service.verifyPage(page))) ?? false;
 
   // 查询失败用提示条说明（同学习通、成绩页），不在卡片里留一行不会消失的红字；登录失效时控制器已回到登录态，原因写在登录页上。
   // 点按钮成功了把这次的结果卡滚进可视区（见 _reveal）；下拉刷新不给 reveal，手指就在页顶，不滚。
@@ -411,7 +421,7 @@ class _ExpressPageState extends State<ExpressPage> {
         const SizedBox(height: 8),
         Center(
           child: Text(
-            '用拼多多官方账号登录后，可查询驿站待取件、生成取件身份码。登录在拼多多官方页面完成，不接触你的密码。',
+            '用拼多多账号的手机号和验证码登录后，可查询驿站待取件、生成取件身份码。手机号与验证码只发给拼多多，不保存。',
             textAlign: TextAlign.center,
             style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: palette.onSurfaceVariant),
           ),
@@ -438,12 +448,14 @@ class _ExpressPageState extends State<ExpressPage> {
           Center(child: Text(controller.error!, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: palette.danger))),
         ],
         const SizedBox(height: 24),
+        ExpressLoginForm(controller: controller, consent: _consent, verify: _openVerify),
+        const SizedBox(height: 12),
+        // 后备：拼多多不认短信登录时还能在官方网页里登（用户选保留）。
         Center(
-          child: FilledButton.icon(
-            style: campusProminent,
-            onPressed: _login,
-            icon: const CampusIcon(CampusIcons.login),
-            label: const Text('登录拼多多'),
+          child: TextButton.icon(
+            onPressed: _webLogin,
+            icon: const CampusIcon(CampusIcons.web),
+            label: const Text('改用拼多多网页登录'),
           ),
         ),
       ],

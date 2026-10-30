@@ -218,6 +218,23 @@ class ExpressController extends ChangeNotifier {
     }
   }
 
+  // 短信登录（[人工决策] 见 express_models.dart 的登录常量）：还没有会话，用空会话建客户端，失败照常抛给登录表单原地说明；
+  // 发码与登录前都现取 anti_content，成功后同网页登录走 onLoggedIn。
+  Future<bool> sendLoginSms(String mobile, {required int requestTimes, bool voice = false}) =>
+      _signIn((client) async => client.sendLoginSms(mobile, antiContent: await _anti(), requestTimes: requestTimes, voice: voice));
+  Future<void> loginWithSms(String mobile, String code) async =>
+      onLoggedIn(await _signIn((client) async => client.loginWithSms(mobile: mobile, code: code, antiContent: await _anti())));
+  Future<void> verifiedLogin(String verifyToken) async => onLoggedIn(await _signIn((client) => client.verifiedLogin(verifyToken)));
+
+  Future<T> _signIn<T>(Future<T> Function(ExpressClient client) op) async {
+    final client = _service.clientFactory(const PddSession());
+    try {
+      return await op(client);
+    } finally {
+      client.close();
+    }
+  }
+
   // 身份码到期自动刷新：失败不清掉当前码，只记一笔，倒计时组件会在下次到期再试。
   Future<void> refreshIdentityCode() async {
     if (_client == null || busy || _refreshing) return;

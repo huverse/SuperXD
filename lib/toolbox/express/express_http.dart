@@ -9,9 +9,11 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/express/express_models.dart';
 
 class ExpressResponse {
-  const ExpressResponse(this.statusCode, this.bytes);
+  const ExpressResponse(this.statusCode, this.bytes, {this.headers = const {}});
   final int statusCode;
   final Uint8List bytes;
+  // 响应头（键小写）；短信登录要从 set-cookie 里取会话，同名的多条被合成一行、以逗号隔开。
+  final Map<String, String> headers;
 
   String get body => utf8.decode(bytes, allowMalformed: true);
 }
@@ -29,10 +31,11 @@ class ExpressHttp {
   Future<ExpressResponse> getJson(Uri uri, {required Map<String, String> headers}) =>
       _send('GET', uri, headers: headers);
 
-  Future<ExpressResponse> postJson(Uri uri, {required Map<String, String> headers, required Map<String, Object?> body}) =>
-      _send('POST', uri, headers: headers, body: jsonEncode(body));
+  // errorBody：4xx 也照常交回响应体（登录接口的失败原因与验证令牌在 4xx 的 JSON 里），由调用方按错误码分支。
+  Future<ExpressResponse> postJson(Uri uri, {required Map<String, String> headers, required Map<String, Object?> body, bool errorBody = false}) =>
+      _send('POST', uri, headers: headers, body: jsonEncode(body), errorBody: errorBody);
 
-  Future<ExpressResponse> _send(String method, Uri uri, {required Map<String, String> headers, String? body}) async {
+  Future<ExpressResponse> _send(String method, Uri uri, {required Map<String, String> headers, String? body, bool errorBody = false}) async {
     final deadline = Completer<void>();
     final timer = Timer(timeout, deadline.complete);
     final request = http.AbortableRequest(method, uri, abortTrigger: deadline.future)..headers.addAll(headers);
@@ -52,6 +55,7 @@ class ExpressHttp {
         }
       }
       size = builder.length;
+      if (errorBody && response.statusCode < 500) return ExpressResponse(response.statusCode, builder.takeBytes(), headers: response.headers);
       if (response.statusCode >= 400) {
         campusLog('[Express] action=http errorType=status path=${uri.path} status=${response.statusCode}');
         // 401/424：异地登录等把会话顶掉时拼多多返回的 HTTP 状态（真机实测 station/package 在被挤下线后回 424），
@@ -61,7 +65,7 @@ class ExpressHttp {
         }
         throw ExpressFailure(ExpressFailureCode.server, '拼多多返回错误码 ${response.statusCode}');
       }
-      return ExpressResponse(response.statusCode, builder.takeBytes());
+      return ExpressResponse(response.statusCode, builder.takeBytes(), headers: response.headers);
     } on ExpressFailure {
       rethrow;
     } on http.RequestAbortedException catch (error, stack) {
