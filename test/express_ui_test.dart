@@ -116,7 +116,7 @@ Future<void> _settleReal(WidgetTester tester, bool Function() done) async {
   }
 }
 
-// 假 anti_content：绑定测试用，不起真实 WebView（webViewController 为空，页面不挂 WebViewWidget）。
+// 假 anti_content：绑定与查物流测试用，不起真实 WebView（webViewController 为空，页面不挂 WebViewWidget）。
 class _FakeAnti implements PddAntiContent {
   @override
   Future<String> generate() async => 'anti';
@@ -163,7 +163,7 @@ void main() {
     catalog: toolboxCatalog,
     store: fixture.store,
     downloads: fixture.manager,
-    services: {ExpressService.serviceId: ExpressService(vault: vault, clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: client)))},
+    services: {ExpressService.serviceId: ExpressService(vault: vault, clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: client)), antiContent: _FakeAnti())},
   );
 
   ToolboxRuntime buildRuntime({
@@ -544,7 +544,8 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  testWidgets('近一周已取出列在驿站卡片里；点「物流」先读后开：读取时只有那一行转圈、弹层未出，读完弹出物流详情', (tester) async {
+  // 10-30 用户在官方 App 抓包：已取出的件链接里没有 order_sn 时只能按运单号查，官方也回 1011，所以不给「物流」（人工决策在 express_page.dart）。数据合成。
+  testWidgets('近一周已取出列在驿站卡片里；没有 order_sn 的不给「物流」；有的点了先读后开：读取时只有那一行转圈、弹层未出，读完弹出物流详情', (tester) async {
     final gate = Completer<void>();
     final requests = <http.Request>[];
     await vault.save(_session);
@@ -555,8 +556,10 @@ void main() {
       station: const {
         'count': 0,
         'package_out_list': [
-          {'address': '测试路 1 号', 'operate_time': '10-20 15:30', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000002', 'jump_url': '/track?tracking_number=SX0000000002&shipping_id=102&source_type=3'},
-          {'address': '测试路 1 号', 'operate_time': '10-19 09:10', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000003', 'shipping_id': '103'},
+          {'address': '测试路 1 号', 'operate_time': '10-20 15:30', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000002', 'jump_url': '/track?order_sn=SN0000000002&source_type=3&entry_source=9&shipping_id=102&tracking_number=SX0000000002'},
+          {'address': '测试路 1 号', 'operate_time': '10-19 09:10', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000003', 'jump_url': '/track?order_sn=SN0000000003&source_type=3&entry_source=9&shipping_id=103&tracking_number=SX0000000003'},
+          // 真机上已取出件的样子：链接里 order_sn 与 source_type 是空的。
+          {'address': '测试路 1 号', 'operate_time': '10-18 18:00', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000004', 'shipping_id': 104, 'jump_url': '/track?order_sn=&source_type=&entry_source=9&shipping_id=104&tracking_number=SX0000000004&partial_shipment_period='},
         ],
       },
     ))));
@@ -564,16 +567,21 @@ void main() {
     await tester.tap(find.text('驿站快递'));
     await tester.pumpAndSettle();
     expect(find.text('没有待取件'), findsOneWidget);
-    expect(find.text('近一周已取出 2 件'), findsOneWidget);
+    expect(find.text('近一周已取出 3 件'), findsOneWidget);
     expect(find.text('取件时间 10-20 15:30'), findsOneWidget);
     expect(find.textContaining('SX0000000002'), findsOneWidget);
+    expect(find.textContaining('SX0000000004'), findsOneWidget);
+    expect(find.widgetWithText(OutlinedButton, '物流'), findsNWidgets(2), reason: '没有 order_sn 的已取出件不在应用里查物流');
+    expect(find.text('在拼多多看'), findsOneWidget);
 
     await tester.tap(find.widgetWithText(OutlinedButton, '物流').first);
     await tester.pump();
     expect(find.text('物流详情'), findsNothing);
     expect(tester.widget<OutlinedButton>(find.widgetWithText(OutlinedButton, '物流').last).onPressed, isNull, reason: '查询中其他行不能再点');
     final track = requests.lastWhere((request) => request.url.path.endsWith('shipping/track'));
-    expect(track.url.queryParameters, {'tracking_number': 'SX0000000002', 'shipping_id': '102', 'entry_source': '9', 'source_type': '3'});
+    expect(track.url.path, '/api/express/dsd/trackbox/shipping/track');
+    expect(jsonDecode(track.body), {'order_sn': 'SN0000000002', 'source_type': 3, 'entry_source': 9, 'query_type': 1});
+    expect(track.headers[PddConstants.antiContentHeader], 'anti', reason: '查物流同官方带 anti-content');
 
     gate.complete();
     await tester.pumpAndSettle();
@@ -581,6 +589,45 @@ void main() {
     expect(find.text('预计明天送达'), findsOneWidget);
     expect(find.text('【合成市】快件已到达合成驿站'), findsOneWidget);
     expect(find.text('2026-10-19 08:00:00'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 10-30 用户真机：已取出的件只有拼多多 App 出得了物流，点「在拼多多看」拉起 App 的物流页，不发查物流请求。数据合成。
+  testWidgets('没有 order_sn 的已取出件点「在拼多多看」拉起拼多多 App 的物流页、不发查物流请求；没装拼多多用提示条', (tester) async {
+    final requests = <http.Request>[];
+    final launched = <Uri>[];
+    var installed = true;
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime(
+      requests: requests,
+      station: const {
+        'count': 0,
+        'package_out_list': [
+          {'address': '测试路 1 号', 'operate_time': '10-18 18:00', 'shipping_name': '合成快递', 'tracking_number': 'SX0000000004', 'shipping_id': 104, 'jump_url': '/track?order_sn=&source_type=&entry_source=9&shipping_id=104&tracking_number=SX0000000004&partial_shipment_period='},
+        ],
+      },
+      launch: (uri) async {
+        launched.add(uri);
+        return installed;
+      },
+    ))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(find.widgetWithText(OutlinedButton, '物流'), findsNothing);
+    await tester.tap(find.text('在拼多多看'));
+    await tester.pumpAndSettle();
+    expect(launched.single.toString(), startsWith('pinduoduo://com.xunmeng.pinduoduo/mdkd/track?'));
+    expect(launched.single.queryParameters['tracking_number'], 'SX0000000004');
+    expect(launched.single.queryParameters.containsKey('station_code'), isFalse, reason: '没扫过驿站码就不带');
+    expect(requests.where((request) => request.url.path.endsWith('shipping/track')), isEmpty, reason: '这类件不调查物流接口');
+    expect(find.text('没有找到拼多多'), findsNothing);
+
+    installed = false;
+    await tester.tap(find.text('在拼多多看'));
+    await tester.pumpAndSettle();
+    expect(find.text('没有找到拼多多'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -836,6 +883,7 @@ void main() {
     await vault.saveOwnerTails({'1|SX0000000005': ''});
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtimeWith(MockClient((request) async {
       if (request.url.path.endsWith('shipping/track')) {
+        expect(request.headers[PddConstants.antiContentHeader], 'anti');
         tracks.add(request.url.path);
         return _json({'error_code': null, 'shipping': {'shipping_name': '合成快递', if (tail.isNotEmpty) 'package_info': '尾号$tail 的快递'}});
       }
@@ -879,6 +927,7 @@ void main() {
         ExpressService.serviceId: ExpressService(
           vault: vault,
           verifyPage: _FakeVerifyPage.new,
+          antiContent: _FakeAnti(),
           clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: MockClient((request) async {
             if (request.url.path.endsWith('shipping/track')) {
               final token = request.headers['VerifyAuthToken'];

@@ -27,7 +27,8 @@ class ParseCoordinator {
   );
   static const automatic = 'auto';
 
-  // [人工决策-2026-09-27 21:47:55] 自动仅尝试用户已启用且已同意的来源；线上当前只有BugPK，不并发广播链接或伪造多源。
+  // [人工决策-2026-09-27 21:47:55] 自动仅尝试用户已启用且已同意的来源，不并发广播链接或伪造多源。
+  // [人工决策-2026-10-30 18:03:16] 用户确认改写上句的过时说法（原写「线上当前只有BugPK」）：现有 BugPK 新版与 BugPK 两个来源，按顺序逐个试。
   List<ParseProvider> candidates(String selected, Set<String> enabled) =>
       selected == automatic
       ? providers.values
