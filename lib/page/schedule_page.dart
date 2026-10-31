@@ -430,9 +430,9 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     // 各列表末尾留出底部安全区与 16 的边距：列表铺到屏幕底边，最后一项能滚到 Home 指示条上方。
     final bottom = 16 + MediaQuery.paddingOf(context).bottom;
     return LayoutBuilder(key: const ValueKey('calendar-body'), builder: (context, constraints) {
-      // 左侧栏多宽、放不放得下见 semesterRailWidth 与 semesterRailFits（两条 [人工决策] 在那里）。
+      // 左侧栏多宽、放不放得下见 semesterRailWidth 与 semesterRailFits（两条 [人工决策] 在那里）；用横条还是左侧栏只看屏宽与字号。
       final railWidth = semesterRailWidth(context, constraints.maxWidth);
-      final strip = showRail && !semesterRailFits(context, constraints.maxWidth);
+      final strip = !semesterRailFits(context, constraints.maxWidth);
       final cards = CampusScrollFade(child: Stack(children: [
           FadeTransition(opacity: _dayCurve, child: PageView.builder(
           key: ValueKey('days-${_term!.key}-$_start'), controller: _pager,
@@ -456,12 +456,15 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
         )),
           if (_outgoingDay != null) Positioned.fill(child: FadeTransition(opacity: ReverseAnimation(_dayCurve), child: _outgoingDay)),
         ]));
+      // 横条同左侧栏一样跟着天、学期视图展开收起（以前直接出现、消失）：高度过渡，横条贴着顶边被收进去，下面的课程卡跟着移动；
+      // 收起时留 16，同左侧栏版的顶边距。
       if (strip) {
-        return Padding(padding: const EdgeInsets.only(top: 12), child: Column(children: [
-          SizedBox(height: 44 * scale, child: _monthStrip()),
-          const SizedBox(height: 12),
+        final stripHeight = 12 + 44 * scale + 12;
+        return Column(children: [
+          AnimatedContainer(duration: motion, curve: Curves.easeInOutCubic, height: showRail ? stripHeight : 16,
+            child: ClipRect(child: OverflowBox(alignment: Alignment.topCenter, minHeight: stripHeight, maxHeight: stripHeight, child: IgnorePointer(ignoring: !showRail, child: Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: _monthStrip()))))),
           Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: cards)),
-        ]));
+        ]);
       }
       return Padding(padding: const EdgeInsets.fromLTRB(16, 16, 16, 0), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
         AnimatedContainer(duration: motion, curve: Curves.easeInOutCubic, width: showRail ? railWidth : 0,
@@ -473,33 +476,57 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
   }
 
   // 横条版的月份周次栏：同竖栏的结构（点月份展开这个月的各周、所看的那周选中），每项一行，打开时把选中的周滚进可见区。
+  // 过渡同竖栏（以前是硬切）：点月份时这个月的各周横向展开、收起；选了别的周滑到中间，跨到另一个月时等那个月的各周展开完再滑；第一次排出横条时直接放到位。
+  // 点了右边的月份时，左边原来展开的那个月收起会把点的这个月往左挤出屏幕，展开完把它滑回可见区（本来就看得见不动）。
+  // 选中的周要等它那个月展开、格子建出来才滚得过去（天视图里各周收着）：所以按「建出来了、还没滚过」判断，收起后再展开会重新滚过去。
   final _stripWeek = GlobalKey();
+  final _stripMonthTile = GlobalKey();
   int? _stripShown;
+  int? _stripMonth;
+  bool _stripBuilt = false;
   Widget _monthStrip() {
     final months = monthsOfTerm(_start!, _weekCount);
     final thisWeek = weekIndex(_start!, campusToday());
-    if (_stripShown != _selection.week) {
-      _stripShown = _selection.week;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        final target = _stripWeek.currentContext;
-        if (target != null && target.mounted) Scrollable.ensureVisible(target, alignment: .5);
-      });
+    final motion = MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 300);
+    // 横条第一次建出来时各周不做展开动画，直接放到位；之后月份变了都等展开完再滑。
+    final built = _stripBuilt;
+    _stripBuilt = true;
+    final expanding = built && _stripMonth != _selection.month;
+    _stripMonth = _selection.month;
+    final week = _selection.week, month = _selection.month;
+    final weekBuilt = week != null && month != null && weeksOfMonth(_start!, _weekCount, month).contains(week);
+    Future<void> reveal(GlobalKey key, {required Duration duration, double alignment = 0, ScrollPositionAlignmentPolicy policy = ScrollPositionAlignmentPolicy.explicit}) async {
+      if (expanding && motion > Duration.zero) await Future<void>.delayed(motion);
+      final target = key.currentContext;
+      if (target != null && target.mounted) await Scrollable.ensureVisible(target, alignment: alignment, duration: duration, curve: Curves.easeInOutCubic, alignmentPolicy: policy);
     }
+    if (weekBuilt && _stripShown != week) {
+      _stripShown = week;
+      WidgetsBinding.instance.addPostFrameCallback((_) => reveal(_stripWeek, duration: built ? motion : Duration.zero, alignment: .5));
+    } else if (expanding && month != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) => reveal(_stripMonthTile, duration: motion, policy: ScrollPositionAlignmentPolicy.keepVisibleAtStart));
+    }
+    if (!weekBuilt) _stripShown = null;
     // 全部建出来（每学期不过十来项），选中的周才能滚进可见区；按需建的列表里离得远的项还没建。
     return SingleChildScrollView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       for (final month in months) ...[
-        Padding(padding: const EdgeInsets.only(right: 8), child: _tile('$month月', month == _selection.month, () => setState(() {
+        Padding(key: month == _selection.month ? _stripMonthTile : null, padding: const EdgeInsets.only(right: 8), child: _tile('$month月', month == _selection.month, () => setState(() {
           _selection = month == _selection.month ? _selection.copy(clearDrill: true) : _selection.copy(month: month, clearDetail: true);
         }), minHeight: 0)),
-        if (month == _selection.month)
+        _stripExpand(motion, month != _selection.month ? const SizedBox(height: double.infinity) : Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           for (final week in weeksOfMonth(_start!, _weekCount, month)) Padding(
             key: week == _selection.week ? _stripWeek : null,
             padding: const EdgeInsets.only(right: 8),
             child: _tile('${weekRailLabel(_start!, week).replaceAll('\n', ' ')}${week == thisWeek ? ' · 本周' : ''}', week == _selection.week, () => _selectDate(dayInWeek(termStartDate: _start!, week: week, today: campusToday())), minHeight: 0),
           ),
+        ])),
       ],
     ]));
   }
+
+  // 减少动画时直接换：AnimatedSize 时长为 0 会在自己的布局里报错（同 theme 的 CampusGlassChip）。
+  Widget _stripExpand(Duration motion, Widget child) =>
+      motion == Duration.zero ? child : AnimatedSize(duration: motion, curve: Curves.easeInOutCubic, alignment: Alignment.centerLeft, child: child);
 
   Widget _months(double scale, double availableHeight, double bottom) {
     final months = monthsOfTerm(_start!, _weekCount);
