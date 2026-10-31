@@ -1,10 +1,30 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/domain/week.dart';
 
 class DateRail extends StatefulWidget {
-  static double heightOf(BuildContext context) => 80 * MediaQuery.textScalerOf(context).scale(14) / 14;
+  // 横条高度：两行字（日期与星期）按当前字号、字体与粗体文本量，加日期格上下各 8 的内边距与 8 的外边距。
+  // 10-31 用户要上下留白短一点、「跟当时侧边栏收窄一样」：以前是 80×字号，留白跟着字号一起放大（130% 时日期格上下各空约 18）；
+  // 现在同课表左侧栏收窄的做法，只按内容量、留白固定。
+  static double heightOf(BuildContext context) {
+    final date = campusTextPainter(context, '12/31', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600));
+    final weekday = campusTextPainter(context, '周三', style: const TextStyle(fontSize: 14));
+    final height = date.height + 2 + weekday.height + 16 + 16;
+    date.dispose();
+    weekday.dispose();
+    return height.ceilToDouble();
+  }
+
+  // 日期格宽：同样按内容量（最宽的「88/88」按选中时的加粗量，和星期取宽的），左右各 8 的内边距、格间 8；
+  // 以前是 64×字号，字形宽的字体里日期会折成两行。
+  static double extentOf(BuildContext context) => (math.max(
+    campusTextWidth(context, '88/88', style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+    campusTextWidth(context, '周三', style: const TextStyle(fontSize: 14)),
+  ) + 16 + 8).ceilToDouble();
   const DateRail({super.key, required this.first, required this.last, required this.selected, required this.onSelect, this.recenterRequest = 0});
   final String first;
   final String last;
@@ -43,7 +63,7 @@ class _DateRailState extends State<DateRail> {
   Widget build(BuildContext context) {
     final first = parseIsoDate(widget.first);
     final count = parseIsoDate(widget.last).difference(first).inDays + 1;
-    final extent = 64 * MediaQuery.textScalerOf(context).scale(14) / 14;
+    final extent = DateRail.extentOf(context);
     if (_extent != extent) { _extent = extent; _ensureVisible(); }
     if (!_scroll.hasClients) _ensureVisible();
     return ColoredBox(color: CampusPalette.of(context).surface.withValues(alpha: .58), child: SizedBox(

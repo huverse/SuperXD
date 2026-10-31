@@ -513,7 +513,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
         Padding(key: month == _selection.month ? _stripMonthTile : null, padding: const EdgeInsets.only(right: 8), child: _tile('$month月', month == _selection.month, () => setState(() {
           _selection = month == _selection.month ? _selection.copy(clearDrill: true) : _selection.copy(month: month, clearDetail: true);
         }), minHeight: 0)),
-        _stripExpand(motion, month != _selection.month ? const SizedBox(height: double.infinity) : Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _expand(motion, Alignment.centerLeft, month != _selection.month ? const SizedBox(height: double.infinity) : Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           for (final week in weeksOfMonth(_start!, _weekCount, month)) Padding(
             key: week == _selection.week ? _stripWeek : null,
             padding: const EdgeInsets.only(right: 8),
@@ -524,9 +524,10 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     ]));
   }
 
-  // 减少动画时直接换：AnimatedSize 时长为 0 会在自己的布局里报错（同 theme 的 CampusGlassChip）。
-  Widget _stripExpand(Duration motion, Widget child) =>
-      motion == Duration.zero ? child : AnimatedSize(duration: motion, curve: Curves.easeInOutCubic, alignment: Alignment.centerLeft, child: child);
+  // 月份展开各周（横条横向、竖栏纵向）。减少动画时直接换：AnimatedSize 时长为 0 会在自己的布局里报错（同 theme 的 CampusGlassChip；
+  // 竖栏原来也是这么写的，10-31 用例证实减少动画时点月份会报断言，一起改）。
+  Widget _expand(Duration motion, Alignment alignment, Widget child) =>
+      motion == Duration.zero ? child : AnimatedSize(duration: motion, curve: Curves.easeInOutCubic, alignment: alignment, child: child);
 
   Widget _months(double scale, double availableHeight, double bottom) {
     final months = monthsOfTerm(_start!, _weekCount);
@@ -536,7 +537,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
       Padding(padding: EdgeInsets.only(bottom: gap), child: _tile('$month月', month == _selection.month, () => setState(() {
         _selection = month == _selection.month ? _selection.copy(clearDrill: true) : _selection.copy(month: month, clearDetail: true);
       }), minHeight: 48 * scale)),
-      AnimatedSize(duration: motion, curve: Curves.easeInOutCubic, alignment: Alignment.topCenter, child: month != _selection.month ? const SizedBox(width: double.infinity) : Column(children: [
+      _expand(motion, Alignment.topCenter, month != _selection.month ? const SizedBox(width: double.infinity) : Column(children: [
         for (final week in weeksOfMonth(_start!, _weekCount, month)) Padding(padding: EdgeInsets.only(bottom: gap), child: _tile('${weekRailLabel(_start!, week)}${week == weekIndex(_start!, campusToday()) ? '\n本周' : ''}', week == _selection.week, () => _selectDate(dayInWeek(termStartDate: _start!, week: week, today: campusToday())), minHeight: 64 * scale)),
       ])),
     ]]);
