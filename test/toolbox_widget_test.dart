@@ -25,8 +25,11 @@ import 'package:superxd/toolbox/short_video/media_result_page.dart';
 
 import 'toolbox_test_support.dart';
 
+// 等到正好一个：推入页面的转场期间新旧两页都在屏上，会先找到两个。转场计时会扣掉首帧到次帧的真实耗时
+// （theme 的 CampusFirstFrameVsync），机器忙时两次 pump 之间真实时间超过 50ms，推进的假时间走完了转场还没完
+// （10-31 全量里红过两次：下载管理页推入到 0.947，结果页与下载管理页各找到一个「等待下载」）。
 Future<void> waitForWidget(WidgetTester tester, Finder finder) async {
-  for (var attempt = 0; attempt < 100 && finder.evaluate().isEmpty; attempt++) {
+  for (var attempt = 0; attempt < 100 && finder.evaluate().length != 1; attempt++) {
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 10)),
     );
