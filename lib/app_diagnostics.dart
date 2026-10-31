@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -129,6 +129,8 @@ class TextSizeWatch extends StatefulWidget {
 
 class _TextSizeWatchState extends State<TextSizeWatch> {
   static const _settle = Duration(seconds: 1);
+  // 量字用的 context（见 build）。
+  final _measure = GlobalKey();
   Timer? _timer;
   String? _logged;
 
@@ -175,8 +177,9 @@ class _TextSizeWatchState extends State<TextSizeWatch> {
     final key = _line(inputs);
     if (key == _logged) return;
     _logged = key;
-    final relayout = textSizeAdaptations(context, width, effective);
-    final state = {...inputs, 'comfortableMax': _fixed(comfortableTextSize(context, width)), 'relayout': relayout.isEmpty ? 'none' : relayout.join('、')};
+    final measure = _measure.currentContext!;
+    final relayout = textSizeAdaptations(measure, width, effective);
+    final state = {...inputs, 'comfortableMax': _fixed(comfortableTextSize(measure, width)), 'relayout': relayout.isEmpty ? 'none' : relayout.join('、')};
     widget.logs.textSize = state;
     campusLog('[TextSize] action=state ${_line(state)}');
   }
@@ -187,7 +190,26 @@ class _TextSizeWatchState extends State<TextSizeWatch> {
       _timer?.cancel();
       _timer = Timer(_settle, _record);
     }
-    return widget.child;
+    // 量字与外观页同口径：页面在 Scaffold 的 Material 里，默认文字样式是主题的 bodyMedium；这一层在它外面，默认的是 MaterialApp 的兜底样式，
+    // 拿它量会让没写字体的规则量成别的字体（10-31 模拟器上 Maple 360dp 记成 160%，外观页是 145%）。所以给量字垫一层 bodyMedium，
+    // 再把原来的默认样式原样还给下面的应用，应用的显示不变。
+    final outer = DefaultTextStyle.of(context);
+    return DefaultTextStyle(
+      style: Theme.of(context).textTheme.bodyMedium!,
+      child: Builder(
+        key: _measure,
+        builder: (_) => DefaultTextStyle(
+          style: outer.style,
+          textAlign: outer.textAlign,
+          softWrap: outer.softWrap,
+          overflow: outer.overflow,
+          maxLines: outer.maxLines,
+          textWidthBasis: outer.textWidthBasis,
+          textHeightBehavior: outer.textHeightBehavior,
+          child: widget.child,
+        ),
+      ),
+    );
   }
 }
 

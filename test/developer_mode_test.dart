@@ -18,6 +18,8 @@ import 'package:superxd/page/developer_page.dart';
 import 'package:superxd/page/text_size_range.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
+import 'form_layout_support.dart';
+
 // 页面里读写日志是真实文件操作，假时钟里不会自己走完：交替让出真实事件循环与推一帧，直到条件满足。
 Future<void> settle(WidgetTester tester, bool Function() done) async {
   for (var attempt = 0; attempt < 200 && !done(); attempt++) {
@@ -194,6 +196,41 @@ void main() {
     await tester.pump(const Duration(seconds: 1));
     expect(records, hasLength(5));
     expect(state(4), startsWith('screenWidth=480 pixelRatio=2.75 systemTextSize=1.15 '));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 10-31 模拟器上记出的推荐上限比外观页高（Maple 360dp 记成 160%）：组合根这一层在 Scaffold 外面，默认文字样式是 MaterialApp 的兜底样式，
+  // 没写字体的那几条规则量成了别的字体。要与外观页同口径（appearance_settings_test 里 10-27 扫描的值）。
+  testWidgets('字号状态的推荐上限与外观页同口径：真字体下 Maple 360dp 到 145%、411dp 到 175%', (tester) async {
+    await loadCampusFonts(tester);
+    final previous = campusLog;
+    campusLog = (_) {};
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(() {
+      campusLog = previous;
+      campusDiagnostics = false;
+      tester.view.reset();
+    });
+    final developer = DeveloperSettings.memory(enabled: true);
+    final display = DisplaySettings.memory();
+    campusDiagnostics = true;
+    TextStyle? outer;
+    await tester.pumpWidget(MaterialApp(
+      theme: campusTheme(fontFamily: display.fontFamily),
+      builder: (context, child) {
+        outer = DefaultTextStyle.of(context).style;
+        return CampusTextScale(textSize: display.textSize, child: TextSizeWatch(developer: developer, logs: logs, display: display, child: child!));
+      },
+      home: const Scaffold(body: SizedBox.expand()),
+    ));
+    expect(DefaultTextStyle.of(tester.element(find.byType(Navigator))).style, outer, reason: '量字垫的那层不改下面应用的默认样式');
+    await tester.pump(const Duration(seconds: 1));
+    expect(logs.textSize['comfortableMax'], '1.45', reason: '${display.fontFamily} 360dp');
+    tester.view.physicalSize = const Size(411, 800);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(logs.textSize['comfortableMax'], '1.75', reason: '${display.fontFamily} 411dp');
     await tester.pumpWidget(const SizedBox());
   });
 
