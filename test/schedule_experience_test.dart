@@ -1,4 +1,5 @@
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -534,6 +535,111 @@ void main() {
     expect(tester.widget<Text>(selected).data!.endsWith('\n本周'), inTerm);
     // 自动展开的这一层不算钻取：返回键直接离开课表，不先收起它。
     expect(tester.widget<PopScope>(find.byWidgetPredicate((widget) => widget is PopScope).first).canPop, isTrue);
+  });
+
+  // 10-31 用户反馈横条是硬切（左侧栏是滑入滑出、展开收起）：三处都要有过渡。窄窗口让学期视图用横条（测试字体是方块字，比真字体宽）。
+  testWidgets('学期视图收成横条时同左侧栏一样有过渡：切天与学期时横条展开收起、点月份各周横向展开、选别的周滑过去', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 900);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway())));
+    await tester.pumpAndSettle();
+    final pages = find.byType(PageView);
+    final dayTop = tester.getTopLeft(pages).dy;
+
+    // 切到学期：横条从上方展开，课程卡跟着往下移，中间有过渡帧；切回天视图同样收起。
+    await tester.tap(find.text('学期'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    final midTop = tester.getTopLeft(pages).dy;
+    await tester.pumpAndSettle();
+    final termTop = tester.getTopLeft(pages).dy;
+    expect(find.textContaining('月'), findsWidgets);
+    // 横条打开后所看的那周滑进屏幕（10-31 模拟器上第一次打开时停在开头没滑：天视图里各周收着，格子还没建出来就当成滚过了）。
+    final today = campusToday();
+    final inTerm = today.compareTo('2026-08-31') >= 0 && today.compareTo(weekRange('2026-08-31', 18).end) <= 0;
+    final selectedWeek = tester.getRect(find.textContaining(RegExp('^第${inTerm ? weekIndex('2026-08-31', today) : 1}周 ')));
+    expect(selectedWeek.left, greaterThanOrEqualTo(0));
+    expect(selectedWeek.right, lessThanOrEqualTo(320));
+    expect(midTop, greaterThan(dayTop));
+    expect(midTop, lessThan(termTop));
+    await tester.tap(find.text('天'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(tester.getTopLeft(pages).dy, inExclusiveRange(dayTop, termTop));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(pages).dy, dayTop);
+    await tester.tap(find.text('学期'));
+    await tester.pumpAndSettle();
+
+    // 本月展开着时点右边的 11 月：本月各周收起把 11 月往左挤出屏幕，展开完它滑回屏幕里。
+    await tester.ensureVisible(find.text('11月'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('11月'));
+    await tester.pumpAndSettle();
+    expect(tester.getRect(find.text('11月')).left, greaterThanOrEqualTo(0));
+
+    // 点 12 月：这个月的各周横向展开，中间帧宽度在 0 与展开后之间。
+    final strip = find.byWidget(tester.widget(find.ancestor(of: find.text('9月'), matching: find.byType(Scrollable)).first));
+    await tester.scrollUntilVisible(find.text('12月'), 80, scrollable: strip);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('12月'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    final weeks = find.ancestor(of: find.text('第15周 12/7'), matching: find.byType(AnimatedSize)).first;
+    final midWidth = tester.getSize(weeks).width;
+    await tester.pumpAndSettle();
+    expect(midWidth, inExclusiveRange(0, tester.getSize(weeks).width));
+    // 左边原来展开的月份收起会把 12 月往左挤，展开完它滑回屏幕里。
+    expect(tester.getRect(find.text('12月')).left, greaterThanOrEqualTo(0));
+
+    // 展开学期中间的 11 月，选它的第一周：横条滑到它居中，中间帧在原位与终点之间（选两头的月份会先碰到滚动边界）。
+    await tester.ensureVisible(find.text('11月'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('11月'));
+    await tester.pumpAndSettle();
+    final position = tester.state<ScrollableState>(find.ancestor(of: find.text('11月'), matching: find.byType(Scrollable)).first).position;
+    final before = position.pixels;
+    await tester.tap(find.textContaining(RegExp(r'^第\d+周 11/')).first);
+    // 滑动在这一帧画完后开始，滚动动画的计时从下一帧算起。
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 16));
+    await tester.pump(const Duration(milliseconds: 100));
+    final midScroll = position.pixels;
+    await tester.pumpAndSettle();
+    final after = position.pixels;
+    expect(after, isNot(before));
+    expect(midScroll, inExclusiveRange(math.min(before, after), math.max(before, after)));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('减少动画时横条直接换：切学期、点月份、选周都没有过渡，也不报错', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(320, 900);
+    addTearDown(tester.view.reset);
+    tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway())));
+    await tester.pumpAndSettle();
+    final pages = find.byType(PageView);
+    await tester.tap(find.text('学期'));
+    await tester.pump();
+    await tester.pump();
+    final termTop = tester.getTopLeft(pages).dy;
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(pages).dy, termTop, reason: '第一帧就到位');
+    await tester.ensureVisible(find.text('11月'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('11月'));
+    await tester.pump();
+    expect(find.textContaining(RegExp(r'^第\d+周 11/')), findsWidgets);
+    // 左边本月的各周一下收起，11 月被挤出屏幕，随即跳回可见区（没有滑动过程）。
+    await tester.pump();
+    await tester.pump();
+    expect(tester.getRect(find.text('11月')).left, greaterThanOrEqualTo(0));
+    await tester.tap(find.textContaining(RegExp(r'^第\d+周 11/')).first);
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('没同步的学期原地给「去同步」，带上这一学年', (tester) async {
