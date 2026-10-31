@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 
-import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -129,8 +129,6 @@ class TextSizeWatch extends StatefulWidget {
 
 class _TextSizeWatchState extends State<TextSizeWatch> {
   static const _settle = Duration(seconds: 1);
-  // 量字用的 context（见 build）。
-  final _measure = GlobalKey();
   Timer? _timer;
   String? _logged;
 
@@ -150,36 +148,36 @@ class _TextSizeWatchState extends State<TextSizeWatch> {
   // 关掉再打开开发者模式时重新记一条。
   void _developerChanged() => setState(() => _logged = null);
 
-  // 推荐上限的几个输入（读的同时登记依赖，变了就重建）：屏宽按逻辑像素取整，字号是标准字号的倍数。
-  ({Map<String, String> inputs, double width, double effective}) _read() {
-    final width = MediaQuery.sizeOf(context).width;
+  // 推荐上限与它的几个输入（读的同时登记依赖，变了就重建）：屏宽按逻辑像素取整，字号是标准字号的倍数。
+  // 推荐上限与改排处取组合根的 TextSizeComfort（与外观页同口径量，见 page/text_size_range.dart）。
+  ({Map<String, String> inputs, double effective}) _read() {
+    final comfortable = TextSizeComfort.of(context).comfortable;
     final system = CampusTextScale.systemOf(context);
     final chosen = widget.display.textSize;
-    final effective = DisplaySettings.effectiveTextSize(chosen, system);
+    final effective = DisplaySettings.effectiveTextSize(chosen, system, followLimit: comfortable);
     return (
       inputs: {
-        'screenWidth': '${width.round()}',
+        'screenWidth': '${MediaQuery.sizeOf(context).width.round()}',
         'pixelRatio': _fixed(MediaQuery.devicePixelRatioOf(context)),
         'systemTextSize': _fixed(system),
         'boldText': '${MediaQuery.boldTextOf(context)}',
         'textSize': chosen == null ? 'system' : _fixed(chosen),
         'effectiveTextSize': _fixed(effective),
         'font': widget.display.fontId,
+        'comfortableMax': _fixed(comfortable),
       },
-      width: width,
       effective: effective,
     );
   }
 
   void _record() {
     if (!mounted || !campusDiagnostics) return;
-    final (:inputs, :width, :effective) = _read();
+    final (:inputs, :effective) = _read();
     final key = _line(inputs);
     if (key == _logged) return;
     _logged = key;
-    final measure = _measure.currentContext!;
-    final relayout = textSizeAdaptations(measure, width, effective);
-    final state = {...inputs, 'comfortableMax': _fixed(comfortableTextSize(measure, width)), 'relayout': relayout.isEmpty ? 'none' : relayout.join('、')};
+    final relayout = TextSizeComfort.of(context).adaptations(effective);
+    final state = {...inputs, 'relayout': relayout.isEmpty ? 'none' : relayout.join('、')};
     widget.logs.textSize = state;
     campusLog('[TextSize] action=state ${_line(state)}');
   }
@@ -190,26 +188,7 @@ class _TextSizeWatchState extends State<TextSizeWatch> {
       _timer?.cancel();
       _timer = Timer(_settle, _record);
     }
-    // 量字与外观页同口径：页面在 Scaffold 的 Material 里，默认文字样式是主题的 bodyMedium；这一层在它外面，默认的是 MaterialApp 的兜底样式，
-    // 拿它量会让没写字体的规则量成别的字体（10-31 模拟器上 Maple 360dp 记成 160%，外观页是 145%）。所以给量字垫一层 bodyMedium，
-    // 再把原来的默认样式原样还给下面的应用，应用的显示不变。
-    final outer = DefaultTextStyle.of(context);
-    return DefaultTextStyle(
-      style: Theme.of(context).textTheme.bodyMedium!,
-      child: Builder(
-        key: _measure,
-        builder: (_) => DefaultTextStyle(
-          style: outer.style,
-          textAlign: outer.textAlign,
-          softWrap: outer.softWrap,
-          overflow: outer.overflow,
-          maxLines: outer.maxLines,
-          textWidthBasis: outer.textWidthBasis,
-          textHeightBehavior: outer.textHeightBehavior,
-          child: widget.child,
-        ),
-      ),
-    );
+    return widget.child;
   }
 }
 

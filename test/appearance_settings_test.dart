@@ -13,6 +13,7 @@ import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/appearance_page.dart';
+import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/text_size_range.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -345,7 +346,7 @@ void main() {
       listenable: settings,
       builder: (context, _) => MaterialApp(
         theme: campusTheme(fontFamily: settings.fontFamily),
-        builder: (context, child) => DisplayScope(settings: settings, child: CampusTextScale(textSize: settings.textSize, child: child!)),
+        builder: (context, child) => DisplayScope(settings: settings, child: TextSizeComfort(builder: (context, comfortable) => CampusTextScale(textSize: settings.textSize, followLimit: comfortable, child: child!))),
         home: const AppearancePage(),
       ),
     ));
@@ -414,29 +415,32 @@ void main() {
       await settings.close();
     }
     await directory.delete(recursive: true);
-    // 跟随系统时系统字号比标准小也照着来，最小按 80%；选的大小按 5% 一档夹在 80%–200%。
-    expect(DisplaySettings.effectiveTextSize(null, .85), .85);
-    expect(DisplaySettings.effectiveTextSize(null, .7), .8);
-    expect(DisplaySettings.effectiveTextSize(null, 1.3), 1.3);
-    expect(DisplaySettings.effectiveTextSize(1.2, 1.6), 1.2);
+    // 跟随系统时系统字号比标准小也照着来，最小按 80%，比推荐上限大时只到推荐上限；自己选的大小不受推荐上限限制；选的大小按 5% 一档夹在 80%–200%。
+    expect(DisplaySettings.effectiveTextSize(null, .85, followLimit: 1.2), .85);
+    expect(DisplaySettings.effectiveTextSize(null, .7, followLimit: 1.2), .8);
+    expect(DisplaySettings.effectiveTextSize(null, 1.3, followLimit: 1.45), 1.3);
+    expect(DisplaySettings.effectiveTextSize(null, 1.3, followLimit: 1.1), 1.1);
+    expect(DisplaySettings.effectiveTextSize(1.6, 1.3, followLimit: 1.0), 1.6);
     expect([DisplaySettings.snapTextSize(1.23), DisplaySettings.snapTextSize(2.4), DisplaySettings.snapTextSize(.83), DisplaySettings.snapTextSize(.6)], [1.25, 2.0, .85, .8]);
   });
 
-  // 推荐上限按屏宽与字体量（同 text_size_range.dart 文件头记的 10-27 扫描结果）：课程卡还带时刻列、今天页与课表顶栏的按钮还带字的最大字号。
-  testWidgets('推荐字号上限随屏宽与字体变：Maple 360dp 到 145%、411dp 到 175%，宋体 360dp 到 170%', (tester) async {
+  // 推荐上限按屏宽与字体量（同 text_size_range.dart 文件头记的 10-31 扫描结果）：学期视图还带左侧栏、课程卡还带时刻列、今天页与课表顶栏的按钮还带字的最大字号；
+  // 左侧栏最先撑不住（[人工决策] 见 text_size_range.dart），默认大小必须是左侧栏，所以标准 100% 在 360dp 起两种字体都要放得下左侧栏。
+  testWidgets('推荐字号上限是学期视图还保留左侧栏的最大字号：Maple 360dp 到 100%、411dp 到 120%，宋体 360dp 到 115%；标准 100% 在 360dp 起是左侧栏', (tester) async {
     await loadCampusFonts(tester);
-    for (final (font, width, expected) in [('Maple Mono NF CN', 360.0, 1.45), ('Maple Mono NF CN', 411.0, 1.75), ('Noto Serif SC', 360.0, 1.7)]) {
+    for (final (font, width, expected) in [('Maple Mono NF CN', 360.0, 1.0), ('Maple Mono NF CN', 411.0, 1.2), ('Noto Serif SC', 360.0, 1.15)]) {
       await tester.pumpWidget(MaterialApp(key: ValueKey(font), theme: campusTheme(fontFamily: font), home: const Scaffold(body: SizedBox.expand())));
       await tester.pumpAndSettle();
       final context = tester.element(find.byType(SizedBox).last);
       final comfortable = comfortableTextSize(context, width);
       expect(comfortable, expected, reason: '$font ${width}dp');
       expect(textSizeAdaptations(context, width, comfortable), isEmpty);
-      expect(textSizeAdaptations(context, width, DisplaySettings.snapTextSize(comfortable + DisplaySettings.textSizeStep)), isNotEmpty);
+      expect(textSizeAdaptations(context, width, DisplaySettings.snapTextSize(comfortable + DisplaySettings.textSizeStep)), contains('学期视图的月份栏移到顶部'));
+      expect(semesterRailFits(context, width, textScaler: TextScaler.noScaling), isTrue, reason: '$font ${width}dp 标准字号要是左侧栏');
     }
   });
 
-  testWidgets('字号条：默认跟随系统并标出系统位置，拖过推荐上限重震一下并说明哪里会改排，松在系统那一档回到跟随系统', (tester) async {
+  testWidgets('字号条：默认跟随系统但最多到推荐上限并标出系统位置，拖过推荐上限重震一下并说明哪里会改排，松在跟随会得到的那一档回到跟随系统', (tester) async {
     // 推荐范围按窗口宽度算（页面里取 MediaQuery 的尺寸），要设窗口而不只是渲染面。
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(360, 1600);
@@ -455,24 +459,25 @@ void main() {
       listenable: settings,
       builder: (context, _) => MaterialApp(
         theme: campusTheme(fontFamily: settings.fontFamily),
-        builder: (context, child) => DisplayScope(settings: settings, child: CampusTextScale(textSize: settings.textSize, child: child!)),
+        builder: (context, child) => DisplayScope(settings: settings, child: TextSizeComfort(builder: (context, comfortable) => CampusTextScale(textSize: settings.textSize, followLimit: comfortable, child: child!))),
         home: const AppearancePage(),
       ),
     ));
     await tester.pumpAndSettle();
     await tester.scrollUntilVisible(find.byType(Slider), 200, scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
-    // 跟随系统：数值是系统的 130%，刻度标着「系统」，下面写这台手机的推荐范围（Maple 360dp 到 145%）。
-    expect(find.textContaining('130%', findRichText: true), findsWidgets);
+    // 跟随系统：系统是 130%，但 Maple 360dp 的推荐上限（左侧栏放得下的最大字号）是 100%，全应用按 100% 排；刻度标着「系统」，下面写推荐与跟随的上限。
+    double scaleNow() => MediaQuery.textScalerOf(tester.element(find.byType(Slider))).scale(14) / 14;
+    expect(scaleNow(), closeTo(1, 1e-6));
     expect(find.text('系统'), findsOneWidget);
-    expect(find.text('这台手机推荐 100%–145%'), findsOneWidget);
+    expect(find.text('这台手机推荐 100%，跟随系统最多到 100%'), findsOneWidget);
     expect(tester.widget<CampusGlassChip>(find.widgetWithText(CampusGlassChip, '跟随系统')).selected, isTrue);
 
     await _slideTextSize(tester, 1.9);
     await tester.pumpAndSettle();
     expect(settings.textSize, 1.9);
     expect(haptics, contains('HapticFeedbackType.mediumImpact'), reason: '越过推荐上限重震一下');
-    expect(find.text('超出推荐：课程卡时刻挪到首行、顶栏按钮只留图标'), findsOneWidget);
+    expect(find.text('超出推荐：学期视图的月份栏移到顶部、课程卡时刻挪到首行、顶栏按钮只留图标'), findsOneWidget);
     // 预览卡按 190% 排，内容一栏放不下改两栏，时刻写在第一行。
     expect(find.text('10:00–11:40', findRichText: true), findsOneWidget);
     expect(tester.widget<CampusGlassChip>(find.widgetWithText(CampusGlassChip, '跟随系统')).selected, isFalse);
@@ -497,7 +502,14 @@ void main() {
     await tester.pumpAndSettle();
     await _slideTextSize(tester, 1.3);
     await tester.pumpAndSettle();
-    expect(settings.textSize, isNull, reason: '松在系统那一档回到跟随系统');
+    expect(settings.textSize, 1.3, reason: '系统刻度超过推荐上限：松在那里存成这个大小，不是跟随（跟随只到 100%）');
+    expect(scaleNow(), closeTo(1.3, 1e-6));
+
+    await tester.scrollUntilVisible(find.byType(Slider), 200, scrollable: find.byType(Scrollable).first);
+    await tester.pumpAndSettle();
+    await _slideTextSize(tester, 1);
+    await tester.pumpAndSettle();
+    expect(settings.textSize, isNull, reason: '松在跟随系统会得到的那一档（推荐上限）回到跟随系统');
 
     await tester.scrollUntilVisible(find.byType(Slider), 200, scrollable: find.byType(Scrollable).first);
     await tester.pumpAndSettle();
@@ -510,7 +522,7 @@ void main() {
     await _slideTextSize(tester, .8);
     await tester.pumpAndSettle();
     expect(settings.textSize, .8);
-    expect(find.text('这台手机推荐 100%–145%'), findsOneWidget);
+    expect(find.text('这台手机推荐 100%，跟随系统最多到 100%'), findsOneWidget);
     // 外观模式的分段控件里也有「跟随系统」，点字号这一节的那个按钮。
     await tester.tap(find.widgetWithText(CampusGlassChip, '跟随系统'));
     await tester.pumpAndSettle();
@@ -526,7 +538,7 @@ void main() {
       data: const MediaQueryData(disableAnimations: true),
       child: StatefulBuilder(builder: (context, setState) {
         update = setState;
-        return CampusTextScale(textSize: textSize, child: Builder(builder: (context) => Text('${MediaQuery.textScalerOf(context).scale(10)}', textDirection: TextDirection.ltr)));
+        return CampusTextScale(textSize: textSize, followLimit: DisplaySettings.textSizeMax, child: Builder(builder: (context) => Text('${MediaQuery.textScalerOf(context).scale(10)}', textDirection: TextDirection.ltr)));
       }),
     ));
     expect(find.text('14.0'), findsOneWidget);

@@ -65,10 +65,13 @@ class DisplaySettings extends ChangeNotifier {
   // 老设置在 v8 换算成看起来不变的值：原来的「标准」跟随系统，较大及以上换成当时的实际大小（系统字号 × 原倍数）。
   // [人工决策-2026-10-28 00:18:15] 最小改为 80%（用户要求，取代上一条的「最小 100%」）：可以拖到比标准小，跟随系统时系统字号比 80% 还小也按 80%；
   // 「文字最小 14px」指标准字号下的设计尺寸，用户自己调小时按比例缩小。推荐范围仍从标准 100% 标起（见 page/text_size_range.dart）。
+  // [人工决策-2026-10-31 21:04:58] 用户要「默认大小必须是课表学期视图的左侧栏」，选「跟随系统但不超左侧栏」（未选「只保证标准 100%」「默认改成固定 100%」）：
+  // 仍默认跟随系统，但系统字号再大也只放到这台手机的推荐上限 followLimit（推荐上限同时改成左侧栏还放得下的最大字号，见 text_size_range.dart），
+  // 同 iOS 应用给系统字号设上限；想更大在字号条上自己拖。followLimit 由组合根按页面规则量好传进来（本层不认识页面）。
   static const textSizeMin = .8;
   static const textSizeMax = 2.0;
   static const textSizeStep = .05;
-  static double effectiveTextSize(double? chosen, double system) => chosen ?? math.max(textSizeMin, system);
+  static double effectiveTextSize(double? chosen, double system, {required double followLimit}) => chosen ?? math.max(textSizeMin, math.min(system, followLimit));
   static double snapTextSize(double value) => (value.clamp(textSizeMin, textSizeMax) / textSizeStep).round() * 5 / 100;
   static bool knownTextSize(double value) => value == 0 || value >= textSizeMin && value <= textSizeMax;
   // [人工决策-2026-10-27 20:11:01] 删掉苔灰配色（用户要求），剩雾蓝、藕粉、暮紫、燕麦四套；存着苔灰的在 v7 升级时换成默认的雾蓝，
@@ -386,10 +389,11 @@ class DisplayScope extends InheritedNotifier<DisplaySettings> {
 // 以前新字号在一帧里整体生效，内容一下变矮、滚动位置被截断，按钮里的文字瞬间变小而勾号让位动画还按旧尺寸在播。
 // 现在把字号在 duration 内平滑插值，全应用的文字、按钮、卡片跟着一起连续缩放（同 iOS 改文字大小时界面连续变化）；
 // 界面页另用 theme 的 CampusAnchoredScrollController 让点的那一项停在手指下。减少动画时直接换。
-// 字号条上选的大小（为空跟随系统，最小 80%）按线性缩放交给全应用，人工决策见 DisplaySettings.textSizeMin。
+// 字号条上选的大小（为空跟随系统，最小 80%，跟随时最多到 followLimit）按线性缩放交给全应用，人工决策见 DisplaySettings.textSizeMin。
 class CampusTextScale extends StatelessWidget {
-  const CampusTextScale({super.key, required this.textSize, required this.child});
+  const CampusTextScale({super.key, required this.textSize, required this.followLimit, required this.child});
   final double? textSize;
+  final double followLimit;
   final Widget child;
   static const duration = Duration(milliseconds: 280);
 
@@ -403,7 +407,7 @@ class CampusTextScale extends StatelessWidget {
     return _SystemTextScale(
       value: system,
       child: TweenAnimationBuilder<double>(
-        tween: Tween(end: DisplaySettings.effectiveTextSize(textSize, system)),
+        tween: Tween(end: DisplaySettings.effectiveTextSize(textSize, system, followLimit: followLimit)),
         duration: media.disableAnimations ? Duration.zero : duration,
         curve: Curves.easeInOutCubic,
         builder: (context, value, child) => MediaQuery(data: media.copyWith(textScaler: TextScaler.linear(value)), child: child!),

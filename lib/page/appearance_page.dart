@@ -84,8 +84,8 @@ class _AppearancePageState extends State<AppearancePage> {
   double? _draftSize;
   Timer? _sizeSave;
   bool _pressing = false;
-  // 最近一次排版时的系统字号；离开页面时补存要用，那时已不能再从 context 取。
-  double _system = 1;
+  // 最近一次排版时跟随系统会得到的大小（系统字号，最多到推荐上限）；离开页面时补存要用，那时已不能再从 context 取。
+  double _follow = 1;
   final _fontAnchors = {for (final id in [DisplaySettings.systemFont, ...DisplaySettings.fontFamilies.keys]) id: GlobalKey()};
 
   @override
@@ -100,7 +100,7 @@ class _AppearancePageState extends State<AppearancePage> {
     _scroll.dispose();
     if (_sizeSave?.isActive == true) {
       _sizeSave!.cancel();
-      _settings!.setTextSize(_followsAt(_draftSize!, _system) ? null : _draftSize).catchError((Object error, StackTrace stack) {
+      _settings!.setTextSize(_followsAt(_draftSize!, _follow) ? null : _draftSize).catchError((Object error, StackTrace stack) {
         campusLog('[Appearance] action=save_text_size errorType=${error.runtimeType}\n$stack');
       });
     }
@@ -178,11 +178,12 @@ class _AppearancePageState extends State<AppearancePage> {
   // 点了就生效：落库在 DisplaySettings 的保存锁里排队、合并完整快照，连着点也不互相覆盖，所以存的时候页面上的选项不变灰，
   // 也不在页尾插「保存中」（以前点一项整页选项闪一下灰、页尾多出一行）。只有导入壁纸这种要等的操作才原地显示进度。
   static double _fraction(double size) => ((size - DisplaySettings.textSizeMin) / (DisplaySettings.textSizeMax - DisplaySettings.textSizeMin)).clamp(0.0, 1.0);
-  // 松在「系统」那一档上就回到跟随系统（同 iOS 文字大小的默认档）。
-  static bool _followsAt(double size, double system) => size == DisplaySettings.snapTextSize(system);
+  // 松在跟随系统会得到的那一档上就回到跟随系统（同 iOS 文字大小的默认档）。系统字号超过推荐上限时那一档是推荐上限
+  //（跟随系统最多到它，见 DisplaySettings.textSizeMin 的人工决策），松在更大的「系统」刻度上就存成那个大小。
+  static bool _followsAt(double size, double follow) => size == DisplaySettings.snapTextSize(follow);
 
   // 拖动中每过一档轻震一下，越过推荐上限（进出都算）重震一下，提醒再往大会改排。
-  void _dragSize(DisplaySettings settings, double fraction, double current, double comfortable, double system) {
+  void _dragSize(DisplaySettings settings, double fraction, double current, double comfortable, double follow) {
     final size = DisplaySettings.snapTextSize(DisplaySettings.textSizeMin + fraction * (DisplaySettings.textSizeMax - DisplaySettings.textSizeMin));
     final previous = _draftSize ?? current;
     if (size != previous) {
@@ -192,21 +193,21 @@ class _AppearancePageState extends State<AppearancePage> {
       setState(() => _draftSize = size);
     }
     _sizeSave?.cancel();
-    if (!_pressing) _sizeSave = Timer(const Duration(milliseconds: 300), () => _commitSize(settings, system));
+    if (!_pressing) _sizeSave = Timer(const Duration(milliseconds: 300), () => _commitSize(settings, follow));
   }
 
-  void _releaseSize(DisplaySettings settings, double system) {
+  void _releaseSize(DisplaySettings settings, double follow) {
     _pressing = false;
-    _commitSize(settings, system);
+    _commitSize(settings, follow);
   }
 
   // 松手：全应用连续过渡到新字号，这一节在过渡期间停在手指下；保存完才撤掉拖动中的值，滑杆不先跳回旧位置。
-  Future<void> _commitSize(DisplaySettings settings, double system) async {
+  Future<void> _commitSize(DisplaySettings settings, double follow) async {
     _sizeSave?.cancel();
     final size = _draftSize;
     if (size == null) return;
     _scroll.hold(_scaleAnchor, CampusTextScale.duration + const Duration(milliseconds: 100));
-    await _save(() => settings.setTextSize(_followsAt(size, system) ? null : size));
+    await _save(() => settings.setTextSize(_followsAt(size, follow) ? null : size));
     if (mounted) setState(() => _draftSize = null);
   }
 
@@ -223,16 +224,17 @@ class _AppearancePageState extends State<AppearancePage> {
   // 字号条（人工决策见 local/display_settings.dart 的 textSizeMin）：条上是实际显示大小，下方色条是这台手机的推荐范围、刻度是系统字号；
   // 再下面的预览卡按拖到的大小排；超出推荐时说明哪些页面会改排（同一套规则见 text_size_range.dart）。
   Widget _textSizeSection(BuildContext context, DisplaySettings settings, CampusPalette colors) {
-    final system = _system = CampusTextScale.systemOf(context);
-    final current = DisplaySettings.effectiveTextSize(settings.textSize, system);
-    final shown = _draftSize ?? current;
+    final system = CampusTextScale.systemOf(context);
     final width = MediaQuery.sizeOf(context).width;
     final comfortable = comfortableTextSize(context, width);
+    final follow = _follow = DisplaySettings.effectiveTextSize(null, system, followLimit: comfortable);
+    final current = DisplaySettings.effectiveTextSize(settings.textSize, system, followLimit: comfortable);
+    final shown = _draftSize ?? current;
     final adaptations = textSizeAdaptations(context, width, shown);
     final following = settings.textSize == null && _draftSize == null;
     final secondary = TextStyle(fontSize: 14, color: colors.onSurfaceVariant);
     String percent(double size) => '${(size * 100).round()}%';
-    final range = '${percent(comfortableTextSizeMin)}–${percent(comfortable)}';
+    final range = comfortable == comfortableTextSizeMin ? percent(comfortable) : '${percent(comfortableTextSizeMin)}–${percent(comfortable)}';
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       Wrap(alignment: WrapAlignment.spaceBetween, crossAxisAlignment: WrapCrossAlignment.center, spacing: 12, runSpacing: 8, children: [
         Text.rich(TextSpan(children: [
@@ -253,13 +255,13 @@ class _AppearancePageState extends State<AppearancePage> {
       // 改字号时整页重新排版，锚定的是字号条本身：上面的标题行随字号变高变矮也不把手指下的滑杆带走。
       KeyedSubtree(key: _scaleAnchor, child: Listener(
         onPointerDown: (_) => _pressing = true,
-        onPointerUp: (_) => _releaseSize(settings, system),
-        onPointerCancel: (_) => _releaseSize(settings, system),
+        onPointerUp: (_) => _releaseSize(settings, follow),
+        onPointerCancel: (_) => _releaseSize(settings, follow),
         child: CampusSlider(
         value: _fraction(shown),
         label: '字号',
-        onChanged: (fraction) => _dragSize(settings, fraction, current, comfortable, system),
-        onChangeEnd: (_) => _commitSize(settings, system),
+        onChanged: (fraction) => _dragSize(settings, fraction, current, comfortable, follow),
+        onChangeEnd: (_) => _commitSize(settings, follow),
         marks: CampusSliderMarks(
           band: (_fraction(comfortableTextSizeMin), _fraction(comfortable)),
           bandLabel: '推荐',
@@ -267,9 +269,9 @@ class _AppearancePageState extends State<AppearancePage> {
         ),
       ))),
       const SizedBox(height: 8),
-      // 读屏读这一句：推荐范围，或超出时哪些地方会改排。
+      // 读屏读这一句：推荐范围（系统字号超过推荐上限时补一句跟随系统最多到哪），或超出时哪些地方会改排。
       adaptations.isEmpty
-          ? BalancedText('这台手机推荐 $range', style: secondary)
+          ? BalancedText(system > comfortable ? '这台手机推荐 $range，跟随系统最多到 ${percent(comfortable)}' : '这台手机推荐 $range', style: secondary)
           : Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Padding(padding: EdgeInsets.only(top: ((MediaQuery.textScalerOf(context).scale(14) * 1.43 - 16) / 2).clamp(0.0, double.infinity)), child: CampusIcon(CampusIcons.warning, size: 16, color: colors.attention)),
               const SizedBox(width: 6),

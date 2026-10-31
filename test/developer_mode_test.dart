@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -134,28 +135,33 @@ void main() {
       listenable: display,
       builder: (context, _) => MaterialApp(
         theme: campusTheme(),
-        builder: (context, child) => CampusTextScale(textSize: display.textSize, child: TextSizeWatch(developer: developer, logs: logs, display: display, child: child!)),
+        builder: (context, child) => TextSizeComfort(builder: (context, comfortable) => CampusTextScale(textSize: display.textSize, followLimit: comfortable, child: TextSizeWatch(developer: developer, logs: logs, display: display, child: child!))),
         home: const Placeholder(),
       ),
     ));
     String state(int index) => records[index].replaceFirst('[TextSize] action=state ', '');
     expect(records, isEmpty, reason: '停 1 秒才记');
     await tester.pump(const Duration(seconds: 1));
-    final comfortable = comfortableTextSize(tester.element(find.byType(Placeholder)), 1080 / 2.75).toStringAsFixed(2);
+    final comfortable = TextSizeComfort.of(tester.element(find.byType(Placeholder))).comfortable;
+    expect(comfortable, comfortableTextSize(tester.element(find.byType(Placeholder)), 1080 / 2.75));
+    final max = comfortable.toStringAsFixed(2);
+    // 测试字体是方块字、比真字体宽，标准字号就会改排；改排处取同一个 TextSizeComfort 量的。
+    final relayout = TextSizeComfort.of(tester.element(find.byType(Placeholder))).adaptations(1);
     expect(records, hasLength(1));
-    expect(state(0), 'screenWidth=393 pixelRatio=2.75 systemTextSize=1.00 boldText=false textSize=system effectiveTextSize=1.00 font=${display.fontId} comfortableMax=$comfortable relayout=none');
+    expect(state(0), 'screenWidth=393 pixelRatio=2.75 systemTextSize=1.00 boldText=false textSize=system effectiveTextSize=1.00 font=${display.fontId} comfortableMax=$max relayout=${relayout.isEmpty ? 'none' : relayout.join('、')}');
 
+    // 跟随系统最多到推荐上限（[人工决策] 见 local/display_settings.dart 的 textSizeMin）。
     tester.platformDispatcher.textScaleFactorTestValue = 1.3;
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    expect(state(1), startsWith('screenWidth=393 pixelRatio=2.75 systemTextSize=1.30 boldText=false textSize=system effectiveTextSize=1.30 '));
+    expect(state(1), startsWith('screenWidth=393 pixelRatio=2.75 systemTextSize=1.30 boldText=false textSize=system effectiveTextSize=${math.min(1.3, comfortable).toStringAsFixed(2)} '));
 
     await display.setTextSize(2);
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
     expect(state(2), contains('textSize=2.00 effectiveTextSize=2.00 '));
-    expect(state(2), contains('relayout=课程卡时刻挪到首行'));
-    expect(logs.textSize['relayout'], startsWith('课程卡时刻挪到首行'));
+    expect(state(2), contains('relayout=学期视图的月份栏移到顶部、课程卡时刻挪到首行'));
+    expect(logs.textSize['relayout'], startsWith('学期视图的月份栏移到顶部、课程卡时刻挪到首行'));
 
     // 别的设置引起的重建不重记；变了又在 1 秒内变回去也不记；连续变两次只记停下来的那次。
     // pump() 只出一帧、不走时间，所以每次变化先出一帧（按新尺寸重建）再走 300ms。
@@ -200,8 +206,8 @@ void main() {
   });
 
   // 10-31 模拟器上记出的推荐上限比外观页高（Maple 360dp 记成 160%）：组合根这一层在 Scaffold 外面，默认文字样式是 MaterialApp 的兜底样式，
-  // 没写字体的那几条规则量成了别的字体。要与外观页同口径（appearance_settings_test 里 10-27 扫描的值）。
-  testWidgets('字号状态的推荐上限与外观页同口径：真字体下 Maple 360dp 到 145%、411dp 到 175%', (tester) async {
+  // 没写字体的那几条规则量成了别的字体。组合根的 TextSizeComfort 要与外观页同口径（appearance_settings_test 里 10-31 扫描的值，算进左侧栏）。
+  testWidgets('组合根量的推荐上限与外观页同口径：真字体下 Maple 360dp 到 100%、411dp 到 120%', (tester) async {
     await loadCampusFonts(tester);
     final previous = campusLog;
     campusLog = (_) {};
@@ -220,17 +226,17 @@ void main() {
       theme: campusTheme(fontFamily: display.fontFamily),
       builder: (context, child) {
         outer = DefaultTextStyle.of(context).style;
-        return CampusTextScale(textSize: display.textSize, child: TextSizeWatch(developer: developer, logs: logs, display: display, child: child!));
+        return TextSizeComfort(builder: (context, comfortable) => CampusTextScale(textSize: display.textSize, followLimit: comfortable, child: TextSizeWatch(developer: developer, logs: logs, display: display, child: child!)));
       },
       home: const Scaffold(body: SizedBox.expand()),
     ));
     expect(DefaultTextStyle.of(tester.element(find.byType(Navigator))).style, outer, reason: '量字垫的那层不改下面应用的默认样式');
     await tester.pump(const Duration(seconds: 1));
-    expect(logs.textSize['comfortableMax'], '1.45', reason: '${display.fontFamily} 360dp');
+    expect(logs.textSize['comfortableMax'], '1.00', reason: '${display.fontFamily} 360dp');
     tester.view.physicalSize = const Size(411, 800);
     await tester.pump();
     await tester.pump(const Duration(seconds: 1));
-    expect(logs.textSize['comfortableMax'], '1.75', reason: '${display.fontFamily} 411dp');
+    expect(logs.textSize['comfortableMax'], '1.20', reason: '${display.fontFamily} 411dp');
     await tester.pumpWidget(const SizedBox());
   });
 
