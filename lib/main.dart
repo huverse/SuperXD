@@ -63,6 +63,7 @@ import 'package:superxd/page/live_clock.dart';
 import 'package:superxd/page/painting_splash.dart';
 import 'package:superxd/page/qr_scan_page.dart';
 import 'package:superxd/page/share_target_sheet.dart';
+import 'package:superxd/page/text_size_range.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_service.dart';
@@ -680,14 +681,16 @@ class _AccountAppState extends State<_AccountApp> {
       themeAnimationDuration: WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations || WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.reduceMotion ? Duration.zero : const Duration(milliseconds: 260),
       locale: const Locale('zh', 'CN'), supportedLocales: const [Locale('zh', 'CN')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
-      builder: (context, child) => DisplayScope(settings: _display, child: CampusTextScale(
+      // 跟随系统时字号最多到这台手机的推荐上限（[人工决策] 见 local/display_settings.dart 的 textSizeMin），上限由 TextSizeComfort 按页面规则量。
+      builder: (context, child) => DisplayScope(settings: _display, child: TextSizeComfort(builder: (context, comfortable) => CampusTextScale(
         textSize: _display.textSize,
+        followLimit: comfortable,
         child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: NativeAppearanceSync(child: CampusStatusBarScroll(child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: campusGlassCapped.value, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, wallpaper: _wallpaper(), overlays: campusOverlayDepth, child: CampusEntryFade(child: LiveClock(child: switch ((widget.developer, widget.logs)) {
         // 开发者模式下浮在所有页面上的开发者工具按钮（见 page/developer_page.dart 的 DeveloperOverlay）；字号状态记录见 app_diagnostics.dart 的 TextSizeWatch。
         (final developer?, final logs?) => TextSizeWatch(developer: developer, logs: logs, display: _display, child: DeveloperOverlay(developer: developer, logs: logs, navigator: _router.routerDelegate.navigatorKey, location: () => _router.routerDelegate.currentConfiguration.uri.path, child: child!)),
         _ => child!,
       })))))))),
-      )),
+      ))),
     ));
   }
 }

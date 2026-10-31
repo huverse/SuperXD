@@ -40,10 +40,10 @@
   - CredentialStore：记住账号的凭据存取接口。
   - SecureCredentialStore：基于系统安全存储的实现，按账号键保存带版本号的 JSON。
 - display_settings.dart：设备级显示设置。
-  - DisplaySettings 存在 display_settings.db，包括字号（text_scale：0 是跟随系统，否则是字号条上选的实际显示大小 80%–200%、5% 一档，跟随系统时也不小于 80%，[人工决策] 在 textSizeMin 处）、配色（四套，默认 defaultPaletteId 雾蓝；改任何一项都整份快照落库，存过的保持原值，[人工决策] 在常量处）、字体（默认 Maple；iOS 多一项系统字体 systemFont，fontFamily 为空即系统字体，[人工决策] 在 systemFont 处）、深浅色、玻璃效果（auto、full、reduced，默认 auto），以及自定义壁纸（文件名、色调网格、模糊与淡化 0–100）。v6 把旧的三档下标按原效果换算成连续量；v7 把删掉的苔灰换成雾蓝、iOS 存着的系统字体一次性换成 Maple；v8 把字号从系统字号上的倍数换成实际大小（原来的标准跟随系统，较大及以上换成当时的系统字号 × 倍数）。
+  - DisplaySettings 存在 display_settings.db，包括字号（text_scale：0 是跟随系统，否则是字号条上选的实际显示大小 80%–200%、5% 一档，跟随系统时也不小于 80%、最多到组合根量的推荐上限，[人工决策] 在 textSizeMin 处）、配色（四套，默认 defaultPaletteId 雾蓝；改任何一项都整份快照落库，存过的保持原值，[人工决策] 在常量处）、字体（默认 Maple；iOS 多一项系统字体 systemFont，fontFamily 为空即系统字体，[人工决策] 在 systemFont 处）、深浅色、玻璃效果（auto、full、reduced，默认 auto），以及自定义壁纸（文件名、色调网格、模糊与淡化 0–100）。v6 把旧的三档下标按原效果换算成连续量；v7 把删掉的苔灰换成雾蓝、iOS 存着的系统字体一次性换成 Maple；v8 把字号从系统字号上的倍数换成实际大小（原来的标准跟随系统，较大及以上换成当时的系统字号 × 倍数）。
   - wallpaperLook 是壁纸模糊与淡化的当前外观：previewWallpaper 只改它、不落库，背景单独监听；setWallpaperLook 立即更新外观并在保存锁内落库，落库后不回写外观（保存期间继续拖动不会被拽回）。
   - 壁纸文件交给 WallpaperStore；复制、落库、删旧文件在保存锁内一次完成。启动时文件丢失则按未设置处理，并清理残留文件。
-  - DisplayScope 负责向下传递；CampusTextScale 把字号（跟随系统或选的大小）按线性缩放交给全应用，变化时在 duration 内连续过渡（组合根套在 MaterialApp.builder 里，减少动画时直接换，[人工决策] 在类上），systemOf 给界面页取系统本来的字号。
+  - DisplayScope 负责向下传递；CampusTextScale 把字号（跟随系统或选的大小；跟随时最多到 followLimit，由组合根的 page/text_size_range.dart 的 TextSizeComfort 量好传入）按线性缩放交给全应用，变化时在 duration 内连续过渡（组合根套在 MaterialApp.builder 里，减少动画时直接换，[人工决策] 在类上），systemOf 给界面页取系统本来的字号。
   - appearance 是当前界面配置（AppearanceShare，不含壁纸图片），用于分享与套用前的撤销点；applyAppearance 套用好友分享的配置，本版本支持的取值在保存锁内一并落库，不支持的保持不变并返回跳过的项名。
 - wallpaper_store.dart：WallpaperStore 管理壁纸文件，放在应用支持目录 display/wallpaper 下，只保留当前一份，单图上限 20MB；每次导入用新文件名。
 - app_update_memory.dart：FileAppUpdateMemory 实现应用更新的检查记录端口 AppUpdateMemory：应用支持目录下固定大小的 app_update.json（上次检查成功的时刻 UTC、跳过的版本、是否待必须更新），先写临时文件再改名；读到坏文件当没有记录。不放数据库：只有三个字段，不随数据增长。
