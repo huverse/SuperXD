@@ -217,8 +217,13 @@ void main() {
     expect(saved, ['SuperXD-合成画作.jpg']);
     expect(find.text('保存中'), findsOneWidget);
     gate.complete(true);
-    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 50)));
-    await tester.pump();
+    // 存完要真实 IO 删临时文件：等界面变成「已保存」。以前固定等 50ms，慢的 CI 上还没删完（10-31 main CI 偶发红）。
+    await tester.runAsync(() async {
+      for (var step = 0; step < 200 && find.text('已保存').evaluate().isEmpty; step++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+        await tester.pump();
+      }
+    });
     expect(find.text('已保存'), findsOneWidget);
     expect(find.text('保存到相册'), findsOneWidget, reason: '另一幅还没存');
   });
