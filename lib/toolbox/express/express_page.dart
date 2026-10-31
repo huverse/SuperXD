@@ -409,8 +409,12 @@ class _ExpressPageState extends State<ExpressPage> {
     )),
   );
 
+  // [人工决策-2026-10-31 21:34:45] 用户嫌登录页文字多、信息冗杂，选「胶囊框、验证码按钮嵌在框里」的精简版：删掉「手机号与验证码只发给拼多多、不保存」那段说明
+  //（首次使用的同意弹窗里写着）；多端登录提醒从卡片缩成登录按钮下一行（10-20 定的「弹窗加落地页都提醒」仍成立，小号绑大号的建议只留在同意弹窗里）；
+  // 拼多多协议勾选、网页登录后备保留。输入框的样子见 express_login_form.dart。
   Widget _buildLogin(ExpressController controller) {
     final palette = CampusPalette.of(context);
+    final quiet = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
     return ListView(
       padding: const EdgeInsets.all(24),
       children: [
@@ -418,37 +422,20 @@ class _ExpressPageState extends State<ExpressPage> {
         Center(child: CampusIcon(CampusIcons.parcel, size: 56, color: palette.onSurfaceVariant)),
         const SizedBox(height: 16),
         Center(child: Text('查询快递与取件身份码', style: Theme.of(context).textTheme.titleMedium)),
-        const SizedBox(height: 8),
-        Center(
-          child: Text(
-            '用拼多多账号的手机号和验证码登录后，可查询驿站待取件、生成取件身份码。手机号与验证码只发给拼多多，不保存。',
-            textAlign: TextAlign.center,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: palette.onSurfaceVariant),
-          ),
-        ),
-        const SizedBox(height: 24),
-        // 多端登录提醒：拼多多不支持多端同时在线，这里登录会把其他设备挤下线；引导用小号登录、绑大号。只读说明，不用主色。
-        CampusSurface(
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Padding(padding: const EdgeInsets.only(right: 12), child: CampusIcon(CampusIcons.info, size: 20, color: palette.onSurfaceVariant)),
-              Expanded(
-                child: Text(
-                  '拼多多不支持多端同时登录，这里登录会让你其他设备上的拼多多下线。建议用小号登录，再用「绑定手机号」绑定大号的手机号。',
-                  style: TextStyle(fontSize: 14, height: 1.5, color: palette.onSurfaceVariant),
-                ),
-              ),
-            ],
-          ),
-        ),
         // 登录失效被退回这里时写明原因（以前原因只写在已登录视图里，退回后看不到）。
         if (controller.error != null) ...[
           const SizedBox(height: 16),
           Center(child: Text(controller.error!, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: palette.danger))),
         ],
-        const SizedBox(height: 24),
+        const SizedBox(height: 32),
         ExpressLoginForm(controller: controller, consent: _consent, verify: _openVerify, openTerms: _openPddTerms),
+        const SizedBox(height: 12),
+        // 多端登录提醒：拼多多不支持多端同时在线，这里登录会把其他设备挤下线。只读说明，不用主色。
+        Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Padding(padding: EdgeInsets.only(top: ((MediaQuery.textScalerOf(context).scale(14) * 1.43 - 16) / 2).clamp(0.0, double.infinity)), child: CampusIcon(CampusIcons.info, size: 16, color: palette.onSurfaceVariant)),
+          const SizedBox(width: 6),
+          Expanded(child: Text('登录会让其他设备上的拼多多下线', style: quiet)),
+        ]),
         const SizedBox(height: 12),
         // 后备：拼多多不认短信登录时还能在官方网页里登（用户选保留）。
         Center(
