@@ -2,9 +2,9 @@ import 'dart:async';
 import 'dart:ffi';
 import 'dart:io';
 
+import 'package:flutter/material.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
-import 'package:flutter/widgets.dart';
 import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
@@ -13,6 +13,8 @@ import 'package:superxd/device/relay_release_feed.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
+import 'package:superxd/local/display_settings.dart';
+import 'package:superxd/page/text_size_range.dart';
 
 // [人工决策-2026-10-21 23:04:08] 开发者模式（用户四项选定）：日志写进应用专属外部目录、连电脑 adb pull，另可一键导出 zip 到 Download/SuperXD；
 // 开着时凡是有利于排查与优化的都记（现有日志、启动环境、页面切换、前后台、每个对外请求的接口路径状态耗时与字节数、卡顿与内存），
@@ -109,6 +111,109 @@ VoidCallback watchRoutes(GoRouter router) {
   router.routerDelegate.addListener(listener);
   return () => router.routerDelegate.removeListener(listener);
 }
+
+// [人工决策-2026-10-31 20:01:37] 为优化字号推荐，用户选「字号状态加变化」（未选「运行环境只加静态几项」），隐私政策第八节补一句、修订号不加：
+// 开发者模式开着时记一条字号状态，之后屏宽、像素密度、系统字号、粗体文本、应用字号设置、字体任一变化再记一条，带这台的推荐上限
+// 与当前字号下会改排的地方（同外观页的字号条，见 page/text_size_range.dart）；当前这组也交给诊断摘要与导出的 about.txt。
+// 字号条拖动中只预览、松手才保存，拖动不刷日志；分屏拖动这类连续变化停 1 秒再记最后的样子。
+class TextSizeWatch extends StatefulWidget {
+  const TextSizeWatch({super.key, required this.developer, required this.logs, required this.display, required this.child});
+  final DeveloperSettings developer;
+  final DiagnosticLog logs;
+  final DisplaySettings display;
+  final Widget child;
+
+  @override
+  State<TextSizeWatch> createState() => _TextSizeWatchState();
+}
+
+class _TextSizeWatchState extends State<TextSizeWatch> {
+  static const _settle = Duration(seconds: 1);
+  // 量字用的 context（见 build）。
+  final _measure = GlobalKey();
+  Timer? _timer;
+  String? _logged;
+
+  @override
+  void initState() {
+    super.initState();
+    widget.developer.addListener(_developerChanged);
+  }
+
+  @override
+  void dispose() {
+    widget.developer.removeListener(_developerChanged);
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  // 关掉再打开开发者模式时重新记一条。
+  void _developerChanged() => setState(() => _logged = null);
+
+  // 推荐上限的几个输入（读的同时登记依赖，变了就重建）：屏宽按逻辑像素取整，字号是标准字号的倍数。
+  ({Map<String, String> inputs, double width, double effective}) _read() {
+    final width = MediaQuery.sizeOf(context).width;
+    final system = CampusTextScale.systemOf(context);
+    final chosen = widget.display.textSize;
+    final effective = DisplaySettings.effectiveTextSize(chosen, system);
+    return (
+      inputs: {
+        'screenWidth': '${width.round()}',
+        'pixelRatio': _fixed(MediaQuery.devicePixelRatioOf(context)),
+        'systemTextSize': _fixed(system),
+        'boldText': '${MediaQuery.boldTextOf(context)}',
+        'textSize': chosen == null ? 'system' : _fixed(chosen),
+        'effectiveTextSize': _fixed(effective),
+        'font': widget.display.fontId,
+      },
+      width: width,
+      effective: effective,
+    );
+  }
+
+  void _record() {
+    if (!mounted || !campusDiagnostics) return;
+    final (:inputs, :width, :effective) = _read();
+    final key = _line(inputs);
+    if (key == _logged) return;
+    _logged = key;
+    final measure = _measure.currentContext!;
+    final relayout = textSizeAdaptations(measure, width, effective);
+    final state = {...inputs, 'comfortableMax': _fixed(comfortableTextSize(measure, width)), 'relayout': relayout.isEmpty ? 'none' : relayout.join('、')};
+    widget.logs.textSize = state;
+    campusLog('[TextSize] action=state ${_line(state)}');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.developer.enabled && _line(_read().inputs) != _logged) {
+      _timer?.cancel();
+      _timer = Timer(_settle, _record);
+    }
+    // 量字与外观页同口径：页面在 Scaffold 的 Material 里，默认文字样式是主题的 bodyMedium；这一层在它外面，默认的是 MaterialApp 的兜底样式，
+    // 拿它量会让没写字体的规则量成别的字体（10-31 模拟器上 Maple 360dp 记成 160%，外观页是 145%）。所以给量字垫一层 bodyMedium，
+    // 再把原来的默认样式原样还给下面的应用，应用的显示不变。
+    final outer = DefaultTextStyle.of(context);
+    return DefaultTextStyle(
+      style: Theme.of(context).textTheme.bodyMedium!,
+      child: Builder(
+        key: _measure,
+        builder: (_) => DefaultTextStyle(
+          style: outer.style,
+          textAlign: outer.textAlign,
+          softWrap: outer.softWrap,
+          overflow: outer.overflow,
+          maxLines: outer.maxLines,
+          textWidthBasis: outer.textWidthBasis,
+          textHeightBehavior: outer.textHeightBehavior,
+          child: widget.child,
+        ),
+      ),
+    );
+  }
+}
+
+String _fixed(double value) => value.toStringAsFixed(2);
 
 String _line(Map<String, String> environment) => [for (final MapEntry(:key, :value) in environment.entries) '$key=${value.replaceAll(' ', '_')}'].join(' ');
 
