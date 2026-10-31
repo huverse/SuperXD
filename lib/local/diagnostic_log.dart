@@ -64,6 +64,9 @@ class DiagnosticLog {
   // 运行环境（版本、构建号、渠道、系统、机型、架构），由组合根启动时填好；导出时写进 about.txt，开发者选项里显示。
   Map<String, String> environment = const {};
 
+  // 字号状态（屏宽、系统与应用字号、字体、推荐上限），开发者模式开着时由组合根随变化更新；摘要与 about.txt 写在运行环境后面。
+  Map<String, String> textSize = const {};
+
   static Future<DiagnosticLog> open({required Directory directory, required Directory exports, required DiagnosticPublish publish, DateTime Function() clock = DateTime.now}) async {
     final log = DiagnosticLog._(directory, exports, publish, clock);
     // 清理旧日志排进写入队列、不等它：跨天后第一次启动要压缩之前的日志（最多约 20MB），等着会拖慢启动；
@@ -259,7 +262,7 @@ class DiagnosticLog {
     }
     return [
       'SuperXD 诊断摘要',
-      for (final MapEntry(:key, :value) in environment.entries) '$key: $value',
+      for (final MapEntry(:key, :value) in {...environment, ...textSize}.entries) '$key: $value',
       '',
       kinds.isEmpty ? '最近没有错误' : '最近的错误（共 ${kinds.length} 种，按最近出现排）：',
       for (final (index, kind) in kinds.take(10).indexed) '${index + 1}. ${kind.signature} × ${kind.count}（最近 ${moment(kind.last)}）',
@@ -300,7 +303,7 @@ class DiagnosticLog {
     String two(int value) => value.toString().padLeft(2, '0');
     final filename = 'SuperXD-日志-${now.year}${two(now.month)}${two(now.day)}-${two(now.hour)}${two(now.minute)}${two(now.second)}.zip';
     final about = [
-      for (final MapEntry(:key, :value) in environment.entries) '$key: $value',
+      for (final MapEntry(:key, :value) in {...environment, ...textSize}.entries) '$key: $value',
       'exportedAt: ${_clock().toUtc().toIso8601String()}',
       'developer: $developer',
       'note: 早于导出当天的开发者模式日志是 .log.gz，用 gunzip 解开',

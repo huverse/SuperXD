@@ -12,8 +12,10 @@ import 'package:superxd/app_diagnostics.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
+import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/about_page.dart';
 import 'package:superxd/page/developer_page.dart';
+import 'package:superxd/page/text_size_range.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
 // 页面里读写日志是真实文件操作，假时钟里不会自己走完：交替让出真实事件循环与推一帧，直到条件满足。
@@ -107,6 +109,92 @@ void main() {
     expect(logs.environment, {'version': '1.0.0-alpha.6'});
     // 关掉，撤下卡顿统计的帧回调，不留给后面的用例。
     await developer.setEnabled(false);
+  });
+
+  // 10-31 为优化字号推荐（[人工决策] 见 app_diagnostics.dart 的 TextSizeWatch）。
+  testWidgets('字号状态：开发者模式开着时记一条，系统字号、应用字号、屏宽变了再记（连续变化停 1 秒记最后的），没变不重记，关着不记；摘要带上当前这组', (tester) async {
+    final records = <String>[];
+    final previous = campusLog;
+    campusLog = records.add;
+    tester.view.physicalSize = const Size(1080, 2340);
+    tester.view.devicePixelRatio = 2.75;
+    tester.platformDispatcher.textScaleFactorTestValue = 1;
+    addTearDown(() {
+      campusLog = previous;
+      campusDiagnostics = false;
+      tester.view.reset();
+      tester.platformDispatcher.clearTextScaleFactorTestValue();
+    });
+    final developer = DeveloperSettings.memory(enabled: true);
+    final display = DisplaySettings.memory();
+    campusDiagnostics = true;
+    await tester.pumpWidget(ListenableBuilder(
+      listenable: display,
+      builder: (context, _) => MaterialApp(
+        theme: campusTheme(),
+        builder: (context, child) => CampusTextScale(textSize: display.textSize, child: TextSizeWatch(developer: developer, logs: logs, display: display, child: child!)),
+        home: const Placeholder(),
+      ),
+    ));
+    String state(int index) => records[index].replaceFirst('[TextSize] action=state ', '');
+    expect(records, isEmpty, reason: '停 1 秒才记');
+    await tester.pump(const Duration(seconds: 1));
+    final comfortable = comfortableTextSize(tester.element(find.byType(Placeholder)), 1080 / 2.75).toStringAsFixed(2);
+    expect(records, hasLength(1));
+    expect(state(0), 'screenWidth=393 pixelRatio=2.75 systemTextSize=1.00 boldText=false textSize=system effectiveTextSize=1.00 font=${display.fontId} comfortableMax=$comfortable relayout=none');
+
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(state(1), startsWith('screenWidth=393 pixelRatio=2.75 systemTextSize=1.30 boldText=false textSize=system effectiveTextSize=1.30 '));
+
+    await display.setTextSize(2);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(state(2), contains('textSize=2.00 effectiveTextSize=2.00 '));
+    expect(state(2), contains('relayout=课程卡时刻挪到首行'));
+    expect(logs.textSize['relayout'], startsWith('课程卡时刻挪到首行'));
+
+    // 别的设置引起的重建不重记；变了又在 1 秒内变回去也不记；连续变两次只记停下来的那次。
+    // pump() 只出一帧、不走时间，所以每次变化先出一帧（按新尺寸重建）再走 300ms。
+    await display.setThemeMode(ThemeMode.dark);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(records, hasLength(3));
+    tester.view.physicalSize = const Size(1200, 2340);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    tester.view.physicalSize = const Size(1080, 2340);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(records, hasLength(3));
+    tester.view.physicalSize = const Size(1200, 2340);
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    tester.view.physicalSize = const Size(1320, 2340);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(records, hasLength(4));
+    expect(state(3), startsWith('screenWidth=480 '));
+
+    final summary = await tester.runAsync(logs.summary);
+    expect(summary, contains('screenWidth: 480'));
+    expect(summary, contains('textSize: 2.00'));
+
+    // 关着不记；再打开重新记一条当前的。
+    await developer.setEnabled(false);
+    campusDiagnostics = false;
+    tester.platformDispatcher.textScaleFactorTestValue = 1.15;
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(records, hasLength(4));
+    await developer.setEnabled(true);
+    campusDiagnostics = true;
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(records, hasLength(5));
+    expect(state(4), startsWith('screenWidth=480 pixelRatio=2.75 systemTextSize=1.15 '));
+    await tester.pumpWidget(const SizedBox());
   });
 
   testWidgets('关于页连点版本号 7 次开启开发者模式：第 4 次起提示还差几次，说明会记什么、确认了才开，开了多出开发者选项', (tester) async {
