@@ -17,6 +17,8 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_rolling_text.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/toolbox/express/express_anti_content.dart';
@@ -305,6 +307,72 @@ void main() {
     await tester.tap(find.text('同意拼多多'));
     await tester.pump();
     expect(tester.widget<Checkbox>(find.byType(Checkbox)).value, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 10-31 用户嫌登录页文字多（[人工决策] 见 express_page.dart 的 _buildLogin 与 express_login_form.dart）。
+  testWidgets('登录页精简：不写说明段，多端提醒只剩一行；手机号与验证码是胶囊框，「获取验证码」在验证码框里，聚焦时描边渐变成主色', (tester) async {
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('不保存'), findsNothing);
+    expect(find.textContaining('小号'), findsNothing, reason: '小号绑大号的建议只在同意弹窗里');
+    expect(find.text('登录会让其他设备上的拼多多下线'), findsOneWidget);
+    Finder capsuleOf(int field) => find.ancestor(of: find.byType(TextField).at(field), matching: find.byType(AnimatedContainer)).first;
+    expect(find.descendant(of: capsuleOf(0), matching: find.text('+86')), findsOneWidget);
+    expect(find.descendant(of: capsuleOf(1), matching: find.widgetWithText(FilledButton, '获取验证码')), findsOneWidget);
+    // 胶囊的描边：AnimatedContainer 画出来的是过渡中的那一份。
+    BorderSide side() => ((tester.widget<DecoratedBox>(find.descendant(of: capsuleOf(0), matching: find.byType(DecoratedBox)).first).decoration as ShapeDecoration).shape as StadiumBorder).side;
+    final palette = CampusPalette.of(tester.element(capsuleOf(0)));
+    expect(side().color, palette.surfaceBorder);
+    // 点 +86（文字以外的地方）也聚焦手机号，描边逐帧变成主色。
+    await tester.tap(find.text('+86'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(side().color, isNot(anyOf(palette.surfaceBorder, palette.primary)));
+    await tester.pumpAndSettle();
+    expect(side().color, palette.primary);
+    expect(tester.widget<TextField>(find.byType(TextField).at(0)).focusNode!.hasFocus, isTrue);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('登录表单出错提示展开淡入；发码后按钮里倒数，数字滚动', (tester) async {
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: loginRuntime(loginClient(loginStatus: 200, loginBody: const {'success': true})))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 100));
+    final fade = tester.widget<FadeTransition>(find.ancestor(of: find.text('请输入 11 位手机号'), matching: find.byType(FadeTransition)).first);
+    expect(fade.opacity.value, inExclusiveRange(0, 1));
+    await tester.pumpAndSettle();
+    expect(fade.opacity.value, 1);
+
+    await tester.enterText(find.byType(TextField).at(0), '13900000000');
+    await tester.tap(find.widgetWithText(FilledButton, '获取验证码'));
+    await waitUntil(tester, () => find.text('同意并登录').evaluate().isNotEmpty);
+    await tester.tap(find.text('同意并登录'));
+    await waitUntil(tester, () => find.textContaining('重新发送').evaluate().isNotEmpty);
+    expect(find.byType(CampusRollingText), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp(r'^重新发送\(\d+\)$')), findsOneWidget, reason: '读屏读整句');
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('减少动画、大字号的窄屏上登录表单照常：出错提示直接出现，验证码框放不下按钮时按钮挪到框下面', (tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(360, 900);
+    addTearDown(tester.view.reset);
+    tester.platformDispatcher.textScaleFactorTestValue = 2;
+    tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAllTestValues);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: buildRuntime())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.widgetWithText(FilledButton, '登录'));
+    await tester.pump();
+    expect(find.text('请输入 11 位手机号'), findsOneWidget);
+    final capsule = tester.getRect(find.ancestor(of: find.byType(TextField).at(1), matching: find.byType(AnimatedContainer)).first);
+    final button = tester.getRect(find.widgetWithText(FilledButton, '获取验证码'));
+    expect(button.top, greaterThanOrEqualTo(capsule.bottom), reason: '测试字体是方块字、200% 下放不下，按钮在框下面');
+    expect(button.right, lessThanOrEqualTo(capsule.right + 1));
+    expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());
   });
 
