@@ -478,6 +478,26 @@ void main() {
     expect(changes, [3]);
   });
 
+  // 10-31 用户要日期栏上下留白短一点（同课表左侧栏收窄）：高度按两行字量，留白固定，不再随字号放大。
+  testWidgets('日期栏高度按两行字量：大字号下日期格上下仍各留 8、外边距 8，不再随字号放大留白', (tester) async {
+    for (final scale in [1.0, 1.3, 1.6]) {
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      await tester.pumpWidget(app(Align(alignment: Alignment.topCenter, child: DateRail(key: ValueKey(scale), first: '2026-09-01', last: '2026-12-31', selected: '2026-09-01', onSelect: (_) {}))));
+      await tester.pumpAndSettle();
+      final rail = tester.getRect(find.byKey(const ValueKey('date-rail')));
+      final tile = tester.getRect(find.ancestor(of: find.text('9/1'), matching: find.byType(Material)).first);
+      final date = tester.getRect(find.text('9/1'));
+      final weekday = tester.getRect(find.text('周二').first);
+      expect(tile.top - rail.top, closeTo(8, .5), reason: '×$scale 外边距');
+      expect(rail.bottom - tile.bottom, closeTo(8, .5), reason: '×$scale 外边距');
+      expect(date.top - tile.top, closeTo(8, 1), reason: '×$scale 日期格上沿留白');
+      expect(tile.bottom - weekday.bottom, closeTo(8, 1), reason: '×$scale 日期格下沿留白');
+      // 格宽也按内容量：测试字体是方块字，以前日期会折成两行、在矮了的格子里溢出。
+      expect(tester.takeException(), isNull, reason: '×$scale 不溢出');
+    }
+    tester.platformDispatcher.clearTextScaleFactorTestValue();
+  });
+
   testWidgets('日期栏可横滑，浏览不改变课程日期，点击才选择', (tester) async {
     final selected = <String>[];
     await tester.pumpWidget(app(Align(alignment: Alignment.topCenter, child: DateRail(first: '2026-09-01', last: '2026-12-31', selected: '2026-09-01', onSelect: selected.add))));
@@ -639,6 +659,24 @@ void main() {
     expect(tester.getRect(find.text('11月')).left, greaterThanOrEqualTo(0));
     await tester.tap(find.textContaining(RegExp(r'^第\d+周 11/')).first);
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  // 10-31：左侧栏的月份展开原来在减少动画时用了时长为 0 的 AnimatedSize，点月份报「RenderAnimatedSize was mutated in its own performLayout」。
+  testWidgets('减少动画时左侧栏点月份直接展开收起，不报错', (tester) async {
+    tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('学期'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining(RegExp(r'^第\d+周\n')), findsWidgets, reason: '宽窗口是左侧栏');
+    await tester.tap(find.text('9月'));
+    await tester.pump();
+    expect(find.textContaining(RegExp(r'^第\d+周\n9/')), findsWidgets);
+    await tester.tap(find.text('9月'));
+    await tester.pump();
+    expect(find.textContaining(RegExp(r'^第\d+周\n9/')), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
