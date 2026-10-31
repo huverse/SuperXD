@@ -457,12 +457,15 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
           if (_outgoingDay != null) Positioned.fill(child: FadeTransition(opacity: ReverseAnimation(_dayCurve), child: _outgoingDay)),
         ]));
       // 横条同左侧栏一样跟着天、学期视图展开收起（以前直接出现、消失）：高度过渡，横条贴着顶边被收进去，下面的课程卡跟着移动；
-      // 收起时留 16，同左侧栏版的顶边距。
+      // 收起时留 16，同左侧栏版的顶边距。横条露出的高度按展开进度从 0 到整条，收起后整个藏住（以前按留下的 16 裁，
+      // 横条上内边距只有 12，天视图里日期栏下面露出一排格子的顶边，10-31 用户 iPhone 截图）。
       if (strip) {
         final stripHeight = 12 + 44 * scale + 12;
         return Column(children: [
-          AnimatedContainer(duration: motion, curve: Curves.easeInOutCubic, height: showRail ? stripHeight : 16,
-            child: ClipRect(child: OverflowBox(alignment: Alignment.topCenter, minHeight: stripHeight, maxHeight: stripHeight, child: IgnorePointer(ignoring: !showRail, child: Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: _monthStrip()))))),
+          TweenAnimationBuilder<double>(tween: Tween(end: showRail ? 1 : 0), duration: motion, curve: Curves.easeInOutCubic,
+            child: OverflowBox(alignment: Alignment.topCenter, minHeight: stripHeight, maxHeight: stripHeight, child: IgnorePointer(ignoring: !showRail, child: Padding(padding: const EdgeInsets.symmetric(vertical: 12), child: _monthStrip()))),
+            builder: (context, shown, child) => SizedBox(height: 16 + (stripHeight - 16) * shown,
+              child: Align(alignment: Alignment.topCenter, child: ClipRect(child: SizedBox(height: stripHeight * shown, child: child))))),
           Expanded(child: Padding(padding: const EdgeInsets.symmetric(horizontal: 16), child: cards)),
         ]);
       }

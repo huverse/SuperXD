@@ -566,6 +566,12 @@ void main() {
     await tester.pumpAndSettle();
     final pages = find.byType(PageView);
     final dayTop = tester.getTopLeft(pages).dy;
+    // 横条里月份格子露在裁剪区里的那一块。天视图里要整个藏住：10-31 用户 iPhone 截图里日期栏下面露出一排格子的顶边
+    // （收起后还按 16 高裁，横条上内边距只有 12，格子顶上 4 露在外面）。
+    Rect shownTile() => find.ancestor(of: find.text('9月'), matching: find.byType(ClipRect)).evaluate()
+        .map((clip) { final box = clip.renderObject! as RenderBox; return box.localToGlobal(Offset.zero) & box.size; })
+        .fold(tester.getRect(find.ancestor(of: find.text('9月'), matching: find.byType(Material)).first), (shown, clip) => shown.intersect(clip));
+    expect(shownTile().isEmpty, isTrue, reason: '天视图里横条不露出格子');
 
     // 切到学期：横条从上方展开，课程卡跟着往下移，中间有过渡帧；切回天视图同样收起。
     await tester.tap(find.text('学期'));
@@ -583,12 +589,14 @@ void main() {
     expect(selectedWeek.right, lessThanOrEqualTo(320));
     expect(midTop, greaterThan(dayTop));
     expect(midTop, lessThan(termTop));
+    expect(shownTile().height, tester.getSize(find.ancestor(of: find.text('9月'), matching: find.byType(Material)).first).height, reason: '学期视图里格子整个露出');
     await tester.tap(find.text('天'));
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 150));
     expect(tester.getTopLeft(pages).dy, inExclusiveRange(dayTop, termTop));
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(pages).dy, dayTop);
+    expect(shownTile().isEmpty, isTrue, reason: '切回天视图横条整个收起');
     await tester.tap(find.text('学期'));
     await tester.pumpAndSettle();
 
