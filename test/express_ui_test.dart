@@ -116,10 +116,23 @@ Future<void> _settleReal(WidgetTester tester, bool Function() done) async {
   }
 }
 
-// 假 anti_content：绑定与查物流测试用，不起真实 WebView（webViewController 为空，页面不挂 WebViewWidget）。
+// 假 anti_content：登录与绑定测试用，不起真实 WebView（webViewController 为空，页面不挂 WebViewWidget）。
 class _FakeAnti implements PddAntiContent {
   @override
   Future<String> generate() async => 'anti';
+  @override
+  WebViewController? get webViewController => null;
+}
+
+// 隐藏网页加载失败时的 anti_content：每次都报错，并记下被要了几次。
+class _BrokenAnti implements PddAntiContent {
+  var calls = 0;
+  @override
+  Future<String> generate() async {
+    calls++;
+    throw const ExpressFailure(ExpressFailureCode.network, '风控页加载失败，请检查网络');
+  }
+
   @override
   WebViewController? get webViewController => null;
 }
@@ -161,11 +174,11 @@ void main() {
   late MemoryExpressVault vault;
   late Directory temp;
 
-  ToolboxRuntime runtimeWith(http.Client client) => ToolboxRuntime.testing(
+  ToolboxRuntime runtimeWith(http.Client client, {PddAntiContent? anti}) => ToolboxRuntime.testing(
     catalog: toolboxCatalog,
     store: fixture.store,
     downloads: fixture.manager,
-    services: {ExpressService.serviceId: ExpressService(vault: vault, clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: client)), antiContent: _FakeAnti())},
+    services: {ExpressService.serviceId: ExpressService(vault: vault, clientFactory: (session) => ExpressClient(session: session, http: ExpressHttp(client: client)), antiContent: anti ?? _FakeAnti())},
   );
 
   ToolboxRuntime buildRuntime({
@@ -739,7 +752,7 @@ void main() {
     final track = requests.lastWhere((request) => request.url.path.endsWith('shipping/track'));
     expect(track.url.path, '/api/express/dsd/trackbox/shipping/track');
     expect(jsonDecode(track.body), {'order_sn': 'SN0000000002', 'source_type': 3, 'entry_source': 9, 'query_type': 1});
-    expect(track.headers[PddConstants.antiContentHeader], 'anti', reason: '查物流同官方带 anti-content');
+    expect(track.headers[PddConstants.antiContentHeader], isNull, reason: '查物流不带 anti-content');
 
     gate.complete();
     await tester.pumpAndSettle();
@@ -751,7 +764,7 @@ void main() {
   });
 
   // 真机上已取出件的样子：链接里 order_sn 与 source_type 是空的，在应用里按运单号查通用物流（10-30 换账号确认能看）。数据合成。
-  testWidgets('没有 order_sn 的已取出件点「物流」按运单号 GET 通用物流（带 shipping_id、entry_source=9 与 anti-content），弹出物流详情', (tester) async {
+  testWidgets('没有 order_sn 的已取出件点「物流」按运单号 GET 通用物流（带 shipping_id、entry_source=9，不带 anti-content），弹出物流详情', (tester) async {
     final requests = <http.Request>[];
     await vault.save(_session);
     await vault.saveStationLinked(true);
@@ -773,7 +786,7 @@ void main() {
     expect(track.method, 'GET');
     expect(track.url.path, '/api/express/shipping/track');
     expect(track.url.queryParameters, {'tracking_number': 'SX0000000004', 'shipping_id': '104', 'entry_source': '9'});
-    expect(track.headers[PddConstants.antiContentHeader], 'anti');
+    expect(track.headers[PddConstants.antiContentHeader], isNull);
     expect(find.text('物流详情'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
@@ -1020,6 +1033,37 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
+  // 10-31 查物流不再带 anti-content（[人工决策] 见 express_models.dart）：隐藏网页生成不了时，补查尾号与点「物流」照常查得到。数据合成。
+  testWidgets('隐藏网页生成不了 anti-content 时，补查尾号与点「物流」照常查得到，也不向它要', (tester) async {
+    final anti = _BrokenAnti();
+    final tracks = <http.Request>[];
+    await vault.save(_session);
+    await vault.saveStationLinked(true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtimeWith(anti: anti, MockClient((request) async {
+      if (request.url.path.endsWith('shipping/track')) {
+        tracks.add(request);
+        return _json({'error_code': null, 'shipping': {'shipping_name': '合成快递', 'package_info': '尾号5678 的快递', 'traces': [{'info': '【合成市】快件已到达合成驿站', 'time': '2026-10-20 15:30:00'}]}});
+      }
+      return _json({'success': true, 'error_code': '0', 'result': {
+        'count': 1,
+        'combine_list': [
+          {'company_name': '合成驿站一号', 'combine_track_list': [{'pick_code': '1-1-0001', 'tracking_number': 'SX0000000001', 'shipping_id': 1}]},
+        ],
+      }});
+    })))));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('驿站快递'));
+    await tester.pumpAndSettle();
+    expect(find.text('尾号 5678 · 1 件'), findsOneWidget);
+    await tester.tap(find.widgetWithText(OutlinedButton, '物流'));
+    await tester.pumpAndSettle();
+    expect(find.text('物流详情'), findsOneWidget);
+    expect(tracks, hasLength(2));
+    expect(tracks.map((request) => request.headers[PddConstants.antiContentHeader]), everyElement(isNull));
+    expect(anti.calls, 0);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   // 10-25 用户反馈：在拼多多里自己添加的件写「尾号未知」。官方物流页对驿站里的件按 order_sn 查驿站物流；用户选「每次查驿站都重查尾号未知的件」。数据合成。
   testWidgets('驿站里带 order_sn 的件按 order_sn 补查尾号；查成功但没给尾号的不存本机，下次查驿站再查', (tester) async {
     final tracks = <String>[];
@@ -1030,7 +1074,7 @@ void main() {
     await vault.saveOwnerTails({'1|SX0000000005': ''});
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ExpressPage(runtime: runtimeWith(MockClient((request) async {
       if (request.url.path.endsWith('shipping/track')) {
-        expect(request.headers[PddConstants.antiContentHeader], 'anti');
+        expect(request.headers[PddConstants.antiContentHeader], isNull);
         tracks.add(request.url.path);
         return _json({'error_code': null, 'shipping': {'shipping_name': '合成快递', if (tail.isNotEmpty) 'package_info': '尾号$tail 的快递'}});
       }

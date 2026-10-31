@@ -154,6 +154,7 @@ class ExpressController extends ChangeNotifier {
   // [人工决策-2026-10-26 17:23:51] 用户真机装上这一版后，自己添加的那件仍是「尾号未知」，拼多多官方 App 里这件也看不到手机号（官方添加快递须知写着仅供隐私面单用户），
   // 即拼多多本来就不给这类件的尾号。用户仍选每次查驿站都重查（未选「查成功没给尾号的记住、不再查」「每天最多重查一次」），分组照旧写「尾号未知」。
   // [人工决策-2026-10-30 18:03:16] 补查也同官方带 anti-content（见 express_models.dart）：每件现取一个，生成器排队逐个出，请求照旧一批 5 件。
+  // [人工决策-2026-10-31 13:01:46] 用户选撤回上一条：补查不再带 anti-content，不再依赖隐藏网页（依据见 express_models.dart）。
   Future<void> _fillOwners(StationPackagesResult result) async {
     final pending = [
       for (final group in result.groups)
@@ -164,7 +165,7 @@ class ExpressController extends ChangeNotifier {
     for (var start = 0; start < pending.length && !blocked; start += 5) {
       await Future.wait(pending.skip(start).take(5).map((parcel) async {
         try {
-          final tail = (await _client!.queryShippingTrack(parcel.trackQuery, antiContent: await _anti())).ownerTail;
+          final tail = (await _client!.queryShippingTrack(parcel.trackQuery)).ownerTail;
           if (tail.isEmpty) {
             _owners.remove(_ownerKey(parcel));
           } else {
@@ -193,7 +194,7 @@ class ExpressController extends ChangeNotifier {
   Future<ShippingTrack?> loadTrack(ExpressTrackQuery query) async {
     ShippingTrack? track;
     _trackingKey = query.trackingNumber;
-    await _run(ExpressAction.track, () async => track = await _client!.queryShippingTrack(query, antiContent: await _anti()));
+    await _run(ExpressAction.track, () async => track = await _client!.queryShippingTrack(query));
     return track;
   }
 
@@ -305,7 +306,7 @@ class ExpressController extends ChangeNotifier {
     }
   }
 
-  // 绑定类与查物流请求前现取 anti_content；生成器没就绪就报错让用户重试。
+  // 登录与绑定类请求前现取 anti_content；生成器没就绪就报错让用户重试。
   Future<String> _anti() async {
     final provider = _service.antiContent;
     if (provider == null) throw const ExpressFailure(ExpressFailureCode.server, '风控组件未就绪，请重试');
