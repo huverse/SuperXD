@@ -27,6 +27,9 @@ abstract final class PddConstants {
   // 带不带 anti-content、带不带空的 source_type 都回 1011，官方 App 里同一件能看（走 App 原生网络层）。用户选「保留，照官方每个请求都带」（未选撤回）：
   // 查物流照旧带，不再当成 1011 的修法；驿站、身份码等其余查询仍不带。
   // [人工决策-2026-10-30 22:51:44] 用户换账号后已取出的件能正常查物流，1011 是那个账号的问题（不是网页通道拿不到）；已取出的件照旧在应用里查，见 express_page.dart 里 recentPackages 处。
+  // [人工决策-2026-10-31 13:01:46] 用户选「只撤查物流的」，撤回 18:03:16 与 18:43:18：查物流（点「物流」与补查尾号）不再带 anti-content。
+  // 依据：10-22 OPPO、10-25 vivo 真机上通用物流与驿站物流都是不带查成功的，10-30 带不带都回 1011；带着只让补查尾号多依赖隐藏网页，网页加载失败就全成尾号未知。
+  // 登录、绑定、解绑、改备注与关联驿站包裹照旧每次现生成；没选另一个 AI 建议的复用缓存、开关与「先不带、403 再带上重发」（不自动重试，发短信不幂等）。
   static const antiContentHeader = 'anti-content';
   static const bindProtocolCode = 'QJXXJSFWTK1_1';
   static const bindSmsScene = '1000123';

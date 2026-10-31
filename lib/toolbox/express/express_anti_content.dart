@@ -7,9 +7,10 @@ import 'package:webview_flutter/webview_flutter.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/express/express_models.dart';
 
-// 绑定/解绑与查物流请求前现取一个 v2 anti_content 的端口。anti_content 有时效：每次请求现生成、不缓存。
+// 登录与绑定/解绑类请求前现取一个 v2 anti_content 的端口。anti_content 有时效：每次请求现生成、不缓存。
 // [人工决策-2026-10-20 17:22:42] 见 express_models.dart：为让绑定/解绑可用，用隐藏 WebView 跑拼多多官方反爬 JS 产出合法 anti_content，
-// 不自行重写风控、仅用于本人已授权账号的取件手机号管理；[人工决策-2026-10-30 18:03:16] 起查物流也带。测试注入假实现（webViewController 为空、不起真实 WebView）。
+// 不自行重写风控、仅用于本人已授权账号的取件手机号管理；[人工决策-2026-10-30 18:03:16] 起查物流也带，[人工决策-2026-10-31 13:01:46] 起查物流又不带。
+// 测试注入假实现（webViewController 为空、不起真实 WebView）。
 abstract interface class PddAntiContent {
   Future<String> generate();
 
@@ -48,7 +49,7 @@ class WebViewAntiContent implements PddAntiContent {
   late final WebViewController _controller;
   Completer<void>? _loaded;
   var _counter = 0;
-  // 只有一个隐藏页：同时重载会互相顶掉 _loaded，所以排队一个一个生成（补查尾号一批 5 件同时要）。
+  // 只有一个隐藏页：同时重载会互相顶掉 _loaded，所以排队一个一个生成。
   final _lock = Lock();
 
   @override
