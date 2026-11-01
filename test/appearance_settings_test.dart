@@ -252,7 +252,7 @@ void main() {
     for (final palette in CampusPalette.values) {
       for (final font in DisplaySettings.fontFamilies.keys) {
         final settings = DisplaySettings.memory(); await settings.setPalette(palette.id); await settings.setFont(font); await settings.setTextSize(1.4);
-        await tester.pumpWidget(MaterialApp(theme: campusTheme(palette: palette, fontFamily: settings.fontFamily), builder: (context, child) => DisplayScope(settings: settings, child: MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.4)), child: child!)), home: AppearancePage(key: ValueKey('${palette.id}-$font'))));
+        await tester.pumpWidget(MaterialApp(theme: campusTheme(palette: palette, fontFamily: settings.fontFamily), builder: (context, child) => DisplayScope(settings: settings, child: MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: const TextScaler.linear(1.4)), child: TextSizeComfort(builder: (_, _) => child!))), home: AppearancePage(key: ValueKey('${palette.id}-$font'))));
         await tester.pumpAndSettle();
         // 两张字体卡依次滚到眼前（页面底部一屏装不下两张），各自的预览都是图。
         final previews = <String>{};
@@ -276,7 +276,7 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(412, 900)); addTearDown(() => tester.binding.setSurfaceSize(null));
     for (final scale in [1.0, 1.4]) {
       final settings = DisplaySettings.memory();
-      await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => DisplayScope(settings: settings, child: MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)), child: child!)), home: AppearancePage(key: ValueKey(scale))));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => DisplayScope(settings: settings, child: MediaQuery(data: MediaQuery.of(context).copyWith(textScaler: TextScaler.linear(scale)), child: TextSizeComfort(builder: (_, _) => child!))), home: AppearancePage(key: ValueKey(scale))));
       await tester.pumpAndSettle();
       final label = find.text(CampusPalette.values.first.label);
       expect(tester.getSize(label).height, lessThan(16 * scale * 2), reason: '×$scale');
@@ -296,7 +296,7 @@ void main() {
             fontFamily: settings.fontFamily,
           ),
           builder: (context, child) =>
-              DisplayScope(settings: settings, child: child!),
+              DisplayScope(settings: settings, child: TextSizeComfort(builder: (_, _) => child!)),
           home: const AppearancePage(),
         ),
       ),
@@ -561,7 +561,7 @@ void main() {
     expect(campusGlassCapped.value, isTrue);
     final settings = DisplaySettings.memory();
     await settings.setGlassMode('full');
-    await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => DisplayScope(settings: settings, child: child!), home: const AppearancePage()));
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => DisplayScope(settings: settings, child: TextSizeComfort(builder: (_, _) => child!)), home: const AppearancePage()));
     await tester.pumpAndSettle();
     const notice = '点「完整」重试';
     await tester.scrollUntilVisible(find.text(notice), 200, scrollable: find.byType(Scrollable).first);

@@ -12,6 +12,7 @@ import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/appearance_page.dart';
+import 'package:superxd/page/text_size_range.dart';
 import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -229,7 +230,7 @@ void main() {
 
     await tester.pumpWidget(MaterialApp(
       theme: campusTheme(),
-      builder: (context, child) => DisplayScope(settings: settings, child: child!),
+      builder: (context, child) => DisplayScope(settings: settings, child: TextSizeComfort(builder: (_, _) => child!)),
       home: AppearancePage(pickWallpaper: pick),
     ));
     await tester.pumpAndSettle();

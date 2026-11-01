@@ -26,6 +26,15 @@ double campusTextWidth(BuildContext context, String text, {TextStyle? style, Tex
   return width;
 }
 
+// 小图标与一段文字的第一行垂直居中时，图标顶上要留的距离：按这段文字在当前字号、字体与粗体文本下的单行实际高度量，
+// 不写死行高倍数（以前写 14×字号×1.43，Maple、宋体与系统字体的行高各不相同，换了字体就对不齐）。
+double campusLineInset(BuildContext context, double iconSize, {TextStyle? style}) {
+  final painter = campusTextPainter(context, '字', style: style, maxLines: 1);
+  final inset = math.max(0.0, (painter.height - iconSize) / 2);
+  painter.dispose();
+  return inset;
+}
+
 // 短句换行均衡（同 CSS text-wrap: balance）：一行放不下时，在不增加行数的前提下把各行排得尽量一样长，
 // 末行不剩一两个字（「马克思主义基本原 / 理」排成「马克思主义 / 基本原理」）。只管四行以内的短句（课名、教室、提示），
 // 更长的段落照常排。量的是子组件自己的排版，支持外层 IntrinsicHeight；居中对齐时收窄后的文字仍居中。

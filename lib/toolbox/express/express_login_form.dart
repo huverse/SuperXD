@@ -10,6 +10,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_rolling_text.dart';
+import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/toolbox/express/express_controller.dart';
@@ -281,8 +282,9 @@ class _CapsuleFieldState extends State<_CapsuleField> {
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
     final focused = _focus.hasFocus;
-    final opaque = MediaQuery.highContrastOf(context) || MediaQuery.accessibleNavigationOf(context);
+    // 点胶囊里文字以外的地方（如 +86）也聚焦；只是放大点按区，读屏照常聚焦里面的输入框，不另报一个可点的东西。
     return GestureDetector(
+      excludeFromSemantics: true,
       onTap: _focus.requestFocus,
       child: AnimatedContainer(
         duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 220),
@@ -290,7 +292,7 @@ class _CapsuleFieldState extends State<_CapsuleField> {
         constraints: const BoxConstraints(minHeight: 52),
         padding: EdgeInsets.only(left: 20, right: widget.trailing == null ? 20 : 6),
         decoration: ShapeDecoration(
-          color: palette.surface.withValues(alpha: focused || opaque ? 1 : .91),
+          color: campusSurfaceFill(context, solid: focused),
           shape: StadiumBorder(side: BorderSide(color: focused ? palette.primary : palette.surfaceBorder, width: focused ? 1.5 : 1)),
         ),
         child: Row(children: [

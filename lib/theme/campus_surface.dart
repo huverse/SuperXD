@@ -3,6 +3,14 @@ import 'package:flutter/material.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_background.dart';
 
+// 卡片底色：配色的 surface（选中时 surfaceSelected），平时 91% 不透明、透出一点背景，高对比度或读屏导航时完全不透明；
+// solid 另要求不透明（如输入框聚焦时微亮）。卡片、搜索框与快递登录的胶囊框共用这一条（以前三处各写一遍）。
+Color campusSurfaceFill(BuildContext context, {bool selected = false, bool solid = false}) {
+  final palette = CampusPalette.of(context);
+  final opaque = solid || MediaQuery.highContrastOf(context) || MediaQuery.accessibleNavigationOf(context);
+  return (selected ? palette.surfaceSelected : palette.surface).withValues(alpha: opaque ? 1 : .91);
+}
+
 class CampusSurface extends StatelessWidget {
   const CampusSurface({
     super.key,
@@ -21,9 +29,6 @@ class CampusSurface extends StatelessWidget {
   final EdgeInsetsGeometry margin;
   @override
   Widget build(BuildContext context) {
-    final opaque =
-        MediaQuery.highContrastOf(context) ||
-        MediaQuery.accessibleNavigationOf(context);
     final content = Stack(
       children: [
         Positioned.fill(child: FrostTexture(radius: radius)),
@@ -33,8 +38,7 @@ class CampusSurface extends StatelessWidget {
     return Padding(
       padding: margin,
       child: Material(
-        color: (selected ? CampusPalette.of(context).surfaceSelected : CampusPalette.of(context).surface)
-            .withValues(alpha: opaque ? 1 : .91),
+        color: campusSurfaceFill(context, selected: selected),
         elevation: 0,
         clipBehavior: Clip.antiAlias,
         shape: RoundedRectangleBorder(

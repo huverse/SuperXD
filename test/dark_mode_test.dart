@@ -8,6 +8,7 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/appearance_page.dart';
+import 'package:superxd/page/text_size_range.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -39,7 +40,7 @@ void main() {
     addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
     await tester.pumpWidget(ListenableBuilder(listenable:settings,builder:(context,_)=>MaterialApp(
       theme:campusTheme(palette:CampusPalette.byId(settings.paletteId)),darkTheme:campusTheme(palette:CampusPalette.byId(settings.paletteId,brightness:Brightness.dark)),themeMode:settings.themeMode,
-      builder:(context,child)=>DisplayScope(settings:settings,child:child!),home:const AppearancePage(),
+      builder:(context,child)=>DisplayScope(settings:settings,child:TextSizeComfort(builder:(_,_)=>child!)),home:const AppearancePage(),
     )));await tester.pumpAndSettle();
     final element=tester.element(find.byType(AppearancePage));
     expect(Theme.of(element).brightness,Brightness.light);
