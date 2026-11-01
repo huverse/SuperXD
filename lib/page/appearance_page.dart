@@ -226,7 +226,8 @@ class _AppearancePageState extends State<AppearancePage> {
   Widget _textSizeSection(BuildContext context, DisplaySettings settings, CampusPalette colors) {
     final system = CampusTextScale.systemOf(context);
     final width = MediaQuery.sizeOf(context).width;
-    final comfortable = comfortableTextSize(context, width);
+    // 推荐上限取组合根量好的那一份（TextSizeComfort，同一口径、按屏宽字体缓存）：以前这里每次重建都再二分量一遍，拖字号条与字号过渡时每帧都量。
+    final comfortable = TextSizeComfort.of(context).comfortable;
     final follow = _follow = DisplaySettings.effectiveTextSize(null, system, followLimit: comfortable);
     final current = DisplaySettings.effectiveTextSize(settings.textSize, system, followLimit: comfortable);
     final shown = _draftSize ?? current;
@@ -273,7 +274,7 @@ class _AppearancePageState extends State<AppearancePage> {
       adaptations.isEmpty
           ? BalancedText(system > comfortable ? '这台手机推荐 $range，跟随系统最多到 ${percent(comfortable)}' : '这台手机推荐 $range', style: secondary)
           : Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Padding(padding: EdgeInsets.only(top: ((MediaQuery.textScalerOf(context).scale(14) * 1.43 - 16) / 2).clamp(0.0, double.infinity)), child: CampusIcon(CampusIcons.warning, size: 16, color: colors.attention)),
+              Padding(padding: EdgeInsets.only(top: campusLineInset(context, 16, style: secondary)), child: CampusIcon(CampusIcons.warning, size: 16, color: colors.attention)),
               const SizedBox(width: 6),
               Expanded(child: BalancedText('超出推荐：${adaptations.join('、')}', style: secondary)),
             ]),

@@ -17,6 +17,7 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_refresh.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/express/express_controller.dart';
@@ -432,7 +433,7 @@ class _ExpressPageState extends State<ExpressPage> {
         const SizedBox(height: 12),
         // 多端登录提醒：拼多多不支持多端同时在线，这里登录会把其他设备挤下线。只读说明，不用主色。
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Padding(padding: EdgeInsets.only(top: ((MediaQuery.textScalerOf(context).scale(14) * 1.43 - 16) / 2).clamp(0.0, double.infinity)), child: CampusIcon(CampusIcons.info, size: 16, color: palette.onSurfaceVariant)),
+          Padding(padding: EdgeInsets.only(top: campusLineInset(context, 16, style: quiet)), child: CampusIcon(CampusIcons.info, size: 16, color: palette.onSurfaceVariant)),
           const SizedBox(width: 6),
           Expanded(child: Text('登录会让其他设备上的拼多多下线', style: quiet)),
         ]),

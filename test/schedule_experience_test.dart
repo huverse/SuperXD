@@ -610,11 +610,13 @@ void main() {
     // 点右边的 12 月、再点回左边的 11 月：两个方向都是新月份的各周横向展开、旧月份的收起，中间帧宽度在 0 与展开后之间
     // （10-31 用户 iPhone 上切月份没过渡：选中月份格子挂的键跟着选中项挪，行里两者之间那段被拆掉重建，一侧的展开或收起直接跳）。
     final strip = find.ancestor(of: find.text('9月'), matching: find.byType(Scrollable)).first;
-    // 某个月后面那段各周的宽（收起时为 0）：紧挨在月份格子右边（格子外留 8）的那个 AnimatedSize。
+    // 某个月后面那段各周此刻的宽（收起时为 0）：横条那一行里紧挨在月份格子后面的那一项。
     double weeksWidth(String month) {
-      final start = tester.getRect(find.ancestor(of: find.text(month), matching: find.byType(Material)).first).right + 8;
-      return find.descendant(of: strip, matching: find.byType(AnimatedSize)).evaluate().map((element) => element.renderObject! as RenderBox)
-          .firstWhere((box) => (box.localToGlobal(Offset.zero).dx - start).abs() < .5).size.width;
+      RenderObject tile = tester.renderObject(find.ancestor(of: find.text(month), matching: find.byType(Material)).first);
+      while (tile.parent is! RenderFlex) {
+        tile = tile.parent!;
+      }
+      return (tile.parentData! as FlexParentData).nextSibling!.size.width;
     }
     // 收起、展开与滑到点的月份（或它里面选中的周）同时开始、一起走完（11-01 用户：以前等展开完再另滑一段，中间停一下影响体验）：
     // 点的月份中途不被挤出屏幕，展开收起走完时滑动也走完、之后不再动。滑到选中的周时月份格子可以出屏，不查（keepsMonth）。
@@ -634,6 +636,8 @@ void main() {
         if (step == 3) {
           midFrom = weeksWidth(from);
           midTo = weeksWidth(to);
+          // 收起的那个月各周照旧画着、跟着空位一起收拢（11-01 用户要求；以前 AnimatedSize 一换子项各周就没了，只剩空位在收）。
+          expect(find.textContaining(RegExp('^第\\d+周 ${from.replaceAll('月', '')}/')), findsWidgets, reason: '$from 的各周收起时还在');
         }
       }
       final ended = scroll.pixels;
@@ -700,6 +704,35 @@ void main() {
     expect(tester.getRect(find.text('11月')).left, greaterThanOrEqualTo(0));
     await tester.tap(find.textContaining(RegExp(r'^第\d+周 11/')).first);
     await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
+  // 11-01 用户要求收起的月份各周跟着空位一起收拢，不一下消失（同 Flutter ExpansionTile）。宽窗口是左侧栏。
+  testWidgets('左侧栏点别的月份：原来那个月的各周照旧画着、跟着空位一起收拢，点的月份同时展开', (tester) async {
+    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway())));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('学期'));
+    await tester.pumpAndSettle();
+    // 左侧栏是按需建的列表，12 月不在视口里时还没建出来。
+    final rail = find.ancestor(of: find.textContaining(RegExp(r'^\d+月$')).first, matching: find.byType(Scrollable)).first;
+    await tester.scrollUntilVisible(find.text('12月'), 100, scrollable: rail);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('12月'));
+    await tester.pumpAndSettle();
+    final december = find.textContaining(RegExp(r'^第\d+周\n12/'));
+    // 各周那一段的裁剪框（离周格子最近的 ClipRect）此刻的高。
+    double weeksHeight(Finder weeks) => tester.getSize(find.ancestor(of: weeks.first, matching: find.byType(ClipRect)).first).height;
+    final full = weeksHeight(december);
+    await tester.scrollUntilVisible(find.text('9月'), -100, scrollable: rail);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('9月'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 150));
+    expect(december, findsWidgets, reason: '12 月的各周收起时还在');
+    expect(weeksHeight(december), inExclusiveRange(0, full));
+    expect(find.textContaining(RegExp(r'^第\d+周\n9/')), findsWidgets);
+    await tester.pumpAndSettle();
+    expect(december, findsNothing, reason: '收完才拿掉');
     expect(tester.takeException(), isNull);
   });
 
