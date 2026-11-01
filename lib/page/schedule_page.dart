@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:go_router/go_router.dart';
 
@@ -117,7 +118,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     _load();
   }
   @override
-  void dispose() { _pager?.dispose(); _dayCurve.dispose(); _dayTransition.dispose(); super.dispose(); }
+  void dispose() { _pager?.dispose(); _dayCurve.dispose(); _dayTransition.dispose(); _stripScroll.dispose(); super.dispose(); }
 
   Future<void> _load() async {
     try {
@@ -479,16 +480,16 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
   }
 
   // 横条版的月份周次栏：同竖栏的结构（点月份展开这个月的各周、所看的那周选中），每项一行，打开时把选中的周滚进可见区。
-  // 过渡同竖栏（以前是硬切）：点月份时这个月的各周横向展开、收起；选了别的周滑到中间，跨到另一个月时等那个月的各周展开完再滑；第一次排出横条时直接放到位。
-  // 点了右边的月份时，左边原来展开的那个月收起会把点的这个月往左挤出屏幕，展开完把它滑回可见区（本来就看得见不动）。
+  // 过渡同竖栏（以前是硬切）：点月份时这个月的各周横向展开、收起；选了别的周滑到中间；第一次排出横条时直接放到位。
+  // 点了右边的月份时，左边原来展开的那个月收起会把点的这个月往左挤，挤出屏幕的就停在左边缘（本来就看得见不动）。
+  // 跨月时滑动与展开收起同时开始、一起走完（11-01 用户：以前等展开完再另滑一段，中间停一下影响体验），见 _stripReveal。
   // 选中的周要等它那个月展开、格子建出来才滚得过去（天视图里各周收着）：所以按「建出来了、还没滚过」判断，收起后再展开会重新滚过去。
   // 每个月份、每一周各用一把固定的键找格子：以前一把键跟着选中项挪，行里新旧两项之间那段被拆掉重建，
   // 一侧的各周展开或收起没有过渡（10-31 用户 iPhone 上切月份没过渡）。
   final _stripMonthTiles = <int, GlobalKey>{};
   final _stripWeeks = <int, GlobalKey>{};
-  // 月份变了时等这个月的各周展开完（它那段 AnimatedSize 的 onEnd）、排好那一帧再滑：以前固定等 300ms，动画从下一帧才开始计时，
-  // 滑的时候旧月份还在收起、把格子往左挤，滑完又被挤出去一截。
-  VoidCallback? _stripReveal;
+  final _stripWeekRows = <int, GlobalKey>{};
+  final _stripScroll = _StripScroll();
   int? _stripShown;
   int? _stripMonth;
   bool _stripBuilt = false;
@@ -496,39 +497,27 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     final months = monthsOfTerm(_start!, _weekCount);
     final thisWeek = weekIndex(_start!, campusToday());
     final motion = MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 300);
-    // 横条第一次建出来时各周不做展开动画，直接放到位；之后月份变了都等展开完再滑。
+    // 横条第一次建出来时各周不做展开动画，直接放到位；之后月份变了，滑动跟着展开收起一起走。
     final built = _stripBuilt;
     _stripBuilt = true;
     final expanding = built && _stripMonth != _selection.month;
     _stripMonth = _selection.month;
     final week = _selection.week, month = _selection.month;
     final weekBuilt = week != null && month != null && weeksOfMonth(_start!, _weekCount, month).contains(week);
-    Future<void> reveal(GlobalKey? key, {required Duration duration, double alignment = 0, ScrollPositionAlignmentPolicy policy = ScrollPositionAlignmentPolicy.explicit}) async {
-      final target = key?.currentContext;
-      if (target != null && target.mounted) await Scrollable.ensureVisible(target, alignment: alignment, duration: duration, curve: Curves.easeInOutCubic, alignmentPolicy: policy);
-    }
-    void schedule(VoidCallback action) {
-      if (expanding && motion > Duration.zero) {
-        _stripReveal = action;
-      } else {
-        WidgetsBinding.instance.addPostFrameCallback((_) => action());
-      }
-    }
     if (weekBuilt && _stripShown != week) {
       _stripShown = week;
-      schedule(() => reveal(_stripWeeks[week], duration: built ? motion : Duration.zero, alignment: .5));
+      WidgetsBinding.instance.addPostFrameCallback((_) => _stripReveal(_stripWeeks[week], built ? motion : Duration.zero, alignment: .5));
     } else if (expanding && month != null) {
-      schedule(() => reveal(_stripMonthTiles[month], duration: motion, policy: ScrollPositionAlignmentPolicy.keepVisibleAtStart));
+      WidgetsBinding.instance.addPostFrameCallback((_) => _stripReveal(_stripMonthTiles[month], motion, onlyIfBefore: true));
     }
     if (!weekBuilt) _stripShown = null;
-    if (month == null) _stripReveal = null;
     // 全部建出来（每学期不过十来项），选中的周才能滚进可见区；按需建的列表里离得远的项还没建。
-    return SingleChildScrollView(scrollDirection: Axis.horizontal, padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+    return SingleChildScrollView(scrollDirection: Axis.horizontal, controller: _stripScroll, padding: const EdgeInsets.symmetric(horizontal: 16), child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       for (final month in months) ...[
         Padding(key: _stripMonthTiles.putIfAbsent(month, GlobalKey.new), padding: const EdgeInsets.only(right: 8), child: _tile('$month月', month == _selection.month, () => setState(() {
           _selection = month == _selection.month ? _selection.copy(clearDrill: true) : _selection.copy(month: month, clearDetail: true);
         }), minHeight: 0)),
-        _expand(motion, Alignment.centerLeft, onEnd: month == _selection.month ? _stripExpanded : null, month != _selection.month ? const SizedBox(height: double.infinity) : Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        _expand(motion, Alignment.centerLeft, key: _stripWeekRows.putIfAbsent(month, GlobalKey.new), month != _selection.month ? const SizedBox(height: double.infinity) : Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           for (final week in weeksOfMonth(_start!, _weekCount, month)) Padding(
             key: _stripWeeks.putIfAbsent(week, GlobalKey.new),
             padding: const EdgeInsets.only(right: 8),
@@ -536,19 +525,58 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
           ),
         ])),
       ],
+      // 零宽占位：每段各周后面都有兄弟，_StripScroll 在排版中按兄弟的起点量这段此刻的宽。
+      const SizedBox.shrink(),
     ]));
   }
 
   // 月份展开各周（横条横向、竖栏纵向）。减少动画时直接换：AnimatedSize 时长为 0 会在自己的布局里报错（同 theme 的 CampusGlassChip；
   // 竖栏原来也是这么写的，10-31 用例证实减少动画时点月份会报断言，一起改）。
-  Widget _expand(Duration motion, Alignment alignment, Widget child, {VoidCallback? onEnd}) =>
-      motion == Duration.zero ? child : AnimatedSize(duration: motion, curve: Curves.easeInOutCubic, alignment: alignment, onEnd: onEnd, child: child);
+  Widget _expand(Duration motion, Alignment alignment, Widget child, {Key? key}) =>
+      motion == Duration.zero ? child : AnimatedSize(key: key, duration: motion, curve: Curves.easeInOutCubic, alignment: alignment, child: child);
 
-  // 横条选中月份的各周展开完：onEnd 在这一帧排版之前回调，滑动放到这一帧画完后，按排好的位置算。
-  void _stripExpanded() {
-    final reveal = _stripReveal;
-    _stripReveal = null;
-    if (reveal != null) WidgetsBinding.instance.addPostFrameCallback((_) => reveal());
+  // 横条滑到要看的格子（alignment 0 是左边缘、.5 是正中；onlyIfBefore 只在它会落到左边缘外时才滑），在月份变了那一帧画完后调用。
+  // 跨月时各段 AnimatedSize 刚开始展开收起、子项已按终宽排好：终点按排完的位置算（排在目标前面的各段会把它挪动「终宽 − 现宽」），
+  // 滑动不另起动画，由横条每次排版时按展开收起走到哪儿放到起点与终点之间的同一比例（_StripScroll），同一帧、同一条曲线，一起走完。
+  void _stripReveal(GlobalKey? key, Duration duration, {double alignment = 0, bool onlyIfBefore = false}) {
+    final target = key?.currentContext?.findRenderObject();
+    if (target is! RenderBox || !target.attached || !_stripScroll.hasClients) return;
+    final position = _stripScroll.position;
+    // 目标属于横条那一行的哪一项（月份格子或某段各周），排在这一项前面的才算：按行里的先后判断，不按横坐标，
+    // 刚开始展开的那段宽还是 0，里面的格子画在后面几项的位置上（11-01 模拟器上往左点回所看那周的月，把后面月份的收起也算了进去，没滑）。
+    final line = _stripMonthTiles.values.first.currentContext?.findRenderObject()?.parent;
+    if (line is! RenderFlex) return;
+    RenderObject item = target;
+    while (item.parent != line) {
+      final parent = item.parent;
+      if (parent == null) return;
+      item = parent;
+    }
+    final preceding = <RenderObject>{};
+    for (RenderBox? child = line.firstChild; child != null && child != item; child = line.childAfter(child)) {
+      preceding.add(child);
+    }
+    var before = 0.0, total = 0.0;
+    RenderAnimatedSize? moving;
+    for (final row in _stripWeekRows.values) {
+      final box = row.currentContext?.findRenderObject();
+      if (box is! RenderAnimatedSize || box.child == null) continue;
+      final change = box.child!.size.width - box.size.width;
+      total += change;
+      if (change.abs() > (moving == null ? .5 : (moving.child!.size.width - moving.size.width).abs())) moving = box;
+      if (preceding.contains(box)) before += change;
+    }
+    final to = RenderAbstractViewport.of(target).getOffsetToReveal(target, alignment).offset + before;
+    if (onlyIfBefore && to >= position.pixels) return;
+    if (duration > Duration.zero && moving != null) {
+      // 终点夹进排完后的可滚范围（内容是横条的滚动内容整块，宽度加上各段的「终宽 − 现宽」），不然半途撞到边就停，比展开先走完。
+      final content = moving.parent!.parent! as RenderBox;
+      _stripScroll.follow(to.clamp(position.minScrollExtent, math.max(position.minScrollExtent, content.size.width + total - position.viewportDimension)), moving);
+    } else if (duration > Duration.zero) {
+      position.animateTo(to.clamp(position.minScrollExtent, position.maxScrollExtent), duration: duration, curve: Curves.easeInOutCubic);
+    } else {
+      position.jumpTo(to.clamp(position.minScrollExtent, position.maxScrollExtent));
+    }
   }
 
   Widget _months(double scale, double availableHeight, double bottom) {
@@ -570,4 +598,52 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16), side: BorderSide(color: selected ? CampusPalette.of(context).primary : CampusPalette.of(context).outlineSubtle)),
     child: InkWell(borderRadius: BorderRadius.circular(16), onTap: tap, child: ConstrainedBox(constraints: BoxConstraints(minHeight: minHeight), child: Padding(padding: const EdgeInsets.all(12), child: Align(alignment: Alignment.centerLeft, child: Text(label, style: TextStyle(fontSize: 14, color: selected ? CampusPalette.of(context).primary : CampusPalette.of(context).onSurfaceVariant)))))),
   );
+}
+
+// 横条的滚动：跨月时滑动跟着各段展开收起走。follow 之后，横条每次排版报内容尺寸时，按那段 AnimatedSize 从现宽到终宽走了多少，
+// 把滚动位置放到起点与终点之间的同一比例（夹在此刻的可滚范围内），同一帧校正、不另起动画，所以不会慢一帧、也不会越界
+// （同 theme 的 CampusAnchoredScrollController 的做法）。走完、手指按住拖动或代码另外滚动时放开。
+class _StripScroll extends ScrollController {
+  (double, double, RenderAnimatedSize, double, double)? _follow;
+
+  void follow(double to, RenderAnimatedSize moving) => _follow = (position.pixels, to, moving, moving.size.width, moving.child!.size.width);
+
+  // 这段此刻的宽：后一个兄弟的起点减它自己的起点（排版当中不许读子孙的尺寸，位置可以读）。
+  static double _widthOf(RenderBox box) {
+    final data = box.parentData! as FlexParentData;
+    return (data.nextSibling!.parentData! as FlexParentData).offset.dx - data.offset.dx;
+  }
+
+  @override
+  ScrollPosition createScrollPosition(ScrollPhysics physics, ScrollContext context, ScrollPosition? oldPosition) =>
+      _StripScrollPosition(controller: this, physics: physics, context: context, initialPixels: initialScrollOffset, keepScrollOffset: keepScrollOffset, oldPosition: oldPosition, debugLabel: debugLabel);
+}
+
+class _StripScrollPosition extends ScrollPositionWithSingleContext {
+  _StripScrollPosition({required this.controller, required super.physics, required super.context, super.initialPixels, super.keepScrollOffset, super.oldPosition, super.debugLabel});
+  final _StripScroll controller;
+
+  @override
+  bool applyContentDimensions(double minScrollExtent, double maxScrollExtent) {
+    if (controller._follow case (final from, final to, final moving, final begin, final end)?) {
+      final progress = moving.attached ? ((_StripScroll._widthOf(moving) - begin) / (end - begin)).clamp(0.0, 1.0) : 1.0;
+      if (progress >= 1) controller._follow = null;
+      // 先校正再交给父类记下新的可滚范围（横条是单子滚动区，不会为校正再排一次，跳过父类范围就停在旧值）。
+      final corrected = (from + (to - from) * progress).clamp(minScrollExtent, maxScrollExtent);
+      if (corrected != pixels) correctPixels(corrected);
+    }
+    return super.applyContentDimensions(minScrollExtent, maxScrollExtent);
+  }
+
+  @override
+  void beginActivity(ScrollActivity? newActivity) {
+    if (newActivity is HoldScrollActivity || newActivity is DragScrollActivity || newActivity is DrivenScrollActivity) controller._follow = null;
+    super.beginActivity(newActivity);
+  }
+
+  @override
+  void jumpTo(double value) {
+    controller._follow = null;
+    super.jumpTo(value);
+  }
 }
