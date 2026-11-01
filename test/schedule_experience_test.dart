@@ -616,22 +616,47 @@ void main() {
       return find.descendant(of: strip, matching: find.byType(AnimatedSize)).evaluate().map((element) => element.renderObject! as RenderBox)
           .firstWhere((box) => (box.localToGlobal(Offset.zero).dx - start).abs() < .5).size.width;
     }
-    Future<void> switchMonth(String from, String to) async {
+    // 收起、展开与滑到点的月份（或它里面选中的周）同时开始、一起走完（11-01 用户：以前等展开完再另滑一段，中间停一下影响体验）：
+    // 点的月份中途不被挤出屏幕，展开收起走完时滑动也走完、之后不再动。滑到选中的周时月份格子可以出屏，不查（keepsMonth）。
+    Future<void> switchMonth(String from, String to, {bool keepsMonth = true}) async {
       await tester.ensureVisible(find.text(to));
       await tester.pumpAndSettle();
       final expanded = weeksWidth(from);
+      final scroll = tester.state<ScrollableState>(strip).position;
       await tester.tap(find.text(to));
       await tester.pump();
-      await tester.pump(const Duration(milliseconds: 150));
-      final midFrom = weeksWidth(from), midTo = weeksWidth(to);
+      final lefts = <double>[];
+      var midFrom = 0.0, midTo = 0.0;
+      // 动画从下一帧起计时，第 7 个 50ms 时 300ms 走完。
+      for (var step = 1; step <= 7; step++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        lefts.add(tester.getRect(find.text(to)).left);
+        if (step == 3) {
+          midFrom = weeksWidth(from);
+          midTo = weeksWidth(to);
+        }
+      }
+      final ended = scroll.pixels;
       await tester.pumpAndSettle();
       expect(midFrom, inExclusiveRange(0, expanded), reason: '$from 的各周收起有过渡');
       expect(midTo, inExclusiveRange(0, weeksWidth(to)), reason: '$to 的各周展开有过渡');
-      // 左边原来展开的月份收起会把点的月份往左挤，展开完它滑回屏幕里。
-      expect(tester.getRect(find.text(to)).left, greaterThanOrEqualTo(0));
+      if (keepsMonth) expect(lefts.every((left) => left >= 0), isTrue, reason: '$to 中途没被挤出屏幕：$lefts');
+      expect(scroll.pixels, ended, reason: '展开收起走完时滑动也走完，之后不再动');
+      // 滑动走满全程、和展开收起一起到位：200ms 时还没到（以前终点没夹进最终的可滚范围，半途撞边提前停住）。
+      if ((lefts.first - lefts.last).abs() > 1) expect((lefts[3] - lefts.last).abs(), greaterThan(.5), reason: '$to 滑动没有提前停：$lefts');
     }
     await switchMonth('11月', '12月');
     await switchMonth('12月', '11月');
+    // 点回所看的那周所在的月：这周和展开一起滑到正中。先在 10 月里选最后一周（不依赖今天是几号），去 11 月再点回 10 月。
+    await switchMonth('11月', '10月', keepsMonth: false);
+    await tester.tap(find.textContaining(RegExp(r'^第\d+周 10/')).last);
+    await tester.pumpAndSettle();
+    await switchMonth('10月', '11月');
+    await switchMonth('11月', '10月', keepsMonth: false);
+    // 11-01 模拟器上发现：往左点时把后面月份的收起也算进了偏移（刚展开的那段宽还是 0，里面的格子画在后面几项的位置上），终点算成负数，没滑。
+    final chosen = tester.getRect(find.ancestor(of: find.textContaining(RegExp(r'^第\d+周 10/')).last, matching: find.byType(Material)).first);
+    expect(chosen.center.dx, closeTo(160, 6), reason: '所看的那周滑到正中：$chosen');
+    await switchMonth('10月', '11月');
 
     // 展开着学期中间的 11 月，选它的第一周：横条滑到它居中，中间帧在原位与终点之间（选两头的月份会先碰到滚动边界）。
     final position = tester.state<ScrollableState>(find.ancestor(of: find.text('11月'), matching: find.byType(Scrollable)).first).position;
