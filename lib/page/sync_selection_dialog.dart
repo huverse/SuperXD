@@ -10,6 +10,7 @@ import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/page/auto_sync_dialog.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 // autoSync 给了时底部多一个「自动同步」入口（今天页给，成绩页只同步成绩、不给）。
@@ -104,7 +105,7 @@ class _SyncSelectionDialogState extends State<_SyncSelectionDialog> {
             builder: (context, _) => TextButton.icon(
               onPressed: () => showAutoSyncSettings(context, autoSync: autoSync, gateway: widget.gateway),
               icon: const CampusIcon(CampusIcons.history),
-              label: Text('自动同步 · ${autoSyncSummary(autoSync.view)}'),
+              label: DotSeparatedText('自动同步 · ${autoSyncSummary(autoSync.view)}', style: const TextStyle()),
             ),
           ),
         ],

@@ -274,6 +274,8 @@ class _DemoAccounts extends AccountAccess {
   @override
   Future<GatewayResult<List<HeldScheduleSync>>> readHeldScheduleSyncs() => inner.readHeldScheduleSyncs();
   @override
+  Future<T> keepSessionDuring<T>(Future<T> Function() body) => inner.keepSessionDuring(body);
+  @override
   Future<GatewayResult<AutoSyncView>> readAutoSync() => inner.readAutoSync();
   @override
   Future<GatewayResult<AutoSyncSetting>> saveAutoSyncSetting(AutoSyncSetting setting) => inner.saveAutoSyncSetting(setting);

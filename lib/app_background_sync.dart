@@ -110,13 +110,14 @@ void _listenForBackgroundSync(AutoSync autoSync) {
   });
 }
 
-// 自动同步的时机：同意协议与政策之后才开始（同意之前不联网）。恢复会话、切换账号或退出时重读设置、排好或撤掉后台任务，
-// 登录着的到期就补跑一轮；回到前台时也看一眼到没到期（iOS 的后台刷新由系统定时机，常常靠这里补上）。
+// 自动同步的时机：同意协议与政策之后才开始（同意之前不联网）。启动、切换账号或退出时重读设置、排好或撤掉后台任务，
+// 登录着的到期就补跑一轮；回到前台时也看一眼到没到期（iOS 的后台刷新由系统定时机，常常靠这里补上）。这些都是用户打开着应用（foreground）；
+// 启动时只是读回本机会话，之后代次变了才是真的重新登录（relogin，清掉登录过期的暂停）。
 void watchAutoSync(AppSession session, AutoSync autoSync, {required Future<void> agreed}) {
   void report(Object error, StackTrace stack) => campusLog('[AutoSync] action=watch errorType=${error.runtimeType}\n$stack');
-  Future<void> changed() async {
-    await autoSync.accountChanged(signedIn: session.loggedIn);
-    if (session.loggedIn) await autoSync.runIfDue();
+  Future<void> changed({required bool relogin}) async {
+    await autoSync.accountChanged(signedIn: session.loggedIn, relogin: relogin);
+    if (session.loggedIn) await autoSync.runIfDue(foreground: true);
   }
 
   unawaited(agreed.then((_) {
@@ -126,11 +127,11 @@ void watchAutoSync(AppSession session, AutoSync autoSync, {required Future<void>
       if (session.generation == generation && session.loggedIn == loggedIn) return;
       generation = session.generation;
       loggedIn = session.loggedIn;
-      unawaited(changed().catchError(report));
+      unawaited(changed(relogin: true).catchError(report));
     });
     AppLifecycleListener(onResume: () {
-      if (session.loggedIn) unawaited(autoSync.runIfDue().catchError(report));
+      if (session.loggedIn) unawaited(autoSync.runIfDue(foreground: true).catchError(report));
     });
-    return changed();
+    return changed(relogin: false);
   }).catchError(report));
 }

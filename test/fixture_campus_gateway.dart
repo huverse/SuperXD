@@ -267,6 +267,9 @@ class FixtureCampusGateway implements CampusGateway {
   ], source: 'local', fetchedAt: _stamp());
 
   @override
+  Future<T> keepSessionDuring<T>(Future<T> Function() body) => body();
+
+  @override
   Future<GatewayResult<AutoSyncView>> readAutoSync() async => _ok(AutoSyncView(setting: autoSyncSetting, status: autoSyncStatus), source: 'local', fetchedAt: _stamp());
 
   @override

@@ -313,8 +313,8 @@ void main() {
       await tester.pumpWidget(host());
       chooseSyncSelection(hostContext, gateway, autoSync: autoSync);
       await tester.pumpAndSettle();
-      expect(find.textContaining('自动同步 · 未开启'), findsOneWidget);
-      await tester.tap(find.textContaining('自动同步 · 未开启'));
+      expect(find.text('未开启'), findsOneWidget);
+      await tester.tap(find.text('未开启'));
       await tester.pumpAndSettle();
       return (gateway, scheduler, autoSync);
     }
@@ -329,7 +329,9 @@ void main() {
       expect(find.text('间隔'), findsOneWidget);
       await tester.tap(find.widgetWithText(TextButton, '完成'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('自动同步 · 每天 · 当前学年'), findsOneWidget);
+      // 「·」挂在前一项末尾（DotSeparatedText）。
+      expect(find.text('每天\u00A0· '), findsOneWidget);
+      expect(find.text('当前学年'), findsOneWidget);
     });
 
     testWidgets('间隔、学年与内容点了就存；学年选具体的再全取消回到当前学年；内容至少留一项', (tester) async {
@@ -341,6 +343,9 @@ void main() {
       await tester.pumpAndSettle();
       expect(gateway.autoSyncSetting.interval, const Duration(hours: 6));
       expect(scheduler.calls.last, startsWith('schedule ${const Duration(hours: 6)}'));
+      for (final label in ['每天', '每 3 天', '每周']) {
+        expect(find.text(label), findsOneWidget);
+      }
 
       await tester.tap(find.text('2025–2026').last);
       await tester.pumpAndSettle();
@@ -376,7 +381,7 @@ void main() {
       await tester.pumpWidget(host());
       chooseSyncSelection(hostContext, gateway, autoSync: autoSync);
       await tester.pumpAndSettle();
-      await tester.tap(find.textContaining('自动同步 · 每天'));
+      await tester.tap(find.text('每天\u00A0· '));
       await tester.pumpAndSettle();
       expect(find.text('合成的失败原因'), findsOneWidget);
     });

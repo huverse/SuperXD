@@ -5,9 +5,12 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:superxd/app_session.dart';
+import 'package:superxd/application/auto_sync.dart';
+import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/edu/login_rules.dart';
 import 'package:superxd/edu/parse_schedule.dart';
+import 'package:superxd/edu/parse_terms.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/credential_store.dart';
@@ -65,6 +68,81 @@ void main() {
     expect(clients.last.reads, 2);
     expect(gateway.generation, generation);
     expect((await gateway.restoreSession()).data?.loginId, 'A');
+  });
+
+  // 人工决策见 domain/auto_sync.dart：登录过期时不打断、只暂停。以前网关一遇到失效就清本机会话，
+  // 后台试一次之后下次冷启动直接停在登录页，看不了本机课表；手动操作才按原规则重新登录。
+  group('自动同步遇到登录过期', () {
+    AutoSync autoSyncOf() => AutoSync(gateway: gateway, clock: () => DateTime.utc(2026, 11, 5));
+
+    Future<void> enable() async {
+      await gateway.saveAutoSyncSetting(const AutoSyncSetting(enabled: true, years: {'2026'}, contents: {SyncContent.schedule}));
+    }
+
+    test('没记住账号：本机会话留着，只记暂停；冷启动照常进应用', () async {
+      await gateway.login('A', 'test-secret');
+      await enable();
+      clients.single.failure = 'SESSION_EXPIRED';
+      final generation = gateway.generation;
+      await autoSyncOf().runIfDue();
+      expect((await gateway.readAutoSync()).data!.status.state, AutoSyncState.paused);
+      expect(gateway.generation, generation, reason: '不换代次，页面不重建');
+      expect(gateway.activeSession?.loginId, 'A', reason: '不退出登录');
+
+      final restarted = AccountGateway(store: await AccountStore.open(directory: directory.path), clientFactory: _Client.new);
+      addTearDown(restarted.close);
+      expect((await restarted.restoreLocalSession()).data?.loginId, 'A', reason: '下次打开还能看本机数据');
+    });
+
+    test('之后手动同步仍报失效（由页面转登录）：这时才清本机会话', () async {
+      await gateway.login('A', 'test-secret');
+      await enable();
+      clients.single.failure = 'SESSION_EXPIRED';
+      await autoSyncOf().runIfDue();
+      expect((await gateway.syncSchedule(_term)).error?.code, 'SESSION_EXPIRED');
+      final restarted = AccountGateway(store: await AccountStore.open(directory: directory.path), clientFactory: _Client.new);
+      addTearDown(restarted.close);
+      expect((await restarted.restoreLocalSession()).ok, isFalse);
+    });
+
+    test('记住了账号且恢复成功：用新会话接着同步，不算暂停', () async {
+      await gateway.loginRemembered('A', 'test-secret', remember: true);
+      await enable();
+      clients.single.failure = 'SESSION_EXPIRED';
+      await autoSyncOf().runIfDue();
+      expect(clients, hasLength(2));
+      expect((await gateway.readAutoSync()).data!.status.state, AutoSyncState.ok);
+    });
+
+    test('记住了账号但自动登录要验证码：不打断，本机会话留着', () async {
+      await gateway.loginRemembered('A', 'test-secret', remember: true);
+      await enable();
+      clients.single.failure = 'SESSION_EXPIRED';
+      nextClient = () => _Client()..loginFailure = 'captcha';
+      await autoSyncOf().runIfDue();
+      expect((await gateway.readAutoSync()).data!.status.state, AutoSyncState.paused);
+      expect(gateway.activeSession?.loginId, 'A');
+      final restarted = AccountGateway(store: await AccountStore.open(directory: directory.path), clientFactory: _Client.new);
+      addTearDown(restarted.close);
+      expect((await restarted.restoreLocalSession()).data?.loginId, 'A');
+    });
+
+    test('自动同步期间用户退出了：不把会话写回去', () async {
+      await gateway.login('A', 'test-secret');
+      await enable();
+      final old = clients.single..failure = 'SESSION_EXPIRED';
+      var logoutDone = false;
+      old.beforeRead = () async {
+        old.beforeRead = null;
+        unawaited(gateway.logout().then((_) => logoutDone = true));
+      };
+      await autoSyncOf().runIfDue();
+      expect(logoutDone, isTrue);
+      expect(gateway.activeSession, isNull);
+      final restarted = AccountGateway(store: await AccountStore.open(directory: directory.path), clientFactory: _Client.new);
+      addTearDown(restarted.close);
+      expect((await restarted.restoreLocalSession()).ok, isFalse, reason: '退出就是退出');
+    });
   });
 
   test('恢复中新增读取复用同一认证，不用旧cookie发送', () async {
@@ -321,6 +399,12 @@ class _Client extends KingoClient {
   final readGate = Completer<void>();
   final loginStarted = Completer<void>();
   final loginGate = Completer<void>();
+  Future<void> Function()? beforeRead;
+  // 刷新学期：自动同步每轮先走它。真实教务在会话失效时 fetchProfile 就报过期，这里交给课表那一步报，免得把用例绑死在第几个请求上。
+  @override
+  Future<KingoProfile> fetchProfile() async => KingoProfile(userCode: 'internal-A', xn: _term.xn, xq: _term.xq, loginId: 'A');
+  @override
+  Future<({List<ParsedTerm> terms, ({String xn, String xq})? published})> listTerms() async => (terms: [ParsedTerm(xn: _term.xn, xq: _term.xq, label: '合成学期', code: '')], published: null);
   @override
   Future<KingoLoginResult> login(String username, String password, {String captcha = ''}) async {
     logins++;
@@ -335,6 +419,7 @@ class _Client extends KingoClient {
   @override
   Future<ParsedSchedule> fetchSchedule({required String xn, required String xq, required String userCode}) async {
     reads++;
+    await beforeRead?.call();
     if (holdReads) {
       if (reads == 2) twoReads.complete();
       await readGate.future;

@@ -460,6 +460,21 @@ class AccountGateway extends AccountAccess {
   @override
   Future<GatewayResult<AutoSyncStatus>> recordAutoSync(AutoSyncStatus status) => _dispatch((gateway) => gateway.recordAutoSync(status));
 
+  // 在切换锁里写回，和退出、切换账号互斥：期间账号变了（用户退出、换了账号、页面转了登录）就不动，退出就是退出。
+  @override
+  Future<T> keepSessionDuring<T>(Future<T> Function() body) async {
+    final context = _active;
+    if (context == null) return body();
+    final saved = await context.gateway.database.readSession();
+    try {
+      return await body();
+    } finally {
+      await _transition.synchronized(() async {
+        if (!_closed && identical(context, _active) && context.accepting) await context.gateway.restoreSessionIfCleared(saved);
+      });
+    }
+  }
+
   // 后台自动同步用（组合根的 app_background_sync.dart）：只用本机会话恢复，恢复不了就算了——不拿记住的账号自动登录、
   // 不清活动账号指针、不发「请重新登录」的提示（[人工决策] 见 domain/auto_sync.dart：登录过期时不打断、只暂停）。
   Future<GatewayResult<SessionView>> restoreLocalSession() => _restoreLocal();

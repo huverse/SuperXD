@@ -24,7 +24,12 @@ String autoSyncSummary(AutoSyncView? view) {
   return '${_intervalLabel(setting.interval)} · ${setting.years == null ? '当前学年' : '${setting.years!.length} 个学年'}';
 }
 
-String _intervalLabel(Duration interval) => interval.inDays >= 1 ? (interval.inDays == 1 ? '每天' : '每 ${interval.inDays} 天') : '每 ${interval.inHours} 小时';
+String _intervalLabel(Duration interval) => switch (interval.inDays) {
+  0 => '每 ${interval.inHours} 小时',
+  1 => '每天',
+  7 => '每周',
+  final days => '每 $days 天',
+};
 
 class _AutoSyncDialog extends StatefulWidget {
   const _AutoSyncDialog({required this.autoSync, required this.gateway});
@@ -107,8 +112,8 @@ class _AutoSyncDialogState extends State<_AutoSyncDialog> {
                 children: [
                   CampusSwitchTile(
                     contentPadding: EdgeInsets.zero,
-                    title: const Text('自动同步'),
-                    subtitle: const Text('到时间且联网时在后台同步'),
+                    title: const Text('到时间自动同步'),
+                    subtitle: const Text('联网时在后台进行'),
                     value: setting.enabled,
                     onChanged: _busy ? (_) {} : (value) => _save(setting.copyWith(enabled: value)),
                   ),

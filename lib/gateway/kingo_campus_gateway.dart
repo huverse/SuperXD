@@ -372,6 +372,25 @@ class KingoCampusGateway implements CampusGateway {
   Future<GatewayResult<List<HeldScheduleSync>>> readHeldScheduleSyncs() => _guard(() async => _ok(await database.heldSchedules(), source: 'local', fetchedAt: _stamp()));
 
   @override
+  Future<T> keepSessionDuring<T>(Future<T> Function() body) async {
+    final saved = await database.readSession();
+    try {
+      return await body();
+    } finally {
+      await restoreSessionIfCleared(saved);
+    }
+  }
+
+  // 会话行被这段时间的失效清掉了才写回；写回失败只记日志，不盖住 body 的结果。
+  Future<void> restoreSessionIfCleared(SavedSession? saved) async {
+    try {
+      if (saved != null && await database.readSession() == null) await database.writeSession(saved);
+    } catch (error, stack) {
+      campusLog('[KingoCampusGateway] action=keep_session errorType=${error.runtimeType}\n$stack');
+    }
+  }
+
+  @override
   Future<GatewayResult<AutoSyncView>> readAutoSync() => _guard(() async => _ok(await database.readAutoSync(), source: 'local', fetchedAt: _stamp()));
 
   @override

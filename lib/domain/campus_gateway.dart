@@ -249,6 +249,9 @@ abstract class CampusGateway {
   // 返回之后还等不等用户来选（选过保留本地的同一份仍是 false）。教务课表落成新版本时同一学期的这一条随之删掉。
   Future<GatewayResult<bool>> holdScheduleSync(TermRef term, List<CourseRecord> courses, {required bool dismissed});
   Future<GatewayResult<List<HeldScheduleSync>>> readHeldScheduleSyncs();
+  // 自动同步用（登录过期时不打断、只暂停，人工决策见 domain/auto_sync.dart）：body 期间教务说会话失效也不丢本机会话，
+  // 用户照常看本机数据、下次冷启动不被挡在登录页，手动操作时才按原规则重新登录。body 期间恢复成新会话的照新的。
+  Future<T> keepSessionDuring<T>(Future<T> Function() body);
   // 自动同步的设置与上次结果，只读写本机账号库；没设置过时是关着的默认值。
   Future<GatewayResult<AutoSyncView>> readAutoSync();
   Future<GatewayResult<AutoSyncSetting>> saveAutoSyncSetting(AutoSyncSetting setting);

@@ -44,8 +44,10 @@ void main() {
       expect(autoSyncDue(view(last: now.subtract(const Duration(days: 1))), now), isTrue);
     });
 
-    test('登录过期暂停时不到期；没连上网的隔 15 分钟就能再试', () {
+    test('登录过期暂停时后台不到期，用户打开着应用才照间隔试；没连上网的隔 15 分钟就能再试', () {
       expect(autoSyncDue(view(last: now.subtract(const Duration(days: 30)), state: AutoSyncState.paused), now), isFalse);
+      expect(autoSyncDue(view(last: now.subtract(const Duration(days: 30)), state: AutoSyncState.paused), now, foreground: true), isTrue);
+      expect(autoSyncDue(view(last: now.subtract(const Duration(hours: 1)), state: AutoSyncState.paused), now, foreground: true), isFalse);
       expect(autoSyncDue(view(last: now.subtract(const Duration(minutes: 10)), state: AutoSyncState.network), now), isFalse);
       expect(autoSyncDue(view(last: now.subtract(const Duration(minutes: 15)), state: AutoSyncState.network), now), isTrue);
     });
@@ -247,6 +249,18 @@ void main() {
       expect(gateway.bellsCalls, 0);
     });
 
+    test('同步期间改了设置：这轮结束时不把内存里的设置改回旧值', () async {
+      gateway.autoSyncSetting = const AutoSyncSetting(enabled: true, contents: {SyncContent.schedule});
+      await autoSync.accountChanged(signedIn: true);
+      gateway.onSchedule = () async {
+        gateway.onSchedule = null;
+        await autoSync.save(const AutoSyncSetting(enabled: true, interval: Duration(days: 7), contents: {SyncContent.schedule}));
+      };
+      await autoSync.runIfDue();
+      expect(autoSync.view!.setting.interval, const Duration(days: 7));
+      expect(autoSync.view!.status.state, AutoSyncState.ok);
+    });
+
     test('开关关着不联网', () async {
       gateway.autoSyncSetting = const AutoSyncSetting();
       await autoSync.runIfDue();
@@ -320,7 +334,7 @@ void main() {
       expect(gateway.adopted, isFalse);
     });
 
-    test('登录过期：只暂停、不再到期；重新登录后清掉暂停接着跑', () async {
+    test('登录过期：只暂停，后台不再联网；冷启动不清暂停（会话是不是有效还不知道），重新登录才清', () async {
       gateway.failSchedule = GatewayCode.sessionExpired;
       await autoSync.runIfDue();
       expect(gateway.autoSyncStatus.state, AutoSyncState.paused);
@@ -328,14 +342,35 @@ void main() {
 
       gateway.failSchedule = null;
       gateway.synced.clear();
+      gateway.autoSyncStatus = AutoSyncStatus(lastAttemptAt: now.subtract(const Duration(days: 9)), state: AutoSyncState.paused, message: gateway.autoSyncStatus.message);
       await autoSync.runIfDue();
-      expect(gateway.synced, isEmpty, reason: '暂停着不联网');
+      expect(gateway.synced, isEmpty, reason: '后台暂停着不联网');
 
       await autoSync.accountChanged(signedIn: true);
+      expect(gateway.autoSyncStatus.state, AutoSyncState.paused, reason: '冷启动只是读回本机会话');
+      expect(autoSync.view!.status.message, contains('重新登录'), reason: '设置页照样写明');
+
+      await autoSync.accountChanged(signedIn: true, relogin: true);
       expect(gateway.autoSyncStatus.state, isNull);
-      gateway.autoSyncStatus = const AutoSyncStatus();
       await autoSync.runIfDue();
+      expect(gateway.synced, [_term.key], reason: '重新登录后后台接着跑');
+    });
+
+    test('暂停时用户打开应用到了间隔就试一次：会话其实有效就恢复，还是过期就接着暂停、不多试', () async {
+      gateway.autoSyncStatus = AutoSyncStatus(lastAttemptAt: now.subtract(const Duration(days: 2)), state: AutoSyncState.paused, message: '合成');
+      await autoSync.runIfDue(foreground: true);
       expect(gateway.synced, [_term.key]);
+      expect(gateway.autoSyncStatus.state, AutoSyncState.ok);
+
+      gateway.synced.clear();
+      gateway.failSchedule = GatewayCode.sessionExpired;
+      gateway.autoSyncStatus = AutoSyncStatus(lastAttemptAt: now.subtract(const Duration(days: 2)), state: AutoSyncState.paused, message: '合成');
+      await autoSync.runIfDue(foreground: true);
+      expect(gateway.autoSyncStatus.state, AutoSyncState.paused);
+      expect(gateway.autoSyncStatus.lastAttemptAt, now);
+      gateway.synced.clear();
+      await autoSync.runIfDue(foreground: true);
+      expect(gateway.synced, isEmpty, reason: '没到间隔不再试');
     });
 
     test('没连上网记成 network，隔一会儿能再试；限流记成 limited，到下次间隔再说', () async {

@@ -2,7 +2,8 @@ import 'package:superxd/domain/schedule_store.dart';
 
 // [人工决策-2026-11-05 17:18:44] 自动同步（用户四项选定）：可开关、可设间隔，范围同手动同步（学年加内容）；
 // 系统后台定时同步（安卓 WorkManager 周期任务、只在联网时跑；iOS 后台刷新，时机由系统定），应用开着时交给前台那份去做；
-// 和本地改过的课表冲突时不覆盖，留到打扰时机问（见 application/app_moments.dart）；登录过期时不打断、只暂停（不转登录页）。
+// 和本地改过的课表冲突时不覆盖，留到打扰时机问（见 application/app_moments.dart）；登录过期时不打断、只暂停：不转登录页、本机会话留着（CampusGateway.keepSessionDuring），
+// 下次打开照常看本机数据，手动操作时才按原规则重新登录。
 // 冲突的选择性覆盖按三方合并，基准是上次教务同步的版本（见 domain/schedule_merge.dart 的 scheduleMergeOrigins）。
 
 // 同步的数据项，手动同步与自动同步共用。
@@ -39,7 +40,8 @@ class AutoSyncSetting {
   );
 }
 
-// 上次自动同步的结果。paused 是登录过期（不打断、只暂停），重新登录后自动恢复；network 是没连上网，autoSyncNetworkRetry 后再试。
+// 上次自动同步的结果。paused 是登录过期（不打断、只暂停）：后台不再试，重新登录后恢复，用户打开应用时到了间隔也试一次（会话可能其实还有效）；
+// network 是没连上网，autoSyncNetworkRetry 后再试。
 enum AutoSyncState { ok, failed, network, limited, paused }
 
 class AutoSyncStatus {
@@ -56,10 +58,10 @@ class AutoSyncView {
   final AutoSyncStatus status;
 }
 
-// 到没到该自动同步的时候：开着、没暂停，离上次尝试过了间隔（网络没连上的那次只隔 autoSyncNetworkRetry）。
-bool autoSyncDue(AutoSyncView view, DateTime now) {
+// 到没到该自动同步的时候：开着，离上次尝试过了间隔（网络没连上的那次只隔 autoSyncNetworkRetry）；登录过期暂停时后台不到期，foreground（用户打开着应用）才照间隔试。
+bool autoSyncDue(AutoSyncView view, DateTime now, {bool foreground = false}) {
   final status = view.status, last = status.lastAttemptAt;
-  if (!view.setting.enabled || status.state == AutoSyncState.paused) return false;
+  if (!view.setting.enabled || (status.state == AutoSyncState.paused && !foreground)) return false;
   if (last == null) return true;
   final gap = status.state == AutoSyncState.network ? autoSyncNetworkRetry : view.setting.interval - autoSyncSlack;
   return !now.isBefore(last.add(gap));

@@ -26,8 +26,9 @@ class AutoSync extends ChangeNotifier {
   // 等用户来选的教务课表（打扰时机里一份一份地问）。
   List<HeldScheduleSync> held = const [];
 
-  // 恢复会话、切换账号或退出后调：读设置排好或撤掉后台任务，读等着选的课表。重新登录后把「登录过期、已暂停」清掉，自动同步接着跑。
-  Future<void> accountChanged({required bool signedIn}) async {
+  // 恢复会话、切换账号或退出后调：读设置排好或撤掉后台任务，读等着选的课表。
+  // relogin 是刚登录过（会话是新的）：把「登录过期、已暂停」清掉，自动同步接着跑；冷启动只是读回本机会话，并不知道它还有效，不清。
+  Future<void> accountChanged({required bool signedIn, bool relogin = false}) async {
     if (!signedIn) {
       view = null;
       held = const [];
@@ -38,7 +39,7 @@ class AutoSync extends ChangeNotifier {
     final read = await gateway.readAutoSync();
     if (!read.ok || read.data == null) return;
     var current = read.data!;
-    if (current.status.state == AutoSyncState.paused) {
+    if (relogin && current.status.state == AutoSyncState.paused) {
       final status = AutoSyncStatus(lastAttemptAt: current.status.lastAttemptAt, lastSuccessAt: current.status.lastSuccessAt);
       if ((await gateway.recordAutoSync(status)).ok) current = AutoSyncView(setting: current.setting, status: status);
     }
@@ -57,14 +58,14 @@ class AutoSync extends ChangeNotifier {
     return null;
   }
 
-  // 到期就同步一轮（后台任务与回到前台都调它）；同一时刻只跑一轮，有别的同步在跑就这次不跑。
-  Future<void> runIfDue() => _running ??= _runIfDue().whenComplete(() => _running = null);
+  // 到期就同步一轮（后台任务与回到前台都调它，foreground 表示用户正打开着应用）；同一时刻只跑一轮，有别的同步在跑就这次不跑。
+  Future<void> runIfDue({bool foreground = false}) => _running ??= _runIfDue(foreground).whenComplete(() => _running = null);
 
-  Future<void> _runIfDue() async {
+  Future<void> _runIfDue(bool foreground) async {
     final read = await gateway.readAutoSync();
     if (!read.ok || read.data == null) return;
     final current = read.data!, now = _clock();
-    if (!autoSyncDue(current, now) || CampusSync.activeRuns > 0) return;
+    if (!autoSyncDue(current, now, foreground: foreground) || CampusSync.activeRuns > 0) return;
     final years = current.setting.years ?? await _currentYear();
     final previous = current.status;
     if (years == null) {
@@ -74,7 +75,8 @@ class AutoSync extends ChangeNotifier {
     campusLog('[AutoSync] action=start years=${years.length} contents=${current.setting.contents.map((content) => content.name).join(',')}');
     // 先记下这次尝试，中途被系统停掉也不会马上又来一轮。
     await _record(AutoSyncStatus(lastAttemptAt: now, lastSuccessAt: previous.lastSuccessAt, state: previous.state, message: previous.message), current);
-    final report = await _sync.run(
+    // 登录过期时不打断：不丢本机会话（见 keepSessionDuring），只记暂停。
+    final report = await gateway.keepSessionDuring(() => _sync.run(
       contents: current.setting.contents,
       years: years,
       // 有人手动同步了就让路（下一个检查点停下），不和它抢同一个教务会话。
@@ -83,7 +85,7 @@ class AutoSync extends ChangeNotifier {
       resolveSchedule: (term, plan, courses) async => KeepLocal(remember: plan.base != null && fingerprint(plan.base!) == fingerprint(courses)),
       // 采用别的学期的作息必须本人确认，自动同步不改作息来源。
       chooseBells: (_, _) async => BellsChoice.cancel,
-    );
+    ));
     final status = _statusOf(report, now, previous);
     campusLog('[AutoSync] action=finish state=${status.state?.name} items=${report.items.length} unfinished=${report.unfinished.length}');
     await _record(status, current);
@@ -121,7 +123,8 @@ class AutoSync extends ChangeNotifier {
       campusLog('[AutoSync] action=record errorType=${recorded.error?.code}');
       return;
     }
-    view = AutoSyncView(setting: current.setting, status: status);
+    // 设置以 view 里的为准：这轮同步期间用户可能改过。
+    view = AutoSyncView(setting: view?.setting ?? current.setting, status: status);
     notifyListeners();
   }
 

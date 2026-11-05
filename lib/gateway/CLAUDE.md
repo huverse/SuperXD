@@ -20,6 +20,7 @@
     - 成功后依次写会话、激活账号索引，再按用户选择写入或删除凭据。任何一步失败都回滚到原值。
     - 只核对（rememberWithPassword，关闭后重新开启记住账号）：以当前学号走同一套尝试与验证码流程，认证成功只写凭据，不换会话与客户端、不加代次（[人工决策] 在方法上）。
   - restoreLocalSession：只用本机会话恢复，给后台自动同步用：恢复不了就算了，不拿记住的账号登录、不清活动账号指针、不写提示。
+  - keepSessionDuring：自动同步期间教务说会话失效也不丢本机会话行（不打断，人工决策见 domain/auto_sync.dart）；在切换锁里写回，期间账号变了就不动，手动操作遇到失效仍按原规则清掉。
   - 启动恢复：
     1. 先用本地会话恢复。
     2. 失败且保存了凭据时，自动登录一次。
@@ -49,7 +50,7 @@
     - RevisionConflict → REVISION_CONFLICT
     - ScheduleConflict → SYNC_CONFLICT
     - ScheduleValidation → INVALID_SCHEDULE
-    - KingoCallException → 异常自带的错误码；会话失效时同时清除会话和 cookie
+    - KingoCallException → 异常自带的错误码；会话失效时同时清除会话和 cookie（自动同步经 keepSessionDuring 写回）
     - 超时 → NETWORK_TIMEOUT
     - 格式异常 → UPSTREAM_FORMAT
     - 网络异常 → NETWORK_FAILED

@@ -27,7 +27,7 @@
   - 管理课程里各门课按最早的上课时段排（[人工决策] 在 courseGroups 上方）。
   - 单时段与单周调整 changeSlot、removeSlot，冲突检测 courseOverlaps。
   - 变更对比 scheduleChanges，以及时段、周次的显示文案；节次文案只经 periodLabel（一节写「第3节」），学分只经 creditLabel（整数不带小数）。
-- auto_sync.dart：自动同步的规则与类型（[人工决策] 在文件头）：SyncContent（手动同步共用）、可选间隔 autoSyncIntervals、设置 AutoSyncSetting（years 为空表示当前学年）、上次结果 AutoSyncStatus、到期规则 autoSyncDue（早 15 分钟内算到期、没连上网的隔 15 分钟、登录过期暂停时不到期）、后台任务第一次的延迟 autoSyncDelay、等用户来选的教务课表 HeldScheduleSync、系统后台任务端口 BackgroundSyncScheduler（device 实现）。
+- auto_sync.dart：自动同步的规则与类型（[人工决策] 在文件头）：SyncContent（手动同步共用）、可选间隔 autoSyncIntervals、设置 AutoSyncSetting（years 为空表示当前学年）、上次结果 AutoSyncStatus、到期规则 autoSyncDue（早 15 分钟内算到期、没连上网的隔 15 分钟、登录过期暂停时后台不到期，用户打开着应用才照间隔试）、后台任务第一次的延迟 autoSyncDelay、等用户来选的教务课表 HeldScheduleSync、系统后台任务端口 BackgroundSyncScheduler（device 实现）。
 - schedule_merge.dart：好友课表逐项合并的规则：planScheduleMerge 按课名配对（同管理课程），配上的那门课按时段比出差异（同一上课时间比周次、教室、教师，一样的改动合成一项；两边各剩的时段配成上课时间改动，多出来的是加上、去掉；学分对整门课），记下有没有同一个教学班；applyScheduleMerge 把勾了的套到自己的时段上再经 regroupCourse 分回教学班，加进来的课和自己课程标识撞了另起本地课程。人工决策在 page/schedule_import.dart。教务课表冲突的三方合并共用这套配对与差异，scheduleMergeOrigins 再拿两边各自和基准比，按课名分清是教务改的、你改的还是两边都改了（默认勾选由此定，人工决策在 auto_sync.dart）。
 - period_spans.dart：把当日课程按节次展开成 PeriodSpan（有课段与空档段），并决定补齐哪些节次。
 - meeting_time.dart：按作息把节次换算成上课时刻 MeetingTime。
