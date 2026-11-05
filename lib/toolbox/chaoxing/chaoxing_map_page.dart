@@ -83,6 +83,11 @@ Future<bool> _locationServiceOn() async {
 // locationLatitude/Longitude/_gd 全空，只有 locationText 与 locationRange，真实坐标只渲染在签到前检查网页的隐藏输入框 #latitude/#longitude 里
 //（口径同详情的 locationLatitude，即提交口径 BD-09）。用户选「读，作为后备」：详情没坐标、又是位置签到时，从那张网页读老师坐标（chaoxingActiveLocation），
 // 这类课才画得出范围圈、用得上「签到点附近」。详情本来就有坐标时不多打这张网页。没跟 Superstar-checkin 做的「按地址文字反查坐标」：要另申请高德 Web key，且不如直接用网页里的真实坐标准。
+// [人工决策-2026-11-05 17:18:44] 上一条读错了输入框（用户选「尽量保留这个逻辑，找真正的签到范围怎么取」）：用户真机上一场按地址设位置的签到，
+// 「签到点附近」取的点离签到点上千万米（服务端回「不在可签到范围内，距教师指定签到地点 1.2…E7 米」）。授权账号只读探针查明 #latitude/#longitude
+// 是学生自己的签到位置——签过的结果页里是当时提交的点（页面地图上的标记写的是学生名字），没签时是 -1 占位；10-29 那 26 场都在学校签过，才像老师坐标。
+// 改读 #locationLatitude/#locationLongitude（CofbroTeam/Doraemon 读未签签到页的字段），-1、不在国内范围的一律当没有（详情字段同样把关）；
+// 出界的中文回复也认成出界，照常收紧偏移重试一次。未签签到页里这两个框是否真带老师坐标还没在进行中的签到上见过：开发者模式日志记 action=teacher_point 的有无与能否用，下次上课核对。
 // 高德 SDK 的合规声明与 key：地图是它唯一的用武之地，每次建地图前先按用户已同意的口径声明一次再初始化。
 void _initAmap(BuildContext context) {
   AMapInitializer.updatePrivacyAgree(const AMapPrivacyStatement(hasContains: true, hasShow: true, hasAgree: true));

@@ -85,6 +85,8 @@ ChaoxingPreSignStatus chaoxingPreSignStatus(String html) {
       : ChaoxingPreSignStatus.readyToSign;
 }
 
+final _teacherDistancePattern = RegExp(r'距教师指定签到地点\s*(\d+(?:\.\d+)?(?:[eE][+-]?\d+)?)\s*米');
+
 // 提交结果是一段纯文本，按前缀分支；认不出的按服务端错误处理。
 // success2 是「迟到或签到已结束」，学习通客户端按失败处理，这里一致；迟到与否另按活动截止时间判断。
 ChaoxingSignOutcome chaoxingSignOutcome(String body) {
@@ -102,12 +104,14 @@ ChaoxingSignOutcome chaoxingSignOutcome(String body) {
     // 只有 [face] 才算人脸未通过（照片记失败标记）；checkFace_ 是「校验没完成」，后缀是续传用的 enc2，带着重发。
     throw ChaoxingFailure(ChaoxingFailureCode.faceCheck, '人脸校验没完成，正在重试', payload: text.substring('checkFace_'.length));
   }
-  if (text.startsWith('errorLocation')) {
+  // 出界有两种写法：老的 errorLocation_距离，现在的中文「不在可签到范围内，距教师指定签到地点X米」（距离超过一千万米时是 1.2583E7 这样的科学计数法；
+  // 写法见 Superstar-checkin 的 checkin-engine.ts，11-05 真机日志里的 71 字节回复与它吻合）。两种都按出界处理，照常收紧偏移再试一次。
+  if (text.startsWith('errorLocation') || text.contains('不在可签到范围内')) {
     final parts = text.split('_');
-    final distance = parts.length > 1 ? parts[1] : null;
+    final distance = text.startsWith('errorLocation') ? (parts.length > 1 ? parts[1] : null) : _teacherDistancePattern.firstMatch(text)?.group(1);
     throw ChaoxingFailure(
       ChaoxingFailureCode.wrongPosition,
-      distance == null ? '位置不在签到范围内' : '位置不在签到范围内，距离签到点约 $distance 米',
+      distance == null ? '位置不在签到范围内' : '位置不在签到范围内，距离签到点约 ${chaoxingDistanceLabel(distance)}',
       payload: distance,
     );
   }
@@ -285,21 +289,24 @@ Future<ChaoxingPreSignStatus> chaoxingPreSign(ChaoxingClient client, ChaoxingAct
   return status;
 }
 
-// 老师设了位置、但详情接口（getPPTActiveInfo）把 locationLatitude/Longitude 留空的那种活动
-//（老师按地址设的位置，学习通只把坐标渲染进签到前检查的网页、不回填详情字段，真机实测见 chaoxing_map_page.dart 的人工决策）：
-// 从这张网页的隐藏输入框 #latitude、#longitude 抠出老师坐标，供画范围圈与「签到点附近」用。坐标口径同详情的 locationLatitude——
-// 都是提交口径 BD-09（网页里拿它和学生提交的 BD-09 坐标算距离）。抠不到（页面改版、0,0、不在班级）就返回空，退回手动选点。
-// 只读页面、不动签到状态，也不走 analysis。
+// 详情接口（getPPTActiveInfo）把 locationLatitude/Longitude 留空的位置签到（老师按地址设的位置，人工决策见 chaoxing_map_page.dart）：
+// 从签到前检查网页的隐藏输入框 #locationLatitude、#locationLongitude 读老师坐标，供画范围圈与「签到点附近」用（口径同详情，提交口径 BD-09；
+// 字段名照 CofbroTeam/Doraemon 读未签签到页的写法，它也把 -1 当没有）。不读 #latitude、#longitude：那是学生自己的签到位置——
+// 签过的结果页里是你当时提交的点（页面地图上的标记写的是学生名字），没签时是 -1 占位，10-29 误当成老师坐标，在 (-1,-1) 附近取点、出界上千万米。
+// 读不到、是占位值或不在国内范围（页面改版、不在班级、这场就没给坐标）都返回空，退回其余默认位置。只读页面、不动签到状态，也不走 analysis。
 Future<ChaoxingLocation?> chaoxingActiveLocation(ChaoxingClient client, ChaoxingActivity activity) async {
   final response = await client.http.postForm(
     chaoxingPreSignRequestUri(activity: activity, account: client.account!),
     chaoxingFormBody({'ext': activity.ext}),
     forbiddenExpired: true,
   );
-  final latitude = double.tryParse(_preSignInputValue(response.body, 'latitude') ?? '');
-  final longitude = double.tryParse(_preSignInputValue(response.body, 'longitude') ?? '');
-  if (latitude == null || longitude == null || (latitude == 0 && longitude == 0)) return null;
-  return ChaoxingLocation(latitude: latitude, longitude: longitude, address: '', system: ChaoxingCoordinateSystem.bd09);
+  final rawLatitude = _preSignInputValue(response.body, 'locationLatitude');
+  final latitude = double.tryParse(rawLatitude ?? '');
+  final longitude = double.tryParse(_preSignInputValue(response.body, 'locationLongitude') ?? '');
+  final usable = chaoxingUsablePoint(latitude, longitude);
+  // 只记有没有、能不能用，不记坐标本身；真实课堂上核对这条后备是否真的拿到老师的点。
+  if (campusDiagnostics) campusLog('[Chaoxing] action=teacher_point source=page found=${rawLatitude != null} usable=$usable bytes=${response.body.length}');
+  return usable ? ChaoxingLocation(latitude: latitude!, longitude: longitude!, address: '', system: ChaoxingCoordinateSystem.bd09) : null;
 }
 
 // 取隐藏输入框的 value，id 与 value 谁先谁后都认（学习通模板两种都出现过）。

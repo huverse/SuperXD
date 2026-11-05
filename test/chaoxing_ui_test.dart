@@ -781,10 +781,13 @@ void main() {
     ];
     // 老师设了位置（ifopenAddress=1、有范围），但详情不回坐标——真机实测的那种按地址设的位置签到。
     fake.activeInfo = {'ifopenAddress': 1, 'locationRange': 100, 'signOutPublishTimeStamp': 4999};
-    // 坐标藏在签到前检查的网页的隐藏输入框里（学习通的 BD-09 口径），signstatus=0 表示还没签。
+    // 坐标在签到前检查网页的 #locationLatitude/#locationLongitude 里（学习通的 BD-09 口径），signstatus=0 表示还没签；
+    // #latitude/#longitude 是学生自己的位置，没签时是 -1，不能当老师的点。
     fake.preSignHtml = '<script>signstatus = 0;</script>'
-        '<input type="hidden" id="latitude" value="36.600000">'
-        '<input type="hidden" id="longitude" value="117.000000">';
+        '<input type="hidden" id="latitude" value="-1">'
+        '<input type="hidden" id="longitude" value="-1">'
+        '<input type="hidden" id="locationLatitude" value="36.600000">'
+        '<input type="hidden" id="locationLongitude" value="117.000000">';
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
     await login(tester);
 
@@ -796,6 +799,54 @@ void main() {
     final north = (filled.latitude - 36.6) * 111320;
     final east = (filled.longitude - 117.0) * 111320 * cos(36.6 * pi / 180);
     expect(sqrt(north * north + east * east), lessThanOrEqualTo(10.2));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 11-05 真机：没签的签到页 #latitude/#longitude 是 -1，签过的结果页里是学生自己当时提交的点，都不是老师的签到点。
+  // 以前拿 (-1,-1) 当签到点，「签到点附近」取的点离真实签到点上千万米。
+  for (final (name, inputs) in [
+    ('没签的占位 -1', ('-1', '-1')),
+    ('签过的结果页里学生自己的位置', ('36.680000', '117.360000')),
+  ]) {
+    testWidgets('网页里只有 #latitude/#longitude（$name）时不当签到点', (tester) async {
+      usePhoneScreen(tester);
+      fake.activities = [
+        {'id': 501, 'type': 2, 'otherId': '4', 'nameOne': '位置签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0, 'ext': {'a': 1}},
+      ];
+      fake.activeInfo = {'ifopenAddress': 1, 'locationRange': 100, 'locationLatitude': '', 'locationLongitude': '', 'signOutPublishTimeStamp': 4999};
+      fake.preSignHtml = '<script>signstatus = 0;</script>'
+          '<input type="hidden" id="latitude" value="${inputs.$1}">'
+          '<input type="hidden" id="longitude" value="${inputs.$2}">';
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+      await login(tester);
+
+      await openSignSheet(tester, button: '去签到');
+      expect(find.widgetWithText(OutlinedButton, '签到点附近'), findsNothing);
+      // 经纬度框不预填（以前填的是 -1 附近换算出来的点）。
+      for (final label in ['纬度', '经度']) {
+        expect(tester.widget<TextField>(find.widgetWithText(TextField, label)).controller!.text, isEmpty);
+      }
+      await tester.pumpWidget(const SizedBox());
+    });
+  }
+
+  testWidgets('服务端回中文的出界：照常收紧偏移再试一次', (tester) async {
+    usePhoneScreen(tester);
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '4', 'nameOne': '签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0, 'ext': {'a': 1}},
+    ];
+    fake.activeInfo = {'ifopenAddress': 1, 'locationLatitude': 36.6, 'locationLongitude': 117.0, 'locationRange': 300, 'signOutPublishTimeStamp': 4999};
+    fake.signResponses.addAll(['不在可签到范围内，距教师指定签到地点312.6米', 'success']);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await openSignSheet(tester, button: '去签到');
+    await tapSign(tester);
+    await waitUntil(tester, () => find.text('收藏这次的位置？').evaluate().isNotEmpty);
+    await tester.tap(find.text('不收藏'));
+    await tester.pump();
+    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    expect(fake.calls.where((call) => call.contains('stuSignajax')).length, 2);
     await tester.pumpWidget(const SizedBox());
   });
 
