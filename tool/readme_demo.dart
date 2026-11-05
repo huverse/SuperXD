@@ -11,6 +11,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/domain/account.dart';
 import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/schedule_store.dart';
@@ -266,4 +267,18 @@ class _DemoAccounts extends AccountAccess {
   Future<GatewayResult<ReminderSetting>> readReminderSetting(TermRef term) => inner.readReminderSetting(term);
   @override
   Future<GatewayResult<ReminderSetting>> saveReminderSetting(TermRef term, ReminderSetting setting) => inner.saveReminderSetting(term, setting);
+  @override
+  Future<GatewayResult<RevisionView>> commitScheduleMerge(TermRef term, List<CourseRecord> courses, List<CourseRecord> merged, String summary, {required String? expectedRevisionId}) => inner.commitScheduleMerge(term, courses, merged, summary, expectedRevisionId: expectedRevisionId);
+  @override
+  Future<GatewayResult<bool>> holdScheduleSync(TermRef term, List<CourseRecord> courses, {required bool dismissed}) => inner.holdScheduleSync(term, courses, dismissed: dismissed);
+  @override
+  Future<GatewayResult<List<HeldScheduleSync>>> readHeldScheduleSyncs() => inner.readHeldScheduleSyncs();
+  @override
+  Future<T> keepSessionDuring<T>(Future<T> Function() body) => inner.keepSessionDuring(body);
+  @override
+  Future<GatewayResult<AutoSyncView>> readAutoSync() => inner.readAutoSync();
+  @override
+  Future<GatewayResult<AutoSyncSetting>> saveAutoSyncSetting(AutoSyncSetting setting) => inner.saveAutoSyncSetting(setting);
+  @override
+  Future<GatewayResult<AutoSyncStatus>> recordAutoSync(AutoSyncStatus status) => inner.recordAutoSync(status);
 }

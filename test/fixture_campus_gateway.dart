@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/period_spans.dart';
@@ -194,7 +195,10 @@ class FixtureCampusGateway implements CampusGateway {
 
   @override
   Future<GatewayResult<SyncPlan>> planScheduleSync(TermRef term, List<CourseRecord> courses) async {
-    return _ok(_store.planSync(term, courses), source: 'local', fetchedAt: _stamp());
+    final plan = _store.planSync(term, courses);
+    if (!plan.conflict) return _ok(plan, source: 'local', fetchedAt: _stamp());
+    final base = _store.revisionsOf(term).where((row) => row.source == 'edu').lastOrNull?.courses;
+    return _ok(SyncPlan(conflict: true, action: plan.action, message: plan.message, revisionId: plan.revisionId, base: base), source: 'local', fetchedAt: _stamp());
   }
 
   @override
@@ -203,6 +207,7 @@ class FixtureCampusGateway implements CampusGateway {
     try {
       final row = _store.commitSync(term, courses, confirm: confirm, now: _stamp());
       if (row == null) return _fail('SYNC_FAILED', '没有可提交的课表');
+      _held.remove(term.key);
       return _ok(_revision(row), source: 'edu', fetchedAt: row.createdAt);
     } on ScheduleConflict catch (error) {
       return _fail(error.code, error.plan.message ?? syncOverwriteMessage);
@@ -233,6 +238,52 @@ class FixtureCampusGateway implements CampusGateway {
   }
 
   final Map<String, ReminderSetting> _reminders = {};
+
+  // 自动同步与三方合并：规则同 KingoCampusGateway 与 AppDatabase（基准取最近一版教务同步，等用户选的每学期一份）。
+  final Map<String, ({List<CourseRecord> courses, bool dismissed})> _held = {};
+  AutoSyncSetting autoSyncSetting = const AutoSyncSetting();
+  AutoSyncStatus autoSyncStatus = const AutoSyncStatus();
+
+  @override
+  Future<GatewayResult<RevisionView>> commitScheduleMerge(TermRef term, List<CourseRecord> courses, List<CourseRecord> merged, String summary, {required String? expectedRevisionId}) async {
+    if (_store.head(term)?.id != expectedRevisionId) return _fail('REVISION_CONFLICT', const RevisionConflict().message);
+    final rows = _store.commitMerge(term, courses, normalizeSchedule(merged), summary, _stamp());
+    _held.remove(term.key);
+    return _ok(_revision(rows.last), source: rows.last.source, fetchedAt: rows.last.createdAt);
+  }
+
+  @override
+  Future<GatewayResult<bool>> holdScheduleSync(TermRef term, List<CourseRecord> courses, {required bool dismissed}) async {
+    final existing = _held[term.key];
+    if (!dismissed && existing != null && existing.dismissed && fingerprint(existing.courses) == fingerprint(courses)) return _ok(false, source: 'local', fetchedAt: _stamp());
+    _held[term.key] = (courses: courses, dismissed: dismissed);
+    return _ok(!dismissed, source: 'local', fetchedAt: _stamp());
+  }
+
+  @override
+  Future<GatewayResult<List<HeldScheduleSync>>> readHeldScheduleSyncs() async => _ok([
+    for (final entry in _held.entries)
+      if (!entry.value.dismissed) HeldScheduleSync(term: _store.terms[entry.key] ?? TermRef(xn: entry.key.split('-').first, xq: entry.key.split('-').last), courses: entry.value.courses, fetchedAt: _stamp()),
+  ], source: 'local', fetchedAt: _stamp());
+
+  @override
+  Future<T> keepSessionDuring<T>(Future<T> Function() body) => body();
+
+  @override
+  Future<GatewayResult<AutoSyncView>> readAutoSync() async => _ok(AutoSyncView(setting: autoSyncSetting, status: autoSyncStatus), source: 'local', fetchedAt: _stamp());
+
+  @override
+  Future<GatewayResult<AutoSyncSetting>> saveAutoSyncSetting(AutoSyncSetting setting) async {
+    if (!autoSyncIntervals.contains(setting.interval) || setting.contents.isEmpty || setting.years?.isEmpty == true) return _fail('INVALID_AUTO_SYNC', '自动同步的间隔、学年或内容不在可选范围内');
+    autoSyncSetting = setting;
+    return _ok(setting, source: 'user', fetchedAt: _stamp());
+  }
+
+  @override
+  Future<GatewayResult<AutoSyncStatus>> recordAutoSync(AutoSyncStatus status) async {
+    autoSyncStatus = status;
+    return _ok(status, source: 'local', fetchedAt: _stamp());
+  }
 
   @override
   Future<GatewayResult<ReminderSetting>> readReminderSetting(TermRef term) async => _ok(_reminders[term.key] ?? ReminderSetting.initial, source: 'local', fetchedAt: _stamp());

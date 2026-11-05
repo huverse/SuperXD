@@ -32,6 +32,10 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<key>BGTaskSchedulerPermittedIdentifiers</key>
+	<array>
+		<string>com.superxd.superxd.autoSync</string>
+	</array>
 	<key>NSCameraUsageDescription</key>
 	<string>扫好友二维码、签到二维码与驿站码，以及拍照签到时使用相机。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
@@ -40,6 +44,10 @@
 	<string>把下载的视频图片、开屏画作、驿站码与红包二维码存进相册。</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>读取你选中的照片，用作壁纸、签到照片或识别其中的二维码。</string>
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>fetch</string>
+	</array>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>UIApplicationSceneManifest</key>

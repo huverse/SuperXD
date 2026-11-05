@@ -8,6 +8,7 @@ import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_merge.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/share_card.dart';
+import 'package:superxd/page/schedule_merge_view.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -183,17 +184,17 @@ class _ImportPageState extends State<_ImportPage> {
       body = [
         if (_plan.changed.isNotEmpty) ...[
           section('有改动 · ${_plan.changed.length} 门', note: '勾上的用${widget.friendName}的'),
-          for (final course in _plan.changed) _ChangedCourse(course: course, selection: _items, enabled: !_saving, onChanged: () => setState(() {})),
+          for (final course in _plan.changed) MergeChangedCourse(course: course, caption: course.sameClass ? '同一个教学班' : '同名课程，教学班不同', selection: _items, enabled: !_saving, onChanged: () => setState(() {})),
         ],
         if (_plan.added.isNotEmpty) ...[
           section('${widget.friendName}有你没有 · ${_plan.added.length} 门', note: '勾上的加进你的课表'),
           for (final group in _plan.added)
-            _WholeCourse(group: group, picked: _added.contains(group.first.courseName.trim()), enabled: !_saving, onTap: () => _toggle(_added, group.first.courseName.trim())),
+            MergeWholeCourse(group: group, picked: _added.contains(group.first.courseName.trim()), enabled: !_saving, onTap: () => _toggle(_added, group.first.courseName.trim())),
         ],
         if (_plan.removed.isNotEmpty) ...[
           section('你有${widget.friendName}没有 · ${_plan.removed.length} 门', note: '勾上的从你的课表删掉'),
           for (final group in _plan.removed)
-            _WholeCourse(group: group, picked: _removed.contains(group.first.courseName.trim()), removing: true, enabled: !_saving, onTap: () => _toggle(_removed, group.first.courseName.trim())),
+            MergeWholeCourse(group: group, picked: _removed.contains(group.first.courseName.trim()), removing: true, enabled: !_saving, onTap: () => _toggle(_removed, group.first.courseName.trim())),
         ],
         if (_plan.same > 0) Padding(padding: const EdgeInsets.fromLTRB(4, 20, 4, 0), child: Text('其余 ${_plan.same} 门两边一样', style: secondary)),
       ];
@@ -245,128 +246,6 @@ class _ImportPageState extends State<_ImportPage> {
               ),
             ),
           ),
-        ]),
-      ),
-    );
-  }
-}
-
-// 勾选行：整行点按勾选（同签到对象），读屏把勾选框与这一行的文字合成一项。
-class _CheckRow extends StatelessWidget {
-  const _CheckRow({required this.value, required this.onTap, required this.child, this.enabled = true});
-  final bool? value;
-  final VoidCallback onTap;
-  final Widget child;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) => MergeSemantics(
-    child: InkWell(
-      borderRadius: BorderRadius.circular(12),
-      onTap: enabled ? onTap : null,
-      child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-        Checkbox(value: value, tristate: value == null, onChanged: enabled ? (_) => onTap() : null),
-        Expanded(child: Padding(padding: const EdgeInsets.only(top: 12, bottom: 8), child: child)),
-      ]),
-    ),
-  );
-}
-
-const _fieldNames = {
-  MergeField.slot: '上课时间',
-  MergeField.place: '教室',
-  MergeField.weeks: '周次',
-  MergeField.teacher: '教师',
-  MergeField.addSlot: '加上时段',
-  MergeField.removeSlot: '去掉时段',
-  MergeField.credit: '学分',
-};
-
-// 两边都有、有差异的一门课：课名一行可整门勾选（部分勾选时是半选），下面每处差异一行，原来的划掉、TA的写在下面。
-class _ChangedCourse extends StatelessWidget {
-  const _ChangedCourse({required this.course, required this.selection, required this.onChanged, required this.enabled});
-  final CourseMerge course;
-  final Set<String> selection;
-  final VoidCallback onChanged;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = CampusPalette.of(context);
-    final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
-    final picked = course.items.where((item) => selection.contains(item.id)).length;
-    final all = picked == course.items.length;
-    return CampusSurface(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(4, 4, 12, 4),
-      radius: 16,
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _CheckRow(
-          value: picked == 0 ? false : all ? true : null,
-          enabled: enabled,
-          onTap: () {
-            for (final item in course.items) {
-              all ? selection.remove(item.id) : selection.add(item.id);
-            }
-            onChanged();
-          },
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(course.name, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
-            Text(course.sameClass ? '同一个教学班' : '同名课程，教学班不同', style: secondary),
-          ]),
-        ),
-        for (final item in course.items)
-          Padding(
-            padding: const EdgeInsets.only(left: 28),
-            child: _CheckRow(
-              value: selection.contains(item.id),
-              enabled: enabled,
-              onTap: () {
-                selection.contains(item.id) ? selection.remove(item.id) : selection.add(item.id);
-                onChanged();
-              },
-              child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                DotSeparatedText([_fieldNames[item.field]!, if (item.scope.isNotEmpty) item.scope].join(' · '), style: secondary),
-                if (item.before.isNotEmpty)
-                  DotSeparatedText(item.before, style: secondary.copyWith(decoration: TextDecoration.lineThrough, decorationColor: palette.onSurfaceVariant, height: 1.5)),
-                if (item.after.isNotEmpty) DotSeparatedText(item.after, style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface)),
-              ]),
-            ),
-          ),
-      ]),
-    );
-  }
-}
-
-// 只有一边有的一门课：整门勾选，下面列时段（老师写在各自时段后）；要删的那组勾上时课名划掉、写明会删掉。
-class _WholeCourse extends StatelessWidget {
-  const _WholeCourse({required this.group, required this.picked, required this.onTap, required this.enabled, this.removing = false});
-  final List<CourseRecord> group;
-  final bool picked;
-  final VoidCallback onTap;
-  final bool enabled;
-  final bool removing;
-
-  @override
-  Widget build(BuildContext context) {
-    final palette = CampusPalette.of(context);
-    final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
-    final struck = removing && picked;
-    return CampusSurface(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.fromLTRB(4, 4, 12, 4),
-      radius: 16,
-      child: _CheckRow(
-        value: picked,
-        enabled: enabled,
-        onTap: onTap,
-        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text(
-            group.first.courseName,
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface, decoration: struck ? TextDecoration.lineThrough : null),
-          ),
-          for (final slot in courseSlots(group)) DotSeparatedText(slotLabel(slot), style: secondary.copyWith(height: 1.5)),
-          if (struck) Text('会从你的课表删掉', style: TextStyle(fontSize: 14, color: palette.danger)),
         ]),
       ),
     );

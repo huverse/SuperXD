@@ -7,6 +7,7 @@ import 'package:superxd/gateway/kingo_auth.dart';
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/domain/account.dart';
+import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/account_store.dart';
@@ -444,6 +445,39 @@ class AccountGateway extends AccountAccess {
     if (result.ok) _scheduleChanges.pulse();
     return result;
   }
+
+  @override
+  Future<GatewayResult<RevisionView>> commitScheduleMerge(TermRef term, List<CourseRecord> courses, List<CourseRecord> merged, String summary, {required String? expectedRevisionId}) =>
+      _notifyWrite(_dispatch((gateway) => gateway.commitScheduleMerge(term, courses, merged, summary, expectedRevisionId: expectedRevisionId)));
+  @override
+  Future<GatewayResult<bool>> holdScheduleSync(TermRef term, List<CourseRecord> courses, {required bool dismissed}) => _dispatch((gateway) => gateway.holdScheduleSync(term, courses, dismissed: dismissed));
+  @override
+  Future<GatewayResult<List<HeldScheduleSync>>> readHeldScheduleSyncs() => _dispatch((gateway) => gateway.readHeldScheduleSyncs());
+  @override
+  Future<GatewayResult<AutoSyncView>> readAutoSync() => _dispatch((gateway) => gateway.readAutoSync());
+  @override
+  Future<GatewayResult<AutoSyncSetting>> saveAutoSyncSetting(AutoSyncSetting setting) => _dispatch((gateway) => gateway.saveAutoSyncSetting(setting));
+  @override
+  Future<GatewayResult<AutoSyncStatus>> recordAutoSync(AutoSyncStatus status) => _dispatch((gateway) => gateway.recordAutoSync(status));
+
+  // 在切换锁里写回，和退出、切换账号互斥：期间账号变了（用户退出、换了账号、页面转了登录）就不动，退出就是退出。
+  @override
+  Future<T> keepSessionDuring<T>(Future<T> Function() body) async {
+    final context = _active;
+    if (context == null) return body();
+    final saved = await context.gateway.database.readSession();
+    try {
+      return await body();
+    } finally {
+      await _transition.synchronized(() async {
+        if (!_closed && identical(context, _active) && context.accepting) await context.gateway.restoreSessionIfCleared(saved);
+      });
+    }
+  }
+
+  // 后台自动同步用（组合根的 app_background_sync.dart）：只用本机会话恢复，恢复不了就算了——不拿记住的账号自动登录、
+  // 不清活动账号指针、不发「请重新登录」的提示（[人工决策] 见 domain/auto_sync.dart：登录过期时不打断、只暂停）。
+  Future<GatewayResult<SessionView>> restoreLocalSession() => _restoreLocal();
 
   @override
   Future<GatewayResult<ReminderSetting>> readReminderSetting(TermRef term) => _dispatch((gateway) => gateway.readReminderSetting(term));

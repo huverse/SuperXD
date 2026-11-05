@@ -19,6 +19,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_motion.dart';
 import 'package:superxd/theme/campus_rolling_text.dart';
+import 'package:superxd/application/auto_sync.dart';
 import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_clock.dart';
@@ -28,6 +29,7 @@ import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/page/course_cards.dart';
 import 'package:superxd/page/campus_sync_dialogs.dart';
 import 'package:superxd/page/live_clock.dart';
+import 'package:superxd/page/sync_merge_page.dart';
 import 'package:superxd/page/sync_selection_dialog.dart';
 import 'package:superxd/page/term_start_dialog.dart';
 import 'package:superxd/theme/glass_panel.dart';
@@ -67,8 +69,11 @@ class TodayPage extends StatefulWidget {
     this.isAccountCurrent,
     this.now,
     this.syncRequest,
+    this.autoSync,
   });
   final CampusGateway gateway;
+  // 自动同步（设备级，经账号门面跟着当前账号）；给了时「同步范围」里多一个自动同步入口。
+  final AutoSync? autoSync;
   final Future<void> Function()? onSessionExpired;
   final bool Function()? isAccountCurrent;
   final DateTime Function()? now;
@@ -381,12 +386,14 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     if (_syncing || _choosing) return;
     _choosing = true;
     try {
-      final selected = await chooseSyncSelection(context, widget.gateway, initialYear: initialYear);
+      final selected = await chooseSyncSelection(context, widget.gateway, initialYear: initialYear, autoSync: widget.autoSync);
       if (selected != null && mounted) await _sync(selected);
     } finally {
       _choosing = false;
     }
   }
+
+  bool _resolvingSync = false;
 
   Future<void> _sync(SyncSelection selection) async {
     if (_syncing) return;
@@ -395,9 +402,21 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
       final report = await _syncService.run(
         contents: selection.contents,
         years: selection.years,
-        isActive: () => mounted && (widget.isAccountCurrent?.call() ?? true) && TickerMode.valuesOf(context).enabled,
-        confirmSchedule: (term, message) async => mounted &&
-            await showCampusConfirm(context, title: term.label.isEmpty ? term.key : term.label, message: message, cancel: '保留本地', action: '覆盖', destructive: true),
+        isActive: () => mounted && (widget.isAccountCurrent?.call() ?? true) && (_resolvingSync || TickerMode.valuesOf(context).enabled),
+        // 和本地改过的课表冲突：打开合并页逐项选（三方合并，人工决策见 domain/auto_sync.dart），退出同保留本地。
+        // 合并页整页盖在今天页上（今天页的 TickerMode 随之关掉），这段不算离开今天页；页面退出后下一帧今天页才重新可见，等过这一帧再接着判断，
+        // 不然刚选完就被当成中途离开，选择被丢掉。
+        resolveSchedule: (term, plan, courses) async {
+          if (!mounted) return const KeepLocal(remember: true);
+          _resolvingSync = true;
+          try {
+            final resolution = await resolveScheduleSync(context, gateway: widget.gateway, term: term, plan: plan, edu: courses);
+            await WidgetsBinding.instance.endOfFrame;
+            return resolution;
+          } finally {
+            _resolvingSync = false;
+          }
+        },
         chooseBells: _chooseBells,
         onProgress: (progress) { if (mounted) setState(() => _syncProgress = progress); },
       );

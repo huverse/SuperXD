@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:superxd/application/campus_sync.dart';
+import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/edu/parse_bells.dart';
 import 'package:superxd/edu/parse_schedule.dart';
@@ -63,7 +64,7 @@ void main() {
     final gateway = _PendingGateway();
     var active = true;
     final future = CampusSync(gateway).run(contents: {SyncContent.schedule}, isActive: () => active,
-      confirmSchedule: (_, _) async => false, chooseBells: (_, _) async => BellsChoice.cancel);
+      resolveSchedule: (_, _, _) async => const KeepLocal(remember: true), chooseBells: (_, _) async => BellsChoice.cancel);
     await gateway.started.future;
     active = false;
     gateway.pending.complete(const GatewayResult<ScheduleView>(ok: false, source: 'edu', fetchedAt: 'stamp', error: GatewayError(code: 'SESSION_EXPIRED', message: '过期')));

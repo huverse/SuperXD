@@ -4,7 +4,7 @@
 
 - [人工决策-2026-09-29 21:40:28] 索引采用仓库内分层 CLAUDE.md（根目录加 lib 各模块），授权 AI 创建，并在每次改动时同步维护。用户全局 CLAUDE.md 仍由 AI 只提建议、由人工修改。
 - [人工决策-2026-10-17 13:25:26] 索引按官方与大厂做法重整（用户四项都选推荐）：本文件控制在 200 行内，只放全局原则、命令与流程，具体超时、上限与测试清单下沉到模块文件；application 与学习通各建模块索引；守护测试按最近的 CLAUDE.md 登记；文件条目一两行，写职责、约束与人工决策位置，行为细节以代码为准。
-- 模块索引共 12 个：lib 下 domain、edu、local、gateway、device、application、page、theme、toolbox、social 各一个，外加 lib/toolbox/chaoxing 与 lib/toolbox/express。lib 根目录的 main.dart、router.dart、app_session.dart、app_diagnostics.dart、app_shortcuts.dart 登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md。
+- 模块索引共 12 个：lib 下 domain、edu、local、gateway、device、application、page、theme、toolbox、social 各一个，外加 lib/toolbox/chaoxing 与 lib/toolbox/express。lib 根目录的 main.dart、router.dart、app_session.dart、app_diagnostics.dart、app_shortcuts.dart、app_background_sync.dart 登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md。
 - test/project_structure_test.dart 兜底两条：lib 下每个 dart 文件按文件名登记在最近的 CLAUDE.md（从所在目录往上找到 lib 为止，都没有就是本文件）；索引里提到的 dart 或 kt 文件必须真实存在。
 - 写法：纯文字，只用 # 标题、- 列表与 1. 编号；不写会随提交变化的数字（测试条数、提交号、库版本号），常量写名字或指到定义处。
 
@@ -26,7 +26,7 @@
 
 目录即分层，依赖只许自上而下，由 test/project_structure_test.dart 守护（[人工决策] 在文件内）。出现反向依赖时先重新划分职责，不要绕过检查。
 
-- 根目录组合根：main.dart、router.dart、app_session.dart、app_diagnostics.dart、app_shortcuts.dart，可依赖任何层。
+- 根目录组合根：main.dart、router.dart、app_session.dart、app_diagnostics.dart、app_shortcuts.dart、app_background_sync.dart，可依赖任何层。
 - page 页面：可依赖 domain、application、gateway、local、social、theme 与 app_session.dart；只经 CampusGateway 与 AccountAccess 访问业务，不直接接触 SQLite、KingoClient 或 cookie（例外只有外观页读写 DisplaySettings、开发者选项页读写开发者设置与本机日志）。
 - toolbox 百宝箱：设备级、免登录，可依赖 domain、theme，不依赖教务相关任何层；分享给好友、读本应用课表（学习通推断正在上的课）都经组合根注入的回调，不依赖 social 与 application。
 - social 私信：设备级的身份、好友、本机库与中转客户端，只依赖 domain；页面经 SocialService 使用。
@@ -43,12 +43,13 @@
   1. 把日志出口注入为 debugPrint，接住没被处理的异步错误与框架报错（带堆栈走 campusLog）；打开本机诊断日志与开发者设置，把出口接成 logcat 加文件两份，按开发者模式切换诊断记录（app_diagnostics.dart 的 watchDeveloperMode）；再初始化时区库、图标与第三方许可。
   2. 先问这次是不是从快捷入口冷启动（是的话跳过开屏画作、这次也不轮换）；打开开屏画作库（local/painting_library.dart，按清单顺序取这次的一幅并马上开始解码）；打开 AccountStore，组装 AppSession（含 AccountGateway 与 SecureCredentialStore）、DisplaySettings、设备级 SocialService（中转未配置或格式不对时为不可用）、AppUpdates（没配中转或不是渠道构建时为空，渠道取 appFlavor）、开发者的话 DeveloperNotes（没配中转时为空）、节日 Festivals（登记来自 page/festival/festival_catalog.dart，没配中转时只播动画不抽签）与打扰时机 AppMoments。
   3. runApp 时外面套开屏画作 PaintingSplash（page/painting_splash.dart：天空里一笔写出应用名，写完、会话恢复、转场走完才溶解，点一下立即进入，[人工决策] 在文件内；溶解完置 splashGone，打扰时机等它），开屏画作库也交给关于页；runApp 之后不等待地初始化玻璃渲染、向原生要一次低电量与省电模式状态（watchNativeLowPower），私信服务等用户同意协议与政策后再初始化（已开启私信的会立即联网），再恢复会话；百宝箱的 shareVideo 接到私信分享弹层，路由把好友分享的视频交给注册表里认得这张卡片的工具（openShared）。
-  4. 恢复会话后核对协议与政策（checkLegalNotice：没在首次启动弹窗里同意过的先征得同意，同意之前不联网；同意过的有实质变化时提示一次），再启动四个监听：watchLocalSchedule 对账课前提醒与小组件，watchWidgetTheme 下发小组件配色，watchAppUpdates 清旧安装包、同意后延迟 3 秒自动检查更新并在回前台时续做安装，watchMoments 启动与回到前台记今天打开过、同意后拉一次开发者的话并补抽上次没连上的签、每次回到前台重新计这一次前台并再看一眼（信间隔不到一小时不联网）；协议弹窗与新版弹窗都由 _AccountApp 在根导航器上弹，登录页也能弹，一个提示只弹一次，协议弹窗开着时更新弹窗等它关掉。节日动画（边播边抽签，抽中的接着拆红包）、没揭晓的奖品与新信等打扰时机的内容也由 _AccountApp 弹（_promptMoment：只在首页（底栏四个根页，未登录时是登录页）且上面没有推入页面、没有弹窗、协议已同意且没有待弹的提示、开屏走完时，停稳再弹）。
+  4. 恢复会话后核对协议与政策（checkLegalNotice：没在首次启动弹窗里同意过的先征得同意，同意之前不联网；同意过的有实质变化时提示一次），再启动五个监听：watchAutoSync 在同意后排好自动同步的后台任务、到期补跑（见 app_background_sync.dart），watchLocalSchedule 对账课前提醒与小组件，watchWidgetTheme 下发小组件配色，watchAppUpdates 清旧安装包、同意后延迟 3 秒自动检查更新并在回前台时续做安装，watchMoments 启动与回到前台记今天打开过、同意后拉一次开发者的话并补抽上次没连上的签、每次回到前台重新计这一次前台并再看一眼（信间隔不到一小时不联网）；协议弹窗与新版弹窗都由 _AccountApp 在根导航器上弹，登录页也能弹，一个提示只弹一次，协议弹窗开着时更新弹窗等它关掉。节日动画（边播边抽签，抽中的接着拆红包）、没揭晓的奖品、自动同步留下的课表冲突与新信等打扰时机的内容也由 _AccountApp 弹（_promptMoment：只在首页（底栏四个根页，未登录时是登录页）且上面没有推入页面、没有弹窗、协议已同意且没有待弹的提示、开屏走完时，停稳再弹）。
 - 账号代次：SuperXdApp 以 session.generation 作 key 重建账号应用，切换账号时路由和页面内存状态整体丢弃（[人工决策] 在 main.dart）。
 - router.dart 门禁：会话恢复完成前停在 /boot；未登录只允许 /login、/legal 下的法务页、/toolbox 与已注册工具及其快捷入口的路由（[人工决策] 在文件内）；已登录访问 /login 回到 /today；底栏壳有今天、服务、消息、我的四个分支，外包 LegacyImportGate；课表、成绩、切换账号、法务页和百宝箱推入根导航器。
 - app_session.dart：把 AccountAccess 的账号变化转成路由刷新并暂存一次性提示；expire 只让发起时的那个代次失效，旧页面不能误登出新账号。
 - app_diagnostics.dart：开发者模式的接线（[人工决策] 在文件头）：运行环境 appEnvironment（开发者模式第一次开着时才读）、按设置切换 campusDiagnostics 与卡顿内存统计（每 10 秒汇总、有慢帧才记）、前后台与页面切换记录（watchRoutes 只记 go_router 的路径；命令式推入的页面由 theme 的 CampusPageRoute 按页面类名记推入与返回），切到后台时把日志写盘；recordExitReasons 每次启动记系统给的上次退出原因（异常的平时也进错误记录）；TextSizeWatch 在开发者模式下记字号状态（屏宽、像素密度、系统与应用字号、粗体、字体、推荐上限与会改排处），开着记一条、变了停 1 秒再记，当前这组进诊断摘要（[人工决策] 在类上，为优化字号推荐）。悬浮开发者工具由 main.dart 的账号应用外壳套上（page/developer_page.dart 的 DeveloperOverlay）。开发者模式只多记日志、多给调试工具，不改任何业务行为。
 - app_shortcuts.dart：常用功能快捷入口的接线（人工决策在 toolbox/express/express_page.dart 的 _openIdentity）：把百宝箱注册表里登记的入口（ToolboxShortcut）画成自适应图标，经 device/app_shortcuts.dart 交给系统（长按应用图标的菜单、添加到桌面）；点了入口要去的页面记在 pending，账号应用等会话恢复好、先回首页（今天或登录页）再推入，返回就回到首页。入口 id 是「工具 id.入口 id」、页面是 /toolbox/工具 id/入口 id，已发布的 id 不要改（桌面上的快捷方式按它找回页面）。测试在 app_shortcuts_test.dart（发布、后台点入口、添加到桌面、先回首页再推入）与 account_lifecycle_test.dart（冷启动直达与门禁）；原生 AppShortcuts.kt 只有设备实测。
+- app_background_sync.dart：自动同步的接线（人工决策在 domain/auto_sync.dart）：系统后台任务每次另起一份 Flutter 引擎跑入口 autoSyncDispatcher，应用开着时经 IsolateNameServer 登记的端口交给前台那份同步（不让两份引擎同时动账号库、抢教务会话），应用不在时自己开账号库跑一轮（只用本机会话恢复 restoreLocalSession，恢复不了就算了，不自动登录、不清活动账号）；任务结果一律报成功，不交给系统的失败重试。watchAutoSync 决定时机：同意协议与政策之后，恢复会话、切换账号或退出时重读设置并排好或撤掉后台任务，回到前台时到期就补跑。后台那份只写账号库，课前提醒与小组件等下次打开应用时再对账（两者的原生通道只注册在前台引擎）。原生只有设备实测。
 - 页面从路由拿到 isAccountCurrent 与 onSessionExpired：异步结果回来后先确认仍属当前账号，再写界面。
 - 编排（CampusSync、CampusReminders、CampusWidgets、AppUpdates）见 lib/application/CLAUDE.md。
 
@@ -57,7 +58,7 @@
 1. 账号隔离：账号身份是教务来源 URL 加教务确认的学号；每个账号按身份哈希用独立的 SQLite 库并校验 owner；账号索引库只存账号列表、活动账号指针和旧库认领记录。切换、退出、导入都经 AccountGateway 的切换锁，旧上下文先停止接收新请求并等在途请求结束。
 2. 网关不抛异常：CampusGateway 的所有方法都返回 GatewayResult，失败带一个在 domain/gateway_code.dart 登记过的错误码。页面与同步只按错误码分支，message 只用来展示；新错误码先登记再使用。
 3. 会话失效：拿到 SESSION_EXPIRED 立即停止后续请求并交给 onSessionExpired。开启了记住账号时 AccountGateway 自动恢复登录一次并重放这次请求，恢复失败或重放后仍失效就不再自动恢复。
-4. 同步不误覆盖：教务页面只有明确的无课、无成绩语义才当空结果，权限、维护、截断或无法识别的页面一律报错并保留本地数据；本地已有自定义课表版本时，同步前要用户确认覆盖；采用其他学期的作息须用户明确确认，普通同步不改变已有的作息绑定。
+4. 同步不误覆盖：教务页面只有明确的无课、无成绩语义才当空结果，权限、维护、截断或无法识别的页面一律报错并保留本地数据；本地已有自定义课表版本时，手动同步进合并页由用户选（三方合并，基准是最近一次教务同步的版本），自动同步一律不覆盖、留到打扰时机问；采用其他学期的作息须用户明确确认，普通同步不改变已有的作息绑定。
 5. 课表版本：编辑、恢复和确认覆盖都带 expectedRevisionId，在同一事务里核对当前 head，不一致返回 REVISION_CONFLICT；每学期版本数有上限，当前 head 与最近一次教务基线受保护（规则见 lib/domain/CLAUDE.md）。
 6. 时间：绝对时刻一律存 UTC 的 ISO 字符串；校园时区只在 domain/campus_clock.dart 的 campusTimeZone 一处定义，今天、周次、倒计时等业务日界都经 campus_clock 计算；展示时间用 formatCampusRelative（按远近写到分钟）。
 7. 凭据：用户明确勾选记住账号且认证成功后才写入系统安全存储（关闭后在账号页重新开启也要先登录核对成功）；业务 SQLite、账号索引和日志一律不存密码；用户关闭记住账号或主动退出时立即删除凭据。
@@ -72,7 +73,8 @@
    - 开发者的话的本机记录（最近的信、读过与弹过的编号）与节日的本机记录（参与号、近 30 天打开过的日期、播过抽过的节日、奖品）属于设备；参与号是随机数，不关联教务账号、私信身份与设备标识。
 9. 对外网络：
    - 每个外部请求都有显式超时与响应上限，只发必要字段；具体数值写在所属模块（教务 edu、解析 toolbox、代签 chaoxing、私信 social、应用更新、开发者的话与节日抽签 device）。
-   - 除会话自动恢复后的一次重放、时钟偏差校正后的一次重发外，不自动重试；私信收取的长轮询是持续接收通道，失败后退避继续。
+   - 除会话自动恢复后的一次重放、时钟偏差校正后的一次重发外，不自动重试；私信收取的长轮询是持续接收通道，失败后退避继续；自动同步按间隔来，没连上网的隔 15 分钟后再试，都不算重试，后台任务也不交给系统重试。
+   - 教务默认只在用户点同步时访问；自动同步是用户开启后的例外（默认关闭），登录过期时只暂停、不转登录页。
    - CampusSync 每个实例内按顺序逐项请求，今天页和成绩页各持有一个实例；成绩同步与其他教务网络请求互斥（SYNC_BUSY）；教务限流时报 RATE_LIMITED，本轮立即停止。
 10. 数据保留：新增只增不删的数据，必须同时给出上限或清理策略，写进所属模块 CLAUDE.md；服务端信箱与设备的保留见 server/README.md。
 11. 日志：只经 domain/campus_log.dart 的 campusLog 输出，应用入口必须注入 debugPrint 才进 logcat；格式为 [模块] action=... errorType=...，错误附完整堆栈；不写原始 HTML、链接、凭据与实名信息。由 test/project_structure_test.dart 守护。

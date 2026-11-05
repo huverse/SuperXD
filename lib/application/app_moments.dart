@@ -2,8 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:superxd/application/auto_sync.dart';
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/application/festivals.dart';
+import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/domain/developer_note.dart';
@@ -27,6 +29,12 @@ class RewardMoment extends AppMoment {
   final FestivalPrize prize;
 }
 
+// 自动同步拿到的教务课表和本地改过的不一样，问要不要逐项合并（人工决策见 domain/auto_sync.dart）。
+class SyncConflictMoment extends AppMoment {
+  const SyncConflictMoment(this.held);
+  final HeldScheduleSync held;
+}
+
 class NoteLetterMoment extends AppMoment {
   const NoteLetterMoment(this.note);
   final DeveloperNote note;
@@ -37,16 +45,19 @@ const _launchSlack = Duration(seconds: 3);
 
 // [人工决策-2026-10-23 23:25:34] 打扰时机（用户要求不在迫切的时候打扰、不迫切时立即出现；安静期见 domain/interruption.dart）。
 // 一次只出现一件，先后是节日动画、没揭晓的奖品、新信（节日只有那一天，信两周内都能弹）。
+// [人工决策-2026-11-05 17:18:44] 用户要求自动同步的课表冲突按同一套打扰时机弹出：排在奖品之后、新信之前（关乎自己的课表，比信要紧；节日只有那一天）。
 // 业务条件在这里：每次回到前台最多出现一件；从快捷入口进来的那次前台不出现（用户有明确要做的事）；在上下课安静期里不出现，安静期一结束再提醒组合根看一眼。
 // 界面条件在组合根（main.dart 的 _promptMoment）：只在底栏四个根页、没有弹窗弹层、协议与政策已同意且没有待弹的提示、开屏走完，停稳一会儿再出现。
 class AppMoments extends ChangeNotifier {
-  AppMoments({this.notes, this.festivals, required this.timetable, DateTime Function()? clock}) : _clock = clock ?? DateTime.now {
+  AppMoments({this.notes, this.festivals, this.autoSync, required this.timetable, DateTime Function()? clock}) : _clock = clock ?? DateTime.now {
     _foregroundAt = _clock();
     notes?.addListener(notifyListeners);
     festivals?.addListener(notifyListeners);
+    autoSync?.addListener(notifyListeners);
   }
   final DeveloperNotes? notes;
   final Festivals? festivals;
+  final AutoSync? autoSync;
   // 今天的课（当前账号本机课表，只读本地）；未登录或缺开学日、作息时为空，也就没有安静期。
   final Future<CampusTimetable> Function() timetable;
   final DateTime Function() _clock;
@@ -90,10 +101,11 @@ class AppMoments extends ChangeNotifier {
     return candidate;
   }
 
-  AppMoment? get _candidate => switch ((festivals?.due, festivals?.unrevealed, notes?.letter)) {
-    (final occasion?, _, _) => CelebrationMoment(occasion),
-    (_, final prize?, _) => RewardMoment(prize),
-    (_, _, final letter?) => NoteLetterMoment(letter),
+  AppMoment? get _candidate => switch ((festivals?.due, festivals?.unrevealed, autoSync?.held.firstOrNull, notes?.letter)) {
+    (final occasion?, _, _, _) => CelebrationMoment(occasion),
+    (_, final prize?, _, _) => RewardMoment(prize),
+    (_, _, final held?, _) => SyncConflictMoment(held),
+    (_, _, _, final letter?) => NoteLetterMoment(letter),
     _ => null,
   };
 
@@ -104,7 +116,7 @@ class AppMoments extends ChangeNotifier {
     switch (moment) {
       case CelebrationMoment(:final occasion):
         unawaited(festivals?.markPlayed(occasion));
-      case RewardMoment():
+      case RewardMoment() || SyncConflictMoment():
         break;
       case NoteLetterMoment(:final note):
         unawaited(notes?.markLetterShown(note));
@@ -116,6 +128,7 @@ class AppMoments extends ChangeNotifier {
     _quiet?.cancel();
     notes?.removeListener(notifyListeners);
     festivals?.removeListener(notifyListeners);
+    autoSync?.removeListener(notifyListeners);
     super.dispose();
   }
 }

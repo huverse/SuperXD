@@ -135,7 +135,7 @@ void main() {
   });
 
   for (final version in [1, 2]) {
-    test('显式 v$version 库升级 v7 保留原数据且不自动写 owner，补建提醒设置表', () async {
+    test('显式 v$version 库升到当前版本保留原数据且不自动写 owner，补建提醒设置与自动同步的表', () async {
       final directory = await Directory.systemTemp.createTemp('account-version-');
       final file = '${directory.path}/test.db';
       var database = await AppDatabase.open(databasePath: file);
@@ -158,10 +158,12 @@ void main() {
       expect(await database.termStartDate(_term.xn, _term.xq), '2026-08-31');
       await database.close();
       final upgraded = await openReadOnlyDatabase(file, singleInstance: false);
-      expect(await upgraded.getVersion(), 7);
+      expect(await upgraded.getVersion(), 8);
       expect(await upgraded.query('account_owner'), isEmpty);
       expect(await upgraded.query('legacy_import_marker'), isEmpty);
       expect(await upgraded.query('reminder_setting'), isEmpty);
+      expect(await upgraded.query('schedule_sync_hold'), isEmpty);
+      expect(await upgraded.query('auto_sync'), isEmpty);
       await upgraded.close();
       await directory.delete(recursive: true);
     });

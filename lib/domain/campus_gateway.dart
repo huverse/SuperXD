@@ -1,3 +1,4 @@
+import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/schedule_store.dart';
 
 class GatewayError {
@@ -242,4 +243,17 @@ abstract class CampusGateway {
   // 只读写本机账号库；未设置过时返回 ReminderSetting.initial。
   Future<GatewayResult<ReminderSetting>> readReminderSetting(TermRef term);
   Future<GatewayResult<ReminderSetting>> saveReminderSetting(TermRef term, ReminderSetting setting);
+  // 逐项合并教务课表（人工决策见 domain/auto_sync.dart）：同一事务里核对 head，先记一版教务同步（下次的基准），合并结果不同时再记一版我的修改。
+  Future<GatewayResult<RevisionView>> commitScheduleMerge(TermRef term, List<CourseRecord> courses, List<CourseRecord> merged, String summary, {required String? expectedRevisionId});
+  // 和本地改过的课表冲突的教务课表：dismissed 为真是用户选了保留本地（同一份教务课表不再提醒），为假是留到打扰时机再问；
+  // 返回之后还等不等用户来选（选过保留本地的同一份仍是 false）。教务课表落成新版本时同一学期的这一条随之删掉。
+  Future<GatewayResult<bool>> holdScheduleSync(TermRef term, List<CourseRecord> courses, {required bool dismissed});
+  Future<GatewayResult<List<HeldScheduleSync>>> readHeldScheduleSyncs();
+  // 自动同步用（登录过期时不打断、只暂停，人工决策见 domain/auto_sync.dart）：body 期间教务说会话失效也不丢本机会话，
+  // 用户照常看本机数据、下次冷启动不被挡在登录页，手动操作时才按原规则重新登录。body 期间恢复成新会话的照新的。
+  Future<T> keepSessionDuring<T>(Future<T> Function() body);
+  // 自动同步的设置与上次结果，只读写本机账号库；没设置过时是关着的默认值。
+  Future<GatewayResult<AutoSyncView>> readAutoSync();
+  Future<GatewayResult<AutoSyncSetting>> saveAutoSyncSetting(AutoSyncSetting setting);
+  Future<GatewayResult<AutoSyncStatus>> recordAutoSync(AutoSyncStatus status);
 }

@@ -26,7 +26,10 @@
     - account_owner：库的归属，只有一行。
     - legacy_import_marker：旧库导入完成标记。
     - reminder_setting：课前提醒设置，每学期一行（v6 新增；v7 加状态栏胶囊开关 live，默认关闭）。
-  - 课表写入（saveSchedule、syncSchedule、restoreRevision）在同一事务内完成：
+    - schedule_sync_hold：和本地改过的课表冲突、等用户来选的教务课表（v8 新增），每学期最多一行，dismissed 为选过保留本地（同一份不再等）；教务课表落成新版本时在同一事务里删掉。
+    - auto_sync：自动同步的设置与上次结果（v8 新增），只有一行。
+  - 课表写入（saveSchedule、syncSchedule、mergeSchedule、restoreRevision）在同一事务内完成：
+    - mergeSchedule 一次写两版：先教务同步（下次三方合并的基准，latestEduCourses 走 (xn, xq, source, sequence) 索引取最近一版），合并结果不同时再写一版我的修改。
     1. 读取 head，核对 expectedRevisionId。
     2. 写入新版本并更新 head。
     3. 裁剪到每学期 100 版，当前 head 与最近一次教务基线受保护。
@@ -83,7 +86,7 @@
 # 测试
 
 - 账号库与旧库：account_store_test.dart、account_isolation_test.dart、legacy_import_test.dart。
-- 课表与作息持久化：schedule_version_test.dart、schedule_migration_test.dart、bells_persistence_test.dart。
+- 课表与作息持久化：schedule_version_test.dart、schedule_migration_test.dart、bells_persistence_test.dart；等用户来选的教务课表、自动同步设置与 v8 升级：auto_sync_test.dart。
 - 显示设置与壁纸：appearance_settings_test.dart、wallpaper_test.dart；开屏画作的轮换与保存：painting_test.dart；应用更新检查记录：app_update_test.dart；开发者的话的本机记录：developer_notes_test.dart；节日的本机记录：festival_test.dart；协议已读记录：legal_page_test.dart；本机日志与开发者设置：diagnostic_log_test.dart。
 
 # 人工决策检索
