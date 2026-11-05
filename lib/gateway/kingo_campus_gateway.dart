@@ -8,6 +8,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:superxd/gateway/kingo_auth.dart';
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/edu/parse_grades.dart';
+import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/app_database.dart';
@@ -348,11 +349,46 @@ class KingoCampusGateway implements CampusGateway {
     return _ok(_revision(row), source: row.source, fetchedAt: row.createdAt);
   });
 
+  // 冲突时带上三方合并的基准（最近一次教务同步的版本），不冲突时不多读。
   @override
-  Future<GatewayResult<SyncPlan>> planScheduleSync(TermRef term, List<CourseRecord> courses) async {
-    final store = await _rules(term);
-    return _ok(store.planSync(term, courses), source: 'local', fetchedAt: _stamp());
-  }
+  Future<GatewayResult<SyncPlan>> planScheduleSync(TermRef term, List<CourseRecord> courses) => _guard(() async {
+    final plan = (await _rules(term)).planSync(term, courses);
+    if (!plan.conflict) return _ok(plan, source: 'local', fetchedAt: _stamp());
+    return _ok(SyncPlan(conflict: true, action: plan.action, message: plan.message, revisionId: plan.revisionId, base: await database.latestEduCourses(term)), source: 'local', fetchedAt: _stamp());
+  });
+
+  @override
+  Future<GatewayResult<RevisionView>> commitScheduleMerge(TermRef term, List<CourseRecord> courses, List<CourseRecord> merged, String summary, {required String? expectedRevisionId}) => _guard(() async {
+    final row = await database.mergeSchedule(term, courses, merged, summary, expectedRevisionId: expectedRevisionId, now: _stamp());
+    return _ok(_revision(row), source: row.source, fetchedAt: row.createdAt);
+  });
+
+  @override
+  Future<GatewayResult<bool>> holdScheduleSync(TermRef term, List<CourseRecord> courses, {required bool dismissed}) => _guard(() async {
+    return _ok(await database.holdSchedule(term, courses, dismissed: dismissed, now: _stamp()), source: 'local', fetchedAt: _stamp());
+  });
+
+  @override
+  Future<GatewayResult<List<HeldScheduleSync>>> readHeldScheduleSyncs() => _guard(() async => _ok(await database.heldSchedules(), source: 'local', fetchedAt: _stamp()));
+
+  @override
+  Future<GatewayResult<AutoSyncView>> readAutoSync() => _guard(() async => _ok(await database.readAutoSync(), source: 'local', fetchedAt: _stamp()));
+
+  @override
+  Future<GatewayResult<AutoSyncSetting>> saveAutoSyncSetting(AutoSyncSetting setting) => _guard(() async {
+    final years = setting.years;
+    if (!autoSyncIntervals.contains(setting.interval) || setting.contents.isEmpty || (years != null && years.isEmpty)) {
+      return _fail(GatewayCode.invalidAutoSync, '自动同步的间隔、学年或内容不在可选范围内');
+    }
+    await database.saveAutoSyncSetting(setting, now: _stamp());
+    return _ok(setting, source: 'user', fetchedAt: _stamp());
+  });
+
+  @override
+  Future<GatewayResult<AutoSyncStatus>> recordAutoSync(AutoSyncStatus status) => _guard(() async {
+    await database.recordAutoSync(status, now: _stamp());
+    return _ok(status, source: 'local', fetchedAt: _stamp());
+  });
 
   @override
   Future<GatewayResult<RevisionView>> commitScheduleSync(TermRef term, List<CourseRecord> courses, {required bool confirm, String? expectedRevisionId}) => _guard(() async {

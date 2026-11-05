@@ -14,6 +14,74 @@ void main() {
   String newId() => 'new-${ids++}';
   setUp(() => ids = 0);
 
+  group('三方合并分清谁改的（基准是上次教务同步的版本）', () {
+    final base = [
+      _course('A', '高等数学', [_meeting(1, 1)]),
+      _course('B', '大学英语', [_meeting(2, 3)]),
+      _course('C', '线性代数', [_meeting(3, 5)]),
+      _course('D', '合成体育', [_meeting(4, 1)]),
+      _course('E', '合成思政', [_meeting(5, 1)]),
+    ];
+    // 本地：改了大学英语与线性代数，删了合成体育，加了合成自习。
+    final mine = [
+      _course('A', '高等数学', [_meeting(1, 1)]),
+      _course('B', '大学英语', [_meeting(2, 3, place: '我改的楼')]),
+      _course('C', '线性代数', [_meeting(3, 5, place: '我改的楼')]),
+      _course('E', '合成思政', [_meeting(5, 1)]),
+      CourseRecord(courseCode: '', courseName: '合成自习', sectionId: '', credit: null, teacherName: '', meetings: [_meeting(6, 1)], localId: 'local-1'),
+    ];
+    // 教务：改了高等数学与线性代数，删了合成思政，加了合成选修。
+    final theirs = [
+      _course('A', '高等数学', [_meeting(1, 1, place: '教务新楼')]),
+      _course('B', '大学英语', [_meeting(2, 3)]),
+      _course('C', '线性代数', [_meeting(3, 5, place: '教务新楼')]),
+      _course('D', '合成体育', [_meeting(4, 1)]),
+      _course('F', '合成选修', [_meeting(1, 9)]),
+    ];
+
+    test('只有教务改的、只有你改的、两边都改了的各归各', () {
+      final plan = planScheduleMerge(mine, theirs);
+      final origins = scheduleMergeOrigins(plan, base: base, mine: mine, theirs: theirs);
+      expect(origins['高等数学'], MergeOrigin.theirs);
+      expect(origins['大学英语'], MergeOrigin.mine);
+      expect(origins['线性代数'], MergeOrigin.both);
+    });
+
+    test('教务有你没有：教务新加的算教务改的，你删掉的算你改的', () {
+      final plan = planScheduleMerge(mine, theirs);
+      final origins = scheduleMergeOrigins(plan, base: base, mine: mine, theirs: theirs);
+      expect(plan.added.map((group) => group.first.courseName), containsAll(['合成体育', '合成选修']));
+      expect(origins['合成选修'], MergeOrigin.theirs);
+      expect(origins['合成体育'], MergeOrigin.mine);
+    });
+
+    test('你有教务没有：教务删掉的算教务改的，你加的算你改的', () {
+      final plan = planScheduleMerge(mine, theirs);
+      final origins = scheduleMergeOrigins(plan, base: base, mine: mine, theirs: theirs);
+      expect(plan.removed.map((group) => group.first.courseName), containsAll(['合成思政', '合成自习']));
+      expect(origins['合成思政'], MergeOrigin.theirs);
+      expect(origins['合成自习'], MergeOrigin.mine);
+    });
+
+    test('你删了、教务又改了算两边都改了；你改了、教务删了也是', () {
+      final mineDeleted = [_course('B', '大学英语', [_meeting(2, 3, place: '我改的楼')])];
+      final theirsChanged = [_course('A', '高等数学', [_meeting(1, 1, place: '教务新楼')])];
+      final baseBoth = [_course('A', '高等数学', [_meeting(1, 1)]), _course('B', '大学英语', [_meeting(2, 3)])];
+      final plan = planScheduleMerge(mineDeleted, theirsChanged);
+      final origins = scheduleMergeOrigins(plan, base: baseBoth, mine: mineDeleted, theirs: theirsChanged);
+      expect(origins['高等数学'], MergeOrigin.both);
+      expect(origins['大学英语'], MergeOrigin.both);
+    });
+
+    test('从没同步过教务（没有基准）：两边都有的算两边都改了，只有一边有的归那一边', () {
+      final plan = planScheduleMerge(mine, theirs);
+      final origins = scheduleMergeOrigins(plan, base: null, mine: mine, theirs: theirs);
+      expect(origins['高等数学'], MergeOrigin.both);
+      expect(origins['合成选修'], MergeOrigin.theirs);
+      expect(origins['合成自习'], MergeOrigin.mine);
+    });
+  });
+
   test('按课名配对：一样的算相同，只有一边有的分别是新课与要删的课', () {
     final mine = [
       _course('A', '高等数学', [_meeting(1, 1)]),

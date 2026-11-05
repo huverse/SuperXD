@@ -24,6 +24,7 @@
   - app_package_files.dart：CacheAppPackageFiles 实现 AppPackageFiles。安装包放在缓存的 app_update 文件夹（原生 FileProvider 只开放这里），只留一个版本；background_downloader 的独立命名空间 superxd_update 下载（回调与百宝箱的下载互不相干），有通知权限时以前台任务跑并在通知栏显示进度（规则同百宝箱 background_transfer.dart）；SHA-256 在后台 isolate 里算；prune 删掉版本号不高于已装版本的包与残留。
   - app_installer_channel.dart：ChannelAppInstaller 实现 AppInstaller，经通道 superxd/app_update 调原生 AppUpdateInstaller.kt：能否安装（Android 8 起要用户允许「安装未知应用」）、打开授权设置、读安装包的包名版本号并比对签名证书、以只读授权交给系统安装器。
 
+- background_sync.dart：WorkmanagerSyncScheduler 实现自动同步的后台任务端口 BackgroundSyncScheduler（人工决策见 domain/auto_sync.dart）：workmanager 插件，安卓是 WorkManager 周期任务、只在联网时跑（改间隔用 UPDATE，不重排时间），iOS 是后台刷新（标识 autoSyncTaskId 同时登记在 ios/Runner/Info.plist 与 AppDelegate.swift，时机由系统定）；入口 dispatcher 由组合根传入。只有设备实测。
 - relay_note_feed.dart：RelayNoteFeed 实现开发者的话的拉取端口 DeveloperNoteFeed：GET 自建中转的 /v1/app/notes（免签名、不带任何标识），单次 15 秒超时、响应上限 512KB、不重试；清单交给 domain 的 decodeDeveloperNotes 校验。
 - relay_reward_client.dart：RelayRewardClient 实现节日抽签端口 FestivalRewardClient：POST 自建中转的 /v1/rewards/<活动>/draw（免签名），只发参与号与近 30 天打开过的天数，单次 15 秒超时、响应上限 8KB、不重试；parseFestivalDraw 把结果当外部输入校验。
 - picture_export.dart：publishPicture 把缓存里的一张图经原生一次性导出（ToolboxFileExporter.kt，通道 superxd/toolbox_files）存进 Download/SuperXD，同名已存过直接算存好；开屏画作的「保存到相册」用，由组合根交给 local/painting_library.dart；节日奖品的「保存二维码」也经它（组合根的 saveRewardPicture）。

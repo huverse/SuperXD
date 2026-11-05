@@ -1,8 +1,7 @@
+import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/gateway_code.dart';
-
-enum SyncContent { schedule, bells, grades }
 
 class SyncSelection {
   SyncSelection({required Set<String> years, required Set<SyncContent> contents})
@@ -13,6 +12,29 @@ class SyncSelection {
 }
 enum SyncOutcome { completed, skipped, failed }
 enum BellsChoice { use, next, cancel }
+
+// 教务课表和本地改过的版本冲突时怎么办（三方合并与自动同步的人工决策见 domain/auto_sync.dart）。
+sealed class ScheduleResolution {
+  const ScheduleResolution();
+}
+
+// 留着本地版本：remember 为真时记下这份教务课表、同一份不再提醒（选了保留本地、或退出合并页）；为假时留到打扰时机再问（自动同步）。
+class KeepLocal extends ScheduleResolution {
+  const KeepLocal({required this.remember});
+  final bool remember;
+}
+
+// 整份换成教务课表。
+class TakeEdu extends ScheduleResolution {
+  const TakeEdu();
+}
+
+// 逐项合并：merged 是合并后的课表，summary 写进历史版本。
+class MergeEdu extends ScheduleResolution {
+  const MergeEdu(this.merged, this.summary);
+  final List<CourseRecord> merged;
+  final String summary;
+}
 
 class SyncItemResult {
   const SyncItemResult(this.label, this.outcome, this.message, {this.code});
@@ -46,12 +68,15 @@ class CampusSync {
   CampusSync(this.gateway);
   final CampusGateway gateway;
   bool _running = false;
+  // 本进程里正在跑的同步有几轮（各实例合计）：自动同步见到有别的在跑就不开始、开始后有人手动同步就让路。
+  static int _active = 0;
+  static int get activeRuns => _active;
 
   // [人工决策-2026-09-24 21:39:35] 用户先多选学年与同步项，三类数据统一范围；跨学年作息来源仍须明确确认。
   Future<CampusSyncReport> run({
     required Set<SyncContent> contents,
     Set<String>? years,
-    required Future<bool> Function(TermRef term, String message) confirmSchedule,
+    required Future<ScheduleResolution> Function(TermRef term, SyncPlan plan, List<CourseRecord> courses) resolveSchedule,
     required Future<BellsChoice> Function(TermRef target, BellsView source) chooseBells,
     required bool Function() isActive,
     void Function(CampusSyncProgress progress)? onProgress,
@@ -59,6 +84,7 @@ class CampusSync {
     if (_running) return const CampusSyncReport([], busy: true);
     if (contents.isEmpty || years?.isEmpty == true) return const CampusSyncReport([]);
     _running = true;
+    _active++;
     final items = <SyncItemResult>[];
     try {
       // 显式同步才刷新学期，防止本地列表过期导致漏同步新学期。
@@ -104,17 +130,10 @@ class CampusSync {
             } else if (plan.data!.conflict) {
               if (!isActive()) return stop(true);
               onProgress?.call(CampusSyncProgress('等待确认$label', waitingForInput: true));
-              final confirmed = await confirmSchedule(term, plan.data!.message ?? syncOverwriteMessage);
+              final resolution = await resolveSchedule(term, plan.data!, fetched.data!.courses);
               onProgress?.call(CampusSyncProgress('正在保存$label'));
               if (!isActive()) return stop(true);
-              if (!confirmed) {
-                items.add(SyncItemResult(label, SyncOutcome.skipped, '保留本地自定义版本'));
-              } else {
-                final committed = await gateway.commitScheduleSync(term, fetched.data!.courses, confirm: true, expectedRevisionId: plan.data!.revisionId);
-                items.add(committed.ok
-                    ? SyncItemResult(label, SyncOutcome.completed, '已同步，旧版本可回退')
-                    : _failure(label, committed.error));
-              }
+              items.add(await settle(term, fetched.data!.courses, resolution, expectedRevisionId: plan.data!.revisionId));
             } else {
               // [人工决策-2026-09-25 00:19:22] 沿用学年/数据项选择；再次提交在事务内核对实时head，未提交不得报已同步。
               final committed = await gateway.commitScheduleSync(term, fetched.data!.courses, confirm: false);
@@ -156,6 +175,25 @@ class CampusSync {
       return CampusSyncReport(items, cancelled: !isActive());
     } finally {
       _running = false;
+      _active--;
+    }
+  }
+
+  // 冲突的教务课表按选择落库；同步当中与打扰时机里处理暂存的那份共用。
+  // expectedRevisionId 是比对时的当前版本（SyncPlan.revisionId），落库时在事务里核对，期间课表被改过就报冲突、不覆盖。
+  Future<SyncItemResult> settle(TermRef term, List<CourseRecord> courses, ScheduleResolution resolution, {required String? expectedRevisionId}) async {
+    final label = '课表 · ${term.label.isEmpty ? term.key : term.label}';
+    switch (resolution) {
+      case KeepLocal(:final remember):
+        final held = await gateway.holdScheduleSync(term, courses, dismissed: remember);
+        if (!held.ok || held.data == null) return _failure(label, held.error);
+        return SyncItemResult(label, SyncOutcome.skipped, held.data! ? '和你改过的课表不一样，等你来选' : '保留本地自定义版本');
+      case TakeEdu():
+        final committed = await gateway.commitScheduleSync(term, courses, confirm: true, expectedRevisionId: expectedRevisionId);
+        return committed.ok ? SyncItemResult(label, SyncOutcome.completed, '已同步，旧版本可回退') : _failure(label, committed.error);
+      case MergeEdu(:final merged, :final summary):
+        final committed = await gateway.commitScheduleMerge(term, courses, merged, summary, expectedRevisionId: expectedRevisionId);
+        return committed.ok ? SyncItemResult(label, SyncOutcome.completed, '已合并所选改动，旧版本可回退') : _failure(label, committed.error);
     }
   }
 

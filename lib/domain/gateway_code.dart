@@ -62,6 +62,8 @@ abstract final class GatewayCode {
   static const legacyImportFailed = 'LEGACY_IMPORT_FAILED';
   // 课前提醒设置不在可选档位内，原设置不变
   static const invalidReminder = 'INVALID_REMINDER';
+  // 自动同步设置不在可选范围内（间隔不是可选档位、没选内容或学年），原设置不变
+  static const invalidAutoSync = 'INVALID_AUTO_SYNC';
   // 本地数据库读写失败
   static const localStorageFailed = 'LOCAL_STORAGE_FAILED';
   // 未归类的操作失败兜底

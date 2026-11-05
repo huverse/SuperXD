@@ -24,11 +24,13 @@ class ScheduleConflict implements Exception {
 }
 
 class SyncPlan {
-  const SyncPlan({required this.conflict, required this.action, this.message, this.revisionId});
+  const SyncPlan({required this.conflict, required this.action, this.message, this.revisionId, this.base});
   final bool conflict;
   final String action;
   final String? message;
   final String? revisionId;
+  // 冲突时三方合并的基准：最近一次教务同步的版本（历史里受保护，一直在）；从没同步过教务时为空。
+  final List<CourseRecord>? base;
 }
 
 class CourseMeeting {
@@ -265,6 +267,14 @@ class ScheduleStore {
     if (plan.action == 'unchanged') return head(term);
     if (plan.action == 'needs_confirm' && !confirm) throw ScheduleConflict(plan);
     return _append(term, incoming, 'edu', '从教务同步', now, operation: 'sync');
+  }
+
+  // 逐项合并教务课表（三方合并，人工决策见 domain/auto_sync.dart）：先记一版教务同步（下次合并的基准），合并结果和它不一样时再记一版我的修改。
+  // 和 git 的合并提交一样，历史里两版都在、都能恢复。
+  List<ScheduleRevision> commitMerge(TermRef term, List<CourseRecord> incoming, List<CourseRecord> merged, String summary, String now) {
+    final synced = _append(term, incoming, 'edu', '从教务同步', now, operation: 'sync');
+    if (fingerprint(merged) == fingerprint(incoming)) return [synced];
+    return [synced, _append(term, merged, 'user', summary, now)];
   }
 
   ScheduleRevision restore(TermRef term, String revisionId, String now) {

@@ -11,6 +11,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_search_field.dart';
 import 'package:superxd/application/campus_sync.dart';
+import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/grades.dart' as grades;
@@ -248,7 +249,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
         contents: selection.contents,
         years: selection.years,
         isActive: () => _active,
-        confirmSchedule: (_, _) async => false,
+        resolveSchedule: (_, _, _) async => const KeepLocal(remember: true),
         chooseBells: (_, _) async => BellsChoice.cancel,
         onProgress: (progress) { if (_active) setState(() => _syncProgress = progress); },
       );

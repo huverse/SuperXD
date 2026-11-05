@@ -8,6 +8,12 @@
   - 先刷新学期列表，再按所选学年依次处理：先同步全部学期的课表，再逐学期同步作息和成绩；每个实例内按顺序逐项请求。
   - 页面离开、会话失效或教务限流时，在下一检查点停止；报告带出已完成项、停下前已发生的失败与未处理项。
   - 学年与数据项的选择、进度口径、未提交不报已同步，见文件内人工决策。
+  - 课表和本地改过的版本冲突时交给 resolveSchedule 决定 ScheduleResolution（KeepLocal、TakeEdu、MergeEdu），settle 落库，自动同步与打扰时机共用。activeRuns 是本进程里正在跑的轮数，自动同步据此让路。
+- auto_sync.dart：自动同步的编排 AutoSync（设备级，经账号门面跟着当前账号，人工决策见 domain/auto_sync.dart）。
+  - runIfDue：到期（autoSyncDue）且没有别的同步在跑才同步一轮，范围取设置里的学年与内容（当前学年按本机的当前学期取）；同一时刻只跑一轮，有人手动同步就在下一检查点让路。
+  - 冲突不覆盖：教务这份和上次同步的一样（只是自己改过）就悄悄保留本地、以后不问；教务确有新改动才留到打扰时机问（held）。作息来源一律不自动改。
+  - 上次结果按报告记：登录过期记 paused（不到期、不转登录页，accountChanged 时清掉）、没连上网记 network（15 分钟后可再试）、限流记 limited、其余失败记 failed 并写明哪一项。
+  - accountChanged 与 save 按设置排好或撤掉系统后台任务（端口 BackgroundSyncScheduler），系统接口出错只记日志。settle 处理打扰时机里选的结果。
 - campus_reminders.dart：课前提醒对账 CampusReminders。读本机的当前学期、提醒设置、课表与作息，展开未来 14 天的课程实例，整体替换系统里的提醒；没有当前学期（含退出登录）、未开启或没有通知权限时撤销本应用的全部课前提醒。开了状态栏胶囊且系统有实时更新时提醒发成实时更新（OPPO 流体云），[人工决策] 在类上方。
 - campus_widgets.dart：桌面课表小组件的快照 CampusWidgets。读本机的当前学期、课表与作息，展开今天起 7 天的课程实例交给小组件端口；退出登录时发布空快照，缺开学日或作息时如实提示。
 - campus_timetable.dart：campusTimetableToday 读本机的当前学期、课表与作息，展开今天的课程实例（CampusTimetable），由组合根经百宝箱运行时交给学习通签到推断正在上的课；未登录、没有学期、缺开学日或作息时给原因。只读本地、从不联网。
@@ -18,7 +24,7 @@
 
 - developer_notes.dart：开发者的话的编排 DeveloperNotes（设备级）：自动拉取间隔至少 developerNoteRefreshGap（一小时，下拉刷新不受限）、同一时刻只拉一次、失败照旧显示上次拉到的；已读与弹过记在本机（弹出一封时当时所有的信都记成弹过、只有这封记成读过）。人工决策见 domain/developer_note.dart。
 - festivals.dart：节日的编排 Festivals（设备级）：今天该播哪一次（在节日里、没播过）、启动与回到前台记今天打开过（只留近 30 天）、抽签（有抽奖、配了中转、结果没定时才抽，同一时刻只发一次；连不上不记、回到前台补抽播过的）、抽中的奖品（没揭晓的等打扰时机揭晓，节日结束后 3 天删）。参与号第一次抽签时生成。人工决策见 domain/festival.dart。
-- app_moments.dart：打扰时机 AppMoments（设备级）：一次只出现一件，先后是节日动画、没揭晓的奖品、新信；决定节日动画、新信这类不是用户要的内容什么时候出现。业务条件在这里：每次回到前台最多一件、从快捷入口进来的那次前台不出现、上下课安静期里不出现（安静期结束时提醒组合根再看一眼）；界面条件在组合根 main.dart 的 _promptMoment。next 只看不记，真的弹出来了再 begin。人工决策在类上方。
+- app_moments.dart：打扰时机 AppMoments（设备级）：一次只出现一件，先后是节日动画、没揭晓的奖品、自动同步留下的课表冲突、新信；决定节日动画、新信这类不是用户要的内容什么时候出现。业务条件在这里：每次回到前台最多一件、从快捷入口进来的那次前台不出现、上下课安静期里不出现（安静期结束时提醒组合根再看一眼）；界面条件在组合根 main.dart 的 _promptMoment。next 只看不记，真的弹出来了再 begin。人工决策在类上方。
 
 # 关键规则
 
@@ -28,7 +34,7 @@
 
 # 测试
 
-- campus_sync_test.dart、sync_ui_test.dart、transition_sync_test.dart（同步编排与同步界面）
+- campus_sync_test.dart、sync_ui_test.dart、transition_sync_test.dart（同步编排与同步界面）；auto_sync_test.dart（到期规则、账号库、自动同步编排与打扰时机的先后）；sync_merge_test.dart（合并页、手动同步流程、打扰时机弹窗、自动同步设置）
 - reminder_test.dart、home_widget_test.dart（课前提醒、小组件）；campus_timetable_test.dart（本应用课表今天的课）
 - app_update_test.dart、app_update_ui_test.dart（应用更新，替身在 app_update_fakes.dart）
 - developer_notes_test.dart（开发者的话的拉取、已读与打扰时机）；festival_test.dart（节日编排、抽签与打扰时机的先后）；account_lifecycle_test.dart（「我的」页入口与小圆点、新信在什么界面条件下弹）
@@ -38,4 +44,5 @@
 - 命令：grep -rn 人工决策- lib/application
 - campus_sync.dart：学年与数据项统一范围、进度只报已有阶段、未提交不报已同步、离开前的失败照常写入报告、限流立即停止。
 - campus_reminders.dart：状态栏胶囊（流体云）的接入方式、显示时段与胶囊内容。
-- app_moments.dart：打扰时机的业务条件。
+- app_moments.dart：打扰时机的业务条件、课表冲突排在哪。
+- 自动同步与三方合并的决定在 domain/auto_sync.dart。

@@ -13,11 +13,13 @@ import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 
+import 'package:superxd/app_background_sync.dart';
 import 'package:superxd/app_diagnostics.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/app_shortcuts.dart';
 import 'package:superxd/application/app_moments.dart';
 import 'package:superxd/application/app_updates.dart';
+import 'package:superxd/application/auto_sync.dart';
 import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/application/campus_timetable.dart';
 import 'package:superxd/application/campus_widgets.dart';
@@ -26,6 +28,7 @@ import 'package:superxd/application/festivals.dart';
 import 'package:superxd/device/app_installer_channel.dart';
 import 'package:superxd/device/app_shortcuts.dart';
 import 'package:superxd/device/app_package_files.dart';
+import 'package:superxd/device/background_sync.dart';
 import 'package:superxd/device/backup_exclusion.dart';
 import 'package:superxd/device/diagnostic_device.dart';
 import 'package:superxd/device/home_widget_publisher.dart';
@@ -54,6 +57,7 @@ import 'package:superxd/page/festival/festival_catalog.dart';
 import 'package:superxd/page/festival/festival_reward.dart';
 import 'package:superxd/page/festival/festival_stage.dart';
 import 'package:superxd/page/legal_page.dart';
+import 'package:superxd/page/sync_merge_page.dart';
 import 'package:superxd/local/credential_store.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/display_settings.dart';
@@ -176,12 +180,14 @@ void main() async {
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
   final notes = await developerNotes(support);
   final festivals = await festivalsOf(support);
+  // 自动同步（人工决策见 domain/auto_sync.dart）：设备级，经账号门面跟着当前账号；后台任务的入口与时机在 app_background_sync.dart。
+  final autoSync = AutoSync(gateway: session.gateway, scheduler: WorkmanagerSyncScheduler(autoSyncDispatcher));
   // 打扰时机（人工决策见 application/app_moments.dart）：上下课的安静期按当前账号本机今天的课算，只读本地。
-  final moments = AppMoments(notes: notes, festivals: festivals, timetable: () => campusTimetableToday(session.gateway, signedIn: session.loggedIn));
+  final moments = AppMoments(notes: notes, festivals: festivals, autoSync: autoSync, timetable: () => campusTimetableToday(session.gateway, signedIn: session.loggedIn));
   final splashed = painting != null && splashImage != null;
   final splashGone = ValueNotifier(!splashed);
   final restored = Completer<void>();
-  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, launch: launched, notes: notes, festivals: festivals, moments: moments, splashGone: splashGone);
+  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, launch: launched, notes: notes, festivals: festivals, moments: moments, autoSync: autoSync, splashGone: splashGone);
   runApp(splashed ? PaintingSplash(painting: painting, image: splashImage, ready: restored.future, onGone: () => splashGone.value = true, child: app) : app);
   unawaited(WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
     if (campusDiagnostics) campusLog('[App] action=first_frame ms=${launch.elapsedMilliseconds}');
@@ -202,6 +208,7 @@ void main() async {
   watchWidgetTheme(display, widgetPort);
   if (updates != null) watchAppUpdates(updates, agreed: legal.agreed);
   watchMoments(moments, notes: notes, festivals: festivals, agreed: legal.agreed);
+  watchAutoSync(session, autoSync, agreed: legal.agreed);
 }
 
 // 中转服务地址来自构建参数 SUPERXD_RELAY；未配置或格式不对时私信与应用更新都不可用，不猜默认地址。
@@ -360,7 +367,9 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch, this.notes, this.festivals, this.moments, this.splashGone});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch, this.notes, this.festivals, this.moments, this.autoSync, this.splashGone});
+  // 自动同步（设备级）；为空时「同步范围」里没有自动同步入口，也不会有课表冲突的打扰时机。
+  final AutoSync? autoSync;
   // 开发者的话（设备级）；为空时「我的」页不显示这一行。
   final DeveloperNotes? notes;
   // 节日（设备级）；为空时不播节日动画、「我的」页没有节日红包。
@@ -463,7 +472,7 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts, notes: widget.notes, festivals: widget.festivals, moments: widget.moments, splashGone: widget.splashGone),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts, notes: widget.notes, festivals: widget.festivals, moments: widget.moments, autoSync: widget.autoSync, splashGone: widget.splashGone),
     );
   }
 }
@@ -483,7 +492,8 @@ class _MomentObserver extends NavigatorObserver {
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.moments, this.splashGone});
+  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.moments, this.autoSync, this.splashGone});
+  final AutoSync? autoSync;
   final AppShortcuts? shortcuts;
   final DeveloperNotes? notes;
   final Festivals? festivals;
@@ -506,7 +516,7 @@ class _AccountApp extends StatefulWidget {
 }
 
 class _AccountAppState extends State<_AccountApp> {
-  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, splashGone: widget.splashGone, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, notes: widget.notes, festivals: widget.festivals, saveRewardPicture: saveRewardPicture, observers: [_MomentObserver(_onMoment)]);
+  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, splashGone: widget.splashGone, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, notes: widget.notes, festivals: widget.festivals, autoSync: widget.autoSync, saveRewardPicture: saveRewardPicture, observers: [_MomentObserver(_onMoment)]);
   late final VoidCallback _unwatchRoutes;
   late final _display = widget.display ?? DisplaySettings.memory();
 
@@ -570,6 +580,8 @@ class _AccountAppState extends State<_AccountApp> {
           await _celebrate(context, occasion);
         case RewardMoment(:final prize):
           await _reveal(context, prize);
+        case SyncConflictMoment(:final held):
+          await showHeldScheduleSync(context, autoSync: widget.autoSync!, gateway: widget.session.gateway, held: held);
         case NoteLetterMoment(:final note):
           await showDeveloperNoteLetter(context, notes: widget.notes!, note: note);
       }

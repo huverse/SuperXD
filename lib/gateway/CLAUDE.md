@@ -19,6 +19,7 @@
     - 每次尝试都新建一个 KingoAuth 和一个客户端，用尝试编号（epoch）防止旧尝试回写。
     - 成功后依次写会话、激活账号索引，再按用户选择写入或删除凭据。任何一步失败都回滚到原值。
     - 只核对（rememberWithPassword，关闭后重新开启记住账号）：以当前学号走同一套尝试与验证码流程，认证成功只写凭据，不换会话与客户端、不加代次（[人工决策] 在方法上）。
+  - restoreLocalSession：只用本机会话恢复，给后台自动同步用：恢复不了就算了，不拿记住的账号登录、不清活动账号指针、不写提示。
   - 启动恢复：
     1. 先用本地会话恢复。
     2. 失败且保存了凭据时，自动登录一次。
@@ -36,7 +37,8 @@
 - kingo_campus_gateway.dart：固定账号的 CampusGateway 实现 KingoCampusGateway。
   - 读操作只读本地库，例如 readSchedule、readGrades、readGradeYear、readBells。
   - 同步操作访问教务网络：syncTerms、syncSchedule、syncGrades、syncBells。成绩同步与其他网络同步互斥，冲突时返回 SYNC_BUSY。
-  - syncSchedule：发现本地有自定义版本时不写入，只返回确认文案；用户确认后由 planScheduleSync、commitScheduleSync 提交。
+  - syncSchedule：发现本地有自定义版本时不写入，只返回确认文案；由 planScheduleSync 判断（冲突时带上基准，最近一次教务同步的版本），再由 commitScheduleSync（整份）或 commitScheduleMerge（逐项合并）提交。
+  - holdScheduleSync、readHeldScheduleSyncs：等用户来选的教务课表；readAutoSync、saveAutoSyncSetting、recordAutoSync：自动同步的设置与上次结果，只读写本机账号库。
   - syncGrades：
     - 两份成绩页的抬头学号和学期都必须一致。
     - 学校的空成绩页没有抬头。此时要求两份都明确为空，并重新核对会话身份；已有非空缓存时不覆盖。

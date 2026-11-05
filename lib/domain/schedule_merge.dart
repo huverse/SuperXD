@@ -152,6 +152,29 @@ List<MergeItem> _diffCourse(String name, List<CourseRecord> mineGroup, List<Cour
   return items..sort((left, right) => left.field.index.compareTo(right.field.index));
 }
 
+// 教务课表与本地改过的课表冲突时，每门课的差异是谁改出来的（三方合并，人工决策见 domain/auto_sync.dart）：
+// 拿两边各自和基准（最近一次教务同步的版本）比，theirs 是只有教务改了、mine 是只有你改了、both 是两边都改了。
+enum MergeOrigin { theirs, mine, both }
+
+// 按课名一组比较（同管理课程），每门课只比一次指纹，工作量随课程数线性增长。基准为空（从没同步过教务）时当作空课表：
+// 两边都有的课算两边都改了，教务独有的算教务加的，本地独有的算你加的。键是课名（同 ScheduleMerge 里的配对）。
+Map<String, MergeOrigin> scheduleMergeOrigins(ScheduleMerge plan, {required List<CourseRecord>? base, required List<CourseRecord> mine, required List<CourseRecord> theirs}) {
+  Map<String, String> prints(List<CourseRecord> courses) => {for (final group in courseGroups(courses)) group.first.courseName.trim(): fingerprint(group)};
+  final before = prints(base ?? const []), mineNow = prints(mine), theirsNow = prints(theirs);
+  final names = {
+    for (final course in plan.changed) course.name,
+    for (final group in [...plan.added, ...plan.removed]) group.first.courseName.trim(),
+  };
+  return {
+    for (final name in names)
+      name: switch ((mineNow[name] != before[name], theirsNow[name] != before[name])) {
+        (false, _) => MergeOrigin.theirs,
+        (true, false) => MergeOrigin.mine,
+        (true, true) => MergeOrigin.both,
+      },
+  };
+}
+
 // 按勾选生成合并后的课表：勾了的改动套到自己这门课的时段上再分回教学班，勾了的「TA有我没有」整门加进来（课程标识和自己撞了的另起本地课程），
 // 勾了的「我有TA没有」整门删掉；其余原样、顺序不变。added、removed 是课名。
 List<CourseRecord> applyScheduleMerge(ScheduleMerge plan, List<CourseRecord> mine, {required Set<String> items, required Set<String> added, required Set<String> removed, required String Function() newLocalId}) {

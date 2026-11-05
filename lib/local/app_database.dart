@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:sqflite/sqflite.dart';
 
 import 'package:superxd/domain/account.dart';
+import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/local/legacy_import.dart';
 import 'package:superxd/domain/schedule_store.dart';
@@ -31,12 +32,12 @@ class AppDatabase {
 
   static Future<AppDatabase> open({String? databasePath}) async {
     if (databasePath == null) throw ArgumentError('必须显式指定数据库路径；账号数据库请使用 AccountStore');
-    final db = await openDatabase(databasePath, version: 7, onConfigure: _configure, onCreate: _create, onUpgrade: _upgrade);
+    final db = await openDatabase(databasePath, version: 8, onConfigure: _configure, onCreate: _create, onUpgrade: _upgrade);
     return AppDatabase(db);
   }
 
   static Future<AppDatabase> openForAccount({required String databasePath, required AccountIdentity identity}) async {
-    final db = await openDatabase(databasePath, version: 7, singleInstance: false,
+    final db = await openDatabase(databasePath, version: 8, singleInstance: false,
       onConfigure: (db) async {
         await _configure(db);
         // Android 会先创建 android_metadata；它不是旧业务数据，不能阻止新账号库初始化。
@@ -108,6 +109,7 @@ class AppDatabase {
       final columns = await db.rawQuery('PRAGMA table_info(reminder_setting)');
       if (!columns.any((row) => row['name'] == 'live')) await db.execute('ALTER TABLE reminder_setting ADD COLUMN live INTEGER NOT NULL DEFAULT 0');
     }
+    if (oldVersion < 8) await _createAutoSync(db);
   }
 
   static Future<void> _revisionIndexes(DatabaseExecutor db) async {
@@ -241,6 +243,34 @@ CREATE TABLE bells_cache (
     await _createAccountMetadata(db);
     await _revisionIndexes(db);
     await _createReminderSetting(db);
+    await _createAutoSync(db);
+  }
+
+  // 自动同步（人工决策见 domain/auto_sync.dart，v8 新增）：schedule_sync_hold 是和本地改过的课表冲突、等用户来选的教务课表，
+  // 每学期最多一行，教务课表落成新版本时删掉；auto_sync 是设置与上次结果，只有一行。两张表的行数都有界。
+  static Future<void> _createAutoSync(Database db) async {
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS schedule_sync_hold (
+  xn TEXT NOT NULL,
+  xq TEXT NOT NULL,
+  courses_json TEXT NOT NULL,
+  fetched_at TEXT NOT NULL,
+  dismissed INTEGER NOT NULL,
+  PRIMARY KEY (xn, xq)
+)''');
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS auto_sync (
+  id INTEGER PRIMARY KEY CHECK (id = 1),
+  enabled INTEGER NOT NULL,
+  interval_minutes INTEGER NOT NULL,
+  years_json TEXT,
+  contents_json TEXT NOT NULL,
+  last_attempt_at TEXT,
+  last_success_at TEXT,
+  last_state TEXT,
+  last_message TEXT NOT NULL DEFAULT '',
+  updated_at TEXT NOT NULL
+)''');
   }
 
   // 课前提醒设置：每学期一行，行数随学期数有界。
@@ -394,7 +424,112 @@ ON CONFLICT(xn, xq) DO UPDATE SET
     final before = store.head(term)?.id;
     if (confirm && before != expectedRevisionId) throw const RevisionConflict();
     final row = store.commitSync(term, courses, confirm: confirm, now: now)!;
+    // 教务课表落了（或本来就一样），等用户来选的那份就作废了。
+    await _releaseHold(transaction, term);
     return row.id == before ? row : await _insertRevision(transaction, row);
+  });
+
+  // 逐项合并教务课表：同 syncSchedule 在一个事务里核对 head，先记教务同步、再记合并结果（规则见 ScheduleStore.commitMerge）。
+  Future<ScheduleRevision> mergeSchedule(TermRef term, List<CourseRecord> courses, List<CourseRecord> merged, String summary, {required String? expectedRevisionId, required String now}) => _db.transaction((transaction) async {
+    final store = await _loadTermStore(transaction, term);
+    if (store.head(term)?.id != expectedRevisionId) throw const RevisionConflict();
+    final normalized = normalizeSchedule(merged);
+    validateSchedule(normalized);
+    await _releaseHold(transaction, term);
+    late ScheduleRevision last;
+    for (final row in store.commitMerge(term, courses, normalized, summary, now)) {
+      last = await _insertRevision(transaction, row);
+    }
+    return last;
+  });
+
+  // 三方合并的基准：这学期最近一次教务同步的版本（走 (xn, xq, source, sequence) 索引，只取一行）。
+  Future<List<CourseRecord>?> latestEduCourses(TermRef term) async {
+    final rows = await _db.query('schedule_revision', columns: ['courses_json'], where: "xn = ? AND xq = ? AND source = 'edu'", whereArgs: [term.xn, term.xq], orderBy: 'sequence DESC', limit: 1);
+    return rows.isEmpty ? null : coursesFromJson(jsonDecode(rows.single['courses_json'] as String));
+  }
+
+  Future<void> _releaseHold(DatabaseExecutor executor, TermRef term) => executor.delete('schedule_sync_hold', where: 'xn = ? AND xq = ?', whereArgs: [term.xn, term.xq]);
+
+  // 冲突的教务课表留着等用户来选；用户对同一份选过保留本地的不再变回等待。返回之后还等不等用户来选。
+  Future<bool> holdSchedule(TermRef term, List<CourseRecord> courses, {required bool dismissed, required String now}) => _db.transaction((transaction) async {
+    final rows = await transaction.query('schedule_sync_hold', columns: ['courses_json', 'dismissed'], where: 'xn = ? AND xq = ?', whereArgs: [term.xn, term.xq], limit: 1);
+    final existing = rows.firstOrNull;
+    if (!dismissed && existing?['dismissed'] == 1 && fingerprint(coursesFromJson(jsonDecode(existing!['courses_json'] as String))) == fingerprint(courses)) return false;
+    await transaction.insert('schedule_sync_hold', {
+      'xn': term.xn,
+      'xq': term.xq,
+      'courses_json': jsonEncode(courses.map((course) => course.toJson()).toList()),
+      'fetched_at': now,
+      'dismissed': dismissed ? 1 : 0,
+    }, conflictAlgorithm: ConflictAlgorithm.replace);
+    return !dismissed;
+  });
+
+  // 等用户来选的那几份，行数不超过学期数；学期名从 term 表补上。
+  Future<List<HeldScheduleSync>> heldSchedules() async {
+    final rows = await _db.rawQuery('''
+SELECT hold.xn, hold.xq, hold.courses_json, hold.fetched_at, term.label FROM schedule_sync_hold hold
+LEFT JOIN term ON term.xn = hold.xn AND term.xq = hold.xq
+WHERE hold.dismissed = 0 ORDER BY hold.xn DESC, hold.xq DESC
+''');
+    return [
+      for (final row in rows)
+        HeldScheduleSync(
+          term: TermRef(xn: row['xn'] as String, xq: row['xq'] as String, label: row['label'] as String? ?? ''),
+          courses: coursesFromJson(jsonDecode(row['courses_json'] as String)),
+          fetchedAt: row['fetched_at'] as String,
+        ),
+    ];
+  }
+
+  Future<AutoSyncView> readAutoSync() async {
+    final row = (await _db.query('auto_sync', where: 'id = 1', limit: 1)).firstOrNull;
+    if (row == null) return const AutoSyncView(setting: AutoSyncSetting(), status: AutoSyncStatus());
+    DateTime? moment(Object? value) => value == null ? null : DateTime.parse(value as String);
+    final years = row['years_json'] as String?;
+    return AutoSyncView(
+      setting: AutoSyncSetting(
+        enabled: row['enabled'] == 1,
+        interval: Duration(minutes: row['interval_minutes'] as int),
+        years: years == null ? null : {...(jsonDecode(years) as List).cast<String>()},
+        contents: {for (final name in (jsonDecode(row['contents_json'] as String) as List).cast<String>()) SyncContent.values.byName(name)},
+      ),
+      status: AutoSyncStatus(
+        lastAttemptAt: moment(row['last_attempt_at']),
+        lastSuccessAt: moment(row['last_success_at']),
+        state: switch (row['last_state']) { final String name => AutoSyncState.values.byName(name), _ => null },
+        message: row['last_message'] as String,
+      ),
+    );
+  }
+
+  Future<void> saveAutoSyncSetting(AutoSyncSetting setting, {required String now}) => _db.rawInsert('''
+INSERT INTO auto_sync (id, enabled, interval_minutes, years_json, contents_json, updated_at) VALUES (1, ?, ?, ?, ?, ?)
+ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, interval_minutes = excluded.interval_minutes, years_json = excluded.years_json,
+  contents_json = excluded.contents_json, updated_at = excluded.updated_at
+''', [
+    setting.enabled ? 1 : 0,
+    setting.interval.inMinutes,
+    switch (setting.years) { final years? => jsonEncode([...years]..sort()), null => null },
+    jsonEncode([for (final content in SyncContent.values) if (setting.contents.contains(content)) content.name]),
+    now,
+  ]);
+
+  // 还没存过设置时先按默认值落一行，再写结果。
+  Future<void> recordAutoSync(AutoSyncStatus status, {required String now}) => _db.transaction((transaction) async {
+    await transaction.rawInsert('INSERT INTO auto_sync (id, enabled, interval_minutes, contents_json, updated_at) VALUES (1, 0, ?, ?, ?) ON CONFLICT(id) DO NOTHING', [
+      autoSyncDefaultInterval.inMinutes,
+      jsonEncode([for (final content in const AutoSyncSetting().contents) content.name]),
+      now,
+    ]);
+    await transaction.update('auto_sync', {
+      'last_attempt_at': status.lastAttemptAt?.toUtc().toIso8601String(),
+      'last_success_at': status.lastSuccessAt?.toUtc().toIso8601String(),
+      'last_state': status.state?.name,
+      'last_message': status.message,
+      'updated_at': now,
+    }, where: 'id = 1');
   });
 
   Future<ScheduleRevision> restoreRevision(TermRef term, String id, {required String? expectedRevisionId, required String now}) => _db.transaction((transaction) async {
