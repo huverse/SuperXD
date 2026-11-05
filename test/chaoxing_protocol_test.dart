@@ -413,6 +413,7 @@ void main() {
       'locationRange': 300,
       'locationLatitude': '39.915',
       'locationLongitude': 116.404,
+      'locationText': '第一教学楼',
     });
     expect(info.needCaptcha, isTrue);
     expect(info.needFace, isTrue);
@@ -422,6 +423,7 @@ void main() {
     expect(info.locationRange, 300);
     expect(info.locationLatitude, 39.915);
     expect(info.locationLongitude, 116.404);
+    expect(info.locationText, '第一教学楼');
   });
 
   test('端到端：登录、课程、活动、preSign 与签到', () async {

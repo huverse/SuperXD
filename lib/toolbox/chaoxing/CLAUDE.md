@@ -16,6 +16,7 @@
   - chaoxing_batch.dart：多人连签 ChaoxingBatchSigning：按勾选顺序逐个签、相邻间隔 200 毫秒；选了「仍然签到」的人跳过检查；位置刚出界时收紧偏移再试；连续扫码一人失败就停队，但已签过、不在班级、登录过期只跳过这个人。
   - chaoxing_lessons.dart：课表推断：两份课表（本应用课表、学习通课表 kb.chaoxing.com）都换成今天的课 ChaoxingLessonSlot；用哪份见 ChaoxingLessonSource 的人工决策（主源加自动备用，默认本应用课表，代签账号只用它自己的学习通课表）；正在上的课（前后半小时）按课名相似度对上课程，同名多班老师对得上的优先；这节课时段里发起、仍在进行的签到算「可能正在签到」（人工决策在 chaoxingLessonActivity，不知道开始时间的不算）。周次与日界按校园时区。
   - chaoxing_location.dart：坐标模型、坐标系转换（提交口径 BD-09）、随机偏移、签到点附近取点（nearby：10 米内按面积均匀，在原口径里取、不换算）、老师坐标能否用（chaoxingUsablePoint）、出界距离的写法（chaoxingDistanceLabel）与位置负载。
+  - chaoxing_geocode.dart：按地址设点的课取老师坐标——把详情的 locationText 交给高德地理编码换成坐标（GCJ-02），经原生通道 superxd/chaoxing_geocode（ChaoxingGeocode.kt）。门槛同地图（chaoxingGeocodeAvailable，安卓 arm 加 key），iOS 恒不可用；只记有无/能否用、不记地址与坐标。测试经 chaoxingGeocodeOverrideForTests 注入（人工决策在 chaoxing_map_page.dart）。
   - chaoxing_photo.dart：拍照签到：上传前随机裁剪、旋转再裁齐（同一张照片反复用会被教师端比对出来），再传云盘拿 objectId。
   - chaoxing_qrcode.dart：课堂签到二维码的解析（SIGNIN: 内嵌串与带 enc 的链接）与过期查询（码里的 c/Code 是轮换签到码、不等于活动号时才查，人工决策在文件内）。
   - chaoxing_captcha.dart：滑块验证码：取配置与底图、按 280 宽的坐标空间提交拖动位置、换一次性 validate（按签到对象各自的会话取；三个 JSONP 接口都要带 callback）；自动找缺口 chaoxingCaptchaMatch（自写、不用模型：缺口块内部与底图逐列算归一化相关，认不准返回空，人工决策在文件内）。
@@ -71,7 +72,7 @@
 - 本应用课表经组合根注入的 ToolboxTimetable 读（application/campus_timetable.dart，只读本地、不联网），只在本机比对课名与时间，不发给学习通；不依赖教务相关的层。
 - 设备信息与 OAID 只在学习通签到时取，加密后只发给学习通，不在本机另存。OAID 库自带的电话状态、存储、写设置与广告 ID 权限在清单里移除；它带入的华为、荣耀广告标识 SDK 列在隐私政策附录一（第三方 SDK 与服务），增删这类 SDK 时同步改隐私政策。
 - 依赖仓库按组限定（android/build.gradle.kts 的 thirdPartyRepositoryGroups）：JitPack 只给 OAID 库与 uCrop，华为、荣耀仓库只给各自的组；新增走这几个仓库的依赖先登记它的组。
-- 位置：提交口径 BD-09，WGS-84、GCJ-02 先在 chaoxing_location.dart 换算，再按小范围随机偏移（超范围时收紧到 0.00001 重试一次）；手输坐标按高德 GCJ-02；坐标系尚未用真账号校准。老师设了签到点（详情的 locationLatitude、locationLongitude）时默认选中签到点 10 米内随机一点，这个点在详情给的口径里取、原样交回，不受校准影响（人工决策在 chaoxing_map_page.dart）；不做被判出界后连续提交探测距离。详情没给坐标、又是位置签到时，从签到前检查网页的 #locationLatitude/#locationLongitude 读老师坐标当后备（chaoxingActiveLocation）；老师坐标是 -1 占位或不在国内范围时一律当没有（chaoxingUsablePoint，详情与网页都过这一道）。11-05 查明 10-29 读的 #latitude/#longitude 是学生自己的签到位置（没签时 -1），曾把 (-1,-1) 当签到点；未签签到页里 #locationLatitude 是否真带老师坐标还没在进行中的签到上见过，开发者模式日志 action=teacher_point 记有无与能否用。定位只在打开位置签到时申请（仅使用期间、不后台定位）；隐私政策第四节写位置签到与记住的位置、附录一列高德 SDK，学习通同意说明为第 5 版（第 5 版写明在本机读本应用课表，人工决策在 chaoxing_page.dart 的 chaoxingConsentVersion）。
+- 位置：提交口径 BD-09，WGS-84、GCJ-02 先在 chaoxing_location.dart 换算，再按小范围随机偏移（超范围时收紧到 0.00001 重试一次）；手输坐标按高德 GCJ-02；坐标系尚未用真账号校准。老师设了签到点（详情的 locationLatitude、locationLongitude）时默认选中签到点 10 米内随机一点，这个点在详情给的口径里取、原样交回，不受校准影响（人工决策在 chaoxing_map_page.dart）；不做被判出界后连续提交探测距离。详情没给坐标、又是位置签到时，先用高德地理编码把 locationText 换成坐标（chaoxing_geocode.dart，返回 GCJ-02），换不到再退回从签到前检查网页的 #locationLatitude/#locationLongitude 读（chaoxingActiveLocation，降为最后兜底、字段仍未验）；老师坐标是 -1 占位或不在国内范围时一律当没有（chaoxingUsablePoint，详情、地理编码与网页都过这一道）。地理编码只在安卓 arm 加 key 时可用、iOS 不可用，换不到就退回手动选点与上次位置。11-05 查明 10-29 读的 #latitude/#longitude 是学生自己的签到位置（没签时 -1），曾把 (-1,-1) 当签到点；地理编码换坐标这步需真机或带 ARM 转译的模拟器加 key，本机未验。定位只在打开位置签到时申请（仅使用期间、不后台定位）；隐私政策第四节写位置签到与记住的位置、附录一列高德 SDK，学习通同意说明为第 5 版（第 5 版写明在本机读本应用课表，人工决策在 chaoxing_page.dart 的 chaoxingConsentVersion）。
 - 代签：
   - 凭据包用一次性随机密钥加密，密钥只在二维码里、不进服务器；密文经自建中转暂存，取件号一次性、10 分钟过期、取走即删；出示方换码或离开出示页即作废上一张（[人工决策] 见服务端 chaoxing_pack.service.ts）。
   - 投递、取件与作废各 15 秒超时、密文上限 2KB，除时钟偏差校正后的一次重发外不重试。

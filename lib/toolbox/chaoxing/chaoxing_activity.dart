@@ -172,6 +172,7 @@ ChaoxingActiveInfo chaoxingActiveInfoFrom(Map<String, Object?> data) {
     locationRange: chaoxingInt(data['locationRange']),
     locationLatitude: usable ? latitude : null,
     locationLongitude: usable ? longitude : null,
+    locationText: chaoxingString(data['locationText']),
     signInId: chaoxingInt(data['signInId']) == 0 ? null : chaoxingInt(data['signInId']),
     signOutId: chaoxingInt(data['signOutId']) == 0 ? null : chaoxingInt(data['signOutId']),
     signOutPublishTime: chaoxingTimestamp(

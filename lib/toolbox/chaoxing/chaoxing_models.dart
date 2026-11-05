@@ -253,6 +253,7 @@ class ChaoxingActiveInfo {
     this.locationRange = 0,
     this.locationLatitude,
     this.locationLongitude,
+    this.locationText = '',
     this.signInId,
     this.signOutId,
     this.signOutPublishTime,
@@ -276,6 +277,9 @@ class ChaoxingActiveInfo {
   final int locationRange;
   final double? locationLatitude;
   final double? locationLongitude;
+
+  // 老师设的签到地址文字（locationText）。按地址设点的课详情不给坐标，只给这个；拿它去地理编码换坐标。
+  final String locationText;
 
   // 非空表示本活动是签退活动，指向它的主签到活动。
   final int? signInId;

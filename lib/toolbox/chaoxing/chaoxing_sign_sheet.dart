@@ -23,6 +23,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_code_cells.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_face.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_face_sheet.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_geocode.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_gesture_field.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_image_pick.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
@@ -155,8 +156,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       // 老师设了签到点就选它 10 米内随机一点 → 这门课上次签到用的 → 上次签到用的；都没有时嵌着的地图拿当前位置。
       // 地图用不了时签到点附近预填进经纬度框，收藏退回最近用过的那个。
       final remembered = await widget.controller.signedLocation(_activity);
-      // 老师设了位置但详情没回坐标：去签到前检查的网页读一次（这类课的坐标只在那张网页里）。读不到就当没有，退回手动选点。
-      final teacherPoint = info.needLocation && info.locationLatitude == null ? await _teacherLocation() : null;
+      // 老师设了位置但详情没回坐标（按地址设点）：先把地址做地理编码换坐标，换不到再退回从签到前检查网页读。
+      final teacherPoint = info.needLocation && info.locationLatitude == null ? await _resolveTeacherPoint(info) : null;
       if (!mounted) return;
       setState(() {
         _info = info;
@@ -311,7 +312,15 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     return ChaoxingLocation(latitude: latitude, longitude: longitude, address: '', system: ChaoxingCoordinateSystem.bd09);
   }
 
-  // 从签到前检查的网页读老师坐标；只记日志、不打断打开签到页（读不到就退回手动选点）。
+  // 按地址设点的课取老师坐标：先地理编码（地址→坐标，高德，口径 GCJ-02），换不到再退回从签到前检查网页读
+  //（那条网页读的字段还没在进行中的签到上验过，只当最后兜底）。都不打断打开签到页，读不到退回手动选点与上次位置。
+  Future<ChaoxingLocation?> _resolveTeacherPoint(ChaoxingActiveInfo info) async {
+    final geocoded = await chaoxingResolveTeacherGeocode(info.locationText);
+    if (geocoded != null) return geocoded;
+    return _teacherLocation();
+  }
+
+  // 从签到前检查的网页读老师坐标；只记日志、不打断打开签到页。
   Future<ChaoxingLocation?> _teacherLocation() async {
     try {
       return await widget.controller.activeLocation(_activity);
