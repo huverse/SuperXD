@@ -139,6 +139,36 @@ void main() {
     );
   });
 
+  // 11-05 真机：服务端出界回的是中文，距离上千万米时是科学计数法；以前认不出，原文直接丢给用户、也没收紧重试。
+  test('中文的出界回复认成出界，距离写成米或公里', () {
+    for (final (body, distance, message) in [
+      ('不在可签到范围内，距教师指定签到地点1.2583166609925E7米', '1.2583166609925E7', '位置不在签到范围内，距离签到点约 12583 公里'),
+      ('签到失败，不在可签到范围内，距教师指定签到地点 312.6 米', '312.6', '位置不在签到范围内，距离签到点约 313 米'),
+      ('不在可签到范围内', null, '位置不在签到范围内'),
+      ('errorLocation_2345.6', '2345.6', '位置不在签到范围内，距离签到点约 2.3 公里'),
+    ]) {
+      expect(
+        () => chaoxingSignOutcome(body),
+        throwsA(isA<ChaoxingFailure>()
+            .having((failure) => failure.code, 'code', ChaoxingFailureCode.wrongPosition)
+            .having((failure) => failure.payload, 'payload', distance)
+            .having((failure) => failure.message, 'message', message)),
+        reason: body,
+      );
+    }
+  });
+
+  test('老师坐标是 -1 占位或不在国内范围时当没给', () {
+    ChaoxingActiveInfo info(Object? latitude, Object? longitude) =>
+        chaoxingActiveInfoFrom({'ifopenAddress': 1, 'locationLatitude': latitude, 'locationLongitude': longitude});
+    for (final (latitude, longitude) in [(-1, -1), ('-1', '-1'), (0, 0), ('', ''), (117.36, 36.68), (36.68, null)]) {
+      final parsed = info(latitude, longitude);
+      expect((parsed.locationLatitude, parsed.locationLongitude), (null, null), reason: '$latitude,$longitude');
+    }
+    final parsed = info('36.680000', 117.36);
+    expect((parsed.locationLatitude, parsed.locationLongitude), (36.68, 117.36));
+  });
+
   test('各签到类型的提交参数', () {
     const location = ChaoxingLocation(latitude: 39.915, longitude: 116.404, address: '教学楼');
 

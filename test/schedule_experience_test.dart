@@ -37,6 +37,10 @@ const bells = [
   BellPeriod(period: 4, dayPart: '', dayPartCode: '', start: '10:55', end: '11:40'),
 ];
 CourseRecord course(int start, int end, {String name = '课程'}) => CourseRecord(courseCode: 'C$start', courseName: name, sectionId: 'S$start', credit: 1, teacherName: '老师', meetings: [CourseMeeting(weekday: 1, periodStart: start, periodEnd: end, place: '教室', weeks: [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18])]);
+// 点月份的用例用已经过去的学期：所看的日期落在学期外、固定选第 1 周，打开时展开的总是 8 月，9 到 12 月都收着，点哪个月都不随今天变
+//（学期里的「本月」会变：11-02 起本月成了 11 月，用例再点 11 月就成了收起，两条横条用例因此红）。2025-08-25 是周一。
+const _pastTermStart = '2025-08-25';
+
 Widget app(Widget child) => MaterialApp(theme: campusTheme(), locale: const Locale('zh', 'CN'), supportedLocales: const [Locale('zh', 'CN')], localizationsDelegates: GlobalMaterialLocalizations.delegates, home: Scaffold(body: child));
 
 void main() {
@@ -562,7 +566,7 @@ void main() {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(320, 900);
     addTearDown(tester.view.reset);
-    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway())));
+    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway(start: _pastTermStart))));
     await tester.pumpAndSettle();
     final pages = find.byType(PageView);
     final dayTop = tester.getTopLeft(pages).dy;
@@ -582,9 +586,7 @@ void main() {
     final termTop = tester.getTopLeft(pages).dy;
     expect(find.textContaining('月'), findsWidgets);
     // 横条打开后所看的那周滑进屏幕（10-31 模拟器上第一次打开时停在开头没滑：天视图里各周收着，格子还没建出来就当成滚过了）。
-    final today = campusToday();
-    final inTerm = today.compareTo('2026-08-31') >= 0 && today.compareTo(weekRange('2026-08-31', 18).end) <= 0;
-    final selectedWeek = tester.getRect(find.textContaining(RegExp('^第${inTerm ? weekIndex('2026-08-31', today) : 1}周 ')));
+    final selectedWeek = tester.getRect(find.textContaining(RegExp('^第1周 ')));
     expect(selectedWeek.left, greaterThanOrEqualTo(0));
     expect(selectedWeek.right, lessThanOrEqualTo(320));
     expect(midTop, greaterThan(dayTop));
@@ -653,6 +655,9 @@ void main() {
     await switchMonth('12月', '11月');
     // 点回所看的那周所在的月：这周和展开一起滑到正中。先在 10 月里选最后一周（不依赖今天是几号），去 11 月再点回 10 月。
     await switchMonth('11月', '10月', keepsMonth: false);
+    // 10 月排在屏幕左边时最后一周可能在屏幕外，先滑进来再点。
+    await tester.ensureVisible(find.textContaining(RegExp(r'^第\d+周 10/')).last);
+    await tester.pumpAndSettle();
     await tester.tap(find.textContaining(RegExp(r'^第\d+周 10/')).last);
     await tester.pumpAndSettle();
     await switchMonth('10月', '11月');
@@ -684,7 +689,7 @@ void main() {
     addTearDown(tester.view.reset);
     tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
     addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
-    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway())));
+    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway(start: _pastTermStart))));
     await tester.pumpAndSettle();
     final pages = find.byType(PageView);
     await tester.tap(find.text('学期'));
@@ -709,7 +714,7 @@ void main() {
 
   // 11-01 用户要求收起的月份各周跟着空位一起收拢，不一下消失（同 Flutter ExpansionTile）。宽窗口是左侧栏。
   testWidgets('左侧栏点别的月份：原来那个月的各周照旧画着、跟着空位一起收拢，点的月份同时展开', (tester) async {
-    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway())));
+    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway(start: _pastTermStart))));
     await tester.pumpAndSettle();
     await tester.tap(find.text('学期'));
     await tester.pumpAndSettle();
@@ -740,7 +745,7 @@ void main() {
   testWidgets('减少动画时左侧栏点月份直接展开收起，不报错', (tester) async {
     tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
     addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
-    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway())));
+    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway(start: _pastTermStart))));
     await tester.pumpAndSettle();
     await tester.tap(find.text('学期'));
     await tester.pumpAndSettle();
@@ -765,8 +770,7 @@ void main() {
   });
 
   testWidgets('12月选周不触发中间月份，日期栏节点高度稳定', (tester) async {
-    final gateway = _Gateway();
-    await tester.pumpWidget(app(SchedulePage(gateway: gateway)));
+    await tester.pumpWidget(app(SchedulePage(gateway: _EveryDayGateway(start: _pastTermStart))));
     await tester.pumpAndSettle();
     final rail = find.byKey(const ValueKey('date-rail'));
     final element = tester.element(rail);
@@ -780,14 +784,14 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('12月'));
     await tester.pumpAndSettle();
-    final week = find.text('第15周\n12/7');
+    final week = find.text('第15周\n12/1');
     await tester.ensureVisible(week);
     await tester.tap(week);
     for (var index = 0; index < 5; index++) {
       await tester.pump(const Duration(milliseconds: 60));
       expect(identical(tester.element(rail), element), isTrue);
       expect(tester.getSize(rail).height, height);
-      expect(find.text('第11周\n11/9'), findsNothing);
+      expect(find.text('第11周\n11/3'), findsNothing);
     }
     expect(find.textContaining('课程'), findsWidgets);
     expect(tester.takeException(), isNull);
@@ -874,8 +878,10 @@ class _UnsyncedGateway extends _Gateway {
 
 // 每天第3–4节有课，任何运行日期都有第1–2节无课卡。
 class _EveryDayGateway extends _Gateway {
+  _EveryDayGateway({this.start = '2026-08-31'});
+  final String start;
   @override
-  Future<GatewayResult<ScheduleView>> readSchedule(ScheduleScope scope) async => GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: ScheduleView(term: term, student: const SessionView(loginId: 'test', name: '', className: ''), termStartDate: '2026-08-31', revisionId: 'rev-test', courses: [
+  Future<GatewayResult<ScheduleView>> readSchedule(ScheduleScope scope) async => GatewayResult(ok: true, source: 'local', fetchedAt: 'stamp', data: ScheduleView(term: term, student: const SessionView(loginId: 'test', name: '', className: ''), termStartDate: start, revisionId: 'rev-test', courses: [
     CourseRecord(courseCode: 'C3', courseName: '课程', sectionId: 'S3', credit: 1, teacherName: '老师', meetings: [
       for (var weekday = 1; weekday <= 7; weekday++) CourseMeeting(weekday: weekday, periodStart: 3, periodEnd: 4, place: '教室', weeks: [for (var week = 1; week <= 18; week++) week]),
     ]),

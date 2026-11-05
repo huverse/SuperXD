@@ -13,6 +13,18 @@ const _xPi = 3.14159265358979324 * 3000.0 / 180.0;
 bool _outOfChina(double latitude, double longitude) =>
     !(longitude > 73.66 && longitude < 135.05 && latitude > 3.86 && latitude < 53.55);
 
+// 学习通给的老师签到点能不能用：没签时网页与详情里是 -1 这类占位值，落在国内范围外的一律当没有（学习通只在国内用）。
+bool chaoxingUsablePoint(double? latitude, double? longitude) =>
+    latitude != null && longitude != null && !_outOfChina(latitude, longitude);
+
+// 服务端判出界时给的距离（米，可能是 1.2583E7 这样的科学计数法）写成人看的：一公里以内写米，再远写公里。
+String chaoxingDistanceLabel(String meters) {
+  final value = double.tryParse(meters);
+  if (value == null) return '$meters 米';
+  if (value < 1000) return '${value.round()} 米';
+  return '${(value / 1000).toStringAsFixed(value < 10000 ? 1 : 0)} 公里';
+}
+
 double _transformLatitude(double x, double y) {
   var ret = -100.0 + 2.0 * x + 3.0 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * sqrt(x.abs());
   ret += (20.0 * sin(6.0 * x * _pi) + 20.0 * sin(2.0 * x * _pi)) * 2.0 / 3.0;

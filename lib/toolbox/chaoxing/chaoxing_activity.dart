@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 
 const chaoxingCourseListUri = 'https://mooc1-api.chaoxing.com/mycourse/backclazzdata?view=json&rss=1';
@@ -152,29 +153,34 @@ Future<ChaoxingActiveInfo> chaoxingActiveInfo(ChaoxingClient client, int activeI
   return chaoxingActiveInfoFrom(data);
 }
 
-ChaoxingActiveInfo chaoxingActiveInfoFrom(Map<String, Object?> data) => ChaoxingActiveInfo(
-  signType: ChaoxingSignType.fromCode(chaoxingString(data['otherId'])),
-  title: chaoxingString(data['nameOne']),
-  classId: chaoxingInt(data['clazzid']),
-  courseId: chaoxingInt(data['courseId']),
-  startTime: chaoxingTimestamp(data['starttime']),
-  endTime: chaoxingTimestamp(data['endTime']),
-  needCaptcha: chaoxingInt(data['ifNeedVCode']) == 1,
-  needFace: chaoxingInt(data['openCheckFaceFlag']) == 1,
-  needLocation: chaoxingInt(data['ifopenAddress']) == 1,
-  needPhoto: chaoxingInt(data['ifphoto']) == 1,
-  refreshQrCode: chaoxingInt(data['ifrefreshewm']) == 1,
-  locationRange: chaoxingInt(data['locationRange']),
-  locationLatitude: chaoxingDouble(data['locationLatitude']),
-  locationLongitude: chaoxingDouble(data['locationLongitude']),
-  signInId: chaoxingInt(data['signInId']) == 0 ? null : chaoxingInt(data['signInId']),
-  signOutId: chaoxingInt(data['signOutId']) == 0 ? null : chaoxingInt(data['signOutId']),
-  signOutPublishTime: chaoxingTimestamp(
-    data['signOutPublishTimeStamp'],
-    none: {chaoxingNoSignOutTimestamp, -1},
-  ),
-  signCodeLength: chaoxingInt(data['numberCount']),
-);
+// 老师坐标是 -1 这类占位值或不在国内范围时两项都当没给（见 chaoxingUsablePoint），不拿它画范围圈、取签到点附近。
+ChaoxingActiveInfo chaoxingActiveInfoFrom(Map<String, Object?> data) {
+  final latitude = chaoxingDouble(data['locationLatitude']), longitude = chaoxingDouble(data['locationLongitude']);
+  final usable = chaoxingUsablePoint(latitude, longitude);
+  return ChaoxingActiveInfo(
+    signType: ChaoxingSignType.fromCode(chaoxingString(data['otherId'])),
+    title: chaoxingString(data['nameOne']),
+    classId: chaoxingInt(data['clazzid']),
+    courseId: chaoxingInt(data['courseId']),
+    startTime: chaoxingTimestamp(data['starttime']),
+    endTime: chaoxingTimestamp(data['endTime']),
+    needCaptcha: chaoxingInt(data['ifNeedVCode']) == 1,
+    needFace: chaoxingInt(data['openCheckFaceFlag']) == 1,
+    needLocation: chaoxingInt(data['ifopenAddress']) == 1,
+    needPhoto: chaoxingInt(data['ifphoto']) == 1,
+    refreshQrCode: chaoxingInt(data['ifrefreshewm']) == 1,
+    locationRange: chaoxingInt(data['locationRange']),
+    locationLatitude: usable ? latitude : null,
+    locationLongitude: usable ? longitude : null,
+    signInId: chaoxingInt(data['signInId']) == 0 ? null : chaoxingInt(data['signInId']),
+    signOutId: chaoxingInt(data['signOutId']) == 0 ? null : chaoxingInt(data['signOutId']),
+    signOutPublishTime: chaoxingTimestamp(
+      data['signOutPublishTimeStamp'],
+      none: {chaoxingNoSignOutTimestamp, -1},
+    ),
+    signCodeLength: chaoxingInt(data['numberCount']),
+  );
+}
 
 // 课程与活动列表在会话失效时返回 result=0。
 void chaoxingCheckSession(Map<String, Object?> json) {
