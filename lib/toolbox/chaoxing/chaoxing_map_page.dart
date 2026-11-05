@@ -88,6 +88,12 @@ Future<bool> _locationServiceOn() async {
 // 是学生自己的签到位置——签过的结果页里是当时提交的点（页面地图上的标记写的是学生名字），没签时是 -1 占位；10-29 那 26 场都在学校签过，才像老师坐标。
 // 改读 #locationLatitude/#locationLongitude（CofbroTeam/Doraemon 读未签签到页的字段），-1、不在国内范围的一律当没有（详情字段同样把关）；
 // 出界的中文回复也认成出界，照常收紧偏移重试一次。未签签到页里这两个框是否真带老师坐标还没在进行中的签到上见过：开发者模式日志记 action=teacher_point 的有无与能否用，下次上课核对。
+// [人工决策-2026-11-05 20:30:46] 升级「按地址设点」这类课的签到点获取（用户要求搜相关项目+实测来优化，AskUserQuestion 里选「高德原生通道」）：
+// 搜了 Superstar-checkin、Xuexitong_shuake 等成熟项目，通行做法是详情有坐标就用详情、只设地址的用 locationText 做地理编码换坐标，都不读 preSign 网页的 #locationLatitude。
+// 据此：详情没坐标时先地理编码（chaoxing_geocode.dart，高德返回 GCJ-02），换不到再退回网页读（那条降为最后兜底，字段仍未验）。
+// 推翻 10-29「不做按地址反查坐标」的理由（当时说要 web key）：改走高德原生搜索 SDK（已随 3dmap-location-search 打包），运行时经 ServiceSettings.setApiKey 复用地图的 app key，不另申请 key、不改清单、不动发版流水线。
+// 只在安卓 arm 且带 key 时可用（同地图，chaoxingGeocodeAvailable），iOS 现在没有高德、恒为不可用，退回手动选点与上次位置；iOS 要同效果须单独给 iOS 配高德 key 与搜索能力，列为后续。
+// 隐私：地理编码把老师设的地址文字发给高德（与地图同一家、同一把 key），隐私政策第四节与附录一同步写明；只记有无/能否用、不记地址与坐标。实测：地理编码换坐标这步需真机或带 ARM 转译的模拟器加 key，本机未验。
 // 高德 SDK 的合规声明与 key：地图是它唯一的用武之地，每次建地图前先按用户已同意的口径声明一次再初始化。
 void _initAmap(BuildContext context) {
   AMapInitializer.updatePrivacyAgree(const AMapPrivacyStatement(hasContains: true, hasShow: true, hasAgree: true));

@@ -45,6 +45,8 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler(chaoxingDevice)
         MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/location_settings")
             .setMethodCallHandler(LocationSettingsChannel(this))
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/chaoxing_geocode")
+            .setMethodCallHandler(ChaoxingGeocodeChannel(applicationContext))
         // 快捷入口：冷启动带来的入口 id 先记下，Dart 启动时来取（Dart 入口在 onStart 才开始跑，这里已经记好）。
         shortcuts = AppShortcuts(this).also { it.pending = it.launched(intent) }
         shortcutChannel = MethodChannel(flutterEngine.dartExecutor.binaryMessenger, "superxd/app_shortcuts").apply { setMethodCallHandler(shortcuts) }

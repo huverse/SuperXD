@@ -22,6 +22,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_activity_card.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_captcha_dialog.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_code_cells.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_geocode.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_gesture_field.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_course_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
@@ -241,6 +242,7 @@ void main() {
 
 
   tearDown(() async {
+    chaoxingGeocodeOverrideForTests = null;
     await store.close();
     await fixture.close();
   });
@@ -798,6 +800,58 @@ void main() {
     final filled = gcj02ToBd09(field('纬度'), field('经度'));
     final north = (filled.latitude - 36.6) * 111320;
     final east = (filled.longitude - 117.0) * 111320 * cos(36.6 * pi / 180);
+    expect(sqrt(north * north + east * east), lessThanOrEqualTo(10.2));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('地理编码通道：国内坐标用（GCJ-02）、占位或出界当没有、空地址不发', (tester) async {
+    const channel = MethodChannel('superxd/chaoxing_geocode');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    Map<String, Object?>? reply;
+    messenger.setMockMethodCallHandler(channel, (call) async => reply);
+    reply = {'latitude': 36.6, 'longitude': 117.0};
+    final ok = await chaoxingGeocodeTeacherPoint('合成教学楼', channel: channel);
+    expect(ok, isNotNull);
+    expect(ok!.system, ChaoxingCoordinateSystem.gcj02);
+    expect((ok.latitude, ok.longitude), (36.6, 117.0));
+    reply = {'latitude': -1.0, 'longitude': -1.0};
+    expect(await chaoxingGeocodeTeacherPoint('合成教学楼', channel: channel), isNull);
+    reply = null;
+    expect(await chaoxingGeocodeTeacherPoint('合成教学楼', channel: channel), isNull);
+    var called = false;
+    messenger.setMockMethodCallHandler(channel, (call) async {
+      called = true;
+      return null;
+    });
+    expect(await chaoxingGeocodeTeacherPoint('   ', channel: channel), isNull);
+    expect(called, isFalse);
+    messenger.setMockMethodCallHandler(channel, null);
+  });
+
+  testWidgets('按地址设点：地理编码换到坐标就画出签到点、预填其 10 米内一点', (tester) async {
+    usePhoneScreen(tester);
+    fake.activities = [
+      {'id': 501, 'type': 2, 'otherId': '4', 'nameOne': '位置签到', 'nameFour': '高等数学', 'startTime': 1760000000000, 'status': 1, 'userStatus': 0, 'ext': {'a': 1}},
+    ];
+    // 详情只给地址、不给坐标，网页也没有老师坐标：靠地理编码把地址换成坐标（这里用合成地名注入）。
+    fake.activeInfo = {'ifopenAddress': 1, 'locationRange': 100, 'locationLatitude': '', 'locationLongitude': '', 'locationText': '合成教学楼', 'signOutPublishTimeStamp': 4999};
+    fake.preSignHtml = '<script>signstatus = 0;</script>';
+    String? geocoded;
+    chaoxingGeocodeOverrideForTests = (address) async {
+      geocoded = address;
+      // 高德地理编码口径 GCJ-02。
+      return const ChaoxingLocation(latitude: 36.6, longitude: 117.0, address: '', system: ChaoxingCoordinateSystem.gcj02);
+    };
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingPage(runtime: runtime)));
+    await login(tester);
+
+    await openSignSheet(tester, button: '去签到');
+    expect(geocoded, '合成教学楼');
+    expect(find.widgetWithText(OutlinedButton, '签到点附近'), findsOneWidget);
+    // 预填的点在地理编码点（GCJ-02 36.6,117.0）10 米内。
+    double field(String label) => double.parse(tester.widget<TextField>(find.widgetWithText(TextField, label)).controller!.text);
+    final north = (field('纬度') - 36.6) * 111320;
+    final east = (field('经度') - 117.0) * 111320 * cos(36.6 * pi / 180);
     expect(sqrt(north * north + east * east), lessThanOrEqualTo(10.2));
     await tester.pumpWidget(const SizedBox());
   });
