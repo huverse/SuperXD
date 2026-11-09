@@ -271,10 +271,15 @@ class ScheduleStore {
 
   // 逐项合并教务课表（三方合并，人工决策见 domain/auto_sync.dart）：先记一版教务同步（下次合并的基准），合并结果和它不一样时再记一版我的修改。
   // 和 git 的合并提交一样，历史里两版都在、都能恢复。
+  // 合并结果就是教务这份时只记一版教务同步。教务这份和上次同步的一样（只是退回了自己的部分改动）时基准已经在了，不再重复记一版教务同步，
+  // 免得版本额度用得快一倍。
   List<ScheduleRevision> commitMerge(TermRef term, List<CourseRecord> incoming, List<CourseRecord> merged, String summary, String now) {
-    final synced = _append(term, incoming, 'edu', '从教务同步', now, operation: 'sync');
-    if (fingerprint(merged) == fingerprint(incoming)) return [synced];
-    return [synced, _append(term, merged, 'user', summary, now)];
+    if (fingerprint(merged) == fingerprint(incoming)) return [_append(term, incoming, 'edu', '从教务同步', now, operation: 'sync')];
+    // 持久化层只载入当前版本与最近一次教务同步的版本，顺序不定：按序号取最新的那版教务同步。
+    final edu = revisionsOf(term).where((row) => row.source == 'edu');
+    final baseline = edu.isEmpty ? null : edu.reduce((left, right) => left.sequence >= right.sequence ? left : right);
+    final synced = baseline != null && fingerprint(baseline.courses) == fingerprint(incoming) ? null : _append(term, incoming, 'edu', '从教务同步', now, operation: 'sync');
+    return [?synced, _append(term, merged, 'user', summary, now)];
   }
 
   ScheduleRevision restore(TermRef term, String revisionId, String now) {

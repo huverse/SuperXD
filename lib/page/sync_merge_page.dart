@@ -25,11 +25,17 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 // 合并后存成两个版本（先一版教务同步、再一版合并结果），都能在历史版本恢复；开学日与作息不动。
 
 // 手动同步遇到冲突（CampusSync 的 resolveSchedule）：先读好本机课表再打开合并页；退出合并页同以前的「保留本地」，这份教务课表不再提醒。
+// 本机课表没读到时用户没做过选择：留着这份等打扰时机再问，不记成「不再提醒」。
 Future<ScheduleResolution> resolveScheduleSync(BuildContext context, {required CampusGateway gateway, required TermRef term, required SyncPlan plan, required List<CourseRecord> edu}) async =>
-    await _openMergePage(context, gateway: gateway, term: term, plan: plan, edu: edu) ?? const KeepLocal(remember: true);
+    switch (await _openMergePage(context, gateway: gateway, term: term, plan: plan, edu: edu)) {
+      (failed: true, resolution: _) => const KeepLocal(remember: false),
+      (failed: false, :final resolution) => resolution ?? const KeepLocal(remember: true),
+    };
 
 // 打扰时机里自动同步留下的冲突：先问一句，要选的再打开合并页；按返回或点空白处是以后再说（下一个打扰时机再问）。
+// 弹之前从本机库重读一遍：手动同步过（暂存的那份已经放掉）或换过账号时就不问了，不拿旧的一份落库。
 Future<void> showHeldScheduleSync(BuildContext context, {required AutoSync autoSync, required CampusGateway gateway, required HeldScheduleSync held}) async {
+  if (await autoSync.stillHeld(held) == null || !context.mounted) return;
   final pick = await showCampusDialog<bool>(
     context: context,
     builder: (context) => CampusGlassDialog(
@@ -55,8 +61,8 @@ Future<void> showHeldScheduleSync(BuildContext context, {required AutoSync autoS
       await showCampusNotice(context, planned.error?.message ?? '读取本机课表失败，请重试');
       return;
     }
-    // 期间本地已经换回教务的版本（或手动同步过）：不再冲突，直接落这份教务课表。
-    final resolution = plan.conflict ? await _openMergePage(context, gateway: gateway, term: held.term, plan: plan, edu: held.courses) : const TakeEdu();
+    // 期间本地已经换回教务的版本：不再冲突，直接落这份教务课表（暂存的这份比那时同步的新：手动同步过会放掉暂存，弹之前已重读）。
+    final resolution = plan.conflict ? (await _openMergePage(context, gateway: gateway, term: held.term, plan: plan, edu: held.courses)).resolution : const TakeEdu();
     if (resolution == null || !context.mounted) return;
     final result = await autoSync.settle(held, resolution, expectedRevisionId: plan.revisionId);
     if (!context.mounted) return;
@@ -69,18 +75,21 @@ Future<void> showHeldScheduleSync(BuildContext context, {required AutoSync autoS
 
 String _termLabel(TermRef term) => term.label.isEmpty ? term.key : term.label;
 
-// 打开合并页，退出时返回空。本机课表读不到时说明原因、也返回空。
-Future<ScheduleResolution?> _openMergePage(BuildContext context, {required CampusGateway gateway, required TermRef term, required SyncPlan plan, required List<CourseRecord> edu}) async {
+// 打开合并页，退出时 resolution 为空。本机课表读不到、或比对之后又被改过时说明原因，failed 为真。
+// 两边看不出差别（只是课程代码这类不显示的字段不同）时没什么可选的，不打开页面，直接用教务的那份（现在的留在历史版本里）。
+Future<({ScheduleResolution? resolution, bool failed})> _openMergePage(BuildContext context, {required CampusGateway gateway, required TermRef term, required SyncPlan plan, required List<CourseRecord> edu}) async {
   final read = await gateway.readSchedule(ScheduleScope.term(term));
-  if (!context.mounted) return null;
+  if (!context.mounted) return (resolution: null, failed: true);
   final mine = read.data;
-  if (!read.ok || mine == null) {
-    await showCampusNotice(context, read.error?.message ?? '读取本机课表失败，请重试');
-    return null;
+  if (!read.ok || mine == null || mine.revisionId != plan.revisionId) {
+    await showCampusNotice(context, read.ok && mine != null ? '课表刚刚有改动，请重新同步' : read.error?.message ?? '读取本机课表失败，请重试');
+    return (resolution: null, failed: true);
   }
-  return Navigator.of(context, rootNavigator: true).push<ScheduleResolution>(
-    CampusPageRoute(builder: (_) => SyncMergePage(term: term, base: plan.base, mine: mine.courses, edu: edu)),
-  );
+  if (planScheduleMerge(mine.courses, edu).identical) return (resolution: const TakeEdu(), failed: false);
+  final route = CampusPageRoute<ScheduleResolution>(builder: (_) => SyncMergePage(term: term, base: plan.base, mine: mine.courses, edu: edu));
+  // 换账号时导航器连同这页一起销毁、不走返回，push 的结果就一直不来、同步那一轮一直挂着；completed 在页面销毁时也会完成（为空，同退出）。
+  final resolution = await Future.any([Navigator.of(context, rootNavigator: true).push(route), route.completed]);
+  return (resolution: resolution, failed: false);
 }
 
 enum _Mode { merge, replace }
@@ -137,7 +146,27 @@ class _SyncMergePageState extends State<SyncMergePage> {
     } else if (_picked == 0) {
       resolution = const KeepLocal(remember: true);
     } else {
-      final merged = applyScheduleMerge(_plan, widget.mine, items: _items, added: _added, removed: _removed, newLocalId: () => const Uuid().v4());
+      final merged = applyEduMerge(_plan, base: widget.base, mine: widget.mine, theirs: widget.edu, items: _items, added: _added, removed: _removed, newLocalId: () => const Uuid().v4());
+      // 合并出来的课表不合规（同一时段同一周重复、超过上限）时原地说明，留在这页换一种勾法，不等落库失败再整个重来。
+      try {
+        validateSchedule(normalizeSchedule(merged));
+      } on ScheduleValidation catch (error) {
+        await showCampusNotice(context, '这样合并不行：${error.message}');
+        return;
+      }
+      if (!mounted) return;
+      // 要从课表删掉的课先确认（教务这学期的课没了时，默认会删掉所有你没改过的课）。
+      if (_removed.isNotEmpty &&
+          !await showCampusConfirm(
+            context,
+            title: '删掉 ${_removed.length} 门课？',
+            message: '${_removed.join('、')}\n\n会从你的课表删掉。现在的课表留在历史版本里，可以恢复。',
+            action: '删掉',
+            destructive: true,
+          )) {
+        return;
+      }
+      if (!mounted) return;
       // 改过的与新加的课和其余课的上课时间有重叠时先说明，仍要合并才存（同好友课表导入）。
       final touched = {
         for (final course in _plan.changed)

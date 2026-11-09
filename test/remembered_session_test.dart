@@ -127,6 +127,36 @@ void main() {
       expect((await restarted.restoreLocalSession()).data?.loginId, 'A');
     });
 
+    test('自动同步里自动重登没成（要验证码）只算这一轮：之后手动同步照常再自动重登一次', () async {
+      await gateway.loginRemembered('A', 'test-secret', remember: true);
+      await enable();
+      clients.single.failure = 'SESSION_EXPIRED';
+      nextClient = () => _Client()..loginFailure = 'captcha';
+      await autoSyncOf().runIfDue();
+      expect((await gateway.readAutoSync()).data!.status.state, AutoSyncState.paused);
+      nextClient = _Client.new;
+      final manual = await gateway.syncSchedule(_term);
+      expect(manual.ok, isTrue, reason: '手动同步的那次自动重登没被自动同步用掉');
+      expect(clients, hasLength(3));
+    });
+
+    test('另一份引擎退出了这个账号（账号索引里不再是它）：不把会话写回去', () async {
+      await gateway.login('A', 'test-secret');
+      await enable();
+      final other = await AccountStore.open(directory: directory.path);
+      addTearDown(other.close);
+      final identity = (await other.currentIdentity())!;
+      final old = clients.single..failure = 'SESSION_EXPIRED';
+      old.beforeRead = () async {
+        old.beforeRead = null;
+        await other.clearCurrent();
+      };
+      await autoSyncOf().runIfDue();
+      final database = await other.openAccount(identity);
+      addTearDown(database.close);
+      expect(await database.readSession(), isNull, reason: '退出就是退出，另一份引擎的也算');
+    });
+
     test('自动同步期间用户退出了：不把会话写回去', () async {
       await gateway.login('A', 'test-secret');
       await enable();

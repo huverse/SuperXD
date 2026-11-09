@@ -166,6 +166,8 @@ class _AutoSyncDialogState extends State<_AutoSyncDialog> {
                       ),
                     const SizedBox(height: 8),
                     Text('和你改过的课表不一样时不覆盖，会在合适的时候问你。', style: note),
+                    // 后台自动重登（用户 11-09 允许）在开关处说清楚，同隐私政策第一节。
+                    Text('开着记住账号时，登录过期会自动重新登录一次。', style: note),
                     if (defaultTargetPlatform == TargetPlatform.iOS) Text('iOS 由系统决定后台什么时候运行，可能晚于设定的间隔，打开应用时会补上。', style: note),
                     ..._status(view!.status, note),
                   ],

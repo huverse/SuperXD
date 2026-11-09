@@ -15,7 +15,7 @@
     <!-- 应用内更新：把下载并核对过的新版本安装包交给系统安装器；Android 8 起还要用户在设置里允许本应用「安装未知应用」。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <!-- 学习通签到取 OAID 的 Android_CN_OAID 会并入这些权限，应用用不到，一律移除，只走各厂商不需授权的标识服务。 -->
-    <!-- workmanager 插件为加急任务带的权限：自动同步只用周期任务、不走前台服务，用不到。 -->
+    <!-- workmanager_android 的清单为加急任务声明了这个权限：自动同步只用周期任务、不走前台服务，用不到（11-09 核实合并清单，移除前后有别）。 -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SHORT_SERVICE" tools:node="remove"/>
     <uses-permission android:name="android.permission.READ_PHONE_STATE" tools:node="remove"/>
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" tools:node="remove"/>
@@ -41,8 +41,10 @@
         android:allowNativeHeapPointerTagging="false"
         android:fullBackupContent="@xml/backup_rules"
         android:dataExtractionRules="@xml/data_extraction_rules">
+        <!-- WorkManager 的前台服务只给后台下载用（dataSync）。workmanager 插件为加急任务给它加了 shortService，自动同步只用周期任务、
+             不走前台服务，用 replace 固定成 dataSync（merge 会把两边的类型并起来）。 -->
         <service android:name="androidx.work.impl.foreground.SystemForegroundService"
-            android:foregroundServiceType="dataSync" tools:node="merge"/>
+            android:foregroundServiceType="dataSync" tools:node="merge" tools:replace="android:foregroundServiceType"/>
         <!-- 高德定位（地图页「定位到我」）的定位服务；高德是 jar 不带清单，须自己声明，缺了定位直接失败。不做后台定位，不设前台服务类型。 -->
         <service android:name="com.amap.api.location.APSService" android:exported="false"/>
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
