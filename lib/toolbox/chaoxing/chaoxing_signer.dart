@@ -289,32 +289,6 @@ Future<ChaoxingPreSignStatus> chaoxingPreSign(ChaoxingClient client, ChaoxingAct
   return status;
 }
 
-// 详情接口（getPPTActiveInfo）把 locationLatitude/Longitude 留空的位置签到（老师按地址设的位置，人工决策见 chaoxing_map_page.dart）：
-// 从签到前检查网页的隐藏输入框 #locationLatitude、#locationLongitude 读老师坐标，供画范围圈与「签到点附近」用（口径同详情，提交口径 BD-09；
-// 字段名照 CofbroTeam/Doraemon 读未签签到页的写法，它也把 -1 当没有）。不读 #latitude、#longitude：那是学生自己的签到位置——
-// 签过的结果页里是你当时提交的点（页面地图上的标记写的是学生名字），没签时是 -1 占位，10-29 误当成老师坐标，在 (-1,-1) 附近取点、出界上千万米。
-// 读不到、是占位值或不在国内范围（页面改版、不在班级、这场就没给坐标）都返回空，退回其余默认位置。只读页面、不动签到状态，也不走 analysis。
-Future<ChaoxingLocation?> chaoxingActiveLocation(ChaoxingClient client, ChaoxingActivity activity) async {
-  final response = await client.http.postForm(
-    chaoxingPreSignRequestUri(activity: activity, account: client.account!),
-    chaoxingFormBody({'ext': activity.ext}),
-    forbiddenExpired: true,
-  );
-  final rawLatitude = _preSignInputValue(response.body, 'locationLatitude');
-  final latitude = double.tryParse(rawLatitude ?? '');
-  final longitude = double.tryParse(_preSignInputValue(response.body, 'locationLongitude') ?? '');
-  final usable = chaoxingUsablePoint(latitude, longitude);
-  // 只记有没有、能不能用，不记坐标本身；真实课堂上核对这条后备是否真的拿到老师的点。
-  if (campusDiagnostics) campusLog('[Chaoxing] action=teacher_point source=page found=${rawLatitude != null} usable=$usable bytes=${response.body.length}');
-  return usable ? ChaoxingLocation(latitude: latitude!, longitude: longitude!, address: '', system: ChaoxingCoordinateSystem.bd09) : null;
-}
-
-// 取隐藏输入框的 value，id 与 value 谁先谁后都认（学习通模板两种都出现过）。
-String? _preSignInputValue(String html, String id) {
-  final element = RegExp('<input[^>]*\\bid=["\']$id["\'][^>]*>', caseSensitive: false).firstMatch(html)?.group(0);
-  return element == null ? null : RegExp('''value\\s*=\\s*["']([^"']*)["']''').firstMatch(element)?.group(1);
-}
-
 // analysis 页面里抠不到 code 时只记日志不拦签到：这两步不返回业务结果，学习通改版换了页面也不该让签到整体失败。
 Future<void> chaoxingAnalysis(ChaoxingClient client, int activeId) async {
   final page = await client.http.get(Uri.parse(chaoxingAnalysisUri).replace(
