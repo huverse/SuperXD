@@ -207,6 +207,40 @@ List<CourseRecord> applyScheduleMerge(ScheduleMerge plan, List<CourseRecord> min
   return result;
 }
 
+// 教务课表冲突的三方合并落库（人工决策见 domain/auto_sync.dart）：在逐项合并的结果上，整门都用教务的课直接换成教务的原样记录——
+// 这门课的改动全勾上了，或者你没改过（和基准一样）、只是课程代码、教学班号这类不显示的字段和教务不一样（列表里没有可勾的项）。
+// 按老师分回教学班会和教务的结构对不上（新教学班成了本地课程），下次同步就认不出「你没改过」：同一份教务每次都报冲突、教务再改时被当成两边都改了。
+// 换进来的记录和别的课的课程标识撞了另起本地课程（同 applyScheduleMerge 加课）。
+List<CourseRecord> applyEduMerge(ScheduleMerge plan, {required List<CourseRecord>? base, required List<CourseRecord> mine, required List<CourseRecord> theirs, required Set<String> items, required Set<String> added, required Set<String> removed, required String Function() newLocalId}) {
+  Map<String, List<CourseRecord>> groups(List<CourseRecord> courses) => {for (final group in courseGroups(courses)) group.first.courseName.trim(): group};
+  final before = groups(base ?? const []), own = groups(mine), edu = groups(theirs);
+  final listed = {for (final course in plan.changed) course.name, for (final group in [...plan.added, ...plan.removed]) group.first.courseName.trim()};
+  final adopt = {
+    for (final course in plan.changed)
+      if (course.items.every((item) => items.contains(item.id))) course.name,
+    for (final MapEntry(key: name, value: group) in own.entries)
+      if (!listed.contains(name) && edu[name] != null && fingerprint(group) != fingerprint(edu[name]!) && before[name] != null && fingerprint(group) == fingerprint(before[name]!)) name,
+  };
+  final merged = applyScheduleMerge(plan, mine, items: items, added: added, removed: removed, newLocalId: newLocalId);
+  if (adopt.isEmpty) return merged;
+  final kept = {for (final course in merged) if (!adopt.contains(course.courseName.trim())) courseKey(course)};
+  final result = <CourseRecord>[];
+  final placed = <String>{};
+  for (final course in merged) {
+    final name = course.courseName.trim();
+    if (!adopt.contains(name)) {
+      result.add(course);
+    } else if (placed.add(name)) {
+      for (final record in edu[name]!) {
+        result.add(kept.contains(courseKey(record))
+            ? CourseRecord(courseCode: record.courseCode, courseName: record.courseName, sectionId: record.sectionId, credit: record.credit, teacherName: record.teacherName, meetings: record.meetings.map((meeting) => meeting.copy()).toList(), localId: newLocalId())
+            : record.copy());
+      }
+    }
+  }
+  return result;
+}
+
 List<CourseRecord> _applyCourse(CourseMerge course, List<MergeItem> picked, String Function() newLocalId) {
   final slots = <CourseSlot?>[...courseSlots(course.mine)];
   final extra = <CourseSlot>[];

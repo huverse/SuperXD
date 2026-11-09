@@ -42,7 +42,7 @@
   - grades_page.dart：成绩页 GradesPage：学年与学期汇总、有效成绩与原始成绩，可筛选、排序、搜索；本页只同步成绩；视图切换淡出淡入（旧内容淡出后才换数据）。筛选是一行「搜索框 + 筛选按钮」，类型、范围、排序在弹层里点了就生效；成绩按行列在一张分组卡里、分数在右，不及格警示色并写明（[人工决策] 在 _filterLabel 上方与 domain/grades.dart 的 gradeFailing）；教务汇总绩点大字（_summaryFigures，缺的那一项写「—」），教务明确这学期没有成绩时只画空状态卡（_emptyGrades）、不画汇总；详情按内容高（_details）；人工决策在方法上。
 - 同步：
   - sync_selection_dialog.dart：同步范围选择 chooseSyncSelection：学年与内容都可多选，默认读本地学期列表，点刷新才联网；给了 autoSync 时底部有「自动同步」入口（今天页给，成绩页不给）。
-  - sync_merge_page.dart：教务课表冲突时选择性覆盖（人工决策见 domain/auto_sync.dart）：合并页 SyncMergePage 分「逐项合并 / 整份替换」，每门课写明是谁改的，默认只勾只有教务改的，没勾任何一项时按钮是保留我的课表，整份替换要确认；页面只交回选择，落库由同步或打扰时机做。resolveScheduleSync 给手动同步用（退出同保留本地），showHeldScheduleSync 给打扰时机用（先弹窗问，按返回是以后再说）。
+  - sync_merge_page.dart：教务课表冲突时选择性覆盖（人工决策见 domain/auto_sync.dart）：合并页 SyncMergePage 分「逐项合并 / 整份替换」，每门课写明是谁改的，默认只勾只有教务改的，没勾任何一项时按钮是保留我的课表，整份替换要确认；页面只交回选择，落库由同步或打扰时机做；落库前先校验合并结果、删课先确认，两边看不出差别时不开页面直接用教务的。resolveScheduleSync 给手动同步用（退出同保留本地，本机课表没读到时留到打扰时机再问），showHeldScheduleSync 给打扰时机用（弹之前重读暂存的那份，先弹窗问，按返回是以后再说）；页面随账号切换被销毁时也交回（同退出），同步不挂着。
   - auto_sync_dialog.dart：自动同步设置 showAutoSyncSettings：开关、间隔、学年（当前学年或指定学年）、内容（至少留一项），点了就存，最下面只读写上次的结果；样子同课前提醒设置。
   - campus_sync_dialogs.dart：同步结果弹窗 showCampusSyncReport：结果与未处理项，可重新登录或重新同步；教务限流停下时只说明约 1 分钟后再同步，不给立即重新同步。
 - 账号与设置：

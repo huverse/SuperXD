@@ -431,7 +431,9 @@ ON CONFLICT(xn, xq) DO UPDATE SET
 
   // 逐项合并教务课表：同 syncSchedule 在一个事务里核对 head，先记教务同步、再记合并结果（规则见 ScheduleStore.commitMerge）。
   Future<ScheduleRevision> mergeSchedule(TermRef term, List<CourseRecord> courses, List<CourseRecord> merged, String summary, {required String? expectedRevisionId, required String now}) => _db.transaction((transaction) async {
-    final store = await _loadTermStore(transaction, term);
+    // 连同最近一次教务同步的版本一起载入（走 (xn, xq, source, sequence) 索引、只取一行）：教务这份和它一样时不再重复记一版。
+    final baseline = (await transaction.query('schedule_revision', columns: ['id'], where: "xn = ? AND xq = ? AND source = 'edu'", whereArgs: [term.xn, term.xq], orderBy: 'sequence DESC', limit: 1)).firstOrNull?['id'] as String?;
+    final store = await _loadTermStore(transaction, term, revisionId: baseline);
     if (store.head(term)?.id != expectedRevisionId) throw const RevisionConflict();
     final normalized = normalizeSchedule(merged);
     validateSchedule(normalized);
@@ -493,12 +495,16 @@ WHERE hold.dismissed = 0 ORDER BY hold.xn DESC, hold.xq DESC
         enabled: row['enabled'] == 1,
         interval: Duration(minutes: row['interval_minutes'] as int),
         years: years == null ? null : {...(jsonDecode(years) as List).cast<String>()},
-        contents: {for (final name in (jsonDecode(row['contents_json'] as String) as List).cast<String>()) SyncContent.values.byName(name)},
+        // 库里的名字认不出（别的版本写的）时跳过那一项、状态当没有，不让读设置抛错、自动同步悄悄停掉；一项内容都不剩时退回默认。
+        contents: switch ({for (final name in (jsonDecode(row['contents_json'] as String) as List).cast<String>()) ?SyncContent.values.asNameMap()[name]}) {
+          final contents when contents.isNotEmpty => contents,
+          _ => const AutoSyncSetting().contents,
+        },
       ),
       status: AutoSyncStatus(
         lastAttemptAt: moment(row['last_attempt_at']),
         lastSuccessAt: moment(row['last_success_at']),
-        state: switch (row['last_state']) { final String name => AutoSyncState.values.byName(name), _ => null },
+        state: switch (row['last_state']) { final String name => AutoSyncState.values.asNameMap()[name], _ => null },
         message: row['last_message'] as String,
       ),
     );

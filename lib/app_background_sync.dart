@@ -28,36 +28,54 @@ import 'package:superxd/local/legal_notice_memory.dart';
 const _portName = 'superxd_auto_sync';
 // 前台收到后先回一声；这么久没回声说明登记的前台已经不在了。
 const _ackWait = Duration(seconds: 5);
-// 等前台跑完的上限，留在 WorkManager 单次 10 分钟的执行上限之内。
-const _runWait = Duration(minutes: 8);
+
+// 系统给一次后台任务的时间：iOS 的后台刷新大约 30 秒（超时系统会终止应用、以后少给机会），安卓 WorkManager 单次 10 分钟；都留出收尾的余量。
+// 到点了这一轮在下一检查点停下（同步按检查点逐项来，停下的部分下次再同步），交给前台跑时同样按它等、也按它停。
+Duration get _budget => Platform.isIOS ? const Duration(seconds: 25) : const Duration(minutes: 8);
+
+// 安卓系统把正在跑的任务叫停（取消、超时、被抢占）：这一轮在下一检查点停下。
+var _stopped = false;
+Future<void>? _headless;
 
 @pragma('vm:entry-point')
 void autoSyncDispatcher() {
-  Workmanager().executeTask((task, input) async {
-    campusLog = debugPrint;
-    try {
-      if (!await _forward()) await _runHeadless();
-    } catch (error, stack) {
-      campusLog('[AutoSync] action=background errorType=${error.runtimeType}\n$stack');
-    }
-    return true;
-  });
+  Workmanager().executeTask(
+    (task, input) async {
+      campusLog = debugPrint;
+      _stopped = false;
+      final deadline = DateTime.now().add(_budget);
+      try {
+        if (!await _forward(deadline)) await (_headless = _runHeadless(deadline));
+      } catch (error, stack) {
+        campusLog('[AutoSync] action=background errorType=${error.runtimeType}\n$stack');
+      } finally {
+        _headless = null;
+      }
+      return true;
+    },
+    // 回调一完成插件就销毁这份引擎：等这一轮停在检查点、关好账号库再返回，最多几秒，免得正写着的事务被掐断。
+    onTaskStopped: (task, reason) async {
+      _stopped = true;
+      campusLog('[AutoSync] action=background stopped=${reason.name}');
+      await _headless?.timeout(const Duration(seconds: 5), onTimeout: () {}).then((_) {}, onError: (Object _) {});
+    },
+  );
 }
 
 // 交给前台那份跑，等它跑完；返回交没交出去。
-Future<bool> _forward() async {
+Future<bool> _forward(DateTime deadline) async {
   final app = IsolateNameServer.lookupPortByName(_portName);
   if (app == null) return false;
   final reply = ReceivePort();
   final replies = StreamIterator<Object?>(reply);
   try {
-    app.send(reply.sendPort);
+    app.send([reply.sendPort, deadline.millisecondsSinceEpoch]);
     if (!await replies.moveNext().timeout(_ackWait, onTimeout: () => false)) {
-      // 登记还在、前台已经没了：撤掉过期的登记，自己跑。
-      IsolateNameServer.removePortNameMapping(_portName);
+      // 登记还在、前台已经没了：撤掉过期的登记（只撤这一个，期间前台重新登记的不动），自己跑。
+      if (IsolateNameServer.lookupPortByName(_portName) == app) IsolateNameServer.removePortNameMapping(_portName);
       return false;
     }
-    await replies.moveNext().timeout(_runWait, onTimeout: () => false);
+    await replies.moveNext().timeout(deadline.difference(DateTime.now()), onTimeout: () => false);
     campusLog('[AutoSync] action=background forwarded=true');
     return true;
   } finally {
@@ -67,7 +85,8 @@ Future<bool> _forward() async {
 }
 
 // 应用不在时自己跑一轮：路径与前台一致（iOS 的库在应用支持目录），没同意协议与政策时不联网；错误照样进本机错误记录。
-Future<void> _runHeadless() async {
+// 跑着跑着用户打开了应用（前台登记了端口）就在下一检查点让给前台，不让两份引擎同时动一个账号库、抢同一个教务会话。
+Future<void> _runHeadless(DateTime deadline) async {
   final support = await getApplicationSupportDirectory();
   if (Platform.isIOS) await databaseFactory.setDatabasesPath(path.join(support.path, 'databases'));
   final external = Platform.isAndroid ? await getExternalStorageDirectory() : null;
@@ -81,13 +100,16 @@ Future<void> _runHeadless() async {
     final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
     if (legal.agreedRevision == null) return;
     ensureCampusClock();
+    // 记住了账号的，会话过期时照常用存着的密码重新登录一次再重放（用户 11-09 允许后台自动重登，隐私政策第一节写明）。
     final gateway = AccountGateway(store: await AccountStore.open(), credentials: SecureCredentialStore());
     try {
       if (!(await gateway.restoreLocalSession()).ok) {
         campusLog('[AutoSync] action=background skipped=no_session');
         return;
       }
-      await AutoSync(gateway: gateway).runIfDue();
+      await AutoSync(gateway: gateway, generation: () => gateway.generation).runIfDue(
+        keepGoing: () => !_stopped && DateTime.now().isBefore(deadline) && IsolateNameServer.lookupPortByName(_portName) == null,
+      );
     } finally {
       await gateway.close();
     }
@@ -96,18 +118,27 @@ Future<void> _runHeadless() async {
   }
 }
 
-// 前台登记：后台任务来了就在这里跑，先回一声收到、跑完再回一声。热重启后旧登记可能还在，先撤再登。
-void _listenForBackgroundSync(AutoSync autoSync) {
+// 前台登记：后台任务来了就在这里跑（到后台任务的时限为止），先回一声收到、跑完再回一声。热重启后旧登记可能还在，先撤再登。
+// 返回重新登记的函数：前台卡过一阵、被后台任务当成不在而撤掉了登记时，回到前台再登一次。
+void Function() _listenForBackgroundSync(AutoSync autoSync) {
   final port = ReceivePort();
-  IsolateNameServer.removePortNameMapping(_portName);
-  IsolateNameServer.registerPortWithName(port.sendPort, _portName);
+  void register() {
+    if (IsolateNameServer.lookupPortByName(_portName) == port.sendPort) return;
+    IsolateNameServer.removePortNameMapping(_portName);
+    IsolateNameServer.registerPortWithName(port.sendPort, _portName);
+  }
+
+  register();
   port.listen((message) {
-    if (message is! SendPort) return;
-    message.send(true);
-    unawaited(autoSync.runIfDue().catchError((Object error, StackTrace stack) {
-      campusLog('[AutoSync] action=forwarded errorType=${error.runtimeType}\n$stack');
-    }).whenComplete(() => message.send(true)));
+    if (message case [final SendPort reply, final int deadline]) {
+      reply.send(true);
+      final until = DateTime.fromMillisecondsSinceEpoch(deadline);
+      unawaited(autoSync.runIfDue(keepGoing: () => DateTime.now().isBefore(until)).catchError((Object error, StackTrace stack) {
+        campusLog('[AutoSync] action=forwarded errorType=${error.runtimeType}\n$stack');
+      }).whenComplete(() => reply.send(true)));
+    }
   });
+  return register;
 }
 
 // 自动同步的时机：同意协议与政策之后才开始（同意之前不联网）。启动、切换账号或退出时重读设置、排好或撤掉后台任务，
@@ -121,7 +152,7 @@ void watchAutoSync(AppSession session, AutoSync autoSync, {required Future<void>
   }
 
   unawaited(agreed.then((_) {
-    _listenForBackgroundSync(autoSync);
+    final register = _listenForBackgroundSync(autoSync);
     var generation = session.generation, loggedIn = session.loggedIn;
     session.addListener(() {
       if (session.generation == generation && session.loggedIn == loggedIn) return;
@@ -130,6 +161,7 @@ void watchAutoSync(AppSession session, AutoSync autoSync, {required Future<void>
       unawaited(changed(relogin: true).catchError(report));
     });
     AppLifecycleListener(onResume: () {
+      register();
       if (session.loggedIn) unawaited(autoSync.runIfDue(foreground: true).catchError(report));
     });
     return changed(relogin: false);

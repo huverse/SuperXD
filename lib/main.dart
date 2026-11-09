@@ -181,7 +181,7 @@ void main() async {
   final notes = await developerNotes(support);
   final festivals = await festivalsOf(support);
   // 自动同步（人工决策见 domain/auto_sync.dart）：设备级，经账号门面跟着当前账号；后台任务的入口与时机在 app_background_sync.dart。
-  final autoSync = AutoSync(gateway: session.gateway, scheduler: WorkmanagerSyncScheduler(autoSyncDispatcher));
+  final autoSync = AutoSync(gateway: session.gateway, generation: () => session.generation, scheduler: WorkmanagerSyncScheduler(autoSyncDispatcher));
   // 打扰时机（人工决策见 application/app_moments.dart）：上下课的安静期按当前账号本机今天的课算，只读本地。
   final moments = AppMoments(notes: notes, festivals: festivals, autoSync: autoSync, timetable: () => campusTimetableToday(session.gateway, signedIn: session.loggedIn));
   final splashed = painting != null && splashImage != null;

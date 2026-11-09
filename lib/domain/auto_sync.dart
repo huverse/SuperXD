@@ -5,6 +5,12 @@ import 'package:superxd/domain/schedule_store.dart';
 // 和本地改过的课表冲突时不覆盖，留到打扰时机问（见 application/app_moments.dart）；登录过期时不打断、只暂停：不转登录页、本机会话留着（CampusGateway.keepSessionDuring），
 // 下次打开照常看本机数据，手动操作时才按原规则重新登录。
 // 冲突的选择性覆盖按三方合并，基准是上次教务同步的版本（见 domain/schedule_merge.dart 的 scheduleMergeOrigins）。
+// 合并页（page/sync_merge_page.dart）：默认只勾只有教务改了的，你改过的与两边都改了的先保留你的；没勾任何一项时按钮是「保留我的课表」；整份替换要确认；
+// 手动同步时退出合并页同「保留本地」，这份教务课表不再提醒（本机课表没读到时不算选过，留到打扰时机再问）。
+// [人工决策-2026-11-09 12:56:15] 允许后台自动重登（审查发现同步端口本就带「会话失效自动重登一次再重放」，后台引擎也带着记住的凭据，用户选「允许」）：
+// 记住了账号时，自动同步在后台遇到登录过期也用存着的密码重新登录一次，同手动同步；隐私政策第一节与自动同步设置里写明（明文、用当时连着的网络），
+// 修订号加一提示老用户。没记住账号的照旧只暂停。其余审查发现按用户「按最佳实践全部优化」修：一轮同步中途换账号就停下、不记结果；
+// 给手动同步让路不记成成功；手动同步等让路的那轮收尾再发请求；后台任务有时限（iOS 后台刷新约 30 秒）与叫停；打扰时机用之前重读暂存的那份。
 
 // 同步的数据项，手动同步与自动同步共用。
 enum SyncContent { schedule, bells, grades }
@@ -59,10 +65,11 @@ class AutoSyncView {
 }
 
 // 到没到该自动同步的时候：开着，离上次尝试过了间隔（网络没连上的那次只隔 autoSyncNetworkRetry）；登录过期暂停时后台不到期，foreground（用户打开着应用）才照间隔试。
+// 上次尝试的时刻比现在还晚（系统时间曾被调到以后又改回来）就当到期，不然要一直等到那个时刻。
 bool autoSyncDue(AutoSyncView view, DateTime now, {bool foreground = false}) {
   final status = view.status, last = status.lastAttemptAt;
   if (!view.setting.enabled || (status.state == AutoSyncState.paused && !foreground)) return false;
-  if (last == null) return true;
+  if (last == null || last.isAfter(now.add(autoSyncSlack))) return true;
   final gap = status.state == AutoSyncState.network ? autoSyncNetworkRetry : view.setting.interval - autoSyncSlack;
   return !now.isBefore(last.add(gap));
 }
@@ -81,10 +88,10 @@ abstract interface class BackgroundSyncScheduler {
   Future<void> cancel();
 }
 
-// 离下一次到期还有多久（排后台任务的第一次用）：没尝试过或已经到期时为零。
+// 离下一次到期还有多久（排后台任务的第一次用）：没尝试过或已经到期时为零，最长一个间隔（上次尝试的时刻比现在晚时同 autoSyncDue 按到期算）。
 Duration autoSyncDelay(AutoSyncView view, DateTime now) {
   final last = view.status.lastAttemptAt;
-  if (last == null) return Duration.zero;
+  if (last == null || last.isAfter(now.add(autoSyncSlack))) return Duration.zero;
   final left = last.add(view.setting.interval).difference(now);
   return left.isNegative ? Duration.zero : left;
 }

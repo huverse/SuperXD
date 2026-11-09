@@ -57,6 +57,13 @@ void main() {
       expect(autoSyncDelay(view(last: now.subtract(const Duration(hours: 6))), now), const Duration(hours: 18));
       expect(autoSyncDelay(view(last: now.subtract(const Duration(days: 3))), now), Duration.zero);
     });
+
+    test('上次尝试的时刻比现在还晚（系统时间被调到以后又改回来）：当作到期、后台任务马上排；只早一点的叫醒不算', () {
+      final future = view(last: now.add(const Duration(days: 300)));
+      expect(autoSyncDue(future, now), isTrue);
+      expect(autoSyncDelay(future, now), Duration.zero);
+      expect(autoSyncDue(view(last: now.add(const Duration(minutes: 10))), now), isFalse);
+    });
   });
 
   group('账号库', () {
@@ -111,6 +118,35 @@ void main() {
       final saved = await gateway.commitScheduleMerge(_term, _courses('教务新楼'), _courses('教务新楼'), '合并', expectedRevisionId: head);
       expect(saved.data!.source, 'edu');
       expect((await gateway.listScheduleRevisions(_term)).data!.length, 3);
+    });
+
+    test('教务这份和上次同步的一样（只退回自己的部分改动）：不再重复记一版教务同步', () async {
+      final head = await eduThenUser();
+      final saved = await gateway.commitScheduleMerge(_term, _courses('教务楼'), _courses('合并后的楼'), '合并教务课表：改 1 门', expectedRevisionId: head);
+      expect(saved.data!.source, 'user');
+      expect((await gateway.listScheduleRevisions(_term)).data!.map((row) => row.source), ['user', 'user', 'edu']);
+      expect((await database.latestEduCourses(_term))!.single.meetings.single.place, '教务楼');
+    });
+
+    test('暂存的那份还在不在：手动同步落成新版本后就没了（打扰时机不拿旧的一份来问）', () async {
+      final head = await eduThenUser();
+      final autoSync = AutoSync(gateway: gateway, clock: () => now);
+      await gateway.holdScheduleSync(_term, _courses('教务新楼'), dismissed: false);
+      final held = (await gateway.readHeldScheduleSyncs()).data!.single;
+      expect(await autoSync.stillHeld(held), isNotNull);
+      await database.syncSchedule(_term, _courses('教务再新楼'), confirm: true, expectedRevisionId: head, now: 'c');
+      expect(await autoSync.stillHeld(held), isNull);
+    });
+
+    test('库里有认不出的名字（别的版本写的）：跳过那一项、状态当没有，不抛错', () async {
+      await gateway.saveAutoSyncSetting(const AutoSyncSetting(enabled: true, contents: {SyncContent.schedule}));
+      final raw = await openDatabase('${directory.path}/account.db', singleInstance: false);
+      await raw.update('auto_sync', {'contents_json': '["schedule","later"]', 'last_state': 'later'});
+      expect((await database.readAutoSync()).setting.contents, {SyncContent.schedule});
+      expect((await database.readAutoSync()).status.state, isNull);
+      await raw.update('auto_sync', {'contents_json': '["later"]'});
+      await raw.close();
+      expect((await database.readAutoSync()).setting.contents, const AutoSyncSetting().contents, reason: '一项都不剩时退回默认');
     });
 
     test('合并时课表已被改过：报冲突、一版都不写', () async {
@@ -285,6 +321,83 @@ void main() {
       await autoSync.runIfDue();
       await yielded;
       expect(gateway.synced, hasLength(1), reason: '第二学期不再同步');
+    });
+
+    test('同步中途换了账号：剩下的不同步、这一轮的结果不记（不落到新账号）', () async {
+      var generation = 0;
+      autoSync = AutoSync(gateway: gateway, generation: () => generation, scheduler: scheduler, clock: () => now);
+      gateway.autoSyncSetting = const AutoSyncSetting(enabled: true, years: {'2026', '2025'}, contents: {SyncContent.schedule, SyncContent.grades});
+      gateway.onSchedule = () async {
+        gateway.onSchedule = null;
+        generation++;
+      };
+      await autoSync.runIfDue();
+      expect(gateway.synced, hasLength(1), reason: '第二学期不再同步');
+      expect(gateway.gradeTerms, isEmpty);
+      expect(gateway.autoSyncStatus.lastSuccessAt, isNull);
+      expect(gateway.autoSyncStatus.state, isNull, reason: '换账号后不记这一轮的结果');
+    });
+
+    test('换账号时旧的一轮还没停：新账号的到期检查等它停下再看，不被并进旧的那一轮', () async {
+      var generation = 0;
+      autoSync = AutoSync(gateway: gateway, generation: () => generation, scheduler: scheduler, clock: () => now);
+      gateway.autoSyncSetting = const AutoSyncSetting(enabled: true, contents: {SyncContent.schedule});
+      Future<void>? second;
+      gateway.onSchedule = () async {
+        gateway.onSchedule = null;
+        generation++;
+        // 新账号从没自动同步过。
+        gateway.autoSyncStatus = const AutoSyncStatus();
+        second = autoSync.runIfDue();
+      };
+      await autoSync.runIfDue();
+      await second;
+      expect(gateway.termCalls, 2, reason: '新账号又跑了一轮');
+    });
+
+    test('给手动同步让路没做完：不记成成功，上次的结果照旧', () async {
+      gateway.autoSyncStatus = AutoSyncStatus(lastAttemptAt: now.subtract(const Duration(days: 2)), state: AutoSyncState.failed, message: '合成的上次失败');
+      gateway.autoSyncSetting = const AutoSyncSetting(enabled: true, years: {'2026', '2025'}, contents: {SyncContent.schedule});
+      Future<CampusSyncReport>? manual;
+      gateway.onSchedule = () async {
+        gateway.onSchedule = null;
+        manual = CampusSync(gateway).run(contents: {SyncContent.grades}, years: {'2026'}, isActive: () => true, resolveSchedule: (_, _, _) async => const KeepLocal(remember: true), chooseBells: (_, _) async => BellsChoice.cancel);
+      };
+      await autoSync.runIfDue();
+      await manual;
+      expect(gateway.autoSyncStatus.lastAttemptAt, now);
+      expect(gateway.autoSyncStatus.lastSuccessAt, isNull);
+      expect((gateway.autoSyncStatus.state, gateway.autoSyncStatus.message), (AutoSyncState.failed, '合成的上次失败'));
+    });
+
+    test('手动同步碰上正在跑的自动同步：等它把手上的请求收完再发，不撞上', () async {
+      gateway.autoSyncSetting = const AutoSyncSetting(enabled: true, contents: {SyncContent.schedule});
+      Future<CampusSyncReport>? manual;
+      var termCallsWhileAutoInFlight = -1;
+      gateway.onSchedule = () async {
+        gateway.onSchedule = null;
+        manual = CampusSync(gateway).run(contents: {SyncContent.grades}, years: {'2026'}, isActive: () => true, resolveSchedule: (_, _, _) async => const KeepLocal(remember: true), chooseBells: (_, _) async => BellsChoice.cancel);
+        for (var turn = 0; turn < 10; turn++) {
+          await Future<void>.delayed(Duration.zero);
+        }
+        termCallsWhileAutoInFlight = gateway.termCalls;
+      };
+      await autoSync.runIfDue();
+      final report = await manual!;
+      expect(termCallsWhileAutoInFlight, 1, reason: '自动同步的请求还在途时，手动那轮没发请求');
+      expect(gateway.termCalls, 2);
+      expect(report.items.where((item) => item.outcome == SyncOutcome.failed), isEmpty);
+    });
+
+    test('换账号时先清掉上一个账号的暂存与设置：读不到新账号的也不留着', () async {
+      gateway.conflict = SyncPlan(conflict: true, action: 'needs_confirm', revisionId: 'mine', base: _courses('教务楼'));
+      gateway.edu = _courses('教务新楼');
+      await autoSync.runIfDue();
+      expect(autoSync.held, hasLength(1));
+      gateway.failAutoSyncRead = true;
+      await autoSync.accountChanged(signedIn: true);
+      expect(autoSync.held, isEmpty);
+      expect(autoSync.view, isNull);
     });
 
     test('教务确有新改动的冲突不覆盖，留到打扰时机问', () async {
@@ -481,7 +594,10 @@ class _Gateway extends FixtureCampusGateway {
   List<CourseRecord> edu = _courses('教务楼');
   String? failSchedule;
   Future<void> Function()? onSchedule;
+  bool failAutoSyncRead = false;
 
+  @override
+  Future<GatewayResult<AutoSyncView>> readAutoSync() async => failAutoSyncRead ? _fail(GatewayCode.localStorageFailed) : super.readAutoSync();
   @override
   Future<GatewayResult<List<TermRef>>> listTerms() async => _ok(terms);
   @override

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
@@ -71,6 +73,8 @@ class CampusSync {
   // 本进程里正在跑的同步有几轮（各实例合计）：自动同步见到有别的在跑就不开始、开始后有人手动同步就让路。
   static int _active = 0;
   static int get activeRuns => _active;
+  // 会让路的那几轮（自动同步）还没收尾的：手动同步先等它们停下再发请求，不然撞上它在途的请求报「成绩同步进行中」。
+  static final _yielding = <Future<void>>{};
 
   // [人工决策-2026-09-24 21:39:35] 用户先多选学年与同步项，三类数据统一范围；跨学年作息来源仍须明确确认。
   Future<CampusSyncReport> run({
@@ -80,13 +84,21 @@ class CampusSync {
     required Future<BellsChoice> Function(TermRef target, BellsView source) chooseBells,
     required bool Function() isActive,
     void Function(CampusSyncProgress progress)? onProgress,
+    bool yields = false,
   }) async {
     if (_running) return const CampusSyncReport([], busy: true);
     if (contents.isEmpty || years?.isEmpty == true) return const CampusSyncReport([]);
     _running = true;
     _active++;
+    final finished = Completer<void>();
+    if (yields) _yielding.add(finished.future);
     final items = <SyncItemResult>[];
     try {
+      // 自动同步见到 activeRuns 变成 2 就在下一检查点停下；等它把手上那个请求收完。
+      if (!yields && _yielding.isNotEmpty) {
+        onProgress?.call(const CampusSyncProgress('正在等自动同步停下'));
+        await Future.wait([..._yielding]);
+      }
       // 显式同步才刷新学期，防止本地列表过期导致漏同步新学期。
       // [人工决策-2026-09-25 14:45:43] 进度只报告已有任务阶段，不改同步范围、顺序和确认规则，不生成假百分比。
       onProgress?.call(const CampusSyncProgress('正在刷新学期列表'));
@@ -176,6 +188,10 @@ class CampusSync {
     } finally {
       _running = false;
       _active--;
+      if (yields) {
+        _yielding.remove(finished.future);
+        finished.complete();
+      }
     }
   }
 

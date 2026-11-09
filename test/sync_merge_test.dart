@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -76,6 +77,16 @@ void main() {
     return result;
   }
 
+  // 点应用；要删课时先确认（教务删掉、你没动过的合成思政默认勾着），点删掉。
+  Future<void> apply(WidgetTester tester, String label) async {
+    await tester.tap(find.widgetWithText(FilledButton, label));
+    await tester.pumpAndSettle();
+    if (find.text('删掉').evaluate().isNotEmpty) {
+      await tester.tap(find.text('删掉'));
+      await tester.pumpAndSettle();
+    }
+  }
+
   bool ticked(WidgetTester tester, String text) {
     final row = find.ancestor(of: find.text(text), matching: find.byType(InkWell)).first;
     return tester.widget<Checkbox>(find.descendant(of: row, matching: find.byType(Checkbox)).first).value == true;
@@ -106,8 +117,7 @@ void main() {
     testWidgets('应用：勾了的用教务的，没勾的保留你的，存的说明写改了几门', (tester) async {
       _tall(tester);
       final result = await open(tester, _Gateway());
-      await tester.tap(find.widgetWithText(FilledButton, '应用 3 项改动'));
-      await tester.pumpAndSettle();
+      await apply(tester, '应用 3 项改动');
       final resolution = await result as MergeEdu;
       final byName = {for (final course in resolution.merged) course.courseName: course};
       expect(byName['高等数学']!.meetings.single.place, '教务新楼', reason: '只有教务改的，用教务的');
@@ -125,8 +135,7 @@ void main() {
       await tester.tap(find.text('线性代数'));
       await tester.pump();
       expect(find.widgetWithText(FilledButton, '应用 4 项改动'), findsOneWidget);
-      await tester.tap(find.widgetWithText(FilledButton, '应用 4 项改动'));
-      await tester.pumpAndSettle();
+      await apply(tester, '应用 4 项改动');
       final resolution = await result as MergeEdu;
       expect(resolution.merged.firstWhere((course) => course.courseName == '线性代数').meetings.single.place, '教务新楼');
     });
@@ -176,7 +185,71 @@ void main() {
       expect(find.text('读取失败'), findsOneWidget);
       await tester.tap(find.byType(TextButton).last);
       await tester.pumpAndSettle();
-      expect(await result, isA<KeepLocal>());
+      expect((await result as KeepLocal).remember, isFalse, reason: '用户没选过，留到打扰时机再问');
+    });
+
+    testWidgets('比对之后本机课表又被改过：说明原因、不打开合并页，留到打扰时机再问', (tester) async {
+      final result = await open(tester, _Gateway()..revision = 'changed');
+      expect(find.text('合并教务课表'), findsNothing);
+      expect(find.text('课表刚刚有改动，请重新同步'), findsOneWidget);
+      await tester.tap(find.byType(TextButton).last);
+      await tester.pumpAndSettle();
+      expect((await result as KeepLocal).remember, isFalse);
+    });
+
+    testWidgets('两边只是教学班号这类看不见的地方不一样：不打开合并页，直接用教务的', (tester) async {
+      final renumbered = [
+        for (final course in _mine) CourseRecord(courseCode: course.courseCode, courseName: course.courseName, sectionId: 'S9', credit: course.credit, teacherName: course.teacherName, meetings: course.meetings),
+      ];
+      await tester.pumpWidget(host());
+      final result = resolveScheduleSync(hostContext, gateway: _Gateway(), term: _term, plan: SyncPlan(conflict: true, action: 'needs_confirm', revisionId: 'mine', base: _base), edu: renumbered);
+      await tester.pumpAndSettle();
+      expect(find.text('合并教务课表'), findsNothing);
+      expect(await result, isA<TakeEdu>());
+    });
+
+    testWidgets('要删课时先确认（写明删哪几门），取消就留在合并页', (tester) async {
+      _tall(tester);
+      final result = await open(tester, _Gateway());
+      await tester.tap(find.widgetWithText(FilledButton, '应用 3 项改动'));
+      await tester.pumpAndSettle();
+      expect(find.text('删掉 1 门课？'), findsOneWidget);
+      expect(find.textContaining('合成思政\n'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(find.text('合并教务课表'), findsOneWidget);
+      await apply(tester, '应用 3 项改动');
+      expect(await result, isA<MergeEdu>());
+    });
+
+    testWidgets('合并出来的课表不合规时原地说明，留在合并页换一种勾法', (tester) async {
+      _tall(tester);
+      await tester.pumpWidget(host());
+      final result = resolveScheduleSync(hostContext, gateway: _Gateway(), term: _term, plan: SyncPlan(conflict: true, action: 'needs_confirm', revisionId: 'mine', base: _base), edu: [..._edu, _course('G', '长' * 201, weekday: 7)]);
+      await tester.pumpAndSettle();
+      var settled = false;
+      unawaited(result.then((_) => settled = true));
+      await tester.tap(find.widgetWithText(FilledButton, '应用 4 项改动'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('这样合并不行'), findsOneWidget);
+      await tester.tap(find.byType(TextButton).last);
+      await tester.pumpAndSettle();
+      expect(find.text('合并教务课表'), findsOneWidget);
+      expect(settled, isFalse);
+      await tester.tap(find.byTooltip('返回'));
+      await tester.pumpAndSettle();
+      expect(settled, isTrue);
+    });
+
+    testWidgets('合并页开着时整个账号应用被换掉（切换账号）：同步那轮不挂着，当退出', (tester) async {
+      final result = await open(tester, _Gateway());
+      expect(find.text('合并教务课表'), findsOneWidget);
+      var settled = false;
+      unawaited(result.then((_) => settled = true));
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpAndSettle();
+      expect(settled, isTrue);
+      expect((await result as KeepLocal).remember, isTrue);
     });
 
     testWidgets('窄屏大字号下不溢出', (tester) async {
@@ -207,8 +280,7 @@ void main() {
       await tester.tap(find.widgetWithText(FilledButton, '开始同步'));
       await tester.pumpAndSettle();
       expect(find.text('合并教务课表'), findsOneWidget);
-      await tester.tap(find.widgetWithText(FilledButton, '应用 3 项改动'));
-      await tester.pumpAndSettle();
+      await apply(tester, '应用 3 项改动');
       expect(find.textContaining('已合并所选改动'), findsOneWidget);
       expect(gateway.merged!.firstWhere((course) => course.courseName == '大学英语').meetings.single.place, '我改的楼');
       expect(gateway.mergedEdu!.firstWhere((course) => course.courseName == '大学英语').meetings.single.place, '合成楼101', reason: '教务那份原样记成基准');
@@ -238,6 +310,16 @@ void main() {
 
   group('打扰时机的弹窗', () {
     final held = HeldScheduleSync(term: _term, courses: _edu, fetchedAt: 'stamp');
+
+    testWidgets('暂存的那份已经没了（手动同步过、换过账号）：不弹，也不落库', (tester) async {
+      final gateway = _Gateway()..holds = [];
+      await tester.pumpWidget(host());
+      final done = showHeldScheduleSync(hostContext, autoSync: AutoSync(gateway: gateway), gateway: gateway, held: held);
+      await tester.pumpAndSettle();
+      await done;
+      expect(find.text('教务课表有更新'), findsNothing);
+      expect((gateway.committed, gateway.merged), (false, null));
+    });
 
     testWidgets('点空白处是以后再说：什么都不记', (tester) async {
       final gateway = _Gateway();
@@ -281,8 +363,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('逐项选择'));
       await tester.pumpAndSettle();
-      await tester.tap(find.widgetWithText(FilledButton, '应用 3 项改动'));
-      await tester.pumpAndSettle();
+      await apply(tester, '应用 3 项改动');
       await done;
       expect(gateway.merged, isNotNull);
       expect(find.textContaining('已合并所选改动'), findsOneWidget);
@@ -434,6 +515,13 @@ class _Gateway extends FixtureCampusGateway {
   bool committed = false;
   List<CourseRecord>? merged, mergedEdu;
   String? expectedRevision;
+  // 读本机课表时的当前版本（比对时是 mine）。
+  String revision = 'mine';
+  // 本机库里等着选的教务课表（打扰时机弹之前会重读）。
+  List<HeldScheduleSync> holds = [HeldScheduleSync(term: _term, courses: _edu, fetchedAt: 'stamp')];
+
+  @override
+  Future<GatewayResult<List<HeldScheduleSync>>> readHeldScheduleSyncs() async => _ok(holds);
 
   @override
   Future<GatewayResult<List<TermRef>>> listTerms() async => _ok(const [_term, TermRef(xn: '2025', xq: '1', label: '上学年')]);
@@ -442,7 +530,7 @@ class _Gateway extends FixtureCampusGateway {
   @override
   Future<GatewayResult<ScheduleView>> readSchedule(ScheduleScope scope) async {
     if (readFails) return const GatewayResult(ok: false, source: 'local', fetchedAt: 'stamp', error: GatewayError(code: 'LOCAL_STORAGE_FAILED', message: '读取失败'));
-    return _ok(ScheduleView(term: scope.term, student: _student, courses: _mine, revisionId: 'mine'));
+    return _ok(ScheduleView(term: scope.term, student: _student, courses: _mine, revisionId: revision));
   }
 
   @override

@@ -461,16 +461,23 @@ class AccountGateway extends AccountAccess {
   Future<GatewayResult<AutoSyncStatus>> recordAutoSync(AutoSyncStatus status) => _dispatch((gateway) => gateway.recordAutoSync(status));
 
   // 在切换锁里写回，和退出、切换账号互斥：期间账号变了（用户退出、换了账号、页面转了登录）就不动，退出就是退出。
+  // 另一份引擎（后台任务跑着时用户打开了应用）可能已经退出了这个账号：账号索引里的当前账号不再是它也不写回，不让退出的会话复活。
+  // 这期间自动重登没成（断网、要验证码）只算这一轮：恢复进来时的「不再自动重登」标记，用户之后手动同步仍按原规则自动重登一次。
   @override
   Future<T> keepSessionDuring<T>(Future<T> Function() body) async {
     final context = _active;
     if (context == null) return body();
     final saved = await context.gateway.database.readSession();
+    final blocked = context.recoveryBlocked;
     try {
       return await body();
     } finally {
       await _transition.synchronized(() async {
-        if (!_closed && identical(context, _active) && context.accepting) await context.gateway.restoreSessionIfCleared(saved);
+        if (_closed || !identical(context, _active) || !context.accepting) return;
+        context.recoveryBlocked = blocked;
+        final current = await store.currentIdentity();
+        if (current == null || store.keyOf(current) != store.keyOf(context.identity)) return;
+        await context.gateway.restoreSessionIfCleared(saved);
       });
     }
   }

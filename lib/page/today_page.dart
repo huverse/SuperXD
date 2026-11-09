@@ -393,8 +393,6 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     }
   }
 
-  bool _resolvingSync = false;
-
   Future<void> _sync(SyncSelection selection) async {
     if (_syncing) return;
     setState(() => _syncing = true);
@@ -402,20 +400,15 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
       final report = await _syncService.run(
         contents: selection.contents,
         years: selection.years,
-        isActive: () => mounted && (widget.isAccountCurrent?.call() ?? true) && (_resolvingSync || TickerMode.valuesOf(context).enabled),
+        isActive: () => mounted && (widget.isAccountCurrent?.call() ?? true) && TickerMode.valuesOf(context).enabled,
         // 和本地改过的课表冲突：打开合并页逐项选（三方合并，人工决策见 domain/auto_sync.dart），退出同保留本地。
-        // 合并页整页盖在今天页上（今天页的 TickerMode 随之关掉），这段不算离开今天页；页面退出后下一帧今天页才重新可见，等过这一帧再接着判断，
-        // 不然刚选完就被当成中途离开，选择被丢掉。
+        // 合并页整页盖在今天页上（今天页的 TickerMode 随之关掉），同步要等它返回才接着判断；页面退出后下一帧今天页才重新可见，
+        // 等过这一帧再交回结果，不然刚选完就被当成中途离开，选择被丢掉。
         resolveSchedule: (term, plan, courses) async {
           if (!mounted) return const KeepLocal(remember: true);
-          _resolvingSync = true;
-          try {
-            final resolution = await resolveScheduleSync(context, gateway: widget.gateway, term: term, plan: plan, edu: courses);
-            await WidgetsBinding.instance.endOfFrame;
-            return resolution;
-          } finally {
-            _resolvingSync = false;
-          }
+          final resolution = await resolveScheduleSync(context, gateway: widget.gateway, term: term, plan: plan, edu: courses);
+          await WidgetsBinding.instance.endOfFrame;
+          return resolution;
         },
         chooseBells: _chooseBells,
         onProgress: (progress) { if (mounted) setState(() => _syncProgress = progress); },

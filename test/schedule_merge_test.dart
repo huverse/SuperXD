@@ -82,6 +82,56 @@ void main() {
     });
   });
 
+  group('教务合并落库（applyEduMerge）', () {
+    final base = [_course('A', '高等数学', [_meeting(1, 1)])];
+    // 教务给高等数学加了一个教学班（另一位老师）。
+    final theirs = [_course('A', '高等数学', [_meeting(1, 1)]), _course('A', '高等数学', [_meeting(2, 1)], section: 'S2', teacher: '合成乙')];
+
+    test('一门课的改动全勾上：换成教务的原样记录（新教学班不变成本地课程），下次再比认得出你没改过', () {
+      final plan = planScheduleMerge(base, theirs);
+      final picked = {for (final course in plan.changed) ...course.items.map((item) => item.id)};
+      final merged = applyEduMerge(plan, base: base, mine: base, theirs: theirs, items: picked, added: const {}, removed: const {}, newLocalId: newId);
+      expect(merged.map((course) => (course.sectionId, course.localId)), [('S1', null), ('S2', null)]);
+      expect(fingerprint(merged), fingerprint(theirs));
+      // 教务以后再改这门课：算教务改的，默认勾上。
+      final later = [_course('A', '高等数学', [_meeting(1, 1, place: '教务新楼')]), theirs[1]];
+      final next = planScheduleMerge(merged, later);
+      expect(scheduleMergeOrigins(next, base: theirs, mine: merged, theirs: later)['高等数学'], MergeOrigin.theirs);
+    });
+
+    test('只勾了一部分：照旧按老师分回教学班，不整门换', () {
+      final mine = [_course('A', '高等数学', [_meeting(1, 1, place: '我改的楼')])];
+      final changed = [_course('A', '高等数学', [_meeting(1, 1, place: '教务新楼')], credit: 3)];
+      final plan = planScheduleMerge(mine, changed);
+      final credit = plan.changed.single.items.firstWhere((item) => item.field == MergeField.credit);
+      final merged = applyEduMerge(plan, base: base, mine: mine, theirs: changed, items: {credit.id}, added: const {}, removed: const {}, newLocalId: newId);
+      expect((merged.single.credit, merged.single.meetings.single.place), (3, '我改的楼'));
+    });
+
+    test('你没改过、只是教学班号这类不显示的字段和教务不一样：照教务的换上；你改过的不动', () {
+      final mine = [_course('A', '高等数学', [_meeting(1, 1)]), _course('B', '大学英语', [_meeting(2, 3)], section: 'S7')];
+      final baseTwo = [_course('A', '高等数学', [_meeting(1, 1)]), _course('B', '大学英语', [_meeting(2, 3)])];
+      final renumbered = [_course('A', '高等数学', [_meeting(1, 1)], section: 'S9'), _course('B', '大学英语', [_meeting(2, 3)], section: 'S8')];
+      final plan = planScheduleMerge(mine, renumbered);
+      expect(plan.identical, isTrue, reason: '列表里没有可勾的项');
+      final merged = applyEduMerge(plan, base: baseTwo, mine: mine, theirs: renumbered, items: const {}, added: const {}, removed: const {}, newLocalId: newId);
+      expect(merged.map((course) => course.sectionId), ['S9', 'S7'], reason: '高等数学你没改过换成教务的，大学英语你改过（教学班号）照旧');
+    });
+
+    test('换进来的教务记录和别的课撞了课程标识：另起本地课程，不动别的课', () {
+      final mine = [_course('A', '高等数学', [_meeting(1, 1)]), _course('A', '合成自习', [_meeting(5, 9)], section: 'S2')];
+      final plan = planScheduleMerge(mine, [...theirs, mine[1]]);
+      final picked = {for (final course in plan.changed) ...course.items.map((item) => item.id)};
+      final merged = applyEduMerge(plan, base: [...base, mine[1]], mine: mine, theirs: [...theirs, mine[1]], items: picked, added: const {}, removed: const {}, newLocalId: newId);
+      final self = merged.firstWhere((course) => course.courseName == '合成自习');
+      expect((self.sectionId, self.localId), ('S2', null));
+      final adopted = merged.where((course) => course.courseName == '高等数学').toList();
+      expect(adopted.first.localId, isNull);
+      expect(adopted.last.sectionId, 'S2');
+      expect(adopted.last.localId, startsWith('new-'));
+    });
+  });
+
   test('按课名配对：一样的算相同，只有一边有的分别是新课与要删的课', () {
     final mine = [
       _course('A', '高等数学', [_meeting(1, 1)]),

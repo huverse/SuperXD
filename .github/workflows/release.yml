@@ -212,6 +212,20 @@ jobs:
           name: release-ios
           path: dist/
           retention-days: 14
+      # 崩溃报告里本应用与扩展的那几层只有地址，要靠这次构建的 dSYM 还原成函数名（11-09 iOS 闪退排查时发现没留）；只含符号名，源码本就公开。
+      - name: 收集 dSYM
+        run: |
+          set -euo pipefail
+          mkdir -p dsym
+          find build/ios -maxdepth 3 -name '*.dSYM' -print0 | xargs -0 -I{} cp -R {} dsym/
+          # 没有 dSYM 不挡发版，只提醒（Release-alpha 配置是 dwarf-with-dsym，正常都有）。
+          if [ -z "$(ls dsym)" ]; then echo "::warning::没找到 dSYM"; exit 0; fi
+          (cd dsym && zip -qry "../SuperXD-$VERSION-ios-dSYMs.zip" .)
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: release-ios-dsyms
+          path: SuperXD-${{ env.VERSION }}-ios-dSYMs.zip
+          retention-days: 90
 
   github:
     name: 发布 GitHub Release
