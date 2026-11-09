@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +16,10 @@ import 'package:superxd/page/splash_signature.dart';
 // 离开时整层淡出、画作再推近一点。减少动画时只淡入淡出，不位移不缩放。
 // [人工决策-2026-11-09 20:36:06] 加第三幅「星月夜」（用户以梵高风格 AI 生成、画中人物是游戏角色的二次创作，标题用户选定）：说明写「仿梵高风格 · AI 生成」，
 // README 与开源许可第六节的画作声明改成「仿莫奈、梵高风格」，角色形象权利归原权利人（第六节原有这句，README 补上）；夜景天空不提亮，用深夜蓝。
+// [人工决策-2026-11-09 21:27:57] 画作顶边与天空的过渡改柔（用户反馈星月夜那里生硬）：渐隐从顶边两成多的线性改成三成的缓动曲线（_fadeMask），
+// 推近改为缩小原图取样区域、不让放大的图超出框（_ZoomedArt），分段色改取各通道中位数（tool/painting_colors.dart）。
+// 试过没用的（别再提）：画作沿顶边翻转模糊接到上方（同 iOS 26 的 backgroundExtensionEffect），河畔树影的树冠被翻成天上的绿影；
+// 渐隐带里叠一层模糊副本（渐进模糊），树冠糊成一顶暗绿帽子，模糊溢出框外还会漏线。
 // [人工决策-2026-10-23 21:12:25] 天空里只写应用名，不写画名与「仿莫奈风格 · AI 生成」（画名与说明只在关于页的开屏画作里看）；应用名改成一笔写出的手写体
 // （同苹果开机的 hello，见 splash_signature.dart）。用户选「写完再溶解」（未选保持 1.2 秒、字写得急）：上屏后 0.1 秒起笔、约 1.6 秒写完、停 0.3 秒，
 // 开屏至少约 2 秒；点一下随时进入。减少动画时不写、直接显示写好的字，至少 1.2 秒。
@@ -218,17 +223,11 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
                         opacity: rise,
                         child: Transform.translate(
                           offset: Offset(0, reduced ? 0 : 28 * (1 - rise)),
-                          // 顶边两成多渐隐，融进天空（画作推近时顶边换了位置，也藏在这段渐隐里）。
+                          // 顶边三成按缓动曲线渐隐，融进天空（见 _fadeMask）。
                           child: ShaderMask(
                             blendMode: BlendMode.dstIn,
-                            shaderCallback: (rect) => const LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.transparent, Colors.black], stops: [0, .24]).createShader(rect),
-                            child: ClipRect(
-                              child: Transform.scale(
-                                scale: zoom,
-                                alignment: Alignment(focus, 1),
-                                child: Image(image: widget.image, fit: BoxFit.cover, alignment: Alignment(focus, 1), filterQuality: FilterQuality.medium, gaplessPlayback: true),
-                              ),
-                            ),
+                            shaderCallback: (rect) => _fadeMask.createShader(rect),
+                            child: _ZoomedArt(image: widget.image, zoom: zoom, focus: focus),
                           ),
                         ),
                       ),
@@ -254,4 +253,86 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
       ),
     );
   }
+}
+
+// 画作顶边的渐隐：透明度按缓动曲线从顶边到三成高走完，线性渐隐的起止处看得出一道边。
+final _fadeMask = LinearGradient(
+  begin: Alignment.topCenter,
+  end: Alignment.bottomCenter,
+  colors: [for (var step = 0; step <= 8; step++) Colors.black.withValues(alpha: Curves.easeInOut.transform(step / 8))],
+  stops: [for (var step = 0; step <= 8; step++) .3 * step / 8],
+);
+
+// 画作按 cover 铺满自己的框，推近时只缩小原图的取样区域（以横向 focus、底边为锚），画的范围始终就是这个框：
+// 不让放大的图超出框再靠裁剪去掉（Impeller 上超出的部分会在框外漏出一行像素，星月夜顶边上方一条亮线）。
+class _ZoomedArt extends StatefulWidget {
+  const _ZoomedArt({required this.image, required this.zoom, required this.focus});
+  final ImageProvider image;
+  final double zoom;
+  final double focus;
+
+  @override
+  State<_ZoomedArt> createState() => _ZoomedArtState();
+}
+
+class _ZoomedArtState extends State<_ZoomedArt> {
+  ImageStream? _stream;
+  ImageInfo? _info;
+  late final _listener = ImageStreamListener((info, _) {
+    if (!mounted) return info.dispose();
+    setState(() {
+      _info?.dispose();
+      _info = info;
+    });
+  });
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _resolve();
+  }
+
+  @override
+  void didUpdateWidget(_ZoomedArt oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.image != widget.image) _resolve();
+  }
+
+  void _resolve() {
+    final stream = widget.image.resolve(createLocalImageConfiguration(context));
+    if (stream.key == _stream?.key) return;
+    _stream?.removeListener(_listener);
+    _stream = stream..addListener(_listener);
+  }
+
+  @override
+  void dispose() {
+    _stream?.removeListener(_listener);
+    _info?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => CustomPaint(size: Size.infinite, painter: _ZoomedArtPainter(image: _info?.image, zoom: widget.zoom, focus: widget.focus));
+}
+
+class _ZoomedArtPainter extends CustomPainter {
+  _ZoomedArtPainter({required this.image, required this.zoom, required this.focus});
+  final ui.Image? image;
+  final double zoom;
+  final double focus;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final image = this.image;
+    if (image == null || size.isEmpty) return;
+    final whole = Offset.zero & Size(image.width.toDouble(), image.height.toDouble());
+    final cover = Alignment(focus, 1).inscribe(applyBoxFit(BoxFit.cover, whole.size, size).source, whole);
+    final width = cover.width / zoom, height = cover.height / zoom;
+    final source = Rect.fromLTWH(cover.left + (cover.width - width) * (focus + 1) / 2, cover.bottom - height, width, height);
+    canvas.drawImageRect(image, source, Offset.zero & size, Paint()..filterQuality = FilterQuality.medium);
+  }
+
+  @override
+  bool shouldRepaint(_ZoomedArtPainter oldDelegate) => oldDelegate.image != image || oldDelegate.zoom != zoom || oldDelegate.focus != focus;
 }
