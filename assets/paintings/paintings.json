@@ -21,6 +21,17 @@
       "focus": 0.5,
       "horizon": ["#B1C5D9", "#C1D1DB", "#BCCDD9", "#B3C6D4", "#A8BED0", "#95AFC5"],
       "sky": "#CAD7E2"
+    },
+    {
+      "id": "starry_night",
+      "file": "starry_night.jpg",
+      "title": "星月夜",
+      "note": "仿梵高风格 · AI 生成",
+      "width": 1280,
+      "height": 960,
+      "focus": 0.35,
+      "horizon": ["#485874", "#3F5285", "#4E6585", "#2A4486", "#2F4990", "#3D5EA5"],
+      "sky": "#1C2C5C"
     }
   ]
 }
