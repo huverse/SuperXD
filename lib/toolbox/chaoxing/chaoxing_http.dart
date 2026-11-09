@@ -275,10 +275,14 @@ Map<String, Object?> chaoxingJson(String body) {
   throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, _unknownFormat);
 }
 
+// 没有 data 时多记学习通的 result（数字）与顶层字段名，分得清是改版、限流还是这个班没数据（11-09 日志里上课轮询反复报 no_data，
+// 只有 type=Null 看不出原因）；不记 msg 这类文字内容。
 Map<String, Object?> chaoxingData(String body) {
-  final data = chaoxingJson(body)['data'];
+  final json = chaoxingJson(body);
+  final data = json['data'];
   if (data is Map) return data.cast<String, Object?>();
-  campusLog('[Chaoxing] action=json errorType=no_data type=${data.runtimeType}');
+  final result = json['result'];
+  campusLog('[Chaoxing] action=json errorType=no_data type=${data.runtimeType} result=${result is num ? result : result.runtimeType} keys=${(json.keys.toList()..sort()).take(12).join(',')}');
   throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, _unknownFormat);
 }
 

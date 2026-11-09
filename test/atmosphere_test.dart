@@ -288,7 +288,7 @@ void main() {
     update(() => phase = null);
     await tester.pump();
     final count = builds;
-    // 云雾按定时器一拍一拍地走（见 campus_background.dart 的 _tick），流动与否看进度变没变。
+    // 云雾按定时器一拍一拍地走（见 campus_background.dart 的 _ticking 与 campus_motion.dart 的 campusDecorTick），流动与否看进度变没变。
     final flowing = (tester.widget<CustomPaint>(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter)).painter! as AtmospherePainter).progress;
     final before = flowing.value;
     await tester.pump(const Duration(seconds: 3));
@@ -321,7 +321,7 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   });
 
-  // [人工决策] 见 lib/theme/campus_background.dart 的 _tick：云雾每秒只更新约 20 次、先画成半分辨率贴图，低电量（iOS）与省电模式（安卓）下停住。
+  // [人工决策] 见 lib/theme/campus_background.dart 的 _ticking：云雾每秒只更新约 20 次、先画成半分辨率贴图，低电量（iOS）与省电模式（安卓）下停住。
   testWidgets('云雾每秒只更新约 20 次、用半分辨率贴图，低电量与省电模式下停住，关掉后从原处接着走', (tester) async {
     await tester.pumpWidget(MaterialApp(home: CampusMotion(child: CampusAtmosphere(child: const SizedBox.expand()))));
     final painter = tester.widget<CustomPaint>(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter)).painter! as AtmospherePainter;

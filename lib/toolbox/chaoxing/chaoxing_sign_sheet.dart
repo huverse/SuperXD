@@ -38,9 +38,11 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 // 签到结果：成功了几个人、有没有迟到的；关弹层时页面按这个给提示。
 class ChaoxingSignSummary {
-  const ChaoxingSignSummary({required this.succeeded, required this.late});
+  const ChaoxingSignSummary({required this.succeeded, required this.late, this.locationSaved = false});
   final int succeeded;
   final bool late;
+  // 签完问收藏时收藏了这次的位置：并进签到结果那一条提示里说。
+  final bool locationSaved;
 }
 
 // 签到弹层：先取活动详情，再按类型要输入；下面是签到对象（本人与导入的代签账号，可多选），
@@ -104,6 +106,8 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   bool _codeWrong = false;
   bool _manualLocation = false;
   ChaoxingLocation? _savedLocation;
+  // 签完问收藏时收藏了这次的位置（随签到结果交回，见 ChaoxingSignSummary）。
+  bool _locationSaved = false;
   ChaoxingQrFeed? _feed;
   // 开签前现拍补给的人脸照片（只上传、还没进人脸照片列表）：签好后问存不存。
   final _newFaces = <ChaoxingSignTarget, String>{};
@@ -625,7 +629,11 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     name.dispose();
     if (!mounted) return;
     if (choice == 'quiet') await widget.controller.quietNearby(location);
-    if (choice == 'save') await widget.controller.saveLocation(label.isEmpty ? location.address : label, location);
+    if (choice != 'save') return;
+    await widget.controller.saveLocation(label.isEmpty ? location.address : label, location);
+    // 收藏好了要有回应：全部签好时弹层随后就关，并进「签到成功」那条提示（单独发会马上被它顶掉）；还有人没签上、弹层留着时单独提示。
+    _locationSaved = true;
+    if (mounted && !_batch.allSucceeded) showCampusToast(context, '位置已收藏');
   }
 
   // 开签前现拍的人脸照片：签好的人问一次要不要存进人脸照片（同参考项目），不存就只这次用；
@@ -821,7 +829,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     if (succeeded.isEmpty) return;
     // [人工决策-2026-10-19 17:55:48] 签到成功、保存课程、导入课表这几个关键结果轻触一次（用户选定，同 iOS 的成功触感；Android 11 起是系统的确认触感）。
     HapticFeedback.successNotification();
-    Navigator.pop(context, ChaoxingSignSummary(succeeded: succeeded.length, late: succeeded.any((target) => target.late)));
+    Navigator.pop(context, ChaoxingSignSummary(succeeded: succeeded.length, late: succeeded.any((target) => target.late), locationSaved: _locationSaved));
   }
 
   // 单独重试一个人；强制签到先说明后果再确认。

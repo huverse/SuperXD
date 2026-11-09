@@ -230,7 +230,8 @@ class _ImportPageState extends State<_ImportPage> {
               ),
             ),
           ),
-          Padding(
+          // 底部主按钮是提示条的锚点，提示条停在它上方。
+          CampusToastAnchor(child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
             child: SizedBox(
               width: double.infinity,
@@ -245,7 +246,7 @@ class _ImportPageState extends State<_ImportPage> {
                 ),
               ),
             ),
-          ),
+          )),
         ]),
       ),
     );

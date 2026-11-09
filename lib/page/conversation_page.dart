@@ -307,8 +307,8 @@ class _ConversationPageState extends State<ConversationPage> {
                     child: _item(messages[index], index + 1 < messages.length ? messages[index + 1] : null, colors, constraints.maxWidth * .82),
                   )),
                 )))),
-          // 底部操作栏：实色、顶部分割线（同会话页输入栏规格），不模糊，铺满宽度。
-          Container(
+          // 底部操作栏：实色、顶部分割线（同会话页输入栏规格），不模糊，铺满宽度；是提示条的锚点，提示条停在它上方。
+          CampusToastAnchor(child: Container(
             width: double.infinity,
             decoration: BoxDecoration(color: colors.surface, border: Border(top: BorderSide(color: colors.outlineSubtle))),
             child: SafeArea(top: false, child: Padding(
@@ -327,7 +327,7 @@ class _ConversationPageState extends State<ConversationPage> {
                       Expanded(child: FilledButton.icon(onPressed: () => _send(DisplayScope.of(context).appearance), icon: const CampusIcon(CampusIcons.palette), label: const Text('分享界面'))),
                     ]),
             )),
-          ),
+          )),
         ]),
       );
     });

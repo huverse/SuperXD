@@ -48,9 +48,9 @@ class ChaoxingSignLauncher {
   }
 }
 
-String chaoxingSummaryText(ChaoxingSignSummary summary) => summary.succeeded == 1
+String chaoxingSummaryText(ChaoxingSignSummary summary) => '${summary.succeeded == 1
     ? chaoxingSignedText(late: summary.late)
-    : '已为 ${summary.succeeded} 人签到${summary.late ? '，有人迟到' : ''}';
+    : '已为 ${summary.succeeded} 人签到${summary.late ? '，有人迟到' : ''}'}${summary.locationSaved ? '，位置已收藏' : ''}';
 
 // 活动卡片：标题行是课程名，下面是活动名与类型、时间。进行中的写开始时间，已结束的写截止时间（都用两个字的前缀，完整时间在卡片里不折行）；
 // 不知道开始时间的有截止就写截止，都没有就不显示时间行。

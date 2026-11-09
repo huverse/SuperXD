@@ -8,6 +8,7 @@ import 'package:superxd/page/animated_branches.dart';
 import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/theme/status_bar_scroll.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 
 class _Probe extends StatefulWidget {
   const _Probe();
@@ -50,6 +51,20 @@ void main() {
     // 底栏72+8，距安全区12，上方留12；测试视图无系统安全区。
     expect(_Probe.inset, 72 + 8 + 12 + 12);
     expect(find.byKey(const ValueKey('navigation-capsule')), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('提示条停在悬浮底栏上方，不挡住底栏', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp.router(theme: campusTheme(), routerConfig: _router()));
+    await tester.pumpAndSettle();
+    showCampusToast(tester.element(find.byKey(const ValueKey('probe'))), '已复制');
+    await tester.pumpAndSettle();
+    expect(tester.getBottomLeft(find.text('已复制')).dy, lessThanOrEqualTo(tester.getTopLeft(find.byType(DragNavigationBar)).dy - 12));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+    expect(find.text('已复制'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
@@ -99,11 +114,11 @@ void main() {
     expect(_Probe.inset, 49 + 12);
     await native('height', 83.0);
     expect(_Probe.inset, 83 + 12);
-    // 提示条（SnackBar 出在最外层的壳 Scaffold 里）整个浮在系统底栏上面，不被挡住。
-    ScaffoldMessenger.of(tester.element(find.byKey(const ValueKey('probe')))).showSnackBar(const SnackBar(content: Text('已复制')));
+    // 系统底栏是提示条的锚点：提示条整个浮在底栏上面，不被挡住。
+    showCampusToast(tester.element(find.byKey(const ValueKey('probe'))), '已复制');
     await tester.pumpAndSettle();
     expect(tester.getBottomLeft(find.text('已复制')).dy, lessThanOrEqualTo(tester.getSize(find.byType(MaterialApp)).height - 83));
-    ScaffoldMessenger.of(tester.element(find.byKey(const ValueKey('probe')))).removeCurrentSnackBar();
+    await tester.pump(const Duration(seconds: 5));
     await tester.pumpAndSettle();
     await native('select', 1);
     expect(router.routerDelegate.currentConfiguration.uri.path, '/1');

@@ -51,8 +51,9 @@ class RelayResponse {
 
 // 传输端口：生产用 HTTP，测试用内存假服务。
 abstract interface class RelayTransport {
-  // timeout 为空用传输的默认超时；长轮询按挂起时长另给。
-  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout});
+  // timeout 为空用传输的默认超时；长轮询按挂起时长另给。background 为真是收消息的长轮询：断网与超时不在这里记错误，
+  // 由收取循环按连续失败次数决定（见 social_service.dart 的 liveFailureLimit）。
+  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, bool background = false});
 }
 
 class HttpRelayTransport implements RelayTransport {
@@ -62,7 +63,7 @@ class HttpRelayTransport implements RelayTransport {
   final http.Client _client;
 
   @override
-  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout}) async {
+  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, bool background = false}) async {
     final request = http.Request(method, Uri.parse('$baseUrl$pathWithQuery'))..headers.addAll(headers);
     if (body != null) request.bodyBytes = body;
     final limit = timeout ?? this.timeout;
@@ -75,15 +76,15 @@ class HttpRelayTransport implements RelayTransport {
       response = await http.Response.fromStream(await _client.send(request).timeout(limit)).timeout(limit);
     } on TimeoutException catch (error, stack) {
       campusRequestLog('relay', method, request.url, elapsed: watch.elapsed, error: RelayCode.timeout);
-      _log(route, RelayCode.timeout, error, stack);
+      if (!background) _log(route, RelayCode.timeout, error, stack);
       throw const RelayException(RelayCode.timeout);
     } on SocketException catch (error, stack) {
       campusRequestLog('relay', method, request.url, elapsed: watch.elapsed, error: RelayCode.network);
-      _log(route, RelayCode.network, error, stack);
+      if (!background) _log(route, RelayCode.network, error, stack);
       throw const RelayException(RelayCode.network);
     } on http.ClientException catch (error, stack) {
       campusRequestLog('relay', method, request.url, elapsed: watch.elapsed, error: RelayCode.network);
-      _log(route, RelayCode.network, error, stack);
+      if (!background) _log(route, RelayCode.network, error, stack);
       throw const RelayException(RelayCode.network);
     }
     campusRequestLog('relay', method, request.url, status: response.statusCode, elapsed: watch.elapsed, bytes: response.bodyBytes.length);
@@ -119,7 +120,7 @@ class RelayClient {
   // 本机时钟与服务器的差（毫秒）。收到 CLOCK_SKEW 时按服务器时间校正，并只重发这一次。
   int clockOffset = 0;
 
-  Future<Map<String, Object?>> _call(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload, Duration? timeout]) async {
+  Future<Map<String, Object?>> _call(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload, Duration? timeout, bool background = false]) async {
     final body = payload == null ? <int>[] : utf8.encode(jsonEncode(payload));
     for (var attempt = 0;; attempt++) {
       final time = '${DateTime.now().millisecondsSinceEpoch + clockOffset}';
@@ -131,7 +132,7 @@ class RelayClient {
         'x-sxd-nonce': nonce,
         'x-sxd-signature': base64UrlNoPad(signature),
         'content-type': 'application/json',
-      }, payload == null ? null : body, timeout: timeout);
+      }, payload == null ? null : body, timeout: timeout, background: background);
       if (response.status >= 200 && response.status < 300) return response.body;
       final code = response.body['code'];
       if (code is! String) throw const RelayException(RelayCode.badResponse);
@@ -177,9 +178,10 @@ class RelayClient {
       _integer((await _call(identity, 'POST', '/v1/messages', {'to': to, 'clientId': clientId, 'envelope': base64UrlNoPad(envelope)}))['createTime']);
 
   // wait 为长轮询挂起时长（服务端上限 25 秒）：没有消息时服务端挂起到有新消息或到时；本次请求超时放宽到挂起时长再加 10 秒。
+  // 长轮询按后台请求发（background），断网与超时算不算错误交给收取循环。
   Future<({List<InboxItem> messages, bool more})> fetch(SocialIdentity identity, {String? after, int limit = 50, Duration? wait}) async {
     final query = '${after == null ? '' : 'after=$after&'}limit=$limit${wait == null ? '' : '&wait=${wait.inSeconds}'}';
-    final body = await _call(identity, 'GET', '/v1/messages?$query', null, wait == null ? null : wait + const Duration(seconds: 10));
+    final body = await _call(identity, 'GET', '/v1/messages?$query', null, wait == null ? null : wait + const Duration(seconds: 10), wait != null);
     final list = body['messages'], more = body['more'];
     if (list is! List || more is! bool) throw const RelayException(RelayCode.badResponse);
     return (

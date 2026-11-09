@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/physics.dart';
@@ -9,6 +7,7 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_glass_material.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
@@ -36,7 +35,7 @@ class ShellPage extends StatelessWidget {
     final keyboard = media.viewInsets.bottom > 0;
     final barHeight = 72.0 * media.textScaler.scale(14) / 14 + 8;
     final bottom = media.padding.bottom + 12;
-    // 底栏上方都多留 12：回今天胶囊、列表末项与提示条同底栏之间的间隙（today_page.dart 10-05 的人工决策：可见间隙约 18dp）；
+    // 底栏上方都多留 12：回今天胶囊、列表末项同底栏之间的间隙（today_page.dart 10-05 的人工决策：可见间隙约 18dp）；
     // iOS 原来只留系统底栏的总高，胶囊几乎贴着底栏（10-27 真机截图约 6pt）。
     final reserved = keyboard ? 0.0 : (nativeHeight ?? barHeight + bottom) + 12;
     // [人工决策-2026-09-29 04:01:38] 四项底栏悬浮于安全区之上；内容层延伸到玻璃下方透出，底栏占位作为底部安全区交给各页，末项滚到底仍停在底栏上方；拖动仍仅预览，松手提交一次。
@@ -48,86 +47,83 @@ class ShellPage extends StatelessWidget {
       onPopInvokedWithResult: (didPop, _) {
         if (!didPop) navigationShell.goBranch(0);
       },
-      // iOS 的系统底栏在 Flutter 之上：提示条（SnackBar 只在最外层这个 Scaffold 里出）按底栏总高留出底部，浮在底栏上面，不被它挡住。
-      child: MediaQuery(
-        data: nativeHeight == null ? media : media.copyWith(padding: media.padding.copyWith(bottom: math.max(media.padding.bottom, reserved)), viewPadding: media.viewPadding.copyWith(bottom: math.max(media.viewPadding.bottom, reserved))),
-        child: Scaffold(
-          backgroundColor: Colors.transparent,
-          body: Stack(
-            children: [
-              // 结构固定只换数据，键盘弹出时不重建分支导航状态。
-              Positioned.fill(
-                child: Builder(builder: (context) {
-                  final body = MediaQuery.of(context);
-                  return MediaQuery(
-                    data: keyboard ? body : body.copyWith(padding: body.padding.copyWith(bottom: reserved), viewPadding: body.viewPadding.copyWith(bottom: reserved)),
-                    child: navigationShell,
-                  );
-                }),
-              ),
-              if (nativeHeight != null)
-                Positioned(
-                  left: 0,
-                  right: 0,
-                  bottom: 0,
-                  height: nativeHeight,
-                  child: ListenableBuilder(
-                    listenable: Listenable.merge([social, notes]),
-                    builder: (context, _) => NativeTabBar(
-                      selected: navigationShell.currentIndex,
-                      tint: CampusPalette.of(context).primary,
-                      items: [
-                        for (final (index, label) in _DragNavigationBarState.labels.indexed)
-                          NativeTabItem(
-                            title: label,
-                            icon: _DragNavigationBarState.icons[index],
-                            selectedIcon: _DragNavigationBarState.selectedIcons[index],
-                            badge: index == 2 ? social?.unread ?? 0 : 0,
-                            dot: index == 3 && (notes?.unread ?? false),
-                            accessibilityValue: index == 2 && (social?.unread ?? 0) > 0 ? '${social!.unread} 条未读' : index == 3 && (notes?.unread ?? false) ? '有新的' : null,
-                          ),
-                      ],
-                      // [人工决策-2026-10-27 00:45:04] 再点当前项（同 iOS 系统）：这一栏有推入的页面时回到这一栏首页，已在首页时滚回顶部（用户选定「同系统：直接切」）。
-                      onSelected: (index) {
-                        if (index != navigationShell.currentIndex) {
-                          navigationShell.goBranch(index);
-                        } else if (navigationShell.route.branches[index].navigatorKey.currentState?.canPop() ?? false) {
-                          navigationShell.goBranch(index, initialLocation: true);
-                        } else {
-                          CampusStatusBarScroll.scrollToTop();
-                        }
-                      },
-                      onHeight: (height) => _nativeBarHeight.value = height,
-                      revealed: revealed,
-                    ),
-                  ),
-                ),
-              if (!keyboard && nativeHeight == null)
-                Positioned(
-                  left: 16,
-                  right: 16,
-                  bottom: bottom,
-                  child: Center(
-                    child: ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 620),
-                      child: ListenableBuilder(
-                        listenable: Listenable.merge([social, notes]),
-                        builder: (context, _) => DragNavigationBar(
-                          selected: navigationShell.currentIndex,
-                          badges: [0, 0, social?.unread ?? 0, 0],
-                          dots: [false, false, false, notes?.unread ?? false],
-                          onSelected: (index) {
-                            if (index != navigationShell.currentIndex) {
-                              navigationShell.goBranch(index);
-                            }
-                          },
+      // 底栏是提示条的锚点（theme 的 CampusToastAnchor）：提示条停在底栏上方，不挡住它。
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          children: [
+            // 结构固定只换数据，键盘弹出时不重建分支导航状态。
+            Positioned.fill(
+              child: Builder(builder: (context) {
+                final body = MediaQuery.of(context);
+                return MediaQuery(
+                  data: keyboard ? body : body.copyWith(padding: body.padding.copyWith(bottom: reserved), viewPadding: body.viewPadding.copyWith(bottom: reserved)),
+                  child: navigationShell,
+                );
+              }),
+            ),
+            if (nativeHeight != null)
+              Positioned(
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: nativeHeight,
+                child: CampusToastAnchor(child: ListenableBuilder(
+                  listenable: Listenable.merge([social, notes]),
+                  builder: (context, _) => NativeTabBar(
+                    selected: navigationShell.currentIndex,
+                    tint: CampusPalette.of(context).primary,
+                    items: [
+                      for (final (index, label) in _DragNavigationBarState.labels.indexed)
+                        NativeTabItem(
+                          title: label,
+                          icon: _DragNavigationBarState.icons[index],
+                          selectedIcon: _DragNavigationBarState.selectedIcons[index],
+                          badge: index == 2 ? social?.unread ?? 0 : 0,
+                          dot: index == 3 && (notes?.unread ?? false),
+                          accessibilityValue: index == 2 && (social?.unread ?? 0) > 0 ? '${social!.unread} 条未读' : index == 3 && (notes?.unread ?? false) ? '有新的' : null,
                         ),
+                    ],
+                    // [人工决策-2026-10-27 00:45:04] 再点当前项（同 iOS 系统）：这一栏有推入的页面时回到这一栏首页，已在首页时滚回顶部（用户选定「同系统：直接切」）。
+                    onSelected: (index) {
+                      if (index != navigationShell.currentIndex) {
+                        navigationShell.goBranch(index);
+                      } else if (navigationShell.route.branches[index].navigatorKey.currentState?.canPop() ?? false) {
+                        navigationShell.goBranch(index, initialLocation: true);
+                      } else {
+                        CampusStatusBarScroll.scrollToTop();
+                      }
+                    },
+                    onHeight: (height) => _nativeBarHeight.value = height,
+                    revealed: revealed,
+                  ),
+                )),
+              ),
+            if (!keyboard && nativeHeight == null)
+              Positioned(
+                left: 16,
+                right: 16,
+                bottom: bottom,
+                child: Center(
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 620),
+                    child: CampusToastAnchor(child: ListenableBuilder(
+                      listenable: Listenable.merge([social, notes]),
+                      builder: (context, _) => DragNavigationBar(
+                        selected: navigationShell.currentIndex,
+                        badges: [0, 0, social?.unread ?? 0, 0],
+                        dots: [false, false, false, notes?.unread ?? false],
+                        onSelected: (index) {
+                          if (index != navigationShell.currentIndex) {
+                            navigationShell.goBranch(index);
+                          }
+                        },
                       ),
-                    ),
+                    )),
                   ),
                 ),
-            ],
-          ),
+              ),
+          ],
         ),
       ),
     );

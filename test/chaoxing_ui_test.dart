@@ -692,7 +692,8 @@ void main() {
     await tester.enterText(find.widgetWithText(TextField, '收藏名'), '一号楼');
     await tester.tap(find.widgetWithText(FilledButton, '收藏'));
     await tester.pump();
-    await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
+    // 收藏了要有回应：弹层随后就关，并进签到结果那一条提示（单独发会马上被它顶掉）。
+    await waitUntil(tester, () => find.text('签到成功，位置已收藏').evaluate().isNotEmpty);
     final saved = await tester.runAsync(() => store.locations()) ?? const <ChaoxingSavedLocation>[];
     expect(saved.map((item) => item.label), ['一号楼']);
     await tester.pumpWidget(const SizedBox());
@@ -716,6 +717,8 @@ void main() {
     await tester.pump();
     await waitUntil(tester, () => find.text('签到成功').evaluate().isNotEmpty);
     await waitUntil(tester, () => listCalls() == loaded + 1);
+    // 签好就关：等弹层退场走完再开下一次，不然「签到」按钮可能还是旧弹层的。
+    await waitUntil(tester, () => find.widgetWithText(FilledButton, '签到').evaluate().isEmpty);
     expect(await tester.runAsync(() => store.locations()), isEmpty);
     expect(await tester.runAsync(() => store.quietPlaces()), hasLength(1));
 

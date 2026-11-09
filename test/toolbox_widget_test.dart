@@ -265,6 +265,21 @@ void main() {
           saved = await fixture.shortVideo.store.preference('parse_source'),
     );
     expect(saved, isNull);
+    // 清除解析缓存要有回应（11-09 用户反馈点了没反应）：弹层关掉后出提示条，再打开同一条要重新解析。
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('设置'));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('清除解析缓存'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('清除解析缓存'));
+    await tester.pumpAndSettle();
+    expect(find.text('已清除解析缓存'), findsOneWidget);
+    await tester.tap(find.text('合成视频'));
+    await waitForWidget(tester, find.text('下载视频'));
+    await tester.pumpAndSettle();
+    expect(fixture.parser.calls, 2);
+    expect(find.textContaining('最近缓存'), findsNothing);
     await tester.pumpWidget(const SizedBox());
   });
 

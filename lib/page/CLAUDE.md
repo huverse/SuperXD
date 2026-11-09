@@ -7,7 +7,7 @@
 # 文件职责
 
 - 壳层与导航：
-  - shell_page.dart：底栏壳 ShellPage（今天、服务、消息、我的四个分支；在别的分支按返回先回今天，[人工决策] 在文件内）与可拖动底栏 DragNavigationBar：悬浮在安全区之上，内容延伸到玻璃下方，底栏占位作为各页的底部安全区；拖动时的透镜是栏玻璃的兄弟层、不被栏裁剪；「消息」带私信未读角标，「我的」在有没读的开发者的话时带一个不计数的小圆点（dots）。iOS 上换成挂在 Flutter 视图上的系统底栏 NativeTabBar（theme/native_glass.dart），角标与小圆点照旧，拖动与悬浮由系统做，内容按系统报来的总高留位置（提示条也按它浮在底栏上面），开屏走完（revealed）才出现；再点当前项回到这一栏首页、已在首页时滚回顶部（[人工决策] 在 onSelected）。
+  - shell_page.dart：底栏壳 ShellPage（今天、服务、消息、我的四个分支；在别的分支按返回先回今天，[人工决策] 在文件内）与可拖动底栏 DragNavigationBar：悬浮在安全区之上，内容延伸到玻璃下方，底栏占位作为各页的底部安全区；拖动时的透镜是栏玻璃的兄弟层、不被栏裁剪；「消息」带私信未读角标，「我的」在有没读的开发者的话时带一个不计数的小圆点（dots）。iOS 上换成挂在 Flutter 视图上的系统底栏 NativeTabBar（theme/native_glass.dart），角标与小圆点照旧，拖动与悬浮由系统做，内容按系统报来的总高留位置，开屏走完（revealed）才出现；两端底栏都是提示条的锚点（theme 的 CampusToastAnchor），提示条停在底栏上方；再点当前项回到这一栏首页、已在首页时滚回顶部（[人工决策] 在 onSelected）。
   - animated_branches.dart：分支切换 AnimatedBranches，保留每个分支的 Navigator；进出两页整屏并排平移，不淡入淡出（页内玻璃在半透明图层下取不到背景）。iOS 上直接切换、不滑动（[人工决策] 在 didUpdateWidget）。
   - section_pages.dart：服务页（课表、成绩、百宝箱入口）、我的页（头像卡读当前会话，只写姓名，姓名未知时显示学号；学号与班级在账号页；有开发者的话时在界面与关于之间多一行，有没读的信时行尾一个小圆点；节日抽中的红包在节日结束后 3 天内是最上面一行「节日红包」，点开再看卡片，没揭晓的照样拆红包）与底栏根页的大标题顶栏 SectionTitleBar。
 - 私信（只有分享卡片，没有文字聊天）：
@@ -22,7 +22,7 @@
   - share_target_sheet.dart：分享弹层 showShareSheet：多选好友后逐个发送，每行原地显示状态，失败的可重发；课表页、界面页、百宝箱结果页共用。
   - social_dialogs.dart：错误码文案 socialErrorText、列表时间 socialShortTime、单行输入弹窗 showSocialTextInput。
 - 今天：
-  - today_page.dart：今天页 TodayPage（顶栏放不下日期时「同步」只留图标）：读当前学期的课表与作息按日浏览；同步按钮走 chooseSyncSelection → CampusSync.run → showCampusSyncReport，没同步时正中给「同步课表」；课表页的「去同步」经 TodaySyncRequest 回到这里打开同步范围（组合根创建，[人工决策] 在类上）；含作息来源确认与缺开学日引导；同步中离开时结果暂存、回来再提示；切回本页或回到前台重读本地，学期、课表版本、开学日与作息都没变时不刷新内容（不整页重排）。顶部「此刻」卡（_ClassNow）显示上课中或下一节，课上完或没课时大字写状态、下面一行预告下一节（以后没课的日子也预告，不放右侧大号时刻，免得像课程卡），没课只在这张卡里说；到点换状态平滑过渡、开课前 15 分钟强调倒计时、5 分钟内按秒倒数、倒计时换数字时滚动、上课中此刻点定时漾开、整卡可点（[人工决策] 在 _ClassNow 上方）；看别的日子时底栏上方居中显示回「今天」胶囊（[人工决策] 见 _layout）；单击有课卡弹只读详情（_openCourse）。
+  - today_page.dart：今天页 TodayPage（顶栏放不下日期时「同步」只留图标）：读当前学期的课表与作息按日浏览；同步按钮走 chooseSyncSelection → CampusSync.run → showCampusSyncReport，没同步时正中给「同步课表」；课表页的「去同步」经 TodaySyncRequest 回到这里打开同步范围（组合根创建，[人工决策] 在类上）；含作息来源确认与缺开学日引导；同步中离开时结果暂存、回来再提示；切回本页或回到前台重读本地，学期、课表版本、开学日与作息都没变时不刷新内容（不整页重排）。顶部「此刻」卡（_ClassNow）显示上课中或下一节，课上完或没课时大字写状态、下面一行预告下一节（以后没课的日子也预告，不放右侧大号时刻，免得像课程卡），没课只在这张卡里说；到点换状态平滑过渡、开课前 15 分钟强调倒计时、5 分钟内按秒倒数、倒计时换数字时滚动、上课中此刻点定时漾开、整卡可点（[人工决策] 在 _ClassNow 上方）；看别的日子时底栏上方居中显示回「今天」胶囊（[人工决策] 见 _layout，显示时也是提示条的锚点）；上课中此刻点的漾开跟云雾同一节拍（[人工决策] 在 _TimeTrack）；单击有课卡弹只读详情（_openCourse）。
   - today_day_navigation.dart：上下拖动切日的手势 TodayDayNavigation（阈值 64、上限 120）。
   - today_date_transition.dart：切日时日期与正文按同一进度纵向交接 TodayDateTransition。
   - course_cards.dart：有课卡的只读详情 showCourseDetail（今天页与课表页共用，课表页带「编辑课程」）；当日节次卡片 CourseDayCards：有课卡（课名、教室行 CoursePlace、节次与教师；时刻列开始前上课时刻大、开始后下课时刻大；内容一栏放不下六个课名字时去掉时刻列、时刻写在内容第一行，空档同理）与空档（虚线空位框 _EmptySlot，高度随时长对数加高；虚线拼成一条路径一次画完），课表页长按展开（读屏整卡一句、长按提示展开详情）；今天页单击回调 onOpen（按下变暗、读屏整卡一句），revealNow 打开时把正在上或下一节滚进可见区；今天的课按 classMoment 分三态，时长格式 classDuration。整天没课时有顶部卡片（今天页）就不在中间重复，没有才居中写「这天没课」。人工决策见 _CourseCardBody 与 revealNow。

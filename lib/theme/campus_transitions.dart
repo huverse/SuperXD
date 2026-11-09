@@ -763,36 +763,98 @@ class CampusGlassDialog extends StatelessWidget {
   }
 }
 
-// 轻提示：沿用 SnackBar 的排队、读屏播报、时长与滑动关闭，背景透明，内容是 overlay 玻璃胶囊；
-// 不用库的 GlassToast，因为它的操作按钮触区只有 32，低于 48 的下限。实色档面板为 surface。
-// 用固定样式：M3 浮动样式会整体淡入，玻璃要到淡入结束才突然出现；固定样式只做高度展开，边距由胶囊外层自己留。
+// 轻提示：同一时刻一条、新的顶掉旧的，插进根 Overlay 浮在最上层；内容是 overlay 玻璃胶囊（实色档面板为 surface），
+// 不用库的 GlassToast，因为它的操作按钮触区只有 32，低于 48 的下限。出现与收起同 SnackBar 固定样式只做 250ms 高度展开
+// （浮动样式整体淡入，玻璃要到淡入结束才突然出现），减少动画时直接出现；不带操作 4 秒、带操作 6 秒收起，
+// 读屏开着时带操作的不自动收起（同 SnackBar），读屏的关闭操作可关。
 // [人工决策-2026-10-15 23:17:30] 弹层、弹窗、菜单里发的提示浮在最上层（用户选定主题层统一修，同 Android 弹层里的 Snackbar、
 // iOS 窗口最上层的提示）：SnackBar 只会进底下那页的 Scaffold，被弹层盖住（真机试用时发现内嵌地图与签到弹层的提示都看不到）；
-// 也不能给弹层套 Scaffold，它的 Material 会吃掉点按，点遮罩关不掉弹层。所以这种情况改插进根 Overlay，外观、时长、读屏播报与下滑关闭同 SnackBar。
+// 也不能给弹层套 Scaffold，它的 Material 会吃掉点按，点遮罩关不掉弹层。
+// [人工决策-2026-11-09 19:18:09] 提示条不挡要点的地方（用户选「上浮避让 + 点穿」；11-09 截图里「已开启开发者模式」压着列表末项，安卓底栏也被它挡住）：
+// 停在最上层页面里 CampusToastAnchor 包着的底栏、底部按钮上方（同 Android Material 的 Snackbar.setAnchorView）；
+// 不带操作的提示不拦点按，手指直接点到下面（同安卓系统 Toast）；带「撤销」「去打开」的照常可点、下滑收起。
+// 所以页面上也不再用 SnackBar：它外层整条 Material 连两边透明的留白都吃掉点按，做不了点穿，位置也只认 Scaffold 自己的底部栏位。
 void showCampusToast(BuildContext context, String message, {String? action, VoidCallback? onAction}) {
-  final duration = Duration(seconds: action == null ? 4 : 6);
-  if (ModalRoute.of(context) is PopupRoute) {
-    _showOverlayToast(context, message, duration: duration, action: action, onAction: onAction);
-    return;
+  _dismissToast();
+  late final OverlayEntry entry;
+  void remove() {
+    if (_toast == entry) _dismissToast();
   }
-  final messenger = ScaffoldMessenger.of(context);
-  final palette = CampusPalette.of(context);
-  // 同一时刻一条、新的顶掉旧的：连着发几条时（如连点版本号）hideCurrentSnackBar 只收起正在显示的那条，其余排队各放 4 秒，
-  // 最新的那条要等很久才出来；clearSnackBars 连排队的一起清掉。
-  messenger
-    ..clearSnackBars()
-    ..showSnackBar(SnackBar(
-      behavior: SnackBarBehavior.fixed,
-      hitTestBehavior: HitTestBehavior.deferToChild,
-      backgroundColor: Colors.transparent,
-      elevation: 0,
-      padding: EdgeInsets.zero,
-      duration: duration,
-      content: _toastCapsule(palette, message, action: action, onAction: () {
-        messenger.hideCurrentSnackBar();
+  entry = OverlayEntry(
+    builder: (context) => _CampusToast(
+      message: message,
+      duration: Duration(seconds: action == null ? 4 : 6),
+      action: action,
+      onAction: () {
+        remove();
         onAction!();
-      }),
-    ));
+      },
+      onDone: remove,
+    ),
+  );
+  _toast = entry;
+  // 从导航器自己的 context 发时（开发者工具的标记）祖先里没有 Overlay，用这个导航器的。
+  (Overlay.maybeOf(context, rootOverlay: true) ?? Navigator.of(context, rootNavigator: true).overlay!).insert(entry);
+}
+
+// 提示条的锚点（同 Android Material 的 Snackbar.setAnchorView）：包住页面底部常驻的栏或按钮（底栏、回今天胶囊、页面底部的主按钮），
+// 提示条停在它上方、不挡住它。只认最上层路由里、所在分支可见、enabled 的锚点，有几个取最靠上的；弹层开着时底下页面的锚点不算。
+class CampusToastAnchor extends StatefulWidget {
+  const CampusToastAnchor({super.key, this.enabled = true, required this.child});
+  final bool enabled;
+  final Widget child;
+
+  @override
+  State<CampusToastAnchor> createState() => _CampusToastAnchorState();
+}
+
+final _toastAnchors = <_CampusToastAnchorState>{};
+
+class _CampusToastAnchorState extends State<CampusToastAnchor> {
+  ModalRoute<Object?>? _route;
+  var _branchVisible = true;
+
+  // 锚点上沿在屏幕里的纵坐标；不在最上层路由、分支不可见、没启用或还没排版时为空。
+  double? get top {
+    if (!widget.enabled || !_branchVisible || !(_route?.isCurrent ?? true)) return null;
+    final box = context.findRenderObject();
+    return box is RenderBox && box.attached && box.hasSize ? box.localToGlobal(Offset.zero).dy : null;
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    _toastAnchors.add(this);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    _route = ModalRoute.of(context);
+    _branchVisible = TickerMode.valuesOf(context).enabled;
+  }
+
+  @override
+  void dispose() {
+    _toastAnchors.remove(this);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
+// 提示条底边离所在 Overlay 底边的距离：系统手势区、键盘与锚点里最高的那个。锚点与 Overlay 的位置读的是上一帧排好的，
+// 锚点按 Overlay 自己的坐标换算（不拿 MediaQuery 的屏幕尺寸，Overlay 不一定铺在屏幕原点）。
+double _toastBottom(BuildContext context) {
+  final media = MediaQuery.of(context);
+  var bottom = math.max(media.viewInsets.bottom, media.padding.bottom);
+  final overlay = Overlay.of(context).context.findRenderObject();
+  if (overlay is! RenderBox || !overlay.attached || !overlay.hasSize) return bottom;
+  for (final anchor in _toastAnchors) {
+    if (anchor.top case final top?) bottom = math.max(bottom, overlay.size.height - overlay.globalToLocal(Offset(0, top)).dy);
+  }
+  return bottom;
 }
 
 Widget _toastCapsule(CampusPalette palette, String message, {required String? action, required VoidCallback onAction}) => Padding(
@@ -810,43 +872,19 @@ Widget _toastCapsule(CampusPalette palette, String message, {required String? ac
   ),
 );
 
-// 浮层里的提示同一时刻只有一条，新的直接顶掉旧的（同 hideCurrentSnackBar）。
-OverlayEntry? _overlayToast;
+OverlayEntry? _toast;
 
-void _showOverlayToast(BuildContext context, String message, {required Duration duration, String? action, VoidCallback? onAction}) {
-  _dismissOverlayToast();
-  late final OverlayEntry entry;
-  void remove() {
-    if (_overlayToast != entry) return;
-    _dismissOverlayToast();
-  }
-  entry = OverlayEntry(
-    builder: (context) => _OverlayToast(
-      message: message,
-      duration: duration,
-      action: action,
-      onAction: () {
-        remove();
-        onAction!();
-      },
-      onDone: remove,
-    ),
-  );
-  _overlayToast = entry;
-  Overlay.of(context, rootOverlay: true).insert(entry);
-}
-
-void _dismissOverlayToast() {
-  final entry = _overlayToast;
-  _overlayToast = null;
+void _dismissToast() {
+  final entry = _toast;
+  _toast = null;
   if (entry == null || !entry.mounted) return;
   entry
     ..remove()
     ..dispose();
 }
 
-class _OverlayToast extends StatefulWidget {
-  const _OverlayToast({required this.message, required this.duration, required this.action, required this.onAction, required this.onDone});
+class _CampusToast extends StatefulWidget {
+  const _CampusToast({required this.message, required this.duration, required this.action, required this.onAction, required this.onDone});
   final String message;
   final Duration duration;
   final String? action;
@@ -854,23 +892,25 @@ class _OverlayToast extends StatefulWidget {
   final VoidCallback onDone;
 
   @override
-  State<_OverlayToast> createState() => _OverlayToastState();
+  State<_CampusToast> createState() => _CampusToastState();
 }
 
-class _OverlayToastState extends State<_OverlayToast> with SingleTickerProviderStateMixin {
-  // 同 SnackBar 固定样式：250ms 高度展开与收起，减少动画时直接出现。
+class _CampusToastState extends State<_CampusToast> with SingleTickerProviderStateMixin {
   late final _height = AnimationController(vsync: this, duration: const Duration(milliseconds: 250));
+  var _started = false;
   Timer? _hold;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (_hold != null) return;
+    if (_started) return;
+    _started = true;
     if (MediaQuery.disableAnimationsOf(context)) {
       _height.value = 1;
     } else {
       _height.forward();
     }
+    if (widget.action != null && MediaQuery.accessibleNavigationOf(context)) return;
     _hold = Timer(widget.duration, () => _height.reverse().then((_) {
       if (mounted) widget.onDone();
     }));
@@ -885,15 +925,15 @@ class _OverlayToastState extends State<_OverlayToast> with SingleTickerProviderS
 
   @override
   Widget build(BuildContext context) {
-    final media = MediaQuery.of(context);
+    final capsule = _toastCapsule(CampusPalette.of(context), widget.message, action: widget.action, onAction: widget.onAction);
     return Positioned(
       left: 0,
       right: 0,
-      // 弹层被键盘顶起时，提示跟着浮在键盘上面。
-      bottom: math.max(media.viewInsets.bottom, media.padding.bottom),
+      bottom: _toastBottom(context),
       child: Semantics(
         container: true,
         liveRegion: true,
+        onDismiss: widget.onDone,
         child: ClipRect(
           child: AnimatedBuilder(
             animation: _height,
@@ -902,13 +942,15 @@ class _OverlayToastState extends State<_OverlayToast> with SingleTickerProviderS
               heightFactor: Curves.fastOutSlowIn.transform(_height.value),
               child: child,
             ),
-            child: Dismissible(
-              key: const ValueKey('campusOverlayToast'),
-              direction: DismissDirection.down,
-              behavior: HitTestBehavior.deferToChild,
-              onDismissed: (_) => widget.onDone(),
-              child: _toastCapsule(CampusPalette.of(context), widget.message, action: widget.action, onAction: widget.onAction),
-            ),
+            child: widget.action == null
+                ? IgnorePointer(child: capsule)
+                : Dismissible(
+                    key: const ValueKey('campusToast'),
+                    direction: DismissDirection.down,
+                    behavior: HitTestBehavior.deferToChild,
+                    onDismissed: (_) => widget.onDone(),
+                    child: capsule,
+                  ),
           ),
         ),
       ),
