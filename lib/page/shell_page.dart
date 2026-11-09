@@ -25,8 +25,9 @@ class ShellPage extends StatelessWidget {
   final DeveloperNotes? notes;
   // 开屏是否走完（iOS 的系统底栏在 Flutter 之上，开屏没走完时不出现）；为空当作没有开屏。
   final ValueListenable<bool>? revealed;
+  // iOS 26 起用系统底栏，更早的 iOS 与安卓用自绘的悬浮玻璃底栏（[人工决策] 见 theme/native_glass.dart 的 campusSystemTabBar）。
   @override
-  Widget build(BuildContext context) => campusIos
+  Widget build(BuildContext context) => campusSystemTabBar
       ? ValueListenableBuilder(valueListenable: _nativeBarHeight, builder: (context, height, _) => _layout(context, nativeHeight: height ?? 49 + MediaQuery.paddingOf(context).bottom))
       : _layout(context);
 
@@ -84,16 +85,7 @@ class ShellPage extends StatelessWidget {
                           accessibilityValue: index == 2 && (social?.unread ?? 0) > 0 ? '${social!.unread} 条未读' : index == 3 && (notes?.unread ?? false) ? '有新的' : null,
                         ),
                     ],
-                    // [人工决策-2026-10-27 00:45:04] 再点当前项（同 iOS 系统）：这一栏有推入的页面时回到这一栏首页，已在首页时滚回顶部（用户选定「同系统：直接切」）。
-                    onSelected: (index) {
-                      if (index != navigationShell.currentIndex) {
-                        navigationShell.goBranch(index);
-                      } else if (navigationShell.route.branches[index].navigatorKey.currentState?.canPop() ?? false) {
-                        navigationShell.goBranch(index, initialLocation: true);
-                      } else {
-                        CampusStatusBarScroll.scrollToTop();
-                      }
-                    },
+                    onSelected: (index) => index != navigationShell.currentIndex ? navigationShell.goBranch(index) : _reselect(index),
                     onHeight: (height) => _nativeBarHeight.value = height,
                     revealed: revealed,
                   ),
@@ -118,6 +110,8 @@ class ShellPage extends StatelessWidget {
                             navigationShell.goBranch(index);
                           }
                         },
+                        // iOS 16–18 用的也是这条自绘底栏，照旧保留 iOS 的再点当前项；安卓不变。
+                        onReselected: campusIos ? _reselect : null,
                       ),
                     )),
                   ),
@@ -133,16 +127,26 @@ class ShellPage extends StatelessWidget {
 // iOS 系统底栏的总高（含底部安全区），由原生按系统排好的样子量好报上来；量到之前按 49 加底部安全区留位置。
 final _nativeBarHeight = ValueNotifier<double?>(null);
 
+extension on ShellPage {
+  // [人工决策-2026-10-27 00:45:04] 再点当前项（同 iOS 系统）：这一栏有推入的页面时回到这一栏首页，已在首页时滚回顶部（用户选定「同系统：直接切」）。
+  void _reselect(int index) => (navigationShell.route.branches[index].navigatorKey.currentState?.canPop() ?? false)
+      ? navigationShell.goBranch(index, initialLocation: true)
+      : CampusStatusBarScroll.scrollToTop();
+}
+
 class DragNavigationBar extends StatefulWidget {
   const DragNavigationBar({
     super.key,
     required this.selected,
     required this.onSelected,
+    this.onReselected,
     this.badges = const [],
     this.dots = const [],
   });
   final int selected;
   final ValueChanged<int> onSelected;
+  // 点了已选中的那一项（只算点按，拖回原位不算）；为空时什么也不做。
+  final ValueChanged<int>? onReselected;
   // 各项的未读角标数，0 或缺省不显示。
   final List<int> badges;
   // 各项有没有不计数的新内容（小圆点），有角标时不画。
@@ -438,7 +442,11 @@ class _DragNavigationBarState extends State<DragNavigationBar>
                                     borderRadius: BorderRadius.circular(24),
                                     // 底栏的按压反馈由玻璃透镜承担，不再叠按下变暗，否则会被透镜折射成镜内色块。
                                     highlightColor: Colors.transparent,
-                                    onTap: () { if (_pointer == null && !_dragging) _commit(index); },
+                                    onTap: () {
+                                      if (_pointer != null || _dragging) return;
+                                      if (index == widget.selected) widget.onReselected?.call(index);
+                                      _commit(index);
+                                    },
                                     child: Column(
                                       mainAxisAlignment:
                                           MainAxisAlignment.center,
