@@ -9,6 +9,7 @@ import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/theme/status_bar_scroll.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/native_glass.dart';
 
 class _Probe extends StatefulWidget {
   const _Probe();
@@ -137,6 +138,66 @@ void main() {
     await tester.pumpAndSettle();
     expect(router.routerDelegate.currentConfiguration.uri.path, '/0');
     expect(find.text('详情'), findsNothing);
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  // [人工决策] 见 lib/theme/native_glass.dart 的 campusSystemTabBar（11-09：iOS 26 以前用自绘悬浮玻璃底栏）。
+  testWidgets('iOS 18：用自绘的悬浮玻璃底栏、不挂系统底栏；点栏直接切，再点当前项回到这一栏首页或滚回顶部；提示条在栏上方', (tester) async {
+    debugCampusIosVersion = 18;
+    addTearDown(() => debugCampusIosVersion = null);
+    const tabBar = MethodChannel('superxd/tab_bar');
+    final messenger = tester.binding.defaultBinaryMessenger;
+    final calls = <String>[];
+    messenger.setMockMethodCallHandler(tabBar, (call) async => calls.add(call.method));
+    addTearDown(() => messenger.setMockMethodCallHandler(tabBar, null));
+    await tester.binding.setSurfaceSize(const Size(400, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final list = ScrollController();
+    addTearDown(list.dispose);
+    final router = GoRouter(initialLocation: '/0', routes: [
+      StatefulShellRoute.indexedStack(
+        builder: (context, state, shell) => ShellPage(navigationShell: shell),
+        branches: [
+          StatefulShellBranch(routes: [GoRoute(path: '/0', builder: (context, state) => const _Probe(), routes: [GoRoute(path: 'detail', builder: (context, state) => const Text('详情'))])]),
+          StatefulShellBranch(routes: [GoRoute(path: '/1', builder: (context, state) => ListView(controller: list, children: [for (var index = 0; index < 60; index++) SizedBox(height: 48, child: Text('第$index行'))]))]),
+        ],
+      ),
+    ]);
+    addTearDown(router.dispose);
+    await tester.pumpWidget(MaterialApp.router(theme: campusTheme(), routerConfig: router, builder: (context, child) => CampusStatusBarScroll(child: child!)));
+    await tester.pumpAndSettle();
+    expect(find.byType(DragNavigationBar), findsOneWidget);
+    expect(find.byType(NativeTabBar), findsNothing);
+    expect(calls, isEmpty, reason: '旧系统不挂系统底栏');
+    // 同安卓：底栏72+8，距安全区12，上方留12。
+    expect(_Probe.inset, 72 + 8 + 12 + 12);
+    showCampusToast(tester.element(find.byKey(const ValueKey('probe'))), '已复制');
+    await tester.pumpAndSettle();
+    expect(tester.getBottomLeft(find.text('已复制')).dy, lessThanOrEqualTo(tester.getTopLeft(find.byType(DragNavigationBar)).dy - 12));
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pumpAndSettle();
+
+    Finder item(String label) => find.descendant(of: find.byType(DragNavigationBar), matching: find.text(label));
+    await tester.tap(item('服务'));
+    await tester.pumpAndSettle();
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/1');
+    expect(tester.getTopLeft(find.text('第0行')).dx, 0, reason: 'iOS 上直接切、不滑动');
+    await tester.drag(find.byType(ListView), const Offset(0, -600));
+    await tester.pumpAndSettle();
+    expect(list.offset, greaterThan(0));
+    await tester.tap(item('服务'));
+    await tester.pumpAndSettle();
+    expect(list.offset, 0, reason: '已在首页时再点滚回顶部');
+    await tester.tap(item('今天'));
+    await tester.pumpAndSettle();
+    router.go('/0/detail');
+    await tester.pumpAndSettle();
+    expect(find.text('详情'), findsOneWidget);
+    await tester.tap(item('今天'));
+    await tester.pumpAndSettle();
+    expect(router.routerDelegate.currentConfiguration.uri.path, '/0', reason: '有推入的页面时再点回这一栏首页');
+    expect(find.text('详情'), findsNothing);
+    expect(calls, isEmpty);
+    expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
   // [人工决策] 见 lib/page/animated_branches.dart：iOS 上切分支直接到位，安卓照旧两页并排滑动。

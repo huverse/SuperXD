@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
@@ -17,6 +18,18 @@ import 'package:superxd/theme/campus_symbols.dart';
 // 上一条里顶栏系统玻璃按钮、系统开关滑杆、垫系统玻璃的做法就此取消；iOS 上仍没有玻璃档位。
 // 测试默认按安卓跑；要测 iOS 分支时设 debugDefaultTargetPlatformOverride。
 bool get campusIos => defaultTargetPlatform == TargetPlatform.iOS;
+
+// [人工决策-2026-11-09 20:07:11] 系统底栏只在 iOS 26 起用（Liquid Glass 悬浮底栏）；iOS 16–18 改用应用自绘的悬浮玻璃底栏（同安卓的 DragNavigationBar，
+// 用户选定，没选「仍用系统底栏只改外观」）：旧系统的 UITabBar 是贴底整条的白底加分割线，同应用里的悬浮玻璃对不上（11-09 iOS 18 截图），
+// 而 iOS 26 以前系统本来就没有玻璃底栏。自绘底栏照旧保留 iOS 习惯：点栏直接切、再点当前项回这一栏首页或滚回顶部。上一条的「底栏真玻璃」只在 iOS 26 起成立。
+bool get campusSystemTabBar => campusIos && campusIosVersion >= 26;
+
+// iOS 主版本号，只在真跑在 iOS 上时读系统（Platform.operatingSystemVersion 形如「Version 18.4.1 (Build 22E252)」）；
+// 测试与安卓上模拟 iOS 时当作最新系统，测试要模拟旧系统时设 debugCampusIosVersion。
+int get campusIosVersion => debugCampusIosVersion ?? _iosVersion;
+@visibleForTesting
+int? debugCampusIosVersion;
+final _iosVersion = Platform.isIOS ? int.tryParse(RegExp(r'\d+').firstMatch(Platform.operatingSystemVersion)?.group(0) ?? '') ?? 26 : 26;
 
 const _nativeUi = MethodChannel('superxd/native_ui');
 
