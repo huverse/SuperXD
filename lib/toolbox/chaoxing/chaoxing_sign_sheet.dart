@@ -104,8 +104,6 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   bool _codeWrong = false;
   bool _manualLocation = false;
   ChaoxingLocation? _savedLocation;
-  // 详情没给坐标、但老师设了位置时，从签到前检查的网页读到的老师坐标（见 chaoxing_signer.dart）。
-  ChaoxingLocation? _teacherPoint;
   ChaoxingQrFeed? _feed;
   // 开签前现拍补给的人脸照片（只上传、还没进人脸照片列表）：签好后问存不存。
   final _newFaces = <ChaoxingSignTarget, String>{};
@@ -151,27 +149,22 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
   Future<void> _loadInfo() async {
     try {
       final info = await widget.controller.activeInfo(_activity);
-      // 默认选中的位置（[人工决策-2026-10-14 21:26:16] 与 [人工决策-2026-10-29 15:55:56]，见 chaoxing_map_page.dart）：
-      // 老师设了签到点就选它 10 米内随机一点 → 这门课上次签到用的 → 上次签到用的；都没有时嵌着的地图拿当前位置。
-      // 地图用不了时签到点附近预填进经纬度框，收藏退回最近用过的那个。
+      // 默认选中的位置（[人工决策-2026-10-14 21:26:16] 与 [人工决策-2026-11-09 12:56:15]，见 chaoxing_map_page.dart）：
+      // 这门课上次签到用的 → 上次签到用的；都没有时嵌着的地图拿当前位置。不拿老师的签到点当默认。
       final remembered = await widget.controller.signedLocation(_activity);
-      // 老师设了位置但详情没回坐标：去签到前检查的网页读一次（这类课的坐标只在那张网页里）。读不到就当没有，退回手动选点。
-      final teacherPoint = info.needLocation && info.locationLatitude == null ? await _teacherLocation() : null;
       if (!mounted) return;
       setState(() {
         _info = info;
-        _teacherPoint = teacherPoint;
         // 列表里认不出的类型，用详情里认出的补上（对齐参考项目；详情也认不出就保持 unknown，提交前提示不支持）。
         if (_activity.signType == ChaoxingSignType.unknown && info.signType != null) {
           _activity = _activity.change(signType: info.signType);
         }
         _loadError = null;
-        // 地图用不了时直接摊开经纬度，别让人先去点一下「手动输入」；改用收藏时默认选中上面那个位置。
-        final nearby = _rangeCenter?.nearby();
+        // 地图用不了时直接摊开经纬度，别让人先去点一下「手动输入」，并预填上面那个位置；改用收藏时默认选中它，没有就选最近用过的收藏。
         _manualLocation = !chaoxingMapAvailable;
-        _savedLocation = chaoxingMapAvailable ? nearby ?? remembered : remembered ?? widget.controller.locations.firstOrNull?.location;
-        if (chaoxingMapAvailable) _address.text = remembered?.address ?? '';
-        if (nearby != null && _manualLocation) _fillManual(nearby);
+        _savedLocation = remembered ?? (chaoxingMapAvailable ? null : widget.controller.locations.firstOrNull?.location);
+        _address.text = remembered?.address ?? '';
+        if (remembered != null && _manualLocation) _fillManual(remembered);
       });
     } on ChaoxingFailure catch (failure) {
       if (mounted) setState(() => _loadError = failure.message);
@@ -301,47 +294,19 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
     );
   }
 
-  // 详情里有签到点与范围时在地图上画出来（学习通给的是 BD-09 口径，地图内部会换算成 GCJ-02）。
-  // 详情没给坐标、但从签到前检查网页读到老师坐标时用那个（_teacherPoint）。
+  // 详情里有签到点与范围时在地图上画出来（学习通给的是 BD-09 口径，地图内部会换算成 GCJ-02），只作提示、不当默认选点。
   ChaoxingLocation? get _rangeCenter {
-    if (_teacherPoint != null) return _teacherPoint;
     final latitude = _info?.locationLatitude;
     final longitude = _info?.locationLongitude;
     if (latitude == null || longitude == null) return null;
     return ChaoxingLocation(latitude: latitude, longitude: longitude, address: '', system: ChaoxingCoordinateSystem.bd09);
   }
 
-  // 从签到前检查的网页读老师坐标；只记日志、不打断打开签到页（读不到就退回手动选点）。
-  Future<ChaoxingLocation?> _teacherLocation() async {
-    try {
-      return await widget.controller.activeLocation(_activity);
-    } catch (failure, stack) {
-      campusLog('[Chaoxing] action=presign_location errorType=${failure.runtimeType}\n$stack');
-      return null;
-    }
-  }
-
-  // 详情给的坐标是学习通的 BD-09 口径，输入框按高德 GCJ-02 解释，先转一层再填（参考项目同样按 BD-09 使用）。
+  // 记住的位置可能是 BD-09 或 WGS-84，输入框按高德 GCJ-02 解释，先转一层再填。
   void _fillManual(ChaoxingLocation location) {
     final asGcj = toGcj02(location.latitude, location.longitude, location.system);
     _latitude.text = asGcj.latitude.toStringAsFixed(6);
     _longitude.text = asGcj.longitude.toStringAsFixed(6);
-  }
-
-  // 「签到点附近」：在老师签到点 10 米内重新随机一点。地图上直接选中（镜头跟过去），手动输入时填进经纬度框；
-  // 地图用不了、正在选收藏时切回手输再填。名称框不动。
-  void _pickNearby() {
-    final nearby = _rangeCenter?.nearby();
-    if (nearby == null) return;
-    setState(() {
-      if (_manualLocation || !chaoxingMapAvailable) {
-        _manualLocation = true;
-        _fillManual(nearby);
-      } else {
-        _savedLocation = nearby;
-      }
-      _error = null;
-    });
   }
 
   // 全屏选点（嵌着的地图太小时用）：从当前选中的位置开始，名称框里的名称带过去。
@@ -450,7 +415,6 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       setState(() {
         _activity = related;
         _info = null;
-        _teacherPoint = null;
         _loadError = null;
         for (final target in _batch.targets) {
           target
@@ -1006,7 +970,6 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
             }),
             onSave: () => unawaited(_saveLocation()),
             onPickOnMap: () => unawaited(_pickOnMap()),
-            onNearby: _rangeCenter == null ? null : _pickNearby,
             // 地图点出来的位置不带名称，名称框里写的照旧用。
             onMapPicked: (location) => setState(() {
               _savedLocation = location;

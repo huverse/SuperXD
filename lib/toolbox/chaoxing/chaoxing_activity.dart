@@ -153,7 +153,7 @@ Future<ChaoxingActiveInfo> chaoxingActiveInfo(ChaoxingClient client, int activeI
   return chaoxingActiveInfoFrom(data);
 }
 
-// 老师坐标是 -1 这类占位值或不在国内范围时两项都当没给（见 chaoxingUsablePoint），不拿它画范围圈、取签到点附近。
+// 老师坐标是 -1 这类占位值或不在国内范围时两项都当没给（见 chaoxingUsablePoint），不拿它画范围圈。
 ChaoxingActiveInfo chaoxingActiveInfoFrom(Map<String, Object?> data) {
   final latitude = chaoxingDouble(data['locationLatitude']), longitude = chaoxingDouble(data['locationLongitude']);
   final usable = chaoxingUsablePoint(latitude, longitude);
