@@ -275,6 +275,7 @@ class _ShortVideoPageState extends State<ShortVideoPage> {
                     onPressed: () {
                       controller.coordinator.clearCache();
                       Navigator.pop(context);
+                      showCampusToast(this.context, '已清除解析缓存');
                     },
                     icon: const CampusIcon(CampusIcons.delete),
                     label: const Text('清除解析缓存'),

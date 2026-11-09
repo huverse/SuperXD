@@ -718,12 +718,12 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
               ),
             ),
           ),
-          // 底部留出高德 logo 的位置：合规要求 logo 可见，面板不压到它。
+          // 底部留出高德 logo 的位置：合规要求 logo 可见，面板不压到它。面板是提示条的锚点，「定位有点慢」这类提示停在它上方。
           Align(
             alignment: AlignmentDirectional.bottomCenter,
             child: Padding(
               padding: const EdgeInsets.fromLTRB(12, 0, 12, 44),
-              child: CampusSurface(
+              child: CampusToastAnchor(child: CampusSurface(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -749,7 +749,7 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
                     ),
                   ],
                 ),
-              ),
+              )),
             ),
           ),
         ],

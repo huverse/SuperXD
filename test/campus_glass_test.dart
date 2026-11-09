@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
@@ -90,7 +91,7 @@ void main() {
         ),
       ),
     );
-    // 云雾按定时器一拍一拍地走（见 campus_background.dart 的 _tick），流动与否看进度变没变。
+    // 云雾按定时器一拍一拍地走（见 campus_background.dart 的 _ticking 与 campus_motion.dart 的 campusDecorTick），流动与否看进度变没变。
     Future<bool> flowing() async {
       final progress = (tester.widget<CustomPaint>(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter)).painter! as AtmospherePainter).progress;
       final before = progress.value;
@@ -413,6 +414,9 @@ void main() {
       expect(shown(), ('solid', 1));
     });
 
+    // 提示条是根 Overlay 里的玻璃胶囊（CampusOverlayGlass），不再是 SnackBar。
+    Finder toastOf(String text) => find.ancestor(of: find.text(text), matching: find.byType(CampusOverlayGlass));
+
     testWidgets('提示条为玻璃胶囊，撤销48dp可点并收起；未就绪为实色', (tester) async {
       campusGlassReady.value = true;
       late BuildContext page;
@@ -424,8 +428,8 @@ void main() {
       await tester.tap(find.text('删除'));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 120));
-      final toast = find.widgetWithText(SnackBar, '已保存删除记录');
-      expect(tester.widget<SnackBar>(toast).behavior, SnackBarBehavior.fixed);
+      final toast = toastOf('已保存删除记录');
+      expect(find.byType(SnackBar), findsNothing);
       expectGlassUnfaded(find.descendant(of: toast, matching: find.byType(liquid.AdaptiveGlass)));
       await tester.pumpAndSettle();
       expect(toast, findsOneWidget);
@@ -438,9 +442,88 @@ void main() {
       campusGlassReady.value = false;
       showCampusToast(page, '删除未完成，请重试');
       await tester.pumpAndSettle();
-      final solid = find.widgetWithText(SnackBar, '删除未完成，请重试');
+      final solid = toastOf('删除未完成，请重试');
       expect(solid, findsOneWidget);
       expect(find.descendant(of: solid, matching: find.byType(liquid.AdaptiveGlass)), findsNothing);
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    // [人工决策] 见 campus_transitions.dart 的 showCampusToast（11-09 上浮避让 + 点穿）。
+    testWidgets('提示条停在锚点上方；不带操作的不拦点按、点得到下面，带操作的照常可点；弹层开着时底下页面的锚点不算', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      campusGlassReady.value = true;
+      var under = 0, bottom = 0;
+      late BuildContext page;
+      await tester.pumpWidget(host(Scaffold(body: Builder(builder: (context) {
+        page = context;
+        return Column(children: [
+          Expanded(child: GestureDetector(behavior: HitTestBehavior.opaque, onTap: () => under++, child: const SizedBox.expand())),
+          CampusToastAnchor(child: SizedBox(height: 120, width: double.infinity, child: TextButton(onPressed: () => bottom++, child: const Text('底部按钮')))),
+        ]);
+      }))));
+      showCampusToast(page, '已复制');
+      await tester.pumpAndSettle();
+      final anchorTop = tester.getTopLeft(find.byType(CampusToastAnchor)).dy;
+      expect(tester.getBottomLeft(toastOf('已复制')).dy, lessThanOrEqualTo(anchorTop), reason: '停在底部按钮上方');
+      await tester.tapAt(tester.getCenter(find.text('已复制')));
+      expect(under, 1, reason: '不带操作的提示不拦点按，点到下面的内容');
+      await tester.tap(find.text('底部按钮'));
+      expect(bottom, 1);
+
+      var undone = 0;
+      showCampusToast(page, '已删除', action: '撤销', onAction: () => undone++);
+      await tester.pumpAndSettle();
+      expect(find.text('已复制'), findsNothing, reason: '新的顶掉旧的');
+      await tester.tapAt(tester.getCenter(find.text('已删除')));
+      expect(under, 1, reason: '带操作的提示照常拦点按');
+      await tester.tap(find.text('撤销'));
+      await tester.pumpAndSettle();
+      expect(undone, 1);
+
+      // 弹层开着：底下页面的锚点不在最上层路由，提示条回到屏幕底部。
+      late BuildContext sheet;
+      showCampusSheet<void>(context: page, builder: (context) {
+        sheet = context;
+        return const CampusSheetPanel(child: SizedBox(height: 200));
+      });
+      await tester.pumpAndSettle();
+      showCampusToast(sheet, '在弹层里');
+      await tester.pumpAndSettle();
+      expect(tester.getBottomLeft(toastOf('在弹层里')).dy, greaterThan(anchorTop));
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('读屏开着时带操作的提示不自动收起，读屏的关闭操作可关；不带操作的照常到时收起', (tester) async {
+      campusGlassReady.value = true;
+      // 提示条在根 Overlay 里，读屏状态要从平台给（同真机），不能只包在页面外面。
+      tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(accessibleNavigation: true);
+      addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+      late BuildContext page;
+      await tester.pumpWidget(host(Scaffold(body: Builder(builder: (context) {
+        page = context;
+        return const SizedBox.expand();
+      }))));
+      final semantics = tester.ensureSemantics();
+      showCampusToast(page, '已保存删除记录', action: '撤销', onAction: () {});
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 10));
+      await tester.pumpAndSettle();
+      expect(find.text('已保存删除记录'), findsOneWidget);
+      final node = tester.getSemantics(find.ancestor(of: find.text('已保存删除记录'), matching: find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.liveRegion == true)).first);
+      node.owner!.performAction(node.id, SemanticsAction.dismiss);
+      await tester.pumpAndSettle();
+      expect(find.text('已保存删除记录'), findsNothing);
+      showCampusToast(page, '已复制');
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 4));
+      await tester.pumpAndSettle();
+      expect(find.text('已复制'), findsNothing);
+      semantics.dispose();
       expect(tester.takeException(), isNull);
     });
 
@@ -478,7 +561,8 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('第一条'), findsNothing, reason: '新的顶掉旧的');
-      expect(find.text('人脸照片没存上').hitTestable(), findsOneWidget);
+      expect(find.text('人脸照片没存上'), findsOneWidget);
+      expect(find.text('人脸照片没存上').hitTestable(), findsNothing, reason: '不带操作的提示不拦点按');
       await tester.pump(const Duration(seconds: 4));
       await tester.pumpAndSettle();
       expect(find.text('人脸照片没存上'), findsNothing, reason: '到时收起');

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -129,4 +130,28 @@ class _MotionScope extends InheritedWidget {
   @override
   bool updateShouldNotify(_MotionScope oldWidget) =>
       foreground != oldWidget.foreground || lowPower != oldWidget.lowPower;
+}
+
+// [人工决策-2026-11-09 19:18:09] 慢装饰动效共用一个节拍（用户选「跟云雾同拍」）：背景云雾与上课中此刻点的漾开都每 50ms 走一步（每秒约 20 次），
+// 同一拍里一起更新、合成同一帧，不各按屏幕刷新率出帧。起因是 11-09 华为 90Hz 手机的日志：上课时漾开按满刷新率画，今天页一直每秒约 50 帧、七成超出预算。
+// 有人听时才计时，最后一个走了就停；暂停与否由各自按 CampusMotion 决定。
+final campusDecorTick = _DecorTick();
+const campusDecorStep = Duration(milliseconds: 50);
+
+class _DecorTick extends ChangeNotifier {
+  Timer? _timer;
+
+  @override
+  void addListener(VoidCallback listener) {
+    super.addListener(listener);
+    _timer ??= Timer.periodic(campusDecorStep, (_) => notifyListeners());
+  }
+
+  @override
+  void removeListener(VoidCallback listener) {
+    super.removeListener(listener);
+    if (hasListeners) return;
+    _timer?.cancel();
+    _timer = null;
+  }
 }

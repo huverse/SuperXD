@@ -370,7 +370,8 @@ class SocialService extends ChangeNotifier {
       }
     }
     await store.setState(messageId, error == null ? MessageState.sent : MessageState.failed, error: error);
-    campusLog('[Social] action=send friendId=${message.friendId} state=${error == null ? 'sent' : 'failed'} errorType=${error ?? ''}');
+    // 发成功不带 errorType=：带了（哪怕是空的）就会被本机日志当成错误记下（11-09 日志里每次发成功都进了错误记录）。
+    campusLog('[Social] action=send friendId=${message.friendId} ${error == null ? 'state=sent' : 'state=failed errorType=$error'}');
     await _reload();
     return (await store.message(messageId))!;
   }
@@ -428,8 +429,23 @@ class SocialService extends ChangeNotifier {
     _background(_liveLoop());
   }
 
+  // [人工决策-2026-11-09 19:18:09] 长轮询的断网与超时连续失败才算错误（用户选定）：单次是可恢复的网络抖动，只在开发者模式记一行、不进错误记录；
+  // 连续失败到 liveFailureLimit 次记一条错误，同一段断网只记这一条，连上后重新计数。同 10-22「后台回收不算错误」，
+  // Crashlytics 也不把可恢复的网络抖动算错误。起因：11-09 日志里这两类占错误记录约六成，每次两条、一条带完整堆栈，真错误被挤掉。
+  static const liveFailureLimit = 5;
+
+  // 长轮询失败这一次记哪一行：断网、超时没到连续上限只记一行不算错误的（不带 errorType=），正好到上限那次记错误；
+  // 中转回的其他错误码只记错误码；其他异常记完整堆栈。
+  static String liveFailureLog(Object error, StackTrace stack, {required int failures, required Duration retryIn}) => switch (error) {
+    RelayException(:final code) when (code == RelayCode.network || code == RelayCode.timeout) && failures != liveFailureLimit =>
+      '[Social] action=live state=retry code=$code failures=$failures retryIn=${retryIn.inSeconds}s',
+    RelayException(:final code) => '[Social] action=live errorType=$code failures=$failures retryIn=${retryIn.inSeconds}s',
+    _ => '[Social] action=live errorType=${error.runtimeType} retryIn=${retryIn.inSeconds}s\n$stack',
+  };
+
   Future<void> _liveLoop() async {
     var backoff = const Duration(seconds: 2);
+    var failures = 0;
     try {
       while (_keepLive) {
         final started = _clock();
@@ -437,6 +453,7 @@ class SocialService extends ChangeNotifier {
           final batch = await _relay!.fetch(_identity!, wait: longPollWait);
           if (!_keepLive) break;
           backoff = const Duration(seconds: 2);
+          failures = 0;
           if (batch.messages.isNotEmpty) {
             final received = await _refreshLock.synchronized(() => _consume(batch.messages));
             campusLog('[Social] action=live received=$received');
@@ -446,8 +463,9 @@ class SocialService extends ChangeNotifier {
           final elapsed = _clock().difference(started);
           if (elapsed < const Duration(seconds: 5)) await Future<void>.delayed(const Duration(seconds: 5) - elapsed);
         } catch (error, stack) {
-          // 网络类错误只记错误码；其他异常记完整堆栈。都退避后继续，不让收消息在前台静默停掉。
-          campusLog(error is RelayException ? '[Social] action=live errorType=${error.code} retryIn=${backoff.inSeconds}s' : '[Social] action=live errorType=${error.runtimeType} retryIn=${backoff.inSeconds}s\n$stack');
+          // 都退避后继续，不让收消息在前台静默停掉。
+          failures++;
+          campusLog(liveFailureLog(error, stack, failures: failures, retryIn: backoff));
           await Future<void>.delayed(backoff);
           backoff = backoff * 2 > const Duration(seconds: 60) ? const Duration(seconds: 60) : backoff * 2;
         }

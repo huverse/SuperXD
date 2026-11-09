@@ -9,17 +9,17 @@
   - campus_theme.dart：campusTheme 按配色和字体生成 ThemeData：按钮 textStyle 显式带应用字体（不带会回落系统字体）；AppBar 返回图标与内容左边距 16 对齐、标题从 56 起（人工决策见文件内）；OutlinedButton 与 TextButton 是中性胶囊。另有 campusFieldGap（带浮动标签输入框的上方间距，随字号缩放）、campusSystemOverlay（系统栏透明）、CampusScrollBehavior（弹性回弹、不加拉伸效果，拉伸会让里面的玻璃退成底色；iOS 上拖动滚动区收起键盘）；按压反馈不用水波、按下整块变暗。CampusBackground 是空包装，只为兼容现有调用点。
   - campus_icons.dart：CampusIcons 统一映射 Lucide 图标，CampusIcon 渲染（iOS 上返回画成向左尖角，同系统导航栏），CampusMorphIcon 做导航图标形变，configureCampusIcons 启动时配置。
 - 背景：
-  - campus_background.dart：CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，弹窗、弹层开着时停在原处（overlays 由组合根传 campusOverlayDepth，不然整屏模糊每帧重算）；CampusWallpaper 是可选的自定义壁纸（静态图，按色调网格逐格铺淡化保证文字可读，高对比度时不显示）；FrostTexture 是固定颗粒纹理（全部小圆点拼成一组一次画完：Impeller 没有栅格缓存，逐个画的上千个小圆每帧都要重新提交；不经离屏贴图，见关键规则）；CampusBackdrop 提供同相位的背景副本，只给入场遮罩和页面转场用（安卓只在压在弹窗上时，iOS 新页面盖在旧页面上时都垫）。换背景前先按屏幕尺寸解码（precacheImage），再交叉淡化。云雾不跟屏幕刷新逐帧走，由定时器每秒推约 20 次（[人工决策] 在 _tick 上方，先 iOS 后安卓），每次更新先画成半分辨率贴图 AtmosphereCache、每帧只贴图；自己监听前后台，离开前台立即停（后台不出帧不重建，等不到 CampusMotion 传过来）。
+  - campus_background.dart：CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，弹窗、弹层开着时停在原处（overlays 由组合根传 campusOverlayDepth，不然整屏模糊每帧重算）；CampusWallpaper 是可选的自定义壁纸（静态图，按色调网格逐格铺淡化保证文字可读，高对比度时不显示）；FrostTexture 是固定颗粒纹理（全部小圆点拼成一组一次画完：Impeller 没有栅格缓存，逐个画的上千个小圆每帧都要重新提交；不经离屏贴图，见关键规则）；CampusBackdrop 提供同相位的背景副本，只给入场遮罩和页面转场用（安卓只在压在弹窗上时，iOS 新页面盖在旧页面上时都垫）。换背景前先按屏幕尺寸解码（precacheImage），再交叉淡化。云雾不跟屏幕刷新逐帧走，按共用节拍 campusDecorTick 每秒推约 20 次（[人工决策] 在 _ticking 上方，先 iOS 后安卓），每次更新先画成半分辨率贴图 AtmosphereCache、每帧只贴图；自己监听前后台，离开前台立即停（后台不出帧不重建，等不到 CampusMotion 传过来）。
   - wallpaper_tone.dart：壁纸色调网格 WallpaperTone（导入时解码成小图记每格最暗最亮像素）与可读下限 wallpaperVeilAlphas、wallpaperVeilAlpha：叠在最不利的像素上，正文、次要文字和主色文字都不低于 4.8:1。改动后要在模拟器上用高反差测试图复测。
 - 动效与转场：
-  - campus_motion.dart：CampusMotion 管理装饰动效的生命周期（减少动画、后台、分支不可见、路由不在最上层、iOS 低电量模式与安卓省电模式时都不播）；玻璃控件专用的弹簧令牌；campusSpringCurve 是页面与分支转场曲线（临界阻尼、不回弹）；CampusFirstFrameVsync 让转场从新内容首帧画完后开始计时，首帧慢时转场不被吃掉。
+  - campus_motion.dart：CampusMotion 管理装饰动效的生命周期（减少动画、后台、分支不可见、路由不在最上层、iOS 低电量模式与安卓省电模式时都不播）；campusDecorTick 是慢装饰动效共用的 50ms 节拍（云雾与上课中此刻点的漾开同一拍出帧，有人听才计时，[人工决策] 在定义处）；玻璃控件专用的弹簧令牌；campusSpringCurve 是页面与分支转场曲线（临界阻尼、不回弹）；CampusFirstFrameVsync 让转场从新内容首帧画完后开始计时，首帧慢时转场不被吃掉。
   - campus_transitions.dart：统一时长（进入 360ms、返回 320ms、弹层 300ms；iOS 的页面推入与返回是系统的 500ms）与全部路由、弹窗：
     - campusPage 与 CampusPageRoute 是唯一的页面路由（不直接用 MaterialPageRoute，code_conventions_test.dart 守护；CampusPageRoute 在开发者模式下按页面类名记推入与返回）；页面转场新旧页整屏并排平移、不淡入淡出。页面推在弹窗或弹层之上时，进出转场期间垫一份同相位背景副本盖住弹窗（页面透明，不垫会叠成两层），副本拍成快照只贴图（直接画每帧要重画几层全屏渐变），停稳即撤。
     - 跟手返回 _CampusBackGesture 只让最前面的页面响应，不用路由自带的 handleCommitBackGesture（它会把进度重置到 1 再倒放）。
     - iOS 的页面转场同系统推入（_IosPageSlide：新页面盖进来带左边缘阴影、旧页面左移三分之一并变暗，新页面转场期间垫背景副本；曲线同 CupertinoPageRoute，底栏跟着走用同一对曲线），跟手返回是页面任意位置右滑（_IosBackSwipe，松手按速度与位置决定，收尾 350ms，里层横向手势优先；内嵌网页、地图这类原生视图不进 Flutter 的手势竞争，要自己带 EagerGestureRecognizer，code_conventions_test.dart 守护网页）；[人工决策] 在 _IosPageSlide 上方。
     - CampusEntryFade 是按代次重建的账号应用入场（盖背景副本淡出）。
     - 共享弹窗 showCampusNotice、showCampusConfirm（destructive 时主按钮警示红）与玻璃弹窗 CampusGlassDialog（按钮一到两个等宽并排，任一个放不下半宽或三个及以上时竖排、主操作在最上，[人工决策] 在操作区；全应用弹窗都用它，日期选择器除外）。
-    - showCampusToast 提示条：同一时刻一条，新的顶掉旧的（排队的一起清掉）；在弹层、弹窗、菜单里调用时插进根 Overlay 浮在最上层（[人工决策] 在文件内；不给弹层套 Scaffold，它的 Material 会吃掉点按）。
+    - showCampusToast 提示条：一律插进根 Overlay 浮在最上层（不用 SnackBar），同一时刻一条、新的顶掉旧的；停在最上层页面里 CampusToastAnchor 包着的底栏、底部按钮上方（同 Android 的 Snackbar.setAnchorView），不带操作的不拦点按（同安卓系统 Toast），带操作的可点、下滑收起，读屏开着时带操作的不自动收起（两条 [人工决策] 在函数上）。页面底部常驻的栏或主按钮要包 CampusToastAnchor。
     - showCampusSheet 与 CampusSheetPanel 是底部弹层（键盘弹出时整块浮到键盘上方）；弹窗与弹层都经 CampusOverlayDepthRoute 登记层数。
   - campus_rolling_text.dart：数字滚动 CampusRollingText（同 iOS 实时活动的数字过渡）：只有变了的位滚动，倒数时方向相反，位按右对齐，减少动画时直接换。
   - campus_refresh.dart：下拉刷新 CampusRefreshControl（基于 CupertinoSliverRefreshControl），放在 CustomScrollView 第一个 sliver，指示器是曲线动效、至少停留 600ms。
@@ -71,10 +71,11 @@
 - 玻璃与按钮：campus_glass_test.dart、campus_glass_button_test.dart；iOS 的系统组件分支：native_glass_test.dart（按 iOS 跑：系统弹窗、菜单的参数，开关滑杆与磨砂档、不建平台视图，系统底栏随推入与浮层交给原生的位置与显隐；原生长什么样只能在 iPhone 上看）。
 - 背景、配色与深色：atmosphere_test.dart（含 iOS 云雾每秒约 20 次、低电量停住、半分辨率贴图同直接画对照、颗粒拼贴同逐点画对照）、dark_mode_test.dart、wallpaper_test.dart。
 - 动效与转场：campus_motion_test.dart、transition_sync_test.dart（含 iOS 推入与任意位置右滑返回）、account_lifecycle_test.dart（入场与转场中间帧）。
+- 提示条：campus_glass_test.dart（玻璃胶囊、锚点上方、点穿、读屏不自动收起、弹层里浮最上层）、shell_layout_test.dart（停在两端底栏上方）。
 - 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器、点状态栏回顶、iOS 拖动收起键盘）；typesetting_test.dart（测量与 Text 同口径含粗体文本与字距、均衡换行、分段控件按字分宽、说明行的点不单独成行）。
 - 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
 
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/theme
-- 本目录的标记位于：主按钮形态、玻璃档位与限档、导航栏透明、透明顶栏、云雾背景、图标形变、配色、转场时长与路由契约、转场弹簧曲线与跟手返回、玻璃换档与弹窗期间栏的过渡、控件激活色与强调按钮、弹窗按钮排布、壁纸透明度语义、二级页顶栏间距、分段控件、弹层里的提示条、曲线授权。
+- 本目录的标记位于：主按钮形态、玻璃档位与限档、导航栏透明、透明顶栏、云雾背景、图标形变、配色、转场时长与路由契约、转场弹簧曲线与跟手返回、玻璃换档与弹窗期间栏的过渡、控件激活色与强调按钮、弹窗按钮排布、壁纸透明度语义、二级页顶栏间距、分段控件、提示条（弹层里浮最上层、锚点与点穿）、装饰动效共用节拍、曲线授权。

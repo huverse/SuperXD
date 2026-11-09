@@ -333,4 +333,36 @@ void main() {
     );
     expect(await failure(MockClient((_) async => http.Response('<html>', 502))), contains('code=BAD_RESPONSE status=502 errorType=FormatException'));
   });
+
+  // [人工决策] 见 social_service.dart 的 liveFailureLimit：长轮询的断网与超时连续失败才算错误。
+  test('长轮询断网、超时：传输层不记错误，收取循环连续失败到上限那次才记一条错误；发成功不带 errorType', () async {
+    final logs = <String>[];
+    final original = campusLog;
+    campusLog = logs.add;
+    addTearDown(() => campusLog = original);
+    final transport = HttpRelayTransport('http://relay.invalid:8080', client: MockClient((_) async => throw http.ClientException('connection reset')));
+    await expectLater(transport.send('GET', '/v1/messages?wait=25', const {}, null, background: true), throwsA(isA<RelayException>()));
+    expect(logs, isEmpty, reason: '后台长轮询的断网交给收取循环决定');
+
+    String line(Object error, int failures) => SocialService.liveFailureLog(error, StackTrace.current, failures: failures, retryIn: const Duration(seconds: 2));
+    for (var failures = 1; failures <= SocialService.liveFailureLimit + 2; failures++) {
+      for (final code in [RelayCode.network, RelayCode.timeout]) {
+        expect(line(RelayException(code), failures).contains('errorType='), failures == SocialService.liveFailureLimit, reason: '$code 第 $failures 次');
+      }
+    }
+    expect(line(const RelayException(RelayCode.notFriend), 1), contains('errorType=${RelayCode.notFriend}'), reason: '中转回的其他错误码照常算错误');
+    expect(line(StateError('坏了'), 1), allOf(contains('errorType=StateError'), contains('social_service_test.dart')), reason: '其他异常带堆栈');
+
+    final relay = FakeRelay();
+    final alice = await device(relay), bob = await device(relay);
+    await alice.enable('小明');
+    await bob.enable('小青');
+    await alice.redeem(InviteCode.decode((await bob.createInvite()).encode())!);
+    await bob.refresh();
+    logs.clear();
+    await alice.send(bob.deviceId!, sampleSchedule());
+    final sent = logs.singleWhere((log) => log.startsWith('[Social] action=send'));
+    expect(sent, contains('state=sent'));
+    expect(sent, isNot(contains('errorType=')), reason: '带 errorType= 就会被本机日志当成错误');
+  });
 }

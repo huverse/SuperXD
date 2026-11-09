@@ -14,14 +14,14 @@
   - relayBaseUrl：中转地址只来自构建参数 SUPERXD_RELAY，不写进代码；未配置时私信不可用。
   - RelayCode：错误码，与服务端 relay_error.ts 一致，另有 NETWORK、TIMEOUT、BAD_RESPONSE。
   - RelayTransport 传输端口，可按请求给超时；HttpRelayTransport 默认 15 秒，长轮询为挂起时长加 10 秒。
-  - HttpRelayTransport 在断网、超时、响应格式不对时记 [RelayTransport] 日志：错误码、方法与路径、异常类型与完整堆栈，不写服务器地址与查询参数；往上只抛 RelayException 错误码。
+  - HttpRelayTransport 在断网、超时、响应格式不对时记 [RelayTransport] 日志：错误码、方法与路径、异常类型与完整堆栈，不写服务器地址与查询参数；往上只抛 RelayException 错误码。收消息的长轮询按后台请求发（background），它的断网与超时不在这里记，交给收取循环。
   - RelayClient：每个请求用设备私钥签名，没有会话令牌；收到 CLOCK_SKEW 按服务器时间校正并只重发这一次。
 - social_store.dart：本机库 social.db（数据库目录，已排除备份）：profile、friend、message、invite 四张表，时间存 UTC ISO 字符串。
 - social_service.dart：SocialService 私信编排，是页面唯一入口。
   - 状态：loading、unavailable（未配置中转）、disabled（未开启）、ready、failed。
   - enable 生成身份、注册、保存昵称；disable 先删服务端设备再清本机。
   - createInvite / redeem 扫码加好友；refresh 拉信箱、解密验签、入库后再确认删除；send / retry 发送卡片；removeFriend、setRemark、markRead、deleteMessage。
-  - polling 为真时就绪后在前台持续长轮询（每次挂起 longPollWait 25 秒，有新消息立即返回），回到前台先拉一次并核对好友，进入后台不再发起；网络失败指数退避（2 秒起、上限 60 秒），空响应快于 5 秒时等满 5 秒防空转。应用里开启，测试关闭。页面不再自己定时拉取。
+  - polling 为真时就绪后在前台持续长轮询（每次挂起 longPollWait 25 秒，有新消息立即返回），回到前台先拉一次并核对好友，进入后台不再发起；网络失败指数退避（2 秒起、上限 60 秒），空响应快于 5 秒时等满 5 秒防空转；断网与超时连续失败到 liveFailureLimit（5 次）那次才记一条错误，之前只记不算错误的一行（[人工决策] 在 liveFailureLimit）。应用里开启，测试关闭。页面不再自己定时拉取。
 
 # 关键规则
 

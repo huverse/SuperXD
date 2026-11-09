@@ -14,6 +14,7 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import 'package:webview_flutter/webview_flutter.dart';
 
+import 'package:superxd/theme/campus_glass_surface.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -656,7 +657,7 @@ void main() {
     await tester.tap(find.text('驿站快递'));
     await tester.pumpAndSettle();
     expect(find.text('没有待取件'), findsOneWidget);
-    expect(find.byType(SnackBar), findsNothing);
+    expect(find.byType(CampusOverlayGlass), findsNothing, reason: '查询成功不出提示条');
     expect(await vault.stationLinked(), isFalse);
     await tester.tap(find.text('驿站快递'));
     await tester.pumpAndSettle();
@@ -1735,7 +1736,8 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('正在查询'), findsNothing);
     expect(find.text('拼多多返回错误码 500'), findsOneWidget, reason: '只在提示条里出现一次');
-    expect(find.ancestor(of: find.text('拼多多返回错误码 500'), matching: find.byType(SnackBar)), findsOneWidget);
+    expect(find.ancestor(of: find.text('拼多多返回错误码 500'), matching: find.byType(CampusOverlayGlass)), findsOneWidget, reason: '在浮层玻璃的提示条里');
+    expect(find.ancestor(of: find.text('拼多多返回错误码 500'), matching: find.byType(CampusSurface)), findsNothing, reason: '不在卡片里');
     await tester.pumpWidget(const SizedBox());
   });
 

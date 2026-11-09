@@ -634,14 +634,15 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
         // [人工决策-2026-10-05 23:16:48] 回今天改为底栏上方居中的玻璃胶囊“今天”，取代右下圆形上箭头（用户选定，同 X、Telegram 的“回到最新”）：
         // 左右对称；箭头指向今天所在方向（看之后的日子朝上、之前的日子朝下，与上下滑切日一致）；出现时自下浮起并显形；顶栏日期下注明相对天数。
         // 胶囊贴着底栏上沿（可见间隙约 18dp，同 Telegram“回到最新”），少压内容、拇指也更近。
-        Positioned(left: 0, right: 0, bottom: MediaQuery.paddingOf(context).bottom, child: Center(child: _TodayReturn(
+        // 显示时是提示条的锚点：提示条停在胶囊上方，不盖住它。
+        Positioned(left: 0, right: 0, bottom: MediaQuery.paddingOf(context).bottom, child: Center(child: CampusToastAnchor(enabled: _day != _today || previewing, child: _TodayReturn(
           visible: _day != _today || previewing,
           upward: _day.compareTo(_today) >= 0,
           onPressed: () {
             HapticFeedback.selectionClick();
             _selectDay(_campusDay(), recenter: true);
           },
-        ))),
+        )))),
       ])),
     ]);
   }
@@ -922,6 +923,8 @@ class _SecondsCountdownState extends State<_SecondsCountdown> {
 
 // 起止时刻进度条：浅轨道上填激活色，末端一个小圆点标出此刻；随分钟时钟平滑推进，减少动画时直接到位。
 // 上课中此刻点定时向外漾开一圈淡去（同苹果地图的定位点）：一圈 1.4 秒、每 2.4 秒一次，中间停着不出帧；
+// [人工决策-2026-11-09 19:18:09] 漾开跟背景云雾同拍（用户选定）：按共用节拍 campusDecorTick 每 50ms 走一步，和云雾在同一拍里合成一帧，
+// 不按屏幕刷新率出帧（原因见 campus_motion.dart 的 campusDecorTick）。
 // 装饰动效不能动时（减少动画、后台、分支或页面不在最前）不漾。只重画这条进度条。
 class _TimeTrack extends StatefulWidget {
   const _TimeTrack({required this.fraction, required this.pulse});
@@ -932,21 +935,26 @@ class _TimeTrack extends StatefulWidget {
   State<_TimeTrack> createState() => _TimeTrackState();
 }
 
-class _TimeTrackState extends State<_TimeTrack> with SingleTickerProviderStateMixin {
-  late final _ripple = AnimationController(vsync: this, duration: const Duration(milliseconds: 1400));
-  Timer? _beat;
+class _TimeTrackState extends State<_TimeTrack> {
+  // 漾开进度 0–1；一圈走完到下一圈之前停在 0，值不变就不重画。
+  final _ripple = ValueNotifier<double>(0);
+  static final _rippleSteps = 1400 ~/ campusDecorStep.inMilliseconds;
+  static final _beatSteps = 2400 ~/ campusDecorStep.inMilliseconds;
+  var _step = 0;
+  var _running = false;
 
   void _sync() {
     final run = widget.pulse && CampusMotion.allowed(context);
-    if (run == (_beat != null)) return;
-    _beat?.cancel();
-    _beat = null;
-    if (!run) {
-      _ripple.value = 0;
-      return;
-    }
-    _ripple.forward(from: 0);
-    _beat = Timer.periodic(const Duration(milliseconds: 2400), (_) => _ripple.forward(from: 0));
+    if (run == _running) return;
+    _running = run;
+    _step = 0;
+    _ripple.value = 0;
+    run ? campusDecorTick.addListener(_advance) : campusDecorTick.removeListener(_advance);
+  }
+
+  void _advance() {
+    _step = (_step + 1) % _beatSteps;
+    _ripple.value = _step < _rippleSteps ? _step / _rippleSteps : 0;
   }
 
   @override
@@ -963,7 +971,7 @@ class _TimeTrackState extends State<_TimeTrack> with SingleTickerProviderStateMi
 
   @override
   void dispose() {
-    _beat?.cancel();
+    if (_running) campusDecorTick.removeListener(_advance);
     _ripple.dispose();
     super.dispose();
   }
@@ -983,7 +991,7 @@ class _TimeTrackState extends State<_TimeTrack> with SingleTickerProviderStateMi
 class _TimeTrackPainter extends CustomPainter {
   _TimeTrackPainter({required this.value, required this.ripple, required this.track, required this.fill, required this.knob}) : super(repaint: ripple);
   final double value;
-  final Animation<double> ripple;
+  final ValueNotifier<double> ripple;
   final Color track;
   final Color fill;
   final Color knob;

@@ -691,13 +691,20 @@ void main() {
     for (final reduced in [false, true]) {
       await tester.pumpWidget(const SizedBox());
       await _mount(tester, _Gateway(), now: () => DateTime.utc(2026, 9, 25, 0, 20), reduced: reduced);
-      // 停稳后只有此刻点的漾开还会定时出帧（每 2.4 秒一圈，中间停着，不拖住 pumpAndSettle）。
-      var rippled = false;
-      for (var step = 0; step < 30; step++) {
-        await tester.pump(const Duration(milliseconds: 100));
-        if (tester.binding.transientCallbackCount > 0) rippled = true;
+      // 停稳后只有此刻点的漾开还会定时出帧：按共用节拍每 50ms 一步（同云雾，[人工决策] 见 today_page.dart 的 _TimeTrack），
+      // 一圈 1.4 秒走 28 步、停 1 秒，不按屏幕刷新率出帧，也不拖住 pumpAndSettle。
+      final track = tester.widget<CustomPaint>(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter.runtimeType.toString() == '_TimeTrackPainter')).painter!;
+      var repaints = 0;
+      void count() => repaints++;
+      track.addListener(count);
+      var vsync = false;
+      for (var step = 0; step < 48; step++) {
+        await tester.pump(const Duration(milliseconds: 50));
+        if (tester.binding.transientCallbackCount > 0) vsync = true;
       }
-      expect(rippled, !reduced, reason: reduced ? '减少动画时此刻点不漾' : '上课中此刻点定时漾开');
+      track.removeListener(count);
+      expect(repaints, reduced ? 0 : inInclusiveRange(27, 30), reason: reduced ? '减少动画时此刻点不漾' : '上课中此刻点定时漾开，一圈约 28 步');
+      expect(vsync, isFalse, reason: '漾开不挂屏幕刷新的回调');
       await tester.pumpAndSettle();
     }
     expect(tester.takeException(), isNull);
