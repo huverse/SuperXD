@@ -6,9 +6,10 @@ import 'package:image/image.dart' as img;
 // 给开屏画作算清单里的尺寸与颜色（assets/paintings/paintings.json）。加一幅画：图放进 assets/paintings，运行
 //   dart run tool/painting_colors.dart assets/paintings/<文件名>.jpg
 // 打印这一幅在清单里的 width、height、horizon 与 sky，连同手写的 id、title、note、focus 加进清单。
-// horizon 是顶边从左到右 6 段的平均色：画作上方的天空按它横向铺开，与画作顶边逐段接上；sky 是屏幕顶端的天空色，应用名写在它上面：
+// horizon 是顶边从左到右 6 段的颜色（各通道中位数）：画作上方的天空按它横向铺开，与画作顶边逐段接上；sky 是屏幕顶端的天空色，应用名写在它上面：
 // 取顶边最偏蓝的那一段（天空多半在那儿）保留色相提亮——各段平均会让暖色与冷色互相抵消成灰。
-// 打印的是建议值：顶边有树冠、建筑等前景的段，在清单里改成两旁天空的颜色（不然前景色会像一股烟往上冒，河畔树影就是这样改的）。
+// 打印的是建议值：顶边有树冠、建筑等前景的段，在清单里改成两旁天空的颜色（不然前景色会像一股烟往上冒，河畔树影就是这样改的）；
+// 某一段比两旁明显更亮或更灰时，天空里会拉出一道竖条，同样手改成接近两旁的颜色（星月夜第 3 段）。
 // 夜景（顶边整体很暗）别用提亮的 sky：浅色天空接在夜空上像天快亮了，清单里改成顶边色相压深的夜空色，应用名会自动换成浅色墨（星月夜就是这样改的）。
 const _bands = 6;
 
@@ -43,17 +44,17 @@ void main(List<String> args) {
   final horizon = <List<double>>[];
   for (var band = 0; band < _bands; band++) {
     final left = image.width * band ~/ _bands, right = image.width * (band + 1) ~/ _bands;
-    var red = 0.0, green = 0.0, blue = 0.0;
+    // 每个通道取中位数，不取平均：顶边零星的亮星、光斑会把平均色拉灰（星月夜的蓝天被黄星平均成灰蓝，接缝像蒙了层雾）。
+    final channels = [<num>[], <num>[], <num>[]];
     for (var y = 0; y < rows; y++) {
       for (var x = left; x < right; x++) {
         final pixel = image.getPixel(x, y);
-        red += pixel.r;
-        green += pixel.g;
-        blue += pixel.b;
+        channels[0].add(pixel.r);
+        channels[1].add(pixel.g);
+        channels[2].add(pixel.b);
       }
     }
-    final count = rows * (right - left);
-    horizon.add([red / count, green / count, blue / count]);
+    horizon.add([for (final channel in channels) (channel..sort())[channel.length ~/ 2].toDouble()]);
   }
   final bluest = horizon.reduce((best, color) => (color[2] - color[0]) + (color[2] - color[1]) / 2 > (best[2] - best[0]) + (best[2] - best[1]) / 2 ? color : best);
   final sky = _lighten(bluest, .84);
