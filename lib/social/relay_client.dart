@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/social/social_crypto.dart';
 
@@ -32,7 +33,7 @@ abstract final class RelayCode {
   // 以下只在客户端产生。
   static const network = 'NETWORK'; // 连不上服务器
   static const timeout = 'TIMEOUT'; // 请求超时（普通 15 秒，长轮询为挂起时长再加 10 秒）
-  static const badResponse = 'BAD_RESPONSE'; // 响应不是约定的格式
+  static const badResponse = 'BAD_RESPONSE'; // 响应不是约定的格式（含超过响应上限）
 }
 
 class RelayException implements Exception {
@@ -51,43 +52,42 @@ class RelayResponse {
 
 // 传输端口：生产用 HTTP，测试用内存假服务。
 abstract interface class RelayTransport {
-  // timeout 为空用传输的默认超时；长轮询按挂起时长另给。background 为真是收消息的长轮询：断网与超时不在这里记错误，
-  // 由收取循环按连续失败次数决定（见 social_service.dart 的 liveFailureLimit）。
-  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, bool background = false});
+  // timeout 为空用传输的默认超时；长轮询按挂起时长另给。limit 是响应字节上限，为空用传输的默认值，拉信箱按这次要的条数另给。
+  // background 为真是收消息的长轮询：断网与超时不在这里记错误，由收取循环按连续失败次数决定（见 social_service.dart 的 liveFailureLimit）。
+  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, int? limit, bool background = false});
 }
 
 class HttpRelayTransport implements RelayTransport {
-  HttpRelayTransport(this.baseUrl, {http.Client? client, this.timeout = const Duration(seconds: 15)}) : _client = client ?? http.Client();
+  HttpRelayTransport(this.baseUrl, {http.Client? client, this.timeout = const Duration(seconds: 15)}) : _http = CampusHttp('relay', client: client);
   final String baseUrl;
   final Duration timeout;
-  final http.Client _client;
+  final CampusHttp _http;
 
+  // 默认的响应上限，只防异常响应占满内存：中转的普通接口只回几个字段，最大的好友列表（500 个）约 30KB。
+  static const responseLimit = 64 * 1024;
+
+  // 超时管整个请求（连接、发送、读完响应体），到点中断连接；响应边读边限长。都在共用内核 CampusHttp，开发者模式下的请求记录也由它记。
   @override
-  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, bool background = false}) async {
-    final request = http.Request(method, Uri.parse('$baseUrl$pathWithQuery'))..headers.addAll(headers);
-    if (body != null) request.bodyBytes = body;
-    final limit = timeout ?? this.timeout;
+  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, int? limit, bool background = false}) async {
+    final uri = Uri.parse('$baseUrl$pathWithQuery');
     // 日志只记方法与路径（不含服务器地址与查询参数），原始异常与堆栈留在日志里，往上只抛错误码。
     final route = '$method ${pathWithQuery.split('?').first}';
-    // 开发者模式下每个请求记一条路径、状态、耗时与字节数（见 campusRequestLog）。
-    final watch = Stopwatch()..start();
     final http.Response response;
     try {
-      response = await http.Response.fromStream(await _client.send(request).timeout(limit)).timeout(limit);
+      response = await _http.send(method, uri, timeout: timeout ?? this.timeout, limit: limit ?? responseLimit, headers: headers, bodyBytes: body);
+    } on CampusHttpTooLarge catch (error, stack) {
+      _log(route, RelayCode.badResponse, error, stack);
+      throw const RelayException(RelayCode.badResponse);
     } on TimeoutException catch (error, stack) {
-      campusRequestLog('relay', method, request.url, elapsed: watch.elapsed, error: RelayCode.timeout);
       if (!background) _log(route, RelayCode.timeout, error, stack);
       throw const RelayException(RelayCode.timeout);
     } on SocketException catch (error, stack) {
-      campusRequestLog('relay', method, request.url, elapsed: watch.elapsed, error: RelayCode.network);
       if (!background) _log(route, RelayCode.network, error, stack);
       throw const RelayException(RelayCode.network);
     } on http.ClientException catch (error, stack) {
-      campusRequestLog('relay', method, request.url, elapsed: watch.elapsed, error: RelayCode.network);
       if (!background) _log(route, RelayCode.network, error, stack);
       throw const RelayException(RelayCode.network);
     }
-    campusRequestLog('relay', method, request.url, status: response.statusCode, elapsed: watch.elapsed, bytes: response.bodyBytes.length);
     if (response.statusCode == 204 || response.bodyBytes.isEmpty) return RelayResponse(response.statusCode, const {});
     try {
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
@@ -102,7 +102,7 @@ class HttpRelayTransport implements RelayTransport {
   static void _log(String route, String code, Object error, StackTrace stack, {int? status}) =>
       campusLog('[RelayTransport] action=request route=$route code=$code${status == null ? '' : ' status=$status'} errorType=${error.runtimeType}\n$stack');
 
-  void close() => _client.close();
+  void close() => _http.close();
 }
 
 class InboxItem {
@@ -120,7 +120,11 @@ class RelayClient {
   // 本机时钟与服务器的差（毫秒）。收到 CLOCK_SKEW 时按服务器时间校正，并只重发这一次。
   int clockOffset = 0;
 
-  Future<Map<String, Object?>> _call(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload, Duration? timeout, bool background = false]) async {
+  // 拉信箱的响应上限按这次要的条数算：单条密文最多 256KB（服务端 relay_limits.ts 的 envelopeMaxBytes），经 base64url 约 342KB，
+  // 加上消息号、发送方与时刻，每条按 360KB 算，再留普通接口那份余量（50 条约 18MB）。
+  static int inboxLimit(int count) => count * 360 * 1024 + HttpRelayTransport.responseLimit;
+
+  Future<Map<String, Object?>> _call(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload, Duration? timeout, bool background = false, int? limit]) async {
     final body = payload == null ? <int>[] : utf8.encode(jsonEncode(payload));
     for (var attempt = 0;; attempt++) {
       final time = '${DateTime.now().millisecondsSinceEpoch + clockOffset}';
@@ -132,7 +136,7 @@ class RelayClient {
         'x-sxd-nonce': nonce,
         'x-sxd-signature': base64UrlNoPad(signature),
         'content-type': 'application/json',
-      }, payload == null ? null : body, timeout: timeout, background: background);
+      }, payload == null ? null : body, timeout: timeout, limit: limit, background: background);
       if (response.status >= 200 && response.status < 300) return response.body;
       final code = response.body['code'];
       if (code is! String) throw const RelayException(RelayCode.badResponse);
@@ -181,7 +185,7 @@ class RelayClient {
   // 长轮询按后台请求发（background），断网与超时算不算错误交给收取循环。
   Future<({List<InboxItem> messages, bool more})> fetch(SocialIdentity identity, {String? after, int limit = 50, Duration? wait}) async {
     final query = '${after == null ? '' : 'after=$after&'}limit=$limit${wait == null ? '' : '&wait=${wait.inSeconds}'}';
-    final body = await _call(identity, 'GET', '/v1/messages?$query', null, wait == null ? null : wait + const Duration(seconds: 10), wait != null);
+    final body = await _call(identity, 'GET', '/v1/messages?$query', null, wait == null ? null : wait + const Duration(seconds: 10), wait != null, inboxLimit(limit));
     final list = body['messages'], more = body['more'];
     if (list is! List || more is! bool) throw const RelayException(RelayCode.badResponse);
     return (
