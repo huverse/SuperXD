@@ -8,7 +8,7 @@ import { createRelayApp } from 'src/relay_app';
 import { env } from 'src/config/env';
 import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
-import { appFilePerHour, appReleasePerHour, developerNotesPerHour } from 'src/common/relay_limits';
+import { appFilePerHour, appReleaseFileMaxBytes, appReleasePerHour, developerNotesPerHour } from 'src/common/relay_limits';
 
 let app: NestExpressApplication;
 let server: string;
@@ -25,6 +25,9 @@ const manifest = (overrides: Record<string, unknown> = {}) => ({
   apks: [{ abi: 'arm64-v8a', file: 'SuperXD-1.0.0-alpha.4-arm64-v8a.apk', size: apkBytes.length, sha256: 'a'.repeat(64) }],
   ...overrides,
 });
+
+// 签名信封：中转只校验形状、原样透传，不验签（受信公钥只在客户端），所以这里用合成的字节即可。
+const envelope = (tag: string) => ({ signed: Buffer.from(`{"tag":"${tag}"}`).toString('base64url'), signatures: [{ keyId: 'release-2026-11', sig: 'A'.repeat(86) }] });
 
 // 每次写入都把修改时间往后挪，服务端按修改时间与大小判断要不要重读，同一秒内连写两次也能认出来。
 let stamp = Date.now() / 1000;
@@ -89,10 +92,54 @@ describe('版本清单', () => {
       notes: '修了一些问题',
       releasePage: 'https://github.com/huverse/SuperXD/releases/tag/v1.0.0-alpha.4',
       apk: { url: '/v1/app/files/SuperXD-1.0.0-alpha.4-arm64-v8a.apk', size: apkBytes.length, sha256: 'a'.repeat(64) },
+      envelope: null,
     });
     const x86 = await request(server).get('/v1/app/releases/alpha').query({ abi: 'x86_64' });
     expect(x86.status).toBe(200);
     expect(x86.body.apk).toBeNull();
+  });
+
+  it('带签名的清单：明文字段照旧给旧客户端，按架构把那一份信封原样透传，没有这个架构的信封时为空', async () => {
+    const envelopes = { 'arm64-v8a': envelope('arm'), 'armeabi-v7a': { ...envelope('v7a'), signatures: [{ keyId: 'release-2026-11', sig: 'B'.repeat(86) }, { keyId: 'offline-2026-11', sig: 'C'.repeat(86) }] } };
+    await putManifest('alpha', manifest({ envelopes }));
+    const arm = await request(server).get('/v1/app/releases/alpha').query({ abi: 'arm64-v8a' });
+    expect(arm.status).toBe(200);
+    expect(arm.body.versionCode).toBe(5);
+    expect(arm.body.apk.url).toBe('/v1/app/files/SuperXD-1.0.0-alpha.4-arm64-v8a.apk');
+    expect(arm.body.envelope).toEqual(envelopes['arm64-v8a']);
+    expect((await request(server).get('/v1/app/releases/alpha').query({ abi: 'armeabi-v7a' })).body.envelope).toEqual(envelopes['armeabi-v7a']);
+    expect((await request(server).get('/v1/app/releases/alpha').query({ abi: 'x86_64' })).body.envelope).toBeNull();
+  });
+
+  it('信封写坏了同样不往外发：不是 base64url、没有签名、签名太多或长度不对、多出字段、不认识的架构', async () => {
+    const printed = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const good = envelope('arm');
+    for (const broken of [
+      { 'arm64-v8a': { ...good, signed: 'not base64!' } },
+      { 'arm64-v8a': { ...good, signatures: [] } },
+      { 'arm64-v8a': { ...good, signatures: Array.from({ length: 5 }, () => good.signatures[0]) } },
+      { 'arm64-v8a': { ...good, signatures: [{ keyId: 'release-2026-11', sig: 'A'.repeat(85) }] } },
+      { 'arm64-v8a': { ...good, signatures: [{ keyId: 'Bad Id', sig: 'A'.repeat(86) }] } },
+      { 'arm64-v8a': { ...good, extra: 1 } },
+      { mips: good },
+      'x',
+    ]) {
+      await putManifest('alpha', manifest({ envelopes: broken }));
+      const response = await request(server).get('/v1/app/releases/alpha').query({ abi: 'arm64-v8a' });
+      expect(response.status).toBe(500);
+      expect(response.body.code).toBe('INTERNAL');
+    }
+    expect(printed).toHaveBeenCalled();
+  });
+
+  it('清单文件按 128KB 封顶：三份信封加写满的更新说明放得下，超过就不读', async () => {
+    const printed = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const big = { signed: 'A'.repeat(20_000), signatures: [{ keyId: 'release-2026-11', sig: 'A'.repeat(86) }] };
+    await putManifest('alpha', manifest({ notes: '字'.repeat(4000), envelopes: { 'arm64-v8a': big, 'armeabi-v7a': big, x86_64: big } }));
+    expect((await request(server).get('/v1/app/releases/alpha').query({ abi: 'x86_64' })).body.envelope).toEqual(big);
+    await putManifest('alpha', manifest({ envelopes: { 'arm64-v8a': { ...big, signed: 'A'.repeat(appReleaseFileMaxBytes) } } }));
+    expect((await request(server).get('/v1/app/releases/alpha').query({ abi: 'arm64-v8a' })).body.code).toBe('INTERNAL');
+    expect(printed).toHaveBeenCalled();
   });
 
   it('换了清单立即生效，渠道之间互不影响', async () => {
@@ -176,22 +223,40 @@ describe('安装包下载', () => {
 describe('开发者的话', () => {
   const note = (id: string, overrides: Record<string, unknown> = {}) => ({ id, title: '近况', publishedAt: '2026-10-24T13:30:00.000Z', body: '第一段\n\n第二段', ...overrides });
 
-  it('还没放清单时给空列表', async () => {
+  it('还没放清单时给空列表，信封为空', async () => {
     const response = await request(server).get('/v1/app/notes');
     expect(response.status).toBe(200);
-    expect(response.body).toEqual({ notes: [] });
+    expect(response.body).toEqual({ notes: [], envelope: null });
   });
 
   it('原样给出清单里的信，换了文件立即生效', async () => {
     await putManifest('developer_notes', { notes: [note('2026-10-24-hello')] });
-    expect((await request(server).get('/v1/app/notes')).body).toEqual({ notes: [note('2026-10-24-hello')] });
+    expect((await request(server).get('/v1/app/notes')).body).toEqual({ notes: [note('2026-10-24-hello')], envelope: null });
     await putManifest('developer_notes', { notes: [note('2026-10-25-again', { title: '又来了' }), note('2026-10-24-hello')] });
     expect((await request(server).get('/v1/app/notes')).body.notes.map((item: { id: string }) => item.id)).toEqual(['2026-10-25-again', '2026-10-24-hello']);
   });
 
+  it('签好的清单：明文 notes 照旧给旧客户端，信封原样透传', async () => {
+    const file = { notes: [note('2026-10-24-hello')], envelope: { ...envelope('notes'), signatures: [{ keyId: 'notes-2026-11', sig: 'D'.repeat(86) }] } };
+    await putManifest('developer_notes', file);
+    expect((await request(server).get('/v1/app/notes')).body).toEqual(file);
+    // 签好的空列表（还没写过信时流水线也会上传）同样原样透传。
+    await putManifest('developer_notes', { notes: [], envelope: envelope('empty') });
+    expect((await request(server).get('/v1/app/notes')).body).toEqual({ notes: [], envelope: envelope('empty') });
+  });
+
   it('清单写坏了不往外发，回 INTERNAL 并打印堆栈', async () => {
     const printed = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    for (const body of [{ notes: [note('../escape')] }, { notes: [note('long', { body: '字'.repeat(4001) })] }, { notes: Array.from({ length: 31 }, (_, index) => note(`n${index}`)) }, { notes: [note('extra', { secret: 1 })] }, '{not json']) {
+    for (const body of [
+      { notes: [note('../escape')] },
+      { notes: [note('long', { body: '字'.repeat(4001) })] },
+      { notes: Array.from({ length: 31 }, (_, index) => note(`n${index}`)) },
+      { notes: [note('extra', { secret: 1 })] },
+      { notes: [], envelope: { ...envelope('x'), signed: '' } },
+      { notes: [], envelope: { ...envelope('x'), signatures: [{ keyId: 'notes-2026-11', sig: 'short' }] } },
+      { notes: [], envelope: 'x' },
+      '{not json',
+    ]) {
       await putManifest('developer_notes', body);
       const response = await request(server).get('/v1/app/notes');
       expect(response.status).toBe(500);

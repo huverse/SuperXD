@@ -1,20 +1,27 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:superxd/device/signed_content.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/developer_note.dart';
 
+import 'content_signing.dart';
+
 // 开发者的话（人工决策见 lib/domain/developer_note.dart）：把仓库 notes 目录里的信整理成中转用的 developer_notes.json。
-// notes 目录有改动合并到 main 时由流水线 .github/workflows/notes.yml 调用并上传；也可手动运行看结果。CI 的 test/developer_notes_test.dart
+// notes 目录有改动合并到 main 时由流水线 .github/workflows/notes.yml 调用并上传；也可手动运行检查格式。CI 的 test/developer_notes_test.dart
 // 会把 notes 目录整个读一遍，格式不对的 PR 合并不了。
+// 签名（人工决策见 lib/device/signed_content.dart）：载荷是 {"notes": [...]} 的确切字节，签好放进 envelope，中转原样透传，新客户端只认它；
+// 顶层的明文 notes 留给 1.0.0-alpha.15 及以前不验签的旧客户端。--signing-key 可以给多把，每把都必须是源码里内置的受信公钥。
 // 每封信一个 .txt 文件，文件名（不含 .txt）是这封信的编号，发出后不要改（已读、弹过都按它记）；只许字母数字与 . _ -，如 2026-10-24-hello。内容：
 //   标题：这封信的标题
 //   时间：2026-10-24 21:30
 //   （空一行）
 //   正文……换行与空行照写的显示。
 // 时间按校园时区写。只发最近 developerNoteLimit 封，更早的留在仓库里、应用里不再显示。
-// 运行：dart run tool/developer_notes.dart --out <文件>
-const developerNotesFileMaxBytes = 512 * 1024;
+// 运行：dart run tool/developer_notes.dart                      只检查格式，不生成文件
+//       dart run tool/developer_notes.dart --out <文件> --signing-key <私钥.pem>   生成签好的文件（流水线用）
+// 明文一份加签名载荷一份，30 封都写满也不到 900KB；中转按 1MB 封顶读（server/src/common/relay_limits.ts 的 developerNotesFileMaxBytes）。
+const developerNotesFileMaxBytes = 1024 * 1024;
 
 DeveloperNote parseDeveloperNoteFile(String id, String text) {
   if (!developerNoteId.hasMatch(id)) throw FormatException('$id.txt：文件名只能用字母数字与 . _ -，开头是字母或数字，不超过 64 个字符');
@@ -43,24 +50,32 @@ Future<List<DeveloperNote>> readDeveloperNotes(Directory directory) async {
   return notes.take(developerNoteLimit).toList();
 }
 
-String encodeDeveloperNotesFile(List<DeveloperNote> notes) {
-  final json = jsonEncode(encodeDeveloperNotes(notes));
+Future<String> encodeDeveloperNotesFile(List<DeveloperNote> notes, List<SigningKey> signers) async {
+  final plain = encodeDeveloperNotes(notes);
+  final envelope = await sealSignedEnvelope(utf8.encode(jsonEncode(plain)), SignedContent.notes, signers);
+  final json = jsonEncode({...plain, 'envelope': envelope});
   final bytes = utf8.encode(json).length;
   if (bytes > developerNotesFileMaxBytes) throw FormatException('清单 $bytes 字节，超过中转的上限 $developerNotesFileMaxBytes');
   return json;
 }
 
 Future<void> main(List<String> args) async {
-  final out = args.length == 2 && args[0] == '--out' ? args[1] : null;
-  if (out == null) {
-    stderr.writeln('usage: dart run tool/developer_notes.dart --out <file>');
+  final out = args.length >= 4 && args[0] == '--out' ? args[1] : null;
+  final signingKeys = [for (var index = 2; index + 1 < args.length; index += 2) if (args[index] == '--signing-key') args[index + 1]];
+  if (args.isNotEmpty && (out == null || signingKeys.isEmpty || signingKeys.length * 2 + 2 != args.length)) {
+    stderr.writeln('usage: dart run tool/developer_notes.dart [--out <file> --signing-key <pem> [--signing-key <pem>]]');
     exitCode = 64;
     return;
   }
   try {
     final notes = await readDeveloperNotes(Directory('notes'));
-    await File(out).writeAsString(encodeDeveloperNotesFile(notes));
-    stdout.writeln('[DeveloperNotes] action=build count=${notes.length} latest=${notes.firstOrNull?.id}');
+    if (out == null) {
+      stdout.writeln('[DeveloperNotes] action=check count=${notes.length} latest=${notes.firstOrNull?.id}');
+      return;
+    }
+    final signers = [for (final path in signingKeys) await SigningKey.fromPemFile(path, SignedContent.notes)];
+    await File(out).writeAsString(await encodeDeveloperNotesFile(notes, signers));
+    stdout.writeln('[DeveloperNotes] action=build count=${notes.length} latest=${notes.firstOrNull?.id} keyIds=${signers.map((signer) => signer.trusted.keyId).join(',')}');
   } on FormatException catch (error) {
     stderr.writeln(error.message);
     exitCode = 1;

@@ -21,11 +21,14 @@ tool/verify_toolbox.dart为手动Android原生下载验证入口，不进入正�
 - 发版由流水线.github/workflows/release.yml全自动完成：升版本PR合并到main即构建与发布，不再要网页批准；发版的关口是合并升版本PR本身，普通PR不发布APK（[人工决策]在工作流文件头）：
   1. 开升版本PR：pubspec.yaml的version改成新版本名、构建号加一；CHANGELOG.md的Unreleased改成「## <版本名> - <日期>」，最前面加「### 更新说明」，写几行面向用户的话（每条一行，合计不超过4000字），它就是应用内更新弹窗里的说明。test/release_changelog_test.dart检查最新版本节取得出更新说明。
   2. 合并到main后，流水线核对：还没有v<版本名>标签、构建号比上一版大、CHANGELOG有版本节和更新说明，都满足才构建；只改pubspec其他内容不会触发。
-  3. 接着自动：构建三个架构的Alpha包，并在macOS机器上构建iOS未签名包（核对包名、构建号与小组件扩展，附在Release上、校验和接在SHA256SUMS后面，不传中转）；逐个核对签名证书（等于工作流里的RELEASE_CERT_SHA256、只有一个签名者）、包名、版本号、不可调试与架构；生成SHA256SUMS、Release正文（tool/release_body.md套CHANGELOG版本节）与版本清单alpha.json；打标签发GitHub Release并下载回来校验；经受限账号传中转（先包、最后清单，再删旧包）；在公网逐架构核对清单与断点下载。
+  3. 接着自动：构建三个架构的Alpha包，并在macOS机器上构建iOS未签名包（核对包名、构建号与小组件扩展，附在Release上、校验和接在SHA256SUMS后面，不传中转）；逐个核对签名证书（等于工作流里的RELEASE_CERT_SHA256、只有一个签名者）、包名、版本号、不可调试与架构；生成SHA256SUMS、Release正文（tool/release_body.md套CHANGELOG版本节）与版本清单alpha.json（按架构签名，再按客户端源码内置的公钥验一遍）；打标签发GitHub Release并下载回来校验；确认中转能透传签名后经受限账号传中转（先包、最后清单，再删旧包）；在公网逐架构核对清单（含签名信封）与断点下载。
   4. 某步失败在Actions里重跑失败的作业：已有的Release不再重建，中转上传可以重复执行。
 - 替换已发的版本（发出后才发现问题）：版本名不变、构建号加一，合并升版本PR之前先删掉这个版本的Release与标签（gh release delete v<版本名> --cleanup-tag），流水线按新提交重发、覆盖中转上同名安装包；装着旧构建号的在应用内会收到更新。
 - 试跑：在Actions里手动运行Release（默认勾选dry_run），只构建、核对、生成清单并试连中转，不发Release、不改中转。改了发版流程、签名或构建配置后先试跑。
-- 机密在仓库Settings › Environments：release环境（只限受保护分支，不设审批人）放SIGNING_KEYSTORE与SIGNING_PROPERTIES（仓库外alpha.jks与signing.properties的base64）、AMAP_KEY、RELAY_URL；relay环境（只限受保护分支）放RELAY_URL、RELAY_SSH_TARGET、RELAY_SSH_KEY、RELAY_KNOWN_HOSTS（受限账号见server/README.md部署第6步）。
+- 机密在仓库Settings › Environments：release环境（只限受保护分支，不设审批人）放SIGNING_KEYSTORE与SIGNING_PROPERTIES（仓库外alpha.jks与signing.properties的base64）、AMAP_KEY、RELAY_URL、MANIFEST_SIGNING_KEY（更新清单签名私钥）；relay环境（只限受保护分支）放RELAY_URL、RELAY_SSH_TARGET、RELAY_SSH_KEY、RELAY_KNOWN_HOSTS（受限账号见server/README.md部署第6步）、NOTES_SIGNING_KEY（开发者的话签名私钥）。
+- 更新清单与开发者的话的签名（[人工决策]见lib/device/signed_content.dart）：中转现在是明文HTTP，两者由流水线用Ed25519签名，客户端只认验签通过的内容（明文字段留给1.0.0-alpha.15及以前的旧客户端）。三把私钥都是openssl生成的PKCS#8 PEM，放在仓库外：发版钥与开发者的话钥各在上面的机密里，离线备用钥（两类都能签）只留维护者本机；公钥与各自能签的内容内置在lib/device/signed_content.dart的trustedSigningKeys，流水线签完用这张表再验一遍，私钥与源码对不上就停。签名挡不住冻结与回滚，冻结只能靠将来的HTTPS；不加过期时间。
+  - 上线顺序：先部署中转服务（能透传签名信封的版本，见server/README.md），再发带验签的客户端；发版与Notes流水线上传前会先确认中转返回里有envelope字段，没有就停。旧客户端照常更新，不受影响。
+  - 换钥（线上钥丢失或泄露）：openssl genpkey -algorithm ed25519生成新钥，dart run tool/content_signing.dart public-key 新钥.pem取公钥，在trustedSigningKeys里加新编号（泄露的那把同时删掉），用新钥更新机密；换钥这一版发布后，在本机用离线备用钥加新钥（--signing-key可给多把）重签清单或开发者的话，由维护者自己传到中转的releases目录覆盖，让手上旧版客户端也验得过。跳过了换钥版本的旧客户端要到发布页手动下载一次。
 - Alpha包名com.superxd.superxd.alpha、显示SuperXD Alpha，与开发包并装、数据不共享。默认flutter run/build是production flavor（开发包名）；只有显式--flavor alpha才构建Alpha。不要向同一设备安装debug签名的alphaDebug。
 
 本机构建（排查问题或流水线不可用时；按架构分包，符号离线保存）：
@@ -38,10 +41,10 @@ ORG_GRADLE_PROJECT_superxdSigningProperties=/仓库外的绝对路径/signing.pr
 
 - 签名配置只从上述外部properties读取，包含storeFile、keyAlias、storePassword、keyPassword；storeFile可相对配置文件。密钥文件和密码在仓库外限制访问并离线备份（流水线用的是release环境里的副本），禁止写进命令行、日志、Git或Issue。release缺少有效配置直接失败，不回退debug签名。丢失密钥就无法覆盖升级，只能换签名并让用户卸载重装（1.0.0-alpha.2即因此更换）；换签名时同步改工作流的RELEASE_CERT_SHA256与release环境的机密。
 - 符号文件build/release_symbols用于还原崩溃堆栈，不打进APK、不上传Release；流水线把它存为Actions产物release-symbols（保留90天），发版后下载到仓库外离线保存。--analyze-size与--split-debug-info不能同次使用。
-- 本机发版时照流水线的核对逐项手做：apksigner verify --print-certs验签，检查包名、版本号、ABI与debuggable=false；生成SHA256SUMS，发布后下载附件再校验；dart run tool/release_changelog.dart取更新说明与Release正文，dart run tool/release_manifest.dart生成alpha.json，先传安装包、最后传清单、再删旧包，用 curl <中转地址>/v1/app/releases/alpha?abi=arm64-v8a 核对。
+- 本机发版时照流水线的核对逐项手做：apksigner verify --print-certs验签，检查包名、版本号、ABI与debuggable=false；生成SHA256SUMS，发布后下载附件再校验；dart run tool/release_changelog.dart取更新说明与Release正文，dart run tool/release_manifest.dart（--signing-key给仓库外的清单签名私钥）生成alpha.json并用dart run tool/content_signing.dart check-release alpha.json --channel alpha核对，先传安装包、最后传清单、再删旧包，用 curl <中转地址>/v1/app/releases/alpha?abi=arm64-v8a 核对（返回要带envelope）。
 - 应用内更新（从1.0.0-alpha.4起）：客户端只认与已装应用同签名、同包名、版本号一致的安装包，换签名的版本无法应用内更新。
 - 强制更新：只有旧版已无法正常使用（服务端接口不兼容、严重问题）或维护者明确要求时，才在升版本PR里调高工作流的RELEASE_MIN_SUPPORTED（最低可用构建号），已装版本低于它的用户会看到关不掉的更新弹窗。这个值只升不降、平时不动，不低于它的版本之间的更新都可选。
-- 开发者的话不走发版：在notes目录加一个.txt（格式见notes/README.md），PR的CI由test/developer_notes_test.dart校验格式，合并到main后流水线.github/workflows/notes.yml用tool/developer_notes.dart生成developer_notes.json，经relay环境的受限账号传到中转并在公网核对；也可在Actions里手动运行Notes重传当前main的内容。
+- 开发者的话不走发版：在notes目录加一个.txt（格式见notes/README.md），PR的CI由test/developer_notes_test.dart校验格式，合并到main后流水线.github/workflows/notes.yml用tool/developer_notes.dart生成并签名developer_notes.json（签名钥在relay环境的NOTES_SIGNING_KEY），验过后经relay环境的受限账号传到中转并在公网核对；也可在Actions里手动运行Notes重传当前main的内容。
 - 节日（人工决策见lib/domain/festival.dart）：不预制，维护者点名哪个节日就为那一次单独做动画——在lib/page/festival下写场景、在festival_catalog.dart登记一项（编号如spring-2027，发出后不改），先在开发者选项的「节日预览」里逐帧看，再在模拟器上改系统日期走一遍真实触发（打扰时机的安静期、只播一次）；动画要随某个版本发出去，所以要赶在节日前发版。要发红包时，在服务器上用维护命令建同编号的活动、导入奖品（见server/README.md部署第6步），编号写进这一项的campaign。
 - 性能比较使用同设备、同构建模式、同数据与显示设置；真机profile才能作为性能验收。字体保持完整字符覆盖和实际字重，不以裁字或假粗体压缩体积。
 
