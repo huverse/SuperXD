@@ -1,11 +1,17 @@
 # 单机部署：中转服务 + MySQL + Redis。只对外暴露中转端口，数据库与缓存只在内部网络。
-# 用法见 README：复制 .env.example 为 .env 并改密码，然后 docker compose up -d --build。
+# 用法见 README「部署」：复制 .env.example 为 .env 并改密码；中转镜像用流水线构建、服务器 docker load 后按 RELAY_IMAGE 运行，本机构建（--build）只作退路。
 services:
   relay:
+    # 默认 superxd-relay:local（本机 --build 的产物）；正式部署在 .env 写 RELAY_IMAGE=superxd-relay:<提交号>（docker load 进来的镜像）。
+    image: ${RELAY_IMAGE:-superxd-relay:local}
+    # 只用本机已有的镜像、不去仓库拉；配合 up --no-build，标签写错时直接报错，不会悄悄在服务器上现场构建。
+    pull_policy: never
     build:
       context: .
       args:
         NPM_REGISTRY: ${NPM_REGISTRY}
+        # 本机构建时可在命令前写 RELAY_BUILD_VERSION=<提交号>；不要写进 .env（env_file 会盖掉镜像里的值）。
+        RELAY_BUILD_VERSION: ${RELAY_BUILD_VERSION:-dev}
     restart: unless-stopped
     env_file: .env
     environment:
@@ -27,12 +33,20 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+    # 同镜像里的 HEALTHCHECK：请求本机 /v1/health；docker ps 与 docker inspect 的 Health 可见，部署后等它变成 healthy。
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://127.0.0.1:$${RELAY_PORT}/v1/health || exit 1"]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
     logging:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }
 
+  # MySQL 与 Redis 固定到补丁版：升级时改这里，先跑一次备份（scripts/backup_db.sh）。
   mysql:
-    image: mysql:8.4
+    image: mysql:8.4.13
     restart: unless-stopped
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
@@ -53,7 +67,7 @@ services:
       retries: 30
 
   redis:
-    image: redis:8-alpine
+    image: redis:8.10.3-alpine
     restart: unless-stopped
     # Redis 只放可丢的运行态（邀请、限流、随机数），不开持久化；内存上限 256MB，满了按 TTL 淘汰。
     command: ["redis-server", "--requirepass", "${REDIS_PASSWORD}", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "volatile-ttl"]

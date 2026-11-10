@@ -70,6 +70,13 @@ export const rewardDrawPerHour = 3000;
 export const rewardCampaignCacheSeconds = 60;
 export const rewardKeepDays = 30;
 
+// 设备公钥的进程内缓存（L1）：每台最多 10 分钟。设备号与签名公钥终身绑定、不会变旧，TTL 只为多实例下别的实例删掉设备（关闭私信、不活跃清理）后，
+// 本实例最迟 10 分钟内也不再认它；本实例删除时立即移除。
+export const deviceKeyCacheSeconds = 10 * 60;
+// 未注册设备号的负缓存（人工决策见 src/modules/device/device.service.ts）：查库没有的设备号在 Redis 记 60 秒，期间同一设备号的请求不再查库；
+// 注册成功即改记「已注册」，新注册立刻在所有实例生效。
+export const deviceMissingSeconds = 60;
+
 // 诊断包（人工决策见客户端 lib/domain/diagnostic_upload.dart）：用户在开发者选项里确认后上传、在本机用开发者公钥加密过的日志包，只存密文、没有下载接口。
 // 单个不超过 24MB：客户端日志包里开发者模式日志最多 20MB、错误记录两份约 1MB（lib/local/diagnostic_log.dart 的上限常量），旧日志已是 gzip、再压不小，留些余量；
 // 不到一个信封头（版本、一次性公钥、随机数与 GCM 标签共 61 字节）的不收。
