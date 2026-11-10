@@ -72,7 +72,7 @@
    - 第三方解析来源逐个来源、按授权版本单独征得同意，自动模式只尝试已启用且已同意的来源。
    - 开发者的话的本机记录（最近的信、读过与弹过的编号）与节日的本机记录（参与号、近 30 天打开过的日期、播过抽过的节日、奖品）属于设备；参与号是随机数，不关联教务账号、私信身份与设备标识。
 9. 对外网络：
-   - 每个外部请求都有显式超时与响应上限，只发必要字段；具体数值写在所属模块（教务 edu、解析 toolbox、代签 chaoxing、私信 social、应用更新、开发者的话与节日抽签 device）。
+   - 每个外部请求都有显式超时与响应上限，只发必要字段；具体数值写在所属模块（教务 edu、解析 toolbox、代签 chaoxing、私信 social、应用更新、开发者的话、节日抽签与诊断包上传 device）。
    - 除会话自动恢复后的一次重放、时钟偏差校正后的一次重发外，不自动重试；私信收取的长轮询是持续接收通道，失败后退避继续；自动同步按间隔来，没连上网的隔 15 分钟后再试，都不算重试，后台任务也不交给系统重试。
    - 教务默认只在用户点同步时访问；自动同步是用户开启后的例外（默认关闭），登录过期时只暂停、不转登录页。
    - CampusSync 每个实例内按顺序逐项请求，今天页和成绩页各持有一个实例；成绩同步与其他教务网络请求互斥（SYNC_BUSY）；教务限流时报 RATE_LIMITED，本轮立即停止。
@@ -116,6 +116,7 @@
   - 访问真实服务，只在授权环境与授权账号上手动运行：verify_edu.dart、verify_grades.dart（教务）、verify_chaoxing.dart（学习通，输出脱敏）。
   - 经真实中转、只用合成数据：verify_social.dart、verify_chaoxing_pack.dart。
   - 设备与原生验证：verify_toolbox.dart（原生下载导出）、verify_chaoxing_map.dart（高德选点，要 SUPERXD_AMAP_KEY）、motion_release_test.dart（发布包的图标字体）。
+  - 诊断包：open_diagnostic.dart（解开用户上传的诊断包、生成开发者密钥对，只读写本机文件）。
   - 发版：release_changelog.dart（从 CHANGELOG 取更新说明与 Release 正文，正文模板 release_body.md）、release_manifest.dart（生成更新清单）。
   - 生成与演示：painting_colors.dart（开屏画作清单里的尺寸与天空色，加画时跑）、readme_demo.dart（README 截图）、font_previews.dart（字体预览图）、schedule_smoke.dart、glass_preview.dart、motion_preview.dart。
 

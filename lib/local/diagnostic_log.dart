@@ -9,6 +9,7 @@ import 'package:path/path.dart' as path;
 import 'package:synchronized/synchronized.dart';
 
 import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/diagnostic_upload.dart';
 
 // 错误记录每份的上限：两份轮换（errors.log 写满改名成 errors.1.log），合计约 1MB，平时也记。
 const diagnosticErrorLimit = 512 * 1024;
@@ -42,10 +43,12 @@ typedef DiagnosticPublish = Future<bool> Function(File archive, String filename)
 // 免得周期性的错误（如断网时私信长轮询）刷满 1MB 错误记录、挤掉真正有用的；早于今天的开发者模式日志压成 .gz；错误可按种类汇总（查看页与诊断摘要）。
 // [人工决策-2026-10-22 16:24:03] 审查后用户选定「同类」按首行加出错位置（堆栈前三帧）算，上次退出原因不参与合并，见 diagnosticErrorSignature。
 class DiagnosticLog {
-  DiagnosticLog._(this.directory, this._exports, this._publish, this._clock);
+  DiagnosticLog._(this.directory, this._exports, this._publish, this._uploader, this._clock);
   final Directory directory;
   final Directory _exports;
   final DiagnosticPublish _publish;
+  // 上传诊断包（组合根注入 device 层的中转实现）；没配中转的构建为空，开发者选项里不出现上传。
+  final DiagnosticUploader? _uploader;
   final DateTime Function() _clock;
   final _errors = <String>[];
   final _all = <String>[];
@@ -67,8 +70,8 @@ class DiagnosticLog {
   // 字号状态（屏宽、系统与应用字号、字体、推荐上限），开发者模式开着时由组合根随变化更新；摘要与 about.txt 写在运行环境后面。
   Map<String, String> textSize = const {};
 
-  static Future<DiagnosticLog> open({required Directory directory, required Directory exports, required DiagnosticPublish publish, DateTime Function() clock = DateTime.now}) async {
-    final log = DiagnosticLog._(directory, exports, publish, clock);
+  static Future<DiagnosticLog> open({required Directory directory, required Directory exports, required DiagnosticPublish publish, DiagnosticUploader? uploader, DateTime Function() clock = DateTime.now}) async {
+    final log = DiagnosticLog._(directory, exports, publish, uploader, clock);
     // 清理旧日志排进写入队列、不等它：跨天后第一次启动要压缩之前的日志（最多约 20MB），等着会拖慢启动；
     // 本机日志只是辅助记录，存储出错（如外部存储暂时不可用）也不能让应用起不来，失败只报到控制台。
     unawaited(log._queue.synchronized(log._prune).catchError((Object error, StackTrace stack) {
@@ -298,10 +301,35 @@ class DiagnosticLog {
   Future<String?> export() => _exporting ??= _export().whenComplete(() => _exporting = null);
 
   Future<String?> _export() async {
-    await flush(settle: true);
     final now = campusInstant(_clock());
     String two(int value) => value.toString().padLeft(2, '0');
     final filename = 'SuperXD-日志-${now.year}${two(now.month)}${two(now.day)}-${two(now.hour)}${two(now.minute)}${two(now.second)}.zip';
+    final archive = File(path.join(_exports.path, filename));
+    try {
+      return await _pack(archive) && await _publish(archive, filename) ? filename : null;
+    } finally {
+      if (await archive.exists()) await archive.delete();
+    }
+  }
+
+  // 有没有上传诊断包的去处（没配中转的构建没有）。
+  bool get canUpload => _uploader != null;
+
+  // 上传诊断包（人工决策见 domain/diagnostic_upload.dart）：打的包与导出的完全相同，交给注入的上传（本机加密后传到中转），成功返回诊断编号；临时包用完即删。
+  // 没有日志或没传成抛 DiagnosticUploadException；sent 是已发出的比例。
+  Future<String> upload({void Function(double sent)? onProgress}) async {
+    final archive = File(path.join(_exports.path, 'upload-${_clock().microsecondsSinceEpoch}.zip'));
+    try {
+      if (!await _pack(archive)) throw const DiagnosticUploadException('本机还没有日志');
+      return await _uploader!.upload(archive.path, onProgress: onProgress);
+    } finally {
+      if (await archive.exists()) await archive.delete();
+    }
+  }
+
+  // 把全部日志加 about.txt（运行环境、字号状态与打包时刻）打成 zip，导出与上传共用；没有日志时不打包、返回假。
+  Future<bool> _pack(File archive) async {
+    await flush(settle: true);
     final about = [
       for (final MapEntry(:key, :value) in {...environment, ...textSize}.entries) '$key: $value',
       'exportedAt: ${_clock().toUtc().toIso8601String()}',
@@ -309,13 +337,7 @@ class DiagnosticLog {
       'note: 早于导出当天的开发者模式日志是 .log.gz，用 gunzip 解开',
     ].join('\n');
     await _exports.create(recursive: true);
-    final archive = File(path.join(_exports.path, filename));
-    try {
-      final packed = await _queue.synchronized(() => _zipIsolated(directory.path, archive.path, about));
-      return packed && await _publish(archive, filename) ? filename : null;
-    } finally {
-      if (await archive.exists()) await archive.delete();
-    }
+    return _queue.synchronized(() => _zipIsolated(directory.path, archive.path, about));
   }
 }
 

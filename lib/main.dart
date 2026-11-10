@@ -34,6 +34,7 @@ import 'package:superxd/device/diagnostic_device.dart';
 import 'package:superxd/device/home_widget_publisher.dart';
 import 'package:superxd/device/notification_reminders.dart';
 import 'package:superxd/device/picture_export.dart';
+import 'package:superxd/device/relay_diagnostic_upload.dart';
 import 'package:superxd/device/relay_note_feed.dart';
 import 'package:superxd/device/relay_release_feed.dart';
 import 'package:superxd/device/relay_reward_client.dart';
@@ -110,10 +111,15 @@ void main() async {
   if (Platform.isIOS) await databaseFactory.setDatabasesPath(path.join(support.path, 'databases'));
   final deviceOnly = Platform.isIOS ? Directory(path.join(support.path, 'device_only')) : support;
   final external = Platform.isAndroid ? await getExternalStorageDirectory() : null;
+  // 诊断包上传走同一个自建中转（人工决策见 domain/diagnostic_upload.dart）；没配中转时为空，开发者选项里不出现上传。
   final logs = await DiagnosticLog.open(
     directory: Directory(path.join((external ?? deviceOnly).path, 'logs')),
     exports: Directory(path.join((await getTemporaryDirectory()).path, 'diagnostics_export')),
     publish: publishDiagnosticArchive,
+    uploader: switch (relayBase()) {
+      final base? => RelayDiagnosticUpload(base),
+      null => null,
+    },
   );
   campusLog = logs.tee(debugPrint);
   // 开屏画作（人工决策见 page/painting_splash.dart）：按清单顺序取这次的一幅，马上开始解码（和下面几步初始化同时进行），开屏第一帧多半就有图。

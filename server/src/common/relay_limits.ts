@@ -70,6 +70,18 @@ export const rewardDrawPerHour = 3000;
 export const rewardCampaignCacheSeconds = 60;
 export const rewardKeepDays = 30;
 
+// 诊断包（人工决策见客户端 lib/domain/diagnostic_upload.dart）：用户在开发者选项里确认后上传、在本机用开发者公钥加密过的日志包，只存密文、没有下载接口。
+// 单个不超过 24MB：客户端日志包里开发者模式日志最多 20MB、错误记录两份约 1MB（lib/local/diagnostic_log.dart 的上限常量），旧日志已是 gzip、再压不小，留些余量；
+// 不到一个信封头（版本、一次性公钥、随机数与 GCM 标签共 61 字节）的不收。
+// 同一来源每小时 30 个（校园网 NAT 共用出口，诊断上传本来就少，一个班同时传也够；只防脚本刷满目录）。
+// 保留 30 天；目录合计不超过 2GB、2000 个（清理任务每轮扫目录的工作量也因此有界），满了回 503，等到期删掉腾出地方。
+export const diagnosticUploadMaxBytes = 24 * 1024 * 1024;
+export const diagnosticUploadMinBytes = 61;
+export const diagnosticUploadPerHour = 30;
+export const diagnosticKeepDays = 30;
+export const diagnosticStoreMaxBytes = 2 * 1024 * 1024 * 1024;
+export const diagnosticStoreMaxFiles = 2000;
+
 // 设备 400 天没有任何请求即删除，连同其好友关系与待取消息。
 export const deviceIdleDays = 400;
 // 最后活跃时间每设备最多每小时写一次库。

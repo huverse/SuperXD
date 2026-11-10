@@ -5,6 +5,8 @@ import { join } from 'node:path';
 const defaults: Record<string, string> = {
   // 应用更新用例自己往这个临时目录放清单与安装包。
   RELAY_RELEASES_DIR: join(tmpdir(), 'superxd-relay-releases-test'),
+  // 诊断包用例同样用自己的临时目录。
+  RELAY_DIAGNOSTICS_DIR: join(tmpdir(), 'superxd-relay-diagnostics-test'),
   RELAY_PORT: '0',
   RELAY_TRUST_PROXY: '0',
   RELAY_SWAGGER: 'false',

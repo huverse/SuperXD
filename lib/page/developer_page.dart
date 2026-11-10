@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/diagnostic_upload.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/domain/festival.dart';
 import 'package:superxd/local/diagnostic_log.dart';
@@ -28,6 +29,10 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 // 导出日志包的结果：安卓存进 Download/SuperXD，iOS 弹系统分享面板（取消也算没完成）。
 String _exportedText(String? filename) => filename == null ? '导出没完成，请重试' : defaultTargetPlatform == TargetPlatform.iOS ? '已导出：$filename' : '已保存到 Download/SuperXD：$filename';
 
+// 上传诊断包前的确认（人工决策见 domain/diagnostic_upload.dart）：每次都问，写明传什么、传到哪、保留多久、怎么提前删。
+const _uploadNotice = '把与「导出日志」相同的日志包（本机日志、运行环境与字号状态）在本机加密后传到开发者的中转服务器，只有开发者能解开，'
+    '$diagnosticUploadKeepDays 天后自动删除。传完会给你一个诊断编号，把它告诉开发者；要提前删除，也凭编号联系开发者。';
+
 // 运行环境各项的显示名（键见组合根 app_diagnostics.dart 的 appEnvironment）。
 const _environmentLabels = {'version': '版本', 'build': '构建号', 'flavor': '渠道', 'os': '系统', 'sdk': 'API 级别', 'device': '机型', 'abi': '处理器架构'};
 
@@ -44,6 +49,10 @@ class DeveloperPage extends StatefulWidget {
 class _DeveloperPageState extends State<DeveloperPage> {
   late Future<int> _size = widget.logs.totalBytes();
   bool _exporting = false;
+  // 上传诊断包：传的过程在按钮上原地显示（加密中、上传中百分比），传完按钮换成诊断编号、点了复制。
+  bool _uploading = false;
+  double? _sent;
+  String? _diagnosticId;
 
   void _refreshSize() => setState(() {
     _size = widget.logs.totalBytes();
@@ -69,6 +78,43 @@ class _DeveloperPageState extends State<DeveloperPage> {
     setState(() => _exporting = false);
     showCampusToast(context, _exportedText(filename));
   }
+
+  Future<void> _upload() async {
+    final agreed = await showCampusConfirm(context, title: '上传诊断包', message: _uploadNotice, action: '上传');
+    if (!agreed || !mounted) return;
+    setState(() {
+      _uploading = true;
+      _sent = null;
+    });
+    String? id, failure;
+    try {
+      id = await widget.logs.upload(onProgress: (sent) {
+        if (mounted) setState(() => _sent = sent);
+      });
+    } on DiagnosticUploadException catch (error) {
+      failure = error.message;
+    } catch (error, stack) {
+      campusLog('[Developer] action=upload errorType=${error.runtimeType}\n$stack');
+      failure = '上传没完成，请重试';
+    }
+    if (!mounted) return;
+    setState(() {
+      _uploading = false;
+      _diagnosticId = id;
+    });
+    showCampusToast(context, failure ?? '已上传，把诊断编号告诉开发者');
+  }
+
+  Future<void> _copyDiagnosticId() async {
+    await Clipboard.setData(ClipboardData(text: _diagnosticId!));
+    if (mounted) showCampusToast(context, '已复制诊断编号');
+  }
+
+  // 加密时还没有进度；发完还要等服务器存好才算传完，所以最多写到 99%。
+  String get _uploadLabel => switch (_sent) {
+    null => '加密中',
+    final sent => '上传中 ${(sent.clamp(0, .99) * 100).floor()}%',
+  };
 
   // 诊断摘要（运行环境加最近的几种错误，已掩码）复制成纯文字，粘贴进聊天或 Issue，不用传整个日志包。
   Future<void> _copySummary() async {
@@ -143,6 +189,15 @@ class _DeveloperPageState extends State<DeveloperPage> {
                   onPressed: _exporting ? null : _export,
                   child: CampusBusyContent(busy: _exporting, label: '导出日志', busyLabel: '导出中', icon: const CampusIcon(CampusIcons.exportLogs)),
                 ),
+                // 没配中转的构建没有上传的去处，不出现这个按钮。
+                if (widget.logs.canUpload)
+                  switch (_diagnosticId) {
+                    null => OutlinedButton(
+                      onPressed: _uploading ? null : _upload,
+                      child: CampusBusyContent(busy: _uploading, label: '上传诊断包', busyLabel: _uploadLabel, icon: const CampusIcon(CampusIcons.send)),
+                    ),
+                    final id => OutlinedButton.icon(onPressed: _copyDiagnosticId, icon: const CampusIcon(CampusIcons.copy), label: Text('诊断编号 $id')),
+                  },
               ]),
               const SizedBox(height: 16),
               // 连上电脑直接拷出整个日志目录（应用专属外部目录，不需要权限，也不用先在手机上导出）。

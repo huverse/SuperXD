@@ -17,6 +17,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --registry=$NPM_REGISTRY && npm cache clean --force
 COPY --from=build /app/dist ./dist
+# 诊断包目录先建好交给 node：compose 的命名卷第一次创建时沿用这里的属主与权限，非 root 进程才写得进去。
+RUN mkdir -p /srv/diagnostics && chown node:node /srv/diagnostics && chmod 700 /srv/diagnostics
 USER node
 EXPOSE 8080
 CMD ["node", "dist/main.js"]
