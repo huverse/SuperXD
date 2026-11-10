@@ -17,7 +17,7 @@
 - 双端一致性由 test/vectors/protocol_v1.json 守护，客户端 test/social_protocol_test.dart 读同一份文件。
 
 接口（base64url 一律无填充）
-- GET /v1/health：免签名，返回协议版本与服务器时间。
+- GET /v1/health：免签名，返回协议版本、服务器时间与构建版本 version（流水线构建的镜像是提交号前 12 位，本地开发为 dev；客户端只读前两项）。
 - POST /v1/devices：注册（自签名，请求体带两把公钥），幂等。DELETE /v1/devices：删除本设备及其好友关系与待取消息（用户关闭私信）。
 - POST /v1/invites：登记邀请号与邀请公钥，5 分钟有效，同时作废本设备旧邀请。DELETE /v1/invites/:id：作废。
 - POST /v1/friends/redeem：扫码方提交邀请号、凭证（邀请私钥对“SXD1-invite、邀请号、扫码方设备号”的签名）与给邀请人的问候密文；关系与问候同一事务写入。邀请有效期内可多人使用。
@@ -45,26 +45,62 @@
 - 开发者的话：同一来源每小时 600 次；最多 30 封、标题 40 字、正文 4000 字，文件超过 512KB 拒绝读取（与客户端 lib/domain/developer_note.dart 一致）。
 - 节日抽奖：同一来源每小时 3000 次；活动行在进程内缓存 60 秒；活动结束 30 天后由每小时一次的清理任务连同奖品与抽签记录分批删除（多实例抢锁，每轮最多 20 批、每批 1000 行）。
 - 按 IP 限流的计数主体：IPv4 按完整地址，IPv6 按 /64 前缀（换地址绕不过去）。
-- Redis 只放可丢的运行态（邀请、随机数、限流计数、写库节流标记、清理任务锁），权威数据只在 MySQL。丢了的后果：邀请需重新出示、限流归零、锁释放后下一轮重抢；随机数丢了则 5 分钟校时窗口内截获的请求可被重放一次。部署用 maxmemory-policy volatile-ttl（内存满时先淘汰寿命最短的 key，随机数与邀请首当其冲），Redis 内存要留足余量。
+- 发送的每分钟与每天两个窗口在一个 Lua 脚本里按顺序计数（一次往返），超了每分钟的不再计入每天的。
+- 验签用的设备公钥在进程内缓存（每实例最多 5 万台、每台 10 分钟，多实例下别的实例删掉的设备最迟 10 分钟内这里也不认）；查库没有的设备号在 Redis 记 60 秒，期间同一设备号直接拒绝、不再查库，注册成功即改记「已注册」，新注册立刻在所有实例生效（人工决策见 src/modules/device/device.service.ts）。每次换随机设备号的刷库挡不住（每个新号仍查一次唯一索引），整体流量要在前置代理或安全组按 IP 限速。
+- 备份（scripts/backup_db.sh）：每天一份，只留最新 14 份，见「备份与恢复」。
+- Redis 只放可丢的运行态（邀请、随机数、限流计数、写库节流标记、设备号负缓存、清理任务锁），权威数据只在 MySQL。丢了的后果：邀请需重新出示、限流归零、负缓存清空后每个未注册设备号多查一次库、锁释放后下一轮重抢；随机数丢了则 5 分钟校时窗口内截获的请求可被重放一次。部署用 maxmemory-policy volatile-ttl（内存满时先淘汰寿命最短的 key，随机数与邀请首当其冲），Redis 内存要留足余量。
 
 # 本地开发与测试
 
 - 环境变量见 .env.example，只在 src/config/env.ts 读取，缺必填项启动即失败。
 - 起测试库：docker compose -f docker-compose.test.yml up -d --wait（宿主机网络，MySQL 3307、Redis 6380，库在内存里）。
-- npm test：类型检查用 npm run typecheck；npm run build && npm run smoke 检查编译产物能在 Node ESM 下加载（类型导入被编译成运行时导入这类问题只在这里暴露，Vitest 测不到；Docker 构建与 CI 都会跑）；e2e 覆盖注册、签名、防重放、校时、扫码加好友（多人、凭证防盗用、作废）、收发幂等、分页、上限、关闭私信与数据保留；代签凭据包（chaoxing_pack.e2e.test.ts）覆盖取走即删、并发只取到一份、大小与格式、2KB 边界与 8KB 请求体上限、提交与取件限流、作废口令、过期与清理不误删、IPv6 按 /64 聚合；应用更新（app_release.e2e.test.ts）覆盖按架构取包、换清单即生效、清单写坏不外发、参数与文件名校验、整包与 Range 下载、限流。
+- npm test：类型检查用 npm run typecheck；npm run build && npm run smoke 检查编译产物能在 Node ESM 下加载（类型导入被编译成运行时导入这类问题只在这里暴露，Vitest 测不到；Docker 构建与 CI 都会跑）；e2e 覆盖注册、签名、防重放、校时、未注册设备号的负缓存（只查一次库、注册立刻生效、与注册交错不误记）、扫码加好友（多人、凭证防盗用、作废）、收发幂等、分页、上限、发送的分钟与每天限流、关闭私信与数据保留；代签凭据包（chaoxing_pack.e2e.test.ts）覆盖取走即删、并发只取到一份、大小与格式、2KB 边界与 8KB 请求体上限、提交与取件限流、作废口令、过期与清理不误删、IPv6 按 /64 聚合；应用更新（app_release.e2e.test.ts）覆盖按架构取包、换清单即生效、清单写坏不外发、参数与文件名校验、整包与 Range 下载、限流。
 - npm run dev：swc 监听编译，bun 运行并在产物变化时重启。
 - 客户端联调：仓库根目录 flutter test tool/verify_social.dart --dart-define=SUPERXD_RELAY=http://127.0.0.1:端口。
 
 # 部署（单机 Docker Compose）
 
 1. 安装 Docker 与 Compose 插件。
-2. 复制本目录到服务器，cp .env.example .env，把三个密码换成随机长串（如 openssl rand -hex 24，只留在服务器上）；RELAY_PUBLIC_PORT 为对外端口。国内服务器：NPM_REGISTRY 改为 https://registry.npmmirror.com；Docker Hub 不通时在 /etc/docker/daemon.json 配 registry-mirrors（如 https://docker.m.daocloud.io、https://docker.1ms.run）。
-3. docker compose up -d --build。首次启动时 MySQL 自动执行 sql/schema.sql 建表；之后的表结构变更由人工执行，服务启动不做 DDL。已有的库按日期执行 sql 下的 upgrade_*.sql（先执行升级再部署新版服务），例如 upgrade_2026_10_08.sql 给 chaoxing_pack 加作废口令哈希列。
-4. curl http://服务器:端口/v1/health 应返回 {"protocol":1,...}。防火墙（云服务器还有安全组）只放行中转端口，MySQL 与 Redis 不对外。
+2. 复制本目录到服务器（git archive <提交>:server 打包，天然不含 .env、node_modules 与 dist），cp .env.example .env，把三个密码换成随机长串（如 openssl rand -hex 24，只留在服务器上）；RELAY_PUBLIC_PORT 为对外端口。国内服务器：NPM_REGISTRY 改为 https://registry.npmmirror.com；Docker Hub 不通时在 /etc/docker/daemon.json 配 registry-mirrors（如 https://docker.m.daocloud.io、https://docker.1ms.run）。
+3. 中转镜像按下面「镜像部署与回滚」加载，再 docker compose up -d --no-build（只在没有流水线镜像时才用 --build 在服务器上构建，小内存机器上约 6 分钟）。首次启动时 MySQL 自动执行 sql/schema.sql 建表；之后的表结构变更由人工执行，服务启动不做 DDL。已有的库按日期执行 sql 下的 upgrade_*.sql（先备份、再执行升级、最后部署新版服务），例如 upgrade_2026_10_08.sql 给 chaoxing_pack 加作废口令哈希列。
+4. curl http://服务器:端口/v1/health 应返回 {"protocol":1,...,"version":"<提交号>"}。防火墙（云服务器还有安全组）只放行中转端口，MySQL 与 Redis 不对外。
    小内存机器（2GB 以内）已按 compose 里的参数关闭 MySQL performance_schema、缓冲池 128MB。
+   MySQL 与 Redis 镜像在 compose 里固定到补丁版：第一次按固定版本启动（或以后改版本）会换掉服务器上原来的镜像，MySQL 在 8.4 长期支持线内原地升级，先跑一次备份。
 5. 客户端构建时传入地址：flutter build apk --flavor alpha --dart-define=SUPERXD_RELAY=http://服务器IP:端口。
 6. 应用更新：compose 把本目录下的 releases 只读挂进容器（/srv/releases）。发版时把各架构安装包与 tool/release_manifest.dart 生成的 <渠道>.json 传进 releases，先传安装包、最后传清单（清单一出现客户端就会来下载），再删掉旧版本的安装包；由仓库的发版流水线（.github/workflows/release.yml）自动完成，步骤见仓库根目录 CONTRIBUTING.md。
    节日抽奖：库按 sql/upgrade_2026_10_23.sql 建三张表后再部署；每次节日在服务器上进中转容器执行维护命令（用法见 src/modules/reward/reward_admin.ts 文件头）：create 建活动（编号、带时区的起止时刻、模式、基础概率、加权上限），import 从标准输入导入奖品（每行「口令<TAB>内容」或「二维码<TAB>内容」，可加附言），status 看发放情况。奖品只经标准输入进库，不放进仓库、不落地成文件。
    流水线用的上传账号只能读写 releases：建系统用户（如 superxd-release，不设密码），把 releases 及其中文件交给它；它的 authorized_keys 只放流水线专用的一把密钥，写成 restrict,command="/usr/bin/rrsync /opt/superxd-relay/releases" ssh-ed25519 …，这把密钥只能经 rsync 读写这个目录，不能登录或执行别的命令。私钥只放进 GitHub 的 relay 环境，主机指纹用 ssh-keyscan 取得后一并存入。
 
 换正式域名：在前面加 Nginx 或 Caddy 终止 HTTPS，把 RELAY_TRUST_PROXY 设为 1（按 X-Forwarded-For 取客户端 IP），客户端改用 --dart-define=SUPERXD_RELAY=https://域名 重新构建即可，协议与数据不变。中国大陆服务器使用域名须先完成 ICP 备案。
+
+# 镜像部署与回滚
+
+镜像由流水线构建，服务器只加载（人工决策见 .github/workflows/relay-image.yml）：main 上 server 目录有改动就构建一次，镜像标签与 /v1/health 的 version 都是提交号前 12 位。部署仍由维护者在用户当次授权后手动执行，流水线不接触服务器。
+
+1. 取镜像包（主路径）：在 Actions 的 Relay image 运行页下载产物 superxd-relay-<版本>（含 superxd-relay-<版本>.tar.gz 与 .sha256，保留 30 天），传到服务器的 /opt/superxd-relay/images，sha256sum -c superxd-relay-<版本>.tar.gz.sha256 核对后 docker load -i superxd-relay-<版本>.tar.gz。
+   备选：服务器能连上 ghcr.io 时 docker pull ghcr.io/huverse/superxd-relay:<版本>，再 docker tag 成 superxd-relay:<版本>（包默认私有，要先在包设置里改公开或用只读令牌登录）。
+2. 同步配置：本次提交的 server 目录（compose、sql、scripts）照第 2 步 git archive 覆盖上去；有新的 upgrade_*.sql 先跑备份再执行。
+3. 记下正在跑的镜像（回滚用）：docker inspect -f '{{.Config.Image}}' superxd-relay-relay-1（容器名以 docker compose ps 为准）。
+4. 把 .env 里的 RELAY_IMAGE 改成 superxd-relay:<版本>，docker compose up -d --no-build --no-deps relay。--no-build 让标签写错时直接报错，不会在服务器上现场构建；--no-deps 不顺带重建 MySQL 与 Redis。
+5. 核对：docker inspect -f '{{.State.Health.Status}}' 容器名 变成 healthy（约半分钟内），curl /v1/health 的 version 等于这次的版本，docker logs 没有报错。
+6. 回滚：RELAY_IMAGE 改回第 3 步记下的标签，同样 docker compose up -d --no-build --no-deps relay。所以服务器上至少留着上一个版本的镜像，更早的再用 docker image rm 删；表结构只做加法（upgrade_*.sql 只加表加列），回滚旧镜像不用回退表结构。
+
+不要把 RELAY_BUILD_VERSION 写进 .env：env_file 会把它注入容器，盖掉镜像里的版本。
+
+# 备份与恢复
+
+人工决策见 scripts/backup_db.sh 文件头。只导长期数据：device、friendship 与节日抽奖的 reward_campaign、reward_prize、reward_draw；message（30 天）与 chaoxing_pack（10 分钟）是短期数据，不导。新增长期保存的表要加进脚本里的表清单。
+
+- 备份：scripts/backup_db.sh 在 mysql 容器里用容器自己的账号环境变量执行 mysqldump --single-transaction（一致性快照，不锁表、不停服务），gzip 后写进 compose 目录下的 backups（目录 700、文件 600），文件名带 UTC 时刻，只留最新 BACKUP_KEEP 份（默认 14）。用 root 的 crontab 每天跑一次，如 17 19 * * * /opt/superxd-relay/scripts/backup_db.sh >> /var/log/superxd-relay-backup.log 2>&1（服务器是 UTC，即北京时间 03:17），日志每天三行。
+- 异地：只存本机盘只防误删与库损坏，防不了整盘丢失或整机被删。去处还没定；定了以后写一个上传脚本，用 BACKUP_UPLOAD_HOOK=脚本路径 传给备份脚本（以备份文件的绝对路径为参数调用，失败则备份脚本非零退出）。备份里有还没发出的红包口令与二维码内容，传出服务器前必须先加密。
+- 恢复：
+  1. docker compose stop relay（恢复期间不再有写入）。
+  2. scripts/restore_db.sh backups/<文件>.sql.gz --yes：先核对压缩包完整、以 mysqldump 的结束标记收尾，再整表替换备份里的那几张（message 与 chaoxing_pack 不动）。
+  3. 备份之后执行过的 upgrade_*.sql 要再执行一遍（备份里是当时的表结构）。
+  4. docker compose start relay，等 healthy 后 curl /v1/health。
+- 恢复的代价：备份之后才注册的设备、新加的好友关系与抽签记录会丢。客户端目前遇到 UNAUTHORIZED 不会自己重新注册，丢了设备记录的用户要关掉私信再开，而关闭私信先删服务端设备，也会因 UNAUTHORIZED 失败——这一处要客户端另行处理，恢复前先确认。
+- 演练：用临时 MySQL（同一固定版本、服务名 mysql）加 COMPOSE_FILE、COMPOSE_PROJECT_NAME 环境变量指向它，造合成数据后备份、删表与删行、恢复，比对 CHECKSUM TABLE；坏的备份（截断、缺结束标记）与不带 --yes 一律被拒。不要拿共用的测试库演练。
+
+# 探活
+
+.github/workflows/relay-health.yml 每 30 分钟从 GitHub 请求一次 /v1/health，隔 30 秒共试 3 次都失败才让工作流失败，由 GitHub 发邮件（发给最后改过它 cron 的人，要在个人设置里开着 Actions 失败通知）。地址取 relay 环境的 RELAY_URL 机密，日志里只有退出码与 health 里的版本。它只发现服务整个挂了或网络不通；公开仓库 60 天没有提交时 GitHub 会停用定时工作流，要在 Actions 页手动启用。容器内的健康检查（Dockerfile 的 HEALTHCHECK 与 compose 的 healthcheck）只把状态标成 unhealthy，不会自动重启。
