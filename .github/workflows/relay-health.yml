@@ -1,0 +1,47 @@
+name: Relay health
+
+# [人工决策-2026-11-10 13:12:22] 中转外部探活（用户 11-10 确认方向）：每 30 分钟从 GitHub 请求一次 /v1/health，失败即工作流失败，由 GitHub 发邮件
+# （发给最后改过这里 cron 的人，要在个人设置的 Actions 通知里开着失败通知）。只发现「服务整个挂了或网络不通」；没选自建监控或第三方拨测（要额外账号或服务器资源）。
+# 地址只在 relay 环境的 RELAY_URL 机密里，不写进仓库与日志：主机名先打码，curl 的报错不输出，只打印退出码与 health 里的协议版本、构建版本。
+# GitHub 到阿里云的线路偶有抖动：隔 30 秒共试 3 次都失败才算挂。不建部署记录（deployment: false），环境页不被探活刷屏。
+# 公开仓库 60 天没有提交时 GitHub 会自动停用定时工作流，停用后要在 Actions 页手动启用。
+on:
+  schedule:
+    - cron: '13,43 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: relay-health
+  cancel-in-progress: false
+
+jobs:
+  probe:
+    name: 探活
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment:
+      name: relay
+      deployment: false
+    steps:
+      - name: 请求 /v1/health
+        env:
+          RELAY_URL: ${{ secrets.RELAY_URL }}
+        run: |
+          set -euo pipefail
+          host=${RELAY_URL#*://}; host=${host%%/*}; host=${host%:*}
+          echo "::add-mask::$host"
+          code=0
+          for attempt in 1 2 3; do
+            if body=$(curl -fsS --max-time 15 "$RELAY_URL/v1/health" 2> /dev/null); then
+              if python3 -I -c 'import json, sys; health = json.loads(sys.argv[1]); assert health["protocol"] == 1; print("[RelayHealth] action=probe result=ok attempt=%s version=%s" % (sys.argv[2], health.get("version", "unknown")))' "$body" "$attempt"; then exit 0; fi
+              code=json
+            else
+              code=$?
+            fi
+            echo "[RelayHealth] action=probe result=failed attempt=$attempt code=$code"
+            if [ "$attempt" -lt 3 ]; then sleep 30; fi
+          done
+          echo "::error::中转健康检查连续 3 次失败（最后一次 code=$code）"
+          exit 1

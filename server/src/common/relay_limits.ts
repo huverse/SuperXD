@@ -70,6 +70,13 @@ export const rewardDrawPerHour = 3000;
 export const rewardCampaignCacheSeconds = 60;
 export const rewardKeepDays = 30;
 
+// 设备公钥的进程内缓存（L1）：每台最多 10 分钟。设备号与签名公钥终身绑定、不会变旧，TTL 只为多实例下别的实例删掉设备（关闭私信、不活跃清理）后，
+// 本实例最迟 10 分钟内也不再认它；本实例删除时立即移除。
+export const deviceKeyCacheSeconds = 10 * 60;
+// 未注册设备号的负缓存（人工决策见 src/modules/device/device.service.ts）：查库没有的设备号在 Redis 记 60 秒，期间同一设备号的请求不再查库；
+// 注册成功即改记「已注册」，新注册立刻在所有实例生效。
+export const deviceMissingSeconds = 60;
+
 // 设备 400 天没有任何请求即删除，连同其好友关系与待取消息。
 export const deviceIdleDays = 400;
 // 最后活跃时间每设备最多每小时写一次库。
