@@ -22,6 +22,9 @@ export const loadEnv = () => ({
   // 反向代理层数：部署在 Nginx 等之后时设为 1，按 X-Forwarded-For 取客户端 IP 做注册与代签接口的限流；前面没有代理时必须为 0，否则来源 IP 可被伪造。
   trustProxy: integer('RELAY_TRUST_PROXY'),
   swagger: flag('RELAY_SWAGGER'),
+  // 构建版本：流水线构建镜像时把提交号经构建参数写进镜像（Dockerfile 的 RELAY_BUILD_VERSION），/v1/health 原样返回；
+  // 本地开发与测试不经镜像构建，没有这个变量即为 dev。不要写进 .env（env_file 会盖掉镜像里的值）。
+  buildVersion: process.env.RELAY_BUILD_VERSION ?? 'dev',
   // 应用更新：版本清单（<渠道>.json）与安装包所在目录，发版时人工放入；容器里只读挂载。
   releasesDir: required('RELAY_RELEASES_DIR'),
   mysql: {
