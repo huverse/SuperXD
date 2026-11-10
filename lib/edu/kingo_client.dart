@@ -11,6 +11,7 @@ import 'package:superxd/edu/parse_grades.dart';
 import 'package:superxd/domain/grades.dart';
 import 'package:superxd/edu/parse_schedule.dart';
 import 'package:superxd/edu/parse_terms.dart';
+import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/gateway_code.dart';
 
@@ -18,7 +19,7 @@ const kingoBase = 'http://42.247.18.146';
 const kingoUserAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
 
 class KingoClient {
-  KingoClient({http.Client? client, this.base = kingoBase, this.requestTimeout = const Duration(seconds: 25), this.dataQuota = 6, this.dataWindow = const Duration(seconds: 10)}) : _client = client ?? http.Client();
+  KingoClient({http.Client? client, this.base = kingoBase, this.requestTimeout = const Duration(seconds: 25), this.dataQuota = 6, this.dataWindow = const Duration(seconds: 10)}) : _http = CampusHttp('edu', client: client);
 
   final Duration requestTimeout;
   // [人工决策-2026-09-30 15:18:51] 教务在几秒内连续约10次数据查询（课表、成绩数据页）后跳转406“请求太过频繁”，其他页面不受限；数据查询按滑动窗口排队，任意dataWindow内最多dataQuota次（实测10秒内7次、15秒内10次均未被拒）。仍被拒报RATE_LIMITED，同步停止，不自动重试。
@@ -27,7 +28,10 @@ class KingoClient {
   final Stopwatch _clock = Stopwatch()..start();
   final List<Duration> _dataSlots = [];
 
-  final http.Client _client;
+  // 成绩之外的页面的响应上限：同成绩数据接口（真实页面远小于它），只防异常响应占满内存。
+  static const pageLimit = 4 * 1024 * 1024;
+
+  final CampusHttp _http;
   final String base;
   final Map<String, String> jar = {};
   String pageSession = '';
@@ -46,7 +50,7 @@ class KingoClient {
     if (_disposed) return;
     _disposed = true;
     cancelRequests();
-    _client.close();
+    _http.close();
     jar.clear();
     pageSession = '';
   }
@@ -263,41 +267,30 @@ class KingoClient {
         if (slot > now) await Future.any([Future<void>.delayed(slot - now), abort.future]);
         if (_disposed || epoch != _requestEpoch) throw http.RequestAbortedException(uri);
       }
-      final request = http.AbortableRequest(method, uri, abortTrigger: abort.future)..followRedirects = false;
-      request.headers['User-Agent'] = kingoUserAgent;
-      request.headers['Accept'] = accept;
-      if (jar.isNotEmpty) request.headers['Cookie'] = jar.entries.map((entry) => '${entry.key}=${entry.value}').join('; ');
-      if (referer != null) request.headers['Referer'] = referer.startsWith('http') ? referer : '$base$referer';
-      if (body != null) {
-        request.headers['Content-Type'] = 'application/x-www-form-urlencoded; charset=UTF-8';
-        request.body = body;
-      }
-      // 开发者模式下记这次请求的路径、状态与耗时（从真正发出算起，不含限流排队）。
-      final watch = Stopwatch()..start();
-      response = await Future.any([
-        (() async {
-          final streamed = await _client.send(request);
-          if (uri.path.endsWith('/xscj.stuckcj_data.jsp')) {
-            final bytes = <int>[];
-            await for (final chunk in streamed.stream) {
-              if (bytes.length + chunk.length > gradePayloadLimit) {
-                throw const FormatException('成绩响应超过容量上限');
-              }
-              bytes.addAll(chunk);
-            }
-            return http.Response.bytes(bytes, streamed.statusCode, headers: streamed.headers, request: request);
-          }
-          return http.Response.fromStream(streamed);
-        })(),
-        abort.future.then<http.Response>((_) => throw http.RequestAbortedException(uri)),
-      ]).timeout(requestTimeout, onTimeout: () {
-        if (!abort.isCompleted) abort.complete();
-        throw TimeoutException('教务请求超时', requestTimeout);
-      }).catchError((Object error, StackTrace stack) {
-        campusRequestLog('edu', method, uri, elapsed: watch.elapsed, error: error.runtimeType.toString());
-        Error.throwWithStackTrace(error, stack);
-      });
-      campusRequestLog('edu', method, uri, status: response.statusCode, elapsed: watch.elapsed, bytes: response.bodyBytes.length);
+      final grades = uri.path.endsWith('/xscj.stuckcj_data.jsp');
+      // 超时管到读完响应体、到点或 cancelRequests 都中断连接、响应边读边限长，都在共用内核 CampusHttp；
+      // 开发者模式下的请求记录也由它记（从真正发出算起，不含限流排队）。
+      response = await _http.send(
+        method,
+        uri,
+        timeout: requestTimeout,
+        limit: grades ? gradePayloadLimit : pageLimit,
+        headers: {
+          'User-Agent': kingoUserAgent,
+          'Accept': accept,
+          if (jar.isNotEmpty) 'Cookie': jar.entries.map((entry) => '${entry.key}=${entry.value}').join('; '),
+          if (referer != null) 'Referer': referer.startsWith('http') ? referer : '$base$referer',
+          if (body != null) 'Content-Type': 'application/x-www-form-urlencoded; charset=UTF-8',
+        },
+        body: body,
+        followRedirects: false,
+        cancel: abort.future,
+        collect: grades ? _gradeBody : null,
+      );
+    } on CampusHttpTooLarge catch (_, stack) {
+      Error.throwWithStackTrace(const FormatException('教务响应超过容量上限'), stack);
+    } on TimeoutException catch (_, stack) {
+      Error.throwWithStackTrace(TimeoutException('教务请求超时', requestTimeout), stack);
     } finally {
       _requests.remove(abort);
     }
@@ -315,6 +308,18 @@ class KingoClient {
     }
     _mergeCookie(response);
     return KingoResponse(response.statusCode, accept.startsWith('image/') ? '' : _decode(response.bodyBytes, response.headers['content-type']), response.headers, response.bodyBytes);
+  }
+
+  // 性能观察项：成绩响应分块累加，没有真机 profile 证据前不要改（见 lib/edu/CLAUDE.md），所以不用内核默认的读法。
+  static Future<List<int>> _gradeBody(Stream<List<int>> stream, int limit) async {
+    final bytes = <int>[];
+    await for (final chunk in stream) {
+      if (bytes.length + chunk.length > limit) {
+        throw const FormatException('成绩响应超过容量上限');
+      }
+      bytes.addAll(chunk);
+    }
+    return bytes;
   }
 
   void _mergeCookie(http.Response response) {
