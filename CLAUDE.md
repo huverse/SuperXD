@@ -41,9 +41,9 @@
 
 - main.dart 启动顺序：
   1. 把日志出口注入为 debugPrint，接住没被处理的异步错误与框架报错（带堆栈走 campusLog）；打开本机诊断日志与开发者设置，把出口接成 logcat 加文件两份，按开发者模式切换诊断记录（app_diagnostics.dart 的 watchDeveloperMode）；再初始化时区库、图标与第三方许可。
-  2. 先问这次是不是从快捷入口冷启动（是的话跳过开屏画作、这次也不轮换）；打开开屏画作库（local/painting_library.dart，按清单顺序取这次的一幅并马上开始解码）；打开 AccountStore，组装 AppSession（含 AccountGateway 与 SecureCredentialStore）、DisplaySettings、设备级 SocialService（中转未配置或格式不对时为不可用）、AppUpdates（没配中转或不是渠道构建时为空，渠道取 appFlavor）、开发者的话 DeveloperNotes（没配中转时为空）、节日 Festivals（登记来自 page/festival/festival_catalog.dart，没配中转时只播动画不抽签）与打扰时机 AppMoments。
+  2. 先问这次是不是从快捷入口冷启动（是的话跳过开屏画作、这次也不轮换）；打开开屏画作库（local/painting_library.dart，按清单顺序取这次的一幅并马上开始解码）；打开 AccountStore，组装 AppSession（含 AccountGateway 与 SecureCredentialStore）、DisplaySettings、设备级 SocialService（中转未配置或格式不对时为不可用）、AppUpdates（没配中转或不是渠道构建时为空，渠道取 appFlavor）、开发者的话 DeveloperNotes（没配中转时为空）、节日 Festivals（登记来自 page/festival/festival_catalog.dart，抽奖身份 social/festival_pass.dart 与抽签客户端在这里接上，没配中转时只播动画不抽签）与打扰时机 AppMoments。
   3. runApp 时外面套开屏画作 PaintingSplash（page/painting_splash.dart：天空里一笔写出应用名，写完、会话恢复、转场走完才溶解，点一下立即进入，[人工决策] 在文件内；溶解完置 splashGone，打扰时机等它），开屏画作库也交给关于页；runApp 之后不等待地初始化玻璃渲染、向原生要一次低电量与省电模式状态（watchNativeLowPower），私信服务等用户同意协议与政策后再初始化（已开启私信的会立即联网），再恢复会话；百宝箱的 shareVideo 接到私信分享弹层，路由把好友分享的视频交给注册表里认得这张卡片的工具（openShared）。
-  4. 恢复会话后核对协议与政策（checkLegalNotice：没在首次启动弹窗里同意过的先征得同意，同意之前不联网；同意过的有实质变化时提示一次），再启动五个监听：watchAutoSync 在同意后排好自动同步的后台任务、到期补跑（见 app_background_sync.dart），watchLocalSchedule 对账课前提醒与小组件，watchWidgetTheme 下发小组件配色，watchAppUpdates 清旧安装包、同意后延迟 3 秒自动检查更新并在回前台时续做安装，watchMoments 启动与回到前台记今天打开过、同意后拉一次开发者的话并补抽上次没连上的签、每次回到前台重新计这一次前台并再看一眼（信间隔不到一小时不联网）；协议弹窗与新版弹窗都由 _AccountApp 在根导航器上弹，登录页也能弹，一个提示只弹一次，协议弹窗开着时更新弹窗等它关掉。节日动画（边播边抽签，抽中的接着拆红包）、没揭晓的奖品、自动同步留下的课表冲突与新信等打扰时机的内容也由 _AccountApp 弹（_promptMoment：只在首页（底栏四个根页，未登录时是登录页）且上面没有推入页面、没有弹窗、协议已同意且没有待弹的提示、开屏走完时，停稳再弹）。
+  4. 恢复会话后核对协议与政策（checkLegalNotice：没在首次启动弹窗里同意过的先征得同意，同意之前不联网；同意过的有实质变化时提示一次），再启动五个监听：watchAutoSync 在同意后排好自动同步的后台任务、到期补跑（见 app_background_sync.dart），watchLocalSchedule 对账课前提醒与小组件，watchWidgetTheme 下发小组件配色，watchAppUpdates 清旧安装包、同意后延迟 3 秒自动检查更新并在回前台时续做安装，watchMoments 启动与回到前台记今天打开过、同意后拉一次开发者的话、按需登记或撤下抽奖身份并补抽上次没连上的签（Festivals.refresh）、每次回到前台重新计这一次前台并再看一眼（信间隔不到一小时不联网）；协议弹窗与新版弹窗都由 _AccountApp 在根导航器上弹，登录页也能弹，一个提示只弹一次，协议弹窗开着时更新弹窗等它关掉。节日动画（边播边抽签，抽中的接着拆红包）、没揭晓的奖品、自动同步留下的课表冲突与新信等打扰时机的内容也由 _AccountApp 弹（_promptMoment：只在首页（底栏四个根页，未登录时是登录页）且上面没有推入页面、没有弹窗、协议已同意且没有待弹的提示、开屏走完时，停稳再弹）。
 - 账号代次：SuperXdApp 以 session.generation 作 key 重建账号应用，切换账号时路由和页面内存状态整体丢弃（[人工决策] 在 main.dart）。
 - router.dart 门禁：会话恢复完成前停在 /boot；未登录只允许 /login、/legal 下的法务页、/toolbox 与已注册工具及其快捷入口的路由（[人工决策] 在文件内）；已登录访问 /login 回到 /today；底栏壳有今天、服务、消息、我的四个分支，外包 LegacyImportGate；课表、成绩、切换账号、法务页和百宝箱推入根导航器。
 - app_session.dart：把 AccountAccess 的账号变化转成路由刷新并暂存一次性提示；expire 只让发起时的那个代次失效，旧页面不能误登出新账号。
@@ -63,16 +63,16 @@
 6. 时间：绝对时刻一律存 UTC 的 ISO 字符串；校园时区只在 domain/campus_clock.dart 的 campusTimeZone 一处定义，今天、周次、倒计时等业务日界都经 campus_clock 计算；展示时间用 formatCampusRelative（按远近写到分钟）。
 7. 凭据：用户明确勾选记住账号且认证成功后才写入系统安全存储（关闭后在账号页重新开启也要先登录核对成功）；业务 SQLite、账号索引和日志一律不存密码；用户关闭记住账号或主动退出时立即删除凭据。
 8. 设备级数据：百宝箱、下载任务、显示设置（配色、字体、字号、深浅色、玻璃、自定义壁纸）、私信身份与好友、学习通账号与收藏、应用更新的检查记录与下载中的安装包、协议与政策的同意与已读修订号、开发者设置与本机日志都属于设备，切换教务账号时保留。
-   - 系统安全存储的每个命名空间（记住账号、私信身份、学习通、拼多多）、本机日志目录与开发者设置 developer.json 都排除出云备份与设备迁移，新增命名空间要同时加进两份备份规则，iOS 上还要给同名的 IOSOptions（仅本机级别），排除的目录同步加进 main.dart 的 excludeFromBackup，test/legal_page_test.dart 守护。
+   - 系统安全存储的每个命名空间（记住账号、私信身份、节日抽奖身份、学习通、拼多多）、本机日志目录与开发者设置 developer.json 都排除出云备份与设备迁移，新增命名空间要同时加进两份备份规则，iOS 上还要给同名的 IOSOptions（仅本机级别），排除的目录同步加进 main.dart 的 excludeFromBackup，test/legal_page_test.dart 守护。
    - 桌面小组件显示的是当前账号的课，跟着账号切换，退出登录即清空；只有它的配色跟随设备设置。
    - 自定义壁纸只经系统照片选择器读用户选中的一张，复制到应用私有目录，不上传、不申请存储权限。
    - 百宝箱不读取教务凭据或 cookie；学习通密码与 cookie 只进系统安全存储，本机不存签到记录。学习通的设备信息与 OAID 只在登录、补用户信息时现取，加密后只发给学习通，不落库。
    - 私信身份私钥只在系统安全存储，私钥与 social.db 都排除出云备份与设备迁移；只有用户「关闭私信」才删除（先删服务端设备，再清本机）。
    - 百宝箱有本机数据的工具可在首页「清除数据」（工具自己删库与凭据，框架撤同意记录），已导出的文件与上游服务器上的数据不动；工具只在 toolbox_catalog.dart 一处登记。
    - 第三方解析来源逐个来源、按授权版本单独征得同意，自动模式只尝试已启用且已同意的来源。
-   - 开发者的话的本机记录（最近的信、读过与弹过的编号）与节日的本机记录（参与号、近 30 天打开过的日期、播过抽过的节日、奖品）属于设备；参与号是随机数，不关联教务账号、私信身份与设备标识。
+   - 开发者的话的本机记录（最近的信、读过与弹过的编号）与节日的本机记录（抽奖身份的状态、近 30 天打开过的日期、播过抽过的节日、奖品）属于设备；抽奖身份是只在有抽奖的节日前后存在的单独密钥（人工决策见 domain/festival.dart），不关联教务账号、私信身份与设备标识。
 9. 对外网络：
-   - 每个外部请求都有显式超时与响应上限，只发必要字段；具体数值写在所属模块（教务 edu、解析 toolbox、代签 chaoxing、私信 social、应用更新、开发者的话与节日抽签 device）。
+   - 每个外部请求都有显式超时与响应上限，只发必要字段；具体数值写在所属模块（教务 edu、解析 toolbox、代签 chaoxing、私信与节日抽签 social、应用更新与开发者的话 device）。
    - 除会话自动恢复后的一次重放、时钟偏差校正后的一次重发外，不自动重试；私信收取的长轮询是持续接收通道，失败后退避继续；自动同步按间隔来，没连上网的隔 15 分钟后再试，都不算重试，后台任务也不交给系统重试。
    - 教务默认只在用户点同步时访问；自动同步是用户开启后的例外（默认关闭），登录过期时只暂停、不转登录页。
    - CampusSync 每个实例内按顺序逐项请求，今天页和成绩页各持有一个实例；成绩同步与其他教务网络请求互斥（SYNC_BUSY）；教务限流时报 RATE_LIMITED，本轮立即停止。

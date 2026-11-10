@@ -63,10 +63,11 @@ export const developerNoteTitleMax = 40;
 export const developerNoteBodyMax = 4000;
 export const developerNotesFileMaxBytes = 512 * 1024;
 
-// 节日抽奖（概率模型见 src/modules/reward/reward_odds.ts）：同一来源每小时 3000 次（校园网 NAT 共用出口，同代签取件的宽松档；
-// 每个参与号只抽一次、重复请求返回同一结果，限流只防脚本刷库）；活动行在进程内缓存 60 秒（建活动、改时间最迟一分钟生效）；
-// 活动结束 30 天后连同奖品与抽签记录删除。
+// 节日抽奖（概率模型与要求设备签名的人工决策见 src/modules/reward/reward_odds.ts）：同一来源每小时 3000 次（校园网 NAT 共用出口，同代签取件的宽松档），
+// 每台设备每小时 10 次（一台设备一次活动只抽一次、重复请求返回同一结果，正常客户端只在没连上时补抽；按设备计数让刷请求的设备先被自己的额度挡住）；
+// 刷号的成本是注册限流 registerPerHour。活动行在进程内缓存 60 秒（建活动、改时间最迟一分钟生效）；活动结束 30 天后连同奖品与抽签记录删除。
 export const rewardDrawPerHour = 3000;
+export const rewardDrawPerDevicePerHour = 10;
 export const rewardCampaignCacheSeconds = 60;
 export const rewardKeepDays = 30;
 

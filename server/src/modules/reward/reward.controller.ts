@@ -1,18 +1,20 @@
-import { Body, Controller, HttpCode, Ip, Param, Post } from '@nestjs/common';
+import { Body, Controller, HttpCode, Ip, Param, Post, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
+import { CurrentDevice, DeviceAuthGuard } from 'src/modules/device/device_auth.guard';
 import { RewardService } from 'src/modules/reward/reward.service';
 import * as dtos from 'src/modules/reward/reward.dto';
 
-// 节日抽奖：免签名（不要求开启私信），凭客户端本机生成的随机参与号幂等。
+// 节日抽奖：要求已登记设备的请求签名（人工决策见 reward_odds.ts），一台设备一次活动只抽一次。
 @ApiTags('reward')
 @Controller('v1/rewards')
+@UseGuards(DeviceAuthGuard)
 export class RewardController {
   constructor(private readonly rewards: RewardService) {}
 
   @Post(':campaign/draw')
   @HttpCode(200)
-  draw(@Param() param: dtos.RewardDrawParamDto, @Body() body: dtos.RewardDrawBodyDto, @Ip() ip: string): Promise<dtos.RewardDrawDto> {
-    return this.rewards.draw(ip, param.campaign, body);
+  draw(@CurrentDevice() deviceId: string, @Param() param: dtos.RewardDrawParamDto, @Body() body: dtos.RewardDrawBodyDto, @Ip() ip: string): Promise<dtos.RewardDrawDto> {
+    return this.rewards.draw(ip, deviceId, param.campaign, body);
   }
 }
