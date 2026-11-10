@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<!-- 只许加载高德的脚本、样式、图块与接口（*.amap.com 与图块域名 *.is.autonavi.com），其余一律拦下；
+     高德的渲染线程从 blob: 起 Worker、脚本里有 new Function，所以放行 blob: 与 unsafe-eval。拦下的会经 securitypolicyviolation 报给应用。 -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval' https://*.amap.com; style-src 'unsafe-inline' https://*.amap.com; img-src data: blob: https://*.amap.com https://*.is.autonavi.com; connect-src data: blob: https://*.amap.com https://*.is.autonavi.com; worker-src blob:; child-src blob:">
+<style>
+html, body, #map { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; }
+</style>
+</head>
+<body>
+<div id="map"></div>
+<script>
+// 学习通位置签到的选点地图（高德 JS API 2.0），由 lib/toolbox/chaoxing/chaoxing_web_map.dart 装进内嵌网页。
+// 只做三件事：画地图与覆盖物、把点按与定位结果交给应用、照应用的吩咐移镜头。发给应用的消息格式见 chaoxing_web_map.dart 的 chaoxingMapMessage。
+// 坐标：地图、点按与覆盖物都是高德的 GCJ-02（数组按 [纬度, 经度] 传）；定位是系统给的 WGS-84，原样交给应用、在应用里换算，不交给高德。
+// 当前位置由应用换算好再交回来，只画一个点、不画精度圈（同原生地图时的人工决策，见 chaoxing_map_page.dart）。
+(function () {
+  'use strict';
+  var config = /*CONFIG*/null;
+  var send = function (message) {
+    window.SuperXdMap.postMessage(JSON.stringify(message));
+  };
+  document.documentElement.style.background = config.background;
+
+  // 被内容安全策略拦下的加载，每个主机名只报一次（开发者模式日志里看高德是不是换了域名）。
+  var blocked = {};
+  document.addEventListener('securitypolicyviolation', function (event) {
+    var host;
+    try {
+      host = new URL(event.blockedURI).host;
+    } catch (error) {
+      host = String(event.blockedURI).slice(0, 16);
+    }
+    if (blocked[host]) return;
+    blocked[host] = true;
+    send({ type: 'blocked', host: host });
+  });
+
+  // key 或安全密钥不对时，高德只在控制台写一句「KEY异常」，转成加载失败交给应用。
+  var log = console.log;
+  console.log = function () {
+    if (String(arguments[0]).indexOf('KEY异常') >= 0) send({ type: 'failed', reason: 'key' });
+    return log.apply(console, arguments);
+  };
+
+  var map = null;
+  var marker = null;
+  var circle = null;
+  var dot = null;
+  var watch = null;
+  // 地图还没建好时先记下，建好再画。
+  var state = { marker: null, range: null, here: null, satellite: false, camera: { point: config.center, zoom: config.zoom } };
+
+  var lngLat = function (point) {
+    return [point[1], point[0]];
+  };
+
+  var drawMarker = function () {
+    if (!map) return;
+    if (!state.marker) {
+      if (marker) marker.setMap(null);
+      marker = null;
+    } else if (marker) {
+      marker.setPosition(lngLat(state.marker));
+    } else {
+      // bubble：点在标记上也算点地图（重新选点）。
+      marker = new AMap.Marker({ position: lngLat(state.marker), bubble: true, map: map });
+    }
+  };
+
+  // 签到范围圈：只作提示；bubble 让圈里的点按照样落到地图上。
+  var drawRange = function () {
+    if (!map) return;
+    if (circle) circle.setMap(null);
+    circle = null;
+    var range = state.range;
+    if (!range) return;
+    circle = new AMap.Circle({
+      center: lngLat(range.center),
+      radius: range.meters,
+      fillColor: range.color,
+      fillOpacity: 0.12,
+      strokeColor: range.color,
+      strokeOpacity: 0.7,
+      strokeWeight: 2,
+      bubble: true,
+      map: map,
+    });
+  };
+
+  // 当前位置的点（半径按屏幕像素，不随缩放变，也不表示精度）。
+  var drawHere = function () {
+    if (!map || !state.here) return;
+    if (dot) {
+      dot.setCenter(lngLat(state.here));
+      return;
+    }
+    dot = new AMap.CircleMarker({
+      center: lngLat(state.here),
+      radius: 6,
+      fillColor: '#2f80ed',
+      fillOpacity: 1,
+      strokeColor: '#ffffff',
+      strokeWeight: 2,
+      bubble: true,
+      map: map,
+    });
+  };
+
+  var drawLayers = function () {
+    if (!map) return;
+    map.setLayers([state.satellite ? new AMap.TileLayer.Satellite() : AMap.createDefaultLayer()]);
+  };
+
+  window.superxdMap = {
+    marker: function (point) {
+      state.marker = point;
+      drawMarker();
+    },
+    range: function (range) {
+      state.range = range;
+      drawRange();
+    },
+    here: function (point) {
+      state.here = point;
+      drawHere();
+    },
+    satellite: function (on) {
+      state.satellite = on;
+      drawLayers();
+    },
+    camera: function (point, zoom) {
+      state.camera = { point: point, zoom: zoom };
+      if (map) map.setZoomAndCenter(zoom, lngLat(point), true);
+    },
+    // 开始（或重新开始）定位：系统给的 WGS-84 原样交给应用，持续回报到页面关掉。
+    locate: function () {
+      if (!navigator.geolocation) {
+        send({ type: 'locateFailed', code: 2 });
+        return;
+      }
+      if (watch !== null) navigator.geolocation.clearWatch(watch);
+      watch = navigator.geolocation.watchPosition(
+        function (position) {
+          send({ type: 'located', latitude: position.coords.latitude, longitude: position.coords.longitude, accuracy: position.coords.accuracy });
+        },
+        function (error) {
+          send({ type: 'locateFailed', code: error.code });
+        },
+        { enableHighAccuracy: true, maximumAge: 0 }
+      );
+    },
+  };
+
+  window.superxdMapLoaded = function () {
+    try {
+      // 不要旋转、倾斜与室内图；点 POI 不弹详情（isHotspot），选点用不着。
+      map = new AMap.Map('map', {
+        center: lngLat(state.camera.point),
+        zoom: state.camera.zoom,
+        viewMode: '2D',
+        rotateEnable: false,
+        pitchEnable: false,
+        isHotspot: false,
+        showIndoorMap: false,
+        keyboardEnable: false,
+      });
+      map.on('click', function (event) {
+        send({ type: 'tap', latitude: event.lnglat.getLat(), longitude: event.lnglat.getLng() });
+      });
+      map.on('complete', function () {
+        var numbers = typeof map.getMapApprovalNumber === 'function' ? map.getMapApprovalNumber() : null;
+        send({ type: 'ready', approval: (numbers && numbers.satellite) || null });
+      });
+      if (state.satellite) drawLayers();
+      drawMarker();
+      drawRange();
+      drawHere();
+    } catch (error) {
+      send({ type: 'failed', reason: 'init' });
+    }
+  };
+
+  window._AMapSecurityConfig = { securityJsCode: config.secret };
+  var script = document.createElement('script');
+  script.src = 'https://webapi.amap.com/maps?v=2.0&key=' + encodeURIComponent(config.key) + '&callback=superxdMapLoaded';
+  script.onerror = function () {
+    send({ type: 'failed', reason: 'script' });
+  };
+  document.head.appendChild(script);
+})();
+</script>
+</body>
+</html>
