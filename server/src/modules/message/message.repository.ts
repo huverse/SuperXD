@@ -37,9 +37,13 @@ export class TypeormMessageRepository extends MessageRepository {
     const repository = (manager ?? this.repository.manager).getRepository(MessageEntity);
     const now = new Date();
     const expireTime = new Date(now.getTime() + messageTtlDays * 24 * 3600 * 1000);
-    await repository.createQueryBuilder().insert().into(MessageEntity).orIgnore()
+    const result = await repository.createQueryBuilder().insert().into(MessageEntity).orIgnore()
       .values({ recipientDeviceId, senderDeviceId, clientId, envelope, expireTime, createTime: now, updateTime: now })
+      .updateEntity(false)
       .execute();
+    // 新写入的直接用自增号与本次写入的时刻；affectedRows 为 0 是重复发送被忽略，才回查已有的那条。
+    const header = result.raw as { affectedRows: number; insertId: number | string };
+    if (header.affectedRows === 1) return { id: String(header.insertId), createTime: now };
     const stored = await repository.findOneOrFail({ select: { id: true, createTime: true }, where: { senderDeviceId, clientId } });
     return { id: stored.id, createTime: stored.createTime };
   }
