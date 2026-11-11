@@ -215,6 +215,22 @@ jobs:
           cp -R "$app" ipa/Payload/
           (cd ipa && zip -qry "../dist/SuperXD-$VERSION-ios-unsigned.ipa" Payload)
           echo "[Release] action=verify platform=ios size=$(stat -f %z "dist/SuperXD-$VERSION-ios-unsigned.ipa")"
+      # 锁文件被构建改写或新生成就不发版，新锁文件传成产物 release-ios-lockfiles（[人工决策] 与做法同 ci.yml 的 ios-build）。
+      - name: 核对锁文件没被改写
+        id: ios-locks
+        run: |
+          set -euo pipefail
+          git status --porcelain --untracked-files=all -- ios
+          changed=$(git status --porcelain --untracked-files=all -- ios/Podfile.lock ':(glob)ios/**/Package.resolved')
+          if [ -n "$changed" ]; then echo "::error::iOS 锁文件被构建改写或新生成：${changed//$'\n'/ ; }"; exit 1; fi
+      - if: failure() && steps.ios-locks.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: release-ios-lockfiles
+          path: |
+            ios/Podfile.lock
+            ios/**/Package.resolved
+          retention-days: 14
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: release-ios
@@ -243,6 +259,9 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: write
+      # 来源证明用：id-token 向 Sigstore 换短期签名证书，attestations 把证明存进本仓库。
+      id-token: write
+      attestations: write
     env:
       VERSION: ${{ needs.plan.outputs.version }}
       GH_TOKEN: ${{ github.token }}
@@ -256,6 +275,14 @@ jobs:
         with:
           name: release-ios
           path: dist
+      # [人工决策-2026-11-10 12:58:48] 发布来源证明（用户同意按最佳实践处理）：发 Release 之前给三个安装包与 iOS 未签名包生成 SLSA 构建来源证明
+      # （Sigstore 签名、存在本仓库），下载的人用 gh attestation verify 核对文件出自本仓库的这条流水线（做法见 CONTRIBUTING.md「供应链」与 Release 正文）。
+      # 只加在这个不碰签名密钥的作业里；用 actions/attest，没用 attest-build-provenance（它从 v4 起只是 actions/attest 的包装，官方建议新接入直接用 actions/attest）。
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: |
+            dist/SuperXD-*.apk
+            dist/SuperXD-*.ipa
       # 重跑时已有这个 Release 就不再建；标签打在触发这次发版的提交上。iOS 包的校验和接在 SHA256SUMS 后面。
       - name: 建 Release 并上传安装包
         run: |

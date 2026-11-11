@@ -1,7 +1,7 @@
 # 开发流程
 
 - main保持可构建；开发使用feat/、fix/、chore/短生命周期分支。
-- 通过PR合并，等待Flutter analyze and test与Relay server test检查成功，只用squash合并；不force push main。
+- 通过PR合并，等待Flutter analyze and test、Relay server test与iOS build三项检查成功，只用squash合并；不force push main。
 - 提交使用feat:、fix:、test:、docs:、chore:等清晰前缀，一次提交聚焦一个变化。
 - 运行flutter pub get --enforce-lockfile、flutter analyze、flutter test。只在明确更新依赖时修改pubspec.lock；本机若配置了pub镜像，命令前加PUB_HOSTED_URL=https://pub.dev，避免锁文件的来源被改写。
 - 改动前按根目录CLAUDE.md的检查清单：读项目索引与涉及模块的CLAUDE.md，检索人工决策注释；改变文件、职责、流程、库表或限额时在同一提交更新索引。
@@ -48,6 +48,24 @@ ORG_GRADLE_PROJECT_superxdSigningProperties=/仓库外的绝对路径/signing.pr
 - 节日（人工决策见lib/domain/festival.dart）：不预制，维护者点名哪个节日就为那一次单独做动画——在lib/page/festival下写场景、在festival_catalog.dart登记一项（编号如spring-2027，发出后不改），先在开发者选项的「节日预览」里逐帧看，再在模拟器上改系统日期走一遍真实触发（打扰时机的安静期、只播一次）；动画要随某个版本发出去，所以要赶在节日前发版。要发红包时，在服务器上用维护命令建同编号的活动、导入奖品（见server/README.md部署第6步），编号写进这一项的campaign。
 - 性能比较使用同设备、同构建模式、同数据与显示设置；真机profile才能作为性能验收。字体保持完整字符覆盖和实际字重，不以裁字或假粗体压缩体积。
 
+# 供应链
+
+- 仓库开着密钥扫描与推送保护、Dependabot 告警与安全更新、私密漏洞报告。推送被推送保护拦下时先看是不是真密钥：真的就先在服务方作废、换新，再把它从提交里去掉；确认是误报才在网页上放行。
+- main 合并要 CI 的 Flutter analyze and test、Relay server test 与 iOS build 三项都通过，且分支先与 main 同步。
+- 依赖自动更新：.github/dependabot.yml 让 Dependabot 每周一检查 GitHub Actions、server 的 npm、根目录的 pub 与 android 的 Gradle（[人工决策]在文件头）。补丁与次版本每处合成一条 PR，主版本各自一条，新版本发布满 7 天才提；安全更新不等。这些 PR 照常等 CI、squash 合并，不自动合并。
+- Dependabot 在 GitHub 上直接从 pub.dev 取包，它改出来的 pubspec.lock 本来就是 pub.dev 的来源，与「本机镜像会改写 pubspec.lock」那条规矩不冲突。在本机接着改这类 PR 时，命令照旧加 PUB_HOSTED_URL=https://pub.dev，提交前确认锁文件里只有这次升级带来的变化。
+- CI 不编安卓原生：插件升级与 Gradle 的 PR 合并前，在本机编一次安卓（PUB_HOSTED_URL=https://pub.dev flutter build apk --debug --flavor production --target-platform android-arm64），iOS 由 CI 的 iOS build 编。
+- 界面库升级前要走查：liquid_glass_widgets 不进合并的那条、单独一条 PR，它和 morphnext、flutter_slidable、lucide_icons_flutter 这类改外观的库升级后，在模拟器上看受影响的页面、深浅色、字号与转场，看过再合并。
+- 不让 Dependabot 提的升级写进 dependabot.yml 的 ignore 并注明原因（如 permission_handler 13 要 compileSdk 37），条件满足后删掉那条。
+- iOS 依赖锁定：CocoaPods 的 ios/Podfile.lock 与 Swift Package 的 Package.resolved 都提交进仓库，CI 与发版的 iOS 作业构建后核对它们没被改写，被改写或新生成就失败（[人工决策]在 ci.yml）。本机是 Linux、没有 Mac，改了 iOS 依赖（升降插件、改 ios/Podfile）后这样取新锁文件：
+  1. 推送分支，等 CI 的 iOS build 在「Check iOS lockfiles」失败。
+  2. 下载这次运行的产物：gh run download <运行号> -n ios-lockfiles -D <临时目录>，里面的路径相对 ios 目录。
+  3. 用 git diff --no-index 对照仓库里的旧锁文件，确认变化只来自这次改动的依赖，放回 ios 下同样的位置提交，再推一次，直到 iOS build 通过。
+- 安卓第三方仓库：android/build.gradle.kts 把 JitPack 与华为、荣耀仓库限定为各自该给的组。Gradle 依赖校验（verification-metadata.xml）暂不启用，原因见下一条。
+- 试过的做法（2026-11）：用 gradlew --write-verification-metadata sha256 跑一遍 arm64 的 Alpha release 构建，生成的文件有一千三百多个组件、六百多 KB（含 Flutter 引擎各构建模式的包与插件测试用的库），之后按校验模式正常构建能通过。没启用的原因：Dependabot 不会改这个文件，而 pub 的插件升级、Gradle 的升级与每次升 Flutter（引擎包的版本跟着变）都要重新生成；CI 又不编安卓，对不上要到发版构建时才失败、挡住发版；只生成 arm64 也缺另外两个架构的引擎包。只校验 JitPack 与华为、荣耀那几组的写法能少动很多，但 OAID 与 image_cropper（带 uCrop）升级时同样会在发版时才失败。等 CI 有了安卓构建的作业，再按这种只校验第三方仓库的写法启用。
+- 发布来源证明：发版流水线发 Release 之前，给各架构安装包与 iOS 未签名包生成 SLSA 构建来源证明（[人工决策]在 release.yml 的 github 作业）。核对：gh attestation verify SuperXD-<版本名>-arm64-v8a.apk -R huverse/SuperXD，要更严再加 --signer-workflow huverse/SuperXD/.github/workflows/release.yml --source-ref refs/heads/main；iOS 包要在重新签名之前核对。它证明文件由本仓库这条流水线在哪个提交上构建，不代替安装时的签名证书核对。
+- 覆盖率门槛：CI 的 Flutter 作业带覆盖率跑测试，tool/coverage_check.dart 算 lib 的合计行覆盖率，低于工具里的门槛就失败。新代码带测试；门槛只在覆盖率确实涨上去后调高，不为过线调低。
+
 # 许可与第三方
 
 - 本项目以GPL-3.0分发。贡献的代码同样以GPL-3.0授权。
@@ -56,4 +74,4 @@ ORG_GRADLE_PROJECT_superxdSigningProperties=/仓库外的绝对路径/signing.pr
 
 # 仓库检查
 
-main受保护：必须通过Flutter analyze and test，且分支须先与main同步。需要新增协作者时由维护者在GitHub明确授权，不共享个人token。安全问题走GitHub私密漏洞报告，不公开提交Issue。
+main受保护：必须通过Flutter analyze and test、Relay server test与iOS build，且分支须先与main同步。需要新增协作者时由维护者在GitHub明确授权，不共享个人token。安全问题走GitHub私密漏洞报告，不公开提交Issue。

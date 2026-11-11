@@ -21,6 +21,7 @@
 - 运行：flutter run 默认是 production flavor（开发包，与 Alpha 包并装、数据不共享）。私信与代签要 --dart-define=SUPERXD_RELAY=<中转地址>，地图要 --dart-define=SUPERXD_AMAP_KEY=<key>，视频解析的 BugPK 新版来源要 --dart-define=SUPERXD_SVPARSE_KEY=<key>，三者都不写进源码（发版流水线从 release 环境的机密注入）。
 - 服务端：cd server，docker compose -f docker-compose.test.yml up -d --wait 起测试库后 npm test；npm run typecheck。
 - 发版由流水线 .github/workflows/release.yml 全自动完成（安卓三个架构加 iOS 未签名包）：升版本 PR 合并到 main 即构建与发布，不再要网页批准；升版本 PR 只在用户明确要求发版时开；约定与本机构建见 CONTRIBUTING.md。
+- 依赖升级由 Dependabot 每周提 PR（.github/dependabot.yml）；main 合并要 CI 三个作业都过；iOS 锁文件怎么从 CI 取、发布来源证明怎么核对，见 CONTRIBUTING.md「供应链」。
 
 # 分层与依赖方向
 
@@ -112,7 +113,8 @@
 
 - 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、请求记录、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由、页面滚动区渐隐、顶栏玻璃圆钮、toImageSync 只用于云雾贴图、内嵌网页拖动归网页），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
 - 共用的测试支撑：fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、toolbox_test_support.dart、form_layout_support.dart、text_fit_support.dart（扫一屏文字的裁切、孤字与单独成行的标点）、app_update_fakes.dart、content_signing_support.dart（测试用签名钥）、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
-- tool 下的手动入口不进 CI（发版三个工具由发版流水线调用），运行方式见各文件头：
+- CI 的 Flutter 作业带覆盖率跑全量测试，再由 tool/coverage_check.dart 算 lib 的行覆盖率，低于工具里的门槛就失败；本机复现先 flutter test --coverage 再 dart run 它。
+- tool 下其余是手动入口，不进 CI（发版三个工具由发版流水线调用），运行方式见各文件头：
   - 访问真实服务，只在授权环境与授权账号上手动运行：verify_edu.dart、verify_grades.dart（教务）、verify_chaoxing.dart（学习通，输出脱敏）。
   - 经真实中转、只用合成数据：verify_social.dart、verify_chaoxing_pack.dart。
   - 设备与原生验证：verify_toolbox.dart（原生下载导出）、verify_chaoxing_map.dart（高德选点，要 SUPERXD_AMAP_KEY）、motion_release_test.dart（发布包的图标字体）。
