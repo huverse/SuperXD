@@ -9,13 +9,16 @@ import 'package:http/testing.dart';
 import 'package:superxd/application/app_moments.dart';
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/device/relay_note_feed.dart';
+import 'package:superxd/device/signed_content.dart';
 import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/domain/developer_note.dart';
 import 'package:superxd/domain/interruption.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/local/developer_note_memory.dart';
 
+import '../tool/content_signing.dart';
 import '../tool/developer_notes.dart';
+import 'content_signing_support.dart';
 
 DeveloperNote note(String id, DateTime publishedAt, {String title = '近况', String body = '正文'}) => DeveloperNote(id: id, title: title, publishedAt: publishedAt, body: body);
 
@@ -46,6 +49,8 @@ CourseOccurrence lesson(DateTime start, DateTime end) => CourseOccurrence(
 
 void main() {
   final now = DateTime.utc(2026, 10, 24, 13, 30);
+  late TestSigning signing;
+  setUpAll(() async => signing = await TestSigning.create());
 
   group('信的格式（tool/developer_notes.dart）', () {
     test('标题、校园时区的时间、空行后的正文；换行原样保留', () {
@@ -78,15 +83,35 @@ void main() {
       final notes = await readDeveloperNotes(directory);
       expect(notes, hasLength(developerNoteLimit));
       expect(notes.first.publishedAt.isAfter(notes.last.publishedAt), isTrue);
-      final decoded = decodeDeveloperNotes(jsonDecode(encodeDeveloperNotesFile(notes)));
-      expect([for (final item in decoded) item.id], [for (final item in notes) item.id]);
-      expect(decoded.first.body, notes.first.body);
+      final file = jsonDecode(await encodeDeveloperNotesFile(notes, [signing.notes])) as Map<String, Object?>;
+      // 新客户端读签好的载荷，旧客户端读明文 notes，两份一致；流水线的核对（check-notes）同样通过。
+      for (final decoded in [await decodeSignedDeveloperNotes(file, keys: signing.keys), decodeDeveloperNotes(file)]) {
+        expect([for (final item in decoded) item.id], [for (final item in notes) item.id]);
+        expect(decoded.first.body, notes.first.body);
+      }
+      await checkDeveloperNotes(file, keys: signing.keys);
+    });
+
+    test('30 封都写满（标题 40 字、正文 4000 字），明文加签名载荷也在中转的上限内', () async {
+      final notes = [for (var index = 0; index < developerNoteLimit; index++) note('n$index', now, title: '题' * developerNoteTitleMax, body: '字' * developerNoteBodyMax)];
+      final bytes = utf8.encode(await encodeDeveloperNotesFile(notes, [signing.notes])).length;
+      expect(bytes, lessThanOrEqualTo(developerNotesFileMaxBytes));
+      expect(developerNoteResponseMaxBytes, developerNotesFileMaxBytes);
+    });
+
+    test('签名钥必须是源码里内置的受信公钥、且能签开发者的话；签好的文件没有信封或与明文不一致都不过核对', () async {
+      await expectLater(SigningKey.fromSeed(List.filled(32, 9), SignedContent.notes, keys: signing.keys), throwsFormatException);
+      await expectLater(SigningKey.fromSeed(List.filled(32, 1), SignedContent.notes, keys: signing.keys), throwsFormatException);
+      final file = jsonDecode(await encodeDeveloperNotesFile([note('a', now)], [signing.notes])) as Map<String, Object?>;
+      await expectLater(checkDeveloperNotes({...file, 'envelope': null}, keys: signing.keys), throwsFormatException);
+      await expectLater(checkDeveloperNotes({...file, 'notes': <Object>[]}, keys: signing.keys), throwsFormatException);
+      await expectLater(checkDeveloperNotes(file, keys: [for (final key in signing.keys) if (key.keyId != 'notes-test') key]), throwsA(isA<SignedEnvelopeException>()));
     });
 
     // 仓库里真实的信：格式不对的 PR 在 CI 就失败，不等合并后流水线才发现。
     test('仓库 notes 目录里的信都合格', () async {
       final notes = await readDeveloperNotes(Directory('notes'));
-      encodeDeveloperNotesFile(notes);
+      await encodeDeveloperNotesFile(notes, [signing.notes]);
     });
   });
 
@@ -245,18 +270,50 @@ void main() {
   });
 
   group('中转客户端（RelayNoteFeed）', () {
-    test('解析清单；限流与格式不对给可读的原因；响应超过上限不往下读', () async {
-      Future<List<DeveloperNote>> fetch(http.Response Function(http.Request request) handler) => RelayNoteFeed('http://relay.test', client: MockClient((request) async => handler(request))).fetch();
-      final body = jsonEncode({'notes': [{'id': 'a', 'title': '近况', 'publishedAt': '2026-10-24T13:30:00.000Z', 'body': '正文'}]});
+    Future<List<DeveloperNote>> fetch(http.Response Function(http.Request request) handler) =>
+        RelayNoteFeed('http://relay.test', keys: signing.keys, client: MockClient((request) async => handler(request))).fetch();
+    http.Response reply(Object? body, [int status = 200]) => http.Response.bytes(utf8.encode(jsonEncode(body)), status);
+    final item = {'id': 'a', 'title': '近况', 'publishedAt': '2026-10-24T13:30:00.000Z', 'body': '正文'};
+    // 中转的返回：明文 notes 给旧客户端（这里故意写成别的内容，新客户端一律不用），envelope 是签好的信封。
+    Future<Map<String, Object?>> signed(Map<String, Object?> payload, {List<SigningKey>? signers, SignedContent content = SignedContent.notes}) async => {
+      'notes': [{...item, 'title': '明文'}],
+      'envelope': await signing.seal(payload, content, signers ?? [signing.notes]),
+    };
+    Matcher failsWith(String hint) => throwsA(isA<DeveloperNoteException>().having((error) => error.message, 'message', contains(hint)));
+
+    test('只认验过签的载荷；限流与格式不对给可读的原因；响应超过上限不往下读', () async {
+      final body = await signed({'notes': [item]});
       final notes = await fetch((request) {
         expect(request.url.path, '/v1/app/notes');
         expect(request.url.query, isEmpty);
-        return http.Response.bytes(utf8.encode(body), 200);
+        return reply(body);
       });
       expect(notes.single.title, '近况');
-      await expectLater(fetch((_) => http.Response('{"code":"RATE_LIMITED"}', 429)), throwsA(isA<DeveloperNoteException>().having((error) => error.message, 'message', contains('频繁'))));
-      await expectLater(fetch((_) => http.Response('{"notes":"x"}', 200)), throwsA(isA<DeveloperNoteException>().having((error) => error.message, 'message', contains('格式'))));
+      await expectLater(fetch((_) => http.Response('{"code":"RATE_LIMITED"}', 429)), failsWith('频繁'));
+      final malformed = await signed({'notes': 'x'});
+      await expectLater(fetch((_) => reply(malformed)), failsWith('格式'));
       await expectLater(fetch((_) => http.Response('x' * (developerNoteResponseMaxBytes + 1), 200)), throwsA(isA<DeveloperNoteException>()));
+    });
+
+    // 中间人能改明文 HTTP 上的任何字节：没有信封、拿发版清单的钥签、冒名的钥、签成发版清单的内容类型，都不认。
+    test('没有签名或验不过：按失败处理，不用明文 notes；离线备用钥签的照样认', () async {
+      for (final body in [
+        {'notes': [item]},
+        {'notes': [item], 'envelope': null},
+        await signed({'notes': [item]}, signers: [signing.release]),
+        await signed({'notes': [item]}, signers: [signing.stranger]),
+        await signed({'notes': [item]}, content: SignedContent.release),
+      ]) {
+        await expectLater(fetch((_) => reply(body)), failsWith('校验'), reason: '$body');
+      }
+      final offline = await signed({'notes': [item]}, signers: [signing.offline]);
+      expect((await fetch((_) => reply(offline))).single.title, '近况');
+    });
+
+    // 中转上还没放过信时给空列表、不带信封：和中间人扣下内容效果相同（签名挡不住扣下），按没有信处理，不记错误。
+    test('中转还没有信：空列表不带信封按没有信处理', () async {
+      expect(await fetch((_) => reply({'notes': <Object>[], 'envelope': null})), isEmpty);
+      expect(await fetch((_) => reply({'notes': <Object>[]})), isEmpty);
     });
   });
 }

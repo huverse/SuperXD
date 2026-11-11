@@ -6,8 +6,10 @@ import 'package:http/http.dart' as http;
 
 import 'package:superxd/domain/app_update.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/device/signed_content.dart';
 
-// 清单很小（服务端按 64KB 封顶），响应超过就当异常，不往下读。
+// 一次响应只有一个架构的信封加明文字段，更新说明最多 4000 字时也不到 30KB；超过 64KB 就当异常，不往下读。
+// （中转上的清单文件带三个架构的信封，按 128KB 封顶，见 tool/release_manifest.dart。）
 const appReleaseResponseMaxBytes = 64 * 1024;
 
 // 安装包按正在运行的架构取：与发布附件的三种分包一致；认不出的架构（桌面测试等）不检查更新。
@@ -18,14 +20,24 @@ String? appAbiName(Abi abi) => switch (abi) {
   _ => null,
 };
 
-// 版本清单的自建中转实现：GET /v1/app/releases/<渠道>?abi=，免签名，单次 15 秒超时、不自动重试。
+// 版本清单的自建中转实现：GET /v1/app/releases/<渠道>?abi=，请求免设备签名，单次 15 秒超时、不自动重试。
+// 只认清单里验签通过的载荷（人工决策见 device/signed_content.dart），没有签名或验不过按失败处理、不提示更新。
 // packages 为假时不要安装包（iOS 不能在应用里安装，只看有没有新版本，下载去发布页）。
 class RelayReleaseFeed implements AppReleaseFeed {
-  RelayReleaseFeed(this.baseUrl, {required this.channel, required this.abi, this.packages = true, http.Client? client, this.timeout = const Duration(seconds: 15)}) : _client = client ?? http.Client();
+  RelayReleaseFeed(
+    this.baseUrl, {
+    required this.channel,
+    required this.abi,
+    this.packages = true,
+    this.keys = trustedSigningKeys,
+    http.Client? client,
+    this.timeout = const Duration(seconds: 15),
+  }) : _client = client ?? http.Client();
   final String baseUrl;
   final String channel;
   final String abi;
   final bool packages;
+  final List<TrustedSigningKey> keys;
   final Duration timeout;
   final http.Client _client;
 
@@ -66,7 +78,10 @@ class RelayReleaseFeed implements AppReleaseFeed {
       throw const AppUpdateException('更新服务器暂时不可用，请稍后再试');
     }
     try {
-      return parseAppRelease(json, baseUrl, packages: packages);
+      return await parseSignedAppRelease(json, baseUrl: baseUrl, channel: channel, abi: abi, packages: packages, keys: keys);
+    } on SignedEnvelopeException catch (error, stack) {
+      campusLog('[AppUpdate] action=feed errorType=${error.runtimeType} reason=${error.reason}\n$stack');
+      throw const AppUpdateException('更新信息没通过校验，请稍后再试');
     } on FormatException catch (error, stack) {
       campusLog('[AppUpdate] action=feed errorType=${error.runtimeType} message=${error.message}\n$stack');
       throw const AppUpdateException('更新信息格式不对，请稍后再试');
@@ -83,9 +98,25 @@ class RelayReleaseFeed implements AppReleaseFeed {
   }
 }
 
-// 清单是外部输入：逐项校验，不合格抛 FormatException。安装包地址只认本服务的下载路径，拼在中转地址后面。
-AppRelease parseAppRelease(Object? json, String baseUrl, {bool packages = true}) {
-  if (json is! Map) throw const FormatException('清单不是对象');
+// 中转的返回：明文字段（给旧客户端）一律不用，只取 envelope 验签，载荷交给 parseAppReleasePayload。
+Future<AppRelease> parseSignedAppRelease(
+  Object? response, {
+  required String baseUrl,
+  required String channel,
+  required String abi,
+  bool packages = true,
+  List<TrustedSigningKey> keys = trustedSigningKeys,
+}) async {
+  if (response is! Map) throw const FormatException('清单不是对象');
+  final payload = await openSignedEnvelope(response['envelope'], SignedContent.release, keys: keys);
+  return parseAppReleasePayload(jsonDecode(utf8.decode(payload)), baseUrl: baseUrl, channel: channel, abi: abi, packages: packages);
+}
+
+// 验过签的载荷（tool/release_manifest.dart 按架构各签一份）仍是外部输入：逐项校验，不合格抛 FormatException。
+// 渠道与架构必须是本机的，防止别的渠道、别的架构的清单被拿来重放；安装包只认本服务下载路径里的文件名，拼在中转地址后面。
+AppRelease parseAppReleasePayload(Object? json, {required String baseUrl, required String channel, required String abi, bool packages = true}) {
+  if (json is! Map) throw const FormatException('载荷不是对象');
+  if (json['channel'] != channel || json['abi'] != abi) throw const FormatException('载荷的渠道或架构不是本机的');
   int integer(String key, int min) => switch (json[key]) {
     final int value when value >= min => value,
     _ => throw FormatException('$key 不合法'),
@@ -103,9 +134,9 @@ AppRelease parseAppRelease(Object? json, String baseUrl, {bool packages = true})
   final apk = switch (json['apk']) {
     _ when !packages => null,
     null => null,
-    {'url': final String url, 'size': final int size, 'sha256': final String sha256}
-        when RegExp(r'^/v1/app/files/[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.apk$').hasMatch(url) && size > 0 && RegExp(r'^[0-9a-f]{64}$').hasMatch(sha256) =>
-      AppReleaseApk(url: Uri.parse('$baseUrl$url'), size: size, sha256: sha256),
+    {'file': final String file, 'size': final int size, 'sha256': final String sha256}
+        when RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.apk$').hasMatch(file) && size > 0 && RegExp(r'^[0-9a-f]{64}$').hasMatch(sha256) =>
+      AppReleaseApk(url: Uri.parse('$baseUrl/v1/app/files/$file'), size: size, sha256: sha256),
     _ => throw const FormatException('apk 不合法'),
   };
   return AppRelease(
