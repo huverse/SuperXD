@@ -35,7 +35,7 @@
   - campus_glass_surface.dart：按钮与手势反馈共用的玻璃材质 CampusGlassSurface、浮层面板 CampusOverlayGlass、浮层显隐 CampusOverlayReveal 与控件出现消失 CampusGlassPresence（AnimatedOpacity 的玻璃版）。
   - campus_glass_button.dart：全局 FilledButton 背景 CampusGlassButtonSurface：视觉约 38dp、触区至少 48dp；在导航层或玻璃面板里是玻璃胶囊，内容区画色调胶囊 CampusTonalSurface；圆形按钮 CampusGlassCircleButton 只用于顶栏操作与悬浮按钮。按钮四级：强调 campusProminent（每屏、每个弹窗一个主操作）、警示 campusDestructive、普通、中性；句中链接用 campusLink（规则见文件内人工决策）。色调胶囊底色改动后重测按钮文字对比度（不低于 4.5:1）。
   - campus_glass_press.dart：玻璃控件的按压物理 CampusGlassPress（按下鼓起、松手过冲一次回位，减少动画时不形变）。
-  - campus_glass_controls.dart：选择标签 CampusGlassChip（选中前后是同一个按钮，只在按钮里给勾号让位、淡入；选中状态与按钮合成一个读屏节点，否则读屏听不到“已选中”；减少动画时不包 AnimatedSize，它时长为 0 会在自己的布局里报错）、开关行 CampusSwitchTile、滑杆 CampusSlider（GlassSlider 在系统取消与读屏增减时不回调 onChangeEnd，调用方要兜底保存；iOS 上两者是 Flutter 的 CupertinoSwitch、CupertinoSlider，iOS 样式滑杆要撑满整行；可带 CampusSliderMarks 在下方画一段带名字的色条与带名字的刻度，按这一种滑杆的拇指行程对齐，名字挤时色条的名字换到下一行）。页面不再直接用 ChoiceChip、FilterChip、SwitchListTile、Slider。
+  - campus_glass_controls.dart：选择标签 CampusGlassChip（选中只着选中色加细边、不带勾，高对比度下才给勾号让位、淡入，[人工决策] 在 build；选中状态与按钮合成一个读屏节点，否则读屏听不到“已选中”；减少动画时不包 AnimatedSize，它时长为 0 会在自己的布局里报错）、开关行 CampusSwitchTile、滑杆 CampusSlider（GlassSlider 在系统取消与读屏增减时不回调 onChangeEnd，调用方要兜底保存；iOS 上两者是 Flutter 的 CupertinoSwitch、CupertinoSlider，iOS 样式滑杆要撑满整行；可带 CampusSliderMarks 在下方画一段带名字的色条与带名字的刻度，按这一种滑杆的拇指行程对齐，名字挤时色条的名字换到下一行）。页面不再直接用 ChoiceChip、FilterChip、SwitchListTile、Slider。
   - campus_glass_menu.dart：玻璃菜单 showCampusMenu（是路由：返回键关闭、读屏模态、登记层数；不用库的 GlassMenu，它直接插 OverlayEntry，返回键会退出底下的页面）与下拉字段 CampusMenuField。页面不再直接用 DropdownButtonFormField、PopupMenuButton、showModalBottomSheet。
 - 通用组件：
   - campus_surface.dart：通用卡片表面 CampusSurface，可带点击（带点击时读屏报按钮）；卡片底色 campusSurfaceFill（平时 91% 不透明，高对比度与读屏导航时不透明），卡片、搜索框与快递登录的胶囊框共用。

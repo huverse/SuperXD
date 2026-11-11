@@ -189,7 +189,8 @@ class CampusTonalSurface extends StatelessWidget {
             side: focused
                 ? BorderSide(color: palette.primary, width: 2)
                 : selected && !disabled
-                ? BorderSide(color: palette.primary.withValues(alpha: .4))
+                // 选中的细边画在外沿、不占内边距：占了的话选中那一下胶囊宽高各多 2，同一行的其他标签跟着挪。
+                ? BorderSide(color: palette.primary.withValues(alpha: .4), strokeAlign: BorderSide.strokeAlignOutside)
                 : BorderSide.none,
           ),
         ),

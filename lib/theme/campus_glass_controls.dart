@@ -53,9 +53,10 @@ class CampusGlassChip extends StatelessWidget {
         child: child!,
       ),
     );
-    // 选中前后是同一个按钮，只在按钮里给勾号让位：图标位宽度平滑展开、图标淡入，文字跟着滑开，胶囊两端始终是圆的。
+    // 选中前后是同一个按钮；高对比度下给勾号让位时，图标位宽度平滑展开、图标淡入，文字跟着滑开，胶囊两端始终是圆的。
     // 以前整个按钮换成带图标的那种、外面包一层 AnimatedSize：勾号和文字一下子到位，胶囊右端在展开途中被裁成直边。
-    final icon = selected ? const CampusIcon(CampusIcons.check, size: 18) : leading;
+    // [人工决策-2026-11-11 19:16:20] 选中不再带对号（用户真机反馈字体卡、配色的对号多余，要求把同类冗余都去掉）：选中已由底色与描边表示，再画一个对号是重复表达，胶囊还会因此变宽、同一行的其他项跟着挪位置。只有系统开了高对比度时保留对号（不只靠颜色区分，同 iOS「不以颜色区分」）。取代设计语言里「选中带勾」的旧写法。
+    final icon = selected && MediaQuery.highContrastOf(context) ? const CampusIcon(CampusIcons.check, size: 18) : leading;
     // 图标与文字的间距同 FilledButton.icon：大字号时从 8 收到 4。
     final gap = 8 - 4 * ((MediaQuery.textScalerOf(context).scale(14) / 14).clamp(1.0, 2.0) - 1);
     final slot = icon == null ? const SizedBox.shrink() : Padding(key: ValueKey(selected), padding: EdgeInsetsDirectional.only(end: gap), child: icon);

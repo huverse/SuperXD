@@ -710,17 +710,21 @@ void main() {
       expect(clamped.applyBoundaryConditions(metrics, -10), -10);
     });
 
-    testWidgets('选择标签选中带勾可切换，开关行整行可点且读屏为开关', (tester) async {
+    testWidgets('选择标签选中不带勾、宽度不变可切换，开关行整行可点且读屏为开关', (tester) async {
       var selected = false, enabled = false;
       await tester.pumpWidget(host(Scaffold(body: StatefulBuilder(builder: (context, setState) => Column(children: [
         CampusGlassChip(label: '第一学期', selected: selected, onSelected: (value) => setState(() => selected = value)),
         CampusSwitchTile(title: const Text('保存解析历史'), value: enabled, onChanged: (value) => setState(() => enabled = value)),
       ])))));
       expect(find.byType(CampusIcon), findsNothing);
+      final width = tester.getSize(find.byType(CampusGlassChip)).width;
       await tester.tap(find.text('第一学期'));
       await tester.pumpAndSettle();
       expect(selected, isTrue);
-      expect(find.descendant(of: find.byType(CampusGlassChip), matching: find.byType(CampusIcon)), findsOneWidget);
+      // 选中只换底色与描边：不画对号，胶囊不变宽（同一行的其他项不挪位置）；读屏照样报已选中。
+      expect(find.descendant(of: find.byType(CampusGlassChip), matching: find.byType(CampusIcon)), findsNothing);
+      expect(tester.getSize(find.byType(CampusGlassChip)).width, width);
+      expect(tester.getSemantics(find.text('第一学期')), isSemantics(isSelected: true, hasSelectedState: true, isButton: true, hasTapAction: true, hasEnabledState: true, isEnabled: true, isFocusable: true, label: '第一学期'));
       final semantics = tester.ensureSemantics();
       expect(tester.getSemantics(find.byType(CampusSwitchTile)), isSemantics(hasToggledState: true, isToggled: false, hasTapAction: true, label: '保存解析历史'));
       expect(find.byType(Switch), findsOneWidget);
@@ -732,6 +736,12 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(liquid.GlassSwitch), findsOneWidget);
       expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('高对比度下选择标签选中仍带勾（不只靠颜色区分）', (tester) async {
+      await tester.pumpWidget(host(MediaQuery(data: const MediaQueryData(highContrast: true), child: Scaffold(body: CampusGlassChip(label: '第一学期', selected: true, onSelected: (_) {})))));
+      await tester.pumpAndSettle();
+      expect(find.descendant(of: find.byType(CampusGlassChip), matching: find.byIcon(CampusIcons.check)), findsOneWidget);
     });
 
     // 开关状态主要由滑块位置表达（同 iOS、鸿蒙）；颜色上开启为鲜亮的激活色、关闭为灰，按感知色差区分，
@@ -809,7 +819,8 @@ void main() {
       expect(find.descendant(of: find.byType(CampusOverlayGlass), matching: find.byType(liquid.AdaptiveGlass)), findsOneWidget);
       final row = find.ancestor(of: find.text('删除记录'), matching: find.byType(InkWell)).first;
       expect(tester.getSize(row).height, greaterThanOrEqualTo(48));
-      expect(find.descendant(of: row, matching: find.byIcon(CampusIcons.check)), findsOneWidget);
+      // 选中项只着选中色，不带对号（高对比度下才有）。
+      expect(find.descendant(of: row, matching: find.byIcon(CampusIcons.check)), findsNothing);
       expect(tester.getSemantics(find.text('删除记录')), isSemantics(isSelected: true, hasSelectedState: true, isButton: true, hasTapAction: true, label: '删除记录'));
       await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
