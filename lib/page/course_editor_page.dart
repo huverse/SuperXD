@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math' as math;
 
@@ -149,7 +150,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
       if (!mounted) return;
       if (error == null) {
         // 成功轻触一次（人工决策见 chaoxing_sign_sheet.dart 的 _finishIfDone）。
-        HapticFeedback.successNotification();
+        unawaited(HapticFeedback.successNotification());
         setState(() => _leaving = true);
         Navigator.pop(context, true);
       } else {

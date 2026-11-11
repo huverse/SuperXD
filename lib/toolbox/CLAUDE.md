@@ -25,7 +25,7 @@
   - short_video_store.dart：short_video.db：偏好（解析来源、参与自动解析的来源、历史开关）与解析历史；第一次打开从框架库搬旧数据（先写后删、不覆盖已有的）；destroy 删库。
   - parse_source.dart：解析来源端口：ParseSource（id、域名、适配版本、授权版本、最小请求间隔）与实现接口 ParseProvider。
   - parse_coordinator.dart：解析编排 ParseCoordinator：总预算 30 秒、单次最多 25 秒；成功结果进最多 20 条、保留 2 分钟的 LRU；按来源限制间隔，限流时按对方给的时间退避；自动模式最多依次试 3 个已启用且已同意的来源（[人工决策] 在文件内）。
-  - parse_http.dart：解析用的 HTTP 封装：25 秒超时、响应上限 1MB，识别限流，退避限制在 1–300 秒。
+  - parse_http.dart：解析用的 HTTP 封装（经共用内核 domain/campus_http.dart）：25 秒超时、响应上限 1MB、取消即中断连接，识别限流，退避限制在 1–300 秒。
   - bugpk_video_parser.dart：BugPK 来源的实现：抖音链接先调 /api/douyin，失败再退回聚合接口 /api/short_videos。
   - svparse_video_parser.dart：BugPK 新版来源（api-new.ifphp.com 的 svparse，30 多个平台）：密钥 svparseKey 只在构建时经 --dart-define=SUPERXD_SVPARSE_KEY 注入、不进仓库，没带的包不登记；业务成功看 JSON 的 code（200），429 按限流退避（[人工决策] 在文件头）。
   - media_json.dart：两个来源共用的统一 JSON 格式归一化 normalizeMediaJson：主视频与每个备用视频带上来源给的画质（原画、1080p 这类，其余档名不展示）、大小、时长与宽高，按外部输入核对范围；媒体地址只认公网 https。
@@ -55,6 +55,7 @@
 # 测试
 
 - toolbox_widget_test.dart、toolbox_download_test.dart：首页、注册表与下载管理。
+- background_transfer_test.dart：安卓后台传输的插件状态换算、失败原因日志、进度与交给插件的任务参数（插件本身与原生下载只有设备实测）。
 - http_transfer_test.dart：iOS 传输（整段下载、跳转只认 https、失败状态、Range 续传、中途断开、不能续传不给暂停、接在下载管理上走完导出）。
 - toolbox_media_features_test.dart：短视频库迁移、旧下载记录兼容、按工具清空下载、清除数据、分享卡片按注册表打开。
 - short_video_parser_test.dart、media_image_test.dart；支撑在 toolbox_test_support.dart。

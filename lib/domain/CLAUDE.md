@@ -1,6 +1,6 @@
 # domain 领域核心
 
-定位：纯 Dart，不依赖 Flutter，也不依赖项目内其他层。外部包只有三个：uuid 用于生成版本 id，timezone 用于校园时区，crypto 用于日历事件 UID。私信的分享卡片协议也在这里（share_card.dart），供 social、page、toolbox、local 共用。业务端口 CampusGateway 和全部视图类型都定义在这里，供 page、application、gateway 共用。
+定位：纯 Dart，不依赖 Flutter，也不依赖项目内其他层。外部包只有四个：uuid 用于生成版本 id，timezone 用于校园时区，crypto 用于日历事件 UID，http 用于共用的有界请求内核。私信的分享卡片协议也在这里（share_card.dart），供 social、page、toolbox、local 共用。业务端口 CampusGateway 和全部视图类型都定义在这里，供 page、application、gateway 共用。
 
 # 文件职责
 
@@ -10,6 +10,7 @@
   - 视图类型：GatewayResult、GatewayError、ScheduleView、GradesView、BellsView、RevisionView 等。
 - gateway_code.dart：错误码登记表 GatewayCode，每个常量配一行语义注释。新错误码先在这里登记再使用；测试里保留字面量，用来钉住线上取值。
 - campus_log.dart：日志出口 campusLog。默认写 stderr；应用入口和设备端工具入口要注入 debugPrint，日志才会进入 logcat。campusDiagnostics 是开发者模式开关（组合根切换），campusRequestLog 是对外请求的诊断记录（只在开发者模式下记，只记路径，按原样不解码切段，像编号的段掩成 :id）。
+- campus_http.dart：对外请求共用的有界请求内核 CampusHttp（一个模块一份，底层 http.Client 可注入，[人工决策] 在类上方）。一次请求给定超时（管到读完响应体，到点中断连接，抛 TimeoutException）、响应字节上限（声明的长度或读到的超了就停、中断连接，抛 CampusHttpTooLarge）与外部取消（抛 http.RequestAbortedException）；底层不理会中断时也按时返回；断网等其余异常原样抛出，堆栈接上调用方那一串；每个请求经 campusRequestLog 记一条。只管机制，各模块的请求头、会话、错误码映射与日志文案在各自的封装里。collect 只给教务成绩那条性能观察项保持原来的读法。lib 里自己构造 http 客户端或请求的只许是它与还没迁过来的几个文件，test/project_structure_test.dart 守护。
 - campus_clock.dart：
   - campusTimeZone：校园时区的唯一定义。
   - campusToday：校园时区的今天。campusNow：校园时区今天的零点。
@@ -96,8 +97,9 @@
 - 成绩、卡片与更新规则：grades_test.dart、share_card_test.dart、app_update_test.dart；开屏画作清单与轮换：painting_test.dart。
 - 开发者的话与打扰时机（清单解析、弹信规则、安静期）：developer_notes_test.dart；节日规则：festival_test.dart。
 - 面向用户的文案写法（节次、学分、按远近写的时刻、不及格）：campus_text_test.dart。
+- 有界请求内核（超时管到响应体、取消、响应上限、请求记录、堆栈）：campus_http_test.dart。
 
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/domain
-- 本目录的标记位于自动同步与三方合并（auto_sync.dart 文件头）、日志出口、节次展开、单周调整、按课名合并、版本恢复、开发者的话（developer_note.dart 文件头）、打扰时机的安静期（interruption.dart 文件头）、节日（festival.dart 文件头）、诊断包上传（diagnostic_upload.dart 文件头）。
+- 本目录的标记位于自动同步与三方合并（auto_sync.dart 文件头）、共用请求内核（campus_http.dart 的 CampusHttp）、日志出口、节次展开、单周调整、按课名合并、版本恢复、开发者的话（developer_note.dart 文件头）、打扰时机的安静期（interruption.dart 文件头）、节日（festival.dart 文件头）、诊断包上传（diagnostic_upload.dart 文件头）。

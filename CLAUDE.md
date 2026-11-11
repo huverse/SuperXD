@@ -21,6 +21,7 @@
 - 运行：flutter run 默认是 production flavor（开发包，与 Alpha 包并装、数据不共享）。私信与代签要 --dart-define=SUPERXD_RELAY=<中转地址>，地图（网页版高德）要 --dart-define=SUPERXD_AMAP_WEB_KEY=<key> 与 --dart-define=SUPERXD_AMAP_WEB_SECRET=<安全密钥>，视频解析的 BugPK 新版来源要 --dart-define=SUPERXD_SVPARSE_KEY=<key>，这些都不写进源码（发版流水线从 release 环境的机密注入）。
 - 服务端：cd server，docker compose -f docker-compose.test.yml up -d --wait 起测试库后 npm test；npm run typecheck。
 - 发版由流水线 .github/workflows/release.yml 全自动完成（安卓三个架构加 iOS 未签名包）：升版本 PR 合并到 main 即构建与发布，不再要网页批准；升版本 PR 只在用户明确要求发版时开；约定与本机构建见 CONTRIBUTING.md。
+- 依赖升级由 Dependabot 每周提 PR（.github/dependabot.yml）；main 合并要 CI 三个作业都过；iOS 锁文件怎么从 CI 取、发布来源证明怎么核对，见 CONTRIBUTING.md「供应链」。
 
 # 分层与依赖方向
 
@@ -49,7 +50,7 @@
 - app_session.dart：把 AccountAccess 的账号变化转成路由刷新并暂存一次性提示；expire 只让发起时的那个代次失效，旧页面不能误登出新账号。
 - app_diagnostics.dart：开发者模式的接线（[人工决策] 在文件头）：运行环境 appEnvironment（开发者模式第一次开着时才读）、按设置切换 campusDiagnostics 与卡顿内存统计（每 10 秒汇总、有慢帧才记）、前后台与页面切换记录（watchRoutes 只记 go_router 的路径；命令式推入的页面由 theme 的 CampusPageRoute 按页面类名记推入与返回），切到后台时把日志写盘；recordExitReasons 每次启动记系统给的上次退出原因（异常的平时也进错误记录）；TextSizeWatch 在开发者模式下记字号状态（屏宽、像素密度、系统与应用字号、粗体、字体、推荐上限与会改排处），开着记一条、变了停 1 秒再记，当前这组进诊断摘要（[人工决策] 在类上，为优化字号推荐）。悬浮开发者工具由 main.dart 的账号应用外壳套上（page/developer_page.dart 的 DeveloperOverlay）。开发者模式只多记日志、多给调试工具，不改任何业务行为。
 - app_shortcuts.dart：常用功能快捷入口的接线（人工决策在 toolbox/express/express_page.dart 的 _openIdentity）：把百宝箱注册表里登记的入口（ToolboxShortcut）画成自适应图标，经 device/app_shortcuts.dart 交给系统（长按应用图标的菜单、添加到桌面）；点了入口要去的页面记在 pending，账号应用等会话恢复好、先回首页（今天或登录页）再推入，返回就回到首页。入口 id 是「工具 id.入口 id」、页面是 /toolbox/工具 id/入口 id，已发布的 id 不要改（桌面上的快捷方式按它找回页面）。测试在 app_shortcuts_test.dart（发布、后台点入口、添加到桌面、先回首页再推入）与 account_lifecycle_test.dart（冷启动直达与门禁）；原生 AppShortcuts.kt 只有设备实测。
-- app_background_sync.dart：自动同步的接线（人工决策在 domain/auto_sync.dart）：系统后台任务每次另起一份 Flutter 引擎跑入口 autoSyncDispatcher，应用开着时经 IsolateNameServer 登记的端口交给前台那份同步（不让两份引擎同时动账号库、抢教务会话），应用不在时自己开账号库跑一轮（启动时只用本机会话恢复 restoreLocalSession，恢复不了就算了、不清活动账号；同步中遇到登录过期，记住了账号的照常自动重登一次再重放，用户 11-09 允许，隐私政策第一节写明），用户打开应用（前台登记了端口）就在下一检查点让给前台；每次任务有时限（iOS 25 秒、安卓 8 分钟，安卓被系统叫停也停），到点停在检查点；任务结果一律报成功，不交给系统的失败重试。watchAutoSync 决定时机：同意协议与政策之后，恢复会话、切换账号或退出时重读设置并排好或撤掉后台任务，回到前台时到期就补跑。后台那份只写账号库，课前提醒与小组件等下次打开应用时再对账（两者的原生通道只注册在前台引擎）。原生只有设备实测。
+- app_background_sync.dart：自动同步的接线（人工决策在 domain/auto_sync.dart）：系统后台任务每次另起一份 Flutter 引擎跑入口 autoSyncDispatcher，应用开着时经 IsolateNameServer 登记的端口交给前台那份同步（不让两份引擎同时动账号库、抢教务会话），应用不在时自己开账号库跑一轮（启动时只用本机会话恢复 restoreLocalSession，恢复不了就算了、不清活动账号；同步中遇到登录过期，记住了账号的照常自动重登一次再重放，用户 11-09 允许，隐私政策第一节写明），用户打开应用（前台登记了端口）就在下一检查点让给前台；每次任务有时限（iOS 25 秒、安卓 8 分钟，安卓被系统叫停也停），到点停在检查点；任务结果一律报成功，不交给系统的失败重试。watchAutoSync 决定时机：同意协议与政策之后，恢复会话、切换账号或退出时重读设置并排好或撤掉后台任务，回到前台时到期就补跑。后台那份只写账号库，课前提醒与小组件等下次打开应用时再对账（两者的原生通道只注册在前台引擎）。交给前台与自己跑一轮的逻辑测试在 app_background_sync_test.dart（交出去、过期登记撤掉重登、没同意不联网、恢复不了会话就跳过、到期跑一轮记结果、前台登记或过时限就让），WorkManager 调度与原生只有设备实测。
 - 页面从路由拿到 isAccountCurrent 与 onSessionExpired：异步结果回来后先确认仍属当前账号，再写界面。
 - 编排（CampusSync、CampusReminders、CampusWidgets、AppUpdates）见 lib/application/CLAUDE.md。
 
@@ -80,7 +81,7 @@
 11. 日志：只经 domain/campus_log.dart 的 campusLog 输出，应用入口必须注入 debugPrint 才进 logcat；格式为 [模块] action=... errorType=...，错误附完整堆栈；不写原始 HTML、链接、凭据与实名信息。由 test/project_structure_test.dart 守护。
     - 同一份输出另写进本机文件（local/diagnostic_log.dart）：平时只记错误，开发者模式记全部；保存期限与掩码规则见 lib/local/CLAUDE.md，隐私政策第八节与附录三同步写明。
     - 只在开发者模式下才有意义的诊断记录（请求耗时、页面切换、卡顿内存）先看 campusDiagnostics，对外请求统一经 campusRequestLog 记，只记路径、不记域名与查询串。
-    - 新模块接入开发者模式：日志照常走 campusLog、错误带 errorType= 或堆栈即自动进本机日志与错误记录；自写 HTTP 封装的发请求处必须调 campusRequestLog（test/project_structure_test.dart 守护）；新页面优先挂 go_router 路由（按路径记），命令式推入的页面经 CampusPageRoute 按页面类名记推入与返回。
+    - 新模块接入开发者模式：日志照常走 campusLog、错误带 errorType= 或堆栈即自动进本机日志与错误记录；对外请求一律经共用内核 domain/campus_http.dart 发（超时、响应上限、取消与 campusRequestLog 都在那里），不再手写封装，还没迁过来的几个文件自己调 campusRequestLog（test/project_structure_test.dart 守护）；新页面优先挂 go_router 路由（按路径记），命令式推入的页面经 CampusPageRoute 按页面类名记推入与返回。
 12. 界面实现：确认和提示统一用 theme/campus_transitions.dart 的 showCampusConfirm 与 showCampusNotice；setState 回调不得返回 Future，给 Future 字段赋值时用块体；只有图标的 IconButton 必须带 tooltip 作读屏标签。后两条由 test/code_conventions_test.dart 守护。
 13. 公开内容不出现实名：
     - [人工决策-2026-10-15 20:20:38] 仓库公开，代码、测试数据、文档、提交信息、PR 与 Issue 的正文和评论一律不写真实姓名、手机号、学号等实名信息（含真实课表里的教师名）。
@@ -112,7 +113,8 @@
 
 - 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、请求记录、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由、页面滚动区渐隐、顶栏玻璃圆钮、toImageSync 只用于云雾贴图、内嵌网页拖动归网页），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
 - 共用的测试支撑：fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、toolbox_test_support.dart、form_layout_support.dart、text_fit_support.dart（扫一屏文字的裁切、孤字与单独成行的标点）、app_update_fakes.dart、content_signing_support.dart（测试用签名钥）、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
-- tool 下的手动入口不进 CI（发版三个工具由发版流水线调用），运行方式见各文件头：
+- CI 的 Flutter 作业带覆盖率跑全量测试，再由 tool/coverage_check.dart 算 lib 的行覆盖率，低于工具里的门槛就失败；本机复现先 flutter test --coverage 再 dart run 它。
+- tool 下其余是手动入口，不进 CI（发版三个工具由发版流水线调用），运行方式见各文件头：
   - 访问真实服务，只在授权环境与授权账号上手动运行：verify_edu.dart、verify_grades.dart（教务）、verify_chaoxing.dart（学习通，输出脱敏）。
   - 经真实中转、只用合成数据：verify_social.dart、verify_chaoxing_pack.dart。
   - 设备与原生验证：verify_toolbox.dart（原生下载导出）、verify_chaoxing_map.dart（网页版高德选点，要 SUPERXD_AMAP_WEB_KEY 与 SUPERXD_AMAP_WEB_SECRET）、motion_release_test.dart（发布包的图标字体）。

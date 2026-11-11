@@ -165,7 +165,7 @@ class _RewardRevealState extends State<_RewardReveal> with TickerProviderStateMi
     final prize = widget.prize;
     if (prize.kind == FestivalPrizeKind.password) {
       await Clipboard.setData(ClipboardData(text: prize.content));
-      HapticFeedback.selectionClick();
+      unawaited(HapticFeedback.selectionClick());
       final opened = await _launch(alipayHome);
       if (mounted) showCampusToast(context, opened ? '口令已复制，在支付宝里搜「口令红包」粘贴' : '口令已复制，没找到支付宝');
       return;

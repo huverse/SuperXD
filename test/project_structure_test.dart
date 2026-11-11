@@ -59,21 +59,37 @@ void main() {
     expect(offenders, isEmpty);
   });
 
-  // 对外请求都进开发者模式的请求记录（domain/campus_log.dart 的 campusRequestLog）：用 package:http 或 dart:io 真正发请求的文件必须调它，
-  // 否则新模块自写的 HTTP 封装在开发者模式里看不到请求路径、状态与耗时，也不会有任何提示。只拿 http 的异常或参数类型的文件不算；原生下载与 WebView 不经 Dart，不在此列。
-  test('lib发请求的地方都接上开发者模式的请求记录', () {
-    final sends = RegExp(r'\.send\(|\bhttp\.Client\(\)|(?<![\w.])http\.(get|post|put|patch|delete|head|read|readBytes)\(');
-    final ioClient = RegExp(r'\bHttpClient\(');
+  // 对外请求都经共用的有界请求内核 domain/campus_http.dart：超时、响应上限、取消与开发者模式的请求记录（campusRequestLog）只在那里实现一遍。
+  // 自己构造 package:http 的客户端或请求、调它的顶层请求函数、用 dart:io 的 HttpClient 发请求的，只许是内核和下面列出的还没迁过来的文件，
+  // 而且它们都得自己调 campusRequestLog；新模块一律经 CampusHttp 发，不再手写封装。只拿 http 的异常、参数类型或接收注入的 http.Client 转交给内核的不算；
+  // 原生下载与 WebView 不经 Dart，不在此列。（以前只要求发请求的文件调 campusRequestLog，现在连自己发都不许，力度只增不减。）
+  test('lib发请求的地方都经共用内核并接上开发者模式的请求记录', () {
+    // 还没迁到内核的：设备侧两个中转清单客户端（另有工作包在改）；iOS 下载传输与诊断包上传（都是边收或边发文件流、按「多久没有进展」超时，
+    // 内核还只有整次请求的时限，要等它支持流式请求体与无进展超时再迁）。
+    // 节日抽签已改经私信中转客户端（RelayClient.request），跟着它走内核。
+    final unmigrated = {
+      for (final name in ['device/relay_note_feed.dart', 'device/relay_release_feed.dart', 'device/relay_diagnostic_upload.dart', 'toolbox/download/http_transfer.dart'])
+        path.joinAll(['lib', ...name.split('/')]),
+    };
+    final kernel = path.join('lib', 'domain', 'campus_http.dart');
+    final httpRaw = RegExp(
+      r'\bhttp\.(Client|Request|AbortableRequest|StreamedRequest|AbortableStreamedRequest|MultipartRequest|AbortableMultipartRequest)\(|\bhttp\.Client\.new\b|(?<![\w.])http\.(get|post|put|patch|delete|head|read|readBytes)\(',
+    );
+    final ioRaw = RegExp(r'\b(HttpClient|IOClient)\(');
     final senders = <String>[], offenders = <String>[];
     for (final file in _dartFiles('lib')) {
       final text = file.readAsStringSync();
-      if (!(text.contains('package:http/http.dart') && sends.hasMatch(text)) && !ioClient.hasMatch(text)) continue;
+      if (!(text.contains('package:http/http.dart') && httpRaw.hasMatch(text)) && !ioRaw.hasMatch(text)) continue;
       senders.add(file.path);
-      if (!text.contains('campusRequestLog(')) offenders.add(file.path);
+      if (file.path != kernel && !unmigrated.contains(file.path)) {
+        offenders.add('${file.path}：自己发请求，没经 CampusHttp');
+      } else if (!text.contains('campusRequestLog(')) {
+        offenders.add('${file.path}：发了对外请求，却没调 campusRequestLog');
+      }
     }
-    // 规则本身没失效：现有的教务客户端要能被认出来。
-    expect(senders, contains(path.join('lib', 'edu', 'kingo_client.dart')));
-    expect(offenders, isEmpty, reason: '这些文件发了对外请求，却没调 campusRequestLog 记进开发者模式');
+    // 规则本身没失效：内核要能被认出来。
+    expect(senders, contains(kernel));
+    expect(offenders, isEmpty);
   });
 
   // 索引只在文件级兜底：新增、删除、搬迁都要同步登记；职责与不变量的变化靠改动前检查清单维护。

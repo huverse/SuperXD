@@ -3,14 +3,15 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
-import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/toolbox/short_video/parse_result.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 
+// 解析接口的请求封装：超时管到读完响应体、响应上限 1MB、取消即中断连接，都在共用内核 CampusHttp；这里只把结果映射成 ParseFailure。
 class ParseHttp {
   ParseHttp({http.Client? client, this.timeout = const Duration(seconds: 25)})
-    : _client = client ?? http.Client();
-  final http.Client _client;
+    : _http = CampusHttp('short_video', client: client);
+  final CampusHttp _http;
   final Duration timeout;
   static const payloadLimit = 1024 * 1024;
 
@@ -21,58 +22,39 @@ class ParseHttp {
     if (cancellation.isCancelled) {
       throw const ParseFailure(ParseFailureCode.cancelled, '操作已取消');
     }
-    final abort = Completer<void>();
-    final request =
-        http.AbortableRequest('GET', uri, abortTrigger: abort.future)
-          ..followRedirects = false
-          ..headers['Accept'] = 'application/json';
-    // 开发者模式下记一条路径、状态、耗时与字节数（见 campusRequestLog，不记查询串里的作品链接）。
-    final watch = Stopwatch()..start();
-    int? status, size;
+    // 开发者模式下记一条路径、状态、耗时与字节数（内核按 campusRequestLog 记，不记查询串里的作品链接）。
     try {
-      return await Future.any([
-        (() async {
-          final response = await _client.send(request);
-          status = response.statusCode;
-          if (response.statusCode == 429) {
-            final seconds = int.tryParse(response.headers['retry-after'] ?? '');
-            throw ParseFailure(
-              ParseFailureCode.rateLimited,
-              '解析服务限流，请稍后再试',
-              retryAfter: Duration(seconds: (seconds ?? 30).clamp(1, 300)),
-            );
-          }
-          if (response.statusCode != 200) {
-            throw const ParseFailure(ParseFailureCode.provider, '解析服务暂不可用');
-          }
-          if ((response.contentLength ?? 0) > payloadLimit) {
-            throw const ParseFailure(ParseFailureCode.provider, '解析响应过大');
-          }
-          final bytes = <int>[];
-          await for (final chunk in response.stream) {
-            if (cancellation.isCancelled) {
-              throw const ParseFailure(ParseFailureCode.cancelled, '操作已取消');
-            }
-            if (bytes.length + chunk.length > payloadLimit) {
-              throw const ParseFailure(ParseFailureCode.provider, '解析响应过大');
-            }
-            bytes.addAll(chunk);
-          }
-          size = bytes.length;
-          final result = jsonDecode(utf8.decode(bytes));
-          if (result is! Map<String, dynamic>) {
-            throw const ParseFailure(ParseFailureCode.provider, '解析服务返回了未知格式');
-          }
-          return result;
-        })(),
-        cancellation.signal.then<Map<String, dynamic>>(
-          (_) => throw const ParseFailure(ParseFailureCode.cancelled, '操作已取消'),
-        ),
-      ]).timeout(
-        timeout,
-        onTimeout: () =>
-            throw const ParseFailure(ParseFailureCode.timeout, '解析超时，请稍后重试'),
+      final response = await _http.send(
+        'GET',
+        uri,
+        timeout: timeout,
+        limit: payloadLimit,
+        headers: const {'Accept': 'application/json'},
+        followRedirects: false,
+        cancel: cancellation.signal,
       );
+      if (response.statusCode == 429) {
+        final seconds = int.tryParse(response.headers['retry-after'] ?? '');
+        throw ParseFailure(
+          ParseFailureCode.rateLimited,
+          '解析服务限流，请稍后再试',
+          retryAfter: Duration(seconds: (seconds ?? 30).clamp(1, 300)),
+        );
+      }
+      if (response.statusCode != 200) {
+        throw const ParseFailure(ParseFailureCode.provider, '解析服务暂不可用');
+      }
+      final result = jsonDecode(utf8.decode(response.bodyBytes));
+      if (result is! Map<String, dynamic>) {
+        throw const ParseFailure(ParseFailureCode.provider, '解析服务返回了未知格式');
+      }
+      return result;
+    } on CampusHttpTooLarge {
+      throw const ParseFailure(ParseFailureCode.provider, '解析响应过大');
+    } on TimeoutException {
+      throw const ParseFailure(ParseFailureCode.timeout, '解析超时，请稍后重试');
+    } on http.RequestAbortedException {
+      throw const ParseFailure(ParseFailureCode.cancelled, '操作已取消');
     } on FormatException catch (error, stack) {
       Error.throwWithStackTrace(
         const ParseFailure(ParseFailureCode.provider, '解析服务返回了未知格式'),
@@ -83,11 +65,8 @@ class ParseHttp {
         const ParseFailure(ParseFailureCode.network, '网络请求未完成，请稍后重试'),
         stack,
       );
-    } finally {
-      if (!abort.isCompleted) abort.complete();
-      campusRequestLog('short_video', 'GET', uri, status: status, elapsed: watch.elapsed, bytes: size, error: size == null ? 'no_response' : null);
     }
   }
 
-  void close() => _client.close();
+  void close() => _http.close();
 }

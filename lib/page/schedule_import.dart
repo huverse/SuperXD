@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:uuid/uuid.dart';
@@ -135,7 +137,7 @@ class _ImportPageState extends State<_ImportPage> {
         return;
       }
       // 成功轻触一次（人工决策见 chaoxing_sign_sheet.dart 的 _finishIfDone）。
-      HapticFeedback.successNotification();
+      unawaited(HapticFeedback.successNotification());
       Navigator.of(context).pop(done);
     } catch (error, stack) {
       campusLog('[ScheduleImport] action=${_mode.name} errorType=${error.runtimeType}\n$stack');

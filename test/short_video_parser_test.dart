@@ -154,7 +154,7 @@ void main() {
     Future<ParseFailure> failure(int code) async {
       final parser = SvparseVideoParser(
         key: 'test-key',
-        client: MockClient((_) async => http.Response.bytes(utf8.encode(jsonEncode({'code': code, 'msg': '没有找到有效内容', 'data': []})), 200)),
+        client: MockClient((_) async => http.Response.bytes(utf8.encode(jsonEncode({'code': code, 'msg': '没有找到有效内容', 'data': <Object?>[]})), 200)),
       );
       try {
         await parser.resolve(input, ToolboxCancellation());
@@ -415,9 +415,9 @@ class _StalledClient extends http.BaseClient {
   final started = Completer<void>();
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    (request as http.AbortableRequest).abortTrigger!.then((_) {
+    unawaited((request as http.AbortableRequest).abortTrigger!.then((_) {
       if (!aborted.isCompleted) aborted.complete();
-    });
+    }));
     started.complete();
     return http.StreamedResponse(body.stream, 200);
   }

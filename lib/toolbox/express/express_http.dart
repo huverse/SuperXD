@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/express/express_models.dart';
 
@@ -18,14 +19,14 @@ class ExpressResponse {
   String get body => utf8.decode(bytes, allowMalformed: true);
 }
 
-// 拼多多接口的请求封装：显式超时管整个请求（连接、发送、读完响应体），响应上限 1MB，日志只记路径。
+// 拼多多接口的请求封装：显式超时管整个请求（连接、发送、读完响应体），响应上限 1MB，日志只记路径；超时、上限与请求记录在共用内核 CampusHttp。
 // 不维护 Cookie 会话——登录态由 PddSession 的请求头整体带上，各请求无状态。
 class ExpressHttp {
-  ExpressHttp({http.Client? client, this.timeout = const Duration(seconds: 15)}) : _client = client ?? http.Client();
+  ExpressHttp({http.Client? client, this.timeout = const Duration(seconds: 15)}) : _http = CampusHttp('express', client: client);
 
   static const payloadLimit = 1024 * 1024;
 
-  final http.Client _client;
+  final CampusHttp _http;
   final Duration timeout;
 
   Future<ExpressResponse> getJson(Uri uri, {required Map<String, String> headers}) =>
@@ -36,26 +37,9 @@ class ExpressHttp {
       _send('POST', uri, headers: headers, body: jsonEncode(body), errorBody: errorBody);
 
   Future<ExpressResponse> _send(String method, Uri uri, {required Map<String, String> headers, String? body, bool errorBody = false}) async {
-    final deadline = Completer<void>();
-    final timer = Timer(timeout, deadline.complete);
-    final request = http.AbortableRequest(method, uri, abortTrigger: deadline.future)..headers.addAll(headers);
-    if (body != null) request.body = body;
-    // 开发者模式下每个请求记一条路径、状态、耗时与字节数（见 campusRequestLog）；出错的原因另有带 errorType 的日志。
-    final watch = Stopwatch()..start();
-    int? status, size;
     try {
-      final response = await _client.send(request);
-      status = response.statusCode;
-      final builder = BytesBuilder(copy: false);
-      await for (final chunk in response.stream) {
-        builder.add(chunk);
-        if (builder.length > payloadLimit) {
-          campusLog('[Express] action=http errorType=too_large path=${uri.path} limit=$payloadLimit');
-          throw const ExpressFailure(ExpressFailureCode.tooLarge, '响应过大，已停止读取');
-        }
-      }
-      size = builder.length;
-      if (errorBody && response.statusCode < 500) return ExpressResponse(response.statusCode, builder.takeBytes(), headers: response.headers);
+      final response = await _http.send(method, uri, timeout: timeout, limit: payloadLimit, headers: headers, body: body);
+      if (errorBody && response.statusCode < 500) return ExpressResponse(response.statusCode, response.bodyBytes, headers: response.headers);
       if (response.statusCode >= 400) {
         campusLog('[Express] action=http errorType=status path=${uri.path} status=${response.statusCode}');
         // 401/424：异地登录等把会话顶掉时拼多多返回的 HTTP 状态（真机实测 station/package 在被挤下线后回 424），
@@ -65,10 +49,13 @@ class ExpressHttp {
         }
         throw ExpressFailure(ExpressFailureCode.server, '拼多多返回错误码 ${response.statusCode}');
       }
-      return ExpressResponse(response.statusCode, builder.takeBytes(), headers: response.headers);
+      return ExpressResponse(response.statusCode, response.bodyBytes, headers: response.headers);
     } on ExpressFailure {
       rethrow;
-    } on http.RequestAbortedException catch (error, stack) {
+    } on CampusHttpTooLarge {
+      campusLog('[Express] action=http errorType=too_large path=${uri.path} limit=$payloadLimit');
+      throw const ExpressFailure(ExpressFailureCode.tooLarge, '响应过大，已停止读取');
+    } on TimeoutException catch (error, stack) {
       _log(uri, 'timeout', error, stack);
       throw const ExpressFailure(ExpressFailureCode.timeout, '请求超时，请稍后重试');
     } on SocketException catch (error, stack) {
@@ -80,9 +67,6 @@ class ExpressHttp {
     } on http.ClientException catch (error, stack) {
       _log(uri, 'network', error, stack);
       throw const ExpressFailure(ExpressFailureCode.network, '网络请求未完成，请稍后重试');
-    } finally {
-      timer.cancel();
-      campusRequestLog('express', method, uri, status: status, elapsed: watch.elapsed, bytes: size, error: size == null ? 'no_response' : null);
     }
   }
 
@@ -90,7 +74,7 @@ class ExpressHttp {
   void _log(Uri uri, String errorType, Object error, StackTrace stack) =>
       campusLog('[Express] action=http errorType=$errorType path=${uri.path}\n$stack');
 
-  void close() => _client.close();
+  void close() => _http.close();
 }
 
 // 认不出的格式记一行（只记类型与长度，不记响应内容）：拼多多改版时最先坏在这里。
