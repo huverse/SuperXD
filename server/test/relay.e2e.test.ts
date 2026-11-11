@@ -6,7 +6,9 @@ import { DataSource } from 'typeorm';
 
 import { createRelayApp } from 'src/relay_app';
 import { REDIS } from 'src/common/redis/redis.module';
+import { RedisKeys } from 'src/common/redis/redis_keys';
 import { base64url } from 'src/common/crypto/relay_crypto';
+import { DeviceRepository } from 'src/modules/device/device.repository';
 import { MailboxNotifier } from 'src/modules/message/mailbox_notifier';
 import { RetentionTask } from 'src/modules/pairing/retention.task';
 import { createInviteKeys, fakeEnvelope, helloOf, inviteProof, TestDevice } from './test_device';
@@ -50,11 +52,13 @@ const pair = async (owner: TestDevice, redeemer: TestDevice, hello = helloOf()) 
 };
 
 describe('健康检查', () => {
-  it('免签名返回协议版本与服务器时间', async () => {
+  it('免签名返回协议版本、服务器时间与构建版本', async () => {
     const response = await request(server).get('/v1/health');
     expect(response.status).toBe(200);
     expect(response.body.protocol).toBe(1);
     expect(Math.abs(response.body.serverTime - Date.now())).toBeLessThan(5000);
+    // 不经镜像构建（没有 RELAY_BUILD_VERSION）即为 dev。
+    expect(response.body.version).toBe('dev');
   });
 });
 
@@ -93,6 +97,31 @@ describe('设备注册与请求签名', () => {
     const stranger = new TestDevice(server);
     expect((await stranger.call('GET', '/v1/friends')).body.code).toBe('UNAUTHORIZED');
     expect((await request(server).get('/v1/friends')).body.code).toBe('UNAUTHORIZED');
+  });
+
+  it('未注册设备号的反复请求只查一次库，注册后立刻可用', async () => {
+    const stranger = new TestDevice(server);
+    const find = vi.spyOn(app.get(DeviceRepository), 'find');
+    try {
+      for (let index = 0; index < 3; index++) expect((await stranger.call('GET', '/v1/friends')).body.code).toBe('UNAUTHORIZED');
+      expect(find.mock.calls.filter(([deviceId]) => deviceId === stranger.deviceId)).toHaveLength(1);
+      expect((await stranger.register()).status).toBe(200);
+      expect((await stranger.call('GET', '/v1/friends')).status).toBe(200);
+    } finally {
+      find.mockRestore();
+    }
+  });
+
+  it('查库与注册交错也不会把刚注册的设备记成不存在', async () => {
+    const device = await registered();
+    // 模拟注册提交之前就查过库的那次请求：没查到，被拒。
+    const find = vi.spyOn(app.get(DeviceRepository), 'find').mockResolvedValueOnce(null);
+    try {
+      expect((await device.call('GET', '/v1/friends')).body.code).toBe('UNAUTHORIZED');
+    } finally {
+      find.mockRestore();
+    }
+    expect((await device.call('GET', '/v1/friends')).status).toBe(200);
   });
 
   it('同一随机数重放被拒', async () => {
@@ -179,11 +208,11 @@ describe('信箱', () => {
     const sent = await bob.call('POST', '/v1/messages', { to: alice.deviceId, clientId, envelope });
     expect(sent.status).toBe(200);
     const again = await bob.call('POST', '/v1/messages', { to: alice.deviceId, clientId, envelope });
-    expect(again.body.id).toBe(sent.body.id);
+    expect(again.body).toEqual(sent.body);
     const inbox = await alice.call('GET', '/v1/messages');
-    // 问候 + 一条消息，重发没有多出一条。
+    // 问候 + 一条消息，重发没有多出一条；发送回执里的消息号与时刻与库里一致。
     expect(inbox.body.messages).toHaveLength(2);
-    expect(inbox.body.messages[1]).toMatchObject({ id: sent.body.id, from: bob.deviceId, envelope });
+    expect(inbox.body.messages[1]).toMatchObject({ id: sent.body.id, from: bob.deviceId, envelope, createTime: sent.body.createTime });
     // 别人确认不了我的消息。
     expect((await bob.call('POST', '/v1/messages/ack', { ids: [sent.body.id] })).body.removed).toBe(0);
     const ids = inbox.body.messages.map((message: { id: string }) => message.id);
@@ -235,6 +264,34 @@ describe('信箱', () => {
     const rows = Array.from({ length: 1000 }, () => [alice.deviceId, bob.deviceId, randomUUID(), Buffer.from('x'), expire, now, now]);
     await dataSource.query('INSERT INTO message (recipient_device_id, sender_device_id, client_id, envelope, expire_time, create_time, update_time) VALUES ?', [rows]);
     expect((await bob.call('POST', '/v1/messages', { to: alice.deviceId, clientId: randomUUID(), envelope: fakeEnvelope() })).body.code).toBe('MAILBOX_FULL');
+  });
+
+  it('每分钟最多发 30 条，超出的不计入每天的额度', async () => {
+    const alice = await registered(), bob = await registered();
+    await pair(alice, bob);
+    // 避开分钟边界：剩不到 5 秒就等到下一分钟再发。
+    const rest = 60000 - (Date.now() % 60000);
+    if (rest < 5000) await new Promise((resolve) => setTimeout(resolve, rest + 100));
+    for (let index = 0; index < 30; index++) {
+      expect((await bob.call('POST', '/v1/messages', { to: alice.deviceId, clientId: randomUUID(), envelope: fakeEnvelope() })).status).toBe(200);
+    }
+    const blocked = await bob.call('POST', '/v1/messages', { to: alice.deviceId, clientId: randomUUID(), envelope: fakeEnvelope() });
+    expect(blocked.status).toBe(429);
+    expect(blocked.body.code).toBe('RATE_LIMITED');
+    expect(blocked.body.retryAfter).toBeGreaterThan(0);
+    expect(blocked.body.retryAfter).toBeLessThanOrEqual(60);
+    const day = Math.floor(Date.now() / 1000 / 86400);
+    expect(await app.get<Redis>(REDIS).get(RedisKeys.rate('send_day', bob.deviceId, day))).toBe('30');
+  });
+
+  it('每天 500 条用完后返回 RATE_LIMITED，等到 UTC 日界', async () => {
+    const alice = await registered(), bob = await registered();
+    await pair(alice, bob);
+    const now = Math.floor(Date.now() / 1000);
+    await app.get<Redis>(REDIS).set(RedisKeys.rate('send_day', bob.deviceId, Math.floor(now / 86400)), '500', 'EX', 86400);
+    const blocked = await bob.call('POST', '/v1/messages', { to: alice.deviceId, clientId: randomUUID(), envelope: fakeEnvelope() });
+    expect(blocked.body.code).toBe('RATE_LIMITED');
+    expect(Math.abs(blocked.body.retryAfter - (86400 - (now % 86400)))).toBeLessThanOrEqual(2);
   });
 
   it('多余字段与不合法参数被拒', async () => {
