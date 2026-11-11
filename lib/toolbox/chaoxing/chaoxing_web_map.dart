@@ -27,6 +27,8 @@ const chaoxingAmapWebSecret = String.fromEnvironment('SUPERXD_AMAP_WEB_SECRET');
 const chaoxingMapPageUrl = 'https://localhost/superxd/chaoxing_map.html';
 const _pageAsset = 'assets/chaoxing_map/map.html';
 const _configSlot = '/*CONFIG*/null';
+// JSON 里的 < 写成 \u003c（JS 照样读成 <），页面里就不会出现提前结束 <script> 的 </script>。
+const _escapedLess = r'\u003c';
 const _bridge = 'SuperXdMap';
 
 // 一条消息最长多少字（正常的不到 200 字）。
@@ -53,7 +55,7 @@ String chaoxingMapHtml(
 }) {
   if (_configSlot.allMatches(template).length != 1) throw StateError('地图页面里要有且只有一处 $_configSlot');
   final config = jsonEncode({'key': key, 'secret': secret, 'center': _pair(center), 'zoom': zoom, 'background': _cssColor(background)});
-  return template.replaceFirst(_configSlot, config.replaceAll('<', r'<'));
+  return template.replaceFirst(_configSlot, config.replaceAll('<', _escapedLess));
 }
 
 // 网页经 JS 通道 SuperXdMap 发来的消息，一条一个 JSON 对象。网页里跑着高德的第三方脚本，按外部输入逐项校验：

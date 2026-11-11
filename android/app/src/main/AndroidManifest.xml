@@ -9,7 +9,7 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <!-- 课前提醒开了状态栏胶囊时发成实时更新（Android 16 起，OPPO 流体云按它显示），见 CourseLive.kt；不是运行时权限，用户可在系统设置里按应用关掉。 -->
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS"/>
-    <!-- 学习通位置签到的地图页点「定位到我」时才申请，仅使用期间（不要后台定位），由高德定位取一次当前位置。 -->
+    <!-- 学习通位置签到的地图页才申请，仅使用期间（不要后台定位）：地图里的内嵌网页经系统定位取当前位置。 -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <!-- 应用内更新：把下载并核对过的新版本安装包交给系统安装器；Android 8 起还要用户在设置里允许本应用「安装未知应用」。 -->
@@ -45,8 +45,6 @@
              不走前台服务，用 replace 固定成 dataSync（merge 会把两边的类型并起来）。 -->
         <service android:name="androidx.work.impl.foreground.SystemForegroundService"
             android:foregroundServiceType="dataSync" tools:node="merge" tools:replace="android:foregroundServiceType"/>
-        <!-- 高德定位（地图页「定位到我」）的定位服务；高德是 jar 不带清单，须自己声明，缺了定位直接失败。不做后台定位，不设前台服务类型。 -->
-        <service android:name="com.amap.api.location.APSService" android:exported="false"/>
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
             <intent-filter>
@@ -113,8 +111,11 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/app_update_paths" />
         </provider>
+        <!-- [人工决策-2026-11-10 18:47:56] 安卓手机锁竖屏（用户选定「锁竖屏」，没选「做横屏适配」）：横屏下悬浮底栏盖住约三分之一内容、卡片被拉满，
+             iOS 本来就只竖屏。Android 16 起系统对大屏设备（平板、折叠屏展开）会忽略这个属性、照样能横过来，属正常（test/shell_layout_test.dart 守护）。 -->
         <activity
             android:name=".MainActivity"
+            android:screenOrientation="portrait"
             android:exported="true"
             android:launchMode="singleTop"
             android:taskAffinity=""

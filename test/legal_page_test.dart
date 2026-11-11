@@ -225,11 +225,14 @@ void main() {
     expect(File('ios/Runner/AppDelegate.swift').readAsStringSync(), contains('DeviceOnlyData.claimKeychain()'));
   });
 
-  // release 才开 R8，CI 不打 release 包；高德 jar 不带混淆规则，删改类名后一开地图就崩。
-  test('release 混淆规则保住高德 SDK', () {
+  // release 才开 R8，CI 不打 release 包；高德原生 jar 不带混淆规则，删改类名后一开地图就崩（#57）。
+  // 11-10 地图改用网页版、原生高德整个删掉（[人工决策] 见 toolbox/chaoxing/chaoxing_web_map.dart）：以后再引回原生 SDK，keep 规则与定位服务声明要一起回来。
+  test('原生高德 SDK 与它的混淆规则、清单声明同进同出', () {
+    final native = File('pubspec.yaml').readAsStringSync().contains('amap_map:');
     final rules = File('android/app/proguard-rules.pro').readAsStringSync();
     for (final package in ['com.amap.api', 'com.autonavi', 'com.loc']) {
-      expect(rules, contains('-keep class $package.** { *; }'));
+      expect(rules.contains('-keep class $package.** { *; }'), native, reason: package);
     }
+    expect(File('android/app/src/main/AndroidManifest.xml').readAsStringSync().contains('com.amap.api.location.APSService'), native);
   });
 }
