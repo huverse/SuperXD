@@ -5,7 +5,7 @@ SuperXD 是开源、非官方的校园课表与成绩客户端，目前只对接
 ## 下载哪个
 
 - 大多数手机：`SuperXD-{{version}}-arm64-v8a.apk`
-- 较老的 32 位手机：`armeabi-v7a`；`x86_64` 用于模拟器（没有高德地图）
+- 较老的 32 位手机：`armeabi-v7a`；`x86_64` 用于模拟器
 - 需要 Android 11 及以上。安装前可用 `SHA256SUMS` 校验：`sha256sum -c SHA256SUMS`
 - 想确认安装包确实出自本仓库的发版流水线：装好 [GitHub CLI](https://cli.github.com/) 后对下载的文件（iPhone 包在重新签名之前）运行 `gh attestation verify <文件名> -R huverse/SuperXD`，显示 Verification succeeded 即通过。
 - iPhone：`SuperXD-{{version}}-ios-unsigned.ipa`，需要 iOS 16 及以上。没有上架 App Store，包未签名，要用你自己的证书签名后安装（例如全能签）；有新版本时应用会提示，去这里下载后重新签名安装。证书只绑一个固定应用 ID 时签不了小组件与实时活动的扩展，在签名工具里去掉插件再装即可。

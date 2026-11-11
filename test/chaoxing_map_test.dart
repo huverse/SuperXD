@@ -1,16 +1,20 @@
-import 'package:amap_map/amap_map.dart';
-import 'package:flutter/foundation.dart';
+import 'dart:convert';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:x_amap_base/x_amap_base.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_location.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_map_page.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_map_view.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_web_map.dart';
 
-// 签到弹层里嵌的地图：测试平台设成 linux，高德插件只画一行占位文字，定位结果与点按由用例直接调 AMapWidget 的回调；
-// 定位权限与系统定位开关走 permission_handler 的方法通道，打开系统定位设置走本应用的原生通道，都由用例回答。
+// 选点页经地图端口（chaoxing_map_view.dart）操作地图：这里注入假地图，记下页面交给它的标记、范围圈、平面卫星与定位请求，
+// 由用例代地图回报点按、定位结果与加载状态。定位权限与系统定位开关走 permission_handler 的方法通道，打开系统定位设置走本应用的原生通道，都由用例回答。
+// 网页版地图本身（内嵌网页里的高德 JS API）在测试里跑不起来，只测它的纯逻辑：网页消息的校验、导航拦截、页面填参与内置页面的安全设置。
 
 const _permissions = MethodChannel('flutter.baseflow.com/permissions/methods');
 const _locationSettings = MethodChannel('superxd/location_settings');
@@ -20,22 +24,70 @@ class _Device {
   int settingsOpened = 0;
 }
 
-const _school = LatLng(36.67, 117.35);
+class _FakeEngine implements ChaoxingMapEngine {
+  _FakeEngine(this.listener, this.center, this.zoom);
+  final ChaoxingMapListener listener;
+  final ChaoxingMapPoint center;
+  final double zoom;
+  ChaoxingMapPoint? marker;
+  ChaoxingMapRange? range;
+  bool satellite = false;
+  int rangeUpdates = 0;
+  int locateCalls = 0;
+  int reloads = 0;
+  bool disposed = false;
+  final cameraMoves = <ChaoxingMapPoint>[];
+  String? approval;
 
-AMapLocation _fix(double latitude, double accuracy) =>
-    AMapLocation(latLng: LatLng(latitude, 117.35), accuracy: accuracy, provider: accuracy > 100 ? 'lbs' : 'gps');
+  @override
+  final Widget view = const SizedBox.expand(key: Key('fake-map'));
 
-// 平台覆盖要在用例体结束前复位（框架在 tearDown 之前就检查调试变量）。
-void _mapTest(String description, Future<void> Function(WidgetTester tester) body) => testWidgets(description, (tester) async {
-  debugDefaultTargetPlatformOverride = TargetPlatform.linux;
-  try {
-    await body(tester);
-  } finally {
-    debugDefaultTargetPlatformOverride = null;
+  @override
+  void setMarker(ChaoxingMapPoint? point) => marker = point;
+
+  @override
+  void setRange(ChaoxingMapRange? value) {
+    range = value;
+    rangeUpdates++;
   }
-});
 
-Future<ValueNotifier<ChaoxingLocation?>> _pumpMap(WidgetTester tester, _Device device, {ChaoxingLocation? selected, double textScale = 1}) async {
+  @override
+  void setSatellite(bool value) => satellite = value;
+
+  @override
+  void locate() => locateCalls++;
+
+  @override
+  void moveCamera(ChaoxingMapPoint target, double zoom) => cameraMoves.add(target);
+
+  @override
+  String? get satelliteApproval => approval;
+
+  @override
+  void reload() {
+    reloads++;
+    listener.onStatus(ChaoxingMapStatus.loading);
+  }
+
+  @override
+  void dispose() => disposed = true;
+}
+
+class _FakeMaps implements ChaoxingMapBackend {
+  _FakeEngine? last;
+
+  _FakeEngine get engine => last!;
+
+  @override
+  ChaoxingMapEngine open({required ChaoxingMapPoint center, required double zoom, required Color background, required ChaoxingMapListener listener}) =>
+      last = _FakeEngine(listener, center, zoom);
+}
+
+const ChaoxingMapPoint _school = (latitude: 36.67, longitude: 117.35);
+
+ChaoxingMapFix _fix(double latitude, double accuracy) => (point: (latitude: latitude, longitude: 117.35), accuracy: accuracy);
+
+void _answerDevice(WidgetTester tester, _Device device) {
   final messenger = tester.binding.defaultBinaryMessenger;
   messenger.setMockMethodCallHandler(_permissions, (call) async => switch (call.method) {
     'requestPermissions' => {for (final permission in call.arguments as List) permission: 1},
@@ -50,6 +102,10 @@ Future<ValueNotifier<ChaoxingLocation?>> _pumpMap(WidgetTester tester, _Device d
     messenger.setMockMethodCallHandler(_permissions, null);
     messenger.setMockMethodCallHandler(_locationSettings, null);
   });
+}
+
+Future<ValueNotifier<ChaoxingLocation?>> _pumpMap(WidgetTester tester, _Device device, _FakeMaps maps, {ChaoxingLocation? selected, double textScale = 1}) async {
+  _answerDevice(tester, device);
   final value = ValueNotifier<ChaoxingLocation?>(selected);
   await tester.pumpWidget(
     MaterialApp(
@@ -58,7 +114,7 @@ Future<ValueNotifier<ChaoxingLocation?>> _pumpMap(WidgetTester tester, _Device d
       home: Scaffold(
         body: ValueListenableBuilder(
           valueListenable: value,
-          builder: (context, location, _) => ChaoxingInlineMap(selected: location, onPicked: (picked) => value.value = picked, onExpand: null),
+          builder: (context, location, _) => ChaoxingInlineMap(selected: location, onPicked: (picked) => value.value = picked, onExpand: null, backend: maps),
         ),
       ),
     ),
@@ -67,19 +123,21 @@ Future<ValueNotifier<ChaoxingLocation?>> _pumpMap(WidgetTester tester, _Device d
   return value;
 }
 
-AMapWidget _map(WidgetTester tester) => tester.widget<AMapWidget>(find.byType(AMapWidget));
-
-Future<void> _locate(WidgetTester tester, AMapLocation location) async {
-  _map(tester).onLocationChanged!(location);
+Future<void> _locate(WidgetTester tester, _FakeMaps maps, ChaoxingMapFix fix) async {
+  maps.engine.listener.onFix(fix);
   await tester.pump();
 }
 
+const _remembered = ChaoxingLocation(latitude: 36.68, longitude: 117.36, address: '知敬楼', system: ChaoxingCoordinateSystem.gcj02);
+
 void main() {
-  _mapTest('系统定位关着：地图左上角写明没开并给「去打开」，打开回来第一次定位结果照样选中', (tester) async {
+  testWidgets('系统定位关着：地图左上角写明没开并给「去打开」，打开回来第一次定位结果照样选中', (tester) async {
     final device = _Device()..serviceOn = false;
-    final selected = await _pumpMap(tester, device);
+    final maps = _FakeMaps();
+    final selected = await _pumpMap(tester, device, maps);
     expect(find.text('手机定位没开'), findsOneWidget);
     expect(find.text('正在定位…'), findsNothing);
+    expect(maps.engine.locateCalls, 1, reason: '定位没开也照常开始定位，打开回来就能接着取到');
 
     await tester.tap(find.byTooltip('定位到我'));
     await tester.pump();
@@ -88,23 +146,20 @@ void main() {
     await tester.pump();
     expect(device.settingsOpened, 1);
 
-    // 定位关着时图层回报的是 0,0，不当结果；打开回来后第一次真实结果就是默认选中。
-    await _locate(tester, const AMapLocation(latLng: LatLng(0, 0)));
-    expect(selected.value, isNull);
     device.serviceOn = true;
-    await _locate(tester, _fix(36.67, 550));
+    await _locate(tester, maps, _fix(36.67, 550));
     expect(selected.value?.latitude, 36.67);
+    expect(selected.value?.system, ChaoxingCoordinateSystem.gcj02);
     expect(find.text('手机定位没开'), findsNothing);
   });
 
-  _mapTest('系统定位关着而已有选中的位置：平时不提示，点了定位到我才写明没开', (tester) async {
-    const remembered = ChaoxingLocation(latitude: 36.68, longitude: 117.36, address: '知敬楼', system: ChaoxingCoordinateSystem.gcj02);
+  testWidgets('系统定位关着而已有选中的位置：平时不提示，点了定位到我才写明没开', (tester) async {
     final device = _Device()..serviceOn = false;
     // 弹层里地图约 300 宽，大字号下提示与「去打开」也排得下（溢出会让用例报错）。
     tester.view.physicalSize = const Size(900, 2400);
     tester.view.devicePixelRatio = 3;
     addTearDown(tester.view.reset);
-    await _pumpMap(tester, device, selected: remembered, textScale: 1.6);
+    await _pumpMap(tester, device, _FakeMaps(), selected: _remembered, textScale: 1.6);
     expect(find.text('手机定位没开'), findsNothing);
     await tester.tap(find.byTooltip('定位到我'));
     await tester.pump();
@@ -112,75 +167,219 @@ void main() {
     expect(find.text('去打开'), findsOneWidget);
   });
 
-  _mapTest('定位来的默认选点跟着更准的结果走，点过地图就不再动；精度圈不画', (tester) async {
-    final selected = await _pumpMap(tester, _Device());
-    final style = _map(tester).myLocationStyleOptions!;
-    expect(style.enabled, isTrue);
-    expect(style.circleFillColor, Colors.transparent);
-    expect(style.circleStrokeColor, Colors.transparent);
+  testWidgets('定位来的默认选点跟着更准的结果走，点过地图就不再动；标记跟着选中的位置', (tester) async {
+    final maps = _FakeMaps();
+    final selected = await _pumpMap(tester, _Device(), maps);
+    expect(maps.engine.locateCalls, 1, reason: '进位置签到就开始定位');
+    expect(maps.engine.marker, isNull);
     expect(find.text('正在定位…'), findsOneWidget);
 
-    await _locate(tester, _fix(36.671, 550));
+    await _locate(tester, maps, _fix(36.671, 550));
     expect(selected.value?.latitude, 36.671, reason: '第一次定位结果就是默认选中');
-    await _locate(tester, _fix(36.672, 30));
+    expect(maps.engine.cameraMoves.last.latitude, 36.671, reason: '镜头跟到定位结果');
+    expect(maps.engine.marker?.latitude, 36.671);
+    await _locate(tester, maps, _fix(36.672, 30));
     expect(selected.value?.latitude, 36.672, reason: '更准的结果来了就换过去');
-    await _locate(tester, _fix(36.673, 40));
+    await _locate(tester, maps, _fix(36.673, 40));
     expect(selected.value?.latitude, 36.672, reason: '没更准的不换');
 
-    _map(tester).onTap!(_school);
+    final moves = maps.engine.cameraMoves.length;
+    maps.engine.listener.onTap(_school);
     await tester.pump();
     expect(selected.value?.latitude, _school.latitude);
-    await _locate(tester, _fix(36.674, 5));
+    expect(maps.engine.cameraMoves, hasLength(moves), reason: '自己点的点不挪镜头，免得点哪儿跳哪儿');
+    await _locate(tester, maps, _fix(36.674, 5));
     expect(selected.value?.latitude, _school.latitude, reason: '自己点过地图就以点的为准');
   });
 
-  _mapTest('全屏选点带着签到页已选的位置进来：标记画上、可以直接用；点地图时范围圈不重建；添加收藏不预选', (tester) async {
-    const chosen = ChaoxingLocation(latitude: 36.68, longitude: 117.36, address: '知敬楼', system: ChaoxingCoordinateSystem.gcj02);
-    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: const ChaoxingMapPage(initial: chosen, rangeCenter: chosen, rangeMeters: 100)));
+  testWidgets('全屏选点带着签到页已选的位置进来：标记画上、可以直接用；点地图时范围圈不重画；添加收藏不预选', (tester) async {
+    _answerDevice(tester, _Device());
+    final maps = _FakeMaps();
+    await tester.pumpWidget(
+      MaterialApp(theme: campusTheme(), home: ChaoxingMapPage(initial: _remembered, rangeCenter: _remembered, rangeMeters: 100, backend: maps)),
+    );
     await tester.pump();
     // 以前进来是空的，标记不画、「用这个位置」灰着，要再点一次。
     expect(find.text('已选 36.680000, 117.360000'), findsOneWidget);
     final use = find.ancestor(of: find.text('用这个位置'), matching: find.byWidgetPredicate((widget) => widget is FilledButton));
     expect(tester.widget<FilledButton>(use).enabled, isTrue);
-    expect(_map(tester).markers, hasLength(1));
-    final polygons = _map(tester).polygons;
-    expect(polygons, hasLength(1));
-    _map(tester).onTap!(_school);
+    expect(maps.engine.marker, (latitude: 36.68, longitude: 117.36));
+    expect(maps.engine.range?.meters, 100);
+    expect(maps.engine.range?.center, (latitude: 36.68, longitude: 117.36));
+    expect(maps.engine.rangeUpdates, 1);
+    expect(maps.engine.locateCalls, 0, reason: '全屏页不自动定位');
+    maps.engine.listener.onTap(_school);
     await tester.pump();
-    expect(identical(_map(tester).polygons, polygons), isTrue, reason: '范围圈按内容缓存，点地图不重建（重建就是新 id，高德删了重画会闪）');
+    expect(find.text('已选 36.670000, 117.350000'), findsOneWidget);
+    expect(maps.engine.marker, _school);
+    expect(maps.engine.rangeUpdates, 1, reason: '范围圈按内容比较，点地图不重画（重画会闪）');
 
     await tester.pumpWidget(const SizedBox());
-    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: const ChaoxingMapPage(initial: chosen, favorite: true)));
+    expect(maps.engine.disposed, isTrue, reason: '离开页面时关掉地图');
+
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChaoxingMapPage(initial: _remembered, favorite: true, backend: maps)));
     await tester.pump();
     expect(find.text('在教室的位置点一下地图'), findsOneWidget);
+    expect(maps.engine.marker, isNull);
+    expect(maps.engine.center, (latitude: 36.68, longitude: 117.36), reason: '最近的收藏只当镜头起点');
     await tester.pumpWidget(const SizedBox());
   });
 
-  _mapTest('跟随最多 30 秒；外面换了位置（选收藏）也不再跟', (tester) async {
-    final selected = await _pumpMap(tester, _Device());
-    await _locate(tester, _fix(36.671, 550));
+  testWidgets('跟随最多 30 秒；外面换了位置（选收藏）也不再跟', (tester) async {
+    final maps = _FakeMaps();
+    final selected = await _pumpMap(tester, _Device(), maps);
+    await _locate(tester, maps, _fix(36.671, 550));
     await tester.pump(const Duration(seconds: 31));
-    await _locate(tester, _fix(36.672, 10));
+    await _locate(tester, maps, _fix(36.672, 10));
     expect(selected.value?.latitude, 36.671, reason: '过了跟随窗口不再换');
 
     // 点「定位到我」重新开始跟随：先用手上的结果选中，再来更准的接着换。
     await tester.tap(find.byTooltip('定位到我'));
     await tester.pump();
     expect(selected.value?.latitude, 36.672);
-    await _locate(tester, _fix(36.673, 8));
+    await _locate(tester, maps, _fix(36.673, 8));
     expect(selected.value?.latitude, 36.673);
     const favorite = ChaoxingLocation(latitude: 36.68, longitude: 117.36, address: '知敬楼', system: ChaoxingCoordinateSystem.gcj02);
     selected.value = favorite;
     await tester.pump();
-    await _locate(tester, _fix(36.675, 5));
+    expect(maps.engine.cameraMoves.last, (latitude: 36.68, longitude: 117.36), reason: '选了收藏镜头跟过去');
+    await _locate(tester, maps, _fix(36.675, 5));
     expect(selected.value, favorite, reason: '选了收藏就以收藏为准');
   });
 
-  _mapTest('已经有选中的位置（这门课上次用的）时不拿定位结果覆盖', (tester) async {
-    const remembered = ChaoxingLocation(latitude: 36.68, longitude: 117.36, address: '知敬楼', system: ChaoxingCoordinateSystem.gcj02);
-    final selected = await _pumpMap(tester, _Device(), selected: remembered);
-    await _locate(tester, _fix(36.671, 550));
-    await _locate(tester, _fix(36.672, 10));
-    expect(selected.value, remembered);
+  testWidgets('已经有选中的位置（这门课上次用的）时不拿定位结果覆盖', (tester) async {
+    final maps = _FakeMaps();
+    final selected = await _pumpMap(tester, _Device(), maps, selected: _remembered);
+    expect(maps.engine.center, (latitude: 36.68, longitude: 117.36), reason: '镜头从选中的位置开始');
+    await _locate(tester, maps, _fix(36.671, 550));
+    await _locate(tester, maps, _fix(36.672, 10));
+    expect(selected.value, _remembered);
+  });
+
+  testWidgets('地图没加载出来：正中写明并给「重试」，重试时提示收起', (tester) async {
+    final maps = _FakeMaps();
+    await _pumpMap(tester, _Device(), maps);
+    expect(find.text('正在定位…'), findsOneWidget);
+    maps.engine.listener.onStatus(ChaoxingMapStatus.failed);
+    await tester.pump();
+    expect(find.text('地图没加载出来'), findsOneWidget);
+    expect(find.text('正在定位…'), findsNothing, reason: '地图都没出来，不写「正在定位」「点一下地图」');
+    await tester.tap(find.text('重试'));
+    await tester.pump();
+    expect(maps.engine.reloads, 1);
+    expect(find.text('地图没加载出来'), findsNothing);
+    expect(find.text('正在定位…'), findsOneWidget);
+  });
+
+  testWidgets('平面卫星切换交给地图，卫星图画好后标出审图号', (tester) async {
+    final maps = _FakeMaps();
+    await _pumpMap(tester, _Device(), maps);
+    maps.engine.approval = 'GS(2025)1807';
+    maps.engine.listener.onStatus(ChaoxingMapStatus.ready);
+    await tester.pump();
+    expect(find.text('GS(2025)1807'), findsNothing, reason: '平面图不标');
+    await tester.tap(find.byTooltip('卫星地图'));
+    await tester.pump();
+    expect(maps.engine.satellite, isTrue);
+    expect(find.text('GS(2025)1807'), findsOneWidget);
+    await tester.tap(find.byTooltip('平面地图'));
+    await tester.pump();
+    expect(maps.engine.satellite, isFalse);
+    expect(find.text('GS(2025)1807'), findsNothing);
+  });
+
+  group('网页版地图', () {
+    test('网页消息按外部输入逐项校验，对不上的整条丢掉', () {
+      expect(chaoxingMapMessage('{"type":"tap","latitude":36.67,"longitude":117.35}'), isA<ChaoxingMapTapped>().having((message) => message.point, 'point', (latitude: 36.67, longitude: 117.35)));
+      expect(chaoxingMapMessage('{"type":"tap","latitude":91,"longitude":117.35}'), isNull);
+      expect(chaoxingMapMessage('{"type":"tap","latitude":36.67,"longitude":-181}'), isNull);
+      expect(chaoxingMapMessage('{"type":"tap","latitude":"36.67","longitude":117.35}'), isNull);
+      expect(chaoxingMapMessage('{"type":"tap","latitude":36.67}'), isNull);
+      expect(
+        chaoxingMapMessage('{"type":"located","latitude":36.67,"longitude":117.35,"accuracy":550}'),
+        isA<ChaoxingMapLocated>().having((message) => message.accuracy, 'accuracy', 550),
+      );
+      expect(chaoxingMapMessage('{"type":"located","latitude":36.67,"longitude":117.35,"accuracy":-1}'), isNull);
+      expect(chaoxingMapMessage('{"type":"located","latitude":36.67,"longitude":117.35,"accuracy":1e9}'), isNull);
+      expect(chaoxingMapMessage('{"type":"located","latitude":36.67,"longitude":117.35}'), isNull);
+      expect(chaoxingMapMessage('{"type":"ready","approval":"GS(2025)1807"}'), isA<ChaoxingMapReady>().having((message) => message.approval, 'approval', 'GS(2025)1807'));
+      expect(chaoxingMapMessage('{"type":"ready","approval":null}'), isA<ChaoxingMapReady>().having((message) => message.approval, 'approval', isNull));
+      expect(chaoxingMapMessage('{"type":"ready","approval":"<b>GS</b>"}'), isNull);
+      expect(chaoxingMapMessage('{"type":"ready","approval":"${'号' * 41}"}'), isNull);
+      for (final reason in ['script', 'key', 'init']) {
+        expect(chaoxingMapMessage('{"type":"failed","reason":"$reason"}'), isA<ChaoxingMapFailed>().having((message) => message.reason, 'reason', reason));
+      }
+      expect(chaoxingMapMessage('{"type":"failed","reason":"other"}'), isNull);
+      expect(chaoxingMapMessage('{"type":"locateFailed","code":1}'), isA<ChaoxingMapLocateFailed>());
+      expect(chaoxingMapMessage('{"type":"locateFailed","code":4}'), isNull);
+      expect(chaoxingMapMessage('{"type":"locateFailed","code":1.5}'), isNull);
+      expect(chaoxingMapMessage('{"type":"blocked","host":"g.alicdn.com"}'), isA<ChaoxingMapBlocked>().having((message) => message.host, 'host', 'g.alicdn.com'));
+      expect(chaoxingMapMessage('{"type":"blocked","host":"a.com/?key=1"}'), isNull);
+      expect(chaoxingMapMessage('{"type":"navigate","url":"https://example.com"}'), isNull);
+      expect(chaoxingMapMessage('[1,2]'), isNull);
+      expect(chaoxingMapMessage('not json'), isNull);
+      expect(chaoxingMapMessage('{"type":"tap","latitude":36.67,"longitude":117.35,"pad":"${'x' * 600}"}'), isNull, reason: '超长的整条丢掉');
+    });
+
+    test('主框架只许停在内置页', () {
+      expect(chaoxingMapNavigation(chaoxingMapPageUrl), NavigationDecision.navigate);
+      expect(chaoxingMapNavigation('$chaoxingMapPageUrl#top'), NavigationDecision.navigate);
+      for (final url in [
+        'http://localhost/superxd/chaoxing_map.html',
+        'https://localhost/superxd/other.html',
+        'https://localhost.evil.com/superxd/chaoxing_map.html',
+        'https://webapi.amap.com/maps?v=2.0',
+        'https://www.amap.com/',
+        'amapuri://route/plan',
+        'intent://open#Intent;end',
+        'about:blank',
+        'javascript:alert(1)',
+      ]) {
+        expect(chaoxingMapNavigation(url), NavigationDecision.prevent, reason: url);
+      }
+    });
+
+    test('页面填参：key、密钥、镜头与底色进 JSON，< 转义，占位不唯一就报错', () {
+      const template = '<script>var config = /*CONFIG*/null;</script>';
+      final html = chaoxingMapHtml(
+        template,
+        key: 'k</script><script>alert(1)',
+        secret: 'secret',
+        center: (latitude: 36.67, longitude: 117.35),
+        zoom: 17,
+        background: const Color(0xFF102030),
+      );
+      expect('</script>'.allMatches(html), hasLength(1), reason: 'key 里的 </script> 不能提前结束脚本');
+      final json = html.substring('<script>var config = '.length, html.length - ';</script>'.length);
+      expect(jsonDecode(json), {'key': 'k</script><script>alert(1)', 'secret': 'secret', 'center': [36.67, 117.35], 'zoom': 17, 'background': '#102030'});
+      expect(() => chaoxingMapHtml('<script></script>', key: 'k', secret: 's', center: (latitude: 0, longitude: 0), zoom: 4, background: const Color(0xFFFFFFFF)), throwsStateError);
+      expect(
+        () => chaoxingMapHtml('/*CONFIG*/null /*CONFIG*/null', key: 'k', secret: 's', center: (latitude: 0, longitude: 0), zoom: 4, background: const Color(0xFFFFFFFF)),
+        throwsStateError,
+      );
+    });
+
+    test('内置页面：只许高德的域名，安全密钥在加载脚本之前设置，不画精度圈', () {
+      final html = File('assets/chaoxing_map/map.html').readAsStringSync();
+      expect(File('pubspec.yaml').readAsStringSync(), contains('    - assets/chaoxing_map/\n'));
+      expect('/*CONFIG*/null'.allMatches(html), hasLength(1));
+      final policy = RegExp(r'http-equiv="Content-Security-Policy" content="([^"]+)"').firstMatch(html)!.group(1)!;
+      final directives = {for (final part in policy.split(';').map((part) => part.trim().split(' '))) part.first: part.skip(1).toSet()};
+      expect(directives['default-src'], {"'none'"});
+      const allowed = {"'unsafe-inline'", "'unsafe-eval'", 'data:', 'blob:', 'https://*.amap.com', 'https://*.is.autonavi.com'};
+      for (final MapEntry(:key, :value) in directives.entries) {
+        expect(allowed.containsAll(value) || value.contains("'none'"), isTrue, reason: '$key 放行了 ${value.difference(allowed)}');
+      }
+      expect(directives.keys, isNot(contains('frame-src')));
+      final secret = html.indexOf('window._AMapSecurityConfig = { securityJsCode: config.secret }');
+      final loader = html.indexOf("'https://webapi.amap.com/maps?v=2.0&key='");
+      final append = html.indexOf('document.head.appendChild(script)');
+      expect(secret, greaterThan(0));
+      expect(loader, greaterThan(secret));
+      expect(append, greaterThan(loader));
+      expect('new AMap.Circle('.allMatches(html), hasLength(1), reason: '只有签到范围圈，定位不画精度圈');
+      expect('watchPosition('.allMatches(html), hasLength(1), reason: '只在应用要定位时才取位置');
+      expect(html, isNot(contains('AMap.Geolocation')), reason: '定位不经高德，位置不发给高德');
+    });
   });
 }

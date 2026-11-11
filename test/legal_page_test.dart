@@ -25,6 +25,7 @@ void main() {
     for (final (title, fragment) in [
       ('二、私信', '按 IP 地址计数限流'),
       ('四、百宝箱：学习通签到', '打开位置签到时申请定位权限（仅使用期间）'),
+      ('四、百宝箱：学习通签到', '当前位置不发给高德'),
       ('四、百宝箱：学习通签到', '本机不保存签到记录与群消息'),
       ('五、百宝箱：快递（拼多多）', '会让你其他设备上的拼多多下线'),
       ('五、百宝箱：快递（拼多多）', '身份码是取件凭证，不写入文件，也不进日志'),
@@ -42,6 +43,7 @@ void main() {
       ('十、未成年人', '未满 14 周岁'),
       ('十一、政策更新与联系', '私下联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com'),
       ('附录一 第三方 SDK 与服务', 'https://lbs.amap.com/pages/privacy/'),
+      ('附录一 第三方 SDK 与服务', '当前位置由手机系统定位提供、不经高德'),
       ('附录一 第三方 SDK 与服务', 'zxing-cpp 条码识别（开源，经插件 flutter_zxing 集成）'),
       ('附录一 第三方 SDK 与服务', '识别在本机完成、不联网'),
       ('附录一 第三方 SDK 与服务', 'com.hihonor.mcs:ads-identifier'),
@@ -229,11 +231,14 @@ void main() {
     expect(File('ios/Runner/AppDelegate.swift').readAsStringSync(), contains('DeviceOnlyData.claimKeychain()'));
   });
 
-  // release 才开 R8，CI 不打 release 包；高德 jar 不带混淆规则，删改类名后一开地图就崩。
-  test('release 混淆规则保住高德 SDK', () {
+  // release 才开 R8，CI 不打 release 包；高德原生 jar 不带混淆规则，删改类名后一开地图就崩（#57）。
+  // 11-10 地图改用网页版、原生高德整个删掉（[人工决策] 见 toolbox/chaoxing/chaoxing_web_map.dart）：以后再引回原生 SDK，keep 规则与定位服务声明要一起回来。
+  test('原生高德 SDK 与它的混淆规则、清单声明同进同出', () {
+    final native = File('pubspec.yaml').readAsStringSync().contains('amap_map:');
     final rules = File('android/app/proguard-rules.pro').readAsStringSync();
     for (final package in ['com.amap.api', 'com.autonavi', 'com.loc']) {
-      expect(rules, contains('-keep class $package.** { *; }'));
+      expect(rules.contains('-keep class $package.** { *; }'), native, reason: package);
     }
+    expect(File('android/app/src/main/AndroidManifest.xml').readAsStringSync().contains('com.amap.api.location.APSService'), native);
   });
 }
