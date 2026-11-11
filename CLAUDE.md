@@ -18,7 +18,7 @@
 # 常用命令
 
 - 静态检查与测试：PUB_HOSTED_URL=https://pub.dev flutter analyze；PUB_HOSTED_URL=https://pub.dev flutter test test/<文件>.dart，必要时去掉文件名跑全量。本机默认镜像会改写 pubspec.lock，所以 flutter 命令一律加这个前缀，提交前确认 pubspec.lock 没变。
-- 运行：flutter run 默认是 production flavor（开发包，与 Alpha 包并装、数据不共享）。私信与代签要 --dart-define=SUPERXD_RELAY=<中转地址>，地图要 --dart-define=SUPERXD_AMAP_KEY=<key>，视频解析的 BugPK 新版来源要 --dart-define=SUPERXD_SVPARSE_KEY=<key>，三者都不写进源码（发版流水线从 release 环境的机密注入）。
+- 运行：flutter run 默认是 production flavor（开发包，与 Alpha 包并装、数据不共享）。私信与代签要 --dart-define=SUPERXD_RELAY=<中转地址>，地图（网页版高德）要 --dart-define=SUPERXD_AMAP_WEB_KEY=<key> 与 --dart-define=SUPERXD_AMAP_WEB_SECRET=<安全密钥>，视频解析的 BugPK 新版来源要 --dart-define=SUPERXD_SVPARSE_KEY=<key>，这些都不写进源码（发版流水线从 release 环境的机密注入）。
 - 服务端：cd server，docker compose -f docker-compose.test.yml up -d --wait 起测试库后 npm test；npm run typecheck。
 - 发版由流水线 .github/workflows/release.yml 全自动完成（安卓三个架构加 iOS 未签名包）：升版本 PR 合并到 main 即构建与发布，不再要网页批准；升版本 PR 只在用户明确要求发版时开；约定与本机构建见 CONTRIBUTING.md。
 
@@ -115,14 +115,15 @@
 - tool 下的手动入口不进 CI（发版两个工具由发版流水线调用），运行方式见各文件头：
   - 访问真实服务，只在授权环境与授权账号上手动运行：verify_edu.dart、verify_grades.dart（教务）、verify_chaoxing.dart（学习通，输出脱敏）。
   - 经真实中转、只用合成数据：verify_social.dart、verify_chaoxing_pack.dart。
-  - 设备与原生验证：verify_toolbox.dart（原生下载导出）、verify_chaoxing_map.dart（高德选点，要 SUPERXD_AMAP_KEY）、motion_release_test.dart（发布包的图标字体）。
+  - 设备与原生验证：verify_toolbox.dart（原生下载导出）、verify_chaoxing_map.dart（网页版高德选点，要 SUPERXD_AMAP_WEB_KEY 与 SUPERXD_AMAP_WEB_SECRET）、motion_release_test.dart（发布包的图标字体）。
   - 发版：release_changelog.dart（从 CHANGELOG 取更新说明与 Release 正文，正文模板 release_body.md）、release_manifest.dart（生成更新清单）。
   - 生成与演示：painting_colors.dart（开屏画作清单里的尺寸与天空色，加画时跑）、readme_demo.dart（README 截图）、font_previews.dart（字体预览图）、schedule_smoke.dart、glass_preview.dart、motion_preview.dart。
 
 # 已知约束
 
 - 平台：Android 最低 Android 11（系统 SQLite 3.28，原因与守护见 android/app/build.gradle.kts 的人工决策），验证以模拟器（API 36、API 34）为主，只在少数真机上走过部分功能。原生通道在 android/app/src 下（入口 MainActivity.kt），各自登记在使用它的模块 CLAUDE.md。
+- 屏幕方向：安卓主界面锁竖屏、iOS 只竖屏（[人工决策] 在清单的 MainActivity；Android 16 起系统对大屏设备会忽略这个设置，属正常；test/shell_layout_test.dart 守护）。
 - iOS：宿主在 ios 目录（入口 ios/Runner/AppDelegate.swift；小组件与实时活动的扩展在 ios/CourseWidgets，两边共用的在 ios/Shared；最低 iOS 16 与渠道配置的人工决策在 ios/Podfile），原生代码同样登记在使用它的模块 CLAUDE.md。本机是 Linux、没有 Mac，iOS 只在 CI 的 ios-build 作业里编译，产物是未签名 ipa，测试者用全能签加自己的证书签名安装（人工决策在 ci.yml）；没有模拟器与本机调试，iOS 结论只认用户 iPhone 上的结果。系统启动图只铺默认配色的底色（LaunchBackground）；应用自己的隐私清单 ios/Runner/PrivacyInfo.xcprivacy 登记原生代码用到的需说明理由的接口（现在只有 UserDefaults），新增这类接口时同步。各项原生能力还在补，补齐前 iOS 未验收。
 - 对外开放文件只经两个 FileProvider：CalendarFileProvider（缓存 calendar_export 文件夹）与 AppUpdateFileProvider（缓存 app_update 文件夹，清单声明 REQUEST_INSTALL_PACKAGES）。
-- release 包开启 R8：不带混淆规则的原生 SDK（目前是高德）要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件（如高德定位的 APSService）还要自己在清单里声明，test/legal_page_test.dart 守护规则。CI 只跑测试；release 包由发版流水线构建，正式发版前可先试跑，用试跑产物在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
+- release 包开启 R8：接入不带混淆规则的原生 SDK 时要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件还要自己在清单里声明（现在没有这类 SDK：原生高德 11-10 随地图改网页版删掉，test/legal_page_test.dart 守护它与规则同进同出）。CI 只跑测试；release 包由发版流水线构建，正式发版前可先试跑，用试跑产物在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
 - 暂不改动的事项（只被测试使用的公开方法、性能观察项、单校写死）记在对应模块 CLAUDE.md 的关键规则里，改动前先看。

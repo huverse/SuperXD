@@ -25,7 +25,7 @@ tool/verify_toolbox.dart为手动Android原生下载验证入口，不进入正�
   4. 某步失败在Actions里重跑失败的作业：已有的Release不再重建，中转上传可以重复执行。
 - 替换已发的版本（发出后才发现问题）：版本名不变、构建号加一，合并升版本PR之前先删掉这个版本的Release与标签（gh release delete v<版本名> --cleanup-tag），流水线按新提交重发、覆盖中转上同名安装包；装着旧构建号的在应用内会收到更新。
 - 试跑：在Actions里手动运行Release（默认勾选dry_run），只构建、核对、生成清单并试连中转，不发Release、不改中转。改了发版流程、签名或构建配置后先试跑。
-- 机密在仓库Settings › Environments：release环境（只限受保护分支，不设审批人）放SIGNING_KEYSTORE与SIGNING_PROPERTIES（仓库外alpha.jks与signing.properties的base64）、AMAP_KEY、RELAY_URL；relay环境（只限受保护分支）放RELAY_URL、RELAY_SSH_TARGET、RELAY_SSH_KEY、RELAY_KNOWN_HOSTS（受限账号见server/README.md部署第6步）。
+- 机密在仓库Settings › Environments：release环境（只限受保护分支，不设审批人）放SIGNING_KEYSTORE与SIGNING_PROPERTIES（仓库外alpha.jks与signing.properties的base64）、AMAP_WEB_KEY与AMAP_WEB_SECRET（高德Web端JS API的key与安全密钥，安卓与iOS构建都带）、RELAY_URL；relay环境（只限受保护分支）放RELAY_URL、RELAY_SSH_TARGET、RELAY_SSH_KEY、RELAY_KNOWN_HOSTS（受限账号见server/README.md部署第6步）。
 - Alpha包名com.superxd.superxd.alpha、显示SuperXD Alpha，与开发包并装、数据不共享。默认flutter run/build是production flavor（开发包名）；只有显式--flavor alpha才构建Alpha。不要向同一设备安装debug签名的alphaDebug。
 
 本机构建（排查问题或流水线不可用时；按架构分包，符号离线保存）：
@@ -33,7 +33,7 @@ tool/verify_toolbox.dart为手动Android原生下载验证入口，不进入正�
 ```sh
 ORG_GRADLE_PROJECT_superxdSigningProperties=/仓库外的绝对路径/signing.properties \
   flutter build apk --release --flavor alpha --split-per-abi --split-debug-info=build/release_symbols \
-  --dart-define=SUPERXD_RELAY=http://中转服务器地址:端口 --dart-define=SUPERXD_AMAP_KEY=<高德key> --dart-define=SUPERXD_SVPARSE_KEY=<svparse密钥>
+  --dart-define=SUPERXD_RELAY=http://中转服务器地址:端口 --dart-define=SUPERXD_AMAP_WEB_KEY=<高德Web端key> --dart-define=SUPERXD_AMAP_WEB_SECRET=<安全密钥> --dart-define=SUPERXD_SVPARSE_KEY=<svparse密钥>
 ```
 
 - 签名配置只从上述外部properties读取，包含storeFile、keyAlias、storePassword、keyPassword；storeFile可相对配置文件。密钥文件和密码在仓库外限制访问并离线备份（流水线用的是release环境里的副本），禁止写进命令行、日志、Git或Issue。release缺少有效配置直接失败，不回退debug签名。丢失密钥就无法覆盖升级，只能换签名并让用户卸载重装（1.0.0-alpha.2即因此更换）；换签名时同步改工作流的RELEASE_CERT_SHA256与release环境的机密。

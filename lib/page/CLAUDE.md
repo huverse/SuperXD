@@ -86,7 +86,7 @@
 
 - 今天与课表：today_navigation_test.dart、today_date_transition_test.dart、schedule_experience_test.dart、schedule_editor_ui_test.dart、schedule_calendar_test.dart、course_clock_performance_test.dart、calendar_export_test.dart。
 - 成绩与同步：grades_ui_test.dart、sync_ui_test.dart、sync_merge_test.dart（合并页、手动同步流程、打扰时机弹窗、自动同步设置）。
-- 壳层与表单：navigation_drag_test.dart、shell_layout_test.dart（含 iOS 26 系统底栏的留位、iOS 18 自绘底栏，两者都测直接切换与再点当前项）、form_spacing_test.dart（支撑 form_layout_support.dart）。
+- 壳层与表单：navigation_drag_test.dart、shell_layout_test.dart（含 iOS 26 系统底栏的留位、iOS 18 自绘底栏，两者都测直接切换与再点当前项；安卓与 iOS 都只竖屏）、form_spacing_test.dart（支撑 form_layout_support.dart）。
 - 排版：text_layout_test.dart（登录、今天、课表三种范围与成绩在 360dp 大字号、宋体加粗体文本、411dp 标准下不裁字、不剩一行标点、不留孤字，同意行与登录按钮、学期视图横条；扫描在 text_fit_support.dart）。改了页面排版、文案长短或字号相关的布局都跑它。
 - 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart；开屏与画作页：painting_ui_test.dart。
 - 开发者的话：account_lifecycle_test.dart（「我的」页入口、小圆点与读信、新信在什么界面条件下弹）。

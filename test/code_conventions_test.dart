@@ -41,7 +41,7 @@ void main() {
   });
 
   // 顶栏右侧操作一律用玻璃圆钮 CampusGlassCircleButton（主题规则：圆形玻璃按钮只用于顶栏操作与悬浮按钮）；10-20 统一性审查发现学习通、快递用的是普通图标。
-  // 例外：地图选点页同屏有高德原生地图，玻璃与地图同屏曾闪退（玻璃限档的由来），顶栏保持普通图标。
+  // 例外：地图选点页同屏有地图（内嵌网页，也是原生视图），玻璃与原生地图同屏曾闪退（玻璃限档的由来），顶栏保持普通图标。
   test('顶栏右侧操作用玻璃圆钮', () {
     final offenders = <String>[];
     for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart') && !file.path.endsWith('chaoxing_map_page.dart'))) {
