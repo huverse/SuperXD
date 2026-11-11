@@ -312,7 +312,10 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                     ].join(' · '),
                     style: const TextStyle(fontSize: 14),
                   ),
-                  trailing: item.phoneNumber == controller.current?.phoneNumber ? const CampusIcon(CampusIcons.check) : null,
+                  // 当前账号这一行着选中色，不另画对号（人工决策见 theme/campus_glass_controls.dart 的 CampusGlassChip）。
+                  selected: item.phoneNumber == controller.current?.phoneNumber,
+                  selectedTileColor: CampusPalette.of(context).surfaceSelected,
+                  selectedColor: CampusPalette.of(context).onSurface,
                   onTap: () {
                     Navigator.pop(context);
                     controller.select(item).catchError((Object error, StackTrace stack) {

@@ -552,12 +552,6 @@ class _AppearancePageState extends State<AppearancePage> {
                                       ),
                                     ),
                                   ),
-                                  if (settings.paletteId == palette.id)
-                                    CampusIcon(
-                                      CampusIcons.check,
-                                      size: 20,
-                                      color: palette.primary,
-                                    ),
                                 ],
                               ),
                             ),
