@@ -141,5 +141,5 @@ class _FakeTransport implements RelayTransport {
   _FakeTransport(this.relay);
   final FakeRelay relay;
   @override
-  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, bool background = false}) => relay.handle(method, pathWithQuery, headers, body, timeout: timeout);
+  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, int? limit, bool background = false}) => relay.handle(method, pathWithQuery, headers, body, timeout: timeout);
 }

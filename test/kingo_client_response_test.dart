@@ -1,11 +1,13 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:enough_convert/enough_convert.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
@@ -120,6 +122,99 @@ void main() {
     expect((await db.readSession())?.loginId, 'test');
     await db.close();
   });
+
+  test('登录后跳转给的地址不同源：不发出、报格式错误', () async {
+    final sent = <Uri>[];
+    final client = KingoClient(client: MockClient((request) async {
+      sent.add(request.url);
+      return switch (request.url.path) {
+        '/cas/login.action' => http.Response('var _ssessionid = "S1";', 200),
+        '/frame/homepage' => http.Response(request.url.query.contains('Deskey') ? 'k1' : '20261110', 200),
+        '/cas/logon.action' => http.Response(jsonEncode({'status': '200', 'message': '', 'result': 'http://evil.example/frame/homes.action'}), 200),
+        _ => http.Response('', 200),
+      };
+    }));
+    await expectLater(client.login('合成学号', 'secret'), throwsA(isA<FormatException>().having((error) => error.message, 'message', '教务返回了非同源地址')));
+    expect(sent.where((url) => url.host == 'evil.example'), isEmpty);
+    expect(sent.last.path, '/cas/logon.action');
+  });
+
+  test('取消后迟到的响应不改写 cookie：在途请求立即结束，响应回来了也丢弃', () async {
+    final gate = Completer<http.Response>();
+    final started = Completer<void>();
+    final client = KingoClient(client: MockClient((request) {
+      if (!started.isCompleted) started.complete();
+      return gate.future;
+    }));
+    client.jar['JSESSIONID'] = 'old';
+    final pending = client.fetchCaptcha();
+    final assertion = expectLater(pending, throwsA(isA<http.RequestAbortedException>()));
+    await started.future;
+    final watch = Stopwatch()..start();
+    client.cancelRequests();
+    await assertion;
+    expect(watch.elapsed, lessThan(const Duration(seconds: 1)), reason: '底层不理会中断也不等响应');
+    gate.complete(http.Response.bytes([1, 2], 200, headers: {'set-cookie': 'JSESSIONID=late; Path=/', 'content-type': 'image/jpeg'}));
+    await pumpEventQueue();
+    expect(client.jar, {'JSESSIONID': 'old'});
+  });
+
+  test('取消信号与迟到响应同时到：响应先到也按已取消丢弃', () async {
+    late KingoClient client;
+    client = KingoClient(client: MockClient((request) async {
+      client.cancelRequests();
+      return http.Response('<h1>学生个人课表</h1><p>课程门数：0</p>', 200, headers: {'set-cookie': 'JSESSIONID=late', 'content-type': 'text/html; charset=utf-8'});
+    }));
+    await expectLater(client.fetchSchedule(xn: '2026', xq: '0', userCode: 'test'), throwsA(isA<http.RequestAbortedException>()));
+    expect(client.jar, isEmpty);
+  });
+
+  test('响应已经读完、交回之前被取消：照样按已取消丢弃，不改写 cookie', () async {
+    late KingoClient client;
+    final previous = campusLog;
+    addTearDown(() {
+      campusLog = previous;
+      campusDiagnostics = false;
+    });
+    // 内核读完响应、记请求记录的那一刻取消：内核已经拿到结果，只剩教务客户端自己的代次核对挡住它。
+    campusDiagnostics = true;
+    campusLog = (line) {
+      if (line.startsWith('[Http]')) client.cancelRequests();
+    };
+    client = KingoClient(client: MockClient((_) async => http.Response('<h1>学生个人课表</h1><p>课程门数：0</p>', 200, headers: {'set-cookie': 'JSESSIONID=late', 'content-type': 'text/html; charset=utf-8'})));
+    await expectLater(client.fetchSchedule(xn: '2026', xq: '0', userCode: 'test'), throwsA(isA<http.RequestAbortedException>()));
+    expect(client.jar, isEmpty);
+  });
+
+  test('dispose 之后拒绝发起请求，什么也不发', () async {
+    var sent = 0;
+    final client = KingoClient(client: MockClient((_) async {
+      sent++;
+      return http.Response('', 200);
+    }));
+    client.dispose();
+    await expectLater(client.fetchCaptcha(), throwsA(isA<http.RequestAbortedException>()));
+    expect(sent, 0);
+  });
+
+  test('成绩之外的页面也有响应上限：超了报格式错误，网关保留原数据', () async {
+    expect(KingoClient.pageLimit, 4 * 1024 * 1024);
+    final client = KingoClient(client: MockClient.streaming((request, body) async {
+      await body.drain<void>();
+      return http.StreamedResponse(Stream.fromIterable([List.filled(KingoClient.pageLimit, 0x20), utf8.encode('多')]), 200, headers: {'content-type': 'text/html; charset=utf-8'});
+    }));
+    await expectLater(client.fetchSchedule(xn: '2026', xq: '0', userCode: 'test'), throwsA(isA<FormatException>().having((error) => error.message, 'message', '教务响应超过容量上限')));
+  });
+
+  test('超时报 TimeoutException（网关按它报连接超时）', () async {
+    final client = KingoClient(client: MockClient((_) => Completer<http.Response>().future), requestTimeout: const Duration(milliseconds: 20));
+    await expectLater(client.fetchCaptcha(), throwsA(isA<TimeoutException>().having((error) => error.message, 'message', '教务请求超时')));
+  });
+
+  test('页面声明 GB 系字符集时按 GBK 解码', () async {
+    final client = KingoClient(client: MockClient((_) async => http.Response.bytes(gbk.encode('<h1>学生个人课表</h1><p>课程门数：0</p>'), 200, headers: {'content-type': 'text/html; charset=GBK'})));
+    expect((await client.fetchSchedule(xn: '2026', xq: '0', userCode: 'test')).courses, isEmpty);
+  });
 }
 
 // 调用send即计数（早于任何await），用来区分“排队中取消”与“发出后取消”。
@@ -138,7 +233,7 @@ class _BodyStalls extends http.BaseClient {
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     final abortable = request as http.AbortableRequest;
-    abortable.abortTrigger!.then((_) => aborted.complete());
+    unawaited(abortable.abortTrigger!.then((_) => aborted.complete()));
     return http.StreamedResponse(body.stream, 200);
   }
 }

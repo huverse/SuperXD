@@ -8,6 +8,7 @@ import 'package:mime/mime.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/toolbox/toolbox_url.dart';
+import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 
 class MediaImage extends StatefulWidget {
@@ -25,7 +26,7 @@ class MediaImage extends StatefulWidget {
 }
 
 class _MediaImageState extends State<MediaImage> {
-  http.Client? _client;
+  CampusHttp? _http;
   Completer<void>? _abort;
   bool _failed = false;
   ImageProvider? _image;
@@ -46,7 +47,7 @@ class _MediaImageState extends State<MediaImage> {
   void _release() {
     final abort = _abort;
     if (abort != null && !abort.isCompleted) abort.complete();
-    _client?.close();
+    _http?.close();
     _image?.evict().catchError((Object error, StackTrace stack) {
       campusLog(
         '[MediaImage] action=evict errorType=${error.runtimeType}\n$stack',
@@ -59,58 +60,13 @@ class _MediaImageState extends State<MediaImage> {
   Future<void> _load() async {
     final generation = ++_generation;
     _release();
-    final client = widget.createClient?.call() ?? http.Client();
+    final client = CampusHttp('short_video_image', client: widget.createClient?.call());
     final abort = Completer<void>();
-    _client = client;
+    _http = client;
     _abort = abort;
     setState(() => _failed = false);
-    final url = widget.url;
-    // 开发者模式下记一条状态、耗时与字节数（见 campusRequestLog，路径不带域名与查询串）。
-    final watch = Stopwatch()..start();
     try {
-      final bytes = await (() async {
-        var uri = toolboxPublicUrl(url.toString(), httpsOnly: true);
-        for (var redirect = 0; redirect < 5; redirect++) {
-          final request = http.AbortableRequest(
-            'GET',
-            uri,
-            abortTrigger: abort.future,
-          )..followRedirects = false;
-          final response = await client.send(request);
-          if (response.isRedirect) {
-            final location = response.headers['location'];
-            await response.stream.listen(null).cancel();
-            if (location == null) throw const FormatException('缺少图片跳转地址');
-            uri = toolboxPublicUrl(
-              uri.resolve(location).toString(),
-              httpsOnly: true,
-            );
-            continue;
-          }
-          if (response.statusCode != 200 ||
-              (response.contentLength ?? 0) > 12 * 1024 * 1024) {
-            throw const FormatException('图片不可用');
-          }
-          final buffer = BytesBuilder(copy: false);
-          await for (final chunk in response.stream) {
-            if (buffer.length + chunk.length > 12 * 1024 * 1024) {
-              throw const FormatException('图片超过预览限制');
-            }
-            buffer.add(chunk);
-          }
-          final data = buffer.takeBytes();
-          final type = lookupMimeType(
-            'image',
-            headerBytes: data.take(64).toList(),
-          );
-          if (type == null || !type.startsWith('image/')) {
-            throw const FormatException('响应不是图片');
-          }
-          campusRequestLog('short_video_image', 'GET', uri, status: response.statusCode, elapsed: watch.elapsed, bytes: data.length);
-          return data;
-        }
-        throw const FormatException('图片跳转过多');
-      })().timeout(const Duration(seconds: 15));
+      final bytes = await _fetch(client, abort.future);
       if (mounted && generation == _generation) {
         setState(
           () => _image = ResizeImage(
@@ -121,7 +77,6 @@ class _MediaImageState extends State<MediaImage> {
         );
       }
     } catch (error, stack) {
-      campusRequestLog('short_video_image', 'GET', url, elapsed: watch.elapsed, error: error.runtimeType.toString());
       campusLog(
         '[MediaImage] action=load errorType=${error.runtimeType}\n$stack',
       );
@@ -131,6 +86,52 @@ class _MediaImageState extends State<MediaImage> {
       client.close();
     }
   }
+
+  // 逐跳只认公网 https，最多跳 5 次；总共 15 秒、图片上限 12MB。每一跳经共用内核 CampusHttp 发：
+  // 到点或换图、离开时中断连接，开发者模式下每跳记一条状态、耗时与字节数（路径不带域名与查询串）。
+  Future<Uint8List> _fetch(CampusHttp client, Future<void> abort) async {
+    final watch = Stopwatch()..start();
+    var uri = toolboxPublicUrl(widget.url.toString(), httpsOnly: true);
+    try {
+      for (var redirect = 0; redirect < 5; redirect++) {
+        final response = await client.send(
+          'GET',
+          uri,
+          timeout: _budget - watch.elapsed,
+          limit: _limit,
+          followRedirects: false,
+          cancel: abort,
+        );
+        if (response.isRedirect) {
+          final location = response.headers['location'];
+          if (location == null) throw const FormatException('缺少图片跳转地址');
+          uri = toolboxPublicUrl(
+            uri.resolve(location).toString(),
+            httpsOnly: true,
+          );
+          continue;
+        }
+        if (response.statusCode != 200) {
+          throw const FormatException('图片不可用');
+        }
+        final data = response.bodyBytes;
+        final type = lookupMimeType(
+          'image',
+          headerBytes: data.take(64).toList(),
+        );
+        if (type == null || !type.startsWith('image/')) {
+          throw const FormatException('响应不是图片');
+        }
+        return data;
+      }
+    } on CampusHttpTooLarge catch (_, stack) {
+      Error.throwWithStackTrace(const FormatException('图片超过预览限制'), stack);
+    }
+    throw const FormatException('图片跳转过多');
+  }
+
+  static const _budget = Duration(seconds: 15);
+  static const _limit = 12 * 1024 * 1024;
 
   @override
   void dispose() {

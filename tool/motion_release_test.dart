@@ -31,7 +31,7 @@ void main() {
       await bundle.load('FontManifest.json');
       final manifest =
           jsonDecode(await bundle.loadString('FontManifest.json')) as List;
-      final family = manifest.cast<Map>().firstWhere(
+      final family = manifest.cast<Map<Object?, Object?>>().firstWhere(
         (row) => row['family'] == 'packages/lucide_icons_flutter/Lucide',
       );
       for (final font in family['fonts'] as List) {

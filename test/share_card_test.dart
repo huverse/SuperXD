@@ -45,8 +45,8 @@ void main() {
   });
 
   test('不认识的类型或更高版本落到 UnknownShare，不抛错', () {
-    expect(decodeShareCard({'type': 'timetable_vote', 'version': 1, 'body': {}}), isA<UnknownShare>());
-    expect(decodeShareCard({'type': 'schedule', 'version': 2, 'body': {}}), isA<UnknownShare>());
+    expect(decodeShareCard({'type': 'timetable_vote', 'version': 1, 'body': <String, Object?>{}}), isA<UnknownShare>());
+    expect(decodeShareCard({'type': 'schedule', 'version': 2, 'body': <String, Object?>{}}), isA<UnknownShare>());
     expect(shareCardSummary(const UnknownShare(type: 'x', version: 1)), contains('更新应用'));
   });
 

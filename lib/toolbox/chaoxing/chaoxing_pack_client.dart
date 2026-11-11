@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 
@@ -15,11 +16,11 @@ class ChaoxingPackHub {
     required this.baseUrl,
     http.Client? client,
     this.timeout = const Duration(seconds: 15),
-  }) : _client = client ?? http.Client();
+  }) : _http = CampusHttp('chaoxing_pack', client: client);
 
   final Uri? baseUrl;
   final Duration timeout;
-  final http.Client _client;
+  final CampusHttp _http;
 
   static const payloadLimit = 8192;
 
@@ -57,33 +58,17 @@ class ChaoxingPackHub {
   static String _encode(List<int> bytes) => base64Url.encode(bytes).replaceAll('=', '');
 
   // route 是日志里的路由模板（不含取件号这类一次性凭据）。
-  // 超时管整个请求：到点中断连接（同 chaoxing_http），响应边读边限长，不先整体读进内存。
+  // 超时管整个请求：到点中断连接，响应边读边限长，不先整体读进内存（共用内核 CampusHttp）。
   Future<Map<String, Object?>> _post(String path, String body, {required String route}) async {
     final base = baseUrl;
     if (base == null) {
       throw const ChaoxingFailure(ChaoxingFailureCode.unavailable, '还没有配置中转服务，面对面代签不可用');
     }
-    final deadline = Completer<void>();
-    final timer = Timer(timeout, deadline.complete);
-    final request = http.AbortableRequest('POST', base.replace(path: path), abortTrigger: deadline.future)
-      ..headers['content-type'] = 'application/json'
-      ..body = body;
-    // 开发者模式下记一条状态、耗时与字节数；路径只写路由模板（取件号是一次性凭据，不进日志）。
-    final watch = Stopwatch()..start();
-    int? status, size;
     try {
-      final response = await _client.send(request);
-      status = response.statusCode;
-      final bytes = BytesBuilder(copy: false);
-      await for (final chunk in response.stream) {
-        bytes.add(chunk);
-        if (bytes.length > payloadLimit) {
-          campusLog('[ChaoxingPack] action=request errorType=too_large route=$route');
-          throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, _unknownResult);
-        }
-      }
-      size = bytes.length;
-      final text = utf8.decode(bytes.takeBytes());
+      // 请求记录的路径只写路由模板（取件号是一次性凭据，不进日志）。
+      final response = await _http.send('POST', base.replace(path: path),
+          timeout: timeout, limit: payloadLimit, headers: const {'content-type': 'application/json'}, body: body, logUri: Uri(path: '/$route'));
+      final text = utf8.decode(response.bodyBytes);
       final decoded = text.isEmpty ? null : jsonDecode(text);
       final json = decoded is Map ? decoded.cast<String, Object?>() : const <String, Object?>{};
       if (response.statusCode == 200 || response.statusCode == 204) return json;
@@ -91,7 +76,10 @@ class ChaoxingPackHub {
       throw _failure(response.statusCode, json);
     } on ChaoxingFailure {
       rethrow;
-    } on http.RequestAbortedException catch (error, stack) {
+    } on CampusHttpTooLarge {
+      campusLog('[ChaoxingPack] action=request errorType=too_large route=$route');
+      throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, _unknownResult);
+    } on TimeoutException catch (error, stack) {
       _log(route, 'timeout', error, stack);
       throw const ChaoxingFailure(ChaoxingFailureCode.timeout, '中转服务没有响应，请稍后重试');
     } on SocketException catch (error, stack) {
@@ -107,9 +95,6 @@ class ChaoxingPackHub {
     } on FormatException catch (error, stack) {
       _log(route, 'response', error, stack);
       throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, _unknownResult);
-    } finally {
-      timer.cancel();
-      campusRequestLog('chaoxing_pack', 'POST', Uri(path: '/$route'), status: status, elapsed: watch.elapsed, bytes: size, error: size == null ? 'no_response' : null);
     }
   }
 
@@ -133,7 +118,7 @@ class ChaoxingPackHub {
     campusLog('[ChaoxingPack] action=request errorType=$errorType route=$route\n$stack');
   }
 
-  void close() => _client.close();
+  void close() => _http.close();
 }
 
 const _unknownResult = '中转服务返回了未知结果';

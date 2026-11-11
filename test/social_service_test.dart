@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -22,9 +23,9 @@ import 'share_card_test.dart' show sampleSchedule;
 late Directory temporary;
 var _databases = 0;
 
-Future<SocialService> device(FakeRelay? relay, {MemoryIdentityVault? vault, String? databasePath, bool polling = false}) async {
+Future<SocialService> device(FakeRelay? relay, {MemoryIdentityVault? vault, String? databasePath, bool polling = false, Random? random}) async {
   final store = await SocialStore.open(databasePath ?? path.join(temporary.path, 'social_${_databases++}.db'));
-  final service = SocialService(store: store, vault: vault ?? MemoryIdentityVault(), transport: relay?.transport(), polling: polling);
+  final service = SocialService(store: store, vault: vault ?? MemoryIdentityVault(), transport: relay?.transport(), polling: polling, random: random);
   await service.initialize();
   return service;
 }
@@ -308,6 +309,35 @@ void main() {
     relay.releaseWaiters();
   });
 
+  // [人工决策] 见 social_service.dart 的 liveRetryDelay：退避每档不变，实际等待在一半到整档之间随机。
+  test('长轮询退避加随机抖动：落在这一档的一半到整档之间，随机源可注入；失败后按抖动后的时长重来', () async {
+    expect(SocialService.liveRetryDelay(const Duration(seconds: 2), _FixedRandom(0)), const Duration(seconds: 1));
+    expect(SocialService.liveRetryDelay(const Duration(seconds: 60), _FixedRandom(0.5)), const Duration(seconds: 45));
+    final random = Random(7);
+    final delays = {for (var index = 0; index < 50; index++) SocialService.liveRetryDelay(const Duration(seconds: 8), random)};
+    expect(delays.every((delay) => delay >= const Duration(seconds: 4) && delay <= const Duration(seconds: 8)), isTrue);
+    expect(delays.length, greaterThan(10), reason: '不是同一个值');
+
+    final logs = <String>[];
+    final original = campusLog;
+    campusLog = logs.add;
+    addTearDown(() => campusLog = original);
+    final relay = FakeRelay();
+    final vault = MemoryIdentityVault();
+    final databasePath = path.join(temporary.path, 'jitter.db');
+    final first = await device(relay, vault: vault, databasePath: databasePath);
+    await first.enable('小青');
+    await first.store.close();
+    relay.failNext = const RelayException(RelayCode.network);
+    final random0 = _FixedRandom(0);
+    final resumed = await device(relay, vault: vault, databasePath: databasePath, polling: true, random: random0);
+    await eventually(() => logs.any((log) => log.startsWith('[Social] action=live state=retry')));
+    expect(logs.firstWhere((log) => log.startsWith('[Social] action=live state=retry')), contains('retryIn=1s'), reason: '第一档 2 秒、抖动取到下限 1 秒');
+    expect(random0.calls, 1);
+    resumed.dispose();
+    relay.releaseWaiters();
+  });
+
   test('HTTP 传输失败记日志：错误码、方法与路径、完整堆栈，不写服务器地址与查询参数', () async {
     final logs = <String>[];
     final original = campusLog;
@@ -365,4 +395,21 @@ void main() {
     expect(sent, contains('state=sent'));
     expect(sent, isNot(contains('errorType=')), reason: '带 errorType= 就会被本机日志当成错误');
   });
+}
+
+// 每次都给同一个值，数得出用了几次。
+class _FixedRandom implements Random {
+  _FixedRandom(this.value);
+  final double value;
+  int calls = 0;
+  @override
+  double nextDouble() {
+    calls++;
+    return value;
+  }
+
+  @override
+  bool nextBool() => value >= 0.5;
+  @override
+  int nextInt(int max) => (value * max).floor();
 }

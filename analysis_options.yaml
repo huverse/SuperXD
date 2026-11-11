@@ -14,6 +14,11 @@ analyzer:
     - build/**
     - android/**
     - ios/**
+  # 原始类型（List、Future 不带类型参数）与推断不出类型的地方一律报出来，免得悄悄变成 dynamic。
+  # strict-casts 没开：现有告警集中在 JSON 解码一类的外部输入边界，逐处加显式转换收益小、改动面大。
+  language:
+    strict-raw-types: true
+    strict-inference: true
 
 linter:
   # The lint rules applied to this project can be customized in the
@@ -27,8 +32,9 @@ linter:
   # `// ignore_for_file: name_of_lint` syntax on the line or in the file
   # producing the lint.
   rules:
-    # avoid_print: false  # Uncomment to disable the `avoid_print` rule
-    # prefer_single_quotes: true  # Uncomment to enable the `prefer_single_quotes` rule
+    # 异步函数里没等也没标明的 Future：错误会悄悄丢掉。有意不等的（成功震动这类）用 unawaited(...) 标明。
+    # discarded_futures 没开：同步回调里丢弃 Future 的写法全项目一百多处，多是按钮回调与生命周期里的有意不等。
+    unawaited_futures: true
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options
