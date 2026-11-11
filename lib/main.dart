@@ -35,6 +35,7 @@ import 'package:superxd/device/home_widget_publisher.dart';
 import 'package:superxd/device/notification_reminders.dart';
 import 'package:superxd/device/picture_export.dart';
 import 'package:superxd/device/relay_diagnostic_upload.dart';
+import 'package:superxd/device/relay_font_pack_source.dart';
 import 'package:superxd/device/relay_note_feed.dart';
 import 'package:superxd/device/relay_release_feed.dart';
 import 'package:superxd/device/relay_reward_client.dart';
@@ -49,6 +50,7 @@ import 'package:superxd/local/developer_note_memory.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/local/festival_memory.dart';
+import 'package:superxd/local/font_packs.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/local/painting_library.dart';
 import 'package:superxd/page/app_update_dialog.dart';
@@ -158,7 +160,13 @@ void main() async {
   registerCampusLicenses();
   final store = await AccountStore.open();
   final session = AppSession(AccountGateway(store: store, credentials: SecureCredentialStore()));
-  final display = await DisplaySettings.open(wallpaperDirectory: Directory(path.join(support.path, 'display', 'wallpaper')));
+  // 衬线等要下载的字体（人工决策见 domain/font_pack.dart）：文件在应用支持目录的 font_packs（排除备份）；选着的在显示设置打开时（首帧前）核对并注册，
+  // 升级上来还没下的等同意协议与政策之后自动下回来（见下面 ensureFontPack）；没配中转时下不了。
+  final fontPacks = FontPackLibrary(directory: Directory(path.join(support.path, 'font_packs')), source: switch (relayBase()) {
+    final base? => RelayFontPackSource(base),
+    null => null,
+  });
+  final display = await DisplaySettings.open(wallpaperDirectory: Directory(path.join(support.path, 'display', 'wallpaper')), fontPacks: fontPacks);
   // 选壁纸走系统照片选择器：不申请存储权限，只拿到用户选中的那一张（API 36 起插件默认如此，更低版本须显式打开）。
   final picker = ImagePickerPlatform.instance;
   if (picker is ImagePickerAndroid) picker.useAndroidPhotoPicker = true;
@@ -173,11 +181,11 @@ void main() async {
     transport: relayTransport(),
     polling: true,
   );
-  // iOS 默认把应用数据带进 iCloud 备份与换机迁移：与安卓 data_extraction_rules.xml 排除的同一批（百宝箱、下载记录、日志与开发者设置、私信库）在这里标记排除；钥匙串见 ios/Runner/DeviceOnlyData.swift。
+  // iOS 默认把应用数据带进 iCloud 备份与换机迁移：与安卓 data_extraction_rules.xml 排除的同一批（百宝箱、下载记录、字体包、日志与开发者设置、私信库）在这里标记排除；钥匙串见 ios/Runner/DeviceOnlyData.swift。
   if (Platform.isIOS) {
     unawaited(excludeFromBackup(
       folders: [
-        for (final folder in ['toolbox', 'backgroundDownloaderTaskRecords', 'backgroundDownloaderResumeData', 'backgroundDownloaderDatabase']) Directory(path.join(support.path, folder)),
+        for (final folder in ['toolbox', 'backgroundDownloaderTaskRecords', 'backgroundDownloaderResumeData', 'backgroundDownloaderDatabase', 'font_packs']) Directory(path.join(support.path, folder)),
         deviceOnly,
       ],
       files: [File(socialDatabase)],
@@ -204,6 +212,8 @@ void main() async {
   unawaited(watchNativeLowPower());
   // 私信是设备级的，与教务会话无关；初始化失败只影响私信（状态 failed），不影响应用。已开启私信的会立即联网收取，所以等用户同意协议与政策之后再初始化。
   unawaited(legal.agreed.then((_) => social.initialize()));
+  // 选着字体包而本机没有（升级上来原先就选着衬线的）：同意之后下回来，装好界面就换过去；失败下次启动再试。
+  unawaited(legal.agreed.then((_) => display.ensureFontPack()));
   try {
     await session.restore();
   } catch (error, stack) {

@@ -1,6 +1,10 @@
 import 'dart:io';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+
+import 'package:superxd/domain/font_pack.dart';
+import 'package:superxd/local/display_settings.dart';
 
 void main() {
   // setState先执行回调，回调返回Future时debug断言抛错且不重建页面；箭头写法给Future字段赋值正是这种情况，调用方的catch会把成功误报成失败。
@@ -170,9 +174,9 @@ void main() {
   });
 
   // Flutter 不会把 FontWeight 映射到可变字体的字重轴，可变字体一律按默认实例渲染（Noto Serif SC 默认为 ExtraLight 200，曾让衬线全应用发细、粗体变假粗）；内置字体只用静态字重文件。
-  test('内置字体都是静态字重文件', () {
+  test('内置字体与字体包都是静态字重文件', () {
     final variable = <String>[];
-    for (final file in Directory('assets/fonts').listSync().whereType<File>().where((file) => file.path.endsWith('.ttf'))) {
+    for (final file in [...Directory('assets/fonts').listSync(), ...Directory('font_packs').listSync()].whereType<File>().where((file) => file.path.endsWith('.ttf'))) {
       final bytes = file.readAsBytesSync();
       final tables = bytes[4] << 8 | bytes[5];
       for (var index = 0; index < tables; index++) {
@@ -181,5 +185,28 @@ void main() {
       }
     }
     expect(variable, isEmpty);
+  });
+
+  // 衬线是下载的字体包（人工决策见 lib/domain/font_pack.dart）：客户端写死的文件名、大小与 SHA-256 要与仓库 font_packs 里发版时传上中转的文件一致，
+  // 不能再打进安装包；随包的 Maple 与字体包的哈希都写进开源许可说明（已裁剪，见 tool/font_subset.py）。
+  test('字体包的登记与仓库 font_packs 里的文件一致，不进安装包，哈希写进开源许可说明', () {
+    final pubspec = File('pubspec.yaml').readAsStringSync();
+    final notices = File('assets/third_party_notices.txt').readAsStringSync();
+    for (final pack in fontPacks.values) {
+      expect(DisplaySettings.fontFamilies[pack.id], pack.family, reason: '显示设置与字体包的族名要一致');
+      expect(pubspec, isNot(contains('family: ${pack.family}')), reason: '${pack.family} 不再打进安装包');
+      for (final entry in pack.files) {
+        expect(fontPackFileName.hasMatch(entry.name), isTrue, reason: entry.name);
+        final file = File('font_packs/${entry.name}');
+        expect(file.existsSync(), isTrue, reason: '仓库 font_packs 里要有 ${entry.name}');
+        final bytes = file.readAsBytesSync();
+        expect(bytes.length, entry.size, reason: entry.name);
+        expect(sha256.convert(bytes).toString(), entry.sha256, reason: entry.name);
+        expect(notices, contains(entry.sha256), reason: '开源许可说明要写 ${entry.name} 的 SHA-256');
+      }
+    }
+    for (final file in Directory('assets/fonts').listSync().whereType<File>().where((file) => file.path.endsWith('.ttf'))) {
+      expect(notices, contains(sha256.convert(file.readAsBytesSync()).toString()), reason: '开源许可说明要写 ${file.path} 的 SHA-256');
+    }
   });
 }

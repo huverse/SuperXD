@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
@@ -10,16 +11,21 @@ import 'package:synchronized/synchronized.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/share_card.dart';
+import 'package:superxd/local/font_packs.dart';
 import 'package:superxd/local/wallpaper_store.dart';
 
 // wallpaperDirectory 为 null 时不支持自定义壁纸（测试与内存实例）。
+// fontPacks 为 null 时不管字体包（测试与内存实例）：字体包里的字体当作已经装好，字体由调用方自己注册。
 class DisplaySettings extends ChangeNotifier {
-  DisplaySettings.memory({Directory? wallpaperDirectory})
+  DisplaySettings.memory({Directory? wallpaperDirectory, this.fontPacks})
     : _database = null,
-      _wallpaper = wallpaperDirectory == null ? null : WallpaperStore(wallpaperDirectory);
+      _wallpaper = wallpaperDirectory == null ? null : WallpaperStore(wallpaperDirectory) {
+    _watchFontPacks();
+  }
   DisplaySettings._(
     this._database,
     this._wallpaper,
+    this.fontPacks,
     this._textSize,
     this._paletteId,
     this._fontId,
@@ -29,9 +35,13 @@ class DisplaySettings extends ChangeNotifier {
     this._wallpaperTone,
     this._wallpaperBlur,
     this._wallpaperFade,
-  );
+  ) {
+    _watchFontPacks();
+  }
   final Database? _database;
   final WallpaperStore? _wallpaper;
+  // 要下载的字体（字体包，人工决策见 domain/font_pack.dart）的本机文件与下载状态，界面页经它显示进度、取消与删除。
+  final FontPackLibrary? fontPacks;
   final Lock _saveLock = Lock();
   double _textSize = 0;
   String _paletteId = defaultPaletteId;
@@ -49,9 +59,15 @@ class DisplaySettings extends ChangeNotifier {
   // 字号：为空是跟随系统，否则是字号条上选的实际显示大小（标准字号的倍数，同一个数在每台手机上一样大），人工决策见 textSizeMin。
   double? get textSize => _textSize == 0 ? null : _textSize;
   String get paletteId => _paletteId;
+  // 选的字体（保存的设置）；fontInUse 是界面实际用的：选的是字体包而还没装好（升级上来、正在下、文件坏了）时先用默认字体，选择照旧保留。
   String get fontId => _fontId;
-  // 为空是系统字体（交给平台默认：iOS 西文 SF、中文苹方）。
-  String? get fontFamily => _fontId == systemFont ? null : fontFamilies[_fontId]!;
+  String get fontInUse => fontReady(_fontId) ? _fontId : defaultFontId;
+  bool fontReady(String id) {
+    final packs = fontPacks;
+    return packs == null || !packs.contains(id) || packs.ready(id);
+  }
+  // 为空是系统字体（交给平台默认：iOS 西文 SF、中文苹方；安卓是系统的默认字体）。
+  String? get fontFamily => fontInUse == systemFont ? null : fontFamilies[fontInUse]!;
   String get glassMode => _glassMode;
   bool get supportsWallpaper => _wallpaper != null;
   File? get wallpaperFile => _wallpaperFile == null ? null : _wallpaper?.file(_wallpaperFile!);
@@ -90,17 +106,20 @@ class DisplaySettings extends ChangeNotifier {
     'maple': 'Maple Mono NF CN',
     'serif': 'Noto Serif SC',
   };
-  // [人工决策-2026-10-26 21:40:32] iOS 可用系统字体（西文 SF、中文苹方），字体列表多一项「系统字体」；安卓没有这一项。
+  // [人工决策-2026-10-26 21:40:32] iOS 可用系统字体（西文 SF、中文苹方），字体列表多一项「系统字体」；安卓没有这一项（这半句已被下面 2026-11-11 那条取代）。
   // [人工决策-2026-10-27 20:11:01] iOS 默认字体改回 Maple（用户要求，取代上一条的「iOS 新装默认系统字体」），系统字体仍可选；
   // iOS 上存着系统字体的在 v7 升级时一次性换成 Maple（用户选定：iOS 测试包 10-26 才有，存着的系统字体基本是默认值、分不清谁主动选的；未选「只改默认值」），
   // 之后再选系统字体的不再改动。
+  // [人工决策-2026-11-11 13:04:38] 安卓也开放「系统字体」（用户 2026-11-10 追加的决定，取代 10-26 那条里「安卓没有这一项」的半句；iOS 部分与 10-27 默认 Maple 不变）：
+  // 默认仍是 Maple；安卓的系统字体是系统设置里的默认字体（国产系统多是厂商字体），好友分享的界面配置里是系统字体时安卓也认。
   static const systemFont = 'system';
-  static bool get supportsSystemFont => defaultTargetPlatform == TargetPlatform.iOS;
+  static bool get supportsSystemFont => defaultTargetPlatform == TargetPlatform.iOS || defaultTargetPlatform == TargetPlatform.android;
   static const defaultFontId = 'maple';
   static bool knownFont(String id) => fontFamilies.containsKey(id) || id == systemFont && supportsSystemFont;
 
   // systemTextScale 是这时的系统字号，只在 v8 换算老字号时用；默认读窗口的。
-  static Future<DisplaySettings> open({String? databasePath, Directory? wallpaperDirectory, double? systemTextScale}) async {
+  // fontPacks 给了时，选的是字体包就在这里（首帧之前）核对本机文件并注册好，缺了或坏了先用默认字体（见 fontInUse）。
+  static Future<DisplaySettings> open({String? databasePath, Directory? wallpaperDirectory, double? systemTextScale, FontPackLibrary? fontPacks}) async {
     final system = systemTextScale ?? ui.PlatformDispatcher.instance.textScaleFactor;
     final db = await openDatabase(
       databasePath ??
@@ -166,12 +185,15 @@ class DisplaySettings extends ChangeNotifier {
     final blur = row?['wallpaper_blur'], fade = row?['wallpaper_fade'];
     // 文件被外部删除、或缺少色调网格时按未设置处理，落库并清掉残留文件。
     final hasWallpaper = wallpaper != null && file is String && tone is String && await wallpaper.file(file).exists();
+    final fontId = font is String && knownFont(font) ? font : defaultFontId;
+    await fontPacks?.open(fontId);
     final settings = DisplaySettings._(
       db,
       wallpaper,
+      fontPacks,
       scale is num && knownTextSize(scale.toDouble()) ? (scale == 0 ? 0.0 : snapTextSize(scale.toDouble())) : 0.0,
       palette is String && paletteIds.contains(palette) ? palette : defaultPaletteId,
-      font is String && knownFont(font) ? font : defaultFontId,
+      fontId,
       ThemeMode.values.where((value) => value.name == mode).firstOrNull ??
           ThemeMode.system,
       glass is String && glassModes.contains(glass) ? glass : 'auto',
@@ -208,6 +230,55 @@ class DisplaySettings extends ChangeNotifier {
       throw ArgumentError.value(value, 'font');
     }
     return _save(fontId: value);
+  }
+
+  // 界面页点选字体：字体包里的先下载、核对、注册好再换上（进度在界面页原地显示，可取消）；换成别的字体时作罢正在下的包，
+  // 下载期间又点了别的，下完也不再换过去。下载失败或取消时选择不变。
+  String? _choosing;
+  Future<void> chooseFont(String value) async {
+    if (!knownFont(value)) throw ArgumentError.value(value, 'font');
+    _choosing = value;
+    _cancelPacksBut(value);
+    final packs = fontPacks;
+    if (packs != null && packs.contains(value) && !packs.ready(value) && !await packs.install(value)) return;
+    if (_choosing != value) return;
+    _choosing = null;
+    await setFont(value);
+  }
+
+  // 选着的字体包还没装好时下载并装上（升级上来原先选着衬线的、套用了好友配置的），装好界面就换过去；失败只留在状态里，下次启动再试。
+  // 组合根在同意协议与政策之后调；没配中转（下不了）时什么也不做。
+  Future<void> ensureFontPack() async {
+    final packs = fontPacks, id = _fontId;
+    if (packs == null || !packs.contains(id) || packs.ready(id) || !packs.downloadable) return;
+    await packs.install(id);
+  }
+
+  // 删除下载的字体包（界面页⋯菜单里确认后）：正在用它就先换回默认字体，再删文件；之后这一项回到未下载，可以再下。
+  Future<void> deleteFontPack(String id) async {
+    final packs = fontPacks!;
+    if (_choosing == id) _choosing = null;
+    if (_fontId == id) await setFont(defaultFontId);
+    await packs.delete(id);
+  }
+
+  void _cancelPacksBut(String id) {
+    for (final pack in fontPacks?.packs.keys ?? const <String>[]) {
+      if (pack != id) fontPacks!.cancel(pack);
+    }
+  }
+
+  // 字体包装好或删掉时，正在用的字体变了才通知（下载进度每变一次都通知字体包，不让整个应用跟着重建）。
+  String? _shownFont;
+  void _watchFontPacks() {
+    _shownFont = fontInUse;
+    fontPacks?.addListener(_onFontPacks);
+  }
+
+  void _onFontPacks() {
+    if (fontInUse == _shownFont) return;
+    _shownFont = fontInUse;
+    notifyListeners();
   }
 
   // [人工决策-2026-09-27 18:22:49] 新旧安装默认跟随系统，可手动浅色/深色；模式属于设备，和配色字体字号锁内合并持久化，切账号保留。
@@ -259,9 +330,12 @@ class DisplaySettings extends ChangeNotifier {
     }
 
     final mode = ThemeMode.values.where((value) => value.name == shared.themeMode).firstOrNull;
+    // 字体包里的字体本机没装好时照样选上、接着下载（同界面页选它），下好界面就换过去；这个版本下不了（没配中转）才当不支持跳过。
+    final packs = fontPacks;
+    final obtainable = packs == null || !packs.contains(shared.fontId) || packs.ready(shared.fontId) || packs.hasFiles(shared.fontId) || packs.downloadable;
     await _save(
       paletteId: pick(paletteIds.contains(shared.paletteId), shared.paletteId, '配色'),
-      fontId: pick(knownFont(shared.fontId), shared.fontId, '字体'),
+      fontId: pick(knownFont(shared.fontId) && obtainable, shared.fontId, '字体'),
       textSize: pick(knownTextSize(shared.scale), shared.scale == 0 ? 0.0 : snapTextSize(shared.scale), '字号'),
       themeMode: pick<ThemeMode?>(mode != null, mode, '深浅色'),
       glassMode: pick(glassModes.contains(shared.glassMode), shared.glassMode, '玻璃效果'),
@@ -269,6 +343,9 @@ class DisplaySettings extends ChangeNotifier {
       wallpaperFade: shared.wallpaperFade,
     );
     wallpaperLook.value = (blur: _wallpaperBlur, fade: _wallpaperFade);
+    _choosing = null;
+    _cancelPacksBut(_fontId);
+    unawaited(ensureFontPack());
     return skipped;
   }
 
@@ -361,6 +438,7 @@ class DisplaySettings extends ChangeNotifier {
     _wallpaperTone = nextTone;
     _wallpaperBlur = nextBlur;
     _wallpaperFade = nextFade;
+    _shownFont = fontInUse;
     notifyListeners();
   }
   Future<void> close() async {
@@ -370,6 +448,7 @@ class DisplaySettings extends ChangeNotifier {
 
   @override
   void dispose() {
+    fontPacks?.removeListener(_onFontPacks);
     wallpaperLook.dispose();
     super.dispose();
   }

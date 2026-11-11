@@ -16,7 +16,7 @@ import 'reward_kit.dart';
 const _qrPaper = Color(0xFFFFFFFF);
 // 按钮按下时压暗、标题的投影。
 const _shadow = Color(0xFF000000);
-// 节日名用宋体（同钞票与证书上刻的字），字体随应用打包。
+// 节日名用宋体（同钞票与证书上刻的字）：衬线是下载的字体包（见 domain/font_pack.dart），没下载时由系统字体显示。
 const rewardSerif = 'Noto Serif SC';
 
 class RewardContainer extends StatelessWidget {

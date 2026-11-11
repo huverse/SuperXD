@@ -8,6 +8,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:superxd/domain/font_pack.dart';
+import 'package:superxd/local/font_packs.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_segmented.dart';
@@ -18,6 +20,7 @@ import 'package:superxd/page/text_size_range.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
+import 'font_pack_support.dart';
 import 'form_layout_support.dart';
 
 // 点字号条上某个大小的位置（测试里玻璃没初始化，用的是实色档的系统滑杆，拇指离两端 24）；点一下即拖到并松手。
@@ -262,11 +265,12 @@ void main() {
         }
         expect(tester.takeException(), isNull, reason: '${palette.id}-$font');
         // 字体预览是图，页面上的文字只用正在用的字体：没在用的内置字体首次排版要在主线程解析全部字重，首帧会卡住、转场被吃掉。
+        // 系统字体一项的预览是用系统字体写的字（系统字体本来就在系统里，不用解析随包的文件）。
         final families = <String?>{};
         for (final paragraph in tester.allRenderObjects.whereType<RenderParagraph>()) {
           paragraph.text.visitChildren((span) { families.add(span.style?.fontFamily); return true; });
         }
-        expect(families.difference({null, settings.fontFamily, 'packages/lucide_icons_flutter/Lucide'}), isEmpty, reason: '${palette.id}-$font');
+        expect(families.difference({null, settings.fontFamily, 'packages/lucide_icons_flutter/Lucide', 'Roboto'}), isEmpty, reason: '${palette.id}-$font');
         expect(previews, {'maple', 'serif'}, reason: '${palette.id}-$font');
         await tester.pumpWidget(const SizedBox()); settings.dispose();
       }
@@ -573,5 +577,130 @@ void main() {
     expect(settings.glassMode, 'full');
     await tester.pumpWidget(const SizedBox());
     settings.dispose();
+  });
+
+  // 用户 11-10 发现：「系统字体」一项的预览其实是 Maple 画的（fontFamily: null 被页面默认字体填上）。安卓也开放了系统字体（人工决策见 display_settings.dart 的 systemFont）。
+  testWidgets('系统字体安卓与 iOS 都有，预览真的用系统字体写（安卓 Roboto 加系统中文字体、iOS 系统字体），不是页面默认的 Maple', (tester) async {
+    for (final (platform, family) in [(TargetPlatform.android, 'Roboto'), (TargetPlatform.iOS, 'CupertinoSystemText')]) {
+      debugDefaultTargetPlatformOverride = platform;
+      final settings = DisplaySettings.memory();
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => DisplayScope(settings: settings, child: TextSizeComfort(builder: (_, _) => child!)), home: AppearancePage(key: ValueKey(platform))));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('系统字体'), 200, scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
+      final preview = find.descendant(of: find.ancestor(of: find.text('系统字体'), matching: find.byType(Column)).first, matching: find.text(fontPreviewText));
+      expect(tester.widget<RichText>(find.descendant(of: preview, matching: find.byType(RichText))).text.style!.fontFamily, family, reason: '$platform');
+      await tester.tap(find.text('系统字体'));
+      await tester.pumpAndSettle();
+      expect(settings.fontId, DisplaySettings.systemFont, reason: '$platform');
+      expect(settings.fontFamily, isNull);
+      await tester.pumpWidget(const SizedBox());
+      settings.dispose();
+    }
+    debugDefaultTargetPlatformOverride = null;
+  });
+
+  // 衬线是下载的字体包（人工决策见 domain/font_pack.dart）：原地显示大小、进度、取消、失败与重试，下好才换上；⋯里删除先确认。
+  testWidgets('衬线字体包：没下载写大小，点了原地显示进度、可取消，下好才换上；失败写原因可重试；⋯里删除先确认、正在用就换回 Maple', (tester) async {
+    final root = (await tester.runAsync(() => Directory.systemTemp.createTemp('appearance-pack-')))!;
+    addTearDown(() => root.delete(recursive: true));
+    final source = FakeFontPackSource(holdAt: 0);
+    final library = FontPackLibrary(directory: root, source: source, packs: testFontPacks, register: (_, _) async {});
+    final settings = DisplaySettings.memory(fontPacks: library);
+    await tester.pumpWidget(ListenableBuilder(
+      listenable: settings,
+      builder: (context, _) => MaterialApp(
+        theme: campusTheme(fontFamily: settings.fontFamily),
+        builder: (context, child) => DisplayScope(settings: settings, child: TextSizeComfort(builder: (_, _) => child!)),
+        home: const AppearancePage(),
+      ),
+    ));
+    await tester.pumpAndSettle();
+    Future<void> showSerif() async {
+      await tester.scrollUntilVisible(find.text('文学衬线'), 200, scrollable: find.byType(Scrollable).first);
+      await tester.pumpAndSettle();
+    }
+    Future<void> until(bool Function() done) async {
+      for (var attempt = 0; attempt < 200 && !done(); attempt++) {
+        await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 10)));
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(done(), isTrue);
+    }
+
+    await showSerif();
+    expect(find.textContaining('选用时下载'), findsOneWidget);
+    expect(find.byTooltip('更多操作'), findsNothing, reason: '没下过不给删除');
+    await tester.tap(find.text('文学衬线'));
+    await until(() => source.held.isCompleted);
+    await tester.pump();
+    expect(find.byType(LinearProgressIndicator), findsOneWidget);
+    expect(find.textContaining('正在下载'), findsOneWidget);
+    expect(settings.fontId, 'maple', reason: '下好之前不换');
+    await tester.tap(find.byTooltip('取消下载'));
+    await until(() => library.statusOf('serif').phase == FontPackPhase.missing);
+    await tester.pumpAndSettle();
+    expect(find.byType(LinearProgressIndicator), findsNothing);
+    expect(find.textContaining('选用时下载'), findsOneWidget);
+    expect(settings.fontId, 'maple');
+
+    source.holdAt = null;
+    await tester.tap(find.text('文学衬线'));
+    await until(() => settings.fontId == 'serif');
+    await tester.pumpAndSettle();
+    expect(Theme.of(tester.element(find.byType(AppearancePage))).textTheme.bodyMedium!.fontFamily, testFontPack.family);
+    expect(find.textContaining('选用时下载'), findsNothing);
+
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('删除字体包'));
+    await tester.pumpAndSettle();
+    expect(find.text('先换回 Maple，再删除本机的文学衬线字体文件，之后可以再下载。'), findsOneWidget);
+    await tester.tap(find.text('删除'));
+    await until(() => library.statusOf('serif').phase == FontPackPhase.missing && find.text('已删除字体包').evaluate().isNotEmpty);
+    expect(settings.fontId, 'maple');
+    expect(library.hasFiles('serif'), isFalse);
+    await showSerif();
+    expect(find.textContaining('选用时下载'), findsOneWidget);
+
+    // 下载失败：原地写原因，给「重试」。
+    final failing = FontPackLibrary(directory: root, source: FakeFontPackSource(failAt: 0, error: const FontPackException('连不上服务器，请检查网络后重试')), packs: testFontPacks, register: (_, _) async {});
+    final failed = DisplaySettings.memory(fontPacks: failing);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => DisplayScope(settings: failed, child: TextSizeComfort(builder: (_, _) => child!)), home: const AppearancePage(key: ValueKey('failed'))));
+    await tester.pumpAndSettle();
+    await showSerif();
+    await tester.tap(find.text('文学衬线'));
+    await until(() => failing.statusOf('serif').phase == FontPackPhase.failed);
+    await tester.pumpAndSettle();
+    expect(find.text('连不上服务器，请检查网络后重试'), findsOneWidget);
+    expect(find.widgetWithText(TextButton, '重试'), findsOneWidget);
+    expect(failed.fontId, 'maple');
+    await tester.pumpWidget(const SizedBox());
+    settings.dispose();
+    failed.dispose();
+  });
+
+  testWidgets('没配中转的构建：没下过就不列衬线，本机有文件时照样能选', (tester) async {
+    final root = (await tester.runAsync(() => Directory.systemTemp.createTemp('appearance-offline-')))!;
+    addTearDown(() => root.delete(recursive: true));
+    Future<void> pumpWith(FontPackLibrary library, String key) async {
+      final settings = DisplaySettings.memory(fontPacks: library);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => DisplayScope(settings: settings, child: TextSizeComfort(builder: (_, _) => child!)), home: AppearancePage(key: ValueKey(key))));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('Maple'), 200, scrollable: find.byType(Scrollable).first);
+      await tester.drag(find.byType(Scrollable).first, const Offset(0, -300));
+      await tester.pumpAndSettle();
+    }
+    await pumpWith(FontPackLibrary(directory: root, packs: testFontPacks, register: (_, _) async {}), 'empty');
+    expect(find.text('文学衬线'), findsNothing);
+    final stored = FontPackLibrary(directory: root, packs: testFontPacks, register: (_, _) async {});
+    await tester.runAsync(() async {
+      writeTestFontPack(root);
+      await stored.open(null);
+    });
+    await pumpWith(stored, 'stored');
+    expect(find.text('文学衬线'), findsOneWidget);
+    expect(find.textContaining('选用时下载'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
   });
 }
