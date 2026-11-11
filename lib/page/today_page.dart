@@ -776,7 +776,7 @@ class _ClassNow extends StatelessWidget {
           BalancedText(course.courseName, style: Theme.of(context).textTheme.titleLarge),
           const SizedBox(height: 4),
           // 教师跟在教室后面（次要色）；首行不放教师，免得大字号下被右侧时长挤得折行。
-          Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.end, children: [
+          Wrap(spacing: 8, crossAxisAlignment: WrapCrossAlignment.center, children: [
             if (place.isNotEmpty) CoursePlace(place),
             if (course.teacherName.isNotEmpty) BalancedText(course.teacherName, style: secondary.copyWith(height: 1.5)),
           ]),
@@ -846,7 +846,8 @@ class _ClassNow extends StatelessWidget {
       const SizedBox(height: 10),
       DotSeparatedText('下一节 · $when', style: secondary.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
       const SizedBox(height: 2),
-      Wrap(spacing: 10, crossAxisAlignment: WrapCrossAlignment.end, children: [
+      // 课名 16 号、教室 14 号排在一行：按行中线对齐。按底边对齐时小一号的教室整体偏下（汉字占满字框，看的是字的中线，不是基线），真机上像错位（用户 11-11 指出）。
+      Wrap(spacing: 10, crossAxisAlignment: WrapCrossAlignment.center, children: [
         BalancedText(next.course.courseName, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.3, color: palette.onSurface)),
         if (place.isNotEmpty) CoursePlace(place, size: 14),
       ]),
