@@ -2,11 +2,11 @@
 
 功能性私信的“哑信箱”：只转交端到端密文，看不到课表、界面配置、作品链接或昵称。客户端在 lib/social。
 另有一处**代签凭据包的临时信箱**（chaoxing 模块）：学习通代签时对方把凭据包用一次性密钥加密后放这里，取走即删，服务端同样没有解密用的密钥。客户端在 lib/toolbox/chaoxing。
-还负责**节日抽奖**（reward 模块）：节日里随机发的支付宝口令或二维码红包只放这里、只在这里抽，客户端凭本机随机生成的参与号抽签，概率模型（平权、按活跃度加权、全天均匀放量）与人工决策见 src/modules/reward/reward_odds.ts。客户端在 lib/device/relay_reward_client.dart，由 lib/application/festivals.dart 编排。
+还负责**节日抽奖**（reward 模块）：节日里随机发的支付宝口令或二维码红包只放这里、只在这里抽，抽签要求已登记设备的请求签名（客户端为此单独生成一把「抽奖身份」密钥，与私信身份分开），概率模型（平权、按活跃度加权、全天均匀放量）与人工决策见 src/modules/reward/reward_odds.ts。客户端在 lib/device/relay_reward_client.dart（抽奖身份的密钥与登记在 lib/social/festival_pass.dart），由 lib/application/festivals.dart 编排。
 还负责**诊断包**（diagnostic 模块）：用户在开发者选项里点「上传诊断包」并确认后，应用把日志包用开发者的公钥加密再传来，这里只按诊断编号存密文、没有下载接口（开发者经 ssh 取出后在本机用私钥解），30 天后删除，人工决策见 lib/domain/diagnostic_upload.dart。客户端是 lib/device/relay_diagnostic_upload.dart。
 还负责**应用内更新**（app_release 模块）：按渠道给出最新版本清单、下载各架构安装包，内容是发版时放进发布目录的文件，不碰数据库。客户端是 lib/device/relay_release_feed.dart，由 lib/application/app_updates.dart 编排。
 
-技术栈：NestJS 12（ESM）+ TypeORM + MySQL 8.4 + Redis 8，swc 构建，Vitest 测试。分层：每个领域模块（device、invite、friend、message、chaoxing）对外只暴露服务与仓储端口（抽象类），TypeORM / Redis 实现可替换；跨领域的编排（扫码加好友、删除设备、数据保留清理）在 pairing 模块；app_release 只读发布目录，reward 只管节日抽奖，diagnostic 只收诊断包，都与其他模块无关。
+技术栈：NestJS 12（ESM）+ TypeORM + MySQL 8.4 + Redis 8，swc 构建，Vitest 测试。分层：每个领域模块（device、invite、friend、message、chaoxing）对外只暴露服务与仓储端口（抽象类），TypeORM / Redis 实现可替换；跨领域的编排（扫码加好友、删除设备、数据保留清理）在 pairing 模块；app_release 只读发布目录，reward 只管节日抽奖（只借设备模块的验签，设备模块不知道抽奖），diagnostic 只收诊断包，都与其他模块无关。
 
 # 协议 v1
 
@@ -19,16 +19,24 @@
 
 接口（base64url 一律无填充）
 - GET /v1/health：免签名，返回协议版本、服务器时间与构建版本 version（流水线构建的镜像是提交号前 12 位，本地开发为 dev；客户端只读前两项）。
-- POST /v1/devices：注册（自签名，请求体带两把公钥），幂等。DELETE /v1/devices：删除本设备及其好友关系与待取消息（用户关闭私信）。
+- POST /v1/devices：注册（自签名，请求体带两把公钥），幂等。DELETE /v1/devices：删除本设备及其好友关系与待取消息（用户关闭私信；客户端在节日过后也用它撤下抽奖身份）。
 - POST /v1/invites：登记邀请号与邀请公钥，5 分钟有效，同时作废本设备旧邀请。DELETE /v1/invites/:id：作废。
 - POST /v1/friends/redeem：扫码方提交邀请号、凭证（邀请私钥对“SXD1-invite、邀请号、扫码方设备号”的签名）与给邀请人的问候密文；关系与问候同一事务写入。邀请有效期内可多人使用。
 - GET /v1/friends、DELETE /v1/friends/:peer（双向解除）。
 - POST /v1/chaoxing/packs：投递代签凭据包（一次性密钥加过密，base64url，≤2KB），返回取件号（12 字节随机数）与作废口令（16 字节随机数，库里只存 sha256）；**不做设备签名**，拿到取件号的人就是收件人，靠取件号随机性、10 分钟过期与按 IP 限流防滥用。POST /v1/chaoxing/packs/:id/pickup：取件，取走即删，重复取或已过期返回 PACK_NOT_FOUND。POST /v1/chaoxing/packs/:id/revoke：出示方凭作废口令作废（换码时作废上一张），一律回 204，不透露包是否存在。代签接口的请求体在解析前按 8KB 封顶。
-- GET /v1/app/releases/:channel?abi=：免签名，读发布目录里的 <渠道>.json，返回版本号、版本名、发布时刻、最低可用版本号、更新说明、发布页与这个架构（arm64-v8a、armeabi-v7a、x86_64）的安装包（下载路径、字节数、SHA-256，没有这个架构时为 null）；没有清单返回 RELEASE_NOT_FOUND，清单写坏了回 INTERNAL 并打印堆栈、不往外发。清单按文件修改时间与大小缓存，换文件即生效。GET /v1/app/files/:name：免签名，下载安装包（文件名只许字母数字与 . _ -、以 .apk 结尾），支持 Range 断点续传，文件不在返回 RELEASE_NOT_FOUND。安装包真伪由客户端核对 SHA-256 与签名证书。
-- GET /v1/app/notes：免签名、不带任何标识，返回发布目录里 developer_notes.json 的「开发者的话」（最近 30 封，从新到旧）；还没放时给空列表，写坏了回 INTERNAL 并打印堆栈、不往外发，按修改时间与大小缓存。文件由仓库的 notes 流水线（.github/workflows/notes.yml）经同一个受限账号上传。
-- POST /v1/rewards/:campaign/draw：免签名，请求体 {participant, activeDays}（参与号是客户端本机生成的 16 字节随机数的 base64url，只存它的 sha256；activeDays 是近 30 天打开过的天数，0–30）。返回 {result, prize}：won 带奖品（kind 为 password 或 qrcode、content、note），missed 没抽中，closed 活动不存在或不在进行。同一活动同一参与号只抽一次，重复请求返回同一结果（含没抽中），并发也只记一次；抽中且这一小时的放量额度与库存都还有才发奖，发奖在活动行上排队、一份只发给一人。
+- GET /v1/app/releases/:channel?abi=：免签名，读发布目录里的 <渠道>.json，返回版本号、版本名、发布时刻、最低可用版本号、更新说明、发布页与这个架构（arm64-v8a、armeabi-v7a、x86_64）的安装包（下载路径、字节数、SHA-256，没有这个架构时为 null）；没有清单返回 RELEASE_NOT_FOUND，清单写坏了回 INTERNAL 并打印堆栈、不往外发。清单按文件修改时间与大小缓存，换文件即生效。返回另带 envelope：清单里这个架构签好的信封原样透传（清单没有签名时为 null），见下面「更新清单与开发者的话的签名」。GET /v1/app/files/:name：免签名，下载安装包（文件名只许字母数字与 . _ -、以 .apk 结尾），支持 Range 断点续传，文件不在返回 RELEASE_NOT_FOUND。安装包真伪由客户端核对 SHA-256 与签名证书。
+- GET /v1/app/notes：免签名、不带任何标识，返回发布目录里 developer_notes.json 的「开发者的话」（最近 30 封，从新到旧）；还没放时给空列表，写坏了回 INTERNAL 并打印堆栈、不往外发，按修改时间与大小缓存。文件由仓库的 notes 流水线（.github/workflows/notes.yml）经同一个受限账号上传。返回另带 envelope：签好的信封原样透传（还没放文件或文件没有签名时为 null）。
+- POST /v1/rewards/:campaign/draw：要求已登记设备的请求签名（没签名、设备没登记或已删除回 UNAUTHORIZED），请求体只有 {activeDays}（近 30 天打开过的天数，0–30）；抽签人就是签名的设备，库里只存设备号的 sha256。客户端用单独的抽奖身份（与私信身份不同的一把密钥，有抽奖的节日开始前 7 天起才生成并经 POST /v1/devices 登记，节日过后经 DELETE /v1/devices 撤下），中转那边它只是一台没有好友与信箱的设备。返回 {result, prize}：won 带奖品（kind 为 password 或 qrcode、content、note），missed 没抽中，closed 活动不存在或不在进行。同一活动同一台设备只抽一次，重复请求返回同一结果（含没抽中），并发也只记一次；抽中且这一小时的放量额度与库存都还有才发奖，发奖在活动行上排队、一份只发给一人。
 - POST /v1/diagnostics：免签名，请求体是 application/octet-stream 的诊断包密文（版本、一次性 X25519 公钥、随机数、AES-256-GCM 密文与标签，至少 61 字节、最多 24MB，必须声明长度，分块上传拒收；超限与类型不对的在通用解析前按请求头挡掉），按流写进 RELAY_DIAGNOSTICS_DIR，文件名即诊断编号（8 位 Crockford base32），返回 {id, keepDays}；目录满了回 503 MAILBOX_FULL。服务端没有解密用的密钥，也没有下载接口。
 - POST /v1/messages：投递密文，按（发送方, clientId）幂等，只能发给好友。GET /v1/messages?after=&limit=&wait=：按 id 游标取；wait（0–25 秒）为长轮询，没有消息时挂起到有新消息、到时或客户端断开。POST /v1/messages/ack：确认即删除。
+
+更新清单与开发者的话的签名（人工决策见客户端 lib/device/signed_content.dart）
+- 现在是明文 HTTP：清单里的最低可用版本可被改成全员强制更新、开发者的话可被改成钓鱼文字，所以两者由流水线用 Ed25519 签名，客户端内置公钥校验；HTTPS 等备案后再做。安装包本身仍由客户端核对 SHA-256 与签名证书。
+- 信封 {signed, signatures}：signed 是载荷 UTF-8 JSON 字节的 base64url，signatures 每项 {keyId, sig}（最多 4 个，任一受信公钥验过即可，便于换钥）；签名原文是域前缀（SXD1-release 或 SXD1-notes 加换行）接载荷字节，两类不能互相挪用。
+- 清单文件 <渠道>.json 在明文字段之外带 envelopes：每个架构一份（载荷含渠道、架构、版本、最低可用版本、更新说明、发布页与这个架构的安装包文件名、大小、SHA-256），按请求的架构挑一份放进返回的 envelope；developer_notes.json 带一个 envelope（载荷是 {"notes": [...]}）。
+- 中转只校验信封形状（base64url、签名个数与长度、keyId 格式，多出字段即当写坏）、原样透传，不解码、不验签；明文字段照旧给 1.0.0-alpha.15 及以前不验签的旧客户端。
+- 签名挡不住冻结与回滚（一直回放旧清单）：版本只升不降由客户端已装版本号与系统安装器保证，冻结只能靠将来的 HTTPS；载荷不带过期时间。
+- 上线顺序：先部署本服务（能透传信封的版本），再发带验签的客户端。旧版服务会把带 envelopes 的清单当写坏的文件拒绝（新旧客户端都查不到更新），所以发版与 notes 流水线上传前都先确认返回里有 envelope 字段，没有就停。部署后旧客户端照常靠明文字段更新，不受影响。
 
 长轮询
 - 先登记等待再查库，查询前后到达的消息都能唤醒，不会漏。投递（含扫码问候，事务提交后）经 Redis 发布订阅频道 {前缀}mail_notify 广播收件设备号，各实例只唤醒自己持有的请求；通知丢了只是等到超时再取，不丢消息。
@@ -43,9 +51,9 @@
 - 发送每设备每分钟 30 条、每天 500 条；同一 IP 每小时注册 20 台新设备；兑换邀请每设备每分钟 10 次。
 - 取走并确认的消息立即删除；未取走的 30 天后删除；设备 400 天不活跃连同关系与信箱删除。清理任务每 10 分钟一次，多实例抢分布式锁，消息每批 1000 行、每轮最多 20 批；不活跃设备每批最多 1000 台，按 10 台一个事务连带删除（每台最多约 2000 行好友关系与消息），单个事务行数有界。
 - 代签凭据包：单条 ≤2KB，取件号 10 分钟有效，取走即删；同一来源每小时最多提交 1000 个、取件与作废各 3000 次（校园网 NAT 共用出口，见 relay_limits.ts 的人工决策）。过期即取不到，清理任务每 10 分钟一轮删除过期的包（最迟约 20 分钟内删掉）。
-- 应用更新：同一来源每小时查清单 600 次、安装包请求 300 次（含断点续传的分段请求）；每个实例同时最多 32 个下载，超出回 503 RATE_LIMITED（retryAfter 60）；清单文件超过 64KB 拒绝读取。发布目录只放当前版本的清单与安装包，发新版时删掉旧包（每个渠道约 3 个安装包、共 300MB 上下）。
-- 开发者的话：同一来源每小时 600 次；最多 30 封、标题 40 字、正文 4000 字，文件超过 512KB 拒绝读取（与客户端 lib/domain/developer_note.dart 一致）。
-- 节日抽奖：同一来源每小时 3000 次；活动行在进程内缓存 60 秒；活动结束 30 天后由每小时一次的清理任务连同奖品与抽签记录分批删除（多实例抢锁，每轮最多 20 批、每批 1000 行）。
+- 应用更新：同一来源每小时查清单 600 次、安装包请求 300 次（含断点续传的分段请求）；每个实例同时最多 32 个下载，超出回 503 RATE_LIMITED（retryAfter 60）；清单文件超过 128KB 拒绝读取（明文加三个架构的签名信封）。发布目录只放当前版本的清单与安装包，发新版时删掉旧包（每个渠道约 3 个安装包、共 300MB 上下）。
+- 开发者的话：同一来源每小时 600 次；最多 30 封、标题 40 字、正文 4000 字，文件超过 1MB 拒绝读取（明文加签名载荷；与客户端 lib/domain/developer_note.dart 及 lib/device/relay_note_feed.dart 一致）。
+- 节日抽奖：每台设备每小时 10 次、同一来源每小时 3000 次（先按设备计数，刷请求的设备不占同一出口别人的额度）；刷号的成本是上面的注册限流（同一 IP 每小时 20 台新设备），不放宽；活动行在进程内缓存 60 秒；活动结束 30 天后由每小时一次的清理任务连同奖品与抽签记录分批删除（多实例抢锁，每轮最多 20 批、每批 1000 行）。
 - 诊断包：单个 ≤24MB；同一来源每小时 30 个；保留 30 天，到期由每 10 分钟一次的清理任务删除（多实例抢锁，一小时前中途断掉的残片一并删）；目录合计 ≤2GB、≤2000 个，满了回 503。已用量在 Redis 里原子预占、写盘失败退回，清理任务每轮按目录实际重写（Redis 丢了也由它重建）。
 - 按 IP 限流的计数主体：IPv4 按完整地址，IPv6 按 /64 前缀（换地址绕不过去）。
 - 发送的每分钟与每天两个窗口在一个 Lua 脚本里按顺序计数（一次往返），超了每分钟的不再计入每天的。
@@ -57,7 +65,7 @@
 
 - 环境变量见 .env.example，只在 src/config/env.ts 读取，缺必填项启动即失败。
 - 起测试库：docker compose -f docker-compose.test.yml up -d --wait（宿主机网络，MySQL 3307、Redis 6380，库在内存里）。
-- npm test：类型检查用 npm run typecheck；npm run build && npm run smoke 检查编译产物能在 Node ESM 下加载（类型导入被编译成运行时导入这类问题只在这里暴露，Vitest 测不到；Docker 构建与 CI 都会跑）；e2e 覆盖注册、签名、防重放、校时、未注册设备号的负缓存（只查一次库、注册立刻生效、与注册交错不误记）、扫码加好友（多人、凭证防盗用、作废）、收发幂等、分页、上限、发送的分钟与每天限流、关闭私信与数据保留；代签凭据包（chaoxing_pack.e2e.test.ts）覆盖取走即删、并发只取到一份、大小与格式、2KB 边界与 8KB 请求体上限、提交与取件限流、作废口令、过期与清理不误删、IPv6 按 /64 聚合；应用更新（app_release.e2e.test.ts）覆盖按架构取包、换清单即生效、清单写坏不外发、参数与文件名校验、整包与 Range 下载、限流；诊断包（diagnostic.e2e.test.ts）覆盖原样落盘与 600 权限、没有下载、只收二进制、24MB 与分块在读请求体前拒收、限流、目录满回 503、中途断开不留残片并退回额度、到期清理与已用量校正。
+- npm test：类型检查用 npm run typecheck；npm run build && npm run smoke 检查编译产物能在 Node ESM 下加载（类型导入被编译成运行时导入这类问题只在这里暴露，Vitest 测不到；Docker 构建与 CI 都会跑）；e2e 覆盖注册、签名、防重放、校时、未注册设备号的负缓存（只查一次库、注册立刻生效、与注册交错不误记）、扫码加好友（多人、凭证防盗用、作废）、收发幂等、分页、上限、发送的分钟与每天限流、关闭私信与数据保留；代签凭据包（chaoxing_pack.e2e.test.ts）覆盖取走即删、并发只取到一份、大小与格式、2KB 边界与 8KB 请求体上限、提交与取件限流、作废口令、过期与清理不误删、IPv6 按 /64 聚合；应用更新（app_release.e2e.test.ts）覆盖按架构取包、换清单即生效、清单写坏不外发、签名信封按架构原样透传与写坏不外发、128KB 文件上限、参数与文件名校验、整包与 Range 下载、限流；节日抽奖（reward.e2e.test.ts）覆盖要求设备签名、按设备只抽一次、加权与均匀放量、并发发奖、按设备与按来源限流、删除设备后不能再抽、维护命令与保留；诊断包（diagnostic.e2e.test.ts）覆盖原样落盘与 600 权限、没有下载、只收二进制、24MB 与分块在读请求体前拒收、限流、目录满回 503、中途断开不留残片并退回额度、到期清理与已用量校正。
 - npm run dev：swc 监听编译，bun 运行并在产物变化时重启。
 - 客户端联调：仓库根目录 flutter test tool/verify_social.dart --dart-define=SUPERXD_RELAY=http://127.0.0.1:端口。
 
@@ -70,7 +78,7 @@
    小内存机器（2GB 以内）已按 compose 里的参数关闭 MySQL performance_schema、缓冲池 128MB。
    MySQL 与 Redis 镜像在 compose 里固定到补丁版：第一次按固定版本启动（或以后改版本）会换掉服务器上原来的镜像，MySQL 在 8.4 长期支持线内原地升级，先跑一次备份。
 5. 客户端构建时传入地址：flutter build apk --flavor alpha --dart-define=SUPERXD_RELAY=http://服务器IP:端口。
-6. 应用更新：compose 把本目录下的 releases 只读挂进容器（/srv/releases）。发版时把各架构安装包与 tool/release_manifest.dart 生成的 <渠道>.json 传进 releases，先传安装包、最后传清单（清单一出现客户端就会来下载），再删掉旧版本的安装包；由仓库的发版流水线（.github/workflows/release.yml）自动完成，步骤见仓库根目录 CONTRIBUTING.md。
+6. 应用更新：compose 把本目录下的 releases 只读挂进容器（/srv/releases）。发版时把各架构安装包与 tool/release_manifest.dart 生成的 <渠道>.json 传进 releases，先传安装包、最后传清单（清单一出现客户端就会来下载），再删掉旧版本的安装包；由仓库的发版流水线（.github/workflows/release.yml）自动完成，步骤见仓库根目录 CONTRIBUTING.md。清单与开发者的话带签名信封后，本服务要先于下一次发版部署（见上面「更新清单与开发者的话的签名」的上线顺序）。
    节日抽奖：库按 sql/upgrade_2026_10_23.sql 建三张表后再部署；每次节日在服务器上进中转容器执行维护命令（用法见 src/modules/reward/reward_admin.ts 文件头）：create 建活动（编号、带时区的起止时刻、模式、基础概率、加权上限），import 从标准输入导入奖品（每行「口令<TAB>内容」或「二维码<TAB>内容」，可加附言），status 看发放情况。奖品只经标准输入进库，不放进仓库、不落地成文件。
    诊断包：compose 把命名卷 diagnostics 挂到容器 /srv/diagnostics（镜像里这个目录归 node，命名卷第一次创建时沿用，非 root 进程能写），不用改 .env。用户报来诊断编号后，在服务器 /opt/superxd-relay 下 docker compose cp relay:/srv/diagnostics/<诊断编号> /tmp/<诊断编号> 取出，拷回开发者本机用 tool/open_diagnostic.dart 解开（私钥只在开发者本机，见该文件头）；用户要求提前删除时 docker compose exec relay rm /srv/diagnostics/<诊断编号>。
    流水线用的上传账号只能读写 releases：建系统用户（如 superxd-release，不设密码），把 releases 及其中文件交给它；它的 authorized_keys 只放流水线专用的一把密钥，写成 restrict,command="/usr/bin/rrsync /opt/superxd-relay/releases" ssh-ed25519 …，这把密钥只能经 rsync 读写这个目录，不能登录或执行别的命令。私钥只放进 GitHub 的 relay 环境，主机指纹用 ssh-keyscan 取得后一并存入。

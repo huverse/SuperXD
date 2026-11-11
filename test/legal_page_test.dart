@@ -30,8 +30,9 @@ void main() {
       ('五、百宝箱：快递（拼多多）', '身份码是取件凭证，不写入文件，也不进日志'),
       ('六、检查更新、开发者的话与安装', '只向开发者的自建中转服务器发送应用的构建渠道（如 Alpha）与处理器架构'),
       ('六、检查更新、开发者的话与安装', '获取开发者写的「开发者的话」，请求不附带任何信息'),
-      ('七、节日活动与抽奖', '本机第一次参与时随机生成的参与号（不关联教务账号、私信身份或设备标识）'),
-      ('七、节日活动与抽奖', '服务器只保存参与号的哈希、这个天数与抽签结果，活动结束 30 天后删除'),
+      ('七、节日活动与抽奖', '只在有抽奖的节日开始前 7 天到节日结束这段时间里打开应用时，应用才在本机生成一对抽奖密钥'),
+      ('七、节日活动与抽奖', '与私信密钥分开，设备号不是手机的硬件标识，不关联教务账号或私信身份'),
+      ('七、节日活动与抽奖', '应用请服务器删除这台抽奖设备，并删除本机的抽奖密钥'),
       ('八、本机存储、备份与日志', '另在本机留一份约 1MB 的错误记录'),
       ('八、本机存储、备份与日志', '最多保留 7 天、20MB，关闭开发者模式即删除'),
       ('八、本机存储、备份与日志', '不会自动上传，只在你点「导出日志」时打包保存到 Download/SuperXD'),
@@ -187,7 +188,7 @@ void main() {
       for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart')))
         for (final match in RegExp(r"storageNamespace: '(\w+)'").allMatches(file.readAsStringSync())) match.group(1)!,
     };
-    expect(namespaces, containsAll(['superxd_credentials', 'superxd_social', 'superxd_chaoxing', 'superxd_pdd']));
+    expect(namespaces, containsAll(['superxd_credentials', 'superxd_social', 'superxd_chaoxing', 'superxd_pdd', 'superxd_reward']));
     final backup = File('android/app/src/main/res/xml/backup_rules.xml').readAsStringSync();
     final extraction = File('android/app/src/main/res/xml/data_extraction_rules.xml').readAsStringSync();
     for (final namespace in namespaces) {
