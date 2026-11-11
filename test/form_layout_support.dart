@@ -1,11 +1,15 @@
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/domain/font_pack.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 
 // 表单排版回归须用真实字体：描边框浮动标签凸出上边框的高度取决于字形行高，测试默认字体量不出来。
+// 衬线不在安装包里（下载的字体包，见 lib/domain/font_pack.dart），直接读仓库 font_packs 里的同一份文件。
 Future<void> loadCampusFonts(WidgetTester tester) async {
   await tester.runAsync(() async {
     final maple = FontLoader('Maple Mono NF CN');
@@ -13,9 +17,9 @@ Future<void> loadCampusFonts(WidgetTester tester) async {
       maple.addFont(rootBundle.load('assets/fonts/maple_mono_nf_cn_$weight.ttf'));
     }
     await maple.load();
-    final serif = FontLoader('Noto Serif SC');
-    for (final weight in ['regular', 'medium', 'semibold']) {
-      serif.addFont(rootBundle.load('assets/fonts/noto_serif_sc_$weight.ttf'));
+    final serif = FontLoader(fontPacks['serif']!.family);
+    for (final file in fontPacks['serif']!.files) {
+      serif.addFont(File('font_packs/${file.name}').readAsBytes().then(ByteData.sublistView));
     }
     await serif.load();
   });

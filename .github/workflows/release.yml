@@ -339,17 +339,32 @@ jobs:
       - name: 试连（试跑）
         if: env.PUBLISH != 'true'
         run: rsync --list-only "$RELAY_TARGET:"
-      # 先传安装包、最后传清单（清单一出现客户端就来下载），再删掉不在新清单里的旧安装包。
+      # 按需下载的字体包（人工决策见 lib/domain/font_pack.dart）不进安装包，在仓库 font_packs 目录，只取这一个目录。
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        if: env.PUBLISH == 'true'
+        with:
+          path: source
+          sparse-checkout: font_packs
+      # 先传安装包与字体包、最后传清单（清单一出现客户端就来下载），再删掉不在新清单里的旧安装包；font_packs 里有的字体包都留着（旧客户端还可能要旧版本）。
+      # 字体包文件名带内容哈希、同名即同一份，已在中转上的不重传。旧版中转的下载接口不认 .ttf（回 400），新版对不存在的文件回 404，上传前先认一下。
       - name: 上传安装包与清单
         if: env.PUBLISH == 'true'
         run: |
           set -euo pipefail
+          probe=$(curl -sS --max-time 30 -o /dev/null -w '%{http_code}' "$RELAY_URL/v1/app/files/font-probe.ttf")
+          if [ "$probe" != 404 ]; then echo "::error::中转还没部署能下载字体包的版本（探测返回 $probe），先部署服务端再发版"; exit 1; fi
           rsync -t --chmod=F644 dist/SuperXD-*.apk "$RELAY_TARGET:"
+          rsync -t --chmod=F644 --ignore-existing source/font_packs/*.ttf "$RELAY_TARGET:"
           rsync -t --chmod=F644 dist/alpha.json "$RELAY_TARGET:"
           mkdir keep
-          cp dist/SuperXD-*.apk dist/alpha.json keep/
+          cp dist/SuperXD-*.apk dist/alpha.json source/font_packs/*.ttf keep/
           rsync -r --delete --existing --ignore-existing --filter='P *.json' keep/ "$RELAY_TARGET:"
           rsync --list-only "$RELAY_TARGET:"
+          for font in source/font_packs/*.ttf; do
+            status=$(curl -sS --max-time 30 -r 0-0 -o /dev/null -w '%{http_code}' "$RELAY_URL/v1/app/files/$(basename "$font")")
+            if [ "$status" != 206 ]; then echo "::error::字体包 $(basename "$font") 断点下载返回 $status"; exit 1; fi
+            echo "[Release] action=relay_check font=$(basename "$font")"
+          done
       - name: 公网核对清单与断点下载
         if: env.PUBLISH == 'true'
         run: |

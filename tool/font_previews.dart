@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/domain/font_pack.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/appearance_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -15,10 +16,16 @@ import 'package:superxd/theme/campus_theme.dart';
 void main() {
   testWidgets('生成字体预览图', (tester) async {
     await tester.runAsync(() async {
-      for (final family in {'Maple Mono NF CN': 'maple_mono_nf_cn', 'Noto Serif SC': 'noto_serif_sc'}.entries) {
-        final loader = FontLoader(family.key);
-        for (final weight in ['regular', 'medium', 'semibold']) {
-          loader.addFont(File('assets/fonts/${family.value}_$weight.ttf').readAsBytes().then(ByteData.sublistView));
+      final maple = FontLoader('Maple Mono NF CN');
+      for (final weight in ['regular', 'medium', 'semibold']) {
+        maple.addFont(File('assets/fonts/maple_mono_nf_cn_$weight.ttf').readAsBytes().then(ByteData.sublistView));
+      }
+      await maple.load();
+      // 衬线是下载的字体包，读仓库 font_packs 里的同一份文件（见 lib/domain/font_pack.dart）。
+      for (final pack in fontPacks.values) {
+        final loader = FontLoader(pack.family);
+        for (final file in pack.files) {
+          loader.addFont(File('font_packs/${file.name}').readAsBytes().then(ByteData.sublistView));
         }
         await loader.load();
       }

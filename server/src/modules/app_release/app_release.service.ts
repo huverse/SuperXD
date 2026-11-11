@@ -70,7 +70,7 @@ export class AppReleaseService {
     return notes;
   }
 
-  // 交给 express 的 sendFile：支持 Range 断点续传与条件请求，按流发送不占内存；根目录限定在发布目录。
+  // 交给 express 的 sendFile：支持 Range 断点续传与条件请求，按流发送不占内存；根目录限定在发布目录。安装包与字体包共用同一套限流与同时下载上限，按扩展名给类型。
   async send(ip: string, name: string, response: Response): Promise<void> {
     const retryAfter = await this.limiter.hit('app_file', rateSubjectOf(ip), appFilePerHour, 3600);
     if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '下载过于频繁', { retryAfter });
@@ -81,7 +81,7 @@ export class AppReleaseService {
     response.once('close', () => this.downloads--);
     this.logger.debug(`[AppRelease] action=send file=${name} active=${this.downloads}`);
     const error = await new Promise<(Error & { status?: number; code?: string }) | undefined>((resolve) =>
-      response.sendFile(name, { root: env().releasesDir, dotfiles: 'deny', headers: { 'Content-Type': 'application/vnd.android.package-archive' } }, resolve),
+      response.sendFile(name, { root: env().releasesDir, dotfiles: 'deny', headers: { 'Content-Type': name.endsWith('.ttf') ? 'font/ttf' : 'application/vnd.android.package-archive' } }, resolve),
     );
     if (error === undefined) return;
     // 已开始发送后出错多是客户端断开（暂停、切网），无从再回错误。
@@ -89,7 +89,7 @@ export class AppReleaseService {
       this.logger.debug(`[AppRelease] action=send_aborted file=${name} errorType=${error.code ?? error.constructor.name}`);
       return;
     }
-    if (error.status === HttpStatus.NOT_FOUND) throw new RelayError(RelayCode.releaseNotFound, HttpStatus.NOT_FOUND, '安装包不存在');
+    if (error.status === HttpStatus.NOT_FOUND) throw new RelayError(RelayCode.releaseNotFound, HttpStatus.NOT_FOUND, '文件不存在');
     throw error;
   }
 

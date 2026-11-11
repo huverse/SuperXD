@@ -220,6 +220,48 @@ describe('安装包下载', () => {
   });
 });
 
+// 按需下载的字体包（客户端 lib/domain/font_pack.dart）与安装包同目录、同一个下载接口，按扩展名给类型，限流与同时下载上限共用。
+describe('字体包下载', () => {
+  const font = 'noto_serif_sc_regular-0123456789ab.ttf';
+  const fontBytes = Buffer.from(Array.from({ length: 2048 }, (_, index) => (index * 7) % 256));
+
+  it('整个下载与断点续传，类型是 font/ttf', async () => {
+    await writeFile(join(dir(), font), fontBytes);
+    const whole = await request(server).get(`/v1/app/files/${font}`).buffer(true).parse((response, done) => {
+      const chunks: Buffer[] = [];
+      response.on('data', (chunk: Buffer) => chunks.push(chunk));
+      response.on('end', () => done(null, Buffer.concat(chunks)));
+    });
+    expect(whole.status).toBe(200);
+    expect(whole.headers['content-type']).toBe('font/ttf');
+    expect(whole.headers['content-length']).toBe(String(fontBytes.length));
+    expect(Buffer.compare(whole.body as Buffer, fontBytes)).toBe(0);
+    const part = await request(server).get(`/v1/app/files/${font}`).set('Range', 'bytes=0-9');
+    expect(part.status).toBe(206);
+    expect(part.headers['content-range']).toBe(`bytes 0-9/${fontBytes.length}`);
+  });
+
+  it('不在目录里回 RELEASE_NOT_FOUND，别的扩展名与路径穿越回 INVALID_REQUEST', async () => {
+    const missing = await request(server).get(`/v1/app/files/${font}`);
+    expect(missing.status).toBe(404);
+    expect(missing.body.code).toBe('RELEASE_NOT_FOUND');
+    await writeFile(join(dir(), 'font.otf'), fontBytes);
+    for (const name of ['font.otf', '.hidden.ttf', '..%2Ffont.ttf', 'font.ttf.json']) {
+      expect((await request(server).get(`/v1/app/files/${name}`)).body.code, name).toBe('INVALID_REQUEST');
+    }
+  });
+
+  it('与安装包共用每小时的下载上限', async () => {
+    pinClock();
+    await writeFile(join(dir(), font), fontBytes);
+    await request(server).get(`/v1/app/files/${font}`);
+    await fillRate('app_file', appFilePerHour);
+    const response = await request(server).get(`/v1/app/files/${font}`);
+    expect(response.status).toBe(429);
+    expect(response.body.code).toBe('RATE_LIMITED');
+  });
+});
+
 describe('开发者的话', () => {
   const note = (id: string, overrides: Record<string, unknown> = {}) => ({ id, title: '近况', publishedAt: '2026-10-24T13:30:00.000Z', body: '第一段\n\n第二段', ...overrides });
 

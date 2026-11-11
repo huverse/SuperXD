@@ -46,23 +46,25 @@ GPL 的例外：下文第四节所述 math-curve-loaders 改编部分（lib/them
    上游二：motor 1.1.0（https://github.com/whynotmake-it/rivership），弹簧动画工具，MIT，Copyright (c) 2024 Tim Lehmann for whynotmake.it
 
 5. Maple Mono NF CN 7.900（等宽字体）
-   来源：https://github.com/subframe7536/maple-font
-   许可：SIL Open Font License 1.1
+   来源：https://github.com/subframe7536/maple-font（发布 v7.9 的 MapleMono-NF-CN.zip）
+   许可：SIL Open Font License 1.1（版权声明里没有保留字体名，裁剪后沿用原字体名）
    版权：Copyright 2022 The Maple Mono Project Authors
-   内置常规、中等、半粗三个字重，未修改。NF 版本含 Nerd Fonts 图标字形，其来源与许可见 https://github.com/ryanoasis/nerd-fonts 。
-   SHA256：Regular bb8e8e8c263896f42555107202f1847f7a42c340a3e532df9c4d585c9794411c
-   SHA256：Medium 6ffdd917c83f397ea021c96f23a54f23f5da835d75f8ddf77f8252ccb35d914f
-   SHA256：SemiBold 62a707a1c155e971055ce22bbdfacfa5bab50cd09d27bcb27e3ecbf1ac154aab
+   改动：内置常规、中等、半粗三个字重，已裁剪：用 fontTools 4.66.1 只保留《通用规范汉字表》8105 字、界面用到的拉丁字母、标点与符号（字符集与脚本见源码 tool/font_charset.txt、tool/font_subset.py），去掉了 Nerd Fonts 图标字形；保留的字形、度量、排版特性与微调指令未改。集合外的字由系统字体显示。
+   原始文件 SHA256：Regular bb8e8e8c263896f42555107202f1847f7a42c340a3e532df9c4d585c9794411c，Medium 6ffdd917c83f397ea021c96f23a54f23f5da835d75f8ddf77f8252ccb35d914f，SemiBold 62a707a1c155e971055ce22bbdfacfa5bab50cd09d27bcb27e3ecbf1ac154aab
+   裁剪后 SHA256：Regular 168f19da44abf10570040c3ae9efba43ded27bcee30ac93b03687d14e932f2b5
+   裁剪后 SHA256：Medium 60b0335e71a2a035e6cbc4774e79b2b7b9b711ea6d08cdde972fd7edc17ddca3
+   裁剪后 SHA256：SemiBold ce110972824ca2e42b48f300703757fc397efdb7fd189fe353cd37200e0687c2
    许可全文见“全部依赖许可”中的 Maple Mono NF CN。
 
 6. Noto Serif SC（文学衬线）
    来源：https://github.com/google/fonts/tree/main/ofl/notoserifsc（提交 8b0a1d0f5983c89bc2b93f1b5fb55f9e252744b5）
-   许可：SIL Open Font License 1.1
+   许可：SIL Open Font License 1.1（版权声明里没有保留字体名，修改后沿用原字体名）
    版权：Copyright 2012 Google Inc. All Rights Reserved.
-   改动：上游为可变字体（wght 200–900，SHA256 050080d9255a86808f2945bffac582b31ef32bc36411ce29563b4961670c66f9）。本应用用 fontTools 4.66.1 的 instancer 导出 400、500、600 三个静态字重（Flutter 不会把字重映射到可变字体的字重轴），字符与字形完整、未裁剪，其余未修改。
-   SHA256：Regular c6703a84c9fc049f8c528f4ac0680fa19907d79cf627724a5ed21ca9199f1440
-   SHA256：Medium 7e2e4943ef89ed89ddd97558f76aff7ef72a1f39d85014ece03df28125d6c02a
-   SHA256：SemiBold 738b5fab642d8cf91769e57c06323cde6dc268a153cd5cf2e370ae10c37ee91e
+   改动：上游为可变字体（wght 200–900，SHA256 050080d9255a86808f2945bffac582b31ef32bc36411ce29563b4961670c66f9）。本应用用 fontTools 4.66.1 的 instancer 导出 400、500、600 三个静态字重（Flutter 不会把字重映射到可变字体的字重轴），再按 Maple 同一份字符集裁剪（tool/font_subset.py）；保留的字形、度量与排版特性未改。
+   不随安装包分发：用户选用文学衬线时从开发者的自建中转下载这三个文件，应用核对下列 SHA256 后才使用。
+   SHA256：Regular 6749e5e6e30a00d2d9cc69e72cc7b8ef4cb9a99c768d984c633137c86b09acd7（noto_serif_sc_regular-6749e5e6e30a.ttf）
+   SHA256：Medium 02c86556249efe02f5ec1102e65172b01651c6f0859e70d69f6dffcf2b9bee98（noto_serif_sc_medium-02c86556249e.ttf）
+   SHA256：SemiBold 4e0287fcab77e9bc079e45f90ccfdb549001515b4c1076a686b33890cef58f71（noto_serif_sc_semibold-4e0287fcab77.ttf）
    许可全文见“全部依赖许可”中的 Noto Serif SC。
 
 7. 高德地图 SDK（Android）
