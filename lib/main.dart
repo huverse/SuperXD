@@ -68,6 +68,7 @@ import 'package:superxd/page/painting_splash.dart';
 import 'package:superxd/page/qr_scan_page.dart';
 import 'package:superxd/page/share_target_sheet.dart';
 import 'package:superxd/page/text_size_range.dart';
+import 'package:superxd/social/festival_pass.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_service.dart';
@@ -260,15 +261,18 @@ Future<DeveloperNotes?> developerNotes(Directory support) async {
   return DeveloperNotes(feed: RelayNoteFeed(base), memory: await FileDeveloperNoteMemory.open(File(path.join(support.path, 'developer_notes.json'))));
 }
 
-// 节日（人工决策见 domain/festival.dart）：登记在 page/festival/festival_catalog.dart；没配中转时只播动画、不抽签。
-Future<Festivals> festivalsOf(Directory support) async => Festivals(
-  occasions: [for (final scene in festivalCatalog) scene.occasion],
-  memory: await FileFestivalMemory.open(File(path.join(support.path, 'festival.json'))),
-  client: switch (relayBase()) {
-    final base? => RelayRewardClient(base),
-    null => null,
-  },
-);
+// 节日（人工决策见 domain/festival.dart）：登记在 page/festival/festival_catalog.dart；没配中转时只播动画、不登记抽奖身份、不抽签。
+// 抽奖身份用自己的安全存储命名空间，与私信身份分开（social/festival_pass.dart）；抽签经它签名（device/relay_reward_client.dart）。
+Future<Festivals> festivalsOf(Directory support) async {
+  final transport = relayTransport();
+  final pass = transport == null ? null : RelayFestivalPass(vault: SecureIdentityVault(festivalPassStorage), transport: transport);
+  return Festivals(
+    occasions: [for (final scene in festivalCatalog) scene.occasion],
+    memory: await FileFestivalMemory.open(File(path.join(support.path, 'festival.json'))),
+    pass: pass,
+    client: pass == null ? null : RelayRewardClient(pass),
+  );
+}
 
 // 奖品二维码存进相册（Download/SuperXD），用支付宝扫一扫从相册识别；临时文件放缓存、用完即删。
 Future<bool> saveRewardPicture(Uint8List png) async {
@@ -284,14 +288,14 @@ Future<bool> saveRewardPicture(Uint8List png) async {
   }
 }
 
-// 开发者的话、节日与打扰时机：同意协议与政策之后拉一次信、补抽上次没连上的签，之后每次回到前台再看一眼（信距上次不到一小时不联网）；
-// 启动与回到前台记今天打开过（活跃天数只在本机）；回到前台重新计这一次前台。
+// 开发者的话、节日与打扰时机：同意协议与政策之后拉一次信、按需登记或撤下抽奖身份并补抽上次没连上的签，之后每次回到前台再看一眼
+// （信距上次不到一小时不联网；没有临近的抽奖节日、本机也没有抽奖身份时节日不联网）；启动与回到前台记今天打开过（活跃天数只在本机）；回到前台重新计这一次前台。
 void watchMoments(AppMoments moments, {DeveloperNotes? notes, Festivals? festivals, required Future<void> agreed}) {
   var ready = false;
   unawaited(festivals?.recordActive());
   unawaited(agreed.then((_) {
     ready = true;
-    unawaited(festivals?.drawPending());
+    unawaited(festivals?.refresh());
     return notes?.autoRefresh();
   }));
   AppLifecycleListener(onShow: () {
@@ -299,7 +303,7 @@ void watchMoments(AppMoments moments, {DeveloperNotes? notes, Festivals? festiva
     unawaited(festivals?.recordActive());
     if (!ready) return;
     unawaited(notes?.autoRefresh());
-    unawaited(festivals?.drawPending());
+    unawaited(festivals?.refresh());
   });
 }
 

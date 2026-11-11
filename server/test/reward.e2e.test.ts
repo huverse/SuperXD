@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash } from 'node:crypto';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import Redis from 'ioredis';
 import { createConnection, Connection } from 'mysql2/promise';
@@ -9,11 +9,12 @@ import { createRelayApp } from 'src/relay_app';
 import { env } from 'src/config/env';
 import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
-import { rewardDrawPerHour, rewardKeepDays } from 'src/common/relay_limits';
+import { rewardDrawPerDevicePerHour, rewardDrawPerHour, rewardKeepDays } from 'src/common/relay_limits';
 import { RewardAdminError, runRewardAdmin } from 'src/modules/reward/reward_admin';
 import { RewardRetentionTask } from 'src/modules/reward/reward_retention.task';
 import { RewardDice } from 'src/modules/reward/reward.service';
 import { rewardChance, rewardReleased, rewardWeight } from 'src/modules/reward/reward_odds';
+import { TestDevice } from './test_device';
 
 let app: NestExpressApplication;
 let server: string;
@@ -21,7 +22,6 @@ let database: DataSource;
 let admin: Connection;
 let roll: ReturnType<typeof vi.spyOn>;
 
-const participant = () => randomBytes(16).toString('base64url');
 const hour = 3600_000;
 
 // 活动编号每个用例各取一个：活动行在服务端缓存 60 秒，同一编号在用例之间改设置不会立即生效。
@@ -44,7 +44,16 @@ const setup = async (options: { from?: number; to?: number; mode?: 'uniform' | '
   return key;
 };
 
-const draw = (key: string, body: Record<string, unknown>) => request(server).post(`/v1/rewards/${key}/draw`).send(body);
+// 抽奖身份：同客户端，一台登记过的设备（注册接口同一来源每小时 20 台新设备，每个用例前清空限流）。
+const registered = async () => {
+  const device = new TestDevice(server);
+  expect((await device.register()).status).toBe(200);
+  return device;
+};
+
+const draw = (device: TestDevice, key: string, body: Record<string, unknown>) => device.call('POST', `/v1/rewards/${key}/draw`, body);
+
+const deviceHash = (device: TestDevice) => createHash('sha256').update(device.deviceId).digest('hex');
 
 beforeAll(async () => {
   app = await createRelayApp();
@@ -100,83 +109,135 @@ describe('概率模型', () => {
 });
 
 describe('抽奖', () => {
-  it('活动不存在、还没开始或已经结束都回 closed，不记抽签', async () => {
-    expect((await draw('no-such-campaign', { participant: participant(), activeDays: 3 })).body).toEqual({ result: 'closed', prize: null });
-    const later = await setup({ from: hour, to: 2 * hour });
-    expect((await draw(later, { participant: participant(), activeDays: 3 })).body.result).toBe('closed');
-    const ended = await setup({ from: -2 * hour, to: -hour });
-    expect((await draw(ended, { participant: participant(), activeDays: 3 })).body.result).toBe('closed');
+  it('要求已登记设备的签名：不签名、没登记、签名不对都回 UNAUTHORIZED，不掷骰子', async () => {
+    const key = await setup();
+    const unsigned = await request(server).post(`/v1/rewards/${key}/draw`).send({ activeDays: 3 });
+    expect(unsigned.status).toBe(401);
+    expect(unsigned.body.code).toBe('UNAUTHORIZED');
+    // 旧客户端的免签名请求同样不收。
+    expect((await request(server).post(`/v1/rewards/${key}/draw`).send({ participant: 'AAAAAAAAAAAAAAAAAAAAAA', activeDays: 3 })).status).toBe(401);
+    const stranger = new TestDevice(server);
+    const unknown = await draw(stranger, key, { activeDays: 3 });
+    expect(unknown.status).toBe(401);
+    expect(unknown.body.code).toBe('UNAUTHORIZED');
+    const device = await registered(), other = await registered();
+    const path = `/v1/rewards/${key}/draw`, body = Buffer.from(JSON.stringify({ activeDays: 3 }));
+    const forged = await request(server).post(path).set({ ...other.headers('POST', path, body), 'x-sxd-device': device.deviceId }).send(body.toString());
+    expect(forged.status).toBe(401);
     expect(roll).not.toHaveBeenCalled();
   });
 
-  it('抽中给出奖品；同一参与号再来返回同一个奖品，没抽中的再来也还是没抽中（不能重抽）；库里只存参与号的哈希', async () => {
+  it('活动不存在、还没开始或已经结束都回 closed，不记抽签', async () => {
+    const device = await registered();
+    expect((await draw(device, 'no-such-campaign', { activeDays: 3 })).body).toEqual({ result: 'closed', prize: null });
+    const later = await setup({ from: hour, to: 2 * hour });
+    expect((await draw(device, later, { activeDays: 3 })).body.result).toBe('closed');
+    const ended = await setup({ from: -2 * hour, to: -hour });
+    expect((await draw(device, ended, { activeDays: 3 })).body.result).toBe('closed');
+    expect(roll).not.toHaveBeenCalled();
+  });
+
+  it('抽中给出奖品；同一台设备再来返回同一个奖品，没抽中的再来也还是没抽中（不能重抽）；库里只存设备号的哈希', async () => {
     const key = await setup();
-    const lucky = participant(), unlucky = participant();
+    const lucky = await registered(), unlucky = await registered();
     roll.mockReturnValue(0);
-    const won = await draw(key, { participant: lucky, activeDays: 5 });
+    const won = await draw(lucky, key, { activeDays: 5 });
     expect(won.status).toBe(200);
     expect(won.body).toEqual({ result: 'won', prize: { kind: 'password', content: '口令0', note: '附言0' } });
     roll.mockReturnValue(0.99);
-    expect((await draw(key, { participant: lucky, activeDays: 30 })).body).toEqual(won.body);
-    expect((await draw(key, { participant: unlucky, activeDays: 5 })).body).toEqual({ result: 'missed', prize: null });
+    expect((await draw(lucky, key, { activeDays: 30 })).body).toEqual(won.body);
+    expect((await draw(unlucky, key, { activeDays: 5 })).body).toEqual({ result: 'missed', prize: null });
     roll.mockReturnValue(0);
-    expect((await draw(key, { participant: unlucky, activeDays: 5 })).body.result).toBe('missed');
+    expect((await draw(unlucky, key, { activeDays: 5 })).body.result).toBe('missed');
     const hashes = (await database.query('SELECT participant_hash AS hash FROM reward_draw d JOIN reward_campaign c ON c.id = d.campaign_id WHERE c.campaign_key = ?', [key])) as { hash: string }[];
-    expect(hashes.map((row) => row.hash).sort()).toEqual([lucky, unlucky].map((value) => createHash('sha256').update(value).digest('hex')).sort());
+    expect(hashes.map((row) => row.hash).sort()).toEqual([lucky, unlucky].map(deviceHash).sort());
   });
 
   it('按活跃度加权：同一个骰子点数，活跃的抽中、新用户没抽中；平权时活跃天数不起作用', async () => {
     roll.mockReturnValue(0.5);
     const weighted = await setup({ mode: 'weighted', chance: 0.2, maxWeight: 3 });
-    expect((await draw(weighted, { participant: participant(), activeDays: 20 })).body.result).toBe('won');
-    expect((await draw(weighted, { participant: participant(), activeDays: 0 })).body.result).toBe('missed');
+    expect((await draw(await registered(), weighted, { activeDays: 20 })).body.result).toBe('won');
+    expect((await draw(await registered(), weighted, { activeDays: 0 })).body.result).toBe('missed');
     const uniform = await setup({ mode: 'uniform', chance: 0.2 });
-    expect((await draw(uniform, { participant: participant(), activeDays: 30 })).body.result).toBe('missed');
+    expect((await draw(await registered(), uniform, { activeDays: 30 })).body.result).toBe('missed');
   });
 
   it('均匀放量：24 小时的活动第一个小时只放 1 份，第二个抽中的人算没抽中', async () => {
     roll.mockReturnValue(0);
     const key = await setup({ from: -hour / 2, to: 23.5 * hour, prizes: 24 });
-    expect((await draw(key, { participant: participant(), activeDays: 1 })).body.result).toBe('won');
-    expect((await draw(key, { participant: participant(), activeDays: 1 })).body.result).toBe('missed');
+    expect((await draw(await registered(), key, { activeDays: 1 })).body.result).toBe('won');
+    expect((await draw(await registered(), key, { activeDays: 1 })).body.result).toBe('missed');
   });
 
-  it('并发：30 个人同时抽中、只有 5 份奖品，正好发出 5 份且各不相同；同一参与号并发 5 次只记一次', async () => {
+  it('并发：12 台设备同时抽中、只有 5 份奖品，正好发出 5 份且各不相同；同一台设备并发 5 次只记一次', async () => {
     roll.mockReturnValue(0);
     const key = await setup({ prizes: 5 });
-    const results = await Promise.all(Array.from({ length: 30 }, () => draw(key, { participant: participant(), activeDays: 1 })));
+    const devices = await Promise.all(Array.from({ length: 12 }, registered));
+    const results = await Promise.all(devices.map((device) => draw(device, key, { activeDays: 1 })));
     const prizes = results.filter((response) => response.body.result === 'won').map((response) => response.body.prize.content);
     expect(prizes).toHaveLength(5);
     expect(new Set(prizes).size).toBe(5);
     const again = await setup({ prizes: 5 });
-    const same = participant();
-    const repeated = await Promise.all(Array.from({ length: 5 }, () => draw(again, { participant: same, activeDays: 1 })));
+    const same = await registered();
+    const repeated = await Promise.all(Array.from({ length: 5 }, () => draw(same, again, { activeDays: 1 })));
     expect(new Set(repeated.map((response) => JSON.stringify(response.body))).size).toBe(1);
     const [counted] = (await database.query('SELECT COUNT(*) AS draws FROM reward_draw d JOIN reward_campaign c ON c.id = d.campaign_id WHERE c.campaign_key = ?', [again])) as { draws: string }[];
     expect(Number(counted.draws)).toBe(1);
   });
 
-  it('参数不合法回 INVALID_REQUEST', async () => {
+  it('参数不合法回 INVALID_REQUEST；请求体只认 activeDays，带上旧的参与号也不收', async () => {
     const key = await setup();
-    for (const body of [{ participant: 'short', activeDays: 1 }, { participant: participant(), activeDays: 31 }, { participant: participant(), activeDays: -1 }, { participant: participant() }, { participant: participant(), activeDays: 1, extra: 1 }]) {
-      const response = await draw(key, body);
+    const device = await registered();
+    for (const body of [{ activeDays: 31 }, { activeDays: -1 }, {}, { activeDays: 1, extra: 1 }, { participant: 'AAAAAAAAAAAAAAAAAAAAAA', activeDays: 1 }]) {
+      const response = await draw(device, key, body);
       expect(response.status).toBe(400);
       expect(response.body.code).toBe('INVALID_REQUEST');
     }
-    expect((await draw('Bad_Key', { participant: participant(), activeDays: 1 })).status).toBe(400);
+    expect((await draw(device, 'Bad_Key', { activeDays: 1 })).status).toBe(400);
+  });
+
+  // 把这一小时的计数直接拨到上限（同一个固定窗口），下一次就超了。
+  const exhaust = async (scope: string, limit: number) => {
+    const redis = app.get<Redis>(REDIS);
+    const prefix = redis.options.keyPrefix ?? '';
+    const [, keys] = await redis.scan('0', 'MATCH', `${prefix}${RedisKeys.rate(scope, '*', 0).replace(/:0$/, '')}:*`, 'COUNT', 1000);
+    expect(keys).toHaveLength(1);
+    await redis.set(keys[0].slice(prefix.length), limit, 'KEEPTTL');
+  };
+
+  it('同一台设备每小时超过上限回 RATE_LIMITED，同一出口的别的设备不受影响', async () => {
+    vi.spyOn(Date, 'now').mockReturnValue((Math.floor(Date.now() / hour) + 0.5) * hour);
+    const key = await setup();
+    const device = await registered(), neighbor = await registered();
+    await draw(device, key, { activeDays: 1 });
+    await exhaust('reward_device', rewardDrawPerDevicePerHour);
+    const response = await draw(device, key, { activeDays: 1 });
+    expect(response.status).toBe(429);
+    expect(response.body.code).toBe('RATE_LIMITED');
+    expect((await draw(neighbor, key, { activeDays: 1 })).status).toBe(200);
   });
 
   it('同一 IP 每小时超过上限回 RATE_LIMITED', async () => {
     vi.spyOn(Date, 'now').mockReturnValue((Math.floor(Date.now() / hour) + 0.5) * hour);
     const key = await setup();
-    await draw(key, { participant: participant(), activeDays: 1 });
-    const redis = app.get<Redis>(REDIS);
-    const prefix = redis.options.keyPrefix ?? '';
-    const [, keys] = await redis.scan('0', 'MATCH', `${prefix}${RedisKeys.rate('reward_draw', '*', 0).replace(/:0$/, '')}:*`, 'COUNT', 1000);
-    await redis.set(keys[0].slice(prefix.length), rewardDrawPerHour, 'KEEPTTL');
-    const response = await draw(key, { participant: participant(), activeDays: 1 });
+    const device = await registered();
+    await draw(device, key, { activeDays: 1 });
+    await exhaust('reward_draw', rewardDrawPerHour);
+    const response = await draw(await registered(), key, { activeDays: 1 });
     expect(response.status).toBe(429);
     expect(response.body.code).toBe('RATE_LIMITED');
+  });
+
+  it('抽奖设备删除自己（DELETE /v1/devices）后不能再抽；抽签记录照旧留到活动保留期', async () => {
+    roll.mockReturnValue(0.99);
+    const key = await setup();
+    const device = await registered();
+    expect((await draw(device, key, { activeDays: 2 })).body.result).toBe('missed');
+    expect((await device.call('DELETE', '/v1/devices')).status).toBe(204);
+    const after = await draw(device, key, { activeDays: 2 });
+    expect(after.status).toBe(401);
+    const [counted] = (await database.query('SELECT COUNT(*) AS draws FROM reward_draw WHERE participant_hash = ?', [deviceHash(device)])) as { draws: string }[];
+    expect(Number(counted.draws)).toBe(1);
   });
 });
 
@@ -189,7 +250,7 @@ describe('维护命令与保留', () => {
     await expect(runRewardAdmin(admin, ['import', key], lines('口令\ta\n红包\tb'))).rejects.toThrow('第 2 行');
     expect(await runRewardAdmin(admin, ['import', key], lines('﻿口令\ta\n\n二维码\thttps://qr.alipay.com/demo\t扫码领'))).toContain('prizes=2');
     roll.mockReturnValue(0);
-    await draw(key, { participant: participant(), activeDays: 4 });
+    await draw(await registered(), key, { activeDays: 4 });
     const status = await runRewardAdmin(admin, ['status', key], lines(''));
     expect(status).toContain('奖品 2 份，已发 1 份');
     expect(status).toContain('抽签 1 人，中 1 人');
@@ -197,10 +258,11 @@ describe('维护命令与保留', () => {
 
   it('活动结束 30 天后连同奖品与抽签记录删除，没到期的不动', async () => {
     roll.mockReturnValue(0);
+    const device = await registered();
     const old = await setup();
-    await draw(old, { participant: participant(), activeDays: 1 });
+    await draw(device, old, { activeDays: 1 });
     const recent = await setup();
-    await draw(recent, { participant: participant(), activeDays: 1 });
+    await draw(device, recent, { activeDays: 1 });
     const ended = new Date(Date.now() - (rewardKeepDays + 1) * 86400_000);
     await database.query('UPDATE reward_campaign SET starts_at = ?, ends_at = ? WHERE campaign_key = ?', [new Date(ended.getTime() - hour), ended, old]);
     await app.get(RewardRetentionTask).sweep();

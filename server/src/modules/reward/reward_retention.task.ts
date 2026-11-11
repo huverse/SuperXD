@@ -5,7 +5,7 @@ import { DistributedLock } from 'src/common/redis/redis.module';
 import { cleanupBatch, rewardKeepDays } from 'src/common/relay_limits';
 import { RewardRepository } from 'src/modules/reward/reward.repository';
 
-// 节日抽奖的保留：活动结束 30 天后连同奖品与抽签记录分批删除（参与号哈希、活跃天数与发奖记录只留到这时，供维护者对账与回应询问）。
+// 节日抽奖的保留：活动结束 30 天后连同奖品与抽签记录分批删除（设备号哈希、活跃天数与发奖记录只留到这时，供维护者对账与回应询问）。
 // 多实例抢分布式锁，全局只跑一份；每轮最多 20 批、每批 1000 行，单次运行工作量有界，剩下的下一轮继续。
 @Injectable()
 export class RewardRetentionTask {

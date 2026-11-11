@@ -10,8 +10,8 @@ export class RewardDrawParamDto {
   @ApiProperty({ description: '活动编号，同客户端的节日编号，如 spring-2027' }) @Matches(/^[a-z0-9][a-z0-9-]{0,63}$/) campaign: string;
 }
 
+// 抽签人是签名的设备（x-sxd-device），请求体里不再带参与号。
 export class RewardDrawBodyDto {
-  @ApiProperty({ description: '参与号：客户端第一次参与时本机生成的 16 字节随机数（base64url），不关联任何账号；服务端只存 sha256' }) @Matches(/^[A-Za-z0-9_-]{22}$/) participant: string;
   @ApiProperty({ description: '近 30 天里打开过应用的天数（客户端本机记）' }) @IsInt() @Min(0) @Max(rewardActiveWindow) activeDays: number;
 }
 

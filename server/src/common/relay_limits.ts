@@ -63,12 +63,20 @@ export const developerNoteTitleMax = 40;
 export const developerNoteBodyMax = 4000;
 export const developerNotesFileMaxBytes = 512 * 1024;
 
-// 节日抽奖（概率模型见 src/modules/reward/reward_odds.ts）：同一来源每小时 3000 次（校园网 NAT 共用出口，同代签取件的宽松档；
-// 每个参与号只抽一次、重复请求返回同一结果，限流只防脚本刷库）；活动行在进程内缓存 60 秒（建活动、改时间最迟一分钟生效）；
-// 活动结束 30 天后连同奖品与抽签记录删除。
+// 节日抽奖（概率模型与要求设备签名的人工决策见 src/modules/reward/reward_odds.ts）：同一来源每小时 3000 次（校园网 NAT 共用出口，同代签取件的宽松档），
+// 每台设备每小时 10 次（一台设备一次活动只抽一次、重复请求返回同一结果，正常客户端只在没连上时补抽；按设备计数让刷请求的设备先被自己的额度挡住）；
+// 刷号的成本是注册限流 registerPerHour。活动行在进程内缓存 60 秒（建活动、改时间最迟一分钟生效）；活动结束 30 天后连同奖品与抽签记录删除。
 export const rewardDrawPerHour = 3000;
+export const rewardDrawPerDevicePerHour = 10;
 export const rewardCampaignCacheSeconds = 60;
 export const rewardKeepDays = 30;
+
+// 设备公钥的进程内缓存（L1）：每台最多 10 分钟。设备号与签名公钥终身绑定、不会变旧，TTL 只为多实例下别的实例删掉设备（关闭私信、不活跃清理）后，
+// 本实例最迟 10 分钟内也不再认它；本实例删除时立即移除。
+export const deviceKeyCacheSeconds = 10 * 60;
+// 未注册设备号的负缓存（人工决策见 src/modules/device/device.service.ts）：查库没有的设备号在 Redis 记 60 秒，期间同一设备号的请求不再查库；
+// 注册成功即改记「已注册」，新注册立刻在所有实例生效。
+export const deviceMissingSeconds = 60;
 
 // 设备 400 天没有任何请求即删除，连同其好友关系与待取消息。
 export const deviceIdleDays = 400;

@@ -5,7 +5,7 @@ import { LRUCache } from 'lru-cache';
 import { rateSubjectOf } from 'src/common/client_ip';
 import { RateLimiter } from 'src/common/redis/redis.module';
 import { RelayCode, RelayError } from 'src/common/relay_error';
-import { rewardCampaignCacheSeconds, rewardDrawPerHour } from 'src/common/relay_limits';
+import { rewardCampaignCacheSeconds, rewardDrawPerDevicePerHour, rewardDrawPerHour } from 'src/common/relay_limits';
 import { RewardCampaignEntity } from 'src/modules/reward/reward.entity';
 import { RewardRepository } from 'src/modules/reward/reward.repository';
 import { RewardMode, rewardChance, rewardModes, rewardWeight } from 'src/modules/reward/reward_odds';
@@ -19,7 +19,7 @@ export class RewardDice {
   }
 }
 
-// 节日抽奖（概率模型与人工决策见 reward_odds.ts）：免签名，凭客户端本机生成的随机参与号幂等；活动表很小，按编号缓存在进程内。
+// 节日抽奖（概率模型与人工决策见 reward_odds.ts）：抽签人是验过签名的已登记设备，按设备号幂等（库里只存设备号的 sha256）；活动表很小，按编号缓存在进程内。
 @Injectable()
 export class RewardService {
   private readonly logger = new Logger('Reward');
@@ -32,13 +32,14 @@ export class RewardService {
     private readonly dice: RewardDice,
   ) {}
 
-  async draw(ip: string, campaignKey: string, body: dtos.RewardDrawBodyDto): Promise<dtos.RewardDrawDto> {
-    const retryAfter = await this.limiter.hit('reward_draw', rateSubjectOf(ip), rewardDrawPerHour, 3600);
+  async draw(ip: string, deviceId: string, campaignKey: string, body: dtos.RewardDrawBodyDto): Promise<dtos.RewardDrawDto> {
+    // 先按设备再按来源计数：一台设备刷请求先被自己的额度挡住，不占同一出口（校园网 NAT）别人的宽松档。
+    const retryAfter = (await this.limiter.hit('reward_device', deviceId, rewardDrawPerDevicePerHour, 3600)) ?? (await this.limiter.hit('reward_draw', rateSubjectOf(ip), rewardDrawPerHour, 3600));
     if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '抽奖请求过于频繁', { retryAfter });
     const campaign = await this.campaign(campaignKey);
     const now = new Date();
     if (campaign === null || now < campaign.startsAt || now >= campaign.endsAt) return { result: 'closed', prize: null };
-    const participantHash = createHash('sha256').update(body.participant).digest('hex');
+    const participantHash = createHash('sha256').update(deviceId).digest('hex');
     const existing = await this.repository.findDraw(campaign.id, participantHash);
     if (existing !== null) return present(existing.prize);
     const mode = campaign.mode as RewardMode;

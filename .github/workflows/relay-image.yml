@@ -1,0 +1,115 @@
+name: Relay image
+
+# [人工决策-2026-11-10 13:12:22] 中转部署改为「流水线构建镜像，服务器只加载」（用户 11-10 确认方向）：server 目录有改动合并到 main 就在这里构建镜像，
+# 主路径是 docker save 压缩后的镜像包（Actions 产物，维护者下载后传到服务器 docker load：服务器在中国大陆，直连 ghcr.io 与 Docker Hub 不可靠），
+# 同时推 GHCR 作备选。没选「服务器上现场 docker build」（1.6GB 内存的生产机上约 6 分钟、占内存）与「流水线直接登录服务器部署」：
+# 部署仍由人工在用户当次授权后执行，流水线不接触生产机。部署与回滚步骤见 server/README.md「部署」。
+# PR 改了 server 目录也跑一遍构建与试运行（不导出、不推送），镜像构建坏了合并前就能看到。
+on:
+  push:
+    branches: [main]
+    paths: ['server/**', '.github/workflows/relay-image.yml']
+  pull_request:
+    paths: ['server/**', '.github/workflows/relay-image.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: relay-image-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  image:
+    name: 构建中转镜像
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    # 试运行用的库：镜像起来能连上库、HEALTHCHECK 变成 healthy、/v1/health 报的是这个提交才算构建成功。版本同 docker-compose.yml。
+    services:
+      mysql:
+        image: mysql:8.4.13
+        env:
+          MYSQL_ROOT_PASSWORD: check-root
+          MYSQL_DATABASE: superxd_relay
+          MYSQL_USER: superxd
+          MYSQL_PASSWORD: check
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -pcheck-root --silent"
+          --health-interval 5s --health-timeout 5s --health-retries 30
+      redis:
+        image: redis:8.10.3-alpine
+        ports: ['6379:6379']
+        options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 30
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      # 版本即提交号前 12 位：镜像标签、镜像包文件名与 /v1/health 的 version 一致；PR 上用 PR 头提交。
+      - name: 构建
+        id: build
+        env:
+          HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          version=${HEAD_SHA:0:12}
+          docker build --pull --build-arg RELAY_BUILD_VERSION="$version" \
+            --label org.opencontainers.image.source="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY" \
+            --label org.opencontainers.image.revision="$HEAD_SHA" \
+            -t "superxd-relay:$version" server
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "[RelayImage] action=build version=$version"
+      - name: 试运行
+        env:
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          docker run -d --name relay-check --network host \
+            -e RELAY_PORT=8080 -e RELAY_TRUST_PROXY=0 -e RELAY_SWAGGER=false -e RELAY_RELEASES_DIR=/tmp \
+            -e MYSQL_HOST=127.0.0.1 -e MYSQL_PORT=3306 -e MYSQL_USER=superxd -e MYSQL_PASSWORD=check -e MYSQL_DATABASE=superxd_relay \
+            -e REDIS_HOST=127.0.0.1 -e REDIS_PORT=6379 -e REDIS_DB=0 -e REDIS_KEY_PREFIX=sxd: \
+            "superxd-relay:$VERSION"
+          status=starting
+          for _ in $(seq 1 45); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' relay-check)
+            if [ "$status" = healthy ]; then break; fi
+            sleep 2
+          done
+          if [ "$status" != healthy ]; then docker logs relay-check; echo "::error::镜像健康检查没有通过（$status）"; exit 1; fi
+          served=$(curl -fsS --max-time 10 http://127.0.0.1:8080/v1/health)
+          python3 -I -c 'import json, sys; health = json.loads(sys.argv[1]); assert health["protocol"] == 1 and health["version"] == sys.argv[2], health; print("[RelayImage] action=check health=healthy version=%s" % health["version"])' "$served" "$VERSION"
+          docker rm -f relay-check
+      # docker load 直接认 gzip；sha256 与镜像包一起下载，传到服务器后先核对再加载。
+      - name: 导出镜像包
+        if: github.event_name != 'pull_request'
+        env:
+          VERSION: ${{ steps.build.outputs.version }}
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          docker save "superxd-relay:$VERSION" | gzip -6 > "out/superxd-relay-$VERSION.tar.gz"
+          (cd out && sha256sum "superxd-relay-$VERSION.tar.gz" > "superxd-relay-$VERSION.tar.gz.sha256")
+          echo "[RelayImage] action=save version=$VERSION bytes=$(stat -c %s "out/superxd-relay-$VERSION.tar.gz")"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        if: github.event_name != 'pull_request'
+        with:
+          name: superxd-relay-${{ steps.build.outputs.version }}
+          path: out/
+          retention-days: 30
+          compression-level: 0
+      # GHCR 是备选来源；新建的包默认私有，要从服务器拉就在包设置里改公开，或在服务器上用只读令牌登录。
+      - name: 推送 GHCR
+        if: github.event_name != 'pull_request'
+        env:
+          VERSION: ${{ steps.build.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}/superxd-relay"
+          printf '%s' "$GH_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker tag "superxd-relay:$VERSION" "$registry:$VERSION"
+          docker push "$registry:$VERSION"
+          docker logout ghcr.io
+          echo "[RelayImage] action=push image=$registry:$VERSION"

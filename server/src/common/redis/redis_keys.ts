@@ -1,4 +1,4 @@
-import { inviteTtlSeconds, nonceTtlSeconds, seenWriteSeconds } from 'src/common/relay_limits';
+import { deviceMissingSeconds, inviteTtlSeconds, nonceTtlSeconds, seenWriteSeconds } from 'src/common/relay_limits';
 
 // Redis key 注册表：所有 key 在此构造，service 不得硬编码 key 字符串。全局前缀由 REDIS_KEY_PREFIX 配置（ioredis keyPrefix）。
 // 这里全部是运行态或可丢的短期状态，权威数据只在 MySQL。丢了的后果：邀请失效需重新出示、限流窗口归零、
@@ -8,6 +8,7 @@ export const RedisKeyTTL = {
   nonce: nonceTtlSeconds,
   invite: inviteTtlSeconds,
   seen: seenWriteSeconds,
+  deviceMissing: deviceMissingSeconds,
 } as const;
 
 export const RedisKeys = {
@@ -21,6 +22,8 @@ export const RedisKeys = {
   rate: (scope: string, subject: string, window: number) => `rate:${scope}:${subject}:${window}`,
   // 最后活跃写库节流标记，单值。
   seen: (deviceId: string) => `seen:${deviceId}`,
+  // 设备号负缓存，单值：missing 表示查库没有这台设备，registered 表示刚注册（挡住与注册交错的查库把它写回 missing）。
+  deviceMissing: (deviceId: string) => `device_missing:${deviceId}`,
   // 分布式锁，单值，持有者令牌。
   lock: (name: string) => `lock:${name}`,
 } as const;

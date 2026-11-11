@@ -9,13 +9,14 @@
   - 请求签名原文 requestCanonical、邀请凭证原文 inviteProofCanonical。
   - 信封 sealEnvelope / openEnvelope：明文 gzip 后由发送方签名，再用一次性 X25519 与收件人协商，HKDF-SHA256 派生 AES-256-GCM 密钥加密，附加数据绑定收件人设备号；解压上限 1MB。验签 verifyOpened 在确认发送方后进行。
 - invite_code.dart：好友二维码内容 InviteCode（SXD1F: 前缀）：邀请号、邀请私钥种子、出示方公钥与昵称、过期时刻，二进制布局转 Base45（RFC 9285），按 QR 字母数字模式编码；validNickname 昵称规则（1–20 字，无首尾空白与控制字符）。
-- identity_vault.dart：身份私钥种子的存放 IdentityVault；SecureIdentityVault 用系统安全存储（命名空间 superxd_social，已排除云备份与设备迁移）；MemoryIdentityVault 供测试。
+- identity_vault.dart：身份私钥种子的存放 IdentityVault；SecureIdentityVault 用系统安全存储（默认命名空间 superxd_social，可传别的命名空间，已排除云备份与设备迁移）；MemoryIdentityVault 供测试。
+- festival_pass.dart：节日抽奖身份 RelayFestivalPass，实现 domain 的 FestivalPass（人工决策见 domain/festival.dart）：与私信身份同格式、但单独生成的一对密钥，存在安全存储的 superxd_reward 命名空间（festivalPassStorage，同样排除备份与迁移），与私信身份互不关联；登记、签名请求与删除都复用 RelayClient（register、request、deleteDevice），中转的错误码换成 FestivalException（UNAUTHORIZED 是 FestivalNotEnrolled）。什么时候生成、登记、删除由 application/festivals.dart 决定，组合根注入；device 的抽签客户端经它签名。
 - relay_client.dart：
   - relayBaseUrl：中转地址只来自构建参数 SUPERXD_RELAY，不写进代码；未配置时私信不可用。
   - RelayCode：错误码，与服务端 relay_error.ts 一致，另有 NETWORK、TIMEOUT、BAD_RESPONSE。
   - RelayTransport 传输端口，可按请求给超时；HttpRelayTransport 默认 15 秒，长轮询为挂起时长加 10 秒。
   - HttpRelayTransport 在断网、超时、响应格式不对时记 [RelayTransport] 日志：错误码、方法与路径、异常类型与完整堆栈，不写服务器地址与查询参数；往上只抛 RelayException 错误码。收消息的长轮询按后台请求发（background），它的断网与超时不在这里记，交给收取循环。
-  - RelayClient：每个请求用设备私钥签名，没有会话令牌；收到 CLOCK_SKEW 按服务器时间校正并只重发这一次。
+  - RelayClient：每个请求用设备私钥签名，没有会话令牌；收到 CLOCK_SKEW 按服务器时间校正并只重发这一次。request 用给定身份签名发任意路径，给节日抽奖身份用。
 - social_store.dart：本机库 social.db（数据库目录，已排除备份）：profile、friend、message、invite 四张表，时间存 UTC ISO 字符串。
 - social_service.dart：SocialService 私信编排，是页面唯一入口。
   - 状态：loading、unavailable（未配置中转）、disabled（未开启）、ready、failed。
@@ -36,7 +37,7 @@
 
 # 测试
 
-- social_protocol_test.dart（与服务端共用测试向量、信封、二维码）、share_card_test.dart、social_service_test.dart、social_ui_test.dart。
+- social_protocol_test.dart（与服务端共用测试向量、信封、二维码）、share_card_test.dart、social_service_test.dart、social_ui_test.dart；节日抽奖身份 festival_pass.dart 在 festival_test.dart（经 fake_relay.dart 验签登记、签名抽签、撤下）。
 - fake_relay.dart 是按协议 v1 规则验签的内存假中转。服务端：cd server 后 npm test（Vitest，需 docker-compose.test.yml 起的 MySQL 与 Redis）。
 - 手动入口：tool/verify_social.dart（两个真实客户端经真实中转联调，只用合成数据，运行方式见文件头）。
 
