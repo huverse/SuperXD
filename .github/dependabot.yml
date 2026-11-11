@@ -1,0 +1,75 @@
+# 依赖自动更新（约定见 CONTRIBUTING.md「供应链」）。
+# [人工决策-2026-11-10 12:58:48] 用户同意按最佳实践开依赖自动更新：Actions、server 的 npm、根目录的 pub、android 的 Gradle 四处，每周一一次；
+# 补丁与次版本每处合成一条 PR，主版本各自单独一条；新版本发布满 7 天才提（cooldown，避开刚发布就被投毒、随后撤下的版本；安全更新不等）。
+# 没选每天检查（PR 太碎）与自动合并（CI 不编安卓与 iOS 的原生部分，界面库升级要人看过）。提交信息前缀跟随仓库写法。
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Shanghai
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: ci
+    groups:
+      actions-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  - package-ecosystem: pub
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Shanghai
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(deps)
+    ignore:
+      # permission_handler 13 起的安卓实现要求 compileSdk 37，现用的 AGP 9.1 最高支持 36；AGP 升上去之后再放开。
+      - dependency-name: permission_handler
+        update-types: [version-update:semver-major]
+    groups:
+      pub-minor-patch:
+        patterns: ['*']
+        # 液态玻璃管着全应用的外观，次版本也会改样子：单独一条 PR，合并前在模拟器上走查。
+        exclude-patterns: [liquid_glass_widgets]
+        update-types: [minor, patch]
+
+  - package-ecosystem: npm
+    directory: /server
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Shanghai
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(server)
+    groups:
+      server-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
+
+  - package-ecosystem: gradle
+    directory: /android
+    schedule:
+      interval: weekly
+      day: monday
+      time: '09:00'
+      timezone: Asia/Shanghai
+    cooldown:
+      default-days: 7
+    commit-message:
+      prefix: chore(android)
+    groups:
+      android-minor-patch:
+        patterns: ['*']
+        update-types: [minor, patch]
