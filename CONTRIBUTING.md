@@ -25,7 +25,7 @@ tool/verify_toolbox.dart为手动Android原生下载验证入口，不进入正�
   4. 某步失败在Actions里重跑失败的作业：已有的Release不再重建，中转上传可以重复执行。
 - 替换已发的版本（发出后才发现问题）：版本名不变、构建号加一，合并升版本PR之前先删掉这个版本的Release与标签（gh release delete v<版本名> --cleanup-tag），流水线按新提交重发、覆盖中转上同名安装包；装着旧构建号的在应用内会收到更新。
 - 试跑：在Actions里手动运行Release（默认勾选dry_run），只构建、核对、生成清单并试连中转，不发Release、不改中转。改了发版流程、签名或构建配置后先试跑。
-- 机密在仓库Settings › Environments：release环境（只限受保护分支，不设审批人）放SIGNING_KEYSTORE与SIGNING_PROPERTIES（仓库外alpha.jks与signing.properties的base64）、AMAP_KEY、RELAY_URL、MANIFEST_SIGNING_KEY（更新清单签名私钥）；relay环境（只限受保护分支）放RELAY_URL、RELAY_SSH_TARGET、RELAY_SSH_KEY、RELAY_KNOWN_HOSTS（受限账号见server/README.md部署第6步）、NOTES_SIGNING_KEY（开发者的话签名私钥）。
+- 机密在仓库Settings › Environments：release环境（只限受保护分支，不设审批人）放SIGNING_KEYSTORE与SIGNING_PROPERTIES（仓库外alpha.jks与signing.properties的base64）、AMAP_WEB_KEY与AMAP_WEB_SECRET（高德Web端JS API的key与安全密钥，安卓与iOS构建都带）、RELAY_URL、MANIFEST_SIGNING_KEY（更新清单签名私钥）；relay环境（只限受保护分支）放RELAY_URL、RELAY_SSH_TARGET、RELAY_SSH_KEY、RELAY_KNOWN_HOSTS（受限账号见server/README.md部署第6步）、NOTES_SIGNING_KEY（开发者的话签名私钥）。
 - 更新清单与开发者的话的签名（[人工决策]见lib/device/signed_content.dart）：中转现在是明文HTTP，两者由流水线用Ed25519签名，客户端只认验签通过的内容（明文字段留给1.0.0-alpha.15及以前的旧客户端）。三把私钥都是openssl生成的PKCS#8 PEM，放在仓库外：发版钥与开发者的话钥各在上面的机密里，离线备用钥（两类都能签）只留维护者本机；公钥与各自能签的内容内置在lib/device/signed_content.dart的trustedSigningKeys，流水线签完用这张表再验一遍，私钥与源码对不上就停。签名挡不住冻结与回滚，冻结只能靠将来的HTTPS；不加过期时间。
   - 上线顺序：先部署中转服务（能透传签名信封的版本，见server/README.md），再发带验签的客户端；发版与Notes流水线上传前会先确认中转返回里有envelope字段，没有就停。旧客户端照常更新，不受影响。
   - 换钥（线上钥丢失或泄露）：openssl genpkey -algorithm ed25519生成新钥，dart run tool/content_signing.dart public-key 新钥.pem取公钥，在trustedSigningKeys里加新编号（泄露的那把同时删掉），用新钥更新机密；换钥这一版发布后，在本机用离线备用钥加新钥（--signing-key可给多把）重签清单或开发者的话，由维护者自己传到中转的releases目录覆盖，让手上旧版客户端也验得过。跳过了换钥版本的旧客户端要到发布页手动下载一次。
@@ -36,7 +36,7 @@ tool/verify_toolbox.dart为手动Android原生下载验证入口，不进入正�
 ```sh
 ORG_GRADLE_PROJECT_superxdSigningProperties=/仓库外的绝对路径/signing.properties \
   flutter build apk --release --flavor alpha --split-per-abi --split-debug-info=build/release_symbols \
-  --dart-define=SUPERXD_RELAY=http://中转服务器地址:端口 --dart-define=SUPERXD_AMAP_KEY=<高德key> --dart-define=SUPERXD_SVPARSE_KEY=<svparse密钥>
+  --dart-define=SUPERXD_RELAY=http://中转服务器地址:端口 --dart-define=SUPERXD_AMAP_WEB_KEY=<高德Web端key> --dart-define=SUPERXD_AMAP_WEB_SECRET=<安全密钥> --dart-define=SUPERXD_SVPARSE_KEY=<svparse密钥>
 ```
 
 - 签名配置只从上述外部properties读取，包含storeFile、keyAlias、storePassword、keyPassword；storeFile可相对配置文件。密钥文件和密码在仓库外限制访问并离线备份（流水线用的是release环境里的副本），禁止写进命令行、日志、Git或Issue。release缺少有效配置直接失败，不回退debug签名。丢失密钥就无法覆盖升级，只能换签名并让用户卸载重装（1.0.0-alpha.2即因此更换）；换签名时同步改工作流的RELEASE_CERT_SHA256与release环境的机密。

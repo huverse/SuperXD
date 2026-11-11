@@ -15,7 +15,7 @@ import 'package:superxd/toolbox/chaoxing/chaoxing_store.dart';
 
 // 收藏位置的管理弹层：在地图上添加、改名与删除（签到弹层里只管选，这里管维护）。
 // [人工决策-2026-10-15 19:42:58] 用户选了补齐参考项目：这里可以主动在地图上添加收藏（取代 10-08「收藏只走签到成功后的询问」）；
-// 地图用不了（没带 key 或不是 arm 设备）时没有这个入口。
+// 地图用不了（安装包没带高德 Web 端 key 与安全密钥）时没有这个入口。
 Future<void> showChaoxingLocationSheet(BuildContext context, {required ChaoxingController controller}) =>
     showCampusSheet<void>(context: context, builder: (context) => _ChaoxingLocationSheet(controller: controller));
 

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -199,6 +201,16 @@ void main() {
     expect(calls, isEmpty);
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
+
+  // [人工决策] 见 android/app/src/main/AndroidManifest.xml 的 MainActivity：横屏下悬浮底栏盖住约三分之一内容，安卓手机锁竖屏，同 iOS 只竖屏。
+  test('安卓主界面与 iOS 都只竖屏', () {
+    final manifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+    final activity = RegExp(r'<activity\s[^>]*android:name="\.MainActivity"[^>]*>').firstMatch(manifest)!.group(0)!;
+    expect(activity, contains('android:screenOrientation="portrait"'));
+    final plist = File('ios/Runner/Info.plist').readAsStringSync();
+    final orientations = RegExp(r'<key>UISupportedInterfaceOrientations</key>\s*<array>([\s\S]*?)</array>').firstMatch(plist)!.group(1)!;
+    expect(RegExp(r'<string>(\w+)</string>').allMatches(orientations).map((match) => match.group(1)), ['UIInterfaceOrientationPortrait']);
+  });
 
   // [人工决策] 见 lib/page/animated_branches.dart：iOS 上切分支直接到位，安卓照旧两页并排滑动。
   testWidgets('切分支：iOS 直接到位，安卓并排滑动', (tester) async {
