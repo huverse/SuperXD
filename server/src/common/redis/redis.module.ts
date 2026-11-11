@@ -6,10 +6,16 @@ import { RedisKeys } from 'src/common/redis/redis_keys';
 
 export const REDIS = Symbol('REDIS');
 
-// 固定窗口计数：INCR 与首次设置过期在同一脚本内原子完成，返回本窗口内的累计次数。
-const rateScript = `local count = redis.call('INCR', KEYS[1])
-if count == 1 then redis.call('EXPIRE', KEYS[1], ARGV[1]) end
-return count`;
+// 固定窗口计数：同一主体的几个窗口按顺序 INCR（首次设置过期），在同一脚本内原子完成、一次往返。ARGV 依次是每个窗口的上限与秒数。
+// 遇到第一个超限的窗口就停下并返回它的序号（从 1 起），后面的窗口不计这次被拒的请求，与逐个检查的效果一致；全部放行返回 0。
+const rateScript = `for index, key in ipairs(KEYS) do
+  local count = redis.call('INCR', key)
+  if count == 1 then redis.call('EXPIRE', key, ARGV[index * 2]) end
+  if count > tonumber(ARGV[index * 2 - 1]) then return index end
+end
+return 0`;
+
+export type RateRule = { scope: string; limit: number; windowSeconds: number };
 
 // 只释放自己持有的锁：比对令牌后再删除，原子完成。
 const unlockScript = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end
@@ -20,11 +26,17 @@ export class RateLimiter {
   constructor(@Inject(REDIS) private readonly redis: Redis) {}
 
   // 返回 null 表示放行，否则返回需等待的秒数（到本窗口结束）。
-  async hit(scope: string, subject: string, limit: number, windowSeconds: number): Promise<number | null> {
+  hit(scope: string, subject: string, limit: number, windowSeconds: number): Promise<number | null> {
+    return this.hitAll(subject, [{ scope, limit, windowSeconds }]);
+  }
+
+  // 同一主体的几个窗口一次往返按顺序检查：返回 null 表示全部放行，否则返回第一个超限窗口需等待的秒数。
+  async hitAll(subject: string, rules: RateRule[]): Promise<number | null> {
     const now = Math.floor(Date.now() / 1000);
-    const window = Math.floor(now / windowSeconds);
-    const count = Number(await this.redis.eval(rateScript, 1, RedisKeys.rate(scope, subject, window), windowSeconds));
-    return count > limit ? (window + 1) * windowSeconds - now : null;
+    const windows = rules.map((rule) => Math.floor(now / rule.windowSeconds));
+    const keys = rules.map((rule, index) => RedisKeys.rate(rule.scope, subject, windows[index]));
+    const exceeded = Number(await this.redis.eval(rateScript, keys.length, ...keys, ...rules.flatMap((rule) => [rule.limit, rule.windowSeconds])));
+    return exceeded === 0 ? null : (windows[exceeded - 1] + 1) * rules[exceeded - 1].windowSeconds - now;
   }
 }
 

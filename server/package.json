@@ -17,9 +17,9 @@
     "smoke": "node --input-type=module -e \"await import('./dist/relay_app.js'); console.log('dist ok')\""
   },
   "dependencies": {
-    "@nestjs/common": "^12.1.2",
-    "@nestjs/core": "^12.1.2",
-    "@nestjs/platform-express": "^12.1.2",
+    "@nestjs/common": "^12.4.2",
+    "@nestjs/core": "^12.4.2",
+    "@nestjs/platform-express": "^12.4.2",
     "@nestjs/schedule": "^12.0.2",
     "@nestjs/swagger": "^12.0.2",
     "@nestjs/typeorm": "^12.0.2",

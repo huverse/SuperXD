@@ -11,6 +11,7 @@ import 'package:path/path.dart' as path;
 
 import 'package:superxd/app_diagnostics.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/diagnostic_upload.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/local/display_settings.dart';
@@ -259,7 +260,7 @@ void main() {
     }
     await tester.pumpAndSettle();
     expect(find.text('开启开发者模式'), findsOneWidget);
-    expect(find.textContaining('最多保留 7 天、20MB，不上传'), findsOneWidget);
+    expect(find.textContaining('最多保留 7 天、20MB，不会自动上传'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(developer.enabled, isFalse);
@@ -321,6 +322,87 @@ void main() {
     final left = await tester.runAsync(() async => [for (final entity in logs.directory.listSync()) path.basename(entity.path)]);
     expect(left, ['errors.log']);
     expect(find.text('开发者选项'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  // 人工决策见 lib/domain/diagnostic_upload.dart：每次都先确认，写明传什么、传到哪、保留多久；没配中转的构建不出现上传。
+  testWidgets('上传诊断包：没配中转时不出现；点了先确认（取消就不传），传的过程在按钮上原地显示，传完按钮换成诊断编号、点了复制；失败给原因并可再点', (tester) async {
+    String? copied;
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+      if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String;
+      return null;
+    });
+    addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+    logs.record('[App] action=uncaught errorType=StateError\n#0 main');
+    await tester.runAsync(logs.flush);
+    final developer = DeveloperSettings.memory(enabled: true);
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: DeveloperPage(developer: developer, logs: logs)));
+    await settle(tester, () => find.textContaining('本机共').evaluate().isNotEmpty);
+    expect(find.text('导出日志'), findsOneWidget);
+    expect(find.text('上传诊断包'), findsNothing);
+
+    final calls = <Completer<String>>[];
+    late void Function(double sent) report;
+    final uploading = await tester.runAsync(() => DiagnosticLog.open(
+      directory: logs.directory,
+      exports: Directory(path.join(temp.path, 'upload_cache')),
+      publish: (archive, filename) async => true,
+      uploader: _FakeUploader((archivePath, onProgress) {
+        expect(File(archivePath).existsSync(), isTrue);
+        report = onProgress!;
+        calls.add(Completer<String>());
+        return calls.last.future;
+      }),
+    ));
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: DeveloperPage(developer: developer, logs: uploading!)));
+    await settle(tester, () => find.textContaining('本机共').evaluate().isNotEmpty);
+    await tester.tap(find.text('上传诊断包'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('与「导出日志」相同的日志包（本机日志、运行环境与字号状态）在本机加密后传到开发者的中转服务器'), findsOneWidget);
+    expect(find.textContaining('30 天后自动删除'), findsOneWidget);
+    expect(find.textContaining('要提前删除，也凭编号联系开发者'), findsOneWidget);
+    await tester.tap(find.text('取消'));
+    await tester.pumpAndSettle();
+    expect(calls, isEmpty);
+
+    await tester.tap(find.text('上传诊断包'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('上传'));
+    // 按钮上转着圈，等不到 pumpAndSettle：按时长推过确认框的退场。
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('上传诊断包'), findsNothing);
+    expect(find.text('加密中'), findsOneWidget);
+    await settle(tester, () => calls.isNotEmpty);
+    report(.374);
+    await tester.pump();
+    expect(find.text('上传中 37%'), findsOneWidget);
+    // 发完还要等服务器存好，不写 100%。
+    report(1);
+    await tester.pump();
+    expect(find.text('上传中 99%'), findsOneWidget);
+    calls.single.complete('ABCD2345');
+    await settle(tester, () => find.text('诊断编号 ABCD2345').evaluate().isNotEmpty);
+    expect(find.text('已上传，把诊断编号告诉开发者'), findsOneWidget);
+    expect(find.text('上传诊断包'), findsNothing);
+    await tester.tap(find.text('诊断编号 ABCD2345'));
+    await tester.pump();
+    expect(copied, 'ABCD2345');
+    await settle(tester, () => find.text('已复制诊断编号').evaluate().isNotEmpty);
+
+    // 失败：原地回到「上传诊断包」，提示条写原因。
+    await tester.pumpWidget(const SizedBox());
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: DeveloperPage(developer: developer, logs: uploading)));
+    await settle(tester, () => find.textContaining('本机共').evaluate().isNotEmpty);
+    await tester.tap(find.text('上传诊断包'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('上传'));
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    await settle(tester, () => calls.length == 2);
+    calls.last.completeError(const DiagnosticUploadException('上传太频繁，请过一会儿再试'));
+    await settle(tester, () => find.text('上传太频繁，请过一会儿再试').evaluate().isNotEmpty);
+    expect(find.text('上传诊断包'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -457,4 +539,12 @@ void main() {
     expect(find.textContaining('sync (file:///s.dart:3)'), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
+}
+
+// 测试用的上传：交给回调决定什么时候传完。
+class _FakeUploader implements DiagnosticUploader {
+  _FakeUploader(this._upload);
+  final Future<String> Function(String archivePath, void Function(double sent)? onProgress) _upload;
+  @override
+  Future<String> upload(String archivePath, {void Function(double sent)? onProgress}) => _upload(archivePath, onProgress);
 }

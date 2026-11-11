@@ -3,6 +3,7 @@ name: Notes
 # 开发者的话（人工决策见 lib/domain/developer_note.dart）：notes 目录有改动合并到 main，就把 tool/developer_notes.dart 生成的
 # developer_notes.json 经受限账号传到中转的发布目录（与发版同一个 relay 环境与账号），客户端联网拉取，不用发版。
 # 只在信（notes/*.txt）有改动时触发，改说明或工具不触发；格式在 PR 的 CI 里已经由 test/developer_notes_test.dart 校验过。手动运行同样上传当前 main 的内容。
+# 签名（人工决策见 lib/device/signed_content.dart）：签名钥在 relay 环境的机密 NOTES_SIGNING_KEY，签完用客户端源码里内置的公钥与客户端的解析代码再验一遍，对不上就停。
 on:
   push:
     branches: [main]
@@ -33,8 +34,24 @@ jobs:
           channel: stable
           cache: true
       - run: flutter pub get --enforce-lockfile
-      - name: 生成清单
-        run: dart run tool/developer_notes.dart --out "$RUNNER_TEMP/developer_notes.json"
+      # 私钥只在这一步写进临时文件、用完即删。
+      - name: 生成并签名
+        env:
+          NOTES_SIGNING_KEY: ${{ secrets.NOTES_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/notes_signing_key.pem"
+          trap 'rm -f "$key"' EXIT
+          (umask 077 && printf '%s\n' "$NOTES_SIGNING_KEY" > "$key")
+          dart run tool/developer_notes.dart --out "$RUNNER_TEMP/developer_notes.json" --signing-key "$key"
+          dart run tool/content_signing.dart check-notes "$RUNNER_TEMP/developer_notes.json"
+      # 带签名信封的文件在旧版中转上会被当成写坏的文件拒绝，上传前先确认中转已部署能透传信封的版本（新版返回里总有 envelope 字段）。
+      # 返回最大约 1MB，超过单个命令行参数的上限，所以先存成文件再交给 python。
+      - name: 核对中转能透传签名
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 30 -o "$RUNNER_TEMP/served_before.json" "$RELAY_URL/v1/app/notes"
+          python3 -I -c 'import json, sys; sys.exit(0 if "envelope" in json.load(open(sys.argv[1], encoding="utf-8")) else 1)' "$RUNNER_TEMP/served_before.json" || { echo "::error::中转还没部署透传签名信封的版本，先部署服务端（server/README.md 部署一节）"; exit 1; }
       # 中转上的账号只能经 rrsync 读写发布目录（server/README.md 部署第 6 步），主机指纹事先固定。
       - name: 准备连接
         env:
@@ -52,11 +69,12 @@ jobs:
           set -euo pipefail
           cp "$RUNNER_TEMP/developer_notes.json" developer_notes.json
           rsync -t --chmod=F644 developer_notes.json "$RELAY_TARGET:"
+      # 中转返回的要与签好的一字不差（含签名信封）。
       - name: 公网核对
         run: |
           set -euo pipefail
-          served=$(curl -fsS --max-time 30 "$RELAY_URL/v1/app/notes")
-          python3 -I -c 'import json, sys; built = json.load(open(sys.argv[1], encoding="utf-8")); served = json.loads(sys.argv[2]); assert built == served, "中转上的开发者的话与生成的不一致"; print("[Notes] action=relay_check count=%d" % len(served["notes"]))' "$RUNNER_TEMP/developer_notes.json" "$served"
+          curl -fsS --max-time 30 -o "$RUNNER_TEMP/served.json" "$RELAY_URL/v1/app/notes"
+          python3 -I -c 'import json, sys; built, served = (json.load(open(path, encoding="utf-8")) for path in sys.argv[1:]); assert served.get("envelope") is not None, "中转返回里没有签名信封"; assert built == served, "中转上的开发者的话与生成的不一致"; print("[Notes] action=relay_check count=%d signed=true" % len(served["notes"]))' "$RUNNER_TEMP/developer_notes.json" "$RUNNER_TEMP/served.json"
       - name: 删除连接凭据
         if: always()
         run: rm -f ~/.ssh/relay
