@@ -131,6 +131,14 @@ void main() {
     expect(logs.last, allOf(contains('status=200'), endsWith('error=too_large')));
   });
 
+  test('声明的长度超了上限：不等响应体，立即拒绝并中断连接', () async {
+    final transport = _Stalled(contentLength: 100);
+    final kernel = CampusHttp('demo', client: transport);
+    await expectLater(kernel.send('GET', Uri.parse('https://example.com/a'), timeout: const Duration(seconds: 2), limit: 8), throwsA(isA<CampusHttpTooLarge>()));
+    await transport.cancelled.future.timeout(const Duration(seconds: 1));
+    await transport.aborted.future.timeout(const Duration(seconds: 1));
+  });
+
   test('断网、读响应体出错原样抛出；收到响应头的照样记状态码', () async {
     final refused = CampusHttp('demo', client: MockClient((_) async => throw http.ClientException('connection refused')));
     StackTrace? stack;

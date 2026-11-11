@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
@@ -168,6 +169,23 @@ void main() {
     expect(client.jar, isEmpty);
   });
 
+  test('响应已经读完、交回之前被取消：照样按已取消丢弃，不改写 cookie', () async {
+    late KingoClient client;
+    final previous = campusLog;
+    addTearDown(() {
+      campusLog = previous;
+      campusDiagnostics = false;
+    });
+    // 内核读完响应、记请求记录的那一刻取消：内核已经拿到结果，只剩教务客户端自己的代次核对挡住它。
+    campusDiagnostics = true;
+    campusLog = (line) {
+      if (line.startsWith('[Http]')) client.cancelRequests();
+    };
+    client = KingoClient(client: MockClient((_) async => http.Response('<h1>学生个人课表</h1><p>课程门数：0</p>', 200, headers: {'set-cookie': 'JSESSIONID=late', 'content-type': 'text/html; charset=utf-8'})));
+    await expectLater(client.fetchSchedule(xn: '2026', xq: '0', userCode: 'test'), throwsA(isA<http.RequestAbortedException>()));
+    expect(client.jar, isEmpty);
+  });
+
   test('dispose 之后拒绝发起请求，什么也不发', () async {
     var sent = 0;
     final client = KingoClient(client: MockClient((_) async {
@@ -180,6 +198,7 @@ void main() {
   });
 
   test('成绩之外的页面也有响应上限：超了报格式错误，网关保留原数据', () async {
+    expect(KingoClient.pageLimit, 4 * 1024 * 1024);
     final client = KingoClient(client: MockClient.streaming((request, body) async {
       await body.drain<void>();
       return http.StreamedResponse(Stream.fromIterable([List.filled(KingoClient.pageLimit, 0x20), utf8.encode('多')]), 200, headers: {'content-type': 'text/html; charset=utf-8'});
