@@ -27,6 +27,8 @@ export const loadEnv = () => ({
   buildVersion: process.env.RELAY_BUILD_VERSION ?? 'dev',
   // 应用更新：版本清单（<渠道>.json）与安装包所在目录，发版时人工放入；容器里只读挂载。
   releasesDir: required('RELAY_RELEASES_DIR'),
+  // 诊断包密文的存放目录（文件名即诊断编号），要可写；容器里是 compose 挂的命名卷。
+  diagnosticsDir: required('RELAY_DIAGNOSTICS_DIR'),
   mysql: {
     host: required('MYSQL_HOST'),
     port: integer('MYSQL_PORT'),

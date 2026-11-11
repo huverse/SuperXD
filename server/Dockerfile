@@ -19,6 +19,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --registry=$NPM_REGISTRY && npm cache clean --force
 COPY --from=build /app/dist ./dist
+# 诊断包目录先建好交给 node：compose 的命名卷第一次创建时沿用这里的属主与权限，非 root 进程才写得进去。
+RUN mkdir -p /srv/diagnostics && chown node:node /srv/diagnostics && chmod 700 /srv/diagnostics
 # 构建版本：流水线传提交号，/v1/health 原样返回；本地构建不传即为 dev。放在最后，换提交不让前面的依赖层失效。
 ARG RELAY_BUILD_VERSION=dev
 ENV RELAY_BUILD_VERSION=$RELAY_BUILD_VERSION

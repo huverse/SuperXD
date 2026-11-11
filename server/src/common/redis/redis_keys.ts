@@ -9,6 +9,8 @@ export const RedisKeyTTL = {
   invite: inviteTtlSeconds,
   seen: seenWriteSeconds,
   deviceMissing: deviceMissingSeconds,
+  // 清理任务每 10 分钟按目录重写一次并续期；任务停了一天才过期（之后上限从零重计，靠清理任务恢复后重建）。
+  diagnosticUsage: 24 * 60 * 60,
 } as const;
 
 export const RedisKeys = {
@@ -26,6 +28,8 @@ export const RedisKeys = {
   deviceMissing: (deviceId: string) => `device_missing:${deviceId}`,
   // 分布式锁，单值，持有者令牌。
   lock: (name: string) => `lock:${name}`,
+  // 诊断包目录的已用量：Hash {bytes, files}，字段固定 2 个。上传时原子预占、写盘失败退回，清理任务每轮按目录实际重写（丢了也由它重建，在那之前上限偏松）。
+  diagnosticUsage: () => 'diagnostic_usage',
 } as const;
 
 // 发布订阅频道：ioredis 的 keyPrefix 不作用于频道名，这里手动加同一前缀隔离环境。
