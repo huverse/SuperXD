@@ -9,6 +9,7 @@ import { ChaoxingPackEntity } from 'src/modules/chaoxing/chaoxing_pack.entity';
 import { ChaoxingPackModule } from 'src/modules/chaoxing/chaoxing_pack.module';
 import { DeviceEntity } from 'src/modules/device/device.entity';
 import { DeviceModule } from 'src/modules/device/device.module';
+import { DiagnosticModule } from 'src/modules/diagnostic/diagnostic.module';
 import { FriendshipEntity } from 'src/modules/friend/friendship.entity';
 import { FriendModule } from 'src/modules/friend/friend.module';
 import { HealthController } from 'src/modules/health/health.controller';
@@ -49,6 +50,7 @@ import { RewardModule } from 'src/modules/reward/reward.module';
     PairingModule,
     AppReleaseModule,
     RewardModule,
+    DiagnosticModule,
   ],
   controllers: [HealthController],
 })

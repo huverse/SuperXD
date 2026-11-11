@@ -31,6 +31,9 @@
 - picture_export.dart：publishPicture 把缓存里的一张图经原生一次性导出（ToolboxFileExporter.kt，通道 superxd/toolbox_files）存进 Download/SuperXD，同名已存过直接算存好；开屏画作的「保存到相册」用，由组合根交给 local/painting_library.dart；节日奖品的「保存二维码」也经它（组合根的 saveRewardPicture）。
 - app_shortcuts.dart：ChannelAppShortcuts 实现 AppShortcutPort。iOS 是 AppShortcuts.swift：只有长按图标的菜单、没有添加到桌面（组合根不给 pinShortcut），菜单图标只能用 SF Symbols，入口 id 到图标名在文件里登记（新增入口要一起加）；按插件登记收场景回调，冷启动的入口先记下给 Dart 取一次。安卓经通道 superxd/app_shortcuts 调原生 AppShortcuts.kt（ShortcutManager）：动态快捷方式整份替换（同 id 的桌面快捷方式跟着换名字与图标）；requestPinShortcut 由桌面弹窗请用户确认，桌面不支持返回 false；冷启动带来的入口 id 由 MainActivity 先记下、Dart 取一次；应用在后台时经 onNewIntent 调 launch 交回。启动标志用 CLEAR_TOP 加 SINGLE_TOP，只把已有界面拉到前台，不加 CLEAR_TASK（那会整个冷启动）。
 - diagnostic_device.dart：本机诊断日志用到的系统能力，由组合根交给 local/diagnostic_log.dart 与 app_diagnostics.dart：readDeviceEnvironment 经 device_info_plus 读系统版本与机型（写进日志包的运行环境）；publishDiagnosticArchive 把缓存里打好的 zip 经原生一次性导出（ToolboxFileExporter.kt，与百宝箱共用通道 superxd/toolbox_files）存进 Download/SuperXD；readExitReasons 经通道 superxd/diagnostics 调原生 ProcessExitReasons.kt，读系统记下的最近几次进程退出原因（Android 11 起的 ApplicationExitInfo，只返回给定时刻之后的，ANR 附主线程堆栈，从 "main" 那行起 80 行、最多 8KB，一条读不出只把这条置空）；每次启动都调，通道处理放在后台线程（MainActivity.kt 的 makeBackgroundTaskQueue），不占主线程。iOS 上运行环境读 iosInfo；退出原因由 ProcessExitReasons.swift 订阅 MetricKit 诊断报告（崩溃记 CRASH、卡死记 ANR，CPU 与写盘超限按后台记），系统在之后某次启动才交来，存进 device_only/exit_reasons.json、只留最近 20 条。
+- 诊断包上传的两个文件（人工决策见 domain/diagnostic_upload.dart），由组合根注入 local/diagnostic_log.dart：
+  - diagnostic_seal.dart：诊断包信封 sealDiagnostic（一次性 X25519 与开发者公钥 diagnosticRecipientKey 协商、HKDF-SHA256、AES-256-GCM，布局写在文件头）；openDiagnostic 只有 tool/open_diagnostic.dart 与测试在用（解包），删除前先改它们。不依赖 Flutter，工具用 dart run 直接解。开发者私钥只在开发者本机，换钥见工具文件头。
+  - relay_diagnostic_upload.dart：RelayDiagnosticUpload 实现 DiagnosticUploader：先在后台 isolate 里加密成缓存里的临时密文，再 POST 自建中转的 /v1/diagnostics 二进制请求体（免签名、声明长度不分块）；包大，不用一刀切的超时：连续 30 秒没有进展就中止、整次最多 5 分钟，响应上限 8KB，不重试；回执只认 8 位 Crockford base32 的诊断编号（parseDiagnosticReceipt），临时密文传完即删。
 - backup_exclusion.dart：excludeFromBackup 只在 iOS 由组合根调用：iOS 没有安卓 data_extraction_rules.xml 那样的规则文件，组合根把同一批只属于本机的目录（先建好）与私信库交给原生 ios/Runner/DeviceOnlyData.swift（通道 superxd/backup）标记不进 iCloud 备份与换机迁移；会被整个替换的文件（开发者设置）放进标记过的 device_only 目录。DeviceOnlyData.swift 另在每次新装后第一次启动时清掉钥匙串里上次安装留下的条目（iOS 卸载不删钥匙串），要赶在 Dart 读钥匙串之前，由 AppDelegate.swift 调用。
 
 # 关键规则
@@ -40,5 +43,5 @@
 
 # 测试
 
-- reminder_test.dart（课前提醒）、home_widget_test.dart（小组件）、app_update_test.dart（清单验签与解析、安装包文件与清理）、content_signing_test.dart（内置公钥表、信封与域前缀、私钥文件、发版清单工具的签名与核对、体积上限）、developer_notes_test.dart（开发者的话的验签与签名工具）；测试用的签名钥在 content_signing_support.dart。
+- reminder_test.dart（课前提醒）、home_widget_test.dart（小组件）、app_update_test.dart（清单验签与解析、安装包文件与清理）、content_signing_test.dart（内置公钥表、信封与域前缀、私钥文件、发版清单工具的签名与核对、体积上限）、developer_notes_test.dart（开发者的话的验签与签名工具）、diagnostic_upload_test.dart（诊断包信封与上传：只有对应私钥解得开、请求形状、各种失败的说明、没有进展时中止）；测试用的签名钥在 content_signing_support.dart。
 - 原生侧（CourseWidgets.kt、CourseLive.kt、AppUpdateInstaller.kt）只有设备实测，单测里的替身证明不了原生比对写对了；ColorOS 流体云要在 OPPO 真机上看。

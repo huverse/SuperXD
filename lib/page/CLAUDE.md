@@ -51,7 +51,7 @@
   - account_page.dart：账号页 AccountPage（账号卡姓名下写学号 · 班级，只在这里写；AccountTitle 我的页共用、只传姓名）：记住账号（关闭即删凭据；重新开启要输密码、后台登录核对成功才保存，不换代次）、切换账号、导入旧版本数据（本机有旧数据才显示）；退出登录单独一组放最底。
   - appearance_page.dart：界面设置 AppearancePage：字号、配色、字体、深浅色、玻璃效果与背景。字号是字号条（_textSizeSection，人工决策见 local 的 textSizeMin）：数值是实际显示大小，默认跟随系统但最多到推荐上限、松在跟随会得到的那一档上回到跟随（系统字号超过推荐上限时松在「系统」刻度上存成那个大小），下方色条标这台手机的推荐范围（text_size_range.dart）、刻度标系统字号，再下面的预览卡按拖到的大小排；拖动中每过一档轻震、越过推荐上限重震，超出时说明哪里会改排，松手才改全应用（自定义图片经系统照片选择器，选图函数可注入）；可分享给好友（不含壁纸图片）。字体预览用 assets/font_previews 里预先画好的图（tool/font_previews.dart 生成），不为预览加载没在用的字体。滑杆拖动中只预览、松手保存，系统取消与读屏增减停手 300ms 补存，离开页面时存掉没存的预览。选项点了就生效，落库在 DisplaySettings 的保存锁里排队，保存时不禁用页面上的其他选项。改字号、换字体时整页重新排版，点的那一行经 theme 的 CampusAnchoredScrollController 停在手指下（字号另有连续过渡，见 local 的 CampusTextScale）。玻璃限档时点「完整」先解除限档。iOS 上字体多一项「系统字体」（文字直接预览，默认仍是 Maple），不显示玻璃效果（iOS 固定磨砂档，底栏是系统的）。
   - image_copy_pick.dart：通用取图 pickImageCopy 与多选 pickImagesCopy，返回副本路径与 discard；只删插件这次新留在缓存里的副本。壁纸、相册识别二维码共用，并经组合根注入百宝箱。
-  - developer_page.dart：开发者选项 DeveloperPage（开关、日志导出与清除、复制诊断摘要、连电脑的 adb 命令、性能浮层、节日预览（播登记的每一次节日动画与两种红包揭晓，不改日期、不抽签）、运行环境；关闭开发者模式删开发者模式日志）、日志查看 DeveloperLogPage（全部或错误、错误按种类合并写出现几次、搜索、点开看全文与复制）与悬浮开发者工具 DeveloperOverlay（开发者模式下浮在所有页面上、可拖动贴边，点开可标记当前页面与一句说明、查看日志、导出、进开发者选项；自带一层 Overlay，开关时不改页面的父级结构，性能浮层也画在这层里、不用 MaterialApp 的开关（那个会给整页加一层 Stack、换父级重建），[人工决策] 在类上）。
+  - developer_page.dart：开发者选项 DeveloperPage（开关、日志导出与清除、上传诊断包（配了中转才有；每次先确认写明内容、去向与保留期，按钮上原地显示加密中与上传百分比，传完换成诊断编号、点了复制，人工决策见 domain/diagnostic_upload.dart）、复制诊断摘要、连电脑的 adb 命令、性能浮层、节日预览（播登记的每一次节日动画与两种红包揭晓，不改日期、不抽签）、运行环境；关闭开发者模式删开发者模式日志）、日志查看 DeveloperLogPage（全部或错误、错误按种类合并写出现几次、搜索、点开看全文与复制）与悬浮开发者工具 DeveloperOverlay（开发者模式下浮在所有页面上、可拖动贴边，点开可标记当前页面与一句说明、查看日志、导出、进开发者选项；自带一层 Overlay，开关时不改页面的父级结构，性能浮层也画在这层里、不用 MaterialApp 的开关（那个会给整页加一层 Stack、换父级重建），[人工决策] 在类上）。
   - developer_notes_page.dart：开发者的话（人工决策见 domain/developer_note.dart）：列表页 DeveloperNotesPage（从新到旧、没读的标小圆点、下拉刷新、没有信时写「还没有内容」）、读信页（标题、正文原样显示可复制、落款写日期）与弹出的信 showDeveloperNoteLetter（玻璃弹窗里读全文，还有别的没读时多一个「查看全部」）；点开一封即记成读过。什么时候弹由组合根按打扰时机决定（application/app_moments.dart）。
   - festival/festival_stage.dart：节日动画的舞台 showFestivalCelebration 与场景类型 FestivalScene（这一次节日、长度、按 0–1 进度画的 builder、减少动画时的静态画面、这一次红包的主题 reward）：浮层路由（下面的页面不做转场、不登记弹窗层数），放完自己淡出，点一下或返回立即淡出；减少动画时显示静态画面或通用问候、festivalStillLength 后关。节日浮层（动画与拆红包）共用系统栏样式 festivalSystemOverlay（浅色图标、导航栏透明，不用 SystemUiOverlayStyle.light，它把导航栏涂成黑条）。人工决策见 domain/festival.dart。
   - festival/festival_catalog.dart：节日登记 festivalCatalog：每一次节日一项、一次一段单独设计的动画（场景文件放本目录），编号发出后不改；现在一项也没有，维护者点名哪个节日再加。festivalRewardTheme 按奖品的节日编号找这一次的红包主题，没登记用默认的流光卡；加一个节日主题只动两处：本目录照 reward_glow.dart 写一个 RewardTheme、场景的 reward 指向它。
@@ -92,7 +92,7 @@
 - 开发者的话：account_lifecycle_test.dart（「我的」页入口、小圆点与读信、新信在什么界面条件下弹）。
 - 节日：festival_test.dart（舞台、红包揭晓与按钮）、reward_sprites_test.dart（粒子贴图同原来画布画的对照；单独一个文件，因为贴图的加载全局缓存）与 account_lifecycle_test.dart（节日当天播动画、抽中接着拆红包）。
 - 私信页面：social_ui_test.dart（含好友课表导入的整份替换与逐项合并）、share_card_test.dart；合并规则在 schedule_merge_test.dart。
-- 开发者模式：developer_mode_test.dart。
+- 开发者模式：developer_mode_test.dart（含上传诊断包的确认、原地状态与诊断编号，没配中转时不出现）。
 - 扫码：qr_scan_test.dart（相机打不开与没给权限的说明、单次与连续模式、同一个码只交一次、iOS 两指缩放不触发右滑返回）。
 - 页面测试的合成数据网关是 fixture_campus_gateway.dart（读 assets/fixtures）。
 

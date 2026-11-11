@@ -59,6 +59,7 @@
 - app_shortcut.dart：常用功能快捷入口 AppShortcut（id、名字、自适应图标 PNG）与系统端口 AppShortcutPort（发布到长按应用图标的菜单、请求添加到桌面、取这次冷启动的入口、应用在后台时点入口的流）；device/app_shortcuts.dart 实现，组合根 app_shortcuts.dart 接线。
 - developer_note.dart：开发者的话 DeveloperNote（编号即 notes 目录里的文件名、标题、发出时刻、正文）与上限（最近 developerNoteLimit 封、标题与正文字数）；decodeDeveloperNotes 是清单的外部输入边界；developerNoteLetter 决定该弹哪封（最新一封、没弹过、发出不满 14 天）；端口 DeveloperNoteFeed（device 实现）与 DeveloperNoteMemory（local 实现）。人工决策在文件头。
 - festival.dart：节日 FestivalOccasion（编号、名字、校园时区的起止日期、抽奖活动编号）、奖品 FestivalPrize（口令或二维码内容、附言、揭晓过没有）、抽签结果 FestivalDraw（抽中、没抽中、活动不在进行）；活跃天数规则 festivalActiveDays（近 30 天）、奖品保留 festivalPrizeKept（节日结束后 3 天）、什么时候要有抽奖身份 festivalPassNeeded（有抽奖的节日开始前 festivalPassLeadDays 天到结束）；本机记录 FestivalRecord（含抽奖身份的状态 FestivalPassState）与端口 FestivalMemory（local 实现）、抽奖身份 FestivalPass（social 实现）、FestivalRewardClient（device 实现），中转不认抽奖设备时抛 FestivalNotEnrolled。人工决策在文件头，概率模型在服务端 server/src/modules/reward/reward_odds.ts。
+- diagnostic_upload.dart：诊断包上传的端口 DiagnosticUploader（device 实现）、DiagnosticUploadException 与服务器保留天数 diagnosticUploadKeepDays（与服务端 relay_limits.ts 一致）；人工决策在文件头（用户确认后才传、内容同导出的日志包、本机加密、凭诊断编号联系开发者）。
 - interruption.dart：打扰时机的上下课安静期 classQuietUntil（开课前 20 分钟到开课后 5 分钟、下课前 5 分钟到下课后 10 分钟，相连的并成一段，返回这段结束的时刻）；人工决策在文件头，其余条件见 application/app_moments.dart。
 - common_free.dart：好友课表与自己课表的共同空闲。compareWeek 按好友那一周的日期对齐双方周次（任一方缺开学日时按相同周次），busyPeriods 求某周每天占用的节次，commonFree 合并双方都空的连续节次并配上作息时刻；周末任一方有课才显示周末。
 
@@ -99,4 +100,4 @@
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/domain
-- 本目录的标记位于自动同步与三方合并（auto_sync.dart 文件头）、日志出口、节次展开、单周调整、按课名合并、版本恢复、开发者的话（developer_note.dart 文件头）、打扰时机的安静期（interruption.dart 文件头）、节日（festival.dart 文件头）。
+- 本目录的标记位于自动同步与三方合并（auto_sync.dart 文件头）、日志出口、节次展开、单周调整、按课名合并、版本恢复、开发者的话（developer_note.dart 文件头）、打扰时机的安静期（interruption.dart 文件头）、节日（festival.dart 文件头）、诊断包上传（diagnostic_upload.dart 文件头）。
