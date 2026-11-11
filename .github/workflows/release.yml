@@ -2,7 +2,7 @@ name: Release
 
 # 发版流水线（步骤与约定见 CONTRIBUTING.md「版本与发布」）：升版本 PR（改 pubspec.yaml 的 version 与 CHANGELOG 版本节）合并到 main 即触发；
 # 签名密钥、高德 key、中转地址只在构建这一步（release 环境）可用。之后发 GitHub Release，再经受限账号传到中转（先包后清单、删旧包）并在公网核对。
-# 手动运行默认试跑（dry_run）：构建、验签、生成清单并试连中转，不发 Release、不改中转。
+# 手动运行默认试跑（dry_run）：构建、验签、生成并签名清单、试连中转，不发 Release、不改中转。
 # [人工决策-2026-10-18 23:46:56] 发版自动化（用户选定）：全托管 CI（签名密钥等放受保护的 release 环境，中转经只能写发布目录的受限账号上传）；
 # 合并升版本 PR 即触发；应用内更新说明取自 CHANGELOG 版本节的「### 更新说明」。
 # [人工决策-2026-10-22 18:59:16] 全自动发版（用户选定，替代原「仍要维护者网页批准一次」）：release 环境去掉必需审批人、保留只限受保护分支，
@@ -149,11 +149,19 @@ jobs:
             echo "[Release] action=verify abi=$abi size=$(stat -c %s "$apk")"
           done
           (cd dist && sha256sum SuperXD-*.apk > SHA256SUMS)
+      # 版本清单按架构各签一份（人工决策见 lib/device/signed_content.dart），私钥只在这一步写进临时文件、用完即删；
+      # 签完用客户端源码里内置的公钥与客户端的解析代码再验一遍（content_signing.dart check-release），机密里的私钥和源码对不上、验不过就停。
       - name: 更新说明、Release 正文与版本清单
+        env:
+          MANIFEST_SIGNING_KEY: ${{ secrets.MANIFEST_SIGNING_KEY }}
         run: |
           set -euo pipefail
           dart run tool/release_changelog.dart --version "$VERSION" --commit "$GITHUB_SHA" --certificate "$RELEASE_CERT_SHA256" --notes-out "$RUNNER_TEMP/notes.txt" --body-out dist/release_body.md
-          dart run tool/release_manifest.dart --apks dist --notes "$RUNNER_TEMP/notes.txt" --out dist --min-supported "$RELEASE_MIN_SUPPORTED"
+          key="$RUNNER_TEMP/manifest_signing_key.pem"
+          trap 'rm -f "$key"' EXIT
+          (umask 077 && printf '%s\n' "$MANIFEST_SIGNING_KEY" > "$key")
+          dart run tool/release_manifest.dart --apks dist --notes "$RUNNER_TEMP/notes.txt" --out dist --min-supported "$RELEASE_MIN_SUPPORTED" --signing-key "$key"
+          dart run tool/content_signing.dart check-release dist/alpha.json --channel alpha
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:
           name: release
@@ -300,6 +308,13 @@ jobs:
           printf '%s\n' "$RELAY_SSH_KEY" > ~/.ssh/relay
           printf '%s\n' "$RELAY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           echo "RSYNC_RSH=ssh -i $HOME/.ssh/relay -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=30" >> "$GITHUB_ENV"
+      # 带签名信封的清单在旧版中转上会被当成写坏的文件拒绝（新旧客户端都查不到更新），所以上传前先确认中转已部署能透传信封的版本：
+      # 新版中转的返回里总有 envelope 字段（文件里没有时为 null）。试跑也查，好在发版前发现。
+      - name: 核对中转能透传签名
+        run: |
+          set -euo pipefail
+          served=$(curl -fsS --max-time 30 "$RELAY_URL/v1/app/releases/alpha?abi=arm64-v8a")
+          python3 -I -c 'import json, sys; sys.exit(0 if "envelope" in json.loads(sys.argv[1]) else 1)' "$served" || { echo "::error::中转还没部署透传签名信封的版本，先部署服务端（server/README.md 部署一节）再发版"; exit 1; }
       - name: 试连（试跑）
         if: env.PUBLISH != 'true'
         run: rsync --list-only "$RELAY_TARGET:"
@@ -323,6 +338,8 @@ jobs:
             expected=$(grep " SuperXD-$VERSION-$abi.apk\$" dist/SHA256SUMS | cut -d' ' -f1)
             read -r code sha url < <(python3 -I -c 'import json, sys; release = json.loads(sys.argv[1]); print(release["versionCode"], release["apk"]["sha256"], release["apk"]["url"])' "$manifest")
             if [ "$code" != "$CODE" ] || [ "$sha" != "$expected" ]; then echo "::error::$abi 中转清单对不上（versionCode=$code）"; exit 1; fi
+            # 新客户端只认签名信封：返回里这个架构的信封要与构建作业签好、验过的那份一字不差。
+            python3 -I -c 'import json, sys; built = json.load(open("dist/alpha.json", encoding="utf-8")); sys.exit(0 if json.loads(sys.argv[1]).get("envelope") == built["envelopes"][sys.argv[2]] else 1)' "$manifest" "$abi" || { echo "::error::$abi 中转返回的签名信封与签好的不一致"; exit 1; }
             status=$(curl -sS --max-time 30 -r 0-0 -o /dev/null -w '%{http_code}' "$RELAY_URL$url")
             if [ "$status" != 206 ]; then echo "::error::$abi 安装包断点下载返回 $status"; exit 1; fi
             echo "[Release] action=relay_check abi=$abi versionCode=$code"

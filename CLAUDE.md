@@ -111,12 +111,12 @@
 # 测试
 
 - 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、请求记录、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由、页面滚动区渐隐、顶栏玻璃圆钮、toImageSync 只用于云雾贴图、内嵌网页拖动归网页），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
-- 共用的测试支撑：fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、toolbox_test_support.dart、form_layout_support.dart、text_fit_support.dart（扫一屏文字的裁切、孤字与单独成行的标点）、app_update_fakes.dart、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
-- tool 下的手动入口不进 CI（发版两个工具由发版流水线调用），运行方式见各文件头：
+- 共用的测试支撑：fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、toolbox_test_support.dart、form_layout_support.dart、text_fit_support.dart（扫一屏文字的裁切、孤字与单独成行的标点）、app_update_fakes.dart、content_signing_support.dart（测试用签名钥）、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
+- tool 下的手动入口不进 CI（发版三个工具由发版流水线调用），运行方式见各文件头：
   - 访问真实服务，只在授权环境与授权账号上手动运行：verify_edu.dart、verify_grades.dart（教务）、verify_chaoxing.dart（学习通，输出脱敏）。
   - 经真实中转、只用合成数据：verify_social.dart、verify_chaoxing_pack.dart。
   - 设备与原生验证：verify_toolbox.dart（原生下载导出）、verify_chaoxing_map.dart（网页版高德选点，要 SUPERXD_AMAP_WEB_KEY 与 SUPERXD_AMAP_WEB_SECRET）、motion_release_test.dart（发布包的图标字体）。
-  - 发版：release_changelog.dart（从 CHANGELOG 取更新说明与 Release 正文，正文模板 release_body.md）、release_manifest.dart（生成更新清单）。
+  - 发版：release_changelog.dart（从 CHANGELOG 取更新说明与 Release 正文，正文模板 release_body.md）、release_manifest.dart（生成更新清单并按架构签名）、content_signing.dart（清单与开发者的话的签名，以及签完按客户端内置公钥再验一遍的 check-release、check-notes；私钥在仓库外，人工决策见 lib/device/signed_content.dart），开发者的话流水线另用它与 developer_notes.dart。
   - 生成与演示：painting_colors.dart（开屏画作清单里的尺寸与天空色，加画时跑）、readme_demo.dart（README 截图）、font_previews.dart（字体预览图）、schedule_smoke.dart、glass_preview.dart、motion_preview.dart。
 
 # 已知约束

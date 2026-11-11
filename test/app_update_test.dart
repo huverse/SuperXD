@@ -12,9 +12,12 @@ import 'package:path/path.dart' as path;
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/device/app_package_files.dart';
 import 'package:superxd/device/relay_release_feed.dart';
+import 'package:superxd/device/signed_content.dart';
 import 'package:superxd/domain/app_update.dart';
 import 'package:superxd/local/app_update_memory.dart';
+import '../tool/content_signing.dart';
 import 'app_update_fakes.dart';
+import 'content_signing_support.dart';
 
 void main() {
   group('规则', () {
@@ -199,67 +202,149 @@ void main() {
   });
 
   group('版本清单', () {
-    final valid = {
+    late TestSigning signing;
+    setUpAll(() async => signing = await TestSigning.create());
+
+    // 发版工具给每个架构各签一份的载荷（tool/release_manifest.dart 的 releasePayload）。
+    final payload = <String, Object?>{
+      'channel': 'alpha',
+      'abi': 'arm64-v8a',
       'versionCode': 5,
       'versionName': '1.0.0-alpha.4',
       'publishedAt': '2026-10-16T08:00:00Z',
       'minSupportedVersionCode': 0,
       'notes': '修了一些问题',
       'releasePage': 'https://github.com/huverse/SuperXD/releases/tag/v1.0.0-alpha.4',
-      'apk': {'url': '/v1/app/files/SuperXD-1.0.0-alpha.4-arm64-v8a.apk', 'size': 1024, 'sha256': fakeSha},
+      'apk': {'file': 'SuperXD-1.0.0-alpha.4-arm64-v8a.apk', 'size': 1024, 'sha256': fakeSha},
+    };
+    // 中转的返回：明文字段给旧客户端（这里故意写成别的值，新客户端一律不用），envelope 是这个架构签好的信封。
+    Future<Map<String, Object?>> signedResponse(Map<String, Object?> payload, {List<SigningKey>? signers, SignedContent content = SignedContent.release}) async => {
+      'versionCode': 99,
+      'versionName': '9.9.9',
+      'publishedAt': '2026-10-16T08:00:00Z',
+      'minSupportedVersionCode': 99,
+      'notes': '明文',
+      'releasePage': 'https://evil.test/',
+      'apk': {'url': '/v1/app/files/evil.apk', 'size': 1, 'sha256': fakeSha},
+      'envelope': await signing.seal(payload, content, signers ?? [signing.release]),
     };
     // 正文按 UTF-8 编码（http.Response 默认 latin1，中文会直接抛错）。
-    http.Response reply(String body, int status) => http.Response.bytes(utf8.encode(body), status, headers: {'content-type': 'application/json; charset=utf-8'});
-    RelayReleaseFeed feed(MockClient client, {Duration timeout = const Duration(seconds: 15)}) =>
-        RelayReleaseFeed('http://relay.test:8080', channel: 'alpha', abi: 'arm64-v8a', client: client, timeout: timeout);
+    http.Response reply(Object? body, int status) =>
+        http.Response.bytes(utf8.encode(body is String ? body : jsonEncode(body)), status, headers: {'content-type': 'application/json; charset=utf-8'});
+    RelayReleaseFeed feed(MockClient client, {Duration timeout = const Duration(seconds: 15), bool packages = true}) =>
+        RelayReleaseFeed('http://relay.test:8080', channel: 'alpha', abi: 'arm64-v8a', packages: packages, keys: signing.keys, client: client, timeout: timeout);
+    Matcher failsWith(String message) => throwsA(isA<AppUpdateException>().having((error) => error.message, 'message', message));
 
-    test('按渠道与架构请求，安装包地址拼在中转地址后面', () async {
+    test('按渠道与架构请求，只认验过签的载荷，安装包地址拼在中转地址后面', () async {
       late Uri requested;
+      final body = await signedResponse(payload);
       final release = await feed(MockClient((request) async {
         requested = request.url;
-        return reply(jsonEncode(valid), 200);
+        return reply(body, 200);
       })).latest();
       expect(requested.toString(), 'http://relay.test:8080/v1/app/releases/alpha?abi=arm64-v8a');
-      expect(release!.versionCode, 5);
+      expect([release!.versionCode, release.minSupportedVersionCode, release.notes], [5, 0, '修了一些问题']);
       expect(release.publishedAt, DateTime.utc(2026, 10, 16, 8));
+      expect(release.releasePage.toString(), 'https://github.com/huverse/SuperXD/releases/tag/v1.0.0-alpha.4');
       expect(release.apk!.url.toString(), 'http://relay.test:8080/v1/app/files/SuperXD-1.0.0-alpha.4-arm64-v8a.apk');
     });
 
     test('渠道没有发布版本返回空，限流与服务端错误给原因', () async {
       expect(await feed(MockClient((_) async => reply('{"code":"RELEASE_NOT_FOUND","message":"x"}', 404))).latest(), isNull);
-      await expectLater(
-        feed(MockClient((_) async => reply('{"code":"RATE_LIMITED","retryAfter":30}', 429))).latest(),
-        throwsA(isA<AppUpdateException>().having((error) => error.message, 'message', '检查更新的人太多，请稍后再试')),
-      );
+      await expectLater(feed(MockClient((_) async => reply('{"code":"RATE_LIMITED","retryAfter":30}', 429))).latest(), failsWith('检查更新的人太多，请稍后再试'));
       await expectLater(feed(MockClient((_) async => reply('{"code":"INTERNAL"}', 500))).latest(), throwsA(isA<AppUpdateException>()));
       await expectLater(feed(MockClient((_) async => reply('<html>', 502))).latest(), throwsA(isA<AppUpdateException>()));
     });
 
-    test('清单是外部输入：别处的下载地址、非 https 发布页、坏哈希、超长响应都不认', () async {
-      for (final broken in [
-        {...valid, 'apk': {'url': 'http://evil.test/a.apk', 'size': 1, 'sha256': fakeSha}},
-        {...valid, 'apk': {'url': '/v1/app/files/../x.apk', 'size': 1, 'sha256': fakeSha}},
-        {...valid, 'apk': {'url': '/v1/app/files/a.apk', 'size': 1, 'sha256': 'XYZ'}},
-        {...valid, 'releasePage': 'http://github.com/x'},
-        {...valid, 'versionCode': 0},
-        {...valid, 'versionName': ''},
+    // 中间人能改明文 HTTP 上的任何字节：没有信封（旧中转或旧清单）、改过的载荷、坏签名、拿开发者的话的钥签、冒名的钥、
+    // 签成开发者的话的内容类型，都不认、不提示更新。
+    test('没有签名或验不过：按失败处理，不用明文字段', () async {
+      final signed = await signedResponse(payload);
+      final envelope = signed['envelope']! as Map<String, Object?>;
+      String encoded(Map<String, Object?> payload) => base64Url.encode(utf8.encode(jsonEncode(payload))).replaceAll('=', '');
+      for (final body in [
+        {...signed}..remove('envelope'),
+        {...signed, 'envelope': null},
+        {...signed, 'envelope': {...envelope, 'signed': encoded({...payload, 'minSupportedVersionCode': 99})}},
+        {...signed, 'envelope': {...envelope, 'signatures': [{'keyId': 'release-test', 'sig': 'A' * 86}]}},
+        {...signed, 'envelope': {...envelope, 'signatures': <Object>[]}},
+        {...signed, 'envelope': {...envelope, 'signed': '不是base64'}},
+        {...signed, 'envelope': {...envelope, 'signatures': [{'keyId': 'release-test', 'sig': 'short'}]}},
+        await signedResponse(payload, signers: [signing.notes]),
+        await signedResponse(payload, signers: [signing.stranger]),
+        await signedResponse(payload, content: SignedContent.notes),
       ]) {
-        await expectLater(feed(MockClient((_) async => reply(jsonEncode(broken), 200))).latest(), throwsA(isA<AppUpdateException>()), reason: '$broken');
+        await expectLater(feed(MockClient((_) async => reply(body, 200))).latest(), failsWith('更新信息没通过校验，请稍后再试'), reason: '$body');
       }
-      final huge = jsonEncode({...valid, 'notes': 'x' * (appReleaseResponseMaxBytes + 1)});
-      await expectLater(feed(MockClient((_) async => reply(huge, 200))).latest(), throwsA(isA<AppUpdateException>()));
-      // 没有这个架构的包：apk 为空，照样是有效清单。
-      expect((await feed(MockClient((_) async => reply(jsonEncode({...valid, 'apk': null}), 200))).latest())!.apk, isNull);
     });
 
-    // iOS 不能在应用里安装（[人工决策] 见 main.dart 的 appUpdates）：只看版本与更新说明，弹窗给「去发布页下载」。
+    test('离线备用钥签的照样认，换钥时多签一份也认', () async {
+      for (final signers in [
+        [signing.offline],
+        [signing.stranger, signing.release],
+      ]) {
+        final body = await signedResponse(payload, signers: signers);
+        expect((await feed(MockClient((_) async => reply(body, 200))).latest())!.versionCode, 5);
+      }
+    });
+
+    test('别的渠道、别的架构的签名载荷不认（防重放）', () async {
+      for (final replayed in [
+        {...payload, 'channel': 'beta'},
+        {...payload, 'abi': 'x86_64'},
+      ]) {
+        final body = await signedResponse(replayed);
+        await expectLater(feed(MockClient((_) async => reply(body, 200))).latest(), failsWith('更新信息格式不对，请稍后再试'), reason: '$replayed');
+      }
+    });
+
+    test('签过名的载荷仍是外部输入：别处的安装包、非 https 发布页、坏哈希、超长响应都不认', () async {
+      for (final broken in [
+        {...payload, 'apk': {'file': '../x.apk', 'size': 1, 'sha256': fakeSha}},
+        {...payload, 'apk': {'file': 'http://evil.test/a.apk', 'size': 1, 'sha256': fakeSha}},
+        {...payload, 'apk': {'file': 'a.apk', 'size': 1, 'sha256': 'XYZ'}},
+        {...payload, 'releasePage': 'http://github.com/x'},
+        {...payload, 'versionCode': 0},
+        {...payload, 'versionName': ''},
+      ]) {
+        final body = await signedResponse(broken);
+        await expectLater(feed(MockClient((_) async => reply(body, 200))).latest(), throwsA(isA<AppUpdateException>()), reason: '$broken');
+      }
+      final huge = jsonEncode({'notes': 'x' * (appReleaseResponseMaxBytes + 1)});
+      await expectLater(feed(MockClient((_) async => reply(huge, 200))).latest(), throwsA(isA<AppUpdateException>()));
+      // 没有这个架构的包：apk 为空，照样是有效清单。
+      final noApk = await signedResponse({...payload, 'apk': null});
+      expect((await feed(MockClient((_) async => reply(noApk, 200))).latest())!.apk, isNull);
+    });
+
+    // iOS 不能在应用里安装（[人工决策] 见 main.dart 的 appUpdates）：取 arm64 那份，只看版本与更新说明，弹窗给「去发布页下载」。
     test('不要安装包时清单照样有效，只是没有安装包', () async {
-      final release = await RelayReleaseFeed('http://relay.test:8080', channel: 'alpha', abi: 'arm64-v8a', packages: false, client: MockClient((_) async => reply(jsonEncode(valid), 200))).latest();
+      final body = await signedResponse(payload);
+      final release = await feed(MockClient((_) async => reply(body, 200)), packages: false).latest();
       expect([release!.versionCode, release.apk, release.releasePage.toString()], [5, isNull, 'https://github.com/huverse/SuperXD/releases/tag/v1.0.0-alpha.4']);
+    });
+
+    test('自动检查遇到验不过的清单：不弹、不记成查过，手动检查给原因', () async {
+      final body = await signedResponse({...payload, 'minSupportedVersionCode': 5}, signers: [signing.stranger]);
+      final fixture = UpdateFixture();
+      final updates = AppUpdates(
+        feed: feed(MockClient((_) async => reply(body, 200))),
+        files: fixture.files,
+        installer: fixture.installer,
+        memory: fixture.memory,
+        installedVersionCode: 4,
+        foreground: () => true,
+        clock: () => fixture.now,
+      );
+      await updates.autoCheck();
+      expect([updates.phase, updates.urgency, updates.takePrompt(), fixture.memory.lastCheckedAt], [AppUpdatePhase.idle, AppUpdateUrgency.none, isNull, isNull]);
+      await updates.check();
+      expect([updates.phase, updates.error], [AppUpdatePhase.failed, '更新信息没通过校验，请稍后再试']);
     });
 
     test('连不上或超时给原因，不自动重试', () async {
       var calls = 0;
+      final body = await signedResponse(payload);
       await expectLater(
         feed(MockClient((_) async {
           calls++;
@@ -271,9 +356,9 @@ void main() {
         feed(MockClient((_) async {
           calls++;
           await Future<void>.delayed(const Duration(milliseconds: 200));
-          return reply(jsonEncode(valid), 200);
+          return reply(body, 200);
         }), timeout: const Duration(milliseconds: 20)).latest(),
-        throwsA(isA<AppUpdateException>().having((error) => error.message, 'message', '连不上更新服务器，请稍后再试')),
+        failsWith('连不上更新服务器，请稍后再试'),
       );
       expect(calls, 2);
     });
