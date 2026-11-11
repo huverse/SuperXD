@@ -258,7 +258,7 @@ class PddNoPackageMobileInfo {
 }
 
 List<Map<String, Object?>> _mapList(Object? value) =>
-    value is List ? value.whereType<Map>().map((entry) => entry.cast<String, Object?>()).toList() : const [];
+    value is List ? value.whereType<Map<Object?, Object?>>().map((entry) => entry.cast<String, Object?>()).toList() : const [];
 
 // 查一件包裹物流要的参数，同官方物流页（/track）读它链接里的：带 order_sn（驿站包裹的记录号）的查驿站物流，按 order_sn、source_type 与 entry_source；
 // 没有的按 tracking_number、shipping_id 与可选的 source_type 查（见 ExpressClient.queryShippingTrack）。

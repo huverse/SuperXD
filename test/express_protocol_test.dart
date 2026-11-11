@@ -125,7 +125,7 @@ void main() {
 
     // 结构取自 10-21 审阅移交包的真实响应（已脱敏），站名与站点码换成合成值。
     test('带驿站码查的结果读出站名与「只能微信扫码取件」（true 或 1 都算）', () {
-      const body = {'count': 0, 'show_mobile_alias': true, 'can_add_package': true, 'station_name': '合成驿站', 'only_wx_scan': true, 'no_package_mobile_info': {'mobileList': [], 'largerThan2': false}};
+      const body = {'count': 0, 'show_mobile_alias': true, 'can_add_package': true, 'station_name': '合成驿站', 'only_wx_scan': true, 'no_package_mobile_info': {'mobileList': <Object?>[], 'largerThan2': false}};
       final result = StationPackagesResult.fromJson(body);
       expect(result.stationName, '合成驿站');
       expect(result.onlyWxScan, isTrue);

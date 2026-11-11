@@ -66,7 +66,7 @@ class ExpressClient {
     final data = await _postJson('/api/apoc/express/detail', referer: PddConstants.mdkdReferer, body: const {'entry_source': 17});
     final list = data['new_binding_list'];
     if (list is! List) return const [];
-    return list.whereType<Map>().map((entry) => PddBoundMobile.fromJson(entry.cast<String, Object?>())).toList();
+    return list.whereType<Map<Object?, Object?>>().map((entry) => PddBoundMobile.fromJson(entry.cast<String, Object?>())).toList();
   }
 
   // 本账号的拼多多昵称（只读，同官方 mdkd「我的」一栏的同一接口与 scene），只给账号卡认出是哪个账号。

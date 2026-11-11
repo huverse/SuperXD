@@ -27,7 +27,9 @@ jobs:
           cache: true
       - run: flutter pub get --enforce-lockfile
       - run: flutter analyze
-      - run: flutter test --reporter expanded
+      - run: flutter test --coverage --reporter expanded
+      # lib 的行覆盖率低于门槛就失败（门槛与 [人工决策] 在工具文件里）。
+      - run: dart run tool/coverage_check.dart
 
   # [人工决策-2026-10-26 20:18:03] iOS 只出未签名 ipa，测试者在手机上用全能签加自己的证书签名安装（用户选定，不买开发者账号、不走 TestFlight）。
   # 本机是 Linux、没有 Mac，iOS 只能在这里编译；PR 包不带中转地址与高德 key，私信、代签、更新与地图不可用。
@@ -70,7 +72,24 @@ jobs:
           path: |
             build/ios-ipa/SuperXD-alpha-unsigned.ipa
             build/ios-ipa/SuperXD-alpha-dSYMs.zip
+          retention-days: 14
+      # [人工决策-2026-11-10 12:58:48] iOS 依赖锁定（用户同意按最佳实践处理）：CocoaPods 的 ios/Podfile.lock 与 Swift Package 的 Package.resolved 都提交进仓库，
+      # 构建把它们改写了或新生成了就失败，并把新锁文件上传成产物 ios-lockfiles，由维护者核对后提交（本机没有 Mac，取法见 CONTRIBUTING.md「供应链」）。
+      # 放在测试包上传之后，锁文件对不上时测试包照样留着；没选只告警不失败（锁文件会悄悄漂移，构建就又不可复现了）。
+      - name: Check iOS lockfiles
+        id: ios-locks
+        run: |
+          set -euo pipefail
+          git status --porcelain --untracked-files=all -- ios
+          changed=$(git status --porcelain --untracked-files=all -- ios/Podfile.lock ':(glob)ios/**/Package.resolved')
+          if [ -n "$changed" ]; then echo "::error::iOS 锁文件被构建改写或新生成，下载产物 ios-lockfiles 核对后提交：${changed//$'\n'/ ; }"; exit 1; fi
+      - if: failure() && steps.ios-locks.outcome == 'failure'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ios-lockfiles
+          path: |
             ios/Podfile.lock
+            ios/**/Package.resolved
           retention-days: 14
 
   relay-check:

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -72,11 +73,11 @@ void main() {
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(await remove, isFalse);
-    showCampusDialog<void>(context: page, builder: (context) => CampusGlassDialog(title: const Text('作息'), actions: [
+    unawaited(showCampusDialog<void>(context: page, builder: (context) => CampusGlassDialog(title: const Text('作息'), actions: [
       TextButton(onPressed: () => Navigator.pop(context), child: const Text('暂不采用')),
       TextButton(onPressed: () => Navigator.pop(context), child: const Text('看下一套')),
       FilledButton(onPressed: () => Navigator.pop(context), child: const Text('用这套')),
-    ]));
+    ])));
     await tester.pumpAndSettle();
     final top = tester.getRect(find.widgetWithText(FilledButton, '用这套')), bottom = tester.getRect(find.widgetWithText(TextButton, '暂不采用'));
     expect(top.top, lessThan(bottom.top));

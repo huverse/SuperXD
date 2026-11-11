@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/widgets.dart';
 import 'package:synchronized/synchronized.dart';
@@ -36,9 +37,10 @@ abstract final class SocialCode {
 // 私信编排：本机库、设备身份与中转服务之间的唯一入口，页面只经它读写。设备级，切换教务账号保留。
 // 联网时机：开启、出示/扫码、发送、刷新（回到前台、进入私信、下拉），以及前台长轮询收消息。除校时重发一次外不自动重试。
 class SocialService extends ChangeNotifier {
-  SocialService({required this.store, required this.vault, RelayTransport? transport, DateTime Function()? clock, this.polling = false})
+  SocialService({required this.store, required this.vault, RelayTransport? transport, DateTime Function()? clock, Random? random, this.polling = false})
     : _relay = transport == null ? null : RelayClient(transport),
-      _clock = clock ?? DateTime.now;
+      _clock = clock ?? DateTime.now,
+      _random = random ?? Random();
   // 就绪后是否在前台持续长轮询收消息（应用里开启；测试关闭，避免残留请求与定时器）。
   final bool polling;
   // 长轮询每次挂起时长，服务端上限 25 秒。
@@ -47,6 +49,8 @@ class SocialService extends ChangeNotifier {
   final IdentityVault vault;
   final RelayClient? _relay;
   final DateTime Function() _clock;
+  // 长轮询退避的随机抖动（见 liveRetryDelay）；测试注入固定的随机源。
+  final Random _random;
   final _refreshLock = Lock();
   final _uuid = const Uuid();
   SocialIdentity? _identity;
@@ -443,6 +447,11 @@ class SocialService extends ChangeNotifier {
     _ => '[Social] action=live errorType=${error.runtimeType} retryIn=${retryIn.inSeconds}s\n$stack',
   };
 
+  // [人工决策-2026-11-10 18:47:42] 长轮询失败的退避加随机抖动（用户确认 W7 工作包方向）：每档 2、4、8…秒、上限 60 秒不变，
+  // 实际等待在这一档的一半到整档之间随机，中转重启或断网恢复时各客户端不再同拍重连。选「一半到整档」（equal jitter），
+  // 没选「零到整档」（full jitter）：留住下限，失败后不会紧接着就再打一次。
+  static Duration liveRetryDelay(Duration backoff, Random random) => backoff * (0.5 + random.nextDouble() / 2);
+
   Future<void> _liveLoop() async {
     var backoff = const Duration(seconds: 2);
     var failures = 0;
@@ -465,8 +474,9 @@ class SocialService extends ChangeNotifier {
         } catch (error, stack) {
           // 都退避后继续，不让收消息在前台静默停掉。
           failures++;
-          campusLog(liveFailureLog(error, stack, failures: failures, retryIn: backoff));
-          await Future<void>.delayed(backoff);
+          final delay = liveRetryDelay(backoff, _random);
+          campusLog(liveFailureLog(error, stack, failures: failures, retryIn: delay));
+          await Future<void>.delayed(delay);
           backoff = backoff * 2 > const Duration(seconds: 60) ? const Duration(seconds: 60) : backoff * 2;
         }
       }

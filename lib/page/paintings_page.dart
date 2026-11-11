@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -41,7 +42,7 @@ class _SaveState extends ChangeNotifier {
     if (ok) saved.add(painting.id);
     notifyListeners();
     if (!ok) return '保存失败，请重试';
-    HapticFeedback.lightImpact();
+    unawaited(HapticFeedback.lightImpact());
     return null;
   }
 }

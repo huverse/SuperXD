@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_client.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
@@ -178,7 +180,8 @@ class ChaoxingAccounts {
       if (await record(client.phoneNumber) != null) await vault.writeCookies(client.phoneNumber, client.http.cookies.session);
       await store.setSessionExpired(client.phoneNumber, expired: false);
     } finally {
-      _reLogins.remove(client);
+      // 拿掉的就是这一次重登自己，调用方都在等它。
+      unawaited(_reLogins.remove(client));
     }
   }();
 

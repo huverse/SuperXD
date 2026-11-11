@@ -45,7 +45,7 @@ void autoSyncDispatcher() {
       _stopped = false;
       final deadline = DateTime.now().add(_budget);
       try {
-        if (!await _forward(deadline)) await (_headless = _runHeadless(deadline));
+        if (!await forwardAutoSync(deadline)) await (_headless = _runHeadless(deadline));
       } catch (error, stack) {
         campusLog('[AutoSync] action=background errorType=${error.runtimeType}\n$stack');
       } finally {
@@ -62,15 +62,16 @@ void autoSyncDispatcher() {
   );
 }
 
-// 交给前台那份跑，等它跑完；返回交没交出去。
-Future<bool> _forward(DateTime deadline) async {
+// 交给前台那份跑，等它跑完；返回交没交出去。ackWait 只有测试改短。
+@visibleForTesting
+Future<bool> forwardAutoSync(DateTime deadline, {Duration ackWait = _ackWait}) async {
   final app = IsolateNameServer.lookupPortByName(_portName);
   if (app == null) return false;
   final reply = ReceivePort();
   final replies = StreamIterator<Object?>(reply);
   try {
     app.send([reply.sendPort, deadline.millisecondsSinceEpoch]);
-    if (!await replies.moveNext().timeout(_ackWait, onTimeout: () => false)) {
+    if (!await replies.moveNext().timeout(ackWait, onTimeout: () => false)) {
       // 登记还在、前台已经没了：撤掉过期的登记（只撤这一个，期间前台重新登记的不动），自己跑。
       if (IsolateNameServer.lookupPortByName(_portName) == app) IsolateNameServer.removePortNameMapping(_portName);
       return false;
@@ -97,30 +98,38 @@ Future<void> _runHeadless(DateTime deadline) async {
   );
   campusLog = logs.tee(debugPrint);
   try {
-    final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
-    if (legal.agreedRevision == null) return;
-    ensureCampusClock();
     // 记住了账号的，会话过期时照常用存着的密码重新登录一次再重放（用户 11-09 允许后台自动重登，隐私政策第一节写明）。
-    final gateway = AccountGateway(store: await AccountStore.open(), credentials: SecureCredentialStore());
-    try {
-      if (!(await gateway.restoreLocalSession()).ok) {
-        campusLog('[AutoSync] action=background skipped=no_session');
-        return;
-      }
-      await AutoSync(gateway: gateway, generation: () => gateway.generation).runIfDue(
-        keepGoing: () => !_stopped && DateTime.now().isBefore(deadline) && IsolateNameServer.lookupPortByName(_portName) == null,
-      );
-    } finally {
-      await gateway.close();
-    }
+    await headlessAutoSync(deadline, support: support, openGateway: () async => AccountGateway(store: await AccountStore.open(), credentials: SecureCredentialStore()));
   } finally {
     await logs.flush(settle: true);
   }
 }
 
+// 应用不在时那一轮里不碰平台的部分（拆出来让测试注入应用支持目录与账号门面）：没同意协议与政策不联网，只用本机会话恢复，
+// 恢复不了就算了；到时限、系统叫停或前台登记了端口就在下一检查点停下；账号门面用完关掉。
+@visibleForTesting
+Future<void> headlessAutoSync(DateTime deadline, {required Directory support, required Future<AccountGateway> Function() openGateway}) async {
+  final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
+  if (legal.agreedRevision == null) return;
+  ensureCampusClock();
+  final gateway = await openGateway();
+  try {
+    if (!(await gateway.restoreLocalSession()).ok) {
+      campusLog('[AutoSync] action=background skipped=no_session');
+      return;
+    }
+    await AutoSync(gateway: gateway, generation: () => gateway.generation).runIfDue(
+      keepGoing: () => !_stopped && DateTime.now().isBefore(deadline) && IsolateNameServer.lookupPortByName(_portName) == null,
+    );
+  } finally {
+    await gateway.close();
+  }
+}
+
 // 前台登记：后台任务来了就在这里跑（到后台任务的时限为止），先回一声收到、跑完再回一声。热重启后旧登记可能还在，先撤再登。
 // 返回重新登记的函数：前台卡过一阵、被后台任务当成不在而撤掉了登记时，回到前台再登一次。
-void Function() _listenForBackgroundSync(AutoSync autoSync) {
+@visibleForTesting
+void Function() listenForBackgroundSync(AutoSync autoSync) {
   final port = ReceivePort();
   void register() {
     if (IsolateNameServer.lookupPortByName(_portName) == port.sendPort) return;
@@ -152,7 +161,7 @@ void watchAutoSync(AppSession session, AutoSync autoSync, {required Future<void>
   }
 
   unawaited(agreed.then((_) {
-    final register = _listenForBackgroundSync(autoSync);
+    final register = listenForBackgroundSync(autoSync);
     var generation = session.generation, loggedIn = session.loggedIn;
     session.addListener(() {
       if (session.generation == generation && session.loggedIn == loggedIn) return;
