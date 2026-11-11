@@ -203,19 +203,26 @@ void main() {
   }, variant: _ios);
 
   // [人工决策] 见 local/display_settings.dart 的 systemFont（10-27 起 iOS 默认改回 Maple）。
-  test('系统字体：iOS 新装默认 Maple、可选系统字体，安卓没有这一项', () async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+  // 安卓 11-10 起也有系统字体（人工决策见 display_settings.dart 的 systemFont），手机以外的平台没有。
+  test('系统字体：iOS 与安卓新装默认 Maple、都可选系统字体，别的平台没有这一项', () async {
+    for (final platform in [TargetPlatform.iOS, TargetPlatform.android]) {
+      debugDefaultTargetPlatformOverride = platform;
+      try {
+        final settings = DisplaySettings.memory();
+        expect(settings.fontId, 'maple', reason: '$platform');
+        expect(DisplaySettings.knownFont(DisplaySettings.systemFont), isTrue, reason: '$platform');
+        await settings.setFont(DisplaySettings.systemFont);
+        expect(settings.fontFamily, isNull, reason: '$platform');
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    }
+    debugDefaultTargetPlatformOverride = TargetPlatform.linux;
     try {
-      final settings = DisplaySettings.memory();
-      expect(settings.fontId, 'maple');
-      expect(DisplaySettings.knownFont(DisplaySettings.systemFont), isTrue);
-      await settings.setFont(DisplaySettings.systemFont);
-      expect(settings.fontFamily, isNull);
+      expect(DisplaySettings.knownFont(DisplaySettings.systemFont), isFalse);
     } finally {
       debugDefaultTargetPlatformOverride = null;
     }
-    expect(DisplaySettings.memory().fontId, 'maple');
-    expect(DisplaySettings.knownFont(DisplaySettings.systemFont), isFalse);
     expect(campusIos, isFalse);
   });
 }

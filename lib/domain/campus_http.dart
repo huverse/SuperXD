@@ -33,7 +33,7 @@ class CampusHttp {
 
   // headers 先写，再写请求体：body 按 http.Request.body 的规则写（UTF-8，Content-Type 缺 charset 时补上），bodyBytes 原样写、不动请求头；
   // multipart 是表单文件上传。logUri 是请求记录里写的地址（比如只写路由模板、不写一次性凭据），为空用 uri。
-  // collect 让调用方自己累加响应体（读到 limit 以上要自己停）：只给教务成绩那条「性能观察项」用，保持它原来的读法（见 lib/edu/CLAUDE.md）。
+  // collect 让调用方自己累加响应体（读到 limit 以上要自己停）：教务成绩那条「性能观察项」用它保持原来的读法（见 lib/edu/CLAUDE.md），字体包下载用它边收边报进度。
   Future<http.Response> send(
     String method,
     Uri uri, {

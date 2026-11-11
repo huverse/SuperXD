@@ -36,8 +36,12 @@ export class AppReleaseQueryDto {
   @ApiProperty({ description: '客户端 CPU 架构', enum: appAbis }) @IsIn(appAbis) abi: (typeof appAbis)[number];
 }
 
+// 下载接口的文件名：安装包，或按需下载的字体包文件（.ttf，客户端核对写死的 SHA-256，见客户端 lib/domain/font_pack.dart）。
+// 只许字母数字与 . _ -、不以点开头，杜绝路径穿越与清单等别的文件。
+const appDownloadFileName = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}\.(apk|ttf)$/;
+
 export class AppFileParamDto {
-  @ApiProperty({ description: '安装包文件名' }) @Matches(apkFileName) name: string;
+  @ApiProperty({ description: '安装包或字体包文件名' }) @Matches(appDownloadFileName) name: string;
 }
 
 export class AppReleaseApkDto {

@@ -43,11 +43,13 @@
   - CredentialStore：记住账号的凭据存取接口。
   - SecureCredentialStore：基于系统安全存储的实现，按账号键保存带版本号的 JSON。
 - display_settings.dart：设备级显示设置。
-  - DisplaySettings 存在 display_settings.db，包括字号（text_scale：0 是跟随系统，否则是字号条上选的实际显示大小 80%–200%、5% 一档，跟随系统时也不小于 80%、最多到组合根量的推荐上限，[人工决策] 在 textSizeMin 处）、配色（四套，默认 defaultPaletteId 雾蓝；改任何一项都整份快照落库，存过的保持原值，[人工决策] 在常量处）、字体（默认 Maple；iOS 多一项系统字体 systemFont，fontFamily 为空即系统字体，[人工决策] 在 systemFont 处）、深浅色、玻璃效果（auto、full、reduced，默认 auto），以及自定义壁纸（文件名、色调网格、模糊与淡化 0–100）。v6 把旧的三档下标按原效果换算成连续量；v7 把删掉的苔灰换成雾蓝、iOS 存着的系统字体一次性换成 Maple；v8 把字号从系统字号上的倍数换成实际大小（原来的标准跟随系统，较大及以上换成当时的系统字号 × 倍数）。
+  - DisplaySettings 存在 display_settings.db，包括字号（text_scale：0 是跟随系统，否则是字号条上选的实际显示大小 80%–200%、5% 一档，跟随系统时也不小于 80%、最多到组合根量的推荐上限，[人工决策] 在 textSizeMin 处）、配色（四套，默认 defaultPaletteId 雾蓝；改任何一项都整份快照落库，存过的保持原值，[人工决策] 在常量处）、字体（默认 Maple；安卓与 iOS 都多一项系统字体 systemFont，fontFamily 为空即系统字体，[人工决策] 在 systemFont 处；衬线是下载的字体包）、深浅色、玻璃效果（auto、full、reduced，默认 auto），以及自定义壁纸（文件名、色调网格、模糊与淡化 0–100）。v6 把旧的三档下标按原效果换算成连续量；v7 把删掉的苔灰换成雾蓝、iOS 存着的系统字体一次性换成 Maple；v8 把字号从系统字号上的倍数换成实际大小（原来的标准跟随系统，较大及以上换成当时的系统字号 × 倍数）。
   - wallpaperLook 是壁纸模糊与淡化的当前外观：previewWallpaper 只改它、不落库，背景单独监听；setWallpaperLook 立即更新外观并在保存锁内落库，落库后不回写外观（保存期间继续拖动不会被拽回）。
   - 壁纸文件交给 WallpaperStore；复制、落库、删旧文件在保存锁内一次完成。启动时文件丢失则按未设置处理，并清理残留文件。
   - DisplayScope 负责向下传递；CampusTextScale 把字号（跟随系统或选的大小；跟随时最多到 followLimit，由组合根的 page/text_size_range.dart 的 TextSizeComfort 量好传入）按线性缩放交给全应用，变化时在 duration 内连续过渡（组合根套在 MaterialApp.builder 里，减少动画时直接换，[人工决策] 在类上），systemOf 给界面页取系统本来的字号。
-  - appearance 是当前界面配置（AppearanceShare，不含壁纸图片），用于分享与套用前的撤销点；applyAppearance 套用好友分享的配置，本版本支持的取值在保存锁内一并落库，不支持的保持不变并返回跳过的项名。
+  - appearance 是当前界面配置（AppearanceShare，不含壁纸图片），用于分享与套用前的撤销点；applyAppearance 套用好友分享的配置，本版本支持的取值在保存锁内一并落库，不支持的保持不变并返回跳过的项名；里面的衬线本机没装时照样选上并开始下载，这个版本下不了（没配中转、本机也没有）才按不支持跳过。
+  - 字体包（人工决策见 domain/font_pack.dart）：fontPacks 是组合根注入的 FontPackLibrary（测试与内存实例为空，此时字体包里的字体当作已装好）。fontId 是选的字体，fontInUse 是界面实际用的：选的字体包还没装好（升级上来、下载中、文件坏了）时先用默认字体、选择保留，装好再换过去，只在实际用的字体变了才通知（下载进度不让整个应用重建）。open 时选着字体包就核对本机文件并注册（首帧之前，不联网）；chooseFont（界面页点选）先下载、核对、注册好再换上，期间又点了别的就作罢；ensureFontPack 由组合根在同意协议与政策之后调，把选着却没装的下回来；deleteFontPack 正在用就先换回默认字体再删文件。
+- font_packs.dart：FontPackLibrary 管下载的字体包（人工决策见 domain/font_pack.dart）：文件放应用支持目录 font_packs（排除出系统备份与换机迁移，iOS 由组合根标记），每个文件核对大小与 SHA-256 才用（下载完一次、注册前读文件时再一次，都在后台 isolate 里读与算），用 FontLoader 注册（registerFontPack，测试可注入）；下载经组合根注入的 FontPackSource（device 层，没配中转时为空、只能用已经下好的）；同一个包同时只装一份；进度按整百分比通知；失败留着已下好的字重、重试只下缺的，取消与删除把这个包的文件全删。保留与清理：只留登记表里现有的文件（每个包几 MB 的固定一组），打开时删掉别的（旧版本、下载残留）；换字体不删，用户可在界面页⋯里删除，系统清除数据或卸载即删。
 - wallpaper_store.dart：WallpaperStore 管理壁纸文件，放在应用支持目录 display/wallpaper 下，只保留当前一份，单图上限 20MB；每次导入用新文件名。
 - app_update_memory.dart：FileAppUpdateMemory 实现应用更新的检查记录端口 AppUpdateMemory：应用支持目录下固定大小的 app_update.json（上次检查成功的时刻 UTC、跳过的版本、是否待必须更新），先写临时文件再改名；读到坏文件当没有记录。不放数据库：只有三个字段，不随数据增长。
 - legal_notice_memory.dart：LegalNoticeMemory 记用户协议与隐私政策同意过、看过哪一版：应用支持目录下固定大小的 legal_notice.json（同意与已读两个修订号），写法同上；check 决定弹什么（没在首次启动弹窗里同意过的先征得同意，新装与老用户都算；同意过的有实质变化时提示一次，[人工决策] 在方法上），takePending 一次运行只取一次（pending 表示还有没取走的，打扰时机等它先弹），点「同意」后 markAgreed、点「知道了」后 markSeen；agreed 在同意后完成，组合根等它再联网。
@@ -88,7 +90,7 @@
 
 - 账号库与旧库：account_store_test.dart、account_isolation_test.dart、legacy_import_test.dart。
 - 课表与作息持久化：schedule_version_test.dart、schedule_migration_test.dart、bells_persistence_test.dart；等用户来选的教务课表、自动同步设置与 v8 升级：auto_sync_test.dart。
-- 显示设置与壁纸：appearance_settings_test.dart、wallpaper_test.dart；开屏画作的轮换与保存：painting_test.dart；应用更新检查记录：app_update_test.dart；开发者的话的本机记录：developer_notes_test.dart；节日的本机记录：festival_test.dart；协议已读记录：legal_page_test.dart；本机日志与开发者设置：diagnostic_log_test.dart。
+- 显示设置与壁纸：appearance_settings_test.dart、wallpaper_test.dart；字体包的本机文件、核对、注册与显示设置的接线：font_pack_test.dart；开屏画作的轮换与保存：painting_test.dart；应用更新检查记录：app_update_test.dart；开发者的话的本机记录：developer_notes_test.dart；节日的本机记录：festival_test.dart；协议已读记录：legal_page_test.dart；本机日志与开发者设置：diagnostic_log_test.dart。
 
 # 人工决策检索
 
@@ -98,7 +100,7 @@
   - 版本上限与裁剪
   - 凭据保存条件
   - 显示设置的设备归属与深浅色
-  - 配色（删苔灰）与字体默认值（iOS 默认 Maple、系统字体可选，v7 一次性迁移）
+  - 配色（删苔灰）与字体默认值（默认 Maple、安卓与 iOS 都可选系统字体，v7 一次性迁移）
   - 协议的同意与更新提示的判定
   - 本机日志的同类错误聚合口径（diagnostic_log.dart 类上）
   - 开发者设置排除备份（developer_settings.dart 类上）

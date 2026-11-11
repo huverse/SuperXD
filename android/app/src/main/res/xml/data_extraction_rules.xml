@@ -8,6 +8,8 @@
         <exclude domain="file" path="backgroundDownloaderTaskRecords/" />
         <exclude domain="file" path="backgroundDownloaderResumeData/" />
         <exclude domain="file" path="backgroundDownloaderDatabase/" />
+        <!-- 下载的字体包（衬线等）只是可以重新下载的缓存，不随备份与换机迁移。 -->
+        <exclude domain="file" path="font_packs/" />
         <exclude domain="sharedpref" path="com.superxd.superxd_preferences.xml" />
         <exclude domain="sharedpref" path="com.superxd.superxd.alpha_preferences.xml" />
         <exclude domain="sharedpref" path="superxd_course_widget.xml" />
@@ -38,6 +40,8 @@
         <exclude domain="file" path="backgroundDownloaderTaskRecords/" />
         <exclude domain="file" path="backgroundDownloaderResumeData/" />
         <exclude domain="file" path="backgroundDownloaderDatabase/" />
+        <!-- 下载的字体包（衬线等）只是可以重新下载的缓存，不随备份与换机迁移。 -->
+        <exclude domain="file" path="font_packs/" />
         <exclude domain="sharedpref" path="com.superxd.superxd_preferences.xml" />
         <exclude domain="sharedpref" path="com.superxd.superxd.alpha_preferences.xml" />
         <exclude domain="sharedpref" path="superxd_course_widget.xml" />

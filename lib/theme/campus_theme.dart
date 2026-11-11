@@ -49,6 +49,7 @@ ThemeData campusTheme({CampusPalette? palette, String? fontFamily = 'Maple Mono 
     highlightColor: colors.onSurface.withValues(alpha: colors.isDark ? .12 : .10),
     extensions: [colors],
     // [人工决策-2026-09-25 17:43:48] Maple仍为默认，可选内置Noto Serif SC；全局字体和测量口径一致，不引入在线字体。
+    // 其中「内置」「不引入在线字体」两处已被 2026-11-10 的字体包决定取代（用户选定衬线改为选用时从自建中转下载、核对哈希后注册，见 lib/domain/font_pack.dart）；Maple 仍随包、仍是默认。
     fontFamily: fontFamily,
     dialogTheme: DialogThemeData(backgroundColor: colors.surface, surfaceTintColor: Colors.transparent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)), titleTextStyle: TextStyle(fontFamily: fontFamily, fontSize: 20, fontWeight: FontWeight.w600, color: colors.onSurface), contentTextStyle: TextStyle(fontFamily: fontFamily, fontSize: 16, color: colors.onSurface)),
     datePickerTheme: DatePickerThemeData(locale: Locale('zh', 'CN'), backgroundColor: colors.surface, surfaceTintColor: Colors.transparent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
