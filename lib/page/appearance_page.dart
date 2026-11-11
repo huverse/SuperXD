@@ -386,7 +386,6 @@ class _AppearancePageState extends State<AppearancePage> {
                 ],
               ),
             ),
-            if (selected) const CampusIcon(CampusIcons.check),
             // 下载的字体包可以删（人工决策见 domain/font_pack.dart）：本机有文件、没在下载时收在⋯里。
             if (pack != null && packs!.hasFiles(id) && !downloading)
               Builder(builder: (anchor) => IconButton(tooltip: '更多操作', onPressed: () => _packMenu(anchor, settings, pack, label), icon: const CampusIcon(CampusIcons.manage))),
