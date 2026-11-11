@@ -10,6 +10,7 @@ import { env } from 'src/config/env';
 import { RelayErrorFilter } from 'src/common/relay_error.filter';
 import { RelayCode } from 'src/common/relay_error';
 import { chaoxingRequestMaxBytes } from 'src/common/relay_limits';
+import { diagnosticBodyLimit } from 'src/modules/diagnostic/diagnostic_body_limit';
 
 // 组装 HTTP 应用，测试与启动共用；rawBody 供请求签名核对请求体哈希。
 export const createRelayApp = async () => {
@@ -25,6 +26,8 @@ export const createRelayApp = async () => {
     }
     next();
   });
+  // 诊断包是二进制请求体、最大 24MB：同样在通用解析之前按声明长度与类型挡掉不合格的，请求体留给控制器按流写盘。
+  app.use('/v1/diagnostics', diagnosticBodyLimit);
   // 请求体上限：密文 256KB 经 base64url 膨胀约 342KB，外加字段，留到 400KB。
   app.useBodyParser('json', { limit: '400kb' });
   app.set('trust proxy', env().trustProxy);
