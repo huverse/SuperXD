@@ -237,12 +237,12 @@ void main() {
       campusDiagnostics = false;
     });
 
-    test('流式写进目标文件并报进度，请求路径与字节数进开发者模式的记录', () async {
+    test('经共用请求内核下载：边收边报进度，收完写进目标文件，请求路径与字节数进开发者模式的记录', () async {
       final bytes = testFontBytes[file.name]!;
       final target = '${root.path}/out.part';
       late Uri requested;
       final received = <int>[];
-      final source = RelayFontPackSource('http://relay.test', client: () => MockClient.streaming((request, _) async {
+      final source = RelayFontPackSource('http://relay.test', client: MockClient.streaming((request, _) async {
         requested = request.url;
         return http.StreamedResponse(Stream.fromIterable([bytes.sublist(0, 100), bytes.sublist(100)]), 200, contentLength: bytes.length);
       }));
@@ -254,9 +254,9 @@ void main() {
     });
 
     test('404、限流、大小不对与超时都换成给用户看的原因；取消抛 FontPackCancelled', () async {
-      Future<Object?> failure(MockClient client, {Future<void>? abort, Duration idle = const Duration(seconds: 30)}) async {
+      Future<Object?> failure(http.Client client, {Future<void>? abort, Duration timeout = const Duration(minutes: 3)}) async {
         try {
-          await RelayFontPackSource('http://relay.test', client: () => client, idle: idle).download(file, '${root.path}/x.part', onProgress: (_) {}, abort: abort ?? Completer<void>().future);
+          await RelayFontPackSource('http://relay.test', client: client, timeout: timeout).download(file, '${root.path}/x.part', onProgress: (_) {}, abort: abort ?? Completer<void>().future);
           return null;
         } catch (error) {
           return error;
@@ -267,18 +267,14 @@ void main() {
       expect(message(await failure(MockClient((_) async => http.Response('{"code":"RATE_LIMITED"}', 429)))), '下载的人太多，请稍后再试');
       expect(message(await failure(MockClient((_) async => http.Response.bytes(Uint8List(file.size + 1), 200)))), '字体文件不对，请稍后再试');
       expect(message(await failure(MockClient.streaming((_, _) async => http.StreamedResponse(Stream.value(Uint8List(file.size + 1)), 200)))), '字体文件不对，请稍后再试');
-      expect(message(await failure(MockClient.streaming((_, _) async => http.StreamedResponse(StreamController<List<int>>().stream, 200)), idle: const Duration(milliseconds: 50))), '连不上服务器，请检查网络后重试');
+      expect(message(await failure(MockClient.streaming((_, _) async => http.StreamedResponse(StreamController<List<int>>().stream, 200)), timeout: const Duration(milliseconds: 50))), '下载超时，请换个网络后重试');
+      expect(message(await failure(MockClient((_) async => throw const SocketException('offline')))), '连不上服务器，请检查网络后重试');
       final abort = Completer<void>();
-      final chunks = StreamController<List<int>>();
-      final cancelled = failure(MockClient.streaming((_, _) async => http.StreamedResponse(chunks.stream, 200)), abort: abort.future);
-      chunks.add([1, 2, 3]);
+      final cancelled = failure(MockClient.streaming((_, _) async => http.StreamedResponse(StreamController<List<int>>().stream, 200)), abort: abort.future);
       await Future<void>.delayed(Duration.zero);
       abort.complete();
-      await Future<void>.delayed(Duration.zero);
-      chunks.add([4]);
       expect(await cancelled, isA<FontPackCancelled>());
-      await chunks.close();
-      expect(logs.where((line) => line.contains('errorType=') && line.contains('[FontPack]')), hasLength(1), reason: '只有超时那次是没预料到的错误，带堆栈记一条');
+      expect(logs.where((line) => line.startsWith('[FontPack]') && line.contains('errorType=')), hasLength(2), reason: '超时与连不上带堆栈各记一条，取消与服务器的回答不算错误');
     });
   });
 }
