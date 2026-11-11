@@ -112,7 +112,8 @@
 # 测试
 
 - 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、请求记录、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由、页面滚动区渐隐、顶栏玻璃圆钮、toImageSync 只用于云雾贴图、内嵌网页拖动归网页），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
-- 共用的测试支撑：fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、toolbox_test_support.dart、form_layout_support.dart、text_fit_support.dart（扫一屏文字的裁切、孤字与单独成行的标点）、app_update_fakes.dart、content_signing_support.dart（测试用签名钥）、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
+- 基准图 golden_test.dart：登录、服务、我的、界面、成绩、百宝箱（含左滑露出的按钮）深浅两套，只在 Linux 上比、容差万分之一；改了样子是有意的，看过 test/failures 的差异图（CI 失败时是产物 golden-failures）再 flutter test --update-goldens test/golden_test.dart 重生成一起提交。界面库升级与主题改动都靠它把关。
+- 共用的测试支撑：fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、page_fixture_support.dart（整应用页面测试的合成账号与教务数据）、toolbox_test_support.dart、form_layout_support.dart、text_fit_support.dart（扫一屏文字的裁切、孤字与单独成行的标点）、app_update_fakes.dart、content_signing_support.dart（测试用签名钥）、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
 - CI 的 Flutter 作业带覆盖率跑全量测试，再由 tool/coverage_check.dart 算 lib 的行覆盖率，低于工具里的门槛就失败；本机复现先 flutter test --coverage 再 dart run 它。
 - tool 下其余是手动入口，不进 CI（发版三个工具由发版流水线调用），运行方式见各文件头：
   - 访问真实服务，只在授权环境与授权账号上手动运行：verify_edu.dart、verify_grades.dart（教务）、verify_chaoxing.dart（学习通，输出脱敏）。
