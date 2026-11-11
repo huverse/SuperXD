@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_clock.dart';
@@ -42,9 +44,9 @@ class ChaoxingSignLauncher {
     }
     if (!context.mounted || summary == null) return;
     showCampusToast(context, chaoxingSummaryText(summary));
-    controller.refreshCourse(activity).catchError((Object error, StackTrace stack) {
+    unawaited(controller.refreshCourse(activity).catchError((Object error, StackTrace stack) {
       campusLog('[Chaoxing] action=refresh errorType=${error.runtimeType}\n$stack');
-    });
+    }));
   }
 }
 

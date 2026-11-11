@@ -179,7 +179,7 @@ class SocialStore {
           'friend_id': friendId,
           'outgoing': outgoing ? 1 : 0,
           'state': state.name,
-          'body': jsonEncode(card is UnknownShare ? {'type': card.type, 'version': card.version, 'body': const {}} : encodeShareCard(card)),
+          'body': jsonEncode(card is UnknownShare ? {'type': card.type, 'version': card.version, 'body': const <String, Object?>{}} : encodeShareCard(card)),
           'create_time': now,
         }, conflictAlgorithm: ConflictAlgorithm.ignore);
         if (inserted == 0) return false;

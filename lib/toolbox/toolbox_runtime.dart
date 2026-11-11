@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -147,7 +148,8 @@ class ToolboxRuntime with WidgetsBindingObserver {
   // 清完从缓存里拿掉，下次打开工具时重新打开一份空的服务。
   Future<void> clearData(String id) async {
     final service = await this.service<ToolboxService>(id);
-    _opened.remove(id);
+    // 拿掉缓存的那份打开过程（上面刚等完），不再等它。
+    unawaited(_opened.remove(id));
     _external.remove(id);
     await service.clearData();
     await store.revokeConsent(id);

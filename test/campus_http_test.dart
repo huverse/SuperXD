@@ -176,9 +176,9 @@ class _Stalled extends http.BaseClient {
 
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
-    (request as http.Abortable).abortTrigger!.then((_) {
+    unawaited((request as http.Abortable).abortTrigger!.then((_) {
       if (!aborted.isCompleted) aborted.complete();
-    });
+    }));
     started.complete();
     return http.StreamedResponse(body.stream, 200, contentLength: contentLength);
   }

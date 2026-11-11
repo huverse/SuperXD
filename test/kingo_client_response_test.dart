@@ -214,7 +214,7 @@ class _BodyStalls extends http.BaseClient {
   @override
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     final abortable = request as http.AbortableRequest;
-    abortable.abortTrigger!.then((_) => aborted.complete());
+    unawaited(abortable.abortTrigger!.then((_) => aborted.complete()));
     return http.StreamedResponse(body.stream, 200);
   }
 }

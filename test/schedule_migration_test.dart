@@ -57,7 +57,7 @@ void main() {
             'sectionId': 'S',
             'courseName': '课程$index',
             'teacherName': '',
-            'meetings': [],
+            'meetings': <Object?>[],
           },
         ]),
       });
