@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -7,6 +8,12 @@ import 'package:http/testing.dart';
 
 import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
+import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
+import 'package:superxd/toolbox/express/express_http.dart';
+import 'package:superxd/toolbox/express/express_models.dart';
 
 void main() {
   late List<String> logs;
@@ -151,6 +158,69 @@ void main() {
       return bytes;
     });
     expect((given, response.body), (64, 'abc'));
+  });
+
+  group('迁到内核后各模块的封装照旧映射', () {
+    test('快递：超时、响应过大、TLS 与断网各归各的错误码，日志只记路径', () async {
+      Future<ExpressFailure> failure(http.Client client) async {
+        try {
+          await ExpressHttp(client: client, timeout: const Duration(milliseconds: 30)).getJson(Uri.parse('https://mobile.example.com/api/x?token=secret'), headers: const {});
+        } on ExpressFailure catch (error) {
+          return error;
+        }
+        fail('没有失败');
+      }
+
+      expect((await failure(MockClient((_) => Completer<http.Response>().future))).code, ExpressFailureCode.timeout);
+      expect(logs.where((log) => log.startsWith('[Express] action=http errorType=timeout path=/api/x\n')), hasLength(1));
+      expect((await failure(MockClient((_) async => http.Response('x' * (ExpressHttp.payloadLimit + 1), 200)))).code, ExpressFailureCode.tooLarge);
+      expect(logs, contains('[Express] action=http errorType=too_large path=/api/x limit=${ExpressHttp.payloadLimit}'));
+      expect((await failure(MockClient((_) async => throw const HandshakeException('terminated')))).code, ExpressFailureCode.network);
+      expect((await failure(MockClient((_) async => throw http.ClientException('reset')))).message, '网络请求未完成，请稍后重试');
+      expect(logs.join('\n'), isNot(contains('secret')));
+    });
+
+    test('学习通：超时与响应过大；403 只在 forbiddenExpired 时算会话过期', () async {
+      Future<ChaoxingFailure> failure(http.Client client, {bool forbiddenExpired = false}) async {
+        try {
+          await ChaoxingHttp(client: client, timeout: const Duration(milliseconds: 30)).postForm(Uri.parse('https://mobilelearn.chaoxing.com/pptSign/stuSignajax'), 'a=1', forbiddenExpired: forbiddenExpired);
+        } on ChaoxingFailure catch (error) {
+          return error;
+        }
+        fail('没有失败');
+      }
+
+      expect((await failure(MockClient((_) => Completer<http.Response>().future))).code, ChaoxingFailureCode.timeout);
+      expect((await failure(MockClient((_) async => http.Response('x' * (ChaoxingHttp.payloadLimit + 1), 200)))).code, ChaoxingFailureCode.invalidResponse);
+      expect((await failure(MockClient((_) async => http.Response('', 403)), forbiddenExpired: true)).code, ChaoxingFailureCode.sessionExpired);
+      expect((await failure(MockClient((_) async => http.Response('', 403)))).code, ChaoxingFailureCode.server);
+    });
+
+    test('代签中转：超时、响应过大，请求记录只写路由模板', () async {
+      Future<ChaoxingFailure> failure(http.Client client) async {
+        try {
+          await ChaoxingPackHub(baseUrl: Uri.parse('http://relay.example:8080'), client: client, timeout: const Duration(milliseconds: 30)).pickup('ticketticketabcd');
+        } on ChaoxingFailure catch (error) {
+          return error;
+        }
+        fail('没有失败');
+      }
+
+      expect((await failure(MockClient((_) => Completer<http.Response>().future))).code, ChaoxingFailureCode.timeout);
+      expect((await failure(MockClient((_) async => http.Response('x' * (ChaoxingPackHub.payloadLimit + 1), 200)))).code, ChaoxingFailureCode.invalidResponse);
+      expect(logs, contains('[ChaoxingPack] action=request errorType=too_large route=pickup'));
+      expect(logs.where((log) => log.startsWith('[Http]')).every((log) => log.contains('path=/pickup ') && !log.contains('ticket')), isTrue);
+    });
+
+    test('私信中转：普通接口 64KB，拉信箱按条数放宽；超了算响应格式不对', () async {
+      final big = '{"messages":[],"more":false,"pad":"${'x' * HttpRelayTransport.responseLimit}"}';
+      final transport = HttpRelayTransport('http://relay.example:8080', client: MockClient((_) async => http.Response(big, 200)));
+      await expectLater(transport.send('GET', '/v1/friends', const {}, null), throwsA(isA<RelayException>().having((error) => error.code, 'code', RelayCode.badResponse)));
+      expect(logs.where((log) => log.startsWith('[RelayTransport] action=request route=GET /v1/friends code=BAD_RESPONSE errorType=CampusHttpTooLarge')), hasLength(1));
+      final response = await transport.send('GET', '/v1/messages?limit=50', const {}, null, limit: RelayClient.inboxLimit(50));
+      expect(response.body['more'], isFalse);
+      expect(RelayClient.inboxLimit(50), greaterThan(50 * (256 * 1024 * 4 ~/ 3)), reason: '50 条最大的密文经 base64url 也放得下');
+    });
   });
 
   test('开发者模式关着不记请求', () async {
