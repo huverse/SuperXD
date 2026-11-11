@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/page/friend_add_page.dart';
 import 'package:superxd/social/invite_code.dart';
 import 'package:superxd/social/social_crypto.dart';
@@ -84,7 +85,7 @@ void main() {
   group('好友二维码', () {
     test('编码解码往返，设备号由公钥推出', () async {
       final owner = await SocialIdentity.generate();
-      final code = InviteCode(inviteId: base64UrlNoPad(randomBytes(16)), inviteSeed: randomBytes(32), owner: PeerKeys(owner.signPublicKey, owner.boxPublicKey), nickname: '小明', expiresAt: 1791100000000);
+      final code = InviteCode(inviteId: base64UrlNoPad(secureRandomBytes(16)), inviteSeed: secureRandomBytes(32), owner: PeerKeys(owner.signPublicKey, owner.boxPublicKey), nickname: '小明', expiresAt: 1791100000000);
       final text = code.encode();
       expect(text, startsWith('SXD1F:'));
       // 全是 QR 字母数字模式字符（Base45），内容约 190 字符，纠错 M 下版本 8（49×49）即可装下。

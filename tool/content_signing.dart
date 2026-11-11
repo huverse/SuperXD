@@ -5,6 +5,7 @@ import 'package:cryptography/cryptography.dart';
 import 'package:superxd/device/relay_note_feed.dart';
 import 'package:superxd/device/relay_release_feed.dart';
 import 'package:superxd/device/signed_content.dart';
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/developer_note.dart';
 
 // 更新清单与开发者的话的签名与核对（人工决策见 lib/device/signed_content.dart）。release_manifest.dart、developer_notes.dart 用它签名；
@@ -31,7 +32,7 @@ List<int> seedFromPem(String text) {
   return der.sublist(16);
 }
 
-Future<String> publicKeyOfSeed(List<int> seed) async => base64Url.encode((await (await _ed25519.newKeyPairFromSeed(seed)).extractPublicKey()).bytes).replaceAll('=', '');
+Future<String> publicKeyOfSeed(List<int> seed) async => base64UrlNoPad((await (await _ed25519.newKeyPairFromSeed(seed)).extractPublicKey()).bytes);
 
 // 一把能用的签名钥：私钥种子推出的公钥必须是源码里内置的那一把、且能签这类内容，否则拒绝（机密里的私钥和源码对不上就停）。
 class SigningKey {
@@ -56,12 +57,12 @@ Future<Map<String, Object>> sealSignedEnvelope(List<int> payload, SignedContent 
   if (signers.isEmpty || signers.length > signedEnvelopeSignatureMax) throw FormatException('签名钥要 1 到 $signedEnvelopeSignatureMax 把');
   final message = signedMessage(content, payload);
   return {
-    'signed': base64Url.encode(payload).replaceAll('=', ''),
+    'signed': base64UrlNoPad(payload),
     'signatures': [
       for (final signer in signers)
         {
           'keyId': signer.trusted.keyId,
-          'sig': base64Url.encode((await _ed25519.sign(message, keyPair: await _ed25519.newKeyPairFromSeed(signer._seed))).bytes).replaceAll('=', ''),
+          'sig': base64UrlNoPad((await _ed25519.sign(message, keyPair: await _ed25519.newKeyPairFromSeed(signer._seed))).bytes),
         },
     ],
   };

@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:cryptography/cryptography.dart';
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/device/diagnostic_seal.dart';
 
 // 解开用户上传的诊断包（人工决策见 lib/domain/diagnostic_upload.dart），解出的就是开发者选项「导出日志」的那个 zip。只读写本机文件、不联网，不打印私钥与包的内容。
@@ -44,8 +45,8 @@ Future<void> _generate(File key) async {
     await key.delete();
     return _fail('reason=chmod_failed');
   }
-  await key.writeAsString('${encodeDiagnosticKey(await keyPair.extractPrivateKeyBytes())}\n', flush: true);
-  stdout.writeln('[OpenDiagnostic] generated=${key.path} publicKey=${encodeDiagnosticKey((await keyPair.extractPublicKey()).bytes)}');
+  await key.writeAsString('${base64UrlNoPad(await keyPair.extractPrivateKeyBytes())}\n', flush: true);
+  stdout.writeln('[OpenDiagnostic] generated=${key.path} publicKey=${base64UrlNoPad((await keyPair.extractPublicKey()).bytes)}');
 }
 
 void _fail(String detail) {

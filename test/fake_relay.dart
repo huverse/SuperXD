@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_crypto.dart';
 
@@ -56,7 +57,7 @@ class FakeRelay {
     if (signKey == null) return _error(401, RelayCode.unauthorized);
     if (selfSigned && deviceIdOf(signKey) != deviceId) return _error(400, RelayCode.deviceMismatch);
     final canonical = requestCanonical(method, path, time, nonce, body ?? const []);
-    if (!await verifySignature(signKey, canonical, decodeBase64UrlNoPad(headers['x-sxd-signature']!))) return _error(401, RelayCode.unauthorized);
+    if (!await verifyEd25519(signKey, canonical, decodeBase64UrlNoPad(headers['x-sxd-signature']!))) return _error(401, RelayCode.unauthorized);
     if (!_nonces.add('$deviceId:$nonce')) return _error(401, RelayCode.replayed);
     final uri = Uri.parse(path);
     switch ((method, uri.path)) {
@@ -78,7 +79,7 @@ class FakeRelay {
         final invite = invites[inviteId];
         if (invite == null || invite.expiresAt < now) return _error(404, RelayCode.inviteNotFound);
         if (invite.owner == deviceId) return _error(400, RelayCode.inviteSelf);
-        if (!await verifySignature(invite.publicKey, inviteProofCanonical(inviteId, deviceId), decodeBase64UrlNoPad(payload['proof'] as String))) {
+        if (!await verifyEd25519(invite.publicKey, inviteProofCanonical(inviteId, deviceId), decodeBase64UrlNoPad(payload['proof'] as String))) {
           return _error(403, RelayCode.inviteProofInvalid);
         }
         friendships..add('$deviceId|${invite.owner}')..add('${invite.owner}|$deviceId');

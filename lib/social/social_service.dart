@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:synchronized/synchronized.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/social/identity_vault.dart';
@@ -200,8 +201,8 @@ class SocialService extends ChangeNotifier {
   // 出示二维码：新建一次性邀请（服务端同时作废本设备之前的邀请），本机记下邀请公钥用于核验扫码方的问候。
   Future<InviteCode> createInvite() async {
     _ready();
-    final inviteSeed = randomBytes(32);
-    final inviteId = base64UrlNoPad(randomBytes(16));
+    final inviteSeed = secureRandomBytes(32);
+    final inviteId = base64UrlNoPad(secureRandomBytes(16));
     final publicKey = await ed25519PublicOf(inviteSeed);
     final int expiresAt;
     try {
@@ -349,7 +350,7 @@ class SocialService extends ChangeNotifier {
     final invitePublic = await store.invitePublicKey(inviteId);
     if (invitePublic == null) throw const SocialCryptoException('邀请不存在');
     final proof = decodeBase64UrlNoPad(hello['proof'] as String, length: 64);
-    if (!await verifySignature(decodeBase64UrlNoPad(invitePublic, length: 32), inviteProofCanonical(inviteId, from), proof)) throw const SocialCryptoException('邀请凭证无效');
+    if (!await verifyEd25519(decodeBase64UrlNoPad(invitePublic, length: 32), inviteProofCanonical(inviteId, from), proof)) throw const SocialCryptoException('邀请凭证无效');
     if (await store.friend(from) == null && await store.friendCount() >= friendLimit) throw const SocialCryptoException('本机好友已满');
     await store.upsertFriend(deviceId: from, nickname: nickname, signPublicKey: base64UrlNoPad(keys.signPublicKey), boxPublicKey: base64UrlNoPad(keys.boxPublicKey), now: now, systemId: id);
     return true;

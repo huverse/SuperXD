@@ -1,7 +1,7 @@
 import 'dart:convert';
 import 'dart:typed_data';
 
-import 'package:cryptography/cryptography.dart';
+import 'package:superxd/domain/campus_crypto.dart';
 
 // [人工决策-2026-11-10 12:58:34] 更新清单与开发者的话加签名（用户选定：现在就加签名、客户端内置公钥校验；HTTPS 等备案后再做，
 // 没有备案域名短期上不了）。中转现在是明文 HTTP 加 IP 直连：安装包本身有 SHA-256 与签名证书核对、不怕改，但清单（最低可用版本可被改成
@@ -53,35 +53,23 @@ class SignedEnvelopeException implements Exception {
   String toString() => 'SignedEnvelopeException($reason)';
 }
 
-final _ed25519 = Ed25519();
-
 // 签名原文：域前缀加载荷原样的字节。
 Uint8List signedMessage(SignedContent content, List<int> payload) => Uint8List.fromList([...utf8.encode(content.domain), ...payload]);
-
-Uint8List? decodeBase64Url(String text) {
-  if (!RegExp(r'^[A-Za-z0-9_-]*$').hasMatch(text)) return null;
-  try {
-    return base64Url.decode(base64Url.normalize(text));
-  } on FormatException {
-    return null;
-  }
-}
 
 // 信封是外部输入：逐项校验，返回验过的载荷字节；只认 keys 里能签这类内容的公钥，不认识的 keyId 跳过。
 Future<Uint8List> openSignedEnvelope(Object? envelope, SignedContent content, {List<TrustedSigningKey> keys = trustedSigningKeys}) async {
   if (envelope == null) throw const SignedEnvelopeException('missing');
   if (envelope case {'signed': final String signed, 'signatures': final List<Object?> signatures}
       when signatures.isNotEmpty && signatures.length <= signedEnvelopeSignatureMax) {
-    final payload = decodeBase64Url(signed);
+    final payload = tryDecodeBase64UrlNoPad(signed);
     if (payload == null) throw const SignedEnvelopeException('malformed');
     final message = signedMessage(content, payload);
     for (final item in signatures) {
       if (item case {'keyId': final String keyId, 'sig': final String sig} when keyIdPattern.hasMatch(keyId)) {
-        final signature = decodeBase64Url(sig);
-        if (signature == null || signature.length != 64) throw const SignedEnvelopeException('malformed');
+        final signature = tryDecodeBase64UrlNoPad(sig, length: 64);
+        if (signature == null) throw const SignedEnvelopeException('malformed');
         for (final key in keys.where((key) => key.keyId == keyId && key.contents.contains(content))) {
-          final publicKey = SimplePublicKey(decodeBase64Url(key.publicKey)!, type: KeyPairType.ed25519);
-          if (await _ed25519.verify(message, signature: Signature(signature, publicKey: publicKey))) return payload;
+          if (await verifyEd25519(tryDecodeBase64UrlNoPad(key.publicKey, length: 32)!, message, signature)) return payload;
         }
       } else {
         throw const SignedEnvelopeException('malformed');
