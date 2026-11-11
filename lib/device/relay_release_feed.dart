@@ -5,6 +5,7 @@ import 'dart:ffi';
 import 'package:http/http.dart' as http;
 
 import 'package:superxd/domain/app_update.dart';
+import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/device/signed_content.dart';
 
@@ -21,6 +22,7 @@ String? appAbiName(Abi abi) => switch (abi) {
 };
 
 // 版本清单的自建中转实现：GET /v1/app/releases/<渠道>?abi=，请求免设备签名，单次 15 秒超时、不自动重试。
+// 经共用请求内核 CampusHttp 发（超时管到读完响应体、到点中断连接，响应边读边限长，请求记录在内核里记，模块 app_update）。
 // 只认清单里验签通过的载荷（人工决策见 device/signed_content.dart），没有签名或验不过按失败处理、不提示更新。
 // packages 为假时不要安装包（iOS 不能在应用里安装，只看有没有新版本，下载去发布页）。
 class RelayReleaseFeed implements AppReleaseFeed {
@@ -32,38 +34,32 @@ class RelayReleaseFeed implements AppReleaseFeed {
     this.keys = trustedSigningKeys,
     http.Client? client,
     this.timeout = const Duration(seconds: 15),
-  }) : _client = client ?? http.Client();
+  }) : _http = CampusHttp('app_update', client: client);
   final String baseUrl;
   final String channel;
   final String abi;
   final bool packages;
   final List<TrustedSigningKey> keys;
   final Duration timeout;
-  final http.Client _client;
+  final CampusHttp _http;
 
   @override
   Future<AppRelease?> latest() async {
     final uri = Uri.parse('$baseUrl/v1/app/releases/$channel').replace(queryParameters: {'abi': abi});
-    final int status;
-    final List<int> body;
-    // 开发者模式下记一条路径、状态、耗时与字节数（见 campusRequestLog）。
-    final watch = Stopwatch()..start();
+    final http.Response response;
     try {
-      final response = await _client.send(http.Request('GET', uri)).timeout(timeout);
-      status = response.statusCode;
-      body = await _read(response.stream).timeout(timeout);
-      campusRequestLog('app_update', 'GET', uri, status: status, elapsed: watch.elapsed, bytes: body.length);
+      response = await _http.send('GET', uri, timeout: timeout, limit: appReleaseResponseMaxBytes);
     } on TimeoutException catch (error, stack) {
-      campusRequestLog('app_update', 'GET', uri, elapsed: watch.elapsed, error: 'timeout');
       campusLog('[AppUpdate] action=feed errorType=${error.runtimeType}\n$stack');
       throw const AppUpdateException('连不上更新服务器，请稍后再试');
-    } on AppUpdateException {
-      rethrow;
+    } on CampusHttpTooLarge catch (error, stack) {
+      campusLog('[AppUpdate] action=feed errorType=${error.runtimeType}\n$stack');
+      throw const AppUpdateException('更新服务器暂时不可用，请稍后再试');
     } catch (error, stack) {
-      campusRequestLog('app_update', 'GET', uri, elapsed: watch.elapsed, error: error.runtimeType.toString());
       campusLog('[AppUpdate] action=feed errorType=${error.runtimeType}\n$stack');
       throw const AppUpdateException('连不上更新服务器，请检查网络后再试');
     }
+    final status = response.statusCode, body = response.bodyBytes;
     final Object? json;
     try {
       json = jsonDecode(utf8.decode(body));
@@ -86,15 +82,6 @@ class RelayReleaseFeed implements AppReleaseFeed {
       campusLog('[AppUpdate] action=feed errorType=${error.runtimeType} message=${error.message}\n$stack');
       throw const AppUpdateException('更新信息格式不对，请稍后再试');
     }
-  }
-
-  Future<List<int>> _read(Stream<List<int>> stream) async {
-    final bytes = <int>[];
-    await for (final chunk in stream) {
-      bytes.addAll(chunk);
-      if (bytes.length > appReleaseResponseMaxBytes) throw const AppUpdateException('更新服务器暂时不可用，请稍后再试');
-    }
-    return bytes;
   }
 }
 

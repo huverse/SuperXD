@@ -64,12 +64,11 @@ void main() {
   // 而且它们都得自己调 campusRequestLog；新模块一律经 CampusHttp 发，不再手写封装。只拿 http 的异常、参数类型或接收注入的 http.Client 转交给内核的不算；
   // 原生下载与 WebView 不经 Dart，不在此列。（以前只要求发请求的文件调 campusRequestLog，现在连自己发都不许，力度只增不减。）
   test('lib发请求的地方都经共用内核并接上开发者模式的请求记录', () {
-    // 还没迁到内核的：设备侧两个中转清单客户端（另有工作包在改）；iOS 下载传输与诊断包上传（都是边收或边发文件流、按「多久没有进展」超时，
-    // 内核还只有整次请求的时限，要等它支持流式请求体与无进展超时再迁）。
-    // 节日抽签已改经私信中转客户端（RelayClient.request），跟着它走内核。
+    // 还没迁到内核的只剩 iOS 下载传输：它要先看响应头（状态、Content-Range、ETag）再决定续写还是重下、边收边写文件、逐跳自己跟跳转，
+    // 内核交回的是读完的整份响应，接不上可续传的大文件下载。设备侧的中转清单、开发者的话与诊断包上传已经迁过去（内核加了无进展超时与流式请求体）；
+    // 节日抽签经私信中转客户端（RelayClient.request），跟着它走内核。
     final unmigrated = {
-      for (final name in ['device/relay_note_feed.dart', 'device/relay_release_feed.dart', 'device/relay_diagnostic_upload.dart', 'toolbox/download/http_transfer.dart'])
-        path.joinAll(['lib', ...name.split('/')]),
+      for (final name in ['toolbox/download/http_transfer.dart']) path.joinAll(['lib', ...name.split('/')]),
     };
     final kernel = path.join('lib', 'domain', 'campus_http.dart');
     final httpRaw = RegExp(

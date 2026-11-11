@@ -87,6 +87,49 @@ void main() {
     await transport.body.close();
   });
 
+  test('边读边发的请求体：声明长度不分块、原样发出，可中断', () async {
+    late http.BaseRequest seen;
+    late List<int> sent;
+    final kernel = CampusHttp('demo', client: MockClient.streaming((request, body) async {
+      seen = request;
+      sent = await body.expand((chunk) => chunk).toList();
+      return http.StreamedResponse(Stream.value(utf8.encode('ok')), 200);
+    }));
+    await kernel.send('POST', Uri.parse('https://example.com/upload'), timeout: const Duration(seconds: 5), limit: 16,
+        headers: const {'content-type': 'application/octet-stream'}, bodyStream: (stream: Stream.fromIterable([[1, 2], [3]]), length: 3));
+    expect(sent, [1, 2, 3]);
+    expect((seen.contentLength, seen.headers['content-type'], seen is http.Abortable), (3, 'application/octet-stream', true));
+  });
+
+  test('无进展超时：一直有进展的不中断，停住超过 idleTimeout 就中断并抛 TimeoutException', () async {
+    final transport = _Stalled(contentLength: null);
+    final kernel = CampusHttp('demo', client: transport);
+    final result = kernel.send('GET', Uri.parse('https://example.com/trickle'), timeout: const Duration(minutes: 1), idleTimeout: const Duration(milliseconds: 150), limit: 1024);
+    final assertion = expectLater(result, throwsA(isA<TimeoutException>()));
+    await transport.started.future;
+    // 每 50 毫秒到一块，累计远超 idleTimeout 也不中断。
+    for (var index = 0; index < 8; index++) {
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      transport.body.add([index]);
+    }
+    expect(transport.aborted.isCompleted, isFalse);
+    await assertion;
+    await transport.aborted.future.timeout(const Duration(seconds: 1));
+    expect(logs.single, endsWith('error=timeout'));
+    await transport.body.close();
+  });
+
+  test('无进展超时也管请求体：发不出去（替身不读请求体也不回）到点中断', () async {
+    final kernel = CampusHttp('demo', client: MockClient.streaming((request, body) => Completer<http.StreamedResponse>().future));
+    final watch = Stopwatch()..start();
+    await expectLater(
+      kernel.send('POST', Uri.parse('https://example.com/upload'), timeout: const Duration(minutes: 1), idleTimeout: const Duration(milliseconds: 50), limit: 16,
+          bodyStream: (stream: Stream.value([1]), length: 1)),
+      throwsA(isA<TimeoutException>()),
+    );
+    expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+  });
+
   test('底层不理会中断信号（替身永远不回）也按时抛超时', () async {
     final kernel = CampusHttp('demo', client: MockClient((_) => Completer<http.Response>().future));
     final watch = Stopwatch()..start();
