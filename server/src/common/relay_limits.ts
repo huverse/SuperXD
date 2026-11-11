@@ -48,20 +48,20 @@ export const chaoxingRequestMaxBytes = 8 * 1024;
 // 应用更新：客户端每天最多自动查一次清单，手动检查不限；同一 IP 每小时清单 600 次、安装包请求 300 次
 // （含断点续传的分段请求；校园网出口多为 NAT，与代签同样放宽，只防脚本刷流量）。
 // 安装包约 100MB，每个实例同时最多 32 个下载，超出回 503 让客户端稍后再试，保护带宽与连接。
-// 清单文件超过 64KB 视为放错文件，拒绝读取。
+// 清单文件超过 128KB 视为放错文件，拒绝读取（明文加三个架构的签名信封，更新说明写满 4000 字也不到 70KB；与 tool/release_manifest.dart 一致）。
 export const appReleasePerHour = 600;
 export const appFilePerHour = 300;
 export const appDownloadsPerInstance = 32;
-export const appReleaseFileMaxBytes = 64 * 1024;
+export const appReleaseFileMaxBytes = 128 * 1024;
 
 // 开发者的话：维护者写的信由流水线放进发布目录（developer_notes.json），客户端启动与回到前台时看一眼（间隔不到一小时不联网），
 // 同一 IP 每小时 600 次（与查清单同档）。只下发最近 30 封，标题不超过 40 字、正文不超过 4000 字（与客户端 lib/domain/developer_note.dart 一致），
-// 文件超过 512KB 视为放错文件，拒绝读取。
+// 文件超过 1MB 视为放错文件，拒绝读取（明文一份加签名载荷一份，30 封写满也不到 900KB；与 tool/developer_notes.dart 及客户端的响应上限一致）。
 export const developerNotesPerHour = 600;
 export const developerNoteLimit = 30;
 export const developerNoteTitleMax = 40;
 export const developerNoteBodyMax = 4000;
-export const developerNotesFileMaxBytes = 512 * 1024;
+export const developerNotesFileMaxBytes = 1024 * 1024;
 
 // 节日抽奖（概率模型与要求设备签名的人工决策见 src/modules/reward/reward_odds.ts）：同一来源每小时 3000 次（校园网 NAT 共用出口，同代签取件的宽松档），
 // 每台设备每小时 10 次（一台设备一次活动只抽一次、重复请求返回同一结果，正常客户端只在没连上时补抽；按设备计数让刷请求的设备先被自己的额度挡住）；
