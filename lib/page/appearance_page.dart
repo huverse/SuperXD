@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
 
+import 'package:superxd/domain/font_pack.dart';
 import 'package:superxd/page/image_copy_pick.dart';
 import 'package:superxd/page/text_size_range.dart';
 import 'package:superxd/page/course_cards.dart';
@@ -22,6 +23,8 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/native_glass.dart';
 import 'package:superxd/theme/scroll_anchor.dart';
@@ -46,10 +49,14 @@ class _FontPreview extends StatelessWidget {
   final String fontId;
   final Color color;
 
-  // 系统字体本来就在系统里，直接用文字预览；内置字体用预先画好的图。
+  // 系统字体本来就在系统里，直接用文字预览；内置与下载的字体用预先画好的图（衬线没下载也能看到样子）。
+  // 系统字体的族名取主题不指定字体时平台默认的那个（安卓 Roboto 加系统的中文字体，iOS 是苹方），同全应用选系统字体时的口径；
+  // 不能写 fontFamily: null，那会被页面默认的 Maple 填上（以前「系统字体」的预览其实是 Maple 画的）。
+  static String? systemFamily(BuildContext context) => Typography.material2021(platform: Theme.of(context).platform).black.bodyMedium?.fontFamily;
+
   @override
   Widget build(BuildContext context) => fontId == DisplaySettings.systemFont
-      ? Text(fontPreviewText, style: const TextStyle(fontFamily: null, fontWeight: FontWeight.w500, fontSize: 16, height: 1.6).copyWith(color: color))
+      ? Text(fontPreviewText, style: TextStyle(fontFamily: systemFamily(context), fontWeight: FontWeight.w500, fontSize: 16, height: 1.6, color: color))
       : Image.asset(
     'assets/font_previews/$fontId.png',
     scale: fontPreviewScale * 16 / MediaQuery.textScalerOf(context).scale(16),
@@ -338,6 +345,113 @@ class _AppearancePageState extends State<AppearancePage> {
     ];
   }
 
+  // 字体包里的字体：能下载、本机有文件、已经装好或正选着它时才列出来（没配中转的构建里没下过就看不到衬线）。
+  static bool _offered(DisplaySettings settings, String id) {
+    final packs = settings.fontPacks;
+    return packs == null || !packs.contains(id) || packs.downloadable || packs.hasFiles(id) || packs.ready(id) || settings.fontId == id;
+  }
+
+  // 点选字体：字体包先下载再换上（DisplaySettings.chooseFont），下载进度、失败与取消都在这张卡里原地显示。
+  // 换字体时第一次用到要解析字形，新字体可能晚几百毫秒才排上，锚定得久一些。
+  void _choose(DisplaySettings settings, String id) {
+    _scroll.hold(_fontAnchors[id]!, const Duration(milliseconds: 900));
+    _save(() => settings.chooseFont(id));
+  }
+
+  Widget _fontCard(BuildContext context, DisplaySettings settings, CampusPalette colors, String id, String label) {
+    final selected = settings.fontId == id;
+    final packs = settings.fontPacks;
+    final pack = packs != null && packs.contains(id) ? packs.packs[id] : null;
+    final status = pack == null ? null : packs!.statusOf(id);
+    final downloading = status?.phase == FontPackPhase.downloading;
+    return Semantics(
+      selected: selected,
+      button: true,
+      label: label,
+      child: CampusSurface(
+        key: _fontAnchors[id],
+        selected: selected,
+        onTap: downloading ? null : () => _choose(settings, id),
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text(label, style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  Align(alignment: AlignmentDirectional.centerStart, child: _FontPreview(fontId: id, color: colors.onSurface)),
+                  if (pack != null && status != null) ..._packStatus(context, settings, colors, pack, status, selected),
+                ],
+              ),
+            ),
+            if (selected) const CampusIcon(CampusIcons.check),
+            // 下载的字体包可以删（人工决策见 domain/font_pack.dart）：本机有文件、没在下载时收在⋯里。
+            if (pack != null && packs!.hasFiles(id) && !downloading)
+              Builder(builder: (anchor) => IconButton(tooltip: '更多操作', onPressed: () => _packMenu(anchor, settings, pack, label), icon: const CampusIcon(CampusIcons.manage))),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 字体包这一项的状态，原地显示：没下载写大小、下载中是进度条与取消、失败写原因给重试；下好了（含这次还没注册的）不再多写。
+  List<Widget> _packStatus(BuildContext context, DisplaySettings settings, CampusPalette colors, FontPack pack, FontPackStatus status, bool selected) {
+    final secondary = TextStyle(fontSize: 14, color: colors.onSurfaceVariant);
+    String megabytes(int bytes) => (bytes / 1048576).toStringAsFixed(1);
+    return switch (status.phase) {
+      FontPackPhase.downloading => [
+        const SizedBox(height: 12),
+        Row(children: [
+          Expanded(child: LinearProgressIndicator(value: status.progress, borderRadius: BorderRadius.circular(4))),
+          IconButton(tooltip: '取消下载', onPressed: () => settings.fontPacks!.cancel(pack.id), icon: const CampusIcon(CampusIcons.close)),
+        ]),
+        Text('正在下载 ${megabytes(status.received)} / ${megabytes(status.total)} MB', style: secondary.copyWith(fontFeatures: const [FontFeature.tabularFigures()])),
+      ],
+      FontPackPhase.failed => [
+        const SizedBox(height: 8),
+        Text(status.error ?? '下载没完成，请重试', style: TextStyle(fontSize: 14, color: colors.danger)),
+        const SizedBox(height: 8),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(onPressed: () => _choose(settings, pack.id), icon: const CampusIcon(CampusIcons.sync), label: const Text('重试')),
+        ),
+      ],
+      FontPackPhase.missing when selected => [
+        const SizedBox(height: 8),
+        Text('还没下载，暂用 Maple 显示', style: secondary),
+        const SizedBox(height: 8),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: TextButton.icon(onPressed: () => _choose(settings, pack.id), icon: const CampusIcon(CampusIcons.download), label: Text('下载 ${megabytes(pack.size)} MB')),
+        ),
+      ],
+      FontPackPhase.missing => [
+        const SizedBox(height: 8),
+        Text('选用时下载，约 ${megabytes(pack.size)} MB', style: secondary),
+      ],
+      FontPackPhase.stored || FontPackPhase.ready => const [],
+    };
+  }
+
+  // ⋯里的「删除字体包」：破坏性操作先确认；正在用就先换回默认字体再删（DisplaySettings.deleteFontPack），删完这一项回到未下载。
+  Future<void> _packMenu(BuildContext anchor, DisplaySettings settings, FontPack pack, String label) async {
+    final choice = await showCampusMenu<String>(anchor, items: const [CampusMenuItem(value: 'delete', label: '删除字体包', icon: CampusIcons.delete, destructive: true)]);
+    if (choice != 'delete' || !mounted) return;
+    final inUse = settings.fontId == pack.id;
+    final agreed = await showCampusConfirm(
+      context,
+      title: '删除字体包',
+      message: inUse ? '先换回 Maple，再删除本机的$label字体文件，之后可以再下载。' : '删除本机的$label字体文件，之后可以再下载。',
+      action: '删除',
+      destructive: true,
+    );
+    if (!agreed || !mounted) return;
+    await _save(() => settings.deleteFontPack(pack.id));
+    if (mounted && _error == null) showCampusToast(context, '已删除字体包');
+  }
+
   @override
   Widget build(BuildContext context) {
     final settings = DisplayScope.of(context);
@@ -460,45 +574,17 @@ class _AppearancePageState extends State<AppearancePage> {
             Text('字体', style: Theme.of(context).textTheme.titleLarge),
             const SizedBox(height: 16),
             for (final font in [
-              // 系统字体只在 iOS 上有（[人工决策] 见 local/display_settings.dart 的 systemFont）。
+              // 系统字体安卓与 iOS 都有（[人工决策] 见 local/display_settings.dart 的 systemFont）。
               if (DisplaySettings.supportsSystemFont) (id: DisplaySettings.systemFont, label: '系统字体'),
               (id: 'maple', label: 'Maple'),
-              (id: 'serif', label: '文学衬线'),
+              // 衬线是下载的字体包（人工决策见 domain/font_pack.dart）：这个版本下不了（没配中转）、本机也没有时不列出来。
+              if (_offered(settings, 'serif')) (id: 'serif', label: '文学衬线'),
             ])
               Padding(
                 padding: const EdgeInsets.only(bottom: 12),
-                child: Semantics(
-                  selected: settings.fontId == font.id,
-                  button: true,
-                  label: font.label,
-                  child: CampusSurface(
-                    key: _fontAnchors[font.id],
-                    selected: settings.fontId == font.id,
-                    // 换字体：第一次用到要解析字形，新字体可能晚几百毫秒才排上，锚定得久一些。
-                    onTap: () {
-                      _scroll.hold(_fontAnchors[font.id]!, const Duration(milliseconds: 900));
-                      _save(() => settings.setFont(font.id));
-                    },
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                font.label,
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              const SizedBox(height: 8),
-                              _FontPreview(fontId: font.id, color: colors.onSurface),
-                            ],
-                          ),
-                        ),
-                        if (settings.fontId == font.id)
-                          const CampusIcon(CampusIcons.check),
-                      ],
-                    ),
-                  ),
+                child: ListenableBuilder(
+                  listenable: settings.fontPacks ?? settings,
+                  builder: (context, _) => _fontCard(context, settings, colors, font.id, font.label),
                 ),
               ),
             const SizedBox(height: 12),
