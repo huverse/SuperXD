@@ -20,9 +20,9 @@ export type RewardDrawInput = {
 
 export abstract class RewardRepository {
   abstract findCampaign(campaignKey: string): Promise<RewardCampaignEntity | null>;
-  // 这个参与号在这次活动里抽过的结果；没抽过为空。
+  // 这台设备（participantHash 是设备号的 sha256）在这次活动里抽过的结果；没抽过为空。
   abstract findDraw(campaignId: string, participantHash: string): Promise<RewardDrawOutcome | null>;
-  // 记一次抽签并按需发奖，同一事务；同一参与号并发来两次只记一次，后到的拿先到的结果。
+  // 记一次抽签并按需发奖，同一事务；同一台设备并发来两次只记一次，后到的拿先到的结果。
   abstract draw(input: RewardDrawInput): Promise<RewardDrawOutcome>;
   // 删除结束早于 before 的活动的奖品与抽签记录，每次最多 limit 行；都删完的活动行一并删掉。返回删除行数。
   abstract deleteEnded(before: Date, limit: number): Promise<number>;

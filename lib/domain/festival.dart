@@ -3,6 +3,16 @@
 // 抽签只在服务器（概率模型见 server/src/modules/reward/reward_odds.ts），没抽中的人不打扰、只看节日动画；奖励的揭晓动画是预制的。
 // 什么时候播走打扰时机（domain/interruption.dart、application/app_moments.dart）；动画登记在 page/festival/festival_catalog.dart。
 //
+// [人工决策-2026-11-10 12:55:52] 抽签改为用已登记的中转设备签名（取代 10-23 起本机随机参与号、免签名抽签；服务端见 server/src/modules/reward/reward_odds.ts）：
+// 免签名时换个参与号就能再抽，一个脚本就能把每小时的放量额度拿完，奖品是真钱。用户选定（接受因此改隐私政策）：
+// - 抽奖用单独的「抽奖身份」密钥对（FestivalPass，social 实现），不复用私信身份：隐私政策承诺过参与不关联教务账号、私信身份与设备标识，复用就连上了。
+// - 按需登记、不给所有人登记：登记表里有带抽奖的节日、今天在它开始前 festivalPassLeadDays（7）天到结束之间、且已同意协议与政策时，打开应用才生成密钥并向中转登记一次；
+//   提前 7 天是因为校园网 NAT 下节日当天大家同时登记会撞中转「每个出口每小时 20 台新设备」的注册限流。被限流或没连上就下次打开再试；
+//   抽签时还没登记成功的照「没连上，下次回到前台补抽」处理。没有这样的节日时不生成密钥、不联网。
+// - 节日都过了以后第一次打开应用时，请中转删除这台抽奖设备并删掉本机密钥；没删成的（没再打开、已卸载）由中转 400 天不活跃清理兜底。
+// - 本机原来的随机参与号不再发出、不再记录（从没发出过：登记表一直是空的）。活跃天数仍由客户端自报，概率模型不变。
+// 没选：所有人启动就登记（没有节日时也多一台设备与一次联网）、复用私信身份、只收紧按 IP 的限流（校园网 NAT 下误伤同学、挡不住换出口）。
+//
 // 一次节日：编号（如 spring-2027，同一节日每一年是不同的一次；发出后不改，播过、抽过都按它记）、名字、校园时区的起止日期（含两端，YYYY-MM-DD）、
 // 抽奖活动编号（为空不抽奖；与服务器上 reward_admin create 的编号一致）。
 class FestivalOccasion {
@@ -57,6 +67,11 @@ class FestivalException implements Exception {
   String toString() => message;
 }
 
+// 抽奖身份没有登记：本机没有抽奖密钥，或中转已不认这台抽奖设备。记成没登记，下次打开应用时重新登记。
+class FestivalNotEnrolled extends FestivalException {
+  const FestivalNotEnrolled() : super('抽奖身份没有登记');
+}
+
 // 活跃度：近 30 天（含今天）里打开过应用的校园日数，抽奖时报给服务器做加权。本机只留这 30 天的日期，记录大小有上限。
 const festivalActiveWindow = 30;
 
@@ -78,13 +93,24 @@ bool festivalPrizeKept(FestivalPrize prize, Iterable<FestivalOccasion> occasions
   return occasion != null && today.compareTo(_shift(occasion.to, festivalPrizeKeepDays)) <= 0;
 }
 
-// 本机记录（local 实现，见 local/festival_memory.dart）：参与号（第一次抽签时生成的随机数，不关联任何账号）、近 30 天打开过的校园日、
+// 抽奖身份提前这么多天生成并登记（人工决策见文件头）：校园网 NAT 下节日当天大家同时登记会撞中转的注册限流，提前一周分散开。
+const festivalPassLeadDays = 7;
+
+// 今天要不要有抽奖身份：有抽奖的节日里有一次，今天在它开始前 festivalPassLeadDays 天到结束（含两端）之间。
+bool festivalPassNeeded(Iterable<FestivalOccasion> occasions, String today) => occasions.any(
+  (occasion) => occasion.campaign != null && _shift(occasion.from, -festivalPassLeadDays).compareTo(today) <= 0 && today.compareTo(occasion.to) <= 0,
+);
+
+// 抽奖身份在本机的状态：none 没有密钥；created 开始生成过、还没登记成功（可能有密钥）；enrolled 已在中转登记。
+enum FestivalPassState { none, created, enrolled }
+
+// 本机记录（local 实现，见 local/festival_memory.dart）：抽奖身份的状态、近 30 天打开过的校园日、
 // 播过的节日、抽过签的节日（结果已定，不再抽）、抽中的奖品。播过与抽过各只留最近 festivalHistoryLimit 次，奖品按 festivalPrizeKeepDays 清。
 const festivalHistoryLimit = 20;
 
 class FestivalRecord {
-  const FestivalRecord({this.participant, this.activeDays = const {}, this.played = const [], this.drawn = const [], this.prizes = const []});
-  final String? participant;
+  const FestivalRecord({this.pass = FestivalPassState.none, this.activeDays = const {}, this.played = const [], this.drawn = const [], this.prizes = const []});
+  final FestivalPassState pass;
   final Set<String> activeDays;
   final List<String> played;
   final List<String> drawn;
@@ -96,7 +122,18 @@ abstract class FestivalMemory {
   Future<void> save(FestivalRecord record);
 }
 
-// 抽签（device 实现：自建中转）。连不上、限流时抛 FestivalException；同一参与号重复抽返回同一个结果。
+// 抽奖身份（social 实现，组合根注入；人工决策见文件头）：本机单独生成的一对密钥，公钥登记在中转，抽签请求用它签名；与私信身份分开存、互不关联。
+// 连不上、被限流、中转出错都抛 FestivalException。
+abstract class FestivalPass {
+  // 本机没有密钥就生成一对，再向中转登记（登记过的再登记一次是幂等的、不占注册限流）。
+  Future<void> enroll();
+  // 用抽奖身份签名发一个 POST，返回响应体。本机没有密钥或中转不认这台设备时抛 FestivalNotEnrolled。
+  Future<Map<String, Object?>> post(String path, Map<String, Object?> payload);
+  // 请中转删除这台抽奖设备（中转已经不认它也算删掉），再删本机密钥；本机没有密钥时什么也不做。
+  Future<void> retire();
+}
+
+// 抽签（device 实现：自建中转，经抽奖身份签名）。连不上、限流时抛 FestivalException；同一台抽奖设备重复抽返回同一个结果。
 abstract class FestivalRewardClient {
-  Future<FestivalDraw> draw(String campaign, {required String occasion, required String participant, required int activeDays});
+  Future<FestivalDraw> draw(String campaign, {required String occasion, required int activeDays});
 }

@@ -745,7 +745,7 @@ void main() {
     final scene = FestivalScene(occasion: occasion, length: const Duration(seconds: 2), builder: (context, progress) => const Center(child: Text('合成场景')));
     festivalCatalog.add(scene);
     addTearDown(() => festivalCatalog.remove(scene));
-    final festivals = Festivals(occasions: [occasion], memory: FileFestivalMemory.memory(), client: _Reward());
+    final festivals = Festivals(occasions: [occasion], memory: FileFestivalMemory.memory(const FestivalRecord(pass: FestivalPassState.enrolled)), client: _Reward());
     final moments = AppMoments(festivals: festivals, timetable: () async => const CampusTimetable([]));
     final legal = LegalNoticeMemory.memory(agreedRevision: legalRevision, seenRevision: legalRevision);
     await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, legal: legal, festivals: festivals, moments: moments)); await tester.pumpAndSettle();
@@ -882,10 +882,10 @@ void expectSliding(WidgetTester tester, Finder page) {
   });
 }
 
-// 合成的抽签：一律抽中一个合成口令。
+// 合成的抽签：一律抽中一个合成口令（测试里抽奖身份记成已登记）。
 class _Reward implements FestivalRewardClient {
   @override
-  Future<FestivalDraw> draw(String campaign, {required String occasion, required String participant, required int activeDays}) async =>
+  Future<FestivalDraw> draw(String campaign, {required String occasion, required int activeDays}) async =>
       FestivalWon(FestivalPrize(occasion: occasion, kind: FestivalPrizeKind.password, content: '合成口令', note: '', wonAt: DateTime.now().toUtc()));
 }
 

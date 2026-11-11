@@ -26,6 +26,7 @@ export class RewardPrizeEntity extends BaseEntity {
 @Entity('reward_draw')
 export class RewardDrawEntity extends BaseEntity {
   @Column({ name: 'campaign_id', type: 'bigint', unsigned: true }) campaignId: string;
+  // 抽签设备的设备号的 sha256 十六进制（2026-11-10 起，见 reward_odds.ts 的人工决策）；列名与 sql 里的注释沿用最初的「参与号」，表结构不变。
   @Column({ name: 'participant_hash', type: 'char', length: 64 }) participantHash: string;
   @Column({ name: 'active_days', type: 'tinyint', unsigned: true }) activeDays: number;
   @Column({ name: 'weight', type: 'decimal', precision: 5, scale: 2 }) weight: string;
