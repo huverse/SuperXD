@@ -13,7 +13,9 @@ import { appDownloadsPerInstance, appFilePerHour, appReleaseFileMaxBytes, appRel
 import * as dtos from 'src/modules/app_release/app_release.dto';
 
 // 应用更新：发版时把清单（<渠道>.json）与各架构安装包放进 RELAY_RELEASES_DIR，这里只读不写。
-// 不签名、不碰数据库：清单是公开信息，安装包的真伪由客户端核对 SHA-256 与签名证书（与已装应用一致才装）。
+// 不碰数据库：清单是公开信息，安装包的真伪由客户端核对 SHA-256 与签名证书（与已装应用一致才装）。
+// 清单与开发者的话由流水线签好名（人工决策见客户端 lib/device/signed_content.dart），这里不签、不验，只把信封原样透传；
+// 明文字段照旧给 1.0.0-alpha.15 及以前不验签的旧客户端。返回里总带 envelope（文件里没有时为 null），流水线上传前靠它确认中转已能透传。
 @Injectable()
 export class AppReleaseService {
   private readonly logger = new Logger('AppRelease');
@@ -39,10 +41,11 @@ export class AppReleaseService {
       notes: release.notes,
       releasePage: release.releasePage,
       apk: apk === undefined ? null : { url: `/v1/app/files/${apk.file}`, size: apk.size, sha256: apk.sha256 },
+      envelope: release.envelopes?.[abi] ?? null,
     };
   }
 
-  // 开发者的话：发布目录里的 developer_notes.json，还没放时给空列表（客户端什么也不显示）。
+  // 开发者的话：发布目录里的 developer_notes.json，还没放时给空列表、信封为空（客户端什么也不显示）。
   async notes(ip: string): Promise<dtos.DeveloperNotesDto> {
     const retryAfter = await this.limiter.hit('developer_notes', rateSubjectOf(ip), developerNotesPerHour, 3600);
     if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '请求过于频繁', { retryAfter });
@@ -53,16 +56,17 @@ export class AppReleaseService {
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
       this.notesCache = undefined;
-      return { notes: [] };
+      return { notes: [], envelope: null };
     }
     const cached = this.notesCache;
     if (cached !== undefined && cached.mtimeMs === info.mtimeMs && cached.size === info.size) return cached.notes;
     if (info.size > developerNotesFileMaxBytes) throw new Error(`developer_notes.json 超过 ${developerNotesFileMaxBytes} 字节`);
-    const notes = plainToInstance(dtos.DeveloperNotesDto, JSON.parse(await readFile(path, 'utf8')) as object);
-    const errors = validateSync(notes, { whitelist: true, forbidNonWhitelisted: true });
+    const file = plainToInstance(dtos.DeveloperNotesDto, JSON.parse(await readFile(path, 'utf8')) as object);
+    const errors = validateSync(file, { whitelist: true, forbidNonWhitelisted: true });
     if (errors.length > 0) throw new Error(`developer_notes.json 格式不对：${errors.map((item) => item.property).join(',')}`);
+    const notes = { notes: file.notes, envelope: file.envelope ?? null };
     this.notesCache = { mtimeMs: info.mtimeMs, size: info.size, notes };
-    this.logger.log(`[AppRelease] action=load_notes count=${notes.notes.length}`);
+    this.logger.log(`[AppRelease] action=load_notes count=${notes.notes.length} signed=${notes.envelope !== null}`);
     return notes;
   }
 
@@ -106,7 +110,7 @@ export class AppReleaseService {
     const errors = validateSync(release, { whitelist: true, forbidNonWhitelisted: true });
     if (errors.length > 0) throw new Error(`清单 ${channel}.json 格式不对：${errors.map((item) => item.property).join(',')}`);
     this.cache.set(channel, { mtimeMs: info.mtimeMs, size: info.size, release });
-    this.logger.log(`[AppRelease] action=load channel=${channel} versionCode=${release.versionCode}`);
+    this.logger.log(`[AppRelease] action=load channel=${channel} versionCode=${release.versionCode} signed=${release.envelopes !== undefined}`);
     return release;
   }
 }

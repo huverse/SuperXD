@@ -30,10 +30,12 @@ export class MessageService {
   async send(senderDeviceId: string, recipientDeviceId: string, clientId: string, envelope: string) {
     const bytes = this.decodeEnvelope(envelope);
     if (!(await this.friends.isFriend(senderDeviceId, recipientDeviceId))) throw new RelayError(RelayCode.notFriend, HttpStatus.FORBIDDEN, '对方不是好友');
-    for (const [scope, limit, window] of [['send_minute', sendPerMinute, 60], ['send_day', sendPerDay, 86400]] as const) {
-      const retryAfter = await this.limiter.hit(scope, senderDeviceId, limit, window);
-      if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '发送过于频繁', { retryAfter });
-    }
+    // 每分钟与每天两个窗口一次往返检查，超了每分钟的就不再计入每天的。
+    const retryAfter = await this.limiter.hitAll(senderDeviceId, [
+      { scope: 'send_minute', limit: sendPerMinute, windowSeconds: 60 },
+      { scope: 'send_day', limit: sendPerDay, windowSeconds: 86400 },
+    ]);
+    if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '发送过于频繁', { retryAfter });
     const stored = await this.deliver(recipientDeviceId, senderDeviceId, clientId, bytes);
     this.notifier.notify(recipientDeviceId);
     this.logger.debug(`[Message] action=send senderDeviceId=${senderDeviceId} recipientDeviceId=${recipientDeviceId} bytes=${bytes.length} id=${stored.id}`);

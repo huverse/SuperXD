@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 import 'package:superxd/app_diagnostics.dart';
 import 'package:superxd/device/diagnostic_device.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/diagnostic_upload.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
 
@@ -176,6 +177,36 @@ void main() {
     final filename = await logs.export();
     expect(filename, 'SuperXD-日志-20261021-120000.zip');
     expect(published[filename], unorderedEquals(['about.txt', 'diagnostics-2026-10-21.log', 'errors.log']));
+    expect(Directory(path.join(temp.path, 'cache', 'diagnostics_export')).listSync(), isEmpty);
+  });
+
+  test('上传诊断包：打的包与导出的相同（全部日志加 about.txt），交给注入的上传、回诊断编号，临时包用完即删；没有日志不传；没注入上传时没有这个去处', () async {
+    expect((await open()).canUpload, isFalse);
+    final uploaded = <List<String>>[];
+    final logs = await DiagnosticLog.open(
+      directory: Directory(path.join(temp.path, 'logs')),
+      exports: Directory(path.join(temp.path, 'cache', 'diagnostics_export')),
+      publish: (archive, filename) async => true,
+      uploader: _RecordingUploader((archivePath, onProgress) async {
+        final decoded = ZipDecoder().decodeBytes(File(archivePath).readAsBytesSync());
+        uploaded.add([for (final file in decoded.files) file.name]);
+        expect(utf8.decode(decoded.findFile('about.txt')!.content), allOf(contains('version: 1.0.0-alpha.6'), contains('developer: true')));
+        onProgress?.call(1);
+        return 'ABCD2345';
+      }),
+      clock: () => DateTime.utc(2026, 10, 21, 4),
+    );
+    expect(logs.canUpload, isTrue);
+    await expectLater(logs.upload(), throwsA(isA<DiagnosticUploadException>().having((error) => error.message, 'message', '本机还没有日志')));
+    expect(uploaded, isEmpty);
+    logs.environment = {'version': '1.0.0-alpha.6'};
+    logs.developer = true;
+    logs.record('[Route] action=change path=/today');
+    logs.record('[App] action=uncaught errorType=StateError\n#0 main');
+    final progress = <double>[];
+    expect(await logs.upload(onProgress: progress.add), 'ABCD2345');
+    expect(uploaded.single, unorderedEquals(['about.txt', 'diagnostics-2026-10-21.log', 'errors.log']));
+    expect(progress, [1]);
     expect(Directory(path.join(temp.path, 'cache', 'diagnostics_export')).listSync(), isEmpty);
   });
 
@@ -459,4 +490,12 @@ void main() {
     final reopened = await DeveloperSettings.open(file);
     expect((reopened.enabled, reopened.performanceOverlay), (true, false));
   });
+}
+
+// 测试用的上传：把收到的包交给回调看。
+class _RecordingUploader implements DiagnosticUploader {
+  _RecordingUploader(this._upload);
+  final Future<String> Function(String archivePath, void Function(double sent)? onProgress) _upload;
+  @override
+  Future<String> upload(String archivePath, {void Function(double sent)? onProgress}) => _upload(archivePath, onProgress);
 }

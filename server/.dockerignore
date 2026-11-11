@@ -1,0 +1,6 @@
+# 构建上下文只要源码与锁文件：依赖在镜像里重新安装；密码、发布目录与备份不进上下文。
+node_modules
+dist
+releases
+backups
+.env

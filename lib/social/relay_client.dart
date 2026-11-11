@@ -195,6 +195,9 @@ class RelayClient {
 
   Future<void> ack(SocialIdentity identity, List<String> ids) => _call(identity, 'POST', '/v1/messages/ack', {'ids': ids});
 
+  // 用给定身份签名发一个请求，返回响应体：节日抽签用单独的抽奖身份发（social/festival_pass.dart），接口路径由调用方给。
+  Future<Map<String, Object?>> request(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload]) => _call(identity, method, path, payload);
+
   static int _integer(Object? value) => value is int ? value : throw const RelayException(RelayCode.badResponse);
   static String _text(Object? value) => value is String ? value : throw const RelayException(RelayCode.badResponse);
 }
