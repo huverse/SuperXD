@@ -264,7 +264,7 @@ void main() {
 
   testWidgets('周次是等宽网格；快捷选周只亮正好匹配的一项，点格子单独增减', (tester) async {
     await tester.pumpWidget(app(Builder(builder: (context) => Scaffold(body: TextButton(
-      onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => CourseEditorPage(courses: const [], bells: const [], onSave: (course) async => null))),
+      onPressed: () => Navigator.push(context, MaterialPageRoute<void>(builder: (_) => CourseEditorPage(courses: const [], bells: const [], onSave: (course) async => null))),
       child: const Text('打开编辑'),
     )))));
     await tapVisible(tester, find.text('打开编辑'));
@@ -293,7 +293,7 @@ void main() {
             body: TextButton(
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(
+                MaterialPageRoute<void>(
                   builder: (_) => CourseEditorPage(
                     courses: const [],
                     bells: const [],

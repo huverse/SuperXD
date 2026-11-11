@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
@@ -311,7 +312,7 @@ void main() {
       expect(await confirm, isTrue);
       expect(campusOverlayDepth.value, 0);
       expect(panelOpaque(), isFalse);
-      showCampusDialog<void>(context: page, builder: (context) => CampusGlassDialog(solid: true, title: const Text('验证码'), options: [SimpleDialogOption(onPressed: () => Navigator.pop(context), child: const Text('选项一'))]));
+      unawaited(showCampusDialog<void>(context: page, builder: (context) => CampusGlassDialog(solid: true, title: const Text('验证码'), options: [SimpleDialogOption(onPressed: () => Navigator.pop(context), child: const Text('选项一'))])));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 120));
       // 实色面板没有玻璃，仍随路由进度淡入。
@@ -322,7 +323,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(CampusGlassDialog), findsNothing);
       // 日期选择器等系统弹窗不含玻璃面板，整体随进度淡入。
-      showCampusDialog<void>(context: page, glassPanel: false, builder: (context) => const AlertDialog(content: Text('选择开学日')));
+      unawaited(showCampusDialog<void>(context: page, glassPanel: false, builder: (context) => const AlertDialog(content: Text('选择开学日'))));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 120));
       expect(fadedOpacity(find.byType(AlertDialog)), inExclusiveRange(0, 1));
@@ -485,10 +486,10 @@ void main() {
 
       // 弹层开着：底下页面的锚点不在最上层路由，提示条回到屏幕底部。
       late BuildContext sheet;
-      showCampusSheet<void>(context: page, builder: (context) {
+      unawaited(showCampusSheet<void>(context: page, builder: (context) {
         sheet = context;
         return const CampusSheetPanel(child: SizedBox(height: 200));
-      });
+      }));
       await tester.pumpAndSettle();
       showCampusToast(sheet, '在弹层里');
       await tester.pumpAndSettle();

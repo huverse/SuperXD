@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:camera/camera.dart' show CameraException;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -11,7 +13,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 Future<GlobalKey<NavigatorState>> _open(WidgetTester tester, QrScanPage page, {void Function(String? raw)? onPop}) async {
   final navigator = GlobalKey<NavigatorState>();
   await tester.pumpWidget(MaterialApp(theme: campusTheme(), navigatorKey: navigator, home: const SizedBox.expand(child: Text('上一页'))));
-  navigator.currentState!.push(CampusPageRoute<String>(builder: (_) => page)).then((raw) => onPop?.call(raw));
+  unawaited(navigator.currentState!.push(CampusPageRoute<String>(builder: (_) => page)).then((raw) => onPop?.call(raw)));
   await tester.pumpAndSettle();
   return navigator;
 }

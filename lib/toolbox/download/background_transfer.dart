@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:background_downloader/background_downloader.dart' as background;
+import 'package:flutter/foundation.dart';
 
 import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/domain/campus_log.dart';
@@ -8,7 +9,8 @@ import 'package:superxd/domain/campus_log.dart';
 class BackgroundTransfer implements ToolboxTransfer {
   BackgroundTransfer(this.directory);
   final String directory;
-  final _downloader = background.FileDownloader();
+  // 用到才取插件的单例：只测回调与任务参数时不碰原生通道。
+  late final _downloader = background.FileDownloader();
   final _updates = StreamController<ToolboxTransferUpdate>.broadcast();
   final _cancellations = <String, Completer<void>>{};
   final _pauses = <String, Completer<bool>>{};
@@ -41,59 +43,7 @@ class BackgroundTransfer implements ToolboxTransfer {
     if (results.any((result) => result.$2.isNotEmpty)) {
       throw const ToolboxException('下载服务初始化失败');
     }
-    _downloader.registerCallbacks(
-      group: group,
-      taskStatusCallback: (update) {
-        // 带上插件给的原因：只记种类分不清是网络、证书还是被系统拦下。
-        // HTTP 错误的描述是响应正文（可能是网页），只记状态码；404 插件不给异常，单独记一条。
-        if (update.exception case final exception?) {
-          campusLog(
-            '[ToolboxDownload] action=transfer errorType=${exception.runtimeType} ${exception is background.TaskHttpException ? 'http=${exception.httpResponseCode}' : 'message=${exception.description.replaceAll(RegExp(r'\s+'), ' ')}'}',
-          );
-        } else if (update.status == background.TaskStatus.notFound) {
-          campusLog(
-            '[ToolboxDownload] action=transfer errorType=NotFound http=${update.responseStatusCode}',
-          );
-        }
-        if (update.status.isFinalState) {
-          final cancellation = _cancellations.remove(update.task.taskId);
-          if (cancellation != null && !cancellation.isCompleted) {
-            cancellation.complete();
-          }
-        }
-        if (update.status == background.TaskStatus.paused ||
-            update.status.isFinalState) {
-          final pause = _pauses.remove(update.task.taskId);
-          if (pause != null && !pause.isCompleted) {
-            pause.complete(update.status == background.TaskStatus.paused);
-          }
-        }
-        _updates.add(
-          ToolboxTransferUpdate(
-            update.task.taskId,
-            _state(update.status),
-            mimeType: update.mimeType,
-            error:
-                update.status == background.TaskStatus.failed ||
-                    update.status == background.TaskStatus.notFound
-                ? '下载失败，链接可能已失效，请重新解析'
-                : null,
-          ),
-        );
-      },
-      taskProgressCallback: (update) {
-        if (update.progress >= 0) {
-          _updates.add(
-            ToolboxTransferUpdate(
-              update.task.taskId,
-              ToolboxDownloadState.downloading,
-              progress: update.progress,
-              totalBytes: update.expectedFileSize,
-            ),
-          );
-        }
-      },
-    );
+    _downloader.registerCallbacks(group: group, taskStatusCallback: onStatus, taskProgressCallback: onProgress);
     _downloader.configureNotificationForGroup(
       group,
       running: const background.TaskNotification('百宝箱正在下载', '{progress}'),
@@ -104,6 +54,77 @@ class BackgroundTransfer implements ToolboxTransfer {
     await _downloader.trackTasksInGroup(group, markDownloadedComplete: false);
     await _downloader.resumeFromBackground();
   }
+
+  // 插件的状态回调：转成通用状态推给下载管理，并收尾在等这个任务停下或暂停的取消与暂停。
+  @visibleForTesting
+  void onStatus(background.TaskStatusUpdate update) {
+    // 带上插件给的原因：只记种类分不清是网络、证书还是被系统拦下。
+    // HTTP 错误的描述是响应正文（可能是网页），只记状态码；404 插件不给异常，单独记一条。
+    if (update.exception case final exception?) {
+      campusLog(
+        '[ToolboxDownload] action=transfer errorType=${exception.runtimeType} ${exception is background.TaskHttpException ? 'http=${exception.httpResponseCode}' : 'message=${exception.description.replaceAll(RegExp(r'\s+'), ' ')}'}',
+      );
+    } else if (update.status == background.TaskStatus.notFound) {
+      campusLog(
+        '[ToolboxDownload] action=transfer errorType=NotFound http=${update.responseStatusCode}',
+      );
+    }
+    if (update.status.isFinalState) {
+      final cancellation = _cancellations.remove(update.task.taskId);
+      if (cancellation != null && !cancellation.isCompleted) {
+        cancellation.complete();
+      }
+    }
+    if (update.status == background.TaskStatus.paused ||
+        update.status.isFinalState) {
+      final pause = _pauses.remove(update.task.taskId);
+      if (pause != null && !pause.isCompleted) {
+        pause.complete(update.status == background.TaskStatus.paused);
+      }
+    }
+    _updates.add(
+      ToolboxTransferUpdate(
+        update.task.taskId,
+        _state(update.status),
+        mimeType: update.mimeType,
+        error:
+            update.status == background.TaskStatus.failed ||
+                update.status == background.TaskStatus.notFound
+            ? '下载失败，链接可能已失效，请重新解析'
+            : null,
+      ),
+    );
+  }
+
+  @visibleForTesting
+  void onProgress(background.TaskProgressUpdate update) {
+    if (update.progress >= 0) {
+      _updates.add(
+        ToolboxTransferUpdate(
+          update.task.taskId,
+          ToolboxDownloadState.downloading,
+          progress: update.progress,
+          totalBytes: update.expectedFileSize,
+        ),
+      );
+    }
+  }
+
+  // 交给插件的下载任务：不自动重试（不变量 9）、可暂停；没有通知权限时排得靠后、改走普通 WorkManager 任务（见 enqueue）。
+  @visibleForTesting
+  background.DownloadTask downloadTask(ToolboxDownload download, {required bool notifications}) => background.DownloadTask(
+    taskId: download.id,
+    url: download.url.toString(),
+    baseDirectory: background.BaseDirectory.root,
+    directory: directory,
+    filename: download.filename,
+    group: group,
+    updates: background.Updates.statusAndProgress,
+    retries: 0,
+    allowPause: true,
+    displayName: '百宝箱下载',
+    priority: notifications ? 0 : 5,
+  );
 
   @override
   Future<void> enqueue(ToolboxDownload download) async {
@@ -121,21 +142,7 @@ class BackgroundTransfer implements ToolboxTransfer {
         ),
       ],
     );
-    final accepted = await _downloader.enqueue(
-      background.DownloadTask(
-        taskId: download.id,
-        url: download.url.toString(),
-        baseDirectory: background.BaseDirectory.root,
-        directory: directory,
-        filename: download.filename,
-        group: group,
-        updates: background.Updates.statusAndProgress,
-        retries: 0,
-        allowPause: true,
-        displayName: '百宝箱下载',
-        priority: notifications ? 0 : 5,
-      ),
-    );
+    final accepted = await _downloader.enqueue(downloadTask(download, notifications: notifications));
     if (!accepted) throw const ToolboxException('下载任务未能启动');
   }
 

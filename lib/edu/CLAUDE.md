@@ -13,7 +13,7 @@
     - 排队中的请求可被 cancelRequests 立即打断。
     - 仍跳到 406 页时报 RATE_LIMITED，不自动重试。
   - cancelRequests 作废在途请求，取消后迟到的响应不得改写 cookie；dispose 之后拒绝发起请求。
-  - 成绩数据接口按块读取，上限 4MB。
+  - 请求经共用内核 domain/campus_http.dart 发：超时管到读完响应体，到点或 cancelRequests 都中断连接。成绩数据接口按块读取，上限 4MB（读法经内核的 collect 保持原样）；其余页面上限 pageLimit（4MB），超了按格式错误报、保留本地数据。
   - 解码：content-type 或页面前 1000 字节声明 GB 系字符集时用 GBK，否则用 UTF-8；UTF-8 解码失败时回退 GBK。
   - 登录流程：
     1. 获取登录页会话。

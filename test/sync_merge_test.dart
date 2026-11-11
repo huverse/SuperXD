@@ -392,7 +392,7 @@ void main() {
       final gateway = _Gateway(), scheduler = _Scheduler();
       final autoSync = AutoSync(gateway: gateway, scheduler: scheduler, clock: () => DateTime.utc(2026, 11, 5));
       await tester.pumpWidget(host());
-      chooseSyncSelection(hostContext, gateway, autoSync: autoSync);
+      unawaited(chooseSyncSelection(hostContext, gateway, autoSync: autoSync));
       await tester.pumpAndSettle();
       expect(find.text('未开启'), findsOneWidget);
       await tester.tap(find.text('未开启'));
@@ -460,7 +460,7 @@ void main() {
       final autoSync = AutoSync(gateway: gateway);
       await autoSync.accountChanged(signedIn: true);
       await tester.pumpWidget(host());
-      chooseSyncSelection(hostContext, gateway, autoSync: autoSync);
+      unawaited(chooseSyncSelection(hostContext, gateway, autoSync: autoSync));
       await tester.pumpAndSettle();
       await tester.tap(find.text('每天\u00A0· '));
       await tester.pumpAndSettle();
@@ -470,7 +470,7 @@ void main() {
     testWidgets('成绩页的同步范围没有自动同步入口', (tester) async {
       await tester.pumpWidget(host());
       final gateway = _Gateway();
-      chooseSyncSelection(hostContext, gateway, initialContents: {SyncContent.grades}, allowedContents: {SyncContent.grades});
+      unawaited(chooseSyncSelection(hostContext, gateway, initialContents: {SyncContent.grades}, allowedContents: {SyncContent.grades}));
       await tester.pumpAndSettle();
       expect(find.textContaining('自动同步'), findsNothing);
     });
@@ -492,7 +492,7 @@ void main() {
           return const Scaffold(body: SizedBox());
         }),
       ));
-      chooseSyncSelection(context, gateway, autoSync: autoSync);
+      unawaited(chooseSyncSelection(context, gateway, autoSync: autoSync));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });

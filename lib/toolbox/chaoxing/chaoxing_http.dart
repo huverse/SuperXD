@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 
@@ -127,12 +128,12 @@ class ChaoxingHttp {
     ChaoxingCookieJar? cookies,
     this.timeout = const Duration(seconds: 15),
     this.profile = ChaoxingClientProfile.chaoxing,
-  }) : _client = client ?? http.Client(),
+  }) : _http = CampusHttp('chaoxing', client: client),
        cookies = cookies ?? ChaoxingCookieJar();
 
   static const payloadLimit = 1024 * 1024;
 
-  final http.Client _client;
+  final CampusHttp _http;
   final ChaoxingCookieJar cookies;
   final Duration timeout;
 
@@ -166,60 +167,40 @@ class ChaoxingHttp {
   }) => _send(
     'POST',
     uri,
-    multipart: (fields: fields, file: http.MultipartFile.fromBytes('file', bytes, filename: filename, contentType: http.MediaType.parse(contentType))),
+    multipart: (fields: fields, files: [http.MultipartFile.fromBytes('file', bytes, filename: filename, contentType: http.MediaType.parse(contentType))]),
     timeout: timeout,
   );
 
-  // 超时管整个请求（连接、发送与读完响应体）：到点直接中断连接，慢速滴流的响应也拖不过上限。
+  // 超时管整个请求（连接、发送与读完响应体）：到点直接中断连接，慢速滴流的响应也拖不过上限（共用内核 CampusHttp）。
   Future<ChaoxingResponse> _send(
     String method,
     Uri uri, {
     String? body,
     String? contentType,
     Map<String, String>? headers,
-    ({Map<String, String> fields, http.MultipartFile file})? multipart,
+    ({Map<String, String> fields, List<http.MultipartFile> files})? multipart,
     Duration? timeout,
     int? payloadLimit,
     bool forbiddenExpired = false,
   }) async {
-    final deadline = Completer<void>();
-    final timer = Timer(timeout ?? this.timeout, deadline.complete);
-    final http.BaseRequest request;
-    if (multipart != null) {
-      request = http.AbortableMultipartRequest(method, uri, abortTrigger: deadline.future)
-        ..fields.addAll(multipart.fields)
-        ..files.add(multipart.file);
-    } else {
-      final plain = http.AbortableRequest(method, uri, abortTrigger: deadline.future);
-      if (body != null) {
-        if (contentType != null) plain.headers['Content-Type'] = contentType;
-        plain.body = body;
-      }
-      request = plain;
-    }
-    request.headers['User-Agent'] = profile.userAgent;
-    request.headers['Accept'] = '*/*';
-    if (headers != null) request.headers.addAll(headers);
     final loaded = cookies.load(uri);
-    if (loaded.isNotEmpty) {
-      request.headers['Cookie'] = loaded.entries.map((entry) => '${entry.key}=${entry.value}').join('; ');
-    }
-    // 开发者模式下每个请求记一条路径、状态、耗时与字节数（见 campusRequestLog）；出错的原因另有上面带 errorType 的日志。
-    final watch = Stopwatch()..start();
-    int? status, size;
+    final limit = payloadLimit ?? ChaoxingHttp.payloadLimit;
     try {
-      final response = await _client.send(request);
-      status = response.statusCode;
-      final bytes = BytesBuilder(copy: false);
-      final limit = payloadLimit ?? ChaoxingHttp.payloadLimit;
-      await for (final chunk in response.stream) {
-        bytes.add(chunk);
-        if (bytes.length > limit) {
-          campusLog('[Chaoxing] action=http errorType=too_large path=${uri.path} limit=$limit');
-          throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, '响应过大，已停止读取');
-        }
-      }
-      size = bytes.length;
+      final response = await _http.send(
+        method,
+        uri,
+        timeout: timeout ?? this.timeout,
+        limit: limit,
+        headers: {
+          if (body != null && contentType != null) 'Content-Type': contentType,
+          'User-Agent': profile.userAgent,
+          'Accept': '*/*',
+          ...?headers,
+          if (loaded.isNotEmpty) 'Cookie': loaded.entries.map((entry) => '${entry.key}=${entry.value}').join('; '),
+        },
+        body: body,
+        multipart: multipart,
+      );
       cookies.save(uri, ChaoxingCookieJar.parseSetCookie(response.headersSplitValues['set-cookie'] ?? const []));
       if (response.statusCode >= 400) {
         campusLog('[Chaoxing] action=http errorType=status path=${uri.path} status=${response.statusCode}');
@@ -228,10 +209,13 @@ class ChaoxingHttp {
         }
         throw ChaoxingFailure(ChaoxingFailureCode.server, '学习通返回错误码 ${response.statusCode}');
       }
-      return ChaoxingResponse(response.statusCode, bytes.takeBytes());
+      return ChaoxingResponse(response.statusCode, response.bodyBytes);
     } on ChaoxingFailure {
       rethrow;
-    } on http.RequestAbortedException catch (error, stack) {
+    } on CampusHttpTooLarge {
+      campusLog('[Chaoxing] action=http errorType=too_large path=${uri.path} limit=$limit');
+      throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, '响应过大，已停止读取');
+    } on TimeoutException catch (error, stack) {
       _log(uri, 'timeout', error, stack);
       throw const ChaoxingFailure(ChaoxingFailureCode.timeout, '请求超时，请稍后重试');
     } on SocketException catch (error, stack) {
@@ -244,9 +228,6 @@ class ChaoxingHttp {
     } on http.ClientException catch (error, stack) {
       _log(uri, 'network', error, stack);
       throw const ChaoxingFailure(ChaoxingFailureCode.network, '网络请求未完成，请稍后重试');
-    } finally {
-      timer.cancel();
-      campusRequestLog('chaoxing', method, uri, status: status, elapsed: watch.elapsed, bytes: size, error: size == null ? 'no_response' : null);
     }
   }
 
@@ -255,7 +236,7 @@ class ChaoxingHttp {
     campusLog('[Chaoxing] action=http errorType=$errorType path=${uri.path}\n$stack');
   }
 
-  void close() => _client.close();
+  void close() => _http.close();
 }
 
 // 表单体按标准表单编码：登录的密文里有 + 与 =，签到活动的 ext 是 JSON，都要编码后再拼。

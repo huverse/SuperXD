@@ -73,7 +73,7 @@ class _RewardRelay implements RelayTransport {
   Map<String, Object?> result = {'result': 'missed', 'prize': null};
 
   @override
-  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, bool background = false}) async {
+  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, int? limit, bool background = false}) async {
     if (!pathWithQuery.startsWith('/v1/rewards/')) return relay.handle(method, pathWithQuery, headers, body, timeout: timeout);
     final failure = relay.failNext;
     if (failure != null) {
@@ -160,7 +160,7 @@ void main() {
       expect(cleaned.pass, FestivalPassState.none);
       expect(cleaned.prizes, hasLength(1));
       // 旧版本写的文件：有 participant、没有 pass。照常读出其余各项，下次写就不再有参与号。
-      await file.writeAsString(jsonEncode({'participant': 'AAAAAAAAAAAAAAAAAAAAAA', 'activeDays': ['2027-02-06'], 'played': ['spring-2027'], 'drawn': [], 'prizes': []}));
+      await file.writeAsString(jsonEncode({'participant': 'AAAAAAAAAAAAAAAAAAAAAA', 'activeDays': ['2027-02-06'], 'played': ['spring-2027'], 'drawn': <Object?>[], 'prizes': <Object?>[]}));
       final legacy = await FileFestivalMemory.open(file);
       expect(legacy.record.pass, FestivalPassState.none);
       expect(legacy.record.played, ['spring-2027']);
