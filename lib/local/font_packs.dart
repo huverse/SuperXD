@@ -60,7 +60,10 @@ class FontPackLibrary extends ChangeNotifier {
 
   // 装好这个包：本机文件核对通过的直接用，缺的或坏的经中转下载、核对后再用，最后注册；同一个包同时只装一份（再调拿到同一个结果）。
   // download 为假时只用本机文件，缺了就当没下载。返回是否装好，失败的原因在 statusOf 里。
-  Future<bool> install(String id, {bool download = true}) => _installing[id] ??= _install(id, download).whenComplete(() => _installing.remove(id));
+  // 收尾时用块体：remove 返回的正是这个 Future，箭头函数把它交回 whenComplete 会自己等自己。
+  Future<bool> install(String id, {bool download = true}) => _installing[id] ??= _install(id, download).whenComplete(() {
+    _installing.remove(id);
+  });
 
   Future<bool> _install(String id, bool download) async {
     final pack = packs[id]!;
