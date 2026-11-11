@@ -35,9 +35,9 @@ class FontPack {
 // Noto Serif SC 2.003 三个静态字重，裁到 tool/font_charset.txt（tool/font_subset.py）。
 const fontPacks = <String, FontPack>{
   'serif': FontPack(id: 'serif', family: 'Noto Serif SC', files: [
-    FontPackFile(name: 'noto_serif_sc_regular-e0e07c32a973.ttf', weight: 400, size: 4388876, sha256: 'e0e07c32a97335cad4ba6e2e8fb01ededa5a0123118f30f3a39f532ebcbcef05'),
-    FontPackFile(name: 'noto_serif_sc_medium-5f51db5a1b46.ttf', weight: 500, size: 4388936, sha256: '5f51db5a1b46cfc307e41ad6744ef922ac681c379036b9fe826959c5c8a6f184'),
-    FontPackFile(name: 'noto_serif_sc_semibold-89dd06c4e481.ttf', weight: 600, size: 4389236, sha256: '89dd06c4e481800781c7376fa31d6ffe02d59e3e47a6fd6dbfe22c68d74c7bbc'),
+    FontPackFile(name: 'noto_serif_sc_regular-6749e5e6e30a.ttf', weight: 400, size: 4405112, sha256: '6749e5e6e30a00d2d9cc69e72cc7b8ef4cb9a99c768d984c633137c86b09acd7'),
+    FontPackFile(name: 'noto_serif_sc_medium-02c86556249e.ttf', weight: 500, size: 4405168, sha256: '02c86556249efe02f5ec1102e65172b01651c6f0859e70d69f6dffcf2b9bee98'),
+    FontPackFile(name: 'noto_serif_sc_semibold-4e0287fcab77.ttf', weight: 600, size: 4405456, sha256: '4e0287fcab77e9bc079e45f90ccfdb549001515b4c1076a686b33890cef58f71'),
   ]),
 };
 

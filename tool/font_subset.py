@@ -46,7 +46,7 @@ NOTO = {
 # 《通用规范汉字表》取自 Unihan 的 kTGH 字段（值为「2013:序号」，共 8105 字）。
 UNIHAN = ('Unihan.zip', 'https://www.unicode.org/Public/17.0.0/ucd/Unihan.zip', 'f7a48b2b545acfaa77b2d607ae28747404ce02baefee16396c5d2d7a8ef34b5e')
 # 字符集文件（连同说明行）的 SHA-256：重新生成字符集后改这里。
-CHARSET_SHA256 = 'a4b17c3bfa7c7556603364fcb636059cfc55cc20890e75c47d2bee55d005b554'
+CHARSET_SHA256 = '4d71fc2db4557c37853fb96f77c7d92d204abf287b0d9e9216d62c454080e88e'
 
 # 界面里用得到的非汉字区段（含两端）：生僻的整区不收，常用的整区收下，字体里没有的码位裁剪时自然跳过。
 SYMBOL_RANGES = [
@@ -87,6 +87,11 @@ SYMBOL_RANGES = [
     (0xFF00, 0xFFEF, '半角与全角'),
     (0xFFFD, 0xFFFD, '替换字符'),
 ]
+# FreeType 自动微调（autofit，安卓与 Flutter 测试画没有微调指令的汉字时用）算中日韩字的基准线与标准笔画宽用到的参考字：
+# afblue.dat 的 CJK 四组与 afscript.h 里 hani 的标准字「田 囗」（FreeType VER-2-13-3，
+# https://gitlab.freedesktop.org/freetype/freetype/-/raw/VER-2-13-3/src/autofit/afblue.dat，SHA-256 3c48ae2da14b128767d1d7a89997e6367057415997aede34be382a04b6e68c80）。
+# 缺了其中的繁体字，算出的基准线会变，汉字灰度边缘差一两个像素（裁剪前后的预览图对比查出），所以一并收下。
+AUTOHINT_CHARS = '他们你來們到和地对對就席我时時會来為能舰說说这這齊军同已愿既星是景民照现現理用置要軍那配里開雷露面顾个为人以個大有主些因它想意生當看着者自著裡过还进進過道還她将將年得情最样樣通即吗吧听呢品响嗎师師收断斷明眼間间际陈限除陳随際隨事前學或政斯新沒没然特球第經谁起例別别制动動增指朝期构物确种調调費费都田囗'
 # 生成字符集时一并扫描的界面文字：lib 下的源码（含注释，比只取字符串多收不多几个字）与界面里直接显示的文本文件。
 SCANNED = ['lib', 'assets/third_party_notices.txt', 'assets/fonts/LICENSE.txt', 'assets/fonts/noto_serif_sc_license.txt', 'LICENSE']
 
@@ -226,6 +231,7 @@ def generate_charset(sources):
     if len(tgh) != 8105:
         sys.exit(f'kTGH 有 {len(tgh)} 字，不是 8105')
     symbols = {code for start, end, _ in SYMBOL_RANGES for code in range(start, end + 1)}
+    autohint = {ord(char) for char in AUTOHINT_CHARS}
     scanned = set()
     for entry in SCANNED:
         path = ROOT / entry
@@ -233,14 +239,15 @@ def generate_charset(sources):
             scanned.update(ord(char) for char in file.read_text(encoding='utf-8'))
     # 控制字符、私用区（图标）与代理码位不进字体。
     scanned = {code for code in scanned if unicodedata.category(chr(code)) not in ('Cc', 'Co', 'Cs')}
-    codes = sorted(tgh | symbols | scanned)
-    extra = sorted(scanned - tgh - symbols)
+    codes = sorted(tgh | symbols | autohint | scanned)
+    extra = sorted(scanned - tgh - symbols - autohint)
     header = [
         '# 字体裁剪的字符集：tool/font_subset.py 用它裁剪 Maple Mono NF CN 与 Noto Serif SC（python3 tool/font_subset.py charset 重新生成）。',
         f'# 1. 《通用规范汉字表》（2013）{len(tgh)} 字：Unicode 17.0.0 Unihan 数据库 Unihan_OtherMappings.txt 的 kTGH 字段，',
         f'#    {UNIHAN[1]}（SHA-256 {UNIHAN[2]}）。',
         '# 2. 界面符号：tool/font_subset.py 的 SYMBOL_RANGES 列出的区段（基本拉丁、拉丁补充、标点、全角、中日韩标点、数字形式、货币、箭头等）。',
-        f'# 3. lib 源码与界面显示的文本文件里出现、又不在上两项里的字符（生成时扫描）：{len(extra)} 个。',
+        f'# 3. FreeType 自动微调算中日韩基准线用到的参考字（tool/font_subset.py 的 AUTOHINT_CHARS），不在第 1 项里的 {len(autohint - tgh)} 个（多是繁体）。',
+        f'# 4. lib 源码与界面显示的文本文件里出现、又不在上几项里的字符（生成时扫描）：{len(extra)} 个。',
         f'# 共 {len(codes)} 个码位，一行一个：码位、制表符、字符（空白与组合字符不写字符）。本文件的 SHA-256 记在 tool/font_subset.py 的 CHARSET_SHA256。',
     ]
     lines = []
@@ -250,7 +257,7 @@ def generate_charset(sources):
         lines.append(f'U+{code:04X}\t{char}' if printable else f'U+{code:04X}')
     data = ('\n'.join(header + lines) + '\n').encode('utf-8')
     CHARSET.write_bytes(data)
-    log(f'action=charset codepoints={len(codes)} tgh={len(tgh)} symbols={len(symbols)} extra={len(extra)} sha256={sha256(data)}')
+    log(f'action=charset codepoints={len(codes)} tgh={len(tgh)} symbols={len(symbols)} autohint={len(autohint - tgh)} extra={len(extra)} sha256={sha256(data)}')
 
 
 def main():
