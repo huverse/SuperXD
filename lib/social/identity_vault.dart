@@ -12,8 +12,9 @@ abstract interface class IdentityVault {
 }
 
 // 系统安全存储（Android Keystore 加密）。命名空间已排除出云备份与设备迁移（backup_rules.xml），身份不随备份搬到别的设备。
+// 默认是私信身份的命名空间；节日抽奖身份传自己的命名空间（social/festival_pass.dart 的 festivalPassStorage），两者互不关联。
 class SecureIdentityVault implements IdentityVault {
-  SecureIdentityVault() : _storage = const FlutterSecureStorage(aOptions: AndroidOptions(storageNamespace: 'superxd_social', resetOnError: false), iOptions: IOSOptions(accountName: 'superxd_social', accessibility: KeychainAccessibility.first_unlock_this_device));
+  SecureIdentityVault([this._storage = const FlutterSecureStorage(aOptions: AndroidOptions(storageNamespace: 'superxd_social', resetOnError: false), iOptions: IOSOptions(accountName: 'superxd_social', accessibility: KeychainAccessibility.first_unlock_this_device))]);
   final FlutterSecureStorage _storage;
   static const _key = 'identity';
 
@@ -22,7 +23,7 @@ class SecureIdentityVault implements IdentityVault {
     final raw = await _storage.read(key: _key);
     if (raw == null) return null;
     final data = jsonDecode(raw);
-    if (data is! Map || data['version'] != 1 || data['sign'] is! String || data['box'] is! String) throw const FormatException('保存的私信身份不可用');
+    if (data is! Map || data['version'] != 1 || data['sign'] is! String || data['box'] is! String) throw const FormatException('保存的设备身份不可用');
     return SocialIdentity.fromSeeds(decodeBase64UrlNoPad(data['sign'] as String, length: 32), decodeBase64UrlNoPad(data['box'] as String, length: 32));
   }
 
