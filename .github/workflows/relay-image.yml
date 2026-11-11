@@ -46,7 +46,7 @@ jobs:
         ports: ['6379:6379']
         options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 30
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       # 版本即提交号前 12 位：镜像标签、镜像包文件名与 /v1/health 的 version 一致；PR 上用 PR 头提交。
       - name: 构建
         id: build
