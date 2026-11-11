@@ -144,7 +144,7 @@ SuperXD 以 [GNU GPL v3.0](LICENSE) 开源，版权所有 (C) 2026 Galaxyous。�
 以下部分不随本项目以 GPL 授权：
 
 - `lib/theme/curve_geometry.dart` 中的曲线加载动画改编自 [Paidax01/math-curve-loaders](https://github.com/Paidax01/math-curve-loaders)，上游未附开源许可，本项目已获作者授权使用。再分发本项目或其修改版时，请自行取得授权，或移除、替换这部分代码。
-- 内置字体 Maple Mono NF CN 与 Noto Serif SC 按 SIL Open Font License 1.1 分发。
+- 字体 Maple Mono NF CN（随安装包）与 Noto Serif SC（选用时从中转下载）按 SIL Open Font License 1.1 分发，都已裁剪到常用汉字与界面符号（tool/font_subset.py，见 assets/third_party_notices.txt）。
 - 测试期临时图标（android/app/src/main/res 下的 ic_launcher 与 ic_launcher_background，以及“关于”页用的 assets/app_icon.png）使用动画《Charlotte》角色画面，版权归原权利人所有（©VisualArt's/Key/Charlotte Project），仅供测试期间临时使用，正式版前替换为原创图标。
 - 开屏画作（assets/paintings 下的图片）由本项目作者用 AI 生成（仿莫奈、梵高风格），版权所有 (C) 2026 Galaxyous，保留所有权利，仅随本应用分发，可在应用里存作个人壁纸；再分发本项目或其修改版时，请移除或替换这些画作。画中如出现第三方作品的角色形象，其权利归原权利人所有，权利人要求时立即移除。
 - 其他第三方组件按各自许可使用，清单见 [assets/third_party_notices.txt](assets/third_party_notices.txt)，或应用内「我的 › 关于 › 开源许可」。

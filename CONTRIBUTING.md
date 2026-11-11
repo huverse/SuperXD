@@ -46,7 +46,7 @@ ORG_GRADLE_PROJECT_superxdSigningProperties=/仓库外的绝对路径/signing.pr
 - 强制更新：只有旧版已无法正常使用（服务端接口不兼容、严重问题）或维护者明确要求时，才在升版本PR里调高工作流的RELEASE_MIN_SUPPORTED（最低可用构建号），已装版本低于它的用户会看到关不掉的更新弹窗。这个值只升不降、平时不动，不低于它的版本之间的更新都可选。
 - 开发者的话不走发版：在notes目录加一个.txt（格式见notes/README.md），PR的CI由test/developer_notes_test.dart校验格式，合并到main后流水线.github/workflows/notes.yml用tool/developer_notes.dart生成并签名developer_notes.json（签名钥在relay环境的NOTES_SIGNING_KEY），验过后经relay环境的受限账号传到中转并在公网核对；也可在Actions里手动运行Notes重传当前main的内容。
 - 节日（人工决策见lib/domain/festival.dart）：不预制，维护者点名哪个节日就为那一次单独做动画——在lib/page/festival下写场景、在festival_catalog.dart登记一项（编号如spring-2027，发出后不改），先在开发者选项的「节日预览」里逐帧看，再在模拟器上改系统日期走一遍真实触发（打扰时机的安静期、只播一次）；动画要随某个版本发出去，所以要赶在节日前发版。要发红包时，在服务器上用维护命令建同编号的活动、导入奖品（见server/README.md部署第6步），编号写进这一项的campaign。
-- 性能比较使用同设备、同构建模式、同数据与显示设置；真机profile才能作为性能验收。字体保持完整字符覆盖和实际字重，不以裁字或假粗体压缩体积。
+- 性能比较使用同设备、同构建模式、同数据与显示设置；真机profile才能作为性能验收。字体保持实际字重、不用假粗体；裁字只按 tool/font_subset.py 的固定字符集做（《通用规范汉字表》加界面符号，用户 2026-11-10 选定），改字符集或换字体后重跑脚本、换掉 assets/fonts 与 font_packs 的文件并同步 lib/domain/font_pack.dart 的登记。
 
 # 许可与第三方
 

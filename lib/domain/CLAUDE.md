@@ -60,6 +60,7 @@
 - developer_note.dart：开发者的话 DeveloperNote（编号即 notes 目录里的文件名、标题、发出时刻、正文）与上限（最近 developerNoteLimit 封、标题与正文字数）；decodeDeveloperNotes 是清单的外部输入边界；developerNoteLetter 决定该弹哪封（最新一封、没弹过、发出不满 14 天）；端口 DeveloperNoteFeed（device 实现）与 DeveloperNoteMemory（local 实现）。人工决策在文件头。
 - festival.dart：节日 FestivalOccasion（编号、名字、校园时区的起止日期、抽奖活动编号）、奖品 FestivalPrize（口令或二维码内容、附言、揭晓过没有）、抽签结果 FestivalDraw（抽中、没抽中、活动不在进行）；活跃天数规则 festivalActiveDays（近 30 天）、奖品保留 festivalPrizeKept（节日结束后 3 天）、什么时候要有抽奖身份 festivalPassNeeded（有抽奖的节日开始前 festivalPassLeadDays 天到结束）；本机记录 FestivalRecord（含抽奖身份的状态 FestivalPassState）与端口 FestivalMemory（local 实现）、抽奖身份 FestivalPass（social 实现）、FestivalRewardClient（device 实现），中转不认抽奖设备时抛 FestivalNotEnrolled。人工决策在文件头，概率模型在服务端 server/src/modules/reward/reward_odds.ts。
 - diagnostic_upload.dart：诊断包上传的端口 DiagnosticUploader（device 实现）、DiagnosticUploadException 与服务器保留天数 diagnosticUploadKeepDays（与服务端 relay_limits.ts 一致）；人工决策在文件头（用户确认后才传、内容同导出的日志包、本机加密、凭诊断编号联系开发者）。
+- font_pack.dart：字体包（不随安装包、选用时从自建中转下载的字体，[人工决策] 在文件头）：FontPack（字体 id、注册用的族名、各字重文件）与 FontPackFile（文件名、字重、大小、SHA-256），登记表 fontPacks 现在只有衬线 serif；文件就是仓库 font_packs 目录里的同名文件（tool/font_subset.py 生成，文件名带内容哈希），换内容就换名字、旧文件留到用它的版本都低于最低可用版本；状态 FontPackStatus（没下载、下载中、文件齐全未注册、已装好、失败）；下载端口 FontPackSource（device 实现）、FontPackException、FontPackCancelled。本机文件与注册在 local/font_packs.dart。
 - interruption.dart：打扰时机的上下课安静期 classQuietUntil（开课前 20 分钟到开课后 5 分钟、下课前 5 分钟到下课后 10 分钟，相连的并成一段，返回这段结束的时刻）；人工决策在文件头，其余条件见 application/app_moments.dart。
 - common_free.dart：好友课表与自己课表的共同空闲。compareWeek 按好友那一周的日期对齐双方周次（任一方缺开学日时按相同周次），busyPeriods 求某周每天占用的节次，commonFree 合并双方都空的连续节次并配上作息时刻；周末任一方有课才显示周末。
 
@@ -95,9 +96,10 @@
 - 课程实例与下游：reminder_test.dart、calendar_export_test.dart、home_widget_test.dart。
 - 成绩、卡片与更新规则：grades_test.dart、share_card_test.dart、app_update_test.dart；开屏画作清单与轮换：painting_test.dart。
 - 开发者的话与打扰时机（清单解析、弹信规则、安静期）：developer_notes_test.dart；节日规则：festival_test.dart。
+- 字体包（登记与仓库文件一致、本机文件与下载）：code_conventions_test.dart、font_pack_test.dart。
 - 面向用户的文案写法（节次、学分、按远近写的时刻、不及格）：campus_text_test.dart。
 
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/domain
-- 本目录的标记位于自动同步与三方合并（auto_sync.dart 文件头）、日志出口、节次展开、单周调整、按课名合并、版本恢复、开发者的话（developer_note.dart 文件头）、打扰时机的安静期（interruption.dart 文件头）、节日（festival.dart 文件头）、诊断包上传（diagnostic_upload.dart 文件头）。
+- 本目录的标记位于自动同步与三方合并（auto_sync.dart 文件头）、日志出口、节次展开、单周调整、按课名合并、版本恢复、开发者的话（developer_note.dart 文件头）、打扰时机的安静期（interruption.dart 文件头）、节日（festival.dart 文件头）、诊断包上传（diagnostic_upload.dart 文件头）、字体裁剪与字体包（font_pack.dart 文件头）。
