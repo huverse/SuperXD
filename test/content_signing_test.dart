@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/device/relay_release_feed.dart';
 import 'package:superxd/device/signed_content.dart';
 import '../tool/content_signing.dart';
@@ -19,7 +20,7 @@ void main() {
     expect({for (final key in trustedSigningKeys) key.publicKey}, hasLength(3));
     for (final key in trustedSigningKeys) {
       expect(keyIdPattern.hasMatch(key.keyId), isTrue, reason: key.keyId);
-      expect(decodeBase64Url(key.publicKey), hasLength(32), reason: key.keyId);
+      expect(tryDecodeBase64UrlNoPad(key.publicKey), hasLength(32), reason: key.keyId);
     }
     Set<SignedContent> contentsOf(String prefix) => trustedSigningKeys.singleWhere((key) => key.keyId.startsWith(prefix)).contents;
     expect(contentsOf('release-'), {SignedContent.release});

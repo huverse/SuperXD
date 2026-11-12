@@ -3,6 +3,8 @@ import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 
+import 'package:superxd/domain/campus_crypto.dart';
+
 // 诊断包信封（人工决策见 domain/diagnostic_upload.dart）：只有开发者解得开。一次性 X25519 密钥与开发者公钥协商，HKDF-SHA256 派生 AES-256-GCM 密钥，
 // 附加数据绑定版本与一次性公钥；构造同私信信封（social/social_crypto.dart），只是不签名、不压缩（日志包本身是 zip）。
 // 布局：版本(1) | 一次性公钥(32) | 随机数(12) | 密文 | GCM 标签(16)。不依赖 Flutter：tool/open_diagnostic.dart 用 dart run 直接解。
@@ -17,13 +19,8 @@ final _x25519 = X25519();
 final _aes = AesGcm.with256bits();
 final _hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
 
-Uint8List decodeDiagnosticKey(String text) {
-  final bytes = base64Url.decode(base64Url.normalize(text));
-  if (bytes.length != 32) throw const FormatException('X25519 密钥应为 32 字节');
-  return bytes;
-}
-
-String encodeDiagnosticKey(List<int> bytes) => base64Url.encode(bytes).replaceAll('=', '');
+// 密钥写成 base64url 无填充（编解码在 domain/campus_crypto.dart）。
+Uint8List decodeDiagnosticKey(String text) => tryDecodeBase64UrlNoPad(text, length: 32) ?? (throw const FormatException('X25519 密钥应为 32 字节的 base64url 无填充'));
 
 // 加密给开发者。日志包最大二十来兆：输出直接拼进一块 Uint8List，不经 List<int> 展开（逐个装箱的整数会慢几十倍、占几倍内存）。
 Future<Uint8List> sealDiagnostic(List<int> plain, List<int> recipientPublicKey) async {

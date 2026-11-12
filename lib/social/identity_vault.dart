@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/social/social_crypto.dart';
 
 // 设备身份私钥种子的存放处。

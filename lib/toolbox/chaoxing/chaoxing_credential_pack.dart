@@ -1,9 +1,9 @@
 import 'dart:convert';
-import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 
 // 代签凭据包：把「手机号 + 学习通密文密码 + 昵称 + 设备码 + 人脸照片」打成一个包，交给信得过的人。
@@ -46,10 +46,6 @@ class ChaoxingSealedPack {
 }
 
 final _aesGcm = AesGcm.with256bits();
-final _random = Random.secure();
-
-Uint8List chaoxingRandomBytes(int length) =>
-    Uint8List.fromList([for (var index = 0; index < length; index++) _random.nextInt(256)]);
 
 // 定长字段前面都带两字节长度，解的时候不用猜。
 Uint8List encodeChaoxingCredentialPack(ChaoxingCredentialPack pack) {
@@ -121,7 +117,7 @@ void _checkPack(ChaoxingCredentialPack pack) {
 }
 
 Future<ChaoxingSealedPack> sealChaoxingCredentialPack(ChaoxingCredentialPack pack, {List<int>? key}) async {
-  final secret = Uint8List.fromList(key ?? chaoxingRandomBytes(chaoxingPackKeyBytes));
+  final secret = Uint8List.fromList(key ?? secureRandomBytes(chaoxingPackKeyBytes));
   if (secret.length != chaoxingPackKeyBytes) {
     throw const ChaoxingFailure(ChaoxingFailureCode.invalidInput, '密钥长度不对');
   }
@@ -163,7 +159,7 @@ class ChaoxingPackTicket {
 }
 
 String encodeChaoxingPackTicket(ChaoxingPackTicket ticket) =>
-    '$chaoxingPackTicketPrefix${ticket.pickupId}.${base64Url.encode(ticket.key).replaceAll('=', '')}';
+    '$chaoxingPackTicketPrefix${ticket.pickupId}.${base64UrlNoPad(ticket.key)}';
 
 ChaoxingPackTicket? decodeChaoxingPackTicket(String raw) {
   final text = raw.trim();
@@ -173,15 +169,8 @@ ChaoxingPackTicket? decodeChaoxingPackTicket(String raw) {
   if (separator <= 0) return null;
   final pickupId = content.substring(0, separator);
   if (!RegExp(r'^[A-Za-z0-9_-]{16,64}$').hasMatch(pickupId)) return null;
-  final encodedKey = content.substring(separator + 1);
-  if (!RegExp(r'^[A-Za-z0-9_-]+$').hasMatch(encodedKey)) return null;
-  try {
-    final key = base64Url.decode(encodedKey.padRight((encodedKey.length + 3) ~/ 4 * 4, '='));
-    if (key.length != chaoxingPackKeyBytes) return null;
-    return ChaoxingPackTicket(pickupId: pickupId, key: Uint8List.fromList(key));
-  } on FormatException {
-    return null;
-  }
+  final key = tryDecodeBase64UrlNoPad(content.substring(separator + 1), length: chaoxingPackKeyBytes);
+  return key == null ? null : ChaoxingPackTicket(pickupId: pickupId, key: key);
 }
 
 class _ByteReader {

@@ -8,6 +8,7 @@ import 'package:http/testing.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/social/identity_vault.dart';
@@ -132,7 +133,7 @@ void main() {
     await mallory.enable('冒充者');
     final real = await alice.createInvite();
     // 中转服务知道邀请号与邀请公钥，但没有私钥：用自己生成的邀请私钥签凭证，再塞进 alice 的信箱。
-    final fakeSeed = randomBytes(32);
+    final fakeSeed = secureRandomBytes(32);
     final forged = InviteCode(inviteId: real.inviteId, inviteSeed: fakeSeed, owner: real.owner, nickname: real.nickname, expiresAt: real.expiresAt);
     relay.invites[real.inviteId] = (owner: alice.deviceId!, publicKey: await ed25519PublicOf(fakeSeed), expiresAt: real.expiresAt);
     await mallory.redeem(forged);
