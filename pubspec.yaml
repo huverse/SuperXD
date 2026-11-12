@@ -51,7 +51,7 @@ dependencies:
   lucide_icons_flutter: ^3.1.20
   liquid_glass_widgets: ^1.8.1
   background_downloader: ^9.6.3
-  flutter_slidable: ^4.0.3
+  flutter_slidable: ^5.2.0
   path_provider: ^2.1.6
   mime: ^2.1.0
   video_player: ^2.14.1
