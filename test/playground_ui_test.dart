@@ -40,8 +40,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('格子谜题'), findsOneWidget);
     expect(find.text('移动与规划'), findsOneWidget);
-    // 没有游戏的子类不显示，也不放占位卡。
-    expect(find.text('逻辑推理'), findsNothing);
+    // 没有游戏的子类不显示，也不放占位卡（按登记表里还空着的子类查，游戏陆续登记进来也不用改这里）。
+    for (final group in playgroundGroups.where((group) => !playgroundCatalog.any((game) => game.group.id == group.id))) {
+      expect(find.text(group.name), findsNothing);
+    }
     expect(find.text('最近玩过'), findsNothing);
 
     await tester.tap(find.text('汉诺塔'));

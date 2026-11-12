@@ -1,6 +1,7 @@
 import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
+import 'package:superxd/playground/puzzle/queens/queens_page.dart';
 import 'package:superxd/theme/campus_icons.dart';
 
 // [人工决策-2026-11-12 21:00:20] 游乐场的板块、子类与游戏只在这一处登记（同百宝箱 toolbox_catalog.dart）；id 发出后不改。
@@ -42,5 +43,16 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.hanoi,
     group: planningGroup,
     builder: (context, game, store) => HanoiPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'queens',
+    name: '八皇后',
+    summary: '补齐皇后，互不攻击',
+    howToPlay: '在 N×N 的棋盘上放 N 个皇后，任意两个不能在同一行、同一列或同一条斜线上。\n'
+        '题面已经摆好几个锁定的皇后（垫着底板，不能动），补齐其余的；每道题的补法都唯一。\n'
+        '点空格放皇后，再点一次拿掉。互相攻击的皇后会标成红色并连一条线；按住一个皇后能看它管到的格子。棋盘大时双指可以放大。',
+    icon: CampusIcons.queens,
+    group: logicGroup,
+    builder: (context, game, store) => QueensPage(game: game, store: store),
   ),
 ];
