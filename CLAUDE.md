@@ -81,7 +81,7 @@
 11. 日志：只经 domain/campus_log.dart 的 campusLog 输出，应用入口必须注入 debugPrint 才进 logcat；格式为 [模块] action=... errorType=...，错误附完整堆栈；不写原始 HTML、链接、凭据与实名信息。由 test/project_structure_test.dart 守护。
     - 同一份输出另写进本机文件（local/diagnostic_log.dart）：平时只记错误，开发者模式记全部；保存期限与掩码规则见 lib/local/CLAUDE.md，隐私政策第八节与附录三同步写明。
     - 只在开发者模式下才有意义的诊断记录（请求耗时、页面切换、卡顿内存）先看 campusDiagnostics，对外请求统一经 campusRequestLog 记，只记路径、不记域名与查询串。
-    - 新模块接入开发者模式：日志照常走 campusLog、错误带 errorType= 或堆栈即自动进本机日志与错误记录；对外请求一律经共用内核 domain/campus_http.dart 发（超时、响应上限、取消与 campusRequestLog 都在那里），不再手写封装，还没迁过来的几个文件自己调 campusRequestLog（test/project_structure_test.dart 守护）；新页面优先挂 go_router 路由（按路径记），命令式推入的页面经 CampusPageRoute 按页面类名记推入与返回。
+    - 新模块接入开发者模式：日志照常走 campusLog、错误带 errorType= 或堆栈即自动进本机日志与错误记录；对外请求一律经共用内核 domain/campus_http.dart 发（超时、响应上限、取消与 campusRequestLog 都在那里），不再手写封装，还没迁过来的 iOS 下载传输自己调 campusRequestLog（test/project_structure_test.dart 守护）；新页面优先挂 go_router 路由（按路径记），命令式推入的页面经 CampusPageRoute 按页面类名记推入与返回。
 12. 界面实现：确认和提示统一用 theme/campus_transitions.dart 的 showCampusConfirm 与 showCampusNotice；setState 回调不得返回 Future，给 Future 字段赋值时用块体；只有图标的 IconButton 必须带 tooltip 作读屏标签。后两条由 test/code_conventions_test.dart 守护。
 13. 公开内容不出现实名：
     - [人工决策-2026-10-15 20:20:38] 仓库公开，代码、测试数据、文档、提交信息、PR 与 Issue 的正文和评论一律不写真实姓名、手机号、学号等实名信息（含真实课表里的教师名）。

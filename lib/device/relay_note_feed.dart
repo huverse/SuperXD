@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:http/http.dart' as http;
 
+import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/developer_note.dart';
 import 'package:superxd/device/signed_content.dart';
@@ -12,33 +13,29 @@ import 'package:superxd/device/signed_content.dart';
 const developerNoteResponseMaxBytes = 1024 * 1024;
 
 // 开发者的话的自建中转实现：GET /v1/app/notes，请求免设备签名、不带任何标识，单次 15 秒超时、不自动重试。
+// 经共用请求内核 CampusHttp 发（超时管到读完响应体、到点中断连接，响应边读边限长，请求记录在内核里记，模块 developer_notes）。
 // 只认验签通过的内容（人工决策见 device/signed_content.dart），没有签名或验不过按失败处理。
 class RelayNoteFeed implements DeveloperNoteFeed {
-  RelayNoteFeed(this.baseUrl, {this.keys = trustedSigningKeys, http.Client? client, this.timeout = const Duration(seconds: 15)}) : _client = client ?? http.Client();
+  RelayNoteFeed(this.baseUrl, {this.keys = trustedSigningKeys, http.Client? client, this.timeout = const Duration(seconds: 15)}) : _http = CampusHttp('developer_notes', client: client);
   final String baseUrl;
   final List<TrustedSigningKey> keys;
   final Duration timeout;
-  final http.Client _client;
+  final CampusHttp _http;
 
   @override
   Future<List<DeveloperNote>> fetch() async {
     final uri = Uri.parse('$baseUrl/v1/app/notes');
-    final int status;
-    final List<int> body;
-    // 开发者模式下记一条路径、状态、耗时与字节数（见 campusRequestLog）。
-    final watch = Stopwatch()..start();
+    final http.Response response;
     try {
-      final response = await _client.send(http.Request('GET', uri)).timeout(timeout);
-      status = response.statusCode;
-      body = await _read(response.stream).timeout(timeout);
-      campusRequestLog('developer_notes', 'GET', uri, status: status, elapsed: watch.elapsed, bytes: body.length);
-    } on DeveloperNoteException {
-      rethrow;
+      response = await _http.send('GET', uri, timeout: timeout, limit: developerNoteResponseMaxBytes);
+    } on CampusHttpTooLarge catch (error, stack) {
+      campusLog('[DeveloperNotes] action=feed errorType=${error.runtimeType}\n$stack');
+      throw const DeveloperNoteException('服务器暂时不可用，请稍后再试');
     } catch (error, stack) {
-      campusRequestLog('developer_notes', 'GET', uri, elapsed: watch.elapsed, error: error is TimeoutException ? 'timeout' : error.runtimeType.toString());
       campusLog('[DeveloperNotes] action=feed errorType=${error.runtimeType}\n$stack');
       throw const DeveloperNoteException('连不上服务器，请检查网络后再试');
     }
+    final status = response.statusCode, body = response.bodyBytes;
     if (status == 429 || status == 503) throw const DeveloperNoteException('请求太频繁，请稍后再试');
     if (status != 200) {
       campusLog('[DeveloperNotes] action=feed status=$status');
@@ -53,15 +50,6 @@ class RelayNoteFeed implements DeveloperNoteFeed {
       campusLog('[DeveloperNotes] action=feed errorType=${error.runtimeType} message=${error.message}\n$stack');
       throw const DeveloperNoteException('内容格式不对，请稍后再试');
     }
-  }
-
-  Future<List<int>> _read(Stream<List<int>> stream) async {
-    final bytes = <int>[];
-    await for (final chunk in stream) {
-      bytes.addAll(chunk);
-      if (bytes.length > developerNoteResponseMaxBytes) throw const DeveloperNoteException('服务器暂时不可用，请稍后再试');
-    }
-    return bytes;
   }
 }
 
