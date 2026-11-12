@@ -17,6 +17,8 @@ class FakeRelay {
   int serverOffset = 0;
   // 下一个请求直接抛出这个错误（模拟断网等）。
   RelayException? failNext;
+  // 下一个「方法 路径」相符的请求抛出这个错误，其余照常。
+  (String, RelayException)? failOn;
   final calls = <String>[];
   // 长轮询中挂起的请求：设备号 → 等待者，投递时唤醒。
   final _waiters = <String, List<Completer<void>>>{};
@@ -35,11 +37,16 @@ class FakeRelay {
   }
 
   Future<RelayResponse> handle(String method, String path, Map<String, String> headers, List<int>? body, {Duration? timeout}) async {
-    calls.add('$method ${path.split('?').first}');
+    final call = '$method ${path.split('?').first}';
+    calls.add(call);
     final failure = failNext;
     if (failure != null) {
       failNext = null;
       throw failure;
+    }
+    if (failOn case (final target, final error) when target == call) {
+      failOn = null;
+      throw error;
     }
     final payload = body == null ? <String, Object?>{} : (jsonDecode(utf8.decode(body)) as Map).cast<String, Object?>();
     final deviceId = headers['x-sxd-device']!, time = headers['x-sxd-time']!, nonce = headers['x-sxd-nonce']!;
