@@ -28,6 +28,14 @@ jobs:
       - run: flutter pub get --enforce-lockfile
       - run: flutter analyze
       - run: flutter test --coverage --reporter expanded
+      # 基准图（test/golden_test.dart）对不上时把差异图留下来，下载看过再决定是修代码还是重生成。
+      - if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: golden-failures
+          path: test/failures
+          if-no-files-found: ignore
+          retention-days: 14
       # lib 的行覆盖率低于门槛就失败（门槛与 [人工决策] 在工具文件里）。
       - run: dart run tool/coverage_check.dart
 
