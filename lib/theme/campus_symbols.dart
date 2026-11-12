@@ -101,6 +101,14 @@ final Map<IconData, String> _symbols = {
   CampusIcons.letter: 'envelope.open',
   CampusIcons.gift: 'gift',
   CampusIcons.celebrate: 'party.popper',
+  CampusIcons.playground: 'gamecontroller',
+  CampusIcons.puzzle: 'puzzlepiece',
+  CampusIcons.shuffle: 'shuffle',
+  CampusIcons.trophy: 'trophy',
+  CampusIcons.undo: 'arrow.uturn.backward',
+  CampusIcons.flag: 'flag',
+  CampusIcons.hanoi: 'square.3.layers.3d',
+  CampusIcons.nonogram: 'square.grid.3x3',
 };
 
 String? campusSymbol(IconData? icon) => icon == null ? null : _symbols[icon];

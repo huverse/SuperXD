@@ -32,8 +32,9 @@ class ServicePage extends StatelessWidget {
       children: [
         const SectionTitleBar(title: '服务'),
         // [人工决策-2026-09-27 20:12:08] 保留课表、成绩，新增百宝箱同级入口；教务无关工具集中注册于百宝箱，不添加未定义服务。
+        // [人工决策-2026-11-12 21:00:20] 用户要求在服务页新增「游乐场」同级入口（小游戏属娱乐，不算工具，不进百宝箱），排在百宝箱后面。
         Expanded(child: CampusScrollFade(bottom: inset, child: ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), children: [
-          for (final service in [(label: '课表', route: '/schedule', icon: CampusIcons.todaySelected), (label: '成绩', route: '/grades', icon: CampusIcons.grades), (label: '百宝箱', route: '/toolbox', icon: CampusIcons.toolbox)]) Padding(padding: const EdgeInsets.only(bottom: 16), child: CampusSurface(
+          for (final service in [(label: '课表', route: '/schedule', icon: CampusIcons.todaySelected), (label: '成绩', route: '/grades', icon: CampusIcons.grades), (label: '百宝箱', route: '/toolbox', icon: CampusIcons.toolbox), (label: '游乐场', route: '/playground', icon: CampusIcons.playground)]) Padding(padding: const EdgeInsets.only(bottom: 16), child: CampusSurface(
             onTap: () => context.push(service.route), padding: const EdgeInsets.all(20),
             child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 40), child: Row(children: [CampusIcon(service.icon, color: CampusPalette.of(context).primary, size: 28), const SizedBox(width: 20), Expanded(child: Text(service.label, style: TextStyle(fontSize: 16, color: CampusPalette.of(context).onSurface))), CampusIcon(CampusIcons.next, color: CampusPalette.of(context).onSurfaceVariant)])),
           )),

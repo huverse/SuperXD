@@ -215,8 +215,10 @@ class _LoginPageState extends State<LoginPage> {
                 ])),
                 // [人工决策-2026-10-21 23:48:00] 登录页加「关于」入口（用户要求未登录也能进开发者模式）：进的是同一个关于页，
                 // 连点版本号开启、开着时有开发者选项，只有一种开启方式；未登录时也能检查更新、看协议。切换账号页不显示，同百宝箱。
+                // [人工决策-2026-11-12 21:00:20] 游乐场自由模式免登录（用户选定），登录页同百宝箱给一个入口。
                 if (!widget.switching) Padding(padding: const EdgeInsets.only(top: 16), child: Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
                   OutlinedButton.icon(onPressed: _busy ? null : () => context.push('/toolbox'), icon: const CampusIcon(CampusIcons.toolbox), label: const Text('百宝箱')),
+                  OutlinedButton.icon(onPressed: _busy ? null : () => context.push('/playground'), icon: const CampusIcon(CampusIcons.playground), label: const Text('游乐场')),
                   OutlinedButton.icon(
                     onPressed: _busy ? null : () => Navigator.push(context, CampusPageRoute<void>(builder: (_) => AboutPage(updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings))),
                     icon: const CampusIcon(CampusIcons.info),

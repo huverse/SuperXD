@@ -103,6 +103,15 @@ abstract final class CampusIcons {
   static const letter = LucideIcons.mailOpen;
   static const gift = LucideIcons.gift;
   static const celebrate = LucideIcons.partyPopper;
+  // 游乐场：入口、益智板块、换一道题、新纪录、撤销与各游戏的图标。
+  static const playground = LucideIcons.gamepad2;
+  static const puzzle = LucideIcons.puzzle;
+  static const shuffle = LucideIcons.shuffle;
+  static const trophy = LucideIcons.trophy;
+  static const undo = LucideIcons.undo2;
+  static const flag = LucideIcons.flag;
+  static const hanoi = LucideIcons.layers;
+  static const nonogram = LucideIcons.grid3x3;
 }
 
 void configureCampusIcons() =>
