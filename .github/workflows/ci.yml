@@ -123,7 +123,9 @@ jobs:
           sleep 30
           xcrun simctl io "$udid" screenshot build/ios-smoke/launch.png
           xcrun simctl spawn "$udid" log show --last 3m --style compact --predicate 'process == "Runner"' > build/ios-smoke/runner.log 2>&1 || true
-          if ! xcrun simctl spawn "$udid" launchctl list | grep -q "UIKitApplication:$bundle"; then
+          # 先写进文件再找：管道里 grep -q 一找到就退出，launchctl 收到 SIGPIPE，set -o pipefail 下整条管道判失败，应用活着也报闪退（#241 遇到过）。
+          xcrun simctl spawn "$udid" launchctl list > build/ios-smoke/launchctl.txt
+          if ! grep -q "UIKitApplication:$bundle" build/ios-smoke/launchctl.txt; then
             find ~/Library/Logs/DiagnosticReports -name 'Runner*' -exec cp {} build/ios-smoke/ \; 2>/dev/null || true
             echo "::error::启动 30 秒后应用进程不在了（闪退），截图、日志与崩溃报告见产物 ios-simulator-smoke"
             exit 1
