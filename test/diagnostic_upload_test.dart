@@ -10,6 +10,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as path;
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/device/diagnostic_seal.dart';
 import 'package:superxd/device/relay_diagnostic_upload.dart';
 import 'package:superxd/domain/diagnostic_upload.dart';
@@ -22,7 +23,7 @@ void main() {
   setUpAll(() async {
     final keyPair = await X25519().newKeyPair();
     testSeed = await keyPair.extractPrivateKeyBytes();
-    testPublic = encodeDiagnosticKey((await keyPair.extractPublicKey()).bytes);
+    testPublic = base64UrlNoPad((await keyPair.extractPublicKey()).bytes);
   });
   setUp(() => temp = Directory.systemTemp.createTempSync('diagnostic_upload_test'));
   tearDown(() => temp.deleteSync(recursive: true));
@@ -55,7 +56,7 @@ void main() {
 
     test('源码里的开发者公钥是 32 字节的 X25519 公钥，编码往返不变', () {
       expect(decodeDiagnosticKey(diagnosticRecipientKey), hasLength(32));
-      expect(encodeDiagnosticKey(decodeDiagnosticKey(diagnosticRecipientKey)), diagnosticRecipientKey);
+      expect(base64UrlNoPad(decodeDiagnosticKey(diagnosticRecipientKey)), diagnosticRecipientKey);
       expect(() => decodeDiagnosticKey('AAAA'), throwsFormatException);
     });
   });

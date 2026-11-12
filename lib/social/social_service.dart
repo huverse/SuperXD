@@ -5,6 +5,7 @@ import 'package:flutter/widgets.dart';
 import 'package:synchronized/synchronized.dart';
 import 'package:uuid/uuid.dart';
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/social/identity_vault.dart';
@@ -35,7 +36,7 @@ abstract final class SocialCode {
 
 // [人工决策-2026-10-04 16:44:36] 好友与私信的身份跟设备走（独立昵称、不暴露学号），切换教务账号保留，百宝箱未登录也能分享。
 // 私信编排：本机库、设备身份与中转服务之间的唯一入口，页面只经它读写。设备级，切换教务账号保留。
-// 联网时机：开启、出示/扫码、发送、刷新（回到前台、进入私信、下拉），以及前台长轮询收消息。除校时重发一次外不自动重试。
+// 联网时机：开启、出示/扫码、发送、刷新（回到前台、进入私信、下拉），以及前台长轮询收消息。除校时重发一次、中转不认这台设备时重新注册后重放一次（见 _authorized）外不自动重试。
 class SocialService extends ChangeNotifier {
   SocialService({required this.store, required this.vault, RelayTransport? transport, DateTime Function()? clock, Random? random, this.polling = false})
     : _relay = transport == null ? null : RelayClient(transport),
@@ -54,6 +55,8 @@ class SocialService extends ChangeNotifier {
   final _refreshLock = Lock();
   final _uuid = const Uuid();
   SocialIdentity? _identity;
+  // 正在进行的重新注册（见 _authorized），几个请求同时遇到 UNAUTHORIZED 时共用这一次。
+  Future<void>? _reregistering;
   AppLifecycleListener? _lifecycle;
   bool _foreground = true;
   bool _living = false;
@@ -127,6 +130,23 @@ class SocialService extends ChangeNotifier {
     return _relay!;
   }
 
+  // [人工决策-2026-11-11 23:16:31] 中转不认这台设备时自动重新注册一次并重放这一次请求（用户 11-11 要求按最佳实践补上 W1 报的缺口）：
+  // 中转从旧备份恢复、或设备 400 天不活跃被清掉后，所有签名请求都回 UNAUTHORIZED，以前收不到、发不出，也关不掉私信。
+  // 设备号由签名公钥推出、注册自签名且幂等，正常客户端只有中转没有这台设备时才会收到 UNAUTHORIZED，所以照「会话失效自动恢复一次再重放」的做法：
+  // 只注册一次、只重放一次，重放后仍失败就照常报错；几个请求同时遇到时共用一次注册。没选「只标记未注册、等用户再点」：
+  // 用户看到的会是一次说不清原因的失败。服务端那边的好友关系随设备一起没了，之后发送照常回 NOT_FRIEND 并标记对方已解除，要重新扫码。
+  Future<T> _authorized<T>(Future<T> Function(RelayClient relay, SocialIdentity identity) call) async {
+    final relay = _relay!, identity = _identity!;
+    try {
+      return await call(relay, identity);
+    } on RelayException catch (error) {
+      if (error.code != RelayCode.unauthorized) rethrow;
+      campusLog('[Social] action=reregister deviceId=${identity.deviceId}');
+      await (_reregistering ??= _register().whenComplete(() => _reregistering = null));
+      return call(relay, identity);
+    }
+  }
+
   // 开启私信：生成设备身份、注册到中转服务、保存昵称。注册失败时身份与昵称已保存，下次启动或再点开启时补注册。
   Future<void> enable(String nickname) async {
     if (_relay == null) throw const SocialException(SocialCode.notReady);
@@ -158,12 +178,14 @@ class SocialService extends ChangeNotifier {
   }
 
   // 关闭私信：先请中转服务删除本设备（好友关系与待收消息），再清空本机数据与身份。服务端删除失败则不清本机，提示重试。
+  // 中转已经不认这台设备（UNAUTHORIZED）时没有可删的，照样清本机（同节日抽奖身份的 retire）。
   Future<void> disable() async {
     final relay = _ready();
     try {
       await relay.deleteDevice(_identity!);
     } on RelayException catch (error) {
-      throw SocialException(error.code);
+      if (error.code != RelayCode.unauthorized) throw SocialException(error.code);
+      campusLog('[Social] action=disable state=not_registered');
     }
     await store.clear();
     await vault.delete();
@@ -178,13 +200,13 @@ class SocialService extends ChangeNotifier {
 
   // 出示二维码：新建一次性邀请（服务端同时作废本设备之前的邀请），本机记下邀请公钥用于核验扫码方的问候。
   Future<InviteCode> createInvite() async {
-    final relay = _ready();
-    final inviteSeed = randomBytes(32);
-    final inviteId = base64UrlNoPad(randomBytes(16));
+    _ready();
+    final inviteSeed = secureRandomBytes(32);
+    final inviteId = base64UrlNoPad(secureRandomBytes(16));
     final publicKey = await ed25519PublicOf(inviteSeed);
     final int expiresAt;
     try {
-      expiresAt = await relay.createInvite(_identity!, inviteId, publicKey);
+      expiresAt = await _authorized((relay, identity) => relay.createInvite(identity, inviteId, publicKey));
     } on RelayException catch (error) {
       throw SocialException(error.code);
     }
@@ -228,7 +250,7 @@ class SocialService extends ChangeNotifier {
       },
     });
     try {
-      await relay.redeem(identity, inviteId: code.inviteId, proof: proof, helloId: helloId, hello: hello);
+      await _authorized((relay, identity) => relay.redeem(identity, inviteId: code.inviteId, proof: proof, helloId: helloId, hello: hello));
     } on RelayException catch (error) {
       throw SocialException(error.code);
     }
@@ -249,7 +271,7 @@ class SocialService extends ChangeNotifier {
         String? after;
         var received = 0;
         for (var page = 0; page < 20; page++) {
-          final batch = await _relay!.fetch(_identity!, after: after);
+          final batch = await _authorized((relay, identity) => relay.fetch(identity, after: after));
           received += await _consume(batch.messages);
           if (batch.messages.isNotEmpty) after = batch.messages.last.id;
           if (!batch.more) break;
@@ -277,13 +299,13 @@ class SocialService extends ChangeNotifier {
     for (final item in items) {
       if (await _accept(item)) received++;
     }
-    await _relay!.ack(_identity!, [for (final item in items) item.id]);
+    await _authorized((relay, identity) => relay.ack(identity, [for (final item in items) item.id]));
     return received;
   }
 
   // 服务端没有、本机还有效的好友，标为对方已解除。
   Future<void> _reconcile() async {
-    final remote = await _relay!.friends(_identity!);
+    final remote = await _authorized((relay, identity) => relay.friends(identity));
     for (final friend in await store.friends()) {
       if (!friend.removed && !remote.containsKey(friend.deviceId)) await store.markRemoved(friend.deviceId);
     }
@@ -328,7 +350,7 @@ class SocialService extends ChangeNotifier {
     final invitePublic = await store.invitePublicKey(inviteId);
     if (invitePublic == null) throw const SocialCryptoException('邀请不存在');
     final proof = decodeBase64UrlNoPad(hello['proof'] as String, length: 64);
-    if (!await verifySignature(decodeBase64UrlNoPad(invitePublic, length: 32), inviteProofCanonical(inviteId, from), proof)) throw const SocialCryptoException('邀请凭证无效');
+    if (!await verifyEd25519(decodeBase64UrlNoPad(invitePublic, length: 32), inviteProofCanonical(inviteId, from), proof)) throw const SocialCryptoException('邀请凭证无效');
     if (await store.friend(from) == null && await store.friendCount() >= friendLimit) throw const SocialCryptoException('本机好友已满');
     await store.upsertFriend(deviceId: from, nickname: nickname, signPublicKey: base64UrlNoPad(keys.signPublicKey), boxPublicKey: base64UrlNoPad(keys.boxPublicKey), now: now, systemId: id);
     return true;
@@ -364,7 +386,7 @@ class SocialService extends ChangeNotifier {
           recipient: PeerKeys(decodeBase64UrlNoPad(friend.signPublicKey, length: 32), decodeBase64UrlNoPad(friend.boxPublicKey, length: 32)),
           message: {'v': 1, 'id': messageId, 'from': identity.deviceId, 'to': friend.deviceId, 'sentAt': _clock().millisecondsSinceEpoch, 'kind': 'card', 'card': encodeShareCard(message.card!)},
         );
-        await _relay!.send(identity, to: friend.deviceId, clientId: messageId, envelope: envelope);
+        await _authorized((relay, identity) => relay.send(identity, to: friend.deviceId, clientId: messageId, envelope: envelope));
       } on RelayException catch (relayError) {
         error = relayError.code;
         if (relayError.code == RelayCode.notFriend) await store.markRemoved(friend.deviceId);
@@ -399,9 +421,9 @@ class SocialService extends ChangeNotifier {
 
   // 删除好友：服务端双向解除（对方之后发来的被拒收），本机删除会话。对方已解除时服务端无关系可删，直接删本机。
   Future<void> removeFriend(String friendId) async {
-    final relay = _ready();
+    _ready();
     try {
-      await relay.removeFriend(_identity!, friendId);
+      await _authorized((relay, identity) => relay.removeFriend(identity, friendId));
     } on RelayException catch (error) {
       throw SocialException(error.code);
     }
@@ -459,7 +481,7 @@ class SocialService extends ChangeNotifier {
       while (_keepLive) {
         final started = _clock();
         try {
-          final batch = await _relay!.fetch(_identity!, wait: longPollWait);
+          final batch = await _authorized((relay, identity) => relay.fetch(identity, wait: longPollWait));
           if (!_keepLive) break;
           backoff = const Duration(seconds: 2);
           failures = 0;

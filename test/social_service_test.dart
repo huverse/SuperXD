@@ -8,6 +8,7 @@ import 'package:http/testing.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/social/identity_vault.dart';
@@ -132,7 +133,7 @@ void main() {
     await mallory.enable('冒充者');
     final real = await alice.createInvite();
     // 中转服务知道邀请号与邀请公钥，但没有私钥：用自己生成的邀请私钥签凭证，再塞进 alice 的信箱。
-    final fakeSeed = randomBytes(32);
+    final fakeSeed = secureRandomBytes(32);
     final forged = InviteCode(inviteId: real.inviteId, inviteSeed: fakeSeed, owner: real.owner, nickname: real.nickname, expiresAt: real.expiresAt);
     relay.invites[real.inviteId] = (owner: alice.deviceId!, publicKey: await ed25519PublicOf(fakeSeed), expiresAt: real.expiresAt);
     await mallory.redeem(forged);
@@ -245,6 +246,90 @@ void main() {
     final aliceId = alice.deviceId!;
     await alice.disable();
     expect(relay.friends(bob.deviceId!, aliceId), isFalse);
+  });
+
+  // 中转丢了这台设备（从旧备份恢复、400 天不活跃被清）：设备记录连同好友关系一起没了。
+  void forgetDevice(FakeRelay relay, String deviceId) {
+    relay.devices.remove(deviceId);
+    relay.friendships.removeWhere((pair) => pair.split('|').contains(deviceId));
+  }
+
+  test('中转丢了本设备：下一次请求遇 UNAUTHORIZED 自动重新注册一次并重放，之后照常可用', () async {
+    final relay = FakeRelay();
+    final (alice, bob) = await friendsPair(relay);
+    forgetDevice(relay, bob.deviceId!);
+    relay.calls.clear();
+    final invite = await bob.createInvite();
+    expect(relay.devices.containsKey(bob.deviceId), isTrue);
+    expect(relay.calls, ['POST /v1/invites', 'POST /v1/devices', 'POST /v1/invites']);
+    // 服务端的好友关系随设备没了：发送照常回 NOT_FRIEND 并标记已解除，重新扫码即可恢复。
+    final rejected = await bob.send(alice.deviceId!, sampleSchedule());
+    expect(rejected.error, RelayCode.notFriend);
+    await alice.redeem(invite);
+    await bob.refresh();
+    expect(bob.friends.single.removed, isFalse);
+    expect((await bob.send(alice.deviceId!, sampleSchedule())).state, MessageState.sent);
+  });
+
+  test('中转丢了本设备：重新注册失败报注册的错误码，只重放一次、不再重试', () async {
+    final relay = FakeRelay();
+    final service = await device(relay);
+    await service.enable('小红');
+    forgetDevice(relay, service.deviceId!);
+    relay.calls.clear();
+    relay.failOn = ('POST /v1/devices', const RelayException(RelayCode.rateLimited));
+    await expectLater(service.createInvite(), throwsA(isA<SocialException>().having((error) => error.code, 'code', RelayCode.rateLimited)));
+    expect(relay.calls, ['POST /v1/invites', 'POST /v1/devices']);
+    // 下一次操作再遇到时照样只注册一次。
+    await service.createInvite();
+    expect(relay.calls.skip(2), ['POST /v1/invites', 'POST /v1/devices', 'POST /v1/invites']);
+  });
+
+  test('中转丢了本设备：几个请求同时遇到 UNAUTHORIZED 只注册一次', () async {
+    final relay = FakeRelay();
+    final service = await device(relay);
+    await service.enable('小红');
+    forgetDevice(relay, service.deviceId!);
+    relay.calls.clear();
+    await Future.wait([service.createInvite(), service.refresh(reconcile: true)]);
+    expect(relay.calls.where((call) => call == 'POST /v1/devices'), hasLength(1));
+    expect(service.refreshError, isNull);
+  });
+
+  test('中转丢了本设备：前台长轮询重新注册后继续收消息', () async {
+    final relay = FakeRelay();
+    final vault = MemoryIdentityVault();
+    final databasePath = path.join(temporary.path, 'relive.db');
+    final bob = await device(relay);
+    await bob.enable('小明');
+    final first = await device(relay, vault: vault, databasePath: databasePath);
+    await first.enable('小红');
+    await first.store.close();
+    forgetDevice(relay, vault.identity!.deviceId);
+    relay.calls.clear();
+    // 重新启动：本机记着已注册、启动时不再注册，由长轮询遇到 UNAUTHORIZED 补上。
+    final restarted = await device(relay, vault: vault, databasePath: databasePath, polling: true);
+    await eventually(() => relay.devices.containsKey(restarted.deviceId));
+    expect(relay.calls.take(3), ['GET /v1/messages', 'POST /v1/devices', 'GET /v1/messages']);
+    await bob.redeem(InviteCode.decode((await restarted.createInvite()).encode())!);
+    await bob.send(restarted.deviceId!, sampleSchedule());
+    await eventually(() => restarted.unread == 1);
+    restarted.dispose();
+    relay.releaseWaiters();
+  });
+
+  test('关闭私信：中转已经不认这台设备时照样清空本机', () async {
+    final relay = FakeRelay();
+    final vault = MemoryIdentityVault();
+    final service = await device(relay, vault: vault);
+    await service.enable('小红');
+    forgetDevice(relay, service.deviceId!);
+    relay.calls.clear();
+    await service.disable();
+    expect(relay.calls, ['DELETE /v1/devices']);
+    expect(service.status, SocialStatus.disabled);
+    expect(vault.identity, isNull);
+    expect(await service.store.profile(), isNull);
   });
 
   test('身份丢失（安全存储被清）时回到未开启，清掉无法解密的旧数据', () async {

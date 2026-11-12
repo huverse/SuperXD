@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/application/app_moments.dart';
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/application/festivals.dart';
@@ -82,7 +83,7 @@ class _RewardRelay implements RelayTransport {
     }
     final device = headers['x-sxd-device']!, key = relay.devices[device]?.sign;
     final canonical = requestCanonical(method, pathWithQuery, headers['x-sxd-time']!, headers['x-sxd-nonce']!, body ?? const []);
-    if (key == null || !await verifySignature(key, canonical, decodeBase64UrlNoPad(headers['x-sxd-signature']!))) return const RelayResponse(401, {'code': RelayCode.unauthorized});
+    if (key == null || !await verifyEd25519(key, canonical, decodeBase64UrlNoPad(headers['x-sxd-signature']!))) return const RelayResponse(401, {'code': RelayCode.unauthorized});
     draws.add((device: device, path: pathWithQuery, body: (jsonDecode(utf8.decode(body!)) as Map).cast<String, Object?>()));
     return RelayResponse(200, result);
   }

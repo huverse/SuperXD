@@ -1,10 +1,11 @@
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' as hash;
 import 'package:cryptography/cryptography.dart';
+
+import 'package:superxd/domain/campus_crypto.dart';
 
 // 协议 v1 的客户端密码学，与服务端 server/src/common/crypto/relay_crypto.ts 逐字节一致（共用 server/test/vectors/protocol_v1.json）。
 // 设备身份：Ed25519 签名密钥 + X25519 加密密钥，私钥种子只在系统安全存储里。
@@ -15,7 +16,6 @@ final _ed25519 = Ed25519();
 final _x25519 = X25519();
 final _aes = AesGcm.with256bits();
 final _hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
-final _random = Random.secure();
 
 const envelopeVersion = 1;
 // 解压后的消息明文上限 1MB，防压缩炸弹。
@@ -28,16 +28,8 @@ class SocialCryptoException implements Exception {
   String toString() => message;
 }
 
-String base64UrlNoPad(List<int> bytes) => base64Url.encode(bytes).replaceAll('=', '');
-
-Uint8List decodeBase64UrlNoPad(String text, {int? length}) {
-  if (!RegExp(r'^[A-Za-z0-9_-]*$').hasMatch(text)) throw const SocialCryptoException('编码不正确');
-  final bytes = base64Url.decode(text.padRight((text.length + 3) ~/ 4 * 4, '='));
-  if (base64UrlNoPad(bytes) != text || length != null && bytes.length != length) throw const SocialCryptoException('编码不正确');
-  return bytes;
-}
-
-Uint8List randomBytes(int length) => Uint8List.fromList([for (var index = 0; index < length; index++) _random.nextInt(256)]);
+// 协议里的 base64url 一律无填充、规范写法（编解码与随机字节在 domain/campus_crypto.dart），不合格算外部输入坏了。
+Uint8List decodeBase64UrlNoPad(String text, {int? length}) => tryDecodeBase64UrlNoPad(text, length: length) ?? (throw const SocialCryptoException('编码不正确'));
 
 String deviceIdOf(List<int> signPublicKey) => base64UrlNoPad(hash.sha256.convert(signPublicKey).bytes.sublist(0, 16));
 
@@ -54,10 +46,6 @@ Future<Uint8List> signWithSeed(List<int> seed, List<int> message) async {
   return Uint8List.fromList(signature.bytes);
 }
 
-Future<bool> verifySignature(List<int> publicKey, List<int> message, List<int> signature) async {
-  if (publicKey.length != 32 || signature.length != 64) return false;
-  return _ed25519.verify(message, signature: Signature(signature, publicKey: SimplePublicKey(publicKey, type: KeyPairType.ed25519)));
-}
 
 Future<Uint8List> ed25519PublicOf(List<int> seed) async {
   final keyPair = await _ed25519.newKeyPairFromSeed(seed);
@@ -83,7 +71,7 @@ class SocialIdentity {
     return SocialIdentity._(Uint8List.fromList(signSeed), Uint8List.fromList(boxSeed), await ed25519PublicOf(signSeed), await x25519PublicOf(boxSeed));
   }
 
-  static Future<SocialIdentity> generate() => fromSeeds(randomBytes(32), randomBytes(32));
+  static Future<SocialIdentity> generate() => fromSeeds(secureRandomBytes(32), secureRandomBytes(32));
 
   Future<Uint8List> sign(List<int> message) => signWithSeed(signSeed, message);
 }
@@ -108,7 +96,7 @@ Future<Uint8List> sealEnvelope({required SocialIdentity sender, required PeerKey
   final ephemeral = await _x25519.newKeyPair();
   final ephemeralPublic = (await ephemeral.extractPublicKey()).bytes;
   final key = await _envelopeKey(await _x25519.sharedSecretKey(keyPair: ephemeral, remotePublicKey: SimplePublicKey(recipient.boxPublicKey, type: KeyPairType.x25519)), ephemeralPublic, recipient.boxPublicKey);
-  final nonce = randomBytes(12);
+  final nonce = secureRandomBytes(12);
   final box = await _aes.encrypt([...signature, ...compressed], secretKey: key, nonce: nonce, aad: _aad(ephemeralPublic, recipient.deviceId));
   return Uint8List.fromList([envelopeVersion, ...ephemeralPublic, ...nonce, ...box.cipherText, ...box.mac.bytes]);
 }
@@ -145,7 +133,7 @@ Future<OpenedEnvelope> openEnvelope({required SocialIdentity recipient, required
   return OpenedEnvelope(message.cast<String, Object?>(), signature, _messageCanonical(compressed));
 }
 
-Future<bool> verifyOpened(OpenedEnvelope opened, List<int> senderSignPublicKey) => verifySignature(senderSignPublicKey, opened.signed, opened.signature);
+Future<bool> verifyOpened(OpenedEnvelope opened, List<int> senderSignPublicKey) => verifyEd25519(senderSignPublicKey, opened.signed, opened.signature);
 
 Future<SecretKey> _envelopeKey(SecretKey shared, List<int> ephemeralPublic, List<int> recipientBoxPublic) =>
     _hkdf.deriveKey(secretKey: shared, nonce: [...ephemeralPublic, ...recipientBoxPublic], info: utf8.encode('SXD1-envelope'));

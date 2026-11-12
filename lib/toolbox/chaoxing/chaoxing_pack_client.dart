@@ -5,6 +5,7 @@ import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
@@ -28,7 +29,7 @@ class ChaoxingPackHub {
 
   // 投递换取件号，另拿一个作废口令（换码时凭它作废这张）；还没升级的中转不给口令，此时为空、作废跳过。
   Future<({String id, String? revokeToken})> submit(List<int> cipherText) async {
-    final json = await _post('/v1/chaoxing/packs', jsonEncode({'data': _encode(cipherText)}), route: 'submit');
+    final json = await _post('/v1/chaoxing/packs', jsonEncode({'data': base64UrlNoPad(cipherText)}), route: 'submit');
     final id = '${json['id'] ?? ''}';
     if (!RegExp(r'^[A-Za-z0-9_-]{16}$').hasMatch(id)) {
       throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, _unknownResult);
@@ -48,14 +49,8 @@ class ChaoxingPackHub {
     if (data.isEmpty) {
       throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, _unknownResult);
     }
-    try {
-      return base64Url.decode(data.padRight((data.length + 3) ~/ 4 * 4, '='));
-    } on FormatException {
-      throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, _unknownResult);
-    }
+    return tryDecodeBase64UrlNoPad(data) ?? (throw const ChaoxingFailure(ChaoxingFailureCode.invalidResponse, _unknownResult));
   }
-
-  static String _encode(List<int> bytes) => base64Url.encode(bytes).replaceAll('=', '');
 
   // route 是日志里的路由模板（不含取件号这类一次性凭据）。
   // 超时管整个请求：到点中断连接，响应边读边限长，不先整体读进内存（共用内核 CampusHttp）。

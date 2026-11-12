@@ -18,6 +18,8 @@ class CampusHttpTooLarge implements Exception {
 // 原来约十套手写封装超时、上限、请求记录各写一遍且不一致（私信与教务页面没有响应上限，有的超时后不中断连接），同一能力全项目只认一个实现。
 // 只管机制，不认识任何模块的接口：
 // - timeout 管整个请求（连接、发送、读完响应体）：到点中断底层连接，抛 TimeoutException。
+// - idleTimeout（可选）管「多久没有进展」：请求体每发出一块、收到响应头、响应体每到一块都重新计时，到点同样中断并抛 TimeoutException；
+//   给大文件上传这类整次耗时说不准的请求用，整次仍受 timeout 封顶。
 // - cancel 完成即中断底层连接，抛 http.RequestAbortedException（与超时分得开）。
 // - 响应体边读边数：声明的长度或读到的字节超过 limit 就停止读取、中断连接，抛 CampusHttpTooLarge。
 // - 底层传输不理会中断信号时（测试替身等）也按时返回：结果与中断信号竞速，输了的那一路被丢弃。
@@ -32,7 +34,8 @@ class CampusHttp {
   final http.Client _client;
 
   // headers 先写，再写请求体：body 按 http.Request.body 的规则写（UTF-8，Content-Type 缺 charset 时补上），bodyBytes 原样写、不动请求头；
-  // multipart 是表单文件上传。logUri 是请求记录里写的地址（比如只写路由模板、不写一次性凭据），为空用 uri。
+  // multipart 是表单文件上传；bodyStream 是边读边发的请求体（如文件流），声明 length、不分块，不整个读进内存。
+  // logUri 是请求记录里写的地址（比如只写路由模板、不写一次性凭据），为空用 uri。
   // collect 让调用方自己累加响应体（读到 limit 以上要自己停）：教务成绩那条「性能观察项」用它保持原来的读法（见 lib/edu/CLAUDE.md），字体包下载用它边收边报进度。
   Future<http.Response> send(
     String method,
@@ -43,14 +46,35 @@ class CampusHttp {
     String? body,
     List<int>? bodyBytes,
     ({Map<String, String> fields, List<http.MultipartFile> files})? multipart,
+    ({Stream<List<int>> stream, int length})? bodyStream,
+    Duration? idleTimeout,
     bool followRedirects = true,
     Future<void>? cancel,
     Uri? logUri,
     Future<List<int>> Function(Stream<List<int>> stream, int limit)? collect,
   }) async {
     final trigger = Completer<void>();
+    String? aborted;
+    void abort(String reason) {
+      if (trigger.isCompleted) return;
+      aborted = reason;
+      trigger.complete();
+    }
+
+    Timer? idle;
+    void active() {
+      if (idleTimeout == null) return;
+      idle?.cancel();
+      idle = Timer(idleTimeout, () => abort(_timeout));
+    }
+
     final http.BaseRequest request;
-    if (multipart != null) {
+    if (bodyStream != null) {
+      request = _AbortableStreamRequest(method, uri, bodyStream.stream.map((chunk) {
+        active();
+        return chunk;
+      }), bodyStream.length, trigger.future)..headers.addAll(headers);
+    } else if (multipart != null) {
       request = http.AbortableMultipartRequest(method, uri, abortTrigger: trigger.future)
         ..headers.addAll(headers)
         ..fields.addAll(multipart.fields)
@@ -62,20 +86,17 @@ class CampusHttp {
       request = plain;
     }
     request.followRedirects = followRedirects;
-    String? aborted;
-    void abort(String reason) {
-      if (trigger.isCompleted) return;
-      aborted = reason;
-      trigger.complete();
-    }
-
     final timer = Timer(timeout, () => abort(_timeout));
+    active();
     if (cancel != null) unawaited(cancel.then((_) => abort(_cancelled), onError: (Object _) => abort(_cancelled)));
     final watch = Stopwatch()..start();
     int? status;
     try {
       final response = await Future.any([
-        _exchange(request, limit, collect, (code) => status = code),
+        _exchange(request, limit, collect, (code) {
+          status = code;
+          active();
+        }, active),
         trigger.future.then<http.Response>((_) => throw http.RequestAbortedException(uri)),
       ]);
       campusRequestLog(module, method, logUri ?? uri, status: response.statusCode, elapsed: watch.elapsed, bytes: response.bodyBytes.length);
@@ -90,19 +111,29 @@ class CampusHttp {
       Error.throwWithStackTrace(error, StackTrace.fromString('$stack<asynchronous suspension>\n${StackTrace.current}'));
     } finally {
       timer.cancel();
+      idle?.cancel();
       // 不论成败都发一次中断：没读完的连接立即关掉，读完的什么也不发生。
       if (!trigger.isCompleted) trigger.complete();
     }
   }
 
-  Future<http.Response> _exchange(http.BaseRequest request, int limit, Future<List<int>> Function(Stream<List<int>>, int)? collect, void Function(int) onStatus) async {
+  Future<http.Response> _exchange(
+    http.BaseRequest request,
+    int limit,
+    Future<List<int>> Function(Stream<List<int>>, int)? collect,
+    void Function(int) onStatus,
+    void Function() onChunk,
+  ) async {
     final response = await _client.send(request);
     onStatus(response.statusCode);
     if ((response.contentLength ?? 0) > limit) {
       await response.stream.listen(null).cancel();
       throw CampusHttpTooLarge(limit);
     }
-    final bytes = await (collect ?? _collect)(response.stream, limit);
+    final bytes = await (collect ?? _collect)(response.stream.map((chunk) {
+      onChunk();
+      return chunk;
+    }), limit);
     return http.Response.bytes(
       bytes,
       response.statusCode,
@@ -124,6 +155,22 @@ class CampusHttp {
   }
 
   void close() => _client.close();
+}
+
+// 边读边发的请求体：声明长度、不分块，可中断（IOClient 收到 abortTrigger 即断开）。
+final class _AbortableStreamRequest extends http.BaseRequest with http.Abortable {
+  _AbortableStreamRequest(super.method, super.url, this._body, int length, this.abortTrigger) {
+    contentLength = length;
+  }
+  final Stream<List<int>> _body;
+  @override
+  final Future<void>? abortTrigger;
+
+  @override
+  http.ByteStream finalize() {
+    super.finalize();
+    return http.ByteStream(_body);
+  }
 }
 
 const _timeout = 'timeout';

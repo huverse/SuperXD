@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:http/http.dart' as http;
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/social/social_crypto.dart';
@@ -128,7 +129,7 @@ class RelayClient {
     final body = payload == null ? <int>[] : utf8.encode(jsonEncode(payload));
     for (var attempt = 0;; attempt++) {
       final time = '${DateTime.now().millisecondsSinceEpoch + clockOffset}';
-      final nonce = base64UrlNoPad(randomBytes(16));
+      final nonce = base64UrlNoPad(secureRandomBytes(16));
       final signature = await identity.sign(requestCanonical(method, path, time, nonce, body));
       final response = await transport.send(method, path, {
         'x-sxd-device': identity.deviceId,

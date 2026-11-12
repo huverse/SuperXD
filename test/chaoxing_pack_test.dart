@@ -3,6 +3,7 @@ import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 
@@ -115,7 +116,7 @@ void main() {
   });
 
   test('取件票二维码文本编解码', () {
-    final key = chaoxingRandomBytes(chaoxingPackKeyBytes);
+    final key = secureRandomBytes(chaoxingPackKeyBytes);
     final text = encodeChaoxingPackTicket(ChaoxingPackTicket(pickupId: 'AbCdEf0123456789XyZ', key: key));
     expect(text.startsWith('SXDC1:AbCdEf0123456789XyZ.'), isTrue);
     final decoded = decodeChaoxingPackTicket(text);

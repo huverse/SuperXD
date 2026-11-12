@@ -74,14 +74,14 @@
    - 开发者的话的本机记录（最近的信、读过与弹过的编号）与节日的本机记录（抽奖身份的状态、近 30 天打开过的日期、播过抽过的节日、奖品）属于设备；抽奖身份是只在有抽奖的节日前后存在的单独密钥（人工决策见 domain/festival.dart），不关联教务账号、私信身份与设备标识。
 9. 对外网络：
    - 每个外部请求都有显式超时与响应上限，只发必要字段；具体数值写在所属模块（教务 edu、解析 toolbox、代签 chaoxing、私信与节日抽签 social、应用更新、开发者的话、诊断包上传与字体包下载 device）。
-   - 除会话自动恢复后的一次重放、时钟偏差校正后的一次重发外，不自动重试；私信收取的长轮询是持续接收通道，失败后退避继续；自动同步按间隔来，没连上网的隔 15 分钟后再试，都不算重试，后台任务也不交给系统重试。
+   - 除会话自动恢复后的一次重放、时钟偏差校正后的一次重发、私信中转不认这台设备时重新注册后的一次重放外，不自动重试；私信收取的长轮询是持续接收通道，失败后退避继续；自动同步按间隔来，没连上网的隔 15 分钟后再试，都不算重试，后台任务也不交给系统重试。
    - 教务默认只在用户点同步时访问；自动同步是用户开启后的例外（默认关闭），登录过期时只暂停、不转登录页。
    - CampusSync 每个实例内按顺序逐项请求，今天页和成绩页各持有一个实例；成绩同步与其他教务网络请求互斥（SYNC_BUSY）；教务限流时报 RATE_LIMITED，本轮立即停止。
 10. 数据保留：新增只增不删的数据，必须同时给出上限或清理策略，写进所属模块 CLAUDE.md；服务端信箱与设备的保留见 server/README.md。
 11. 日志：只经 domain/campus_log.dart 的 campusLog 输出，应用入口必须注入 debugPrint 才进 logcat；格式为 [模块] action=... errorType=...，错误附完整堆栈；不写原始 HTML、链接、凭据与实名信息。由 test/project_structure_test.dart 守护。
     - 同一份输出另写进本机文件（local/diagnostic_log.dart）：平时只记错误，开发者模式记全部；保存期限与掩码规则见 lib/local/CLAUDE.md，隐私政策第八节与附录三同步写明。
     - 只在开发者模式下才有意义的诊断记录（请求耗时、页面切换、卡顿内存）先看 campusDiagnostics，对外请求统一经 campusRequestLog 记，只记路径、不记域名与查询串。
-    - 新模块接入开发者模式：日志照常走 campusLog、错误带 errorType= 或堆栈即自动进本机日志与错误记录；对外请求一律经共用内核 domain/campus_http.dart 发（超时、响应上限、取消与 campusRequestLog 都在那里），不再手写封装，还没迁过来的几个文件自己调 campusRequestLog（test/project_structure_test.dart 守护）；新页面优先挂 go_router 路由（按路径记），命令式推入的页面经 CampusPageRoute 按页面类名记推入与返回。
+    - 新模块接入开发者模式：日志照常走 campusLog、错误带 errorType= 或堆栈即自动进本机日志与错误记录；对外请求一律经共用内核 domain/campus_http.dart 发（超时、响应上限、取消与 campusRequestLog 都在那里），不再手写封装，还没迁过来的 iOS 下载传输自己调 campusRequestLog（test/project_structure_test.dart 守护）；新页面优先挂 go_router 路由（按路径记），命令式推入的页面经 CampusPageRoute 按页面类名记推入与返回。
 12. 界面实现：确认和提示统一用 theme/campus_transitions.dart 的 showCampusConfirm 与 showCampusNotice；setState 回调不得返回 Future，给 Future 字段赋值时用块体；只有图标的 IconButton 必须带 tooltip 作读屏标签。后两条由 test/code_conventions_test.dart 守护。
 13. 公开内容不出现实名：
     - [人工决策-2026-10-15 20:20:38] 仓库公开，代码、测试数据、文档、提交信息、PR 与 Issue 的正文和评论一律不写真实姓名、手机号、学号等实名信息（含真实课表里的教师名）。
@@ -112,7 +112,8 @@
 # 测试
 
 - 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、请求记录、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由、页面滚动区渐隐、顶栏玻璃圆钮、toImageSync 只用于云雾贴图、内嵌网页拖动归网页），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
-- 共用的测试支撑：fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、toolbox_test_support.dart、form_layout_support.dart、text_fit_support.dart（扫一屏文字的裁切、孤字与单独成行的标点）、app_update_fakes.dart、content_signing_support.dart（测试用签名钥）、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
+- 基准图 golden_test.dart：登录、服务、我的、界面、成绩、百宝箱（含左滑露出的按钮）深浅两套，只在 Linux 上比、容差万分之一；改了样子是有意的，看过 test/failures 的差异图（CI 失败时是产物 golden-failures）再 flutter test --update-goldens test/golden_test.dart 重生成一起提交。界面库升级与主题改动都靠它把关。
+- 共用的测试支撑：fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、page_fixture_support.dart（整应用页面测试的合成账号与教务数据）、toolbox_test_support.dart、form_layout_support.dart、text_fit_support.dart（扫一屏文字的裁切、孤字与单独成行的标点）、app_update_fakes.dart、content_signing_support.dart（测试用签名钥）、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
 - CI 的 Flutter 作业带覆盖率跑全量测试，再由 tool/coverage_check.dart 算 lib 的行覆盖率，低于工具里的门槛就失败；本机复现先 flutter test --coverage 再 dart run 它。
 - tool 下其余是手动入口，不进 CI（发版三个工具由发版流水线调用），运行方式见各文件头：
   - 访问真实服务，只在授权环境与授权账号上手动运行：verify_edu.dart、verify_grades.dart（教务）、verify_chaoxing.dart（学习通，输出脱敏）。
@@ -126,7 +127,7 @@
 
 - 平台：Android 最低 Android 11（系统 SQLite 3.28，原因与守护见 android/app/build.gradle.kts 的人工决策），验证以模拟器（API 36、API 34）为主，只在少数真机上走过部分功能。原生通道在 android/app/src 下（入口 MainActivity.kt），各自登记在使用它的模块 CLAUDE.md。
 - 屏幕方向：安卓主界面锁竖屏、iOS 只竖屏（[人工决策] 在清单的 MainActivity；Android 16 起系统对大屏设备会忽略这个设置，属正常；test/shell_layout_test.dart 守护）。
-- iOS：宿主在 ios 目录（入口 ios/Runner/AppDelegate.swift；小组件与实时活动的扩展在 ios/CourseWidgets，两边共用的在 ios/Shared；最低 iOS 16 与渠道配置的人工决策在 ios/Podfile），原生代码同样登记在使用它的模块 CLAUDE.md。本机是 Linux、没有 Mac，iOS 只在 CI 的 ios-build 作业里编译，产物是未签名 ipa，测试者用全能签加自己的证书签名安装（人工决策在 ci.yml）；没有模拟器与本机调试，iOS 结论只认用户 iPhone 上的结果。系统启动图只铺默认配色的底色（LaunchBackground）；应用自己的隐私清单 ios/Runner/PrivacyInfo.xcprivacy 登记原生代码用到的需说明理由的接口（现在只有 UserDefaults），新增这类接口时同步。各项原生能力还在补，补齐前 iOS 未验收。
+- iOS：宿主在 ios 目录（入口 ios/Runner/AppDelegate.swift；小组件与实时活动的扩展在 ios/CourseWidgets，两边共用的在 ios/Shared；最低 iOS 16 与渠道配置的人工决策在 ios/Podfile），原生代码同样登记在使用它的模块 CLAUDE.md。本机是 Linux、没有 Mac，iOS 只在 CI 的 ios-build 作业里编译（同一作业另在模拟器上装调试包做启动冒烟，截图在产物 ios-simulator-smoke，[人工决策] 在 ci.yml），产物是未签名 ipa，测试者用全能签加自己的证书签名安装（人工决策在 ci.yml）；没有模拟器与本机调试，iOS 结论只认用户 iPhone 上的结果。系统启动图只铺默认配色的底色（LaunchBackground）；应用自己的隐私清单 ios/Runner/PrivacyInfo.xcprivacy 登记原生代码用到的需说明理由的接口（现在只有 UserDefaults），新增这类接口时同步。各项原生能力还在补，补齐前 iOS 未验收。
 - 对外开放文件只经两个 FileProvider：CalendarFileProvider（缓存 calendar_export 文件夹）与 AppUpdateFileProvider（缓存 app_update 文件夹，清单声明 REQUEST_INSTALL_PACKAGES）。
 - release 包开启 R8：接入不带混淆规则的原生 SDK 时要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件还要自己在清单里声明（现在没有这类 SDK：原生高德 11-10 随地图改网页版删掉，test/legal_page_test.dart 守护它与规则同进同出）。CI 只跑测试；release 包由发版流水线构建，正式发版前可先试跑，用试跑产物在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
 - 暂不改动的事项（只被测试使用的公开方法、性能观察项、单校写死）记在对应模块 CLAUDE.md 的关键规则里，改动前先看。

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_crypto.dart';
 
@@ -17,6 +18,8 @@ class FakeRelay {
   int serverOffset = 0;
   // 下一个请求直接抛出这个错误（模拟断网等）。
   RelayException? failNext;
+  // 下一个「方法 路径」相符的请求抛出这个错误，其余照常。
+  (String, RelayException)? failOn;
   final calls = <String>[];
   // 长轮询中挂起的请求：设备号 → 等待者，投递时唤醒。
   final _waiters = <String, List<Completer<void>>>{};
@@ -35,11 +38,16 @@ class FakeRelay {
   }
 
   Future<RelayResponse> handle(String method, String path, Map<String, String> headers, List<int>? body, {Duration? timeout}) async {
-    calls.add('$method ${path.split('?').first}');
+    final call = '$method ${path.split('?').first}';
+    calls.add(call);
     final failure = failNext;
     if (failure != null) {
       failNext = null;
       throw failure;
+    }
+    if (failOn case (final target, final error) when target == call) {
+      failOn = null;
+      throw error;
     }
     final payload = body == null ? <String, Object?>{} : (jsonDecode(utf8.decode(body)) as Map).cast<String, Object?>();
     final deviceId = headers['x-sxd-device']!, time = headers['x-sxd-time']!, nonce = headers['x-sxd-nonce']!;
@@ -49,7 +57,7 @@ class FakeRelay {
     if (signKey == null) return _error(401, RelayCode.unauthorized);
     if (selfSigned && deviceIdOf(signKey) != deviceId) return _error(400, RelayCode.deviceMismatch);
     final canonical = requestCanonical(method, path, time, nonce, body ?? const []);
-    if (!await verifySignature(signKey, canonical, decodeBase64UrlNoPad(headers['x-sxd-signature']!))) return _error(401, RelayCode.unauthorized);
+    if (!await verifyEd25519(signKey, canonical, decodeBase64UrlNoPad(headers['x-sxd-signature']!))) return _error(401, RelayCode.unauthorized);
     if (!_nonces.add('$deviceId:$nonce')) return _error(401, RelayCode.replayed);
     final uri = Uri.parse(path);
     switch ((method, uri.path)) {
@@ -71,7 +79,7 @@ class FakeRelay {
         final invite = invites[inviteId];
         if (invite == null || invite.expiresAt < now) return _error(404, RelayCode.inviteNotFound);
         if (invite.owner == deviceId) return _error(400, RelayCode.inviteSelf);
-        if (!await verifySignature(invite.publicKey, inviteProofCanonical(inviteId, deviceId), decodeBase64UrlNoPad(payload['proof'] as String))) {
+        if (!await verifyEd25519(invite.publicKey, inviteProofCanonical(inviteId, deviceId), decodeBase64UrlNoPad(payload['proof'] as String))) {
           return _error(403, RelayCode.inviteProofInvalid);
         }
         friendships..add('$deviceId|${invite.owner}')..add('${invite.owner}|$deviceId');
