@@ -1,6 +1,9 @@
 import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
+import 'package:superxd/playground/puzzle/ice/ice_page.dart';
+import 'package:superxd/playground/puzzle/lights/lights_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
+import 'package:superxd/playground/puzzle/queens/queens_page.dart';
 import 'package:superxd/theme/campus_icons.dart';
 
 // [人工决策-2026-11-12 21:00:20] 游乐场的板块、子类与游戏只在这一处登记（同百宝箱 toolbox_catalog.dart）；id 发出后不改。
@@ -42,5 +45,38 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.hanoi,
     group: planningGroup,
     builder: (context, game, store) => HanoiPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'queens',
+    name: '八皇后',
+    summary: '补齐皇后，互不攻击',
+    howToPlay: '在 N×N 的棋盘上放 N 个皇后，任意两个不能在同一行、同一列或同一条斜线上。\n'
+        '题面已经摆好几个锁定的皇后（垫着底板，不能动），补齐其余的；每道题的补法都唯一。\n'
+        '点空格放皇后，再点一次拿掉。互相攻击的皇后会标成红色并连一条线；按住一个皇后能看它管到的格子。棋盘大时双指可以放大。',
+    icon: CampusIcons.queens,
+    group: logicGroup,
+    builder: (context, game, store) => QueensPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'ice',
+    name: '冰面滑行',
+    summary: '一滑到底，停在终点上',
+    howToPlay: '小企鹅朝一个方向滑出去，一直滑到撞上岩石或边界才停。\n'
+        '要正好停在插旗的终点格上才算到达，滑过去不算。\n'
+        '在棋盘上朝上下左右滑动来推它，也可以点下方的方向键；走错了可以撤销。',
+    icon: CampusIcons.ice,
+    group: planningGroup,
+    builder: (context, game, store) => IcePage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'lights',
+    name: '点灯',
+    summary: '翻转十字，把灯全点亮',
+    howToPlay: '每格一盏灯。点一格，这一盏和它上下左右相邻的灯一起翻转：亮的变灭，灭的变亮。\n'
+        '把全部灯点亮就解开了。同一格点两下等于没点，点的先后也不影响结果。\n'
+        '每道题都有解，状态行写着最少要点几下；点错了可以撤销。',
+    icon: CampusIcons.lights,
+    group: gridGroup,
+    builder: (context, game, store) => LightsPage(game: game, store: store),
   ),
 ];

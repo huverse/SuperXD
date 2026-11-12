@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
@@ -40,8 +41,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('格子谜题'), findsOneWidget);
     expect(find.text('移动与规划'), findsOneWidget);
-    // 没有游戏的子类不显示，也不放占位卡。
-    expect(find.text('逻辑推理'), findsNothing);
+    // 没有游戏的子类不显示，也不放占位卡（按登记表里还空着的子类查，游戏陆续登记进来也不用改这里）。
+    for (final group in playgroundGroups.where((group) => !playgroundCatalog.any((game) => game.group.id == group.id))) {
+      expect(find.text(group.name), findsNothing);
+    }
     expect(find.text('最近玩过'), findsNothing);
 
     await tester.tap(find.text('汉诺塔'));
@@ -196,6 +199,46 @@ void main() {
     expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '撤销')).onPressed, isNull);
     semantics.dispose();
   });
+
+  // iOS 的页面任意位置右滑返回（campus_transitions.dart 的 _IosBackSwipe）约 18dp 就认横向拖动：棋盘上的拖动必须归棋盘，
+  // 不然数织横着涂、汉诺塔往右拖盘子时整页跟着滑走。
+  testWidgets('iOS 上棋盘里的横向拖动归棋盘：数织横着涂一行、汉诺塔往右拖盘子，都不触发右滑返回', (tester) async {
+    final semantics = tester.ensureSemantics();
+    tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(accessibleNavigation: true);
+    addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+    final store = PlaygroundStore.memory();
+    final navigator = GlobalKey<NavigatorState>();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), navigatorKey: navigator, home: const SizedBox.expand(child: Text('上一页'))));
+
+    Future<void> dragRight(Offset from, Offset to) async {
+      final gesture = await tester.startGesture(from);
+      final steps = ((to.dx - from.dx) / 12).ceil();
+      for (var step = 0; step < steps; step++) {
+        await gesture.moveBy(Offset((to.dx - from.dx) / steps, 0));
+        await tester.pump();
+        expect(navigator.currentState!.userGestureInProgress, isFalse);
+      }
+      await gesture.up();
+      await tester.pump(const Duration(milliseconds: 400));
+    }
+
+    unawaited(navigator.currentState!.push(CampusPageRoute<void>(builder: (_) => NonogramPage(game: _game('nonogram'), store: store, seeds: () => 3))));
+    await tester.pumpAndSettle();
+    await dragRight(tester.getCenter(_cell(1, 0)), tester.getCenter(_cell(1, 4)));
+    expect(tester.getTopLeft(find.byType(NonogramPage)).dx, 0);
+    for (var column = 0; column < 5; column++) {
+      expect(find.bySemanticsLabel('第2行第${column + 1}列，已涂'), findsOneWidget);
+    }
+    navigator.currentState!.pop();
+    await tester.pumpAndSettle();
+
+    unawaited(navigator.currentState!.push(CampusPageRoute<void>(builder: (_) => HanoiPage(game: _game('hanoi'), store: store, seeds: () => 1))));
+    await tester.pumpAndSettle();
+    await dragRight(tester.getCenter(_peg(0)), tester.getCenter(_peg(1)));
+    expect(tester.getTopLeft(find.byType(HanoiPage)).dx, 0);
+    expect(find.textContaining('1 步'), findsOneWidget);
+    semantics.dispose();
+  }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
   test('本机记录：最好成绩只在更快时更新，最近玩过有上限，写盘后重新打开还在，坏文件当没有', () async {
     final directory = await Directory.systemTemp.createTemp('playground_store');
