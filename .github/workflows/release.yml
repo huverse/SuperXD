@@ -45,7 +45,7 @@ jobs:
       build: ${{ steps.version.outputs.build }}
       publish: ${{ steps.version.outputs.publish }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           fetch-depth: 0
       # 新版本号还没有标签才发；改 pubspec 别的内容（依赖等）不发。构建号必须比上一版大，客户端不认降级。
@@ -97,7 +97,7 @@ jobs:
       VERSION: ${{ needs.plan.outputs.version }}
       CODE: ${{ needs.plan.outputs.code }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
           flutter-version: '3.47.2'
@@ -187,7 +187,7 @@ jobs:
       VERSION: ${{ needs.plan.outputs.version }}
       CODE: ${{ needs.plan.outputs.code }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
         with:
           flutter-version: '3.47.2'
@@ -346,7 +346,7 @@ jobs:
         if: env.PUBLISH != 'true'
         run: rsync --list-only "$RELAY_TARGET:"
       # 按需下载的字体包（人工决策见 lib/domain/font_pack.dart）不进安装包，在仓库 font_packs 目录，只取这一个目录。
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         if: env.PUBLISH == 'true'
         with:
           path: source
