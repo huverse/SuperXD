@@ -1,6 +1,7 @@
 import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
 import 'package:superxd/playground/puzzle/ice/ice_page.dart';
+import 'package:superxd/playground/puzzle/lights/lights_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
 import 'package:superxd/playground/puzzle/queens/queens_page.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -66,5 +67,16 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.ice,
     group: planningGroup,
     builder: (context, game, store) => IcePage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'lights',
+    name: '点灯',
+    summary: '点一下翻转十字，把灯全点亮',
+    howToPlay: '每格一盏灯。点一格，这一盏和它上下左右相邻的灯一起翻转：亮的变灭，灭的变亮。\n'
+        '把全部灯点亮就解开了。同一格点两下等于没点，点的先后也不影响结果。\n'
+        '每道题都有解，状态行写着最少要点几下；点错了可以撤销。',
+    icon: CampusIcons.lights,
+    group: gridGroup,
+    builder: (context, game, store) => LightsPage(game: game, store: store),
   ),
 ];
