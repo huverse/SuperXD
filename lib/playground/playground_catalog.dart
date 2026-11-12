@@ -71,7 +71,7 @@ final playgroundCatalog = <PlaygroundGame>[
   PlaygroundGame(
     id: 'lights',
     name: '点灯',
-    summary: '点一下翻转十字，把灯全点亮',
+    summary: '翻转十字，把灯全点亮',
     howToPlay: '每格一盏灯。点一格，这一盏和它上下左右相邻的灯一起翻转：亮的变灭，灭的变亮。\n'
         '把全部灯点亮就解开了。同一格点两下等于没点，点的先后也不影响结果。\n'
         '每道题都有解，状态行写着最少要点几下；点错了可以撤销。',
