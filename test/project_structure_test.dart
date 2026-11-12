@@ -14,6 +14,8 @@ const _allowed = {
   'device': {'domain', 'device'},
   'theme': {'theme', 'domain/campus_log.dart'},
   'toolbox': {'domain', 'theme', 'toolbox'},
+  // 游乐场（设备级，同百宝箱）：小游戏的规则与页面，只依赖 domain 与 theme；以后的挑战、积分与账号经组合根注入的接口使用。
+  'playground': {'domain', 'theme', 'playground'},
   // 功能性私信（设备级）：本机库、设备身份与中转服务客户端，只依赖 domain；页面经 SocialService 使用，百宝箱经组合根注入的回调使用。
   'social': {'domain', 'social'},
   'page': {'domain', 'application', 'gateway', 'local', 'social', 'theme', 'page', 'app_session.dart'},

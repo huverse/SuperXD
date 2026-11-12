@@ -26,11 +26,14 @@ import 'package:superxd/page/today_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/domain/share_card.dart';
+import 'package:superxd/playground/playground_catalog.dart';
+import 'package:superxd/playground/playground_page.dart';
+import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
-GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, ValueListenable<bool>? splashGone, CampusReminders? reminders, SocialService? social, AppUpdates? updates, DeveloperSettings? developer, DiagnosticLog? logs, PaintingGallery? paintings, DeveloperNotes? notes, Festivals? festivals, AutoSync? autoSync, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
+GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, required PlaygroundStore playground, ValueListenable<bool>? splashGone, CampusReminders? reminders, SocialService? social, AppUpdates? updates, DeveloperSettings? developer, DiagnosticLog? logs, PaintingGallery? paintings, DeveloperNotes? notes, Festivals? festivals, AutoSync? autoSync, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
   final tools = toolbox.modules;
   // 好友分享的卡片交给注册表里认得它的工具打开（页面层不依赖百宝箱，由这里接上；路由不认识具体工具页面）。
   void openVideo(BuildContext context, VideoShare video) {
@@ -57,7 +60,10 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       // [人工决策-2026-09-27 20:12:08] 仅百宝箱及注册工具免教务登录，其他业务门禁不变。
       // 工具登记的快捷入口属于这个工具，同样免登录。
       final publicTool = location == '/toolbox' || tools.any((tool) => location == '/toolbox/${tool.id}' || tool.shortcuts.any((shortcut) => location == '/toolbox/${tool.id}/${shortcut.id}'));
-      if (!session.loggedIn && !atLogin && !legal && !publicTool) return '/login';
+      // [人工决策-2026-11-12 21:00:20] 游乐场的自由模式同百宝箱免教务登录（用户选定，补充 09-27 那条）：本机成绩属于设备，切换账号不丢。
+      // 挑战模式要应用账号（以教务登录为登录方式之一），做好后在挑战页里自己要求登录，不在这里拦。
+      final publicPlay = location == '/playground' || playgroundCatalog.any((game) => location == '/playground/${game.id}');
+      if (!session.loggedIn && !atLogin && !legal && !publicTool && !publicPlay) return '/login';
       if (session.loggedIn && atLogin) return '/today';
       return null;
     },
@@ -87,6 +93,10 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       for (final tool in tools)
         for (final shortcut in tool.shortcuts) GoRoute(path: '/toolbox/${tool.id}/${shortcut.id}', parentNavigatorKey: rootKey,
           pageBuilder: (context, state) => campusPage(key: state.pageKey, child: shortcut.builder(context))),
+      GoRoute(path: '/playground', parentNavigatorKey: rootKey,
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: PlaygroundPage(store: playground, games: playgroundCatalog, groups: playgroundGroups))),
+      for (final game in playgroundCatalog) GoRoute(path: '/playground/${game.id}', parentNavigatorKey: rootKey,
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: PlaygroundGameHost(game: game, store: playground))),
       GoRoute(
         path: '/schedule',
         parentNavigatorKey: rootKey,

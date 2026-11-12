@@ -54,6 +54,7 @@ import 'package:superxd/local/font_packs.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/local/painting_library.dart';
 import 'package:superxd/page/app_update_dialog.dart';
+import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/page/developer_notes_page.dart';
 import 'package:superxd/page/developer_page.dart';
 import 'package:superxd/page/festival/festival_catalog.dart';
@@ -387,7 +388,7 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch, this.notes, this.festivals, this.moments, this.autoSync, this.splashGone});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.playground, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch, this.notes, this.festivals, this.moments, this.autoSync, this.splashGone});
   // 自动同步（设备级）；为空时「同步范围」里没有自动同步入口，也不会有课表冲突的打扰时机。
   final AutoSync? autoSync;
   // 开发者的话（设备级）；为空时「我的」页不显示这一行。
@@ -413,6 +414,8 @@ class SuperXdApp extends StatefulWidget {
   // 开屏画作（设备级）；为空时关于页不显示「开屏画作」。
   final PaintingGallery? paintings;
   final ToolboxRuntime? toolbox;
+  // 游乐场的本机记录（设备级，切换账号保留）；为空时用应用支持目录里的那份。
+  final PlaygroundStore? playground;
   final AppSession session;
   final DisplaySettings? display;
   // 测试/截图固定装饰相位，不关闭业务转场或图标动画。
@@ -423,6 +426,7 @@ class SuperXdApp extends StatefulWidget {
 }
 
 class _SuperXdAppState extends State<SuperXdApp> {
+  late final _playground = widget.playground ?? PlaygroundStore.inSupportDirectory();
   late final _toolbox = widget.toolbox ?? ToolboxRuntime(
     shareVideo: switch (widget.social) {
       final social? => (context, video) => showShareSheet(context, social: social, card: video),
@@ -492,7 +496,7 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts, notes: widget.notes, festivals: widget.festivals, moments: widget.moments, autoSync: widget.autoSync, splashGone: widget.splashGone),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, playground: _playground, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts, notes: widget.notes, festivals: widget.festivals, moments: widget.moments, autoSync: widget.autoSync, splashGone: widget.splashGone),
     );
   }
 }
@@ -512,7 +516,7 @@ class _MomentObserver extends NavigatorObserver {
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.moments, this.autoSync, this.splashGone});
+  const _AccountApp({super.key, required this.session, required this.toolbox, required this.playground, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.moments, this.autoSync, this.splashGone});
   final AutoSync? autoSync;
   final AppShortcuts? shortcuts;
   final DeveloperNotes? notes;
@@ -527,6 +531,7 @@ class _AccountApp extends StatefulWidget {
   final DiagnosticLog? logs;
   final PaintingGallery? paintings;
   final ToolboxRuntime toolbox;
+  final PlaygroundStore playground;
   final AppSession session;
   final DisplaySettings? display;
   final double? backgroundPhase;
@@ -536,7 +541,7 @@ class _AccountApp extends StatefulWidget {
 }
 
 class _AccountAppState extends State<_AccountApp> {
-  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, splashGone: widget.splashGone, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, notes: widget.notes, festivals: widget.festivals, autoSync: widget.autoSync, saveRewardPicture: saveRewardPicture, observers: [_MomentObserver(_onMoment)]);
+  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, playground: widget.playground, splashGone: widget.splashGone, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, notes: widget.notes, festivals: widget.festivals, autoSync: widget.autoSync, saveRewardPicture: saveRewardPicture, observers: [_MomentObserver(_onMoment)]);
   late final VoidCallback _unwatchRoutes;
   late final _display = widget.display ?? DisplaySettings.memory();
 

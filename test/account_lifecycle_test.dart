@@ -44,6 +44,9 @@ import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/page/account_page.dart';
 import 'package:superxd/page/login_page.dart';
 import 'package:superxd/page/shell_page.dart';
+import 'package:superxd/playground/playground_page.dart';
+import 'package:superxd/playground/playground_store.dart';
+import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/express/express_page.dart';
 import 'package:superxd/toolbox/express/express_service.dart';
@@ -84,6 +87,29 @@ void main() {
       await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
       expect(find.byType(LoginPage), findsOneWidget);
     }
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+    await tester.runAsync(fixture.close);
+  });
+
+  // 人工决策见 router.dart 的门禁（游乐场自由模式免登录）。
+  testWidgets('游乐场自由模式免教务登录：登录页进得去、能开游戏，课表门禁照旧', (tester) async {
+    final fixture = ToolboxFixture();
+    await tester.runAsync(fixture.initialize);
+    final gateway = _Accounts().._active = null;
+    final session = AppSession(gateway); await session.restore();
+    await tester.pumpWidget(SuperXdApp(session: session, toolbox: fixture.runtime, playground: PlaygroundStore.memory(), backgroundPhase: .18));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('游乐场'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PlaygroundPage), findsOneWidget);
+    await tester.tap(find.text('汉诺塔'));
+    await tester.pumpAndSettle();
+    expect(find.byType(HanoiPage), findsOneWidget);
+    GoRouter.of(tester.element(find.byType(HanoiPage))).go('/schedule');
+    await tester.pumpAndSettle();
+    expect(find.byType(LoginPage), findsOneWidget);
+    expect(find.byType(SchedulePage), findsNothing);
     await tester.pumpWidget(const SizedBox());
     session.dispose();
     await tester.runAsync(fixture.close);
