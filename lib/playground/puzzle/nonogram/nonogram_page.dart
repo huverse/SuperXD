@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:superxd/playground/play_frame.dart';
@@ -253,17 +254,22 @@ class _NonogramPageState extends State<NonogramPage> with SingleTickerProviderSt
       _clues.prepare(_puzzle, style, MediaQuery.textScalerOf(context), palette);
       final layout = _layout = _NonogramLayout.fit(_puzzle, _clues, Size(constraints.maxWidth, constraints.maxHeight), zoom: _zoom, pan: _pan);
       final satisfied = _satisfiedLines();
-      return Center(child: SizedBox.fromSize(size: layout.size, child: Listener(
-        onPointerDown: _down,
-        onPointerMove: _move,
-        onPointerUp: _up,
-        onPointerCancel: _up,
-        child: Stack(children: [
-          Positioned.fill(child: AnimatedBuilder(animation: _reveal, builder: (context, _) => CustomPaint(painter: _NonogramPainter(
-            puzzle: _puzzle, marks: _marks, layout: layout, clues: _clues, palette: palette, focus: _focus, satisfied: satisfied, reveal: _reveal.value,
-          )))),
-          if (MediaQuery.of(context).accessibleNavigation) ..._cellSemantics(layout),
-        ]),
+      // 外面垫一个手指一落下就赢下手势竞争的识别器：iOS 的页面任意位置右滑返回约 18dp 就认横向拖动，不垫的话横着涂一行整页会跟着滑走；
+      // 涂格与缩放走原始指针（Listener），不参与手势竞争，不受影响。
+      return Center(child: SizedBox.fromSize(size: layout.size, child: RawGestureDetector(
+        gestures: {EagerGestureRecognizer: GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(EagerGestureRecognizer.new, (_) {})},
+        child: Listener(
+          onPointerDown: _down,
+          onPointerMove: _move,
+          onPointerUp: _up,
+          onPointerCancel: _up,
+          child: Stack(children: [
+            Positioned.fill(child: AnimatedBuilder(animation: _reveal, builder: (context, _) => CustomPaint(painter: _NonogramPainter(
+              puzzle: _puzzle, marks: _marks, layout: layout, clues: _clues, palette: palette, focus: _focus, satisfied: satisfied, reveal: _reveal.value,
+            )))),
+            if (MediaQuery.of(context).accessibleNavigation) ..._cellSemantics(layout),
+          ]),
+        ),
       )));
     }),
   );

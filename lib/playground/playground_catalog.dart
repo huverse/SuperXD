@@ -55,6 +55,8 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.queens,
     group: logicGroup,
     builder: (context, game, store) => QueensPage(game: game, store: store),
+  ),
+  PlaygroundGame(
     id: 'ice',
     name: '冰面滑行',
     summary: '一滑到底，停在终点上',

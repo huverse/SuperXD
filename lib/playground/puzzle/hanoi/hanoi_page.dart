@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:superxd/playground/play_frame.dart';
@@ -31,9 +32,11 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
   final _moves = <HanoiMove>[];
   // 点选拿起的那根柱子。
   int? _lifted;
-  // 拖动中的盘子来自哪根柱子、手指在棋盘上的位置。
+  // 拖动中的盘子来自哪根柱子、手指在棋盘上的位置；只跟第一根手指，按下的位置用来分点按与拖动。
   int? _dragPeg;
   Offset? _drag;
+  int? _pointer;
+  Offset? _pressAt;
   late final _shake = AnimationController(vsync: this, duration: const Duration(milliseconds: 360));
   int? _shakingDisk;
 
@@ -214,28 +217,55 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
       )));
     }
 
-    return Center(child: SizedBox(width: area.width, height: area.height, child: GestureDetector(
+    // 点按与拖动按原始指针自己分（走过触摸门槛算拖动，否则松手算点按），外面垫一个手指一落下就赢下手势竞争的识别器：
+    // iOS 的页面任意位置右滑返回约 18dp 就认横向拖动，用普通的拖动识别器（36dp 才认）往右拖盘子会被它抢走、整页滑走。
+    return Center(child: SizedBox(width: area.width, height: area.height, child: RawGestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTapUp: (details) => _tapPeg(pegAt(details.localPosition.dx)),
-      onPanStart: (details) {
-        final peg = pegAt(details.localPosition.dx);
-        if (_session.finished || _pegs[peg].isEmpty) return;
-        setState(() {
-          _lifted = null;
-          _dragPeg = peg;
-          _drag = details.localPosition;
-        });
-      },
-      onPanUpdate: (details) {
-        if (_dragPeg == null) return;
-        setState(() => _drag = details.localPosition);
-      },
-      onPanEnd: (_) => _drop(pegAt),
-      onPanCancel: () => setState(() {
-        _dragPeg = null;
-        _drag = null;
-      }),
-      child: Stack(clipBehavior: Clip.none, children: children),
+      gestures: {EagerGestureRecognizer: GestureRecognizerFactoryWithHandlers<EagerGestureRecognizer>(EagerGestureRecognizer.new, (_) {})},
+      child: Listener(
+        behavior: HitTestBehavior.opaque,
+        onPointerDown: (event) {
+          if (_pointer != null) return;
+          _pointer = event.pointer;
+          _pressAt = event.localPosition;
+        },
+        onPointerMove: (event) {
+          final pressAt = _pressAt;
+          if (event.pointer != _pointer || pressAt == null) return;
+          if (_dragPeg == null) {
+            if ((event.localPosition - pressAt).distance < kTouchSlop) return;
+            final peg = pegAt(pressAt.dx);
+            if (_session.finished || _pegs[peg].isEmpty) {
+              _pressAt = null;
+              return;
+            }
+            setState(() {
+              _lifted = null;
+              _dragPeg = peg;
+            });
+          }
+          setState(() => _drag = event.localPosition);
+        },
+        onPointerUp: (event) {
+          if (event.pointer != _pointer) return;
+          final pressAt = _pressAt;
+          _pointer = _pressAt = null;
+          if (_dragPeg != null) {
+            _drop(pegAt);
+          } else if (pressAt != null) {
+            _tapPeg(pegAt(pressAt.dx));
+          }
+        },
+        onPointerCancel: (event) {
+          if (event.pointer != _pointer) return;
+          _pointer = _pressAt = null;
+          setState(() {
+            _dragPeg = null;
+            _drag = null;
+          });
+        },
+        child: Stack(clipBehavior: Clip.none, children: children),
+      ),
     )));
   }
 
