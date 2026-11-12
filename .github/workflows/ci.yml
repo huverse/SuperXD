@@ -45,7 +45,7 @@ jobs:
   ios-build:
     name: iOS build
     runs-on: macos-26
-    timeout-minutes: 40
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
       - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
@@ -98,6 +98,43 @@ jobs:
           path: |
             ios/Podfile.lock
             ios/**/Package.resolved
+          retention-days: 14
+
+      # [人工决策-2026-11-11 23:48:44] iOS 模拟器启动冒烟（用户 11-10 同意第二轮架构项、11-11 要求按最佳实践做完）：本机没有 Mac，
+      # iOS 能不能启动以前只能等测试者装包回报。这里在模拟器上装调试包（模拟器只跑得了调试包）、冷启动、停 30 秒看进程还在不在，
+      # 截图与这段系统日志留作产物 ios-simulator-smoke；进程没了就失败。调试包是 JIT、发版是 AOT，抓得到启动就崩的原生与插件问题，
+      # 抓不到只在 release 下才出的问题；模拟器上也没有钥匙串共享组、推送与小组件的真机行为。
+      - name: iOS simulator smoke
+        id: ios-smoke
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          mkdir -p build/ios-smoke
+          flutter build ios --simulator --debug --flavor alpha
+          app=$(find build/ios/iphonesimulator -maxdepth 1 -name '*.app' -print -quit)
+          bundle=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$app/Info.plist")
+          xcrun simctl list devices available -j > build/ios-smoke/devices.json
+          udid=$(python3 -c "import json; d=json.load(open('build/ios-smoke/devices.json'))['devices']; print(next(x['udid'] for r in sorted(d, reverse=True) if '.iOS-' in r for x in d[r] if x['name'].startswith('iPhone')))")
+          echo "[IosSmoke] bundle=$bundle device=$udid"
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl install "$udid" "$app"
+          xcrun simctl launch "$udid" "$bundle"
+          sleep 30
+          xcrun simctl io "$udid" screenshot build/ios-smoke/launch.png
+          xcrun simctl spawn "$udid" log show --last 3m --style compact --predicate 'process == "Runner"' > build/ios-smoke/runner.log 2>&1 || true
+          if ! xcrun simctl spawn "$udid" launchctl list | grep -q "UIKitApplication:$bundle"; then
+            find ~/Library/Logs/DiagnosticReports -name 'Runner*' -exec cp {} build/ios-smoke/ \; 2>/dev/null || true
+            echo "::error::启动 30 秒后应用进程不在了（闪退），截图、日志与崩溃报告见产物 ios-simulator-smoke"
+            exit 1
+          fi
+          echo "[IosSmoke] action=launch state=alive"
+      - if: always() && steps.ios-smoke.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: ios-simulator-smoke
+          path: build/ios-smoke
+          if-no-files-found: ignore
           retention-days: 14
 
   relay-check:
