@@ -113,6 +113,7 @@ abstract final class CampusIcons {
   static const hanoi = LucideIcons.layers;
   static const nonogram = LucideIcons.grid3x3;
   static const queens = LucideIcons.crown;
+  static const ice = LucideIcons.snowflake;
 }
 
 void configureCampusIcons() =>

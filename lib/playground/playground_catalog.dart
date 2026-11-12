@@ -1,5 +1,6 @@
 import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
+import 'package:superxd/playground/puzzle/ice/ice_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
 import 'package:superxd/playground/puzzle/queens/queens_page.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -54,5 +55,14 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.queens,
     group: logicGroup,
     builder: (context, game, store) => QueensPage(game: game, store: store),
+    id: 'ice',
+    name: '冰面滑行',
+    summary: '一滑到底，停在终点上',
+    howToPlay: '小企鹅朝一个方向滑出去，一直滑到撞上岩石或边界才停。\n'
+        '要正好停在插旗的终点格上才算到达，滑过去不算。\n'
+        '在棋盘上朝上下左右滑动来推它，也可以点下方的方向键；走错了可以撤销。',
+    icon: CampusIcons.ice,
+    group: planningGroup,
+    builder: (context, game, store) => IcePage(game: game, store: store),
   ),
 ];
