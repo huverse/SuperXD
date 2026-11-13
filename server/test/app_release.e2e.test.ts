@@ -8,7 +8,7 @@ import { createRelayApp } from 'src/relay_app';
 import { env } from 'src/config/env';
 import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
-import { appFilePerHour, appReleaseFileMaxBytes, appReleasePerHour, developerNotesPerHour } from 'src/common/relay_limits';
+import { appFilePerHour, appReleaseFileMaxBytes, appReleasePerHour, developerNotesPerHour, rolloutConfigPerHour, rolloutFileMaxBytes } from 'src/common/relay_limits';
 
 let app: NestExpressApplication;
 let server: string;
@@ -312,6 +312,55 @@ describe('开发者的话', () => {
     await request(server).get('/v1/app/notes');
     await fillRate('developer_notes', developerNotesPerHour);
     const response = await request(server).get('/v1/app/notes');
+    expect(response.status).toBe(429);
+    expect(response.body.code).toBe('RATE_LIMITED');
+  });
+});
+
+// 灰度配置（人工决策见客户端 lib/domain/rollout.dart）：读法同开发者的话，只校验形状、信封原样透传。
+describe('灰度配置', () => {
+  const staged = { id: 'app_update.alpha.28', stages: [{ from: '2026-11-14T00:00:00.000Z', percent: 20 }, { from: '2026-11-15T00:00:00.000Z', percent: 100 }] };
+
+  it('还没放文件时给空开关，信封为空', async () => {
+    const response = await request(server).get('/v1/app/rollout');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ flags: [], envelope: null });
+  });
+
+  it('定值与放量表的开关、签好的信封原样透传，换了文件立即生效', async () => {
+    const file = { flags: [{ id: 'challenge', percent: 10 }, staged], envelope: { ...envelope('rollout'), signatures: [{ keyId: 'notes-2026-11', sig: 'E'.repeat(86) }] } };
+    await putManifest('rollout', file);
+    expect((await request(server).get('/v1/app/rollout')).body).toEqual(file);
+    await putManifest('rollout', { flags: [], envelope: envelope('empty') });
+    expect((await request(server).get('/v1/app/rollout')).body).toEqual({ flags: [], envelope: envelope('empty') });
+  });
+
+  it('文件写坏或超过上限不往外发，回 INTERNAL 并打印堆栈', async () => {
+    const printed = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    for (const body of [
+      { flags: [{ id: 'Bad Id', percent: 1 }] },
+      { flags: [{ id: 'x', percent: 101 }] },
+      { flags: [{ id: 'x', stages: [] }] },
+      { flags: [{ id: 'x', stages: [{ from: 'tomorrow', percent: 1 }] }] },
+      { flags: [{ id: 'x', percent: 1, secret: 1 }] },
+      { flags: Array.from({ length: 201 }, (_, index) => ({ id: `f${index}`, percent: 1 })) },
+      { flags: [], envelope: 'x' },
+      { flags: [], pad: 'x'.repeat(rolloutFileMaxBytes) },
+      '{not json',
+    ]) {
+      await putManifest('rollout', body);
+      const response = await request(server).get('/v1/app/rollout');
+      expect(response.status).toBe(500);
+      expect(response.body.code).toBe('INTERNAL');
+    }
+    expect(printed).toHaveBeenCalled();
+  });
+
+  it('同一 IP 每小时超过上限回 RATE_LIMITED', async () => {
+    pinClock();
+    await request(server).get('/v1/app/rollout');
+    await fillRate('app_rollout', rolloutConfigPerHour);
+    const response = await request(server).get('/v1/app/rollout');
     expect(response.status).toBe(429);
     expect(response.body.code).toBe('RATE_LIMITED');
   });

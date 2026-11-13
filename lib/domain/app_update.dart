@@ -1,4 +1,5 @@
 import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/rollout.dart';
 
 // 应用内更新的领域类型、规则与端口：版本清单来自自建中转（发版时放上去的清单文件），
 // 安装包下载到本机缓存，核对 SHA-256、包名、版本号与签名证书后交给系统安装器。
@@ -20,6 +21,7 @@ class AppRelease {
     required this.notes,
     required this.releasePage,
     required this.apk,
+    this.rollout = const [],
   });
   final int versionCode;
   final String versionName;
@@ -30,6 +32,8 @@ class AppRelease {
   // 下载失败或没有这个架构的安装包时，用浏览器打开发布页。
   final Uri releasePage;
   final AppReleaseApk? apk;
+  // 分批放量表（人工决策见 domain/rollout.dart）：空表示全量；自动检查按它与灰度配置判断这台在不在这一批。
+  final List<RolloutStage> rollout;
 }
 
 enum AppUpdateUrgency { none, optional, forced }

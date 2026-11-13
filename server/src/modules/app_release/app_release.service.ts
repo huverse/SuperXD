@@ -9,7 +9,7 @@ import { env } from 'src/config/env';
 import { rateSubjectOf } from 'src/common/client_ip';
 import { RateLimiter } from 'src/common/redis/redis.module';
 import { RelayCode, RelayError } from 'src/common/relay_error';
-import { appDownloadsPerInstance, appFilePerHour, appReleaseFileMaxBytes, appReleasePerHour, developerNotesFileMaxBytes, developerNotesPerHour } from 'src/common/relay_limits';
+import { appDownloadsPerInstance, appFilePerHour, appReleaseFileMaxBytes, appReleasePerHour, developerNotesFileMaxBytes, developerNotesPerHour, rolloutConfigPerHour, rolloutFileMaxBytes } from 'src/common/relay_limits';
 import * as dtos from 'src/modules/app_release/app_release.dto';
 
 // 应用更新：发版时把清单（<渠道>.json）与各架构安装包放进 RELAY_RELEASES_DIR，这里只读不写。
@@ -23,6 +23,7 @@ export class AppReleaseService {
   private readonly cache = new Map<string, { mtimeMs: number; size: number; release: dtos.AppReleaseFile }>();
   // 开发者的话同样按修改时间与大小缓存，只有一份。
   private notesCache: { mtimeMs: number; size: number; notes: dtos.DeveloperNotesDto } | undefined;
+  private rolloutCache: { mtimeMs: number; size: number; config: dtos.RolloutConfigDto } | undefined;
   private downloads = 0;
 
   constructor(private readonly limiter: RateLimiter) {}
@@ -68,6 +69,32 @@ export class AppReleaseService {
     this.notesCache = { mtimeMs: info.mtimeMs, size: info.size, notes };
     this.logger.log(`[AppRelease] action=load_notes count=${notes.notes.length} signed=${notes.envelope !== null}`);
     return notes;
+  }
+
+  // 灰度配置：发布目录里的 rollout.json，还没放时给空开关、信封为空（客户端按各开关的默认值）；读法同开发者的话。
+  async rollout(ip: string): Promise<dtos.RolloutConfigDto> {
+    const retryAfter = await this.limiter.hit('app_rollout', rateSubjectOf(ip), rolloutConfigPerHour, 3600);
+    if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '请求过于频繁', { retryAfter });
+    const path = join(env().releasesDir, 'rollout.json');
+    let info: Awaited<ReturnType<typeof stat>>;
+    try {
+      info = await stat(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      this.rolloutCache = undefined;
+      return { flags: [], envelope: null };
+    }
+    const cached = this.rolloutCache;
+    if (cached !== undefined && cached.mtimeMs === info.mtimeMs && cached.size === info.size) return cached.config;
+    if (info.size > rolloutFileMaxBytes) throw new Error(`rollout.json 超过 ${rolloutFileMaxBytes} 字节`);
+    const file = plainToInstance(dtos.RolloutConfigDto, JSON.parse(await readFile(path, 'utf8')) as object);
+    const errors = validateSync(file, { whitelist: true, forbidNonWhitelisted: true });
+    if (errors.length > 0) throw new Error(`rollout.json 格式不对：${errors.map((item) => item.property).join(',')}`);
+    // 原样透传：class-transformer 会给没写的可选字段补 undefined，序列化时自然省掉，信封里的载荷字节不经这里改动。
+    const config = { flags: file.flags, envelope: file.envelope ?? null };
+    this.rolloutCache = { mtimeMs: info.mtimeMs, size: info.size, config };
+    this.logger.log(`[AppRelease] action=load_rollout flags=${config.flags.length} signed=${config.envelope !== null}`);
+    return config;
   }
 
   // 交给 express 的 sendFile：支持 Range 断点续传与条件请求，按流发送不占内存；根目录限定在发布目录。安装包与字体包共用同一套限流与同时下载上限，按扩展名给类型。

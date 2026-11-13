@@ -26,6 +26,7 @@ import 'package:superxd/application/campus_widgets.dart';
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/festivals.dart';
+import 'package:superxd/application/rollouts.dart';
 import 'package:superxd/device/app_installer_channel.dart';
 import 'package:superxd/device/app_shortcuts.dart';
 import 'package:superxd/device/app_package_files.dart';
@@ -40,6 +41,7 @@ import 'package:superxd/device/relay_font_pack_source.dart';
 import 'package:superxd/device/relay_note_feed.dart';
 import 'package:superxd/device/relay_release_feed.dart';
 import 'package:superxd/device/relay_reward_client.dart';
+import 'package:superxd/device/relay_rollout_feed.dart';
 import 'package:superxd/domain/app_shortcut.dart';
 import 'package:superxd/domain/course_widget.dart';
 import 'package:superxd/domain/festival.dart';
@@ -54,6 +56,7 @@ import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/local/festival_memory.dart';
 import 'package:superxd/local/font_packs.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
+import 'package:superxd/local/rollout_memory.dart';
 import 'package:superxd/local/painting_library.dart';
 import 'package:superxd/page/app_update_dialog.dart';
 import 'package:superxd/playground/playground_store.dart';
@@ -195,11 +198,12 @@ void main() async {
       files: [File(socialDatabase)],
     ));
   }
-  final updates = await appUpdates(support);
+  final appAccounts = appAccountsOf(session.gateway);
+  final rollouts = await rolloutsOf(support, appAccounts);
+  final updates = await appUpdates(support, rollouts);
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
   final notes = await developerNotes(support);
   final festivals = await festivalsOf(support);
-  final appAccounts = appAccountsOf(session.gateway);
   // 自动同步（人工决策见 domain/auto_sync.dart）：设备级，经账号门面跟着当前账号；后台任务的入口与时机在 app_background_sync.dart。
   final autoSync = AutoSync(gateway: session.gateway, generation: () => session.generation, scheduler: WorkmanagerSyncScheduler(autoSyncDispatcher));
   // 打扰时机（人工决策见 application/app_moments.dart）：上下课的安静期按当前账号本机今天的课算，只读本地。
@@ -232,6 +236,7 @@ void main() async {
   watchMoments(moments, notes: notes, festivals: festivals, agreed: legal.agreed);
   watchAutoSync(session, autoSync, agreed: legal.agreed);
   if (appAccounts != null) watchAppAccounts(appAccounts, session.gateway, agreed: legal.agreed);
+  watchRollouts(rollouts, agreed: legal.agreed);
 }
 
 // 中转服务地址来自构建参数 SUPERXD_RELAY；未配置或格式不对时私信与应用更新都不可用，不猜默认地址。
@@ -253,7 +258,7 @@ RelayTransport? relayTransport() => switch (relayBase()) {
 // 应用内更新走同一个自建中转，渠道就是构建渠道（appFlavor，如 alpha）；没配中转、不是渠道构建（测试）或认不出架构时不检查更新。
 // [人工决策-2026-10-26 22:08:25] iOS 不能在应用里安装（用户选定「检查新版后去下载页」）：按 arm64 取同一份清单，只看版本与更新说明、不要安装包，
 // 弹窗里给「去发布页下载」，由用户下载未签名包后自己重新签名安装。
-Future<AppUpdates?> appUpdates(Directory support) async {
+Future<AppUpdates?> appUpdates(Directory support, Rollouts rollouts) async {
   final base = relayBase(), channel = appFlavor, abi = Platform.isIOS ? 'arm64-v8a' : appAbiName(Abi.current());
   if (base == null || channel == null || abi == null) return null;
   final installed = int.tryParse((await PackageInfo.fromPlatform()).buildNumber);
@@ -265,7 +270,32 @@ Future<AppUpdates?> appUpdates(Directory support) async {
     memory: await FileAppUpdateMemory.open(File(path.join(support.path, 'app_update.json'))),
     installedVersionCode: installed,
     foreground: () => WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed,
+    inBatch: rollouts.inUpdateBatch,
   );
+}
+
+// 灰度（人工决策见 domain/rollout.dart）：配置走同一个自建中转（没配中转时只用本机存着的，一般为空）；本机随机编号与上次的配置在 rollout.json。
+// 分桶主体是当前教务账号对应的应用账号号，没登录用本机随机编号；渠道同应用更新（测试与没有渠道的构建记作 development）。
+Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts) async => Rollouts(
+  memory: await FileRolloutMemory.open(File(path.join(support.path, 'rollout.json'))),
+  channel: appFlavor ?? 'development',
+  accountId: () => appAccounts?.accountId,
+  feed: switch (relayBase()) {
+    final base? => RelayRolloutFeed(base),
+    null => null,
+  },
+);
+
+// 同意协议与政策之后拉一次灰度配置，之后每次回到前台再看一眼（距上次不到一小时不联网）；请求不带任何标识。
+void watchRollouts(Rollouts rollouts, {required Future<void> agreed}) {
+  var ready = false;
+  unawaited(agreed.then((_) {
+    ready = true;
+    return rollouts.refresh();
+  }));
+  AppLifecycleListener(onResume: () {
+    if (ready) unawaited(rollouts.refresh());
+  });
 }
 
 // 应用更新：启动先清掉装好后的旧安装包，用户同意协议与政策、首屏稳下来后再自动检查（每个校园日一次，查到由账号应用弹窗）；

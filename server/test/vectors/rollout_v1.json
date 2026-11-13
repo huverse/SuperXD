@@ -1,0 +1,105 @@
+{
+  "note": "灰度分桶：客户端 lib/domain/rollout.dart 的 rolloutBucket 是参照实现，服务端 src/common/rollout_bucket.ts 与此逐位一致；全部合成数据。",
+  "cases": [
+    {
+      "id": "app_update.alpha.28",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "bucket": 8057
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "bucket": 4814
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "bucket": 1213
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "中文主体",
+      "bucket": 5295
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "",
+      "bucket": 1554
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "bucket": 6176
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "bucket": 1622
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "bucket": 5544
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "中文主体",
+      "bucket": 306
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "",
+      "bucket": 7214
+    },
+    {
+      "id": "challenge",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "bucket": 7154
+    },
+    {
+      "id": "challenge",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "bucket": 5466
+    },
+    {
+      "id": "challenge",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "bucket": 7786
+    },
+    {
+      "id": "challenge",
+      "subject": "中文主体",
+      "bucket": 546
+    },
+    {
+      "id": "challenge",
+      "subject": "",
+      "bucket": 9584
+    },
+    {
+      "id": "x",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "bucket": 1580
+    },
+    {
+      "id": "x",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "bucket": 7840
+    },
+    {
+      "id": "x",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "bucket": 4724
+    },
+    {
+      "id": "x",
+      "subject": "中文主体",
+      "bucket": 9545
+    },
+    {
+      "id": "x",
+      "subject": "",
+      "bucket": 327
+    }
+  ]
+}

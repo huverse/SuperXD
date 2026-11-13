@@ -1,8 +1,8 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsISO8601, IsOptional, IsString, Matches, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsISO8601, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 
-import { developerNoteBodyMax, developerNoteLimit, developerNoteTitleMax } from 'src/common/relay_limits';
+import { developerNoteBodyMax, developerNoteLimit, developerNoteTitleMax, rolloutFlagLimit, rolloutStageLimit } from 'src/common/relay_limits';
 
 // 客户端按自己正在运行的 CPU 架构取安装包，与发布附件的三种分包一致。
 export const appAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64'] as const;
@@ -100,6 +100,35 @@ export class DeveloperNotesDto {
   @ApiProperty({ description: '最近的信，从新到旧', type: [DeveloperNoteDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => DeveloperNoteDto) @ArrayMaxSize(developerNoteLimit) notes: DeveloperNoteDto[];
   // 签好的同一批信（tool/developer_notes.dart），新客户端只认它；还没放文件或文件里没有时返回空。
   @ApiProperty({ description: '签好的信封，新客户端只认它（notes 留给不验签的旧客户端）；没有时为空', type: SignedEnvelopeDto, nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SignedEnvelopeDto)
+  envelope?: SignedEnvelopeDto | null;
+}
+
+// 灰度配置（人工决策见客户端 lib/domain/rollout.dart）：流水线由仓库 rollout/rollout.json 生成的 rollout.json（tool/rollout_config.dart），
+// 这里只校验形状（开关名、定值或放量表），按时间先后、只增不减这些语义由客户端校验；写坏了不往外发。
+export class RolloutStageDto {
+  @ApiProperty({ description: '这一档从什么时刻起，ISO 8601 带时区' }) @IsISO8601({ strict: true }) from: string;
+  @ApiProperty({ description: '放量百分比 0–100' }) @IsInt() @Min(0) @Max(100) percent: number;
+}
+
+export class RolloutFlagDto {
+  @ApiProperty({ description: '开关名，分批更新是 app_update.<渠道>.<版本号>' }) @Matches(/^[a-z0-9][a-z0-9._-]{0,63}$/) id: string;
+  @ApiProperty({ description: '定值放量百分比（与 stages 二选一）', required: false }) @IsOptional() @IsInt() @Min(0) @Max(100) percent?: number;
+  @ApiProperty({ description: '按时刻的放量表（与 percent 二选一）', type: [RolloutStageDto], required: false })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(1)
+  @ArrayMaxSize(rolloutStageLimit)
+  @ValidateNested({ each: true })
+  @Type(() => RolloutStageDto)
+  stages?: RolloutStageDto[];
+}
+
+export class RolloutConfigDto {
+  @ApiProperty({ description: '全部开关', type: [RolloutFlagDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RolloutFlagDto) @ArrayMaxSize(rolloutFlagLimit) flags: RolloutFlagDto[];
+  @ApiProperty({ description: '签好的信封，客户端只认它；还没放文件时为空', type: SignedEnvelopeDto, nullable: true })
   @IsOptional()
   @ValidateNested()
   @Type(() => SignedEnvelopeDto)

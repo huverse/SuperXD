@@ -55,7 +55,7 @@
   - 新增卡片类型：这里加子类与编解码，页面 share_card_view.dart 加渲染。
 - painting.dart：开屏画作 Painting（标题、说明、图片路径、尺寸、裁切焦点、顶边分段色与天空色）与来源端口 PaintingGallery（全部画作、这次开屏的那幅、存原图）；decodePaintings 逐项校验清单 assets/paintings/paintings.json（画作不写死在代码里，清单顺序即轮换顺序）。实现在 local/painting_library.dart，人工决策在 page/painting_splash.dart。
 - app_update.dart：应用内更新的类型、规则与端口。
-  - 类型：AppRelease（版本号、版本名、发布时刻、最低可用版本号、更新说明、发布页、这个架构的安装包 AppReleaseApk）、AppPackageIdentity、AppUpdateException、AppUpdateCancelled。
+  - 类型：AppRelease（版本号、版本名、发布时刻、最低可用版本号、更新说明、发布页、这个架构的安装包 AppReleaseApk、分批放量表 rollout）、AppPackageIdentity、AppUpdateException、AppUpdateCancelled。
   - 规则：appUpdateUrgency（有更新版本才算，已装低于最低可用版本为必须更新）、appUpdateCheckDue（自动检查每个校园日一次，待必须更新时不限）、appUpdatePromptDue（跳过的版本不自动弹，必须更新不认跳过）。人工决策见文件内。
   - 端口：AppReleaseFeed、AppPackageFiles（device 实现）、AppInstaller（device 实现，原生见 AppUpdateInstaller.kt）、AppUpdateMemory（local 实现），由 application/app_updates.dart 编排。
 - app_shortcut.dart：常用功能快捷入口 AppShortcut（id、名字、自适应图标 PNG）与系统端口 AppShortcutPort（发布到长按应用图标的菜单、请求添加到桌面、取这次冷启动的入口、应用在后台时点入口的流）；device/app_shortcuts.dart 实现，组合根 app_shortcuts.dart 接线。
@@ -63,6 +63,7 @@
 - festival.dart：节日 FestivalOccasion（编号、名字、校园时区的起止日期、抽奖活动编号）、奖品 FestivalPrize（口令或二维码内容、附言、揭晓过没有）、抽签结果 FestivalDraw（抽中、没抽中、活动不在进行）；活跃天数规则 festivalActiveDays（近 30 天）、奖品保留 festivalPrizeKept（节日结束后 3 天）、什么时候要有抽奖身份 festivalPassNeeded（有抽奖的节日开始前 festivalPassLeadDays 天到结束）；本机记录 FestivalRecord（含抽奖身份的状态 FestivalPassState）与端口 FestivalMemory（local 实现）、抽奖身份 FestivalPass（social 实现）、FestivalRewardClient（device 实现），中转不认抽奖设备时抛 FestivalNotEnrolled。人工决策在文件头，概率模型在服务端 server/src/modules/reward/reward_odds.ts。
 - diagnostic_upload.dart：诊断包上传的端口 DiagnosticUploader（device 实现）、DiagnosticUploadException 与服务器保留天数 diagnosticUploadKeepDays（与服务端 relay_limits.ts 一致）；人工决策在文件头（用户确认后才传、内容同导出的日志包、本机加密、凭诊断编号联系开发者）。
 - app_account.dart：应用账号（[人工决策] 在文件内：教务会话绑 IP 且单会话，核对改为中转代登录一次）：教务登录的口令摘要 KingoSignInProof（明文密码的 hexMd5 与四项强度旁证，由 edu/login_rules.dart 的 kingoSignInProof 算出，经 social/account_seal.dart 封装后交中转）、登录这一步的结果 AppAccountStep（登录成功带账号号，或要验证码）、AppAccountSummary、失败 AppAccountException（AppAccountFailure 分类，notSignedIn 是这把设备密钥已不属于任何账号）与中转端口 AppAccountClient（social 实现，每个教务账号一把设备密钥），由 application/app_accounts.dart 编排。
+- rollout.dart：灰度与分批更新（[人工决策] 在文件头）：分桶 rolloutBucket（与服务端 rollout_bucket.ts 共用 server/test/vectors/rollout_v1.json）与 rolloutIncludes、开关 RolloutRule（定值或按时刻的放量表 RolloutStage，percentAt 取此刻的档）、配置 RolloutConfig 与它的外部输入边界 decodeRolloutConfig、decodeRolloutStages（发版清单的放量表共用）、分批更新的开关名 appUpdateRolloutId；端口 RolloutFeed（device 实现）与 RolloutMemory（local 实现）。
 - font_pack.dart：字体包（不随安装包、选用时从自建中转下载的字体，[人工决策] 在文件头）：FontPack（字体 id、注册用的族名、各字重文件）与 FontPackFile（文件名、字重、大小、SHA-256），登记表 fontPacks 现在只有衬线 serif；文件就是仓库 font_packs 目录里的同名文件（tool/font_subset.py 生成，文件名带内容哈希），换内容就换名字、旧文件留到用它的版本都低于最低可用版本；状态 FontPackStatus（没下载、下载中、文件齐全未注册、已装好、失败）；下载端口 FontPackSource（device 实现）、FontPackException、FontPackCancelled。本机文件与注册在 local/font_packs.dart。
 - interruption.dart：打扰时机的上下课安静期 classQuietUntil（开课前 20 分钟到开课后 5 分钟、下课前 5 分钟到下课后 10 分钟，相连的并成一段，返回这段结束的时刻）；人工决策在文件头，其余条件见 application/app_moments.dart。
 - common_free.dart：好友课表与自己课表的共同空闲。compareWeek 按好友那一周的日期对齐双方周次（任一方缺开学日时按相同周次），busyPeriods 求某周每天占用的节次，commonFree 合并双方都空的连续节次并配上作息时刻；周末任一方有课才显示周末。
@@ -100,6 +101,7 @@
 - 成绩、卡片与更新规则：grades_test.dart、share_card_test.dart、app_update_test.dart；开屏画作清单与轮换：painting_test.dart。
 - 开发者的话与打扰时机（清单解析、弹信规则、安静期）：developer_notes_test.dart；节日规则：festival_test.dart。
 - 字体包（登记与仓库文件一致、本机文件与下载）：code_conventions_test.dart、font_pack_test.dart。
+- 灰度与分批更新（分桶向量、配置解析、编排、签名下发、发版清单的放量表）：rollout_test.dart。
 - 面向用户的文案写法（节次、学分、按远近写的时刻、不及格）：campus_text_test.dart。
 - 有界请求内核（超时管到响应体、取消、响应上限、请求记录、堆栈）：campus_http_test.dart；密码学小工具（严格解码、验签）：campus_crypto_test.dart。
 
