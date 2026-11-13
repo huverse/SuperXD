@@ -195,7 +195,8 @@ void main() {
       expect(game.name, '舒尔特方格');
       expect(game.group, memoryGroup);
       expect(game.challengeable, isFalse);
-      expect(identical(playgroundCatalog.last, game), isTrue);
+      // 只登记一次（几个游戏并行登记，谁排最后不固定，不按位置查）。
+      expect(playgroundCatalog.where((other) => other.id == 'schulte'), hasLength(1));
     });
   });
 

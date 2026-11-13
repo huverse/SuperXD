@@ -305,7 +305,8 @@ void main() {
       expect(game.group, logicGroup);
       expect(game.challengeable, isTrue);
       expect(game.summary.length, lessThanOrEqualTo(10));
-      expect(playgroundCatalog.last, same(game));
+      // 只登记一次（几个游戏并行登记，谁排最后不固定，不按位置查）。
+      expect(playgroundCatalog.where((other) => other.id == 'cipher'), hasLength(1));
     });
   });
 
