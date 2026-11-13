@@ -7,6 +7,10 @@ const defaults: Record<string, string> = {
   RELAY_RELEASES_DIR: join(tmpdir(), 'superxd-relay-releases-test'),
   // 诊断包用例同样用自己的临时目录。
   RELAY_DIAGNOSTICS_DIR: join(tmpdir(), 'superxd-relay-diagnostics-test'),
+  // 应用账号：假教务由用例自己起（先改这个变量再建应用），这里给一个连不上的地址；两把密钥是公开的测试值，只在测试与镜像试运行里用。
+  RELAY_KINGO_BASE: 'http://127.0.0.1:9',
+  RELAY_ACCOUNT_SEAL_KEY: 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA',
+  RELAY_ACCOUNT_SUBJECT_KEY: 'c3VwZXJ4ZC10ZXN0LXN1YmplY3Qta2V5LTMyLWJ5dGVz',
   RELAY_PORT: '0',
   RELAY_TRUST_PROXY: '0',
   RELAY_SWAGGER: 'false',

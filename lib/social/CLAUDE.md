@@ -11,6 +11,7 @@
 - invite_code.dart：好友二维码内容 InviteCode（SXD1F: 前缀）：邀请号、邀请私钥种子、出示方公钥与昵称、过期时刻，二进制布局转 Base45（RFC 9285），按 QR 字母数字模式编码；validNickname 昵称规则（1–20 字，无首尾空白与控制字符）。
 - identity_vault.dart：身份私钥种子的存放 IdentityVault；SecureIdentityVault 用系统安全存储（默认命名空间 superxd_social，可传别的命名空间，已排除云备份与设备迁移）；MemoryIdentityVault 供测试。
 - festival_pass.dart：节日抽奖身份 RelayFestivalPass，实现 domain 的 FestivalPass（人工决策见 domain/festival.dart）：与私信身份同格式、但单独生成的一对密钥，存在安全存储的 superxd_reward 命名空间（festivalPassStorage，同样排除备份与迁移），与私信身份互不关联；登记、签名请求与删除都复用 RelayClient（register、request、deleteDevice），中转的错误码换成 FestivalException（UNAUTHORIZED 是 FestivalNotEnrolled）。什么时候生成、登记、删除由 application/festivals.dart 决定，组合根注入；device 的抽签客户端经它签名。
+- account_seal.dart：应用账号登录时封装口令摘要的信封 sealAccountProof（一次性 X25519 与中转公钥 accountSealKey 协商、HKDF-SHA256、AES-256-GCM，附加数据绑定设备号；布局与服务端 account_keys.ts 一致，共用 server/test/vectors/account_seal_v1.json）。人工决策见 domain/app_account.dart；中转私钥只在服务器与开发者本机，换钥两边一起换。
 - relay_client.dart：
   - relayBaseUrl：中转地址只来自构建参数 SUPERXD_RELAY，不写进代码；未配置时私信不可用。
   - RelayCode：错误码，与服务端 relay_error.ts 一致，另有 NETWORK、TIMEOUT、BAD_RESPONSE。
@@ -38,7 +39,7 @@
 
 # 测试
 
-- social_protocol_test.dart（与服务端共用测试向量、信封、二维码）、share_card_test.dart、social_service_test.dart、social_ui_test.dart；节日抽奖身份 festival_pass.dart 在 festival_test.dart（经 fake_relay.dart 验签登记、签名抽签、撤下）。
+- social_protocol_test.dart（与服务端共用测试向量、信封、二维码、应用账号信封）、share_card_test.dart、social_service_test.dart、social_ui_test.dart；节日抽奖身份 festival_pass.dart 在 festival_test.dart（经 fake_relay.dart 验签登记、签名抽签、撤下）。
 - fake_relay.dart 是按协议 v1 规则验签的内存假中转。服务端：cd server 后 npm test（Vitest，需 docker-compose.test.yml 起的 MySQL 与 Redis）。
 - 手动入口：tool/verify_social.dart（两个真实客户端经真实中转联调，只用合成数据，运行方式见文件头）。
 

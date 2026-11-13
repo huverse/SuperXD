@@ -70,6 +70,7 @@ jobs:
             -e RELAY_PORT=8080 -e RELAY_TRUST_PROXY=0 -e RELAY_SWAGGER=false -e RELAY_RELEASES_DIR=/tmp -e RELAY_DIAGNOSTICS_DIR=/srv/diagnostics \
             -e MYSQL_HOST=127.0.0.1 -e MYSQL_PORT=3306 -e MYSQL_USER=superxd -e MYSQL_PASSWORD=check -e MYSQL_DATABASE=superxd_relay \
             -e REDIS_HOST=127.0.0.1 -e REDIS_PORT=6379 -e REDIS_DB=0 -e REDIS_KEY_PREFIX=sxd: \
+            -e RELAY_KINGO_BASE=http://127.0.0.1:9 -e RELAY_ACCOUNT_SEAL_KEY=AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA -e RELAY_ACCOUNT_SUBJECT_KEY=c3VwZXJ4ZC10ZXN0LXN1YmplY3Qta2V5LTMyLWJ5dGVz \
             "superxd-relay:$VERSION"
           status=starting
           for _ in $(seq 1 45); do

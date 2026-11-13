@@ -29,6 +29,14 @@ export const loadEnv = () => ({
   releasesDir: required('RELAY_RELEASES_DIR'),
   // 诊断包密文的存放目录（文件名即诊断编号），要可写；容器里是 compose 挂的命名卷。
   diagnosticsDir: required('RELAY_DIAGNOSTICS_DIR'),
+  account: {
+    // 应用账号核对时代登录的学校教务地址（正式为 http://42.247.18.146，测试指向本机假教务）；学号哈希里的来源固定写在 kingo_verifier.ts，不随它变。
+    kingoBase: required('RELAY_KINGO_BASE'),
+    // 客户端封装口令摘要用的 X25519 私钥种子（32 字节 base64url）；公钥写死在客户端 lib/social/account_seal.dart，换钥两边一起换。
+    sealKey: required('RELAY_ACCOUNT_SEAL_KEY'),
+    // 学号哈希的 HMAC 密钥（至少 32 字节 base64url）。丢了所有账号都认不回来，必须和数据库备份分开另存一份；换了等于全部账号作废。
+    subjectKey: required('RELAY_ACCOUNT_SUBJECT_KEY'),
+  },
   mysql: {
     host: required('MYSQL_HOST'),
     port: integer('MYSQL_PORT'),

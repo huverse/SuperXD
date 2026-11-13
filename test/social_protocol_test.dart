@@ -1,10 +1,13 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/domain/campus_crypto.dart';
+import 'package:superxd/edu/login_rules.dart';
 import 'package:superxd/page/friend_add_page.dart';
+import 'package:superxd/social/account_seal.dart';
 import 'package:superxd/social/invite_code.dart';
 import 'package:superxd/social/social_crypto.dart';
 
@@ -43,6 +46,23 @@ void main() {
       expect(() => decodeBase64UrlNoPad(vectors['deviceId'] as String, length: 32), throwsA(isA<SocialCryptoException>()));
       expect(decodeBase64UrlNoPad(vectors['deviceId'] as String, length: 16), hasLength(16));
     });
+  });
+
+  // 应用账号登录时封装口令摘要（人工决策见 domain/app_account.dart）：服务端 server/test/account.e2e.test.ts 打开同一份向量。
+  test('应用账号信封与服务端共用向量', () async {
+    final vector = jsonDecode(File('server/test/vectors/account_seal_v1.json').readAsStringSync()) as Map<String, dynamic>;
+    final proof = kingoSignInProof('20260000001', 'secret-value');
+    expect(proof.toJson(), vector['proof']);
+    final sealed = await sealAccountProof(
+      proof,
+      vector['deviceId'] as String,
+      decodeBase64UrlNoPad(vector['recipientPublic'] as String),
+      ephemeral: await X25519().newKeyPairFromSeed(decodeBase64UrlNoPad(vector['ephemeralSeed'] as String)),
+      nonce: decodeBase64UrlNoPad(vector['nonce'] as String),
+    );
+    expect(base64UrlNoPad(sealed), vector['sealed']);
+    // 内置的正式公钥是 32 字节的 X25519 公钥。
+    expect(tryDecodeBase64UrlNoPad(accountSealKey, length: 32), isNotNull);
   });
 
   group('端到端信封', () {

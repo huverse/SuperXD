@@ -1,0 +1,366 @@
+{
+  "note": "教务登录参数的加密与签名：客户端 lib/edu 是参照实现，服务端 src/modules/kingo/kingo_codec.ts 与此逐字节一致；全部合成数据。",
+  "strEnc": [
+    {
+      "data": "x",
+      "key": "a",
+      "out": "3BFA7CFE6128FE18"
+    },
+    {
+      "data": "x",
+      "key": "Ab3",
+      "out": "CD503B52C1D56B90"
+    },
+    {
+      "data": "x",
+      "key": "k9Lm",
+      "out": "B15F6D2CC749BD1A"
+    },
+    {
+      "data": "x",
+      "key": "deskey12",
+      "out": "22177535EE7EF01F"
+    },
+    {
+      "data": "x",
+      "key": "Q7x2pZ0rT5vW",
+      "out": "C67CDBEE732DEEA1"
+    },
+    {
+      "data": "x",
+      "key": "abcdefghijklmnopqrst",
+      "out": "8A29A18DB28975FE"
+    },
+    {
+      "data": "ab",
+      "key": "a",
+      "out": "04419C5669BBBCD9"
+    },
+    {
+      "data": "ab",
+      "key": "Ab3",
+      "out": "E301B9FE9F2BFA51"
+    },
+    {
+      "data": "ab",
+      "key": "k9Lm",
+      "out": "5CDFBA671120C434"
+    },
+    {
+      "data": "ab",
+      "key": "deskey12",
+      "out": "F546CCDE63FA753D"
+    },
+    {
+      "data": "ab",
+      "key": "Q7x2pZ0rT5vW",
+      "out": "CA81C1CBAD6A5B04"
+    },
+    {
+      "data": "ab",
+      "key": "abcdefghijklmnopqrst",
+      "out": "F52D58F1B9E93C7F"
+    },
+    {
+      "data": "abc",
+      "key": "a",
+      "out": "8CFBE225AD891DA3"
+    },
+    {
+      "data": "abc",
+      "key": "Ab3",
+      "out": "83033A721806B476"
+    },
+    {
+      "data": "abc",
+      "key": "k9Lm",
+      "out": "D9E91BD55CD49EA7"
+    },
+    {
+      "data": "abc",
+      "key": "deskey12",
+      "out": "50B408E9922EF099"
+    },
+    {
+      "data": "abc",
+      "key": "Q7x2pZ0rT5vW",
+      "out": "051EAF316E7207E8"
+    },
+    {
+      "data": "abc",
+      "key": "abcdefghijklmnopqrst",
+      "out": "BAB0250D189D48FD"
+    },
+    {
+      "data": "abcd",
+      "key": "a",
+      "out": "E644027B8E853CED"
+    },
+    {
+      "data": "abcd",
+      "key": "Ab3",
+      "out": "EFB96A49860716F5"
+    },
+    {
+      "data": "abcd",
+      "key": "k9Lm",
+      "out": "D2B79ECD5FD09573"
+    },
+    {
+      "data": "abcd",
+      "key": "deskey12",
+      "out": "45ED3012802C69AB"
+    },
+    {
+      "data": "abcd",
+      "key": "Q7x2pZ0rT5vW",
+      "out": "A79660DD630C608D"
+    },
+    {
+      "data": "abcd",
+      "key": "abcdefghijklmnopqrst",
+      "out": "72E5F32A5912D068"
+    },
+    {
+      "data": "abcde",
+      "key": "a",
+      "out": "E644027B8E853CEDCB23FDAB7B2387D6"
+    },
+    {
+      "data": "abcde",
+      "key": "Ab3",
+      "out": "EFB96A49860716F50FEF7E9A00A9F6AF"
+    },
+    {
+      "data": "abcde",
+      "key": "k9Lm",
+      "out": "D2B79ECD5FD09573F8AAC053F2517399"
+    },
+    {
+      "data": "abcde",
+      "key": "deskey12",
+      "out": "45ED3012802C69AB1ADD35A110677BFC"
+    },
+    {
+      "data": "abcde",
+      "key": "Q7x2pZ0rT5vW",
+      "out": "A79660DD630C608D039064A14ACBDBE9"
+    },
+    {
+      "data": "abcde",
+      "key": "abcdefghijklmnopqrst",
+      "out": "72E5F32A5912D068B4A2A2546B6950F0"
+    },
+    {
+      "data": "hello world!",
+      "key": "a",
+      "out": "1B0E962C4518950A1BD1F14AD7B3E441F52D79730525CA7B"
+    },
+    {
+      "data": "hello world!",
+      "key": "Ab3",
+      "out": "A7706C316CC7E546ADF631B6F0AD2C741A60F09F5219A503"
+    },
+    {
+      "data": "hello world!",
+      "key": "k9Lm",
+      "out": "DEB628A7B2B57EB555E2D663AE8159B3A31CF0047486983C"
+    },
+    {
+      "data": "hello world!",
+      "key": "deskey12",
+      "out": "A0317AC86356E22A6C665E5FE479B91CD024B0C4F7EF66E0"
+    },
+    {
+      "data": "hello world!",
+      "key": "Q7x2pZ0rT5vW",
+      "out": "8EA4AFB02F255AB43E382C9E14B0397147CF4F6D230E29A9"
+    },
+    {
+      "data": "hello world!",
+      "key": "abcdefghijklmnopqrst",
+      "out": "6455A44A875006C7CBC94C80FB3C4771AFF4147B07F5D5DA"
+    },
+    {
+      "data": "中文与ASCII混排",
+      "key": "a",
+      "out": "10E10280E5B923E95D9EDD063F9401AAB005167493416933"
+    },
+    {
+      "data": "中文与ASCII混排",
+      "key": "Ab3",
+      "out": "C9F433746AE0F2EC4920E53F2879DBED43E5CB74F4967B85"
+    },
+    {
+      "data": "中文与ASCII混排",
+      "key": "k9Lm",
+      "out": "B7EF9507950E2B345EA23633DAA3BBE54A13742BC8FE9683"
+    },
+    {
+      "data": "中文与ASCII混排",
+      "key": "deskey12",
+      "out": "125272CEC8364870DCF0B0A784FEB179785255AD0B93A224"
+    },
+    {
+      "data": "中文与ASCII混排",
+      "key": "Q7x2pZ0rT5vW",
+      "out": "59E997D9E510D8B8B9AC3A21C3664BE9005E83B0F0EEF903"
+    },
+    {
+      "data": "中文与ASCII混排",
+      "key": "abcdefghijklmnopqrst",
+      "out": "C4A7EFAF8D6F86E2AC88F37EFA473457E315A4AEDD3442C2"
+    },
+    {
+      "data": "_u=MjAyNjAwMDAwMDE7O1NFU1NJT04=&_p=0123456789abcdef",
+      "key": "a",
+      "out": "9B74F58153C88D27A54FADDF524124AEAD6861979C174EF8EA1A969B7D5FCB4B645E8C5E32342DF2E855887E099205FB7F6A57244E5ECEB50429DC2D36DA8FF9EE5C825CB514D83B484FD6D18A550137E16C2289F65000ECF4FB5F39F414877F80F81F4DCE76E305"
+    },
+    {
+      "data": "_u=MjAyNjAwMDAwMDE7O1NFU1NJT04=&_p=0123456789abcdef",
+      "key": "Ab3",
+      "out": "64CAFE036C90639F3E447D042BC050D89EC98113853A9544479C2C60BC9146DD1417A655E458C112E67AE59FE7589A1FFF8BE8A48A9BE353BB0C1E325521EC6780C38A1BEB6C125C20E004570B21989F6A35DF66FB8FC7AEFFCFF4E5326145D8916DCC4685B5294D"
+    },
+    {
+      "data": "_u=MjAyNjAwMDAwMDE7O1NFU1NJT04=&_p=0123456789abcdef",
+      "key": "k9Lm",
+      "out": "9F117EAFEBEC5B723941838921D10E0ACEB37BD6CCEE23D195B0AFBAE0B4295923FF11E32C225D1F0EA9512D8BB17789375CE77BD47DF5064999B02D2551191EEE12DD069A58195E2662AD0B22ABBF58CAE24BB775A587B8BD3DD1471A7EF91740D896193629AF0F"
+    },
+    {
+      "data": "_u=MjAyNjAwMDAwMDE7O1NFU1NJT04=&_p=0123456789abcdef",
+      "key": "deskey12",
+      "out": "DD10529CF849E1FF7B3162130355882421B0C66BA28A3F8E939F9BF2E930B939A87920DA240404088449BAC9EBEA3393B698F7E92FB186285B25C3E62D964CA21C438323C4A0753A6BD6D6E8752980D6285F506B61B7D5215011CD8542DA380852878F60D7AEF287"
+    },
+    {
+      "data": "_u=MjAyNjAwMDAwMDE7O1NFU1NJT04=&_p=0123456789abcdef",
+      "key": "Q7x2pZ0rT5vW",
+      "out": "3881832B8962196D9C2627347DDFC05A6C420BD2C84C99C30B4B6D078167C846455A18DDB374DBA53EC954AE3EF88DA37828A0A186E739DB89A0A866CF2A1A7CC3CFF8B150F5EC30DBC4F5BCFF6194AB367793DF80852E240B9CB34F59D7B2CDEF2BA04AD450742E"
+    },
+    {
+      "data": "_u=MjAyNjAwMDAwMDE7O1NFU1NJT04=&_p=0123456789abcdef",
+      "key": "abcdefghijklmnopqrst",
+      "out": "677369871B90E0DBEAB7C779C9181C1873D9D6B2020EBCAD73AFD5BE8637380D1F91247AB477682D76F3481BE3462DBB62676A0AC90C98F9A37C8FF259BCDC58074F8EB69C5C43FCA2308004469DFC8DD0D787D609332BA8BCB86648C0AA911612065FC1E4D482C0"
+    }
+  ],
+  "encryptLoginParams": [
+    {
+      "plain": "_u=abc&_p=def",
+      "deskey": "k9Lm8n",
+      "out": "MjJBMURDREQ5NjcwOUUzOENFMkZBNzk4OUIzMzk3QjEyNTQ5MkEzNDdCODk3QjFBNzY2MDFFQTBERTNCMkIwMQ=="
+    },
+    {
+      "plain": "randnumber=&isPasswordPolicy=1&hid_flag=1",
+      "deskey": "Z1y2X3w4V5u6",
+      "out": "REQ2QTU0OTkxQjIwNkQwQjBBNkZDNkZGMTczQUZFMzhGNDgyNkQ2Q0QwODlGRTM3QTM2QTJFRjg1QTFDQjRBNEEzRjY1OTRCNDYzNDE2OTdCQTk3MkQ3RDJEMzkxQ0Y5MkQ2QzgxMEE1RTZFMjQyOTVCQkUwRUQwQjQ2MTJCN0VBQ0M5RURFMkNFMkZENDUzNzY1QTAzRjAzQ0M2RTI1RjcxMUZFOEM4RDU3Mjg4NUU="
+    },
+    {
+      "plain": "_u=MjAyNjAwMDAwMDE7O1NFU1NJT04wMTIz&_p=fe89e8eac4b27a7ed47561527e52ac60&randnumber=&isPasswordPolicy=1&txt_mm_expression=5&txt_mm_length=12&txt_mm_userzh=0&hid_flag=1&hidlag=1&hid_dxyzm=",
+      "deskey": "tempDesKey9",
+      "out": "NTA5NUZBRUYxNUJFMjY0QzE1MkIwQUIxQUFBQUUyMTVBQUZCNTg1MTg3MjhEMkE4NzA1MEI5M0Y5RDk3OEJBMzRGNThCNUVGQzFGRDcwQURCNzU2NTM3MkQ3OTZERjhFNTVDM0NBMUE1QzA5MjY1N0FCOTU4ODc5OUM0NkY4OTBDRjdEMjgxMUJDODM2ODE1NEIzMzRERjBCM0ZCREI2QTkyODM2QjUzN0U3Nzc0REIxOTNEQTE5RTNBOTFBREIyOEZCNzIzOTY2QTFDM0VCMTJBRjRGM0E5QjhBOTI4MzczMzBERjA2QjdCQ0FEOUMzNjZGMjBFRDcwNUVERTU1QTI5NjFDN0QxOTUyMUQ2MkQ2RERFQTdEODgyMEFDREMxRTNBNkY1QTk4Qjk0MjYwOTA2RURBMTE4RUI1NTZDODQ2QUU4N0QyNTIwMzVGRUY4RkE3M0Q3NEM0MEExQkIzMjRFOUQ4NjNGNzVDRDYxMEYwNzY0MjM2NEIwMDA2RTJDMkNDNjQ4QUM2OEM2RDcyMTYzMUJGN0YzNkM3MEVBOUFFNzM2ODlEQTdBOEQwNTMxQzdGN0IwODdFNkRBMkJFM0IzMDNGODhCRjc0NDAwMUM0NDhERDZCQkIxODgwOTBERTRGRkVEQTNBOUIzQTMyMUU3MzY4OURBN0E4RDA1MzE2NEEyOUI0QUY4Q0Y1QTI2NTZDOTYxQUU5Qjg4QkFBNDMzNEY0QjUzQjA0REZGQjcyQ0EzRTUwMkIwNkUwNjhGQjhEOTg3QUNEOEMyQ0QwODYxNkU4NzhDMjY5RUQ3QUYzMTJBQUZDQTdFM0NGMDY0QTYzMThDQUVFRERCNDlBNjQ4OUM3OUQ3N0IxMkM4NjBFQ0E5MjZDRTAxMDk3QTY1NjkyMkJDQjAwN0RBMkIzOUY0MzdEMkE2ODgwREExN0ZBNjMxOENBRUVEREI0OUE2MTM0MDlDQjhFRkNBMjcwQzc0OEM2NEZGOTg0RTU4MTA="
+    }
+  ],
+  "loginToken": [
+    {
+      "plain": "a=b",
+      "timestamp": "2026-11-13 22:00:00",
+      "out": "be45787af4e40633268b0687fc8cf736"
+    },
+    {
+      "plain": "_uAb=MjAyNjAwMDAwMDE7O1NFU1NJT04wMTIz&_pAb=05581a090695e5c12297f6c1803ff994&randnumber=Ab&isPasswordPolicy=1&txt_mm_expression=5&txt_mm_length=12&txt_mm_userzh=0&hid_flag=&hidlag=1&hid_dxyzm=",
+      "timestamp": "1763042400000",
+      "out": "d3b089a3488632c9c353033b03fabb49"
+    }
+  ],
+  "proofs": [
+    {
+      "account": "20260000001",
+      "password": "secret-value",
+      "proof": {
+        "account": "20260000001",
+        "passwordDigest": "7f0713c4944e88155d2074e7d8605289",
+        "expression": "5",
+        "length": "12",
+        "userzh": "0",
+        "policy": "1"
+      },
+      "pageSession": "SESSION0123",
+      "captcha": "",
+      "plain": "_u=MjAyNjAwMDAwMDE7O1NFU1NJT04wMTIz&_p=fe89e8eac4b27a7ed47561527e52ac60&randnumber=&isPasswordPolicy=1&txt_mm_expression=5&txt_mm_length=12&txt_mm_userzh=0&hid_flag=1&hidlag=1&hid_dxyzm="
+    },
+    {
+      "account": "20260000001",
+      "password": "secret-value",
+      "proof": {
+        "account": "20260000001",
+        "passwordDigest": "7f0713c4944e88155d2074e7d8605289",
+        "expression": "5",
+        "length": "12",
+        "userzh": "0",
+        "policy": "1"
+      },
+      "pageSession": "SESSION0123",
+      "captcha": "Ab12",
+      "plain": "_uAb12=MjAyNjAwMDAwMDE7O1NFU1NJT04wMTIz&_pAb12=c687b30eec89d0e93abfee7e7961c7ef&randnumber=Ab12&isPasswordPolicy=1&txt_mm_expression=5&txt_mm_length=12&txt_mm_userzh=0&hid_flag=&hidlag=1&hid_dxyzm="
+    },
+    {
+      "account": "20260000002",
+      "password": "20260000002",
+      "proof": {
+        "account": "20260000002",
+        "passwordDigest": "b35cf95a4771141bdd8af6f6f7a54a9b",
+        "expression": "8",
+        "length": "11",
+        "userzh": "1",
+        "policy": "0"
+      },
+      "pageSession": "S2",
+      "captcha": "",
+      "plain": "_u=MjAyNjAwMDAwMDI7O1My&_p=90cde386c3861fc5dddebcb8240343ad&randnumber=&isPasswordPolicy=0&txt_mm_expression=8&txt_mm_length=11&txt_mm_userzh=1&hid_flag=1&hidlag=1&hid_dxyzm="
+    },
+    {
+      "account": "20260000003",
+      "password": "ab1",
+      "proof": {
+        "account": "20260000003",
+        "passwordDigest": "68b6a776378decbb4a79cda89087c4ce",
+        "expression": "12",
+        "length": "3",
+        "userzh": "0",
+        "policy": "0"
+      },
+      "pageSession": "S3",
+      "captcha": "xy",
+      "plain": "_uxy=MjAyNjAwMDAwMDM7O1Mz&_pxy=dbdea625d75c2f68391da143cd038d61&randnumber=xy&isPasswordPolicy=0&txt_mm_expression=12&txt_mm_length=3&txt_mm_userzh=0&hid_flag=&hidlag=1&hid_dxyzm="
+    },
+    {
+      "account": "20260000004",
+      "password": "Pa$$w0rd-20260000004",
+      "proof": {
+        "account": "20260000004",
+        "passwordDigest": "23d1f79a8c0f3f4a5bee25e79ad8629f",
+        "expression": "15",
+        "length": "20",
+        "userzh": "1",
+        "policy": "1"
+      },
+      "pageSession": "S4",
+      "captcha": "",
+      "plain": "_u=MjAyNjAwMDAwMDQ7O1M0&_p=78cdb5e1e624335c0504c219a1a59905&randnumber=&isPasswordPolicy=1&txt_mm_expression=15&txt_mm_length=20&txt_mm_userzh=1&hid_flag=1&hidlag=1&hid_dxyzm="
+    },
+    {
+      "account": "20260000005",
+      "password": "密码Mixed9",
+      "proof": {
+        "account": "20260000005",
+        "passwordDigest": "a7db7f61dab85aa65103af243dd4b841",
+        "expression": "15",
+        "length": "8",
+        "userzh": "0",
+        "policy": "1"
+      },
+      "pageSession": "S5",
+      "captcha": "Q",
+      "plain": "_uQ=MjAyNjAwMDAwMDU7O1M1&_pQ=614f56d72e27446fcd3acdddbd210558&randnumber=Q&isPasswordPolicy=1&txt_mm_expression=15&txt_mm_length=8&txt_mm_userzh=0&hid_flag=&hidlag=1&hid_dxyzm="
+    }
+  ]
+}

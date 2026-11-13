@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -75,6 +76,26 @@ void main() {
     expect(withCode, contains('randnumber=Ab'));
     expect(withCode, contains('hid_flag=&'));
     expect(plain == withCode, isFalse);
+  });
+
+  // 应用账号核对时中转代登录教务（人工决策见 domain/app_account.dart）：服务端 server/test/kingo_codec.test.ts 读同一份向量，两端逐字节一致。
+  test('教务登录向量与服务端共用', () {
+    final vectors = jsonDecode(File('server/test/vectors/kingo_login_v1.json').readAsStringSync()) as Map<String, dynamic>;
+    for (final item in (vectors['strEnc'] as List).cast<Map<String, dynamic>>()) {
+      expect(strEnc(item['data'] as String, item['key'] as String, null, null), item['out']);
+    }
+    for (final item in (vectors['encryptLoginParams'] as List).cast<Map<String, dynamic>>()) {
+      expect(encryptLoginParams(item['plain'] as String, item['deskey'] as String), item['out']);
+    }
+    for (final item in (vectors['loginToken'] as List).cast<Map<String, dynamic>>()) {
+      expect(loginToken(item['plain'] as String, item['timestamp'] as String), item['out']);
+    }
+    for (final item in (vectors['proofs'] as List).cast<Map<String, dynamic>>()) {
+      final proof = kingoSignInProof(item['account'] as String, item['password'] as String);
+      expect(proof.toJson(), item['proof']);
+      expect(buildProofLoginPlain(proof, item['pageSession'] as String, item['captcha'] as String), item['plain']);
+      expect(buildLoginPlain(item['account'] as String, item['password'] as String, item['pageSession'] as String, item['captcha'] as String), item['plain']);
+    }
   });
 
   test('青果 DES 与参照实现的密文一致', () {
