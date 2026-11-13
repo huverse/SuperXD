@@ -121,6 +121,12 @@ abstract final class CampusIcons {
   static const knight = LucideIcons.shield;
   static const knave = LucideIcons.venetianMask;
   static const river = LucideIcons.sailboat;
+  // 24 点：游戏图标是计算器，对局页的四个运算键是加减乘除号。
+  static const twentyfour = LucideIcons.calculator;
+  static const operatorAdd = LucideIcons.plus;
+  static const operatorSubtract = LucideIcons.minus;
+  static const operatorMultiply = LucideIcons.x;
+  static const operatorDivide = LucideIcons.divide;
 }
 
 void configureCampusIcons() =>

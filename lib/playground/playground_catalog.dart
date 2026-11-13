@@ -7,6 +7,7 @@ import 'package:superxd/playground/puzzle/lights/lights_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
 import 'package:superxd/playground/puzzle/queens/queens_page.dart';
 import 'package:superxd/playground/puzzle/river/river_page.dart';
+import 'package:superxd/playground/puzzle/twentyfour/twentyfour_page.dart';
 import 'package:superxd/theme/campus_icons.dart';
 
 // [人工决策-2026-11-12 21:00:20] 游乐场的板块、子类与游戏只在这一处登记（同百宝箱 toolbox_catalog.dart）；id 发出后不改。
@@ -115,5 +116,16 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.boxes,
     group: planningGroup,
     builder: (context, game, store) => BoxesPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'twentyfour',
+    name: '24 点',
+    summary: '加减乘除，凑出 24',
+    howToPlay: '四张卡上各有一个 1 到 13 的数，每个数恰好用一次，用加减乘除算出 24。\n'
+        '点一张卡，再点一个运算和另一张卡，两张就合成一张写着结果的新卡（减和除是第一张减、除以第二张），除不尽的写成分数。\n'
+        '合到只剩一张、正好是 24 就解开了；算错了可以撤销，一步步退回。',
+    icon: CampusIcons.twentyfour,
+    group: numberGroup,
+    builder: (context, game, store) => TwentyFourPage(game: game, store: store),
   ),
 ];

@@ -117,6 +117,7 @@ final Map<IconData, String> _symbols = {
   CampusIcons.knight: 'shield',
   CampusIcons.knave: 'theatermasks',
   CampusIcons.river: 'sailboat',
+  CampusIcons.twentyfour: 'plus.forwardslash.minus',
 };
 
 String? campusSymbol(IconData? icon) => icon == null ? null : _symbols[icon];

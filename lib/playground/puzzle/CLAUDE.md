@@ -28,6 +28,9 @@
 - boxes 推箱子（移动与规划）：
   - boxes_rules.dart：BoxesRules：房间内部 5 到 9 见方、1 到 4 个箱子；倒推法出题（随机挖连通、没有死角的房间，目标点扎堆，从箱子都在目标点上广度优先倒着拉，拉到的局面都推得回去、拉到的层数就是最少推数），最少推数落在这一档的区间才用（区间与房间参数写在 _tiers）；boxesSolve 是正向 A*（状态为箱子位置加玩家能走到的区域，剪死格与 2×2 死块），测试拿它核对参考解就是最少推数；boxesStep、boxesReplay 判每一步（撞墙、推不动原地不动）；难度分 boxesDifficulty 按最少推数分段、段界对齐各档区间；题面是宽高、墙串、目标点、箱子与起点，答案每步一个方向，最多 boxesMaxMoves 步。
   - boxes_page.dart：BoxesPage：在棋盘上滑一下或点下方方向键走一格，推不动或撞墙轻震、小人朝那边顶一下；墙连成一片（只圆外凸角，露出的下沿画深一点的立面），地面隔格淡底，目标点是圆环，箱子是带内框斜撑的软方块、到位换激活色；静态层拼成几条路径按题与配色缓存；状态只计推数（同最少推数比），撤销按步退回、推的那步连箱子一起退；全部到位后箱子依次轻跳一下再弹结果；读屏读小人位置与还差几个箱子。
+- twentyfour 24 点（数字计算）：
+  - twentyfour_rules.dart：TwentyFourRules：四个 1–13 的数（入门 1–9、简单 1–10、普通起 1–13），有理数 TwentyFourValue 精确算、不用浮点；twentyFourAnalyze 枚举全部合并顺序，合到 24 的化成规范写法（拍平加减与乘除、÷1 当 ×1、负号提到外面）去重数解法，并判是否必须用除法、必须经过分数；难度分 twentyFourScore 按必须的算法与解法数（口径在注释），各档按分数段出题，专家档先用只走整数、找到就停的求解筛；twentyFourMerge、twentyFourReplay 判每一步（结果放进第二张的位置、第一张的位置空出来）；题面是四个数，答案每步编成 [第一张, 运算 code, 第二张]、正好三步，解码拒收算不出 24 的题。
+  - twentyfour_page.dart：TwentyFourPage：四张卡两行两列，下面加减乘除四个色调胶囊键；点卡、运算、再点卡合成新卡（先点运算也行），第一张滑向第二张淡去、新卡放大淡入，空出的位置留淡边框；分数上下叠着写；除以 0 不让合、剩一张不是 24 都重震、晃一下并用提示条说明（后者描警示边）；卡片与运算键之间一行写最近合出的算式；撤销按步倒放；合到 24 卡片铺激活色鼓一下再弹结果；读屏卡片读数（分数念「几分之几」）与选中，运算键读名字与选中；减少动画时直接到位。
 
 # 加一个游戏的步骤
 
@@ -45,7 +48,7 @@
 # 测试
 
 - 规则：playground_rules_test.dart；页面：playground_ui_test.dart。
-- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart（各自的规则与页面都在自己的文件里）。
+- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；24 点：playground_twentyfour_test.dart（各自的规则与页面都在自己的文件里）。
 - iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行与推箱子在自己的测试里。
 
 # 人工决策检索
