@@ -19,6 +19,9 @@
 - lights 点灯（格子谜题）：
   - lights_rules.dart：LightsRules：3 到 7 见方；从全亮随机点几个不同的格得开局（一定解得开），lightsSolve 在 GF(2) 上高斯消元求最少点法（零空间不为零的 4×4、5×5 枚举取最省），最少下数落在这一档的区间才用（区间写在 _least）；难度分按格数与最少下数；lightsReach、lightsPress、lightsReplay 是翻转与重放；题面编成边长加 0、1 串，答案是依次点的格，最多 lightsMaxPresses 下，解码拒收全亮与点不全亮的题面。
   - lights_page.dart：LightsPage：灯排在一张卡片上，整张卡按格均分作热区（缝与卡边归最近一格），落点按按下的那一格算；按下处浮浅色方块、松手淡出；被翻的几盏 180ms 从当前亮度续接过渡；亮灯是激活色推出的圆灯加格内柔光（一盏一个径向渐变，不经离屏贴图），灭灯是灰色实心圆带细边、拼成一条路径画；全亮后从中心向外依次亮一下再弹结果；状态写步数与最少步数，可撤销；读屏每格一个按钮；减少动画时直接到位。
+- knights 骑士与无赖（逻辑推理）：
+  - knights_rules.dart：KnightsRules：2 到 6 人（名字按座位叫甲到己）；句式 KnightsClaimKind（code 发出后不改）随档加：是骑士或无赖、我和谁同类或不同类，普通加恰好、至少、至多几个骑士，困难与专家加如果…那么、至少一个是无赖、转述；出题先定身份再给每人挑一句和身份一致的话，枚举全部 2^N 组只有一组成立才用，knightsReasoning 模拟单句推与联合几句推，按档限制开头能直接定下几人、最多联合几句；solved 按「每句话真假与说话人身份一致」判；题面只存句式与参数，解码校验参数并拒收不唯一的题；难度分以人数为主、联合推理量够多再加 1（口径在 difficulty 的注释）。
+  - knights_page.dart：KnightsPage：每人一张卡（自绘头像：骑士戴盔、无赖戴面具、未定是中性）写他说的话（按结构生成口语、按意思分段换行），卡上「骑士 / 无赖」两个色调胶囊直接选、再点取消，可按步撤销；全部定下就判，错了不给答案、只把话和身份对不上的人标警示色并轻震，对了卡片依次翻一下再弹结果；状态写「已定 3/5」；读屏每张卡读名字、话与当前标记。
 
 # 加一个游戏的步骤
 
@@ -36,7 +39,7 @@
 # 测试
 
 - 规则：playground_rules_test.dart；页面：playground_ui_test.dart。
-- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart（各自的规则与页面都在自己的文件里）。
+- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart（各自的规则与页面都在自己的文件里）。
 - iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行在自己的测试里。
 
 # 人工决策检索

@@ -1,6 +1,7 @@
 import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
 import 'package:superxd/playground/puzzle/ice/ice_page.dart';
+import 'package:superxd/playground/puzzle/knights/knights_page.dart';
 import 'package:superxd/playground/puzzle/lights/lights_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
 import 'package:superxd/playground/puzzle/queens/queens_page.dart';
@@ -78,5 +79,16 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.lights,
     group: gridGroup,
     builder: (context, game, store) => LightsPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'knights',
+    name: '骑士与无赖',
+    summary: '谁说真话，谁在说谎',
+    howToPlay: '岛上住着骑士和无赖：骑士永远说真话，无赖永远说假话。每张卡片上是一个人说的一句话，「我们」包括说话的人自己。\n'
+        '点卡片上的「骑士」或「无赖」定下这个人的身份，再点一次取消。\n'
+        '全部定下就判定：每个人的话都要和他的身份对得上。对不上的人会标成红色，自己找出矛盾再改；每道题的答案都唯一。',
+    icon: CampusIcons.knights,
+    group: logicGroup,
+    builder: (context, game, store) => KnightsPage(game: game, store: store),
   ),
 ];
