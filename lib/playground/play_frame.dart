@@ -76,6 +76,13 @@ class PlaySession<P, A> extends ChangeNotifier {
     restart();
   }
 
+  // 结束但不记成绩（如扫雷踩雷）：停表、置为结束并通知对局页停走表，之后只能从头来或换一道题。
+  void end() {
+    _watch.stop();
+    finished = true;
+    notifyListeners();
+  }
+
   // 解开了：停表、记成绩，返回是不是这一档的新纪录。
   Future<bool> finish({int? moves}) async {
     _watch.stop();

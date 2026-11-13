@@ -93,8 +93,6 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
 
   void _reset() {
     _hold?.cancel();
-    // 踩雷停表用的是 pause，它的暂停标记 restart 不清，不清的话新的一局走第一步也不开始计时（见 _lose）。
-    _session.resume();
     _counts = minesCounts(_puzzle);
     _revealed = minesStartOpen(_puzzle, _counts);
     _mineCount = _puzzle.mines.where((mine) => mine).length;
@@ -172,13 +170,11 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
   // [人工决策-2026-11-13 16:05:37] 用户选定：踩雷即结束（揭开全部雷、锁住棋盘、不能撤销、不记成绩，只能从头来或换一道题）；加长按插旗（任何模式下长按未翻开的格插旗、长按旗子拔旗，长按只管旗）。
   // 踩雷：揭开全部雷、踩到的垫警示红、插错的旗打叉，重震；缩放复原看全盘，棋盘锁住，底部原地换成「这一题从头来」「换一道题」（build 里）。
   // 不弹提示条：结束是停住的状态，棋盘、状态行（改写「踩到雷了」）与换掉的按钮一直都在，提示条几秒就收、还压在新按钮上方；读屏靠棋盘上的播报。
-  // 停表不记成绩：PlaySession 没有「结束但不记」的接口，停表后把 finished 置上（切后台回来不再走表、换难度不再确认），只有 finish 才记成绩，这里不调。
+  // 停表不记成绩用 PlaySession.end（切后台回来不再走表、换难度不再确认、对局页停走表），只有 finish 才记成绩，这里不调。
   void _lose(List<(int, int)> opened, Set<int> boom) {
     playRejected();
     _hold?.cancel();
-    _session
-      ..pause()
-      ..finished = true;
+    _session.end();
     setState(() {
       _boom = boom;
       _startWave(opened);

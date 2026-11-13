@@ -520,6 +520,9 @@ void main() {
       expect(_customActions(tester, _cell(puzzle, hidden[2])), isEmpty);
       expect(find.text('踩到雷了'), findsOneWidget);
       expect(store.best('mines', PuzzleTier.entry), isNull);
+      // 停表经 PlaySession.end 通知对局页：走表停下，动画走完后不再空转出帧。
+      await tester.pump(const Duration(seconds: 2));
+      expect(tester.binding.hasScheduledFrame, isFalse, reason: '踩雷后对局页停走表');
 
       // 这一题从头来：回到开局，旗也清掉，撤销按钮回来但不可用。
       await tester.tap(find.widgetWithText(FilledButton, '这一题从头来'));

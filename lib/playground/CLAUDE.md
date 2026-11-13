@@ -26,7 +26,7 @@
 - playground_game.dart：登记项类型：板块 PlaygroundSection、子类 PlaygroundGroup、游戏 PlaygroundGame（名字、一句话玩法、玩法说明、图标、子类、能否进挑战、对局页）。
 - playground_catalog.dart：注册表：板块、子类的显示顺序与全部游戏；人工决策在文件头（含 17 个游戏的子类归属）。
 - playground_store.dart：本机记录 PlaygroundStore（playground/playground.json，先写临时文件再改名、写入排队、坏文件当没有）：每个游戏每档的最好成绩（最快用时与那局步数）、上次选的档、最近玩过（最多 playgroundRecentLimit 个）；首页卡片上显示难度最高一档的成绩（topBest）。
-- play_frame.dart：对局页共用部分：PlaySession（档位、这一局的题、从第一步起计时、切后台暂停、完成记成绩）、PlayFrame（顶栏返回、游戏名、玩法、⋯里「这一题从头来」「换一道题」；状态行左边点开选难度，走过几步再换档先确认；底部操作是一排色调胶囊，包 CampusToastAnchor）、用时写法 playDuration、棋盘外框 PlayBoardBox 与共用触感 playTick、playRejected。
+- play_frame.dart：对局页共用部分：PlaySession（档位、这一局的题、从第一步起计时、切后台暂停、完成记成绩，end 是结束但不记成绩，如扫雷踩雷）、PlayFrame（顶栏返回、游戏名、玩法、⋯里「这一题从头来」「换一道题」；状态行左边点开选难度，走过几步再换档先确认；底部操作是一排色调胶囊，包 CampusToastAnchor）、用时写法 playDuration、棋盘外框 PlayBoardBox 与共用触感 playTick、playRejected。
 - play_controls.dart：方向操作的游戏（冰面滑行、推箱子）共用的棋盘滑动识别 PlaySwipeRecognizer 与 playSwipeArea（一落指就赢下手势竞争，iOS 右滑返回抢不走）、十字方向键 PlayDirectionPad（读屏标签「向上」加动词）；方向编码 0 上、1 右、2 下、3 左。
 - play_result.dart：解开后的结果弹层 showPlayResult（成功触感、用时大字、新纪录或这一档最好、再来一局与换到下一档，不写「挑战」二字）；单独一个文件，因为弹层有自己的滚动区、不是页面。
 - playground_page.dart：游乐场首页 PlaygroundPage（最近玩过一行带图标的按钮，下面按子类分组的游戏卡，两列放不下就一列，同行等高；卡上写一句话玩法与难度最高一档的最好成绩）与对局页外壳 PlaygroundGameHost（等本机记录读好再建对局页，打开时记进最近玩过）。
