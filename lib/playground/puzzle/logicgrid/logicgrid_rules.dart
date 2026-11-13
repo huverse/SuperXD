@@ -605,7 +605,8 @@ class LogicGridRules extends PuzzleRules<LogicGridPuzzle, List<List<int>>> {
     final clues = [for (final raw in rawClues) _decodeClue(raw, people, categories.length, seat < 0 ? null : seat)];
     final puzzle = LogicGridPuzzle(people: people, categories: List.unmodifiable(categories), clues: List.unmodifiable(clues));
     // 没有解、或不止一个解的不是题（题库里不该有）。
-    if (logicGridCount(puzzle) != 1) throw const FormatException('题目不是唯一解');
+    // 和出题用同一个节点上限：出过的题一定在上限内确认唯一，恶意构造的题面也不会搜上几秒。
+    if (_unique(puzzle) != true) throw const FormatException('题目不是唯一解');
     return puzzle;
   }
 
