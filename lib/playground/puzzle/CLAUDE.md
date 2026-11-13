@@ -52,6 +52,9 @@
 - schulte 舒尔特方格（记忆与反应，拼手速、不进挑战）：
   - schulte_rules.dart：SchulteRules：入门到困难是单色 3 到 6 见方、按 1 到 N² 点；专家是 5×5 红黑表（题型 SchulteVariant，code 发出后不改）：黑 1 到 13 从小到大、红 12 到 1 从大到小交替点，黑色先点（schulteTarget 给第几下该点哪个数）；出题把这一串数按种子洗牌铺进格子；答案只记点对的格，solved 要正好 N² 下且逐下对上；难度分只看格数与题型（红黑表乘 2，口径在注释）；题面是边长、题型、每格的数与红黑串，解码拒收不是每个数各一次的题。
   - schulte_page.dart：SchultePage：开局数字盖着（空白浅底格，红黑表也不露颜色），点棋盘中间的「开始」才揭开并开始计时，换题、从头来回到盖着，开始前读屏只有「开始」（人工决策在 _started 上）；整张卡按格均分作热区，按下那一格算落点、抬手才算一下，每根手指各算各的，滑出触摸容差作废（让给右滑返回）；点对的格变淡缩小，点错轻震、晃一下描警示色并计数，点过的格再点不算错；单色是浅底格，红黑表的黑色实心深底、红色描边（色弱靠样式分）；数字 14 号起跟着字号缩放、只在格子放不下时封顶；状态写「下一个：7」或「下一个：红 12」与点错次数；用时写到 0.1 秒（登记项 timeInTenths），结果弹层的大字下面只写点错次数，点错不罚时；读屏每格读数（带颜色）与是否已点。
+- pour 画线入杯（物理，只进自由模式）：
+  - pour_rules.dart：PourRules：整数单位（1 单位当 1 厘米，棋盘 pourWidth × pourHeight，y 朝下），题面是球的起点、杯子、固定障碍与墨水上限；PourSimulation 用 forge2d（Box2D v3）按固定步长 pourStep、固定子步模拟，线是固定不动的胶囊段，球全进杯并连续 0.5 秒几乎不动算解开，掉出棋盘、停住没全进或满 pourMaxSteps 算没进；出题按档搭参考线（入门到困难一段直坡引到杯口近侧，专家球在杯子正上方、挡板拦着、两笔折返，参数写在 _tiers），障碍让开球经过的通道，参考线能进、上下挪 6 单位也能进、不画进不了才用；答案每笔一串点，pourAnswerValid 查笔数点数、坐标、墨水与离球起点的距离；难度分按结构分五类各两分、墨水紧加 1；判定只保证同一台设备上稳定（口径在文件头）。
+  - pour_page.dart：PourPage：画线走原始指针（外面垫一落指就赢的识别器，iOS 右滑返回抢不走），每走 pourMinSegment 记一个点，墨水不够截在用完处、碰到球的起点就停，提示条说原因、接着做正常操作就收起；放球按真实时间逐帧推进同一份模拟（一帧最多追 4 步，不在前台时计时器静音），放球中按钮变「停下」、不能画；没进提示再试一次，球留在原处到下一次操作；进杯后杯子亮一下、光圈漾开再弹结果，减少动画时直接弹；方格纸、障碍、杯子与画好的线按题与笔数缓存成路径，只有球、正在画的线与墨水条逐帧重画；读屏读球、杯子、障碍的方位、墨水与上一次结果，放球、撤销、重画是按钮。
 
 # 加一个游戏的步骤
 
@@ -69,8 +72,8 @@
 # 测试
 
 - 规则：playground_rules_test.dart；页面：playground_ui_test.dart。
-- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；24 点：playground_twentyfour_test.dart；记忆闪光：playground_flash_test.dart；天平称球：playground_balance_test.dart；扫雷：playground_mines_test.dart；数回：playground_loop_test.dart；逻辑网格：playground_logicgrid_test.dart；密码破译：playground_cipher_test.dart；舒尔特方格：playground_schulte_test.dart（各自的规则与页面都在自己的文件里）。
-- iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行、推箱子、扫雷与数回在自己的测试里。
+- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；24 点：playground_twentyfour_test.dart；记忆闪光：playground_flash_test.dart；天平称球：playground_balance_test.dart；扫雷：playground_mines_test.dart；数回：playground_loop_test.dart；逻辑网格：playground_logicgrid_test.dart；密码破译：playground_cipher_test.dart；舒尔特方格：playground_schulte_test.dart；画线入杯：playground_pour_test.dart（各自的规则与页面都在自己的文件里）。
+- iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行、推箱子、扫雷、数回与画线入杯在自己的测试里。
 
 # 人工决策检索
 
