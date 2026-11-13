@@ -141,6 +141,7 @@ abstract final class CampusIcons {
   // 密码破译：游戏图标是打开的锁（锁扣 lock 已占了合上的那把），答案格旁的退格键。
   static const cipher = LucideIcons.lockKeyholeOpen;
   static const backspace = LucideIcons.delete;
+  static const schulte = LucideIcons.timer;
 }
 
 void configureCampusIcons() =>
