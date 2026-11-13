@@ -142,6 +142,10 @@ abstract final class CampusIcons {
   static const cipher = LucideIcons.lockKeyholeOpen;
   static const backspace = LucideIcons.delete;
   static const schulte = LucideIcons.timer;
+  // 画线入杯：游戏图标是画线的笔，底部操作「重画」是橡皮、放球时的「停下」是方块。
+  static const pour = LucideIcons.pencilLine;
+  static const erase = LucideIcons.eraser;
+  static const stop = LucideIcons.squareStop;
 }
 
 void configureCampusIcons() =>

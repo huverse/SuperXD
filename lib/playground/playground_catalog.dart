@@ -11,6 +11,7 @@ import 'package:superxd/playground/puzzle/mines/mines_page.dart';
 import 'package:superxd/playground/puzzle/loop/loop_page.dart';
 import 'package:superxd/playground/puzzle/logicgrid/logicgrid_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
+import 'package:superxd/playground/puzzle/pour/pour_page.dart';
 import 'package:superxd/playground/puzzle/queens/queens_page.dart';
 import 'package:superxd/playground/puzzle/river/river_page.dart';
 import 'package:superxd/playground/puzzle/twentyfour/twentyfour_page.dart';
@@ -214,5 +215,17 @@ final playgroundCatalog = <PlaygroundGame>[
     challengeable: false,
     timeInTenths: true,
     builder: (context, game, store) => SchultePage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'pour',
+    name: '画线入杯',
+    summary: '画一条线，把球引进杯子',
+    howToPlay: '用手指在棋盘上画线，松手后线就固定不动；墨水有限，顶上的细条是剩下的墨水，用完就画不了。线不能碰到球。\n'
+        '画好后点「放球」，球在重力下落下。全部球滚进杯子并停稳就过关；没进可以撤销上一笔或重画，再放一次。\n'
+        '可以画好几笔。放球时不能画线，点「停下」让球回到起点。',
+    icon: CampusIcons.pour,
+    group: physicsGroup,
+    challengeable: false,
+    builder: (context, game, store) => PourPage(game: game, store: store),
   ),
 ];
