@@ -123,6 +123,7 @@ final Map<IconData, String> _symbols = {
   // SF Symbols 没有地雷与炸弹，取扫雷常用的旗子同族里带圆圈的那个，和汉诺塔、过河问题标目标用的 flag 分开。
   CampusIcons.mines: 'flag.circle',
   CampusIcons.loop: 'lasso',
+  CampusIcons.logicgrid: 'tablecells',
 };
 
 String? campusSymbol(IconData? icon) => icon == null ? null : _symbols[icon];

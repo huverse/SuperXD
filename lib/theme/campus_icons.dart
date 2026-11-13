@@ -136,6 +136,8 @@ abstract final class CampusIcons {
   static const mines = LucideIcons.bomb;
   // 数回：套索是一笔绕成的圈。
   static const loop = LucideIcons.lasso;
+  // 逻辑网格推理：带勾的方格表。
+  static const logicgrid = LucideIcons.grid2x2Check;
 }
 
 void configureCampusIcons() =>

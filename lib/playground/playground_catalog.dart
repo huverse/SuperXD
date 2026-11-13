@@ -8,6 +8,7 @@ import 'package:superxd/playground/puzzle/knights/knights_page.dart';
 import 'package:superxd/playground/puzzle/lights/lights_page.dart';
 import 'package:superxd/playground/puzzle/mines/mines_page.dart';
 import 'package:superxd/playground/puzzle/loop/loop_page.dart';
+import 'package:superxd/playground/puzzle/logicgrid/logicgrid_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
 import 'package:superxd/playground/puzzle/queens/queens_page.dart';
 import 'package:superxd/playground/puzzle/river/river_page.dart';
@@ -177,5 +178,16 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.loop,
     group: gridGroup,
     builder: (context, game, store) => LoopPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'logicgrid',
+    name: '逻辑网格',
+    summary: '按线索推出谁有什么',
+    howToPlay: '每个人在每一类里各有一样，同一类里每样只属于一个人。按下面的线索推出整张表。\n'
+        '点表格的一格，在「是」里选一个填上；确定不是的可以在「不是」里标掉，做记号用。点一条线索可以标成用过了。\n'
+        '座位从左到右是 1 号到 N 号。填满就判定，对不上的线索会标成红色；每道题的答案都唯一。',
+    icon: CampusIcons.logicgrid,
+    group: logicGroup,
+    builder: (context, game, store) => LogicGridPage(game: game, store: store),
   ),
 ];
