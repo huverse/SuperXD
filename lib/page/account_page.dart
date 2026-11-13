@@ -236,7 +236,8 @@ class _AccountPageState extends State<AccountPage> {
               }),
             ),
           ])),
-          // 应用账号单独一组（人工决策见 application/app_accounts.dart）：跟着这个教务账号，没登录点了登录，登录着点了弹出退出与注销。
+          // [人工决策-2026-11-13 23:07:30] 应用账号单独一组，放在上面那组与退出登录之间（用户确认扩展 10-05 那条：账号操作都在账号页、退出登录仍单独一组放最底）。
+          // 跟着这个教务账号（人工决策见 application/app_accounts.dart），没登录点了登录，登录着点了弹出退出与注销。
           if (widget.appAccounts case final appAccounts?) ...[
             const SizedBox(height: 16),
             CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: ListenableBuilder(listenable: appAccounts, builder: (context, _) {
