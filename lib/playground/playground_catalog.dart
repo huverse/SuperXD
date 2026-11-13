@@ -2,6 +2,7 @@ import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/puzzle/balance/balance_page.dart';
 import 'package:superxd/playground/puzzle/boxes/boxes_page.dart';
 import 'package:superxd/playground/puzzle/flash/flash_page.dart';
+import 'package:superxd/playground/puzzle/cipher/cipher_page.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
 import 'package:superxd/playground/puzzle/ice/ice_page.dart';
 import 'package:superxd/playground/puzzle/knights/knights_page.dart';
@@ -189,5 +190,16 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.logicgrid,
     group: logicGroup,
     builder: (context, game, store) => LogicGridPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'cipher',
+    name: '密码破译',
+    summary: '看线索，推出密码',
+    howToPlay: '密码是几位各不相同的数字。每行线索是一组数字，下面写着它和密码比有几个数字对、位置对不对。\n'
+        '只靠这些线索就能推出唯一的密码。点线索里的数字可以做记号：点一下是不在密码里，再点是在密码里，再点清掉。\n'
+        '用下方的数字键填答案，点答案格清掉那一位；填满点「确认」。不对时，和答案对不上的线索会标红。',
+    icon: CampusIcons.cipher,
+    group: logicGroup,
+    builder: (context, game, store) => CipherPage(game: game, store: store),
   ),
 ];

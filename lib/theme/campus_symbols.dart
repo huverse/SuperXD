@@ -124,6 +124,8 @@ final Map<IconData, String> _symbols = {
   CampusIcons.mines: 'flag.circle',
   CampusIcons.loop: 'lasso',
   CampusIcons.logicgrid: 'tablecells',
+  CampusIcons.cipher: 'lock.open',
+  CampusIcons.backspace: 'delete.left',
 };
 
 String? campusSymbol(IconData? icon) => icon == null ? null : _symbols[icon];

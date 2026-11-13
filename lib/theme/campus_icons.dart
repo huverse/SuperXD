@@ -138,6 +138,9 @@ abstract final class CampusIcons {
   static const loop = LucideIcons.lasso;
   // 逻辑网格推理：带勾的方格表。
   static const logicgrid = LucideIcons.grid2x2Check;
+  // 密码破译：游戏图标是打开的锁（锁扣 lock 已占了合上的那把），答案格旁的退格键。
+  static const cipher = LucideIcons.lockKeyholeOpen;
+  static const backspace = LucideIcons.delete;
 }
 
 void configureCampusIcons() =>
