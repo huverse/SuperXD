@@ -53,6 +53,14 @@ mixin _CampusCoverRoute<T> on PageRoute<T> {
     _coversPopup = previousRoute is PopupRoute;
     super.didChangePrevious(previousRoute);
   }
+
+  // 新页面盖上来时收起旧页面的提示条（提示属于弹出它的那一页，同 Compose 每页各自的 SnackbarHost），
+  // 它可点可划，留在新页面上会挡住点按；弹窗与弹层盖上来时由提示条自己看 campusOverlayDepth。
+  @override
+  TickerFuture didPush() {
+    hideCampusToast();
+    return super.didPush();
+  }
 }
 
 class _CoverBackdrop extends StatefulWidget {
@@ -764,16 +772,20 @@ class CampusGlassDialog extends StatelessWidget {
 }
 
 // 轻提示：同一时刻一条、新的顶掉旧的，插进根 Overlay 浮在最上层；内容是 overlay 玻璃胶囊（实色档面板为 surface），
-// 不用库的 GlassToast，因为它的操作按钮触区只有 32，低于 48 的下限。出现与收起同 SnackBar 固定样式只做 250ms 高度展开
-// （浮动样式整体淡入，玻璃要到淡入结束才突然出现），减少动画时直接出现；不带操作 4 秒、带操作 6 秒收起，
-// 读屏开着时带操作的不自动收起（同 SnackBar），读屏的关闭操作可关。
+// 不用库的 GlassToast，因为它的操作按钮触区只有 32，低于 48 的下限。进场 250ms 从下方上浮并显形、退场 200ms 沉下隐去
+// （显隐交给 CampusOverlayReveal，同菜单；不裁剪，以前的高度展开用矩形裁剪，把 32 模糊的投影切成了一个方框），
+// 减少动画时直接出现、直接拿掉；不带操作 4 秒、带操作 6 秒收起，手指按着时暂停、松手重新计时（同 Material 的 Snackbar），
+// 读屏开着时带操作的不自动收起（同 SnackBar），读屏的关闭操作可关。上面又推入页面、打开弹层弹窗菜单时收起（提示属于弹出它的那一层）。
 // [人工决策-2026-10-15 23:17:30] 弹层、弹窗、菜单里发的提示浮在最上层（用户选定主题层统一修，同 Android 弹层里的 Snackbar、
 // iOS 窗口最上层的提示）：SnackBar 只会进底下那页的 Scaffold，被弹层盖住（真机试用时发现内嵌地图与签到弹层的提示都看不到）；
 // 也不能给弹层套 Scaffold，它的 Material 会吃掉点按，点遮罩关不掉弹层。
 // [人工决策-2026-11-09 19:18:09] 提示条不挡要点的地方（用户选「上浮避让 + 点穿」；11-09 截图里「已开启开发者模式」压着列表末项，安卓底栏也被它挡住）：
 // 停在最上层页面里 CampusToastAnchor 包着的底栏、底部按钮上方（同 Android Material 的 Snackbar.setAnchorView）；
-// 不带操作的提示不拦点按，手指直接点到下面（同安卓系统 Toast）；带「撤销」「去打开」的照常可点、下滑收起。
+// 不带操作的提示不拦点按，手指直接点到下面（同安卓系统 Toast；11-13 改为胶囊本身可点可划，见下条）；带「撤销」「去打开」的照常可点、下滑收起。
 // 所以页面上也不再用 SnackBar：它外层整条 Material 连两边透明的留白都吃掉点按，做不了点穿，位置也只认 Scaffold 自己的底部栏位。
+// [人工决策-2026-11-13 13:48:52] 提示条可点可划（用户选「可点可划」，取代上条的「不带操作的不拦点按」；用户反馈提示只能干等它自己消失）：
+// 胶囊本身接住触摸，点一下收起，下滑或左右滑划走，按着时暂停计时（同 Sonner、iOS 通知横幅）；胶囊四周的透明留白照旧点穿，
+// 带操作的点按钮执行操作；停在锚点上方照旧。
 void showCampusToast(BuildContext context, String message, {String? action, VoidCallback? onAction}) {
   _dismissToast();
   late final OverlayEntry entry;
@@ -857,30 +869,30 @@ double _toastBottom(BuildContext context) {
   return bottom;
 }
 
-Widget _toastCapsule(CampusPalette palette, String message, {required String? action, required VoidCallback onAction}) => Padding(
-  padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-  child: CampusOverlayGlass(
-    radius: 18,
-    floating: true,
-    child: Padding(
-      padding: EdgeInsets.fromLTRB(16, action == null ? 14 : 0, action == null ? 16 : 4, action == null ? 14 : 0),
-      child: Row(children: [
-        Expanded(child: Text(message, style: TextStyle(color: palette.onSurface, fontSize: 14))),
-        if (action != null) TextButton(onPressed: onAction, child: Text(action)),
-      ]),
-    ),
+Widget _toastCapsule(CampusPalette palette, String message, {required String? action, required VoidCallback onAction}) => CampusOverlayGlass(
+  radius: 18,
+  floating: true,
+  child: Padding(
+    padding: EdgeInsets.fromLTRB(16, action == null ? 14 : 0, action == null ? 16 : 4, action == null ? 14 : 0),
+    child: Row(children: [
+      Expanded(child: Text(message, style: TextStyle(color: palette.onSurface, fontSize: 14))),
+      if (action != null) TextButton(onPressed: onAction, child: Text(action)),
+    ]),
   ),
 );
+
+// 进场从下方上浮的距离。
+const _toastRise = 16.0;
 
 OverlayEntry? _toast;
 _CampusToastState? _toastState;
 
 // 收起正在显示的提示条（同 Android 的 Snackbar.dismiss()）：用户接着做了一步正常操作、提示已经过时时调（如过河问题犯规后又成功开了船），
-// 走同自然收起一样的高度收拢，减少动画时直接拿掉；没有提示条时什么也不做。
+// 走同自然收起一样的退场，减少动画时直接拿掉；没有提示条时什么也不做。
 void hideCampusToast() {
   final state = _toastState;
   if (state == null || !state.mounted) return _dismissToast();
-  state._collapse();
+  state._hide();
 }
 
 void _dismissToast() {
@@ -904,15 +916,34 @@ class _CampusToast extends StatefulWidget {
   State<_CampusToast> createState() => _CampusToastState();
 }
 
-class _CampusToastState extends State<_CampusToast> with SingleTickerProviderStateMixin {
-  late final _height = AnimationController(vsync: this, duration: const Duration(milliseconds: 250));
+class _CampusToastState extends State<_CampusToast> with TickerProviderStateMixin {
+  // 显形进度：进场上浮显形，退场原路沉下隐去（反向 200ms）。
+  late final _reveal = AnimationController(vsync: this, duration: const Duration(milliseconds: 250), reverseDuration: const Duration(milliseconds: 200));
+  // 松手后划出去或弹回原位。
+  late final _settle = AnimationController(vsync: this, duration: const Duration(milliseconds: 220));
+  Animation<Offset>? _settleOffset;
+  // 手指拖动的位移，方向在第一次移动时锁定成横划或竖划；往上拖带阻尼。
+  var _drag = Offset.zero;
+  Axis? _axis;
   var _started = false;
+  var _leaving = false;
   Timer? _hold;
+  var _depth = campusOverlayDepth.value;
 
   @override
   void initState() {
     super.initState();
     _toastState = this;
+    _settle.addListener(() => setState(() => _drag = _settleOffset!.value));
+    campusOverlayDepth.addListener(_covered);
+  }
+
+  // 上面又盖了弹窗、弹层或菜单（层数变多）就收起：提示属于弹出它的那一层（同 Android 弹窗盖住 Snackbar），
+  // 不留在新弹层上挡住它底部的按钮。在弹层里弹出的提示，弹层关上时照旧留着。
+  void _covered() {
+    final depth = campusOverlayDepth.value;
+    if (depth > _depth) _hide();
+    _depth = depth;
   }
 
   @override
@@ -921,28 +952,68 @@ class _CampusToastState extends State<_CampusToast> with SingleTickerProviderSta
     if (_started) return;
     _started = true;
     if (MediaQuery.disableAnimationsOf(context)) {
-      _height.value = 1;
+      _reveal.value = 1;
     } else {
-      _height.forward();
+      _reveal.forward();
     }
-    if (widget.action != null && MediaQuery.accessibleNavigationOf(context)) return;
-    _hold = Timer(widget.duration, _collapse);
+    _holdOn();
   }
 
-  // 收拢后拿掉：到时自动收起与 hideCampusToast 共用；减少动画时直接拿掉。
-  void _collapse() {
+  // 开始倒计时到点收起；读屏开着时带操作的不自动收起。手指松开时也从头计（同 Material 的 Snackbar）。
+  void _holdOn() {
+    _hold?.cancel();
+    if (_leaving) return;
+    if (widget.action != null && MediaQuery.accessibleNavigationOf(context)) return;
+    _hold = Timer(widget.duration, _hide);
+  }
+
+  // 收起：到时、点一下与 hideCampusToast 共用。
+  void _hide() => _leave(Offset.zero);
+
+  // 退场：朝 away 移开（划走时是划出去的方向）的同时隐去，走完拿掉；减少动画时直接拿掉。
+  void _leave(Offset away) {
+    if (_leaving) return;
+    _leaving = true;
     _hold?.cancel();
     if (MediaQuery.disableAnimationsOf(context)) return widget.onDone();
-    _height.reverse().then((_) {
+    if (away != Offset.zero) _slide(away);
+    _reveal.reverse().then((_) {
       if (mounted) widget.onDone();
     });
+  }
+
+  void _slide(Offset to) {
+    _settleOffset = Tween(begin: _drag, end: to).animate(CurvedAnimation(parent: _settle, curve: Curves.easeOutCubic));
+    _settle.forward(from: 0);
+  }
+
+  void _dragUpdate(DragUpdateDetails details) {
+    if (_leaving) return;
+    _settle.stop();
+    final next = _drag + details.delta;
+    _axis ??= next.dx.abs() > next.dy.abs() ? Axis.horizontal : Axis.vertical;
+    setState(() => _drag = _axis == Axis.horizontal ? Offset(next.dx, 0) : Offset(0, next.dy));
+  }
+
+  // 横划过三分之一宽或甩得够快就划出屏幕，下拉过 24 或往下甩就沉下去，不然弹回原位。
+  void _dragEnd(DragEndDetails details) {
+    if (_leaving) return;
+    final velocity = details.velocity.pixelsPerSecond;
+    final width = context.size!.width;
+    final flung = velocity.dx.abs() > 700 && velocity.dx.sign == _drag.dx.sign;
+    if (_axis == Axis.horizontal && (_drag.dx.abs() > width / 3 || flung)) return _leave(Offset(_drag.dx.sign * width, 0));
+    if (_axis == Axis.vertical && (_drag.dy > 24 || velocity.dy > 700)) return _leave(Offset(0, _drag.dy + 48));
+    if (MediaQuery.disableAnimationsOf(context)) return setState(() => _drag = Offset.zero);
+    _slide(Offset.zero);
   }
 
   @override
   void dispose() {
     if (_toastState == this) _toastState = null;
+    campusOverlayDepth.removeListener(_covered);
     _hold?.cancel();
-    _height.dispose();
+    _reveal.dispose();
+    _settle.dispose();
     super.dispose();
   }
 
@@ -957,23 +1028,31 @@ class _CampusToastState extends State<_CampusToast> with SingleTickerProviderSta
         container: true,
         liveRegion: true,
         onDismiss: widget.onDone,
-        child: ClipRect(
-          child: AnimatedBuilder(
-            animation: _height,
-            builder: (context, child) => Align(
-              alignment: AlignmentDirectional.topStart,
-              heightFactor: Curves.fastOutSlowIn.transform(_height.value),
-              child: child,
+        child: AnimatedBuilder(
+          animation: _reveal,
+          builder: (context, child) => Transform.translate(
+            offset: Offset(_drag.dx, (_drag.dy < 0 ? _drag.dy / 4 : _drag.dy) + _toastRise * (1 - Curves.easeOutCubic.transform(_reveal.value))),
+            child: child,
+          ),
+          // 只有胶囊接住触摸，四周的留白照旧点穿；读屏用关闭操作收起，不把拖动报成可滚动。
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+            child: Listener(
+              onPointerDown: (_) => _hold?.cancel(),
+              onPointerUp: (_) => _holdOn(),
+              onPointerCancel: (_) => _holdOn(),
+              // 位移从按下处算起（不扣掉越过拖动阈值的那段）：快甩只有一两个移动事件时，扣掉就没有位移可判、划不走。
+              child: GestureDetector(
+                behavior: HitTestBehavior.opaque,
+                excludeFromSemantics: true,
+                dragStartBehavior: DragStartBehavior.down,
+                onTap: _hide,
+                onPanStart: (_) => _axis = null,
+                onPanUpdate: _dragUpdate,
+                onPanEnd: _dragEnd,
+                child: CampusOverlayReveal(animation: _reveal, child: capsule),
+              ),
             ),
-            child: widget.action == null
-                ? IgnorePointer(child: capsule)
-                : Dismissible(
-                    key: const ValueKey('campusToast'),
-                    direction: DismissDirection.down,
-                    behavior: HitTestBehavior.deferToChild,
-                    onDismissed: (_) => widget.onDone(),
-                    child: capsule,
-                  ),
           ),
         ),
       ),
