@@ -164,11 +164,11 @@ void main() {
       await _frames(tester, 300);
       expect(find.text('左岸没人看着，狼会吃掉羊'), findsOneWidget);
       expect(find.textContaining('渡河 0 次'), findsOneWidget);
-      await _frames(tester, 4500);
 
-      // 带羊过去再撤销：回到开局，农夫和羊都在左岸。
+      // 带羊过去再撤销：回到开局，农夫和羊都在左岸。接着让羊上船是一步能做的操作，过时的犯规提示马上收起（不等 4 秒）。
       final goat = puzzle.people.indexWhere((person) => person.role == RiverRole.goat);
       await _seat(tester, labels, {0, goat});
+      expect(find.text('左岸没人看着，狼会吃掉羊'), findsNothing);
       await tester.tap(find.text('开船'));
       await _frames(tester, 600);
       expect(find.textContaining('渡河 1 次'), findsOneWidget);

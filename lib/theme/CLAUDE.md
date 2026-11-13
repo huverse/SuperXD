@@ -19,7 +19,7 @@
     - iOS 的页面转场同系统推入（_IosPageSlide：新页面盖进来带左边缘阴影、旧页面左移三分之一并变暗，新页面转场期间垫背景副本；曲线同 CupertinoPageRoute，底栏跟着走用同一对曲线），跟手返回是页面任意位置右滑（_IosBackSwipe，松手按速度与位置决定，收尾 350ms，里层横向手势优先；内嵌网页、地图这类原生视图不进 Flutter 的手势竞争，要自己带 EagerGestureRecognizer，code_conventions_test.dart 守护网页）；[人工决策] 在 _IosPageSlide 上方。
     - CampusEntryFade 是按代次重建的账号应用入场（盖背景副本淡出）。
     - 共享弹窗 showCampusNotice、showCampusConfirm（destructive 时主按钮警示红）与玻璃弹窗 CampusGlassDialog（按钮一到两个等宽并排，任一个放不下半宽或三个及以上时竖排、主操作在最上，[人工决策] 在操作区；全应用弹窗都用它，日期选择器除外）。
-    - showCampusToast 提示条：一律插进根 Overlay 浮在最上层（不用 SnackBar），同一时刻一条、新的顶掉旧的；停在最上层页面里 CampusToastAnchor 包着的底栏、底部按钮上方（同 Android 的 Snackbar.setAnchorView），不带操作的不拦点按（同安卓系统 Toast），带操作的可点、下滑收起，读屏开着时带操作的不自动收起（两条 [人工决策] 在函数上）。页面底部常驻的栏或主按钮要包 CampusToastAnchor。
+    - showCampusToast 提示条：一律插进根 Overlay 浮在最上层（不用 SnackBar），同一时刻一条、新的顶掉旧的；停在最上层页面里 CampusToastAnchor 包着的底栏、底部按钮上方（同 Android 的 Snackbar.setAnchorView），不带操作的不拦点按（同安卓系统 Toast），带操作的可点、下滑收起，读屏开着时带操作的不自动收起（两条 [人工决策] 在函数上）。hideCampusToast 收起过时的提示（同 Snackbar.dismiss()，走同样的收拢，减少动画时直接拿掉），用户接着做了一步正常操作时由调用方调。页面底部常驻的栏或主按钮要包 CampusToastAnchor。
     - showCampusSheet 与 CampusSheetPanel 是底部弹层（键盘弹出时整块浮到键盘上方）；弹窗与弹层都经 CampusOverlayDepthRoute 登记层数。
   - campus_rolling_text.dart：数字滚动 CampusRollingText（同 iOS 实时活动的数字过渡）：只有变了的位滚动，倒数时方向相反，位按右对齐，减少动画时直接换。
   - campus_refresh.dart：下拉刷新 CampusRefreshControl（基于 CupertinoSliverRefreshControl），放在 CustomScrollView 第一个 sliver，指示器是曲线动效、至少停留 600ms。
@@ -71,7 +71,7 @@
 - 玻璃与按钮：campus_glass_test.dart、campus_glass_button_test.dart；iOS 的系统组件分支：native_glass_test.dart（按 iOS 跑：系统弹窗、菜单的参数，开关滑杆与磨砂档、不建平台视图，系统底栏随推入与浮层交给原生的位置与显隐；原生长什么样只能在 iPhone 上看）。
 - 背景、配色与深色：atmosphere_test.dart（含 iOS 云雾每秒约 20 次、低电量停住、半分辨率贴图同直接画对照、颗粒拼贴同逐点画对照）、dark_mode_test.dart、wallpaper_test.dart。
 - 动效与转场：campus_motion_test.dart、transition_sync_test.dart（含 iOS 推入与任意位置右滑返回）、account_lifecycle_test.dart（入场与转场中间帧）。
-- 提示条：campus_glass_test.dart（玻璃胶囊、锚点上方、点穿、读屏不自动收起、弹层里浮最上层）、shell_layout_test.dart（停在两端底栏上方）。
+- 提示条：campus_glass_test.dart（玻璃胶囊、锚点上方、点穿、读屏不自动收起、弹层里浮最上层、hideCampusToast 收起）、shell_layout_test.dart（停在两端底栏上方）。
 - 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器、点状态栏回顶、iOS 拖动收起键盘）；typesetting_test.dart（测量与 Text 同口径含粗体文本与字距、均衡换行、分段控件按字分宽、说明行的点不单独成行）。
 - 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
 

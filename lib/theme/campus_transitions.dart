@@ -873,6 +873,15 @@ Widget _toastCapsule(CampusPalette palette, String message, {required String? ac
 );
 
 OverlayEntry? _toast;
+_CampusToastState? _toastState;
+
+// 收起正在显示的提示条（同 Android 的 Snackbar.dismiss()）：用户接着做了一步正常操作、提示已经过时时调（如过河问题犯规后又成功开了船），
+// 走同自然收起一样的高度收拢，减少动画时直接拿掉；没有提示条时什么也不做。
+void hideCampusToast() {
+  final state = _toastState;
+  if (state == null || !state.mounted) return _dismissToast();
+  state._collapse();
+}
 
 void _dismissToast() {
   final entry = _toast;
@@ -901,6 +910,12 @@ class _CampusToastState extends State<_CampusToast> with SingleTickerProviderSta
   Timer? _hold;
 
   @override
+  void initState() {
+    super.initState();
+    _toastState = this;
+  }
+
+  @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     if (_started) return;
@@ -911,13 +926,21 @@ class _CampusToastState extends State<_CampusToast> with SingleTickerProviderSta
       _height.forward();
     }
     if (widget.action != null && MediaQuery.accessibleNavigationOf(context)) return;
-    _hold = Timer(widget.duration, () => _height.reverse().then((_) {
+    _hold = Timer(widget.duration, _collapse);
+  }
+
+  // 收拢后拿掉：到时自动收起与 hideCampusToast 共用；减少动画时直接拿掉。
+  void _collapse() {
+    _hold?.cancel();
+    if (MediaQuery.disableAnimationsOf(context)) return widget.onDone();
+    _height.reverse().then((_) {
       if (mounted) widget.onDone();
-    }));
+    });
   }
 
   @override
   void dispose() {
+    if (_toastState == this) _toastState = null;
     _hold?.cancel();
     _height.dispose();
     super.dispose();

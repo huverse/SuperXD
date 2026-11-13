@@ -80,6 +80,7 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
   bool get _busy => _session.finished || _sail.isAnimating;
 
   void _reset() {
+    hideCampusToast();
     _left = _puzzle.everyone;
     _side = riverLeft;
     _seats = List.filled(_puzzle.capacity, null);
@@ -164,6 +165,8 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
       if (free < 0) return _refuse(person, '船上最多 ${_puzzle.capacity} 个');
     }
     playTick();
+    // 犯规的提示已经过时（用户接着做了一步能做的操作），收起来，免得还停在屏幕上像是在说这一步。
+    hideCampusToast();
     _session.moved();
     setState(() {
       _flagged = {};
@@ -192,6 +195,7 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
     final group = riverMask(_seats.nonNulls);
     if (riverCheck(_puzzle, _left, _side, group) case final violation?) return _reject(violation);
     playTick();
+    hideCampusToast();
     _session.moved();
     final from = _boatAt;
     setState(() {
@@ -244,6 +248,7 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
   void _undo() {
     if (_history.isEmpty || _busy) return;
     playTick();
+    hideCampusToast();
     final last = _history.removeLast();
     final from = _boatAt;
     setState(() {
