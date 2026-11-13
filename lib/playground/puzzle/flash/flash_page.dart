@@ -279,6 +279,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
   };
 
   // 棋盘下的提示（看得见的短句）与读屏播报（亮着时逐个念出亮的格）。
+  // [人工决策-2026-11-13 15:35:06] 阶段提示行保留（用户选定）：点错换图案时靠它说明发生了什么，同时是读屏的播报区。
   String get _hint => switch (_phase) {
     _Phase.ready => '记住亮起的格，再点出来',
     _Phase.lead || _Phase.showing => '记住亮起的格',
