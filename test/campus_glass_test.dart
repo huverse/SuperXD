@@ -482,8 +482,101 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
-    // [人工决策] 见 campus_transitions.dart 的 showCampusToast（11-09 上浮避让 + 点穿）。
-    testWidgets('提示条停在锚点上方；不带操作的不拦点按、点得到下面，带操作的照常可点；弹层开着时底下页面的锚点不算', (tester) async {
+    // [人工决策] 见 campus_transitions.dart 的 showCampusToast（11-13 可点可划）。
+    testWidgets('提示条下滑、横划划走，拖得不够弹回原位；按着时不收起、松手重新计时；投影不被裁剪', (tester) async {
+      await tester.binding.setSurfaceSize(const Size(400, 800));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      campusGlassReady.value = true;
+      late BuildContext page;
+      await tester.pumpWidget(host(Scaffold(body: Builder(builder: (context) {
+        page = context;
+        return const SizedBox.expand();
+      }))));
+      // 退场 200ms 从第一帧起算，走完拿掉条目，下一帧才从画面上消失。
+      Future<void> leave() async {
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
+        await tester.pump();
+      }
+
+      showCampusToast(page, '已复制');
+      await tester.pumpAndSettle();
+      expect(find.ancestor(of: toastOf('已复制'), matching: find.byType(ClipRect)), findsNothing, reason: '投影不被裁成方框');
+      final rest = tester.getRect(toastOf('已复制'));
+      await tester.drag(find.text('已复制'), const Offset(80, 0));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(toastOf('已复制')), rest, reason: '横划不到三分之一宽弹回原位');
+      await tester.drag(find.text('已复制'), const Offset(0, -80));
+      await tester.pumpAndSettle();
+      expect(tester.getRect(toastOf('已复制')), rest, reason: '往上拖弹回原位');
+      await tester.drag(find.text('已复制'), const Offset(0, 80));
+      await leave();
+      expect(find.text('已复制'), findsNothing, reason: '下滑划走');
+
+      showCampusToast(page, '已收藏');
+      await tester.pumpAndSettle();
+      await tester.drag(find.text('已收藏'), const Offset(-220, 0));
+      await leave();
+      expect(find.text('已收藏'), findsNothing, reason: '左划划走');
+
+      // 快甩只有一个移动事件：越过拖动阈值的这一下就是全部位移，也要划得走（模拟器上 adb 快甩复现过弹回）。
+      showCampusToast(page, '已甩走');
+      await tester.pumpAndSettle();
+      final fling = await tester.startGesture(tester.getCenter(find.text('已甩走')));
+      await fling.moveBy(const Offset(150, 0));
+      await fling.up();
+      await leave();
+      expect(find.text('已甩走'), findsNothing, reason: '一下甩出去也划走');
+
+      showCampusToast(page, '按着');
+      await tester.pumpAndSettle();
+      final gesture = await tester.startGesture(tester.getCenter(find.text('按着')));
+      await tester.pump(const Duration(seconds: 6));
+      expect(find.text('按着'), findsOneWidget, reason: '按着时暂停计时');
+      // 拖开再拖回原处松手：弹回，不划走也不算点按。
+      await gesture.moveBy(const Offset(60, 0));
+      await tester.pump();
+      await gesture.moveBy(const Offset(-60, 0));
+      await tester.pump();
+      await gesture.up();
+      await tester.pumpAndSettle();
+      await tester.pump(const Duration(seconds: 3));
+      expect(find.text('按着'), findsOneWidget, reason: '松手后从头计 4 秒');
+      await tester.pump(const Duration(seconds: 1));
+      await leave();
+      expect(find.text('按着'), findsNothing);
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('提示条属于弹出它的那一层：上面盖了弹层或推入新页面就收起，弹层里弹的提示在弹层关上后留着', (tester) async {
+      campusGlassReady.value = true;
+      late BuildContext page;
+      await tester.pumpWidget(host(Scaffold(body: Builder(builder: (context) {
+        page = context;
+        return const SizedBox.expand();
+      }))));
+      showCampusToast(page, '已登录');
+      await tester.pumpAndSettle();
+      late BuildContext sheet;
+      unawaited(showCampusSheet<void>(context: page, builder: (context) {
+        sheet = context;
+        return const CampusSheetPanel(child: SizedBox(height: 200));
+      }));
+      await tester.pumpAndSettle();
+      expect(find.text('已登录'), findsNothing, reason: '弹层盖上来就收起，不挡弹层底部的按钮');
+      showCampusToast(sheet, '位置已收藏');
+      await tester.pumpAndSettle();
+      Navigator.of(sheet).pop();
+      await tester.pumpAndSettle();
+      expect(find.text('位置已收藏'), findsOneWidget, reason: '弹层关上后提示照旧留着');
+      unawaited(Navigator.of(page).push(CampusPageRoute<void>(builder: (_) => const Scaffold(body: Text('下一页')))));
+      await tester.pumpAndSettle();
+      expect(find.text('位置已收藏'), findsNothing, reason: '推入新页面就收起');
+      expect(tester.takeException(), isNull);
+    });
+
+    // [人工决策] 见 campus_transitions.dart 的 showCampusToast（11-09 上浮避让，11-13 胶囊可点可划、留白点穿）。
+    testWidgets('提示条停在锚点上方；点胶囊收起、不落到下面，四周留白点得到下面，带操作的点按钮执行；弹层开着时底下页面的锚点不算', (tester) async {
       await tester.binding.setSurfaceSize(const Size(400, 800));
       addTearDown(() => tester.binding.setSurfaceSize(null));
       campusGlassReady.value = true;
@@ -500,20 +593,30 @@ void main() {
       await tester.pumpAndSettle();
       final anchorTop = tester.getTopLeft(find.byType(CampusToastAnchor)).dy;
       expect(tester.getBottomLeft(toastOf('已复制')).dy, lessThanOrEqualTo(anchorTop), reason: '停在底部按钮上方');
-      await tester.tapAt(tester.getCenter(find.text('已复制')));
-      expect(under, 1, reason: '不带操作的提示不拦点按，点到下面的内容');
+      // 胶囊左右各留 16 的透明边：点在留白上落到下面的内容。
+      final capsule = tester.getRect(toastOf('已复制'));
+      await tester.tapAt(Offset(capsule.left - 8, capsule.center.dy));
+      expect(under, 1, reason: '胶囊四周的留白点穿');
+      expect(find.text('已复制'), findsOneWidget);
       await tester.tap(find.text('底部按钮'));
       expect(bottom, 1);
+      await tester.tapAt(capsule.center);
+      expect(under, 1, reason: '点在胶囊上不落到下面');
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 250));
+      await tester.pump();
+      expect(find.text('已复制'), findsNothing, reason: '点一下收起，不用等 4 秒');
 
       var undone = 0;
+      showCampusToast(page, '已复制');
+      await tester.pump();
       showCampusToast(page, '已删除', action: '撤销', onAction: () => undone++);
       await tester.pumpAndSettle();
       expect(find.text('已复制'), findsNothing, reason: '新的顶掉旧的');
-      await tester.tapAt(tester.getCenter(find.text('已删除')));
-      expect(under, 1, reason: '带操作的提示照常拦点按');
       await tester.tap(find.text('撤销'));
       await tester.pumpAndSettle();
       expect(undone, 1);
+      expect(under, 1);
 
       // 弹层开着：底下页面的锚点不在最上层路由，提示条回到屏幕底部。
       late BuildContext sheet;
@@ -594,7 +697,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 300));
       expect(find.text('第一条'), findsNothing, reason: '新的顶掉旧的');
       expect(find.text('人脸照片没存上'), findsOneWidget);
-      expect(find.text('人脸照片没存上').hitTestable(), findsNothing, reason: '不带操作的提示不拦点按');
+      expect(find.text('人脸照片没存上').hitTestable(), findsOneWidget, reason: '胶囊可点可划');
       await tester.pump(const Duration(seconds: 4));
       await tester.pumpAndSettle();
       expect(find.text('人脸照片没存上'), findsNothing, reason: '到时收起');
