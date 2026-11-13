@@ -12,6 +12,7 @@ import 'package:superxd/playground/puzzle/schulte/schulte_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 
 // 舒尔特方格对局页：数字格排在一张卡片上，整张卡按格均分作热区（缝与卡边归最近一格），落点按按下的那一格算、抬手才算点了一下；
 // 每根手指各算各的（两只手轮流点不丢），按下后滑出触摸容差就作废，留给页面的右滑返回。按下的格微微缩小、往字色偏一点。
@@ -194,9 +195,11 @@ class _SchultePageState extends State<SchultePage> with TickerProviderStateMixin
     final puzzle = _puzzle;
     final layout = _SchulteLayout(puzzle.side, size.width);
     final tile = layout.pitch * (1 - 2 * _SchulteLayout.gap);
-    // 数字 14 号起、跟着字号缩放；只在两位数占不下格子时封顶（字号不小于 14，不用 FittedBox 往小缩）。
-    final scaled = MediaQuery.textScalerOf(context).scale(math.max(14, layout.pitch * .36));
-    final fontSize = math.max(14.0, math.min(scaled, tile * .6));
+    // 数字 14 号起、跟着字号缩放；最宽的那个数按实际字体量过，占不下格宽的七成时才往下收，收到 14 为止（不用 FittedBox 往小缩）。
+    var fontSize = math.min(MediaQuery.textScalerOf(context).scale(math.max(14, layout.pitch * .36)), tile * .6);
+    final widest = campusTextWidth(context, '${puzzle.numbers.reduce(math.max)}', style: _SchulteTile.numberStyle(fontSize), textScaler: TextScaler.noScaling);
+    if (widest > tile * .7) fontSize *= tile * .7 / widest;
+    fontSize = math.max(14, fontSize);
     final colors = _SchulteColors(palette);
     final duration = _reduced ? Duration.zero : _fade;
     return Listener(
@@ -316,6 +319,9 @@ class _SchulteTile extends StatelessWidget {
   final double press;
   final double alert;
 
+  // 格里数字的样式（量最宽的数时同一份）。
+  static TextStyle numberStyle(double fontSize) => TextStyle(fontSize: fontSize, height: 1.2, fontWeight: FontWeight.w600, fontFeatures: const [FontFeature.tabularFigures()]);
+
   @override
   Widget build(BuildContext context) {
     final keep = 1 - .7 * dim;
@@ -338,7 +344,7 @@ class _SchulteTile extends StatelessWidget {
           maxLines: 1,
           softWrap: false,
           textScaler: TextScaler.noScaling,
-          style: TextStyle(fontSize: fontSize, height: 1.2, fontWeight: FontWeight.w600, color: ink.withValues(alpha: keep), fontFeatures: const [FontFeature.tabularFigures()]),
+          style: numberStyle(fontSize).copyWith(color: ink.withValues(alpha: keep)),
         )),
       ),
     ))));
