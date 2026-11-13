@@ -37,6 +37,9 @@
 - balance 天平称球（逻辑推理）：
   - balance_rules.dart：BalanceRules：每档参数写在 _tiers（入门 9 个已知偏重称 2 次、简单 9 个称 3 次、普通 12 个、困难 12 个还要说轻重、专家 13 个，都称 3 次），种子只定平局怎么答；秤按对手规则答（balanceRespond：不预定假球，挑「剩下的候选还要称最多次」的结果，一样多按种子与第几次挑；为什么不按候选最多见文件头），称错一步必定挑到分不清的那支；求解器按每类球的个数做极小极大（balanceSolvable、balanceSolve），难度分按整棵策略树的选择量（口径在 difficulty 的注释）；solved 重放秤的回答、核对次数与两边球数，最后候选恰好是指认的那个才算；答案是每次左右盘的球加指认，解码拒收已知偏重又要说轻重、在次数内找不出的题。
   - balance_page.dart：BalancePage：上面天平、下面桌上每个球一个固定格（拿走留空圈）；底部分段选放左盘、放右盘或做记号（自己标可能偏重、偏轻、好球，不自动排除），点桌上的球放进盘、点盘里的拿回；「称一下」两边空或不等就不称（轻震、天平晃、提示条写原因，接着做一步就收起），称了天平倾斜、记一行结果，停一会儿球回桌上；「指认」点球（困难档再选偏重或偏轻）确认，还确定不了或对不上就轻震提示，次数用完留在指认里；解开后那个球鼓一下再弹结果；没有撤销（称的次数就是限制）；读屏每个球读编号、在哪与记号。
+- mines 扫雷（格子谜题）：
+  - mines_rules.dart：MinesRules：6、8、9、12、14 见方，雷 5、10、15、28、40 颗；起点取不靠边的一格、它和周围八格不放雷，其余随机撒，求解器 minesSolve 从起点推完、推理量 minesDeep 够这一档的门槛才出（写在 _tiers，普通起排除只靠单格的题），推不完就重撒；求解器模拟人推理，按单格、子集（两个数字比）、全局（剩余雷数加互不重叠的数字）三层，低层推不动才用高层，推出安全就翻开（顺序即参考解）；minesStep、minesReplay 判每一步（点未翻格翻开、0 格连开，点已翻开的数字按插对了旗连开；越界、翻到雷、翻不出新格都不合法），插旗不进答案；难度分 minesDifficulty 按雷数分五段加推理量（口径在注释）；题面是宽高、雷串与起点，答案是依次点的格，解码拒收要猜的与开局就全翻开的题。
+  - mines_page.dart：MinesPage：下方分段选翻开或插旗，点格子按模式操作，点已翻开的数字在周围插旗数相等时连开（对不上轻震、数字晃一下），插着旗的格不让翻；连开一片按圈淡出；翻到雷揭开所有雷、踩到的垫警示红画白雷、插错的旗打叉、轻震，提示条给「撤销」（退回踩雷那一步接着玩，也可 ⋯ 里从头来），棋盘锁住到撤销为止；未翻格是卡片底色的凸起方块（下沿一道侧边）、翻开格是凹下的淡底，数字 1–8 从激活色转色相并按对比度调亮度（7、8 是正文色与次要色），旗子与雷自绘、按颜色拼成路径一次画完；格子不到 48 时双指放大到 48、放大后单指平移，棋盘一落指就赢下手势竞争；解开后没插的旗插上、雷位按行亮一下再弹结果；状态写还剩几颗雷没插旗；读屏每格一个按钮，可撤销。
 
 # 加一个游戏的步骤
 
@@ -54,8 +57,8 @@
 # 测试
 
 - 规则：playground_rules_test.dart；页面：playground_ui_test.dart。
-- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；24 点：playground_twentyfour_test.dart；记忆闪光：playground_flash_test.dart；天平称球：playground_balance_test.dart（各自的规则与页面都在自己的文件里）。
-- iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行与推箱子在自己的测试里。
+- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；24 点：playground_twentyfour_test.dart；记忆闪光：playground_flash_test.dart；天平称球：playground_balance_test.dart；扫雷：playground_mines_test.dart（各自的规则与页面都在自己的文件里）。
+- iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行、推箱子与扫雷在自己的测试里。
 
 # 人工决策检索
 

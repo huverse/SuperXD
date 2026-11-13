@@ -133,6 +133,7 @@ abstract final class CampusIcons {
   // 天平称球：游戏图标与「称一下」是天平；自己做的记号「可能偏重」是向下的箭头（沉下去），「可能偏轻」用 arrowUp，「好球」用 check。
   static const balance = LucideIcons.scale;
   static const arrowDown = LucideIcons.arrowDown;
+  static const mines = LucideIcons.bomb;
 }
 
 void configureCampusIcons() =>
