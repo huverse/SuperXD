@@ -11,6 +11,7 @@ import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/playground/puzzle/flash/flash_page.dart';
 import 'package:superxd/playground/puzzle/flash/flash_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
+import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
 const _rules = FlashRules();
@@ -168,6 +169,8 @@ void main() {
       expect(_rules.solved(puzzle, [...solution.take(4), solution.last.sublist(1)]), isFalse);
       // 多点：点齐以后又点一格。
       expect(_rules.solved(puzzle, [[...first, outside], ...rest]), isFalse);
+      // 点齐后多点的一格也不能当成这一次点错、接着换下一组。
+      expect(_rules.solved(puzzle, [[...first, outside], flashPattern(puzzle, 0, 1), ...rest]), isFalse);
       expect(_rules.solved(puzzle, [...solution.take(4), [...solution.last, _outside(puzzle, solution.last)]]), isFalse);
       // 点已点亮的格：页面里不响应，答案里不该有。
       expect(_rules.solved(puzzle, [[first.first, ...first], ...rest]), isFalse);
@@ -176,6 +179,8 @@ void main() {
       expect(_rules.solved(puzzle, [[], ...solution]), isFalse);
       // 点错后接着点：点错必须是这一次的最后一下。
       expect(_rules.solved(puzzle, [[outside, ...first], ...rest]), isFalse);
+      expect(_rules.solved(puzzle, [[outside, ...first.take(first.length - 1)], ...rest]), isFalse);
+      expect(_rules.solved(puzzle, [[outside, ...first.take(first.length - 1)], flashPattern(puzzle, 0, 1), ...rest]), isFalse);
       // 点错后没换图案、照旧点第一组：第二次要点的是第二组。
       expect(_rules.solved(puzzle, [[outside], first, ...rest]), isFalse);
       expect(_rules.solved(puzzle, [[outside], flashPattern(puzzle, 0, 1), ...rest]), isTrue);
@@ -308,14 +313,19 @@ void main() {
       final outside = _outside(puzzle, first);
       expect(_status(1, 0), findsOneWidget);
       expect(find.bySemanticsLabel('记住亮起的格，再点出来'), findsOneWidget);
-      _expectBoard(3, _dark);
+      // 开始前读屏不放格子，直接走到「开始」。
+      expect(find.bySemanticsLabel('开始'), findsOneWidget);
+      expect(_cell(0, 3), findsNothing);
 
-      // 开始按钮盖在棋盘中间：点角上的格什么都不发生。
-      await _tapCell(tester, 0, 3);
-      await _tapCell(tester, 8, 3);
+      // 开始按钮盖在棋盘中间：点卡片的两个角（归角上的格）什么都不发生。
+      final card = tester.getRect(find.descendant(of: find.byType(FlashPage), matching: find.byType(CampusSurface)));
+      await tester.tapAt(card.topLeft + const Offset(12, 12));
+      await tester.pump();
+      await tester.tapAt(card.bottomRight - const Offset(12, 12));
+      await tester.pump();
       expect(haptics, isEmpty);
-      _expectBoard(3, _dark);
       expect(_start, findsOneWidget);
+      expect(_cell(0, 3), findsNothing);
 
       await tester.tap(_start);
       await tester.pump();
@@ -382,11 +392,11 @@ void main() {
       final store = await _open(tester, seed: 2);
       final puzzle = _rules.generate(2, PuzzleTier.entry).puzzle;
       final last = flashPattern(puzzle, flashRounds - 1, 0);
-      // 收尾时看最后一轮没亮的一格：它在收尾之前一直是暗着的样子。
-      final probe = tester.getCenter(_cell(_outside(puzzle, last), 3));
       late Color dark;
       await tester.tap(_start);
       await tester.pump();
+      // 收尾时看最后一轮没亮的一格：它在收尾之前一直是暗着的样子。
+      final probe = tester.getCenter(_cell(_outside(puzzle, last), 3));
       for (var round = 0; round < flashRounds; round++) {
         await _showRound(tester, puzzle, before: round == 0 ? Duration.zero : flashHold);
         expect(_status(round + 1, 0), findsOneWidget);
@@ -413,8 +423,9 @@ void main() {
       await tester.tap(find.text('换到简单'));
       await tester.pumpAndSettle();
       expect(store.tierOf('flash'), PuzzleTier.easy);
-      expect(_start, findsOneWidget);
       expect(_status(1, 0), findsOneWidget);
+      await tester.tap(_start);
+      await tester.pump();
       _expectBoard(4, _dark);
       semantics.dispose();
     });
@@ -426,9 +437,9 @@ void main() {
       await _open(tester, seed: 3);
       final puzzle = _rules.generate(3, PuzzleTier.entry).puzzle;
       final first = flashPattern(puzzle, 0, 0);
-      final center = tester.getCenter(_cell(first.first, 3));
       await tester.tap(_start);
       await tester.pump();
+      final center = tester.getCenter(_cell(first.first, 3));
       final dark = await _colorAt(tester, center);
       await tester.pump(flashLead);
       final lit = await _colorAt(tester, center);
@@ -503,10 +514,11 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(_start, findsOneWidget);
       expect(_status(1, 0), findsOneWidget);
-      _expectBoard(3, _dark);
-      // 等着的下一组不会再亮起来。
+      expect(_cell(0, 3), findsNothing);
+      // 等着的下一组不会再亮起来，停在开始前。
       await tester.pump(flashReveal + flashLead);
-      _expectBoard(3, _dark);
+      expect(_start, findsOneWidget);
+      expect(_cell(0, 3), findsNothing);
 
       await tester.tap(_start);
       await tester.pump();
@@ -518,7 +530,8 @@ void main() {
       expect(_start, findsOneWidget);
       expect(_status(1, 0), findsOneWidget);
       await tester.pump(flashReveal + flashLead);
-      _expectBoard(3, _dark);
+      expect(_start, findsOneWidget);
+      expect(_cell(0, 3), findsNothing);
       semantics.dispose();
     });
 
@@ -532,6 +545,8 @@ void main() {
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
       await _open(tester, seed: 6, tier: PuzzleTier.expert);
       expect(tester.takeException(), isNull);
+      await tester.tap(_start);
+      await tester.pump();
       for (var cell = 0; cell < 36; cell++) {
         final rect = tester.getRect(_cell(cell, 6));
         expect(rect.width, greaterThanOrEqualTo(48), reason: '$cell');

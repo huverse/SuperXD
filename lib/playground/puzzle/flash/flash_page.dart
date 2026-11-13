@@ -346,15 +346,16 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
             palette: palette,
           )),
         ))),
-        // 读屏：每格一个按钮，读出第几行第几列与亮灭；只有作答时能点。
-        for (var cell = 0; cell < side * side; cell++)
-          Positioned.fromRect(rect: layout.cellRect(cell), child: Semantics(
-            container: true,
-            button: true,
-            label: '${_cellName(cell)}，${_cellState(cell)}',
-            onTap: _phase == _Phase.input ? () => _tap(cell) : null,
-            child: const SizedBox.expand(),
-          )),
+        // 读屏：开始以后每格一个按钮，读出第几行第几列与亮灭，只有作答时能点；开始前不放，读屏直接走到「开始」。
+        if (_phase != _Phase.ready)
+          for (var cell = 0; cell < side * side; cell++)
+            Positioned.fromRect(rect: layout.cellRect(cell), child: Semantics(
+              container: true,
+              button: true,
+              label: '${_cellName(cell)}，${_cellState(cell)}',
+              onTap: _phase == _Phase.input ? () => _tap(cell) : null,
+              child: const SizedBox.expand(),
+            )),
         if (_phase == _Phase.ready)
           Center(child: FilledButton.icon(style: campusProminent, onPressed: _start, icon: const CampusIcon(CampusIcons.resume), label: const Text('开始'))),
       ])),
@@ -429,6 +430,8 @@ class _FlashPainter extends CustomPainter {
     final dark = palette.isDark;
     final count = layout.side * layout.side;
     final accent = palette.accent;
+    // 压在激活色、警示红底上的浅色：浅色模式取卡片底色，深色模式取正文色（深色配色的 onDanger、onPrimary 是深色，压不住红底）。
+    final paper = dark ? palette.onSurface : palette.surface;
     // 暗着的格：同点灯的灭灯，底色加一圈细边。
     final all = _tiles([for (var cell = 0; cell < count; cell++) cell]);
     canvas.drawPath(all, Paint()..color = dark ? Color.lerp(palette.surface, palette.backgroundTop, .55)! : Color.lerp(palette.surface, palette.outlineSubtle, .55)!);
@@ -469,13 +472,13 @@ class _FlashPainter extends CustomPainter {
             ..style = PaintingStyle.stroke
             ..strokeWidth = tile.width * .08
             ..strokeCap = StrokeCap.round
-            ..color = palette.onDanger.withValues(alpha: shown),
+            ..color = paper.withValues(alpha: shown),
         );
       }
     }
 
     // 收尾：每一圈的格拼成一条路径，盖一层提亮的激活色（暗着的格亮成浅激活色，点亮的格更亮一下）。
-    final glow = Color.lerp(accent, palette.onPrimary, .35)!;
+    final glow = Color.lerp(accent, paper, .35)!;
     for (var ring = 0; ring < pulses.length; ring++) {
       if (pulses[ring] <= 0) continue;
       canvas.drawPath(_tiles([for (var cell = 0; cell < count; cell++) if (layout.ring(cell) == ring) cell]), Paint()..color = glow.withValues(alpha: pulses[ring] * .9));
