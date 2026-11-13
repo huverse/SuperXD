@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
 
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
@@ -10,10 +11,10 @@ import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/playground/puzzle/mines/mines_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
+import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_segmented.dart';
-import 'package:superxd/theme/campus_transitions.dart';
 
 enum _Mode { reveal, flag }
 
@@ -25,9 +26,9 @@ const _fadeMs = 160, _ringGap = 35, _maxRings = 8;
 // 解开后的收尾：没插旗的雷先插上旗（_flagMs），雷位按行依次亮一下（每颗 _glowMs，最后一行晚 _glowSpread）。
 const _flagMs = 260, _glowMs = 380, _glowSpread = 280;
 
-// 扫雷对局页：下方分段选「翻开 / 插旗」，点格子按当前模式操作；点已翻开的数字，周围插旗数等于数字时把其余未翻格一起翻开（经典的双击开，这里单击）。
-// 翻到雷就输：揭开所有雷、标出点到的那颗、轻震，提示条给「撤销」（也可 ⋯ 里从头来）。所有不是雷的格翻完即解开：旗子全部插好、雷位亮一下再弹结果。
-// 格子不到 48 时双指放大，放大后单指平移。
+// 扫雷对局页：下方分段选「翻开 / 插旗」，点格子按当前模式操作，任何模式下长按未翻的格都是插旗、长按旗子拔旗；点已翻开的数字，
+// 周围插旗数等于数字时把其余未翻格一起翻开（经典的双击开，这里单击）。翻到雷这一局就结束（见 _lose）。
+// 所有不是雷的格翻完即解开：旗子全部插好、雷位亮一下再弹结果。格子不到 48 时双指放大，放大后单指平移。
 class MinesPage extends StatefulWidget {
   const MinesPage({super.key, required this.game, required this.store, this.seeds});
   final PlaygroundGame game;
@@ -50,10 +51,11 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
   final _moves = <int>[];
   final _history = <_Step>[];
   var _mode = _Mode.reveal;
-  // 这一步踩到的雷（点数字连开可能一次踩到几颗）；不为空就是输了，只能撤销或从头来。
+  // 踩到的雷（点数字连开可能一次踩到几颗）；不为空就是这一局结束了，只能从头来或换一道题。
   var _boom = <int>{};
-  // 手势：一根手指点按（移动超过触摸容差就不算点），两根手指缩放；放大后单指拖动平移。
+  // 手势：一根手指点按（移动超过触摸容差就不算点）、按住到长按时长插旗或拔旗，两根手指缩放；放大后单指拖动平移。
   final _pointers = <int, Offset>{};
+  Timer? _hold;
   int? _tapCell, _pressed;
   Offset _tapAt = Offset.zero, _dragPan = Offset.zero;
   bool _pinching = false;
@@ -75,6 +77,7 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
 
   @override
   void dispose() {
+    _hold?.cancel();
     _wave.dispose();
     _pop.dispose();
     _shake.dispose();
@@ -89,7 +92,9 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
   bool get _lost => _boom.isNotEmpty;
 
   void _reset() {
-    hideCampusToast();
+    _hold?.cancel();
+    // 踩雷停表用的是 pause，它的暂停标记 restart 不清，不清的话新的一局走第一步也不开始计时（见 _lose）。
+    _session.resume();
     _counts = minesCounts(_puzzle);
     _revealed = minesStartOpen(_puzzle, _counts);
     _mineCount = _puzzle.mines.where((mine) => mine).length;
@@ -121,7 +126,7 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
   // ---------- 操作 ----------
 
   void _tap(int cell) {
-    if (_session.finished || _lost) return;
+    if (_session.finished) return;
     if (_revealed[cell]) return _chord(cell);
     if (_mode == _Mode.flag) return _toggleFlag(cell);
     // 插着旗的格不让翻（防手滑），先切到插旗拔掉。
@@ -138,7 +143,7 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
     _open(cell, hidden);
   }
 
-  // 翻开一步：targets 是要翻的格（点格子是它自己，点数字连开是周围没插旗的未翻格），0 格连开一片，连开到的插错的旗顺手拔掉；翻到雷就输。
+  // 翻开一步：targets 是要翻的格（点格子是它自己，点数字连开是周围没插旗的未翻格），0 格连开一片，连开到的插错的旗顺手拔掉；翻到雷这一局结束。
   void _open(int cell, List<int> targets) {
     final opened = <(int, int)>[], boom = <int>{};
     for (final target in targets) {
@@ -154,20 +159,47 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
     }
     final unflagged = [for (final (other, _) in opened) if (_flags.remove(other)) other];
     _session.moved();
+    if (boom.isNotEmpty) return _lose(opened, boom);
     setState(() {
       _moves.add(cell);
       _history.add((cell: cell, flag: false, opened: [for (final (other, _) in opened) other], unflagged: unflagged));
-      _boom = boom;
       _startWave(opened);
     });
-    if (boom.isNotEmpty) {
-      playRejected();
-      showCampusToast(context, '踩到雷了', action: '撤销', onAction: _undo);
-      return;
-    }
     playTick();
-    hideCampusToast();
     if (_rules.solved(_puzzle, _moves)) unawaited(_finish());
+  }
+
+  // [人工决策-2026-11-13 16:05:37] 用户选定：踩雷即结束（揭开全部雷、锁住棋盘、不能撤销、不记成绩，只能从头来或换一道题）；加长按插旗（任何模式下长按未翻开的格插旗、长按旗子拔旗，长按只管旗）。
+  // 踩雷：揭开全部雷、踩到的垫警示红、插错的旗打叉，重震；缩放复原看全盘，棋盘锁住，底部原地换成「这一题从头来」「换一道题」（build 里）。
+  // 不弹提示条：结束是停住的状态，棋盘、状态行（改写「踩到雷了」）与换掉的按钮一直都在，提示条几秒就收、还压在新按钮上方；读屏靠棋盘上的播报。
+  // 停表不记成绩：PlaySession 没有「结束但不记」的接口，停表后把 finished 置上（切后台回来不再走表、换难度不再确认），只有 finish 才记成绩，这里不调。
+  void _lose(List<(int, int)> opened, Set<int> boom) {
+    playRejected();
+    _hold?.cancel();
+    _session
+      ..pause()
+      ..finished = true;
+    setState(() {
+      _boom = boom;
+      _startWave(opened);
+      _pointers.clear();
+      _pressed = _tapCell = null;
+      _pinching = false;
+      _zoom = 1;
+      _pan = Offset.zero;
+    });
+  }
+
+  // 长按（见上面的人工决策）：手指按住未翻的格到系统的长按时长、期间没挪出拖动阈值也没落第二根手指，就插旗或拔旗，不看当前模式；
+  // 抬手时不再当点按（_tapCell 清掉），之后再挪手指从这里起算平移。
+  void _longPress(int cell) {
+    _hold = null;
+    if (_tapCell != cell || _pointers.length != 1 || _session.finished || _revealed[cell]) return;
+    _tapCell = null;
+    _tapAt = _pointers.values.single;
+    _dragPan = _pan;
+    _pressed = null;
+    _toggleFlag(cell);
   }
 
   void _startWave(List<(int, int)> opened) {
@@ -185,7 +217,6 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
 
   void _toggleFlag(int cell) {
     playTick();
-    hideCampusToast();
     _session.moved();
     setState(() {
       if (!_flags.remove(cell)) _flags.add(cell);
@@ -212,7 +243,6 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
   void _undo() {
     if (_history.isEmpty || _session.finished) return;
     playTick();
-    hideCampusToast();
     setState(() {
       final last = _history.removeLast();
       if (last.flag) {
@@ -224,7 +254,6 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
         }
         _flags.addAll(last.unflagged);
         _moves.removeLast();
-        _boom = {};
       }
       _rings.clear();
       _wave.value = 1;
@@ -269,8 +298,9 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
     final layout = _layout;
     if (layout == null || _session.finished) return;
     if (_pointers.length == 2) {
-      // 第二根手指落下：这一下不算点按，改成缩放。
+      // 第二根手指落下：这一下不算点按也不算长按，改成缩放。
       _tapCell = null;
+      _hold?.cancel();
       if (_pressed != null) setState(() => _pressed = null);
       if (layout.maxZoom <= 1) return;
       _pinching = true;
@@ -286,7 +316,10 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
     _tapCell = cell;
     _tapAt = event.localPosition;
     _dragPan = _pan;
-    if (cell != null && !_revealed[cell] && !_lost) setState(() => _pressed = cell);
+    if (cell == null || _revealed[cell]) return;
+    _hold?.cancel();
+    _hold = Timer(kLongPressTimeout, () => _longPress(cell));
+    setState(() => _pressed = cell);
   }
 
   void _move(PointerMoveEvent event) {
@@ -310,6 +343,7 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
     final moved = event.localPosition - _tapAt;
     if (_tapCell != null && moved.distance > kTouchSlop) {
       _tapCell = null;
+      _hold?.cancel();
       if (_pressed != null) setState(() => _pressed = null);
     }
     if (_tapCell == null && _zoom > 1) setState(() => _pan = layout.clampPan(_dragPan + moved, _zoom));
@@ -317,6 +351,7 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
 
   void _up(PointerEvent event) {
     _pointers.remove(event.pointer);
+    _hold?.cancel();
     if (_pointers.length == 1) {
       // 缩放的两根手指抬起一根：剩下那根接着平移，不再当点按。
       _pinching = false;
@@ -337,6 +372,7 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
   // ---------- 画面 ----------
 
   String get _status {
+    if (_lost) return '踩到雷了';
     final left = _mineCount - _flags.length;
     return left >= 0 ? '剩 $left 颗雷' : '旗多插了 ${-left} 面';
   }
@@ -347,15 +383,21 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
     onNewGame: _newGame,
     onRestart: _restart,
     status: _status,
-    controls: [
-      SizedBox(width: 200, child: CampusSegmented<_Mode>(
-        values: const [_Mode.reveal, _Mode.flag],
-        label: (mode) => mode == _Mode.reveal ? '翻开' : '插旗',
-        selected: _mode,
-        onSelected: _session.finished ? null : (mode) => setState(() => _mode = mode),
-      )),
-      FilledButton.icon(onPressed: _history.isEmpty || _session.finished ? null : _undo, icon: const CampusIcon(CampusIcons.undo), label: const Text('撤销')),
-    ],
+    // 踩雷后原地换成下一步能做的两件事（同 ⋯ 里的同名项）；主操作是换一道题：这一题的雷已经全看过了，从头来留作次要的。
+    controls: _lost
+        ? [
+            FilledButton.icon(onPressed: _restart, icon: const CampusIcon(CampusIcons.restore), label: const Text('这一题从头来')),
+            FilledButton.icon(style: campusProminent, onPressed: () => _newGame(null), icon: const CampusIcon(CampusIcons.shuffle), label: const Text('换一道题')),
+          ]
+        : [
+            SizedBox(width: 200, child: CampusSegmented<_Mode>(
+              values: const [_Mode.reveal, _Mode.flag],
+              label: (mode) => mode == _Mode.reveal ? '翻开' : '插旗',
+              selected: _mode,
+              onSelected: _session.finished ? null : (mode) => setState(() => _mode = mode),
+            )),
+            FilledButton.icon(onPressed: _history.isEmpty || _session.finished ? null : _undo, icon: const CampusIcon(CampusIcons.undo), label: const Text('撤销')),
+          ],
     board: PlayBoardBox(aspectRatio: _puzzle.width / _puzzle.height, maxWidth: 64.0 * _puzzle.width, builder: (context, size) {
       final palette = CampusPalette.of(context);
       final layout = _layout = _MinesLayout(columns: _puzzle.width, rows: _puzzle.height, size: size, zoom: _zoom, pan: _pan);
@@ -395,6 +437,8 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
                 finale: _finale.value * (_flagMs + _glowMs + _glowSpread),
               )),
             )),
+            // 踩雷时读屏播报（不弹提示条，状态行的变化读屏不会主动念）。
+            if (_lost) Positioned.fill(child: Semantics(container: true, liveRegion: true, label: '踩到雷了', child: const SizedBox.expand())),
             ..._cellSemantics(layout),
           ]),
         ),
@@ -402,14 +446,16 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
     }),
   );
 
-  // 读屏：每格一个按钮，读出第几行第几列与状态，点按同手指点这一格（按当前的翻开或插旗）。
+  // 读屏：每格一个按钮，读出第几行第几列与状态，点按同手指点这一格（按当前的翻开或插旗）；未翻的格另带自定义操作「插旗 / 拔旗」，
+  // 同手指长按，不用切模式。结束后（解开或踩雷）都不能操作。
   List<Widget> _cellSemantics(_MinesLayout layout) => [
     for (var cell = 0; cell < _puzzle.mines.length; cell++)
       if (layout.cellRect(cell) case final rect when layout.viewport.overlaps(rect))
         Positioned.fromRect(rect: rect, child: Semantics(
           button: true,
           label: '第${cell ~/ _puzzle.width + 1}行第${cell % _puzzle.width + 1}列，${_cellState(cell)}',
-          onTap: _session.finished || _lost ? null : () => _tap(cell),
+          onTap: _session.finished ? null : () => _tap(cell),
+          customSemanticsActions: _session.finished || _revealed[cell] ? null : {CustomSemanticsAction(label: _flags.contains(cell) ? '拔旗' : '插旗'): () => _toggleFlag(cell)},
           child: const SizedBox.expand(),
         )),
   ];

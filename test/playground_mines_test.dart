@@ -1,6 +1,9 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/semantics.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/playground/playground_catalog.dart';
@@ -105,8 +108,10 @@ int? _chordable(MinesPuzzle puzzle, List<int> counts, List<bool> open) {
   return null;
 }
 
-Future<void> _open(WidgetTester tester, PlaygroundStore store, int seed) async {
-  await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: MinesPage(game: _game, store: store, seeds: () => seed)));
+// advance 为真时每换一道题种子加一（测「换一道题」真的换了）。
+Future<void> _open(WidgetTester tester, PlaygroundStore store, int seed, {bool advance = false}) async {
+  var next = seed;
+  await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: MinesPage(game: _game, store: store, seeds: advance ? () => next++ : () => seed)));
   await tester.pumpAndSettle();
 }
 
@@ -114,6 +119,41 @@ Future<void> _chooseMode(WidgetTester tester, String mode) async {
   await tester.tap(find.text(mode));
   await _step(tester);
 }
+
+// 记下触感：playTick 是选择触感（selectionClick），playRejected 是重震（heavyImpact）。
+List<Object?> _haptics(WidgetTester tester) {
+  final calls = <Object?>[];
+  tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+    if (call.method == 'HapticFeedback.vibrate') calls.add(call.arguments);
+    return null;
+  });
+  addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+  return calls;
+}
+
+// 按住一格到长按时长再多一点，手指还没抬（调用方先看插没插上旗，再自己抬手）。
+Future<TestGesture> _press(WidgetTester tester, Finder finder) async {
+  final gesture = await tester.startGesture(tester.getCenter(finder));
+  await tester.pump(kLongPressTimeout + const Duration(milliseconds: 50));
+  return gesture;
+}
+
+Future<void> _longPress(WidgetTester tester, Finder finder) async {
+  final gesture = await _press(tester, finder);
+  await gesture.up();
+  await _step(tester);
+}
+
+// 每一格读屏读出的状态都对得上这道题的开局。
+void _expectOpening(MinesPuzzle puzzle) {
+  final (:counts, :open) = _opening(puzzle);
+  for (var cell = 0; cell < open.length; cell++) {
+    expect(_cellIs(puzzle, cell, !open[cell] ? '未翻开' : counts[cell] == 0 ? '空白' : '数字 ${counts[cell]}'), findsOneWidget, reason: '$cell');
+  }
+}
+
+// 读屏节点上挂的自定义操作。
+List<int> _customActions(WidgetTester tester, Finder finder) => tester.getSemantics(finder).getSemanticsData().customSemanticsActionIds ?? const [];
 
 void main() {
   group('规则', () {
@@ -425,66 +465,202 @@ void main() {
       semantics.dispose();
     });
 
-    testWidgets('翻到雷：揭开所有雷、标出踩到的那颗与插错的旗，提示条给撤销，撤销后接着玩', (tester) async {
+    // 用户 11-13 选定踩雷即结束（人工决策在 mines_page.dart 的 _lose 上方）。
+    testWidgets('踩雷即结束：揭开所有雷、标出踩到的与插错的旗、重震，棋盘锁住、撤销不在、不记成绩；底部「这一题从头来」回到开局、照常计时', (tester) async {
       final semantics = tester.ensureSemantics();
+      final haptics = _haptics(tester);
       final store = PlaygroundStore.memory();
-      final seed = _seedWhere(PuzzleTier.entry, (puzzle, counts, open) => _hiddenNumber(puzzle, counts, open) != null);
+      // 要一个没翻开的数字格（翻开只开它自己）和另外两个没翻开的安全格。
+      List<int> pick(MinesPuzzle puzzle, List<int> counts, List<bool> open) {
+        final number = _hiddenNumber(puzzle, counts, open);
+        if (number == null) return const [];
+        return [number, for (var cell = 0; cell < 36; cell++) if (!open[cell] && !puzzle.mines[cell] && cell != number) cell];
+      }
+
+      final seed = _seedWhere(PuzzleTier.entry, (puzzle, counts, open) => pick(puzzle, counts, open).length >= 3);
       final puzzle = _rules.generate(seed, PuzzleTier.entry).puzzle;
       final (:counts, :open) = _opening(puzzle);
       final mines = [for (var cell = 0; cell < 36; cell++) if (puzzle.mines[cell]) cell];
-      final wrong = _hiddenNumber(puzzle, counts, open)!;
+      final hidden = pick(puzzle, counts, open);
+      final wrong = hidden[1];
       await _open(tester, store, seed);
-      // 先在一个不是雷的格上插旗（输了要标成插错）。
+      // 先在一个不是雷的格上插旗（输了要标成插错），再正常翻开一个数字格（踩雷前有可撤销的步）。
       await _chooseMode(tester, '插旗');
       await _tapOn(tester, _cell(puzzle, wrong));
       await _step(tester);
       await _chooseMode(tester, '翻开');
+      await _tapOn(tester, _cell(puzzle, hidden[0]));
+      await _step(tester);
+      expect(_undoButton(tester).onPressed, isNotNull);
+      haptics.clear();
 
       await _tapOn(tester, _cell(puzzle, mines.first));
       await _step(tester);
+      expect(haptics, contains('HapticFeedbackType.heavyImpact'));
       expect(_cellIs(puzzle, mines.first, '踩到的雷'), findsOneWidget);
       for (final cell in mines.skip(1)) {
         expect(_cellIs(puzzle, cell, '雷'), findsOneWidget, reason: '$cell');
       }
       expect(_cellIs(puzzle, wrong, '插错的旗'), findsOneWidget);
+      // 状态行改写「踩到雷了」，读屏另有播报；不弹提示条、没有撤销，分段控件换成两个按钮。
       expect(find.text('踩到雷了'), findsOneWidget);
-      expect(_undoButton(tester).onPressed, isNotNull);
-      // 输了以后点格子不动（棋盘锁住，只能撤销或从头来）。挑提示条上方的格点，免得点到提示条上把它收起。
-      final toastTop = tester.getTopLeft(find.text('踩到雷了')).dy - 24;
-      final other = [
-        for (var cell = 0; cell < 36; cell++)
-          if (!open[cell] && !puzzle.mines[cell] && cell != wrong && tester.getCenter(_cell(puzzle, cell)).dy < toastTop) cell,
-      ].first;
-      await _tapOn(tester, _cell(puzzle, other));
+      expect(tester.getSemantics(find.bySemanticsLabel('踩到雷了')), isSemantics(label: '踩到雷了', isLiveRegion: true));
+      expect(find.widgetWithText(TextButton, '撤销'), findsNothing);
+      expect(find.widgetWithText(FilledButton, '撤销'), findsNothing);
+      expect(find.text('插旗'), findsNothing);
+      expect(find.widgetWithText(FilledButton, '这一题从头来'), findsOneWidget);
+      expect(find.widgetWithText(FilledButton, '换一道题'), findsOneWidget);
+      // 棋盘锁住：点、长按都不动，读屏也不能点、没有插旗操作。
+      await _tapOn(tester, _cell(puzzle, hidden[2]));
       await _step(tester);
-      expect(_cellIs(puzzle, other, '未翻开'), findsOneWidget);
+      expect(_cellIs(puzzle, hidden[2], '未翻开'), findsOneWidget);
+      await _longPress(tester, _cell(puzzle, hidden[2]));
+      expect(_cellIs(puzzle, hidden[2], '未翻开'), findsOneWidget);
+      expect(tester.getSemantics(_cell(puzzle, hidden[2])), isSemantics(hasTapAction: false));
+      expect(_customActions(tester, _cell(puzzle, hidden[2])), isEmpty);
       expect(find.text('踩到雷了'), findsOneWidget);
+      expect(store.best('mines', PuzzleTier.entry), isNull);
 
-      // 点提示条上的「撤销」：退回踩雷那一步，雷又藏起来，旗还在。
-      await tester.tap(find.widgetWithText(TextButton, '撤销'));
+      // 这一题从头来：回到开局，旗也清掉，撤销按钮回来但不可用。
+      await tester.tap(find.widgetWithText(FilledButton, '这一题从头来'));
       await _step(tester);
       expect(find.text('踩到雷了'), findsNothing);
-      for (final cell in mines) {
-        expect(_cellIs(puzzle, cell, '未翻开'), findsOneWidget, reason: '$cell');
-      }
-      expect(_cellIs(puzzle, wrong, '已插旗'), findsOneWidget);
-      await _tapOn(tester, _cell(puzzle, other));
+      _expectOpening(puzzle);
+      expect(find.textContaining('剩 5 颗雷'), findsOneWidget);
+      expect(_undoButton(tester).onPressed, isNull);
+      // 照常计时：走一步再换难度要确认（开始计时了才问）。
+      await _tapOn(tester, _cell(puzzle, hidden[0]));
       await _step(tester);
-      expect(_cellIs(puzzle, other, '未翻开'), findsNothing);
+      await tester.tap(find.widgetWithText(TextButton, '入门'));
+      await _step(tester);
+      await tester.tap(find.text('简单'));
+      await _step(tester);
+      expect(find.text('换成简单？'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await _step(tester);
 
-      // 再踩一次，用 ⋯ 里的「这一题从头来」：回到开局，提示条收起。
+      // 再踩一次：这一局结束了，换难度不用确认，直接换题。
       await _tapOn(tester, _cell(puzzle, mines.first));
+      await _step(tester);
+      expect(find.text('踩到雷了'), findsOneWidget);
+      await tester.tap(find.widgetWithText(TextButton, '入门'));
+      await _step(tester);
+      await tester.tap(find.text('简单'));
+      await _step(tester);
+      expect(find.text('换成简单？'), findsNothing);
+      expect(_anyCell, findsNWidgets(64));
+      expect(find.textContaining('剩 10 颗雷'), findsOneWidget);
+      expect(store.best('mines', PuzzleTier.entry), isNull);
+      semantics.dispose();
+    });
+
+    testWidgets('踩雷后「换一道题」换成新的一道题；⋯ 里的同名项照旧能用', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final store = PlaygroundStore.memory();
+      final first = _rules.generate(10, PuzzleTier.entry).puzzle, second = _rules.generate(11, PuzzleTier.entry).puzzle;
+      expect('${_rules.encodePuzzle(first)}', isNot('${_rules.encodePuzzle(second)}'));
+      await _open(tester, store, 10, advance: true);
+      await _tapOn(tester, _cell(first, first.mines.indexOf(true)));
+      await _step(tester);
+      expect(find.text('踩到雷了'), findsOneWidget);
+
+      await tester.tap(find.widgetWithText(FilledButton, '换一道题'));
+      await _step(tester);
+      expect(find.text('踩到雷了'), findsNothing);
+      _expectOpening(second);
+      expect(find.widgetWithText(FilledButton, '换一道题'), findsNothing);
+      expect(store.best('mines', PuzzleTier.entry), isNull);
+
+      // 再踩一次，用 ⋯ 里的「这一题从头来」（菜单浮在最上层，同名的两个取菜单里那个）：回到这一道的开局。
+      await _tapOn(tester, _cell(second, second.mines.indexOf(true)));
       await _step(tester);
       expect(find.text('踩到雷了'), findsOneWidget);
       await tester.tap(find.byTooltip('更多操作'));
       await _step(tester);
-      await tester.tap(find.text('这一题从头来'));
+      await tester.tap(find.text('这一题从头来').last);
       await _step(tester);
-      await tester.pump(const Duration(milliseconds: 500));
       expect(find.text('踩到雷了'), findsNothing);
-      expect(_cellIs(puzzle, mines.first, '未翻开'), findsOneWidget);
-      expect(_cellIs(puzzle, wrong, '未翻开'), findsOneWidget);
-      expect(_undoButton(tester).onPressed, isNull);
+      _expectOpening(second);
+      semantics.dispose();
+    });
+
+    // 用户 11-13 选定加长按插旗：任何模式下长按只管旗，免得插旗模式下长按误翻到雷。
+    testWidgets('长按插旗：翻开与插旗模式下长按未翻的格都是插旗、长按旗子拔旗，长按到时就有触感、抬手不翻开；中途挪动不算', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final haptics = _haptics(tester);
+      final store = PlaygroundStore.memory();
+      final seed = _seedWhere(PuzzleTier.entry, (puzzle, counts, open) => [for (var cell = 0; cell < 36; cell++) if (!open[cell] && !puzzle.mines[cell]) cell].length >= 2);
+      final puzzle = _rules.generate(seed, PuzzleTier.entry).puzzle;
+      final (:counts, :open) = _opening(puzzle);
+      final mine = puzzle.mines.indexOf(true);
+      final safe = [for (var cell = 0; cell < 36; cell++) if (!open[cell] && !puzzle.mines[cell]) cell];
+      await _open(tester, store, seed);
+
+      // 翻开模式长按雷：插上旗（不是翻开），到长按时长就插、手指还按着，触感跟着来；抬手不翻开。
+      final gesture = await _press(tester, _cell(puzzle, mine));
+      expect(_cellIs(puzzle, mine, '已插旗'), findsOneWidget);
+      expect(haptics, ['HapticFeedbackType.selectionClick']);
+      await gesture.up();
+      await _step(tester);
+      expect(_cellIs(puzzle, mine, '已插旗'), findsOneWidget);
+      expect(find.text('踩到雷了'), findsNothing);
+      expect(find.textContaining('剩 4 颗雷'), findsOneWidget);
+      await _longPress(tester, _cell(puzzle, mine));
+      expect(_cellIs(puzzle, mine, '未翻开'), findsOneWidget);
+      expect(find.textContaining('剩 5 颗雷'), findsOneWidget);
+
+      // 插旗模式长按：同样是插旗（抬手不再按插旗模式点一下把它拔掉），再长按拔旗。
+      await _chooseMode(tester, '插旗');
+      await _longPress(tester, _cell(puzzle, safe[0]));
+      expect(_cellIs(puzzle, safe[0], '已插旗'), findsOneWidget);
+      await _longPress(tester, _cell(puzzle, safe[0]));
+      expect(_cellIs(puzzle, safe[0], '未翻开'), findsOneWidget);
+      await _chooseMode(tester, '翻开');
+
+      // 按住以后挪出拖动阈值：不算长按，抬手也不算点，格子不动。
+      final drift = await tester.startGesture(tester.getCenter(_cell(puzzle, safe[1])));
+      await tester.pump(const Duration(milliseconds: 200));
+      await drift.moveBy(const Offset(0, kTouchSlop + 6));
+      await tester.pump(kLongPressTimeout);
+      await drift.up();
+      await _step(tester);
+      expect(_cellIs(puzzle, safe[1], '未翻开'), findsOneWidget);
+      // 短按照常翻开；长按翻开的格不插旗。
+      await _tapOn(tester, _cell(puzzle, safe[1]));
+      await _step(tester);
+      expect(_cellIs(puzzle, safe[1], '未翻开'), findsNothing);
+      await _longPress(tester, _cell(puzzle, safe[1]));
+      expect(_cellIs(puzzle, safe[1], '已插旗'), findsNothing);
+      // 长按插拔旗也是一步步记下的：撤销先退回刚才翻开的那一下。
+      await tester.tap(find.widgetWithText(FilledButton, '撤销'));
+      await _step(tester);
+      expect(_cellIs(puzzle, safe[1], '未翻开'), findsOneWidget);
+      semantics.dispose();
+    });
+
+    testWidgets('读屏：未翻的格带「插旗」自定义操作，插上后变成「拔旗」，不用切模式；翻开的格没有', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final store = PlaygroundStore.memory();
+      final puzzle = _rules.generate(3, PuzzleTier.entry).puzzle;
+      final (:counts, :open) = _opening(puzzle);
+      final mine = puzzle.mines.indexOf(true), shown = open.indexOf(true);
+      await _open(tester, store, 3);
+      const flag = CustomSemanticsAction(label: '插旗'), unflag = CustomSemanticsAction(label: '拔旗');
+      Future<void> perform(CustomSemanticsAction action) async {
+        final node = tester.getSemantics(_cell(puzzle, mine));
+        node.owner!.performAction(node.id, SemanticsAction.customAction, CustomSemanticsAction.getIdentifier(action));
+        await _step(tester);
+      }
+
+      expect(_customActions(tester, _cell(puzzle, mine)), [CustomSemanticsAction.getIdentifier(flag)]);
+      expect(_customActions(tester, _cell(puzzle, shown)), isEmpty);
+      // 翻开模式下用自定义操作插旗：不会翻开这颗雷。
+      await perform(flag);
+      expect(_cellIs(puzzle, mine, '已插旗'), findsOneWidget);
+      expect(_customActions(tester, _cell(puzzle, mine)), [CustomSemanticsAction.getIdentifier(unflag)]);
+      await perform(unflag);
+      expect(_cellIs(puzzle, mine, '未翻开'), findsOneWidget);
+      expect(find.text('踩到雷了'), findsNothing);
       semantics.dispose();
     });
 
@@ -519,7 +695,7 @@ void main() {
       semantics.dispose();
     });
 
-    testWidgets('14×14 格子不到 48：双指张开放大到 48，放大后单指拖动平移，都不算一步', (tester) async {
+    testWidgets('14×14 格子不到 48：双指张开放大到 48（第一根手指先按住一会儿也不会长按插旗），放大后单指拖动平移，都不算一步', (tester) async {
       final semantics = tester.ensureSemantics();
       final store = PlaygroundStore.memory();
       await store.chooseTier('mines', PuzzleTier.expert);
@@ -529,15 +705,17 @@ void main() {
       final before = tester.getRect(_cell(puzzle, middle)).width;
       expect(before, lessThan(48));
       final center = tester.getCenter(_cell(puzzle, middle));
+      // 第一根手指按住 300ms 才落第二根，整个缩放加起来超过长按时长：第二根手指落下就不再算长按。
       final first = await tester.startGesture(center - const Offset(20, 0));
-      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
       final second = await tester.startGesture(center + const Offset(20, 0));
       await tester.pump();
       for (var step = 0; step < 6; step++) {
         await first.moveBy(const Offset(-12, 0));
         await second.moveBy(const Offset(12, 0));
-        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
       }
+      expect(find.bySemanticsLabel(RegExp('，已插旗\$')), findsNothing);
       await first.up();
       await second.up();
       await _step(tester);
