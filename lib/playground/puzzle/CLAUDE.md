@@ -34,6 +34,9 @@
 - flash 记忆闪光（记忆与反应）：
   - flash_rules.dart：FlashRules：3、4、5、6、6 见方，每道题 5 轮、亮的格数逐轮递增（入门 3–4 到专家 10–12）、亮 1.5 秒到 1 秒（参数写在 _tiers）；题面直接列出每轮 1 组图案加 5 组备用（整行、整列、整条对角线全亮的不要，整道题不重样），点错依次换下一组、用完从头轮换（flashPattern），核对不用复现出题过程；flashTap 判一下点按，flashMistakes 按规则重放答案并数出点错次数（点错必须是这一次的最后一下，点齐即止、不许多点）；难度分按格数、平均亮格数与亮的时长（口径在 difficulty 的注释）；答案是每次尝试点的格，最多 flashMaxAttempts 次。
   - flash_page.dart：FlashPage：棋盘上先点「开始」（计时从这里起），每次暗一下再亮、到时熄灭，亮着与暗着时点了不算不震；点对的格保持激活色，点错的格警示色打叉、重震并亮出漏掉的格，停一会儿换下一组；阶段用 Timer 计时（AnimationController 在减少动画时会被压短），减少动画时照样亮灭、只是不渐变；切到后台时亮着的这一组回来重新亮；全部点对后从中心一圈一圈亮一下再弹结果；状态写第几轮与点错次数；棋盘下一行提示兼读屏播报（亮起时念出亮的格）；开始后读屏每格一个按钮（开始前不放，读屏直接走到「开始」）。
+- balance 天平称球（逻辑推理）：
+  - balance_rules.dart：BalanceRules：每档参数写在 _tiers（入门 9 个已知偏重称 2 次、简单 9 个称 3 次、普通 12 个、困难 12 个还要说轻重、专家 13 个，都称 3 次），种子只定平局怎么答；秤按对手规则答（balanceRespond：不预定假球，挑「剩下的候选还要称最多次」的结果，一样多按种子与第几次挑；为什么不按候选最多见文件头），称错一步必定挑到分不清的那支；求解器按每类球的个数做极小极大（balanceSolvable、balanceSolve），难度分按整棵策略树的选择量（口径在 difficulty 的注释）；solved 重放秤的回答、核对次数与两边球数，最后候选恰好是指认的那个才算；答案是每次左右盘的球加指认，解码拒收已知偏重又要说轻重、在次数内找不出的题。
+  - balance_page.dart：BalancePage：上面天平、下面桌上每个球一个固定格（拿走留空圈）；底部分段选放左盘、放右盘或做记号（自己标可能偏重、偏轻、好球，不自动排除），点桌上的球放进盘、点盘里的拿回；「称一下」两边空或不等就不称（轻震、天平晃、提示条写原因，接着做一步就收起），称了天平倾斜、记一行结果，停一会儿球回桌上；「指认」点球（困难档再选偏重或偏轻）确认，还确定不了或对不上就轻震提示，次数用完留在指认里；解开后那个球鼓一下再弹结果；没有撤销（称的次数就是限制）；读屏每个球读编号、在哪与记号。
 
 # 加一个游戏的步骤
 
@@ -51,7 +54,7 @@
 # 测试
 
 - 规则：playground_rules_test.dart；页面：playground_ui_test.dart。
-- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；24 点：playground_twentyfour_test.dart；记忆闪光：playground_flash_test.dart（各自的规则与页面都在自己的文件里）。
+- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；24 点：playground_twentyfour_test.dart；记忆闪光：playground_flash_test.dart；天平称球：playground_balance_test.dart（各自的规则与页面都在自己的文件里）。
 - iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行与推箱子在自己的测试里。
 
 # 人工决策检索

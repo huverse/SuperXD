@@ -1,4 +1,5 @@
 import 'package:superxd/playground/playground_game.dart';
+import 'package:superxd/playground/puzzle/balance/balance_page.dart';
 import 'package:superxd/playground/puzzle/boxes/boxes_page.dart';
 import 'package:superxd/playground/puzzle/flash/flash_page.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
@@ -139,5 +140,16 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.flash,
     group: memoryGroup,
     builder: (context, game, store) => FlashPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'balance',
+    name: '天平称球',
+    summary: '用天平找出不一样的球',
+    howToPlay: '一组外观一样的球里恰好有一个重量不同，用天平称有限的几次把它找出来；有的档还要说出它偏轻还是偏重。天平上方写着这一道的球数和次数。\n'
+        '选「放左盘」或「放右盘」，点桌上的球放进去，点盘里的球拿回来；两边球数一样才能称，每次的结果记在下方。\n'
+        '确定了就点「指认」，点那个球（要说轻重的再选偏重或偏轻）确认。秤不会让你碰运气：只有称的结果只剩它一个时才算找出。「做记号」可以给球标可能偏重、可能偏轻或好球。',
+    icon: CampusIcons.balance,
+    group: logicGroup,
+    builder: (context, game, store) => BalancePage(game: game, store: store),
   ),
 ];
