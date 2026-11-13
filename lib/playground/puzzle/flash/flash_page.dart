@@ -13,6 +13,7 @@ import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 
 // 亮之前先暗一下、一轮点齐后停一下、点错后亮着答案的时长（测试按它推进时钟）；亮着的时长在题面里。
 const flashLead = Duration(milliseconds: 450);
@@ -66,6 +67,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
   static const _pulse = Duration(milliseconds: 320);
   // 一格最大的边长：3×3 在宽屏上不铺得过分大。
   static const _maxPitch = 88.0;
+  static const _hintGap = 16.0;
 
   @override
   void initState() {
@@ -292,21 +294,29 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
     final rounds = _puzzle.rounds.length;
+    // 点齐后停一下的这段，棋盘还亮着这一轮，状态行也还写这一轮，下一轮亮起时才跳。
+    final current = _phase == _Phase.passed ? _round : math.min(_round + 1, rounds);
     return PlayFrame(
       session: _session,
       onNewGame: _newGame,
       onRestart: _restart,
-      status: '第 ${math.min(_round + 1, rounds)}/$rounds 轮 · 点错 $_mistakes 次',
-      board: Column(children: [
-        Expanded(child: PlayBoardBox(aspectRatio: 1, maxWidth: _maxPitch * (_side + 2 * _FlashLayout.inset), builder: _board)),
-        const SizedBox(height: 12),
-        Semantics(
-          container: true,
-          liveRegion: true,
-          label: _announcement,
-          child: ExcludeSemantics(child: Text(_hint, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))),
-        ),
-      ]),
+      status: '第 $current/$rounds 轮 · 点错 $_mistakes 次',
+      // 提示行紧跟在棋盘下面、两者一起居中（不被挤到屏幕底部）：棋盘边长按扣掉提示行后剩下的高度定。
+      board: LayoutBuilder(builder: (context, constraints) {
+        final style = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
+        final hintHeight = campusTextPainter(context, _hint, style: style, maxWidth: constraints.maxWidth).height;
+        final side = math.min(math.min(constraints.maxWidth, _maxPitch * (_side + 2 * _FlashLayout.inset)), constraints.maxHeight - _hintGap - hintHeight);
+        return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
+          SizedBox.square(dimension: side, child: _board(context, Size.square(side))),
+          const SizedBox(height: _hintGap),
+          Semantics(
+            container: true,
+            liveRegion: true,
+            label: _announcement,
+            child: ExcludeSemantics(child: Text(_hint, textAlign: TextAlign.center, style: style)),
+          ),
+        ]));
+      }),
     );
   }
 

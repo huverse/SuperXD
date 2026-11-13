@@ -378,10 +378,11 @@ void main() {
       for (final cell in second.reversed) {
         await _tapCell(tester, cell, 3);
       }
-      expect(_status(2, 1), findsOneWidget);
+      expect(_status(1, 1), findsOneWidget, reason: '点齐后停一下时棋盘还是这一轮，状态行也不先跳');
       expect(find.bySemanticsLabel('这一轮全对'), findsOneWidget);
       _expectBoard(3, (cell) => second.contains(cell) ? '已点亮' : '未点亮');
       await tester.pump(flashHold);
+      expect(_status(2, 1), findsOneWidget);
       await tester.pump(flashLead);
       _expectBoard(3, _lit(flashPattern(puzzle, 1, 0)));
       semantics.dispose();

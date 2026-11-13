@@ -386,7 +386,8 @@ class _CardFace extends StatelessWidget {
     final palette = CampusPalette.of(context);
     final base = campusSurfaceFill(context, selected: picked);
     final fill = Color.lerp(pressed ? Color.alphaBlend(palette.onSurface.withValues(alpha: .06), base) : base, palette.accent, glow)!;
-    final ink = Color.lerp(palette.onSurface, palette.onPrimary, glow)!;
+    // 激活色底上是白字（配色约定白字对 accent 不低于 4.5:1）；onPrimary 是给文字主色底配的，深色下是深色。
+    final ink = Color.lerp(palette.onSurface, Colors.white, glow)!;
     final side = picked
         ? BorderSide(color: palette.accent, width: 2)
         : wrong
