@@ -30,6 +30,10 @@ abstract final class RelayCode {
   static const peerNotFound = 'PEER_NOT_FOUND';
   static const envelopeTooLarge = 'ENVELOPE_TOO_LARGE';
   static const mailboxFull = 'MAILBOX_FULL';
+  static const accountRejected = 'ACCOUNT_REJECTED';
+  static const captchaExpired = 'CAPTCHA_EXPIRED';
+  static const upstreamUnavailable = 'UPSTREAM_UNAVAILABLE';
+  static const accountNotFound = 'ACCOUNT_NOT_FOUND';
   static const internal = 'INTERNAL';
   // 以下只在客户端产生。
   static const network = 'NETWORK'; // 连不上服务器
@@ -38,9 +42,11 @@ abstract final class RelayCode {
 }
 
 class RelayException implements Exception {
-  const RelayException(this.code, {this.retryAfter});
+  const RelayException(this.code, {this.retryAfter, this.detail = const {}});
   final String code;
   final int? retryAfter;
+  // 错误响应的其余字段（应用账号登录被教务拒绝时的 reason、message 等），外部输入，用时逐项校验。
+  final Map<String, Object?> detail;
   @override
   String toString() => 'RelayException($code)';
 }
@@ -147,7 +153,7 @@ class RelayClient {
         continue;
       }
       final retryAfter = response.body['retryAfter'];
-      throw RelayException(code, retryAfter: retryAfter is int ? retryAfter : null);
+      throw RelayException(code, retryAfter: retryAfter is int ? retryAfter : null, detail: response.body);
     }
   }
 
@@ -200,8 +206,9 @@ class RelayClient {
 
   Future<void> ack(SocialIdentity identity, List<String> ids) => _call(identity, 'POST', '/v1/messages/ack', {'ids': ids});
 
-  // 用给定身份签名发一个请求，返回响应体：节日抽签用单独的抽奖身份发（social/festival_pass.dart），接口路径由调用方给。
-  Future<Map<String, Object?>> request(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload]) => _call(identity, method, path, payload);
+  // 用给定身份签名发一个请求，返回响应体：节日抽签用单独的抽奖身份发（social/festival_pass.dart），应用账号用各自的设备密钥发，接口路径由调用方给。
+  // timeout 为空用传输的默认值；应用账号登录要等中转代登录教务，另给更长的。
+  Future<Map<String, Object?>> request(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload, Duration? timeout]) => _call(identity, method, path, payload, timeout);
 
   static int _integer(Object? value) => value is int ? value : throw const RelayException(RelayCode.badResponse);
   static String _text(Object? value) => value is String ? value : throw const RelayException(RelayCode.badResponse);

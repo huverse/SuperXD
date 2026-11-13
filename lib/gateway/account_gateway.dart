@@ -5,8 +5,10 @@ import 'package:synchronized/synchronized.dart';
 
 import 'package:superxd/gateway/kingo_auth.dart';
 import 'package:superxd/edu/kingo_client.dart';
+import 'package:superxd/edu/login_rules.dart';
 import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/domain/account.dart';
+import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
@@ -174,6 +176,33 @@ class AccountGateway extends AccountAccess {
     if (pending == null) return _loginRequired();
     return _finishLogin(pending, await pending.auth.login(pending.expected!.loginId, password));
   });
+
+  // 应用账号核对用的口令摘要（人工决策见 domain/app_account.dart）：给了密码用它，没给用记住的；明文密码不出网关，往上只给摘要。
+  @override
+  Future<GatewayResult<KingoSignInProof>> appAccountProof({String? password}) => _guard(() async {
+    final active = _active;
+    if (_closed || active == null) return _loginRequired();
+    final secret = password ?? (await credentials?.read(store.keyOf(active.identity)))?.password;
+    if (secret == null) return _fail(GatewayCode.passwordNeeded, '要输入一次教务密码');
+    return _ok(kingoSignInProof(active.identity.loginId, secret));
+  });
+
+  // 中转代登录挤掉了本机的教务会话：走同步中会话失效的同一条重登（_recoverOnce），换上新会话、不加代次，页面不动。
+  // 给了密码用它（没记住账号时），重登失败也不删记住的凭据；和正在进行的自动恢复排队，不让两次登录互相挤掉。
+  @override
+  Future<GatewayResult<bool>> refreshSession({String? password}) async {
+    final context = _active;
+    if (_closed || context == null) return _loginRequired();
+    if (password == null && credentials == null) return _fail(GatewayCode.passwordNeeded, '要输入一次教务密码');
+    final running = context.recovery;
+    if (running != null) await running;
+    final future = _recoverOnce(context, password: password);
+    context.recovery = future;
+    unawaited(future.whenComplete(() { if (identical(context.recovery, future)) context.recovery = null; }));
+    final refreshed = await future;
+    if (refreshed.ok) context.recoveryBlocked = false;
+    return refreshed;
+  }
 
   @override
   Future<GatewayResult<LoginView>> submitLoginCaptcha(String code) => _guard(() async {
@@ -345,6 +374,10 @@ class AccountGateway extends AccountAccess {
     await context.drain();
   }
 
+  final _loggedOut = StreamController<AccountIdentity>.broadcast();
+  @override
+  Stream<AccountIdentity> get loggedOut => _loggedOut.stream;
+
   @override
   Future<void> logout() { _cancelRecovery(); return _logout(forget: true); }
 
@@ -367,6 +400,8 @@ class AccountGateway extends AccountAccess {
         old.gateway.client.dispose();
         await old.gateway.database.close();
       }
+      // 用户主动退出（会话过期不算）：应用账号跟着退出由组合根接线（人工决策见 application/app_accounts.dart）。
+      if (forget && old != null) _loggedOut.add(old.identity);
     } finally {
       _changing = false;
       if (identical(_active, old)) old?.accepting = true;
@@ -432,6 +467,7 @@ class AccountGateway extends AccountAccess {
       await old.gateway.database.close();
     }
     await store.close();
+    await _loggedOut.close();
     super.dispose();
   });
 
@@ -529,12 +565,12 @@ class AccountGateway extends AccountAccess {
     return future;
   }
 
-  Future<GatewayResult<bool>> _recoverOnce(_AccountContext context) async {
+  Future<GatewayResult<bool>> _recoverOnce(_AccountContext context, {String? password}) async {
     final epoch = _recoveryEpoch;
     bool active() => !_closed && identical(context, _active) && context.accepting && epoch == _recoveryEpoch;
     KingoClient? client;
     try {
-      final saved = await credentials!.read(store.keyOf(context.identity));
+      final saved = password != null ? RememberedCredential(account: context.identity.loginId, password: password) : await credentials!.read(store.keyOf(context.identity));
       if (!active()) return _changed();
       if (saved == null) return _fail(GatewayCode.sessionExpired, '会话已失效，请登录或开启记住账号');
       await context.drain();
@@ -547,7 +583,7 @@ class AccountGateway extends AccountAccess {
       if (!login.ok || login.needsInput != null) {
         context.recoveryBlocked = true;
         final code = login.error?.code;
-        if (code == GatewayCode.passwordWrong || code == GatewayCode.passwordWrongCount || code == GatewayCode.accountLocked) await credentials!.delete(store.keyOf(context.identity));
+        if (password == null && (code == GatewayCode.passwordWrong || code == GatewayCode.passwordWrongCount || code == GatewayCode.accountLocked)) await credentials!.delete(store.keyOf(context.identity));
         return _fail(GatewayCode.sessionExpired, login.needsInput == 'captcha' ? '自动登录需要验证码，请手动登录完成验证' : '自动登录未完成：${login.error?.message ?? '需要人工验证'}');
       }
       if (auth.session?.loginId != context.identity.loginId) { context.recoveryBlocked = true; return _fail(GatewayCode.sessionExpired, '自动登录身份不一致，已停止'); }
