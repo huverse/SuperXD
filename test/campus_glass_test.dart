@@ -451,6 +451,37 @@ void main() {
       expect(tester.takeException(), isNull);
     });
 
+    testWidgets('hideCampusToast 收起过时的提示：收拢后拿掉，减少动画时直接拿掉，没有提示条时什么也不做', (tester) async {
+      late BuildContext page;
+      await tester.pumpWidget(host(Scaffold(body: Builder(builder: (context) {
+        page = context;
+        return const SizedBox.expand();
+      }))));
+      hideCampusToast();
+      showCampusToast(page, '船上最多 2 个');
+      await tester.pumpAndSettle();
+      expect(toastOf('船上最多 2 个'), findsOneWidget);
+      hideCampusToast();
+      await tester.pump(const Duration(milliseconds: 120));
+      expect(toastOf('船上最多 2 个'), findsOneWidget, reason: '收拢动画中途还在');
+      // 收拢 250ms 从第一帧起算，第二次推进要走满；走完后拿掉条目，下一帧才从画面上消失。
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      expect(toastOf('船上最多 2 个'), findsNothing, reason: '不等 4 秒，收拢完就拿掉');
+
+      tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(disableAnimations: true);
+      addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+      await tester.pump();
+      showCampusToast(page, '有人不在船这一岸');
+      await tester.pump();
+      expect(toastOf('有人不在船这一岸'), findsOneWidget);
+      hideCampusToast();
+      await tester.pump();
+      expect(toastOf('有人不在船这一岸'), findsNothing);
+      await tester.pump(const Duration(seconds: 5));
+      expect(tester.takeException(), isNull);
+    });
+
     // [人工决策] 见 campus_transitions.dart 的 showCampusToast（11-09 上浮避让 + 点穿）。
     testWidgets('提示条停在锚点上方；不带操作的不拦点按、点得到下面，带操作的照常可点；弹层开着时底下页面的锚点不算', (tester) async {
       await tester.binding.setSurfaceSize(const Size(400, 800));

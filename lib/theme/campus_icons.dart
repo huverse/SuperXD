@@ -114,7 +114,13 @@ abstract final class CampusIcons {
   static const nonogram = LucideIcons.grid3x3;
   static const queens = LucideIcons.crown;
   static const ice = LucideIcons.snowflake;
+  static const boxes = LucideIcons.boxes;
   static const lights = LucideIcons.lightbulb;
+  // 骑士与无赖：游戏图标是半边实心的盾（一半真话一半假话），标签上骑士是盾、无赖是面具。
+  static const knights = LucideIcons.shieldHalf;
+  static const knight = LucideIcons.shield;
+  static const knave = LucideIcons.venetianMask;
+  static const river = LucideIcons.sailboat;
 }
 
 void configureCampusIcons() =>

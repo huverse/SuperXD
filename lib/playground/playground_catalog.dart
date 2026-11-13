@@ -1,9 +1,12 @@
 import 'package:superxd/playground/playground_game.dart';
+import 'package:superxd/playground/puzzle/boxes/boxes_page.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
 import 'package:superxd/playground/puzzle/ice/ice_page.dart';
+import 'package:superxd/playground/puzzle/knights/knights_page.dart';
 import 'package:superxd/playground/puzzle/lights/lights_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
 import 'package:superxd/playground/puzzle/queens/queens_page.dart';
+import 'package:superxd/playground/puzzle/river/river_page.dart';
 import 'package:superxd/theme/campus_icons.dart';
 
 // [人工决策-2026-11-12 21:00:20] 游乐场的板块、子类与游戏只在这一处登记（同百宝箱 toolbox_catalog.dart）；id 发出后不改。
@@ -78,5 +81,39 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.lights,
     group: gridGroup,
     builder: (context, game, store) => LightsPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'knights',
+    name: '骑士与无赖',
+    summary: '谁说真话，谁在说谎',
+    howToPlay: '岛上住着骑士和无赖：骑士永远说真话，无赖永远说假话。每张卡片上是一个人说的一句话，「我们」包括说话的人自己。\n'
+        '点卡片上的「骑士」或「无赖」定下这个人的身份，再点一次取消。\n'
+        '全部定下就判定：每个人的话都要和他的身份对得上。对不上的人会标成红色，自己找出矛盾再改；每道题的答案都唯一。',
+    icon: CampusIcons.knights,
+    group: logicGroup,
+    builder: (context, game, store) => KnightsPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'river',
+    name: '过河问题',
+    summary: '小船往返，全员过河',
+    howToPlay: '用一条小船把所有人和物都送到右岸。船上至少一人、不超过船的容量，船上要有会划船的人才开得了。\n'
+        '点岸上的人上船（船要停在这一岸），点船上的人下船；坐好了点「开船」。靠岸以后船上的人算在那一岸，可以留在船上接着坐。\n'
+        '每档的规矩不同，河上方写着这一道的：农夫过河只有农夫会划船，没人看着时狼会吃羊、羊会吃白菜；大人与小孩是有大人的岸上，小孩不能比大人多；'
+        '父子是爸爸不在时，孩子不能和别人家的爸爸待在一起。会犯规的开不了船，会提示原因；撤销按整次渡河退回。',
+    icon: CampusIcons.river,
+    group: planningGroup,
+    builder: (context, game, store) => RiverPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'boxes',
+    name: '推箱子',
+    summary: '把箱子都推到目标点',
+    howToPlay: '在房间里上下左右走，走进箱子就把它朝前推一格。只能推、不能拉，一次只能推一个，箱子前面是墙或别的箱子就推不动。\n'
+        '在棋盘上滑一下走一格，也可以点下方的方向键；推错了可以撤销。\n'
+        '把所有箱子都推到圆环标出的目标点上就解开了。状态行写推了几次和最少要推几次。',
+    icon: CampusIcons.boxes,
+    group: planningGroup,
+    builder: (context, game, store) => BoxesPage(game: game, store: store),
   ),
 ];
