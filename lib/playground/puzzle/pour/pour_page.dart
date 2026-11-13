@@ -251,11 +251,7 @@ class _PourPageState extends State<PourPage> with TickerProviderStateMixin, Widg
     if (simulation.outcome == PourOutcome.running) return;
     _ticker.stop();
     setState(() => _running = false);
-    if (simulation.outcome == PourOutcome.won) {
-      unawaited(_finish());
-    } else {
-      showCampusToast(context, '没进杯，再试一次');
-    }
+    if (simulation.outcome == PourOutcome.won) unawaited(_finish());
   }
 
   // 解开：停表记成绩，杯子亮一下、光圈漾开，再弹结果；减少动画时直接弹。中途换题或从头来会停掉动画，等着的这一段就不再往下走。
@@ -288,17 +284,22 @@ class _PourPageState extends State<PourPage> with TickerProviderStateMixin, Widg
   @override
   Widget build(BuildContext context) {
     final finished = _session.finished, editable = _strokes.isNotEmpty && !_running && !finished;
+    final missed = !_running && _simulation?.outcome == PourOutcome.lost;
     return PlayFrame(
       session: _session,
       onNewGame: _newGame,
       onRestart: _restart,
-      status: ['墨水 $_inkLeft%', if (_strokes.isNotEmpty) '${_strokes.length} 笔'].join(' · '),
+      status: [if (missed) '没进杯', '墨水 $_inkLeft%', if (_strokes.isNotEmpty) '${_strokes.length} 笔'].join(' · '),
       controls: [
         FilledButton.icon(onPressed: editable ? _undo : null, icon: const CampusIcon(CampusIcons.undo), label: const Text('撤销')),
         FilledButton.icon(onPressed: editable ? _clear : null, icon: const CampusIcon(CampusIcons.erase), label: const Text('重画')),
         FilledButton.icon(style: campusProminent, onPressed: finished ? null : _drop, icon: CampusIcon(_running ? CampusIcons.stop : CampusIcons.resume), label: Text(_running ? '停下' : '放球')),
       ],
-      board: PlayBoardBox(aspectRatio: pourWidth / pourHeight, builder: _board),
+      // 没进杯写在状态行、读屏靠这里的播报，不弹提示条：提示条停在底部按钮上方，正好盖住棋盘下沿（常常就是杯子那块）、接住画线的手指。
+      board: Stack(children: [
+        Positioned.fill(child: PlayBoardBox(aspectRatio: pourWidth / pourHeight, builder: _board)),
+        Semantics(liveRegion: true, label: missed ? '没进杯，再试一次' : '', child: const SizedBox.shrink()),
+      ]),
     );
   }
 

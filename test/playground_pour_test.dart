@@ -9,6 +9,7 @@ import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/playground/puzzle/pour/pour_page.dart';
 import 'package:superxd/playground/puzzle/pour/pour_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
+import 'package:superxd/theme/campus_glass_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 
@@ -345,15 +346,20 @@ void main() {
       expect(find.widgetWithText(FilledButton, '撤销'), findsOneWidget);
       expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '撤销')).onPressed, isNull);
 
-      await _runOut(tester);
-      expect(find.text('没进杯，再试一次'), findsOneWidget);
-      expect(find.widgetWithText(FilledButton, '放球'), findsOneWidget);
-      expect(find.bySemanticsLabel(RegExp('，上一次没进杯')), findsOneWidget);
-      // 提示条浮在棋盘下沿上方、会接住手指，先收起再画。
+      // 放球中不能画线的提示过时了，收掉再看没进杯。
       hideCampusToast();
       await tester.pump(const Duration(milliseconds: 400));
+      await _runOut(tester);
+      // 没进杯写在状态行、读屏有播报，不弹提示条（它会盖住棋盘下沿、接住画线的手指）。
+      expect(find.textContaining('没进杯'), findsOneWidget);
+      expect(find.byType(CampusOverlayGlass), findsNothing);
+      expect(tester.getSemantics(find.bySemanticsLabel('没进杯，再试一次')), isSemantics(label: '没进杯，再试一次', isLiveRegion: true));
+      expect(find.widgetWithText(FilledButton, '放球'), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('，上一次没进杯')), findsOneWidget);
+      // 马上就能在棋盘下沿画线。
       await _draw(tester, [300, 792, 500, 792]);
       expect(_strokeCount(2), findsOneWidget);
+      expect(find.textContaining('没进杯'), findsNothing);
       expect(find.bySemanticsLabel(RegExp('，上一次没进杯')), findsNothing);
       semantics.dispose();
     });
@@ -372,7 +378,7 @@ void main() {
       tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
       await _runOut(tester);
       expect(find.widgetWithText(FilledButton, '放球'), findsOneWidget);
-      expect(find.text('没进杯，再试一次'), findsOneWidget);
+      expect(find.textContaining('没进杯'), findsOneWidget);
     });
 
     testWidgets('减少动画时进杯停稳马上弹结果', (tester) async {
