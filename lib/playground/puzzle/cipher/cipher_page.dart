@@ -265,10 +265,14 @@ class _CipherPageState extends State<CipherPage> with TickerProviderStateMixin {
             _keypad(context, keyHeight),
           ]),
         )));
-        // 放得下时键盘停在底部、线索在上面单独滚；太矮（横屏、超大字号）时连键盘一起滚。
+        // 放得下时键盘停在底部、线索在上面单独滚（线索少时在上面的区域里居中）；太矮（横屏、超大字号）时连键盘一起滚。
         if (constraints.maxHeight - inputHeight - 12 >= 140) {
           return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Expanded(child: CampusScrollFade(child: SingleChildScrollView(controller: _scroll, padding: const EdgeInsets.symmetric(vertical: 4), child: clues))),
+            Expanded(child: LayoutBuilder(builder: (context, area) => CampusScrollFade(child: SingleChildScrollView(
+              controller: _scroll,
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: ConstrainedBox(constraints: BoxConstraints(minHeight: math.max(0, area.maxHeight - 8)), child: Center(child: clues)),
+            )))),
             const SizedBox(height: 12),
             input,
           ]);
@@ -290,7 +294,7 @@ class _CipherPageState extends State<CipherPage> with TickerProviderStateMixin {
       child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(4, 0, 4, 8),
-          child: DotSeparatedText('密码 ${puzzle.length} 位 · 数字 0–${puzzle.digits - 1} · 各不相同', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+          child: DotSeparatedText('${puzzle.length} 位 · 数字 0–${puzzle.digits - 1} · 不重复', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
         ),
         for (final (index, row) in puzzle.rows.indexed) ...[
           if (index > 0) const SizedBox(height: 8),
@@ -311,7 +315,7 @@ class _CipherPageState extends State<CipherPage> with TickerProviderStateMixin {
         CampusSurface(
           radius: 20,
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             // 一行数字不折行（位置就是信息）：5 位也只占 264 宽，360dp 的屏上放得下。
             Row(mainAxisSize: MainAxisSize.min, children: [
               for (final (position, digit) in row.guess.indexed) ...[

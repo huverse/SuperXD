@@ -315,7 +315,7 @@ void main() {
       final haptics = _haptics(tester);
       await _open(tester, seed: 3);
       final draw = _rules.generate(3, PuzzleTier.entry);
-      expect(find.bySemanticsLabel('密码 3 位 · 数字 0–5 · 各不相同'), findsOneWidget);
+      expect(find.bySemanticsLabel('3 位 · 数字 0–5 · 不重复'), findsOneWidget);
       for (var digit = 0; digit < 6; digit++) {
         expect(_key(digit), findsOneWidget);
       }
@@ -445,8 +445,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(find.text('新纪录'), findsOneWidget);
       // 结果里的说明行按「 · 」分项排（项尾带不换行空格与点），按开头认。
-      expect(find.textContaining(RegExp('^3 位')), findsOneWidget);
-      expect(find.textContaining(RegExp('^判错 1 次')), findsOneWidget);
+      Finder sheet(Pattern text) => find.descendant(of: find.byType(CampusSheetPanel), matching: find.textContaining(text));
+      expect(sheet(RegExp('^3 位')), findsOneWidget);
+      expect(sheet(RegExp('^判错 1 次')), findsOneWidget);
       expect(store.best('cipher', PuzzleTier.entry), isNotNull);
 
       await tester.tap(find.text('换到简单'));
@@ -454,7 +455,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 400));
       expect(store.tierOf('cipher'), PuzzleTier.easy);
       expect(_status(0, 3), findsOneWidget);
-      expect(find.bySemanticsLabel('密码 3 位 · 数字 0–9 · 各不相同'), findsOneWidget);
+      expect(find.bySemanticsLabel('3 位 · 数字 0–9 · 不重复'), findsOneWidget);
       expect(_key(9), findsOneWidget);
       semantics.dispose();
     });
