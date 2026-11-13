@@ -39,16 +39,24 @@ void main() {
     ]);
     await tester.pumpWidget(MaterialApp.router(theme: campusTheme(), routerConfig: router));
     await tester.pumpAndSettle();
-    expect(find.text('格子谜题'), findsOneWidget);
-    expect(find.text('移动与规划'), findsOneWidget);
-    // 没有游戏的子类不显示，也不放占位卡（按登记表里还空着的子类查，游戏陆续登记进来也不用改这里）。
-    for (final group in playgroundGroups.where((group) => !playgroundCatalog.any((game) => game.group.id == group.id))) {
-      expect(find.text(group.name), findsNothing);
+    // 有游戏的子类按顺序都显示；没有游戏的子类不显示，也不放占位卡（按登记表查，游戏陆续登记进来也不用改这里）。
+    // 游戏多了首页要滚动、列表按需构建，所以按顺序滚到每个标题再看，最后滚回顶部。
+    final scrollable = find.descendant(of: find.byType(PlaygroundPage), matching: find.byType(Scrollable)).first;
+    for (final group in playgroundGroups) {
+      if (playgroundCatalog.any((game) => game.group.id == group.id)) {
+        await tester.scrollUntilVisible(find.text(group.name), 200, scrollable: scrollable);
+        await tester.pumpAndSettle();
+        expect(find.text(group.name), findsOneWidget);
+      } else {
+        expect(find.text(group.name), findsNothing);
+      }
     }
+    await tester.drag(scrollable, const Offset(0, 10000));
+    await tester.pumpAndSettle();
     expect(find.text('最近玩过'), findsNothing);
 
-    // 游戏多了首页要滚动，列表按需构建：先滚到汉诺塔再点（跳到位后排一帧再点，不然按跳之前的位置点）。
-    await tester.scrollUntilVisible(find.text('汉诺塔'), 200, scrollable: find.descendant(of: find.byType(PlaygroundPage), matching: find.byType(Scrollable)).first);
+    // 先滚到汉诺塔再点（跳到位后排一帧再点，不然按跳之前的位置点）。
+    await tester.scrollUntilVisible(find.text('汉诺塔'), 200, scrollable: scrollable);
     await tester.pumpAndSettle();
     await tester.tap(find.text('汉诺塔'));
     await tester.pumpAndSettle();
