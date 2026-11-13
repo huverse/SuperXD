@@ -111,6 +111,7 @@ final Map<IconData, String> _symbols = {
   CampusIcons.nonogram: 'square.grid.3x3',
   CampusIcons.queens: 'crown',
   CampusIcons.ice: 'snowflake',
+  CampusIcons.boxes: 'shippingbox',
   CampusIcons.lights: 'lightbulb',
   CampusIcons.knights: 'shield.lefthalf.filled',
   CampusIcons.knight: 'shield',

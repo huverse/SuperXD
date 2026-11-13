@@ -1,4 +1,5 @@
 import 'package:superxd/playground/playground_game.dart';
+import 'package:superxd/playground/puzzle/boxes/boxes_page.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
 import 'package:superxd/playground/puzzle/ice/ice_page.dart';
 import 'package:superxd/playground/puzzle/knights/knights_page.dart';
@@ -103,5 +104,16 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.river,
     group: planningGroup,
     builder: (context, game, store) => RiverPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'boxes',
+    name: '推箱子',
+    summary: '把箱子都推到目标点',
+    howToPlay: '在房间里上下左右走，走进箱子就把它朝前推一格。只能推、不能拉，一次只能推一个，箱子前面是墙或别的箱子就推不动。\n'
+        '在棋盘上滑一下走一格，也可以点下方的方向键；推错了可以撤销。\n'
+        '把所有箱子都推到圆环标出的目标点上就解开了。状态行写推了几次和最少要推几次。',
+    icon: CampusIcons.boxes,
+    group: planningGroup,
+    builder: (context, game, store) => BoxesPage(game: game, store: store),
   ),
 ];

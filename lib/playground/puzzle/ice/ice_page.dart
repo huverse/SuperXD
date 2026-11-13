@@ -3,9 +3,9 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'dart:ui' as ui;
 
-import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'package:superxd/playground/play_controls.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -205,7 +205,7 @@ class _IcePageState extends State<IcePage> with TickerProviderStateMixin {
       board: Column(children: [
         Expanded(child: PlayBoardBox(aspectRatio: _session.puzzle.width / _session.puzzle.height, builder: _board)),
         const SizedBox(height: 16),
-        _Pad(onPush: finished ? null : _push),
+        PlayDirectionPad(verb: '滑', onPush: finished ? null : _push),
       ]),
     );
   }
@@ -219,12 +219,8 @@ class _IcePageState extends State<IcePage> with TickerProviderStateMixin {
       container: true,
       label: '冰面 ${puzzle.width}×${puzzle.height}，棋子在${place(_cell)}，终点在${place(puzzle.goal)}${_cell == puzzle.goal ? '，已到达' : ''}',
       hint: '上下左右滑动推动棋子，也可以用下方的方向按钮',
-      child: RawGestureDetector(
-        behavior: HitTestBehavior.opaque,
-        excludeFromSemantics: true,
-        gestures: {
-          _SwipeRecognizer: GestureRecognizerFactoryWithHandlers<_SwipeRecognizer>(_SwipeRecognizer.new, (recognizer) => recognizer.onSwipe = _push),
-        },
+      child: playSwipeArea(
+        onSwipe: _push,
         child: Stack(fit: StackFit.expand, children: [
           RepaintBoundary(child: CustomPaint(painter: _IcePainter(scene))),
           RepaintBoundary(child: CustomPaint(painter: _PiecePainter(scene: scene, pose: _pose, repaint: _motion))),
@@ -240,83 +236,6 @@ Offset _unit(int direction) => switch (direction) {
   iceDown => const Offset(0, 1),
   _ => const Offset(-1, 0),
 };
-
-// 棋盘上的滑动：手指一落下就赢下手势竞争（iOS 的页面任意位置右滑返回也在抢横向移动，见 campus_transitions.dart 的 _IosBackSwipe），
-// 走过触摸门槛后按横竖哪边走得多认一个方向，这一笔里只认一次；只跟第一根手指。
-class _SwipeRecognizer extends OneSequenceGestureRecognizer {
-  void Function(int direction)? onSwipe;
-  int? _pointer;
-  Offset _origin = Offset.zero;
-  bool _fired = false;
-
-  @override
-  void addAllowedPointer(PointerDownEvent event) {
-    if (_pointer != null) return;
-    super.addAllowedPointer(event);
-    _pointer = event.pointer;
-    _origin = event.position;
-    _fired = false;
-    resolve(GestureDisposition.accepted);
-  }
-
-  @override
-  void handleEvent(PointerEvent event) {
-    if (event.pointer != _pointer) return;
-    if (event is PointerMoveEvent && !_fired) {
-      final delta = event.position - _origin;
-      if (delta.distance < kTouchSlop) return;
-      _fired = true;
-      final direction = delta.dx.abs() > delta.dy.abs() ? (delta.dx > 0 ? iceRight : iceLeft) : (delta.dy > 0 ? iceDown : iceUp);
-      invokeCallback<void>('onSwipe', () => onSwipe?.call(direction));
-    } else if (event is PointerUpEvent || event is PointerCancelEvent) {
-      stopTrackingPointer(event.pointer);
-    }
-  }
-
-  @override
-  void didStopTrackingLastPointer(int pointer) => _pointer = null;
-
-  @override
-  void acceptGesture(int pointer) {}
-
-  @override
-  void rejectGesture(int pointer) => stopTrackingPointer(pointer);
-
-  @override
-  String get debugDescription => 'ice swipe';
-}
-
-// 棋盘下方的方向键：上下在中间一列、左右在两边，排成紧凑的十字；内容区的色调圆钮，每个都有读屏标签与长按提示。
-class _Pad extends StatelessWidget {
-  const _Pad({required this.onPush});
-  final void Function(int direction)? onPush;
-
-  static const _size = 52.0, _gap = 6.0;
-
-  @override
-  Widget build(BuildContext context) {
-    Widget key(int direction, String label, IconData icon, double left, double top) => Positioned(
-      left: left,
-      top: top,
-      child: Tooltip(
-        message: label,
-        excludeFromSemantics: true,
-        child: FilledButton(
-          onPressed: onPush == null ? null : () => onPush!(direction),
-          style: FilledButton.styleFrom(shape: const CircleBorder(), fixedSize: const Size.square(_size), minimumSize: const Size.square(_size), padding: EdgeInsets.zero),
-          child: Semantics(label: label, excludeSemantics: true, child: CampusIcon(icon, size: 26)),
-        ),
-      ),
-    );
-    const middle = (_size + _gap) / 2;
-    return SizedBox(width: _size * 3 + _gap * 2, height: _size * 2 + _gap, child: Stack(children: [
-      key(iceUp, '向上滑', CampusIcons.collapse, _size + _gap, 0),
-      key(iceLeft, '向左滑', CampusIcons.previous, 0, middle),
-      key(iceRight, '向右滑', CampusIcons.next, (_size + _gap) * 2, middle),
-      key(iceDown, '向下滑', CampusIcons.expand, _size + _gap, _size + _gap),
-    ]));
-  }
-}
 
 class _Pose {
   const _Pose({required this.at, required this.facing, required this.squash, required this.squashDirection, required this.hop, required this.trailFrom, required this.trail, required this.ring});
