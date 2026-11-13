@@ -1,0 +1,17 @@
+{
+  "note": "应用账号封装口令摘要的信封：客户端 lib/social/account_seal.dart 封装、服务端 src/modules/account/account_keys.ts 打开；全部合成数据。",
+  "recipientSeed": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+  "recipientPublic": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9_AsrhtHHw",
+  "ephemeralSeed": "yMfGxcTDwsHAv769vLu6ubi3trW0s7KxsK-urayrqqk",
+  "nonce": "AAcOFRwjKjE4P0ZN",
+  "deviceId": "AAAAAAAAAAAAAAAAAAAAAA",
+  "proof": {
+    "account": "20260000001",
+    "passwordDigest": "7f0713c4944e88155d2074e7d8605289",
+    "expression": "5",
+    "length": "12",
+    "userzh": "0",
+    "policy": "1"
+  },
+  "sealed": "AY2vz-6ukEXumnjXipn88y53geRB6wcwlsNCuOLcw7YSAAcOFRwjKjE4P0ZNLnNFuan5G_0hUp1ja9O4uAEkY-lM7EV8jigMlkezVQrPniANBxWPHS-pi6pZXE3PqZQFCM0IosuBbRDl9Qznx1sdMS0n6hTX1hde6bVA8saXBD0O5vhStmzbk43mYp95t7QM1wbF-pPNov-q1OA3y6daRWbdi1qjPBJOCNiNZ-cIhf0UmjPxgWWbFRi8klC2PGTvittK"
+}

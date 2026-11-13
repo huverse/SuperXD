@@ -26,7 +26,7 @@
 - login_rules.dart：登录与页面结果判定。
   - explainLogin 把教务状态码和提示映射为 LoginFailure（带 GatewayCode）。
   - explainPage 识别页面里的会话失效。
-  - 另含验证码判定与提示文案，以及登录明文的拼装。
+  - 另含验证码判定与提示文案，以及登录明文的拼装：buildLoginPlain 先由 kingoSignInProof 把明文密码换成口令摘要（hexMd5 与四项强度旁证），再由 buildProofLoginPlain 拼装；应用账号核对时只把口令摘要交给中转，服务端 kingo_codec.ts 用同一算法登录，双端共用 server/test/vectors/kingo_login_v1.json（contract_test.dart 守护）。
 - parse_terms.dart：把学期下拉列表的 JSON 解析为 ParsedTerm（学年 xn、学期 xq、名称）。
 - parse_schedule.dart：
   - 把课表页 HTML 解析为 ParsedSchedule。

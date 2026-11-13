@@ -1,4 +1,4 @@
-import { deviceMissingSeconds, inviteTtlSeconds, nonceTtlSeconds, seenWriteSeconds } from 'src/common/relay_limits';
+import { deviceMissingSeconds, inviteTtlSeconds, kingoChallengeSeconds, nonceTtlSeconds, seenWriteSeconds } from 'src/common/relay_limits';
 
 // Redis key 注册表：所有 key 在此构造，service 不得硬编码 key 字符串。全局前缀由 REDIS_KEY_PREFIX 配置（ioredis keyPrefix）。
 // 这里全部是运行态或可丢的短期状态，权威数据只在 MySQL。丢了的后果：邀请失效需重新出示、限流窗口归零、
@@ -11,6 +11,7 @@ export const RedisKeyTTL = {
   deviceMissing: deviceMissingSeconds,
   // 清理任务每 10 分钟按目录重写一次并续期；任务停了一天才过期（之后上限从零重计，靠清理任务恢复后重建）。
   diagnosticUsage: 24 * 60 * 60,
+  kingoChallenge: kingoChallengeSeconds,
 } as const;
 
 export const RedisKeys = {
@@ -30,6 +31,9 @@ export const RedisKeys = {
   lock: (name: string) => `lock:${name}`,
   // 诊断包目录的已用量：Hash {bytes, files}，字段固定 2 个。上传时原子预占、写盘失败退回，清理任务每轮按目录实际重写（丢了也由它重建，在那之前上限偏松）。
   diagnosticUsage: () => 'diagnostic_usage',
+  // 应用账号登录要验证码时的教务会话：单值 JSON {deviceId, jar, pageSession}，cookie 只有教务给的几项，几百字节；5 分钟过期，答题时取出即删。
+  // 丢了只是这次要重新登录。
+  kingoChallenge: (challengeId: string) => `kingo_challenge:${challengeId}`,
 } as const;
 
 // 发布订阅频道：ioredis 的 keyPrefix 不作用于频道名，这里手动加同一前缀隔离环境。

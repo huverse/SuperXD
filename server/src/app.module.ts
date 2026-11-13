@@ -4,6 +4,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { env } from 'src/config/env';
 import { RedisModule } from 'src/common/redis/redis.module';
+import { AccountDeviceEntity, AccountIdentityEntity, AppAccountEntity } from 'src/modules/account/account.entity';
+import { AccountModule } from 'src/modules/account/account.module';
 import { AppReleaseModule } from 'src/modules/app_release/app_release.module';
 import { ChaoxingPackEntity } from 'src/modules/chaoxing/chaoxing_pack.entity';
 import { ChaoxingPackModule } from 'src/modules/chaoxing/chaoxing_pack.module';
@@ -26,7 +28,7 @@ import { RewardModule } from 'src/modules/reward/reward.module';
       useFactory: () => ({
         type: 'mysql',
         ...env().mysql,
-        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity, RewardCampaignEntity, RewardPrizeEntity, RewardDrawEntity],
+        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity, RewardCampaignEntity, RewardPrizeEntity, RewardDrawEntity, AppAccountEntity, AccountIdentityEntity, AccountDeviceEntity],
         // 表结构由人工执行 sql/schema.sql 管理，启动不做 DDL。
         synchronize: false,
         migrationsRun: false,
@@ -51,6 +53,7 @@ import { RewardModule } from 'src/modules/reward/reward.module';
     AppReleaseModule,
     RewardModule,
     DiagnosticModule,
+    AccountModule,
   ],
   controllers: [HealthController],
 })

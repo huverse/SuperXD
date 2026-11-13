@@ -37,6 +37,11 @@ export class DeviceService {
       const retryAfter = await this.limiter.hit('register', rateSubjectOf(ip), registerPerHour, 3600);
       if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '注册过于频繁', { retryAfter });
     }
+    await this.enroll(deviceId, signPublicKey, boxPublicKey);
+  }
+
+  // 登记设备、不过注册限流：给已经另有限流把关的入口用（应用账号登录核对通过后登记它的设备密钥）。调用方已核对设备号与公钥一致（自签名）。
+  async enroll(deviceId: string, signPublicKey: string, boxPublicKey: string) {
     const created = await this.devices.upsert(deviceId, signPublicKey, boxPublicKey);
     // 覆盖负缓存：新注册立刻在所有实例生效；这个标记留到负缓存期满，期间与注册交错、查库没查到的请求也写不回「不存在」（signKey 用 NX）。
     await this.redis.set(RedisKeys.deviceMissing(deviceId), registeredMark, 'EX', RedisKeyTTL.deviceMissing);

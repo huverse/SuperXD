@@ -90,6 +90,27 @@ export const diagnosticKeepDays = 30;
 export const diagnosticStoreMaxBytes = 2 * 1024 * 1024 * 1024;
 export const diagnosticStoreMaxFiles = 2000;
 
+// 应用账号（人工决策见 src/modules/account/account_provider.ts 与客户端 lib/domain/app_account.dart）：
+// 登录核对要中转代登录一次学校教务，限流防两件事——被拿来试同学的密码（按学号每天最多 10 次尝试，含验证码重试），
+// 以及学校看到我们的 IP 大量登录（全局每小时 600 次，所有实例共用一个计数）。同一来源每小时 300 次（校园网 NAT 共用出口），每台设备每小时 10 次。
+// 每个实例同时最多 4 个代登录在跑（每个要连发七八个教务请求），超出回 503 让客户端稍后再试。
+// 教务每个请求 12 秒超时、整次核对最多 40 秒（客户端等 45 秒）；教务响应超过 1MB 当格式不对。
+// 需要验证码时教务会话在 Redis 存 5 分钟（只有 cookie 与页面会话号，不存口令摘要，答题时客户端重新加密交来）。
+// 封装后的口令摘要不超过 1KB（明文 JSON 两百来字节加 61 字节信封头）。
+// 一个账号最多同时登录在 20 把设备密钥上，再登录顶掉最久没用的那把；账号 400 天没有登录或查看即删除（同设备）。
+export const accountSignInPerDevicePerHour = 10;
+export const accountSignInPerSourcePerHour = 300;
+export const accountSignInPerHour = 600;
+export const accountSignInPerSubjectPerDay = 10;
+export const kingoConcurrentPerInstance = 4;
+export const kingoRequestTimeoutMs = 12_000;
+export const kingoSignInDeadlineMs = 40_000;
+export const kingoResponseMaxBytes = 1024 * 1024;
+export const kingoChallengeSeconds = 5 * 60;
+export const accountSealMaxBytes = 1024;
+export const accountDeviceLimit = 20;
+export const accountIdleDays = 400;
+
 // 设备 400 天没有任何请求即删除，连同其好友关系与待取消息。
 export const deviceIdleDays = 400;
 // 最后活跃时间每设备最多每小时写一次库。
