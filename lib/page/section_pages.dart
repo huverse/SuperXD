@@ -8,6 +8,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/app_session.dart';
+import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/application/festivals.dart';
@@ -45,8 +46,10 @@ class ServicePage extends StatelessWidget {
 }
 
 class MinePage extends StatelessWidget {
-  const MinePage({super.key, required this.session, this.social, this.updates, this.developer, this.logs, this.paintings, this.notes, this.festivals, this.saveRewardPicture});
+  const MinePage({super.key, required this.session, this.social, this.updates, this.developer, this.logs, this.paintings, this.notes, this.festivals, this.appAccounts, this.saveRewardPicture});
   final AppSession session;
+  // 应用账号（设备级，跟着当前教务账号）；没配中转时为空，账号页不显示那一组。
+  final AppAccounts? appAccounts;
   final SocialService? social;
   // 开发者的话（设备级）；为空（没配中转）或还没有信时不显示这一行。
   final DeveloperNotes? notes;
@@ -74,7 +77,7 @@ class MinePage extends StatelessWidget {
             ListenableBuilder(listenable: session, builder: (context, _) {
               final account = session.gateway.activeSession;
               final name = account == null ? '' : account.name.isEmpty ? account.loginId : account.name;
-              return CampusSurface(padding: const EdgeInsets.all(20), onTap: () => _push(context, AccountPage(session: session, name: name)), child: Row(children: [
+              return CampusSurface(padding: const EdgeInsets.all(20), onTap: () => _push(context, AccountPage(session: session, name: name, appAccounts: appAccounts)), child: Row(children: [
                 CircleAvatar(radius: 28, backgroundColor: CampusPalette.of(context).surfaceSelected, child: CampusIcon(CampusIcons.account, color: CampusPalette.of(context).primary, size: 28)),
                 const SizedBox(width: 16),
                 Expanded(child: AccountTitle(name: name)),

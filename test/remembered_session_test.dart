@@ -8,6 +8,7 @@ import 'package:superxd/app_session.dart';
 import 'package:superxd/application/auto_sync.dart';
 import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/edu/kingo_client.dart';
+import 'package:superxd/edu/kingo_codec.dart';
 import 'package:superxd/edu/login_rules.dart';
 import 'package:superxd/edu/parse_schedule.dart';
 import 'package:superxd/edu/parse_terms.dart';
@@ -331,6 +332,49 @@ void main() {
     expect((await gateway.syncSchedule(_term)).ok, isTrue);
     expect(clients.first.reads, 1);
     expect(clients.skip(1).every((client) => client.reads == 0), isTrue);
+  });
+
+  // 应用账号（人工决策见 domain/app_account.dart）：网关只往上给口令摘要；中转代登录挤掉本机会话后，用同一个密码重登，不换代次。
+  group('应用账号核对', () {
+    test('口令摘要：给了密码用它，没给用记住的，都没有要输密码', () async {
+      await gateway.loginRemembered('A', 'test-secret', remember: false);
+      expect((await gateway.appAccountProof()).error?.code, 'PASSWORD_NEEDED');
+      final given = await gateway.appAccountProof(password: 'typed-secret');
+      expect(given.data?.toJson(), kingoSignInProof('A', 'typed-secret').toJson());
+      await gateway.loginRemembered('A', 'test-secret', remember: true);
+      expect((await gateway.appAccountProof()).data?.passwordDigest, hexMd5('test-secret'));
+      await gateway.logout();
+      expect((await gateway.appAccountProof(password: 'x')).error?.code, 'SESSION_EXPIRED');
+    });
+
+    test('重登换上新会话、不换代次；给的密码不对时不删记住的凭据', () async {
+      await gateway.loginRemembered('A', 'test-secret', remember: true);
+      final generation = gateway.generation;
+      final refreshed = await gateway.refreshSession(password: 'typed-secret');
+      expect(refreshed.ok, isTrue);
+      expect(gateway.generation, generation);
+      expect(clients, hasLength(2));
+      expect(clients.last.logins, 1);
+      expect((await gateway.syncSchedule(_term)).ok, isTrue);
+      expect(clients.last.reads, 1);
+      expect((await gateway.refreshSession(password: 'wrong')).ok, isFalse);
+      expect(credentials.values.values.single.password, 'test-secret');
+      // 没给密码用记住的：上一次失败把自动恢复堵上了，这次成功要放开。
+      expect((await gateway.refreshSession()).ok, isTrue);
+      expect(gateway.generation, generation);
+    });
+
+    test('主动退出发出退出事件，会话过期不发', () async {
+      final events = <String>[];
+      final subscription = gateway.loggedOut.listen((identity) => events.add(identity.loginId));
+      await gateway.loginRemembered('A', 'test-secret', remember: false);
+      await gateway.expireSession();
+      await gateway.loginRemembered('A', 'test-secret', remember: false);
+      await gateway.logout();
+      await pumpEventQueue();
+      expect(events, ['A']);
+      await subscription.cancel();
+    });
   });
 
   test('姓名只增不丢：同步课表学到后当前会话立即带上，自动重登与重新登录都沿用', () async {

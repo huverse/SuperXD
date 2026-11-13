@@ -6,7 +6,7 @@ import Security
 enum DeviceOnlyData {
   private static let keychainClaimedKey = "superxd.keychainClaimed"
 
-  // iOS 卸载应用不删钥匙串：新装后第一次启动先清掉上次安装留下的记住账号凭据、私信私钥、节日抽奖密钥（superxd_reward）与学习通、拼多多会话，同安卓卸载即删。
+  // iOS 卸载应用不删钥匙串：新装后第一次启动先清掉上次安装留下的记住账号凭据、私信私钥、节日抽奖密钥（superxd_reward）、应用账号密钥（superxd_account）与学习通、拼多多会话，同安卓卸载即删。
   // 删的是本应用全部通用密码条目，新增命名空间不用改这里。
   // 标记放在 UserDefaults，卸载时随应用删除；钥匙串条目都是「仅本机」级别，换机恢复的备份带不过来。
   static func claimKeychain() {

@@ -64,6 +64,8 @@ abstract final class GatewayCode {
   static const invalidReminder = 'INVALID_REMINDER';
   // 自动同步设置不在可选范围内（间隔不是可选档位、没选内容或学年），原设置不变
   static const invalidAutoSync = 'INVALID_AUTO_SYNC';
+  // 要教务密码才能做（没记住账号时登录应用账号），由页面请用户输一次
+  static const passwordNeeded = 'PASSWORD_NEEDED';
   // 本地数据库读写失败
   static const localStorageFailed = 'LOCAL_STORAGE_FAILED';
   // 未归类的操作失败兜底

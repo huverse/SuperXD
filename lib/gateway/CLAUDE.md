@@ -9,6 +9,7 @@
   - 提供代次 generation、当前会话与身份、记住账号（含已登录时输密码重新开启 rememberWithPassword）、登出与会话过期、旧库导入状态。
   - 页面和 AppSession 只依赖这个接口。
   - scheduleChanges：学期、课表、作息、开学日或提醒设置在本机写入成功后通知，组合根据此重新对账课前提醒；默认实现从不通知。
+  - 应用账号用的三项（人工决策见 domain/app_account.dart）：appAccountProof 给口令摘要（给了密码用它、没给用记住的、都没有报 PASSWORD_NEEDED，明文不出网关）；refreshSession 为当前账号重登一次换上新会话（中转代登录会挤掉本机会话）；loggedOut 在用户主动退出某个账号时发出（会话过期不发）。
 - account_gateway.dart：AccountAccess 的实现 AccountGateway。这个门面只负责选中固定的账号上下文。
   - 活动上下文包含身份、会话和该账号专属的 KingoCampusGateway。
     - 业务调用经 _dispatch 转发，并记录在途请求数。
@@ -19,6 +20,7 @@
     - 每次尝试都新建一个 KingoAuth 和一个客户端，用尝试编号（epoch）防止旧尝试回写。
     - 成功后依次写会话、激活账号索引，再按用户选择写入或删除凭据。任何一步失败都回滚到原值。
     - 只核对（rememberWithPassword，关闭后重新开启记住账号）：以当前学号走同一套尝试与验证码流程，认证成功只写凭据，不换会话与客户端、不加代次（[人工决策] 在方法上）。
+  - refreshSession：走同步中会话失效的同一条重登（_recoverOnce），不加代次、页面不动；给了密码就用它，失败也不删记住的凭据；和正在进行的自动恢复排队。
   - restoreLocalSession：只用本机会话恢复，给后台自动同步启动时用：恢复不了就算了，不拿记住的账号登录、不清活动账号指针、不写提示（之后同步中遇到失效照常按下面「同步中会话失效」自动重登）。
   - keepSessionDuring：自动同步期间教务说会话失效也不丢本机会话行（不打断，人工决策见 domain/auto_sync.dart）；在切换锁里写回，期间账号变了、或账号索引里的当前账号已不是它（另一份引擎退出了登录）就不动，手动操作遇到失效仍按原规则清掉。这期间自动重登没成只算这一轮，结束时恢复进来时的「不再自动恢复」标记。
   - 启动恢复：
@@ -70,7 +72,7 @@
 
 # 测试
 
-- account_isolation_test.dart、account_lifecycle_test.dart、remembered_session_test.dart、kingo_gateway_test.dart、sync_boundary_regression_test.dart。
+- account_isolation_test.dart、account_lifecycle_test.dart、remembered_session_test.dart（含应用账号的口令摘要、重登与退出事件）、kingo_gateway_test.dart、sync_boundary_regression_test.dart。
 - 页面与同步用的合成数据网关是 test/fixture_campus_gateway.dart（读 assets/fixtures），新增端口方法时一并补齐。
 
 # 人工决策检索
