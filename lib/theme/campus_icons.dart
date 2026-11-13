@@ -127,6 +127,7 @@ abstract final class CampusIcons {
   static const operatorSubtract = LucideIcons.minus;
   static const operatorMultiply = LucideIcons.x;
   static const operatorDivide = LucideIcons.divide;
+  static const flash = LucideIcons.brain;
 }
 
 void configureCampusIcons() =>

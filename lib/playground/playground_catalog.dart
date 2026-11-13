@@ -1,5 +1,6 @@
 import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/puzzle/boxes/boxes_page.dart';
+import 'package:superxd/playground/puzzle/flash/flash_page.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
 import 'package:superxd/playground/puzzle/ice/ice_page.dart';
 import 'package:superxd/playground/puzzle/knights/knights_page.dart';
@@ -127,5 +128,16 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.twentyfour,
     group: numberGroup,
     builder: (context, game, store) => TwentyFourPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'flash',
+    name: '记忆闪光',
+    summary: '记住亮起的格，再点出来',
+    howToPlay: '点「开始」后，棋盘上同时亮起几格，停一会儿就熄灭。熄灭后把刚才亮过的格子全部点出来，顺序不限；亮着的时候不能点。\n'
+        '点对的格子保持点亮。点错一格这一轮就作废：会亮出漏掉的格子，再换一组新图案重来。\n'
+        '一道题 5 轮，每轮全部点对才进下一轮；档位越高，格子越多、亮的格越多、亮的时间越短。',
+    icon: CampusIcons.flash,
+    group: memoryGroup,
+    builder: (context, game, store) => FlashPage(game: game, store: store),
   ),
 ];
