@@ -6,6 +6,9 @@ import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
 import 'package:superxd/playground/puzzle/ice/ice_page.dart';
 import 'package:superxd/playground/puzzle/knights/knights_page.dart';
 import 'package:superxd/playground/puzzle/lights/lights_page.dart';
+import 'package:superxd/playground/puzzle/mines/mines_page.dart';
+import 'package:superxd/playground/puzzle/loop/loop_page.dart';
+import 'package:superxd/playground/puzzle/logicgrid/logicgrid_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
 import 'package:superxd/playground/puzzle/queens/queens_page.dart';
 import 'package:superxd/playground/puzzle/river/river_page.dart';
@@ -152,5 +155,39 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.balance,
     group: logicGroup,
     builder: (context, game, store) => BalancePage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'mines',
+    name: '扫雷',
+    summary: '只靠推理排雷，不用猜',
+    howToPlay: '翻开的格子上写着周围八格里有几颗雷。把所有不是雷的格子都翻开就解开了；翻到雷这一局就结束，只能从头来或换一道题。\n'
+        '开局已经翻开一片。下方选「翻开」或「插旗」，再点格子；长按没翻开的格子也能插旗，长按旗子拔掉，旗子只是记号。点已翻开的数字，周围插的旗正好等于这个数字时，其余格子一起翻开。棋盘大时双指可以放大。\n'
+        '每道题都只靠推理就能翻完，不用猜。',
+    icon: CampusIcons.mines,
+    group: gridGroup,
+    builder: (context, game, store) => MinesPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'loop',
+    name: '数回',
+    summary: '沿着点阵画一个圈，对上格里的数字',
+    howToPlay: '沿着点与点之间的边画一条闭合的回路：不分叉、不交叉，全盘只有一个圈。\n'
+        '格子里的数字是这一格四条边里有几条在回路上，没有数字的格不限。\n'
+        '点一条边画线，再点一次取消；按住沿着点拖动可以连着画。确定不走的边可以切到「标叉」做记号。棋盘大时双指可以放大。\n'
+        '每道题的答案都唯一。',
+    icon: CampusIcons.loop,
+    group: gridGroup,
+    builder: (context, game, store) => LoopPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'logicgrid',
+    name: '逻辑网格',
+    summary: '按线索推出谁有什么',
+    howToPlay: '每个人在每一类里各有一样，同一类里每样只属于一个人。按下面的线索推出整张表。\n'
+        '点表格的一格，在「是」里选一个填上；确定不是的可以在「不是」里标掉，做记号用。点一条线索可以标成用过了。\n'
+        '座位从左到右是 1 号到 N 号。填满就判定，对不上的线索会标成红色；每道题的答案都唯一。',
+    icon: CampusIcons.logicgrid,
+    group: logicGroup,
+    builder: (context, game, store) => LogicGridPage(game: game, store: store),
   ),
 ];
