@@ -66,10 +66,8 @@
 # 测试
 
 - 规则：playground_rules_test.dart；页面：playground_ui_test.dart。
-- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；24 点：playground_twentyfour_test.dart；记忆闪光：playground_flash_test.dart；天平称球：playground_balance_test.dart；扫雷：playground_mines_test.dart；数回：playground_loop_test.dart；逻辑网格：playground_logicgrid_test.dart（各自的规则与页面都在自己的文件里）。
+- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；24 点：playground_twentyfour_test.dart；记忆闪光：playground_flash_test.dart；天平称球：playground_balance_test.dart；扫雷：playground_mines_test.dart；数回：playground_loop_test.dart；逻辑网格：playground_logicgrid_test.dart；密码破译：playground_cipher_test.dart（各自的规则与页面都在自己的文件里）。
 - iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行、推箱子、扫雷与数回在自己的测试里。
-- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；密码破译：playground_cipher_test.dart（各自的规则与页面都在自己的文件里）。
-- iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行与推箱子在自己的测试里。
 
 # 人工决策检索
 

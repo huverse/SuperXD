@@ -314,9 +314,9 @@ class _CipherPageState extends State<CipherPage> with TickerProviderStateMixin {
       child: Stack(children: [
         CampusSurface(
           radius: 20,
-          padding: const EdgeInsets.fromLTRB(12, 12, 12, 12),
+          padding: const EdgeInsets.fromLTRB(10, 12, 10, 12),
           child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            // 一行数字不折行（位置就是信息）：5 位也只占 264 宽，360dp 的屏上放得下。
+            // 一行数字不折行（位置就是信息）：5 位也只占 264 宽，连卡片内边距在 320dp 的屏上也放得下。
             Row(mainAxisSize: MainAxisSize.min, children: [
               for (final (position, digit) in row.guess.indexed) ...[
                 if (position > 0) const SizedBox(width: 6),
