@@ -28,6 +28,15 @@
 - boxes 推箱子（移动与规划）：
   - boxes_rules.dart：BoxesRules：房间内部 5 到 9 见方、1 到 4 个箱子；倒推法出题（随机挖连通、没有死角的房间，目标点扎堆，从箱子都在目标点上广度优先倒着拉，拉到的局面都推得回去、拉到的层数就是最少推数），最少推数落在这一档的区间才用（区间与房间参数写在 _tiers）；boxesSolve 是正向 A*（状态为箱子位置加玩家能走到的区域，剪死格与 2×2 死块），测试拿它核对参考解就是最少推数；boxesStep、boxesReplay 判每一步（撞墙、推不动原地不动）；难度分 boxesDifficulty 按最少推数分段、段界对齐各档区间；题面是宽高、墙串、目标点、箱子与起点，答案每步一个方向，最多 boxesMaxMoves 步。
   - boxes_page.dart：BoxesPage：在棋盘上滑一下或点下方方向键走一格，推不动或撞墙轻震、小人朝那边顶一下；墙连成一片（只圆外凸角，露出的下沿画深一点的立面），地面隔格淡底，目标点是圆环，箱子是带内框斜撑的软方块、到位换激活色；静态层拼成几条路径按题与配色缓存；状态只计推数（同最少推数比），撤销按步退回、推的那步连箱子一起退；全部到位后箱子依次轻跳一下再弹结果；读屏读小人位置与还差几个箱子。
+- twentyfour 24 点（数字计算）：
+  - twentyfour_rules.dart：TwentyFourRules：四个 1–13 的数（入门 1–9、简单 1–10、普通起 1–13），题面写明允许的运算（入门到普通经典四则 twentyFourClassic，困难起加乘方与开方 twentyFourExtended，人工决策在文件头）；有理数 TwentyFourValue 精确算，乘方的指数要是整数且不超过 twentyFourMaxExponent，开方只在开得尽时可用（√0、√1 不让开），每步结果不超过 twentyFourLimit；twentyFourAnalyze 枚举全部走法（开方挪到卡刚出现时做），合到 24 的化成规范写法（拍平加减与乘除、÷1 与指数等于 1 的乘方当乘法、负号提到外面、其余乘方与开方当整体）去重数解法，并判有没有只用加减乘的解法、有没有经典四则不经过分数的解法；难度分 twentyFourScore 按这两条与解法数（口径与各档组数在注释），专家档的题经典四则不经过分数解不开、且解法不超过 twentyFourExpertSolutions 种（人工决策在文件头）；twentyFourMerge、twentyFourReplay 判每一步（二元结果进第二张的位置、开方留在原位、运算要是题面允许的）；题面编成数与运算 code，答案每步 [第一张, 运算 code, 第二张]（开方两个位置相同）、最多 twentyFourMaxSteps 步，解码拒收算不出 24 的题。
+  - twentyfour_page.dart：TwentyFourPage：四张卡两行两列，下面是题面允许的运算键（色调胶囊，六个在 360dp 上排两行，包 CampusToastAnchor 让提示条浮在键上方）；点卡、运算、再点卡合成新卡（先点运算也行），第一张滑向第二张淡去、新卡放大淡入，空出的位置留淡边框；开方点了直接作用在选着的卡上、原地换值、开完仍选着；分数上下叠着写；不合规（除以 0、开不尽、指数不合规、结果太大）与剩一张不是 24 都重震、晃一下并用提示条说明（后者描警示边）；卡片与运算键之间留两行写最近算出的算式（乘方写 a^b、开方写 √，不缩字），读屏念「2的3次方」「根号9」；撤销按步倒放；合到 24 卡片铺激活色鼓一下再弹结果；读屏卡片读数（分数念「几分之几」）与选中，运算键读名字与选中；减少动画时直接到位。
+- flash 记忆闪光（记忆与反应）：
+  - flash_rules.dart：FlashRules：3、4、5、6、6 见方，每道题 5 轮、亮的格数逐轮递增（入门 3–4 到专家 10–12）、亮 1.5 秒到 1 秒（参数写在 _tiers）；题面直接列出每轮 1 组图案加 5 组备用（整行、整列、整条对角线全亮的不要，整道题不重样），点错依次换下一组、用完从头轮换（flashPattern），核对不用复现出题过程；flashTap 判一下点按，flashMistakes 按规则重放答案并数出点错次数（点错必须是这一次的最后一下，点齐即止、不许多点）；难度分按格数、平均亮格数与亮的时长（口径在 difficulty 的注释）；答案是每次尝试点的格，最多 flashMaxAttempts 次。
+  - flash_page.dart：FlashPage：棋盘上先点「开始」（计时从这里起），每次暗一下再亮、到时熄灭，亮着与暗着时点了不算不震；点对的格保持激活色，点错的格警示色打叉、重震并亮出漏掉的格，停一会儿换下一组；阶段用 Timer 计时（AnimationController 在减少动画时会被压短），减少动画时照样亮灭、只是不渐变；切到后台时亮着的这一组回来重新亮；全部点对后从中心一圈一圈亮一下再弹结果；状态写第几轮与点错次数；棋盘下一行提示兼读屏播报（亮起时念出亮的格）；开始后读屏每格一个按钮（开始前不放，读屏直接走到「开始」）。
+- balance 天平称球（逻辑推理）：
+  - balance_rules.dart：BalanceRules：每档参数写在 _tiers（入门 9 个已知偏重称 2 次、简单 9 个称 3 次、普通 12 个、困难 12 个还要说轻重、专家 13 个，都称 3 次），种子只定平局怎么答；秤按对手规则答（balanceRespond：不预定假球，挑「剩下的候选还要称最多次」的结果，一样多按种子与第几次挑；为什么不按候选最多见文件头），称错一步必定挑到分不清的那支；求解器按每类球的个数做极小极大（balanceSolvable、balanceSolve），难度分按整棵策略树的选择量（口径在 difficulty 的注释）；solved 重放秤的回答、核对次数与两边球数，最后候选恰好是指认的那个才算；答案是每次左右盘的球加指认，解码拒收已知偏重又要说轻重、在次数内找不出的题。
+  - balance_page.dart：BalancePage：上面天平、下面桌上每个球一个固定格（拿走留空圈）；底部分段选放左盘、放右盘或做记号（自己标可能偏重、偏轻、好球，不自动排除），点桌上的球放进盘、点盘里的拿回；「称一下」两边空或不等就不称（轻震、天平晃、提示条写原因，接着做一步就收起），称了天平倾斜、记一行结果，停一会儿球回桌上；「指认」点球（困难档再选偏重或偏轻）确认，还确定不了或对不上就轻震提示，次数用完留在指认里；解开后那个球鼓一下再弹结果；没有撤销（称的次数就是限制）；读屏每个球读编号、在哪与记号。
 
 # 加一个游戏的步骤
 
@@ -45,10 +54,10 @@
 # 测试
 
 - 规则：playground_rules_test.dart；页面：playground_ui_test.dart。
-- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart（各自的规则与页面都在自己的文件里）。
+- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；24 点：playground_twentyfour_test.dart；记忆闪光：playground_flash_test.dart；天平称球：playground_balance_test.dart（各自的规则与页面都在自己的文件里）。
 - iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行与推箱子在自己的测试里。
 
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/playground/puzzle
-- 本目录暂无单独的标记，用户对游戏清单的选择在 lib/playground/playground_catalog.dart 文件头。
+- 本目录的标记在 twentyfour/twentyfour_rules.dart 文件头（24 点允许负数、困难起加乘方与开方、专家档的要求）与 flash/flash_page.dart 的阶段提示行（保留）；用户对游戏清单的选择在 lib/playground/playground_catalog.dart 文件头。

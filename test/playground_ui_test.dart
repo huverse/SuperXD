@@ -47,11 +47,17 @@ void main() {
     }
     expect(find.text('最近玩过'), findsNothing);
 
+    // 游戏多了首页要滚动，列表按需构建：先滚到汉诺塔再点（跳到位后排一帧再点，不然按跳之前的位置点）。
+    await tester.scrollUntilVisible(find.text('汉诺塔'), 200, scrollable: find.descendant(of: find.byType(PlaygroundPage), matching: find.byType(Scrollable)).first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('汉诺塔'));
     await tester.pumpAndSettle();
     expect(find.byType(HanoiPage), findsOneWidget);
     expect(store.recent, ['hanoi']);
     await tester.tap(find.byTooltip('返回'));
+    await tester.pumpAndSettle();
+    // 返回后首页停在滚下去的位置，滚回顶部再看「最近玩过」。
+    await tester.scrollUntilVisible(find.text('最近玩过'), -200, scrollable: find.descendant(of: find.byType(PlaygroundPage), matching: find.byType(Scrollable)).first);
     await tester.pumpAndSettle();
     expect(find.text('最近玩过'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, '汉诺塔'), findsOneWidget);

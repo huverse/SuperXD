@@ -1,5 +1,7 @@
 import 'package:superxd/playground/playground_game.dart';
+import 'package:superxd/playground/puzzle/balance/balance_page.dart';
 import 'package:superxd/playground/puzzle/boxes/boxes_page.dart';
+import 'package:superxd/playground/puzzle/flash/flash_page.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
 import 'package:superxd/playground/puzzle/ice/ice_page.dart';
 import 'package:superxd/playground/puzzle/knights/knights_page.dart';
@@ -7,6 +9,7 @@ import 'package:superxd/playground/puzzle/lights/lights_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
 import 'package:superxd/playground/puzzle/queens/queens_page.dart';
 import 'package:superxd/playground/puzzle/river/river_page.dart';
+import 'package:superxd/playground/puzzle/twentyfour/twentyfour_page.dart';
 import 'package:superxd/theme/campus_icons.dart';
 
 // [人工决策-2026-11-12 21:00:20] 游乐场的板块、子类与游戏只在这一处登记（同百宝箱 toolbox_catalog.dart）；id 发出后不改。
@@ -115,5 +118,39 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.boxes,
     group: planningGroup,
     builder: (context, game, store) => BoxesPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'twentyfour',
+    name: '24 点',
+    summary: '加减乘除，凑出 24',
+    howToPlay: '四张卡上各有一个 1 到 13 的数，每个数恰好用一次，用加减乘除算出 24。\n'
+        '点一张卡，再点一个运算和另一张卡，两张就合成一张写着结果的新卡（减和除是第一张减、除以第二张），除不尽的写成分数。\n'
+        '困难起还可以用乘方和开方：乘方同上，第二张是指数（要是整数）；开方只作用在选着的那一张上，要开得尽。\n'
+        '合到只剩一张、正好是 24 就解开了；算错了可以撤销，一步步退回。',
+    icon: CampusIcons.twentyfour,
+    group: numberGroup,
+    builder: (context, game, store) => TwentyFourPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'flash',
+    name: '记忆闪光',
+    summary: '记住亮起的格，再点出来',
+    howToPlay: '点「开始」后，棋盘上同时亮起几格，停一会儿就熄灭。熄灭后把刚才亮过的格子全部点出来，顺序不限；亮着的时候不能点。\n'
+        '点对的格子保持点亮。点错一格这一轮就作废：会亮出漏掉的格子，再换一组新图案重来。\n'
+        '一道题 5 轮，每轮全部点对才进下一轮；档位越高，格子越多、亮的格越多、亮的时间越短。',
+    icon: CampusIcons.flash,
+    group: memoryGroup,
+    builder: (context, game, store) => FlashPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'balance',
+    name: '天平称球',
+    summary: '用天平找出不一样的球',
+    howToPlay: '一组外观一样的球里恰好有一个重量不同，用天平称有限的几次把它找出来；有的档还要说出它偏轻还是偏重。天平上方写着这一道的球数和次数。\n'
+        '选「放左盘」或「放右盘」，点桌上的球放进去，点盘里的球拿回来；两边球数一样才能称，每次的结果记在下方。\n'
+        '确定了就点「指认」，点那个球（要说轻重的再选偏重或偏轻）确认。秤不会让你碰运气：只有称的结果只剩它一个时才算找出。「做记号」可以给球标可能偏重、可能偏轻或好球。',
+    icon: CampusIcons.balance,
+    group: logicGroup,
+    builder: (context, game, store) => BalancePage(game: game, store: store),
   ),
 ];

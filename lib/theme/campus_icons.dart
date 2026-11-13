@@ -121,6 +121,18 @@ abstract final class CampusIcons {
   static const knight = LucideIcons.shield;
   static const knave = LucideIcons.venetianMask;
   static const river = LucideIcons.sailboat;
+  // 24 点：游戏图标是计算器，对局页的运算键是加减乘除号，困难起多乘方（x 带上标）与开方（根号）。
+  static const twentyfour = LucideIcons.calculator;
+  static const operatorAdd = LucideIcons.plus;
+  static const operatorSubtract = LucideIcons.minus;
+  static const operatorMultiply = LucideIcons.x;
+  static const operatorDivide = LucideIcons.divide;
+  static const operatorPower = LucideIcons.superscript;
+  static const operatorRoot = LucideIcons.radical;
+  static const flash = LucideIcons.brain;
+  // 天平称球：游戏图标与「称一下」是天平；自己做的记号「可能偏重」是向下的箭头（沉下去），「可能偏轻」用 arrowUp，「好球」用 check。
+  static const balance = LucideIcons.scale;
+  static const arrowDown = LucideIcons.arrowDown;
 }
 
 void configureCampusIcons() =>

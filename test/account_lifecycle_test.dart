@@ -103,6 +103,9 @@ void main() {
     await tester.tap(find.text('游乐场'));
     await tester.pumpAndSettle();
     expect(find.byType(PlaygroundPage), findsOneWidget);
+    // 游戏多了首页要滚动，列表按需构建：先滚到汉诺塔再点。
+    await tester.scrollUntilVisible(find.text('汉诺塔'), 200, scrollable: find.descendant(of: find.byType(PlaygroundPage), matching: find.byType(Scrollable)).first);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('汉诺塔'));
     await tester.pumpAndSettle();
     expect(find.byType(HanoiPage), findsOneWidget);
