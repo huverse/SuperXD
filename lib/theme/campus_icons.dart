@@ -119,6 +119,7 @@ abstract final class CampusIcons {
   static const knights = LucideIcons.shieldHalf;
   static const knight = LucideIcons.shield;
   static const knave = LucideIcons.venetianMask;
+  static const river = LucideIcons.sailboat;
 }
 
 void configureCampusIcons() =>

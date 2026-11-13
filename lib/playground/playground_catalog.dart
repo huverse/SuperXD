@@ -5,6 +5,7 @@ import 'package:superxd/playground/puzzle/knights/knights_page.dart';
 import 'package:superxd/playground/puzzle/lights/lights_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
 import 'package:superxd/playground/puzzle/queens/queens_page.dart';
+import 'package:superxd/playground/puzzle/river/river_page.dart';
 import 'package:superxd/theme/campus_icons.dart';
 
 // [人工决策-2026-11-12 21:00:20] 游乐场的板块、子类与游戏只在这一处登记（同百宝箱 toolbox_catalog.dart）；id 发出后不改。
@@ -90,5 +91,17 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.knights,
     group: logicGroup,
     builder: (context, game, store) => KnightsPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'river',
+    name: '过河问题',
+    summary: '小船往返，全员过河',
+    howToPlay: '用一条小船把所有人和物都送到右岸。船上至少一人、不超过船的容量，船上要有会划船的人才开得了。\n'
+        '点岸上的人上船（船要停在这一岸），点船上的人下船；坐好了点「开船」。靠岸以后船上的人算在那一岸，可以留在船上接着坐。\n'
+        '每档的规矩不同，河上方写着这一道的：农夫过河只有农夫会划船，没人看着时狼会吃羊、羊会吃白菜；大人与小孩是有大人的岸上，小孩不能比大人多；'
+        '父子是爸爸不在时，孩子不能和别人家的爸爸待在一起。会犯规的开不了船，会提示原因；撤销按整次渡河退回。',
+    icon: CampusIcons.river,
+    group: planningGroup,
+    builder: (context, game, store) => RiverPage(game: game, store: store),
   ),
 ];

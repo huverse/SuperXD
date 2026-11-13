@@ -22,6 +22,9 @@
 - knights 骑士与无赖（逻辑推理）：
   - knights_rules.dart：KnightsRules：2 到 6 人（名字按座位叫甲到己）；句式 KnightsClaimKind（code 发出后不改）随档加：是骑士或无赖、我和谁同类或不同类，普通加恰好、至少、至多几个骑士，困难与专家加如果…那么、至少一个是无赖、转述；出题先定身份再给每人挑一句和身份一致的话，枚举全部 2^N 组只有一组成立才用，knightsReasoning 模拟单句推与联合几句推，按档限制开头能直接定下几人、最多联合几句；solved 按「每句话真假与说话人身份一致」判；题面只存句式与参数，解码校验参数并拒收不唯一的题；难度分以人数为主、联合推理量够多再加 1（口径在 difficulty 的注释）。
   - knights_page.dart：KnightsPage：每人一张卡（自绘头像：骑士戴盔、无赖戴面具、未定是中性）写他说的话（按结构生成口语、按意思分段换行），卡上「骑士 / 无赖」两个色调胶囊直接选、再点取消，可按步撤销；全部定下就判，错了不给答案、只把话和身份对不上的人标警示色并轻震，对了卡片依次翻一下再弹结果；状态写「已定 3/5」；读屏每张卡读名字、话与当前标记。
+- river 过河问题（移动与规划）：
+  - river_rules.dart：RiverRules：三种题型 RiverVariant（入门农夫过河；简单、困难大人与小孩，有大人的岸上小孩不能比大人多；普通、专家父子，爸爸不在时孩子不能和别人家的爸爸待在一起，船上也算），困难与专家各加一对人（五大人五小孩、五对父子，船坐 3 人）免得档位倒挂；riverCheck 在开船那一刻按「船上、留下的岸、到的岸」查第一处问题（RiverViolation 带牵涉的人），riverSolve 以「左岸有谁、船在哪岸」为状态广度优先求最少渡河次数，每档区间写在 _least；难度分 riverDifficulty 按沿最短走法每步挑对的信息量与可达局面数（口径在注释）；人物编码与名字池 riverFamilyNames 发出后只能在末尾追加，解码校验人物与题型对得上、开局合规且解得开；答案是每次渡河的下标组，最多 riverMaxCrossings 次。
+  - river_page.dart：RiverPage：左岸、河、右岸横排，人物是圆形徽章（父子同色配对、大小区分）；点岸上的人上船、点船上的人下船，强调按钮「开船」；犯规不开船，轻震、船晃一下、圈出牵涉的人，提示条写原因；靠岸后船上的人留在船上算那一岸；河上方写这一道的规矩；撤销按整次渡河退回；全到右岸后大家依次轻轻跳一下再弹结果；状态写渡河次数与最少次数；读屏每人读身份与在哪岸或船上。
 
 # 加一个游戏的步骤
 
@@ -39,7 +42,7 @@
 # 测试
 
 - 规则：playground_rules_test.dart；页面：playground_ui_test.dart。
-- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart（各自的规则与页面都在自己的文件里）。
+- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart（各自的规则与页面都在自己的文件里）。
 - iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行在自己的测试里。
 
 # 人工决策检索
