@@ -19,6 +19,8 @@ Future<PlayResultChoice> showPlayResult(BuildContext context, {required PlaySess
   unawaited(HapticFeedback.successNotification());
   final best = session.store.best(session.game.id, session.tier);
   final harder = session.tier.index + 1 < PuzzleTier.values.length ? PuzzleTier.values[session.tier.index + 1] : null;
+  // 拼手速的游戏用时写到 0.1 秒（大字与「最好」同一种写法），其余写分:秒。
+  String duration(Duration elapsed) => playDuration(elapsed, tenths: session.game.timeInTenths);
   final choice = await showCampusSheet<PlayResultChoice>(context: context, builder: (context) {
     final palette = CampusPalette.of(context);
     final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
@@ -31,9 +33,9 @@ Future<PlayResultChoice> showPlayResult(BuildContext context, {required PlaySess
           Expanded(child: Text(newBest ? '新纪录' : '解开了', style: Theme.of(context).textTheme.titleLarge)),
         ]),
         const SizedBox(height: 16),
-        Text(playDuration(session.elapsed), style: TextStyle(fontSize: 40, fontWeight: FontWeight.w600, height: 1.15, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()])),
+        Text(duration(session.elapsed), style: TextStyle(fontSize: 40, fontWeight: FontWeight.w600, height: 1.15, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()])),
         const SizedBox(height: 4),
-        DotSeparatedText([session.tier.label, ?detail, if (!newBest && best != null) '最好 ${playDuration(Duration(milliseconds: best.millis))}'].join(' · '), style: secondary),
+        DotSeparatedText([session.tier.label, ?detail, if (!newBest && best != null) '最好 ${duration(Duration(milliseconds: best.millis))}'].join(' · '), style: secondary),
         const SizedBox(height: 20),
         FilledButton.icon(style: campusProminent, onPressed: () => Navigator.pop(context, PlayResultChoice.again), icon: const CampusIcon(CampusIcons.shuffle), label: const Text('再来一局')),
         if (harder != null) ...[

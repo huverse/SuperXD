@@ -10,11 +10,13 @@ import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/playground/puzzle/schulte/schulte_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
+import 'package:superxd/theme/campus_glass_button.dart';
+import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
 
-// 舒尔特方格对局页：数字格排在一张卡片上，整张卡按格均分作热区（缝与卡边归最近一格），落点按按下的那一格算、抬手才算点了一下；
+// 舒尔特方格对局页：开局数字盖着，棋盘中间是「开始」，点了才揭开并开始计时；数字格排在一张卡片上，整张卡按格均分作热区（缝与卡边归最近一格），落点按按下的那一格算、抬手才算点了一下；
 // 每根手指各算各的（两只手轮流点不丢），按下后滑出触摸容差就作废，留给页面的右滑返回。按下的格微微缩小、往字色偏一点。
 // 点对的格 200ms 变淡缩小，点错轻震、那一格左右晃一下并描一圈警示色，记一次错、不往下走；点过的格再点不算错。
 // 全部点完从中心向外依次亮一下（点过的格短暂恢复原色、微微放大），再弹结果。减少动画时直接到位、不晃不亮。
@@ -31,6 +33,9 @@ class SchultePage extends StatefulWidget {
 
 class _SchultePageState extends State<SchultePage> with TickerProviderStateMixin {
   late final _session = PlaySession<SchultePuzzle, List<int>>(game: widget.game, rules: const SchulteRules(), store: widget.store, seeds: widget.seeds);
+  // [人工决策-2026-11-13 17:14:54] 用户选定（三项都选推荐）：开局先盖住数字、点「开始」才揭开并计时（不能先记位置）；用时写到 0.1 秒（只有舒尔特，框架加标记）；点错不罚时、只记次数。
+  // 点了「开始」没有：之前格子全是空白的浅底格（红黑表也不露颜色），点格不算，读屏只有「开始」；换题、从头来回到盖着。
+  var _started = false;
   // 点对了几下（下一下该点第 _step 个数）与一共点错几下。
   var _step = 0;
   var _misses = 0;
@@ -77,6 +82,7 @@ class _SchultePageState extends State<SchultePage> with TickerProviderStateMixin
   String _name(SchulteMark mark) => _puzzle.variant == SchulteVariant.redBlack ? '${mark.red ? '红' : '黑'} ${mark.number}' : '${mark.number}';
 
   void _reset() {
+    _started = false;
     _step = 0;
     _misses = 0;
     _stepOf = _steps();
@@ -97,8 +103,16 @@ class _SchultePageState extends State<SchultePage> with TickerProviderStateMixin
     _reset();
   });
 
+  // 揭开数字、开始计时（PlaySession 从第一步起计时，这一下就是第一步）。
+  void _start() {
+    if (_started || _session.finished) return;
+    playTick();
+    _session.moved();
+    setState(() => _started = true);
+  }
+
   void _pointerDown(PointerDownEvent event, _SchulteLayout layout) {
-    if (_session.finished) return;
+    if (!_started || _session.finished) return;
     final cell = layout.cellAt(event.localPosition);
     _downs[event.pointer] = (cell: cell, at: event.localPosition);
     _pressed = cell;
@@ -125,7 +139,6 @@ class _SchultePageState extends State<SchultePage> with TickerProviderStateMixin
 
   void _tap(int cell) {
     if (_session.finished || _stepOf[cell] < _step) return;
-    _session.moved();
     if (_stepOf[cell] != _step) {
       playRejected();
       setState(() {
@@ -148,8 +161,8 @@ class _SchultePageState extends State<SchultePage> with TickerProviderStateMixin
     if (!mounted) return;
     if (!_reduced) await _wave.forward(from: 0);
     if (!mounted) return;
-    final seconds = (_session.elapsed.inMilliseconds / 1000).toStringAsFixed(1);
-    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: '$seconds 秒 · ${_misses == 0 ? '没有点错' : '点错 $_misses 次'}');
+    // 用时已是大字（写到 0.1 秒），这里只写点错次数。
+    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: _misses == 0 ? '没有点错' : '点错 $_misses 次');
     if (!mounted) return;
     switch (choice) {
       case PlayResultChoice.again:
@@ -211,44 +224,52 @@ class _SchultePageState extends State<SchultePage> with TickerProviderStateMixin
         if (cell != null) _tap(cell);
       },
       onPointerCancel: (event) => _lift(event.pointer),
-      child: CampusSurface(padding: EdgeInsets.zero, child: AnimatedBuilder(
-        animation: _motion,
-        builder: (context, _) {
-          final pulses = _pulses(puzzle.side);
-          final shake = _shake.value;
-          return Stack(children: [
-            for (var cell = 0; cell < puzzle.count; cell++)
-              Positioned.fromRect(
-                key: ValueKey((_session.draw, cell)),
-                rect: layout.cellRect(cell),
-                // 读屏：每格一个按钮，读出数（红黑表带颜色）与是否已点，点按同手指点这一格。
-                child: Semantics(
-                  container: true,
-                  button: true,
-                  label: '${_name(puzzle.mark(cell))}，${_stepOf[cell] < _step ? '已点' : '未点'}',
-                  onTap: _session.finished || _stepOf[cell] < _step ? null : () => _tap(cell),
-                  child: ExcludeSemantics(child: TweenAnimationBuilder<double>(
-                    tween: Tween(end: _stepOf[cell] < _step ? 1 : 0),
-                    duration: duration,
-                    curve: Curves.easeOutCubic,
-                    builder: (context, dim, _) => _SchulteTile(
-                      text: '${puzzle.numbers[cell]}',
-                      style: puzzle.variant == SchulteVariant.single ? _TileStyle.plain : puzzle.red[cell] ? _TileStyle.red : _TileStyle.black,
-                      colors: colors,
-                      size: tile,
-                      fontSize: fontSize,
-                      dim: dim * (1 - pulses[cell]),
-                      scale: (1 - .07 * (_pressed == cell ? _press.value : 0)) * (1 - .08 * dim) * (1 + .08 * pulses[cell]),
-                      shift: _shaken == cell ? math.sin(shake * math.pi * 4) * (1 - shake) * layout.pitch * .08 : 0,
-                      press: _pressed == cell ? _press.value : 0,
-                      alert: _shaken != cell ? 0 : _reduced ? 1 : 1 - shake,
-                    ),
-                  )),
+      child: CampusSurface(padding: EdgeInsets.zero, child: Stack(children: [
+        Positioned.fill(child: AnimatedBuilder(
+          animation: _motion,
+          builder: (context, _) {
+            final pulses = _pulses(puzzle.side);
+            final shake = _shake.value;
+            return Stack(children: [
+              for (var cell = 0; cell < puzzle.count; cell++)
+                Positioned.fromRect(
+                  key: ValueKey((_session.draw, cell)),
+                  rect: layout.cellRect(cell),
+                  child: () {
+                    final view = ExcludeSemantics(child: TweenAnimationBuilder<double>(
+                      tween: Tween(end: _stepOf[cell] < _step ? 1 : 0),
+                      duration: duration,
+                      curve: Curves.easeOutCubic,
+                      builder: (context, dim, _) => _SchulteTile(
+                        // 开始前盖着：空白的浅底格，不露数也不露颜色。
+                        text: _started ? '${puzzle.numbers[cell]}' : '',
+                        style: !_started || puzzle.variant == SchulteVariant.single ? _TileStyle.plain : puzzle.red[cell] ? _TileStyle.red : _TileStyle.black,
+                        colors: colors,
+                        size: tile,
+                        fontSize: fontSize,
+                        dim: dim * (1 - pulses[cell]),
+                        scale: (1 - .07 * (_pressed == cell ? _press.value : 0)) * (1 - .08 * dim) * (1 + .08 * pulses[cell]),
+                        shift: _shaken == cell ? math.sin(shake * math.pi * 4) * (1 - shake) * layout.pitch * .08 : 0,
+                        press: _pressed == cell ? _press.value : 0,
+                        alert: _shaken != cell ? 0 : _reduced ? 1 : 1 - shake,
+                      ),
+                    ));
+                    // 读屏：开始以后每格一个按钮，读出数（红黑表带颜色）与是否已点，点按同手指点这一格；开始前不放，读屏直接走到「开始」。
+                    return !_started ? view : Semantics(
+                      container: true,
+                      button: true,
+                      label: '${_name(puzzle.mark(cell))}，${_stepOf[cell] < _step ? '已点' : '未点'}',
+                      onTap: _session.finished || _stepOf[cell] < _step ? null : () => _tap(cell),
+                      child: view,
+                    );
+                  }(),
                 ),
-              ),
-          ]);
-        },
-      )),
+            ]);
+          },
+        )),
+        if (!_started)
+          Center(child: FilledButton.icon(style: campusProminent, onPressed: _start, icon: const CampusIcon(CampusIcons.resume), label: const Text('开始'))),
+      ])),
     );
   }
 }

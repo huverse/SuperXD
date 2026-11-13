@@ -212,6 +212,7 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.schulte,
     group: memoryGroup,
     challengeable: false,
+    timeInTenths: true,
     builder: (context, game, store) => SchultePage(game: game, store: store),
   ),
 ];

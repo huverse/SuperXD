@@ -5,11 +5,14 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/playground_catalog.dart';
+import 'package:superxd/playground/playground_page.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/playground/puzzle/schulte/schulte_page.dart';
 import 'package:superxd/playground/puzzle/schulte/schulte_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
+import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
 const _rules = SchulteRules();
@@ -44,12 +47,19 @@ Future<void> _step(WidgetTester tester) async {
 // 格里数字的不透明度：点过的格只留三成。
 double _ink(WidgetTester tester, SchultePuzzle puzzle, int cell) => tester.widget<Text>(find.text('${puzzle.numbers[cell]}').first).style!.color!.a;
 
-Future<PlaygroundStore> _open(WidgetTester tester, {required int seed, PuzzleTier tier = PuzzleTier.entry}) async {
+Finder get _start => find.widgetWithText(FilledButton, '开始');
+
+// 打开对局页；start 为真时接着点「开始」揭开数字。
+Future<PlaygroundStore> _open(WidgetTester tester, {required int seed, PuzzleTier tier = PuzzleTier.entry, bool start = true}) async {
   final store = PlaygroundStore.memory();
   await store.chooseTier('schulte', tier);
   final game = playgroundCatalog.firstWhere((game) => game.id == 'schulte');
   await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: SchultePage(key: UniqueKey(), game: game, store: store, seeds: () => seed)));
   await tester.pumpAndSettle();
+  if (start) {
+    await tester.tap(_start);
+    await _step(tester);
+  }
   return store;
 }
 
@@ -194,6 +204,7 @@ void main() {
       final semantics = tester.ensureSemantics();
       final haptics = _haptics(tester);
       final store = await _open(tester, seed: 1);
+      haptics.clear();
       final draw = _rules.generate(1, PuzzleTier.entry);
       final puzzle = draw.puzzle;
       // 正中那一格不是最后点的：收尾时看得出它从变淡亮回来。
@@ -234,12 +245,18 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('新纪录'), findsOneWidget);
       expect(find.textContaining('没有点错'), findsOneWidget);
+      expect(find.textContaining(RegExp(r'^\d+\.\d 秒$')), findsOneWidget);
+      expect(find.textContaining(RegExp(r'\d 秒')), findsOneWidget);
       expect(_ink(tester, puzzle, 4), closeTo(.3, .01));
       expect(store.best('schulte', PuzzleTier.entry)!.moves, 9);
 
       await tester.tap(find.text('换到简单'));
       await tester.pumpAndSettle();
       expect(store.tierOf('schulte'), PuzzleTier.easy);
+      // 新的一局回到盖着，点「开始」才露出 4×4。
+      expect(_start, findsOneWidget);
+      await tester.tap(_start);
+      await _step(tester);
       final easy = _rules.generate(1, PuzzleTier.easy).puzzle;
       for (var cell = 0; cell < 16; cell++) {
         expect(find.bySemanticsLabel('${easy.numbers[cell]}，未点'), findsOneWidget);
@@ -248,10 +265,72 @@ void main() {
       semantics.dispose();
     });
 
+    testWidgets('开局盖住：开始前看不到数字、点格不算、读屏只有开始；点开始揭开并开始计时；从头来与换题回到盖住', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final haptics = _haptics(tester);
+      await _open(tester, seed: 5, start: false);
+      final puzzle = _rules.generate(5, PuzzleTier.entry).puzzle;
+      void expectCovered() {
+        expect(_start, findsOneWidget);
+        expect(find.bySemanticsLabel('开始'), findsOneWidget);
+        for (var number = 1; number <= 9; number++) {
+          expect(find.text('$number'), findsNothing);
+        }
+        expect(find.bySemanticsLabel(RegExp(r'^\d+，')), findsNothing);
+        expect(_status('下一个：1', 0), findsOneWidget);
+      }
+
+      expectCovered();
+      // 开始按钮盖在棋盘中间：点卡片的两个角（归角上的格）什么都不发生。
+      final card = tester.getRect(find.descendant(of: find.byType(SchultePage), matching: find.byType(CampusSurface)));
+      await tester.tapAt(card.topLeft + const Offset(4, 4));
+      await _step(tester);
+      await tester.tapAt(card.bottomRight - const Offset(4, 4));
+      await _step(tester);
+      expect(haptics, isEmpty);
+      expectCovered();
+
+      await tester.tap(_start);
+      await _step(tester);
+      expect(haptics, ['HapticFeedbackType.selectionClick']);
+      expect(_start, findsNothing);
+      for (var cell = 0; cell < 9; cell++) {
+        expect(find.bySemanticsLabel('${puzzle.numbers[cell]}，未点'), findsOneWidget);
+        expect(find.text('${puzzle.numbers[cell]}'), findsOneWidget);
+      }
+      // 计时已经开始：还没点一格，换难度也要先确认。
+      await tester.tap(find.widgetWithText(TextButton, '入门'));
+      await _step(tester);
+      await tester.tap(find.text('简单'));
+      await _step(tester);
+      expect(find.text('换成简单？'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await _step(tester);
+
+      await _tapOn(tester, _cell(puzzle, puzzle.numbers.indexOf(1)));
+      await _step(tester);
+      expect(_status('下一个：2', 0), findsOneWidget);
+      await tester.tap(find.byTooltip('更多操作'));
+      await _step(tester);
+      await tester.tap(find.text('这一题从头来'));
+      await _step(tester);
+      expectCovered();
+
+      await tester.tap(_start);
+      await _step(tester);
+      await tester.tap(find.byTooltip('更多操作'));
+      await _step(tester);
+      await tester.tap(find.text('换一道题'));
+      await _step(tester);
+      expectCovered();
+      semantics.dispose();
+    });
+
     testWidgets('点错轻震、晃一下，记一次错不往下走；点过的格再点不算错；结果写点错次数', (tester) async {
       final semantics = tester.ensureSemantics();
       final haptics = _haptics(tester);
       await _open(tester, seed: 2);
+      haptics.clear();
       final draw = _rules.generate(2, PuzzleTier.entry);
       final puzzle = draw.puzzle;
       final wrong = draw.solution[5];
@@ -315,6 +394,7 @@ void main() {
       final semantics = tester.ensureSemantics();
       final haptics = _haptics(tester);
       await _open(tester, seed: 4, tier: PuzzleTier.expert);
+      haptics.clear();
       final draw = _rules.generate(4, PuzzleTier.expert);
       final puzzle = draw.puzzle;
       int cellOf(bool red, int number) => List.generate(25, (cell) => cell).firstWhere((cell) => puzzle.red[cell] == red && puzzle.numbers[cell] == number);
@@ -416,6 +496,33 @@ void main() {
       await _open(tester, seed: 9);
       expect(size(), closeTo(standard * 1.3, .01));
       semantics.dispose();
+    });
+  });
+
+  group('用时写到 0.1 秒', () {
+    test('playDuration：舒尔特写到 0.1 秒（不满一分钟写秒、满了接在分:秒后面，都向下取整），其他游戏照旧分:秒', () {
+      String tenths(int millis) => playDuration(Duration(milliseconds: millis), tenths: true);
+      expect(tenths(0), '0.0 秒');
+      expect(tenths(12345), '12.3 秒');
+      expect(tenths(59960), '59.9 秒');
+      expect(tenths(60000), '1:00.0');
+      expect(tenths(62349), '1:02.3');
+      expect(tenths(3723400), '1:02:03.4');
+      expect(playDuration(const Duration(milliseconds: 62349)), '1:02');
+      expect(playDuration(const Duration(milliseconds: 12345)), '0:12');
+      expect(playgroundCatalog.where((game) => game.timeInTenths).map((game) => game.id), ['schulte']);
+    });
+
+    testWidgets('首页卡片：舒尔特的最好成绩写到 0.1 秒，其他游戏照旧分:秒', (tester) async {
+      final store = PlaygroundStore.memory();
+      await store.finish('schulte', PuzzleTier.normal, millis: 12345, at: DateTime.utc(2026, 11, 13));
+      await store.finish('hanoi', PuzzleTier.entry, millis: 12345, moves: 7, at: DateTime.utc(2026, 11, 13));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: PlaygroundPage(store: store, games: playgroundCatalog, groups: playgroundGroups)));
+      await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(find.text('普通 12.3 秒'), 200);
+      expect(find.text('普通 12.3 秒'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('入门 0:12'), -200);
+      expect(find.text('入门 0:12'), findsOneWidget);
     });
   });
 }

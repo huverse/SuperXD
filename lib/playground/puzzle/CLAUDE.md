@@ -51,7 +51,7 @@
   - cipher_page.dart：CipherPage：线索卡上每个数字是 48 见方的方块，点了按数字做记号（排除、确定、清掉轮换，同一个数字在各行与键盘上一起变，只是玩家的笔记）；下面答案格加退格、数字键盘（只有这一档的数字，填过的不收并提示，填满后停用），两者包 CampusToastAnchor 停在底部、线索区单独滚（太矮时整块一起滚）；填满点「确认」判，错了不给答案、只把对不上的线索描警示色、轻震、答案格晃一下并滚到第一行对不上的，答案一改就清掉标记；对了答案格依次亮成激活色再弹结果；撤销按步退回记号与填数；读屏每个数字方块、答案格与数字键各一个按钮。
 - schulte 舒尔特方格（记忆与反应，拼手速、不进挑战）：
   - schulte_rules.dart：SchulteRules：入门到困难是单色 3 到 6 见方、按 1 到 N² 点；专家是 5×5 红黑表（题型 SchulteVariant，code 发出后不改）：黑 1 到 13 从小到大、红 12 到 1 从大到小交替点，黑色先点（schulteTarget 给第几下该点哪个数）；出题把这一串数按种子洗牌铺进格子；答案只记点对的格，solved 要正好 N² 下且逐下对上；难度分只看格数与题型（红黑表乘 2，口径在注释）；题面是边长、题型、每格的数与红黑串，解码拒收不是每个数各一次的题。
-  - schulte_page.dart：SchultePage：整张卡按格均分作热区，按下那一格算落点、抬手才算一下，每根手指各算各的，滑出触摸容差作废（让给右滑返回）；点对的格变淡缩小，点错轻震、晃一下描警示色并计数，点过的格再点不算错；单色是浅底格，红黑表的黑色实心深底、红色描边（色弱靠样式分）；数字 14 号起跟着字号缩放、只在格子放不下时封顶；状态写「下一个：7」或「下一个：红 12」与点错次数；结果弹层另写精确到 0.1 秒的用时与点错次数；读屏每格读数（带颜色）与是否已点。
+  - schulte_page.dart：SchultePage：开局数字盖着（空白浅底格，红黑表也不露颜色），点棋盘中间的「开始」才揭开并开始计时，换题、从头来回到盖着，开始前读屏只有「开始」（人工决策在 _started 上）；整张卡按格均分作热区，按下那一格算落点、抬手才算一下，每根手指各算各的，滑出触摸容差作废（让给右滑返回）；点对的格变淡缩小，点错轻震、晃一下描警示色并计数，点过的格再点不算错；单色是浅底格，红黑表的黑色实心深底、红色描边（色弱靠样式分）；数字 14 号起跟着字号缩放、只在格子放不下时封顶；状态写「下一个：7」或「下一个：红 12」与点错次数；用时写到 0.1 秒（登记项 timeInTenths），结果弹层的大字下面只写点错次数，点错不罚时；读屏每格读数（带颜色）与是否已点。
 
 # 加一个游戏的步骤
 
@@ -69,12 +69,10 @@
 # 测试
 
 - 规则：playground_rules_test.dart；页面：playground_ui_test.dart。
-- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；24 点：playground_twentyfour_test.dart；记忆闪光：playground_flash_test.dart；天平称球：playground_balance_test.dart；扫雷：playground_mines_test.dart；数回：playground_loop_test.dart；逻辑网格：playground_logicgrid_test.dart；密码破译：playground_cipher_test.dart（各自的规则与页面都在自己的文件里）。
+- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；24 点：playground_twentyfour_test.dart；记忆闪光：playground_flash_test.dart；天平称球：playground_balance_test.dart；扫雷：playground_mines_test.dart；数回：playground_loop_test.dart；逻辑网格：playground_logicgrid_test.dart；密码破译：playground_cipher_test.dart；舒尔特方格：playground_schulte_test.dart（各自的规则与页面都在自己的文件里）。
 - iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行、推箱子、扫雷与数回在自己的测试里。
-- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；舒尔特方格：playground_schulte_test.dart（各自的规则与页面都在自己的文件里）。
-- iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行与推箱子在自己的测试里。
 
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/playground/puzzle
-- 本目录的标记在 twentyfour/twentyfour_rules.dart 文件头（24 点允许负数、困难起加乘方与开方、专家档的要求）、mines/mines_page.dart 的 _lose 上方（踩雷即结束、长按插旗）与 flash/flash_page.dart 的阶段提示行（保留）；用户对游戏清单的选择在 lib/playground/playground_catalog.dart 文件头。
+- 本目录的标记在 twentyfour/twentyfour_rules.dart 文件头（24 点允许负数、困难起加乘方与开方、专家档的要求）、mines/mines_page.dart 的 _lose 上方（踩雷即结束、长按插旗）flash/flash_page.dart 的阶段提示行（保留）与 schulte/schulte_page.dart 的 _started 上（开局盖住、用时写到 0.1 秒、点错不罚时）；用户对游戏清单的选择在 lib/playground/playground_catalog.dart 文件头。

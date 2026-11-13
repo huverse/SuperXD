@@ -122,7 +122,7 @@ class _GameCard extends StatelessWidget {
             Row(children: [
               CampusIcon(CampusIcons.trophy, size: 16, color: palette.onSurfaceVariant),
               const SizedBox(width: 6),
-              Flexible(child: Text('${top.tier.label} ${playDuration(Duration(milliseconds: top.best.millis))}', style: secondary)),
+              Flexible(child: Text('${top.tier.label} ${playDuration(Duration(milliseconds: top.best.millis), tenths: game.timeInTenths)}', style: secondary)),
             ]),
           ],
         ])),

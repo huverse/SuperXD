@@ -23,6 +23,7 @@ class PlaygroundGroup {
 
 // 一个游戏：名字、一句话玩法（首页卡片上）、玩法说明（对局页「玩法」里）、图标、所在子类与对局页。
 // challengeable：服务器能不能核对这个游戏的答案。拼手速（舒尔特方格）与物理模拟（画线入杯）的结果服务器复现不了，只进自由模式。
+// timeInTenths：用时写到 0.1 秒（几秒就完、拼手速的游戏，如舒尔特方格）：首页卡片的最好成绩与结果弹层按它选 playDuration 的写法，对局中的走表照旧按秒。
 class PlaygroundGame {
   const PlaygroundGame({
     required this.id,
@@ -33,6 +34,7 @@ class PlaygroundGame {
     required this.group,
     required this.builder,
     this.challengeable = true,
+    this.timeInTenths = false,
   });
   final String id;
   final String name;
@@ -41,6 +43,7 @@ class PlaygroundGame {
   final IconData icon;
   final PlaygroundGroup group;
   final bool challengeable;
+  final bool timeInTenths;
   // 对局页：拿到自己的登记项（名字、玩法说明）与本机记录。
   final Widget Function(BuildContext context, PlaygroundGame game, PlaygroundStore store) builder;
 }
