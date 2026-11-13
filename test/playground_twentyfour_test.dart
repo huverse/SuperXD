@@ -242,8 +242,8 @@ void main() {
       expect(_rules.difficulty(_puzzle([1, 1, 6, 8], twentyFourExtended)), inInclusiveRange(7, 8));
     });
 
-    test('1–13 的 1820 组数：困难档能出 183 组，专家档加上乘方与开方能出 358 组（原来只靠分数的 16 组）', () {
-      var hard = 0, fractionOnly = 0, expert = 0;
+    test('1–13 的 1820 组数：困难档能出 183 组，加上乘方与开方经典四则不经过分数解不开的有 358 组，专家档只取解法不超过 2 种的 107 组（原来只靠分数的 16 组）', () {
+      var hard = 0, fractionOnly = 0, extendedOnly = 0, expert = 0;
       for (var a = 1; a <= 13; a++) {
         for (var b = a; b <= 13; b++) {
           for (var c = b; c <= 13; c++) {
@@ -254,12 +254,14 @@ void main() {
                 continue;
               }
               if (classic.solutions > 0) fractionOnly++;
-              if (twentyFourAnalyze([a, b, c, d], twentyFourExtended).solutions > 0) expert++;
+              final extended = twentyFourAnalyze([a, b, c, d], twentyFourExtended).solutions;
+              if (extended > 0) extendedOnly++;
+              if (extended > 0 && extended <= twentyFourExpertSolutions) expert++;
             }
           }
         }
       }
-      expect((hard, fractionOnly, expert), (183, 16, 358));
+      expect([hard, fractionOnly, extendedOnly, expert], [183, 16, 358, 107]);
     });
 
     test('每档出 20 道：数在这一档的区间、参考解解得开、档位要求（入门只用加减乘也能解且解法多，困难要除法，专家要用到乘方、开方或分数）；难度分同档最多差 1、档间不倒挂；出题快且可复现', () {
@@ -295,6 +297,7 @@ void main() {
               expect((classic.plain, classic.whole), (false, true), reason: reason);
             case PuzzleTier.expert:
               expect(classic.whole, isFalse, reason: reason);
+              expect(twentyFourAnalyze(numbers, twentyFourExtended).solutions, inInclusiveRange(1, twentyFourExpertSolutions), reason: reason);
           }
           scores.add(_rules.difficulty(draw.puzzle));
         }
@@ -635,9 +638,9 @@ void main() {
     testWidgets('乘方写成 a^b、念「几的几次方」；开不尽、开方后不变、指数不是整数、结果太大都不让做，重震并说明原因', (tester) async {
       final semantics = tester.ensureSemantics();
       final haptics = _haptics(tester);
-      // 专家第 5 题是 2 12 8 1。
-      await _open(tester, seed: 5, tier: PuzzleTier.expert);
-      expect(_rules.generate(5, PuzzleTier.expert).puzzle.numbers, [2, 12, 8, 1]);
+      // 专家第 21 题是 9 6 11 1（专家档只取解法不超过 2 种的题，原来用的 2 12 8 1 不再出现）。
+      await _open(tester, seed: 21, tier: PuzzleTier.expert);
+      expect(_rules.generate(21, PuzzleTier.expert).puzzle.numbers, [9, 6, 11, 1]);
 
       Future<void> refused(String message) async {
         expect(haptics.last, 'HapticFeedbackType.heavyImpact', reason: message);
@@ -645,30 +648,30 @@ void main() {
         haptics.clear();
       }
 
-      // √8 开不尽、√1 不变：卡不变。
-      await tester.tap(_card(2));
+      // √6 开不尽、√1 不变：卡不变。
+      await tester.tap(_card(1));
       await _wait(tester);
       await tester.tap(_key(_root));
       await _wait(tester);
       await refused('开不尽');
-      expect(tester.getSemantics(_card(2)), isSemantics(label: '8', isSelected: true));
+      expect(tester.getSemantics(_card(1)), isSemantics(label: '6', isSelected: true));
       await tester.tap(_card(3));
       await _wait(tester);
       await tester.tap(_key(_root));
       await _wait(tester);
       await refused('开方后不变');
       expect(tester.getSemantics(_card(3)), isSemantics(label: '1'));
-      // 12 的 8 次方超过一百万。
-      await tester.tap(_card(1));
+      // 11 的 6 次方超过一百万。
+      await tester.tap(_card(2));
       await _wait(tester);
       await tester.tap(_key(_power));
       await _wait(tester);
-      await tester.tap(_card(2));
+      await tester.tap(_card(1));
       await _wait(tester);
       await refused('结果太大');
-      expect(tester.getSemantics(_card(2)), isSemantics(label: '8'));
+      expect(tester.getSemantics(_card(1)), isSemantics(label: '6'));
       expect(_status(4), findsOneWidget);
-      // 12 与乘方还选着：再点一下乘方取消。1 ÷ 8 = 1/8，再拿 2 做 1/8 次方：指数不是整数。
+      // 11 与乘方还选着：再点一下乘方取消。1 ÷ 6 = 1/6，再拿 9 做 1/6 次方：指数不是整数。
       await tester.tap(_key(_power));
       await _wait(tester);
       expect(tester.getSemantics(_key(_power)), isSemantics(isSelected: false));
@@ -676,22 +679,22 @@ void main() {
       await _wait(tester);
       await tester.tap(_key(_divide));
       await _wait(tester);
-      await tester.tap(_card(2));
+      await tester.tap(_card(1));
       await _wait(tester);
-      expect(tester.getSemantics(_card(2)), isSemantics(label: '8分之1'));
-      await _play(tester, _step(0, _power, 2));
+      expect(tester.getSemantics(_card(1)), isSemantics(label: '6分之1'));
+      await _play(tester, _step(0, _power, 1));
       await refused('指数要是整数');
       await tester.tap(find.widgetWithText(FilledButton, '撤销'));
       await _wait(tester);
-      // 撤销回到 2 12 8 1。8 的 1 次方：写成 8^1，念「8的1次方」；再加 2：乘方比加法先算，不加括号。
-      await _play(tester, _step(2, _power, 3));
-      expect(find.text('8^1 = 8'), findsOneWidget);
-      expect(find.bySemanticsLabel('8的1次方，等于8'), findsOneWidget);
+      // 撤销回到 9 6 11 1。6 的 1 次方：写成 6^1，念「6的1次方」；再加 9：乘方比加法先算，不加括号。
+      await _play(tester, _step(1, _power, 3));
+      expect(find.text('6^1 = 6'), findsOneWidget);
+      expect(find.bySemanticsLabel('6的1次方，等于6'), findsOneWidget);
       await _play(tester, _step(0, _add, 3));
-      expect(find.text('2 + 8^1 = 10'), findsOneWidget);
-      expect(find.bySemanticsLabel('2加8的1次方，等于10'), findsOneWidget);
-      // 10 的 12 次方：指数超过 10。
-      await _play(tester, _step(3, _power, 1));
+      expect(find.text('9 + 6^1 = 15'), findsOneWidget);
+      expect(find.bySemanticsLabel('9加6的1次方，等于15'), findsOneWidget);
+      // 15 的 11 次方：指数超过 10。
+      await _play(tester, _step(3, _power, 2));
       await refused('指数要在 −$twentyFourMaxExponent 到 $twentyFourMaxExponent 之间');
       expect(_status(2), findsOneWidget);
       // 等提示条自己收起，不留下计时器。

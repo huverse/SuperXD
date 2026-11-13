@@ -6,6 +6,7 @@ import 'package:superxd/playground/puzzle_rules.dart';
 // 一局按「合并」走：每步挑两张卡和一个二元运算，两张合成一张；开方是一元的，只改一张卡的值。合到只剩一张、等于 24 就解开。
 // 运算一律用有理数精确算（分子分母都是整数），不用浮点：8 ÷ 3 就是 8/3，再乘 3 正好回到 8。
 // [人工决策-2026-11-13 15:35:06] 用户选定：中间结果允许负数；困难、专家两档加乘方与开方（入门到普通保持经典四则），专家档的题必须用到乘方、开方或分数才能解（原来只靠分数，1–13 里只有 16 组会重复）。
+// [人工决策-2026-11-13 16:47:29] 用户选定：专家档再按解法数筛，只留解法不超过 twentyFourExpertSolutions（2）种的（107 组）；不筛时 358 组难度跨度太大（1 3 4 6 有 61 种解法，5 1 1 2 用 5²−1×1 一眼就出来）。
 
 // 每一步的结果（约分后）分子、分母的绝对值都不超过它，超了不让合：乘方会把数变得很大，卡片上也写不下。
 // 经典四则三步之内最大 13^4，碰不到这条。
@@ -131,6 +132,9 @@ enum TwentyFourOp {
 // 运算集合：入门到普通是经典四则，困难、专家再加乘方与开方。
 const twentyFourClassic = {TwentyFourOp.add, TwentyFourOp.subtract, TwentyFourOp.multiply, TwentyFourOp.divide};
 const twentyFourExtended = {...twentyFourClassic, TwentyFourOp.power, TwentyFourOp.root};
+
+// 专家档的题最多几种解法（人工决策在文件头）。
+const twentyFourExpertSolutions = 2;
 
 // 一步。下标规则：四个位置按题面的顺序编 0–3（第 i 个数开局在第 i 个位置）。
 // 二元运算：first 与 second 是两个不同的位置，结果放进第二张（second）的位置，第一张的位置空出来，之后不能再用；
@@ -415,7 +419,7 @@ TwentyFourAnalysis twentyFourAnalyze(List<int> numbers, Set<TwentyFourOp> ops) {
 // 只有经典四则时就是原来的口径（入门到普通出的题不变）。各档按分数段出题（_scores），所以同档最多差 1 分、档与档之间不重叠地往上走。
 // 1–13 的 1820 组数（不计顺序），经典四则有解的 1362 组：1–2 分 192 组（1–9 里 63 组）、3–4 分 357 组（1–10 里 170 组）、
 // 5–6 分 614 组、7–8 分 183 组（加上乘方与开方后 7 分 154 组、8 分 29 组）；9–10 分加上乘方与开方有 358 组（9 分 285、10 分 73，
-// 原来只靠分数只有 3 3 8 8、1 5 5 5 这类 16 组），仍算不出的 116 组。1^b、a^0 这类白吃一张卡的乘方照样算数（禁掉只少 2 组，不值得多一条规矩）。
+// 原来只靠分数只有 3 3 8 8、1 5 5 5 这类 16 组；专家档只取解法不超过 twentyFourExpertSolutions 种的 107 组），仍算不出的 116 组。1^b、a^0 这类白吃一张卡的乘方照样算数（禁掉只少 2 组，不值得多一条规矩）。
 // 没有解的题面不会出、也解码不进来，按 10 分算。
 int twentyFourScore(TwentyFourAnalysis analysis) {
   final solutions = analysis.solutions;
@@ -447,7 +451,8 @@ class TwentyFourRules extends PuzzleRules<TwentyFourPuzzle, List<TwentyFourStep>
   static const _scores = {PuzzleTier.entry: (1, 2), PuzzleTier.easy: (3, 4), PuzzleTier.normal: (5, 6), PuzzleTier.hard: (7, 8), PuzzleTier.expert: (9, 10)};
 
   // 出题：在这一档的区间里随机抽四个数，难度分落在这一档的分数段、确认有解才用，否则重抽。
-  // - 专家档：经典四则不经过分数就能解的不要（先用找到就停的求解筛，大多数组合几步就找到），剩下的用全部运算找一种解法，找得到就用；
+  // - 专家档：经典四则不经过分数就能解的不要（先用找到就停的求解筛，大多数组合几步就找到），剩下的用全部运算求解，
+  //   有解且解法不超过 twentyFourExpertSolutions 种才用；
   // - 其余各档：分数段只取决于「只用加减乘能不能解、经典四则有没有不经过分数的解法」与解法数，前两条与乘方、开方无关，
   //   困难档按经典四则求解定档（乘方、开方是多给的办法，解法数在难度分里另算，仍落在 7–8 分）。
   @override
@@ -460,9 +465,9 @@ class TwentyFourRules extends PuzzleRules<TwentyFourPuzzle, List<TwentyFourStep>
       final numbers = List<int>.unmodifiable([for (var card = 0; card < twentyFourCards; card++) low + random.nextInt(high - low + 1)]);
       if (tier == PuzzleTier.expert) {
         if (_wholeReachable(numbers)) continue;
-        final sample = _firstSolution(numbers, ops);
-        if (sample == null) continue;
-        return PuzzleDraw(TwentyFourPuzzle(numbers, ops), sample);
+        final extended = twentyFourAnalyze(numbers, ops);
+        if (extended.sample == null || extended.solutions > twentyFourExpertSolutions) continue;
+        return PuzzleDraw(TwentyFourPuzzle(numbers, ops), extended.sample!);
       }
       final analysis = twentyFourAnalyze(numbers, twentyFourClassic);
       final score = twentyFourScore(analysis);
