@@ -84,6 +84,12 @@ GPL 的例外：下文第四节所述 math-curve-loaders 改编部分（lib/them
    版权：zxing-cpp：Copyright 2016 Nu-book Inc.、Copyright 2019 Axel Waggershauser 与 ZXing 作者（以各源文件头为准）；zint：Copyright (C) 2009-2025 Robin Stuart 与贡献者
    用途：扫码加好友、扫课堂签到二维码与从相册识别二维码，识别在本机完成、不联网。
 
+10. Box2D v3.1.1（随 forge2d 0.15.3 编进安装包的原生库）
+   来源：https://github.com/erincatto/box2d （提交 8c661469c9507d3ad6fbd2fea3f1aa71669c2fe3），经 Dart 绑定 forge2d（https://github.com/flame-engine/forge2d，BSD 3-Clause，Copyright 2015 Google Inc.，其许可由构建工具自动收集）打包
+   许可：MIT（全文见第七节）
+   版权：Copyright (c) 2022 Erin Catto
+   用途：游乐场「画线入杯」的物理模拟，在本机计算、不联网。
+
 
 三、参考与借鉴
 

@@ -46,6 +46,15 @@
 - logicgrid 逻辑网格推理（逻辑推理）：
   - logicgrid_rules.dart：LogicGridRules：3 人 2 类到 5 人 4 类（人叫甲到戊；属性池 logicGridKinds 的类与值只能在末尾追加，座位是唯一的有序类，只有困难、专家带）；句式 LogicGridClueKind（code 发出后不改）随档加：是、不是，普通加要么…要么…，困难加左边一位、挨着，专家再加左边（不一定挨着）；求解器是经典两两排除表（人与各类、各类之间各一张，每行每列唯一、传递、线索直接定下或排除，座位类线索在「值 × 座位」那一行移位求交），数解在所有表里挑候选最少的一格分支、数到第 2 个就停；出题先随机定答案、加线索到约束传播就能填满，再按随机顺序删到每条都少不了（删时数解有节点上限，超了整道重来），按档限制试探次数、高档出两道留推理最深的；solved 按「每类一一对应且每条线索成立」判；题面只存类、值与线索结构，解码校验参数并拒收不唯一的题；难度分以规模为主、要试探或传播轮数多再加 1（口径在 difficulty 的注释）。
   - logicgrid_page.dart：LogicGridPage：上面一张表（每行一个人、每列一类，表头固定，人多字大时人那几行在表格里滚，最多占六成高），点一格弹层里「是」点一个填上（同类里原来在别人那格的挪过来，再点是清空）、「不是」可连着标几个排除（格子写剩几个、只剩一个时写出它）；下面线索可滚动，点一条标成用过了变淡；填满就判，错了只把不成立的线索标警示色、轻震、提示条写几条对不上并滚到第一条，接着改一步提示收起，对了表格一行行亮一下再弹结果；按步撤销（挪值时两格一起退），线索记号不进撤销；读屏每格读人、类与填的值或排除，弹层里读「是 / 不是」加值。
+- cipher 密码破译（逻辑推理）：
+  - cipher_rules.dart：CipherRules：密码与每行线索的数字都各不相同，入门 3 位取自 0–5，简单 3 位、普通与困难 4 位、专家 5 位取自 0–9；出题随机定密码，随机加线索行（提示由密码算出，全对的与筛不掉候选的不要）到候选只剩一个，再按随机顺序删掉多余的行，困难与专家各出三道候选留联合推理最多的；cipherHint 按 Mastermind 记法算提示（有重复数字不多算）；cipherSolve 枚举全部候选筛，数到第 2 个就停；cipherReasoning 模拟人拿「数字 × 位置」表加「一定在」推（单行、两行联合……），入门到普通只靠单行、困难与专家必须联合（区间写在 _plans）；solved 要求合规（位数、范围、不重复）且和每行都对得上；难度分按候选规模加联合与轮数（口径在 difficulty 的注释）；解码拒收不唯一的题。
+  - cipher_page.dart：CipherPage：线索卡上每个数字是 48 见方的方块，点了按数字做记号（排除、确定、清掉轮换，同一个数字在各行与键盘上一起变，只是玩家的笔记）；下面答案格加退格、数字键盘（只有这一档的数字，填过的不收并提示，填满后停用），两者包 CampusToastAnchor 停在底部、线索区单独滚（太矮时整块一起滚）；填满点「确认」判，错了不给答案、只把对不上的线索描警示色、轻震、答案格晃一下并滚到第一行对不上的，答案一改就清掉标记；对了答案格依次亮成激活色再弹结果；撤销按步退回记号与填数；读屏每个数字方块、答案格与数字键各一个按钮。
+- schulte 舒尔特方格（记忆与反应，拼手速、不进挑战）：
+  - schulte_rules.dart：SchulteRules：入门到困难是单色 3 到 6 见方、按 1 到 N² 点；专家是 5×5 红黑表（题型 SchulteVariant，code 发出后不改）：黑 1 到 13 从小到大、红 12 到 1 从大到小交替点，黑色先点（schulteTarget 给第几下该点哪个数）；出题把这一串数按种子洗牌铺进格子；答案只记点对的格，solved 要正好 N² 下且逐下对上；难度分只看格数与题型（红黑表乘 2，口径在注释）；题面是边长、题型、每格的数与红黑串，解码拒收不是每个数各一次的题。
+  - schulte_page.dart：SchultePage：开局数字盖着（空白浅底格，红黑表也不露颜色），点棋盘中间的「开始」才揭开并开始计时，换题、从头来回到盖着，开始前读屏只有「开始」（人工决策在 _started 上）；整张卡按格均分作热区，按下那一格算落点、抬手才算一下，每根手指各算各的，滑出触摸容差作废（让给右滑返回）；点对的格变淡缩小，点错轻震、晃一下描警示色并计数，点过的格再点不算错；单色是浅底格，红黑表的黑色实心深底、红色描边（色弱靠样式分）；数字 14 号起跟着字号缩放、只在格子放不下时封顶；状态写「下一个：7」或「下一个：红 12」与点错次数；用时写到 0.1 秒（登记项 timeInTenths），结果弹层的大字下面只写点错次数，点错不罚时；读屏每格读数（带颜色）与是否已点。
+- pour 画线入杯（物理，只进自由模式）：
+  - pour_rules.dart：PourRules：整数单位（1 单位当 1 厘米，棋盘 pourWidth × pourHeight，y 朝下），题面是球的起点、杯子、固定障碍与墨水上限；PourSimulation 用 forge2d（Box2D v3）按固定步长 pourStep、固定子步模拟，线是固定不动的胶囊段，球全进杯并连续 0.5 秒几乎不动算解开，掉出棋盘、停住没全进或满 pourMaxSteps 算没进；出题按档搭参考线（入门到困难一段直坡引到杯口近侧，专家球在杯子正上方、挡板拦着、两笔折返，参数写在 _tiers），障碍让开球经过的通道，参考线能进、上下挪 6 单位也能进、不画进不了才用；答案每笔一串点，pourAnswerValid 查笔数点数、坐标、墨水与离球起点的距离；难度分按结构分五类各两分、墨水紧加 1；判定只保证同一台设备上稳定（口径在文件头）。
+  - pour_page.dart：PourPage：画线走原始指针（外面垫一落指就赢的识别器，iOS 右滑返回抢不走），每走 pourMinSegment 记一个点，墨水不够截在用完处、碰到球的起点就停，提示条说原因、接着做正常操作就收起；放球按真实时间逐帧推进同一份模拟（一帧最多追 4 步，不在前台时计时器静音），放球中按钮变「停下」、不能画；没进提示再试一次，球留在原处到下一次操作；进杯后杯子亮一下、光圈漾开再弹结果，减少动画时直接弹；方格纸、障碍、杯子与画好的线按题与笔数缓存成路径，只有球、正在画的线与墨水条逐帧重画；读屏读球、杯子、障碍的方位、墨水与上一次结果，放球、撤销、重画是按钮。
 
 # 加一个游戏的步骤
 
@@ -63,10 +72,10 @@
 # 测试
 
 - 规则：playground_rules_test.dart；页面：playground_ui_test.dart。
-- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；24 点：playground_twentyfour_test.dart；记忆闪光：playground_flash_test.dart；天平称球：playground_balance_test.dart；扫雷：playground_mines_test.dart；数回：playground_loop_test.dart；逻辑网格：playground_logicgrid_test.dart（各自的规则与页面都在自己的文件里）。
-- iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行、推箱子、扫雷与数回在自己的测试里。
+- 八皇后：playground_queens_test.dart；冰面滑行：playground_ice_test.dart；点灯：playground_lights_test.dart；骑士与无赖：playground_knights_test.dart；过河问题：playground_river_test.dart；推箱子：playground_boxes_test.dart；24 点：playground_twentyfour_test.dart；记忆闪光：playground_flash_test.dart；天平称球：playground_balance_test.dart；扫雷：playground_mines_test.dart；数回：playground_loop_test.dart；逻辑网格：playground_logicgrid_test.dart；密码破译：playground_cipher_test.dart；舒尔特方格：playground_schulte_test.dart；画线入杯：playground_pour_test.dart（各自的规则与页面都在自己的文件里）。
+- iOS 上棋盘里的横向拖动不被页面右滑返回抢走：数织与汉诺塔在 playground_ui_test.dart，冰面滑行、推箱子、扫雷、数回与画线入杯在自己的测试里。
 
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/playground/puzzle
-- 本目录的标记在 twentyfour/twentyfour_rules.dart 文件头（24 点允许负数、困难起加乘方与开方、专家档的要求）、mines/mines_page.dart 的 _lose 上方（踩雷即结束、长按插旗）与 flash/flash_page.dart 的阶段提示行（保留）；用户对游戏清单的选择在 lib/playground/playground_catalog.dart 文件头。
+- 本目录的标记在 twentyfour/twentyfour_rules.dart 文件头（24 点允许负数、困难起加乘方与开方、专家档的要求）、mines/mines_page.dart 的 _lose 上方（踩雷即结束、长按插旗）flash/flash_page.dart 的阶段提示行（保留）与 schulte/schulte_page.dart 的 _started 上（开局盖住、用时写到 0.1 秒、点错不罚时）；用户对游戏清单的选择在 lib/playground/playground_catalog.dart 文件头。

@@ -2,6 +2,7 @@ import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/puzzle/balance/balance_page.dart';
 import 'package:superxd/playground/puzzle/boxes/boxes_page.dart';
 import 'package:superxd/playground/puzzle/flash/flash_page.dart';
+import 'package:superxd/playground/puzzle/cipher/cipher_page.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
 import 'package:superxd/playground/puzzle/ice/ice_page.dart';
 import 'package:superxd/playground/puzzle/knights/knights_page.dart';
@@ -10,9 +11,11 @@ import 'package:superxd/playground/puzzle/mines/mines_page.dart';
 import 'package:superxd/playground/puzzle/loop/loop_page.dart';
 import 'package:superxd/playground/puzzle/logicgrid/logicgrid_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
+import 'package:superxd/playground/puzzle/pour/pour_page.dart';
 import 'package:superxd/playground/puzzle/queens/queens_page.dart';
 import 'package:superxd/playground/puzzle/river/river_page.dart';
 import 'package:superxd/playground/puzzle/twentyfour/twentyfour_page.dart';
+import 'package:superxd/playground/puzzle/schulte/schulte_page.dart';
 import 'package:superxd/theme/campus_icons.dart';
 
 // [人工决策-2026-11-12 21:00:20] 游乐场的板块、子类与游戏只在这一处登记（同百宝箱 toolbox_catalog.dart）；id 发出后不改。
@@ -189,5 +192,40 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.logicgrid,
     group: logicGroup,
     builder: (context, game, store) => LogicGridPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'cipher',
+    name: '密码破译',
+    summary: '看线索，推出密码',
+    howToPlay: '密码是几位各不相同的数字。每行线索是一组数字，下面写着它和密码比有几个数字对、位置对不对。\n'
+        '只靠这些线索就能推出唯一的密码。点线索里的数字可以做记号：点一下是不在密码里，再点是在密码里，再点清掉。\n'
+        '用下方的数字键填答案，点答案格清掉那一位；填满点「确认」。不对时，和答案对不上的线索会标红。',
+    icon: CampusIcons.cipher,
+    group: logicGroup,
+    builder: (context, game, store) => CipherPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'schulte',
+    name: '舒尔特方格',
+    summary: '从小到大，尽快依次点完',
+    howToPlay: '方格里打乱排着一组数，从 1 开始按从小到大的顺序尽快依次点完。点对的格会变淡；点错会震一下、记一次，不往下走。计时从点第一下开始。\n'
+        '专家档分黑、红两色：黑色实心格从 1 点到 13，红色描边格从 12 点到 1，两色交替：黑 1、红 12、黑 2、红 11……最后是黑 13。',
+    icon: CampusIcons.schulte,
+    group: memoryGroup,
+    challengeable: false,
+    timeInTenths: true,
+    builder: (context, game, store) => SchultePage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'pour',
+    name: '画线入杯',
+    summary: '画一条线，把球引进杯子',
+    howToPlay: '用手指在棋盘上画线，松手后线就固定不动；墨水有限，顶上的细条是剩下的墨水，用完就画不了。线不能碰到球。\n'
+        '画好后点「放球」，球在重力下落下。全部球滚进杯子并停稳就过关；没进可以撤销上一笔或重画，再放一次。\n'
+        '可以画好几笔。放球时不能画线，点「停下」让球回到起点。',
+    icon: CampusIcons.pour,
+    group: physicsGroup,
+    challengeable: false,
+    builder: (context, game, store) => PourPage(game: game, store: store),
   ),
 ];

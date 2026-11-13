@@ -453,6 +453,14 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "3.1.0"
+  forge2d:
+    dependency: "direct main"
+    description:
+      name: forge2d
+      sha256: "373e51fe0d781304604045626be8c0849630189315f930b3c788bfaf6acc24a3"
+      url: "https://pub.dev"
+    source: hosted
+    version: "0.15.3"
   glob:
     dependency: transitive
     description:

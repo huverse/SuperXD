@@ -92,11 +92,15 @@ class PlaySession<P, A> extends ChangeNotifier {
   }
 }
 
-// 用时写成 分:秒（一小时以上写 时:分:秒）。
-String playDuration(Duration elapsed) {
+// 用时写成 分:秒（一小时以上写 时:分:秒）；tenths 为真时写到 0.1 秒：不满一分钟写「12.3 秒」，满了在分:秒后面接「.3」（1:02.3）。
+// 都是向下取整（分:秒舍去不足一秒的，0.1 秒舍去不足 0.1 秒的），59.96 秒写「59.9 秒」而不是进成 60.0。
+String playDuration(Duration elapsed, {bool tenths = false}) {
   final seconds = elapsed.inSeconds;
   String two(int value) => value.toString().padLeft(2, '0');
-  return seconds >= 3600 ? '${seconds ~/ 3600}:${two(seconds ~/ 60 % 60)}:${two(seconds % 60)}' : '${seconds ~/ 60}:${two(seconds % 60)}';
+  final whole = seconds >= 3600 ? '${seconds ~/ 3600}:${two(seconds ~/ 60 % 60)}:${two(seconds % 60)}' : '${seconds ~/ 60}:${two(seconds % 60)}';
+  if (!tenths) return whole;
+  final tenth = elapsed.inMilliseconds ~/ 100 % 10;
+  return seconds < 60 ? '$seconds.$tenth 秒' : '$whole.$tenth';
 }
 
 // 对局页的骨架：顶栏（返回、游戏名、玩法、⋯）、状态行（难度、用时与游戏自己的状态）、棋盘、底部操作。
