@@ -134,6 +134,8 @@ abstract final class CampusIcons {
   static const balance = LucideIcons.scale;
   static const arrowDown = LucideIcons.arrowDown;
   static const mines = LucideIcons.bomb;
+  // 数回：套索是一笔绕成的圈。
+  static const loop = LucideIcons.lasso;
 }
 
 void configureCampusIcons() =>

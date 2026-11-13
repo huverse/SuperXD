@@ -7,6 +7,7 @@ import 'package:superxd/playground/puzzle/ice/ice_page.dart';
 import 'package:superxd/playground/puzzle/knights/knights_page.dart';
 import 'package:superxd/playground/puzzle/lights/lights_page.dart';
 import 'package:superxd/playground/puzzle/mines/mines_page.dart';
+import 'package:superxd/playground/puzzle/loop/loop_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
 import 'package:superxd/playground/puzzle/queens/queens_page.dart';
 import 'package:superxd/playground/puzzle/river/river_page.dart';
@@ -164,5 +165,17 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.mines,
     group: gridGroup,
     builder: (context, game, store) => MinesPage(game: game, store: store),
+  ),
+  PlaygroundGame(
+    id: 'loop',
+    name: '数回',
+    summary: '沿着点阵画一个圈，对上格里的数字',
+    howToPlay: '沿着点与点之间的边画一条闭合的回路：不分叉、不交叉，全盘只有一个圈。\n'
+        '格子里的数字是这一格四条边里有几条在回路上，没有数字的格不限。\n'
+        '点一条边画线，再点一次取消；按住沿着点拖动可以连着画。确定不走的边可以切到「标叉」做记号。棋盘大时双指可以放大。\n'
+        '每道题的答案都唯一。',
+    icon: CampusIcons.loop,
+    group: gridGroup,
+    builder: (context, game, store) => LoopPage(game: game, store: store),
   ),
 ];
