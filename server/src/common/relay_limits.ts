@@ -97,6 +97,11 @@ export const diagnosticUploadPerHour = 30;
 export const diagnosticKeepDays = 30;
 export const diagnosticStoreMaxBytes = 2 * 1024 * 1024 * 1024;
 export const diagnosticStoreMaxFiles = 2000;
+// 诊断包认领到应用账号（第 4 阶段，人工决策见客户端 lib/domain/diagnostic_upload.dart）：上传回执里的认领口令一天内有效、只能用一次；
+// 认领、列出、删除按设备每小时 60 次；列表最多给 50 个（一个来源每小时最多传 30 个、30 天就删，正常远到不了）。
+export const diagnosticClaimSeconds = 24 * 60 * 60;
+export const diagnosticAccountRequestsPerHour = 60;
+export const diagnosticAccountListLimit = 50;
 
 // 应用账号（人工决策见 src/modules/account/account_provider.ts 与客户端 lib/domain/app_account.dart）：
 // 登录核对要中转代登录一次学校教务，限流防两件事——被拿来试同学的密码（按学号每天最多 10 次尝试，含验证码重试），

@@ -30,6 +30,7 @@ export const RelayCode = {
   runNotFound: 'RUN_NOT_FOUND', // 这一局不存在或不属于这个账号
   runOver: 'RUN_OVER', // 这一局已经结束，附 run（结算后的局面）
   levelLocked: 'LEVEL_LOCKED', // 这一关还没解锁、已经过了或已经算没过，附 run
+  diagnosticNotFound: 'DIAGNOSTIC_NOT_FOUND', // 诊断包不存在、已到期、认领口令不对或过期，或不属于这个账号
   internal: 'INTERNAL', // 未预期的服务端错误
 } as const;
 

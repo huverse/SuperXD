@@ -3,12 +3,15 @@ import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/app_session.dart';
+import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/domain/account.dart';
 import 'package:superxd/domain/app_account.dart';
+import 'package:superxd/domain/diagnostic_upload.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/edu/login_rules.dart';
 import 'package:superxd/gateway/account_access.dart';
@@ -275,6 +278,46 @@ void main() {
       await tester.pumpAndSettle();
     });
 
+    // 人工决策见 domain/diagnostic_upload.dart：登录着应用账号时，菜单里看与删记在账号下的诊断包。
+    testWidgets('登录着点开多一项「我上传的诊断包」：列出记在账号下的包，点一行复制编号，⋯里删除要确认', (tester) async {
+      final diagnosticsClient = _DiagnosticClient([
+        DiagnosticRecord(id: '7KQ2M9XD', bytes: 2 * 1024 * 1024, uploadedAt: DateTime.now().toUtc(), expiresAt: DateTime.now().toUtc().add(const Duration(days: 30, hours: 1))),
+      ]);
+      final diagnostics = AccountDiagnostics(uploader: _NoUploader(), client: diagnosticsClient, account: () => appAccounts.current);
+      String? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String;
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+      client.records[_identity.loginId] = _accountId;
+      await appAccounts.load();
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: AccountPage(session: session, name: '同学甲', appAccounts: appAccounts, diagnostics: diagnostics)));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('应用账号'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('我上传的诊断包'));
+      await tester.pumpAndSettle();
+      expect(find.text('诊断编号 7KQ2M9XD'), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('2.0 MB · 30 天后删除')), findsOneWidget);
+      await tester.tap(find.text('诊断编号 7KQ2M9XD'));
+      await tester.pumpAndSettle();
+      expect(copied, '7KQ2M9XD');
+      expect(find.text('已复制诊断编号'), findsOneWidget);
+      await tester.tap(find.byTooltip('更多操作'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('删除'));
+      await tester.pumpAndSettle();
+      expect(find.text('删除诊断包 7KQ2M9XD？'), findsOneWidget);
+      await tester.tap(find.widgetWithText(FilledButton, '删除'));
+      await tester.pumpAndSettle();
+      expect(diagnosticsClient.deleted, ['7KQ2M9XD']);
+      expect(find.text('诊断编号 7KQ2M9XD'), findsNothing);
+      expect(find.text('应用账号下还没有诊断包'), findsOneWidget);
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+    });
+
     testWidgets('没配中转时不显示这一组', (tester) async {
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: AccountPage(session: session, name: '同学甲')));
       await tester.pumpAndSettle();
@@ -392,4 +435,24 @@ class _Accounts extends AccountAccess {
   }
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+class _NoUploader implements DiagnosticUploader {
+  @override
+  Future<DiagnosticReceipt> upload(String archivePath, {void Function(double sent)? onProgress}) => throw UnimplementedError();
+}
+
+class _DiagnosticClient implements DiagnosticAccountClient {
+  _DiagnosticClient(this.records);
+  final List<DiagnosticRecord> records;
+  final deleted = <String>[];
+  @override
+  Future<DiagnosticRecord> claim(AppAccountRef account, String id, String claim) => throw UnimplementedError();
+  @override
+  Future<List<DiagnosticRecord>> list(AppAccountRef account) async => [...records];
+  @override
+  Future<void> delete(AppAccountRef account, String id) async {
+    deleted.add(id);
+    records.removeWhere((record) => record.id == id);
+  }
 }

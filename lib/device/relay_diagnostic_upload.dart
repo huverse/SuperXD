@@ -29,7 +29,7 @@ class RelayDiagnosticUpload implements DiagnosticUploader {
   final CampusHttp _http;
 
   @override
-  Future<String> upload(String archivePath, {void Function(double sent)? onProgress}) async {
+  Future<DiagnosticReceipt> upload(String archivePath, {void Function(double sent)? onProgress}) async {
     final sealedPath = '$archivePath.sealed', key = decodeDiagnosticKey(recipientKey);
     try {
       final length = await Isolate.run(() async {
@@ -44,7 +44,7 @@ class RelayDiagnosticUpload implements DiagnosticUploader {
     }
   }
 
-  Future<String> _send(File sealed, int length, void Function(double sent)? onProgress) async {
+  Future<DiagnosticReceipt> _send(File sealed, int length, void Function(double sent)? onProgress) async {
     final uri = Uri.parse('$baseUrl/v1/diagnostics');
     var sent = 0;
     final body = sealed.openRead().map((chunk) {
@@ -86,9 +86,9 @@ class RelayDiagnosticUpload implements DiagnosticUploader {
         throw DiagnosticUploadException(status == 413 ? '日志包超过上传上限，请改用导出日志' : '服务器暂时不可用，请稍后再试');
     }
     try {
-      final id = parseDiagnosticReceipt(jsonDecode(utf8.decode(response.bodyBytes)));
-      campusLog('[Diagnostics] action=upload id=$id bytes=$length');
-      return id;
+      final receipt = parseDiagnosticReceipt(jsonDecode(utf8.decode(response.bodyBytes)));
+      campusLog('[Diagnostics] action=upload id=${receipt.id} bytes=$length');
+      return receipt;
     } on FormatException catch (error, stack) {
       campusLog('[Diagnostics] action=upload errorType=${error.runtimeType} message=${error.message}\n$stack');
       throw const DiagnosticUploadException('服务器返回的格式不对');
@@ -96,8 +96,9 @@ class RelayDiagnosticUpload implements DiagnosticUploader {
   }
 }
 
-// 回执是外部输入：只认格式对的诊断编号，不合格抛 FormatException。
-String parseDiagnosticReceipt(Object? json) => switch (json) {
-  {'id': final String id} when diagnosticIdPattern.hasMatch(id) => id,
+// 回执是外部输入：只认格式对的诊断编号，不合格抛 FormatException；认领口令只认 16 字节的 base64url，没有或不对当没有（这个包就只能匿名）。
+DiagnosticReceipt parseDiagnosticReceipt(Object? json) => switch (json) {
+  {'id': final String id} when diagnosticIdPattern.hasMatch(id) =>
+    DiagnosticReceipt(id: id, claim: switch (json['claim']) { final String claim when RegExp(r'^[A-Za-z0-9_-]{22}$').hasMatch(claim) => claim, _ => null }),
   _ => throw const FormatException('不是诊断包回执'),
 };

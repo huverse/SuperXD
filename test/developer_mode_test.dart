@@ -546,5 +546,5 @@ class _FakeUploader implements DiagnosticUploader {
   _FakeUploader(this._upload);
   final Future<String> Function(String archivePath, void Function(double sent)? onProgress) _upload;
   @override
-  Future<String> upload(String archivePath, {void Function(double sent)? onProgress}) => _upload(archivePath, onProgress);
+  Future<DiagnosticReceipt> upload(String archivePath, {void Function(double sent)? onProgress}) => _upload(archivePath, onProgress).then((id) => DiagnosticReceipt(id: id));
 }

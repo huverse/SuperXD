@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:superxd/app_session.dart';
+import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/account_dialogs.dart';
+import 'package:superxd/page/diagnostic_uploads_page.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -36,11 +40,13 @@ class AccountTitle extends StatelessWidget {
 
 // [人工决策-2026-10-05 01:28:53] 账号操作收进“我的”头像卡进入的账号页（同 iOS Apple ID）：记住账号、切换账号、导入旧版本数据一组，退出登录单独一组、红字放最底。
 class AccountPage extends StatefulWidget {
-  const AccountPage({super.key, required this.session, required this.name, this.appAccounts});
+  const AccountPage({super.key, required this.session, required this.name, this.appAccounts, this.diagnostics});
   final AppSession session;
   final String name;
   // 应用账号（人工决策见 application/app_accounts.dart）；没配中转时为空，不显示这一组。
   final AppAccounts? appAccounts;
+  // 应用账号下的诊断包（人工决策见 domain/diagnostic_upload.dart）：登录着时应用账号那一行的菜单里多一项「我上传的诊断包」。
+  final AccountDiagnostics? diagnostics;
 
   @override
   State<AccountPage> createState() => _AccountPageState();
@@ -153,13 +159,19 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
-  // 登录着：从这一行弹出退出与注销（注销是破坏性操作，都先确认）。
+  // 登录着：从这一行弹出我上传的诊断包（配了中转才有）、退出与注销（注销是破坏性操作，都先确认）。
   Future<void> _appAccountMenu(BuildContext anchor, AppAccounts appAccounts) async {
-    final choice = await showCampusMenu<String>(anchor, items: const [
-      CampusMenuItem(value: 'signOut', label: '退出应用账号', icon: CampusIcons.logout),
-      CampusMenuItem(value: 'delete', label: '注销应用账号', icon: CampusIcons.delete, destructive: true),
+    final diagnostics = widget.diagnostics;
+    final choice = await showCampusMenu<String>(anchor, items: [
+      if (diagnostics != null) const CampusMenuItem(value: 'diagnostics', label: '我上传的诊断包', icon: CampusIcons.send),
+      const CampusMenuItem(value: 'signOut', label: '退出应用账号', icon: CampusIcons.logout),
+      const CampusMenuItem(value: 'delete', label: '注销应用账号', icon: CampusIcons.delete, destructive: true),
     ]);
     if (!mounted || choice == null) return;
+    if (choice == 'diagnostics') {
+      unawaited(Navigator.of(context).push(CampusPageRoute<void>(builder: (context) => DiagnosticUploadsPage(diagnostics: diagnostics!))));
+      return;
+    }
     final deleting = choice == 'delete';
     final confirmed = await showCampusConfirm(
       context,

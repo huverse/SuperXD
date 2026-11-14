@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/app_session.dart';
+import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/auto_sync.dart';
@@ -39,13 +40,13 @@ import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 // 推入账号页（登录应用账号在那里）：游乐场的挑战与节日动画后的抽奖提示共用。
-void pushAccountPage(BuildContext context, AppSession session, AppAccounts? appAccounts) {
+void pushAccountPage(BuildContext context, AppSession session, AppAccounts? appAccounts, AccountDiagnostics? diagnostics) {
   final account = session.gateway.activeSession;
   final name = account == null ? '' : account.name.isEmpty ? account.loginId : account.name;
-  unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => AccountPage(session: session, name: name, appAccounts: appAccounts))));
+  unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => AccountPage(session: session, name: name, appAccounts: appAccounts, diagnostics: diagnostics))));
 }
 
-GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, required PlaygroundStore playground, ValueListenable<bool>? splashGone, CampusReminders? reminders, SocialService? social, AppUpdates? updates, DeveloperSettings? developer, DiagnosticLog? logs, PaintingGallery? paintings, DeveloperNotes? notes, Festivals? festivals, AppAccounts? appAccounts, ChallengeHub? challenges, AutoSync? autoSync, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
+GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, required PlaygroundStore playground, ValueListenable<bool>? splashGone, CampusReminders? reminders, SocialService? social, AppUpdates? updates, DeveloperSettings? developer, DiagnosticLog? logs, PaintingGallery? paintings, DeveloperNotes? notes, Festivals? festivals, AppAccounts? appAccounts, AccountDiagnostics? diagnostics, ChallengeHub? challenges, AutoSync? autoSync, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
   final tools = toolbox.modules;
   // 好友分享的卡片交给注册表里认得它的工具打开（页面层不依赖百宝箱，由这里接上；路由不认识具体工具页面）。
   void openVideo(BuildContext context, VideoShare video) {
@@ -112,7 +113,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
           groups: playgroundGroups,
           challenges: challenges,
           // 挑战要应用账号：推入账号页（登录应用账号在那里）；没登录教务先去登录页。
-          openAccount: (context) => pushAccountPage(context, session, appAccounts),
+          openAccount: (context) => pushAccountPage(context, session, appAccounts, diagnostics),
           openLogin: (context) => context.go('/login'),
         ))),
       for (final game in playgroundCatalog) GoRoute(path: '/playground/${game.id}', parentNavigatorKey: rootKey,
@@ -137,7 +138,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
           StatefulShellBranch(routes: [GoRoute(path: '/today', builder: (context, state) => TodayPage(gateway: gateway, onSessionExpired: () => session.expire(generation), isAccountCurrent: () => session.generation == generation && session.loggedIn, syncRequest: todaySync, autoSync: autoSync))]),
           StatefulShellBranch(routes: [GoRoute(path: '/service', builder: (context, state) => const ServicePage())]),
           StatefulShellBranch(routes: [GoRoute(path: '/message', builder: (context, state) => MessagePage(social: social, gateway: gateway, openVideo: openVideo))]),
-          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, social: social, updates: updates, developer: developer, logs: logs, paintings: paintings, notes: notes, festivals: festivals, appAccounts: appAccounts, saveRewardPicture: saveRewardPicture))]),
+          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, social: social, updates: updates, developer: developer, logs: logs, paintings: paintings, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, saveRewardPicture: saveRewardPicture))]),
         ],
       ),
     ],

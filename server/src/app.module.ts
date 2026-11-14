@@ -8,6 +8,7 @@ import { AccountDeviceEntity, AccountIdentityEntity, AppAccountEntity } from 'sr
 import { AccountModule } from 'src/modules/account/account.module';
 import { AppReleaseModule } from 'src/modules/app_release/app_release.module';
 import { ChallengeBestEntity, ChallengeRunEntity } from 'src/modules/challenge/challenge.entity';
+import { DiagnosticUploadEntity } from 'src/modules/diagnostic/diagnostic_upload.entity';
 import { ChallengeModule } from 'src/modules/challenge/challenge.module';
 import { ChaoxingPackEntity } from 'src/modules/chaoxing/chaoxing_pack.entity';
 import { ChaoxingPackModule } from 'src/modules/chaoxing/chaoxing_pack.module';
@@ -32,7 +33,7 @@ import { RewardModule } from 'src/modules/reward/reward.module';
       useFactory: () => ({
         type: 'mysql',
         ...env().mysql,
-        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity, RewardCampaignEntity, RewardPrizeEntity, RewardDrawEntity, AppAccountEntity, AccountIdentityEntity, AccountDeviceEntity, PointsGrantEntity, PointsEntryEntity, ChallengeRunEntity, ChallengeBestEntity],
+        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity, RewardCampaignEntity, RewardPrizeEntity, RewardDrawEntity, AppAccountEntity, AccountIdentityEntity, AccountDeviceEntity, PointsGrantEntity, PointsEntryEntity, ChallengeRunEntity, ChallengeBestEntity, DiagnosticUploadEntity],
         // 表结构由人工执行 sql/schema.sql 管理，启动不做 DDL。
         synchronize: false,
         migrationsRun: false,

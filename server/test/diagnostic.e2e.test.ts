@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import Redis from 'ioredis';
 import request from 'supertest';
+import { DataSource } from 'typeorm';
 
 import { createRelayApp } from 'src/relay_app';
 import { env } from 'src/config/env';
@@ -12,6 +13,7 @@ import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
 import { diagnosticKeepDays, diagnosticStoreMaxBytes, diagnosticStoreMaxFiles, diagnosticUploadMaxBytes, diagnosticUploadPerHour } from 'src/common/relay_limits';
 import { DiagnosticRetentionTask } from 'src/modules/diagnostic/diagnostic_retention.task';
+import { TestDevice } from './test_device';
 
 let app: NestExpressApplication;
 let server: string;
@@ -79,7 +81,7 @@ describe('诊断包', () => {
   it('密文原样存成以诊断编号命名的文件（只给服务进程读写），回编号与保留天数，并记进已用量；没有下载接口', async () => {
     const body = randomBytes(4096);
     const response = await upload(body).expect(200);
-    expect(response.body).toEqual({ id: expect.stringMatching(/^[0-9A-HJKMNP-TV-Z]{8}$/), keepDays: diagnosticKeepDays });
+    expect(response.body).toEqual({ id: expect.stringMatching(/^[0-9A-HJKMNP-TV-Z]{8}$/), keepDays: diagnosticKeepDays, claim: expect.stringMatching(/^[A-Za-z0-9_-]{22}$/) });
     const path = join(dir(), response.body.id);
     expect(await readFile(path)).toEqual(body);
     expect((await stat(path)).mode & 0o777).toBe(0o600);
@@ -176,5 +178,82 @@ describe('诊断包', () => {
     expect((await readdir(dir())).sort()).toEqual([fresh, 'JKMNPQRS.part', 'README.txt'].sort());
     expect(await usage()).toEqual({ bytes: '370', files: '2' });
     expect(await redis().ttl(RedisKeys.diagnosticUsage())).toBeGreaterThan(0);
+  });
+});
+
+describe('认领到应用账号', () => {
+  // 一个登录了应用账号的设备：注册设备后直接在库里登记账号（账号登录本身在 account.e2e.test.ts 测）。
+  const signedIn = async () => {
+    const device = new TestDevice(server);
+    expect((await device.register()).status).toBe(200);
+    const accountId = randomBytes(16).toString('base64url'), now = new Date();
+    const database = app.get(DataSource);
+    await database.query('INSERT INTO app_account (account_id, last_seen_time, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, now, now, now]);
+    await database.query('INSERT INTO account_device (account_id, device_id, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, device.deviceId, now, now]);
+    return device;
+  };
+  const claimed = async (id: string) => (await app.get(DataSource).query('SELECT account_id AS accountId FROM diagnostic_upload WHERE diagnostic_id = ?', [id])) as { accountId: string }[];
+
+  it('回执带一次性认领口令；登录了应用账号的设备凭它认领，列表里看得到；口令错、用过、没登录、别的账号都不行', async () => {
+    const receipt = (await upload(randomBytes(300)).expect(200)).body as { id: string; claim: string };
+    expect(receipt.claim).toMatch(/^[A-Za-z0-9_-]{22}$/);
+    const owner = await signedIn(), other = await signedIn();
+    const bare = new TestDevice(server);
+    expect((await bare.register()).status).toBe(200);
+    const notSignedIn = await bare.call('POST', `/v1/account/diagnostics/${receipt.id}/claim`, { claim: receipt.claim });
+    expect(notSignedIn.status).toBe(404);
+    expect(notSignedIn.body.code).toBe('ACCOUNT_NOT_FOUND');
+    const wrong = await owner.call('POST', `/v1/account/diagnostics/${receipt.id}/claim`, { claim: 'A'.repeat(22) });
+    expect(wrong.status).toBe(404);
+    expect(wrong.body.code).toBe('DIAGNOSTIC_NOT_FOUND');
+    const done = await owner.call('POST', `/v1/account/diagnostics/${receipt.id}/claim`, { claim: receipt.claim });
+    expect(done.status).toBe(200);
+    expect(done.body).toMatchObject({ id: receipt.id, bytes: 300 });
+    expect(done.body.expiresAt - done.body.uploadedAt).toBe(diagnosticKeepDays * 86400_000);
+    expect((await other.call('POST', `/v1/account/diagnostics/${receipt.id}/claim`, { claim: receipt.claim })).status).toBe(404);
+    expect(await claimed(receipt.id)).toHaveLength(1);
+    const listed = await owner.call('GET', '/v1/account/diagnostics');
+    expect(listed.body.uploads.map((item: { id: string }) => item.id)).toEqual([receipt.id]);
+    expect((await other.call('GET', '/v1/account/diagnostics')).body.uploads).toEqual([]);
+    const malformed = await owner.call('POST', '/v1/account/diagnostics/abc/claim', { claim: receipt.claim });
+    expect(malformed.status).toBe(400);
+  });
+
+  it('删除只能删自己账号下的：文件与记录一起删，别人删回 DIAGNOSTIC_NOT_FOUND', async () => {
+    const receipt = (await upload(randomBytes(200)).expect(200)).body as { id: string; claim: string };
+    const owner = await signedIn(), other = await signedIn();
+    await owner.call('POST', `/v1/account/diagnostics/${receipt.id}/claim`, { claim: receipt.claim });
+    const denied = await other.call('DELETE', `/v1/account/diagnostics/${receipt.id}`);
+    expect(denied.status).toBe(404);
+    expect(denied.body.code).toBe('DIAGNOSTIC_NOT_FOUND');
+    expect(await readdir(dir())).toEqual([receipt.id]);
+    expect((await owner.call('DELETE', `/v1/account/diagnostics/${receipt.id}`)).status).toBe(204);
+    expect(await readdir(dir())).toEqual([]);
+    expect(await claimed(receipt.id)).toEqual([]);
+  });
+
+  it('注销应用账号连带删认领过的包，没认领的包不动', async () => {
+    const mine = (await upload(randomBytes(200)).expect(200)).body as { id: string; claim: string };
+    const anonymous = (await upload(randomBytes(100)).expect(200)).body as { id: string };
+    const owner = await signedIn();
+    await owner.call('POST', `/v1/account/diagnostics/${mine.id}/claim`, { claim: mine.claim });
+    expect((await owner.call('DELETE', '/v1/account')).status).toBe(204);
+    expect(await readdir(dir())).toEqual([anonymous.id]);
+    expect(await claimed(mine.id)).toEqual([]);
+  });
+
+  it('清理任务删到期的包时连同认领记录；认领满保留期多一天的记录兜底删掉', async () => {
+    const receipt = (await upload(randomBytes(200)).expect(200)).body as { id: string; claim: string };
+    const owner = await signedIn();
+    await owner.call('POST', `/v1/account/diagnostics/${receipt.id}/claim`, { claim: receipt.claim });
+    const seconds = (Date.now() - diagnosticKeepDays * 86400_000 - 60_000) / 1000;
+    await utimes(join(dir(), receipt.id), seconds, seconds);
+    const stray = randomBytes(5).toString('hex').toUpperCase().replace(/[ILOU]/g, '0').slice(0, 8);
+    const old = new Date(Date.now() - (diagnosticKeepDays + 2) * 86400_000);
+    await app.get(DataSource).query('INSERT INTO diagnostic_upload (diagnostic_id, account_id, bytes, create_time, update_time) VALUES (?, ?, ?, ?, ?)', [stray, 'gone', 1, old, old]);
+    await app.get(DiagnosticRetentionTask).sweep();
+    expect(await claimed(receipt.id)).toEqual([]);
+    expect(await claimed(stray)).toEqual([]);
+    expect((await owner.call('GET', '/v1/account/diagnostics')).body.uploads).toEqual([]);
   });
 });

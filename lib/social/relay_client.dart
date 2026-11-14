@@ -40,6 +40,7 @@ abstract final class RelayCode {
   static const runNotFound = 'RUN_NOT_FOUND';
   static const runOver = 'RUN_OVER';
   static const levelLocked = 'LEVEL_LOCKED';
+  static const diagnosticNotFound = 'DIAGNOSTIC_NOT_FOUND';
   static const internal = 'INTERNAL';
   // 以下只在客户端产生。
   static const network = 'NETWORK'; // 连不上服务器

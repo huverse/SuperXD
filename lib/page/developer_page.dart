@@ -86,9 +86,10 @@ class _DeveloperPageState extends State<DeveloperPage> {
       _uploading = true;
       _sent = null;
     });
-    String? id, failure;
+    String? failure;
+    DiagnosticReceipt? receipt;
     try {
-      id = await widget.logs.upload(onProgress: (sent) {
+      receipt = await widget.logs.upload(onProgress: (sent) {
         if (mounted) setState(() => _sent = sent);
       });
     } on DiagnosticUploadException catch (error) {
@@ -100,9 +101,10 @@ class _DeveloperPageState extends State<DeveloperPage> {
     if (!mounted) return;
     setState(() {
       _uploading = false;
-      _diagnosticId = id;
+      _diagnosticId = receipt?.id;
     });
-    showCampusToast(context, failure ?? '已上传，把诊断编号告诉开发者');
+    // 登录着应用账号时已认领到账号下（人工决策见 domain/diagnostic_upload.dart），在账号页能看到、删除。
+    showCampusToast(context, failure ?? (receipt!.claimed ? '已上传并记在应用账号下，把诊断编号告诉开发者' : '已上传，把诊断编号告诉开发者'));
   }
 
   Future<void> _copyDiagnosticId() async {
