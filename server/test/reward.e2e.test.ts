@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import Redis from 'ioredis';
 import { createConnection, Connection } from 'mysql2/promise';
@@ -44,16 +44,22 @@ const setup = async (options: { from?: number; to?: number; mode?: 'uniform' | '
   return key;
 };
 
-// 抽奖身份：同客户端，一台登记过的设备（注册接口同一来源每小时 20 台新设备，每个用例前清空限流）。
-const registered = async () => {
+// 抽签人：登录了应用账号的设备。注册设备后直接在库里登记账号与一条教务登录身份（账号登录本身在 account.e2e.test.ts 测）；
+// 注册接口同一来源每小时 20 台新设备，每个用例前清空限流。subject 是登录身份的主体哈希，给了同一个就是同一个人。
+const registered = async (subject = randomBytes(32).toString('base64url')) => {
   const device = new TestDevice(server);
   expect((await device.register()).status).toBe(200);
+  const accountId = randomBytes(16).toString('base64url'), now = new Date();
+  await database.query('INSERT INTO app_account (account_id, last_seen_time, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, now, now, now]);
+  await database.query('INSERT INTO account_identity (account_id, provider, subject_hash, create_time, update_time) VALUES (?, ?, ?, ?, ?)', [accountId, 'kingo', subject, now, now]);
+  await database.query('INSERT INTO account_device (account_id, device_id, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, device.deviceId, now, now]);
   return device;
 };
 
 const draw = (device: TestDevice, key: string, body: Record<string, unknown>) => device.call('POST', `/v1/rewards/${key}/draw`, body);
 
-const deviceHash = (device: TestDevice) => createHash('sha256').update(device.deviceId).digest('hex');
+// 库里的抽签人：登录身份的 sha256（同 reward.service.ts）。
+const participantHash = (subject: string) => createHash('sha256').update(`SXD1-reward\nkingo\n${subject}`).digest('hex');
 
 beforeAll(async () => {
   app = await createRelayApp();
@@ -109,7 +115,7 @@ describe('概率模型', () => {
 });
 
 describe('抽奖', () => {
-  it('要求已登记设备的签名：不签名、没登记、签名不对都回 UNAUTHORIZED，不掷骰子', async () => {
+  it('要求登录了应用账号的设备签名：不签名、没登记、签名不对回 UNAUTHORIZED，没登录应用账号回 ACCOUNT_NOT_FOUND，都不掷骰子', async () => {
     const key = await setup();
     const unsigned = await request(server).post(`/v1/rewards/${key}/draw`).send({ activeDays: 3 });
     expect(unsigned.status).toBe(401);
@@ -124,7 +130,24 @@ describe('抽奖', () => {
     const path = `/v1/rewards/${key}/draw`, body = Buffer.from(JSON.stringify({ activeDays: 3 }));
     const forged = await request(server).post(path).set({ ...other.headers('POST', path, body), 'x-sxd-device': device.deviceId }).send(body.toString());
     expect(forged.status).toBe(401);
+    const bare = new TestDevice(server);
+    expect((await bare.register()).status).toBe(200);
+    const anonymous = await draw(bare, key, { activeDays: 3 });
+    expect(anonymous.status).toBe(404);
+    expect(anonymous.body.code).toBe('ACCOUNT_NOT_FOUND');
     expect(roll).not.toHaveBeenCalled();
+  });
+
+  it('一个人一次活动只抽一次：换一台设备、注销后用同一身份重建账号，都还是第一次的结果；换个人才重新掷', async () => {
+    const key = await setup();
+    const subject = randomBytes(32).toString('base64url');
+    roll.mockReturnValue(0.99);
+    expect((await draw(await registered(subject), key, { activeDays: 3 })).body.result).toBe('missed');
+    await database.query('DELETE d, a, i FROM account_identity i JOIN app_account a ON a.account_id = i.account_id JOIN account_device d ON d.account_id = i.account_id WHERE i.subject_hash = ?', [subject]);
+    roll.mockReturnValue(0);
+    expect((await draw(await registered(subject), key, { activeDays: 3 })).body.result).toBe('missed');
+    expect((await draw(await registered(), key, { activeDays: 3 })).body.result).toBe('won');
+    expect(roll).toHaveBeenCalledTimes(2);
   });
 
   it('活动不存在、还没开始或已经结束都回 closed，不记抽签', async () => {
@@ -137,9 +160,10 @@ describe('抽奖', () => {
     expect(roll).not.toHaveBeenCalled();
   });
 
-  it('抽中给出奖品；同一台设备再来返回同一个奖品，没抽中的再来也还是没抽中（不能重抽）；库里只存设备号的哈希', async () => {
+  it('抽中给出奖品；同一个人再来返回同一个奖品，没抽中的再来也还是没抽中（不能重抽）；库里只存登录身份的哈希', async () => {
     const key = await setup();
-    const lucky = await registered(), unlucky = await registered();
+    const luckySubject = randomBytes(32).toString('base64url'), unluckySubject = randomBytes(32).toString('base64url');
+    const lucky = await registered(luckySubject), unlucky = await registered(unluckySubject);
     roll.mockReturnValue(0);
     const won = await draw(lucky, key, { activeDays: 5 });
     expect(won.status).toBe(200);
@@ -150,7 +174,7 @@ describe('抽奖', () => {
     roll.mockReturnValue(0);
     expect((await draw(unlucky, key, { activeDays: 5 })).body.result).toBe('missed');
     const hashes = (await database.query('SELECT participant_hash AS hash FROM reward_draw d JOIN reward_campaign c ON c.id = d.campaign_id WHERE c.campaign_key = ?', [key])) as { hash: string }[];
-    expect(hashes.map((row) => row.hash).sort()).toEqual([lucky, unlucky].map(deviceHash).sort());
+    expect(hashes.map((row) => row.hash).sort()).toEqual([luckySubject, unluckySubject].map(participantHash).sort());
   });
 
   it('按活跃度加权：同一个骰子点数，活跃的抽中、新用户没抽中；平权时活跃天数不起作用', async () => {
@@ -169,10 +193,10 @@ describe('抽奖', () => {
     expect((await draw(await registered(), key, { activeDays: 1 })).body.result).toBe('missed');
   });
 
-  it('并发：12 台设备同时抽中、只有 5 份奖品，正好发出 5 份且各不相同；同一台设备并发 5 次只记一次', async () => {
+  it('并发：12 个人同时抽中、只有 5 份奖品，正好发出 5 份且各不相同；同一个人并发 5 次只记一次', async () => {
     roll.mockReturnValue(0);
     const key = await setup({ prizes: 5 });
-    const devices = await Promise.all(Array.from({ length: 12 }, registered));
+    const devices = await Promise.all(Array.from({ length: 12 }, () => registered()));
     const results = await Promise.all(devices.map((device) => draw(device, key, { activeDays: 1 })));
     const prizes = results.filter((response) => response.body.result === 'won').map((response) => response.body.prize.content);
     expect(prizes).toHaveLength(5);
@@ -228,15 +252,16 @@ describe('抽奖', () => {
     expect(response.body.code).toBe('RATE_LIMITED');
   });
 
-  it('抽奖设备删除自己（DELETE /v1/devices）后不能再抽；抽签记录照旧留到活动保留期', async () => {
+  it('设备删除自己（DELETE /v1/devices）后不能再抽；抽签记录照旧留到活动保留期', async () => {
     roll.mockReturnValue(0.99);
     const key = await setup();
-    const device = await registered();
+    const subject = randomBytes(32).toString('base64url');
+    const device = await registered(subject);
     expect((await draw(device, key, { activeDays: 2 })).body.result).toBe('missed');
     expect((await device.call('DELETE', '/v1/devices')).status).toBe(204);
     const after = await draw(device, key, { activeDays: 2 });
     expect(after.status).toBe(401);
-    const [counted] = (await database.query('SELECT COUNT(*) AS draws FROM reward_draw WHERE participant_hash = ?', [deviceHash(device)])) as { draws: string }[];
+    const [counted] = (await database.query('SELECT COUNT(*) AS draws FROM reward_draw WHERE participant_hash = ?', [participantHash(subject)])) as { draws: string }[];
     expect(Number(counted.draws)).toBe(1);
   });
 });

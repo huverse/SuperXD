@@ -10,7 +10,7 @@ import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/application/app_moments.dart';
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/application/festivals.dart';
-import 'package:superxd/device/relay_reward_client.dart';
+import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/domain/developer_note.dart';
@@ -19,9 +19,9 @@ import 'package:superxd/local/developer_note_memory.dart';
 import 'package:superxd/local/festival_memory.dart';
 import 'package:superxd/page/festival/festival_reward.dart';
 import 'package:superxd/page/festival/festival_stage.dart';
-import 'package:superxd/social/festival_pass.dart';
-import 'package:superxd/social/identity_vault.dart';
+import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/social/relay_reward_client.dart';
 import 'package:superxd/social/social_crypto.dart';
 
 import 'fake_relay.dart';
@@ -32,44 +32,25 @@ class FakeRewardClient implements FestivalRewardClient {
   FestivalDraw Function(String occasion) result;
   Object? failure;
   Completer<void>? gate;
-  final requests = <({String campaign, int activeDays})>[];
+  final requests = <({AppAccountRef account, String campaign, int activeDays})>[];
 
   @override
-  Future<FestivalDraw> draw(String campaign, {required String occasion, required int activeDays}) async {
-    requests.add((campaign: campaign, activeDays: activeDays));
+  Future<FestivalDraw> draw(AppAccountRef account, String campaign, {required String occasion, required int activeDays}) async {
+    requests.add((account: account, campaign: campaign, activeDays: activeDays));
     await gate?.future;
     if (failure case final failure?) throw failure;
     return result(occasion);
   }
 }
 
-// 合成的抽奖身份：只记调用；failure 不为空时登记与撤下都抛它；gate 不为空时登记等它完成。
-class FakePass implements FestivalPass {
-  final calls = <String>[];
-  Object? failure;
-  Completer<void>? gate;
+// 用例里登录着的应用账号（合成）。
+const _account = AppAccountRef(accountId: 'AAAAAAAAAAAAAAAAAAAAAA', slot: 'account.test');
 
-  @override
-  Future<void> enroll() async {
-    calls.add('enroll');
-    await gate?.future;
-    if (failure case final failure?) throw failure;
-  }
-
-  @override
-  Future<Map<String, Object?>> post(String path, Map<String, Object?> payload) => throw UnimplementedError();
-
-  @override
-  Future<void> retire() async {
-    calls.add('retire');
-    if (failure case final failure?) throw failure;
-  }
-}
-
-// 抽签的假中转：设备登记与删除交给按协议 v1 验签的 FakeRelay；抽签同样按登记过的签名公钥验签（没登记回 UNAUTHORIZED），再按 result 回。
+// 抽签的假中转：按 FakeRelay 登记过的签名公钥验签（没登记回 UNAUTHORIZED），设备不在 accounts 里回 ACCOUNT_NOT_FOUND（同服务端没登录应用账号），再按 result 回。
 class _RewardRelay implements RelayTransport {
   _RewardRelay(this.relay);
   final FakeRelay relay;
+  final accounts = <String>{};
   final draws = <({String device, String path, Map<String, Object?> body})>[];
   Map<String, Object?> result = {'result': 'missed', 'prize': null};
 
@@ -84,6 +65,7 @@ class _RewardRelay implements RelayTransport {
     final device = headers['x-sxd-device']!, key = relay.devices[device]?.sign;
     final canonical = requestCanonical(method, pathWithQuery, headers['x-sxd-time']!, headers['x-sxd-nonce']!, body ?? const []);
     if (key == null || !await verifyEd25519(key, canonical, decodeBase64UrlNoPad(headers['x-sxd-signature']!))) return const RelayResponse(401, {'code': RelayCode.unauthorized});
+    if (!accounts.contains(device)) return const RelayResponse(404, {'code': RelayCode.accountNotFound});
     draws.add((device: device, path: pathWithQuery, body: (jsonDecode(utf8.decode(body!)) as Map).cast<String, Object?>()));
     return RelayResponse(200, result);
   }
@@ -100,7 +82,6 @@ void main() {
   final noon = campusNoon(2, 6);
   const spring = FestivalOccasion(id: 'spring-2027', name: '新春快乐', from: '2027-02-06', to: '2027-02-08', campaign: 'spring-2027');
   const lantern = FestivalOccasion(id: 'lantern-2027', name: '元宵快乐', from: '2027-02-20', to: '2027-02-20');
-  const enrolled = FestivalRecord(pass: FestivalPassState.enrolled);
 
   group('规则', () {
     test('节日按校园日含两端；活跃天数只算近 30 天；奖品在节日结束后再留 3 天', () {
@@ -109,12 +90,6 @@ void main() {
       expect(festivalPrizeKept(prize('spring-2027'), [spring], '2027-02-11'), isTrue);
       expect(festivalPrizeKept(prize('spring-2027'), [spring], '2027-02-12'), isFalse);
       expect(festivalPrizeKept(prize('gone'), [spring], '2027-02-06'), isFalse);
-    });
-
-    test('抽奖身份只在有抽奖的节日开始前 7 天到结束（含两端）之间要有；没有抽奖的节日不算', () {
-      expect([for (final day in ['2027-01-29', '2027-01-30', '2027-02-08', '2027-02-09']) festivalPassNeeded([spring, lantern], day)], [false, true, true, false]);
-      expect(festivalPassNeeded([lantern], '2027-02-20'), isFalse);
-      expect(festivalPassNeeded(const [], '2027-02-06'), isFalse);
     });
 
     test('抽签结果是外部输入：认不出的结果、种类与超长内容都拒绝', () {
@@ -137,44 +112,46 @@ void main() {
   });
 
   group('本机记录', () {
-    test('写下再读回；播过与抽过只留最近 20 次；坏的项丢掉、坏文件当没有记录；旧版本的参与号不认也不写', () async {
+    test('写下再读回；播过与抽过只留最近 20 次；坏的项丢掉、坏文件当没有记录；旧版本的参与号与抽奖身份状态不认也不写', () async {
       final directory = await Directory.systemTemp.createTemp('festival');
       addTearDown(() => directory.delete(recursive: true));
       final file = File('${directory.path}/festival.json');
       final memory = await FileFestivalMemory.open(file);
       await memory.save(FestivalRecord(
-        pass: FestivalPassState.enrolled,
         activeDays: {'2027-02-06'},
         played: [for (var index = 0; index < 25; index++) 'p$index'],
         drawn: ['spring-2027'],
         prizes: [prize('spring-2027')],
       ));
       final record = (await FileFestivalMemory.open(file)).record;
-      expect(record.pass, FestivalPassState.enrolled);
       expect(record.played, [for (var index = 5; index < 25; index++) 'p$index']);
       expect(record.prizes.single.content, '88662027');
       final json = jsonDecode(await file.readAsString()) as Map;
       (json['prizes'] as List).add({'occasion': 'x', 'kind': 'cash', 'content': 'y', 'note': '', 'wonAt': 'bad', 'revealed': false});
-      json['pass'] = 'lucky';
       await file.writeAsString(jsonEncode(json));
       final cleaned = (await FileFestivalMemory.open(file)).record;
-      expect(cleaned.pass, FestivalPassState.none);
       expect(cleaned.prizes, hasLength(1));
-      // 旧版本写的文件：有 participant、没有 pass。照常读出其余各项，下次写就不再有参与号。
-      await file.writeAsString(jsonEncode({'participant': 'AAAAAAAAAAAAAAAAAAAAAA', 'activeDays': ['2027-02-06'], 'played': ['spring-2027'], 'drawn': <Object?>[], 'prizes': <Object?>[]}));
+      // 旧版本写的文件：有 participant 或 pass。照常读出其余各项，下次写就都没了。
+      await file.writeAsString(jsonEncode({'participant': 'AAAAAAAAAAAAAAAAAAAAAA', 'pass': 'enrolled', 'activeDays': ['2027-02-06'], 'played': ['spring-2027'], 'drawn': <Object?>[], 'prizes': <Object?>[]}));
       final legacy = await FileFestivalMemory.open(file);
-      expect(legacy.record.pass, FestivalPassState.none);
       expect(legacy.record.played, ['spring-2027']);
       await legacy.save(legacy.record);
-      expect(jsonDecode(await file.readAsString()), isNot(contains('participant')));
+      expect(jsonDecode(await file.readAsString()), allOf(isNot(contains('participant')), isNot(contains('pass'))));
       await file.writeAsString('{坏');
       expect((await FileFestivalMemory.open(file)).record.played, isEmpty);
     });
   });
 
   group('编排（Festivals）', () {
-    Festivals festivals({FestivalRewardClient? client, FestivalPass? pass, FestivalMemory? memory, DateTime? now}) =>
-        Festivals(occasions: const [spring, lantern], memory: memory ?? FileFestivalMemory.memory(enrolled), pass: pass ?? FakePass(), client: client, clock: () => now ?? noon);
+    // 当前的应用账号：用例里改它模拟登录、退出。
+    AppAccountRef? signedIn = _account;
+    var gone = 0;
+    setUp(() {
+      signedIn = _account;
+      gone = 0;
+    });
+    Festivals festivals({FestivalRewardClient? client, FestivalMemory? memory, DateTime? now}) =>
+        Festivals(occasions: const [spring, lantern], memory: memory ?? FileFestivalMemory.memory(), client: client, account: () => signedIn, accountGone: () => gone++, clock: () => now ?? noon);
 
     test('今天在过、没播过的才该播；播过就不再播；不在节日里没有', () async {
       final subject = festivals();
@@ -184,8 +161,8 @@ void main() {
       expect(festivals(now: DateTime.utc(2027, 2, 10)).due, isNull);
     });
 
-    test('活跃天数：同一天只记一次，抽签时报近 30 天的天数', () async {
-      final memory = FileFestivalMemory.memory(const FestivalRecord(pass: FestivalPassState.enrolled, activeDays: {'2027-01-01', '2027-02-01'}));
+    test('活跃天数：同一天只记一次，抽签时报近 30 天的天数；用当前的应用账号抽', () async {
+      final memory = FileFestivalMemory.memory(const FestivalRecord(activeDays: {'2027-01-01', '2027-02-01'}));
       final client = FakeRewardClient((occasion) => const FestivalMissed());
       final subject = festivals(client: client, memory: memory);
       await subject.recordActive();
@@ -193,6 +170,7 @@ void main() {
       expect(memory.record.activeDays, {'2027-02-01', '2027-02-06'});
       await subject.draw(spring);
       expect(client.requests.single.activeDays, 2);
+      expect(client.requests.single.account, _account);
     });
 
     // 回归：draw 的 whenComplete 曾写成箭头体，remove 返回的正是这个 Future，Future 等自己、永远完成不了，动画后的揭晓被超时吃掉。
@@ -212,7 +190,7 @@ void main() {
     });
 
     test('连不上不记结果，回到前台补抽一次（只补播过、有抽奖、今天还在过的）；没配中转或没有抽奖不抽', () async {
-      final memory = FileFestivalMemory.memory(enrolled);
+      final memory = FileFestivalMemory.memory();
       final client = FakeRewardClient((occasion) => const FestivalMissed())..failure = const FestivalException('连不上服务器');
       final subject = festivals(client: client, memory: memory);
       expect(await subject.draw(spring), isNull);
@@ -228,132 +206,58 @@ void main() {
       expect(await subject.draw(lantern), isNull);
     });
 
-    test('按需登记抽奖身份：节日前 7 天以前不碰；进了窗口登记一次，没登记成就下次打开再试；节日过后撤下，没撤成下次再撤', () async {
-      final memory = FileFestivalMemory.memory(), pass = FakePass();
-      var now = campusNoon(1, 29);
-      final subject = Festivals(occasions: const [spring, lantern], memory: memory, pass: pass, client: FakeRewardClient((occasion) => const FestivalMissed()), clock: () => now);
-      await subject.prepare();
-      expect(pass.calls, isEmpty, reason: '离节日还有 8 天：不生成密钥、不联网');
-      expect(memory.record.pass, FestivalPassState.none);
-      now = campusNoon(1, 30);
-      pass.failure = const FestivalException('请求过于频繁');
-      await subject.prepare();
-      expect(pass.calls, ['enroll']);
-      expect(memory.record.pass, FestivalPassState.created, reason: '被限流：记下生成过，下次再登记');
-      pass.failure = null;
-      await subject.prepare();
-      await subject.prepare();
-      expect(pass.calls, ['enroll', 'enroll'], reason: '登记成功后不再登记');
-      expect(memory.record.pass, FestivalPassState.enrolled);
-      now = campusNoon(2, 9);
-      pass.failure = const FestivalException('连不上服务器');
-      await subject.prepare();
-      expect(memory.record.pass, FestivalPassState.enrolled, reason: '没撤成：留着下次再撤');
-      pass.failure = null;
-      await subject.prepare();
-      await subject.prepare();
-      expect(pass.calls, ['enroll', 'enroll', 'retire', 'retire']);
-      expect(memory.record.pass, FestivalPassState.none);
-      // 只有没抽奖的节日：怎么都不碰。
-      final quiet = FakePass();
-      await Festivals(occasions: const [lantern], memory: FileFestivalMemory.memory(), pass: quiet, clock: () => campusNoon(2, 20)).prepare();
-      expect(quiet.calls, isEmpty);
-    });
-
-    test('登记没成也撤：生成过密钥、节日过了还没登记成功的，同样请中转删、删本机密钥', () async {
-      final memory = FileFestivalMemory.memory(const FestivalRecord(pass: FestivalPassState.created)), pass = FakePass();
-      await Festivals(occasions: const [spring], memory: memory, pass: pass, clock: () => campusNoon(2, 9)).prepare();
-      expect(pass.calls, ['retire']);
-      expect(memory.record.pass, FestivalPassState.none);
-    });
-
-    test('抽签前没登记成功不抽、等下次；登记在路上时先等它；中转不认这台设备时记回没登记，下次打开重新登记后补抽', () async {
-      final memory = FileFestivalMemory.memory(), pass = FakePass()..failure = const FestivalException('连不上服务器');
+    test('没登录应用账号：不抽、不记、提示可以去登录；登录后回到前台补抽，抽过就不再提示', () async {
+      final memory = FileFestivalMemory.memory();
       final client = FakeRewardClient((occasion) => const FestivalMissed());
-      final subject = festivals(client: client, pass: pass, memory: memory);
+      final subject = festivals(client: client, memory: memory);
+      signedIn = null;
+      expect(subject.needsSignIn(spring), isTrue);
+      expect(subject.needsSignIn(lantern), isFalse, reason: '没有抽奖的节日不提示');
+      expect(festivals().needsSignIn(spring), isFalse, reason: '没配中转的不提示');
       await subject.markPlayed(spring);
-      await subject.refresh();
-      expect(client.requests, isEmpty, reason: '没登记成功的不抽');
+      expect(await subject.draw(spring), isNull);
+      expect(client.requests, isEmpty);
       expect(memory.record.drawn, isEmpty);
-      pass
-        ..failure = null
-        ..gate = Completer<void>();
-      final preparing = subject.prepare();
-      final drawing = subject.draw(spring);
-      pass.gate!.complete();
-      await preparing;
-      expect(await drawing, isA<FestivalMissed>(), reason: '等登记完再抽');
-      expect(client.requests, hasLength(1));
-      // 下一次节日：中转已经不认这台设备。
-      final next = FakeRewardClient((occasion) => const FestivalMissed())..failure = const FestivalNotEnrolled();
-      final again = Festivals(occasions: const [spring], memory: FileFestivalMemory.memory(enrolled), pass: pass, client: next, clock: () => noon);
-      await again.markPlayed(spring);
-      expect(await again.draw(spring), isNull);
-      next.failure = null;
-      pass.calls.clear();
-      await again.refresh();
-      expect(pass.calls, ['enroll'], reason: '记回没登记，回到前台重新登记');
-      expect(next.requests, hasLength(2));
+      signedIn = _account;
+      expect(subject.needsSignIn(spring), isFalse);
+      await subject.refresh();
+      expect(client.requests.single.account, _account);
+      expect(memory.record.drawn, ['spring-2027']);
+      signedIn = null;
+      expect(subject.needsSignIn(spring), isFalse, reason: '这次节日已经抽过');
+    });
+
+    test('中转说这个应用账号已不在：不记结果，让应用账号马上核一次', () async {
+      final memory = FileFestivalMemory.memory();
+      final client = FakeRewardClient((occasion) => const FestivalMissed())..failure = const FestivalNotSignedIn();
+      final subject = festivals(client: client, memory: memory);
+      expect(await subject.draw(spring), isNull);
+      expect(memory.record.drawn, isEmpty);
+      expect(gone, 1);
     });
   });
 
-  group('抽奖身份与抽签客户端（经假中转）', () {
-    test('登记到中转、抽签用抽奖身份签名且只发活跃天数；与私信身份分开存；撤下时中转删设备、本机删密钥', () async {
-      final relay = FakeRelay(), transport = _RewardRelay(relay), vault = MemoryIdentityVault(), social = MemoryIdentityVault();
-      social.identity = await SocialIdentity.generate();
-      final pass = RelayFestivalPass(vault: vault, transport: transport);
-      await pass.enroll();
-      final deviceId = vault.identity!.deviceId;
-      expect(relay.devices.keys, [deviceId], reason: '中转按自签名登记了这台抽奖设备');
-      expect(deviceId, isNot(social.identity!.deviceId));
-      await pass.enroll();
-      expect(vault.identity!.deviceId, deviceId, reason: '再登记沿用同一把密钥');
+  group('抽签客户端（经假中转）', () {
+    test('用这个应用账号的设备密钥签名，只发活跃天数；本机没有这把密钥、中转说账号不在都算没登录；连不上、格式不对给原因', () async {
+      final relay = FakeRelay(), transport = _RewardRelay(relay), vault = MemoryAppAccountVault();
+      final client = RelayRewardClient(vault: vault, transport: transport);
+      await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalNotSignedIn>()), reason: '本机没有这个账号的密钥');
+      expect(transport.draws, isEmpty);
+      final key = await SocialIdentity.generate();
+      await vault.write(_account.slot, AppAccountKey(identity: key, accountId: _account.accountId));
+      relay.devices[key.deviceId] = (sign: key.signPublicKey, box: key.boxPublicKey);
+      await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalNotSignedIn>()), reason: '中转说这把密钥不在任何账号下');
+      transport.accounts.add(key.deviceId);
       transport.result = {'result': 'won', 'prize': {'kind': 'password', 'content': '口令', 'note': ''}};
-      final result = await RelayRewardClient(pass).draw('spring-2027', occasion: 'spring-2027', activeDays: 7);
+      final result = await client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7);
       expect((result as FestivalWon).prize.content, '口令');
-      expect(transport.draws.single.device, deviceId);
+      expect(transport.draws.single.device, key.deviceId);
       expect(transport.draws.single.path, '/v1/rewards/spring-2027/draw');
       expect(transport.draws.single.body, {'activeDays': 7});
       transport.result = {'result': 'won'};
-      await expectLater(RelayRewardClient(pass).draw('spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalException>().having((error) => error.message, 'message', contains('格式'))));
+      await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalException>().having((error) => error.message, 'message', contains('格式'))));
       relay.failNext = const RelayException(RelayCode.network);
-      await expectLater(RelayRewardClient(pass).draw('spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalException>().having((error) => error.message, 'message', contains('连不上'))));
-      await pass.retire();
-      expect(relay.devices, isEmpty);
-      expect(vault.identity, isNull);
-      expect(social.identity, isNotNull, reason: '私信身份不受影响');
-      await expectLater(pass.post('/v1/rewards/spring-2027/draw', {'activeDays': 1}), throwsA(isA<FestivalNotEnrolled>()), reason: '本机没有密钥');
-    });
-
-    test('中转不认这台设备：抽签算没登记；撤下时照样删本机密钥；连不上时本机密钥留着下次再撤', () async {
-      final relay = FakeRelay(), vault = MemoryIdentityVault();
-      final pass = RelayFestivalPass(vault: vault, transport: _RewardRelay(relay));
-      vault.identity = await SocialIdentity.generate();
-      await expectLater(RelayRewardClient(pass).draw('spring-2027', occasion: 'spring-2027', activeDays: 1), throwsA(isA<FestivalNotEnrolled>()));
-      await pass.enroll();
-      relay.failNext = const RelayException(RelayCode.timeout);
-      await expectLater(pass.retire(), throwsA(isA<FestivalException>()));
-      expect(vault.identity, isNotNull);
-      relay.devices.clear();
-      await pass.retire();
-      expect(vault.identity, isNull);
-    });
-
-    test('从头走一遍：节日前一周打开时登记，节日当天抽签带抽奖设备的签名，节日过后撤下', () async {
-      final relay = FakeRelay(), transport = _RewardRelay(relay), vault = MemoryIdentityVault();
-      final pass = RelayFestivalPass(vault: vault, transport: transport);
-      var now = campusNoon(1, 30);
-      final subject = Festivals(occasions: const [spring], memory: FileFestivalMemory.memory(), pass: pass, client: RelayRewardClient(pass), clock: () => now);
-      await subject.refresh();
-      expect(relay.devices, hasLength(1));
-      now = noon;
-      await subject.markPlayed(spring);
-      expect(await subject.draw(spring), isA<FestivalMissed>());
-      expect(transport.draws.single.device, relay.devices.keys.single);
-      now = campusNoon(2, 9);
-      await subject.refresh();
-      expect(relay.devices, isEmpty);
-      expect(vault.identity, isNull);
+      await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalException>().having((error) => error.message, 'message', contains('连不上'))));
     });
   });
 

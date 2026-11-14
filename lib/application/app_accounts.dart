@@ -57,15 +57,17 @@ class AppAccounts extends ChangeNotifier {
   static const checkGap = Duration(hours: 24);
 
   AccountIdentity? _identity;
-  String? _accountId;
+  AppAccountRef? _account;
   bool _loaded = false;
   bool _busy = false;
   _PendingSignIn? _pending;
   DateTime? _checkedAt;
   int _epoch = 0;
 
-  // 当前教务账号对应的应用账号号（灰度与分批更新按它分桶），没登录为空。
-  String? get accountId => _accountId;
+  // 当前的应用账号（人工决策见 domain/app_account.dart 的 AppAccountRef）：挑战、节日抽奖、诊断包、私信都只认它；没登录为空。
+  AppAccountRef? get current => _account;
+  // 它的账号号（灰度与分批更新按它分桶）。
+  String? get accountId => _account?.accountId;
   bool get loaded => _loaded;
   bool get busy => _busy;
 
@@ -81,9 +83,9 @@ class AppAccounts extends ChangeNotifier {
     final epoch = ++_epoch;
     _cancelPending();
     _identity = identity;
-    final accountId = identity == null ? null : await client.accountOf(identity);
+    final account = identity == null ? null : await client.accountOf(identity);
     if (epoch != _epoch) return;
-    _accountId = accountId;
+    _account = account;
     _loaded = true;
     _checkedAt = null;
     notifyListeners();
@@ -153,9 +155,9 @@ class AppAccounts extends ChangeNotifier {
     switch (step) {
       case AppAccountCaptcha(:final captcha):
         return AppAccountNeedsCaptcha(captcha);
-      case AppAccountSignedIn(:final accountId):
+      case AppAccountSignedIn(:final account):
         _pending = null;
-        _accountId = accountId;
+        _account = account;
         _checkedAt = _now();
         notifyListeners();
         // 中转刚用这个账号登录过教务，本机的会话已被挤掉：紧接着自己重登，换上新会话。
@@ -167,22 +169,22 @@ class AppAccounts extends ChangeNotifier {
 
   Future<AppAccountResult> signOut() => _run('sign_out', () async {
     final identity = _identity;
-    if (identity == null || _accountId == null) return const AppAccountDone();
+    if (identity == null || _account == null) return const AppAccountDone();
     await client.signOut(identity);
-    if (_same(identity, _identity)) _accountId = null;
+    if (_same(identity, _identity)) _account = null;
     return const AppAccountDone('已退出应用账号');
   });
 
   // 注销：服务端删掉账号与全部设备上的登录，本机随之退出。
   Future<AppAccountResult> deleteAccount() => _run('delete', () async {
     final identity = _identity;
-    if (identity == null || _accountId == null) return const AppAccountDone();
+    if (identity == null || _account == null) return const AppAccountDone();
     try {
       await client.delete(identity);
     } on AppAccountException catch (error) {
       return AppAccountError(error.message);
     }
-    if (_same(identity, _identity)) _accountId = null;
+    if (_same(identity, _identity)) _account = null;
     return const AppAccountDone('应用账号已注销');
   });
 
@@ -193,8 +195,8 @@ class AppAccounts extends ChangeNotifier {
     } catch (error, stack) {
       campusLog('[AppAccounts] action=forget errorType=${error.runtimeType}\n$stack');
     }
-    if (_same(identity, _identity) && _accountId != null) {
-      _accountId = null;
+    if (_same(identity, _identity) && _account != null) {
+      _account = null;
       notifyListeners();
     }
   }
@@ -204,14 +206,14 @@ class AppAccounts extends ChangeNotifier {
   Future<void> check({bool force = false}) async {
     final identity = _identity;
     final checkedAt = _checkedAt;
-    if (identity == null || _accountId == null || _busy || (!force && checkedAt != null && _now().difference(checkedAt) < checkGap)) return;
+    if (identity == null || _account == null || _busy || (!force && checkedAt != null && _now().difference(checkedAt) < checkGap)) return;
     _checkedAt = _now();
     try {
       await client.summary(identity);
     } on AppAccountException catch (error) {
       campusLog('[AppAccounts] action=check failure=${error.failure.name}');
       if (error.failure == AppAccountFailure.notSignedIn && _same(identity, _identity)) {
-        _accountId = null;
+        _account = null;
         notifyListeners();
       }
     } catch (error, stack) {

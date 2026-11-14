@@ -17,6 +17,7 @@ import 'package:superxd/application/festivals.dart';
 import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/domain/developer_note.dart';
 import 'package:superxd/domain/festival.dart';
+import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/developer_note_memory.dart';
 import 'package:superxd/local/festival_memory.dart';
@@ -774,7 +775,7 @@ void main() {
     final scene = FestivalScene(occasion: occasion, length: const Duration(seconds: 2), builder: (context, progress) => const Center(child: Text('合成场景')));
     festivalCatalog.add(scene);
     addTearDown(() => festivalCatalog.remove(scene));
-    final festivals = Festivals(occasions: [occasion], memory: FileFestivalMemory.memory(const FestivalRecord(pass: FestivalPassState.enrolled)), client: _Reward());
+    final festivals = Festivals(occasions: [occasion], memory: FileFestivalMemory.memory(), client: _Reward(), account: () => const AppAccountRef(accountId: 'AAAAAAAAAAAAAAAAAAAAAA', slot: 'fake-slot'));
     final moments = AppMoments(festivals: festivals, timetable: () async => const CampusTimetable([]));
     final legal = LegalNoticeMemory.memory(agreedRevision: legalRevision, seenRevision: legalRevision);
     await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, legal: legal, festivals: festivals, moments: moments)); await tester.pumpAndSettle();
@@ -785,6 +786,33 @@ void main() {
     expect(find.text('合成场景'), findsNothing);
     expect(find.bySemanticsLabel('拆开红包'), findsOneWidget);
     expect(festivals.unrevealed, isNull, reason: '揭晓了就记下');
+    await tester.pumpWidget(const SizedBox()); session.dispose(); moments.dispose();
+  });
+  // 人工决策见 domain/festival.dart：抽奖要登录应用账号；没登录的只看动画，放完提示一句，点「去登录」进账号页。
+  testWidgets('节日当天没登录应用账号：照样播动画但不抽签，放完提示可以去登录，点「去登录」进账号页', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 2.75;
+    addTearDown(tester.view.reset);
+    final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
+    final today = formatCampusDate(campusInstant());
+    final occasion = FestivalOccasion(id: 'test-day', name: '合成节日', from: today, to: today, campaign: 'test-day');
+    final scene = FestivalScene(occasion: occasion, length: const Duration(seconds: 2), builder: (context, progress) => const Center(child: Text('合成场景')));
+    festivalCatalog.add(scene);
+    addTearDown(() => festivalCatalog.remove(scene));
+    final reward = _Reward();
+    final festivals = Festivals(occasions: [occasion], memory: FileFestivalMemory.memory(), client: reward, account: () => null);
+    final moments = AppMoments(festivals: festivals, timetable: () async => const CampusTimetable([]));
+    final legal = LegalNoticeMemory.memory(agreedRevision: legalRevision, seenRevision: legalRevision);
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, legal: legal, festivals: festivals, moments: moments)); await tester.pumpAndSettle();
+    await tester.pump(const Duration(seconds: 1)); await tester.pump(const Duration(milliseconds: 400));
+    expect(find.text('合成场景'), findsOneWidget);
+    await tester.pump(const Duration(seconds: 2)); await tester.pump(const Duration(milliseconds: 500)); await tester.pump(const Duration(milliseconds: 500));
+    expect(find.text('合成场景'), findsNothing);
+    expect(find.bySemanticsLabel('拆开红包'), findsNothing);
+    expect(reward.draws, 0);
+    expect(find.text('登录应用账号就能参加这次抽奖'), findsOneWidget);
+    await tester.tap(find.text('去登录')); await tester.pumpAndSettle();
+    expect(find.byType(AccountPage), findsOneWidget);
     await tester.pumpWidget(const SizedBox()); session.dispose(); moments.dispose();
   });
   testWidgets('新信在不迫切的时候弹出：开屏走完、停在底栏根页且上面没有别的页面；从别的页面回到根页时立即看一眼；每次前台最多一次', (tester) async {
@@ -911,11 +939,14 @@ void expectSliding(WidgetTester tester, Finder page) {
   });
 }
 
-// 合成的抽签：一律抽中一个合成口令（测试里抽奖身份记成已登记）。
+// 合成的抽签：一律抽中一个合成口令（测试里登录着一个合成的应用账号）。
 class _Reward implements FestivalRewardClient {
+  var draws = 0;
   @override
-  Future<FestivalDraw> draw(String campaign, {required String occasion, required int activeDays}) async =>
-      FestivalWon(FestivalPrize(occasion: occasion, kind: FestivalPrizeKind.password, content: '合成口令', note: '', wonAt: DateTime.now().toUtc()));
+  Future<FestivalDraw> draw(AppAccountRef account, String campaign, {required String occasion, required int activeDays}) async {
+    draws++;
+    return FestivalWon(FestivalPrize(occasion: occasion, kind: FestivalPrizeKind.password, content: '合成口令', note: '', wonAt: DateTime.now().toUtc()));
+  }
 }
 
 // 开发者的话的合成清单：两封，第二封刚发出（会弹）。

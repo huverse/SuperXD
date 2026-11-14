@@ -1,4 +1,4 @@
-import 'package:superxd/domain/account.dart';
+import 'package:superxd/domain/app_account.dart';
 
 // 挑战与积分（人工决策见 lib/playground/challenge/challenge_rules.dart 与服务端 src/modules/points/points.service.ts）：
 // 服务器下发挑战、出题、逐关核对、计时（不暂停）与结算，积分属于应用账号。这里是两边共用的类型与端口，协议见 server/README.md「挑战与积分」。
@@ -134,19 +134,19 @@ class ChallengeException implements Exception {
   String toString() => 'ChallengeException($failure)';
 }
 
-// 中转端口（social 实现）：用这个教务账号对应的应用账号设备密钥签名。games 是这个版本玩得了的游戏 id。
+// 中转端口（social 实现）：用这个应用账号的设备密钥签名。games 是这个版本玩得了的游戏 id。
 abstract interface class ChallengeClient {
-  Future<ChallengeCatalog> catalog(AccountIdentity identity, Set<String> games);
-  Future<ChallengeRun> start(AccountIdentity identity, String challengeId, Set<String> games);
-  Future<ChallengeRun> run(AccountIdentity identity, String runId);
+  Future<ChallengeCatalog> catalog(AppAccountRef account, Set<String> games);
+  Future<ChallengeRun> start(AppAccountRef account, String challengeId, Set<String> games);
+  Future<ChallengeRun> run(AppAccountRef account, String runId);
   // attempt 是这一关之前交过几次；没收到回复时用同一个号重发，服务器只算一次。
-  Future<ChallengeVerdict> answer(AccountIdentity identity, String runId, String levelId, int attempt, Object? answer);
-  Future<ChallengeRun> end(AccountIdentity identity, String runId);
-  Future<PointsSummary> points(AccountIdentity identity);
-  Future<PointsBatch> pointsEntries(AccountIdentity identity, {String? before});
+  Future<ChallengeVerdict> answer(AppAccountRef account, String runId, String levelId, int attempt, Object? answer);
+  Future<ChallengeRun> end(AppAccountRef account, String runId);
+  Future<PointsSummary> points(AppAccountRef account);
+  Future<PointsBatch> pointsEntries(AppAccountRef account, {String? before});
 }
 
-// 游乐场经它用挑战与积分（application 实现，组合根注入）：跟着当前教务账号的应用账号走；登录状态变了 changes 发一次。
+// 游乐场经它用挑战与积分（application 实现，组合根注入）：跟着当前的应用账号走；登录状态变了 changes 发一次。
 abstract interface class ChallengeHub {
   Stream<void> get changes;
   // 当前教务账号登录了应用账号。

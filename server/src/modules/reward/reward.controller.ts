@@ -5,7 +5,7 @@ import { CurrentDevice, DeviceAuthGuard } from 'src/modules/device/device_auth.g
 import { RewardService } from 'src/modules/reward/reward.service';
 import * as dtos from 'src/modules/reward/reward.dto';
 
-// 节日抽奖：要求已登记设备的请求签名（人工决策见 reward_odds.ts），一台设备一次活动只抽一次。
+// 节日抽奖：要求登录了应用账号的设备签名（人工决策见 reward_odds.ts），一个人一次活动只抽一次。
 @ApiTags('reward')
 @Controller('v1/rewards')
 @UseGuards(DeviceAuthGuard)

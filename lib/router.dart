@@ -38,6 +38,13 @@ import 'package:superxd/social/social_service.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
+// 推入账号页（登录应用账号在那里）：游乐场的挑战与节日动画后的抽奖提示共用。
+void pushAccountPage(BuildContext context, AppSession session, AppAccounts? appAccounts) {
+  final account = session.gateway.activeSession;
+  final name = account == null ? '' : account.name.isEmpty ? account.loginId : account.name;
+  unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => AccountPage(session: session, name: name, appAccounts: appAccounts))));
+}
+
 GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, required PlaygroundStore playground, ValueListenable<bool>? splashGone, CampusReminders? reminders, SocialService? social, AppUpdates? updates, DeveloperSettings? developer, DiagnosticLog? logs, PaintingGallery? paintings, DeveloperNotes? notes, Festivals? festivals, AppAccounts? appAccounts, ChallengeHub? challenges, AutoSync? autoSync, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
   final tools = toolbox.modules;
   // 好友分享的卡片交给注册表里认得它的工具打开（页面层不依赖百宝箱，由这里接上；路由不认识具体工具页面）。
@@ -105,11 +112,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
           groups: playgroundGroups,
           challenges: challenges,
           // 挑战要应用账号：推入账号页（登录应用账号在那里）；没登录教务先去登录页。
-          openAccount: (context) {
-            final account = session.gateway.activeSession;
-            final name = account == null ? '' : account.name.isEmpty ? account.loginId : account.name;
-            unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => AccountPage(session: session, name: name, appAccounts: appAccounts))));
-          },
+          openAccount: (context) => pushAccountPage(context, session, appAccounts),
           openLogin: (context) => context.go('/login'),
         ))),
       for (final game in playgroundCatalog) GoRoute(path: '/playground/${game.id}', parentNavigatorKey: rootKey,

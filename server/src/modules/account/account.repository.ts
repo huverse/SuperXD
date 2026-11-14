@@ -18,6 +18,8 @@ export abstract class AccountRepository {
   abstract summaryOf(deviceId: string, now: Date): Promise<AccountSummary | null>;
   // 这把密钥所在的账号号（积分、挑战按它认人），只读不记活跃；没登录返回 null。
   abstract accountOf(deviceId: string): Promise<string | null>;
+  // 这把密钥所在账号最早的那条登录方式（「登录方式\n主体哈希」），节日抽奖按它认人：注销后用同一身份重建账号还是同一个人。没登录返回 null。
+  abstract identityKeyOf(deviceId: string): Promise<string | null>;
   // 注销这把密钥所在的账号：登录方式、全部密钥的登记与账号本身。没登录返回 false。
   abstract deleteOf(deviceId: string): Promise<boolean>;
   // 删设备时连带删登记，须在调用方事务内（跨领域的设备删除由 pairing 编排）。
@@ -86,6 +88,13 @@ export class TypeormAccountRepository extends AccountRepository {
   async accountOf(deviceId: string) {
     const linked = (await this.accounts.query('SELECT account_id AS accountId FROM account_device WHERE device_id = ?', [deviceId])) as { accountId: string }[];
     return linked[0]?.accountId ?? null;
+  }
+
+  async identityKeyOf(deviceId: string) {
+    const accountId = await this.accountOf(deviceId);
+    if (accountId === null) return null;
+    const rows = (await this.accounts.query('SELECT provider, subject_hash AS subjectHash FROM account_identity WHERE account_id = ? ORDER BY id LIMIT 1', [accountId])) as { provider: string; subjectHash: string }[];
+    return rows[0] === undefined ? null : `${rows[0].provider}\n${rows[0].subjectHash}`;
   }
 
   deleteOf(deviceId: string) {

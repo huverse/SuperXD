@@ -1,11 +1,11 @@
-import 'package:superxd/domain/account.dart';
+import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_client.dart';
 
 // 挑战与积分的中转客户端（协议见 server/README.md「挑战与积分」，人工决策见 lib/playground/challenge/challenge_rules.dart）：
-// 用这个教务账号对应的应用账号设备密钥签名（同 RelayAppAccountClient，密钥在安全存储 superxd_account），校时重发一次复用 RelayClient；
+// 用这个应用账号的设备密钥签名（同 RelayAppAccountClient，密钥在安全存储 superxd_account 的 account.slot），校时重发一次复用 RelayClient；
 // 服务器的回复是外部输入，逐项校验，看不懂的按失败报、不猜。
 class RelayChallengeClient implements ChallengeClient {
   RelayChallengeClient({required this.vault, required RelayTransport transport}) : _relay = RelayClient(transport);
@@ -17,8 +17,8 @@ class RelayChallengeClient implements ChallengeClient {
 
   static String _games(Set<String> games) => (games.toList()..sort()).join(',');
 
-  Future<Map<String, Object?>> _send(AccountIdentity identity, String method, String path, [Map<String, Object?>? payload]) async {
-    final saved = await vault.read(appAccountSlot(identity));
+  Future<Map<String, Object?>> _send(AppAccountRef account, String method, String path, [Map<String, Object?>? payload]) async {
+    final saved = await vault.read(account.slot);
     if (saved == null) throw const ChallengeException(ChallengeFailure.notSignedIn, '请先登录应用账号');
     try {
       return await _relay.request(saved.identity, method, path, payload, null, runLimit);
@@ -108,8 +108,8 @@ class RelayChallengeClient implements ChallengeClient {
   }
 
   @override
-  Future<ChallengeCatalog> catalog(AccountIdentity identity, Set<String> games) async {
-    final body = await _send(identity, 'GET', '/v1/challenges?games=${_games(games)}');
+  Future<ChallengeCatalog> catalog(AppAccountRef account, Set<String> games) async {
+    final body = await _send(account, 'GET', '/v1/challenges?games=${_games(games)}');
     final active = body['activeRun'];
     return ChallengeCatalog(
       serverTime: _time(body, 'serverTime'),
@@ -134,32 +134,32 @@ class RelayChallengeClient implements ChallengeClient {
   }
 
   @override
-  Future<ChallengeRun> start(AccountIdentity identity, String challengeId, Set<String> games) async =>
-      _run(await _send(identity, 'POST', '/v1/challenges/${Uri.encodeComponent(challengeId)}/runs', {'games': (games.toList()..sort())}));
+  Future<ChallengeRun> start(AppAccountRef account, String challengeId, Set<String> games) async =>
+      _run(await _send(account, 'POST', '/v1/challenges/${Uri.encodeComponent(challengeId)}/runs', {'games': (games.toList()..sort())}));
 
   @override
-  Future<ChallengeRun> run(AccountIdentity identity, String runId) async => _run(await _send(identity, 'GET', '/v1/challenge-runs/$runId'));
+  Future<ChallengeRun> run(AppAccountRef account, String runId) async => _run(await _send(account, 'GET', '/v1/challenge-runs/$runId'));
 
   @override
-  Future<ChallengeVerdict> answer(AccountIdentity identity, String runId, String levelId, int attempt, Object? answer) async {
-    final body = await _send(identity, 'POST', '/v1/challenge-runs/$runId/levels/$levelId/answers', {'attempt': attempt, 'answer': answer});
+  Future<ChallengeVerdict> answer(AppAccountRef account, String runId, String levelId, int attempt, Object? answer) async {
+    final body = await _send(account, 'POST', '/v1/challenge-runs/$runId/levels/$levelId/answers', {'attempt': attempt, 'answer': answer});
     final key = body['key'];
     return ChallengeVerdict(correct: _field<bool>(body, 'correct'), key: key is int ? key : null, run: _run(body['run']));
   }
 
   @override
-  Future<ChallengeRun> end(AccountIdentity identity, String runId) async => _run(await _send(identity, 'POST', '/v1/challenge-runs/$runId/end'));
+  Future<ChallengeRun> end(AppAccountRef account, String runId) async => _run(await _send(account, 'POST', '/v1/challenge-runs/$runId/end'));
 
   @override
-  Future<PointsSummary> points(AccountIdentity identity) async {
-    final body = await _send(identity, 'GET', '/v1/points');
+  Future<PointsSummary> points(AppAccountRef account) async {
+    final body = await _send(account, 'GET', '/v1/points');
     final expiringAt = body['expiringAt'];
     return PointsSummary(balance: _field<int>(body, 'balance'), expiring: _field<int>(body, 'expiring'), expiringAt: expiringAt is int ? DateTime.fromMillisecondsSinceEpoch(expiringAt, isUtc: true) : null);
   }
 
   @override
-  Future<PointsBatch> pointsEntries(AccountIdentity identity, {String? before}) async {
-    final body = await _send(identity, 'GET', before == null ? '/v1/points/entries' : '/v1/points/entries?before=$before');
+  Future<PointsBatch> pointsEntries(AppAccountRef account, {String? before}) async {
+    final body = await _send(account, 'GET', before == null ? '/v1/points/entries' : '/v1/points/entries?before=$before');
     final next = body['next'];
     return PointsBatch(
       entries: [

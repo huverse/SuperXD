@@ -41,7 +41,6 @@ import 'package:superxd/device/relay_diagnostic_upload.dart';
 import 'package:superxd/device/relay_font_pack_source.dart';
 import 'package:superxd/device/relay_note_feed.dart';
 import 'package:superxd/device/relay_release_feed.dart';
-import 'package:superxd/device/relay_reward_client.dart';
 import 'package:superxd/device/relay_rollout_feed.dart';
 import 'package:superxd/domain/app_shortcut.dart';
 import 'package:superxd/domain/course_widget.dart';
@@ -78,11 +77,11 @@ import 'package:superxd/page/painting_splash.dart';
 import 'package:superxd/page/qr_scan_page.dart';
 import 'package:superxd/page/share_target_sheet.dart';
 import 'package:superxd/page/text_size_range.dart';
-import 'package:superxd/social/festival_pass.dart';
 import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_challenge_client.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/social/relay_reward_client.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_store.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -207,7 +206,7 @@ void main() async {
   final updates = await appUpdates(support, rollouts);
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
   final notes = await developerNotes(support);
-  final festivals = await festivalsOf(support);
+  final festivals = await festivalsOf(support, appAccounts);
   // 自动同步（人工决策见 domain/auto_sync.dart）：设备级，经账号门面跟着当前账号；后台任务的入口与时机在 app_background_sync.dart。
   final autoSync = AutoSync(gateway: session.gateway, generation: () => session.generation, scheduler: WorkmanagerSyncScheduler(autoSyncDispatcher));
   // 打扰时机（人工决策见 application/app_moments.dart）：上下课的安静期按当前账号本机今天的课算，只读本地。
@@ -237,7 +236,7 @@ void main() async {
   watchLocalSchedule(session, reminders: reminders, widgets: widgets);
   watchWidgetTheme(display, widgetPort);
   if (updates != null) watchAppUpdates(updates, agreed: legal.agreed);
-  watchMoments(moments, notes: notes, festivals: festivals, agreed: legal.agreed);
+  watchMoments(moments, notes: notes, festivals: festivals, appAccounts: appAccounts, agreed: legal.agreed);
   watchAutoSync(session, autoSync, agreed: legal.agreed);
   if (appAccounts != null) watchAppAccounts(appAccounts, session.gateway, agreed: legal.agreed);
   watchRollouts(rollouts, agreed: legal.agreed);
@@ -317,21 +316,22 @@ Future<DeveloperNotes?> developerNotes(Directory support) async {
   return DeveloperNotes(feed: RelayNoteFeed(base), memory: await FileDeveloperNoteMemory.open(File(path.join(support.path, 'developer_notes.json'))));
 }
 
-// 节日（人工决策见 domain/festival.dart）：登记在 page/festival/festival_catalog.dart；没配中转时只播动画、不登记抽奖身份、不抽签。
-// 抽奖身份用自己的安全存储命名空间，与私信身份分开（social/festival_pass.dart）；抽签经它签名（device/relay_reward_client.dart）。
-Future<Festivals> festivalsOf(Directory support) async {
+// 节日（人工决策见 domain/festival.dart）：登记在 page/festival/festival_catalog.dart；没配中转时只播动画、不抽签。
+// 抽签用当前应用账号的设备密钥签名（social/relay_reward_client.dart）；没登录应用账号不抽，中转说账号已不在时让应用账号马上核一次。
+// 登录应用账号后补抽在 watchMoments 里接（同意协议与政策之后才联网）。
+Future<Festivals> festivalsOf(Directory support, AppAccounts? appAccounts) async {
   final transport = relayTransport();
-  final pass = transport == null ? null : RelayFestivalPass(vault: SecureIdentityVault(festivalPassStorage), transport: transport);
   return Festivals(
     occasions: [for (final scene in festivalCatalog) scene.occasion],
     memory: await FileFestivalMemory.open(File(path.join(support.path, 'festival.json'))),
-    pass: pass,
-    client: pass == null ? null : RelayRewardClient(pass),
+    client: transport == null || appAccounts == null ? null : RelayRewardClient(vault: const SecureAppAccountVault(), transport: transport),
+    account: () => appAccounts?.current,
+    accountGone: () => unawaited(appAccounts?.check(force: true)),
   );
 }
 
 // 应用账号（人工决策见 application/app_accounts.dart）走同一个自建中转；没配中转时为空，账号页不显示那一组。
-// 每个教务账号一把单独的设备密钥，存在自己的安全存储命名空间（social/relay_app_account.dart），与私信身份、抽奖身份互不关联。
+// 每个教务账号一把单独的设备密钥，存在自己的安全存储命名空间（social/relay_app_account.dart），与私信身份互不关联。
 AppAccounts? appAccountsOf(AccountAccess accounts) {
   final transport = relayTransport();
   if (transport == null) return null;
@@ -375,14 +375,20 @@ Future<bool> saveRewardPicture(Uint8List png) async {
   }
 }
 
-// 开发者的话、节日与打扰时机：同意协议与政策之后拉一次信、按需登记或撤下抽奖身份并补抽上次没连上的签，之后每次回到前台再看一眼
-// （信距上次不到一小时不联网；没有临近的抽奖节日、本机也没有抽奖身份时节日不联网）；启动与回到前台记今天打开过（活跃天数只在本机）；回到前台重新计这一次前台。
-void watchMoments(AppMoments moments, {DeveloperNotes? notes, Festivals? festivals, required Future<void> agreed}) {
+// 开发者的话、节日与打扰时机：同意协议与政策之后拉一次信、补抽上次没抽成的签，之后每次回到前台、登录了（换了）应用账号再看一眼
+// （信距上次不到一小时不联网；没有播过动画还没抽的节日、没登录应用账号时节日不联网）；启动与回到前台记今天打开过（活跃天数只在本机）；回到前台重新计这一次前台。
+void watchMoments(AppMoments moments, {DeveloperNotes? notes, Festivals? festivals, AppAccounts? appAccounts, required Future<void> agreed}) {
   var ready = false;
   unawaited(festivals?.recordActive());
   unawaited(agreed.then((_) {
     ready = true;
     unawaited(festivals?.refresh());
+    var signedIn = appAccounts?.current;
+    appAccounts?.addListener(() {
+      final current = appAccounts.current;
+      if (current != null && current != signedIn) unawaited(festivals?.refresh());
+      signedIn = current;
+    });
     return notes?.autoRefresh();
   }));
   AppLifecycleListener(onShow: () {
@@ -690,16 +696,22 @@ class _AccountAppState extends State<_AccountApp> {
   }
 
   // 节日：边播动画边抽签，抽中的放完动画接着揭晓；动画放完时结果还没回来的最多再等 _drawWait，等不到的抽中了下次回到前台再揭晓。
+  // 有抽奖但没登录应用账号（人工决策见 domain/festival.dart）：动画放完提示一句，可以直接去账号页登录，登录后回来补抽。
   static const _drawWait = Duration(seconds: 3);
 
   Future<void> _celebrate(BuildContext context, FestivalOccasion occasion) async {
     final festivals = widget.festivals!;
+    final signIn = festivals.needsSignIn(occasion);
     final drawing = festivals.draw(occasion).catchError((Object error, StackTrace stack) {
       campusLog('[Festival] action=draw errorType=${error.runtimeType}\n$stack');
       return null;
     });
     final scene = festivalCatalog.where((item) => item.occasion.id == occasion.id).firstOrNull;
     if (scene != null) await showFestivalCelebration(context, scene);
+    if (signIn && context.mounted) {
+      showCampusToast(context, '登录应用账号就能参加这次抽奖', action: '去登录', onAction: () => pushAccountPage(context, widget.session, widget.appAccounts));
+      return;
+    }
     final result = await drawing.timeout(_drawWait, onTimeout: () => null);
     if (result case FestivalWon(:final prize) when context.mounted) await _reveal(context, prize);
   }
