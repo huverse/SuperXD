@@ -46,7 +46,7 @@
 - app_update_test.dart、app_update_ui_test.dart（应用更新，替身在 app_update_fakes.dart）
 - app_account_test.dart（应用账号的中转客户端、编排与账号页）；challenge_test.dart（挑战的编排与中转客户端，页面部分见 lib/playground/CLAUDE.md）
 - rollout_test.dart（灰度编排、分批更新按批次、积分等级加权与降级不踢出）
-- unlock_test.dart（解锁编排：下架锁着、公开开着、同意前与没登录不联网、换账号、买了更新、账号不在了马上核；中转客户端；游乐场锁着的卡、百宝箱藏起锁着的工具、积分页列能买的）
+- unlock_test.dart（解锁编排：下架锁着、公开开着、同意前与没登录不联网、换账号、买了更新、账号不在了马上核；中转客户端；游乐场锁着的卡、百宝箱藏起锁着的工具、积分页列能买的；路由拦住锁着的入口在 account_lifecycle_test.dart）
 - developer_notes_test.dart（开发者的话的拉取、已读与打扰时机）；festival_test.dart（节日编排、抽签与打扰时机的先后）；diagnostic_upload_test.dart（诊断包认领、列出与删除的编排与中转客户端）；account_lifecycle_test.dart（「我的」页入口与小圆点、新信在什么界面条件下弹）
 
 # 人工决策检索

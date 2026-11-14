@@ -17,6 +17,8 @@ import 'package:superxd/application/festivals.dart';
 import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/domain/developer_note.dart';
 import 'package:superxd/domain/festival.dart';
+import 'package:superxd/domain/rollout.dart';
+import 'package:superxd/domain/unlock.dart';
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/developer_note_memory.dart';
@@ -114,6 +116,38 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(LoginPage), findsOneWidget);
     expect(find.byType(SchedulePage), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+    await tester.runAsync(fixture.close);
+  });
+
+  // 解锁（规则见服务端 src/modules/unlock/unlock_rules.ts）：锁着的游戏与隐藏的工具连同快捷入口不让直接进，回到各自首页；开了照常进。
+  testWidgets('锁着的游戏与隐藏的工具（含快捷入口）直接跳过去会回到各自首页，开了照常进', (tester) async {
+    final fixture = ToolboxFixture();
+    await tester.runAsync(fixture.initialize);
+    final gateway = _Accounts().._active = null;
+    final session = AppSession(gateway); await session.restore();
+    final tool = fixture.runtime.modules.first;
+    final unlocks = _Unlocks({'game.hanoi', toolboxUnlockId(tool.id)});
+    await tester.pumpWidget(SuperXdApp(session: session, toolbox: fixture.runtime, playground: PlaygroundStore.memory(), unlocks: unlocks, backgroundPhase: .18));
+    await tester.pumpAndSettle();
+    GoRouter router() => GoRouter.of(tester.element(find.byType(Navigator).first));
+    router().go('/playground/hanoi');
+    await tester.pumpAndSettle();
+    expect(find.byType(HanoiPage), findsNothing);
+    expect(find.byType(PlaygroundPage), findsOneWidget);
+    router().go('/toolbox/${tool.id}');
+    await tester.pumpAndSettle();
+    expect(find.byType(ToolboxPage), findsOneWidget);
+    for (final shortcut in tool.shortcuts) {
+      router().go('/toolbox/${tool.id}/${shortcut.id}');
+      await tester.pumpAndSettle();
+      expect(find.byType(ToolboxPage), findsOneWidget);
+    }
+    unlocks.closed.clear();
+    router().go('/playground/hanoi');
+    await tester.pumpAndSettle();
+    expect(find.byType(HanoiPage), findsOneWidget);
     await tester.pumpWidget(const SizedBox());
     session.dispose();
     await tester.runAsync(fixture.close);
@@ -847,6 +881,24 @@ void main() {
 }
 
 // 快捷入口的系统端口：测试只用冷启动带来的入口，发布与添加到桌面什么也不做。
+// 只按编号判锁着没有的解锁（界面与路由只用到 locked）。
+class _Unlocks implements UnlockAccess {
+  _Unlocks(this.closed);
+  final Set<String> closed;
+  @override
+  Stream<void> get changes => const Stream.empty();
+  @override
+  bool locked(String id) => closed.contains(id);
+  @override
+  RolloutUnlock? offer(String id) => null;
+  @override
+  List<RolloutUnlock> get purchasable => const [];
+  @override
+  Future<void> refresh() async {}
+  @override
+  Future<void> buy(String id) async {}
+}
+
 class _Shortcuts implements AppShortcutPort {
   @override
   Future<void> publish(List<AppShortcut> shortcuts) async {}

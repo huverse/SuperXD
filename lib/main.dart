@@ -50,6 +50,7 @@ import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/domain/course_widget.dart';
 import 'package:superxd/domain/festival.dart';
 import 'package:superxd/domain/painting.dart';
+import 'package:superxd/domain/unlock.dart';
 import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
@@ -541,7 +542,7 @@ class SuperXdApp extends StatefulWidget {
   final AppAccounts? appAccounts;
   final AccountDiagnostics? diagnostics;
   final Challenges? challenges;
-  final Unlocks? unlocks;
+  final UnlockAccess? unlocks;
   // 打扰时机（设备级，人工决策见 application/app_moments.dart）；为空时节日动画、新信都不出现。splashGone 为开屏是否走完，为空当作没有开屏。
   final AppMoments? moments;
   final ValueListenable<bool>? splashGone;
@@ -671,7 +672,7 @@ class _AccountApp extends StatefulWidget {
   final AppAccounts? appAccounts;
   final AccountDiagnostics? diagnostics;
   final Challenges? challenges;
-  final Unlocks? unlocks;
+  final UnlockAccess? unlocks;
   final AppMoments? moments;
   final ValueListenable<bool>? splashGone;
   final CampusReminders? reminders;
