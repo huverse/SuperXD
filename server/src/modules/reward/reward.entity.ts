@@ -17,6 +17,8 @@ export class RewardCampaignEntity extends BaseEntity {
 @Entity('reward_prize')
 export class RewardPrizeEntity extends BaseEntity {
   @Column({ name: 'campaign_id', type: 'bigint', unsigned: true }) campaignId: string;
+  // 金额档：0 普通，数越大金额越高（规则见 reward_odds.ts）。
+  @Column({ name: 'tier', type: 'tinyint', unsigned: true }) tier: number;
   @Column({ name: 'kind', type: 'varchar', length: 16 }) kind: string;
   @Column({ name: 'content', type: 'varchar', length: 1024 }) content: string;
   @Column({ name: 'note', type: 'varchar', length: 200 }) note: string;

@@ -1,3 +1,5 @@
+import { pointsLevelCount } from 'src/common/relay_limits';
+
 // [人工决策-2026-10-23 23:25:34] 节日抽奖的概率模型（用户要求有平权与按活跃度加权两种，选「打开即抽、全天均匀放量」，
 // 未选「定时统一开奖」；没抽中的人不打扰，见客户端 lib/application/festivals.dart）。奖品（支付宝口令、二维码）是秘密，
 // 只放服务器、只在服务器抽，客户端只展示（同大厂抽奖：库存、每人一次、概率都在服务端）。每次活动选一种模式：
@@ -18,6 +20,10 @@
 // 一个人一次活动只抽一次，人按账号最早的那条登录身份认（participant_hash 存「SXD1-reward\n登录方式\n主体哈希」的 sha256），
 // 注销后用同一身份重建账号、换设备、重装都还是同一个人；注销不删抽签记录，照旧活动结束 rewardKeepDays 天后清。没登录回 ACCOUNT_NOT_FOUND。
 // 取代 11-10 的单独抽奖身份（客户端那把密钥从没生成过：节日登记表一直是空的）。只认应用账号、不认教务：以后加别的登录方式不用改这里。
+// [人工决策-2026-11-14 20:20:18] 红包并进积分等级（用户选「等级并进加权」，等级规则见 src/modules/points/points_level.ts）：加权模式下中签倍数取
+// 活跃天数的倍数与等级的倍数里高的那个，等级倍数 = 1 + (maxWeight − 1) × 等级 ÷ 5，总上限仍是这次活动的 maxWeight；平权模式仍人人一样；不花积分。
+// 奖品分金额档（tier：0 普通，数越大金额越高，导入时标）：每档各自按小时均匀放量；抽中后在这一小时还有额度的档里挑，每档的分量 = 可发份数 ×
+// （大额档乘等级倍数、普通档乘 1），同样封顶 maxWeight。等级由服务端按积分算，不是客户端报的（活跃天数仍是客户端报的，概率模型其余不变）。
 export const rewardModes = ['uniform', 'weighted'] as const;
 export type RewardMode = (typeof rewardModes)[number];
 
@@ -26,10 +32,26 @@ export const rewardActiveSaturation = 20;
 // 客户端报的活跃天数只认近 30 天。
 export const rewardActiveWindow = 30;
 
-export const rewardWeight = (mode: RewardMode, activeDays: number, maxWeight: number): number => {
+// 等级（0–5）的倍数：平权为 1，加权从 1 线性到这次活动的上限。
+export const rewardLevelWeight = (mode: RewardMode, level: number, maxWeight: number): number => (mode === 'uniform' ? 1 : 1 + ((maxWeight - 1) * level) / (pointsLevelCount - 1));
+
+export const rewardWeight = (mode: RewardMode, activeDays: number, level: number, maxWeight: number): number => {
   if (mode === 'uniform') return 1;
   const days = Math.min(Math.max(activeDays, 0), rewardActiveSaturation);
-  return 1 + ((maxWeight - 1) * days) / rewardActiveSaturation;
+  return Math.max(1 + ((maxWeight - 1) * days) / rewardActiveSaturation, rewardLevelWeight(mode, level, maxWeight));
+};
+
+// 抽中后挑哪一档：available 是每档这一小时还能发的份数，roll 在 [0, 1)；都发不了返回 null。
+export const rewardPickTier = (available: { tier: number; count: number }[], levelWeight: number, roll: number): number | null => {
+  const weights = available.filter((item) => item.count > 0).map((item) => ({ tier: item.tier, weight: item.count * (item.tier > 0 ? levelWeight : 1) }));
+  const total = weights.reduce((sum, item) => sum + item.weight, 0);
+  if (total === 0) return null;
+  let at = roll * total;
+  for (const item of weights) {
+    if (at < item.weight) return item.tier;
+    at -= item.weight;
+  }
+  return weights[weights.length - 1].tier;
 };
 
 export const rewardChance = (baseChance: number, weight: number): number => Math.min(1, baseChance * weight);

@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { EntityManager, Repository } from 'typeorm';
 
 import { RewardCampaignEntity, RewardDrawEntity, RewardPrizeEntity } from 'src/modules/reward/reward.entity';
-import { rewardReleased } from 'src/modules/reward/reward_odds';
+import { rewardPickTier, rewardReleased } from 'src/modules/reward/reward_odds';
 
 export type RewardDrawOutcome = { prize: Pick<RewardPrizeEntity, 'kind' | 'content' | 'note'> | null };
 
@@ -15,6 +15,9 @@ export type RewardDrawInput = {
   chance: number;
   // 骰子已经掷出抽中；还要看这一小时的放量额度与库存。
   lucky: boolean;
+  // 等级的倍数（挑档时大额档乘它）与挑档用的骰子（不止一档有额度时才掷）。
+  levelWeight: number;
+  tierRoll: () => number;
   now: Date;
 };
 
@@ -63,9 +66,18 @@ export class TypeormRewardRepository extends RewardRepository {
       if (!input.lucky) return { prize: null };
       // 抽中的人在活动这一行上排队，放量额度与发奖一个接一个算；只有抽中的才排，人数有界。
       await manager.query('SELECT id FROM reward_campaign WHERE id = ? FOR UPDATE', [campaign.id]);
-      const [counts] = (await manager.query('SELECT COUNT(*) AS stock, COUNT(draw_id) AS given FROM reward_prize WHERE campaign_id = ?', [campaign.id])) as { stock: string; given: string }[];
-      if (Number(counts.given) >= rewardReleased(Number(counts.stock), campaign.startsAt, campaign.endsAt, now)) return { prize: null };
-      const [prize] = (await manager.query('SELECT id, kind, content, note FROM reward_prize WHERE campaign_id = ? AND draw_id IS NULL ORDER BY id LIMIT 1 FOR UPDATE', [campaign.id])) as { id: string; kind: string; content: string; note: string }[];
+      // 每档各自均匀放量：这一小时每档还能发的份数，再按等级加权挑一档（走 (campaign_id, tier, draw_id) 索引，行数是这次活动的奖品数）。
+      const counts = (await manager.query('SELECT tier, COUNT(*) AS stock, COUNT(draw_id) AS given FROM reward_prize WHERE campaign_id = ? GROUP BY tier', [campaign.id])) as { tier: number; stock: string; given: string }[];
+      const available = counts.map((row) => ({ tier: Number(row.tier), count: Math.max(0, rewardReleased(Number(row.stock), campaign.startsAt, campaign.endsAt, now) - Number(row.given)) }));
+      const open = available.filter((item) => item.count > 0);
+      const tier = open.length > 1 ? rewardPickTier(open, input.levelWeight, input.tierRoll()) : (open[0]?.tier ?? null);
+      if (tier === null) return { prize: null };
+      const [prize] = (await manager.query('SELECT id, kind, content, note FROM reward_prize WHERE campaign_id = ? AND tier = ? AND draw_id IS NULL ORDER BY id LIMIT 1 FOR UPDATE', [campaign.id, tier])) as {
+        id: string;
+        kind: string;
+        content: string;
+        note: string;
+      }[];
       if (prize === undefined) return { prize: null };
       const drawId = String(inserted.insertId);
       await manager.query('UPDATE reward_prize SET draw_id = ?, update_time = ? WHERE id = ?', [drawId, now, prize.id]);

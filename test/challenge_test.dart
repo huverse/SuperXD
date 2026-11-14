@@ -163,6 +163,8 @@ void main() {
       expect((await client.points(_ref)), isA<PointsSummary>().having((points) => points.expiringAt, 'expiringAt', DateTime.fromMillisecondsSinceEpoch(5000, isUtc: true)).having((points) => points.earned, 'earned', 620).having((points) => points.level, 'level', 1).having((points) => points.nextLevelAt, 'nextLevelAt', 3000));
       relay.reply = (request) => const RelayResponse(200, {'balance': 86, 'expiring': 0, 'expiringAt': null, 'earned': 90000, 'level': 5, 'nextLevelAt': null, 'serverTime': 1});
       expect((await client.points(_ref)).nextLevelAt, isNull);
+      relay.reply = (request) => const RelayResponse(200, {'balance': 86, 'expiring': 0, 'expiringAt': null, 'earned': 90000, 'level': 6, 'nextLevelAt': null, 'serverTime': 1});
+      await expectLater(client.points(_ref), throwsA(isA<ChallengeException>().having((error) => error.failure, 'failure', ChallengeFailure.failed)));
       relay.reply = (request) => const RelayResponse(200, {'entries': [{'id': '9', 'kind': 'earn', 'amount': 86, 'note': '入门 · 三连环', 'at': 1}], 'next': '9'});
       final batch = await client.pointsEntries(_ref, before: '12');
       expect(relay.requests.last.path, '/v1/points/entries?before=12');

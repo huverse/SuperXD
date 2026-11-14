@@ -7,4 +7,6 @@ export const rolloutBucket = (id: string, subject: string) => {
   return Math.floor((digest.readUInt32BE(0) * 10000) / 0x100000000);
 };
 
-export const rolloutIncludes = (id: string, subject: string, percent: number) => rolloutBucket(id, subject) < percent * 100;
+// level 是积分等级 0–5（[人工决策-2026-11-14 20:20:18] 灰度按等级加权，见客户端 lib/domain/rollout.dart）：倍数 1 + 2 × 等级 ÷ 5、封顶 3 倍，
+// 门槛用整数算（放量 × 20 × (5 + 2 × 等级)），与客户端逐位一致（向量的 weighted）。
+export const rolloutIncludes = (id: string, subject: string, percent: number, level = 0) => rolloutBucket(id, subject) < Math.min(10000, percent * 20 * (5 + 2 * level));

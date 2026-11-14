@@ -1,5 +1,5 @@
 {
-  "note": "灰度分桶：客户端 lib/domain/rollout.dart 的 rolloutBucket 是参照实现，服务端 src/common/rollout_bucket.ts 与此逐位一致；全部合成数据。",
+  "note": "灰度分桶：客户端 lib/domain/rollout.dart 的 rolloutBucket 是参照实现，服务端 src/common/rollout_bucket.ts 与此逐位一致；全部合成数据。 weighted 是按积分等级加权的判定（门槛 = 放量 × 20 × (5 + 2 × 等级)，封顶 10000）。",
   "cases": [
     {
       "id": "app_update.alpha.28",
@@ -100,6 +100,848 @@
       "id": "x",
       "subject": "",
       "bucket": 327
+    }
+  ],
+  "weighted": [
+    {
+      "id": "app_update.alpha.28",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 40,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 40,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 40,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 40,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 40,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 40,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 24,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 24,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 24,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 24,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 24,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 24,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 6,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 6,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 6,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 6,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 6,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 6,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "中文主体",
+      "percent": 26,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "中文主体",
+      "percent": 26,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "中文主体",
+      "percent": 26,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "中文主体",
+      "percent": 26,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "中文主体",
+      "percent": 26,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "中文主体",
+      "percent": 26,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "",
+      "percent": 7,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "",
+      "percent": 7,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "",
+      "percent": 7,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "",
+      "percent": 7,
+      "level": 3,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "",
+      "percent": 7,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.28",
+      "subject": "",
+      "percent": 7,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 30,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 30,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 30,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 30,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 30,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 30,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 8,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 8,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 8,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 8,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 8,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 8,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 27,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 27,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 27,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 27,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 27,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 27,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "中文主体",
+      "percent": 1,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "中文主体",
+      "percent": 1,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "中文主体",
+      "percent": 1,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "中文主体",
+      "percent": 1,
+      "level": 3,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "中文主体",
+      "percent": 1,
+      "level": 4,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "中文主体",
+      "percent": 1,
+      "level": 5,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "",
+      "percent": 36,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "",
+      "percent": 36,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "",
+      "percent": 36,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "",
+      "percent": 36,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "",
+      "percent": 36,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "app_update.alpha.29",
+      "subject": "",
+      "percent": 36,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "challenge",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 35,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 35,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 35,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 35,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "challenge",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 35,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "challenge",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 35,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "challenge",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 27,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 27,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 27,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 27,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "challenge",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 27,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "challenge",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 27,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "challenge",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 38,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 38,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 38,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 38,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "challenge",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 38,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "challenge",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 38,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "challenge",
+      "subject": "中文主体",
+      "percent": 2,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "中文主体",
+      "percent": 2,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "中文主体",
+      "percent": 2,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "中文主体",
+      "percent": 2,
+      "level": 3,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "中文主体",
+      "percent": 2,
+      "level": 4,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "中文主体",
+      "percent": 2,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "challenge",
+      "subject": "",
+      "percent": 47,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "",
+      "percent": 47,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "",
+      "percent": 47,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "challenge",
+      "subject": "",
+      "percent": 47,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "challenge",
+      "subject": "",
+      "percent": 47,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "challenge",
+      "subject": "",
+      "percent": 47,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "x",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 7,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 7,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 7,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 7,
+      "level": 3,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 7,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "x",
+      "subject": "AAAAAAAAAAAAAAAAAAAAAA",
+      "percent": 7,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "x",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 39,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 39,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 39,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 39,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "x",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 39,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "x",
+      "subject": "BBBBBBBBBBBBBBBBBBBBBB",
+      "percent": 39,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "x",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 23,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 23,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 23,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 23,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "x",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 23,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "x",
+      "subject": "q0w9e8r7t6y5u4i3o2p1aZ",
+      "percent": 23,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "x",
+      "subject": "中文主体",
+      "percent": 47,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "中文主体",
+      "percent": 47,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "中文主体",
+      "percent": 47,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "中文主体",
+      "percent": 47,
+      "level": 3,
+      "included": true
+    },
+    {
+      "id": "x",
+      "subject": "中文主体",
+      "percent": 47,
+      "level": 4,
+      "included": true
+    },
+    {
+      "id": "x",
+      "subject": "中文主体",
+      "percent": 47,
+      "level": 5,
+      "included": true
+    },
+    {
+      "id": "x",
+      "subject": "",
+      "percent": 1,
+      "level": 0,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "",
+      "percent": 1,
+      "level": 1,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "",
+      "percent": 1,
+      "level": 2,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "",
+      "percent": 1,
+      "level": 3,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "",
+      "percent": 1,
+      "level": 4,
+      "included": false
+    },
+    {
+      "id": "x",
+      "subject": "",
+      "percent": 1,
+      "level": 5,
+      "included": false
     }
   ]
 }

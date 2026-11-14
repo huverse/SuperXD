@@ -1,6 +1,9 @@
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:crypto/crypto.dart';
+
+import 'package:superxd/domain/challenge.dart';
 
 // [人工决策-2026-11-13 22:06:22] 灰度与分批更新（分批更新用户选「自动分阶段」，灰度的做法是助手定的、说过用户没反对）：
 // - 分桶：sha256("SXD1-rollout\n" + 开关 + "\n" + 主体) 前 4 字节当无符号整数，乘 10000 除以 2^32 取整，得 0–9999；放量 p% 时桶号小于 p×100 的在批次里。
@@ -10,6 +13,9 @@ import 'package:crypto/crypto.dart';
 // - 分批更新：发版时清单里写放量表（从发布时刻起每天一档，默认 20%→50%→100%），客户端按当前时刻算；配置里同名的开关
 //   （appUpdateRolloutId）可以覆盖成定值（暂停就写成当时的百分比，直接全量写 100）。自动检查按批次，手动检查不受限（同苹果的分阶段发布），
 //   必须更新（低于最低可用版本）不受批次限制。
+// [人工决策-2026-11-14 20:20:18] 灰度按积分等级加权（用户选「按等级自动加权」，等级规则见服务端 src/modules/points/points_level.ts）：不用报名，
+// Lv0 到 Lv5 的倍数 1.0、1.4、1.8、2.2、2.6、3.0（1 + 2 × 等级 ÷ 5，封顶 3 倍），桶号小于「放量 × 100 × 倍数」的在批次里；
+// 只因等级进的批次本机记住（application/rollouts.dart），积分过期降级也不踢出；放量写 0 仍人人关，一键关停不受等级影响。
 
 class RolloutStage {
   const RolloutStage({required this.from, required this.percent});
@@ -47,8 +53,6 @@ class RolloutConfig {
   static const empty = RolloutConfig({});
 }
 
-const rolloutLevelCount = 6;
-
 // 上限：开关最多 200 个、每个放量表最多 20 档（与 tool/rollout_config.dart、服务端 relay_limits.ts 的文件上限一起管住配置的体积）。
 const rolloutRuleLimit = 200;
 const rolloutStageLimit = 20;
@@ -60,7 +64,8 @@ int rolloutBucket(String id, String subject) {
   return value * 10000 ~/ 0x100000000;
 }
 
-bool rolloutIncludes(String id, String subject, int percent) => rolloutBucket(id, subject) < percent * 100;
+// level 是积分等级 0–5：门槛用整数算（放量 × 20 × (5 + 2 × 等级)，即放量 × 100 × 倍数），免得小数误差多放或少放一个桶。
+bool rolloutIncludes(String id, String subject, int percent, {int level = 0}) => rolloutBucket(id, subject) < min(10000, percent * 20 * (5 + 2 * level));
 
 // 分批更新用的开关名：渠道加版本号，每个版本各分一次桶（每次先拿到更新的不总是同一批人）。
 String appUpdateRolloutId(String channel, int versionCode) => 'app_update.$channel.$versionCode';
@@ -90,7 +95,7 @@ List<RolloutStage> decodeRolloutStages(Object? json) {
 
 // 等级门槛：正好六档、从 0 起、严格递增（同服务端 rollout_source.ts）。
 List<int> _levels(Object? json) {
-  if (json is! List || json.length != rolloutLevelCount) throw const FormatException('levels 要是六个数');
+  if (json is! List || json.length != pointsLevelCount) throw const FormatException('levels 要是六个数');
   final levels = [for (final item in json) item is int && item >= 0 ? item : throw const FormatException('levels 要是非负整数')];
   for (var index = 0; index < levels.length; index++) {
     if (index == 0 ? levels[0] != 0 : levels[index] <= levels[index - 1]) throw const FormatException('levels 要从 0 起严格递增');
@@ -141,10 +146,15 @@ abstract interface class RolloutFeed {
   Future<RolloutConfig> fetch();
 }
 
-// 本机记录（local 实现）：这台设备的随机编号（没登录应用账号时分桶用，不上传）、上次拉到的配置与时刻。
+// 本机记录（local 实现）：这台设备的随机编号（没登录应用账号时分桶用，不上传）、上次拉到的配置与时刻；
+// 另记当前主体（应用账号号）上次取到的积分等级与只因等级才进的批次（最多 rolloutRuleLimit 个，旧的先丢），换了主体从头记。
 abstract interface class RolloutMemory {
   String get installId;
   RolloutConfig get config;
   DateTime? get fetchedAt;
   Future<void> save(RolloutConfig config, DateTime fetchedAt);
+  int levelOf(String subject);
+  bool joined(String subject, String id);
+  Future<void> saveLevel(String subject, int level);
+  Future<void> join(String subject, String id);
 }

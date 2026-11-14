@@ -52,6 +52,13 @@ export class PointsService implements OnModuleInit {
     this.logger.log(`[Points] action=spend amount=${amount} ref=${ref}`);
   }
 
+  // 这个账号此刻的等级（节日抽奖的加权用）。
+  async levelOfAccount(accountId: string) {
+    const now = new Date();
+    const balance = await this.points.balanceOf(accountId, now, now);
+    return levelOf(balance.earned, await this.rollouts.levels()).level;
+  }
+
   async summary(deviceId: string): Promise<dtos.PointsSummaryDto> {
     const accountId = await this.accountOf(deviceId);
     const now = new Date();
