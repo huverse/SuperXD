@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:sqflite/sqflite.dart' show DatabaseException;
 import 'package:synchronized/synchronized.dart';
 
 import 'package:superxd/gateway/kingo_auth.dart';
@@ -307,7 +308,7 @@ class AccountGateway extends AccountAccess {
       }
       return result;
     } catch (error, stack) {
-      campusLog('[AccountGateway] action=activate errorType=${error.runtimeType}\n$stack');
+      campusLog('[AccountGateway] action=activate errorType=${error.runtimeType}${_sqliteCode(error)}\n$stack');
       if (!committed) {
         if (identical(_pending, pending)) _cancelPending();
         if (credentialWritten) {
@@ -675,11 +676,14 @@ class AccountGateway extends AccountAccess {
     try {
       return await operation();
     } catch (error, stack) {
-      campusLog('[AccountGateway] action=operation errorType=${error.runtimeType}\n$stack');
+      campusLog('[AccountGateway] action=operation errorType=${error.runtimeType}${_sqliteCode(error)}\n$stack');
       return _fail(GatewayCode.operationFailed, '操作未完成，请重试');
     }
   }
 }
+
+// 本机库出错时带上 SQLite 结果码（5 是被别的连接锁住、11 是文件损坏），分得清是哪一类（11-14 事故只记了异常类型）。
+String _sqliteCode(Object error) => error is DatabaseException ? ' sqliteCode=${error.getResultCode()}' : '';
 
 // 自动重登遇到这些是教务连不上或不稳，不是账号要人工处理（人工决策见 AccountGateway.restoreSession）。
 const _unreachable = {GatewayCode.networkTimeout, GatewayCode.networkFailed, GatewayCode.rateLimited, GatewayCode.serverUnavailable, GatewayCode.upstreamHttp};

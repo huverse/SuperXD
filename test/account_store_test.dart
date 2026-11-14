@@ -168,4 +168,38 @@ void main() {
       await directory.delete(recursive: true);
     });
   }
+
+  // 人工决策见 AccountStore.open。安卓上新引擎接回旧引擎留下的那条连接、回滚停在中间的事务，只发生在原生层（ffi 不报告接回状态，测不到回滚）：
+  // 这里测单实例的效果（同一路径共用一条连接），再守住回滚开关与前台、后台各自的接线；接回与回滚在模拟器上用探针验。
+  test('前台接管旧引擎遗留的连接：账号索引与账号库都用单实例并回滚停在中间的事务；后台照旧用独立连接', () async {
+    final directory = await Directory.systemTemp.createTemp('account-reclaim-');
+    addTearDown(() => directory.delete(recursive: true));
+    Future<bool> usable(Future<Object?> Function() read) async {
+      try {
+        await read();
+        return true;
+      } on DatabaseException {
+        return false;
+      }
+    }
+    for (final reclaim in [true, false]) {
+      final first = await AccountStore.open(directory: directory.path, reclaim: reclaim);
+      await first.activate(_accountA);
+      final account = await first.openAccount(_accountA);
+      final second = await AccountStore.open(directory: directory.path, reclaim: reclaim);
+      await (await second.openAccount(_accountA)).close();
+      await second.close();
+      expect(await usable(first.currentIdentity), !reclaim, reason: '账号索引 reclaim=$reclaim');
+      expect(await usable(() => account.terms()), !reclaim, reason: '账号库 reclaim=$reclaim');
+      if (!reclaim) {
+        await account.close();
+        await first.close();
+      }
+    }
+    for (final file in ['lib/local/account_store.dart', 'lib/local/app_database.dart']) {
+      expect(File(file).readAsStringSync(), contains('singleInstance: reclaim, rollbackActiveTransactionOnOpen: reclaim'), reason: file);
+    }
+    expect(File('lib/main.dart').readAsStringSync(), contains('AccountStore.open(reclaim: true)'));
+    expect(File('lib/app_background_sync.dart').readAsStringSync(), allOf(contains('AccountStore.open()'), isNot(contains('reclaim'))));
+  });
 }

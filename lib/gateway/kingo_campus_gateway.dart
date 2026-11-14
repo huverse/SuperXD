@@ -567,7 +567,7 @@ class KingoCampusGateway implements CampusGateway {
       campusLog('[KingoCampusGateway] code=NETWORK_FAILED errorType=${error.runtimeType}\n$stack');
       return _fail(GatewayCode.networkFailed, '教务连接失败');
     } on DatabaseException catch (error, stack) {
-      campusLog('[KingoCampusGateway] code=LOCAL_STORAGE_FAILED errorType=${error.runtimeType}\n$stack');
+      campusLog('[KingoCampusGateway] code=LOCAL_STORAGE_FAILED errorType=${error.runtimeType} sqliteCode=${error.getResultCode()}\n$stack');
       return _fail(GatewayCode.localStorageFailed, '本地数据保存失败');
     } catch (error, stack) {
       campusLog('[KingoCampusGateway] code=OPERATION_FAILED errorType=${error.runtimeType}\n$stack');
