@@ -33,6 +33,7 @@ class RelayChallengeClient implements ChallengeClient {
         RelayCode.runNotFound => const ChallengeException(ChallengeFailure.runNotFound, '这一局找不到了'),
         RelayCode.runOver => ChallengeException(ChallengeFailure.runOver, '这一局已经结束', run: run),
         RelayCode.levelLocked => ChallengeException(ChallengeFailure.levelLocked, '这一关现在不能交', run: run),
+        RelayCode.pointsShort => ChallengeException(ChallengeFailure.pointsShort, detail['price'] is int ? '积分不够，门票要 ${detail['price']} 分' : '积分不够'),
         RelayCode.rateLimited => const ChallengeException(ChallengeFailure.rateLimited, '操作太频繁，请稍后再试'),
         RelayCode.network || RelayCode.timeout => const ChallengeException(ChallengeFailure.network, '连不上服务器'),
         _ => ChallengeException(ChallengeFailure.failed, '服务器暂时不可用（${error.code}）'),
@@ -126,6 +127,7 @@ class RelayChallengeClient implements ChallengeClient {
               endsAt: _time(item, 'endsAt'),
               best: item['best'] is int ? item['best'] as int : null,
               playable: _field<bool>(item, 'playable'),
+              ticket: _field<int>(item, 'ticket'),
             )
           else
             _bad('challenge'),
@@ -153,8 +155,15 @@ class RelayChallengeClient implements ChallengeClient {
   @override
   Future<PointsSummary> points(AppAccountRef account) async {
     final body = await _send(account, 'GET', '/v1/points');
-    final expiringAt = body['expiringAt'];
-    return PointsSummary(balance: _field<int>(body, 'balance'), expiring: _field<int>(body, 'expiring'), expiringAt: expiringAt is int ? DateTime.fromMillisecondsSinceEpoch(expiringAt, isUtc: true) : null);
+    final expiringAt = body['expiringAt'], next = body['nextLevelAt'];
+    return PointsSummary(
+      balance: _field<int>(body, 'balance'),
+      expiring: _field<int>(body, 'expiring'),
+      expiringAt: expiringAt is int ? DateTime.fromMillisecondsSinceEpoch(expiringAt, isUtc: true) : null,
+      earned: _field<int>(body, 'earned'),
+      level: _field<int>(body, 'level'),
+      nextLevelAt: next is int ? next : null,
+    );
   }
 
   @override

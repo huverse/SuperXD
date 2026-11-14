@@ -13,8 +13,8 @@ import { judgedGames } from 'src/modules/challenge/judges/judges';
 export type BankSlot = { at: number; value: number; key: number };
 export type BankEntry = { id: string; puzzle: unknown; difficulty: number; slots: BankSlot[] };
 
-// 此刻开放的一个挑战。
-export type OpenChallenge = { id: string; title: string; template: ChallengeTemplate; start: number; end: number };
+// 此刻开放的一个挑战；ticket 是开局要付的积分，0 是免费。
+export type OpenChallenge = { id: string; title: string; template: ChallengeTemplate; start: number; end: number; ticket: number };
 
 type Cached<T> = { mtimeMs: number; size: number; value: T };
 
@@ -58,11 +58,11 @@ export class ChallengeContent {
       const period = periodOf(now, rotation.every, timeZone);
       for (const name of rotation.templates) {
         const template = config.templates.get(name)!;
-        open.push({ id: `${rotation.id}.${period.date}.${name}`, title: template.title, template, start: period.start, end: period.end });
+        open.push({ id: `${rotation.id}.${period.date}.${name}`, title: template.title, template, start: period.start, end: period.end, ticket: rotation.ticket });
       }
     }
     for (const event of config.events) {
-      if (event.start <= now && now < event.end) open.push({ id: event.id, title: event.title, template: config.templates.get(event.template)!, start: event.start, end: event.end });
+      if (event.start <= now && now < event.end) open.push({ id: event.id, title: event.title, template: config.templates.get(event.template)!, start: event.start, end: event.end, ticket: event.ticket });
     }
     return open;
   }

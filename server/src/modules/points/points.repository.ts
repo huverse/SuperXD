@@ -5,15 +5,19 @@ import { EntityManager, Repository } from 'typeorm';
 import { PointsGrantEntity } from 'src/modules/points/points.entity';
 
 export type PointsGrantInput = { accountId: string; amount: number; source: string; sourceKey: string; note: string; now: Date; expireTime: Date };
-export type PointsBalance = { balance: number; expiring: number; expiringAt: Date | null };
+export type PointsBalance = { balance: number; expiring: number; expiringAt: Date | null; earned: number };
+export type PointsSpendInput = { accountId: string; amount: number; ref: string; note: string; now: Date };
 export type PointsEntryRow = { id: string; kind: string; amount: number; note: string; createTime: Date };
 
 // 积分存储端口：服务只依赖这个抽象。
 export abstract class PointsRepository {
   // 记一笔获得与对应的流水，须在调用方事务内（挑战结算与这一笔同一事务）。同一来源同一个键已记过就不再记，返回 false。
   abstract grant(manager: EntityManager, input: PointsGrantInput): Promise<boolean>;
-  // 余额（没过期的剩余之和）与 within 之内要过期的合计、其中最早的过期时刻；走 (account_id, expire_time) 索引，行数是这个账号 12 个月里的获得笔数。
+  // 余额（没过期的剩余之和）、within 之内要过期的合计与其中最早的过期时刻、没过期的获得总数（算等级，花了不减）；
+  // 走 (account_id, expire_time) 索引，行数是这个账号 12 个月里的获得笔数。
   abstract balanceOf(accountId: string, now: Date, within: Date): Promise<PointsBalance>;
+  // 花一笔（调用方事务内）：先扣快过期的，记一条花费流水；余额不够不扣、返回 false。
+  abstract spend(manager: EntityManager, input: PointsSpendInput): Promise<boolean>;
   // 流水从新到旧，before 是上一页最后一条的编号（按 id 游标，不用 OFFSET）。
   abstract entriesOf(accountId: string, before: string | null, limit: number): Promise<PointsEntryRow[]>;
   // 把最多 limit 笔到期还有剩余的获得清零，每笔记一条过期流水，返回处理的笔数。
@@ -51,10 +55,42 @@ export class TypeormPointsRepository extends PointsRepository {
 
   async balanceOf(accountId: string, now: Date, within: Date) {
     const [row] = (await this.grants.query(
-      'SELECT COALESCE(SUM(remaining), 0) AS balance, COALESCE(SUM(CASE WHEN expire_time <= ? THEN remaining ELSE 0 END), 0) AS expiring, MIN(CASE WHEN expire_time <= ? AND remaining > 0 THEN expire_time END) AS expiringAt FROM points_grant WHERE account_id = ? AND expire_time > ?',
+      'SELECT COALESCE(SUM(remaining), 0) AS balance, COALESCE(SUM(CASE WHEN expire_time <= ? THEN remaining ELSE 0 END), 0) AS expiring, MIN(CASE WHEN expire_time <= ? AND remaining > 0 THEN expire_time END) AS expiringAt, COALESCE(SUM(amount), 0) AS earned FROM points_grant WHERE account_id = ? AND expire_time > ?',
       [within, within, accountId, now],
-    )) as { balance: string; expiring: string; expiringAt: Date | null }[];
-    return { balance: Number(row.balance), expiring: Number(row.expiring), expiringAt: row.expiringAt };
+    )) as { balance: string; expiring: string; expiringAt: Date | null; earned: string }[];
+    return { balance: Number(row.balance), expiring: Number(row.expiring), expiringAt: row.expiringAt, earned: Number(row.earned) };
+  }
+
+  async spend(manager: EntityManager, input: PointsSpendInput) {
+    // 锁住这个账号还有剩余的获得（12 个月里的笔数，有界），按过期先后扣。
+    const grants = (await manager.query('SELECT id, remaining FROM points_grant WHERE account_id = ? AND expire_time > ? AND remaining > 0 ORDER BY expire_time, id FOR UPDATE', [
+      input.accountId,
+      input.now,
+    ])) as { id: string; remaining: number }[];
+    const taken: { id: string; left: number }[] = [];
+    let owed = input.amount;
+    for (const grant of grants) {
+      if (owed === 0) break;
+      const take = Math.min(owed, grant.remaining);
+      taken.push({ id: grant.id, left: grant.remaining - take });
+      owed -= take;
+    }
+    if (owed > 0) return false;
+    await manager.query(`UPDATE points_grant SET remaining = CASE id ${taken.map(() => 'WHEN ? THEN ?').join(' ')} END, update_time = ? WHERE id IN (?)`, [
+      ...taken.flatMap((item) => [item.id, item.left]),
+      input.now,
+      taken.map((item) => item.id),
+    ]);
+    await manager.query('INSERT INTO points_entry (account_id, kind, amount, note, ref, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?)', [
+      input.accountId,
+      'spend',
+      -input.amount,
+      input.note,
+      input.ref,
+      input.now,
+      input.now,
+    ]);
+    return true;
   }
 
   async entriesOf(accountId: string, before: string | null, limit: number) {

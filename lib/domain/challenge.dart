@@ -6,7 +6,17 @@ import 'package:superxd/domain/app_account.dart';
 enum ChallengeLevelState { locked, open, solved, failed }
 
 class ChallengeSummary {
-  const ChallengeSummary({required this.id, required this.title, required this.label, required this.levels, required this.timeLimit, required this.endsAt, required this.best, required this.playable});
+  const ChallengeSummary({
+    required this.id,
+    required this.title,
+    required this.label,
+    required this.levels,
+    required this.timeLimit,
+    required this.endsAt,
+    required this.best,
+    required this.playable,
+    required this.ticket,
+  });
   final String id, title, label;
   final int levels;
   final Duration timeLimit;
@@ -15,6 +25,8 @@ class ChallengeSummary {
   final int? best;
   // 里面有这个版本没有的游戏时为假（要更新应用）。
   final bool playable;
+  // 开局要付的积分门票，0 是免费；开局即扣、过没过都不退（[人工决策-2026-11-14 20:20:18] 见服务端 points.service.ts）。
+  final int ticket;
 }
 
 class ChallengeCatalog {
@@ -102,10 +114,13 @@ class ChallengeVerdict {
   final ChallengeRun run;
 }
 
+// 余额与等级：等级 Lv0–Lv5 按近 12 个月获得的总数 earned 算（花了不减），nextLevelAt 是到下一级要的获得总数，最高级为空
+// （[人工决策-2026-11-14 20:20:18] 见服务端 src/modules/points/points_level.ts）。
 class PointsSummary {
-  const PointsSummary({required this.balance, required this.expiring, required this.expiringAt});
-  final int balance, expiring;
+  const PointsSummary({required this.balance, required this.expiring, required this.expiringAt, required this.earned, required this.level, required this.nextLevelAt});
+  final int balance, expiring, earned, level;
   final DateTime? expiringAt;
+  final int? nextLevelAt;
 }
 
 class PointsEntry {
@@ -121,8 +136,8 @@ class PointsBatch {
   final String? next;
 }
 
-// 失败：notSignedIn 是没登录应用账号（或已在别处注销）；runActive 附进行中那一局的编号；runOver、levelLocked 附服务器那边的现状。
-enum ChallengeFailure { notSignedIn, notFound, unavailable, runActive, runNotFound, runOver, levelLocked, network, rateLimited, failed }
+// 失败：notSignedIn 是没登录应用账号（或已在别处注销）；runActive 附进行中那一局的编号；runOver、levelLocked 附服务器那边的现状；pointsShort 是积分不够付门票。
+enum ChallengeFailure { notSignedIn, notFound, unavailable, runActive, runNotFound, runOver, levelLocked, pointsShort, network, rateLimited, failed }
 
 class ChallengeException implements Exception {
   const ChallengeException(this.failure, this.message, {this.runId, this.run});

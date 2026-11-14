@@ -10,7 +10,8 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
-// 积分（人工决策见服务端 points.service.ts）：余额、30 天内要过期的，与流水（从新到旧，按需往下翻）。积分属于应用账号，每笔满 12 个月过期。
+// 积分（人工决策见服务端 points.service.ts）：余额、30 天内要过期的、等级（近 12 个月获得的总数定，花了不减），与流水（从新到旧，按需往下翻）。
+// 积分属于应用账号，每笔满 12 个月过期。服务器还没配等级门槛时不显示等级。
 class PointsPage extends StatefulWidget {
   const PointsPage({super.key, required this.hub});
   final ChallengeHub hub;
@@ -102,6 +103,17 @@ class _PointsPageState extends State<PointsPage> {
                         : '每笔积分满 12 个月过期',
                     style: secondary,
                   ),
+                  if (pointsLevelShown(summary)) ...[
+                    const SizedBox(height: 16),
+                    Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
+                      Text('Lv${summary.level}', style: TextStyle(fontSize: 20, fontWeight: FontWeight.w600, color: palette.onSurface)),
+                      const SizedBox(width: 12),
+                      Expanded(child: Text(switch (summary.nextLevelAt) {
+                        final next? => '离 Lv${summary.level + 1} 还差 ${next - summary.earned} 分',
+                        null => '最高等级',
+                      }, style: secondary)),
+                    ]),
+                  ],
                 ])),
                 const SizedBox(height: 24),
                 Text('明细', style: Theme.of(context).textTheme.titleMedium),
@@ -137,3 +149,6 @@ class _PointsPageState extends State<PointsPage> {
     _ => '变动',
   };
 }
+
+// 服务器配了等级门槛才显示等级（没配时人人 Lv0、也没有下一级）。
+bool pointsLevelShown(PointsSummary summary) => summary.level > 0 || summary.nextLevelAt != null;

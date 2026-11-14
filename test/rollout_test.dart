@@ -81,6 +81,14 @@ void main() {
       expect(jsonEncode(encodeRolloutConfig(decodeRolloutConfig(encodeRolloutConfig(config)))), jsonEncode(encodeRolloutConfig(config)));
     });
 
+    test('积分等级的门槛 levels 可以没有；有就是从 0 起严格递增的六个数，读回来再写一样', () {
+      expect(decodeRolloutConfig({'flags': <Object?>[]}).levels, isEmpty);
+      final config = decodeRolloutConfig({'flags': <Object?>[], 'levels': [0, 500, 3000, 10000, 30000, 80000]});
+      expect(config.levels, [0, 500, 3000, 10000, 30000, 80000]);
+      expect(encodeRolloutConfig(decodeRolloutConfig(encodeRolloutConfig(config)))['levels'], config.levels);
+      expect(encodeRolloutConfig(RolloutConfig.empty).containsKey('levels'), isFalse);
+    });
+
     test('外部输入：格式不对、开关重复、放量倒退、时刻不带时区都不认', () {
       for (final bad in <Object?>[
         null,
@@ -95,6 +103,11 @@ void main() {
         {'flags': [{'id': 'x', 'stages': [{'from': '2026-11-15T00:00:00Z', 'percent': 50}, {'from': '2026-11-14T00:00:00Z', 'percent': 60}]}]},
         {'flags': [{'id': 'x', 'stages': [{'from': '2026-11-14T00:00:00Z', 'percent': 50}, {'from': '2026-11-15T00:00:00Z', 'percent': 20}]}]},
         {'flags': [for (var index = 0; index <= rolloutRuleLimit; index++) {'id': 'f$index', 'percent': 1}]},
+        {'flags': <Object?>[], 'levels': [0, 500, 3000]},
+        {'flags': <Object?>[], 'levels': [1, 500, 3000, 10000, 30000, 80000]},
+        {'flags': <Object?>[], 'levels': [0, 500, 500, 10000, 30000, 80000]},
+        {'flags': <Object?>[], 'levels': [0, 500, 3000, 10000, 30000, 80000.5]},
+        {'flags': <Object?>[], 'levels': 'x'},
       ]) {
         expect(() => decodeRolloutConfig(bad), throwsFormatException, reason: '$bad');
       }
@@ -124,6 +137,10 @@ void main() {
       final file = jsonDecode(await encodeRolloutFile(config, [signing.rollout])) as Map<String, Object?>;
       await checkRolloutConfig(file, keys: signing.keys);
       expect(checkRolloutConfig({...file, 'flags': [{'id': 'app_update.alpha.28', 'percent': 100}]}, keys: signing.keys), throwsFormatException);
+      final leveled = jsonDecode(await encodeRolloutFile(decodeRolloutConfig({'flags': <Object?>[], 'levels': [0, 500, 3000, 10000, 30000, 80000]}), [signing.rollout])) as Map<String, Object?>;
+      await checkRolloutConfig(leveled, keys: signing.keys);
+      expect(checkRolloutConfig({...leveled, 'levels': [0, 1, 3000, 10000, 30000, 80000]}, keys: signing.keys), throwsFormatException);
+      expect(checkRolloutConfig({...leveled}..remove('levels'), keys: signing.keys), throwsFormatException);
     });
   });
 

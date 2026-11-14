@@ -3,6 +3,7 @@ import { ChallengePeriod } from 'src/modules/challenge/challenge_calendar';
 // 挑战配置（人工决策见客户端 lib/playground/challenge/challenge_rules.dart）：模板（关卡图、档位、限时）、轮换、限时活动与计分参数
 // 都写在发布目录的 challenge/config.json（仓库 challenge/config.json 经流水线上传），按修改时间热加载，改了不用发版也不用重启；
 // 写坏了不替换，接着用上一份并记错误日志。这里只做结构校验，题库够不够出某个模板由开局时的出题检查。
+// 轮换与活动可以写门票 ticket（积分，[人工决策-2026-11-14 20:20:18] 用户选「开局扣票不退」，见 points.service.ts），不写是免费的。
 
 export const challengeTiers = ['entry', 'easy', 'normal', 'hard', 'expert'] as const;
 export type ChallengeTier = (typeof challengeTiers)[number];
@@ -30,8 +31,8 @@ export type ChallengeScoring = {
 
 export type ChallengeNode = { id: string; tier: ChallengeTier; games: string[] | null };
 export type ChallengeTemplate = { id: string; title: string; label: string; timeLimit: number; nodes: ChallengeNode[]; edges: [string, string][] };
-export type ChallengeRotation = { id: string; every: ChallengePeriod; templates: string[] };
-export type ChallengeEvent = { id: string; title: string; template: string; start: number; end: number };
+export type ChallengeRotation = { id: string; every: ChallengePeriod; templates: string[]; ticket: number };
+export type ChallengeEvent = { id: string; title: string; template: string; start: number; end: number; ticket: number };
 export type ChallengeConfig = { scoring: ChallengeScoring; templates: Map<string, ChallengeTemplate>; rotations: ChallengeRotation[]; events: ChallengeEvent[] };
 
 export class ChallengeConfigError extends Error {}
@@ -45,6 +46,7 @@ const list = (value: unknown, where: string, max: number) => (Array.isArray(valu
 const text = (value: unknown, where: string, pattern: RegExp) => (typeof value === 'string' && pattern.test(value) ? value : fail(`${where} 不合法`));
 const number = (value: unknown, where: string, min: number, max: number) => (typeof value === 'number' && Number.isFinite(value) && value >= min && value <= max ? value : fail(`${where} 要在 ${min}–${max}`));
 const idPattern = /^[a-z][a-z0-9_]{0,23}$/;
+const ticketOf = (value: unknown, where: string) => (value === undefined ? 0 : Math.trunc(number(value, `${where}的 ticket`, 1, 100_000)));
 const titlePattern = /^\S(?:.{0,18}\S)?$/u;
 
 const scoringOf = (raw: unknown): ChallengeScoring => {
@@ -114,7 +116,7 @@ export const parseChallengeConfig = (raw: unknown, judged: Set<string>, maxLevel
   const rotations = list(value.rotations ?? [], 'rotations', 16).map((item): ChallengeRotation => {
     const rotation = record(item, '轮换');
     const names = list(rotation.templates, '轮换的 templates', 8).map((name) => (typeof name === 'string' && templates.has(name) ? name : fail(`轮换用了不存在的模板 ${String(name)}`)));
-    return { id: text(rotation.id, '轮换 id', idPattern), every: text(rotation.every, '轮换的 every', /^(day|week)$/) as ChallengePeriod, templates: names };
+    return { id: text(rotation.id, '轮换 id', idPattern), every: text(rotation.every, '轮换的 every', /^(day|week)$/) as ChallengePeriod, templates: names, ticket: ticketOf(rotation.ticket, '轮换') };
   });
   const events = list(value.events ?? [], 'events', 64).map((item): ChallengeEvent => {
     const event = record(item, '活动');
@@ -123,7 +125,7 @@ export const parseChallengeConfig = (raw: unknown, judged: Set<string>, maxLevel
     if (!(end > start)) fail('活动的 end 要晚于 start');
     const template = text(event.template, '活动的 template', idPattern);
     if (!templates.has(template)) fail(`活动用了不存在的模板 ${template}`);
-    return { id: text(event.id, '活动 id', idPattern), title: text(event.title, '活动的 title', titlePattern), template, start, end };
+    return { id: text(event.id, '活动 id', idPattern), title: text(event.title, '活动的 title', titlePattern), template, start, end, ticket: ticketOf(event.ticket, '活动') };
   });
   const ids = [...rotations.map((rotation) => rotation.id), ...events.map((event) => event.id)];
   if (new Set(ids).size !== ids.length) fail('轮换与活动的 id 重复');

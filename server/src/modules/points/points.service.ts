@@ -6,13 +6,17 @@ import { RelayCode, RelayError } from 'src/common/relay_error';
 import { pointsEntriesPage, pointsExpiringDays, pointsLifetimeMonths, pointsReadPerDevicePerHour } from 'src/common/relay_limits';
 import { AccountRepository } from 'src/modules/account/account.repository';
 import { AccountDataHooks } from 'src/modules/account/account_data_hooks';
+import { RolloutSource } from 'src/modules/app_release/rollout_source';
 import { PointsRepository } from 'src/modules/points/points.repository';
+import { levelOf } from 'src/modules/points/points_level';
 import * as dtos from 'src/modules/points/points.dto';
 
 // 积分账本。
 // [人工决策-2026-11-12 21:00:20] 用户 11-12 选定的长期规则：积分属于应用账号；每笔获得满 12 个月过期，花的时候先扣快过期的；
 // 流水只增、满 13 个月删除；同一挑战重复挑战只补最好成绩的差额（在挑战模块结算时算好再来记）。挑战是获得积分的方式之一，以后的来源
 // （活动、任务）与用途（解锁服务、内测资格加权、红包加权）都按「来源 + 幂等键」记一笔，用途等用户点名再做，影响真钱的加权都封顶。
+// [人工决策-2026-11-14 20:20:18] 第 5 阶段用户点名用途：积分能花（额外挑战场次的门票，开局即扣、过没过都不退，与开局同一事务、没开成不扣），
+// 另按近 12 个月获得的总数定等级（花了不减，规则见 points_level.ts），灰度、隐藏服务与红包的加权看等级。
 @Injectable()
 export class PointsService implements OnModuleInit {
   private readonly logger = new Logger('Points');
@@ -22,6 +26,7 @@ export class PointsService implements OnModuleInit {
     private readonly accounts: AccountRepository,
     private readonly hooks: AccountDataHooks,
     private readonly limiter: RateLimiter,
+    private readonly rollouts: RolloutSource,
   ) {}
 
   onModuleInit() {
@@ -38,11 +43,29 @@ export class PointsService implements OnModuleInit {
     return granted;
   }
 
+  // 花一笔（调用方事务内，花费所属的业务行与这一笔同一事务）：先扣快过期的；不够回 POINTS_SHORT，调用方的事务随之回滚。
+  async spendIn(manager: EntityManager, accountId: string, amount: number, ref: string, note: string, now: Date) {
+    if (!(await this.points.spend(manager, { accountId, amount, ref, note, now }))) {
+      const balance = await this.points.balanceOf(accountId, now, now);
+      throw new RelayError(RelayCode.pointsShort, HttpStatus.CONFLICT, '积分不够', { price: amount, balance: balance.balance });
+    }
+    this.logger.log(`[Points] action=spend amount=${amount} ref=${ref}`);
+  }
+
   async summary(deviceId: string): Promise<dtos.PointsSummaryDto> {
     const accountId = await this.accountOf(deviceId);
     const now = new Date();
     const balance = await this.points.balanceOf(accountId, now, new Date(now.getTime() + pointsExpiringDays * 86400_000));
-    return { balance: balance.balance, expiring: balance.expiring, expiringAt: balance.expiringAt?.getTime() ?? null, serverTime: now.getTime() };
+    const level = levelOf(balance.earned, await this.rollouts.levels());
+    return {
+      balance: balance.balance,
+      expiring: balance.expiring,
+      expiringAt: balance.expiringAt?.getTime() ?? null,
+      earned: balance.earned,
+      level: level.level,
+      nextLevelAt: level.next,
+      serverTime: now.getTime(),
+    };
   }
 
   async entries(deviceId: string, before: string | undefined): Promise<dtos.PointsEntriesDto> {
