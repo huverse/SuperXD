@@ -7,13 +7,16 @@ import { PointsGrantEntity } from 'src/modules/points/points.entity';
 export type PointsGrantInput = { accountId: string; amount: number; source: string; sourceKey: string; note: string; now: Date; expireTime: Date };
 export type PointsBalance = { balance: number; expiring: number; expiringAt: Date | null; earned: number };
 export type PointsSpendInput = { accountId: string; amount: number; ref: string; note: string; now: Date };
+export type PointsRefund = { accountId: string; amount: number; sourceKey: string; note: string };
 export type PointsEntryRow = { id: string; kind: string; amount: number; note: string; createTime: Date };
 
 // 积分存储端口：服务只依赖这个抽象。
 export abstract class PointsRepository {
   // 记一笔获得与对应的流水，须在调用方事务内（挑战结算与这一笔同一事务）。同一来源同一个键已记过就不再记，返回 false。
   abstract grant(manager: EntityManager, input: PointsGrantInput): Promise<boolean>;
-  // 余额（没过期的剩余之和）、within 之内要过期的合计与其中最早的过期时刻、没过期的获得总数（算等级，花了不减）；
+  // 退回一批（调用方事务内）：每笔记成来源 refund 的获得（同样满 12 个月过期，不算进等级）与一条退回流水；同一个键只记一次。
+  abstract refundAll(manager: EntityManager, refunds: PointsRefund[], now: Date, expireTime: Date): Promise<void>;
+  // 余额（没过期的剩余之和）、within 之内要过期的合计与其中最早的过期时刻、没过期的获得总数（算等级，花了不减、退回的不算）；
   // 走 (account_id, expire_time) 索引，行数是这个账号 12 个月里的获得笔数。
   abstract balanceOf(accountId: string, now: Date, within: Date): Promise<PointsBalance>;
   // 花一笔（调用方事务内）：先扣快过期的，记一条花费流水；余额不够不扣、返回 false。
@@ -55,10 +58,22 @@ export class TypeormPointsRepository extends PointsRepository {
 
   async balanceOf(accountId: string, now: Date, within: Date) {
     const [row] = (await this.grants.query(
-      'SELECT COALESCE(SUM(remaining), 0) AS balance, COALESCE(SUM(CASE WHEN expire_time <= ? THEN remaining ELSE 0 END), 0) AS expiring, MIN(CASE WHEN expire_time <= ? AND remaining > 0 THEN expire_time END) AS expiringAt, COALESCE(SUM(amount), 0) AS earned FROM points_grant WHERE account_id = ? AND expire_time > ?',
+      `SELECT COALESCE(SUM(remaining), 0) AS balance, COALESCE(SUM(CASE WHEN expire_time <= ? THEN remaining ELSE 0 END), 0) AS expiring, MIN(CASE WHEN expire_time <= ? AND remaining > 0 THEN expire_time END) AS expiringAt, COALESCE(SUM(CASE WHEN source <> 'refund' THEN amount ELSE 0 END), 0) AS earned FROM points_grant WHERE account_id = ? AND expire_time > ?`,
       [within, within, accountId, now],
     )) as { balance: string; expiring: string; expiringAt: Date | null; earned: string }[];
     return { balance: Number(row.balance), expiring: Number(row.expiring), expiringAt: row.expiringAt, earned: Number(row.earned) };
+  }
+
+  async refundAll(manager: EntityManager, refunds: PointsRefund[], now: Date, expireTime: Date) {
+    if (refunds.length === 0) return;
+    await manager.query(
+      `INSERT IGNORE INTO points_grant (account_id, amount, remaining, source, source_key, expire_time, create_time, update_time) VALUES ${refunds.map(() => '(?, ?, ?, ?, ?, ?, ?, ?)').join(', ')}`,
+      refunds.flatMap((item) => [item.accountId, item.amount, item.amount, 'refund', item.sourceKey, expireTime, now, now]),
+    );
+    await manager.query(
+      `INSERT INTO points_entry (account_id, kind, amount, note, ref, create_time, update_time) VALUES ${refunds.map(() => '(?, ?, ?, ?, ?, ?, ?)').join(', ')}`,
+      refunds.flatMap((item) => [item.accountId, 'refund', item.amount, item.note, item.sourceKey, now, now]),
+    );
   }
 
   async spend(manager: EntityManager, input: PointsSpendInput) {

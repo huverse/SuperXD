@@ -137,6 +137,15 @@ export const pointsReadPerDevicePerHour = 600;
 // 等级固定六档 Lv0–Lv5（门槛在灰度配置的 levels，规则见 src/modules/points/points_level.ts）。
 export const pointsLevelCount = 6;
 
+// 解锁（人工决策见 src/modules/unlock/unlock_rules.ts）：灰度配置里最多 100 项、名字 20 字、价格 1–100000 积分；每台设备每小时看 600 次、每个账号每小时买 30 次；
+// 服务公开 30 天后删它的解锁记录（公开后人人可用、不退积分）；标了下架的，买过的退回积分后删记录。清理每小时一次，多实例抢锁、每轮最多 20 批、每批 1000 行。
+export const unlockLimit = 100;
+export const unlockTitleMax = 20;
+export const unlockPriceMax = 100_000;
+export const unlockReadPerDevicePerHour = 600;
+export const unlockBuyPerAccountPerHour = 30;
+export const unlockKeepDaysAfterPublic = 30;
+
 // 挑战（人工决策见客户端 lib/playground/challenge/challenge_rules.dart）：一个账号同时只有一局，每小时最多开 30 局；
 // 每台设备每小时 3000 个挑战请求（看列表、看局面、交答案合计）；一关错交到配置里的上限（maxErrors）就算没过。
 // 一局最多 16 关；局结束 30 天后删除；最好成绩在挑战结束 400 天后删除（每个账号每周 4 行左右）。

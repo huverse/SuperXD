@@ -27,6 +27,8 @@ import { PointsEntryEntity, PointsGrantEntity } from 'src/modules/points/points.
 import { PointsModule } from 'src/modules/points/points.module';
 import { RewardCampaignEntity, RewardDrawEntity, RewardPrizeEntity } from 'src/modules/reward/reward.entity';
 import { RewardModule } from 'src/modules/reward/reward.module';
+import { AccountUnlockEntity } from 'src/modules/unlock/unlock.entity';
+import { UnlockModule } from 'src/modules/unlock/unlock.module';
 
 @Module({
   imports: [
@@ -34,7 +36,7 @@ import { RewardModule } from 'src/modules/reward/reward.module';
       useFactory: () => ({
         type: 'mysql',
         ...env().mysql,
-        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity, RewardCampaignEntity, RewardPrizeEntity, RewardDrawEntity, AppAccountEntity, AccountIdentityEntity, AccountDeviceEntity, PointsGrantEntity, PointsEntryEntity, ChallengeRunEntity, ChallengeBestEntity, DiagnosticUploadEntity, AccountSocialEntity],
+        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity, RewardCampaignEntity, RewardPrizeEntity, RewardDrawEntity, AppAccountEntity, AccountIdentityEntity, AccountDeviceEntity, PointsGrantEntity, PointsEntryEntity, ChallengeRunEntity, ChallengeBestEntity, DiagnosticUploadEntity, AccountSocialEntity, AccountUnlockEntity],
         // 表结构由人工执行 sql/schema.sql 管理，启动不做 DDL。
         synchronize: false,
         migrationsRun: false,
@@ -62,6 +64,7 @@ import { RewardModule } from 'src/modules/reward/reward.module';
     AccountModule,
     PointsModule,
     ChallengeModule,
+    UnlockModule,
   ],
   controllers: [HealthController],
 })

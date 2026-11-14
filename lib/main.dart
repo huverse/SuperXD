@@ -24,6 +24,7 @@ import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/application/campus_timetable.dart';
 import 'package:superxd/application/campus_widgets.dart';
 import 'package:superxd/application/challenges.dart';
+import 'package:superxd/application/unlocks.dart';
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
@@ -82,6 +83,7 @@ import 'package:superxd/page/share_target_sheet.dart';
 import 'package:superxd/page/text_size_range.dart';
 import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_challenge_client.dart';
+import 'package:superxd/social/relay_unlock_client.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/relay_diagnostic_account.dart';
@@ -211,6 +213,7 @@ void main() async {
   appAccounts = appAccountsOf(session.gateway, onDeleted: (account) => unawaited(social.forgetAccount(account)));
   final challenges = challengesOf(session.gateway, appAccounts);
   final rollouts = await rolloutsOf(support, appAccounts, challenges);
+  final unlocks = unlocksOf(rollouts, appAccounts);
   final updates = await appUpdates(support, rollouts);
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
   final notes = await developerNotes(support);
@@ -222,7 +225,7 @@ void main() async {
   final splashed = painting != null && splashImage != null;
   final splashGone = ValueNotifier(!splashed);
   final restored = Completer<void>();
-  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, launch: launched, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, moments: moments, autoSync: autoSync, splashGone: splashGone);
+  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, launch: launched, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, unlocks: unlocks, moments: moments, autoSync: autoSync, splashGone: splashGone);
   runApp(splashed ? PaintingSplash(painting: painting, image: splashImage, ready: restored.future, onGone: () => splashGone.value = true, child: app) : app);
   unawaited(WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
     if (campusDiagnostics) campusLog('[App] action=first_frame ms=${launch.elapsedMilliseconds}');
@@ -248,6 +251,7 @@ void main() async {
   watchAutoSync(session, autoSync, agreed: legal.agreed);
   if (appAccounts != null) watchAppAccounts(appAccounts, session.gateway, agreed: legal.agreed);
   watchRollouts(rollouts, agreed: legal.agreed);
+  if (unlocks != null) watchUnlocks(unlocks, agreed: legal.agreed);
 }
 
 // 中转服务地址来自构建参数 SUPERXD_RELAY；未配置或格式不对时私信与应用更新都不可用，不猜默认地址。
@@ -307,6 +311,25 @@ Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challen
     null => null,
   },
 );
+
+// 解锁（人工决策见服务端 src/modules/unlock/unlock_rules.ts）：清单跟着灰度配置，这个账号能用哪些问同一个中转（应用账号签名）；没配中转时为空，游戏与工具都照常开着。
+Unlocks? unlocksOf(Rollouts rollouts, AppAccounts? appAccounts) {
+  final transport = relayTransport();
+  if (transport == null || appAccounts == null) return null;
+  return Unlocks(rollouts: rollouts, appAccounts: appAccounts, client: RelayUnlockClient(vault: const SecureAppAccountVault(), transport: transport));
+}
+
+// 同意协议与政策之后才开始问解锁（之前只按本机配置判定公开与下架），之后每次回到前台再看一眼（距上次不到一小时不联网）。
+void watchUnlocks(Unlocks unlocks, {required Future<void> agreed}) {
+  var ready = false;
+  unawaited(agreed.then((_) {
+    ready = true;
+    unlocks.start();
+  }));
+  AppLifecycleListener(onResume: () {
+    if (ready) unawaited(unlocks.foreground());
+  });
+}
 
 // 同意协议与政策之后拉一次灰度配置，之后每次回到前台再看一眼（距上次不到一小时不联网）；请求不带任何标识。
 void watchRollouts(Rollouts rollouts, {required Future<void> agreed}) {
@@ -508,7 +531,7 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.playground, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.moments, this.autoSync, this.splashGone});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.playground, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.moments, this.autoSync, this.splashGone});
   // 自动同步（设备级）；为空时「同步范围」里没有自动同步入口，也不会有课表冲突的打扰时机。
   final AutoSync? autoSync;
   // 开发者的话（设备级）；为空时「我的」页不显示这一行。
@@ -518,6 +541,7 @@ class SuperXdApp extends StatefulWidget {
   final AppAccounts? appAccounts;
   final AccountDiagnostics? diagnostics;
   final Challenges? challenges;
+  final Unlocks? unlocks;
   // 打扰时机（设备级，人工决策见 application/app_moments.dart）；为空时节日动画、新信都不出现。splashGone 为开屏是否走完，为空当作没有开屏。
   final AppMoments? moments;
   final ValueListenable<bool>? splashGone;
@@ -619,7 +643,7 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, playground: _playground, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts, notes: widget.notes, festivals: widget.festivals, appAccounts: widget.appAccounts, diagnostics: widget.diagnostics, challenges: widget.challenges, moments: widget.moments, autoSync: widget.autoSync, splashGone: widget.splashGone),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, playground: _playground, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts, notes: widget.notes, festivals: widget.festivals, appAccounts: widget.appAccounts, diagnostics: widget.diagnostics, challenges: widget.challenges, unlocks: widget.unlocks, moments: widget.moments, autoSync: widget.autoSync, splashGone: widget.splashGone),
     );
   }
 }
@@ -639,7 +663,7 @@ class _MomentObserver extends NavigatorObserver {
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, required this.playground, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.moments, this.autoSync, this.splashGone});
+  const _AccountApp({super.key, required this.session, required this.toolbox, required this.playground, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.moments, this.autoSync, this.splashGone});
   final AutoSync? autoSync;
   final AppShortcuts? shortcuts;
   final DeveloperNotes? notes;
@@ -647,6 +671,7 @@ class _AccountApp extends StatefulWidget {
   final AppAccounts? appAccounts;
   final AccountDiagnostics? diagnostics;
   final Challenges? challenges;
+  final Unlocks? unlocks;
   final AppMoments? moments;
   final ValueListenable<bool>? splashGone;
   final CampusReminders? reminders;
@@ -667,7 +692,7 @@ class _AccountApp extends StatefulWidget {
 }
 
 class _AccountAppState extends State<_AccountApp> {
-  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, playground: widget.playground, splashGone: widget.splashGone, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, notes: widget.notes, festivals: widget.festivals, appAccounts: widget.appAccounts, diagnostics: widget.diagnostics, challenges: widget.challenges, autoSync: widget.autoSync, saveRewardPicture: saveRewardPicture, observers: [_MomentObserver(_onMoment)]);
+  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, playground: widget.playground, splashGone: widget.splashGone, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, notes: widget.notes, festivals: widget.festivals, appAccounts: widget.appAccounts, diagnostics: widget.diagnostics, challenges: widget.challenges, unlocks: widget.unlocks, autoSync: widget.autoSync, saveRewardPicture: saveRewardPicture, observers: [_MomentObserver(_onMoment)]);
   late final VoidCallback _unwatchRoutes;
   late final _display = widget.display ?? DisplaySettings.memory();
 

@@ -7,7 +7,7 @@ import { pointsEntriesPage, pointsExpiringDays, pointsLifetimeMonths, pointsRead
 import { AccountRepository } from 'src/modules/account/account.repository';
 import { AccountDataHooks } from 'src/modules/account/account_data_hooks';
 import { RolloutSource } from 'src/modules/app_release/rollout_source';
-import { PointsRepository } from 'src/modules/points/points.repository';
+import { PointsRefund, PointsRepository } from 'src/modules/points/points.repository';
 import { levelOf } from 'src/modules/points/points_level';
 import * as dtos from 'src/modules/points/points.dto';
 
@@ -41,6 +41,14 @@ export class PointsService implements OnModuleInit {
     const granted = await this.points.grant(manager, { accountId, amount, source, sourceKey, note, now, expireTime });
     this.logger.log(`[Points] action=grant source=${source} amount=${amount} granted=${granted}`);
     return granted;
+  }
+
+  // 退回一批（调用方事务内，退回所属的业务行在同一事务里删掉，所以不会重复退）：满 12 个月过期，不算进等级。
+  async refundAllIn(manager: EntityManager, refunds: PointsRefund[], now: Date) {
+    const expireTime = new Date(now);
+    expireTime.setUTCMonth(expireTime.getUTCMonth() + pointsLifetimeMonths);
+    await this.points.refundAll(manager, refunds, now, expireTime);
+    if (refunds.length > 0) this.logger.log(`[Points] action=refund count=${refunds.length} amount=${refunds.reduce((sum, item) => sum + item.amount, 0)}`);
   }
 
   // 花一笔（调用方事务内，花费所属的业务行与这一笔同一事务）：先扣快过期的；不够回 POINTS_SHORT，调用方的事务随之回滚。

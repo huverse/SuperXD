@@ -44,12 +44,32 @@ class RolloutRule {
   }
 }
 
+// 一项解锁（[人工决策-2026-11-14 20:20:18] 规则见服务端 src/modules/unlock/unlock_rules.ts）：编号用约定前缀（game.<游戏 id> 新游戏抢先玩、
+// toolbox.<工具 id> 隐藏的工具），title 是积分页上的名字；等级门槛、价格、抽签比例、公开时刻满足任一就开，retired 是下架（谁都不能用，买过的退回积分）。
+class RolloutUnlock {
+  const RolloutUnlock({required this.id, required this.title, this.minLevel, this.price, this.percent, this.publicAt, this.retired = false});
+  final String id, title;
+  final int? minLevel, price, percent;
+  final DateTime? publicAt;
+  final bool retired;
+
+  bool isPublic(DateTime now) => switch (publicAt) {
+    final at? => !at.isAfter(now),
+    null => false,
+  };
+}
+
+const rolloutUnlockLimit = 100;
+const rolloutUnlockTitleMax = 20;
+const rolloutUnlockPriceMax = 100000;
+
 class RolloutConfig {
-  const RolloutConfig(this.rules, {this.levels = const []});
+  const RolloutConfig(this.rules, {this.levels = const [], this.unlocks = const []});
   final Map<String, RolloutRule> rules;
   // 积分等级 Lv0–Lv5 的门槛（近 12 个月获得的积分，[人工决策-2026-11-14 20:20:18] 见服务端 src/modules/points/points_level.ts）：
   // 跟着灰度配置下发，服务端算等级读同一份；没写为空。
   final List<int> levels;
+  final List<RolloutUnlock> unlocks;
   static const empty = RolloutConfig({});
 }
 
@@ -103,9 +123,48 @@ List<int> _levels(Object? json) {
   return levels;
 }
 
-// 灰度配置 {flags: [{id, percent} 或 {id, stages}], levels?: [六个数]} 是外部输入：逐项校验，开关名不能重复，多出来的字段不认。
+const _unlockKeys = {'id', 'title', 'minLevel', 'price', 'percent', 'publicAt', 'retired'};
+
+int? _range(Object? value, int min, int max, String what) => switch (value) {
+  null => null,
+  final int number when number >= min && number <= max => number,
+  _ => throw FormatException('$what 要在 $min–$max'),
+};
+
+// 解锁：编号不重复；没下架的至少写一个条件；下架只认 true（同服务端 rollout_source.ts）。
+List<RolloutUnlock> _unlocks(Object? json) {
+  if (json is! List || json.length > rolloutUnlockLimit) throw const FormatException('unlocks 不合法');
+  final unlocks = <RolloutUnlock>[];
+  for (final item in json) {
+    if (item case {'id': final String id, 'title': final String title} when item.keys.every(_unlockKeys.contains) && rolloutIdPattern.hasMatch(id) && title.isNotEmpty && title.length <= rolloutUnlockTitleMax) {
+      final publicAt = switch (item['publicAt']) {
+        null => null,
+        final String text when text.endsWith('Z') || RegExp(r'[+-]\d\d:\d\d$').hasMatch(text) => DateTime.tryParse(text)?.toUtc() ?? (throw const FormatException('publicAt 不合法')),
+        _ => throw const FormatException('publicAt 要带时区'),
+      };
+      if (!(item['retired'] == null || item['retired'] == true)) throw const FormatException('retired 只能写 true');
+      final unlock = RolloutUnlock(
+        id: id,
+        title: title,
+        minLevel: _range(item['minLevel'], 1, pointsLevelCount - 1, 'minLevel'),
+        price: _range(item['price'], 1, rolloutUnlockPriceMax, 'price'),
+        percent: _range(item['percent'], 1, 100, 'percent'),
+        publicAt: publicAt,
+        retired: item['retired'] == true,
+      );
+      if (!unlock.retired && unlock.minLevel == null && unlock.price == null && unlock.percent == null && unlock.publicAt == null) throw FormatException('解锁 $id 一个条件也没写');
+      if (unlocks.any((other) => other.id == id)) throw FormatException('解锁 $id 重复');
+      unlocks.add(unlock);
+    } else {
+      throw const FormatException('解锁不合法');
+    }
+  }
+  return unlocks;
+}
+
+// 灰度配置 {flags: [{id, percent} 或 {id, stages}], levels?: [六个数], unlocks?: [...]} 是外部输入：逐项校验，开关名不能重复，多出来的字段不认。
 RolloutConfig decodeRolloutConfig(Object? json) {
-  if (json case {'flags': final List<Object?> flags} when flags.length <= rolloutRuleLimit && json.keys.every((key) => key == 'flags' || key == 'levels')) {
+  if (json case {'flags': final List<Object?> flags} when flags.length <= rolloutRuleLimit && json.keys.every((key) => key == 'flags' || key == 'levels' || key == 'unlocks')) {
     final rules = <String, RolloutRule>{};
     for (final flag in flags) {
       final rule = switch (flag) {
@@ -116,7 +175,7 @@ RolloutConfig decodeRolloutConfig(Object? json) {
       if (rules.containsKey(rule.id)) throw FormatException('开关 ${rule.id} 重复');
       rules[rule.id] = rule;
     }
-    return RolloutConfig(rules, levels: json.containsKey('levels') ? _levels(json['levels']) : const []);
+    return RolloutConfig(rules, levels: json.containsKey('levels') ? _levels(json['levels']) : const [], unlocks: json.containsKey('unlocks') ? _unlocks(json['unlocks']) : const []);
   }
   throw const FormatException('灰度配置不合法');
 }
@@ -131,6 +190,19 @@ Map<String, Object?> encodeRolloutConfig(RolloutConfig config) => {
         {'id': rule.id, 'stages': [for (final stage in rule.stages) {'from': stage.from.toUtc().toIso8601String(), 'percent': stage.percent}]},
   ],
   if (config.levels.isNotEmpty) 'levels': config.levels,
+  if (config.unlocks.isNotEmpty)
+    'unlocks': [
+      for (final unlock in config.unlocks)
+        {
+          'id': unlock.id,
+          'title': unlock.title,
+          'minLevel': ?unlock.minLevel,
+          'price': ?unlock.price,
+          'percent': ?unlock.percent,
+          'publicAt': ?unlock.publicAt?.toUtc().toIso8601String(),
+          if (unlock.retired) 'retired': true,
+        },
+    ],
 };
 
 // 拉配置失败，message 只记日志（灰度配置没有界面）。

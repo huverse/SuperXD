@@ -15,6 +15,7 @@ import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/application/festivals.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/challenge.dart';
+import 'package:superxd/domain/unlock.dart';
 import 'package:superxd/domain/painting.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
@@ -46,7 +47,7 @@ void pushAccountPage(BuildContext context, AppSession session, AppAccounts? appA
   unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => AccountPage(session: session, name: name, appAccounts: appAccounts, diagnostics: diagnostics))));
 }
 
-GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, required PlaygroundStore playground, ValueListenable<bool>? splashGone, CampusReminders? reminders, SocialService? social, AppUpdates? updates, DeveloperSettings? developer, DiagnosticLog? logs, PaintingGallery? paintings, DeveloperNotes? notes, Festivals? festivals, AppAccounts? appAccounts, AccountDiagnostics? diagnostics, ChallengeHub? challenges, AutoSync? autoSync, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
+GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, required PlaygroundStore playground, ValueListenable<bool>? splashGone, CampusReminders? reminders, SocialService? social, AppUpdates? updates, DeveloperSettings? developer, DiagnosticLog? logs, PaintingGallery? paintings, DeveloperNotes? notes, Festivals? festivals, AppAccounts? appAccounts, AccountDiagnostics? diagnostics, ChallengeHub? challenges, UnlockAccess? unlocks, AutoSync? autoSync, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
   final tools = toolbox.modules;
   // 好友分享的卡片交给注册表里认得它的工具打开（页面层不依赖百宝箱，由这里接上；路由不认识具体工具页面）。
   void openVideo(BuildContext context, VideoShare video) {
@@ -78,6 +79,16 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       final publicPlay = location == '/playground' || playgroundCatalog.any((game) => location == '/playground/${game.id}');
       if (!session.loggedIn && !atLogin && !legal && !publicTool && !publicPlay) return '/login';
       if (session.loggedIn && atLogin) return '/today';
+      // 解锁（人工决策见服务端 src/modules/unlock/unlock_rules.ts）：锁着的游戏与隐藏的工具（含它的快捷入口）不让直接进，回到各自的首页。
+      final segments = location.split('/');
+      if (unlocks != null && segments.length >= 3) {
+        final lock = switch (segments[1]) {
+          'playground' => playgroundUnlockId(segments[2]),
+          'toolbox' => toolboxUnlockId(segments[2]),
+          _ => null,
+        };
+        if (lock != null && unlocks.locked(lock)) return '/${segments[1]}';
+      }
       return null;
     },
     routes: [
@@ -100,7 +111,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
         pageBuilder: (context, state) => campusPage(key: state.pageKey, child: LegalPage(privacy: state.pathParameters['kind'] == 'privacy')),
       ),
       GoRoute(path: '/toolbox', parentNavigatorKey: rootKey,
-        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: ToolboxPage(runtime: toolbox))),
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: ToolboxPage(runtime: toolbox, unlocks: unlocks))),
       for (final tool in tools) GoRoute(path: '/toolbox/${tool.id}', parentNavigatorKey: rootKey,
         pageBuilder: (context, state) => campusPage(key: state.pageKey, child: tool.builder(context))),
       for (final tool in tools)
@@ -112,6 +123,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
           games: playgroundCatalog,
           groups: playgroundGroups,
           challenges: challenges,
+          unlocks: unlocks,
           // 挑战要应用账号：推入账号页（登录应用账号在那里）；没登录教务先去登录页。
           openAccount: (context) => pushAccountPage(context, session, appAccounts, diagnostics),
           openLogin: (context) => context.go('/login'),

@@ -175,6 +175,21 @@ CREATE TABLE IF NOT EXISTS points_entry (
   KEY idx_time (create_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- 账号记过的解锁（规则见 src/modules/unlock/unlock_rules.ts）：花积分买的（buy）与按等级加权抽签抽中的（drawn），一个账号一项一行；
+-- 随账号删除；服务公开 30 天后、或下架退回积分后由每小时一次的清理任务删除。
+CREATE TABLE IF NOT EXISTS account_unlock (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  account_id VARCHAR(32) NOT NULL,
+  unlock_id VARCHAR(64) NOT NULL COMMENT '灰度配置 unlocks 里的编号，如 game.sudoku',
+  source VARCHAR(8) NOT NULL COMMENT 'buy 花积分买的，drawn 抽签抽中的',
+  price INT UNSIGNED NOT NULL COMMENT '付的积分，抽中的为 0（下架时按它退回）',
+  create_time DATETIME(3) NOT NULL,
+  update_time DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_account_unlock (account_id, unlock_id),
+  KEY idx_unlock (unlock_id, id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- 挑战的一局（人工决策见客户端 lib/playground/challenge/challenge_rules.dart）：计划与进度是 JSON 文本；active 进行中为 1、结算后为空，
 -- (account_id, active) 唯一，一个账号同时只有一局进行中。结束满 30 天删除。
 CREATE TABLE IF NOT EXISTS challenge_run (

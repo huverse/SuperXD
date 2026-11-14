@@ -105,6 +105,42 @@ void main() {
       expect(encodeRolloutConfig(RolloutConfig.empty).containsKey('levels'), isFalse);
     });
 
+    test('解锁 unlocks：编号、名字与条件，公开时刻带时区，下架只认 true；读回来再写一样', () {
+      final config = decodeRolloutConfig({
+        'flags': <Object?>[],
+        'unlocks': [
+          {'id': 'game.sudoku', 'title': '数独抢先玩', 'minLevel': 2, 'price': 300, 'publicAt': '2026-12-01T00:00:00+08:00'},
+          {'id': 'toolbox.lab', 'title': '内测工具', 'percent': 10},
+          {'id': 'toolbox.old', 'title': '下架的', 'retired': true},
+        ],
+      });
+      final first = config.unlocks.first;
+      expect(first.minLevel, 2);
+      expect(first.price, 300);
+      expect(first.publicAt, DateTime.utc(2026, 11, 30, 16));
+      expect(first.isPublic(DateTime.utc(2026, 11, 30, 15)), isFalse);
+      expect(first.isPublic(DateTime.utc(2026, 11, 30, 16)), isTrue);
+      expect(config.unlocks.last.retired, isTrue);
+      expect(jsonEncode(encodeRolloutConfig(decodeRolloutConfig(encodeRolloutConfig(config)))), jsonEncode(encodeRolloutConfig(config)));
+      for (final bad in <Object?>[
+        [{'id': 'a', 'title': 'A'}],
+        [{'id': 'a', 'title': 'A', 'price': 1}, {'id': 'a', 'title': 'B', 'price': 2}],
+        [{'id': 'a', 'title': '', 'price': 1}],
+        [{'id': 'a', 'title': '名字超过二十个字名字超过二十个字名字超过二', 'price': 1}],
+        [{'id': 'Bad Id', 'title': 'A', 'price': 1}],
+        [{'id': 'a', 'title': 'A', 'minLevel': 6}],
+        [{'id': 'a', 'title': 'A', 'price': 0}],
+        [{'id': 'a', 'title': 'A', 'percent': 101}],
+        [{'id': 'a', 'title': 'A', 'publicAt': '2026-12-01T00:00:00'}],
+        [{'id': 'a', 'title': 'A', 'price': 1, 'retired': false}],
+        [{'id': 'a', 'title': 'A', 'price': 1, 'secret': 1}],
+        [for (var index = 0; index <= rolloutUnlockLimit; index++) {'id': 'u$index', 'title': 'U', 'price': 1}],
+        'x',
+      ]) {
+        expect(() => decodeRolloutConfig({'flags': <Object?>[], 'unlocks': bad}), throwsFormatException, reason: '$bad');
+      }
+    });
+
     test('外部输入：格式不对、开关重复、放量倒退、时刻不带时区都不认', () {
       for (final bad in <Object?>[
         null,

@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsISO8601, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 
-import { developerNoteBodyMax, developerNoteLimit, developerNoteTitleMax, pointsLevelCount, rolloutFlagLimit, rolloutStageLimit } from 'src/common/relay_limits';
+import { developerNoteBodyMax, developerNoteLimit, developerNoteTitleMax, pointsLevelCount, rolloutFlagLimit, rolloutStageLimit, unlockLimit, unlockPriceMax, unlockTitleMax } from 'src/common/relay_limits';
 
 // 客户端按自己正在运行的 CPU 架构取安装包，与发布附件的三种分包一致。
 export const appAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64'] as const;
@@ -126,6 +126,18 @@ export class RolloutFlagDto {
   stages?: RolloutStageDto[];
 }
 
+// 一项解锁（规则见 src/modules/unlock/unlock_rules.ts）：id 用约定前缀（game.<游戏 id>、toolbox.<工具 id>），title 是积分页上的名字；
+// 等级门槛、价格、抽签比例、公开时刻至少写一个（下架的除外），满足任一就开；retired 只写 true。
+export class RolloutUnlockDto {
+  @ApiProperty({ description: '解锁的编号，如 game.sudoku' }) @Matches(/^[a-z0-9][a-z0-9._-]{0,63}$/) id: string;
+  @ApiProperty({ description: '积分页上的名字' }) @IsString() @MinLength(1) @MaxLength(unlockTitleMax) title: string;
+  @ApiProperty({ description: '等级到这么多就开（1–5）', required: false }) @IsOptional() @IsInt() @Min(1) @Max(pointsLevelCount - 1) minLevel?: number;
+  @ApiProperty({ description: '花这么多积分永久解锁', required: false }) @IsOptional() @IsInt() @Min(1) @Max(unlockPriceMax) price?: number;
+  @ApiProperty({ description: '按积分等级加权抽签的比例（1–100）', required: false }) @IsOptional() @IsInt() @Min(1) @Max(100) percent?: number;
+  @ApiProperty({ description: '从这一刻起人人可用，ISO 8601 带时区', required: false }) @IsOptional() @IsISO8601({ strict: true }) @Matches(/(Z|[+-]\d\d:\d\d)$/) publicAt?: string;
+  @ApiProperty({ description: '下架：谁都不能用，买过的退回积分', required: false }) @IsOptional() @IsIn([true]) retired?: true;
+}
+
 export class RolloutConfigDto {
   @ApiProperty({ description: '全部开关', type: [RolloutFlagDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RolloutFlagDto) @ArrayMaxSize(rolloutFlagLimit) flags: RolloutFlagDto[];
   // 积分等级 Lv0–Lv5 的门槛（近 12 个月获得的积分，规则见 src/modules/points/points_level.ts），从 0 起严格递增，由 RolloutSource 再核一遍。
@@ -138,6 +150,13 @@ export class RolloutConfigDto {
   @Min(0, { each: true })
   @Max(100_000_000, { each: true })
   levels?: number[];
+  @ApiProperty({ description: '解锁（隐藏服务与新游戏抢先玩）', type: [RolloutUnlockDto], required: false })
+  @IsOptional()
+  @IsArray()
+  @ValidateNested({ each: true })
+  @Type(() => RolloutUnlockDto)
+  @ArrayMaxSize(unlockLimit)
+  unlocks?: RolloutUnlockDto[];
   @ApiProperty({ description: '签好的信封，客户端只认它；还没放文件时为空', type: SignedEnvelopeDto, nullable: true })
   @IsOptional()
   @ValidateNested()

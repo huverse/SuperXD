@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 import 'package:flutter_slidable/flutter_slidable.dart';
@@ -14,20 +16,41 @@ import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/unlock.dart';
 
+// 隐藏的工具（解锁 toolbox.<工具 id>，人工决策见服务端 src/modules/unlock/unlock_rules.ts）：对当前账号锁着时不显示入口，开了才出现。
 class ToolboxPage extends StatefulWidget {
-  const ToolboxPage({super.key, required this.runtime, this.modules});
+  const ToolboxPage({super.key, required this.runtime, this.modules, this.unlocks});
   final ToolboxRuntime runtime;
   final List<ToolboxModule>? modules;
+  // 没配中转时为空，工具都显示。
+  final UnlockAccess? unlocks;
   @override
   State<ToolboxPage> createState() => _ToolboxPageState();
 }
 
 class _ToolboxPageState extends State<ToolboxPage> {
   late Future<void> _ready = widget.runtime.initialize();
-  late final _modules = widget.modules ?? widget.runtime.modules;
+  late final _all = widget.modules ?? widget.runtime.modules;
   final _busy = <String>{};
   String? _error;
+  StreamSubscription<void>? _unlockChanges;
+
+  List<ToolboxModule> get _modules => [for (final module in _all) if (widget.unlocks?.locked(toolboxUnlockId(module.id)) != true) module];
+
+  @override
+  void initState() {
+    super.initState();
+    _unlockChanges = widget.unlocks?.changes.listen((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    unawaited(_unlockChanges?.cancel());
+    super.dispose();
+  }
 
   Future<void> _operation(String id, Future<void> Function() action) async {
     if (_busy.contains(id)) return;
@@ -285,3 +308,6 @@ class _SwipeAction extends StatelessWidget {
     );
   }
 }
+
+// 隐藏工具的解锁编号：toolbox.<工具 id>（灰度配置 unlocks 里按这个写）。
+String toolboxUnlockId(String toolId) => 'toolbox.$toolId';

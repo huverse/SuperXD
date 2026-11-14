@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/challenge.dart';
+import 'package:superxd/domain/unlock.dart';
 import 'package:superxd/playground/challenge/challenge_run.dart';
 import 'package:superxd/playground/challenge/challenge_run_page.dart';
 import 'package:superxd/playground/challenge/points_page.dart';
@@ -18,8 +19,10 @@ import 'package:superxd/theme/dot_separated_text.dart';
 // 游乐场的「挑战」一栏（人工决策见 challenge_rules.dart）：要登录教务并登录应用账号；上面是积分与等级，下面是本周开放的挑战
 // （服务器下发，每周一换，同一挑战再玩只补超过最好成绩的部分；有门票的开局即扣、不退，积分不够时不给开始）。还有一局没结束时顶上给「继续」。
 class ChallengeHome extends StatefulWidget {
-  const ChallengeHome({super.key, required this.hub, required this.games, required this.store, required this.openAccount, required this.openLogin, required this.bottom});
+  const ChallengeHome({super.key, required this.hub, required this.games, required this.store, required this.openAccount, required this.openLogin, required this.bottom, this.unlocks});
   final ChallengeHub hub;
+  // 积分页列能买的解锁用；没配中转时为空。
+  final UnlockAccess? unlocks;
   final List<PlaygroundGame> games;
   final PlaygroundStore store;
   // 去「我的 › 账号」登录应用账号、去登录教务（组合根给，游乐场不认识那几页）。
@@ -151,7 +154,7 @@ class _ChallengeHomeState extends State<ChallengeHome> {
       onRefresh: _load,
       child: ListView(padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + widget.bottom), children: [
         CampusSurface(
-          onTap: () => Navigator.of(context).push(CampusPageRoute<void>(builder: (context) => PointsPage(hub: hub))),
+          onTap: () => Navigator.of(context).push(CampusPageRoute<void>(builder: (context) => PointsPage(hub: hub, unlocks: widget.unlocks))),
           padding: const EdgeInsets.all(20),
           child: Row(children: [
             CampusIcon(CampusIcons.points, size: 28, color: palette.primary),
