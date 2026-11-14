@@ -138,8 +138,9 @@ abstract final class CampusIcons {
   static const loop = LucideIcons.lasso;
   // 逻辑网格推理：带勾的方格表。
   static const logicgrid = LucideIcons.grid2x2Check;
-  // 密码破译：游戏图标是打开的锁（锁扣 lock 已占了合上的那把），答案格旁的退格键。
-  static const cipher = LucideIcons.lockKeyholeOpen;
+  // 密码破译：游戏图标是密码框（一排圆点），答案格旁的退格键。
+  // [人工决策-2026-11-14 16:00:28] 不用打开的锁：挑战总览里锁着的关是合上的锁，两把锁挨着会把这一关看成「已解锁」（用户选推荐）。
+  static const cipher = LucideIcons.rectangleEllipsis;
   static const backspace = LucideIcons.delete;
   static const schulte = LucideIcons.timer;
   // 画线入杯：游戏图标是画线的笔，底部操作「重画」是橡皮、放球时的「停下」是方块。

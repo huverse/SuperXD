@@ -127,6 +127,7 @@ class _KnightsPageState extends State<KnightsPage> with TickerProviderStateMixin
   void _mark(int person, bool? mark) {
     if (_session.finished || _session.judging || _marks[person] == mark) return;
     playTick();
+    hideCampusToast();
     _session.moved();
     setState(() {
       _history.add((person, _marks[person]));
@@ -138,6 +139,7 @@ class _KnightsPageState extends State<KnightsPage> with TickerProviderStateMixin
   void _undo() {
     if (_history.isEmpty || _session.finished) return;
     playTick();
+    hideCampusToast();
     setState(() {
       final (person, previous) = _history.removeLast();
       _marks[person] = previous;
@@ -168,10 +170,16 @@ class _KnightsPageState extends State<KnightsPage> with TickerProviderStateMixin
   }
 
   // 挑战模式：定完最后一个人就交服务器判（每次判错计一次错交，所以退回的局面不在本机判、不先标）；判错了才标出对不上的人。
+  // [人工决策-2026-11-14 16:00:28] 填满即交的判对错类（骑士与无赖、逻辑网格）连不上时，提示条带「重交」按钮原样再交一次
+  // （用户选推荐；以前要改一步再定才会重交）。接着改了一步提示就收起，不会把过时或没定完的局面交上去。
   Future<void> _submit() async {
     final correct = await _session.judge([for (final mark in _marks) mark!]);
     if (!mounted) return;
-    if (correct == null) return showCampusToast(context, '没交上，连不上服务器；改一个人再定一次就会重交');
+    if (correct == null) {
+      return showCampusToast(context, '没交上，连不上服务器', action: '重交', onAction: () {
+        if (!_session.finished && !_session.judging && !_marks.contains(null)) unawaited(_submit());
+      });
+    }
     if (correct) return unawaited(_finish());
     setState(() => _mismatches = knightsMismatches(_puzzle, _knights).toSet());
     _wrongs++;
