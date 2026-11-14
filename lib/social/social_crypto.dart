@@ -38,6 +38,9 @@ Uint8List requestCanonical(String method, String pathWithQuery, String time, Str
 
 Uint8List inviteProofCanonical(String inviteId, String redeemerDeviceId) => utf8.encode(['SXD1-invite', inviteId, redeemerDeviceId].join('\n'));
 
+// 私信设备挂到应用账号的凭证原文：私信密钥对「应用账号设备号 + 私信设备号」签名（与服务端 relay_crypto.ts 的 socialBindCanonical 同一份）。
+Uint8List socialBindCanonical(String accountDeviceId, String socialDeviceId) => utf8.encode(['SXD1-social-bind', accountDeviceId, socialDeviceId].join('\n'));
+
 // 消息签名带域前缀，签名不能被挪作请求或邀请签名使用。
 Uint8List _messageCanonical(List<int> compressed) => Uint8List.fromList([...utf8.encode('SXD1-msg\n'), ...compressed]);
 

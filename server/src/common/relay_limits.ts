@@ -31,6 +31,8 @@ export const sendPerDay = 500;
 export const registerPerHour = 20;
 // 兑换邀请限流：每设备每分钟 10 次，防止穷举。
 export const redeemPerMinute = 10;
+// 私信挂到应用账号（含接管）：每把应用账号密钥每小时 30 次（正常只在开启私信、重新登录与换手机时各一次）。
+export const socialBindPerHour = 30;
 
 // 代签凭据包：单条不超过 2KB，取件号 10 分钟有效。
 // [人工决策-2026-10-07 17:00:15] 限流采用极度宽松策略：同一 IP 每小时提交 1000 个、取件 3000 次。校园网出口多为 NAT，

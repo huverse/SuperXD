@@ -1,14 +1,29 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsString, Matches, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsOptional, IsString, Matches, ValidateNested } from 'class-validator';
+
+import { friendLimit } from 'src/common/relay_limits';
+
+const deviceIdPattern = /^[A-Za-z0-9_-]{22}$/;
 
 export class FriendDto {
   @ApiProperty({ description: '好友设备号' }) deviceId: string;
   @ApiProperty({ description: '成为好友的时刻，毫秒' }) since: number;
+  @ApiProperty({ description: '好友的签名公钥（换了设备的好友总带，keys=1 时每个都带），base64url', required: false }) signPublicKey?: string;
+  @ApiProperty({ description: '好友的加密公钥，同上', required: false }) boxPublicKey?: string;
+  @ApiProperty({ description: '好友的私信换到了这台新设备，这是你认得的旧设备号；处理完调 POST /v1/friends/moves/ack', required: false }) movedFrom?: string;
 }
 
 export class FriendListDto {
   @ApiProperty({ description: '好友列表，最多 500 个', type: [FriendDto] }) friends: FriendDto[];
+}
+
+export class FriendListQueryDto {
+  @ApiProperty({ description: '为 1 时每个好友都带公钥（新手机接管后拿好友名单）', required: false }) @IsOptional() @IsIn(['1']) keys?: string;
+}
+
+export class AckMovesDto {
+  @ApiProperty({ description: '处理完换设备提示的好友（新设备号）', type: [String] }) @IsArray() @ArrayMinSize(1) @ArrayMaxSize(friendLimit) @Matches(deviceIdPattern, { each: true }) deviceIds: string[];
 }
 
 export class HelloDto {

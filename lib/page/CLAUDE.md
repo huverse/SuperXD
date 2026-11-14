@@ -11,15 +11,15 @@
   - animated_branches.dart：分支切换 AnimatedBranches，保留每个分支的 Navigator；进出两页整屏并排平移，不淡入淡出（页内玻璃在半透明图层下取不到背景）。iOS 上直接切换、不滑动（[人工决策] 在 didUpdateWidget）。
   - section_pages.dart：服务页（课表、成绩、百宝箱、游乐场入口，[人工决策] 在列表上方）、我的页（头像卡读当前会话，只写姓名，姓名未知时显示学号；学号与班级在账号页；有开发者的话时在界面与关于之间多一行，有没读的信时行尾一个小圆点；节日抽中的红包在节日结束后 3 天内是最上面一行「节日红包」，点开再看卡片，没揭晓的照样拆红包）与底栏根页的大标题顶栏 SectionTitleBar。
 - 私信（只有分享卡片，没有文字聊天）：
-  - message_page.dart：消息页，只放私信（还没有通知来源，不放空的「通知」分段，[人工决策] 在文件头）；未开启时是开启卡片（含数据处理说明与隐私政策），开启后是添加好友与好友列表（按最近活动排序，下拉刷新并核对好友，增删好友时那一行原地展开、收起；时间在名字一行右端、未读角标在预览一行右端，大字号下各自长高不溢出）。
+  - message_page.dart：消息页，只放私信（还没有通知来源，不放空的「通知」分段，[人工决策] 在文件头）；没登录应用账号时是一张「登录应用账号后使用私信」卡（去登录经路由注入的 openAccount 推入账号页），私信在另一台手机上时是「在这台手机上使用」卡（takeOverSocial：先确认写明另一台停用、好友会看到、记录不过来，再原地等待接管），打开失败时是「暂时连不上」卡给重试（人工决策见 social/social_service.dart）；未开启时是开启卡片（含数据处理说明与隐私政策），开启后是添加好友与好友列表（按最近活动排序，下拉刷新并核对好友，增删好友时那一行原地展开、收起；时间在名字一行右端、未读角标在预览一行右端，大字号下各自长高不溢出）。
   - friend_add_page.dart：添加好友：出示自己的二维码（浅色画，保证可扫）与倒计时，离开即作废；出示时本页屏幕亮度调到最高、离开恢复（screen_brightness，只改本应用窗口，[人工决策] 在 initState）；「扫一扫」扫对方的码。扫码函数可注入（InviteScanner）。
   - qr_scan_page.dart：通用扫码页 QrScanPage：取景与相册识别都用 zxing-cpp（flutter_zxing，本机解码、不联网；换掉 ML Kit 的 [人工决策] 在文件头）。取景按 1080p 整帧找码，可两指缩放与点 1×/2×/4× 拉近（两指一落下就认作缩放，不让 iOS 右滑返回抢走），同一个码只交出一次；相册图用系统解码器缩到 2048 像素、在后台线程解。只认 QR，内容交给调用方的 accept 判断，认下就返回原文，不打开任何链接。好友二维码与课堂签到二维码共用。
-  - conversation_page.dart：会话页：卡片列表最新在下，自己的卡片原地显示发送中、失败与重发；对方的卡片贴左、自己的贴右、最宽 82%；卡片⋯可重发或删除（仅本机）；两处 [人工决策] 都在 _item；底部分享课表与界面；对方解除好友后改为提示。
+  - conversation_page.dart：会话页：卡片列表最新在下，系统提示写「已成为好友」或「对方换了设备」，自己的卡片原地显示发送中、失败与重发；对方的卡片贴左、自己的贴右、最宽 82%；卡片⋯可重发或删除（仅本机）；两处 [人工决策] 都在 _item；底部分享课表与界面；对方解除好友后改为提示。
   - share_card_view.dart：卡片渲染：课表（查看与对比，收到的可导入）、界面配置（预览、套用）、视频（打开）、未知类型（提示更新应用）。
   - friend_schedule_page.dart：好友课表与「共同空闲」（读本机同学期课表按日期对齐）；没有同学期课表或缺开学日时如实说明；顶栏可导入到自己的课表。
   - schedule_merge_view.dart：逐项合并的列表行（MergeCheckRow、MergeChangedCourse、MergeWholeCourse），好友课表导入与教务课表合并共用。
   - schedule_import.dart：好友课表导入 importSharedSchedule：先读好本机课表再打开导入页（推入根导航器），顶部分段「逐项合并 / 整份替换」：逐项合并按 domain 的 planScheduleMerge 列出有改动的课（每处差异一行、原来的划掉，整门可半选）、TA有你没有的课、你有TA没有的课（勾上会删掉），默认只勾有同一个教学班的那几门课的改动；应用按钮原地转圈，与其余课重叠时先确认；都存成当前账号的新版本、可在历史版本恢复，开学日与作息不动，成功的提示条回到发起页显示；本机没有那个学期时说明原因、不联网（[人工决策] 在文件内）。会话卡片与好友课表页共用。
-  - share_target_sheet.dart：分享弹层 showShareSheet：多选好友后逐个发送，每行原地显示状态，失败的可重发；课表页、界面页、百宝箱结果页共用。
+  - share_target_sheet.dart：分享弹层 showShareSheet（私信没就绪时按状态只提示去哪开启、登录或接管）：多选好友后逐个发送，每行原地显示状态，失败的可重发；课表页、界面页、百宝箱结果页共用。
   - social_dialogs.dart：错误码文案 socialErrorText、列表时间 socialShortTime、单行输入弹窗 showSocialTextInput。
 - 今天：
   - today_page.dart：今天页 TodayPage（顶栏放不下日期时「同步」只留图标）：读当前学期的课表与作息按日浏览；同步按钮走 chooseSyncSelection → CampusSync.run → showCampusSyncReport，没同步时正中给「同步课表」；课表页的「去同步」经 TodaySyncRequest 回到这里打开同步范围（组合根创建，[人工决策] 在类上）；含作息来源确认与缺开学日引导；同步中离开时结果暂存、回来再提示；切回本页或回到前台重读本地，学期、课表版本、开学日与作息都没变时不刷新内容（不整页重排）。顶部「此刻」卡（_ClassNow）显示上课中或下一节，课上完或没课时大字写状态、下面一行预告下一节（以后没课的日子也预告，不放右侧大号时刻，免得像课程卡），没课只在这张卡里说；到点换状态平滑过渡、开课前 15 分钟强调倒计时、5 分钟内按秒倒数、倒计时换数字时滚动、上课中此刻点定时漾开、整卡可点（[人工决策] 在 _ClassNow 上方）；看别的日子时底栏上方居中显示回「今天」胶囊（[人工决策] 见 _layout，显示时也是提示条的锚点）；上课中此刻点的漾开跟云雾同一节拍（[人工决策] 在 _TimeTrack）；单击有课卡弹只读详情（_openCourse）。
@@ -92,7 +92,7 @@
 - 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart；应用账号一组：app_account_test.dart（含「我上传的诊断包」）；开屏与画作页：painting_ui_test.dart。
 - 开发者的话：account_lifecycle_test.dart（「我的」页入口、小圆点与读信、新信在什么界面条件下弹）。
 - 节日：festival_test.dart（舞台、红包揭晓与按钮）、reward_sprites_test.dart（粒子贴图同原来画布画的对照；单独一个文件，因为贴图的加载全局缓存）与 account_lifecycle_test.dart（节日当天播动画、抽中接着拆红包）。
-- 私信页面：social_ui_test.dart（含好友课表导入的整份替换与逐项合并）、share_card_test.dart；合并规则在 schedule_merge_test.dart。
+- 私信页面：social_ui_test.dart（含好友课表导入的整份替换与逐项合并、没登录应用账号与私信在另一台手机上的卡片与接管确认、会话里的换设备提示）、share_card_test.dart；合并规则在 schedule_merge_test.dart。
 - 开发者模式：developer_mode_test.dart（含上传诊断包的确认、原地状态与诊断编号，没配中转时不出现）。
 - 扫码：qr_scan_test.dart（相机打不开与没给权限的说明、单次与连续模式、同一个码只交一次、iOS 两指缩放不触发右滑返回）。
 - 页面测试的合成数据网关是 fixture_campus_gateway.dart（读 assets/fixtures）。

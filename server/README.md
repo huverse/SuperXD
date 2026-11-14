@@ -1,6 +1,6 @@
 # SuperXD 中转服务（superxd-relay）
 
-功能性私信的“哑信箱”：只转交端到端密文，看不到课表、界面配置、作品链接或昵称。客户端在 lib/social。
+功能性私信的“哑信箱”：只转交端到端密文，看不到课表、界面配置、作品链接或昵称。私信要登录应用账号，私信设备挂在应用账号下（account_social），所以服务器知道哪些应用账号互为好友；换手机时由新设备接管。客户端在 lib/social。
 另有一处**代签凭据包的临时信箱**（chaoxing 模块）：学习通代签时对方把凭据包用一次性密钥加密后放这里，取走即删，服务端同样没有解密用的密钥。客户端在 lib/toolbox/chaoxing。
 还负责**节日抽奖**（reward 模块）：节日里随机发的支付宝口令或二维码红包只放这里、只在这里抽，抽签要登录了应用账号的设备签名，一个人（账号最早的那条登录身份）一次活动只抽一次，概率模型（平权、按活跃度加权、全天均匀放量）与人工决策见 src/modules/reward/reward_odds.ts。客户端在 lib/social/relay_reward_client.dart（用应用账号的设备密钥签名），由 lib/application/festivals.dart 编排。
 还负责**诊断包**（diagnostic 模块）：用户在开发者选项里点「上传诊断包」并确认后，应用把日志包用开发者的公钥加密再传来，这里只按诊断编号存密文、没有下载接口（开发者经 ssh 取出后在本机用私钥解），30 天后删除，人工决策见 lib/domain/diagnostic_upload.dart。上传照旧免签名、匿名完成；登录了应用账号的设备紧接着凭回执里的一次性口令把包认领到账号下，之后在账号页能看到、删除，注销账号一并删除。客户端是 lib/device/relay_diagnostic_upload.dart（上传）与 lib/social/relay_diagnostic_account.dart（认领、列出、删除），由 lib/application/account_diagnostics.dart 编排。
@@ -8,7 +8,7 @@
 还负责**积分与挑战**（points 与 challenge 模块，人工决策见客户端 lib/playground/challenge/challenge_rules.dart 与 src/modules/points/points.service.ts）：游乐场的挑战由这里按配置下发（每周一换）、出题、逐关核对、计时（不暂停）与结算，成绩换成积分记在应用账号下；挑战的内容（模板、轮换、计分参数、限时）与题库是发布目录 challenge 下的文件，换文件即生效。判定在 src/modules/challenge/judges，从客户端 Dart 规则逐个移植、共用测试向量。客户端在 lib/social/relay_challenge_client.dart，由 lib/application/challenges.dart 编排。
 还负责**应用内更新**（app_release 模块）：按渠道给出最新版本清单、下载各架构安装包，内容是发版时放进发布目录的文件，不碰数据库。客户端是 lib/device/relay_release_feed.dart，由 lib/application/app_updates.dart 编排。
 
-技术栈：NestJS 12（ESM）+ TypeORM + MySQL 8.4 + Redis 8，swc 构建，Vitest 测试。分层：每个领域模块（device、invite、friend、message、chaoxing）对外只暴露服务与仓储端口（抽象类），TypeORM / Redis 实现可替换；跨领域的编排（扫码加好友、删除设备、数据保留清理）在 pairing 模块；app_release 只读发布目录，reward 只管节日抽奖（借设备模块的验签、借账号模块按设备认人，两者都不知道抽奖），diagnostic 只收诊断包，都与其他模块无关；account 借设备模块验签与登记密钥、借 kingo 模块代登录（登录方式是可替换的端口 AccountProvider，kingo 只会登录一次读学号、不知道账号），设备删除时连带删账号登记由 pairing 编排；points 借账号模块按设备认账号，challenge 再借 points 记积分，两者都在 onModuleInit 往账号模块的 AccountDataHooks 登记删除函数，删账号时在同一事务里连带删，账号模块不知道它们。
+技术栈：NestJS 12（ESM）+ TypeORM + MySQL 8.4 + Redis 8，swc 构建，Vitest 测试。分层：每个领域模块（device、invite、friend、message、chaoxing）对外只暴露服务与仓储端口（抽象类），TypeORM / Redis 实现可替换；跨领域的编排（扫码加好友、删除设备、私信挂到应用账号与换设备接管、数据保留清理）在 pairing 模块；app_release 只读发布目录，reward 只管节日抽奖（借设备模块的验签、借账号模块按设备认人，两者都不知道抽奖），diagnostic 只收诊断包，都与其他模块无关；account 借设备模块验签与登记密钥、借 kingo 模块代登录（登录方式是可替换的端口 AccountProvider，kingo 只会登录一次读学号、不知道账号），设备删除时连带删账号登记由 pairing 编排；points 借账号模块按设备认账号，challenge 再借 points 记积分，两者都在 onModuleInit 往账号模块的 AccountDataHooks 登记删除函数，删账号时在同一事务里连带删，账号模块不知道它们。
 
 # 协议 v1
 
@@ -24,7 +24,7 @@
 - POST /v1/devices：注册（自签名，请求体带两把公钥），幂等。DELETE /v1/devices：删除本设备及其好友关系与待取消息（用户关闭私信；退出应用账号时删那把设备密钥）。
 - POST /v1/invites：登记邀请号与邀请公钥，5 分钟有效，同时作废本设备旧邀请。DELETE /v1/invites/:id：作废。
 - POST /v1/friends/redeem：扫码方提交邀请号、凭证（邀请私钥对“SXD1-invite、邀请号、扫码方设备号”的签名）与给邀请人的问候密文；关系与问候同一事务写入。邀请有效期内可多人使用。
-- GET /v1/friends、DELETE /v1/friends/:peer（双向解除）。
+- GET /v1/friends?keys=：好友列表；对方的私信换了设备（接管，见下）时那一项是新设备号并带新公钥与 movedFrom（你认得的旧设备号），keys=1 时每一项都带公钥（新手机接管后拿名单）。POST /v1/friends/moves/ack {deviceIds}：处理完换设备提示，清掉 movedFrom。DELETE /v1/friends/:peer（双向解除）。
 - POST /v1/chaoxing/packs：投递代签凭据包（一次性密钥加过密，base64url，≤2KB），返回取件号（12 字节随机数）与作废口令（16 字节随机数，库里只存 sha256）；**不做设备签名**，拿到取件号的人就是收件人，靠取件号随机性、10 分钟过期与按 IP 限流防滥用。POST /v1/chaoxing/packs/:id/pickup：取件，取走即删，重复取或已过期返回 PACK_NOT_FOUND。POST /v1/chaoxing/packs/:id/revoke：出示方凭作废口令作废（换码时作废上一张），一律回 204，不透露包是否存在。代签接口的请求体在解析前按 8KB 封顶。
 - GET /v1/app/releases/:channel?abi=：免签名，读发布目录里的 <渠道>.json，返回版本号、版本名、发布时刻、最低可用版本号、更新说明、发布页与这个架构（arm64-v8a、armeabi-v7a、x86_64）的安装包（下载路径、字节数、SHA-256，没有这个架构时为 null）；没有清单返回 RELEASE_NOT_FOUND，清单写坏了回 INTERNAL 并打印堆栈、不往外发。清单按文件修改时间与大小缓存，换文件即生效。返回另带 envelope：清单里这个架构签好的信封原样透传（清单没有签名时为 null），见下面「更新清单与开发者的话的签名」。GET /v1/app/files/:name：免签名，下载安装包或按需下载的字体包（文件名只许字母数字与 . _ -、以 .apk 或 .ttf 结尾，类型按扩展名给，两者共用限流与同时下载上限），支持 Range 断点续传，文件不在返回 RELEASE_NOT_FOUND。安装包真伪由客户端核对 SHA-256 与签名证书。
 - GET /v1/app/rollout：免签名、不带任何标识，返回发布目录里 rollout.json 的灰度配置 {flags, envelope}（每个开关是定值 percent 或按时刻的 stages，分批更新的开关名是 app_update.<渠道>.<构建号>），还没放时给空列表、信封为空；只校验形状、信封原样透传，写坏了回 INTERNAL 并打印堆栈、不往外发，按修改时间与大小缓存。文件由仓库的 rollout 流水线（.github/workflows/rollout.yml）经同一个受限账号上传，签名用开发者的话那把钥（域前缀 SXD1-rollout）。客户端在本机判定，服务器不知道谁拿到了什么；以后要在服务端强制的功能用 src/common/rollout_bucket.ts 再算一遍（与客户端共用 test/vectors/rollout_v1.json）。
@@ -40,6 +40,7 @@
 - POST /v1/challenge-runs/:runId/end：提前结束，按已过的关结算。
 - GET /v1/points：{balance, expiring（30 天内要过期的）, expiringAt, serverTime}；GET /v1/points/entries?before=：流水从新到旧，每页 20 条，按 id 游标翻页。
 - POST /v1/account/diagnostics/:id/claim：凭上传回执的口令 {claim} 把这个诊断包认领到当前应用账号，返回 {id, bytes, uploadedAt, expiresAt}（毫秒时间戳，uploadedAt 是认领时刻）；口令不对、过期、用过或包已不在都回 404 DIAGNOSTIC_NOT_FOUND。GET /v1/account/diagnostics：这个账号认领过的包 {uploads: [...]}，从新到旧、最多 50 个。DELETE /v1/account/diagnostics/:id：删这个账号下的这个包，记录与文件一起删，别人的或不存在回 DIAGNOSTIC_NOT_FOUND。
+- POST /v1/account/social：把私信设备挂到这个应用账号（人工决策见客户端 lib/social/social_service.dart 文件头）。请求体是私信设备的两把公钥、它对「SXD1-social-bind\n应用账号设备号\n私信设备号」的签名 proof（证明两把钥匙在同一台手机上，共用向量 socialBind）与可选的 takeover；没注册过的私信设备顺带登记。返回 {deviceId, moved}。账号的私信在别的设备上时，不带 takeover 回 409 SOCIAL_ELSEWHERE；带了就接管：同一事务里把好友关系改挂到这台（对方那行记 movedFrom，两边本来就有的不重复，两台互加的去掉），删掉旧设备与它没收的信，旧设备之后的请求是 UNAUTHORIZED。这台私信设备已属于别的账号回 409 SOCIAL_TAKEN。私信设备不能是应用账号的设备密钥。注销账号时私信设备连同好友关系与信箱一起删。
 - 以上都要应用账号的设备签名，没登录回 404 ACCOUNT_NOT_FOUND。
 - POST /v1/messages：投递密文，按（发送方, clientId）幂等，只能发给好友。GET /v1/messages?after=&limit=&wait=：按 id 游标取；wait（0–25 秒）为长轮询，没有消息时挂起到有新消息、到时或客户端断开。POST /v1/messages/ack：确认即删除。
 
@@ -80,6 +81,7 @@
 - 开发者的话：同一来源每小时 600 次；最多 30 封、标题 40 字、正文 4000 字，文件超过 1MB 拒绝读取（明文加签名载荷；与客户端 lib/domain/developer_note.dart 及 lib/device/relay_note_feed.dart 一致）。
 - 灰度配置：同一来源每小时 600 次；最多 200 个开关、每个 20 档，文件超过 64KB 拒绝读取（与客户端 lib/device/relay_rollout_feed.dart 一致）。
 - 节日抽奖：每台设备每小时 10 次、同一来源每小时 3000 次（先按设备计数，刷请求的设备不占同一出口别人的额度）；按人只抽一次，刷号要有真实的应用账号（登录要经学校教务核对学号）；注销账号不删抽签记录（否则注销重建就能再抽）；活动行在进程内缓存 60 秒；活动结束 30 天后由每小时一次的清理任务连同奖品与抽签记录分批删除（多实例抢锁，每轮最多 20 批、每批 1000 行）。
+- 私信挂到应用账号（含接管）：每把应用账号密钥每小时 30 次；account_social 一个账号一行，随设备删除或注销账号删除；friendship.moved_from 在好友确认后清空，没确认的随关系删除。
 - 诊断包：单个 ≤24MB；同一来源每小时 30 个；保留 30 天，到期由每 10 分钟一次的清理任务删除（多实例抢锁，一小时前中途断掉的残片一并删）；目录合计 ≤2GB、≤2000 个，满了回 503。已用量在 Redis 里原子预占、写盘失败退回，清理任务每轮按目录实际重写（Redis 丢了也由它重建）。认领记录 diagnostic_upload 随文件到期一起删（清理任务删掉文件就删记录，另按认领时刻兜底删超过保留期的），用户删除或注销账号时记录与文件一起删；认领、列出、删除每台设备每小时共 60 次。
 - 应用账号：每次登录都要代登录学校教务，所以按学号每天最多 10 次尝试（含验证码重试，挡住被拿来试同学的密码；计数主体是学号的 HMAC）、每台设备每小时 10 次、同一来源每小时 300 次、全局每小时 600 次（所有实例共用，护住学校那边对本服务 IP 的观感）；每个实例同时最多 4 个代登录，超出回 503。教务每个请求 12 秒超时、整次最多 40 秒，响应超过 1MB 当格式不对。验证码这一步的教务会话（只有 cookie 与页面会话号）在 Redis 存 5 分钟。一个账号最多 20 把设备密钥，再登录顶掉最久没用的；账号 400 天没有登录或查看即连同登录方式与密钥登记删除（每小时一次的清理任务，抢锁、每轮最多 20 批、每批 1000 个）；设备删除时连带删它的登记。
 - 积分：每笔满 12 个月过期，每小时一次的任务把到期的清零并记过期流水；流水满 13 个月（395 天）删除；剩余为 0 且过期满 30 天的获得行删除；每台设备每小时查 600 次。
@@ -94,7 +96,7 @@
 
 - 环境变量见 .env.example，只在 src/config/env.ts 读取，缺必填项启动即失败。
 - 起测试库：docker compose -f docker-compose.test.yml up -d --wait（宿主机网络，MySQL 3307、Redis 6380，库在内存里）。
-- npm test：类型检查用 npm run typecheck；npm run build && npm run smoke 检查编译产物能在 Node ESM 下加载（类型导入被编译成运行时导入这类问题只在这里暴露，Vitest 测不到；Docker 构建与 CI 都会跑）；e2e 覆盖注册、签名、防重放、校时、未注册设备号的负缓存（只查一次库、注册立刻生效、与注册交错不误记）、扫码加好友（多人、凭证防盗用、作废）、收发幂等、分页、上限、发送的分钟与每天限流、关闭私信与数据保留；代签凭据包（chaoxing_pack.e2e.test.ts）覆盖取走即删、并发只取到一份、大小与格式、2KB 边界与 8KB 请求体上限、提交与取件限流、作废口令、过期与清理不误删、IPv6 按 /64 聚合；应用更新（app_release.e2e.test.ts）覆盖按架构取包、换清单即生效、灰度配置的透传与写坏不外发、清单写坏不外发、签名信封按架构原样透传与写坏不外发、128KB 文件上限、参数与文件名校验、整包与 Range 下载、限流；节日抽奖（reward.e2e.test.ts）覆盖要求设备签名、按设备只抽一次、加权与均匀放量、并发发奖、按设备与按来源限流、删除设备后不能再抽、维护命令与保留；应用账号（account.e2e.test.ts，起一个本机假教务）覆盖新建与同学号换密钥登录到同一账号、库里只有学号的 HMAC、密码错不登记密钥、锁定、验证码给图与答对答错、挑战号一次性且只认发起的设备、信封封给别的设备或内容不全不认、按学号的尝试上限、教务限流、退出账号连带删登记、注销、20 把密钥上限、400 天清理与客户端信封向量；教务登录参数的向量在 kingo_codec.test.ts；积分与挑战（challenge.e2e.test.ts，题库用判定向量里的题）覆盖没登录不给、本周挑战与玩不了的标记、整局走完（错交计数、重发只算一次、钥匙齐了才解锁、全过结算记积分）、只补最好成绩差额、同时一局与错交到上限、到点结算与定时结算、注销连带删除、积分过期与保留、配置热加载与写坏不换；判定与 Dart 逐条一致在 challenge_judge.test.ts（向量由客户端 tool/challenge_vectors.dart 生成），周期日界、配置校验、出题分钥匙与计分口径在 challenge_rules.test.ts；诊断包（diagnostic.e2e.test.ts）覆盖原样落盘与 600 权限、没有下载、只收二进制、24MB 与分块在读请求体前拒收、限流、目录满回 503、中途断开不留残片并退回额度、到期清理与已用量校正。
+- npm test：类型检查用 npm run typecheck；npm run build && npm run smoke 检查编译产物能在 Node ESM 下加载（类型导入被编译成运行时导入这类问题只在这里暴露，Vitest 测不到；Docker 构建与 CI 都会跑）；e2e 覆盖注册、签名、防重放、校时、未注册设备号的负缓存（只查一次库、注册立刻生效、与注册交错不误记）、扫码加好友（多人、凭证防盗用、作废）、收发幂等、分页、上限、发送的分钟与每天限流、关闭私信与数据保留；代签凭据包（chaoxing_pack.e2e.test.ts）覆盖取走即删、并发只取到一份、大小与格式、2KB 边界与 8KB 请求体上限、提交与取件限流、作废口令、过期与清理不误删、IPv6 按 /64 聚合；应用更新（app_release.e2e.test.ts）覆盖按架构取包、换清单即生效、灰度配置的透传与写坏不外发、清单写坏不外发、签名信封按架构原样透传与写坏不外发、128KB 文件上限、参数与文件名校验、整包与 Range 下载、限流；私信挂到应用账号（social_account.e2e.test.ts）覆盖挂上与幂等、凭证不对与没登录、一台私信设备不能挂两个账号、换手机没带接管被拒与接管后好友改挂（对方看到新公钥与旧号、确认后不再提示、旧设备与没收的信删掉）、再接管回来、两台手机的好友合在一起、关闭私信与注销连带删除；节日抽奖（reward.e2e.test.ts）覆盖要求设备签名、按设备只抽一次、加权与均匀放量、并发发奖、按设备与按来源限流、删除设备后不能再抽、维护命令与保留；应用账号（account.e2e.test.ts，起一个本机假教务）覆盖新建与同学号换密钥登录到同一账号、库里只有学号的 HMAC、密码错不登记密钥、锁定、验证码给图与答对答错、挑战号一次性且只认发起的设备、信封封给别的设备或内容不全不认、按学号的尝试上限、教务限流、退出账号连带删登记、注销、20 把密钥上限、400 天清理与客户端信封向量；教务登录参数的向量在 kingo_codec.test.ts；积分与挑战（challenge.e2e.test.ts，题库用判定向量里的题）覆盖没登录不给、本周挑战与玩不了的标记、整局走完（错交计数、重发只算一次、钥匙齐了才解锁、全过结算记积分）、只补最好成绩差额、同时一局与错交到上限、到点结算与定时结算、注销连带删除、积分过期与保留、配置热加载与写坏不换；判定与 Dart 逐条一致在 challenge_judge.test.ts（向量由客户端 tool/challenge_vectors.dart 生成），周期日界、配置校验、出题分钥匙与计分口径在 challenge_rules.test.ts；诊断包（diagnostic.e2e.test.ts）覆盖原样落盘与 600 权限、没有下载、只收二进制、24MB 与分块在读请求体前拒收、限流、目录满回 503、中途断开不留残片并退回额度、到期清理与已用量校正。
 - npm run dev：swc 监听编译，bun 运行并在产物变化时重启。
 - 客户端联调：仓库根目录 flutter test tool/verify_social.dart --dart-define=SUPERXD_RELAY=http://127.0.0.1:端口。
 
@@ -110,6 +112,7 @@
 6. 应用更新：compose 把本目录下的 releases 只读挂进容器（/srv/releases）。发版时把各架构安装包、仓库 font_packs 里的字体包与 tool/release_manifest.dart 生成的 <渠道>.json 传进 releases，先传安装包、最后传清单（清单一出现客户端就会来下载），再删掉旧版本的安装包；由仓库的发版流水线（.github/workflows/release.yml）自动完成，步骤见仓库根目录 CONTRIBUTING.md。清单与开发者的话带签名信封后，本服务要先于下一次发版部署（见上面「更新清单与开发者的话的签名」的上线顺序）。
    节日抽奖：库按 sql/upgrade_2026_10_23.sql 建三张表后再部署；每次节日在服务器上进中转容器执行维护命令（用法见 src/modules/reward/reward_admin.ts 文件头）：create 建活动（编号、带时区的起止时刻、模式、基础概率、加权上限），import 从标准输入导入奖品（每行「口令<TAB>内容」或「二维码<TAB>内容」，可加附言），status 看发放情况。奖品只经标准输入进库，不放进仓库、不落地成文件。
    积分与挑战：库按 sql/upgrade_2026_11_14.sql 建四张表后再部署；compose 里固定了业务时区 RELAY_BUSINESS_TIME_ZONE（Asia/Shanghai），.env 不用改；挑战的配置与题库由流水线 challenge.yml 传进 releases/challenge（题库种子是 GitHub 机密 CHALLENGE_BANK_SEED，开发者本机另存一份），没传之前挑战列表为空。
+   私信跟着应用账号：库按 sql/upgrade_2026_11_14c.sql 给 friendship 加 moved_from 列、建 account_social 表后再部署（加列是 INSTANT，不重建表）。旧客户端照旧用设备注册与设备级私信，不受影响。
    应用账号：库按 sql/upgrade_2026_11_13.sql 建三张表后再部署；.env 加 RELAY_KINGO_BASE=http://42.247.18.146 与两把密钥：RELAY_ACCOUNT_SEAL_KEY（X25519 私钥种子，32 字节 base64url，对应的公钥写死在客户端 lib/social/account_seal.dart 的 accountSealKey）、RELAY_ACCOUNT_SUBJECT_KEY（学号哈希的 HMAC 密钥，32 字节 base64url）。两把都在开发者本机生成、本机另存一份（~/.local/share/superxd-release/account，600），经 ssh 写进服务器 .env，不回显、不进仓库。学号哈希密钥丢了或换了，所有账号都认不回来（数据库备份里只有哈希），所以它的备份比数据库备份还要紧。
    诊断包：compose 把命名卷 diagnostics 挂到容器 /srv/diagnostics（镜像里这个目录归 node，命名卷第一次创建时沿用，非 root 进程能写），不用改 .env。认领到应用账号要先按 sql/upgrade_2026_11_14b.sql 建 diagnostic_upload 表再部署。用户报来诊断编号后，在服务器 /opt/superxd-relay 下 docker compose cp relay:/srv/diagnostics/<诊断编号> /tmp/<诊断编号> 取出，拷回开发者本机用 tool/open_diagnostic.dart 解开（私钥只在开发者本机，见该文件头）；用户要求提前删除时 docker compose exec relay rm /srv/diagnostics/<诊断编号>。
    流水线用的上传账号只能读写 releases：建系统用户（如 superxd-release，不设密码），把 releases 及其中文件交给它；它的 authorized_keys 只放流水线专用的一把密钥，写成 restrict,command="/usr/bin/rrsync /opt/superxd-relay/releases" ssh-ed25519 …，这把密钥只能经 rsync 读写这个目录，不能登录或执行别的命令。私钥只放进 GitHub 的 relay 环境，主机指纹用 ssh-keyscan 取得后一并存入。
@@ -132,7 +135,7 @@
 
 # 备份与恢复
 
-人工决策见 scripts/backup_db.sh 文件头。只导长期数据：device、friendship、节日抽奖的 reward_campaign、reward_prize、reward_draw 与应用账号的 app_account、account_identity、account_device，积分的 points_grant、points_entry 与挑战的最好成绩 challenge_best；message（30 天）、chaoxing_pack（10 分钟）、challenge_run（30 天）与诊断包认领记录 diagnostic_upload（随诊断包 30 天）是短期数据，不导。新增长期保存的表要加进脚本里的表清单。
+人工决策见 scripts/backup_db.sh 文件头。只导长期数据：device、friendship、节日抽奖的 reward_campaign、reward_prize、reward_draw 与应用账号的 app_account、account_identity、account_device，积分的 points_grant、points_entry、挑战的最好成绩 challenge_best 与私信设备属于哪个应用账号的 account_social；message（30 天）、chaoxing_pack（10 分钟）、challenge_run（30 天）与诊断包认领记录 diagnostic_upload（随诊断包 30 天）是短期数据，不导。新增长期保存的表要加进脚本里的表清单。
 
 - 备份：scripts/backup_db.sh 在 mysql 容器里用容器自己的账号环境变量执行 mysqldump --single-transaction（一致性快照，不锁表、不停服务），gzip 后写进 compose 目录下的 backups（目录 700、文件 600），文件名带 UTC 时刻，只留最新 BACKUP_KEEP 份（默认 14）。用 root 的 crontab 每天跑一次，如 17 19 * * * /opt/superxd-relay/scripts/backup_db.sh >> /var/log/superxd-relay-backup.log 2>&1（服务器是 UTC，即北京时间 03:17），日志每天三行。
 - 异地：只存本机盘只防误删与库损坏，防不了整盘丢失或整机被删。去处还没定；定了以后写一个上传脚本，用 BACKUP_UPLOAD_HOOK=脚本路径 传给备份脚本（以备份文件的绝对路径为参数调用，失败则备份脚本非零退出）。备份里有还没发出的红包口令与二维码内容，传出服务器前必须先加密。

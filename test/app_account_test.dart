@@ -200,6 +200,23 @@ void main() {
       await appAccounts.check();
       expect(client.summaries, 2, reason: '没登录不联网');
     });
+
+    // 人工决策见 social/social_service.dart（11-14 17:56:46）：注销成了才通知组合根清掉这台手机上那个账号的私信；注销失败不通知。
+    test('注销成功后把注销的账号交给 onDeleted，失败不交', () async {
+      final deleted = <AppAccountRef>[];
+      final subject = AppAccounts(accounts: accounts, client: client, onDeleted: deleted.add, now: () => now);
+      addTearDown(subject.dispose);
+      client.records[_identity.loginId] = _accountId;
+      await subject.load();
+      client.failure = const AppAccountException(AppAccountFailure.network, '连不上服务器');
+      expect(await subject.deleteAccount(), isA<AppAccountError>());
+      expect(deleted, isEmpty);
+      client.failure = null;
+      final account = subject.current;
+      expect(await subject.deleteAccount(), isA<AppAccountDone>());
+      expect(deleted, [account]);
+      expect(subject.current, isNull);
+    });
   });
 
   group('账号页', () {
@@ -269,6 +286,8 @@ void main() {
       await tester.tap(find.text('注销应用账号'));
       await tester.pumpAndSettle();
       expect(find.text('注销应用账号？'), findsOneWidget);
+      // 人工决策见 social/social_service.dart（11-14 17:56:46）：注销连同私信一起删，确认框写明。
+      expect(find.textContaining('私信好友'), findsOneWidget);
       await tester.tap(find.text('注销'));
       await tester.pumpAndSettle();
       expect(client.deleted, [_identity.loginId]);
@@ -396,6 +415,7 @@ class _Client implements AppAccountClient {
   }
   @override
   Future<void> delete(AccountIdentity identity) async {
+    if (failure case final error?) throw error;
     deleted.add(identity.loginId);
     records.remove(identity.loginId);
   }

@@ -30,3 +30,6 @@ export const requestCanonical = (method: string, pathWithQuery: string, time: st
 
 // 邀请凭证原文：扫码方用二维码里的邀请私钥签“邀请号 + 自己的设备号”，凭证只对扫码方本人有效，被截获也不能给别的设备用。
 export const inviteProofCanonical = (inviteId: string, redeemerDeviceId: string) => Buffer.from(['SXD1-invite', inviteId, redeemerDeviceId].join('\n'), 'utf8');
+
+// 私信设备挂到应用账号的凭证原文：私信密钥对「应用账号那把设备密钥的设备号 + 私信设备号」签名，证明两把钥匙在同一台手机上（客户端 lib/social/social_crypto.dart 同一份）。
+export const socialBindCanonical = (accountDeviceId: string, socialDeviceId: string) => Buffer.from(['SXD1-social-bind', accountDeviceId, socialDeviceId].join('\n'), 'utf8');

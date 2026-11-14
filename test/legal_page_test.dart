@@ -8,6 +8,7 @@ import 'package:go_router/go_router.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/page/legal_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/social/social_spaces.dart';
 
 void main() {
   testWidgets('隐私政策先摘要再分节，末尾三份清单；覆盖教务明文、私信服务器数据、第三方 SDK、权限与用户权利，长文能滚到底', (tester) async {
@@ -24,6 +25,9 @@ void main() {
     // 按文档顺序往下滚。
     for (final (title, fragment) in [
       ('二、私信', '按 IP 地址计数限流'),
+      // 11-14 私信跟着应用账号（人工决策见 social/social_service.dart）：服务器能看出账号之间的好友关系、换手机时公钥由服务器转交，都要写明。
+      ('二、私信', '因此服务器知道哪些应用账号互为好友'),
+      ('二、私信', '新手机的好友名单和好友的公钥由服务器给出'),
       ('四、百宝箱：学习通签到', '打开位置签到时申请定位权限（仅使用期间）'),
       ('四、百宝箱：学习通签到', '当前位置不发给高德'),
       ('四、百宝箱：学习通签到', '本机不保存签到记录与群消息'),
@@ -228,7 +232,14 @@ void main() {
     expect(excluded, contains('deviceOnly'));
     expect(main, contains("File(path.join(deviceOnly.path, 'developer.json'))"));
     expect(main, contains("Directory(path.join((external ?? deviceOnly).path, 'logs'))"));
-    expect(excluded, contains('File(socialDatabase)'));
+    // 私信库：第一个应用账号沿用的 social.db 与其余账号的 social 文件夹（social/social_spaces.dart），安卓两份规则与 iOS 都排除。
+    expect(excluded, contains('File(path.join(socialDirectory, SocialSpaces.legacyDatabase))'));
+    expect(excluded, contains('Directory(path.join(socialDirectory, SocialSpaces.accountFolder))'));
+    expect(SocialSpaces.legacyDatabase, 'social.db');
+    expect(SocialSpaces.accountFolder, 'social');
+    for (final rules in [File('android/app/src/main/res/xml/backup_rules.xml').readAsStringSync(), extraction]) {
+      expect(rules, allOf(contains('<exclude domain="database" path="social.db" />'), contains('<exclude domain="database" path="social/" />')));
+    }
     expect(File('ios/Runner/AppDelegate.swift').readAsStringSync(), contains('DeviceOnlyData.claimKeychain()'));
   });
 

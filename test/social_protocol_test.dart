@@ -40,6 +40,13 @@ void main() {
       expect(base64UrlNoPad(await signWithSeed(seed, canonical)), invite['proof']);
     });
 
+    test('私信挂到应用账号的凭证逐字节一致', () async {
+      final bind = vectors['socialBind'] as Map<String, dynamic>;
+      final canonical = socialBindCanonical(bind['accountDeviceId'] as String, bind['socialDeviceId'] as String);
+      expect(utf8.decode(canonical), bind['canonical']);
+      expect(base64UrlNoPad(await signWithSeed(decodeBase64UrlNoPad(vectors['signSeed'] as String), canonical)), bind['proof']);
+    });
+
     test('base64url 只认无填充的规范写法', () {
       expect(() => decodeBase64UrlNoPad('AA=='), throwsA(isA<SocialCryptoException>()));
       expect(() => decodeBase64UrlNoPad('A+A'), throwsA(isA<SocialCryptoException>()));

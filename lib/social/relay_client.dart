@@ -41,6 +41,8 @@ abstract final class RelayCode {
   static const runOver = 'RUN_OVER';
   static const levelLocked = 'LEVEL_LOCKED';
   static const diagnosticNotFound = 'DIAGNOSTIC_NOT_FOUND';
+  static const socialElsewhere = 'SOCIAL_ELSEWHERE'; // 这个应用账号的私信在另一台设备上（没带接管）
+  static const socialTaken = 'SOCIAL_TAKEN'; // 这个私信设备已挂在别的应用账号下
   static const internal = 'INTERNAL';
   // 以下只在客户端产生。
   static const network = 'NETWORK'; // 连不上服务器
@@ -119,6 +121,15 @@ class HttpRelayTransport implements RelayTransport {
   void close() => _http.close();
 }
 
+// 服务端好友列表里的一项：换了设备的好友 movedFrom 是本机认得的旧设备号，keys 是它的新公钥（已核对与设备号一致）。
+class RemoteFriend {
+  const RemoteFriend({required this.deviceId, required this.since, this.keys, this.movedFrom});
+  final String deviceId;
+  final int since;
+  final PeerKeys? keys;
+  final String? movedFrom;
+}
+
 class InboxItem {
   const InboxItem({required this.id, required this.from, required this.envelope, required this.createTime});
   final String id;
@@ -184,10 +195,44 @@ class RelayClient {
     return _integer(body['since']);
   }
 
-  Future<Map<String, int>> friends(SocialIdentity identity) async {
-    final list = (await _call(identity, 'GET', '/v1/friends'))['friends'];
+  // 服务端的好友列表（最多 500 个）。换了设备的好友带新公钥与 movedFrom（本机认得的旧设备号）；keys 为真时每个都带公钥（新手机接管后拿名单），
+  // 这时响应放宽到 256KB（500 个好友各两把公钥约 120KB）。公钥与设备号对不上的当格式不对。
+  Future<Map<String, RemoteFriend>> friends(SocialIdentity identity, {bool keys = false}) async {
+    final list = (await _call(identity, 'GET', keys ? '/v1/friends?keys=1' : '/v1/friends', null, null, false, keys ? 256 * 1024 : null))['friends'];
     if (list is! List) throw const RelayException(RelayCode.badResponse);
-    return {for (final item in list.cast<Map<Object?, Object?>>()) _text(item['deviceId']): _integer(item['since'])};
+    return {
+      for (final item in list.cast<Map<Object?, Object?>>())
+        _text(item['deviceId']): RemoteFriend(deviceId: _text(item['deviceId']), since: _integer(item['since']), keys: _keys(item), movedFrom: switch (item['movedFrom']) {
+          null => null,
+          final String movedFrom => movedFrom,
+          _ => throw const RelayException(RelayCode.badResponse),
+        }),
+    };
+  }
+
+  static PeerKeys? _keys(Map<Object?, Object?> item) {
+    if (item['signPublicKey'] == null && item['boxPublicKey'] == null) return null;
+    final sign = tryDecodeBase64UrlNoPad(_text(item['signPublicKey']), length: 32), box = tryDecodeBase64UrlNoPad(_text(item['boxPublicKey']), length: 32);
+    if (sign == null || box == null) throw const RelayException(RelayCode.badResponse);
+    final keys = PeerKeys(sign, box);
+    return keys.deviceId == item['deviceId'] ? keys : throw const RelayException(RelayCode.badResponse);
+  }
+
+  // 处理完这些好友换设备的提示（新设备号），服务端清掉 movedFrom。
+  Future<void> ackMoves(SocialIdentity identity, List<String> deviceIds) => _call(identity, 'POST', '/v1/friends/moves/ack', {'deviceIds': deviceIds});
+
+  // 把私信设备挂到应用账号（用应用账号的设备密钥 account 签名，请求体带私信密钥对两把钥匙的签名）；没注册过的私信设备顺带登记。
+  // 账号的私信在另一台设备上时抛 SOCIAL_ELSEWHERE，takeover 为真时接管过来；返回这次是否从别的设备接管。
+  Future<bool> bindSocial(SocialIdentity account, SocialIdentity social, {bool takeover = false}) async {
+    final proof = await social.sign(socialBindCanonical(account.deviceId, social.deviceId));
+    final body = await _call(account, 'POST', '/v1/account/social', {
+      'signPublicKey': base64UrlNoPad(social.signPublicKey),
+      'boxPublicKey': base64UrlNoPad(social.boxPublicKey),
+      'proof': base64UrlNoPad(proof),
+      if (takeover) 'takeover': true,
+    });
+    final moved = body['moved'];
+    return body['deviceId'] == social.deviceId && moved is bool ? moved : throw const RelayException(RelayCode.badResponse);
   }
 
   Future<void> removeFriend(SocialIdentity identity, String peerDeviceId) => _call(identity, 'DELETE', '/v1/friends/$peerDeviceId');

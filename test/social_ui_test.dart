@@ -21,8 +21,9 @@ import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/page/social_dialogs.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/invite_code.dart';
+import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/social_service.dart';
-import 'package:superxd/social/social_store.dart';
+import 'package:superxd/social/social_spaces.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_refresh.dart';
@@ -36,9 +37,12 @@ import 'share_card_test.dart' show sampleSchedule;
 late Directory temporary;
 var _databases = 0;
 
+// 一台登录了应用账号的手机上的私信（每台单独的数据库目录）。
 Future<SocialService> device(FakeRelay relay, [String? nickname]) async {
-  final service = SocialService(store: await SocialStore.open(path.join(temporary.path, 'ui_${_databases++}.db')), vault: MemoryIdentityVault(), transport: relay.transport());
-  await service.initialize();
+  final directory = Directory(path.join(temporary.path, 'ui_${_databases++}'))..createSync();
+  final keys = MemoryAppAccountVault();
+  final service = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: directory.path), accountKeys: keys, transport: relay.transport());
+  await service.switchAccount(await relay.signIn(keys));
   if (nickname != null) await service.enable(nickname);
   return service;
 }
@@ -117,6 +121,48 @@ void main() {
     await advanceUntil(tester, () => social.status == SocialStatus.ready && find.text('添加好友').evaluate().isNotEmpty);
     expect(find.text('添加好友'), findsOneWidget);
     expect(find.textContaining('还没有好友'), findsOneWidget);
+  });
+
+  // 人工决策见 social/social_service.dart 文件头（11-14）：私信跟着应用账号。
+  testWidgets('没登录应用账号：一张卡写明要先登录，点「去登录」交给账号页', (tester) async {
+    final relay = FakeRelay();
+    final directory = Directory(path.join(temporary.path, 'signed_out'))..createSync();
+    final social = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: directory.path), accountKeys: MemoryAppAccountVault(), transport: relay.transport());
+    await tester.runAsync(() => social.switchAccount(null));
+    var opened = 0;
+    await tester.pumpWidget(app(Scaffold(body: MessagePage(social: social, openAccount: (_) => opened++))));
+    await advance(tester);
+    expect(find.text('登录应用账号后使用私信'), findsOneWidget);
+    await tester.tap(find.text('去登录'));
+    expect(opened, 1);
+    expect(relay.calls, isEmpty);
+  });
+
+  testWidgets('私信在另一台手机上：点「在这台手机上使用」先确认写明后果，确认后接管、好友名单从服务器来；会话里写「对方换了设备」', (tester) async {
+    final relay = FakeRelay();
+    final (alice, bob) = (await tester.runAsync(() => friends(relay)))!;
+    final accountId = relay.accountSocial.entries.firstWhere((entry) => entry.value == alice.deviceId).key;
+    final keys = MemoryAppAccountVault();
+    final moved = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: (Directory(path.join(temporary.path, 'new_phone'))..createSync()).path), accountKeys: keys, transport: relay.transport());
+    await tester.runAsync(() async {
+      await moved.switchAccount(await relay.signIn(keys, accountId: accountId));
+      await expectLater(moved.enable('小红'), throwsA(isA<SocialException>()));
+    });
+    await tester.pumpWidget(app(Scaffold(body: MessagePage(social: moved))));
+    await advance(tester);
+    expect(find.text('私信在另一台手机上'), findsOneWidget);
+    await tester.tap(find.text('在这台手机上使用'));
+    await advance(tester);
+    expect(find.text('在这台手机上使用私信？'), findsOneWidget);
+    expect(find.textContaining('好友会看到你换了设备'), findsOneWidget);
+    await tester.tap(find.text('使用'));
+    await advanceUntil(tester, () => moved.status == SocialStatus.ready && find.text('添加好友').evaluate().isNotEmpty);
+    expect(moved.friends.single.deviceId, bob.deviceId);
+
+    await tester.runAsync(() => bob.refresh(reconcile: true));
+    await tester.pumpWidget(app(ConversationPage(social: bob, friendId: moved.deviceId!)));
+    await advance(tester);
+    expect(find.text('对方换了设备'), findsOneWidget);
   });
 
   testWidgets('好友列表：预览、未读角标；进入会话后清零，卡片按类型渲染', (tester) async {

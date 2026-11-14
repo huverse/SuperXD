@@ -19,6 +19,7 @@ CREATE TABLE IF NOT EXISTS friendship (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   owner_device_id VARCHAR(32) NOT NULL,
   peer_device_id VARCHAR(32) NOT NULL,
+  moved_from VARCHAR(32) NULL COMMENT '对方的私信换到了 peer 这台新设备，owner 还认得的旧设备号；owner 确认后清空',
   create_time DATETIME(3) NOT NULL,
   update_time DATETIME(3) NOT NULL,
   PRIMARY KEY (id),
@@ -224,4 +225,16 @@ CREATE TABLE IF NOT EXISTS diagnostic_upload (
   UNIQUE KEY uk_diagnostic (diagnostic_id),
   KEY idx_account (account_id, id),
   KEY idx_create (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- 应用账号的私信设备（人工决策见客户端 lib/social/social_service.dart 文件头）：一个账号同一时刻一台，接管时改指新设备；删设备与注销账号时删。行数以账号数为界。
+CREATE TABLE IF NOT EXISTS account_social (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  account_id VARCHAR(32) NOT NULL,
+  device_id VARCHAR(32) NOT NULL COMMENT '私信设备号',
+  create_time DATETIME(3) NOT NULL,
+  update_time DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_account (account_id),
+  UNIQUE KEY uk_device (device_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;

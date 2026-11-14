@@ -31,6 +31,8 @@ export const RelayCode = {
   runOver: 'RUN_OVER', // 这一局已经结束，附 run（结算后的局面）
   levelLocked: 'LEVEL_LOCKED', // 这一关还没解锁、已经过了或已经算没过，附 run
   diagnosticNotFound: 'DIAGNOSTIC_NOT_FOUND', // 诊断包不存在、已到期、认领口令不对或过期，或不属于这个账号
+  socialElsewhere: 'SOCIAL_ELSEWHERE', // 这个应用账号的私信在另一台设备上（没带接管），客户端问用户要不要在这台上接管
+  socialTaken: 'SOCIAL_TAKEN', // 这个私信设备已挂在别的应用账号下
   internal: 'INTERNAL', // 未预期的服务端错误
 } as const;
 
