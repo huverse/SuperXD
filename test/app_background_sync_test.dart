@@ -95,6 +95,32 @@ void main() {
     });
   });
 
+  // 人工决策见 AccountStore.release：叫停后等这一轮停在检查点，等不到就收回这份引擎开的连接再交还引擎。
+  group('系统叫停', () {
+    test('这一轮在宽限内停下就不收回', () async {
+      var released = 0;
+      expect(await stopHeadless(Future<void>.delayed(const Duration(milliseconds: 10)), () async => released++, grace: const Duration(seconds: 1)), isFalse);
+      expect(await stopHeadless(Future<void>.error(StateError('stopped')), () async => released++, grace: const Duration(seconds: 1)), isFalse);
+      expect(released, 0);
+    });
+
+    test('等不到检查点（请求还在路上）就收回连接，收回出错只记日志', () async {
+      var released = 0;
+      final hanging = Completer<void>();
+      expect(await stopHeadless(hanging.future, () async => released++, grace: const Duration(milliseconds: 20)), isTrue);
+      expect(released, 1);
+      expect(logs, contains('[AutoSync] action=background released=true'));
+      expect(await stopHeadless(hanging.future, () async => throw StateError('closed'), grace: const Duration(milliseconds: 20)), isTrue);
+      expect(logs.last, startsWith('[AutoSync] action=release errorType=StateError'));
+    });
+
+    test('后台那份开账号库时登记收回，用完撤掉', () {
+      final source = File('lib/app_background_sync.dart').readAsStringSync();
+      expect(source, contains('_release = store.release;'));
+      expect(source, contains('await stopHeadless(headless, _release ?? () async {});'));
+    });
+  });
+
   group('应用不在时自己跑', () {
     late Directory directory;
     late Directory support;

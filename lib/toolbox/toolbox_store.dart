@@ -8,10 +8,11 @@ class ToolboxStore {
   ToolboxStore._(this._database);
   final Database _database;
 
+  // 单实例并回滚遗留的事务：退出再进入时接回旧引擎留下的连接（人工决策见 local/account_store.dart 的 open）。
   static Future<ToolboxStore> open(String path) async => ToolboxStore._(
-    await openDatabase(
+    await databaseFactory.openDatabase(
       path,
-      version: 2,
+      options: OpenDatabaseOptions(version: 2, rollbackActiveTransactionOnOpen: true,
       onCreate: (database, _) async {
         await database.execute(
           'CREATE TABLE downloads (id TEXT PRIMARY KEY, tool_id TEXT NOT NULL, terminal INTEGER NOT NULL, updated_at INTEGER NOT NULL, payload TEXT NOT NULL)',
@@ -39,7 +40,7 @@ class ToolboxStore {
           );
         }
       },
-    ),
+    )),
   );
 
   Future<List<ToolboxDownload>> downloads() async {

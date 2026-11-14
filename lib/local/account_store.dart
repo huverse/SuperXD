@@ -112,7 +112,24 @@ ON CONFLICT(account_key) DO UPDATE SET display_name = CASE WHEN excluded.display
     final normalized = _normalize(identity);
     final directory = path.join(_directory, 'accounts');
     await Directory(directory).create(recursive: true);
-    return AppDatabase.openForAccount(databasePath: path.join(directory, '${keyOf(normalized)}.db'), identity: normalized, reclaim: _reclaim);
+    final database = await AppDatabase.openForAccount(databasePath: path.join(directory, '${keyOf(normalized)}.db'), identity: normalized, reclaim: _reclaim);
+    if (!_reclaim) _opened.add(database);
+    return database;
+  }
+
+  // 独立连接打开过的账号库（只有后台那份引擎这样开，一轮里一两个），release 时一并收回。
+  final _opened = <AppDatabase>[];
+
+  // [人工决策-2026-11-14 12:54:12] 后台引擎被系统叫停时立即收回连接（用户让两项遗留风险按最佳实践处理）：独立连接接不回来，
+  // 引擎停在写事务中间被销毁，这条连接会锁住账号库直到进程结束。关连接时 sqflite 立即把它标成已关闭：进行中的事务下一句就报已关闭、
+  // 整个事务回滚（账号库的事务里只有库操作，毫秒级），之后才真正关掉，所以引擎交还时一条连接、一个事务都不留，库里只有提交过的数据；
+  // 这份引擎之后再碰库报的已关闭，由叫停流程当作正常停下（app_background_sync.dart 的 onTaskStopped）。重复关闭不报错。
+  Future<void> release() async {
+    for (final database in _opened) {
+      await database.close();
+    }
+    _opened.clear();
+    await _index.close();
   }
 
   Future<LegacyImportState> legacyState(AccountIdentity identity) async {

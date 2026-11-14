@@ -36,6 +36,10 @@ Duration get _budget => Platform.isIOS ? const Duration(seconds: 25) : const Dur
 // 安卓系统把正在跑的任务叫停（取消、超时、被抢占）：这一轮在下一检查点停下。
 var _stopped = false;
 Future<void>? _headless;
+// 这份引擎自己开的账号库连接：叫停后等不到检查点就直接收回（人工决策见 local/account_store.dart 的 release）。
+Future<void> Function()? _release;
+// 叫停后等这一轮自己停在检查点、关好账号库的时间；等不到（教务请求还在路上，最长 25 秒）就收回连接再交还引擎。
+const _stopGrace = Duration(seconds: 3);
 
 @pragma('vm:entry-point')
 void autoSyncDispatcher() {
@@ -47,19 +51,41 @@ void autoSyncDispatcher() {
       try {
         if (!await forwardAutoSync(deadline)) await (_headless = _runHeadless(deadline));
       } catch (error, stack) {
-        campusLog('[AutoSync] action=background errorType=${error.runtimeType}\n$stack');
+        // 叫停后收回了连接，这一轮再碰库报的「已关闭」是正常停下，不进错误记录。
+        if (_stopped) {
+          campusLog('[AutoSync] action=background result=stopped after=${error.runtimeType}');
+        } else {
+          campusLog('[AutoSync] action=background errorType=${error.runtimeType}\n$stack');
+        }
       } finally {
         _headless = null;
       }
       return true;
     },
-    // 回调一完成插件就销毁这份引擎：等这一轮停在检查点、关好账号库再返回，最多几秒，免得正写着的事务被掐断。
+    // 回调一完成插件就销毁这份引擎（插件等这个回调做完）：先等这一轮停在检查点、关好账号库；等不到就收回连接（进行中的事务回滚）再返回，
+    // 引擎销毁时这份引擎开的连接一条不留。
     onTaskStopped: (task, reason) async {
       _stopped = true;
       campusLog('[AutoSync] action=background stopped=${reason.name}');
-      await _headless?.timeout(const Duration(seconds: 5), onTimeout: () {}).then((_) {}, onError: (Object _) {});
+      final headless = _headless;
+      if (headless == null) return;
+      await stopHeadless(headless, _release ?? () async {});
     },
   );
+}
+
+// 叫停后的收尾（拆出来给测试）：这一轮 grace 内停下就算了，否则收回连接。返回是不是收回的。
+@visibleForTesting
+Future<bool> stopHeadless(Future<void> headless, Future<void> Function() release, {Duration grace = _stopGrace}) async {
+  final settled = await headless.then((_) => true, onError: (Object _) => true).timeout(grace, onTimeout: () => false);
+  if (settled) return false;
+  try {
+    await release();
+    campusLog('[AutoSync] action=background released=true');
+  } catch (error, stack) {
+    campusLog('[AutoSync] action=release errorType=${error.runtimeType}\n$stack');
+  }
+  return true;
 }
 
 // 交给前台那份跑，等它跑完；返回交没交出去。ackWait 只有测试改短。
@@ -99,8 +125,13 @@ Future<void> _runHeadless(DateTime deadline) async {
   campusLog = logs.tee(debugPrint);
   try {
     // 记住了账号的，会话过期时照常用存着的密码重新登录一次再重放（用户 11-09 允许后台自动重登，隐私政策第一节写明）。
-    await headlessAutoSync(deadline, support: support, openGateway: () async => AccountGateway(store: await AccountStore.open(), credentials: SecureCredentialStore()));
+    await headlessAutoSync(deadline, support: support, openGateway: () async {
+      final store = await AccountStore.open();
+      _release = store.release;
+      return AccountGateway(store: store, credentials: SecureCredentialStore());
+    });
   } finally {
+    _release = null;
     await logs.flush(settle: true);
   }
 }

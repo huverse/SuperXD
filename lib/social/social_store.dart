@@ -102,7 +102,8 @@ class SocialStore {
   SocialStore._(this._database);
   final Database _database;
 
-  static Future<SocialStore> open(String path) async => SocialStore._(await openDatabase(path, version: 1, onCreate: (database, _) async {
+  // 单实例并回滚遗留的事务：退出再进入时接回旧引擎留下的连接（人工决策见 local/account_store.dart 的 open）。
+  static Future<SocialStore> open(String path) async => SocialStore._(await databaseFactory.openDatabase(path, options: OpenDatabaseOptions(version: 1, rollbackActiveTransactionOnOpen: true, onCreate: (database, _) async {
     await database.execute('CREATE TABLE profile (id INTEGER PRIMARY KEY CHECK(id=1), nickname TEXT NOT NULL, registered INTEGER NOT NULL)');
     await database.execute(
       'CREATE TABLE friend (device_id TEXT PRIMARY KEY, nickname TEXT NOT NULL, remark TEXT, sign_public_key TEXT NOT NULL, box_public_key TEXT NOT NULL, '
@@ -115,7 +116,7 @@ class SocialStore {
     await database.execute('CREATE INDEX message_conversation ON message (friend_id, create_time DESC, id DESC)');
     await database.execute('CREATE TABLE invite (invite_id TEXT PRIMARY KEY, public_key TEXT NOT NULL, create_time TEXT NOT NULL)');
     await database.execute('CREATE INDEX invite_time ON invite (create_time)');
-  }));
+  })));
 
   Future<void> close() => _database.close();
 

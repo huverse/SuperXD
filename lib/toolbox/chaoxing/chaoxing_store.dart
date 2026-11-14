@@ -146,11 +146,12 @@ class ChaoxingStore {
   // 学习通课表缓存 7 天，过期再拉（与学习通客户端同一口径）。
   static const lessonCacheLifetime = Duration(days: 7);
 
+  // 单实例并回滚遗留的事务：退出再进入时接回旧引擎留下的连接（人工决策见 local/account_store.dart 的 open）。
   static Future<ChaoxingStore> open(String path) async {
     final store = ChaoxingStore._(
-      await openDatabase(
+      await databaseFactory.openDatabase(
         path,
-        version: 10,
+        options: OpenDatabaseOptions(version: 10, rollbackActiveTransactionOnOpen: true,
         onCreate: (database, _) async {
           await database.execute(
             'CREATE TABLE accounts (phone_number TEXT PRIMARY KEY, uid INTEGER NOT NULL, puid INTEGER NOT NULL, '
@@ -215,7 +216,7 @@ class ChaoxingStore {
           // 第 10 版：签完问收藏时「这附近不再问」的地点。
           if (oldVersion < 10) await _createQuietPlaces(database);
         },
-      ),
+      )),
     );
     await store._pruneAll();
     return store;
