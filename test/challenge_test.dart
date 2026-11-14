@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/application/app_accounts.dart';
@@ -24,12 +25,16 @@ import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_rules.dart';
 import 'package:superxd/playground/puzzle/knights/knights_rules.dart';
+import 'package:superxd/playground/puzzle/loop/loop_page.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_challenge_client.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_crypto.dart';
 import 'package:superxd/theme/campus_theme.dart';
+
+import 'form_layout_support.dart';
+import 'text_fit_support.dart';
 
 // 挑战与积分的客户端（人工决策见 lib/playground/challenge/challenge_rules.dart）：中转客户端、编排、对局页的挑战模式与挑战页面。合成数据。
 const _identity = AccountIdentity(source: 'http://school.example', loginId: '20260000001');
@@ -87,6 +92,9 @@ ChallengeLevel _level(Map<String, Object?> json) => ChallengeLevel(
   puzzle: json['puzzle'],
   keyed: const [],
 );
+
+// 「甲 · 乙」说明行分项排在 Wrap 里，整句在读屏标签上。
+Finder _line(String text) => find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == text);
 
 ChallengeRun _run({bool running = true, List<Map<String, Object?>>? levels, Map<String, Object?>? result}) {
   final json = _runJson(running: running, levels: levels, result: result);
@@ -293,9 +301,9 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.textContaining('已过 1/3 关'), findsOneWidget);
       expect(find.text('第 1 关 · 汉诺塔'), findsOneWidget);
-      expect(find.text('入门 · 可以做'), findsOneWidget);
-      expect(find.text('入门 · 过了 · 钥匙 8 交给第 3 关'), findsOneWidget);
-      expect(find.text('入门 · 等第 1 关、第 2 关的钥匙'), findsOneWidget);
+      expect(_line('入门 · 可以做'), findsOneWidget);
+      expect(_line('入门 · 过了 · 钥匙 8 交给第 3 关'), findsOneWidget);
+      expect(_line('入门 · 等第 1、2 关的钥匙'), findsOneWidget);
       expect(find.text('四张牌：? 8 3 ?'), findsOneWidget);
 
       hub.ended = _run(running: false, result: {'points': 13, 'awarded': 0, 'ending': 'ended'});
@@ -355,7 +363,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('积分 86'), findsOneWidget);
       expect(find.text('入门 · 六连环'), findsOneWidget);
-      expect(find.textContaining('6 关 · 限时 15 分钟 · 还剩 2 天'), findsOneWidget);
+      expect(_line('6 关 · 限时 15 分钟 · 还剩 2 天'), findsOneWidget);
       expect(hub.games, {for (final game in playgroundCatalog) if (game.challengeable) game.id});
       await tester.tap(find.text('开始'));
       await tester.pumpAndSettle();
@@ -366,6 +374,72 @@ void main() {
       expect(hub.started, ['weekly.2026-11-09.six']);
       expect(find.byType(ChallengeRunPage), findsOneWidget);
       expect(find.byType(ChallengeHome), findsNothing);
+    });
+
+    // 11-14 模拟器走查（1.3 倍字号）：挑战卡说明行折出孤字「天」、总览把「交给第 / 4 关」拆开，预告与钥匙行把「第 ? / 列」「第 5 格 / 是 3」拆到两行。
+    // 说明行按「 · 」分项、预告与钥匙按「，」分句放进 Wrap，放得下一行的一项不拆开；一句本身比一行长时自成一段、均衡折行，不留孤字。
+    testWidgets('窄屏大字号：挑战卡、总览与收钥匙的关里，说明行按项、预告与钥匙按句换行，不拆开、不留孤字', (tester) async {
+      tester.view.devicePixelRatio = 3;
+      tester.view.physicalSize = const Size(360 * 3, 800 * 3);
+      tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+      addTearDown(tester.platformDispatcher.clearAllTestValues);
+      addTearDown(tester.view.reset);
+      await loadCampusFonts(tester);
+      List<String> problems() => [for (final issue in scanTexts(tester)) if (issue.kind != 'truncate') '$issue'];
+      // 含这段文字的那一段只排成一行（同 scanTexts 的口径：不到 1.8 倍字号高算一行）。
+      RenderParagraph paragraphOf(String phrase) => tester.renderObject<RenderParagraph>(find.byWidgetPredicate((widget) => widget is RichText && widget.text.toPlainText().contains(phrase)).first);
+      void oneLine(String phrase) {
+        final paragraph = paragraphOf(phrase);
+        expect(paragraph.size.height, lessThan(paragraph.textScaler.scale(14) * 1.8), reason: '「$phrase」拆到了两行：${paragraph.text.toPlainText()}');
+      }
+      // 这一句自成一段（后面最多挂一个逗号），不和别的句挤在一段里折行。
+      void ownClause(String phrase) => expect(paragraphOf(phrase).text.toPlainText(), anyOf(phrase, '$phrase，'));
+
+      final hub = _Hub()
+        ..signedIn = true
+        ..best = 234;
+      await tester.pumpWidget(MaterialApp(
+        theme: campusTheme(),
+        home: PlaygroundPage(store: PlaygroundStore.memory(), games: playgroundCatalog, groups: playgroundGroups, challenges: hub, openAccount: (_) {}, openLogin: (_) {}),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('挑战'));
+      await tester.pumpAndSettle();
+      for (final phrase in ['6 关', '限时 15 分钟', '最好 234 分', '还剩 2 天']) {
+        oneLine(phrase);
+      }
+      expect(problems(), isEmpty, reason: '挑战一栏');
+
+      final controller = ChallengeRunController(hub: hub, run: _run(levels: [
+        _levelJson('a', output: 'c', puzzle: const HanoiRules().encodePuzzle(_hanoi)),
+        _levelJson('b', game: 'ice', output: 'c', state: 'solved', key: 8),
+        _levelJson('c', game: 'queens', state: 'locked', inputs: ['a', 'b'], teaser: '8×8，第 1 行的锁定皇后在第 ? 列，第 6 行的锁定皇后在第 8 列，第 2 行的锁定皇后在第 ? 列'),
+      ]));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChallengeRunPage(controller: controller, games: playgroundCatalog, store: PlaygroundStore.memory())));
+      await tester.pump(const Duration(milliseconds: 500));
+      for (final phrase in ['钥匙 8 交给第 3 关', '等第 1、2 关的钥匙']) {
+        oneLine(phrase);
+      }
+      // 「第 1 行的锁定皇后在第 ? 列，」在 360dp 加 1.3 倍下比一行长：自成一段均衡折成两行（以前折出孤字「列，」）。
+      for (final phrase in ['第 1 行的锁定皇后在第 ? 列', '第 6 行的锁定皇后在第 8 列', '第 2 行的锁定皇后在第 ? 列']) {
+        ownClause(phrase);
+      }
+      expect(problems(), isEmpty, reason: '总览');
+      controller.dispose();
+
+      // 数回 5×5，第 4 行第 3 格与第 1 行第 5 格是前两关给的钥匙（题面取自走查那一局）。
+      const puzzle = {'width': 5, 'height': 5, 'clues': [-1, 2, -1, -1, 3, -1, 2, 1, -1, -1, -1, 1, 1, 2, -1, 2, 0, 1, 3, 1, -1, -1, -1, -1, 0]};
+      final level = ChallengeLevel(
+        id: 'c', game: 'loop', tier: 'easy', difficulty: 4, inputs: const ['a', 'b'], output: 'e', state: ChallengeLevelState.open, submissions: 0, errors: 0, key: null, teaser: null, puzzle: puzzle,
+        keyed: const [ChallengeKeyed(from: 'a', at: 17, key: 1), ChallengeKeyed(from: 'b', at: 4, key: 3)],
+      );
+      final challenge = PlayChallenge(level: level, name: '第 3 关', target: '第 5 关', deadline: DateTime.now().add(const Duration(minutes: 5)), submit: (answer) async => const PlayVerdict(correct: true, key: 10));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: LoopPage(game: playgroundCatalog.firstWhere((game) => game.id == 'loop'), store: PlaygroundStore.memory(), challenge: challenge)));
+      await tester.pump(const Duration(milliseconds: 500));
+      for (final phrase in ['第 4 行第 3 格是 1', '第 1 行第 5 格是 3']) {
+        oneLine(phrase);
+      }
+      expect(problems(), isEmpty, reason: '收钥匙的关');
     });
   });
 }
@@ -395,6 +469,7 @@ class _Hub implements ChallengeHub {
   bool signedIn = false;
   @override
   bool get campusSignedIn => true;
+  int? best;
   Set<String>? games;
   final started = <String>[];
   ChallengeRun? ended;
@@ -407,7 +482,7 @@ class _Hub implements ChallengeHub {
   Future<ChallengeCatalog> catalog(Set<String> games) async {
     this.games = games;
     return ChallengeCatalog(serverTime: DateTime.utc(2026, 11, 14), activeRun: null, challenges: [
-      ChallengeSummary(id: 'weekly.2026-11-09.six', title: '六连环', label: '入门', levels: 6, timeLimit: const Duration(minutes: 15), endsAt: DateTime.now().add(const Duration(days: 2, hours: 1)), best: null, playable: true),
+      ChallengeSummary(id: 'weekly.2026-11-09.six', title: '六连环', label: '入门', levels: 6, timeLimit: const Duration(minutes: 15), endsAt: DateTime.now().add(const Duration(days: 2, hours: 1)), best: best, playable: true),
     ]);
   }
 

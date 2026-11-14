@@ -72,6 +72,23 @@ void main() {
     expect(scanTexts(tester).where((issue) => issue.kind == 'lone-punct'), isEmpty);
   });
 
+  // 11-14 挑战总览：一句比一行长时在 Wrap 里照常贪心折行，末尾剩「? 列，」；现在一项也均衡换行，并占满这一行，下一项不挤到它收窄后的右边。
+  testWidgets('说明行：一项比一行长时均衡折行、占满这一行；按「，」分句时逗号跟着前一句', (tester) async {
+    await loadCampusFonts(tester);
+    const style = TextStyle(fontSize: 14);
+    const first = '第 1 行的锁定皇后在第 ? 列，';
+    await tester.pumpWidget(_app(Builder(builder: (context) {
+      // 第一句比一行长一点：贪心折行会剩孤字；第二句很短，放得进第一句收窄后右边的空处。
+      final width = campusTextWidth(context, first, style: style) - 8;
+      return Align(alignment: Alignment.topLeft, child: SizedBox(width: width, child: const DotSeparatedText('第 1 行的锁定皇后在第 ? 列，第 2 格', style: style, separator: '，')));
+    })));
+    expect(tester.widgetList<Text>(find.byType(Text)).map((text) => text.data), [first, '第 2 格']);
+    expect(scanTexts(tester).where((issue) => issue.kind == 'orphan'), isEmpty);
+    expect(tester.getTopLeft(find.text('第 2 格')).dx, tester.getTopLeft(find.text(first)).dx);
+    expect(tester.getTopLeft(find.text('第 2 格')).dy, greaterThanOrEqualTo(tester.getBottomLeft(find.text(first)).dy - 1));
+    expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '第 1 行的锁定皇后在第 ? 列，第 2 格'), findsOneWidget);
+  });
+
   // 同 iOS 分段控件的按内容分宽：等分放不下最长的文字时按文字分，宽屏照旧等分。
   testWidgets('分段控件：等分放不下时按文字分宽，不截成「跟随系…」；放得下照旧等分', (tester) async {
     await loadCampusFonts(tester);

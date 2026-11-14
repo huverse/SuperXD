@@ -44,8 +44,8 @@
   - campus_field_table.dart：详情里的「标签 值」两列行 CampusFieldTable（左列次要色按最宽标签对齐，值可选中复制，空值的行不画）；课程详情与成绩详情共用。
   - campus_prose.dart：按行排版的长说明 CampusProse：「1. 正文」编号悬挂缩进，「登录：正文」冒号前的段内小标题半粗，以冒号结尾的整行是小节标题；协议、隐私政策、首次同意弹窗与学习通同意说明共用，文字原样显示。
   - campus_animated_list.dart：列表增删的过渡（[人工决策] 在文件头，时长 campusListDuration，要等过渡走完再定位的调用方用它）：CampusAnimatedColumn 按 key 比对前后子项，新的展开淡入、去掉的原地收起；CampusAppear 给按需建的长列表里新到的一项展开。第一次显示不动画、减少动画时直接换，只用于没有玻璃的内容区列表。过渡不改条目的横向排布：条目始终铺满列表宽度，按内容收窄的条目（会话卡片）照旧靠左或靠右，不被居中。
-  - dot_separated_text.dart：「甲 · 乙」式说明行 DotSeparatedText：按「 · 」分项放进 Wrap 换行，不把词拆成孤字，点前是不换行空格（一项自己折行时「·」不单独成行），读屏读整句；page 层与百宝箱共用。
-  - campus_typesetting.dart：排版口径（10-27 iPhone 系统字体下时刻被裁后加）：campusTextPainter、campusTextWidth 按 Text 实际排版的口径量文字（合并默认样式的字距、系统粗体文本时加粗、字号缩放、语言），凡按文字尺寸决定布局的都用它，不自己 new TextPainter；小图标对齐一段文字的第一行用 campusLineInset（按实际行高量，不写死行高倍数）；BalancedText 是短句均衡换行（同 CSS text-wrap: balance，行数不变取最窄宽度，只管四行以内，支持外层 IntrinsicHeight），课名、教室、短提示与弹窗正文用它避免末行剩一两个字。
+  - dot_separated_text.dart：「甲 · 乙」式说明行 DotSeparatedText：按「 · 」分项放进 Wrap 换行（separator 给「，」时按句分，挑战的预告与钥匙行用），不把词拆成孤字，点前是不换行空格（一项自己折行时「·」不单独成行），一项本身比一行长时均衡折行并占满这一行（11-14 挑战预告折出「? 列，」后加），读屏读整句；page 层、百宝箱与游乐场共用。
+  - campus_typesetting.dart：排版口径（10-27 iPhone 系统字体下时刻被裁后加）：campusTextPainter、campusTextWidth 按 Text 实际排版的口径量文字（合并默认样式的字距、系统粗体文本时加粗、字号缩放、语言），凡按文字尺寸决定布局的都用它，不自己 new TextPainter；小图标对齐一段文字的第一行用 campusLineInset（按实际行高量，不写死行高倍数）；BalancedText 是短句均衡换行（同 CSS text-wrap: balance，行数不变取最窄宽度，只管四行以内，支持外层 IntrinsicHeight），课名、教室、短提示与弹窗正文用它避免末行剩一两个字；expandWhenWrapped 让折了行的仍占满给的宽度（Wrap 里的一项，不让下一项挤到它右边）。
   - scroll_anchor.dart：滚动锚定 CampusAnchoredScrollController：hold 之后，整页重新排版（字号过渡、换字体）时在滚动区排版的同一帧里校正滚动位置，锚点停在原来的屏幕位置；过了最短时长还要等到一次不用校正、内容尺寸不再变的排版才放开（慢设备上过渡的最后一帧会晚到），最晚 settleLimit；手指一按或代码滚动就放开，到顶或到底校正不了的部分照常移动。界面页的字号与字体选项在用。
   - status_bar_scroll.dart：iOS 点状态栏回顶 CampusStatusBarScroll（组合根套在 MaterialApp.builder 里）：系统经 WidgetsBindingObserver.handleStatusBarTap 交来点按，分支页的滚动区挂在各自路由上、壳层 Scaffold 收不到，所以记住最近拖过的竖向滚动区，把它滚回开头（倒序列表是视觉上的顶端）；它不在最上层路由或分支不可见时不动。scrollToTop 给 iOS 再点当前底栏项时用。
   - scroll_edge_fade.dart：ScrollEdgeFade 在浮动玻璃栏下只渐隐内容本身（子树里不能再放玻璃）；CampusScrollFade 是页面滚动区的柔和边缘：有滚动区的页面都包（code_conventions_test.dart 守护；弹层、弹窗是玻璃面板不包），子树有玻璃开关或视频的页面不包；倒序列表（会话页最新在下）按视觉上缘那一端算，首次排版就按位置渐隐；没有浮动栏时下面还有内容就同样让下缘自身淡出（最多 24，滚到底不淡，ScrollEdgeFade 的 tail），滚动位置在排版当中被校正时等这一帧画完再改。
@@ -72,7 +72,7 @@
 - 背景、配色与深色：atmosphere_test.dart（含 iOS 云雾每秒约 20 次、低电量停住、半分辨率贴图同直接画对照、颗粒拼贴同逐点画对照）、dark_mode_test.dart、wallpaper_test.dart。
 - 动效与转场：campus_motion_test.dart、transition_sync_test.dart（含 iOS 推入与任意位置右滑返回）、account_lifecycle_test.dart（入场与转场中间帧）。
 - 提示条：campus_glass_test.dart（玻璃胶囊、锚点上方、点一下收起与留白点穿、下滑横划与快甩划走、按着暂停计时、投影不裁剪、被新弹层或页面盖住就收起、读屏不自动收起、弹层里浮最上层、hideCampusToast 收起）、shell_layout_test.dart（停在两端底栏上方）。
-- 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器、点状态栏回顶、iOS 拖动收起键盘）；typesetting_test.dart（测量与 Text 同口径含粗体文本与字距、均衡换行、分段控件按字分宽、说明行的点不单独成行）。
+- 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器、点状态栏回顶、iOS 拖动收起键盘）；typesetting_test.dart（测量与 Text 同口径含粗体文本与字距、均衡换行、分段控件按字分宽、说明行的点不单独成行、说明行一项比一行长时均衡折行并占满这一行）。
 - 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
 
 # 人工决策检索

@@ -31,7 +31,8 @@ class ChallengeRunController extends ChangeNotifier {
   }
 
   // 关名「第 3 关」：按模板里的顺序数。
-  String nameOf(String levelId) => '第 ${_run.levels.indexWhere((level) => level.id == levelId) + 1} 关';
+  int numberOf(String levelId) => _run.levels.indexWhere((level) => level.id == levelId) + 1;
+  String nameOf(String levelId) => '第 ${numberOf(levelId)} 关';
 
   PlayChallenge challengeFor(String levelId) {
     final level = _run.level(levelId);

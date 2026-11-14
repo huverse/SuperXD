@@ -15,6 +15,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
 // 一局挑战的总览（人工决策见 challenge_rules.dart）：上面是剩下的时间（服务器计时、不暂停）与过了几关，下面按关列出：
@@ -133,7 +134,7 @@ class _ChallengeRunPageState extends State<ChallengeRunPage> with SingleTickerPr
             ])),
           const SizedBox(height: 16),
           for (final level in run.levels) ...[
-            _LevelCard(level: level, name: _controller.nameOf(level.id), game: _game(level.game), nameOf: _controller.nameOf, running: run.running, onOpen: () => _open(level)),
+            _LevelCard(level: level, name: _controller.nameOf(level.id), game: _game(level.game), nameOf: _controller.nameOf, numberOf: _controller.numberOf, running: run.running, onOpen: () => _open(level)),
             const SizedBox(height: 12),
           ],
         ],
@@ -165,7 +166,7 @@ class _ResultCard extends StatelessWidget {
       const SizedBox(height: 12),
       Text('${result.points} 分', style: TextStyle(fontSize: 36, fontWeight: FontWeight.w600, height: 1.15, color: palette.onSurface)),
       const SizedBox(height: 4),
-      Text(
+      DotSeparatedText(
         ['过了 $solved/$total 关', result.awarded > 0 ? '加了 ${result.awarded} 积分' : '没超过这个挑战的最好成绩，不加积分'].join(' · '),
         style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
       ),
@@ -174,11 +175,12 @@ class _ResultCard extends StatelessWidget {
 }
 
 class _LevelCard extends StatelessWidget {
-  const _LevelCard({required this.level, required this.name, required this.game, required this.nameOf, required this.running, required this.onOpen});
+  const _LevelCard({required this.level, required this.name, required this.game, required this.nameOf, required this.numberOf, required this.running, required this.onOpen});
   final ChallengeLevel level;
   final String name;
   final PlaygroundGame? game;
   final String Function(String id) nameOf;
+  final int Function(String id) numberOf;
   final bool running;
   final VoidCallback onOpen;
 
@@ -192,7 +194,7 @@ class _LevelCard extends StatelessWidget {
       ChallengeLevelState.open => (game?.icon ?? CampusIcons.puzzle, running ? (level.errors > 0 ? '可以做 · 错交 ${level.errors} 次' : '可以做') : '没做完'),
       ChallengeLevelState.solved => (CampusIcons.success, level.key == null || level.output == null ? '过了' : '过了 · 钥匙 ${level.key} 交给${nameOf(level.output!)}'),
       ChallengeLevelState.failed => (CampusIcons.failed, '错交太多次，没过'),
-      ChallengeLevelState.locked => (CampusIcons.locked, running ? '等${level.inputs.map(nameOf).join('、')}的钥匙' : '没解锁'),
+      ChallengeLevelState.locked => (CampusIcons.locked, running ? '等第 ${level.inputs.map(numberOf).join('、')} 关的钥匙' : '没解锁'),
     };
     return CampusSurface(
       onTap: open ? onOpen : null,
@@ -203,10 +205,10 @@ class _LevelCard extends StatelessWidget {
         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Text('$name · ${game?.name ?? '这个版本没有的游戏'}', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 2),
-          Text('$tier · $status', style: secondary),
+          DotSeparatedText('$tier · $status', style: secondary),
           if (running && level.state == ChallengeLevelState.locked && level.teaser != null) ...[
             const SizedBox(height: 4),
-            Text(level.teaser!, style: secondary),
+            DotSeparatedText(level.teaser!, style: secondary, separator: '，'),
           ],
         ])),
         if (open) ...[const SizedBox(width: 12), CampusIcon(CampusIcons.next, color: palette.onSurfaceVariant)],

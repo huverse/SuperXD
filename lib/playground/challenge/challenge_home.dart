@@ -13,6 +13,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 
 // 游乐场的「挑战」一栏（人工决策见 challenge_rules.dart）：要登录教务并登录应用账号；上面是积分，下面是本周开放的挑战
 // （服务器下发，每周一换，同一挑战再玩只补超过最好成绩的部分）。还有一局没结束时顶上给「继续」。
@@ -182,7 +183,7 @@ class _ChallengeHomeState extends State<ChallengeHome> {
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('${challenge.label} · ${challenge.title}', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 2),
-                Text(
+                DotSeparatedText(
                   ['${challenge.levels} 关', '限时 ${challenge.timeLimit.inMinutes} 分钟', if (challenge.best case final best?) '最好 $best 分', _left(challenge.endsAt)].join(' · '),
                   style: secondary,
                 ),
