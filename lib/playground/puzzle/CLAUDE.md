@@ -79,4 +79,4 @@
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/playground/puzzle
-- 本目录的标记在 twentyfour/twentyfour_rules.dart 文件头（24 点允许负数、困难起加乘方与开方、专家档的要求）、mines/mines_page.dart 的 _lose 上方（踩雷即结束、长按插旗）flash/flash_page.dart 的阶段提示行（保留）与 schulte/schulte_page.dart 的 _started 上（开局盖住、用时写到 0.1 秒、点错不罚时）；用户对游戏清单的选择在 lib/playground/playground_catalog.dart 文件头。
+- 本目录的标记在 twentyfour/twentyfour_rules.dart 文件头（24 点允许负数、困难起加乘方与开方、专家档的要求）、mines/mines_page.dart 的 _lose 上方（踩雷即结束、长按插旗）、knights/knights_page.dart 的 _submit（挑战里填满即交的判对错类连不上时提示条带「重交」，逻辑网格同）、flash/flash_page.dart 的阶段提示行（保留）与 schulte/schulte_page.dart 的 _started 上（开局盖住、用时写到 0.1 秒、点错不罚时）；用户对游戏清单的选择在 lib/playground/playground_catalog.dart 文件头。

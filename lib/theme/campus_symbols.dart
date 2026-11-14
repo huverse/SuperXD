@@ -124,7 +124,7 @@ final Map<IconData, String> _symbols = {
   CampusIcons.mines: 'flag.circle',
   CampusIcons.loop: 'lasso',
   CampusIcons.logicgrid: 'tablecells',
-  CampusIcons.cipher: 'lock.open',
+  CampusIcons.cipher: 'ellipsis.rectangle',
   CampusIcons.backspace: 'delete.left',
   CampusIcons.schulte: 'timer',
   CampusIcons.pour: 'pencil.line',

@@ -210,10 +210,15 @@ class _LogicGridPageState extends State<LogicGridPage> with TickerProviderStateM
   }
 
   // 挑战模式：填满就交服务器判（每次判错计一次错交，所以退回的局面不在本机判、不先标）；判错了才标出不成立的线索。
+  // 连不上时提示条带「重交」原样再交（人工决策见 knights_page.dart 的 _submit）；接着改一步提示就收起（_commit、_undo）。
   Future<void> _submit() async {
     final correct = await _session.judge([for (final row in _values) [...row]]);
     if (!mounted) return;
-    if (correct == null) return showCampusToast(context, '没交上，连不上服务器；改一格再填满就会重交');
+    if (correct == null) {
+      return showCampusToast(context, '没交上，连不上服务器', action: '重交', onAction: () {
+        if (!_session.finished && !_session.judging && _values.every((row) => !row.contains(-1))) unawaited(_submit());
+      });
+    }
     if (correct) return unawaited(_finish());
     final violations = logicGridViolations(_puzzle, _values).toSet();
     setState(() => _violations = violations);

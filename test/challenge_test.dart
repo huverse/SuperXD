@@ -24,6 +24,7 @@ import 'package:superxd/playground/playground_page.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_rules.dart';
+import 'package:superxd/playground/puzzle/knights/knights_page.dart';
 import 'package:superxd/playground/puzzle/knights/knights_rules.dart';
 import 'package:superxd/playground/puzzle/loop/loop_page.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
@@ -31,6 +32,7 @@ import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_challenge_client.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
 import 'form_layout_support.dart';
@@ -290,6 +292,63 @@ void main() {
       await tester.tap(find.text('回到挑战'));
       await tester.pump(const Duration(seconds: 1));
       expect(find.text('挑战总览'), findsOneWidget);
+    });
+
+    // 人工决策见 knights_page.dart 的 _submit：填满即交的判对错类连不上时，提示条带「重交」原样再交；接着改一步提示就收起。
+    testWidgets('骑士与无赖作为挑战的一关：定完就交，连不上时提示条的「重交」原样再交；取消一个人的标记提示就收起', (tester) async {
+      final game = playgroundCatalog.firstWhere((game) => game.id == 'knights');
+      final draw = const KnightsRules().generate(3, PuzzleTier.entry);
+      final answers = <String>[];
+      var offline = true;
+      final navigator = GlobalKey<NavigatorState>();
+      final challenge = PlayChallenge(
+        level: _run(levels: [_levelJson('a', game: 'knights', puzzle: const KnightsRules().encodePuzzle(draw.puzzle))]).level('a'),
+        name: '第 1 关',
+        deadline: DateTime.now().add(const Duration(minutes: 5)),
+        submit: (answer) async {
+          answers.add(jsonEncode(answer));
+          if (offline) throw const ChallengeException(ChallengeFailure.network, '连不上服务器');
+          return const PlayVerdict(correct: true);
+        },
+      );
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), navigatorKey: navigator, home: const Text('挑战总览')));
+      unawaited(navigator.currentState!.push(MaterialPageRoute<void>(builder: (context) => KnightsPage(game: game, store: PlaygroundStore.memory(), challenge: challenge))));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      Future<void> mark(int person, bool knight) async {
+        final chip = find.widgetWithText(CampusGlassChip, knight ? '骑士' : '无赖').at(person);
+        await tester.ensureVisible(chip);
+        await tester.pump();
+        await tester.tap(chip);
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+
+      for (final (person, knight) in draw.solution.indexed) {
+        await mark(person, knight);
+      }
+      expect(answers, hasLength(1));
+      expect(find.text('没交上，连不上服务器'), findsOneWidget);
+      expect(find.text('重交'), findsOneWidget);
+      // 再点一下取消第一个人的标记：局面没定完，过时的提示收起、不交。
+      await mark(0, draw.solution[0]);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('重交'), findsNothing);
+      expect(answers, hasLength(1));
+      await mark(0, draw.solution[0]);
+      expect(answers, hasLength(2));
+      expect(find.text('重交'), findsOneWidget);
+
+      offline = false;
+      await tester.tap(find.text('重交'));
+      await tester.pump();
+      // 判对后卡片依次翻一下再弹结果。
+      for (var second = 0; second < 3; second++) {
+        await tester.pump(const Duration(seconds: 1));
+      }
+      expect(answers, hasLength(3));
+      expect(answers.toSet(), hasLength(1));
+      expect(find.text('第 1 关过了'), findsOneWidget);
     });
   });
 
