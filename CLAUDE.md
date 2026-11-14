@@ -59,7 +59,7 @@
 
 1. 账号隔离：账号身份是教务来源 URL 加教务确认的学号；每个账号按身份哈希用独立的 SQLite 库并校验 owner；账号索引库只存账号列表、活动账号指针和旧库认领记录。切换、退出、导入都经 AccountGateway 的切换锁，旧上下文先停止接收新请求并等在途请求结束。
 2. 网关不抛异常：CampusGateway 的所有方法都返回 GatewayResult，失败带一个在 domain/gateway_code.dart 登记过的错误码。页面与同步只按错误码分支，message 只用来展示；新错误码先登记再使用。
-3. 会话失效：拿到 SESSION_EXPIRED 立即停止后续请求并交给 onSessionExpired。开启了记住账号时 AccountGateway 自动恢复登录一次并重放这次请求，恢复失败或重放后仍失效就不再自动恢复。
+3. 会话失效：拿到 SESSION_EXPIRED 立即停止后续请求并交给 onSessionExpired。开启了记住账号时 AccountGateway 自动恢复登录一次并重放这次请求，恢复失败或重放后仍失效就不再自动恢复；恢复时教务连不上只报原错误、不算失效。启动只用本机数据，不访问教务（人工决策在 account_gateway.dart 的 restoreSession）。
 4. 同步不误覆盖：教务页面只有明确的无课、无成绩语义才当空结果，权限、维护、截断或无法识别的页面一律报错并保留本地数据；本地已有自定义课表版本时，手动同步进合并页由用户选（三方合并，基准是最近一次教务同步的版本），自动同步一律不覆盖、留到打扰时机问；采用其他学期的作息须用户明确确认，普通同步不改变已有的作息绑定。
 5. 课表版本：编辑、恢复和确认覆盖都带 expectedRevisionId，在同一事务里核对当前 head，不一致返回 REVISION_CONFLICT；每学期版本数有上限，当前 head 与最近一次教务基线受保护（规则见 lib/domain/CLAUDE.md）。
 6. 时间：绝对时刻一律存 UTC 的 ISO 字符串；校园时区只在 domain/campus_clock.dart 的 campusTimeZone 一处定义，今天、周次、倒计时等业务日界都经 campus_clock 计算；展示时间用 formatCampusRelative（按远近写到分钟）。

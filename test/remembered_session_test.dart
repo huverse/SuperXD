@@ -226,6 +226,21 @@ void main() {
     });
   }
 
+  for (final failure in ['NETWORK_TIMEOUT', 'NETWORK_FAILED', 'RATE_LIMITED']) {
+    test('同步中自动重登时教务连不上（$failure）：报原错误、不转登录，下次同步再自动重登', () async {
+      await gateway.loginRemembered('A', 'test-secret', remember: true);
+      clients.first.failure = 'SESSION_EXPIRED';
+      nextClient = () => _Client()..loginFailure = failure;
+      final result = await gateway.syncSchedule(_term);
+      expect(result.error?.code, failure);
+      expect(await gateway.isRemembered(), isTrue);
+      expect(gateway.activeSession?.loginId, 'A');
+      nextClient = _Client.new;
+      expect((await gateway.syncSchedule(_term)).ok, isTrue);
+      expect(clients, hasLength(3));
+    });
+  }
+
   for (final action in ['logout', 'forget', 'switch']) {
     test('恢复中$action使迟到认证失效，不复活旧账号', () async {
       await gateway.loginRemembered('A', 'test-secret', remember: true);
@@ -405,9 +420,11 @@ void main() {
     expect((await gateway.readSchedule(const ScheduleScope.week(term: _term, week: 1))).data?.student.name, '张三');
   });
 
-  for (final failure in [null, 'PASSWORD_WRONG', 'captcha']) {
-    test('冷启动缺本地会话时最多恢复一次：${failure ?? '成功'}', () async {
+  // 人工决策见 AccountGateway.restoreSession：启动不访问教务，第一次同步才自动重登；教务连不上只报错、不转登录。
+  for (final failure in [null, 'PASSWORD_WRONG', 'captcha', 'NETWORK_TIMEOUT']) {
+    test('冷启动缺本地会话但记住了账号：不联网直接进应用，第一次同步自动重登一次：${failure ?? '成功'}', () async {
       await gateway.loginRemembered('A', 'test-secret', remember: true);
+      await gateway.syncSchedule(_term);
       final identity = gateway.activeIdentity!;
       await gateway.close();
       store = await AccountStore.open(directory: directory.path);
@@ -418,18 +435,44 @@ void main() {
       gateway = AccountGateway(store: store, credentials: credentials, clientFactory: () { final client = _Client()..loginFailure = failure; clients.add(client); return client; });
       final session = AppSession(gateway);
       await session.restore();
+      expect(session.loggedIn, isTrue);
+      expect(session.takeNotice(), isNull);
+      expect(clients.where((client) => client.logins > 0), isEmpty, reason: '启动这一步不访问教务');
+      expect((await gateway.readSchedule(const ScheduleScope.week(term: _term, week: 1))).ok, isTrue, reason: '本机课表照常能看');
+      final synced = await gateway.syncSchedule(_term);
       expect(clients.where((client) => client.logins > 0).length, 1);
-      expect(session.loggedIn, failure == null);
-      if (failure != null) {
-        expect(session.takeNotice(), isNotNull);
-        expect(await store.currentIdentity(), isNull);
-        if (failure == 'PASSWORD_WRONG') expect(credentials.values, isEmpty);
+      switch (failure) {
+        case null:
+          expect(synced.ok, isTrue);
+        case 'NETWORK_TIMEOUT':
+          expect(synced.error?.code, 'NETWORK_TIMEOUT', reason: '连不上不算登录失效，页面不转登录');
+          expect(await gateway.isRemembered(), isTrue);
+          await gateway.syncSchedule(_term);
+          expect(clients.where((client) => client.logins > 0).length, 2, reason: '下次同步再自动重登');
+        default:
+          expect(synced.error?.code, 'SESSION_EXPIRED');
+          expect(await gateway.isRemembered(), failure == 'captcha');
+          await gateway.syncSchedule(_term);
+          expect(clients.where((client) => client.logins > 0).length, 1, reason: '要人工处理的不再自动重登');
       }
-      await gateway.restoreSession();
-      expect(clients.where((client) => client.logins > 0).length, 1);
       session.dispose();
     });
   }
+
+  test('冷启动缺本地会话也没记住账号：进登录页、不联网', () async {
+    await gateway.loginRemembered('A', 'test-secret', remember: false);
+    final identity = gateway.activeIdentity!;
+    await gateway.close();
+    store = await AccountStore.open(directory: directory.path);
+    final database = await store.openAccount(identity);
+    await database.clearSession();
+    await database.close();
+    clients.clear();
+    gateway = AccountGateway(store: store, credentials: credentials, clientFactory: () { final client = _Client(); clients.add(client); return client; });
+    expect((await gateway.restoreSession()).ok, isFalse);
+    expect(gateway.activeSession, isNull);
+    expect(clients.where((client) => client.logins > 0), isEmpty);
+  });
 }
 
 class _Credentials implements CredentialStore {
