@@ -19,6 +19,7 @@ import * as dtos from 'src/modules/challenge/challenge.dto';
 // 挑战（人工决策见客户端 lib/playground/challenge/challenge_rules.dart）：服务器出题、逐关核对、计时（不暂停）与结算，全程联网。
 // 一个账号同时只有一局；交答案、结算都在这一局的行锁里做；到点没交的局由 ChallengeTasks 定时结算，用户不回来也照样记分。
 // 结算只补超过这个挑战以前最好成绩的差额（11-12 用户选定），积分与最好成绩、这一局的结算在同一事务里写。
+// 有门票的挑战开局即扣（11-14 用户选「开局扣票不退」，见 points.service.ts）：扣积分与插入这一局同一事务，积分不够或没开成都不扣。
 @Injectable()
 export class ChallengeService implements OnModuleInit {
   private readonly logger = new Logger('Challenge');
@@ -55,6 +56,7 @@ export class ChallengeService implements OnModuleInit {
         best: best.get(challenge.id) ?? null,
         // 每一关的候选游戏里至少有一个这个客户端玩得了。
         playable: challenge.template.nodes.every((node) => (node.games ?? [...(challenge.template.edges.some(([, to]) => to === node.id) ? consumerGames : judgedGames)]).some((game) => supported.has(game))),
+        ticket: challenge.ticket,
       })),
     };
   }
@@ -96,10 +98,13 @@ export class ChallengeService implements OnModuleInit {
       awarded: null,
       endTime: null,
     };
-    if (!(await this.runs.insertRun(run, new Date(now)))) {
+    const charge = async (manager: EntityManager) => {
+      if (challenge.ticket > 0) await this.points.spendIn(manager, accountId, challenge.ticket, run.runId, `${plan.label} · ${plan.title} 门票`, new Date(now));
+    };
+    if (!(await this.runs.insertRun(run, new Date(now), charge))) {
       throw new RelayError(RelayCode.runActive, HttpStatus.CONFLICT, '已有进行中的一局', { runId: (await this.runs.activeRunOf(accountId)) ?? '' });
     }
-    this.logger.log(`[Challenge] action=start challengeId=${challengeId} runId=${run.runId} levels=${plan.levels.map((level) => level.game).join(',')}`);
+    this.logger.log(`[Challenge] action=start challengeId=${challengeId} runId=${run.runId} ticket=${challenge.ticket} levels=${plan.levels.map((level) => level.game).join(',')}`);
     return this.viewOf(run, now);
   }
 

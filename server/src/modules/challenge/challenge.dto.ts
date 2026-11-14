@@ -39,6 +39,7 @@ export class ChallengeSummaryDto {
   @ApiProperty({ description: '开放到什么时候，毫秒' }) endsAt: number;
   @ApiProperty({ description: '这个账号在这个挑战上的最好成绩，没玩过为空', nullable: true }) best: number | null;
   @ApiProperty({ description: '这个客户端玩不了里面的游戏时为假（要更新应用）' }) playable: boolean;
+  @ApiProperty({ description: '开局要付的积分门票，0 是免费；开局即扣，过没过都不退' }) ticket: number;
 }
 
 export class ChallengeListDto {

@@ -22,8 +22,8 @@ export type RunChanges = Pick<RunRow, 'progress'> & Partial<Pick<RunRow, 'ending
 
 // 挑战存储端口：服务只依赖这个抽象。
 export abstract class ChallengeRepository {
-  // 插入一局；这个账号已有进行中的一局时插不进，返回 false。
-  abstract insertRun(run: RunRow, now: Date): Promise<boolean>;
+  // 插入一局；这个账号已有进行中的一局时插不进，返回 false。插进了就在同一事务里调 charge（付门票），charge 抛错则这一局也不留。
+  abstract insertRun(run: RunRow, now: Date, charge: (manager: EntityManager) => Promise<void>): Promise<boolean>;
   abstract activeRunOf(accountId: string): Promise<string | null>;
   // 在事务里锁住这一局（只认这个账号的），交给 work 读改；没有这一局时 work 拿到 null。
   abstract withRun<T>(runId: string, accountId: string | null, work: (manager: EntityManager, run: RunRow | null) => Promise<T>): Promise<T>;
@@ -51,12 +51,16 @@ export class TypeormChallengeRepository extends ChallengeRepository {
     super();
   }
 
-  async insertRun(run: RunRow, now: Date) {
-    const inserted = (await this.runs.query(
-      'INSERT IGNORE INTO challenge_run (run_id, account_id, challenge_id, active, deadline, plan, progress, ending, points, awarded, end_time, create_time, update_time) VALUES (?, ?, ?, 1, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)',
-      [run.runId, run.accountId, run.challengeId, run.deadline, run.plan, run.progress, now, now],
-    )) as { affectedRows: number };
-    return inserted.affectedRows === 1;
+  insertRun(run: RunRow, now: Date, charge: (manager: EntityManager) => Promise<void>) {
+    return this.runs.manager.transaction(async (manager) => {
+      const inserted = (await manager.query(
+        'INSERT IGNORE INTO challenge_run (run_id, account_id, challenge_id, active, deadline, plan, progress, ending, points, awarded, end_time, create_time, update_time) VALUES (?, ?, ?, 1, ?, ?, ?, NULL, NULL, NULL, NULL, ?, ?)',
+        [run.runId, run.accountId, run.challengeId, run.deadline, run.plan, run.progress, now, now],
+      )) as { affectedRows: number };
+      if (inserted.affectedRows !== 1) return false;
+      await charge(manager);
+      return true;
+    });
   }
 
   async activeRunOf(accountId: string) {

@@ -112,8 +112,8 @@ Future<void> checkDeveloperNotes(Map<String, Object?> file, {List<TrustedSigning
 Future<void> checkRolloutConfig(Map<String, Object?> file, {List<TrustedSigningKey> keys = trustedSigningKeys}) async {
   if (file['envelope'] == null) throw const FormatException('灰度配置没有签名信封');
   final signed = await decodeSignedRolloutConfig(file, keys: keys);
-  final plain = decodeRolloutConfig({'flags': file['flags']});
-  if (jsonEncode(encodeRolloutConfig(signed)) != jsonEncode(encodeRolloutConfig(plain))) throw const FormatException('签名载荷与明文 flags 不一致');
+  final plain = decodeRolloutConfig({'flags': file['flags'], if (file.containsKey('levels')) 'levels': file['levels']});
+  if (jsonEncode(encodeRolloutConfig(signed)) != jsonEncode(encodeRolloutConfig(plain))) throw const FormatException('签名载荷与明文 flags、levels 不一致');
   stdout.writeln('[ContentSigning] action=check_rollout flags=${signed.rules.length} keyIds=${_keyIds(file['envelope'])}');
 }
 

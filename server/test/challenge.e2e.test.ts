@@ -1,7 +1,7 @@
 import { NestExpressApplication } from '@nestjs/platform-express';
 import Redis from 'ioredis';
 import { randomBytes } from 'node:crypto';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { mkdir, readFile, rm, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { DataSource } from 'typeorm';
 
@@ -262,6 +262,51 @@ describe('积分与挑战', () => {
     await database.query('UPDATE challenge_run SET end_time = ? WHERE run_id = ?', [new Date(now - (challengeRunKeepDays + 1) * 86400_000), run.runId]);
     await app.get(ChallengeTasks).sweep(now);
     expect(await database.query('SELECT id FROM challenge_run WHERE run_id = ?', [run.runId])).toEqual([]);
+  });
+
+  it('要门票的挑战：积分不够不开也不扣；开局先扣快过期的，提前结束不退；等级按获得总数、花了不减', async () => {
+    const { device, accountId } = await signedIn();
+    await writeConfig(config({ rotations: [{ id: 'weekly', every: 'week', templates: ['trio'] }, { id: 'paid', every: 'week', templates: ['trio'], ticket: 50 }] }));
+    const paid = ((await list(device)).body.challenges as { id: string; ticket: number }[]).find((item) => item.id.startsWith('paid.'))!;
+    expect(paid.ticket).toBe(50);
+    expect(((await list(device)).body.challenges as { ticket: number }[]).map((item) => item.ticket)).toEqual([0, 50]);
+
+    const short = await device.call('POST', `/v1/challenges/${paid.id}/runs`, { games });
+    expect(short.status).toBe(409);
+    expect(short.body).toMatchObject({ code: 'POINTS_SHORT', price: 50, balance: 0 });
+    expect((await list(device)).body.activeRun).toBeNull();
+
+    const now = Date.now();
+    const grant = (key: string, amount: number, days: number) =>
+      database.query('INSERT INTO points_grant (account_id, amount, remaining, source, source_key, expire_time, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+        accountId,
+        amount,
+        amount,
+        'challenge',
+        `${key}-${accountId}`,
+        new Date(now + days * 86400_000),
+        new Date(now),
+        new Date(now),
+      ]);
+    await grant('late', 40, 300);
+    await grant('soon', 30, 10);
+    const started = await device.call('POST', `/v1/challenges/${paid.id}/runs`, { games });
+    expect(started.status, JSON.stringify(started.body)).toBe(200);
+    const remaining = (await database.query('SELECT source_key AS sourceKey, remaining FROM points_grant WHERE account_id = ? ORDER BY expire_time', [accountId])) as { sourceKey: string; remaining: number }[];
+    expect(remaining.map((row) => row.remaining)).toEqual([0, 20]);
+    const entries = (await device.call('GET', '/v1/points/entries')).body.entries as { kind: string; amount: number; note: string }[];
+    expect(entries[0]).toMatchObject({ kind: 'spend', amount: -50, note: '入门 · 三连环 门票' });
+
+    expect((await device.call('POST', `/v1/challenge-runs/${(started.body as Run).runId}/end`)).body.state).toBe('settled');
+    expect((await device.call('GET', '/v1/points')).body).toMatchObject({ balance: 20, earned: 70, level: 0, nextLevelAt: null });
+
+    // 门槛来自灰度配置：获得 70 分在 [0, 50, 100, ...] 里是 Lv1，离 Lv2 要 100。
+    const rollout = join(env().releasesDir, 'rollout.json');
+    await writeFile(rollout, JSON.stringify({ flags: [], levels: [0, 50, 100, 200, 400, 800], envelope: null }));
+    await utimes(rollout, now / 1000 + 5, now / 1000 + 5);
+    expect((await device.call('GET', '/v1/points')).body).toMatchObject({ balance: 20, earned: 70, level: 1, nextLevelAt: 100 });
+    await rm(rollout);
+    await writeConfig(config());
   });
 
   it('配置热加载：换文件即生效，写坏了接着用上一份', async () => {

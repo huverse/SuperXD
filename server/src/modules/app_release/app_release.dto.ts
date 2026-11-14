@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsISO8601, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 
-import { developerNoteBodyMax, developerNoteLimit, developerNoteTitleMax, rolloutFlagLimit, rolloutStageLimit } from 'src/common/relay_limits';
+import { developerNoteBodyMax, developerNoteLimit, developerNoteTitleMax, pointsLevelCount, rolloutFlagLimit, rolloutStageLimit } from 'src/common/relay_limits';
 
 // 客户端按自己正在运行的 CPU 架构取安装包，与发布附件的三种分包一致。
 export const appAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64'] as const;
@@ -128,6 +128,16 @@ export class RolloutFlagDto {
 
 export class RolloutConfigDto {
   @ApiProperty({ description: '全部开关', type: [RolloutFlagDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RolloutFlagDto) @ArrayMaxSize(rolloutFlagLimit) flags: RolloutFlagDto[];
+  // 积分等级 Lv0–Lv5 的门槛（近 12 个月获得的积分，规则见 src/modules/points/points_level.ts），从 0 起严格递增，由 RolloutSource 再核一遍。
+  @ApiProperty({ description: '积分等级的门槛，六个数', type: [Number], required: false })
+  @IsOptional()
+  @IsArray()
+  @ArrayMinSize(pointsLevelCount)
+  @ArrayMaxSize(pointsLevelCount)
+  @IsInt({ each: true })
+  @Min(0, { each: true })
+  @Max(100_000_000, { each: true })
+  levels?: number[];
   @ApiProperty({ description: '签好的信封，客户端只认它；还没放文件时为空', type: SignedEnvelopeDto, nullable: true })
   @IsOptional()
   @ValidateNested()

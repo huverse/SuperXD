@@ -40,6 +40,7 @@ abstract final class RelayCode {
   static const runNotFound = 'RUN_NOT_FOUND';
   static const runOver = 'RUN_OVER';
   static const levelLocked = 'LEVEL_LOCKED';
+  static const pointsShort = 'POINTS_SHORT'; // 积分不够付这笔（如挑战门票），附 price 与 balance
   static const diagnosticNotFound = 'DIAGNOSTIC_NOT_FOUND';
   static const socialElsewhere = 'SOCIAL_ELSEWHERE'; // 这个应用账号的私信在另一台设备上（没带接管）
   static const socialTaken = 'SOCIAL_TAKEN'; // 这个私信设备已挂在别的应用账号下

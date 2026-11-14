@@ -15,8 +15,8 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 
-// 游乐场的「挑战」一栏（人工决策见 challenge_rules.dart）：要登录教务并登录应用账号；上面是积分，下面是本周开放的挑战
-// （服务器下发，每周一换，同一挑战再玩只补超过最好成绩的部分）。还有一局没结束时顶上给「继续」。
+// 游乐场的「挑战」一栏（人工决策见 challenge_rules.dart）：要登录教务并登录应用账号；上面是积分与等级，下面是本周开放的挑战
+// （服务器下发，每周一换，同一挑战再玩只补超过最好成绩的部分；有门票的开局即扣、不退，积分不够时不给开始）。还有一局没结束时顶上给「继续」。
 class ChallengeHome extends StatefulWidget {
   const ChallengeHome({super.key, required this.hub, required this.games, required this.store, required this.openAccount, required this.openLogin, required this.bottom});
   final ChallengeHub hub;
@@ -93,7 +93,8 @@ class _ChallengeHomeState extends State<ChallengeHome> {
     final confirmed = await showCampusConfirm(
       context,
       title: '开始「${challenge.title}」？',
-      message: '${challenge.levels} 关，限时 $minutes 分钟，从现在开始计时；切到后台、来电话也照走，到点按已经过了的关结算。',
+      message: '${challenge.levels} 关，限时 $minutes 分钟，从现在开始计时；切到后台、来电话也照走，到点按已经过了的关结算。'
+          '${challenge.ticket > 0 ? '开局扣 ${challenge.ticket} 积分门票，过没过都不退。' : ''}',
       action: '开始',
     );
     if (!confirmed || !mounted) return;
@@ -156,7 +157,7 @@ class _ChallengeHomeState extends State<ChallengeHome> {
             CampusIcon(CampusIcons.points, size: 28, color: palette.primary),
             const SizedBox(width: 20),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text('积分 ${_points?.balance ?? 0}', style: Theme.of(context).textTheme.titleMedium),
+              Text(['积分 ${_points?.balance ?? 0}', if (_points case final points? when pointsLevelShown(points)) 'Lv${points.level}'].join(' · '), style: Theme.of(context).textTheme.titleMedium),
               if ((_points?.expiring ?? 0) > 0) Text('30 天内有 ${_points!.expiring} 分到期', style: secondary),
             ])),
             CampusIcon(CampusIcons.next, color: palette.onSurfaceVariant),
@@ -184,19 +185,27 @@ class _ChallengeHomeState extends State<ChallengeHome> {
                 Text('${challenge.label} · ${challenge.title}', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 2),
                 DotSeparatedText(
-                  ['${challenge.levels} 关', '限时 ${challenge.timeLimit.inMinutes} 分钟', if (challenge.best case final best?) '最好 $best 分', _left(challenge.endsAt)].join(' · '),
+                  [
+                    '${challenge.levels} 关',
+                    '限时 ${challenge.timeLimit.inMinutes} 分钟',
+                    if (challenge.ticket > 0) '门票 ${challenge.ticket} 分',
+                    if (challenge.best case final best?) '最好 $best 分',
+                    _left(challenge.endsAt),
+                  ].join(' · '),
                   style: secondary,
                 ),
               ])),
             ]),
             const SizedBox(height: 12),
-            Align(alignment: Alignment.centerRight, child: challenge.playable
-                ? FilledButton.icon(
+            Align(alignment: Alignment.centerRight, child: !challenge.playable
+                ? Text('里面有新游戏，更新应用后才能玩', style: secondary)
+                : challenge.ticket > (_points?.balance ?? 0)
+                ? Text('积分不够付门票', style: secondary)
+                : FilledButton.icon(
                     onPressed: _starting == null ? () => unawaited(_start(challenge)) : null,
                     icon: _starting == challenge.id ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const CampusIcon(CampusIcons.resume),
                     label: Text(challenge.best == null ? '开始' : '再挑战'),
-                  )
-                : Text('里面有新游戏，更新应用后才能玩', style: secondary)),
+                  )),
           ])),
           const SizedBox(height: 12),
         ],

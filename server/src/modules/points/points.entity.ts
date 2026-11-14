@@ -2,7 +2,7 @@ import { Column, Entity } from 'typeorm';
 
 import { BaseEntity } from 'src/common/base.entity';
 
-// 每笔获得一行（人工决策见 points.service.ts）：满 12 个月过期，花的时候先扣快过期的（本阶段还没有花费的入口）；余额 = 没过期的 remaining 之和。
+// 每笔获得一行（人工决策见 points.service.ts）：满 12 个月过期，花的时候先扣快过期的；余额 = 没过期的 remaining 之和，等级按没过期的 amount 之和。
 @Entity('points_grant')
 export class PointsGrantEntity extends BaseEntity {
   @Column({ name: 'account_id', type: 'varchar', length: 32 }) accountId: string;

@@ -134,6 +134,8 @@ export const pointsEntryKeepDays = 395;
 export const pointsSpentGrantKeepDays = 30;
 export const pointsEntriesPage = 20;
 export const pointsReadPerDevicePerHour = 600;
+// 等级固定六档 Lv0–Lv5（门槛在灰度配置的 levels，规则见 src/modules/points/points_level.ts）。
+export const pointsLevelCount = 6;
 
 // 挑战（人工决策见客户端 lib/playground/challenge/challenge_rules.dart）：一个账号同时只有一局，每小时最多开 30 局；
 // 每台设备每小时 3000 个挑战请求（看列表、看局面、交答案合计）；一关错交到配置里的上限（maxErrors）就算没过。

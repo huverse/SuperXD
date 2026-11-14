@@ -5,6 +5,9 @@ export class PointsSummaryDto {
   @ApiProperty({ description: '余额（没过期的积分）' }) balance: number;
   @ApiProperty({ description: '30 天内要过期的合计' }) expiring: number;
   @ApiProperty({ description: '其中最早的过期时刻，毫秒；没有为空', nullable: true }) expiringAt: number | null;
+  @ApiProperty({ description: '近 12 个月获得的总数（没过期的获得，花了不减），等级按它算' }) earned: number;
+  @ApiProperty({ description: '等级 0–5（Lv0–Lv5）' }) level: number;
+  @ApiProperty({ description: '到下一级要的获得总数；已是最高级或还没配门槛为空', nullable: true }) nextLevelAt: number | null;
   @ApiProperty({ description: '服务器时间，毫秒' }) serverTime: number;
 }
 

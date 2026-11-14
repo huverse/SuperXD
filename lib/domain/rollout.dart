@@ -39,10 +39,15 @@ class RolloutRule {
 }
 
 class RolloutConfig {
-  const RolloutConfig(this.rules);
+  const RolloutConfig(this.rules, {this.levels = const []});
   final Map<String, RolloutRule> rules;
+  // 积分等级 Lv0–Lv5 的门槛（近 12 个月获得的积分，[人工决策-2026-11-14 20:20:18] 见服务端 src/modules/points/points_level.ts）：
+  // 跟着灰度配置下发，服务端算等级读同一份；没写为空。
+  final List<int> levels;
   static const empty = RolloutConfig({});
 }
+
+const rolloutLevelCount = 6;
 
 // 上限：开关最多 200 个、每个放量表最多 20 档（与 tool/rollout_config.dart、服务端 relay_limits.ts 的文件上限一起管住配置的体积）。
 const rolloutRuleLimit = 200;
@@ -83,9 +88,19 @@ List<RolloutStage> decodeRolloutStages(Object? json) {
   return stages;
 }
 
-// 灰度配置 {flags: [{id, percent} 或 {id, stages}]} 是外部输入：逐项校验，开关名不能重复，多出来的字段不认。
+// 等级门槛：正好六档、从 0 起、严格递增（同服务端 rollout_source.ts）。
+List<int> _levels(Object? json) {
+  if (json is! List || json.length != rolloutLevelCount) throw const FormatException('levels 要是六个数');
+  final levels = [for (final item in json) item is int && item >= 0 ? item : throw const FormatException('levels 要是非负整数')];
+  for (var index = 0; index < levels.length; index++) {
+    if (index == 0 ? levels[0] != 0 : levels[index] <= levels[index - 1]) throw const FormatException('levels 要从 0 起严格递增');
+  }
+  return levels;
+}
+
+// 灰度配置 {flags: [{id, percent} 或 {id, stages}], levels?: [六个数]} 是外部输入：逐项校验，开关名不能重复，多出来的字段不认。
 RolloutConfig decodeRolloutConfig(Object? json) {
-  if (json case {'flags': final List<Object?> flags} when json.length == 1 && flags.length <= rolloutRuleLimit) {
+  if (json case {'flags': final List<Object?> flags} when flags.length <= rolloutRuleLimit && json.keys.every((key) => key == 'flags' || key == 'levels')) {
     final rules = <String, RolloutRule>{};
     for (final flag in flags) {
       final rule = switch (flag) {
@@ -96,7 +111,7 @@ RolloutConfig decodeRolloutConfig(Object? json) {
       if (rules.containsKey(rule.id)) throw FormatException('开关 ${rule.id} 重复');
       rules[rule.id] = rule;
     }
-    return RolloutConfig(rules);
+    return RolloutConfig(rules, levels: json.containsKey('levels') ? _levels(json['levels']) : const []);
   }
   throw const FormatException('灰度配置不合法');
 }
@@ -110,6 +125,7 @@ Map<String, Object?> encodeRolloutConfig(RolloutConfig config) => {
       else
         {'id': rule.id, 'stages': [for (final stage in rule.stages) {'from': stage.from.toUtc().toIso8601String(), 'percent': stage.percent}]},
   ],
+  if (config.levels.isNotEmpty) 'levels': config.levels,
 };
 
 // 拉配置失败，message 只记日志（灰度配置没有界面）。

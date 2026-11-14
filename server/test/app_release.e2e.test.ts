@@ -335,6 +335,12 @@ describe('灰度配置', () => {
     expect((await request(server).get('/v1/app/rollout')).body).toEqual({ flags: [], envelope: envelope('empty') });
   });
 
+  it('积分等级的门槛 levels 原样透传', async () => {
+    const file = { flags: [], levels: [0, 500, 3000, 10000, 30000, 80000], envelope: envelope('levels') };
+    await putManifest('rollout', file);
+    expect((await request(server).get('/v1/app/rollout')).body).toEqual(file);
+  });
+
   it('文件写坏或超过上限不往外发，回 INTERNAL 并打印堆栈', async () => {
     const printed = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     for (const body of [
@@ -345,6 +351,10 @@ describe('灰度配置', () => {
       { flags: [{ id: 'x', percent: 1, secret: 1 }] },
       { flags: Array.from({ length: 201 }, (_, index) => ({ id: `f${index}`, percent: 1 })) },
       { flags: [], envelope: 'x' },
+      { flags: [], levels: [0, 500, 3000] },
+      { flags: [], levels: [1, 500, 3000, 10000, 30000, 80000] },
+      { flags: [], levels: [0, 500, 500, 10000, 30000, 80000] },
+      { flags: [], levels: [0, 500, 3000, 10000, 30000, 80000.5] },
       { flags: [], pad: 'x'.repeat(rolloutFileMaxBytes) },
       '{not json',
     ]) {

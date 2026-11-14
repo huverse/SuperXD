@@ -139,13 +139,15 @@ void main() {
         'serverTime': 1000,
         'activeRun': null,
         'challenges': [
-          {'id': 'weekly.2026-11-09.six', 'title': '六连环', 'label': '入门', 'levels': 6, 'timeLimit': 900, 'endsAt': 2000, 'best': 153, 'playable': true},
+          {'id': 'weekly.2026-11-09.six', 'title': '六连环', 'label': '入门', 'levels': 6, 'timeLimit': 900, 'endsAt': 2000, 'best': 153, 'playable': true, 'ticket': 0},
+          {'id': 'bonus.2026-11-09.bonus', 'title': '十二连环', 'label': '加赛', 'levels': 12, 'timeLimit': 3600, 'endsAt': 2000, 'best': null, 'playable': true, 'ticket': 300},
         ],
       });
       final catalog = await client.catalog(_ref, {'ice', 'hanoi'});
       expect(relay.requests.single.path, '/v1/challenges?games=hanoi,ice');
       expect(relay.requests.single.headers['x-sxd-device'], key.deviceId);
-      expect(catalog.challenges.single, isA<ChallengeSummary>().having((item) => item.best, 'best', 153).having((item) => item.timeLimit, 'timeLimit', const Duration(minutes: 15)));
+      expect(catalog.challenges.first, isA<ChallengeSummary>().having((item) => item.best, 'best', 153).having((item) => item.timeLimit, 'timeLimit', const Duration(minutes: 15)).having((item) => item.ticket, 'ticket', 0));
+      expect(catalog.challenges.last.ticket, 300);
     });
 
     test('一局的局面、交答案带号码、积分与流水按协议解码；看不懂的回复报失败', () async {
@@ -157,8 +159,10 @@ void main() {
       expect(verdict.correct, isTrue);
       expect(verdict.key, 7);
       expect(verdict.run.level('c'), isA<ChallengeLevel>().having((level) => level.state, 'state', ChallengeLevelState.locked).having((level) => level.teaser, 'teaser', '四张牌：? 8 3 ?'));
-      relay.reply = (request) => const RelayResponse(200, {'balance': 86, 'expiring': 20, 'expiringAt': 5000, 'serverTime': 1});
-      expect((await client.points(_ref)).expiringAt, DateTime.fromMillisecondsSinceEpoch(5000, isUtc: true));
+      relay.reply = (request) => const RelayResponse(200, {'balance': 86, 'expiring': 20, 'expiringAt': 5000, 'earned': 620, 'level': 1, 'nextLevelAt': 3000, 'serverTime': 1});
+      expect((await client.points(_ref)), isA<PointsSummary>().having((points) => points.expiringAt, 'expiringAt', DateTime.fromMillisecondsSinceEpoch(5000, isUtc: true)).having((points) => points.earned, 'earned', 620).having((points) => points.level, 'level', 1).having((points) => points.nextLevelAt, 'nextLevelAt', 3000));
+      relay.reply = (request) => const RelayResponse(200, {'balance': 86, 'expiring': 0, 'expiringAt': null, 'earned': 90000, 'level': 5, 'nextLevelAt': null, 'serverTime': 1});
+      expect((await client.points(_ref)).nextLevelAt, isNull);
       relay.reply = (request) => const RelayResponse(200, {'entries': [{'id': '9', 'kind': 'earn', 'amount': 86, 'note': '入门 · 三连环', 'at': 1}], 'next': '9'});
       final batch = await client.pointsEntries(_ref, before: '12');
       expect(relay.requests.last.path, '/v1/points/entries?before=12');
@@ -175,6 +179,11 @@ void main() {
       await expectLater(client.answer(_ref, _runId, 'a', 0, []), throwsA(isA<ChallengeException>().having((error) => error.run?.result?.ending, 'ending', 'timeout')));
       relay.reply = (request) => const RelayResponse(404, {'code': 'ACCOUNT_NOT_FOUND'});
       await expectLater(client.points(_ref), throwsA(isA<ChallengeException>().having((error) => error.failure, 'failure', ChallengeFailure.notSignedIn)));
+      relay.reply = (request) => const RelayResponse(409, {'code': 'POINTS_SHORT', 'price': 300, 'balance': 86});
+      await expectLater(
+        client.start(_ref, 'bonus.2026-11-09.bonus', {'hanoi'}),
+        throwsA(isA<ChallengeException>().having((error) => error.failure, 'failure', ChallengeFailure.pointsShort).having((error) => error.message, 'message', '积分不够，门票要 300 分')),
+      );
     });
   });
 
@@ -381,7 +390,7 @@ void main() {
 
     testWidgets('积分页：余额、30 天内到期的提示、明细从新到旧，按需往下翻', (tester) async {
       final hub = _Hub()
-        ..summary = PointsSummary(balance: 236, expiring: 50, expiringAt: DateTime.now().toUtc().add(const Duration(days: 3)))
+        ..summary = PointsSummary(balance: 236, expiring: 50, expiringAt: DateTime.now().toUtc().add(const Duration(days: 3)), earned: 1200, level: 1, nextLevelAt: 3000)
         ..batches = [
           PointsBatch(entries: [PointsEntry(id: '9', kind: 'earn', amount: 186, note: '普通 · 八连环', at: DateTime.now().toUtc())], next: '9'),
           PointsBatch(entries: [PointsEntry(id: '3', kind: 'expire', amount: -20, note: '积分到期', at: DateTime.now().toUtc().subtract(const Duration(days: 2)))], next: null),
@@ -390,6 +399,8 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('236'), findsOneWidget);
       expect(find.textContaining('30 天内有 50 分到期'), findsOneWidget);
+      expect(find.text('Lv1'), findsOneWidget);
+      expect(find.text('离 Lv2 还差 1800 分'), findsOneWidget);
       expect(find.text('普通 · 八连环'), findsOneWidget);
       expect(find.text('+186'), findsOneWidget);
       await tester.tap(find.text('更早的'));
@@ -397,6 +408,50 @@ void main() {
       expect(hub.before, ['9']);
       expect(find.text('-20'), findsOneWidget);
       expect(find.text('更早的'), findsNothing);
+    });
+
+    testWidgets('积分页的等级：最高级写「最高等级」；服务器还没配门槛时不显示等级', (tester) async {
+      final hub = _Hub()..summary = const PointsSummary(balance: 10, expiring: 0, expiringAt: null, earned: 90000, level: 5, nextLevelAt: null);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: PointsPage(hub: hub)));
+      await tester.pumpAndSettle();
+      expect(find.text('Lv5'), findsOneWidget);
+      expect(find.text('最高等级'), findsOneWidget);
+      hub.summary = const PointsSummary(balance: 10, expiring: 0, expiringAt: null, earned: 90000, level: 0, nextLevelAt: null);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: PointsPage(key: UniqueKey(), hub: hub)));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('Lv'), findsNothing);
+      expect(find.text('最高等级'), findsNothing);
+    });
+
+    testWidgets('要门票的挑战：卡上写门票；积分不够不给开始；够了开始前写明开局扣、过没过都不退', (tester) async {
+      final hub = _Hub()
+        ..signedIn = true
+        ..ticket = 300
+        ..summary = const PointsSummary(balance: 86, expiring: 0, expiringAt: null, earned: 620, level: 1, nextLevelAt: 3000);
+      await tester.pumpWidget(MaterialApp(
+        theme: campusTheme(),
+        home: PlaygroundPage(store: PlaygroundStore.memory(), games: playgroundCatalog, groups: playgroundGroups, challenges: hub, openAccount: (_) {}, openLogin: (_) {}),
+      ));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('挑战'));
+      await tester.pumpAndSettle();
+      expect(find.text('积分 86 · Lv1'), findsOneWidget);
+      expect(find.text('加赛 · 十二连环'), findsOneWidget);
+      expect(_line('12 关 · 限时 60 分钟 · 门票 300 分 · 还剩 2 天'), findsOneWidget);
+      expect(find.text('积分不够付门票'), findsOneWidget);
+      expect(find.text('开始'), findsOneWidget);
+
+      hub.summary = const PointsSummary(balance: 500, expiring: 0, expiringAt: null, earned: 620, level: 1, nextLevelAt: 3000);
+      hub.emit();
+      await tester.pumpAndSettle();
+      expect(find.text('积分不够付门票'), findsNothing);
+      await tester.tap(find.text('开始').last);
+      await tester.pumpAndSettle();
+      expect(find.textContaining('开局扣 300 积分门票，过没过都不退'), findsOneWidget);
+      await tester.tap(find.text('开始').last);
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(hub.started, ['bonus.2026-11-09.bonus']);
     });
 
     testWidgets('游乐场首页：配了挑战才有「自由 | 挑战」；没登录应用账号引导去登录；登录后列本周挑战，开始前写明计时规则', (tester) async {
@@ -531,6 +586,8 @@ class _Hub implements ChallengeHub {
   @override
   bool get campusSignedIn => true;
   int? best;
+  // 大于 0 时另列一场要这么多门票的加赛。
+  int ticket = 0;
   Set<String>? games;
   final started = <String>[];
   ChallengeRun? ended;
@@ -543,7 +600,9 @@ class _Hub implements ChallengeHub {
   Future<ChallengeCatalog> catalog(Set<String> games) async {
     this.games = games;
     return ChallengeCatalog(serverTime: DateTime.utc(2026, 11, 14), activeRun: null, challenges: [
-      ChallengeSummary(id: 'weekly.2026-11-09.six', title: '六连环', label: '入门', levels: 6, timeLimit: const Duration(minutes: 15), endsAt: DateTime.now().add(const Duration(days: 2, hours: 1)), best: best, playable: true),
+      ChallengeSummary(id: 'weekly.2026-11-09.six', title: '六连环', label: '入门', levels: 6, timeLimit: const Duration(minutes: 15), endsAt: DateTime.now().add(const Duration(days: 2, hours: 1)), best: best, playable: true, ticket: 0),
+      if (ticket > 0)
+        ChallengeSummary(id: 'bonus.2026-11-09.bonus', title: '十二连环', label: '加赛', levels: 12, timeLimit: const Duration(minutes: 60), endsAt: DateTime.now().add(const Duration(days: 2, hours: 1)), best: null, playable: true, ticket: ticket),
     ]);
   }
 
@@ -559,7 +618,7 @@ class _Hub implements ChallengeHub {
   Future<ChallengeVerdict> answer(String runId, String levelId, int attempt, Object? answer) async => ChallengeVerdict(correct: true, key: 7, run: _run());
   @override
   Future<ChallengeRun> end(String runId) async => ended!;
-  PointsSummary summary = const PointsSummary(balance: 86, expiring: 0, expiringAt: null);
+  PointsSummary summary = const PointsSummary(balance: 86, expiring: 0, expiringAt: null, earned: 0, level: 0, nextLevelAt: null);
   List<PointsBatch> batches = const [PointsBatch(entries: [], next: null)];
   final before = <String?>[];
   @override
@@ -592,7 +651,7 @@ class _Client implements ChallengeClient {
   @override
   Future<ChallengeRun> end(AppAccountRef account, String runId) => _call('end', _run());
   @override
-  Future<PointsSummary> points(AppAccountRef account) => _call('points', const PointsSummary(balance: 0, expiring: 0, expiringAt: null));
+  Future<PointsSummary> points(AppAccountRef account) => _call('points', const PointsSummary(balance: 0, expiring: 0, expiringAt: null, earned: 0, level: 0, nextLevelAt: null));
   @override
   Future<PointsBatch> pointsEntries(AppAccountRef account, {String? before}) => _call('entries', const PointsBatch(entries: [], next: null));
 }

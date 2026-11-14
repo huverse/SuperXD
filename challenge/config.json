@@ -78,8 +78,31 @@
         { "id": "l", "tier": "expert" }
       ],
       "edges": [["a", "e"], ["b", "e"], ["c", "e"], ["d", "g"], ["f", "g"], ["e", "h"], ["g", "h"], ["h", "i"], ["i", "l"], ["j", "l"], ["k", "l"]]
+    },
+    "bonus": {
+      "title": "十二连环",
+      "label": "加赛",
+      "timeLimit": 3600,
+      "nodes": [
+        { "id": "a", "tier": "hard" },
+        { "id": "b", "tier": "hard" },
+        { "id": "c", "tier": "hard" },
+        { "id": "d", "tier": "hard" },
+        { "id": "e", "tier": "expert" },
+        { "id": "f", "tier": "hard" },
+        { "id": "g", "tier": "expert" },
+        { "id": "h", "tier": "expert" },
+        { "id": "i", "tier": "expert" },
+        { "id": "j", "tier": "expert" },
+        { "id": "k", "tier": "expert" },
+        { "id": "l", "tier": "expert" }
+      ],
+      "edges": [["a", "e"], ["b", "e"], ["c", "e"], ["d", "g"], ["f", "g"], ["e", "h"], ["g", "h"], ["h", "i"], ["i", "l"], ["j", "l"], ["k", "l"]]
     }
   },
-  "rotations": [{ "id": "weekly", "every": "week", "templates": ["six", "eight", "ten", "twelve"] }],
+  "rotations": [
+    { "id": "weekly", "every": "week", "templates": ["six", "eight", "ten", "twelve"] },
+    { "id": "bonus", "every": "week", "templates": ["bonus"], "ticket": 300 }
+  ],
   "events": []
 }

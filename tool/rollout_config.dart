@@ -13,7 +13,8 @@ import 'content_signing.dart';
 //   {"id": "某功能", "percent": 10}                                   定值：10% 的人打开（0 关停、100 全开）
 //   {"id": "某功能", "stages": [{"from": "2026-11-20T00:00:00+08:00", "percent": 20}, ...]}   按时刻放量，只增不减
 //   {"id": "app_update.alpha.28", "percent": 50}                      覆盖这一版更新清单的放量表：暂停写当时的百分比，直接全量写 100，整版关停写 0
-// 签名：载荷是整理后的 {"flags": [...]} 的确切字节，签好放进 envelope，中转原样透传，客户端只认它；--signing-key 可以给多把，每把都必须是源码里能签 rollout 的受信公钥。
+// 另可写 "levels": [0, 500, 3000, 10000, 30000, 80000]：积分等级 Lv0–Lv5 的门槛（近 12 个月获得的积分，从 0 起严格递增，规则见服务端 src/modules/points/points_level.ts）。
+// 签名：载荷是整理后的 {"flags": [...], "levels": [...]} 的确切字节，签好放进 envelope，中转原样透传，客户端只认它；--signing-key 可以给多把，每把都必须是源码里能签 rollout 的受信公钥。
 // 运行：dart run tool/rollout_config.dart                                  只检查格式
 //       dart run tool/rollout_config.dart --out <文件> --signing-key <私钥.pem>   生成签好的文件（流水线用）
 // 明文一份加签名载荷一份不超过 64KB；中转与客户端同一上限（server/src/common/relay_limits.ts 的 rolloutFileMaxBytes）。
@@ -44,7 +45,7 @@ Future<void> main(List<String> args) async {
   try {
     final config = await readRolloutConfig(File('rollout/rollout.json'));
     if (out == null) {
-      stdout.writeln('[RolloutConfig] action=check flags=${config.rules.length}');
+      stdout.writeln('[RolloutConfig] action=check flags=${config.rules.length} levels=${config.levels.length}');
       return;
     }
     final signers = [for (final path in signingKeys) await SigningKey.fromPemFile(path, SignedContent.rollout)];

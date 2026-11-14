@@ -29,11 +29,24 @@ describe('业务时区的周期', () => {
 });
 
 describe('挑战配置', () => {
-  it('仓库里的 challenge/config.json 服务端认得，四个模板都在每周轮换里', () => {
+  it('仓库里的 challenge/config.json 服务端认得：四个免费模板在每周轮换里，另有一场要门票的加赛', () => {
     const config = parseChallengeConfig(JSON.parse(readFileSync(new URL('../../challenge/config.json', import.meta.url), 'utf8')), judgedGames, challengeMaxLevels);
-    expect([...config.templates.keys()]).toEqual(['six', 'eight', 'ten', 'twelve']);
+    expect([...config.templates.keys()]).toEqual(['six', 'eight', 'ten', 'twelve', 'bonus']);
     expect(config.templates.get('twelve')!.nodes).toHaveLength(12);
-    expect(config.rotations).toEqual([{ id: 'weekly', every: 'week', templates: ['six', 'eight', 'ten', 'twelve'] }]);
+    expect(config.templates.get('bonus')!.label).toBe('加赛');
+    expect(config.rotations).toEqual([
+      { id: 'weekly', every: 'week', templates: ['six', 'eight', 'ten', 'twelve'], ticket: 0 },
+      { id: 'bonus', every: 'week', templates: ['bonus'], ticket: 300 },
+    ]);
+  });
+
+  it('门票：不写是免费，写了要是 1–100000 的积分', () => {
+    const parse = (ticket: unknown) => () => parseChallengeConfig({ ...rawConfig(twoToOne), rotations: [{ id: 'weekly', every: 'week', templates: ['demo'], ticket }] }, judgedGames, challengeMaxLevels);
+    expect(parse(undefined)().rotations[0].ticket).toBe(0);
+    expect(parse(300)().rotations[0].ticket).toBe(300);
+    expect(parse(0)).toThrow(/ticket/);
+    expect(parse('300')).toThrow(/ticket/);
+    expect(parse(100_001)).toThrow(/ticket/);
   });
 
   it('关卡图不合规的拒收：环、一关两条出边、收钥匙的不是能收钥匙的游戏、不认识的游戏、边指向不存在的关', () => {
