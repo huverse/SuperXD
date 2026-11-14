@@ -1,0 +1,85 @@
+{
+  "version": 1,
+  "scoring": {
+    "levelBase": 10,
+    "timeFloor": 0.4,
+    "errorDecay": 0.9,
+    "passWeight": 0.5,
+    "depthBonus": 0.05,
+    "clearBonus": 0.25,
+    "timeBonus": 0.2,
+    "maxErrors": 10
+  },
+  "templates": {
+    "six": {
+      "title": "六连环",
+      "label": "入门",
+      "timeLimit": 900,
+      "nodes": [
+        { "id": "a", "tier": "entry" },
+        { "id": "b", "tier": "entry" },
+        { "id": "c", "tier": "easy" },
+        { "id": "d", "tier": "entry" },
+        { "id": "e", "tier": "easy" },
+        { "id": "f", "tier": "easy" }
+      ],
+      "edges": [["a", "c"], ["b", "c"], ["c", "e"], ["d", "e"], ["e", "f"]]
+    },
+    "eight": {
+      "title": "八连环",
+      "label": "普通",
+      "timeLimit": 1500,
+      "nodes": [
+        { "id": "a", "tier": "easy" },
+        { "id": "b", "tier": "easy" },
+        { "id": "c", "tier": "easy" },
+        { "id": "d", "tier": "normal" },
+        { "id": "e", "tier": "normal" },
+        { "id": "f", "tier": "normal" },
+        { "id": "g", "tier": "normal" },
+        { "id": "h", "tier": "normal" }
+      ],
+      "edges": [["a", "d"], ["b", "d"], ["c", "d"], ["d", "g"], ["e", "g"], ["f", "g"], ["g", "h"]]
+    },
+    "ten": {
+      "title": "十连环",
+      "label": "困难",
+      "timeLimit": 2400,
+      "nodes": [
+        { "id": "a", "tier": "normal" },
+        { "id": "b", "tier": "normal" },
+        { "id": "c", "tier": "normal" },
+        { "id": "d", "tier": "normal" },
+        { "id": "e", "tier": "hard" },
+        { "id": "f", "tier": "hard" },
+        { "id": "g", "tier": "hard" },
+        { "id": "h", "tier": "hard" },
+        { "id": "i", "tier": "hard" },
+        { "id": "j", "tier": "hard" }
+      ],
+      "edges": [["a", "e"], ["b", "e"], ["c", "f"], ["d", "f"], ["e", "g"], ["f", "g"], ["i", "g"], ["g", "h"], ["j", "h"]]
+    },
+    "twelve": {
+      "title": "十二连环",
+      "label": "专家",
+      "timeLimit": 3600,
+      "nodes": [
+        { "id": "a", "tier": "hard" },
+        { "id": "b", "tier": "hard" },
+        { "id": "c", "tier": "hard" },
+        { "id": "d", "tier": "hard" },
+        { "id": "e", "tier": "expert" },
+        { "id": "f", "tier": "hard" },
+        { "id": "g", "tier": "expert" },
+        { "id": "h", "tier": "expert" },
+        { "id": "i", "tier": "expert" },
+        { "id": "j", "tier": "expert" },
+        { "id": "k", "tier": "expert" },
+        { "id": "l", "tier": "expert" }
+      ],
+      "edges": [["a", "e"], ["b", "e"], ["c", "e"], ["d", "g"], ["f", "g"], ["e", "h"], ["g", "h"], ["h", "i"], ["i", "l"], ["j", "l"], ["k", "l"]]
+    }
+  },
+  "rotations": [{ "id": "weekly", "every": "week", "templates": ["six", "eight", "ten", "twelve"] }],
+  "events": []
+}

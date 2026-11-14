@@ -24,6 +24,12 @@ export const RelayCode = {
   captchaExpired: 'CAPTCHA_EXPIRED', // 验证码这一步过期或不属于这台设备，要重新登录
   upstreamUnavailable: 'UPSTREAM_UNAVAILABLE', // 学校教务连不上、超时、限流或返回了看不懂的页面，附 reason（network、timeout、rateLimited、http、format）
   accountNotFound: 'ACCOUNT_NOT_FOUND', // 这把设备密钥没有登录应用账号，或账号已注销
+  challengeNotFound: 'CHALLENGE_NOT_FOUND', // 挑战不存在或不在开放时间
+  challengeUnavailable: 'CHALLENGE_UNAVAILABLE', // 这个客户端玩不了里面的游戏，或题库还没备好（客户端提示更新应用或稍后再试）
+  runActive: 'RUN_ACTIVE', // 这个账号已有进行中的一局，附 runId
+  runNotFound: 'RUN_NOT_FOUND', // 这一局不存在或不属于这个账号
+  runOver: 'RUN_OVER', // 这一局已经结束，附 run（结算后的局面）
+  levelLocked: 'LEVEL_LOCKED', // 这一关还没解锁、已经过了或已经算没过，附 run
   internal: 'INTERNAL', // 未预期的服务端错误
 } as const;
 
