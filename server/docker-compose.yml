@@ -21,6 +21,8 @@ services:
       REDIS_PORT: 6379
       RELAY_RELEASES_DIR: /srv/releases
       RELAY_DIAGNOSTICS_DIR: /srv/diagnostics
+      # 业务时区只在这一处定（同客户端 campusTimeZone），换时区改这里。
+      RELAY_BUSINESS_TIME_ZONE: Asia/Shanghai
     # 应用更新的清单与安装包：发版时放进宿主机 ./releases，容器只读。
     # 诊断包密文：命名卷，第一次创建时沿用镜像里这个目录的属主（node），容器以非 root 运行也能写；开发者用 docker compose cp 取出。
     volumes:

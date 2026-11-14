@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -32,11 +33,13 @@ const _sideNames = ['上边', '右边', '下边', '左边'];
 // 画线会让一个点连出三条线（分叉或交叉）就不画，轻震并提示。格子周围线数超过数字时数字标警示色，正好时变淡。
 // 回路连成一条且数字都对上即解开：线条过渡成激活色、围起来的格淡淡铺一层，再弹结果。格子小于 48 时双指放大。
 class LoopPage extends StatefulWidget {
-  const LoopPage({super.key, required this.game, required this.store, this.seeds});
+  const LoopPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 挑战里的一关（题面是服务器给的）；自由模式为空。
+  final PlayChallenge? challenge;
 
   @override
   State<LoopPage> createState() => _LoopPageState();
@@ -44,7 +47,7 @@ class LoopPage extends StatefulWidget {
 
 class _LoopPageState extends State<LoopPage> with TickerProviderStateMixin {
   static const _rules = LoopRules();
-  late final _session = PlaySession<LoopPuzzle, List<bool>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds);
+  late final _session = PlaySession<LoopPuzzle, List<bool>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
   late var _marks = _blank();
   var _mode = _Mark.line;
   // 每一笔改了哪些边、改之前是什么，撤销按笔退回。
@@ -265,7 +268,7 @@ class _LoopPageState extends State<LoopPage> with TickerProviderStateMixin {
 
   Future<void> _finish() async {
     hideCampusToast();
-    final newBest = await _session.finish();
+    final newBest = await _session.finish(answer: _lines);
     if (!mounted) return;
     setState(() {
       _pointers.clear();

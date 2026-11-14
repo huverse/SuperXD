@@ -146,6 +146,13 @@ abstract final class CampusIcons {
   static const pour = LucideIcons.pencilLine;
   static const erase = LucideIcons.eraser;
   static const stop = LucideIcons.squareStop;
+  // 游乐场挑战与积分：挑战、钥匙、积分、限时、锁着的关、没过的关。
+  static const challenge = LucideIcons.target;
+  static const key = LucideIcons.keyRound;
+  static const points = LucideIcons.coins;
+  static const timer = LucideIcons.hourglass;
+  static const locked = LucideIcons.lockKeyhole;
+  static const failed = LucideIcons.circleX;
 }
 
 void configureCampusIcons() =>

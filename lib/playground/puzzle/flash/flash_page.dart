@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -29,24 +30,28 @@ enum _Phase { ready, lead, showing, input, reveal, passed, solved }
 // （减少动画时它的时长会被压成二十分之一，图案就一闪而过）。切到后台时正在亮的这一组作废，回来重新暗一下再亮。
 // 读屏：每格一个按钮读行列与亮灭；棋盘下的一行提示是播报区，亮起时把亮的格逐个念出来，读屏用户听完再点。
 class FlashPage extends StatefulWidget {
-  const FlashPage({super.key, required this.game, required this.store, this.seeds});
+  const FlashPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 挑战里的一关（题面是服务器给的）；自由模式为空。
+  final PlayChallenge? challenge;
 
   @override
   State<FlashPage> createState() => _FlashPageState();
 }
 
 class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, WidgetsBindingObserver {
-  late final _session = PlaySession<FlashPuzzle, List<List<int>>>(game: widget.game, rules: const FlashRules(), store: widget.store, seeds: widget.seeds);
+  late final _session = PlaySession<FlashPuzzle, List<List<int>>>(game: widget.game, rules: const FlashRules(), store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
   var _phase = _Phase.ready;
   // 第几轮、这一轮第几次尝试（从 0 数）与这一局点错的次数：点齐或点错的那一下就记上，下一次亮哪一组按它取（同规则的 flashPattern）。
   var _round = 0, _tries = 0, _mistakes = 0;
   // 这一次的图案、点对的格（按点的先后）与点错的那一格；换下一组时先淡掉再清。
   var _target = <int>[];
   var _hits = <int>{};
+  // 每次尝试依次点的格（答案，挑战模式交服务器核对）。
+  final _attempts = <List<int>>[];
   int? _wrong;
   Timer? _timer;
   // 切到后台时正在暗、正在亮或正在等下一组：回到前台重新暗一下再亮。
@@ -132,6 +137,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
     _interrupted = false;
     _phase = _Phase.ready;
     _round = _tries = _mistakes = 0;
+    _attempts.clear();
     _target = [];
     _hits = {};
     _wrong = null;
@@ -168,6 +174,8 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
       setState(() {
         _target = flashPattern(_puzzle, _round, _tries);
         _hits = {};
+        // 新的一次尝试；切后台回来重亮的还是同一次（还没点过）。
+        if (_attempts.isEmpty || _attempts.last.isNotEmpty) _attempts.add([]);
         _wrong = null;
         _phase = _Phase.showing;
       });
@@ -197,7 +205,9 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
 
   void _tap(int cell) {
     if (_phase != _Phase.input) return;
-    switch (flashTap(_target, _hits, cell)) {
+    final tap = flashTap(_target, _hits, cell);
+    if (tap != FlashTap.repeated) _attempts.last.add(cell);
+    switch (tap) {
       case FlashTap.repeated:
         return;
       case FlashTap.hit:
@@ -234,7 +244,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
   }
 
   Future<void> _finish() async {
-    final newBest = await _session.finish();
+    final newBest = await _session.finish(answer: [for (final taps in _attempts) [...taps]]);
     if (!mounted) return;
     if (!_reduced) {
       // 等最后一格亮好，再从中心一圈一圈往外亮一下。

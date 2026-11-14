@@ -17,6 +17,16 @@ const flag = (name: string): boolean => {
   return value === 'true';
 };
 
+const timeZone = (name: string): string => {
+  const value = required(name);
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: value });
+  } catch {
+    throw new Error(`环境变量 ${name} 不是认得的时区名`);
+  }
+  return value;
+};
+
 export const loadEnv = () => ({
   port: integer('RELAY_PORT'),
   // 反向代理层数：部署在 Nginx 等之后时设为 1，按 X-Forwarded-For 取客户端 IP 做注册与代签接口的限流；前面没有代理时必须为 0，否则来源 IP 可被伪造。
@@ -29,6 +39,8 @@ export const loadEnv = () => ({
   releasesDir: required('RELAY_RELEASES_DIR'),
   // 诊断包密文的存放目录（文件名即诊断编号），要可写；容器里是 compose 挂的命名卷。
   diagnosticsDir: required('RELAY_DIAGNOSTICS_DIR'),
+  // 业务时区（IANA 名，同客户端 lib/domain/campus_clock.dart 的 campusTimeZone）：每周轮换的挑战按它的周一 0 点换，日界只在这里取，不写死偏移。
+  businessTimeZone: timeZone('RELAY_BUSINESS_TIME_ZONE'),
   account: {
     // 应用账号核对时代登录的学校教务地址（正式为 http://42.247.18.146，测试指向本机假教务）；学号哈希里的来源固定写在 kingo_verifier.ts，不随它变。
     kingoBase: required('RELAY_KINGO_BASE'),

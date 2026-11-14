@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -25,11 +26,13 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 // 下方记一行结果，停一会儿球回到桌上、天平回平。「指认」进入指认：点一个球（要说轻重的档再选偏重或偏轻）确认，
 // 只有剩下的候选恰好就是它才解开；还确定不了或和称的结果对不上就轻震并提示。没有撤销：称的次数就是这道题的限制，放错的球点一下就拿回来了。
 class BalancePage extends StatefulWidget {
-  const BalancePage({super.key, required this.game, required this.store, this.seeds});
+  const BalancePage({super.key, required this.game, required this.store, this.seeds, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 挑战里的一关（题面是服务器给的）；自由模式为空。
+  final PlayChallenge? challenge;
 
   @override
   State<BalancePage> createState() => _BalancePageState();
@@ -46,7 +49,7 @@ const _maxAngle = 7 * math.pi / 180;
 
 class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin {
   static const _rules = BalanceRules();
-  late final _session = PlaySession<BalancePuzzle, BalanceAnswer>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds);
+  late final _session = PlaySession<BalancePuzzle, BalanceAnswer>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
   // 两盘里的球，按放进去的先后。
   final _pans = [<int>[], <int>[]];
   var _tool = _Tool.left;
@@ -296,17 +299,22 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
 
   bool get _guessReady => _guess != null && (!_puzzle.direction || _guessHeavy != null);
 
-  void _confirm() {
-    if (_busy || !_guessReady) return;
+  // 指认：自由模式按规则在本机判，挑战模式连同称过的几次交服务器判（判错计一次错交；连不上不算数，提示后可以再点一次）。
+  Future<void> _confirm() async {
+    if (_busy || _session.judging || !_guessReady) return;
     final ball = _guess!, heavy = _puzzle.direction ? _guessHeavy : null;
     _session.moved();
-    final verdict = balanceVerdict(_puzzle, _suspects, ball, heavy);
-    if (verdict == BalanceVerdict.solved) {
+    final answer = BalanceAnswer([for (final record in _records) record.weighing], ball, heavy);
+    final correct = await _session.judge(answer);
+    if (!mounted) return;
+    if (correct == null) return showCampusToast(context, '没交上，连不上服务器，再点一次指认');
+    if (correct) {
       playTick();
       hideCampusToast();
-      unawaited(_finish(ball));
+      unawaited(_finish(answer));
       return;
     }
+    final verdict = balanceVerdict(_puzzle, _suspects, ball, heavy);
     _wrongs++;
     final name = '${ball + 1} 号${heavy == null ? '' : heavy ? '偏重' : '偏轻'}';
     final message = verdict == BalanceVerdict.contradicts
@@ -324,9 +332,9 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
   }
 
   // 解开：停表记成绩；那个球轻轻鼓一下、别的球淡下去，再弹结果。减少动画时直接弹。中途换题或从头来就不再往下走。
-  Future<void> _finish(int ball) async {
-    final epoch = _epoch;
-    final newBest = await _session.finish(moves: _records.length);
+  Future<void> _finish(BalanceAnswer answer) async {
+    final epoch = _epoch, ball = answer.ball;
+    final newBest = await _session.finish(moves: _records.length, answer: answer);
     if (!mounted || epoch != _epoch) return;
     setState(() {
       _guessing = false;

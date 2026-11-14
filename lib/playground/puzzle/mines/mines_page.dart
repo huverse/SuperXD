@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -30,11 +31,13 @@ const _flagMs = 260, _glowMs = 380, _glowSpread = 280;
 // 周围插旗数等于数字时把其余未翻格一起翻开（经典的双击开，这里单击）。翻到雷这一局就结束（见 _lose）。
 // 所有不是雷的格翻完即解开：旗子全部插好、雷位亮一下再弹结果。格子不到 48 时双指放大，放大后单指平移。
 class MinesPage extends StatefulWidget {
-  const MinesPage({super.key, required this.game, required this.store, this.seeds});
+  const MinesPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 挑战里的一关（题面是服务器给的）；自由模式为空。
+  final PlayChallenge? challenge;
 
   @override
   State<MinesPage> createState() => _MinesPageState();
@@ -42,7 +45,7 @@ class MinesPage extends StatefulWidget {
 
 class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
   static const _rules = MinesRules();
-  late final _session = PlaySession<MinesPuzzle, List<int>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds);
+  late final _session = PlaySession<MinesPuzzle, List<int>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
   late var _counts = minesCounts(_puzzle);
   late var _revealed = minesStartOpen(_puzzle, _counts);
   late var _mineCount = _puzzle.mines.where((mine) => mine).length;
@@ -257,7 +260,7 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
   }
 
   Future<void> _finish() async {
-    final newBest = await _session.finish();
+    final newBest = await _session.finish(answer: [..._moves]);
     if (!mounted) return;
     setState(() {
       _pointers.clear();

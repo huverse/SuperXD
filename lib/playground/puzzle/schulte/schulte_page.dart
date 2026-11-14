@@ -233,7 +233,7 @@ class _SchultePageState extends State<SchultePage> with TickerProviderStateMixin
             return Stack(children: [
               for (var cell = 0; cell < puzzle.count; cell++)
                 Positioned.fromRect(
-                  key: ValueKey((_session.draw, cell)),
+                  key: ValueKey((_session.puzzle, cell)),
                   rect: layout.cellRect(cell),
                   child: () {
                     final view = ExcludeSemantics(child: TweenAnimationBuilder<double>(

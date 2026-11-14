@@ -1,5 +1,6 @@
 import 'package:flutter/widgets.dart';
 
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/playground_store.dart';
 
 // 游乐场按「板块 → 子类 → 游戏」三级组织（同应用商店的分类 → 子分类 → 应用）：首页按板块分页、板块里按子类分组，不把所有游戏混成一张表。
@@ -44,6 +45,6 @@ class PlaygroundGame {
   final PlaygroundGroup group;
   final bool challengeable;
   final bool timeInTenths;
-  // 对局页：拿到自己的登记项（名字、玩法说明）与本机记录。
-  final Widget Function(BuildContext context, PlaygroundGame game, PlaygroundStore store) builder;
+  // 对局页：拿到自己的登记项（名字、玩法说明）与本机记录；挑战里的一关另给 challenge（题面是服务器给的，不出题、不记本机成绩）。
+  final Widget Function(BuildContext context, PlaygroundGame game, PlaygroundStore store, PlayChallenge? challenge) builder;
 }

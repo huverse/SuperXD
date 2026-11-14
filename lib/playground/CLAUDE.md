@@ -10,26 +10,34 @@
 - 每个游戏是规则加页面两部分：
   - 规则是纯 Dart（不引 Flutter），实现 puzzle_rules.dart 的 PuzzleRules：按种子与档位出题并给参考解、按规则判定答案（不和参考解逐项比）、难度分 1–10、题面与答案编解码（解码是外部输入边界）。出题只用 PuzzleRandom（32 位运算，换语言能逐位复现）。
   - 页面用 play_frame.dart 的 PlaySession 管档位、计时与记成绩，用 PlayFrame 搭顶栏、状态行与底部操作，棋盘自己画。
-- 挑战模式（服务器下发、逐关核对）直接复用规则：题库由 tool 下的工具用同一份规则离线生成导入，服务器的 TS 核对器与 Dart 共用测试向量。拼手速与物理模拟的游戏（challengeable 为假）只进自由模式。
+- 挑战模式（人工决策见 challenge/challenge_rules.dart 文件头）：服务器（server/src/modules/challenge）按配置下发每周的 N 连环，出题用题库（tool/challenge_bank.dart 用同一份规则、保密种子离线生成）、逐关核对（TS 判定从规则逐个移植，与 Dart 共用 server/test/vectors/challenge_judge_v1.json）、计时（不暂停）与结算积分；关卡之间用钥匙填空连起来。客户端只按服务器给的关卡图通用地画，模板、计分与题库改了不用发版；新游戏要发版。同一个对局页给了 PlayChallenge 就是挑战里的一关：题面与档位固定、不换题、不记本机成绩，判对错与完成都交服务器。拼手速与物理模拟的游戏（challengeable 为假）只进自由模式。
+- 挑战与积分经组合根注入的 domain 端口 ChallengeHub（application/challenges.dart 实现）使用，游乐场不依赖应用账号与中转；去登录应用账号、登录教务的页面也由组合根以回调给。
 
 # 长期路线（用户 11-12 选定，做到哪一阶段在哪一阶段落代码与人工决策）
 
 1. 游乐场框架、自由模式与 17 个游戏（本阶段，纯本机、不联网）。
 2. 应用账号与灰度：教务登录是登录方式之一（11-13 实测教务会话绑 IP 且单会话，改为客户端交加密的口令摘要、中转代登录一次核对学号，学号只存带服务器密钥的哈希；人工决策见 domain/app_account.dart）；灰度按「开关加账号」的哈希分桶、放量只增、可一键关停、配置签名下发；应用内更新分批推送。
-3. 积分与挑战：挑战是串联、并联或混合的 N 连环关卡（六连环入门、八连环普通、十连环困难、十二连环专家），限时，下一关按上一关的结果从题库挑；服务器逐关核对与计时；计分看每关难度分、用时（最低留四成）、错交次数、按难度加权的过关率、串联深度、全通关与剩余时间；同一挑战只补最好成绩的差额；积分每笔满 12 个月过期、先扣快过期的，流水只增并满 13 个月归档。
+3. 积分与挑战（11-14 做完，用户三项选择见 challenge/challenge_rules.dart 文件头）：挑战是串联、并联或混合的 N 连环关卡（六连环入门、八连环普通、十连环困难、十二连环专家），限时，下一关按上一关的结果从题库挑；服务器逐关核对与计时；计分看每关难度分、用时（最低留四成）、错交次数、按难度加权的过关率、串联深度、全通关与剩余时间；同一挑战只补最好成绩的差额；积分每笔满 12 个月过期、先扣快过期的，流水只增并满 13 个月归档。
 4. 节日抽奖、私信好友、诊断包并入账号（推翻 11-10 抽奖身份的决策，改隐私政策）。
 5. 积分用途（解锁服务、内测资格抽签加权、红包加权与金额档）：等用户点名再做，影响真钱的加权都封顶。
 
 # 文件职责
 
 - puzzle_rules.dart：规则契约 PuzzleRules、档位 PuzzleTier（入门到专家，name 发出后不改）、出题结果 PuzzleDraw（题面与参考解）、可复现随机数 PuzzleRandom（xoshiro128**，种子按 splitmix32 式展开）与解码小工具 puzzleInt、puzzleInts。人工决策在文件头。
-- playground_game.dart：登记项类型：板块 PlaygroundSection、子类 PlaygroundGroup、游戏 PlaygroundGame（名字、一句话玩法、玩法说明、图标、子类、能否进挑战、用时写不写到 0.1 秒 timeInTenths、对局页）。
+- playground_game.dart：登记项类型：板块 PlaygroundSection、子类 PlaygroundGroup、游戏 PlaygroundGame（名字、一句话玩法、玩法说明、图标、子类、能否进挑战、用时写不写到 0.1 秒 timeInTenths、对局页；对局页构造器另收 PlayChallenge，自由模式为空）。
+- challenge 挑战（人工决策都在 challenge_rules.dart 文件头）：
+  - challenge_rules.dart：纯 Dart（tool 下的题库与向量工具直接跑）：能进挑战的 15 个规则 challengeRules（id 同注册表）、能收钥匙的游戏 challengeConsumers（24 点、八皇后、数回）与钥匙槽 challengeSlots（每处单独挖掉都让题不唯一，八皇后与数回用求解器核）。
+  - play_challenge.dart：挑战里的一关交给对局页的 PlayChallenge（这一关、关名、到点时刻、钥匙给哪一关、交答案）、服务器判定 PlayVerdict、钥匙位置的写法 challengeSlotName（口径同服务端预告）。
+  - challenge_run.dart：一局的控制器 ChallengeRunController：按服务器时刻倒计时（记偏差）、交答案的号码是这一关交过几次（没收到回复原样重交，服务器只算一次）、到点或回前台刷新、提前结束；已结束、这一关不能交时按服务器给的现状更新。
+  - challenge_run_page.dart：一局的总览 ChallengeRunPage：剩下的时间与过了几关，按关列出开着的（点进对局页）、锁着的（预告与在等哪几关的钥匙）、过了的（钥匙交给哪一关）、没过的；结算后换成成绩与加了多少积分；⋯里提前结束（确认）。
+  - challenge_home.dart：首页的挑战一栏 ChallengeHome：没登录教务或应用账号引导去登录；积分一行进积分页；还有一局没结束时给继续；本周的挑战卡（关数、限时、最好成绩、剩几天），开始前确认里写明计时不暂停；同时只能一局，撞上时引导回那一局。
+  - points_page.dart：积分页 PointsPage：余额、30 天内要过期的，流水从新到旧、按需往下翻。
 - playground_catalog.dart：注册表：板块、子类的显示顺序与全部游戏；人工决策在文件头（含 17 个游戏的子类归属）。
 - playground_store.dart：本机记录 PlaygroundStore（playground/playground.json，先写临时文件再改名、写入排队、坏文件当没有）：每个游戏每档的最好成绩（最快用时与那局步数）、上次选的档、最近玩过（最多 playgroundRecentLimit 个）；首页卡片上显示难度最高一档的成绩（topBest）。
-- play_frame.dart：对局页共用部分：PlaySession（档位、这一局的题、从第一步起计时、切后台暂停、完成记成绩，end 是结束但不记成绩，如扫雷踩雷）、PlayFrame（顶栏返回、游戏名、玩法、⋯里「这一题从头来」「换一道题」；状态行左边点开选难度，走过几步再换档先确认；底部操作是一排色调胶囊，包 CampusToastAnchor）、用时写法 playDuration（分:秒；tenths 为真写到 0.1 秒，不满一分钟「12.3 秒」、满了「1:02.3」，都向下取整；对局中的走表一律按秒）、棋盘外框 PlayBoardBox 与共用触感 playTick、playRejected。
+- play_frame.dart：对局页共用部分：PlaySession（档位、这一局的题、从第一步起计时、切后台暂停、完成记成绩，end 是结束但不记成绩，如扫雷踩雷；reference 是出题的参考解，挑战模式为空；给了 challenge 是挑战模式：题面解码服务器给的、judge 交服务器判（连不上返回空、不算数）、finish 交答案得 submission、连不上 resubmit 原样重交）、PlayFrame（顶栏返回、游戏名、玩法、⋯里「这一题从头来」「换一道题」；状态行左边点开选难度，走过几步再换档先确认；底部操作是一排色调胶囊，包 CampusToastAnchor）、用时写法 playDuration（分:秒；tenths 为真写到 0.1 秒，不满一分钟「12.3 秒」、满了「1:02.3」，都向下取整；对局中的走表一律按秒；挑战模式状态行写这一局剩下的时间、标题位置写关名与档位、⋯里只有从头来、收钥匙的关多一行写哪几处是钥匙，到点退回挑战那一页）、棋盘外框 PlayBoardBox 与共用触感 playTick、playRejected。
 - play_controls.dart：方向操作的游戏（冰面滑行、推箱子）共用的棋盘滑动识别 PlaySwipeRecognizer 与 playSwipeArea（一落指就赢下手势竞争，iOS 右滑返回抢不走）、十字方向键 PlayDirectionPad（读屏标签「向上」加动词）；方向编码 0 上、1 右、2 下、3 左。
-- play_result.dart：解开后的结果弹层 showPlayResult（成功触感、用时大字（与「最好」都按登记项的 timeInTenths 选写法）、新纪录或这一档最好、再来一局与换到下一档，不写「挑战」二字）；单独一个文件，因为弹层有自己的滚动区、不是页面。
-- playground_page.dart：游乐场首页 PlaygroundPage（最近玩过一行带图标的按钮，下面按子类分组的游戏卡，两列放不下就一列，同行等高；卡上写一句话玩法与难度最高一档的最好成绩，用时按登记项的 timeInTenths 选写法）与对局页外壳 PlaygroundGameHost（等本机记录读好再建对局页，打开时记进最近玩过）。
+- play_result.dart：解开后的结果弹层 showPlayResult（成功触感、用时大字（与「最好」都按登记项的 timeInTenths 选写法）、新纪录或这一档最好、再来一局与换到下一档，不写「挑战」二字）；挑战模式改成在弹层里等服务器核对（原地写正在核对、连不上可重新交、过了写拿到的钥匙交给哪一关），关掉即回到挑战那一页；单独一个文件，因为弹层有自己的滚动区、不是页面。
+- playground_page.dart：游乐场首页 PlaygroundPage（注入了 ChallengeHub 时标题下有「自由 | 挑战」分段，挑战一栏是 challenge_home.dart；最近玩过一行带图标的按钮，下面按子类分组的游戏卡，两列放不下就一列，同行等高；卡上写一句话玩法与难度最高一档的最好成绩，用时按登记项的 timeInTenths 选写法）与对局页外壳 PlaygroundGameHost（等本机记录读好再建对局页，打开时记进最近玩过）。
 
 # 关键规则
 
@@ -61,8 +69,10 @@
 - playground_schulte_test.dart：舒尔特方格每档出题是该点的数各一次且可复现、红黑表的颜色与交替顺序、按规则判定（顺序错、漏点、多点不算）、难度分逐档上升、编解码与坏输入；对局页开局盖住（看不到数字、点格不算、读屏只有开始）、点开始揭开并计时、从头来与换题回到盖住、按顺序点完弹新纪录（大字写到 0.1 秒、下面只写点错次数）与换档、点错轻震不前进且计数、点过的格再点不算、状态行的「下一个」、两根手指交替点、滑出容差作废、减少动画直接到位、读屏标签、360dp 加 1.3 倍字号下最大档放得下；框架的 playDuration 写到 0.1 秒与首页卡片（只有舒尔特，其他游戏照旧分:秒）。
 - playground_pour_test.dart：画线入杯的规则（每档参考线进杯、不画进不了、结构与难度分段逐档上升、同一设备上模拟结果一样、错线不进、墨水超限与压着球的答案不算、编解码与坏输入、出题与判定耗时）与对局页（墨水随画减少、用完截停、撤销与重画、碰球停笔、按参考线画完进杯弹新纪录并换档、放球中不能画与停下、没进提示、不在前台时停住、减少动画直接弹、iOS 横着画线不触发右滑返回、读屏）。
 - account_lifecycle_test.dart：没登录教务时从登录页进游乐场、开游戏，课表门禁照旧。
+- challenge_test.dart：挑战的中转客户端（签名、解码、错误码）、编排（没登录不联网、应用账号不在了马上核一次）、对局页的挑战模式（判对错交服务器、连不上不算数、汉诺塔整关交答案与钥匙回执、能进挑战的对局页都把挑战交给会话并带答案）、总览页、积分页与首页挑战一栏。
+- challenge_vectors_test.dart：判定向量就是现在的规则生成的、题库工具的种子与钥匙槽。服务端判定、出题、计分与积分在 server/test（challenge_judge、challenge_rules、challenge.e2e）。
 
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/playground lib/router.dart lib/page/section_pages.dart lib/page/login_page.dart
-- 本目录的标记在 puzzle_rules.dart 文件头（长期架构）、playground_catalog.dart 文件头（登记与 17 个游戏）；入口在 router.dart（免登录）、section_pages.dart（服务页入口）、login_page.dart（登录页入口）。
+- 本目录的标记在 puzzle_rules.dart 文件头（长期架构）、playground_catalog.dart 文件头（登记与 17 个游戏）、challenge/challenge_rules.dart 文件头（挑战的三项选择）；入口在 router.dart（免登录）、section_pages.dart（服务页入口）、login_page.dart（登录页入口）。

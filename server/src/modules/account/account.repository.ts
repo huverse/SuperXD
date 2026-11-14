@@ -5,6 +5,7 @@ import { EntityManager, Repository } from 'typeorm';
 
 import { accountDeviceLimit } from 'src/common/relay_limits';
 import { AppAccountEntity } from 'src/modules/account/account.entity';
+import { AccountDataHooks } from 'src/modules/account/account_data_hooks';
 
 export type AccountSummary = { accountId: string; providers: string[]; deviceCount: number; createTime: Date };
 
@@ -15,6 +16,8 @@ export abstract class AccountRepository {
   abstract signIn(provider: string, subjectHash: string, deviceId: string, now: Date): Promise<{ accountId: string; created: boolean }>;
   // 这把密钥所在的账号，顺带记最后活跃；没登录返回 null。
   abstract summaryOf(deviceId: string, now: Date): Promise<AccountSummary | null>;
+  // 这把密钥所在的账号号（积分、挑战按它认人），只读不记活跃；没登录返回 null。
+  abstract accountOf(deviceId: string): Promise<string | null>;
   // 注销这把密钥所在的账号：登录方式、全部密钥的登记与账号本身。没登录返回 false。
   abstract deleteOf(deviceId: string): Promise<boolean>;
   // 删设备时连带删登记，须在调用方事务内（跨领域的设备删除由 pairing 编排）。
@@ -25,7 +28,10 @@ export abstract class AccountRepository {
 
 @Injectable()
 export class TypeormAccountRepository extends AccountRepository {
-  constructor(@InjectRepository(AppAccountEntity) private readonly accounts: Repository<AppAccountEntity>) {
+  constructor(
+    @InjectRepository(AppAccountEntity) private readonly accounts: Repository<AppAccountEntity>,
+    private readonly hooks: AccountDataHooks,
+  ) {
     super();
   }
 
@@ -77,6 +83,11 @@ export class TypeormAccountRepository extends AccountRepository {
     return { accountId, providers: providers.map((row) => row.provider), deviceCount: Number(count.total), createTime: account.createTime };
   }
 
+  async accountOf(deviceId: string) {
+    const linked = (await this.accounts.query('SELECT account_id AS accountId FROM account_device WHERE device_id = ?', [deviceId])) as { accountId: string }[];
+    return linked[0]?.accountId ?? null;
+  }
+
   deleteOf(deviceId: string) {
     return this.accounts.manager.transaction(async (manager) => {
       const linked = (await manager.query('SELECT account_id AS accountId FROM account_device WHERE device_id = ?', [deviceId])) as { accountId: string }[];
@@ -101,7 +112,9 @@ export class TypeormAccountRepository extends AccountRepository {
     return idle.length;
   }
 
+  // 账号下的积分与挑战由登记的删除函数在同一事务里删（AccountDataHooks）；400 天没活跃的账号，积分流水早已满 13 个月删掉，剩下的行有界。
   private async removeAccounts(manager: EntityManager, accountIds: string[]) {
+    await this.hooks.run(manager, accountIds);
     await manager.query('DELETE FROM account_device WHERE account_id IN (?)', [accountIds]);
     await manager.query('DELETE FROM account_identity WHERE account_id IN (?)', [accountIds]);
     await manager.query('DELETE FROM app_account WHERE account_id IN (?)', [accountIds]);

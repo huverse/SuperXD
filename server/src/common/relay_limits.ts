@@ -119,6 +119,29 @@ export const accountSealMaxBytes = 1024;
 export const accountDeviceLimit = 20;
 export const accountIdleDays = 400;
 
+// 积分（人工决策见 src/modules/points/points.service.ts）：每笔获得满 12 个月过期，30 天内要过期的在余额旁提示；
+// 流水满 13 个月（按 395 天）删除；剩余为 0 且过期满 30 天的获得行删除。流水每页 20 条；每台设备每小时查 600 次。
+export const pointsLifetimeMonths = 12;
+export const pointsExpiringDays = 30;
+export const pointsEntryKeepDays = 395;
+export const pointsSpentGrantKeepDays = 30;
+export const pointsEntriesPage = 20;
+export const pointsReadPerDevicePerHour = 600;
+
+// 挑战（人工决策见客户端 lib/playground/challenge/challenge_rules.dart）：一个账号同时只有一局，每小时最多开 30 局；
+// 每台设备每小时 3000 个挑战请求（看列表、看局面、交答案合计）；一关错交到配置里的上限（maxErrors）就算没过。
+// 一局最多 16 关；局结束 30 天后删除；最好成绩在挑战结束 400 天后删除（每个账号每周 4 行左右）。
+// 配置文件不超过 256KB、每个题库文件不超过 8MB（读进内存缓存，最多 100 个文件）；到点没交的局每 5 分钟结算一批，每批 200 局。
+export const challengeStartsPerAccountPerHour = 30;
+export const challengeRequestsPerDevicePerHour = 3000;
+export const challengeMaxLevels = 16;
+export const challengeRunKeepDays = 30;
+export const challengeBestKeepDays = 400;
+export const challengeConfigMaxBytes = 256 * 1024;
+export const challengeBankFileMaxBytes = 8 * 1024 * 1024;
+export const challengeBankCacheFiles = 100;
+export const challengeSweepBatch = 200;
+
 // 设备 400 天没有任何请求即删除，连同其好友关系与待取消息。
 export const deviceIdleDays = 400;
 // 最后活跃时间每设备最多每小时写一次库。

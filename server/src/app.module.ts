@@ -7,6 +7,8 @@ import { RedisModule } from 'src/common/redis/redis.module';
 import { AccountDeviceEntity, AccountIdentityEntity, AppAccountEntity } from 'src/modules/account/account.entity';
 import { AccountModule } from 'src/modules/account/account.module';
 import { AppReleaseModule } from 'src/modules/app_release/app_release.module';
+import { ChallengeBestEntity, ChallengeRunEntity } from 'src/modules/challenge/challenge.entity';
+import { ChallengeModule } from 'src/modules/challenge/challenge.module';
 import { ChaoxingPackEntity } from 'src/modules/chaoxing/chaoxing_pack.entity';
 import { ChaoxingPackModule } from 'src/modules/chaoxing/chaoxing_pack.module';
 import { DeviceEntity } from 'src/modules/device/device.entity';
@@ -19,6 +21,8 @@ import { InviteModule } from 'src/modules/invite/invite.module';
 import { MessageEntity } from 'src/modules/message/message.entity';
 import { MessageModule } from 'src/modules/message/message.module';
 import { PairingModule } from 'src/modules/pairing/pairing.module';
+import { PointsEntryEntity, PointsGrantEntity } from 'src/modules/points/points.entity';
+import { PointsModule } from 'src/modules/points/points.module';
 import { RewardCampaignEntity, RewardDrawEntity, RewardPrizeEntity } from 'src/modules/reward/reward.entity';
 import { RewardModule } from 'src/modules/reward/reward.module';
 
@@ -28,7 +32,7 @@ import { RewardModule } from 'src/modules/reward/reward.module';
       useFactory: () => ({
         type: 'mysql',
         ...env().mysql,
-        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity, RewardCampaignEntity, RewardPrizeEntity, RewardDrawEntity, AppAccountEntity, AccountIdentityEntity, AccountDeviceEntity],
+        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity, RewardCampaignEntity, RewardPrizeEntity, RewardDrawEntity, AppAccountEntity, AccountIdentityEntity, AccountDeviceEntity, PointsGrantEntity, PointsEntryEntity, ChallengeRunEntity, ChallengeBestEntity],
         // 表结构由人工执行 sql/schema.sql 管理，启动不做 DDL。
         synchronize: false,
         migrationsRun: false,
@@ -54,6 +58,8 @@ import { RewardModule } from 'src/modules/reward/reward.module';
     RewardModule,
     DiagnosticModule,
     AccountModule,
+    PointsModule,
+    ChallengeModule,
   ],
   controllers: [HealthController],
 })

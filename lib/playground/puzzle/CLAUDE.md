@@ -60,6 +60,7 @@
 
 1. 在本目录建子目录，照 hanoi 目录的命名写规则文件（实现 PuzzleRules，只用 PuzzleRandom 出题，出题前用求解器确认可解，需要唯一解的确认唯一）与对局页文件（PlaySession 加 PlayFrame，棋盘自己画；文字 14 号起、触区至少 48 或可放大；违规用 playRejected，落子用 playTick；解开先放收尾动画再 showPlayResult）。
 2. 在 playground_catalog.dart 登记到用户定的子类里（id 发出后不改），写一句话玩法与玩法说明；服务器核不了的（拼手速、物理模拟）challengeable 写假。
+   能进挑战的：对局页收 PlayChallenge 并交给会话（challenge: widget.challenge），完成时 finish 带答案，判对错类在玩家确认时走 session.judge（挑战模式交服务器，错了才在本机标出哪里不对）；最少几步这类靠参考解的写法在挑战模式省掉（reference 为空）。再在 challenge/challenge_rules.dart 登记规则、把判定移植到 server/src/modules/challenge/judges、重跑 tool/challenge_vectors.dart，两端测试都要过。
 3. 测试放这个游戏自己的文件（文件名用 playground_ 加游戏 id 加 _test，几个游戏并行开发时互不冲突）：规则部分测每档出题可解、参考解通过、违规不算、编解码往返与坏输入，页面部分走完一局并弹出结果；汉诺塔与数织的写法在 playground_rules_test.dart 与 playground_ui_test.dart。
 4. 在本文件与 lib/playground/CLAUDE.md 的测试一节登记，在 CHANGELOG 的 Unreleased 下记一条（几个游戏并行开发时由合并的人统一写一条）；在模拟器上 360dp 加 1.3 倍字号与 411dp 标准两种条件下、深浅两色看过再交。
 

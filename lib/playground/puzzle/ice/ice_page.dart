@@ -6,6 +6,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 
 import 'package:superxd/playground/play_controls.dart';
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -18,18 +19,20 @@ import 'package:superxd/theme/campus_palette.dart';
 // 冰面滑行对局页：在棋盘上朝上下左右滑动（或点棋盘下方的方向按钮）推动小企鹅，它一直滑到撞上岩石或边界才停；
 // 正好停在终点（插旗的光圈）上就解开。滑行时长按距离算、前快后慢，撞停时轻轻一压再弹回；滑不动时轻震、朝那边抖一下，不算步数。
 class IcePage extends StatefulWidget {
-  const IcePage({super.key, required this.game, required this.store, this.seeds});
+  const IcePage({super.key, required this.game, required this.store, this.seeds, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 挑战里的一关（题面是服务器给的）；自由模式为空。
+  final PlayChallenge? challenge;
 
   @override
   State<IcePage> createState() => _IcePageState();
 }
 
 class _IcePageState extends State<IcePage> with TickerProviderStateMixin {
-  late final _session = PlaySession<IcePuzzle, List<int>>(game: widget.game, rules: const IceRules(), store: widget.store, seeds: widget.seeds);
+  late final _session = PlaySession<IcePuzzle, List<int>>(game: widget.game, rules: const IceRules(), store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
   // 走过的每一步：方向与滑之前在哪一格，撤销按步退回。
   final _moves = <({int direction, int from})>[];
   late int _cell = _session.puzzle.start;
@@ -59,7 +62,8 @@ class _IcePageState extends State<IcePage> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  int get _least => _session.draw.solution.length;
+  // 最少几步：挑战模式没有参考解（服务器不给），就不写。
+  int? get _least => _session.reference?.length;
 
   void _reset() {
     _moves.clear();
@@ -139,13 +143,13 @@ class _IcePageState extends State<IcePage> with TickerProviderStateMixin {
   // 解开：停表记成绩，等滑到终点、在终点上轻轻一跳（光圈同时漾开）再弹结果；减少动画时直接弹。
   // 中途换题或从头来会停掉动画，等着的这一段就不再往下走。
   Future<void> _finish(TickerFuture slide) async {
-    final newBest = await _session.finish(moves: _moves.length);
+    final newBest = await _session.finish(moves: _moves.length, answer: [for (final move in _moves) move.direction]);
     await slide;
     if (!mounted) return;
     if (!MediaQuery.disableAnimationsOf(context)) await _cheer.forward(from: 0);
     if (!mounted) return;
     final least = _least;
-    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: _moves.length == least ? '$least 步，正好最少' : '${_moves.length} 步，最少 $least 步');
+    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: least == null ? '${_moves.length} 步' : _moves.length == least ? '$least 步，正好最少' : '${_moves.length} 步，最少 $least 步');
     if (!mounted) return;
     switch (choice) {
       case PlayResultChoice.again:
@@ -198,7 +202,7 @@ class _IcePageState extends State<IcePage> with TickerProviderStateMixin {
       session: _session,
       onNewGame: _newGame,
       onRestart: _restart,
-      status: '${_moves.length} 步 · 最少 $_least 步',
+      status: ['${_moves.length} 步', if (_least case final least?) '最少 $least 步'].join(' · '),
       controls: [
         FilledButton.icon(onPressed: _moves.isEmpty || finished ? null : _undo, icon: const CampusIcon(CampusIcons.undo), label: const Text('撤销')),
       ],
