@@ -38,34 +38,52 @@ double campusLineInset(BuildContext context, double iconSize, {TextStyle? style}
 // 短句换行均衡（同 CSS text-wrap: balance）：一行放不下时，在不增加行数的前提下把各行排得尽量一样长，
 // 末行不剩一两个字（「马克思主义基本原 / 理」排成「马克思主义 / 基本原理」）。只管四行以内的短句（课名、教室、提示），
 // 更长的段落照常排。量的是子组件自己的排版，支持外层 IntrinsicHeight；居中对齐时收窄后的文字仍居中。
+// expandWhenWrapped：折了行时仍占满给的宽度（Wrap 里的一项：收窄后不让下一项挤到它右边，见 dot_separated_text.dart）。
 class BalancedText extends StatelessWidget {
-  const BalancedText(this.text, {super.key, this.style, this.textAlign});
+  const BalancedText(this.text, {super.key, this.style, this.textAlign, this.expandWhenWrapped = false});
   final String text;
   final TextStyle? style;
   final TextAlign? textAlign;
+  final bool expandWhenWrapped;
 
   @override
-  Widget build(BuildContext context) => _Balanced(centered: textAlign == TextAlign.center, child: Text(text, style: style, textAlign: textAlign));
+  Widget build(BuildContext context) => _Balanced(centered: textAlign == TextAlign.center, expand: expandWhenWrapped, child: Text(text, style: style, textAlign: textAlign));
 }
 
 class _Balanced extends SingleChildRenderObjectWidget {
-  const _Balanced({required this.centered, required super.child});
+  const _Balanced({required this.centered, required this.expand, required super.child});
   final bool centered;
+  final bool expand;
 
   @override
-  RenderObject createRenderObject(BuildContext context) => _RenderBalanced(centered);
+  RenderObject createRenderObject(BuildContext context) => _RenderBalanced(centered, expand);
 
   @override
-  void updateRenderObject(BuildContext context, _RenderBalanced renderObject) => renderObject.centered = centered;
+  void updateRenderObject(BuildContext context, _RenderBalanced renderObject) => renderObject
+    ..centered = centered
+    ..expand = expand;
 }
 
 class _RenderBalanced extends RenderShiftedBox {
-  _RenderBalanced(this._centered) : super(null);
+  _RenderBalanced(this._centered, this._expand) : super(null);
   bool _centered;
   set centered(bool value) {
     if (value == _centered) return;
     _centered = value;
     markNeedsLayout();
+  }
+
+  bool _expand;
+  set expand(bool value) {
+    if (value == _expand) return;
+    _expand = value;
+    markNeedsLayout();
+  }
+
+  // 折了行（一行放不下）且要占满时，自己的宽度取给的最大宽度。
+  Size _sizeFor(RenderBox child, Size childSize, BoxConstraints constraints) {
+    final wrapped = _expand && constraints.maxWidth.isFinite && child.getMaxIntrinsicWidth(double.infinity) > constraints.maxWidth;
+    return constraints.constrain(wrapped ? Size(constraints.maxWidth, childSize.height) : childSize);
   }
 
   // 行数不变的最窄宽度；一行放得下或超过四行时就是给的最大宽度。
@@ -95,14 +113,14 @@ class _RenderBalanced extends RenderShiftedBox {
   Size computeDryLayout(BoxConstraints constraints) {
     final child = this.child;
     if (child == null) return constraints.smallest;
-    return constraints.constrain(child.getDryLayout(_childConstraints(child, constraints)));
+    return _sizeFor(child, child.getDryLayout(_childConstraints(child, constraints)), constraints);
   }
 
   @override
   void performLayout() {
     final child = this.child!;
     child.layout(_childConstraints(child, constraints), parentUsesSize: true);
-    size = constraints.constrain(child.size);
+    size = _sizeFor(child, child.size, constraints);
     (child.parentData! as BoxParentData).offset = Offset(_centered ? (size.width - child.size.width) / 2 : 0, 0);
   }
 

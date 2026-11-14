@@ -302,9 +302,10 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver, Sing
           Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 0), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             CampusIcon(CampusIcons.key, size: 18, color: palette.onSurfaceVariant),
             const SizedBox(width: 8),
-            Expanded(child: Text(
+            Expanded(child: DotSeparatedText(
               '钥匙：${[for (final keyed in challenge.level.keyed) '${challengeSlotName(challenge.level.game, keyed.at, challenge.level.puzzle)}是 ${keyed.key}'].join('，')}',
               style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
+              separator: '，',
             )),
           ])),
         Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 12), child: widget.board)),
