@@ -578,13 +578,13 @@ void main() {
     expect(tester.takeException(), isNull); await tester.pumpWidget(const SizedBox()); session.dispose();
   });
 
-  testWidgets('冷启动自动登录失败在登录页弹出提示', (tester) async {
+  testWidgets('冷启动转人工登录的提示在登录页弹出', (tester) async {
     final gateway = _Accounts().._active = null;
-    final session = AppSession(gateway)..pendingNotice = '自动登录需要验证码，请手动登录完成验证。';
+    final session = AppSession(gateway)..pendingNotice = '保存的鉴权数据不可用，请手动登录。';
     await session.restore();
     await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18));
     await tester.pumpAndSettle();
-    expect(find.text('自动登录需要验证码，请手动登录完成验证。'), findsOneWidget);
+    expect(find.text('保存的鉴权数据不可用，请手动登录。'), findsOneWidget);
     await tester.tap(find.text('知道了'));
     await tester.pumpAndSettle();
     expect(find.text('登录'), findsOneWidget);

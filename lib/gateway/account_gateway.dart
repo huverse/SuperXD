@@ -29,7 +29,6 @@ class AccountGateway extends AccountAccess {
   String? _accountNotice;
   int _recoveryEpoch = 0;
   KingoClient? _recoveryClient;
-  bool _restoreAttempted = false;
 
   @override
   String? takeAccountNotice() { final notice = _accountNotice; _accountNotice = null; return notice; }
@@ -67,45 +66,36 @@ class AccountGateway extends AccountAccess {
 
   KingoClient _newClient({String? source}) => clientFactory?.call() ?? KingoClient(base: source ?? kingoBase);
 
+  // [人工决策-2026-11-14 11:07:58] 启动不等教务（用户选「先进应用、后台重登」，大厂的离线优先做法）：起因是 alpha.16 本机会话行没了时，
+  // 启动卡在「正在恢复账号」联网自动登录（串行九个请求、每个 25 秒，教务慢时最长近 4 分钟、不能跳过，中途退出重进从头再来），
+  // 网络失败还清掉当前账号踢回登录页、本机课表也看不到。现在：会话行没了但记住了账号，直接用本机数据进应用（姓名从账号索引补），
+  // 启动这一步不访问教务；第一次同步照「同步中会话失效」自动重登一次再重放（_dispatch），教务连不上只报错、不转登录（_recoverOnce）。
+  // 没记住账号的照旧进登录页。
   @override
   Future<GatewayResult<SessionView>> restoreSession() async {
     final result = await _restoreLocal();
-    if (result.ok || _restoreAttempted || _active != null || credentials == null) return result;
-    _restoreAttempted = true;
+    if (result.ok || _active != null || credentials == null) return result;
     final identity = await store.currentIdentity();
     if (identity == null) return result;
     final epoch = _recoveryEpoch;
     try {
       final saved = await credentials!.read(store.keyOf(identity));
       if (saved == null || _closed || epoch != _recoveryEpoch) return result;
-      final login = await _login(saved.account, saved.password, source: identity.source, expected: identity);
-      if (!login.ok || login.needsInput != null) {
-        final code = login.error?.code;
-        if (code == GatewayCode.accountChanged) return result;
-        await cancelLogin();
-        await _transition.synchronized(() async {
-          if (_active != null || _pending != null) return;
-          if (code == GatewayCode.passwordWrong || code == GatewayCode.passwordWrongCount || code == GatewayCode.accountLocked) await credentials!.delete(store.keyOf(identity));
-          // 转人工后不再沿活动指针在下次启动反复尝试同一份凭据。
-          await store.clearCurrent();
-          _accountNotice = login.needsInput == 'captcha' ? '自动登录需要验证码，请手动登录完成验证。' : '自动登录未完成：${login.error?.message ?? '请手动登录'}';
-        });
-        return result;
-      }
-      return _ok(login.data!.session!);
     } catch (error, stack) {
       campusLog('[AccountGateway] action=auto_restore errorType=${error.runtimeType}\n$stack');
       _accountNotice = '保存的鉴权数据不可用，请手动登录。';
       return result;
     }
+    return _restoreLocal(remembered: identity, epoch: epoch);
   }
 
-  Future<GatewayResult<SessionView>> _restoreLocal() => _guard(() => _transition.synchronized(() async {
-    if (_closed) return _loginRequired();
+  // remembered：记住了这个账号，本机会话行没了也用本机数据进应用（人工决策见 restoreSession）；读凭据期间退出或换了账号就不进。
+  Future<GatewayResult<SessionView>> _restoreLocal({AccountIdentity? remembered, int? epoch}) => _guard(() => _transition.synchronized(() async {
+    if (_closed || (epoch != null && epoch != _recoveryEpoch)) return _loginRequired();
     final active = _active;
     if (active != null) return _ok(active.session);
     final identity = await store.currentIdentity();
-    if (identity == null) return _loginRequired();
+    if (identity == null || (remembered != null && store.keyOf(identity) != store.keyOf(remembered))) return _loginRequired();
     final database = await store.openAccount(identity);
     final client = _newClient(source: identity.source);
     var retained = false;
@@ -114,7 +104,11 @@ class AccountGateway extends AccountAccess {
         return _fail(GatewayCode.accountSourceChanged, '教务来源已变化，请重新登录');
       }
       final gateway = KingoCampusGateway(database: database, client: client, now: _now);
-      final restored = await gateway.restoreSession();
+      var restored = await gateway.restoreSession();
+      if (remembered != null && restored.error?.code == GatewayCode.sessionExpired) {
+        campusLog('[AccountGateway] action=restore_offline');
+        restored = _ok(SessionView(loginId: identity.loginId, name: await store.displayNameOf(identity), className: ''));
+      }
       if (!restored.ok || restored.data == null || restored.data!.loginId != identity.loginId) {
         return _loginRequired();
       }
@@ -137,13 +131,13 @@ class AccountGateway extends AccountAccess {
   @override
   Future<GatewayResult<LoginView>> loginRemembered(String account, String password, {required bool remember}) => _login(account, password, remember: remember);
 
-  Future<GatewayResult<LoginView>> _login(String account, String password, {bool? remember, String? source, AccountIdentity? expected}) {
+  Future<GatewayResult<LoginView>> _login(String account, String password, {bool? remember}) {
     _cancelRecovery();
     return _guard(() async {
     final pending = await _transition.synchronized(() {
       if (_closed) return null;
       _cancelPending();
-      final candidate = _PendingLogin(epoch: _attemptEpoch, auth: KingoAuth(client: _newClient(source: source), now: _now), remember: remember, credential: remember == true ? RememberedCredential(account: account, password: password) : null, expected: expected);
+      final candidate = _PendingLogin(epoch: _attemptEpoch, auth: KingoAuth(client: _newClient(), now: _now), remember: remember, credential: remember == true ? RememberedCredential(account: account, password: password) : null);
       _pending = candidate;
       return candidate;
     });
@@ -580,9 +574,11 @@ class AccountGateway extends AccountAccess {
       final auth = KingoAuth(client: client, now: _now);
       final login = await auth.login(saved.account, saved.password);
       if (!active()) return _changed();
+      // 教务连不上不算登录失效（人工决策见 restoreSession）：报原错误、页面不转登录，也不挡用户下次同步再自动重登。
+      final code = login.error?.code;
+      if (login.needsInput == null && _unreachable.contains(code)) return _fail(code!, login.error!.message);
       if (!login.ok || login.needsInput != null) {
         context.recoveryBlocked = true;
-        final code = login.error?.code;
         if (password == null && (code == GatewayCode.passwordWrong || code == GatewayCode.passwordWrongCount || code == GatewayCode.accountLocked)) await credentials!.delete(store.keyOf(context.identity));
         return _fail(GatewayCode.sessionExpired, login.needsInput == 'captcha' ? '自动登录需要验证码，请手动登录完成验证' : '自动登录未完成：${login.error?.message ?? '需要人工验证'}');
       }
@@ -684,6 +680,9 @@ class AccountGateway extends AccountAccess {
     }
   }
 }
+
+// 自动重登遇到这些是教务连不上或不稳，不是账号要人工处理（人工决策见 AccountGateway.restoreSession）。
+const _unreachable = {GatewayCode.networkTimeout, GatewayCode.networkFailed, GatewayCode.rateLimited, GatewayCode.serverUnavailable, GatewayCode.upstreamHttp};
 
 class _CancelledAccountSwitch implements Exception {
   const _CancelledAccountSwitch();
