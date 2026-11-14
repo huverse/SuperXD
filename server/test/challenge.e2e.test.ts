@@ -180,7 +180,7 @@ describe('积分与挑战', () => {
     const summary = await device.call('GET', '/v1/points');
     expect(summary.body).toMatchObject({ balance: awarded, expiring: 0, expiringAt: null });
     const entries = await device.call('GET', '/v1/points/entries');
-    expect(entries.body.entries).toEqual([expect.objectContaining({ kind: 'earn', amount: awarded, note: '入门·三连环' })]);
+    expect(entries.body.entries).toEqual([expect.objectContaining({ kind: 'earn', amount: awarded, note: '入门 · 三连环' })]);
     expect(entries.body.next).toBeNull();
     expect((await list(device)).body.challenges[0].best).toBe(points);
 

@@ -106,15 +106,19 @@ class _PointsPageState extends State<PointsPage> {
                 const SizedBox(height: 24),
                 Text('明细', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
-                if (_entries.isEmpty) Text('还没有积分。参加挑战过关就能拿到。', style: secondary),
-                for (final entry in _entries)
-                  Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(children: [
-                    Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                      Text(entry.note.isNotEmpty ? entry.note : _kindLabel(entry.kind), style: Theme.of(context).textTheme.bodyLarge),
-                      Text('${_kindLabel(entry.kind)} · ${formatCampusRelative(entry.at.toIso8601String())}', style: secondary),
-                    ])),
-                    const SizedBox(width: 12),
-                    Text(entry.amount > 0 ? '+${entry.amount}' : '${entry.amount}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: entry.amount > 0 ? palette.onSurface : palette.onSurfaceVariant)),
+                if (_entries.isEmpty)
+                  Text('还没有积分。参加挑战过关就能拿到。', style: secondary)
+                else
+                  CampusSurface(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8), child: Column(children: [
+                    for (final entry in _entries)
+                      Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(children: [
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(entry.note.isNotEmpty ? entry.note : _kindLabel(entry.kind), style: Theme.of(context).textTheme.bodyLarge),
+                          Text('${_kindLabel(entry.kind)} · ${formatCampusRelative(entry.at.toIso8601String())}', style: secondary),
+                        ])),
+                        const SizedBox(width: 12),
+                        Text(entry.amount > 0 ? '+${entry.amount}' : '${entry.amount}', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: entry.amount > 0 ? palette.onSurface : palette.onSurfaceVariant)),
+                      ])),
                   ])),
                 if (_next != null) ...[
                   const SizedBox(height: 8),

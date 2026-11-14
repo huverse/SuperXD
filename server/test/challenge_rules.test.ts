@@ -68,8 +68,12 @@ describe('出题与钥匙', () => {
     expect(a.key).toBe(c.slots[0].key);
     expect(b.key).toBe(c.slots[1].key);
     expect(new Set(c.slots.map((slot) => slot.at)).size).toBe(2);
-    expect(teaserOf(c)!.split('?').length - 1).toBe(2);
-    expect(teaserOf(a)).toBeNull();
+    expect(teaserOf(c, () => false)!.split('?').length - 1).toBe(2);
+    // 拿到第一把钥匙后，那个位置写钥匙数。
+    const known = teaserOf(c, (levelId) => levelId === 'a')!;
+    expect(known.split('?').length - 1).toBe(1);
+    expect(known).toContain(String(a.key));
+    expect(teaserOf(a, () => true)).toBeNull();
   });
 
   it('挑不出题（客户端玩不了、题库里挖不出足够多处）抛 ChallengePlanError', async () => {

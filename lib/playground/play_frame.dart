@@ -270,7 +270,7 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver, Sing
     final inset = MediaQuery.paddingOf(context).bottom;
     final challenge = session.challenge;
     final clock = playDuration(Duration(seconds: _shownSeconds));
-    final status = [challenge == null ? clock : '剩 $clock', ?widget.status].join(' · ');
+    final status = [challenge == null ? clock : '还有 $clock', ?widget.status].join(' · ');
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.maybePop(context), icon: const CampusIcon(CampusIcons.back)),

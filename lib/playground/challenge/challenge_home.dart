@@ -183,7 +183,7 @@ class _ChallengeHomeState extends State<ChallengeHome> {
                 Text('${challenge.label} · ${challenge.title}', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 2),
                 Text(
-                  ['${challenge.levels} 关', '限时 ${challenge.timeLimit.inMinutes} 分钟', challenge.best == null ? '还没玩过' : '最好 ${challenge.best} 分', _left(challenge.endsAt)].join(' · '),
+                  ['${challenge.levels} 关', '限时 ${challenge.timeLimit.inMinutes} 分钟', if (challenge.best case final best?) '最好 $best 分', _left(challenge.endsAt)].join(' · '),
                   style: secondary,
                 ),
               ])),

@@ -93,19 +93,22 @@ export const planChallenge = async (
   };
 };
 
-// 收钥匙的关解锁前给玩家看的预告：挖掉的地方写「?」，看得出要靠前面哪几关。题面结构见各游戏的 Dart 规则。
-export const teaserOf = (level: PlanLevel) => {
+// 收钥匙的关解锁前给玩家看的预告：钥匙已经拿到的位置写钥匙数，还没拿到的写「?」，看得出钥匙填在哪、还差哪几关。题面结构见各游戏的 Dart 规则。
+export const teaserOf = (level: PlanLevel, solved: (levelId: string) => boolean) => {
   if (level.slots.length === 0) return null;
   const puzzle = level.puzzle as Record<string, unknown>;
-  const hidden = new Set(level.slots.map((slot) => slot.at));
+  const shown = (slot: PlanSlot) => (solved(slot.from) ? String(slot.key) : '?');
   switch (level.game) {
     case 'twentyfour':
-      return `四张牌：${(puzzle.numbers as number[]).map((number, index) => (hidden.has(index) ? '?' : String(number))).join(' ')}`;
+      return `四张牌：${(puzzle.numbers as number[]).map((number, index) => {
+        const slot = level.slots.find((item) => item.at === index);
+        return slot === undefined ? String(number) : shown(slot);
+      }).join(' ')}`;
     case 'queens':
-      return `${String(puzzle.size)}×${String(puzzle.size)}，${level.slots.map((slot) => `第 ${slot.at + 1} 行的锁定皇后在第 ? 列`).join('，')}`;
+      return `${String(puzzle.size)}×${String(puzzle.size)}，${level.slots.map((slot) => `第 ${slot.at + 1} 行的锁定皇后在第 ${shown(slot)} 列`).join('，')}`;
     case 'loop': {
       const width = puzzle.width as number;
-      return `${width}×${String(puzzle.height)}，${level.slots.map((slot) => `第 ${Math.trunc(slot.at / width) + 1} 行第 ${(slot.at % width) + 1} 格是 ?`).join('，')}`;
+      return `${width}×${String(puzzle.height)}，${level.slots.map((slot) => `第 ${Math.trunc(slot.at / width) + 1} 行第 ${(slot.at % width) + 1} 格是 ${shown(slot)}`).join('，')}`;
     }
     default:
       return null;

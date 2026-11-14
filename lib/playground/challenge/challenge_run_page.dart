@@ -192,7 +192,7 @@ class _LevelCard extends StatelessWidget {
       ChallengeLevelState.open => (game?.icon ?? CampusIcons.puzzle, running ? (level.errors > 0 ? '可以做 · 错交 ${level.errors} 次' : '可以做') : '没做完'),
       ChallengeLevelState.solved => (CampusIcons.success, level.key == null || level.output == null ? '过了' : '过了 · 钥匙 ${level.key} 交给${nameOf(level.output!)}'),
       ChallengeLevelState.failed => (CampusIcons.failed, '错交太多次，没过'),
-      ChallengeLevelState.locked => (CampusIcons.locked, '等${level.inputs.map(nameOf).join('、')}的钥匙'),
+      ChallengeLevelState.locked => (CampusIcons.locked, running ? '等${level.inputs.map(nameOf).join('、')}的钥匙' : '没解锁'),
     };
     return CampusSurface(
       onTap: open ? onOpen : null,
@@ -204,7 +204,7 @@ class _LevelCard extends StatelessWidget {
           Text('$name · ${game?.name ?? '这个版本没有的游戏'}', style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 2),
           Text('$tier · $status', style: secondary),
-          if (level.state == ChallengeLevelState.locked && level.teaser != null) ...[
+          if (running && level.state == ChallengeLevelState.locked && level.teaser != null) ...[
             const SizedBox(height: 4),
             Text(level.teaser!, style: secondary),
           ],

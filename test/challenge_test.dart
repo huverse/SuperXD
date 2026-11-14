@@ -16,6 +16,7 @@ import 'package:superxd/playground/challenge/challenge_home.dart';
 import 'package:superxd/playground/challenge/challenge_run.dart';
 import 'package:superxd/playground/challenge/challenge_run_page.dart';
 import 'package:superxd/playground/challenge/play_challenge.dart';
+import 'package:superxd/playground/challenge/points_page.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/playground_catalog.dart';
 import 'package:superxd/playground/playground_page.dart';
@@ -146,7 +147,7 @@ void main() {
       expect(verdict.run.level('c'), isA<ChallengeLevel>().having((level) => level.state, 'state', ChallengeLevelState.locked).having((level) => level.teaser, 'teaser', '四张牌：? 8 3 ?'));
       relay.reply = (request) => const RelayResponse(200, {'balance': 86, 'expiring': 20, 'expiringAt': 5000, 'serverTime': 1});
       expect((await client.points(_identity)).expiringAt, DateTime.fromMillisecondsSinceEpoch(5000, isUtc: true));
-      relay.reply = (request) => const RelayResponse(200, {'entries': [{'id': '9', 'kind': 'earn', 'amount': 86, 'note': '入门·三连环', 'at': 1}], 'next': '9'});
+      relay.reply = (request) => const RelayResponse(200, {'entries': [{'id': '9', 'kind': 'earn', 'amount': 86, 'note': '入门 · 三连环', 'at': 1}], 'next': '9'});
       final batch = await client.pointsEntries(_identity, before: '12');
       expect(relay.requests.last.path, '/v1/points/entries?before=12');
       expect(batch.next, '9');
@@ -259,7 +260,7 @@ void main() {
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.text('第 1 关 · 入门'), findsOneWidget);
-      expect(find.textContaining('剩 4:5'), findsOneWidget);
+      expect(find.textContaining('还有 4:5'), findsOneWidget);
       await tester.tap(find.bySemanticsLabel('更多操作'));
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.text('这一题从头来'), findsOneWidget);
@@ -309,6 +310,26 @@ void main() {
       expect(find.textContaining('没超过这个挑战的最好成绩，不加积分'), findsOneWidget);
     });
 
+    testWidgets('积分页：余额、30 天内到期的提示、明细从新到旧，按需往下翻', (tester) async {
+      final hub = _Hub()
+        ..summary = PointsSummary(balance: 236, expiring: 50, expiringAt: DateTime.now().toUtc().add(const Duration(days: 3)))
+        ..batches = [
+          PointsBatch(entries: [PointsEntry(id: '9', kind: 'earn', amount: 186, note: '普通 · 八连环', at: DateTime.now().toUtc())], next: '9'),
+          PointsBatch(entries: [PointsEntry(id: '3', kind: 'expire', amount: -20, note: '积分到期', at: DateTime.now().toUtc().subtract(const Duration(days: 2)))], next: null),
+        ];
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: PointsPage(hub: hub)));
+      await tester.pumpAndSettle();
+      expect(find.text('236'), findsOneWidget);
+      expect(find.textContaining('30 天内有 50 分到期'), findsOneWidget);
+      expect(find.text('普通 · 八连环'), findsOneWidget);
+      expect(find.text('+186'), findsOneWidget);
+      await tester.tap(find.text('更早的'));
+      await tester.pumpAndSettle();
+      expect(hub.before, ['9']);
+      expect(find.text('-20'), findsOneWidget);
+      expect(find.text('更早的'), findsNothing);
+    });
+
     testWidgets('游乐场首页：配了挑战才有「自由 | 挑战」；没登录应用账号引导去登录；登录后列本周挑战，开始前写明计时规则', (tester) async {
       final hub = _Hub();
       final store = PlaygroundStore.memory();
@@ -334,7 +355,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('积分 86'), findsOneWidget);
       expect(find.text('入门 · 六连环'), findsOneWidget);
-      expect(find.textContaining('6 关 · 限时 15 分钟 · 还没玩过'), findsOneWidget);
+      expect(find.textContaining('6 关 · 限时 15 分钟 · 还剩 2 天'), findsOneWidget);
       expect(hub.games, {for (final game in playgroundCatalog) if (game.challengeable) game.id});
       await tester.tap(find.text('开始'));
       await tester.pumpAndSettle();
@@ -402,10 +423,16 @@ class _Hub implements ChallengeHub {
   Future<ChallengeVerdict> answer(String runId, String levelId, int attempt, Object? answer) async => ChallengeVerdict(correct: true, key: 7, run: _run());
   @override
   Future<ChallengeRun> end(String runId) async => ended!;
+  PointsSummary summary = const PointsSummary(balance: 86, expiring: 0, expiringAt: null);
+  List<PointsBatch> batches = const [PointsBatch(entries: [], next: null)];
+  final before = <String?>[];
   @override
-  Future<PointsSummary> points() async => const PointsSummary(balance: 86, expiring: 0, expiringAt: null);
+  Future<PointsSummary> points() async => summary;
   @override
-  Future<PointsBatch> pointsEntries({String? before}) async => const PointsBatch(entries: [], next: null);
+  Future<PointsBatch> pointsEntries({String? before}) async {
+    if (before != null) this.before.add(before);
+    return before == null ? batches.first : batches.last;
+  }
 }
 
 class _Client implements ChallengeClient {

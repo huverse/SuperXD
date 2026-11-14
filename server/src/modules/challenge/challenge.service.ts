@@ -184,7 +184,7 @@ export class ChallengeService implements OnModuleInit {
     const best = await this.runs.lockBest(manager, run.accountId, run.challengeId);
     const awarded = Math.max(0, score.points - best);
     if (awarded > 0) {
-      await this.points.grantIn(manager, run.accountId, awarded, 'challenge', run.runId, `${plan.label}·${plan.title}`, new Date(now));
+      await this.points.grantIn(manager, run.accountId, awarded, 'challenge', run.runId, `${plan.label} · ${plan.title}`, new Date(now));
       await this.runs.saveBest(manager, { accountId: run.accountId, challengeId: run.challengeId, points: score.points, runId: run.runId, endsAt: new Date(plan.endsAt) }, new Date(now));
     }
     const settled: RunRow = { ...run, active: false, ending, points: score.points, awarded, endTime: new Date(endAt) };
@@ -220,7 +220,7 @@ export class ChallengeService implements OnModuleInit {
           submissions: state.submissions,
           errors: state.errors + state.penalties,
           key: state.state === 'solved' ? level.key : null,
-          teaser: state.state === 'locked' ? teaserOf(level) : null,
+          teaser: state.state === 'locked' ? teaserOf(level, (levelId) => progress.levels[levelId].state === 'solved') : null,
           puzzle: open ? level.puzzle : null,
           keyed: open ? level.slots.map((slot) => ({ from: slot.from, at: slot.at, key: slot.key })) : [],
         };
