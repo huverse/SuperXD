@@ -12,7 +12,7 @@ import 'package:superxd/social/account_seal.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_crypto.dart';
 
-// 应用账号设备密钥的系统安全存储：单独的命名空间，与私信身份、抽奖身份互不关联；同样排除出安卓云备份与设备迁移
+// 应用账号设备密钥的系统安全存储：单独的命名空间，与私信身份互不关联；同样排除出安卓云备份与设备迁移
 // （backup_rules.xml、data_extraction_rules.xml），iOS 上仅本机级别、新装后第一次启动清掉（ios/Runner/DeviceOnlyData.swift）。
 const appAccountStorage = FlutterSecureStorage(
   aOptions: AndroidOptions(storageNamespace: 'superxd_account', resetOnError: false),
@@ -84,7 +84,11 @@ class RelayAppAccountClient implements AppAccountClient {
   static const signInTimeout = Duration(seconds: 50);
 
   @override
-  Future<String?> accountOf(AccountIdentity identity) async => (await vault.read(appAccountSlot(identity)))?.accountId;
+  Future<AppAccountRef?> accountOf(AccountIdentity identity) async {
+    final slot = appAccountSlot(identity);
+    final saved = await vault.read(slot);
+    return saved == null ? null : AppAccountRef(accountId: saved.accountId, slot: slot);
+  }
 
   @override
   Future<AppAccountStep> signInWithKingo(AccountIdentity identity, KingoSignInProof proof, {String? captcha}) async {
@@ -113,7 +117,7 @@ class RelayAppAccountClient implements AppAccountClient {
       final accountId = raw['accountId'], created = raw['created'];
       if (accountId is String && _accountIdPattern.hasMatch(accountId) && created is bool) {
         await vault.write(slot, AppAccountKey(identity: key, accountId: accountId));
-        return AppAccountSignedIn(accountId: accountId, created: created);
+        return AppAccountSignedIn(account: AppAccountRef(accountId: accountId, slot: slot), created: created);
       }
     }
     campusLog('[AppAccount] action=sign_in code=${RelayCode.badResponse} status=$status');

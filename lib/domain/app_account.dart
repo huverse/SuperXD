@@ -20,14 +20,29 @@ class KingoSignInProof {
   Map<String, String> toJson() => {'account': account, 'passwordDigest': passwordDigest, 'expression': expression, 'length': length, 'userzh': userzh, 'policy': policy};
 }
 
-// 登录这一步的结果：登录成功（账号号，客户端拿它做灰度分桶）或要先答验证码。
+// 一个登录着的应用账号在这台设备上的把手：账号号（灰度分桶用）与那把设备密钥在安全存储里的位置 slot。
+// [人工决策-2026-11-14 16:47:34] 第 4 阶段用户要求「留好后路，以后不一定会锁死绑定教务」：用到应用账号的功能（挑战、节日抽奖、诊断包、私信）
+// 只认这个把手，不认它是用什么方式登录的、跟着哪个教务账号；现在「每个教务账号一个应用账号」（slot 由教务身份算出）只是 AppAccountClient 实现
+// 与组合根的规则（application/app_accounts.dart），以后加别的登录方式或不再跟着教务切换，这些功能不用改。
+class AppAccountRef {
+  const AppAccountRef({required this.accountId, required this.slot});
+  final String accountId;
+  final String slot;
+
+  @override
+  bool operator ==(Object other) => other is AppAccountRef && other.accountId == accountId && other.slot == slot;
+  @override
+  int get hashCode => Object.hash(accountId, slot);
+}
+
+// 登录这一步的结果：登录成功（这个应用账号的把手）或要先答验证码。
 sealed class AppAccountStep {
   const AppAccountStep();
 }
 
 final class AppAccountSignedIn extends AppAccountStep {
-  const AppAccountSignedIn({required this.accountId, required this.created});
-  final String accountId;
+  const AppAccountSignedIn({required this.account, required this.created});
+  final AppAccountRef account;
   final bool created;
 }
 
@@ -58,8 +73,8 @@ class AppAccountException implements Exception {
 // 应用账号的中转端口（social 实现）：每个教务账号一个应用账号，各用一把设备密钥，按教务身份分开存在安全存储；
 // 要验证码时这一次的设备密钥与挑战号留在实现里，答题时接着用。
 abstract interface class AppAccountClient {
-  // 本机记着的账号号，没登录为空；不联网。
-  Future<String?> accountOf(AccountIdentity identity);
+  // 本机记着的这个教务账号的应用账号，没登录为空；不联网。
+  Future<AppAccountRef?> accountOf(AccountIdentity identity);
   // 用教务口令摘要登录；captcha 不为空时是答上一步的验证码。成功后本机记下账号号与设备密钥。
   Future<AppAccountStep> signInWithKingo(AccountIdentity identity, KingoSignInProof proof, {String? captcha});
   // 放弃这次没答完的验证码（丢掉留着的设备密钥与挑战号）。

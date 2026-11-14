@@ -23,10 +23,7 @@
     <!-- 拼多多登录会话（身份码取件凭证）同样只属于这台设备，不随备份与换机迁移。 -->
     <exclude domain="sharedpref" path="superxd_pdd.xml" />
     <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_pdd.xml" />
-    <!-- 节日抽奖身份的私钥同样只属于这台设备（与私信身份分开的命名空间），不随备份与换机迁移。 -->
-    <exclude domain="sharedpref" path="superxd_reward.xml" />
-    <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_reward.xml" />
-    <!-- 应用账号的设备密钥同样只属于这台设备（每个教务账号一把，与私信、抽奖身份分开），不随备份与换机迁移。 -->
+    <!-- 应用账号的设备密钥同样只属于这台设备（每个教务账号一把，与私信身份分开），不随备份与换机迁移。 -->
     <exclude domain="sharedpref" path="superxd_account.xml" />
     <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_account.xml" />
     <!-- 本机诊断日志（应用专属外部目录的 logs，取不到时退回应用支持目录的 logs）与开发者设置 developer.json 只属于这台设备，不随备份与换机迁移。 -->

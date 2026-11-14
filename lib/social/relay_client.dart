@@ -212,7 +212,7 @@ class RelayClient {
 
   Future<void> ack(SocialIdentity identity, List<String> ids) => _call(identity, 'POST', '/v1/messages/ack', {'ids': ids});
 
-  // 用给定身份签名发一个请求，返回响应体：节日抽签用单独的抽奖身份发（social/festival_pass.dart），应用账号用各自的设备密钥发，接口路径由调用方给。
+  // 用给定身份签名发一个请求，返回响应体：应用账号、挑战与节日抽签都用这个应用账号的设备密钥发，接口路径由调用方给。
   // timeout 为空用传输的默认值；应用账号登录要等中转代登录教务，另给更长的。
   Future<Map<String, Object?>> request(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload, Duration? timeout, int? limit]) => _call(identity, method, path, payload, timeout, false, limit);
 

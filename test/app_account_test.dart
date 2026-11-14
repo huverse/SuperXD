@@ -22,6 +22,8 @@ import 'package:superxd/theme/campus_theme.dart';
 const _identity = AccountIdentity(source: 'http://school.example', loginId: '20260000001');
 const _other = AccountIdentity(source: 'http://school.example', loginId: '20260000002');
 const _accountId = 'AAAAAAAAAAAAAAAAAAAAAA';
+// 编排测试里替身给的把手（slot 只是替身里的一个名字）。
+const _account = AppAccountRef(accountId: _accountId, slot: 'fake-slot');
 // 1×1 的 PNG：账号页的验证码弹窗要真的解得出图。
 const _captchaImage = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
 
@@ -54,12 +56,12 @@ void main() {
       expect(utf8.decode(opened), isNot(contains('secret-value')));
       relay.reply = (request) => const RelayResponse(200, {'status': 'signedIn', 'account': {'accountId': _accountId, 'created': true, 'serverTime': 1}, 'captcha': null});
       final signed = await client.signInWithKingo(_identity, proof, captcha: 'AB12');
-      expect(signed, isA<AppAccountSignedIn>().having((step) => step.accountId, 'accountId', _accountId));
+      expect(signed, isA<AppAccountSignedIn>().having((step) => step.account, 'account', AppAccountRef(accountId: _accountId, slot: appAccountSlot(_identity))));
       final second = relay.requests.last;
       expect(second.headers['x-sxd-device'], first.headers['x-sxd-device']);
       expect(second.body['challengeId'], 'BBBBBBBBBBBBBBBBBBBBBB');
       expect(second.body['captcha'], 'AB12');
-      expect(await client.accountOf(_identity), _accountId);
+      expect(await client.accountOf(_identity), AppAccountRef(accountId: _accountId, slot: appAccountSlot(_identity)));
       expect((await vault.read(appAccountSlot(_identity)))!.identity.deviceId, second.headers['x-sxd-device']);
       expect(await client.accountOf(_other), isNull);
       // 存储键里不出现学号。
@@ -111,7 +113,7 @@ void main() {
 
       await vault.write(appAccountSlot(_identity), AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId));
       await expectLater(client.delete(_identity), throwsA(isA<AppAccountException>()));
-      expect(await client.accountOf(_identity), _accountId);
+      expect(await client.accountOf(_identity), AppAccountRef(accountId: _accountId, slot: appAccountSlot(_identity)));
       relay.reply = (request) => request.path == '/v1/account' ? const RelayResponse(204, {}) : const RelayResponse(204, {});
       await client.delete(_identity);
       expect(relay.requests.map((request) => '${request.method} ${request.path}').toList().reversed.take(2).toList(), ['DELETE /v1/devices', 'DELETE /v1/account']);
@@ -139,7 +141,7 @@ void main() {
       client.steps.add(const AppAccountCaptcha(CaptchaView(prompt: '', hint: '请输入图中的验证码', contentType: 'image/jpeg', imageBase64: _captchaImage)));
       expect(await appAccounts.signIn(password: 'typed-secret'), isA<AppAccountNeedsCaptcha>());
       expect(client.signIns.single, (captcha: null, digest: kingoSignInProof(_identity.loginId, 'typed-secret').passwordDigest));
-      client.steps.add(const AppAccountSignedIn(accountId: _accountId, created: true));
+      client.steps.add(const AppAccountSignedIn(account: _account, created: true));
       final done = await appAccounts.answerCaptcha('AB12');
       expect(done, isA<AppAccountDone>().having((result) => result.notice, 'notice', '已登录应用账号'));
       expect(client.signIns.last.captcha, 'AB12');
@@ -155,7 +157,7 @@ void main() {
       expect(appAccounts.accountId, isNull);
       expect(accounts.refreshed, isEmpty);
       client.failure = null;
-      client.steps.add(const AppAccountSignedIn(accountId: _accountId, created: false));
+      client.steps.add(const AppAccountSignedIn(account: _account, created: false));
       accounts.refreshOk = false;
       expect(await appAccounts.signIn(), isA<AppAccountDone>().having((result) => result.notice, 'notice', '已登录应用账号；教务需要重新登录一次'));
       expect(accounts.refreshed, [null]);
@@ -235,7 +237,7 @@ void main() {
       expect(find.text('请输入图中的验证码'), findsOneWidget);
       await tester.enterText(find.byType(TextField), 'AB12');
       await tester.pump();
-      client.steps.add(const AppAccountSignedIn(accountId: _accountId, created: true));
+      client.steps.add(const AppAccountSignedIn(account: _account, created: true));
       await tester.tap(find.text('确定'));
       await tester.pumpAndSettle();
       expect(find.text('已登录'), findsOneWidget);
@@ -326,13 +328,13 @@ class _Client implements AppAccountClient {
   AppAccountException? failure;
 
   @override
-  Future<String?> accountOf(AccountIdentity identity) async => records[identity.loginId];
+  Future<AppAccountRef?> accountOf(AccountIdentity identity) async => records[identity.loginId] == null ? null : AppAccountRef(accountId: records[identity.loginId]!, slot: _account.slot);
   @override
   Future<AppAccountStep> signInWithKingo(AccountIdentity identity, KingoSignInProof proof, {String? captcha}) async {
     signIns.add((captcha: captcha, digest: proof.passwordDigest));
     if (failure case final error?) throw error;
     final step = steps.removeAt(0);
-    if (step is AppAccountSignedIn) records[identity.loginId] = step.accountId;
+    if (step is AppAccountSignedIn) records[identity.loginId] = step.account.accountId;
     return step;
   }
   @override

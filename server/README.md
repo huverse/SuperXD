@@ -2,13 +2,13 @@
 
 功能性私信的“哑信箱”：只转交端到端密文，看不到课表、界面配置、作品链接或昵称。客户端在 lib/social。
 另有一处**代签凭据包的临时信箱**（chaoxing 模块）：学习通代签时对方把凭据包用一次性密钥加密后放这里，取走即删，服务端同样没有解密用的密钥。客户端在 lib/toolbox/chaoxing。
-还负责**节日抽奖**（reward 模块）：节日里随机发的支付宝口令或二维码红包只放这里、只在这里抽，抽签要求已登记设备的请求签名（客户端为此单独生成一把「抽奖身份」密钥，与私信身份分开），概率模型（平权、按活跃度加权、全天均匀放量）与人工决策见 src/modules/reward/reward_odds.ts。客户端在 lib/device/relay_reward_client.dart（抽奖身份的密钥与登记在 lib/social/festival_pass.dart），由 lib/application/festivals.dart 编排。
+还负责**节日抽奖**（reward 模块）：节日里随机发的支付宝口令或二维码红包只放这里、只在这里抽，抽签要登录了应用账号的设备签名，一个人（账号最早的那条登录身份）一次活动只抽一次，概率模型（平权、按活跃度加权、全天均匀放量）与人工决策见 src/modules/reward/reward_odds.ts。客户端在 lib/social/relay_reward_client.dart（用应用账号的设备密钥签名），由 lib/application/festivals.dart 编排。
 还负责**诊断包**（diagnostic 模块）：用户在开发者选项里点「上传诊断包」并确认后，应用把日志包用开发者的公钥加密再传来，这里只按诊断编号存密文、没有下载接口（开发者经 ssh 取出后在本机用私钥解），30 天后删除，人工决策见 lib/domain/diagnostic_upload.dart。客户端是 lib/device/relay_diagnostic_upload.dart。
 还负责**应用账号**（account 与 kingo 模块，人工决策见 src/modules/account/account_provider.ts 与客户端 lib/domain/app_account.dart）：教务账号是登录方式之一。学校教务的会话绑 IP、同一账号只有一个会话，核对时只能由这里代登录一次：客户端交用本服务公钥封装的口令摘要（不是明文密码），这里登录、读身份页取学号后即丢，学号只存带服务器密钥的 HMAC。账号对外只有随机账号号，一把设备密钥登录一个账号，全部请求带设备签名。客户端在 lib/social（封装与请求），由 lib/application 编排。
 还负责**积分与挑战**（points 与 challenge 模块，人工决策见客户端 lib/playground/challenge/challenge_rules.dart 与 src/modules/points/points.service.ts）：游乐场的挑战由这里按配置下发（每周一换）、出题、逐关核对、计时（不暂停）与结算，成绩换成积分记在应用账号下；挑战的内容（模板、轮换、计分参数、限时）与题库是发布目录 challenge 下的文件，换文件即生效。判定在 src/modules/challenge/judges，从客户端 Dart 规则逐个移植、共用测试向量。客户端在 lib/social/relay_challenge_client.dart，由 lib/application/challenges.dart 编排。
 还负责**应用内更新**（app_release 模块）：按渠道给出最新版本清单、下载各架构安装包，内容是发版时放进发布目录的文件，不碰数据库。客户端是 lib/device/relay_release_feed.dart，由 lib/application/app_updates.dart 编排。
 
-技术栈：NestJS 12（ESM）+ TypeORM + MySQL 8.4 + Redis 8，swc 构建，Vitest 测试。分层：每个领域模块（device、invite、friend、message、chaoxing）对外只暴露服务与仓储端口（抽象类），TypeORM / Redis 实现可替换；跨领域的编排（扫码加好友、删除设备、数据保留清理）在 pairing 模块；app_release 只读发布目录，reward 只管节日抽奖（只借设备模块的验签，设备模块不知道抽奖），diagnostic 只收诊断包，都与其他模块无关；account 借设备模块验签与登记密钥、借 kingo 模块代登录（登录方式是可替换的端口 AccountProvider，kingo 只会登录一次读学号、不知道账号），设备删除时连带删账号登记由 pairing 编排；points 借账号模块按设备认账号，challenge 再借 points 记积分，两者都在 onModuleInit 往账号模块的 AccountDataHooks 登记删除函数，删账号时在同一事务里连带删，账号模块不知道它们。
+技术栈：NestJS 12（ESM）+ TypeORM + MySQL 8.4 + Redis 8，swc 构建，Vitest 测试。分层：每个领域模块（device、invite、friend、message、chaoxing）对外只暴露服务与仓储端口（抽象类），TypeORM / Redis 实现可替换；跨领域的编排（扫码加好友、删除设备、数据保留清理）在 pairing 模块；app_release 只读发布目录，reward 只管节日抽奖（借设备模块的验签、借账号模块按设备认人，两者都不知道抽奖），diagnostic 只收诊断包，都与其他模块无关；account 借设备模块验签与登记密钥、借 kingo 模块代登录（登录方式是可替换的端口 AccountProvider，kingo 只会登录一次读学号、不知道账号），设备删除时连带删账号登记由 pairing 编排；points 借账号模块按设备认账号，challenge 再借 points 记积分，两者都在 onModuleInit 往账号模块的 AccountDataHooks 登记删除函数，删账号时在同一事务里连带删，账号模块不知道它们。
 
 # 协议 v1
 
@@ -21,7 +21,7 @@
 
 接口（base64url 一律无填充）
 - GET /v1/health：免签名，返回协议版本、服务器时间与构建版本 version（流水线构建的镜像是提交号前 12 位，本地开发为 dev；客户端只读前两项）。
-- POST /v1/devices：注册（自签名，请求体带两把公钥），幂等。DELETE /v1/devices：删除本设备及其好友关系与待取消息（用户关闭私信；客户端在节日过后也用它撤下抽奖身份）。
+- POST /v1/devices：注册（自签名，请求体带两把公钥），幂等。DELETE /v1/devices：删除本设备及其好友关系与待取消息（用户关闭私信；退出应用账号时删那把设备密钥）。
 - POST /v1/invites：登记邀请号与邀请公钥，5 分钟有效，同时作废本设备旧邀请。DELETE /v1/invites/:id：作废。
 - POST /v1/friends/redeem：扫码方提交邀请号、凭证（邀请私钥对“SXD1-invite、邀请号、扫码方设备号”的签名）与给邀请人的问候密文；关系与问候同一事务写入。邀请有效期内可多人使用。
 - GET /v1/friends、DELETE /v1/friends/:peer（双向解除）。
@@ -29,7 +29,7 @@
 - GET /v1/app/releases/:channel?abi=：免签名，读发布目录里的 <渠道>.json，返回版本号、版本名、发布时刻、最低可用版本号、更新说明、发布页与这个架构（arm64-v8a、armeabi-v7a、x86_64）的安装包（下载路径、字节数、SHA-256，没有这个架构时为 null）；没有清单返回 RELEASE_NOT_FOUND，清单写坏了回 INTERNAL 并打印堆栈、不往外发。清单按文件修改时间与大小缓存，换文件即生效。返回另带 envelope：清单里这个架构签好的信封原样透传（清单没有签名时为 null），见下面「更新清单与开发者的话的签名」。GET /v1/app/files/:name：免签名，下载安装包或按需下载的字体包（文件名只许字母数字与 . _ -、以 .apk 或 .ttf 结尾，类型按扩展名给，两者共用限流与同时下载上限），支持 Range 断点续传，文件不在返回 RELEASE_NOT_FOUND。安装包真伪由客户端核对 SHA-256 与签名证书。
 - GET /v1/app/rollout：免签名、不带任何标识，返回发布目录里 rollout.json 的灰度配置 {flags, envelope}（每个开关是定值 percent 或按时刻的 stages，分批更新的开关名是 app_update.<渠道>.<构建号>），还没放时给空列表、信封为空；只校验形状、信封原样透传，写坏了回 INTERNAL 并打印堆栈、不往外发，按修改时间与大小缓存。文件由仓库的 rollout 流水线（.github/workflows/rollout.yml）经同一个受限账号上传，签名用开发者的话那把钥（域前缀 SXD1-rollout）。客户端在本机判定，服务器不知道谁拿到了什么；以后要在服务端强制的功能用 src/common/rollout_bucket.ts 再算一遍（与客户端共用 test/vectors/rollout_v1.json）。
 - GET /v1/app/notes：免签名、不带任何标识，返回发布目录里 developer_notes.json 的「开发者的话」（最近 30 封，从新到旧）；还没放时给空列表，写坏了回 INTERNAL 并打印堆栈、不往外发，按修改时间与大小缓存。文件由仓库的 notes 流水线（.github/workflows/notes.yml）经同一个受限账号上传。返回另带 envelope：签好的信封原样透传（还没放文件或文件没有签名时为 null）。
-- POST /v1/rewards/:campaign/draw：要求已登记设备的请求签名（没签名、设备没登记或已删除回 UNAUTHORIZED），请求体只有 {activeDays}（近 30 天打开过的天数，0–30）；抽签人就是签名的设备，库里只存设备号的 sha256。客户端用单独的抽奖身份（与私信身份不同的一把密钥，有抽奖的节日开始前 7 天起才生成并经 POST /v1/devices 登记，节日过后经 DELETE /v1/devices 撤下），中转那边它只是一台没有好友与信箱的设备。返回 {result, prize}：won 带奖品（kind 为 password 或 qrcode、content、note），missed 没抽中，closed 活动不存在或不在进行。同一活动同一台设备只抽一次，重复请求返回同一结果（含没抽中），并发也只记一次；抽中且这一小时的放量额度与库存都还有才发奖，发奖在活动行上排队、一份只发给一人。
+- POST /v1/rewards/:campaign/draw：要求登录了应用账号的设备签名（没签名、设备没登记或已删除回 UNAUTHORIZED，设备不在任何应用账号下回 ACCOUNT_NOT_FOUND），请求体只有 {activeDays}（近 30 天打开过的天数，0–30）；抽签人是这个账号最早的那条登录身份，库里只存「SXD1-reward\n登录方式\n主体哈希」的 sha256，换设备、重装、注销后用同一身份重建账号都还是同一个人。返回 {result, prize}：won 带奖品（kind 为 password 或 qrcode、content、note），missed 没抽中，closed 活动不存在或不在进行。同一活动同一个人只抽一次，重复请求返回同一结果（含没抽中），并发也只记一次；抽中且这一小时的放量额度与库存都还有才发奖，发奖在活动行上排队、一份只发给一人。
 - POST /v1/diagnostics：免签名，请求体是 application/octet-stream 的诊断包密文（版本、一次性 X25519 公钥、随机数、AES-256-GCM 密文与标签，至少 61 字节、最多 24MB，必须声明长度，分块上传拒收；超限与类型不对的在通用解析前按请求头挡掉），按流写进 RELAY_DIAGNOSTICS_DIR，文件名即诊断编号（8 位 Crockford base32），返回 {id, keepDays}；目录满了回 503 MAILBOX_FULL。服务端没有解密用的密钥，也没有下载接口。
 - POST /v1/account/sign-in/:provider：应用账号登录，provider 现在只有 kingo。自签名（同注册设备，请求体带这把设备密钥的两把公钥），请求体另有 sealed（用本服务账号公钥封装的口令摘要，见下面「应用账号的信封」）与答验证码时的 challengeId、captcha。核对通过才登记这把密钥并登录到对应账号（没有就新建），返回 {status: signedIn, account: {accountId, created, serverTime}}；教务要验证码时返回 {status: captcha, captcha: {challengeId, image（标准 base64）, contentType, hint}}，客户端带挑战号与验证码、重新封装一次口令摘要再交来（挑战号 5 分钟有效、只给发起的那把密钥用一次）。失败：ACCOUNT_REJECTED（教务拒绝，附 reason、message、failCount）、CAPTCHA_EXPIRED、UPSTREAM_UNAVAILABLE（学校连不上、超时、限流或页面看不懂，附 reason）、INVALID_REQUEST（信封打不开或内容不对）、RATE_LIMITED。
 - GET /v1/account：这把密钥所在账号的 {accountId, providers, deviceCount, createdAt}，顺带记最后活跃；没登录回 ACCOUNT_NOT_FOUND。DELETE /v1/account：注销账号（登录方式、全部密钥的登记与账号本身）。退出账号就是 DELETE /v1/devices（删这把设备密钥，pairing 连带删登记）。
@@ -78,7 +78,7 @@
 - 应用更新：同一来源每小时查清单 600 次、安装包请求 300 次（含断点续传的分段请求）；每个实例同时最多 32 个下载，超出回 503 RATE_LIMITED（retryAfter 60）；清单文件超过 128KB 拒绝读取（明文加三个架构的签名信封）。发布目录只放当前版本的清单与安装包，发新版时删掉旧包（每个渠道约 3 个安装包、共 300MB 上下）。
 - 开发者的话：同一来源每小时 600 次；最多 30 封、标题 40 字、正文 4000 字，文件超过 1MB 拒绝读取（明文加签名载荷；与客户端 lib/domain/developer_note.dart 及 lib/device/relay_note_feed.dart 一致）。
 - 灰度配置：同一来源每小时 600 次；最多 200 个开关、每个 20 档，文件超过 64KB 拒绝读取（与客户端 lib/device/relay_rollout_feed.dart 一致）。
-- 节日抽奖：每台设备每小时 10 次、同一来源每小时 3000 次（先按设备计数，刷请求的设备不占同一出口别人的额度）；刷号的成本是上面的注册限流（同一 IP 每小时 20 台新设备），不放宽；活动行在进程内缓存 60 秒；活动结束 30 天后由每小时一次的清理任务连同奖品与抽签记录分批删除（多实例抢锁，每轮最多 20 批、每批 1000 行）。
+- 节日抽奖：每台设备每小时 10 次、同一来源每小时 3000 次（先按设备计数，刷请求的设备不占同一出口别人的额度）；按人只抽一次，刷号要有真实的应用账号（登录要经学校教务核对学号）；注销账号不删抽签记录（否则注销重建就能再抽）；活动行在进程内缓存 60 秒；活动结束 30 天后由每小时一次的清理任务连同奖品与抽签记录分批删除（多实例抢锁，每轮最多 20 批、每批 1000 行）。
 - 诊断包：单个 ≤24MB；同一来源每小时 30 个；保留 30 天，到期由每 10 分钟一次的清理任务删除（多实例抢锁，一小时前中途断掉的残片一并删）；目录合计 ≤2GB、≤2000 个，满了回 503。已用量在 Redis 里原子预占、写盘失败退回，清理任务每轮按目录实际重写（Redis 丢了也由它重建）。
 - 应用账号：每次登录都要代登录学校教务，所以按学号每天最多 10 次尝试（含验证码重试，挡住被拿来试同学的密码；计数主体是学号的 HMAC）、每台设备每小时 10 次、同一来源每小时 300 次、全局每小时 600 次（所有实例共用，护住学校那边对本服务 IP 的观感）；每个实例同时最多 4 个代登录，超出回 503。教务每个请求 12 秒超时、整次最多 40 秒，响应超过 1MB 当格式不对。验证码这一步的教务会话（只有 cookie 与页面会话号）在 Redis 存 5 分钟。一个账号最多 20 把设备密钥，再登录顶掉最久没用的；账号 400 天没有登录或查看即连同登录方式与密钥登记删除（每小时一次的清理任务，抢锁、每轮最多 20 批、每批 1000 个）；设备删除时连带删它的登记。
 - 积分：每笔满 12 个月过期，每小时一次的任务把到期的清零并记过期流水；流水满 13 个月（395 天）删除；剩余为 0 且过期满 30 天的获得行删除；每台设备每小时查 600 次。

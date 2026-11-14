@@ -178,7 +178,7 @@ class SocialService extends ChangeNotifier {
   }
 
   // 关闭私信：先请中转服务删除本设备（好友关系与待收消息），再清空本机数据与身份。服务端删除失败则不清本机，提示重试。
-  // 中转已经不认这台设备（UNAUTHORIZED）时没有可删的，照样清本机（同节日抽奖身份的 retire）。
+  // 中转已经不认这台设备（UNAUTHORIZED）时没有可删的，照样清本机。
   Future<void> disable() async {
     final relay = _ready();
     try {

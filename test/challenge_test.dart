@@ -41,6 +41,8 @@ import 'text_fit_support.dart';
 // 挑战与积分的客户端（人工决策见 lib/playground/challenge/challenge_rules.dart）：中转客户端、编排、对局页的挑战模式与挑战页面。合成数据。
 const _identity = AccountIdentity(source: 'http://school.example', loginId: '20260000001');
 const _runId = 'RRRRRRRRRRRRRRRRRRRRRR';
+// 中转客户端用例里登录着的应用账号：密钥存在这个教务身份算出的 slot。
+final _ref = AppAccountRef(accountId: 'AAAAAAAAAAAAAAAAAAAAAA', slot: appAccountSlot(_identity));
 final _hanoi = const HanoiRules().generate(1, PuzzleTier.entry).puzzle;
 
 Map<String, Object?> _levelJson(String id, {String game = 'hanoi', String state = 'open', List<String> inputs = const [], String? output, int submissions = 0, int? key, String? teaser, Object? puzzle, List<Object?> keyed = const []}) => {
@@ -130,7 +132,7 @@ void main() {
     });
 
     test('没登录应用账号不发请求；登录了用那个应用账号的设备密钥签名', () async {
-      await expectLater(client.catalog(_identity, {'hanoi'}), throwsA(isA<ChallengeException>().having((error) => error.failure, 'failure', ChallengeFailure.notSignedIn)));
+      await expectLater(client.catalog(_ref, {'hanoi'}), throwsA(isA<ChallengeException>().having((error) => error.failure, 'failure', ChallengeFailure.notSignedIn)));
       expect(relay.requests, isEmpty);
       await vault.write(appAccountSlot(_identity), AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
       relay.reply = (request) => const RelayResponse(200, {
@@ -140,7 +142,7 @@ void main() {
           {'id': 'weekly.2026-11-09.six', 'title': '六连环', 'label': '入门', 'levels': 6, 'timeLimit': 900, 'endsAt': 2000, 'best': 153, 'playable': true},
         ],
       });
-      final catalog = await client.catalog(_identity, {'ice', 'hanoi'});
+      final catalog = await client.catalog(_ref, {'ice', 'hanoi'});
       expect(relay.requests.single.path, '/v1/challenges?games=hanoi,ice');
       expect(relay.requests.single.headers['x-sxd-device'], key.deviceId);
       expect(catalog.challenges.single, isA<ChallengeSummary>().having((item) => item.best, 'best', 153).having((item) => item.timeLimit, 'timeLimit', const Duration(minutes: 15)));
@@ -149,30 +151,30 @@ void main() {
     test('一局的局面、交答案带号码、积分与流水按协议解码；看不懂的回复报失败', () async {
       await vault.write(appAccountSlot(_identity), AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
       relay.reply = (request) => RelayResponse(200, {'correct': true, 'key': 7, 'run': _runJson()});
-      final verdict = await client.answer(_identity, _runId, 'a', 2, [1, 2]);
+      final verdict = await client.answer(_ref, _runId, 'a', 2, [1, 2]);
       expect(relay.requests.last.path, '/v1/challenge-runs/$_runId/levels/a/answers');
       expect(relay.requests.last.body, {'attempt': 2, 'answer': [1, 2]});
       expect(verdict.correct, isTrue);
       expect(verdict.key, 7);
       expect(verdict.run.level('c'), isA<ChallengeLevel>().having((level) => level.state, 'state', ChallengeLevelState.locked).having((level) => level.teaser, 'teaser', '四张牌：? 8 3 ?'));
       relay.reply = (request) => const RelayResponse(200, {'balance': 86, 'expiring': 20, 'expiringAt': 5000, 'serverTime': 1});
-      expect((await client.points(_identity)).expiringAt, DateTime.fromMillisecondsSinceEpoch(5000, isUtc: true));
+      expect((await client.points(_ref)).expiringAt, DateTime.fromMillisecondsSinceEpoch(5000, isUtc: true));
       relay.reply = (request) => const RelayResponse(200, {'entries': [{'id': '9', 'kind': 'earn', 'amount': 86, 'note': '入门 · 三连环', 'at': 1}], 'next': '9'});
-      final batch = await client.pointsEntries(_identity, before: '12');
+      final batch = await client.pointsEntries(_ref, before: '12');
       expect(relay.requests.last.path, '/v1/points/entries?before=12');
       expect(batch.next, '9');
       relay.reply = (request) => const RelayResponse(200, {'correct': 'yes'});
-      await expectLater(client.answer(_identity, _runId, 'a', 0, []), throwsA(isA<ChallengeException>().having((error) => error.failure, 'failure', ChallengeFailure.failed)));
+      await expectLater(client.answer(_ref, _runId, 'a', 0, []), throwsA(isA<ChallengeException>().having((error) => error.failure, 'failure', ChallengeFailure.failed)));
     });
 
     test('错误码换成挑战的失败：还有一局带编号、已结束带局面、应用账号不在了', () async {
       await vault.write(appAccountSlot(_identity), AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
       relay.reply = (request) => const RelayResponse(409, {'code': 'RUN_ACTIVE', 'runId': _runId});
-      await expectLater(client.start(_identity, 'weekly.2026-11-09.six', {'hanoi'}), throwsA(isA<ChallengeException>().having((error) => error.runId, 'runId', _runId)));
+      await expectLater(client.start(_ref, 'weekly.2026-11-09.six', {'hanoi'}), throwsA(isA<ChallengeException>().having((error) => error.runId, 'runId', _runId)));
       relay.reply = (request) => RelayResponse(409, {'code': 'RUN_OVER', 'run': _runJson(running: false, result: {'points': 13, 'awarded': 13, 'ending': 'timeout'})});
-      await expectLater(client.answer(_identity, _runId, 'a', 0, []), throwsA(isA<ChallengeException>().having((error) => error.run?.result?.ending, 'ending', 'timeout')));
+      await expectLater(client.answer(_ref, _runId, 'a', 0, []), throwsA(isA<ChallengeException>().having((error) => error.run?.result?.ending, 'ending', 'timeout')));
       relay.reply = (request) => const RelayResponse(404, {'code': 'ACCOUNT_NOT_FOUND'});
-      await expectLater(client.points(_identity), throwsA(isA<ChallengeException>().having((error) => error.failure, 'failure', ChallengeFailure.notSignedIn)));
+      await expectLater(client.points(_ref), throwsA(isA<ChallengeException>().having((error) => error.failure, 'failure', ChallengeFailure.notSignedIn)));
     });
   });
 
@@ -580,19 +582,19 @@ class _Client implements ChallengeClient {
   }
 
   @override
-  Future<ChallengeCatalog> catalog(AccountIdentity identity, Set<String> games) => _call('catalog', ChallengeCatalog(serverTime: DateTime.utc(2026), activeRun: null, challenges: const []));
+  Future<ChallengeCatalog> catalog(AppAccountRef account, Set<String> games) => _call('catalog', ChallengeCatalog(serverTime: DateTime.utc(2026), activeRun: null, challenges: const []));
   @override
-  Future<ChallengeRun> start(AccountIdentity identity, String challengeId, Set<String> games) => _call('start', _run());
+  Future<ChallengeRun> start(AppAccountRef account, String challengeId, Set<String> games) => _call('start', _run());
   @override
-  Future<ChallengeRun> run(AccountIdentity identity, String runId) => _call('run', _run());
+  Future<ChallengeRun> run(AppAccountRef account, String runId) => _call('run', _run());
   @override
-  Future<ChallengeVerdict> answer(AccountIdentity identity, String runId, String levelId, int attempt, Object? answer) => _call('answer', ChallengeVerdict(correct: true, key: null, run: _run()));
+  Future<ChallengeVerdict> answer(AppAccountRef account, String runId, String levelId, int attempt, Object? answer) => _call('answer', ChallengeVerdict(correct: true, key: null, run: _run()));
   @override
-  Future<ChallengeRun> end(AccountIdentity identity, String runId) => _call('end', _run());
+  Future<ChallengeRun> end(AppAccountRef account, String runId) => _call('end', _run());
   @override
-  Future<PointsSummary> points(AccountIdentity identity) => _call('points', const PointsSummary(balance: 0, expiring: 0, expiringAt: null));
+  Future<PointsSummary> points(AppAccountRef account) => _call('points', const PointsSummary(balance: 0, expiring: 0, expiringAt: null));
   @override
-  Future<PointsBatch> pointsEntries(AccountIdentity identity, {String? before}) => _call('entries', const PointsBatch(entries: [], next: null));
+  Future<PointsBatch> pointsEntries(AppAccountRef account, {String? before}) => _call('entries', const PointsBatch(entries: [], next: null));
 }
 
 class _AppClient implements AppAccountClient {
@@ -600,7 +602,7 @@ class _AppClient implements AppAccountClient {
   var summaries = 0;
   var lost = false;
   @override
-  Future<String?> accountOf(AccountIdentity identity) async => records[identity.loginId];
+  Future<AppAccountRef?> accountOf(AccountIdentity identity) async => records[identity.loginId] == null ? null : AppAccountRef(accountId: records[identity.loginId]!, slot: 'fake-slot');
   @override
   Future<AppAccountStep> signInWithKingo(AccountIdentity identity, KingoSignInProof proof, {String? captcha}) => throw UnimplementedError();
   @override
