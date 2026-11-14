@@ -124,7 +124,7 @@ class _ChaoxingLocationSheetState extends State<_ChaoxingLocationSheet> {
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Text(
-                        chaoxingMapAvailable ? '还没有收藏位置' : '还没有收藏位置，签到成功后会问要不要收藏',
+                        '还没有收藏位置',
                         style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
                       ),
                     )

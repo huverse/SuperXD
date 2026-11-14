@@ -275,7 +275,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
     if (!await showCampusConfirm(
       context,
       title: '清空本学期课程？',
-      message: '将移除${base.courses.length}门课程并保存空课表版本。学期、成绩、开学日和作息不变，可在保留的历史版本内恢复。',
+      message: '移除 ${base.courses.length} 门课程，可在历史版本恢复',
       action: '清空课程', destructive: true,
     )) {
       return;
@@ -399,8 +399,8 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
                         padding: const EdgeInsets.symmetric(vertical: 32),
                         child: Text(
                           _view!.revisionId == null
-                              ? '尚未建立课表，可以直接手工添加课程。'
-                              : '当前课表没有课程，可新增或从历史版本恢复。',
+                              ? '还没有课表'
+                              : '课表里没有课程',
                           textAlign: TextAlign.center,
                         ),
                       ),

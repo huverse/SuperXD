@@ -71,10 +71,10 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
   Future<void> _openLocked(PlaygroundGame game, RolloutUnlock offer) async {
     final unlocks = widget.unlocks!;
     if (offer.price == null) {
-      await showCampusNotice(context, unlockTerms(offer, priceFirst: false), title: '${game.name}还没开放');
+      await showCampusNotice(context, unlockTerms(offer), title: '${game.name}还没开放');
       return;
     }
-    if (!await showCampusConfirm(context, title: '解锁「${game.name}」？', message: '花 ${offer.price} 积分，解锁后一直能玩；公开后人人可玩，不退积分。', action: '解锁')) return;
+    if (!await showCampusConfirm(context, title: '解锁「${game.name}」？', message: '花 ${offer.price} 积分，公开后不退', action: '解锁')) return;
     try {
       await unlocks.buy(offer.id);
       if (mounted) showCampusToast(context, '已解锁「${game.name}」');
@@ -204,7 +204,7 @@ class _GameCard extends StatelessWidget {
             Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               SizedBox(height: MediaQuery.textScalerOf(context).scale(14) * 1.5, child: Center(child: CampusIcon(CampusIcons.lock, size: 16, color: palette.onSurfaceVariant))),
               const SizedBox(width: 6),
-              Expanded(child: DotSeparatedText(unlockTerms(offer, priceFirst: false), style: secondary)),
+              Expanded(child: DotSeparatedText(unlockTerms(offer), style: secondary)),
             ]),
           ] else if (top != null) ...[
             const SizedBox(height: 6),

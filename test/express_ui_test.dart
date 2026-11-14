@@ -1413,7 +1413,7 @@ void main() {
     expect(_blurred(tester, find.byType(BarcodeWidget)), isTrue);
     expect(find.byIcon(CampusIcons.eye), findsNothing);
     expect(find.textContaining('有效期剩余'), findsOneWidget);
-    expect(find.textContaining('请勿随意分享身份码'), findsOneWidget);
+    expect(find.textContaining('请勿分享身份码'), findsOneWidget);
     // 销毁页面取消倒计时定时器，避免 pending timer 报错。
     await tester.pumpWidget(const SizedBox());
   });

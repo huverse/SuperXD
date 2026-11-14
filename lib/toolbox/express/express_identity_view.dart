@@ -226,7 +226,7 @@ class _ExpressIdentityViewState extends State<ExpressIdentityView> {
         const SizedBox(height: 4),
         Center(
           child: Text(
-            '为避免快递丢失，请勿随意分享身份码',
+            '请勿分享身份码',
             style: textTheme.bodyMedium?.copyWith(color: palette.onSurfaceVariant),
           ),
         ),

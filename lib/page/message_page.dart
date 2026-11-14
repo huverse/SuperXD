@@ -93,6 +93,7 @@ class _MessagePageState extends State<MessagePage> {
         final nickname = await showSocialTextInput(context, title: '修改昵称', initial: _social.profile?.nickname ?? '', hint: '昵称（对之后添加的好友生效）', maxLength: nicknameMaxLength, action: '保存', validate: _nicknameError);
         if (nickname != null) await _social.rename(nickname);
       case 'disable':
+        // 长文案：关闭私信的删除确认。
         final confirmed = await showCampusConfirm(context, title: '关闭私信？', message: '将删除本设备的私信身份、全部好友与会话，服务器上的好友关系和待收消息一并删除，无法恢复。', action: '关闭并删除', destructive: true);
         if (!confirmed || !mounted) return;
         try {
@@ -131,6 +132,7 @@ String? _nicknameError(String value) => validNickname(value) ? null : '昵称为
 
 // 在这台手机上接管这个应用账号的私信（人工决策见 social/social_service.dart）：先确认，写明另一台停用、好友会看到、记录不过来。
 Future<void> takeOverSocial(BuildContext context, SocialService social) async {
+  // 长文案：接管确认（人工决策见 social/social_service.dart）。
   final confirmed = await showCampusConfirm(context, title: '在这台手机上使用私信？', message: '另一台手机上的私信会停用，好友会看到你换了设备。那台手机上的聊天记录和还没收到的消息不会过来。', action: '使用');
   if (!confirmed || !context.mounted) return;
   try {
@@ -222,8 +224,6 @@ class _SocialSetupState extends State<_SocialSetup> {
     return CampusScrollFade(bottom: inset, child: ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), children: [
       CampusSurface(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         Text('开启私信', style: Theme.of(context).textTheme.titleLarge),
-        const SizedBox(height: 8),
-        Text('和同学扫码互加好友，分享课表、界面配置和短视频。', style: TextStyle(fontSize: 16, color: colors.onSurface)),
         SizedBox(height: campusFieldGap(context)),
         TextField(
           controller: _nickname,
@@ -234,7 +234,7 @@ class _SocialSetupState extends State<_SocialSetup> {
           onSubmitted: (_) => _enable(),
         ),
         const SizedBox(height: 4),
-        Text('分享内容在本机加密，中转服务器只转交密文；对方未取走的 30 天后删除。好友与私信记在应用账号下，换手机登录同一个账号可以接着用。', style: secondary),
+        Text('内容在本机加密，服务器只转交密文、未取走的 30 天后删除；好友记在应用账号下。', style: secondary),
         Align(alignment: AlignmentDirectional.centerStart, child: TextButton(style: campusLink, onPressed: () => context.push('/legal/privacy'), child: const Text('隐私政策', style: TextStyle(fontSize: 14)))),
         const SizedBox(height: 8),
         FilledButton(

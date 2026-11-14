@@ -160,7 +160,7 @@ void main() {
       await store.opened('queens');
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: PlaygroundPage(store: store, games: playgroundCatalog, groups: playgroundGroups, unlocks: access)));
       await tester.pumpAndSettle();
-      expect(find.textContaining('Lv2 起抢先玩'), findsOneWidget);
+      expect(find.textContaining('Lv2'), findsOneWidget);
       expect(find.widgetWithText(OutlinedButton, '八皇后'), findsNothing, reason: '锁着的不进最近玩过');
       await tester.tap(find.text('八皇后'));
       await tester.pumpAndSettle();
@@ -173,7 +173,7 @@ void main() {
         ..add(const RolloutUnlock(id: 'game.queens', title: '八皇后', price: 300));
       access.emit();
       await tester.pumpAndSettle();
-      expect(find.textContaining('300 分解锁'), findsOneWidget);
+      expect(find.textContaining('300 分'), findsOneWidget);
       await tester.tap(find.text('八皇后'));
       await tester.pumpAndSettle();
       expect(find.text('解锁「八皇后」？'), findsOneWidget);
@@ -182,7 +182,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(access.bought, ['game.queens']);
       expect(find.text('已解锁「八皇后」'), findsOneWidget);
-      expect(find.textContaining('300 分解锁'), findsNothing);
+      expect(find.textContaining('300 分'), findsNothing);
       expect(find.widgetWithText(OutlinedButton, '八皇后'), findsOneWidget, reason: '开了就回到最近玩过');
 
       access.specs
@@ -220,7 +220,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('内测工具'), findsOneWidget);
       expect(find.text('只看等级'), findsNothing, reason: '不能用积分买的不列');
-      for (final item in ['300 分', 'Lv3 起免费', '2027年1月1日']) {
+      for (final item in ['300 分', 'Lv3', '2027年1月1日']) {
         expect(find.textContaining(item), findsOneWidget, reason: item);
       }
       // 「解锁」先是这一栏的标题，第二个是按钮；弹窗里的按钮在最后。

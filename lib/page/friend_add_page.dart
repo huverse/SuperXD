@@ -199,7 +199,7 @@ class _FriendAddPageState extends State<FriendAddPage> {
           if (_added.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 12), child: Text('已添加：${_added.join('、')}', textAlign: TextAlign.center, style: secondary)),
         ])),
         const SizedBox(height: 16),
-        Text('同学用 SuperXD 扫这个二维码，即互为好友', textAlign: TextAlign.center, style: secondary),
+        Text('用 SuperXD 扫码互加好友', textAlign: TextAlign.center, style: secondary),
         const SizedBox(height: 20),
         FilledButton(
           style: campusProminent,

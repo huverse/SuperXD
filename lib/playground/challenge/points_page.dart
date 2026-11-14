@@ -56,7 +56,7 @@ class _PointsPageState extends State<PointsPage> {
     final confirmed = await showCampusConfirm(
       context,
       title: '解锁「${unlock.title}」？',
-      message: '花 ${unlock.price} 积分，解锁后一直能用；公开后人人都能用，不退积分。',
+      message: '花 ${unlock.price} 积分，公开后不退',
       action: '解锁',
     );
     if (!confirmed || !mounted) return;
@@ -135,13 +135,10 @@ class _PointsPageState extends State<PointsPage> {
                     const SizedBox(width: 12),
                     Text('${summary.balance}', style: TextStyle(fontSize: 36, fontWeight: FontWeight.w600, height: 1.15, color: palette.onSurface)),
                   ]),
-                  const SizedBox(height: 4),
-                  Text(
-                    summary.expiring > 0 && summary.expiringAt != null
-                        ? '30 天内有 ${summary.expiring} 分到期，最早 ${formatCampusRelative(summary.expiringAt!.toIso8601String())}'
-                        : '每笔积分满 12 个月过期',
-                    style: secondary,
-                  ),
+                  if (summary.expiring > 0) ...[
+                    const SizedBox(height: 4),
+                    Text('30 天内 ${summary.expiring} 分到期', style: secondary),
+                  ],
                   if (pointsLevelShown(summary)) ...[
                     const SizedBox(height: 16),
                     Row(crossAxisAlignment: CrossAxisAlignment.baseline, textBaseline: TextBaseline.alphabetic, children: [
@@ -163,7 +160,7 @@ class _PointsPageState extends State<PointsPage> {
                       Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(children: [
                         Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                           Text(unlock.title, style: Theme.of(context).textTheme.bodyLarge),
-                          DotSeparatedText(unlockTerms(unlock, priceFirst: true), style: secondary),
+                          DotSeparatedText(unlockTerms(unlock), style: secondary),
                         ])),
                         const SizedBox(width: 12),
                         FilledButton.tonalIcon(
@@ -178,7 +175,7 @@ class _PointsPageState extends State<PointsPage> {
                 Text('明细', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
                 if (_entries.isEmpty)
-                  Text('还没有积分。参加挑战过关就能拿到。', style: secondary)
+                  Text('暂无明细', style: secondary)
                 else
                   CampusSurface(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8), child: Column(children: [
                     for (final entry in _entries)
@@ -212,11 +209,10 @@ class _PointsPageState extends State<PointsPage> {
 // 服务器配了等级门槛才显示等级（没配时人人 Lv0、也没有下一级）。
 bool pointsLevelShown(PointsSummary summary) => summary.level > 0 || summary.nextLevelAt != null;
 
-// 一项解锁的条件，写成「300 分 · Lv3 起免费 · 12月1日 00:00 起人人可用」这样一句（积分页与锁着的游戏卡共用）。
-String unlockTerms(RolloutUnlock unlock, {required bool priceFirst}) => [
-  if (priceFirst && unlock.price != null) '${unlock.price} 分',
-  if (unlock.minLevel case final level?) priceFirst ? 'Lv$level 起免费' : 'Lv$level 起抢先玩',
-  if (!priceFirst && unlock.price != null) '${unlock.price} 分解锁',
-  if (unlock.percent != null && unlock.minLevel == null && unlock.price == null) '按等级抽签',
-  if (unlock.publicAt case final at?) '${formatCampusRelative(at.toIso8601String())} 起人人可用',
+// 一项解锁的条件，写成「300 分 · Lv3 · 12月1日 00:00 开放」这样一句（积分页与锁着的游戏卡共用，前面有锁或价格，不再写「起免费」「起人人可用」）。
+String unlockTerms(RolloutUnlock unlock) => [
+  if (unlock.price != null) '${unlock.price} 分',
+  if (unlock.minLevel case final level?) 'Lv$level',
+  if (unlock.percent != null && unlock.minLevel == null && unlock.price == null) '抽签',
+  if (unlock.publicAt case final at?) '${formatCampusRelative(at.toIso8601String())} 开放',
 ].join(' · ');

@@ -236,7 +236,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     if (!mounted) return;
     if (_start == null) { await _notice('请先设置当前学期的开学日。'); return; }
     final date = campusToday();
-    if (date.compareTo(_first!) < 0 || date.compareTo(_last!) > 0) { await _notice('今天不在已同步课表的教学日期范围内。'); return; }
+    if (date.compareTo(_first!) < 0 || date.compareTo(_last!) > 0) { await _notice('今天不在课表的教学日期内'); return; }
     setState(() {
       _selection = _selection.copy(inYearTerm: _selection.range == ScheduleRange.year);
       _recenterRequest++;
@@ -270,7 +270,7 @@ class _SchedulePageState extends State<SchedulePage> with SingleTickerProviderSt
     final selectedDate = _selection.date;
     setState(() => _selection = selection.copy(date: selectedDate, clearDetail: true,
       clearDrill: selectedDate != selection.date || selection.week != null && selection.week! > _weekCount));
-    if (selectedDate != selection.date) await _notice('课程日期范围已变化，已切换到当前课表的有效日期。');
+    if (selectedDate != selection.date) await _notice('已切换到课表的有效日期');
   }
 
   // [人工决策-2026-09-29 01:01:28] 无课时段预填当天星期与节次，周次仅本周，扩大周次须用户在时段里自选；可新增或安排已有课程，仅课表页，今天页保持只读。

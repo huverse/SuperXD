@@ -666,7 +666,7 @@ class _ChaoxingMapPageState extends State<ChaoxingMapPage> {
                       controller: _label,
                       decoration: InputDecoration(
                         labelText: widget.favorite ? '收藏名' : '位置名称',
-                        helperText: widget.favorite ? '例如 知敬楼402' : '例如 知敬楼402，签到时会一起提交',
+                        helperText: '例如 知敬楼402',
                       ),
                     ),
                     const SizedBox(height: 12),

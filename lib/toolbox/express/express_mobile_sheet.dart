@@ -148,7 +148,7 @@ class _ExpressMobileSheetState extends State<_ExpressMobileSheet> {
               ),
             ),
         const SizedBox(height: 8),
-        Text('绑定后，寄到该手机号的快递都能用这个账号的身份码取件。拼多多不支持多端登录，建议用小号登录后把大号的手机号绑进来。', style: secondary),
+        Text('寄到绑定手机号的快递都能用这个账号的身份码取件', style: secondary),
         const SizedBox(height: 16),
         if (showFastBind)
           Padding(

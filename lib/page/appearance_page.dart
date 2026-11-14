@@ -25,7 +25,6 @@ import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_transitions.dart';
-import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/native_glass.dart';
 import 'package:superxd/theme/scroll_anchor.dart';
 import 'package:superxd/theme/wallpaper_tone.dart';
@@ -603,7 +602,7 @@ class _AppearancePageState extends State<AppearancePage> {
                 builder: (context, capped, _) => capped && settings.glassMode != 'reduced'
                     ? Padding(
                         padding: const EdgeInsets.only(top: 8),
-                        child: DotSeparatedText('上次异常退出，已暂时降为简化效果 · 点「完整」重试', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
+                        child: Text('上次异常退出，已临时降为简化效果', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
                       )
                     : const SizedBox.shrink(),
               ),

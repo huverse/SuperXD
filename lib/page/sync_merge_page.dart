@@ -40,7 +40,7 @@ Future<void> showHeldScheduleSync(BuildContext context, {required AutoSync autoS
     context: context,
     builder: (context) => CampusGlassDialog(
       title: const Text('教务课表有更新'),
-      content: Text('「${_termLabel(held.term)}」教务的课表和你改过的不一样，可以逐项挑要用的改动。', style: const TextStyle(fontSize: 14)),
+      content: Text('「${_termLabel(held.term)}」教务课表与你的修改不同', style: const TextStyle(fontSize: 14)),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('保留本地')),
         FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('逐项选择')),
@@ -136,7 +136,7 @@ class _SyncMergePageState extends State<SyncMergePage> {
       if (!await showCampusConfirm(
         context,
         title: '换成教务课表？',
-        message: '「${_termLabel(widget.term)}」现在的 $mineCount 门课会换成教务的 $eduCount 门课，你改过的地方都会换掉；现在的课表留在历史版本里，可以恢复。开学日和作息不变。',
+        message: '「${_termLabel(widget.term)}」现在的 $mineCount 门课换成教务的 $eduCount 门课，你的修改都会被替换，旧课表可在历史版本恢复',
         action: '换成教务的',
         destructive: true,
       )) {
@@ -160,7 +160,7 @@ class _SyncMergePageState extends State<SyncMergePage> {
           !await showCampusConfirm(
             context,
             title: '删掉 ${_removed.length} 门课？',
-            message: '${_removed.join('、')}\n\n会从你的课表删掉。现在的课表留在历史版本里，可以恢复。',
+            message: '${_removed.join('、')}\n\n可在历史版本恢复',
             action: '删掉',
             destructive: true,
           )) {
@@ -209,7 +209,7 @@ class _SyncMergePageState extends State<SyncMergePage> {
         const SizedBox(height: 16),
         CampusSurface(
           child: Text(
-            '你现在的 $mineCount 门课会换成教务的 $eduCount 门课，你改过的地方都会换掉。现在的课表留在历史版本里，可以恢复；开学日和作息不变。',
+            '现在的 $mineCount 门课换成教务的 $eduCount 门课，你的修改都会被替换，旧课表可在历史版本恢复',
             style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface),
           ),
         ),

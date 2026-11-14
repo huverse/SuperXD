@@ -119,7 +119,7 @@ class _ReminderDialogState extends State<_ReminderDialog> {
                       CampusSwitchTile(
                         contentPadding: EdgeInsets.zero,
                         title: Text(_ios ? '实时活动' : '状态栏胶囊'),
-                        subtitle: Text(_ios ? '打开应用后，开课前到下课在锁屏与灵动岛显示倒计时' : '开课前到下课显示倒计时'),
+                        subtitle: const Text('开课前到下课显示倒计时'),
                         value: status.setting.live,
                         onChanged: _busy ? (_) {} : (value) => _save(term, ReminderSetting(enabled: true, leadMinutes: status.setting.leadMinutes, live: value)),
                       ),

@@ -6,11 +6,11 @@ import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/gateway_code.dart';
 
 const scheduleRevisionLimit = 100;
-const syncOverwriteMessage = '继续同步将用教务课表替换当前自定义内容，可在历史版本中恢复；开学日和作息不变。';
+const syncOverwriteMessage = '继续同步会用教务课表替换你的修改，可在历史版本恢复';
 
 class RevisionConflict implements Exception {
   const RevisionConflict();
-  String get message => '课表已有新版本，未覆盖新内容。请重新读取后再修改，或在历史版本中预览恢复。';
+  String get message => '课表已被修改，请刷新后再改';
   @override
   String toString() => message;
 }

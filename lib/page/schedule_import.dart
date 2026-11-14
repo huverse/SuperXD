@@ -94,8 +94,8 @@ class _ImportPageState extends State<_ImportPage> {
         context,
         title: _fresh ? '导入这份课表？' : '替换这学期的课表？',
         message: _fresh
-            ? '会用$friend分享的 $theirCount 门课建立「${_termLabel(widget.term)}」的课表。开学日和作息不变。'
-            : '「${_termLabel(widget.term)}」现在的 $mineCount 门课会换成$friend分享的 $theirCount 门课，存成一个新版本；现在的课表留在历史版本里，可以恢复。开学日和作息不变。',
+            ? '用$friend分享的 $theirCount 门课建立「${_termLabel(widget.term)}」的课表'
+            : '「${_termLabel(widget.term)}」现在的 $mineCount 门课换成$friend分享的 $theirCount 门课，旧课表可在历史版本恢复',
         action: _fresh ? '导入' : '替换',
         destructive: !_fresh,
       )) {
@@ -168,8 +168,8 @@ class _ImportPageState extends State<_ImportPage> {
         CampusSurface(
           child: Text(
             _fresh
-                ? '会用${widget.friendName}分享的 $theirCount 门课建立这学期的课表。开学日和作息不变。'
-                : '你现在的 $mineCount 门课会换成${widget.friendName}分享的 $theirCount 门课。现在的课表留在历史版本里，可以恢复；开学日和作息不变。',
+                ? '用${widget.friendName}分享的 $theirCount 门课建立这学期的课表'
+                : '现在的 $mineCount 门课换成${widget.friendName}分享的 $theirCount 门课，旧课表可在历史版本恢复',
             style: TextStyle(fontSize: 16, height: 1.5, color: palette.onSurface),
           ),
         ),

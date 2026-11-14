@@ -95,7 +95,7 @@
 - 可点击元素一律做成带图标的按钮。状态信息只读，不用主色；主色只留给按钮和图标。整组操作和破坏性操作收进⋯菜单，并保留确认。
 - 液态玻璃只用于导航层与浮层；内容区按钮与标签用色调胶囊，顶栏透明、内容滚动时自身渐隐（见 lib/theme/CLAUDE.md）。
 - 会变化的列表按稳定键排序，状态变化时条目不跳动。
-- 文案简洁，少放说明性文字；账号授权、旧数据归属、删除或覆盖确认以及必要的错误文案必须保留。
+- 文案简洁，少放说明性文字；账号授权、旧数据归属、删除或覆盖确认以及必要的错误文案必须保留。一句话超过 40 个字要在上面三行内写「// 长文案：原因」，test/code_conventions_test.dart 守护（[人工决策] 在测试处）。
 - 手势、方向等偏离常见习惯的要求，先提醒用户确认再实现。
 - 文字最小 14px；带浮动标签的输入框，上方间距随字号缩放（campusFieldGap）。
 - 提示条一律 showCampusToast，停在底栏与页面底部按钮上方，点一下或划一下就收起、四周留白点穿；页面底部常驻的栏或主按钮包 CampusToastAnchor（规则见 theme/campus_transitions.dart 的人工决策）。没有可见结果的操作（清缓存、收藏等）点完要有提示条。
@@ -112,7 +112,7 @@
 
 # 测试
 
-- 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、请求记录、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由、页面滚动区渐隐、顶栏玻璃圆钮、toImageSync 只用于云雾贴图、内嵌网页拖动归网页），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
+- 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、请求记录、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由、页面滚动区渐隐、顶栏玻璃圆钮、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、界面文案长度），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
 - 基准图 golden_test.dart：登录、服务、我的、界面、成绩、百宝箱（含左滑露出的按钮）深浅两套，只在 Linux 上比、容差万分之一；改了样子是有意的，看过 test/failures 的差异图（CI 失败时是产物 golden-failures）再 flutter test --update-goldens test/golden_test.dart 重生成一起提交。界面库升级与主题改动都靠它把关。
 - 共用的测试支撑：fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、page_fixture_support.dart（整应用页面测试的合成账号与教务数据）、toolbox_test_support.dart、form_layout_support.dart、text_fit_support.dart（扫一屏文字的裁切、孤字与单独成行的标点）、app_update_fakes.dart、content_signing_support.dart（测试用签名钥）、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
 - CI 的 Flutter 作业带覆盖率跑全量测试，再由 tool/coverage_check.dart 算 lib 的行覆盖率，低于工具里的门槛就失败；本机复现先 flutter test --coverage 再 dart run 它。

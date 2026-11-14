@@ -154,7 +154,7 @@ void main() {
     await tester.tap(find.text('查看结果'));
     await tester.pumpAndSettle();
     expect(find.text('同步已中止'), findsOneWidget);
-    expect(find.textContaining('请求太过频繁，已停止剩余项'), findsOneWidget);
+    expect(find.textContaining('教务限流，已停止'), findsOneWidget);
     expect(find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == '未处理 · 成绩 · 当前学期'), findsOneWidget);
     expect(find.text('重新同步'), findsNothing);
     await tester.tap(find.text('知道了'));

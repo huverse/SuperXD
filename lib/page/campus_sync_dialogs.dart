@@ -45,7 +45,7 @@ Future<bool> showCampusSyncReport(
                 SyncOutcome.failed => '失败',
               }} · ${item.label}', item.message),
             for (final label in report.unfinished) row(context, CampusIcons.pause, '未处理 · $label'),
-            if (interrupted) Text(report.rateLimited ? '教务提示请求太过频繁，已停止剩余项；已完成的内容已保存，约1分钟后可重新同步。' : '离开今天页后已停止，已完成的内容已保存。', style: const TextStyle(fontSize: 14)),
+            if (interrupted) Text(report.rateLimited ? '教务限流，已停止；已完成的已保存，约 1 分钟后再同步' : '离开今天页后已停止，已完成的已保存', style: const TextStyle(fontSize: 14)),
           ],
         ),
       ),

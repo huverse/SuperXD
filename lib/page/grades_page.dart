@@ -427,7 +427,6 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
         scope == 'term' ? '教务汇总 · 本学期' : '旧缓存教务汇总 · 范围未核实',
         style: Theme.of(context).textTheme.titleMedium!,
       ),
-      if (scope != 'term') const Text('需重新同步核对范围，不将以下数值当作本学期指标。'),
       if (summary == null)
         Padding(padding: const EdgeInsets.only(top: 4), child: Text('教务没给本学期汇总', style: TextStyle(fontSize: 14, color: CampusPalette.of(context).onSurfaceVariant)))
       else ...[
@@ -605,7 +604,7 @@ class _GradesPageState extends State<GradesPage> with SingleTickerProviderStateM
                   overview.summaryScope,
                 )
               else
-                const Text('旧汇总范围未核实，请同步后查看学期指标。'),
+                const Text('汇总范围未核实，请重新同步'),
             ],
           ],
         ),
