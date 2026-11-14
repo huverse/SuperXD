@@ -1497,10 +1497,14 @@ void main() {
     await tester.tap(force);
     await tester.pump();
     await waitUntil(tester, () => find.widgetWithText(FilledButton, '强制签到').evaluate().isNotEmpty);
+    int activityLists() => fake.calls.where((call) => call.endsWith('/activelist')).length;
+    final before = activityLists();
     await tester.tap(find.widgetWithText(FilledButton, '强制签到'));
     await tester.pump();
     await waitUntil(tester, () => fake.signQuery != null);
     expect(find.text('请先选要签到的人'), findsNothing);
+    // 弹层关掉后才重读账号、再重拉这门课的签到：等到重拉再拆页面。拆早了，CI 上本机库慢时重读账号还在查库，测试结束时留着 sqflite 的计时器（11-14 main 偶发）。
+    await waitUntil(tester, () => activityLists() > before);
     await tester.pumpWidget(const SizedBox());
   });
 
