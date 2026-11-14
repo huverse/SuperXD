@@ -5,10 +5,11 @@ import { DistributedLock } from 'src/common/redis/redis.module';
 import { challengeBestKeepDays, challengeRunKeepDays, challengeSweepBatch, cleanupBatch } from 'src/common/relay_limits';
 import { ChallengeRepository } from 'src/modules/challenge/challenge.repository';
 import { ChallengeService } from 'src/modules/challenge/challenge.service';
+import { ChallengePace } from 'src/modules/challenge/challenge_pace';
 
 // 挑战的定时任务（多实例抢分布式锁，工作量有界）：
 // - 每 5 分钟结算到点没交的局（服务器计时不暂停，用户不回来也照样记分），每轮最多 10 批、每批 challengeSweepBatch 局；
-// - 每小时删结束满 30 天的局与挑战结束满 400 天的最好成绩，每轮最多 20 批、每批 1000 行。
+// - 每小时删结束满 30 天的局、挑战结束满 400 天的最好成绩与满 12 周的用时计数，每轮最多 20 批、每批 1000 行。
 @Injectable()
 export class ChallengeTasks {
   private readonly logger = new Logger('ChallengeTasks');
@@ -17,6 +18,7 @@ export class ChallengeTasks {
     private readonly lock: DistributedLock,
     private readonly challenges: ChallengeService,
     private readonly runs: ChallengeRepository,
+    private readonly pace: ChallengePace,
   ) {}
 
   // 只比较 UTC 绝对时刻，显式按 UTC 调度。
@@ -50,7 +52,13 @@ export class ChallengeTasks {
       best += batch;
       if (batch < cleanupBatch) break;
     }
-    this.logger.log(`[ChallengeTasks] action=sweep runs=${runs} best=${best}`);
+    let paces = 0;
+    for (let round = 0; round < 20; round++) {
+      const batch = await this.pace.deleteOld(now, cleanupBatch);
+      paces += batch;
+      if (batch < cleanupBatch) break;
+    }
+    this.logger.log(`[ChallengeTasks] action=sweep runs=${runs} best=${best} paces=${paces}`);
   }
 
   private async guard(name: string, ttlSeconds: number, task: () => Promise<void>) {

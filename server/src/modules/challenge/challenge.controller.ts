@@ -5,7 +5,7 @@ import { ChallengeService } from 'src/modules/challenge/challenge.service';
 import { CurrentDevice, DeviceAuthGuard } from 'src/modules/device/device_auth.guard';
 import * as dtos from 'src/modules/challenge/challenge.dto';
 
-// 挑战：用应用账号的设备密钥签名。看开放的挑战、开局、看局面、逐关交答案、提前结束。
+// 挑战：用应用账号的设备密钥签名。看开放的挑战、开局、看局面、逐关交答案、开门、输终章的最终密码、提前结束。
 @ApiTags('challenge')
 @Controller('v1')
 @UseGuards(DeviceAuthGuard)
@@ -32,6 +32,18 @@ export class ChallengeController {
   @HttpCode(200)
   answer(@CurrentDevice() deviceId: string, @Param() param: dtos.ChallengeLevelParamDto, @Body() body: dtos.ChallengeAnswerBodyDto): Promise<dtos.ChallengeAnswerDto> {
     return this.challenges.answer(deviceId, param.runId, param.levelId, body.attempt, body.answer);
+  }
+
+  @Post('challenge-runs/:runId/gates/:levelId')
+  @HttpCode(200)
+  gate(@CurrentDevice() deviceId: string, @Param() param: dtos.ChallengeGateParamDto, @Body() body: dtos.ChallengeGateBodyDto): Promise<dtos.ChallengeGateResultDto> {
+    return this.challenges.gate(deviceId, param.runId, param.levelId, body.value);
+  }
+
+  @Post('challenge-runs/:runId/final')
+  @HttpCode(200)
+  final(@CurrentDevice() deviceId: string, @Param() param: dtos.ChallengeRunParamDto, @Body() body: dtos.ChallengeGateBodyDto): Promise<dtos.ChallengeGateResultDto> {
+    return this.challenges.final(deviceId, param.runId, body.value);
   }
 
   @Post('challenge-runs/:runId/end')

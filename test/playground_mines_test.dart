@@ -225,7 +225,7 @@ void main() {
           expect(draw.solution, result.taps, reason: reason);
           expect(_rules.solved(puzzle, draw.solution), isTrue, reason: reason);
           expect(_rules.solved(puzzle, draw.solution.sublist(0, draw.solution.length - 1)), isFalse, reason: reason);
-          expect(_rules.difficulty(puzzle), inInclusiveRange(band.score.$1, band.score.$2), reason: reason);
+          expect(_rules.complexity(puzzle), inInclusiveRange(band.score.$1, band.score.$2), reason: reason);
         }
       }
       // 高档必须用到子集推理：只靠单格的推不完。
@@ -252,7 +252,7 @@ void main() {
     });
 
     test('难度分：同档最多差 1 分，下一档最低不低于上一档最高，平均分逐档上升；推理量过门槛才加 1', () {
-      final scores = {for (final tier in PuzzleTier.values) tier: [for (var seed = 0; seed < 30; seed++) _rules.difficulty(_rules.generate(seed, tier).puzzle)]};
+      final scores = {for (final tier in PuzzleTier.values) tier: [for (var seed = 0; seed < 30; seed++) _rules.complexity(_rules.generate(seed, tier).puzzle)]};
       double average(List<int> values) => values.reduce((sum, value) => sum + value) / values.length;
       int lowest(List<int> values) => values.reduce((a, b) => a < b ? a : b);
       int highest(List<int> values) => values.reduce((a, b) => a > b ? a : b);

@@ -566,12 +566,16 @@ class LogicGridRules extends PuzzleRules<LogicGridPuzzle, List<List<int>>> {
     return logicGridViolations(puzzle, answer).isEmpty;
   }
 
-  // 难度分口径：以规模为主，基础分 2 ×（人数 − 3）+ 2 ×（属性类数 − 2）+ 1（3 人 2 类 1 分、3 人 3 类 3、4 人 3 类 5、4 人 4 类 7、5 人 4 类 9）；
+  // 难易分口径：以规模为主，基础分 2 ×（人数 − 3）+ 2 ×（属性类数 − 2）+ 1（3 人 2 类 1 分、3 人 3 类 3、4 人 3 类 5、4 人 4 类 7、5 人 4 类 9）；
   // 再看推理过程（logicGridReasoning）：要试探才推得下去，或约束传播的轮数达到「人数 + 属性类数 − 2」，再加 1 分。
   // 所以同档的题最多差 1 分、下一档最低分高过上一档最高分：入门 1–2、简单 3–4、普通 5–6、困难 7–8、专家 9–10。
   // 不是唯一解的题面不会出、也解码不进来，按 10 分算。
+  // 预计用时：3 人 2 类约 1.5 分钟、5 人 4 类约 10 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.257。
   @override
-  int difficulty(LogicGridPuzzle puzzle) {
+  int expectedSeconds(LogicGridPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 80, growth: 1.257);
+
+  @override
+  int complexity(LogicGridPuzzle puzzle) {
     if (logicGridCount(puzzle) != 1) return 10;
     final reasoning = logicGridReasoning(puzzle);
     final size = puzzle.categories.length;

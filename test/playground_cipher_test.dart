@@ -207,7 +207,7 @@ void main() {
     test('难度分：1–10，同档最多差 1 分，下一档最低高过上一档最高', () {
       int? lowerTop;
       for (final tier in PuzzleTier.values) {
-        final scores = [for (var seed = 0; seed < 20; seed++) _rules.difficulty(_rules.generate(seed, tier).puzzle)];
+        final scores = [for (var seed = 0; seed < 20; seed++) _rules.complexity(_rules.generate(seed, tier).puzzle)];
         final lowest = scores.reduce(math.min), highest = scores.reduce(math.max);
         expect(lowest, greaterThanOrEqualTo(1));
         expect(highest, lessThanOrEqualTo(10));
@@ -215,9 +215,9 @@ void main() {
         if (lowerTop != null) expect(lowest, greaterThan(lowerTop), reason: '$tier 要高过下一档');
         lowerTop = highest;
       }
-      expect(_rules.difficulty(_chain), 1);
+      expect(_rules.complexity(_chain), 1);
       // 要联合的 3 位 0–5 题加 2 分。
-      expect(_rules.difficulty(_joint), 3);
+      expect(_rules.complexity(_joint), 3);
     });
 
     test('按规则判定：和每一行都对得上的合规密码都算（不和参考解比）；和某行对不上、位数不对、数字重复或超出范围都不算，并列出对不上的行', () {

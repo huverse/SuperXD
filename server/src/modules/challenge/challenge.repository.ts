@@ -18,7 +18,8 @@ export type RunRow = {
   endTime: Date | null;
 };
 
-export type RunChanges = Pick<RunRow, 'progress'> & Partial<Pick<RunRow, 'ending' | 'points' | 'awarded' | 'endTime'>> & { settle?: boolean };
+// plan 只在追加加试题时写，deadline 只在门与终章输错往前挪时写。
+export type RunChanges = Pick<RunRow, 'progress'> & Partial<Pick<RunRow, 'ending' | 'points' | 'awarded' | 'endTime' | 'plan' | 'deadline'>> & { settle?: boolean };
 
 // 挑战存储端口：服务只依赖这个抽象。
 export abstract class ChallengeRepository {
@@ -79,8 +80,8 @@ export class TypeormChallengeRepository extends ChallengeRepository {
 
   async updateRun(manager: EntityManager, runId: string, changes: RunChanges, now: Date) {
     await manager.query(
-      `UPDATE challenge_run SET progress = ?, ending = COALESCE(?, ending), points = COALESCE(?, points), awarded = COALESCE(?, awarded), end_time = COALESCE(?, end_time)${changes.settle === true ? ', active = NULL' : ''}, update_time = ? WHERE run_id = ?`,
-      [changes.progress, changes.ending ?? null, changes.points ?? null, changes.awarded ?? null, changes.endTime ?? null, now, runId],
+      `UPDATE challenge_run SET progress = ?, plan = COALESCE(?, plan), deadline = COALESCE(?, deadline), ending = COALESCE(?, ending), points = COALESCE(?, points), awarded = COALESCE(?, awarded), end_time = COALESCE(?, end_time)${changes.settle === true ? ', active = NULL' : ''}, update_time = ? WHERE run_id = ?`,
+      [changes.progress, changes.plan ?? null, changes.deadline ?? null, changes.ending ?? null, changes.points ?? null, changes.awarded ?? null, changes.endTime ?? null, now, runId],
     );
   }
 

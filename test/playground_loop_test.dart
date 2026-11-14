@@ -269,7 +269,7 @@ void main() {
     });
 
     test('难度分：1–10，同档最多差 1 分，下一档最低不低于上一档最高，平均分逐档上升', () {
-      final scores = {for (final tier in PuzzleTier.values) tier: [for (var seed = 0; seed < 10; seed++) _rules.difficulty(_rules.generate(seed, tier).puzzle)]};
+      final scores = {for (final tier in PuzzleTier.values) tier: [for (var seed = 0; seed < 10; seed++) _rules.complexity(_rules.generate(seed, tier).puzzle)]};
       double average(List<int> values) => values.reduce((sum, value) => sum + value) / values.length;
       int lowest(List<int> values) => values.reduce((a, b) => a < b ? a : b);
       int highest(List<int> values) => values.reduce((a, b) => a > b ? a : b);

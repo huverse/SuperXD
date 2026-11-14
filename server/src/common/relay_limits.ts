@@ -159,6 +159,13 @@ export const challengeConfigMaxBytes = 256 * 1024;
 export const challengeBankFileMaxBytes = 8 * 1024 * 1024;
 export const challengeBankCacheFiles = 100;
 export const challengeSweepBatch = 200;
+// 预计用时的回调（见 src/modules/challenge/challenge_pace.ts）：近 challengePaceWeeks 周的过关次数够 challengePaceMinSamples 才回调，
+// 倍数夹在 1/challengePaceMaxFactor 到 challengePaceMaxFactor；计数按周分开，满 challengePaceKeepWeeks 周删除；每实例缓存一小时。
+export const challengePaceWeeks = 8;
+export const challengePaceKeepWeeks = 12;
+export const challengePaceMinSamples = 30;
+export const challengePaceMaxFactor = 2;
+export const challengePaceCacheMs = 3600_000;
 
 // 设备 400 天没有任何请求即删除，连同其好友关系与待取消息。
 export const deviceIdleDays = 400;

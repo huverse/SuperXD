@@ -102,7 +102,7 @@ void main() {
           expect(draw.solution.length, least, reason: reason);
           expect(_rules.solved(puzzle, draw.solution), isTrue, reason: reason);
           expect(_rules.solved(puzzle, draw.solution.sublist(0, least! - 1)), isFalse, reason: reason);
-          expect(_rules.difficulty(puzzle), inInclusiveRange(band.score.$1, band.score.$2), reason: reason);
+          expect(_rules.complexity(puzzle), inInclusiveRange(band.score.$1, band.score.$2), reason: reason);
           rocks += puzzle.rocks.where((rock) => rock).length;
         }
         // 岩石密度按 15%–25% 撒：20 道平均下来落在这附近。

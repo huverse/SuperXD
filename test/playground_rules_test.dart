@@ -1,10 +1,41 @@
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/playground/challenge/challenge_rules.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_rules.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_rules.dart';
+import 'package:superxd/playground/puzzle/pour/pour_rules.dart';
+import 'package:superxd/playground/puzzle/schulte/schulte_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 
 void main() {
+  // 预计用时做标尺（人工决策见 puzzle_rules.dart 文件头）：难度分按预计用时取对数，跨游戏可比；每个游戏的预计用时随档不降。
+  group('预计用时与难度分', () {
+    test('难度分按预计用时取对数：25 秒 2、1 分钟 4、2 分钟 5、5 分钟 7、10 分钟 8、20 分钟起 10', () {
+      expect([for (final seconds in [5, 10, 25, 60, 120, 300, 600, 1200, 99999]) puzzleDifficulty(seconds)], [1, 1, 2, 4, 5, 7, 8, 10, 10]);
+      expect(puzzlePace(1, base: 30, growth: 1.5), 30);
+      expect(puzzlePace(3, base: 30, growth: 1.5), 68);
+    });
+
+    test('每个游戏的预计用时随档不降，难度分都在 1–10', () {
+      final all = <String, PuzzleRules<Object?, Object?>>{...challengeRules, 'schulte': const SchulteRules(), 'pour': const PourRules()};
+      for (final MapEntry(key: game, value: rules) in all.entries) {
+        var previous = 0;
+        for (final tier in PuzzleTier.values) {
+          final seconds = <int>[];
+          for (var seed = 0; seed < (game == 'pour' ? 3 : 5); seed++) {
+            final puzzle = rules.generate(seed, tier).puzzle;
+            seconds.add(rules.expectedSeconds(puzzle));
+            expect(rules.difficulty(puzzle), inInclusiveRange(1, 10), reason: '$game $tier $seed');
+          }
+          seconds.sort();
+          final median = seconds[seconds.length ~/ 2];
+          expect(median, greaterThanOrEqualTo(previous), reason: '$game $tier');
+          previous = median;
+        }
+      }
+    });
+  });
+
   group('可复现的随机数', () {
     test('同一个种子出同一串数，换种子不同', () {
       List<int> run(int seed) {

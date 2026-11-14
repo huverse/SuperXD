@@ -412,7 +412,7 @@ TwentyFourAnalysis twentyFourAnalyze(List<int> numbers, Set<TwentyFourOp> ops) {
   return (solutions: found.length, plain: ways.any((way) => way.plain), whole: ways.any((way) => way.whole), sample: sample);
 }
 
-// 难度分（1–10）口径：先看非用不可的算法，再看解法多少（去掉等价写法后的解法数，口径见 _canonical，按题面允许的运算数）：
+// 难易分（1–10）口径：先看非用不可的算法，再看解法多少（去掉等价写法后的解法数，口径见 _canonical，按题面允许的运算数）：
 // - 经典四则不经过分数解不开（必须经过分数，或必须用乘方、开方）：9，只有一种解法 10；
 // - 有经典四则不经过分数的解法、但每种解法都要用除法、乘方或开方：7，只有一种解法 8；
 // - 只用加减乘就能解的，按解法数：8 种以上 1、5–7 种 2、4 种 3、3 种 4、2 种 5、只有 1 种 6。
@@ -439,7 +439,7 @@ int twentyFourScore(TwentyFourAnalysis analysis) {
 class TwentyFourRules extends PuzzleRules<TwentyFourPuzzle, List<TwentyFourStep>> {
   const TwentyFourRules();
 
-  // 每档的数从哪个区间里抽、允许哪些运算、难度分落在哪一段。入门、简单的数小，心算轻松；普通起用到 13；困难起加乘方与开方。
+  // 每档的数从哪个区间里抽、允许哪些运算、难易分落在哪一段。入门、简单的数小，心算轻松；普通起用到 13；困难起加乘方与开方。
   static const _ranges = {PuzzleTier.entry: (1, 9), PuzzleTier.easy: (1, 10), PuzzleTier.normal: (1, 13), PuzzleTier.hard: (1, 13), PuzzleTier.expert: (1, 13)};
   static const _ops = {
     PuzzleTier.entry: twentyFourClassic,
@@ -450,11 +450,11 @@ class TwentyFourRules extends PuzzleRules<TwentyFourPuzzle, List<TwentyFourStep>
   };
   static const _scores = {PuzzleTier.entry: (1, 2), PuzzleTier.easy: (3, 4), PuzzleTier.normal: (5, 6), PuzzleTier.hard: (7, 8), PuzzleTier.expert: (9, 10)};
 
-  // 出题：在这一档的区间里随机抽四个数，难度分落在这一档的分数段、确认有解才用，否则重抽。
+  // 出题：在这一档的区间里随机抽四个数，难易分落在这一档的分数段、确认有解才用，否则重抽。
   // - 专家档：经典四则不经过分数就能解的不要（先用找到就停的求解筛，大多数组合几步就找到），剩下的用全部运算求解，
   //   有解且解法不超过 twentyFourExpertSolutions 种才用；
   // - 其余各档：分数段只取决于「只用加减乘能不能解、经典四则有没有不经过分数的解法」与解法数，前两条与乘方、开方无关，
-  //   困难档按经典四则求解定档（乘方、开方是多给的办法，解法数在难度分里另算，仍落在 7–8 分）。
+  //   困难档按经典四则求解定档（乘方、开方是多给的办法，解法数在难易分里另算，仍落在 7–8 分）。
   @override
   PuzzleDraw<TwentyFourPuzzle, List<TwentyFourStep>> generate(int seed, PuzzleTier tier) {
     final (low, high) = _ranges[tier]!;
@@ -484,8 +484,12 @@ class TwentyFourRules extends PuzzleRules<TwentyFourPuzzle, List<TwentyFourStep>
     return left != null && left.length == 1 && left.single == twentyFourTarget;
   }
 
+  // 预计用时：一眼能凑的约 20 秒、只有一两种解法的约 3 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.306。
   @override
-  int difficulty(TwentyFourPuzzle puzzle) => twentyFourScore(twentyFourAnalyze(puzzle.numbers, puzzle.ops));
+  int expectedSeconds(TwentyFourPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 19, growth: 1.306);
+
+  @override
+  int complexity(TwentyFourPuzzle puzzle) => twentyFourScore(twentyFourAnalyze(puzzle.numbers, puzzle.ops));
 
   // 题面编成 {'numbers': [四个数，按位置顺序], 'ops': [允许的运算 code，从小到大]}。
   @override

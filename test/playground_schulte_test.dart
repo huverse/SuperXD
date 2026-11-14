@@ -137,7 +137,7 @@ void main() {
     test('难度分只看格数与题型：同档相同、逐档上升，专家的红黑表高过 6×6', () {
       int? previous;
       for (final tier in PuzzleTier.values) {
-        final scores = {for (var seed = 0; seed < 10; seed++) _rules.difficulty(_rules.generate(seed, tier).puzzle)};
+        final scores = {for (var seed = 0; seed < 10; seed++) _rules.complexity(_rules.generate(seed, tier).puzzle)};
         expect(scores, {_scores[tier]}, reason: '$tier');
         if (previous != null) expect(scores.single, greaterThan(previous), reason: '$tier 要高过下一档');
         previous = scores.single;

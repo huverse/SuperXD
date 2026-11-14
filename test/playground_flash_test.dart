@@ -285,15 +285,15 @@ void main() {
       int? lower;
       for (final MapEntry(key: tier, value: expected) in _tiers.entries) {
         for (var seed = 0; seed < 20; seed++) {
-          expect(_rules.difficulty(_rules.generate(seed, tier).puzzle), expected.score, reason: '$tier $seed');
+          expect(_rules.complexity(_rules.generate(seed, tier).puzzle), expected.score, reason: '$tier $seed');
         }
         if (lower != null) expect(expected.score, greaterThan(lower));
         lower = expected.score;
       }
       final easiest = FlashPuzzle(side: 3, showMillis: flashMaxShowMillis, rounds: const [[[0]]]);
       final hardest = FlashPuzzle(side: 6, showMillis: flashMinShowMillis, rounds: List.filled(flashMaxRounds, [List.generate(18, (cell) => cell)]));
-      expect(_rules.difficulty(easiest), 1);
-      expect(_rules.difficulty(hardest), 10);
+      expect(_rules.complexity(easiest), 1);
+      expect(_rules.complexity(hardest), 10);
     });
 
     test('登记在记忆与反应，能进挑战', () {

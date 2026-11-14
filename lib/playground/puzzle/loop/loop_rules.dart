@@ -126,7 +126,7 @@ typedef LoopSolveResult = ({int count, List<bool>? first, int rounds, int branch
 // 5. 圈里圈外：边是线当且仅当两边的格一里一外，已知同侧、异侧的关系用带奇偶的并查集记，两格进了同一组，中间那条边就定了。
 // 6. 全部的线要能沿着不是叉的边连成一片，连不上就是矛盾。
 // 试探挑线头（度为 1 的点）里未定边最少、所在那段线最短的那个，没有线头挑还差线最多的数字格；挑法固定，唯一解的题数满两个之前
-// 会把整棵树走完，所以分支数是这道题确定的值，进难度分。rounds 是开头那次推理走了几轮（一轮 = 上一轮改过的边牵涉的格与点各查一遍）。
+// 会把整棵树走完，所以分支数是这道题确定的值，进难易分。rounds 是开头那次推理走了几轮（一轮 = 上一轮改过的边牵涉的格与点各查一遍）。
 LoopSolveResult loopSolve(LoopPuzzle puzzle, {int limit = 2}) => _LoopSolver(puzzle.width, puzzle.height, _allowedOf(puzzle.clues)).solve(limit);
 
 // 只推理、不试探：从题面加上已知的边（given 是边的下标到「是不是线」）推到推不动，返回每条边的结论（true 线、false 叉、null 未定），
@@ -772,10 +772,14 @@ class LoopRules extends PuzzleRules<LoopPuzzle, List<bool>> {
     return walked == total;
   }
 
-  // 难度分口径：以边长为主（4、5、6、7 见方记 1、3、5、7，8 见方起记 9）；要试探的题试探分支数不少于格数的四分之一、
+  // 难易分口径：以边长为主（4、5、6、7 见方记 1、3、5、7，8 见方起记 9）；要试探的题试探分支数不少于格数的四分之一、
   // 只靠推理的题推理轮数不少于格数的一半，再加 1。五档各占两分（入门 1–2 到专家 9–10），同档最多差 1、档间不重叠。
+  // 预计用时：4 见方约 45 秒、10 见方约 10 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.376。
   @override
-  int difficulty(LoopPuzzle puzzle) {
+  int expectedSeconds(LoopPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 35, growth: 1.376);
+
+  @override
+  int complexity(LoopPuzzle puzzle) {
     final result = loopSolve(puzzle);
     final side = (puzzle.width + puzzle.height) / 2;
     final base = (2 * side - 7).round().clamp(1, 9);

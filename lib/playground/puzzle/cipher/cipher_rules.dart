@@ -353,11 +353,15 @@ class CipherRules extends PuzzleRules<CipherPuzzle, List<int>> {
   @override
   bool solved(CipherPuzzle puzzle, List<int> answer) => cipherValidCode(puzzle, answer) && cipherConflicts(puzzle, answer).isEmpty;
 
-  // 难度分口径：先看候选有多少（位数与数字个数）：3 位 0–5 记 1，3 位 0–9 记 3，4 位记 5，5 位记 7；必须联合几行才推得下去的再加 2；
+  // 难易分口径：先看候选有多少（位数与数字个数）：3 位 0–5 记 1，3 位 0–9 记 3，4 位记 5，5 位记 7；必须联合几行才推得下去的再加 2；
   // 单行要来回推三轮以上（前面推出的结论要拿回去再用一遍）的再加 1。按各档的方案出题，同档最多差 1 分、下一档最低高过上一档最高：
   // 入门 1–2、简单 3–4、普通 5–6、困难 7–8、专家 9–10。不是唯一解的题面不会出、也解码不进来，按 10 分算。
+  // 预计用时：入门约 1 分钟、专家约 7 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.247。
   @override
-  int difficulty(CipherPuzzle puzzle) {
+  int expectedSeconds(CipherPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 57, growth: 1.247);
+
+  @override
+  int complexity(CipherPuzzle puzzle) {
     if (cipherSolve(puzzle).count != 1) return 10;
     final reasoning = cipherReasoning(puzzle);
     final base = 2 * (puzzle.length - 3) + (puzzle.digits > 6 ? 3 : 1) + (reasoning.depth > 1 ? 2 : 0);

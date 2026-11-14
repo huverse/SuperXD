@@ -163,7 +163,7 @@ void main() {
     test('难度分：1–10，同档最多差 1 分，下一档最低高过上一档最高', () {
       int? lowerTop;
       for (final tier in PuzzleTier.values) {
-        final scores = [for (var seed = 0; seed < 20; seed++) _rules.difficulty(_rules.generate(seed, tier).puzzle)];
+        final scores = [for (var seed = 0; seed < 20; seed++) _rules.complexity(_rules.generate(seed, tier).puzzle)];
         final lowest = scores.reduce(math.min), highest = scores.reduce(math.max);
         expect(lowest, greaterThanOrEqualTo(1));
         expect(highest, lessThanOrEqualTo(10));
@@ -171,8 +171,8 @@ void main() {
         if (lowerTop != null) expect(lowest, greaterThan(lowerTop), reason: '$tier 要高过下一档');
         lowerTop = highest;
       }
-      expect(_rules.difficulty(_rules.generate(0, PuzzleTier.entry).puzzle), 1);
-      expect(_rules.difficulty(_rules.generate(0, PuzzleTier.expert).puzzle), greaterThanOrEqualTo(9));
+      expect(_rules.complexity(_rules.generate(0, PuzzleTier.entry).puzzle), 1);
+      expect(_rules.complexity(_rules.generate(0, PuzzleTier.expert).puzzle), greaterThanOrEqualTo(9));
     });
 
     test('按规则判定：任何一组让每句话都和身份对得上的都算（不和参考解比）；改错一个人、人数不对都不算，并标出对不上的人', () {

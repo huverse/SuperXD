@@ -8,12 +8,27 @@ import { ChallengePeriod } from 'src/modules/challenge/challenge_calendar';
 export const challengeTiers = ['entry', 'easy', 'normal', 'hard', 'expert'] as const;
 export type ChallengeTier = (typeof challengeTiers)[number];
 
-// 能收钥匙的游戏（同客户端 challengeConsumers）。
-export const consumerGames = new Set(['twentyfour', 'queens', 'loop']);
+// 能收碎片的游戏（同客户端 challengeConsumers，人工决策见 lib/playground/challenge/challenge_rules.dart）：补条件的在题面上写成 ?，改目标的由服务器改写题面。
+export const slotGames = new Set(['twentyfour', 'queens', 'loop', 'cipher', 'knights']);
+export const goalGames = new Set(['hanoi', 'ice', 'flash']);
+export const consumerGames = new Set([...slotGames, ...goalGames]);
+// 碎片要按玩家的答案才知道的游戏（天平称球的球是玩家称出来的）：只能放在不给别的关碎片的位置。
+export const answerFragmentGames = new Set(['balance']);
+// 困难与专家档要用最少步数的游戏（[人工决策-2026-11-14 23:11:48]）。
+export const optimalGames = new Set(['hanoi', 'ice', 'lights', 'boxes']);
+export const optimalTiers = new Set<ChallengeTier>(['hard', 'expert']);
 
 export type ChallengeScoring = {
-  // 每关基础分 = levelBase × 难度分（1–10）。
+  // 每关基础分 = levelBase × 难度分（1–10，按预计用时取对数）。
   levelBase: number;
+  // 参考用时 = 这一关的预计用时 × parSlack（预计用时已按真实过关用时回调，见 challenge_pace.ts）。
+  parSlack: number;
+  // 门与终章输错一次扣多少秒（到点时刻往前挪）。
+  gatePenalty: number;
+  // 一关的用时不到预计用时的 extraRatio（也不到 extraFloor 秒）算快得不正常，追加一道加试题；一局最多 maxExtras 道。
+  extraRatio: number;
+  extraFloor: number;
+  maxExtras: number;
   // 时间系数最低留这么多（用时是参考用时的几倍都不低于它）。
   timeFloor: number;
   // 每错交一次（含记忆闪光一题里点错）乘一次。
@@ -53,6 +68,11 @@ const scoringOf = (raw: unknown): ChallengeScoring => {
   const value = record(raw, 'scoring');
   return {
     levelBase: number(value.levelBase, 'scoring.levelBase', 1, 1000),
+    parSlack: number(value.parSlack, 'scoring.parSlack', 1, 10),
+    gatePenalty: Math.trunc(number(value.gatePenalty, 'scoring.gatePenalty', 0, 600)),
+    extraRatio: number(value.extraRatio, 'scoring.extraRatio', 0, 1),
+    extraFloor: Math.trunc(number(value.extraFloor, 'scoring.extraFloor', 0, 600)),
+    maxExtras: Math.trunc(number(value.maxExtras, 'scoring.maxExtras', 0, 5)),
     timeFloor: number(value.timeFloor, 'scoring.timeFloor', 0, 1),
     errorDecay: number(value.errorDecay, 'scoring.errorDecay', 0, 1),
     passWeight: number(value.passWeight, 'scoring.passWeight', 0, 1),
@@ -63,7 +83,8 @@ const scoringOf = (raw: unknown): ChallengeScoring => {
   };
 };
 
-// 关卡图：节点 id 唯一；每条边从给钥匙的关指向收钥匙的关；收钥匙的关只能是能收钥匙的游戏；每关最多给一把钥匙（最多一条出边）；不能有环；最多 maxLevels 关。
+// 关卡图：节点 id 是一个字母 a–p 且唯一（加试题用 xa、xb…）；每条边从给碎片的关指向收碎片的关；收碎片的关只能是能收碎片的游戏；
+// 每关的碎片最多进一道门（最多一条出边）；不能有环；最多 maxLevels 关。
 const templateOf = (id: string, raw: unknown, judged: Set<string>, maxLevels: number): ChallengeTemplate => {
   const value = record(raw, `模板 ${id}`);
   const nodes = list(value.nodes, `模板 ${id} 的 nodes`, maxLevels).map((item, index): ChallengeNode => {
@@ -71,7 +92,7 @@ const templateOf = (id: string, raw: unknown, judged: Set<string>, maxLevels: nu
     const tier = text(node.tier, `模板 ${id} 的档位`, /^(entry|easy|normal|hard|expert)$/) as ChallengeTier;
     const games = node.games === undefined ? null : list(node.games, `模板 ${id} 的 games`, 32).map((game) => (typeof game === 'string' && judged.has(game) ? game : fail(`模板 ${id} 里的游戏 ${String(game)} 进不了挑战`)));
     if (games !== null && games.length === 0) fail(`模板 ${id} 的 games 不能为空`);
-    return { id: text(node.id, `模板 ${id} 的关卡 id`, /^[a-z]{1,2}$/), tier, games };
+    return { id: text(node.id, `模板 ${id} 的关卡 id`, /^[a-p]$/), tier, games };
   });
   if (nodes.length < 2) fail(`模板 ${id} 至少两关`);
   const ids = new Set(nodes.map((node) => node.id));
@@ -89,7 +110,10 @@ const templateOf = (id: string, raw: unknown, judged: Set<string>, maxLevels: nu
   }
   for (const node of nodes) {
     if (!edges.some(([, to]) => to === node.id)) continue;
-    if ((node.games ?? [...consumerGames]).some((game) => !consumerGames.has(game))) fail(`模板 ${id} 的 ${node.id} 收钥匙，只能是 ${[...consumerGames].join('、')}`);
+    if ((node.games ?? [...consumerGames]).some((game) => !consumerGames.has(game))) fail(`模板 ${id} 的 ${node.id} 收碎片，只能是 ${[...consumerGames].join('、')}`);
+  }
+  for (const node of nodes) {
+    if (outgoing.has(node.id) && node.games !== null && node.games.every((game) => answerFragmentGames.has(game))) fail(`模板 ${id} 的 ${node.id} 给碎片，不能只放 ${[...answerFragmentGames].join('、')}`);
   }
   // 每关只有一条出边，沿出边走不回原处就没有环。
   for (const node of nodes) {

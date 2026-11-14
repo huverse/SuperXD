@@ -160,7 +160,8 @@ export const minesJudge: Judge<MinesPuzzle, number[]> = {
 };
 
 // ---------- 记忆闪光 flash ----------
-type FlashPuzzle = { side: number; rounds: number[][][] };
+// mirror：挑战里碎片改目标时为真，亮的照常亮，要点的是左右镜像的格（同 Dart 的 flashPattern）。
+type FlashPuzzle = { side: number; rounds: number[][][]; mirror: boolean };
 const flashMinSide = 3, flashMaxSide = 6, flashMaxRounds = 10, flashMaxPatterns = 8, flashMaxAttempts = 400;
 
 // 按规则重放答案，返回点错的次数；不合规或没走完全部轮次返回 null（同 Dart 的 flashMistakes）。
@@ -171,7 +172,8 @@ export const flashMistakes = (puzzle: FlashPuzzle, attempts: number[][]): number
   for (const taps of attempts) {
     if (round === puzzle.rounds.length) return null;
     const patterns = puzzle.rounds[round];
-    const pattern = patterns[tries % patterns.length];
+    const shown = patterns[tries % patterns.length];
+    const pattern = puzzle.mirror ? shown.map((cell) => Math.trunc(cell / puzzle.side) * puzzle.side + puzzle.side - 1 - (cell % puzzle.side)) : shown;
     const hits = new Set<number>();
     let last: 'hit' | 'cleared' | 'missed' | null = null;
     for (const cell of taps) {
@@ -197,8 +199,11 @@ export const flashJudge: Judge<FlashPuzzle, number[][]> = {
     const side = puzzleInt(json, 'side', flashMinSide, flashMaxSide);
     const rounds = field(json, 'rounds');
     if (!Array.isArray(rounds) || rounds.length === 0 || rounds.length > flashMaxRounds) throw new JudgeFormatError('轮数不合法');
+    const mirror = field(json, 'mirror') ?? false;
+    if (typeof mirror !== 'boolean') throw new JudgeFormatError('镜像不合法');
     return {
       side,
+      mirror,
       rounds: rounds.map((patterns) => {
         if (!Array.isArray(patterns) || patterns.length === 0 || patterns.length > flashMaxPatterns) throw new JudgeFormatError('一轮的图案不合法');
         return patterns.map((pattern) => puzzleInts(pattern, Math.trunc((side * side) / 2), 0, side * side - 1));

@@ -82,10 +82,14 @@ class SchulteRules extends PuzzleRules<SchultePuzzle, List<int>> {
     return true;
   }
 
-  // 难度分：要找的格数，红黑表乘 2（按常见常模，红黑表每格用时是单色的两到三倍，取保守的 2），除以 7 加 1 再取整：
+  // 难易分：要找的格数，红黑表乘 2（按常见常模，红黑表每格用时是单色的两到三倍，取保守的 2），除以 7 加 1 再取整：
   // 入门 2、简单 3、普通 5、困难 6、专家 8。只看格数与题型，同档相同、逐档上升（与其他游戏入门约 2、专家七八分同一把尺子）。
+  // 预计用时：每个数约 1.1 秒（找加点），红黑表要来回换着找、约 2.2 秒。
   @override
-  int difficulty(SchultePuzzle puzzle) => (puzzle.count * (puzzle.variant == SchulteVariant.redBlack ? 2 : 1) / 7 + 1).round().clamp(1, 10);
+  int expectedSeconds(SchultePuzzle puzzle) => (puzzle.count * (puzzle.variant == SchulteVariant.redBlack ? 2.2 : 1.1)).round();
+
+  @override
+  int complexity(SchultePuzzle puzzle) => (puzzle.count * (puzzle.variant == SchulteVariant.redBlack ? 2 : 1) / 7 + 1).round().clamp(1, 10);
 
   // 题面编成边长、题型与每格的数（按行优先）；红黑表另加一串 0、1，1 是红色。
   @override

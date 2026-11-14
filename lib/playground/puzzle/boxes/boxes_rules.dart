@@ -27,7 +27,7 @@ const boxesMaxSide = 16;
 const boxesMaxBoxes = 5;
 // 一局最多记这么多步（外部输入的上限；专家档的参考走法一两百步，留足走弯路与撤销重走的余地）。
 const boxesMaxMoves = 4096;
-// 求解器最多展开这么多个状态：外部的题超了按解不开算（难度分记满）。出的题实测最多展开一万上下。
+// 求解器最多展开这么多个状态：外部的题超了按解不开算（难易分记满）。出的题实测最多展开一万上下。
 const boxesSolveLimit = 60000;
 
 const _rowStep = [-1, 0, 1, 0];
@@ -71,7 +71,7 @@ int? boxesNeighbor(BoxesPuzzle puzzle, int cell, int direction) {
 
 bool boxesAllHome(BoxesPuzzle puzzle, List<int> boxes) => boxes.every(puzzle.goals.contains);
 
-// 求解结果：一份走法（每步一个方向）、最少推几次，以及求解器为此展开了多少个状态（难度分用）。
+// 求解结果：一份走法（每步一个方向）、最少推几次，以及求解器为此展开了多少个状态（难易分用）。
 class BoxesSolution {
   const BoxesSolution({required this.moves, required this.pushes, required this.expanded});
   final List<int> moves;
@@ -255,8 +255,12 @@ class BoxesRules extends PuzzleRules<BoxesPuzzle, List<int>> {
   @override
   bool solved(BoxesPuzzle puzzle, List<int> answer) => answer.length <= boxesMaxMoves && boxesAllHome(puzzle, boxesReplay(puzzle, answer).boxes);
 
+  // 预计用时：入门约 50 秒、专家约 8 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.318。
   @override
-  int difficulty(BoxesPuzzle puzzle) {
+  int expectedSeconds(BoxesPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 49, growth: 1.318);
+
+  @override
+  int complexity(BoxesPuzzle puzzle) {
     final solution = boxesSolve(puzzle);
     return solution == null ? 10 : boxesDifficulty(solution.pushes);
   }
@@ -301,7 +305,7 @@ class BoxesRules extends PuzzleRules<BoxesPuzzle, List<int>> {
   List<int> decodeAnswer(Object? json) => puzzleInts(json, maxLength: boxesMaxMoves, min: 0, max: boxesDirections - 1);
 }
 
-// 难度分 1–10：按最少推数分段，段界对齐各档最少推数的区间（入门 4–8、简单 9–13、普通 14–19、困难 20–26、专家 27–40），
+// 难易分 1–10：按最少推数分段，段界对齐各档最少推数的区间（入门 4–8、简单 9–13、普通 14–19、困难 20–26、专家 27–40），
 // 所以档与档的分数段不重叠：入门 1–2、简单 3、普通 4–5、困难 6–7、专家 8–10。箱子数已经随档定，推数又随箱子数涨，不另算。
 int boxesDifficulty(int pushes) => switch (pushes) {
   <= 6 => 1,

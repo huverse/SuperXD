@@ -9,9 +9,11 @@ import { periodOf } from 'src/modules/challenge/challenge_calendar';
 import { ChallengeConfig, ChallengeConfigError, ChallengeTemplate, ChallengeTier, parseChallengeConfig } from 'src/modules/challenge/challenge_config';
 import { judgedGames } from 'src/modules/challenge/judges/judges';
 
-// 题库里的一道题：题面（Dart 规则编码）、难度分与能挖掉换成钥匙的条件（只有收钥匙的游戏有）。题库由 tool/challenge_bank.dart 用保密种子生成。
-export type BankSlot = { at: number; value: number; key: number };
-export type BankEntry = { id: string; puzzle: unknown; difficulty: number; slots: BankSlot[] };
+// 题库里的一道题（tool/challenge_bank.dart 用保密种子生成，第 2 版）：题面（Dart 规则编码）、预计用时（秒）、难度分、碎片（天平称球为空）、
+// 要最少步数的游戏的最少步数、能写成 ? 的几处（补条件的游戏）与几个标号的出口（冰面滑行：每个当终点时的最少步数、碎片与预计用时）。
+export type BankSlot = { at: number; value: number };
+export type BankExit = { cell: number; minimum: number; fragment: number; expected: number; difficulty: number };
+export type BankEntry = { id: string; puzzle: unknown; expected: number; difficulty: number; fragment: number | null; minimum: number | null; slots: BankSlot[]; exits: BankExit[] };
 
 // 此刻开放的一个挑战；ticket 是开局要付的积分，0 是免费。
 export type OpenChallenge = { id: string; title: string; template: ChallengeTemplate; start: number; end: number; ticket: number };
@@ -91,14 +93,21 @@ export class ChallengeContent {
   }
 }
 
+const whole = (value: unknown, min: number, max: number) => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
+
 const parseBank = (raw: unknown): BankEntry[] => {
   const file = raw as { version?: unknown; entries?: unknown };
-  if (file?.version !== 1 || !Array.isArray(file.entries)) throw new ChallengeConfigError('题库格式不对');
+  if (file?.version !== 2 || !Array.isArray(file.entries)) throw new ChallengeConfigError('题库格式不对');
   return file.entries.map((item: unknown) => {
     const entry = item as Partial<BankEntry>;
     const slots = Array.isArray(entry.slots) ? entry.slots : [];
-    if (typeof entry.id !== 'string' || typeof entry.difficulty !== 'number' || entry.puzzle === undefined) throw new ChallengeConfigError('题库条目不对');
-    for (const slot of slots) if (![slot?.at, slot?.value, slot?.key].every((value) => Number.isInteger(value))) throw new ChallengeConfigError('题库的钥匙位置不对');
-    return { id: entry.id, puzzle: entry.puzzle, difficulty: Math.min(10, Math.max(1, Math.round(entry.difficulty))), slots };
+    const exits = Array.isArray(entry.exits) ? entry.exits : [];
+    if (typeof entry.id !== 'string' || entry.puzzle === undefined || !whole(entry.expected, 1, 86400) || !whole(entry.difficulty, 1, 10)) throw new ChallengeConfigError('题库条目不对');
+    if ((entry.fragment !== null && !whole(entry.fragment, 0, 99999)) || (entry.minimum !== null && !whole(entry.minimum, 0, 99999))) throw new ChallengeConfigError('题库的碎片或最少步数不对');
+    for (const slot of slots) if (!whole(slot?.at, 0, 999) || !whole(slot?.value, 0, 99)) throw new ChallengeConfigError('题库能写成 ? 的位置不对');
+    for (const exit of exits) {
+      if (![exit?.cell, exit?.minimum, exit?.fragment].every((value) => whole(value, 0, 99999)) || !whole(exit?.expected, 1, 86400) || !whole(exit?.difficulty, 1, 10)) throw new ChallengeConfigError('题库的出口不对');
+    }
+    return { id: entry.id, puzzle: entry.puzzle, expected: entry.expected!, difficulty: entry.difficulty!, fragment: entry.fragment ?? null, minimum: entry.minimum ?? null, slots, exits };
   });
 };

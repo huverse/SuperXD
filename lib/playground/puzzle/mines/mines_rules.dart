@@ -264,8 +264,12 @@ class MinesRules extends PuzzleRules<MinesPuzzle, List<int>> {
     return true;
   }
 
+  // 预计用时：6 见方约 40 秒、14 见方约 7 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.343。
   @override
-  int difficulty(MinesPuzzle puzzle) => minesDifficulty(puzzle.mines.where((mine) => mine).length, minesDeep(minesSolve(puzzle)));
+  int expectedSeconds(MinesPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 34, growth: 1.343);
+
+  @override
+  int complexity(MinesPuzzle puzzle) => minesDifficulty(puzzle.mines.where((mine) => mine).length, minesDeep(minesSolve(puzzle)));
 
   @override
   Object encodePuzzle(MinesPuzzle puzzle) => {
@@ -303,7 +307,7 @@ class MinesRules extends PuzzleRules<MinesPuzzle, List<int>> {
 // 推理量：子集推理的轮数加全局推理轮数的两倍（数雷要通盘看，比两格对比更难想到）。
 int minesDeep(MinesSolveResult result) => result.subsets + result.globals * 2;
 
-// 难度分 1–10 的口径：以雷数为主（雷越多、要推的格越多），按雷数分五段（段界 8、13、22、34，对着五档的 5、10、15、28、40 颗），
+// 难易分 1–10 的口径：以雷数为主（雷越多、要推的格越多），按雷数分五段（段界 8、13、22、34，对着五档的 5、10、15、28、40 颗），
 // 基础分 1、3、5、7、9；推理量到了这一段的门槛（第几段就是几轮，入门 1 轮到专家 5 轮，约是各档出题的中位数）再加 1。
 // 所以同档的题最多差 1 分，下一档最低不低于上一档最高：入门 1–2、简单 3–4、普通 5–6、困难 7–8、专家 9–10。
 int minesDifficulty(int mines, int deep) {
