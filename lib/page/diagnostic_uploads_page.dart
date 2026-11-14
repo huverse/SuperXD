@@ -72,6 +72,9 @@ class _DiagnosticUploadsPageState extends State<DiagnosticUploadsPage> {
 
   static String _size(int bytes) => bytes < 1024 * 1024 ? '${math.max(1, (bytes / 1024).round())} KB' : '${(bytes / 1024 / 1024).toStringAsFixed(1)} MB';
 
+  // 还有几天删除：不满一天也算一天（刚传完写 30 天，同确认框；服务器在到点后的清理轮次才删）。
+  static int _daysLeft(DateTime expiresAt) => math.max(0, (expiresAt.difference(DateTime.now().toUtc()).inMinutes / Duration.minutesPerDay).ceil());
+
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
@@ -96,7 +99,7 @@ class _DiagnosticUploadsPageState extends State<DiagnosticUploadsPage> {
                       Text('诊断编号 ${record.id}', style: Theme.of(context).textTheme.titleMedium),
                       const SizedBox(height: 2),
                       DotSeparatedText(
-                        ['上传于 ${formatCampusRelative(record.uploadedAt.toIso8601String())}', _size(record.bytes), '${math.max(0, record.expiresAt.difference(DateTime.now().toUtc()).inDays)} 天后删除'].join(' · '),
+                        ['上传于 ${formatCampusRelative(record.uploadedAt.toIso8601String())}', _size(record.bytes), '${_daysLeft(record.expiresAt)} 天后删除'].join(' · '),
                         style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
                       ),
                     ])),

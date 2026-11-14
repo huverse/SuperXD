@@ -281,7 +281,8 @@ void main() {
     // 人工决策见 domain/diagnostic_upload.dart：登录着应用账号时，菜单里看与删记在账号下的诊断包。
     testWidgets('登录着点开多一项「我上传的诊断包」：列出记在账号下的包，点一行复制编号，⋯里删除要确认', (tester) async {
       final diagnosticsClient = _DiagnosticClient([
-        DiagnosticRecord(id: '7KQ2M9XD', bytes: 2 * 1024 * 1024, uploadedAt: DateTime.now().toUtc(), expiresAt: DateTime.now().toUtc().add(const Duration(days: 30, hours: 1))),
+        // 刚传完：离删除差几分钟满 30 天，要写 30 天（同确认框），不能向下取整成 29。
+        DiagnosticRecord(id: '7KQ2M9XD', bytes: 2 * 1024 * 1024, uploadedAt: DateTime.now().toUtc(), expiresAt: DateTime.now().toUtc().add(const Duration(days: 30, minutes: -1))),
       ]);
       final diagnostics = AccountDiagnostics(uploader: _NoUploader(), client: diagnosticsClient, account: () => appAccounts.current);
       String? copied;
