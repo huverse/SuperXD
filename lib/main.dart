@@ -25,6 +25,7 @@ import 'package:superxd/application/campus_timetable.dart';
 import 'package:superxd/application/campus_widgets.dart';
 import 'package:superxd/application/challenges.dart';
 import 'package:superxd/application/developer_notes.dart';
+import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/festivals.dart';
 import 'package:superxd/application/rollouts.dart';
@@ -81,6 +82,7 @@ import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_challenge_client.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/social/relay_diagnostic_account.dart';
 import 'package:superxd/social/relay_reward_client.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_store.dart';
@@ -123,14 +125,14 @@ void main() async {
   final deviceOnly = Platform.isIOS ? Directory(path.join(support.path, 'device_only')) : support;
   final external = Platform.isAndroid ? await getExternalStorageDirectory() : null;
   // 诊断包上传走同一个自建中转（人工决策见 domain/diagnostic_upload.dart）；没配中转时为空，开发者选项里不出现上传。
+  // 登录着应用账号时传完紧接着认领到账号下（application/account_diagnostics.dart 包一层）；应用账号在后面才建好，认领只在用户点了上传以后才读它。
+  late final AppAccounts? appAccounts;
+  final diagnostics = diagnosticsOf(() => appAccounts);
   final logs = await DiagnosticLog.open(
     directory: Directory(path.join((external ?? deviceOnly).path, 'logs')),
     exports: Directory(path.join((await getTemporaryDirectory()).path, 'diagnostics_export')),
     publish: publishDiagnosticArchive,
-    uploader: switch (relayBase()) {
-      final base? => RelayDiagnosticUpload(base),
-      null => null,
-    },
+    uploader: diagnostics,
   );
   campusLog = logs.tee(debugPrint);
   // 开屏画作（人工决策见 page/painting_splash.dart）：按清单顺序取这次的一幅，马上开始解码（和下面几步初始化同时进行），开屏第一帧多半就有图。
@@ -200,7 +202,7 @@ void main() async {
       files: [File(socialDatabase)],
     ));
   }
-  final appAccounts = appAccountsOf(session.gateway);
+  appAccounts = appAccountsOf(session.gateway);
   final challenges = challengesOf(session.gateway, appAccounts);
   final rollouts = await rolloutsOf(support, appAccounts);
   final updates = await appUpdates(support, rollouts);
@@ -214,7 +216,7 @@ void main() async {
   final splashed = painting != null && splashImage != null;
   final splashGone = ValueNotifier(!splashed);
   final restored = Completer<void>();
-  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, launch: launched, notes: notes, festivals: festivals, appAccounts: appAccounts, challenges: challenges, moments: moments, autoSync: autoSync, splashGone: splashGone);
+  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, launch: launched, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, moments: moments, autoSync: autoSync, splashGone: splashGone);
   runApp(splashed ? PaintingSplash(painting: painting, image: splashImage, ready: restored.future, onGone: () => splashGone.value = true, child: app) : app);
   unawaited(WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
     if (campusDiagnostics) campusLog('[App] action=first_frame ms=${launch.elapsedMilliseconds}');
@@ -327,6 +329,19 @@ Future<Festivals> festivalsOf(Directory support, AppAccounts? appAccounts) async
     client: transport == null || appAccounts == null ? null : RelayRewardClient(vault: const SecureAppAccountVault(), transport: transport),
     account: () => appAccounts?.current,
     accountGone: () => unawaited(appAccounts?.check(force: true)),
+  );
+}
+
+// 诊断包上传（人工决策见 domain/diagnostic_upload.dart）：没配中转时为空；配了就是包着中转上传的 AccountDiagnostics，登录着应用账号时传完认领到账号下，
+// 账号页也经它看与删自己认领过的包。
+AccountDiagnostics? diagnosticsOf(AppAccounts? Function() appAccounts) {
+  final base = relayBase(), transport = relayTransport();
+  if (base == null || transport == null) return null;
+  return AccountDiagnostics(
+    uploader: RelayDiagnosticUpload(base),
+    client: RelayDiagnosticAccountClient(vault: const SecureAppAccountVault(), transport: transport),
+    account: () => appAccounts()?.current,
+    accountGone: () => unawaited(appAccounts()?.check(force: true)),
   );
 }
 
@@ -464,7 +479,7 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.playground, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch, this.notes, this.festivals, this.appAccounts, this.challenges, this.moments, this.autoSync, this.splashGone});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.playground, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.moments, this.autoSync, this.splashGone});
   // 自动同步（设备级）；为空时「同步范围」里没有自动同步入口，也不会有课表冲突的打扰时机。
   final AutoSync? autoSync;
   // 开发者的话（设备级）；为空时「我的」页不显示这一行。
@@ -472,6 +487,7 @@ class SuperXdApp extends StatefulWidget {
   // 节日（设备级）；为空时不播节日动画、「我的」页没有节日红包。
   final Festivals? festivals;
   final AppAccounts? appAccounts;
+  final AccountDiagnostics? diagnostics;
   final Challenges? challenges;
   // 打扰时机（设备级，人工决策见 application/app_moments.dart）；为空时节日动画、新信都不出现。splashGone 为开屏是否走完，为空当作没有开屏。
   final AppMoments? moments;
@@ -574,7 +590,7 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, playground: _playground, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts, notes: widget.notes, festivals: widget.festivals, appAccounts: widget.appAccounts, challenges: widget.challenges, moments: widget.moments, autoSync: widget.autoSync, splashGone: widget.splashGone),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, playground: _playground, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts, notes: widget.notes, festivals: widget.festivals, appAccounts: widget.appAccounts, diagnostics: widget.diagnostics, challenges: widget.challenges, moments: widget.moments, autoSync: widget.autoSync, splashGone: widget.splashGone),
     );
   }
 }
@@ -594,12 +610,13 @@ class _MomentObserver extends NavigatorObserver {
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, required this.playground, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.challenges, this.moments, this.autoSync, this.splashGone});
+  const _AccountApp({super.key, required this.session, required this.toolbox, required this.playground, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.moments, this.autoSync, this.splashGone});
   final AutoSync? autoSync;
   final AppShortcuts? shortcuts;
   final DeveloperNotes? notes;
   final Festivals? festivals;
   final AppAccounts? appAccounts;
+  final AccountDiagnostics? diagnostics;
   final Challenges? challenges;
   final AppMoments? moments;
   final ValueListenable<bool>? splashGone;
@@ -621,7 +638,7 @@ class _AccountApp extends StatefulWidget {
 }
 
 class _AccountAppState extends State<_AccountApp> {
-  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, playground: widget.playground, splashGone: widget.splashGone, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, notes: widget.notes, festivals: widget.festivals, appAccounts: widget.appAccounts, challenges: widget.challenges, autoSync: widget.autoSync, saveRewardPicture: saveRewardPicture, observers: [_MomentObserver(_onMoment)]);
+  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, playground: widget.playground, splashGone: widget.splashGone, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, notes: widget.notes, festivals: widget.festivals, appAccounts: widget.appAccounts, diagnostics: widget.diagnostics, challenges: widget.challenges, autoSync: widget.autoSync, saveRewardPicture: saveRewardPicture, observers: [_MomentObserver(_onMoment)]);
   late final VoidCallback _unwatchRoutes;
   late final _display = widget.display ?? DisplaySettings.memory();
 
@@ -709,7 +726,7 @@ class _AccountAppState extends State<_AccountApp> {
     final scene = festivalCatalog.where((item) => item.occasion.id == occasion.id).firstOrNull;
     if (scene != null) await showFestivalCelebration(context, scene);
     if (signIn && context.mounted) {
-      showCampusToast(context, '登录应用账号就能参加这次抽奖', action: '去登录', onAction: () => pushAccountPage(context, widget.session, widget.appAccounts));
+      showCampusToast(context, '登录应用账号就能参加这次抽奖', action: '去登录', onAction: () => pushAccountPage(context, widget.session, widget.appAccounts, widget.diagnostics));
       return;
     }
     final result = await drawing.timeout(_drawWait, onTimeout: () => null);

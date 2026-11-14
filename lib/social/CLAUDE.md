@@ -11,6 +11,7 @@
 - invite_code.dart：好友二维码内容 InviteCode（SXD1F: 前缀）：邀请号、邀请私钥种子、出示方公钥与昵称、过期时刻，二进制布局转 Base45（RFC 9285），按 QR 字母数字模式编码；validNickname 昵称规则（1–20 字，无首尾空白与控制字符）。
 - identity_vault.dart：身份私钥种子的存放 IdentityVault；SecureIdentityVault 用系统安全存储（命名空间 superxd_social，已排除云备份与设备迁移）；MemoryIdentityVault 供测试。
 - relay_reward_client.dart：节日抽签端口 FestivalRewardClient 的中转实现 RelayRewardClient（人工决策见 domain/festival.dart）：POST /v1/rewards/<活动>/draw，用这个应用账号的设备密钥签名（安全存储 superxd_account 的 account.slot，没有这把密钥算没登录），请求体只有近 30 天打开过的天数；超时、请求记录与校时重发一次沿用 RelayClient，不重试；ACCOUNT_NOT_FOUND 与 UNAUTHORIZED 换成 FestivalNotSignedIn，其余给原因；parseFestivalDraw 把结果当外部输入校验。
+- relay_diagnostic_account.dart：应用账号下的诊断包端口 DiagnosticAccountClient 的中转实现 RelayDiagnosticAccountClient（人工决策见 domain/diagnostic_upload.dart，协议见 server/README.md）：认领 POST /v1/account/diagnostics/<编号>/claim、列出 GET、删除 DELETE，用这个应用账号的设备密钥签名（没有这把密钥算没登录）；超时、请求记录与校时重发一次沿用 RelayClient，不重试；ACCOUNT_NOT_FOUND 与 UNAUTHORIZED 换成 DiagnosticNotSignedIn，回复逐项校验。
 - account_seal.dart：应用账号登录时封装口令摘要的信封 sealAccountProof（一次性 X25519 与中转公钥 accountSealKey 协商、HKDF-SHA256、AES-256-GCM，附加数据绑定设备号；布局与服务端 account_keys.ts 一致，共用 server/test/vectors/account_seal_v1.json）。人工决策见 domain/app_account.dart；中转私钥只在服务器与开发者本机，换钥两边一起换。
 - relay_app_account.dart：应用账号端口 AppAccountClient 的中转实现 RelayAppAccountClient（人工决策见 domain/app_account.dart，协议见 server/README.md）：每个教务账号一把单独的设备密钥（同私信身份的格式），登录成功才连同账号号存进安全存储的 superxd_account 命名空间（appAccountStorage，排除备份与迁移；存储键是教务身份的哈希 appAccountSlot，不出现学号）；登录请求 50 秒超时（中转代登录整次最多 40 秒），要验证码时这一次的密钥与挑战号留在内存里接着用；退出删服务端这把密钥（DELETE /v1/devices，连不上也删本机），注销先 DELETE /v1/account 再退出；中转的错误码换成 AppAccountException，响应逐项校验。
 - relay_challenge_client.dart：挑战与积分端口 ChallengeClient 的中转实现 RelayChallengeClient（协议见 server/README.md「挑战与积分」）：用这个应用账号的设备密钥签名（AppAccountRef.slot 指向安全存储 superxd_account 里的那把，没登录不发请求），一局的回复放宽到 256KB（专家档一开局有 7 关的题面），回复逐项校验、看不懂按失败报；错误码换成 ChallengeException（RUN_ACTIVE 带编号、RUN_OVER 与 LEVEL_LOCKED 带现状、ACCOUNT_NOT_FOUND 与 UNAUTHORIZED 是没登录）。
@@ -41,7 +42,7 @@
 
 # 测试
 
-- social_protocol_test.dart（与服务端共用测试向量、信封、二维码、应用账号信封）、share_card_test.dart、social_service_test.dart、social_ui_test.dart；节日抽签 relay_reward_client.dart 在 festival_test.dart（经 fake_relay.dart 验签、用应用账号的密钥签名）；应用账号 relay_app_account.dart 在 app_account_test.dart。
+- social_protocol_test.dart（与服务端共用测试向量、信封、二维码、应用账号信封）、share_card_test.dart、social_service_test.dart、social_ui_test.dart；节日抽签 relay_reward_client.dart 在 festival_test.dart（经 fake_relay.dart 验签、用应用账号的密钥签名）；应用账号 relay_app_account.dart 在 app_account_test.dart；诊断包 relay_diagnostic_account.dart 在 diagnostic_upload_test.dart。
 - fake_relay.dart 是按协议 v1 规则验签的内存假中转。服务端：cd server 后 npm test（Vitest，需 docker-compose.test.yml 起的 MySQL 与 Redis）。
 - 手动入口：tool/verify_social.dart（两个真实客户端经真实中转联调，只用合成数据，运行方式见文件头）。
 

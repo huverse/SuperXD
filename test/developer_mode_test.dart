@@ -360,7 +360,8 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.textContaining('与「导出日志」相同的日志包（本机日志、运行环境与字号状态）在本机加密后传到开发者的中转服务器'), findsOneWidget);
     expect(find.textContaining('30 天后自动删除'), findsOneWidget);
-    expect(find.textContaining('要提前删除，也凭编号联系开发者'), findsOneWidget);
+    // 登录着应用账号时会记到账号下（去向变了），确认框要写明；没登录的照旧凭编号联系开发者删除。
+    expect(find.textContaining('登录着应用账号时还会记在账号下，可在账号页删除；没登录的要提前删除，凭编号联系开发者'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(calls, isEmpty);
@@ -546,5 +547,5 @@ class _FakeUploader implements DiagnosticUploader {
   _FakeUploader(this._upload);
   final Future<String> Function(String archivePath, void Function(double sent)? onProgress) _upload;
   @override
-  Future<String> upload(String archivePath, {void Function(double sent)? onProgress}) => _upload(archivePath, onProgress);
+  Future<DiagnosticReceipt> upload(String archivePath, {void Function(double sent)? onProgress}) => _upload(archivePath, onProgress).then((id) => DiagnosticReceipt(id: id));
 }

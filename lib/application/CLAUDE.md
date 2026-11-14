@@ -27,6 +27,7 @@
 - developer_notes.dart：开发者的话的编排 DeveloperNotes（设备级）：自动拉取间隔至少 developerNoteRefreshGap（一小时，下拉刷新不受限）、同一时刻只拉一次、失败照旧显示上次拉到的；已读与弹过记在本机（弹出一封时当时所有的信都记成弹过、只有这封记成读过）。人工决策见 domain/developer_note.dart。
 - festivals.dart：节日的编排 Festivals（设备级）：今天该播哪一次（在节日里、没播过）、启动与回到前台记今天打开过（只留近 30 天）、抽签（有抽奖、配了中转、登录着应用账号、结果没定时才抽，同一时刻只发一次；当前应用账号由组合根注入；连不上或没登录不记，中转说账号已不在时调 accountGone 让应用账号马上核一次）、needsSignIn（有抽奖但没登录，组合根在动画放完时提示去登录）、抽中的奖品（没揭晓的等打扰时机揭晓，节日结束后 3 天删）。refresh 是同意协议与政策后、每次回到前台、登录了应用账号时由组合根调的：补抽播过动画还没抽的。人工决策见 domain/festival.dart。
 - app_accounts.dart：应用账号的编排 AppAccounts（设备级，切换教务账号不重建；三项用户决定的 [人工决策] 在类上方）：按当前教务身份读本机记着的应用账号（跟着教务切换，换账号时丢掉没答完的验证码）；signIn 先向网关要口令摘要（没记住账号返回要密码，页面请用户输一次），经 AppAccountClient 交中转核对，要验证码时 answerCaptcha、refreshCaptcha（重新发起一次）接着做，成功后用同一个密码经 AccountAccess.refreshSession 重登教务（中转代登录挤掉了本机会话）；signOut、deleteAccount 由账号页发起；forget 由组合根在用户退出教务时调；check 在同意协议与政策后、回到前台时由组合根调，登录着且隔 checkGap（一天）才联网，别处注销了退回未登录；force 为真时不等间隔（挑战那边发现账号不在了）。current 是当前的应用账号 AppAccountRef（挑战、节日抽奖等只认它），accountId 是它的账号号（灰度与分批更新分桶用）。
+- account_diagnostics.dart：记在应用账号下的诊断包 AccountDiagnostics（设备级，人工决策见 domain/diagnostic_upload.dart）：本身实现 DiagnosticUploader，包住 device 的上传，传完登录着当前应用账号就凭回执里的一次性口令认领，回执标上 claimed；认领没成只记日志、包照旧匿名留着。list、delete 给账号页「我上传的诊断包」；中转说账号已不在时调 accountGone 让应用账号马上核一次。
 - challenges.dart：挑战与积分的编排 Challenges（设备级，实现 domain 的 ChallengeHub，人工决策见 playground/challenge/challenge_rules.dart）：跟着当前的应用账号走（AppAccounts.current），没登录应用账号不联网直接报未登录；中转说应用账号不在了（别处注销、被清理）就让 AppAccounts.check(force: true) 马上核一次，本机退回未登录；登录状态变了发 changes。
 - rollouts.dart：灰度的编排 Rollouts（设备级，人工决策见 domain/rollout.dart）：本机判定，主体是应用账号号（组合根注入，没登录用本机随机编号）；enabled 判功能开关（没配用调用方给的默认值）；inUpdateBatch 判分批更新（配置里同名开关覆盖清单的放量表：暂停、直接全量、整版关停）；refresh 在同意协议与政策后、回到前台时由组合根调，两次至少隔 refreshGap（一小时），失败照旧用上次的；没配中转时不联网。
 - app_moments.dart：打扰时机 AppMoments（设备级）：一次只出现一件，先后是节日动画、没揭晓的奖品、自动同步留下的课表冲突、新信；决定节日动画、新信这类不是用户要的内容什么时候出现。业务条件在这里：每次回到前台最多一件、从快捷入口进来的那次前台不出现、上下课安静期里不出现（安静期结束时提醒组合根再看一眼）；界面条件在组合根 main.dart 的 _promptMoment。next 只看不记，真的弹出来了再 begin。人工决策在类上方。
@@ -44,7 +45,7 @@
 - app_update_test.dart、app_update_ui_test.dart（应用更新，替身在 app_update_fakes.dart）
 - app_account_test.dart（应用账号的中转客户端、编排与账号页）；challenge_test.dart（挑战的编排与中转客户端，页面部分见 lib/playground/CLAUDE.md）
 - rollout_test.dart（灰度编排、分批更新按批次）
-- developer_notes_test.dart（开发者的话的拉取、已读与打扰时机）；festival_test.dart（节日编排、抽签与打扰时机的先后）；account_lifecycle_test.dart（「我的」页入口与小圆点、新信在什么界面条件下弹）
+- developer_notes_test.dart（开发者的话的拉取、已读与打扰时机）；festival_test.dart（节日编排、抽签与打扰时机的先后）；diagnostic_upload_test.dart（诊断包认领、列出与删除的编排与中转客户端）；account_lifecycle_test.dart（「我的」页入口与小圆点、新信在什么界面条件下弹）
 
 # 人工决策检索
 

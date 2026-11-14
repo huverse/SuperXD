@@ -41,8 +41,12 @@ export abstract class DiagnosticStore {
   abstract release(bytes: number): Promise<void>;
   // 把请求体写成以诊断编号命名的文件；中途断开不留残片。
   abstract save(id: string, body: Readable): Promise<void>;
-  // 删掉到期的包与残片，按目录实际重写已用量。
-  abstract sweep(now: number): Promise<{ removed: number; files: number; bytes: number }>;
+  // 这个包的大小；没有（已到期删掉、编号不对）返回 null。
+  abstract size(id: string): Promise<number | null>;
+  // 删掉这些包（用户删除、注销账号）；没有的不算错，已用量等清理任务按目录重写。
+  abstract remove(ids: string[]): Promise<void>;
+  // 删掉到期的包与残片，按目录实际重写已用量；removed 是删掉的诊断编号（不含残片）。
+  abstract sweep(now: number): Promise<{ removed: string[]; files: number; bytes: number }>;
 }
 
 // 本机目录实现：先写 <编号>.part 再改名，看到的 <编号> 一定是完整的；文件只给服务进程自己读写（600）。
@@ -81,6 +85,23 @@ export class FileDiagnosticStore extends DiagnosticStore implements OnModuleInit
     }
   }
 
+  async size(id: string) {
+    if (!diagnosticIdPattern.test(id)) return null;
+    try {
+      return (await stat(join(this.dir, id))).size;
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
+  }
+
+  async remove(ids: string[]) {
+    const names = ids.filter((id) => diagnosticIdPattern.test(id));
+    for (let start = 0; start < names.length; start += 100) {
+      await Promise.all(names.slice(start, start + 100).map((name) => rm(join(this.dir, name), { force: true })));
+    }
+  }
+
   async sweep(now: number) {
     const keepBefore = now - diagnosticKeepDays * 86400_000, partBefore = now - partStaleMs;
     const expired: string[] = [];
@@ -102,7 +123,7 @@ export class FileDiagnosticStore extends DiagnosticStore implements OnModuleInit
       await Promise.all(expired.slice(start, start + 100).map((name) => rm(join(this.dir, name), { force: true })));
     }
     await this.exec(this.redis.multi().hset(RedisKeys.diagnosticUsage(), { bytes, files }).expire(RedisKeys.diagnosticUsage(), RedisKeyTTL.diagnosticUsage));
-    return { removed: expired.length, files, bytes };
+    return { removed: expired.filter((name) => diagnosticIdPattern.test(name)), files, bytes };
   }
 
   // MULTI 里的命令出错不会让 exec 抛，逐项检查。

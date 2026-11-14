@@ -64,7 +64,7 @@
   - 早于今天的开发者模式日志在后台 isolate 里压成 .log.gz（超过保留天数的先删、不压），查看时解开读、导出原样放进 zip。
   - textSize 是组合根在开发者模式下随变化更新的字号状态，摘要与 about.txt 写在运行环境后面。
   - export 把全部日志加 about.txt（运行环境、字号状态、导出时刻）在后台 isolate 里打成 zip，经组合根注入的 publish 存进 Download/SuperXD，临时包放缓存的 diagnostics_export、用完即删。
-  - upload 打同一个包交给组合根注入的 DiagnosticUploader（device 层：本机加密后传到中转，人工决策见 domain/diagnostic_upload.dart），回诊断编号，临时包用完即删；没配中转时不注入，canUpload 为假、开发者选项里不出现上传。
+  - upload 打同一个包交给组合根注入的 DiagnosticUploader（device 层：本机加密后传到中转，人工决策见 domain/diagnostic_upload.dart），回上传回执（诊断编号与认领口令；组合根注入的是 application 的 AccountDiagnostics，登录着应用账号时传完认领），临时包用完即删；没配中转时不注入，canUpload 为假、开发者选项里不出现上传。
 - developer_note_memory.dart：FileDeveloperNoteMemory 实现开发者的话的本机记录 DeveloperNoteMemory：应用支持目录下的 developer_notes.json（上次拉到的信、读过与弹过的编号、上次拉取成功的时刻 UTC），信最多 developerNoteLimit 封、编号只留还在清单里的，大小有上限；写法同 legal_notice.json，写入经锁一个接一个，读到坏文件当没有记录。
 - festival_memory.dart：FileFestivalMemory 实现节日的本机记录 FestivalMemory：应用支持目录下的 festival.json（近 30 天打开过的校园日、最近 festivalHistoryLimit 次播过与抽过的节日、抽中的奖品），写法同 legal_notice.json，读到坏文件或坏项丢掉；各项有上限，奖品由 application/festivals.dart 按节日结束后 3 天清。
 - rollout_memory.dart：FileRolloutMemory 实现灰度的本机记录 RolloutMemory（人工决策见 domain/rollout.dart）：应用支持目录下的 rollout.json（这台设备的随机编号，没登录应用账号时分桶用、只在本机不上传；上次拉到的配置与时刻），写法同 legal_notice.json，坏文件当没有、编号重新生成；只有一份配置，不随使用增长。

@@ -315,9 +315,9 @@ class DiagnosticLog {
   // 有没有上传诊断包的去处（没配中转的构建没有）。
   bool get canUpload => _uploader != null;
 
-  // 上传诊断包（人工决策见 domain/diagnostic_upload.dart）：打的包与导出的完全相同，交给注入的上传（本机加密后传到中转），成功返回诊断编号；临时包用完即删。
-  // 没有日志或没传成抛 DiagnosticUploadException；sent 是已发出的比例。
-  Future<String> upload({void Function(double sent)? onProgress}) async {
+  // 上传诊断包（人工决策见 domain/diagnostic_upload.dart）：打的包与导出的完全相同，交给注入的上传（本机加密后传到中转，登录着应用账号时组合根包了一层认领），
+  // 成功返回回执；临时包用完即删。没有日志或没传成抛 DiagnosticUploadException；sent 是已发出的比例。
+  Future<DiagnosticReceipt> upload({void Function(double sent)? onProgress}) async {
     final archive = File(path.join(_exports.path, 'upload-${_clock().microsecondsSinceEpoch}.zip'));
     try {
       if (!await _pack(archive)) throw const DiagnosticUploadException('本机还没有日志');

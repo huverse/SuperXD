@@ -204,7 +204,7 @@ void main() {
     logs.record('[Route] action=change path=/today');
     logs.record('[App] action=uncaught errorType=StateError\n#0 main');
     final progress = <double>[];
-    expect(await logs.upload(onProgress: progress.add), 'ABCD2345');
+    expect((await logs.upload(onProgress: progress.add)).id, 'ABCD2345');
     expect(uploaded.single, unorderedEquals(['about.txt', 'diagnostics-2026-10-21.log', 'errors.log']));
     expect(progress, [1]);
     expect(Directory(path.join(temp.path, 'cache', 'diagnostics_export')).listSync(), isEmpty);
@@ -497,5 +497,5 @@ class _RecordingUploader implements DiagnosticUploader {
   _RecordingUploader(this._upload);
   final Future<String> Function(String archivePath, void Function(double sent)? onProgress) _upload;
   @override
-  Future<String> upload(String archivePath, {void Function(double sent)? onProgress}) => _upload(archivePath, onProgress);
+  Future<DiagnosticReceipt> upload(String archivePath, {void Function(double sent)? onProgress}) => _upload(archivePath, onProgress).then((id) => DiagnosticReceipt(id: id));
 }
