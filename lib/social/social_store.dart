@@ -4,7 +4,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'package:superxd/domain/share_card.dart';
 
-// 私信本机库 social.db（设备级，切换教务账号保留）：资料、好友、消息、邀请。
+// 私信本机库（每个应用账号一份，文件见 social_spaces.dart；切换教务账号保留）：资料、好友、消息、邀请。
 // 时间一律存 UTC ISO 字符串；私钥不在这里，在系统安全存储（identity_vault.dart）。
 // 上限：好友 500；每个好友保留最近 200 条消息；邀请保留 31 天（覆盖信箱 30 天保留期内迟到的问候）。
 
@@ -63,7 +63,7 @@ class SocialMessage {
   final MessageState state;
   final String createTime;
   final ShareCard? card;
-  // 系统提示的类型：friend_added。
+  // 系统提示的类型：friend_added（已成为好友）、friend_moved（对方换了设备）。
   final String? system;
   // 发送失败的错误码。
   final String? error;
@@ -92,19 +92,26 @@ class SocialMessage {
   }
 }
 
+// bound：这台私信设备已挂到应用账号下（服务端 account_social）。旧版的库只有 registered（注册过设备），升级上来是 false，打开时补挂一次。
 class SocialProfile {
-  const SocialProfile({required this.nickname, required this.registered});
+  const SocialProfile({required this.nickname, required this.bound});
   final String nickname;
-  final bool registered;
+  final bool bound;
 }
+
+// 新手机从服务器拿到、还没收到对方资料的好友，先用这个名字（对方上线后自动发来昵称）。
+String placeholderNickname(String deviceId) => '好友 ${deviceId.substring(0, 4)}';
 
 class SocialStore {
   SocialStore._(this._database);
   final Database _database;
 
   // 单实例并回滚遗留的事务：退出再进入时接回旧引擎留下的连接（人工决策见 local/account_store.dart 的 open）。
-  static Future<SocialStore> open(String path) async => SocialStore._(await databaseFactory.openDatabase(path, options: OpenDatabaseOptions(version: 1, rollbackActiveTransactionOnOpen: true, onCreate: (database, _) async {
-    await database.execute('CREATE TABLE profile (id INTEGER PRIMARY KEY CHECK(id=1), nickname TEXT NOT NULL, registered INTEGER NOT NULL)');
+  // 第 2 版（11-14 私信跟着应用账号）：profile 加 bound。
+  static Future<SocialStore> open(String path) async => SocialStore._(await databaseFactory.openDatabase(path, options: OpenDatabaseOptions(version: 2, rollbackActiveTransactionOnOpen: true, onUpgrade: (database, from, _) async {
+    if (from < 2) await database.execute('ALTER TABLE profile ADD COLUMN bound INTEGER NOT NULL DEFAULT 0');
+  }, onCreate: (database, _) async {
+    await database.execute('CREATE TABLE profile (id INTEGER PRIMARY KEY CHECK(id=1), nickname TEXT NOT NULL, registered INTEGER NOT NULL, bound INTEGER NOT NULL DEFAULT 0)');
     await database.execute(
       'CREATE TABLE friend (device_id TEXT PRIMARY KEY, nickname TEXT NOT NULL, remark TEXT, sign_public_key TEXT NOT NULL, box_public_key TEXT NOT NULL, '
       'since TEXT NOT NULL, last_activity TEXT NOT NULL, removed INTEGER NOT NULL DEFAULT 0, last_preview TEXT NOT NULL DEFAULT \'\', unread INTEGER NOT NULL DEFAULT 0)',
@@ -122,10 +129,11 @@ class SocialStore {
 
   Future<SocialProfile?> profile() async {
     final row = (await _database.query('profile', where: 'id = 1')).firstOrNull;
-    return row == null ? null : SocialProfile(nickname: row['nickname'] as String, registered: row['registered'] == 1);
+    return row == null ? null : SocialProfile(nickname: row['nickname'] as String, bound: row['bound'] == 1);
   }
 
-  Future<void> saveProfile(SocialProfile profile) => _database.insert('profile', {'id': 1, 'nickname': profile.nickname, 'registered': profile.registered ? 1 : 0}, conflictAlgorithm: ConflictAlgorithm.replace);
+  // registered 是旧版的列，跟着 bound 写（挂账号时顺带登记了设备）。
+  Future<void> saveProfile(SocialProfile profile) => _database.insert('profile', {'id': 1, 'nickname': profile.nickname, 'registered': profile.bound ? 1 : 0, 'bound': profile.bound ? 1 : 0}, conflictAlgorithm: ConflictAlgorithm.replace);
 
   // 关闭私信：清空本机全部私信数据。
   Future<void> clear() => _database.transaction((transaction) async {
@@ -160,6 +168,30 @@ class SocialStore {
       });
 
   Future<void> setRemark(String deviceId, String? remark) => _database.update('friend', {'remark': remark}, where: 'device_id = ?', whereArgs: [deviceId]);
+
+  // 对方发来的资料（换设备后补昵称）。
+  Future<void> setNickname(String deviceId, String nickname) => _database.update('friend', {'nickname': nickname}, where: 'device_id = ?', whereArgs: [deviceId]);
+
+  // 好友换了设备：旧设备号的好友连同会话改挂到新设备号与新公钥，写一条「对方换了设备」。本机已经有新设备号的好友（两边都加过）时并进那一个。
+  Future<void> relinkFriend({required String from, required String to, required String signPublicKey, required String boxPublicKey, required String now, required String systemId}) =>
+      _database.transaction((transaction) async {
+        final merged = (await transaction.query('friend', columns: ['device_id'], where: 'device_id = ?', whereArgs: [to])).isNotEmpty;
+        await transaction.update('message', {'friend_id': to}, where: 'friend_id = ?', whereArgs: [from]);
+        if (merged) {
+          await transaction.delete('friend', where: 'device_id = ?', whereArgs: [from]);
+        } else {
+          await transaction.update('friend', {'device_id': to}, where: 'device_id = ?', whereArgs: [from]);
+        }
+        await transaction.update('friend', {'sign_public_key': signPublicKey, 'box_public_key': boxPublicKey, 'removed': 0, 'last_activity': now, 'last_preview': '对方换了设备'}, where: 'device_id = ?', whereArgs: [to]);
+        await transaction.insert('message', {'id': systemId, 'friend_id': to, 'outgoing': 0, 'state': MessageState.received.name, 'system': 'friend_moved', 'create_time': now}, conflictAlgorithm: ConflictAlgorithm.ignore);
+      });
+
+  // 新手机接管后从服务器拿到的好友：本机没有才加，名字先用占位（对方上线后发来昵称），不写系统提示。好友有上限，满了不加。
+  Future<void> importFriend({required String deviceId, required String signPublicKey, required String boxPublicKey, required String now}) => _database.insert(
+    'friend',
+    {'device_id': deviceId, 'nickname': placeholderNickname(deviceId), 'sign_public_key': signPublicKey, 'box_public_key': boxPublicKey, 'since': now, 'last_activity': now},
+    conflictAlgorithm: ConflictAlgorithm.ignore,
+  );
 
   Future<void> markRemoved(String deviceId) => _database.update('friend', {'removed': 1}, where: 'device_id = ?', whereArgs: [deviceId]);
 

@@ -1,7 +1,9 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_crypto.dart';
+import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_crypto.dart';
 
@@ -11,6 +13,11 @@ class FakeRelay {
   final devices = <String, ({List<int> sign, List<int> box})>{};
   final invites = <String, ({String owner, List<int> publicKey, int expiresAt})>{};
   final friendships = <String>{};
+  // 好友换了设备（应用账号接管）：「owner|新设备号」→ owner 认得的旧设备号，owner 确认后删掉。
+  final movedFrom = <String, String>{};
+  // 应用账号：账号密钥的设备号 → 账号号；账号号 → 它的私信设备号。
+  final accountDevices = <String, String>{};
+  final accountSocial = <String, String>{};
   final mailbox = <({int id, String recipient, String sender, String clientId, List<int> envelope, int createTime})>[];
   final _nonces = <String>{};
   int _nextId = 0;
@@ -29,6 +36,31 @@ class FakeRelay {
   RelayTransport transport() => _FakeTransport(this);
 
   bool friends(String first, String second) => friendships.contains('$first|$second');
+
+  // 在这台「手机」上登录应用账号（账号号给了就登到已有的账号）：生成账号密钥、登记到中转并存进 vault，返回当前应用账号。
+  Future<AppAccountRef> signIn(MemoryAppAccountVault vault, {String? accountId, String? slot}) async {
+    final key = await SocialIdentity.generate();
+    final account = AppAccountRef(accountId: accountId ?? 'acct-${base64UrlNoPad(secureRandomBytes(6))}', slot: slot ?? 'account.${base64UrlNoPad(secureRandomBytes(6))}');
+    devices[key.deviceId] = (sign: key.signPublicKey, box: key.boxPublicKey);
+    accountDevices[key.deviceId] = account.accountId;
+    await vault.write(account.slot, AppAccountKey(identity: key, accountId: account.accountId));
+    return account;
+  }
+
+  Map<String, Object?>? _keysOf(String deviceId) => switch (devices[deviceId]) {
+    final keys? => {'signPublicKey': base64UrlNoPad(keys.sign), 'boxPublicKey': base64UrlNoPad(keys.box)},
+    null => null,
+  };
+
+  // 删掉设备连同它的好友关系、信箱与账号登记（关闭私信、接管时删旧设备共用）。
+  void _removeDevice(String deviceId) {
+    devices.remove(deviceId);
+    friendships.removeWhere((pair) => pair.split('|').contains(deviceId));
+    movedFrom.removeWhere((pair, _) => pair.split('|').contains(deviceId));
+    mailbox.removeWhere((item) => item.recipient == deviceId);
+    accountDevices.remove(deviceId);
+    accountSocial.removeWhere((_, social) => social == deviceId);
+  }
 
   // 测试结束时放掉还挂着的长轮询，不留未完成的计时。
   void releaseWaiters() {
@@ -65,10 +97,39 @@ class FakeRelay {
         devices[deviceId] = (sign: signKey, box: decodeBase64UrlNoPad(payload['boxPublicKey'] as String));
         return RelayResponse(200, {'deviceId': deviceId, 'serverTime': now});
       case ('DELETE', '/v1/devices'):
-        devices.remove(deviceId);
-        friendships.removeWhere((pair) => pair.split('|').contains(deviceId));
-        mailbox.removeWhere((item) => item.recipient == deviceId);
+        _removeDevice(deviceId);
         return const RelayResponse(204, {});
+      case ('POST', '/v1/account/social'):
+        final accountId = accountDevices[deviceId];
+        if (accountId == null) return _error(404, RelayCode.accountNotFound);
+        final sign = decodeBase64UrlNoPad(payload['signPublicKey'] as String), social = deviceIdOf(sign);
+        if (!await verifyEd25519(sign, socialBindCanonical(deviceId, social), decodeBase64UrlNoPad(payload['proof'] as String))) return _error(400, RelayCode.invalidRequest);
+        devices[social] = (sign: sign, box: decodeBase64UrlNoPad(payload['boxPublicKey'] as String));
+        final owner = accountSocial.entries.where((entry) => entry.value == social).firstOrNull?.key;
+        if (owner != null && owner != accountId) return _error(409, RelayCode.socialTaken);
+        final current = accountSocial[accountId];
+        if (current == social) return RelayResponse(200, {'deviceId': social, 'moved': false});
+        if (current != null && payload['takeover'] != true) return _error(409, RelayCode.socialElsewhere);
+        if (current != null) {
+          // 同服务端 friendship.repository.ts 的 moveDevice：关系改挂新设备，对方那行记下认得的旧号（正好是新号时清空），两台互加的去掉。
+          for (final pair in friendships.where((pair) => pair.split('|').contains(current)).toList()) {
+            final [first, second] = pair.split('|');
+            friendships.remove(pair);
+            final peerSide = second == current;
+            final moved = peerSide ? '$first|$social' : '$social|$second';
+            if (moved == '$social|$social' || friendships.contains(moved)) continue;
+            friendships.add(moved);
+            if (peerSide) {
+              final earlier = movedFrom.remove(pair) ?? current;
+              if (earlier != social) movedFrom[moved] = earlier;
+            } else if (movedFrom.remove(pair) case final old?) {
+              movedFrom[moved] = old;
+            }
+          }
+          _removeDevice(current);
+        }
+        accountSocial[accountId] = social;
+        return RelayResponse(200, {'deviceId': social, 'moved': current != null});
       case ('POST', '/v1/invites'):
         invites.removeWhere((_, invite) => invite.owner == deviceId);
         final expiresAt = now + 5 * 60 * 1000;
@@ -87,12 +148,24 @@ class FakeRelay {
         _deliver(invite.owner, deviceId, hello['clientId'] as String, decodeBase64UrlNoPad(hello['envelope'] as String));
         return RelayResponse(200, {'deviceId': invite.owner, 'since': now});
       case ('GET', '/v1/friends'):
+        final withKeys = uri.queryParameters['keys'] == '1';
         return RelayResponse(200, {
           'friends': [
             for (final pair in friendships)
-              if (pair.startsWith('$deviceId|')) {'deviceId': pair.split('|')[1], 'since': now},
+              if (pair.startsWith('$deviceId|'))
+                {
+                  'deviceId': pair.split('|')[1],
+                  'since': now,
+                  if (withKeys || movedFrom.containsKey(pair)) ...?_keysOf(pair.split('|')[1]),
+                  'movedFrom': ?movedFrom[pair],
+                },
           ],
         });
+      case ('POST', '/v1/friends/moves/ack'):
+        for (final peer in (payload['deviceIds'] as List).cast<String>()) {
+          movedFrom.remove('$deviceId|$peer');
+        }
+        return const RelayResponse(204, {});
       case ('POST', '/v1/messages'):
         final to = payload['to'] as String;
         if (!friends(deviceId, to)) return _error(403, RelayCode.notFriend);

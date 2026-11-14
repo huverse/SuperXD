@@ -1,7 +1,7 @@
 import { createHash, generateKeyPairSync, KeyObject, randomBytes, randomUUID, sign } from 'node:crypto';
 import request from 'supertest';
 
-import { base64url, inviteProofCanonical, requestCanonical } from 'src/common/crypto/relay_crypto';
+import { base64url, inviteProofCanonical, requestCanonical, socialBindCanonical } from 'src/common/crypto/relay_crypto';
 
 // 测试用设备：持有 Ed25519 签名密钥与 X25519 加密公钥，按协议 v1 给每个请求签名。
 export class TestDevice {
@@ -49,3 +49,11 @@ export const inviteProof = (privateKey: KeyObject, inviteId: string, redeemerDev
 export const fakeEnvelope = (size = 64) => base64url(randomBytes(size));
 
 export const helloOf = () => ({ clientId: randomUUID(), envelope: fakeEnvelope() });
+
+// 私信设备挂到应用账号的请求体：私信密钥对「应用账号设备号 + 私信设备号」签名。
+export const socialBindBody = (social: TestDevice, accountDeviceId: string, takeover?: boolean) => ({
+  signPublicKey: social.signPublicKey,
+  boxPublicKey: social.boxPublicKey,
+  proof: base64url(sign(null, socialBindCanonical(accountDeviceId, social.deviceId), social.signPrivate)),
+  ...(takeover === undefined ? {} : { takeover }),
+});

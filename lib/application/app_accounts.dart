@@ -46,11 +46,13 @@ class _PendingSignIn {
 // 2. 按需核对：用户在账号页点「登录应用账号」、单独同意后才核对（密码经中转那一步），以后挑战、积分第一次用到时再引导；记住了账号的不用再输密码。
 // 3. 中转代登录会挤掉本机的教务会话（教务单会话），核对通过后紧接着用同一个密码重登（AccountAccess.refreshSession，不换代次、页面不动）。
 class AppAccounts extends ChangeNotifier {
-  AppAccounts({required this.accounts, required this.client, DateTime Function()? now}) : _now = now ?? DateTime.now {
+  AppAccounts({required this.accounts, required this.client, this.onDeleted, DateTime Function()? now}) : _now = now ?? DateTime.now {
     accounts.addListener(_accountsChanged);
   }
   final AccountAccess accounts;
   final AppAccountClient client;
+  // 注销成功后（服务器已删掉账号下的数据）：组合根接上清掉这台手机上那个账号的私信（人工决策见 social/social_service.dart）。
+  final void Function(AppAccountRef account)? onDeleted;
   final DateTime Function() _now;
 
   // 联网看账号（顺带让服务器记最后活跃、发现别处注销）至少隔这么久：账号 400 天没查看才会被清，一天一次足够。
@@ -177,13 +179,14 @@ class AppAccounts extends ChangeNotifier {
 
   // 注销：服务端删掉账号与全部设备上的登录，本机随之退出。
   Future<AppAccountResult> deleteAccount() => _run('delete', () async {
-    final identity = _identity;
-    if (identity == null || _account == null) return const AppAccountDone();
+    final identity = _identity, account = _account;
+    if (identity == null || account == null) return const AppAccountDone();
     try {
       await client.delete(identity);
     } on AppAccountException catch (error) {
       return AppAccountError(error.message);
     }
+    onDeleted?.call(account);
     if (_same(identity, _identity)) _account = null;
     return const AppAccountDone('应用账号已注销');
   });

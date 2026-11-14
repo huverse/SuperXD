@@ -176,7 +176,7 @@ class _AccountPageState extends State<AccountPage> {
     final confirmed = await showCampusConfirm(
       context,
       title: deleting ? '注销应用账号？' : '退出应用账号？',
-      message: deleting ? '服务器上的应用账号与所有设备上的登录都会删除，不能恢复。教务账号不受影响。' : '这台设备不再登录应用账号，教务账号不受影响。',
+      message: deleting ? '服务器上的应用账号、所有设备上的登录，以及账号下的积分、私信好友与诊断包都会删除，这台手机上的私信记录也一并清掉，不能恢复。教务账号不受影响。' : '这台设备不再登录应用账号，教务账号不受影响。',
       action: deleting ? '注销' : '退出',
       destructive: true,
     );

@@ -43,6 +43,7 @@ import 'package:superxd/device/relay_font_pack_source.dart';
 import 'package:superxd/device/relay_note_feed.dart';
 import 'package:superxd/device/relay_release_feed.dart';
 import 'package:superxd/device/relay_rollout_feed.dart';
+import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/app_shortcut.dart';
 import 'package:superxd/domain/course_widget.dart';
 import 'package:superxd/domain/festival.dart';
@@ -85,7 +86,7 @@ import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/relay_diagnostic_account.dart';
 import 'package:superxd/social/relay_reward_client.dart';
 import 'package:superxd/social/social_service.dart';
-import 'package:superxd/social/social_store.dart';
+import 'package:superxd/social/social_spaces.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_background.dart';
@@ -185,11 +186,14 @@ void main() async {
   final reminders = CampusReminders(gateway: session.gateway, port: NotificationReminders());
   final widgetPort = HomeWidgetPublisher();
   final widgets = CampusWidgets(gateway: session.gateway, port: widgetPort);
-  final socialDatabase = path.join(await getDatabasesPath(), 'social.db');
+  // 私信（人工决策见 social/social_service.dart）：每个应用账号一份，库在数据库目录（旧版的 social.db 与 social 文件夹，见 social/social_spaces.dart）；
+  // 挂账号用应用账号的设备密钥签名，中转说账号不在了让应用账号马上核一次。
+  final socialDirectory = await getDatabasesPath();
   final social = SocialService(
-    store: await SocialStore.open(socialDatabase),
-    vault: SecureIdentityVault(),
+    spaces: SocialSpaces(vault: const SecureIdentityVault(), directory: socialDirectory),
+    accountKeys: const SecureAppAccountVault(),
     transport: relayTransport(),
+    accountGone: () => unawaited(appAccounts?.check(force: true)),
     polling: true,
   );
   // iOS 默认把应用数据带进 iCloud 备份与换机迁移：与安卓 data_extraction_rules.xml 排除的同一批（百宝箱、下载记录、字体包、日志与开发者设置、私信库）在这里标记排除；钥匙串见 ios/Runner/DeviceOnlyData.swift。
@@ -198,11 +202,12 @@ void main() async {
       folders: [
         for (final folder in ['toolbox', 'backgroundDownloaderTaskRecords', 'backgroundDownloaderResumeData', 'backgroundDownloaderDatabase', 'font_packs']) Directory(path.join(support.path, folder)),
         deviceOnly,
+        Directory(path.join(socialDirectory, SocialSpaces.accountFolder)),
       ],
-      files: [File(socialDatabase)],
+      files: [File(path.join(socialDirectory, SocialSpaces.legacyDatabase))],
     ));
   }
-  appAccounts = appAccountsOf(session.gateway);
+  appAccounts = appAccountsOf(session.gateway, onDeleted: (account) => unawaited(social.forgetAccount(account)));
   final challenges = challengesOf(session.gateway, appAccounts);
   final rollouts = await rolloutsOf(support, appAccounts);
   final updates = await appUpdates(support, rollouts);
@@ -224,8 +229,8 @@ void main() async {
   unawaited(initializeCampusGlass());
   // 低电量（iOS）与省电模式（安卓）时装饰动效停下，先要一次当前状态（见 theme/native_glass.dart 的 nativeLowPower）。
   unawaited(watchNativeLowPower());
-  // 私信是设备级的，与教务会话无关；初始化失败只影响私信（状态 failed），不影响应用。已开启私信的会立即联网收取，所以等用户同意协议与政策之后再初始化。
-  unawaited(legal.agreed.then((_) => social.initialize()));
+  // 私信跟着当前应用账号；打开失败只影响私信（状态 failed），不影响应用。已开启私信的会立即联网收取，所以等用户同意协议与政策之后再打开。
+  watchSocial(social, appAccounts, agreed: legal.agreed);
   // 选着字体包而本机没有（升级上来原先就选着衬线的）：同意之后下回来，装好界面就换过去；失败下次启动再试。
   unawaited(legal.agreed.then((_) => display.ensureFontPack()));
   try {
@@ -347,10 +352,22 @@ AccountDiagnostics? diagnosticsOf(AppAccounts? Function() appAccounts) {
 
 // 应用账号（人工决策见 application/app_accounts.dart）走同一个自建中转；没配中转时为空，账号页不显示那一组。
 // 每个教务账号一把单独的设备密钥，存在自己的安全存储命名空间（social/relay_app_account.dart），与私信身份互不关联。
-AppAccounts? appAccountsOf(AccountAccess accounts) {
+AppAccounts? appAccountsOf(AccountAccess accounts, {void Function(AppAccountRef account)? onDeleted}) {
   final transport = relayTransport();
   if (transport == null) return null;
-  return AppAccounts(accounts: accounts, client: RelayAppAccountClient(vault: const SecureAppAccountVault(), transport: transport));
+  return AppAccounts(accounts: accounts, client: RelayAppAccountClient(vault: const SecureAppAccountVault(), transport: transport), onDeleted: onDeleted);
+}
+
+// 私信跟着当前应用账号（人工决策见 social/social_service.dart）：同意协议与政策之后，等应用账号读好本机记录就切过去，之后应用账号一变就跟着切；没配中转时为不可用。
+void watchSocial(SocialService social, AppAccounts? appAccounts, {required Future<void> agreed}) {
+  unawaited(agreed.then((_) async {
+    if (appAccounts == null) return social.switchAccount(null);
+    void follow() {
+      if (appAccounts.loaded) unawaited(social.switchAccount(appAccounts.current));
+    }
+    appAccounts.addListener(follow);
+    follow();
+  }));
 }
 
 // 挑战与积分（人工决策见 playground/challenge/challenge_rules.dart）：同应用账号走自建中转，用那个应用账号的设备密钥签名；

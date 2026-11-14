@@ -20,6 +20,7 @@ import { FriendModule } from 'src/modules/friend/friend.module';
 import { HealthController } from 'src/modules/health/health.controller';
 import { InviteModule } from 'src/modules/invite/invite.module';
 import { MessageEntity } from 'src/modules/message/message.entity';
+import { AccountSocialEntity } from 'src/modules/pairing/account_social.entity';
 import { MessageModule } from 'src/modules/message/message.module';
 import { PairingModule } from 'src/modules/pairing/pairing.module';
 import { PointsEntryEntity, PointsGrantEntity } from 'src/modules/points/points.entity';
@@ -33,7 +34,7 @@ import { RewardModule } from 'src/modules/reward/reward.module';
       useFactory: () => ({
         type: 'mysql',
         ...env().mysql,
-        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity, RewardCampaignEntity, RewardPrizeEntity, RewardDrawEntity, AppAccountEntity, AccountIdentityEntity, AccountDeviceEntity, PointsGrantEntity, PointsEntryEntity, ChallengeRunEntity, ChallengeBestEntity, DiagnosticUploadEntity],
+        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity, RewardCampaignEntity, RewardPrizeEntity, RewardDrawEntity, AppAccountEntity, AccountIdentityEntity, AccountDeviceEntity, PointsGrantEntity, PointsEntryEntity, ChallengeRunEntity, ChallengeBestEntity, DiagnosticUploadEntity, AccountSocialEntity],
         // 表结构由人工执行 sql/schema.sql 管理，启动不做 DDL。
         synchronize: false,
         migrationsRun: false,

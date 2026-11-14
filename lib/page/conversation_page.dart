@@ -229,7 +229,7 @@ class _ConversationPageState extends State<ConversationPage> {
     if (message.system != null) {
       return Column(children: [
         ?time,
-        Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Center(child: Text('已成为好友', style: secondary))),
+        Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Center(child: Text(message.system == 'friend_moved' ? '对方换了设备' : '已成为好友', style: secondary))),
       ]);
     }
     final alignment = message.outgoing ? CrossAxisAlignment.end : CrossAxisAlignment.start;

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -26,9 +28,11 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 // 消息页：私信。私信是功能性的：只有好友之间的分享卡片，没有文字聊天。
 // [人工决策-2026-10-19 17:55:48] 去掉还没接入的「通知」分段，消息页只放私信，等真有通知来源再加回（用户选定：一直空着的入口像功能坏了）。
 class MessagePage extends StatefulWidget {
-  const MessagePage({super.key, this.social, this.gateway, this.openVideo, this.scan = scanInviteWithCamera});
+  const MessagePage({super.key, this.social, this.gateway, this.openVideo, this.openAccount, this.scan = scanInviteWithCamera});
   // 为空表示本次运行未接入私信（测试或未配置中转服务）。
   final SocialService? social;
+  // 没登录应用账号时去登录（推入账号页）。
+  final void Function(BuildContext context)? openAccount;
   final CampusGateway? gateway;
   final VideoOpener? openVideo;
   final InviteScanner scan;
@@ -110,7 +114,12 @@ class _MessagePageState extends State<MessagePage> {
           : ListenableBuilder(listenable: social, builder: (context, _) => switch (social.status) {
               SocialStatus.loading => const Center(child: CampusLoading(label: '读取私信')),
               SocialStatus.unavailable => const _CenteredText('当前版本未配置私信服务'),
-              SocialStatus.failed => const _CenteredText('私信暂时不可用，请重启应用后再试'),
+              SocialStatus.failed => _SocialNotice(title: '私信暂时连不上', action: '重试', icon: CampusIcons.sync, onPressed: () => unawaited(social.reopen())),
+              SocialStatus.signedOut => _SocialNotice(title: '登录应用账号后使用私信', action: '去登录', icon: CampusIcons.login, onPressed: switch (widget.openAccount) {
+                final open? => () => open(context),
+                null => null,
+              }),
+              SocialStatus.elsewhere => _SocialNotice(title: '私信在另一台手机上', action: '在这台手机上使用', icon: CampusIcons.phone, onPressed: () => unawaited(takeOverSocial(context, social))),
               SocialStatus.disabled => _SocialSetup(social: social),
               SocialStatus.ready => _FriendList(social: social, onOpen: _open, onAdd: _add, onMore: _more, onRefresh: () => _refresh(reconcile: true, report: true)),
             })),
@@ -119,6 +128,39 @@ class _MessagePageState extends State<MessagePage> {
 }
 
 String? _nicknameError(String value) => validNickname(value) ? null : '昵称为 1–$nicknameMaxLength 个字';
+
+// 在这台手机上接管这个应用账号的私信（人工决策见 social/social_service.dart）：先确认，写明另一台停用、好友会看到、记录不过来。
+Future<void> takeOverSocial(BuildContext context, SocialService social) async {
+  final confirmed = await showCampusConfirm(context, title: '在这台手机上使用私信？', message: '另一台手机上的私信会停用，好友会看到你换了设备。那台手机上的聊天记录和还没收到的消息不会过来。', action: '使用');
+  if (!confirmed || !context.mounted) return;
+  try {
+    await showCampusWaiting(context, label: '正在接管', operation: social.takeOver);
+  } catch (error, stack) {
+    campusLog('[MessagePage] action=take_over errorType=${error.runtimeType}\n$stack');
+    if (context.mounted) await showCampusNotice(context, socialErrorText(error is SocialException ? error.code : null));
+  }
+}
+
+// 私信用不了时的一张卡：一句状态加一个按钮（去登录、接管、重试）。
+class _SocialNotice extends StatelessWidget {
+  const _SocialNotice({required this.title, required this.action, required this.icon, required this.onPressed});
+  final String title;
+  final String action;
+  final IconData icon;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) {
+    final inset = MediaQuery.paddingOf(context).bottom;
+    return CampusScrollFade(bottom: inset, child: ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), children: [
+      CampusSurface(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        BalancedText(title, style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 16),
+        if (onPressed != null) FilledButton.icon(style: campusProminent, onPressed: onPressed, icon: CampusIcon(icon), label: Text(action)),
+      ])),
+    ]));
+  }
+}
 
 class _CenteredText extends StatelessWidget {
   const _CenteredText(this.text);
@@ -192,7 +234,7 @@ class _SocialSetupState extends State<_SocialSetup> {
           onSubmitted: (_) => _enable(),
         ),
         const SizedBox(height: 4),
-        Text('分享内容在本机加密，中转服务器只转交密文；对方未取走的 30 天后删除。好友与私信属于这台设备，切换教务账号不受影响。', style: secondary),
+        Text('分享内容在本机加密，中转服务器只转交密文；对方未取走的 30 天后删除。好友与私信记在应用账号下，换手机登录同一个账号可以接着用。', style: secondary),
         Align(alignment: AlignmentDirectional.centerStart, child: TextButton(style: campusLink, onPressed: () => context.push('/legal/privacy'), child: const Text('隐私政策', style: TextStyle(fontSize: 14)))),
         const SizedBox(height: 8),
         FilledButton(

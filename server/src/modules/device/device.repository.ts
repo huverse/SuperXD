@@ -7,6 +7,8 @@ import { DeviceEntity } from 'src/modules/device/device.entity';
 // 设备存储端口：服务只依赖这个抽象，实现可替换。
 export abstract class DeviceRepository {
   abstract find(deviceId: string): Promise<DeviceEntity | null>;
+  // 一批设备的公钥（好友列表给换了设备的好友与新手机用），走 uk_device_id；调用方保证条数有界。
+  abstract keysOf(deviceIds: string[]): Promise<Pick<DeviceEntity, 'deviceId' | 'signPublicKey' | 'boxPublicKey'>[]>;
   // 按设备号顺序加行锁（FOR UPDATE），返回存在的设备号；须在调用方事务内执行。
   abstract lock(deviceIds: string[], manager: EntityManager): Promise<string[]>;
   // 不存在则插入、存在则更新加密公钥；返回是否新建。
@@ -25,6 +27,11 @@ export class TypeormDeviceRepository extends DeviceRepository {
 
   find(deviceId: string) {
     return this.repository.findOne({ where: { deviceId } });
+  }
+
+  async keysOf(deviceIds: string[]) {
+    if (deviceIds.length === 0) return [];
+    return this.repository.find({ select: { deviceId: true, signPublicKey: true, boxPublicKey: true }, where: { deviceId: In(deviceIds) } });
   }
 
   async lock(deviceIds: string[], manager: EntityManager) {

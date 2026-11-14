@@ -23,8 +23,9 @@ import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/main.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/invite_code.dart';
+import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/social_service.dart';
-import 'package:superxd/social/social_store.dart';
+import 'package:superxd/social/social_spaces.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/third_party_licenses.dart';
@@ -75,10 +76,12 @@ Future<SocialService> _demoSocial(TermRef term, String start) async {
   final relay = FakeRelay();
   final temporary = await getTemporaryDirectory();
   Future<SocialService> device(String name) async {
-    final file = File(path.join(temporary.path, 'readme_demo_$name.db'));
-    if (file.existsSync()) file.deleteSync();
-    final service = SocialService(store: await SocialStore.open(file.path), vault: MemoryIdentityVault(), transport: relay.transport());
-    await service.initialize();
+    final directory = Directory(path.join(temporary.path, 'readme_demo_$name'));
+    if (directory.existsSync()) directory.deleteSync(recursive: true);
+    directory.createSync();
+    final keys = MemoryAppAccountVault();
+    final service = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: directory.path), accountKeys: keys, transport: relay.transport());
+    await service.switchAccount(await relay.signIn(keys));
     await service.enable(name);
     return service;
   }

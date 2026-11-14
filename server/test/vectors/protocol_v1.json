@@ -18,5 +18,11 @@
     "redeemerDeviceId": "ZbYGc9btiEvwHCwiLYKtoA",
     "canonical": "SXD1-invite\nEBESExQVFhcYGRobHB0eHw\nZbYGc9btiEvwHCwiLYKtoA",
     "proof": "4cSaRWKSdNzpcoo9Gq-BPJug11mHkQJL7uqUmc9cIogrvvZ1aVgrcbgqovMc1vWsKCGRm1LHamsNBQjIYE0UAA"
+  },
+  "socialBind": {
+    "accountDeviceId": "AAECAwQFBgcICQoLDA0ODw",
+    "socialDeviceId": "ZbYGc9btiEvwHCwiLYKtoA",
+    "canonical": "SXD1-social-bind\nAAECAwQFBgcICQoLDA0ODw\nZbYGc9btiEvwHCwiLYKtoA",
+    "proof": "3ZrN2k72gZLmEUVhxB-vVn_PDDh_sEsOg7s95yv88tXdVGO1hAVmPlE-GIun6xuGoaMqA_27UTgOsI_tA_WLBw"
   }
 }

@@ -15,7 +15,12 @@ import 'package:superxd/theme/campus_transitions.dart';
 // 课表页、界面页、百宝箱结果页共用；百宝箱经组合根注入的回调调用这里。
 Future<void> showShareSheet(BuildContext context, {required SocialService social, required ShareCard card}) async {
   if (social.status != SocialStatus.ready) {
-    await showCampusNotice(context, social.status == SocialStatus.unavailable ? '当前版本未配置私信服务' : '请先在“消息 › 私信”开启私信并添加好友');
+    await showCampusNotice(context, switch (social.status) {
+      SocialStatus.unavailable => '当前版本未配置私信服务',
+      SocialStatus.signedOut => '请先在“我的 › 账号”登录应用账号，再开启私信',
+      SocialStatus.elsewhere => '私信在另一台手机上，可以在“消息”里改到这台手机上使用',
+      _ => '请先在“消息 › 私信”开启私信并添加好友',
+    });
     return;
   }
   if (!social.friends.any((friend) => !friend.removed)) {

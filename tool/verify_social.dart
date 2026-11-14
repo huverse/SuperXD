@@ -1,22 +1,42 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
+import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/invite_code.dart';
+import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/social/social_crypto.dart';
 import 'package:superxd/social/social_service.dart';
+import 'package:superxd/social/social_spaces.dart';
 import 'package:superxd/social/social_store.dart';
 
 // 私信端到端联调（手动，不进 CI）：两个真实客户端经真实中转服务加好友、收发三种卡片、删除好友、关闭私信。
 // 只用合成数据。运行：
 //   flutter test tool/verify_social.dart --dart-define=SUPERXD_RELAY=http://127.0.0.1:18080
 // 中转服务可用 server/docker-compose.test.yml 起库后 npm run build && node dist/main.js 启动，或指向已部署的服务器。
+// 私信要挂到应用账号，而应用账号要中转代登录一次真实教务，合成数据做不到：私信身份事先用旧的设备注册接口登记好，挂账号那一个请求在本地截下
+// （挂账号与换手机接管由 server/test/social_account.e2e.test.ts 与共用向量 socialBind 覆盖），其余请求原样经真实中转。
+class _BoundLocally implements RelayTransport {
+  _BoundLocally(this.inner);
+  final RelayTransport inner;
+  @override
+  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, int? limit, bool background = false}) async {
+    if (method == 'POST' && pathWithQuery == '/v1/account/social') {
+      final payload = jsonDecode(utf8.decode(body!)) as Map<String, Object?>;
+      return RelayResponse(200, {'deviceId': deviceIdOf(decodeBase64UrlNoPad(payload['signPublicKey'] as String)), 'moved': false});
+    }
+    return inner.send(method, pathWithQuery, headers, body, timeout: timeout, limit: limit, background: background);
+  }
+}
+
 void main() {
   setUpAll(() {
     sqfliteFfiInit();
@@ -26,9 +46,17 @@ void main() {
   test('真实中转服务：扫码加好友、收发卡片、删除好友、关闭私信', () async {
     expect(relayBaseUrl, isNotEmpty, reason: '用 --dart-define=SUPERXD_RELAY=… 指定中转服务地址');
     final directory = Directory.systemTemp.createTempSync('verify_social');
+    final identities = <String, SocialIdentity>{};
     Future<SocialService> device(String name) async {
-      final service = SocialService(store: await SocialStore.open(path.join(directory.path, '$name.db')), vault: MemoryIdentityVault(), transport: HttpRelayTransport(relayBaseUrl));
-      await service.initialize();
+      final vault = MemoryIdentityVault(), keys = MemoryAppAccountVault();
+      final account = AppAccountRef(accountId: 'verify-${identities.length}', slot: 'account.verify');
+      await keys.write(account.slot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: account.accountId));
+      final spaces = SocialSpaces(vault: vault, directory: (Directory(path.join(directory.path, account.accountId))..createSync()).path);
+      final social = identities[name] = await SocialIdentity.generate();
+      await RelayClient(HttpRelayTransport(relayBaseUrl)).register(social);
+      await vault.write((await spaces.of(account.accountId)).identityKey, social);
+      final service = SocialService(spaces: spaces, accountKeys: keys, transport: _BoundLocally(HttpRelayTransport(relayBaseUrl)));
+      await service.switchAccount(account);
       await service.enable(name);
       return service;
     }
@@ -69,9 +97,8 @@ void main() {
     expect(alice.unread, 3);
 
     // 长轮询：alice 挂着拉取，bob 一秒后发一张，看 alice 多久拿到（应远小于挂起时长）。
-    final aliceIdentity = await alice.vault.read();
     final relay = RelayClient(HttpRelayTransport(relayBaseUrl));
-    final waiting = relay.fetch(aliceIdentity!, wait: SocialService.longPollWait);
+    final waiting = relay.fetch(identities['联调甲']!, wait: SocialService.longPollWait);
     await Future<void>.delayed(const Duration(seconds: 1));
     final sentAt = DateTime.now();
     await bob.send(alice.deviceId!, cards.last);
