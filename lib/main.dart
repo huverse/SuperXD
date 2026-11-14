@@ -165,7 +165,8 @@ void main() async {
   ensureCampusClock();
   configureCampusIcons();
   registerCampusLicenses();
-  final store = await AccountStore.open();
+  // 接管同一进程里旧引擎遗留的账号库连接、回滚停在中间的事务（人工决策见 local/account_store.dart 的 open）。
+  final store = await AccountStore.open(reclaim: true);
   final session = AppSession(AccountGateway(store: store, credentials: SecureCredentialStore()));
   // 衬线等要下载的字体（人工决策见 domain/font_pack.dart）：文件在应用支持目录的 font_packs（排除备份）；选着的在显示设置打开时（首帧前）核对并注册，
   // 升级上来还没下的等同意协议与政策之后自动下回来（见下面 ensureFontPack）；没配中转时下不了。

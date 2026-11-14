@@ -36,8 +36,9 @@ class AppDatabase {
     return AppDatabase(db);
   }
 
-  static Future<AppDatabase> openForAccount({required String databasePath, required AccountIdentity identity}) async {
-    final db = await openDatabase(databasePath, version: 8, singleInstance: false,
+  // reclaim：前台接管旧引擎遗留的连接（人工决策见 AccountStore.open）。
+  static Future<AppDatabase> openForAccount({required String databasePath, required AccountIdentity identity, bool reclaim = false}) async {
+    final db = await databaseFactory.openDatabase(databasePath, options: OpenDatabaseOptions(version: 8, singleInstance: reclaim, rollbackActiveTransactionOnOpen: reclaim,
       onConfigure: (db) async {
         await _configure(db);
         // Android 会先创建 android_metadata；它不是旧业务数据，不能阻止新账号库初始化。
@@ -50,7 +51,7 @@ class AppDatabase {
       },
       onUpgrade: _upgrade,
       onOpen: (db) => _verifyOwner(db, identity),
-    );
+    ));
     return AppDatabase(db);
   }
 

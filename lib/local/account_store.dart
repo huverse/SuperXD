@@ -9,15 +9,21 @@ import 'package:superxd/domain/account.dart';
 import 'package:superxd/local/app_database.dart';
 
 class AccountStore {
-  AccountStore._(this._index, this._directory);
+  AccountStore._(this._index, this._directory, this._reclaim);
 
   final Database _index;
   final String _directory;
+  final bool _reclaim;
 
-  static Future<AccountStore> open({String? directory}) async {
+  // [人工决策-2026-11-14 11:50:24] 前台接管旧引擎遗留的连接（用户选「接管旧连接」）：11-14 用户真机上恢复会话与登录都打不开账号库
+  // （SQLITE_BUSY，同一进程里跨了几个引擎，换了进程才好）。安卓上退出再进入会新建 Flutter 引擎而进程还在，sqflite 的原生连接放在进程级的表里、
+  // 引擎销毁时不关；旧引擎停在写事务中间被销毁，这条连接就一直锁着库直到进程结束（模拟器上已确定复现）。reclaim 为真时账号索引与账号库用单实例打开：
+  // 新引擎接回旧引擎留下的那条连接，停在事务中间的先回滚（sqflite 默认只在调试包回滚，这里显式打开），连接也不再越积越多。
+  // 只给前台（main.dart）用；后台自动同步那份引擎可能和前台同时在跑，仍用独立连接，免得两份引擎共用一条连接、一方的回滚或关闭打断另一方。
+  static Future<AccountStore> open({String? directory, bool reclaim = false}) async {
     final root = path.normalize(path.absolute(directory ?? await getDatabasesPath()));
     await Directory(root).create(recursive: true);
-    final index = await openDatabase(path.join(root, 'account_index.db'), version: 1, singleInstance: false,
+    final index = await databaseFactory.openDatabase(path.join(root, 'account_index.db'), options: OpenDatabaseOptions(version: 1, singleInstance: reclaim, rollbackActiveTransactionOnOpen: reclaim,
       onCreate: (db, version) async {
         await db.execute('''
 CREATE TABLE account (
@@ -40,8 +46,8 @@ CREATE TABLE legacy_claim (
   status TEXT NOT NULL CHECK (status IN ('claimed', 'done'))
 )''');
       },
-    );
-    return AccountStore._(index, root);
+    ));
+    return AccountStore._(index, root, reclaim);
   }
 
   // URL 保留校园部署的 base path；端口、大小写和末尾斜线的等价写法共用账号库。
@@ -106,7 +112,7 @@ ON CONFLICT(account_key) DO UPDATE SET display_name = CASE WHEN excluded.display
     final normalized = _normalize(identity);
     final directory = path.join(_directory, 'accounts');
     await Directory(directory).create(recursive: true);
-    return AppDatabase.openForAccount(databasePath: path.join(directory, '${keyOf(normalized)}.db'), identity: normalized);
+    return AppDatabase.openForAccount(databasePath: path.join(directory, '${keyOf(normalized)}.db'), identity: normalized, reclaim: _reclaim);
   }
 
   Future<LegacyImportState> legacyState(AccountIdentity identity) async {
