@@ -4,11 +4,13 @@ import { rewardModes, RewardMode } from 'src/modules/reward/reward_odds';
 
 // 节日抽奖的维护命令（概率模型见 src/modules/reward/reward_odds.ts；命令行入口 src/tools/reward_admin.ts），在服务器上进中转容器执行，奖品只经标准输入进库、不落地成文件：
 //   docker compose exec -T relay node dist/tools/reward_admin.js create <编号> --from 2027-02-06T00:00+08:00 --to 2027-02-07T00:00+08:00 --mode weighted --chance 0.2 --max-weight 3
-//   docker compose exec -T relay node dist/tools/reward_admin.js import <编号> < 奖品.tsv     每行「口令<TAB>内容」或「二维码<TAB>内容」，可再加「<TAB>附言」
+//   docker compose exec -T relay node dist/tools/reward_admin.js import <编号> [--tier 1] < 奖品.tsv     每行「口令<TAB>内容」或「二维码<TAB>内容」，可再加「<TAB>附言」；
+//     --tier 是这批奖品的金额档（0 普通，默认；数越大金额越高，抽中后大额档按等级加权挑，规则见 reward_odds.ts），不同档分批导入
 //   docker compose exec -T relay node dist/tools/reward_admin.js status <编号>
 // 编号与客户端节日登记的 campaign 一致；create 对已有的编号是改设置（开始后改时长会改变放量节奏，慎改）。平权时 --max-weight 不用写。
 const kinds: Record<string, 'password' | 'qrcode'> = { 口令: 'password', 二维码: 'qrcode' };
 const importChunk = 1000;
+const tierMax = 9;
 
 // 输入不对：命令行只打印这句话、不打印堆栈。
 export class RewardAdminError extends Error {}
@@ -54,7 +56,9 @@ export const runRewardAdmin = async (connection: Connection, args: string[], lin
   ];
   if (campaign === undefined) fail(`没有活动 ${key}，先 create`);
   if (command === 'import') {
-    const rows: [string, string, string, string, Date, Date][] = [];
+    const tier = Number(option(rest, 'tier') ?? '0');
+    if (!Number.isInteger(tier) || tier < 0 || tier > tierMax) fail(`--tier 是金额档，0 到 ${tierMax} 的整数`);
+    const rows: [string, number, string, string, string, Date, Date][] = [];
     const now = new Date();
     let line = 0;
     for await (const text of lines) {
@@ -65,22 +69,26 @@ export const runRewardAdmin = async (connection: Connection, args: string[], lin
       if (kind === undefined) fail(`第 ${line} 行：开头写「口令」或「二维码」，再用 Tab 隔开内容`);
       if (content === '' || content.length > 1024) fail(`第 ${line} 行：内容为空或超过 1024 字`);
       if (note.length > 200) fail(`第 ${line} 行：附言超过 200 字`);
-      rows.push([campaign.id, kind, content, note, now, now]);
+      rows.push([campaign.id, tier, kind, content, note, now, now]);
     }
     if (rows.length === 0) fail('没有读到奖品');
     for (let start = 0; start < rows.length; start += importChunk) {
-      await connection.query('INSERT INTO reward_prize (campaign_id, kind, content, note, create_time, update_time) VALUES ?', [rows.slice(start, start + importChunk)]);
+      await connection.query('INSERT INTO reward_prize (campaign_id, tier, kind, content, note, create_time, update_time) VALUES ?', [rows.slice(start, start + importChunk)]);
     }
-    return `[RewardAdmin] action=import campaign=${key} prizes=${rows.length}`;
+    return `[RewardAdmin] action=import campaign=${key} tier=${tier} prizes=${rows.length}`;
   }
   if (command === 'status') {
-    const [[prizes]] = (await connection.query('SELECT COUNT(*) AS stock, COUNT(draw_id) AS given FROM reward_prize WHERE campaign_id = ?', [campaign.id])) as unknown as [{ stock: number; given: number }[]];
+    const [tiers] = (await connection.query('SELECT tier, COUNT(*) AS stock, COUNT(draw_id) AS given FROM reward_prize WHERE campaign_id = ? GROUP BY tier ORDER BY tier', [campaign.id])) as unknown as [
+      { tier: number; stock: number; given: number }[],
+    ];
+    const prizes = { stock: tiers.reduce((sum, row) => sum + Number(row.stock), 0), given: tiers.reduce((sum, row) => sum + Number(row.given), 0) };
     const [[draws]] = (await connection.query('SELECT COUNT(*) AS draws, COUNT(prize_id) AS winners, AVG(active_days) AS activeDays FROM reward_draw WHERE campaign_id = ?', [campaign.id])) as unknown as [
       { draws: number; winners: number; activeDays: string | null }[],
     ];
     return (
       `活动 ${key}：${campaign.startsAt.toISOString()} 到 ${campaign.endsAt.toISOString()}，模式 ${campaign.mode}，基础概率 ${campaign.baseChance}，加权上限 ${campaign.maxWeight}\n` +
-      `奖品 ${prizes.stock} 份，已发 ${prizes.given} 份；抽签 ${draws.draws} 人，中 ${draws.winners} 人，平均活跃 ${Number(draws.activeDays ?? 0).toFixed(1)} 天`
+      `奖品 ${prizes.stock} 份，已发 ${prizes.given} 份；抽签 ${draws.draws} 人，中 ${draws.winners} 人，平均活跃 ${Number(draws.activeDays ?? 0).toFixed(1)} 天` +
+      (tiers.length > 1 ? `\n${tiers.map((row) => `第 ${row.tier} 档：${row.stock} 份，已发 ${row.given} 份`).join('；')}` : '')
     );
   }
   return fail(`不认识的命令 ${command}，只有 create、import、status`);

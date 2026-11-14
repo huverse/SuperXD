@@ -45,6 +45,7 @@ import 'package:superxd/device/relay_release_feed.dart';
 import 'package:superxd/device/relay_rollout_feed.dart';
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/app_shortcut.dart';
+import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/domain/course_widget.dart';
 import 'package:superxd/domain/festival.dart';
 import 'package:superxd/domain/painting.dart';
@@ -209,7 +210,7 @@ void main() async {
   }
   appAccounts = appAccountsOf(session.gateway, onDeleted: (account) => unawaited(social.forgetAccount(account)));
   final challenges = challengesOf(session.gateway, appAccounts);
-  final rollouts = await rolloutsOf(support, appAccounts);
+  final rollouts = await rolloutsOf(support, appAccounts, challenges);
   final updates = await appUpdates(support, rollouts);
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
   final notes = await developerNotes(support);
@@ -286,10 +287,21 @@ Future<AppUpdates?> appUpdates(Directory support, Rollouts rollouts) async {
 
 // 灰度（人工决策见 domain/rollout.dart）：配置走同一个自建中转（没配中转时只用本机存着的，一般为空）；本机随机编号与上次的配置在 rollout.json。
 // 分桶主体是当前教务账号对应的应用账号号，没登录用本机随机编号；渠道同应用更新（测试与没有渠道的构建记作 development）。
-Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts) async => Rollouts(
+// 积分等级经挑战与积分的签名请求取（取不到时 Challenges 已记日志，这里按没取到算）。
+Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challenges? challenges) async => Rollouts(
   memory: await FileRolloutMemory.open(File(path.join(support.path, 'rollout.json'))),
   channel: appFlavor ?? 'development',
   accountId: () => appAccounts?.accountId,
+  level: switch (challenges) {
+    final hub? => () async {
+      try {
+        return (await hub.points()).level;
+      } on ChallengeException {
+        return null;
+      }
+    },
+    null => null,
+  },
   feed: switch (relayBase()) {
     final base? => RelayRolloutFeed(base),
     null => null,

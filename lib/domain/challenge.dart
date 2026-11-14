@@ -116,6 +116,8 @@ class ChallengeVerdict {
 
 // 余额与等级：等级 Lv0–Lv5 按近 12 个月获得的总数 earned 算（花了不减），nextLevelAt 是到下一级要的获得总数，最高级为空
 // （[人工决策-2026-11-14 20:20:18] 见服务端 src/modules/points/points_level.ts）。
+const pointsLevelCount = 6;
+
 class PointsSummary {
   const PointsSummary({required this.balance, required this.expiring, required this.expiringAt, required this.earned, required this.level, required this.nextLevelAt});
   final int balance, expiring, earned, level;

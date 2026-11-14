@@ -43,6 +43,22 @@ void main() {
       for (final item in (vectors['cases'] as List).cast<Map<String, dynamic>>()) {
         expect(rolloutBucket(item['id'] as String, item['subject'] as String), item['bucket']);
       }
+      for (final item in (vectors['weighted'] as List).cast<Map<String, dynamic>>()) {
+        expect(rolloutIncludes(item['id'] as String, item['subject'] as String, item['percent'] as int, level: item['level'] as int), item['included'], reason: '$item');
+      }
+    });
+
+    test('积分等级加权：倍数 1 到 3 倍、等级越高进的越多且包含低等级的；放量 0 不论等级都不在，100 都在', () {
+      final subjects = [for (var index = 0; index < 4000; index++) 'subject-$index'];
+      Set<String> at(int level) => subjects.where((subject) => rolloutIncludes('feature', subject, 10, level: level)).toSet();
+      expect(at(0).length / subjects.length, closeTo(0.10, 0.02));
+      expect(at(5).length / subjects.length, closeTo(0.30, 0.03));
+      for (var level = 1; level <= 5; level++) {
+        expect(at(level).containsAll(at(level - 1)), isTrue);
+      }
+      expect(subjects.where((subject) => rolloutIncludes('feature', subject, 0, level: 5)), isEmpty);
+      expect(subjects.every((subject) => rolloutIncludes('feature', subject, 100)), isTrue);
+      expect(subjects.where((subject) => rolloutIncludes('feature', subject, 50, level: 5)).length, subjects.length, reason: '50% × 3 倍封顶到全部');
     });
 
     test('放量只涨时进了批次的一直在里面，比例接近放量值，换版本重新分桶', () {
@@ -247,6 +263,49 @@ void main() {
       expect(rollouts.enabled('challenge', fallback: false), isTrue);
     });
 
+    test('登录着应用账号时同一时机取积分等级：等级加权进批次；只因等级进的降级后照旧在里面，放量 0 仍关', () async {
+      final candidates = Iterable<String>.generate(2000, (index) => 'subject-$index');
+      final lifted = candidates.firstWhere((subject) => !rolloutIncludes('feature', subject, 10) && rolloutIncludes('feature', subject, 10, level: 5));
+      var level = 5;
+      var asked = 0;
+      final leveled = Rollouts(memory: memory, channel: 'alpha', accountId: () => accountId, feed: feed, level: () async => (asked++, level).$2, now: () => now);
+      feed.next = decodeRolloutConfig({'flags': [{'id': 'feature', 'percent': 10}]});
+      accountId = lifted;
+      await leveled.refresh();
+      expect(asked, 1);
+      expect(memory.levelOf(lifted), 5);
+      expect(leveled.enabled('feature', fallback: false), isTrue);
+      await pumpEventQueue();
+      expect(memory.joined(lifted, 'feature'), isTrue);
+      level = 0;
+      now = now.add(Rollouts.refreshGap);
+      await leveled.refresh();
+      expect(memory.levelOf(lifted), 0);
+      expect(leveled.enabled('feature', fallback: false), isTrue, reason: '降级不踢出');
+      now = now.add(Rollouts.refreshGap);
+      feed.next = decodeRolloutConfig({'flags': [{'id': 'feature', 'percent': 0}]});
+      await leveled.refresh();
+      expect(leveled.enabled('feature', fallback: true), isFalse, reason: '一键关停不受等级影响');
+    });
+
+    test('没登录应用账号不取等级；取不到照旧用记着的', () async {
+      var asked = 0;
+      int? level = 3;
+      final leveled = Rollouts(memory: memory, channel: 'alpha', accountId: () => accountId, feed: feed, level: () async => (asked++, level).$2, now: () => now);
+      feed.next = RolloutConfig.empty;
+      await leveled.refresh();
+      expect(asked, 0);
+      accountId = 'AAAAAAAAAAAAAAAAAAAAAB';
+      now = now.add(Rollouts.refreshGap);
+      await leveled.refresh();
+      expect(memory.levelOf('AAAAAAAAAAAAAAAAAAAAAB'), 3);
+      level = null;
+      now = now.add(Rollouts.refreshGap);
+      await leveled.refresh();
+      expect(asked, 2);
+      expect(memory.levelOf('AAAAAAAAAAAAAAAAAAAAAB'), 3);
+    });
+
     test('没配中转时不联网，开关按默认值', () async {
       final offline = Rollouts(memory: FileRolloutMemory.memory(), channel: 'alpha', accountId: () => null, now: () => now);
       await offline.refresh();
@@ -272,6 +331,33 @@ void main() {
       final reset = await FileRolloutMemory.open(file);
       expect(reset.installId, isNot(first.installId));
       expect(reset.config.rules, isEmpty);
+    });
+
+    test('等级与只因等级进的批次跟着主体存：换了主体从头记，批次最多 rolloutRuleLimit 个、旧的先丢；格式不对的当没记过', () async {
+      final file = File('${directory.path}/rollout.json');
+      final memory = await FileRolloutMemory.open(file);
+      await memory.saveLevel('account-a', 4);
+      await memory.join('account-a', 'feature');
+      final again = await FileRolloutMemory.open(file);
+      expect(again.levelOf('account-a'), 4);
+      expect(again.joined('account-a', 'feature'), isTrue);
+      expect(again.levelOf('account-b'), 0);
+      expect(again.joined('account-b', 'feature'), isFalse);
+      await again.join('account-b', 'other');
+      expect(again.levelOf('account-a'), 0);
+      expect(again.joined('account-a', 'feature'), isFalse);
+      for (var index = 0; index <= rolloutRuleLimit; index++) {
+        await again.join('account-b', 'f$index');
+      }
+      expect(again.joined('account-b', 'other'), isFalse);
+      expect(again.joined('account-b', 'f$rolloutRuleLimit'), isTrue);
+      final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+      expect((json['joined'] as List).length, rolloutRuleLimit);
+      await file.writeAsString(jsonEncode({...json, 'level': 9}));
+      final bad = await FileRolloutMemory.open(file);
+      expect(bad.installId, again.installId);
+      expect(bad.levelOf('account-b'), 0);
+      expect(bad.joined('account-b', 'f1'), isFalse);
     });
   });
 

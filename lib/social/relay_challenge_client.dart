@@ -156,12 +156,14 @@ class RelayChallengeClient implements ChallengeClient {
   Future<PointsSummary> points(AppAccountRef account) async {
     final body = await _send(account, 'GET', '/v1/points');
     final expiringAt = body['expiringAt'], next = body['nextLevelAt'];
+    final level = _field<int>(body, 'level');
+    if (level < 0 || level >= pointsLevelCount) _bad('level');
     return PointsSummary(
       balance: _field<int>(body, 'balance'),
       expiring: _field<int>(body, 'expiring'),
       expiringAt: expiringAt is int ? DateTime.fromMillisecondsSinceEpoch(expiringAt, isUtc: true) : null,
       earned: _field<int>(body, 'earned'),
-      level: _field<int>(body, 'level'),
+      level: level,
       nextLevelAt: next is int ? next : null,
     );
   }

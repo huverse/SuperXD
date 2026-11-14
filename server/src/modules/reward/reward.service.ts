@@ -5,11 +5,12 @@ import { LRUCache } from 'lru-cache';
 import { rateSubjectOf } from 'src/common/client_ip';
 import { RateLimiter } from 'src/common/redis/redis.module';
 import { AccountRepository } from 'src/modules/account/account.repository';
+import { PointsService } from 'src/modules/points/points.service';
 import { RelayCode, RelayError } from 'src/common/relay_error';
 import { rewardCampaignCacheSeconds, rewardDrawPerDevicePerHour, rewardDrawPerHour } from 'src/common/relay_limits';
 import { RewardCampaignEntity } from 'src/modules/reward/reward.entity';
 import { RewardRepository } from 'src/modules/reward/reward.repository';
-import { RewardMode, rewardChance, rewardModes, rewardWeight } from 'src/modules/reward/reward_odds';
+import { RewardMode, rewardChance, rewardLevelWeight, rewardModes, rewardWeight } from 'src/modules/reward/reward_odds';
 import * as dtos from 'src/modules/reward/reward.dto';
 
 // 掷骰子：[0, 1) 上均匀，百万分之一精度（同 base_chance 的小数位）。单独成类，测试里可以替换。
@@ -32,6 +33,7 @@ export class RewardService {
     private readonly repository: RewardRepository,
     private readonly dice: RewardDice,
     private readonly accounts: AccountRepository,
+    private readonly points: PointsService,
   ) {}
 
   async draw(ip: string, deviceId: string, campaignKey: string, body: dtos.RewardDrawBodyDto): Promise<dtos.RewardDrawDto> {
@@ -48,11 +50,25 @@ export class RewardService {
     if (existing !== null) return present(existing.prize);
     const mode = campaign.mode as RewardMode;
     if (!rewardModes.includes(mode)) throw new Error(`活动 ${campaignKey} 的模式 ${campaign.mode} 不认识`);
-    const weight = rewardWeight(mode, body.activeDays, Number(campaign.maxWeight));
+    // 等级只在加权模式里用（平权人人一样），按设备所在账号的积分算。
+    const accountId = mode === 'weighted' ? await this.accounts.accountOf(deviceId) : null;
+    const level = accountId === null ? 0 : await this.points.levelOfAccount(accountId);
+    const maxWeight = Number(campaign.maxWeight);
+    const weight = rewardWeight(mode, body.activeDays, level, maxWeight);
     const chance = rewardChance(Number(campaign.baseChance), weight);
     const lucky = this.dice.roll() < chance;
-    const outcome = await this.repository.draw({ campaign, participantHash, activeDays: body.activeDays, weight, chance, lucky, now });
-    this.logger.log(`[Reward] action=draw campaign=${campaignKey} mode=${mode} activeDays=${body.activeDays} chance=${chance.toFixed(4)} lucky=${lucky} won=${outcome.prize !== null}`);
+    const outcome = await this.repository.draw({
+      campaign,
+      participantHash,
+      activeDays: body.activeDays,
+      weight,
+      chance,
+      lucky,
+      levelWeight: rewardLevelWeight(mode, level, maxWeight),
+      tierRoll: () => this.dice.roll(),
+      now,
+    });
+    this.logger.log(`[Reward] action=draw campaign=${campaignKey} mode=${mode} activeDays=${body.activeDays} level=${level} chance=${chance.toFixed(4)} lucky=${lucky} won=${outcome.prize !== null}`);
     return present(outcome.prize);
   }
 

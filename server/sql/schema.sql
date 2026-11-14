@@ -80,6 +80,7 @@ CREATE TABLE IF NOT EXISTS reward_campaign (
 CREATE TABLE IF NOT EXISTS reward_prize (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   campaign_id BIGINT UNSIGNED NOT NULL,
+  tier TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '金额档：0 普通，数越大金额越高（抽中后大额档按积分等级加权挑）',
   kind VARCHAR(16) NOT NULL COMMENT 'password 口令，qrcode 二维码内容',
   content VARCHAR(1024) NOT NULL,
   note VARCHAR(200) NOT NULL DEFAULT '' COMMENT '附言，显示在奖品下面',
@@ -87,7 +88,7 @@ CREATE TABLE IF NOT EXISTS reward_prize (
   create_time DATETIME(3) NOT NULL,
   update_time DATETIME(3) NOT NULL,
   PRIMARY KEY (id),
-  KEY idx_campaign_draw (campaign_id, draw_id)
+  KEY idx_campaign_tier_draw (campaign_id, tier, draw_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- 抽签记录：每次活动每个参与号一行（参与号只存 sha256），重复请求返回同一个结果，抽不中的也记，防止反复重抽。

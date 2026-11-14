@@ -2,6 +2,8 @@ import { createHash, randomBytes } from 'node:crypto';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import Redis from 'ioredis';
 import { createConnection, Connection } from 'mysql2/promise';
+import { mkdir, rm, utimes, writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 
@@ -13,7 +15,7 @@ import { rewardDrawPerDevicePerHour, rewardDrawPerHour, rewardKeepDays } from 's
 import { RewardAdminError, runRewardAdmin } from 'src/modules/reward/reward_admin';
 import { RewardRetentionTask } from 'src/modules/reward/reward_retention.task';
 import { RewardDice } from 'src/modules/reward/reward.service';
-import { rewardChance, rewardReleased, rewardWeight } from 'src/modules/reward/reward_odds';
+import { rewardChance, rewardLevelWeight, rewardPickTier, rewardReleased, rewardWeight } from 'src/modules/reward/reward_odds';
 import { TestDevice } from './test_device';
 
 let app: NestExpressApplication;
@@ -33,7 +35,7 @@ const lines = async function* (text: string) {
 };
 
 // 经维护命令建活动、导入奖品（同维护者在服务器上的用法）。
-const setup = async (options: { from?: number; to?: number; mode?: 'uniform' | 'weighted'; chance?: number; maxWeight?: number; prizes?: number } = {}) => {
+const setup = async (options: { from?: number; to?: number; mode?: 'uniform' | 'weighted'; chance?: number; maxWeight?: number; prizes?: number; bigPrizes?: number } = {}) => {
   const key = campaignKey();
   const now = Date.now();
   const args = ['create', key, '--from', new Date(now + (options.from ?? -hour / 2)).toISOString(), '--to', new Date(now + (options.to ?? hour / 2)).toISOString(), '--mode', options.mode ?? 'uniform', '--chance', String(options.chance ?? 0.2)];
@@ -41,6 +43,7 @@ const setup = async (options: { from?: number; to?: number; mode?: 'uniform' | '
   await runRewardAdmin(admin, args, lines(''));
   const prizes = options.prizes ?? 3;
   if (prizes > 0) await runRewardAdmin(admin, ['import', key], lines(Array.from({ length: prizes }, (_, index) => `口令\t口令${index}\t附言${index}`).join('\n')));
+  if ((options.bigPrizes ?? 0) > 0) await runRewardAdmin(admin, ['import', key, '--tier', '1'], lines(Array.from({ length: options.bigPrizes! }, (_, index) => `口令\t大额${index}`).join('\n')));
   return key;
 };
 
@@ -57,6 +60,24 @@ const registered = async (subject = randomBytes(32).toString('base64url')) => {
 };
 
 const draw = (device: TestDevice, key: string, body: Record<string, unknown>) => device.call('POST', `/v1/rewards/${key}/draw`, body);
+
+// 给设备所在账号记一笔积分（等级按近 12 个月获得的总数算），门槛写进灰度配置。
+const levels = [0, 500, 3000, 10000, 30000, 80000];
+const earn = async (device: TestDevice, amount: number) => {
+  const [{ accountId }] = (await database.query('SELECT account_id AS accountId FROM account_device WHERE device_id = ?', [device.deviceId])) as { accountId: string }[];
+  const now = new Date();
+  await database.query('INSERT INTO points_grant (account_id, amount, remaining, source, source_key, expire_time, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?, ?, ?)', [
+    accountId,
+    amount,
+    amount,
+    'challenge',
+    randomBytes(8).toString('hex'),
+    new Date(now.getTime() + 300 * 86400_000),
+    now,
+    now,
+  ]);
+};
+const rolloutFile = () => join(env().releasesDir, 'rollout.json');
 
 // 库里的抽签人：登录身份的 sha256（同 reward.service.ts）。
 const participantHash = (subject: string) => createHash('sha256').update(`SXD1-reward\nkingo\n${subject}`).digest('hex');
@@ -86,13 +107,37 @@ afterAll(async () => {
 
 describe('概率模型', () => {
   it('平权人人一样；加权从 1 线性到上限，20 天封顶；概率不超过 1', () => {
-    expect(rewardWeight('uniform', 30, 3)).toBe(1);
-    expect(rewardWeight('weighted', 0, 3)).toBe(1);
-    expect(rewardWeight('weighted', 10, 3)).toBe(2);
-    expect(rewardWeight('weighted', 20, 3)).toBe(3);
-    expect(rewardWeight('weighted', 30, 3)).toBe(3);
+    expect(rewardWeight('uniform', 30, 0, 3)).toBe(1);
+    expect(rewardWeight('weighted', 0, 0, 3)).toBe(1);
+    expect(rewardWeight('weighted', 10, 0, 3)).toBe(2);
+    expect(rewardWeight('weighted', 20, 0, 3)).toBe(3);
+    expect(rewardWeight('weighted', 30, 0, 3)).toBe(3);
     expect(rewardChance(0.2, 3)).toBeCloseTo(0.6);
     expect(rewardChance(0.5, 3)).toBe(1);
+  });
+
+  it('积分等级并进加权：取活跃天数与等级里高的倍数，上限仍是活动的；平权时等级不起作用', () => {
+    expect(rewardLevelWeight('weighted', 5, 3)).toBe(3);
+    expect(rewardLevelWeight('weighted', 1, 3)).toBeCloseTo(1.4);
+    expect(rewardLevelWeight('weighted', 5, 2)).toBe(2);
+    expect(rewardLevelWeight('uniform', 5, 3)).toBe(1);
+    expect(rewardWeight('weighted', 0, 5, 3)).toBe(3);
+    expect(rewardWeight('weighted', 10, 1, 3)).toBe(2);
+    expect(rewardWeight('weighted', 2, 3, 3)).toBeCloseTo(2.2);
+    expect(rewardWeight('uniform', 0, 5, 3)).toBe(1);
+  });
+
+  it('挑档：按可发份数，大额档再乘等级倍数；都发不了为空', () => {
+    const available = [{ tier: 0, count: 4 }, { tier: 1, count: 1 }];
+    expect(rewardPickTier(available, 1, 0.7)).toBe(0);
+    expect(rewardPickTier(available, 3, 0.7)).toBe(1);
+    expect(rewardPickTier(available, 3, 0.5)).toBe(0);
+    expect(rewardPickTier([{ tier: 0, count: 0 }, { tier: 1, count: 2 }], 1, 0)).toBe(1);
+    expect(rewardPickTier([{ tier: 0, count: 0 }], 3, 0.5)).toBeNull();
+    // 按模型抽很多次：Lv5（3 倍）时大额档占 3/7。
+    const dice = new RewardDice();
+    const big = Array.from({ length: 20000 }, () => rewardPickTier(available, 3, dice.roll())).filter((tier) => tier === 1).length / 20000;
+    expect(big).toBeCloseTo(3 / 7, 1);
   });
 
   it('均匀放量：24 小时 24 份每小时累计多放 1 份，最后一小时放完；时长不足一小时也能放完', () => {
@@ -108,9 +153,9 @@ describe('概率模型', () => {
   it('抽中率与模型一致：平权 0.2；加权新用户 0.2、最活跃 0.6', () => {
     const dice = new RewardDice();
     const rate = (chance: number) => Array.from({ length: 20000 }, () => dice.roll() < chance).filter(Boolean).length / 20000;
-    expect(rate(rewardChance(0.2, rewardWeight('uniform', 25, 3)))).toBeCloseTo(0.2, 1);
-    expect(rate(rewardChance(0.2, rewardWeight('weighted', 0, 3)))).toBeCloseTo(0.2, 1);
-    expect(rate(rewardChance(0.2, rewardWeight('weighted', 25, 3)))).toBeCloseTo(0.6, 1);
+    expect(rate(rewardChance(0.2, rewardWeight('uniform', 25, 0, 3)))).toBeCloseTo(0.2, 1);
+    expect(rate(rewardChance(0.2, rewardWeight('weighted', 0, 0, 3)))).toBeCloseTo(0.2, 1);
+    expect(rate(rewardChance(0.2, rewardWeight('weighted', 25, 0, 3)))).toBeCloseTo(0.6, 1);
   });
 });
 
@@ -184,6 +229,38 @@ describe('抽奖', () => {
     expect((await draw(await registered(), weighted, { activeDays: 0 })).body.result).toBe('missed');
     const uniform = await setup({ mode: 'uniform', chance: 0.2 });
     expect((await draw(await registered(), uniform, { activeDays: 30 })).body.result).toBe('missed');
+  });
+
+  it('按积分等级加权：同一个骰子点数，Lv5 的抽中、Lv0 的没抽中，大额档按等级倍数挑；平权时等级都不起作用', async () => {
+    await mkdir(env().releasesDir, { recursive: true });
+    await writeFile(rolloutFile(), JSON.stringify({ flags: [], levels, envelope: null }));
+    await utimes(rolloutFile(), Date.now() / 1000 + 7, Date.now() / 1000 + 7);
+    try {
+      roll.mockReturnValue(0.5);
+      const weighted = await setup({ mode: 'weighted', chance: 0.2, maxWeight: 3 });
+      const top = await registered();
+      await earn(top, 80000);
+      expect((await draw(top, weighted, { activeDays: 0 })).body.result).toBe('won');
+      expect((await draw(await registered(), weighted, { activeDays: 0 })).body.result).toBe('missed');
+
+      // 两档各 2 份、都已放出：中签骰子 0、挑档骰子 0.4。Lv0 分量 2:2 落在普通档，Lv5 分量 1:(2×3) 落在大额档。
+      const tiered = await setup({ mode: 'weighted', chance: 0.2, maxWeight: 3, prizes: 2, bigPrizes: 2 });
+      roll.mockReturnValueOnce(0).mockReturnValueOnce(0.4);
+      expect((await draw(await registered(), tiered, { activeDays: 0 })).body.prize.content).toBe('口令0');
+      const rich = await registered();
+      await earn(rich, 80000);
+      roll.mockReturnValueOnce(0).mockReturnValueOnce(0.4);
+      expect((await draw(rich, tiered, { activeDays: 0 })).body.prize.content).toBe('大额0');
+      expect(await runRewardAdmin(admin, ['status', tiered], lines(''))).toContain('第 0 档：2 份，已发 1 份；第 1 档：2 份，已发 1 份');
+
+      const uniform = await setup({ mode: 'uniform', chance: 0.2, prizes: 1, bigPrizes: 1 });
+      const plain = await registered();
+      await earn(plain, 80000);
+      roll.mockReturnValueOnce(0.5);
+      expect((await draw(plain, uniform, { activeDays: 0 })).body.result).toBe('missed');
+    } finally {
+      await rm(rolloutFile(), { force: true });
+    }
   });
 
   it('均匀放量：24 小时的活动第一个小时只放 1 份，第二个抽中的人算没抽中', async () => {
@@ -273,6 +350,7 @@ describe('维护命令与保留', () => {
     await expect(runRewardAdmin(admin, ['import', 'no-such'], lines('口令\ta'))).rejects.toThrow('先 create');
     const key = await setup({ prizes: 0 });
     await expect(runRewardAdmin(admin, ['import', key], lines('口令\ta\n红包\tb'))).rejects.toThrow('第 2 行');
+    await expect(runRewardAdmin(admin, ['import', key, '--tier', '10'], lines('口令\ta'))).rejects.toThrow('--tier');
     expect(await runRewardAdmin(admin, ['import', key], lines('﻿口令\ta\n\n二维码\thttps://qr.alipay.com/demo\t扫码领'))).toContain('prizes=2');
     roll.mockReturnValue(0);
     await draw(await registered(), key, { activeDays: 4 });
