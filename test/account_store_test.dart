@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:path/path.dart' as path;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:superxd/domain/account.dart';
@@ -201,5 +203,77 @@ void main() {
     }
     expect(File('lib/main.dart').readAsStringSync(), contains('AccountStore.open(reclaim: true)'));
     expect(File('lib/app_background_sync.dart').readAsStringSync(), allOf(contains('AccountStore.open()'), isNot(contains('reclaim'))));
+  });
+
+  // 其余前台库同样单实例并回滚遗留的事务（sqflite 默认只在调试包回滚）：lib 里打开库的文件都要显式写回滚开关。
+  test('前台的其余本机库都显式回滚接回连接上停在中间的事务', () {
+    final opening = [
+      for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart')))
+        if (RegExp(r'\bopenDatabase\(').hasMatch(file.readAsStringSync())) file.path,
+    ];
+    expect(opening, containsAll(['lib/local/display_settings.dart', 'lib/social/social_store.dart', 'lib/toolbox/toolbox_store.dart', 'lib/toolbox/short_video/short_video_store.dart', 'lib/toolbox/chaoxing/chaoxing_store.dart']));
+    for (final file in opening) {
+      final source = File(file).readAsStringSync();
+      // AppDatabase.open 只给测试与工具（内存库、指定路径），账号库走 openForAccount。
+      final plain = RegExp(r'(?<!databaseFactory\.)\bopenDatabase\(').allMatches(source).length;
+      expect(plain, file == 'lib/local/app_database.dart' ? 1 : 0, reason: '$file 要用 databaseFactory.openDatabase 并写回滚开关');
+      expect(source, contains('rollbackActiveTransactionOnOpen: '), reason: file);
+    }
+  });
+
+  // 人工决策见 AccountStore.release：后台那份引擎被叫停时收回自己开的连接，release 依赖「关连接时进行中的事务下一句报已关闭、整体回滚，然后放开写锁」。
+  test('关掉连接时进行中的写事务下一句报已关闭并整体回滚，再关掉、放开写锁', () async {
+    final directory = await Directory.systemTemp.createTemp('account-release-');
+    addTearDown(() => directory.delete(recursive: true));
+    final file = path.join(directory.path, 'lock.db');
+    final first = await databaseFactory.openDatabase(file, options: OpenDatabaseOptions(singleInstance: false, version: 1, onCreate: (db, _) => db.execute('CREATE TABLE item (value INTEGER)')));
+    final began = Completer<void>(), hold = Completer<void>();
+    final pending = first.transaction((transaction) async {
+      await transaction.insert('item', {'value': 1});
+      began.complete();
+      await hold.future;
+      await transaction.insert('item', {'value': 2});
+    });
+    await began.future;
+    var closed = false;
+    final closing = first.close().then((_) => closed = true);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    expect(closed, isFalse);
+    hold.complete();
+    await expectLater(pending, throwsA(isA<DatabaseException>()));
+    await closing;
+    await expectLater(() => first.query('item'), throwsA(isA<DatabaseException>()));
+    final second = await databaseFactory.openDatabase(file, options: OpenDatabaseOptions(singleInstance: false));
+    await second.execute('BEGIN IMMEDIATE');
+    await second.execute('COMMIT');
+    expect(await second.query('item'), isEmpty);
+    await second.close();
+  });
+
+  test('后台那份收回连接：账号索引与开过的账号库都关掉，重复收回不报错，之后照常能打开', () async {
+    final directory = await Directory.systemTemp.createTemp('account-release-');
+    addTearDown(() => directory.delete(recursive: true));
+    Future<bool> usable(Future<Object?> Function() read) async {
+      try {
+        await read();
+        return true;
+      } on DatabaseException {
+        return false;
+      }
+    }
+
+    final store = await AccountStore.open(directory: directory.path);
+    await store.activate(_accountA);
+    final account = await store.openAccount(_accountA);
+    await store.release();
+    expect(await usable(store.currentIdentity), isFalse);
+    expect(await usable(() => account.terms()), isFalse);
+    await store.release();
+    await account.close();
+    await store.close();
+    final again = await AccountStore.open(directory: directory.path);
+    expect((await again.currentIdentity())?.loginId, _accountA.loginId);
+    await (await again.openAccount(_accountA)).close();
+    await again.close();
   });
 }

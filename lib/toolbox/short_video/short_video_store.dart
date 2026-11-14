@@ -13,10 +13,11 @@ class ShortVideoStore {
   static const historyLifetime = Duration(days: 30);
 
   static Future<ShortVideoStore> open(String path, {required ToolboxStore legacy}) async {
+    // 单实例并回滚遗留的事务：退出再进入时接回旧引擎留下的连接（人工决策见 local/account_store.dart 的 open）。
     final store = ShortVideoStore._(
-      await openDatabase(
+      await databaseFactory.openDatabase(
         path,
-        version: 1,
+        options: OpenDatabaseOptions(version: 1, rollbackActiveTransactionOnOpen: true,
         onCreate: (database, _) async {
           await database.execute('CREATE TABLE preferences (key TEXT PRIMARY KEY, value TEXT NOT NULL)');
           await database.execute(
@@ -24,7 +25,7 @@ class ShortVideoStore {
           );
           await database.execute('CREATE INDEX parse_history_time ON parse_history (created_at DESC, id DESC)');
         },
-      ),
+      )),
     );
     await store._migrate(legacy);
     return store;

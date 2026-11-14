@@ -121,10 +121,11 @@ class DisplaySettings extends ChangeNotifier {
   // fontPacks 给了时，选的是字体包就在这里（首帧之前）核对本机文件并注册好，缺了或坏了先用默认字体（见 fontInUse）。
   static Future<DisplaySettings> open({String? databasePath, Directory? wallpaperDirectory, double? systemTextScale, FontPackLibrary? fontPacks}) async {
     final system = systemTextScale ?? ui.PlatformDispatcher.instance.textScaleFactor;
-    final db = await openDatabase(
+    // 单实例并回滚遗留的事务：退出再进入时接回旧引擎留下的连接（人工决策见 account_store.dart 的 open）。
+    final db = await databaseFactory.openDatabase(
       databasePath ??
           path.join(await getDatabasesPath(), 'display_settings.db'),
-      version: 8,
+      options: OpenDatabaseOptions(version: 8, rollbackActiveTransactionOnOpen: true,
       onCreate: (db, _) async {
         await db.execute(
           "CREATE TABLE display_settings (id INTEGER PRIMARY KEY CHECK(id=1), text_scale REAL NOT NULL, palette_id TEXT NOT NULL DEFAULT '$defaultPaletteId', font_id TEXT NOT NULL DEFAULT 'maple', theme_mode TEXT NOT NULL DEFAULT 'system', glass_mode TEXT NOT NULL DEFAULT 'auto', wallpaper_file TEXT, wallpaper_tone TEXT, wallpaper_blur INTEGER NOT NULL DEFAULT $defaultWallpaperBlur, wallpaper_fade INTEGER NOT NULL DEFAULT 0)",
@@ -172,7 +173,7 @@ class DisplaySettings extends ChangeNotifier {
           await db.execute('UPDATE display_settings SET text_scale = CASE WHEN text_scale <= 1 THEN 0 ELSE MIN($textSizeMax, MAX($textSizeMin, ROUND(text_scale * $system * 20) / 20.0)) END');
         }
       },
-    );
+    ));
     final rows = await db.query('display_settings', where: 'id = 1', limit: 1);
     final row = rows.firstOrNull;
     final scale = row?['text_scale'];
