@@ -35,6 +35,7 @@ abstract final class CampusIcons {
   static const history = LucideIcons.history;
   static const add = LucideIcons.plus;
   static const lock = LucideIcons.lockKeyhole;
+  static const unlock = LucideIcons.lockKeyholeOpen;
   static const switchAccount = LucideIcons.usersRound;
   static const download = LucideIcons.download;
   static const toolbox = LucideIcons.box;

@@ -6,7 +6,10 @@ import 'package:go_router/go_router.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/challenge.dart';
+import 'package:superxd/domain/rollout.dart';
+import 'package:superxd/domain/unlock.dart';
 import 'package:superxd/playground/challenge/challenge_home.dart';
+import 'package:superxd/playground/challenge/points_page.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/playground_store.dart';
@@ -15,18 +18,24 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
 // 游乐场首页：最上面一行「最近玩过」，下面按子类分组列出游戏卡（同应用商店按分类分组的货架）；
 // 有多个板块时顶部再加板块切换（现在只有益智一个，不显示）。配了中转时标题下有「自由 | 挑战」分段，挑战一栏见 challenge/challenge_home.dart。
+// 新游戏抢先玩（解锁 game.<游戏 id>，人工决策见服务端 unlock_rules.ts）：锁着的卡写开放条件、点了能买的确认花积分、不能买的说明条件，
+// 不进「最近玩过」；下架的不显示。
 class PlaygroundPage extends StatefulWidget {
-  const PlaygroundPage({super.key, required this.store, required this.games, required this.groups, this.challenges, this.openAccount, this.openLogin});
+  const PlaygroundPage({super.key, required this.store, required this.games, required this.groups, this.challenges, this.unlocks, this.openAccount, this.openLogin});
   final PlaygroundStore store;
   final List<PlaygroundGame> games;
   final List<PlaygroundGroup> groups;
   // 挑战与积分（没配中转时为空，不显示分段）与去登录应用账号、登录教务（组合根给）。
   final ChallengeHub? challenges;
+  // 解锁（没配中转时为空，游戏都照常开着）。
+  final UnlockAccess? unlocks;
   final void Function(BuildContext context)? openAccount;
   final void Function(BuildContext context)? openLogin;
 
@@ -36,6 +45,43 @@ class PlaygroundPage extends StatefulWidget {
 
 class _PlaygroundPageState extends State<PlaygroundPage> {
   var _challenge = false;
+  StreamSubscription<void>? _unlockChanges;
+
+  @override
+  void initState() {
+    super.initState();
+    _unlockChanges = widget.unlocks?.changes.listen((_) {
+      if (mounted) setState(() {});
+    });
+  }
+
+  @override
+  void dispose() {
+    unawaited(_unlockChanges?.cancel());
+    super.dispose();
+  }
+
+  bool _locked(PlaygroundGame game) => widget.unlocks?.locked(playgroundUnlockId(game.id)) ?? false;
+
+  RolloutUnlock? _offer(PlaygroundGame game) => widget.unlocks?.offer(playgroundUnlockId(game.id));
+
+  // 下架的游戏（锁着又没有开放条件）不显示。
+  List<PlaygroundGame> get _shown => [for (final game in widget.games) if (!_locked(game) || _offer(game) != null) game];
+
+  Future<void> _openLocked(PlaygroundGame game, RolloutUnlock offer) async {
+    final unlocks = widget.unlocks!;
+    if (offer.price == null) {
+      await showCampusNotice(context, unlockTerms(offer, priceFirst: false), title: '${game.name}还没开放');
+      return;
+    }
+    if (!await showCampusConfirm(context, title: '解锁「${game.name}」？', message: '花 ${offer.price} 积分，解锁后一直能玩；公开后人人可玩，不退积分。', action: '解锁')) return;
+    try {
+      await unlocks.buy(offer.id);
+      if (mounted) showCampusToast(context, '已解锁「${game.name}」');
+    } on UnlockException catch (error) {
+      if (mounted) showCampusToast(context, error.message);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +99,7 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
             child: CampusSegmented<bool>(values: const [false, true], label: (challenge) => challenge ? '挑战' : '自由', selected: _challenge, onSelected: (value) => setState(() => _challenge = value)),
           ),
         Expanded(child: CampusScrollFade(bottom: inset, child: hub != null && _challenge
-            ? ChallengeHome(hub: hub, games: widget.games, store: widget.store, openAccount: widget.openAccount!, openLogin: widget.openLogin!, bottom: inset)
+            ? ChallengeHome(hub: hub, games: widget.games, store: widget.store, openAccount: widget.openAccount!, openLogin: widget.openLogin!, bottom: inset, unlocks: widget.unlocks)
             : FutureBuilder<void>(
                 future: widget.store.ready,
                 builder: (context, snapshot) => snapshot.connectionState != ConnectionState.done
@@ -70,10 +116,18 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
                             const SizedBox(height: 24),
                           ],
                           for (final group in widget.groups)
-                            if (widget.games.where((game) => game.group.id == group.id).toList() case final members when members.isNotEmpty) ...[
+                            if (_shown.where((game) => game.group.id == group.id).toList() case final members when members.isNotEmpty) ...[
                               Text(group.name, style: Theme.of(context).textTheme.titleMedium),
                               const SizedBox(height: 8),
-                              _GameGrid(games: members, store: widget.store, onOpen: (game) => _open(context, game)),
+                              _GameGrid(
+                                games: members,
+                                store: widget.store,
+                                offer: (game) => _locked(game) ? _offer(game) : null,
+                                onOpen: (game) => switch (_locked(game) ? _offer(game) : null) {
+                                  final offer? => unawaited(_openLocked(game, offer)),
+                                  null => _open(context, game),
+                                },
+                              ),
                               const SizedBox(height: 24),
                             ],
                         ],
@@ -84,7 +138,7 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
   }
 
   List<PlaygroundGame> get _recent => [
-    for (final id in widget.store.recent) ?widget.games.where((game) => game.id == id).firstOrNull,
+    for (final id in widget.store.recent) ?widget.games.where((game) => game.id == id && !_locked(game)).firstOrNull,
   ];
 
   void _open(BuildContext context, PlaygroundGame game) => context.push('/playground/${game.id}');
@@ -92,9 +146,11 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
 
 // 游戏卡：手机上一行一张（同百宝箱与服务页的入口卡），宽屏放得下两张整行卡时才两列，同一行的卡等高。
 class _GameGrid extends StatelessWidget {
-  const _GameGrid({required this.games, required this.store, required this.onOpen});
+  const _GameGrid({required this.games, required this.store, required this.offer, required this.onOpen});
   final List<PlaygroundGame> games;
   final PlaygroundStore store;
+  // 锁着的游戏的开放条件，开着的为空。
+  final RolloutUnlock? Function(PlaygroundGame game) offer;
   final ValueChanged<PlaygroundGame> onOpen;
 
   @override
@@ -110,7 +166,7 @@ class _GameGrid extends StatelessWidget {
         child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           for (var index = 0; index < columns; index++) ...[
             if (index > 0) const SizedBox(width: 12),
-            Expanded(child: index < slice.length ? _GameCard(game: slice[index], store: store, onOpen: onOpen) : const SizedBox.shrink()),
+            Expanded(child: index < slice.length ? _GameCard(game: slice[index], store: store, offer: offer(slice[index]), onOpen: onOpen) : const SizedBox.shrink()),
           ],
         ])),
       ));
@@ -120,9 +176,10 @@ class _GameGrid extends StatelessWidget {
 }
 
 class _GameCard extends StatelessWidget {
-  const _GameCard({required this.game, required this.store, required this.onOpen});
+  const _GameCard({required this.game, required this.store, required this.offer, required this.onOpen});
   final PlaygroundGame game;
   final PlaygroundStore store;
+  final RolloutUnlock? offer;
   final ValueChanged<PlaygroundGame> onOpen;
 
   @override
@@ -141,7 +198,15 @@ class _GameCard extends StatelessWidget {
           Text(game.name, style: Theme.of(context).textTheme.titleMedium),
           const SizedBox(height: 2),
           BalancedText(game.summary, style: secondary),
-          if (top != null) ...[
+          if (offer case final offer?) ...[
+            const SizedBox(height: 6),
+            // 条件折成几行时锁跟第一行对齐（高度取一行字的行高，随字号缩放）。
+            Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              SizedBox(height: MediaQuery.textScalerOf(context).scale(14) * 1.5, child: Center(child: CampusIcon(CampusIcons.lock, size: 16, color: palette.onSurfaceVariant))),
+              const SizedBox(width: 6),
+              Expanded(child: DotSeparatedText(unlockTerms(offer, priceFirst: false), style: secondary)),
+            ]),
+          ] else if (top != null) ...[
             const SizedBox(height: 6),
             Row(children: [
               CampusIcon(CampusIcons.trophy, size: 16, color: palette.onSurfaceVariant),
@@ -182,3 +247,6 @@ class _PlaygroundGameHostState extends State<PlaygroundGameHost> {
         : const Scaffold(body: CampusLoading(label: '正在准备')),
   );
 }
+
+// 新游戏抢先玩的解锁编号：game.<游戏 id>（灰度配置 unlocks 里按这个写）。
+String playgroundUnlockId(String gameId) => 'game.$gameId';

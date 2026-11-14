@@ -10,6 +10,10 @@ import * as dtos from 'src/modules/app_release/app_release.dto';
 
 // 等级门槛：正好六档、从 0 起、严格递增（与客户端 decodeRolloutConfig 同一规则）。
 const levelsValid = (levels: number[]) => levels.length === pointsLevelCount && levels[0] === 0 && levels.every((value, index) => index === 0 || value > levels[index - 1]);
+// 解锁：编号不重复；没下架的至少写一个条件（与客户端同一规则）。
+const unlocksValid = (unlocks: dtos.RolloutUnlockDto[]) =>
+  new Set(unlocks.map((unlock) => unlock.id)).size === unlocks.length &&
+  unlocks.every((unlock) => unlock.retired === true || [unlock.minLevel, unlock.price, unlock.percent, unlock.publicAt].some((value) => value !== undefined));
 
 // 灰度配置（人工决策见客户端 lib/domain/rollout.dart）：发布目录里的 rollout.json，由流水线签好上传；公开接口原样透传，
 // 积分等级的门槛（levels）也在这里，服务端算等级读同一份。按修改时间与大小缓存，换文件即生效。
@@ -36,10 +40,11 @@ export class RolloutSource {
     const errors = validateSync(file, { whitelist: true, forbidNonWhitelisted: true });
     if (errors.length > 0) throw new Error(`rollout.json 格式不对：${errors.map((item) => item.property).join(',')}`);
     if (file.levels !== undefined && !levelsValid(file.levels)) throw new Error('rollout.json 的 levels 要是从 0 起严格递增的六个数');
+    if (file.unlocks !== undefined && !unlocksValid(file.unlocks)) throw new Error('rollout.json 的 unlocks 编号重复，或没下架的一项一个条件也没写');
     // 原样透传：class-transformer 会给没写的可选字段补 undefined，序列化时自然省掉，信封里的载荷字节不经这里改动。
-    const config = { flags: file.flags, levels: file.levels, envelope: file.envelope ?? null };
+    const config = { flags: file.flags, levels: file.levels, unlocks: file.unlocks, envelope: file.envelope ?? null };
     this.cache = { mtimeMs: info.mtimeMs, size: info.size, config };
-    this.logger.log(`[RolloutSource] action=load flags=${config.flags.length} levels=${config.levels?.length ?? 0} signed=${config.envelope !== null}`);
+    this.logger.log(`[RolloutSource] action=load flags=${config.flags.length} levels=${config.levels?.length ?? 0} unlocks=${config.unlocks?.length ?? 0} signed=${config.envelope !== null}`);
     return config;
   }
 

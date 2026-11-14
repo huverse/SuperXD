@@ -1,0 +1,85 @@
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { EntityManager, Repository } from 'typeorm';
+
+import { AccountUnlockEntity } from 'src/modules/unlock/unlock.entity';
+
+export type UnlockRow = { id: string; accountId: string; unlockId: string; source: string; price: number };
+
+// 解锁存储端口：服务只依赖这个抽象。
+export abstract class UnlockRepository {
+  // 这个账号记过的解锁里属于 unlockIds 的（走 (account_id, unlock_id) 唯一键，行数不超过配置里的项数）。
+  abstract ownedOf(accountId: string, unlockIds: string[]): Promise<Set<string>>;
+  // 记下抽中的（已有就不动）。
+  abstract insertDrawn(accountId: string, unlockIds: string[], now: Date): Promise<void>;
+  // 在事务里记一笔买的：已经记过（买过或抽中过）返回 null，否则返回这一行的编号，再在同一事务里调 charge（付积分），charge 抛错则不留。
+  abstract buy(accountId: string, unlockId: string, price: number, now: Date, charge: (manager: EntityManager, rowId: string) => Promise<void>): Promise<string | null>;
+  // 在事务里取最多 limit 行属于这些解锁的记录交给 work（下架退回用），work 之后这些行删掉；返回处理的行数。
+  abstract settle(unlockIds: string[], limit: number, work: (manager: EntityManager, rows: UnlockRow[]) => Promise<void>): Promise<number>;
+  // 删最多 limit 行属于这些解锁的记录（公开满 30 天的），返回删的行数。
+  abstract deleteOf(unlockIds: string[], limit: number): Promise<number>;
+  abstract deleteAccounts(manager: EntityManager, accountIds: string[]): Promise<void>;
+}
+
+@Injectable()
+export class TypeormUnlockRepository extends UnlockRepository {
+  constructor(@InjectRepository(AccountUnlockEntity) private readonly unlocks: Repository<AccountUnlockEntity>) {
+    super();
+  }
+
+  async ownedOf(accountId: string, unlockIds: string[]) {
+    if (unlockIds.length === 0) return new Set<string>();
+    const rows = (await this.unlocks.query('SELECT unlock_id AS unlockId FROM account_unlock WHERE account_id = ? AND unlock_id IN (?)', [accountId, unlockIds])) as { unlockId: string }[];
+    return new Set(rows.map((row) => row.unlockId));
+  }
+
+  async insertDrawn(accountId: string, unlockIds: string[], now: Date) {
+    if (unlockIds.length === 0) return;
+    await this.unlocks.query(
+      `INSERT IGNORE INTO account_unlock (account_id, unlock_id, source, price, create_time, update_time) VALUES ${unlockIds.map(() => '(?, ?, ?, 0, ?, ?)').join(', ')}`,
+      unlockIds.flatMap((unlockId) => [accountId, unlockId, 'drawn', now, now]),
+    );
+  }
+
+  buy(accountId: string, unlockId: string, price: number, now: Date, charge: (manager: EntityManager, rowId: string) => Promise<void>) {
+    return this.unlocks.manager.transaction(async (manager) => {
+      const inserted = (await manager.query('INSERT IGNORE INTO account_unlock (account_id, unlock_id, source, price, create_time, update_time) VALUES (?, ?, ?, ?, ?, ?)', [
+        accountId,
+        unlockId,
+        'buy',
+        price,
+        now,
+        now,
+      ])) as { affectedRows: number; insertId: number | string };
+      if (inserted.affectedRows !== 1) return null;
+      const rowId = String(inserted.insertId);
+      await charge(manager, rowId);
+      return rowId;
+    });
+  }
+
+  settle(unlockIds: string[], limit: number, work: (manager: EntityManager, rows: UnlockRow[]) => Promise<void>) {
+    if (unlockIds.length === 0) return Promise.resolve(0);
+    return this.unlocks.manager.transaction(async (manager) => {
+      const rows = (await manager.query(
+        'SELECT id, account_id AS accountId, unlock_id AS unlockId, source, price FROM account_unlock WHERE unlock_id IN (?) ORDER BY id LIMIT ? FOR UPDATE',
+        [unlockIds, limit],
+      )) as UnlockRow[];
+      if (rows.length === 0) return 0;
+      await work(manager, rows.map((row) => ({ ...row, id: String(row.id), price: Number(row.price) })));
+      await manager.query('DELETE FROM account_unlock WHERE id IN (?)', [rows.map((row) => row.id)]);
+      return rows.length;
+    });
+  }
+
+  async deleteOf(unlockIds: string[], limit: number) {
+    if (unlockIds.length === 0) return 0;
+    const result = (await this.unlocks.query('DELETE FROM account_unlock WHERE unlock_id IN (?) ORDER BY id LIMIT ?', [unlockIds, limit])) as { affectedRows: number };
+    return result.affectedRows;
+  }
+
+  async deleteAccounts(manager: EntityManager, accountIds: string[]) {
+    if (accountIds.length === 0) return;
+    await manager.query('DELETE FROM account_unlock WHERE account_id IN (?)', [accountIds]);
+  }
+}

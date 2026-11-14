@@ -26,6 +26,9 @@ class Rollouts extends ChangeNotifier {
 
   String get subject => _accountId() ?? memory.installId;
 
+  // 本机存着的配置（解锁的清单也在里面，见 application/unlocks.dart）；拉到新配置时 notifyListeners。
+  RolloutConfig get config => memory.config;
+
   // 功能开关：配置里有就按放量判定，没有用调用方给的默认值（新功能默认关、要关停的老功能默认开）。
   bool enabled(String id, {required bool fallback}) {
     final rule = memory.config.rules[id];

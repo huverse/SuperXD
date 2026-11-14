@@ -4,17 +4,24 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/challenge.dart';
+import 'package:superxd/domain/rollout.dart';
+import 'package:superxd/domain/unlock.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
 // 积分（人工决策见服务端 points.service.ts）：余额、30 天内要过期的、等级（近 12 个月获得的总数定，花了不减），与流水（从新到旧，按需往下翻）。
 // 积分属于应用账号，每笔满 12 个月过期。服务器还没配等级门槛时不显示等级。
+// 有能用积分买的解锁（人工决策见服务端 unlock_rules.ts）时，余额下面列出来，点「解锁」确认后花积分。
 class PointsPage extends StatefulWidget {
-  const PointsPage({super.key, required this.hub});
+  const PointsPage({super.key, required this.hub, this.unlocks});
   final ChallengeHub hub;
+  // 没配中转时为空，不列解锁。
+  final UnlockAccess? unlocks;
 
   @override
   State<PointsPage> createState() => _PointsPageState();
@@ -26,11 +33,43 @@ class _PointsPageState extends State<PointsPage> {
   String? _next;
   String? _error;
   var _loading = false;
+  String? _buying;
+  StreamSubscription<void>? _unlockChanges;
 
   @override
   void initState() {
     super.initState();
+    _unlockChanges = widget.unlocks?.changes.listen((_) {
+      if (mounted) setState(() {});
+    });
     unawaited(_load());
+    unawaited(widget.unlocks?.refresh());
+  }
+
+  @override
+  void dispose() {
+    unawaited(_unlockChanges?.cancel());
+    super.dispose();
+  }
+
+  Future<void> _buy(UnlockAccess unlocks, RolloutUnlock unlock) async {
+    final confirmed = await showCampusConfirm(
+      context,
+      title: '解锁「${unlock.title}」？',
+      message: '花 ${unlock.price} 积分，解锁后一直能用；公开后人人都能用，不退积分。',
+      action: '解锁',
+    );
+    if (!confirmed || !mounted) return;
+    setState(() => _buying = unlock.id);
+    try {
+      await unlocks.buy(unlock.id);
+      if (mounted) showCampusToast(context, '已解锁「${unlock.title}」');
+      await _load();
+    } on UnlockException catch (error) {
+      if (mounted) showCampusToast(context, error.message);
+    } finally {
+      if (mounted) setState(() => _buying = null);
+    }
   }
 
   Future<void> _load() async {
@@ -115,6 +154,26 @@ class _PointsPageState extends State<PointsPage> {
                     ]),
                   ],
                 ])),
+                if (widget.unlocks case final unlocks? when unlocks.purchasable.isNotEmpty) ...[
+                  const SizedBox(height: 24),
+                  Text('解锁', style: Theme.of(context).textTheme.titleMedium),
+                  const SizedBox(height: 8),
+                  CampusSurface(padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8), child: Column(children: [
+                    for (final unlock in unlocks.purchasable)
+                      Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Row(children: [
+                        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                          Text(unlock.title, style: Theme.of(context).textTheme.bodyLarge),
+                          DotSeparatedText(unlockTerms(unlock, priceFirst: true), style: secondary),
+                        ])),
+                        const SizedBox(width: 12),
+                        FilledButton.tonalIcon(
+                          onPressed: _buying == null ? () => unawaited(_buy(unlocks, unlock)) : null,
+                          icon: _buying == unlock.id ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const CampusIcon(CampusIcons.unlock),
+                          label: const Text('解锁'),
+                        ),
+                      ])),
+                  ])),
+                ],
                 const SizedBox(height: 24),
                 Text('明细', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 8),
@@ -152,3 +211,12 @@ class _PointsPageState extends State<PointsPage> {
 
 // 服务器配了等级门槛才显示等级（没配时人人 Lv0、也没有下一级）。
 bool pointsLevelShown(PointsSummary summary) => summary.level > 0 || summary.nextLevelAt != null;
+
+// 一项解锁的条件，写成「300 分 · Lv3 起免费 · 12月1日 00:00 起人人可用」这样一句（积分页与锁着的游戏卡共用）。
+String unlockTerms(RolloutUnlock unlock, {required bool priceFirst}) => [
+  if (priceFirst && unlock.price != null) '${unlock.price} 分',
+  if (unlock.minLevel case final level?) priceFirst ? 'Lv$level 起免费' : 'Lv$level 起抢先玩',
+  if (!priceFirst && unlock.price != null) '${unlock.price} 分解锁',
+  if (unlock.percent != null && unlock.minLevel == null && unlock.price == null) '按等级抽签',
+  if (unlock.publicAt case final at?) '${formatCampusRelative(at.toIso8601String())} 起人人可用',
+].join(' · ');
