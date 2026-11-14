@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -54,11 +55,13 @@ const _bleed = 16.0;
 // 不用经典的三角排除网格：5 人 4 类有 6 张 5×5 的小表，360dp 宽放不下也读不清；人与属性一张表在手机上一眼看全，排除记号记在格子里。
 // 点一条线索标成用过了（变淡），再点取消。全部填满就判：对了表格依次亮一下再弹结果；不对不给答案，只把不成立的线索标警示色并轻震。
 class LogicGridPage extends StatefulWidget {
-  const LogicGridPage({super.key, required this.game, required this.store, this.seeds});
+  const LogicGridPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 挑战里的一关（题面是服务器给的）；自由模式为空。
+  final PlayChallenge? challenge;
 
   @override
   State<LogicGridPage> createState() => _LogicGridPageState();
@@ -66,7 +69,7 @@ class LogicGridPage extends StatefulWidget {
 
 class _LogicGridPageState extends State<LogicGridPage> with TickerProviderStateMixin {
   static const _rules = LogicGridRules();
-  late final _session = PlaySession<LogicGridPuzzle, List<List<int>>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds);
+  late final _session = PlaySession<LogicGridPuzzle, List<List<int>>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
   // _values[c][p]：第 p 个人在第 c 类里填的值（−1 是没填）；_excluded[c][p]：标了「不是」的值（按位）。
   late var _values = _empty(-1);
   late var _excluded = _empty(0);
@@ -144,7 +147,7 @@ class _LogicGridPageState extends State<LogicGridPage> with TickerProviderStateM
 
   // 填值（−1 是清空）：同一类里这个值原来在别人那一格就挪过来（那一格变空），这一格对这个值的「不是」一并去掉。
   void _fill(int category, int person, int value) {
-    if (_session.finished || _values[category][person] == value) return;
+    if (_session.finished || _session.judging || _values[category][person] == value) return;
     final holder = value < 0 ? -1 : _values[category].indexOf(value);
     _commit([(category, person), if (holder >= 0) (category, holder)], () {
       if (holder >= 0) _values[category][holder] = -1;
@@ -185,6 +188,11 @@ class _LogicGridPageState extends State<LogicGridPage> with TickerProviderStateM
   // 全部填满就按规则判：成立即解开；不成立只标出不成立的线索（题目唯一，所以一定有），alert 时轻震、晃一下、滚到第一条并记一次判错。
   void _judge({required bool alert}) {
     final complete = _values.every((row) => !row.contains(-1));
+    if (widget.challenge != null) {
+      setState(() => _violations = {});
+      if (complete && alert) unawaited(_submit());
+      return;
+    }
     final violations = complete ? logicGridViolations(_puzzle, _values).toSet() : <int>{};
     setState(() => _violations = violations);
     if (!complete) return;
@@ -201,8 +209,22 @@ class _LogicGridPageState extends State<LogicGridPage> with TickerProviderStateM
     if (first != null) unawaited(Scrollable.ensureVisible(first, alignment: .5, duration: _still ? Duration.zero : const Duration(milliseconds: 300), curve: Curves.easeOutCubic));
   }
 
+  // 挑战模式：填满就交服务器判（每次判错计一次错交，所以退回的局面不在本机判、不先标）；判错了才标出不成立的线索。
+  Future<void> _submit() async {
+    final correct = await _session.judge([for (final row in _values) [...row]]);
+    if (!mounted) return;
+    if (correct == null) return showCampusToast(context, '没交上，连不上服务器；改一格再填满就会重交');
+    if (correct) return unawaited(_finish());
+    final violations = logicGridViolations(_puzzle, _values).toSet();
+    setState(() => _violations = violations);
+    _wrongs++;
+    playRejected();
+    showCampusToast(context, '有 ${violations.length} 条线索对不上');
+    if (!_still) unawaited(_shake.forward(from: 0));
+  }
+
   Future<void> _finish() async {
-    final newBest = await _session.finish();
+    final newBest = await _session.finish(answer: [for (final row in _values) [...row]]);
     if (!mounted) return;
     // 表格一行一行亮一下，亮完再弹结果；减少动画时直接弹。
     if (!_still) await _glow.animateTo(1, duration: Duration(milliseconds: _glowEach + (_puzzle.people - 1) * _glowGap));

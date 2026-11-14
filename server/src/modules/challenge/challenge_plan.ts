@@ -65,8 +65,10 @@ export const planChallenge = async (
       if (entries.length > 0) candidates.push({ game, entries });
     }
     if (candidates.length === 0) throw new ChallengePlanError(`${template.id} 的 ${node.id} 挑不出题`);
+    // 先挑这一局还没用过的；给钥匙的关再优先挑不收钥匙的游戏，把能收钥匙的几个留给收钥匙的关（它们只有三个，用掉了只能重复）。
     const fresh = candidates.filter((candidate) => !used.has(candidate.game));
-    const chosen = pick(fresh.length > 0 ? fresh : candidates, random);
+    const plain = inputs.length === 0 ? fresh.filter((candidate) => !consumerGames.has(candidate.game)) : [];
+    const chosen = pick(plain.length > 0 ? plain : fresh.length > 0 ? fresh : candidates, random);
     used.add(chosen.game);
     const entry = pick(chosen.entries, random);
     // 挖哪几处：从能挖的里不放回地随机挑，按边的顺序分给各个给钥匙的关。

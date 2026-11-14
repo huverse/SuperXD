@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -54,11 +55,13 @@ const _cell = 48.0;
 // 密码破译对局页：上面是线索（每行几个数字方块加一句提示，点数字做记号），下面是答案格与数字键盘，填满点「确认」判定。
 // 对了答案格依次亮一下再弹结果；不对不给答案，只标出和答案对不上的线索行、轻震并提示，判错次数写进结果。
 class CipherPage extends StatefulWidget {
-  const CipherPage({super.key, required this.game, required this.store, this.seeds});
+  const CipherPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 挑战里的一关（题面是服务器给的）；自由模式为空。
+  final PlayChallenge? challenge;
 
   @override
   State<CipherPage> createState() => _CipherPageState();
@@ -66,7 +69,7 @@ class CipherPage extends StatefulWidget {
 
 class _CipherPageState extends State<CipherPage> with TickerProviderStateMixin {
   static const _rules = CipherRules();
-  late final _session = PlaySession<CipherPuzzle, List<int>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds);
+  late final _session = PlaySession<CipherPuzzle, List<int>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
   // 答案格：每位填的数字，null 是空。
   late var _slots = List<int?>.filled(_puzzle.length, null);
   // 每个数字的记号（下标是数字）。
@@ -186,10 +189,14 @@ class _CipherPageState extends State<CipherPage> with TickerProviderStateMixin {
   }
 
   // 填满后点「确认」：按规则判。对了收尾；不对记一次判错，标出对不上的线索行、轻震、答案格晃一下，滚到第一行对不上的线索。
-  void _confirm() {
-    if (_session.finished || !_full) return;
+  // 挑战模式交服务器判，判错计一次错交；连不上不算数，提示后可以再点一次。
+  Future<void> _confirm() async {
+    if (_session.finished || _session.judging || !_full) return;
     final answer = [for (final digit in _slots) digit!];
-    if (_rules.solved(_puzzle, answer)) {
+    final correct = await _session.judge(answer);
+    if (!mounted) return;
+    if (correct == null) return showCampusToast(context, '没交上，连不上服务器，再点一次确认');
+    if (correct) {
       hideCampusToast();
       unawaited(_finish());
       return;
@@ -203,7 +210,7 @@ class _CipherPageState extends State<CipherPage> with TickerProviderStateMixin {
     showCampusToast(context, '还不对，标红的线索对不上');
     if (_still) return;
     unawaited(_shake.forward(from: 0));
-    if (_rowKeys[conflicts.first].currentContext case final target?) _reveal(target);
+    if (_rowKeys[conflicts.first].currentContext case final target? when target.mounted) _reveal(target);
   }
 
   // 第一行对不上的线索在可见区外时滚过去：在上面就贴着上沿露出来，在下面就贴着下沿，已经看得见的不动。
@@ -220,7 +227,7 @@ class _CipherPageState extends State<CipherPage> with TickerProviderStateMixin {
   }
 
   Future<void> _finish() async {
-    final newBest = await _session.finish();
+    final newBest = await _session.finish(answer: [for (final digit in _slots) digit!]);
     if (!mounted) return;
     // 答案格依次亮一下，亮完再弹结果；减少动画时直接弹。
     if (!_still) await _glow.animateTo(1, duration: Duration(milliseconds: _glowEach + (_puzzle.length - 1) * _glowGap));

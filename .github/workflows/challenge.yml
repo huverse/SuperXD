@@ -1,0 +1,86 @@
+name: Challenge
+
+# 挑战的内容（人工决策见 lib/playground/challenge/challenge_rules.dart）：仓库 challenge/config.json（模板、轮换、计分参数、限时）与题库
+# 经受限账号传到中转发布目录的 challenge 下（与发版、开发者的话同一个 relay 环境与账号），中转按修改时间热加载，不用发版也不用重启。
+# - config.json 有改动合并到 main：只传配置（格式在 PR 的 CI 里已经由服务端 test/challenge_rules.test.ts 校验过）。
+# - 手动运行（bank 选 true）：用保密种子（relay 环境的 CHALLENGE_BANK_SEED）重出题库，先传题库、再传配置（配置可能用到新的游戏与档位）。
+#   规则改了口径、加了能进挑战的游戏、或想换一批题时手动跑一次；题库只经 rrsync 进发布目录，中转不对外提供下载。
+on:
+  push:
+    branches: [main]
+    paths: ['challenge/config.json']
+  workflow_dispatch:
+    inputs:
+      bank:
+        description: '重出题库并上传'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: challenge
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: 上传挑战内容
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: relay
+    env:
+      RELAY_URL: ${{ secrets.RELAY_URL }}
+      RELAY_TARGET: ${{ secrets.RELAY_SSH_TARGET }}
+      BANK: ${{ github.event_name == 'workflow_dispatch' && inputs.bank }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        if: env.BANK == 'true'
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+      - if: env.BANK == 'true'
+        run: flutter pub get --enforce-lockfile
+      # 每道题的种子由保密种子推出：仓库公开也推不出线上题库。
+      - name: 出题库
+        if: env.BANK == 'true'
+        env:
+          CHALLENGE_BANK_SEED: ${{ secrets.CHALLENGE_BANK_SEED }}
+        run: |
+          set -euo pipefail
+          test -n "$CHALLENGE_BANK_SEED" || { echo "::error::relay 环境里没有 CHALLENGE_BANK_SEED"; exit 1; }
+          dart run tool/challenge_bank.dart --out build/challenge
+      - name: 核对中转在线
+        run: curl -fsS --max-time 30 -o /dev/null "$RELAY_URL/v1/health"
+      # 中转上的账号只能经 rrsync 读写发布目录（server/README.md 部署第 6 步），主机指纹事先固定。
+      - name: 准备连接
+        env:
+          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+          RELAY_KNOWN_HOSTS: ${{ secrets.RELAY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$RELAY_SSH_KEY" > ~/.ssh/relay
+          printf '%s\n' "$RELAY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          echo "RSYNC_RSH=ssh -i $HOME/.ssh/relay -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=30" >> "$GITHUB_ENV"
+      # rsync 每个文件先写临时文件再改名，中转不会读到写了一半的文件；题库目录里不再有的游戏或档位一并删掉。
+      - name: 上传题库
+        if: env.BANK == 'true'
+        run: |
+          set -euo pipefail
+          # 源写 bank（不带斜杠）：没有 challenge 目录时 rsync 建出它与 bank，--delete 只管 challenge/bank 里面。
+          rsync -rt --delete --chmod=D755,F644 build/challenge/bank "$RELAY_TARGET:challenge/"
+          echo "[Challenge] action=upload_bank files=$(ls build/challenge/bank | wc -l)"
+      - name: 上传配置
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/challenge"
+          cp challenge/config.json "$RUNNER_TEMP/challenge/config.json"
+          rsync -rt --chmod=D755,F644 "$RUNNER_TEMP/challenge/" "$RELAY_TARGET:challenge/"
+          echo "[Challenge] action=upload_config"
+      - name: 删除连接凭据
+        if: always()
+        run: rm -f ~/.ssh/relay

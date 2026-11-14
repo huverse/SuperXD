@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -17,18 +18,20 @@ import 'package:superxd/theme/campus_surface.dart';
 // 按下的那一格底下浮一块浅色方块、松手淡出（同 iOS 按下变暗）。灯排在一张卡片上，亮灯是激活色的圆灯带一圈柔光，灭灯是灰色实心圆带细边。
 // 全亮即解开：所有灯从中心向外依次亮一下，再弹结果。没有违规的点法，所以不用重震。
 class LightsPage extends StatefulWidget {
-  const LightsPage({super.key, required this.game, required this.store, this.seeds});
+  const LightsPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 挑战里的一关（题面是服务器给的）；自由模式为空。
+  final PlayChallenge? challenge;
 
   @override
   State<LightsPage> createState() => _LightsPageState();
 }
 
 class _LightsPageState extends State<LightsPage> with TickerProviderStateMixin {
-  late final _session = PlaySession<LightsPuzzle, List<int>>(game: widget.game, rules: const LightsRules(), store: widget.store, seeds: widget.seeds);
+  late final _session = PlaySession<LightsPuzzle, List<int>>(game: widget.game, rules: const LightsRules(), store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
   late var _lit = [..._session.puzzle.lit];
   final _presses = <int>[];
   // 翻转过渡：每格这次过渡开始时显示的亮度，随 _flip 走到 _lit 的目标；连点时从当时显示的亮度续接。
@@ -56,7 +59,8 @@ class _LightsPageState extends State<LightsPage> with TickerProviderStateMixin {
   }
 
   int get _side => _session.puzzle.side;
-  int get _least => _session.draw.solution.length;
+  // 最少几步：挑战模式没有参考解（服务器不给），就不写。
+  int? get _least => _session.reference?.length;
   bool get _reduced => MediaQuery.disableAnimationsOf(context);
 
   List<double> _targets() => [for (final on in _lit) on ? 1.0 : 0.0];
@@ -135,7 +139,7 @@ class _LightsPageState extends State<LightsPage> with TickerProviderStateMixin {
   }
 
   Future<void> _finish() async {
-    final newBest = await _session.finish(moves: _presses.length);
+    final newBest = await _session.finish(moves: _presses.length, answer: [..._presses]);
     if (!mounted) return;
     if (!_reduced) {
       // 等最后一下的翻转走完，再从中心向外依次亮一下。
@@ -144,7 +148,7 @@ class _LightsPageState extends State<LightsPage> with TickerProviderStateMixin {
     }
     if (!mounted) return;
     final least = _least, presses = _presses.length;
-    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: presses == least ? '$least 步，正好最少' : '$presses 步，最少 $least 步');
+    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: least == null ? '$presses 步' : presses == least ? '$least 步，正好最少' : '$presses 步，最少 $least 步');
     if (!mounted) return;
     switch (choice) {
       case PlayResultChoice.again:
@@ -177,7 +181,7 @@ class _LightsPageState extends State<LightsPage> with TickerProviderStateMixin {
     session: _session,
     onNewGame: _newGame,
     onRestart: _restart,
-    status: '${_presses.length} 步 · 最少 $_least 步',
+    status: ['${_presses.length} 步', if (_least case final least?) '最少 $least 步'].join(' · '),
     controls: [
       FilledButton.icon(onPressed: _presses.isEmpty || _session.finished ? null : _undo, icon: const CampusIcon(CampusIcons.undo), label: const Text('撤销')),
     ],

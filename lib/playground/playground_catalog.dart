@@ -45,7 +45,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '每道题都只靠推理就能唯一解出，不用猜。',
     icon: CampusIcons.nonogram,
     group: gridGroup,
-    builder: (context, game, store) => NonogramPage(game: game, store: store),
+    builder: (context, game, store, challenge) => NonogramPage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'hanoi',
@@ -56,7 +56,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '困难和专家档的开局是打乱的，最少步数按开局算。',
     icon: CampusIcons.hanoi,
     group: planningGroup,
-    builder: (context, game, store) => HanoiPage(game: game, store: store),
+    builder: (context, game, store, challenge) => HanoiPage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'queens',
@@ -67,7 +67,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '点空格放皇后，再点一次拿掉。互相攻击的皇后会标成红色并连一条线；按住一个皇后能看它管到的格子。棋盘大时双指可以放大。',
     icon: CampusIcons.queens,
     group: logicGroup,
-    builder: (context, game, store) => QueensPage(game: game, store: store),
+    builder: (context, game, store, challenge) => QueensPage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'ice',
@@ -78,7 +78,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '在棋盘上朝上下左右滑动来推它，也可以点下方的方向键；走错了可以撤销。',
     icon: CampusIcons.ice,
     group: planningGroup,
-    builder: (context, game, store) => IcePage(game: game, store: store),
+    builder: (context, game, store, challenge) => IcePage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'lights',
@@ -89,7 +89,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '每道题都有解，状态行写着最少要点几下；点错了可以撤销。',
     icon: CampusIcons.lights,
     group: gridGroup,
-    builder: (context, game, store) => LightsPage(game: game, store: store),
+    builder: (context, game, store, challenge) => LightsPage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'knights',
@@ -100,7 +100,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '全部定下就判定：每个人的话都要和他的身份对得上。对不上的人会标成红色，自己找出矛盾再改；每道题的答案都唯一。',
     icon: CampusIcons.knights,
     group: logicGroup,
-    builder: (context, game, store) => KnightsPage(game: game, store: store),
+    builder: (context, game, store, challenge) => KnightsPage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'river',
@@ -112,7 +112,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '父子是爸爸不在时，孩子不能和别人家的爸爸待在一起。会犯规的开不了船，会提示原因；撤销按整次渡河退回。',
     icon: CampusIcons.river,
     group: planningGroup,
-    builder: (context, game, store) => RiverPage(game: game, store: store),
+    builder: (context, game, store, challenge) => RiverPage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'boxes',
@@ -123,7 +123,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '把所有箱子都推到圆环标出的目标点上就解开了。状态行写推了几次和最少要推几次。',
     icon: CampusIcons.boxes,
     group: planningGroup,
-    builder: (context, game, store) => BoxesPage(game: game, store: store),
+    builder: (context, game, store, challenge) => BoxesPage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'twentyfour',
@@ -135,7 +135,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '合到只剩一张、正好是 24 就解开了；算错了可以撤销，一步步退回。',
     icon: CampusIcons.twentyfour,
     group: numberGroup,
-    builder: (context, game, store) => TwentyFourPage(game: game, store: store),
+    builder: (context, game, store, challenge) => TwentyFourPage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'flash',
@@ -146,7 +146,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '一道题 5 轮，每轮全部点对才进下一轮；档位越高，格子越多、亮的格越多、亮的时间越短。',
     icon: CampusIcons.flash,
     group: memoryGroup,
-    builder: (context, game, store) => FlashPage(game: game, store: store),
+    builder: (context, game, store, challenge) => FlashPage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'balance',
@@ -157,7 +157,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '确定了就点「指认」，点那个球（要说轻重的再选偏重或偏轻）确认。秤不会让你碰运气：只有称的结果只剩它一个时才算找出。「做记号」可以给球标可能偏重、可能偏轻或好球。',
     icon: CampusIcons.balance,
     group: logicGroup,
-    builder: (context, game, store) => BalancePage(game: game, store: store),
+    builder: (context, game, store, challenge) => BalancePage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'mines',
@@ -168,7 +168,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '每道题都只靠推理就能翻完，不用猜。',
     icon: CampusIcons.mines,
     group: gridGroup,
-    builder: (context, game, store) => MinesPage(game: game, store: store),
+    builder: (context, game, store, challenge) => MinesPage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'loop',
@@ -180,7 +180,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '每道题的答案都唯一。',
     icon: CampusIcons.loop,
     group: gridGroup,
-    builder: (context, game, store) => LoopPage(game: game, store: store),
+    builder: (context, game, store, challenge) => LoopPage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'logicgrid',
@@ -191,7 +191,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '座位从左到右是 1 号到 N 号。填满就判定，对不上的线索会标成红色；每道题的答案都唯一。',
     icon: CampusIcons.logicgrid,
     group: logicGroup,
-    builder: (context, game, store) => LogicGridPage(game: game, store: store),
+    builder: (context, game, store, challenge) => LogicGridPage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'cipher',
@@ -202,7 +202,7 @@ final playgroundCatalog = <PlaygroundGame>[
         '用下方的数字键填答案，点答案格清掉那一位；填满点「确认」。不对时，和答案对不上的线索会标红。',
     icon: CampusIcons.cipher,
     group: logicGroup,
-    builder: (context, game, store) => CipherPage(game: game, store: store),
+    builder: (context, game, store, challenge) => CipherPage(game: game, store: store, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'schulte',
@@ -214,7 +214,7 @@ final playgroundCatalog = <PlaygroundGame>[
     group: memoryGroup,
     challengeable: false,
     timeInTenths: true,
-    builder: (context, game, store) => SchultePage(game: game, store: store),
+    builder: (context, game, store, _) => SchultePage(game: game, store: store),
   ),
   PlaygroundGame(
     id: 'pour',
@@ -226,6 +226,6 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.pour,
     group: physicsGroup,
     challengeable: false,
-    builder: (context, game, store) => PourPage(game: game, store: store),
+    builder: (context, game, store, _) => PourPage(game: game, store: store),
   ),
 ];

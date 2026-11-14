@@ -34,6 +34,12 @@ abstract final class RelayCode {
   static const captchaExpired = 'CAPTCHA_EXPIRED';
   static const upstreamUnavailable = 'UPSTREAM_UNAVAILABLE';
   static const accountNotFound = 'ACCOUNT_NOT_FOUND';
+  static const challengeNotFound = 'CHALLENGE_NOT_FOUND';
+  static const challengeUnavailable = 'CHALLENGE_UNAVAILABLE';
+  static const runActive = 'RUN_ACTIVE';
+  static const runNotFound = 'RUN_NOT_FOUND';
+  static const runOver = 'RUN_OVER';
+  static const levelLocked = 'LEVEL_LOCKED';
   static const internal = 'INTERNAL';
   // 以下只在客户端产生。
   static const network = 'NETWORK'; // 连不上服务器
@@ -208,7 +214,7 @@ class RelayClient {
 
   // 用给定身份签名发一个请求，返回响应体：节日抽签用单独的抽奖身份发（social/festival_pass.dart），应用账号用各自的设备密钥发，接口路径由调用方给。
   // timeout 为空用传输的默认值；应用账号登录要等中转代登录教务，另给更长的。
-  Future<Map<String, Object?>> request(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload, Duration? timeout]) => _call(identity, method, path, payload, timeout);
+  Future<Map<String, Object?>> request(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload, Duration? timeout, int? limit]) => _call(identity, method, path, payload, timeout, false, limit);
 
   static int _integer(Object? value) => value is int ? value : throw const RelayException(RelayCode.badResponse);
   static String _text(Object? value) => value is String ? value : throw const RelayException(RelayCode.badResponse);

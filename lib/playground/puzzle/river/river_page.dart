@@ -5,6 +5,7 @@ import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -22,11 +23,13 @@ import 'package:superxd/theme/campus_typesetting.dart';
 // 开船那一刻按规则查：会犯规就不开，轻震、船晃一下，把牵涉的人圈出来，提示条写明原因。撤销按整次渡河退回到开船前。
 // 每个人在两岸各有固定的站位（左右镜像），上下船只在站位与座位之间移动，别人不挪。全部到了右岸：船上的人下船，大家依次轻轻跳一下，再弹结果。
 class RiverPage extends StatefulWidget {
-  const RiverPage({super.key, required this.game, required this.store, this.seeds});
+  const RiverPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 挑战里的一关（题面是服务器给的）；自由模式为空。
+  final PlayChallenge? challenge;
 
   @override
   State<RiverPage> createState() => _RiverPageState();
@@ -37,7 +40,7 @@ typedef _Before = ({int left, int side, List<int?> seats});
 
 class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
   static const _rules = RiverRules();
-  late final _session = PlaySession<RiverPuzzle, List<RiverCrossing>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds);
+  late final _session = PlaySession<RiverPuzzle, List<RiverCrossing>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
   // 左岸有谁（含停在左岸的船上的人）、船在哪岸、船上每个座位坐着谁（座位固定，下船的人空出座位，别人不挪）。
   late int _left = _puzzle.everyone;
   int _side = riverLeft;
@@ -75,7 +78,8 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
   }
 
   RiverPuzzle get _puzzle => _session.puzzle;
-  int get _least => _session.draw.solution.length;
+  // 最少几次：挑战模式没有参考解（服务器不给），就不写。
+  int? get _least => _session.reference?.length;
   bool get _reduced => MediaQuery.disableAnimationsOf(context);
   bool get _busy => _session.finished || _sail.isAnimating;
 
@@ -266,7 +270,7 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
   // 解开：停表记成绩；等船靠岸，船上的人下船站到右岸，大家依次轻轻跳一下，再弹结果。减少动画时直接弹。
   // 中途换题或从头来会停掉动画，等着的这一段就不再往下走。
   Future<void> _finish(TickerFuture sail) async {
-    final newBest = await _session.finish(moves: _history.length);
+    final newBest = await _session.finish(moves: _history.length, answer: [for (final step in _history) [...step.seats.nonNulls]]);
     await sail;
     if (!mounted) return;
     setState(() => _shift(() => _seats = List.filled(_puzzle.capacity, null)));
@@ -278,7 +282,7 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
     }
     if (!mounted) return;
     final least = _least, crossings = _history.length;
-    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: crossings == least ? '渡河 $least 次，正好最少' : '渡河 $crossings 次，最少 $least 次');
+    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: least == null ? '渡河 $crossings 次' : crossings == least ? '渡河 $least 次，正好最少' : '渡河 $crossings 次，最少 $least 次');
     if (!mounted) return;
     switch (choice) {
       case PlayResultChoice.again:
@@ -299,7 +303,7 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
       session: _session,
       onNewGame: _newGame,
       onRestart: _restart,
-      status: '渡河 ${_history.length} 次 · 最少 $_least 次',
+      status: ['渡河 ${_history.length} 次', if (_least case final least?) '最少 $least 次'].join(' · '),
       controls: [
         FilledButton.icon(onPressed: _history.isEmpty || finished ? null : _undo, icon: const CampusIcon(CampusIcons.undo), label: const Text('撤销')),
         FilledButton.icon(

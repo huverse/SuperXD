@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -77,11 +78,13 @@ class _Card {
 // 剩一张：是 24 就解开（那张卡铺满激活色、轻轻鼓一下，再弹结果）；不是 24 重震、晃一下、描警示色的边，可撤销（能开方的还可以接着开）。
 // 卡片与运算键中间写最近算出来的那张卡的算式（如「3 − 8 ÷ 3 = 1/3」「2^3 × √9 = 24」，最多两行），读屏念成「2的3次方乘根号9，等于24」。
 class TwentyFourPage extends StatefulWidget {
-  const TwentyFourPage({super.key, required this.game, required this.store, this.seeds});
+  const TwentyFourPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 挑战里的一关（题面是服务器给的）；自由模式为空。
+  final PlayChallenge? challenge;
 
   @override
   State<TwentyFourPage> createState() => _TwentyFourPageState();
@@ -89,7 +92,7 @@ class TwentyFourPage extends StatefulWidget {
 
 class _TwentyFourPageState extends State<TwentyFourPage> with TickerProviderStateMixin {
   static const _rules = TwentyFourRules();
-  late final _session = PlaySession<TwentyFourPuzzle, List<TwentyFourStep>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds);
+  late final _session = PlaySession<TwentyFourPuzzle, List<TwentyFourStep>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
   // 四个位置上的卡（null 是合并后空出来的位置）与每一步合并前的样子（撤销按步退回）。
   late var _cards = _deal();
   final _history = <({List<_Card?> before, TwentyFourStep step})>[];
@@ -255,7 +258,7 @@ class _TwentyFourPageState extends State<TwentyFourPage> with TickerProviderStat
 
   // 解开：停表记成绩；等合并走完，那张卡铺上激活色鼓一下，再弹结果（减少动画时直接弹）。中途换题或从头来会停掉动画，这一段就不再往下走。
   Future<void> _finish(_Card card, TickerFuture merging) async {
-    final newBest = await _session.finish();
+    final newBest = await _session.finish(answer: [for (final entry in _history) entry.step]);
     await merging;
     if (!mounted) return;
     if (_reduced) {

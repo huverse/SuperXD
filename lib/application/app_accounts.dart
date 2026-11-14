@@ -200,10 +200,11 @@ class AppAccounts extends ChangeNotifier {
   }
 
   // 启动（同意协议与政策之后）与回到前台时由组合根调：登录着且距上次超过 checkGap 才联网看一眼；账号已在别处注销或被清理就退回未登录。
-  Future<void> check() async {
+  // force：挑战或积分那边中转说这个应用账号已不在了，不等间隔马上核一次。
+  Future<void> check({bool force = false}) async {
     final identity = _identity;
     final checkedAt = _checkedAt;
-    if (identity == null || _accountId == null || _busy || (checkedAt != null && _now().difference(checkedAt) < checkGap)) return;
+    if (identity == null || _accountId == null || _busy || (!force && checkedAt != null && _now().difference(checkedAt) < checkGap)) return;
     _checkedAt = _now();
     try {
       await client.summary(identity);

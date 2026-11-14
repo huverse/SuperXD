@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -16,18 +17,20 @@ import 'package:superxd/theme/campus_palette.dart';
 // 汉诺塔对局页：点一根柱子拿起最上面的盘子（盘子浮到柱顶上方），再点另一根放下；也可以直接按住盘子拖到别的柱子上。
 // 不合规的放法（大盘压小盘）轻震一下、盘子左右晃一晃退回原处，不算步数。
 class HanoiPage extends StatefulWidget {
-  const HanoiPage({super.key, required this.game, required this.store, this.seeds});
+  const HanoiPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 挑战里的一关（题面是服务器给的）；自由模式为空。
+  final PlayChallenge? challenge;
 
   @override
   State<HanoiPage> createState() => _HanoiPageState();
 }
 
 class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMixin {
-  late final _session = PlaySession<HanoiPuzzle, List<HanoiMove>>(game: widget.game, rules: const HanoiRules(), store: widget.store, seeds: widget.seeds);
+  late final _session = PlaySession<HanoiPuzzle, List<HanoiMove>>(game: widget.game, rules: const HanoiRules(), store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
   late List<List<int>> _pegs = hanoiStacks(_session.puzzle);
   final _moves = <HanoiMove>[];
   // 点选拿起的那根柱子。
@@ -102,7 +105,7 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
   }
 
   Future<void> _finish() async {
-    final newBest = await _session.finish(moves: _moves.length);
+    final newBest = await _session.finish(moves: _moves.length, answer: [..._moves]);
     // 等最后一个盘子落定再弹结果。
     await Future<void>.delayed(_settle);
     if (!mounted) return;

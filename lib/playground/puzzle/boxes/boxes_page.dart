@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 
 import 'package:superxd/playground/play_controls.dart';
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -17,11 +18,13 @@ import 'package:superxd/theme/campus_palette.dart';
 // 推不动（前面是墙或另一个箱子）、撞墙时轻震、小人朝那边顶一下，不算一步。全部箱子推到目标点上即解开。
 // 状态只计推了几次（同最少推数比），撤销按步退回（推了箱子的那步连箱子一起退）。
 class BoxesPage extends StatefulWidget {
-  const BoxesPage({super.key, required this.game, required this.store, this.seeds});
+  const BoxesPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 挑战里的一关（题面是服务器给的）；自由模式为空。
+  final PlayChallenge? challenge;
 
   @override
   State<BoxesPage> createState() => _BoxesPageState();
@@ -31,11 +34,11 @@ class BoxesPage extends StatefulWidget {
 typedef _Move = ({int direction, int from, int box});
 
 class _BoxesPageState extends State<BoxesPage> with TickerProviderStateMixin {
-  late final _session = PlaySession<BoxesPuzzle, List<int>>(game: widget.game, rules: const BoxesRules(), store: widget.store, seeds: widget.seeds);
+  late final _session = PlaySession<BoxesPuzzle, List<int>>(game: widget.game, rules: const BoxesRules(), store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
   late List<int> _boxes = [..._session.puzzle.boxes];
   late int _player = _session.puzzle.player;
   final _moves = <_Move>[];
-  late int _least = _leastPushes();
+  late int? _least = _leastPushes();
   // 正在画的这一步：小人从哪格来、哪个箱子从哪格来（没动的箱子是 -1）。
   late int _fromPlayer = _player;
   int _movedBox = -1, _fromBox = -1;
@@ -55,7 +58,11 @@ class _BoxesPageState extends State<BoxesPage> with TickerProviderStateMixin {
     super.dispose();
   }
 
-  int _leastPushes() => boxesReplay(_session.puzzle, _session.draw.solution).pushes;
+  // 最少推数：挑战模式没有参考解（服务器不给），就不写。
+  int? _leastPushes() => switch (_session.reference) {
+    final solution? => boxesReplay(_session.puzzle, solution).pushes,
+    null => null,
+  };
   int get _pushes => _moves.where((move) => move.box >= 0).length;
   bool get _reduced => MediaQuery.disableAnimationsOf(context);
 
@@ -137,7 +144,7 @@ class _BoxesPageState extends State<BoxesPage> with TickerProviderStateMixin {
 
   // 解开：停表记成绩，等最后一推走完、箱子依次轻轻一跳（亮一下）再弹结果；减少动画时直接弹。
   Future<void> _finish() async {
-    final newBest = await _session.finish(moves: _pushes);
+    final newBest = await _session.finish(moves: _pushes, answer: [for (final move in _moves) move.direction]);
     if (!mounted) return;
     if (!_reduced) {
       await _step.forward();
@@ -146,7 +153,7 @@ class _BoxesPageState extends State<BoxesPage> with TickerProviderStateMixin {
     }
     if (!mounted) return;
     final pushes = _pushes;
-    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: pushes == _least ? '推 $pushes 次，正好最少' : '推 $pushes 次，最少 $_least 次');
+    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: _least == null ? '推 $pushes 次' : pushes == _least ? '推 $pushes 次，正好最少' : '推 $pushes 次，最少 $_least 次');
     if (!mounted) return;
     switch (choice) {
       case PlayResultChoice.again:
@@ -167,7 +174,7 @@ class _BoxesPageState extends State<BoxesPage> with TickerProviderStateMixin {
       session: _session,
       onNewGame: _newGame,
       onRestart: _restart,
-      status: '推 $_pushes 次 · 最少 $_least 次',
+      status: ['推 $_pushes 次', if (_least case final least?) '最少 $least 次'].join(' · '),
       controls: [
         FilledButton.icon(onPressed: _moves.isEmpty || finished ? null : _undo, icon: const CampusIcon(CampusIcons.undo), label: const Text('撤销')),
       ],

@@ -4,6 +4,7 @@ import 'dart:math' as math;
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -20,11 +21,13 @@ const _glowEach = 360, _glowGap = 60;
 // 只把它们标成警示色、彼此之间连一条淡淡的线，让玩家自己看出哪里错了。最后碰过的那个皇后（按住的、刚放下的）用很淡的底色显示它管到的格。
 // 棋盘大、格子不到 48 时双指放大，放大后单指拖动平移。
 class QueensPage extends StatefulWidget {
-  const QueensPage({super.key, required this.game, required this.store, this.seeds});
+  const QueensPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 挑战里的一关（题面是服务器给的）；自由模式为空。
+  final PlayChallenge? challenge;
 
   @override
   State<QueensPage> createState() => _QueensPageState();
@@ -32,7 +35,7 @@ class QueensPage extends StatefulWidget {
 
 class _QueensPageState extends State<QueensPage> with TickerProviderStateMixin {
   static const _rules = QueensRules();
-  late final _session = PlaySession<QueensPuzzle, List<int>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds);
+  late final _session = PlaySession<QueensPuzzle, List<int>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
   // 玩家自己放的皇后（格号 = 行 × N + 列）；锁定的在题面里。同一行可以放两个，冲突只标出来。
   final _placed = <int>{};
   // 每一步放上（true）或拿掉（false）了哪一格，撤销按步退回。
@@ -77,6 +80,14 @@ class _QueensPageState extends State<QueensPage> with TickerProviderStateMixin {
 
   Set<int> get _locked => {for (var row = 0; row < _size; row++) if (_puzzle.given[row] >= 0) row * _size + _puzzle.given[row]};
   List<int> get _queens => [..._locked, ..._placed]..sort();
+  // 答案：每行皇后所在的列（没放是 -1）。
+  List<int> get _rows {
+    final rows = List.filled(_size, -1);
+    for (final cell in _queens) {
+      rows[cell ~/ _size] = cell % _size;
+    }
+    return rows;
+  }
 
   // 每行恰好一个时编成答案交规则判定，否则还没解开。
   bool get _solved {
@@ -179,7 +190,7 @@ class _QueensPageState extends State<QueensPage> with TickerProviderStateMixin {
   }
 
   Future<void> _finish() async {
-    final newBest = await _session.finish();
+    final newBest = await _session.finish(answer: _rows);
     if (!mounted) return;
     setState(() {
       _focus = _pressed = _tapCell = null;

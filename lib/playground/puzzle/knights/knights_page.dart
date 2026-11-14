@@ -3,6 +3,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -13,6 +14,7 @@ import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
 // 人名按座位依次叫天干（不用真实人名）；计数与人数的说法。
@@ -56,11 +58,13 @@ const _bleed = 16.0;
 // 选标签而不点整张卡循环：一步到位不用记循环顺序，卡片多时上下滑也不会误改，读屏也是两个现成的带选中状态的按钮。
 // 全部定了就判：对了卡片依次翻一下再弹结果；不对不给答案，只把「话的真假和他的身份对不上」的人标警示色、轻震并晃一下。
 class KnightsPage extends StatefulWidget {
-  const KnightsPage({super.key, required this.game, required this.store, this.seeds});
+  const KnightsPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 挑战里的一关（题面是服务器给的）；自由模式为空。
+  final PlayChallenge? challenge;
 
   @override
   State<KnightsPage> createState() => _KnightsPageState();
@@ -68,7 +72,7 @@ class KnightsPage extends StatefulWidget {
 
 class _KnightsPageState extends State<KnightsPage> with TickerProviderStateMixin {
   static const _rules = KnightsRules();
-  late final _session = PlaySession<KnightsPuzzle, List<bool>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds);
+  late final _session = PlaySession<KnightsPuzzle, List<bool>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
   // 每人的标记：null 是未定，true 骑士，false 无赖。
   late var _marks = List<bool?>.filled(_puzzle.people, null);
   // 每一步改了谁、改之前是什么，撤销按步退回。
@@ -121,7 +125,7 @@ class _KnightsPageState extends State<KnightsPage> with TickerProviderStateMixin
   // ---------- 标记与判定 ----------
 
   void _mark(int person, bool? mark) {
-    if (_session.finished || _marks[person] == mark) return;
+    if (_session.finished || _session.judging || _marks[person] == mark) return;
     playTick();
     _session.moved();
     setState(() {
@@ -145,6 +149,11 @@ class _KnightsPageState extends State<KnightsPage> with TickerProviderStateMixin
   // 全部定了就按规则判：成立即解开；不成立只标出话和身份对不上的人（题目唯一，所以一定有），alert 时轻震、晃一下并记一次判错。
   void _judge({required bool alert}) {
     final complete = !_marks.contains(null);
+    if (widget.challenge != null) {
+      setState(() => _mismatches = {});
+      if (complete && alert) unawaited(_submit());
+      return;
+    }
     final mismatches = complete ? knightsMismatches(_puzzle, _knights).toSet() : <int>{};
     setState(() => _mismatches = mismatches);
     if (!complete) return;
@@ -158,8 +167,20 @@ class _KnightsPageState extends State<KnightsPage> with TickerProviderStateMixin
     if (!_still) unawaited(_shake.forward(from: 0));
   }
 
+  // 挑战模式：定完最后一个人就交服务器判（每次判错计一次错交，所以退回的局面不在本机判、不先标）；判错了才标出对不上的人。
+  Future<void> _submit() async {
+    final correct = await _session.judge([for (final mark in _marks) mark!]);
+    if (!mounted) return;
+    if (correct == null) return showCampusToast(context, '没交上，连不上服务器；改一个人再定一次就会重交');
+    if (correct) return unawaited(_finish());
+    setState(() => _mismatches = knightsMismatches(_puzzle, _knights).toSet());
+    _wrongs++;
+    playRejected();
+    if (!_still) unawaited(_shake.forward(from: 0));
+  }
+
   Future<void> _finish() async {
-    final newBest = await _session.finish();
+    final newBest = await _session.finish(answer: [for (final mark in _marks) mark!]);
     if (!mounted) return;
     // 卡片自上而下依次翻一下，翻完再弹结果；减少动画时直接弹。
     if (!_still) await _flip.animateTo(1, duration: Duration(milliseconds: _flipEach + (_puzzle.people - 1) * _flipGap));

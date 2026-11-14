@@ -5,62 +5,86 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/challenge.dart';
+import 'package:superxd/playground/challenge/challenge_home.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
-// 游乐场首页（自由模式）：最上面一行「最近玩过」，下面按子类分组列出游戏卡（同应用商店按分类分组的货架）；
-// 有多个板块时顶部再加板块切换（现在只有益智一个，不显示）。挑战模式做好后在标题下加「自由 | 挑战」分段。
-class PlaygroundPage extends StatelessWidget {
-  const PlaygroundPage({super.key, required this.store, required this.games, required this.groups});
+// 游乐场首页：最上面一行「最近玩过」，下面按子类分组列出游戏卡（同应用商店按分类分组的货架）；
+// 有多个板块时顶部再加板块切换（现在只有益智一个，不显示）。配了中转时标题下有「自由 | 挑战」分段，挑战一栏见 challenge/challenge_home.dart。
+class PlaygroundPage extends StatefulWidget {
+  const PlaygroundPage({super.key, required this.store, required this.games, required this.groups, this.challenges, this.openAccount, this.openLogin});
   final PlaygroundStore store;
   final List<PlaygroundGame> games;
   final List<PlaygroundGroup> groups;
+  // 挑战与积分（没配中转时为空，不显示分段）与去登录应用账号、登录教务（组合根给）。
+  final ChallengeHub? challenges;
+  final void Function(BuildContext context)? openAccount;
+  final void Function(BuildContext context)? openLogin;
+
+  @override
+  State<PlaygroundPage> createState() => _PlaygroundPageState();
+}
+
+class _PlaygroundPageState extends State<PlaygroundPage> {
+  var _challenge = false;
 
   @override
   Widget build(BuildContext context) {
     final inset = MediaQuery.paddingOf(context).bottom;
+    final hub = widget.challenges;
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(tooltip: '返回', onPressed: () => context.pop(), icon: const CampusIcon(CampusIcons.back)),
         title: const Text('游乐场'),
       ),
-      body: CampusScrollFade(bottom: inset, child: FutureBuilder<void>(
-        future: store.ready,
-        builder: (context, snapshot) => snapshot.connectionState != ConnectionState.done
-            ? const CampusLoading(label: '正在准备游乐场')
-            : ListenableBuilder(listenable: store, builder: (context, _) => ListView(
-                padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + inset),
-                children: [
-                  if (_recent case final recent when recent.isNotEmpty) ...[
-                    Text('最近玩过', style: Theme.of(context).textTheme.titleMedium),
-                    const SizedBox(height: 8),
-                    Wrap(spacing: 8, runSpacing: 8, children: [
-                      for (final game in recent) OutlinedButton.icon(onPressed: () => _open(context, game), icon: CampusIcon(game.icon), label: Text(game.name)),
-                    ]),
-                    const SizedBox(height: 24),
-                  ],
-                  for (final group in groups)
-                    if (games.where((game) => game.group.id == group.id).toList() case final members when members.isNotEmpty) ...[
-                      Text(group.name, style: Theme.of(context).textTheme.titleMedium),
-                      const SizedBox(height: 8),
-                      _GameGrid(games: members, store: store, onOpen: (game) => _open(context, game)),
-                      const SizedBox(height: 24),
-                    ],
-                ],
-              )),
-      )),
+      body: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        if (hub != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+            child: CampusSegmented<bool>(values: const [false, true], label: (challenge) => challenge ? '挑战' : '自由', selected: _challenge, onSelected: (value) => setState(() => _challenge = value)),
+          ),
+        Expanded(child: CampusScrollFade(bottom: inset, child: hub != null && _challenge
+            ? ChallengeHome(hub: hub, games: widget.games, store: widget.store, openAccount: widget.openAccount!, openLogin: widget.openLogin!, bottom: inset)
+            : FutureBuilder<void>(
+                future: widget.store.ready,
+                builder: (context, snapshot) => snapshot.connectionState != ConnectionState.done
+                    ? const CampusLoading(label: '正在准备游乐场')
+                    : ListenableBuilder(listenable: widget.store, builder: (context, _) => ListView(
+                        padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + inset),
+                        children: [
+                          if (_recent case final recent when recent.isNotEmpty) ...[
+                            Text('最近玩过', style: Theme.of(context).textTheme.titleMedium),
+                            const SizedBox(height: 8),
+                            Wrap(spacing: 8, runSpacing: 8, children: [
+                              for (final game in recent) OutlinedButton.icon(onPressed: () => _open(context, game), icon: CampusIcon(game.icon), label: Text(game.name)),
+                            ]),
+                            const SizedBox(height: 24),
+                          ],
+                          for (final group in widget.groups)
+                            if (widget.games.where((game) => game.group.id == group.id).toList() case final members when members.isNotEmpty) ...[
+                              Text(group.name, style: Theme.of(context).textTheme.titleMedium),
+                              const SizedBox(height: 8),
+                              _GameGrid(games: members, store: widget.store, onOpen: (game) => _open(context, game)),
+                              const SizedBox(height: 24),
+                            ],
+                        ],
+                      )),
+              ))),
+      ]),
     );
   }
 
   List<PlaygroundGame> get _recent => [
-    for (final id in store.recent) ?games.where((game) => game.id == id).firstOrNull,
+    for (final id in widget.store.recent) ?widget.games.where((game) => game.id == id).firstOrNull,
   ];
 
   void _open(BuildContext context, PlaygroundGame game) => context.push('/playground/${game.id}');
@@ -154,7 +178,7 @@ class _PlaygroundGameHostState extends State<PlaygroundGameHost> {
   Widget build(BuildContext context) => FutureBuilder<void>(
     future: widget.store.ready,
     builder: (context, snapshot) => snapshot.connectionState == ConnectionState.done
-        ? widget.game.builder(context, widget.game, widget.store)
+        ? widget.game.builder(context, widget.game, widget.store, null)
         : const Scaffold(body: CampusLoading(label: '正在准备')),
   );
 }
