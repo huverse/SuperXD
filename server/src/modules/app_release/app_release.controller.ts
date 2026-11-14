@@ -22,6 +22,12 @@ export class AppReleaseController {
     return this.releases.notes(ip);
   }
 
+  // 灰度配置（人工决策见客户端 lib/domain/rollout.dart）：免签名、不带任何标识，客户端在本机判定。
+  @Get('rollout')
+  rollout(@Ip() ip: string): Promise<dtos.RolloutConfigDto> {
+    return this.releases.rollout(ip);
+  }
+
   @Get('files/:name')
   file(@Param() param: dtos.AppFileParamDto, @Ip() ip: string, @Res() response: Response): Promise<void> {
     return this.releases.send(ip, param.name, response);

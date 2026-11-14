@@ -5,6 +5,7 @@ import 'dart:ffi';
 import 'package:http/http.dart' as http;
 
 import 'package:superxd/domain/app_update.dart';
+import 'package:superxd/domain/rollout.dart';
 import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/device/signed_content.dart';
@@ -134,5 +135,7 @@ AppRelease parseAppReleasePayload(Object? json, {required String baseUrl, requir
     notes: text('notes', 4000),
     releasePage: releasePage,
     apk: apk,
+    // 分批放量表（tool/release_manifest.dart 的 --rollout）：没有或为空是全量；旧客户端不认这个字段、照常全量。
+    rollout: json['rollout'] == null ? const [] : decodeRolloutStages(json['rollout']),
   );
 }

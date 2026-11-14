@@ -19,6 +19,7 @@ class AppUpdates extends ChangeNotifier {
     required this.memory,
     required this.installedVersionCode,
     required this._foreground,
+    this._inBatch,
     DateTime Function()? clock,
   }) : _clock = clock ?? DateTime.now;
   final AppReleaseFeed feed;
@@ -27,6 +28,8 @@ class AppUpdates extends ChangeNotifier {
   final AppUpdateMemory memory;
   final int installedVersionCode;
   final bool Function() _foreground;
+  // 分批更新（组合根接 Rollouts.inUpdateBatch，人工决策见 domain/rollout.dart）；为空是全量。
+  final bool Function(AppRelease release)? _inBatch;
   final DateTime Function() _clock;
 
   AppUpdatePhase phase = AppUpdatePhase.idle;
@@ -69,10 +72,13 @@ class AppUpdates extends ChangeNotifier {
     try {
       final latest = await feed.latest();
       release = latest;
-      urgency = latest == null ? AppUpdateUrgency.none : appUpdateUrgency(installedVersionCode, latest);
+      final found = latest == null ? AppUpdateUrgency.none : appUpdateUrgency(installedVersionCode, latest);
+      // 分批：自动检查时可选更新不在这一批就当没有，明天再查；手动检查与必须更新不受批次限制（同苹果的分阶段发布）。
+      final held = !manual && found == AppUpdateUrgency.optional && !(_inBatch?.call(latest!) ?? true);
+      urgency = held ? AppUpdateUrgency.none : found;
       phase = urgency == AppUpdateUrgency.none ? AppUpdatePhase.upToDate : AppUpdatePhase.available;
       await memory.save(lastCheckedAt: _clock().toUtc(), skippedVersionCode: memory.skippedVersionCode, forcedPending: urgency == AppUpdateUrgency.forced);
-      campusLog('[AppUpdate] action=check manual=$manual result=${phase.name} installed=$installedVersionCode latest=${latest?.versionCode}');
+      campusLog('[AppUpdate] action=check manual=$manual result=${phase.name} held=$held installed=$installedVersionCode latest=${latest?.versionCode}');
       return urgency == AppUpdateUrgency.none ? null : latest;
     } on AppUpdateException catch (failure, stack) {
       campusLog('[AppUpdate] action=check manual=$manual errorType=AppUpdateException\n$stack');

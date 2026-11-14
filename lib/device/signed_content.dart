@@ -12,9 +12,12 @@ import 'package:superxd/domain/campus_crypto.dart';
 // 签名挡不住冻结与回滚（中间人一直回放旧的清单或旧的信）：版本只升不降由已装版本号与系统安装器保证，冻结只能靠将来的 HTTPS；
 // 载荷不带过期时间（没选：发版不定期，过期会让更新通道自己失效）。
 // 新客户端只认验签通过的载荷，明文字段留给 1.0.0-alpha.15 及以前不验签的旧客户端。
+// [人工决策-2026-11-13 23:38:40] 灰度配置（domain/rollout.dart）同样经明文 HTTP 下发、能改变客户端行为（分批更新的暂停与全量、功能开关），按本条同样签名
+// （用户确认这样扩展上一条）：第三类内容 rollout，由开发者的话那把钥（同在 relay 环境、同一类维护者内容）与离线备用钥签，发版钥签不了，不另加秘钥。
 enum SignedContent {
   release('SXD1-release\n'),
-  notes('SXD1-notes\n');
+  notes('SXD1-notes\n'),
+  rollout('SXD1-rollout\n');
 
   const SignedContent(this.domain);
   final String domain;
@@ -31,13 +34,13 @@ class TrustedSigningKey {
 
 // 内置的受信公钥，私钥都不在仓库里：
 // - release：发版清单，私钥在 GitHub release 环境的机密 MANIFEST_SIGNING_KEY；
-// - notes：开发者的话，私钥在 relay 环境的机密 NOTES_SIGNING_KEY；
-// - offline：离线备用，私钥只在维护者本机，两类都受信；线上钥丢失或泄露时用它签一版换钥（步骤见 CONTRIBUTING.md）。
+// - notes：开发者的话与灰度配置，私钥在 relay 环境的机密 NOTES_SIGNING_KEY；
+// - offline：离线备用，私钥只在维护者本机，三类都受信；线上钥丢失或泄露时用它签一版换钥（步骤见 CONTRIBUTING.md）。
 // 发版与 notes 流水线签完用这张表与客户端的解析代码再验一遍（tool/content_signing.dart），机密里的私钥和这里的公钥对不上就停。
 const trustedSigningKeys = [
   TrustedSigningKey('release-2026-11', 'gCb1CCRvjVPWWDiVmUKY93Y2TGCObCx3Z8BHqd1194E', {SignedContent.release}),
-  TrustedSigningKey('notes-2026-11', 'SKpm-cUy-FYmrldyyjRZE-mIdU6Jt4ODG6ULf1XZEwk', {SignedContent.notes}),
-  TrustedSigningKey('offline-2026-11', 'tab0o-Uwvm8JQs6WwxnuBKN3fVu4y2txxU-f9eKzs6o', {SignedContent.release, SignedContent.notes}),
+  TrustedSigningKey('notes-2026-11', 'SKpm-cUy-FYmrldyyjRZE-mIdU6Jt4ODG6ULf1XZEwk', {SignedContent.notes, SignedContent.rollout}),
+  TrustedSigningKey('offline-2026-11', 'tab0o-Uwvm8JQs6WwxnuBKN3fVu4y2txxU-f9eKzs6o', {SignedContent.release, SignedContent.notes, SignedContent.rollout}),
 ];
 
 // 一个信封最多几个签名（换钥时新旧两把各签一份，留余量）；中转按同一上限校验（server/src/modules/app_release/app_release.dto.ts）。

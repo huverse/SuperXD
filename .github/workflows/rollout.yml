@@ -1,0 +1,78 @@
+name: Rollout
+
+# 灰度配置（人工决策见 lib/domain/rollout.dart）：rollout/rollout.json 有改动合并到 main，就把 tool/rollout_config.dart 签好的 rollout.json
+# 经受限账号传到中转的发布目录（与发版、开发者的话同一个 relay 环境与账号），客户端联网拉取，不用发版。分批更新的暂停、直接全量与整版关停也在这里改。
+# 格式在 PR 的 CI 里已经由 test/rollout_test.dart 校验过。手动运行同样上传当前 main 的内容。
+# 签名（人工决策见 lib/device/signed_content.dart）：用开发者的话那把钥（relay 环境的 NOTES_SIGNING_KEY，源码里允许它签 rollout），签完用客户端源码里内置的公钥与解析代码再验一遍，对不上就停。
+on:
+  push:
+    branches: [main]
+    paths: ['rollout/rollout.json']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rollout
+  cancel-in-progress: false
+
+jobs:
+  upload:
+    name: 上传灰度配置
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: relay
+    env:
+      RELAY_URL: ${{ secrets.RELAY_URL }}
+      RELAY_TARGET: ${{ secrets.RELAY_SSH_TARGET }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      # 私钥只在这一步写进临时文件、用完即删。
+      - name: 生成并签名
+        env:
+          NOTES_SIGNING_KEY: ${{ secrets.NOTES_SIGNING_KEY }}
+        run: |
+          set -euo pipefail
+          key="$RUNNER_TEMP/notes_signing_key.pem"
+          trap 'rm -f "$key"' EXIT
+          (umask 077 && printf '%s\n' "$NOTES_SIGNING_KEY" > "$key")
+          dart run tool/rollout_config.dart --out "$RUNNER_TEMP/rollout.json" --signing-key "$key"
+          dart run tool/content_signing.dart check-rollout "$RUNNER_TEMP/rollout.json"
+      # 旧版中转没有这个接口（404）：上传前先确认中转已部署能透传灰度配置的版本。
+      - name: 核对中转有灰度接口
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 30 -o "$RUNNER_TEMP/served_before.json" "$RELAY_URL/v1/app/rollout" || { echo "::error::中转还没部署灰度配置接口，先部署服务端（server/README.md 部署一节）"; exit 1; }
+      # 中转上的账号只能经 rrsync 读写发布目录（server/README.md 部署第 6 步），主机指纹事先固定。
+      - name: 准备连接
+        env:
+          RELAY_SSH_KEY: ${{ secrets.RELAY_SSH_KEY }}
+          RELAY_KNOWN_HOSTS: ${{ secrets.RELAY_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          mkdir -p ~/.ssh
+          printf '%s\n' "$RELAY_SSH_KEY" > ~/.ssh/relay
+          printf '%s\n' "$RELAY_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          echo "RSYNC_RSH=ssh -i $HOME/.ssh/relay -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=30" >> "$GITHUB_ENV"
+      - name: 上传
+        run: |
+          set -euo pipefail
+          cp "$RUNNER_TEMP/rollout.json" rollout.json
+          rsync -t --chmod=F644 rollout.json "$RELAY_TARGET:"
+      # 中转返回的要与签好的一字不差（含签名信封）。
+      - name: 公网核对
+        run: |
+          set -euo pipefail
+          curl -fsS --max-time 30 -o "$RUNNER_TEMP/served.json" "$RELAY_URL/v1/app/rollout"
+          python3 -I -c 'import json, sys; built, served = (json.load(open(path, encoding="utf-8")) for path in sys.argv[1:]); assert served.get("envelope") is not None, "中转返回里没有签名信封"; assert built == served, "中转上的灰度配置与生成的不一致"; print("[Rollout] action=relay_check flags=%d signed=true" % len(served["flags"]))' "$RUNNER_TEMP/rollout.json" "$RUNNER_TEMP/served.json"
+      - name: 删除连接凭据
+        if: always()
+        run: rm -f ~/.ssh/relay

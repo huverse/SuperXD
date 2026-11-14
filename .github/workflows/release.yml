@@ -33,6 +33,9 @@ env:
   # [人工决策-2026-10-22 18:27:38] 1.0.0-alpha.7 应维护者要求强制更新，调到 8（alpha.7 的构建号），之后发版保持不回调（规则见 lib/domain/app_update.dart）。
   # [人工决策-2026-10-22 18:59:16] 1.0.0-alpha.7 换成构建号 9 重发（修快递页布局，用户选定替换并强制），调到 9，装着构建号 8 的也要更新。
   RELEASE_MIN_SUPPORTED: 9
+  # 分批更新（人工决策见 lib/domain/rollout.dart，用户选「自动分阶段」）：留空是全量；要分批就在升版本 PR 里写从发布时刻起每天一档的放量百分比，
+  # 默认的三天是 20,50,100（只增、最后一档 100）。发版后要暂停、直接全量或整版关停，改仓库 rollout/rollout.json（见 CONTRIBUTING.md）。
+  RELEASE_ROLLOUT: ''
 
 jobs:
   plan:
@@ -160,7 +163,7 @@ jobs:
           key="$RUNNER_TEMP/manifest_signing_key.pem"
           trap 'rm -f "$key"' EXIT
           (umask 077 && printf '%s\n' "$MANIFEST_SIGNING_KEY" > "$key")
-          dart run tool/release_manifest.dart --apks dist --notes "$RUNNER_TEMP/notes.txt" --out dist --min-supported "$RELEASE_MIN_SUPPORTED" --signing-key "$key"
+          dart run tool/release_manifest.dart --apks dist --notes "$RUNNER_TEMP/notes.txt" --out dist --min-supported "$RELEASE_MIN_SUPPORTED" --rollout "$RELEASE_ROLLOUT" --signing-key "$key"
           dart run tool/content_signing.dart check-release dist/alpha.json --channel alpha
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
         with:

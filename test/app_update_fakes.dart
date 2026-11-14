@@ -96,8 +96,8 @@ class FakeInstaller implements AppInstaller {
 }
 
 class UpdateFixture {
-  UpdateFixture({int installed = 4, DateTime? now}) : now = now ?? DateTime.utc(2026, 10, 15, 2) {
-    updates = AppUpdates(feed: feed, files: files, installer: installer, memory: memory, installedVersionCode: installed, foreground: () => foreground, clock: () => this.now);
+  UpdateFixture({int installed = 4, DateTime? now, bool Function(AppRelease release)? inBatch}) : now = now ?? DateTime.utc(2026, 10, 15, 2) {
+    updates = AppUpdates(feed: feed, files: files, installer: installer, memory: memory, installedVersionCode: installed, foreground: () => foreground, inBatch: inBatch, clock: () => this.now);
   }
   final feed = FakeReleaseFeed();
   final files = FakePackageFiles();

@@ -4,9 +4,11 @@ import 'dart:io';
 import 'package:cryptography/cryptography.dart';
 import 'package:superxd/device/relay_note_feed.dart';
 import 'package:superxd/device/relay_release_feed.dart';
+import 'package:superxd/device/relay_rollout_feed.dart';
 import 'package:superxd/device/signed_content.dart';
 import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/developer_note.dart';
+import 'package:superxd/domain/rollout.dart';
 
 // 更新清单与开发者的话的签名与核对（人工决策见 lib/device/signed_content.dart）。release_manifest.dart、developer_notes.dart 用它签名；
 // 流水线签完再用它的 check-release、check-notes 按客户端源码里内置的公钥与客户端的解析代码验一遍，对不上就停。
@@ -14,6 +16,7 @@ import 'package:superxd/domain/developer_note.dart';
 // 运行：
 //   dart run tool/content_signing.dart check-release <清单.json> --channel alpha
 //   dart run tool/content_signing.dart check-notes <developer_notes.json>
+//   dart run tool/content_signing.dart check-rollout <rollout.json>
 //   dart run tool/content_signing.dart public-key <私钥.pem>      换钥时取新钥的公钥，写进 lib/device/signed_content.dart
 const releaseAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64'];
 
@@ -91,7 +94,7 @@ Future<void> checkReleaseManifest(Map<String, Object?> manifest, {required Strin
     if (!same) throw FormatException('$abi 签名载荷与明文字段不一致');
     // iOS 取 arm64 那份、不要安装包。
     if (abi == 'arm64-v8a') await parseSignedAppRelease(response, baseUrl: baseUrl, channel: channel, abi: abi, packages: false, keys: keys);
-    stdout.writeln('[ContentSigning] action=check_release abi=$abi versionCode=${release.versionCode} keyIds=${_keyIds(envelopes[abi])}');
+    stdout.writeln('[ContentSigning] action=check_release abi=$abi versionCode=${release.versionCode} rollout=${release.rollout.map((stage) => stage.percent).join(',')} keyIds=${_keyIds(envelopes[abi])}');
   }
 }
 
@@ -103,6 +106,15 @@ Future<void> checkDeveloperNotes(Map<String, Object?> file, {List<TrustedSigning
   String digest(List<DeveloperNote> notes) => jsonEncode(encodeDeveloperNotes(notes));
   if (digest(signed) != digest(plain)) throw const FormatException('签名载荷与明文 notes 不一致');
   stdout.writeln('[ContentSigning] action=check_notes count=${signed.length} keyIds=${_keyIds(file['envelope'])}');
+}
+
+// 灰度配置同开发者的话：签好的文件必须带信封，验得过且与明文 flags 一致。
+Future<void> checkRolloutConfig(Map<String, Object?> file, {List<TrustedSigningKey> keys = trustedSigningKeys}) async {
+  if (file['envelope'] == null) throw const FormatException('灰度配置没有签名信封');
+  final signed = await decodeSignedRolloutConfig(file, keys: keys);
+  final plain = decodeRolloutConfig({'flags': file['flags']});
+  if (jsonEncode(encodeRolloutConfig(signed)) != jsonEncode(encodeRolloutConfig(plain))) throw const FormatException('签名载荷与明文 flags 不一致');
+  stdout.writeln('[ContentSigning] action=check_rollout flags=${signed.rules.length} keyIds=${_keyIds(file['envelope'])}');
 }
 
 String _keyIds(Object? envelope) => switch (envelope) {
@@ -117,10 +129,12 @@ Future<void> main(List<String> args) async {
         await checkReleaseManifest(jsonDecode(await File(path).readAsString()) as Map<String, Object?>, channel: channel);
       case ['check-notes', final path]:
         await checkDeveloperNotes(jsonDecode(await File(path).readAsString()) as Map<String, Object?>);
+      case ['check-rollout', final path]:
+        await checkRolloutConfig(jsonDecode(await File(path).readAsString()) as Map<String, Object?>);
       case ['public-key', final path]:
         stdout.writeln(await publicKeyOfSeed(seedFromPem(await File(path).readAsString())));
       default:
-        stderr.writeln('usage: dart run tool/content_signing.dart check-release <file> --channel <channel> | check-notes <file> | public-key <pem>');
+        stderr.writeln('usage: dart run tool/content_signing.dart check-release <file> --channel <channel> | check-notes <file> | check-rollout <file> | public-key <pem>');
         exitCode = 64;
     }
   } on FormatException catch (error) {

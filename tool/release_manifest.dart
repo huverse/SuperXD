@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:superxd/device/signed_content.dart';
+import 'package:superxd/domain/rollout.dart';
 
 import 'content_signing.dart';
 
@@ -13,7 +14,9 @@ import 'content_signing.dart';
 // 最低可用版本、更新说明、发布页与这个架构的安装包），放进 envelopes，中转原样透传；新客户端只认它。顶层的明文字段与 apks
 // 留给 1.0.0-alpha.15 及以前不验签的旧客户端。--signing-key 可以给多把（换钥时新旧各签一份），每把都必须是源码里内置的受信公钥。
 // 运行：
-//   dart run tool/release_manifest.dart --apks <安装包目录> --notes <更新说明.txt> --out <输出目录> --signing-key <私钥.pem> [--channel alpha] [--min-supported 0]
+//   dart run tool/release_manifest.dart --apks <安装包目录> --notes <更新说明.txt> --out <输出目录> --signing-key <私钥.pem> [--channel alpha] [--min-supported 0] [--rollout 20,50,100]
+// 分批更新（人工决策见 lib/domain/rollout.dart）：--rollout 是从发布时刻起每天一档的放量百分比（只增、最后一档 100），写进每个架构的签名载荷；
+// 不给就是全量。明文字段不带它（中转按白名单校验明文清单，旧客户端也不认），发版后要暂停或直接全量改仓库 rollout/rollout.json。
 // 中转按 128KB 封顶读清单文件（server/src/common/relay_limits.ts 的 appReleaseFileMaxBytes）：三份信封加明文，更新说明写满 4000 字也不到 70KB。
 const releaseManifestFileMaxBytes = 128 * 1024;
 
@@ -23,6 +26,7 @@ Map<String, Object?> releasePayload({
   required String abi,
   required Map<String, Object?> manifest,
   required Map<String, Object?>? apk,
+  List<Map<String, Object?>>? rollout,
 }) => {
   'channel': channel,
   'abi': abi,
@@ -33,17 +37,30 @@ Map<String, Object?> releasePayload({
   'notes': manifest['notes'],
   'releasePage': manifest['releasePage'],
   'apk': apk == null ? null : {'file': apk['file'], 'size': apk['size'], 'sha256': apk['sha256']},
+  'rollout': rollout,
 };
 
+// --rollout 20,50,100：从发布时刻起第 i 天放到第 i 个百分比；只增、最后一档 100、最多 rolloutStageLimit 档。
+List<Map<String, Object?>> rolloutStagesOf(String spec, DateTime publishedAt) {
+  final percents = [for (final part in spec.split(',')) int.tryParse(part.trim())];
+  if (percents.isEmpty || percents.length > rolloutStageLimit || percents.any((percent) => percent == null || percent < 1 || percent > 100) || percents.last != 100) {
+    throw const FormatException('--rollout 要写 1–100 的整数、逗号隔开、最后一档 100，如 20,50,100');
+  }
+  for (var index = 1; index < percents.length; index++) {
+    if (percents[index]! <= percents[index - 1]!) throw const FormatException('--rollout 的百分比要逐档变大');
+  }
+  return [for (var index = 0; index < percents.length; index++) {'from': publishedAt.toUtc().add(Duration(days: index)).toIso8601String(), 'percent': percents[index]}];
+}
+
 // 明文清单加每个架构各一份信封；没有这个架构的安装包时载荷里 apk 为空（客户端改用发布页）。
-Future<Map<String, Object?>> signReleaseManifest(Map<String, Object?> manifest, {required String channel, required List<SigningKey> signers}) async {
+Future<Map<String, Object?>> signReleaseManifest(Map<String, Object?> manifest, {required String channel, required List<SigningKey> signers, List<Map<String, Object?>>? rollout}) async {
   final apks = (manifest['apks']! as List).cast<Map<String, Object?>>();
   return {
     ...manifest,
     'envelopes': {
       for (final abi in releaseAbis)
         abi: await sealSignedEnvelope(
-          utf8.encode(jsonEncode(releasePayload(channel: channel, abi: abi, manifest: manifest, apk: apks.where((item) => item['abi'] == abi).firstOrNull))),
+          utf8.encode(jsonEncode(releasePayload(channel: channel, abi: abi, manifest: manifest, apk: apks.where((item) => item['abi'] == abi).firstOrNull, rollout: rollout))),
           SignedContent.release,
           signers,
         ),
@@ -72,7 +89,7 @@ Future<void> main(List<String> args) async {
   final channel = options['channel'] ?? 'alpha';
   final minSupported = int.tryParse(options['min-supported'] ?? '0');
   if (apks == null || notesFile == null || out == null || signingKeys.isEmpty || minSupported == null || minSupported < 0) {
-    _fail('usage: dart run tool/release_manifest.dart --apks <dir> --notes <file> --out <dir> --signing-key <pem> [--signing-key <pem>] [--channel alpha] [--min-supported 0]');
+    _fail('usage: dart run tool/release_manifest.dart --apks <dir> --notes <file> --out <dir> --signing-key <pem> [--signing-key <pem>] [--channel alpha] [--min-supported 0] [--rollout 20,50,100]');
     return;
   }
   final version = RegExp(r'^version:\s*(\S+)\+(\d+)\s*$', multiLine: true).firstMatch(await File('pubspec.yaml').readAsString());
@@ -113,8 +130,10 @@ Future<void> main(List<String> args) async {
   final String json;
   try {
     final signers = [for (final path in signingKeys) await SigningKey.fromPemFile(path, SignedContent.release)];
-    json = encodeReleaseManifestFile(await signReleaseManifest(manifest, channel: channel, signers: signers));
-    stdout.writeln('[ReleaseManifest] action=sign keyIds=${signers.map((signer) => signer.trusted.keyId).join(',')}');
+    final spec = options['rollout'] ?? '';
+    final rollout = spec.trim().isEmpty ? null : rolloutStagesOf(spec, DateTime.parse(manifest['publishedAt']! as String));
+    json = encodeReleaseManifestFile(await signReleaseManifest(manifest, channel: channel, signers: signers, rollout: rollout));
+    stdout.writeln('[ReleaseManifest] action=sign keyIds=${signers.map((signer) => signer.trusted.keyId).join(',')} rollout=${rollout == null ? 'full' : spec}');
   } on FormatException catch (error) {
     _fail(error.message);
     return;
