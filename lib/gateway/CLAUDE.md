@@ -9,7 +9,6 @@
   - 提供代次 generation、当前会话与身份、记住账号（含已登录时输密码重新开启 rememberWithPassword）、登出与会话过期、旧库导入状态。
   - 页面和 AppSession 只依赖这个接口。
   - scheduleChanges：学期、课表、作息、开学日或提醒设置在本机写入成功后通知，组合根据此重新对账课前提醒；默认实现从不通知。
-  - 应用账号跟着教务走（人工决策见 application/app_accounts.dart）：loggedOut 在用户主动退出某个账号时发出（会话过期不发）。
 - account_gateway.dart：AccountAccess 的实现 AccountGateway。这个门面只负责选中固定的账号上下文。
   - 活动上下文包含身份、会话和该账号专属的 KingoCampusGateway。
     - 业务调用经 _dispatch 转发，并记录在途请求数。
@@ -71,7 +70,7 @@
 
 # 测试
 
-- account_isolation_test.dart、account_lifecycle_test.dart、remembered_session_test.dart（含应用账号跟着走的退出事件）、kingo_gateway_test.dart、sync_boundary_regression_test.dart。
+- account_isolation_test.dart、account_lifecycle_test.dart、remembered_session_test.dart、kingo_gateway_test.dart、sync_boundary_regression_test.dart。
 - 页面与同步用的合成数据网关是 test/fixture_campus_gateway.dart（读 assets/fixtures），新增端口方法时一并补齐。
 
 # 人工决策检索

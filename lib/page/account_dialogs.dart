@@ -90,22 +90,16 @@ class _LegacyImportGateState extends State<LegacyImportGate> {
 }
 
 // 开启记住账号时要密码：学号就是当前账号，只输密码；返回空表示取消。
-Future<String?> askRememberPassword(BuildContext context) => showCampusDialog<String>(
-  context: context,
-  builder: (context) => const _PasswordDialog(title: '开启记住账号', message: '输入当前账号的教务密码，核对通过后保存在本机安全存储，以后自动登录。', action: '开启'),
-);
+Future<String?> askRememberPassword(BuildContext context) => showCampusDialog<String>(context: context, builder: (context) => const _RememberPasswordDialog());
 
-class _PasswordDialog extends StatefulWidget {
-  const _PasswordDialog({required this.title, required this.message, required this.action});
-  final String title;
-  final String message;
-  final String action;
+class _RememberPasswordDialog extends StatefulWidget {
+  const _RememberPasswordDialog();
 
   @override
-  State<_PasswordDialog> createState() => _PasswordDialogState();
+  State<_RememberPasswordDialog> createState() => _RememberPasswordDialogState();
 }
 
-class _PasswordDialogState extends State<_PasswordDialog> {
+class _RememberPasswordDialogState extends State<_RememberPasswordDialog> {
   final _password = TextEditingController();
 
   @override
@@ -120,9 +114,9 @@ class _PasswordDialogState extends State<_PasswordDialog> {
 
   @override
   Widget build(BuildContext context) => CampusGlassDialog(
-    title: Text(widget.title),
+    title: const Text('开启记住账号'),
     content: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      Text(widget.message, style: const TextStyle(fontSize: 14)),
+      const Text('输入当前账号的教务密码，核对通过后保存在本机安全存储，以后自动登录。', style: TextStyle(fontSize: 14)),
       SizedBox(height: campusFieldGap(context)),
       TextField(
         controller: _password,
@@ -135,50 +129,22 @@ class _PasswordDialogState extends State<_PasswordDialog> {
     ]),
     actions: [
       TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-      FilledButton(onPressed: _password.text.isEmpty ? null : _submit, child: Text(widget.action)),
+      FilledButton(onPressed: _password.text.isEmpty ? null : _submit, child: const Text('开启')),
     ],
   );
 }
 
 // 教务登录的验证码弹窗：登录页与账号页开启记住账号共用。通过后自己关（返回空）；出错带原因关，取消时撤掉这次登录尝试。
-class LoginCaptchaDialog extends StatelessWidget {
+class LoginCaptchaDialog extends StatefulWidget {
   const LoginCaptchaDialog({super.key, required this.gateway, required this.captcha});
   final AccountAccess gateway;
   final CaptchaView captcha;
 
   @override
-  Widget build(BuildContext context) => CaptchaDialog(
-    captcha: captcha,
-    refresh: () async {
-      final result = await gateway.refreshLoginCaptcha();
-      return (captcha: result.ok ? result.data : null, error: result.ok && result.data != null ? null : result.error?.message ?? '验证码刷新失败');
-    },
-    submit: (code) async {
-      final result = await gateway.submitLoginCaptcha(code);
-      if (result.needsInput == 'captcha' && result.data?.captcha != null) return (captcha: result.data!.captcha, error: null);
-      // 登录成功时账号代次变化会连弹窗一起换掉；只核对密码（开启记住账号）不换代次，要自己关。
-      return (captcha: null, error: result.ok ? null : result.error?.message ?? '登录未完成');
-    },
-    cancel: gateway.cancelLogin,
-  );
+  State<LoginCaptchaDialog> createState() => _LoginCaptchaDialogState();
 }
 
-// 验证码这一步的结果：给了新图就换图让用户再填；没给图时 error 为空表示通过（弹窗关、返回空），否则带原因关。
-typedef CaptchaReply = ({CaptchaView? captcha, String? error});
-
-// 验证码弹窗：点图或「刷新验证码」换一张，填好确定；取消或按返回撤掉这次尝试。教务登录用（LoginCaptchaDialog 接网关）。
-class CaptchaDialog extends StatefulWidget {
-  const CaptchaDialog({super.key, required this.captcha, required this.refresh, required this.submit, required this.cancel});
-  final CaptchaView captcha;
-  final Future<CaptchaReply> Function() refresh;
-  final Future<CaptchaReply> Function(String code) submit;
-  final Future<void> Function() cancel;
-
-  @override
-  State<CaptchaDialog> createState() => _CaptchaDialogState();
-}
-
-class _CaptchaDialogState extends State<CaptchaDialog> {
+class _LoginCaptchaDialogState extends State<LoginCaptchaDialog> {
   late CaptchaView _captcha = widget.captcha;
   final _code = TextEditingController();
   bool _busy = false;
@@ -194,15 +160,14 @@ class _CaptchaDialogState extends State<CaptchaDialog> {
     if (_busy) return;
     setState(() { _busy = true; _refreshing = true; });
     try {
-      final reply = await widget.refresh();
+      final result = await widget.gateway.refreshLoginCaptcha();
       if (!mounted) return;
-      final captcha = reply.captcha;
-      if (captcha == null) {
-        Navigator.pop(context, reply.error ?? '验证码刷新失败');
+      if (!result.ok || result.data == null) {
+        Navigator.pop(context, result.error?.message ?? '验证码刷新失败');
         return;
       }
       setState(() {
-        _captcha = captcha;
+        _captcha = result.data!;
         _code.clear();
       });
     } catch (error, stack) {
@@ -217,16 +182,16 @@ class _CaptchaDialogState extends State<CaptchaDialog> {
     if (_busy || _code.text.trim().isEmpty) return;
     setState(() { _busy = true; _refreshing = false; });
     try {
-      final reply = await widget.submit(_code.text.trim());
+      final result = await widget.gateway.submitLoginCaptcha(_code.text.trim());
       if (!mounted) return;
-      final captcha = reply.captcha;
-      if (captcha != null) {
+      if (result.needsInput == 'captcha' && result.data?.captcha != null) {
         setState(() {
-          _captcha = captcha;
+          _captcha = result.data!.captcha!;
           _code.clear();
         });
       } else {
-        Navigator.pop(context, reply.error);
+        // 登录成功时账号代次变化会连弹窗一起换掉；只核对密码（开启记住账号）不换代次，要自己关。
+        Navigator.pop(context, result.ok ? null : result.error?.message ?? '登录未完成');
       }
     } catch (error, stack) {
       campusLog('[CaptchaDialog] action=submit errorType=${error.runtimeType}\n$stack');
@@ -240,7 +205,7 @@ class _CaptchaDialogState extends State<CaptchaDialog> {
   Widget build(BuildContext context) => PopScope<String>(
     onPopInvokedWithResult: (didPop, result) {
       if (didPop) {
-        widget.cancel().catchError((Object error, StackTrace stack) {
+        widget.gateway.cancelLogin().catchError((Object error, StackTrace stack) {
           campusLog('[CaptchaDialog] action=cancel errorType=${error.runtimeType}\n$stack');
         });
       }

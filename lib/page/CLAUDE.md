@@ -47,7 +47,7 @@
   - campus_sync_dialogs.dart：同步结果弹窗 showCampusSyncReport：结果与未处理项，可重新登录或重新同步；教务限流停下时只说明约 1 分钟后再同步，不给立即重新同步。
 - 账号与设置：
   - login_page.dart：登录页 LoginPage，也用于切换账号：验证码、记住账号确认、百宝箱、游乐场、关于（进同一个关于页，未登录也能开开发者模式、检查更新，[人工决策] 在按钮处）与法务入口；同意行勾选框读屏读整句，点「我已阅读并同意」也能勾选，放不下一行时「用户协议 和 隐私政策」整组换行、行距按文字排（_agreement）；登录按钮常亮，没填或没勾同意时原地说明，接系统自动填充（[人工决策] 在文件内）。
-  - account_dialogs.dart：旧版本数据导入确认 showLegacyImport 与登录后自动提示的 LegacyImportGate；验证码弹窗 CaptchaDialog（按回调刷新、提交与取消），教务登录用的 LoginCaptchaDialog 接网关；输密码弹窗 askRememberPassword（开启记住账号）。
+  - account_dialogs.dart：旧版本数据导入确认 showLegacyImport 与登录后自动提示的 LegacyImportGate；教务验证码弹窗 LoginCaptchaDialog；开启记住账号的输密码弹窗 askRememberPassword。
   - account_page.dart：账号页 AccountPage（账号卡姓名下写学号 · 班级，只在这里写；AccountTitle 我的页共用、只传姓名）：记住账号（关闭即删凭据；重新开启要输密码、后台登录核对成功才保存，不换代次）、切换账号、导入旧版本数据（本机有旧数据才显示）；应用账号单独一行（配了中转才有，写用户名或未登录，点了推入应用账号页）；退出登录单独一组放最底。
   - app_account_page.dart：应用账号页 AppAccountPage（人工决策见 domain/app_account.dart：自己的账号体系，与教务各管各的，没登录教务也能进；游乐场、私信、节日提示与账号页都推它）：没登录时「登录 / 注册」分段，「忘记密码」凭恢复码重设，「扫码登录」让已登录的手机批准；用户名与密码先在本机查格式、不合格原地说明不联网；注册与重设成功后弹出恢复码 showRecoveryCode（四位一组、可复制，点「我已保存」才关，按返回不关）。登录着：用户名、修改密码（输一次新密码）、换新的恢复码（先确认）、让新设备登录（扫码函数可注入）、我上传的诊断包（配了诊断包上传才有），退出与注销单独一组放最底，都先确认。
   - app_account_join_page.dart：扫码登录：新手机出示登录二维码的页面 AppAccountJoinPage（5 分钟有效、可刷新，显示 6 位核对码与倒计时，每 3 秒问一次批准了没有、批准了返回，亮度同添加好友页调到最高）；登录着的手机扫码批准 approveAppAccountJoin（扫码函数可注入 JoinScanner，先确认核对码）。

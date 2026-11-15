@@ -8,19 +8,6 @@ import 'package:superxd/domain/campus_crypto.dart';
 // 密码与恢复码在本机用中转公钥封装后才发出（social/account_seal.dart，中转是明文 HTTP），服务器只存 scrypt 哈希；恢复码在本机生成，原文只给用户看一次。
 // 11-13 的中转代登录教务（口令摘要）与 11-15 的设备核对、3 天找回都作废、删除。规则在服务端 server/src/modules/account/account.service.ts。
 
-// 教务登录拼参数用的口令摘要（edu/login_rules.dart 的 kingoSignInProof 算出；11-15 起只在手机登录教务时用，不再交给中转）。
-class KingoSignInProof {
-  const KingoSignInProof({required this.account, required this.passwordDigest, required this.expression, required this.length, required this.userzh, required this.policy});
-  final String account;
-  final String passwordDigest;
-  final String expression;
-  final String length;
-  final String userzh;
-  final String policy;
-
-  Map<String, String> toJson() => {'account': account, 'passwordDigest': passwordDigest, 'expression': expression, 'length': length, 'userzh': userzh, 'policy': policy};
-}
-
 // 一个登录着的应用账号在这台设备上的把手：账号号（灰度分桶用）与那把设备密钥在安全存储里的位置 slot。
 // [人工决策-2026-11-14 16:47:34] 第 4 阶段用户要求「留好后路，以后不一定会锁死绑定教务」：用到应用账号的功能（挑战、节日抽奖、诊断包、私信）
 // 只认这个把手，不认它是用什么方式登录的；11-15 换成自己的账号体系时这些功能果然不用改。
