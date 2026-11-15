@@ -1,12 +1,11 @@
 import 'dart:convert';
 
-import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
-import 'package:superxd/domain/account.dart';
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/social/account_seal.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_crypto.dart';
 
@@ -17,21 +16,20 @@ const appAccountStorage = FlutterSecureStorage(
   iOptions: IOSOptions(accountName: 'superxd_account', accessibility: KeychainAccessibility.first_unlock_this_device),
 );
 
-// 一个应用账号在本机的记录：设备密钥（同私信身份的格式）与账号号；accountId 为空是等待中（设备核对后学号已有账号，等扫码授权或找回生效），
-// recoveryId 是这时提交的找回申请。
+// 一个应用账号在本机的记录：设备密钥（同私信身份的格式）、账号号与用户名（11-15 以前的旧记录没有用户名，为空）。
 class AppAccountKey {
-  const AppAccountKey({required this.identity, required this.accountId, this.recoveryId});
+  const AppAccountKey({required this.identity, required this.accountId, this.username = ''});
   final SocialIdentity identity;
   final String accountId;
-  final String? recoveryId;
-
-  bool get pending => accountId.isEmpty;
+  final String username;
 }
 
 abstract interface class AppAccountVault {
   Future<AppAccountKey?> read(String slot);
   Future<void> write(String slot, AppAccountKey key);
   Future<void> delete(String slot);
+  // 存着的全部键（清理 11-15 以前每个教务账号一把的旧密钥时用）。
+  Future<List<String>> slots();
 }
 
 class SecureAppAccountVault implements AppAccountVault {
@@ -43,24 +41,27 @@ class SecureAppAccountVault implements AppAccountVault {
     final raw = await _storage.read(key: slot);
     if (raw == null) return null;
     final data = jsonDecode(raw);
-    if (data is! Map || data['version'] != 1 || data['sign'] is! String || data['box'] is! String || data['accountId'] is! String || (data['recovery'] != null && data['recovery'] is! String)) {
+    if (data is! Map || data['version'] != 1 || data['sign'] is! String || data['box'] is! String || data['accountId'] is! String || (data['username'] ?? '') is! String) {
       throw const FormatException('保存的应用账号不可用');
     }
     return AppAccountKey(
       identity: await SocialIdentity.fromSeeds(decodeBase64UrlNoPad(data['sign'] as String, length: 32), decodeBase64UrlNoPad(data['box'] as String, length: 32)),
       accountId: data['accountId'] as String,
-      recoveryId: data['recovery'] as String?,
+      username: (data['username'] ?? '') as String,
     );
   }
 
   @override
   Future<void> write(String slot, AppAccountKey key) => _storage.write(
     key: slot,
-    value: jsonEncode({'version': 1, 'sign': base64UrlNoPad(key.identity.signSeed), 'box': base64UrlNoPad(key.identity.boxSeed), 'accountId': key.accountId, 'recovery': ?key.recoveryId}),
+    value: jsonEncode({'version': 1, 'sign': base64UrlNoPad(key.identity.signSeed), 'box': base64UrlNoPad(key.identity.boxSeed), 'accountId': key.accountId, 'username': key.username}),
   );
 
   @override
   Future<void> delete(String slot) => _storage.delete(key: slot);
+
+  @override
+  Future<List<String>> slots() async => (await _storage.readAll()).keys.toList();
 }
 
 class MemoryAppAccountVault implements AppAccountVault {
@@ -71,189 +72,162 @@ class MemoryAppAccountVault implements AppAccountVault {
   Future<void> write(String slot, AppAccountKey key) async => records[slot] = key;
   @override
   Future<void> delete(String slot) async => records.remove(slot);
+  @override
+  Future<List<String>> slots() async => records.keys.toList();
 }
 
-// 安全存储里的键：教务身份的哈希，存储里不出现学号。
-String appAccountSlot(AccountIdentity identity) => 'account.${base64UrlNoPad(sha256.convert(utf8.encode('SXD1-app-account\n${identity.source}\n${identity.loginId}')).bytes.sublist(0, 16))}';
+// 安全存储里这台设备应用账号的键（11-15 起一台设备一个，与教务各管各的）。11-15 以前每个教务账号一把，键是 account.<教务身份的哈希>。
+const appAccountSlot = 'app_account';
+const _legacySlotPrefix = 'account.';
 
 final _accountIdPattern = RegExp(r'^[A-Za-z0-9_-]{22}$');
-final _recoveryIdPattern = RegExp(r'^\d{1,20}$');
 
 // 应用账号端口的中转实现（人工决策见 domain/app_account.dart，协议见 server/README.md「应用账号」）：
-// 签名请求、校时重发一次都复用私信的 RelayClient；每个教务账号一把单独的设备密钥。设备核对时学号已有账号，这把密钥先存成等待中，
-// 扫码授权或找回生效后补上账号号（找回要等几天，重启应用也接着用这把）。
+// 签名请求、校时重发一次都复用私信的 RelayClient；这台设备一把设备密钥，登录成功才连同账号号存进安全存储。
+// 注册、登录、用恢复码重设都先生成一把新密钥（服务端把它登记到账号下），密码与恢复码经 account_seal.dart 封装后才发出。
 class RelayAppAccountClient implements AppAccountClient {
-  RelayAppAccountClient({required this.vault, required RelayTransport transport}) : _relay = RelayClient(transport);
+  RelayAppAccountClient({required this.vault, required RelayTransport transport, List<int>? sealKey})
+    : _relay = RelayClient(transport),
+      _sealKey = sealKey ?? decodeBase64UrlNoPad(accountSealKey, length: 32);
   final AppAccountVault vault;
   final RelayClient _relay;
+  final List<int> _sealKey;
 
   @override
-  Future<AppAccountRef?> accountOf(AccountIdentity identity) async {
-    final slot = appAccountSlot(identity);
-    final saved = await vault.read(slot);
-    return saved == null || saved.pending ? null : AppAccountRef(accountId: saved.accountId, slot: slot);
+  Future<AppAccountSession?> accountOf() async {
+    final saved = await vault.read(appAccountSlot);
+    return saved == null ? null : AppAccountSession(account: AppAccountRef(accountId: saved.accountId, slot: appAccountSlot), username: saved.username);
   }
 
-  Map<String, Object?> _deviceBody(SocialIdentity key, AccountIdentity identity) => {
-    'signPublicKey': base64UrlNoPad(key.signPublicKey),
-    'boxPublicKey': base64UrlNoPad(key.boxPublicKey),
-    'loginId': identity.loginId,
-  };
-
-  static String? _accountIdOf(Object? raw) => switch (raw) {
-    {'accountId': final String accountId} when _accountIdPattern.hasMatch(accountId) => accountId,
-    _ => null,
-  };
-
-  Future<AppAccountRef> _signedIn(String slot, SocialIdentity key, String accountId) async {
-    await vault.write(slot, AppAccountKey(identity: key, accountId: accountId));
-    return AppAccountRef(accountId: accountId, slot: slot);
+  Future<AppAccountSession> _save(SocialIdentity key, String accountId, String username) async {
+    await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: accountId, username: username));
+    return AppAccountSession(account: AppAccountRef(accountId: accountId, slot: appAccountSlot), username: username);
   }
 
-  // 等待中的密钥：设备核对过才有（服务端已登记这把设备密钥）。
-  Future<AppAccountKey> _pendingKey(String slot) async {
-    final saved = await vault.read(slot);
-    if (saved == null || !saved.pending) throw const AppAccountException(AppAccountFailure.failed, '请重新登录应用账号');
-    return saved;
+  static final _usernamePattern = RegExp(r'^[a-z0-9_]{3,20}$');
+
+  @override
+  Future<List<AppAccountRef>> dropLegacy() async {
+    final dropped = <AppAccountRef>[];
+    for (final slot in (await vault.slots()).where((slot) => slot.startsWith(_legacySlotPrefix))) {
+      try {
+        final saved = await vault.read(slot);
+        if (saved != null) dropped.add(AppAccountRef(accountId: saved.accountId, slot: slot));
+      } on FormatException catch (error, stack) {
+        campusLog('[AppAccount] action=drop_legacy errorType=${error.runtimeType}\n$stack');
+      }
+      await vault.delete(slot);
+    }
+    return dropped;
   }
 
-  static AppAccountFailure _bad(String action, Object? status) {
-    campusLog('[AppAccount] action=$action code=${RelayCode.badResponse} status=$status');
-    return AppAccountFailure.failed;
-  }
+  Map<String, Object?> _keys(SocialIdentity key) => {'signPublicKey': base64UrlNoPad(key.signPublicKey), 'boxPublicKey': base64UrlNoPad(key.boxPublicKey)};
+
+  Future<String> _seal(SocialIdentity key, Map<String, Object?> secrets) async => base64UrlNoPad(await sealAccountSecrets(secrets, key.deviceId, _sealKey));
 
   static const _badMessage = '服务器的回复看不懂，请更新应用后再试';
 
-  @override
-  Future<AppAccountStep> signInWithDevice(AccountIdentity identity) async {
-    final slot = appAccountSlot(identity);
-    final saved = await vault.read(slot);
-    // 上次停在等待中的接着用那把密钥（找回申请记在它名下）；没有就新生成。
-    final key = saved != null && saved.pending ? saved.identity : await SocialIdentity.generate();
-    final body = await _relayed(() => _relay.request(key, 'POST', '/v1/account/device-sign-in', _deviceBody(key, identity)));
-    final status = body['status'], accountId = _accountIdOf(body['account']);
-    if (status == 'signedIn' && accountId != null) {
-      return AppAccountSignedIn(account: await _signedIn(slot, key, accountId), created: (body['account']! as Map)['created'] == true);
-    }
-    if (status == 'exists') {
-      if (saved == null || !saved.pending) await vault.write(slot, AppAccountKey(identity: key, accountId: ''));
-      return const AppAccountExists();
-    }
-    throw AppAccountException(_bad('device_sign_in', status), _badMessage);
+  static AppAccountException _bad(String action) {
+    campusLog('[AppAccount] action=$action code=${RelayCode.badResponse}');
+    return const AppAccountException(AppAccountFailure.failed, _badMessage);
+  }
+
+  // 注册、登录、重设共用：新生成一把设备密钥，带着封装好的秘密发出，成功才存本机。
+  Future<AppAccountSession> _credential(String action, String path, String username, Map<String, Object?> secrets) async {
+    final key = await SocialIdentity.generate();
+    final body = await _relayed(() async => _relay.request(key, 'POST', path, {..._keys(key), 'username': normalizeAppUsername(username), 'sealed': await _seal(key, secrets)}));
+    final accountId = body['accountId'], name = body['username'];
+    if (accountId is! String || !_accountIdPattern.hasMatch(accountId) || name is! String || !_usernamePattern.hasMatch(name)) throw _bad(action);
+    return _save(key, accountId, name);
   }
 
   @override
-  Future<AppAccountJoin> startJoin(AccountIdentity identity) async {
-    final key = (await _pendingKey(appAccountSlot(identity))).identity;
-    final body = await _relayed(() => _relay.request(key, 'POST', '/v1/account/joins', _deviceBody(key, identity)));
+  Future<AppAccountSession> register(String username, String password, String recoveryCode) =>
+      _credential('register', '/v1/account/register', username, {'password': password, 'recoveryCode': recoveryCode});
+
+  @override
+  Future<AppAccountSession> login(String username, String password) => _credential('login', '/v1/account/login', username, {'password': password});
+
+  @override
+  Future<AppAccountSession> recover(String username, String recoveryCode, String password, String newRecoveryCode) =>
+      _credential('recover', '/v1/account/recover', username, {'recoveryCode': recoveryCode, 'password': password, 'newRecoveryCode': newRecoveryCode});
+
+  Future<AppAccountKey> _signedIn() async {
+    final saved = await vault.read(appAccountSlot);
+    if (saved == null) throw const AppAccountException(AppAccountFailure.notSignedIn, '没有登录应用账号');
+    return saved;
+  }
+
+  @override
+  Future<void> changePassword(String password) async {
+    final saved = await _signedIn();
+    await _relayed(() async => _relay.request(saved.identity, 'POST', '/v1/account/password', {'sealed': await _seal(saved.identity, {'password': password})}));
+  }
+
+  @override
+  Future<void> changeRecoveryCode(String recoveryCode) async {
+    final saved = await _signedIn();
+    await _relayed(() async => _relay.request(saved.identity, 'POST', '/v1/account/recovery-code', {'sealed': await _seal(saved.identity, {'recoveryCode': recoveryCode})}));
+  }
+
+  // 扫码登录出示二维码用的密钥：出示时新生成、只放内存，批准了才存进安全存储（没批准就丢，服务端那条登记按 400 天不活跃清掉）。
+  SocialIdentity? _joinKey;
+
+  @override
+  Future<AppAccountJoin> startJoin() async {
+    final key = _joinKey = await SocialIdentity.generate();
+    final body = await _relayed(() => _relay.request(key, 'POST', '/v1/account/joins', _keys(key)));
     final ticketId = body['ticketId'], code = body['code'], expiresAt = body['expiresAt'];
     if (ticketId is String && _accountIdPattern.hasMatch(ticketId) && code is String && RegExp(r'^\d{6}$').hasMatch(code) && expiresAt is int) {
       return AppAccountJoin(ticketId: ticketId, code: code, expiresAt: DateTime.fromMillisecondsSinceEpoch(expiresAt, isUtc: true));
     }
-    throw AppAccountException(_bad('start_join', null), _badMessage);
+    throw _bad('start_join');
   }
 
   @override
-  Future<AppAccountRef?> joinState(AccountIdentity identity, AppAccountJoin join) async {
-    final slot = appAccountSlot(identity);
-    final key = (await _pendingKey(slot)).identity;
+  Future<AppAccountSession?> joinState(AppAccountJoin join) async {
+    final key = _joinKey;
+    if (key == null) throw const AppAccountException(AppAccountFailure.joinExpired, '二维码已过期，请刷新');
     final body = await _relayed(() => _relay.request(key, 'GET', '/v1/account/joins/${join.ticketId}'));
-    final state = body['state'], accountId = _accountIdOf(body['account']);
+    final state = body['state'], account = body['account'];
     if (state == 'pending') return null;
-    if (state == 'approved' && accountId != null) return _signedIn(slot, key, accountId);
-    throw AppAccountException(_bad('join_state', state), _badMessage);
+    if (state == 'approved') {
+      if (account case {'accountId': final String accountId, 'username': final String name} when _accountIdPattern.hasMatch(accountId) && _usernamePattern.hasMatch(name)) {
+        _joinKey = null;
+        return _save(key, accountId, name);
+      }
+    }
+    throw _bad('join_state');
   }
 
   @override
-  Future<void> approveJoin(AccountIdentity identity, String payload) async {
+  Future<void> approveJoin(String payload) async {
     final parsed = AppAccountJoin.parse(payload);
-    if (parsed == null) throw const AppAccountException(AppAccountFailure.joinExpired, '不是应用账号的授权二维码');
-    final saved = await vault.read(appAccountSlot(identity));
-    if (saved == null || saved.pending) throw const AppAccountException(AppAccountFailure.notSignedIn, '没有登录应用账号');
+    if (parsed == null) throw const AppAccountException(AppAccountFailure.joinExpired, '不是应用账号的登录二维码');
+    final saved = await _signedIn();
     await _relayed(() => _relay.request(saved.identity, 'POST', '/v1/account/joins/${parsed.ticketId}/approve', {'code': parsed.code}));
   }
 
-  AppAccountRecovery _recovery(Map<String, Object?> body) {
-    final id = body['recoveryId'], state = body['state'], grantAt = body['grantAt'];
-    final parsed = AppAccountRecoveryState.values.where((item) => item.name == state).firstOrNull;
-    if (id is String && _recoveryIdPattern.hasMatch(id) && parsed != null && grantAt is int) {
-      return AppAccountRecovery(id: id, state: parsed, grantAt: DateTime.fromMillisecondsSinceEpoch(grantAt, isUtc: true));
-    }
-    throw AppAccountException(_bad('recovery', state), _badMessage);
-  }
-
   @override
-  Future<AppAccountRecovery> requestRecovery(AccountIdentity identity) async {
-    final slot = appAccountSlot(identity);
-    final saved = await _pendingKey(slot);
-    final recovery = _recovery(await _relayed(() => _relay.request(saved.identity, 'POST', '/v1/account/recoveries', _deviceBody(saved.identity, identity))));
-    await vault.write(slot, AppAccountKey(identity: saved.identity, accountId: '', recoveryId: recovery.id));
-    return recovery;
-  }
-
-  @override
-  Future<AppAccountRecovery?> recoveryOf(AccountIdentity identity) async {
-    final slot = appAccountSlot(identity);
-    final saved = await vault.read(slot);
-    if (saved == null || !saved.pending || saved.recoveryId == null) return null;
-    final Map<String, Object?> body;
-    try {
-      body = await _relayed(() => _relay.request(saved.identity, 'GET', '/v1/account/recoveries/mine'));
-    } on AppAccountException catch (error) {
-      if (error.failure != AppAccountFailure.notSignedIn) rethrow;
-      // 申请满 30 天被清理、或账号已注销：本机不再记着它。
-      await vault.write(slot, AppAccountKey(identity: saved.identity, accountId: ''));
-      return null;
-    }
-    final recovery = _recovery(body);
-    if (recovery.state == AppAccountRecoveryState.granted) {
-      final accountId = _accountIdOf(body['account']);
-      if (accountId == null) throw AppAccountException(_bad('recovery_granted', null), _badMessage);
-      await _signedIn(slot, saved.identity, accountId);
-    }
-    return recovery;
-  }
-
-  @override
-  Future<void> decideRecovery(AccountIdentity identity, String recoveryId, {required bool approve}) async {
-    final saved = await vault.read(appAccountSlot(identity));
-    if (saved == null || saved.pending) throw const AppAccountException(AppAccountFailure.notSignedIn, '没有登录应用账号');
-    await _relayed(() => _relay.request(saved.identity, 'POST', '/v1/account/recoveries/$recoveryId/${approve ? 'approve' : 'deny'}'));
-  }
-
-  @override
-  Future<AppAccountSummary> summary(AccountIdentity identity) async {
-    final slot = appAccountSlot(identity);
-    final saved = await vault.read(slot);
-    if (saved == null || saved.pending) throw const AppAccountException(AppAccountFailure.notSignedIn, '没有登录应用账号');
+  Future<AppAccountSummary> summary() async {
+    final saved = await _signedIn();
     try {
       final body = await _relayed(() => _relay.request(saved.identity, 'GET', '/v1/account'));
-      final accountId = body['accountId'], providers = body['providers'], deviceCount = body['deviceCount'], createdAt = body['createdAt'], recoveries = body['recoveries'];
-      if (accountId is String && providers is List && providers.every((item) => item is String) && deviceCount is int && createdAt is int && recoveries is List) {
-        return AppAccountSummary(
-          accountId: accountId,
-          providers: providers.cast<String>(),
-          deviceCount: deviceCount,
-          createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt, isUtc: true),
-          recoveries: [
-            for (final item in recoveries)
-              if (item case {'recoveryId': final String id, 'createdAt': final int created, 'grantAt': final int grant} when _recoveryIdPattern.hasMatch(id))
-                AppAccountPendingRecovery(id: id, createdAt: DateTime.fromMillisecondsSinceEpoch(created, isUtc: true), grantAt: DateTime.fromMillisecondsSinceEpoch(grant, isUtc: true)),
-          ],
-        );
+      final accountId = body['accountId'], username = body['username'], deviceCount = body['deviceCount'], createdAt = body['createdAt'];
+      if (accountId is String && username is String && deviceCount is int && createdAt is int) {
+        return AppAccountSummary(accountId: accountId, username: username, deviceCount: deviceCount, createdAt: DateTime.fromMillisecondsSinceEpoch(createdAt, isUtc: true));
       }
-      throw const AppAccountException(AppAccountFailure.failed, _badMessage);
+      throw _bad('summary');
     } on AppAccountException catch (error) {
       // 账号在别处注销、被清理，或这把密钥被顶掉了：本机记录随之作废。
-      if (error.failure == AppAccountFailure.notSignedIn) await vault.delete(slot);
+      if (error.failure == AppAccountFailure.notSignedIn) await vault.delete(appAccountSlot);
       rethrow;
     }
   }
 
   @override
-  Future<void> signOut(AccountIdentity identity) async {
-    final slot = appAccountSlot(identity);
-    final saved = await vault.read(slot);
+  Future<void> signOut() async {
+    final saved = await vault.read(appAccountSlot);
     if (saved == null) return;
     try {
       await _relayed(() => _relay.deleteDevice(saved.identity));
@@ -261,19 +235,18 @@ class RelayAppAccountClient implements AppAccountClient {
       // 服务端已不认、或这会儿连不上：照样删本机密钥（没了私钥谁也用不了那条登记，服务端按 400 天不活跃清掉）。
       campusLog('[AppAccount] action=sign_out failure=${error.failure.name} errorType=${error.runtimeType}\n$stack');
     }
-    await vault.delete(slot);
+    await vault.delete(appAccountSlot);
   }
 
   @override
-  Future<void> delete(AccountIdentity identity) async {
-    final saved = await vault.read(appAccountSlot(identity));
-    if (saved == null || saved.pending) throw const AppAccountException(AppAccountFailure.notSignedIn, '没有登录应用账号');
+  Future<void> delete() async {
+    final saved = await _signedIn();
     try {
       await _relayed(() => _relay.request(saved.identity, 'DELETE', '/v1/account'));
     } on AppAccountException catch (error) {
       if (error.failure != AppAccountFailure.notSignedIn) rethrow;
     }
-    await signOut(identity);
+    await signOut();
   }
 
   // 中转的错误码换成应用账号的失败（application 与 page 不认 social 的错误码）；断网与超时的原始异常与堆栈已由传输层记进日志。
@@ -282,12 +255,13 @@ class RelayAppAccountClient implements AppAccountClient {
       return await send();
     } on RelayException catch (error) {
       throw switch (error.code) {
-        RelayCode.joinNotFound => const AppAccountException(AppAccountFailure.joinExpired, '二维码或申请已过期，请重新开始'),
-        RelayCode.joinMismatch => const AppAccountException(AppAccountFailure.joinMismatch, '这是别的学号的应用账号'),
+        RelayCode.usernameTaken => const AppAccountException(AppAccountFailure.usernameTaken, '用户名已被占用'),
+        RelayCode.credentialsInvalid => const AppAccountException(AppAccountFailure.credentialsInvalid, '用户名或密码不对'),
+        RelayCode.joinNotFound => const AppAccountException(AppAccountFailure.joinExpired, '二维码已过期或不对，请刷新'),
         RelayCode.accountNotFound || RelayCode.unauthorized => const AppAccountException(AppAccountFailure.notSignedIn, '应用账号已经退出'),
         RelayCode.rateLimited => const AppAccountException(AppAccountFailure.rateLimited, '尝试太频繁，请稍后再试'),
         RelayCode.network || RelayCode.timeout => const AppAccountException(AppAccountFailure.network, '连不上服务器'),
-        RelayCode.invalidRequest => const AppAccountException(AppAccountFailure.failed, '登录信息没能交给服务器，请更新应用后再试'),
+        RelayCode.invalidRequest => const AppAccountException(AppAccountFailure.failed, '信息没能交给服务器，请更新应用后再试'),
         _ => AppAccountException(AppAccountFailure.failed, '服务器暂时不可用（${error.code}）'),
       };
     }

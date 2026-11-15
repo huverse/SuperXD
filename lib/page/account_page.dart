@@ -6,14 +6,10 @@ import 'package:go_router/go_router.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
-import 'package:superxd/domain/app_account.dart';
-import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/account_dialogs.dart';
-import 'package:superxd/page/app_account_join_page.dart';
-import 'package:superxd/page/diagnostic_uploads_page.dart';
-import 'package:superxd/theme/campus_glass_menu.dart';
+import 'package:superxd/page/app_account_page.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -43,15 +39,13 @@ class AccountTitle extends StatelessWidget {
 
 // [人工决策-2026-10-05 01:28:53] 账号操作收进“我的”头像卡进入的账号页（同 iOS Apple ID）：记住账号、切换账号、导入旧版本数据一组，退出登录单独一组、红字放最底。
 class AccountPage extends StatefulWidget {
-  const AccountPage({super.key, required this.session, required this.name, this.appAccounts, this.diagnostics, this.scanJoin = scanJoinWithCamera});
+  const AccountPage({super.key, required this.session, required this.name, this.appAccounts, this.diagnostics});
   final AppSession session;
   final String name;
   // 应用账号（人工决策见 application/app_accounts.dart）；没配中转时为空，不显示这一组。
   final AppAccounts? appAccounts;
-  // 应用账号下的诊断包（人工决策见 domain/diagnostic_upload.dart）：登录着时应用账号那一行的菜单里多一项「我上传的诊断包」。
+  // 应用账号下的诊断包（人工决策见 domain/diagnostic_upload.dart）：交给应用账号页，登录着时那里多一项「我上传的诊断包」。
   final AccountDiagnostics? diagnostics;
-  // 授权新设备时扫码的入口（测试注入假扫码）。
-  final JoinScanner scanJoin;
 
   @override
   State<AccountPage> createState() => _AccountPageState();
@@ -118,88 +112,6 @@ class _AccountPageState extends State<AccountPage> {
     }
   }
 
-  // 登录应用账号：先单独同意（学号交给中转那一步），再设备核对；学号已有应用账号时选扫码授权或申请找回。
-  Future<void> _signInAppAccount(AppAccounts appAccounts) async {
-    final agreed = await showCampusConfirm(
-      context,
-      title: '登录应用账号？',
-      // 长文案：登录应用账号的单独同意（人工决策见 domain/app_account.dart）。
-      message: '用这台手机登录着的教务账号核对身份：学号交给本应用的服务器，服务器只存学号的加密哈希，教务密码不出手机。',
-      action: '同意并登录',
-    );
-    if (!mounted || !agreed) return;
-    final result = await showCampusWaiting(context, label: '正在登录应用账号', operation: appAccounts.signIn);
-    if (!mounted) return;
-    switch (result) {
-      case AppAccountNeedsAuthorization(:final recovery):
-        await _authorizeAppAccount(appAccounts, recovery);
-      case AppAccountDone(:final notice?):
-        showCampusToast(context, notice);
-      case AppAccountError(:final message):
-        await showCampusNotice(context, message);
-      default:
-        break;
-    }
-  }
-
-  Future<void> _authorizeAppAccount(AppAccounts appAccounts, AppAccountRecovery? recovery) async {
-    final choice = await chooseAppAccountAuthorization(context, recovery);
-    if (!mounted || choice == null) return;
-    if (choice == 'join') {
-      final joined = await Navigator.of(context).push<bool>(CampusPageRoute(builder: (_) => AppAccountJoinPage(appAccounts: appAccounts)));
-      if (mounted && joined == true) showCampusToast(context, '已登录应用账号');
-      return;
-    }
-    final result = await showCampusWaiting(context, label: '正在申请找回', operation: appAccounts.requestRecovery);
-    if (!mounted) return;
-    switch (result) {
-      case AppAccountDone(:final notice?):
-        final grantAt = appAccounts.recovery?.grantAt;
-        showCampusToast(context, appAccounts.current != null || grantAt == null ? notice : '$notice，${formatCampusRelative(grantAt.toUtc().toIso8601String())}起生效');
-      case AppAccountError(:final message):
-        await showCampusNotice(context, message);
-      default:
-        break;
-    }
-  }
-
-  // 登录着：从这一行弹出授权新设备（扫新手机上的二维码）、我上传的诊断包（配了中转才有）、退出与注销（注销是破坏性操作，都先确认）。
-  Future<void> _appAccountMenu(BuildContext anchor, AppAccounts appAccounts) async {
-    final diagnostics = widget.diagnostics;
-    final choice = await showCampusMenu<String>(anchor, items: [
-      const CampusMenuItem(value: 'join', label: '授权新设备', icon: CampusIcons.scan),
-      if (diagnostics != null) const CampusMenuItem(value: 'diagnostics', label: '我上传的诊断包', icon: CampusIcons.send),
-      const CampusMenuItem(value: 'signOut', label: '退出应用账号', icon: CampusIcons.logout),
-      const CampusMenuItem(value: 'delete', label: '注销应用账号', icon: CampusIcons.delete, destructive: true),
-    ]);
-    if (!mounted || choice == null) return;
-    if (choice == 'join') return approveAppAccountJoin(context, appAccounts, scan: widget.scanJoin);
-    if (choice == 'diagnostics') {
-      unawaited(Navigator.of(context).push(CampusPageRoute<void>(builder: (context) => DiagnosticUploadsPage(diagnostics: diagnostics!))));
-      return;
-    }
-    final deleting = choice == 'delete';
-    final confirmed = await showCampusConfirm(
-      context,
-      title: deleting ? '注销应用账号？' : '退出应用账号？',
-      // 长文案：注销的删除确认。
-      message: deleting ? '服务器上的应用账号、所有设备上的登录，以及账号下的积分、私信好友与诊断包都会删除，这台手机上的私信记录也一并清掉，不能恢复。教务账号不受影响。' : '这台设备不再登录应用账号，教务账号不受影响。',
-      action: deleting ? '注销' : '退出',
-      destructive: true,
-    );
-    if (!mounted || !confirmed) return;
-    final result = await showCampusWaiting(context, label: deleting ? '正在注销应用账号' : '正在退出应用账号', operation: deleting ? appAccounts.deleteAccount : appAccounts.signOut);
-    if (!mounted) return;
-    switch (result) {
-      case AppAccountDone(:final notice?):
-        showCampusToast(context, notice);
-      case AppAccountError(:final message):
-        await showCampusNotice(context, message);
-      default:
-        break;
-    }
-  }
-
   Future<void> _logout() async {
     final confirmed = await showCampusConfirm(context, title: '退出登录？', message: '清除本机登录态和此账号保存的自动登录凭据，当前课表和自定义修改保留。', action: '退出', destructive: true);
     if (!mounted || !confirmed) return;
@@ -256,35 +168,18 @@ class _AccountPageState extends State<AccountPage> {
             ),
           ])),
           // [人工决策-2026-11-13 23:07:30] 应用账号单独一组，放在上面那组与退出登录之间（用户确认扩展 10-05 那条：账号操作都在账号页、退出登录仍单独一组放最底）。
-          // 跟着这个教务账号（人工决策见 application/app_accounts.dart），没登录点了登录，登录着点了弹出授权新设备、退出与注销；
-          // 别的设备提交的找回申请一条一行列在下面，点了拒绝或同意。
+          // 11-15 起应用账号与教务各管各的（人工决策见 domain/app_account.dart）：这一行写用户名或未登录，点了推入应用账号页，登录、注册与管理都在那里。
           if (widget.appAccounts case final appAccounts?) ...[
             const SizedBox(height: 16),
-            CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: ListenableBuilder(listenable: appAccounts, builder: (context, _) {
-              final signedIn = appAccounts.accountId != null;
-              final recovering = !signedIn && appAccounts.recovery?.state == AppAccountRecoveryState.pending;
-              final enabled = !_busy && appAccounts.loaded && !appAccounts.busy;
-              return Column(children: [
-                Builder(builder: (anchor) => ListTile(
-                  contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.mainAccount), title: const BalancedText('应用账号'),
-                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text(!appAccounts.loaded ? '' : signedIn ? '已登录' : recovering ? '找回中' : '未登录', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
-                    if (appAccounts.loaded) ...[const SizedBox(width: 4), const CampusIcon(CampusIcons.next)],
-                  ]),
-                  enabled: enabled,
-                  onTap: () => signedIn ? _appAccountMenu(anchor, appAccounts) : _signInAppAccount(appAccounts),
-                )),
-                if (signedIn) for (final recovery in appAccounts.recoveries) ListTile(
-                  contentPadding: rowPadding, leading: CampusIcon(CampusIcons.warning, color: colors.danger), title: const BalancedText('有设备在申请找回'),
-                  trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                    Text(formatCampusRelative(recovery.createdAt.toUtc().toIso8601String()), style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
-                    const SizedBox(width: 4), const CampusIcon(CampusIcons.next),
-                  ]),
-                  enabled: enabled,
-                  onTap: () => decideAppAccountRecovery(context, appAccounts, recovery),
-                ),
-              ]);
-            })),
+            CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: ListenableBuilder(listenable: appAccounts, builder: (context, _) => ListTile(
+              contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.mainAccount), title: const BalancedText('应用账号'),
+              trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+                Text(!appAccounts.loaded ? '' : appAccounts.username ?? '未登录', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
+                if (appAccounts.loaded) ...[const SizedBox(width: 4), const CampusIcon(CampusIcons.next)],
+              ]),
+              enabled: !_busy && appAccounts.loaded,
+              onTap: () => Navigator.of(context).push(CampusPageRoute<void>(builder: (context) => AppAccountPage(appAccounts: appAccounts, diagnostics: widget.diagnostics))),
+            ))),
           ],
           const SizedBox(height: 16),
           CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: ListTile(

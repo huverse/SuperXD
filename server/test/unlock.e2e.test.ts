@@ -10,6 +10,7 @@ import { env } from 'src/config/env';
 import { REDIS } from 'src/common/redis/redis.module';
 import { unlockKeepDaysAfterPublic } from 'src/common/relay_limits';
 import { UnlockService } from 'src/modules/unlock/unlock.service';
+import { insertAccount } from './account_fixture';
 import { TestDevice } from './test_device';
 
 // 解锁（规则见 src/modules/unlock/unlock_rules.ts）：配置写进发布目录的 rollout.json，账号直接在库里登记（账号登录本身在 account.e2e.test.ts 测）。
@@ -31,7 +32,7 @@ const signedIn = async () => {
   expect((await device.register()).status).toBe(200);
   const accountId = randomBytes(16).toString('base64url');
   const now = new Date();
-  await database.query('INSERT INTO app_account (account_id, last_seen_time, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, now, now, now]);
+  await insertAccount(database, accountId, now);
   await database.query('INSERT INTO account_device (account_id, device_id, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, device.deviceId, now, now]);
   return { device, accountId };
 };

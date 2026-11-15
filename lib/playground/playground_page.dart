@@ -28,16 +28,15 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 // 新游戏抢先玩（解锁 game.<游戏 id>，人工决策见服务端 unlock_rules.ts）：锁着的卡写开放条件、点了能买的确认花积分、不能买的说明条件，
 // 不进「最近玩过」；下架的不显示。
 class PlaygroundPage extends StatefulWidget {
-  const PlaygroundPage({super.key, required this.store, required this.games, required this.groups, this.challenges, this.unlocks, this.openAccount, this.openLogin});
+  const PlaygroundPage({super.key, required this.store, required this.games, required this.groups, this.challenges, this.unlocks, this.openAccount});
   final PlaygroundStore store;
   final List<PlaygroundGame> games;
   final List<PlaygroundGroup> groups;
-  // 挑战与积分（没配中转时为空，不显示分段）与去登录应用账号、登录教务（组合根给）。
+  // 挑战与积分（没配中转时为空，不显示分段）与去登录应用账号（组合根给）。
   final ChallengeHub? challenges;
   // 解锁（没配中转时为空，游戏都照常开着）。
   final UnlockAccess? unlocks;
   final void Function(BuildContext context)? openAccount;
-  final void Function(BuildContext context)? openLogin;
 
   @override
   State<PlaygroundPage> createState() => _PlaygroundPageState();
@@ -99,7 +98,7 @@ class _PlaygroundPageState extends State<PlaygroundPage> {
             child: CampusSegmented<bool>(values: const [false, true], label: (challenge) => challenge ? '挑战' : '自由', selected: _challenge, onSelected: (value) => setState(() => _challenge = value)),
           ),
         Expanded(child: CampusScrollFade(bottom: inset, child: hub != null && _challenge
-            ? ChallengeHome(hub: hub, games: widget.games, store: widget.store, openAccount: widget.openAccount!, openLogin: widget.openLogin!, bottom: inset, unlocks: widget.unlocks)
+            ? ChallengeHome(hub: hub, games: widget.games, store: widget.store, openAccount: widget.openAccount!, bottom: inset, unlocks: widget.unlocks)
             : FutureBuilder<void>(
                 future: widget.store.ready,
                 builder: (context, snapshot) => snapshot.connectionState != ConnectionState.done

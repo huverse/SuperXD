@@ -110,7 +110,7 @@ KingoSignInProof kingoSignInProof(String username, String passwordPlain) => King
   policy: (passwordPlain.length < 6 || passwordPlain == username) ? '0' : '1',
 );
 
-// 服务端 server/src/modules/kingo/kingo_codec.ts 的 buildLoginPlain 与此逐字节一致（共用 server/test/vectors/kingo_login_v1.json）。
+// 固定向量 server/test/vectors/kingo_login_v1.json 钉住它（11-15 以前服务端代登录用同一算法，那份已删）。
 String buildProofLoginPlain(KingoSignInProof proof, String pageSession, String captcha) {
   final randnumber = captcha;
   final hidFlag = captcha.isEmpty ? '1' : '';

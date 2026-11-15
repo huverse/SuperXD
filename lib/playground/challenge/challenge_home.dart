@@ -21,15 +21,14 @@ import 'package:superxd/theme/dot_separated_text.dart';
 // 游乐场的「挑战」一栏（人工决策见 challenge_rules.dart）：要登录教务并登录应用账号；上面是积分与等级，下面是本周开放的挑战
 // （服务器下发，每周一换，同一挑战再玩只补超过最好成绩的部分；有门票的开局即扣、不退，积分不够时不给开始）。还有一局没结束时顶上给「继续」。
 class ChallengeHome extends StatefulWidget {
-  const ChallengeHome({super.key, required this.hub, required this.games, required this.store, required this.openAccount, required this.openLogin, required this.bottom, this.unlocks});
+  const ChallengeHome({super.key, required this.hub, required this.games, required this.store, required this.openAccount, required this.bottom, this.unlocks});
   final ChallengeHub hub;
   // 积分页列能买的解锁用；没配中转时为空。
   final UnlockAccess? unlocks;
   final List<PlaygroundGame> games;
   final PlaygroundStore store;
-  // 去「我的 › 账号」登录应用账号、去登录教务（组合根给，游乐场不认识那几页）。
+  // 去应用账号页登录（组合根给，游乐场不认识那一页）。
   final void Function(BuildContext context) openAccount;
-  final void Function(BuildContext context) openLogin;
   final double bottom;
 
   @override
@@ -129,8 +128,8 @@ class _ChallengeHomeState extends State<ChallengeHome> {
     final palette = CampusPalette.of(context);
     final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
     final hub = widget.hub;
-    // 没登录教务或应用账号：只给去登录的按钮。
-    if (!hub.campusSignedIn || !hub.signedIn) {
+    // 没登录应用账号：只给去登录的按钮。
+    if (!hub.signedIn) {
       return ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + widget.bottom), children: [
         CampusSurface(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
@@ -140,9 +139,9 @@ class _ChallengeHomeState extends State<ChallengeHome> {
           ]),
           const SizedBox(height: 16),
           FilledButton.icon(
-            onPressed: () => hub.campusSignedIn ? widget.openAccount(context) : widget.openLogin(context),
+            onPressed: () => widget.openAccount(context),
             icon: const CampusIcon(CampusIcons.login),
-            label: Text(hub.campusSignedIn ? '登录应用账号' : '登录教务'),
+            label: const Text('登录应用账号'),
           ),
         ])),
       ]);

@@ -6,13 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/rollouts.dart';
 import 'package:superxd/application/unlocks.dart';
-import 'package:superxd/domain/account.dart';
 import 'package:superxd/domain/app_account.dart';
-import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/domain/rollout.dart';
 import 'package:superxd/domain/unlock.dart';
-import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/local/rollout_memory.dart';
 import 'package:superxd/playground/challenge/points_page.dart';
 import 'package:superxd/playground/playground_catalog.dart';
@@ -28,14 +25,12 @@ import 'package:superxd/toolbox/toolbox_page.dart';
 import 'toolbox_test_support.dart';
 
 // 解锁（隐藏服务与新游戏抢先玩，规则见服务端 src/modules/unlock/unlock_rules.ts）：编排、中转客户端与三处界面。合成数据。
-const _identity = AccountIdentity(source: 'http://school.example', loginId: '20260000001');
 final _now = DateTime.utc(2026, 11, 20);
 
 RolloutConfig _config(List<RolloutUnlock> unlocks) => RolloutConfig(const {}, unlocks: unlocks);
 
 void main() {
   group('编排', () {
-    late _Accounts accounts;
     late _AppClient appClient;
     late AppAccounts appAccounts;
     late FileRolloutMemory memory;
@@ -43,9 +38,8 @@ void main() {
     late _Client client;
     late Unlocks unlocks;
     setUp(() async {
-      accounts = _Accounts()..identity = _identity;
       appClient = _AppClient();
-      appAccounts = AppAccounts(accounts: accounts, client: appClient);
+      appAccounts = AppAccounts(client: appClient);
       memory = FileRolloutMemory.memory(
         config: _config([
           RolloutUnlock(id: 'game.open', title: '已公开', publicAt: _now.subtract(const Duration(days: 1))),
@@ -67,7 +61,7 @@ void main() {
       expect(unlocks.locked('game.unknown'), isFalse);
       expect(unlocks.purchasable.map((unlock) => unlock.id), ['toolbox.paid']);
 
-      appClient.records[_identity.loginId] = 'AAAAAAAAAAAAAAAAAAAAAA';
+      appClient.accountId = 'AAAAAAAAAAAAAAAAAAAAAA';
       await appAccounts.load();
       await pumpEventQueue();
       expect(client.calls, isEmpty, reason: '同意协议与政策之前不联网');
@@ -84,7 +78,7 @@ void main() {
     });
 
     test('买了马上更新；换了应用账号旧账号的状态不作数；中转说账号不在了马上核一次；没有要账号才开的项不联网', () async {
-      appClient.records[_identity.loginId] = 'AAAAAAAAAAAAAAAAAAAAAA';
+      appClient.accountId = 'AAAAAAAAAAAAAAAAAAAAAA';
       await appAccounts.load();
       unlocks.start();
       await pumpEventQueue();
@@ -97,7 +91,7 @@ void main() {
       await pumpEventQueue();
       expect(changes, isNotEmpty);
 
-      appClient.records[_identity.loginId] = 'BBBBBBBBBBBBBBBBBBBBBB';
+      appClient.accountId = 'BBBBBBBBBBBBBBBBBBBBBB';
       client.next = const UnlockState(level: 0, open: {});
       await appAccounts.load();
       await pumpEventQueue();
@@ -124,10 +118,10 @@ void main() {
       final vault = MemoryAppAccountVault();
       final relay = _Relay();
       final client = RelayUnlockClient(vault: vault, transport: relay);
-      final ref = AppAccountRef(accountId: 'AAAAAAAAAAAAAAAAAAAAAA', slot: appAccountSlot(_identity));
+      final ref = AppAccountRef(accountId: 'AAAAAAAAAAAAAAAAAAAAAA', slot: appAccountSlot);
       await expectLater(client.state(ref), throwsA(isA<UnlockException>().having((error) => error.failure, 'failure', UnlockFailure.notSignedIn)));
       final key = await SocialIdentity.fromSeeds(List<int>.generate(32, (index) => index + 1), List<int>.generate(32, (index) => index + 33));
-      await vault.write(appAccountSlot(_identity), AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
+      await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
       relay.reply = const RelayResponse(200, {'level': 3, 'open': ['game.early'], 'serverTime': 1});
       final state = await client.state(ref);
       expect(relay.paths.last, 'GET /v1/unlocks');
@@ -317,8 +311,6 @@ class _Hub implements ChallengeHub {
   @override
   bool get signedIn => true;
   @override
-  bool get campusSignedIn => true;
-  @override
   Future<PointsSummary> points() async => const PointsSummary(balance: 500, expiring: 0, expiringAt: null, earned: 500, level: 1, nextLevelAt: 3000);
   @override
   Future<PointsBatch> pointsEntries({String? before}) async => const PointsBatch(entries: [], next: null);
@@ -327,44 +319,23 @@ class _Hub implements ChallengeHub {
 }
 
 class _AppClient implements AppAccountClient {
-  final records = <String, String>{};
+  String? accountId;
   var summaries = 0;
   var lost = false;
   @override
-  Future<AppAccountRef?> accountOf(AccountIdentity identity) async => records[identity.loginId] == null ? null : AppAccountRef(accountId: records[identity.loginId]!, slot: 'fake-slot');
+  Future<AppAccountSession?> accountOf() async => accountId == null ? null : AppAccountSession(account: AppAccountRef(accountId: accountId!, slot: 'fake-slot'), username: 'tester');
   @override
-  Future<AppAccountStep> signInWithDevice(AccountIdentity identity) => throw UnimplementedError();
+  Future<List<AppAccountRef>> dropLegacy() async => const [];
   @override
-  Future<AppAccountJoin> startJoin(AccountIdentity identity) => throw UnimplementedError();
-  @override
-  Future<AppAccountRef?> joinState(AccountIdentity identity, AppAccountJoin join) => throw UnimplementedError();
-  @override
-  Future<void> approveJoin(AccountIdentity identity, String payload) => throw UnimplementedError();
-  @override
-  Future<AppAccountRecovery> requestRecovery(AccountIdentity identity) => throw UnimplementedError();
-  @override
-  Future<AppAccountRecovery?> recoveryOf(AccountIdentity identity) async => null;
-  @override
-  Future<void> decideRecovery(AccountIdentity identity, String recoveryId, {required bool approve}) => throw UnimplementedError();
-  @override
-  Future<AppAccountSummary> summary(AccountIdentity identity) async {
+  Future<AppAccountSummary> summary() async {
     summaries++;
     if (lost) throw const AppAccountException(AppAccountFailure.notSignedIn, '应用账号已经退出');
-    return AppAccountSummary(accountId: records[identity.loginId]!, providers: const ['kingo'], deviceCount: 1, createdAt: DateTime.utc(2026));
+    return AppAccountSummary(accountId: accountId!, username: 'tester', deviceCount: 1, createdAt: DateTime.utc(2026));
   }
   @override
-  Future<void> signOut(AccountIdentity identity) async {}
-  @override
-  Future<void> delete(AccountIdentity identity) async {}
-}
-
-// 只实现编排用到的几项，其余交给 noSuchMethod。
-class _Accounts extends AccountAccess {
-  AccountIdentity? identity;
-  @override
-  AccountIdentity? get activeIdentity => identity;
-  @override
-  SessionView? get activeSession => null;
+  Future<void> signOut() async {}
+  // 编排测试用不到的几项交给 noSuchMethod。
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
+

@@ -348,21 +348,6 @@ void main() {
     expect(clients.skip(1).every((client) => client.reads == 0), isTrue);
   });
 
-  // 应用账号跟着教务走（人工决策见 application/app_accounts.dart）：主动退出教务时网关发出退出事件。
-  group('应用账号', () {
-    test('主动退出发出退出事件，会话过期不发', () async {
-      final events = <String>[];
-      final subscription = gateway.loggedOut.listen((identity) => events.add(identity.loginId));
-      await gateway.loginRemembered('A', 'test-secret', remember: false);
-      await gateway.expireSession();
-      await gateway.loginRemembered('A', 'test-secret', remember: false);
-      await gateway.logout();
-      await pumpEventQueue();
-      expect(events, ['A']);
-      await subscription.cancel();
-    });
-  });
-
   test('姓名只增不丢：同步课表学到后当前会话立即带上，自动重登与重新登录都沿用', () async {
     final session = AppSession(gateway);
     await gateway.loginRemembered('A', 'test-secret', remember: true);

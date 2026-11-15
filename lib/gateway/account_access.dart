@@ -21,8 +21,6 @@ abstract class AccountAccess extends ChangeNotifier implements CampusGateway {
     error: GatewayError(code: GatewayCode.operationFailed, message: '这里不能开启记住账号'),
   );
   Future<void> forgetCredential() async {}
-  // 用户主动退出某个账号（不含会话过期）时发出这个账号；应用账号跟着退出（组合根接线）。
-  Stream<AccountIdentity> get loggedOut => const Stream.empty();
   Future<void> expireSession() => logout();
   String? takeAccountNotice() => null;
   Future<void> cancelLogin();

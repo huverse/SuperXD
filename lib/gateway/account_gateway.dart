@@ -340,10 +340,6 @@ class AccountGateway extends AccountAccess {
     await context.drain();
   }
 
-  final _loggedOut = StreamController<AccountIdentity>.broadcast();
-  @override
-  Stream<AccountIdentity> get loggedOut => _loggedOut.stream;
-
   @override
   Future<void> logout() { _cancelRecovery(); return _logout(forget: true); }
 
@@ -366,8 +362,6 @@ class AccountGateway extends AccountAccess {
         old.gateway.client.dispose();
         await old.gateway.database.close();
       }
-      // 用户主动退出（会话过期不算）：应用账号跟着退出由组合根接线（人工决策见 application/app_accounts.dart）。
-      if (forget && old != null) _loggedOut.add(old.identity);
     } finally {
       _changing = false;
       if (identical(_active, old)) old?.accepting = true;
@@ -433,7 +427,6 @@ class AccountGateway extends AccountAccess {
       await old.gateway.database.close();
     }
     await store.close();
-    await _loggedOut.close();
     super.dispose();
   });
 

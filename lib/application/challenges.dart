@@ -4,35 +4,28 @@ import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/challenge.dart';
-import 'package:superxd/gateway/account_access.dart';
 
 // 挑战与积分的编排（设备级，切换教务账号不重建；人工决策见 lib/playground/challenge/challenge_rules.dart）：跟着当前的应用账号走（只认 AppAccountRef，见 domain/app_account.dart），
 // 游乐场经 ChallengeHub 用。没登录应用账号时不联网、直接报 notSignedIn；中转说这个应用账号已不在（别处注销、被清理）就让 AppAccounts 马上核一次，
 // 本机随之退回未登录，页面引导重新登录。
 class Challenges implements ChallengeHub {
-  Challenges({required this.accounts, required this.appAccounts, required this.client}) {
-    accounts.addListener(_changed);
+  Challenges({required this.appAccounts, required this.client}) {
     appAccounts.addListener(_changed);
   }
-  final AccountAccess accounts;
   final AppAccounts appAccounts;
   final ChallengeClient client;
   final _changes = StreamController<void>.broadcast();
-  var _signedIn = false, _campus = false;
+  var _signedIn = false;
 
   @override
   Stream<void> get changes => _changes.stream;
 
   @override
-  bool get campusSignedIn => accounts.activeIdentity != null;
-
-  @override
   bool get signedIn => appAccounts.current != null;
 
   void _changed() {
-    if (signedIn == _signedIn && campusSignedIn == _campus) return;
+    if (signedIn == _signedIn) return;
     _signedIn = signedIn;
-    _campus = campusSignedIn;
     _changes.add(null);
   }
 

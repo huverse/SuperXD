@@ -6,70 +6,34 @@ import 'package:screen_brightness/screen_brightness.dart';
 
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/domain/app_account.dart';
-import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/qr_scan_page.dart';
-import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
-import 'package:superxd/theme/native_glass.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
-// 学号已有应用账号时的授权（人工决策见 application/app_accounts.dart 与 domain/app_account.dart）：新手机出示二维码、登录着的手机扫码批准，
-// 或申请找回（等 3 天，账号的手机可以拒绝）。
+// 扫码登录（人工决策见 domain/app_account.dart）：新手机出示二维码、登录着的手机扫码核对 6 位码后批准，新手机不用输密码。
 
-String _moment(DateTime value) => formatCampusRelative(value.toUtc().toIso8601String());
-
-// 学号已有应用账号：选扫码授权或申请找回；返回 'join'、'recover' 或空（取消）。找回在等着时不再给申请。
-Future<String?> chooseAppAccountAuthorization(BuildContext context, AppAccountRecovery? recovery) async {
-  final pending = recovery?.state == AppAccountRecoveryState.pending;
-  final message = switch (recovery?.state) {
-    AppAccountRecoveryState.pending => '已申请找回，${_moment(recovery!.grantAt)}起生效。也可以用已登录的手机扫码授权。',
-    // 长文案：找回被拒绝后的说明与去路。
-    AppAccountRecoveryState.denied => '找回申请被已登录的手机拒绝了。可以用那台手机扫码授权，或重新申请找回。',
-    // 长文案：两台设备同时申请时为安全都不生效，要说明原因与去路。
-    AppAccountRecoveryState.conflict => '同时有别的设备在申请找回，为了安全都没有生效。可以用已登录的手机扫码授权，或重新申请。',
-    // 长文案：两条去路与找回的等待期都要写明。
-    _ => '用已登录的手机扫码授权；手机丢了可以申请找回，3 天后生效，期间已登录的手机可以拒绝。',
-  };
-  const title = '这个学号已有应用账号';
-  if (campusIos) {
-    final actions = [const NativeAlertAction('取消', cancel: true), if (!pending) const NativeAlertAction('申请找回'), const NativeAlertAction('扫码授权', preferred: true)];
-    final index = await showNativeAlert(title: title, message: message, actions: actions);
-    return switch (index == null ? null : actions[index].title) { '扫码授权' => 'join', '申请找回' => 'recover', _ => null };
-  }
-  if (!context.mounted) return null;
-  return showCampusDialog<String>(context: context, builder: (context) => CampusGlassDialog(
-    title: const Text(title),
-    content: SingleChildScrollView(child: BalancedText(message)),
-    actions: [
-      TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-      if (!pending) TextButton(onPressed: () => Navigator.pop(context, 'recover'), child: const Text('申请找回')),
-      FilledButton(onPressed: () => Navigator.pop(context, 'join'), child: const Text('扫码授权')),
-    ],
-  ));
-}
-
-// 扫授权二维码的入口可注入（同添加好友的 InviteScanner），测试用假扫码；返回扫到的原文。
+// 扫登录二维码的入口可注入（同添加好友的 InviteScanner），测试用假扫码；返回扫到的原文。
 typedef JoinScanner = Future<String?> Function(BuildContext context);
 
 Future<String?> scanJoinWithCamera(BuildContext context) => Navigator.of(context).push<String>(CampusPageRoute(builder: (_) => QrScanPage(
-  hint: '扫新手机上的授权二维码',
-  accept: (value) => AppAccountJoin.parse(value) == null ? '不是应用账号的授权二维码' : null,
+  hint: '扫新手机上的登录二维码',
+  accept: (value) => AppAccountJoin.parse(value) == null ? '不是应用账号的登录二维码' : null,
 )));
 
-// 登录着的手机：扫新手机上的授权二维码，核对 6 位码后批准。
+// 登录着的手机：扫新手机上的登录二维码，核对 6 位码后批准。
 Future<void> approveAppAccountJoin(BuildContext context, AppAccounts appAccounts, {JoinScanner scan = scanJoinWithCamera}) async {
   final raw = await scan(context);
   final parsed = raw == null ? null : AppAccountJoin.parse(raw);
   if (parsed == null || !context.mounted) return;
-  final confirmed = await showCampusConfirm(context, title: '授权新设备？', message: '新手机上的核对码是 ${parsed.code} 吗？授权后那台手机登录这个应用账号。', action: '授权');
+  final confirmed = await showCampusConfirm(context, title: '让新设备登录？', message: '新手机上的核对码是 ${parsed.code} 吗？确认后那台手机登录这个应用账号。', action: '确认');
   if (!confirmed || !context.mounted) return;
-  final result = await showCampusWaiting(context, label: '正在授权', operation: () => appAccounts.approveJoin(raw!));
+  final result = await showCampusWaiting(context, label: '正在让新设备登录', operation: () => appAccounts.approveJoin(raw!));
   if (!context.mounted) return;
   switch (result) {
     case AppAccountDone(:final notice?):
@@ -81,41 +45,7 @@ Future<void> approveAppAccountJoin(BuildContext context, AppAccounts appAccounts
   }
 }
 
-// 别的设备提交的找回申请：拒绝、同意或以后再说（打扰时机与账号页共用）。拒绝是默认的主操作（不是本人时最该点的）。
-Future<void> decideAppAccountRecovery(BuildContext context, AppAccounts appAccounts, AppAccountPendingRecovery recovery) async {
-  const title = '有设备在申请找回';
-  // 长文案：找回申请的安全提醒，要写明生效时刻与不是本人时怎么做。
-  final message = '一台设备用这个学号申请登录应用账号，${_moment(recovery.grantAt)}起生效。不是你本人请拒绝。';
-  bool? approve;
-  if (campusIos) {
-    final index = await showNativeAlert(title: title, message: message, actions: const [NativeAlertAction('以后再说', cancel: true), NativeAlertAction('是我本人'), NativeAlertAction('拒绝', destructive: true, preferred: true)]);
-    approve = switch (index) { 1 => true, 2 => false, _ => null };
-  } else {
-    approve = await showCampusDialog<bool>(context: context, builder: (context) => CampusGlassDialog(
-      title: const Text(title),
-      content: SingleChildScrollView(child: BalancedText(message)),
-      actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('以后再说')),
-        TextButton(onPressed: () => Navigator.pop(context, true), child: const Text('是我本人')),
-        FilledButton(style: campusDestructive, onPressed: () => Navigator.pop(context, false), child: const Text('拒绝')),
-      ],
-    ));
-  }
-  if (approve == null || !context.mounted) return;
-  final decided = approve;
-  final result = await showCampusWaiting(context, label: '正在处理', operation: () => appAccounts.decideRecovery(recovery.id, approve: decided));
-  if (!context.mounted) return;
-  switch (result) {
-    case AppAccountDone(:final notice?):
-      showCampusToast(context, notice);
-    case AppAccountError(:final message):
-      await showCampusNotice(context, message);
-    default:
-      break;
-  }
-}
-
-// 新手机出示授权二维码（5 分钟有效，可刷新）：每 3 秒问一次批准了没有，批准了返回 true。
+// 新手机出示登录二维码（5 分钟有效，可刷新）：每 3 秒问一次批准了没有，批准了返回 true。
 // 出示时本页亮度调到最高、离开恢复，同添加好友页（人工决策在 friend_add_page.dart 的 initState）。
 class AppAccountJoinPage extends StatefulWidget {
   const AppAccountJoinPage({super.key, required this.appAccounts});
@@ -215,7 +145,7 @@ class _AppAccountJoinPageState extends State<AppAccountJoinPage> {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
-        title: const Text('扫码授权'),
+        title: const Text('扫码登录'),
       ),
       body: CampusScrollFade(child: SafeArea(child: ListView(padding: const EdgeInsets.all(20), children: [
         CampusSurface(padding: const EdgeInsets.all(20), child: Column(children: [
@@ -226,7 +156,7 @@ class _AppAccountJoinPageState extends State<AppAccountJoinPage> {
                 ? Center(child: _error == null ? const CampusLoading(label: '正在生成二维码', network: true, remote: '中转服务') : Text(_error!, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: light.danger)))
                 : Stack(fit: StackFit.expand, children: [
                     Semantics(
-                      label: '应用账号授权二维码',
+                      label: '应用账号登录二维码',
                       image: true,
                       child: PrettyQrView(
                         qrImage: _qrImage!,
@@ -250,7 +180,7 @@ class _AppAccountJoinPageState extends State<AppAccountJoinPage> {
           ),
         ])),
         const SizedBox(height: 16),
-        BalancedText('在已登录的手机上：账号 › 应用账号 › 授权新设备', textAlign: TextAlign.center, style: secondary),
+        BalancedText('在已登录的手机上：应用账号 › 让新设备登录', textAlign: TextAlign.center, style: secondary),
       ]))),
     );
   }

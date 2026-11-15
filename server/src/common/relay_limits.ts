@@ -76,7 +76,7 @@ export const rolloutFileMaxBytes = 64 * 1024;
 // 节日抽奖（概率模型与要求设备签名的人工决策见 src/modules/reward/reward_odds.ts）：同一来源每小时 3000 次（校园网 NAT 共用出口，同代签取件的宽松档），
 // 每台设备每小时 10 次（一台设备一次活动只抽一次、重复请求返回同一结果，正常客户端只在没连上时补抽；按设备计数让刷请求的设备先被自己的额度挡住）；
 // 刷号的成本是注册限流 registerPerHour。活动行在进程内缓存 60 秒（建活动、改时间最迟一分钟生效）；活动结束 30 天后连同奖品与抽签记录删除。
-// 账号建立满 rewardAccountMinAgeDays 天才能抽（设备核对谁都能建号，挡住改版应用批量建号抽红包；人工决策见 reward_odds.ts）。
+// 账号建立满 rewardAccountMinAgeDays 天才能抽（注册用户名谁都能建号，挡住批量新建的账号抽红包；人工决策见 reward_odds.ts）。
 export const rewardAccountMinAgeDays = 7;
 export const rewardDrawPerHour = 3000;
 export const rewardDrawPerDevicePerHour = 10;
@@ -107,37 +107,26 @@ export const diagnosticClaimSeconds = 24 * 60 * 60;
 export const diagnosticAccountRequestsPerHour = 60;
 export const diagnosticAccountListLimit = 50;
 
-// 应用账号（人工决策见 src/modules/account/account_provider.ts 与客户端 lib/domain/app_account.dart）：
-// 登录核对要中转代登录一次学校教务，限流防两件事——被拿来试同学的密码（按学号每天最多 10 次尝试，含验证码重试），
-// 以及学校看到我们的 IP 大量登录（全局每小时 600 次，所有实例共用一个计数）。同一来源每小时 300 次（校园网 NAT 共用出口），每台设备每小时 10 次。
-// 每个实例同时最多 4 个代登录在跑（每个要连发七八个教务请求），超出回 503 让客户端稍后再试。
-// 教务每个请求 12 秒超时、整次核对最多 40 秒（客户端等 45 秒）；教务响应超过 1MB 当格式不对。
-// 需要验证码时教务会话在 Redis 存 5 分钟（只有 cookie 与页面会话号，不存口令摘要，答题时客户端重新加密交来）。
-// 封装后的口令摘要不超过 1KB（明文 JSON 两百来字节加 61 字节信封头）。
-// 一个账号最多同时登录在 20 把设备密钥上，再登录顶掉最久没用的那把；账号 400 天没有登录或查看即删除（同设备）。
-export const accountSignInPerDevicePerHour = 10;
-export const accountSignInPerSourcePerHour = 300;
-export const accountSignInPerHour = 600;
-export const accountSignInPerSubjectPerDay = 10;
-export const kingoConcurrentPerInstance = 4;
-export const kingoRequestTimeoutMs = 12_000;
-export const kingoSignInDeadlineMs = 40_000;
-export const kingoResponseMaxBytes = 1024 * 1024;
-export const kingoChallengeSeconds = 5 * 60;
+// 应用账号（人工决策见 src/modules/account/account.service.ts 与客户端 lib/domain/app_account.dart）：用户名加密码，密码与恢复码在客户端用中转公钥封装后交来，
+// 这里只存 scrypt 哈希。限流防撞库与刷号：注册每台设备每小时 5 个、同一来源每小时 60 个（校园网 NAT 共用出口）；
+// 登录与用恢复码重设先按来源每小时 60 次，再按「用户名 + 来源」每小时 10 次、按用户名每小时 100 次（别人只用一两个出口锁不住你，分散撞库也有上限）；
+// 登录着改密码、换恢复码每台设备每小时 10 次。每个实例同时最多算 passwordHashConcurrency 个哈希（每个约 32MB 内存），超出回 503 让客户端稍后再试。
+// 封装后的密钥信封不超过 accountSealMaxBytes。一个账号最多同时登录在 20 把设备密钥上，再登录顶掉最久没用的那把；账号 400 天没有登录或查看即删除（同设备）。
+export const accountRegisterPerDevicePerHour = 5;
+export const accountRegisterPerSourcePerHour = 60;
+export const accountLoginPerSourcePerHour = 60;
+export const accountLoginPerUserSourcePerHour = 10;
+export const accountLoginPerUserPerHour = 100;
+export const accountSecretChangePerDevicePerHour = 10;
+export const passwordHashConcurrency = 8;
 export const accountSealMaxBytes = 1024;
 export const accountDeviceLimit = 20;
 export const accountIdleDays = 400;
-// 设备核对与扫码授权（人工决策见 src/modules/account/account.service.ts 的 deviceSignIn）：设备核对不连学校，同样按设备、来源、全局与学号限流（复用上面几档）。
-// 扫码授权的票据在 Redis 存 5 分钟（新设备号、学号哈希、6 位核对码、批准后的账号号）；新设备每小时最多发起 20 次，旧设备每小时最多批准 30 次。
+// 扫码登录：新设备出示二维码，已登录的设备扫码核对 6 位码后批准。票据在 Redis 存 5 分钟（新设备号、核对码、批准后的账号号）；
+// 新设备每小时最多出示 20 次，已登录的设备每小时最多批准 30 次。
 export const accountJoinSeconds = 5 * 60;
 export const accountJoinPerDevicePerHour = 20;
 export const accountApprovePerDevicePerHour = 30;
-// 找回申请：等 3 天，期间账号的设备可以拒绝或批准；同一账号同时有别的设备在申请就都不自动生效。每台设备每天最多提交 3 次，
-// 一个账号列出的等待中申请最多 10 条（多的按先后截断，限流下正常到不了）；申请满 30 天删除。
-export const accountRecoveryDays = 3;
-export const accountRecoveryPerDevicePerDay = 3;
-export const accountRecoveryListLimit = 10;
-export const accountRecoveryKeepDays = 30;
 
 // 积分（人工决策见 src/modules/points/points.service.ts）：每笔获得满 12 个月过期，30 天内要过期的在余额旁提示；
 // 流水满 13 个月（按 395 天）删除；剩余为 0 且过期满 30 天的获得行删除。流水每页 20 条；每台设备每小时查 600 次。

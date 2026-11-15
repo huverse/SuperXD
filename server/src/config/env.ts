@@ -42,12 +42,8 @@ export const loadEnv = () => ({
   // 业务时区（IANA 名，同客户端 lib/domain/campus_clock.dart 的 campusTimeZone）：每周轮换的挑战按它的周一 0 点换，日界只在这里取，不写死偏移。
   businessTimeZone: timeZone('RELAY_BUSINESS_TIME_ZONE'),
   account: {
-    // 应用账号核对时代登录的学校教务地址（正式为 http://42.247.18.146，测试指向本机假教务）；学号哈希里的来源固定写在 kingo_verifier.ts，不随它变。
-    kingoBase: required('RELAY_KINGO_BASE'),
-    // 客户端封装口令摘要用的 X25519 私钥种子（32 字节 base64url）；公钥写死在客户端 lib/social/account_seal.dart，换钥两边一起换。
+    // 客户端封装密码与恢复码用的 X25519 私钥种子（32 字节 base64url）；公钥写死在客户端 lib/social/account_seal.dart，换钥两边一起换。
     sealKey: required('RELAY_ACCOUNT_SEAL_KEY'),
-    // 学号哈希的 HMAC 密钥（至少 32 字节 base64url）。丢了所有账号都认不回来，必须和数据库备份分开另存一份；换了等于全部账号作废。
-    subjectKey: required('RELAY_ACCOUNT_SUBJECT_KEY'),
   },
   mysql: {
     host: required('MYSQL_HOST'),
