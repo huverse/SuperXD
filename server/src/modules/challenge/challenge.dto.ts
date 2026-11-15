@@ -1,11 +1,14 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { ArrayMaxSize, IsArray, IsDefined, IsInt, Matches, Max, Min } from 'class-validator';
 
-const gamePattern = /^[a-z][a-z0-9_]{0,23}$/;
+// 一个玩得了的游戏：「游戏 id@题面写法版本」（hanoi@1）；只写游戏 id 的是 11-15 以前的客户端，按第 1 版（人工决策见客户端 challenge_rules.dart 的 11-15 19:18 那条）。
+const gamePattern = /^[a-z][a-z0-9_]{0,23}(@[1-9][0-9]{0,3})?$/;
 
-// 客户端这个版本玩得了的游戏 id（逗号分隔），服务器只给它玩得了的挑战、只从这些游戏里出题。
+// 客户端这个版本玩得了的游戏（逗号分隔），服务器只给它玩得了的挑战、只从这些游戏与题面写法版本里出题。
 export class ChallengeListQueryDto {
-  @ApiProperty({ description: '这个客户端玩得了的游戏 id，逗号分隔' }) @Matches(/^[a-z][a-z0-9_]{0,23}(,[a-z][a-z0-9_]{0,23}){0,63}$/) games: string;
+  @ApiProperty({ description: '这个客户端玩得了的游戏，「游戏 id@题面写法版本」逗号分隔（只写 id 按第 1 版）' })
+  @Matches(/^[a-z][a-z0-9_]{0,23}(@[1-9][0-9]{0,3})?(,[a-z][a-z0-9_]{0,23}(@[1-9][0-9]{0,3})?){0,63}$/)
+  games: string;
 }
 
 export class ChallengeParamDto {
@@ -13,7 +16,7 @@ export class ChallengeParamDto {
 }
 
 export class ChallengeStartBodyDto {
-  @ApiProperty({ description: '这个客户端玩得了的游戏 id', type: [String] }) @IsArray() @ArrayMaxSize(64) @Matches(gamePattern, { each: true }) games: string[];
+  @ApiProperty({ description: '这个客户端玩得了的游戏，「游戏 id@题面写法版本」（只写 id 按第 1 版）', type: [String] }) @IsArray() @ArrayMaxSize(64) @Matches(gamePattern, { each: true }) games: string[];
 }
 
 export class ChallengeRunParamDto {

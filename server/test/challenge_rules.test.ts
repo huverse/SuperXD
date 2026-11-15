@@ -71,6 +71,8 @@ const sequence = (values: number[]) => {
   return (bound: number) => values[index++ % values.length] % bound;
 };
 const flat = () => 1;
+// 客户端认得的游戏，题面写法都是第 1 版。
+const v1 = (...games: string[]) => new Map(games.map((game) => [game, 1]));
 
 describe('出题、碎片与门', () => {
   const tpl: ChallengeTemplate = template({ ...twoToOne, nodes: [{ id: 'a', tier: 'entry' }, { id: 'b', tier: 'entry' }, { id: 'c', tier: 'easy', games: ['twentyfour'] }] });
@@ -80,7 +82,7 @@ describe('出题、碎片与门', () => {
 
   it('给碎片的关带碎片与字母；收碎片的关的门上的数是碎片的和或积，挑的题那一处的真值 = 门上的数 ÷ modulus 的余数 + offset', async () => {
     for (const product of [false, true]) {
-      const plan = await planChallenge({ ...input, supported: new Set(['hanoi', 'ice', 'twentyfour']) }, bank, sequence(product ? [0, 0, 0, 0, 0, 0, 0] : [1, 1, 1, 1, 1, 1, 1]));
+      const plan = await planChallenge({ ...input, supported: v1('hanoi', 'ice', 'twentyfour') }, bank, sequence(product ? [0, 0, 0, 0, 0, 0, 0] : [1, 1, 1, 1, 1, 1, 1]));
       const [a, b, c] = plan.levels;
       expect([a.letter, b.letter, c.letter]).toEqual(['A', 'B', 'C']);
       expect(c).toMatchObject({ game: 'twentyfour', inputs: ['a', 'b'], output: null, depth: 1 });
@@ -100,7 +102,7 @@ describe('出题、碎片与门', () => {
     const hanoi = entry('h', { puzzle: { disks: 3, start: [0, 0, 0], target: 2 }, fragment: 7, minimum: 7 });
     const flash = entry('f', { puzzle: { side: 3, show: 1500, rounds: [[[0, 1, 2]]] } });
     const banks = async (game: string) => (game === 'mines' ? [entry('m', { fragment: 7 })] : game === 'hanoi' ? [hanoi] : game === 'ice' ? [ice] : [flash]);
-    const pick = async (game: string) => (await planChallenge({ ...input, template: goals, supported: new Set(['mines', game]), allGames: new Set(['mines', game]) }, banks, sequence([0]))).levels[1];
+    const pick = async (game: string) => (await planChallenge({ ...input, template: goals, supported: v1('mines', game), allGames: new Set(['mines', game]) }, banks, sequence([0]))).levels[1];
     // 门上的数是 7：汉诺塔 7 ÷ 3 余 1 → 第 2 根；冰面 7 ÷ 3 余 1 → 第 2 个出口；记忆闪光 7 ÷ 2 余 1 → 镜像。
     const tower = await pick('hanoi');
     expect(tower.consume).toEqual({ kind: 'goal', at: 0, modulus: 3, offset: 1 });
@@ -113,18 +115,35 @@ describe('出题、碎片与门', () => {
   });
 
   it('按真实过关用时回调的倍数乘在预计用时上，难度分跟着变；排几次留预计总用时接近限时一半多的那份', async () => {
-    const plan = await planChallenge({ ...input, supported: new Set(['hanoi', 'ice', 'twentyfour']), pace: (game) => (game === 'hanoi' ? 2 : 1) }, bank, sequence([0]));
+    const plan = await planChallenge({ ...input, supported: v1('hanoi', 'ice', 'twentyfour'), pace: (game) => (game === 'hanoi' ? 2 : 1) }, bank, sequence([0]));
     const hanoi = plan.levels.find((level) => level.game === 'hanoi')!;
     expect(hanoi).toMatchObject({ baseExpected: 60, expected: 120, difficulty: puzzleDifficulty(120) });
   });
 
   it('挑不出题（客户端玩不了、没有那一处的值对得上门上的数的题）抛 ChallengePlanError', async () => {
-    await expect(planChallenge({ ...input, supported: new Set(['hanoi']) }, bank)).rejects.toThrow(ChallengePlanError);
-    await expect(planChallenge({ ...input, supported: new Set(['hanoi', 'ice', 'twentyfour']) }, async (game) => (game === 'twentyfour' ? [entry('t', { slots: [{ at: 0, value: 13 }] })] : [entry(game)]))).rejects.toThrow(ChallengePlanError);
+    await expect(planChallenge({ ...input, supported: v1('hanoi') }, bank)).rejects.toThrow(ChallengePlanError);
+    await expect(planChallenge({ ...input, supported: v1('hanoi', 'ice', 'twentyfour') }, async (game) => (game === 'twentyfour' ? [entry('t', { slots: [{ at: 0, value: 13 }] })] : [entry(game)]))).rejects.toThrow(ChallengePlanError);
+  });
+
+  // 人工决策见客户端 challenge_rules.dart 的 11-15 19:18 那条：只从客户端认得的题面写法版本里出题。
+  it('只从客户端认得的题面写法版本里出题：按版本取题库，关卡与加试题记下版本', async () => {
+    const asked: string[] = [];
+    const versioned = async (game: string, tier: string, version: number) => {
+      asked.push(`${game}@${version}.${tier}`);
+      return bank(game);
+    };
+    const plan = await planChallenge({ ...input, supported: new Map([['hanoi', 2], ['ice', 1], ['twentyfour', 3]]) }, versioned, sequence([0]));
+    expect(asked.length).toBeGreaterThan(0);
+    expect(asked.filter((item) => !/^(hanoi@2|ice@1|twentyfour@3)\./.test(item))).toEqual([]);
+    expect(plan.levels.every((level) => level.version === ({ hanoi: 2, ice: 1, twentyfour: 3 } as Record<string, number>)[level.game])).toBe(true);
+    const of = plan.levels.find((level) => level.game === 'twentyfour')!;
+    asked.length = 0;
+    expect((await extraLevel(plan, of, versioned, flat, sequence([0])))!.version).toBe(3);
+    expect(asked).toEqual(['twentyfour@3.easy']);
   });
 
   it('加试题同一个游戏另挑一道，不给碎片、不收碎片，编号 xa', async () => {
-    const plan = await planChallenge({ ...input, supported: new Set(['hanoi', 'ice', 'twentyfour']) }, bank, sequence([0]));
+    const plan = await planChallenge({ ...input, supported: v1('hanoi', 'ice', 'twentyfour') }, bank, sequence([0]));
     const of = plan.levels.find((level) => level.game === 'twentyfour')!;
     const extra = (await extraLevel(plan, of, bank, flat, sequence([0])))!;
     expect(extra).toMatchObject({ id: 'xa', game: 'twentyfour', extraOf: of.id, fragment: null, letter: null, gate: null, consume: null, inputs: [], output: null });

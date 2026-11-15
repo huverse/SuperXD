@@ -13,7 +13,7 @@ import { ChallengeContent } from 'src/modules/challenge/challenge_content';
 import { ChallengePace } from 'src/modules/challenge/challenge_pace';
 import { ChallengePlan, ChallengePlanError, extraLevel, planChallenge } from 'src/modules/challenge/challenge_plan';
 import { addExtra, finalReady, openFinal, openGate, recordVerdict, runOutcome, RunProgress, scoreRun, spentOn, startProgress } from 'src/modules/challenge/challenge_progress';
-import { judge, judgedGames } from 'src/modules/challenge/judges/judges';
+import { clientGames, judge, judgedGames } from 'src/modules/challenge/judges/judges';
 import { PointsService } from 'src/modules/points/points.service';
 import * as dtos from 'src/modules/challenge/challenge.dto';
 
@@ -43,7 +43,7 @@ export class ChallengeService implements OnModuleInit {
   async list(deviceId: string, games: string[]): Promise<dtos.ChallengeListDto> {
     const accountId = await this.accountOf(deviceId);
     const now = Date.now();
-    const supported = this.supported(games);
+    const supported = clientGames(games);
     const open = await this.content.openChallenges(now);
     const best = await this.runs.bestOf(accountId, open.map((challenge) => challenge.id));
     return {
@@ -59,7 +59,7 @@ export class ChallengeService implements OnModuleInit {
         timeLimit: challenge.template.timeLimit,
         endsAt: challenge.end,
         best: best.get(challenge.id) ?? null,
-        // 每一关的候选游戏里至少有一个这个客户端玩得了。
+        // 每一关的候选游戏里至少有一个这个客户端玩得了（游戏与题面写法版本这份判定都认得）。
         playable: challenge.template.nodes.every((node) => (node.games ?? [...(challenge.template.edges.some(([, to]) => to === node.id) ? consumerGames : judgedGames)]).some((game) => supported.has(game))),
         ticket: challenge.ticket,
       })),
@@ -82,8 +82,8 @@ export class ChallengeService implements OnModuleInit {
     let plan: ChallengePlan;
     try {
       plan = await planChallenge(
-        { challengeId, title: challenge.title, template: challenge.template, endsAt: challenge.end, scoring: config.scoring, supported: this.supported(games), allGames: judgedGames, pace: await this.pace.factors(now) },
-        (game, tier) => this.content.bank(game, tier),
+        { challengeId, title: challenge.title, template: challenge.template, endsAt: challenge.end, scoring: config.scoring, supported: clientGames(games), allGames: judgedGames, pace: await this.pace.factors(now) },
+        (game, tier, version) => this.content.bank(game, tier, version),
       );
     } catch (error) {
       if (!(error instanceof ChallengePlanError)) throw error;
@@ -138,7 +138,7 @@ export class ChallengeService implements OnModuleInit {
       }
       if (!run.active) return new RelayError(RelayCode.runOver, HttpStatus.CONFLICT, '这一局已经结束', { run: this.viewOf(run, now) });
       if ((state.state !== 'open' && state.state !== 'solved') || attempt !== state.submissions) return new RelayError(RelayCode.levelLocked, HttpStatus.CONFLICT, '这一关现在不能交', { run: this.viewOf(run, now) });
-      const verdict = judge(level.game, level.puzzle, answer);
+      const verdict = judge(level.game, level.puzzle, answer, level.version ?? 1);
       const judged = verdict.kind === 'solved' ? { solved: true, penalties: verdict.penalties, steps: verdict.steps } : { solved: false, penalties: 0, steps: null };
       const result = recordVerdict(plan, progress, levelId, judged, now);
       let extra: string | null = null;
@@ -148,7 +148,7 @@ export class ChallengeService implements OnModuleInit {
         // 快得不正常（不到预计用时的 extraRatio，也不到 extraFloor 秒）：追加一道同一游戏的加试题，做完才开终章。
         const extras = plan.levels.filter((item) => item.extraOf !== null).length;
         if (level.extraOf === null && extras < plan.scoring.maxExtras && spent < Math.min(level.expected * 1000 * plan.scoring.extraRatio, plan.scoring.extraFloor * 1000)) {
-          const added = await extraLevel(plan, level, (game, tier) => this.content.bank(game, tier), await this.pace.factors(now));
+          const added = await extraLevel(plan, level, (game, tier, version) => this.content.bank(game, tier, version), await this.pace.factors(now));
           if (added !== null) {
             addExtra(plan, progress, added, now);
             extra = added.id;
@@ -291,10 +291,6 @@ export class ChallengeService implements OnModuleInit {
       }),
       result: run.active ? null : { points: run.points ?? 0, awarded: run.awarded ?? 0, ending: run.ending ?? 'ended' },
     };
-  }
-
-  private supported(games: string[]) {
-    return new Set(games.filter((game) => judgedGames.has(game)));
   }
 
   private async accountOf(deviceId: string) {

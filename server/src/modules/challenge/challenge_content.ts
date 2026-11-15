@@ -9,7 +9,7 @@ import { periodOf } from 'src/modules/challenge/challenge_calendar';
 import { ChallengeConfig, ChallengeConfigError, ChallengeTemplate, ChallengeTier, parseChallengeConfig } from 'src/modules/challenge/challenge_config';
 import { judgedGames } from 'src/modules/challenge/judges/judges';
 
-// 题库里的一道题（tool/challenge_bank.dart 用保密种子生成，第 2 版）：题面（Dart 规则编码）、预计用时（秒）、难度分、碎片（天平称球为空）、
+// 题库里的一道题（tool/challenge_bank.dart 用保密种子生成，文件格式第 2 版；每个文件是一个游戏一档一版题面写法）：题面（Dart 规则编码）、预计用时（秒）、难度分、碎片（天平称球为空）、
 // 要最少步数的游戏的最少步数、能写成 ? 的几处（补条件的游戏）与几个标号的出口（冰面滑行：每个当终点时的最少步数、碎片与预计用时）。
 export type BankSlot = { at: number; value: number };
 export type BankExit = { cell: number; minimum: number; fragment: number; expected: number; difficulty: number };
@@ -73,21 +73,27 @@ export class ChallengeContent {
     return (await this.openChallenges(now)).find((challenge) => challenge.id === id) ?? null;
   }
 
-  // 一个游戏一档的题库；没有这个文件或写坏了返回空（出题时就不选这个游戏）。
-  async bank(game: string, tier: ChallengeTier): Promise<BankEntry[]> {
-    const path = join(this.directory, 'bank', `${game}.${tier}.json`);
-    const info = await stat(path).catch(() => null);
+  // 一个游戏一档一版题面写法的题库（人工决策见客户端 challenge_rules.dart 的 11-15 19:18 那条）：文件名 <游戏>@<版本>.<档位>.json，
+  // 第 1 版没有这个文件时读 11-15 以前的旧文件名 <游戏>.<档位>.json（部署时线上已有的题库）。没有文件、写坏了或文件里写的版本对不上返回空（出题时就不选这个游戏）。
+  async bank(game: string, tier: ChallengeTier, version: number): Promise<BankEntry[]> {
+    const versioned = join(this.directory, 'bank', `${game}@${version}.${tier}.json`);
+    let path = versioned;
+    let info = await stat(path).catch(() => null);
+    if (info === null && version === 1) {
+      path = join(this.directory, 'bank', `${game}.${tier}.json`);
+      info = await stat(path).catch(() => null);
+    }
     if (info === null) return [];
     const cached = this.banks.get(path);
     if (cached !== undefined && cached.mtimeMs === info.mtimeMs && cached.size === info.size) return cached.value;
     try {
       if (info.size > challengeBankFileMaxBytes) throw new ChallengeConfigError(`题库文件超过 ${challengeBankFileMaxBytes} 字节`);
-      const value = parseBank(JSON.parse(await readFile(path, 'utf8')));
+      const value = parseBank(JSON.parse(await readFile(path, 'utf8')), version);
       this.banks.set(path, { mtimeMs: info.mtimeMs, size: info.size, value });
       return value;
     } catch (error) {
       console.error(error);
-      this.logger.error(`[ChallengeContent] action=bank_load game=${game} tier=${tier} errorType=${error instanceof Error ? error.constructor.name : typeof error}`);
+      this.logger.error(`[ChallengeContent] action=bank_load game=${game} tier=${tier} version=${version} errorType=${error instanceof Error ? error.constructor.name : typeof error}`);
       return cached?.value ?? [];
     }
   }
@@ -95,9 +101,11 @@ export class ChallengeContent {
 
 const whole = (value: unknown, min: number, max: number) => Number.isInteger(value) && (value as number) >= min && (value as number) <= max;
 
-const parseBank = (raw: unknown): BankEntry[] => {
-  const file = raw as { version?: unknown; entries?: unknown };
+// puzzleVersion 是这份题库的题面写法版本（11-15 以前的文件没写，是第 1 版），要和文件名上的版本一致。
+const parseBank = (raw: unknown, version: number): BankEntry[] => {
+  const file = raw as { version?: unknown; puzzleVersion?: unknown; entries?: unknown };
   if (file?.version !== 2 || !Array.isArray(file.entries)) throw new ChallengeConfigError('题库格式不对');
+  if ((file.puzzleVersion ?? 1) !== version) throw new ChallengeConfigError(`题库写的题面写法版本 ${String(file.puzzleVersion)} 和文件名上的 ${version} 对不上`);
   return file.entries.map((item: unknown) => {
     const entry = item as Partial<BankEntry>;
     const slots = Array.isArray(entry.slots) ? entry.slots : [];

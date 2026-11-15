@@ -25,14 +25,31 @@ const judges = {
 
 export const judgedGames = new Set(Object.keys(judges));
 
+// 每个游戏这份判定认得的题面写法版本（同客户端规则的 puzzleVersion，人工决策见客户端 lib/playground/challenge/challenge_rules.dart 的 11-15 19:18 那条）：
+// 客户端改了某个游戏的题面写法（版本加一）时，这里移植新写法的判定并把版本加进来；旧版本留到不再有客户端报它。
+export const judgedVersions: ReadonlyMap<string, ReadonlySet<number>> = new Map(Object.keys(judges).map((game) => [game, new Set([1])]));
+
+// 客户端报的玩得了的游戏（「hanoi@1」；只报游戏名的旧客户端按第 1 版）里这份判定认得的：游戏 → 题面写法版本。认不得的游戏或版本不算。
+const clientToken = /^([a-z][a-z0-9_]{0,23})(?:@([1-9][0-9]{0,3}))?$/;
+export const clientGames = (tokens: string[]): Map<string, number> => {
+  const games = new Map<string, number>();
+  for (const token of tokens) {
+    const match = clientToken.exec(token);
+    if (match === null) continue;
+    const version = match[2] === undefined ? 1 : Number(match[2]);
+    if (judgedVersions.get(match[1])?.has(version) === true) games.set(match[1], version);
+  }
+  return games;
+};
+
 export type Verdict = { kind: 'solved'; penalties: number; steps: number | null } | { kind: 'unsolved' } | { kind: 'invalid' };
 
 // 判一次作答：答案不合法是 invalid（同 Dart 的 decodeAnswer 抛错），合法但没解开是 unsolved。
 // penalties 是答案里自带的失误（记忆闪光一题内点错的次数），计分时同错交一样扣；steps 是要最少步数的游戏用了几步（推箱子按推的次数）。
-// 题面坏了（题库写坏）照常抛错，由调用方当服务端错误。
-export const judge = (game: string, puzzleJson: unknown, answerJson: unknown): Verdict => {
+// 题面坏了（题库写坏）照常抛错，由调用方当服务端错误。version 是这一关题面的写法版本（11-15 以前排的局没记，按第 1 版）。
+export const judge = (game: string, puzzleJson: unknown, answerJson: unknown, version = 1): Verdict => {
   const rules = judges[game];
-  if (rules === undefined) throw new Error(`没有 ${game} 的判定`);
+  if (rules === undefined || judgedVersions.get(game)?.has(version) !== true) throw new Error(`没有 ${game}@${version} 的判定`);
   const puzzle = rules.decodePuzzle(puzzleJson);
   let answer: unknown;
   try {
