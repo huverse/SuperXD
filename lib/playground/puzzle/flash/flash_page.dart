@@ -30,11 +30,13 @@ enum _Phase { ready, lead, showing, input, reveal, passed, solved }
 // （减少动画时它的时长会被压成二十分之一，图案就一闪而过）。切到后台时正在亮的这一组作废，回来重新暗一下再亮。
 // 读屏：每格一个按钮读行列与亮灭；棋盘下的一行提示是播报区，亮起时把亮的格逐个念出来，读屏用户听完再点。
 class FlashPage extends StatefulWidget {
-  const FlashPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
+  const FlashPage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 外壳在后台出好的第一道题（自由模式；没备好或测试注入种子时为空，当场出）。
+  final PlayFirst? first;
   // 挑战里的一关（题面是服务器给的）；自由模式为空。
   final PlayChallenge? challenge;
 
@@ -43,7 +45,7 @@ class FlashPage extends StatefulWidget {
 }
 
 class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, WidgetsBindingObserver {
-  late final _session = PlaySession<FlashPuzzle, List<List<int>>>(game: widget.game, rules: const FlashRules(), store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
+  late final _session = PlaySession<FlashPuzzle, List<List<int>>>(game: widget.game, rules: const FlashRules(), store: widget.store, seeds: widget.seeds, first: widget.first, challenge: widget.challenge);
   var _phase = _Phase.ready;
   // 第几轮、这一轮第几次尝试（从 0 数）与这一局点错的次数：点齐或点错的那一下就记上，下一次亮哪一组按它取（同规则的 flashPattern）。
   var _round = 0, _tries = 0, _mistakes = 0;

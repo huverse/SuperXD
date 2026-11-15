@@ -57,11 +57,13 @@ const _cell = 48.0;
 // 密码破译对局页：上面是线索（每行几个数字方块加一句提示，点数字做记号），下面是答案格与数字键盘，填满点「确认」判定。
 // 对了答案格依次亮一下再弹结果；不对不给答案，只标出和答案对不上的线索行、轻震并提示，判错次数写进结果。
 class CipherPage extends StatefulWidget {
-  const CipherPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
+  const CipherPage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 外壳在后台出好的第一道题（自由模式；没备好或测试注入种子时为空，当场出）。
+  final PlayFirst? first;
   // 挑战里的一关（题面是服务器给的）；自由模式为空。
   final PlayChallenge? challenge;
 
@@ -71,7 +73,7 @@ class CipherPage extends StatefulWidget {
 
 class _CipherPageState extends State<CipherPage> with TickerProviderStateMixin {
   static const _rules = CipherRules();
-  late final _session = PlaySession<CipherPuzzle, List<int>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
+  late final _session = PlaySession<CipherPuzzle, List<int>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, first: widget.first, challenge: widget.challenge);
   // 答案格：每位填的数字，null 是空。
   late var _slots = List<int?>.filled(_puzzle.length, null);
   // 每个数字的记号（下标是数字）。

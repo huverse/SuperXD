@@ -67,11 +67,13 @@ const _bleed = 16.0;
 // 选标签而不点整张卡循环：一步到位不用记循环顺序，卡片多时上下滑也不会误改，读屏也是两个现成的带选中状态的按钮。
 // 全部定了就判：对了卡片依次翻一下再弹结果；不对不给答案，只把「话的真假和他的身份对不上」的人标警示色、轻震并晃一下。
 class KnightsPage extends StatefulWidget {
-  const KnightsPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
+  const KnightsPage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 外壳在后台出好的第一道题（自由模式；没备好或测试注入种子时为空，当场出）。
+  final PlayFirst? first;
   // 挑战里的一关（题面是服务器给的）；自由模式为空。
   final PlayChallenge? challenge;
 
@@ -81,7 +83,7 @@ class KnightsPage extends StatefulWidget {
 
 class _KnightsPageState extends State<KnightsPage> with TickerProviderStateMixin {
   static const _rules = KnightsRules();
-  late final _session = PlaySession<KnightsPuzzle, List<bool>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
+  late final _session = PlaySession<KnightsPuzzle, List<bool>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, first: widget.first, challenge: widget.challenge);
   // 每人的标记：null 是未定，true 骑士，false 无赖。
   late var _marks = List<bool?>.filled(_puzzle.people, null);
   // 每一步改了谁、改之前是什么，撤销按步退回。

@@ -74,6 +74,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       final publicTool = location == '/toolbox' || tools.any((tool) => location == '/toolbox/${tool.id}' || tool.shortcuts.any((shortcut) => location == '/toolbox/${tool.id}/${shortcut.id}'));
       // [人工决策-2026-11-12 21:00:20] 游乐场的自由模式同百宝箱免教务登录（用户选定，补充 09-27 那条）：本机成绩属于设备，切换账号不丢。
       // 挑战模式要应用账号（以教务登录为登录方式之一），做好后在挑战页里自己要求登录，不在这里拦。
+      // （11-15 起应用账号是自己的账号体系、与教务各管各的，人工决策见 domain/app_account.dart；挑战照旧在挑战页里要求登录。）
       final publicPlay = location == '/playground' || playgroundCatalog.any((game) => location == '/playground/${game.id}');
       // 娱乐与积分关着（人工决策见 domain/leisure.dart）：游乐场与游戏都进不去，回到服务页（没登录教务回登录页）。
       if (leisure?.enabled == false && location.startsWith('/playground')) return session.loggedIn ? '/service' : '/login';

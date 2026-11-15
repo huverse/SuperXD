@@ -117,7 +117,9 @@ beforeAll(async () => {
       .map((item) => item.puzzle)
       .concat(game === 'hanoi' ? [towerTwo] : [])
       .map((puzzle, index) => ({ id: `${game}.entry.${index}`, puzzle, expected: 60, difficulty: 4, fragment: fragments[game], minimum: null, slots: slotsOf(game, puzzle as Record<string, unknown>) }));
-    await writeFile(join(directory, 'bank', `${game}.entry.json`), JSON.stringify({ version: 2, entries }));
+    // 汉诺塔用带题面写法版本的文件名（题库工具现在这么出）；冰面与 24 点用旧文件名（第 1 版，部署时线上已有的题库）。
+    const name = game === 'hanoi' ? `${game}@1.entry.json` : `${game}.entry.json`;
+    await writeFile(join(directory, 'bank', name), JSON.stringify(game === 'hanoi' ? { version: 2, puzzleVersion: 1, entries } : { version: 2, entries }));
   }
   await writeConfig(config());
   app = await createRelayApp();
@@ -153,6 +155,31 @@ describe('积分与挑战', () => {
     expect((await list(device, ['hanoi', 'ice'])).body.challenges[0].playable).toBe(false);
     expect((await device.call('POST', `/v1/challenges/${listed.body.challenges[0].id as string}/runs`, { games: ['hanoi', 'ice'] })).body.code).toBe('CHALLENGE_UNAVAILABLE');
     expect((await device.call('POST', '/v1/challenges/weekly.2020-01-06.trio/runs', { games })).body.code).toBe('CHALLENGE_NOT_FOUND');
+  });
+
+  // 人工决策见客户端 challenge_rules.dart 的 11-15 19:18 那条：客户端报「游戏@题面写法版本」，服务器只排、只下发认得的版本。
+  it('题面写法版本：报「游戏@版本」照常玩，只报游戏名按第 1 版；报了这份判定不认得的版本当玩不了；题库文件写的版本和文件名对不上就不用', async () => {
+    const { device } = await signedIn();
+    const versioned = ['hanoi@1', 'ice@1', 'twentyfour@1'];
+    const listed = await list(device, versioned);
+    expect(listed.status).toBe(200);
+    expect(listed.body.challenges[0].playable).toBe(true);
+    const id = listed.body.challenges[0].id as string;
+    expect((await list(device, ['hanoi@2', 'ice@1', 'twentyfour@1'])).body.challenges[0].playable).toBe(false);
+    expect((await device.call('POST', `/v1/challenges/${id}/runs`, { games: ['hanoi@2', 'ice@1', 'twentyfour@1'] })).body.code).toBe('CHALLENGE_UNAVAILABLE');
+    expect((await device.call('GET', '/v1/challenges?games=hanoi@1x')).status).toBe(400);
+
+    // 冰面多一份写着第 2 版的 ice@1 文件：版本对不上，这一份不用（冰面没题可出），删掉后回到旧文件名的那份。
+    const wrong = join(directory, 'bank', 'ice@1.entry.json');
+    await writeFile(wrong, JSON.stringify({ version: 2, puzzleVersion: 2, entries: [{ id: 'ice.entry.0', puzzle: vectors.games.ice[0].puzzle, expected: 60, difficulty: 4, fragment: 6, minimum: null, slots: [] }] }));
+    expect((await device.call('POST', `/v1/challenges/${id}/runs`, { games: versioned })).body.code).toBe('CHALLENGE_UNAVAILABLE');
+    await rm(wrong);
+    const started = await device.call('POST', `/v1/challenges/${id}/runs`, { games: versioned });
+    expect(started.status, JSON.stringify(started.body)).toBe(200);
+    const run = started.body as Run;
+    expect(run.levels.map((item) => item.game)).toEqual(['hanoi', 'ice', 'twentyfour']);
+    const answered = await solve(device, run, 'a');
+    expect(answered.fragment).toBe(fragments.hanoi);
   });
 
   it('整局走完：错交计数、重发只算一次、过关给一次碎片、碎片齐了到门前、门输错扣 20 秒、重做看碎片、终章输对才算全部过关并记积分', async () => {

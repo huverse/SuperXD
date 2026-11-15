@@ -9,6 +9,7 @@ import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/domain/rollout.dart';
 import 'package:superxd/domain/unlock.dart';
 import 'package:superxd/playground/challenge/challenge_home.dart';
+import 'package:superxd/playground/challenge/challenge_rules.dart';
 import 'package:superxd/playground/challenge/points_page.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -222,16 +223,25 @@ class _GameCard extends StatelessWidget {
 }
 
 // 对局页的外壳：等本机记录读好再建对局页（对局页按记录取上次的档），打开时记进最近玩过。
+// [人工决策-2026-11-15 19:18:31] 用户选「外壳读本机记录时顺便在后台把第一道题出好」（推荐）：专家档出一道题几十到上百毫秒，
+// 以前在建对局页的那一帧里出，第一次打开会卡一下；现在读好记录就在另一个 isolate 里出第一道题，出好了交给对局页，界面不变。
+// 只给能进挑战的游戏备（规则是纯 Dart，见 challenge_rules.dart 的 challengeRules）：画线入杯的 forge2d 不是线程安全的、舒尔特出题瞬间完成，都由对局页当场出。
+// 后台最多等 firstPatience，isolate 起不来或慢得反常时不让人干等，照旧由对局页当场出。
 class PlaygroundGameHost extends StatefulWidget {
   const PlaygroundGameHost({super.key, required this.game, required this.store});
   final PlaygroundGame game;
   final PlaygroundStore store;
+
+  static const firstPatience = Duration(milliseconds: 1500);
 
   @override
   State<PlaygroundGameHost> createState() => _PlaygroundGameHostState();
 }
 
 class _PlaygroundGameHostState extends State<PlaygroundGameHost> {
+  late final Future<PlayFirst?> _first = _prepare();
+  Timer? _patience;
+
   @override
   void initState() {
     super.initState();
@@ -239,10 +249,36 @@ class _PlaygroundGameHostState extends State<PlaygroundGameHost> {
   }
 
   @override
-  Widget build(BuildContext context) => FutureBuilder<void>(
-    future: widget.store.ready,
+  void dispose() {
+    _patience?.cancel();
+    super.dispose();
+  }
+
+  Future<PlayFirst?> _prepare() async {
+    await widget.store.ready;
+    final rules = challengeRules[widget.game.id];
+    if (rules == null) return null;
+    final tier = widget.store.tierOf(widget.game.id), seed = math.Random().nextInt(1 << 32);
+    final first = Completer<PlayFirst?>();
+    _patience = Timer(PlaygroundGameHost.firstPatience, () {
+      if (!first.isCompleted) first.complete(null);
+    });
+    unawaited(playGenerateApart(rules, seed, tier).then((draw) {
+      if (!first.isCompleted) first.complete((seed: seed, tier: tier, draw: draw));
+    }, onError: (Object error, StackTrace stack) {
+      campusLog('[Playground] action=first_draw errorType=${error.runtimeType}\n$stack');
+      if (!first.isCompleted) first.complete(null);
+    }));
+    final result = await first.future;
+    _patience?.cancel();
+    return result;
+  }
+
+  @override
+  Widget build(BuildContext context) => FutureBuilder<PlayFirst?>(
+    future: _first,
     builder: (context, snapshot) => snapshot.connectionState == ConnectionState.done
-        ? widget.game.builder(context, widget.game, widget.store, null)
+        ? widget.game.builder(context, widget.game, widget.store, null, snapshot.data)
         : const Scaffold(body: CampusLoading(label: '正在准备')),
   );
 }

@@ -186,6 +186,30 @@ void main() {
       expect(catalog.challenges.first.edges, [(0, 2), (1, 2)]);
     });
 
+    test('关卡图按服务端模板的规则核对：重复编号、引用不在的关、指向自己、一关的碎片交给两关、成环都当看不懂；缩略图的边同样', () async {
+      await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
+      final failed = throwsA(isA<ChallengeException>().having((error) => error.failure, 'failure', ChallengeFailure.failed));
+      for (final levels in [
+        [_levelJson('a'), _levelJson('a')],
+        [_levelJson('a', inputs: ['x'])],
+        [_levelJson('a', inputs: ['a'])],
+        [_levelJson('a'), _levelJson('b', inputs: ['a']), _levelJson('c', inputs: ['a'])],
+        [_levelJson('a', inputs: ['b']), _levelJson('b', inputs: ['a'])],
+        [_levelJson('a'), _levelJson('x', extraOf: 'y')],
+      ]) {
+        relay.reply = (request) => RelayResponse(200, _runJson(levels: levels));
+        await expectLater(client.run(_ref, _runId), failed, reason: '$levels');
+      }
+      for (final edges in [[[0, 0]], [[0, 3]], [[0, 1], [0, 2]], [[0, 1], [1, 0]]]) {
+        relay.reply = (request) => RelayResponse(200, {
+          'serverTime': 1000,
+          'activeRun': null,
+          'challenges': [{'id': 'weekly.x', 'title': '三连环', 'label': '入门', 'levels': 3, 'tiers': ['entry', 'entry', 'easy'], 'edges': edges, 'timeLimit': 900, 'endsAt': 2000, 'best': null, 'playable': true, 'ticket': 0}],
+        });
+        await expectLater(client.catalog(_ref, {'hanoi'}), failed, reason: '$edges');
+      }
+    });
+
     test('一局的局面、交答案带号码、开门与终章、积分与流水按协议解码；看不懂的回复报失败', () async {
       await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
       relay.reply = (request) => RelayResponse(200, {'correct': true, 'fragment': 7, 'extra': 'xa', 'run': _runJson(penalty: 20)});
@@ -298,6 +322,25 @@ void main() {
       expect(appClient.summaries, 1);
       expect(challenges.signedIn, isFalse);
       expect(changes, hasLength(2));
+      await subscription.cancel();
+    });
+
+    test('直接从一个应用账号换成另一个也通知页面（挑战一栏要按新账号重读）', () async {
+      final appClient = _AppClient()..accountId = 'AAAAAAAAAAAAAAAAAAAAAA';
+      final appAccounts = AppAccounts(client: appClient);
+      await appAccounts.load();
+      final challenges = Challenges(appAccounts: appAccounts, client: _Client());
+      final changes = <void>[];
+      final subscription = challenges.changes.listen(changes.add);
+      appClient.accountId = 'BBBBBBBBBBBBBBBBBBBBBB';
+      await appAccounts.load();
+      await pumpEventQueue();
+      expect(challenges.signedIn, isTrue);
+      expect(changes, hasLength(1));
+      appClient.accountId = 'AAAAAAAAAAAAAAAAAAAAAA';
+      await appAccounts.load();
+      await pumpEventQueue();
+      expect(changes, hasLength(2), reason: '换回来也通知');
       await subscription.cancel();
     });
   });
@@ -889,7 +932,7 @@ void main() {
       expect(find.text('积分 86'), findsOneWidget);
       expect(find.text('入门 · 六连环'), findsOneWidget);
       expect(_line('6 关 · 限时 15 分钟 · 还剩 2 天'), findsOneWidget);
-      expect(hub.games, {for (final game in playgroundCatalog) if (game.challengeable) game.id});
+      expect(hub.games, {for (final game in playgroundCatalog) if (game.challengeable) '${game.id}@1'}, reason: '报给服务器的是「游戏@题面写法版本」');
       await tester.tap(find.text('开始'));
       await tester.pumpAndSettle();
       expect(find.textContaining('计时不暂停'), findsOneWidget);

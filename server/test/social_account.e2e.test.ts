@@ -5,6 +5,7 @@ import { DataSource } from 'typeorm';
 
 import { createRelayApp } from 'src/relay_app';
 import { REDIS } from 'src/common/redis/redis.module';
+import { decodeBase64url, ed25519Key, friendKeysCanonical, verifyEd25519 } from 'src/common/crypto/relay_crypto';
 import { createInviteKeys, fakeEnvelope, helloOf, inviteProof, socialBindBody, TestDevice } from './test_device';
 
 // 私信挂到应用账号与换手机接管（人工决策见客户端 lib/social/social_service.dart 文件头）。
@@ -27,7 +28,15 @@ afterAll(async () => {
   await app.close();
 });
 
-type Friend = { deviceId: string; since: number; signPublicKey?: string; boxPublicKey?: string; movedFrom?: string };
+type Friend = { deviceId: string; since: number; signPublicKey?: string; boxPublicKey?: string; keysSignature?: string; movedFrom?: string };
+
+// 好友列表里带公钥的每一条都要有服务器签名（测试种子的公钥，同 test/vectors/protocol_v1.json 的 friendKeys.publicKey）。
+const friendKeysPublic = ed25519Key(decodeBase64url('5_FioQvsVZr-oZXk3OhLaVaNXSywlj60RsBoXisX8vA', 32)!);
+const signedKeys = (owner: TestDevice, friend: Friend) =>
+  friend.signPublicKey !== undefined &&
+  friend.boxPublicKey !== undefined &&
+  friend.keysSignature !== undefined &&
+  verifyEd25519(friendKeysPublic, friendKeysCanonical(owner.deviceId, friend.deviceId, friend.signPublicKey, friend.boxPublicKey, friend.movedFrom ?? null), decodeBase64url(friend.keysSignature, 64)!);
 
 const registered = async () => {
   const device = new TestDevice(server);
@@ -81,6 +90,23 @@ describe('私信挂到应用账号', () => {
     expect(taken.body.code).toBe('SOCIAL_TAKEN');
   });
 
+  it('被拒的挂法不登记私信设备；两个账号同时挂同一台私信设备，只有一个挂上，另一个回 SOCIAL_TAKEN（不回 500）', async () => {
+    const devicesOf = async (deviceId: string) => Number(((await dataSource.query('SELECT COUNT(*) AS count FROM device WHERE device_id = ?', [deviceId])) as { count: string }[])[0].count);
+    const { device: account, accountId } = await signedIn();
+    expect((await bind(account, new TestDevice(server))).status).toBe(200);
+    const { device: second } = await signedIn(accountId);
+    const stray = new TestDevice(server);
+    expect((await bind(second, stray)).body.code).toBe('SOCIAL_ELSEWHERE');
+    expect(await devicesOf(stray.deviceId), '被拒的不留设备').toBe(0);
+
+    const shared = new TestDevice(server);
+    const { device: left } = await signedIn(), { device: right } = await signedIn();
+    const results = await Promise.all([bind(left, shared), bind(right, shared)]);
+    expect(results.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(results.find((response) => response.status === 409)!.body.code).toBe('SOCIAL_TAKEN');
+    expect(Number(((await dataSource.query('SELECT COUNT(*) AS count FROM account_social WHERE device_id = ?', [shared.deviceId])) as { count: string }[])[0].count)).toBe(1);
+  });
+
   it('换手机：没带接管回 SOCIAL_ELSEWHERE；接管后好友关系改挂新设备，好友那边看到新公钥与旧号，确认后不再提示；旧设备与它没收的信删掉', async () => {
     const { device: oldAccount, accountId } = await signedIn();
     const oldSocial = new TestDevice(server);
@@ -99,10 +125,17 @@ describe('私信挂到应用账号', () => {
 
     expect((await bind(newAccount, newSocial, true)).body).toEqual({ deviceId: newSocial.deviceId, moved: true });
     expect(await boundDevice(accountId)).toBe(newSocial.deviceId);
-    expect(await friendsOf(friend)).toEqual([expect.objectContaining({ deviceId: newSocial.deviceId, movedFrom: oldSocial.deviceId, signPublicKey: newSocial.signPublicKey, boxPublicKey: newSocial.boxPublicKey })]);
+    const moved = await friendsOf(friend);
+    expect(moved).toEqual([expect.objectContaining({ deviceId: newSocial.deviceId, movedFrom: oldSocial.deviceId, signPublicKey: newSocial.signPublicKey, boxPublicKey: newSocial.boxPublicKey })]);
+    expect(signedKeys(friend, moved[0]), '新公钥带服务器签名').toBe(true);
+    expect(signedKeys(newSocial, moved[0]), '签名绑定了问的那台设备').toBe(false);
+    expect(signedKeys(friend, { ...moved[0], movedFrom: friend.deviceId }), '签名绑定了旧设备号').toBe(false);
+    expect(signedKeys(friend, { ...moved[0], boxPublicKey: friend.boxPublicKey }), '换了加密公钥就验不过').toBe(false);
     // 新手机：不带 keys 时没换设备的好友不带公钥，带了每个都有。
     expect(await friendsOf(newSocial)).toEqual([{ deviceId: friend.deviceId, since: expect.any(Number) }]);
-    expect(await friendsOf(newSocial, true)).toEqual([expect.objectContaining({ deviceId: friend.deviceId, signPublicKey: friend.signPublicKey, boxPublicKey: friend.boxPublicKey })]);
+    const keyed = await friendsOf(newSocial, true);
+    expect(keyed).toEqual([expect.objectContaining({ deviceId: friend.deviceId, signPublicKey: friend.signPublicKey, boxPublicKey: friend.boxPublicKey })]);
+    expect(signedKeys(newSocial, keyed[0]), '接管拿名单时每个好友的公钥都带签名').toBe(true);
     expect((await newSocial.call('GET', '/v1/messages')).body.messages).toEqual([]);
     expect((await oldSocial.call('GET', '/v1/messages')).status).toBe(401);
     expect((await dataSource.query('SELECT COUNT(*) AS count FROM message WHERE recipient_device_id = ?', [oldSocial.deviceId]))[0].count).toBe('0');

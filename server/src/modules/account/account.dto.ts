@@ -1,5 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { Matches } from 'class-validator';
+import { IsOptional, Length, Matches } from 'class-validator';
+
+import { accountJoinDeviceMaxLength } from 'src/common/relay_limits';
 
 // 自签名的几个请求（注册、登录、用恢复码重设、出示扫码登录的二维码）都带这把设备密钥的两把公钥，核对通过才登记。
 export class AccountDeviceKeysDto {
@@ -25,6 +27,11 @@ export class AccountSignedInDto {
   @ApiProperty({ description: '服务器时间，毫秒' }) serverTime: number;
 }
 
+// 出示扫码登录的二维码：两把公钥，另带这台设备自报的机型（安卓厂商加型号、iOS 机型名，给批准方核对；旧客户端不带）。
+export class AccountJoinStartBodyDto extends AccountDeviceKeysDto {
+  @ApiProperty({ description: '机型，1–64 个字符，不含控制字符', required: false }) @IsOptional() @Length(1, accountJoinDeviceMaxLength) @Matches(/^[^\p{C}]+$/u) device?: string;
+}
+
 export class AccountJoinDto {
   @ApiProperty({ description: '票据号，放进二维码' }) ticketId: string;
   @ApiProperty({ description: '6 位核对码，新旧两台设备上都显示' }) code: string;
@@ -37,6 +44,12 @@ export class AccountJoinParamDto {
 
 export class AccountJoinApproveBodyDto {
   @ApiProperty({ description: '二维码里的核对码' }) @Matches(/^\d{6}$/) code: string;
+}
+
+// 批准方批准前看到的请求方：机型（出示的设备自报）与按它的来源 IP 查出的属地（省市一级），没有的为空。
+export class AccountJoinRequestDto {
+  @ApiProperty({ description: '机型', type: String, nullable: true }) device: string | null;
+  @ApiProperty({ description: '属地，省市一级', type: String, nullable: true }) region: string | null;
 }
 
 export class AccountJoinStateDto {

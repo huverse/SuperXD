@@ -7,7 +7,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/rollout.dart';
 
 // 灰度的编排 Rollouts（设备级，人工决策见 domain/rollout.dart）：用本机存着的配置在本机判定；配置在同意协议与政策之后、回到前台时拉，
-// 两次至少隔 refreshGap，失败照旧用上次的。分桶的主体是当前教务账号对应的应用账号号，没登录用本机随机编号（不上传）。
+// 两次至少隔 refreshGap，失败照旧用上次的。分桶的主体是当前应用账号的账号号，没登录用本机随机编号（不上传）。
 // 登录着应用账号时同一时机取一次积分等级（level，经挑战与积分的签名请求），按等级加权；只因等级才进的批次记在本机，降级也不踢出。
 // levelsOn 为假（娱乐与积分关着，人工决策见 domain/leisure.dart）时不取等级、按 Lv0 判定，已经因等级进了的批次照旧算。
 class Rollouts extends ChangeNotifier {

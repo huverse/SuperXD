@@ -9,6 +9,8 @@ const defaults: Record<string, string> = {
   RELAY_DIAGNOSTICS_DIR: join(tmpdir(), 'superxd-relay-diagnostics-test'),
   // 应用账号封装密码与恢复码用的私钥种子：公开的测试值（同 test/vectors/account_seal_v1.json 的 recipientSeed），只在测试与镜像试运行里用。
   RELAY_ACCOUNT_SEAL_KEY: 'AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA',
+  // 给好友公钥签名的私钥种子：公开的测试值（同 test/vectors/protocol_v1.json 的 friendKeys.seed，客户端 test/fake_relay.dart 也用它），只在测试与镜像试运行里用。
+  RELAY_FRIEND_SIGN_KEY: 'ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0A',
   RELAY_BUSINESS_TIME_ZONE: 'Asia/Shanghai',
   RELAY_PORT: '0',
   RELAY_TRUST_PROXY: '0',

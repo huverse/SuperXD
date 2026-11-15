@@ -19,15 +19,22 @@ export abstract class AccountRepository {
   // 改密码或恢复码的哈希（不给的不改）；账号不在了返回 false。
   abstract updateSecrets(accountId: string, secrets: { passwordHash?: string; recoveryHash?: string }, now: Date): Promise<boolean>;
   // 把一把设备密钥登记到已有账号下（登录、扫码登录；原来属于别的账号就改过来，超过上限删最久没用的），顺带记最后活跃。账号不在了返回 false。
-  abstract link(accountId: string, deviceId: string, now: Date): Promise<boolean>;
+  // only 为真时（凭恢复码重设）同一事务里删掉账号下别的密钥登记，只留这一把。
+  abstract link(accountId: string, deviceId: string, now: Date, only?: boolean): Promise<boolean>;
   // 这把密钥所在账号的建立时刻；没登录返回 null。
   abstract createdOf(deviceId: string): Promise<Date | null>;
   // 这把密钥所在的账号，顺带记最后活跃；没登录返回 null。
   abstract summaryOf(deviceId: string, now: Date): Promise<AccountSummary | null>;
   // 这把密钥所在的账号号（积分、挑战、节日抽奖按它认人），只读不记活跃；没登录返回 null。
   abstract accountOf(deviceId: string): Promise<string | null>;
-  // 注销这把密钥所在的账号：全部密钥的登记、挂在账号下的数据与账号本身。没登录返回 false。
+  // 注销这把密钥所在的账号：全部密钥的登记、挂在账号下的数据与账号本身，同一事务里给这些密钥记墓碑。没登录返回 false。
   abstract deleteOf(deviceId: string): Promise<boolean>;
+  // 这把密钥是不是属于一个已注销的账号（墓碑还在保留期内）；只在没登录的路径上查。
+  abstract deletedOf(deviceId: string): Promise<boolean>;
+  // 这把密钥有别的签名请求（设备模块每台每小时通知一次）：它所在的账号记最后活跃，没登录什么也不做。
+  abstract touchOf(deviceId: string, now: Date): Promise<void>;
+  // 删最多 limit 条记于 before 之前的墓碑，返回删掉的条数。
+  abstract deleteTombstones(before: Date, limit: number): Promise<number>;
   // 删设备时连带删登记，须在调用方事务内（跨领域的设备删除由 pairing 编排）。
   abstract unlinkDevices(deviceIds: string[], manager: EntityManager): Promise<void>;
   // 删最多 limit 个最后活跃早于 before 的账号（连同密钥登记），返回删掉的个数。
@@ -67,11 +74,17 @@ export class TypeormAccountRepository extends AccountRepository {
     return updated.affected === 1;
   }
 
-  link(accountId: string, deviceId: string, now: Date) {
+  link(accountId: string, deviceId: string, now: Date, only = false) {
     return this.accounts.manager.transaction(async (manager) => {
       const updated = (await manager.query('UPDATE app_account SET last_seen_time = ?, update_time = ? WHERE account_id = ?', [now, now, accountId])) as { affectedRows: number };
       if (updated.affectedRows !== 1) return false;
       await this.linkIn(manager, accountId, deviceId, now);
+      // 一个账号最多 accountDeviceLimit 条登记，走 idx_account。
+      if (only) {
+        await manager.query('DELETE FROM account_device WHERE account_id = ? AND device_id <> ?', [accountId, deviceId]);
+        // 私信一起收回（人工决策见 account.service.ts 类上方 11-15 21:48 那条）：由私信模块登记的收回钩子停掉这个账号的私信设备。
+        await this.hooks.revoke(manager, [accountId]);
+      }
       return true;
     });
   }
@@ -81,8 +94,9 @@ export class TypeormAccountRepository extends AccountRepository {
     return rows[0]?.createTime ?? null;
   }
 
-  // 登记设备密钥（一把只属于一个账号）并把账号下的密钥压到上限以内，须在调用方事务内。
+  // 登记设备密钥（一把只属于一个账号）并把账号下的密钥压到上限以内，须在调用方事务内。登记上了就不再是已注销账号的密钥（墓碑删掉）。
   private async linkIn(manager: EntityManager, accountId: string, deviceId: string, now: Date) {
+    await manager.query('DELETE FROM account_tombstone WHERE device_id = ?', [deviceId]);
     await manager.query(
       'INSERT INTO account_device (account_id, device_id, create_time, update_time) VALUES (?, ?, ?, ?) ON DUPLICATE KEY UPDATE account_id = VALUES(account_id), update_time = VALUES(update_time)',
       [accountId, deviceId, now, now],
@@ -113,9 +127,29 @@ export class TypeormAccountRepository extends AccountRepository {
       const linked = (await manager.query('SELECT account_id AS accountId FROM account_device WHERE device_id = ?', [deviceId])) as { accountId: string }[];
       const accountId = linked[0]?.accountId;
       if (accountId === undefined) return false;
+      // 墓碑：这个账号的每把密钥一行（最多 accountDeviceLimit 行），之后再来的回 ACCOUNT_DELETED。
+      const now = new Date();
+      await manager.query(
+        'INSERT INTO account_tombstone (device_id, create_time, update_time) SELECT device_id, ?, ? FROM account_device WHERE account_id = ? ON DUPLICATE KEY UPDATE create_time = VALUES(create_time), update_time = VALUES(update_time)',
+        [now, now, accountId],
+      );
       await this.removeAccounts(manager, [accountId]);
       return true;
     });
+  }
+
+  async deletedOf(deviceId: string) {
+    return ((await this.accounts.query('SELECT id FROM account_tombstone WHERE device_id = ? LIMIT 1', [deviceId])) as unknown[]).length > 0;
+  }
+
+  // 一条语句：按 uk_device 找到登记、按主键改账号，不先查账号号。
+  async touchOf(deviceId: string, now: Date) {
+    await this.accounts.query('UPDATE app_account a JOIN account_device d ON d.account_id = a.account_id SET a.last_seen_time = ?, a.update_time = ? WHERE d.device_id = ?', [now, now, deviceId]);
+  }
+
+  async deleteTombstones(before: Date, limit: number) {
+    const deleted = (await this.accounts.query('DELETE FROM account_tombstone WHERE create_time < ? ORDER BY create_time LIMIT ?', [before, limit])) as { affectedRows: number };
+    return deleted.affectedRows;
   }
 
   async unlinkDevices(deviceIds: string[], manager: EntityManager) {

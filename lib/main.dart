@@ -302,7 +302,7 @@ Future<AppUpdates?> appUpdates(Directory support, Rollouts rollouts) async {
 }
 
 // 灰度（人工决策见 domain/rollout.dart）：配置走同一个自建中转（没配中转时只用本机存着的，一般为空）；本机随机编号与上次的配置在 rollout.json。
-// 分桶主体是当前教务账号对应的应用账号号，没登录用本机随机编号；渠道同应用更新（测试与没有渠道的构建记作 development）。
+// 分桶主体是当前应用账号的账号号，没登录用本机随机编号；渠道同应用更新（测试与没有渠道的构建记作 development）。
 // 积分等级经挑战与积分的签名请求取（取不到时 Challenges 已记日志，这里按没取到算）。
 Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challenges? challenges, {required bool Function() levelsOn}) async => Rollouts(
   memory: await FileRolloutMemory.open(File(path.join(support.path, 'rollout.json'))),
@@ -404,7 +404,7 @@ AccountDiagnostics? diagnosticsOf(AppAccounts? Function() appAccounts) {
 AppAccounts? appAccountsOf({void Function(AppAccountRef account)? onDeleted}) {
   final transport = relayTransport();
   if (transport == null) return null;
-  return AppAccounts(client: RelayAppAccountClient(vault: const SecureAppAccountVault(), transport: transport), onDeleted: onDeleted);
+  return AppAccounts(client: RelayAppAccountClient(vault: const SecureAppAccountVault(), transport: transport, deviceModel: readDeviceModel), onDeleted: onDeleted);
 }
 
 // 私信跟着当前应用账号（人工决策见 social/social_service.dart）：同意协议与政策之后，等应用账号读好本机记录就切过去，之后应用账号一变就跟着切；没配中转时为不可用。

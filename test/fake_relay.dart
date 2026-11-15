@@ -1,6 +1,8 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:cryptography/cryptography.dart';
+
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/social/relay_app_account.dart';
@@ -10,6 +12,11 @@ import 'package:superxd/social/social_crypto.dart';
 // 内存版中转服务：按协议 v1 与服务端同样的规则验签、管理邀请、好友与信箱，供客户端编排测试使用。
 // 真实服务端的行为由 server/test 的 e2e 覆盖；两边共用 server/test/vectors 下的测试向量。
 class FakeRelay {
+  // 给好友公钥签名的测试钥（种子同 server/test/setup_env.ts 的 RELAY_FRIEND_SIGN_KEY）：用到假中转的 SocialService 把 friendKeys 换成它。
+  static const friendKeys = ['5_FioQvsVZr-oZXk3OhLaVaNXSywlj60RsBoXisX8vA'];
+  static final _friendSeed = List.generate(32, (index) => 0x21 + index);
+  // 设了就拿这把钥签好友公钥（模拟网络上的人换了公钥、签名对不上）。
+  List<int>? friendSeedOverride;
   final devices = <String, ({List<int> sign, List<int> box})>{};
   final invites = <String, ({String owner, List<int> publicKey, int expiresAt})>{};
   final friendships = <String>{};
@@ -149,18 +156,16 @@ class FakeRelay {
         return RelayResponse(200, {'deviceId': invite.owner, 'since': now});
       case ('GET', '/v1/friends'):
         final withKeys = uri.queryParameters['keys'] == '1';
-        return RelayResponse(200, {
-          'friends': [
-            for (final pair in friendships)
-              if (pair.startsWith('$deviceId|'))
-                {
-                  'deviceId': pair.split('|')[1],
-                  'since': now,
-                  if (withKeys || movedFrom.containsKey(pair)) ...?_keysOf(pair.split('|')[1]),
-                  'movedFrom': ?movedFrom[pair],
-                },
-          ],
-        });
+        final signer = await Ed25519().newKeyPairFromSeed(friendSeedOverride ?? _friendSeed);
+        final friends = <Map<String, Object?>>[];
+        for (final pair in friendships.where((pair) => pair.startsWith('$deviceId|'))) {
+          final peer = pair.split('|')[1], keys = withKeys || movedFrom.containsKey(pair) ? _keysOf(peer) : null;
+          final signature = keys == null
+              ? null
+              : await Ed25519().sign(friendKeysCanonical(deviceId, peer, keys['signPublicKey']! as String, keys['boxPublicKey']! as String, movedFrom[pair]), keyPair: signer);
+          friends.add({'deviceId': peer, 'since': now, ...?keys, if (signature != null) 'keysSignature': base64UrlNoPad(signature.bytes), 'movedFrom': ?movedFrom[pair]});
+        }
+        return RelayResponse(200, {'friends': friends});
       case ('POST', '/v1/friends/moves/ack'):
         for (final peer in (payload['deviceIds'] as List).cast<String>()) {
           movedFrom.remove('$deviceId|$peer');

@@ -26,11 +26,13 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 // 下方记一行结果，停一会儿球回到桌上、天平回平。「指认」进入指认：点一个球（要说轻重的档再选偏重或偏轻）确认，
 // 只有剩下的候选恰好就是它才解开；还确定不了或和称的结果对不上就轻震并提示。没有撤销：称的次数就是这道题的限制，放错的球点一下就拿回来了。
 class BalancePage extends StatefulWidget {
-  const BalancePage({super.key, required this.game, required this.store, this.seeds, this.challenge});
+  const BalancePage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 外壳在后台出好的第一道题（自由模式；没备好或测试注入种子时为空，当场出）。
+  final PlayFirst? first;
   // 挑战里的一关（题面是服务器给的）；自由模式为空。
   final PlayChallenge? challenge;
 
@@ -49,7 +51,7 @@ const _maxAngle = 7 * math.pi / 180;
 
 class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin {
   static const _rules = BalanceRules();
-  late final _session = PlaySession<BalancePuzzle, BalanceAnswer>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
+  late final _session = PlaySession<BalancePuzzle, BalanceAnswer>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, first: widget.first, challenge: widget.challenge);
   // 两盘里的球，按放进去的先后。
   final _pans = [<int>[], <int>[]];
   var _tool = _Tool.left;

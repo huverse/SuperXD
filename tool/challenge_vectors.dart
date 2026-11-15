@@ -107,7 +107,8 @@ Map<String, Object?> buildChallengeVectors({int seedsPerTier = 2, int seed = 0x5
     cases.addAll(_goalCases(game, rules));
     games[game] = cases;
   }
-  return {'version': 1, 'games': games};
+  // 每个游戏的题面写法版本：服务端按它核对自己的判定认得哪一版（test/challenge_judge.test.ts）。
+  return {'version': 1, 'puzzleVersions': {for (final MapEntry(key: game, value: rules) in challengeRules.entries) game: rules.puzzleVersion}, 'games': games};
 }
 
 // 收碎片改目标的题面（人工决策见 challenge_rules.dart 的 11-14 23:11 那条）：记忆闪光镜像（照亮的点不算、点镜像的才算）、冰面滑行标了几个出口

@@ -8,6 +8,7 @@ import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/page/friend_add_page.dart';
 import 'package:superxd/social/account_seal.dart';
 import 'package:superxd/social/invite_code.dart';
+import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_crypto.dart';
 
 // 协议 v1 客户端密码学：与服务端共用 server/test/vectors/protocol_v1.json，双端逐字节一致。
@@ -44,6 +45,17 @@ void main() {
       final canonical = socialBindCanonical(bind['accountDeviceId'] as String, bind['socialDeviceId'] as String);
       expect(utf8.decode(canonical), bind['canonical']);
       expect(base64UrlNoPad(await signWithSeed(decodeBase64UrlNoPad(vectors['signSeed'] as String), canonical)), bind['proof']);
+    });
+
+    test('服务器给好友公钥的签名原文逐字节一致、签名验得过；内置的是真钥（测试钥只在测试里）', () async {
+      final keys = vectors['friendKeys'] as Map<String, dynamic>;
+      final canonical = friendKeysCanonical(keys['ownerDeviceId'] as String, keys['deviceId'] as String, keys['signPublicKey'] as String, keys['boxPublicKey'] as String, keys['movedFrom'] as String);
+      expect(utf8.decode(canonical), keys['canonical']);
+      final seed = decodeBase64UrlNoPad(keys['seed'] as String);
+      expect(base64UrlNoPad(await ed25519PublicOf(seed)), keys['publicKey']);
+      expect(await verifyEd25519(decodeBase64UrlNoPad(keys['publicKey'] as String), canonical, decodeBase64UrlNoPad(keys['signature'] as String)), isTrue);
+      expect(utf8.decode(friendKeysCanonical('a', 'b', 'c', 'd', null)), 'SXD1-friend-keys\na\nb\nc\nd\n');
+      expect(relayFriendKeys, isNot(contains(keys['publicKey'])));
     });
 
     test('base64url 只认无填充的规范写法', () {

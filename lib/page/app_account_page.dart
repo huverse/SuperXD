@@ -1,13 +1,13 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/page/app_account_join_page.dart';
 import 'package:superxd/page/diagnostic_uploads_page.dart';
+import 'package:superxd/page/sensitive_clipboard.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -244,7 +244,7 @@ class _AppAccountPageState extends State<AppAccountPage> {
   }
 }
 
-// 恢复码只显示这一次：分组写出、可复制，点「我已保存」才关（按返回不关，免得没抄就没了）。
+// 恢复码只显示这一次：分组写出、可复制（标成敏感内容、一分钟后清掉，见 sensitive_clipboard.dart），点「我已保存」才关（按返回不关，免得没抄就没了）。
 Future<void> showRecoveryCode(BuildContext context, String code) => showCampusDialog<void>(
   context: context,
   barrierDismissible: false,
@@ -259,7 +259,7 @@ Future<void> showRecoveryCode(BuildContext context, String code) => showCampusDi
     actions: [
       TextButton(
         onPressed: () async {
-          await Clipboard.setData(ClipboardData(text: formatRecoveryCode(code)));
+          await copySensitive(formatRecoveryCode(code));
           if (context.mounted) showCampusToast(context, '已复制恢复码');
         },
         child: const Text('复制'),

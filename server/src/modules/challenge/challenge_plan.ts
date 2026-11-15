@@ -18,6 +18,8 @@ export type PlanLevel = {
   id: string;
   game: string;
   tier: ChallengeTier;
+  // 题面写法版本（客户端报的那一版，判定按它；11-15 以前排的局没有，按第 1 版）。
+  version?: number;
   // 题库里的预计用时（秒）与按真实过关用时回调后的预计用时、难度分（计分与参考用时用回调后的）。
   baseExpected: number;
   expected: number;
@@ -114,15 +116,16 @@ type PlanInput = {
   template: ChallengeTemplate;
   endsAt: number;
   scoring: ChallengeScoring;
-  supported: Set<string>;
+  // 客户端玩得了的游戏 → 它认得的题面写法版本（只从这一版的题库里出题）。
+  supported: ReadonlyMap<string, number>;
   allGames: Set<string>;
   // 这个游戏的预计用时按真实过关用时回调的倍数（见 challenge_pace.ts），没有数据时为 1。
   pace: (game: string) => number;
 };
 
-type Bank = (game: string, tier: ChallengeTier) => Promise<BankEntry[]>;
+type Bank = (game: string, tier: ChallengeTier, version: number) => Promise<BankEntry[]>;
 
-// 排一次：拓扑序（先排给碎片的关）逐关挑游戏与题。游戏只在客户端玩得了（supported）且题库里有这一档的里挑，尽量不重复；
+// 排一次：拓扑序（先排给碎片的关）逐关挑游戏与题。游戏只在客户端玩得了（supported）且题库里有这一档、这一版写法的里挑，尽量不重复；
 // 给碎片的关不放碎片要看答案的游戏；收碎片的关先算门上的数，只挑改得出那个值的题。挑不出来抛 ChallengePlanError。
 const planOnce = async (input: PlanInput, bank: Bank, random: PlanRandom): Promise<ChallengePlan> => {
   const { template } = input;
@@ -152,7 +155,7 @@ const planOnce = async (input: PlanInput, bank: Bank, random: PlanRandom): Promi
     const candidates: { game: string; entries: { entry: BankEntry; rule: ConsumeRule | null; at: number; value: number }[] }[] = [];
     for (const game of pool) {
       const choices = [];
-      for (const entry of await bank(game, node.tier)) {
+      for (const entry of await bank(game, node.tier, input.supported.get(game)!)) {
         if (gate === null) {
           choices.push({ entry, rule: null, at: 0, value: 0 });
           continue;
@@ -177,6 +180,7 @@ const planOnce = async (input: PlanInput, bank: Bank, random: PlanRandom): Promi
       id: node.id,
       game: chosen.game,
       tier: node.tier,
+      version: input.supported.get(chosen.game)!,
       baseExpected: goal.expected,
       expected,
       difficulty: puzzleDifficulty(expected),
@@ -220,9 +224,10 @@ export const planChallenge = async (input: PlanInput, bank: Bank, random: PlanRa
   return best!.plan;
 };
 
-// 加试题：同一个游戏、同一档里另挑一道（不改写、不给碎片、不收碎片），编号 xa、xb、xc。
+// 加试题：同一个游戏、同一档、同一版题面写法里另挑一道（不改写、不给碎片、不收碎片），编号 xa、xb、xc。
 export const extraLevel = async (plan: ChallengePlan, of: PlanLevel, bank: Bank, pace: (game: string) => number, random: PlanRandom = secureRandom): Promise<PlanLevel | null> => {
-  const entries = (await bank(of.game, of.tier)).filter((entry) => JSON.stringify(entry.puzzle) !== JSON.stringify(of.puzzle));
+  const version = of.version ?? 1;
+  const entries = (await bank(of.game, of.tier, version)).filter((entry) => JSON.stringify(entry.puzzle) !== JSON.stringify(of.puzzle));
   if (entries.length === 0) return null;
   const entry = pick(entries, random);
   const expected = Math.max(1, Math.round(entry.expected * pace(of.game)));
@@ -230,6 +235,7 @@ export const extraLevel = async (plan: ChallengePlan, of: PlanLevel, bank: Bank,
     id: `x${String.fromCharCode(97 + plan.levels.filter((level) => level.extraOf !== null).length)}`,
     game: of.game,
     tier: of.tier,
+    version,
     baseExpected: entry.expected,
     expected,
     difficulty: puzzleDifficulty(expected),

@@ -4,7 +4,7 @@
 
 # 文件职责
 
-- social_crypto.dart：协议 v1 的客户端密码学，与服务端 relay_crypto.ts 逐字节一致，双端共用 server/test/vectors/protocol_v1.json。
+- social_crypto.dart：协议 v1 的客户端密码学，与服务端 relay_crypto.ts 逐字节一致，双端共用 server/test/vectors/protocol_v1.json（含服务器给好友公钥签名的原文 friendKeysCanonical）。
   - 设备身份 SocialIdentity：Ed25519 签名密钥加 X25519 加密密钥；设备号是签名公钥 sha256 的前 16 字节（base64url）。
   - 请求签名原文 requestCanonical、邀请凭证原文 inviteProofCanonical、私信设备挂到应用账号的凭证原文 socialBindCanonical（共用向量 socialBind）。
   - 信封 sealEnvelope / openEnvelope：明文 gzip 后由发送方签名，再用一次性 X25519 与收件人协商，HKDF-SHA256 派生 AES-256-GCM 密钥加密，附加数据绑定收件人设备号；解压上限 1MB。验签 verifyOpened 在确认发送方后进行。
@@ -14,16 +14,16 @@
 - relay_reward_client.dart：节日抽签端口 FestivalRewardClient 的中转实现 RelayRewardClient（人工决策见 domain/festival.dart）：POST /v1/rewards/<活动>/draw，用这个应用账号的设备密钥签名（安全存储 superxd_account 里 AppAccountRef.slot 指的那把，没有这把密钥算没登录），请求体只有近 30 天打开过的天数；超时、请求记录与校时重发一次沿用 RelayClient，不重试；ACCOUNT_NOT_FOUND 与 UNAUTHORIZED 换成 FestivalNotSignedIn，ACCOUNT_TOO_NEW 换成结果 FestivalTooNew（带 eligibleAt），其余给原因；抽中的奖品是服务器用这台设备的 box 公钥封装的 sealed，openRewardPrize 用安全存储里那把设备密钥解开（与服务端 reward_seal.ts 共用 server/test/vectors/reward_prize_v1.json，festival_test.dart 核对），parseFestivalDraw 把结果与解开的奖品当外部输入校验。
 - relay_diagnostic_account.dart：应用账号下的诊断包端口 DiagnosticAccountClient 的中转实现 RelayDiagnosticAccountClient（人工决策见 domain/diagnostic_upload.dart，协议见 server/README.md）：认领 POST /v1/account/diagnostics/<编号>/claim、列出 GET、删除 DELETE，用这个应用账号的设备密钥签名（没有这把密钥算没登录）；超时、请求记录与校时重发一次沿用 RelayClient，不重试；ACCOUNT_NOT_FOUND 与 UNAUTHORIZED 换成 DiagnosticNotSignedIn，回复逐项校验。
 - account_seal.dart：应用账号的密码与恢复码发出前封装的信封 sealAccountSecrets（一次性 X25519 与中转公钥 accountSealKey 协商、HKDF-SHA256、AES-256-GCM，附加数据绑定设备号；布局与服务端 account_keys.ts 一致，共用 server/test/vectors/account_seal_v1.json）。中转是明文 HTTP，不封装就会被同一网络里的人看到；中转私钥只在服务器与开发者本机，换钥两边一起换。
-- relay_app_account.dart：应用账号端口 AppAccountClient 的中转实现 RelayAppAccountClient（人工决策见 domain/app_account.dart，协议见 server/README.md「应用账号」）：这台设备一把设备密钥（同私信身份的格式），连同账号号与用户名存进安全存储的 superxd_account 命名空间（appAccountStorage，排除备份与迁移；键是 appAccountSlot）。注册、登录、用恢复码重设都先生成一把新密钥，用户名与封装好的秘密一起发出，成功才存本机；扫码登录出示时的密钥只放内存，批准了才存；登录着的设备改密码、换恢复码、批准登录码；dropLegacy 删掉 11-15 以前每个教务账号一把的旧密钥（键 account.* ）并交出把手；退出删服务端这把密钥（DELETE /v1/devices，连不上也删本机），注销先 DELETE /v1/account 再退出；中转的错误码换成 AppAccountException，响应逐项校验。
+- relay_app_account.dart：应用账号端口 AppAccountClient 的中转实现 RelayAppAccountClient（人工决策见 domain/app_account.dart，协议见 server/README.md「应用账号」）：这台设备一把设备密钥（同私信身份的格式），连同账号号与用户名存进安全存储的 superxd_account 命名空间（appAccountStorage，排除备份与迁移；键是 appAccountSlot）。注册、登录、用恢复码重设都先生成一把新密钥，用户名与封装好的秘密一起发出，成功才存本机；扫码登录出示时的密钥只放内存，批准了才存，出示时带上组合根注入的机型 deviceModel（去掉控制字符、最多 64 个字符，读不出不带），离开出示页用那把临时密钥作废票据（cancelJoin，批准过或没出示过不发）；登录着的设备改密码、换恢复码、批准前看请求方（inspectJoin，机型与属地逐项校验）、批准登录码；dropLegacy 删掉 11-15 以前每个教务账号一把的旧密钥（键 account.* ）并交出把手；退出删服务端这把密钥（DELETE /v1/devices，连不上也删本机），注销先 DELETE /v1/account 再退出；中转的错误码换成 AppAccountException（ACCOUNT_DELETED 是 deleted，查看账号时同 notSignedIn 删本机记录），响应逐项校验。
 - relay_unlock_client.dart：解锁端口 UnlockClient 的中转实现 RelayUnlockClient（规则见服务端 src/modules/unlock/unlock_rules.ts）：GET /v1/unlocks 与 POST /v1/unlocks/<编号>/buy，用这个应用账号的设备密钥签名（同挑战与积分），回复上限 16KB、逐项校验（等级 0–5、编号合规、不超过 rolloutUnlockLimit 个）；错误码换成 UnlockException（POINTS_SHORT 带价格、UNLOCK_UNAVAILABLE、ACCOUNT_NOT_FOUND 与 UNAUTHORIZED 是没登录）。
-- relay_challenge_client.dart：挑战与积分端口 ChallengeClient 的中转实现 RelayChallengeClient（协议见 server/README.md「挑战与积分」）：用这个应用账号的设备密钥签名（AppAccountRef.slot 指向安全存储 superxd_account 里的那把，没登录不发请求），一局的回复放宽到 256KB（专家档一开局有 7 关的题面），回复逐项校验、看不懂按失败报；开门与终章各一个请求（门上的数、全部碎片之和）；错误码换成 ChallengeException（RUN_ACTIVE 带编号、RUN_OVER 与 LEVEL_LOCKED 带现状、ACCOUNT_NOT_FOUND 与 UNAUTHORIZED 是没登录）。
+- relay_challenge_client.dart：挑战与积分端口 ChallengeClient 的中转实现 RelayChallengeClient（协议见 server/README.md「挑战与积分」）：用这个应用账号的设备密钥签名（AppAccountRef.slot 指向安全存储 superxd_account 里的那把，没登录不发请求），一局的回复放宽到 256KB（专家档一开局有 7 关的题面），回复逐项校验、看不懂按失败报；开门与终章各一个请求（门上的数、全部碎片之和）；错误码换成 ChallengeException（RUN_ACTIVE 带编号、RUN_OVER 与 LEVEL_LOCKED 带现状、ACCOUNT_NOT_FOUND 与 UNAUTHORIZED 是没登录）。 关卡图按服务端模板的规则核对（编号不重复、引用的关都在、不指向自己、每关的碎片只交给一关、不成环；首页缩略图的边同样），不合格当看不懂。
 - relay_client.dart：
   - relayBaseUrl：中转地址只来自构建参数 SUPERXD_RELAY，不写进代码；未配置时私信不可用。
   - RelayCode：错误码，与服务端 relay_error.ts 一致，另有 NETWORK、TIMEOUT、BAD_RESPONSE。
   - RelayTransport 传输端口，可按请求给超时与响应上限；HttpRelayTransport 经共用内核 domain/campus_http.dart 发，超时管到读完响应体（到点中断连接），默认 15 秒，长轮询为挂起时长加 10 秒；响应上限默认 responseLimit（64KB，最大的好友列表约 30KB），拉信箱按这次要的条数放宽（RelayClient.inboxLimit：每条按 360KB 算，单条密文 256KB 经 base64url 约 342KB），超了算 BAD_RESPONSE。经 _call 的请求（含节日抽签用的 RelayClient.request）都受这两条约束。
   - HttpRelayTransport 在断网、超时、响应格式不对时记 [RelayTransport] 日志：错误码、方法与路径、异常类型与完整堆栈，不写服务器地址与查询参数；往上只抛 RelayException 错误码。收消息的长轮询按后台请求发（background），它的断网与超时不在这里记，交给收取循环。
   - RelayClient：每个请求用设备私钥签名，没有会话令牌；收到 CLOCK_SKEW 按服务器时间校正并只重发这一次。request 用给定身份签名发任意路径（可另给超时与响应上限），给应用账号、挑战与节日抽签用；错误响应的其余字段放在 RelayException.detail。
-  - 私信挂到应用账号 bindSocial（用应用账号的设备密钥签名，带私信密钥的凭证，可带接管）；好友列表 friends 解析成 RemoteFriend（换了设备的带新公钥与 movedFrom，公钥与设备号对不上算格式不对；keys 为真时每项都带公钥、响应放宽到 256KB）；ackMoves 确认换设备提示。
+  - 私信挂到应用账号 bindSocial（用应用账号的设备密钥签名，带私信密钥的凭证，可带接管）；好友列表 friends 解析成 RemoteFriend（换了设备的带新公钥与 movedFrom，公钥与设备号对不上、没有服务器签名或验不过都算格式不对；keys 为真时每项都带公钥、响应放宽到 256KB）；服务器给好友公钥的签名钥内置在 relayFriendKeys（[人工决策] 在常量上，RelayClient 与 SocialService 的 friendKeys 可换成测试钥）；ackMoves 确认换设备提示。
 - social_store.dart：私信本机库（每个应用账号一份，文件见 social_spaces.dart，已排除备份）：profile、friend、message、invite 四张表，时间存 UTC ISO 字符串。第 2 版 profile 加 bound（已挂到应用账号；旧版升级上来是 0，打开时补挂一次）。好友换了设备时 relinkFriend 把好友连同会话改挂到新设备号与新公钥并写一条 friend_moved；新手机接管后 importFriend 补进服务器给的好友（名字先用 placeholderNickname，等对方发来昵称）。
 - social_service.dart：SocialService 私信编排，是页面唯一入口。
   - 状态：loading、unavailable（未配置中转）、signedOut（没登录应用账号）、disabled（未开启）、elsewhere（这个账号的私信在另一台手机上）、ready、failed（打开时挂不上账号等，页面给重试 reopen）。

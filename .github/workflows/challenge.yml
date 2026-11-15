@@ -66,13 +66,15 @@ jobs:
           printf '%s\n' "$RELAY_SSH_KEY" > ~/.ssh/relay
           printf '%s\n' "$RELAY_KNOWN_HOSTS" > ~/.ssh/known_hosts
           echo "RSYNC_RSH=ssh -i $HOME/.ssh/relay -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o ConnectTimeout=30 -o ServerAliveInterval=30" >> "$GITHUB_ENV"
-      # rsync 每个文件先写临时文件再改名，中转不会读到写了一半的文件；题库目录里不再有的游戏或档位一并删掉。
+      # rsync 每个文件先写临时文件再改名，中转不会读到写了一半的文件。
+      # 题库文件名带题面写法版本（<游戏>@<版本>.<档位>.json，人工决策见 lib/playground/challenge/challenge_rules.dart 的 11-15 19:18 那条）：
+      # 不删中转上已有的文件，某个游戏换了写法后旧版本那几份留给还没更新的应用；11-15 以前的旧文件名与下架的游戏要清时手动删（见 server/README.md）。
       - name: 上传题库
         if: env.BANK == 'true'
         run: |
           set -euo pipefail
-          # 源写 bank（不带斜杠）：没有 challenge 目录时 rsync 建出它与 bank，--delete 只管 challenge/bank 里面。
-          rsync -rt --delete --chmod=D755,F644 build/challenge/bank "$RELAY_TARGET:challenge/"
+          # 源写 bank（不带斜杠）：没有 challenge 目录时 rsync 建出它与 bank。
+          rsync -rt --chmod=D755,F644 build/challenge/bank "$RELAY_TARGET:challenge/"
           echo "[Challenge] action=upload_bank files=$(ls build/challenge/bank | wc -l)"
       - name: 上传配置
         run: |

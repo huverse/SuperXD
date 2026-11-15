@@ -18,11 +18,13 @@ import 'package:superxd/theme/campus_palette.dart';
 // 推不动（前面是墙或另一个箱子）、撞墙时轻震、小人朝那边顶一下，不算一步。全部箱子推到目标点上即解开。
 // 状态只计推了几次（同最少推数比），撤销按步退回（推了箱子的那步连箱子一起退）。
 class BoxesPage extends StatefulWidget {
-  const BoxesPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
+  const BoxesPage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 外壳在后台出好的第一道题（自由模式；没备好或测试注入种子时为空，当场出）。
+  final PlayFirst? first;
   // 挑战里的一关（题面是服务器给的）；自由模式为空。
   final PlayChallenge? challenge;
 
@@ -34,7 +36,7 @@ class BoxesPage extends StatefulWidget {
 typedef _Move = ({int direction, int from, int box});
 
 class _BoxesPageState extends State<BoxesPage> with TickerProviderStateMixin {
-  late final _session = PlaySession<BoxesPuzzle, List<int>>(game: widget.game, rules: const BoxesRules(), store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
+  late final _session = PlaySession<BoxesPuzzle, List<int>>(game: widget.game, rules: const BoxesRules(), store: widget.store, seeds: widget.seeds, first: widget.first, challenge: widget.challenge);
   late List<int> _boxes = [..._session.puzzle.boxes];
   late int _player = _session.puzzle.player;
   final _moves = <_Move>[];

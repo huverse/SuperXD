@@ -1,8 +1,9 @@
-import { HttpStatus, Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Inject, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import Redis from 'ioredis';
 import { randomBytes, randomInt, timingSafeEqual } from 'node:crypto';
 
 import { rateSubjectOf } from 'src/common/client_ip';
+import { IpRegion } from 'src/common/ip_region';
 import { RateLimiter, REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys, RedisKeyTTL } from 'src/common/redis/redis_keys';
 import { RelayCode, RelayError } from 'src/common/relay_error';
@@ -33,8 +34,13 @@ const passwordLength = { min: 8, max: 64 };
 // 应用账号与教务各管各的（用户选，取代 11-13 的「跟着教务走」）；11-13 起用教务核对登录的老账号全部清掉、重新注册（用户选，见 sql/upgrade_2026_11_15b.sql）。
 // 11-15 的设备核对、3 天找回与更早的中转代登录教务都作废、代码删除。密码与恢复码在客户端用中转公钥封装（中转是明文 HTTP），这里只存 scrypt 哈希。
 // 用户名、密码、恢复码哪一项不对都只回 CREDENTIALS_INVALID，不说是哪一项；注册时用户名被占用是例外（先到先得，没法不说）。
+// [人工决策-2026-11-15 19:18:31] 账号安全加固（用户在审查报告里全选推荐）：凭恢复码重设后账号下其他设备都下线（recover，改密码不动）；
+// 扫码登录批准前给批准方看请求方的机型与属地（startJoin、inspectJoin）；离开出示页时作废票据（cancelJoin）；
+// 注销时给账号的密钥记墓碑、再来的回 ACCOUNT_DELETED（remove、missing），客户端只在这时清本机那个账号的私信；账号下任一设备有签名请求就按小时记活跃（onModuleInit）。
+// [人工决策-2026-11-15 21:48:25] 凭恢复码重设时私信一起收回（用户选「同时解绑私信，按最佳实践做」）：别的设备下线的同一事务里调收回钩子（AccountDataHooks.revoke），
+// 私信模块停掉这个账号的私信设备（做法见 src/modules/pairing/social_binding.service.ts 的同一条）；改密码不收回。
 @Injectable()
-export class AccountService {
+export class AccountService implements OnModuleInit {
   private readonly logger = new Logger('Account');
 
   constructor(
@@ -42,8 +48,24 @@ export class AccountService {
     private readonly keys: AccountKeys,
     private readonly devices: DeviceService,
     private readonly limiter: RateLimiter,
+    private readonly regions: IpRegion,
     @Inject(REDIS) private readonly redis: Redis,
   ) {}
+
+  // 账号下的设备有签名请求时（设备模块每台每小时通知一次，热路径不等）记账号的最后活跃，400 天不活跃清理按它算；设备模块不知道账号。
+  onModuleInit() {
+    this.devices.onSeen((deviceId) => this.accounts.touchOf(deviceId, new Date()));
+  }
+
+  // 这把密钥没登录：注销过的账号（墓碑还在）回 ACCOUNT_DELETED，客户端据此清掉本机那个账号的私信；其余（被顶掉、重设踢下线、从没登录）回 ACCOUNT_NOT_FOUND。
+  private async missing(deviceId: string): Promise<never> {
+    if (await this.accounts.deletedOf(deviceId)) throw new RelayError(RelayCode.accountDeleted, HttpStatus.GONE, '应用账号已注销');
+    throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
+  }
+
+  private async accountOrMissing(deviceId: string) {
+    return (await this.accounts.accountOf(deviceId)) ?? (await this.missing(deviceId));
+  }
 
   private async limit(scope: string, subject: string, limit: number, window: number, message: string) {
     const retryAfter = await this.limiter.hit(scope, subject, limit, window);
@@ -115,7 +137,7 @@ export class AccountService {
     return this.signedIn(credentials.accountId, username, now);
   }
 
-  // 忘了密码：凭恢复码设新密码，旧恢复码同时作废、换成客户端新生成的那个；登录这台设备。
+  // 忘了密码：凭恢复码设新密码，旧恢复码同时作废、换成客户端新生成的那个；登录这台设备，账号下别的设备都下线（拿着旧密码登录的设备不能留着，人工决策见类上方）。
   async recover(deviceId: string, ip: string, body: dtos.AccountCredentialBodyDto): Promise<dtos.AccountSignedInDto> {
     const username = body.username.toLowerCase();
     await this.credentialLimits('account_recover', username, ip);
@@ -126,7 +148,7 @@ export class AccountService {
     const now = new Date();
     if (!(await this.accounts.updateSecrets(credentials.accountId, { passwordHash, recoveryHash }, now))) this.invalid();
     await this.devices.enroll(deviceId, body.signPublicKey, body.boxPublicKey);
-    if (!(await this.accounts.link(credentials.accountId, deviceId, now))) this.invalid();
+    if (!(await this.accounts.link(credentials.accountId, deviceId, now, true))) this.invalid();
     this.logger.log(`[Account] action=recover deviceId=${deviceId}`);
     return this.signedIn(credentials.accountId, username, now);
   }
@@ -134,8 +156,7 @@ export class AccountService {
   // 登录着的设备直接改密码或换恢复码（不要旧密码：忘了密码时在还登着的手机上重设，用户选定）。
   async changeSecret(deviceId: string, kind: 'password' | 'recoveryCode', body: dtos.AccountSecretBodyDto) {
     await this.limit('account_secret_change', deviceId, accountSecretChangePerDevicePerHour, 3600, '修改过于频繁');
-    const accountId = await this.accounts.accountOf(deviceId);
-    if (accountId === null) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
+    const accountId = await this.accountOrMissing(deviceId);
     const secret = this.secretsOf(body.sealed, deviceId, [kind] as const)[kind];
     const hashed = await this.keys.hash(secret);
     if (!(await this.accounts.updateSecrets(accountId, kind === 'password' ? { passwordHash: hashed } : { recoveryHash: hashed }, new Date()))) {
@@ -146,13 +167,14 @@ export class AccountService {
 
   // 扫码登录，新设备这一侧：登记设备密钥、发一张 5 分钟的票据（放进二维码，另带 6 位核对码两边都显示）。
   // 还没登记过的设备另按来源计数（每次换新密钥就能绕过按设备的计数，每次都会多登记一台设备）。
-  async startJoin(deviceId: string, ip: string, body: dtos.AccountDeviceKeysDto): Promise<dtos.AccountJoinDto> {
+  // 票据另记这台自报的机型与按来源 IP 在本机离线库查出的属地（src/common/ip_region.ts），给批准方核对；IP 原文不进票据、不进日志。
+  async startJoin(deviceId: string, ip: string, body: dtos.AccountJoinStartBodyDto): Promise<dtos.AccountJoinDto> {
     await this.limit('account_join', deviceId, accountJoinPerDevicePerHour, 3600, '出示二维码过于频繁');
     if (!(await this.devices.registered(deviceId))) await this.limit('account_join_source', rateSubjectOf(ip), accountJoinPerSourcePerHour, 3600, '出示二维码过于频繁');
     await this.devices.enroll(deviceId, body.signPublicKey, body.boxPublicKey);
     const ticketId = randomBytes(16).toString('base64url');
     const code = String(randomInt(1_000_000)).padStart(6, '0');
-    const ticket: JoinTicket = { deviceId, code, accountId: null };
+    const ticket: JoinTicket = { deviceId, code, accountId: null, device: body.device ?? null, region: await this.regions.regionOf(ip) };
     await this.redis.set(RedisKeys.accountJoin(ticketId), JSON.stringify(ticket), 'EX', RedisKeyTTL.accountJoin);
     return { ticketId, code, expiresAt: Date.now() + RedisKeyTTL.accountJoin * 1000 };
   }
@@ -166,12 +188,31 @@ export class AccountService {
     const ticket = raw === null ? null : (JSON.parse(raw) as JoinTicket);
     const notFound = () => new RelayError(RelayCode.joinNotFound, HttpStatus.NOT_FOUND, '二维码已过期或不对');
     if (raw === null || ticket === null || !sameText(ticket.code, code) || ticket.deviceId === deviceId) throw notFound();
-    const accountId = await this.accounts.accountOf(deviceId);
-    if (accountId === null) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
+    const accountId = await this.accountOrMissing(deviceId);
     const claimed = ticket.accountId === null && (await this.redis.eval(claimJoinScript, 1, key, raw, JSON.stringify({ ...ticket, accountId }))) !== null;
     if (!claimed && (await this.ticketOf(ticketId))?.accountId !== accountId) throw notFound();
     if (claimed && !(await this.accounts.link(accountId, ticket.deviceId, new Date()))) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
     this.logger.log(`[Account] action=approve_join deviceId=${deviceId} joined=${ticket.deviceId} claimed=${claimed}`);
+  }
+
+  // 批准方扫到二维码、核对码对得上时，批准之前先看请求方的机型与属地（同批准的限流与核对；已被别的账号批准的不给看）。
+  async inspectJoin(deviceId: string, ticketId: string, code: string): Promise<dtos.AccountJoinRequestDto> {
+    await this.limit('account_inspect', deviceId, accountApprovePerDevicePerHour, 3600, '查看过于频繁');
+    const ticket = await this.ticketOf(ticketId);
+    if (ticket === null || !sameText(ticket.code, code) || ticket.deviceId === deviceId) throw new RelayError(RelayCode.joinNotFound, HttpStatus.NOT_FOUND, '二维码已过期或不对');
+    const accountId = await this.accountOrMissing(deviceId);
+    if (ticket.accountId !== null && ticket.accountId !== accountId) throw new RelayError(RelayCode.joinNotFound, HttpStatus.NOT_FOUND, '二维码已过期或不对');
+    return { device: ticket.device ?? null, region: ticket.region ?? null };
+  }
+
+  // 新设备离开出示页：作废自己还没被批准的票据（比对原值后删除，原子完成，不和批准抢）；别的设备的、已批准的、已过期的什么也不做。
+  async cancelJoin(deviceId: string, ticketId: string) {
+    const key = RedisKeys.accountJoin(ticketId);
+    const raw = await this.redis.get(key);
+    const ticket = raw === null ? null : (JSON.parse(raw) as JoinTicket);
+    if (raw === null || ticket === null || ticket.deviceId !== deviceId || ticket.accountId !== null) return;
+    const removed = await this.redis.eval(cancelJoinScript, 1, key, raw);
+    this.logger.log(`[Account] action=cancel_join deviceId=${deviceId} removed=${removed === 1}`);
   }
 
   // 新设备轮询：批准了就带上账号（重复问照旧给，票据到期自然删）。
@@ -190,21 +231,26 @@ export class AccountService {
   }
 
   async summary(deviceId: string): Promise<dtos.AccountSummaryDto> {
-    const summary = await this.accounts.summaryOf(deviceId, new Date());
-    if (summary === null) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
+    const summary = (await this.accounts.summaryOf(deviceId, new Date())) ?? (await this.missing(deviceId));
     return { accountId: summary.accountId, username: summary.username, deviceCount: summary.deviceCount, createdAt: summary.createTime.getTime() };
   }
 
+  // 注销：账号下全部密钥记墓碑（见 missing），再删登记、账号下的数据与账号本身，同一事务。
   async remove(deviceId: string) {
-    if (!(await this.accounts.deleteOf(deviceId))) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
+    if (!(await this.accounts.deleteOf(deviceId))) await this.missing(deviceId);
     this.logger.log(`[Account] action=delete deviceId=${deviceId}`);
   }
 }
 
-type JoinTicket = { deviceId: string; code: string; accountId: string | null };
+// device 与 region 是 11-16 起加的（之前出示的票据没有，5 分钟内就过期了）。
+type JoinTicket = { deviceId: string; code: string; accountId: string | null; device?: string | null; region?: string | null };
 
 // 占住扫码登录的票据：值还是读到的那一串才改写成带账号号的（保留过期时间），否则返回空。
 const claimJoinScript = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('SET', KEYS[1], ARGV[2], 'KEEPTTL') end
 return false`;
+
+// 作废扫码登录的票据：值还是读到的那一串（没被批准）才删。
+const cancelJoinScript = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('DEL', KEYS[1]) end
+return 0`;
 
 const sameText = (left: string, right: string) => left.length === right.length && timingSafeEqual(Buffer.from(left), Buffer.from(right));

@@ -111,7 +111,9 @@ export const diagnosticAccountListLimit = 50;
 // 这里只存 scrypt 哈希。限流防撞库与刷号：注册每台设备每小时 5 个、同一来源每小时 60 个（校园网 NAT 共用出口）；
 // 登录与用恢复码重设先按来源每小时 60 次，再按「用户名 + 来源」每小时 10 次、按用户名每小时 100 次（别人只用一两个出口锁不住你，分散撞库也有上限）；
 // 登录着改密码、换恢复码每台设备每小时 10 次。每个实例同时最多算 passwordHashConcurrency 个哈希（每个约 32MB 内存），超出回 503 让客户端稍后再试。
-// 封装后的密钥信封不超过 accountSealMaxBytes。一个账号最多同时登录在 20 把设备密钥上，再登录顶掉最久没用的那把；账号 400 天没有登录或查看即删除（同设备）。
+// 封装后的密钥信封不超过 accountSealMaxBytes。一个账号最多同时登录在 20 把设备密钥上，再登录顶掉最久没用的那把；凭恢复码重设后只留发起的那一把。
+// 账号 400 天没有任何活跃（登录、查看、账号下任一设备的签名请求，每台每小时记一次）即删除（同设备）；注销时给它的密钥记的墓碑留 accountTombstoneDays 天
+// （之后这些设备也早被设备的不活跃清理删掉，再来的回 UNAUTHORIZED）。
 export const accountRegisterPerDevicePerHour = 5;
 export const accountRegisterPerSourcePerHour = 60;
 export const accountLoginPerSourcePerHour = 60;
@@ -122,13 +124,16 @@ export const passwordHashConcurrency = 8;
 export const accountSealMaxBytes = 1024;
 export const accountDeviceLimit = 20;
 export const accountIdleDays = 400;
+export const accountTombstoneDays = 400;
 // 扫码登录：新设备出示二维码，已登录的设备扫码核对 6 位码后批准。票据在 Redis 存 5 分钟（新设备号、核对码、批准后的账号号）；
 // 新设备每小时最多出示 20 次，已登录的设备每小时最多批准 30 次。出示时就登记新设备的密钥（轮询要验签），
 // 所以还没登记过的设备另按来源计数，同注册的来源档每小时 60 台（每次换新密钥的刷法挡在这里，同一台重新出示不计）。
+// 票据另记出示设备自报的机型（不超过 accountJoinDeviceMaxLength 个字符）与按来源 IP 在本机离线库查出的属地（不存 IP），批准方批准前先看（每台每小时同批准 30 次）。
 export const accountJoinSeconds = 5 * 60;
 export const accountJoinPerDevicePerHour = 20;
 export const accountJoinPerSourcePerHour = 60;
 export const accountApprovePerDevicePerHour = 30;
+export const accountJoinDeviceMaxLength = 64;
 
 // 积分（人工决策见 src/modules/points/points.service.ts）：每笔获得满 12 个月过期，30 天内要过期的在余额旁提示；
 // 流水满 13 个月（按 395 天）删除；剩余为 0 且过期满 30 天的获得行删除。流水每页 20 条；每台设备每小时查 600 次。

@@ -17,6 +17,7 @@ import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/page/account_page.dart';
 import 'package:superxd/page/app_account_join_page.dart';
 import 'package:superxd/page/app_account_page.dart';
+import 'package:superxd/page/sensitive_clipboard.dart';
 import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_crypto.dart';
@@ -128,6 +129,37 @@ void main() {
       await expectLater(client.approveJoin(join.payload), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.joinExpired)));
     });
 
+    // [人工决策-2026-11-15 19:18:31] 扫码登录批准前看请求方的机型与属地、离开出示页作废票据（用户选推荐）。
+    test('扫码登录：出示时带上机型，批准方批准前先看请求方的机型与属地；离开出示页作废还没批准的票据，没出示过或已批准的不发', () async {
+      final modeled = RelayAppAccountClient(vault: vault, transport: relay, sealKey: (await sealPair.extractPublicKey()).bytes, deviceModel: () async => ' Xiaomi 23127PN0CC ');
+      relay.reply = (request) => RelayResponse(200, {'ticketId': _ticketId, 'code': '012345', 'expiresAt': DateTime.now().millisecondsSinceEpoch + 300000});
+      final join = await modeled.startJoin();
+      expect(relay.requests.single.body['device'], 'Xiaomi 23127PN0CC');
+      expect((await client.startJoin()).ticketId, _ticketId);
+      expect(relay.requests.last.body.containsKey('device'), isFalse, reason: '取不到机型就不带');
+
+      await vault.write(appAccountSlot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId, username: 'tester_one'));
+      relay.reply = (request) => const RelayResponse(200, {'device': 'Xiaomi 23127PN0CC', 'region': '广东省深圳市'});
+      final request = await client.inspectJoin(join.payload);
+      expect((request.device, request.region), ('Xiaomi 23127PN0CC', '广东省深圳市'));
+      expect('${relay.requests.last.method} ${relay.requests.last.path}', 'POST /v1/account/joins/$_ticketId/inspect');
+      expect(relay.requests.last.body, {'code': '012345'});
+      relay.reply = (request) => const RelayResponse(200, {'device': null, 'region': null});
+      expect((await client.inspectJoin(join.payload)).device, isNull);
+      relay.reply = (request) => RelayResponse(200, {'device': 'x' * 65, 'region': null});
+      await expectLater(client.inspectJoin(join.payload), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.failed)));
+      await expectLater(client.inspectJoin('https://example.com'), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.joinExpired)));
+
+      relay.reply = (request) => const RelayResponse(204, {});
+      final count = relay.requests.length;
+      await modeled.cancelJoin(join);
+      expect('${relay.requests.last.method} ${relay.requests.last.path}', 'DELETE /v1/account/joins/$_ticketId');
+      expect(relay.requests.last.headers['x-sxd-device'], relay.requests.first.headers['x-sxd-device'], reason: '用出示时那把临时密钥签名');
+      final fresh = RelayAppAccountClient(vault: MemoryAppAccountVault(), transport: relay, sealKey: (await sealPair.extractPublicKey()).bytes);
+      await fresh.cancelJoin(join);
+      expect(relay.requests, hasLength(count + 1), reason: '没出示过不发');
+    });
+
     test('扫码登录：手机时钟快了 10 分钟（中转校时后重发）时，二维码的失效时刻换成本机时钟，出示页照样倒数 5 分钟', () async {
       int serverNow() => DateTime.now().subtract(const Duration(minutes: 10)).millisecondsSinceEpoch;
       relay.reply = (request) => (int.parse(request.headers['x-sxd-time']!) - serverNow()).abs() > 5 * 60000
@@ -172,6 +204,14 @@ void main() {
       relay.reply = (request) => const RelayResponse(204, {});
       await client.delete();
       expect(relay.requests.map((request) => '${request.method} ${request.path}').toList().reversed.take(2).toList(), ['DELETE /v1/devices', 'DELETE /v1/account']);
+      expect(await client.accountOf(), isNull);
+    });
+
+    // [人工决策-2026-11-15 19:18:31] 区分「账号已注销」与「这把密钥不在账号里」（用户选推荐）。
+    test('查看账号：账号已注销（ACCOUNT_DELETED）同样删本机记录，失败分类是账号已注销', () async {
+      await vault.write(appAccountSlot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId, username: 'tester_one'));
+      relay.reply = (request) => const RelayResponse(410, {'code': 'ACCOUNT_DELETED'});
+      await expectLater(client.summary(), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.deleted)));
       expect(await client.accountOf(), isNull);
     });
 
@@ -292,6 +332,39 @@ void main() {
       expect(client.summaries, 2, reason: '没登录不联网');
     });
 
+    // [人工决策-2026-11-15 19:18:31] 只有中转说账号已注销才清本机那个账号的私信；只是不在账号里（被顶掉、恢复码重设踢下线）只退回未登录。
+    test('别处注销了（ACCOUNT_DELETED）：退回未登录并把账号交给 onDeleted；只是不在账号里了不交；操作中遇到也马上核一次', () async {
+      client.session = _session;
+      await appAccounts.load();
+      client.failure = const AppAccountException(AppAccountFailure.notSignedIn, '应用账号已经退出');
+      await appAccounts.check(force: true);
+      expect(appAccounts.current, isNull);
+      expect(deleted, isEmpty);
+      client.session = _session;
+      await appAccounts.load();
+      client.failure = const AppAccountException(AppAccountFailure.deleted, '应用账号已注销');
+      await appAccounts.check(force: true);
+      expect(appAccounts.current, isNull);
+      expect(deleted, [_account]);
+      client.session = _session;
+      await appAccounts.load();
+      expect(await appAccounts.changePassword('changed-synthetic'), isA<AppAccountError>());
+      await pumpEventQueue();
+      expect(deleted, [_account, _account]);
+    });
+
+    test('批准前看请求方：登录着才看，结果交给页面；离开出示页作废票据，出错只记日志', () async {
+      expect(await appAccounts.inspectJoin('superxd-join:$_ticketId:012345'), isA<AppAccountError>());
+      client.session = _session;
+      await appAccounts.load();
+      expect(await appAccounts.inspectJoin('superxd-join:$_ticketId:012345'), isA<AppAccountJoinRequested>().having((result) => result.request.region, 'region', '广东省深圳市'));
+      final join = AppAccountJoin(ticketId: _ticketId, code: '012345', expiresAt: DateTime.utc(2026, 11, 15, 12, 5));
+      await appAccounts.cancelJoin(join);
+      client.cancelFailure = const AppAccountException(AppAccountFailure.network, '连不上服务器');
+      await appAccounts.cancelJoin(join);
+      expect(client.cancelled, [_ticketId, _ticketId]);
+    });
+
     // 人工决策见 social/social_service.dart（11-14 17:56:46）：注销成了才通知组合根清掉这台手机上那个账号的私信；注销失败不通知。
     test('注销成功后把注销的账号交给 onDeleted，失败不交', () async {
       client.session = _session;
@@ -352,11 +425,11 @@ void main() {
 
     testWidgets('注册：格式不对原地说明、不联网；注册成功弹出恢复码（按返回不关，可复制），点「我已保存」后显示用户名', (tester) async {
       String? copied;
-      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
-        if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('superxd/sensitive_clipboard'), (call) async {
+        copied = (call.arguments as Map)['text'] as String;
         return null;
       });
-      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('superxd/sensitive_clipboard'), null));
       await pumpPage(tester);
       await tester.tap(find.text('注册'));
       await tester.pumpAndSettle();
@@ -385,6 +458,39 @@ void main() {
       expect(find.text('tester_one'), findsOneWidget);
       expect(find.text('已注册并登录'), findsOneWidget);
       await clearToast(tester);
+    });
+
+    // [人工决策-2026-11-15 19:18:31] 恢复码的「复制」标成敏感内容、一分钟后清掉（用户选推荐）：安卓、iOS 走原生通道，别的平台退回普通复制。
+    testWidgets('恢复码的「复制」走敏感剪贴板：交给原生的是一行的写法与一分钟后清掉', (tester) async {
+      final calls = <MethodCall>[];
+      var plain = false;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('superxd/sensitive_clipboard'), (call) async {
+        calls.add(call);
+        return null;
+      });
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') plain = true;
+        return null;
+      });
+      addTearDown(() {
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('superxd/sensitive_clipboard'), null);
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null);
+      });
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Builder(builder: (context) => TextButton(onPressed: () => showRecoveryCode(context, _code), child: const Text('打开')))));
+      await tester.tap(find.text('打开'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('复制'));
+      await tester.pumpAndSettle();
+      expect(calls.single.method, 'copy');
+      expect(calls.single.arguments, {'text': 'ABCD-0123-EFGH-4567-JKMN-89PQ', 'clearAfterMs': 60000});
+      expect(plain, isFalse);
+      expect(find.text('已复制恢复码'), findsOneWidget);
+      await tester.tap(find.text('我已保存'));
+      await clearToast(tester);
+      // 没有这个通道的平台（测试、桌面）退回普通复制。
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(const MethodChannel('superxd/sensitive_clipboard'), (call) async => throw MissingPluginException());
+      await copySensitive('ABCD-0123-EFGH-4567-JKMN-89PQ');
+      expect(plain, isTrue);
     });
 
     testWidgets('登录：密码不对写明原因；忘记密码凭恢复码重设，成功弹出新的恢复码', (tester) async {
@@ -423,6 +529,23 @@ void main() {
       await clearToast(tester);
     });
 
+    // [人工决策-2026-11-15 19:18:31] 离开出示页时作废票据（用户选推荐）：刷新二维码时旧的那张也作废。
+    testWidgets('扫码登录：刷新二维码作废旧的那张，离开出示页作废当前那张', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 2.75;
+      addTearDown(tester.view.reset);
+      await pumpPage(tester);
+      await tester.tap(find.text('扫码登录'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('刷新二维码'));
+      await tester.pumpAndSettle();
+      expect(client.cancelled, [_ticketId]);
+      await tester.tap(find.byTooltip('返回'));
+      await tester.pumpAndSettle();
+      expect(client.cancelled, [_ticketId, _ticketId]);
+      expect(find.text('扫码登录'), findsOneWidget);
+    });
+
     testWidgets('扫码登录：出示二维码与核对码，批准后回来显示已登录', (tester) async {
       await pumpPage(tester);
       await tester.tap(find.text('扫码登录'));
@@ -448,6 +571,10 @@ void main() {
       await tester.tap(find.text('让新设备登录'));
       await tester.pumpAndSettle();
       expect(find.textContaining('012345'), findsOneWidget);
+      // 人工决策见 server/src/modules/account/account.service.ts 的 19:18:31 那条：批准前写出请求方的机型、属地与提醒。
+      expect(find.textContaining('Xiaomi 23127PN0CC'), findsOneWidget);
+      expect(find.textContaining('广东省深圳市'), findsOneWidget);
+      expect(find.textContaining('不是你本人操作就不要确认'), findsOneWidget);
       await tester.tap(find.text('确认'));
       await tester.pumpAndSettle();
       expect(client.approved, ['superxd-join:$_ticketId:012345']);
@@ -570,6 +697,8 @@ class _Client implements AppAccountClient {
   bool joinApproved = false;
   AppAccountException? failure;
   AppAccountException? joinFailure;
+  AppAccountException? cancelFailure;
+  final cancelled = <String>[];
   Object? loadFailure;
   Object? legacyFailure;
 
@@ -633,6 +762,16 @@ class _Client implements AppAccountClient {
   Future<void> approveJoin(String payload) async {
     _fail();
     approved.add(payload);
+  }
+  @override
+  Future<AppAccountJoinRequest> inspectJoin(String payload) async {
+    _fail();
+    return const AppAccountJoinRequest(device: 'Xiaomi 23127PN0CC', region: '广东省深圳市');
+  }
+  @override
+  Future<void> cancelJoin(AppAccountJoin join) async {
+    cancelled.add(join.ticketId);
+    if (cancelFailure case final error?) throw error;
   }
   @override
   Future<AppAccountSummary> summary() async {

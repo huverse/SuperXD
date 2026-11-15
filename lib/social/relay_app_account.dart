@@ -86,12 +86,14 @@ final _accountIdPattern = RegExp(r'^[A-Za-z0-9_-]{22}$');
 // 签名请求、校时重发一次都复用私信的 RelayClient；这台设备一把设备密钥，登录成功才连同账号号存进安全存储。
 // 注册、登录、用恢复码重设都先生成一把新密钥（服务端把它登记到账号下），密码与恢复码经 account_seal.dart 封装后才发出。
 class RelayAppAccountClient implements AppAccountClient {
-  RelayAppAccountClient({required this.vault, required RelayTransport transport, List<int>? sealKey})
+  RelayAppAccountClient({required this.vault, required RelayTransport transport, List<int>? sealKey, this.deviceModel})
     : _relay = RelayClient(transport),
       _sealKey = sealKey ?? decodeBase64UrlNoPad(accountSealKey, length: 32);
   final AppAccountVault vault;
   final RelayClient _relay;
   final List<int> _sealKey;
+  // 这台手机的机型（安卓厂商加型号、iOS 机型名，组合根从 device 层注入；测试不给），扫码登录出示时带上给批准方核对。
+  final Future<String?> Function()? deviceModel;
 
   @override
   Future<AppAccountSession?> accountOf() async {
@@ -173,10 +175,24 @@ class RelayAppAccountClient implements AppAccountClient {
   // 扫码登录出示二维码用的密钥：出示时新生成、只放内存，批准了才存进安全存储（没批准就丢，服务端那条登记按 400 天不活跃清掉）。
   SocialIdentity? _joinKey;
 
+  // 机型是给批准方看的一行字：去掉首尾空白与控制字符，最多 64 个字符（同服务端 accountJoinDeviceMaxLength），读不出就不带。
+  Future<String?> _model() async {
+    final read = deviceModel;
+    if (read == null) return null;
+    try {
+      final model = (await read())?.replaceAll(RegExp(r'\p{C}', unicode: true), '').trim();
+      return model == null || model.isEmpty ? null : String.fromCharCodes(model.runes.take(64));
+    } catch (error, stack) {
+      campusLog('[AppAccount] action=device_model errorType=${error.runtimeType}\n$stack');
+      return null;
+    }
+  }
+
   @override
   Future<AppAccountJoin> startJoin() async {
     final key = _joinKey = await SocialIdentity.generate();
-    final body = await _relayed(() => _relay.request(key, 'POST', '/v1/account/joins', _keys(key)));
+    final model = await _model();
+    final body = await _relayed(() => _relay.request(key, 'POST', '/v1/account/joins', {..._keys(key), 'device': ?model}));
     final ticketId = body['ticketId'], code = body['code'], expiresAt = body['expiresAt'];
     if (ticketId is String && _accountIdPattern.hasMatch(ticketId) && code is String && RegExp(r'^\d{6}$').hasMatch(code) && expiresAt is int) {
       // 失效时刻是服务器时钟，换成本机时钟给出示页倒数（手机时钟不准、校时过时，不换就一出示就显示已失效、不再问批准）。
@@ -201,6 +217,29 @@ class RelayAppAccountClient implements AppAccountClient {
     throw _bad('join_state');
   }
 
+  // 离开出示页：用出示时那把临时密钥请中转作废这张票据（中转只作废还没批准的）；批准过（密钥已存）或没出示过不发。
+  @override
+  Future<void> cancelJoin(AppAccountJoin join) async {
+    final key = _joinKey;
+    if (key == null) return;
+    await _relayed(() => _relay.request(key, 'DELETE', '/v1/account/joins/${join.ticketId}'));
+  }
+
+  // 批准前先看请求方：机型与属地都是外部输入，逐项校验（机型最多 64 个字符、属地最多 32 个），没有的为空。
+  @override
+  Future<AppAccountJoinRequest> inspectJoin(String payload) async {
+    final parsed = AppAccountJoin.parse(payload);
+    if (parsed == null) throw const AppAccountException(AppAccountFailure.joinExpired, '不是应用账号的登录二维码');
+    final saved = await _signedIn();
+    final body = await _relayed(() => _relay.request(saved.identity, 'POST', '/v1/account/joins/${parsed.ticketId}/inspect', {'code': parsed.code}));
+    String? text(Object? value, int limit) => switch (value) {
+      null => null,
+      final String text when text.isNotEmpty && text.runes.length <= limit => text,
+      _ => throw _bad('inspect_join'),
+    };
+    return AppAccountJoinRequest(device: text(body['device'], 64), region: text(body['region'], 32));
+  }
+
   @override
   Future<void> approveJoin(String payload) async {
     final parsed = AppAccountJoin.parse(payload);
@@ -221,7 +260,7 @@ class RelayAppAccountClient implements AppAccountClient {
       throw _bad('summary');
     } on AppAccountException catch (error) {
       // 账号在别处注销、被清理，或这把密钥被顶掉了：本机记录随之作废。
-      if (error.failure == AppAccountFailure.notSignedIn) await vault.delete(appAccountSlot);
+      if (error.failure == AppAccountFailure.notSignedIn || error.failure == AppAccountFailure.deleted) await vault.delete(appAccountSlot);
       rethrow;
     }
   }
@@ -260,6 +299,7 @@ class RelayAppAccountClient implements AppAccountClient {
         RelayCode.credentialsInvalid => const AppAccountException(AppAccountFailure.credentialsInvalid, '用户名或密码不对'),
         RelayCode.joinNotFound => const AppAccountException(AppAccountFailure.joinExpired, '二维码已过期或不对，请刷新'),
         RelayCode.accountNotFound || RelayCode.unauthorized => const AppAccountException(AppAccountFailure.notSignedIn, '应用账号已经退出'),
+        RelayCode.accountDeleted => const AppAccountException(AppAccountFailure.deleted, '应用账号已注销'),
         RelayCode.rateLimited => const AppAccountException(AppAccountFailure.rateLimited, '尝试太频繁，请稍后再试'),
         RelayCode.network || RelayCode.timeout => const AppAccountException(AppAccountFailure.network, '连不上服务器'),
         RelayCode.invalidRequest => const AppAccountException(AppAccountFailure.failed, '信息没能交给服务器，请更新应用后再试'),

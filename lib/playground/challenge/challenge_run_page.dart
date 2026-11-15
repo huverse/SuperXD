@@ -126,7 +126,7 @@ class _ChallengeRunPageState extends State<ChallengeRunPage> with WidgetsBinding
       showCampusToast(context, '这一关的题看不懂，请更新应用后再试');
       return;
     }
-    await Navigator.of(context).push(CampusPageRoute<void>(builder: (context) => game.builder(context, game, widget.store, challenge)));
+    await Navigator.of(context).push(CampusPageRoute<void>(builder: (context) => game.builder(context, game, widget.store, challenge, null)));
   }
 
   // 门：输门上的数；终章：输全部碎片之和。输错扣时间、不说哪个碎片错了。

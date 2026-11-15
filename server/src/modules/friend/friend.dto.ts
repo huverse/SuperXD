@@ -11,6 +11,7 @@ export class FriendDto {
   @ApiProperty({ description: '成为好友的时刻，毫秒' }) since: number;
   @ApiProperty({ description: '好友的签名公钥（换了设备的好友总带，keys=1 时每个都带），base64url', required: false }) signPublicKey?: string;
   @ApiProperty({ description: '好友的加密公钥，同上', required: false }) boxPublicKey?: string;
+  @ApiProperty({ description: '带公钥时服务器对「请求的设备号、好友设备号、两把公钥、movedFrom」的 Ed25519 签名（原文见 relay_crypto.ts 的 friendKeysCanonical），base64url', required: false }) keysSignature?: string;
   @ApiProperty({ description: '好友的私信换到了这台新设备，这是你认得的旧设备号；处理完调 POST /v1/friends/moves/ack', required: false }) movedFrom?: string;
 }
 

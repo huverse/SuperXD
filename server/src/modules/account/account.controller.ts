@@ -48,12 +48,24 @@ export class AccountController {
     return this.accounts.changeSecret(deviceId, 'recoveryCode', body);
   }
 
-  // 扫码登录：新设备出示（自签名）、已登录的设备批准、新设备轮询。
+  // 扫码登录：新设备出示（自签名）、已登录的设备先看请求方再批准、新设备轮询、新设备离开出示页时作废。
   @Post('joins')
   @HttpCode(200)
   @SelfSigned()
-  startJoin(@CurrentDevice() deviceId: string, @Body() body: dtos.AccountDeviceKeysDto, @Ip() ip: string): Promise<dtos.AccountJoinDto> {
+  startJoin(@CurrentDevice() deviceId: string, @Body() body: dtos.AccountJoinStartBodyDto, @Ip() ip: string): Promise<dtos.AccountJoinDto> {
     return this.accounts.startJoin(deviceId, ip, body);
+  }
+
+  @Post('joins/:ticketId/inspect')
+  @HttpCode(200)
+  inspectJoin(@CurrentDevice() deviceId: string, @Param() param: dtos.AccountJoinParamDto, @Body() body: dtos.AccountJoinApproveBodyDto): Promise<dtos.AccountJoinRequestDto> {
+    return this.accounts.inspectJoin(deviceId, param.ticketId, body.code);
+  }
+
+  @Delete('joins/:ticketId')
+  @HttpCode(204)
+  cancelJoin(@CurrentDevice() deviceId: string, @Param() param: dtos.AccountJoinParamDto) {
+    return this.accounts.cancelJoin(deviceId, param.ticketId);
   }
 
   @Post('joins/:ticketId/approve')

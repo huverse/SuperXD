@@ -40,3 +40,9 @@ export const inviteProofCanonical = (inviteId: string, redeemerDeviceId: string)
 
 // 私信设备挂到应用账号的凭证原文：私信密钥对「应用账号那把设备密钥的设备号 + 私信设备号」签名，证明两把钥匙在同一台手机上（客户端 lib/social/social_crypto.dart 同一份）。
 export const socialBindCanonical = (accountDeviceId: string, socialDeviceId: string) => Buffer.from(['SXD1-social-bind', accountDeviceId, socialDeviceId].join('\n'), 'utf8');
+
+// 服务器给好友公钥的签名原文（客户端 lib/social/social_crypto.dart 的 friendKeysCanonical 同一份）：好友列表里带的公钥（换了设备的好友、新手机接管拿名单）
+// 只由服务器转交，中转是明文 HTTP，同一网络里的人能把公钥换成自己的；服务器用在线签名钥签「谁问的、好友设备号、两把公钥、认得的旧设备号」，
+// 客户端用内置公钥验过才收（人工决策见 src/modules/friend/friend_key_signer.ts）。
+export const friendKeysCanonical = (ownerDeviceId: string, deviceId: string, signPublicKey: string, boxPublicKey: string, movedFrom: string | null) =>
+  Buffer.from(['SXD1-friend-keys', ownerDeviceId, deviceId, signPublicKey, boxPublicKey, movedFrom ?? ''].join('\n'), 'utf8');

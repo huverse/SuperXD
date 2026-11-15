@@ -15,6 +15,8 @@ class LoopPuzzle {
 const loopMinSide = 2;
 // 外部输入的上限：专家档 10 见方留有余地，再大的坏题求解器可能要算很久。
 const loopMaxSide = 12;
+// 解码时证明唯一最多试探几次：出过的专家题多数几百次、试过最多六千多次，这里留够余量；随便拼的 12 见方题面不设上限能搜几分钟。
+const loopDecodeBudget = 50000;
 
 // 点阵的几何（题面、答案与对局页共用，下标规则发出后不改）：width × height 个格，(width + 1) × (height + 1) 个点，点的下标是「行 × (width + 1) + 列」。
 // 边先排横边再排竖边：第 r 行点（0 到 height）上从左数第 c 段横边是 r × width + c；
@@ -797,8 +799,10 @@ class LoopRules extends PuzzleRules<LoopPuzzle, List<bool>> {
     final clues = puzzleInts((json as Map)['clues'], maxLength: loopMaxSide * loopMaxSide, min: -1, max: 3);
     if (clues.length != width * height) throw const FormatException('数字的格数不对');
     final puzzle = LoopPuzzle(width: width, height: height, clues: List.unmodifiable(clues));
-    // 解不开或不止一个解的题当坏题拒收。
-    if (loopSolve(puzzle).count != 1) throw const FormatException('题目不唯一');
+    // 解不开或不止一个解的题当坏题拒收。试探有上限 loopDecodeBudget（同逻辑网格解码的节点上限）：恶意或写坏的题面不让界面线程搜上几分钟，
+    // 证明不了唯一的也拒收；题库工具只收这个版本自己解得开的题，出过的题不会被拒。
+    final solver = _LoopSolver(width, height, _allowedOf(clues), budget: loopDecodeBudget);
+    if (solver.solve(2).count != 1 || solver.overBudget) throw const FormatException('题目不唯一');
     return puzzle;
   }
 
