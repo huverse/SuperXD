@@ -243,9 +243,10 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver {
   Duration get _untilNextSecond {
     const second = Duration.microsecondsPerSecond;
     final micros = switch (widget.session.challenge) {
-      final challenge? => math.max(0, challenge.deadline.difference(DateTime.now()).inMicroseconds % second),
+      final challenge? => challenge.deadline.difference(DateTime.now()).inMicroseconds,
       null => second - widget.session.elapsed.inMicroseconds % second,
     };
+    if (widget.session.challenge != null) return micros <= 0 ? Duration.zero : Duration(microseconds: micros % second + 1000);
     return Duration(microseconds: micros + 1000);
   }
 
