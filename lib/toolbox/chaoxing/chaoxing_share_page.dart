@@ -200,7 +200,7 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
               ),
               if (_faces.isNotEmpty) ...[
                 const SizedBox(height: 16),
-                Text('附带人脸照片（对方替你签人脸签到时用）', style: secondary),
+                Text('附带人脸照片', style: secondary),
                 const SizedBox(height: 8),
                 Wrap(
                   spacing: 8,
@@ -216,9 +216,9 @@ class _ChaoxingTicketPageState extends State<ChaoxingTicketPage> {
                 ),
               ],
               const SizedBox(height: 16),
-              Text('让对方在“学习通签到”里选“扫别人的代签码”，扫到后本机就会保存你的账号替他签到', textAlign: TextAlign.center, style: secondary),
+              Text('对方在「学习通签到」里扫这个码', textAlign: TextAlign.center, style: secondary),
               const SizedBox(height: 8),
-              Text('二维码被谁扫到就等于把账号交给了他，只当面给自己信得过的人看', textAlign: TextAlign.center, style: secondary),
+              Text('扫到就等于拿到你的账号，只给信得过的人看', textAlign: TextAlign.center, style: secondary),
             ],
           ),
         ),

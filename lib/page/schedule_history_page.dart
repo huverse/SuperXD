@@ -273,7 +273,7 @@ class _RevisionPreviewState extends State<_RevisionPreview> {
     if (!await showCampusConfirm(
       context,
       title: '恢复到这个版本？',
-      message: '上面列出的变化会生效，并存成一个新版本；现在的课表也留在历史里，随时能再恢复。开学日和作息不变。',
+      message: '存成新版本，现在的课表仍可恢复',
       action: '恢复',
     )) {
       return;

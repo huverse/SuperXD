@@ -118,6 +118,7 @@ class _AccountPageState extends State<AccountPage> {
     final agreed = await showCampusConfirm(
       context,
       title: '登录应用账号？',
+      // 长文案：登录应用账号的单独同意（人工决策见 domain/app_account.dart）。
       message: '核对身份时，教务密码在本机换成登录用的摘要（不是明文），加密后交给本应用的服务器登录一次学校教务、确认学号后立即丢弃；服务器只存学号的加密哈希。手机上的教务随后会自动重新登录。',
       action: '同意并登录',
     );
@@ -176,6 +177,7 @@ class _AccountPageState extends State<AccountPage> {
     final confirmed = await showCampusConfirm(
       context,
       title: deleting ? '注销应用账号？' : '退出应用账号？',
+      // 长文案：注销的删除确认。
       message: deleting ? '服务器上的应用账号、所有设备上的登录，以及账号下的积分、私信好友与诊断包都会删除，这台手机上的私信记录也一并清掉，不能恢复。教务账号不受影响。' : '这台设备不再登录应用账号，教务账号不受影响。',
       action: deleting ? '注销' : '退出',
       destructive: true,

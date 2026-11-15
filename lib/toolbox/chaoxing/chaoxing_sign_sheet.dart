@@ -562,7 +562,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       final useProfile = await showCampusConfirm(
         context,
         title: '${target.record.name} 还没有人脸照片',
-        message: '学习通里存着一张默认人脸照片。直接反复用它容易被比对出来，会随机裁剪旋转一张再上传；也可以现在拍一张新的。',
+        message: '用学习通里的默认照片（随机裁剪旋转后上传），或拍一张新的',
         action: '重处理默认照片',
         cancel: '拍摄新照片',
       );
@@ -838,6 +838,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
       final agreed = await showCampusConfirm(
         context,
         title: '强制签到',
+        // 长文案：强制签到的后果说明。
         message: '会跳过签到前的检查（已签到、已截止、是否在班级）直接提交。检查判断没错时，老师那边可能出现不在班级的名单或重复记录。',
         action: '强制签到',
       );
@@ -1077,7 +1078,7 @@ class _ChaoxingSignSheetState extends State<_ChaoxingSignSheet> {
           if (_needsFace) ...[
             const SizedBox(height: 16),
             Text(
-              single.faceObjectId == null ? '这场签到要人脸识别，会用存着的人脸照片' : '已选这次用的人脸照片',
+              single.faceObjectId == null ? '需要人脸识别' : '已选这次用的人脸照片',
               style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
             ),
             const SizedBox(height: 8),

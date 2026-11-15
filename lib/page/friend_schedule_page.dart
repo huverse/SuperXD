@@ -150,7 +150,7 @@ class _FriendSchedulePageState extends State<FriendSchedulePage> {
           IconButton(tooltip: '下一周', onPressed: _week < _weekCount ? () => setState(() => _week++) : null, icon: Transform.flip(flipX: true, child: const CampusIcon(CampusIcons.back))),
         ]),
         if (common && _loadingMine) const Padding(padding: EdgeInsets.all(24), child: CampusLoading(label: '读取我的课表'))
-        else if (common && comparison.mine == null) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text('你这台设备上没有这个学期的课表，无法对比。可先在今天页同步该学年。', style: secondary))
+        else if (common && comparison.mine == null) Padding(padding: const EdgeInsets.symmetric(vertical: 8), child: Text('本机没有这个学期的课表，无法对比', style: secondary))
         else if (common && !comparison.alignedByDate) Padding(padding: const EdgeInsets.only(bottom: 8), child: Text('有一方未设置开学日，按相同周次对比', style: secondary)),
         const SizedBox(height: 8),
         CampusSurface(padding: const EdgeInsets.fromLTRB(8, 12, 8, 12), child: _WeekGrid(comparison: comparison, courses: widget.share.courses, bells: _bells, common: common && comparison.mine != null, onCourse: _showCourse)),

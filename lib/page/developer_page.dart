@@ -30,6 +30,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 String _exportedText(String? filename) => filename == null ? '导出没完成，请重试' : defaultTargetPlatform == TargetPlatform.iOS ? '已导出：$filename' : '已保存到 Download/SuperXD：$filename';
 
 // 上传诊断包前的确认（人工决策见 domain/diagnostic_upload.dart）：每次都问，写明传什么、传到哪、保留多久、会不会记到应用账号下、怎么提前删。
+// 长文案：诊断包每次上传前的确认（人工决策见 domain/diagnostic_upload.dart）。
 const _uploadNotice = '把与「导出日志」相同的日志包（本机日志、运行环境与字号状态）在本机加密后传到开发者的中转服务器，只有开发者能解开，'
     '$diagnosticUploadKeepDays 天后自动删除。传完会给你一个诊断编号，把它告诉开发者。登录着应用账号时还会记在账号下，可在账号页删除；没登录的要提前删除，凭编号联系开发者。';
 
@@ -59,7 +60,7 @@ class _DeveloperPageState extends State<DeveloperPage> {
   });
 
   Future<void> _turnOff() async {
-    final agreed = await showCampusConfirm(context, title: '关闭开发者模式', message: '停止记录并删除开发者模式日志，错误记录保留。要留着日志请先导出。', action: '关闭', destructive: true);
+    final agreed = await showCampusConfirm(context, title: '关闭开发者模式', message: '删除开发者模式日志，错误记录保留', action: '关闭', destructive: true);
     if (!agreed || !mounted) return;
     await widget.developer.setEnabled(false);
     await widget.logs.clearDiagnostics();
@@ -154,7 +155,7 @@ class _DeveloperPageState extends State<DeveloperPage> {
           children: [
             CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: CampusSwitchTile(
               title: const Text('开发者模式'),
-              subtitle: const Text('记录运行日志与诊断信息，只存本机'),
+              subtitle: const Text('日志只存本机'),
               value: widget.developer.enabled,
               onChanged: (value) {
                 if (!value) _turnOff();
@@ -219,7 +220,6 @@ class _DeveloperPageState extends State<DeveloperPage> {
             const SizedBox(height: 16),
             CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: CampusSwitchTile(
               title: const Text('性能浮层'),
-              subtitle: const Text('屏幕上方显示每帧的构建与绘制耗时'),
               value: widget.developer.performanceOverlay,
               onChanged: (value) => widget.developer.setPerformanceOverlay(value),
             )),
@@ -236,8 +236,6 @@ class _DeveloperPageState extends State<DeveloperPage> {
             // 红包用合成的口令与二维码，按钮照常去拉起支付宝（顺便在设备上验应用链接）。
             CampusSurface(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text('节日预览', style: Theme.of(context).textTheme.titleMedium),
-              const SizedBox(height: 4),
-              Text(festivalCatalog.isEmpty ? '还没有登记节日，可以先看红包揭晓' : '点一项播放，不改日期、不抽签', style: secondary),
               const SizedBox(height: 12),
               Wrap(spacing: 8, runSpacing: 8, children: [
                 for (final scene in festivalCatalog)

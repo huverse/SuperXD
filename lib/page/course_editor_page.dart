@@ -235,7 +235,7 @@ class _CourseEditorPageState extends State<CourseEditorPage> {
     if (!await showCampusConfirm(
       context,
       title: '从草稿移除此时段？',
-      message: '${week == null ? meetingLabel(meeting) : '仅第$week周的这次课'}\n保存课程后生效，历史版本中可恢复。',
+      message: week == null ? meetingLabel(meeting) : '仅第$week周的这次课',
       action: '移除', destructive: true,
     )) {
       return;

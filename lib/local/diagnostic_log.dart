@@ -334,6 +334,7 @@ class DiagnosticLog {
       for (final MapEntry(:key, :value) in {...environment, ...textSize}.entries) '$key: $value',
       'exportedAt: ${_clock().toUtc().toIso8601String()}',
       'developer: $developer',
+      // 长文案：导出包里的说明文件，不上界面。
       'note: 早于导出当天的开发者模式日志是 .log.gz，用 gunzip 解开',
     ].join('\n');
     await _exports.create(recursive: true);

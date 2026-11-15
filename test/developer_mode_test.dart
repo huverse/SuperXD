@@ -260,7 +260,7 @@ void main() {
     }
     await tester.pumpAndSettle();
     expect(find.text('开启开发者模式'), findsOneWidget);
-    expect(find.textContaining('最多保留 7 天、20MB，不会自动上传'), findsOneWidget);
+    expect(find.textContaining('最多 7 天、20MB，不自动上传'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
     expect(developer.enabled, isFalse);

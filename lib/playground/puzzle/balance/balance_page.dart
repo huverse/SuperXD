@@ -228,7 +228,7 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
       case BalanceFault.empty:
         return _refuse(-1, '两边都要放球');
       case BalanceFault.uneven:
-        return _refuse(-1, '两边的球数要一样：左边 ${left.length} 个，右边 ${right.length} 个');
+        return _refuse(-1, '两边球数要一样');
       case BalanceFault.invalid:
         return;
       case null:
@@ -320,7 +320,7 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
     final message = verdict == BalanceVerdict.contradicts
         ? '$name和称的结果对不上'
         : _usedUp
-        ? '还确定不了。${_puzzle.weighings} 次都称过了，可以从⋯里「这一题从头来」'
+        ? '还确定不了，次数已用完'
         : '还确定不了';
     _refuse(ball, message);
     // 还能称就回到称球，次数用完了留在指认里（可以换一个再试）。
@@ -510,10 +510,10 @@ class _Brief extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
     final rule = puzzle.knownHeavy
-        ? '其中一个比别的重，找出它。'
+        ? '其中一个偏重，找出它'
         : puzzle.direction
-        ? '其中一个重量不同，不知道偏轻还是偏重。找出它，并说出它偏轻还是偏重。'
-        : '其中一个重量不同，不知道偏轻还是偏重。找出它就行，不用说轻重。';
+        ? '有一个轻重不明，找出它并说出轻重'
+        : '有一个轻重不明，找出它';
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text('${puzzle.balls} 个球，最多称 ${puzzle.weighings} 次', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.4, color: palette.onSurface)),
       const SizedBox(height: 2),

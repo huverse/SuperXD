@@ -114,7 +114,7 @@ class _ChaoxingTagSheetState extends State<_ChaoxingTagSheet> {
                 if (tags.isEmpty)
                   Padding(
                     padding: const EdgeInsets.fromLTRB(8, 4, 8, 12),
-                    child: Text('还没有标签，签到时可以按标签一起勾选', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+                    child: Text('还没有标签', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
                   ),
                 for (final tag in tags)
                   CampusSurface(
@@ -243,7 +243,7 @@ class _AccountTagsDialogState extends State<_AccountTagsDialog> {
     return CampusGlassDialog(
       title: Text('给 ${widget.record.displayName} 设标签'),
       content: tags.isEmpty
-          ? Text('还没有标签，先在账号管理顶上的「标签」里新建', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))
+          ? Text('还没有标签，先在账号管理里新建', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant))
           : Column(
               mainAxisSize: MainAxisSize.min,
               children: [

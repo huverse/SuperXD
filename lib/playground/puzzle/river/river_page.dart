@@ -427,12 +427,12 @@ class _Brief extends StatelessWidget {
     final capacity = puzzle.capacity;
     final roles = [for (final person in puzzle.people) person.role];
     final (title, rule) = switch (puzzle.variant) {
-      RiverVariant.farmer => ('农夫过河', '只有农夫会划船，船上除了他最多再带一样；没人看着时，狼会吃羊，羊会吃白菜。'),
+      RiverVariant.farmer => ('农夫过河', '农夫划船，最多再带一样；没人看着时狼吃羊、羊吃白菜'),
       RiverVariant.guardians => (
         '${_chinese(roles.where((role) => role == RiverRole.adult).length)}个大人、${_chinese(roles.where((role) => role == RiverRole.kid).length)}个小孩',
-        '人人会划船，船上最多 $capacity 人；有大人的岸上，小孩不能比大人多，靠岸时连船上的人一起算。',
+        '船坐 $capacity 人；岸上有大人时小孩不能比大人多，船上的也算',
       ),
-      RiverVariant.families => ('${_chinese(puzzle.count ~/ 2)}对父子', '人人会划船，船上最多 $capacity 人；爸爸不在时，孩子不能和别人家的爸爸待在一起，船上也算。'),
+      RiverVariant.families => ('${_chinese(puzzle.count ~/ 2)}对父子', '船坐 $capacity 人；爸爸不在时，孩子不能和别人家的爸爸在一起，船上也算'),
     };
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
       Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.4, color: palette.onSurface)),

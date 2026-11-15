@@ -387,7 +387,7 @@ void main() {
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.text('这一局结束了'), findsOneWidget);
       expect(find.text('13 分'), findsOneWidget);
-      expect(find.textContaining('没超过这个挑战的最好成绩，不加积分'), findsOneWidget);
+      expect(find.textContaining('未超过最好成绩'), findsOneWidget);
     });
 
     testWidgets('积分页：余额、30 天内到期的提示、明细从新到旧，按需往下翻', (tester) async {
@@ -400,7 +400,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: PointsPage(hub: hub)));
       await tester.pumpAndSettle();
       expect(find.text('236'), findsOneWidget);
-      expect(find.textContaining('30 天内有 50 分到期'), findsOneWidget);
+      expect(find.textContaining('30 天内 50 分到期'), findsOneWidget);
       expect(find.text('Lv1'), findsOneWidget);
       expect(find.text('离 Lv2 还差 1800 分'), findsOneWidget);
       expect(find.text('普通 · 八连环'), findsOneWidget);
@@ -449,7 +449,7 @@ void main() {
       expect(find.text('积分不够付门票'), findsNothing);
       await tester.tap(find.text('开始').last);
       await tester.pumpAndSettle();
-      expect(find.textContaining('开局扣 300 积分门票，过没过都不退'), findsOneWidget);
+      expect(find.textContaining('门票 300 积分，不退'), findsOneWidget);
       await tester.tap(find.text('开始').last);
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pump(const Duration(milliseconds: 500));
@@ -485,7 +485,7 @@ void main() {
       expect(hub.games, {for (final game in playgroundCatalog) if (game.challengeable) game.id});
       await tester.tap(find.text('开始'));
       await tester.pumpAndSettle();
-      expect(find.textContaining('切到后台、来电话也照走'), findsOneWidget);
+      expect(find.textContaining('计时不暂停'), findsOneWidget);
       await tester.tap(find.text('开始').last);
       await tester.pump(const Duration(milliseconds: 500));
       await tester.pump(const Duration(milliseconds: 500));

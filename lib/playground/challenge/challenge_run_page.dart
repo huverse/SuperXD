@@ -84,7 +84,7 @@ class _ChallengeRunPageState extends State<ChallengeRunPage> with SingleTickerPr
   }
 
   Future<void> _end() async {
-    if (!await showCampusConfirm(context, title: '提前结束这一局？', message: '按已经过了的关结算，没过的关不算分。', action: '结束', destructive: true) || !mounted) return;
+    if (!await showCampusConfirm(context, title: '提前结束这一局？', message: '按已过的关结算', action: '结束', destructive: true) || !mounted) return;
     final error = await _controller.end();
     if (error != null && mounted) showCampusToast(context, error.message);
   }
@@ -94,9 +94,7 @@ class _ChallengeRunPageState extends State<ChallengeRunPage> with SingleTickerPr
     if (choice == 'end') await _end();
   }
 
-  static const _rules = '解开一关，服务器核对通过后给这一关的钥匙（一个数）。收钥匙的关题面里挖掉了几处，钥匙齐了才解锁，挖掉的地方正好由钥匙补上。\n'
-      '限时从开始算起，切到后台、来电话也照走，到点按已经过了的关结算。\n'
-      '成绩看每关的难度、用时和错交次数，过的关越多、越难越高；全部过关另有奖励。同一个挑战再玩，只补超过最好成绩的部分进积分。';
+  static const _rules = '过关得钥匙，钥匙齐了开下一关。\n计时不暂停。\n同一挑战只补超过最好成绩的分。';
 
   @override
   Widget build(BuildContext context) {
@@ -167,7 +165,7 @@ class _ResultCard extends StatelessWidget {
       Text('${result.points} 分', style: TextStyle(fontSize: 36, fontWeight: FontWeight.w600, height: 1.15, color: palette.onSurface)),
       const SizedBox(height: 4),
       DotSeparatedText(
-        ['过了 $solved/$total 关', result.awarded > 0 ? '加了 ${result.awarded} 积分' : '没超过这个挑战的最好成绩，不加积分'].join(' · '),
+        ['过了 $solved/$total 关', result.awarded > 0 ? '积分 +${result.awarded}' : '未超过最好成绩'].join(' · '),
         style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
       ),
     ]));

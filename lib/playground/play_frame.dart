@@ -244,7 +244,7 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver, Sing
     final session = widget.session;
     final tier = await showCampusMenu<PuzzleTier>(anchor, selected: session.tier, items: [for (final tier in PuzzleTier.values) CampusMenuItem(value: tier, label: tier.label)]);
     if (tier == null || tier == session.tier || !mounted) return;
-    if (session.started && !session.finished && !await showCampusConfirm(context, title: '换成${tier.label}？', message: '会换一道新题，这一局的进度不保留。', action: '换难度')) return;
+    if (session.started && !session.finished && !await showCampusConfirm(context, title: '换成${tier.label}？', message: '这一局的进度不保留', action: '换难度')) return;
     widget.onNewGame(tier);
   }
 

@@ -209,4 +209,134 @@ void main() {
       expect(notices, contains(sha256.convert(file.readAsBytesSync()).toString()), reason: '开源许可说明要写 ${file.path} 的 SHA-256');
     }
   });
+  // [人工决策-2026-11-14 23:11:48] 用户第三次提描述性文字太多（口径见 lib/playground/playground_catalog.dart 文件头）：界面上一句话不超过 40 个字
+  // （插值不计，相邻字面量连起来算）。授权与同意说明、删除与覆盖确认这类必须写全的，在上面三行内写「// 长文案：原因」才放行。
+  // 法务正文、教务页面解析的正则、规则文件、日志与异常信息不上界面，不在此列。
+  test('界面文案不堆说明，长文案要标明原因', () {
+    final offenders = <String>[];
+    final cjk = RegExp(r'[一-鿿]');
+    for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart') && !file.path.endsWith('legal_page.dart') && !file.path.contains('/edu/') && !file.path.endsWith('_rules.dart'))) {
+      final source = file.readAsStringSync();
+      final lines = source.split('\n');
+      for (final (line, text) in _DartLiterals(source).scan()) {
+        if (text.runes.length <= 40 || !cjk.hasMatch(text)) continue;
+        final at = lines[line - 1];
+        if (at.contains('campusLog') || at.contains('Exception(') || at.contains('Error(')) continue;
+        if (lines.sublist(line > 3 ? line - 4 : 0, line).any((above) => above.contains('长文案：'))) continue;
+        offenders.add('${file.path}:$line ${String.fromCharCodes(text.runes.take(16))}…（${text.runes.length} 字）');
+      }
+    }
+    expect(offenders, isEmpty);
+  });
+}
+
+// 取出 Dart 源码里的字符串字面量（起始行、字面文字）：插值不计入文字（插值里嵌套的字面量另算一条），相邻字面量连成一条，原始字符串（正则）跳过，注释不看。
+class _DartLiterals {
+  _DartLiterals(this.source) {
+    for (var index = 0; index < source.length; index++) {
+      if (source.codeUnitAt(index) == 10) _newlines.add(index);
+    }
+  }
+
+  final String source;
+  final _newlines = <int>[];
+  final _found = <(int, String)>[];
+
+  List<(int, String)> scan() {
+    _code(0, false);
+    return _found;
+  }
+
+  int _line(int offset) {
+    var low = 0, high = _newlines.length;
+    while (low < high) {
+      final middle = (low + high) ~/ 2;
+      if (_newlines[middle] < offset) {
+        low = middle + 1;
+      } else {
+        high = middle;
+      }
+    }
+    return low + 1;
+  }
+
+  static bool _word(int unit) => unit == 95 || (unit >= 48 && unit <= 57) || (unit >= 65 && unit <= 90) || (unit >= 97 && unit <= 122);
+
+  bool _quote(int at) => at < source.length && (source[at] == "'" || source[at] == '"');
+
+  bool _stringStart(int at) => _quote(at) || (source[at] == 'r' && _quote(at + 1) && (at == 0 || !_word(source.codeUnitAt(at - 1))));
+
+  // 扫一段代码；untilBrace 时停在配平的右花括号之后（插值的结尾）。
+  int _code(int at, bool untilBrace) {
+    var depth = 0;
+    while (at < source.length) {
+      if (source.startsWith('//', at)) {
+        final end = source.indexOf('\n', at);
+        at = end < 0 ? source.length : end;
+        continue;
+      }
+      if (source.startsWith('/*', at)) {
+        final end = source.indexOf('*/', at + 2);
+        at = end < 0 ? source.length : end + 2;
+        continue;
+      }
+      if (_stringStart(at)) {
+        final start = at;
+        final text = StringBuffer();
+        while (true) {
+          final (part, end) = _string(at);
+          text.write(part);
+          at = end;
+          var next = at;
+          while (next < source.length && ' \t\r\n'.contains(source[next])) {
+            next++;
+          }
+          if (next < source.length && _stringStart(next)) {
+            at = next;
+            continue;
+          }
+          break;
+        }
+        if (text.isNotEmpty) _found.add((_line(start), text.toString()));
+        continue;
+      }
+      final char = source[at];
+      if (untilBrace && char == '{') depth++;
+      if (untilBrace && char == '}') {
+        if (depth == 0) return at + 1;
+        depth--;
+      }
+      at++;
+    }
+    return at;
+  }
+
+  // 读一个字面量，返回字面文字（原始字符串为空）与结束位置。
+  (String, int) _string(int start) {
+    var at = start;
+    final raw = source[at] == 'r';
+    if (raw) at++;
+    final quote = source[at];
+    final close = source.startsWith(quote * 3, at) ? quote * 3 : quote;
+    at += close.length;
+    final text = StringBuffer();
+    while (at < source.length && !source.startsWith(close, at)) {
+      final char = source[at];
+      if (!raw && char == r'\') {
+        text.write(source[at + 1] == 'n' ? '\n' : source[at + 1]);
+        at += 2;
+      } else if (!raw && char == r'$' && at + 1 < source.length && source[at + 1] == '{') {
+        at = _code(at + 2, true);
+      } else if (!raw && char == r'$') {
+        at++;
+        while (at < source.length && _word(source.codeUnitAt(at))) {
+          at++;
+        }
+      } else {
+        text.write(char);
+        at++;
+      }
+    }
+    return (raw ? '' : text.toString(), at + close.length);
+  }
 }

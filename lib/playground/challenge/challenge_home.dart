@@ -96,8 +96,7 @@ class _ChallengeHomeState extends State<ChallengeHome> {
     final confirmed = await showCampusConfirm(
       context,
       title: '开始「${challenge.title}」？',
-      message: '${challenge.levels} 关，限时 $minutes 分钟，从现在开始计时；切到后台、来电话也照走，到点按已经过了的关结算。'
-          '${challenge.ticket > 0 ? '开局扣 ${challenge.ticket} 积分门票，过没过都不退。' : ''}',
+      message: ['${challenge.levels} 关 · $minutes 分钟，计时不暂停', if (challenge.ticket > 0) '门票 ${challenge.ticket} 积分，不退'].join('\n'),
       action: '开始',
     );
     if (!confirmed || !mounted) return;
@@ -107,7 +106,7 @@ class _ChallengeHomeState extends State<ChallengeHome> {
     } on ChallengeException catch (error) {
       if (!mounted) return;
       if (error.failure == ChallengeFailure.runActive && error.runId != null) {
-        if (await showCampusConfirm(context, title: '上一局还没结束', message: '同一时间只能进行一局。先回到那一局，做完或提前结束后再开新的。', action: '回到那一局')) await _resume(error.runId!);
+        if (await showCampusConfirm(context, title: '上一局还没结束', message: '同时只能进行一局', action: '回到那一局')) await _resume(error.runId!);
       } else {
         showCampusToast(context, error.message);
         await _load();
@@ -128,7 +127,7 @@ class _ChallengeHomeState extends State<ChallengeHome> {
     final palette = CampusPalette.of(context);
     final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
     final hub = widget.hub;
-    // 没登录教务或应用账号：说明一句，给去登录的按钮。
+    // 没登录教务或应用账号：只给去登录的按钮。
     if (!hub.campusSignedIn || !hub.signedIn) {
       return ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + widget.bottom), children: [
         CampusSurface(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
@@ -137,8 +136,6 @@ class _ChallengeHomeState extends State<ChallengeHome> {
             const SizedBox(width: 12),
             Expanded(child: Text('挑战要先登录', style: Theme.of(context).textTheme.titleMedium)),
           ]),
-          const SizedBox(height: 8),
-          Text(hub.campusSignedIn ? '挑战由服务器出题、核对和计分，成绩记进应用账号的积分。' : '挑战的成绩记进应用账号，应用账号用教务账号登录。', style: secondary),
           const SizedBox(height: 16),
           FilledButton.icon(
             onPressed: () => hub.campusSignedIn ? widget.openAccount(context) : widget.openLogin(context),
@@ -161,7 +158,7 @@ class _ChallengeHomeState extends State<ChallengeHome> {
             const SizedBox(width: 20),
             Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
               Text(['积分 ${_points?.balance ?? 0}', if (_points case final points? when pointsLevelShown(points)) 'Lv${points.level}'].join(' · '), style: Theme.of(context).textTheme.titleMedium),
-              if ((_points?.expiring ?? 0) > 0) Text('30 天内有 ${_points!.expiring} 分到期', style: secondary),
+              if ((_points?.expiring ?? 0) > 0) Text('30 天内 ${_points!.expiring} 分到期', style: secondary),
             ])),
             CampusIcon(CampusIcons.next, color: palette.onSurfaceVariant),
           ]),
@@ -178,7 +175,7 @@ class _ChallengeHomeState extends State<ChallengeHome> {
         const SizedBox(height: 24),
         Text('本周挑战', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 8),
-        if (catalog.challenges.isEmpty) Text('这周还没有挑战，过两天再来看看。', style: secondary),
+        if (catalog.challenges.isEmpty) Text('本周暂无挑战', style: secondary),
         for (final challenge in catalog.challenges) ...[
           CampusSurface(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Row(children: [
@@ -201,7 +198,7 @@ class _ChallengeHomeState extends State<ChallengeHome> {
             ]),
             const SizedBox(height: 12),
             Align(alignment: Alignment.centerRight, child: !challenge.playable
-                ? Text('里面有新游戏，更新应用后才能玩', style: secondary)
+                ? Text('更新应用后可玩', style: secondary)
                 : challenge.ticket > (_points?.balance ?? 0)
                 ? Text('积分不够付门票', style: secondary)
                 : FilledButton.icon(

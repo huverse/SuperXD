@@ -53,6 +53,7 @@ Future<void> importChaoxingTicket(
   final agreed = await showCampusConfirm(
     context,
     title: '导入代签账号',
+    // 长文案：导入代签账号的授权说明。
     message: '导入后本机会保存对方的手机号、登录凭据、设备码与附带的人脸照片记录，用来替他签到；对方改了密码时可以重新登录修复。你可以在账号菜单里随时删掉。',
     action: '导入',
   );
@@ -148,6 +149,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
       builder: (context) => CampusGlassDialog(
         title: Text(updated ? '学习通签到的说明更新了' : '登录学习通'),
         content: const SingleChildScrollView(child: CampusProse(
+          // 长文案：学习通签到的同意说明。
           '1. SuperXD 会把你的学习通账号与密码保存在本机安全存储，用于登录超星学习通（chaoxing.com）并提交签到。\n'
           '2. 签到时的位置、照片与账号信息会发送给学习通。\n'
           '3. 为了与学习通客户端一致（人脸签到的设备签名、避免被标「更换设备」），登录时会把设备信息（型号、系统版本、ANDROID_ID、DRM 设备号等）加密后发给学习通，并读取系统的匿名设备标识（OAID）算出设备码。\n'
@@ -244,7 +246,7 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
     final agreed = await showCampusConfirm(
       context,
       title: '退出登录？',
-      message: '账号、密码、人脸照片与设置都保留在本机，下次登录或切换回来直接用；当前会话会关闭。',
+      message: '账号与设置留在本机，下次直接用',
       action: '退出登录',
     );
     if (!agreed || !mounted) return;

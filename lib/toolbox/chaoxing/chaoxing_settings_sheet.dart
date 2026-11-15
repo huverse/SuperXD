@@ -257,7 +257,7 @@ class _ChaoxingSettingsSheetState extends State<_ChaoxingSettingsSheet> {
                     ),
                     const SizedBox(height: 8),
                     Text(
-                      '学校用的是定制版学习通、课程列表对不上时才需要换，否则保持「学习通」',
+                      '课程对不上时才需要换',
                       style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
                     ),
                     // 自定义的输入框与出错提示展开、收起时弹层高度平滑变化，不一下子跳高跳矮；减少动画时直接到位

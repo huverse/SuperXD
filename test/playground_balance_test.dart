@@ -473,14 +473,14 @@ void main() {
       haptics.clear();
       await _button(tester, '称一下');
       await _frames(tester, 300);
-      expect(find.text('两边的球数要一样：左边 2 个，右边 1 个'), findsOneWidget);
+      expect(find.text('两边球数要一样'), findsOneWidget);
       expect(haptics, ['HapticFeedbackType.heavyImpact']);
       expect(find.textContaining('称了 0/2 次'), findsOneWidget);
 
       // 点盘里的球拿回桌上是一步正常操作：过时的提示马上收起。
       await _tapBall(tester, 1);
       await _frames(tester, 400);
-      expect(find.text('两边的球数要一样：左边 2 个，右边 1 个'), findsNothing);
+      expect(find.text('两边球数要一样'), findsNothing);
       expect(find.bySemanticsLabel('2 号球，在桌上'), findsOneWidget);
 
       // 1 对 3：称了，记一行，球回到桌上。
@@ -535,7 +535,7 @@ void main() {
       await _tapBall(tester, candidate);
       await _button(tester, '确认');
       await _frames(tester, 300);
-      expect(find.text('还确定不了。2 次都称过了，可以从⋯里「这一题从头来」'), findsOneWidget);
+      expect(find.text('还确定不了，次数已用完'), findsOneWidget);
       expect(find.widgetWithText(FilledButton, '确认'), findsOneWidget);
       semantics.dispose();
     });

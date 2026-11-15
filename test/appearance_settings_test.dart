@@ -567,7 +567,7 @@ void main() {
     await settings.setGlassMode('full');
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), builder: (context, child) => DisplayScope(settings: settings, child: TextSizeComfort(builder: (_, _) => child!)), home: const AppearancePage()));
     await tester.pumpAndSettle();
-    const notice = '点「完整」重试';
+    const notice = '上次异常退出，已临时降为简化效果';
     await tester.scrollUntilVisible(find.text(notice), 200, scrollable: find.byType(Scrollable).first);
     await tester.tap(find.text('完整'));
     await tester.pumpAndSettle();
