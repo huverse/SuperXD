@@ -4,7 +4,7 @@
 
 # 文件职责
 
-- social_crypto.dart：协议 v1 的客户端密码学，与服务端 relay_crypto.ts 逐字节一致，双端共用 server/test/vectors/protocol_v1.json。
+- social_crypto.dart：协议 v1 的客户端密码学，与服务端 relay_crypto.ts 逐字节一致，双端共用 server/test/vectors/protocol_v1.json（含服务器给好友公钥签名的原文 friendKeysCanonical）。
   - 设备身份 SocialIdentity：Ed25519 签名密钥加 X25519 加密密钥；设备号是签名公钥 sha256 的前 16 字节（base64url）。
   - 请求签名原文 requestCanonical、邀请凭证原文 inviteProofCanonical、私信设备挂到应用账号的凭证原文 socialBindCanonical（共用向量 socialBind）。
   - 信封 sealEnvelope / openEnvelope：明文 gzip 后由发送方签名，再用一次性 X25519 与收件人协商，HKDF-SHA256 派生 AES-256-GCM 密钥加密，附加数据绑定收件人设备号；解压上限 1MB。验签 verifyOpened 在确认发送方后进行。
@@ -23,7 +23,7 @@
   - RelayTransport 传输端口，可按请求给超时与响应上限；HttpRelayTransport 经共用内核 domain/campus_http.dart 发，超时管到读完响应体（到点中断连接），默认 15 秒，长轮询为挂起时长加 10 秒；响应上限默认 responseLimit（64KB，最大的好友列表约 30KB），拉信箱按这次要的条数放宽（RelayClient.inboxLimit：每条按 360KB 算，单条密文 256KB 经 base64url 约 342KB），超了算 BAD_RESPONSE。经 _call 的请求（含节日抽签用的 RelayClient.request）都受这两条约束。
   - HttpRelayTransport 在断网、超时、响应格式不对时记 [RelayTransport] 日志：错误码、方法与路径、异常类型与完整堆栈，不写服务器地址与查询参数；往上只抛 RelayException 错误码。收消息的长轮询按后台请求发（background），它的断网与超时不在这里记，交给收取循环。
   - RelayClient：每个请求用设备私钥签名，没有会话令牌；收到 CLOCK_SKEW 按服务器时间校正并只重发这一次。request 用给定身份签名发任意路径（可另给超时与响应上限），给应用账号、挑战与节日抽签用；错误响应的其余字段放在 RelayException.detail。
-  - 私信挂到应用账号 bindSocial（用应用账号的设备密钥签名，带私信密钥的凭证，可带接管）；好友列表 friends 解析成 RemoteFriend（换了设备的带新公钥与 movedFrom，公钥与设备号对不上算格式不对；keys 为真时每项都带公钥、响应放宽到 256KB）；ackMoves 确认换设备提示。
+  - 私信挂到应用账号 bindSocial（用应用账号的设备密钥签名，带私信密钥的凭证，可带接管）；好友列表 friends 解析成 RemoteFriend（换了设备的带新公钥与 movedFrom，公钥与设备号对不上、没有服务器签名或验不过都算格式不对；keys 为真时每项都带公钥、响应放宽到 256KB）；服务器给好友公钥的签名钥内置在 relayFriendKeys（[人工决策] 在常量上，RelayClient 与 SocialService 的 friendKeys 可换成测试钥）；ackMoves 确认换设备提示。
 - social_store.dart：私信本机库（每个应用账号一份，文件见 social_spaces.dart，已排除备份）：profile、friend、message、invite 四张表，时间存 UTC ISO 字符串。第 2 版 profile 加 bound（已挂到应用账号；旧版升级上来是 0，打开时补挂一次）。好友换了设备时 relinkFriend 把好友连同会话改挂到新设备号与新公钥并写一条 friend_moved；新手机接管后 importFriend 补进服务器给的好友（名字先用 placeholderNickname，等对方发来昵称）。
 - social_service.dart：SocialService 私信编排，是页面唯一入口。
   - 状态：loading、unavailable（未配置中转）、signedOut（没登录应用账号）、disabled（未开启）、elsewhere（这个账号的私信在另一台手机上）、ready、failed（打开时挂不上账号等，页面给重试 reopen）。

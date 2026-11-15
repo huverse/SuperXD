@@ -41,7 +41,7 @@ var _databases = 0;
 Future<SocialService> device(FakeRelay relay, [String? nickname]) async {
   final directory = Directory(path.join(temporary.path, 'ui_${_databases++}'))..createSync();
   final keys = MemoryAppAccountVault();
-  final service = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: directory.path), accountKeys: keys, transport: relay.transport());
+  final service = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: directory.path), accountKeys: keys, transport: relay.transport(), friendKeys: FakeRelay.friendKeys);
   await service.switchAccount(await relay.signIn(keys));
   if (nickname != null) await service.enable(nickname);
   return service;
@@ -127,7 +127,7 @@ void main() {
   testWidgets('没登录应用账号：一张卡写明要先登录，点「去登录」交给账号页', (tester) async {
     final relay = FakeRelay();
     final directory = Directory(path.join(temporary.path, 'signed_out'))..createSync();
-    final social = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: directory.path), accountKeys: MemoryAppAccountVault(), transport: relay.transport());
+    final social = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: directory.path), accountKeys: MemoryAppAccountVault(), transport: relay.transport(), friendKeys: FakeRelay.friendKeys);
     await tester.runAsync(() => social.switchAccount(null));
     var opened = 0;
     await tester.pumpWidget(app(Scaffold(body: MessagePage(social: social, openAccount: (_) => opened++))));
@@ -143,7 +143,7 @@ void main() {
     final (alice, bob) = (await tester.runAsync(() => friends(relay)))!;
     final accountId = relay.accountSocial.entries.firstWhere((entry) => entry.value == alice.deviceId).key;
     final keys = MemoryAppAccountVault();
-    final moved = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: (Directory(path.join(temporary.path, 'new_phone'))..createSync()).path), accountKeys: keys, transport: relay.transport());
+    final moved = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: (Directory(path.join(temporary.path, 'new_phone'))..createSync()).path), accountKeys: keys, transport: relay.transport(), friendKeys: FakeRelay.friendKeys);
     await tester.runAsync(() async {
       await moved.switchAccount(await relay.signIn(keys, accountId: accountId));
       await expectLater(moved.enable('小红'), throwsA(isA<SocialException>()));

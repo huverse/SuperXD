@@ -80,7 +80,7 @@ Future<SocialService> _demoSocial(TermRef term, String start) async {
     if (directory.existsSync()) directory.deleteSync(recursive: true);
     directory.createSync();
     final keys = MemoryAppAccountVault();
-    final service = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: directory.path), accountKeys: keys, transport: relay.transport());
+    final service = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: directory.path), accountKeys: keys, transport: relay.transport(), friendKeys: FakeRelay.friendKeys);
     await service.switchAccount(await relay.signIn(keys));
     await service.enable(name);
     return service;

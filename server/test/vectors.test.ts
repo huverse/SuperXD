@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 
-import { base64url, decodeBase64url, deviceIdOf, ed25519Key, inviteProofCanonical, requestCanonical, socialBindCanonical, verifyEd25519, x25519PrivateKey, x25519PublicOf } from 'src/common/crypto/relay_crypto';
+import { base64url, decodeBase64url, deviceIdOf, ed25519Key, friendKeysCanonical, inviteProofCanonical, requestCanonical, socialBindCanonical, verifyEd25519, x25519PrivateKey, x25519PublicOf } from 'src/common/crypto/relay_crypto';
 import { sealRewardPrize } from 'src/modules/reward/reward_seal';
 
 // 协议 v1 测试向量：客户端 test/social_protocol_test.dart 读同一份文件，双端逐字节一致。
@@ -23,6 +23,14 @@ describe('协议 v1 测试向量', () => {
     const canonical = inviteProofCanonical(invite.inviteId, invite.redeemerDeviceId);
     expect(canonical.toString('utf8')).toBe(invite.canonical);
     expect(verifyEd25519(ed25519Key(decodeBase64url(invite.publicKey, 32)!), canonical, decodeBase64url(invite.proof, 64)!)).toBe(true);
+  });
+
+  it('服务器给好友公钥的签名原文与签名可验', () => {
+    const keys = vectors.friendKeys;
+    const canonical = friendKeysCanonical(keys.ownerDeviceId, keys.deviceId, keys.signPublicKey, keys.boxPublicKey, keys.movedFrom);
+    expect(canonical.toString('utf8')).toBe(keys.canonical);
+    expect(verifyEd25519(ed25519Key(decodeBase64url(keys.publicKey, 32)!), canonical, decodeBase64url(keys.signature, 64)!)).toBe(true);
+    expect(friendKeysCanonical(keys.ownerDeviceId, keys.deviceId, keys.signPublicKey, keys.boxPublicKey, null).toString('utf8').endsWith('\n')).toBe(true);
   });
 
   it('私信挂到应用账号的凭证原文与签名可验', () => {

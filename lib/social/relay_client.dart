@@ -141,10 +141,17 @@ class InboxItem {
   final int createTime;
 }
 
+// [人工决策-2026-11-15 19:18:31] 好友列表里带的公钥（换了设备的好友、新手机接管拿名单）由服务器签名（用户选「服务器签名新公钥」，没选「中转改 HTTPS」）：
+// 中转是明文 HTTP，同一网络里的人能把好友的新公钥换成自己的、之后的私信就被他看到；服务器用在线签名钥签（服务端 src/modules/friend/friend_key_signer.ts），
+// 这里内置它的公钥，带公钥的每一条都要有任一把验得过的签名，不然整份当格式不对。只挡网络上的人，挡不住服务器本身。换钥时先在这里加新公钥、发版后再换服务器的。
+const relayFriendKeys = ['hPOt9e7eTElfw24qcN7bccM1K3-rHX9KtVHCwhn-xaI'];
+
 // 协议 v1 的接口调用：每个请求用设备签名私钥签名（方法、路径、时间、随机数、请求体哈希），没有会话令牌。
+// friendKeys 是受信的好友公钥签名钥（base64url），默认内置的；测试换成测试钥。
 class RelayClient {
-  RelayClient(this.transport);
+  RelayClient(this.transport, {this.friendKeys = relayFriendKeys});
   final RelayTransport transport;
+  final List<String> friendKeys;
   // 本机时钟与服务器的差（毫秒）。收到 CLOCK_SKEW 时按服务器时间校正，并只重发这一次。
   int clockOffset = 0;
 
@@ -199,26 +206,36 @@ class RelayClient {
   }
 
   // 服务端的好友列表（最多 500 个）。换了设备的好友带新公钥与 movedFrom（本机认得的旧设备号）；keys 为真时每个都带公钥（新手机接管后拿名单），
-  // 这时响应放宽到 256KB（500 个好友各两把公钥约 120KB）。公钥与设备号对不上的当格式不对。
+  // 这时响应放宽到 256KB（500 个好友各两把公钥约 120KB）。公钥与设备号对不上、没有服务器签名或验不过的当格式不对（见 relayFriendKeys）。
   Future<Map<String, RemoteFriend>> friends(SocialIdentity identity, {bool keys = false}) async {
     final list = (await _call(identity, 'GET', keys ? '/v1/friends?keys=1' : '/v1/friends', null, null, false, keys ? 256 * 1024 : null))['friends'];
     if (list is! List) throw const RelayException(RelayCode.badResponse);
-    return {
-      for (final item in list.cast<Map<Object?, Object?>>())
-        _text(item['deviceId']): RemoteFriend(deviceId: _text(item['deviceId']), since: _integer(item['since']), keys: _keys(item), movedFrom: switch (item['movedFrom']) {
-          null => null,
-          final String movedFrom => movedFrom,
-          _ => throw const RelayException(RelayCode.badResponse),
-        }),
-    };
+    final friends = <String, RemoteFriend>{};
+    for (final item in list.cast<Map<Object?, Object?>>()) {
+      final deviceId = _text(item['deviceId']);
+      final movedFrom = switch (item['movedFrom']) {
+        null => null,
+        final String movedFrom => movedFrom,
+        _ => throw const RelayException(RelayCode.badResponse),
+      };
+      friends[deviceId] = RemoteFriend(deviceId: deviceId, since: _integer(item['since']), keys: await _keys(item, identity.deviceId, deviceId, movedFrom), movedFrom: movedFrom);
+    }
+    return friends;
   }
 
-  static PeerKeys? _keys(Map<Object?, Object?> item) {
+  Future<PeerKeys?> _keys(Map<Object?, Object?> item, String ownerDeviceId, String deviceId, String? movedFrom) async {
     if (item['signPublicKey'] == null && item['boxPublicKey'] == null) return null;
-    final sign = tryDecodeBase64UrlNoPad(_text(item['signPublicKey']), length: 32), box = tryDecodeBase64UrlNoPad(_text(item['boxPublicKey']), length: 32);
-    if (sign == null || box == null) throw const RelayException(RelayCode.badResponse);
+    final signText = _text(item['signPublicKey']), boxText = _text(item['boxPublicKey']);
+    final sign = tryDecodeBase64UrlNoPad(signText, length: 32), box = tryDecodeBase64UrlNoPad(boxText, length: 32), signature = tryDecodeBase64UrlNoPad(_text(item['keysSignature']), length: 64);
+    if (sign == null || box == null || signature == null) throw const RelayException(RelayCode.badResponse);
     final keys = PeerKeys(sign, box);
-    return keys.deviceId == item['deviceId'] ? keys : throw const RelayException(RelayCode.badResponse);
+    if (keys.deviceId != deviceId) throw const RelayException(RelayCode.badResponse);
+    final message = friendKeysCanonical(ownerDeviceId, deviceId, signText, boxText, movedFrom);
+    for (final trusted in friendKeys) {
+      if (await verifyEd25519(tryDecodeBase64UrlNoPad(trusted, length: 32)!, message, signature)) return keys;
+    }
+    campusLog('[Relay] action=friend_keys errorType=signature deviceId=$deviceId');
+    throw const RelayException(RelayCode.badResponse);
   }
 
   // 处理完这些好友换设备的提示（新设备号），服务端清掉 movedFrom。
