@@ -18,3 +18,10 @@ export class AccountDeviceEntity extends BaseEntity {
   @Column({ name: 'account_id', type: 'varchar', length: 32 }) accountId: string;
   @Column({ name: 'device_id', type: 'varchar', length: 32 }) deviceId: string;
 }
+
+// 注销账号时它的每把设备密钥记一行墓碑（人工决策见 account.service.ts 的 remove）：这些密钥再来回 ACCOUNT_DELETED，客户端据此清掉本机那个账号的私信；
+// 被顶掉、恢复码重设踢下线的密钥不记，照旧回 ACCOUNT_NOT_FOUND。保留 accountTombstoneDays 天，由账号的清理任务删。
+@Entity('account_tombstone')
+export class AccountTombstoneEntity extends BaseEntity {
+  @Column({ name: 'device_id', type: 'varchar', length: 32 }) deviceId: string;
+}

@@ -404,7 +404,7 @@ AccountDiagnostics? diagnosticsOf(AppAccounts? Function() appAccounts) {
 AppAccounts? appAccountsOf({void Function(AppAccountRef account)? onDeleted}) {
   final transport = relayTransport();
   if (transport == null) return null;
-  return AppAccounts(client: RelayAppAccountClient(vault: const SecureAppAccountVault(), transport: transport), onDeleted: onDeleted);
+  return AppAccounts(client: RelayAppAccountClient(vault: const SecureAppAccountVault(), transport: transport, deviceModel: readDeviceModel), onDeleted: onDeleted);
 }
 
 // 私信跟着当前应用账号（人工决策见 social/social_service.dart）：同意协议与政策之后，等应用账号读好本机记录就切过去，之后应用账号一变就跟着切；没配中转时为不可用。

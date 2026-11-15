@@ -5,6 +5,7 @@
 # 11-14 补进积分的两张表（points_grant、points_entry）与挑战的最好成绩 challenge_best；挑战的一局 challenge_run 结束 30 天就删，是短期数据，不导。
 # 11-14 晚补进私信设备属于哪个应用账号的 account_social（随账号长期保存，丢了要重新接管），与账号记过的解锁 account_unlock（花积分买的，丢了要重新付）。
 # 11-15 应用账号改为用户名加密码：account_identity 删除，app_account 里多了密码与恢复码的 scrypt 哈希（没有原文，但备份同样只给属主读写）。
+# 11-16 补进注销账号时记的墓碑 account_tombstone（保留 400 天；丢了只是那些设备再来时回 ACCOUNT_NOT_FOUND、不清本机私信）。
 # message（30 天）与 chaoxing_pack（10 分钟）是短期数据，不导。用 mysqldump --single-transaction 在 InnoDB 一致性快照里导出，不锁表、不停服务；
 # gzip 压缩，文件名带 UTC 时刻，按天跑、只留最新 BACKUP_KEEP 份（默认 14）。只存本机盘只防误删与库损坏，防不了整盘丢失；
 # 异地存放的去处还没定（等用户选），先留可选的上传钩子 BACKUP_UPLOAD_HOOK：备份写好后以备份文件的绝对路径为参数调用它，失败则本脚本以非零退出。
@@ -15,7 +16,7 @@
 set -euo pipefail
 
 # 新增长期保存的表时加在这里，并同步 README「备份与恢复」。
-tables=(device friendship reward_campaign reward_prize reward_draw app_account account_device points_grant points_entry challenge_best account_social account_unlock)
+tables=(device friendship reward_campaign reward_prize reward_draw app_account account_device account_tombstone points_grant points_entry challenge_best account_social account_unlock)
 
 log() { echo "[Backup] $* time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; }
 

@@ -31,6 +31,12 @@ final class AppAccountWaiting extends AppAccountResult {
   const AppAccountWaiting();
 }
 
+// 批准方批准前看到的请求方（机型与属地）。
+final class AppAccountJoinRequested extends AppAccountResult {
+  const AppAccountJoinRequested(this.request);
+  final AppAccountJoinRequest request;
+}
+
 final class AppAccountError extends AppAccountResult {
   const AppAccountError(this.message);
   final String message;
@@ -44,7 +50,8 @@ class AppAccounts extends ChangeNotifier {
     : _now = now ?? DateTime.now,
       _recoveryCode = recoveryCode ?? generateRecoveryCode;
   final AppAccountClient client;
-  // 注销成功后（服务器已删掉账号下的数据），以及清掉 11-15 以前的旧账号时：组合根接上清掉这台手机上那个账号的私信（人工决策见 social/social_service.dart）。
+  // 注销成功后（服务器已删掉账号下的数据）、中转说账号已在别处注销时，以及清掉 11-15 以前的旧账号时：
+  // 组合根接上清掉这台手机上那个账号的私信（人工决策见 social/social_service.dart 与 domain/app_account.dart 的 19:18:31 那条）。
   final void Function(AppAccountRef account)? onDeleted;
   final DateTime Function() _now;
   final String Function() _recoveryCode;
@@ -98,7 +105,7 @@ class AppAccounts extends ChangeNotifier {
       return result;
     } on AppAccountException catch (error) {
       campusLog('[AppAccounts] action=$action failure=${error.failure.name}');
-      lost = error.failure == AppAccountFailure.notSignedIn && _session != null;
+      lost = (error.failure == AppAccountFailure.notSignedIn || error.failure == AppAccountFailure.deleted) && _session != null;
       return AppAccountError(error.message);
     } catch (error, stack) {
       campusLog('[AppAccounts] action=$action errorType=${error.runtimeType}\n$stack');
@@ -106,7 +113,7 @@ class AppAccounts extends ChangeNotifier {
     } finally {
       _busy = false;
       notifyListeners();
-      // 中转说这台设备已不在账号里（别处注销、被清理）：马上核一次，本机退回未登录。
+      // 中转说这台设备已不在账号里（被顶掉、重设踢下线、别处注销）：马上核一次，本机退回未登录，账号已注销的另清本机私信。
       if (lost) unawaited(check(force: true));
     }
   }
@@ -178,7 +185,22 @@ class AppAccounts extends ChangeNotifier {
     }
   }
 
-  // 登录着的设备批准扫到的登录码（页面已请用户核对过 6 位码）。
+  // 离开出示页（或刷新二维码换下旧的那张）时作废票据：不等、不占 busy，失败只记日志（票据 5 分钟后自己过期）。
+  Future<void> cancelJoin(AppAccountJoin join) async {
+    try {
+      await client.cancelJoin(join);
+    } catch (error, stack) {
+      campusLog('[AppAccounts] action=cancel_join errorType=${error.runtimeType}\n$stack');
+    }
+  }
+
+  // 登录着的设备批准前先看请求方（机型与属地），页面写进确认框（人工决策见 domain/app_account.dart 的 19:18:31 那条）。
+  Future<AppAccountResult> inspectJoin(String payload) => _run('inspect_join', () async {
+    if (_session == null) return const AppAccountError('没有登录应用账号');
+    return AppAccountJoinRequested(await client.inspectJoin(payload));
+  });
+
+  // 登录着的设备批准扫到的登录码（页面已请用户核对过 6 位码与请求方）。
   Future<AppAccountResult> approveJoin(String payload) => _run('approve_join', () async {
     if (_session == null) return const AppAccountError('没有登录应用账号');
     await client.approveJoin(payload);
@@ -202,7 +224,7 @@ class AppAccounts extends ChangeNotifier {
     return const AppAccountDone('应用账号已注销');
   });
 
-  // 启动（同意协议与政策之后）与回到前台时由组合根调：登录着且距上次超过 checkGap 才联网看一眼；账号已在别处注销或被清理就退回未登录。
+  // 启动（同意协议与政策之后）与回到前台时由组合根调：登录着且距上次超过 checkGap 才联网看一眼；这把密钥已不在账号里就退回未登录，账号已注销的另交给 onDeleted。
   // force：挑战或积分那边中转说这个应用账号已不在了，不等间隔马上核一次。
   Future<void> check({bool force = false}) async {
     final session = _session, checkedAt = _checkedAt;
@@ -217,8 +239,11 @@ class AppAccounts extends ChangeNotifier {
       }
     } on AppAccountException catch (error) {
       campusLog('[AppAccounts] action=check failure=${error.failure.name}');
-      if (error.failure == AppAccountFailure.notSignedIn && identical(_session, session)) {
+      final gone = error.failure == AppAccountFailure.notSignedIn || error.failure == AppAccountFailure.deleted;
+      if (gone && identical(_session, session)) {
         _session = null;
+        // 只有账号已注销才清本机那个账号的私信；被顶掉、重设踢下线的再登录还能接着用（人工决策见 domain/app_account.dart 的 19:18:31 那条）。
+        if (error.failure == AppAccountFailure.deleted) onDeleted?.call(session.account);
         notifyListeners();
       }
     } catch (error, stack) {
