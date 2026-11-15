@@ -76,6 +76,8 @@ export const rolloutFileMaxBytes = 64 * 1024;
 // 节日抽奖（概率模型与要求设备签名的人工决策见 src/modules/reward/reward_odds.ts）：同一来源每小时 3000 次（校园网 NAT 共用出口，同代签取件的宽松档），
 // 每台设备每小时 10 次（一台设备一次活动只抽一次、重复请求返回同一结果，正常客户端只在没连上时补抽；按设备计数让刷请求的设备先被自己的额度挡住）；
 // 刷号的成本是注册限流 registerPerHour。活动行在进程内缓存 60 秒（建活动、改时间最迟一分钟生效）；活动结束 30 天后连同奖品与抽签记录删除。
+// 账号建立满 rewardAccountMinAgeDays 天才能抽（设备核对谁都能建号，挡住改版应用批量建号抽红包；人工决策见 reward_odds.ts）。
+export const rewardAccountMinAgeDays = 7;
 export const rewardDrawPerHour = 3000;
 export const rewardDrawPerDevicePerHour = 10;
 export const rewardCampaignCacheSeconds = 60;
@@ -125,6 +127,17 @@ export const kingoChallengeSeconds = 5 * 60;
 export const accountSealMaxBytes = 1024;
 export const accountDeviceLimit = 20;
 export const accountIdleDays = 400;
+// 设备核对与扫码授权（人工决策见 src/modules/account/account.service.ts 的 deviceSignIn）：设备核对不连学校，同样按设备、来源、全局与学号限流（复用上面几档）。
+// 扫码授权的票据在 Redis 存 5 分钟（新设备号、学号哈希、6 位核对码、批准后的账号号）；新设备每小时最多发起 20 次，旧设备每小时最多批准 30 次。
+export const accountJoinSeconds = 5 * 60;
+export const accountJoinPerDevicePerHour = 20;
+export const accountApprovePerDevicePerHour = 30;
+// 找回申请：等 3 天，期间账号的设备可以拒绝或批准；同一账号同时有别的设备在申请就都不自动生效。每台设备每天最多提交 3 次，
+// 一个账号列出的等待中申请最多 10 条（多的按先后截断，限流下正常到不了）；申请满 30 天删除。
+export const accountRecoveryDays = 3;
+export const accountRecoveryPerDevicePerDay = 3;
+export const accountRecoveryListLimit = 10;
+export const accountRecoveryKeepDays = 30;
 
 // 积分（人工决策见 src/modules/points/points.service.ts）：每笔获得满 12 个月过期，30 天内要过期的在余额旁提示；
 // 流水满 13 个月（按 395 天）删除；剩余为 0 且过期满 30 天的获得行删除。流水每页 20 条；每台设备每小时查 600 次。

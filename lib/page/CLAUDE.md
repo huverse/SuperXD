@@ -47,8 +47,9 @@
   - campus_sync_dialogs.dart：同步结果弹窗 showCampusSyncReport：结果与未处理项，可重新登录或重新同步；教务限流停下时只说明约 1 分钟后再同步，不给立即重新同步。
 - 账号与设置：
   - login_page.dart：登录页 LoginPage，也用于切换账号：验证码、记住账号确认、百宝箱、游乐场、关于（进同一个关于页，未登录也能开开发者模式、检查更新，[人工决策] 在按钮处）与法务入口；同意行勾选框读屏读整句，点「我已阅读并同意」也能勾选，放不下一行时「用户协议 和 隐私政策」整组换行、行距按文字排（_agreement）；登录按钮常亮，没填或没勾同意时原地说明，接系统自动填充（[人工决策] 在文件内）。
-  - account_dialogs.dart：旧版本数据导入确认 showLegacyImport 与登录后自动提示的 LegacyImportGate；验证码弹窗 CaptchaDialog（按回调刷新、提交与取消），教务登录用的 LoginCaptchaDialog 接网关，登录应用账号的接 AppAccounts；输密码弹窗 askRememberPassword（开启记住账号）与 askAppAccountPassword（没记住账号时登录应用账号，核对后不保存）。
-  - account_page.dart：账号页 AccountPage（账号卡姓名下写学号 · 班级，只在这里写；AccountTitle 我的页共用、只传姓名）：记住账号（关闭即删凭据；重新开启要输密码、后台登录核对成功才保存，不换代次）、切换账号、导入旧版本数据（本机有旧数据才显示）；应用账号单独一组（配了中转才有，人工决策见 application/app_accounts.dart：没登录点了先单独同意、再按需输密码与答验证码，原地等待后给提示条；登录着点了弹出退出与注销，都先确认；配了诊断包上传时登录着的菜单里多一项「我上传的诊断包」）；退出登录单独一组放最底。
+  - account_dialogs.dart：旧版本数据导入确认 showLegacyImport 与登录后自动提示的 LegacyImportGate；验证码弹窗 CaptchaDialog（按回调刷新、提交与取消），教务登录用的 LoginCaptchaDialog 接网关；输密码弹窗 askRememberPassword（开启记住账号）。
+  - account_page.dart：账号页 AccountPage（账号卡姓名下写学号 · 班级，只在这里写；AccountTitle 我的页共用、只传姓名）：记住账号（关闭即删凭据；重新开启要输密码、后台登录核对成功才保存，不换代次）、切换账号、导入旧版本数据（本机有旧数据才显示）；应用账号单独一组（配了中转才有，人工决策见 application/app_accounts.dart：没登录点了先单独同意、再设备核对，学号已有应用账号时选扫码授权或申请找回，行尾写已登录、找回中或未登录；登录着点了弹出授权新设备、退出与注销，退出与注销都先确认；别的设备提交的找回申请一条一行列在下面，点了拒绝或同意；配了诊断包上传时登录着的菜单里多一项「我上传的诊断包」）；退出登录单独一组放最底。
+  - app_account_join_page.dart：学号已有应用账号时的授权（人工决策见 application/app_accounts.dart）：选扫码授权或申请找回的弹窗 chooseAppAccountAuthorization（找回在等着时只给扫码）；新手机出示授权二维码的页面 AppAccountJoinPage（5 分钟有效、可刷新，显示 6 位核对码与倒计时，每 3 秒问一次批准了没有、批准了返回，亮度同添加好友页调到最高）；登录着的手机扫码批准 approveAppAccountJoin（扫码函数可注入 JoinScanner，先确认核对码）；别的设备的找回申请 decideAppAccountRecovery（拒绝是主操作，打扰时机与账号页共用）。
   - diagnostic_uploads_page.dart：我上传的诊断包 DiagnosticUploadsPage（人工决策见 domain/diagnostic_upload.dart）：记在当前应用账号下的诊断包从新到旧，打开时读一次（点进来才联网），每行写诊断编号、上传时间、大小与几天后删除；点一行复制编号，⋯里删除（先确认，服务器上的包与记录一起删）。
   - appearance_page.dart：界面设置 AppearancePage：字号、配色、字体、深浅色、玻璃效果与背景。字号是字号条（_textSizeSection，人工决策见 local 的 textSizeMin）：数值是实际显示大小，默认跟随系统但最多到推荐上限、松在跟随会得到的那一档上回到跟随（系统字号超过推荐上限时松在「系统」刻度上存成那个大小），下方色条标这台手机的推荐范围（text_size_range.dart）、刻度标系统字号，再下面的预览卡按拖到的大小排；拖动中每过一档轻震、越过推荐上限重震，超出时说明哪里会改排，松手才改全应用（自定义图片经系统照片选择器，选图函数可注入）；可分享给好友（不含壁纸图片）。字体预览用 assets/font_previews 里预先画好的图（tool/font_previews.dart 生成），不为预览加载没在用的字体；系统字体一项直接用系统字体写（族名取主题不指定字体时平台默认的那个，不能写 fontFamily: null，会被页面默认的 Maple 填上）。衬线是下载的字体包（人工决策见 domain/font_pack.dart）：没下载时写大小，点了在这张卡里原地显示进度、可取消，下好才换上；失败写原因给重试；选着却还没下（升级上来）写暂用 Maple 并给下载；本机有文件时⋯里可删除（先确认，正在用就先换回 Maple）；这个版本下不了（没配中转）又没下过时不列出来。滑杆拖动中只预览、松手保存，系统取消与读屏增减停手 300ms 补存，离开页面时存掉没存的预览。选项点了就生效，落库在 DisplaySettings 的保存锁里排队，保存时不禁用页面上的其他选项。改字号、换字体时整页重新排版，点的那一行经 theme 的 CampusAnchoredScrollController 停在手指下（字号另有连续过渡，见 local 的 CampusTextScale）。玻璃限档时点「完整」先解除限档。字体多一项「系统字体」（安卓与 iOS 都有，默认仍是 Maple）；iOS 上不显示玻璃效果（iOS 固定磨砂档，底栏是系统的）。
   - image_copy_pick.dart：通用取图 pickImageCopy 与多选 pickImagesCopy，返回副本路径与 discard；只删插件这次新留在缓存里的副本。壁纸、相册识别二维码共用，并经组合根注入百宝箱。
@@ -89,7 +90,7 @@
 - 成绩与同步：grades_ui_test.dart、sync_ui_test.dart、sync_merge_test.dart（合并页、手动同步流程、打扰时机弹窗、自动同步设置）。
 - 壳层与表单：navigation_drag_test.dart、shell_layout_test.dart（含 iOS 26 系统底栏的留位、iOS 18 自绘底栏，两者都测直接切换与再点当前项；安卓与 iOS 都只竖屏）、form_spacing_test.dart（支撑 form_layout_support.dart）。
 - 排版：text_layout_test.dart（登录、今天、课表三种范围与成绩在 360dp 大字号、宋体加粗体文本、411dp 标准下不裁字、不剩一行标点、不留孤字，同意行与登录按钮、学期视图横条；扫描在 text_fit_support.dart）。改了页面排版、文案长短或字号相关的布局都跑它。
-- 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart；应用账号一组：app_account_test.dart（含「我上传的诊断包」）；开屏与画作页：painting_ui_test.dart。
+- 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart；应用账号一组：app_account_test.dart（含扫码授权、申请找回、处理别的设备的找回申请与「我上传的诊断包」）；开屏与画作页：painting_ui_test.dart。
 - 开发者的话：account_lifecycle_test.dart（「我的」页入口、小圆点与读信、新信在什么界面条件下弹）。
 - 节日：festival_test.dart（舞台、红包揭晓与按钮）、reward_sprites_test.dart（粒子贴图同原来画布画的对照；单独一个文件，因为贴图的加载全局缓存）与 account_lifecycle_test.dart（节日当天播动画、抽中接着拆红包）。
 - 私信页面：social_ui_test.dart（含好友课表导入的整份替换与逐项合并、没登录应用账号与私信在另一台手机上的卡片与接管确认、会话里的换设备提示）、share_card_test.dart；合并规则在 schedule_merge_test.dart。

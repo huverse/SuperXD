@@ -49,11 +49,12 @@ const setup = async (options: { from?: number; to?: number; mode?: 'uniform' | '
 
 // 抽签人：登录了应用账号的设备。注册设备后直接在库里登记账号与一条教务登录身份（账号登录本身在 account.e2e.test.ts 测）；
 // 注册接口同一来源每小时 20 台新设备，每个用例前清空限流。subject 是登录身份的主体哈希，给了同一个就是同一个人。
-const registered = async (subject = randomBytes(32).toString('base64url')) => {
+// created 是账号建立的时刻：默认 8 天前（满 7 天才能抽，人工决策见 reward_odds.ts）。
+const registered = async (subject = randomBytes(32).toString('base64url'), created = new Date(Date.now() - 8 * 86400_000)) => {
   const device = new TestDevice(server);
   expect((await device.register()).status).toBe(200);
   const accountId = randomBytes(16).toString('base64url'), now = new Date();
-  await database.query('INSERT INTO app_account (account_id, last_seen_time, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, now, now, now]);
+  await database.query('INSERT INTO app_account (account_id, last_seen_time, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, now, created, now]);
   await database.query('INSERT INTO account_identity (account_id, provider, subject_hash, create_time, update_time) VALUES (?, ?, ?, ?, ?)', [accountId, 'kingo', subject, now, now]);
   await database.query('INSERT INTO account_device (account_id, device_id, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, device.deviceId, now, now]);
   return device;
@@ -305,6 +306,19 @@ describe('抽奖', () => {
     expect(keys).toHaveLength(1);
     await redis.set(keys[0].slice(prefix.length), limit, 'KEEPTTL');
   };
+
+  it('账号建立不满 7 天回 ACCOUNT_TOO_NEW 并附可以抽的时刻，不记这次；满了照常抽', async () => {
+    const key = await setup();
+    roll.mockReturnValue(0);
+    const young = await registered(randomBytes(32).toString('base64url'), new Date(Date.now() - 2 * 86400_000));
+    const refused = await draw(young, key, { activeDays: 3 });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('ACCOUNT_TOO_NEW');
+    expect(Math.abs((refused.body.eligibleAt as number) - (Date.now() + 5 * 86400_000))).toBeLessThan(60_000);
+    expect(await database.query('SELECT d.id FROM reward_draw d JOIN reward_campaign c ON c.id = d.campaign_id WHERE c.campaign_key = ?', [key])).toHaveLength(0);
+    await database.query('UPDATE app_account SET create_time = ? WHERE account_id = (SELECT account_id FROM account_device WHERE device_id = ?)', [new Date(Date.now() - 8 * 86400_000), young.deviceId]);
+    expect((await draw(young, key, { activeDays: 3 })).body.result).toBe('won');
+  });
 
   it('同一台设备每小时超过上限回 RATE_LIMITED，同一出口的别的设备不受影响', async () => {
     vi.spyOn(Date, 'now').mockReturnValue((Math.floor(Date.now() / hour) + 0.5) * hour);

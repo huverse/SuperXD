@@ -4,7 +4,7 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { env } from 'src/config/env';
 import { RedisModule } from 'src/common/redis/redis.module';
-import { AccountDeviceEntity, AccountIdentityEntity, AppAccountEntity } from 'src/modules/account/account.entity';
+import { AccountDeviceEntity, AccountRecoveryEntity, AccountIdentityEntity, AppAccountEntity } from 'src/modules/account/account.entity';
 import { AccountModule } from 'src/modules/account/account.module';
 import { AppReleaseModule } from 'src/modules/app_release/app_release.module';
 import { ChallengeBestEntity, ChallengeRunEntity } from 'src/modules/challenge/challenge.entity';
@@ -36,7 +36,7 @@ import { UnlockModule } from 'src/modules/unlock/unlock.module';
       useFactory: () => ({
         type: 'mysql',
         ...env().mysql,
-        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity, RewardCampaignEntity, RewardPrizeEntity, RewardDrawEntity, AppAccountEntity, AccountIdentityEntity, AccountDeviceEntity, PointsGrantEntity, PointsEntryEntity, ChallengeRunEntity, ChallengeBestEntity, DiagnosticUploadEntity, AccountSocialEntity, AccountUnlockEntity],
+        entities: [DeviceEntity, FriendshipEntity, MessageEntity, ChaoxingPackEntity, RewardCampaignEntity, RewardPrizeEntity, RewardDrawEntity, AppAccountEntity, AccountIdentityEntity, AccountDeviceEntity, AccountRecoveryEntity, PointsGrantEntity, PointsEntryEntity, ChallengeRunEntity, ChallengeBestEntity, DiagnosticUploadEntity, AccountSocialEntity, AccountUnlockEntity],
         // 表结构由人工执行 sql/schema.sql 管理，启动不做 DDL。
         synchronize: false,
         migrationsRun: false,

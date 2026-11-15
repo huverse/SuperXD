@@ -34,6 +34,9 @@ abstract final class RelayCode {
   static const captchaExpired = 'CAPTCHA_EXPIRED';
   static const upstreamUnavailable = 'UPSTREAM_UNAVAILABLE';
   static const accountNotFound = 'ACCOUNT_NOT_FOUND';
+  static const joinNotFound = 'JOIN_NOT_FOUND'; // 扫码授权的票据或找回申请已过期、处理过或不对
+  static const joinMismatch = 'JOIN_MISMATCH'; // 批准的设备登的不是同一个学号的应用账号
+  static const accountTooNew = 'ACCOUNT_TOO_NEW'; // 应用账号建立不满规定天数（节日抽奖），附 eligibleAt 毫秒
   static const challengeNotFound = 'CHALLENGE_NOT_FOUND';
   static const challengeUnavailable = 'CHALLENGE_UNAVAILABLE';
   static const runActive = 'RUN_ACTIVE';

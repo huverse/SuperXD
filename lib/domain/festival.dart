@@ -67,6 +67,12 @@ class FestivalClosed extends FestivalDraw {
   const FestivalClosed();
 }
 
+// 应用账号建立不满规定天数（服务器定，人工决策见 server/src/modules/reward/reward_odds.ts 的 11-15 那条）：这次不算抽过，eligibleAt 起再抽。
+class FestivalTooNew extends FestivalDraw {
+  const FestivalTooNew(this.eligibleAt);
+  final DateTime eligibleAt;
+}
+
 class FestivalException implements Exception {
   const FestivalException(this.message);
   final String message;

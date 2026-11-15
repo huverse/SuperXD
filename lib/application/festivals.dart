@@ -22,6 +22,8 @@ class Festivals extends ChangeNotifier {
   final void Function()? _accountGone;
   final DateTime Function() _clock;
   final _drawing = <String, Future<FestivalDraw?>>{};
+  // 中转说这个应用账号建立不满规定天数：到 until 之前不再为它抽（不联网），只在内存里记。
+  ({AppAccountRef account, DateTime until})? _young;
 
   String get _today => formatCampusDate(campusInstant(_clock().toUtc()));
 
@@ -84,6 +86,7 @@ class Festivals extends ChangeNotifier {
       campusLog('[Festival] action=draw occasion=${occasion.id} state=signed_out');
       return null;
     }
+    if (_young case (:final account, :final until) when account == _account() && _clock().isBefore(until)) return null;
     final activeDays = festivalActiveDays(_memory.record.activeDays, _today).length;
     final FestivalDraw result;
     try {
@@ -96,6 +99,11 @@ class Festivals extends ChangeNotifier {
     } on FestivalException catch (error) {
       campusLog('[Festival] action=draw occasion=${occasion.id} errorType=FestivalException message=$error');
       return null;
+    }
+    if (result case FestivalTooNew(:final eligibleAt)) {
+      _young = (account: account, until: eligibleAt);
+      campusLog('[Festival] action=draw occasion=${occasion.id} state=too_new eligibleAt=${eligibleAt.toIso8601String()}');
+      return result;
     }
     final record = _memory.record;
     await _save(

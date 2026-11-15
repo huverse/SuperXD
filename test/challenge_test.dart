@@ -937,9 +937,19 @@ class _AppClient implements AppAccountClient {
   @override
   Future<AppAccountRef?> accountOf(AccountIdentity identity) async => records[identity.loginId] == null ? null : AppAccountRef(accountId: records[identity.loginId]!, slot: 'fake-slot');
   @override
-  Future<AppAccountStep> signInWithKingo(AccountIdentity identity, KingoSignInProof proof, {String? captcha}) => throw UnimplementedError();
+  Future<AppAccountStep> signInWithDevice(AccountIdentity identity) => throw UnimplementedError();
   @override
-  void abandon(AccountIdentity identity) {}
+  Future<AppAccountJoin> startJoin(AccountIdentity identity) => throw UnimplementedError();
+  @override
+  Future<AppAccountRef?> joinState(AccountIdentity identity, AppAccountJoin join) => throw UnimplementedError();
+  @override
+  Future<void> approveJoin(AccountIdentity identity, String payload) => throw UnimplementedError();
+  @override
+  Future<AppAccountRecovery> requestRecovery(AccountIdentity identity) => throw UnimplementedError();
+  @override
+  Future<AppAccountRecovery?> recoveryOf(AccountIdentity identity) async => null;
+  @override
+  Future<void> decideRecovery(AccountIdentity identity, String recoveryId, {required bool approve}) => throw UnimplementedError();
   @override
   Future<AppAccountSummary> summary(AccountIdentity identity) async {
     summaries++;

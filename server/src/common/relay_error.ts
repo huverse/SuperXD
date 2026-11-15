@@ -24,6 +24,9 @@ export const RelayCode = {
   captchaExpired: 'CAPTCHA_EXPIRED', // 验证码这一步过期或不属于这台设备，要重新登录
   upstreamUnavailable: 'UPSTREAM_UNAVAILABLE', // 学校教务连不上、超时、限流或返回了看不懂的页面，附 reason（network、timeout、rateLimited、http、format）
   accountNotFound: 'ACCOUNT_NOT_FOUND', // 这把设备密钥没有登录应用账号，或账号已注销
+  joinNotFound: 'JOIN_NOT_FOUND', // 扫码授权的票据不存在、已过期、核对码不对，或不是这台设备发起的
+  joinMismatch: 'JOIN_MISMATCH', // 批准的设备登录的不是同一个学号的应用账号
+  accountTooNew: 'ACCOUNT_TOO_NEW', // 应用账号建立不满规定天数，暂时不能参加（如节日抽奖），附 eligibleAt 毫秒
   challengeNotFound: 'CHALLENGE_NOT_FOUND', // 挑战不存在或不在开放时间
   challengeUnavailable: 'CHALLENGE_UNAVAILABLE', // 这个客户端玩不了里面的游戏，或题库还没备好（客户端提示更新应用或稍后再试）
   runActive: 'RUN_ACTIVE', // 这个账号已有进行中的一局，附 runId

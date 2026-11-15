@@ -7,7 +7,7 @@ import { RateLimiter } from 'src/common/redis/redis.module';
 import { AccountRepository } from 'src/modules/account/account.repository';
 import { PointsService } from 'src/modules/points/points.service';
 import { RelayCode, RelayError } from 'src/common/relay_error';
-import { rewardCampaignCacheSeconds, rewardDrawPerDevicePerHour, rewardDrawPerHour } from 'src/common/relay_limits';
+import { rewardCampaignCacheSeconds, rewardDrawPerDevicePerHour, rewardDrawPerHour, rewardAccountMinAgeDays } from 'src/common/relay_limits';
 import { RewardCampaignEntity } from 'src/modules/reward/reward.entity';
 import { RewardRepository } from 'src/modules/reward/reward.repository';
 import { RewardMode, rewardChance, rewardLevelWeight, rewardModes, rewardWeight } from 'src/modules/reward/reward_odds';
@@ -45,6 +45,10 @@ export class RewardService {
     if (campaign === null || now < campaign.startsAt || now >= campaign.endsAt) return { result: 'closed', prize: null };
     const identityKey = await this.accounts.identityKeyOf(deviceId);
     if (identityKey === null) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
+    // 账号建立满 rewardAccountMinAgeDays 天才能抽（人工决策见 reward_odds.ts 的 11-15 那条）；不记这次，满了再来。
+    const created = await this.accounts.createdOf(deviceId);
+    const eligibleAt = (created?.getTime() ?? now.getTime()) + rewardAccountMinAgeDays * 86400_000;
+    if (now.getTime() < eligibleAt) throw new RelayError(RelayCode.accountTooNew, HttpStatus.FORBIDDEN, '应用账号建立不满规定天数', { eligibleAt });
     const participantHash = createHash('sha256').update(`SXD1-reward\n${identityKey}`).digest('hex');
     const existing = await this.repository.findDraw(campaign.id, participantHash);
     if (existing !== null) return present(existing.prize);

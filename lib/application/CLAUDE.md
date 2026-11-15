@@ -25,13 +25,13 @@
   - 端口都在 domain/app_update.dart，实现在 device 与 local（见各自 CLAUDE.md）；规则与弹窗的人工决策见 app_update.dart 与 page/app_update_dialog.dart。
 
 - developer_notes.dart：开发者的话的编排 DeveloperNotes（设备级）：自动拉取间隔至少 developerNoteRefreshGap（一小时，下拉刷新不受限）、同一时刻只拉一次、失败照旧显示上次拉到的；已读与弹过记在本机（弹出一封时当时所有的信都记成弹过、只有这封记成读过）。人工决策见 domain/developer_note.dart。
-- festivals.dart：节日的编排 Festivals（设备级）：今天该播哪一次（在节日里、没播过）、启动与回到前台记今天打开过（只留近 30 天）、抽签（有抽奖、配了中转、登录着应用账号、结果没定时才抽，同一时刻只发一次；当前应用账号由组合根注入；连不上或没登录不记，中转说账号已不在时调 accountGone 让应用账号马上核一次）、needsSignIn（有抽奖但没登录，组合根在动画放完时提示去登录）、抽中的奖品（没揭晓的等打扰时机揭晓，节日结束后 3 天删）。refresh 是同意协议与政策后、每次回到前台、登录了应用账号时由组合根调的：补抽播过动画还没抽的。人工决策见 domain/festival.dart。
-- app_accounts.dart：应用账号的编排 AppAccounts（设备级，切换教务账号不重建；三项用户决定的 [人工决策] 在类上方）：按当前教务身份读本机记着的应用账号（跟着教务切换，换账号时丢掉没答完的验证码）；signIn 先向网关要口令摘要（没记住账号返回要密码，页面请用户输一次），经 AppAccountClient 交中转核对，要验证码时 answerCaptcha、refreshCaptcha（重新发起一次）接着做，成功后用同一个密码经 AccountAccess.refreshSession 重登教务（中转代登录挤掉了本机会话）；signOut、deleteAccount 由账号页发起（注销成功后调组合根注入的 onDeleted，清掉这台手机上那个账号的私信）；forget 由组合根在用户退出教务时调；check 在同意协议与政策后、回到前台时由组合根调，登录着且隔 checkGap（一天）才联网，别处注销了退回未登录；force 为真时不等间隔（挑战那边发现账号不在了）。current 是当前的应用账号 AppAccountRef（挑战、节日抽奖等只认它），accountId 是它的账号号（灰度与分批更新分桶用）。
+- festivals.dart：节日的编排 Festivals（设备级）：今天该播哪一次（在节日里、没播过）、启动与回到前台记今天打开过（只留近 30 天）、抽签（有抽奖、配了中转、登录着应用账号、结果没定时才抽，同一时刻只发一次；当前应用账号由组合根注入；连不上或没登录不记，中转说账号已不在时调 accountGone 让应用账号马上核一次；账号建立不满规定天数的不记，到 eligibleAt 之前不再为这个账号抽，只记在内存里）、needsSignIn（有抽奖但没登录，组合根在动画放完时提示去登录）、抽中的奖品（没揭晓的等打扰时机揭晓，节日结束后 3 天删）。refresh 是同意协议与政策后、每次回到前台、登录了应用账号时由组合根调的：补抽播过动画还没抽的。人工决策见 domain/festival.dart。
+- app_accounts.dart：应用账号的编排 AppAccounts（设备级，切换教务账号不重建；用户决定的 [人工决策] 在类上方）：按当前教务身份读本机记着的应用账号（跟着教务切换）；signIn 设备核对（学号交中转），学号已有应用账号时先看这台手机的找回申请生效没有，没生效返回要授权（带申请现状）；startJoin、pollJoin 给新手机出示授权二维码（轮询连不上照旧等、不占 busy），approveJoin 给登录着的手机批准；requestRecovery 申请找回（到点的顺手问一次）；check 在同意协议与政策后、回到前台时由组合根调，隔 checkGap（一小时）才联网：登录着的看账号（别处注销了退回未登录，带回别的设备的找回申请 recoveries），没登录有等待中找回的问进度（生效就登录，被拒绝或冲突后不再问）；force 为真时不等间隔；decideRecovery 处理一条找回申请，unseenRecovery 与 markRecoveryShown 给打扰时机（这次启动弹一次）；操作中中转说这台设备不在账号里就马上核一次；signOut、deleteAccount 由账号页发起（注销成功后调组合根注入的 onDeleted，清掉这台手机上那个账号的私信）；forget 由组合根在用户退出教务时调（连同等待中的找回）。current 是当前的应用账号 AppAccountRef（挑战、节日抽奖等只认它），accountId 是它的账号号（灰度与分批更新分桶用）。
 - account_diagnostics.dart：记在应用账号下的诊断包 AccountDiagnostics（设备级，人工决策见 domain/diagnostic_upload.dart）：本身实现 DiagnosticUploader，包住 device 的上传，传完登录着当前应用账号就凭回执里的一次性口令认领，回执标上 claimed；认领没成只记日志、包照旧匿名留着。list、delete 给账号页「我上传的诊断包」；中转说账号已不在时调 accountGone 让应用账号马上核一次。
 - challenges.dart：挑战与积分的编排 Challenges（设备级，实现 domain 的 ChallengeHub，人工决策见 playground/challenge/challenge_rules.dart）：跟着当前的应用账号走（AppAccounts.current），没登录应用账号不联网直接报未登录；中转说应用账号不在了（别处注销、被清理）就让 AppAccounts.check(force: true) 马上核一次，本机退回未登录；登录状态变了发 changes。
 - unlocks.dart：解锁的编排 Unlocks（设备级，实现 domain 的 UnlockAccess，规则见服务端 src/modules/unlock/unlock_rules.ts）：清单来自 Rollouts.config 的 unlocks，本机判定下架锁着、公开开着（没登录也开），其余看服务器给的这个账号能用哪些（换了应用账号旧状态不作数）；组合根在同意协议与政策后调 start 才联网，之后拉到新配置、切换应用账号时重问，回到前台隔 refreshGap（一小时）再问，积分页打开与买了直接更新；清单里没有要账号才开的项或没登录时不联网；中转说应用账号不在了就让 AppAccounts 马上核一次。
 - rollouts.dart：灰度的编排 Rollouts（设备级，人工决策见 domain/rollout.dart）：本机判定，主体是应用账号号（组合根注入，没登录用本机随机编号）；enabled 判功能开关（没配用调用方给的默认值）；inUpdateBatch 判分批更新（配置里同名开关覆盖清单的放量表：暂停、直接全量、整版关停）；refresh 在同意协议与政策后、回到前台时由组合根调，两次至少隔 refreshGap（一小时），失败照旧用上次的，登录着应用账号时同一时机经组合根注入的 level 取一次积分等级（取不到照旧用记着的）；判定按等级加权，只因等级进的批次记进本机、降级不踢出，放量 0 仍全关；没配中转时不联网。
-- app_moments.dart：打扰时机 AppMoments（设备级）：一次只出现一件，先后是节日动画、没揭晓的奖品、自动同步留下的课表冲突、新信；决定节日动画、新信这类不是用户要的内容什么时候出现。业务条件在这里：每次回到前台最多一件、从快捷入口进来的那次前台不出现、上下课安静期里不出现（安静期结束时提醒组合根再看一眼）；界面条件在组合根 main.dart 的 _promptMoment。next 只看不记，真的弹出来了再 begin。人工决策在类上方。
+- app_moments.dart：打扰时机 AppMoments（设备级）：一次只出现一件，先后是别的设备的找回申请、节日动画、没揭晓的奖品、自动同步留下的课表冲突、新信；决定节日动画、新信这类不是用户要的内容什么时候出现。业务条件在这里：每次回到前台最多一件、从快捷入口进来的那次前台不出现、上下课安静期里不出现（安静期结束时提醒组合根再看一眼）；界面条件在组合根 main.dart 的 _promptMoment。next 只看不记，真的弹出来了再 begin。人工决策在类上方。
 
 # 关键规则
 
@@ -44,7 +44,7 @@
 - campus_sync_test.dart、sync_ui_test.dart、transition_sync_test.dart（同步编排与同步界面）；auto_sync_test.dart（到期规则、账号库、自动同步编排与打扰时机的先后）；sync_merge_test.dart（合并页、手动同步流程、打扰时机弹窗、自动同步设置）
 - reminder_test.dart、home_widget_test.dart（课前提醒、小组件）；campus_timetable_test.dart（本应用课表今天的课）
 - app_update_test.dart、app_update_ui_test.dart（应用更新，替身在 app_update_fakes.dart）
-- app_account_test.dart（应用账号的中转客户端、编排与账号页）；challenge_test.dart（挑战的编排与中转客户端，页面部分见 lib/playground/CLAUDE.md）
+- app_account_test.dart（应用账号的中转客户端、编排（含找回申请在打扰时机里排最前）与账号页）；challenge_test.dart（挑战的编排与中转客户端，页面部分见 lib/playground/CLAUDE.md）
 - rollout_test.dart（灰度编排、分批更新按批次、积分等级加权与降级不踢出）
 - unlock_test.dart（解锁编排：下架锁着、公开开着、同意前与没登录不联网、换账号、买了更新、账号不在了马上核；中转客户端；游乐场锁着的卡、百宝箱藏起锁着的工具、积分页列能买的；路由拦住锁着的入口在 account_lifecycle_test.dart）
 - developer_notes_test.dart（开发者的话的拉取、已读与打扰时机）；festival_test.dart（节日编排、抽签与打扰时机的先后）；diagnostic_upload_test.dart（诊断包认领、列出与删除的编排与中转客户端）；account_lifecycle_test.dart（「我的」页入口与小圆点、新信在什么界面条件下弹）
@@ -55,5 +55,5 @@
 - campus_sync.dart：学年与数据项统一范围、进度只报已有阶段、未提交不报已同步、离开前的失败照常写入报告、限流立即停止。
 - campus_reminders.dart：状态栏胶囊（流体云）的接入方式、显示时段与胶囊内容。
 - app_moments.dart：打扰时机的业务条件、课表冲突排在哪。
-- app_accounts.dart：应用账号跟着教务走、按需核对、核对后重登（类上方）；跟着走的接线在 main.dart 的 watchAppAccounts。
+- app_accounts.dart：应用账号跟着教务走、按需核对、核对后重登（11-15 作废）、设备核对之后的扫码授权与找回（类上方）；跟着走的接线在 main.dart 的 watchAppAccounts。
 - 自动同步与三方合并的决定在 domain/auto_sync.dart。

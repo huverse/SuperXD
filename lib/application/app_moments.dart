@@ -2,9 +2,11 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/auto_sync.dart';
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/application/festivals.dart';
+import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/course_occurrence.dart';
@@ -15,6 +17,12 @@ import 'package:superxd/domain/interruption.dart';
 // 打扰时机里要出现的一件事。
 sealed class AppMoment {
   const AppMoment();
+}
+
+// 别的设备在申请找回这个应用账号：提醒账号的设备拒绝或同意（人工决策见 application/app_accounts.dart）。
+class AccountRecoveryMoment extends AppMoment {
+  const AccountRecoveryMoment(this.recovery);
+  final AppAccountPendingRecovery recovery;
 }
 
 // 节日动画（同时去抽签，抽中的放完动画接着揭晓）。
@@ -46,15 +54,18 @@ const _launchSlack = Duration(seconds: 3);
 // [人工决策-2026-10-23 23:25:34] 打扰时机（用户要求不在迫切的时候打扰、不迫切时立即出现；安静期见 domain/interruption.dart）。
 // 一次只出现一件，先后是节日动画、没揭晓的奖品、新信（节日只有那一天，信两周内都能弹）。
 // [人工决策-2026-11-05 17:18:44] 用户要求自动同步的课表冲突按同一套打扰时机弹出：排在奖品之后、新信之前（关乎自己的课表，比信要紧；节日只有那一天）。
+// 找回申请的提醒排在最前（关乎账号安全，有 3 天的等待期，不必打断安静期；11-15 随设备核对加上）。
 // 业务条件在这里：每次回到前台最多出现一件；从快捷入口进来的那次前台不出现（用户有明确要做的事）；在上下课安静期里不出现，安静期一结束再提醒组合根看一眼。
 // 界面条件在组合根（main.dart 的 _promptMoment）：只在底栏四个根页、没有弹窗弹层、协议与政策已同意且没有待弹的提示、开屏走完，停稳一会儿再出现。
 class AppMoments extends ChangeNotifier {
-  AppMoments({this.notes, this.festivals, this.autoSync, required this.timetable, DateTime Function()? clock}) : _clock = clock ?? DateTime.now {
+  AppMoments({this.appAccounts, this.notes, this.festivals, this.autoSync, required this.timetable, DateTime Function()? clock}) : _clock = clock ?? DateTime.now {
     _foregroundAt = _clock();
+    appAccounts?.addListener(notifyListeners);
     notes?.addListener(notifyListeners);
     festivals?.addListener(notifyListeners);
     autoSync?.addListener(notifyListeners);
   }
+  final AppAccounts? appAccounts;
   final DeveloperNotes? notes;
   final Festivals? festivals;
   final AutoSync? autoSync;
@@ -101,11 +112,12 @@ class AppMoments extends ChangeNotifier {
     return candidate;
   }
 
-  AppMoment? get _candidate => switch ((festivals?.due, festivals?.unrevealed, autoSync?.held.firstOrNull, notes?.letter)) {
-    (final occasion?, _, _, _) => CelebrationMoment(occasion),
-    (_, final prize?, _, _) => RewardMoment(prize),
-    (_, _, final held?, _) => SyncConflictMoment(held),
-    (_, _, _, final letter?) => NoteLetterMoment(letter),
+  AppMoment? get _candidate => switch ((appAccounts?.unseenRecovery, festivals?.due, festivals?.unrevealed, autoSync?.held.firstOrNull, notes?.letter)) {
+    (final recovery?, _, _, _, _) => AccountRecoveryMoment(recovery),
+    (_, final occasion?, _, _, _) => CelebrationMoment(occasion),
+    (_, _, final prize?, _, _) => RewardMoment(prize),
+    (_, _, _, final held?, _) => SyncConflictMoment(held),
+    (_, _, _, _, final letter?) => NoteLetterMoment(letter),
     _ => null,
   };
 
@@ -114,6 +126,8 @@ class AppMoments extends ChangeNotifier {
     _spent = true;
     campusLog('[AppMoments] action=begin kind=${moment.runtimeType}');
     switch (moment) {
+      case AccountRecoveryMoment(:final recovery):
+        appAccounts?.markRecoveryShown(recovery.id);
       case CelebrationMoment(:final occasion):
         unawaited(festivals?.markPlayed(occasion));
       case RewardMoment() || SyncConflictMoment():
@@ -126,6 +140,7 @@ class AppMoments extends ChangeNotifier {
   @override
   void dispose() {
     _quiet?.cancel();
+    appAccounts?.removeListener(notifyListeners);
     notes?.removeListener(notifyListeners);
     festivals?.removeListener(notifyListeners);
     autoSync?.removeListener(notifyListeners);

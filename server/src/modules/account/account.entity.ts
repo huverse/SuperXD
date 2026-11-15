@@ -23,3 +23,12 @@ export class AccountDeviceEntity extends BaseEntity {
   @Column({ name: 'account_id', type: 'varchar', length: 32 }) accountId: string;
   @Column({ name: 'device_id', type: 'varchar', length: 32 }) deviceId: string;
 }
+
+// 找回申请（人工决策见 account.service.ts 的 deviceSignIn）：账号还有设备登着时，新设备提交、等 accountRecoveryDays 天，账号的设备可以拒绝或批准。
+// 只增：每台设备每天有限流，满 accountRecoveryKeepDays 天删除。
+@Entity('account_recovery')
+export class AccountRecoveryEntity extends BaseEntity {
+  @Column({ name: 'account_id', type: 'varchar', length: 32 }) accountId: string;
+  @Column({ name: 'device_id', type: 'varchar', length: 32 }) deviceId: string;
+  @Column({ name: 'state', type: 'varchar', length: 8 }) state: string;
+}

@@ -19,6 +19,58 @@ export class AccountController {
     return this.accounts.signIn(deviceId, ip, param.provider, body);
   }
 
+  // 设备核对（人工决策见 AccountService.deviceSignIn）：自签名，手机自己登录教务后报学号。
+  @Post('device-sign-in')
+  @HttpCode(200)
+  @SelfSigned()
+  deviceSignIn(@CurrentDevice() deviceId: string, @Body() body: dtos.AccountDeviceBodyDto, @Ip() ip: string): Promise<dtos.AccountDeviceSignInDto> {
+    return this.accounts.deviceSignIn(deviceId, ip, body);
+  }
+
+  // 扫码授权：新设备发起（自签名）、已登录的设备批准、新设备轮询。
+  @Post('joins')
+  @HttpCode(200)
+  @SelfSigned()
+  startJoin(@CurrentDevice() deviceId: string, @Body() body: dtos.AccountDeviceBodyDto): Promise<dtos.AccountJoinDto> {
+    return this.accounts.startJoin(deviceId, body);
+  }
+
+  @Post('joins/:ticketId/approve')
+  @HttpCode(204)
+  approveJoin(@CurrentDevice() deviceId: string, @Param() param: dtos.AccountJoinParamDto, @Body() body: dtos.AccountJoinApproveBodyDto) {
+    return this.accounts.approveJoin(deviceId, param.ticketId, body.code);
+  }
+
+  @Get('joins/:ticketId')
+  joinState(@CurrentDevice() deviceId: string, @Param() param: dtos.AccountJoinParamDto): Promise<dtos.AccountJoinStateDto> {
+    return this.accounts.joinState(deviceId, param.ticketId);
+  }
+
+  // 找回：新设备提交（自签名）与查看自己的申请；账号的设备拒绝或批准。
+  @Post('recoveries')
+  @HttpCode(200)
+  @SelfSigned()
+  requestRecovery(@CurrentDevice() deviceId: string, @Body() body: dtos.AccountDeviceBodyDto, @Ip() ip: string): Promise<dtos.AccountRecoveryDto> {
+    return this.accounts.requestRecovery(deviceId, ip, body);
+  }
+
+  @Get('recoveries/mine')
+  recoveryState(@CurrentDevice() deviceId: string): Promise<dtos.AccountRecoveryDto> {
+    return this.accounts.recoveryState(deviceId);
+  }
+
+  @Post('recoveries/:recoveryId/deny')
+  @HttpCode(204)
+  denyRecovery(@CurrentDevice() deviceId: string, @Param() param: dtos.AccountRecoveryParamDto) {
+    return this.accounts.decideRecovery(deviceId, param.recoveryId, false);
+  }
+
+  @Post('recoveries/:recoveryId/approve')
+  @HttpCode(204)
+  approveRecovery(@CurrentDevice() deviceId: string, @Param() param: dtos.AccountRecoveryParamDto) {
+    return this.accounts.decideRecovery(deviceId, param.recoveryId, true);
+  }
+
   @Get()
   summary(@CurrentDevice() deviceId: string): Promise<dtos.AccountSummaryDto> {
     return this.accounts.summary(deviceId);

@@ -63,6 +63,7 @@ import 'package:superxd/local/font_packs.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/local/rollout_memory.dart';
 import 'package:superxd/local/painting_library.dart';
+import 'package:superxd/page/app_account_join_page.dart';
 import 'package:superxd/page/app_update_dialog.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/page/developer_notes_page.dart';
@@ -222,7 +223,7 @@ void main() async {
   // 自动同步（人工决策见 domain/auto_sync.dart）：设备级，经账号门面跟着当前账号；后台任务的入口与时机在 app_background_sync.dart。
   final autoSync = AutoSync(gateway: session.gateway, generation: () => session.generation, scheduler: WorkmanagerSyncScheduler(autoSyncDispatcher));
   // 打扰时机（人工决策见 application/app_moments.dart）：上下课的安静期按当前账号本机今天的课算，只读本地。
-  final moments = AppMoments(notes: notes, festivals: festivals, autoSync: autoSync, timetable: () => campusTimetableToday(session.gateway, signedIn: session.loggedIn));
+  final moments = AppMoments(appAccounts: appAccounts, notes: notes, festivals: festivals, autoSync: autoSync, timetable: () => campusTimetableToday(session.gateway, signedIn: session.loggedIn));
   final splashed = painting != null && splashImage != null;
   final splashGone = ValueNotifier(!splashed);
   final restored = Completer<void>();
@@ -416,7 +417,7 @@ Challenges? challengesOf(AccountAccess accounts, AppAccounts? appAccounts) {
 
 // [人工决策-2026-11-13 22:06:22] 应用账号跟着教务走（用户选定）：用户主动退出教务时，这台设备上那个教务账号的应用账号一并退出（共用手机不串号）；
 // 会话过期不算退出。切换教务由 AppAccounts 按身份自己读。以后加别的登录方式、改成独立登录时换掉这一条。
-// 会话恢复之后读本机记录；同意协议与政策之后、每次回到前台看一眼账号（隔一天才联网，没登录不联网）。
+// 会话恢复之后读本机记录；同意协议与政策之后、每次回到前台看一眼账号（隔一小时才联网，没登录又没有等待中的找回不联网）。
 void watchAppAccounts(AppAccounts appAccounts, AccountAccess accounts, {required Future<void> agreed}) {
   accounts.loggedOut.listen((identity) => unawaited(appAccounts.forget(identity)));
   var ready = false;
@@ -753,6 +754,8 @@ class _AccountAppState extends State<_AccountApp> {
     _momentOpen = true;
     try {
       switch (moment) {
+        case AccountRecoveryMoment(:final recovery):
+          await decideAppAccountRecovery(context, widget.appAccounts!, recovery);
         case CelebrationMoment(:final occasion):
           await _celebrate(context, occasion);
         case RewardMoment(:final prize):
@@ -768,7 +771,7 @@ class _AccountAppState extends State<_AccountApp> {
   }
 
   // 节日：边播动画边抽签，抽中的放完动画接着揭晓；动画放完时结果还没回来的最多再等 _drawWait，等不到的抽中了下次回到前台再揭晓。
-  // 有抽奖但没登录应用账号（人工决策见 domain/festival.dart）：动画放完提示一句，可以直接去账号页登录，登录后回来补抽。
+  // 有抽奖但没登录应用账号（人工决策见 domain/festival.dart）：动画放完提示一句，可以直接去账号页登录，登录后回来补抽；应用账号建立不满规定天数的提示从哪天起能抽。
   static const _drawWait = Duration(seconds: 3);
 
   Future<void> _celebrate(BuildContext context, FestivalOccasion occasion) async {
@@ -785,7 +788,15 @@ class _AccountAppState extends State<_AccountApp> {
       return;
     }
     final result = await drawing.timeout(_drawWait, onTimeout: () => null);
-    if (result case FestivalWon(:final prize) when context.mounted) await _reveal(context, prize);
+    if (!context.mounted) return;
+    switch (result) {
+      case FestivalWon(:final prize):
+        await _reveal(context, prize);
+      case FestivalTooNew(:final eligibleAt):
+        showCampusToast(context, '应用账号${formatCampusRelative(eligibleAt.toIso8601String())}起能参加抽奖');
+      default:
+        break;
+    }
   }
 
   Future<void> _reveal(BuildContext context, FestivalPrize prize) {
