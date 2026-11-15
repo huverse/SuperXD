@@ -2,11 +2,11 @@ import { Injectable, Logger } from '@nestjs/common';
 import { Cron } from '@nestjs/schedule';
 
 import { DistributedLock } from 'src/common/redis/redis.module';
-import { accountIdleDays, cleanupBatch } from 'src/common/relay_limits';
+import { accountIdleDays, accountTombstoneDays, cleanupBatch } from 'src/common/relay_limits';
 import { AccountRepository } from 'src/modules/account/account.repository';
 
-// 应用账号的保留：400 天没有登录也没有查看过的账号，连同密钥登记与账号下的数据删除（同设备的不活跃清理）。
-// 密钥登记另随设备删除（pairing 编排）。多实例抢分布式锁，每轮最多 20 批、每批 1000 个（每 10 个一个事务），工作量有界。
+// 应用账号的保留：400 天没有任何活跃（登录、查看、账号下任一设备的签名请求）的账号，连同密钥登记与账号下的数据删除（同设备的不活跃清理）；
+// 注销时记的墓碑满 accountTombstoneDays 天删除。密钥登记另随设备删除（pairing 编排）。多实例抢分布式锁，每轮各最多 20 批、每批 1000 个（账号每 10 个一个事务），工作量有界。
 @Injectable()
 export class AccountRetentionTask {
   private readonly logger = new Logger('AccountRetention');
@@ -35,6 +35,13 @@ export class AccountRetentionTask {
       removed += batch;
       if (batch < cleanupBatch) break;
     }
-    this.logger.log(`[AccountRetention] action=sweep removedAccounts=${removed}`);
+    const tombstoneBefore = new Date(Date.now() - accountTombstoneDays * 86400_000);
+    let tombstones = 0;
+    for (let round = 0; round < 20; round++) {
+      const batch = await this.accounts.deleteTombstones(tombstoneBefore, cleanupBatch);
+      tombstones += batch;
+      if (batch < cleanupBatch) break;
+    }
+    this.logger.log(`[AccountRetention] action=sweep removedAccounts=${removed} removedTombstones=${tombstones}`);
   }
 }

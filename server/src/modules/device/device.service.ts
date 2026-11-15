@@ -77,9 +77,18 @@ export class DeviceService {
     for (const deviceId of deviceIds) this.keys.delete(deviceId);
   }
 
-  // 最后活跃时间每设备每小时最多写一次库；热路径调用方不等待。
+  // 依赖设备模块的模块（应用账号）登记「这台设备有签名请求」的回调，同 AccountDataHooks 的做法，设备模块不知道它们是什么。
+  private readonly seenHooks: ((deviceId: string) => Promise<void>)[] = [];
+
+  onSeen(hook: (deviceId: string) => Promise<void>) {
+    this.seenHooks.push(hook);
+  }
+
+  // 最后活跃时间每设备每小时最多写一次库，同一时机调登记的回调（也就是每台每小时最多一次）；热路径调用方不等待。
   async touch(deviceId: string) {
     const first = await this.redis.set(RedisKeys.seen(deviceId), '1', 'EX', RedisKeyTTL.seen, 'NX');
-    if (first === 'OK') await this.devices.touch(deviceId);
+    if (first !== 'OK') return;
+    await this.devices.touch(deviceId);
+    for (const hook of this.seenHooks) await hook(deviceId);
   }
 }

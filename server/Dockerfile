@@ -7,6 +7,14 @@ ARG NPM_REGISTRY=https://registry.npmjs.org
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --registry=$NPM_REGISTRY
+# IP 属地离线库（src/common/ip_region.ts，扫码登录给批准方看请求方大致在哪）：ip2region 的 IPv4 数据（约 11MB，Apache-2.0 或 MIT 任选），
+# 按固定提交下载、核对 sha256，许可原文一起放进镜像。更新：换成 ip2region 仓库里 data/ip2region_v4.xdb 较新的提交号，重新算两份 sha256。
+# 服务器上现场构建连不上 GitHub 时可传 IP2REGION_BASE 指向镜像站上的同一路径（校验和对得上才过）。
+ARG IP2REGION_BASE=https://raw.githubusercontent.com/lionsoul2014/ip2region/f8410adb250b075c20f4c6f463c4b52b821a7970
+RUN mkdir -p /app/ip2region \
+  && wget -q -O /app/ip2region/ip2region_v4.xdb "$IP2REGION_BASE/data/ip2region_v4.xdb" \
+  && wget -q -O /app/ip2region/LICENSE.md "$IP2REGION_BASE/LICENSE.md" \
+  && printf '%s  %s\n' a12ad5aca1277d67e525efcda531a20cc0d654ff4f087150d45bc17fca4bc260 /app/ip2region/ip2region_v4.xdb fe01f2f8fcaafac539154e6aa80b0b7f8af54e01dc4d52322f72971991c6280e /app/ip2region/LICENSE.md | sha256sum -c -
 COPY .swcrc tsconfig.json ./
 COPY src ./src
 # 构建后立即试加载编译产物：类型导入被编译成运行时导入等问题在这里就失败，不会带到线上。
@@ -19,6 +27,8 @@ WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --omit=dev --registry=$NPM_REGISTRY && npm cache clean --force
 COPY --from=build /app/dist ./dist
+COPY --from=build /app/ip2region ./ip2region
+ENV RELAY_IP_REGION_DB=/app/ip2region/ip2region_v4.xdb
 # 诊断包目录先建好交给 node：compose 的命名卷第一次创建时沿用这里的属主与权限，非 root 进程才写得进去。
 RUN mkdir -p /srv/diagnostics && chown node:node /srv/diagnostics && chmod 700 /srv/diagnostics
 # 构建版本：流水线传提交号，/v1/health 原样返回；本地构建不传即为 dev。放在最后，换提交不让前面的依赖层失效。

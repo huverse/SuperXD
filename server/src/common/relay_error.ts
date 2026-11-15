@@ -20,7 +20,8 @@ export const RelayCode = {
   mailboxFull: 'MAILBOX_FULL', // 对方待取消息已满
   packNotFound: 'PACK_NOT_FOUND', // 代签凭据包不存在、已被取走或已过期
   releaseNotFound: 'RELEASE_NOT_FOUND', // 这个渠道没有发布版本，或安装包文件不存在
-  accountNotFound: 'ACCOUNT_NOT_FOUND', // 这把设备密钥没有登录应用账号，或账号已注销
+  accountNotFound: 'ACCOUNT_NOT_FOUND', // 这把设备密钥没有登录应用账号（被顶掉、凭恢复码重设后踢下线，或从没登录）
+  accountDeleted: 'ACCOUNT_DELETED', // 这把设备密钥所在的应用账号已注销（只有账号模块的接口回它，其余模块照旧回 ACCOUNT_NOT_FOUND）；客户端据此清本机那个账号的私信
   usernameTaken: 'USERNAME_TAKEN', // 注册时用户名已被占用
   credentialsInvalid: 'CREDENTIALS_INVALID', // 用户名、密码或恢复码不对（不区分哪一项）
   joinNotFound: 'JOIN_NOT_FOUND', // 扫码登录的票据不存在、已过期、核对码不对，或不是这台设备发起的

@@ -24,7 +24,7 @@ export const RedisKeys = {
   inviteOwner: (deviceId: string) => `invite_owner:${deviceId}`,
   // 固定窗口限流计数，单值，TTL 等于窗口长度。
   rate: (scope: string, subject: string, window: number) => `rate:${scope}:${subject}:${window}`,
-  // 最后活跃写库节流标记，单值。
+  // 最后活跃写库节流标记，单值：设备与它所在应用账号的最后活跃都按它每台每小时最多写一次。
   seen: (deviceId: string) => `seen:${deviceId}`,
   // 设备号负缓存，单值：missing 表示查库没有这台设备，registered 表示刚注册（挡住与注册交错的查库把它写回 missing）。
   deviceMissing: (deviceId: string) => `device_missing:${deviceId}`,
@@ -34,7 +34,7 @@ export const RedisKeys = {
   diagnosticUsage: () => 'diagnostic_usage',
   // 诊断包的认领口令：单值，口令的 sha256 十六进制；一天过期，认领时核对后删掉。丢了只是这个包认领不了、照旧匿名。
   diagnosticClaim: (diagnosticId: string) => `diagnostic_claim:${diagnosticId}`,
-  // 扫码登录的票据：单值 JSON {deviceId, code, accountId}，一百来字节；5 分钟过期。丢了只是新设备要重新出示二维码。
+  // 扫码登录的票据：单值 JSON {deviceId, code, accountId, device, region}（机型最多 64 字、属地最多 32 字，不存 IP），几百字节；5 分钟过期。丢了只是新设备要重新出示二维码。
   accountJoin: (ticketId: string) => `account_join:${ticketId}`,
 } as const;
 

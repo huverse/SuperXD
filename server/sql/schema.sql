@@ -107,14 +107,14 @@ CREATE TABLE IF NOT EXISTS reward_draw (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- 应用账号（人工决策见 src/modules/account/account.service.ts）：自己的账号体系，用户名加密码；对外只有随机账号号与用户名，
--- 密码与恢复码只存 scrypt 哈希（src/modules/account/account_keys.ts）。400 天没有登录或查看即连同下面的设备登记删除。
+-- 密码与恢复码只存 scrypt 哈希（src/modules/account/account_keys.ts）。400 天没有任何设备的签名请求即连同下面的设备登记删除。
 CREATE TABLE IF NOT EXISTS app_account (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   account_id VARCHAR(32) NOT NULL COMMENT '随机账号号 base64url，客户端拿它做灰度分桶',
   username VARCHAR(20) NOT NULL COMMENT '用户名，小写的规范写法，3–20 位字母数字下划线',
   password_hash VARCHAR(160) NOT NULL COMMENT 'scrypt$N$r$p$盐$哈希',
   recovery_hash VARCHAR(160) NOT NULL COMMENT '恢复码的 scrypt 哈希，格式同上',
-  last_seen_time DATETIME(3) NOT NULL COMMENT '最后登录或查看',
+  last_seen_time DATETIME(3) NOT NULL COMMENT '最后活跃：登录、查看或账号下任一设备的签名请求（每台每小时最多记一次）',
   create_time DATETIME(3) NOT NULL,
   update_time DATETIME(3) NOT NULL,
   PRIMARY KEY (id),
@@ -133,6 +133,18 @@ CREATE TABLE IF NOT EXISTS account_device (
   PRIMARY KEY (id),
   UNIQUE KEY uk_device (device_id),
   KEY idx_account (account_id, update_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- 已注销账号的设备密钥（人工决策见 src/modules/account/account.service.ts 的 remove）：注销时每把密钥一行，这些密钥再来回 ACCOUNT_DELETED；
+-- 只有设备号与时刻，不记账号号；保留 400 天（之后这些设备也早被不活跃清理删掉），由账号的清理任务每小时分批删。
+CREATE TABLE IF NOT EXISTS account_tombstone (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  device_id VARCHAR(32) NOT NULL,
+  create_time DATETIME(3) NOT NULL,
+  update_time DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_device (device_id),
+  KEY idx_create (create_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- 积分每笔获得一行（人工决策见 src/modules/points/points.service.ts）：满 12 个月过期；余额 = 没过期的 remaining 之和；剩余为 0 且过期满 30 天删除。
