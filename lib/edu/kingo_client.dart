@@ -204,13 +204,18 @@ class KingoClient {
     return parsed;
   }
 
+  // 成绩数据页对部分校外来源返回空正文（200、content-length:0，学校服务器自己回的；11-15 起用户校外网络上每次都这样，
+  // 校园网与浏览器正常，换请求头、先加载页面资源、GET 查询都没用），而页面上「导出」用的导出接口照常给同一份成绩 HTML
+  // （有效、原始两种逐门逐项与合计都和数据页一致，探针核对过）。真没成绩时学校给的是不带抬头的空成绩页、不会是 0 字节，
+  // 所以只在正文为空时改取导出接口；平时仍走数据页（快一个数量级）。
   Future<ParsedGrades> _grades(String kind, {required String xn, required String xq, required String rxnj, required String nj}) async {
-    final page = await _post(
-      '/student/xscj.stuckcj_data.jsp',
-      buildGradeBody(kind: kind, xn: xn, xq: xq, rxnj: rxnj, nj: nj),
-      referer: '/student/xscj.stuckcj.jsp?menucode=S40303',
-      data: true,
-    );
+    const referer = '/student/xscj.stuckcj.jsp?menucode=S40303';
+    final body = buildGradeBody(kind: kind, xn: xn, xq: xq, rxnj: rxnj, nj: nj);
+    var page = await _post('/student/xscj.stuckcj_data.jsp', body, referer: referer, data: true);
+    if (page.bodyBytes.isEmpty) {
+      campusLog('[KingoClient] action=grades_export_fallback kind=$kind');
+      page = await _post('/student/xscj.stuckcj_data_exp.jsp', body, referer: referer, data: true);
+    }
     _throwIfExpired(page.body);
     return kind == 'yscj' ? parseOriginalGrades(page.body) : parseEffectiveGrades(page.body);
   }
@@ -267,7 +272,7 @@ class KingoClient {
         if (slot > now) await Future.any([Future<void>.delayed(slot - now), abort.future]);
         if (_disposed || epoch != _requestEpoch) throw http.RequestAbortedException(uri);
       }
-      final grades = uri.path.endsWith('/xscj.stuckcj_data.jsp');
+      final grades = uri.path.endsWith('/xscj.stuckcj_data.jsp') || uri.path.endsWith('/xscj.stuckcj_data_exp.jsp');
       // 超时管到读完响应体、到点或 cancelRequests 都中断连接、响应边读边限长，都在共用内核 CampusHttp；
       // 开发者模式下的请求记录也由它记（从真正发出算起，不含限流排队）。
       response = await _http.send(

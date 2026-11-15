@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:enough_convert/enough_convert.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
@@ -308,6 +309,26 @@ void main() {
     await inspect.close();
     await database.close();
     await directory.delete(recursive: true);
+  });
+
+  // 11-15 用户校外网络：成绩数据页每次 200、content-length:0，导出接口照常给同一份成绩 HTML（见 kingo_client.dart 的 _grades）。
+  test('成绩数据页回空正文时改取导出接口（同一份 HTML，GBK、Excel 类型）；两边都空照旧报格式异常', () async {
+    final paths = <String>[];
+    var exportEmpty = false;
+    final client = KingoClient(client: MockClient((request) async {
+      paths.add(request.url.path);
+      if (request.url.path.endsWith('/xscj.stuckcj_data.jsp')) return http.Response.bytes(const [], 200, headers: {'content-type': 'text/html;charset=GBK', 'content-length': '0'});
+      final original = request.body.contains('ysyx=yscj');
+      final bytes = exportEmpty ? const <int>[] : const GbkCodec().encode('<html><head><style>td{}</style></head><body>${transcript(original: original)}</body></html>');
+      return http.Response.bytes(bytes, 200, headers: {'content-type': 'application/vnd.ms-excel;charset=gbk'});
+    }));
+    final pages = await client.fetchGrades(xn: '2025', xq: '0', rxnj: '2025', nj: '2025');
+    expect(paths, ['/student/xscj.stuckcj_data.jsp', '/student/xscj.stuckcj_data_exp.jsp', '/student/xscj.stuckcj_data.jsp', '/student/xscj.stuckcj_data_exp.jsp']);
+    expect((pages.effective.loginId, pages.effective.courses.single.courseName, pages.effective.courses.single.score), ('test', '课程&甲', 87.5));
+    expect((pages.original.courses.single.finalScore, pages.original.courses.single.totalScore), (80, 87.5));
+    exportEmpty = true;
+    await expectLater(client.fetchGrades(xn: '2025', xq: '0', rxnj: '2025', nj: '2025'), throwsFormatException);
+    client.dispose();
   });
 
   test('HTTP成绩正文超限中止且超时仍覆盖正文', () async {
