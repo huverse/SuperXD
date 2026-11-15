@@ -306,10 +306,12 @@ describe('积分与挑战', () => {
     const old = new Date(now - 2 * 86400_000);
     await database.query('INSERT INTO points_grant (account_id, amount, remaining, source, source_key, expire_time, create_time, update_time) VALUES (?, 50, 50, ?, ?, ?, ?, ?)', [accountId, 'challenge', `old-${accountId}`, old, old, old]);
     await database.query('INSERT INTO points_grant (account_id, amount, remaining, source, source_key, expire_time, create_time, update_time) VALUES (?, 30, 30, ?, ?, ?, ?, ?)', [accountId, 'challenge', `soon-${accountId}`, new Date(now + 3 * 86400_000), old, old]);
+    // 早就花完、过期了还留着的一笔：不在到期清零的索引范围里，不再记过期流水。
+    await database.query('INSERT INTO points_grant (account_id, amount, remaining, source, source_key, expire_time, create_time, update_time) VALUES (?, 20, 0, ?, ?, ?, ?, ?)', [accountId, 'challenge', `spent-${accountId}`, new Date(now - 3 * 86400_000), old, old]);
     expect((await device.call('GET', '/v1/points')).body).toMatchObject({ balance: 30, expiring: 30 });
     await app.get(PointsRetentionTask).sweep(new Date(now));
     const entries = (await device.call('GET', '/v1/points/entries')).body.entries as { kind: string; amount: number }[];
-    expect(entries[0]).toMatchObject({ kind: 'expire', amount: -50 });
+    expect(entries.filter((entry) => entry.kind === 'expire')).toEqual([expect.objectContaining({ kind: 'expire', amount: -50 })]);
     const ancient = new Date(now - (pointsEntryKeepDays + 1) * 86400_000);
     await database.query('UPDATE points_entry SET create_time = ? WHERE account_id = ?', [ancient, accountId]);
     await app.get(PointsRetentionTask).sweep(new Date(now));
