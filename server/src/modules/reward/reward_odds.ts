@@ -20,8 +20,10 @@ import { pointsLevelCount } from 'src/common/relay_limits';
 // 一个人一次活动只抽一次，人按账号最早的那条登录身份认（participant_hash 存「SXD1-reward\n登录方式\n主体哈希」的 sha256），
 // 注销后用同一身份重建账号、换设备、重装都还是同一个人；注销不删抽签记录，照旧活动结束 rewardKeepDays 天后清。没登录回 ACCOUNT_NOT_FOUND。
 // 取代 11-10 的单独抽奖身份（客户端那把密钥从没生成过：节日登记表一直是空的）。只认应用账号、不认教务：以后加别的登录方式不用改这里。
-// 11-15 16:40 起应用账号是自己的账号体系（人工决策见 src/modules/account/account.service.ts），没有学号这类能跨账号认人的身份：
-// 上面「按账号最早的登录身份认」改为按账号认（participant_hash 存「SXD1-reward\naccount\n账号号」的 sha256），注销后重新注册就是新的人。
+// （「按账号最早的登录身份认」与「注销重建还是同一个人」由下一条取代。）
+// [人工决策-2026-11-15 17:59:02] 节日抽奖按应用账号认人（用户选定）：11-15 16:40 起应用账号是自己的账号体系（人工决策见
+// src/modules/account/account.service.ts），没有学号这类能跨账号认人的身份，participant_hash 改存「SXD1-reward\naccount\n账号号」的 sha256，
+// 一个应用账号一次活动只抽一次，注销后重新注册就是新的人；挡批量新建的账号靠下一条的账号年龄、限流与小额兜底。
 // [人工决策-2026-11-15 15:04:27] 谁都能建号（当时是设备核对，11-15 16:40 起是注册用户名，同样谁都能建）：
 // 抽签要求账号建立满 rewardAccountMinAgeDays（7）天，不满回 ACCOUNT_TOO_NEW（附可以抽的时刻）、不记这次，挡住批量新建的账号抽红包。
 // [人工决策-2026-11-14 20:20:18] 红包并进积分等级（用户选「等级并进加权」，等级规则见 src/modules/points/points_level.ts）：加权模式下中签倍数取
