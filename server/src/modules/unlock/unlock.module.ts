@@ -16,5 +16,6 @@ import { UnlockTask } from 'src/modules/unlock/unlock.task';
   imports: [TypeOrmModule.forFeature([AccountUnlockEntity]), DeviceModule, AccountModule, PointsModule, AppReleaseModule],
   controllers: [UnlockController],
   providers: [{ provide: UnlockRepository, useClass: TypeormUnlockRepository }, UnlockService, UnlockTask],
+  exports: [UnlockService],
 })
 export class UnlockModule {}

@@ -94,9 +94,11 @@ class CampusSwitchTile extends StatelessWidget {
     required this.title,
     required this.value,
     required this.onChanged,
+    this.leading,
     this.subtitle,
     this.contentPadding,
   });
+  final Widget? leading;
   final Widget title;
   final Widget? subtitle;
   final bool value;
@@ -115,6 +117,7 @@ class CampusSwitchTile extends StatelessWidget {
             toggled: value,
             child: ListTile(
               contentPadding: contentPadding,
+              leading: leading,
               title: title,
               subtitle: subtitle,
               onTap: () => onChanged(!value),

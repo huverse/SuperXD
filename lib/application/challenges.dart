@@ -67,4 +67,7 @@ class Challenges implements ChallengeHub {
 
   @override
   Future<PointsBatch> pointsEntries({String? before}) => _with('points_entries', (account) => client.pointsEntries(account, before: before));
+
+  // 娱乐与积分的「删除数据」（application/leisure.dart 调，不在给游乐场的 ChallengeHub 里）：删服务器上当前应用账号的积分、挑战与解锁。
+  Future<void> deleteData() => _with('delete_data', client.deleteData);
 }

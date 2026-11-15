@@ -10,9 +10,11 @@ import 'package:superxd/domain/festival.dart';
 // 节日的编排（设备级，切换账号不重建；人工决策见 domain/festival.dart）：今天该播哪一次、记活跃天数、抽签与奖品。
 // 动画什么时候播由 app_moments.dart 决定，播什么由组合根按 page/festival/festival_catalog.dart 接上。
 // 抽签用当前的应用账号（组合根注入 account，只认 AppAccountRef）；中转说账号已不在时调 accountGone（组合根让应用账号马上核一次）。
+// levelsOn 为假（娱乐与积分关着，人工决策见 domain/leisure.dart）时请服务器不按积分等级加权。
 class Festivals extends ChangeNotifier {
-  Festivals({required this.occasions, required this._memory, this._client, AppAccountRef? Function()? account, this._accountGone, DateTime Function()? clock})
+  Festivals({required this.occasions, required this._memory, this._client, AppAccountRef? Function()? account, this._accountGone, bool Function()? levelsOn, DateTime Function()? clock})
     : _account = account ?? (() => null),
+      _levelsOn = levelsOn ?? (() => true),
       _clock = clock ?? DateTime.now;
   final List<FestivalOccasion> occasions;
   final FestivalMemory _memory;
@@ -20,6 +22,7 @@ class Festivals extends ChangeNotifier {
   final FestivalRewardClient? _client;
   final AppAccountRef? Function() _account;
   final void Function()? _accountGone;
+  final bool Function() _levelsOn;
   final DateTime Function() _clock;
   final _drawing = <String, Future<FestivalDraw?>>{};
   // 中转说这个应用账号建立不满规定天数：到 until 之前不再为它抽（不联网），只在内存里记。
@@ -90,7 +93,7 @@ class Festivals extends ChangeNotifier {
     final activeDays = festivalActiveDays(_memory.record.activeDays, _today).length;
     final FestivalDraw result;
     try {
-      result = await client.draw(account, campaign, occasion: occasion.id, activeDays: activeDays);
+      result = await client.draw(account, campaign, occasion: occasion.id, activeDays: activeDays, levels: _levelsOn());
     } on FestivalNotSignedIn catch (error) {
       // 中转说这个应用账号已不在（别处注销、被清理）：不记结果，让应用账号马上核一次，本机随之退回未登录。
       campusLog('[Festival] action=draw occasion=${occasion.id} errorType=FestivalNotSignedIn message=$error');

@@ -921,6 +921,8 @@ class _Client implements ChallengeClient {
   Future<PointsSummary> points(AppAccountRef account) => _call('points', const PointsSummary(balance: 0, expiring: 0, expiringAt: null, earned: 0, level: 0, nextLevelAt: null));
   @override
   Future<PointsBatch> pointsEntries(AppAccountRef account, {String? before}) => _call('entries', const PointsBatch(entries: [], next: null));
+  @override
+  Future<void> deleteData(AppAccountRef account) => _call('delete', null);
 }
 
 class _AppClient implements AppAccountClient {

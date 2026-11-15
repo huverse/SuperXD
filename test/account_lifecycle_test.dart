@@ -49,9 +49,13 @@ import 'package:superxd/page/account_page.dart';
 import 'package:superxd/page/app_account_page.dart';
 import 'package:superxd/page/login_page.dart';
 import 'package:superxd/page/shell_page.dart';
+import 'package:superxd/application/leisure.dart';
+import 'package:superxd/local/leisure_memory.dart';
+import 'package:superxd/page/section_pages.dart';
 import 'package:superxd/playground/playground_page.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
+import 'package:superxd/playground/puzzle_rules.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/express/express_page.dart';
 import 'package:superxd/toolbox/express/express_service.dart';
@@ -121,6 +125,64 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     session.dispose();
     await tester.runAsync(fixture.close);
+  });
+
+  // 娱乐与积分的开关（人工决策见 domain/leisure.dart）。
+  testWidgets('娱乐与积分关着时登录页没有游乐场入口，直接跳过去回登录页', (tester) async {
+    final fixture = ToolboxFixture();
+    await tester.runAsync(fixture.initialize);
+    final gateway = _Accounts().._active = null;
+    final session = AppSession(gateway); await session.restore();
+    final leisure = Leisure(memory: FileLeisureMemory.memory(enabled: false), clearLocal: () async {});
+    await tester.pumpWidget(SuperXdApp(session: session, toolbox: fixture.runtime, playground: PlaygroundStore.memory(), leisure: leisure, backgroundPhase: .18));
+    await tester.pumpAndSettle();
+    expect(find.byType(LoginPage), findsOneWidget);
+    expect(find.text('游乐场'), findsNothing);
+    expect(find.text('百宝箱'), findsOneWidget);
+    GoRouter.of(tester.element(find.byType(LoginPage))).go('/playground/hanoi');
+    await tester.pumpAndSettle();
+    expect(find.byType(HanoiPage), findsNothing);
+    expect(find.byType(LoginPage), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+    await tester.runAsync(fixture.close);
+  });
+
+  testWidgets('娱乐与积分：「我的」里一行开关，关掉后服务页不列游乐场、直接跳过去回服务页，打开就恢复；⋯里删除数据先确认再清本机成绩', (tester) async {
+    final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
+    final playground = PlaygroundStore.memory();
+    await playground.finish('hanoi', PuzzleTier.entry, millis: 1000, at: DateTime.utc(2026, 11, 15));
+    final leisure = Leisure(memory: FileLeisureMemory.memory(), clearLocal: playground.clear);
+    await tester.pumpWidget(SuperXdApp(session: session, playground: playground, leisure: leisure, backgroundPhase: .18)); await tester.pumpAndSettle();
+    await tester.tap(find.text('服务').last); await tester.pumpAndSettle();
+    expect(find.text('游乐场'), findsOneWidget);
+    await tester.tap(find.text('我的')); await tester.pumpAndSettle();
+    await tester.tap(find.text('游乐场与积分')); await tester.pumpAndSettle();
+    expect(leisure.enabled, isFalse);
+    await tester.tap(find.text('服务').last); await tester.pumpAndSettle();
+    expect(find.text('游乐场'), findsNothing);
+    GoRouter.of(tester.element(find.byType(ServicePage))).go('/playground/hanoi');
+    await tester.pumpAndSettle();
+    expect(find.byType(HanoiPage), findsNothing);
+    expect(find.byType(ServicePage), findsOneWidget);
+
+    await tester.tap(find.text('我的')); await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('更多操作')); await tester.pumpAndSettle();
+    await tester.tap(find.text('删除数据')); await tester.pumpAndSettle();
+    expect(find.text('删除游乐场与积分的数据？'), findsOneWidget);
+    expect(find.textContaining('服务器上的积分要登录应用账号后才能删'), findsOneWidget, reason: '没配中转、没登录应用账号时只清本机');
+    expect(playground.best('hanoi', PuzzleTier.entry), isNotNull, reason: '确认之前不删');
+    await tester.tap(find.text('删除')); await tester.pumpAndSettle();
+    expect(playground.best('hanoi', PuzzleTier.entry), isNull);
+    expect(find.text('已删除'), findsOneWidget);
+
+    await tester.tap(find.text('游乐场与积分')); await tester.pumpAndSettle();
+    expect(leisure.enabled, isTrue);
+    await tester.tap(find.text('服务').last); await tester.pumpAndSettle();
+    expect(find.text('游乐场'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
   });
 
   // 解锁（规则见服务端 src/modules/unlock/unlock_rules.ts）：锁着的游戏与隐藏的工具连同快捷入口不让直接进，回到各自首页；开了照常进。
@@ -999,7 +1061,7 @@ void expectSliding(WidgetTester tester, Finder page) {
 class _Reward implements FestivalRewardClient {
   var draws = 0;
   @override
-  Future<FestivalDraw> draw(AppAccountRef account, String campaign, {required String occasion, required int activeDays}) async {
+  Future<FestivalDraw> draw(AppAccountRef account, String campaign, {required String occasion, required int activeDays, bool levels = true}) async {
     draws++;
     return FestivalWon(FestivalPrize(occasion: occasion, kind: FestivalPrizeKind.password, content: '合成口令', note: '', wonAt: DateTime.now().toUtc()));
   }

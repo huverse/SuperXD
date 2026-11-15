@@ -19,6 +19,7 @@ import { FriendshipEntity } from 'src/modules/friend/friendship.entity';
 import { FriendModule } from 'src/modules/friend/friend.module';
 import { HealthController } from 'src/modules/health/health.controller';
 import { InviteModule } from 'src/modules/invite/invite.module';
+import { LeisureModule } from 'src/modules/leisure/leisure.module';
 import { MessageEntity } from 'src/modules/message/message.entity';
 import { AccountSocialEntity } from 'src/modules/pairing/account_social.entity';
 import { MessageModule } from 'src/modules/message/message.module';
@@ -65,6 +66,7 @@ import { UnlockModule } from 'src/modules/unlock/unlock.module';
     PointsModule,
     ChallengeModule,
     UnlockModule,
+    LeisureModule,
   ],
   controllers: [HealthController],
 })

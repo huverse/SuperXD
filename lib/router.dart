@@ -13,6 +13,7 @@ import 'package:superxd/application/auto_sync.dart';
 import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/application/festivals.dart';
+import 'package:superxd/application/leisure.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/domain/unlock.dart';
@@ -44,7 +45,7 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 void pushAppAccountPage(BuildContext context, AppAccounts appAccounts, AccountDiagnostics? diagnostics) =>
     unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => AppAccountPage(appAccounts: appAccounts, diagnostics: diagnostics))));
 
-GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, required PlaygroundStore playground, ValueListenable<bool>? splashGone, CampusReminders? reminders, SocialService? social, AppUpdates? updates, DeveloperSettings? developer, DiagnosticLog? logs, PaintingGallery? paintings, DeveloperNotes? notes, Festivals? festivals, AppAccounts? appAccounts, AccountDiagnostics? diagnostics, ChallengeHub? challenges, UnlockAccess? unlocks, AutoSync? autoSync, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
+GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, required PlaygroundStore playground, Leisure? leisure, ValueListenable<bool>? splashGone, CampusReminders? reminders, SocialService? social, AppUpdates? updates, DeveloperSettings? developer, DiagnosticLog? logs, PaintingGallery? paintings, DeveloperNotes? notes, Festivals? festivals, AppAccounts? appAccounts, AccountDiagnostics? diagnostics, ChallengeHub? challenges, UnlockAccess? unlocks, AutoSync? autoSync, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
   final tools = toolbox.modules;
   // 好友分享的卡片交给注册表里认得它的工具打开（页面层不依赖百宝箱，由这里接上；路由不认识具体工具页面）。
   void openVideo(BuildContext context, VideoShare video) {
@@ -61,7 +62,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
     navigatorKey: rootKey,
     observers: observers,
     initialLocation: '/boot',
-    refreshListenable: session,
+    refreshListenable: leisure == null ? session : Listenable.merge([session, leisure]),
     redirect: (context, state) {
       final location = state.matchedLocation;
       if (!session.ready) return location == '/boot' ? null : '/boot';
@@ -74,6 +75,8 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       // [人工决策-2026-11-12 21:00:20] 游乐场的自由模式同百宝箱免教务登录（用户选定，补充 09-27 那条）：本机成绩属于设备，切换账号不丢。
       // 挑战模式要应用账号（以教务登录为登录方式之一），做好后在挑战页里自己要求登录，不在这里拦。
       final publicPlay = location == '/playground' || playgroundCatalog.any((game) => location == '/playground/${game.id}');
+      // 娱乐与积分关着（人工决策见 domain/leisure.dart）：游乐场与游戏都进不去，回到服务页（没登录教务回登录页）。
+      if (leisure?.enabled == false && location.startsWith('/playground')) return session.loggedIn ? '/service' : '/login';
       if (!session.loggedIn && !atLogin && !legal && !publicTool && !publicPlay) return '/login';
       if (session.loggedIn && atLogin) return '/today';
       // 解锁（人工决策见服务端 src/modules/unlock/unlock_rules.ts）：锁着的游戏与隐藏的工具（含它的快捷入口）不让直接进，回到各自的首页。
@@ -95,7 +98,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
       ),
       GoRoute(
         path: '/login',
-        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: LoginPage(gateway: session.gateway, session: session, updates: updates, developer: developer, logs: logs, paintings: paintings)),
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: LoginPage(gateway: session.gateway, session: session, updates: updates, developer: developer, logs: logs, paintings: paintings, leisure: leisure)),
       ),
       GoRoute(
         path: '/switch-account',
@@ -144,9 +147,9 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
         pageBuilder: (context, state, navigationShell) => campusPage(key: state.pageKey, child: LegacyImportGate(session: session, child: ShellPage(navigationShell: navigationShell, social: social, notes: notes, revealed: splashGone))),
         branches: [
           StatefulShellBranch(routes: [GoRoute(path: '/today', builder: (context, state) => TodayPage(gateway: gateway, onSessionExpired: () => session.expire(generation), isAccountCurrent: () => session.generation == generation && session.loggedIn, syncRequest: todaySync, autoSync: autoSync))]),
-          StatefulShellBranch(routes: [GoRoute(path: '/service', builder: (context, state) => const ServicePage())]),
+          StatefulShellBranch(routes: [GoRoute(path: '/service', builder: (context, state) => ServicePage(leisure: leisure))]),
           StatefulShellBranch(routes: [GoRoute(path: '/message', builder: (context, state) => MessagePage(social: social, gateway: gateway, openVideo: openVideo, openAccount: appAccounts == null ? null : (context) => pushAppAccountPage(context, appAccounts, diagnostics)))]),
-          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, social: social, updates: updates, developer: developer, logs: logs, paintings: paintings, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, saveRewardPicture: saveRewardPicture))]),
+          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, social: social, updates: updates, developer: developer, logs: logs, paintings: paintings, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, leisure: leisure, saveRewardPicture: saveRewardPicture))]),
         ],
       ),
     ],

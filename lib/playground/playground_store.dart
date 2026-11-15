@@ -126,6 +126,20 @@ class PlaygroundStore extends ChangeNotifier {
     return true;
   }
 
+  // 删除娱乐与积分数据（人工决策见 domain/leisure.dart）：成绩、上次选的档、最近玩过与笔记全清，连文件一起删。
+  Future<void> clear() async {
+    await ready;
+    _best.clear();
+    _tiers.clear();
+    _recent.clear();
+    _notes = null;
+    notifyListeners();
+    await _saveLock.synchronized(() async {
+      final file = _file;
+      if (file != null && await file.exists()) await file.delete();
+    });
+  }
+
   Future<void> _write() => _saveLock.synchronized(() async {
     final file = _file;
     if (file == null) return;

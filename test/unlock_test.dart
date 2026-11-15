@@ -77,6 +77,33 @@ void main() {
       expect(client.calls, ['state'], reason: '回前台隔一小时才再问');
     });
 
+    test('娱乐与积分关着时只认公开与下架、不联网；打开或删了数据重新判定并重问', () async {
+      var accountOn = true;
+      final gated = Unlocks(rollouts: rollouts, appAccounts: appAccounts, client: client, accountOn: () => accountOn, now: () => _now);
+      appClient.accountId = 'AAAAAAAAAAAAAAAAAAAAAA';
+      await appAccounts.load();
+      client.next = const UnlockState(level: 2, open: {'game.open', 'game.early'});
+      gated.start();
+      await pumpEventQueue();
+      expect(gated.locked('game.early'), isFalse);
+      final calls = client.calls.length;
+      final changes = <void>[];
+      final subscription = gated.changes.listen(changes.add);
+      accountOn = false;
+      gated.reconsider();
+      await pumpEventQueue();
+      expect(gated.locked('game.early'), isTrue, reason: '关着时靠等级开的锁着');
+      expect(gated.locked('game.open'), isFalse, reason: '公开的照旧开着');
+      expect(client.calls.length, calls, reason: '关着不联网');
+      expect(changes, hasLength(1));
+      accountOn = true;
+      gated.reconsider();
+      await pumpEventQueue();
+      expect(client.calls.length, calls + 1, reason: '打开了重问');
+      expect(gated.locked('game.early'), isFalse);
+      await subscription.cancel();
+    });
+
     test('买了马上更新；换了应用账号旧账号的状态不作数；中转说账号不在了马上核一次；没有要账号才开的项不联网', () async {
       appClient.accountId = 'AAAAAAAAAAAAAAAAAAAAAA';
       await appAccounts.load();

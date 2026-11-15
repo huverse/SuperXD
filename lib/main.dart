@@ -29,6 +29,7 @@ import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/festivals.dart';
+import 'package:superxd/application/leisure.dart';
 import 'package:superxd/application/rollouts.dart';
 import 'package:superxd/device/app_installer_channel.dart';
 import 'package:superxd/device/app_shortcuts.dart';
@@ -58,6 +59,7 @@ import 'package:superxd/local/developer_note_memory.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/local/festival_memory.dart';
+import 'package:superxd/local/leisure_memory.dart';
 import 'package:superxd/local/font_packs.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/local/rollout_memory.dart';
@@ -211,13 +213,23 @@ void main() async {
     ));
   }
   appAccounts = appAccountsOf(onDeleted: (account) => unawaited(social.forgetAccount(account)));
+  // 娱乐与积分的开关（人工决策见 domain/leisure.dart）：关着时解锁只认公开与下架、不联网，灰度与节日抽签不按等级加权。
+  final leisureMemory = await FileLeisureMemory.open(File(path.join(support.path, 'leisure.json')));
+  bool leisureOn() => leisureMemory.enabled;
   final challenges = challengesOf(appAccounts);
-  final rollouts = await rolloutsOf(support, appAccounts, challenges);
-  final unlocks = unlocksOf(rollouts, appAccounts);
+  final rollouts = await rolloutsOf(support, appAccounts, challenges, levelsOn: leisureOn);
+  final unlocks = unlocksOf(rollouts, appAccounts, accountOn: leisureOn);
+  final playground = PlaygroundStore.inSupportDirectory();
+  // 删除数据清本机的游乐场记录与记着的等级（服务器上的由 Leisure 经挑战与积分先删）；开关变了、删了数据，解锁都重新判定。
+  final leisure = Leisure(memory: leisureMemory, deleteRemote: challenges?.deleteData, signedIn: () => challenges?.signedIn ?? false, clearLocal: () async {
+    await playground.clear();
+    await rollouts.forgetLevel();
+  });
+  if (unlocks != null) leisure.addListener(unlocks.reconsider);
   final updates = await appUpdates(support, rollouts);
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
   final notes = await developerNotes(support);
-  final festivals = await festivalsOf(support, appAccounts);
+  final festivals = await festivalsOf(support, appAccounts, levelsOn: leisureOn);
   // 自动同步（人工决策见 domain/auto_sync.dart）：设备级，经账号门面跟着当前账号；后台任务的入口与时机在 app_background_sync.dart。
   final autoSync = AutoSync(gateway: session.gateway, generation: () => session.generation, scheduler: WorkmanagerSyncScheduler(autoSyncDispatcher));
   // 打扰时机（人工决策见 application/app_moments.dart）：上下课的安静期按当前账号本机今天的课算，只读本地。
@@ -225,7 +237,7 @@ void main() async {
   final splashed = painting != null && splashImage != null;
   final splashGone = ValueNotifier(!splashed);
   final restored = Completer<void>();
-  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, launch: launched, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, unlocks: unlocks, moments: moments, autoSync: autoSync, splashGone: splashGone);
+  final app = SuperXdApp(session: session, display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, launch: launched, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, unlocks: unlocks, playground: playground, leisure: leisure, moments: moments, autoSync: autoSync, splashGone: splashGone);
   runApp(splashed ? PaintingSplash(painting: painting, image: splashImage, ready: restored.future, onGone: () => splashGone.value = true, child: app) : app);
   unawaited(WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
     if (campusDiagnostics) campusLog('[App] action=first_frame ms=${launch.elapsedMilliseconds}');
@@ -292,10 +304,11 @@ Future<AppUpdates?> appUpdates(Directory support, Rollouts rollouts) async {
 // 灰度（人工决策见 domain/rollout.dart）：配置走同一个自建中转（没配中转时只用本机存着的，一般为空）；本机随机编号与上次的配置在 rollout.json。
 // 分桶主体是当前教务账号对应的应用账号号，没登录用本机随机编号；渠道同应用更新（测试与没有渠道的构建记作 development）。
 // 积分等级经挑战与积分的签名请求取（取不到时 Challenges 已记日志，这里按没取到算）。
-Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challenges? challenges) async => Rollouts(
+Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challenges? challenges, {required bool Function() levelsOn}) async => Rollouts(
   memory: await FileRolloutMemory.open(File(path.join(support.path, 'rollout.json'))),
   channel: appFlavor ?? 'development',
   accountId: () => appAccounts?.accountId,
+  levelsOn: levelsOn,
   level: switch (challenges) {
     final hub? => () async {
       try {
@@ -313,10 +326,10 @@ Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challen
 );
 
 // 解锁（人工决策见服务端 src/modules/unlock/unlock_rules.ts）：清单跟着灰度配置，这个账号能用哪些问同一个中转（应用账号签名）；没配中转时为空，游戏与工具都照常开着。
-Unlocks? unlocksOf(Rollouts rollouts, AppAccounts? appAccounts) {
+Unlocks? unlocksOf(Rollouts rollouts, AppAccounts? appAccounts, {required bool Function() accountOn}) {
   final transport = relayTransport();
   if (transport == null || appAccounts == null) return null;
-  return Unlocks(rollouts: rollouts, appAccounts: appAccounts, client: RelayUnlockClient(vault: const SecureAppAccountVault(), transport: transport));
+  return Unlocks(rollouts: rollouts, appAccounts: appAccounts, client: RelayUnlockClient(vault: const SecureAppAccountVault(), transport: transport), accountOn: accountOn);
 }
 
 // 同意协议与政策之后才开始问解锁（之前只按本机配置判定公开与下架），之后每次回到前台再看一眼（距上次不到一小时不联网）。
@@ -361,7 +374,7 @@ Future<DeveloperNotes?> developerNotes(Directory support) async {
 // 节日（人工决策见 domain/festival.dart）：登记在 page/festival/festival_catalog.dart；没配中转时只播动画、不抽签。
 // 抽签用当前应用账号的设备密钥签名（social/relay_reward_client.dart）；没登录应用账号不抽，中转说账号已不在时让应用账号马上核一次。
 // 登录应用账号后补抽在 watchMoments 里接（同意协议与政策之后才联网）。
-Future<Festivals> festivalsOf(Directory support, AppAccounts? appAccounts) async {
+Future<Festivals> festivalsOf(Directory support, AppAccounts? appAccounts, {required bool Function() levelsOn}) async {
   final transport = relayTransport();
   return Festivals(
     occasions: [for (final scene in festivalCatalog) scene.occasion],
@@ -369,6 +382,7 @@ Future<Festivals> festivalsOf(Directory support, AppAccounts? appAccounts) async
     client: transport == null || appAccounts == null ? null : RelayRewardClient(vault: const SecureAppAccountVault(), transport: transport),
     account: () => appAccounts?.current,
     accountGone: () => unawaited(appAccounts?.check(force: true)),
+    levelsOn: levelsOn,
   );
 }
 
@@ -529,7 +543,7 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
 }
 
 class SuperXdApp extends StatefulWidget {
-  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.playground, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.moments, this.autoSync, this.splashGone});
+  const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.playground, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.leisure, this.moments, this.autoSync, this.splashGone});
   // 自动同步（设备级）；为空时「同步范围」里没有自动同步入口，也不会有课表冲突的打扰时机。
   final AutoSync? autoSync;
   // 开发者的话（设备级）；为空时「我的」页不显示这一行。
@@ -561,6 +575,8 @@ class SuperXdApp extends StatefulWidget {
   final ToolboxRuntime? toolbox;
   // 游乐场的本机记录（设备级，切换账号保留）；为空时用应用支持目录里的那份。
   final PlaygroundStore? playground;
+  // 娱乐与积分的开关（设备级，人工决策见 domain/leisure.dart）；为空时游乐场照常显示、「我的」里没有这一行。
+  final Leisure? leisure;
   final AppSession session;
   final DisplaySettings? display;
   // 测试/截图固定装饰相位，不关闭业务转场或图标动画。
@@ -641,7 +657,7 @@ class _SuperXdAppState extends State<SuperXdApp> {
     return ListenableBuilder(
       listenable: widget.session,
       // [人工决策-2026-09-24 20:40:27] 账号切换成功才替换页面上下文；旧账号路由和内存状态不能带入新账号。
-      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, playground: _playground, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts, notes: widget.notes, festivals: widget.festivals, appAccounts: widget.appAccounts, diagnostics: widget.diagnostics, challenges: widget.challenges, unlocks: widget.unlocks, moments: widget.moments, autoSync: widget.autoSync, splashGone: widget.splashGone),
+      builder: (context, child) => _AccountApp(key: ValueKey(widget.session.generation), session: widget.session, display: widget.display, backgroundPhase: widget.backgroundPhase, toolbox: _toolbox, playground: _playground, reminders: widget.reminders, social: widget.social, updates: widget.updates, legal: widget.legal, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, shortcuts: _shortcuts, notes: widget.notes, festivals: widget.festivals, appAccounts: widget.appAccounts, diagnostics: widget.diagnostics, challenges: widget.challenges, unlocks: widget.unlocks, leisure: widget.leisure, moments: widget.moments, autoSync: widget.autoSync, splashGone: widget.splashGone),
     );
   }
 }
@@ -661,7 +677,7 @@ class _MomentObserver extends NavigatorObserver {
 }
 
 class _AccountApp extends StatefulWidget {
-  const _AccountApp({super.key, required this.session, required this.toolbox, required this.playground, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.moments, this.autoSync, this.splashGone});
+  const _AccountApp({super.key, required this.session, required this.toolbox, required this.playground, this.display, this.backgroundPhase, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.leisure, this.moments, this.autoSync, this.splashGone});
   final AutoSync? autoSync;
   final AppShortcuts? shortcuts;
   final DeveloperNotes? notes;
@@ -681,6 +697,7 @@ class _AccountApp extends StatefulWidget {
   final PaintingGallery? paintings;
   final ToolboxRuntime toolbox;
   final PlaygroundStore playground;
+  final Leisure? leisure;
   final AppSession session;
   final DisplaySettings? display;
   final double? backgroundPhase;
@@ -690,7 +707,7 @@ class _AccountApp extends StatefulWidget {
 }
 
 class _AccountAppState extends State<_AccountApp> {
-  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, playground: widget.playground, splashGone: widget.splashGone, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, notes: widget.notes, festivals: widget.festivals, appAccounts: widget.appAccounts, diagnostics: widget.diagnostics, challenges: widget.challenges, unlocks: widget.unlocks, autoSync: widget.autoSync, saveRewardPicture: saveRewardPicture, observers: [_MomentObserver(_onMoment)]);
+  late final _router = buildRouter(gateway: widget.session.gateway, session: widget.session, toolbox: widget.toolbox, playground: widget.playground, leisure: widget.leisure, splashGone: widget.splashGone, reminders: widget.reminders, social: widget.social, updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings, notes: widget.notes, festivals: widget.festivals, appAccounts: widget.appAccounts, diagnostics: widget.diagnostics, challenges: widget.challenges, unlocks: widget.unlocks, autoSync: widget.autoSync, saveRewardPicture: saveRewardPicture, observers: [_MomentObserver(_onMoment)]);
   late final VoidCallback _unwatchRoutes;
   late final _display = widget.display ?? DisplaySettings.memory();
 

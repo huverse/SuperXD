@@ -1,4 +1,5 @@
 import { HttpStatus, Injectable, Logger, OnModuleInit } from '@nestjs/common';
+import { EntityManager } from 'typeorm';
 
 import { RateLimiter } from 'src/common/redis/redis.module';
 import { RelayCode, RelayError } from 'src/common/relay_error';
@@ -28,7 +29,12 @@ export class UnlockService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    this.hooks.register((manager, accountIds) => this.unlocks.deleteAccounts(manager, accountIds));
+    this.hooks.register((manager, accountIds) => this.deleteAccountsIn(manager, accountIds));
+  }
+
+  // 删这些账号的解锁记录（调用方事务内）：注销账号与娱乐与积分的「删除数据」共用。
+  deleteAccountsIn(manager: EntityManager, accountIds: string[]) {
+    return this.unlocks.deleteAccounts(manager, accountIds);
   }
 
   async state(deviceId: string): Promise<dtos.UnlockStateDto> {
