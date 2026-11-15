@@ -32,6 +32,12 @@ List<Map<String, Object?>> challengeBankEntries(String secret, String game, Puzz
     final draw = rules.generate(seed, tier);
     final puzzle = rules.encodePuzzle(draw.puzzle);
     if (!seen.add(jsonEncode(puzzle))) continue;
+    // 只收这个版本的客户端自己解得开的题（解码对证明唯一的试探有上限，如数回的 loopDecodeBudget）：发下去的题不会被客户端拒收。
+    try {
+      rules.decodePuzzle(jsonDecode(jsonEncode(puzzle)));
+    } on FormatException {
+      continue;
+    }
     entries.add({
       'id': '$game.${tier.name}.$index',
       'puzzle': puzzle,
