@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/domain/campus_crypto.dart';
@@ -52,7 +53,9 @@ class _RewardRelay implements RelayTransport {
   final FakeRelay relay;
   final accounts = <String>{};
   final draws = <({String device, String path, Map<String, Object?> body})>[];
-  Map<String, Object?> result = {'result': 'missed', 'prize': null};
+  Map<String, Object?> result = {'result': 'missed', 'sealed': null};
+  // 设了就同服务端抽中：用请求设备登记的 box 公钥把它封进 sealed（同 server/src/modules/reward/reward_seal.ts）。
+  Map<String, Object?>? prize;
   // 设了就同服务端账号建立不满规定天数：回 403 ACCOUNT_TOO_NEW 附 eligibleAt（毫秒）。
   int? eligibleAt;
 
@@ -70,8 +73,20 @@ class _RewardRelay implements RelayTransport {
     if (!accounts.contains(device)) return const RelayResponse(404, {'code': RelayCode.accountNotFound});
     if (eligibleAt case final at?) return RelayResponse(403, {'code': RelayCode.accountTooNew, 'eligibleAt': at});
     draws.add((device: device, path: pathWithQuery, body: (jsonDecode(utf8.decode(body!)) as Map).cast<String, Object?>()));
+    if (prize case final prize?) return RelayResponse(200, {'result': 'won', 'sealed': base64UrlNoPad(await _sealPrize(prize, pathWithQuery.split('/')[3], device, relay.devices[device]!.box))});
     return RelayResponse(200, result);
   }
+}
+
+// 测试这边按服务端的布局封一份奖品（一次性密钥每次新起）。
+Future<List<int>> _sealPrize(Map<String, Object?> prize, String campaign, String deviceId, List<int> devicePublic) async {
+  final x25519 = X25519(), aes = AesGcm.with256bits();
+  final ephemeral = await x25519.newKeyPair();
+  final ephemeralPublic = (await ephemeral.extractPublicKey()).bytes;
+  final shared = await x25519.sharedSecretKey(keyPair: ephemeral, remotePublicKey: SimplePublicKey(devicePublic, type: KeyPairType.x25519));
+  final key = await Hkdf(hmac: Hmac.sha256(), outputLength: 32).deriveKey(secretKey: shared, nonce: [...ephemeralPublic, ...devicePublic], info: utf8.encode('SXD1-reward-prize'));
+  final box = await aes.encrypt(utf8.encode(jsonEncode(prize)), secretKey: key, nonce: aes.newNonce(), aad: [1, ...ephemeralPublic, ...utf8.encode('$campaign\n$deviceId')]);
+  return [1, ...ephemeralPublic, ...box.nonce, ...box.cipherText, ...box.mac.bytes];
 }
 
 FestivalPrize prize(String occasion, {FestivalPrizeKind kind = FestivalPrizeKind.password, String content = '88662027', bool revealed = false}) =>
@@ -95,22 +110,22 @@ void main() {
       expect(festivalPrizeKept(prize('gone'), [spring], '2027-02-06'), isFalse);
     });
 
-    test('抽签结果是外部输入：认不出的结果、种类与超长内容都拒绝', () {
+    test('抽签结果是外部输入：认不出的结果、种类与超长内容都拒绝（奖品是解开的信封）', () {
       final now = DateTime.utc(2027);
-      expect(parseFestivalDraw({'result': 'missed', 'prize': null}, occasion: 'a', now: now), isA<FestivalMissed>());
-      expect(parseFestivalDraw({'result': 'closed', 'prize': null}, occasion: 'a', now: now), isA<FestivalClosed>());
-      final won = parseFestivalDraw({'result': 'won', 'prize': {'kind': 'qrcode', 'content': ' https://qr.alipay.com/x ', 'note': ''}}, occasion: 'a', now: now);
+      expect(parseFestivalDraw({'result': 'missed', 'sealed': null}, occasion: 'a', now: now), isA<FestivalMissed>());
+      expect(parseFestivalDraw({'result': 'closed', 'sealed': null}, occasion: 'a', now: now), isA<FestivalClosed>());
+      final won = parseFestivalDraw({'result': 'won', 'sealed': '…'}, prize: {'kind': 'qrcode', 'content': ' https://qr.alipay.com/x ', 'note': ''}, occasion: 'a', now: now);
       expect((won as FestivalWon).prize.kind, FestivalPrizeKind.qrCode);
       expect(won.prize.content, 'https://qr.alipay.com/x');
-      for (final bad in [
-        {'result': 'won', 'prize': {'kind': 'cash', 'content': 'x', 'note': ''}},
-        {'result': 'won', 'prize': {'kind': 'password', 'content': ' ', 'note': ''}},
-        {'result': 'won', 'prize': {'kind': 'password', 'content': 'x' * 1025, 'note': ''}},
-        {'result': 'won'},
-        {'result': 'lucky'},
+      for (final bad in <Map<String, Object?>?>[
+        {'kind': 'cash', 'content': 'x', 'note': ''},
+        {'kind': 'password', 'content': ' ', 'note': ''},
+        {'kind': 'password', 'content': 'x' * 1025, 'note': ''},
+        null,
       ]) {
-        expect(() => parseFestivalDraw(bad, occasion: 'a', now: now), throwsFormatException);
+        expect(() => parseFestivalDraw({'result': 'won', 'sealed': '…'}, prize: bad, occasion: 'a', now: now), throwsFormatException);
       }
+      expect(() => parseFestivalDraw({'result': 'lucky'}, occasion: 'a', now: now), throwsFormatException);
     });
   });
 
@@ -270,6 +285,20 @@ void main() {
   });
 
   group('抽签客户端（经假中转）', () {
+    test('奖品信封与服务端共用向量：设备的 box 私钥解得开，换个活动编号、换台设备、改一个字节都解不开', () async {
+      final vector = jsonDecode(File('server/test/vectors/reward_prize_v1.json').readAsStringSync()) as Map<String, Object?>;
+      List<int> bytes(String key) => decodeBase64UrlNoPad(vector[key]! as String);
+      final identity = await SocialIdentity.fromSeeds(bytes('signSeed'), bytes('deviceSeed'));
+      expect(identity.deviceId, vector['deviceId']);
+      expect(base64UrlNoPad(identity.boxPublicKey), vector['devicePublic']);
+      final sealed = bytes('sealed'), campaign = vector['campaign']! as String;
+      expect(jsonEncode(await openRewardPrize(sealed, identity, campaign)), vector['plaintext']);
+      await expectLater(openRewardPrize(sealed, identity, '${campaign}x'), throwsFormatException);
+      await expectLater(openRewardPrize(sealed, await SocialIdentity.generate(), campaign), throwsFormatException);
+      await expectLater(openRewardPrize([...sealed.take(50), sealed[50] ^ 1, ...sealed.skip(51)], identity, campaign), throwsFormatException);
+      await expectLater(openRewardPrize([2, ...sealed.skip(1)], identity, campaign), throwsFormatException, reason: '版本不对');
+    });
+
     test('用这个应用账号的设备密钥签名，只发活跃天数；本机没有这把密钥、中转说账号不在都算没登录；连不上、格式不对给原因', () async {
       final relay = FakeRelay(), transport = _RewardRelay(relay), vault = MemoryAppAccountVault();
       final client = RelayRewardClient(vault: vault, transport: transport);
@@ -280,7 +309,7 @@ void main() {
       relay.devices[key.deviceId] = (sign: key.signPublicKey, box: key.boxPublicKey);
       await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalNotSignedIn>()), reason: '中转说这把密钥不在任何账号下');
       transport.accounts.add(key.deviceId);
-      transport.result = {'result': 'won', 'prize': {'kind': 'password', 'content': '口令', 'note': ''}};
+      transport.prize = {'kind': 'password', 'content': '口令', 'note': ''};
       final result = await client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7);
       expect((result as FestivalWon).prize.content, '口令');
       expect(transport.draws.single.device, key.deviceId);
@@ -289,6 +318,7 @@ void main() {
       transport.draws.clear();
       await client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7, levels: false);
       expect(transport.draws.single.body, {'activeDays': 7, 'levels': false}, reason: '娱乐与积分关着');
+      transport.prize = null;
       transport.result = {'result': 'won'};
       await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalException>().having((error) => error.message, 'message', contains('格式'))));
       relay.failNext = const RelayException(RelayCode.network);

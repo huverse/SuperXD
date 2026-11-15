@@ -1,13 +1,11 @@
 import { HttpStatus, Injectable } from '@nestjs/common';
-import { createDecipheriv, createPrivateKey, createPublicKey, diffieHellman, hkdfSync, KeyObject, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
+import { createDecipheriv, diffieHellman, hkdfSync, KeyObject, randomBytes, scrypt, timingSafeEqual } from 'node:crypto';
 
 import { env } from 'src/config/env';
 import { RelayCode, RelayError } from 'src/common/relay_error';
 import { passwordHashConcurrency } from 'src/common/relay_limits';
-import { decodeBase64url } from 'src/common/crypto/relay_crypto';
+import { decodeBase64url, x25519PrivateKey, x25519PublicKey, x25519PublicOf } from 'src/common/crypto/relay_crypto';
 
-const x25519Pkcs8Prefix = Buffer.from('302e020100300506032b656e04220420', 'hex');
-const x25519SpkiPrefix = Buffer.from('302a300506032b656e032100', 'hex');
 
 // 封装密码与恢复码的信封，客户端 lib/social/account_seal.dart 与此一致（共用 test/vectors/account_seal_v1.json）：
 // 一次性 X25519 与中转公钥协商，HKDF-SHA256（盐 = 一次性公钥 + 中转公钥，info = SXD1-account-sign-in）派生 AES-256-GCM 密钥，
@@ -20,7 +18,7 @@ export const openAccountSeal = (sealed: Buffer, deviceId: string, privateKey: Ke
   if (sealed.length <= sealOverhead || sealed[0] !== accountSealVersion) return null;
   const ephemeral = sealed.subarray(1, 33);
   try {
-    const shared = diffieHellman({ privateKey, publicKey: createPublicKey({ key: Buffer.concat([x25519SpkiPrefix, ephemeral]), format: 'der', type: 'spki' }) });
+    const shared = diffieHellman({ privateKey, publicKey: x25519PublicKey(ephemeral) });
     const key = Buffer.from(hkdfSync('sha256', shared, Buffer.concat([ephemeral, publicKey]), 'SXD1-account-sign-in', 32));
     const decipher = createDecipheriv('aes-256-gcm', key, sealed.subarray(33, 45));
     decipher.setAAD(Buffer.concat([Buffer.from([accountSealVersion]), ephemeral, Buffer.from(deviceId, 'utf8')]));
@@ -32,8 +30,6 @@ export const openAccountSeal = (sealed: Buffer, deviceId: string, privateKey: Ke
   }
 };
 
-export const x25519PrivateKey = (seed: Buffer) => createPrivateKey({ key: Buffer.concat([x25519Pkcs8Prefix, seed]), format: 'der', type: 'pkcs8' });
-export const x25519PublicOf = (privateKey: KeyObject) => Buffer.from(createPublicKey(privateKey).export({ format: 'jwk' }).x!, 'base64url');
 
 // 密码与恢复码的哈希：Node 自带的 scrypt（N=2^15、r=8、p=1，约 32MB 内存、几十毫秒），每条随机 16 字节盐；
 // 存成「scrypt$N$r$p$盐$哈希」，以后调参数旧哈希照样能核对。

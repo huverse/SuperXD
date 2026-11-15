@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto';
+import { createDecipheriv, createHash, diffieHellman, hkdfSync, randomBytes } from 'node:crypto';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import Redis from 'ioredis';
 import { createConnection, Connection } from 'mysql2/promise';
@@ -11,6 +11,7 @@ import { createRelayApp } from 'src/relay_app';
 import { env } from 'src/config/env';
 import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
+import { x25519PublicKey } from 'src/common/crypto/relay_crypto';
 import { rewardDrawPerDevicePerHour, rewardDrawPerHour, rewardKeepDays } from 'src/common/relay_limits';
 import { RewardAdminError, runRewardAdmin } from 'src/modules/reward/reward_admin';
 import { RewardRetentionTask } from 'src/modules/reward/reward_retention.task';
@@ -61,6 +62,18 @@ const registered = async (accountId = randomBytes(16).toString('base64url'), cre
 };
 
 const draw = (device: TestDevice, key: string, body: Record<string, unknown>) => device.call('POST', `/v1/rewards/${key}/draw`, body);
+
+// 解开奖品信封（同客户端 openRewardPrize，布局见 src/modules/reward/reward_seal.ts）：只有抽签设备的加密私钥打得开，打不开抛错。
+const prizeOf = (device: TestDevice, key: string, body: { result: string; sealed: string | null }) => {
+  if (body.sealed === null) return null;
+  const sealed = Buffer.from(body.sealed, 'base64url');
+  const ephemeral = sealed.subarray(1, 33), devicePublic = Buffer.from(device.boxPublicKey, 'base64url');
+  const shared = diffieHellman({ privateKey: device.boxPrivate, publicKey: x25519PublicKey(ephemeral) });
+  const decipher = createDecipheriv('aes-256-gcm', Buffer.from(hkdfSync('sha256', shared, Buffer.concat([ephemeral, devicePublic]), 'SXD1-reward-prize', 32)), sealed.subarray(33, 45));
+  decipher.setAAD(Buffer.concat([sealed.subarray(0, 1), ephemeral, Buffer.from(`${key}\n${device.deviceId}`, 'utf8')]));
+  decipher.setAuthTag(sealed.subarray(sealed.length - 16));
+  return JSON.parse(Buffer.concat([decipher.update(sealed.subarray(45, sealed.length - 16)), decipher.final()]).toString('utf8')) as { kind: string; content: string; note: string };
+};
 
 // 给设备所在账号记一笔积分（等级按近 12 个月获得的总数算），门槛写进灰度配置。
 const levels = [0, 500, 3000, 10000, 30000, 80000];
@@ -198,7 +211,7 @@ describe('抽奖', () => {
 
   it('活动不存在、还没开始或已经结束都回 closed，不记抽签', async () => {
     const device = await registered();
-    expect((await draw(device, 'no-such-campaign', { activeDays: 3 })).body).toEqual({ result: 'closed', prize: null });
+    expect((await draw(device, 'no-such-campaign', { activeDays: 3 })).body).toEqual({ result: 'closed', sealed: null });
     const later = await setup({ from: hour, to: 2 * hour });
     expect((await draw(device, later, { activeDays: 3 })).body.result).toBe('closed');
     const ended = await setup({ from: -2 * hour, to: -hour });
@@ -206,17 +219,23 @@ describe('抽奖', () => {
     expect(roll).not.toHaveBeenCalled();
   });
 
-  it('抽中给出奖品；同一个人再来返回同一个奖品，没抽中的再来也还是没抽中（不能重抽）；库里只存账号号的哈希', async () => {
+  it('抽中给出奖品（只有抽签的设备打得开）；同一个人再来返回同一个奖品，没抽中的再来也还是没抽中（不能重抽）；库里只存账号号的哈希', async () => {
     const key = await setup();
     const luckySubject = randomBytes(16).toString('base64url'), unluckySubject = randomBytes(16).toString('base64url');
     const lucky = await registered(luckySubject), unlucky = await registered(unluckySubject);
     roll.mockReturnValue(0);
     const won = await draw(lucky, key, { activeDays: 5 });
     expect(won.status).toBe(200);
-    expect(won.body).toEqual({ result: 'won', prize: { kind: 'password', content: '口令0', note: '附言0' } });
+    expect(won.body.result).toBe('won');
+    expect(JSON.stringify(won.body)).not.toContain('口令0');
+    expect(prizeOf(lucky, key, won.body)).toEqual({ kind: 'password', content: '口令0', note: '附言0' });
+    expect(() => prizeOf(unlucky, key, won.body), '别的设备打不开').toThrow();
+    expect(() => prizeOf(lucky, `${key}x`, won.body), '换个活动编号打不开').toThrow();
     roll.mockReturnValue(0.99);
-    expect((await draw(lucky, key, { activeDays: 30 })).body).toEqual(won.body);
-    expect((await draw(unlucky, key, { activeDays: 5 })).body).toEqual({ result: 'missed', prize: null });
+    const again = await draw(lucky, key, { activeDays: 30 });
+    expect(again.body.sealed, '每次另起一次性密钥重新封').not.toBe(won.body.sealed);
+    expect(prizeOf(lucky, key, again.body)).toEqual(prizeOf(lucky, key, won.body));
+    expect((await draw(unlucky, key, { activeDays: 5 })).body).toEqual({ result: 'missed', sealed: null });
     roll.mockReturnValue(0);
     expect((await draw(unlucky, key, { activeDays: 5 })).body.result).toBe('missed');
     const hashes = (await database.query('SELECT participant_hash AS hash FROM reward_draw d JOIN reward_campaign c ON c.id = d.campaign_id WHERE c.campaign_key = ?', [key])) as { hash: string }[];
@@ -247,11 +266,12 @@ describe('抽奖', () => {
       // 两档各 2 份、都已放出：中签骰子 0、挑档骰子 0.4。Lv0 分量 2:2 落在普通档，Lv5 分量 1:(2×3) 落在大额档。
       const tiered = await setup({ mode: 'weighted', chance: 0.2, maxWeight: 3, prizes: 2, bigPrizes: 2 });
       roll.mockReturnValueOnce(0).mockReturnValueOnce(0.4);
-      expect((await draw(await registered(), tiered, { activeDays: 0 })).body.prize.content).toBe('口令0');
+      const plainDevice = await registered();
+      expect(prizeOf(plainDevice, tiered, (await draw(plainDevice, tiered, { activeDays: 0 })).body)?.content).toBe('口令0');
       const rich = await registered();
       await earn(rich, 80000);
       roll.mockReturnValueOnce(0).mockReturnValueOnce(0.4);
-      expect((await draw(rich, tiered, { activeDays: 0 })).body.prize.content).toBe('大额0');
+      expect(prizeOf(rich, tiered, (await draw(rich, tiered, { activeDays: 0 })).body)?.content).toBe('大额0');
       expect(await runRewardAdmin(admin, ['status', tiered], lines(''))).toContain('第 0 档：2 份，已发 1 份；第 1 档：2 份，已发 1 份');
 
       const uniform = await setup({ mode: 'uniform', chance: 0.2, prizes: 1, bigPrizes: 1 });
@@ -295,13 +315,13 @@ describe('抽奖', () => {
     const key = await setup({ prizes: 5 });
     const devices = await Promise.all(Array.from({ length: 12 }, () => registered()));
     const results = await Promise.all(devices.map((device) => draw(device, key, { activeDays: 1 })));
-    const prizes = results.filter((response) => response.body.result === 'won').map((response) => response.body.prize.content);
+    const prizes = results.flatMap((response, index) => (response.body.result === 'won' ? [prizeOf(devices[index], key, response.body)!.content] : []));
     expect(prizes).toHaveLength(5);
     expect(new Set(prizes).size).toBe(5);
     const again = await setup({ prizes: 5 });
     const same = await registered();
     const repeated = await Promise.all(Array.from({ length: 5 }, () => draw(same, again, { activeDays: 1 })));
-    expect(new Set(repeated.map((response) => JSON.stringify(response.body))).size).toBe(1);
+    expect(new Set(repeated.map((response) => JSON.stringify(prizeOf(same, again, response.body)))).size).toBe(1);
     const [counted] = (await database.query('SELECT COUNT(*) AS draws FROM reward_draw d JOIN reward_campaign c ON c.id = d.campaign_id WHERE c.campaign_key = ?', [again])) as { draws: string }[];
     expect(Number(counted.draws)).toBe(1);
   });

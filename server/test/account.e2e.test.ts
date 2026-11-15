@@ -8,8 +8,8 @@ import { createRelayApp } from 'src/relay_app';
 import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
 import { accountDeviceLimit, accountJoinPerSourcePerHour, accountLoginPerUserSourcePerHour, accountRegisterPerDevicePerHour } from 'src/common/relay_limits';
-import { decodeBase64url } from 'src/common/crypto/relay_crypto';
-import { openAccountSeal, x25519PrivateKey, x25519PublicOf } from 'src/modules/account/account_keys';
+import { decodeBase64url, x25519PrivateKey, x25519PublicOf } from 'src/common/crypto/relay_crypto';
+import { openAccountSeal } from 'src/modules/account/account_keys';
 import { AccountRetentionTask } from 'src/modules/account/account_retention.task';
 import { TestDevice } from './test_device';
 

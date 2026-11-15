@@ -8,6 +8,8 @@ export class TestDevice {
   readonly signPrivate: KeyObject;
   readonly signPublicKey: string;
   readonly boxPublicKey: string;
+  // 加密私钥：节日奖品的信封只有它打得开（reward.e2e.test.ts 解奖品用）。
+  readonly boxPrivate: KeyObject;
   readonly deviceId: string;
   // 用于模拟时钟偏差。
   clockOffset = 0;
@@ -16,7 +18,9 @@ export class TestDevice {
     const pair = generateKeyPairSync('ed25519');
     this.signPrivate = pair.privateKey;
     this.signPublicKey = pair.publicKey.export({ format: 'jwk' }).x!;
-    this.boxPublicKey = generateKeyPairSync('x25519').publicKey.export({ format: 'jwk' }).x!;
+    const box = generateKeyPairSync('x25519');
+    this.boxPrivate = box.privateKey;
+    this.boxPublicKey = box.publicKey.export({ format: 'jwk' }).x!;
     this.deviceId = base64url(createHash('sha256').update(Buffer.from(this.signPublicKey, 'base64url')).digest().subarray(0, 16));
   }
 

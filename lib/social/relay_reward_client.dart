@@ -1,12 +1,18 @@
+import 'dart:convert';
+
+import 'package:cryptography/cryptography.dart';
+
 import 'package:superxd/domain/app_account.dart';
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/festival.dart';
 import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/social/social_crypto.dart';
 
 // 节日抽签的自建中转实现（人工决策见 domain/festival.dart）：POST /v1/rewards/<活动>/draw，用这个应用账号的设备密钥签名
 // （同挑战，密钥在安全存储 superxd_account 的 account.slot），请求体只有近 30 天打开过的天数，娱乐与积分关着时另带 levels: false。超时（15 秒）、请求记录与校时后重发一次都沿用
-// RelayClient；不自动重试（同一个人重复抽返回同一结果，下次回到前台再补抽）。
+// RelayClient；不自动重试（同一个人重复抽返回同一结果，下次回到前台再补抽）。抽中的奖品用这台设备的 box 公钥封装（openRewardPrize），只有它打得开。
 class RelayRewardClient implements FestivalRewardClient {
   RelayRewardClient({required this.vault, required RelayTransport transport}) : _relay = RelayClient(transport);
   final AppAccountVault vault;
@@ -30,7 +36,9 @@ class RelayRewardClient implements FestivalRewardClient {
       };
     }
     try {
-      return parseFestivalDraw(body, occasion: occasion, now: DateTime.now().toUtc());
+      final sealed = body['sealed'];
+      final prize = body['result'] == 'won' && sealed is String ? await openRewardPrize(tryDecodeBase64UrlNoPad(sealed) ?? (throw const FormatException('奖品不是 base64url')), saved.identity, campaign) : null;
+      return parseFestivalDraw(body, prize: prize, occasion: occasion, now: DateTime.now().toUtc());
     } on FormatException catch (error, stack) {
       campusLog('[Festival] action=draw errorType=${error.runtimeType} message=${error.message}\n$stack');
       throw const FestivalException('服务器返回的格式不对');
@@ -38,12 +46,41 @@ class RelayRewardClient implements FestivalRewardClient {
   }
 }
 
-// 抽签结果是外部输入：逐项校验，不合格抛 FormatException。
-FestivalDraw parseFestivalDraw(Object? json, {required String occasion, required DateTime now}) => switch (json) {
-  {'result': 'closed'} => const FestivalClosed(),
-  {'result': 'missed'} => const FestivalMissed(),
-  {'result': 'won', 'prize': {'kind': final String kind, 'content': final String content, 'note': final String note}}
+// 抽签结果是外部输入：逐项校验，不合格抛 FormatException；抽中时 prize 是解开的奖品信封。
+FestivalDraw parseFestivalDraw(Object? json, {required String occasion, required DateTime now, Map<String, Object?>? prize}) => switch ((json, prize)) {
+  ({'result': 'closed'}, _) => const FestivalClosed(),
+  ({'result': 'missed'}, _) => const FestivalMissed(),
+  ({'result': 'won'}, {'kind': final String kind, 'content': final String content, 'note': final String note})
       when (kind == 'password' || kind == 'qrcode') && content.trim().isNotEmpty && content.length <= 1024 && note.length <= 200 =>
     FestivalWon(FestivalPrize(occasion: occasion, kind: kind == 'password' ? FestivalPrizeKind.password : FestivalPrizeKind.qrCode, content: content.trim(), note: note.trim(), wonAt: now)),
   _ => throw const FormatException('不是抽签结果'),
 };
+
+// 奖品信封（服务端 server/src/modules/reward/reward_seal.ts，共用 server/test/vectors/reward_prize_v1.json）：中转是明文 HTTP，口令是真钱，
+// 服务器用抽签设备登记的 box 公钥封装，同一网络里的人截不走。一次性 X25519 与设备的 box 密钥协商，HKDF-SHA256（盐 = 一次性公钥 + 设备公钥，
+// info = SXD1-reward-prize）派生 AES-256-GCM 密钥，附加数据绑定版本、一次性公钥与「活动编号\n设备号」。
+// 布局：版本(1) | 一次性公钥(32) | 随机数(12) | 密文 | GCM 标签(16)；明文是 {kind, content, note} 的 JSON。打不开、版本不对都抛 FormatException。
+const rewardSealVersion = 1;
+final _x25519 = X25519();
+final _aes = AesGcm.with256bits();
+final _hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
+
+Future<Map<String, Object?>> openRewardPrize(List<int> sealed, SocialIdentity identity, String campaign) async {
+  if (sealed.length <= 1 + 32 + 12 + 16 || sealed[0] != rewardSealVersion) throw const FormatException('奖品信封格式不对');
+  final ephemeral = sealed.sublist(1, 33);
+  final keyPair = await _x25519.newKeyPairFromSeed(identity.boxSeed);
+  final shared = await _x25519.sharedSecretKey(keyPair: keyPair, remotePublicKey: SimplePublicKey(ephemeral, type: KeyPairType.x25519));
+  final key = await _hkdf.deriveKey(secretKey: shared, nonce: [...ephemeral, ...identity.boxPublicKey], info: utf8.encode('SXD1-reward-prize'));
+  final List<int> clear;
+  try {
+    clear = await _aes.decrypt(
+      SecretBox(sealed.sublist(45, sealed.length - 16), nonce: sealed.sublist(33, 45), mac: Mac(sealed.sublist(sealed.length - 16))),
+      secretKey: key,
+      aad: [rewardSealVersion, ...ephemeral, ...utf8.encode('$campaign\n${identity.deviceId}')],
+    );
+  } on SecretBoxAuthenticationError {
+    throw const FormatException('奖品信封打不开');
+  }
+  final json = jsonDecode(utf8.decode(clear));
+  return json is Map<String, Object?> ? json : throw const FormatException('奖品不是对象');
+}
