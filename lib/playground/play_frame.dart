@@ -27,7 +27,8 @@ class PlaySession<P, A> extends ChangeNotifier {
     if (challenge == null) {
       _draw(_seed = _seeds());
     } else {
-      _puzzle = rules.decodePuzzle(challenge!.level.puzzle);
+      // 题面在建 PlayChallenge 时已按这个游戏的规则解好（认不得的那一关挑战那一页就拦下了）。
+      _puzzle = challenge!.puzzle as P;
     }
   }
 
@@ -49,6 +50,8 @@ class PlaySession<P, A> extends ChangeNotifier {
   Future<PlayVerdict>? submission;
   // 正在等服务器判定（判对错类的游戏这时不再接受确认）。
   bool judging = false;
+  // 对局页已关（如挑战到点退回）：之后才回来的服务器判定不再通知。
+  bool _disposed = false;
 
   P get puzzle => _puzzle;
   // 出题时的参考解（页面拿它算「最少几步」）；挑战模式没有（服务器不给），页面就不写最少几步。
@@ -122,8 +125,14 @@ class PlaySession<P, A> extends ChangeNotifier {
       return null;
     } finally {
       judging = false;
-      notifyListeners();
+      if (!_disposed) notifyListeners();
     }
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 
   // 解开了：停表、记成绩，返回是不是这一档的新纪录。挑战模式不记本机成绩，把答案交服务器核对（submission，结果弹层等它），返回 false。
@@ -174,9 +183,32 @@ class PlayFrame extends StatefulWidget {
   State<PlayFrame> createState() => _PlayFrameState();
 }
 
-class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver, SingleTickerProviderStateMixin {
-  // 用时按秒刷新：只在走表时出帧。挑战模式改写这一局剩下的时间（服务器计时、不暂停），一直走，到点退回挑战那一页。
-  late final _ticker = createTicker((_) {
+class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver {
+  // 用时按秒刷新：只在走表且在前台时，用一次性计时器对到下一次秒数变化再刷新（不逐帧出帧，棋盘不动时不画）。
+  // 挑战模式改写这一局剩下的时间（服务器计时、不暂停），一直走，到点退回挑战那一页。
+  Timer? _clock;
+  var _shownSeconds = 0;
+  var _timeUp = false;
+  var _foreground = true;
+
+  int get _seconds => switch (widget.session.challenge) {
+    final challenge? => math.max(0, challenge.deadline.difference(DateTime.now()).inSeconds),
+    null => widget.session.elapsed.inSeconds,
+  };
+
+  // 到下一次显示的秒数变化还有多久（多等 1 毫秒，落在变化之后）：自由模式看这一局的用时，挑战看离到点还有多久，到点了马上。
+  Duration get _untilNextSecond {
+    const second = Duration.microsecondsPerSecond;
+    final micros = switch (widget.session.challenge) {
+      final challenge? => math.max(0, challenge.deadline.difference(DateTime.now()).inMicroseconds % second),
+      null => second - widget.session.elapsed.inMicroseconds % second,
+    };
+    return Duration(microseconds: micros + 1000);
+  }
+
+  void _tick() {
+    _clock = null;
+    if (!mounted) return;
     final seconds = _seconds;
     if (seconds != _shownSeconds) setState(() => _shownSeconds = seconds);
     if (widget.session.challenge != null && seconds <= 0 && !_timeUp) {
@@ -184,21 +216,16 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver, Sing
       showCampusToast(context, '时间到了');
       unawaited(Navigator.maybePop(context));
     }
-  });
-  var _shownSeconds = 0;
-  var _timeUp = false;
-
-  int get _seconds => switch (widget.session.challenge) {
-    final challenge? => math.max(0, challenge.deadline.difference(DateTime.now()).inSeconds),
-    null => widget.session.elapsed.inSeconds,
-  };
+    _syncClock();
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.session.addListener(_sessionChanged);
-    _syncTicker();
+    _shownSeconds = _seconds;
+    _syncClock();
   }
 
   @override
@@ -214,13 +241,14 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver, Sing
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     widget.session.removeListener(_sessionChanged);
-    _ticker.dispose();
+    _clock?.cancel();
     super.dispose();
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed) {
+    _foreground = state == AppLifecycleState.resumed;
+    if (_foreground) {
       widget.session.resume();
     } else {
       widget.session.pause();
@@ -228,14 +256,19 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver, Sing
     _sessionChanged();
   }
 
-  void _syncTicker() {
-    final running = widget.session.challenge != null || widget.session.started && !widget.session.finished;
-    if (running && !_ticker.isActive) unawaited(_ticker.start());
-    if (!running && _ticker.isActive) _ticker.stop();
+  // 走表的时候排下一次刷新，停了就撤掉；用时有变（换题、从头来）时重排。
+  void _syncClock({bool reset = false}) {
+    final session = widget.session;
+    final running = _foreground && (session.challenge != null ? !_timeUp : session.started && !session.finished);
+    if (!running || reset) {
+      _clock?.cancel();
+      _clock = null;
+    }
+    if (running) _clock ??= Timer(_untilNextSecond, _tick);
   }
 
   void _sessionChanged() {
-    _syncTicker();
+    _syncClock(reset: true);
     if (mounted) setState(() => _shownSeconds = _seconds);
   }
 

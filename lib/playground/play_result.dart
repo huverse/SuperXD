@@ -55,6 +55,8 @@ Future<PlayResultChoice> showPlayResult(BuildContext context, {required PlaySess
 // 服务器说不对或这一局已经结束就照实写。关掉弹层即回到挑战那一页（这一关已经交完，不留在棋盘上）；等着时划掉弹层也一样，结果由挑战那一页接着收。
 Future<PlayResultChoice> _showLevelResult(BuildContext context, PlaySession<Object?, Object?> session, String? detail) async {
   final challenge = session.challenge!;
+  // 过了只震一次（弹层重建时不再震）。
+  var cheered = false;
   await showCampusSheet<void>(context: context, builder: (context) => StatefulBuilder(builder: (context, setState) {
     final palette = CampusPalette.of(context);
     final secondary = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
@@ -64,7 +66,10 @@ Future<PlayResultChoice> _showLevelResult(BuildContext context, PlaySession<Obje
         final verdict = snapshot.data;
         final failed = snapshot.hasError;
         final waiting = !failed && verdict == null;
-        if (verdict?.correct ?? false) unawaited(HapticFeedback.successNotification());
+        if ((verdict?.correct ?? false) && !cheered) {
+          cheered = true;
+          unawaited(HapticFeedback.successNotification());
+        }
         final (icon, title, line) = switch ((waiting, failed, verdict)) {
           (true, _, _) => (CampusIcons.sync, '正在交给服务器核对', '用时 ${playDuration(session.elapsed)}'),
           (_, true, _) => (CampusIcons.warning, '没交上', snapshot.error is ChallengeException ? (snapshot.error as ChallengeException).message : '连不上服务器'),
@@ -84,7 +89,7 @@ Future<PlayResultChoice> _showLevelResult(BuildContext context, PlaySession<Obje
           if (verdict case PlayVerdict(correct: true, :final fragment?)) ...[
             const SizedBox(height: 16),
             Text('碎片 ${challenge.level.letter} = $fragment', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w600, height: 1.2, color: palette.onSurface)),
-            Text(challengeFragmentName(challenge.level.game, challenge.level.puzzle), style: secondary),
+            Text(challengeFragmentName(challenge.level.game, session.puzzle), style: secondary),
           ],
           if (verdict case PlayVerdict(correct: true, extra: _?)) ...[
             const SizedBox(height: 12),
