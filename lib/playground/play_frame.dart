@@ -347,7 +347,8 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver {
                 for (final (index, part) in line.split(' = ').indexed) Text(index == 0 ? part : '= $part', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
               ])),
             ])),
-        Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 12), child: widget.board)),
+        // 棋盘单独一层：状态行每秒换字时不重画棋盘，棋盘的动画也不带着顶栏与底部操作一起重画。
+        Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 12), child: RepaintBoundary(child: widget.board))),
         if (widget.controls.isNotEmpty)
           CampusToastAnchor(child: Padding(
             padding: EdgeInsets.fromLTRB(16, 0, 16, 12 + inset),
