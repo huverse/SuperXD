@@ -49,6 +49,9 @@ class KnightsPuzzle {
 const knightsMinPeople = 2;
 const knightsMaxPeople = 6;
 
+// 人名按座位依次叫天干（不用真实人名），正好 knightsMaxPeople 个。
+const knightsNames = ['甲', '乙', '丙', '丁', '戊', '己'];
+
 int _bits(int value) {
   var count = 0;
   for (var rest = value; rest != 0; rest &= rest - 1) {

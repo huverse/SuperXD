@@ -21,6 +21,7 @@ import 'package:superxd/playground/puzzle/loop/loop_rules.dart';
 import 'package:superxd/playground/puzzle/queens/queens_page.dart';
 import 'package:superxd/playground/puzzle/queens/queens_rules.dart';
 import 'package:superxd/playground/puzzle/twentyfour/twentyfour_page.dart';
+import 'package:superxd/playground/puzzle/twentyfour/twentyfour_rules.dart';
 import 'package:superxd/playground/challenge/challenge_home.dart';
 import 'package:superxd/playground/challenge/challenge_run.dart';
 import 'package:superxd/playground/challenge/challenge_run_page.dart';
@@ -48,7 +49,7 @@ import 'text_fit_support.dart';
 
 // 挑战与积分的客户端（人工决策见 lib/playground/challenge/challenge_rules.dart）：中转客户端、编排、对局页的挑战模式与挑战页面。合成数据。
 const _runId = 'RRRRRRRRRRRRRRRRRRRRRR';
-// 中转客户端用例里登录着的应用账号：密钥存在这个教务身份算出的 slot。
+// 中转客户端用例里登录着的应用账号：密钥存在 appAccountSlot。
 final _ref = AppAccountRef(accountId: 'AAAAAAAAAAAAAAAAAAAAAA', slot: appAccountSlot);
 final _hanoi = const HanoiRules().generate(1, PuzzleTier.entry).puzzle;
 
@@ -523,9 +524,163 @@ void main() {
       expect(answers.toSet(), hasLength(1));
       expect(find.text('A 关过了'), findsOneWidget);
     });
+
+    // 服务器给的题面是外部输入：建一关时就按这个游戏的规则解好（对局页直接用、不解第二次），这个版本认不得的不交给对局页。
+    test('建一关时就解题面：认不得的游戏、档位、坏题面与不在题面上的 ? 都抛 FormatException', () {
+      PlayChallenge make(Map<String, Object?> json) => PlayChallenge(level: _level(json), name: 'C 关', deadline: DateTime.now(), submit: (answer) async => const PlayVerdict(correct: true));
+      Map<String, Object?> slotted(int at) => _levelJson('c', game: 'twentyfour', inputs: ['a'], gate: {'op': 'sum', 'value': 11}, consume: {'kind': 'slot', 'at': at, 'modulus': 9, 'offset': 1}, puzzle: {'numbers': [3, 8, 2, 8], 'ops': [0, 1, 2, 3]});
+      expect(make(slotted(3)).puzzle, isA<TwentyFourPuzzle>());
+      expect(make(_levelJson('a', puzzle: const HanoiRules().encodePuzzle(_hanoi))).puzzle, isA<HanoiPuzzle>());
+      expect(() => make(slotted(4)), throwsFormatException);
+      expect(() => make(slotted(-1)), throwsFormatException);
+      expect(() => make({...slotted(0), 'game': 'hanoi', 'puzzle': const HanoiRules().encodePuzzle(_hanoi)}), throwsFormatException, reason: '汉诺塔不收补条件的碎片');
+      expect(() => make(_levelJson('a', game: 'schulte', puzzle: const {'side': 3})), throwsFormatException);
+      expect(() => make({..._levelJson('a', puzzle: const HanoiRules().encodePuzzle(_hanoi)), 'tier': 'master'}), throwsFormatException);
+      expect(() => make(_levelJson('a', puzzle: const {'start': 'x'})), throwsFormatException);
+    });
+
+    // 到点退回挑战那一页：对局页上面开着弹层（玩法、24 点选数、逻辑网格选值）时连弹层一起收掉，不是只关弹层、留在 0:00 的棋盘上。
+    testWidgets('到点退回挑战那一页：上面开着弹层也一起收掉；结果弹层开着时只退一层', (tester) async {
+      final navigator = GlobalKey<NavigatorState>();
+      final game = playgroundCatalog.firstWhere((game) => game.id == 'hanoi');
+      PlayChallenge challenge(Duration left, {Future<PlayVerdict> Function(Object? answer)? submit}) => PlayChallenge(
+        level: _run().level('a'),
+        name: 'A 关',
+        deadline: DateTime.now().add(left),
+        submit: submit ?? (answer) async => const PlayVerdict(correct: true, fragment: 7),
+      );
+      Future<void> open(PlayChallenge challenge) async {
+        await tester.pumpWidget(MaterialApp(theme: campusTheme(), navigatorKey: navigator, home: const Text('挑战总览')));
+        unawaited(navigator.currentState!.push(MaterialPageRoute<void>(builder: (context) => HanoiPage(game: game, store: PlaygroundStore.memory(), challenge: challenge))));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+
+      await open(challenge(const Duration(milliseconds: 1500)));
+      await tester.tap(find.bySemanticsLabel('玩法'));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text(game.howToPlay), findsOneWidget);
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1600)));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(HanoiPage), findsNothing);
+      expect(find.text('挑战总览'), findsOneWidget);
+
+      // 走完交上去、结果弹层等着服务器时到点：退回挑战那一页，不多退一层。
+      final reply = Completer<PlayVerdict>();
+      await open(challenge(const Duration(milliseconds: 1500), submit: (answer) => reply.future));
+      for (final move in hanoiSolution(_hanoi)) {
+        await tester.tapAt(tester.getCenter(find.bySemanticsLabel(RegExp('^第${move.from + 1}根柱子'))));
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.tapAt(tester.getCenter(find.bySemanticsLabel(RegExp('^第${move.to + 1}根柱子'))));
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('正在交给服务器核对'), findsOneWidget);
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1600)));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(HanoiPage), findsNothing);
+      expect(find.text('挑战总览'), findsOneWidget);
+      reply.complete(const PlayVerdict(correct: false, over: true));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('挑战总览'), findsOneWidget);
+    });
+
+    // 挑战到点时对局页会自己退回；等着服务器判定或结算局面时页面关了，回来的结果不再通知已经关掉的会话与控制器。
+    test('等服务器回复时对局页或总览关了：回复回来不再通知、不报错', () async {
+      final draw = const KnightsRules().generate(3, PuzzleTier.entry);
+      final reply = Completer<PlayVerdict>();
+      final challenge = PlayChallenge(
+        level: _run(levels: [_levelJson('a', game: 'knights', puzzle: const KnightsRules().encodePuzzle(draw.puzzle))]).level('a'),
+        name: 'A 关',
+        deadline: DateTime.now().add(const Duration(minutes: 5)),
+        submit: (answer) => reply.future,
+      );
+      final session = PlaySession(game: playgroundCatalog.firstWhere((game) => game.id == 'knights'), rules: const KnightsRules(), store: PlaygroundStore.memory(), challenge: challenge);
+      final judged = session.judge(draw.solution);
+      session.dispose();
+      reply.complete(const PlayVerdict(correct: true));
+      expect(await judged, isTrue);
+
+      final hub = _SlowHub();
+      final controller = ChallengeRunController(hub: hub, run: _run());
+      final refreshing = controller.refresh();
+      controller.dispose();
+      hub.runs.single.complete(_run(running: false, result: {'points': 13, 'awarded': 13, 'ending': 'timeout'}));
+      expect(await refreshing, isNull);
+      expect(controller.run.running, isFalse);
+    });
   });
 
   group('挑战页面', () {
+    testWidgets('这个版本认不得的一关：点了不进，提示更新应用', (tester) async {
+      final run = _run(levels: [_levelJson('a', puzzle: const {'start': 'x'})]);
+      final controller = ChallengeRunController(hub: _Hub(), run: run);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChallengeRunPage(controller: controller, games: playgroundCatalog, store: PlaygroundStore.memory())));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.bySemanticsLabel('A 关，汉诺塔，入门，进入'));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.byType(HanoiPage), findsNothing);
+      expect(find.text('这一关的题看不懂，请更新应用后再试'), findsOneWidget);
+    });
+
+    // 到点拉一次局面让服务器结算；没拉到（断网）不逐帧重拉（以前每一帧都再发一次，断网时一秒几十个请求），回到前台再拉。
+    testWidgets('到点只拉一次局面，没拉到等回到前台再拉；倒计时不逐帧出帧', (tester) async {
+      final hub = _SlowHub();
+      final base = _run();
+      final now = DateTime.now().toUtc();
+      final run = ChallengeRun(
+        runId: base.runId, challengeId: base.challengeId, title: base.title, label: base.label, timeLimit: base.timeLimit,
+        startedAt: now.subtract(base.timeLimit), deadline: now.subtract(const Duration(seconds: 1)), serverTime: now,
+        running: true, penalty: Duration.zero, ending: base.ending, levels: base.levels, result: null,
+      );
+      final controller = ChallengeRunController(hub: hub, run: run);
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChallengeRunPage(controller: controller, games: playgroundCatalog, store: PlaygroundStore.memory())));
+      await tester.pump();
+      expect(hub.runs, hasLength(1));
+      hub.runs.single.completeError(const ChallengeException(ChallengeFailure.network, '连不上服务器'));
+      for (var frame = 0; frame < 20; frame++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      expect(hub.runs, hasLength(1), reason: '断网时不逐帧重拉');
+      expect(find.text('还有 0:00'), findsOneWidget);
+      expect(tester.binding.hasScheduledFrame, isFalse);
+
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.inactive);
+      tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+      await tester.pump();
+      expect(hub.runs, hasLength(2));
+      hub.runs.last.complete(_run(running: false, result: {'points': 13, 'awarded': 13, 'ending': 'timeout'}));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('时间到了'), findsOneWidget);
+    });
+
+    // 登录状态变了、下拉刷新或从一局回来都会再读；先发的晚回来不盖掉后来的（换了应用账号不显示上一个账号的挑战）。
+    testWidgets('挑战一栏只认最近一次读：退出登录前发出的读晚回来，不显示给后来登录的账号', (tester) async {
+      final hub = _SlowHub()..signedIn = true;
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: PlaygroundPage(store: PlaygroundStore.memory(), games: playgroundCatalog, groups: playgroundGroups, challenges: hub, openAccount: (_) {})));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('挑战'));
+      await tester.pump();
+      expect(hub.catalogs, hasLength(1));
+      hub.signedIn = false;
+      hub.emit();
+      await tester.pump();
+      expect(find.text('挑战要先登录'), findsOneWidget);
+      hub.catalogs.single.complete(ChallengeCatalog(serverTime: DateTime.utc(2026, 11, 14), activeRun: null, challenges: [
+        ChallengeSummary(id: 'old', title: '上一个账号的挑战', label: '入门', levels: 1, tiers: const ['entry'], edges: const [], timeLimit: const Duration(minutes: 5), endsAt: DateTime.now().add(const Duration(days: 2)), best: null, playable: true, ticket: 0),
+      ]));
+      await tester.pump();
+      hub.signedIn = true;
+      hub.emit();
+      await tester.pump();
+      expect(find.textContaining('上一个账号的挑战'), findsNothing);
+      expect(find.text('正在读本周的挑战'), findsOneWidget);
+    });
+
     testWidgets('总览是关卡流程图：给碎片的关并排、箭头写门上的数怎么来、下面是门后那一关；门前的点了输门上的数（错了扣时间），终章全部碎片相加；笔记存本机；结算后换成成绩', (tester) async {
       tester.view.physicalSize = const Size(1200, 2400);
       addTearDown(tester.view.reset);
@@ -796,7 +951,7 @@ void main() {
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: LoopPage(game: playgroundCatalog.firstWhere((game) => game.id == 'loop'), store: PlaygroundStore.memory(), challenge: challenge)));
       await tester.pump(const Duration(milliseconds: 500));
       oneLine('= 21 ÷ 4 的余数');
-      expect(problems(), isEmpty, reason: '收钥匙的关');
+      expect(problems(), isEmpty, reason: '收碎片的关');
     });
   });
 }
@@ -890,6 +1045,26 @@ class _Hub implements ChallengeHub {
   Future<PointsBatch> pointsEntries({String? before}) async {
     if (before != null) this.before.add(before);
     return before == null ? batches.first : batches.last;
+  }
+}
+
+// 读本周挑战与拉局面都等测试来回复（看先发后到与断网时的重拉）。
+class _SlowHub extends _Hub {
+  final catalogs = <Completer<ChallengeCatalog>>[];
+  final runs = <Completer<ChallengeRun>>[];
+
+  @override
+  Future<ChallengeCatalog> catalog(Set<String> games) {
+    final reply = Completer<ChallengeCatalog>();
+    catalogs.add(reply);
+    return reply.future;
+  }
+
+  @override
+  Future<ChallengeRun> run(String runId) {
+    final reply = Completer<ChallengeRun>();
+    runs.add(reply);
+    return reply.future;
   }
 }
 
