@@ -207,6 +207,23 @@ void main() {
       expect((appAccounts.accountId, appAccounts.username), (_accountId, 'tester_one'));
     });
 
+    test('本机记录读不出（安全存储出错、格式认不出）：照样读完、当没登录（账号页那一行能点、私信能切过去），重新登录就覆盖它；清旧密钥出错不挡读本机账号', () async {
+      final broken = _Client()..loadFailure = const FormatException('保存的应用账号不可用');
+      final accounts = AppAccounts(client: broken, now: () => now, recoveryCode: () => _code);
+      addTearDown(accounts.dispose);
+      await accounts.load();
+      expect((accounts.loaded, accounts.current), (true, null));
+      broken.loadFailure = null;
+      expect(await accounts.login('tester_one', 'synthetic-pass'), isA<AppAccountDone>());
+      expect(accounts.username, 'tester_one');
+
+      final legacyBroken = _Client()..legacyFailure = Exception('安全存储出错')..session = _session;
+      final second = AppAccounts(client: legacyBroken, now: () => now, recoveryCode: () => _code);
+      addTearDown(second.dispose);
+      await second.load();
+      expect((second.loaded, second.username), (true, 'tester_one'));
+    });
+
     test('注册把生成的恢复码交给页面；登录；用恢复码重设时先规范写法，不像恢复码的不联网，成功换新恢复码', () async {
       expect(await appAccounts.register('tester_one', 'synthetic-pass'), isA<AppAccountRecoveryCode>().having((result) => result.code, 'code', _code));
       expect(client.registered, [('tester_one', 'synthetic-pass', _code)]);
@@ -553,6 +570,8 @@ class _Client implements AppAccountClient {
   bool joinApproved = false;
   AppAccountException? failure;
   AppAccountException? joinFailure;
+  Object? loadFailure;
+  Object? legacyFailure;
 
   void _fail() {
     if (failure case final error?) throw error;
@@ -561,9 +580,13 @@ class _Client implements AppAccountClient {
   AppAccountSession _signIn(String username) => session = AppAccountSession(account: _account, username: normalizeAppUsername(username));
 
   @override
-  Future<AppAccountSession?> accountOf() async => session;
+  Future<AppAccountSession?> accountOf() async {
+    if (loadFailure case final error?) throw error;
+    return session;
+  }
   @override
   Future<List<AppAccountRef>> dropLegacy() async {
+    if (legacyFailure case final error?) throw error;
     final dropped = legacy;
     legacy = const [];
     return dropped;
