@@ -10,7 +10,7 @@
   - 信封 sealEnvelope / openEnvelope：明文 gzip 后由发送方签名，再用一次性 X25519 与收件人协商，HKDF-SHA256 派生 AES-256-GCM 密钥加密，附加数据绑定收件人设备号；解压上限 1MB。验签 verifyOpened 在确认发送方后进行。
 - invite_code.dart：好友二维码内容 InviteCode（SXD1F: 前缀）：邀请号、邀请私钥种子、出示方公钥与昵称、过期时刻，二进制布局转 Base45（RFC 9285），按 QR 字母数字模式编码；validNickname 昵称规则（1–20 字，无首尾空白与控制字符）。
 - identity_vault.dart：私信身份私钥种子的存放 IdentityVault（每个应用账号一项，键由 social_spaces.dart 定；另记旧版私信归哪个账号 legacyOwner）；SecureIdentityVault 用系统安全存储（命名空间 superxd_social，已排除云备份与设备迁移）；MemoryIdentityVault 供测试。
-- social_spaces.dart：每个应用账号一份私信 SocialSpaces：本机库与身份的键。旧版留下的设备级私信（库 social.db、身份 identity）归这台手机上第一个用私信的应用账号（legacyOwner），其余账号库在数据库目录的 social/<账号号>.db、身份 identity.<账号号>（social 文件夹整个排除备份，两份备份规则与 iOS 的 excludeFromBackup 都有，test/legal_page_test.dart 守护）；库只开一次、切换账号不关（单实例）。
+- social_spaces.dart：每个应用账号一份私信 SocialSpaces：本机库与身份的键。旧版留下的设备级私信（库 social.db、身份 identity）归这台手机上第一个用私信的应用账号（legacyOwner），其余账号库在数据库目录的 social/<账号号>.db、身份 identity.<账号号>（social 文件夹整个排除备份，两份备份规则与 iOS 的 excludeFromBackup 都有，test/legal_page_test.dart 守护）；库只开一次、切换账号不关（单实例）。existing 只找已有的那一份（清注销了的账号用：不认领旧版私信、不新建库）。
 - relay_reward_client.dart：节日抽签端口 FestivalRewardClient 的中转实现 RelayRewardClient（人工决策见 domain/festival.dart）：POST /v1/rewards/<活动>/draw，用这个应用账号的设备密钥签名（安全存储 superxd_account 里 AppAccountRef.slot 指的那把，没有这把密钥算没登录），请求体只有近 30 天打开过的天数；超时、请求记录与校时重发一次沿用 RelayClient，不重试；ACCOUNT_NOT_FOUND 与 UNAUTHORIZED 换成 FestivalNotSignedIn，ACCOUNT_TOO_NEW 换成结果 FestivalTooNew（带 eligibleAt），其余给原因；抽中的奖品是服务器用这台设备的 box 公钥封装的 sealed，openRewardPrize 用安全存储里那把设备密钥解开（与服务端 reward_seal.ts 共用 server/test/vectors/reward_prize_v1.json，festival_test.dart 核对），parseFestivalDraw 把结果与解开的奖品当外部输入校验。
 - relay_diagnostic_account.dart：应用账号下的诊断包端口 DiagnosticAccountClient 的中转实现 RelayDiagnosticAccountClient（人工决策见 domain/diagnostic_upload.dart，协议见 server/README.md）：认领 POST /v1/account/diagnostics/<编号>/claim、列出 GET、删除 DELETE，用这个应用账号的设备密钥签名（没有这把密钥算没登录）；超时、请求记录与校时重发一次沿用 RelayClient，不重试；ACCOUNT_NOT_FOUND 与 UNAUTHORIZED 换成 DiagnosticNotSignedIn，回复逐项校验。
 - account_seal.dart：应用账号的密码与恢复码发出前封装的信封 sealAccountSecrets（一次性 X25519 与中转公钥 accountSealKey 协商、HKDF-SHA256、AES-256-GCM，附加数据绑定设备号；布局与服务端 account_keys.ts 一致，共用 server/test/vectors/account_seal_v1.json）。中转是明文 HTTP，不封装就会被同一网络里的人看到；中转私钥只在服务器与开发者本机，换钥两边一起换。
@@ -28,7 +28,7 @@
 - social_service.dart：SocialService 私信编排，是页面唯一入口。
   - 状态：loading、unavailable（未配置中转）、signedOut（没登录应用账号）、disabled（未开启）、elsewhere（这个账号的私信在另一台手机上）、ready、failed（打开时挂不上账号等，页面给重试 reopen）。
   - switchAccount 由组合根在同意协议与政策后、当前应用账号变化时调（main.dart 的 watchSocial）；切换后进行中的旧账号操作不再改界面状态，长轮询的旧一轮回来后让给新账号。
-  - 挂账号：开启、打开时补挂（bound 为 0）、中转不认这台设备时都经 _bind 挂到当前应用账号；账号的私信在另一台手机上时转成 elsewhere，用户确认后 takeOver 接管（之后带 importRemote 刷新，补进服务器给的好友）；应用账号没了转成 signedOut 并调 accountGone（组合根让应用账号马上核一次）。forgetAccount 在注销应用账号后清掉这台手机上那个账号的私信。
+  - 挂账号：开启、打开时补挂（bound 为 0）、中转不认这台设备时都经 _bind 挂到当前应用账号；账号的私信在另一台手机上时转成 elsewhere，用户确认后 takeOver 接管（之后带 importRemote 刷新，补进服务器给的好友）；应用账号没了转成 signedOut 并调 accountGone（组合根让应用账号马上核一次）。forgetAccount 在注销应用账号、启动清 11-15 以前的旧账号时清掉这台手机上那个账号的私信（没用过私信的什么也不动）。
   - 好友换了设备：核对好友列表时把 movedFrom 指着本机好友的改挂过来、确认提示，再给它发一条 profile（自己的昵称，失败只记日志）；收到不认识的发件人先核对一次；发送被拒 NOT_FRIEND 先核对，改挂了的报 FRIEND_MOVED（点重发即到新设备），还在旧号上的才算已解除。收到 profile 只认好友、验签后改昵称。
   - enable 生成身份、保存昵称、挂到当前应用账号；disable 先删服务端设备再清本机（中转已不认这台设备、或已被别的手机接管时照样清本机）。
   - 签名请求都经 _authorized：中转回 UNAUTHORIZED（从旧备份恢复、400 天不活跃被清、被别的手机接管）时重新挂账号一次再重放这一次，几个请求同时遇到时共用一次；挂账号得到在另一台手机上或账号没了就转状态、不重放。
@@ -50,7 +50,7 @@
 
 - social_protocol_test.dart（与服务端共用测试向量、信封、二维码、应用账号信封、挂账号凭证）、share_card_test.dart、social_service_test.dart（含「私信跟着应用账号」一组：没登录、每账号一份、旧版第 1 版库并入与升级、换手机接管与再接管、发送被拒后改挂、注销、账号没了）、social_ui_test.dart（含没登录与在另一台手机上的卡片、接管确认、会话里的换设备提示）；节日抽签 relay_reward_client.dart 在 festival_test.dart（经 fake_relay.dart 验签、用应用账号的密钥签名）；应用账号 relay_app_account.dart 在 app_account_test.dart；诊断包 relay_diagnostic_account.dart 在 diagnostic_upload_test.dart；解锁 relay_unlock_client.dart 在 unlock_test.dart。
 - fake_relay.dart 是按协议 v1 规则验签的内存假中转（含应用账号登记 signIn、挂账号与接管、好友公钥与 movedFrom）。服务端：cd server 后 npm test（Vitest，需 docker-compose.test.yml 起的 MySQL 与 Redis）。
-- 手动入口：tool/verify_social.dart（两个真实客户端经真实中转联调，只用合成数据，运行方式见文件头；挂应用账号要真实教务，这一个请求在本地截下，见文件头）。
+- 手动入口：tool/verify_social.dart（两个真实客户端经真实中转联调，只用合成数据，运行方式见文件头；挂应用账号那一个请求在本地截下，免得在线上留下合成的应用账号，见文件头）。
 
 # 人工决策检索
 

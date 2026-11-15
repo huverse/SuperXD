@@ -17,6 +17,18 @@ class ChallengeRunController extends ChangeNotifier {
   // 服务器时刻减本机时刻。
   Duration _offset = Duration.zero;
   bool busy = false;
+  // 总览页已关：之后才回来的请求只更新局面、不再通知。
+  bool _disposed = false;
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
+
+  void _notify() {
+    if (!_disposed) notifyListeners();
+  }
 
   ChallengeRun get run => _run;
 
@@ -27,7 +39,7 @@ class ChallengeRunController extends ChangeNotifier {
   void _apply(ChallengeRun run) {
     _run = run;
     _offset = run.serverTime.difference(_now().toUtc());
-    notifyListeners();
+    _notify();
   }
 
   PlayChallenge challengeFor(String levelId) {
@@ -79,7 +91,7 @@ class ChallengeRunController extends ChangeNotifier {
   Future<ChallengeException?> _guard(String action, Future<void> Function() work) async {
     if (busy) return null;
     busy = true;
-    notifyListeners();
+    _notify();
     try {
       await work();
       return null;
@@ -89,7 +101,7 @@ class ChallengeRunController extends ChangeNotifier {
       return error;
     } finally {
       busy = false;
-      notifyListeners();
+      _notify();
     }
   }
 }

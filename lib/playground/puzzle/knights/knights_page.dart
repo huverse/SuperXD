@@ -17,8 +17,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
-// 人名按座位依次叫天干（不用真实人名）；计数与人数的说法。
-const knightsNames = ['甲', '乙', '丙', '丁', '戊', '己'];
+// 计数与人数的说法（人名 knightsNames 在规则文件里，挑战的算式也用它）。
 const _numbers = ['零', '一', '两', '三', '四', '五', '六'];
 
 // 一句话按结构说成口语（题面只存结构），说话人自己说成「我」。分成几段，只在段与段之间换行：

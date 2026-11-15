@@ -66,12 +66,22 @@ class AppAccounts extends ChangeNotifier {
   bool get busy => _busy;
 
   // 启动时读本机记着的应用账号（不联网）；先清掉 11-15 以前每个教务账号一把的旧密钥（老账号全部重新注册，用户选），连带它们的本机私信。
+  // 安全存储出错或记录认不出时当没登录、照样读完（不然账号页那一行一直灰着、私信一直停在读取中），重新登录会覆盖那条记录；清旧密钥出错下次启动再清。
   Future<void> load() async {
-    for (final legacy in await client.dropLegacy()) {
-      campusLog('[AppAccounts] action=drop_legacy');
-      onDeleted?.call(legacy);
+    try {
+      for (final legacy in await client.dropLegacy()) {
+        campusLog('[AppAccounts] action=drop_legacy');
+        onDeleted?.call(legacy);
+      }
+    } catch (error, stack) {
+      campusLog('[AppAccounts] action=drop_legacy errorType=${error.runtimeType}\n$stack');
     }
-    _session = await client.accountOf();
+    try {
+      _session = await client.accountOf();
+    } catch (error, stack) {
+      campusLog('[AppAccounts] action=load errorType=${error.runtimeType}\n$stack');
+      _session = null;
+    }
     _loaded = true;
     _checkedAt = null;
     notifyListeners();
