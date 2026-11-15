@@ -11,14 +11,18 @@ import 'package:superxd/domain/unlock.dart';
 // 本机判定：下架的锁着、公开了的开着（没登录也开），其余看服务器给的；清单里没有要账号才开的项、或没登录应用账号时不联网。
 // 同意协议与政策之后组合根调 start 才开始联网；之后拉到新配置、切换应用账号时重问一次，回到前台时距上次超过 refreshGap 再问，
 // 积分页打开时直接 refresh；中转说应用账号不在了就让 AppAccounts 马上核一次。
+// accountOn 为假（娱乐与积分关着，人工决策见 domain/leisure.dart）时只认公开与下架、不联网，开关变了组合根调 reconsider。
 class Unlocks implements UnlockAccess {
-  Unlocks({required this.rollouts, required this.appAccounts, required this.client, DateTime Function()? now}) : _now = now ?? DateTime.now {
+  Unlocks({required this.rollouts, required this.appAccounts, required this.client, bool Function()? accountOn, DateTime Function()? now})
+    : _accountOn = accountOn ?? (() => true),
+      _now = now ?? DateTime.now {
     rollouts.addListener(_configChanged);
     appAccounts.addListener(_accountChanged);
   }
   final Rollouts rollouts;
   final AppAccounts appAccounts;
   final UnlockClient client;
+  final bool Function() _accountOn;
   final DateTime Function() _now;
   final _changes = StreamController<void>.broadcast();
   // 服务器给的状态与它属于哪个应用账号（换了账号就不再作数）。
@@ -44,7 +48,7 @@ class Unlocks implements UnlockAccess {
     if (spec.retired) return true;
     if (spec.isPublic(_now())) return false;
     final state = _state, account = appAccounts.current;
-    return !(state != null && account != null && account == _stateOf && state.open.contains(id));
+    return !(_accountOn() && state != null && account != null && account == _stateOf && state.open.contains(id));
   }
 
   @override
@@ -66,6 +70,13 @@ class Unlocks implements UnlockAccess {
     if (_started && (fetchedAt == null || _now().difference(fetchedAt) >= refreshGap)) await refresh();
   }
 
+  // 娱乐与积分开关变了或删了数据：旧状态作废、页面重画，开着就重问一次。
+  void reconsider() {
+    _state = null;
+    _changes.add(null);
+    if (_started) unawaited(refresh());
+  }
+
   void _configChanged() {
     _changes.add(null);
     if (_started) unawaited(refresh());
@@ -84,7 +95,7 @@ class Unlocks implements UnlockAccess {
     final account = appAccounts.current;
     final now = _now();
     // 只有要账号才开的项（等级、价格、抽签）没公开、没下架时才问服务器。
-    if (account == null || !_specs.any((spec) => !spec.retired && !spec.isPublic(now) && (spec.minLevel != null || spec.price != null || spec.percent != null))) return;
+    if (account == null || !_accountOn() || !_specs.any((spec) => !spec.retired && !spec.isPublic(now) && (spec.minLevel != null || spec.price != null || spec.percent != null))) return;
     try {
       _apply(account, await client.state(account));
     } on UnlockException catch (error) {

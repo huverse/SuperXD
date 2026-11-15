@@ -5,7 +5,7 @@ import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_client.dart';
 
 // 节日抽签的自建中转实现（人工决策见 domain/festival.dart）：POST /v1/rewards/<活动>/draw，用这个应用账号的设备密钥签名
-// （同挑战，密钥在安全存储 superxd_account 的 account.slot），请求体只有近 30 天打开过的天数。超时（15 秒）、请求记录与校时后重发一次都沿用
+// （同挑战，密钥在安全存储 superxd_account 的 account.slot），请求体只有近 30 天打开过的天数，娱乐与积分关着时另带 levels: false。超时（15 秒）、请求记录与校时后重发一次都沿用
 // RelayClient；不自动重试（同一个人重复抽返回同一结果，下次回到前台再补抽）。
 class RelayRewardClient implements FestivalRewardClient {
   RelayRewardClient({required this.vault, required RelayTransport transport}) : _relay = RelayClient(transport);
@@ -13,12 +13,12 @@ class RelayRewardClient implements FestivalRewardClient {
   final RelayClient _relay;
 
   @override
-  Future<FestivalDraw> draw(AppAccountRef account, String campaign, {required String occasion, required int activeDays}) async {
+  Future<FestivalDraw> draw(AppAccountRef account, String campaign, {required String occasion, required int activeDays, bool levels = true}) async {
     final saved = await vault.read(account.slot);
     if (saved == null) throw const FestivalNotSignedIn();
     final Map<String, Object?> body;
     try {
-      body = await _relay.request(saved.identity, 'POST', '/v1/rewards/$campaign/draw', {'activeDays': activeDays});
+      body = await _relay.request(saved.identity, 'POST', '/v1/rewards/$campaign/draw', {'activeDays': activeDays, if (!levels) 'levels': false});
     } on RelayException catch (error) {
       final eligibleAt = error.detail['eligibleAt'];
       if (error.code == RelayCode.accountTooNew && eligibleAt is int) return FestivalTooNew(DateTime.fromMillisecondsSinceEpoch(eligibleAt, isUtc: true));

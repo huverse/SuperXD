@@ -324,6 +324,31 @@ void main() {
       expect(leveled.enabled('feature', fallback: true), isFalse, reason: '一键关停不受等级影响');
     });
 
+    test('娱乐与积分关着时不取等级、按 Lv0 判定，已经因等级进了的批次照旧；删了数据记着的等级归零', () async {
+      final candidates = Iterable<String>.generate(2000, (index) => 'subject-$index');
+      final lifted = candidates.firstWhere((subject) => !rolloutIncludes('feature', subject, 10) && rolloutIncludes('feature', subject, 10, level: 5));
+      final other = candidates.firstWhere((subject) => subject != lifted && !rolloutIncludes('other', subject, 10) && rolloutIncludes('other', subject, 10, level: 5));
+      var asked = 0, levelsOn = true;
+      final leveled = Rollouts(memory: memory, channel: 'alpha', accountId: () => accountId, feed: feed, level: () async => (asked++, 5).$2, levelsOn: () => levelsOn, now: () => now);
+      feed.next = decodeRolloutConfig({'flags': [{'id': 'feature', 'percent': 10}, {'id': 'other', 'percent': 10}]});
+      accountId = lifted;
+      await leveled.refresh();
+      expect(leveled.enabled('feature', fallback: false), isTrue);
+      await pumpEventQueue();
+      levelsOn = false;
+      now = now.add(Rollouts.refreshGap);
+      await leveled.refresh();
+      expect(asked, 1, reason: '关着不取等级');
+      expect(leveled.enabled('feature', fallback: false), isTrue, reason: '已经进了的照旧');
+      accountId = other;
+      await memory.saveLevel(other, 5);
+      expect(leveled.enabled('other', fallback: false), isFalse, reason: '关着按 Lv0');
+      levelsOn = true;
+      expect(leveled.enabled('other', fallback: false), isTrue);
+      await leveled.forgetLevel();
+      expect(memory.levelOf(other), 0);
+    });
+
     test('没登录应用账号不取等级；取不到照旧用记着的', () async {
       var asked = 0;
       int? level = 3;

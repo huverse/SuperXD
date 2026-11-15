@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsInt, Matches, Max, Min } from 'class-validator';
+import { IsBoolean, IsInt, IsOptional, Matches, Max, Min } from 'class-validator';
 
 import { rewardActiveWindow } from 'src/modules/reward/reward_odds';
 
@@ -13,6 +13,7 @@ export class RewardDrawParamDto {
 // 抽签人是签名的设备（x-sxd-device），请求体里不再带参与号。
 export class RewardDrawBodyDto {
   @ApiProperty({ description: '近 30 天里打开过应用的天数（客户端本机记）' }) @IsInt() @Min(0) @Max(rewardActiveWindow) activeDays: number;
+  @ApiProperty({ description: '为 false 时不按积分等级加权（客户端关掉了娱乐与积分），缺省按等级', required: false }) @IsOptional() @IsBoolean() levels?: boolean;
 }
 
 export class RewardPrizeDto {

@@ -12,6 +12,7 @@
   - 页面用 play_frame.dart 的 PlaySession 管档位、计时与记成绩，用 PlayFrame 搭顶栏、状态行与底部操作，棋盘自己画。
 - 挑战模式（人工决策见 challenge/challenge_rules.dart 文件头）：服务器（server/src/modules/challenge）按配置下发每周的 N 连环，出题用题库（tool/challenge_bank.dart 用同一份规则、保密种子离线生成）、逐关核对（TS 判定从规则逐个移植，与 Dart 共用 server/test/vectors/challenge_judge_v1.json）、计时（不暂停）与结算积分；关卡之间用碎片连起来（11-14 夜取代钥匙填空）：过关给一次从解里读出的碎片，收碎片的关先开门（门上的数是几块碎片之和或之积），门上的数改写这一关的一处条件或目标，全部过了输终章（全部碎片之和），快得不正常追加加试题。客户端只按服务器给的关卡图通用地画，模板、计分与题库改了不用发版；新游戏要发版。同一个对局页给了 PlayChallenge 就是挑战里的一关：题面与档位固定、不换题、不记本机成绩，判对错与完成都交服务器。拼手速与物理模拟的游戏（challengeable 为假）只进自由模式。
 - 挑战与积分经组合根注入的 domain 端口 ChallengeHub（application/challenges.dart 实现）使用，游乐场不依赖应用账号与中转；去登录应用账号的页面也由组合根以回调给。
+- 整个游乐场、挑战与积分、解锁可以在「我的」里关掉（人工决策见 domain/leisure.dart）：关着时服务页、登录页不给入口，路由把 /playground 下的都拦回去，组合根停掉解锁与等级加权；游乐场自己不知道这个开关。
 
 # 长期路线（用户 11-12 选定，做到哪一阶段在哪一阶段落代码与人工决策）
 
@@ -33,7 +34,7 @@
   - challenge_home.dart：首页的挑战一栏 ChallengeHome：没登录应用账号引导去登录；积分一行（带等级）进积分页；还有一局没结束时给继续；本周的挑战卡（结构缩略图 ChallengeShape 按整理树画关卡图：按到终点的距离分列、收碎片的关在它那几关正中、点着档位色，关数、限时、门票、最好成绩、剩几天），开始前确认里写明计时不暂停、有门票的写明开局扣且不退，积分不够付门票时不给开始；同时只能一局，撞上时引导回那一局。
   - points_page.dart：积分页 PointsPage：余额、30 天内要过期的、等级与离下一级还差多少（服务器没配门槛时不显示，pointsLevelShown）、能用积分买的解锁（注入了 UnlockAccess 时，确认后买、提示已解锁；条件文案 unlockTerms 与游戏卡共用），流水从新到旧、按需往下翻。
 - playground_catalog.dart：注册表：板块、子类的显示顺序与全部游戏；人工决策在文件头（含 17 个游戏的子类归属）。
-- playground_store.dart：本机记录 PlaygroundStore（playground/playground.json，先写临时文件再改名、写入排队、坏文件当没有）：每个游戏每档的最好成绩（最快用时与那局步数）、上次选的档、最近玩过（最多 playgroundRecentLimit 个）、挑战的笔记（只留最近一局的一份，换一局就覆盖）；首页卡片上显示难度最高一档的成绩（topBest）。
+- playground_store.dart：本机记录 PlaygroundStore（playground/playground.json，先写临时文件再改名、写入排队、坏文件当没有；clear 在删除娱乐与积分数据时全清并删文件，人工决策见 domain/leisure.dart）：每个游戏每档的最好成绩（最快用时与那局步数）、上次选的档、最近玩过（最多 playgroundRecentLimit 个）、挑战的笔记（只留最近一局的一份，换一局就覆盖）；首页卡片上显示难度最高一档的成绩（topBest）。
 - play_frame.dart：对局页共用部分：PlaySession（档位、这一局的题（自由模式的下一道题先在另一个 isolate 里备好，换题、再来一局、换到下一档出好了就直接用，只给能进挑战的纯 Dart 规则备，测试注入种子时不备）、从第一步起计时、切后台暂停、完成记成绩，对局页关了之后回来的服务器判定不再通知，end 是结束但不记成绩，如扫雷踩雷；reference 是出题的参考解，挑战模式为空；给了 challenge 是挑战模式：题面用 PlayChallenge 解好的、judge 交服务器判（连不上返回空、不算数）、finish 交答案得 submission、连不上 resubmit 原样重交）、PlayFrame（顶栏返回、游戏名、玩法、⋯里「这一题从头来」「换一道题」；状态行左边点开选难度，走过几步再换档先确认；底部操作是一排色调胶囊，包 CampusToastAnchor）、状态行的用时只在走表且在前台时用对到下一秒的一次性计时器刷新（不逐帧出帧）、用时写法 playDuration（分:秒；tenths 为真写到 0.1 秒，不满一分钟「12.3 秒」、满了「1:02.3」，都向下取整；对局中的走表一律按秒；挑战模式状态行写这一局剩下的时间、标题位置写关名与档位、⋯里只有从头来、收碎片的关多一行写改写那一处的算式（在等号处换行）、要最少步数的多一行写几步，到点连同上面开着的弹层一起退回挑战那一页）、档位色 playTierColor 与色点 PlayTierDot（五档同一套色相，总览与首页缩略图共用）、棋盘外框 PlayBoardBox 与共用触感 playTick、playRejected。
 - play_controls.dart：方向操作的游戏（冰面滑行、推箱子）共用的棋盘滑动识别 PlaySwipeRecognizer 与 playSwipeArea（一落指就赢下手势竞争，iOS 右滑返回抢不走）、十字方向键 PlayDirectionPad（读屏标签「向上」加动词）；方向编码 0 上、1 右、2 下、3 左；另有格子太小时双指缩放的共用算法 PlayPinch（数织、八皇后、扫雷、数回，按两指距离缩放、手指中点下那一点不动）。
 - play_result.dart：解开后的结果弹层 showPlayResult（成功触感、用时大字（与「最好」都按登记项的 timeInTenths 选写法）、新纪录或这一档最好、再来一局与换到下一档，不写「挑战」二字）；挑战模式改成在弹层里等服务器核对（原地写正在核对、连不上可重新交、过了大字写碎片「碎片 A = 7」与它是什么，只这一次给，追加了加试题写一行），关掉即回到挑战那一页；单独一个文件，因为弹层有自己的滚动区、不是页面。

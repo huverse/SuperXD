@@ -208,6 +208,11 @@ class RelayChallengeClient implements ChallengeClient {
   }
 
   @override
+  Future<void> deleteData(AppAccountRef account) async {
+    await _send(account, 'DELETE', '/v1/leisure');
+  }
+
+  @override
   Future<PointsBatch> pointsEntries(AppAccountRef account, {String? before}) async {
     final body = await _send(account, 'GET', before == null ? '/v1/points/entries' : '/v1/points/entries?before=$before');
     final next = body['next'];

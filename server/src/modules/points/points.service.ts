@@ -30,7 +30,12 @@ export class PointsService implements OnModuleInit {
   ) {}
 
   onModuleInit() {
-    this.hooks.register((manager, accountIds) => this.points.deleteAccounts(manager, accountIds));
+    this.hooks.register((manager, accountIds) => this.deleteAccountsIn(manager, accountIds));
+  }
+
+  // 删这些账号的积分（调用方事务内）：注销账号与娱乐与积分的「删除数据」共用。
+  deleteAccountsIn(manager: EntityManager, accountIds: string[]) {
+    return this.points.deleteAccounts(manager, accountIds);
   }
 
   // 获得一笔（调用方事务内；同一来源同一个键只记一次）：满 12 个月过期。

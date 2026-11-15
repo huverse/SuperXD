@@ -32,11 +32,11 @@ class FakeRewardClient implements FestivalRewardClient {
   FestivalDraw Function(String occasion) result;
   Object? failure;
   Completer<void>? gate;
-  final requests = <({AppAccountRef account, String campaign, int activeDays})>[];
+  final requests = <({AppAccountRef account, String campaign, int activeDays, bool levels})>[];
 
   @override
-  Future<FestivalDraw> draw(AppAccountRef account, String campaign, {required String occasion, required int activeDays}) async {
-    requests.add((account: account, campaign: campaign, activeDays: activeDays));
+  Future<FestivalDraw> draw(AppAccountRef account, String campaign, {required String occasion, required int activeDays, bool levels = true}) async {
+    requests.add((account: account, campaign: campaign, activeDays: activeDays, levels: levels));
     await gate?.future;
     if (failure case final failure?) throw failure;
     return result(occasion);
@@ -149,12 +149,14 @@ void main() {
     // 当前的应用账号：用例里改它模拟登录、退出。
     AppAccountRef? signedIn = _account;
     var gone = 0;
+    var levelsOn = true;
     setUp(() {
       signedIn = _account;
       gone = 0;
+      levelsOn = true;
     });
     Festivals festivals({FestivalRewardClient? client, FestivalMemory? memory, DateTime? now}) =>
-        Festivals(occasions: const [spring, lantern], memory: memory ?? FileFestivalMemory.memory(), client: client, account: () => signedIn, accountGone: () => gone++, clock: () => now ?? noon);
+        Festivals(occasions: const [spring, lantern], memory: memory ?? FileFestivalMemory.memory(), client: client, account: () => signedIn, accountGone: () => gone++, levelsOn: () => levelsOn, clock: () => now ?? noon);
 
     test('今天在过、没播过的才该播；播过就不再播；不在节日里没有', () async {
       final subject = festivals();
@@ -174,6 +176,14 @@ void main() {
       await subject.draw(spring);
       expect(client.requests.single.activeDays, 2);
       expect(client.requests.single.account, _account);
+      expect(client.requests.single.levels, isTrue);
+    });
+
+    test('娱乐与积分关着时抽签请服务器不按等级加权', () async {
+      levelsOn = false;
+      final client = FakeRewardClient((occasion) => const FestivalMissed());
+      await festivals(client: client).draw(spring);
+      expect(client.requests.single.levels, isFalse);
     });
 
     // 回归：draw 的 whenComplete 曾写成箭头体，remove 返回的正是这个 Future，Future 等自己、永远完成不了，动画后的揭晓被超时吃掉。
@@ -276,6 +286,9 @@ void main() {
       expect(transport.draws.single.device, key.deviceId);
       expect(transport.draws.single.path, '/v1/rewards/spring-2027/draw');
       expect(transport.draws.single.body, {'activeDays': 7});
+      transport.draws.clear();
+      await client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7, levels: false);
+      expect(transport.draws.single.body, {'activeDays': 7, 'levels': false}, reason: '娱乐与积分关着');
       transport.result = {'result': 'won'};
       await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalException>().having((error) => error.message, 'message', contains('格式'))));
       relay.failNext = const RelayException(RelayCode.network);

@@ -69,6 +69,7 @@
 - festival_memory.dart：FileFestivalMemory 实现节日的本机记录 FestivalMemory：应用支持目录下的 festival.json（近 30 天打开过的校园日、最近 festivalHistoryLimit 次播过与抽过的节日、抽中的奖品），写法同 legal_notice.json，读到坏文件或坏项丢掉；各项有上限，奖品由 application/festivals.dart 按节日结束后 3 天清。
 - rollout_memory.dart：FileRolloutMemory 实现灰度的本机记录 RolloutMemory（人工决策见 domain/rollout.dart）：应用支持目录下的 rollout.json（这台设备的随机编号，没登录应用账号时分桶用、只在本机不上传；上次拉到的配置与时刻；当前主体的积分等级与只因等级进的批次，换了主体从头记），写法同 legal_notice.json，坏文件当没有、编号重新生成，等级与批次格式不对的当没记过；只有一份配置、批次最多 rolloutRuleLimit 个，不随使用增长。
 - painting_library.dart：PaintingLibrary 实现 domain 的 PaintingGallery：启动时读随安装包的画作清单，按清单顺序接着上次取这次开屏的一幅（next，一次运行只取一次）；轮换记录是应用支持目录下固定大小的 splash_painting.json（只记上次那幅的 id，写法同 legal_notice.json，读到坏文件从第一幅起）；save 把原图拷到缓存、经组合根注入的 publish（device/picture_export.dart）存进 Download/SuperXD，用完即删。
+- leisure_memory.dart：FileLeisureMemory 实现娱乐与积分的开关 LeisureMemory（人工决策见 domain/leisure.dart）：应用支持目录下固定大小的 leisure.json，写法同 developer.json（先写临时文件再改名、写入排队）；没有文件或坏文件当打开着；只是一项偏好，不排除备份。
 - developer_settings.dart：DeveloperSettings 记开发者模式与性能浮层两个开关：应用支持目录下固定大小的 developer.json（iOS 放 device_only 下），写法同 legal_notice.json，写入经锁一个接一个（连点开关不交错）；已排除备份与换机迁移（[人工决策] 在类上）；关掉开发者模式时性能浮层一起关，读到坏文件当都关着。
 - legacy_import.dart：旧单库导入 importLegacyDatabase。
   - 旧库只读打开，只支持 user_version 1–2。
@@ -91,6 +92,7 @@
 
 # 测试
 
+- 娱乐与积分的开关（本机记录、游乐场记录清空）：leisure_test.dart。
 - 账号库与旧库：account_store_test.dart、account_isolation_test.dart、legacy_import_test.dart。
 - 课表与作息持久化：schedule_version_test.dart、schedule_migration_test.dart、bells_persistence_test.dart；等用户来选的教务课表、自动同步设置与 v8 升级：auto_sync_test.dart。
 - 显示设置与壁纸：appearance_settings_test.dart、wallpaper_test.dart；字体包的本机文件、核对、注册与显示设置的接线：font_pack_test.dart；开屏画作的轮换与保存：painting_test.dart；应用更新检查记录：app_update_test.dart；开发者的话的本机记录：developer_notes_test.dart；节日的本机记录：festival_test.dart；灰度的本机记录：rollout_test.dart；协议已读记录：legal_page_test.dart；本机日志与开发者设置：diagnostic_log_test.dart。

@@ -44,6 +44,7 @@
 - POST /v1/challenge-runs/:runId/final：终章 {value}（全部非加试关的碎片之和），返回 {correct, run}；对了当场结算（全通关），错了同样扣时间；还没全过回 409 LEVEL_LOCKED。
 - POST /v1/challenge-runs/:runId/end：提前结束，按已过的关结算。
 - GET /v1/points：{balance, expiring（30 天内要过期的）, expiringAt, serverTime}；GET /v1/points/entries?before=：流水从新到旧，每页 20 条，按 id 游标翻页。
+- DELETE /v1/leisure（娱乐与积分的「删除数据」，人工决策见客户端 lib/domain/leisure.dart）：应用账号签名，删这个账号的积分、流水、挑战局与最好成绩、解锁记录（同一事务；账号、私信、诊断包与节日抽签记录不动），回 204；每台设备每小时 leisureDeletePerDevicePerHour（10）次。客户端关掉娱乐与积分时抽签请求体另带 levels: false，服务器按 Lv0 算（只降自己的机会，不防篡改）。
 - POST /v1/account/diagnostics/:id/claim：凭上传回执的口令 {claim} 把这个诊断包认领到当前应用账号，返回 {id, bytes, uploadedAt, expiresAt}（毫秒时间戳，uploadedAt 是认领时刻）；口令不对、过期、用过或包已不在都回 404 DIAGNOSTIC_NOT_FOUND。GET /v1/account/diagnostics：这个账号认领过的包 {uploads: [...]}，从新到旧、最多 50 个。DELETE /v1/account/diagnostics/:id：删这个账号下的这个包，记录与文件一起删，别人的或不存在回 DIAGNOSTIC_NOT_FOUND。
 - POST /v1/account/social：把私信设备挂到这个应用账号（人工决策见客户端 lib/social/social_service.dart 文件头）。请求体是私信设备的两把公钥、它对「SXD1-social-bind\n应用账号设备号\n私信设备号」的签名 proof（证明两把钥匙在同一台手机上，共用向量 socialBind）与可选的 takeover；没注册过的私信设备顺带登记。返回 {deviceId, moved}。账号的私信在别的设备上时，不带 takeover 回 409 SOCIAL_ELSEWHERE；带了就接管：同一事务里把好友关系改挂到这台（对方那行记 movedFrom，两边本来就有的不重复，两台互加的去掉），删掉旧设备与它没收的信，旧设备之后的请求是 UNAUTHORIZED。这台私信设备已属于别的账号回 409 SOCIAL_TAKEN。私信设备不能是应用账号的设备密钥。注销账号时私信设备连同好友关系与信箱一起删。
 - 以上都要应用账号的设备签名，没登录回 404 ACCOUNT_NOT_FOUND。

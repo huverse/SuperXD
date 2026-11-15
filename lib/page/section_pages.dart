@@ -1,7 +1,12 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:superxd/theme/campus_glass_controls.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
+import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -13,6 +18,8 @@ import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/application/festivals.dart';
+import 'package:superxd/application/leisure.dart';
+import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/domain/painting.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
@@ -25,7 +32,9 @@ import 'package:superxd/social/social_service.dart';
 import 'package:superxd/theme/glass_panel.dart';
 
 class ServicePage extends StatelessWidget {
-  const ServicePage({super.key});
+  const ServicePage({super.key, this.leisure});
+  // 娱乐与积分关着（人工决策见 domain/leisure.dart）时没有游乐场一项。
+  final Leisure? leisure;
 
   @override
   Widget build(BuildContext context) {
@@ -35,20 +44,23 @@ class ServicePage extends StatelessWidget {
         const SectionTitleBar(title: '服务'),
         // [人工决策-2026-09-27 20:12:08] 保留课表、成绩，新增百宝箱同级入口；教务无关工具集中注册于百宝箱，不添加未定义服务。
         // [人工决策-2026-11-12 21:00:20] 用户要求在服务页新增「游乐场」同级入口（小游戏属娱乐，不算工具，不进百宝箱），排在百宝箱后面。
-        Expanded(child: CampusScrollFade(bottom: inset, child: ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), children: [
-          for (final service in [(label: '课表', route: '/schedule', icon: CampusIcons.todaySelected), (label: '成绩', route: '/grades', icon: CampusIcons.grades), (label: '百宝箱', route: '/toolbox', icon: CampusIcons.toolbox), (label: '游乐场', route: '/playground', icon: CampusIcons.playground)]) Padding(padding: const EdgeInsets.only(bottom: 16), child: CampusSurface(
+        // [人工决策-2026-11-15 18:14:27] 娱乐与积分关着时不列游乐场（见 domain/leisure.dart）。
+        Expanded(child: CampusScrollFade(bottom: inset, child: ListenableBuilder(listenable: Listenable.merge([?leisure]), builder: (context, _) => ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), children: [
+          for (final service in [(label: '课表', route: '/schedule', icon: CampusIcons.todaySelected), (label: '成绩', route: '/grades', icon: CampusIcons.grades), (label: '百宝箱', route: '/toolbox', icon: CampusIcons.toolbox), if (leisure?.enabled != false) (label: '游乐场', route: '/playground', icon: CampusIcons.playground)]) Padding(padding: const EdgeInsets.only(bottom: 16), child: CampusSurface(
             onTap: () => context.push(service.route), padding: const EdgeInsets.all(20),
             child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 40), child: Row(children: [CampusIcon(service.icon, color: CampusPalette.of(context).primary, size: 28), const SizedBox(width: 20), Expanded(child: Text(service.label, style: TextStyle(fontSize: 16, color: CampusPalette.of(context).onSurface))), CampusIcon(CampusIcons.next, color: CampusPalette.of(context).onSurfaceVariant)])),
           )),
-        ]))),
+        ])))),
       ],
     );
   }
 }
 
 class MinePage extends StatelessWidget {
-  const MinePage({super.key, required this.session, this.social, this.updates, this.developer, this.logs, this.paintings, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.saveRewardPicture});
+  const MinePage({super.key, required this.session, this.social, this.updates, this.developer, this.logs, this.paintings, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.leisure, this.saveRewardPicture});
   final AppSession session;
+  // 娱乐与积分的开关（设备级，人工决策见 domain/leisure.dart）：界面下面一行，⋯里删除数据。
+  final Leisure? leisure;
   // 应用账号（设备级，跟着当前教务账号）；没配中转时为空，账号页不显示那一组。
   final AppAccounts? appAccounts;
   // 应用账号下的诊断包（人工决策见 domain/diagnostic_upload.dart）：账号页应用账号那一行的菜单里看与删；没配中转时为空。
@@ -65,6 +77,30 @@ class MinePage extends StatelessWidget {
   final PaintingGallery? paintings;
 
   void _push(BuildContext context, Widget page) => Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => page));
+
+  // 删除娱乐与积分的数据：先确认写明删哪些；登录着应用账号时连服务器上的一起删，没删成本机也不动。
+  Future<void> _leisureMore(BuildContext context, BuildContext anchor, Leisure leisure) async {
+    final choice = await showCampusMenu<String>(anchor, items: const [CampusMenuItem(value: 'delete', label: '删除数据', icon: CampusIcons.delete, destructive: true)]);
+    if (!context.mounted || choice != 'delete') return;
+    final username = appAccounts?.username;
+    // 长文案：删除确认要写清删哪些数据、删了不能恢复。
+    final message = leisure.signedIn ? '本机的游戏成绩与笔记，以及应用账号 $username 在服务器上的积分、挑战成绩与解锁记录都会删除，不能恢复。'
+        // 长文案：没登录应用账号时要说明服务器上的积分不在这次删除里。
+        : '本机的游戏成绩与笔记会删除，不能恢复；服务器上的积分要登录应用账号后才能删。';
+    final confirmed = await showCampusConfirm(context, title: '删除游乐场与积分的数据？', message: message, action: '删除', destructive: true);
+    if (!context.mounted || !confirmed) return;
+    String? failure;
+    await showCampusWaiting(context, label: '正在删除', operation: () async {
+      try {
+        await leisure.deleteData();
+      } on ChallengeException catch (error) {
+        failure = error.message;
+      }
+    });
+    if (!context.mounted) return;
+    if (failure case final message?) return showCampusNotice(context, message);
+    showCampusToast(context, '已删除');
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -102,6 +138,19 @@ class MinePage extends StatelessWidget {
                 ),
               }),
               ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.palette), trailing: const CampusIcon(CampusIcons.next), title: const Text('界面'), onTap: () => _push(context, AppearancePage(social: social))),
+              // [人工决策-2026-11-15 18:14:27] 娱乐与积分的开关（见 domain/leisure.dart）：与界面、关于同组一行，默认打开；删除数据在这一行的⋯里、先确认。
+              // ⋯开着关着都在：只在关着时才出现会把开关挤得挪位。
+              if (leisure case final leisure?) ListenableBuilder(listenable: leisure, builder: (context, _) => Row(children: [
+                Expanded(child: CampusSwitchTile(
+                  contentPadding: const EdgeInsets.only(left: 20),
+                  leading: const CampusIcon(CampusIcons.playground),
+                  title: const Text('游乐场与积分'),
+                  value: leisure.enabled,
+                  onChanged: (value) => unawaited(leisure.setEnabled(value)),
+                )),
+                Builder(builder: (anchor) => IconButton(tooltip: '更多操作', onPressed: () => unawaited(_leisureMore(context, anchor, leisure)), icon: const CampusIcon(CampusIcons.manage))),
+                const SizedBox(width: 8),
+              ])),
               // 开发者的话（人工决策见 domain/developer_note.dart）：有没读的信时行尾一个小圆点，底栏「我的」同时有一个。
               if (notes case final notes?) ListenableBuilder(listenable: notes, builder: (context, _) => notes.notes.isEmpty ? const SizedBox.shrink() : ListTile(
                 contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.letter), title: const Text('开发者的话'),

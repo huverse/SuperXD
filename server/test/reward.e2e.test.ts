@@ -264,6 +264,25 @@ describe('抽奖', () => {
     }
   });
 
+  it('客户端关掉了娱乐与积分（levels: false）时按 Lv0：同一个骰子点数 Lv5 的也没抽中；levels 只认布尔', async () => {
+    await mkdir(env().releasesDir, { recursive: true });
+    await writeFile(rolloutFile(), JSON.stringify({ flags: [], levels, envelope: null }));
+    await utimes(rolloutFile(), Date.now() / 1000 + 7, Date.now() / 1000 + 7);
+    try {
+      roll.mockReturnValue(0.5);
+      const weighted = await setup({ mode: 'weighted', chance: 0.2, maxWeight: 3 });
+      const top = await registered();
+      await earn(top, 80000);
+      expect((await draw(top, weighted, { activeDays: 0, levels: 'no' })).status).toBe(400);
+      expect((await draw(top, weighted, { activeDays: 0, levels: false })).body.result).toBe('missed');
+      const other = await registered();
+      await earn(other, 80000);
+      expect((await draw(other, weighted, { activeDays: 0, levels: true })).body.result, '带 true 同不带').toBe('won');
+    } finally {
+      await rm(rolloutFile(), { force: true });
+    }
+  });
+
   it('均匀放量：24 小时的活动第一个小时只放 1 份，第二个抽中的人算没抽中', async () => {
     roll.mockReturnValue(0);
     const key = await setup({ from: -hour / 2, to: 23.5 * hour, prizes: 24 });

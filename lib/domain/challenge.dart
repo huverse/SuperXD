@@ -205,6 +205,8 @@ abstract interface class ChallengeClient {
   Future<ChallengeRun> end(AppAccountRef account, String runId);
   Future<PointsSummary> points(AppAccountRef account);
   Future<PointsBatch> pointsEntries(AppAccountRef account, {String? before});
+  // 删掉服务器上这个应用账号的积分、挑战成绩与解锁记录（娱乐与积分的「删除数据」，人工决策见 domain/leisure.dart）。
+  Future<void> deleteData(AppAccountRef account);
 }
 
 // 游乐场经它用挑战与积分（application 实现，组合根注入）：跟着当前的应用账号走；登录状态变了 changes 发一次。

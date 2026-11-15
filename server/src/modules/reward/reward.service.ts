@@ -56,7 +56,8 @@ export class RewardService {
     const mode = campaign.mode as RewardMode;
     if (!rewardModes.includes(mode)) throw new Error(`活动 ${campaignKey} 的模式 ${campaign.mode} 不认识`);
     // 等级只在加权模式里用（平权人人一样），按设备所在账号的积分算。
-    const level = mode === 'weighted' ? await this.points.levelOfAccount(accountId) : 0;
+    // 客户端关掉了娱乐与积分（levels: false，人工决策见客户端 lib/domain/leisure.dart）时按 Lv0：只会降低自己的机会，不用防篡改。
+    const level = mode === 'weighted' && body.levels !== false ? await this.points.levelOfAccount(accountId) : 0;
     const maxWeight = Number(campaign.maxWeight);
     const weight = rewardWeight(mode, body.activeDays, level, maxWeight);
     const chance = rewardChance(Number(campaign.baseChance), weight);

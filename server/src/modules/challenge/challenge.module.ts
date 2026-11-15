@@ -18,5 +18,6 @@ import { PointsModule } from 'src/modules/points/points.module';
   imports: [TypeOrmModule.forFeature([ChallengeRunEntity, ChallengeBestEntity, ChallengePaceEntity]), DeviceModule, AccountModule, PointsModule],
   controllers: [ChallengeController],
   providers: [{ provide: ChallengeRepository, useClass: TypeormChallengeRepository }, { provide: ChallengePaceRepository, useClass: TypeormChallengePaceRepository }, ChallengeContent, ChallengePace, ChallengeService, ChallengeTasks],
+  exports: [ChallengeService],
 })
 export class ChallengeModule {}

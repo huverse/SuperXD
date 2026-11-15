@@ -9,8 +9,11 @@ import 'package:superxd/domain/rollout.dart';
 // 灰度的编排 Rollouts（设备级，人工决策见 domain/rollout.dart）：用本机存着的配置在本机判定；配置在同意协议与政策之后、回到前台时拉，
 // 两次至少隔 refreshGap，失败照旧用上次的。分桶的主体是当前教务账号对应的应用账号号，没登录用本机随机编号（不上传）。
 // 登录着应用账号时同一时机取一次积分等级（level，经挑战与积分的签名请求），按等级加权；只因等级才进的批次记在本机，降级也不踢出。
+// levelsOn 为假（娱乐与积分关着，人工决策见 domain/leisure.dart）时不取等级、按 Lv0 判定，已经因等级进了的批次照旧算。
 class Rollouts extends ChangeNotifier {
-  Rollouts({required this.memory, required this.channel, required this._accountId, this.feed, this.level, DateTime Function()? now}) : _now = now ?? DateTime.now;
+  Rollouts({required this.memory, required this.channel, required this._accountId, this.feed, this.level, bool Function()? levelsOn, DateTime Function()? now})
+    : _levelsOn = levelsOn ?? (() => true),
+      _now = now ?? DateTime.now;
   final RolloutMemory memory;
   // 构建渠道（如 alpha），分批更新的开关名带上它。
   final String channel;
@@ -19,6 +22,7 @@ class Rollouts extends ChangeNotifier {
   // 当前应用账号的积分等级；没登录或这次取不到为空（照旧用本机记着的）。没配中转时整个为空。
   final Future<int?> Function()? level;
   final String? Function() _accountId;
+  final bool Function() _levelsOn;
   final DateTime Function() _now;
 
   static const refreshGap = Duration(hours: 1);
@@ -47,7 +51,7 @@ class Rollouts extends ChangeNotifier {
     final subject = this.subject;
     if (percent == 0) return false;
     if (rolloutIncludes(id, subject, percent) || memory.joined(subject, id)) return true;
-    if (!rolloutIncludes(id, subject, percent, level: memory.levelOf(subject))) return false;
+    if (!_levelsOn() || !rolloutIncludes(id, subject, percent, level: memory.levelOf(subject))) return false;
     unawaited(memory.join(subject, id).catchError((Object error, StackTrace stack) => campusLog('[Rollouts] action=join errorType=${error.runtimeType}\n$stack')));
     return true;
   }
@@ -71,9 +75,12 @@ class Rollouts extends ChangeNotifier {
     await _refreshLevel();
   }
 
+  // 删除了娱乐与积分数据：记着的等级归零，不等下次取等级。
+  Future<void> forgetLevel() => memory.saveLevel(subject, 0);
+
   Future<void> _refreshLevel() async {
     final source = level;
-    if (source == null || _accountId() == null) return;
+    if (source == null || _accountId() == null || !_levelsOn()) return;
     final subject = this.subject;
     try {
       final current = await source();
