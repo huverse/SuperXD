@@ -1,5 +1,4 @@
 import 'package:superxd/edu/kingo_codec.dart';
-import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/gateway_code.dart';
 
 class LoginFailure {
@@ -98,31 +97,23 @@ String charBits(String password) {
   return '$result';
 }
 
-String buildLoginPlain(String username, String passwordPlain, String pageSession, String captcha) => buildProofLoginPlain(kingoSignInProof(username, passwordPlain), pageSession, captcha);
-
-// 教务登录只用到明文密码的这几项（人工决策见 domain/app_account.dart）：应用账号核对时把它们交给中转，中转据此登录，拿不到明文。
-KingoSignInProof kingoSignInProof(String username, String passwordPlain) => KingoSignInProof(
-  account: username,
-  passwordDigest: hexMd5(passwordPlain),
-  expression: charBits(passwordPlain),
-  length: '${passwordPlain.length}',
-  userzh: passwordPlain.toLowerCase().trim().contains(username.toLowerCase().trim()) ? '1' : '0',
-  policy: (passwordPlain.length < 6 || passwordPlain == username) ? '0' : '1',
-);
-
-// 固定向量 server/test/vectors/kingo_login_v1.json 钉住它（11-15 以前服务端代登录用同一算法，那份已删）。
-String buildProofLoginPlain(KingoSignInProof proof, String pageSession, String captcha) {
+// 固定向量 server/test/vectors/kingo_login_v1.json 钉住它（contract_test.dart）。
+String buildLoginPlain(String username, String passwordPlain, String pageSession, String captcha) {
   final randnumber = captcha;
   final hidFlag = captcha.isEmpty ? '1' : '';
-  final password = hexMd5(proof.passwordDigest + hexMd5(randnumber.toLowerCase()));
-  final userEncoded = kingoBase64('${proof.account};;$pageSession');
+  final password = hexMd5(hexMd5(passwordPlain) + hexMd5(randnumber.toLowerCase()));
+  final expression = charBits(passwordPlain);
+  final length = '${passwordPlain.length}';
+  final userzh = passwordPlain.toLowerCase().trim().contains(username.toLowerCase().trim()) ? '1' : '0';
+  final policy = (passwordPlain.length < 6 || passwordPlain == username) ? '0' : '1';
+  final userEncoded = kingoBase64('$username;;$pageSession');
   return '_u$randnumber=$userEncoded'
       '&_p$randnumber=$password'
       '&randnumber=$randnumber'
-      '&isPasswordPolicy=${proof.policy}'
-      '&txt_mm_expression=${proof.expression}'
-      '&txt_mm_length=${proof.length}'
-      '&txt_mm_userzh=${proof.userzh}'
+      '&isPasswordPolicy=$policy'
+      '&txt_mm_expression=$expression'
+      '&txt_mm_length=$length'
+      '&txt_mm_userzh=$userzh'
       '&hid_flag=$hidFlag'
       '&hidlag=1&hid_dxyzm=';
 }

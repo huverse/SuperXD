@@ -75,7 +75,7 @@ export const rolloutFileMaxBytes = 64 * 1024;
 
 // 节日抽奖（概率模型与要求设备签名的人工决策见 src/modules/reward/reward_odds.ts）：同一来源每小时 3000 次（校园网 NAT 共用出口，同代签取件的宽松档），
 // 每台设备每小时 10 次（一个应用账号一次活动只抽一次、重复请求返回同一结果，正常客户端只在没连上时补抽；按设备计数让刷请求的设备先被自己的额度挡住）；
-// 刷号的成本是注册限流 registerPerHour。活动行在进程内缓存 60 秒（建活动、改时间最迟一分钟生效）；活动结束 30 天后连同奖品与抽签记录删除。
+// 刷号的成本是应用账号的注册限流（accountRegisterPerSourcePerHour）与下面的账号年龄。活动行在进程内缓存 60 秒（建活动、改时间最迟一分钟生效）；活动结束 30 天后连同奖品与抽签记录删除。
 // 账号建立满 rewardAccountMinAgeDays 天才能抽（注册用户名谁都能建号，挡住批量新建的账号抽红包；人工决策见 reward_odds.ts）。
 export const rewardAccountMinAgeDays = 7;
 export const rewardDrawPerHour = 3000;
@@ -123,9 +123,11 @@ export const accountSealMaxBytes = 1024;
 export const accountDeviceLimit = 20;
 export const accountIdleDays = 400;
 // 扫码登录：新设备出示二维码，已登录的设备扫码核对 6 位码后批准。票据在 Redis 存 5 分钟（新设备号、核对码、批准后的账号号）；
-// 新设备每小时最多出示 20 次，已登录的设备每小时最多批准 30 次。
+// 新设备每小时最多出示 20 次，已登录的设备每小时最多批准 30 次。出示时就登记新设备的密钥（轮询要验签），
+// 所以还没登记过的设备另按来源计数，同注册的来源档每小时 60 台（每次换新密钥的刷法挡在这里，同一台重新出示不计）。
 export const accountJoinSeconds = 5 * 60;
 export const accountJoinPerDevicePerHour = 20;
+export const accountJoinPerSourcePerHour = 60;
 export const accountApprovePerDevicePerHour = 30;
 
 // 积分（人工决策见 src/modules/points/points.service.ts）：每笔获得满 12 个月过期，30 天内要过期的在余额旁提示；

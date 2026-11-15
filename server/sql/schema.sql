@@ -146,10 +146,12 @@ CREATE TABLE IF NOT EXISTS points_grant (
   expire_time DATETIME(3) NOT NULL,
   create_time DATETIME(3) NOT NULL,
   update_time DATETIME(3) NOT NULL,
+  due_time DATETIME(3) AS (IF(remaining > 0, expire_time, NULL)) VIRTUAL COMMENT '还有剩余时等于到期时刻，否则为空（到期清零只扫这些）',
   PRIMARY KEY (id),
   UNIQUE KEY uk_source (source, source_key),
   KEY idx_account_expire (account_id, expire_time),
-  KEY idx_expire (expire_time)
+  KEY idx_expire (expire_time),
+  KEY idx_due (due_time)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- 积分流水：只增，满 13 个月删除。

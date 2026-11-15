@@ -128,6 +128,16 @@ void main() {
       await expectLater(client.approveJoin(join.payload), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.joinExpired)));
     });
 
+    test('扫码登录：手机时钟快了 10 分钟（中转校时后重发）时，二维码的失效时刻换成本机时钟，出示页照样倒数 5 分钟', () async {
+      int serverNow() => DateTime.now().subtract(const Duration(minutes: 10)).millisecondsSinceEpoch;
+      relay.reply = (request) => (int.parse(request.headers['x-sxd-time']!) - serverNow()).abs() > 5 * 60000
+          ? RelayResponse(401, {'code': 'CLOCK_SKEW', 'serverTime': serverNow()})
+          : RelayResponse(200, {'ticketId': _ticketId, 'code': '012345', 'expiresAt': serverNow() + 5 * 60000});
+      final join = await client.startJoin();
+      expect(relay.requests, hasLength(2), reason: '校时后重发一次');
+      expect(join.expiresAt.difference(DateTime.now()).inSeconds, inInclusiveRange(290, 300));
+    });
+
     test('改密码、换恢复码：用登录着的密钥签名、秘密封装；没登录不发', () async {
       await expectLater(client.changePassword('changed-synthetic'), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.notSignedIn)));
       expect(relay.requests, isEmpty);
@@ -195,6 +205,23 @@ void main() {
       await appAccounts.load();
       expect(deleted.map((account) => account.accountId), ['OLDOLDOLDOLDOLDOLDOLDO']);
       expect((appAccounts.accountId, appAccounts.username), (_accountId, 'tester_one'));
+    });
+
+    test('本机记录读不出（安全存储出错、格式认不出）：照样读完、当没登录（账号页那一行能点、私信能切过去），重新登录就覆盖它；清旧密钥出错不挡读本机账号', () async {
+      final broken = _Client()..loadFailure = const FormatException('保存的应用账号不可用');
+      final accounts = AppAccounts(client: broken, now: () => now, recoveryCode: () => _code);
+      addTearDown(accounts.dispose);
+      await accounts.load();
+      expect((accounts.loaded, accounts.current), (true, null));
+      broken.loadFailure = null;
+      expect(await accounts.login('tester_one', 'synthetic-pass'), isA<AppAccountDone>());
+      expect(accounts.username, 'tester_one');
+
+      final legacyBroken = _Client()..legacyFailure = Exception('安全存储出错')..session = _session;
+      final second = AppAccounts(client: legacyBroken, now: () => now, recoveryCode: () => _code);
+      addTearDown(second.dispose);
+      await second.load();
+      expect((second.loaded, second.username), (true, 'tester_one'));
     });
 
     test('注册把生成的恢复码交给页面；登录；用恢复码重设时先规范写法，不像恢复码的不联网，成功换新恢复码', () async {
@@ -543,6 +570,8 @@ class _Client implements AppAccountClient {
   bool joinApproved = false;
   AppAccountException? failure;
   AppAccountException? joinFailure;
+  Object? loadFailure;
+  Object? legacyFailure;
 
   void _fail() {
     if (failure case final error?) throw error;
@@ -551,9 +580,13 @@ class _Client implements AppAccountClient {
   AppAccountSession _signIn(String username) => session = AppAccountSession(account: _account, username: normalizeAppUsername(username));
 
   @override
-  Future<AppAccountSession?> accountOf() async => session;
+  Future<AppAccountSession?> accountOf() async {
+    if (loadFailure case final error?) throw error;
+    return session;
+  }
   @override
   Future<List<AppAccountRef>> dropLegacy() async {
+    if (legacyFailure case final error?) throw error;
     final dropped = legacy;
     legacy = const [];
     return dropped;

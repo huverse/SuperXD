@@ -239,7 +239,7 @@ void main() {
       expect(gone, 1);
     });
 
-    // 人工决策见服务端 reward_odds.ts 的 11-15 那条：设备核对谁都能建号，账号建立满规定天数才能抽。
+    // 人工决策见服务端 reward_odds.ts 的 11-15 15:04:27 那条：注册用户名谁都能建号，账号建立满规定天数才能抽。
     test('应用账号建立不满规定天数：不记结果，到能抽的时刻之前不再为它抽（不联网），到了回到前台补抽', () async {
       final memory = FileFestivalMemory.memory();
       final eligibleAt = noon.add(const Duration(days: 1));
