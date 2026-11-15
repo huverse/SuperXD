@@ -128,6 +128,16 @@ void main() {
       await expectLater(client.approveJoin(join.payload), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.joinExpired)));
     });
 
+    test('扫码登录：手机时钟快了 10 分钟（中转校时后重发）时，二维码的失效时刻换成本机时钟，出示页照样倒数 5 分钟', () async {
+      int serverNow() => DateTime.now().subtract(const Duration(minutes: 10)).millisecondsSinceEpoch;
+      relay.reply = (request) => (int.parse(request.headers['x-sxd-time']!) - serverNow()).abs() > 5 * 60000
+          ? RelayResponse(401, {'code': 'CLOCK_SKEW', 'serverTime': serverNow()})
+          : RelayResponse(200, {'ticketId': _ticketId, 'code': '012345', 'expiresAt': serverNow() + 5 * 60000});
+      final join = await client.startJoin();
+      expect(relay.requests, hasLength(2), reason: '校时后重发一次');
+      expect(join.expiresAt.difference(DateTime.now()).inSeconds, inInclusiveRange(290, 300));
+    });
+
     test('改密码、换恢复码：用登录着的密钥签名、秘密封装；没登录不发', () async {
       await expectLater(client.changePassword('changed-synthetic'), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.notSignedIn)));
       expect(relay.requests, isEmpty);

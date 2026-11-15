@@ -69,6 +69,7 @@ class AppAccountJoin {
   const AppAccountJoin({required this.ticketId, required this.code, required this.expiresAt});
   final String ticketId;
   final String code;
+  // 按本机时钟（中转实现已按校时换算），出示页拿它和本机时间比着倒数。
   final DateTime expiresAt;
 
   static const _prefix = 'superxd-join:';
