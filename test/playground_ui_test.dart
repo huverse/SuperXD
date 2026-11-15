@@ -142,6 +142,27 @@ void main() {
     semantics.dispose();
   });
 
+  // 用时按秒刷新：走着表、棋盘不动时不逐帧出帧（以前用逐帧的计时器，一局开着就一直以屏幕刷新率重画）；秒数照样往前走。
+  testWidgets('走表时棋盘不动就不出帧，用时照样按秒刷新', (tester) async {
+    final store = PlaygroundStore.memory();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: HanoiPage(game: _game('hanoi'), store: store, seeds: () => 1)));
+    await tester.pumpAndSettle();
+    await _tapOn(tester, _peg(0));
+    await _step(tester);
+    await _tapOn(tester, _peg(1));
+    // 落盘的动画走完（几帧接力，逐段推进）。
+    for (var frame = 0; frame < 3; frame++) {
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+    expect(find.textContaining('1 步'), findsOneWidget);
+    expect(tester.binding.hasScheduledFrame, isFalse, reason: '走着表也不空转出帧');
+    // 用时是真实时间（Stopwatch），等过一秒再推进假时钟，计时器到点刷新状态行。
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1100)));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.textContaining(RegExp(r'^0:0[1-9]')), findsOneWidget);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+  });
+
   testWidgets('数织：拖动锁在一行、撤销按笔退回，按参考解点完即解开', (tester) async {
     final semantics = tester.ensureSemantics();
     tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(accessibleNavigation: true);

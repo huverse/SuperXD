@@ -591,6 +591,7 @@ void main() {
       final controller = ChallengeRunController(hub: hub, run: run);
       addTearDown(controller.dispose);
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChallengeRunPage(controller: controller, games: playgroundCatalog, store: PlaygroundStore.memory())));
+      await tester.pump();
       expect(hub.runs, hasLength(1));
       hub.runs.single.completeError(const ChallengeException(ChallengeFailure.network, '连不上服务器'));
       for (var frame = 0; frame < 20; frame++) {
