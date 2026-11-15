@@ -32,7 +32,7 @@ class RelayChallengeClient implements ChallengeClient {
         RelayCode.runActive => ChallengeException(ChallengeFailure.runActive, '还有一局没结束', runId: detail['runId'] is String ? detail['runId'] as String : null),
         RelayCode.runNotFound => const ChallengeException(ChallengeFailure.runNotFound, '这一局找不到了'),
         RelayCode.runOver => ChallengeException(ChallengeFailure.runOver, '这一局已经结束', run: run),
-        RelayCode.levelLocked => ChallengeException(ChallengeFailure.levelLocked, '这一关现在不能交', run: run),
+        RelayCode.levelLocked => ChallengeException(ChallengeFailure.levelLocked, '现在不能交', run: run),
         RelayCode.pointsShort => ChallengeException(ChallengeFailure.pointsShort, detail['price'] is int ? '积分不够，门票要 ${detail['price']} 分' : '积分不够'),
         RelayCode.rateLimited => const ChallengeException(ChallengeFailure.rateLimited, '操作太频繁，请稍后再试'),
         RelayCode.network || RelayCode.timeout => const ChallengeException(ChallengeFailure.network, '连不上服务器'),
@@ -80,6 +80,8 @@ class RelayChallengeClient implements ChallengeClient {
         'settled' => false,
         _ => _bad('state'),
       },
+      penalty: Duration(seconds: _field<int>(raw, 'penaltySeconds')),
+      ending: ChallengeFinal.values.where((state) => state.name == raw['final']).firstOrNull ?? _bad('final'),
       levels: [for (final level in _field<List<Object?>>(raw, 'levels')) _level(level)],
       result: result is Map ? ChallengeResult(points: _field<int>(result, 'points'), awarded: _field<int>(result, 'awarded'), ending: _field<String>(result, 'ending')) : null,
     );
@@ -87,24 +89,48 @@ class RelayChallengeClient implements ChallengeClient {
 
   static ChallengeLevel _level(Object? raw) {
     if (raw is! Map) _bad('level');
-    final key = raw['key'], teaser = raw['teaser'], output = raw['output'];
+    final output = raw['output'], letter = raw['letter'], minimum = raw['minimum'], gate = raw['gate'], consume = raw['consume'], extra = raw['extraOf'];
     return ChallengeLevel(
       id: _field<String>(raw, 'id'),
       game: _field<String>(raw, 'game'),
       tier: _field<String>(raw, 'tier'),
       difficulty: _field<int>(raw, 'difficulty'),
+      expected: Duration(seconds: _field<int>(raw, 'expected')),
       inputs: _strings(raw, 'inputs'),
       output: output is String ? output : null,
+      letter: letter is String ? letter : null,
       state: ChallengeLevelState.values.where((state) => state.name == raw['state']).firstOrNull ?? _bad('levelState'),
       submissions: _field<int>(raw, 'submissions'),
       errors: _field<int>(raw, 'errors'),
-      key: key is int ? key : null,
-      teaser: teaser is String ? teaser : null,
+      minimum: minimum is int ? minimum : null,
+      gate: switch (gate) {
+        null => null,
+        final Map<Object?, Object?> map => ChallengeGate(
+          product: switch (map['op']) {
+            'product' => true,
+            'sum' => false,
+            _ => _bad('gate'),
+          },
+          value: map['value'] is int ? map['value'] as int : null,
+        ),
+        _ => _bad('gate'),
+      },
+      consume: switch (consume) {
+        null => null,
+        final Map<Object?, Object?> map when _field<int>(map, 'modulus') > 0 => ChallengeConsume(
+          slot: switch (map['kind']) {
+            'slot' => true,
+            'goal' => false,
+            _ => _bad('consume'),
+          },
+          at: _field<int>(map, 'at'),
+          modulus: _field<int>(map, 'modulus'),
+          offset: _field<int>(map, 'offset'),
+        ),
+        _ => _bad('consume'),
+      },
+      extraOf: extra is String ? extra : null,
       puzzle: raw['puzzle'],
-      keyed: [
-        for (final item in _field<List<Object?>>(raw, 'keyed'))
-          if (item is Map) ChallengeKeyed(from: _field<String>(item, 'from'), at: _field<int>(item, 'at'), key: _field<int>(item, 'key')) else _bad('keyed'),
-      ],
     );
   }
 
@@ -123,6 +149,11 @@ class RelayChallengeClient implements ChallengeClient {
               title: _field<String>(item, 'title'),
               label: _field<String>(item, 'label'),
               levels: _field<int>(item, 'levels'),
+              tiers: _strings(item, 'tiers'),
+              edges: [
+                for (final edge in _field<List<Object?>>(item, 'edges'))
+                  if (edge case [final int from, final int to] when from >= 0 && to >= 0) (from, to) else _bad('edges'),
+              ],
               timeLimit: Duration(seconds: _field<int>(item, 'timeLimit')),
               endsAt: _time(item, 'endsAt'),
               best: item['best'] is int ? item['best'] as int : null,
@@ -145,9 +176,17 @@ class RelayChallengeClient implements ChallengeClient {
   @override
   Future<ChallengeVerdict> answer(AppAccountRef account, String runId, String levelId, int attempt, Object? answer) async {
     final body = await _send(account, 'POST', '/v1/challenge-runs/$runId/levels/$levelId/answers', {'attempt': attempt, 'answer': answer});
-    final key = body['key'];
-    return ChallengeVerdict(correct: _field<bool>(body, 'correct'), key: key is int ? key : null, run: _run(body['run']));
+    final fragment = body['fragment'], extra = body['extra'];
+    return ChallengeVerdict(correct: _field<bool>(body, 'correct'), fragment: fragment is int ? fragment : null, extra: extra is String ? extra : null, run: _run(body['run']));
   }
+
+  @override
+  Future<ChallengeEntry> gate(AppAccountRef account, String runId, String levelId, int value) async => _entry(await _send(account, 'POST', '/v1/challenge-runs/$runId/gates/$levelId', {'value': value}));
+
+  @override
+  Future<ChallengeEntry> finale(AppAccountRef account, String runId, int value) async => _entry(await _send(account, 'POST', '/v1/challenge-runs/$runId/final', {'value': value}));
+
+  static ChallengeEntry _entry(Map<String, Object?> body) => ChallengeEntry(correct: _field<bool>(body, 'correct'), run: _run(body['run']));
 
   @override
   Future<ChallengeRun> end(AppAccountRef account, String runId) async => _run(await _send(account, 'POST', '/v1/challenge-runs/$runId/end'));

@@ -108,7 +108,7 @@ void main() {
           expect(pourAnswerValid(puzzle, draw.solution), isTrue, reason: reason);
           expect(_rules.solved(puzzle, draw.solution), isTrue, reason: reason);
           expect(pourSimulate(puzzle, const []), PourOutcome.lost, reason: reason);
-          final score = _rules.difficulty(puzzle);
+          final score = _rules.complexity(puzzle);
           expect(score, inInclusiveRange(band.score.$1, band.score.$2), reason: reason);
         }
       }
@@ -117,7 +117,7 @@ void main() {
     test('难度分逐档上升，同档相差不超过 1', () {
       var previous = 0;
       for (final tier in PuzzleTier.values) {
-        final scores = [for (var seed = 0; seed < 30; seed++) _rules.difficulty(_rules.generate(seed, tier).puzzle)];
+        final scores = [for (var seed = 0; seed < 30; seed++) _rules.complexity(_rules.generate(seed, tier).puzzle)];
         expect(scores.reduce(math.max) - scores.reduce(math.min), lessThanOrEqualTo(1), reason: tier.name);
         expect(scores.reduce(math.min), greaterThan(previous), reason: tier.name);
         previous = scores.reduce(math.max);

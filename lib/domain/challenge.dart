@@ -2,8 +2,13 @@ import 'package:superxd/domain/app_account.dart';
 
 // 挑战与积分（人工决策见 lib/playground/challenge/challenge_rules.dart 与服务端 src/modules/points/points.service.ts）：
 // 服务器下发挑战、出题、逐关核对、计时（不暂停）与结算，积分属于应用账号。这里是两边共用的类型与端口，协议见 server/README.md「挑战与积分」。
+// 关与关之间是碎片与门：过关给一次碎片，收碎片的关先开门，全部过了输终章的最终密码才算全部过关。
 
-enum ChallengeLevelState { locked, open, solved, failed }
+// locked：给它碎片的关还没全过；gated：碎片齐了、门还没开。
+enum ChallengeLevelState { locked, gated, open, solved, failed }
+
+// 终章：locked 还有关没过（含加试题）、ready 能输最终密码、cleared 输对了。
+enum ChallengeFinal { locked, ready, cleared }
 
 class ChallengeSummary {
   const ChallengeSummary({
@@ -11,6 +16,8 @@ class ChallengeSummary {
     required this.title,
     required this.label,
     required this.levels,
+    required this.tiers,
+    required this.edges,
     required this.timeLimit,
     required this.endsAt,
     required this.best,
@@ -19,6 +26,9 @@ class ChallengeSummary {
   });
   final String id, title, label;
   final int levels;
+  // 关卡图（首页画结构缩略图）：每一关的档位名与边（给碎片的关、收碎片的关在 tiers 里的下标）。
+  final List<String> tiers;
+  final List<(int, int)> edges;
   final Duration timeLimit;
   final DateTime endsAt;
   // 这个应用账号在这个挑战上的最好成绩，没玩过为空。
@@ -36,11 +46,21 @@ class ChallengeCatalog {
   final List<ChallengeSummary> challenges;
 }
 
-// 收钥匙的关里由钥匙补上的一处：from 是给钥匙的关，at 是位置（24 点第几张牌、八皇后第几行、数回第几格），key 是钥匙数。
-class ChallengeKeyed {
-  const ChallengeKeyed({required this.from, required this.at, required this.key});
-  final String from;
-  final int at, key;
+// 门：门上的数 = 给它碎片的几关的碎片相加（sum）或相乘（product），只有一关就是那个碎片；开了以后 value 是门上的数。
+class ChallengeGate {
+  const ChallengeGate({required this.product, required this.value});
+  final bool product;
+  final int? value;
+}
+
+// 门上的数改写这一关的那一处：值 = 门上的数 ÷ modulus 的余数 + offset。slot 为真是补条件（题面里那一处写成 ?，at 是位置：
+// 24 点第几张牌、八皇后第几行、数回第几格、密码破译第几行的「位置也对」、骑士与无赖第几个人那句话的人数），为假是改目标（汉诺塔的目标柱、冰面滑行的出口、记忆闪光镜像）。
+class ChallengeConsume {
+  const ChallengeConsume({required this.slot, required this.at, required this.modulus, required this.offset});
+  final bool slot;
+  final int at, modulus, offset;
+
+  int valueOf(int gate) => gate % modulus + offset;
 }
 
 class ChallengeLevel {
@@ -49,30 +69,38 @@ class ChallengeLevel {
     required this.game,
     required this.tier,
     required this.difficulty,
+    required this.expected,
     required this.inputs,
     required this.output,
+    required this.letter,
     required this.state,
     required this.submissions,
     required this.errors,
-    required this.key,
-    required this.teaser,
+    required this.minimum,
+    required this.gate,
+    required this.consume,
+    required this.extraOf,
     required this.puzzle,
-    required this.keyed,
   });
   final String id, game, tier;
   final int difficulty;
+  // 预计用时（服务器按真实过关用时回调过的）。
+  final Duration expected;
   final List<String> inputs;
   final String? output;
+  // 这一关碎片的字母（A、B…），加试题为空。
+  final String? letter;
   final ChallengeLevelState state;
   // 交过几次（下一次交的号）、错交次数（含答案里自带的失误）。
   final int submissions, errors;
-  // 解开后给的钥匙数。
-  final int? key;
-  // 锁着时的预告（挖掉的写 ?）。
-  final String? teaser;
-  // 题面（开着时才有），按这个游戏的规则解码。
+  // 要用最少步数时的最少步数。
+  final int? minimum;
+  final ChallengeGate? gate;
+  final ChallengeConsume? consume;
+  // 加试题是为哪一关加的。
+  final String? extraOf;
+  // 题面（开着或过了时才有，过了的可以重做一遍再看碎片），按这个游戏的规则解码。
   final Object? puzzle;
-  final List<ChallengeKeyed> keyed;
 }
 
 class ChallengeResult {
@@ -93,24 +121,37 @@ class ChallengeRun {
     required this.deadline,
     required this.serverTime,
     required this.running,
+    required this.penalty,
+    required this.ending,
     required this.levels,
     required this.result,
   });
   final String runId, challengeId, title, label;
   final Duration timeLimit;
-  // 服务器时刻（UTC）；本机按 serverTime 与收到时的本机时刻算偏差再倒计时。
+  // 服务器时刻（UTC）；本机按 serverTime 与收到时的本机时刻算偏差再倒计时。到点时刻已扣掉门与终章输错的时间（penalty）。
   final DateTime startedAt, deadline, serverTime;
   final bool running;
+  final Duration penalty;
+  final ChallengeFinal ending;
   final List<ChallengeLevel> levels;
   final ChallengeResult? result;
 
   ChallengeLevel level(String id) => levels.firstWhere((level) => level.id == id);
 }
 
+// 交一次答案的结果：fragment 是过关给的碎片（只在这次回复里有），extra 是快得不正常追加的加试题。
 class ChallengeVerdict {
-  const ChallengeVerdict({required this.correct, required this.key, required this.run});
+  const ChallengeVerdict({required this.correct, required this.fragment, required this.extra, required this.run});
   final bool correct;
-  final int? key;
+  final int? fragment;
+  final String? extra;
+  final ChallengeRun run;
+}
+
+// 开门或输终章的结果：错了已扣时间（到点时刻往前挪）。
+class ChallengeEntry {
+  const ChallengeEntry({required this.correct, required this.run});
+  final bool correct;
   final ChallengeRun run;
 }
 
@@ -158,6 +199,9 @@ abstract interface class ChallengeClient {
   Future<ChallengeRun> run(AppAccountRef account, String runId);
   // attempt 是这一关之前交过几次；没收到回复时用同一个号重发，服务器只算一次。
   Future<ChallengeVerdict> answer(AppAccountRef account, String runId, String levelId, int attempt, Object? answer);
+  // 开门（levelId 是门后面那一关）与输终章的最终密码。
+  Future<ChallengeEntry> gate(AppAccountRef account, String runId, String levelId, int value);
+  Future<ChallengeEntry> finale(AppAccountRef account, String runId, int value);
   Future<ChallengeRun> end(AppAccountRef account, String runId);
   Future<PointsSummary> points(AppAccountRef account);
   Future<PointsBatch> pointsEntries(AppAccountRef account, {String? before});
@@ -174,6 +218,8 @@ abstract interface class ChallengeHub {
   Future<ChallengeRun> start(String challengeId, Set<String> games);
   Future<ChallengeRun> run(String runId);
   Future<ChallengeVerdict> answer(String runId, String levelId, int attempt, Object? answer);
+  Future<ChallengeEntry> gate(String runId, String levelId, int value);
+  Future<ChallengeEntry> finale(String runId, int value);
   Future<ChallengeRun> end(String runId);
   Future<PointsSummary> points();
   Future<PointsBatch> pointsEntries({String? before});

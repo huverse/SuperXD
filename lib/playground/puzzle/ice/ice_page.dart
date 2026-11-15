@@ -221,7 +221,9 @@ class _IcePageState extends State<IcePage> with TickerProviderStateMixin {
     String place(int cell) => '第${cell ~/ puzzle.width + 1}行第${cell % puzzle.width + 1}列';
     return Semantics(
       container: true,
-      label: '冰面 ${puzzle.width}×${puzzle.height}，棋子在${place(_cell)}，终点在${place(puzzle.goal)}${_cell == puzzle.goal ? '，已到达' : ''}',
+      label: puzzle.exits.isEmpty
+          ? '冰面 ${puzzle.width}×${puzzle.height}，棋子在${place(_cell)}，终点在${place(puzzle.goal)}${_cell == puzzle.goal ? '，已到达' : ''}'
+          : '冰面 ${puzzle.width}×${puzzle.height}，棋子在${place(_cell)}，${[for (final (index, exit) in puzzle.exits.indexed) '${index + 1}号出口在${place(exit)}'].join('，')}',
       hint: '上下左右滑动推动棋子，也可以用下方的方向按钮',
       child: playSwipeArea(
         onSwipe: _push,
@@ -478,8 +480,19 @@ class _IcePainter extends CustomPainter {
   }
 
   // 终点：冰面上一圈扁的激活色光圈（同石块与企鹅的影子一样是斜看的地面），中间插一面小旗；企鹅停上去时旗面从头顶后面露出来。
+  // 挑战里碎片改目标时（题面带 exits，人工决策见 challenge_rules.dart）：几个出口各画一圈光圈、写上 ①②③，不插旗、不标哪个是终点。
   void _goal(Canvas canvas) {
     final colors = scene.colors, cell = scene.cell, base = scene.goalBase;
+    if (scene.puzzle.exits.isNotEmpty) {
+      for (final (index, exit) in scene.puzzle.exits.indexed) {
+        final center = scene.centerOf(exit);
+        canvas.drawOval(Rect.fromCenter(center: center + Offset(0, cell * .22), width: cell * .66, height: cell * .3), Paint()..style = PaintingStyle.stroke..strokeWidth = math.max(1.6, cell * .06)..color = colors.goal);
+        final label = TextPainter(text: TextSpan(text: '①②③④'[index], style: TextStyle(fontSize: math.max(14, cell * .5), color: colors.goal, fontWeight: FontWeight.w600)), textDirection: TextDirection.ltr)..layout();
+        label.paint(canvas, center - Offset(label.width / 2, label.height * .62));
+        label.dispose();
+      }
+      return;
+    }
     final glow = Rect.fromCenter(center: base, width: cell * .96, height: cell * .5);
     canvas.drawOval(glow, Paint()..shader = RadialGradient(colors: [colors.goal.withValues(alpha: .4), colors.goal.withValues(alpha: 0)]).createShader(glow));
     canvas.drawOval(Rect.fromCenter(center: base, width: cell * .66, height: cell * .3), Paint()..style = PaintingStyle.stroke..strokeWidth = math.max(1.6, cell * .06)..color = colors.goal);

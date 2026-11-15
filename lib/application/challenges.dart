@@ -61,6 +61,12 @@ class Challenges implements ChallengeHub {
   Future<ChallengeVerdict> answer(String runId, String levelId, int attempt, Object? answer) => _with('answer', (account) => client.answer(account, runId, levelId, attempt, answer));
 
   @override
+  Future<ChallengeEntry> gate(String runId, String levelId, int value) => _with('gate', (account) => client.gate(account, runId, levelId, value));
+
+  @override
+  Future<ChallengeEntry> finale(String runId, int value) => _with('finale', (account) => client.finale(account, runId, value));
+
+  @override
   Future<ChallengeRun> end(String runId) => _with('end', (account) => client.end(account, runId));
 
   @override

@@ -93,7 +93,7 @@ void main() {
           expect(_rules.solved(draw.puzzle, draw.solution), isTrue, reason: '$tier $seed');
           expect(_rules.solved(draw.puzzle, const []), isFalse);
           expect(riverSolve(draw.puzzle)!.length, draw.solution.length);
-          scores.add(_rules.difficulty(draw.puzzle));
+          scores.add(_rules.complexity(draw.puzzle));
         }
         expect(scores.reduce((low, score) => score < low ? score : low), greaterThanOrEqualTo(previous), reason: '$tier');
         previous = scores.reduce((high, score) => score > high ? score : high);

@@ -100,7 +100,7 @@ void main() {
           expect(draw.solution.length, inInclusiveRange(low, high));
           expect(lightsSolve(puzzle)!.length, draw.solution.length);
           expect(rules.solved(puzzle, draw.solution), isTrue);
-          scores.add(rules.difficulty(puzzle));
+          scores.add(rules.complexity(puzzle));
         }
         final lowest = scores.reduce(math.min), highest = scores.reduce(math.max);
         expect(lowest, greaterThanOrEqualTo(1));

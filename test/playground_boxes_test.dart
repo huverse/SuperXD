@@ -68,7 +68,7 @@ void main() {
           final pushes = boxesReplay(puzzle, draw.solution).pushes;
           expect(pushes, inInclusiveRange(low, high), reason: '$tier $seed');
           expect(boxesSolve(puzzle)!.pushes, pushes, reason: '$tier $seed 参考解应当是最少推数');
-          expect(_rules.difficulty(puzzle), inInclusiveRange(lowScore, highScore), reason: '$tier $seed');
+          expect(_rules.complexity(puzzle), inInclusiveRange(lowScore, highScore), reason: '$tier $seed');
         }
       }
       expect(_rules.generate(5, PuzzleTier.hard).puzzle.boxes, _rules.generate(5, PuzzleTier.hard).puzzle.boxes);

@@ -15,7 +15,9 @@ describe('challenge judge vectors', () => {
     it(`${game} 判定同 Dart`, () => {
       for (const [index, item] of cases.entries()) {
         for (const [order, { answer, expect: expected }] of item.answers.entries()) {
-          expect(judge(game, item.puzzle, answer), `${game} ${item.tier} 第 ${index} 题第 ${order} 个答案`).toEqual(expected);
+          // 只比两端共用的口径（kind 与失误数）；步数与按答案给的碎片另在 challenge_rules 里测。
+          const verdict = judge(game, item.puzzle, answer);
+          expect(verdict.kind === 'solved' ? { kind: verdict.kind, penalties: verdict.penalties } : verdict, `${game} ${item.tier} 第 ${index} 题第 ${order} 个答案`).toEqual(expected);
         }
       }
     });

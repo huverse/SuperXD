@@ -54,6 +54,17 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
 
   int get _least => hanoiMinMoves(_session.puzzle.start, _session.puzzle.target);
 
+  // 挑战里碎片改目标（人工决策见 challenge_rules.dart）：不标目标柱、柱子标 ①②③，玩家按门上的数自己算；全部盘子到了同一根柱（不是开局那根）就交。
+  bool get _hidden => widget.challenge?.goal ?? false;
+  int? get _target => _hidden ? null : _session.puzzle.target;
+
+  bool get _gathered {
+    final puzzle = _session.puzzle;
+    if (!_hidden) return _pegs[puzzle.target].length == puzzle.disks;
+    final start = puzzle.start.every((peg) => peg == puzzle.start.first) ? puzzle.start.first : null;
+    return [for (var peg = 0; peg < hanoiPegs; peg++) if (peg != start && _pegs[peg].length == puzzle.disks) peg].isNotEmpty;
+  }
+
   void _reset() {
     _pegs = hanoiStacks(_session.puzzle);
     _moves.clear();
@@ -101,7 +112,7 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
       _moves.add(move);
       _lifted = null;
     });
-    if (_pegs[_session.puzzle.target].length == _session.puzzle.disks) unawaited(_finish());
+    if (_gathered) unawaited(_finish());
   }
 
   Future<void> _finish() async {
@@ -110,7 +121,7 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
     await Future<void>.delayed(_settle);
     if (!mounted) return;
     final least = _least;
-    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: _moves.length == least ? '$least 步，正好最少' : '${_moves.length} 步，最少 $least 步');
+    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: _hidden ? '${_moves.length} 步' : _moves.length == least ? '$least 步，正好最少' : '${_moves.length} 步，最少 $least 步');
     if (!mounted) return;
     switch (choice) {
       case PlayResultChoice.again:
@@ -137,7 +148,7 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
     session: _session,
     onNewGame: _newGame,
     onRestart: _restart,
-    status: '${_moves.length} 步 · 最少 $_least 步',
+    status: _hidden ? '${_moves.length} 步' : '${_moves.length} 步 · 最少 $_least 步',
     controls: [
       FilledButton.icon(onPressed: _moves.isEmpty || _session.finished ? null : _undo, icon: const CampusIcon(CampusIcons.undo), label: const Text('撤销')),
     ],
@@ -170,14 +181,16 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
       for (var peg = 0; peg < hanoiPegs; peg++) ...[
         Positioned(
           left: column * (peg + .5) - 3, width: 6, top: rodTop, height: rod + 2,
-          child: DecoratedBox(decoration: BoxDecoration(color: peg == puzzle.target ? Color.lerp(palette.outlineSubtle, palette.accent, .45) : palette.outlineSubtle, borderRadius: BorderRadius.circular(3))),
+          child: DecoratedBox(decoration: BoxDecoration(color: peg == _target ? Color.lerp(palette.outlineSubtle, palette.accent, .45) : palette.outlineSubtle, borderRadius: BorderRadius.circular(3))),
         ),
-        if (peg == puzzle.target)
+        if (peg == _target)
           Positioned(left: column * peg, width: column, top: base + 16, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             CampusIcon(CampusIcons.flag, size: 16, color: palette.onSurfaceVariant),
             const SizedBox(width: 4),
             Text('目标', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
-          ])),
+          ]))
+        else if (_hidden)
+          Positioned(left: column * peg, width: column, top: base + 16, child: Text('①②③'[peg], textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: palette.onSurfaceVariant))),
       ],
     ];
     for (var peg = 0; peg < hanoiPegs; peg++) {
@@ -214,7 +227,7 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
       children.add(Positioned(left: column * peg, width: column, top: 0, bottom: 0, child: Semantics(
         container: true,
         button: true,
-        label: '第${peg + 1}根柱子${peg == puzzle.target ? '，目标' : ''}，${stack.isEmpty ? '空' : '${stack.length}个盘子，最上面是${stack.last + 1}号'}${_lifted == peg ? '，已拿起' : ''}',
+        label: '第${peg + 1}根柱子${peg == _target ? '，目标' : ''}，${stack.isEmpty ? '空' : '${stack.length}个盘子，最上面是${stack.last + 1}号'}${_lifted == peg ? '，已拿起' : ''}',
         onTap: () => _tapPeg(peg),
         child: const SizedBox.expand(),
       )));

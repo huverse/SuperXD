@@ -227,11 +227,15 @@ class QueensRules extends PuzzleRules<QueensPuzzle, List<int>> {
     return true;
   }
 
-  // 难度分口径：以棋盘边长为主（要补的皇后与要排除的格都随边长涨），入门 5×5 记 1、专家 12×12 记 9，中间按边长线性取整
+  // 难易分口径：以棋盘边长为主（要补的皇后与要排除的格都随边长涨），入门 5×5 记 1、专家 12×12 记 9，中间按边长线性取整
   // （6、8、10 记 2、4、7）；求解器要试探的分支多于边长（光靠逐行逐列排除推不完、得反复试）再加 1。
   // 所以同档的题最多差 1 分，下一档最低不低于上一档最高：5×5 是 1–2，6×6 是 2–3，8×8 是 4–5，10×10 是 7–8，12×12 是 9–10。
+  // 预计用时：入门约 30 秒、专家约 6 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.333。
   @override
-  int difficulty(QueensPuzzle puzzle) {
+  int expectedSeconds(QueensPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 30, growth: 1.333);
+
+  @override
+  int complexity(QueensPuzzle puzzle) {
     final size = puzzle.size;
     final base = (1 + (size - 5) * 8 / 7).round();
     return (base + (queensSolve(puzzle).branches > size ? 1 : 0)).clamp(1, 10);

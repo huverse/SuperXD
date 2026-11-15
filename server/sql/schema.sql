@@ -229,6 +229,20 @@ CREATE TABLE IF NOT EXISTS challenge_best (
   KEY idx_ends (ends_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
+-- 预计用时的回调（见 src/modules/challenge/challenge_pace.ts）：每个游戏每周每档的过关次数，满 12 周删除；只是分析用的计数，不进备份。
+CREATE TABLE IF NOT EXISTS challenge_pace (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  game VARCHAR(24) NOT NULL,
+  week CHAR(10) NOT NULL COMMENT '业务时区的周一 YYYY-MM-DD',
+  bucket TINYINT NOT NULL,
+  count INT UNSIGNED NOT NULL,
+  create_time DATETIME(3) NOT NULL,
+  update_time DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_challenge_pace (game, week, bucket),
+  KEY idx_week (week)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
 -- 认领到应用账号的诊断包（人工决策见客户端 lib/domain/diagnostic_upload.dart）：只记认领过的，随包到期（30 天）、用户删除或注销账号删除。
 CREATE TABLE IF NOT EXISTS diagnostic_upload (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,

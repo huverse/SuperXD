@@ -17,9 +17,9 @@ class PlaygroundBest {
   final DateTime at;
 }
 
-// 游乐场的本机记录（设备级，切换教务账号保留）：每个游戏每档的最好成绩、每个游戏上次选的档、最近玩过的游戏。
+// 游乐场的本机记录（设备级，切换教务账号保留）：每个游戏每档的最好成绩、每个游戏上次选的档、最近玩过的游戏，与挑战那一局的笔记（自己记碎片用）。
 // 存在应用支持目录 playground/playground.json，先写临时文件再改名，写入排队；读到坏文件当没有记录。
-// 大小有上限：游戏数 × 五档的最好成绩，最近玩过最多 playgroundRecentLimit 个，不随玩的次数增长。
+// 大小有上限：游戏数 × 五档的最好成绩，最近玩过最多 playgroundRecentLimit 个，笔记只留最近一局、最多 playgroundNotesLimit 字，不随玩的次数增长。
 // 不排除出云备份：只有成绩，换机恢复了也无妨。
 class PlaygroundStore extends ChangeNotifier {
   PlaygroundStore(Future<File> Function() locate) : _locate = locate;
@@ -35,10 +35,15 @@ class PlaygroundStore extends ChangeNotifier {
   final _best = <String, Map<PuzzleTier, PlaygroundBest>>{};
   final _tiers = <String, PuzzleTier>{};
   final _recent = <String>[];
+  ({String runId, String text})? _notes;
   final _saveLock = Lock();
   late final Future<void> ready = _load();
 
   static const playgroundRecentLimit = 6;
+  static const playgroundNotesLimit = 2000;
+
+  // 这一局的笔记（换了一局就是空的）。
+  String notesOf(String runId) => _notes?.runId == runId ? _notes!.text : '';
 
   List<String> get recent => List.unmodifiable(_recent);
   PlaygroundBest? best(String gameId, PuzzleTier tier) => _best[gameId]?[tier];
@@ -79,6 +84,7 @@ class PlaygroundStore extends ChangeNotifier {
         }
       }
       if (json['recent'] case final List<Object?> recent) _recent.addAll(recent.whereType<String>().take(playgroundRecentLimit));
+      if (json['notes'] case {'runId': final String runId, 'text': final String text}) _notes = (runId: runId, text: text.length > playgroundNotesLimit ? text.substring(0, playgroundNotesLimit) : text);
     } catch (error, stack) {
       campusLog('[Playground] action=records_read errorType=${error.runtimeType}\n$stack');
     }
@@ -92,6 +98,13 @@ class PlaygroundStore extends ChangeNotifier {
       ..insert(0, gameId);
     if (_recent.length > playgroundRecentLimit) _recent.removeRange(playgroundRecentLimit, _recent.length);
     notifyListeners();
+    await _write();
+  }
+
+  // 记下这一局的笔记（只留最近一局，盖掉上一局的）。
+  Future<void> saveNotes(String runId, String text) async {
+    await ready;
+    _notes = (runId: runId, text: text.length > playgroundNotesLimit ? text.substring(0, playgroundNotesLimit) : text);
     await _write();
   }
 
@@ -125,6 +138,7 @@ class PlaygroundStore extends ChangeNotifier {
       },
       'tiers': {for (final MapEntry(:key, :value) in _tiers.entries) key: value.name},
       'recent': _recent,
+      if (_notes case final notes?) 'notes': {'runId': notes.runId, 'text': notes.text},
     }), flush: true);
     await pending.rename(file.path);
   });

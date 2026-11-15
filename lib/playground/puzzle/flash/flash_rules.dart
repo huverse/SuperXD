@@ -4,13 +4,15 @@ import 'package:superxd/playground/puzzle_rules.dart';
 // 一道题固定几轮，每轮全点对才进下一轮；点错一格这一次就作废，换这一轮的下一组图案重来。
 // 题面直接列出每轮的全部图案（主图案加备用），核对答案只要按规则重放，不用复现出题的随机过程。
 class FlashPuzzle {
-  const FlashPuzzle({required this.side, required this.showMillis, required this.rounds});
+  const FlashPuzzle({required this.side, required this.showMillis, required this.rounds, this.mirror = false});
   final int side;
   // 每组图案亮多久（毫秒）。
   final int showMillis;
   // rounds[第几轮][第几组] 是这一组亮的格（行优先下标、升序）：第一组是这一轮的图案，后面是点错后依次换上的备用，
   // 备用用完从第一组接着轮换。同一轮的几组亮的格数相同、互不相同。
   final List<List<List<int>>> rounds;
+  // 挑战里收碎片的关：碎片算出来要镜像时，亮的照常亮，要点的是左右镜像的格（人工决策见 challenge_rules.dart）；平时为假。
+  final bool mirror;
 }
 
 // 题面边长、每轮几组、亮的时长与答案长度的上限（解码是外部输入的边界）。
@@ -26,8 +28,16 @@ const flashMaxAttempts = 400;
 const flashRounds = 5;
 const flashPatternsPerRound = 6;
 
-// 第 round 轮第 attempt 次尝试（从 0 数，点错一次加一）要点的图案：备用用完从头轮换。
-List<int> flashPattern(FlashPuzzle puzzle, int round, int attempt) => puzzle.rounds[round][attempt % puzzle.rounds[round].length];
+// 第 round 轮第 attempt 次尝试（从 0 数，点错一次加一）亮的图案：备用用完从头轮换。
+List<int> flashShown(FlashPuzzle puzzle, int round, int attempt) => puzzle.rounds[round][attempt % puzzle.rounds[round].length];
+
+// 这一次要点的格：平时就是亮的那组，镜像时是它左右镜像的格（升序）。
+List<int> flashPattern(FlashPuzzle puzzle, int round, int attempt) {
+  final shown = flashShown(puzzle, round, attempt);
+  if (!puzzle.mirror) return shown;
+  final side = puzzle.side;
+  return [for (final cell in shown) cell ~/ side * side + side - 1 - cell % side]..sort();
+}
 
 // 一次尝试里点一格的结果：已点亮的格不响应（不算一下）；在图案里算点对，点齐这一组就过了这一轮；不在图案里算点错，这一次就此作废。
 enum FlashTap { repeated, hit, cleared, missed }
@@ -123,11 +133,16 @@ class FlashRules extends PuzzleRules<FlashPuzzle, List<List<int>>> {
   @override
   bool solved(FlashPuzzle puzzle, List<List<int>> answer) => flashMistakes(puzzle, answer) != null;
 
-  // 难度分：格数 ÷ 12（要扫的棋盘多大）加「每轮平均亮几格 × 1500 ÷ 亮的毫秒数」÷ 2.6（要记的格多少，亮得越短越难记），再取整。
+  // 难易分：格数 ÷ 12（要扫的棋盘多大）加「每轮平均亮几格 × 1500 ÷ 亮的毫秒数」÷ 2.6（要记的格多少，亮得越短越难记），再取整。
   // 按各档参数算：入门 2、简单 3、普通 5、困难 7、专家 9；同一档的参数相同所以分数相同，档与档之间往上走
   // （与点灯、汉诺塔入门约 2 分、专家七八分同一把尺子）。只看每轮的第一组：备用只在点错后才用到；各档都是 5 轮，轮数不进分数。
+  // 预计用时：每轮看亮的时长、每个亮格点一下约 1.1 秒、轮与轮之间约 2.5 秒，按轮累加，再按点错重来多两成。
   @override
-  int difficulty(FlashPuzzle puzzle) {
+  int expectedSeconds(FlashPuzzle puzzle) =>
+      (puzzle.rounds.fold(0.0, (sum, patterns) => sum + puzzle.showMillis / 1000 + patterns.first.length * 1.1 + 2.5) * 1.2).round();
+
+  @override
+  int complexity(FlashPuzzle puzzle) {
     final lit = puzzle.rounds.fold(0, (sum, patterns) => sum + patterns.first.length) / puzzle.rounds.length;
     return (puzzle.side * puzzle.side / 12 + lit * 1500 / puzzle.showMillis / 2.6).round().clamp(1, 10);
   }
@@ -138,6 +153,7 @@ class FlashRules extends PuzzleRules<FlashPuzzle, List<List<int>>> {
     'side': puzzle.side,
     'show': puzzle.showMillis,
     'rounds': [for (final patterns in puzzle.rounds) [for (final pattern in patterns) [...pattern]]],
+    if (puzzle.mirror) 'mirror': true,
   };
 
   // 解码校验：轮数与每轮组数在上限内；每组的格在棋盘内、严格升序（没有重格）、至少 1 格且不超过棋盘的一半；同一轮几组的格数相同、互不相同。
@@ -147,7 +163,9 @@ class FlashRules extends PuzzleRules<FlashPuzzle, List<List<int>>> {
     final show = puzzleInt(json, 'show', min: flashMinShowMillis, max: flashMaxShowMillis);
     final rounds = (json as Map)['rounds'];
     if (rounds is! List || rounds.isEmpty || rounds.length > flashMaxRounds) throw const FormatException('轮数不合法');
-    return FlashPuzzle(side: side, showMillis: show, rounds: [for (final patterns in rounds) _decodeRound(patterns, side)]);
+    final mirror = json['mirror'] ?? false;
+    if (mirror is! bool) throw const FormatException('镜像不合法');
+    return FlashPuzzle(side: side, showMillis: show, rounds: [for (final patterns in rounds) _decodeRound(patterns, side)], mirror: mirror);
   }
 
   static List<List<int>> _decodeRound(Object? json, int side) {

@@ -3,14 +3,19 @@ import 'package:superxd/playground/puzzle_rules.dart';
 // 冰面滑行：格子地图上有岩石，棋子朝一个方向滑出去，一直滑到撞上岩石或边界才停。
 // 要正好停在终点格上才算到达，只是滑过去不算；滑不动（紧挨着岩石或边界）只算原地，不算违规。
 class IcePuzzle {
-  const IcePuzzle({required this.width, required this.height, required this.rocks, required this.start, required this.goal});
+  const IcePuzzle({required this.width, required this.height, required this.rocks, required this.start, required this.goal, this.exits = const []});
   final int width;
   final int height;
   // 按行优先，true 是岩石。
   final List<bool> rocks;
   final int start;
   final int goal;
+  // 挑战里收碎片的关：棋盘上标 ①②③… 的几个出口（含终点），哪个是终点由碎片算出来（人工决策见 challenge_rules.dart），页面不标终点；平时为空。
+  final List<int> exits;
 }
+
+// 挑战里一道题最多标几个出口。
+const iceMaxExits = 4;
 
 // 方向编码 0 上、1 右、2 下、3 左（答案按它存，发出后不改）。
 const iceUp = 0, iceRight = 1, iceDown = 2, iceLeft = 3;
@@ -105,8 +110,12 @@ class IceRules extends PuzzleRules<IcePuzzle, List<int>> {
   @override
   bool solved(IcePuzzle puzzle, List<int> answer) => answer.length <= iceMaxMoves && iceReplay(puzzle, answer) == puzzle.goal;
 
+  // 预计用时：入门约 30 秒、专家约 3 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.33。
   @override
-  int difficulty(IcePuzzle puzzle) => iceDifficulty(iceMinMoves(puzzle) ?? 99, puzzle.width > puzzle.height ? puzzle.width : puzzle.height);
+  int expectedSeconds(IcePuzzle puzzle) => puzzlePace(complexity(puzzle), base: 25, growth: 1.33);
+
+  @override
+  int complexity(IcePuzzle puzzle) => iceDifficulty(iceMinMoves(puzzle) ?? 99, puzzle.width > puzzle.height ? puzzle.width : puzzle.height);
 
   @override
   Object encodePuzzle(IcePuzzle puzzle) => {
@@ -115,6 +124,7 @@ class IceRules extends PuzzleRules<IcePuzzle, List<int>> {
     'rocks': puzzle.rocks.map((rock) => rock ? '1' : '0').join(),
     'start': puzzle.start,
     'goal': puzzle.goal,
+    if (puzzle.exits.isNotEmpty) 'exits': [...puzzle.exits],
   };
 
   @override
@@ -126,7 +136,11 @@ class IceRules extends PuzzleRules<IcePuzzle, List<int>> {
     final rocks = [for (final char in text.split('')) char == '1'];
     final start = puzzleInt(json, 'start', min: 0, max: cells - 1), goal = puzzleInt(json, 'goal', min: 0, max: cells - 1);
     if (rocks[start] || rocks[goal] || start == goal) throw const FormatException('起点或终点不合法');
-    return IcePuzzle(width: width, height: height, rocks: rocks, start: start, goal: goal);
+    final exits = json['exits'] == null ? const <int>[] : puzzleInts(json['exits'], maxLength: iceMaxExits, min: 0, max: cells - 1);
+    if (exits.isNotEmpty && (exits.length < 2 || exits.toSet().length != exits.length || !exits.contains(goal) || exits.any((exit) => rocks[exit] || exit == start))) {
+      throw const FormatException('出口不合法');
+    }
+    return IcePuzzle(width: width, height: height, rocks: rocks, start: start, goal: goal, exits: exits);
   }
 
   // 每步一个方向（0 上、1 右、2 下、3 左），最长 iceMaxMoves 步。
@@ -137,6 +151,21 @@ class IceRules extends PuzzleRules<IcePuzzle, List<int>> {
   List<int> decodeAnswer(Object? json) => puzzleInts(json, maxLength: iceMaxMoves, min: 0, max: iceDirections - 1);
 }
 
-// 难度分 1–10：主要看最少步数（广度优先搜索的层数，也就是要往前想几步），地图边长做小幅加成（格多了要看的岩石多）。
+// 难易分 1–10：主要看最少步数（广度优先搜索的层数，也就是要往前想几步），地图边长做小幅加成（格多了要看的岩石多）。
 // 系数让相邻两档在区间端点上也拉开：入门 1–2、简单 3、普通 4–5、困难 6–7、专家 8–10（步数到 19 封顶）。
 int iceDifficulty(int least, int side) => (least * .42 + (side - 6) * .28 + .2).round().clamp(1, 10);
+
+// 挑战里收碎片的关要标的几个出口：终点之外再挑几个停得到、最少要 3 步以上的格，互相隔开两格以上（挨着的一眼看不出差别）；
+// 按种子挑、挑不够就少几个（至少 2 个才有得选）。返回包括终点在内、按格号排好的出口。
+List<int> iceExits(IcePuzzle puzzle, PuzzleRandom random, {int count = 3}) {
+  final steps = iceDistances(puzzle);
+  int apart(int left, int right) => (left ~/ puzzle.width - right ~/ puzzle.width).abs() + (left % puzzle.width - right % puzzle.width).abs();
+  final candidates = [for (var cell = 0; cell < steps.length; cell++) if ((steps[cell] ?? 0) >= 3 && cell != puzzle.goal && cell != puzzle.start) cell];
+  random.shuffle(candidates);
+  final exits = [puzzle.goal];
+  for (final cell in candidates) {
+    if (exits.length == count) break;
+    if (exits.every((exit) => apart(exit, cell) >= 2)) exits.add(cell);
+  }
+  return exits..sort();
+}

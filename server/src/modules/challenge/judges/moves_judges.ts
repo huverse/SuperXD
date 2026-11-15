@@ -53,6 +53,8 @@ export const iceJudge: Judge<IcePuzzle, number[]> = {
   decodePuzzle: (json) => {
     const width = puzzleInt(json, 'width', iceMinSide, iceMaxSide), height = puzzleInt(json, 'height', iceMinSide, iceMaxSide);
     const cells = width * height;
+    // 挑战里标的几个出口（exits）只给页面画，判定只看停没停在终点。
+    if (field(json, 'exits') !== undefined) puzzleInts(field(json, 'exits'), 4, 0, cells - 1);
     return { width, height, rocks: bitString(field(json, 'rocks'), cells), start: puzzleInt(json, 'start', 0, cells - 1), goal: puzzleInt(json, 'goal', 0, cells - 1) };
   },
   decodeAnswer: (json) => puzzleInts(json, iceMaxMoves, 0, 3),
@@ -115,7 +117,7 @@ export const queensJudge: Judge<QueensPuzzle, number[]> = {
 };
 
 // ---------- 推箱子 boxes ----------
-type BoxesPuzzle = { width: number; height: number; walls: boolean[]; goals: number[]; boxes: number[]; player: number };
+export type BoxesPuzzle = { width: number; height: number; walls: boolean[]; goals: number[]; boxes: number[]; player: number };
 const boxesMinSide = 3, boxesMaxSide = 16, boxesMaxBoxes = 5, boxesMaxMoves = 4096;
 
 const boxesNeighbor = (puzzle: BoxesPuzzle, cell: number, direction: number) => {
@@ -123,6 +125,25 @@ const boxesNeighbor = (puzzle: BoxesPuzzle, cell: number, direction: number) => 
   if (row < 0 || row >= puzzle.height || column < 0 || column >= puzzle.width) return null;
   const next = row * puzzle.width + column;
   return puzzle.walls[next] ? null : next;
+};
+
+// 推了几次（同重放的规则，撞墙、推不动的那步不算）：困难与专家档要和最少推数比。
+export const boxesPushes = (puzzle: BoxesPuzzle, answer: number[]) => {
+  const boxes = [...puzzle.boxes];
+  let player = puzzle.player, pushes = 0;
+  for (const direction of answer) {
+    const to = boxesNeighbor(puzzle, player, direction);
+    if (to === null) continue;
+    const box = boxes.indexOf(to);
+    if (box >= 0) {
+      const beyond = boxesNeighbor(puzzle, to, direction);
+      if (beyond === null || boxes.includes(beyond)) continue;
+      boxes[box] = beyond;
+      pushes++;
+    }
+    player = to;
+  }
+  return pushes;
 };
 
 export const boxesJudge: Judge<BoxesPuzzle, number[]> = {

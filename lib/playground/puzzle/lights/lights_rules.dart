@@ -150,11 +150,15 @@ class LightsRules extends PuzzleRules<LightsPuzzle, List<int>> {
     return lit != null && !lit.contains(false);
   }
 
-  // 难度分：格数（要盯住的灯有多少）加最少下数（要找出的那几格有多少），格数 ÷ 10 + 最少下数 ÷ 6 + 0.3 再取整。
+  // 难易分：格数（要盯住的灯有多少）加最少下数（要找出的那几格有多少），格数 ÷ 10 + 最少下数 ÷ 6 + 0.3 再取整。
   // 按各档的格数与下数区间算：入门 2、简单 3、普通 4–5、困难 6、专家 7–9，同档相近、档与档之间不重叠地往上走
   // （与汉诺塔、数织的入门约 2 分、专家七八分同一把尺子，挑战模式按它计分）。解不开的题面不会出、也解码不进来，按 10 分算。
+  // 预计用时：入门约 40 秒、专家约 5 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.414。
   @override
-  int difficulty(LightsPuzzle puzzle) {
+  int expectedSeconds(LightsPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 28, growth: 1.414);
+
+  @override
+  int complexity(LightsPuzzle puzzle) {
     final least = lightsSolve(puzzle)?.length;
     if (least == null) return 10;
     return (puzzle.side * puzzle.side / 10 + least / 6 + .3).round().clamp(1, 10);

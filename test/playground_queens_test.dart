@@ -75,7 +75,7 @@ void main() {
     });
 
     test('难度分：1–10，同档最多差 1 分，下一档最低不低于上一档最高，平均分逐档上升', () {
-      final scores = {for (final tier in PuzzleTier.values) tier: [for (var seed = 0; seed < 20; seed++) rules.difficulty(rules.generate(seed, tier).puzzle)]};
+      final scores = {for (final tier in PuzzleTier.values) tier: [for (var seed = 0; seed < 20; seed++) rules.complexity(rules.generate(seed, tier).puzzle)]};
       double average(List<int> values) => values.reduce((sum, value) => sum + value) / values.length;
       for (final (index, tier) in PuzzleTier.values.indexed) {
         final list = scores[tier]!;

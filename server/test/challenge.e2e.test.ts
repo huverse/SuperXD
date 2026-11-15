@@ -14,24 +14,24 @@ import { ChallengeService } from 'src/modules/challenge/challenge.service';
 import { PointsRetentionTask } from 'src/modules/points/points_retention.task';
 import { TestDevice } from './test_device';
 
-// 题库用双端判定向量里的题（向量带参考解，用例拿它交对的答案）：24 点的四张牌都能挖，八皇后挖锁定的行，数回挖有数字的格。
+// 题库用双端判定向量里的题（向量带参考解，用例拿它交对的答案）。碎片按题库写的：汉诺塔 3、冰面 6，所以门上的数是 9（相加）或 18（相乘），
+// 入门档的 24 点按 9 取余加 1 都是 1，向量里的 24 点（1 6 9 9）有一张 1 能写成 ?。
 type Case = { tier: string; puzzle: unknown; answers: { answer: unknown; expect: { kind: string } }[] };
 const vectors = JSON.parse(await readFile(new URL('./vectors/challenge_judge_v1.json', import.meta.url), 'utf8')) as { games: Record<string, Case[]> };
 const reference = new Map<string, unknown>();
 for (const cases of Object.values(vectors.games)) for (const item of cases) reference.set(JSON.stringify(item.puzzle), item.answers[0].answer);
 
-const slotsOf = (game: string, puzzle: Record<string, unknown>) => {
-  if (game === 'twentyfour') return (puzzle.numbers as number[]).map((value, at) => ({ at, value, key: value }));
-  if (game === 'queens') return (puzzle.given as number[]).flatMap((value, at) => (value >= 0 ? [{ at, value, key: value + 1 }] : []));
-  if (game === 'loop') return (puzzle.clues as number[]).flatMap((value, at) => (value >= 0 ? [{ at, value, key: value }] : []));
-  return [];
-};
+const fragments: Record<string, number> = { hanoi: 3, ice: 6, twentyfour: 25 };
+// 向量里入门档的两道汉诺塔一模一样，加试题要另一道：再放一道挪到第 2 根柱子的（参考解按经典走法写好）。
+const towerTwo = { disks: 3, start: [0, 0, 0], target: 1 };
+reference.set(JSON.stringify(towerTwo), [1, 2, 5, 1, 6, 7, 1]);
+const slotsOf = (game: string, puzzle: Record<string, unknown>) => (game === 'twentyfour' ? (puzzle.numbers as number[]).map((value, at) => ({ at, value })) : []);
 
 const directory = join(env().releasesDir, 'challenge');
-const games = ['hanoi', 'ice', 'twentyfour', 'queens', 'loop'];
-const config = (overrides: Record<string, unknown> = {}) => ({
+const games = ['hanoi', 'ice', 'twentyfour'];
+const config = (overrides: Record<string, unknown> = {}, scoring: Record<string, unknown> = {}) => ({
   version: 1,
-  scoring: { levelBase: 10, timeFloor: 0.4, errorDecay: 0.9, passWeight: 0.5, depthBonus: 0.05, clearBonus: 0.25, timeBonus: 0.2, maxErrors: 2 },
+  scoring: { levelBase: 10, parSlack: 1.5, gatePenalty: 20, extraRatio: 0.15, extraFloor: 30, maxExtras: 0, timeFloor: 0.4, errorDecay: 0.9, passWeight: 0.5, depthBonus: 0.05, clearBonus: 0.25, timeBonus: 0.2, maxErrors: 2, ...scoring },
   templates: {
     trio: {
       title: '三连环',
@@ -75,8 +75,9 @@ const signedIn = async () => {
   return { device, accountId };
 };
 
-type Level = { id: string; game: string; state: string; submissions: number; errors: number; key: number | null; teaser: string | null; puzzle: unknown; keyed: { from: string; at: number; key: number }[] };
-type Run = { runId: string; challengeId: string; state: string; deadline: number; levels: Level[]; result: { points: number; awarded: number; ending: string } | null };
+type Level = { id: string; game: string; state: string; submissions: number; errors: number; letter: string | null; gate: { op: string; value: number | null } | null; consume: { kind: string; at: number; modulus: number; offset: number } | null; extraOf: string | null; puzzle: unknown };
+type Run = { runId: string; challengeId: string; state: string; deadline: number; penaltySeconds: number; final: string; levels: Level[]; result: { points: number; awarded: number; ending: string } | null };
+type Answered = { correct: boolean; fragment: number | null; extra: string | null; run: Run };
 
 const list = (device: TestDevice, supported = games) => device.call('GET', `/v1/challenges?games=${supported.join(',')}`);
 const start = async (device: TestDevice) => {
@@ -92,7 +93,19 @@ const solve = async (device: TestDevice, run: Run, id: string) => {
   const response = await submit(device, run, id, reference.get(JSON.stringify(level(run, id).puzzle)));
   expect(response.status, JSON.stringify(response.body)).toBe(200);
   expect(response.body.correct).toBe(true);
-  return response.body as { correct: boolean; key: number | null; run: Run };
+  return response.body as Answered;
+};
+const gate = (device: TestDevice, run: Run, id: string, value: number) => device.call('POST', `/v1/challenge-runs/${run.runId}/gates/${id}`, { value });
+const final = (device: TestDevice, run: Run, value: number) => device.call('POST', `/v1/challenge-runs/${run.runId}/final`, { value });
+// 门上的数：a、b 的碎片按门上写的相加或相乘。
+const gateOf = (run: Run) => (level(run, 'c').gate!.op === 'product' ? fragments.hanoi * fragments.ice : fragments.hanoi + fragments.ice);
+// 走完一整局：过 a、b，开门，过 c，输终章。
+const clear = async (device: TestDevice, run: Run) => {
+  let current = (await solve(device, run, 'a')).run;
+  current = (await solve(device, current, 'b')).run;
+  current = (await gate(device, current, 'c', gateOf(current))).body.run as Run;
+  current = (await solve(device, current, 'c')).run;
+  return (await final(device, current, fragments.hanoi + fragments.ice + fragments.twentyfour)).body.run as Run;
 };
 
 beforeAll(async () => {
@@ -100,8 +113,10 @@ beforeAll(async () => {
   for (const game of games) {
     const entries = vectors.games[game]
       .filter((item) => item.tier === 'entry')
-      .map((item, index) => ({ id: `${game}.entry.${index}`, puzzle: item.puzzle, difficulty: 2, slots: slotsOf(game, item.puzzle as Record<string, unknown>) }));
-    await writeFile(join(directory, 'bank', `${game}.entry.json`), JSON.stringify({ version: 1, entries }));
+      .map((item) => item.puzzle)
+      .concat(game === 'hanoi' ? [towerTwo] : [])
+      .map((puzzle, index) => ({ id: `${game}.entry.${index}`, puzzle, expected: 60, difficulty: 4, fragment: fragments[game], minimum: null, slots: slotsOf(game, puzzle as Record<string, unknown>) }));
+    await writeFile(join(directory, 'bank', `${game}.entry.json`), JSON.stringify({ version: 2, entries }));
   }
   await writeConfig(config());
   app = await createRelayApp();
@@ -112,6 +127,7 @@ beforeAll(async () => {
 
 beforeEach(async () => {
   await app.get<Redis>(REDIS).flushdb();
+  await writeConfig(config());
 });
 
 afterAll(async () => {
@@ -131,27 +147,26 @@ describe('积分与挑战', () => {
     const { device } = await signedIn();
     const listed = await list(device);
     expect(listed.body.activeRun).toBeNull();
-    expect(listed.body.challenges).toEqual([expect.objectContaining({ title: '三连环', label: '入门', levels: 3, timeLimit: 600, best: null, playable: true })]);
+    expect(listed.body.challenges).toEqual([expect.objectContaining({ title: '三连环', label: '入门', levels: 3, tiers: ['entry', 'entry', 'entry'], edges: [[0, 2], [1, 2]], timeLimit: 600, best: null, playable: true })]);
     expect(listed.body.challenges[0].id).toMatch(/^weekly\.\d{4}-\d\d-\d\d\.trio$/);
     expect((await list(device, ['hanoi', 'ice'])).body.challenges[0].playable).toBe(false);
     expect((await device.call('POST', `/v1/challenges/${listed.body.challenges[0].id as string}/runs`, { games: ['hanoi', 'ice'] })).body.code).toBe('CHALLENGE_UNAVAILABLE');
     expect((await device.call('POST', '/v1/challenges/weekly.2020-01-06.trio/runs', { games })).body.code).toBe('CHALLENGE_NOT_FOUND');
   });
 
-  it('整局走完：错交计数、重发只算一次、钥匙齐了才解锁、全过结算并记积分', async () => {
+  it('整局走完：错交计数、重发只算一次、过关给一次碎片、碎片齐了到门前、门输错扣 20 秒、重做看碎片、终章输对才算全部过关并记积分', async () => {
     const { device } = await signedIn();
     const started = await start(device);
     expect(started.status).toBe(200);
     let run = started.body as Run;
-    expect(run.state).toBe('running');
-    expect(level(run, 'a')).toMatchObject({ game: 'hanoi', state: 'open', key: null, teaser: null });
-    expect(level(run, 'c')).toMatchObject({ game: 'twentyfour', state: 'locked', puzzle: null, keyed: [] });
-    // 预告挖掉两张牌（a、b 各一把钥匙）。
-    expect(level(run, 'c').teaser!.split('?').length - 1).toBe(2);
+    expect(run).toMatchObject({ state: 'running', final: 'locked', penaltySeconds: 0 });
+    expect(level(run, 'a')).toMatchObject({ game: 'hanoi', state: 'open', letter: 'A', gate: null, consume: null });
+    expect(level(run, 'c')).toMatchObject({ game: 'twentyfour', state: 'locked', letter: 'C', puzzle: null, consume: { kind: 'slot', modulus: 9, offset: 1 } });
+    expect(level(run, 'c').gate).toEqual({ op: expect.stringMatching(/^(sum|product)$/), value: null });
     expect((await submit(device, run, 'c', [])).body.code).toBe('LEVEL_LOCKED');
 
     const wrong = await submit(device, run, 'a', []);
-    expect(wrong.body).toMatchObject({ correct: false, key: null });
+    expect(wrong.body).toMatchObject({ correct: false, fragment: null, extra: null });
     // 回复丢了重发同一个号：回原来的结果，不再计数。
     const replay = await submit(device, run, 'a', [], 0);
     expect(replay.body.correct).toBe(false);
@@ -159,39 +174,80 @@ describe('积分与挑战', () => {
     run = wrong.body.run as Run;
 
     const first = await solve(device, run, 'a');
-    expect(first.key).not.toBeNull();
+    expect(first.fragment).toBe(fragments.hanoi);
     expect(level(first.run, 'c').state).toBe('locked');
-    const second = await solve(device, first.run, 'b');
-    const consumer = level(second.run, 'c');
-    expect(consumer.state).toBe('open');
-    expect(consumer.keyed.map((slot) => slot.from).sort()).toEqual(['a', 'b']);
-    expect(consumer.keyed.find((slot) => slot.from === 'a')!.key).toBe(first.key);
-    expect(consumer.keyed.find((slot) => slot.from === 'b')!.key).toBe(second.key);
-    expect(consumer.keyed.every((slot) => (consumer.puzzle as { numbers: number[] }).numbers[slot.at] === slot.key)).toBe(true);
+    // 碎片只在过关那次回复里给；过了的关还能拿到题面，重做一遍再看一次碎片（不计错交、不改进度）。
+    expect(JSON.stringify(first.run)).not.toContain('"fragment"');
+    const again = await solve(device, first.run, 'a');
+    expect(again.fragment).toBe(fragments.hanoi);
+    expect((await submit(device, again.run, 'a', [])).body).toMatchObject({ correct: false });
+    const second = await solve(device, (await device.call('GET', `/v1/challenge-runs/${run.runId}`)).body as Run, 'b');
+    expect(level(second.run, 'c').state).toBe('gated');
 
-    const last = await solve(device, second.run, 'c');
-    expect(last.run.state).toBe('settled');
-    expect(last.run.result).toMatchObject({ ending: 'cleared' });
-    const { points, awarded } = last.run.result!;
+    const deadline = second.run.deadline;
+    const missed = await gate(device, second.run, 'c', gateOf(second.run) + 1);
+    expect(missed.body).toMatchObject({ correct: false });
+    expect((missed.body.run as Run).penaltySeconds).toBe(20);
+    expect((missed.body.run as Run).deadline).toBe(deadline - 20_000);
+    expect(level(missed.body.run as Run, 'c').state).toBe('gated');
+    const opened = await gate(device, missed.body.run as Run, 'c', gateOf(second.run));
+    expect(opened.body.correct).toBe(true);
+    const consumer = level(opened.body.run as Run, 'c');
+    expect(consumer).toMatchObject({ state: 'open', gate: { value: gateOf(second.run) } });
+    // 门上的数 ÷ 9 余数 + 1 = 1：那一处就是题面里的 1。
+    expect((consumer.puzzle as { numbers: number[] }).numbers[consumer.consume!.at]).toBe(1);
+
+    const last = await solve(device, opened.body.run as Run, 'c');
+    expect(last.run).toMatchObject({ state: 'running', final: 'ready' });
+    expect((await final(device, last.run, 1)).body).toMatchObject({ correct: false, run: { penaltySeconds: 40 } });
+    const cleared = (await final(device, last.run, fragments.hanoi + fragments.ice + fragments.twentyfour)).body as { correct: boolean; run: Run };
+    expect(cleared.correct).toBe(true);
+    expect(cleared.run).toMatchObject({ state: 'settled', final: 'cleared', result: { ending: 'cleared' } });
+    const { points, awarded } = cleared.run.result!;
     expect(points).toBeGreaterThan(0);
     expect(awarded).toBe(points);
     expect((await device.call('POST', `/v1/challenge-runs/${run.runId}/levels/c/answers`, { attempt: 1, answer: [] })).body.code).toBe('RUN_OVER');
+    expect((await gate(device, cleared.run, 'c', 9)).body.code).toBe('RUN_OVER');
 
     const summary = await device.call('GET', '/v1/points');
     expect(summary.body).toMatchObject({ balance: awarded, expiring: 0, expiringAt: null });
     const entries = await device.call('GET', '/v1/points/entries');
     expect(entries.body.entries).toEqual([expect.objectContaining({ kind: 'earn', amount: awarded, note: '入门 · 三连环' })]);
-    expect(entries.body.next).toBeNull();
     expect((await list(device)).body.challenges[0].best).toBe(points);
+    // 每过一关记一次用时（分析用的计数，不等它写完）。
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    const paces = (await database.query('SELECT game, CAST(SUM(count) AS UNSIGNED) AS count FROM challenge_pace GROUP BY game ORDER BY game')) as { game: string; count: string | number }[];
+    expect(paces.map((row) => [row.game, Number(row.count)])).toEqual(expect.arrayContaining([['hanoi', expect.any(Number)], ['ice', expect.any(Number)], ['twentyfour', expect.any(Number)]]));
 
     // 再来一局只过一关就结束：成绩没超过最好成绩，不加积分。
-    const again = (await start(device)).body as Run;
-    const partial = await solve(device, again, 'a');
-    const ended = await device.call('POST', `/v1/challenge-runs/${again.runId}/end`);
+    const next = (await start(device)).body as Run;
+    const partial = await solve(device, next, 'a');
+    const ended = await device.call('POST', `/v1/challenge-runs/${next.runId}/end`);
     expect(ended.body.result).toMatchObject({ ending: 'ended', awarded: 0 });
     expect(ended.body.result.points).toBeLessThan(points);
     expect(partial.run.state).toBe('running');
     expect((await device.call('GET', '/v1/points')).body.balance).toBe(awarded);
+  });
+
+  it('解得快得不正常追加加试题：直接开着、同一个游戏，做完前终章开不了，做完才能输最终密码', async () => {
+    const { device } = await signedIn();
+    await writeConfig(config({}, { maxExtras: 1 }));
+    const run = (await start(device)).body as Run;
+    const first = await solve(device, run, 'a');
+    expect(first.extra).toBe('xa');
+    expect(level(first.run, 'xa')).toMatchObject({ game: 'hanoi', state: 'open', extraOf: 'a', letter: null });
+    // 一局最多 1 道：b 再快也不加。
+    let current = (await solve(device, first.run, 'b')).run;
+    expect(current.levels).toHaveLength(4);
+    current = (await gate(device, current, 'c', gateOf(current))).body.run as Run;
+    current = (await solve(device, current, 'c')).run;
+    expect(current.final).toBe('locked');
+    expect((await final(device, current, 34)).body.code).toBe('LEVEL_LOCKED');
+    const extra = await solve(device, current, 'xa');
+    expect(extra.fragment).toBeNull();
+    expect(extra.run.final).toBe('ready');
+    expect((await final(device, extra.run, 34)).body.run.result).toMatchObject({ ending: 'cleared' });
+    await writeConfig(config());
   });
 
   it('一个账号同时只有一局；错交到上限算没过，剩下的开不了就结算', async () => {
@@ -207,6 +263,7 @@ describe('积分与挑战', () => {
     expect((failed.body.run as Run).state).toBe('running');
     const stuck = await solve(device, failed.body.run as Run, 'b');
     expect(stuck.run.result).toMatchObject({ ending: 'stuck' });
+    expect(stuck.fragment).toBe(fragments.ice);
     expect((await start(device)).status).toBe(200);
   });
 
@@ -234,7 +291,7 @@ describe('积分与挑战', () => {
   it('注销应用账号连带删掉积分与挑战记录', async () => {
     const { device, accountId } = await signedIn();
     const run = (await start(device)).body as Run;
-    for (const id of ['a', 'b', 'c']) await solve(device, (await device.call('GET', `/v1/challenge-runs/${run.runId}`)).body as Run, id);
+    expect((await clear(device, run)).result).toMatchObject({ ending: 'cleared' });
     expect((await device.call('GET', '/v1/points')).body.balance).toBeGreaterThan(0);
     expect((await device.call('DELETE', '/v1/account')).status).toBe(204);
     for (const table of ['points_grant', 'points_entry', 'challenge_run', 'challenge_best']) {
@@ -260,8 +317,11 @@ describe('积分与挑战', () => {
     const run = (await start(device)).body as Run;
     await device.call('POST', `/v1/challenge-runs/${run.runId}/end`);
     await database.query('UPDATE challenge_run SET end_time = ? WHERE run_id = ?', [new Date(now - (challengeRunKeepDays + 1) * 86400_000), run.runId]);
+    // 满 12 周的用时计数一并删掉。
+    await database.query("INSERT INTO challenge_pace (game, week, bucket, count, create_time, update_time) VALUES ('hanoi', '2020-01-06', 0, 1, UTC_TIMESTAMP(3), UTC_TIMESTAMP(3)) ON DUPLICATE KEY UPDATE count = count");
     await app.get(ChallengeTasks).sweep(now);
     expect(await database.query('SELECT id FROM challenge_run WHERE run_id = ?', [run.runId])).toEqual([]);
+    expect(await database.query("SELECT id FROM challenge_pace WHERE week = '2020-01-06'")).toEqual([]);
   });
 
   it('要门票的挑战：积分不够不开也不扣；开局先扣快过期的，提前结束不退；等级按获得总数、花了不减', async () => {

@@ -1,32 +1,46 @@
 import { randomInt } from 'node:crypto';
 
-import { ChallengeScoring, ChallengeTemplate, ChallengeTier, consumerGames } from 'src/modules/challenge/challenge_config';
+import { answerFragmentGames, ChallengeScoring, ChallengeTemplate, ChallengeTier, consumerGames, optimalGames, optimalTiers } from 'src/modules/challenge/challenge_config';
 import { BankEntry } from 'src/modules/challenge/challenge_content';
 
-// 一局开始时排好的计划（人工决策见客户端 lib/playground/challenge/challenge_rules.dart 的钥匙填空）：每关是哪个游戏、哪道题；
-// 收钥匙的关挖掉哪几处条件、各由哪一关的钥匙补上；给钥匙的关的钥匙数。计划连同题面整份存进这一局（题库热更新换了文件也不影响进行中的局）。
+// 一局开始时排好的计划（人工决策见客户端 lib/playground/challenge/challenge_rules.dart 的 11-14 23:11 那条）：每关是哪个游戏、哪道题、
+// 过关给的碎片；收碎片的关前面的门（几关碎片相加或相乘）与门上的数改写这一关的哪一处。计划连同题面整份存进这一局（题库热更新也不影响进行中的局），
+// 中途追加的加试题也写进计划。
 
-// 收钥匙的关里挖掉的一处：from 是给这把钥匙的关，at 是位置，value 是题面里的真值，key 是给玩家看的钥匙数。
-export type PlanSlot = { from: string; at: number; value: number; key: number };
+// 门：门上的数 = inputs 几关碎片的和或积（只有一关就是那个碎片），开局时就算好（给碎片的关碎片都在题库里）。
+export type PlanGate = { op: 'sum' | 'product'; value: number };
+
+// 门上的数改写的那一处：slot 是补条件（题面里那一处写成 ?），goal 是改目标（汉诺塔的目标柱、冰面滑行的真出口、记忆闪光要不要镜像）；
+// at 是位置（slot 才有意义），值 = 门上的数 ÷ modulus 的余数 + offset（八皇后的列、汉诺塔的柱、冰面的出口都从 1 数）。
+export type PlanConsume = { kind: 'slot' | 'goal'; at: number; modulus: number; offset: number };
 
 export type PlanLevel = {
   id: string;
   game: string;
   tier: ChallengeTier;
+  // 题库里的预计用时（秒）与按真实过关用时回调后的预计用时、难度分（计分与参考用时用回调后的）。
+  baseExpected: number;
+  expected: number;
   difficulty: number;
   puzzle: unknown;
-  // 收哪几关的钥匙（边的顺序），没有为空。
+  // 收哪几关的碎片（边的顺序），没有为空。
   inputs: string[];
-  // 钥匙给哪一关，没有（最后一关）为 null。
+  // 碎片进哪一关的门，没有（最后一关、加试题）为 null。
   output: string | null;
-  // 这一关解开后给的钥匙数（output 不为空才有）。
-  key: number | null;
-  slots: PlanSlot[];
+  // 过关给的碎片与它的字母（A、B…，加试题没有）；碎片为 null 的（天平称球）按玩家的答案给。
+  fragment: number | null;
+  letter: string | null;
+  // 要用最少步数时的最少步数，不要求为 null。
+  minimum: number | null;
+  gate: PlanGate | null;
+  consume: PlanConsume | null;
   // 从源头数第几层（串联深度，计分用）。
   depth: number;
+  // 加试题是为哪一关加的，平常为 null。
+  extraOf: string | null;
 };
 
-export type ChallengePlan = { challengeId: string; title: string; label: string; timeLimit: number; endsAt: number; scoring: ChallengeScoring; levels: PlanLevel[] };
+export type ChallengePlan = { version: 2; challengeId: string; title: string; label: string; timeLimit: number; endsAt: number; scoring: ChallengeScoring; levels: PlanLevel[] };
 
 export class ChallengePlanError extends Error {}
 
@@ -36,13 +50,81 @@ const secureRandom: PlanRandom = (bound) => randomInt(bound);
 
 const pick = <T>(items: T[], random: PlanRandom) => items[random(items.length)];
 
-// 按模板排一局：拓扑序（先排给钥匙的关）逐关挑游戏与题。游戏只在客户端玩得了（supported）且题库里有这一档的里挑，尽量不重复；
-// 收钥匙的关只挑挖得出足够多处条件的题。挑不出来（配置与题库对不上、客户端太旧）抛 ChallengePlanError。
-export const planChallenge = async (
-  input: { challengeId: string; title: string; template: ChallengeTemplate; endsAt: number; scoring: ChallengeScoring; supported: Set<string>; allGames: Set<string> },
-  bank: (game: string, tier: ChallengeTier) => Promise<BankEntry[]>,
-  random: PlanRandom = secureRandom,
-): Promise<ChallengePlan> => {
+// 预计用时换难度分（同客户端 puzzle_rules.dart 的 puzzleDifficulty）：10 秒以内 1 分，往后每翻一倍加 1.4 分，夹在 1–10。
+export const puzzleDifficulty = (seconds: number) => (seconds <= 10 ? 1 : Math.min(10, Math.max(1, Math.round((1.4 * Math.log(seconds / 10)) / Math.LN2))));
+
+// 门上的数改写这一关的规矩：每个能收碎片的游戏、每档的 modulus 与 offset（值的范围要落在题库里常见的值上，否则挑不出对得上的题），
+// 以及这道题里哪几处能改成哪个值（candidates：at 与值）。改不了（冰面滑行没标出口）为 null。
+type ConsumeRule = { kind: 'slot' | 'goal'; modulus: number; offset: number; candidates: { at: number; value: number }[] };
+
+const consumeRuleOf = (game: string, tier: ChallengeTier, entry: BankEntry): ConsumeRule | null => {
+  const puzzle = entry.puzzle as Record<string, unknown>;
+  switch (game) {
+    case 'twentyfour': {
+      const modulus = tier === 'entry' ? 9 : tier === 'easy' ? 10 : 13;
+      return { kind: 'slot', modulus, offset: 1, candidates: entry.slots };
+    }
+    case 'queens':
+      return { kind: 'slot', modulus: puzzle.size as number, offset: 1, candidates: entry.slots.map((slot) => ({ at: slot.at, value: slot.value + 1 })) };
+    case 'loop':
+      return { kind: 'slot', modulus: 4, offset: 0, candidates: entry.slots };
+    case 'cipher':
+      return { kind: 'slot', modulus: 3, offset: 0, candidates: entry.slots };
+    case 'knights':
+      return { kind: 'slot', modulus: (puzzle.claims as unknown[]).length - 1, offset: 1, candidates: entry.slots };
+    case 'hanoi':
+      return { kind: 'goal', modulus: 3, offset: 1, candidates: [1, 2, 3].map((value) => ({ at: 0, value })) };
+    case 'ice':
+      return entry.exits.length < 2 ? null : { kind: 'goal', modulus: entry.exits.length, offset: 1, candidates: entry.exits.map((_, index) => ({ at: 0, value: index + 1 })) };
+    case 'flash':
+      return { kind: 'goal', modulus: 2, offset: 0, candidates: [0, 1].map((value) => ({ at: 0, value })) };
+    default:
+      return null;
+  }
+};
+
+// 按改目标的值改写题面（返回新题面、这一关的碎片、最少步数与题库预计用时）：汉诺塔把柱子轮换到目标柱是第 value 根（最少步数不变），
+// 冰面滑行把终点换成第 value 个出口（碎片、最少步数与预计用时都换成那个出口的），记忆闪光 value 为 1 时镜像。
+const applyGoal = (game: string, entry: BankEntry, value: number) => {
+  const puzzle = { ...(entry.puzzle as Record<string, unknown>) };
+  switch (game) {
+    case 'hanoi': {
+      const shift = (value - 1 - (puzzle.target as number) + 3) % 3;
+      puzzle.start = (puzzle.start as number[]).map((peg) => (peg + shift) % 3);
+      puzzle.target = value - 1;
+      return { puzzle, fragment: entry.fragment, minimum: entry.minimum, expected: entry.expected };
+    }
+    case 'ice': {
+      const exit = entry.exits[value - 1];
+      puzzle.goal = exit.cell;
+      puzzle.exits = entry.exits.map((item) => item.cell);
+      return { puzzle, fragment: exit.fragment, minimum: exit.minimum, expected: exit.expected };
+    }
+    default:
+      if (value === 1) puzzle.mirror = true;
+      return { puzzle, fragment: entry.fragment, minimum: entry.minimum, expected: entry.expected };
+  }
+};
+
+const valueOf = (gate: PlanGate, consume: { modulus: number; offset: number }) => (gate.value % consume.modulus) + consume.offset;
+
+type PlanInput = {
+  challengeId: string;
+  title: string;
+  template: ChallengeTemplate;
+  endsAt: number;
+  scoring: ChallengeScoring;
+  supported: Set<string>;
+  allGames: Set<string>;
+  // 这个游戏的预计用时按真实过关用时回调的倍数（见 challenge_pace.ts），没有数据时为 1。
+  pace: (game: string) => number;
+};
+
+type Bank = (game: string, tier: ChallengeTier) => Promise<BankEntry[]>;
+
+// 排一次：拓扑序（先排给碎片的关）逐关挑游戏与题。游戏只在客户端玩得了（supported）且题库里有这一档的里挑，尽量不重复；
+// 给碎片的关不放碎片要看答案的游戏；收碎片的关先算门上的数，只挑改得出那个值的题。挑不出来抛 ChallengePlanError。
+const planOnce = async (input: PlanInput, bank: Bank, random: PlanRandom): Promise<ChallengePlan> => {
   const { template } = input;
   const inputsOf = (id: string) => template.edges.filter(([, to]) => to === id).map(([from]) => from);
   const outputOf = (id: string) => template.edges.find(([from]) => from === id)?.[1] ?? null;
@@ -56,33 +138,62 @@ export const planChallenge = async (
   };
   const used = new Set<string>();
   const levels = new Map<string, PlanLevel>();
+  const letters = new Map(template.nodes.map((node, index) => [node.id, String.fromCharCode(65 + index)]));
   for (const node of [...template.nodes].sort((left, right) => depthOf(left.id) - depthOf(right.id))) {
     const inputs = inputsOf(node.id);
-    const pool = (node.games ?? [...(inputs.length > 0 ? consumerGames : input.allGames)]).filter((game) => input.supported.has(game));
-    const candidates: { game: string; entries: BankEntry[] }[] = [];
+    const output = outputOf(node.id);
+    let gate: PlanGate | null = null;
+    if (inputs.length > 0) {
+      const fragments = inputs.map((from) => levels.get(from)!.fragment!);
+      const op = inputs.length === 2 && random(2) === 0 ? 'product' : 'sum';
+      gate = { op, value: op === 'product' ? fragments.reduce((left, right) => left * right, 1) : fragments.reduce((left, right) => left + right, 0) };
+    }
+    const pool = (node.games ?? [...(inputs.length > 0 ? consumerGames : input.allGames)]).filter((game) => input.supported.has(game) && (output === null || !answerFragmentGames.has(game)));
+    const candidates: { game: string; entries: { entry: BankEntry; rule: ConsumeRule | null; at: number; value: number }[] }[] = [];
     for (const game of pool) {
-      const entries = (await bank(game, node.tier)).filter((entry) => entry.slots.length >= inputs.length);
-      if (entries.length > 0) candidates.push({ game, entries });
+      const choices = [];
+      for (const entry of await bank(game, node.tier)) {
+        if (gate === null) {
+          choices.push({ entry, rule: null, at: 0, value: 0 });
+          continue;
+        }
+        const rule = consumeRuleOf(game, node.tier, entry);
+        if (rule === null) continue;
+        const value = valueOf(gate, rule);
+        for (const candidate of rule.candidates) if (candidate.value === value) choices.push({ entry, rule, at: candidate.at, value });
+      }
+      if (choices.length > 0) candidates.push({ game, entries: choices });
     }
     if (candidates.length === 0) throw new ChallengePlanError(`${template.id} 的 ${node.id} 挑不出题`);
-    // 先挑这一局还没用过的；给钥匙的关再优先挑不收钥匙的游戏，把能收钥匙的几个留给收钥匙的关（它们只有三个，用掉了只能重复）。
+    // 先挑这一局还没用过的；不收碎片的关再优先挑不能收碎片的游戏，把能收碎片的留给收碎片的关。
     const fresh = candidates.filter((candidate) => !used.has(candidate.game));
     const plain = inputs.length === 0 ? fresh.filter((candidate) => !consumerGames.has(candidate.game)) : [];
     const chosen = pick(plain.length > 0 ? plain : fresh.length > 0 ? fresh : candidates, random);
     used.add(chosen.game);
-    const entry = pick(chosen.entries, random);
-    // 挖哪几处：从能挖的里不放回地随机挑，按边的顺序分给各个给钥匙的关。
-    const open = [...entry.slots];
-    const slots = inputs.map((from) => {
-      const slot = open.splice(random(open.length), 1)[0];
-      return { from, at: slot.at, value: slot.value, key: slot.key };
+    const { entry, rule, at, value } = pick(chosen.entries, random);
+    const goal = rule?.kind === 'goal' ? applyGoal(chosen.game, entry, value) : { puzzle: entry.puzzle, fragment: entry.fragment, minimum: entry.minimum, expected: entry.expected };
+    const expected = Math.max(1, Math.round(goal.expected * input.pace(chosen.game)));
+    levels.set(node.id, {
+      id: node.id,
+      game: chosen.game,
+      tier: node.tier,
+      baseExpected: goal.expected,
+      expected,
+      difficulty: puzzleDifficulty(expected),
+      puzzle: goal.puzzle,
+      inputs,
+      output,
+      fragment: goal.fragment,
+      letter: letters.get(node.id)!,
+      minimum: optimalGames.has(chosen.game) && optimalTiers.has(node.tier) ? goal.minimum : null,
+      gate,
+      consume: rule === null ? null : { kind: rule.kind, at, modulus: rule.modulus, offset: rule.offset },
+      depth: depthOf(node.id),
+      extraOf: null,
     });
-    levels.set(node.id, { id: node.id, game: chosen.game, tier: node.tier, difficulty: entry.difficulty, puzzle: entry.puzzle, inputs, output: outputOf(node.id), key: null, slots, depth: depthOf(node.id) });
-  }
-  for (const level of levels.values()) {
-    if (level.output !== null) level.key = levels.get(level.output)!.slots.find((slot) => slot.from === level.id)!.key;
   }
   return {
+    version: 2,
     challengeId: input.challengeId,
     title: input.title,
     label: template.label,
@@ -93,24 +204,44 @@ export const planChallenge = async (
   };
 };
 
-// 收钥匙的关解锁前给玩家看的预告：钥匙已经拿到的位置写钥匙数，还没拿到的写「?」，看得出钥匙填在哪、还差哪几关。题面结构见各游戏的 Dart 规则。
-export const teaserOf = (level: PlanLevel, solved: (levelId: string) => boolean) => {
-  if (level.slots.length === 0) return null;
-  const puzzle = level.puzzle as Record<string, unknown>;
-  const shown = (slot: PlanSlot) => (solved(slot.from) ? String(slot.key) : '?');
-  switch (level.game) {
-    case 'twentyfour':
-      return `四张牌：${(puzzle.numbers as number[]).map((number, index) => {
-        const slot = level.slots.find((item) => item.at === index);
-        return slot === undefined ? String(number) : shown(slot);
-      }).join(' ')}`;
-    case 'queens':
-      return `${String(puzzle.size)}×${String(puzzle.size)}，${level.slots.map((slot) => `第 ${slot.at + 1} 行的锁定皇后在第 ${shown(slot)} 列`).join('，')}`;
-    case 'loop': {
-      const width = puzzle.width as number;
-      return `${width}×${String(puzzle.height)}，${level.slots.map((slot) => `第 ${Math.trunc(slot.at / width) + 1} 行第 ${(slot.at % width) + 1} 格是 ${shown(slot)}`).join('，')}`;
-    }
-    default:
-      return null;
+// 按模板排一局：排几次，留预计总用时最接近限时一半多一点（planTarget）的那份，不超过限时的 planCeiling（一个人一次做一关，总用时就是各关之和）；
+// 都超了留最短的。挑不出来（配置与题库对不上、客户端太旧）抛 ChallengePlanError。
+const planTries = 12, planTarget = 0.55, planCeiling = 0.8;
+
+export const planChallenge = async (input: PlanInput, bank: Bank, random: PlanRandom = secureRandom): Promise<ChallengePlan> => {
+  const limit = input.template.timeLimit;
+  let best: { plan: ChallengePlan; miss: number } | null = null;
+  for (let attempt = 0; attempt < planTries; attempt++) {
+    const plan = await planOnce(input, bank, random);
+    const total = plan.levels.reduce((sum, level) => sum + level.expected, 0);
+    const miss = total > limit * planCeiling ? limit + total : Math.abs(total - limit * planTarget);
+    if (best === null || miss < best.miss) best = { plan, miss };
   }
+  return best!.plan;
+};
+
+// 加试题：同一个游戏、同一档里另挑一道（不改写、不给碎片、不收碎片），编号 xa、xb、xc。
+export const extraLevel = async (plan: ChallengePlan, of: PlanLevel, bank: Bank, pace: (game: string) => number, random: PlanRandom = secureRandom): Promise<PlanLevel | null> => {
+  const entries = (await bank(of.game, of.tier)).filter((entry) => JSON.stringify(entry.puzzle) !== JSON.stringify(of.puzzle));
+  if (entries.length === 0) return null;
+  const entry = pick(entries, random);
+  const expected = Math.max(1, Math.round(entry.expected * pace(of.game)));
+  return {
+    id: `x${String.fromCharCode(97 + plan.levels.filter((level) => level.extraOf !== null).length)}`,
+    game: of.game,
+    tier: of.tier,
+    baseExpected: entry.expected,
+    expected,
+    difficulty: puzzleDifficulty(expected),
+    puzzle: entry.puzzle,
+    inputs: [],
+    output: null,
+    fragment: null,
+    letter: null,
+    minimum: of.minimum === null ? null : entry.minimum,
+    gate: null,
+    consume: null,
+    depth: 0,
+    extraOf: of.id,
+  };
 };

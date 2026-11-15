@@ -35,6 +35,8 @@ export class ChallengeSummaryDto {
   @ApiProperty({ description: '名字，如「六连环」' }) title: string;
   @ApiProperty({ description: '档位名，如「入门」' }) label: string;
   @ApiProperty({ description: '关数' }) levels: number;
+  @ApiProperty({ description: '每一关的档位（模板里的顺序），首页画结构缩略图用', type: [String] }) tiers: string[];
+  @ApiProperty({ description: '边：给碎片的关与收碎片的关在 tiers 里的下标', type: 'array', items: { type: 'array', items: { type: 'integer' } } }) edges: number[][];
   @ApiProperty({ description: '限时，秒' }) timeLimit: number;
   @ApiProperty({ description: '开放到什么时候，毫秒' }) endsAt: number;
   @ApiProperty({ description: '这个账号在这个挑战上的最好成绩，没玩过为空', nullable: true }) best: number | null;
@@ -48,26 +50,37 @@ export class ChallengeListDto {
   @ApiProperty({ type: [ChallengeSummaryDto] }) challenges: ChallengeSummaryDto[];
 }
 
-export class ChallengeKeyedDto {
-  @ApiProperty({ description: '给钥匙的关' }) from: string;
-  @ApiProperty({ description: '位置（24 点第几张牌、八皇后第几行、数回第几格）' }) at: number;
-  @ApiProperty({ description: '钥匙数' }) key: number;
+// 门：门上的数 = inputs 几关碎片的和（sum）或积（product），只有一关就是那个碎片；开了才给门上的数。
+export class ChallengeGateDto {
+  @ApiProperty({ description: 'sum 相加、product 相乘' }) op: string;
+  @ApiProperty({ description: '开了以后门上的数（玩家输对的那个），没开为空', nullable: true }) value: number | null;
+}
+
+// 门上的数改写这一关的那一处：值 = 门上的数 ÷ modulus 的余数 + offset。
+export class ChallengeConsumeDto {
+  @ApiProperty({ description: 'slot 补条件（题面里那一处写成 ?）、goal 改目标（目标柱、真出口、镜像）' }) kind: string;
+  @ApiProperty({ description: '位置（slot：24 点第几张牌、八皇后第几行、数回第几格、密码破译第几行、骑士与无赖第几个人）' }) at: number;
+  @ApiProperty() modulus: number;
+  @ApiProperty() offset: number;
 }
 
 export class ChallengeLevelDto {
-  @ApiProperty({ description: '关卡 id' }) id: string;
+  @ApiProperty({ description: '关卡 id（加试题是 xa、xb…）' }) id: string;
   @ApiProperty({ description: '游戏 id' }) game: string;
   @ApiProperty({ description: '档位 entry、easy、normal、hard、expert' }) tier: string;
-  @ApiProperty({ description: '难度分 1–10' }) difficulty: number;
-  @ApiProperty({ description: '收哪几关的钥匙', type: [String] }) inputs: string[];
-  @ApiProperty({ description: '钥匙给哪一关，没有为空', nullable: true }) output: string | null;
-  @ApiProperty({ description: 'locked、open、solved、failed' }) state: string;
+  @ApiProperty({ description: '难度分 1–10（按预计用时取对数）' }) difficulty: number;
+  @ApiProperty({ description: '预计用时，秒' }) expected: number;
+  @ApiProperty({ description: '收哪几关的碎片', type: [String] }) inputs: string[];
+  @ApiProperty({ description: '碎片进哪一关的门，没有为空', nullable: true }) output: string | null;
+  @ApiProperty({ description: '这一关碎片的字母（A、B…），加试题为空', nullable: true }) letter: string | null;
+  @ApiProperty({ description: 'locked、gated（碎片齐了、门没开）、open、solved、failed' }) state: string;
   @ApiProperty({ description: '交过几次（下一次的 attempt）' }) submissions: number;
   @ApiProperty({ description: '错交次数' }) errors: number;
-  @ApiProperty({ description: '解开后给的钥匙数，没解开或不给钥匙为空', nullable: true }) key: number | null;
-  @ApiProperty({ description: '锁着时的预告（收钥匙的关，挖掉的写 ?），开了为空', nullable: true }) teaser: string | null;
-  @ApiProperty({ description: '题面，只在开着时给', nullable: true }) puzzle: unknown;
-  @ApiProperty({ description: '题面里哪几处来自钥匙（开着时给）', type: [ChallengeKeyedDto] }) keyed: ChallengeKeyedDto[];
+  @ApiProperty({ description: '要用最少步数时的最少步数，不要求为空', nullable: true }) minimum: number | null;
+  @ApiProperty({ type: ChallengeGateDto, nullable: true }) gate: ChallengeGateDto | null;
+  @ApiProperty({ type: ChallengeConsumeDto, nullable: true }) consume: ChallengeConsumeDto | null;
+  @ApiProperty({ description: '加试题是为哪一关加的，平常为空', nullable: true }) extraOf: string | null;
+  @ApiProperty({ description: '题面，开着或过了（可以重做看碎片）时给', nullable: true }) puzzle: unknown;
 }
 
 export class ChallengeResultDto {
@@ -86,12 +99,29 @@ export class ChallengeRunDto {
   @ApiProperty({ description: '到点时刻，毫秒（服务器计时，不暂停）' }) deadline: number;
   @ApiProperty({ description: '服务器时间，毫秒' }) serverTime: number;
   @ApiProperty({ description: 'running 进行中、settled 已结算' }) state: string;
+  @ApiProperty({ description: '门与终章输错扣的秒数合计（到点时刻已往前挪）' }) penaltySeconds: number;
+  @ApiProperty({ description: '终章：locked 还有关没过（含加试题）、ready 能输最终密码、cleared 输对了' }) final: string;
   @ApiProperty({ type: [ChallengeLevelDto] }) levels: ChallengeLevelDto[];
   @ApiProperty({ type: ChallengeResultDto, nullable: true }) result: ChallengeResultDto | null;
 }
 
 export class ChallengeAnswerDto {
   @ApiProperty({ description: '这次交的对不对（重发的号回原来的结果）' }) correct: boolean;
-  @ApiProperty({ description: '解开后给的钥匙数', nullable: true }) key: number | null;
+  @ApiProperty({ description: '解开后给的碎片（只在这次回复里给，局面里不再给），加试题为空', nullable: true }) fragment: number | null;
+  @ApiProperty({ description: '这一关解得快得不正常时追加的加试题，没有为空', nullable: true }) extra: string | null;
+  @ApiProperty({ type: ChallengeRunDto }) run: ChallengeRunDto;
+}
+
+export class ChallengeGateParamDto extends ChallengeRunParamDto {
+  @ApiProperty({ description: '门后面那一关的 id' }) @Matches(/^[a-p]$/) levelId: string;
+}
+
+// 门上的数或终章的最终密码。
+export class ChallengeGateBodyDto {
+  @ApiProperty({ description: '输入的数' }) @IsInt() @Min(0) @Max(99_999_999) value: number;
+}
+
+export class ChallengeGateResultDto {
+  @ApiProperty({ description: '对不对（错了扣时间）' }) correct: boolean;
   @ApiProperty({ type: ChallengeRunDto }) run: ChallengeRunDto;
 }

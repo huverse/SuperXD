@@ -291,12 +291,16 @@ class KnightsRules extends PuzzleRules<KnightsPuzzle, List<bool>> {
     return knightsMismatches(puzzle, knights).isEmpty;
   }
 
-  // 难度分口径：以人数为主，基础分 2 × 人数 − 3（2 人 1 分、3 人 3、4 人 5、5 人 7、6 人 9）；再看推理深度（knightsReasoning）：
+  // 难易分口径：以人数为主，基础分 2 × 人数 − 3（2 人 1 分、3 人 3、4 人 5、5 人 7、6 人 9）；再看推理深度（knightsReasoning）：
   // 只靠单句一路推就能全部定下的不加分，剩下要联合几句才定得下的人，每人记「联合的句数 − 1」作推理量，推理量达到人数的一半再加 1 分。
   // 所以同档的题最多差 1 分、下一档最低分高过上一档最高分：入门 1、简单 3（这两档的句式单句就能推完）、普通 5–6、困难 7–8、专家 9–10。
   // 不是唯一解的题面不会出、也解码不进来，按 10 分算。
+  // 预计用时：两人约 30 秒、六人约 6 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.326。
   @override
-  int difficulty(KnightsPuzzle puzzle) {
+  int expectedSeconds(KnightsPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 30, growth: 1.326);
+
+  @override
+  int complexity(KnightsPuzzle puzzle) {
     if (knightsSolutions(puzzle).length != 1) return 10;
     final reasoning = knightsReasoning(puzzle);
     return (2 * puzzle.people - 3 + (2 * reasoning.joined >= puzzle.people ? 1 : 0)).clamp(1, 10);

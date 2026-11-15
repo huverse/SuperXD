@@ -4,7 +4,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/playground/challenge/play_challenge.dart';
 
-// 一局挑战的控制器（人工决策见 challenge_rules.dart）：拿着服务器给的局面，交答案、刷新、提前结束，局面变了通知页面。
+// 一局挑战的控制器（人工决策见 challenge_rules.dart）：拿着服务器给的局面，交答案、开门、输终章、刷新、提前结束，局面变了通知页面。
 // 倒计时按服务器时刻算：每次收到局面记下服务器与本机的偏差，到点时刻换成本机钟；服务器计时不暂停，本机只负责显示。
 // 交答案的号码就是这一关交过几次（服务器给的）：没收到回复时用同一个号重交，服务器只算一次。
 class ChallengeRunController extends ChangeNotifier {
@@ -30,13 +30,9 @@ class ChallengeRunController extends ChangeNotifier {
     notifyListeners();
   }
 
-  // 关名「第 3 关」：按模板里的顺序数。
-  int numberOf(String levelId) => _run.levels.indexWhere((level) => level.id == levelId) + 1;
-  String nameOf(String levelId) => '第 ${numberOf(levelId)} 关';
-
   PlayChallenge challengeFor(String levelId) {
     final level = _run.level(levelId);
-    return PlayChallenge(level: level, name: nameOf(levelId), target: level.output == null ? null : nameOf(level.output!), deadline: deadline, submit: (answer) => submit(levelId, answer));
+    return PlayChallenge(level: level, name: challengeLevelName(level), deadline: deadline, submit: (answer) => submit(levelId, answer));
   }
 
   Future<PlayVerdict> submit(String levelId, Object? answer) async {
@@ -44,18 +40,34 @@ class ChallengeRunController extends ChangeNotifier {
     try {
       final verdict = await hub.answer(_run.runId, levelId, attempt, answer);
       _apply(verdict.run);
-      return PlayVerdict(correct: verdict.correct, key: verdict.key);
+      return PlayVerdict(correct: verdict.correct, fragment: verdict.fragment, extra: verdict.extra);
     } on ChallengeException catch (error) {
       if (error.run case final run?) _apply(run);
       switch (error.failure) {
         case ChallengeFailure.runOver:
           return const PlayVerdict(correct: false, over: true);
         case ChallengeFailure.levelLocked:
-          final level = _run.level(levelId);
-          return PlayVerdict(correct: level.state == ChallengeLevelState.solved, key: level.key, over: !_run.running);
+          return PlayVerdict(correct: false, over: !_run.running);
         default:
           rethrow;
       }
+    }
+  }
+
+  // 开门（levelId 是门后面那一关）或输终章的最终密码：对不对；错了服务器已扣时间，局面跟着更新。连不上抛 ChallengeException。
+  Future<bool> gate(String levelId, int value) => _enter(() => hub.gate(_run.runId, levelId, value));
+
+  Future<bool> finale(int value) => _enter(() => hub.finale(_run.runId, value));
+
+  Future<bool> _enter(Future<ChallengeEntry> Function() send) async {
+    try {
+      final entry = await send();
+      _apply(entry.run);
+      return entry.correct;
+    } on ChallengeException catch (error) {
+      if (error.run case final run?) _apply(run);
+      if (error.failure == ChallengeFailure.levelLocked || error.failure == ChallengeFailure.runOver) return false;
+      rethrow;
     }
   }
 

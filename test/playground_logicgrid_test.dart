@@ -272,7 +272,7 @@ void main() {
       final deep = <bool>{};
       for (final tier in PuzzleTier.values) {
         final puzzles = [for (var seed = 0; seed < 12; seed++) _rules.generate(seed, tier).puzzle];
-        final scores = [for (final puzzle in puzzles) _rules.difficulty(puzzle)];
+        final scores = [for (final puzzle in puzzles) _rules.complexity(puzzle)];
         // 口径：规模的基础分，要试探或传播轮数达到「人数 + 类数 − 2」再加 1。
         for (final (index, puzzle) in puzzles.indexed) {
           final reasoning = logicGridReasoning(puzzle);
@@ -289,7 +289,7 @@ void main() {
       }
       // 加分与不加分的题都出过。
       expect(deep, {true, false});
-      expect(_rules.difficulty(_seated([_clue(LogicGridClueKind.same, [(0, 0), (1, 0)])])), 10);
+      expect(_rules.complexity(_seated([_clue(LogicGridClueKind.same, [(0, 0), (1, 0)])])), 10);
     });
 
     test('按规则判：参考解通过；换两个人、重复的值、越界、形状不对都不算', () {

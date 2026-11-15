@@ -207,7 +207,7 @@ const Map<PuzzleTier, _Tier> _tiers = {
   PuzzleTier.expert: (balls: 2, blocks: 1, cup: (95, 115), span: (0, 0), grade: (25, 45), ink: (125, 140), switchback: true),
 };
 
-// 难度分里「墨水紧」的分界：墨水除以最远的球到杯口近侧内沿的直线距离，低于这一类的分界加 1 分（分界取各类出题的中位数附近）。
+// 难易分里「墨水紧」的分界：墨水除以最远的球到杯口近侧内沿的直线距离，低于这一类的分界加 1 分（分界取各类出题的中位数附近）。
 const _tight = [2.1, 1.8, 1.7, 1.45, 1.85];
 
 class PourRules extends PuzzleRules<PourPuzzle, List<List<int>>> {
@@ -236,10 +236,14 @@ class PourRules extends PuzzleRules<PourPuzzle, List<List<int>>> {
   @override
   bool solved(PourPuzzle puzzle, List<List<int>> answer) => pourAnswerValid(puzzle, answer) && pourSimulate(puzzle, answer) == PourOutcome.won;
 
-  // 难度分：先按结构分五类（单球没有障碍、单球一块、单球两块及以上、多球、多球且球在杯子正上方要折返），各占两分，
+  // 难易分：先按结构分五类（单球没有障碍、单球一块、单球两块及以上、多球、多球且球在杯子正上方要折返），各占两分，
   // 再看墨水：墨水比这一类的分界紧就加 1。同一档出的题结构相同，所以同档相差最多 1 分，档与档之间不重叠。
+  // 预计用时：一段直坡约 30 秒、挡板加折返约 2.5 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.2。
   @override
-  int difficulty(PourPuzzle puzzle) {
+  int expectedSeconds(PourPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 25, growth: 1.2);
+
+  @override
+  int complexity(PourPuzzle puzzle) {
     final cup = puzzle.cup;
     var reach = 0.0, above = false;
     for (var index = 0; index < puzzle.balls.length; index += 2) {

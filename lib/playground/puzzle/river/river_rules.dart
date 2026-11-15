@@ -242,7 +242,7 @@ List<RiverCrossing>? riverSolve(RiverPuzzle puzzle) {
   return (bits: expect(graph.start), states: states);
 }
 
-// 难度分 1–10：bits × 0.55 + log2(states) × 0.7 − 3.7，取整夹在 1–10（bits 已经按步数累加，步数多、每步岔路多都会抬高它）。
+// 难易分 1–10：bits × 0.55 + log2(states) × 0.7 − 3.7，取整夹在 1–10（bits 已经按步数累加，步数多、每步岔路多都会抬高它）。
 // 实测（每档的题型只差名字与站位，所以同档的分几乎一样）：
 // 农夫过河 7 次、6.2 比特、10 种局面 → 2；三大人两小孩船 2 人 7 次、8.1 比特 → 4；三大人三小孩 11 次、10.8 比特 → 5；
 // 三对父子船 2 人 11 次、11.4 比特、40 种局面 → 6；五大人五小孩船 3 人 11 次、13.4 比特 → 7；五对父子船 3 人 11 次、14.1 比特、184 种局面 → 9。
@@ -254,7 +254,7 @@ int riverDifficulty(RiverPuzzle puzzle) {
 class RiverRules extends PuzzleRules<RiverPuzzle, List<RiverCrossing>> {
   const RiverRules();
 
-  // 每档最少渡河次数的区间（含两端，实测）：入门 7；简单 7–11；普通、困难、专家都是 11。档与档单调不降，难度分逐档上升（见 riverDifficulty）。
+  // 每档最少渡河次数的区间（含两端，实测）：入门 7；简单 7–11；普通、困难、专家都是 11。档与档单调不降，难易分逐档上升（见 riverDifficulty）。
   // 困难与专家原定四大人四小孩、四对父子（船都是 3 人），实测最少只要 9 次、推理量也比简单、普通小（9.2、10.2 比特），
   // 档位会倒挂，所以各加一对：五大人五小孩、五对父子，最少 11 次、推理量明显更大。
   static const _least = {PuzzleTier.entry: (7, 7), PuzzleTier.easy: (7, 11), PuzzleTier.normal: (11, 11), PuzzleTier.hard: (11, 11), PuzzleTier.expert: (11, 11)};
@@ -305,8 +305,12 @@ class RiverRules extends PuzzleRules<RiverPuzzle, List<RiverCrossing>> {
   @override
   bool solved(RiverPuzzle puzzle, List<RiverCrossing> answer) => answer.length <= riverMaxCrossings && riverReplay(puzzle, answer)?.left == 0;
 
+  // 预计用时：入门约 1 分钟、专家约 6 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.29。
   @override
-  int difficulty(RiverPuzzle puzzle) => riverDifficulty(puzzle);
+  int expectedSeconds(RiverPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 46, growth: 1.29);
+
+  @override
+  int complexity(RiverPuzzle puzzle) => riverDifficulty(puzzle);
 
   // 每个人编成一个数：0 农夫、1 狼、2 羊、3 白菜、4 大人、5 小孩，第 f 家的爸爸 10 + 2f、孩子 11 + 2f（发出后不改）。
   static int _code(RiverPerson person) => switch (person.role) {

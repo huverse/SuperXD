@@ -196,7 +196,7 @@ void main() {
         final analysis = twentyFourAnalyze(numbers, twentyFourClassic);
         expect((analysis.solutions, analysis.plain, analysis.whole), (1, false, false), reason: '$numbers');
         expect(_rules.solved(_puzzle(numbers), analysis.sample!), isTrue, reason: '$numbers');
-        expect(_rules.difficulty(_puzzle(numbers)), 10, reason: '$numbers');
+        expect(_rules.complexity(_puzzle(numbers)), 10, reason: '$numbers');
       }
     });
 
@@ -234,12 +234,12 @@ void main() {
       final fives = twentyFourAnalyze([1, 1, 1, 5], twentyFourExtended);
       expect((fives.solutions, fives.plain, fives.whole), (1, false, false));
       expect(_rules.solved(_puzzle([1, 1, 1, 5], twentyFourExtended), fives.sample!), isTrue);
-      expect(_rules.difficulty(_puzzle([1, 1, 1, 5], twentyFourExtended)), 10);
+      expect(_rules.complexity(_puzzle([1, 1, 1, 5], twentyFourExtended)), 10);
       expect(twentyFourAnalyze([1, 1, 3, 3], twentyFourExtended).solutions, 1);
       // 困难档的题加上乘方与开方：仍要除法、有整数走法，难度分仍在 7–8。
       final halves = twentyFourAnalyze([1, 1, 6, 8], twentyFourExtended);
       expect((halves.plain, halves.whole), (false, true));
-      expect(_rules.difficulty(_puzzle([1, 1, 6, 8], twentyFourExtended)), inInclusiveRange(7, 8));
+      expect(_rules.complexity(_puzzle([1, 1, 6, 8], twentyFourExtended)), inInclusiveRange(7, 8));
     });
 
     test('1–13 的 1820 组数：困难档能出 183 组，加上乘方与开方经典四则不经过分数解不开的有 358 组，专家档只取解法不超过 2 种的 107 组（原来只靠分数的 16 组）', () {
@@ -299,7 +299,7 @@ void main() {
               expect(classic.whole, isFalse, reason: reason);
               expect(twentyFourAnalyze(numbers, twentyFourExtended).solutions, inInclusiveRange(1, twentyFourExpertSolutions), reason: reason);
           }
-          scores.add(_rules.difficulty(draw.puzzle));
+          scores.add(_rules.complexity(draw.puzzle));
         }
         timings[tier] = slowest;
         final lowest = scores.reduce(math.min), highest = scores.reduce(math.max);

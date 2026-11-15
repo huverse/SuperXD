@@ -2,6 +2,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:superxd/playground/challenge/challenge_rules.dart';
+import 'package:superxd/playground/puzzle/flash/flash_rules.dart';
+import 'package:superxd/playground/puzzle/ice/ice_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 
 // 挑战判定的双端测试向量（人工决策见 lib/playground/challenge/challenge_rules.dart）：每个能进挑战的游戏、每档出几道题，
@@ -102,9 +104,39 @@ Map<String, Object?> buildChallengeVectors({int seedsPerTier = 2, int seed = 0x5
         });
       }
     }
+    cases.addAll(_goalCases(game, rules));
     games[game] = cases;
   }
   return {'version': 1, 'games': games};
+}
+
+// 收碎片改目标的题面（人工决策见 challenge_rules.dart 的 11-14 23:11 那条）：记忆闪光镜像（照亮的点不算、点镜像的才算）、冰面滑行标了几个出口
+// （判定仍只看终点）。用自己的固定种子出，不动上面已有的向量。
+List<Map<String, Object?>> _goalCases(String game, PuzzleRules<Object?, Object?> rules) {
+  final draw = rules.generate(0x60A1, PuzzleTier.normal);
+  final Object? puzzle;
+  final List<Object?> answers;
+  switch (draw.puzzle) {
+    case final FlashPuzzle flash:
+      final mirrored = FlashPuzzle(side: flash.side, showMillis: flash.showMillis, rounds: flash.rounds, mirror: true);
+      puzzle = rules.encodePuzzle(mirrored);
+      answers = [
+        [for (var round = 0; round < flash.rounds.length; round++) flashPattern(mirrored, round, 0)],
+        rules.encodeAnswer(draw.solution),
+      ];
+    case final IcePuzzle ice:
+      puzzle = rules.encodePuzzle(IcePuzzle(width: ice.width, height: ice.height, rocks: ice.rocks, start: ice.start, goal: ice.goal, exits: iceExits(ice, PuzzleRandom(0x60A1))));
+      answers = [rules.encodeAnswer(draw.solution), <int>[]];
+    default:
+      return const [];
+  }
+  return [
+    {
+      'tier': PuzzleTier.normal.name,
+      'puzzle': puzzle,
+      'answers': [for (final answer in answers) {'answer': answer, 'expect': challengeVerdict(game, puzzle, answer)}],
+    },
+  ];
 }
 
 Future<void> main(List<String> arguments) async {

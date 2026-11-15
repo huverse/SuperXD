@@ -263,7 +263,8 @@ class BalanceRules extends PuzzleRules<BalancePuzzle, BalanceAnswer> {
   static const _tiers = {
     PuzzleTier.entry: (balls: 9, weighings: 2, knownHeavy: true, direction: false),
     PuzzleTier.easy: (balls: 9, weighings: 3, knownHeavy: false, direction: false),
-    PuzzleTier.normal: (balls: 12, weighings: 3, knownHeavy: false, direction: false),
+    // [人工决策-2026-11-15 10:54:57] 普通档改为 10 个球（用户选定）：按预计用时标尺量，12 个球比简单档长约 3 倍（95 秒到 303 秒），10 个球是 120 秒。
+    PuzzleTier.normal: (balls: 10, weighings: 3, knownHeavy: false, direction: false),
     PuzzleTier.hard: (balls: 12, weighings: 3, knownHeavy: false, direction: true),
     PuzzleTier.expert: (balls: 13, weighings: 3, knownHeavy: false, direction: false),
   };
@@ -285,12 +286,16 @@ class BalanceRules extends PuzzleRules<BalancePuzzle, BalanceAnswer> {
     return replay != null && balanceVerdict(puzzle, replay.suspects, answer.ball, answer.heavy) == BalanceVerdict.solved;
   }
 
-  // 难度分口径：整棵策略树的选择量（_treeBits）÷ 2 − 3.5，取整夹在 1–10。参数只由档定、种子不影响，所以同档同分。
+  // 难易分口径：整棵策略树的选择量（_treeBits）÷ 2 − 3.5，取整夹在 1–10。参数只由档定、种子不影响，所以同档同分。
   // 实测：入门 9 个已知偏重称 2 次 9.0 比特 → 1；简单 9 个称 3 次 12.7 → 3；普通 12 个称 3 次 22.9 → 8；
   // 困难 12 个称 3 次还要说轻重 24.9 → 9；专家 13 个称 3 次 26.8 → 10。普通以上三档都是一次 4 对 4 起手的满载题，推理量本来就接近，所以挤在高分段。
   // 解不开的题面（出题与解码都会拦下）按 10 分算。
+  // 预计用时：9 个球称 2 次约 1 分钟、13 个球还要说轻重约 8 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.26。
   @override
-  int difficulty(BalancePuzzle puzzle) {
+  int expectedSeconds(BalancePuzzle puzzle) => puzzlePace(complexity(puzzle), base: 60, growth: 1.26);
+
+  @override
+  int complexity(BalancePuzzle puzzle) {
     if (!balanceSolvable(puzzle)) return 10;
     final bits = _treeBits(_stateOf(puzzle, balanceStart(puzzle)), puzzle.weighings, puzzle.direction);
     return (bits / 2 - 3.5).round().clamp(1, 10);

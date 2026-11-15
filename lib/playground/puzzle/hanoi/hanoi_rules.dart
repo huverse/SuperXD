@@ -83,8 +83,16 @@ class HanoiRules extends PuzzleRules<HanoiPuzzle, List<HanoiMove>> {
   }
 
   // 最少步数的对数：经典 3 盘约 2 分、7 盘约 7 分。
+  // 预计用时：按最少步数，每步约 1.6 秒（点两下加看一眼），打乱的开局每步要多想、约 2.4 秒，另加 10 秒看题。
   @override
-  int difficulty(HanoiPuzzle puzzle) {
+  int expectedSeconds(HanoiPuzzle puzzle) {
+    final moves = hanoiMinMoves(puzzle.start, puzzle.target);
+    final classic = puzzle.start.every((peg) => peg == puzzle.start.first);
+    return (10 + moves * (classic ? 1.6 : 2.4)).round();
+  }
+
+  @override
+  int complexity(HanoiPuzzle puzzle) {
     final moves = hanoiMinMoves(puzzle.start, puzzle.target);
     return (math.log(moves + 1) / math.ln2 * 1.25 - 1.5).round().clamp(1, 10);
   }

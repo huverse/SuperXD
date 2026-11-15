@@ -209,8 +209,12 @@ class NonogramRules extends PuzzleRules<NonogramPuzzle, List<bool>> {
   }
 
   // 格数与推理轮数：5×5 约 2 分，15×15 约 7–9 分。
+  // 预计用时：5 见方约 40 秒、15 见方约 9 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.578。
   @override
-  int difficulty(NonogramPuzzle puzzle) {
+  int expectedSeconds(NonogramPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 35, growth: 1.578);
+
+  @override
+  int complexity(NonogramPuzzle puzzle) {
     final sweeps = nonogramLineSolve(puzzle) ?? 10;
     return (puzzle.width * puzzle.height / 40 + sweeps * .5).round().clamp(1, 10);
   }

@@ -91,7 +91,7 @@ BalanceWeighing _randomWeighing(PuzzleRandom random, int balls) {
 const _tiers = {
   PuzzleTier.entry: (9, 2, true, false),
   PuzzleTier.easy: (9, 3, false, false),
-  PuzzleTier.normal: (12, 3, false, false),
+  PuzzleTier.normal: (10, 3, false, false),
   PuzzleTier.hard: (12, 3, false, true),
   PuzzleTier.expert: (13, 3, false, false),
 };
@@ -165,14 +165,14 @@ void main() {
       for (final tier in PuzzleTier.values) {
         final watch = Stopwatch()..start();
         final draw = _rules.generate(0, tier);
-        _rules.difficulty(draw.puzzle);
+        _rules.complexity(draw.puzzle);
         // 以前的游戏单题最慢在 100ms 量级；这里按类数搜，冷启动也只要几毫秒，留足 CI 的余量。
         expect(watch.elapsedMilliseconds, lessThan(300), reason: '$tier');
       }
       final watch = Stopwatch()..start();
       for (final tier in PuzzleTier.values) {
         for (var seed = 0; seed < 20; seed++) {
-          _rules.difficulty(_rules.generate(seed, tier).puzzle);
+          _rules.complexity(_rules.generate(seed, tier).puzzle);
         }
       }
       expect(watch.elapsedMilliseconds, lessThan(1500));
@@ -384,12 +384,12 @@ void main() {
     });
 
     test('难度分：同档同分、逐档上升（1、3、8、9、10），解不开的按 10 分', () {
-      final expected = {PuzzleTier.entry: 1, PuzzleTier.easy: 3, PuzzleTier.normal: 8, PuzzleTier.hard: 9, PuzzleTier.expert: 10};
+      final expected = {PuzzleTier.entry: 1, PuzzleTier.easy: 3, PuzzleTier.normal: 4, PuzzleTier.hard: 9, PuzzleTier.expert: 10};
       for (final tier in PuzzleTier.values) {
-        final scores = {for (var seed = 0; seed < 20; seed++) _rules.difficulty(_rules.generate(seed, tier).puzzle)};
+        final scores = {for (var seed = 0; seed < 20; seed++) _rules.complexity(_rules.generate(seed, tier).puzzle)};
         expect(scores, {expected[tier]}, reason: '$tier');
       }
-      expect(_rules.difficulty(_puzzle(13, 3, direction: true)), 10);
+      expect(_rules.complexity(_puzzle(13, 3, direction: true)), 10);
     });
 
     test('编解码往返，坏输入抛 FormatException', () {

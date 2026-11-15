@@ -10,13 +10,15 @@ import { AccountDataHooks } from 'src/modules/account/account_data_hooks';
 import { ChallengeRepository, RunRow } from 'src/modules/challenge/challenge.repository';
 import { consumerGames } from 'src/modules/challenge/challenge_config';
 import { ChallengeContent } from 'src/modules/challenge/challenge_content';
-import { ChallengePlan, ChallengePlanError, planChallenge, teaserOf } from 'src/modules/challenge/challenge_plan';
-import { recordVerdict, runOutcome, RunProgress, scoreRun, startProgress } from 'src/modules/challenge/challenge_progress';
+import { ChallengePace } from 'src/modules/challenge/challenge_pace';
+import { ChallengePlan, ChallengePlanError, extraLevel, planChallenge } from 'src/modules/challenge/challenge_plan';
+import { addExtra, finalReady, openFinal, openGate, recordVerdict, runOutcome, RunProgress, scoreRun, spentOn, startProgress } from 'src/modules/challenge/challenge_progress';
 import { judge, judgedGames } from 'src/modules/challenge/judges/judges';
 import { PointsService } from 'src/modules/points/points.service';
 import * as dtos from 'src/modules/challenge/challenge.dto';
 
 // 挑战（人工决策见客户端 lib/playground/challenge/challenge_rules.dart）：服务器出题、逐关核对、计时（不暂停）与结算，全程联网。
+// 11-14 起关与关之间是碎片与门：过关给一次碎片，收碎片的关先开门（输错扣时间），全部过了输终章的最终密码才算全部过关；解得快得不正常追加加试题。
 // 一个账号同时只有一局；交答案、结算都在这一局的行锁里做；到点没交的局由 ChallengeTasks 定时结算，用户不回来也照样记分。
 // 结算只补超过这个挑战以前最好成绩的差额（11-12 用户选定），积分与最好成绩、这一局的结算在同一事务里写。
 // 有门票的挑战开局即扣（11-14 用户选「开局扣票不退」，见 points.service.ts）：扣积分与插入这一局同一事务，积分不够或没开成都不扣。
@@ -31,6 +33,7 @@ export class ChallengeService implements OnModuleInit {
     private readonly hooks: AccountDataHooks,
     private readonly points: PointsService,
     private readonly limiter: RateLimiter,
+    private readonly pace: ChallengePace,
   ) {}
 
   onModuleInit() {
@@ -51,6 +54,8 @@ export class ChallengeService implements OnModuleInit {
         title: challenge.title,
         label: challenge.template.label,
         levels: challenge.template.nodes.length,
+        tiers: challenge.template.nodes.map((node) => node.tier),
+        edges: challenge.template.edges.map(([from, to]) => [challenge.template.nodes.findIndex((node) => node.id === from), challenge.template.nodes.findIndex((node) => node.id === to)]),
         timeLimit: challenge.template.timeLimit,
         endsAt: challenge.end,
         best: best.get(challenge.id) ?? null,
@@ -77,7 +82,7 @@ export class ChallengeService implements OnModuleInit {
     let plan: ChallengePlan;
     try {
       plan = await planChallenge(
-        { challengeId, title: challenge.title, template: challenge.template, endsAt: challenge.end, scoring: config.scoring, supported: this.supported(games), allGames: judgedGames },
+        { challengeId, title: challenge.title, template: challenge.template, endsAt: challenge.end, scoring: config.scoring, supported: this.supported(games), allGames: judgedGames, pace: await this.pace.factors(now) },
         (game, tier) => this.content.bank(game, tier),
       );
     } catch (error) {
@@ -129,18 +134,66 @@ export class ChallengeService implements OnModuleInit {
       // 同一个号重发（上一次的回复丢了）：回那一次的结果，不再计数。
       if (attempt < state.submissions) {
         const correct = state.state === 'solved' && attempt === state.submissions - 1;
-        return { correct, key: correct ? level.key : null, run: this.viewOf(run, now) };
+        return { correct, fragment: correct ? state.fragment : null, extra: correct ? (plan.levels.find((item) => item.extraOf === levelId)?.id ?? null) : null, run: this.viewOf(run, now) };
       }
       if (!run.active) return new RelayError(RelayCode.runOver, HttpStatus.CONFLICT, '这一局已经结束', { run: this.viewOf(run, now) });
-      if (state.state !== 'open' || attempt !== state.submissions) return new RelayError(RelayCode.levelLocked, HttpStatus.CONFLICT, '这一关现在不能交', { run: this.viewOf(run, now) });
+      if ((state.state !== 'open' && state.state !== 'solved') || attempt !== state.submissions) return new RelayError(RelayCode.levelLocked, HttpStatus.CONFLICT, '这一关现在不能交', { run: this.viewOf(run, now) });
       const verdict = judge(level.game, level.puzzle, answer);
-      const solved = verdict.kind === 'solved';
-      recordVerdict(plan, progress, levelId, solved, solved ? verdict.penalties : 0, now);
-      this.logger.log(`[Challenge] action=answer runId=${runId} level=${levelId} game=${level.game} verdict=${verdict.kind}`);
-      const outcome = runOutcome(progress);
-      const updated = { ...run, progress: JSON.stringify(progress) };
-      const result = outcome === null ? await this.save(manager, updated, now) : await this.settle(manager, updated, outcome, now);
-      return { correct: solved, key: solved ? level.key : null, run: this.viewOf(result, now) };
+      const judged = verdict.kind === 'solved' ? { solved: true, penalties: verdict.penalties, steps: verdict.steps, answerFragment: verdict.answerFragment } : { solved: false, penalties: 0, steps: null, answerFragment: null };
+      const result = recordVerdict(plan, progress, levelId, judged, now);
+      let extra: string | null = null;
+      if (result.solved && !result.replay) {
+        const spent = spentOn(progress, levelId);
+        this.pace.record(level.game, spent, level.baseExpected, now);
+        // 快得不正常（不到预计用时的 extraRatio，也不到 extraFloor 秒）：追加一道同一游戏的加试题，做完才开终章。
+        const extras = plan.levels.filter((item) => item.extraOf !== null).length;
+        if (level.extraOf === null && extras < plan.scoring.maxExtras && spent < Math.min(level.expected * 1000 * plan.scoring.extraRatio, plan.scoring.extraFloor * 1000)) {
+          const added = await extraLevel(plan, level, (game, tier) => this.content.bank(game, tier), await this.pace.factors(now));
+          if (added !== null) {
+            addExtra(plan, progress, added, now);
+            extra = added.id;
+          }
+        }
+      }
+      this.logger.log(`[Challenge] action=answer runId=${runId} level=${levelId} game=${level.game} verdict=${verdict.kind} solved=${result.solved} replay=${result.replay} extra=${extra ?? ''}`);
+      const outcome = runOutcome(plan, progress);
+      const updated = { ...run, progress: JSON.stringify(progress), plan: extra === null ? run.plan : JSON.stringify(plan) };
+      const saved = outcome === null ? await this.save(manager, updated, now, extra !== null) : await this.settle(manager, updated, outcome, now);
+      return { correct: result.solved, fragment: result.fragment, extra, run: this.viewOf(saved, now) };
+    });
+  }
+
+  // 开门：碎片齐了、门上的数对了就开这一关；输错扣 gatePenalty 秒（到点时刻往前挪，不说哪个碎片错了）。
+  async gate(deviceId: string, runId: string, levelId: string, value: number): Promise<dtos.ChallengeGateResultDto> {
+    return this.enter(deviceId, runId, (plan, progress, now) => {
+      if (progress.levels[levelId]?.state !== 'gated') return null;
+      return openGate(plan, progress, levelId, value, now);
+    }, levelId);
+  }
+
+  // 终章：全部关（含加试题）都过了才能输；最终密码 = 全部碎片相加，输对就是全部过关、马上结算。
+  async final(deviceId: string, runId: string, value: number): Promise<dtos.ChallengeGateResultDto> {
+    return this.enter(deviceId, runId, (plan, progress) => (finalReady(plan, progress) ? openFinal(plan, progress, value) : null), 'final');
+  }
+
+  // 门与终章共用：锁住这一局，try 返回 null 是现在不能输（回 levelLocked 与现状），否则按对错存进度；输错把到点时刻往前挪。
+  private async enter(deviceId: string, runId: string, attempt: (plan: ChallengePlan, progress: RunProgress, now: number) => boolean | null, what: string): Promise<dtos.ChallengeGateResultDto> {
+    const accountId = await this.accountOf(deviceId);
+    return this.locked(runId, accountId, async (manager, found) => {
+      const now = Date.now();
+      const run = await this.settleIfDue(manager, found, now);
+      if (!run.active) return new RelayError(RelayCode.runOver, HttpStatus.CONFLICT, '这一局已经结束', { run: this.viewOf(run, now) });
+      const plan = JSON.parse(run.plan) as ChallengePlan;
+      const progress = JSON.parse(run.progress) as RunProgress;
+      const correct = attempt(plan, progress, now);
+      if (correct === null) return new RelayError(RelayCode.levelLocked, HttpStatus.CONFLICT, '现在不能输', { run: this.viewOf(run, now) });
+      const deadline = correct ? run.deadline : new Date(run.deadline.getTime() - plan.scoring.gatePenalty * 1000);
+      this.logger.log(`[Challenge] action=gate runId=${runId} gate=${what} correct=${correct}`);
+      const updated = { ...run, progress: JSON.stringify(progress), deadline };
+      if (!correct) await this.runs.updateRun(manager, run.runId, { progress: updated.progress, deadline }, new Date(now));
+      const outcome = runOutcome(plan, progress);
+      const saved = outcome !== null ? await this.settle(manager, updated, outcome, now) : correct ? await this.save(manager, updated, now, false) : await this.settleIfDue(manager, updated, now);
+      return { correct, run: this.viewOf(saved, now) };
     });
   }
 
@@ -176,8 +229,8 @@ export class ChallengeService implements OnModuleInit {
     return run.active && run.deadline.getTime() <= now ? this.settle(manager, run, 'timeout', now) : run;
   }
 
-  private async save(manager: EntityManager, run: RunRow, now: number) {
-    await this.runs.updateRun(manager, run.runId, { progress: run.progress }, new Date(now));
+  private async save(manager: EntityManager, run: RunRow, now: number, withPlan: boolean) {
+    await this.runs.updateRun(manager, run.runId, { progress: run.progress, plan: withPlan ? run.plan : undefined }, new Date(now));
     return run;
   }
 
@@ -185,7 +238,7 @@ export class ChallengeService implements OnModuleInit {
   private async settle(manager: EntityManager, run: RunRow, ending: string, now: number) {
     const plan = JSON.parse(run.plan) as ChallengePlan;
     const endAt = Math.min(now, run.deadline.getTime());
-    const score = scoreRun(plan, JSON.parse(run.progress) as RunProgress, endAt);
+    const score = scoreRun(plan, JSON.parse(run.progress) as RunProgress, endAt, run.deadline.getTime());
     const best = await this.runs.lockBest(manager, run.accountId, run.challengeId);
     const awarded = Math.max(0, score.points - best);
     if (awarded > 0) {
@@ -193,7 +246,7 @@ export class ChallengeService implements OnModuleInit {
       await this.runs.saveBest(manager, { accountId: run.accountId, challengeId: run.challengeId, points: score.points, runId: run.runId, endsAt: new Date(plan.endsAt) }, new Date(now));
     }
     const settled: RunRow = { ...run, active: false, ending, points: score.points, awarded, endTime: new Date(endAt) };
-    await this.runs.updateRun(manager, run.runId, { progress: run.progress, ending, points: score.points, awarded, endTime: settled.endTime, settle: true }, new Date(now));
+    await this.runs.updateRun(manager, run.runId, { progress: run.progress, plan: run.plan, ending, points: score.points, awarded, endTime: settled.endTime, settle: true }, new Date(now));
     this.logger.log(`[Challenge] action=settle runId=${run.runId} ending=${ending} points=${score.points} awarded=${awarded} passRate=${score.passRate.toFixed(2)}`);
     return settled;
   }
@@ -211,23 +264,29 @@ export class ChallengeService implements OnModuleInit {
       deadline: run.deadline.getTime(),
       serverTime: now,
       state: run.active ? 'running' : 'settled',
+      penaltySeconds: progress.penaltySeconds,
+      final: progress.cleared ? 'cleared' : finalReady(plan, progress) ? 'ready' : 'locked',
       levels: plan.levels.map((level) => {
         const state = progress.levels[level.id];
-        const open = state.state === 'open' && run.active;
+        const opened = state.state === 'open' || state.state === 'solved' || state.state === 'failed';
         return {
           id: level.id,
           game: level.game,
           tier: level.tier,
           difficulty: level.difficulty,
+          expected: level.expected,
           inputs: level.inputs,
           output: level.output,
+          letter: level.letter,
           state: state.state,
           submissions: state.submissions,
           errors: state.errors + state.penalties,
-          key: state.state === 'solved' ? level.key : null,
-          teaser: state.state === 'locked' ? teaserOf(level, (levelId) => progress.levels[levelId].state === 'solved') : null,
-          puzzle: open ? level.puzzle : null,
-          keyed: open ? level.slots.map((slot) => ({ from: slot.from, at: slot.at, key: slot.key })) : [],
+          minimum: level.minimum,
+          gate: level.gate === null ? null : { op: level.gate.op, value: opened ? level.gate.value : null },
+          consume: level.consume,
+          extraOf: level.extraOf,
+          // 碎片只在过关那次回复里给，局面里不给；题面开着或过了（重做看碎片）才给。
+          puzzle: run.active && (state.state === 'open' || state.state === 'solved') ? level.puzzle : null,
         };
       }),
       result: run.active ? null : { points: run.points ?? 0, awarded: run.awarded ?? 0, ending: run.ending ?? 'ended' },
