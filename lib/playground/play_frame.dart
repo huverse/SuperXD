@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -23,9 +24,11 @@ import 'package:superxd/theme/dot_separated_text.dart';
 class PlaySession<P, A> extends ChangeNotifier {
   PlaySession({required this.game, required this.rules, required this.store, int Function()? seeds, this.challenge})
     : _seeds = seeds ?? (() => math.Random().nextInt(1 << 32)),
+      _apart = seeds == null && challenge == null && game.challengeable,
       tier = challenge == null ? store.tierOf(game.id) : PuzzleTier.named(challenge.level.tier)! {
     if (challenge == null) {
       _draw(_seed = _seeds());
+      _prepare(tier);
     } else {
       // 题面在建 PlayChallenge 时已按这个游戏的规则解好（认不得的那一关挑战那一页就拦下了）。
       _puzzle = challenge!.puzzle as P;
@@ -37,6 +40,11 @@ class PlaySession<P, A> extends ChangeNotifier {
   final PlaygroundStore store;
   final PlayChallenge? challenge;
   final int Function() _seeds;
+  // 自由模式的下一道题先在另一个 isolate 里出好（专家档出一道要几十到上百毫秒，在界面线程出会卡一下）：每档最多备一道，种子先取好；
+  // 「换一道题」「再来一局」「换到下一档」时出好了就直接用，没出好就用同一个种子当场出（题一样）。只给能进挑战的游戏备：它们的规则是纯 Dart 整数运算，
+  // 在别的 isolate 里出题安全；画线入杯用 forge2d 的原生世界（全局的世界表不是线程安全的），舒尔特出题瞬间完成，都当场出。测试注入种子时也当场出（种子序列由测试定）。
+  final bool _apart;
+  final _upcoming = <PuzzleTier, _Upcoming<P, A>>{};
   PuzzleTier tier;
   late P _puzzle;
   A? _reference;
@@ -63,6 +71,18 @@ class PlaySession<P, A> extends ChangeNotifier {
     _puzzle = draw.puzzle;
     _reference = draw.solution;
   }
+
+  // 给这一档备下一道题（已经备着就不再备）。
+  void _prepare(PuzzleTier tier) {
+    if (!_apart || _upcoming.containsKey(tier)) return;
+    final upcoming = _upcoming[tier] = _Upcoming<P, A>(_seeds());
+    upcoming.done = _generateApart(rules, upcoming.seed, tier).then<void>((draw) => upcoming.draw = draw, onError: (Object error, StackTrace stack) => campusLog('[Playground] action=prefetch errorType=${error.runtimeType}\n$stack'));
+  }
+
+  // 测试用：这一档备着的下一道题出好时完成，没备为空。
+  @visibleForTesting
+  Future<void>? upcoming(PuzzleTier tier) => _upcoming[tier]?.done;
+
   bool get started => _watch.elapsedTicks > 0 || _watch.isRunning;
   Duration get elapsed => _watch.elapsed;
 
@@ -98,8 +118,16 @@ class PlaySession<P, A> extends ChangeNotifier {
       this.tier = tier;
       unawaited(store.chooseTier(game.id, tier).catchError((Object error, StackTrace stack) => campusLog('[Playground] action=tier_save errorType=${error.runtimeType}\n$stack')));
     }
-    _draw(_seed = _seeds());
+    final upcoming = _upcoming.remove(this.tier);
+    if (upcoming?.draw case final draw?) {
+      _seed = upcoming!.seed;
+      _puzzle = draw.puzzle;
+      _reference = draw.solution;
+    } else {
+      _draw(_seed = upcoming?.seed ?? _seeds());
+    }
     restart();
+    _prepare(this.tier);
   }
 
   // 结束但不记成绩（如扫雷踩雷）：停表、置为结束并通知对局页停走表，之后只能从头来或换一道题。
@@ -141,7 +169,11 @@ class PlaySession<P, A> extends ChangeNotifier {
     finished = true;
     notifyListeners();
     final challenge = this.challenge;
-    if (challenge == null) return store.finish(game.id, tier, millis: _watch.elapsedMilliseconds, moves: moves, at: DateTime.now());
+    if (challenge == null) {
+      // 结果弹层里有「换到下一档」：下一档也先备一道。
+      if (tier.index + 1 < PuzzleTier.values.length) _prepare(PuzzleTier.values[tier.index + 1]);
+      return store.finish(game.id, tier, millis: _watch.elapsedMilliseconds, moves: moves, at: DateTime.now());
+    }
     if (_passed case final passed?) {
       submission = Future.value(passed);
     } else {
@@ -154,6 +186,17 @@ class PlaySession<P, A> extends ChangeNotifier {
   // 完成时那份答案没交上（连不上服务器）：原样再交一次（号码不变，服务器只算一次）。
   void resubmit() => submission = challenge!.submit(_submitted);
 }
+
+// 备着的下一道题：种子先取好，另一个 isolate 出好后填上 draw。
+class _Upcoming<P, A> {
+  _Upcoming(this.seed);
+  final int seed;
+  PuzzleDraw<P, A>? draw;
+  late final Future<void> done;
+}
+
+// 在另一个 isolate 里出一道题：只把规则、种子与档位带过去（顶层函数，闭包里没有页面上的任何东西）。
+Future<PuzzleDraw<P, A>> _generateApart<P, A>(PuzzleRules<P, A> rules, int seed, PuzzleTier tier) => Isolate.run(() => rules.generate(seed, tier));
 
 // 用时写成 分:秒（一小时以上写 时:分:秒）；tenths 为真时写到 0.1 秒：不满一分钟写「12.3 秒」，满了在分:秒后面接「.3」（1:02.3）。
 // 都是向下取整（分:秒舍去不足一秒的，0.1 秒舍去不足 0.1 秒的），59.96 秒写「59.9 秒」而不是进成 60.0。
