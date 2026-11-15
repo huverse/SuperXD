@@ -4,13 +4,16 @@ import { LRUCache } from 'lru-cache';
 
 import { rateSubjectOf } from 'src/common/client_ip';
 import { RateLimiter } from 'src/common/redis/redis.module';
+import { base64url, decodeBase64url } from 'src/common/crypto/relay_crypto';
 import { AccountRepository } from 'src/modules/account/account.repository';
+import { DeviceRepository } from 'src/modules/device/device.repository';
 import { PointsService } from 'src/modules/points/points.service';
 import { RelayCode, RelayError } from 'src/common/relay_error';
 import { rewardCampaignCacheSeconds, rewardDrawPerDevicePerHour, rewardDrawPerHour, rewardAccountMinAgeDays } from 'src/common/relay_limits';
 import { RewardCampaignEntity } from 'src/modules/reward/reward.entity';
 import { RewardRepository } from 'src/modules/reward/reward.repository';
 import { RewardMode, rewardChance, rewardLevelWeight, rewardModes, rewardWeight } from 'src/modules/reward/reward_odds';
+import { sealRewardPrize } from 'src/modules/reward/reward_seal';
 import * as dtos from 'src/modules/reward/reward.dto';
 
 // 掷骰子：[0, 1) 上均匀，百万分之一精度（同 base_chance 的小数位）。单独成类，测试里可以替换。
@@ -33,6 +36,7 @@ export class RewardService {
     private readonly repository: RewardRepository,
     private readonly dice: RewardDice,
     private readonly accounts: AccountRepository,
+    private readonly devices: DeviceRepository,
     private readonly points: PointsService,
   ) {}
 
@@ -42,7 +46,7 @@ export class RewardService {
     if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '抽奖请求过于频繁', { retryAfter });
     const campaign = await this.campaign(campaignKey);
     const now = new Date();
-    if (campaign === null || now < campaign.startsAt || now >= campaign.endsAt) return { result: 'closed', prize: null };
+    if (campaign === null || now < campaign.startsAt || now >= campaign.endsAt) return { result: 'closed', sealed: null };
     const accountId = await this.accounts.accountOf(deviceId);
     if (accountId === null) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
     // 账号建立满 rewardAccountMinAgeDays 天才能抽（人工决策见 reward_odds.ts 的 11-15 那条）；不记这次，满了再来。
@@ -52,7 +56,7 @@ export class RewardService {
     // 按账号认人（11-15 起是自己的账号体系，没有学号可认，人工决策见 account.service.ts）。
     const participantHash = createHash('sha256').update(`SXD1-reward\naccount\n${accountId}`).digest('hex');
     const existing = await this.repository.findDraw(campaign.id, participantHash);
-    if (existing !== null) return present(existing.prize);
+    if (existing !== null) return this.present(existing.prize, campaignKey, deviceId);
     const mode = campaign.mode as RewardMode;
     if (!rewardModes.includes(mode)) throw new Error(`活动 ${campaignKey} 的模式 ${campaign.mode} 不认识`);
     // 等级只在加权模式里用（平权人人一样），按设备所在账号的积分算。
@@ -74,7 +78,16 @@ export class RewardService {
       now,
     });
     this.logger.log(`[Reward] action=draw campaign=${campaignKey} mode=${mode} activeDays=${body.activeDays} level=${level} chance=${chance.toFixed(4)} lucky=${lucky} won=${outcome.prize !== null}`);
-    return present(outcome.prize);
+    return this.present(outcome.prize, campaignKey, deviceId);
+  }
+
+  // 抽中的奖品只发给抽签的这台设备：用它登记的 box 公钥封装（信封见 reward_seal.ts），同一网络里的人截不走口令。
+  private async present(prize: { kind: string; content: string; note: string } | null, campaignKey: string, deviceId: string): Promise<dtos.RewardDrawDto> {
+    if (prize === null) return { result: 'missed', sealed: null };
+    const [keys] = await this.devices.keysOf([deviceId]);
+    const devicePublic = keys === undefined ? null : decodeBase64url(keys.boxPublicKey, 32);
+    if (devicePublic === null) throw new Error(`设备 ${deviceId} 没有可用的加密公钥`);
+    return { result: 'won', sealed: base64url(sealRewardPrize(prize, campaignKey, deviceId, devicePublic)) };
   }
 
   private async campaign(campaignKey: string): Promise<RewardCampaignEntity | null> {
@@ -86,5 +99,3 @@ export class RewardService {
   }
 }
 
-const present = (prize: { kind: string; content: string; note: string } | null): dtos.RewardDrawDto =>
-  prize === null ? { result: 'missed', prize: null } : { result: 'won', prize: { kind: prize.kind as dtos.RewardPrizeKind, content: prize.content, note: prize.note } };

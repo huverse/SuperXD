@@ -1,9 +1,11 @@
-import { createHash, createPublicKey, KeyObject, verify } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, KeyObject, verify } from 'node:crypto';
 
 // 协议 v1 的密码学约定，客户端 lib/social/social_crypto.dart 与此逐字节一致（双端共用 test/vectors 下的测试向量）。
 // 设备身份：Ed25519 签名公钥；设备号 = base64url(sha256(签名公钥) 前 16 字节)，22 个字符。
 
 const ed25519SpkiPrefix = Buffer.from('302a300506032b6570032100', 'hex');
+const x25519Pkcs8Prefix = Buffer.from('302e020100300506032b656e04220420', 'hex');
+const x25519SpkiPrefix = Buffer.from('302a300506032b656e032100', 'hex');
 
 export const base64url = (bytes: Uint8Array) => Buffer.from(bytes).toString('base64url');
 
@@ -21,6 +23,11 @@ export const sha256 = (bytes: Uint8Array) => createHash('sha256').update(bytes).
 export const deviceIdOf = (signPublicKey: Uint8Array) => base64url(sha256(signPublicKey).subarray(0, 16));
 
 export const ed25519Key = (raw: Uint8Array): KeyObject => createPublicKey({ key: Buffer.concat([ed25519SpkiPrefix, raw]), format: 'der', type: 'spki' });
+
+// X25519 的原始 32 字节私钥种子与公钥换成 Node 的 KeyObject（应用账号的信封与节日奖品的信封共用）。
+export const x25519PrivateKey = (seed: Uint8Array) => createPrivateKey({ key: Buffer.concat([x25519Pkcs8Prefix, seed]), format: 'der', type: 'pkcs8' });
+export const x25519PublicKey = (raw: Uint8Array): KeyObject => createPublicKey({ key: Buffer.concat([x25519SpkiPrefix, raw]), format: 'der', type: 'spki' });
+export const x25519PublicOf = (privateKey: KeyObject) => Buffer.from(createPublicKey(privateKey).export({ format: 'jwk' }).x!, 'base64url');
 
 export const verifyEd25519 = (key: KeyObject, message: Uint8Array, signature: Uint8Array) => signature.length === 64 && verify(null, message, key, signature);
 

@@ -1,0 +1,12 @@
+{
+  "note": "节日奖品的信封（服务端 src/modules/reward/reward_seal.ts，客户端 lib/social/relay_reward_client.dart 的 openRewardPrize）：合成数据，种子与随机数都是固定的递增字节",
+  "signSeed": "EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8",
+  "deviceSeed": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8",
+  "devicePublic": "eaYx7t4b-cmPEgMs3q3Q56B5OY_HhriMyEbsia-FpRo",
+  "ephemeralSeed": "gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8",
+  "nonce": "wMHCw8TFxsfIycrL",
+  "campaign": "spring-2027",
+  "deviceId": "CltnVJVCyaVe1qgLpcdkaw",
+  "plaintext": "{\"kind\":\"password\",\"content\":\"合成口令 88888888\",\"note\":\"合成附言\"}",
+  "sealed": "AUk-gvx0RkpZJogXYj0gU8XrjizEqYi0_uF57GsBDVMdwMHCw8TFxsfIycrLZ3Wp1LwGKKNmxLw-STDjxweYOkBAtK7ROkVdeoEEx0WwYz5tQwcglg8gisT2IAW7tRW-i33HIg-x_c6ZDrMFh7JczgSShVHmvIbL87PlGn59nPNTcQExvnVSlQ"
+}
