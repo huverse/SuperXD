@@ -238,7 +238,9 @@ void main() {
     expect(SocialSpaces.legacyDatabase, 'social.db');
     expect(SocialSpaces.accountFolder, 'social');
     for (final rules in [File('android/app/src/main/res/xml/backup_rules.xml').readAsStringSync(), extraction]) {
-      expect(rules, allOf(contains('<exclude domain="database" path="social.db" />'), contains('<exclude domain="database" path="social/" />')));
+      expect(rules, allOf(contains('<exclude domain="database" path="social.db" />'), contains('<exclude domain="root" path="databases/social/" />')));
+      // database 与 sharedpref 域只能写文件名，写子目录 release 包的 lint 直接报致命错误（CI 不打 release 包，11-14 漏进过 main），文件夹按 root 域写。
+      expect(RegExp(r'domain="(?:database|sharedpref)" path="[^"]*/').hasMatch(rules), isFalse);
     }
     expect(File('ios/Runner/AppDelegate.swift').readAsStringSync(), contains('DeviceOnlyData.claimKeychain()'));
   });
