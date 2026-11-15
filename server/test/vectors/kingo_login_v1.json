@@ -1,5 +1,5 @@
 {
-  "note": "教务登录参数的加密与签名：客户端 lib/edu 是参照实现，服务端 src/modules/kingo/kingo_codec.ts 与此逐字节一致；全部合成数据。",
+  "note": "教务登录参数的加密与签名：客户端 lib/edu 是参照实现（test/contract_test.dart 读这份）；11-15 以前服务端代登录教务也用同一算法，那份已随自有账号体系删除；全部合成数据。",
   "strEnc": [
     {
       "data": "x",

@@ -75,7 +75,7 @@ export const rolloutFileMaxBytes = 64 * 1024;
 
 // 节日抽奖（概率模型与要求设备签名的人工决策见 src/modules/reward/reward_odds.ts）：同一来源每小时 3000 次（校园网 NAT 共用出口，同代签取件的宽松档），
 // 每台设备每小时 10 次（一个应用账号一次活动只抽一次、重复请求返回同一结果，正常客户端只在没连上时补抽；按设备计数让刷请求的设备先被自己的额度挡住）；
-// 刷号的成本是注册限流 registerPerHour。活动行在进程内缓存 60 秒（建活动、改时间最迟一分钟生效）；活动结束 30 天后连同奖品与抽签记录删除。
+// 刷号的成本是应用账号的注册限流（accountRegisterPerSourcePerHour）与下面的账号年龄。活动行在进程内缓存 60 秒（建活动、改时间最迟一分钟生效）；活动结束 30 天后连同奖品与抽签记录删除。
 // 账号建立满 rewardAccountMinAgeDays 天才能抽（注册用户名谁都能建号，挡住批量新建的账号抽红包；人工决策见 reward_odds.ts）。
 export const rewardAccountMinAgeDays = 7;
 export const rewardDrawPerHour = 3000;
