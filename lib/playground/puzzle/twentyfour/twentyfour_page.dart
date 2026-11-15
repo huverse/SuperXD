@@ -47,11 +47,14 @@ const _spokenOps = {TwentyFourOp.add: '加', TwentyFourOp.subtract: '减', Twent
 // 一张卡：值、算出它的算式（开局的卡就是那个数）、算式的念法（读屏用）与算式最外层的优先级
 // （加减 1、乘除 2、乘方 3、开方 4、单个数 5，拼进更大的算式时决定加不加括号）。
 class _Card {
-  const _Card(this.value, this.expression, this.spoken, this.precedence);
-  _Card.number(int number) : value = TwentyFourValue(number), expression = '$number', spoken = '$number', precedence = 5;
+  const _Card(this.value, this.expression, this.spoken, this.precedence) : unknown = false;
+  _Card.number(int number) : value = TwentyFourValue(number), expression = '$number', spoken = '$number', precedence = 5, unknown = false;
+  // 挑战里碎片补条件的那张牌（人工决策见 challenge_rules.dart）：写成 ?，点了选一个数（玩家按门上的数自己算）才能用。
+  _Card.unknown() : value = TwentyFourValue(0), expression = '?', spoken = '问号', precedence = 5, unknown = true;
   final TwentyFourValue value;
   final String expression, spoken;
   final int precedence;
+  final bool unknown;
 
   // first op second 合成的新卡（开方时 second 就是 first）。乘方写成「底^指数」、开方写成「√里面」，底、指数与开方的里面不是单个数就加括号；
   // 其余的左边优先级低于这一步才加括号，右边同级时减、除也要加（a − (b − c) 不等于 a − b − c）。
@@ -126,7 +129,47 @@ class _TwentyFourPageState extends State<TwentyFourPage> with TickerProviderStat
   bool get _reduced => MediaQuery.disableAnimationsOf(context);
   Iterable<_Card> get _left => _cards.nonNulls;
 
-  List<_Card?> _deal() => [for (final number in _session.puzzle.numbers) _Card.number(number)];
+  // 补条件的那张牌选好的数（换题、从头来都留着）。
+  int? _chosen;
+
+  List<_Card?> _deal() => [
+    for (final (slot, number) in _session.puzzle.numbers.indexed)
+      slot != widget.challenge?.slot ? _Card.number(number) : _chosen == null ? _Card.unknown() : _Card.number(_chosen!),
+  ];
+
+  // 选 ? 那张牌的数：值的范围同门上的数改写的口径（余数加偏移）。选好后桌上与撤销记录里的 ? 都换成它。
+  Future<void> _choose(int slot) async {
+    final consume = widget.challenge!.level.consume!;
+    final values = [for (var value = consume.offset; value < consume.offset + consume.modulus; value++) value];
+    final picked = await showCampusSheet<int>(context: context, builder: (context) => CampusSheetPanel(child: Padding(
+      padding: const EdgeInsets.all(20),
+      child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+        Text('第 ${slot + 1} 张牌', style: Theme.of(context).textTheme.titleLarge),
+        const SizedBox(height: 16),
+        GridView.count(
+          crossAxisCount: 5,
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          mainAxisSpacing: 8,
+          crossAxisSpacing: 8,
+          childAspectRatio: 1.3,
+          children: [
+            for (final value in values) FilledButton.tonal(onPressed: () => Navigator.pop(context, value), child: Text('$value', style: const TextStyle(fontSize: 18, fontFeatures: [FontFeature.tabularFigures()]))),
+          ],
+        ),
+      ]),
+    )));
+    if (picked == null || !mounted) return;
+    playTick();
+    setState(() {
+      _chosen = picked;
+      _Card? fill(_Card? card) => card != null && card.unknown ? _Card.number(picked) : card;
+      _cards = [for (final card in _cards) fill(card)];
+      for (final (index, entry) in _history.indexed) {
+        _history[index] = (before: [for (final card in entry.before) fill(card)], step: entry.step);
+      }
+    });
+  }
 
   // 换题、从头来：先清自己的卡与动画，再交给 session。
   void _reset() {
@@ -155,6 +198,10 @@ class _TwentyFourPageState extends State<TwentyFourPage> with TickerProviderStat
   // 点卡：选着「开方」就开这一张；没有第一张就选它，点选着的那张是取消；已有第一张时，选了运算就合，没选运算就改选这一张。
   void _tapCard(int slot) {
     if (_session.finished || _cards[slot] == null) return;
+    if (_cards[slot]!.unknown) {
+      unawaited(_choose(slot));
+      return;
+    }
     final picked = _picked, op = _op;
     if (op != null && op.unary) return _apply(TwentyFourStep(slot, op, slot));
     if (picked != null && picked != slot && op != null) return _apply(TwentyFourStep(picked, op, slot));
@@ -363,7 +410,7 @@ class _TwentyFourPageState extends State<TwentyFourPage> with TickerProviderStat
                   button: true,
                   selected: _picked == slot,
                   excludeSemantics: true,
-                  label: '${twentyFourReading(card.value)}${wrong ? '，不是 24' : ''}',
+                  label: card.unknown ? '问号，选一个数' : '${twentyFourReading(card.value)}${wrong ? '，不是 24' : ''}',
                   onTap: finished ? null : () => _tapCard(slot),
                   child: GestureDetector(
                     behavior: HitTestBehavior.opaque,
@@ -374,7 +421,7 @@ class _TwentyFourPageState extends State<TwentyFourPage> with TickerProviderStat
                       setState(() => _pressed = null);
                       _tapCard(slot);
                     },
-                    child: _CardFace(value: card.value, picked: _picked == slot, pressed: _pressed == slot && !finished, wrong: wrong, glow: winning),
+                    child: _CardFace(value: card.value, unknown: card.unknown, picked: _picked == slot, pressed: _pressed == slot && !finished, wrong: wrong, glow: winning),
                   ),
                 ),
               ),
@@ -438,9 +485,9 @@ class _TwentyFourPageState extends State<TwentyFourPage> with TickerProviderStat
 // 卡面：圆角块，中间是数（分数上下叠着写）。点着的描激活色的边、底色换选中色；按着时变暗；剩一张不是 24 时描警示色的边；
 // 解开时 glow 从 0 到 1 铺上激活色、字换成激活色上的白字。
 class _CardFace extends StatelessWidget {
-  const _CardFace({required this.value, this.picked = false, this.pressed = false, this.wrong = false, this.glow = 0});
+  const _CardFace({required this.value, this.unknown = false, this.picked = false, this.pressed = false, this.wrong = false, this.glow = 0});
   final TwentyFourValue value;
-  final bool picked, pressed, wrong;
+  final bool unknown, picked, pressed, wrong;
   final double glow;
 
   @override
@@ -464,7 +511,9 @@ class _CardFace extends StatelessWidget {
       padding: const EdgeInsets.all(8),
       child: Center(child: FittedBox(
         fit: BoxFit.scaleDown,
-        child: value.whole
+        child: unknown
+            ? Text('?', style: big.copyWith(color: palette.onSurfaceVariant))
+            : value.whole
             ? Text('$sign${value.numerator.abs()}', style: big)
             : Row(mainAxisSize: MainAxisSize.min, children: [
                 if (sign.isNotEmpty) Text(sign, style: part),

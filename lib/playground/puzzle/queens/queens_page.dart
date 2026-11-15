@@ -78,7 +78,16 @@ class _QueensPageState extends State<QueensPage> with TickerProviderStateMixin {
   int get _size => _puzzle.size;
   bool get _still => MediaQuery.disableAnimationsOf(context);
 
-  Set<int> get _locked => {for (var row = 0; row < _size; row++) if (_puzzle.given[row] >= 0) row * _size + _puzzle.given[row]};
+  // 挑战里碎片补条件（人工决策见 challenge_rules.dart）：那一行的锁定皇后不画、不锁，玩家按门上的数自己放；本机判定也不看它，交了由服务器按原题核对。
+  QueensPuzzle get _shown => switch (widget.challenge?.slot) {
+    final row? => QueensPuzzle(size: _size, given: [..._puzzle.given]..[row] = -1),
+    null => _puzzle,
+  };
+
+  Set<int> get _locked {
+    final given = _shown.given;
+    return {for (var row = 0; row < _size; row++) if (given[row] >= 0) row * _size + given[row]};
+  }
   List<int> get _queens => [..._locked, ..._placed]..sort();
   // 答案：每行皇后所在的列（没放是 -1）。
   List<int> get _rows {
@@ -98,7 +107,7 @@ class _QueensPageState extends State<QueensPage> with TickerProviderStateMixin {
       if (answer[cell ~/ _size] >= 0) return false;
       answer[cell ~/ _size] = cell % _size;
     }
-    return _rules.solved(_puzzle, answer);
+    return _rules.solved(_shown, answer);
   }
 
   void _reset() {

@@ -7,8 +7,10 @@ import 'package:superxd/domain/unlock.dart';
 import 'package:superxd/playground/challenge/challenge_run.dart';
 import 'package:superxd/playground/challenge/challenge_run_page.dart';
 import 'package:superxd/playground/challenge/points_page.dart';
+import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/playground_store.dart';
+import 'package:superxd/playground/puzzle_rules.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -179,8 +181,8 @@ class _ChallengeHomeState extends State<ChallengeHome> {
         for (final challenge in catalog.challenges) ...[
           CampusSurface(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
             Row(children: [
-              CampusIcon(CampusIcons.challenge, size: 28, color: palette.primary),
-              const SizedBox(width: 20),
+              ChallengeShape(tiers: challenge.tiers, edges: challenge.edges),
+              const SizedBox(width: 16),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
                 Text('${challenge.label} · ${challenge.title}', style: Theme.of(context).textTheme.titleMedium),
                 const SizedBox(height: 2),
@@ -212,4 +214,73 @@ class _ChallengeHomeState extends State<ChallengeHome> {
       ]),
     );
   }
+}
+
+// 挑战卡上的结构缩略图（人工决策见 challenge_rules.dart 的 11-14 23:11 那条）：从左往右按串联深度排，每关一个档位色调的点，线是碎片进门的方向；
+// 一眼看出几关并联、在哪汇合、整体偏哪几档。
+class ChallengeShape extends StatelessWidget {
+  const ChallengeShape({super.key, required this.tiers, required this.edges});
+  final List<String> tiers;
+  final List<(int, int)> edges;
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    return Semantics(
+      label: '${tiers.length} 关',
+      child: CustomPaint(size: const Size(80, 56), painter: _ShapePainter(colors: [for (final tier in tiers) playTierColor(palette, PuzzleTier.named(tier) ?? PuzzleTier.entry)], edges: edges, line: palette.onSurfaceVariant.withValues(alpha: .45))),
+    );
+  }
+}
+
+class _ShapePainter extends CustomPainter {
+  _ShapePainter({required this.colors, required this.edges, required this.line});
+  final List<Color> colors;
+  final List<(int, int)> edges;
+  final Color line;
+
+  // 每关最多一条出边（关卡图是树）：按到终点的距离分列，终点在最右，给碎片的关紧挨着收它的那一关；
+  // 上下按整理树的排法：从终点往回走，不收碎片的关依次占一行，收碎片的关在它那几关的正中，连线不交叉；行多时点跟着缩小。
+  @override
+  void paint(Canvas canvas, Size size) {
+    final count = colors.length;
+    final target = List<int?>.filled(count, null);
+    for (final (from, to) in edges) {
+      if (from < count && to < count) target[from] = to;
+    }
+    final distance = List.filled(count, -1);
+    int distanceOf(int node) => distance[node] >= 0 ? distance[node] : distance[node] = target[node] == null ? 0 : 1 + distanceOf(target[node]!);
+    for (var node = 0; node < count; node++) {
+      distanceOf(node);
+    }
+    final layers = distance.reduce((left, right) => left > right ? left : right) + 1;
+    final row = List.filled(count, 0.0);
+    var rows = 0;
+    double place(int node) {
+      final inputs = [for (var other = 0; other < count; other++) if (target[other] == node) other];
+      if (inputs.isEmpty) return row[node] = (rows++).toDouble();
+      return row[node] = inputs.map(place).reduce((left, right) => left + right) / inputs.length;
+    }
+    for (var node = 0; node < count; node++) {
+      if (target[node] == null) place(node);
+    }
+    final pitch = rows <= 1 ? 0.0 : (size.height - 10) / (rows - 1);
+    final radius = rows <= 1 ? 4.5 : (pitch * .42).clamp(2.5, 4.5).toDouble();
+    final points = [
+      for (var node = 0; node < count; node++)
+        Offset(layers == 1 ? size.width / 2 : size.width - 5 - (size.width - 10) * distance[node] / (layers - 1), rows <= 1 ? size.height / 2 : 5 + pitch * row[node]),
+    ];
+    final stroke = Paint()
+      ..color = line
+      ..strokeWidth = 1.5;
+    for (final (from, to) in edges) {
+      if (from < count && to < count) canvas.drawLine(points[from], points[to], stroke);
+    }
+    for (var node = 0; node < count; node++) {
+      canvas.drawCircle(points[node], radius, Paint()..color = colors[node]);
+    }
+  }
+
+  @override
+  bool shouldRepaint(_ShapePainter oldDelegate) => oldDelegate.colors != colors || oldDelegate.edges != edges || oldDelegate.line != line;
 }

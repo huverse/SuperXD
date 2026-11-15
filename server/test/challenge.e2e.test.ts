@@ -147,7 +147,7 @@ describe('积分与挑战', () => {
     const { device } = await signedIn();
     const listed = await list(device);
     expect(listed.body.activeRun).toBeNull();
-    expect(listed.body.challenges).toEqual([expect.objectContaining({ title: '三连环', label: '入门', levels: 3, timeLimit: 600, best: null, playable: true })]);
+    expect(listed.body.challenges).toEqual([expect.objectContaining({ title: '三连环', label: '入门', levels: 3, tiers: ['entry', 'entry', 'entry'], edges: [[0, 2], [1, 2]], timeLimit: 600, best: null, playable: true })]);
     expect(listed.body.challenges[0].id).toMatch(/^weekly\.\d{4}-\d\d-\d\d\.trio$/);
     expect((await list(device, ['hanoi', 'ice'])).body.challenges[0].playable).toBe(false);
     expect((await device.call('POST', `/v1/challenges/${listed.body.challenges[0].id as string}/runs`, { games: ['hanoi', 'ice'] })).body.code).toBe('CHALLENGE_UNAVAILABLE');

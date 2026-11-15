@@ -87,6 +87,12 @@ class _LoopPageState extends State<LoopPage> with TickerProviderStateMixin {
   }
 
   LoopPuzzle get _puzzle => _session.puzzle;
+  // 挑战里碎片补条件（人工决策见 challenge_rules.dart）：那一格的数字写成 ?，本机判定与提示都不看它，交了由服务器按原题核对。
+  int? get _unknown => widget.challenge?.slot;
+  LoopPuzzle get _shown => switch (_unknown) {
+    final cell? => LoopPuzzle(width: _puzzle.width, height: _puzzle.height, clues: [..._puzzle.clues]..[cell] = -1),
+    null => _puzzle,
+  };
   LoopGrid get _grid => LoopGrid.of(_puzzle.width, _puzzle.height);
   bool get _still => MediaQuery.disableAnimationsOf(context);
   List<_Mark> _blank() => List.filled(LoopGrid.of(_session.puzzle.width, _session.puzzle.height).edgeCount, _Mark.none);
@@ -221,14 +227,15 @@ class _LoopPageState extends State<LoopPage> with TickerProviderStateMixin {
   // 一笔收完：解开就收尾；数字都对上了却还没解开，说一下差在哪（还有线头没接上，或分成了几个圈）。
   void _judge() {
     final lines = _lines;
-    if (_rules.solved(_puzzle, lines)) {
+    if (_rules.solved(_shown, lines)) {
       unawaited(_finish());
       return;
     }
     if (!lines.contains(true)) return;
     final counts = loopCounts(lines, _grid);
+    final clues = _shown.clues;
     for (var cell = 0; cell < counts.length; cell++) {
-      if (_puzzle.clues[cell] >= 0 && _puzzle.clues[cell] != counts[cell]) return;
+      if (clues[cell] >= 0 && clues[cell] != counts[cell]) return;
     }
     final grid = _grid;
     var open = false;
@@ -404,7 +411,8 @@ class _LoopPageState extends State<LoopPage> with TickerProviderStateMixin {
           onPointerCancel: _up,
           child: Stack(children: [
             Positioned.fill(child: AnimatedBuilder(animation: Listenable.merge([_reveal, _flash]), builder: (context, _) => CustomPaint(painter: _LoopPainter(
-              puzzle: _puzzle,
+              puzzle: _shown,
+              unknown: _unknown,
               grid: _grid,
               marks: _marks,
               counts: counts,
@@ -442,12 +450,12 @@ class _LoopPageState extends State<LoopPage> with TickerProviderStateMixin {
   }
 
   String _cellLabel(int cell, List<int> counts) {
-    final width = _puzzle.width, clue = _puzzle.clues[cell];
+    final width = _puzzle.width, clue = _shown.clues[cell];
     String sides(_Mark mark) => [for (var side = 0; side < 4; side++) if (_marks[_grid.cellEdges[cell * 4 + side]] == mark) _sideNames[side]].join('、');
     final lines = sides(_Mark.line), crosses = sides(_Mark.cross);
     return [
       '第${cell ~/ width + 1}行第${cell % width + 1}列',
-      if (clue < 0) '没有数字' else '数字$clue',
+      if (cell == _unknown) '数字是问号' else if (clue < 0) '没有数字' else '数字$clue',
       if (lines.isEmpty) '没有线' else '${counts[cell]}条线：$lines',
       // 同画面上数字标警示色：线比数字多。
       if (clue >= 0 && counts[cell] > clue) '多了${counts[cell] - clue}条',
@@ -469,11 +477,13 @@ class _DigitPainters {
   final normal = <TextPainter>[];
   final done = <TextPainter>[];
   final over = <TextPainter>[];
+  TextPainter? question;
 
   void dispose() {
-    for (final painter in [...normal, ...done, ...over]) {
+    for (final painter in [...normal, ...done, ...over, ?question]) {
       painter.dispose();
     }
+    question = null;
     normal.clear();
     done.clear();
     over.clear();
@@ -485,6 +495,7 @@ class _DigitPainters {
     _key = key;
     dispose();
     TextPainter make(int digit, Color color) => TextPainter(text: TextSpan(text: '$digit', style: style.copyWith(color: color)), textDirection: TextDirection.ltr, textScaler: scaler)..layout();
+    question = TextPainter(text: TextSpan(text: '?', style: style.copyWith(color: palette.onSurfaceVariant)), textDirection: TextDirection.ltr, textScaler: scaler)..layout();
     for (var digit = 0; digit <= 3; digit++) {
       normal.add(make(digit, palette.onSurface));
       done.add(make(digit, palette.onSurfaceVariant.withValues(alpha: .45)));
@@ -536,6 +547,7 @@ class _LoopLayout {
 class _LoopPainter extends CustomPainter {
   _LoopPainter({
     required this.puzzle,
+    required this.unknown,
     required this.grid,
     required this.marks,
     required this.counts,
@@ -552,6 +564,8 @@ class _LoopPainter extends CustomPainter {
   final List<int> counts;
   final _LoopLayout layout;
   final _DigitPainters digits;
+  // 写成 ? 的那一格（挑战里由碎片补上），平时为空。
+  final int? unknown;
   final CampusPalette palette;
   // reveal：解开后的过渡 0–1（线条从墨色过渡到激活色、叉淡出、圈里的格铺上淡激活色）；flash：被拦下那个点的警示圈进度。
   final double reveal, flash;
@@ -617,6 +631,9 @@ class _LoopPainter extends CustomPainter {
       ..color = Color.lerp(palette.onSurface.withValues(alpha: .9), palette.accent, reveal)!);
 
     // 数字：周围线数超过数字标警示色，正好时变淡（0 一开局就「正好」，不淡，免得一眼看过去像没有）。
+    if ((unknown, digits.question) case (final cell?, final question?)) {
+      question.paint(canvas, layout.cellRect(cell ~/ width, cell % width).center - Offset(question.width / 2, question.height / 2));
+    }
     for (var cell = 0; cell < grid.cellCount; cell++) {
       final clue = puzzle.clues[cell];
       if (clue < 0) continue;

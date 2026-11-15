@@ -21,8 +21,10 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 const _numbers = ['零', '一', '两', '三', '四', '五'];
 
 // 一行线索的提示说成口语，分成几段、只在段与段之间换行（窄屏时不把「位置」这类词拆到两行）。
-List<String> cipherHintPhrases(CipherRow row) {
+// hidden：挑战里碎片补条件，这一行「位置也对」的个数写成 ?（人工决策见 challenge_rules.dart）。
+List<String> cipherHintPhrases(CipherRow row, {bool hidden = false}) {
   final (exact, misplaced) = (row.exact, row.misplaced);
+  if (hidden) return ['? 个数字对且位置对，', misplaced == 0 ? '没有位置不对的' : '另有${_numbers[misplaced]}个数字对但位置不对'];
   return switch ((exact, misplaced)) {
     (0, 0) => ['没有一个数字对'],
     (_, 0) => ['${_numbers[exact]}个数字对，', exact > 1 ? '位置也都对' : '位置也对'],
@@ -31,7 +33,7 @@ List<String> cipherHintPhrases(CipherRow row) {
   };
 }
 
-String cipherHintText(CipherRow row) => cipherHintPhrases(row).join();
+String cipherHintText(CipherRow row, {bool hidden = false}) => cipherHintPhrases(row, hidden: hidden).join();
 
 // 玩家给数字做的记号（只是玩家自己的笔记，不自动推）：没做、不在密码里（排除）、在密码里（确定）。
 // 记号跟着数字走：点线索里任何一个 7，所有线索里的 7 与键盘上的 7 都换成同一个记号。
@@ -201,15 +203,17 @@ class _CipherPageState extends State<CipherPage> with TickerProviderStateMixin {
       unawaited(_finish());
       return;
     }
-    final conflicts = cipherConflicts(_puzzle, answer);
+    // 写成 ? 的那一行不标（玩家不知道它的真值）。
+    final conflicts = [for (final index in cipherConflicts(_puzzle, answer)) if (index != widget.challenge?.slot) index];
     setState(() {
       _wrongs++;
       _conflicts = conflicts.toSet();
     });
     playRejected();
-    showCampusToast(context, '还不对，标红的线索对不上');
+    showCampusToast(context, conflicts.isEmpty ? '还不对' : '还不对，标红的线索对不上');
     if (_still) return;
     unawaited(_shake.forward(from: 0));
+    if (conflicts.isEmpty) return;
     if (_rowKeys[conflicts.first].currentContext case final target? when target.mounted) _reveal(target);
   }
 
@@ -317,7 +321,7 @@ class _CipherPageState extends State<CipherPage> with TickerProviderStateMixin {
     final duration = _still ? Duration.zero : const Duration(milliseconds: 150);
     return Semantics(
       container: true,
-      label: '第 ${index + 1} 行线索：${row.guess.join(' ')}，${cipherHintText(row)}${conflict ? '，和你的答案对不上' : ''}',
+      label: '第 ${index + 1} 行线索：${row.guess.join(' ')}，${cipherHintText(row, hidden: index == widget.challenge?.slot)}${conflict ? '，和你的答案对不上' : ''}',
       child: Stack(children: [
         CampusSurface(
           radius: 20,
@@ -332,7 +336,7 @@ class _CipherPageState extends State<CipherPage> with TickerProviderStateMixin {
             ]),
             const SizedBox(height: 8),
             ExcludeSemantics(child: Wrap(children: [
-              for (final phrase in cipherHintPhrases(row)) Text(phrase, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, height: 1.4, color: palette.onSurface)),
+              for (final phrase in cipherHintPhrases(row, hidden: index == widget.challenge?.slot)) Text(phrase, style: TextStyle(fontSize: 15, fontWeight: FontWeight.w500, height: 1.4, color: palette.onSurface)),
             ])),
           ]),
         ),

@@ -290,24 +290,30 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver, Sing
               onPressed: () => _chooseTier(anchor),
               iconAlignment: IconAlignment.end,
               icon: const CampusIcon(CampusIcons.expand),
-              label: Text(session.tier.label),
+              label: Row(mainAxisSize: MainAxisSize.min, children: [PlayTierDot(session.tier), const SizedBox(width: 8), Text(session.tier.label)]),
             ))
-          else
+          else ...[
+            PlayTierDot(session.tier),
+            const SizedBox(width: 8),
             Text('${challenge.name} · ${session.tier.label}', style: Theme.of(context).textTheme.titleSmall),
+          ],
           const SizedBox(width: 12),
           Expanded(child: DotSeparatedText(status, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()]))),
         ])),
-        // 收钥匙的关：写明题面里哪几处是前面几关给的钥匙。
-        if (challenge != null && challenge.level.keyed.isNotEmpty)
-          Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 0), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            CampusIcon(CampusIcons.key, size: 18, color: palette.onSurfaceVariant),
-            const SizedBox(width: 8),
-            Expanded(child: DotSeparatedText(
-              '钥匙：${[for (final keyed in challenge.level.keyed) '${challengeSlotName(challenge.level.game, keyed.at, challenge.level.puzzle)}是 ${keyed.key}'].join('，')}',
-              style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant),
-              separator: '，',
-            )),
-          ])),
+        // 收碎片的关：写明被改写的那一处怎么算（玩家自己算）；要最少步数的写明几步。
+        if (challenge != null)
+          for (final (icon, line) in [
+            if (challengeConsumeText(challenge.level) case final consume?) (CampusIcons.key, consume),
+            if (challenge.level.minimum case final least?) (CampusIcons.flag, '最少 $least 步'),
+          ])
+            Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 0), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+              CampusIcon(icon, size: 18, color: palette.onSurfaceVariant),
+              const SizedBox(width: 8),
+              // 算式在「=」前后分两段：窄屏放不下一行时在等号处换行，不把「余数」拆开。
+              Expanded(child: Wrap(spacing: 6, children: [
+                for (final (index, part) in line.split(' = ').indexed) Text(index == 0 ? part : '= $part', style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
+              ])),
+            ])),
         Expanded(child: Padding(padding: const EdgeInsets.fromLTRB(16, 12, 16, 12), child: widget.board)),
         if (widget.controls.isNotEmpty)
           CampusToastAnchor(child: Padding(
@@ -338,6 +344,23 @@ class PlayBoardBox extends StatelessWidget {
     }
     return Center(child: SizedBox(width: width, height: height, child: builder(context, Size(width, height))));
   });
+}
+
+// 五档难度各一种色调（自由模式的档位、挑战卡与关卡图处处一样）：入门绿、简单青、普通蓝、困难橙、专家红，深色下提亮。
+// 只当辨认档位的小色块用，不用来写字或当按钮色（主色只留给按钮与图标）。
+Color playTierColor(CampusPalette palette, PuzzleTier tier) {
+  const hues = {PuzzleTier.entry: 145.0, PuzzleTier.easy: 185.0, PuzzleTier.normal: 215.0, PuzzleTier.hard: 28.0, PuzzleTier.expert: 355.0};
+  return HSLColor.fromAHSL(1, hues[tier]!, .62, palette.isDark ? .62 : .46).toColor();
+}
+
+// 档位前的小圆点。
+class PlayTierDot extends StatelessWidget {
+  const PlayTierDot(this.tier, {super.key, this.size = 10});
+  final PuzzleTier tier;
+  final double size;
+
+  @override
+  Widget build(BuildContext context) => SizedBox.square(dimension: size, child: DecoratedBox(decoration: BoxDecoration(color: playTierColor(CampusPalette.of(context), tier), shape: BoxShape.circle)));
 }
 
 // 所有游戏共用的触感（设计语言第 8 节）：落子、挪动用选择触感，违规用重震（同学习通签到码输错），解开用成功触感（见 showPlayResult）。

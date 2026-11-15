@@ -51,7 +51,7 @@ Future<PlayResultChoice> showPlayResult(BuildContext context, {required PlaySess
   return choice ?? PlayResultChoice.close;
 }
 
-// 挑战里的一关解开后：先在弹层里等服务器核对（原地写「正在核对」），过了写明拿到的钥匙交给哪一关；连不上可以原样再交；
+// 挑战里的一关解开后：先在弹层里等服务器核对（原地写「正在核对」），过了大字写出这一关的碎片（只这一次）；连不上可以原样再交；
 // 服务器说不对或这一局已经结束就照实写。关掉弹层即回到挑战那一页（这一关已经交完，不留在棋盘上）；等着时划掉弹层也一样，结果由挑战那一页接着收。
 Future<PlayResultChoice> _showLevelResult(BuildContext context, PlaySession<Object?, Object?> session, String? detail) async {
   final challenge = session.challenge!;
@@ -68,11 +68,7 @@ Future<PlayResultChoice> _showLevelResult(BuildContext context, PlaySession<Obje
         final (icon, title, line) = switch ((waiting, failed, verdict)) {
           (true, _, _) => (CampusIcons.sync, '正在交给服务器核对', '用时 ${playDuration(session.elapsed)}'),
           (_, true, _) => (CampusIcons.warning, '没交上', snapshot.error is ChallengeException ? (snapshot.error as ChallengeException).message : '连不上服务器'),
-          (_, _, PlayVerdict(correct: true, :final key)) => (
-            CampusIcons.success,
-            '${challenge.name}过了',
-            key == null || challenge.target == null ? '用时 ${playDuration(session.elapsed)}' : '拿到钥匙 $key，交给${challenge.target}',
-          ),
+          (_, _, PlayVerdict(correct: true)) => (CampusIcons.success, '${challenge.name}过了', '用时 ${playDuration(session.elapsed)}'),
           (_, _, PlayVerdict(over: true)) => (CampusIcons.timer, '这一局已经结束', '这一关没算上'),
           _ => (CampusIcons.warning, '服务器核对没通过', '可以回去重做这一关'),
         };
@@ -84,6 +80,16 @@ Future<PlayResultChoice> _showLevelResult(BuildContext context, PlaySession<Obje
           ]),
           const SizedBox(height: 8),
           DotSeparatedText([line, ?detail].join(' · '), style: secondary),
+          // 碎片只显示这一次（人工决策见 challenge_rules.dart）：大字写出来，要自己记下；快得不正常追加了加试题也在这里说。
+          if (verdict case PlayVerdict(correct: true, :final fragment?)) ...[
+            const SizedBox(height: 16),
+            Text('碎片 ${challenge.level.letter} = $fragment', style: TextStyle(fontSize: 32, fontWeight: FontWeight.w600, height: 1.2, color: palette.onSurface)),
+            Text(challengeFragmentName(challenge.level.game, challenge.level.puzzle), style: secondary),
+          ],
+          if (verdict case PlayVerdict(correct: true, extra: _?)) ...[
+            const SizedBox(height: 12),
+            Text('解得太快，加了一道加试题', style: secondary),
+          ],
           const SizedBox(height: 20),
           if (failed) ...[
             FilledButton.icon(style: campusProminent, onPressed: () => setState(session.resubmit), icon: const CampusIcon(CampusIcons.sync), label: const Text('重新交')),

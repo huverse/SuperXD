@@ -5,6 +5,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/playground/challenge/challenge_rules.dart';
 import 'package:superxd/playground/playground_catalog.dart';
+import 'package:superxd/playground/puzzle/cipher/cipher_rules.dart';
+import 'package:superxd/playground/puzzle/ice/ice_rules.dart';
 import 'package:superxd/playground/puzzle/loop/loop_rules.dart';
 import 'package:superxd/playground/puzzle/queens/queens_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
@@ -41,25 +43,28 @@ void main() {
       expect(challengeBankSeed('abcdefghijklmnop', 'ice', PuzzleTier.hard, 7), 0x57accfd3);
     });
 
-    test('每道题能解码、难度分在 1–10、编号不重复、同一题面只留一道', () {
-      for (final game in ['hanoi', 'ice', 'cipher', 'knights']) {
-        final entries = challengeBankEntries('local-test-seed-0001', game, PuzzleTier.normal, 5);
+    test('每道题能解码、难度分在 1–10、编号不重复、同一题面只留一道；带预计用时与碎片，高档要最少步数的带最少步数', () {
+      for (final game in ['hanoi', 'ice', 'cipher', 'knights', 'balance']) {
+        final entries = challengeBankEntries('local-test-seed-0001', game, PuzzleTier.hard, 5);
         expect(entries.map((entry) => entry['id']).toSet(), hasLength(entries.length));
         expect(entries.map((entry) => jsonEncode(entry['puzzle'])).toSet(), hasLength(entries.length));
         for (final entry in entries) {
-          challengeRules[game]!.decodePuzzle(jsonDecode(jsonEncode(entry['puzzle'])));
+          final puzzle = challengeRules[game]!.decodePuzzle(jsonDecode(jsonEncode(entry['puzzle'])));
           expect(entry['difficulty'], inInclusiveRange(1, 10));
-          expect(entry['slots'], isEmpty);
+          expect(entry['expected'], challengeRules[game]!.expectedSeconds(puzzle));
+          expect(entry['minimum'], game == 'hanoi' || game == 'ice' ? isA<int>() : isNull);
+          // 天平称球的球是玩家称出来的，碎片按答案给。
+          expect(entry['fragment'], game == 'balance' ? isNull : isA<int>());
+          expect(entry.containsKey('exits'), game == 'ice');
         }
       }
     });
 
-    test('收钥匙的游戏：记下的每一处挖掉都让题不唯一，值与钥匙数对得上题面', () {
+    test('收碎片的游戏：记下的每一处写成 ? 都做不出来，值对得上题面；冰面的出口里有原终点、每个出口带自己的最少步数', () {
       for (final entry in challengeBankEntries('local-test-seed-0001', 'queens', PuzzleTier.normal, 3)) {
         final puzzle = const QueensRules().decodePuzzle(entry['puzzle']);
         for (final slot in (entry['slots']! as List).cast<Map<String, int>>()) {
           expect(puzzle.given[slot['at']!], slot['value']);
-          expect(slot['key'], slot['value']! + 1);
           expect(queensSolve(QueensPuzzle(size: puzzle.size, given: [...puzzle.given]..[slot['at']!] = -1)).count, 2);
         }
       }
@@ -72,8 +77,24 @@ void main() {
           expect(loopSolve(LoopPuzzle(width: puzzle.width, height: puzzle.height, clues: [...puzzle.clues]..[slot['at']!] = -1)).count, 2);
         }
       }
+      for (final entry in challengeBankEntries('local-test-seed-0001', 'cipher', PuzzleTier.normal, 3)) {
+        final puzzle = const CipherRules().decodePuzzle(entry['puzzle']);
+        for (final slot in (entry['slots']! as List).cast<Map<String, int>>()) {
+          expect(puzzle.rows[slot['at']!].exact, slot['value']);
+        }
+      }
       final cards = challengeBankEntries('local-test-seed-0001', 'twentyfour', PuzzleTier.entry, 1).single;
       expect([for (final slot in (cards['slots']! as List).cast<Map<String, int>>()) slot['value']], (cards['puzzle']! as Map)['numbers']);
+      for (final entry in challengeBankEntries('local-test-seed-0001', 'ice', PuzzleTier.normal, 3)) {
+        final puzzle = const IceRules().decodePuzzle(entry['puzzle']);
+        final exits = (entry['exits']! as List).cast<Map<String, int>>();
+        expect(exits.map((exit) => exit['cell']), contains(puzzle.goal));
+        for (final exit in exits) {
+          final goal = IcePuzzle(width: puzzle.width, height: puzzle.height, rocks: puzzle.rocks, start: puzzle.start, goal: exit['cell']!);
+          expect(exit['minimum'], iceMinMoves(goal));
+          expect(exit['fragment'], exit['minimum']);
+        }
+      }
     });
   });
 }

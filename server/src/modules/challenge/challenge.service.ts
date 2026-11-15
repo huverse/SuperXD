@@ -54,6 +54,8 @@ export class ChallengeService implements OnModuleInit {
         title: challenge.title,
         label: challenge.template.label,
         levels: challenge.template.nodes.length,
+        tiers: challenge.template.nodes.map((node) => node.tier),
+        edges: challenge.template.edges.map(([from, to]) => [challenge.template.nodes.findIndex((node) => node.id === from), challenge.template.nodes.findIndex((node) => node.id === to)]),
         timeLimit: challenge.template.timeLimit,
         endsAt: challenge.end,
         best: best.get(challenge.id) ?? null,

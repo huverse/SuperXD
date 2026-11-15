@@ -35,6 +35,8 @@ export class ChallengeSummaryDto {
   @ApiProperty({ description: '名字，如「六连环」' }) title: string;
   @ApiProperty({ description: '档位名，如「入门」' }) label: string;
   @ApiProperty({ description: '关数' }) levels: number;
+  @ApiProperty({ description: '每一关的档位（模板里的顺序），首页画结构缩略图用', type: [String] }) tiers: string[];
+  @ApiProperty({ description: '边：给碎片的关与收碎片的关在 tiers 里的下标', type: 'array', items: { type: 'array', items: { type: 'integer' } } }) edges: number[][];
   @ApiProperty({ description: '限时，秒' }) timeLimit: number;
   @ApiProperty({ description: '开放到什么时候，毫秒' }) endsAt: number;
   @ApiProperty({ description: '这个账号在这个挑战上的最好成绩，没玩过为空', nullable: true }) best: number | null;

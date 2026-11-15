@@ -13,6 +13,17 @@ import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/gateway/account_access.dart';
+import 'package:superxd/playground/challenge/challenge_rules.dart';
+import 'package:superxd/playground/playground_game.dart';
+import 'package:superxd/playground/puzzle/balance/balance_rules.dart';
+import 'package:superxd/playground/puzzle/cipher/cipher_page.dart';
+import 'package:superxd/playground/puzzle/cipher/cipher_rules.dart';
+import 'package:superxd/playground/puzzle/flash/flash_rules.dart';
+import 'package:superxd/playground/puzzle/ice/ice_rules.dart';
+import 'package:superxd/playground/puzzle/loop/loop_rules.dart';
+import 'package:superxd/playground/puzzle/queens/queens_page.dart';
+import 'package:superxd/playground/puzzle/queens/queens_rules.dart';
+import 'package:superxd/playground/puzzle/twentyfour/twentyfour_page.dart';
 import 'package:superxd/playground/challenge/challenge_home.dart';
 import 'package:superxd/playground/challenge/challenge_run.dart';
 import 'package:superxd/playground/challenge/challenge_run_page.dart';
@@ -45,23 +56,39 @@ const _runId = 'RRRRRRRRRRRRRRRRRRRRRR';
 final _ref = AppAccountRef(accountId: 'AAAAAAAAAAAAAAAAAAAAAA', slot: appAccountSlot(_identity));
 final _hanoi = const HanoiRules().generate(1, PuzzleTier.entry).puzzle;
 
-Map<String, Object?> _levelJson(String id, {String game = 'hanoi', String state = 'open', List<String> inputs = const [], String? output, int submissions = 0, int? key, String? teaser, Object? puzzle, List<Object?> keyed = const []}) => {
+Map<String, Object?> _levelJson(
+  String id, {
+  String game = 'hanoi',
+  String state = 'open',
+  String? letter,
+  List<String> inputs = const [],
+  String? output,
+  int submissions = 0,
+  Object? puzzle,
+  Map<String, Object?>? gate,
+  Map<String, Object?>? consume,
+  int? minimum,
+  String? extraOf,
+}) => {
   'id': id,
   'game': game,
   'tier': 'entry',
-  'difficulty': 2,
+  'difficulty': 4,
+  'expected': 60,
   'inputs': inputs,
   'output': output,
+  'letter': letter ?? (extraOf == null ? id.toUpperCase() : null),
   'state': state,
   'submissions': submissions,
   'errors': 0,
-  'key': key,
-  'teaser': teaser,
+  'minimum': minimum,
+  'gate': gate,
+  'consume': consume,
+  'extraOf': extraOf,
   'puzzle': puzzle,
-  'keyed': keyed,
 };
 
-Map<String, Object?> _runJson({bool running = true, List<Map<String, Object?>>? levels, Map<String, Object?>? result, int serverTime = 1000000}) => {
+Map<String, Object?> _runJson({bool running = true, List<Map<String, Object?>>? levels, Map<String, Object?>? result, int serverTime = 1000000, String ending = 'locked', int penalty = 0}) => {
   'runId': _runId,
   'challengeId': 'weekly.2026-11-09.trio',
   'title': '三连环',
@@ -71,36 +98,44 @@ Map<String, Object?> _runJson({bool running = true, List<Map<String, Object?>>? 
   'deadline': serverTime + 600000,
   'serverTime': serverTime,
   'state': running ? 'running' : 'settled',
+  'penaltySeconds': penalty,
+  'final': ending,
   'levels': levels ??
       [
         _levelJson('a', output: 'c', puzzle: const HanoiRules().encodePuzzle(_hanoi)),
-        _levelJson('b', game: 'ice', output: 'c', puzzle: null, state: 'solved', key: 8),
-        _levelJson('c', game: 'twentyfour', state: 'locked', inputs: ['a', 'b'], teaser: '四张牌：? 8 3 ?'),
+        _levelJson('b', game: 'ice', output: 'c', state: 'solved'),
+        _levelJson('c', game: 'twentyfour', state: 'gated', inputs: ['a', 'b'], gate: {'op': 'product', 'value': null}, consume: {'kind': 'slot', 'at': 2, 'modulus': 9, 'offset': 1}),
       ],
   'result': result,
 };
 
 // 同一份局面直接建成领域对象（页面与编排的测试用；中转客户端的解码在「中转客户端」一组里测）。
-ChallengeLevel _level(Map<String, Object?> json) => ChallengeLevel(
-  id: json['id']! as String,
-  game: json['game']! as String,
-  tier: json['tier']! as String,
-  difficulty: json['difficulty']! as int,
-  inputs: (json['inputs']! as List).cast<String>(),
-  output: json['output'] as String?,
-  state: ChallengeLevelState.values.byName(json['state']! as String),
-  submissions: json['submissions']! as int,
-  errors: json['errors']! as int,
-  key: json['key'] as int?,
-  teaser: json['teaser'] as String?,
-  puzzle: json['puzzle'],
-  keyed: const [],
-);
+ChallengeLevel _level(Map<String, Object?> json) {
+  final gate = json['gate'] as Map<String, Object?>?, consume = json['consume'] as Map<String, Object?>?;
+  return ChallengeLevel(
+    id: json['id']! as String,
+    game: json['game']! as String,
+    tier: json['tier']! as String,
+    difficulty: json['difficulty']! as int,
+    expected: Duration(seconds: json['expected']! as int),
+    inputs: (json['inputs']! as List).cast<String>(),
+    output: json['output'] as String?,
+    letter: json['letter'] as String?,
+    state: ChallengeLevelState.values.byName(json['state']! as String),
+    submissions: json['submissions']! as int,
+    errors: json['errors']! as int,
+    minimum: json['minimum'] as int?,
+    gate: gate == null ? null : ChallengeGate(product: gate['op'] == 'product', value: gate['value'] as int?),
+    consume: consume == null ? null : ChallengeConsume(slot: consume['kind'] == 'slot', at: consume['at']! as int, modulus: consume['modulus']! as int, offset: consume['offset']! as int),
+    extraOf: json['extraOf'] as String?,
+    puzzle: json['puzzle'],
+  );
+}
 
 // 「甲 · 乙」说明行分项排在 Wrap 里，整句在读屏标签上。
 Finder _line(String text) => find.byWidgetPredicate((widget) => widget is Semantics && widget.properties.label == text);
 
-ChallengeRun _run({bool running = true, List<Map<String, Object?>>? levels, Map<String, Object?>? result}) {
+ChallengeRun _run({bool running = true, List<Map<String, Object?>>? levels, Map<String, Object?>? result, ChallengeFinal ending = ChallengeFinal.locked, int penalty = 0}) {
   final json = _runJson(running: running, levels: levels, result: result);
   final now = DateTime.now().toUtc();
   return ChallengeRun(
@@ -113,6 +148,8 @@ ChallengeRun _run({bool running = true, List<Map<String, Object?>>? levels, Map<
     deadline: now.add(const Duration(minutes: 10)),
     serverTime: now,
     running: running,
+    penalty: Duration(seconds: penalty),
+    ending: ending,
     levels: [for (final level in (json['levels']! as List).cast<Map<String, Object?>>()) _level(level)],
     result: result == null ? null : ChallengeResult(points: result['points']! as int, awarded: result['awarded']! as int, ending: result['ending']! as String),
   );
@@ -139,8 +176,8 @@ void main() {
         'serverTime': 1000,
         'activeRun': null,
         'challenges': [
-          {'id': 'weekly.2026-11-09.six', 'title': '六连环', 'label': '入门', 'levels': 6, 'timeLimit': 900, 'endsAt': 2000, 'best': 153, 'playable': true, 'ticket': 0},
-          {'id': 'bonus.2026-11-09.bonus', 'title': '十二连环', 'label': '加赛', 'levels': 12, 'timeLimit': 3600, 'endsAt': 2000, 'best': null, 'playable': true, 'ticket': 300},
+          {'id': 'weekly.2026-11-09.six', 'title': '六连环', 'label': '入门', 'levels': 3, 'tiers': ['entry', 'entry', 'easy'], 'edges': [[0, 2], [1, 2]], 'timeLimit': 900, 'endsAt': 2000, 'best': 153, 'playable': true, 'ticket': 0},
+          {'id': 'bonus.2026-11-09.bonus', 'title': '十二连环', 'label': '加赛', 'levels': 2, 'tiers': ['hard', 'expert'], 'edges': [[0, 1]], 'timeLimit': 3600, 'endsAt': 2000, 'best': null, 'playable': true, 'ticket': 300},
         ],
       });
       final catalog = await client.catalog(_ref, {'ice', 'hanoi'});
@@ -148,17 +185,29 @@ void main() {
       expect(relay.requests.single.headers['x-sxd-device'], key.deviceId);
       expect(catalog.challenges.first, isA<ChallengeSummary>().having((item) => item.best, 'best', 153).having((item) => item.timeLimit, 'timeLimit', const Duration(minutes: 15)).having((item) => item.ticket, 'ticket', 0));
       expect(catalog.challenges.last.ticket, 300);
+      expect(catalog.challenges.first.tiers, ['entry', 'entry', 'easy']);
+      expect(catalog.challenges.first.edges, [(0, 2), (1, 2)]);
     });
 
-    test('一局的局面、交答案带号码、积分与流水按协议解码；看不懂的回复报失败', () async {
+    test('一局的局面、交答案带号码、开门与终章、积分与流水按协议解码；看不懂的回复报失败', () async {
       await vault.write(appAccountSlot(_identity), AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
-      relay.reply = (request) => RelayResponse(200, {'correct': true, 'key': 7, 'run': _runJson()});
+      relay.reply = (request) => RelayResponse(200, {'correct': true, 'fragment': 7, 'extra': 'xa', 'run': _runJson(penalty: 20)});
       final verdict = await client.answer(_ref, _runId, 'a', 2, [1, 2]);
       expect(relay.requests.last.path, '/v1/challenge-runs/$_runId/levels/a/answers');
       expect(relay.requests.last.body, {'attempt': 2, 'answer': [1, 2]});
-      expect(verdict.correct, isTrue);
-      expect(verdict.key, 7);
-      expect(verdict.run.level('c'), isA<ChallengeLevel>().having((level) => level.state, 'state', ChallengeLevelState.locked).having((level) => level.teaser, 'teaser', '四张牌：? 8 3 ?'));
+      expect((verdict.correct, verdict.fragment, verdict.extra), (true, 7, 'xa'));
+      expect(verdict.run.penalty, const Duration(seconds: 20));
+      expect(verdict.run.ending, ChallengeFinal.locked);
+      final consumer = verdict.run.level('c');
+      expect((consumer.state, consumer.letter, consumer.gate?.product, consumer.gate?.value), (ChallengeLevelState.gated, 'C', true, null));
+      expect((consumer.consume?.slot, consumer.consume?.at, consumer.consume?.valueOf(37)), (true, 2, 2));
+      relay.reply = (request) => RelayResponse(200, {'correct': false, 'run': _runJson()});
+      expect((await client.gate(_ref, _runId, 'c', 37)).correct, isFalse);
+      expect(relay.requests.last.path, '/v1/challenge-runs/$_runId/gates/c');
+      expect(relay.requests.last.body, {'value': 37});
+      relay.reply = (request) => RelayResponse(200, {'correct': true, 'run': _runJson(running: false, ending: 'cleared', result: {'points': 99, 'awarded': 99, 'ending': 'cleared'})});
+      expect((await client.finale(_ref, _runId, 40)).run.ending, ChallengeFinal.cleared);
+      expect(relay.requests.last.path, '/v1/challenge-runs/$_runId/final');
       relay.reply = (request) => const RelayResponse(200, {'balance': 86, 'expiring': 20, 'expiringAt': 5000, 'earned': 620, 'level': 1, 'nextLevelAt': 3000, 'serverTime': 1});
       expect((await client.points(_ref)), isA<PointsSummary>().having((points) => points.expiringAt, 'expiringAt', DateTime.fromMillisecondsSinceEpoch(5000, isUtc: true)).having((points) => points.earned, 'earned', 620).having((points) => points.level, 'level', 1).having((points) => points.nextLevelAt, 'nextLevelAt', 3000));
       relay.reply = (request) => const RelayResponse(200, {'balance': 86, 'expiring': 0, 'expiringAt': null, 'earned': 90000, 'level': 5, 'nextLevelAt': null, 'serverTime': 1});
@@ -186,6 +235,43 @@ void main() {
         client.start(_ref, 'bonus.2026-11-09.bonus', {'hanoi'}),
         throwsA(isA<ChallengeException>().having((error) => error.failure, 'failure', ChallengeFailure.pointsShort).having((error) => error.message, 'message', '积分不够，门票要 300 分')),
       );
+    });
+  });
+
+  group('碎片与改目标的规则', () {
+    test('碎片从解里来：汉诺塔最少步数、数回圈里几格、密码各位之和；天平称球按答案给（这里为空）', () {
+      final hanoi = const HanoiRules().generate(2, PuzzleTier.easy);
+      expect(challengeFragment('hanoi', hanoi.puzzle, hanoi.solution), hanoi.solution.length);
+      // 2×2 的格子全在圈里：外圈 8 条边。
+      const loop = LoopPuzzle(width: 2, height: 2, clues: [-1, -1, -1, -1]);
+      final grid = LoopGrid.of(2, 2);
+      final edges = List.filled(grid.edgeCount, false);
+      for (final edge in [grid.horizontal(0, 0), grid.horizontal(0, 1), grid.horizontal(2, 0), grid.horizontal(2, 1), grid.vertical(0, 0), grid.vertical(1, 0), grid.vertical(0, 2), grid.vertical(1, 2)]) {
+        edges[edge] = true;
+      }
+      expect(loopInside(loop, edges), 4);
+      final cipher = const CipherRules().generate(3, PuzzleTier.normal);
+      expect(challengeFragment('cipher', cipher.puzzle, cipher.solution), cipher.solution.fold<int>(0, (sum, digit) => sum + digit));
+      expect(challengeFragment('balance', const BalanceRules().generate(1, PuzzleTier.entry).puzzle, null), isNull);
+    });
+
+    test('记忆闪光镜像：亮的照常亮，要点左右镜像的格；冰面滑行的出口只给页面画、判定只看终点', () {
+      final draw = const FlashRules().generate(5, PuzzleTier.easy);
+      final flash = draw.puzzle;
+      final mirrored = FlashPuzzle(side: flash.side, showMillis: flash.showMillis, rounds: flash.rounds, mirror: true);
+      expect(flashShown(mirrored, 0, 0), flashShown(flash, 0, 0));
+      expect(flashPattern(mirrored, 0, 0), ([for (final cell in flashShown(flash, 0, 0)) cell ~/ flash.side * flash.side + flash.side - 1 - cell % flash.side]..sort()));
+      expect(const FlashRules().solved(mirrored, draw.solution), isFalse);
+      expect(const FlashRules().solved(mirrored, [for (var round = 0; round < flash.rounds.length; round++) flashPattern(mirrored, round, 0)]), isTrue);
+      expect(const FlashRules().decodePuzzle(const FlashRules().encodePuzzle(mirrored)).mirror, isTrue);
+
+      final ice = const IceRules().generate(7, PuzzleTier.normal);
+      final exits = iceExits(ice.puzzle, PuzzleRandom(1));
+      expect(exits, contains(ice.puzzle.goal));
+      final labeled = IcePuzzle(width: ice.puzzle.width, height: ice.puzzle.height, rocks: ice.puzzle.rocks, start: ice.puzzle.start, goal: ice.puzzle.goal, exits: exits);
+      expect(const IceRules().decodePuzzle(const IceRules().encodePuzzle(labeled)).exits, exits);
+      expect(const IceRules().solved(labeled, ice.solution), isTrue);
+      expect(() => const IceRules().decodePuzzle({...const IceRules().encodePuzzle(labeled) as Map<String, Object?>, 'exits': [ice.puzzle.start]}), throwsFormatException);
     });
   });
 
@@ -240,12 +326,12 @@ void main() {
       var offline = true;
       final challenge = PlayChallenge(
         level: _run(levels: [_levelJson('a', game: 'knights', puzzle: const KnightsRules().encodePuzzle(draw.puzzle))]).level('a'),
-        name: '第 1 关',
+        name: 'A 关',
         deadline: DateTime.now().add(const Duration(minutes: 5)),
         submit: (answer) async {
           answers.add(answer);
           if (offline) throw const ChallengeException(ChallengeFailure.network, '连不上服务器');
-          return PlayVerdict(correct: jsonEncode(answer) == jsonEncode(const KnightsRules().encodeAnswer(draw.solution)), key: 5);
+          return PlayVerdict(correct: jsonEncode(answer) == jsonEncode(const KnightsRules().encodeAnswer(draw.solution)), fragment: 5);
         },
       );
       final session = PlaySession(game: game, rules: const KnightsRules(), store: store, challenge: challenge);
@@ -257,24 +343,23 @@ void main() {
       expect(await session.judge(draw.solution), isTrue);
       expect(answers, hasLength(3));
       expect(await session.finish(answer: draw.solution), isFalse);
-      expect((await session.submission!).key, 5);
+      expect((await session.submission!).fragment, 5);
       expect(answers, hasLength(3));
       expect(store.best('knights', PuzzleTier.entry), isNull);
     });
 
-    testWidgets('汉诺塔作为挑战的一关：写关名与剩下的时间、不能换题换档；走完交服务器，弹层写拿到的钥匙，回到挑战', (tester) async {
+    testWidgets('汉诺塔作为挑战的一关：写关名与剩下的时间、不能换题换档；走完交服务器，弹层大字写碎片（只这一次）与追加的加试题，回到挑战', (tester) async {
       final store = PlaygroundStore.memory();
       final game = playgroundCatalog.firstWhere((game) => game.id == 'hanoi');
       final answers = <Object?>[];
       final navigator = GlobalKey<NavigatorState>();
       final challenge = PlayChallenge(
         level: _run().level('a'),
-        name: '第 1 关',
-        target: '第 3 关',
+        name: 'A 关',
         deadline: DateTime.now().add(const Duration(minutes: 5)),
         submit: (answer) async {
           answers.add(answer);
-          return const PlayVerdict(correct: true, key: 7);
+          return const PlayVerdict(correct: true, fragment: 7, extra: 'xa');
         },
       );
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), navigatorKey: navigator, home: const Text('挑战总览')));
@@ -282,7 +367,7 @@ void main() {
       // 推入的页先离屏建一帧（给 Hero 量位置），再推进转场。
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 500));
-      expect(find.text('第 1 关 · 入门'), findsOneWidget);
+      expect(find.text('A 关 · 入门'), findsOneWidget);
       expect(find.textContaining('还有 4:5'), findsOneWidget);
       await tester.tap(find.bySemanticsLabel('更多操作'));
       await tester.pump(const Duration(milliseconds: 500));
@@ -299,12 +384,91 @@ void main() {
       }
       await tester.pump(const Duration(seconds: 1));
       expect(answers.single, const HanoiRules().encodeAnswer(hanoiSolution(_hanoi)));
-      expect(find.text('第 1 关过了'), findsOneWidget);
-      expect(find.textContaining('拿到钥匙 7，交给第 3 关'), findsOneWidget);
+      expect(find.text('A 关过了'), findsOneWidget);
+      expect(find.text('碎片 A = 7'), findsOneWidget);
+      expect(find.text('最少步数'), findsOneWidget);
+      expect(find.text('解得太快，加了一道加试题'), findsOneWidget);
       expect(store.best('hanoi', PuzzleTier.entry), isNull);
       await tester.tap(find.text('回到挑战'));
       await tester.pump(const Duration(seconds: 1));
       expect(find.text('挑战总览'), findsOneWidget);
+    });
+
+    // 人工决策见 challenge_rules.dart 的 11-14 23:11 那条：门上的数改写的那一处写成 ?（补条件）或不标目标（改目标），页面写出算式，玩家自己算。
+    testWidgets('收碎片的关：写出算式与最少步数；24 点的 ? 牌点了选数才能用；汉诺塔不标目标柱、柱子标 ①②③', (tester) async {
+      Future<void> open(Widget page) async {
+        await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: page));
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+
+      PlayChallenge challenge(Map<String, Object?> json) => PlayChallenge(level: _level(json), name: 'C 关', deadline: DateTime.now().add(const Duration(minutes: 5)), submit: (answer) async => const PlayVerdict(correct: true));
+      final cards = challenge(_levelJson('c', game: 'twentyfour', inputs: ['a', 'b'], gate: {'op': 'sum', 'value': 37}, consume: {'kind': 'slot', 'at': 2, 'modulus': 9, 'offset': 1}, puzzle: {'numbers': [3, 8, 2, 8], 'ops': [0, 1, 2, 3]}));
+      await open(TwentyFourPage(game: playgroundCatalog.firstWhere((game) => game.id == 'twentyfour'), store: PlaygroundStore.memory(), challenge: cards));
+      expect(find.text('第 3 张牌'), findsOneWidget);
+      expect(find.text('= 37 ÷ 9 的余数 + 1'), findsOneWidget);
+      expect(find.text('?'), findsOneWidget);
+      expect(find.text('2'), findsNothing, reason: '那张牌的真值不露出来');
+      await tester.tap(find.text('?'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('第 3 张牌'), findsNWidgets(2));
+      expect([for (var value = 1; value <= 9; value++) find.widgetWithText(FilledButton, '$value').evaluate().length], List.filled(9, 1));
+      await tester.tap(find.widgetWithText(FilledButton, '2'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('?'), findsNothing);
+      expect(find.text('2'), findsOneWidget);
+
+      final tower = challenge(_levelJson('c', inputs: ['a'], gate: {'op': 'sum', 'value': 7}, consume: {'kind': 'goal', 'at': 0, 'modulus': 3, 'offset': 1}, minimum: 7, puzzle: {'disks': 3, 'start': [0, 0, 0], 'target': 1}));
+      await open(HanoiPage(game: playgroundCatalog.firstWhere((game) => game.id == 'hanoi'), store: PlaygroundStore.memory(), challenge: tower));
+      expect(find.text('= 7 ÷ 3 的余数 + 1'), findsOneWidget);
+      expect(find.text('最少 7 步'), findsOneWidget);
+      expect(find.text('目标'), findsNothing);
+      expect(find.text('②'), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('柱子，目标')), findsNothing);
+      // 目标藏起来了：全部盘子到了不是开局的那根柱就交（对不对由服务器按门上的数核对），这里搬到第 3 根。
+      for (final move in hanoiSolution(const HanoiPuzzle(disks: 3, start: [0, 0, 0], target: 2))) {
+        await tester.tapAt(tester.getCenter(find.bySemanticsLabel(RegExp('^第${move.from + 1}根柱子'))));
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.tapAt(tester.getCenter(find.bySemanticsLabel(RegExp('^第${move.to + 1}根柱子'))));
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('C 关过了'), findsOneWidget);
+    });
+
+    testWidgets('补条件的那一处写成 ?：八皇后那一行不锁、数回那一格、密码破译那一行的「位置也对」、骑士与无赖那句话的人数', (tester) async {
+      Future<void> open(Widget page) async {
+        await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: page));
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+
+      PlayChallenge slotted(String game, Object? puzzle, int at, int modulus) =>
+          PlayChallenge(level: _level(_levelJson('c', game: game, inputs: ['a'], gate: {'op': 'sum', 'value': 11}, consume: {'kind': 'slot', 'at': at, 'modulus': modulus, 'offset': 0}, puzzle: puzzle)), name: 'C 关', deadline: DateTime.now().add(const Duration(minutes: 5)), submit: (answer) async => const PlayVerdict(correct: true));
+      PlaygroundGame game(String id) => playgroundCatalog.firstWhere((item) => item.id == id);
+
+      final queens = const QueensRules().generate(4, PuzzleTier.normal).puzzle;
+      final row = challengeSlots('queens', queens).first.at;
+      final given = queens.given.where((column) => column >= 0).length;
+      await open(QueensPage(game: game('queens'), store: PlaygroundStore.memory(), challenge: slotted('queens', const QueensRules().encodePuzzle(queens), row, queens.size)));
+      expect(find.textContaining('已放 ${given - 1}/'), findsOneWidget);
+
+      tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(accessibleNavigation: true);
+      addTearDown(tester.platformDispatcher.clearAccessibilityFeaturesTestValue);
+      final loop = const LoopRules().generate(4, PuzzleTier.easy).puzzle;
+      final cell = challengeSlots('loop', loop).first.at;
+      await open(LoopPage(game: game('loop'), store: PlaygroundStore.memory(), challenge: slotted('loop', const LoopRules().encodePuzzle(loop), cell, 4)));
+      expect(find.bySemanticsLabel(RegExp('第${cell ~/ loop.width + 1}行第${cell % loop.width + 1}列，数字是问号')), findsOneWidget);
+
+      final cipher = const CipherRules().generate(4, PuzzleTier.easy).puzzle;
+      final line = challengeSlots('cipher', cipher).first.at;
+      await open(CipherPage(game: game('cipher'), store: PlaygroundStore.memory(), challenge: slotted('cipher', const CipherRules().encodePuzzle(cipher), line, 3)));
+      expect(find.text('? 个数字对且位置对，'), findsOneWidget);
+
+      final knights = [for (var seed = 0; seed < 20; seed++) const KnightsRules().generate(seed, PuzzleTier.normal).puzzle].firstWhere((puzzle) => challengeSlots('knights', puzzle).isNotEmpty);
+      final speaker = challengeSlots('knights', knights).first.at;
+      await open(KnightsPage(game: game('knights'), store: PlaygroundStore.memory(), challenge: slotted('knights', const KnightsRules().encodePuzzle(knights), speaker, knights.people - 1)));
+      expect(find.textContaining('? 个骑士'), findsOneWidget);
     });
 
     // 人工决策见 knights_page.dart 的 _submit：填满即交的判对错类连不上时，提示条带「重交」原样再交；接着改一步提示就收起。
@@ -316,7 +480,7 @@ void main() {
       final navigator = GlobalKey<NavigatorState>();
       final challenge = PlayChallenge(
         level: _run(levels: [_levelJson('a', game: 'knights', puzzle: const KnightsRules().encodePuzzle(draw.puzzle))]).level('a'),
-        name: '第 1 关',
+        name: 'A 关',
         deadline: DateTime.now().add(const Duration(minutes: 5)),
         submit: (answer) async {
           answers.add(jsonEncode(answer));
@@ -361,22 +525,56 @@ void main() {
       }
       expect(answers, hasLength(3));
       expect(answers.toSet(), hasLength(1));
-      expect(find.text('第 1 关过了'), findsOneWidget);
+      expect(find.text('A 关过了'), findsOneWidget);
     });
   });
 
   group('挑战页面', () {
-    testWidgets('总览：开着的能点、锁着的写预告与在等谁的钥匙、过了的写钥匙交给哪一关；结算后换成成绩与加了多少积分', (tester) async {
+    testWidgets('总览是关卡流程图：给碎片的关并排、箭头写门上的数怎么来、下面是门后那一关；门前的点了输门上的数（错了扣时间），终章全部碎片相加；笔记存本机；结算后换成成绩', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      addTearDown(tester.view.reset);
       final hub = _Hub();
+      final store = PlaygroundStore.memory();
       final controller = ChallengeRunController(hub: hub, run: _run());
-      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChallengeRunPage(controller: controller, games: playgroundCatalog, store: PlaygroundStore.memory())));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChallengeRunPage(controller: controller, games: playgroundCatalog, store: store)));
       await tester.pump(const Duration(milliseconds: 500));
       expect(find.textContaining('已过 1/3 关'), findsOneWidget);
-      expect(find.text('第 1 关 · 汉诺塔'), findsOneWidget);
-      expect(_line('入门 · 可以做'), findsOneWidget);
-      expect(_line('入门 · 过了 · 钥匙 8 交给第 3 关'), findsOneWidget);
-      expect(_line('入门 · 等第 1、2 关的钥匙'), findsOneWidget);
-      expect(find.text('四张牌：? 8 3 ?'), findsOneWidget);
+      expect(find.bySemanticsLabel('A 关，汉诺塔，入门，进入'), findsOneWidget);
+      expect(find.bySemanticsLabel('B 关，冰面滑行，入门，过了'), findsOneWidget);
+      expect(find.bySemanticsLabel('C 关，24 点，入门，开门'), findsOneWidget);
+      expect(find.text('A × B'), findsOneWidget);
+      expect(find.text('全部碎片相加'), findsOneWidget);
+
+      // 门：输错扣 20 秒、原地清空再输；输对关掉、提示门开了，箭头写出门上的数。
+      hub.entries = [false, true];
+      await tester.tap(find.bySemanticsLabel('C 关，24 点，入门，开门'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('C 关的门'), findsOneWidget);
+      Future<void> key(String label) async {
+        await tester.tap(find.widgetWithText(FilledButton, label));
+        await tester.pump();
+      }
+
+      await key('1');
+      await key('8');
+      await tester.tap(find.bySemanticsLabel('确认'));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('不对 · 扣 20 秒'), findsOneWidget);
+      expect(find.textContaining('罚时 20 秒'), findsOneWidget);
+      await key('1');
+      await key('8');
+      await tester.tap(find.bySemanticsLabel('确认'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(hub.entered, [('c', 18), ('c', 18)]);
+      expect(find.text('C 关的门'), findsNothing);
+      expect(find.text('门开了'), findsOneWidget);
+      expect(find.text('A × B = 18'), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), 'A = 3');
+      await tester.pump(const Duration(seconds: 1));
+      expect(store.notesOf(_runId), 'A = 3');
 
       hub.ended = _run(running: false, result: {'points': 13, 'awarded': 0, 'ending': 'ended'});
       await tester.tap(find.bySemanticsLabel('更多操作'));
@@ -388,6 +586,64 @@ void main() {
       expect(find.text('这一局结束了'), findsOneWidget);
       expect(find.text('13 分'), findsOneWidget);
       expect(find.textContaining('未超过最好成绩'), findsOneWidget);
+      expect(find.byType(TextField), findsNothing);
+    });
+
+    test('流程图分段：收碎片的关紧接着给下一段碎片时只画一次（排进下一段第一个、箭头对准它），隔段用到的只在箭头上写字母', () {
+      // 六连环：A、B → C；C、D → E；E → F。
+      final six = _run(levels: [
+        _levelJson('a', output: 'c'),
+        _levelJson('b', output: 'c'),
+        _levelJson('c', state: 'gated', inputs: ['a', 'b'], output: 'e', gate: {'op': 'sum', 'value': null}, consume: {'kind': 'goal', 'at': 0, 'modulus': 3, 'offset': 1}),
+        _levelJson('d', output: 'e'),
+        _levelJson('e', state: 'locked', inputs: ['c', 'd'], output: 'f', gate: {'op': 'sum', 'value': null}, consume: {'kind': 'goal', 'at': 0, 'modulus': 3, 'offset': 1}),
+        _levelJson('f', state: 'locked', inputs: ['e'], gate: {'op': 'sum', 'value': null}, consume: {'kind': 'goal', 'at': 0, 'modulus': 3, 'offset': 1}),
+      ]);
+      String shape(List<ChallengeSection> sections) => [
+        for (final section in sections)
+          '${section.inputs.map((level) => level.letter).join()}>${section.sources.map((level) => level.letter).join('+')}>${section.consumer?.letter}${section.carried ? '^' : ''}${section.aim ? '*' : ''}',
+      ].join(' ');
+      expect(shape(challengeSections(six)), 'AB>A+B>C^* CD>C+D>E^ E>E>F');
+      // 十连环的前半：A、B → E；C、D → F；E、F、I → G。E 隔一段才用到：照样画在自己那段，G 那段只画 F 与 I。
+      final ten = _run(levels: [
+        _levelJson('a', output: 'e'),
+        _levelJson('b', output: 'e'),
+        _levelJson('c', output: 'f'),
+        _levelJson('d', output: 'f'),
+        _levelJson('e', state: 'locked', inputs: ['a', 'b'], output: 'g', gate: {'op': 'sum', 'value': null}, consume: {'kind': 'goal', 'at': 0, 'modulus': 3, 'offset': 1}),
+        _levelJson('f', state: 'locked', inputs: ['c', 'd'], output: 'g', gate: {'op': 'sum', 'value': null}, consume: {'kind': 'goal', 'at': 0, 'modulus': 3, 'offset': 1}),
+        _levelJson('g', state: 'locked', inputs: ['e', 'f', 'i'], gate: {'op': 'product', 'value': null}, consume: {'kind': 'goal', 'at': 0, 'modulus': 3, 'offset': 1}),
+        _levelJson('i', output: 'g'),
+      ]);
+      expect(shape(challengeSections(ten)), 'AB>A+B>E CD>C+D>F^* FI>E+F+I>G');
+    });
+
+    testWidgets('终章：全部过了才能点，输全部碎片之和；加试题排在终章前', (tester) async {
+      tester.view.physicalSize = const Size(1200, 2400);
+      addTearDown(tester.view.reset);
+      final hub = _Hub();
+      final controller = ChallengeRunController(hub: hub, run: _run(ending: ChallengeFinal.ready, levels: [
+        _levelJson('a', output: 'c', state: 'solved'),
+        _levelJson('b', game: 'ice', output: 'c', state: 'solved'),
+        _levelJson('c', game: 'twentyfour', state: 'solved', inputs: ['a', 'b'], gate: {'op': 'sum', 'value': 9}, consume: {'kind': 'slot', 'at': 2, 'modulus': 9, 'offset': 1}),
+        _levelJson('xa', state: 'solved', extraOf: 'a'),
+      ]));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChallengeRunPage(controller: controller, games: playgroundCatalog, store: PlaygroundStore.memory())));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('加试'), findsOneWidget);
+      expect(find.bySemanticsLabel('加试，汉诺塔，入门，过了'), findsOneWidget);
+      hub.entries = [true];
+      await tester.tap(find.text('终章'));
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('全部碎片相加'), findsNWidgets(2));
+      await tester.tap(find.widgetWithText(FilledButton, '4'));
+      await tester.pump();
+      await tester.tap(find.widgetWithText(FilledButton, '0'));
+      await tester.pump();
+      await tester.tap(find.bySemanticsLabel('确认'));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(hub.entered, [('final', 40)]);
     });
 
     testWidgets('积分页：余额、30 天内到期的提示、明细从新到旧，按需往下翻', (tester) async {
@@ -494,9 +750,8 @@ void main() {
       expect(find.byType(ChallengeHome), findsNothing);
     });
 
-    // 11-14 模拟器走查（1.3 倍字号）：挑战卡说明行折出孤字「天」、总览把「交给第 / 4 关」拆开，预告与钥匙行把「第 ? / 列」「第 5 格 / 是 3」拆到两行。
-    // 说明行按「 · 」分项、预告与钥匙按「，」分句放进 Wrap，放得下一行的一项不拆开；一句本身比一行长时自成一段、均衡折行，不留孤字。
-    testWidgets('窄屏大字号：挑战卡、总览与收钥匙的关里，说明行按项、预告与钥匙按句换行，不拆开、不留孤字', (tester) async {
+    // 11-14 模拟器走查（1.3 倍字号）：挑战卡说明行折出孤字「天」。说明行按「 · 」分项放进 Wrap，放得下一行的一项不拆开。
+    testWidgets('窄屏大字号：挑战卡的说明行按项换行、总览的门与收碎片的关的算式不拆开、不留孤字', (tester) async {
       tester.view.devicePixelRatio = 3;
       tester.view.physicalSize = const Size(360 * 3, 800 * 3);
       tester.platformDispatcher.textScaleFactorTestValue = 1.3;
@@ -510,8 +765,6 @@ void main() {
         final paragraph = paragraphOf(phrase);
         expect(paragraph.size.height, lessThan(paragraph.textScaler.scale(14) * 1.8), reason: '「$phrase」拆到了两行：${paragraph.text.toPlainText()}');
       }
-      // 这一句自成一段（后面最多挂一个逗号），不和别的句挤在一段里折行。
-      void ownClause(String phrase) => expect(paragraphOf(phrase).text.toPlainText(), anyOf(phrase, '$phrase，'));
 
       final hub = _Hub()
         ..signedIn = true
@@ -529,34 +782,24 @@ void main() {
       expect(problems(), isEmpty, reason: '挑战一栏');
 
       final controller = ChallengeRunController(hub: hub, run: _run(levels: [
-        _levelJson('a', output: 'c', puzzle: const HanoiRules().encodePuzzle(_hanoi)),
-        _levelJson('b', game: 'ice', output: 'c', state: 'solved', key: 8),
-        _levelJson('c', game: 'queens', state: 'locked', inputs: ['a', 'b'], teaser: '8×8，第 1 行的锁定皇后在第 ? 列，第 6 行的锁定皇后在第 8 列，第 2 行的锁定皇后在第 ? 列'),
+        _levelJson('a', output: 'd', puzzle: const HanoiRules().encodePuzzle(_hanoi)),
+        _levelJson('b', game: 'ice', output: 'd', state: 'solved'),
+        _levelJson('c', game: 'logicgrid', output: 'd', state: 'solved'),
+        _levelJson('d', game: 'queens', state: 'gated', inputs: ['a', 'b', 'c'], gate: {'op': 'sum', 'value': null}, consume: {'kind': 'slot', 'at': 0, 'modulus': 8, 'offset': 1}),
       ]));
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ChallengeRunPage(controller: controller, games: playgroundCatalog, store: PlaygroundStore.memory())));
       await tester.pump(const Duration(milliseconds: 500));
-      for (final phrase in ['钥匙 8 交给第 3 关', '等第 1、2 关的钥匙']) {
-        oneLine(phrase);
-      }
-      // 「第 1 行的锁定皇后在第 ? 列，」在 360dp 加 1.3 倍下比一行长：自成一段均衡折成两行（以前折出孤字「列，」）。
-      for (final phrase in ['第 1 行的锁定皇后在第 ? 列', '第 6 行的锁定皇后在第 8 列', '第 2 行的锁定皇后在第 ? 列']) {
-        ownClause(phrase);
-      }
+      oneLine('A + B + C');
       expect(problems(), isEmpty, reason: '总览');
       controller.dispose();
 
-      // 数回 5×5，第 4 行第 3 格与第 1 行第 5 格是前两关给的钥匙（题面取自走查那一局）。
+      // 数回 5×5，第 4 行第 3 格是门上的数改写的（题面取自走查那一局）。
       const puzzle = {'width': 5, 'height': 5, 'clues': [-1, 2, -1, -1, 3, -1, 2, 1, -1, -1, -1, 1, 1, 2, -1, 2, 0, 1, 3, 1, -1, -1, -1, -1, 0]};
-      final level = ChallengeLevel(
-        id: 'c', game: 'loop', tier: 'easy', difficulty: 4, inputs: const ['a', 'b'], output: 'e', state: ChallengeLevelState.open, submissions: 0, errors: 0, key: null, teaser: null, puzzle: puzzle,
-        keyed: const [ChallengeKeyed(from: 'a', at: 17, key: 1), ChallengeKeyed(from: 'b', at: 4, key: 3)],
-      );
-      final challenge = PlayChallenge(level: level, name: '第 3 关', target: '第 5 关', deadline: DateTime.now().add(const Duration(minutes: 5)), submit: (answer) async => const PlayVerdict(correct: true, key: 10));
+      final level = _level(_levelJson('c', game: 'loop', inputs: ['a', 'b'], gate: {'op': 'product', 'value': 21}, consume: {'kind': 'slot', 'at': 17, 'modulus': 4, 'offset': 0}, puzzle: puzzle));
+      final challenge = PlayChallenge(level: level, name: 'C 关', deadline: DateTime.now().add(const Duration(minutes: 5)), submit: (answer) async => const PlayVerdict(correct: true, fragment: 10));
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: LoopPage(game: playgroundCatalog.firstWhere((game) => game.id == 'loop'), store: PlaygroundStore.memory(), challenge: challenge)));
       await tester.pump(const Duration(milliseconds: 500));
-      for (final phrase in ['第 4 行第 3 格是 1', '第 1 行第 5 格是 3']) {
-        oneLine(phrase);
-      }
+      oneLine('= 21 ÷ 4 的余数');
       expect(problems(), isEmpty, reason: '收钥匙的关');
     });
   });
@@ -602,9 +845,15 @@ class _Hub implements ChallengeHub {
   Future<ChallengeCatalog> catalog(Set<String> games) async {
     this.games = games;
     return ChallengeCatalog(serverTime: DateTime.utc(2026, 11, 14), activeRun: null, challenges: [
-      ChallengeSummary(id: 'weekly.2026-11-09.six', title: '六连环', label: '入门', levels: 6, timeLimit: const Duration(minutes: 15), endsAt: DateTime.now().add(const Duration(days: 2, hours: 1)), best: best, playable: true, ticket: 0),
+      ChallengeSummary(
+        id: 'weekly.2026-11-09.six', title: '六连环', label: '入门', levels: 6, tiers: const ['entry', 'entry', 'easy', 'easy', 'normal', 'normal'], edges: const [(0, 2), (1, 2), (2, 4), (3, 4), (4, 5)],
+        timeLimit: const Duration(minutes: 15), endsAt: DateTime.now().add(const Duration(days: 2, hours: 1)), best: best, playable: true, ticket: 0,
+      ),
       if (ticket > 0)
-        ChallengeSummary(id: 'bonus.2026-11-09.bonus', title: '十二连环', label: '加赛', levels: 12, timeLimit: const Duration(minutes: 60), endsAt: DateTime.now().add(const Duration(days: 2, hours: 1)), best: null, playable: true, ticket: ticket),
+        ChallengeSummary(
+          id: 'bonus.2026-11-09.bonus', title: '十二连环', label: '加赛', levels: 12, tiers: List.filled(12, 'hard'), edges: [for (var index = 0; index < 11; index++) (index, index + 1)],
+          timeLimit: const Duration(minutes: 60), endsAt: DateTime.now().add(const Duration(days: 2, hours: 1)), best: null, playable: true, ticket: ticket,
+        ),
     ]);
   }
 
@@ -617,7 +866,25 @@ class _Hub implements ChallengeHub {
   @override
   Future<ChallengeRun> run(String runId) async => _run();
   @override
-  Future<ChallengeVerdict> answer(String runId, String levelId, int attempt, Object? answer) async => ChallengeVerdict(correct: true, key: 7, run: _run());
+  Future<ChallengeVerdict> answer(String runId, String levelId, int attempt, Object? answer) async => ChallengeVerdict(correct: true, fragment: 7, extra: null, run: _run());
+  // 开门与终章依次给的对错；输错的那次带 20 秒罚时、门还关着，输对的那次门开了（门上的数写进局面）。
+  List<bool> entries = const [];
+  final entered = <(String, int)>[];
+  ChallengeEntry _enter(String id, int value) {
+    final correct = entries[entered.length];
+    entered.add((id, value));
+    final levels = [
+      _levelJson('a', output: 'c', puzzle: const HanoiRules().encodePuzzle(_hanoi)),
+      _levelJson('b', game: 'ice', output: 'c', state: 'solved'),
+      _levelJson('c', game: 'twentyfour', state: correct ? 'open' : 'gated', inputs: ['a', 'b'], gate: {'op': 'product', 'value': correct ? value : null}, consume: {'kind': 'slot', 'at': 2, 'modulus': 9, 'offset': 1}, puzzle: correct ? {'numbers': [3, 8, 2, 8], 'ops': [0, 1, 2, 3]} : null),
+    ];
+    return ChallengeEntry(correct: correct, run: _run(levels: levels, penalty: entries.take(entered.length).where((item) => !item).length * 20));
+  }
+
+  @override
+  Future<ChallengeEntry> gate(String runId, String levelId, int value) async => _enter(levelId, value);
+  @override
+  Future<ChallengeEntry> finale(String runId, int value) async => _enter('final', value);
   @override
   Future<ChallengeRun> end(String runId) async => ended!;
   PointsSummary summary = const PointsSummary(balance: 86, expiring: 0, expiringAt: null, earned: 0, level: 0, nextLevelAt: null);
@@ -649,7 +916,11 @@ class _Client implements ChallengeClient {
   @override
   Future<ChallengeRun> run(AppAccountRef account, String runId) => _call('run', _run());
   @override
-  Future<ChallengeVerdict> answer(AppAccountRef account, String runId, String levelId, int attempt, Object? answer) => _call('answer', ChallengeVerdict(correct: true, key: null, run: _run()));
+  Future<ChallengeVerdict> answer(AppAccountRef account, String runId, String levelId, int attempt, Object? answer) => _call('answer', ChallengeVerdict(correct: true, fragment: null, extra: null, run: _run()));
+  @override
+  Future<ChallengeEntry> gate(AppAccountRef account, String runId, String levelId, int value) => _call('gate', ChallengeEntry(correct: true, run: _run()));
+  @override
+  Future<ChallengeEntry> finale(AppAccountRef account, String runId, int value) => _call('final', ChallengeEntry(correct: true, run: _run()));
   @override
   Future<ChallengeRun> end(AppAccountRef account, String runId) => _call('end', _run());
   @override

@@ -49,6 +49,8 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
   var _round = 0, _tries = 0, _mistakes = 0;
   // 这一次的图案、点对的格（按点的先后）与点错的那一格；换下一组时先淡掉再清。
   var _target = <int>[];
+  // 亮的那组：平时就是要点的；挑战里碎片算出要镜像时（人工决策见 challenge_rules.dart），亮的照常亮、要点的是它左右镜像的格（_target）。
+  var _shown = <int>[];
   var _hits = <int>{};
   // 每次尝试依次点的格（答案，挑战模式交服务器核对）。
   final _attempts = <List<int>>[];
@@ -139,6 +141,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
     _round = _tries = _mistakes = 0;
     _attempts.clear();
     _target = [];
+    _shown = [];
     _hits = {};
     _wrong = null;
     _pressed = null;
@@ -173,6 +176,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
     _schedule(flashLead, () {
       setState(() {
         _target = flashPattern(_puzzle, _round, _tries);
+        _shown = flashShown(_puzzle, _round, _tries);
         _hits = {};
         // 新的一次尝试；切后台回来重亮的还是同一次（还没点过）。
         if (_attempts.isEmpty || _attempts.last.isNotEmpty) _attempts.add([]);
@@ -281,7 +285,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
   String _cellName(int cell) => '第${cell ~/ _side + 1}行第${cell % _side + 1}列';
 
   String _cellState(int cell) => switch (_phase) {
-    _Phase.showing when _target.contains(cell) => '亮',
+    _Phase.showing when _shown.contains(cell) => '亮',
     _ when _hits.contains(cell) => '已点亮',
     _ when cell == _wrong => '点错了',
     _Phase.reveal when _target.contains(cell) => '应该亮',
@@ -299,7 +303,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
     _Phase.solved => '全部记对了',
   };
 
-  String get _announcement => _phase == _Phase.showing ? '亮起 ${_target.length} 格：${_target.map(_cellName).join('、')}' : _hint;
+  String get _announcement => _phase == _Phase.showing ? '亮起 ${_shown.length} 格：${_shown.map(_cellName).join('、')}' : _hint;
 
   @override
   Widget build(BuildContext context) {
@@ -353,7 +357,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
           animation: _motion,
           builder: (context, _) => CustomPaint(painter: _FlashPainter(
             layout: layout,
-            target: _target,
+            target: _shown,
             flash: _flash.value,
             settled: [for (final cell in _hits) if (cell != fresh) cell],
             fresh: fresh,

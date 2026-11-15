@@ -23,10 +23,20 @@ const _numbers = ['零', '一', '两', '三', '四', '五', '六'];
 
 // 一句话按结构说成口语（题面只存结构），说话人自己说成「我」。分成几段，只在段与段之间换行：
 // 窄屏两行时按字均分会把「至少」「同一类人」这样的词拆到两行，按意思断开读起来顺。
-List<String> knightsPhrases(KnightsClaim claim, int speaker, int people) {
+// hidden：挑战里碎片补条件，这句话里的人数写成 ?（人工决策见 challenge_rules.dart）。
+List<String> knightsPhrases(KnightsClaim claim, int speaker, int people, {bool hidden = false}) {
   String who(int person) => person == speaker ? '我' : knightsNames[person];
   final (first, second) = (claim.first, claim.second);
   final we = '我们${_numbers[people]}个人';
+  if (hidden) {
+    final count = switch (claim.kind) {
+      KnightsClaimKind.exactly => '恰好有 ? 个骑士。',
+      KnightsClaimKind.atLeast => '至少有 ? 个骑士。',
+      KnightsClaimKind.atMost => '最多只有 ? 个骑士。',
+      _ => null,
+    };
+    if (count != null) return ['$we里', count];
+  }
   return switch (claim.kind) {
     KnightsClaimKind.knight => ['${who(first)}是骑士。'],
     KnightsClaimKind.knave => ['${who(first)}是无赖。'],
@@ -181,7 +191,8 @@ class _KnightsPageState extends State<KnightsPage> with TickerProviderStateMixin
       });
     }
     if (correct) return unawaited(_finish());
-    setState(() => _mismatches = knightsMismatches(_puzzle, _knights).toSet());
+    // 那句话的人数写成 ? 的人不标（玩家不知道它的真值）。
+    setState(() => _mismatches = {for (final person in knightsMismatches(_puzzle, _knights)) if (person != widget.challenge?.slot) person});
     _wrongs++;
     playRejected();
     if (!_still) unawaited(_shake.forward(from: 0));
@@ -265,7 +276,7 @@ class _KnightsPageState extends State<KnightsPage> with TickerProviderStateMixin
     final mark = _marks[person];
     final mismatch = _mismatches.contains(person);
     final name = knightsNames[person];
-    final phrases = knightsPhrases(_puzzle.claims[person], person, _puzzle.people);
+    final phrases = knightsPhrases(_puzzle.claims[person], person, _puzzle.people, hidden: person == widget.challenge?.slot);
     final duration = _still ? Duration.zero : const Duration(milliseconds: 150);
     final markLabel = switch (mark) {
       null => '未定',
