@@ -11,7 +11,7 @@ import { AccountService } from 'src/modules/account/account.service';
 import { DeviceModule } from 'src/modules/device/device.module';
 
 // 应用账号：借设备模块验签与登记密钥，设备模块不知道账号。设备删除时的连带删除由 pairing 编排。
-// 积分、挑战、私信、诊断包依赖本模块按设备认账号（AccountRepository.accountOf），删账号时它们的数据经 AccountDataHooks 一起删。
+// 积分、挑战、解锁、私信、诊断包与节日抽奖依赖本模块按设备认账号（AccountRepository.accountOf），删账号时除抽签记录外它们的数据经 AccountDataHooks 一起删。
 @Module({
   imports: [TypeOrmModule.forFeature([AppAccountEntity, AccountDeviceEntity]), DeviceModule],
   controllers: [AccountController],

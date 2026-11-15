@@ -179,7 +179,8 @@ class RelayAppAccountClient implements AppAccountClient {
     final body = await _relayed(() => _relay.request(key, 'POST', '/v1/account/joins', _keys(key)));
     final ticketId = body['ticketId'], code = body['code'], expiresAt = body['expiresAt'];
     if (ticketId is String && _accountIdPattern.hasMatch(ticketId) && code is String && RegExp(r'^\d{6}$').hasMatch(code) && expiresAt is int) {
-      return AppAccountJoin(ticketId: ticketId, code: code, expiresAt: DateTime.fromMillisecondsSinceEpoch(expiresAt, isUtc: true));
+      // 失效时刻是服务器时钟，换成本机时钟给出示页倒数（手机时钟不准、校时过时，不换就一出示就显示已失效、不再问批准）。
+      return AppAccountJoin(ticketId: ticketId, code: code, expiresAt: DateTime.fromMillisecondsSinceEpoch(expiresAt - _relay.clockOffset, isUtc: true));
     }
     throw _bad('start_join');
   }

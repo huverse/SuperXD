@@ -31,7 +31,7 @@ class MessagePage extends StatefulWidget {
   const MessagePage({super.key, this.social, this.gateway, this.openVideo, this.openAccount, this.scan = scanInviteWithCamera});
   // 为空表示本次运行未接入私信（测试或未配置中转服务）。
   final SocialService? social;
-  // 没登录应用账号时去登录（推入账号页）。
+  // 没登录应用账号时去登录（推入应用账号页）。
   final void Function(BuildContext context)? openAccount;
   final CampusGateway? gateway;
   final VideoOpener? openVideo;

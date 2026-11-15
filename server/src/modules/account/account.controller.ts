@@ -52,8 +52,8 @@ export class AccountController {
   @Post('joins')
   @HttpCode(200)
   @SelfSigned()
-  startJoin(@CurrentDevice() deviceId: string, @Body() body: dtos.AccountDeviceKeysDto): Promise<dtos.AccountJoinDto> {
-    return this.accounts.startJoin(deviceId, body);
+  startJoin(@CurrentDevice() deviceId: string, @Body() body: dtos.AccountDeviceKeysDto, @Ip() ip: string): Promise<dtos.AccountJoinDto> {
+    return this.accounts.startJoin(deviceId, ip, body);
   }
 
   @Post('joins/:ticketId/approve')
