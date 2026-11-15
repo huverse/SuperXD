@@ -8,11 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/challenges.dart';
-import 'package:superxd/domain/account.dart';
 import 'package:superxd/domain/app_account.dart';
-import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/challenge.dart';
-import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/playground/challenge/challenge_rules.dart';
 import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/puzzle/balance/balance_rules.dart';
@@ -50,10 +47,9 @@ import 'form_layout_support.dart';
 import 'text_fit_support.dart';
 
 // 挑战与积分的客户端（人工决策见 lib/playground/challenge/challenge_rules.dart）：中转客户端、编排、对局页的挑战模式与挑战页面。合成数据。
-const _identity = AccountIdentity(source: 'http://school.example', loginId: '20260000001');
 const _runId = 'RRRRRRRRRRRRRRRRRRRRRR';
 // 中转客户端用例里登录着的应用账号：密钥存在这个教务身份算出的 slot。
-final _ref = AppAccountRef(accountId: 'AAAAAAAAAAAAAAAAAAAAAA', slot: appAccountSlot(_identity));
+final _ref = AppAccountRef(accountId: 'AAAAAAAAAAAAAAAAAAAAAA', slot: appAccountSlot);
 final _hanoi = const HanoiRules().generate(1, PuzzleTier.entry).puzzle;
 
 Map<String, Object?> _levelJson(
@@ -171,7 +167,7 @@ void main() {
     test('没登录应用账号不发请求；登录了用那个应用账号的设备密钥签名', () async {
       await expectLater(client.catalog(_ref, {'hanoi'}), throwsA(isA<ChallengeException>().having((error) => error.failure, 'failure', ChallengeFailure.notSignedIn)));
       expect(relay.requests, isEmpty);
-      await vault.write(appAccountSlot(_identity), AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
+      await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
       relay.reply = (request) => const RelayResponse(200, {
         'serverTime': 1000,
         'activeRun': null,
@@ -190,7 +186,7 @@ void main() {
     });
 
     test('一局的局面、交答案带号码、开门与终章、积分与流水按协议解码；看不懂的回复报失败', () async {
-      await vault.write(appAccountSlot(_identity), AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
+      await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
       relay.reply = (request) => RelayResponse(200, {'correct': true, 'fragment': 7, 'extra': 'xa', 'run': _runJson(penalty: 20)});
       final verdict = await client.answer(_ref, _runId, 'a', 2, [1, 2]);
       expect(relay.requests.last.path, '/v1/challenge-runs/$_runId/levels/a/answers');
@@ -223,7 +219,7 @@ void main() {
     });
 
     test('错误码换成挑战的失败：还有一局带编号、已结束带局面、应用账号不在了', () async {
-      await vault.write(appAccountSlot(_identity), AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
+      await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
       relay.reply = (request) => const RelayResponse(409, {'code': 'RUN_ACTIVE', 'runId': _runId});
       await expectLater(client.start(_ref, 'weekly.2026-11-09.six', {'hanoi'}), throwsA(isA<ChallengeException>().having((error) => error.runId, 'runId', _runId)));
       relay.reply = (request) => RelayResponse(409, {'code': 'RUN_OVER', 'run': _runJson(running: false, result: {'points': 13, 'awarded': 13, 'ending': 'timeout'})});
@@ -278,19 +274,18 @@ void main() {
 
   group('编排', () {
     test('没登录应用账号直接报未登录；中转说应用账号不在了就马上核一次，本机退回未登录并通知页面', () async {
-      final accounts = _Accounts()..identity = _identity;
       final appClient = _AppClient();
-      final appAccounts = AppAccounts(accounts: accounts, client: appClient);
+      final appAccounts = AppAccounts(client: appClient);
       await appAccounts.load();
       final client = _Client();
-      final challenges = Challenges(accounts: accounts, appAccounts: appAccounts, client: client);
+      final challenges = Challenges(appAccounts: appAccounts, client: client);
       final changes = <void>[];
       final subscription = challenges.changes.listen(changes.add);
       expect(challenges.signedIn, isFalse);
       await expectLater(challenges.points(), throwsA(isA<ChallengeException>()));
       expect(client.calls, isEmpty);
 
-      appClient.records[_identity.loginId] = 'AAAAAAAAAAAAAAAAAAAAAA';
+      appClient.accountId = 'AAAAAAAAAAAAAAAAAAAAAA';
       await appAccounts.load();
       await pumpEventQueue();
       expect(challenges.signedIn, isTrue);
@@ -689,7 +684,7 @@ void main() {
         ..summary = const PointsSummary(balance: 86, expiring: 0, expiringAt: null, earned: 620, level: 1, nextLevelAt: 3000);
       await tester.pumpWidget(MaterialApp(
         theme: campusTheme(),
-        home: PlaygroundPage(store: PlaygroundStore.memory(), games: playgroundCatalog, groups: playgroundGroups, challenges: hub, openAccount: (_) {}, openLogin: (_) {}),
+        home: PlaygroundPage(store: PlaygroundStore.memory(), games: playgroundCatalog, groups: playgroundGroups, challenges: hub, openAccount: (_) {}),
       ));
       await tester.pumpAndSettle();
       await tester.tap(find.text('挑战'));
@@ -719,7 +714,7 @@ void main() {
       var accountOpened = 0;
       Widget page(ChallengeHub? challenges) => MaterialApp(
         theme: campusTheme(),
-        home: PlaygroundPage(store: store, games: playgroundCatalog, groups: playgroundGroups, challenges: challenges, openAccount: (_) => accountOpened++, openLogin: (_) {}),
+        home: PlaygroundPage(store: store, games: playgroundCatalog, groups: playgroundGroups, challenges: challenges, openAccount: (_) => accountOpened++),
       );
       await tester.pumpWidget(page(null));
       await tester.pumpAndSettle();
@@ -772,7 +767,7 @@ void main() {
         ..best = 234;
       await tester.pumpWidget(MaterialApp(
         theme: campusTheme(),
-        home: PlaygroundPage(store: PlaygroundStore.memory(), games: playgroundCatalog, groups: playgroundGroups, challenges: hub, openAccount: (_) {}, openLogin: (_) {}),
+        home: PlaygroundPage(store: PlaygroundStore.memory(), games: playgroundCatalog, groups: playgroundGroups, challenges: hub, openAccount: (_) {}),
       ));
       await tester.pumpAndSettle();
       await tester.tap(find.text('挑战'));
@@ -829,8 +824,6 @@ class _Hub implements ChallengeHub {
   final _controller = StreamController<void>.broadcast();
   @override
   bool signedIn = false;
-  @override
-  bool get campusSignedIn => true;
   int? best;
   // 大于 0 时另列一场要这么多门票的加赛。
   int ticket = 0;
@@ -931,34 +924,23 @@ class _Client implements ChallengeClient {
 }
 
 class _AppClient implements AppAccountClient {
-  final records = <String, String>{};
+  String? accountId;
   var summaries = 0;
   var lost = false;
   @override
-  Future<AppAccountRef?> accountOf(AccountIdentity identity) async => records[identity.loginId] == null ? null : AppAccountRef(accountId: records[identity.loginId]!, slot: 'fake-slot');
+  Future<AppAccountSession?> accountOf() async => accountId == null ? null : AppAccountSession(account: AppAccountRef(accountId: accountId!, slot: 'fake-slot'), username: 'tester');
   @override
-  Future<AppAccountStep> signInWithKingo(AccountIdentity identity, KingoSignInProof proof, {String? captcha}) => throw UnimplementedError();
+  Future<List<AppAccountRef>> dropLegacy() async => const [];
   @override
-  void abandon(AccountIdentity identity) {}
-  @override
-  Future<AppAccountSummary> summary(AccountIdentity identity) async {
+  Future<AppAccountSummary> summary() async {
     summaries++;
     if (lost) throw const AppAccountException(AppAccountFailure.notSignedIn, '应用账号已经退出');
-    return AppAccountSummary(accountId: records[identity.loginId]!, providers: const ['kingo'], deviceCount: 1, createdAt: DateTime.utc(2026));
+    return AppAccountSummary(accountId: accountId!, username: 'tester', deviceCount: 1, createdAt: DateTime.utc(2026));
   }
   @override
-  Future<void> signOut(AccountIdentity identity) async {}
-  @override
-  Future<void> delete(AccountIdentity identity) async {}
-}
-
-// 只实现编排用到的几项，其余交给 noSuchMethod。
-class _Accounts extends AccountAccess {
-  AccountIdentity? identity;
-  @override
-  AccountIdentity? get activeIdentity => identity;
-  @override
-  SessionView? get activeSession => null;
+  Future<void> signOut() async {}
+  // 编排测试用不到的几项交给 noSuchMethod。
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }
+

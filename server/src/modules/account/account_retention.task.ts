@@ -5,7 +5,7 @@ import { DistributedLock } from 'src/common/redis/redis.module';
 import { accountIdleDays, cleanupBatch } from 'src/common/relay_limits';
 import { AccountRepository } from 'src/modules/account/account.repository';
 
-// 应用账号的保留：400 天没有登录也没有查看过的账号，连同登录方式与密钥登记删除（同设备的不活跃清理）。
+// 应用账号的保留：400 天没有登录也没有查看过的账号，连同密钥登记与账号下的数据删除（同设备的不活跃清理）。
 // 密钥登记另随设备删除（pairing 编排）。多实例抢分布式锁，每轮最多 20 批、每批 1000 个，工作量有界。
 @Injectable()
 export class AccountRetentionTask {

@@ -20,6 +20,8 @@ class RelayRewardClient implements FestivalRewardClient {
     try {
       body = await _relay.request(saved.identity, 'POST', '/v1/rewards/$campaign/draw', {'activeDays': activeDays});
     } on RelayException catch (error) {
+      final eligibleAt = error.detail['eligibleAt'];
+      if (error.code == RelayCode.accountTooNew && eligibleAt is int) return FestivalTooNew(DateTime.fromMillisecondsSinceEpoch(eligibleAt, isUtc: true));
       throw switch (error.code) {
         RelayCode.accountNotFound || RelayCode.unauthorized => const FestivalNotSignedIn(),
         RelayCode.network || RelayCode.timeout => const FestivalException('连不上服务器'),

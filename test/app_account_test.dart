@@ -1,193 +1,256 @@
-import 'dart:async';
 import 'dart:convert';
 
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/domain/account.dart';
 import 'package:superxd/domain/app_account.dart';
-import 'package:superxd/domain/diagnostic_upload.dart';
 import 'package:superxd/domain/campus_gateway.dart';
-import 'package:superxd/edu/login_rules.dart';
+import 'package:superxd/domain/diagnostic_upload.dart';
 import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/page/account_page.dart';
+import 'package:superxd/page/app_account_join_page.dart';
+import 'package:superxd/page/app_account_page.dart';
 import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_crypto.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
-// 应用账号（人工决策见 domain/app_account.dart 与 application/app_accounts.dart）：中转客户端、编排与账号页。合成数据。
-const _identity = AccountIdentity(source: 'http://school.example', loginId: '20260000001');
-const _other = AccountIdentity(source: 'http://school.example', loginId: '20260000002');
+// 应用账号（人工决策见 domain/app_account.dart 的 11-15 16:40:33 那条）：自己的账号体系，用户名加密码；中转客户端、编排、账号页与应用账号页。合成数据。
 const _accountId = 'AAAAAAAAAAAAAAAAAAAAAA';
+const _ticketId = 'TTTTTTTTTTTTTTTTTTTTTT';
+const _code = 'ABCD0123EFGH4567JKMN89PQ';
 // 编排测试里替身给的把手（slot 只是替身里的一个名字）。
 const _account = AppAccountRef(accountId: _accountId, slot: 'fake-slot');
-// 1×1 的 PNG：账号页的验证码弹窗要真的解得出图。
-const _captchaImage = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+const _session = AppAccountSession(account: _account, username: 'tester_one');
 
 void main() {
+  group('恢复码与用户名', () {
+    test('恢复码 24 位 Crockford base32，四位一组显示；输入时容错 O、I、L 与分隔符', () {
+      final code = generateRecoveryCode();
+      expect(code, matches(RegExp(r'^[0-9A-HJKMNP-TV-Z]{24}$')));
+      expect(generateRecoveryCode(), isNot(code));
+      expect(formatRecoveryCode(_code), 'ABCD-0123-EFGH-4567-JKMN-89PQ');
+      expect(normalizeRecoveryCode(' abcd-0123-efgh-4567-jkmn-89pq '), _code);
+      expect(normalizeRecoveryCode('OOOO-IIII-LLLL-2222-3333-4444'), '000011111111222233334444');
+      expect(normalizeRecoveryCode('ABCD'), isNull);
+      expect(validAppUsername('Tester_1'), isTrue);
+      expect(validAppUsername('ab'), isFalse);
+      expect(validAppUsername('用户名'), isFalse);
+      expect(validAppPassword('1234567'), isFalse);
+      expect(validAppPassword('12345678'), isTrue);
+    });
+  });
+
   group('中转客户端', () {
     late _Relay relay;
     late MemoryAppAccountVault vault;
     late RelayAppAccountClient client;
-    late List<int> sealSeed;
+    late SimpleKeyPair sealPair;
     setUp(() async {
       relay = _Relay();
       vault = MemoryAppAccountVault();
-      sealSeed = List<int>.generate(32, (index) => index + 1);
-      final sealPublic = (await (await X25519().newKeyPairFromSeed(sealSeed)).extractPublicKey()).bytes;
-      client = RelayAppAccountClient(vault: vault, transport: relay, sealKey: sealPublic);
+      sealPair = await X25519().newKeyPairFromSeed(List<int>.generate(32, (index) => index + 1));
+      client = RelayAppAccountClient(vault: vault, transport: relay, sealKey: (await sealPair.extractPublicKey()).bytes);
     });
 
-    test('登录：签名、口令摘要只认这台设备打得开，要验证码时沿用同一把密钥与挑战号，成功才存本机', () async {
-      final proof = kingoSignInProof(_identity.loginId, 'secret-value');
-      relay.reply = (request) => const RelayResponse(200, {'status': 'captcha', 'account': null, 'captcha': {'challengeId': 'BBBBBBBBBBBBBBBBBBBBBB', 'image': _captchaImage, 'contentType': 'image/jpeg', 'hint': '请输入图中的验证码'}});
-      final step = await client.signInWithKingo(_identity, proof);
-      expect(step, isA<AppAccountCaptcha>().having((step) => step.captcha.imageBase64, 'image', _captchaImage));
-      expect(await client.accountOf(_identity), isNull);
-      final first = relay.requests.single;
-      expect(first.path, '/v1/account/sign-in/kingo');
-      expect(first.headers['x-sxd-device'], first.deviceIdOfBody);
-      // 封装的是口令摘要，不是明文；只有中转私钥、而且只按这台设备号打得开。
-      final opened = await _open(sealSeed, decodeBase64UrlNoPad(first.body['sealed'] as String), first.deviceIdOfBody);
-      expect(jsonDecode(utf8.decode(opened)), proof.toJson());
-      expect(utf8.decode(opened), isNot(contains('secret-value')));
-      relay.reply = (request) => const RelayResponse(200, {'status': 'signedIn', 'account': {'accountId': _accountId, 'created': true, 'serverTime': 1}, 'captcha': null});
-      final signed = await client.signInWithKingo(_identity, proof, captcha: 'AB12');
-      expect(signed, isA<AppAccountSignedIn>().having((step) => step.account, 'account', AppAccountRef(accountId: _accountId, slot: appAccountSlot(_identity))));
-      final second = relay.requests.last;
-      expect(second.headers['x-sxd-device'], first.headers['x-sxd-device']);
-      expect(second.body['challengeId'], 'BBBBBBBBBBBBBBBBBBBBBB');
-      expect(second.body['captcha'], 'AB12');
-      expect(await client.accountOf(_identity), AppAccountRef(accountId: _accountId, slot: appAccountSlot(_identity)));
-      expect((await vault.read(appAccountSlot(_identity)))!.identity.deviceId, second.headers['x-sxd-device']);
-      expect(await client.accountOf(_other), isNull);
-      // 存储键里不出现学号。
-      expect(appAccountSlot(_identity), isNot(contains(_identity.loginId)));
+    test('注册：只发用户名与封装好的秘密（只有中转打得开、只认这台设备）；成功才把密钥、账号号与用户名存本机', () async {
+      relay.reply = (request) => const RelayResponse(200, {'accountId': _accountId, 'username': 'tester_one', 'serverTime': 1});
+      final session = await client.register('Tester_One', 'synthetic-pass', _code);
+      final request = relay.requests.single;
+      expect(request.path, '/v1/account/register');
+      expect(request.body.keys.toSet(), {'signPublicKey', 'boxPublicKey', 'username', 'sealed'});
+      expect(request.body['username'], 'tester_one');
+      expect(request.headers['x-sxd-device'], request.deviceIdOfBody);
+      expect(jsonEncode(request.body), isNot(contains('synthetic-pass')));
+      final opened = await _open(sealPair, decodeBase64UrlNoPad(request.body['sealed'] as String), request.deviceIdOfBody);
+      expect(jsonDecode(utf8.decode(opened)), {'password': 'synthetic-pass', 'recoveryCode': _code});
+      expect((session.account, session.username), (const AppAccountRef(accountId: _accountId, slot: appAccountSlot), 'tester_one'));
+      final saved = (await vault.read(appAccountSlot))!;
+      expect((saved.accountId, saved.username, saved.identity.deviceId), (_accountId, 'tester_one', request.deviceIdOfBody));
+      expect((await client.accountOf())!.username, 'tester_one');
     });
 
-    test('答验证码时没有留着的挑战、放弃后再答，都要重新登录', () async {
-      await expectLater(client.signInWithKingo(_identity, kingoSignInProof(_identity.loginId, 'x'), captcha: 'AB12'), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.captchaExpired)));
-      relay.reply = (request) => const RelayResponse(200, {'status': 'captcha', 'account': null, 'captcha': {'challengeId': 'BBBBBBBBBBBBBBBBBBBBBB', 'image': _captchaImage, 'contentType': 'image/jpeg', 'hint': ''}});
-      await client.signInWithKingo(_identity, kingoSignInProof(_identity.loginId, 'x'));
-      client.abandon(_identity);
-      await expectLater(client.signInWithKingo(_identity, kingoSignInProof(_identity.loginId, 'x'), captcha: 'AB12'), throwsA(isA<AppAccountException>()));
-    });
-
-    test('中转的错误码换成给用户看的原因', () async {
+    test('登录与用恢复码重设各发各的秘密；中转的错误码换成给用户看的原因，失败不存本机', () async {
+      relay.reply = (request) => const RelayResponse(200, {'accountId': _accountId, 'username': 'tester_one', 'serverTime': 1});
+      await client.recover('tester_one', _code, 'new-synthetic', 'ZZZZ0123EFGH4567JKMN89PQ');
+      final opened = await _open(sealPair, decodeBase64UrlNoPad(relay.requests.last.body['sealed'] as String), relay.requests.last.deviceIdOfBody);
+      expect(relay.requests.last.path, '/v1/account/recover');
+      expect(jsonDecode(utf8.decode(opened)), {'recoveryCode': _code, 'password': 'new-synthetic', 'newRecoveryCode': 'ZZZZ0123EFGH4567JKMN89PQ'});
+      await vault.delete(appAccountSlot);
       final cases = <(Map<String, Object?>, int, AppAccountFailure, String)>[
-        ({'code': 'ACCOUNT_REJECTED', 'reason': 'passwordWrong', 'message': '账号或密码有误!'}, 422, AppAccountFailure.rejected, '账号或密码有误!'),
-        ({'code': 'UPSTREAM_UNAVAILABLE', 'reason': 'rateLimited'}, 429, AppAccountFailure.upstream, '教务提示请求太过频繁，请约 1 分钟后再试'),
-        ({'code': 'UPSTREAM_UNAVAILABLE', 'reason': 'network'}, 502, AppAccountFailure.upstream, '暂时连不上学校教务，请稍后再试'),
+        ({'code': 'CREDENTIALS_INVALID'}, 403, AppAccountFailure.credentialsInvalid, '用户名或密码不对'),
+        ({'code': 'USERNAME_TAKEN'}, 409, AppAccountFailure.usernameTaken, '用户名已被占用'),
         ({'code': 'RATE_LIMITED', 'retryAfter': 60}, 429, AppAccountFailure.rateLimited, '尝试太频繁，请稍后再试'),
-        ({'code': 'CAPTCHA_EXPIRED'}, 410, AppAccountFailure.captchaExpired, '验证码已过期，请重新登录'),
       ];
       for (final (body, status, failure, message) in cases) {
         relay.reply = (request) => RelayResponse(status, body);
-        await expectLater(client.signInWithKingo(_identity, kingoSignInProof(_identity.loginId, 'x')), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', failure).having((error) => error.message, 'message', message)));
+        await expectLater(client.login('tester_one', 'synthetic-pass'), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', failure).having((error) => error.message, 'message', message)));
       }
+      expect(relay.requests.last.path, '/v1/account/login');
       relay.reply = (request) => throw const RelayException(RelayCode.network);
-      await expectLater(client.signInWithKingo(_identity, kingoSignInProof(_identity.loginId, 'x')), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.network)));
-      relay.reply = (request) => const RelayResponse(200, {'status': 'signedIn', 'account': {'accountId': 'bad id', 'created': true}});
-      await expectLater(client.signInWithKingo(_identity, kingoSignInProof(_identity.loginId, 'x')), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.failed)));
-      expect(await client.accountOf(_identity), isNull);
+      await expectLater(client.login('tester_one', 'synthetic-pass'), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.network)));
+      relay.reply = (request) => const RelayResponse(200, {'accountId': 'bad id', 'username': 'tester_one'});
+      await expectLater(client.login('tester_one', 'synthetic-pass'), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.failed)));
+      expect(await client.accountOf(), isNull);
+    });
+
+    test('扫码登录：出示用临时密钥，批准了才存本机；登录着的设备批准时带核对码', () async {
+      final expiresAt = DateTime.utc(2026, 11, 15, 12, 5);
+      relay.reply = (request) => RelayResponse(200, {'ticketId': _ticketId, 'code': '012345', 'expiresAt': expiresAt.millisecondsSinceEpoch});
+      final join = await client.startJoin();
+      final shown = relay.requests.single;
+      expect(shown.path, '/v1/account/joins');
+      expect((join.payload, join.expiresAt), ('superxd-join:$_ticketId:012345', expiresAt));
+      expect(AppAccountJoin.parse(join.payload), (ticketId: _ticketId, code: '012345'));
+      expect(AppAccountJoin.parse('SXD1F:ABC'), isNull);
+      relay.reply = (request) => const RelayResponse(200, {'state': 'pending', 'account': null});
+      expect(await client.joinState(join), isNull);
+      expect(await client.accountOf(), isNull);
+      relay.reply = (request) => const RelayResponse(200, {'state': 'approved', 'account': {'accountId': _accountId, 'username': 'tester_one', 'serverTime': 1}});
+      expect((await client.joinState(join))!.username, 'tester_one');
+      expect(relay.requests.last.headers['x-sxd-device'], shown.headers['x-sxd-device']);
+      expect((await vault.read(appAccountSlot))!.identity.deviceId, shown.headers['x-sxd-device']);
+
+      relay.reply = (request) => const RelayResponse(204, {});
+      await client.approveJoin(join.payload);
+      expect(relay.requests.last.path, '/v1/account/joins/$_ticketId/approve');
+      expect(relay.requests.last.body, {'code': '012345'});
+      expect(relay.requests.last.headers['x-sxd-device'], shown.headers['x-sxd-device']);
+      await expectLater(client.approveJoin('https://example.com'), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.joinExpired)));
+      relay.reply = (request) => const RelayResponse(404, {'code': 'JOIN_NOT_FOUND'});
+      await expectLater(client.approveJoin(join.payload), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.joinExpired)));
+    });
+
+    test('改密码、换恢复码：用登录着的密钥签名、秘密封装；没登录不发', () async {
+      await expectLater(client.changePassword('changed-synthetic'), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.notSignedIn)));
+      expect(relay.requests, isEmpty);
+      final key = await SocialIdentity.generate();
+      await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: _accountId, username: 'tester_one'));
+      relay.reply = (request) => const RelayResponse(204, {});
+      await client.changePassword('changed-synthetic');
+      expect((relay.requests.last.path, relay.requests.last.headers['x-sxd-device']), ('/v1/account/password', key.deviceId));
+      expect(jsonDecode(utf8.decode(await _open(sealPair, decodeBase64UrlNoPad(relay.requests.last.body['sealed'] as String), key.deviceId))), {'password': 'changed-synthetic'});
+      await client.changeRecoveryCode(_code);
+      expect(relay.requests.last.path, '/v1/account/recovery-code');
+      expect(jsonDecode(utf8.decode(await _open(sealPair, decodeBase64UrlNoPad(relay.requests.last.body['sealed'] as String), key.deviceId))), {'recoveryCode': _code});
     });
 
     test('查看账号：别处注销了就删本机记录；退出连不上也删本机；注销要服务端删成才算', () async {
-      await vault.write(appAccountSlot(_identity), AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId));
-      relay.reply = (request) => const RelayResponse(200, {'accountId': _accountId, 'providers': ['kingo'], 'deviceCount': 2, 'createdAt': 1763000000000});
-      final summary = await client.summary(_identity);
-      expect(summary.deviceCount, 2);
+      await vault.write(appAccountSlot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId, username: 'tester_one'));
+      relay.reply = (request) => const RelayResponse(200, {'accountId': _accountId, 'username': 'tester_one', 'deviceCount': 2, 'createdAt': 1763000000000});
+      expect((await client.summary()).deviceCount, 2);
       relay.reply = (request) => const RelayResponse(404, {'code': 'ACCOUNT_NOT_FOUND'});
-      await expectLater(client.summary(_identity), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.notSignedIn)));
-      expect(await client.accountOf(_identity), isNull);
+      await expectLater(client.summary(), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.notSignedIn)));
+      expect(await client.accountOf(), isNull);
 
-      await vault.write(appAccountSlot(_identity), AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId));
+      await vault.write(appAccountSlot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId, username: 'tester_one'));
       relay.reply = (request) => throw const RelayException(RelayCode.network);
-      await client.signOut(_identity);
-      expect(relay.requests.last.method, 'DELETE');
-      expect(relay.requests.last.path, '/v1/devices');
-      expect(await client.accountOf(_identity), isNull);
+      await client.signOut();
+      expect('${relay.requests.last.method} ${relay.requests.last.path}', 'DELETE /v1/devices');
+      expect(await vault.read(appAccountSlot), isNull);
 
-      await vault.write(appAccountSlot(_identity), AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId));
-      await expectLater(client.delete(_identity), throwsA(isA<AppAccountException>()));
-      expect(await client.accountOf(_identity), AppAccountRef(accountId: _accountId, slot: appAccountSlot(_identity)));
-      relay.reply = (request) => request.path == '/v1/account' ? const RelayResponse(204, {}) : const RelayResponse(204, {});
-      await client.delete(_identity);
+      await vault.write(appAccountSlot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId, username: 'tester_one'));
+      await expectLater(client.delete(), throwsA(isA<AppAccountException>()));
+      expect(await client.accountOf(), isNotNull);
+      relay.reply = (request) => const RelayResponse(204, {});
+      await client.delete();
       expect(relay.requests.map((request) => '${request.method} ${request.path}').toList().reversed.take(2).toList(), ['DELETE /v1/devices', 'DELETE /v1/account']);
-      expect(await client.accountOf(_identity), isNull);
+      expect(await client.accountOf(), isNull);
+    });
+
+    test('11-15 以前每个教务账号一把的旧密钥：删掉并交出把手，新的那把不动', () async {
+      final legacy = await SocialIdentity.generate();
+      await vault.write('account.AAAA', AppAccountKey(identity: legacy, accountId: 'OLDOLDOLDOLDOLDOLDOLDO'));
+      await vault.write(appAccountSlot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId, username: 'tester_one'));
+      expect(await client.dropLegacy(), [const AppAccountRef(accountId: 'OLDOLDOLDOLDOLDOLDOLDO', slot: 'account.AAAA')]);
+      expect(await vault.slots(), [appAccountSlot]);
+      expect(await client.dropLegacy(), isEmpty);
     });
   });
 
   group('编排', () {
-    late _Accounts accounts;
     late _Client client;
     late AppAccounts appAccounts;
     late DateTime now;
+    late List<AppAccountRef> deleted;
     setUp(() async {
-      accounts = _Accounts()..identity = _identity;
+      now = DateTime.utc(2026, 11, 15, 12);
       client = _Client();
-      now = DateTime.utc(2026, 11, 13, 12);
-      appAccounts = AppAccounts(accounts: accounts, client: client, now: () => now);
+      deleted = [];
+      appAccounts = AppAccounts(client: client, onDeleted: deleted.add, now: () => now, recoveryCode: () => _code);
       await appAccounts.load();
     });
     tearDown(() => appAccounts.dispose());
 
-    test('没记住账号要输密码，要验证码就答，成功后用同一个密码重登教务', () async {
-      expect(await appAccounts.signIn(), isA<AppAccountPasswordNeeded>());
-      expect(client.signIns, isEmpty);
-      client.steps.add(const AppAccountCaptcha(CaptchaView(prompt: '', hint: '请输入图中的验证码', contentType: 'image/jpeg', imageBase64: _captchaImage)));
-      expect(await appAccounts.signIn(password: 'typed-secret'), isA<AppAccountNeedsCaptcha>());
-      expect(client.signIns.single, (captcha: null, digest: kingoSignInProof(_identity.loginId, 'typed-secret').passwordDigest));
-      client.steps.add(const AppAccountSignedIn(account: _account, created: true));
-      final done = await appAccounts.answerCaptcha('AB12');
-      expect(done, isA<AppAccountDone>().having((result) => result.notice, 'notice', '已登录应用账号'));
-      expect(client.signIns.last.captcha, 'AB12');
-      expect(accounts.refreshed, ['typed-secret']);
-      expect(appAccounts.accountId, _accountId);
-      expect(await appAccounts.answerCaptcha('AB12'), isA<AppAccountError>());
+    test('启动时清掉旧密钥并交给 onDeleted（清那些账号的本机私信），再读本机账号', () async {
+      client.legacy = [const AppAccountRef(accountId: 'OLDOLDOLDOLDOLDOLDOLDO', slot: 'account.AAAA')];
+      client.session = _session;
+      await appAccounts.load();
+      expect(deleted.map((account) => account.accountId), ['OLDOLDOLDOLDOLDOLDOLDO']);
+      expect((appAccounts.accountId, appAccounts.username), (_accountId, 'tester_one'));
     });
 
-    test('记住了账号直接核对；教务拒绝原样告诉用户；重登没成也算登录了、提示重新登录教务', () async {
-      accounts.remembered = 'saved-secret';
-      client.failure = const AppAccountException(AppAccountFailure.rejected, '账号或密码有误!');
-      expect(await appAccounts.signIn(), isA<AppAccountError>().having((result) => result.message, 'message', '账号或密码有误!'));
-      expect(appAccounts.accountId, isNull);
-      expect(accounts.refreshed, isEmpty);
-      client.failure = null;
-      client.steps.add(const AppAccountSignedIn(account: _account, created: false));
-      accounts.refreshOk = false;
-      expect(await appAccounts.signIn(), isA<AppAccountDone>().having((result) => result.notice, 'notice', '已登录应用账号；教务需要重新登录一次'));
-      expect(accounts.refreshed, [null]);
+    test('注册把生成的恢复码交给页面；登录；用恢复码重设时先规范写法，不像恢复码的不联网，成功换新恢复码', () async {
+      expect(await appAccounts.register('tester_one', 'synthetic-pass'), isA<AppAccountRecoveryCode>().having((result) => result.code, 'code', _code));
+      expect(client.registered, [('tester_one', 'synthetic-pass', _code)]);
+      expect(appAccounts.username, 'tester_one');
+      await appAccounts.signOut();
+      expect(appAccounts.current, isNull);
+      expect(await appAccounts.login('tester_one', 'synthetic-pass'), isA<AppAccountDone>().having((result) => result.notice, 'notice', '已登录应用账号'));
+      await appAccounts.signOut();
+      expect(await appAccounts.recover('tester_one', 'ABCD', 'new-synthetic'), isA<AppAccountError>());
+      expect(client.recovered, isEmpty);
+      expect(await appAccounts.recover('tester_one', 'abcd-0123-efgh-4567-jkmn-89pq', 'new-synthetic'), isA<AppAccountRecoveryCode>());
+      expect(client.recovered, [('tester_one', _code, 'new-synthetic', _code)]);
+      client.failure = const AppAccountException(AppAccountFailure.credentialsInvalid, '用户名或密码不对');
+      await appAccounts.signOut();
+      expect(await appAccounts.login('tester_one', 'wrong-pass'), isA<AppAccountError>().having((result) => result.message, 'message', '用户名或密码不对'));
+      expect(await appAccounts.recover('tester_one', _code, 'new-synthetic'), isA<AppAccountError>().having((result) => result.message, 'message', '用户名或恢复码不对'));
+      expect(appAccounts.current, isNull);
     });
 
-    test('跟着教务走：换账号读那个账号的、丢掉没答完的验证码；退出教务时退出那个账号的', () async {
-      client.records[_identity.loginId] = _accountId;
+    test('改密码、换恢复码要登录着；扫码登录：出示、连不上照旧等、过期报错、批准了就登录', () async {
+      expect(await appAccounts.changePassword('changed-synthetic'), isA<AppAccountError>());
+      client.session = _session;
       await appAccounts.load();
-      expect(appAccounts.accountId, _accountId);
-      client.steps.add(const AppAccountCaptcha(CaptchaView(prompt: '', hint: '', contentType: 'image/jpeg', imageBase64: _captchaImage)));
-      accounts.identity = _other;
-      expect(await appAccounts.signIn(password: 'x'), isA<AppAccountError>(), reason: '还没读完新账号的记录');
+      expect(await appAccounts.changePassword('changed-synthetic'), isA<AppAccountDone>());
+      expect(await appAccounts.renewRecoveryCode(), isA<AppAccountRecoveryCode>().having((result) => result.code, 'code', _code));
+      expect(client.changes, ['password changed-synthetic', 'recovery $_code']);
+      await appAccounts.signOut();
+
+      final join = (await appAccounts.startJoin() as AppAccountJoinStarted).join;
+      expect(await appAccounts.pollJoin(join), isA<AppAccountWaiting>());
+      client.joinFailure = const AppAccountException(AppAccountFailure.network, '连不上服务器');
+      expect(await appAccounts.pollJoin(join), isA<AppAccountWaiting>());
+      client.joinFailure = const AppAccountException(AppAccountFailure.joinExpired, '二维码已过期或不对，请刷新');
+      expect(await appAccounts.pollJoin(join), isA<AppAccountError>());
+      client.joinFailure = null;
+      client.joinApproved = true;
+      expect(await appAccounts.pollJoin(join), isA<AppAccountDone>());
+      expect(appAccounts.username, 'tester_one');
+      expect(await appAccounts.approveJoin(join.payload), isA<AppAccountDone>().having((result) => result.notice, 'notice', '已让新设备登录'));
+      expect(client.approved, [join.payload]);
+    });
+
+    test('中转说这台设备不在账号里了：马上核一次，退回未登录', () async {
+      client.session = _session;
       await appAccounts.load();
-      expect(appAccounts.accountId, isNull);
-      expect(await appAccounts.signIn(password: 'x'), isA<AppAccountNeedsCaptcha>());
-      accounts.identity = _identity;
-      accounts.notify();
+      client.failure = const AppAccountException(AppAccountFailure.notSignedIn, '应用账号已经退出');
+      expect(await appAccounts.approveJoin('superxd-join:$_ticketId:012345'), isA<AppAccountError>());
       await pumpEventQueue();
-      expect(client.abandoned, [_other.loginId]);
-      expect(appAccounts.accountId, _accountId);
-      await appAccounts.forget(_identity);
-      expect(client.signedOut, [_identity.loginId]);
-      expect(appAccounts.accountId, isNull);
+      expect(client.summaries, 1);
+      expect(appAccounts.current, isNull);
     });
 
     test('每天最多看一次账号；别处注销了就退回未登录', () async {
-      client.records[_identity.loginId] = _accountId;
+      client.session = _session;
       await appAccounts.load();
       await appAccounts.check();
       await appAccounts.check();
@@ -196,93 +259,193 @@ void main() {
       client.failure = const AppAccountException(AppAccountFailure.notSignedIn, '应用账号已经退出');
       await appAccounts.check();
       expect(client.summaries, 2);
-      expect(appAccounts.accountId, isNull);
+      expect(appAccounts.current, isNull);
+      now = now.add(AppAccounts.checkGap);
       await appAccounts.check();
       expect(client.summaries, 2, reason: '没登录不联网');
     });
 
     // 人工决策见 social/social_service.dart（11-14 17:56:46）：注销成了才通知组合根清掉这台手机上那个账号的私信；注销失败不通知。
     test('注销成功后把注销的账号交给 onDeleted，失败不交', () async {
-      final deleted = <AppAccountRef>[];
-      final subject = AppAccounts(accounts: accounts, client: client, onDeleted: deleted.add, now: () => now);
-      addTearDown(subject.dispose);
-      client.records[_identity.loginId] = _accountId;
-      await subject.load();
+      client.session = _session;
+      await appAccounts.load();
       client.failure = const AppAccountException(AppAccountFailure.network, '连不上服务器');
-      expect(await subject.deleteAccount(), isA<AppAccountError>());
+      expect(await appAccounts.deleteAccount(), isA<AppAccountError>());
       expect(deleted, isEmpty);
       client.failure = null;
-      final account = subject.current;
-      expect(await subject.deleteAccount(), isA<AppAccountDone>());
-      expect(deleted, [account]);
-      expect(subject.current, isNull);
+      expect(await appAccounts.deleteAccount(), isA<AppAccountDone>());
+      expect(deleted, [_account]);
+      expect(appAccounts.current, isNull);
     });
   });
 
-  group('账号页', () {
-    late _Accounts accounts;
+  group('页面', () {
     late _Client client;
     late AppAccounts appAccounts;
-    late AppSession session;
     setUp(() async {
-      accounts = _Accounts()..identity = _identity;
       client = _Client();
-      appAccounts = AppAccounts(accounts: accounts, client: client);
+      appAccounts = AppAccounts(client: client, recoveryCode: () => _code);
       await appAccounts.load();
-      session = AppSession(accounts);
     });
-    tearDown(() { appAccounts.dispose(); session.dispose(); });
+    tearDown(() => appAccounts.dispose());
 
-    Future<void> pumpPage(WidgetTester tester) async {
-      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: AccountPage(session: session, name: '同学甲', appAccounts: appAccounts)));
+    Future<void> pumpPage(WidgetTester tester, {AccountDiagnostics? diagnostics, JoinScanner? scan}) async {
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: AppAccountPage(appAccounts: appAccounts, diagnostics: diagnostics, scanJoin: scan ?? scanJoinWithCamera)));
       await tester.pumpAndSettle();
     }
 
-    testWidgets('登录：先单独同意，输密码，答验证码，成功后显示已登录并给提示条', (tester) async {
-      await pumpPage(tester);
-      expect(find.text('应用账号'), findsOneWidget);
-      expect(find.text('未登录'), findsOneWidget);
-      await tester.tap(find.text('应用账号'));
-      await tester.pumpAndSettle();
-      expect(find.text('登录应用账号？'), findsOneWidget);
-      expect(find.textContaining('不是明文'), findsOneWidget);
-      await tester.tap(find.text('同意并登录'));
-      await tester.pumpAndSettle();
-      expect(find.text('输入当前账号的教务密码，核对后不保存。'), findsOneWidget);
-      await tester.enterText(find.byType(TextField), 'typed-secret');
-      await tester.pump();
-      client.steps.add(const AppAccountCaptcha(CaptchaView(prompt: '', hint: '请输入图中的验证码', contentType: 'image/jpeg', imageBase64: _captchaImage)));
-      await tester.tap(find.text('登录'));
-      await tester.pumpAndSettle();
-      expect(find.text('请输入图中的验证码'), findsOneWidget);
-      await tester.enterText(find.byType(TextField), 'AB12');
-      await tester.pump();
-      client.steps.add(const AppAccountSignedIn(account: _account, created: true));
-      await tester.tap(find.text('确定'));
-      await tester.pumpAndSettle();
-      expect(find.text('已登录'), findsOneWidget);
-      expect(find.text('已登录应用账号'), findsOneWidget);
-      expect(accounts.refreshed, ['typed-secret']);
+    Future<void> clearToast(WidgetTester tester) async {
       await tester.pump(const Duration(seconds: 5));
       await tester.pumpAndSettle();
-    });
+    }
 
-    testWidgets('不同意就不核对；登录着点开是退出与注销，都要确认', (tester) async {
-      await pumpPage(tester);
-      await tester.tap(find.text('应用账号'));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('取消'));
-      await tester.pumpAndSettle();
-      expect(client.signIns, isEmpty);
-      expect(accounts.proofs, 0);
+    Future<void> fill(WidgetTester tester, String label, String text) async {
+      await tester.enterText(find.widgetWithText(TextField, label), text);
+      await tester.pump();
+    }
 
-      client.records[_identity.loginId] = _accountId;
+    testWidgets('账号页：应用账号一行写用户名或未登录，点了推入应用账号页；没配中转时不显示', (tester) async {
+      final session = AppSession(_Accounts());
+      addTearDown(session.dispose);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: AccountPage(session: session, name: '同学甲', appAccounts: appAccounts)));
+      await tester.pumpAndSettle();
+      expect(find.text('未登录'), findsOneWidget);
+      client.session = _session;
       await appAccounts.load();
       await tester.pumpAndSettle();
-      expect(find.text('已登录'), findsOneWidget);
+      expect(find.text('tester_one'), findsOneWidget);
       await tester.tap(find.text('应用账号'));
       await tester.pumpAndSettle();
-      expect(find.text('退出应用账号'), findsOneWidget);
+      expect(find.text('修改密码'), findsOneWidget);
+      await tester.pumpWidget(MaterialApp(key: const ValueKey('bare'), theme: campusTheme(), home: AccountPage(session: session, name: '同学甲')));
+      await tester.pumpAndSettle();
+      expect(find.text('应用账号'), findsNothing);
+      expect(find.text('退出登录'), findsOneWidget);
+    });
+
+    testWidgets('注册：格式不对原地说明、不联网；注册成功弹出恢复码（按返回不关，可复制），点「我已保存」后显示用户名', (tester) async {
+      String? copied;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'Clipboard.setData') copied = (call.arguments as Map)['text'] as String;
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
+      await pumpPage(tester);
+      await tester.tap(find.text('注册'));
+      await tester.pumpAndSettle();
+      await fill(tester, '用户名', 'ab');
+      await fill(tester, '新密码', 'short');
+      await tester.tap(find.widgetWithText(FilledButton, '注册'));
+      await tester.pumpAndSettle();
+      expect(find.text('3–20 位字母、数字或下划线'), findsOneWidget);
+      expect(find.text('8–64 个字符'), findsOneWidget);
+      expect(client.registered, isEmpty);
+      await fill(tester, '用户名', 'tester_one');
+      await fill(tester, '新密码', 'synthetic-pass');
+      await tester.tap(find.widgetWithText(FilledButton, '注册'));
+      await tester.pumpAndSettle();
+      expect(client.registered, [('tester_one', 'synthetic-pass', _code)]);
+      expect(find.text('保存恢复码'), findsOneWidget);
+      expect(find.text('ABCD-0123-EFGH\n4567-JKMN-89PQ'), findsOneWidget);
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(find.text('保存恢复码'), findsOneWidget, reason: '没点「我已保存」不关');
+      await tester.tap(find.text('复制'));
+      await tester.pumpAndSettle();
+      expect(copied, 'ABCD-0123-EFGH-4567-JKMN-89PQ');
+      await tester.tap(find.text('我已保存'));
+      await tester.pumpAndSettle();
+      expect(find.text('tester_one'), findsOneWidget);
+      expect(find.text('已注册并登录'), findsOneWidget);
+      await clearToast(tester);
+    });
+
+    testWidgets('登录：密码不对写明原因；忘记密码凭恢复码重设，成功弹出新的恢复码', (tester) async {
+      await pumpPage(tester);
+      client.failure = const AppAccountException(AppAccountFailure.credentialsInvalid, '用户名或密码不对');
+      await fill(tester, '用户名', 'tester_one');
+      await fill(tester, '密码', 'wrong-pass');
+      await tester.tap(find.widgetWithText(FilledButton, '登录'));
+      await tester.pumpAndSettle();
+      expect(find.text('用户名或密码不对'), findsOneWidget);
+      await tester.tap(find.text('知道了'));
+      await tester.pumpAndSettle();
+      expect(find.text('wrong-pass'), findsOneWidget, reason: '失败不清输入，改一处再交');
+      client.failure = null;
+      await tester.tap(find.text('忘记密码'));
+      await tester.pumpAndSettle();
+      expect(find.text('用恢复码重设密码'), findsOneWidget);
+      await fill(tester, '用户名', 'tester_one');
+      await fill(tester, '恢复码', 'abcd 0123 efgh 4567 jkmn 89pq');
+      await fill(tester, '新密码', 'new-synthetic');
+      await tester.tap(find.widgetWithText(FilledButton, '重设并登录'));
+      await tester.pumpAndSettle();
+      expect(client.recovered, [('tester_one', _code, 'new-synthetic', _code)]);
+      expect(find.text('保存恢复码'), findsOneWidget);
+      await tester.tap(find.text('我已保存'));
+      await tester.pumpAndSettle();
+      expect(find.text('tester_one'), findsOneWidget);
+      await clearToast(tester);
+      // 退出后回到的是「登录」那一段，不停在重设。
+      await tester.tap(find.text('退出应用账号'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('退出'));
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(FilledButton, '登录'), findsOneWidget);
+      expect(find.text('用恢复码重设密码'), findsNothing);
+      await clearToast(tester);
+    });
+
+    testWidgets('扫码登录：出示二维码与核对码，批准后回来显示已登录', (tester) async {
+      await pumpPage(tester);
+      await tester.tap(find.text('扫码登录'));
+      await tester.pumpAndSettle();
+      expect(find.text('核对码 012345'), findsOneWidget);
+      expect(find.byType(PrettyQrView), findsOneWidget);
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(client.joinPolls, 1);
+      client.joinApproved = true;
+      await tester.pump(const Duration(seconds: 3));
+      await tester.pumpAndSettle();
+      expect(find.text('核对码 012345'), findsNothing);
+      expect(find.text('tester_one'), findsOneWidget);
+      expect(find.text('已登录应用账号'), findsOneWidget);
+      await clearToast(tester);
+    });
+
+    testWidgets('登录着：让新设备登录（扫码、核对码确认）、修改密码、换新的恢复码要确认，退出与注销都要确认', (tester) async {
+      client.session = _session;
+      await appAccounts.load();
+      await pumpPage(tester, scan: (context) async => 'superxd-join:$_ticketId:012345');
+      await tester.tap(find.text('让新设备登录'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('012345'), findsOneWidget);
+      await tester.tap(find.text('确认'));
+      await tester.pumpAndSettle();
+      expect(client.approved, ['superxd-join:$_ticketId:012345']);
+      expect(find.text('已让新设备登录'), findsOneWidget);
+      await clearToast(tester);
+
+      await tester.tap(find.text('修改密码'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'changed-synthetic');
+      await tester.tap(find.widgetWithText(FilledButton, '修改'));
+      await tester.pumpAndSettle();
+      expect(client.changes, ['password changed-synthetic']);
+      await clearToast(tester);
+
+      await tester.tap(find.text('换新的恢复码'));
+      await tester.pumpAndSettle();
+      expect(find.text('原来的恢复码会作废。'), findsOneWidget);
+      await tester.tap(find.text('换新的'));
+      await tester.pumpAndSettle();
+      expect(find.text('保存恢复码'), findsOneWidget);
+      await tester.tap(find.text('我已保存'));
+      await tester.pumpAndSettle();
+      expect(client.changes.last, 'recovery $_code');
+      await clearToast(tester);
+
       await tester.tap(find.text('注销应用账号'));
       await tester.pumpAndSettle();
       expect(find.text('注销应用账号？'), findsOneWidget);
@@ -290,15 +453,14 @@ void main() {
       expect(find.textContaining('私信好友'), findsOneWidget);
       await tester.tap(find.text('注销'));
       await tester.pumpAndSettle();
-      expect(client.deleted, [_identity.loginId]);
-      expect(find.text('未登录'), findsOneWidget);
+      expect(client.deleted, 1);
       expect(find.text('应用账号已注销'), findsOneWidget);
-      await tester.pump(const Duration(seconds: 5));
-      await tester.pumpAndSettle();
+      expect(find.widgetWithText(FilledButton, '登录'), findsOneWidget);
+      await clearToast(tester);
     });
 
-    // 人工决策见 domain/diagnostic_upload.dart：登录着应用账号时，菜单里看与删记在账号下的诊断包。
-    testWidgets('登录着点开多一项「我上传的诊断包」：列出记在账号下的包，点一行复制编号，⋯里删除要确认', (tester) async {
+    // 人工决策见 domain/diagnostic_upload.dart：登录着应用账号时，看与删记在账号下的诊断包。
+    testWidgets('登录着多一项「我上传的诊断包」：列出记在账号下的包，点一行复制编号，⋯里删除要确认', (tester) async {
       final diagnosticsClient = _DiagnosticClient([
         // 刚传完：离删除差几分钟满 30 天，要写 30 天（同确认框），不能向下取整成 29。
         DiagnosticRecord(id: '7KQ2M9XD', bytes: 2 * 1024 * 1024, uploadedAt: DateTime.now().toUtc(), expiresAt: DateTime.now().toUtc().add(const Duration(days: 30, minutes: -1))),
@@ -310,12 +472,9 @@ void main() {
         return null;
       });
       addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
-      client.records[_identity.loginId] = _accountId;
+      client.session = _session;
       await appAccounts.load();
-      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: AccountPage(session: session, name: '同学甲', appAccounts: appAccounts, diagnostics: diagnostics)));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('应用账号'));
-      await tester.pumpAndSettle();
+      await pumpPage(tester, diagnostics: diagnostics);
       await tester.tap(find.text('我上传的诊断包'));
       await tester.pumpAndSettle();
       expect(find.text('诊断编号 7KQ2M9XD'), findsOneWidget);
@@ -334,22 +493,13 @@ void main() {
       expect(diagnosticsClient.deleted, ['7KQ2M9XD']);
       expect(find.text('诊断编号 7KQ2M9XD'), findsNothing);
       expect(find.text('应用账号下还没有诊断包'), findsOneWidget);
-      await tester.pump(const Duration(seconds: 5));
-      await tester.pumpAndSettle();
-    });
-
-    testWidgets('没配中转时不显示这一组', (tester) async {
-      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: AccountPage(session: session, name: '同学甲')));
-      await tester.pumpAndSettle();
-      expect(find.text('应用账号'), findsNothing);
-      expect(find.text('退出登录'), findsOneWidget);
+      await clearToast(tester);
     });
   });
 }
 
-// 按客户端的布局解开信封（同服务端 account_keys.ts），验证只有中转私钥、而且只按发起的设备号打得开。
-Future<List<int>> _open(List<int> recipientSeed, List<int> sealed, String deviceId) async {
-  final recipient = await X25519().newKeyPairFromSeed(recipientSeed);
+// 按服务端的布局解开信封（同 server/src/modules/account/account_keys.ts），验证只有中转私钥、而且只按发起的设备号打得开。
+Future<List<int>> _open(SimpleKeyPair recipient, List<int> sealed, String deviceId) async {
   final recipientPublic = (await recipient.extractPublicKey()).bytes;
   final ephemeral = sealed.sublist(1, 33);
   final shared = await X25519().sharedSecretKey(keyPair: recipient, remotePublicKey: SimplePublicKey(ephemeral, type: KeyPairType.x25519));
@@ -381,79 +531,102 @@ class _Relay implements RelayTransport {
 }
 
 class _Client implements AppAccountClient {
-  final records = <String, String>{};
-  final steps = <AppAccountStep>[];
-  final signIns = <({String? captcha, String digest})>[];
-  final abandoned = <String>[];
-  final signedOut = <String>[];
-  final deleted = <String>[];
+  AppAccountSession? session;
+  List<AppAccountRef> legacy = const [];
+  final registered = <(String, String, String)>[];
+  final recovered = <(String, String, String, String)>[];
+  final changes = <String>[];
+  final approved = <String>[];
   int summaries = 0;
+  int joinPolls = 0;
+  int deleted = 0;
+  bool joinApproved = false;
   AppAccountException? failure;
+  AppAccountException? joinFailure;
+
+  void _fail() {
+    if (failure case final error?) throw error;
+  }
+
+  AppAccountSession _signIn(String username) => session = AppAccountSession(account: _account, username: normalizeAppUsername(username));
 
   @override
-  Future<AppAccountRef?> accountOf(AccountIdentity identity) async => records[identity.loginId] == null ? null : AppAccountRef(accountId: records[identity.loginId]!, slot: _account.slot);
+  Future<AppAccountSession?> accountOf() async => session;
   @override
-  Future<AppAccountStep> signInWithKingo(AccountIdentity identity, KingoSignInProof proof, {String? captcha}) async {
-    signIns.add((captcha: captcha, digest: proof.passwordDigest));
-    if (failure case final error?) throw error;
-    final step = steps.removeAt(0);
-    if (step is AppAccountSignedIn) records[identity.loginId] = step.account.accountId;
-    return step;
+  Future<List<AppAccountRef>> dropLegacy() async {
+    final dropped = legacy;
+    legacy = const [];
+    return dropped;
   }
   @override
-  void abandon(AccountIdentity identity) => abandoned.add(identity.loginId);
+  Future<AppAccountSession> register(String username, String password, String recoveryCode) async {
+    _fail();
+    registered.add((username, password, recoveryCode));
+    return _signIn(username);
+  }
   @override
-  Future<AppAccountSummary> summary(AccountIdentity identity) async {
+  Future<AppAccountSession> login(String username, String password) async {
+    _fail();
+    return _signIn(username);
+  }
+  @override
+  Future<AppAccountSession> recover(String username, String recoveryCode, String password, String newRecoveryCode) async {
+    _fail();
+    recovered.add((username, recoveryCode, password, newRecoveryCode));
+    return _signIn(username);
+  }
+  @override
+  Future<void> changePassword(String password) async {
+    _fail();
+    changes.add('password $password');
+  }
+  @override
+  Future<void> changeRecoveryCode(String recoveryCode) async {
+    _fail();
+    changes.add('recovery $recoveryCode');
+  }
+  @override
+  Future<AppAccountJoin> startJoin() async {
+    _fail();
+    return AppAccountJoin(ticketId: _ticketId, code: '012345', expiresAt: DateTime.now().add(const Duration(minutes: 5)));
+  }
+  @override
+  Future<AppAccountSession?> joinState(AppAccountJoin join) async {
+    joinPolls++;
+    if (joinFailure case final error?) throw error;
+    return joinApproved ? _signIn('tester_one') : null;
+  }
+  @override
+  Future<void> approveJoin(String payload) async {
+    _fail();
+    approved.add(payload);
+  }
+  @override
+  Future<AppAccountSummary> summary() async {
     summaries++;
-    if (failure case final error?) throw error;
-    return AppAccountSummary(accountId: records[identity.loginId]!, providers: const ['kingo'], deviceCount: 1, createdAt: DateTime.utc(2026));
+    _fail();
+    return AppAccountSummary(accountId: session!.account.accountId, username: session!.username, deviceCount: 1, createdAt: DateTime.utc(2026));
   }
   @override
-  Future<void> signOut(AccountIdentity identity) async {
-    signedOut.add(identity.loginId);
-    records.remove(identity.loginId);
-  }
+  Future<void> signOut() async => session = null;
   @override
-  Future<void> delete(AccountIdentity identity) async {
-    if (failure case final error?) throw error;
-    deleted.add(identity.loginId);
-    records.remove(identity.loginId);
+  Future<void> delete() async {
+    _fail();
+    deleted++;
+    session = null;
   }
 }
 
-// 只实现应用账号与账号页用到的几项，其余交给 noSuchMethod。
+// 账号页只用到的几项，其余交给 noSuchMethod。
 class _Accounts extends AccountAccess {
-  AccountIdentity? identity;
-  String? remembered;
-  bool refreshOk = true;
-  int proofs = 0;
-  final refreshed = <String?>[];
-  final _loggedOut = StreamController<AccountIdentity>.broadcast();
-
-  void notify() => notifyListeners();
-
   @override
-  AccountIdentity? get activeIdentity => identity;
+  AccountIdentity? get activeIdentity => const AccountIdentity(source: 'http://school.example', loginId: '20260000001');
   @override
-  SessionView? get activeSession => identity == null ? null : SessionView(loginId: identity!.loginId, name: '同学甲', className: '');
+  SessionView? get activeSession => const SessionView(loginId: '20260000001', name: '同学甲', className: '');
   @override
   int get generation => 1;
   @override
-  Stream<AccountIdentity> get loggedOut => _loggedOut.stream;
-  @override
   Future<LegacyImportState> legacyImportState() async => const LegacyImportState(available: false);
-  @override
-  Future<GatewayResult<KingoSignInProof>> appAccountProof({String? password}) async {
-    proofs++;
-    final secret = password ?? remembered;
-    if (secret == null) return const GatewayResult(ok: false, source: 'local', fetchedAt: '', error: GatewayError(code: 'PASSWORD_NEEDED', message: '要输入一次教务密码'));
-    return GatewayResult(ok: true, source: 'local', fetchedAt: '', data: kingoSignInProof(identity!.loginId, secret));
-  }
-  @override
-  Future<GatewayResult<bool>> refreshSession({String? password}) async {
-    refreshed.add(password);
-    return refreshOk ? const GatewayResult(ok: true, source: 'local', fetchedAt: '', data: true) : const GatewayResult(ok: false, source: 'local', fetchedAt: '', error: GatewayError(code: 'SESSION_EXPIRED', message: ''));
-  }
   @override
   dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

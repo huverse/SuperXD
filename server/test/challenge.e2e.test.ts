@@ -12,6 +12,7 @@ import { challengeRunKeepDays, pointsEntryKeepDays } from 'src/common/relay_limi
 import { ChallengeTasks } from 'src/modules/challenge/challenge.tasks';
 import { ChallengeService } from 'src/modules/challenge/challenge.service';
 import { PointsRetentionTask } from 'src/modules/points/points_retention.task';
+import { insertAccount } from './account_fixture';
 import { TestDevice } from './test_device';
 
 // 题库用双端判定向量里的题（向量带参考解，用例拿它交对的答案）。碎片按题库写的：汉诺塔 3、冰面 6，所以门上的数是 9（相加）或 18（相乘），
@@ -70,7 +71,7 @@ const signedIn = async () => {
   expect((await device.register()).status).toBe(200);
   const accountId = randomBytes(16).toString('base64url');
   const now = new Date();
-  await database.query('INSERT INTO app_account (account_id, last_seen_time, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, now, now, now]);
+  await insertAccount(database, accountId, now);
   await database.query('INSERT INTO account_device (account_id, device_id, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, device.deviceId, now, now]);
   return { device, accountId };
 };

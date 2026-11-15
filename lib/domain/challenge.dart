@@ -212,8 +212,6 @@ abstract interface class ChallengeHub {
   Stream<void> get changes;
   // 当前教务账号登录了应用账号。
   bool get signedIn;
-  // 登录着教务（没登录教务时页面引导先登录教务）。
-  bool get campusSignedIn;
   Future<ChallengeCatalog> catalog(Set<String> games);
   Future<ChallengeRun> start(String challengeId, Set<String> games);
   Future<ChallengeRun> run(String runId);

@@ -53,6 +53,8 @@ class _RewardRelay implements RelayTransport {
   final accounts = <String>{};
   final draws = <({String device, String path, Map<String, Object?> body})>[];
   Map<String, Object?> result = {'result': 'missed', 'prize': null};
+  // 设了就同服务端账号建立不满规定天数：回 403 ACCOUNT_TOO_NEW 附 eligibleAt（毫秒）。
+  int? eligibleAt;
 
   @override
   Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, int? limit, bool background = false}) async {
@@ -66,6 +68,7 @@ class _RewardRelay implements RelayTransport {
     final canonical = requestCanonical(method, pathWithQuery, headers['x-sxd-time']!, headers['x-sxd-nonce']!, body ?? const []);
     if (key == null || !await verifyEd25519(key, canonical, decodeBase64UrlNoPad(headers['x-sxd-signature']!))) return const RelayResponse(401, {'code': RelayCode.unauthorized});
     if (!accounts.contains(device)) return const RelayResponse(404, {'code': RelayCode.accountNotFound});
+    if (eligibleAt case final at?) return RelayResponse(403, {'code': RelayCode.accountTooNew, 'eligibleAt': at});
     draws.add((device: device, path: pathWithQuery, body: (jsonDecode(utf8.decode(body!)) as Map).cast<String, Object?>()));
     return RelayResponse(200, result);
   }
@@ -235,6 +238,25 @@ void main() {
       expect(memory.record.drawn, isEmpty);
       expect(gone, 1);
     });
+
+    // 人工决策见服务端 reward_odds.ts 的 11-15 那条：设备核对谁都能建号，账号建立满规定天数才能抽。
+    test('应用账号建立不满规定天数：不记结果，到能抽的时刻之前不再为它抽（不联网），到了回到前台补抽', () async {
+      final memory = FileFestivalMemory.memory();
+      final eligibleAt = noon.add(const Duration(days: 1));
+      final client = FakeRewardClient((occasion) => FestivalTooNew(eligibleAt));
+      var now = noon;
+      final subject = Festivals(occasions: const [spring, lantern], memory: memory, client: client, account: () => signedIn, clock: () => now);
+      await subject.markPlayed(spring);
+      expect(await subject.draw(spring), isA<FestivalTooNew>().having((result) => result.eligibleAt, 'eligibleAt', eligibleAt));
+      expect(memory.record.drawn, isEmpty);
+      await subject.refresh();
+      expect(client.requests, hasLength(1), reason: '还没到能抽的时刻');
+      now = eligibleAt;
+      client.result = (occasion) => const FestivalMissed();
+      await subject.refresh();
+      expect(client.requests, hasLength(2));
+      expect(memory.record.drawn, ['spring-2027']);
+    });
   });
 
   group('抽签客户端（经假中转）', () {
@@ -258,6 +280,8 @@ void main() {
       await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalException>().having((error) => error.message, 'message', contains('格式'))));
       relay.failNext = const RelayException(RelayCode.network);
       await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalException>().having((error) => error.message, 'message', contains('连不上'))));
+      transport.eligibleAt = DateTime.utc(2027, 2, 9).millisecondsSinceEpoch;
+      expect(await client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), isA<FestivalTooNew>().having((result) => result.eligibleAt, 'eligibleAt', DateTime.utc(2027, 2, 9)));
     });
   });
 

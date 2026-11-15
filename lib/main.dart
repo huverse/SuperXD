@@ -51,7 +51,6 @@ import 'package:superxd/domain/course_widget.dart';
 import 'package:superxd/domain/festival.dart';
 import 'package:superxd/domain/painting.dart';
 import 'package:superxd/domain/unlock.dart';
-import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/app_update_memory.dart';
@@ -211,8 +210,8 @@ void main() async {
       files: [File(path.join(socialDirectory, SocialSpaces.legacyDatabase))],
     ));
   }
-  appAccounts = appAccountsOf(session.gateway, onDeleted: (account) => unawaited(social.forgetAccount(account)));
-  final challenges = challengesOf(session.gateway, appAccounts);
+  appAccounts = appAccountsOf(onDeleted: (account) => unawaited(social.forgetAccount(account)));
+  final challenges = challengesOf(appAccounts);
   final rollouts = await rolloutsOf(support, appAccounts, challenges);
   final unlocks = unlocksOf(rollouts, appAccounts);
   final updates = await appUpdates(support, rollouts);
@@ -250,7 +249,7 @@ void main() async {
   if (updates != null) watchAppUpdates(updates, agreed: legal.agreed);
   watchMoments(moments, notes: notes, festivals: festivals, appAccounts: appAccounts, agreed: legal.agreed);
   watchAutoSync(session, autoSync, agreed: legal.agreed);
-  if (appAccounts != null) watchAppAccounts(appAccounts, session.gateway, agreed: legal.agreed);
+  if (appAccounts != null) watchAppAccounts(appAccounts, agreed: legal.agreed);
   watchRollouts(rollouts, agreed: legal.agreed);
   if (unlocks != null) watchUnlocks(unlocks, agreed: legal.agreed);
 }
@@ -386,12 +385,12 @@ AccountDiagnostics? diagnosticsOf(AppAccounts? Function() appAccounts) {
   );
 }
 
-// 应用账号（人工决策见 application/app_accounts.dart）走同一个自建中转；没配中转时为空，账号页不显示那一组。
-// 每个教务账号一把单独的设备密钥，存在自己的安全存储命名空间（social/relay_app_account.dart），与私信身份互不关联。
-AppAccounts? appAccountsOf(AccountAccess accounts, {void Function(AppAccountRef account)? onDeleted}) {
+// 应用账号（人工决策见 domain/app_account.dart）走同一个自建中转；没配中转时为空，账号页不显示那一组。
+// 这台设备一把设备密钥，存在自己的安全存储命名空间（social/relay_app_account.dart），与私信身份互不关联。
+AppAccounts? appAccountsOf({void Function(AppAccountRef account)? onDeleted}) {
   final transport = relayTransport();
   if (transport == null) return null;
-  return AppAccounts(accounts: accounts, client: RelayAppAccountClient(vault: const SecureAppAccountVault(), transport: transport), onDeleted: onDeleted);
+  return AppAccounts(client: RelayAppAccountClient(vault: const SecureAppAccountVault(), transport: transport), onDeleted: onDeleted);
 }
 
 // 私信跟着当前应用账号（人工决策见 social/social_service.dart）：同意协议与政策之后，等应用账号读好本机记录就切过去，之后应用账号一变就跟着切；没配中转时为不可用。
@@ -408,17 +407,15 @@ void watchSocial(SocialService social, AppAccounts? appAccounts, {required Futur
 
 // 挑战与积分（人工决策见 playground/challenge/challenge_rules.dart）：同应用账号走自建中转，用那个应用账号的设备密钥签名；
 // 没配中转时为空，游乐场不显示「挑战」。
-Challenges? challengesOf(AccountAccess accounts, AppAccounts? appAccounts) {
+Challenges? challengesOf(AppAccounts? appAccounts) {
   final transport = relayTransport();
   if (transport == null || appAccounts == null) return null;
-  return Challenges(accounts: accounts, appAccounts: appAccounts, client: RelayChallengeClient(vault: const SecureAppAccountVault(), transport: transport));
+  return Challenges(appAccounts: appAccounts, client: RelayChallengeClient(vault: const SecureAppAccountVault(), transport: transport));
 }
 
-// [人工决策-2026-11-13 22:06:22] 应用账号跟着教务走（用户选定）：用户主动退出教务时，这台设备上那个教务账号的应用账号一并退出（共用手机不串号）；
-// 会话过期不算退出。切换教务由 AppAccounts 按身份自己读。以后加别的登录方式、改成独立登录时换掉这一条。
-// 会话恢复之后读本机记录；同意协议与政策之后、每次回到前台看一眼账号（隔一天才联网，没登录不联网）。
-void watchAppAccounts(AppAccounts appAccounts, AccountAccess accounts, {required Future<void> agreed}) {
-  accounts.loggedOut.listen((identity) => unawaited(appAccounts.forget(identity)));
+// 应用账号与教务各管各的（人工决策见 domain/app_account.dart 的 11-15 16:40:33 那条，取代 11-13「跟着教务走」：退出教务不再连带退出应用账号）。
+// 启动时读本机记录；同意协议与政策之后、每次回到前台看一眼账号（隔一天才联网，没登录不联网）。
+void watchAppAccounts(AppAccounts appAccounts, {required Future<void> agreed}) {
   var ready = false;
   unawaited(appAccounts.load().then((_) => agreed).then((_) {
     ready = true;
@@ -768,7 +765,7 @@ class _AccountAppState extends State<_AccountApp> {
   }
 
   // 节日：边播动画边抽签，抽中的放完动画接着揭晓；动画放完时结果还没回来的最多再等 _drawWait，等不到的抽中了下次回到前台再揭晓。
-  // 有抽奖但没登录应用账号（人工决策见 domain/festival.dart）：动画放完提示一句，可以直接去账号页登录，登录后回来补抽。
+  // 有抽奖但没登录应用账号（人工决策见 domain/festival.dart）：动画放完提示一句，可以直接去账号页登录，登录后回来补抽；应用账号建立不满规定天数的提示从哪天起能抽。
   static const _drawWait = Duration(seconds: 3);
 
   Future<void> _celebrate(BuildContext context, FestivalOccasion occasion) async {
@@ -781,11 +778,20 @@ class _AccountAppState extends State<_AccountApp> {
     final scene = festivalCatalog.where((item) => item.occasion.id == occasion.id).firstOrNull;
     if (scene != null) await showFestivalCelebration(context, scene);
     if (signIn && context.mounted) {
-      showCampusToast(context, '登录应用账号就能参加这次抽奖', action: '去登录', onAction: () => pushAccountPage(context, widget.session, widget.appAccounts, widget.diagnostics));
+      final appAccounts = widget.appAccounts;
+      showCampusToast(context, '登录应用账号就能参加这次抽奖', action: appAccounts == null ? null : '去登录', onAction: appAccounts == null ? null : () => pushAppAccountPage(context, appAccounts, widget.diagnostics));
       return;
     }
     final result = await drawing.timeout(_drawWait, onTimeout: () => null);
-    if (result case FestivalWon(:final prize) when context.mounted) await _reveal(context, prize);
+    if (!context.mounted) return;
+    switch (result) {
+      case FestivalWon(:final prize):
+        await _reveal(context, prize);
+      case FestivalTooNew(:final eligibleAt):
+        showCampusToast(context, '应用账号${formatCampusRelative(eligibleAt.toIso8601String())}起能参加抽奖');
+      default:
+        break;
+    }
   }
 
   Future<void> _reveal(BuildContext context, FestivalPrize prize) {

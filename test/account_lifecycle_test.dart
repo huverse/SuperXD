@@ -10,6 +10,7 @@ import 'package:path/path.dart' as path;
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/app_session.dart';
+import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/app_moments.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/developer_notes.dart';
@@ -45,6 +46,7 @@ import 'package:superxd/page/message_page.dart';
 import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/page/account_page.dart';
+import 'package:superxd/page/app_account_page.dart';
 import 'package:superxd/page/login_page.dart';
 import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/playground/playground_page.dart';
@@ -822,8 +824,8 @@ void main() {
     expect(festivals.unrevealed, isNull, reason: '揭晓了就记下');
     await tester.pumpWidget(const SizedBox()); session.dispose(); moments.dispose();
   });
-  // 人工决策见 domain/festival.dart：抽奖要登录应用账号；没登录的只看动画，放完提示一句，点「去登录」进账号页。
-  testWidgets('节日当天没登录应用账号：照样播动画但不抽签，放完提示可以去登录，点「去登录」进账号页', (tester) async {
+  // 人工决策见 domain/festival.dart：抽奖要登录应用账号；没登录的只看动画，放完提示一句，点「去登录」进应用账号页。
+  testWidgets('节日当天没登录应用账号：照样播动画但不抽签，放完提示可以去登录，点「去登录」进应用账号页', (tester) async {
     tester.view.physicalSize = const Size(1080, 2400);
     tester.view.devicePixelRatio = 2.75;
     addTearDown(tester.view.reset);
@@ -837,7 +839,9 @@ void main() {
     final festivals = Festivals(occasions: [occasion], memory: FileFestivalMemory.memory(), client: reward, account: () => null);
     final moments = AppMoments(festivals: festivals, timetable: () async => const CampusTimetable([]));
     final legal = LegalNoticeMemory.memory(agreedRevision: legalRevision, seenRevision: legalRevision);
-    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, legal: legal, festivals: festivals, moments: moments)); await tester.pumpAndSettle();
+    final appAccounts = AppAccounts(client: _NoAppAccount());
+    await appAccounts.load();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, legal: legal, festivals: festivals, moments: moments, appAccounts: appAccounts)); await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 1)); await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('合成场景'), findsOneWidget);
     await tester.pump(const Duration(seconds: 2)); await tester.pump(const Duration(milliseconds: 500)); await tester.pump(const Duration(milliseconds: 500));
@@ -846,7 +850,7 @@ void main() {
     expect(reward.draws, 0);
     expect(find.text('登录应用账号就能参加这次抽奖'), findsOneWidget);
     await tester.tap(find.text('去登录')); await tester.pumpAndSettle();
-    expect(find.byType(AccountPage), findsOneWidget);
+    expect(find.byType(AppAccountPage), findsOneWidget);
     await tester.pumpWidget(const SizedBox()); session.dispose(); moments.dispose();
   });
   testWidgets('新信在不迫切的时候弹出：开屏走完、停在底栏根页且上面没有别的页面；从别的页面回到根页时立即看一眼；每次前台最多一次', (tester) async {
@@ -1011,4 +1015,14 @@ class _NoteFeed implements DeveloperNoteFeed {
       DeveloperNote(id: 'a', title: '第一封', publishedAt: now.subtract(const Duration(days: 30)), body: '第一封的正文'),
     ];
   }
+}
+
+// 没登录的应用账号（节日提示去登录用）：只答读本机记录的两项，其余交给 noSuchMethod。
+class _NoAppAccount implements AppAccountClient {
+  @override
+  Future<AppAccountSession?> accountOf() async => null;
+  @override
+  Future<List<AppAccountRef>> dropLegacy() async => const [];
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
 }

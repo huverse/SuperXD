@@ -30,10 +30,11 @@ abstract final class RelayCode {
   static const peerNotFound = 'PEER_NOT_FOUND';
   static const envelopeTooLarge = 'ENVELOPE_TOO_LARGE';
   static const mailboxFull = 'MAILBOX_FULL';
-  static const accountRejected = 'ACCOUNT_REJECTED';
-  static const captchaExpired = 'CAPTCHA_EXPIRED';
-  static const upstreamUnavailable = 'UPSTREAM_UNAVAILABLE';
   static const accountNotFound = 'ACCOUNT_NOT_FOUND';
+  static const usernameTaken = 'USERNAME_TAKEN'; // 注册时用户名已被占用
+  static const credentialsInvalid = 'CREDENTIALS_INVALID'; // 用户名、密码或恢复码不对（不说是哪一项）
+  static const joinNotFound = 'JOIN_NOT_FOUND'; // 扫码登录的票据已过期、核对码不对或不是这台设备发起的
+  static const accountTooNew = 'ACCOUNT_TOO_NEW'; // 应用账号建立不满规定天数（节日抽奖），附 eligibleAt 毫秒
   static const challengeNotFound = 'CHALLENGE_NOT_FOUND';
   static const challengeUnavailable = 'CHALLENGE_UNAVAILABLE';
   static const runActive = 'RUN_ACTIVE';

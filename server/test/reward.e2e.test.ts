@@ -16,6 +16,7 @@ import { RewardAdminError, runRewardAdmin } from 'src/modules/reward/reward_admi
 import { RewardRetentionTask } from 'src/modules/reward/reward_retention.task';
 import { RewardDice } from 'src/modules/reward/reward.service';
 import { rewardChance, rewardLevelWeight, rewardPickTier, rewardReleased, rewardWeight } from 'src/modules/reward/reward_odds';
+import { insertAccount } from './account_fixture';
 import { TestDevice } from './test_device';
 
 let app: NestExpressApplication;
@@ -47,14 +48,14 @@ const setup = async (options: { from?: number; to?: number; mode?: 'uniform' | '
   return key;
 };
 
-// 抽签人：登录了应用账号的设备。注册设备后直接在库里登记账号与一条教务登录身份（账号登录本身在 account.e2e.test.ts 测）；
-// 注册接口同一来源每小时 20 台新设备，每个用例前清空限流。subject 是登录身份的主体哈希，给了同一个就是同一个人。
-const registered = async (subject = randomBytes(32).toString('base64url')) => {
+// 抽签人：登录了应用账号的设备。注册设备后直接在库里登记账号（账号登录本身在 account.e2e.test.ts 测）；
+// 注册接口同一来源每小时 20 台新设备，每个用例前清空限流。accountId 给了已有的就是同一个账号的另一台设备（同一个人）。
+// created 是账号建立的时刻：默认 8 天前（满 7 天才能抽，人工决策见 reward_odds.ts）。
+const registered = async (accountId = randomBytes(16).toString('base64url'), created = new Date(Date.now() - 8 * 86400_000)) => {
   const device = new TestDevice(server);
   expect((await device.register()).status).toBe(200);
-  const accountId = randomBytes(16).toString('base64url'), now = new Date();
-  await database.query('INSERT INTO app_account (account_id, last_seen_time, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, now, now, now]);
-  await database.query('INSERT INTO account_identity (account_id, provider, subject_hash, create_time, update_time) VALUES (?, ?, ?, ?, ?)', [accountId, 'kingo', subject, now, now]);
+  const now = new Date();
+  if ((await database.query('SELECT id FROM app_account WHERE account_id = ?', [accountId])).length === 0) await insertAccount(database, accountId, now, created);
   await database.query('INSERT INTO account_device (account_id, device_id, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, device.deviceId, now, now]);
   return device;
 };
@@ -80,7 +81,7 @@ const earn = async (device: TestDevice, amount: number) => {
 const rolloutFile = () => join(env().releasesDir, 'rollout.json');
 
 // 库里的抽签人：登录身份的 sha256（同 reward.service.ts）。
-const participantHash = (subject: string) => createHash('sha256').update(`SXD1-reward\nkingo\n${subject}`).digest('hex');
+const participantHash = (accountId: string) => createHash('sha256').update(`SXD1-reward\naccount\n${accountId}`).digest('hex');
 
 beforeAll(async () => {
   app = await createRelayApp();
@@ -183,14 +184,14 @@ describe('抽奖', () => {
     expect(roll).not.toHaveBeenCalled();
   });
 
-  it('一个人一次活动只抽一次：换一台设备、注销后用同一身份重建账号，都还是第一次的结果；换个人才重新掷', async () => {
+  // 11-15 16:40 起按账号认人（自己的账号体系没有能跨账号认人的身份，见 reward_odds.ts）：注销后重新注册就是新的人。
+  it('一个账号一次活动只抽一次：同一账号换一台设备还是第一次的结果；换个账号才重新掷', async () => {
     const key = await setup();
-    const subject = randomBytes(32).toString('base64url');
+    const accountId = randomBytes(16).toString('base64url');
     roll.mockReturnValue(0.99);
-    expect((await draw(await registered(subject), key, { activeDays: 3 })).body.result).toBe('missed');
-    await database.query('DELETE d, a, i FROM account_identity i JOIN app_account a ON a.account_id = i.account_id JOIN account_device d ON d.account_id = i.account_id WHERE i.subject_hash = ?', [subject]);
+    expect((await draw(await registered(accountId), key, { activeDays: 3 })).body.result).toBe('missed');
     roll.mockReturnValue(0);
-    expect((await draw(await registered(subject), key, { activeDays: 3 })).body.result).toBe('missed');
+    expect((await draw(await registered(accountId), key, { activeDays: 3 })).body.result).toBe('missed');
     expect((await draw(await registered(), key, { activeDays: 3 })).body.result).toBe('won');
     expect(roll).toHaveBeenCalledTimes(2);
   });
@@ -205,9 +206,9 @@ describe('抽奖', () => {
     expect(roll).not.toHaveBeenCalled();
   });
 
-  it('抽中给出奖品；同一个人再来返回同一个奖品，没抽中的再来也还是没抽中（不能重抽）；库里只存登录身份的哈希', async () => {
+  it('抽中给出奖品；同一个人再来返回同一个奖品，没抽中的再来也还是没抽中（不能重抽）；库里只存账号号的哈希', async () => {
     const key = await setup();
-    const luckySubject = randomBytes(32).toString('base64url'), unluckySubject = randomBytes(32).toString('base64url');
+    const luckySubject = randomBytes(16).toString('base64url'), unluckySubject = randomBytes(16).toString('base64url');
     const lucky = await registered(luckySubject), unlucky = await registered(unluckySubject);
     roll.mockReturnValue(0);
     const won = await draw(lucky, key, { activeDays: 5 });
@@ -306,6 +307,19 @@ describe('抽奖', () => {
     await redis.set(keys[0].slice(prefix.length), limit, 'KEEPTTL');
   };
 
+  it('账号建立不满 7 天回 ACCOUNT_TOO_NEW 并附可以抽的时刻，不记这次；满了照常抽', async () => {
+    const key = await setup();
+    roll.mockReturnValue(0);
+    const young = await registered(randomBytes(16).toString('base64url'), new Date(Date.now() - 2 * 86400_000));
+    const refused = await draw(young, key, { activeDays: 3 });
+    expect(refused.status).toBe(403);
+    expect(refused.body.code).toBe('ACCOUNT_TOO_NEW');
+    expect(Math.abs((refused.body.eligibleAt as number) - (Date.now() + 5 * 86400_000))).toBeLessThan(60_000);
+    expect(await database.query('SELECT d.id FROM reward_draw d JOIN reward_campaign c ON c.id = d.campaign_id WHERE c.campaign_key = ?', [key])).toHaveLength(0);
+    await database.query('UPDATE app_account SET create_time = ? WHERE account_id = (SELECT account_id FROM account_device WHERE device_id = ?)', [new Date(Date.now() - 8 * 86400_000), young.deviceId]);
+    expect((await draw(young, key, { activeDays: 3 })).body.result).toBe('won');
+  });
+
   it('同一台设备每小时超过上限回 RATE_LIMITED，同一出口的别的设备不受影响', async () => {
     vi.spyOn(Date, 'now').mockReturnValue((Math.floor(Date.now() / hour) + 0.5) * hour);
     const key = await setup();
@@ -332,7 +346,7 @@ describe('抽奖', () => {
   it('设备删除自己（DELETE /v1/devices）后不能再抽；抽签记录照旧留到活动保留期', async () => {
     roll.mockReturnValue(0.99);
     const key = await setup();
-    const subject = randomBytes(32).toString('base64url');
+    const subject = randomBytes(16).toString('base64url');
     const device = await registered(subject);
     expect((await draw(device, key, { activeDays: 2 })).body.result).toBe('missed');
     expect((await device.call('DELETE', '/v1/devices')).status).toBe(204);

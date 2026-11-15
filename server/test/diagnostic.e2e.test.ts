@@ -13,6 +13,7 @@ import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
 import { diagnosticKeepDays, diagnosticStoreMaxBytes, diagnosticStoreMaxFiles, diagnosticUploadMaxBytes, diagnosticUploadPerHour } from 'src/common/relay_limits';
 import { DiagnosticRetentionTask } from 'src/modules/diagnostic/diagnostic_retention.task';
+import { insertAccount } from './account_fixture';
 import { TestDevice } from './test_device';
 
 let app: NestExpressApplication;
@@ -188,7 +189,7 @@ describe('认领到应用账号', () => {
     expect((await device.register()).status).toBe(200);
     const accountId = randomBytes(16).toString('base64url'), now = new Date();
     const database = app.get(DataSource);
-    await database.query('INSERT INTO app_account (account_id, last_seen_time, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, now, now, now]);
+    await insertAccount(database, accountId, now);
     await database.query('INSERT INTO account_device (account_id, device_id, create_time, update_time) VALUES (?, ?, ?, ?)', [accountId, device.deviceId, now, now]);
     return device;
   };

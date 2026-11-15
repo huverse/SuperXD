@@ -20,7 +20,7 @@ import 'package:superxd/domain/painting.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/page/account_dialogs.dart';
-import 'package:superxd/page/account_page.dart';
+import 'package:superxd/page/app_account_page.dart';
 import 'package:superxd/page/animated_branches.dart';
 import 'package:superxd/page/login_page.dart';
 import 'package:superxd/page/legal_page.dart';
@@ -40,12 +40,9 @@ import 'package:superxd/social/social_service.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
-// 推入账号页（登录应用账号在那里）：游乐场的挑战与节日动画后的抽奖提示共用。
-void pushAccountPage(BuildContext context, AppSession session, AppAccounts? appAccounts, AccountDiagnostics? diagnostics) {
-  final account = session.gateway.activeSession;
-  final name = account == null ? '' : account.name.isEmpty ? account.loginId : account.name;
-  unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => AccountPage(session: session, name: name, appAccounts: appAccounts, diagnostics: diagnostics))));
-}
+// 推入应用账号页（与教务各管各的，没登录教务也能进）：游乐场的挑战、私信与节日动画后的抽奖提示共用。
+void pushAppAccountPage(BuildContext context, AppAccounts appAccounts, AccountDiagnostics? diagnostics) =>
+    unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => AppAccountPage(appAccounts: appAccounts, diagnostics: diagnostics))));
 
 GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, required PlaygroundStore playground, ValueListenable<bool>? splashGone, CampusReminders? reminders, SocialService? social, AppUpdates? updates, DeveloperSettings? developer, DiagnosticLog? logs, PaintingGallery? paintings, DeveloperNotes? notes, Festivals? festivals, AppAccounts? appAccounts, AccountDiagnostics? diagnostics, ChallengeHub? challenges, UnlockAccess? unlocks, AutoSync? autoSync, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
   final tools = toolbox.modules;
@@ -124,9 +121,8 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
           groups: playgroundGroups,
           challenges: challenges,
           unlocks: unlocks,
-          // 挑战要应用账号：推入账号页（登录应用账号在那里）；没登录教务先去登录页。
-          openAccount: (context) => pushAccountPage(context, session, appAccounts, diagnostics),
-          openLogin: (context) => context.go('/login'),
+          // 挑战要应用账号：推入应用账号页。
+          openAccount: appAccounts == null ? null : (context) => pushAppAccountPage(context, appAccounts, diagnostics),
         ))),
       for (final game in playgroundCatalog) GoRoute(path: '/playground/${game.id}', parentNavigatorKey: rootKey,
         pageBuilder: (context, state) => campusPage(key: state.pageKey, child: PlaygroundGameHost(game: game, store: playground))),
@@ -149,7 +145,7 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
         branches: [
           StatefulShellBranch(routes: [GoRoute(path: '/today', builder: (context, state) => TodayPage(gateway: gateway, onSessionExpired: () => session.expire(generation), isAccountCurrent: () => session.generation == generation && session.loggedIn, syncRequest: todaySync, autoSync: autoSync))]),
           StatefulShellBranch(routes: [GoRoute(path: '/service', builder: (context, state) => const ServicePage())]),
-          StatefulShellBranch(routes: [GoRoute(path: '/message', builder: (context, state) => MessagePage(social: social, gateway: gateway, openVideo: openVideo, openAccount: (context) => pushAccountPage(context, session, appAccounts, diagnostics)))]),
+          StatefulShellBranch(routes: [GoRoute(path: '/message', builder: (context, state) => MessagePage(social: social, gateway: gateway, openVideo: openVideo, openAccount: appAccounts == null ? null : (context) => pushAppAccountPage(context, appAccounts, diagnostics)))]),
           StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, social: social, updates: updates, developer: developer, logs: logs, paintings: paintings, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, saveRewardPicture: saveRewardPicture))]),
         ],
       ),

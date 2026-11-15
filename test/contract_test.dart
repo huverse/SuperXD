@@ -78,8 +78,8 @@ void main() {
     expect(plain == withCode, isFalse);
   });
 
-  // 应用账号核对时中转代登录教务（人工决策见 domain/app_account.dart）：服务端 server/test/kingo_codec.test.ts 读同一份向量，两端逐字节一致。
-  test('教务登录向量与服务端共用', () {
+  // 教务登录参数的固定向量（11-15 以前中转代登录教务时与服务端共用；服务端那份随代登录删除，向量留作手机登录教务的回归基准）。
+  test('教务登录参数与固定向量逐字节一致', () {
     final vectors = jsonDecode(File('server/test/vectors/kingo_login_v1.json').readAsStringSync()) as Map<String, dynamic>;
     for (final item in (vectors['strEnc'] as List).cast<Map<String, dynamic>>()) {
       expect(strEnc(item['data'] as String, item['key'] as String, null, null), item['out']);

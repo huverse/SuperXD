@@ -95,12 +95,6 @@ Future<String?> askRememberPassword(BuildContext context) => showCampusDialog<St
   builder: (context) => const _PasswordDialog(title: '开启记住账号', message: '输入当前账号的教务密码，核对通过后保存在本机安全存储，以后自动登录。', action: '开启'),
 );
 
-// 没记住账号时登录应用账号要输一次教务密码（核对完即丢，不保存）；返回空表示取消。
-Future<String?> askAppAccountPassword(BuildContext context) => showCampusDialog<String>(
-  context: context,
-  builder: (context) => const _PasswordDialog(title: '登录应用账号', message: '输入当前账号的教务密码，核对后不保存。', action: '登录'),
-);
-
 class _PasswordDialog extends StatefulWidget {
   const _PasswordDialog({required this.title, required this.message, required this.action});
   final String title;
@@ -172,7 +166,7 @@ class LoginCaptchaDialog extends StatelessWidget {
 // 验证码这一步的结果：给了新图就换图让用户再填；没给图时 error 为空表示通过（弹窗关、返回空），否则带原因关。
 typedef CaptchaReply = ({CaptchaView? captcha, String? error});
 
-// 验证码弹窗：点图或「刷新验证码」换一张，填好确定；取消或按返回撤掉这次尝试。教务登录与登录应用账号共用。
+// 验证码弹窗：点图或「刷新验证码」换一张，填好确定；取消或按返回撤掉这次尝试。教务登录用（LoginCaptchaDialog 接网关）。
 class CaptchaDialog extends StatefulWidget {
   const CaptchaDialog({super.key, required this.captcha, required this.refresh, required this.submit, required this.cancel});
   final CaptchaView captcha;
