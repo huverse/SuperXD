@@ -24,5 +24,17 @@
     "socialDeviceId": "ZbYGc9btiEvwHCwiLYKtoA",
     "canonical": "SXD1-social-bind\nAAECAwQFBgcICQoLDA0ODw\nZbYGc9btiEvwHCwiLYKtoA",
     "proof": "3ZrN2k72gZLmEUVhxB-vVn_PDDh_sEsOg7s95yv88tXdVGO1hAVmPlE-GIun6xuGoaMqA_27UTgOsI_tA_WLBw"
+  },
+  "friendKeys": {
+    "note": "服务器给好友公钥的签名（src/modules/friend/friend_key_signer.ts，客户端 lib/social/relay_client.dart 验）：种子是公开的测试值，同 test/setup_env.ts 的 RELAY_FRIEND_SIGN_KEY",
+    "seed": "ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0A",
+    "publicKey": "5_FioQvsVZr-oZXk3OhLaVaNXSywlj60RsBoXisX8vA",
+    "ownerDeviceId": "AAECAwQFBgcICQoLDA0ODw",
+    "deviceId": "ZbYGc9btiEvwHCwiLYKtoA",
+    "signPublicKey": "ebVWLo_mVPlAeLES6KmLp5AfhTrmlb7X4OORC60ElmQ",
+    "boxPublicKey": "YGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8",
+    "movedFrom": "EBESExQVFhcYGRobHB0eHw",
+    "canonical": "SXD1-friend-keys\nAAECAwQFBgcICQoLDA0ODw\nZbYGc9btiEvwHCwiLYKtoA\nebVWLo_mVPlAeLES6KmLp5AfhTrmlb7X4OORC60ElmQ\nYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8\nEBESExQVFhcYGRobHB0eHw",
+    "signature": "4Np-cW0eEJ7DEmT1pls5oqhuNCW7pCpQTVK-WUh42k1g_Rkci-z-nPRbxwvyfa_XDBWh2Mm0ldhyms404S6bAw"
   }
 }

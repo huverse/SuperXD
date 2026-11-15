@@ -1,6 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common';
 
 import { DeviceRepository } from 'src/modules/device/device.repository';
+import { FriendKeySigner } from 'src/modules/friend/friend_key_signer';
 import { FriendshipRepository } from 'src/modules/friend/friendship.repository';
 import * as dtos from 'src/modules/friend/friend.dto';
 
@@ -11,9 +12,11 @@ export class FriendService {
   constructor(
     private readonly friendships: FriendshipRepository,
     private readonly devices: DeviceRepository,
+    private readonly signer: FriendKeySigner,
   ) {}
 
   // 换了设备的好友（movedFrom）总带新公钥；withKeys 为真时每个好友都带（新手机接管后拿好友名单用）。好友有上限，查公钥一次 IN 有界。
+  // 带公钥的每一条都附服务器签名 keysSignature（见 friend_key_signer.ts）。
   async list(ownerDeviceId: string, withKeys: boolean): Promise<dtos.FriendDto[]> {
     const rows = await this.friendships.list(ownerDeviceId);
     const keyed = withKeys ? rows : rows.filter((row) => row.movedFrom !== null);
@@ -23,7 +26,9 @@ export class FriendService {
       return {
         deviceId: row.peerDeviceId,
         since: row.createTime.getTime(),
-        ...(device === undefined ? {} : { signPublicKey: device.signPublicKey, boxPublicKey: device.boxPublicKey }),
+        ...(device === undefined
+          ? {}
+          : { signPublicKey: device.signPublicKey, boxPublicKey: device.boxPublicKey, keysSignature: this.signer.sign(ownerDeviceId, row.peerDeviceId, device.signPublicKey, device.boxPublicKey, row.movedFrom) }),
         ...(row.movedFrom === null ? {} : { movedFrom: row.movedFrom }),
       };
     });

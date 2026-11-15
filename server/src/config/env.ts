@@ -45,6 +45,10 @@ export const loadEnv = () => ({
     // 客户端封装密码与恢复码用的 X25519 私钥种子（32 字节 base64url）；公钥写死在客户端 lib/social/account_seal.dart，换钥两边一起换。
     sealKey: required('RELAY_ACCOUNT_SEAL_KEY'),
   },
+  friend: {
+    // 给好友公钥签名的 Ed25519 私钥种子（32 字节 base64url，见 src/modules/friend/friend_key_signer.ts）；公钥写死在客户端 lib/social/relay_client.dart 的 relayFriendKeys。
+    signKey: required('RELAY_FRIEND_SIGN_KEY'),
+  },
   mysql: {
     host: required('MYSQL_HOST'),
     port: integer('MYSQL_PORT'),

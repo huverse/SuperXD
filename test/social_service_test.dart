@@ -44,7 +44,7 @@ class Phone {
 
   Future<SocialService> start({bool polling = false, Random? random}) async {
     final spaces = _spaces = SocialSpaces(vault: vault, directory: directory.path);
-    final service = SocialService(spaces: spaces, accountKeys: keys, transport: relay?.transport(), accountGone: () => gone++, polling: polling, random: random);
+    final service = SocialService(spaces: spaces, accountKeys: keys, transport: relay?.transport(), accountGone: () => gone++, polling: polling, random: random, friendKeys: FakeRelay.friendKeys);
     _phoneOf[service] = this;
     await service.switchAccount(account);
     return service;
@@ -642,6 +642,30 @@ void main() {
       expect(bob.friends.single.deviceId, before.deviceId);
       await after.refresh();
       expect(after.status, SocialStatus.elsewhere);
+    });
+
+    test('好友换了设备但新公钥的服务器签名对不上（网络上有人换了公钥）：不改挂、不收新公钥，也不确认这条提示', () async {
+      final relay = FakeRelay();
+      final oldPhone = Phone(relay);
+      final account = await oldPhone.signIn();
+      final before = await oldPhone.start();
+      await before.enable('小红');
+      final bob = await device(relay);
+      await bob.enable('小明');
+      await bob.redeem(InviteCode.decode((await before.createInvite()).encode())!);
+      await before.refresh();
+      final newPhone = Phone(relay);
+      await newPhone.signIn(accountId: account.accountId);
+      final after = await newPhone.start();
+      await expectLater(after.enable('小红'), throwsA(isA<SocialException>()));
+      await after.takeOver();
+      relay.friendSeedOverride = List.filled(32, 9);
+      await bob.refresh(reconcile: true);
+      expect(bob.friends.single.deviceId, before.deviceId, reason: '没收下新公钥');
+      expect(relay.movedFrom, isNotEmpty, reason: '没确认，签名对了再处理');
+      relay.friendSeedOverride = null;
+      await bob.refresh(reconcile: true);
+      expect(bob.friends.single.deviceId, after.deviceId);
     });
 
     test('好友换了设备、这边还没核对：发过去被拒时先核对，改挂后报「对方换了设备」，点重发就到新设备；收到新设备的卡片先核对再收下', () async {

@@ -41,6 +41,11 @@ Uint8List inviteProofCanonical(String inviteId, String redeemerDeviceId) => utf8
 // 私信设备挂到应用账号的凭证原文：私信密钥对「应用账号设备号 + 私信设备号」签名（与服务端 relay_crypto.ts 的 socialBindCanonical 同一份）。
 Uint8List socialBindCanonical(String accountDeviceId, String socialDeviceId) => utf8.encode(['SXD1-social-bind', accountDeviceId, socialDeviceId].join('\n'));
 
+// 服务器给好友公钥的签名原文：「谁问的、好友设备号、两把公钥（base64url）、认得的旧设备号（没有为空）」（与服务端 relay_crypto.ts 的 friendKeysCanonical 同一份，
+// 共用 server/test/vectors/protocol_v1.json 的 friendKeys；人工决策见 relay_client.dart 的 relayFriendKeys）。
+Uint8List friendKeysCanonical(String ownerDeviceId, String deviceId, String signPublicKey, String boxPublicKey, String? movedFrom) =>
+    utf8.encode(['SXD1-friend-keys', ownerDeviceId, deviceId, signPublicKey, boxPublicKey, movedFrom ?? ''].join('\n'));
+
 // 消息签名带域前缀，签名不能被挪作请求或邀请签名使用。
 Uint8List _messageCanonical(List<int> compressed) => Uint8List.fromList([...utf8.encode('SXD1-msg\n'), ...compressed]);
 
