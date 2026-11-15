@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/domain/unlock.dart';
+import 'package:superxd/playground/challenge/challenge_rules.dart';
 import 'package:superxd/playground/challenge/challenge_run.dart';
 import 'package:superxd/playground/challenge/challenge_run_page.dart';
 import 'package:superxd/playground/challenge/points_page.dart';
@@ -44,7 +45,8 @@ class _ChallengeHomeState extends State<ChallengeHome> {
   // 第几次读：登录状态变了、下拉刷新或从一局回来会再读，只认最近一次（先发的晚回来不盖掉新的，退出登录后回来的也不显示）。
   var _loads = 0;
 
-  Set<String> get _supported => {for (final game in widget.games) if (game.challengeable) game.id};
+  // 这个版本玩得了的挑战游戏连同题面写法版本（「hanoi@1」，人工决策见 challenge_rules.dart 的 11-15 19:18 那条）。
+  Set<String> get _supported => challengeGameTokens([for (final game in widget.games) if (game.challengeable) game.id]);
 
   @override
   void initState() {

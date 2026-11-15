@@ -48,6 +48,10 @@ abstract class PuzzleRules<P, A> {
   // 难度分 1–10：按预计用时取对数，跨游戏可比（挑战的计分与参考用时用它）。
   int difficulty(P puzzle) => puzzleDifficulty(expectedSeconds(puzzle));
 
+  // 题面写法的版本（从 1 起）：改了 encodePuzzle 与 decodePuzzle 的写法，就在这个游戏的规则里覆写它加一（挑战按「游戏@版本」下发，
+  // 没更新的应用照旧拿认得的版本；样例钉在 test/challenge_vectors_test.dart，人工决策见 challenge/challenge_rules.dart 的 11-15 19:18 那条）。
+  int get puzzleVersion => 1;
+
   Object encodePuzzle(P puzzle);
   P decodePuzzle(Object? json);
   Object encodeAnswer(A answer);
