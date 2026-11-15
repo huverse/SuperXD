@@ -3,7 +3,7 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { randomBytes } from 'node:crypto';
 import { EntityManager, Repository } from 'typeorm';
 
-import { accountDeviceLimit } from 'src/common/relay_limits';
+import { accountDeviceLimit, deviceRemovalChunk } from 'src/common/relay_limits';
 import { AppAccountEntity } from 'src/modules/account/account.entity';
 import { AccountDataHooks } from 'src/modules/account/account_data_hooks';
 
@@ -124,15 +124,15 @@ export class TypeormAccountRepository extends AccountRepository {
 
   async deleteIdle(before: Date, limit: number) {
     const idle = (await this.accounts.query('SELECT account_id AS accountId FROM app_account WHERE last_seen_time < ? ORDER BY last_seen_time LIMIT ?', [before, limit])) as { accountId: string }[];
-    // 每个账号最多 accountDeviceLimit 条登记，按 100 个一个事务删，单个事务行数有界。
-    for (let start = 0; start < idle.length; start += 100) {
-      const chunk = idle.slice(start, start + 100).map((row) => row.accountId);
+    // 账号下的私信设备连带它的好友关系与信箱一起删（每台约 2000 行，见 AccountDataHooks），同不活跃设备按 deviceRemovalChunk 个一个事务，单个事务行数有界。
+    for (let start = 0; start < idle.length; start += deviceRemovalChunk) {
+      const chunk = idle.slice(start, start + deviceRemovalChunk).map((row) => row.accountId);
       await this.accounts.manager.transaction((manager) => this.removeAccounts(manager, chunk));
     }
     return idle.length;
   }
 
-  // 账号下的积分与挑战由登记的删除函数在同一事务里删（AccountDataHooks）；400 天没活跃的账号，积分流水早已满 13 个月删掉，剩下的行有界。
+  // 账号下的积分、挑战、解锁、诊断包认领与私信设备由登记的删除函数在同一事务里删（AccountDataHooks）；400 天没活跃的账号，积分流水早已满 13 个月删掉，剩下的行有界。
   private async removeAccounts(manager: EntityManager, accountIds: string[]) {
     await this.hooks.run(manager, accountIds);
     await manager.query('DELETE FROM account_device WHERE account_id IN (?)', [accountIds]);

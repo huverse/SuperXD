@@ -73,6 +73,7 @@ class _PointsPageState extends State<PointsPage> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
     setState(() {
       _loading = true;
       _error = null;

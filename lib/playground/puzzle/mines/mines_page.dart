@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
 
 import 'package:superxd/playground/challenge/play_challenge.dart';
+import 'package:superxd/playground/play_controls.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/play_result.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -62,8 +63,7 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
   int? _tapCell, _pressed;
   Offset _tapAt = Offset.zero, _dragPan = Offset.zero;
   bool _pinching = false;
-  double _pinchDistance = 1, _pinchZoom = 1;
-  Offset _pinchFocal = Offset.zero, _pinchPan = Offset.zero;
+  final _pinch = PlayPinch();
   double _zoom = 1;
   Offset _pan = Offset.zero;
   _MinesLayout? _layout;
@@ -303,11 +303,7 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
       if (_pressed != null) setState(() => _pressed = null);
       if (layout.maxZoom <= 1) return;
       _pinching = true;
-      final points = _pointers.values.toList();
-      _pinchDistance = math.max(1, (points[0] - points[1]).distance);
-      _pinchFocal = (points[0] + points[1]) / 2;
-      _pinchZoom = _zoom;
-      _pinchPan = _pan;
+      _pinch.start(_pointers.values, zoom: _zoom, pan: _pan);
       return;
     }
     if (_pointers.length > 1) return;
@@ -327,14 +323,10 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
     final layout = _layout;
     if (layout == null || _session.finished) return;
     if (_pinching && _pointers.length >= 2) {
-      final points = _pointers.values.take(2).toList();
-      final zoom = (_pinchZoom * (points[0] - points[1]).distance / _pinchDistance).clamp(1.0, layout.maxZoom);
-      final focal = (points[0] + points[1]) / 2;
-      // 缩放前手指中点下的那一点，缩放后仍在手指中点下。
-      final anchor = (_pinchFocal - _pinchPan) / _pinchZoom;
+      final (zoom, pan) = _pinch.update(_pointers.values, maxZoom: layout.maxZoom);
       setState(() {
         _zoom = zoom;
-        _pan = layout.clampPan(focal - anchor * zoom, zoom);
+        _pan = layout.clampPan(pan, zoom);
       });
       return;
     }

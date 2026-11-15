@@ -1,10 +1,12 @@
+import 'dart:math' as math;
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/campus_icons.dart';
 
 // 方向操作的游戏（冰面滑行、推箱子）共用的两样：棋盘上的滑动识别器与棋盘下方的十字方向键。方向编码统一 0 上、1 右、2 下、3 左
-// （同各游戏规则里的答案编码）。
+// （同各游戏规则里的答案编码）。另有格子太小时双指缩放的共用算法 PlayPinch。
 
 const playUp = 0, playRight = 1, playDown = 2, playLeft = 3;
 
@@ -93,5 +95,28 @@ class PlayDirectionPad extends StatelessWidget {
       key(playRight, '向右$verb', CampusIcons.next, (_size + _gap) * 2, middle),
       key(playDown, '向下$verb', CampusIcons.expand, _size + _gap, _size + _gap),
     ]));
+  }
+}
+
+// 双指缩放的共用算法（数织、八皇后、扫雷、数回）：第二根手指落下时 start 记下两指的距离、中点与当时的缩放和平移；
+// 之后 update 按两指距离之比缩放（1 到 maxZoom），缩放前手指中点下的那一点缩放后仍在中点下，返回新的缩放与还没夹到边界里的平移
+// （origin 是可平移的那块内容在触摸区里的原点，数织的格子区在提示栏右下）。什么时候算在缩放、手指怎么记、平移怎么夹由各游戏自己管。
+class PlayPinch {
+  double _distance = 1, _zoom = 1;
+  Offset _focal = Offset.zero, _pan = Offset.zero;
+
+  void start(Iterable<Offset> fingers, {required double zoom, required Offset pan}) {
+    final [first, second, ...] = fingers.toList();
+    _distance = math.max(1, (first - second).distance);
+    _focal = (first + second) / 2;
+    _zoom = zoom;
+    _pan = pan;
+  }
+
+  (double, Offset) update(Iterable<Offset> fingers, {required double maxZoom, Offset origin = Offset.zero}) {
+    final [first, second, ...] = fingers.take(2).toList();
+    final zoom = (_zoom * (first - second).distance / _distance).clamp(1.0, maxZoom);
+    final anchor = (_focal - origin - _pan) / _zoom;
+    return (zoom, (first + second) / 2 - origin - anchor * zoom);
   }
 }

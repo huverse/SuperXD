@@ -104,7 +104,7 @@ class _DeveloperPageState extends State<DeveloperPage> {
       _uploading = false;
       _diagnosticId = receipt?.id;
     });
-    // 登录着应用账号时已认领到账号下（人工决策见 domain/diagnostic_upload.dart），在账号页能看到、删除。
+    // 登录着应用账号时已认领到账号下（人工决策见 domain/diagnostic_upload.dart），在应用账号页「我上传的诊断包」能看到、删除。
     showCampusToast(context, failure ?? (receipt!.claimed ? '已上传并记在应用账号下，把诊断编号告诉开发者' : '已上传，把诊断编号告诉开发者'));
   }
 

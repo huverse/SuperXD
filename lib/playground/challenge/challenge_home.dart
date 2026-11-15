@@ -18,7 +18,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 
-// 游乐场的「挑战」一栏（人工决策见 challenge_rules.dart）：要登录教务并登录应用账号；上面是积分与等级，下面是本周开放的挑战
+// 游乐场的「挑战」一栏（人工决策见 challenge_rules.dart）：要登录应用账号（与教务各管各的）；上面是积分与等级，下面是本周开放的挑战
 // （服务器下发，每周一换，同一挑战再玩只补超过最好成绩的部分；有门票的开局即扣、不退，积分不够时不给开始）。还有一局没结束时顶上给「继续」。
 class ChallengeHome extends StatefulWidget {
   const ChallengeHome({super.key, required this.hub, required this.games, required this.store, required this.openAccount, required this.bottom, this.unlocks});
@@ -41,6 +41,8 @@ class _ChallengeHomeState extends State<ChallengeHome> {
   PointsSummary? _points;
   String? _error;
   String? _starting;
+  // 第几次读：登录状态变了、下拉刷新或从一局回来会再读，只认最近一次（先发的晚回来不盖掉新的，退出登录后回来的也不显示）。
+  var _loads = 0;
 
   Set<String> get _supported => {for (final game in widget.games) if (game.challengeable) game.id};
 
@@ -58,21 +60,26 @@ class _ChallengeHomeState extends State<ChallengeHome> {
   }
 
   Future<void> _load() async {
+    if (!mounted) return;
+    final load = ++_loads;
     if (!widget.hub.signedIn) {
-      if (mounted) setState(() => _catalog = null);
+      setState(() {
+        _catalog = null;
+        _points = null;
+      });
       return;
     }
     setState(() => _error = null);
     try {
       final catalog = await widget.hub.catalog(_supported);
       final points = await widget.hub.points();
-      if (!mounted) return;
+      if (!mounted || load != _loads) return;
       setState(() {
         _catalog = catalog;
         _points = points;
       });
     } on ChallengeException catch (error) {
-      if (mounted) setState(() => _error = error.message);
+      if (mounted && load == _loads) setState(() => _error = error.message);
     }
   }
 

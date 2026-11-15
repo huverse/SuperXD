@@ -7,7 +7,7 @@ import { DataSource } from 'typeorm';
 import { createRelayApp } from 'src/relay_app';
 import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
-import { accountDeviceLimit, accountLoginPerUserSourcePerHour, accountRegisterPerDevicePerHour } from 'src/common/relay_limits';
+import { accountDeviceLimit, accountJoinPerSourcePerHour, accountLoginPerUserSourcePerHour, accountRegisterPerDevicePerHour } from 'src/common/relay_limits';
 import { decodeBase64url, x25519PrivateKey, x25519PublicOf } from 'src/common/crypto/relay_crypto';
 import { openAccountSeal } from 'src/modules/account/account_keys';
 import { AccountRetentionTask } from 'src/modules/account/account_retention.task';
@@ -193,6 +193,31 @@ describe('扫码登录', () => {
     await app.get<Redis>(REDIS).del(RedisKeys.accountJoin(ticketId));
     expect((await owner.call('POST', `/v1/account/joins/${ticketId}/approve`, { code })).body.code).toBe('JOIN_NOT_FOUND');
     expect((await fresh.call('GET', '/v1/account')).body.code).toBe('ACCOUNT_NOT_FOUND');
+  });
+
+  it('已被一个账号批准的票据，别的账号再批不认（新设备留在先批准的账号），同一账号重发照旧成功', async () => {
+    const { device: owner, accountId } = await registered();
+    const { device: other } = await registered();
+    const fresh = new TestDevice(server);
+    const { ticketId, code } = (await fresh.call('POST', '/v1/account/joins', keys(fresh))).body as { ticketId: string; code: string };
+    expect((await owner.call('POST', `/v1/account/joins/${ticketId}/approve`, { code })).status).toBe(204);
+    expect((await other.call('POST', `/v1/account/joins/${ticketId}/approve`, { code })).body.code).toBe('JOIN_NOT_FOUND');
+    expect((await owner.call('POST', `/v1/account/joins/${ticketId}/approve`, { code })).status).toBe(204);
+    expect((await fresh.call('GET', `/v1/account/joins/${ticketId}`)).body).toMatchObject({ state: 'approved', account: { accountId } });
+    expect((await fresh.call('GET', '/v1/account')).body.accountId).toBe(accountId);
+  });
+
+  it(`同一来源每小时出示二维码的新设备最多 ${accountJoinPerSourcePerHour} 台（每台都会登记设备），同一台重新出示不计`, async () => {
+    const first = new TestDevice(server);
+    for (let index = 0; index < 3; index++) expect((await first.call('POST', '/v1/account/joins', keys(first))).status).toBe(200);
+    for (let index = 1; index < accountJoinPerSourcePerHour; index++) {
+      const device = new TestDevice(server);
+      expect((await device.call('POST', '/v1/account/joins', keys(device))).status).toBe(200);
+    }
+    const extra = new TestDevice(server);
+    expect((await extra.call('POST', '/v1/account/joins', keys(extra))).body.code).toBe('RATE_LIMITED');
+    expect(await database.query('SELECT id FROM device WHERE device_id = ?', [extra.deviceId])).toHaveLength(0);
+    expect((await first.call('POST', '/v1/account/joins', keys(first))).status).toBe(200);
   });
 });
 

@@ -1,9 +1,9 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
-import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/playground/challenge/challenge_run.dart';
 import 'package:superxd/playground/challenge/play_challenge.dart';
@@ -34,13 +34,14 @@ class ChallengeRunPage extends StatefulWidget {
   State<ChallengeRunPage> createState() => _ChallengeRunPageState();
 }
 
-class _ChallengeRunPageState extends State<ChallengeRunPage> with SingleTickerProviderStateMixin, WidgetsBindingObserver {
+class _ChallengeRunPageState extends State<ChallengeRunPage> with WidgetsBindingObserver {
   ChallengeRunController get _controller => widget.controller;
-  late final Ticker _ticker = createTicker((_) => _tick());
   late final _notes = TextEditingController(text: widget.store.notesOf(_controller.run.runId));
   Timer? _saving;
-  var _shownSeconds = -1;
-  var _expiring = false;
+  // 倒计时：一次性计时器对到下一次秒数变化再刷新（不逐帧出帧，只重建那一行字）；到点只拉一次局面，没拉到等回前台再拉（不在这里反复重试）。
+  Timer? _clock;
+  final _left = ValueNotifier(Duration.zero);
+  var _expired = false;
 
   @override
   void initState() {
@@ -54,9 +55,10 @@ class _ChallengeRunPageState extends State<ChallengeRunPage> with SingleTickerPr
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _controller.removeListener(_changed);
-    _ticker.dispose();
+    _clock?.cancel();
+    _left.dispose();
     _saving?.cancel();
-    unawaited(widget.store.saveNotes(_controller.run.runId, _notes.text));
+    _save(_notes.text);
     _notes.dispose();
     super.dispose();
   }
@@ -68,26 +70,33 @@ class _ChallengeRunPageState extends State<ChallengeRunPage> with SingleTickerPr
 
   void _changed() {
     if (!mounted) return;
-    if (_controller.run.running && !_ticker.isActive) unawaited(_ticker.start());
-    if (!_controller.run.running && _ticker.isActive) _ticker.stop();
     setState(() {});
+    _clock?.cancel();
+    _tick();
   }
 
-  // 按秒刷新倒计时；到点拉一次局面，服务器那边结算。
   void _tick() {
-    final seconds = _controller.remaining.inSeconds;
-    if (seconds != _shownSeconds) setState(() => _shownSeconds = seconds);
-    if (seconds <= 0 && !_expiring) {
-      _expiring = true;
-      unawaited(_controller.refresh().whenComplete(() => _expiring = false));
+    _clock = null;
+    final remaining = _controller.remaining;
+    _left.value = remaining.isNegative ? Duration.zero : Duration(seconds: remaining.inSeconds);
+    if (!_controller.run.running) return;
+    if (remaining > Duration.zero) {
+      _expired = false;
+      _clock = Timer(Duration(microseconds: remaining.inMicroseconds % Duration.microsecondsPerSecond + 1000), _tick);
+    } else if (!_expired) {
+      // 到点：拉一次局面，服务器那边结算。
+      _expired = true;
+      unawaited(_controller.refresh());
     }
   }
 
-  // 笔记停手半秒再存（只留最近一局）。
+  // 笔记停手半秒再存（只留最近一局）；写不进只记日志。
   void _noted(String text) {
     _saving?.cancel();
-    _saving = Timer(const Duration(milliseconds: 500), () => unawaited(widget.store.saveNotes(_controller.run.runId, text)));
+    _saving = Timer(const Duration(milliseconds: 500), () => _save(text));
   }
+
+  void _save(String text) => unawaited(widget.store.saveNotes(_controller.run.runId, text).catchError((Object error, StackTrace stack) => campusLog('[Challenge] action=notes_save errorType=${error.runtimeType}\n$stack')));
 
   PlaygroundGame? _game(String id) => widget.games.where((game) => game.id == id).firstOrNull;
 
@@ -105,10 +114,19 @@ class _ChallengeRunPageState extends State<ChallengeRunPage> with SingleTickerPr
     }
   }
 
+  // 进一关：题面、档位或改写的那一处这个版本认不得（服务器换了写法、应用没更新）时不进，提示更新应用。
   Future<void> _play(ChallengeLevel level) async {
     final game = _game(level.game);
     if (game == null) return;
-    await Navigator.of(context).push(CampusPageRoute<void>(builder: (context) => game.builder(context, game, widget.store, _controller.challengeFor(level.id))));
+    final PlayChallenge challenge;
+    try {
+      challenge = _controller.challengeFor(level.id);
+    } on FormatException catch (error, stack) {
+      campusLog('[Challenge] action=open_level game=${level.game} errorType=${error.runtimeType}\n$stack');
+      showCampusToast(context, '这一关的题看不懂，请更新应用后再试');
+      return;
+    }
+    await Navigator.of(context).push(CampusPageRoute<void>(builder: (context) => game.builder(context, game, widget.store, challenge)));
   }
 
   // 门：输门上的数；终章：输全部碎片之和。输错扣时间、不说哪个碎片错了。
@@ -166,8 +184,8 @@ class _ChallengeRunPageState extends State<ChallengeRunPage> with SingleTickerPr
               CampusIcon(CampusIcons.timer, size: 28, color: palette.primary),
               const SizedBox(width: 16),
               Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                Text('还有 ${playDuration(_controller.remaining.isNegative ? Duration.zero : _controller.remaining)}',
-                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()])),
+                ValueListenableBuilder(valueListenable: _left, builder: (context, left, _) => Text('还有 ${playDuration(left)}',
+                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()]))),
                 DotSeparatedText(['已过 $solved/${counted.length} 关', if (run.penalty > Duration.zero) '罚时 ${run.penalty.inSeconds} 秒'].join(' · '), style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
               ])),
             ])),

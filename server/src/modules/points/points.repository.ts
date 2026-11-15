@@ -116,9 +116,10 @@ export class TypeormPointsRepository extends PointsRepository {
     return rows.map((row) => ({ ...row, id: String(row.id) }));
   }
 
+  // 走 idx_due：虚拟列 due_time 只在还有剩余时有值，剩余为 0、过期后还留着的行不在索引范围里，每批只扫要清零的行。
   expireDue(now: Date, limit: number) {
     return this.grants.manager.transaction(async (manager) => {
-      const due = (await manager.query('SELECT id, account_id AS accountId, remaining FROM points_grant WHERE expire_time <= ? AND remaining > 0 ORDER BY expire_time LIMIT ? FOR UPDATE', [now, limit])) as {
+      const due = (await manager.query('SELECT id, account_id AS accountId, remaining FROM points_grant WHERE due_time <= ? ORDER BY due_time LIMIT ? FOR UPDATE', [now, limit])) as {
         id: string;
         accountId: string;
         remaining: number;

@@ -147,6 +147,16 @@ List<ChallengeSlot> challengeSlots(String game, Object? puzzle) {
   }
 }
 
+// 补条件的那一处能落在哪些位置（0 到它减 1）：服务器给的位置先按它核一遍，对局页才按位置取题面里的那一项；不收补条件的游戏是 0。
+int challengeSlotRange(String game, Object? puzzle) => switch (game) {
+  'twentyfour' => (puzzle as TwentyFourPuzzle).numbers.length,
+  'queens' => (puzzle as QueensPuzzle).size,
+  'loop' => (puzzle as LoopPuzzle).clues.length,
+  'cipher' => (puzzle as CipherPuzzle).rows.length,
+  'knights' => (puzzle as KnightsPuzzle).people,
+  _ => 0,
+};
+
 // 要用最少步数的游戏在困难与专家档的最少步数（题库存好，服务器拿答案的步数比）：汉诺塔、冰面滑行、点灯按步数，推箱子按推的次数。
 int? challengeMinimum(String game, Object? puzzle) => switch (game) {
   'hanoi' => hanoiMinMoves((puzzle as HanoiPuzzle).start, puzzle.target),

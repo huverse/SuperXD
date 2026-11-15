@@ -689,6 +689,29 @@ void main() {
       expect(await phone.identity(second), isNotNull);
     });
 
+    test('清掉这台手机上没用过私信的旧账号：不认领旧版留下的设备级私信、不为它建库，之后第一个用私信的账号照样并进来', () async {
+      final relay = FakeRelay();
+      final phone = Phone(relay);
+      final legacy = await SocialIdentity.generate();
+      phone.vault.identities['identity'] = legacy;
+      relay.devices[legacy.deviceId] = (sign: legacy.signPublicKey, box: legacy.boxPublicKey);
+      final old = await SocialStore.open(path.join(phone.directory.path, SocialSpaces.legacyDatabase));
+      await old.saveProfile(const SocialProfile(nickname: '老用户', bound: false));
+      await old.close();
+      final service = await phone.start();
+      const dropped = AppAccountRef(accountId: 'OLDOLDOLDOLDOLDOLDOLDO', slot: 'account.AAAA');
+      await service.forgetAccount(dropped);
+      expect(phone.vault.owner, isNull);
+      expect(phone.vault.identities['identity'], isNotNull);
+      expect(File(path.join(phone.directory.path, SocialSpaces.accountFolder, '${dropped.accountId}.db')).existsSync(), isFalse);
+      expect(service.status, SocialStatus.signedOut);
+
+      await service.switchAccount(await phone.signIn());
+      expect(service.status, SocialStatus.ready);
+      expect(service.deviceId, legacy.deviceId);
+      expect(service.profile!.nickname, '老用户');
+    });
+
     test('中转说应用账号已不在：停用私信、让应用账号马上核一次', () async {
       final relay = FakeRelay();
       final phone = Phone(relay);
