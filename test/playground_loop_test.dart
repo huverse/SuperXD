@@ -341,6 +341,23 @@ void main() {
         expect(() => _rules.decodeAnswer(bad), throwsFormatException, reason: '$bad');
       }
     });
+
+    // 解码是外部输入的边界（服务器给的题面）：随便拼的 12 见方题面，不设上限时证明唯一要搜几分钟，在界面线程上就是卡死。
+    test('解码时证明唯一的试探有上限：随便拼的大题面一会儿就拒收，出过的专家题都收', () {
+      const clues = [
+        0, -1, -1, -1, -1, 2, 3, -1, -1, -1, -1, -1, -1, -1, 3, -1, -1, -1, 3, -1, -1, 2, -1, -1, -1, -1, 1, -1, 1, -1, 3, -1, -1, 1, -1, 0, //
+        3, 1, -1, -1, -1, 1, -1, -1, 1, -1, -1, -1, 3, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 2, 0, -1, -1, -1, -1, -1, //
+        -1, -1, -1, -1, -1, -1, -1, 0, -1, -1, -1, 1, -1, 3, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, 2, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, //
+        -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 0, -1, -1, -1, -1, -1, -1, 3, -1, -1, 0, 2, -1, -1, -1,
+      ];
+      final watch = Stopwatch()..start();
+      expect(() => _rules.decodePuzzle({'width': 12, 'height': 12, 'clues': clues}), throwsFormatException);
+      expect(watch.elapsed, lessThan(const Duration(seconds: 5)));
+      for (var seed = 0; seed < 12; seed++) {
+        final draw = _rules.generate(seed * 7919 + 13, PuzzleTier.expert);
+        expect(_rules.decodePuzzle(_rules.encodePuzzle(draw.puzzle)).clues, draw.puzzle.clues);
+      }
+    }, timeout: const Timeout(Duration(minutes: 1)));
   });
 
   group('对局页', () {

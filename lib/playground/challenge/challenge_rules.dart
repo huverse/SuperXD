@@ -29,6 +29,9 @@ import 'package:superxd/playground/puzzle_rules.dart';
 //    改目标的是目标柱、真正的出口、要不要镜像；页面写出算式，自己算。能收碎片的游戏见 challengeConsumers。
 // 3. 终章：全部碎片相加是最终密码，输对才算全部过关；某一关过得快得不正常，追加一道同一游戏的加试题，做完才开终章。
 // 4. 困难与专家档的汉诺塔、冰面滑行、推箱子、点灯要用最少步数（challengeMinimum），多一步都不算过。
+// [人工决策-2026-11-15 19:18:31] 用户选「题面带版本号」（推荐）：每个游戏的题面写法有版本号（PuzzleRules.puzzleVersion，从 1 起，改了写法加一），
+// 客户端报「游戏@版本」（challengeGameTokens），服务器只排、只下发认得的版本，题库按版本分文件。原因：服务器那边换了某个游戏的题面写法时，
+// 没更新的应用照样能玩它认得的版本，不会进了关才发现看不懂（以前只按游戏名判断能不能玩）。
 // 能进挑战的游戏：登记项 challengeable 为真的 15 个，id 同注册表，发出后不改；服务器的判定（server/src/modules/challenge/judges）从这些规则逐个移植，
 // 与这里共用测试向量 server/test/vectors/challenge_judge_v1.json（tool/challenge_vectors.dart 生成）。
 const Map<String, PuzzleRules<Object?, Object?>> challengeRules = {
@@ -47,6 +50,12 @@ const Map<String, PuzzleRules<Object?, Object?>> challengeRules = {
   'flash': FlashRules(),
   'loop': LoopRules(),
   'balance': BalanceRules(),
+};
+
+// 报给服务器的「游戏@题面写法版本」（如 hanoi@1）：只报能进挑战的，不认识的游戏不报（人工决策见文件头 11-15 19:18 那条）。
+Set<String> challengeGameTokens(Iterable<String> games) => {
+  for (final game in games)
+    if (challengeRules[game] case final rules?) '$game@${rules.puzzleVersion}',
 };
 
 // 这一关的碎片（solution 是题库的参考解）：从解里读出、所有正确解都一样，题库里存好，过关时服务器给一次。

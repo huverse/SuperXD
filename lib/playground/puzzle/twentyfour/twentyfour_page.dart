@@ -81,11 +81,13 @@ class _Card {
 // 剩一张：是 24 就解开（那张卡铺满激活色、轻轻鼓一下，再弹结果）；不是 24 重震、晃一下、描警示色的边，可撤销（能开方的还可以接着开）。
 // 卡片与运算键中间写最近算出来的那张卡的算式（如「3 − 8 ÷ 3 = 1/3」「2^3 × √9 = 24」，最多两行），读屏念成「2的3次方乘根号9，等于24」。
 class TwentyFourPage extends StatefulWidget {
-  const TwentyFourPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
+  const TwentyFourPage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 外壳在后台出好的第一道题（自由模式；没备好或测试注入种子时为空，当场出）。
+  final PlayFirst? first;
   // 挑战里的一关（题面是服务器给的）；自由模式为空。
   final PlayChallenge? challenge;
 
@@ -95,7 +97,7 @@ class TwentyFourPage extends StatefulWidget {
 
 class _TwentyFourPageState extends State<TwentyFourPage> with TickerProviderStateMixin {
   static const _rules = TwentyFourRules();
-  late final _session = PlaySession<TwentyFourPuzzle, List<TwentyFourStep>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
+  late final _session = PlaySession<TwentyFourPuzzle, List<TwentyFourStep>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, first: widget.first, challenge: widget.challenge);
   // 四个位置上的卡（null 是合并后空出来的位置）与每一步合并前的样子（撤销按步退回）。
   late var _cards = _deal();
   final _history = <({List<_Card?> before, TwentyFourStep step})>[];

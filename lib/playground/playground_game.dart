@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 
 import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/playground_store.dart';
+import 'package:superxd/playground/puzzle_rules.dart';
 
 // 游乐场按「板块 → 子类 → 游戏」三级组织（同应用商店的分类 → 子分类 → 应用）：首页按板块分页、板块里按子类分组，不把所有游戏混成一张表。
 // 三级的 id 发出后都不改：本机记录、以后的挑战题库与积分都按 id 认。只在 playground_catalog.dart 一处登记。
@@ -45,6 +46,10 @@ class PlaygroundGame {
   final PlaygroundGroup group;
   final bool challengeable;
   final bool timeInTenths;
-  // 对局页：拿到自己的登记项（名字、玩法说明）与本机记录；挑战里的一关另给 challenge（题面是服务器给的，不出题、不记本机成绩）。
-  final Widget Function(BuildContext context, PlaygroundGame game, PlaygroundStore store, PlayChallenge? challenge) builder;
+  // 对局页：拿到自己的登记项（名字、玩法说明）与本机记录；挑战里的一关另给 challenge（题面是服务器给的，不出题、不记本机成绩）；
+  // 自由模式从外壳进来时另给 first（外壳在后台出好的第一道题，画线入杯与舒尔特不备、为空）。
+  final Widget Function(BuildContext context, PlaygroundGame game, PlaygroundStore store, PlayChallenge? challenge, PlayFirst? first) builder;
 }
+
+// 对局页外壳在后台 isolate 里出好的第一道题（人工决策见 playground_page.dart 的 PlaygroundGameHost）：种子、档位与题；档位和对局页这次的档对上才用。
+typedef PlayFirst = ({int seed, PuzzleTier tier, PuzzleDraw<Object?, Object?> draw});

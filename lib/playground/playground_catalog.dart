@@ -45,7 +45,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '每行（列）的数字是这一行（列）里依次连续涂色的格数，段与段之间至少空一格。',
     icon: CampusIcons.nonogram,
     group: gridGroup,
-    builder: (context, game, store, challenge) => NonogramPage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => NonogramPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'hanoi',
@@ -54,7 +54,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '把整叠盘子挪到「目标」柱：一次挪一个，大盘不能压在小盘上。',
     icon: CampusIcons.hanoi,
     group: planningGroup,
-    builder: (context, game, store, challenge) => HanoiPage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => HanoiPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'queens',
@@ -63,7 +63,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '补齐皇后，任意两个不同行、不同列、不在同一斜线。锁定的皇后不能动。',
     icon: CampusIcons.queens,
     group: logicGroup,
-    builder: (context, game, store, challenge) => QueensPage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => QueensPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'ice',
@@ -72,7 +72,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '小企鹅一滑到底，撞到岩石或边界才停；正好停在终点上才算到达。',
     icon: CampusIcons.ice,
     group: planningGroup,
-    builder: (context, game, store, challenge) => IcePage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => IcePage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'lights',
@@ -81,7 +81,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '点一格，它和上下左右的灯一起翻转。把灯全部点亮。',
     icon: CampusIcons.lights,
     group: gridGroup,
-    builder: (context, game, store, challenge) => LightsPage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => LightsPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'knights',
@@ -90,7 +90,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '骑士只说真话，无赖只说假话；「我们」包括说话的人。定下每个人的身份。',
     icon: CampusIcons.knights,
     group: logicGroup,
-    builder: (context, game, store, challenge) => KnightsPage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => KnightsPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'river',
@@ -99,7 +99,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '用小船把大家都送到右岸，不能违反河上方写的规矩。',
     icon: CampusIcons.river,
     group: planningGroup,
-    builder: (context, game, store, challenge) => RiverPage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => RiverPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'boxes',
@@ -108,7 +108,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '把箱子都推到目标点。只能推不能拉，一次推一个。',
     icon: CampusIcons.boxes,
     group: planningGroup,
-    builder: (context, game, store, challenge) => BoxesPage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => BoxesPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'twentyfour',
@@ -117,7 +117,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '四个数各用一次，算出 24。困难起可以用乘方和开方。',
     icon: CampusIcons.twentyfour,
     group: numberGroup,
-    builder: (context, game, store, challenge) => TwentyFourPage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => TwentyFourPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'flash',
@@ -126,7 +126,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '记住亮起的格，熄灭后全部点出来，顺序不限。一道题 5 轮。',
     icon: CampusIcons.flash,
     group: memoryGroup,
-    builder: (context, game, store, challenge) => FlashPage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => FlashPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'balance',
@@ -135,7 +135,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '有一个球重量不同，在限定次数内称出它；称的结果能唯一确定它才算找出。',
     icon: CampusIcons.balance,
     group: logicGroup,
-    builder: (context, game, store, challenge) => BalancePage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => BalancePage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'mines',
@@ -144,7 +144,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '数字是周围八格里的雷数。翻开所有不是雷的格，长按插旗。',
     icon: CampusIcons.mines,
     group: gridGroup,
-    builder: (context, game, store, challenge) => MinesPage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => MinesPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'loop',
@@ -153,7 +153,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '沿格线画一个不分叉的闭合圈，每个数字是它四条边里在圈上的条数。',
     icon: CampusIcons.loop,
     group: gridGroup,
-    builder: (context, game, store, challenge) => LoopPage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => LoopPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'logicgrid',
@@ -162,7 +162,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '按线索推出每个人在每一类里各是哪一样。座位从左到右是 1 号起。',
     icon: CampusIcons.logicgrid,
     group: logicGroup,
-    builder: (context, game, store, challenge) => LogicGridPage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => LogicGridPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'cipher',
@@ -171,7 +171,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '密码的各位数字互不相同。每行线索写着：几个数字位置也对、几个数字对但位置不对。',
     icon: CampusIcons.cipher,
     group: logicGroup,
-    builder: (context, game, store, challenge) => CipherPage(game: game, store: store, challenge: challenge),
+    builder: (context, game, store, challenge, first) => CipherPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
     id: 'schulte',
@@ -182,7 +182,7 @@ final playgroundCatalog = <PlaygroundGame>[
     group: memoryGroup,
     challengeable: false,
     timeInTenths: true,
-    builder: (context, game, store, _) => SchultePage(game: game, store: store),
+    builder: (context, game, store, _, _) => SchultePage(game: game, store: store),
   ),
   PlaygroundGame(
     id: 'pour',
@@ -192,6 +192,6 @@ final playgroundCatalog = <PlaygroundGame>[
     icon: CampusIcons.pour,
     group: physicsGroup,
     challengeable: false,
-    builder: (context, game, store, _) => PourPage(game: game, store: store),
+    builder: (context, game, store, _, _) => PourPage(game: game, store: store),
   ),
 ];

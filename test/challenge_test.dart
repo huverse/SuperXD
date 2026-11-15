@@ -932,7 +932,7 @@ void main() {
       expect(find.text('积分 86'), findsOneWidget);
       expect(find.text('入门 · 六连环'), findsOneWidget);
       expect(_line('6 关 · 限时 15 分钟 · 还剩 2 天'), findsOneWidget);
-      expect(hub.games, {for (final game in playgroundCatalog) if (game.challengeable) game.id});
+      expect(hub.games, {for (final game in playgroundCatalog) if (game.challengeable) '${game.id}@1'}, reason: '报给服务器的是「游戏@题面写法版本」');
       await tester.tap(find.text('开始'));
       await tester.pumpAndSettle();
       expect(find.textContaining('计时不暂停'), findsOneWidget);
