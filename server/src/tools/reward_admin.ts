@@ -11,7 +11,7 @@ const main = async () => {
   const { host, port, username, password, database } = env().mysql;
   const connection = await createConnection({ host, port, user: username, password, database, timezone: 'Z', connectTimeout: 5000 });
   try {
-    console.log(await runRewardAdmin(connection, process.argv.slice(2), createInterface({ input: process.stdin, crlfDelay: Infinity })));
+    console.log(await runRewardAdmin(connection, process.argv.slice(2), () => createInterface({ input: process.stdin, crlfDelay: Infinity })));
   } finally {
     await connection.end();
   }

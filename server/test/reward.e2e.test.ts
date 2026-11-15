@@ -4,6 +4,8 @@ import Redis from 'ioredis';
 import { createConnection, Connection } from 'mysql2/promise';
 import { mkdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
+import { createInterface } from 'node:readline';
+import { PassThrough } from 'node:stream';
 import request from 'supertest';
 import { DataSource } from 'typeorm';
 
@@ -32,9 +34,10 @@ const hour = 3600_000;
 let serial = 0;
 const campaignKey = () => `test-${Date.now().toString(36)}-${serial++}`;
 
-const lines = async function* (text: string) {
-  for (const line of text.split('\n')) yield line;
-};
+const lines = (text: string) =>
+  async function* () {
+    for (const line of text.split('\n')) yield line;
+  };
 
 // 经维护命令建活动、导入奖品（同维护者在服务器上的用法）。
 const setup = async (options: { from?: number; to?: number; mode?: 'uniform' | 'weighted'; chance?: number; maxWeight?: number; prizes?: number; bigPrizes?: number } = {}) => {
@@ -410,6 +413,18 @@ describe('维护命令与保留', () => {
     const status = await runRewardAdmin(admin, ['status', key], lines(''));
     expect(status).toContain('奖品 2 份，已发 1 份');
     expect(status).toContain('抽签 1 人，中 1 人');
+  });
+
+  // 命令行入口用 readline 读标准输入：import 先查活动再读，读之前已经发出的行不能丢；不读输入的命令不碰标准输入（不然进程等输入结束、不退出）。
+  it('import 先查活动再读标准输入也不丢行；create 与 status 不读标准输入', async () => {
+    const key = await setup({ prizes: 0 });
+    const input = new PassThrough();
+    input.end('口令\t甲\n二维码\t乙\n');
+    expect(await runRewardAdmin(admin, ['import', key], () => createInterface({ input, crlfDelay: Infinity }))).toContain('prizes=2');
+    const untouched = () => {
+      throw new Error('不该读标准输入');
+    };
+    expect(await runRewardAdmin(admin, ['status', key], untouched)).toContain('奖品 2 份');
   });
 
   it('活动结束 30 天后连同奖品与抽签记录删除，没到期的不动', async () => {

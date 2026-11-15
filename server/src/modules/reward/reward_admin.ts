@@ -31,8 +31,10 @@ const instant = (value: string | undefined, name: string): Date => {
   return parsed;
 };
 
-// 执行一条维护命令，返回要打印的结果；lines 是标准输入的各行（只有 import 用）。
-export const runRewardAdmin = async (connection: Connection, args: string[], lines: AsyncIterable<string>): Promise<string> => {
+// 执行一条维护命令，返回要打印的结果；lines 现取标准输入的各行，只有 import 调用。
+// 要读时才取、取完立刻逐行读：readline 在开始迭代之前发出的行会丢（先查库再读，小文件的行连同结束一起丢光、一直等下去），
+// 不读输入的命令也不能先建 readline（进程会等标准输入结束、不退出）。
+export const runRewardAdmin = async (connection: Connection, args: string[], lines: () => AsyncIterable<string>): Promise<string> => {
   const [command, key, ...rest] = args;
   if (command === undefined || key === undefined || !/^[a-z0-9][a-z0-9-]{0,63}$/.test(key)) fail('用法见 src/tools/reward_admin.ts 文件头');
   if (command === 'create') {
@@ -61,7 +63,7 @@ export const runRewardAdmin = async (connection: Connection, args: string[], lin
     const rows: [string, number, string, string, string, Date, Date][] = [];
     const now = new Date();
     let line = 0;
-    for await (const text of lines) {
+    for await (const text of lines()) {
       line++;
       if (text.trim() === '') continue;
       const [label, content = '', note = ''] = text.replace(/^\uFEFF/, '').split('\t').map((part) => part.trim());
