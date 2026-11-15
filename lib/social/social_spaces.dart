@@ -35,9 +35,21 @@ class SocialSpaces {
       owner = accountId;
     }
     final legacy = owner == accountId;
-    final file = legacy ? path.join(directory, legacyDatabase) : path.join(directory, accountFolder, '$accountId.db');
+    final file = _file(accountId, legacy: legacy);
     if (!legacy) await Directory(path.dirname(file)).create(recursive: true);
-    final store = _stores[file] ??= await SocialStore.open(file);
-    return SocialSpace(accountId: accountId, store: store, identityKey: legacy ? 'identity' : 'identity.$accountId');
+    return _open(accountId, file, legacy: legacy);
   });
+
+  // 清掉注销了的账号时用：只找这台手机上已有的那一份，没用过私信为空；不认领旧版的私信（那是还没登录过的人的），也不为它新建库。
+  Future<SocialSpace?> existing(String accountId) => _lock.synchronized(() async {
+    final legacy = await vault.legacyOwner() == accountId;
+    final file = _file(accountId, legacy: legacy);
+    if (!_stores.containsKey(file) && !await File(file).exists()) return null;
+    return _open(accountId, file, legacy: legacy);
+  });
+
+  String _file(String accountId, {required bool legacy}) => legacy ? path.join(directory, legacyDatabase) : path.join(directory, accountFolder, '$accountId.db');
+
+  Future<SocialSpace> _open(String accountId, String file, {required bool legacy}) async =>
+      SocialSpace(accountId: accountId, store: _stores[file] ??= await SocialStore.open(file), identityKey: legacy ? 'identity' : 'identity.$accountId');
 }
