@@ -50,14 +50,13 @@ describe('挑战配置', () => {
     expect(parse(100_001)).toThrow(/ticket/);
   });
 
-  it('关卡图不合规的拒收：环、一关两条出边、收碎片的不是能收碎片的游戏、给碎片的只放天平称球、关卡 id 不是 a–p 的一个字母、不认识的游戏、边指向不存在的关', () => {
+  it('关卡图不合规的拒收：环、一关两条出边、收碎片的不是能收碎片的游戏、关卡 id 不是 a–p 的一个字母、不认识的游戏、边指向不存在的关', () => {
     const parse = (template: Record<string, unknown>) => () => parseChallengeConfig(rawConfig(template), judgedGames, challengeMaxLevels);
     expect(parse(twoToOne)).not.toThrow();
     expect(parse({ ...twoToOne, edges: [['a', 'c'], ['c', 'a']] })).toThrow(ChallengeConfigError);
     expect(parse({ ...twoToOne, edges: [['a', 'b'], ['a', 'c']] })).toThrow(/不止一条出边/);
     expect(parse({ ...twoToOne, nodes: [{ id: 'a', tier: 'entry' }, { id: 'b', tier: 'entry' }, { id: 'c', tier: 'easy', games: ['hanoi', 'flash'] }] })).not.toThrow();
     expect(parse({ ...twoToOne, nodes: [{ id: 'a', tier: 'entry' }, { id: 'b', tier: 'entry' }, { id: 'c', tier: 'easy', games: ['mines'] }] })).toThrow(/收碎片/);
-    expect(parse({ ...twoToOne, nodes: [{ id: 'a', tier: 'entry', games: ['balance'] }, { id: 'b', tier: 'entry' }, { id: 'c', tier: 'easy' }] })).toThrow(/给碎片/);
     expect(parse({ ...twoToOne, nodes: [{ id: 'aa', tier: 'entry' }, { id: 'b', tier: 'entry' }, { id: 'c', tier: 'easy' }], edges: [['aa', 'c'], ['b', 'c']] })).toThrow(/关卡 id/);
     expect(parse({ ...twoToOne, nodes: [{ id: 'a', tier: 'entry', games: ['schulte'] }, { id: 'b', tier: 'entry' }, { id: 'c', tier: 'easy' }] })).toThrow(/进不了挑战/);
     expect(parse({ ...twoToOne, edges: [['a', 'z']] })).toThrow(/边/);
@@ -163,8 +162,8 @@ describe('进度与计分', () => {
       level({ id: 'c', game: 'twentyfour', tier: 'easy', expected: expected[2], difficulty: puzzleDifficulty(expected[2]), inputs: ['a', 'b'], fragment: 20, letter: 'C', gate: { op: 'product', value: 24 }, consume: { kind: 'slot', at: 0, modulus: 10, offset: 1 }, depth: 1 }),
     ],
   });
-  const yes: JudgedAnswer = { solved: true, penalties: 0, steps: null, answerFragment: null };
-  const no: JudgedAnswer = { solved: false, penalties: 0, steps: null, answerFragment: null };
+  const yes: JudgedAnswer = { solved: true, penalties: 0, steps: null };
+  const no: JudgedAnswer = { solved: false, penalties: 0, steps: null };
 
   it('碎片齐了到门前；门上的数对了才开，输错扣 20 秒；全过了终章才能输，最终密码 = 全部碎片之和，输对是 cleared', () => {
     const demo = plan([60, 60, 60]);
@@ -192,7 +191,7 @@ describe('进度与计分', () => {
     expect(runOutcome(demo, progress)).toBe('cleared');
   });
 
-  it('重做过了的关：对了再给一次碎片、不改进度，错了不计错交；要最少步数的多一步不算过；天平称球的碎片按答案给', () => {
+  it('重做过了的关：对了再给一次碎片、不改进度，错了不计错交；要最少步数的多一步不算过', () => {
     const demo = plan([60, 60, 60]);
     demo.levels[0].minimum = 7;
     const progress = startProgress(demo, 0);
@@ -202,12 +201,6 @@ describe('进度与计分', () => {
     expect(recordVerdict(demo, progress, 'a', { ...yes, steps: 7 }, 9000)).toEqual({ solved: true, fragment: 3, replay: true });
     expect(recordVerdict(demo, progress, 'a', no, 9500)).toEqual({ solved: false, fragment: null, replay: true });
     expect(progress.levels.a).toMatchObject({ state: 'solved', solvedAt: 2000, errors: 1 });
-
-    const balance = plan([60, 60, 60]);
-    balance.levels[1] = level({ id: 'b', game: 'balance', fragment: null, letter: 'B' });
-    const weighed = startProgress(balance, 0);
-    recordVerdict(balance, weighed, 'b', { ...yes, answerFragment: 6 }, 1000);
-    expect(weighed.levels.b.fragment).toBe(6);
   });
 
   it('加试题直接开着，做完前终章开不了，不给碎片也不计分；错交到上限算没过、剩下的开不了是 stuck', () => {

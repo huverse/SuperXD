@@ -12,8 +12,6 @@ export type ChallengeTier = (typeof challengeTiers)[number];
 export const slotGames = new Set(['twentyfour', 'queens', 'loop', 'cipher', 'knights']);
 export const goalGames = new Set(['hanoi', 'ice', 'flash']);
 export const consumerGames = new Set([...slotGames, ...goalGames]);
-// 碎片要按玩家的答案才知道的游戏（天平称球的球是玩家称出来的）：只能放在不给别的关碎片的位置。
-export const answerFragmentGames = new Set(['balance']);
 // 困难与专家档要用最少步数的游戏（[人工决策-2026-11-14 23:11:48]）。
 export const optimalGames = new Set(['hanoi', 'ice', 'lights', 'boxes']);
 export const optimalTiers = new Set<ChallengeTier>(['hard', 'expert']);
@@ -111,9 +109,6 @@ const templateOf = (id: string, raw: unknown, judged: Set<string>, maxLevels: nu
   for (const node of nodes) {
     if (!edges.some(([, to]) => to === node.id)) continue;
     if ((node.games ?? [...consumerGames]).some((game) => !consumerGames.has(game))) fail(`模板 ${id} 的 ${node.id} 收碎片，只能是 ${[...consumerGames].join('、')}`);
-  }
-  for (const node of nodes) {
-    if (outgoing.has(node.id) && node.games !== null && node.games.every((game) => answerFragmentGames.has(game))) fail(`模板 ${id} 的 ${node.id} 给碎片，不能只放 ${[...answerFragmentGames].join('、')}`);
   }
   // 每关只有一条出边，沿出边走不回原处就没有环。
   for (const node of nodes) {

@@ -239,7 +239,7 @@ void main() {
   });
 
   group('碎片与改目标的规则', () {
-    test('碎片从解里来：汉诺塔最少步数、数回圈里几格、密码各位之和；天平称球按答案给（这里为空）', () {
+    test('碎片从解里来：汉诺塔最少步数、数回圈里几格、密码各位之和；天平称球用题面定的称几次', () {
       final hanoi = const HanoiRules().generate(2, PuzzleTier.easy);
       expect(challengeFragment('hanoi', hanoi.puzzle, hanoi.solution), hanoi.solution.length);
       // 2×2 的格子全在圈里：外圈 8 条边。
@@ -252,7 +252,8 @@ void main() {
       expect(loopInside(loop, edges), 4);
       final cipher = const CipherRules().generate(3, PuzzleTier.normal);
       expect(challengeFragment('cipher', cipher.puzzle, cipher.solution), cipher.solution.fold<int>(0, (sum, digit) => sum + digit));
-      expect(challengeFragment('balance', const BalanceRules().generate(1, PuzzleTier.entry).puzzle, null), isNull);
+      expect(challengeFragment('balance', const BalanceRules().generate(1, PuzzleTier.entry).puzzle, null), 2);
+      expect(challengeFragment('balance', const BalanceRules().generate(1, PuzzleTier.expert).puzzle, null), 3);
     });
 
     test('记忆闪光镜像：亮的照常亮，要点左右镜像的格；冰面滑行的出口只给页面画、判定只看终点', () {

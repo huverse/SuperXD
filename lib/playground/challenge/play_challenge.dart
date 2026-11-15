@@ -50,7 +50,7 @@ String challengeFragmentName(String game, Object? puzzle) => switch (game) {
   'mines' => '第一行有几颗雷',
   'flash' => '最后一轮亮几格',
   'loop' => '圈里围住几格',
-  'balance' => '不同的是几号球',
+  'balance' => '称几次',
   _ => '碎片',
 };
 

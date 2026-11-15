@@ -25,7 +25,7 @@ export const addExtra = (plan: ChallengePlan, progress: RunProgress, level: Plan
   progress.levels[level.id] = fresh('open', now);
 };
 
-export type JudgedAnswer = { solved: boolean; penalties: number; steps: number | null; answerFragment: number | null };
+export type JudgedAnswer = { solved: boolean; penalties: number; steps: number | null };
 
 // 记一次判定。这一关开着：解开就记过关时刻与碎片（要最少步数的多一步不算解开），收它碎片的那关碎片都齐了就到门前；没解开计一次错交，到上限算没过。
 // 这一关已经过了（重做一遍看碎片）：对了再给一次碎片，不改进度，错了也不计错交。返回这次算不算解开与给的碎片。
@@ -43,7 +43,7 @@ export const recordVerdict = (plan: ChallengePlan, progress: RunProgress, levelI
   state.state = 'solved';
   state.solvedAt = now;
   state.penalties = judged.penalties;
-  state.fragment = level.extraOf === null ? (level.fragment ?? judged.answerFragment) : null;
+  state.fragment = level.extraOf === null ? level.fragment : null;
   if (level.output !== null) {
     const target = plan.levels.find((item) => item.id === level.output)!;
     if (target.inputs.every((input) => progress.levels[input].state === 'solved')) progress.levels[target.id].state = 'gated';
