@@ -7,15 +7,16 @@ import 'package:superxd/domain/challenge.dart';
 
 // 挑战与积分的编排（设备级，切换教务账号不重建；人工决策见 lib/playground/challenge/challenge_rules.dart）：跟着当前的应用账号走（只认 AppAccountRef，见 domain/app_account.dart），
 // 游乐场经 ChallengeHub 用。没登录应用账号时不联网、直接报 notSignedIn；中转说这个应用账号已不在（别处注销、被清理）就让 AppAccounts 马上核一次，
-// 本机随之退回未登录，页面引导重新登录。
+// 本机随之退回未登录，页面引导重新登录。当前应用账号变了（含直接换成另一个账号）发 changes。
 class Challenges implements ChallengeHub {
-  Challenges({required this.appAccounts, required this.client}) {
+  Challenges({required this.appAccounts, required this.client}) : _account = appAccounts.current {
     appAccounts.addListener(_changed);
   }
   final AppAccounts appAccounts;
   final ChallengeClient client;
   final _changes = StreamController<void>.broadcast();
-  var _signedIn = false;
+  // 上次通知时的应用账号：登录、退出与直接换成另一个账号都发 changes（挑战一栏要按新账号重读）。
+  AppAccountRef? _account;
 
   @override
   Stream<void> get changes => _changes.stream;
@@ -24,8 +25,9 @@ class Challenges implements ChallengeHub {
   bool get signedIn => appAccounts.current != null;
 
   void _changed() {
-    if (signedIn == _signedIn) return;
-    _signedIn = signedIn;
+    final account = appAccounts.current;
+    if (account == _account) return;
+    _account = account;
     _changes.add(null);
   }
 

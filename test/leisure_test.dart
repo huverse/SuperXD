@@ -48,6 +48,14 @@ void main() {
     });
   });
 
+  test('游乐场记录写盘失败只记日志：完成一局照常返回新纪录，内存里的成绩照旧', () async {
+    final blocker = File(path.join(directory.path, 'blocked'));
+    await blocker.writeAsString('不是目录');
+    final store = PlaygroundStore(() async => File(path.join(blocker.path, 'playground.json')));
+    expect(await store.finish('hanoi', PuzzleTier.entry, millis: 900, at: DateTime.utc(2026, 11, 15)), isTrue);
+    expect(store.best('hanoi', PuzzleTier.entry)?.millis, 900);
+  });
+
   group('编排', () {
     test('开关：变了才写、通知一次；关了再开回来', () async {
       final memory = FileLeisureMemory.memory();

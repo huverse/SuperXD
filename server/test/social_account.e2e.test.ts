@@ -81,6 +81,23 @@ describe('私信挂到应用账号', () => {
     expect(taken.body.code).toBe('SOCIAL_TAKEN');
   });
 
+  it('被拒的挂法不登记私信设备；两个账号同时挂同一台私信设备，只有一个挂上，另一个回 SOCIAL_TAKEN（不回 500）', async () => {
+    const devicesOf = async (deviceId: string) => Number(((await dataSource.query('SELECT COUNT(*) AS count FROM device WHERE device_id = ?', [deviceId])) as { count: string }[])[0].count);
+    const { device: account, accountId } = await signedIn();
+    expect((await bind(account, new TestDevice(server))).status).toBe(200);
+    const { device: second } = await signedIn(accountId);
+    const stray = new TestDevice(server);
+    expect((await bind(second, stray)).body.code).toBe('SOCIAL_ELSEWHERE');
+    expect(await devicesOf(stray.deviceId), '被拒的不留设备').toBe(0);
+
+    const shared = new TestDevice(server);
+    const { device: left } = await signedIn(), { device: right } = await signedIn();
+    const results = await Promise.all([bind(left, shared), bind(right, shared)]);
+    expect(results.map((response) => response.status).sort()).toEqual([200, 409]);
+    expect(results.find((response) => response.status === 409)!.body.code).toBe('SOCIAL_TAKEN');
+    expect(Number(((await dataSource.query('SELECT COUNT(*) AS count FROM account_social WHERE device_id = ?', [shared.deviceId])) as { count: string }[])[0].count)).toBe(1);
+  });
+
   it('换手机：没带接管回 SOCIAL_ELSEWHERE；接管后好友关系改挂新设备，好友那边看到新公钥与旧号，确认后不再提示；旧设备与它没收的信删掉', async () => {
     const { device: oldAccount, accountId } = await signedIn();
     const oldSocial = new TestDevice(server);

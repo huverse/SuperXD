@@ -212,7 +212,7 @@ abstract interface class ChallengeClient {
 // 游乐场经它用挑战与积分（application 实现，组合根注入）：跟着当前的应用账号走；登录状态变了 changes 发一次。
 abstract interface class ChallengeHub {
   Stream<void> get changes;
-  // 当前教务账号登录了应用账号。
+  // 这台设备登录着应用账号。
   bool get signedIn;
   Future<ChallengeCatalog> catalog(Set<String> games);
   Future<ChallengeRun> start(String challengeId, Set<String> games);

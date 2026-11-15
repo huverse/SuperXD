@@ -61,9 +61,9 @@ class MinePage extends StatelessWidget {
   final AppSession session;
   // 娱乐与积分的开关（设备级，人工决策见 domain/leisure.dart）：界面下面一行，⋯里删除数据。
   final Leisure? leisure;
-  // 应用账号（设备级，跟着当前教务账号）；没配中转时为空，账号页不显示那一组。
+  // 应用账号（设备级，与教务各管各的）；没配中转时为空，账号页不显示那一行。
   final AppAccounts? appAccounts;
-  // 应用账号下的诊断包（人工决策见 domain/diagnostic_upload.dart）：账号页应用账号那一行的菜单里看与删；没配中转时为空。
+  // 应用账号下的诊断包（人工决策见 domain/diagnostic_upload.dart）：应用账号页的「我上传的诊断包」里看与删；没配中转时为空。
   final AccountDiagnostics? diagnostics;
   final SocialService? social;
   // 开发者的话（设备级）；为空（没配中转）或还没有信时不显示这一行。

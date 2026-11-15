@@ -82,9 +82,51 @@ class RelayChallengeClient implements ChallengeClient {
       },
       penalty: Duration(seconds: _field<int>(raw, 'penaltySeconds')),
       ending: ChallengeFinal.values.where((state) => state.name == raw['final']).firstOrNull ?? _bad('final'),
-      levels: [for (final level in _field<List<Object?>>(raw, 'levels')) _level(level)],
+      levels: _graph([for (final level in _field<List<Object?>>(raw, 'levels')) _level(level)]),
       result: result is Map ? ChallengeResult(points: _field<int>(result, 'points'), awarded: _field<int>(result, 'awarded'), ending: _field<String>(result, 'ending')) : null,
     );
+  }
+
+  // 关卡图是外部输入，按服务端模板的同一规则核对（server/src/modules/challenge/challenge_config.ts）：编号不重复、引用的关都在、不指向自己、
+  // 每关的碎片只交给一关、不成环；不合格当看不懂（引用不在的关会让 ChallengeRun.level 抛错，成环会让总览与首页缩略图无限递归）。
+  static List<ChallengeLevel> _graph(List<ChallengeLevel> levels) {
+    final ids = {for (final level in levels) level.id};
+    if (ids.length != levels.length) _bad('levels');
+    final next = <String, String>{};
+    for (final level in levels) {
+      for (final input in level.inputs) {
+        if (input == level.id || !ids.contains(input) || next.containsKey(input)) _bad('inputs');
+        next[input] = level.id;
+      }
+      if (level.extraOf case final extra? when extra == level.id || !ids.contains(extra)) _bad('extraOf');
+    }
+    _acyclic(next);
+    return levels;
+  }
+
+  // 每个点最多一条出边：沿出边走回到走过的点就是环。
+  static void _acyclic<T>(Map<T, T> next) {
+    for (final start in next.keys) {
+      final seen = <T>{};
+      for (T? at = start; at != null; at = next[at]) {
+        if (!seen.add(at)) _bad('cycle');
+      }
+    }
+  }
+
+  // 首页缩略图的边：两端都在这一个挑战的关里、不指向自己、每关一条出边、不成环。
+  static List<(int, int)> _edges(Object? raw, int levels) {
+    final edges = [
+      for (final edge in raw is List ? raw : _bad('edges'))
+        if (edge case [final int from, final int to] when from >= 0 && to >= 0 && from < levels && to < levels && from != to) (from, to) else _bad('edges'),
+    ];
+    final next = <int, int>{};
+    for (final (from, to) in edges) {
+      if (next.containsKey(from)) _bad('edges');
+      next[from] = to;
+    }
+    _acyclic(next);
+    return edges;
   }
 
   static ChallengeLevel _level(Object? raw) {
@@ -150,10 +192,7 @@ class RelayChallengeClient implements ChallengeClient {
               label: _field<String>(item, 'label'),
               levels: _field<int>(item, 'levels'),
               tiers: _strings(item, 'tiers'),
-              edges: [
-                for (final edge in _field<List<Object?>>(item, 'edges'))
-                  if (edge case [final int from, final int to] when from >= 0 && to >= 0) (from, to) else _bad('edges'),
-              ],
+              edges: _edges(item['edges'], _field<int>(item, 'levels')),
               timeLimit: Duration(seconds: _field<int>(item, 'timeLimit')),
               endsAt: _time(item, 'endsAt'),
               best: item['best'] is int ? item['best'] as int : null,

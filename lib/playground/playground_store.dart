@@ -140,9 +140,18 @@ class PlaygroundStore extends ChangeNotifier {
     });
   }
 
+  // 写盘失败（磁盘满等）只记日志：内存里的记录照旧，对局页照常弹结果，下次写入再存整份。
   Future<void> _write() => _saveLock.synchronized(() async {
     final file = _file;
     if (file == null) return;
+    try {
+      await _writeTo(file);
+    } catch (error, stack) {
+      campusLog('[Playground] action=records_write errorType=${error.runtimeType}\n$stack');
+    }
+  });
+
+  Future<void> _writeTo(File file) async {
     await file.parent.create(recursive: true);
     final pending = File('${file.path}.tmp');
     await pending.writeAsString(jsonEncode({
@@ -155,5 +164,5 @@ class PlaygroundStore extends ChangeNotifier {
       if (_notes case final notes?) 'notes': {'runId': notes.runId, 'text': notes.text},
     }), flush: true);
     await pending.rename(file.path);
-  });
+  }
 }

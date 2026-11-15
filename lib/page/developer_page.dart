@@ -32,7 +32,7 @@ String _exportedText(String? filename) => filename == null ? '导出没完成，
 // 上传诊断包前的确认（人工决策见 domain/diagnostic_upload.dart）：每次都问，写明传什么、传到哪、保留多久、会不会记到应用账号下、怎么提前删。
 // 长文案：诊断包每次上传前的确认（人工决策见 domain/diagnostic_upload.dart）。
 const _uploadNotice = '把与「导出日志」相同的日志包（本机日志、运行环境与字号状态）在本机加密后传到开发者的中转服务器，只有开发者能解开，'
-    '$diagnosticUploadKeepDays 天后自动删除。传完会给你一个诊断编号，把它告诉开发者。登录着应用账号时还会记在账号下，可在账号页删除；没登录的要提前删除，凭编号联系开发者。';
+    '$diagnosticUploadKeepDays 天后自动删除。传完会给你一个诊断编号，把它告诉开发者。登录着应用账号时还会记在账号下，可在应用账号页删除；没登录的要提前删除，凭编号联系开发者。';
 
 // 运行环境各项的显示名（键见组合根 app_diagnostics.dart 的 appEnvironment）。
 const _environmentLabels = {'version': '版本', 'build': '构建号', 'flavor': '渠道', 'os': '系统', 'sdk': 'API 级别', 'device': '机型', 'abi': '处理器架构'};

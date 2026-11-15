@@ -59,19 +59,22 @@ export class SocialBindingService implements OnModuleInit {
     if (!verifyEd25519(ed25519Key(sign), socialBindCanonical(accountDeviceId, deviceId), proof)) throw new RelayError(RelayCode.invalidRequest, HttpStatus.BAD_REQUEST, '私信设备的凭证不对');
     // 应用账号的设备密钥不能兼作私信设备（两者分开，退出应用账号删的是那把账号密钥）。
     if (deviceId === accountDeviceId || (await this.accounts.accountOf(deviceId)) !== null) throw new RelayError(RelayCode.invalidRequest, HttpStatus.BAD_REQUEST, '私信设备不能是应用账号的设备密钥');
-    await this.deviceService.enroll(deviceId, body.signPublicKey, body.boxPublicKey);
+    const taken = () => new RelayError(RelayCode.socialTaken, HttpStatus.CONFLICT, '这个私信设备属于别的应用账号');
     const previous = await this.dataSource.transaction(async (manager) => {
       const current = await this.socials.lockOf(accountId, manager);
       const owner = await this.socials.ownerOf(deviceId, manager);
-      if (owner !== null && owner !== accountId) throw new RelayError(RelayCode.socialTaken, HttpStatus.CONFLICT, '这个私信设备属于别的应用账号');
+      if (owner !== null && owner !== accountId) throw taken();
+      if (current !== null && current !== deviceId && body.takeover !== true) throw new RelayError(RelayCode.socialElsewhere, HttpStatus.CONFLICT, '这个应用账号的私信在另一台设备上');
+      // 检查都过了才登记私信设备：原来先登记再检查，被拒的请求也留下一台设备，一把账号密钥就能绕过设备注册限流往 device 表写行。
+      await this.deviceService.enroll(deviceId, body.signPublicKey, body.boxPublicKey);
       if (current === deviceId) return null;
-      if (current !== null && body.takeover !== true) throw new RelayError(RelayCode.socialElsewhere, HttpStatus.CONFLICT, '这个应用账号的私信在另一台设备上');
       if (current !== null) {
         await this.friendships.moveDevice(current, deviceId, manager);
         await this.messages.removeMailboxes([current], manager);
         await this.devices.remove([current], manager);
       }
-      await this.socials.set(accountId, deviceId, manager);
+      // 两个账号同时挂同一台私信设备：后到的撞 uk_device，回 SOCIAL_TAKEN（事务回滚），不回 500、也不会挂进别人的那一行。
+      if (!(await this.socials.set(accountId, deviceId, current !== null, manager))) throw taken();
       return current;
     });
     if (previous !== null) this.deviceService.forget([previous]);
