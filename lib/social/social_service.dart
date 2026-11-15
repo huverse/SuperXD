@@ -327,9 +327,14 @@ class SocialService extends ChangeNotifier {
   }
 
   // 注销了应用账号（服务器已删掉它的私信设备，见文件头 17:56:46 那条）：清掉这台手机上那个账号的私信，是当前账号时停用。
+  // 不是当前账号时只找已有的那一份（SocialSpaces.existing）：启动清旧账号时不能把旧版留下的设备级私信认成它的再清掉。
   Future<void> forgetAccount(AppAccountRef account) => _switchLock.synchronized(() async {
     final current = _session;
-    final session = current != null && current.account == account ? current : _Session(account, await spaces.of(account.accountId), null);
+    final session = current != null && current.account == account ? current : switch (await spaces.existing(account.accountId)) {
+      final space? => _Session(account, space, null),
+      null => null,
+    };
+    if (session == null) return;
     await _clearLocal(session);
     if (identical(session, _session)) {
       status = SocialStatus.signedOut;

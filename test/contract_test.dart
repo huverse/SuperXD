@@ -91,9 +91,6 @@ void main() {
       expect(loginToken(item['plain'] as String, item['timestamp'] as String), item['out']);
     }
     for (final item in (vectors['proofs'] as List).cast<Map<String, dynamic>>()) {
-      final proof = kingoSignInProof(item['account'] as String, item['password'] as String);
-      expect(proof.toJson(), item['proof']);
-      expect(buildProofLoginPlain(proof, item['pageSession'] as String, item['captcha'] as String), item['plain']);
       expect(buildLoginPlain(item['account'] as String, item['password'] as String, item['pageSession'] as String, item['captcha'] as String), item['plain']);
     }
   });

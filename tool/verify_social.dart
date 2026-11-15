@@ -22,7 +22,7 @@ import 'package:superxd/social/social_store.dart';
 // 只用合成数据。运行：
 //   flutter test tool/verify_social.dart --dart-define=SUPERXD_RELAY=http://127.0.0.1:18080
 // 中转服务可用 server/docker-compose.test.yml 起库后 npm run build && node dist/main.js 启动，或指向已部署的服务器。
-// 私信要挂到应用账号，用合成学号设备核对会在线上留下真的应用账号：私信身份事先用旧的设备注册接口登记好，挂账号那一个请求在本地截下
+// 私信要挂到应用账号，注册合成的应用账号会在线上留下真的账号：私信身份事先用旧的设备注册接口登记好，挂账号那一个请求在本地截下
 // （挂账号与换手机接管由 server/test/social_account.e2e.test.ts 与共用向量 socialBind 覆盖），其余请求原样经真实中转。
 class _BoundLocally implements RelayTransport {
   _BoundLocally(this.inner);
@@ -49,7 +49,7 @@ void main() {
     final identities = <String, SocialIdentity>{};
     Future<SocialService> device(String name) async {
       final vault = MemoryIdentityVault(), keys = MemoryAppAccountVault();
-      final account = AppAccountRef(accountId: 'verify-${identities.length}', slot: 'account.verify');
+      final account = AppAccountRef(accountId: 'verify-${identities.length}', slot: appAccountSlot);
       await keys.write(account.slot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: account.accountId));
       final spaces = SocialSpaces(vault: vault, directory: (Directory(path.join(directory.path, account.accountId))..createSync()).path);
       final social = identities[name] = await SocialIdentity.generate();

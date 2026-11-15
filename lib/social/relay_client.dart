@@ -57,7 +57,7 @@ class RelayException implements Exception {
   const RelayException(this.code, {this.retryAfter, this.detail = const {}});
   final String code;
   final int? retryAfter;
-  // 错误响应的其余字段（应用账号登录被教务拒绝时的 reason、message 等），外部输入，用时逐项校验。
+  // 错误响应的其余字段（积分不够时的 price、账号太新时的 eligibleAt、挑战的现状等），外部输入，用时逐项校验。
   final Map<String, Object?> detail;
   @override
   String toString() => 'RelayException($code)';
@@ -262,7 +262,7 @@ class RelayClient {
   Future<void> ack(SocialIdentity identity, List<String> ids) => _call(identity, 'POST', '/v1/messages/ack', {'ids': ids});
 
   // 用给定身份签名发一个请求，返回响应体：应用账号、挑战与节日抽签都用这个应用账号的设备密钥发，接口路径由调用方给。
-  // timeout 为空用传输的默认值；应用账号登录要等中转代登录教务，另给更长的。
+  // timeout 为空用传输的默认值（现在没有调用方另给）；limit 为空用传输的默认响应上限，挑战一局与解锁另给。
   Future<Map<String, Object?>> request(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload, Duration? timeout, int? limit]) => _call(identity, method, path, payload, timeout, false, limit);
 
   static int _integer(Object? value) => value is int ? value : throw const RelayException(RelayCode.badResponse);
