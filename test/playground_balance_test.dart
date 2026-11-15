@@ -91,7 +91,7 @@ BalanceWeighing _randomWeighing(PuzzleRandom random, int balls) {
 const _tiers = {
   PuzzleTier.entry: (9, 2, true, false),
   PuzzleTier.easy: (9, 3, false, false),
-  PuzzleTier.normal: (12, 3, false, false),
+  PuzzleTier.normal: (10, 3, false, false),
   PuzzleTier.hard: (12, 3, false, true),
   PuzzleTier.expert: (13, 3, false, false),
 };
@@ -384,7 +384,7 @@ void main() {
     });
 
     test('难度分：同档同分、逐档上升（1、3、8、9、10），解不开的按 10 分', () {
-      final expected = {PuzzleTier.entry: 1, PuzzleTier.easy: 3, PuzzleTier.normal: 8, PuzzleTier.hard: 9, PuzzleTier.expert: 10};
+      final expected = {PuzzleTier.entry: 1, PuzzleTier.easy: 3, PuzzleTier.normal: 4, PuzzleTier.hard: 9, PuzzleTier.expert: 10};
       for (final tier in PuzzleTier.values) {
         final scores = {for (var seed = 0; seed < 20; seed++) _rules.complexity(_rules.generate(seed, tier).puzzle)};
         expect(scores, {expected[tier]}, reason: '$tier');

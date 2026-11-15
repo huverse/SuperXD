@@ -263,7 +263,8 @@ class BalanceRules extends PuzzleRules<BalancePuzzle, BalanceAnswer> {
   static const _tiers = {
     PuzzleTier.entry: (balls: 9, weighings: 2, knownHeavy: true, direction: false),
     PuzzleTier.easy: (balls: 9, weighings: 3, knownHeavy: false, direction: false),
-    PuzzleTier.normal: (balls: 12, weighings: 3, knownHeavy: false, direction: false),
+    // [人工决策-2026-11-15 10:54:57] 普通档改为 10 个球（用户选定）：按预计用时标尺量，12 个球比简单档长约 3 倍（95 秒到 303 秒），10 个球是 120 秒。
+    PuzzleTier.normal: (balls: 10, weighings: 3, knownHeavy: false, direction: false),
     PuzzleTier.hard: (balls: 12, weighings: 3, knownHeavy: false, direction: true),
     PuzzleTier.expert: (balls: 13, weighings: 3, knownHeavy: false, direction: false),
   };
