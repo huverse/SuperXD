@@ -40,7 +40,12 @@ export class DeviceService {
     await this.enroll(deviceId, signPublicKey, boxPublicKey);
   }
 
-  // 登记设备、不过注册限流：给已经另有限流把关的入口用（应用账号登录核对通过后登记它的设备密钥）。调用方已核对设备号与公钥一致（自签名）。
+  // 这个设备号是否已登记（给只按新设备计数的限流用）。
+  async registered(deviceId: string) {
+    return (await this.devices.find(deviceId)) !== null;
+  }
+
+  // 登记设备、不过注册限流：给已经另有限流把关的入口用（应用账号的注册、登录、恢复码重设、扫码登录出示二维码，私信挂到应用账号）。调用方已核对设备号与公钥一致（自签名或凭证）。
   async enroll(deviceId: string, signPublicKey: string, boxPublicKey: string) {
     const created = await this.devices.upsert(deviceId, signPublicKey, boxPublicKey);
     // 覆盖负缓存：新注册立刻在所有实例生效；这个标记留到负缓存期满，期间与注册交错、查库没查到的请求也写不回「不存在」（signKey 用 NX）。
