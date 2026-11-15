@@ -9,6 +9,7 @@ import { RelayCode, RelayError } from 'src/common/relay_error';
 import {
   accountApprovePerDevicePerHour,
   accountJoinPerDevicePerHour,
+  accountJoinPerSourcePerHour,
   accountLoginPerSourcePerHour,
   accountLoginPerUserPerHour,
   accountLoginPerUserSourcePerHour,
@@ -144,8 +145,10 @@ export class AccountService {
   }
 
   // 扫码登录，新设备这一侧：登记设备密钥、发一张 5 分钟的票据（放进二维码，另带 6 位核对码两边都显示）。
-  async startJoin(deviceId: string, body: dtos.AccountDeviceKeysDto): Promise<dtos.AccountJoinDto> {
+  // 还没登记过的设备另按来源计数（每次换新密钥就能绕过按设备的计数，每次都会多登记一台设备）。
+  async startJoin(deviceId: string, ip: string, body: dtos.AccountDeviceKeysDto): Promise<dtos.AccountJoinDto> {
     await this.limit('account_join', deviceId, accountJoinPerDevicePerHour, 3600, '出示二维码过于频繁');
+    if (!(await this.devices.registered(deviceId))) await this.limit('account_join_source', rateSubjectOf(ip), accountJoinPerSourcePerHour, 3600, '出示二维码过于频繁');
     await this.devices.enroll(deviceId, body.signPublicKey, body.boxPublicKey);
     const ticketId = randomBytes(16).toString('base64url');
     const code = String(randomInt(1_000_000)).padStart(6, '0');
@@ -154,19 +157,21 @@ export class AccountService {
     return { ticketId, code, expiresAt: Date.now() + RedisKeyTTL.accountJoin * 1000 };
   }
 
-  // 已登录的设备批准：核对码对得上才把新设备登记进自己的账号。
+  // 已登录的设备批准：核对码对得上才把新设备登记进自己的账号。先占住票据再登记（比对原值后改写，原子完成），
+  // 两个账号同时或先后来批只有先占到的那个算数，后来的回 JOIN_NOT_FOUND；同一个账号重发照旧算成功。
   async approveJoin(deviceId: string, ticketId: string, code: string) {
     await this.limit('account_approve', deviceId, accountApprovePerDevicePerHour, 3600, '批准过于频繁');
     const key = RedisKeys.accountJoin(ticketId);
-    const ticket = await this.ticketOf(ticketId);
-    if (ticket === null || !sameText(ticket.code, code) || ticket.deviceId === deviceId) throw new RelayError(RelayCode.joinNotFound, HttpStatus.NOT_FOUND, '二维码已过期或不对');
+    const raw = await this.redis.get(key);
+    const ticket = raw === null ? null : (JSON.parse(raw) as JoinTicket);
+    const notFound = () => new RelayError(RelayCode.joinNotFound, HttpStatus.NOT_FOUND, '二维码已过期或不对');
+    if (raw === null || ticket === null || !sameText(ticket.code, code) || ticket.deviceId === deviceId) throw notFound();
     const accountId = await this.accounts.accountOf(deviceId);
     if (accountId === null) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
-    if (ticket.accountId === null) {
-      if (!(await this.accounts.link(accountId, ticket.deviceId, new Date()))) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
-      await this.redis.set(key, JSON.stringify({ ...ticket, accountId }), 'KEEPTTL');
-    }
-    this.logger.log(`[Account] action=approve_join deviceId=${deviceId} joined=${ticket.deviceId}`);
+    const claimed = ticket.accountId === null && (await this.redis.eval(claimJoinScript, 1, key, raw, JSON.stringify({ ...ticket, accountId }))) !== null;
+    if (!claimed && (await this.ticketOf(ticketId))?.accountId !== accountId) throw notFound();
+    if (claimed && !(await this.accounts.link(accountId, ticket.deviceId, new Date()))) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
+    this.logger.log(`[Account] action=approve_join deviceId=${deviceId} joined=${ticket.deviceId} claimed=${claimed}`);
   }
 
   // 新设备轮询：批准了就带上账号（重复问照旧给，票据到期自然删）。
@@ -197,5 +202,9 @@ export class AccountService {
 }
 
 type JoinTicket = { deviceId: string; code: string; accountId: string | null };
+
+// 占住扫码登录的票据：值还是读到的那一串才改写成带账号号的（保留过期时间），否则返回空。
+const claimJoinScript = `if redis.call('GET', KEYS[1]) == ARGV[1] then return redis.call('SET', KEYS[1], ARGV[2], 'KEEPTTL') end
+return false`;
 
 const sameText = (left: string, right: string) => left.length === right.length && timingSafeEqual(Buffer.from(left), Buffer.from(right));

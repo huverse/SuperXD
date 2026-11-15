@@ -123,9 +123,11 @@ export const accountSealMaxBytes = 1024;
 export const accountDeviceLimit = 20;
 export const accountIdleDays = 400;
 // 扫码登录：新设备出示二维码，已登录的设备扫码核对 6 位码后批准。票据在 Redis 存 5 分钟（新设备号、核对码、批准后的账号号）；
-// 新设备每小时最多出示 20 次，已登录的设备每小时最多批准 30 次。
+// 新设备每小时最多出示 20 次，已登录的设备每小时最多批准 30 次。出示时就登记新设备的密钥（轮询要验签），
+// 所以还没登记过的设备另按来源计数，同注册的来源档每小时 60 台（每次换新密钥的刷法挡在这里，同一台重新出示不计）。
 export const accountJoinSeconds = 5 * 60;
 export const accountJoinPerDevicePerHour = 20;
+export const accountJoinPerSourcePerHour = 60;
 export const accountApprovePerDevicePerHour = 30;
 
 // 积分（人工决策见 src/modules/points/points.service.ts）：每笔获得满 12 个月过期，30 天内要过期的在余额旁提示；
