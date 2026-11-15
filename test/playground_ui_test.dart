@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as path;
 
+import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/playground_catalog.dart';
 import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/playground_page.dart';
@@ -140,6 +141,53 @@ void main() {
     expect(find.widgetWithText(TextButton, '专家'), findsOneWidget);
     expect(find.textContaining('0 步'), findsOneWidget);
     semantics.dispose();
+  });
+
+  // 用时按秒刷新：走着表、棋盘不动时不逐帧出帧（以前用逐帧的计时器，一局开着就一直以屏幕刷新率重画）；秒数照样往前走。
+  testWidgets('走表时棋盘不动就不出帧，用时照样按秒刷新', (tester) async {
+    final store = PlaygroundStore.memory();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: HanoiPage(game: _game('hanoi'), store: store, seeds: () => 1)));
+    await tester.pumpAndSettle();
+    await _tapOn(tester, _peg(0));
+    await _step(tester);
+    await _tapOn(tester, _peg(1));
+    // 落盘的动画走完（几帧接力，逐段推进）。
+    for (var frame = 0; frame < 3; frame++) {
+      await tester.pump(const Duration(milliseconds: 500));
+    }
+    expect(find.textContaining('1 步'), findsOneWidget);
+    expect(tester.binding.hasScheduledFrame, isFalse, reason: '走着表也不空转出帧');
+    // 用时是真实时间（Stopwatch），等过一秒再推进假时钟，计时器到点刷新状态行。
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1100)));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.textContaining(RegExp(r'^0:0[1-9]')), findsOneWidget);
+    expect(tester.binding.hasScheduledFrame, isFalse);
+  });
+
+  // 专家档出一道题要几十到上百毫秒：下一道题先在另一个 isolate 里出好，换题时直接用，界面线程不再出题。
+  test('自由模式的下一道题先在后台出好：换一道题、换到下一档直接用出好的，没备的档当场出', () async {
+    _generatedHere = 0;
+    final session = PlaySession(game: _game('hanoi'), rules: const _CountingRules(), store: PlaygroundStore.memory());
+    expect(_generatedHere, 1, reason: '第一道题当场出');
+    await session.upcoming(PuzzleTier.entry);
+    session.next();
+    expect(_generatedHere, 1, reason: '换一道题用后台出好的');
+    expect(session.puzzle, session.seed);
+    final finished = await session.finish(moves: 1);
+    expect(finished, isTrue);
+    await session.upcoming(PuzzleTier.easy);
+    session.next(tier: PuzzleTier.easy);
+    expect(_generatedHere, 1, reason: '换到下一档也用后台出好的');
+    session.next(tier: PuzzleTier.expert);
+    expect(_generatedHere, 2, reason: '没备的档当场出');
+    expect(session.upcoming(PuzzleTier.expert), isNotNull);
+    session.dispose();
+
+    // 测试注入种子与不能进挑战的游戏（画线入杯用原生物理世界）都当场出、不备。
+    final seeded = PlaySession(game: _game('hanoi'), rules: const _CountingRules(), store: PlaygroundStore.memory(), seeds: () => 7);
+    expect(seeded.upcoming(PuzzleTier.entry), isNull);
+    final pour = PlaySession(game: _game('pour'), rules: const _CountingRules(), store: PlaygroundStore.memory());
+    expect(pour.upcoming(PuzzleTier.entry), isNull);
   });
 
   testWidgets('数织：拖动锁在一行、撤销按笔退回，按参考解点完即解开', (tester) async {
@@ -285,4 +333,33 @@ void main() {
     expect(broken.best('hanoi', PuzzleTier.normal), isNull);
     expect(broken.recent, isEmpty);
   });
+}
+
+// 数一数这个 isolate 里出了几道题（顶层变量每个 isolate 各一份，后台 isolate 里出的不算在这里）。
+var _generatedHere = 0;
+
+// 题面与参考解就是种子，出一道记一次。
+class _CountingRules extends PuzzleRules<int, int> {
+  const _CountingRules();
+
+  @override
+  PuzzleDraw<int, int> generate(int seed, PuzzleTier tier) {
+    _generatedHere++;
+    return PuzzleDraw(seed, seed);
+  }
+
+  @override
+  bool solved(int puzzle, int answer) => puzzle == answer;
+  @override
+  int complexity(int puzzle) => 1;
+  @override
+  int expectedSeconds(int puzzle) => 10;
+  @override
+  Object encodePuzzle(int puzzle) => puzzle;
+  @override
+  int decodePuzzle(Object? json) => json! as int;
+  @override
+  Object encodeAnswer(int answer) => answer;
+  @override
+  int decodeAnswer(Object? json) => json! as int;
 }
