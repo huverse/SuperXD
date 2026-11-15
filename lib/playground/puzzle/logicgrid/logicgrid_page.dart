@@ -55,11 +55,13 @@ const _bleed = 16.0;
 // 不用经典的三角排除网格：5 人 4 类有 6 张 5×5 的小表，360dp 宽放不下也读不清；人与属性一张表在手机上一眼看全，排除记号记在格子里。
 // 点一条线索标成用过了（变淡），再点取消。全部填满就判：对了表格依次亮一下再弹结果；不对不给答案，只把不成立的线索标警示色并轻震。
 class LogicGridPage extends StatefulWidget {
-  const LogicGridPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
+  const LogicGridPage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 外壳在后台出好的第一道题（自由模式；没备好或测试注入种子时为空，当场出）。
+  final PlayFirst? first;
   // 挑战里的一关（题面是服务器给的）；自由模式为空。
   final PlayChallenge? challenge;
 
@@ -69,7 +71,7 @@ class LogicGridPage extends StatefulWidget {
 
 class _LogicGridPageState extends State<LogicGridPage> with TickerProviderStateMixin {
   static const _rules = LogicGridRules();
-  late final _session = PlaySession<LogicGridPuzzle, List<List<int>>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
+  late final _session = PlaySession<LogicGridPuzzle, List<List<int>>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, first: widget.first, challenge: widget.challenge);
   // _values[c][p]：第 p 个人在第 c 类里填的值（−1 是没填）；_excluded[c][p]：标了「不是」的值（按位）。
   late var _values = _empty(-1);
   late var _excluded = _empty(0);

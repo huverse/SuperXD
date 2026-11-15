@@ -19,11 +19,13 @@ import 'package:superxd/theme/campus_palette.dart';
 // 冰面滑行对局页：在棋盘上朝上下左右滑动（或点棋盘下方的方向按钮）推动小企鹅，它一直滑到撞上岩石或边界才停；
 // 正好停在终点（插旗的光圈）上就解开。滑行时长按距离算、前快后慢，撞停时轻轻一压再弹回；滑不动时轻震、朝那边抖一下，不算步数。
 class IcePage extends StatefulWidget {
-  const IcePage({super.key, required this.game, required this.store, this.seeds, this.challenge});
+  const IcePage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 外壳在后台出好的第一道题（自由模式；没备好或测试注入种子时为空，当场出）。
+  final PlayFirst? first;
   // 挑战里的一关（题面是服务器给的）；自由模式为空。
   final PlayChallenge? challenge;
 
@@ -32,7 +34,7 @@ class IcePage extends StatefulWidget {
 }
 
 class _IcePageState extends State<IcePage> with TickerProviderStateMixin {
-  late final _session = PlaySession<IcePuzzle, List<int>>(game: widget.game, rules: const IceRules(), store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
+  late final _session = PlaySession<IcePuzzle, List<int>>(game: widget.game, rules: const IceRules(), store: widget.store, seeds: widget.seeds, first: widget.first, challenge: widget.challenge);
   // 走过的每一步：方向与滑之前在哪一格，撤销按步退回。
   final _moves = <({int direction, int from})>[];
   late int _cell = _session.puzzle.start;

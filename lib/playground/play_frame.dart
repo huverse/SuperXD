@@ -22,12 +22,19 @@ import 'package:superxd/theme/dot_separated_text.dart';
 // 计时从第一步开始（同常见的谜题游戏），切到后台暂停，完成即停；记录写进 PlaygroundStore。
 // 挑战模式（给了 challenge）：题面与档位是服务器给的，不出题、不换档、不记本机成绩；判对错与完成都交服务器核对（人工决策见 challenge/challenge_rules.dart）。
 class PlaySession<P, A> extends ChangeNotifier {
-  PlaySession({required this.game, required this.rules, required this.store, int Function()? seeds, this.challenge})
+  // first：外壳在后台出好的第一道题（档位对得上才用，没给就当场出）。
+  PlaySession({required this.game, required this.rules, required this.store, int Function()? seeds, PlayFirst? first, this.challenge})
     : _seeds = seeds ?? (() => math.Random().nextInt(1 << 32)),
       _apart = seeds == null && challenge == null && game.challengeable,
       tier = challenge == null ? store.tierOf(game.id) : PuzzleTier.named(challenge.level.tier)! {
     if (challenge == null) {
-      _draw(_seed = _seeds());
+      if (first case (:final seed, tier: final drawn, draw: final PuzzleDraw<P, A> draw) when drawn == tier) {
+        _seed = seed;
+        _puzzle = draw.puzzle;
+        _reference = draw.solution;
+      } else {
+        _draw(_seed = _seeds());
+      }
       _prepare(tier);
     } else {
       // 题面在建 PlayChallenge 时已按这个游戏的规则解好（认不得的那一关挑战那一页就拦下了）。
@@ -76,7 +83,7 @@ class PlaySession<P, A> extends ChangeNotifier {
   void _prepare(PuzzleTier tier) {
     if (!_apart || _upcoming.containsKey(tier)) return;
     final upcoming = _upcoming[tier] = _Upcoming<P, A>(_seeds());
-    upcoming.done = _generateApart(rules, upcoming.seed, tier).then<void>((draw) => upcoming.draw = draw, onError: (Object error, StackTrace stack) => campusLog('[Playground] action=prefetch errorType=${error.runtimeType}\n$stack'));
+    upcoming.done = playGenerateApart(rules, upcoming.seed, tier).then<void>((draw) => upcoming.draw = draw, onError: (Object error, StackTrace stack) => campusLog('[Playground] action=prefetch errorType=${error.runtimeType}\n$stack'));
   }
 
   // 测试用：这一档备着的下一道题出好时完成，没备为空。
@@ -195,8 +202,9 @@ class _Upcoming<P, A> {
   late final Future<void> done;
 }
 
-// 在另一个 isolate 里出一道题：只把规则、种子与档位带过去（顶层函数，闭包里没有页面上的任何东西）。
-Future<PuzzleDraw<P, A>> _generateApart<P, A>(PuzzleRules<P, A> rules, int seed, PuzzleTier tier) => Isolate.run(() => rules.generate(seed, tier));
+// 在另一个 isolate 里出一道题（下一道题与外壳的第一道题共用）：只把规则、种子与档位带过去（顶层函数，闭包里没有页面上的任何东西）。
+// 只给纯 Dart 的规则用：画线入杯的 forge2d 原生世界表不是线程安全的。
+Future<PuzzleDraw<P, A>> playGenerateApart<P, A>(PuzzleRules<P, A> rules, int seed, PuzzleTier tier) => Isolate.run(() => rules.generate(seed, tier));
 
 // 用时写成 分:秒（一小时以上写 时:分:秒）；tenths 为真时写到 0.1 秒：不满一分钟写「12.3 秒」，满了在分:秒后面接「.3」（1:02.3）。
 // 都是向下取整（分:秒舍去不足一秒的，0.1 秒舍去不足 0.1 秒的），59.96 秒写「59.9 秒」而不是进成 60.0。

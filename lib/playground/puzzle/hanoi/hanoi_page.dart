@@ -17,11 +17,13 @@ import 'package:superxd/theme/campus_palette.dart';
 // 汉诺塔对局页：点一根柱子拿起最上面的盘子（盘子浮到柱顶上方），再点另一根放下；也可以直接按住盘子拖到别的柱子上。
 // 不合规的放法（大盘压小盘）轻震一下、盘子左右晃一晃退回原处，不算步数。
 class HanoiPage extends StatefulWidget {
-  const HanoiPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
+  const HanoiPage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 外壳在后台出好的第一道题（自由模式；没备好或测试注入种子时为空，当场出）。
+  final PlayFirst? first;
   // 挑战里的一关（题面是服务器给的）；自由模式为空。
   final PlayChallenge? challenge;
 
@@ -30,7 +32,7 @@ class HanoiPage extends StatefulWidget {
 }
 
 class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMixin {
-  late final _session = PlaySession<HanoiPuzzle, List<HanoiMove>>(game: widget.game, rules: const HanoiRules(), store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
+  late final _session = PlaySession<HanoiPuzzle, List<HanoiMove>>(game: widget.game, rules: const HanoiRules(), store: widget.store, seeds: widget.seeds, first: widget.first, challenge: widget.challenge);
   late List<List<int>> _pegs = hanoiStacks(_session.puzzle);
   final _moves = <HanoiMove>[];
   // 点选拿起的那根柱子。

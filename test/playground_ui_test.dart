@@ -190,6 +190,46 @@ void main() {
     expect(pour.upcoming(PuzzleTier.entry), isNull);
   });
 
+  // 人工决策见 playground_page.dart 的 PlaygroundGameHost：第一道题也在后台出，外壳读好本机记录就出，出好交给对局页。
+  test('外壳出好的第一道题：档位对得上就用，对不上当场出', () {
+    _generatedHere = 0;
+    final store = PlaygroundStore.memory();
+    final used = PlaySession(game: _game('hanoi'), rules: const _CountingRules(), store: store, first: (seed: 5, tier: PuzzleTier.entry, draw: const PuzzleDraw<int, int>(5, 5)));
+    expect(_generatedHere, 0);
+    expect((used.puzzle, used.seed), (5, 5));
+    final skipped = PlaySession(game: _game('hanoi'), rules: const _CountingRules(), store: store, first: (seed: 5, tier: PuzzleTier.expert, draw: const PuzzleDraw<int, int>(5, 5)));
+    expect(_generatedHere, 1, reason: '档位对不上当场出');
+    expect(skipped.puzzle, skipped.seed);
+    used.dispose();
+    skipped.dispose();
+  });
+
+  testWidgets('外壳读好本机记录就在后台出第一道题交给对局页；后台迟迟没出好就由对局页当场出；画线入杯不备', (tester) async {
+    final store = PlaygroundStore.memory();
+    Widget host(String id) => MaterialApp(theme: campusTheme(), home: PlaygroundGameHost(key: ValueKey(id), game: _game(id), store: store));
+    await tester.pumpWidget(host('hanoi'));
+    await tester.pump();
+    expect(find.text('正在准备'), findsOneWidget);
+    // 另一个 isolate 按真实时间出题：让出真实的事件循环等它回来。
+    await tester.runAsync(() => Future<void>.delayed(const Duration(seconds: 1)));
+    await tester.pump();
+    await tester.pump();
+    expect(tester.widget<HanoiPage>(find.byType(HanoiPage)).first, isNotNull);
+
+    // 假时钟里另一个 isolate 回不来：等满 firstPatience 就由对局页当场出。
+    await tester.pumpWidget(host('nonogram'));
+    await tester.pump();
+    expect(find.byType(NonogramPage), findsNothing);
+    await tester.pump(PlaygroundGameHost.firstPatience);
+    await tester.pump();
+    expect(tester.widget<NonogramPage>(find.byType(NonogramPage)).first, isNull);
+
+    await tester.pumpWidget(host('pour'));
+    await tester.pump();
+    expect(find.text('正在准备'), findsNothing);
+    await tester.pumpWidget(const SizedBox());
+  });
+
   testWidgets('数织：拖动锁在一行、撤销按笔退回，按参考解点完即解开', (tester) async {
     final semantics = tester.ensureSemantics();
     tester.platformDispatcher.accessibilityFeaturesTestValue = const FakeAccessibilityFeatures(accessibleNavigation: true);

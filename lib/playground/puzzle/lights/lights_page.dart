@@ -18,11 +18,13 @@ import 'package:superxd/theme/campus_surface.dart';
 // 按下的那一格底下浮一块浅色方块、松手淡出（同 iOS 按下变暗）。灯排在一张卡片上，亮灯是激活色的圆灯带一圈柔光，灭灯是灰色实心圆带细边。
 // 全亮即解开：所有灯从中心向外依次亮一下，再弹结果。没有违规的点法，所以不用重震。
 class LightsPage extends StatefulWidget {
-  const LightsPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
+  const LightsPage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 外壳在后台出好的第一道题（自由模式；没备好或测试注入种子时为空，当场出）。
+  final PlayFirst? first;
   // 挑战里的一关（题面是服务器给的）；自由模式为空。
   final PlayChallenge? challenge;
 
@@ -31,7 +33,7 @@ class LightsPage extends StatefulWidget {
 }
 
 class _LightsPageState extends State<LightsPage> with TickerProviderStateMixin {
-  late final _session = PlaySession<LightsPuzzle, List<int>>(game: widget.game, rules: const LightsRules(), store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
+  late final _session = PlaySession<LightsPuzzle, List<int>>(game: widget.game, rules: const LightsRules(), store: widget.store, seeds: widget.seeds, first: widget.first, challenge: widget.challenge);
   late var _lit = [..._session.puzzle.lit];
   final _presses = <int>[];
   // 翻转过渡：每格这次过渡开始时显示的亮度，随 _flip 走到 _lit 的目标；连点时从当时显示的亮度续接。

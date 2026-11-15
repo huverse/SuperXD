@@ -22,11 +22,13 @@ enum _Mark { none, filled, crossed }
 // 起点已经是这种标记时这一笔改成擦掉。双指缩放与平移（格子太小点不准时放大），提示数字始终是 14 号字、跟着格子对齐。
 // 这一行（列）涂的段和提示一致时提示变淡；全部对上即解开，叉号淡出、涂色格过渡成激活色的图案。
 class NonogramPage extends StatefulWidget {
-  const NonogramPage({super.key, required this.game, required this.store, this.seeds, this.challenge});
+  const NonogramPage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
   final PlaygroundStore store;
   // 测试用：固定出题种子。
   final int Function()? seeds;
+  // 外壳在后台出好的第一道题（自由模式；没备好或测试注入种子时为空，当场出）。
+  final PlayFirst? first;
   // 挑战里的一关（题面是服务器给的）；自由模式为空。
   final PlayChallenge? challenge;
 
@@ -35,7 +37,7 @@ class NonogramPage extends StatefulWidget {
 }
 
 class _NonogramPageState extends State<NonogramPage> with SingleTickerProviderStateMixin {
-  late final _session = PlaySession<NonogramPuzzle, List<bool>>(game: widget.game, rules: const NonogramRules(), store: widget.store, seeds: widget.seeds, challenge: widget.challenge);
+  late final _session = PlaySession<NonogramPuzzle, List<bool>>(game: widget.game, rules: const NonogramRules(), store: widget.store, seeds: widget.seeds, first: widget.first, challenge: widget.challenge);
   late var _marks = _blank();
   var _mode = _Mark.filled;
   // 每一笔改了哪些格、改之前是什么，撤销按笔退回。
