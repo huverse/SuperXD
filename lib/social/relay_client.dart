@@ -31,6 +31,7 @@ abstract final class RelayCode {
   static const envelopeTooLarge = 'ENVELOPE_TOO_LARGE';
   static const mailboxFull = 'MAILBOX_FULL';
   static const accountNotFound = 'ACCOUNT_NOT_FOUND';
+  static const accountDeleted = 'ACCOUNT_DELETED'; // 这把密钥所在的应用账号已注销（只有应用账号的接口回它，别的照旧回 ACCOUNT_NOT_FOUND）
   static const usernameTaken = 'USERNAME_TAKEN'; // 注册时用户名已被占用
   static const credentialsInvalid = 'CREDENTIALS_INVALID'; // 用户名、密码或恢复码不对（不说是哪一项）
   static const joinNotFound = 'JOIN_NOT_FOUND'; // 扫码登录的票据已过期、核对码不对或不是这台设备发起的

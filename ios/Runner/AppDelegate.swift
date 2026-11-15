@@ -40,12 +40,36 @@ import workmanager_apple
     calendar.register(messenger: messenger)
     ChaoxingDevice.register(messenger: messenger)
     LocationSettings.register(messenger: messenger)
+    SensitiveClipboard.register(messenger: messenger)
     CourseBridge.register(messenger: messenger)
     dialogs.register(messenger: messenger)
     tabBar.register(messenger: messenger)
     // 快捷入口要收场景回调（冷启动带来的入口、后台时点的入口），按插件登记。
     if let registrar = engineBridge.pluginRegistry.registrar(forPlugin: "SuperXDAppShortcuts") {
       shortcuts.register(with: registrar)
+    }
+  }
+}
+
+// 复制恢复码这类敏感内容，对应安卓 SensitiveClipboard.kt（通道 superxd/sensitive_clipboard，Dart 侧 lib/page/sensitive_clipboard.dart；
+// 人工决策见 lib/domain/app_account.dart 的 19:18:31 那条）：只放本机（localOnly，不经通用剪贴板同步到同一 Apple 账号的别的设备），
+// 到点由系统清掉（expirationDate，只清这一项，用户之后自己复制了别的不受影响）。iOS 没有安卓那样的「敏感内容」标记。
+enum SensitiveClipboard {
+  static func register(messenger: FlutterBinaryMessenger) {
+    FlutterMethodChannel(name: "superxd/sensitive_clipboard", binaryMessenger: messenger).setMethodCallHandler { call, result in
+      guard call.method == "copy",
+            let arguments = call.arguments as? [String: Any],
+            let text = arguments["text"] as? String,
+            let clearAfter = arguments["clearAfterMs"] as? Int
+      else {
+        result(FlutterMethodNotImplemented)
+        return
+      }
+      UIPasteboard.general.setItems(
+        [["public.utf8-plain-text": text]],
+        options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(Double(clearAfter) / 1000)]
+      )
+      result(nil)
     }
   }
 }

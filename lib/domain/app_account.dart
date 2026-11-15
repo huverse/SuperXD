@@ -7,6 +7,9 @@ import 'package:superxd/domain/campus_crypto.dart';
 // 应用账号与教务各管各的（用户选，取代 11-13 的「跟着教务走」）；11-13 起用教务核对登录的老账号全部重新注册（用户选）。
 // 密码与恢复码在本机用中转公钥封装后才发出（social/account_seal.dart，中转是明文 HTTP），服务器只存 scrypt 哈希；恢复码在本机生成，原文只给用户看一次。
 // 11-13 的中转代登录教务（口令摘要）与 11-15 的设备核对、3 天找回都作废、删除。规则在服务端 server/src/modules/account/account.service.ts。
+// [人工决策-2026-11-15 19:18:31] 账号安全加固（用户在审查报告里全选推荐，服务端同名标记在 account.service.ts）：凭恢复码重设后账号下别的设备下线（改密码不动）；
+// 扫码登录批准前写出请求方的机型与属地并提醒「不是你本人操作就不要确认」（AppAccountJoinRequest）；离开出示页时作废票据（cancelJoin）；
+// 只有中转说账号已注销（AppAccountFailure.deleted）才清本机那个账号的私信，只是不在账号里（被顶掉、重设踢下线）只退回未登录；恢复码的「复制」标成敏感内容、一分钟后清掉（page/sensitive_clipboard.dart）。
 
 // 一个登录着的应用账号在这台设备上的把手：账号号（灰度分桶用）与那把设备密钥在安全存储里的位置 slot。
 // [人工决策-2026-11-14 16:47:34] 第 4 阶段用户要求「留好后路，以后不一定会锁死绑定教务」：用到应用账号的功能（挑战、节日抽奖、诊断包、私信）
@@ -82,6 +85,13 @@ class AppAccountJoin {
   }
 }
 
+// 批准方批准前看到的请求方：机型（出示的手机自报）与中转按它的来源 IP 查出的属地（省市一级），没有的为空。
+class AppAccountJoinRequest {
+  const AppAccountJoinRequest({required this.device, required this.region});
+  final String? device;
+  final String? region;
+}
+
 class AppAccountSummary {
   const AppAccountSummary({required this.accountId, required this.username, required this.deviceCount, required this.createdAt});
   final String accountId;
@@ -90,9 +100,10 @@ class AppAccountSummary {
   final DateTime createdAt;
 }
 
-// 中转回的失败：message 给用户看；notSignedIn 是这把设备密钥已不属于任何账号（账号在别处注销、被清理），本机记录随之作废；
+// 中转回的失败：message 给用户看；notSignedIn 是这把设备密钥已不属于任何账号（被顶掉、凭恢复码重设后踢下线、被清理），本机记录随之作废；
+// deleted 是这把密钥所在的账号已注销（同样作废本机记录，另清掉本机那个账号的私信）；
 // credentialsInvalid 是用户名、密码或恢复码不对（服务器不说是哪一项）；joinExpired 是扫码登录的二维码已过期或不对。
-enum AppAccountFailure { notSignedIn, usernameTaken, credentialsInvalid, joinExpired, network, rateLimited, failed }
+enum AppAccountFailure { notSignedIn, deleted, usernameTaken, credentialsInvalid, joinExpired, network, rateLimited, failed }
 
 class AppAccountException implements Exception {
   const AppAccountException(this.failure, this.message);
@@ -116,12 +127,15 @@ abstract interface class AppAccountClient {
   // 登录着改密码、换恢复码。
   Future<void> changePassword(String password);
   Future<void> changeRecoveryCode(String recoveryCode);
-  // 扫码登录，新设备这一侧：发一张票据；问批准了没有（批准了本机记下账号号并返回把手，还在等返回 null，过期抛 joinExpired）。
+  // 扫码登录，新设备这一侧：发一张票据（带上这台的机型）；问批准了没有（批准了本机记下账号号并返回把手，还在等返回 null，过期抛 joinExpired）；
+  // 离开出示页时作废这张还没被批准的票据（没出示过、已批准的什么也不做）。
   Future<AppAccountJoin> startJoin();
   Future<AppAccountSession?> joinState(AppAccountJoin join);
-  // 登录着的设备批准扫到的登录码。
+  Future<void> cancelJoin(AppAccountJoin join);
+  // 登录着的设备：批准前先看扫到的登录码是哪台手机、在哪里发起的，再批准。
+  Future<AppAccountJoinRequest> inspectJoin(String payload);
   Future<void> approveJoin(String payload);
-  // 联网看账号，顺带让服务器记最后活跃；notSignedIn 时本机记录已删。
+  // 联网看账号，顺带让服务器记最后活跃；notSignedIn、deleted 时本机记录已删。
   Future<AppAccountSummary> summary();
   // 退出：删服务端这把设备密钥（连带登记），再删本机记录；服务端已不认时照样删本机。
   Future<void> signOut();

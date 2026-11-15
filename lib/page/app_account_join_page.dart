@@ -26,12 +26,20 @@ Future<String?> scanJoinWithCamera(BuildContext context) => Navigator.of(context
   accept: (value) => AppAccountJoin.parse(value) == null ? '不是应用账号的登录二维码' : null,
 )));
 
-// 登录着的手机：扫新手机上的登录二维码，核对 6 位码后批准。
+// 登录着的手机：扫新手机上的登录二维码，先看是哪台手机、在哪里发起的，核对 6 位码后批准。
+// [人工决策-2026-11-15 19:18:31] 批准前写出请求方的机型与属地，并提醒不是本人操作就不要确认（用户选推荐，防别人把自己的登录码发来骗你批准）。
 Future<void> approveAppAccountJoin(BuildContext context, AppAccounts appAccounts, {JoinScanner scan = scanJoinWithCamera}) async {
   final raw = await scan(context);
   final parsed = raw == null ? null : AppAccountJoin.parse(raw);
   if (parsed == null || !context.mounted) return;
-  final confirmed = await showCampusConfirm(context, title: '让新设备登录？', message: '新手机上的核对码是 ${parsed.code} 吗？确认后那台手机登录这个应用账号。', action: '确认');
+  final inspected = await showCampusWaiting(context, label: '正在读取', operation: () => appAccounts.inspectJoin(raw!));
+  if (!context.mounted) return;
+  if (inspected is AppAccountError) return showCampusNotice(context, inspected.message);
+  if (inspected is! AppAccountJoinRequested) return;
+  final request = inspected.request;
+  final lines = ['新手机上的核对码是 ${parsed.code} 吗？', if (request.device case final device?) '设备：$device', if (request.region case final region?) '位置：$region', '不是你本人操作就不要确认。'];
+  // 长文案：批准登录前的核对与防骗提醒（人工决策见上）。
+  final confirmed = await showCampusConfirm(context, title: '让新设备登录？', message: lines.join('\n'), action: '确认');
   if (!confirmed || !context.mounted) return;
   final result = await showCampusWaiting(context, label: '正在让新设备登录', operation: () => appAccounts.approveJoin(raw!));
   if (!context.mounted) return;
@@ -80,16 +88,24 @@ class _AppAccountJoinPageState extends State<AppAccountJoinPage> {
     campusLog('[AppAccountJoin] action=brightness errorType=${error.runtimeType}\n$stack');
   });
 
+  // 离开出示页（或刷新换下旧的那张）时作废票据，不等结果（人工决策见 domain/app_account.dart 的 19:18:31 那条）。
+  void _cancel() {
+    final join = _join;
+    if (join != null) unawaited(widget.appAccounts.cancelJoin(join));
+  }
+
   @override
   void dispose() {
     _ticker?.cancel();
     _poll?.cancel();
+    _cancel();
     _brightness(ScreenBrightness.instance.resetApplicationScreenBrightness);
     super.dispose();
   }
 
   Future<void> _create() async {
     _poll?.cancel();
+    _cancel();
     setState(() {
       _creating = true;
       _error = null;
