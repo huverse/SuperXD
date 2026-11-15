@@ -46,6 +46,16 @@ export class SocialBindingService implements OnModuleInit {
       this.deviceService.forget(deviceIds);
       this.logger.log(`[SocialBinding] action=delete_accounts devices=${deviceIds.length}`);
     });
+    // [人工决策-2026-11-15 21:48:25] 凭恢复码重设时私信一起收回（用户选「同时解绑私信，按最佳实践做」）：只删私信设备的登记，它就连不上中转、收不到新信；
+    // 好友关系、没收的信与账号的挂载都留着：私信本来就在发起重设的手机上的，照现有流程重新挂上同一台就恢复；在被踢的手机上的，发起重设的手机照现有流程接管，
+    // 好友那边提示换了设备。同大厂重设密码后撤销所有会话、消息端要重新验证的做法。
+    this.hooks.registerRevoke(async (manager, accountIds) => {
+      const deviceIds = await this.socials.devicesOf(accountIds, manager);
+      if (deviceIds.length === 0) return;
+      await this.devices.remove(deviceIds, manager);
+      this.deviceService.forget(deviceIds);
+      this.logger.log(`[SocialBinding] action=revoke devices=${deviceIds.length}`);
+    });
   }
 
   async bind(accountDeviceId: string, body: dtos.BindSocialDto): Promise<dtos.BindSocialResultDto> {

@@ -12,7 +12,7 @@ import { decodeBase64url, x25519PrivateKey, x25519PublicOf } from 'src/common/cr
 import { openAccountSeal } from 'src/modules/account/account_keys';
 import { AccountRetentionTask } from 'src/modules/account/account_retention.task';
 import { IpRegion } from 'src/common/ip_region';
-import { TestDevice } from './test_device';
+import { createInviteKeys, helloOf, inviteProof, socialBindBody, TestDevice } from './test_device';
 
 // 应用账号（人工决策见 src/modules/account/account.service.ts）：用户名加密码，密码与恢复码封装后交来，库里只有 scrypt 哈希。合成数据。
 
@@ -170,6 +170,49 @@ describe('忘了密码', () => {
     expect((await fresh.call('GET', '/v1/account')).body.deviceCount).toBe(1);
     expect((await owner.call('GET', '/v1/account')).body.code).toBe('ACCOUNT_NOT_FOUND');
     expect((await other.call('GET', '/v1/account')).body.code).toBe('ACCOUNT_NOT_FOUND');
+  });
+
+  // 好友：owner 出示邀请，redeemer 兑换（同 social_account.e2e.test.ts）。
+  const pair = async (owner: TestDevice, redeemer: TestDevice) => {
+    const invite = createInviteKeys();
+    expect((await owner.call('POST', '/v1/invites', { inviteId: invite.inviteId, publicKey: invite.publicKey })).status).toBe(200);
+    expect((await redeemer.call('POST', '/v1/friends/redeem', { inviteId: invite.inviteId, proof: inviteProof(invite.privateKey, invite.inviteId, redeemer.deviceId), hello: helloOf() })).status).toBe(200);
+  };
+  const bindSocial = (account: TestDevice, social: TestDevice, takeover?: boolean) => account.call('POST', '/v1/account/social', socialBindBody(social, account.deviceId, takeover));
+
+  it('凭恢复码重设时私信一起收回：原来的私信设备连不上中转，好友关系留着；发起重设的手机接管后好友改挂、看到换了设备', async () => {
+    const username = name(), code = recoveryCode();
+    const owner = new TestDevice(server);
+    await register(owner, username, 'synthetic-pass', code);
+    const social = new TestDevice(server);
+    expect((await bindSocial(owner, social)).status).toBe(200);
+    const friend = new TestDevice(server);
+    expect((await friend.register()).status).toBe(200);
+    await pair(friend, social);
+    const fresh = new TestDevice(server);
+    expect((await recover(fresh, username, code, 'new-synthetic', recoveryCode())).status).toBe(200);
+    expect((await social.call('GET', '/v1/friends')).status, '被踢的手机上的私信设备连不上').toBe(401);
+    const freshSocial = new TestDevice(server);
+    expect((await bindSocial(fresh, freshSocial)).body.code).toBe('SOCIAL_ELSEWHERE');
+    expect((await bindSocial(fresh, freshSocial, true)).body).toEqual({ deviceId: freshSocial.deviceId, moved: true });
+    expect((await friend.call('GET', '/v1/friends')).body.friends).toEqual([expect.objectContaining({ deviceId: freshSocial.deviceId, movedFrom: social.deviceId })]);
+  });
+
+  it('私信本来就在发起重设的手机上：重设后重新挂上同一台就恢复，好友照旧；改密码不收回私信', async () => {
+    const username = name(), code = recoveryCode();
+    const owner = new TestDevice(server);
+    await register(owner, username, 'synthetic-pass', code);
+    const social = new TestDevice(server);
+    expect((await bindSocial(owner, social)).status).toBe(200);
+    const friend = new TestDevice(server);
+    expect((await friend.register()).status).toBe(200);
+    await pair(friend, social);
+    expect((await owner.call('POST', '/v1/account/password', { sealed: seal({ password: 'changed-synthetic' }, owner.deviceId) })).status).toBe(204);
+    expect((await social.call('GET', '/v1/friends')).status, '改密码不收回').toBe(200);
+    expect((await recover(owner, username, code, 'new-synthetic', recoveryCode())).status).toBe(200);
+    expect((await social.call('GET', '/v1/friends')).status).toBe(401);
+    expect((await bindSocial(owner, social)).body).toEqual({ deviceId: social.deviceId, moved: false });
+    expect((await social.call('GET', '/v1/friends')).body.friends).toEqual([expect.objectContaining({ deviceId: friend.deviceId })]);
   });
 
   it('登录着的设备直接改密码、换恢复码（不要旧密码）；没登录的不行', async () => {

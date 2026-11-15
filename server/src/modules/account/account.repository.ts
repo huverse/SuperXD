@@ -80,7 +80,11 @@ export class TypeormAccountRepository extends AccountRepository {
       if (updated.affectedRows !== 1) return false;
       await this.linkIn(manager, accountId, deviceId, now);
       // 一个账号最多 accountDeviceLimit 条登记，走 idx_account。
-      if (only) await manager.query('DELETE FROM account_device WHERE account_id = ? AND device_id <> ?', [accountId, deviceId]);
+      if (only) {
+        await manager.query('DELETE FROM account_device WHERE account_id = ? AND device_id <> ?', [accountId, deviceId]);
+        // 私信一起收回（人工决策见 account.service.ts 类上方 11-15 21:48 那条）：由私信模块登记的收回钩子停掉这个账号的私信设备。
+        await this.hooks.revoke(manager, [accountId]);
+      }
       return true;
     });
   }

@@ -16,6 +16,8 @@ export abstract class AccountSocialRepository {
   abstract unlinkDevices(deviceIds: string[], manager: EntityManager): Promise<void>;
   // 注销账号：删登记，返回这些账号的私信设备号（调用方连同设备一起删）；须在调用方事务内执行。
   abstract deleteAccounts(accountIds: string[], manager: EntityManager): Promise<string[]>;
+  // 这些账号挂着的私信设备号（不改登记）；须在调用方事务内执行。
+  abstract devicesOf(accountIds: string[], manager: EntityManager): Promise<string[]>;
 }
 
 @Injectable()
@@ -50,6 +52,12 @@ export class TypeormAccountSocialRepository extends AccountSocialRepository {
 
   async unlinkDevices(deviceIds: string[], manager: EntityManager) {
     if (deviceIds.length > 0) await manager.query('DELETE FROM account_social WHERE device_id IN (?)', [deviceIds]);
+  }
+
+  async devicesOf(accountIds: string[], manager: EntityManager) {
+    if (accountIds.length === 0) return [];
+    const rows = (await manager.query('SELECT device_id AS deviceId FROM account_social WHERE account_id IN (?) FOR UPDATE', [accountIds])) as { deviceId: string }[];
+    return rows.map((row) => row.deviceId);
   }
 
   async deleteAccounts(accountIds: string[], manager: EntityManager) {

@@ -37,6 +37,8 @@ const passwordLength = { min: 8, max: 64 };
 // [人工决策-2026-11-15 19:18:31] 账号安全加固（用户在审查报告里全选推荐）：凭恢复码重设后账号下其他设备都下线（recover，改密码不动）；
 // 扫码登录批准前给批准方看请求方的机型与属地（startJoin、inspectJoin）；离开出示页时作废票据（cancelJoin）；
 // 注销时给账号的密钥记墓碑、再来的回 ACCOUNT_DELETED（remove、missing），客户端只在这时清本机那个账号的私信；账号下任一设备有签名请求就按小时记活跃（onModuleInit）。
+// [人工决策-2026-11-15 21:48:25] 凭恢复码重设时私信一起收回（用户选「同时解绑私信，按最佳实践做」）：别的设备下线的同一事务里调收回钩子（AccountDataHooks.revoke），
+// 私信模块停掉这个账号的私信设备（做法见 src/modules/pairing/social_binding.service.ts 的同一条）；改密码不收回。
 @Injectable()
 export class AccountService implements OnModuleInit {
   private readonly logger = new Logger('Account');
