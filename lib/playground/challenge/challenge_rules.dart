@@ -50,7 +50,7 @@ const Map<String, PuzzleRules<Object?, Object?>> challengeRules = {
 };
 
 // 这一关的碎片（solution 是题库的参考解）：从解里读出、所有正确解都一样，题库里存好，过关时服务器给一次。
-// 天平称球的球是玩家称出来的（秤不预定假球），碎片按玩家指认的球由服务器在判定时给，这里为空，它也就不给门上的数用。
+// 天平称球的球是玩家称出来的（秤不预定假球），没有固定的「不同的那个球」，碎片用题面定的称几次（每档都正好够用，也就是最少要称几次）。
 int? challengeFragment(String game, Object? puzzle, Object? solution) => switch (game) {
   'hanoi' => hanoiMinMoves((puzzle as HanoiPuzzle).start, puzzle.target),
   'ice' => iceMinMoves(puzzle as IcePuzzle),
@@ -66,6 +66,7 @@ int? challengeFragment(String game, Object? puzzle, Object? solution) => switch 
   'mines' => (puzzle as MinesPuzzle).mines.take(puzzle.width).where((mine) => mine).length,
   'flash' => (puzzle as FlashPuzzle).rounds.last.first.length,
   'loop' => loopInside(puzzle as LoopPuzzle, solution as List<bool>),
+  'balance' => (puzzle as BalancePuzzle).weighings,
   _ => null,
 };
 

@@ -139,7 +139,7 @@ export class ChallengeService implements OnModuleInit {
       if (!run.active) return new RelayError(RelayCode.runOver, HttpStatus.CONFLICT, '这一局已经结束', { run: this.viewOf(run, now) });
       if ((state.state !== 'open' && state.state !== 'solved') || attempt !== state.submissions) return new RelayError(RelayCode.levelLocked, HttpStatus.CONFLICT, '这一关现在不能交', { run: this.viewOf(run, now) });
       const verdict = judge(level.game, level.puzzle, answer);
-      const judged = verdict.kind === 'solved' ? { solved: true, penalties: verdict.penalties, steps: verdict.steps, answerFragment: verdict.answerFragment } : { solved: false, penalties: 0, steps: null, answerFragment: null };
+      const judged = verdict.kind === 'solved' ? { solved: true, penalties: verdict.penalties, steps: verdict.steps } : { solved: false, penalties: 0, steps: null };
       const result = recordVerdict(plan, progress, levelId, judged, now);
       let extra: string | null = null;
       if (result.solved && !result.replay) {

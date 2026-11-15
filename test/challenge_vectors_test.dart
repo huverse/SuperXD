@@ -53,8 +53,7 @@ void main() {
           expect(entry['difficulty'], inInclusiveRange(1, 10));
           expect(entry['expected'], challengeRules[game]!.expectedSeconds(puzzle));
           expect(entry['minimum'], game == 'hanoi' || game == 'ice' ? isA<int>() : isNull);
-          // 天平称球的球是玩家称出来的，碎片按答案给。
-          expect(entry['fragment'], game == 'balance' ? isNull : isA<int>());
+          expect(entry['fragment'], isA<int>());
           expect(entry.containsKey('exits'), game == 'ice');
         }
       }

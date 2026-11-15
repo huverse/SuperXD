@@ -1,6 +1,6 @@
 import { randomInt } from 'node:crypto';
 
-import { answerFragmentGames, ChallengeScoring, ChallengeTemplate, ChallengeTier, consumerGames, optimalGames, optimalTiers } from 'src/modules/challenge/challenge_config';
+import { ChallengeScoring, ChallengeTemplate, ChallengeTier, consumerGames, optimalGames, optimalTiers } from 'src/modules/challenge/challenge_config';
 import { BankEntry } from 'src/modules/challenge/challenge_content';
 
 // 一局开始时排好的计划（人工决策见客户端 lib/playground/challenge/challenge_rules.dart 的 11-14 23:11 那条）：每关是哪个游戏、哪道题、
@@ -27,7 +27,7 @@ export type PlanLevel = {
   inputs: string[];
   // 碎片进哪一关的门，没有（最后一关、加试题）为 null。
   output: string | null;
-  // 过关给的碎片与它的字母（A、B…，加试题没有）；碎片为 null 的（天平称球）按玩家的答案给。
+  // 过关给的碎片与它的字母（A、B…，加试题没有）。
   fragment: number | null;
   letter: string | null;
   // 要用最少步数时的最少步数，不要求为 null。
@@ -148,7 +148,7 @@ const planOnce = async (input: PlanInput, bank: Bank, random: PlanRandom): Promi
       const op = inputs.length === 2 && random(2) === 0 ? 'product' : 'sum';
       gate = { op, value: op === 'product' ? fragments.reduce((left, right) => left * right, 1) : fragments.reduce((left, right) => left + right, 0) };
     }
-    const pool = (node.games ?? [...(inputs.length > 0 ? consumerGames : input.allGames)]).filter((game) => input.supported.has(game) && (output === null || !answerFragmentGames.has(game)));
+    const pool = (node.games ?? [...(inputs.length > 0 ? consumerGames : input.allGames)]).filter((game) => input.supported.has(game));
     const candidates: { game: string; entries: { entry: BankEntry; rule: ConsumeRule | null; at: number; value: number }[] }[] = [];
     for (const game of pool) {
       const choices = [];
