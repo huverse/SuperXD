@@ -110,6 +110,7 @@ Future<PlayResultChoice> _showLevelResult(BuildContext context, PlaySession<Obje
       }),
     ));
   }));
-  if (context.mounted) unawaited(Navigator.maybePop(context));
+  // 到点时对局页已经连弹层一起退了（不再是最上面一页），不再多退一层。
+  if (context.mounted && (ModalRoute.of(context)?.isCurrent ?? false)) unawaited(Navigator.maybePop(context));
   return PlayResultChoice.close;
 }

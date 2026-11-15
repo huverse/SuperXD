@@ -539,6 +539,54 @@ void main() {
       expect(() => make(_levelJson('a', puzzle: const {'start': 'x'})), throwsFormatException);
     });
 
+    // 到点退回挑战那一页：对局页上面开着弹层（玩法、24 点选数、逻辑网格选值）时连弹层一起收掉，不是只关弹层、留在 0:00 的棋盘上。
+    testWidgets('到点退回挑战那一页：上面开着弹层也一起收掉；结果弹层开着时只退一层', (tester) async {
+      final navigator = GlobalKey<NavigatorState>();
+      final game = playgroundCatalog.firstWhere((game) => game.id == 'hanoi');
+      PlayChallenge challenge(Duration left, {Future<PlayVerdict> Function(Object? answer)? submit}) => PlayChallenge(
+        level: _run().level('a'),
+        name: 'A 关',
+        deadline: DateTime.now().add(left),
+        submit: submit ?? (answer) async => const PlayVerdict(correct: true, fragment: 7),
+      );
+      Future<void> open(PlayChallenge challenge) async {
+        await tester.pumpWidget(MaterialApp(theme: campusTheme(), navigatorKey: navigator, home: const Text('挑战总览')));
+        unawaited(navigator.currentState!.push(MaterialPageRoute<void>(builder: (context) => HanoiPage(game: game, store: PlaygroundStore.memory(), challenge: challenge))));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 500));
+      }
+
+      await open(challenge(const Duration(milliseconds: 1500)));
+      await tester.tap(find.bySemanticsLabel('玩法'));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text(game.howToPlay), findsOneWidget);
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1600)));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(HanoiPage), findsNothing);
+      expect(find.text('挑战总览'), findsOneWidget);
+
+      // 走完交上去、结果弹层等着服务器时到点：退回挑战那一页，不多退一层。
+      final reply = Completer<PlayVerdict>();
+      await open(challenge(const Duration(milliseconds: 1500), submit: (answer) => reply.future));
+      for (final move in hanoiSolution(_hanoi)) {
+        await tester.tapAt(tester.getCenter(find.bySemanticsLabel(RegExp('^第${move.from + 1}根柱子'))));
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.tapAt(tester.getCenter(find.bySemanticsLabel(RegExp('^第${move.to + 1}根柱子'))));
+        await tester.pump(const Duration(milliseconds: 300));
+      }
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('正在交给服务器核对'), findsOneWidget);
+      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1600)));
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.byType(HanoiPage), findsNothing);
+      expect(find.text('挑战总览'), findsOneWidget);
+      reply.complete(const PlayVerdict(correct: false, over: true));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text('挑战总览'), findsOneWidget);
+    });
+
     // 挑战到点时对局页会自己退回；等着服务器判定或结算局面时页面关了，回来的结果不再通知已经关掉的会话与控制器。
     test('等服务器回复时对局页或总览关了：回复回来不再通知、不报错', () async {
       final draw = const KnightsRules().generate(3, PuzzleTier.entry);

@@ -257,7 +257,10 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver {
     if (widget.session.challenge != null && seconds <= 0 && !_timeUp) {
       _timeUp = true;
       showCampusToast(context, '时间到了');
-      unawaited(Navigator.maybePop(context));
+      // 上面开着的弹层（玩法、选数、选值、结果弹层）一起收掉，再退回挑战那一页。
+      final navigator = Navigator.of(context), page = ModalRoute.of(context);
+      navigator.popUntil((route) => route == page);
+      unawaited(navigator.maybePop());
     }
     _syncClock();
   }
