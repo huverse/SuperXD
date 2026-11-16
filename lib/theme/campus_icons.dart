@@ -95,6 +95,9 @@ abstract final class CampusIcons {
   static const privacy = LucideIcons.shieldCheck;
   static const sourceCode = LucideIcons.codeXml;
   static const feedback = LucideIcons.messageSquareWarning;
+  // 新版本反馈的好与不好。
+  static const thumbsUp = LucideIcons.thumbsUp;
+  static const thumbsDown = LucideIcons.thumbsDown;
   static const pin = LucideIcons.pin;
   static const unpin = LucideIcons.pinOff;
   static const course = LucideIcons.bookOpen;

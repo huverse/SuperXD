@@ -71,6 +71,21 @@ export const developerNotesFileMaxBytes = 1024 * 1024;
 // 客户端同意协议与政策后、回到前台时看一眼（间隔不到一小时不联网），同一 IP 每小时 600 次（与开发者的话同档）。最多 200 个开关、每个 20 档，
 // 明文加签名载荷两份也远不到 64KB，文件超过 64KB 视为放错文件，拒绝读取（与客户端 lib/device/relay_rollout_feed.dart 的响应上限一致）。
 export const rolloutConfigPerHour = 600;
+
+// 分批更新的健康回报与意见反馈（人工决策见 src/modules/app_health/app_health_rules.ts）：都匿名、不带账号与设备号，按来源限流。
+// 健康回报每台每天最多一次（客户端），中转每个来源每小时最多 healthReportPerSourcePerHour 次（校园网 NAT 下一个出口很多人）；只收最近 healthReportMaxAgeDays 天的。
+// 自动暂停：最近 healthWindowDays 天里新旧两版各至少 healthMinSamples 份，新版致命率超过旧版的 healthPauseRatio 倍且高出 healthPauseMargin 才停。
+// 意见每个来源每小时 feedbackPerSourcePerHour 条、每条最多 feedbackTextMax 字。健康汇总与意见保留 healthKeepDays 天，暂停记录保留 healthPauseKeepDays 天。
+export const healthReportPerSourcePerHour = 60;
+export const healthReportMaxAgeDays = 7;
+export const healthWindowDays = 3;
+export const healthMinSamples = 50;
+export const healthPauseRatio = 2;
+export const healthPauseMargin = 0.05;
+export const feedbackPerSourcePerHour = 5;
+export const feedbackTextMax = 200;
+export const healthKeepDays = 90;
+export const healthPauseKeepDays = 180;
 export const rolloutFlagLimit = 200;
 export const rolloutStageLimit = 20;
 export const rolloutFileMaxBytes = 64 * 1024;

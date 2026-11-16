@@ -1,0 +1,99 @@
+import 'package:flutter/foundation.dart';
+
+import 'package:superxd/domain/app_health.dart';
+import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/campus_log.dart';
+
+// 分批更新的健康回报与意见的编排 AppHealth（设备级，人工决策见 domain/app_health.dart）：
+// - markActive：启动与回到前台记今天打开过、装着哪个版本（换了版本记下第一次打开的那天，意见窗口从那天算）；只写本机。
+// - markFatal：没接住的异常、框架报错、系统记下的崩溃与无响应时，把那天记成有致命错误（组合根接上错误出口与上次退出原因）。
+// - reportDue：同意协议与政策后、回到前台时由组合根调（联网策略 appHealth 允许才调）：发前一天及以前没发过的，最多 healthReportBatch 份；
+//   连不上的留着下次，服务器拒收的记成发过；同一时刻只发一轮。
+// - sendFeedback：关于页「新版本反馈」提交，成功后这个版本不再出现入口。没配中转时 client 为空，什么都不发、也不给入口。
+class AppHealth extends ChangeNotifier {
+  AppHealth({required this._memory, required this.channel, required this.platform, required this.versionCode, this._client, DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
+  final AppHealthMemory _memory;
+  final AppHealthClient? _client;
+  final String channel;
+  final String platform;
+  final int versionCode;
+  final DateTime Function() _clock;
+  Future<void>? _reporting;
+
+  String _dayOf(DateTime at) => formatCampusDate(campusInstant(at.toUtc()));
+  String get _today => _dayOf(_clock());
+
+  bool get feedbackOpen => _client != null && healthFeedbackOpen(_memory.record, versionCode, _today);
+
+  Future<void> markActive() async {
+    final record = _memory.record, today = _today;
+    final days = healthRecent(record.days, today);
+    final known = days.any((day) => day.day == today && day.versionCode == versionCode);
+    final sameVersion = record.versionCode == versionCode;
+    if (known && sameVersion) return;
+    await _save(HealthRecord(
+      days: known ? days : [...days.where((day) => day.day != today), HealthDay(day: today, versionCode: versionCode, fatal: days.any((day) => day.day == today && day.fatal))],
+      versionCode: versionCode,
+      versionSince: sameVersion ? record.versionSince : today,
+      feedbackSent: sameVersion && record.feedbackSent,
+    ));
+  }
+
+  // at 是出错的时刻（上次退出原因带的是系统记下的时刻）；那天没记过打开就补一项（版本按现在装着的）。
+  Future<void> markFatal(DateTime at) async {
+    final record = _memory.record, day = _dayOf(at), today = _today;
+    if (day.compareTo(today) > 0) return;
+    final days = healthRecent(record.days, today);
+    if (days.any((item) => item.day == day && item.fatal)) return;
+    final exists = days.any((item) => item.day == day);
+    await _save(HealthRecord(
+      days: [for (final item in days) item.day == day ? item.copyWith(fatal: true) : item, if (!exists) HealthDay(day: day, versionCode: versionCode, fatal: true)],
+      versionCode: record.versionCode,
+      versionSince: record.versionSince,
+      feedbackSent: record.feedbackSent,
+    ));
+  }
+
+  Future<void> reportDue() => _reporting ??= _report().whenComplete(() => _reporting = null);
+
+  Future<void> _report() async {
+    final client = _client;
+    if (client == null) return;
+    for (final day in healthDue(_memory.record, _today)) {
+      try {
+        await client.report(channel: channel, platform: platform, day: day);
+      } on AppHealthException catch (error) {
+        campusLog('[AppHealth] action=report day=${day.day} errorType=AppHealthException message=${error.message} rejected=${error.rejected}');
+        if (!error.rejected) return;
+      }
+      final record = _memory.record;
+      await _save(HealthRecord(
+        days: [for (final item in record.days) item.day == day.day ? item.copyWith(reported: true) : item],
+        versionCode: record.versionCode,
+        versionSince: record.versionSince,
+        feedbackSent: record.feedbackSent,
+      ));
+      campusLog('[AppHealth] action=reported day=${day.day} versionCode=${day.versionCode} fatal=${day.fatal}');
+    }
+  }
+
+  // 提交意见；失败抛 AppHealthException（message 给页面显示）。
+  Future<void> sendFeedback({required bool good, required String text}) async {
+    final client = _client;
+    if (client == null) throw const AppHealthException('这个版本不能提交反馈');
+    await client.feedback(channel: channel, platform: platform, versionCode: versionCode, good: good, text: text.trim());
+    final record = _memory.record;
+    await _save(HealthRecord(days: record.days, versionCode: record.versionCode, versionSince: record.versionSince, feedbackSent: true));
+  }
+
+  // 写本机失败只记日志：最坏是少报或多报一天。
+  Future<void> _save(HealthRecord record) async {
+    final saving = _memory.save(record);
+    notifyListeners();
+    try {
+      await saving;
+    } catch (error, stack) {
+      campusLog('[AppHealth] action=save errorType=${error.runtimeType}\n$stack');
+    }
+  }
+}

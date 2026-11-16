@@ -3,7 +3,8 @@
 # [人工决策-2026-11-10 13:12:22] 中转库备份（用户 11-10 确认方向）：只导长期数据——device、friendship 与节日抽奖三张表（reward_campaign、reward_prize、reward_draw）；
 # 11-13 起按下面「新增长期保存的表加在这里」补进应用账号的三张表（app_account、account_identity、account_device）；
 # 11-14 补进积分的两张表（points_grant、points_entry）与挑战的最好成绩 challenge_best；挑战的一局 challenge_run 结束 30 天就删，是短期数据，不导。
-# 11-16 补进灰度点名 rollout_target 与红包名单 reward_audience（都是开发者手工导入的名单，丢了要重导）。
+# 11-16 补进灰度点名 rollout_target 与红包名单 reward_audience（都是开发者手工导入的名单，丢了要重导），以及分批更新的暂停记录 app_release_pause（丢了解除过的会被再停）；
+# 健康汇总与意见只留 90 天、丢了不影响，不备份。
 # 11-14 晚补进私信设备属于哪个应用账号的 account_social（随账号长期保存，丢了要重新接管），与账号记过的解锁 account_unlock（花积分买的，丢了要重新付）。
 # 11-15 应用账号改为用户名加密码：account_identity 删除，app_account 里多了密码与恢复码的 scrypt 哈希（没有原文，但备份同样只给属主读写）。
 # 11-16 补进注销账号时记的墓碑 account_tombstone（保留 400 天；丢了只是那些设备再来时回 ACCOUNT_NOT_FOUND、不清本机私信）。
@@ -17,7 +18,7 @@
 set -euo pipefail
 
 # 新增长期保存的表时加在这里，并同步 README「备份与恢复」。
-tables=(device friendship reward_campaign reward_prize reward_draw reward_audience app_account account_device account_tombstone points_grant points_entry challenge_best account_social account_unlock rollout_target)
+tables=(device friendship reward_campaign reward_prize reward_draw reward_audience app_account account_device account_tombstone points_grant points_entry challenge_best account_social account_unlock rollout_target app_release_pause)
 
 log() { echo "[Backup] $* time=$(date -u +%Y-%m-%dT%H:%M:%SZ)"; }
 

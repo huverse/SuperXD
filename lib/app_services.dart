@@ -9,6 +9,7 @@ import 'package:path/path.dart' as path;
 
 import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
+import 'package:superxd/application/app_health.dart';
 import 'package:superxd/application/app_moments.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/auto_sync.dart';
@@ -25,6 +26,7 @@ import 'package:superxd/device/diagnostic_device.dart';
 import 'package:superxd/device/relay_diagnostic_upload.dart';
 import 'package:superxd/device/relay_note_feed.dart';
 import 'package:superxd/device/relay_release_feed.dart';
+import 'package:superxd/device/relay_app_health.dart';
 import 'package:superxd/device/relay_rollout_feed.dart';
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/app_shortcut.dart';
@@ -39,6 +41,7 @@ import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/local/festival_memory.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
+import 'package:superxd/local/app_health_memory.dart';
 import 'package:superxd/local/rollout_memory.dart';
 import 'package:superxd/page/festival/festival_catalog.dart';
 import 'package:superxd/playground/playground_store.dart';
@@ -55,7 +58,7 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 // 组合根造好的设备级服务（[人工决策-2026-11-16 17:26:21] 组合根改应用模块，用户选定架构推荐方案）：打包成一份交给应用外壳、账号应用与路由，
 // 新功能只在这里加一个字段，不再在 SuperXdApp、账号应用与 buildRouter 三处各加一个参数。为空的表示这项没有（没配中转、测试没给），页面照各自的规则藏起入口。
 class AppServices {
-  const AppServices({this.display, this.toolbox, this.playground, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.leisure, this.moments, this.autoSync});
+  const AppServices({this.display, this.toolbox, this.playground, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.leisure, this.moments, this.autoSync, this.health});
   // 显示设置；为空时用一份只在内存里的。
   final DisplaySettings? display;
   // 百宝箱运行时；为空时外壳按注册表自己建。
@@ -90,6 +93,8 @@ class AppServices {
   final AppMoments? moments;
   // 自动同步；为空时「同步范围」里没有自动同步入口，也不会有课表冲突的打扰时机。
   final AutoSync? autoSync;
+  // 分批更新的健康回报与新版本反馈（人工决策见 domain/app_health.dart）。
+  final AppHealth? health;
 }
 
 // 中转服务地址来自构建参数 SUPERXD_RELAY；未配置或格式不对时私信与应用更新都不可用，不猜默认地址。
@@ -129,6 +134,18 @@ Future<AppUpdates?> appUpdates(Directory support, Rollouts rollouts) async {
 
 // 灰度（人工决策见 domain/rollout.dart）：配置走同一个自建中转（没配中转时只用本机存着的，一般为空）；本机随机编号与上次的配置在 rollout.json。
 // 分桶主体是当前应用账号的账号号，没登录用本机随机编号；渠道同应用更新（测试与没有渠道的构建记作 development）。
+// 分批更新的健康回报与意见（人工决策见 domain/app_health.dart）：本机记录 health.json；没配中转时不发、关于页不给反馈入口。
+Future<AppHealth> appHealthOf(Directory support) async => AppHealth(
+  memory: await FileAppHealthMemory.open(File(path.join(support.path, 'health.json'))),
+  channel: appFlavor ?? 'development',
+  platform: Platform.isIOS ? 'ios' : 'android',
+  versionCode: int.tryParse((await PackageInfo.fromPlatform()).buildNumber) ?? 0,
+  client: switch (relayBase()) {
+    final base? => RelayAppHealthClient(base),
+    null => null,
+  },
+);
+
 // 积分等级经挑战与积分的签名请求取（取不到时 Challenges 已记日志，这里按没取到算）。
 // 11-16 起（人工决策见 domain/rollout.dart 文件头 11-16 那条）：开关的平台与版本号条件按这台设备判定；登录着应用账号时同一时机问点名（用这个账号的设备密钥签名）。
 Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challenges? challenges, {required bool Function() levelsOn}) async {

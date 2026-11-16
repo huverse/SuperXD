@@ -11,6 +11,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/app_session.dart';
+import 'package:superxd/application/app_health.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/leisure.dart';
 import 'package:superxd/domain/painting.dart';
@@ -26,12 +27,13 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/account_dialogs.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, required this.gateway, required this.session, this.switching = false, this.updates, this.developer, this.logs, this.paintings, this.leisure});
+  const LoginPage({super.key, required this.gateway, required this.session, this.switching = false, this.updates, this.health, this.developer, this.logs, this.paintings, this.leisure});
   final AccountAccess gateway;
   final AppSession session;
   final bool switching;
   // 关于页要的应用更新、开发者模式与本机日志（设备级），没登录也能检查更新、开开发者模式。
   final AppUpdates? updates;
+  final AppHealth? health;
   final DeveloperSettings? developer;
   final DiagnosticLog? logs;
   final PaintingGallery? paintings;
@@ -225,7 +227,7 @@ class _LoginPageState extends State<LoginPage> {
                   // [人工决策-2026-11-15 18:14:27] 娱乐与积分关着时不给这个入口（见 domain/leisure.dart）。
                   if (widget.leisure?.enabled != false) OutlinedButton.icon(onPressed: _busy ? null : () => context.push('/playground'), icon: const CampusIcon(CampusIcons.playground), label: const Text('游乐场')),
                   OutlinedButton.icon(
-                    onPressed: _busy ? null : () => Navigator.push(context, CampusPageRoute<void>(builder: (_) => AboutPage(updates: widget.updates, developer: widget.developer, logs: widget.logs, paintings: widget.paintings))),
+                    onPressed: _busy ? null : () => Navigator.push(context, CampusPageRoute<void>(builder: (_) => AboutPage(updates: widget.updates, health: widget.health, developer: widget.developer, logs: widget.logs, paintings: widget.paintings))),
                     icon: const CampusIcon(CampusIcons.info),
                     label: const Text('关于'),
                   ),

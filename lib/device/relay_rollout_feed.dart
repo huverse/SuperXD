@@ -26,9 +26,15 @@ class RelayRolloutFeed implements RolloutFeed {
   Future<RolloutConfig> fetch() async {
     final flags = await _get('/v1/app/flags', accept404: true);
     if (flags != null) {
-      if (flags case {'version': 2, 'envelope': final Object envelope}) return _decode(() async => decodeRolloutConfig(jsonDecode(utf8.decode(await openSignedEnvelope(envelope, SignedContent.rollout, keys: keys)))));
+      // 不签名的 paused（自动暂停的分批更新）只拿来少提示，签名载荷里的不认。
+      final paused = flags is Map ? decodeRolloutPaused(flags['paused']) : const <String>{};
+      if (flags case {'version': 2, 'envelope': final Object envelope}) {
+        return _decode(() async => decodeRolloutConfig(jsonDecode(utf8.decode(await openSignedEnvelope(envelope, SignedContent.rollout, keys: keys)))).withPaused(paused));
+      }
       if (flags case {'version': 2, 'envelope': null}) {
         campusLog('[Rollouts] action=feed source=legacy');
+        final legacy = await _get('/v1/app/rollout');
+        return _decode(() async => (await decodeSignedRolloutConfig(legacy, keys: keys)).withPaused(paused));
       } else {
         campusLog('[Rollouts] action=feed errorType=FormatException message=第 2 版回复不合法');
         throw const RolloutException('配置格式不对');

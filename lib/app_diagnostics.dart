@@ -33,7 +33,8 @@ const _abnormalWhenVisible = {'SIGNALED', 'LOW_MEMORY', 'EXCESSIVE_RESOURCE_USAG
 // 系统的进程重要度（RunningAppProcessInfo）：越小越靠前台，前台 100、前台服务 125、可见 200，再往后是用户看不见的后台与缓存。
 const _visibleImportance = 200;
 
-Future<void> recordExitReasons({required File marker, required Future<List<ProcessExit>> Function(int since) read}) async {
+// onAbnormal：异常结束时交出系统记下的时刻（组合根记进分批更新的健康回报，人工决策见 domain/app_health.dart）。
+Future<void> recordExitReasons({required File marker, required Future<List<ProcessExit>> Function(int since) read, void Function(DateTime at)? onAbnormal}) async {
   try {
     final since = await marker.exists() ? int.tryParse((await marker.readAsString()).trim()) ?? 0 : 0;
     final exits = await read(since);
@@ -41,6 +42,7 @@ Future<void> recordExitReasons({required File marker, required Future<List<Proce
     // 系统按新到旧给，按发生先后记。
     for (final exit in exits.reversed) {
       final abnormal = _abnormalExits.contains(exit.reason) || _abnormalWhenVisible.contains(exit.reason) && exit.importance <= _visibleImportance;
+      if (abnormal) onAbnormal?.call(DateTime.fromMillisecondsSinceEpoch(exit.timestamp, isUtc: true));
       if (!abnormal && !campusDiagnostics) continue;
       final at = DateTime.fromMillisecondsSinceEpoch(exit.timestamp, isUtc: true).toIso8601String();
       final description = exit.description.replaceAll(RegExp(r'\s+'), '_');

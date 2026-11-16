@@ -6,6 +6,7 @@ import { env } from 'src/config/env';
 import { RedisModule } from 'src/common/redis/redis.module';
 import { AccountDeviceEntity, AppAccountEntity } from 'src/modules/account/account.entity';
 import { AccountModule } from 'src/modules/account/account.module';
+import { AppHealthModule } from 'src/modules/app_health/app_health.module';
 import { AppReleaseModule } from 'src/modules/app_release/app_release.module';
 import { ChallengeBestEntity, ChallengeRunEntity } from 'src/modules/challenge/challenge.entity';
 import { DiagnosticUploadEntity } from 'src/modules/diagnostic/diagnostic_upload.entity';
@@ -61,6 +62,7 @@ import { UnlockModule } from 'src/modules/unlock/unlock.module';
     ChaoxingPackModule,
     PairingModule,
     AppReleaseModule,
+    AppHealthModule,
     RewardModule,
     DiagnosticModule,
     AccountModule,

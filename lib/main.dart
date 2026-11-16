@@ -65,14 +65,19 @@ void main() async {
   // 日志出口注入debugPrint，Android上才进入logcat，见campus_log.dart。
   campusLog = debugPrint;
   WidgetsFlutterBinding.ensureInitialized();
+  // 致命错误也记进分批更新的健康回报（人工决策见 domain/app_health.dart）：健康记录打开前先放进缓冲，打开后补记、之后直接记。
+  final fatalBefore = <DateTime>[];
+  void Function(DateTime at) markFatal = fatalBefore.add;
   // 没被接住的异步错误（火忘式调用漏了 catch）也带堆栈走 campusLog，不只由引擎打到控制台。
   WidgetsBinding.instance.platformDispatcher.onError = (error, stack) {
     campusLog('[App] action=uncaught errorType=${error.runtimeType}\n$stack');
+    markFatal(DateTime.now());
     return true;
   };
   // 框架报的错（构建、布局、绘制）同样带堆栈走 campusLog、进本机错误记录；控制台照旧打印详情。
   FlutterError.onError = (details) {
     campusLog('[App] action=flutter_error errorType=${details.exception.runtimeType}\n${details.stack ?? StackTrace.current}');
+    markFatal(DateTime.now());
     FlutterError.presentError(details);
   };
   // 本机诊断日志（见 local/diagnostic_log.dart）：尽早接上，之后的 campusLog 同时进 logcat 与文件；应用专属外部目录取不到时退回应用支持目录。
@@ -150,7 +155,7 @@ void main() async {
   final socialDirectory = await databasesPath, leisureMemory = await leisureOpen, legal = await legalOpen;
 
   watchDeveloperMode(developer, logs, environment: appEnvironment);
-  unawaited(recordExitReasons(marker: File(path.join(support.path, 'last_exit_seen')), read: readExitReasons));
+  unawaited(recordExitReasons(marker: File(path.join(support.path, 'last_exit_seen')), read: readExitReasons, onAbnormal: (at) => markFatal(at)));
   final session = AppSession(AccountGateway(store: store, credentials: SecureCredentialStore()));
   // 选壁纸走系统照片选择器：不申请存储权限，只拿到用户选中的那一张（API 36 起插件默认如此，更低版本须显式打开）。
   final picker = ImagePickerPlatform.instance;
@@ -197,6 +202,11 @@ void main() async {
   final updatesOpen = appUpdates(support, rollouts), notesOpen = developerNotes(support), festivalsOpen = festivalsOf(support, appAccounts, levelsOn: leisureOn);
   await Future.wait<Object?>([updatesOpen, notesOpen, festivalsOpen]);
   final updates = await updatesOpen, notes = await notesOpen, festivals = await festivalsOpen;
+  final health = await appHealthOf(support);
+  for (final at in fatalBefore) {
+    unawaited(health.markFatal(at));
+  }
+  markFatal = (at) => unawaited(health.markFatal(at));
   // 自动同步（人工决策见 domain/auto_sync.dart）：设备级，经账号门面跟着当前账号；后台任务的入口与时机在 app_background_sync.dart。
   final autoSync = AutoSync(gateway: session.gateway, generation: () => session.generation, scheduler: WorkmanagerSyncScheduler(autoSyncDispatcher), notices: SyncNotifications());
   // 点了同步结果通知进同步记录（人工决策见 domain/sync_record.dart）：冷启动由通知拉起时取一次，开着或在后台时点了经流交来；
@@ -211,7 +221,7 @@ void main() async {
   final splashed = painting != null && splashImage != null;
   final splashGone = ValueNotifier(!splashed);
   final restored = Completer<void>();
-  final services = AppServices(display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, unlocks: unlocks, playground: playground, leisure: leisure, moments: moments, autoSync: autoSync);
+  final services = AppServices(display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, unlocks: unlocks, playground: playground, leisure: leisure, moments: moments, autoSync: autoSync, health: health);
   final app = SuperXdApp(session: session, services: services, launch: launched, splashGone: splashGone);
   runApp(splashed ? PaintingSplash(painting: painting, image: splashImage, ready: restored.future, onGone: () => splashGone.value = true, child: app) : app);
   unawaited(WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
@@ -240,5 +250,6 @@ void main() async {
   watchAutoSync(session, autoSync, hooks);
   if (appAccounts != null) watchAppAccounts(appAccounts, hooks);
   watchRollouts(rollouts, hooks);
+  watchAppHealth(health, hooks);
   if (unlocks != null) watchUnlocks(unlocks, hooks);
 }

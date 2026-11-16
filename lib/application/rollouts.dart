@@ -62,6 +62,8 @@ class Rollouts extends ChangeNotifier {
   // 分批更新：配置里同名开关覆盖清单的放量表（暂停、直接全量、整版关停）；清单没写放量表又没覆盖时就是全量。
   bool inUpdateBatch(AppRelease release) {
     final id = appUpdateRolloutId(channel, release.versionCode);
+    // 健康回报自动暂停了这一版：只少提示（人工决策见 domain/app_health.dart）。
+    if (memory.config.paused.contains(id)) return false;
     final rule = memory.config.rules[id] ?? (release.rollout.isEmpty ? null : RolloutRule(id: id, stages: release.rollout));
     return rule == null || _includes(id, rule.percentAt(_now()));
   }
