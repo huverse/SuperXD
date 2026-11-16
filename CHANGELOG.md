@@ -24,6 +24,7 @@
 - 组合根拆分（用户不可见）：main.dart 从 950 行拆成启动顺序（main.dart）、服务的造法与打包 AppServices（app_services.dart）、生命周期钩子 AppHooks（app_lifecycle.dart，同意之后、回到前台、前台可见三个时机统一登记）与应用外壳（app_shell.dart）；新增联网服务登记表与联网策略（domain/network_policy.dart，默认全部允许，为偏向开关做准备）。启动时互不依赖的本机文件与系统调用改为同时发出；模拟器调试包上首帧前的耗时实测没有可见差别（瓶颈是第一次打开账号库约 250 毫秒）。
 - 学业模块化（用户不可见）：教务业务端口按功能拆成窄接口（会话、学期、课表、成绩、作息、同步记录），同步改成登记的步骤流水线（campusSyncSteps，加一类数据只加一个步骤），学业页的入口与课表、成绩的路由从学业功能登记生成（page/academic_catalog.dart）；同步的顺序、未处理项与中途离开的处理逐项不变。
 - 灰度第 2 版（用户不可见）：配置改由维护者本机签名上传（tool/rollout_publish.sh），不再放公开仓库、删掉 rollout 流水线；中转新增 /v1/app/flags（第 2 版，只有签名信封）与 /v1/flags/mine（点名），第 1 版 /v1/app/rollout 留给 alpha.28 及以前；功能开关只经 domain/feature_flags.dart 登记的开关问。
+- 字号与间距令牌（用户不可见）：lib/theme/campus_tokens.dart 的 CampusFontSize 与 CampusGap 镜像现有的值，主题的文字样式改用它们；规范测试冻结主题以外的数字字面量个数、只许减少。
 
 ## 1.0.0-alpha.28 - 2026-11-16
 
