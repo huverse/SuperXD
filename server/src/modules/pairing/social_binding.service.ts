@@ -1,5 +1,5 @@
 import { HttpStatus, Injectable, Logger, OnModuleInit } from '@nestjs/common';
-import { DataSource } from 'typeorm';
+import { DataSource, QueryFailedError } from 'typeorm';
 
 import { RateLimiter } from 'src/common/redis/redis.module';
 import { RelayCode, RelayError } from 'src/common/relay_error';
@@ -70,7 +70,10 @@ export class SocialBindingService implements OnModuleInit {
     // 应用账号的设备密钥不能兼作私信设备（两者分开，退出应用账号删的是那把账号密钥）。
     if (deviceId === accountDeviceId || (await this.accounts.accountOf(deviceId)) !== null) throw new RelayError(RelayCode.invalidRequest, HttpStatus.BAD_REQUEST, '私信设备不能是应用账号的设备密钥');
     const taken = () => new RelayError(RelayCode.socialTaken, HttpStatus.CONFLICT, '这个私信设备属于别的应用账号');
-    const previous = await this.dataSource.transaction(async (manager) => {
+    // 两个账号同时挂同一台私信设备时，InnoDB 可能判成死锁（两边锁账号行留下的间隙锁与插入互等，MySQL 要求重试事务）：
+    // 只对死锁（errno 1213）重来一次，重来时已能看到对方挂上的那一行，照常回 SOCIAL_TAKEN，不回 500。11-16 CI 偶发复现过。
+    const deadlocked = (error: unknown) => error instanceof QueryFailedError && (error.driverError as { errno?: number }).errno === 1213;
+    const attempt = () => this.dataSource.transaction(async (manager) => {
       const current = await this.socials.lockOf(accountId, manager);
       const owner = await this.socials.ownerOf(deviceId, manager);
       if (owner !== null && owner !== accountId) throw taken();
@@ -86,6 +89,11 @@ export class SocialBindingService implements OnModuleInit {
       // 两个账号同时挂同一台私信设备：后到的撞 uk_device，回 SOCIAL_TAKEN（事务回滚），不回 500、也不会挂进别人的那一行。
       if (!(await this.socials.set(accountId, deviceId, current !== null, manager))) throw taken();
       return current;
+    });
+    const previous = await attempt().catch((error: unknown) => {
+      if (!deadlocked(error)) throw error;
+      this.logger.warn(`[SocialBinding] action=bind_deadlock_retry deviceId=${deviceId}`);
+      return attempt();
     });
     if (previous !== null) this.deviceService.forget([previous]);
     this.logger.log(`[SocialBinding] action=bind deviceId=${deviceId} accountDeviceId=${accountDeviceId} moved=${previous !== null}`);
