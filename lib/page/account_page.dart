@@ -4,12 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:superxd/app_session.dart';
-import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/account_dialogs.dart';
-import 'package:superxd/page/app_account_page.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -39,13 +37,13 @@ class AccountTitle extends StatelessWidget {
 
 // [人工决策-2026-10-05 01:28:53] 账号操作收进“我的”头像卡进入的账号页（同 iOS Apple ID）：记住账号、切换账号、导入旧版本数据一组，退出登录单独一组、红字放最底。
 class AccountPage extends StatefulWidget {
-  const AccountPage({super.key, required this.session, required this.name, this.appAccounts, this.diagnostics});
+  const AccountPage({super.key, required this.session, required this.name, this.appAccounts, this.openAppAccount});
   final AppSession session;
   final String name;
   // 应用账号（人工决策见 application/app_accounts.dart）；没配中转时为空，不显示这一组。
   final AppAccounts? appAccounts;
-  // 应用账号下的诊断包（人工决策见 domain/diagnostic_upload.dart）：交给应用账号页，登录着时那里多一项「我上传的诊断包」。
-  final AccountDiagnostics? diagnostics;
+  // 推入应用账号页（组合根给，同游乐场与私信；那页还有联网偏好与删除游乐场数据）。
+  final void Function(BuildContext context)? openAppAccount;
 
   @override
   State<AccountPage> createState() => _AccountPageState();
@@ -178,7 +176,10 @@ class _AccountPageState extends State<AccountPage> {
                 if (appAccounts.loaded) ...[const SizedBox(width: 4), const CampusIcon(CampusIcons.next)],
               ]),
               enabled: !_busy && appAccounts.loaded,
-              onTap: () => Navigator.of(context).push(CampusPageRoute<void>(builder: (context) => AppAccountPage(appAccounts: appAccounts, diagnostics: widget.diagnostics))),
+              onTap: switch (widget.openAppAccount) {
+                final open? => () => open(context),
+                null => null,
+              },
             ))),
           ],
           const SizedBox(height: 16),

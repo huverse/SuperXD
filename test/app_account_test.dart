@@ -9,11 +9,15 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
+import 'package:superxd/application/leisure.dart';
+import 'package:superxd/application/network_preference.dart';
 import 'package:superxd/domain/account.dart';
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/diagnostic_upload.dart';
+import 'package:superxd/domain/network_policy.dart';
 import 'package:superxd/gateway/account_access.dart';
+import 'package:superxd/local/network_mode_memory.dart';
 import 'package:superxd/page/account_page.dart';
 import 'package:superxd/page/app_account_join_page.dart';
 import 'package:superxd/page/app_account_page.dart';
@@ -404,10 +408,55 @@ void main() {
       await tester.pump();
     }
 
+    // 联网偏好与删除游乐场数据（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）。
+    testWidgets('联网偏好：改为本地化先确认，确认后登录保留但账号管理收起、写暂停；改回联网化不用确认；最底下删除游乐场数据', (tester) async {
+      client.session = _session;
+      await appAccounts.load();
+      final network = NetworkPreference(memory: FileNetworkModeMemory.memory());
+      final cleared = <String>[];
+      final leisure = Leisure(clearLocal: () async => cleared.add('local'), deleteRemote: () async => cleared.add('remote'), signedIn: () => network.online);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: AppAccountPage(appAccounts: appAccounts, network: network, leisure: leisure)));
+      await tester.pumpAndSettle();
+      expect(find.text('联网化'), findsOneWidget);
+      expect(find.text('修改密码'), findsOneWidget);
+      await tester.tap(find.text('本地化'));
+      await tester.pumpAndSettle();
+      expect(find.text('改为本地化？'), findsOneWidget);
+      await tester.tap(find.text('取消'));
+      await tester.pumpAndSettle();
+      expect(network.mode, NetworkMode.online, reason: '取消不改');
+      await tester.tap(find.text('本地化'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('改为本地化'));
+      await tester.pumpAndSettle();
+      expect(network.mode, NetworkMode.local);
+      expect(find.text('本地化时暂停使用'), findsOneWidget);
+      expect(find.text('tester_one'), findsOneWidget, reason: '登录保留');
+      expect(find.text('修改密码'), findsNothing);
+      expect(appAccounts.current, isNotNull);
+      await clearToast(tester);
+
+      await tester.scrollUntilVisible(find.text('删除游乐场与积分的数据'), 100);
+      await tester.tap(find.text('删除游乐场与积分的数据'));
+      await tester.pumpAndSettle();
+      expect(find.textContaining('要在联网化并登录应用账号后才能删'), findsOneWidget, reason: '本地化时只删本机');
+      await tester.tap(find.text('删除'));
+      await tester.pumpAndSettle();
+      expect(cleared, ['local']);
+      await clearToast(tester);
+
+      await tester.scrollUntilVisible(find.text('联网化'), -100);
+      await tester.tap(find.text('联网化'));
+      await tester.pumpAndSettle();
+      expect(network.mode, NetworkMode.online);
+      expect(find.text('修改密码'), findsOneWidget);
+      await clearToast(tester);
+    });
+
     testWidgets('账号页：应用账号一行写用户名或未登录，点了推入应用账号页；没配中转时不显示', (tester) async {
       final session = AppSession(_Accounts());
       addTearDown(session.dispose);
-      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: AccountPage(session: session, name: '同学甲', appAccounts: appAccounts)));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: AccountPage(session: session, name: '同学甲', appAccounts: appAccounts, openAppAccount: (context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => AppAccountPage(appAccounts: appAccounts))))));
       await tester.pumpAndSettle();
       expect(find.text('未登录'), findsOneWidget);
       client.session = _session;

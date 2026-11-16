@@ -12,9 +12,10 @@ import 'package:superxd/domain/festival.dart';
 // 抽签用当前的应用账号（组合根注入 account，只认 AppAccountRef）；中转说账号已不在时调 accountGone（组合根让应用账号马上核一次）。
 // levelsOn 为假（娱乐与积分关着，人工决策见 domain/leisure.dart）时请服务器不按积分等级加权。
 class Festivals extends ChangeNotifier {
-  Festivals({required this.occasions, required this._memory, this._client, AppAccountRef? Function()? account, this._accountGone, bool Function()? levelsOn, DateTime Function()? clock})
+  Festivals({required this.occasions, required this._memory, this._client, AppAccountRef? Function()? account, this._accountGone, bool Function()? levelsOn, bool Function()? online, DateTime Function()? clock})
     : _account = account ?? (() => null),
       _levelsOn = levelsOn ?? (() => true),
+      _online = online ?? (() => true),
       _clock = clock ?? DateTime.now;
   final List<FestivalOccasion> occasions;
   final FestivalMemory _memory;
@@ -23,6 +24,8 @@ class Festivals extends ChangeNotifier {
   final AppAccountRef? Function() _account;
   final void Function()? _accountGone;
   final bool Function() _levelsOn;
+  // 本地化时为假（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）：动画照常播，不抽签、不领红包、不提示去登录。
+  final bool Function() _online;
   final DateTime Function() _clock;
   final _drawing = <String, Future<FestivalDraw?>>{};
   // 中转说这个应用账号建立不满规定天数：到 until 之前不再为它抽（不联网），只在内存里记。
@@ -48,7 +51,7 @@ class Festivals extends ChangeNotifier {
   String occasionName(String id) => occasions.where((occasion) => occasion.id == id).firstOrNull?.name ?? (_kept.any((prize) => prize.occasion == id && prize.keepThrough != null) ? '红包' : '节日红包');
 
   // 信里附的红包（人工决策见 domain/developer_note.dart 的附件）：配了中转且登录着应用账号才能领；没配中转时附件不显示。
-  bool get claimable => _client != null;
+  bool get claimable => _client != null && _online();
   bool get signedIn => _account() != null;
 
   // 这个活动领到的、还留着的奖品（信里再点「查看」直接揭晓，不再联网）。
@@ -57,7 +60,7 @@ class Festivals extends ChangeNotifier {
   // 问一个活动能不能领；没登录、没配中转或问不到为空（附件就不显示按钮）；中转说账号已不在时让应用账号马上核一次。
   Future<RewardStatus?> status(String campaign) async {
     final client = _client, account = _account();
-    if (client == null || account == null) return null;
+    if (client == null || account == null || !_online()) return null;
     try {
       return await client.status(account, campaign, levels: _levelsOn());
     } on FestivalNotSignedIn catch (error) {
@@ -78,7 +81,7 @@ class Festivals extends ChangeNotifier {
 
   Future<FestivalDraw?> _claim(String campaign, DateTime endsAt) async {
     final client = _client, account = _account();
-    if (client == null || account == null) return null;
+    if (client == null || account == null || !_online()) return null;
     final activeDays = festivalActiveDays(_memory.record.activeDays, _today).length;
     final FestivalDraw result;
     try {
@@ -114,7 +117,7 @@ class Festivals extends ChangeNotifier {
   Future<void> refresh() => drawPending();
 
   // 这次节日有抽奖、还没抽出结果，但没登录应用账号抽不了：动画放完时提示可以去登录（组合根）。
-  bool needsSignIn(FestivalOccasion occasion) => occasion.campaign != null && _client != null && _account() == null && !_memory.record.drawn.contains(occasion.id);
+  bool needsSignIn(FestivalOccasion occasion) => occasion.campaign != null && _client != null && _online() && _account() == null && !_memory.record.drawn.contains(occasion.id);
 
   // 动画开始播：记下，之后不再播（中途被杀掉也不重播）。
   Future<void> markPlayed(FestivalOccasion occasion) => _save(played: [..._memory.record.played.where((id) => id != occasion.id), occasion.id]);
@@ -139,7 +142,7 @@ class Festivals extends ChangeNotifier {
 
   Future<FestivalDraw?> _draw(FestivalOccasion occasion) async {
     final campaign = occasion.campaign, client = _client;
-    if (campaign == null || client == null || _memory.record.drawn.contains(occasion.id)) return null;
+    if (campaign == null || client == null || !_online() || _memory.record.drawn.contains(occasion.id)) return null;
     final account = _account();
     if (account == null) {
       campusLog('[Festival] action=draw occasion=${occasion.id} state=signed_out');

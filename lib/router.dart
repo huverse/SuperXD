@@ -7,8 +7,6 @@ import 'package:go_router/go_router.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/app_services.dart';
 import 'package:superxd/app_session.dart';
-import 'package:superxd/application/account_diagnostics.dart';
-import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/page/academic_catalog.dart';
 import 'package:superxd/page/academic_page.dart';
 import 'package:superxd/page/sync_records_page.dart';
@@ -30,13 +28,16 @@ import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
-// 推入应用账号页（与教务各管各的，没登录教务也能进）：游乐场的挑战、私信与节日动画后的抽奖提示共用。
-void pushAppAccountPage(BuildContext context, AppAccounts appAccounts, AccountDiagnostics? diagnostics) =>
-    unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => AppAccountPage(appAccounts: appAccounts, diagnostics: diagnostics))));
+// 推入应用账号页（与教务各管各的，没登录教务也能进）：游乐场的挑战、私信、账号页与节日动画后的抽奖提示共用；联网偏好与删除游乐场数据也在这页。
+// 只在配了中转（有应用账号）时调。
+void pushAppAccountPage(BuildContext context, AppServices services) => unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(
+  builder: (context) => AppAccountPage(appAccounts: services.appAccounts!, diagnostics: services.diagnostics, network: services.network, leisure: services.leisure),
+)));
 
 // 路由表（组合根）：设备级服务都在 services 里（见 app_services.dart），百宝箱运行时与游乐场记录由外壳给好。
 GoRouter buildRouter({required AppSession session, required AppServices services, required ToolboxRuntime toolbox, required PlaygroundStore playground, ValueListenable<bool>? splashGone, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
-  final AppServices(:leisure, :reminders, :social, :updates, :developer, :logs, :paintings, :notes, :festivals, :appAccounts, :diagnostics, :challenges, :unlocks, :autoSync, :health) = services;
+  final AppServices(:reminders, :social, :updates, :developer, :logs, :paintings, :notes, :festivals, :appAccounts, :challenges, :unlocks, :autoSync, :health, :network) = services;
+  final void Function(BuildContext context)? openAccount = appAccounts == null ? null : (context) => pushAppAccountPage(context, services);
   final gateway = session.gateway;
   final tools = toolbox.modules;
   // 好友分享的卡片交给注册表里认得它的工具打开（页面层不依赖百宝箱，由这里接上；路由不认识具体工具页面）。
@@ -66,7 +67,7 @@ GoRouter buildRouter({required AppSession session, required AppServices services
     navigatorKey: rootKey,
     observers: observers,
     initialLocation: '/boot',
-    refreshListenable: leisure == null ? session : Listenable.merge([session, leisure]),
+    refreshListenable: session,
     redirect: (context, state) {
       final location = state.matchedLocation;
       if (!session.ready) return location == '/boot' ? null : '/boot';
@@ -80,8 +81,6 @@ GoRouter buildRouter({required AppSession session, required AppServices services
       // 挑战模式要应用账号（以教务登录为登录方式之一），做好后在挑战页里自己要求登录，不在这里拦。
       // （11-15 起应用账号是自己的账号体系、与教务各管各的，人工决策见 domain/app_account.dart；挑战照旧在挑战页里要求登录。）
       final publicPlay = location == '/playground' || playgroundCatalog.any((game) => location == '/playground/${game.id}');
-      // 娱乐与积分关着（人工决策见 domain/leisure.dart）：游乐场与游戏都进不去，回到服务页（没登录教务回登录页）。
-      if (leisure?.enabled == false && location.startsWith('/playground')) return session.loggedIn ? '/service' : '/login';
       if (!session.loggedIn && !atLogin && !legal && !publicTool && !publicPlay) return '/login';
       if (session.loggedIn && atLogin) return '/today';
       // 解锁（人工决策见服务端 src/modules/unlock/unlock_rules.ts）：锁着的游戏与隐藏的工具（含它的快捷入口）不让直接进，回到各自的首页。
@@ -103,7 +102,7 @@ GoRouter buildRouter({required AppSession session, required AppServices services
       ),
       GoRoute(
         path: '/login',
-        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: LoginPage(gateway: session.gateway, session: session, updates: updates, health: health, developer: developer, logs: logs, paintings: paintings, leisure: leisure)),
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: LoginPage(gateway: session.gateway, session: session, updates: updates, health: health, developer: developer, logs: logs, paintings: paintings)),
       ),
       GoRoute(
         path: '/switch-account',
@@ -123,15 +122,16 @@ GoRouter buildRouter({required AppSession session, required AppServices services
         for (final shortcut in tool.shortcuts) GoRoute(path: '/toolbox/${tool.id}/${shortcut.id}', parentNavigatorKey: rootKey,
           pageBuilder: (context, state) => campusPage(key: state.pageKey, child: shortcut.builder(context))),
       GoRoute(path: '/playground', parentNavigatorKey: rootKey,
-        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: PlaygroundPage(
+        // 本地化时没有挑战分段（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条），自由模式照常。
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: ListenableBuilder(listenable: Listenable.merge([?network]), builder: (context, _) => PlaygroundPage(
           store: playground,
           games: playgroundCatalog,
           groups: playgroundGroups,
-          challenges: challenges,
+          challenges: network?.online == false ? null : challenges,
           unlocks: unlocks,
           // 挑战要应用账号：推入应用账号页。
-          openAccount: appAccounts == null ? null : (context) => pushAppAccountPage(context, appAccounts, diagnostics),
-        ))),
+          openAccount: openAccount,
+        )))),
       for (final game in playgroundCatalog) GoRoute(path: '/playground/${game.id}', parentNavigatorKey: rootKey,
         pageBuilder: (context, state) => campusPage(key: state.pageKey, child: PlaygroundGameHost(game: game, store: playground))),
       // 学业里各项数据的页面（课表、成绩）从学业功能登记生成（page/academic_catalog.dart）。
@@ -151,9 +151,9 @@ GoRouter buildRouter({required AppSession session, required AppServices services
         pageBuilder: (context, state, navigationShell) => campusPage(key: state.pageKey, child: LegacyImportGate(session: session, child: ShellPage(navigationShell: navigationShell, social: social, notes: notes, revealed: splashGone))),
         branches: [
           StatefulShellBranch(routes: [GoRoute(path: '/today', builder: (context, state) => TodayPage(gateway: gateway, onSessionExpired: () => session.expire(generation), isAccountCurrent: () => session.generation == generation && session.loggedIn, syncRequest: todaySync, autoSync: autoSync))]),
-          StatefulShellBranch(routes: [GoRoute(path: '/service', builder: (context, state) => ServicePage(leisure: leisure))]),
-          StatefulShellBranch(routes: [GoRoute(path: '/message', builder: (context, state) => MessagePage(social: social, gateway: gateway, openVideo: openVideo, openAccount: appAccounts == null ? null : (context) => pushAppAccountPage(context, appAccounts, diagnostics)))]),
-          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, social: social, updates: updates, health: health, developer: developer, logs: logs, paintings: paintings, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, leisure: leisure, saveRewardPicture: saveRewardPicture))]),
+          StatefulShellBranch(routes: [GoRoute(path: '/service', builder: (context, state) => const ServicePage())]),
+          StatefulShellBranch(routes: [GoRoute(path: '/message', builder: (context, state) => MessagePage(social: social, gateway: gateway, openVideo: openVideo, openAccount: openAccount))]),
+          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, social: social, updates: updates, health: health, developer: developer, logs: logs, paintings: paintings, notes: notes, festivals: festivals, appAccounts: appAccounts, openAppAccount: openAccount, saveRewardPicture: saveRewardPicture))]),
         ],
       ),
     ],

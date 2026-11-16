@@ -17,7 +17,8 @@ import 'package:superxd/social/social_spaces.dart';
 import 'package:superxd/social/social_store.dart';
 
 // signedOut：没登录应用账号；elsewhere：这个应用账号的私信在另一台手机上（可以接管）。
-enum SocialStatus { loading, unavailable, signedOut, disabled, elsewhere, ready, failed }
+// offline：本地化模式下经中转的私信停着（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条），账号与本机记录都留着。
+enum SocialStatus { loading, unavailable, signedOut, disabled, elsewhere, ready, failed, offline }
 
 // 发送或加好友失败：code 是 RelayCode 或本地错误码（见 socialErrorText）。
 class SocialException implements Exception {
@@ -127,9 +128,22 @@ class SocialService extends ChangeNotifier {
   // 暂时不可用（挂账号时连不上等）后重试。
   Future<void> reopen() => switchAccount(_account, force: true);
 
+  // 本地化时停下、联网化时接着用（组合根跟着联网偏好调）：停着不收发、不挂账号，账号与本机记录都留着；还没开始（同意协议与政策之前）只记下。
+  bool _offline = false;
+  Future<void> setOffline(bool value) async {
+    if (value == _offline) return;
+    _offline = value;
+    campusLog('[Social] action=offline value=$value');
+    if (_started) await switchAccount(_account, force: true);
+  }
+
   Future<void> _open(AppAccountRef? account) async {
     if (_relay == null) {
       status = SocialStatus.unavailable;
+      return;
+    }
+    if (_offline) {
+      status = SocialStatus.offline;
       return;
     }
     if (account == null) {

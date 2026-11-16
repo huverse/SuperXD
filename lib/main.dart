@@ -22,6 +22,7 @@ import 'package:superxd/application/campus_reminders.dart';
 import 'package:superxd/application/campus_timetable.dart';
 import 'package:superxd/application/campus_widgets.dart';
 import 'package:superxd/application/leisure.dart';
+import 'package:superxd/application/network_preference.dart';
 import 'package:superxd/device/background_sync.dart';
 import 'package:superxd/device/backup_exclusion.dart';
 import 'package:superxd/device/campus_notifications.dart';
@@ -42,7 +43,7 @@ import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/local/font_packs.dart';
-import 'package:superxd/local/leisure_memory.dart';
+import 'package:superxd/local/network_mode_memory.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/local/painting_library.dart';
 import 'package:superxd/page/painting_splash.dart';
@@ -91,7 +92,10 @@ void main() async {
   // 诊断包上传走同一个自建中转（人工决策见 domain/diagnostic_upload.dart）；没配中转时为空，开发者选项里不出现上传。
   // 登录着应用账号时传完紧接着认领到账号下（application/account_diagnostics.dart 包一层）；应用账号在后面才建好，认领只在用户点了上传以后才读它。
   late final AppAccounts? appAccounts;
-  final diagnostics = diagnosticsOf(() => appAccounts);
+  // 联网偏好（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）在下面第一批里打开；诊断包认领只在用户点了上传以后才读它。
+  late final NetworkPreference network;
+  bool networkOnline() => network.online;
+  final diagnostics = diagnosticsOf(() => appAccounts, online: networkOnline);
   final logs = await DiagnosticLog.open(
     directory: Directory(path.join((external ?? deviceOnly).path, 'logs')),
     exports: Directory(path.join(temporary.path, 'diagnostics_export')),
@@ -144,15 +148,16 @@ void main() async {
   final displayOpen = DisplaySettings.open(wallpaperDirectory: Directory(path.join(support.path, 'display', 'wallpaper')), fontPacks: fontPacks);
   final glassLoad = CampusGlassGuard.load();
   final databasesPath = getDatabasesPath();
-  final leisureOpen = FileLeisureMemory.open(File(path.join(support.path, 'leisure.json')));
+  final networkOpen = FileNetworkModeMemory.open(File(path.join(support.path, 'network_mode.json')));
   final legalOpen = LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
   ensureCampusClock();
   configureCampusIcons();
   registerCampusLicenses();
-  await Future.wait<Object?>([splashOpen, developerOpen, edgeToEdge, storeOpen, displayOpen, glassLoad, databasesPath, leisureOpen, legalOpen]);
+  await Future.wait<Object?>([splashOpen, developerOpen, edgeToEdge, storeOpen, displayOpen, glassLoad, databasesPath, networkOpen, legalOpen]);
   final (:launched, :painting, image: splashImage) = await splashOpen;
   final paintings = await paintingsOpen, developer = await developerOpen, store = await storeOpen, display = await displayOpen;
-  final socialDirectory = await databasesPath, leisureMemory = await leisureOpen, legal = await legalOpen;
+  final socialDirectory = await databasesPath, legal = await legalOpen;
+  network = NetworkPreference(memory: await networkOpen);
 
   watchDeveloperMode(developer, logs, environment: appEnvironment);
   unawaited(recordExitReasons(marker: File(path.join(support.path, 'last_exit_seen')), read: readExitReasons, onAbnormal: (at) => markFatal(at)));
@@ -186,20 +191,22 @@ void main() async {
     ));
   }
   appAccounts = appAccountsOf(onDeleted: (account) => unawaited(social.forgetAccount(account)));
-  // 娱乐与积分的开关（人工决策见 domain/leisure.dart）：关着时解锁只认公开与下架、不联网，灰度与节日抽签不按等级加权。
-  bool leisureOn() => leisureMemory.enabled;
+  // 本地化时（联网偏好）解锁只认公开与下架、不联网，灰度与节日抽签不按等级加权、不问点名（11-16 起取代娱乐与积分的开关，见 domain/leisure.dart）。
   final challenges = challengesOf(appAccounts);
-  final rollouts = await rolloutsOf(support, appAccounts, challenges, levelsOn: leisureOn);
-  final unlocks = unlocksOf(rollouts, appAccounts, accountOn: leisureOn);
+  final rollouts = await rolloutsOf(support, appAccounts, challenges, online: networkOnline);
+  final unlocks = unlocksOf(rollouts, appAccounts, accountOn: networkOnline);
   final playground = PlaygroundStore.inSupportDirectory();
-  // 删除数据清本机的游乐场记录与记着的等级（服务器上的由 Leisure 经挑战与积分先删）；开关变了、删了数据，解锁都重新判定。
-  final leisure = Leisure(memory: leisureMemory, deleteRemote: challenges?.deleteData, signedIn: () => challenges?.signedIn ?? false, clearLocal: () async {
+  // 删除数据清本机的游乐场记录与记着的等级（服务器上的由 Leisure 经挑战与积分先删，本地化时只删本机）；联网偏好变了、删了数据，解锁都重新判定。
+  final leisure = Leisure(deleteRemote: challenges?.deleteData, signedIn: () => network.online && (challenges?.signedIn ?? false), clearLocal: () async {
     await playground.clear();
     await rollouts.forgetLevel();
   });
-  if (unlocks != null) leisure.addListener(unlocks.reconsider);
+  if (unlocks != null) {
+    leisure.addListener(unlocks.reconsider);
+    network.addListener(unlocks.reconsider);
+  }
   // 第二批：要等灰度与应用账号造好的几份本机记录同时打开。
-  final updatesOpen = appUpdates(support, rollouts), notesOpen = developerNotes(support), festivalsOpen = festivalsOf(support, appAccounts, levelsOn: leisureOn);
+  final updatesOpen = appUpdates(support, rollouts), notesOpen = developerNotes(support), festivalsOpen = festivalsOf(support, appAccounts, online: networkOnline);
   await Future.wait<Object?>([updatesOpen, notesOpen, festivalsOpen]);
   final updates = await updatesOpen, notes = await notesOpen, festivals = await festivalsOpen;
   final health = await appHealthOf(support);
@@ -221,7 +228,7 @@ void main() async {
   final splashed = painting != null && splashImage != null;
   final splashGone = ValueNotifier(!splashed);
   final restored = Completer<void>();
-  final services = AppServices(display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, unlocks: unlocks, playground: playground, leisure: leisure, moments: moments, autoSync: autoSync, health: health);
+  final services = AppServices(display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, unlocks: unlocks, playground: playground, leisure: leisure, moments: moments, autoSync: autoSync, health: health, network: network);
   final app = SuperXdApp(session: session, services: services, launch: launched, splashGone: splashGone);
   runApp(splashed ? PaintingSplash(painting: painting, image: splashImage, ready: restored.future, onGone: () => splashGone.value = true, child: app) : app);
   unawaited(WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
@@ -231,9 +238,9 @@ void main() async {
   // 低电量（iOS）与省电模式（安卓）时装饰动效停下，先要一次当前状态（见 theme/native_glass.dart 的 nativeLowPower）。
   unawaited(watchNativeLowPower());
   // 各功能在同意协议与政策之后、回到前台时做什么，统一挂在生命周期钩子上（见 app_lifecycle.dart）。
-  final hooks = AppHooks(agreed: legal.agreed);
+  final hooks = AppHooks(agreed: legal.agreed, policy: network);
   // 私信跟着当前应用账号；打开失败只影响私信（状态 failed），不影响应用。已开启私信的会立即联网收取，所以等用户同意协议与政策之后再打开。
-  watchSocial(social, appAccounts, hooks);
+  watchSocial(social, appAccounts, hooks, network: network);
   // 选着字体包而本机没有（升级上来原先就选着衬线的）：同意之后下回来，装好界面就换过去；失败下次启动再试。
   hooks.afterAgreed('FontPacks', display.ensureFontPack, service: NetworkService.fontPack);
   try {

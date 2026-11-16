@@ -68,9 +68,9 @@
 - feature_flags.dart：功能开关登记 FeatureFlag 与 featureFlags（[人工决策] 在文件头）：要灰度的功能、逻辑或界面在这里登记一项（id 发出后不改、配置没写时的 fallback），代码只经 Rollouts.isOn 与 Rollouts.param 问，全量或下线后删掉。
 - challenge.dart：挑战与积分（人工决策见 lib/playground/challenge/challenge_rules.dart）：挑战列表 ChallengeCatalog 与 ChallengeSummary（含门票 ticket）、挑战卡带关卡图（每关档位 tiers 与边 edges）；一局 ChallengeRun（服务器时刻、罚时、终章 ChallengeFinal、关卡 ChallengeLevel 的状态（含等开门）、字母、预计用时、要求的最少步数、门 ChallengeGate、门上的数改写哪一处 ChallengeConsume（valueOf 按余数加偏移算）、加试题跟在哪一关、开着或过了时的题面、结算 ChallengeResult）、判定 ChallengeVerdict（碎片只在这里给一次、追加的加试题）、开门与终章的结果 ChallengeEntry、积分 PointsSummary（余额、要过期的、近 12 个月获得 earned、等级 level 与到下一级要的 nextLevelAt，等级档数 pointsLevelCount）与流水 PointsEntry、PointsBatch；失败 ChallengeException（ChallengeFailure，runActive 附进行中那一局、runOver 与 levelLocked 附服务器的现状、pointsShort 是积分不够付门票）；中转端口 ChallengeClient（social 实现，按 AppAccountRef 用那个应用账号签名；deleteData 删这个账号的积分、挑战与解锁）与游乐场用的 ChallengeHub（application 实现，跟着当前的应用账号，changes 通知登录状态变化；不再要求登录教务）。
 - unlock.dart：解锁（隐藏服务与新游戏抢先玩，规则见服务端 src/modules/unlock/unlock_rules.ts，清单是 rollout.dart 的 RolloutUnlock）：这个账号此刻的状态 UnlockState（等级与能用的编号）、失败 UnlockException（UnlockFailure）、中转端口 UnlockClient（social 实现）与页面用的 UnlockAccess（application 实现：locked、offer、purchasable、refresh、buy，changes 通知变化）。
-- network_policy.dart：联网服务登记表 NetworkService（11-16 起含健康回报 appHealth 与新版本反馈 appFeedback；应用里每一项会主动联网的服务一项，名字发出后不改，新增会联网的服务先在这里登记）与联网策略 NetworkPolicy（这项服务现在能不能联网；默认 OnlineNetworkPolicy 全部允许），组合根的生命周期钩子按它决定做不做（[人工决策] 在文件头）。
+- network_policy.dart：联网偏好 NetworkMode（联网化、本地化）与本地化要关的服务 localModeDenied、判定 networkModeAllows、本机记录端口 NetworkModeMemory（[人工决策] 在文件尾 11-16 22:24:59 那条）；联网服务登记表 NetworkService（11-16 起含健康回报 appHealth 与新版本反馈 appFeedback；应用里每一项会主动联网的服务一项，名字发出后不改，新增会联网的服务先在这里登记）与联网策略 NetworkPolicy（这项服务现在能不能联网；默认 OnlineNetworkPolicy 全部允许），组合根的生命周期钩子按它决定做不做（[人工决策] 在文件头）。
 - app_health.dart：分批更新的健康回报与新版本反馈（[人工决策] 在文件头，服务端判定见 server/src/modules/app_health/app_health_rules.ts）：按校园日的一项 HealthDay（版本、有没有致命错误、发过没有）与本机记录 HealthRecord（另有当前版本第一次打开的日子与反馈交过没有）、只留最近几天 healthRecent、该发的 healthDue、给不给反馈入口 healthFeedbackOpen、失败 AppHealthException（rejected 是服务器拒收）、中转端口 AppHealthClient（device 实现）与本机记录端口 AppHealthMemory（local 实现）。
-- leisure.dart：娱乐与积分的开关（[人工决策] 在文件头：游乐场自由模式、挑战与积分、解锁算一个整体，「我的」里一行开关、默认打开；关着时入口全藏、不联网、灰度与红包按 Lv0；删除数据清本机成绩与服务器上这个账号的积分、挑战与解锁）：端口 LeisureMemory（local 实现），编排在 application/leisure.dart。
+- leisure.dart：娱乐与积分开关的来由（[人工决策] 在文件头：11-15 两条，11-16 起由联网偏好取代、不再单独收起游乐场），没有代码；删除数据在 application/leisure.dart。
 - font_pack.dart：字体包（不随安装包、选用时从自建中转下载的字体，[人工决策] 在文件头）：FontPack（字体 id、注册用的族名、各字重文件）与 FontPackFile（文件名、字重、大小、SHA-256），登记表 fontPacks 现在只有衬线 serif；文件就是仓库 font_packs 目录里的同名文件（tool/font_subset.py 生成，文件名带内容哈希），换内容就换名字、旧文件留到用它的版本都低于最低可用版本；状态 FontPackStatus（没下载、下载中、文件齐全未注册、已装好、失败）；下载端口 FontPackSource（device 实现）、FontPackException、FontPackCancelled。本机文件与注册在 local/font_packs.dart。
 - interruption.dart：打扰时机的上下课安静期 classQuietUntil（开课前 20 分钟到开课后 5 分钟、下课前 5 分钟到下课后 10 分钟，相连的并成一段，返回这段结束的时刻）；人工决策在文件头，其余条件见 application/app_moments.dart。
 - common_free.dart：好友课表与自己课表的共同空闲。compareWeek 按好友那一周的日期对齐双方周次（任一方缺开学日时按相同周次），busyPeriods 求某周每天占用的节次，commonFree 合并双方都空的连续节次并配上作息时刻；周末任一方有课才显示周末。
@@ -107,7 +107,7 @@
 - 课程实例与下游：reminder_test.dart、calendar_export_test.dart、home_widget_test.dart。
 - 成绩、卡片与更新规则：grades_test.dart、share_card_test.dart、app_update_test.dart；开屏画作清单与轮换：painting_test.dart。
 - 同步记录（读写边界、文案与通知）：sync_record_test.dart。
-- 开发者的话与打扰时机（清单解析、弹信规则、安静期）：developer_notes_test.dart；节日规则：festival_test.dart；娱乐与积分的开关：leisure_test.dart。
+- 开发者的话与打扰时机（清单解析、弹信规则、安静期）：developer_notes_test.dart；节日规则：festival_test.dart；联网偏好：network_mode_test.dart。
 - 字体包（登记与仓库文件一致、本机文件与下载）：code_conventions_test.dart、font_pack_test.dart。
 - 灰度与分批更新（分桶向量含等级加权、配置解析、编排、签名下发、发版清单的放量表、本机记的等级与批次；第 2 版的条件与参数、两份签名、拉取退回第 1 版、点名的判定、本机记录与中转客户端）：rollout_test.dart。
 - 面向用户的文案写法（节次、学分、按远近写的时刻、不及格）：campus_text_test.dart。

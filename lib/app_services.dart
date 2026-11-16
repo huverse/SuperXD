@@ -18,6 +18,7 @@ import 'package:superxd/application/challenges.dart';
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/application/festivals.dart';
 import 'package:superxd/application/leisure.dart';
+import 'package:superxd/application/network_preference.dart';
 import 'package:superxd/application/rollouts.dart';
 import 'package:superxd/application/unlocks.dart';
 import 'package:superxd/device/app_installer_channel.dart';
@@ -58,7 +59,7 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 // 组合根造好的设备级服务（[人工决策-2026-11-16 17:26:21] 组合根改应用模块，用户选定架构推荐方案）：打包成一份交给应用外壳、账号应用与路由，
 // 新功能只在这里加一个字段，不再在 SuperXdApp、账号应用与 buildRouter 三处各加一个参数。为空的表示这项没有（没配中转、测试没给），页面照各自的规则藏起入口。
 class AppServices {
-  const AppServices({this.display, this.toolbox, this.playground, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.leisure, this.moments, this.autoSync, this.health});
+  const AppServices({this.display, this.toolbox, this.playground, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.leisure, this.moments, this.autoSync, this.health, this.network});
   // 显示设置；为空时用一份只在内存里的。
   final DisplaySettings? display;
   // 百宝箱运行时；为空时外壳按注册表自己建。
@@ -95,6 +96,8 @@ class AppServices {
   final AutoSync? autoSync;
   // 分批更新的健康回报与新版本反馈（人工决策见 domain/app_health.dart）。
   final AppHealth? health;
+  // 联网偏好（本地化或联网化，人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）；测试里为空当联网化。
+  final NetworkPreference? network;
 }
 
 // 中转服务地址来自构建参数 SUPERXD_RELAY；未配置或格式不对时私信与应用更新都不可用，不猜默认地址。
@@ -148,7 +151,8 @@ Future<AppHealth> appHealthOf(Directory support) async => AppHealth(
 
 // 积分等级经挑战与积分的签名请求取（取不到时 Challenges 已记日志，这里按没取到算）。
 // 11-16 起（人工决策见 domain/rollout.dart 文件头 11-16 那条）：开关的平台与版本号条件按这台设备判定；登录着应用账号时同一时机问点名（用这个账号的设备密钥签名）。
-Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challenges? challenges, {required bool Function() levelsOn}) async {
+// 本地化时（online 为假）不取等级、按 Lv0，也不问点名（记着的照旧用）。
+Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challenges? challenges, {required bool Function() online}) async {
   final transport = relayTransport();
   final targets = transport == null ? null : RelayFlagTargetClient(vault: const SecureAppAccountVault(), transport: transport);
   return Rollouts(
@@ -157,14 +161,14 @@ Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challen
   platform: Platform.isIOS ? 'ios' : 'android',
   versionCode: int.tryParse((await PackageInfo.fromPlatform()).buildNumber) ?? 0,
   targets: switch ((targets, appAccounts)) {
-    (final client?, final accounts?) => () async => switch (accounts.current) {
+    (final client?, final accounts?) => () async => switch (online() ? accounts.current : null) {
       final account? => client.mine(account),
       null => null,
     },
     _ => null,
   },
   accountId: () => appAccounts?.accountId,
-  levelsOn: levelsOn,
+  levelsOn: online,
   level: switch (challenges) {
     final hub? => () async {
       try {
@@ -199,7 +203,8 @@ Future<DeveloperNotes?> developerNotes(Directory support) async {
 // 节日（人工决策见 domain/festival.dart）：登记在 page/festival/festival_catalog.dart；没配中转时只播动画、不抽签。
 // 抽签用当前应用账号的设备密钥签名（social/relay_reward_client.dart）；没登录应用账号不抽，中转说账号已不在时让应用账号马上核一次。
 // 登录应用账号后补抽在 app_lifecycle.dart 的 watchMoments 里接（同意协议与政策之后才联网）。
-Future<Festivals> festivalsOf(Directory support, AppAccounts? appAccounts, {required bool Function() levelsOn}) async {
+// 本地化时（online 为假，人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）不抽签、不领红包，也不按等级加权。
+Future<Festivals> festivalsOf(Directory support, AppAccounts? appAccounts, {required bool Function() online}) async {
   final transport = relayTransport();
   return Festivals(
     occasions: [for (final scene in festivalCatalog) scene.occasion],
@@ -207,19 +212,21 @@ Future<Festivals> festivalsOf(Directory support, AppAccounts? appAccounts, {requ
     client: transport == null || appAccounts == null ? null : RelayRewardClient(vault: const SecureAppAccountVault(), transport: transport),
     account: () => appAccounts?.current,
     accountGone: () => unawaited(appAccounts?.check(force: true)),
-    levelsOn: levelsOn,
+    levelsOn: online,
+    online: online,
   );
 }
 
 // 诊断包上传（人工决策见 domain/diagnostic_upload.dart）：没配中转时为空；配了就是包着中转上传的 AccountDiagnostics，登录着应用账号时传完认领到账号下，
 // 账号页也经它看与删自己认领过的包。
-AccountDiagnostics? diagnosticsOf(AppAccounts? Function() appAccounts) {
+// 本地化时（online 为假）上传照旧、只是不认领到应用账号下。
+AccountDiagnostics? diagnosticsOf(AppAccounts? Function() appAccounts, {required bool Function() online}) {
   final base = relayBase(), transport = relayTransport();
   if (base == null || transport == null) return null;
   return AccountDiagnostics(
     uploader: RelayDiagnosticUpload(base),
     client: RelayDiagnosticAccountClient(vault: const SecureAppAccountVault(), transport: transport),
-    account: () => appAccounts()?.current,
+    account: () => online() ? appAccounts()?.current : null,
     accountGone: () => unawaited(appAccounts()?.check(force: true)),
   );
 }

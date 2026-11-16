@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/app_health.dart';
+import 'package:superxd/application/network_preference.dart';
 import 'package:superxd/application/app_moments.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/campus_reminders.dart';
@@ -108,7 +109,12 @@ void watchAppUpdates(AppUpdates updates, AppHooks hooks) {
 }
 
 // 私信跟着当前应用账号（人工决策见 social/social_service.dart）：同意协议与政策之后，等应用账号读好本机记录就切过去，之后应用账号一变就跟着切；没配中转时为不可用。
-void watchSocial(SocialService social, AppAccounts? appAccounts, AppHooks hooks) {
+// 本地化时停下、联网化时接着用（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条：保留登录、只是不联网）；同意之前只记下。
+void watchSocial(SocialService social, AppAccounts? appAccounts, AppHooks hooks, {NetworkPreference? network}) {
+  if (network != null) {
+    unawaited(social.setOffline(!network.online));
+    network.addListener(() => unawaited(social.setOffline(!network.online)));
+  }
   hooks.afterAgreed('Social', () {
     if (appAccounts == null) return social.switchAccount(null);
     void follow() {

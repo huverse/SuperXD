@@ -281,7 +281,7 @@ class _AccountAppState extends State<_AccountApp> {
     if (scene != null) await showFestivalCelebration(context, scene);
     if (signIn && context.mounted) {
       final appAccounts = widget.services.appAccounts;
-      showCampusToast(context, '登录应用账号就能参加这次抽奖', action: appAccounts == null ? null : '去登录', onAction: appAccounts == null ? null : () => pushAppAccountPage(context, appAccounts, widget.services.diagnostics));
+      showCampusToast(context, '登录应用账号就能参加这次抽奖', action: appAccounts == null ? null : '去登录', onAction: appAccounts == null ? null : () => pushAppAccountPage(context, widget.services));
       return;
     }
     final result = await drawing.timeout(_drawWait, onTimeout: () => null);
@@ -401,10 +401,7 @@ class _AccountAppState extends State<_AccountApp> {
         campaign: attachment.ref,
         saveQrCode: saveRewardPicture,
         accountChanges: widget.services.appAccounts,
-        onSignIn: switch (widget.services.appAccounts) {
-          final accounts? => (context) => pushAppAccountPage(context, accounts, widget.services.diagnostics),
-          null => null,
-        },
+        onSignIn: widget.services.appAccounts == null ? null : (context) => pushAppAccountPage(context, widget.services),
       ),
   };
 
