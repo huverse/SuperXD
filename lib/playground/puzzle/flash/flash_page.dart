@@ -53,7 +53,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
   var _target = <int>[];
   // 亮的那组：平时就是要点的；挑战里碎片算出要镜像时（人工决策见 challenge_rules.dart），亮的照常亮、要点的是它左右镜像的格（_target）。
   var _shown = <int>[];
-  var _hits = <int>{};
+  var _hits = <int>[];
   // 每次尝试依次点的格（答案，挑战模式交服务器核对）。
   final _attempts = <List<int>>[];
   int? _wrong;
@@ -144,7 +144,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
     _attempts.clear();
     _target = [];
     _shown = [];
-    _hits = {};
+    _hits = [];
     _wrong = null;
     _pressed = null;
     for (final controller in [_flash, _mark, _press, _wave]) {
@@ -179,7 +179,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
       setState(() {
         _target = flashPattern(_puzzle, _round, _tries);
         _shown = flashShown(_puzzle, _round, _tries);
-        _hits = {};
+        _hits = [];
         // 新的一次尝试；切后台回来重亮的还是同一次（还没点过）。
         if (_attempts.isEmpty || _attempts.last.isNotEmpty) _attempts.add([]);
         _wrong = null;
@@ -211,10 +211,10 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
 
   void _tap(int cell) {
     if (_phase != _Phase.input) return;
-    final tap = flashTap(_target, _hits, cell);
-    if (tap != FlashTap.repeated) _attempts.last.add(cell);
+    final tap = flashTap(_puzzle.variant, _target, _hits, cell);
+    if (tap != FlashTap.ignored) _attempts.last.add(cell);
     switch (tap) {
-      case FlashTap.repeated:
+      case FlashTap.ignored:
         return;
       case FlashTap.hit:
         playTick();

@@ -1,4 +1,4 @@
-import { balanceJudge, flashJudge, loopJudge, minesJudge, twentyFourJudge } from 'src/modules/challenge/judges/board_judges';
+import { balanceJudge, flashJudge, flashJudgeV2, loopJudge, minesJudge, twentyFourJudge } from 'src/modules/challenge/judges/board_judges';
 import { cipherJudge, logicGridJudge } from 'src/modules/challenge/judges/deduction_judges';
 import { Judge, JudgeFormatError } from 'src/modules/challenge/judges/judge_input';
 import { knightsJudge, nonogramJudge, riverJudge } from 'src/modules/challenge/judges/logic_judges';
@@ -21,7 +21,7 @@ const judges = {
   cipher: { 1: cipherJudge },
   twentyfour: { 1: twentyFourJudge },
   mines: { 1: minesJudge },
-  flash: { 1: flashJudge },
+  flash: { 1: flashJudge, 2: flashJudgeV2 },
   loop: { 1: loopJudge },
   balance: { 1: balanceJudge },
 } as unknown as Record<string, Record<number, Judge<unknown, unknown>>>;

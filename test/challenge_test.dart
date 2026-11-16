@@ -281,7 +281,7 @@ void main() {
     test('记忆闪光镜像：亮的照常亮，要点左右镜像的格；冰面滑行的出口只给页面画、判定只看终点', () {
       final draw = const FlashRules().generate(5, PuzzleTier.easy);
       final flash = draw.puzzle;
-      final mirrored = FlashPuzzle(side: flash.side, showMillis: flash.showMillis, rounds: flash.rounds, mirror: true);
+      final mirrored = flash.mirrored;
       expect(flashShown(mirrored, 0, 0), flashShown(flash, 0, 0));
       expect(flashPattern(mirrored, 0, 0), ([for (final cell in flashShown(flash, 0, 0)) cell ~/ flash.side * flash.side + flash.side - 1 - cell % flash.side]..sort()));
       expect(const FlashRules().solved(mirrored, draw.solution), isFalse);
