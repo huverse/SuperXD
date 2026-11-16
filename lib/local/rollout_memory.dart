@@ -10,9 +10,9 @@ import 'package:superxd/domain/rollout.dart';
 
 // 灰度的本机记录（人工决策见 domain/rollout.dart）：rollout.json 里是这台设备的随机编号（没登录应用账号时分桶用，只在本机、不上传）、
 // 上次拉到的配置，与当前主体的积分等级和只因等级进的批次；先写临时文件再改名，坏文件当没有（编号重新生成，最多换一次桶）。
-// 只有一份配置、批次最多 rolloutRuleLimit 个，不随使用增长。
+// 另记当前主体问到的点名与账号建立的时刻（11-16 起）。只有一份配置、批次与点名各最多 rolloutRuleLimit 个，不随使用增长。
 class FileRolloutMemory implements RolloutMemory {
-  FileRolloutMemory._(this._file, this.installId, this._config, this._fetchedAt, [this._subject, this._level = 0, List<String> joined = const []]) : _joined = [...joined];
+  FileRolloutMemory._(this._file, this.installId, this._config, this._fetchedAt, [this._subject, this._level = 0, List<String> joined = const [], RolloutTargets? targets]) : _joined = [...joined], _targets = [...?targets?.flags], _accountCreatedAt = targets?.accountCreatedAt;
   final File? _file;
   @override
   final String installId;
@@ -21,6 +21,9 @@ class FileRolloutMemory implements RolloutMemory {
   String? _subject;
   int _level;
   final List<String> _joined;
+  // 当前主体问到的点名（最多 rolloutTargetLimit 个，服务器给的就有上限）。
+  final List<RolloutTarget> _targets;
+  DateTime? _accountCreatedAt;
   final _lock = Lock();
 
   static Future<FileRolloutMemory> open(File file) async {
@@ -32,7 +35,12 @@ class FileRolloutMemory implements RolloutMemory {
           // 等级与批次只认格式对的，不对就当没记过（只影响加权，下次联网再取）。
           if (json case {'subject': final String subject, 'level': final int level, 'joined': final List<Object?> joined}
               when level >= 0 && level < pointsLevelCount && joined.length <= rolloutRuleLimit && joined.every((id) => id is String && rolloutIdPattern.hasMatch(id))) {
-            return FileRolloutMemory._(file, installId, decodeRolloutConfig(config), fetchedAt, subject, level, joined.cast<String>());
+            // 点名格式不对当没问过（下次联网再问）。
+            final targets = switch (json['targets']) {
+              final Object targets => _tryTargets(targets),
+              null => null,
+            };
+            return FileRolloutMemory._(file, installId, decodeRolloutConfig(config), fetchedAt, subject, level, joined.cast<String>(), targets);
           }
           return FileRolloutMemory._(file, installId, decodeRolloutConfig(config), fetchedAt);
         }
@@ -67,12 +75,30 @@ class FileRolloutMemory implements RolloutMemory {
   @override
   bool joined(String subject, String id) => subject == _subject && _joined.contains(id);
 
-  // 换了主体：等级与批次都从头记。
+  @override
+  List<RolloutTarget> targetsOf(String subject) => subject == _subject ? List.unmodifiable(_targets) : const [];
+
+  @override
+  DateTime? accountCreatedOf(String subject) => subject == _subject ? _accountCreatedAt : null;
+
+  @override
+  Future<void> saveTargets(String subject, RolloutTargets targets) {
+    _switchTo(subject);
+    _targets
+      ..clear()
+      ..addAll(targets.flags.take(rolloutTargetLimit));
+    _accountCreatedAt = targets.accountCreatedAt;
+    return _write();
+  }
+
+  // 换了主体：等级、批次与点名都从头记。
   void _switchTo(String subject) {
     if (subject == _subject) return;
     _subject = subject;
     _level = 0;
     _joined.clear();
+    _targets.clear();
+    _accountCreatedAt = null;
   }
 
   @override
@@ -97,7 +123,13 @@ class FileRolloutMemory implements RolloutMemory {
       'installId': installId,
       'config': encodeRolloutConfig(_config),
       if (_fetchedAt case final at?) 'fetchedAt': at.toIso8601String(),
-      if (_subject case final subject?) ...{'subject': subject, 'level': _level, 'joined': [..._joined]},
+      if (_subject case final subject?) ...{
+        'subject': subject,
+        'level': _level,
+        'joined': [..._joined],
+        if (_accountCreatedAt case final created?)
+          'targets': {'flags': [for (final target in _targets) {'id': target.id, 'until': target.until?.toUtc().toIso8601String()}], 'accountCreatedAt': created.toIso8601String()},
+      },
     };
     return _lock.synchronized(() async {
       final file = _file;
@@ -107,5 +139,14 @@ class FileRolloutMemory implements RolloutMemory {
       await pending.writeAsString(jsonEncode(snapshot), flush: true);
       await pending.rename(file.path);
     });
+  }
+}
+
+RolloutTargets? _tryTargets(Object targets) {
+  try {
+    return decodeRolloutTargets(targets);
+  } on FormatException catch (error, stack) {
+    campusLog('[Rollouts] action=memory_targets errorType=${error.runtimeType}\n$stack');
+    return null;
   }
 }

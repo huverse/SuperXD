@@ -46,6 +46,7 @@ import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_challenge_client.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/relay_diagnostic_account.dart';
+import 'package:superxd/social/relay_flag_target_client.dart';
 import 'package:superxd/social/relay_reward_client.dart';
 import 'package:superxd/social/relay_unlock_client.dart';
 import 'package:superxd/social/social_service.dart';
@@ -129,9 +130,22 @@ Future<AppUpdates?> appUpdates(Directory support, Rollouts rollouts) async {
 // 灰度（人工决策见 domain/rollout.dart）：配置走同一个自建中转（没配中转时只用本机存着的，一般为空）；本机随机编号与上次的配置在 rollout.json。
 // 分桶主体是当前应用账号的账号号，没登录用本机随机编号；渠道同应用更新（测试与没有渠道的构建记作 development）。
 // 积分等级经挑战与积分的签名请求取（取不到时 Challenges 已记日志，这里按没取到算）。
-Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challenges? challenges, {required bool Function() levelsOn}) async => Rollouts(
+// 11-16 起（人工决策见 domain/rollout.dart 文件头 11-16 那条）：开关的平台与版本号条件按这台设备判定；登录着应用账号时同一时机问点名（用这个账号的设备密钥签名）。
+Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challenges? challenges, {required bool Function() levelsOn}) async {
+  final transport = relayTransport();
+  final targets = transport == null ? null : RelayFlagTargetClient(vault: const SecureAppAccountVault(), transport: transport);
+  return Rollouts(
   memory: await FileRolloutMemory.open(File(path.join(support.path, 'rollout.json'))),
   channel: appFlavor ?? 'development',
+  platform: Platform.isIOS ? 'ios' : 'android',
+  versionCode: int.tryParse((await PackageInfo.fromPlatform()).buildNumber) ?? 0,
+  targets: switch ((targets, appAccounts)) {
+    (final client?, final accounts?) => () async => switch (accounts.current) {
+      final account? => client.mine(account),
+      null => null,
+    },
+    _ => null,
+  },
   accountId: () => appAccounts?.accountId,
   levelsOn: levelsOn,
   level: switch (challenges) {
@@ -149,6 +163,7 @@ Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challen
     null => null,
   },
 );
+}
 
 // 解锁（人工决策见服务端 src/modules/unlock/unlock_rules.ts）：清单跟着灰度配置，这个账号能用哪些问同一个中转（应用账号签名）；没配中转时为空，游戏与工具都照常开着。
 Unlocks? unlocksOf(Rollouts rollouts, AppAccounts? appAccounts, {required bool Function() accountOn}) {

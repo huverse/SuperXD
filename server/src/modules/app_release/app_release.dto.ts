@@ -106,7 +106,7 @@ export class DeveloperNotesDto {
   envelope?: SignedEnvelopeDto | null;
 }
 
-// 灰度配置（人工决策见客户端 lib/domain/rollout.dart）：流水线由仓库 rollout/rollout.json 生成的 rollout.json（tool/rollout_config.dart），
+// 灰度配置（人工决策见客户端 lib/domain/rollout.dart）：维护者本机签好的第 1 版 rollout.json（tool/rollout_config.dart，只放没有新字段的开关），
 // 这里只校验形状（开关名、定值或放量表），按时间先后、只增不减这些语义由客户端校验；写坏了不往外发。
 export class RolloutStageDto {
   @ApiProperty({ description: '这一档从什么时刻起，ISO 8601 带时区' }) @IsISO8601({ strict: true }) from: string;
@@ -136,6 +136,17 @@ export class RolloutUnlockDto {
   @ApiProperty({ description: '按积分等级加权抽签的比例（1–100）', required: false }) @IsOptional() @IsInt() @Min(1) @Max(100) percent?: number;
   @ApiProperty({ description: '从这一刻起人人可用，ISO 8601 带时区', required: false }) @IsOptional() @IsISO8601({ strict: true }) @Matches(/(Z|[+-]\d\d:\d\d)$/) publicAt?: string;
   @ApiProperty({ description: '下架：谁都不能用，买过的退回积分', required: false }) @IsOptional() @IsIn([true]) retired?: true;
+}
+
+// 第 2 版灰度配置（人工决策见客户端 lib/domain/rollout.dart 的 11-16 那条）：只有签名信封，载荷（开关的条件、参数与时间窗、等级门槛、解锁清单）
+// 只由客户端验签后解码，服务端不再重复一遍规则；还没放文件时信封为空，客户端退回第 1 版的 /v1/app/rollout。
+export class FlagConfigDto {
+  @ApiProperty({ description: '配置写法版本，固定 2' }) @IsIn([2]) version: 2;
+  @ApiProperty({ description: '签名信封（载荷是第 2 版配置的 UTF-8 JSON）', type: SignedEnvelopeDto, nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SignedEnvelopeDto)
+  envelope: SignedEnvelopeDto | null;
 }
 
 export class RolloutConfigDto {

@@ -34,7 +34,7 @@ env:
   # [人工决策-2026-10-22 18:59:16] 1.0.0-alpha.7 换成构建号 9 重发（修快递页布局，用户选定替换并强制），调到 9，装着构建号 8 的也要更新。
   RELEASE_MIN_SUPPORTED: 9
   # 分批更新（人工决策见 lib/domain/rollout.dart，用户选「自动分阶段」）：留空是全量；要分批就在升版本 PR 里写从发布时刻起每天一档的放量百分比，
-  # 默认的三天是 20,50,100（只增、最后一档 100）。发版后要暂停、直接全量或整版关停，改仓库 rollout/rollout.json（见 CONTRIBUTING.md）。
+  # 默认的三天是 20,50,100（只增、最后一档 100）。发版后要暂停、直接全量或整版关停，改维护者电脑上的灰度配置后用 tool/rollout_publish.sh 上传（见 CONTRIBUTING.md）。
   RELEASE_ROLLOUT: ''
 
 jobs:

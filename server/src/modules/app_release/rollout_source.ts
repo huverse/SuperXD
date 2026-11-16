@@ -21,6 +21,7 @@ const unlocksValid = (unlocks: dtos.RolloutUnlockDto[]) =>
 export class RolloutSource {
   private readonly logger = new Logger('RolloutSource');
   private cache: { mtimeMs: number; size: number; config: dtos.RolloutConfigDto } | undefined;
+  private flagsCache: { mtimeMs: number; size: number; config: dtos.FlagConfigDto } | undefined;
 
   // 还没放文件时给空开关、信封为空（客户端按各开关的默认值）；文件写坏了抛错，不往外发。
   async current(): Promise<dtos.RolloutConfigDto> {
@@ -45,6 +46,29 @@ export class RolloutSource {
     const config = { flags: file.flags, levels: file.levels, unlocks: file.unlocks, envelope: file.envelope ?? null };
     this.cache = { mtimeMs: info.mtimeMs, size: info.size, config };
     this.logger.log(`[RolloutSource] action=load flags=${config.flags.length} levels=${config.levels?.length ?? 0} unlocks=${config.unlocks?.length ?? 0} signed=${config.envelope !== null}`);
+    return config;
+  }
+
+  // 第 2 版配置（发布目录的 flags.json，本机工具签好后上传）：只核外形与大小，原样透传；还没放时信封为空（客户端退回第 1 版）。
+  async flags(): Promise<dtos.FlagConfigDto> {
+    const path = join(env().releasesDir, 'flags.json');
+    let info: Awaited<ReturnType<typeof stat>>;
+    try {
+      info = await stat(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      this.flagsCache = undefined;
+      return { version: 2, envelope: null };
+    }
+    const cached = this.flagsCache;
+    if (cached !== undefined && cached.mtimeMs === info.mtimeMs && cached.size === info.size) return cached.config;
+    if (info.size > rolloutFileMaxBytes) throw new Error(`flags.json 超过 ${rolloutFileMaxBytes} 字节`);
+    const file = plainToInstance(dtos.FlagConfigDto, JSON.parse(await readFile(path, 'utf8')) as object);
+    const errors = validateSync(file, { whitelist: true, forbidNonWhitelisted: true });
+    if (errors.length > 0 || file.envelope === null || file.envelope === undefined) throw new Error(`flags.json 格式不对：${errors.map((item) => item.property).join(',')}`);
+    const config = { version: 2 as const, envelope: file.envelope };
+    this.flagsCache = { mtimeMs: info.mtimeMs, size: info.size, config };
+    this.logger.log('[RolloutSource] action=load_flags signed=true');
     return config;
   }
 

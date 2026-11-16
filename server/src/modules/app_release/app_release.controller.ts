@@ -28,6 +28,12 @@ export class AppReleaseController {
     return this.releases.rollout(ip);
   }
 
+  // 第 2 版灰度配置（开关带条件、参数与时间窗，人工决策见客户端 lib/domain/rollout.dart 的 11-16 那条）：只有签名信封，同样免签名、不带标识。
+  @Get('flags')
+  flags(@Ip() ip: string): Promise<dtos.FlagConfigDto> {
+    return this.releases.flags(ip);
+  }
+
   @Get('files/:name')
   file(@Param() param: dtos.AppFileParamDto, @Ip() ip: string, @Res() response: Response): Promise<void> {
     return this.releases.send(ip, param.name, response);
