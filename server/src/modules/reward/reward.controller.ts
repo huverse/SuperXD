@@ -1,4 +1,4 @@
-import { Body, Controller, HttpCode, Ip, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Ip, Param, Post, Query, UseGuards } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import { CurrentDevice, DeviceAuthGuard } from 'src/modules/device/device_auth.guard';
@@ -11,6 +11,11 @@ import * as dtos from 'src/modules/reward/reward.dto';
 @UseGuards(DeviceAuthGuard)
 export class RewardController {
   constructor(private readonly rewards: RewardService) {}
+
+  @Get(':campaign')
+  status(@CurrentDevice() deviceId: string, @Param() param: dtos.RewardDrawParamDto, @Query() query: dtos.RewardStatusQueryDto): Promise<dtos.RewardStatusDto> {
+    return this.rewards.status(deviceId, param.campaign, query.levels !== '0');
+  }
 
   @Post(':campaign/draw')
   @HttpCode(200)

@@ -278,6 +278,18 @@ describe('开发者的话', () => {
     expect((await request(server).get('/v1/app/notes')).body.notes.map((item: { id: string }) => item.id)).toEqual(['2026-10-25-again', '2026-10-24-hello']);
   });
 
+  it('信可以带附件（11-16 起，如领取红包）：原样透传；附件类型或编号不合法、超过 4 个都不往外发', async () => {
+    const withReward = { notes: [note('2026-11-16-sorry', { attachments: [{ type: 'reward', ref: 'compensation-2026-11' }] })], envelope: envelope('notes') };
+    await putManifest('developer_notes', withReward);
+    expect((await request(server).get('/v1/app/notes')).body).toEqual(withReward);
+    const printed = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    for (const attachments of [[{ type: 'Reward', ref: 'x' }], [{ type: 'reward', ref: '../x' }], [{ type: 'reward' }], Array.from({ length: 5 }, () => ({ type: 'reward', ref: 'x' })), [{ type: 'reward', ref: 'x', extra: 1 }]]) {
+      await putManifest('developer_notes', { notes: [note('bad', { attachments })] });
+      expect((await request(server).get('/v1/app/notes')).status, JSON.stringify(attachments)).toBe(500);
+    }
+    printed.mockRestore();
+  });
+
   it('签好的清单：明文 notes 照旧给旧客户端，信封原样透传', async () => {
     const file = { notes: [note('2026-10-24-hello')], envelope: { ...envelope('notes'), signatures: [{ keyId: 'notes-2026-11', sig: 'D'.repeat(86) }] } };
     await putManifest('developer_notes', file);

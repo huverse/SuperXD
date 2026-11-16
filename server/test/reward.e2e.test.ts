@@ -450,3 +450,118 @@ describe('维护命令与保留', () => {
     expect(Number(orphans.draws)).toBe(0);
   });
 });
+
+// 11-16 起资格与发放由活动参数决定（人工决策见 src/modules/reward/reward_odds.ts 的 11-16 那条）。
+describe('资格与发放', () => {
+  const create = async (extra: string[], prizes = 3) => {
+    const key = campaignKey();
+    const now = Date.now();
+    await runRewardAdmin(admin, ['create', key, '--from', new Date(now - hour / 2).toISOString(), '--to', new Date(now + 23.5 * hour).toISOString(), ...extra], lines(''));
+    if (prizes > 0) await runRewardAdmin(admin, ['import', key], lines(Array.from({ length: prizes }, (_, index) => `口令\t口令${index}`).join('\n')));
+    return key;
+  };
+  const accountOf = async (device: TestDevice) => {
+    const [row] = (await database.query('SELECT a.account_id AS accountId, a.username FROM account_device d JOIN app_account a ON a.account_id = d.account_id WHERE d.device_id = ?', [device.deviceId])) as {
+      accountId: string;
+      username: string;
+    }[];
+    return row;
+  };
+  const status = async (device: TestDevice, key: string, query = '') => {
+    const response = await device.call('GET', `/v1/rewards/${key}${query}`);
+    expect(response.status, JSON.stringify(response.body)).toBe(200);
+    return response.body as { state: string; endsAt: string | null; eligibleAt: number | null };
+  };
+  const draws = async (key: string) =>
+    Number(((await database.query('SELECT COUNT(*) AS count FROM reward_draw d JOIN reward_campaign c ON c.id = d.campaign_id WHERE c.campaign_key = ?', [key])) as { count: string }[])[0].count);
+
+  it('all：有资格就发、不掷骰子、不按小时放量，发完为止；平权一档就是等额', async () => {
+    roll.mockReturnValue(0.999);
+    const key = await create(['--distribution', 'all']);
+    const results = [];
+    for (let index = 0; index < 4; index++) {
+      const device = await registered();
+      const body = (await draw(device, key, { activeDays: 0 })).body as { result: string; sealed: string | null };
+      results.push(body.result === 'won' ? prizeOf(device, key, body)!.content : body.result);
+    }
+    expect(results).toEqual(['口令0', '口令1', '口令2', 'missed']);
+    expect(roll).not.toHaveBeenCalled();
+    expect(await runRewardAdmin(admin, ['status', key], lines(''))).toContain('发放 all');
+  });
+
+  it('名单：按用户名导入（不分大小写、报出对不上的），名单里的人能领，名单外的是 ineligible 且不记这次；状态 open、ineligible、drawn、closed', async () => {
+    roll.mockReturnValue(0.999);
+    const key = await create(['--distribution', 'all', '--audience', 'list']);
+    const listed = await registered(), outsider = await registered();
+    const { username } = await accountOf(listed);
+    const imported = await runRewardAdmin(admin, ['audience', key], lines(`${username.toUpperCase()}\n\n${username}\nnobody_here\n`));
+    expect(imported).toContain('names=2 added=1 unknown=1');
+    expect(imported).toContain('nobody_here');
+    expect((await runRewardAdmin(admin, ['audience', key], lines(username))).includes('added=0')).toBe(true);
+    expect(await status(listed, key)).toMatchObject({ state: 'open', eligibleAt: null });
+    expect((await status(outsider, key)).state).toBe('ineligible');
+    expect((await draw(outsider, key, { activeDays: 0 })).body).toEqual({ result: 'ineligible', sealed: null });
+    expect(await draws(key)).toBe(0);
+    const won = (await draw(listed, key, { activeDays: 0 })).body as { result: string; sealed: string | null };
+    expect(prizeOf(listed, key, won)?.content).toBe('口令0');
+    expect((await status(listed, key)).state).toBe('drawn');
+    // 活动行在进程内缓存 60 秒，改库的结束时刻这里看不到；没有的活动是 closed。
+    expect(await status(listed, 'no-such-campaign')).toEqual({ state: 'closed', endsAt: null, eligibleAt: null });
+    await expect(runRewardAdmin(admin, ['audience', key], lines('Bad Name!'))).rejects.toThrow(RewardAdminError);
+  });
+
+  it('账号满几天每个活动自己定：0 天新账号也能领，默认 7 天，30 天的 8 天账号是 ACCOUNT_TOO_NEW；状态 too_new 附可以领的时刻', async () => {
+    roll.mockReturnValue(0);
+    const fresh = await registered(undefined, new Date());
+    expect((await draw(fresh, await create(['--mode', 'uniform', '--chance', '0.5', '--min-account-days', '0']), { activeDays: 0 })).body.result).toBe('won');
+    const standard = await create(['--mode', 'uniform', '--chance', '0.5']);
+    expect((await draw(fresh, standard, { activeDays: 0 })).body.code).toBe('ACCOUNT_TOO_NEW');
+    const strict = await create(['--mode', 'uniform', '--chance', '0.5', '--min-account-days', '30']);
+    const week = await registered();
+    const refused = await draw(week, strict, { activeDays: 0 });
+    expect(refused.body.code).toBe('ACCOUNT_TOO_NEW');
+    const state = await status(week, strict);
+    expect(state.state).toBe('too_new');
+    expect(state.eligibleAt).toBe(refused.body.eligibleAt);
+    expect(await draws(strict)).toBe(0);
+    await expect(runRewardAdmin(admin, ['create', campaignKey(), '--from', new Date().toISOString(), '--to', new Date(Date.now() + hour).toISOString(), '--distribution', 'all', '--min-account-days', '-1'], lines(''))).rejects.toThrow(/min-account-days/);
+  });
+
+  it('最低等级：不够的 ineligible，够的能领；娱乐与积分关着（levels false、状态 levels=0）按 Lv0', async () => {
+    await mkdir(env().releasesDir, { recursive: true });
+    await writeFile(rolloutFile(), JSON.stringify({ flags: [], levels, envelope: null }));
+    await utimes(rolloutFile(), Date.now() / 1000 + 9, Date.now() / 1000 + 9);
+    try {
+      const key = await create(['--distribution', 'all', '--min-level', '2']);
+      const low = await registered(), high = await registered();
+      await earn(high, 3000);
+      expect((await status(low, key)).state).toBe('ineligible');
+      expect((await draw(low, key, { activeDays: 0 })).body.result).toBe('ineligible');
+      expect((await status(high, key)).state).toBe('open');
+      expect((await status(high, key, '?levels=0')).state).toBe('ineligible');
+      expect((await draw(high, key, { activeDays: 0, levels: false })).body.result).toBe('ineligible');
+      expect((await draw(high, key, { activeDays: 0 })).body.result).toBe('won');
+      expect((await high.call('GET', `/v1/rewards/${key}?levels=no`)).body.code).toBe('INVALID_REQUEST');
+    } finally {
+      await rm(rolloutFile(), { force: true });
+    }
+  });
+
+  it('名单随注销账号删除，随活动保留期删除', async () => {
+    const key = await create(['--distribution', 'all', '--audience', 'list']);
+    const device = await registered();
+    const { username, accountId } = await accountOf(device);
+    await runRewardAdmin(admin, ['audience', key], lines(username));
+    const audience = async () => Number(((await database.query('SELECT COUNT(*) AS count FROM reward_audience WHERE account_id = ?', [accountId])) as { count: string }[])[0].count);
+    expect(await audience()).toBe(1);
+    expect((await device.call('DELETE', '/v1/account')).status).toBe(204);
+    expect(await audience()).toBe(0);
+    const other = await registered();
+    const second = await accountOf(other);
+    await runRewardAdmin(admin, ['audience', key], lines(second.username));
+    const ended = new Date(Date.now() - (rewardKeepDays + 1) * 86400_000);
+    await database.query('UPDATE reward_campaign SET starts_at = ?, ends_at = ? WHERE campaign_key = ?', [new Date(ended.getTime() - hour), ended, key]);
+    await app.get(RewardRetentionTask).sweep();
+    expect(Number(((await database.query('SELECT COUNT(*) AS count FROM reward_audience WHERE account_id = ?', [second.accountId])) as { count: string }[])[0].count)).toBe(0);
+  });
+});

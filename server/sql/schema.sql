@@ -69,6 +69,10 @@ CREATE TABLE IF NOT EXISTS reward_campaign (
   mode VARCHAR(16) NOT NULL COMMENT 'uniform 平权，weighted 按活跃度加权',
   base_chance DECIMAL(7,6) NOT NULL COMMENT '权重为 1 的人一次抽中的概率',
   max_weight DECIMAL(5,2) NOT NULL COMMENT '加权上限：最活跃的人是新用户的几倍，平权时为 1',
+  distribution VARCHAR(8) NOT NULL DEFAULT 'lottery' COMMENT 'lottery 抽签，all 有资格就发（发完为止）',
+  audience VARCHAR(8) NOT NULL DEFAULT 'everyone' COMMENT 'everyone 人人可参加，list 只有 reward_audience 名单里的应用账号',
+  min_account_days SMALLINT UNSIGNED NOT NULL DEFAULT 7 COMMENT '应用账号建立满几天才能参加',
+  min_level TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '最低积分等级 0–5',
   create_time DATETIME(3) NOT NULL,
   update_time DATETIME(3) NOT NULL,
   PRIMARY KEY (id),
@@ -104,6 +108,18 @@ CREATE TABLE IF NOT EXISTS reward_draw (
   update_time DATETIME(3) NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uk_campaign_participant (campaign_id, participant_hash)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- 名单活动的名单：一个应用账号一行，由 reward_admin audience 按用户名导入；随活动删除（活动结束 30 天后）、随账号删除。
+CREATE TABLE IF NOT EXISTS reward_audience (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  campaign_id BIGINT UNSIGNED NOT NULL,
+  account_id VARCHAR(32) NOT NULL COMMENT '应用账号号',
+  create_time DATETIME(3) NOT NULL,
+  update_time DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_campaign_account (campaign_id, account_id),
+  KEY idx_account (account_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- 应用账号（人工决策见 src/modules/account/account.service.ts）：自己的账号体系，用户名加密码；对外只有随机账号号与用户名，
