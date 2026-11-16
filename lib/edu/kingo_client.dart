@@ -19,10 +19,14 @@ const kingoBase = 'http://42.247.18.146';
 const kingoUserAgent = 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/150.0.0.0 Safari/537.36';
 
 class KingoClient {
-  KingoClient({http.Client? client, this.base = kingoBase, this.requestTimeout = const Duration(seconds: 25), this.dataQuota = 6, this.dataWindow = const Duration(seconds: 10)}) : _http = CampusHttp('edu', client: client);
+  KingoClient({http.Client? client, this.base = kingoBase, this.requestTimeout = const Duration(seconds: 25), this.idleTimeout = const Duration(seconds: 10), this.dataQuota = 6, this.dataWindow = const Duration(seconds: 10)}) : _http = CampusHttp('edu', client: client);
 
   final Duration requestTimeout;
+  // 多久没有进展就放弃（连不上、发出去没回应、响应体中途停住都算）：学校在部分移动网络下整个不回应，原来每个请求要等满 requestTimeout 才报错。
+  final Duration idleTimeout;
   // [人工决策-2026-09-30 15:18:51] 教务在几秒内连续约10次数据查询（课表、成绩数据页）后跳转406“请求太过频繁”，其他页面不受限；数据查询按滑动窗口排队，任意dataWindow内最多dataQuota次（实测10秒内7次、15秒内10次均未被拒）。仍被拒报RATE_LIMITED，同步停止，不自动重试。
+  // [人工决策-2026-11-16 17:26:21] 成绩改走导出接口、不再排队（用户确认改上一条）：11-16 实测成绩数据页每 0.5 秒一次第 10 次就跳 406，导出接口每 0.25 秒连发 30 次都不限、
+  // 耗时与数据页一样（约 50 毫秒）、给的是同一份成绩 HTML；排队只管课表（与导出回空时退回的那次数据页）。遇 406 照旧停下、不自动重试。
   final int dataQuota;
   final Duration dataWindow;
   final Stopwatch _clock = Stopwatch()..start();
@@ -38,6 +42,9 @@ class KingoClient {
   final Set<Completer<void>> _requests = {};
   int _requestEpoch = 0;
   bool _disposed = false;
+  // 一个会话里只取一次：成绩查询页给的入学年级（账号不变就不变）、作息查询前要先打开的公开课表页。重新登录与 dispose 时清掉。
+  ({String rxnj, String nj})? _gradeForm;
+  bool _timetableOpened = false;
 
   void cancelRequests() {
     _requestEpoch++;
@@ -53,9 +60,13 @@ class KingoClient {
     _http.close();
     jar.clear();
     pageSession = '';
+    _gradeForm = null;
+    _timetableOpened = false;
   }
 
   Future<KingoLoginResult> login(String username, String password, {String captcha = ''}) async {
+    _gradeForm = null;
+    _timetableOpened = false;
     if (pageSession.isEmpty) {
       final page = await _get('/cas/login.action');
       pageSession = RegExp(r'_ssessionid\s*=\s*"([^"]+)"').firstMatch(page.body)?.group(1) ?? jar['JSESSIONID'] ?? '';
@@ -145,6 +156,7 @@ class KingoClient {
 
   Future<({List<ParsedTerm> terms, ({String xn, String xq})? published})> listTerms() async {
     final shell = await _get('/public/SchoolTimetable.jsp', accept: 'text/html');
+    _timetableOpened = true;
     final posted = await _post(
       '/frame/droplist/getDropLists.action',
       'comboBoxName=MsXnxqDxDesc&paramValue=&isYXB=0&isCDDW=0&isXQ=0&isDJKSLB=0&isZY=0',
@@ -168,6 +180,7 @@ class KingoClient {
   }
 
   Future<({String rxnj, String nj})> fetchGradeForm() async {
+    if (_gradeForm case final form?) return form;
     final page = await _get('/student/xscj.stuckcj.jsp?menucode=S40303', referer: '/frame/homes.action');
     _throwIfExpired(page.body);
     final rxnj = RegExp(r'id="rxnj"[^>]*value="([^"]*)"').firstMatch(page.body)?.group(1) ?? '';
@@ -175,7 +188,7 @@ class KingoClient {
     if (rxnj.isEmpty) {
       throw KingoCallException(const LoginFailure(code: GatewayCode.upstreamFormat, message: '教务成绩查询页格式异常'));
     }
-    return (rxnj: rxnj, nj: nj.isEmpty ? rxnj : nj);
+    return _gradeForm = (rxnj: rxnj, nj: nj.isEmpty ? rxnj : nj);
   }
 
   Future<({ParsedGrades effective, ParsedGrades original})> fetchGrades({
@@ -190,7 +203,10 @@ class KingoClient {
   }
 
   Future<ParsedBells> fetchBells({required String xn, required String xq}) async {
-    await _get('/public/SchoolTimetable.jsp', accept: 'text/html');
+    if (!_timetableOpened) {
+      await _get('/public/SchoolTimetable.jsp', accept: 'text/html');
+      _timetableOpened = true;
+    }
     final page = await _post(
       '/public/SchoolTimetable.show.jsp',
       'menucode=&xn=$xn&xq_m=$xq&is_ssxq=0&btnQry=%BC%EC%CB%F7',
@@ -204,17 +220,17 @@ class KingoClient {
     return parsed;
   }
 
-  // 成绩数据页对部分校外来源返回空正文（200、content-length:0，学校服务器自己回的；11-15 起用户校外网络上每次都这样，
-  // 校园网与浏览器正常，换请求头、先加载页面资源、GET 查询都没用），而页面上「导出」用的导出接口照常给同一份成绩 HTML
-  // （有效、原始两种逐门逐项与合计都和数据页一致，探针核对过）。真没成绩时学校给的是不带抬头的空成绩页、不会是 0 字节，
-  // 所以只在正文为空时改取导出接口；平时仍走数据页（快一个数量级）。
+  // 成绩走页面上「导出」用的导出接口（人工决策见 dataQuota 上方 11-16 那条）：数据页对部分校外来源回空正文（200、content-length:0，
+  // 学校服务器自己回的；11-15 起用户校外网络上有效成绩每次都这样，11-16 本机校外网络复现），导出接口照常给同一份成绩 HTML
+  // （有效、原始两种逐门逐项与合计都和数据页一致，探针核对过），而且不受数据查询限流。真没成绩时学校给的是不带抬头的空成绩页、
+  // 不会是 0 字节，所以导出接口回空正文时才退回数据页（那次照常排队）。
   Future<ParsedGrades> _grades(String kind, {required String xn, required String xq, required String rxnj, required String nj}) async {
     const referer = '/student/xscj.stuckcj.jsp?menucode=S40303';
     final body = buildGradeBody(kind: kind, xn: xn, xq: xq, rxnj: rxnj, nj: nj);
-    var page = await _post('/student/xscj.stuckcj_data.jsp', body, referer: referer, data: true);
+    var page = await _post('/student/xscj.stuckcj_data_exp.jsp', body, referer: referer);
     if (page.bodyBytes.isEmpty) {
-      campusLog('[KingoClient] action=grades_export_fallback kind=$kind');
-      page = await _post('/student/xscj.stuckcj_data_exp.jsp', body, referer: referer, data: true);
+      campusLog('[KingoClient] action=grades_data_fallback kind=$kind');
+      page = await _post('/student/xscj.stuckcj_data.jsp', body, referer: referer, data: true);
     }
     _throwIfExpired(page.body);
     return kind == 'yscj' ? parseOriginalGrades(page.body) : parseEffectiveGrades(page.body);
@@ -279,6 +295,7 @@ class KingoClient {
         method,
         uri,
         timeout: requestTimeout,
+        idleTimeout: idleTimeout,
         limit: grades ? gradePayloadLimit : pageLimit,
         headers: {
           'User-Agent': kingoUserAgent,

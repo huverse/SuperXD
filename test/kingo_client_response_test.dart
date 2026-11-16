@@ -90,6 +90,44 @@ void main() {
     expect(other.single, lessThan(data[2]));
   });
 
+  // [人工决策-2026-11-16 17:26:21] 成绩导出接口实测不限流，不进数据查询的排队（配额 1、窗口 5 秒时连查两学期也不用等）。
+  test('成绩走导出接口不排队；查询页与公开课表页一个会话只取一次，重新登录后重取', () async {
+    final sent = <String>[];
+    final client = KingoClient(dataQuota: 1, dataWindow: const Duration(seconds: 5), client: MockClient((request) async {
+      sent.add(request.url.path);
+      if (request.url.path.endsWith('/xscj.stuckcj.jsp')) return http.Response('<input id="rxnj" value="2025"><input id="nj" value="2025">', 200, headers: {'content-type': 'text/html; charset=utf-8'});
+      if (request.url.path.endsWith('SchoolTimetable.show.jsp')) return http.Response('作息时间 未设置作息时间', 200, headers: {'content-type': 'text/html; charset=utf-8'});
+      if (request.url.path.endsWith('/cas/logon.action')) return http.Response('{"status":"0","message":"密码错误"}', 200, headers: {'content-type': 'application/json'});
+      if (request.url.path.endsWith('/cas/login.action')) return http.Response('_ssessionid = "s"', 200);
+      if (request.url.path.endsWith('/frame/homepage')) return http.Response('x', 200);
+      return http.Response('<p>学生成绩</p><p>没有检索到记录!</p>', 200, headers: {'content-type': 'text/html; charset=utf-8'});
+    }));
+    final watch = Stopwatch()..start();
+    for (final xq in ['0', '1']) {
+      final form = await client.fetchGradeForm();
+      await client.fetchGrades(xn: '2025', xq: xq, rxnj: form.rxnj, nj: form.nj);
+      await client.fetchBells(xn: '2025', xq: xq);
+    }
+    expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+    expect(sent.where((path) => path.endsWith('/xscj.stuckcj.jsp')), hasLength(1));
+    expect(sent.where((path) => path.endsWith('/SchoolTimetable.jsp')), hasLength(1));
+    expect(sent.where((path) => path.endsWith('/xscj.stuckcj_data_exp.jsp')), hasLength(4));
+    expect(sent.where((path) => path.endsWith('/xscj.stuckcj_data.jsp')), isEmpty);
+    await client.login('u', 'p');
+    sent.clear();
+    await client.fetchGradeForm();
+    await client.fetchBells(xn: '2025', xq: '0');
+    expect(sent, ['/student/xscj.stuckcj.jsp', '/public/SchoolTimetable.jsp', '/public/SchoolTimetable.show.jsp']);
+    client.dispose();
+  });
+
+  test('教务整个不回应时按无进展超时放弃，不等满总时限', () async {
+    final client = KingoClient(client: MockClient((_) => Completer<http.Response>().future), idleTimeout: const Duration(milliseconds: 30));
+    final watch = Stopwatch()..start();
+    await expectLater(client.fetchCaptcha(), throwsA(isA<TimeoutException>().having((error) => error.message, 'message', '教务请求超时')));
+    expect(watch.elapsed, lessThan(const Duration(seconds: 2)));
+  });
+
   test('排队中的数据查询被取消后立即结束且不再发出', () async {
     final transport = _CountingClient();
     final client = KingoClient(dataQuota: 1, dataWindow: const Duration(seconds: 5), client: transport);
