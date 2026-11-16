@@ -52,6 +52,7 @@ import 'package:superxd/page/shell_page.dart';
 import 'package:superxd/application/leisure.dart';
 import 'package:superxd/local/leisure_memory.dart';
 import 'package:superxd/page/section_pages.dart';
+import 'package:superxd/page/leisure_page.dart';
 import 'package:superxd/playground/playground_page.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
@@ -148,7 +149,7 @@ void main() {
     await tester.runAsync(fixture.close);
   });
 
-  testWidgets('娱乐与积分：「我的」里一行开关，关掉后服务页不列游乐场、直接跳过去回服务页，打开就恢复；⋯里删除数据先确认再清本机成绩', (tester) async {
+  testWidgets('娱乐与积分：「我的」里一行写开着关着、点进设置页关掉后服务页不列游乐场、直接跳过去回服务页，打开就恢复；设置页底下删除数据先确认再清本机成绩', (tester) async {
     final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
     final playground = PlaygroundStore.memory();
     await playground.finish('hanoi', PuzzleTier.entry, millis: 1000, at: DateTime.utc(2026, 11, 15));
@@ -157,8 +158,14 @@ void main() {
     await tester.tap(find.text('服务').last); await tester.pumpAndSettle();
     expect(find.text('游乐场'), findsOneWidget);
     await tester.tap(find.text('我的')); await tester.pumpAndSettle();
+    expect(find.text('已开启'), findsOneWidget);
+    expect(find.byType(Switch), findsNothing, reason: '「我的」里这一行只写状态、点了进设置页，开关不与⋯挤在一行');
     await tester.tap(find.text('游乐场与积分')); await tester.pumpAndSettle();
+    expect(find.byType(LeisurePage), findsOneWidget);
+    await tester.tap(find.byType(CampusSwitchTile)); await tester.pumpAndSettle();
     expect(leisure.enabled, isFalse);
+    await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
+    expect(find.text('已关闭'), findsOneWidget);
     await tester.tap(find.text('服务').last); await tester.pumpAndSettle();
     expect(find.text('游乐场'), findsNothing);
     GoRouter.of(tester.element(find.byType(ServicePage))).go('/playground/hanoi');
@@ -167,7 +174,7 @@ void main() {
     expect(find.byType(ServicePage), findsOneWidget);
 
     await tester.tap(find.text('我的')); await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('更多操作')); await tester.pumpAndSettle();
+    await tester.tap(find.text('游乐场与积分')); await tester.pumpAndSettle();
     await tester.tap(find.text('删除数据')); await tester.pumpAndSettle();
     expect(find.text('删除游乐场与积分的数据？'), findsOneWidget);
     expect(find.textContaining('服务器上的积分要登录应用账号后才能删'), findsOneWidget, reason: '没配中转、没登录应用账号时只清本机');
@@ -176,8 +183,10 @@ void main() {
     expect(playground.best('hanoi', PuzzleTier.entry), isNull);
     expect(find.text('已删除'), findsOneWidget);
 
-    await tester.tap(find.text('游乐场与积分')); await tester.pumpAndSettle();
+    await tester.tap(find.byType(CampusSwitchTile)); await tester.pumpAndSettle();
     expect(leisure.enabled, isTrue);
+    await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
+    expect(find.text('已开启'), findsOneWidget);
     await tester.tap(find.text('服务').last); await tester.pumpAndSettle();
     expect(find.text('游乐场'), findsOneWidget);
     expect(tester.takeException(), isNull);
