@@ -80,19 +80,18 @@ void main() {
     );
     final cards = <ShareCard>[
       schedule,
-      const AppearanceShare(paletteId: 'mist', fontId: 'serif', scale: 1.1, themeMode: 'dark', glassMode: 'auto', wallpaperBlur: 27, wallpaperFade: 0),
       const VideoShare(sourceUrl: 'https://example.com/synthetic', title: '合成作品', author: '合成作者', platform: 'example', kind: 'video'),
     ];
     watch.reset();
     for (final card in cards) {
       expect((await bob.send(alice.deviceId!, card)).state, MessageState.sent);
     }
-    stdout.writeln('[VerifySocial] send3_ms=${watch.elapsedMilliseconds}');
+    stdout.writeln('[VerifySocial] send2_ms=${watch.elapsedMilliseconds}');
     watch.reset();
     await alice.refresh();
     stdout.writeln('[VerifySocial] fetch_ms=${watch.elapsedMilliseconds}');
     final received = (await alice.conversation(bob.deviceId!)).where((message) => message.card != null).toList();
-    expect(received.map((message) => message.card!.type), unorderedEquals(['schedule', 'appearance', 'video']));
+    expect(received.map((message) => message.card!.type), unorderedEquals(['schedule', 'video']));
     expect((received.firstWhere((message) => message.card is ScheduleShare).card! as ScheduleShare).courses, hasLength(60));
     expect(alice.unread, 3);
 

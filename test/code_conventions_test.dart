@@ -112,7 +112,7 @@ void main() {
   // 11-16 架构方案 PR D：字号与间距用 lib/theme/campus_tokens.dart 的令牌；这两个数是 lib/theme 以外现存的字面量个数，只许减少。
   // 换成令牌后把数改小（棘轮）；新代码要写字面量（一次性的超大展示数字）就在同一处换掉一个旧的。
   test('字号与间距的字面量只许减少：新代码用 CampusFontSize 与 CampusGap', () {
-    const fontSizeLiterals = 360, gapLiterals = 462;
+    const fontSizeLiterals = 359, gapLiterals = 460;
     final fontSize = RegExp(r'fontSize: [0-9]+(\.[0-9]+)?\b'), gap = RegExp(r'SizedBox\((height|width): [0-9]+(\.[0-9]+)?\)');
     var fonts = 0, gaps = 0;
     for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart') && !file.path.startsWith('lib/theme/'))) {

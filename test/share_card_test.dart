@@ -35,10 +35,14 @@ void main() {
     expect(decoded.bells.map((bell) => bell.start), ['08:00', '08:55']);
   });
 
-  test('界面与视频卡片往返', () {
-    const appearance = AppearanceShare(paletteId: 'mist', fontId: 'serif', scale: 1.1, themeMode: 'dark', glassMode: 'auto', wallpaperBlur: 27, wallpaperFade: 40);
-    final decodedAppearance = roundTrip(appearance) as AppearanceShare;
-    expect([decodedAppearance.paletteId, decodedAppearance.fontId, decodedAppearance.scale, decodedAppearance.themeMode, decodedAppearance.wallpaperFade], ['mist', 'serif', 1.1, 'dark', 40]);
+  test('删掉的界面配置卡片：旧版本发来的解成 RetiredShare，预览写已不再支持，不能再发', () {
+    final retired = decodeShareCard({'type': 'appearance', 'version': 1, 'body': {'paletteId': 'mist'}});
+    expect(retired, isA<RetiredShare>());
+    expect(shareCardSummary(retired), '[已不再支持的卡片]');
+    expect(() => encodeShareCard(retired), throwsA(isA<ShareCardException>()));
+  });
+
+  test('视频卡片往返', () {
     const video = VideoShare(sourceUrl: 'https://v.douyin.com/abc/', title: '标题', author: '作者', platform: 'douyin', kind: 'video');
     final decodedVideo = roundTrip(video) as VideoShare;
     expect([decodedVideo.sourceUrl, decodedVideo.title, decodedVideo.author, decodedVideo.kind], ['https://v.douyin.com/abc/', '标题', '作者', 'video']);
@@ -83,7 +87,6 @@ void main() {
       }(),
       '视频链接非 http': {'type': 'video', 'version': 1, 'body': {'sourceUrl': 'javascript:alert(1)', 'title': '', 'author': '', 'platform': '', 'kind': 'video'}},
       '视频类型未知': {'type': 'video', 'version': 1, 'body': {'sourceUrl': 'https://a.com/x', 'title': '', 'author': '', 'platform': '', 'kind': 'live'}},
-      '壁纸透明度越界': {'type': 'appearance', 'version': 1, 'body': {'paletteId': 'mist', 'fontId': 'maple', 'scale': 1, 'themeMode': 'system', 'glassMode': 'auto', 'wallpaperBlur': 0, 'wallpaperFade': 101}},
     };
     for (final entry in cases.entries) {
       expect(() => decodeShareCard(entry.value), throwsA(isA<ShareCardException>()), reason: entry.key);

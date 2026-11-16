@@ -11,7 +11,6 @@ import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:superxd/device/relay_font_pack_source.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/font_pack.dart';
-import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/local/font_packs.dart';
 
@@ -199,26 +198,6 @@ void main() {
       expect(settings.fontFamily, 'Maple Mono NF CN');
       expect(library.hasFiles('serif'), isFalse);
       await settings.close();
-    });
-
-    test('套用好友的界面配置：衬线没装时照样选上并开始下载；这个版本下不了时按不支持跳过；安卓也认系统字体', () async {
-      final (settings, library, source) = await open();
-      AppearanceShare share(String font) => AppearanceShare(paletteId: 'rose', fontId: font, scale: 0, themeMode: 'system', glassMode: 'auto', wallpaperBlur: 27, wallpaperFade: 0);
-      expect(await settings.applyAppearance(share('serif')), isEmpty);
-      expect(settings.fontId, 'serif');
-      await library.install('serif');
-      expect(source.requested, hasLength(testFontPack.files.length));
-      expect(settings.fontFamily, testFontPack.family);
-      expect(await settings.applyAppearance(share(DisplaySettings.systemFont)), isEmpty);
-      expect(settings.fontId, DisplaySettings.systemFont);
-      await settings.close();
-
-      // 本机也没有文件、又下不了：才按不支持跳过。
-      await Directory('${root.path}/packs').delete(recursive: true);
-      final (offline, _, _) = await open(downloadable: false);
-      expect(await offline.applyAppearance(share('serif')), ['字体']);
-      expect(offline.fontId, DisplaySettings.systemFont, reason: '字体保持原来选的');
-      await offline.close();
     });
   });
 
