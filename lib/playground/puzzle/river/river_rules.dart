@@ -254,6 +254,10 @@ int riverDifficulty(RiverPuzzle puzzle) {
 class RiverRules extends PuzzleRules<RiverPuzzle, List<RiverCrossing>> {
   const RiverRules();
 
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
+  @override
+  int? fragment(RiverPuzzle puzzle, List<RiverCrossing> solution) => riverSolve(puzzle)!.length;
+
   // 每档最少渡河次数的区间（含两端，实测）：入门 7；简单 7–11；普通、困难、专家都是 11。档与档单调不降，难易分逐档上升（见 riverDifficulty）。
   // 困难与专家原定四大人四小孩、四对父子（船都是 3 人），实测最少只要 9 次、推理量也比简单、普通小（9.2、10.2 比特），
   // 档位会倒挂，所以各加一对：五大人五小孩、五对父子，最少 11 次、推理量明显更大。

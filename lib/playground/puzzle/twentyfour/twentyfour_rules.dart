@@ -439,6 +439,17 @@ int twentyFourScore(TwentyFourAnalysis analysis) {
 class TwentyFourRules extends PuzzleRules<TwentyFourPuzzle, List<TwentyFourStep>> {
   const TwentyFourRules();
 
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
+  // 碎片是四张牌之和；补条件挖的是某一张牌，缺了哪张都算不出。
+  @override
+  int? fragment(TwentyFourPuzzle puzzle, List<TwentyFourStep> solution) => puzzle.numbers.fold<int>(0, (sum, number) => sum + number);
+  @override
+  PuzzleIntake? get intake => PuzzleIntake.condition;
+  @override
+  List<ChallengeSlot> slots(TwentyFourPuzzle puzzle) => [for (final (index, number) in puzzle.numbers.indexed) ChallengeSlot(at: index, value: number)];
+  @override
+  int slotRange(TwentyFourPuzzle puzzle) => puzzle.numbers.length;
+
   // 每档的数从哪个区间里抽、允许哪些运算、难易分落在哪一段。入门、简单的数小，心算轻松；普通起用到 13；困难起加乘方与开方。
   static const _ranges = {PuzzleTier.entry: (1, 9), PuzzleTier.easy: (1, 10), PuzzleTier.normal: (1, 13), PuzzleTier.hard: (1, 13), PuzzleTier.expert: (1, 13)};
   static const _ops = {

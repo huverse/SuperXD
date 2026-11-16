@@ -56,6 +56,14 @@ bool hanoiLegal(List<List<int>> pegs, HanoiMove move) {
 class HanoiRules extends PuzzleRules<HanoiPuzzle, List<HanoiMove>> {
   const HanoiRules();
 
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
+  @override
+  int? fragment(HanoiPuzzle puzzle, List<HanoiMove> solution) => hanoiMinMoves(puzzle.start, puzzle.target);
+  @override
+  PuzzleIntake? get intake => PuzzleIntake.goal;
+  @override
+  int? minimum(HanoiPuzzle puzzle) => hanoiMinMoves(puzzle.start, puzzle.target);
+
   static const _disks = {PuzzleTier.entry: 3, PuzzleTier.easy: 4, PuzzleTier.normal: 5, PuzzleTier.hard: 6, PuzzleTier.expert: 7};
 
   @override

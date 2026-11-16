@@ -221,6 +221,11 @@ MinesSolveResult minesSolve(MinesPuzzle puzzle, {MinesRule maxRule = MinesRule.g
 class MinesRules extends PuzzleRules<MinesPuzzle, List<int>> {
   const MinesRules();
 
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
+  // 碎片是第一行有几颗雷。
+  @override
+  int? fragment(MinesPuzzle puzzle, List<int> solution) => puzzle.mines.take(puzzle.width).where((mine) => mine).length;
+
   // 每档的边长、雷数（密度 14% 到 20% 逐档加），与至少要几轮子集或全局推理（minesDeep；普通起排除只靠单格就推得完的题，档越高要的越多）。
   // 随机撒的雷能推完且推理够深的比例：入门约九成、专家约一成半，专家档平均撒七八次，一次求解不到 1 毫秒。
   static const _tiers = {

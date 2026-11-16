@@ -58,119 +58,20 @@ Set<String> challengeGameTokens(Iterable<String> games) => {
     if (challengeRules[game] case final rules?) '$game@${rules.puzzleVersion}',
 };
 
-// 这一关的碎片（solution 是题库的参考解）：从解里读出、所有正确解都一样，题库里存好，过关时服务器给一次。
-// 天平称球的球是玩家称出来的（秤不预定假球），没有固定的「不同的那个球」，碎片用题面定的称几次（每档都正好够用，也就是最少要称几次）。
-int? challengeFragment(String game, Object? puzzle, Object? solution) => switch (game) {
-  'hanoi' => hanoiMinMoves((puzzle as HanoiPuzzle).start, puzzle.target),
-  'ice' => iceMinMoves(puzzle as IcePuzzle),
-  'lights' => lightsSolve(puzzle as LightsPuzzle)!.length,
-  'boxes' => boxesSolve(puzzle as BoxesPuzzle)!.pushes,
-  'queens' => (solution as List<int>).last + 1,
-  'river' => riverSolve(puzzle as RiverPuzzle)!.length,
-  'nonogram' => (solution as List<bool>).where((cell) => cell).length,
-  'knights' => (solution as List<bool>).where((knight) => knight).length,
-  'logicgrid' => (solution as List<List<int>>).first.indexOf(0) + 1,
-  'cipher' => (solution as List<int>).fold<int>(0, (sum, digit) => sum + digit),
-  'twentyfour' => (puzzle as TwentyFourPuzzle).numbers.fold<int>(0, (sum, number) => sum + number),
-  'mines' => (puzzle as MinesPuzzle).mines.take(puzzle.width).where((mine) => mine).length,
-  'flash' => (puzzle as FlashPuzzle).rounds.last.first.length,
-  'loop' => loopInside(puzzle as LoopPuzzle, solution as List<bool>),
-  'balance' => (puzzle as BalancePuzzle).weighings,
-  _ => null,
-};
+// 下面的名单与查询都从各游戏规则里的挑战特性取（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment），这里不再按游戏写 switch。
+// 这一关的碎片（solution 是题库的参考解），过关时服务器给一次。
+int? challengeFragment(String game, Object? puzzle, Object? solution) => challengeRules[game]?.fragment(puzzle, solution);
 
-// 圈里围住几格：每一格往左数，这一行左边在圈上的竖边是奇数条就在圈里。
-int loopInside(LoopPuzzle puzzle, List<bool> edges) {
-  final grid = LoopGrid.of(puzzle.width, puzzle.height);
-  var inside = 0;
-  for (var row = 0; row < puzzle.height; row++) {
-    var crossings = 0;
-    for (var column = 0; column < puzzle.width; column++) {
-      if (edges[grid.vertical(row, column)]) crossings++;
-      if (crossings.isOdd) inside++;
-    }
-  }
-  return inside;
-}
+// 能收碎片的游戏（同服务端 consumerGames）：补条件的在题面上把那一处写成 ?，改目标的由服务器改写题面。
+final challengeSlotGames = {for (final MapEntry(:key, :value) in challengeRules.entries) if (value.intake == PuzzleIntake.condition) key};
+final challengeGoalGames = {for (final MapEntry(:key, :value) in challengeRules.entries) if (value.intake == PuzzleIntake.goal) key};
+final challengeConsumers = {...challengeSlotGames, ...challengeGoalGames};
 
-// 能收碎片的游戏（同服务端 consumerGames）：补条件的在题面上把那一处写成 ?（challengeSlots 给能挖的位置与真值），
-// 改目标的由服务器改写题面（汉诺塔的目标柱、冰面滑行的真出口 iceExits、记忆闪光要不要镜像）。
-const challengeSlotGames = {'twentyfour', 'queens', 'loop', 'cipher', 'knights'};
-const challengeGoalGames = {'hanoi', 'ice', 'flash'};
-const challengeConsumers = {...challengeSlotGames, ...challengeGoalGames};
-
-// 能由碎片补上的一处：at 是位置（24 点第几张牌、八皇后第几行、数回第几格、密码破译第几行的「位置也对」、骑士与无赖第几个人那句话的人数），
-// value 是题面里的真值（八皇后是从 0 数的列）。
-class ChallengeSlot {
-  const ChallengeSlot({required this.at, required this.value});
-  final int at, value;
-
-  Map<String, int> toJson() => {'at': at, 'value': value};
-}
-
-// 一道题里写成 ? 也做不出来（不知道它就解不唯一或推不下去）的那几处，出题库时算好存进题库；服务器按门上的数挑真值对得上的一处。
-// 24 点四张牌缺了哪张都算不出；八皇后出题时就把多余的锁定皇后拿掉了，这里照样再核一遍；数回、密码破译、骑士与无赖换个值仍有解才算。
-// 数织试过只有一段的行：不看那一行的提示逐行推不下去的，40 道里只有一两道，不收碎片。
-List<ChallengeSlot> challengeSlots(String game, Object? puzzle) {
-  switch (game) {
-    case 'twentyfour':
-      return [for (final (index, number) in (puzzle as TwentyFourPuzzle).numbers.indexed) ChallengeSlot(at: index, value: number)];
-    case 'queens':
-      final queens = puzzle as QueensPuzzle;
-      return [
-        for (var row = 0; row < queens.size; row++)
-          if (queens.given[row] >= 0 && queensSolve(QueensPuzzle(size: queens.size, given: [...queens.given]..[row] = -1)).count > 1)
-            ChallengeSlot(at: row, value: queens.given[row]),
-      ];
-    case 'loop':
-      final loop = puzzle as LoopPuzzle;
-      return [
-        for (var cell = 0; cell < loop.clues.length; cell++)
-          if (loop.clues[cell] >= 0 && loopSolve(LoopPuzzle(width: loop.width, height: loop.height, clues: [...loop.clues]..[cell] = -1)).count > 1)
-            ChallengeSlot(at: cell, value: loop.clues[cell]),
-      ];
-    case 'cipher':
-      final cipher = puzzle as CipherPuzzle;
-      return [
-        for (final (index, row) in cipher.rows.indexed)
-          if ([
-            for (var exact = 0; exact <= cipher.length - row.misplaced; exact++)
-              if (exact != row.exact) CipherPuzzle(length: cipher.length, digits: cipher.digits, rows: [...cipher.rows]..[index] = CipherRow(row.guess, exact, row.misplaced)),
-          ].any((other) => cipherSolve(other, limit: 1).count > 0))
-            ChallengeSlot(at: index, value: row.exact),
-      ];
-    case 'knights':
-      final knights = puzzle as KnightsPuzzle;
-      const counted = {KnightsClaimKind.exactly, KnightsClaimKind.atLeast, KnightsClaimKind.atMost};
-      return [
-        for (final (speaker, claim) in knights.claims.indexed)
-          if (counted.contains(claim.kind) &&
-              [
-                for (var count = 0; count <= knights.people; count++)
-                  if (count != claim.first) KnightsPuzzle([...knights.claims]..[speaker] = KnightsClaim(claim.kind, count)),
-              ].any((other) => knightsSolutions(other).isNotEmpty))
-            ChallengeSlot(at: speaker, value: claim.first),
-      ];
-    default:
-      return const [];
-  }
-}
+// 一道题里写成 ? 也做不出来的那几处，出题库时算好存进题库。
+List<ChallengeSlot> challengeSlots(String game, Object? puzzle) => challengeRules[game]?.slots(puzzle) ?? const [];
 
 // 补条件的那一处能落在哪些位置（0 到它减 1）：服务器给的位置先按它核一遍，对局页才按位置取题面里的那一项；不收补条件的游戏是 0。
-int challengeSlotRange(String game, Object? puzzle) => switch (game) {
-  'twentyfour' => (puzzle as TwentyFourPuzzle).numbers.length,
-  'queens' => (puzzle as QueensPuzzle).size,
-  'loop' => (puzzle as LoopPuzzle).clues.length,
-  'cipher' => (puzzle as CipherPuzzle).rows.length,
-  'knights' => (puzzle as KnightsPuzzle).people,
-  _ => 0,
-};
+int challengeSlotRange(String game, Object? puzzle) => challengeRules[game]?.slotRange(puzzle) ?? 0;
 
-// 要用最少步数的游戏在困难与专家档的最少步数（题库存好，服务器拿答案的步数比）：汉诺塔、冰面滑行、点灯按步数，推箱子按推的次数。
-int? challengeMinimum(String game, Object? puzzle) => switch (game) {
-  'hanoi' => hanoiMinMoves((puzzle as HanoiPuzzle).start, puzzle.target),
-  'ice' => iceMinMoves(puzzle as IcePuzzle),
-  'lights' => lightsSolve(puzzle as LightsPuzzle)!.length,
-  'boxes' => boxesSolve(puzzle as BoxesPuzzle)!.pushes,
-  _ => null,
-};
+// 要用最少步数的游戏在困难与专家档的最少步数：汉诺塔、冰面滑行、点灯按步数，推箱子按推的次数。
+int? challengeMinimum(String game, Object? puzzle) => challengeRules[game]?.minimum(puzzle);

@@ -114,6 +114,12 @@ List<int>? lightsSolve(LightsPuzzle puzzle) {
 class LightsRules extends PuzzleRules<LightsPuzzle, List<int>> {
   const LightsRules();
 
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
+  @override
+  int? fragment(LightsPuzzle puzzle, List<int> solution) => lightsSolve(puzzle)!.length;
+  @override
+  int? minimum(LightsPuzzle puzzle) => lightsSolve(puzzle)!.length;
+
   static const _sides = {PuzzleTier.entry: 3, PuzzleTier.easy: 4, PuzzleTier.normal: 5, PuzzleTier.hard: 6, PuzzleTier.expert: 7};
   // 每档「最少点几下」的区间：开局随机点的下数也从这里取。3×3、6×6、7×7 满秩，最少下数就是随机点的下数；
   // 4×4、5×5 有零空间，随机点的几下可能有更省的点法，最少下数会落到区间下面，这时换一组重来（实测 4×4 平均每 8 道重来一次、最多 3 次，5×5 更少）；

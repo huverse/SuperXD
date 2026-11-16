@@ -627,6 +627,21 @@ List<int> loopCounts(List<bool> lines, LoopGrid grid) => [
 class LoopRules extends PuzzleRules<LoopPuzzle, List<bool>> {
   const LoopRules();
 
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
+  // 碎片是圈里围住几格；补条件挖的是某一格的数字，换个值仍有解才算。
+  @override
+  int? fragment(LoopPuzzle puzzle, List<bool> solution) => loopInside(puzzle, solution);
+  @override
+  PuzzleIntake? get intake => PuzzleIntake.condition;
+  @override
+  List<ChallengeSlot> slots(LoopPuzzle puzzle) => [
+    for (var cell = 0; cell < puzzle.clues.length; cell++)
+      if (puzzle.clues[cell] >= 0 && loopSolve(LoopPuzzle(width: puzzle.width, height: puzzle.height, clues: [...puzzle.clues]..[cell] = -1)).count > 1)
+        ChallengeSlot(at: cell, value: puzzle.clues[cell]),
+  ];
+  @override
+  int slotRange(LoopPuzzle puzzle) => puzzle.clues.length;
+
   // 档位：入门 4 见方、简单 5 见方只靠推理就能解开（不用试探）；普通 6 见方起只要求唯一；困难 7 见方、专家 10 见方还要求光靠推理推不完
   // （要用到试探，不只是数字、点与格角的直接规则），并出几道候选留试探最多的（专家一道候选几十毫秒，只比两道）。
   static const _sides = {PuzzleTier.entry: 4, PuzzleTier.easy: 5, PuzzleTier.normal: 6, PuzzleTier.hard: 7, PuzzleTier.expert: 10};
@@ -816,4 +831,18 @@ class LoopRules extends PuzzleRules<LoopPuzzle, List<bool>> {
     if (json is! String || json.length > most || !RegExp(r'^[01]*$').hasMatch(json)) throw const FormatException('答案不合法');
     return [for (final char in json.split('')) char == '1'];
   }
+}
+
+// 圈里围住几格：每一格往左数，这一行左边在圈上的竖边是奇数条就在圈里（挑战的碎片）。
+int loopInside(LoopPuzzle puzzle, List<bool> edges) {
+  final grid = LoopGrid.of(puzzle.width, puzzle.height);
+  var inside = 0;
+  for (var row = 0; row < puzzle.height; row++) {
+    var crossings = 0;
+    for (var column = 0; column < puzzle.width; column++) {
+      if (edges[grid.vertical(row, column)]) crossings++;
+      if (crossings.isOdd) inside++;
+    }
+  }
+  return inside;
 }

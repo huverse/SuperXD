@@ -151,6 +151,21 @@ class _QueensState {
 class QueensRules extends PuzzleRules<QueensPuzzle, List<int>> {
   const QueensRules();
 
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
+  // 碎片是最后一行皇后所在的列（从 1 数）；补条件挖的是锁定的皇后，八皇后出题时就把多余的锁定皇后拿掉了，这里照样再核一遍。
+  @override
+  int? fragment(QueensPuzzle puzzle, List<int> solution) => solution.last + 1;
+  @override
+  PuzzleIntake? get intake => PuzzleIntake.condition;
+  @override
+  List<ChallengeSlot> slots(QueensPuzzle puzzle) => [
+    for (var row = 0; row < puzzle.size; row++)
+      if (puzzle.given[row] >= 0 && queensSolve(QueensPuzzle(size: puzzle.size, given: [...puzzle.given]..[row] = -1)).count > 1)
+        ChallengeSlot(at: row, value: puzzle.given[row]),
+  ];
+  @override
+  int slotRange(QueensPuzzle puzzle) => puzzle.size;
+
   static const _sizes = {PuzzleTier.entry: 5, PuzzleTier.easy: 6, PuzzleTier.normal: 8, PuzzleTier.hard: 10, PuzzleTier.expert: 12};
   // 高档出几道候选、留提示最少（一样少时要试探最深）的那道：档越高提示越少、推理越深。一道 12×12 不到 1 毫秒，八道也不卡界面。
   static const _candidates = {PuzzleTier.entry: 1, PuzzleTier.easy: 1, PuzzleTier.normal: 4, PuzzleTier.hard: 6, PuzzleTier.expert: 8};

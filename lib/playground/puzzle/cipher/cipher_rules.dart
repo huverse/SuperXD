@@ -268,6 +268,24 @@ class _Plan {
 class CipherRules extends PuzzleRules<CipherPuzzle, List<int>> {
   const CipherRules();
 
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
+  // 碎片是密码各位之和；补条件挖的是某一行的「位置也对」个数，换个值仍有解才算。
+  @override
+  int? fragment(CipherPuzzle puzzle, List<int> solution) => solution.fold<int>(0, (sum, digit) => sum + digit);
+  @override
+  PuzzleIntake? get intake => PuzzleIntake.condition;
+  @override
+  List<ChallengeSlot> slots(CipherPuzzle puzzle) => [
+    for (final (index, row) in puzzle.rows.indexed)
+      if ([
+        for (var exact = 0; exact <= puzzle.length - row.misplaced; exact++)
+          if (exact != row.exact) CipherPuzzle(length: puzzle.length, digits: puzzle.digits, rows: [...puzzle.rows]..[index] = CipherRow(row.guess, exact, row.misplaced)),
+      ].any((other) => cipherSolve(other, limit: 1).count > 0))
+        ChallengeSlot(at: index, value: row.exact),
+  ];
+  @override
+  int slotRange(CipherPuzzle puzzle) => puzzle.rows.length;
+
   // 入门 3 位取自 0–5（候选 120 个，两三行线索）；简单 3 位取自 0–9；这两档与普通（4 位）都只靠单行一路推完。
   // 困难 4 位、专家 5 位，必须有一步要联合两行（最多三行）才推得下去，各出三道合格的候选留联合推理最多的；
   // 联合推理量设上限，免得同档里冒出要把一堆线索放在一起试的题。实测各档行数：入门 2–4、简单 3–6、普通 4–6、困难 4–7、专家 5–7。

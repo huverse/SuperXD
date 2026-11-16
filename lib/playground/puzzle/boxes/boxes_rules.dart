@@ -96,6 +96,12 @@ typedef _Shape = ({int inner, (int, int) boxes, (int, int) least, (double, doubl
 class BoxesRules extends PuzzleRules<BoxesPuzzle, List<int>> {
   const BoxesRules();
 
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
+  @override
+  int? fragment(BoxesPuzzle puzzle, List<int> solution) => boxesSolve(puzzle)!.pushes;
+  @override
+  int? minimum(BoxesPuzzle puzzle) => boxesSolve(puzzle)!.pushes;
+
   // 区间与参数按实测定（11-12 每档 200 个种子）：
   // - 最少推数的区间档与档之间不重叠。各档房间不限推数时最深能倒到：入门 3–9（中位 5）、简单 3–19（中位 9）、普通中位约 15、
   //   困难中位约 20、专家中位约 27；区间下沿取在中位附近，倒不到的房间整张换掉（专家平均两三张出一道），上沿以上的房间取上沿那一层。

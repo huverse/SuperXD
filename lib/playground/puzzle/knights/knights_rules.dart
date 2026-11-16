@@ -206,6 +206,28 @@ class _Plan {
 class KnightsRules extends PuzzleRules<KnightsPuzzle, List<bool>> {
   const KnightsRules();
 
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
+  // 碎片是有几个骑士；补条件挖的是「恰好、至少、至多几个骑士」那句话里的人数，换个值仍有解才算。
+  @override
+  int? fragment(KnightsPuzzle puzzle, List<bool> solution) => solution.where((knight) => knight).length;
+  @override
+  PuzzleIntake? get intake => PuzzleIntake.condition;
+  @override
+  List<ChallengeSlot> slots(KnightsPuzzle puzzle) {
+    const counted = {KnightsClaimKind.exactly, KnightsClaimKind.atLeast, KnightsClaimKind.atMost};
+    return [
+      for (final (speaker, claim) in puzzle.claims.indexed)
+        if (counted.contains(claim.kind) &&
+            [
+              for (var count = 0; count <= puzzle.people; count++)
+                if (count != claim.first) KnightsPuzzle([...puzzle.claims]..[speaker] = KnightsClaim(claim.kind, count)),
+            ].any((other) => knightsSolutions(other).isNotEmpty))
+          ChallengeSlot(at: speaker, value: claim.first),
+    ];
+  }
+  @override
+  int slotRange(KnightsPuzzle puzzle) => puzzle.people;
+
   // 「X 是骑士 / 无赖」多一些：「我和 X 同类 / 不同类」单句就能定下 X，多了就没有推的过程。
   static const _basic = {KnightsClaimKind.knight: 3, KnightsClaimKind.knave: 3, KnightsClaimKind.same: 2, KnightsClaimKind.different: 2};
   static const _counted = {..._basic, KnightsClaimKind.exactly: 2, KnightsClaimKind.atLeast: 2, KnightsClaimKind.atMost: 2};
