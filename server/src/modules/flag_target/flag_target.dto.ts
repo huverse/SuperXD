@@ -7,4 +7,5 @@ export class FlagTargetDto {
 
 export class FlagTargetsDto {
   @ApiProperty({ description: '这个账号此刻被点名的开关', type: [FlagTargetDto] }) flags: FlagTargetDto[];
+  @ApiProperty({ description: '这个账号建立的时刻（ISO 8601，UTC），客户端按它判开关的 minAccountDays 条件' }) accountCreatedAt: string;
 }

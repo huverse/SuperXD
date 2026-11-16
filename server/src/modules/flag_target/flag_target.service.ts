@@ -10,7 +10,8 @@ import { FlagTargetRepository } from 'src/modules/flag_target/flag_target.reposi
 import * as dtos from 'src/modules/flag_target/flag_target.dto';
 
 // 灰度点名（人工决策见客户端 lib/domain/rollout.dart 的 11-16 那条）：名单由管理命令 flag_admin 写在 rollout_target，
-// 登录着应用账号的手机签名来问「我被点名了哪些」，只回这个账号没过期的；撤销即删行，手机下次来问就没了。随账号删除，过期的每天清。
+// 登录着应用账号的手机签名来问「我被点名了哪些」，只回这个账号没过期的，顺带回账号建立的时刻（开关的 minAccountDays 条件在客户端判）；
+// 撤销即删行，手机下次来问就没了。随账号删除，过期的每天清。
 @Injectable()
 export class FlagTargetService implements OnModuleInit {
   private readonly logger = new Logger('FlagTarget');
@@ -33,10 +34,10 @@ export class FlagTargetService implements OnModuleInit {
   async mine(deviceId: string, now = new Date()): Promise<dtos.FlagTargetsDto> {
     const retryAfter = await this.limiter.hit('flag_target_read', deviceId, flagTargetReadPerDevicePerHour, 3600);
     if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '查询过于频繁', { retryAfter });
-    const accountId = await this.accounts.accountOf(deviceId);
-    if (accountId === null) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
+    const [accountId, createdAt] = await Promise.all([this.accounts.accountOf(deviceId), this.accounts.createdOf(deviceId)]);
+    if (accountId === null || createdAt === null) throw new RelayError(RelayCode.accountNotFound, HttpStatus.NOT_FOUND, '没有登录应用账号');
     const rows = await this.targets.activeOf(accountId, now, flagTargetLimit);
-    return { flags: rows.map((row) => ({ id: row.flagId, until: row.expiresAt?.toISOString() ?? null })) };
+    return { flags: rows.map((row) => ({ id: row.flagId, until: row.expiresAt?.toISOString() ?? null })), accountCreatedAt: createdAt.toISOString() };
   }
 
   // 过期的分批删，每轮最多 20 批。

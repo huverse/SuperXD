@@ -10,9 +10,9 @@ import 'package:superxd/domain/rollout.dart';
 
 // 灰度的本机记录（人工决策见 domain/rollout.dart）：rollout.json 里是这台设备的随机编号（没登录应用账号时分桶用，只在本机、不上传）、
 // 上次拉到的配置，与当前主体的积分等级和只因等级进的批次；先写临时文件再改名，坏文件当没有（编号重新生成，最多换一次桶）。
-// 另记当前主体问到的点名（11-16 起）。只有一份配置、批次与点名各最多 rolloutRuleLimit 个，不随使用增长。
+// 另记当前主体问到的点名与账号建立的时刻（11-16 起）。只有一份配置、批次与点名各最多 rolloutRuleLimit 个，不随使用增长。
 class FileRolloutMemory implements RolloutMemory {
-  FileRolloutMemory._(this._file, this.installId, this._config, this._fetchedAt, [this._subject, this._level = 0, List<String> joined = const [], List<RolloutTarget> targets = const []]) : _joined = [...joined], _targets = [...targets];
+  FileRolloutMemory._(this._file, this.installId, this._config, this._fetchedAt, [this._subject, this._level = 0, List<String> joined = const [], RolloutTargets? targets]) : _joined = [...joined], _targets = [...?targets?.flags], _accountCreatedAt = targets?.accountCreatedAt;
   final File? _file;
   @override
   final String installId;
@@ -23,6 +23,7 @@ class FileRolloutMemory implements RolloutMemory {
   final List<String> _joined;
   // 当前主体问到的点名（最多 rolloutTargetLimit 个，服务器给的就有上限）。
   final List<RolloutTarget> _targets;
+  DateTime? _accountCreatedAt;
   final _lock = Lock();
 
   static Future<FileRolloutMemory> open(File file) async {
@@ -37,7 +38,7 @@ class FileRolloutMemory implements RolloutMemory {
             // 点名格式不对当没问过（下次联网再问）。
             final targets = switch (json['targets']) {
               final Object targets => _tryTargets(targets),
-              null => const <RolloutTarget>[],
+              null => null,
             };
             return FileRolloutMemory._(file, installId, decodeRolloutConfig(config), fetchedAt, subject, level, joined.cast<String>(), targets);
           }
@@ -78,11 +79,15 @@ class FileRolloutMemory implements RolloutMemory {
   List<RolloutTarget> targetsOf(String subject) => subject == _subject ? List.unmodifiable(_targets) : const [];
 
   @override
-  Future<void> saveTargets(String subject, List<RolloutTarget> targets) {
+  DateTime? accountCreatedOf(String subject) => subject == _subject ? _accountCreatedAt : null;
+
+  @override
+  Future<void> saveTargets(String subject, RolloutTargets targets) {
     _switchTo(subject);
     _targets
       ..clear()
-      ..addAll(targets.take(rolloutTargetLimit));
+      ..addAll(targets.flags.take(rolloutTargetLimit));
+    _accountCreatedAt = targets.accountCreatedAt;
     return _write();
   }
 
@@ -93,6 +98,7 @@ class FileRolloutMemory implements RolloutMemory {
     _level = 0;
     _joined.clear();
     _targets.clear();
+    _accountCreatedAt = null;
   }
 
   @override
@@ -121,7 +127,8 @@ class FileRolloutMemory implements RolloutMemory {
         'subject': subject,
         'level': _level,
         'joined': [..._joined],
-        'targets': {'flags': [for (final target in _targets) {'id': target.id, 'until': target.until?.toUtc().toIso8601String()}]},
+        if (_accountCreatedAt case final created?)
+          'targets': {'flags': [for (final target in _targets) {'id': target.id, 'until': target.until?.toUtc().toIso8601String()}], 'accountCreatedAt': created.toIso8601String()},
       },
     };
     return _lock.synchronized(() async {
@@ -135,11 +142,11 @@ class FileRolloutMemory implements RolloutMemory {
   }
 }
 
-List<RolloutTarget> _tryTargets(Object targets) {
+RolloutTargets? _tryTargets(Object targets) {
   try {
     return decodeRolloutTargets(targets);
   } on FormatException catch (error, stack) {
     campusLog('[Rollouts] action=memory_targets errorType=${error.runtimeType}\n$stack');
-    return const [];
+    return null;
   }
 }

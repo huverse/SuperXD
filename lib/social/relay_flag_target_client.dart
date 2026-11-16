@@ -5,7 +5,7 @@ import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_client.dart';
 
 // 灰度点名的中转客户端（人工决策见 domain/rollout.dart 文件头 11-16 那条，服务端 src/modules/flag_target）：GET /v1/flags/mine，
-// 用这个应用账号的设备密钥签名（同解锁）；回复是外部输入，按 decodeRolloutTargets 逐项校验。没登录或账号不在了为空，连不上抛 RolloutException。
+// 用这个应用账号的设备密钥签名（同解锁），回复带账号建立的时刻；回复是外部输入，按 decodeRolloutTargets 逐项校验。没登录或账号不在了为空，连不上抛 RolloutException。
 class RelayFlagTargetClient implements RolloutTargetClient {
   RelayFlagTargetClient({required this.vault, required RelayTransport transport}) : _relay = RelayClient(transport);
   final AppAccountVault vault;
@@ -15,7 +15,7 @@ class RelayFlagTargetClient implements RolloutTargetClient {
   static const limit = 32 * 1024;
 
   @override
-  Future<List<RolloutTarget>?> mine(AppAccountRef account) async {
+  Future<RolloutTargets?> mine(AppAccountRef account) async {
     final saved = await vault.read(account.slot);
     if (saved == null) return null;
     final Map<String, Object?> body;

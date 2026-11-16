@@ -464,6 +464,7 @@ void main() {
       'minVersion': 29,
       'maxVersion': 40,
       'minLevel': 2,
+      'minAccountDays': 7,
       'params': {'limit': 3, 'ratio': 0.5, 'label': '新版', 'strict': true},
     };
 
@@ -501,6 +502,7 @@ void main() {
         flag({'minVersion': 40, 'maxVersion': 29}),
         flag({'minVersion': 0}),
         flag({'minLevel': pointsLevelCount}),
+        flag({'minAccountDays': 0}),
         flag({'params': <String, Object?>{}}),
         flag({'params': {'Bad': 1}}),
         flag({'params': {'list': <int>[]}}),
@@ -555,7 +557,9 @@ void main() {
       late String? accountId;
       late _Feed feed;
       late FileRolloutMemory memory;
-      late List<RolloutTarget>? remote;
+      late RolloutTargets? remote;
+      final created = DateTime.utc(2026, 11, 1);
+      RolloutTargets reply(List<RolloutTarget> flags) => RolloutTargets(flags: flags, accountCreatedAt: created);
       late int asked;
       Rollouts rollouts({String platform = 'android', String channel = 'alpha', int versionCode = 30, int level = 2}) => Rollouts(
         memory: memory,
@@ -573,7 +577,7 @@ void main() {
         accountId = 'account-a';
         feed = _Feed()..next = decodeRolloutConfig({'flags': [conditional]});
         memory = FileRolloutMemory.memory();
-        remote = const [];
+        remote = reply(const []);
         asked = 0;
       });
       const flag = FeatureFlag('game.flash2', fallback: false);
@@ -595,6 +599,26 @@ void main() {
         expect(on.isOn(flag), isFalse, reason: 'from 之前关');
       });
 
+      test('账号建立的天数按问点名时一起拿到的建立时刻算：不够关；没登录应用账号、还没问到都不满足', () async {
+        // 只带这一个条件，免得被时间窗、平台或等级挡住。
+        feed.next = decodeRolloutConfig({'flags': [{'id': 'game.flash2', 'percent': 100, 'minAccountDays': 7}]});
+        remote = null;
+        final aged = rollouts(level: 0);
+        await aged.refresh();
+        expect(memory.config.rules['game.flash2']!.minAccountDays, 7);
+        expect(aged.isOn(flag), isFalse, reason: '还没问到建立时刻');
+        now = now.add(Rollouts.refreshGap);
+        remote = reply(const []);
+        await aged.refresh();
+        expect(aged.isOn(flag), isTrue, reason: '建立 14 天，要求 7 天');
+        now = created.add(const Duration(days: 6, hours: 23));
+        expect(aged.isOn(flag), isFalse, reason: '不满 7 天');
+        now = created.add(const Duration(days: 7));
+        expect(aged.isOn(flag), isTrue, reason: '刚满 7 天');
+        accountId = null;
+        expect(aged.isOn(flag), isFalse, reason: '没登录应用账号');
+      });
+
       test('等级条件按记着的等级：等级不够关，娱乐与积分关着按 Lv0', () async {
         final low = rollouts(level: 1);
         await low.refresh();
@@ -606,7 +630,7 @@ void main() {
 
       test('点名的不看比例与条件、只看到期时刻；撤销（问到空列表）就关；问不到照旧用记着的；没登录不问也不用', () async {
         feed.next = decodeRolloutConfig({'flags': [{...conditional, 'percent': 0}]});
-        remote = [RolloutTarget('game.flash2', until: DateTime.utc(2026, 11, 16))];
+        remote = reply([RolloutTarget('game.flash2', until: DateTime.utc(2026, 11, 16))]);
         final ios = rollouts(platform: 'ios', level: 0);
         await ios.refresh();
         expect(asked, 1);
@@ -619,12 +643,12 @@ void main() {
         await ios.refresh();
         expect(ios.isOn(flag), isTrue, reason: '问不到照旧用记着的');
         now = now.add(Rollouts.refreshGap);
-        remote = const [];
+        remote = reply(const []);
         await ios.refresh();
         expect(ios.isOn(flag), isFalse, reason: '撤销');
         accountId = null;
         now = now.add(Rollouts.refreshGap);
-        remote = [const RolloutTarget('game.flash2')];
+        remote = reply([const RolloutTarget('game.flash2')]);
         final before = asked;
         await ios.refresh();
         expect(asked, before, reason: '没登录不问');
@@ -636,17 +660,21 @@ void main() {
         addTearDown(() => directory.delete(recursive: true));
         final file = File('${directory.path}/rollout.json');
         final stored = await FileRolloutMemory.open(file);
-        await stored.saveTargets('account-a', [RolloutTarget('a.one', until: DateTime.utc(2026, 12, 1)), const RolloutTarget('a.two')]);
+        await stored.saveTargets('account-a', RolloutTargets(flags: [RolloutTarget('a.one', until: DateTime.utc(2026, 12, 1)), const RolloutTarget('a.two')], accountCreatedAt: DateTime.utc(2026, 10, 1)));
         final again = await FileRolloutMemory.open(file);
         expect(again.targetsOf('account-a').map((target) => (target.id, target.until)), [('a.one', DateTime.utc(2026, 12, 1)), ('a.two', null)]);
+        expect(again.accountCreatedOf('account-a'), DateTime.utc(2026, 10, 1));
         expect(again.targetsOf('account-b'), isEmpty);
+        expect(again.accountCreatedOf('account-b'), isNull);
         await again.saveLevel('account-b', 1);
         expect(again.targetsOf('account-a'), isEmpty);
-        await again.saveTargets('account-a', [const RolloutTarget('a.one')]);
+        expect(again.accountCreatedOf('account-b'), isNull, reason: '换了主体从头记');
+        await again.saveTargets('account-a', RolloutTargets(flags: [const RolloutTarget('a.one')], accountCreatedAt: DateTime.utc(2026, 10, 1)));
         final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-        await file.writeAsString(jsonEncode({...json, 'targets': {'flags': [{'id': 'Bad Id', 'until': null}]}}));
+        await file.writeAsString(jsonEncode({...json, 'targets': {'flags': [{'id': 'Bad Id', 'until': null}], 'accountCreatedAt': '2026-10-01T00:00:00.000Z'}}));
         final bad = await FileRolloutMemory.open(file);
         expect(bad.targetsOf('account-a'), isEmpty);
+        expect(bad.accountCreatedOf('account-a'), isNull);
         expect(bad.installId, again.installId);
       });
     });
@@ -660,31 +688,37 @@ void main() {
       expect(relay.requests, isEmpty, reason: '没有密钥不发请求');
       final key = await SocialIdentity.fromSeeds(List<int>.generate(32, (index) => index + 1), List<int>.generate(32, (index) => index + 33));
       await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
-      relay.reply = const RelayResponse(200, {'flags': [{'id': 'game.flash2', 'until': '2026-12-01T00:00:00.000Z'}]});
+      relay.reply = const RelayResponse(200, {'flags': [{'id': 'game.flash2', 'until': '2026-12-01T00:00:00.000Z'}], 'accountCreatedAt': '2026-11-01T08:00:00.000Z'});
       final targets = (await client.mine(ref))!;
       expect(relay.requests.last.$1, 'GET /v1/flags/mine');
       expect(relay.requests.last.$2['x-sxd-device'], key.deviceId);
       expect(relay.requests.last.$2.containsKey('x-sxd-signature'), isTrue);
-      expect(targets.single.until, DateTime.utc(2026, 12, 1));
+      expect(targets.flags.single.until, DateTime.utc(2026, 12, 1));
+      expect(targets.accountCreatedAt, DateTime.utc(2026, 11, 1, 8));
       relay.reply = const RelayResponse(404, {'code': 'ACCOUNT_NOT_FOUND'});
       expect(await client.mine(ref), isNull);
       relay.reply = const RelayResponse(429, {'code': 'RATE_LIMITED', 'retryAfter': 60});
       await expectLater(client.mine(ref), throwsA(isA<RolloutException>()));
-      relay.reply = const RelayResponse(200, {'flags': [{'id': 'Bad Id', 'until': null}]});
+      relay.reply = const RelayResponse(200, {'flags': [{'id': 'Bad Id', 'until': null}], 'accountCreatedAt': '2026-11-01T08:00:00.000Z'});
       await expectLater(client.mine(ref), throwsA(isA<RolloutException>()));
     });
 
-    test('点名列表是外部输入：编号合规、不重复、到期时刻带时区、不超过上限', () {
-      expect(decodeRolloutTargets({'flags': [{'id': 'a.b', 'until': '2026-12-01T00:00:00.000Z'}, {'id': 'c', 'until': null}]}).map((target) => target.id), ['a.b', 'c']);
+    test('点名列表是外部输入：编号合规、不重复、到期时刻与账号建立时刻带时区、不超过上限', () {
+      const at = '2026-11-01T00:00:00.000Z';
+      final decoded = decodeRolloutTargets({'flags': [{'id': 'a.b', 'until': '2026-12-01T00:00:00.000Z'}, {'id': 'c', 'until': null}], 'accountCreatedAt': at});
+      expect(decoded.flags.map((target) => target.id), ['a.b', 'c']);
+      expect(decoded.accountCreatedAt, DateTime.utc(2026, 11));
       for (final bad in <Object?>[
         null,
-        {'flags': 'x'},
-        {'flags': [{'id': 'Bad Id', 'until': null}]},
-        {'flags': [{'id': 'a', 'until': null}, {'id': 'a', 'until': null}]},
-        {'flags': [{'id': 'a', 'until': '2026-12-01T00:00:00'}]},
-        {'flags': [{'id': 'a'}]},
-        {'flags': [{'id': 'a', 'until': 1}]},
-        {'flags': [for (var index = 0; index <= rolloutTargetLimit; index++) {'id': 'f$index', 'until': null}]},
+        {'flags': 'x', 'accountCreatedAt': at},
+        {'flags': <Object?>[]},
+        {'flags': <Object?>[], 'accountCreatedAt': '2026-11-01T00:00:00'},
+        {'flags': [{'id': 'Bad Id', 'until': null}], 'accountCreatedAt': at},
+        {'flags': [{'id': 'a', 'until': null}, {'id': 'a', 'until': null}], 'accountCreatedAt': at},
+        {'flags': [{'id': 'a', 'until': '2026-12-01T00:00:00'}], 'accountCreatedAt': at},
+        {'flags': [{'id': 'a'}], 'accountCreatedAt': at},
+        {'flags': [{'id': 'a', 'until': 1}], 'accountCreatedAt': at},
+        {'flags': [for (var index = 0; index <= rolloutTargetLimit; index++) {'id': 'f$index', 'until': null}], 'accountCreatedAt': at},
       ]) {
         expect(() => decodeRolloutTargets(bad), throwsFormatException, reason: '$bad');
       }

@@ -19,7 +19,7 @@ import 'package:superxd/domain/challenge.dart';
 // 只因等级进的批次本机记住（application/rollouts.dart），积分过期降级也不踢出；放量写 0 仍人人关，一键关停不受等级影响。
 
 // [人工决策-2026-11-16 17:05:21] 灰度改「混合判定」（用户选定，原话要求灰度能随时发放、随时撤销，任何功能、逻辑、界面都能灰度，参数可定义如预设时间）：
-// - 比例与条件在本机判定：开关可另写时间窗 from/until（过了 until 全关）、平台、渠道、安装的版本号区间、最低积分等级与参数 params（命中时功能读它）；
+// - 比例与条件在本机判定：开关可另写时间窗 from/until（过了 until 全关）、平台、渠道、安装的版本号区间、最低积分等级、应用账号建立满几天与参数 params（命中时功能读它）；
 //   新功能只经 domain/feature_flags.dart 登记的开关问 Rollouts，不散落字符串。
 // - 点名在服务器判定：开发者用中转的管理命令 flag_admin 把开关单独开给某个应用账号（名单只在服务器、不进公开配置），登录着应用账号的手机
 //   随拉配置同一时机签名问「我被点名了哪些」（RolloutTargetClient），点名的开关不看比例与条件、只看到期时刻；撤销后下次问就没了。
@@ -37,7 +37,7 @@ class RolloutStage {
 
 // 一个开关：定值（percent）或按时刻的放量表（stages），两者只有一个；另可写条件（都满足才按比例判定）与命中时给的参数。
 class RolloutRule {
-  const RolloutRule({required this.id, this.percent, this.stages = const [], this.from, this.until, this.platforms = const {}, this.channels = const {}, this.minVersion, this.maxVersion, this.minLevel, this.params = const {}});
+  const RolloutRule({required this.id, this.percent, this.stages = const [], this.from, this.until, this.platforms = const {}, this.channels = const {}, this.minVersion, this.maxVersion, this.minLevel, this.minAccountDays, this.params = const {}});
   final String id;
   final int? percent;
   final List<RolloutStage> stages;
@@ -49,21 +49,24 @@ class RolloutRule {
   final int? minVersion, maxVersion;
   // 积分等级至少多少（娱乐与积分关着按 Lv0）。
   final int? minLevel;
+  // 应用账号建立满多少天（没登录应用账号、还没问到建立时刻的都不满足）。
+  final int? minAccountDays;
   // 命中时给功能读的参数：键是小写开头的英文，值是字符串、整数、小数或布尔。
   final Map<String, Object> params;
 
   // 带第 2 版才有的字段：第 1 版配置里放不下（旧版本解码多一个字段就整份拒收）。
-  bool get conditional => from != null || until != null || platforms.isNotEmpty || channels.isNotEmpty || minVersion != null || maxVersion != null || minLevel != null || params.isNotEmpty;
+  bool get conditional => from != null || until != null || platforms.isNotEmpty || channels.isNotEmpty || minVersion != null || maxVersion != null || minLevel != null || minAccountDays != null || params.isNotEmpty;
 
-  // 条件都满足：在时间窗里、平台渠道对得上、版本号在区间里、等级够。
-  bool applies({required DateTime now, required String platform, required String channel, required int versionCode, required int level}) =>
+  // 条件都满足：在时间窗里、平台渠道对得上、版本号在区间里、等级够、账号建立的天数够（accountDays 为空是不知道）。
+  bool applies({required DateTime now, required String platform, required String channel, required int versionCode, required int level, int? accountDays}) =>
       (from == null || !now.isBefore(from!)) &&
       (until == null || now.isBefore(until!)) &&
       (platforms.isEmpty || platforms.contains(platform)) &&
       (channels.isEmpty || channels.contains(channel)) &&
       (minVersion == null || versionCode >= minVersion!) &&
       (maxVersion == null || versionCode <= maxVersion!) &&
-      (minLevel == null || level >= minLevel!);
+      (minLevel == null || level >= minLevel!) &&
+      (minAccountDays == null || (accountDays != null && accountDays >= minAccountDays!));
 
   // 此刻放量多少：定值直接用；放量表取开始时刻不晚于此刻的最后一档，还没开始为 0。
   int percentAt(DateTime now) {
@@ -109,7 +112,14 @@ class RolloutConfig {
   RolloutConfig get legacy => RolloutConfig({for (final rule in rules.values) if (!rule.conditional) rule.id: rule}, levels: levels, unlocks: unlocks);
 }
 
-// 点名（人工决策见文件头 11-16 那条）：开发者在服务器上把这个开关单独开给当前应用账号，until 为空是一直开到撤销。
+// 问点名的回复（人工决策见文件头 11-16 那条）：点名的开关与这个应用账号建立的时刻（判 minAccountDays 用）。
+class RolloutTargets {
+  const RolloutTargets({required this.flags, required this.accountCreatedAt});
+  final List<RolloutTarget> flags;
+  final DateTime accountCreatedAt;
+}
+
+// 点名：开发者在服务器上把这个开关单独开给当前应用账号，until 为空是一直开到撤销。
 class RolloutTarget {
   const RolloutTarget(this.id, {this.until});
   final String id;
@@ -121,9 +131,9 @@ class RolloutTarget {
 // 点名的上限：同开关数（服务端 relay_limits.ts 的 flagTargetLimit）。
 const rolloutTargetLimit = rolloutRuleLimit;
 
-// 中转返回的点名列表是外部输入：编号合规、不重复、到期时刻带时区，超过上限拒收。
-List<RolloutTarget> decodeRolloutTargets(Object? json) {
-  if (json case {'flags': final List<Object?> flags} when flags.length <= rolloutTargetLimit) {
+// 中转返回的点名列表是外部输入：编号合规、不重复、到期时刻与账号建立时刻带时区，超过上限拒收。本机记录也用这个格式。
+RolloutTargets decodeRolloutTargets(Object? json) {
+  if (json case {'flags': final List<Object?> flags, 'accountCreatedAt': final String createdAt} when flags.length <= rolloutTargetLimit) {
     final targets = <RolloutTarget>[];
     for (final item in flags) {
       if (item case {'id': final String id, 'until': final Object? until} when rolloutIdPattern.hasMatch(id) && targets.every((other) => other.id != id)) {
@@ -136,7 +146,7 @@ List<RolloutTarget> decodeRolloutTargets(Object? json) {
         throw const FormatException('点名不合法');
       }
     }
-    return targets;
+    return RolloutTargets(flags: targets, accountCreatedAt: _instant(createdAt, 'accountCreatedAt'));
   }
   throw const FormatException('点名列表不合法');
 }
@@ -242,7 +252,7 @@ const rolloutParamLimit = 20;
 const rolloutParamTextMax = 200;
 const rolloutPlatforms = {'android', 'ios'};
 final _paramKey = RegExp(r'^[a-z][a-zA-Z0-9_]{0,31}$');
-const _flagKeys = {'id', 'percent', 'stages', 'from', 'until', 'platforms', 'channels', 'minVersion', 'maxVersion', 'minLevel', 'params'};
+const _flagKeys = {'id', 'percent', 'stages', 'from', 'until', 'platforms', 'channels', 'minVersion', 'maxVersion', 'minLevel', 'minAccountDays', 'params'};
 
 Set<String> _names(Object? json, bool Function(String name) valid, String what) => switch (json) {
   null => const {},
@@ -285,6 +295,7 @@ RolloutRule _rule(Object? flag) {
       minVersion: minVersion,
       maxVersion: maxVersion,
       minLevel: _range(flag['minLevel'], 0, pointsLevelCount - 1, 'minLevel'),
+      minAccountDays: _range(flag['minAccountDays'], 1, 3650, 'minAccountDays'),
       params: _params(flag['params']),
     );
   }
@@ -292,7 +303,7 @@ RolloutRule _rule(Object? flag) {
 }
 
 // 灰度配置 {flags: [...], levels?: [六个数], unlocks?: [...]} 是外部输入：逐项校验，开关名不能重复，多出来的字段不认。
-// 每个开关 {id, percent 或 stages, 另可写 from、until、platforms、channels、minVersion、maxVersion、minLevel、params}（第 2 版；第 1 版只有前两项）。
+// 每个开关 {id, percent 或 stages, 另可写 from、until、platforms、channels、minVersion、maxVersion、minLevel、minAccountDays、params}（第 2 版；第 1 版只有前两项）。
 // version 只是给人看的写法版本，可写可不写（第 1 版接口发出去的那份不写，旧版本见了会拒收）。
 RolloutConfig decodeRolloutConfig(Object? json) {
   const keys = {'version', 'flags', 'levels', 'unlocks'};
@@ -322,6 +333,7 @@ Map<String, Object?> encodeRolloutConfig(RolloutConfig config) => {
         'minVersion': ?rule.minVersion,
         'maxVersion': ?rule.maxVersion,
         'minLevel': ?rule.minLevel,
+        'minAccountDays': ?rule.minAccountDays,
         if (rule.params.isNotEmpty) 'params': rule.params,
       },
   ],
@@ -365,12 +377,13 @@ abstract interface class RolloutMemory {
   bool joined(String subject, String id);
   Future<void> saveLevel(String subject, int level);
   Future<void> join(String subject, String id);
-  // 当前主体（应用账号号）上次问到的点名；换了主体为空。
+  // 当前主体（应用账号号）上次问到的点名与账号建立的时刻；换了主体为空。
   List<RolloutTarget> targetsOf(String subject);
-  Future<void> saveTargets(String subject, List<RolloutTarget> targets);
+  DateTime? accountCreatedOf(String subject);
+  Future<void> saveTargets(String subject, RolloutTargets targets);
 }
 
 // 问中转「当前应用账号被点名了哪些」（social 实现，用这个账号的设备密钥签名）；没登录或账号不在了为空，连不上抛 RolloutException。
 abstract interface class RolloutTargetClient {
-  Future<List<RolloutTarget>?> mine(AppAccountRef account);
+  Future<RolloutTargets?> mine(AppAccountRef account);
 }

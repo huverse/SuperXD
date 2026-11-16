@@ -12,7 +12,7 @@ import 'package:superxd/domain/rollout.dart';
 // 登录着应用账号时同一时机取一次积分等级（level，经挑战与积分的签名请求），按等级加权；只因等级才进的批次记在本机，降级也不踢出。
 // levelsOn 为假（娱乐与积分关着，人工决策见 domain/leisure.dart）时不取等级、按 Lv0 判定，已经因等级进了的批次照旧算。
 // 11-16 起（人工决策见 domain/rollout.dart 文件头 11-16 那条）：开关的条件（时间窗、平台、渠道、版本号、等级）都满足才按比例判定；
-// 登录着应用账号时同一时机问一次点名（targets），点名的开关不看比例与条件、只看到期时刻，问到的记在本机（换账号从头记）。
+// 登录着应用账号时同一时机问一次点名（targets，顺带账号建立的时刻，判 minAccountDays），点名的开关不看比例与条件、只看到期时刻，问到的记在本机（换账号从头记）。
 class Rollouts extends ChangeNotifier {
   Rollouts({required this.memory, required this.channel, required this.platform, required this.versionCode, required this._accountId, this.feed, this.level, this.targets, bool Function()? levelsOn, DateTime Function()? now})
     : _levelsOn = levelsOn ?? (() => true),
@@ -24,7 +24,7 @@ class Rollouts extends ChangeNotifier {
   final String platform;
   final int versionCode;
   // 当前应用账号被点名了哪些；没登录、没配中转时为空（照旧用本机记着的）。
-  final Future<List<RolloutTarget>?> Function()? targets;
+  final Future<RolloutTargets?> Function()? targets;
   // 没配中转时为空：只用本机存着的配置（一般是空的），开关都按各自的默认值。
   final RolloutFeed? feed;
   // 当前应用账号的积分等级；没登录或这次取不到为空（照旧用本机记着的）。没配中转时整个为空。
@@ -47,7 +47,9 @@ class Rollouts extends ChangeNotifier {
     if (memory.targetsOf(subject).any((target) => target.id == id && target.activeAt(now))) return true;
     final rule = memory.config.rules[id];
     if (rule == null) return fallback;
-    if (!rule.applies(now: now, platform: platform, channel: channel, versionCode: versionCode, level: _levelsOn() ? memory.levelOf(subject) : 0)) return false;
+    final created = memory.accountCreatedOf(subject);
+    final accountDays = created == null ? null : now.difference(created).inDays;
+    if (!rule.applies(now: now, platform: platform, channel: channel, versionCode: versionCode, level: _levelsOn() ? memory.levelOf(subject) : 0, accountDays: accountDays)) return false;
     return _includes(id, rule.percentAt(now));
   }
 
@@ -102,10 +104,11 @@ class Rollouts extends ChangeNotifier {
     try {
       final current = await source();
       if (current == null || subject != this.subject) return;
-      final before = memory.targetsOf(subject).map((target) => '${target.id}@${target.until}').join(',');
+      String signature(Iterable<RolloutTarget> flags, DateTime? created) => '${flags.map((target) => '${target.id}@${target.until}').join(',')}|$created';
+      final before = signature(memory.targetsOf(subject), memory.accountCreatedOf(subject));
       await memory.saveTargets(subject, current);
-      campusLog('[Rollouts] action=targets count=${current.length}');
-      if (current.map((target) => '${target.id}@${target.until}').join(',') != before) notifyListeners();
+      campusLog('[Rollouts] action=targets count=${current.flags.length}');
+      if (signature(current.flags, current.accountCreatedAt) != before) notifyListeners();
     } on RolloutException catch (error) {
       campusLog('[Rollouts] action=targets errorType=RolloutException message=${error.message}');
     } catch (error, stack) {

@@ -71,8 +71,11 @@ describe('灰度点名', () => {
     const stranger = new TestDevice(server);
     expect((await stranger.register()).status).toBe(200);
     expect((await stranger.call('GET', '/v1/flags/mine')).body.code).toBe('ACCOUNT_NOT_FOUND');
-    const { device } = await signedIn();
+    const { device, accountId } = await signedIn();
     expect(await mine(device)).toEqual([]);
+    // 顺带回账号建立的时刻，客户端按它判 minAccountDays。
+    const [{ created }] = (await database.query('SELECT create_time AS created FROM app_account WHERE account_id = ?', [accountId])) as { created: Date }[];
+    expect((await device.call('GET', '/v1/flags/mine')).body.accountCreatedAt).toBe(new Date(created).toISOString());
   });
 
   it('管理命令点名、改到期、撤销与列出；只回这个账号没过期的；用户名不分大小写', async () => {

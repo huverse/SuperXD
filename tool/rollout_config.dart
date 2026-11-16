@@ -13,7 +13,7 @@ import 'content_signing.dart';
 //   {"id": "某功能", "percent": 10}                                   定值：10% 的人打开（0 关停、100 全开）
 //   {"id": "某功能", "stages": [{"from": "2026-11-20T00:00:00+08:00", "percent": 20}, ...]}   按时刻放量，只增不减
 //   另可加条件与参数（第 2 版才有，旧版本按默认值）："from"、"until"（带时区的时刻，过了 until 全关）、"platforms": ["android"]、
-//     "channels": ["alpha"]、"minVersion": 29、"maxVersion": 40（安装的构建号区间）、"minLevel": 2（积分等级至少）、"params": {"limit": 3}（命中时功能读）
+//     "channels": ["alpha"]、"minVersion": 29、"maxVersion": 40（安装的构建号区间）、"minLevel": 2（积分等级至少）、"minAccountDays": 7（应用账号建立满几天）、"params": {"limit": 3}（命中时功能读）
 //   {"id": "app_update.alpha.28", "percent": 50}                      覆盖这一版更新清单的放量表：暂停写当时的百分比，直接全量写 100，整版关停写 0
 // "levels" 是积分等级 Lv0–Lv5 的门槛（规则见服务端 src/modules/points/points_level.ts），"unlocks" 是解锁清单（规则见服务端 src/modules/unlock/unlock_rules.ts）。
 // 开关编号要在 lib/domain/feature_flags.dart 登记（应用更新的 app_update.* 除外）；点名单个应用账号不写在这里，用中转的 flag_admin（见 server/README.md）。
