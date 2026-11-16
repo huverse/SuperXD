@@ -81,6 +81,13 @@ export class AppReleaseService {
     return this.rollouts.current();
   }
 
+  // 第 2 版灰度配置：读法见 RolloutSource.flags，与第 1 版共用限流。
+  async flags(ip: string): Promise<dtos.FlagConfigDto> {
+    const retryAfter = await this.limiter.hit('app_rollout', rateSubjectOf(ip), rolloutConfigPerHour, 3600);
+    if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '请求过于频繁', { retryAfter });
+    return this.rollouts.flags();
+  }
+
   // 交给 express 的 sendFile：支持 Range 断点续传与条件请求，按流发送不占内存；根目录限定在发布目录。安装包与字体包共用同一套限流与同时下载上限，按扩展名给类型。
   async send(ip: string, name: string, response: Response): Promise<void> {
     const retryAfter = await this.limiter.hit('app_file', rateSubjectOf(ip), appFilePerHour, 3600);

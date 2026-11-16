@@ -16,6 +16,7 @@
 - account_seal.dart：应用账号的密码与恢复码发出前封装的信封 sealAccountSecrets（一次性 X25519 与中转公钥 accountSealKey 协商、HKDF-SHA256、AES-256-GCM，附加数据绑定设备号；布局与服务端 account_keys.ts 一致，共用 server/test/vectors/account_seal_v1.json）。中转是明文 HTTP，不封装就会被同一网络里的人看到；中转私钥只在服务器与开发者本机，换钥两边一起换。
 - relay_app_account.dart：应用账号端口 AppAccountClient 的中转实现 RelayAppAccountClient（人工决策见 domain/app_account.dart，协议见 server/README.md「应用账号」）：这台设备一把设备密钥（同私信身份的格式），连同账号号与用户名存进安全存储的 superxd_account 命名空间（appAccountStorage，排除备份与迁移；键是 appAccountSlot）。注册、登录、用恢复码重设都先生成一把新密钥，用户名与封装好的秘密一起发出，成功才存本机；扫码登录出示时的密钥只放内存，批准了才存，出示时带上组合根注入的机型 deviceModel（去掉控制字符、最多 64 个字符，读不出不带），离开出示页用那把临时密钥作废票据（cancelJoin，批准过或没出示过不发）；登录着的设备改密码、换恢复码、批准前看请求方（inspectJoin，机型与属地逐项校验）、批准登录码；dropLegacy 删掉 11-15 以前每个教务账号一把的旧密钥（键 account.* ）并交出把手；退出删服务端这把密钥（DELETE /v1/devices，连不上也删本机），注销先 DELETE /v1/account 再退出；中转的错误码换成 AppAccountException（ACCOUNT_DELETED 是 deleted，查看账号时同 notSignedIn 删本机记录），响应逐项校验。
 - relay_unlock_client.dart：解锁端口 UnlockClient 的中转实现 RelayUnlockClient（规则见服务端 src/modules/unlock/unlock_rules.ts）：GET /v1/unlocks 与 POST /v1/unlocks/<编号>/buy，用这个应用账号的设备密钥签名（同挑战与积分），回复上限 16KB、逐项校验（等级 0–5、编号合规、不超过 rolloutUnlockLimit 个）；错误码换成 UnlockException（POINTS_SHORT 带价格、UNLOCK_UNAVAILABLE、ACCOUNT_NOT_FOUND 与 UNAUTHORIZED 是没登录）。
+- relay_flag_target_client.dart：灰度点名端口 RolloutTargetClient 的中转实现 RelayFlagTargetClient（人工决策见 domain/rollout.dart 文件头 11-16 那条，服务端 src/modules/flag_target）：GET /v1/flags/mine，用这个应用账号的设备密钥签名（同解锁），回复上限 32KB、经 decodeRolloutTargets 逐项校验；没这把密钥、ACCOUNT_NOT_FOUND 与 UNAUTHORIZED 为空（没登录），其余错误与看不懂的回复抛 RolloutException。
 - relay_challenge_client.dart：挑战与积分端口 ChallengeClient 的中转实现 RelayChallengeClient（协议见 server/README.md「挑战与积分」）：用这个应用账号的设备密钥签名（AppAccountRef.slot 指向安全存储 superxd_account 里的那把，没登录不发请求），一局的回复放宽到 256KB（专家档一开局有 7 关的题面），回复逐项校验、看不懂按失败报；开门与终章各一个请求（门上的数、全部碎片之和）；错误码换成 ChallengeException（RUN_ACTIVE 带编号、RUN_OVER 与 LEVEL_LOCKED 带现状、ACCOUNT_NOT_FOUND 与 UNAUTHORIZED 是没登录）。 关卡图按服务端模板的规则核对（编号不重复、引用的关都在、不指向自己、每关的碎片只交给一关、不成环；首页缩略图的边同样），不合格当看不懂。
 - relay_client.dart：
   - relayBaseUrl：中转地址只来自构建参数 SUPERXD_RELAY，不写进代码；未配置时私信不可用。
@@ -48,7 +49,7 @@
 
 # 测试
 
-- social_protocol_test.dart（与服务端共用测试向量、信封、二维码、应用账号信封、挂账号凭证）、share_card_test.dart、social_service_test.dart（含「私信跟着应用账号」一组：没登录、每账号一份、旧版第 1 版库并入与升级、换手机接管与再接管、发送被拒后改挂、注销、账号没了）、social_ui_test.dart（含没登录与在另一台手机上的卡片、接管确认、会话里的换设备提示）；节日抽签 relay_reward_client.dart 在 festival_test.dart（经 fake_relay.dart 验签、用应用账号的密钥签名）；应用账号 relay_app_account.dart 在 app_account_test.dart；诊断包 relay_diagnostic_account.dart 在 diagnostic_upload_test.dart；解锁 relay_unlock_client.dart 在 unlock_test.dart。
+- social_protocol_test.dart（与服务端共用测试向量、信封、二维码、应用账号信封、挂账号凭证）、share_card_test.dart、social_service_test.dart（含「私信跟着应用账号」一组：没登录、每账号一份、旧版第 1 版库并入与升级、换手机接管与再接管、发送被拒后改挂、注销、账号没了）、social_ui_test.dart（含没登录与在另一台手机上的卡片、接管确认、会话里的换设备提示）；节日抽签 relay_reward_client.dart 在 festival_test.dart（经 fake_relay.dart 验签、用应用账号的密钥签名）；应用账号 relay_app_account.dart 在 app_account_test.dart；诊断包 relay_diagnostic_account.dart 在 diagnostic_upload_test.dart；解锁 relay_unlock_client.dart 在 unlock_test.dart；灰度点名 relay_flag_target_client.dart 在 rollout_test.dart。
 - fake_relay.dart 是按协议 v1 规则验签的内存假中转（含应用账号登记 signIn、挂账号与接管、好友公钥与 movedFrom）。服务端：cd server 后 npm test（Vitest，需 docker-compose.test.yml 起的 MySQL 与 Redis）。
 - 手动入口：tool/verify_social.dart（两个真实客户端经真实中转联调，只用合成数据，运行方式见文件头；挂应用账号那一个请求在本地截下，免得在线上留下合成的应用账号，见文件头）。
 

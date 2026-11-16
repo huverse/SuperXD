@@ -16,7 +16,7 @@ import 'content_signing.dart';
 // 运行：
 //   dart run tool/release_manifest.dart --apks <安装包目录> --notes <更新说明.txt> --out <输出目录> --signing-key <私钥.pem> [--channel alpha] [--min-supported 0] [--rollout 20,50,100]
 // 分批更新（人工决策见 lib/domain/rollout.dart）：--rollout 是从发布时刻起每天一档的放量百分比（只增、最后一档 100），写进每个架构的签名载荷；
-// 不给就是全量。明文字段不带它（中转按白名单校验明文清单，旧客户端也不认），发版后要暂停或直接全量改仓库 rollout/rollout.json。
+// 不给就是全量。明文字段不带它（中转按白名单校验明文清单，旧客户端也不认），发版后要暂停或直接全量改维护者本机的灰度配置、用 tool/rollout_publish.sh 上传。
 // 中转按 128KB 封顶读清单文件（server/src/common/relay_limits.ts 的 appReleaseFileMaxBytes）：三份信封加明文，更新说明写满 4000 字也不到 70KB。
 const releaseManifestFileMaxBytes = 128 * 1024;
 

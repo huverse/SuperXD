@@ -2,14 +2,23 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 
 import 'package:superxd/application/rollouts.dart';
 import 'package:superxd/device/relay_release_feed.dart';
 import 'package:superxd/device/relay_rollout_feed.dart';
 import 'package:superxd/device/signed_content.dart';
+import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/app_update.dart';
+import 'package:superxd/domain/challenge.dart';
+import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/domain/rollout.dart';
 import 'package:superxd/local/rollout_memory.dart';
+import 'package:superxd/social/relay_app_account.dart';
+import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/social/relay_flag_target_client.dart';
+import 'package:superxd/social/social_crypto.dart';
 
 import '../tool/content_signing.dart';
 import '../tool/release_manifest.dart';
@@ -165,9 +174,9 @@ void main() {
       }
     });
 
-    test('仓库里的 rollout/rollout.json 格式正确（不对的 PR 合并不了）', () async {
-      final config = await readRolloutConfig(File('rollout/rollout.json'));
-      expect(config.rules.length, lessThanOrEqualTo(rolloutRuleLimit));
+    test('登记的功能开关编号合规、不重复（配置与服务器的点名都按它认）', () {
+      expect(featureFlags.every((flag) => rolloutIdPattern.hasMatch(flag.id)), isTrue);
+      expect(featureFlags.map((flag) => flag.id).toSet().length, featureFlags.length);
     });
   });
 
@@ -235,7 +244,7 @@ void main() {
       accountId = null;
       feed = _Feed();
       memory = FileRolloutMemory.memory();
-      rollouts = Rollouts(memory: memory, channel: 'alpha', accountId: () => accountId, feed: feed, now: () => now);
+      rollouts = Rollouts(platform: 'android', versionCode: 30, memory: memory, channel: 'alpha', accountId: () => accountId, feed: feed, now: () => now);
     });
 
     AppRelease release({List<RolloutStage> rollout = const []}) => AppRelease(
@@ -304,7 +313,7 @@ void main() {
       final lifted = candidates.firstWhere((subject) => !rolloutIncludes('feature', subject, 10) && rolloutIncludes('feature', subject, 10, level: 5));
       var level = 5;
       var asked = 0;
-      final leveled = Rollouts(memory: memory, channel: 'alpha', accountId: () => accountId, feed: feed, level: () async => (asked++, level).$2, now: () => now);
+      final leveled = Rollouts(platform: 'android', versionCode: 30, memory: memory, channel: 'alpha', accountId: () => accountId, feed: feed, level: () async => (asked++, level).$2, now: () => now);
       feed.next = decodeRolloutConfig({'flags': [{'id': 'feature', 'percent': 10}]});
       accountId = lifted;
       await leveled.refresh();
@@ -329,7 +338,7 @@ void main() {
       final lifted = candidates.firstWhere((subject) => !rolloutIncludes('feature', subject, 10) && rolloutIncludes('feature', subject, 10, level: 5));
       final other = candidates.firstWhere((subject) => subject != lifted && !rolloutIncludes('other', subject, 10) && rolloutIncludes('other', subject, 10, level: 5));
       var asked = 0, levelsOn = true;
-      final leveled = Rollouts(memory: memory, channel: 'alpha', accountId: () => accountId, feed: feed, level: () async => (asked++, 5).$2, levelsOn: () => levelsOn, now: () => now);
+      final leveled = Rollouts(platform: 'android', versionCode: 30, memory: memory, channel: 'alpha', accountId: () => accountId, feed: feed, level: () async => (asked++, 5).$2, levelsOn: () => levelsOn, now: () => now);
       feed.next = decodeRolloutConfig({'flags': [{'id': 'feature', 'percent': 10}, {'id': 'other', 'percent': 10}]});
       accountId = lifted;
       await leveled.refresh();
@@ -352,7 +361,7 @@ void main() {
     test('没登录应用账号不取等级；取不到照旧用记着的', () async {
       var asked = 0;
       int? level = 3;
-      final leveled = Rollouts(memory: memory, channel: 'alpha', accountId: () => accountId, feed: feed, level: () async => (asked++, level).$2, now: () => now);
+      final leveled = Rollouts(platform: 'android', versionCode: 30, memory: memory, channel: 'alpha', accountId: () => accountId, feed: feed, level: () async => (asked++, level).$2, now: () => now);
       feed.next = RolloutConfig.empty;
       await leveled.refresh();
       expect(asked, 0);
@@ -368,7 +377,7 @@ void main() {
     });
 
     test('没配中转时不联网，开关按默认值', () async {
-      final offline = Rollouts(memory: FileRolloutMemory.memory(), channel: 'alpha', accountId: () => null, now: () => now);
+      final offline = Rollouts(platform: 'android', versionCode: 30, memory: FileRolloutMemory.memory(), channel: 'alpha', accountId: () => null, now: () => now);
       await offline.refresh();
       expect(offline.enabled('challenge', fallback: false), isFalse);
     });
@@ -443,4 +452,252 @@ void main() {
       expect(fixture.updates.takePrompt(), isNotNull);
     });
   });
+
+  group('第 2 版：条件、参数与点名', () {
+    final conditional = {
+      'id': 'game.flash2',
+      'percent': 100,
+      'from': '2026-11-14T00:00:00+08:00',
+      'until': '2026-11-20T00:00:00Z',
+      'platforms': ['android'],
+      'channels': ['alpha'],
+      'minVersion': 29,
+      'maxVersion': 40,
+      'minLevel': 2,
+      'params': {'limit': 3, 'ratio': 0.5, 'label': '新版', 'strict': true},
+    };
+
+    test('条件与参数读回来再写一样；旧版视图去掉带新字段的开关，等级与解锁照旧', () {
+      final config = decodeRolloutConfig({
+        'version': 2,
+        'flags': [conditional, {'id': 'plain', 'percent': 10}],
+        'levels': [0, 500, 3000, 10000, 30000, 80000],
+      });
+      final rule = config.rules['game.flash2']!;
+      expect(rule.from, DateTime.utc(2026, 11, 13, 16));
+      expect(rule.platforms, {'android'});
+      expect(rule.params, {'limit': 3, 'ratio': 0.5, 'label': '新版', 'strict': true});
+      expect(rule.conditional, isTrue);
+      expect(config.rules['plain']!.conditional, isFalse);
+      expect(jsonEncode(encodeRolloutConfig(decodeRolloutConfig(encodeRolloutConfig(config)))), jsonEncode(encodeRolloutConfig(config)));
+      final legacy = config.legacy;
+      expect(legacy.rules.keys, ['plain']);
+      expect(legacy.levels, config.levels);
+      // 旧版本的解码：开关只有 id 加 percent 或 stages，顶层不带 version。
+      final legacyJson = encodeRolloutConfig(legacy);
+      expect(legacyJson.keys, ['flags', 'levels']);
+      expect((legacyJson['flags']! as List).single, {'id': 'plain', 'percent': 10});
+    });
+
+    test('条件的外部输入：时刻不带时区、窗口倒置、平台不认识、版本区间倒置、等级越界、参数名或值不合法、多出来的字段都不认', () {
+      Map<String, Object?> flag(Map<String, Object?> extra) => {'flags': [{'id': 'x', 'percent': 1, ...extra}]};
+      for (final bad in [
+        flag({'from': '2026-11-14T00:00:00'}),
+        flag({'from': '2026-11-15T00:00:00Z', 'until': '2026-11-14T00:00:00Z'}),
+        flag({'until': 5}),
+        flag({'platforms': ['windows']}),
+        flag({'platforms': <String>[]}),
+        flag({'channels': ['Bad Channel']}),
+        flag({'minVersion': 40, 'maxVersion': 29}),
+        flag({'minVersion': 0}),
+        flag({'minLevel': pointsLevelCount}),
+        flag({'params': <String, Object?>{}}),
+        flag({'params': {'Bad': 1}}),
+        flag({'params': {'list': <int>[]}}),
+        flag({'params': {'text': 'x' * (rolloutParamTextMax + 1)}}),
+        flag({'params': {for (var index = 0; index <= rolloutParamLimit; index++) 'k$index': index}}),
+        flag({'extra': 1}),
+        {'version': 3, 'flags': <Object?>[]},
+      ]) {
+        expect(() => decodeRolloutConfig(bad), throwsFormatException, reason: '$bad');
+      }
+    });
+
+    test('两份签名：第 2 版载荷是整份配置，第 1 版只放没有新字段的开关；核对挡住第 1 版里带条件的开关', () async {
+      final signing = await TestSigning.create();
+      final config = decodeRolloutConfig({'flags': [conditional, {'id': 'plain', 'percent': 10}], 'unlocks': [{'id': 'game.sudoku', 'title': '数独', 'price': 100}]});
+      final flags = jsonDecode(await encodeFlagsFile(config, [signing.rollout])) as Map<String, Object?>;
+      expect(flags.keys, ['version', 'envelope']);
+      expect((await checkFlagsConfig(flags, keys: signing.keys)).rules.keys, ['game.flash2', 'plain']);
+      final legacy = jsonDecode(await encodeRolloutFile(config, [signing.rollout])) as Map<String, Object?>;
+      await checkRolloutConfig(legacy, keys: signing.keys);
+      expect((await decodeSignedRolloutConfig(legacy, keys: signing.keys)).rules.keys, ['plain']);
+      final plain = encodeRolloutConfig(config);
+      final forged = {...plain, 'envelope': await signing.seal(plain, SignedContent.rollout, [signing.rollout])};
+      await expectLater(checkRolloutConfig(forged, keys: signing.keys), throwsFormatException);
+      await expectLater(checkFlagsConfig({...flags, 'flags': <Object?>[]}, keys: signing.keys), throwsFormatException);
+      await expectLater(checkFlagsConfig({'version': 2, 'envelope': legacy['envelope']}, keys: signing.keys), completes, reason: '第 1 版的载荷也是合法的第 2 版');
+    });
+
+    test('拉取：先拉第 2 版；中转还没放第 2 版或是旧中转（404）退回第 1 版；第 2 版外形不对报错', () async {
+      final signing = await TestSigning.create();
+      final config = decodeRolloutConfig({'flags': [conditional, {'id': 'plain', 'percent': 10}]});
+      final flags = await encodeFlagsFile(config, [signing.rollout]);
+      final legacy = await encodeRolloutFile(config, [signing.rollout]);
+      Future<RolloutConfig> fetch(Map<String, (String, int)> replies) {
+        final paths = <String>[];
+        return RelayRolloutFeed('https://relay.invalid', keys: signing.keys, client: MockClient((request) async {
+          paths.add(request.url.path);
+          final (body, status) = replies[request.url.path]!;
+          return http.Response.bytes(utf8.encode(body), status);
+        })).fetch();
+      }
+
+      expect((await fetch({'/v1/app/flags': (flags, 200)})).rules.keys, ['game.flash2', 'plain']);
+      expect((await fetch({'/v1/app/flags': ('{"version":2,"envelope":null}', 200), '/v1/app/rollout': (legacy, 200)})).rules.keys, ['plain']);
+      expect((await fetch({'/v1/app/flags': ('{"code":"NOT_FOUND"}', 404), '/v1/app/rollout': (legacy, 200)})).rules.keys, ['plain']);
+      await expectLater(fetch({'/v1/app/flags': ('{"version":1,"envelope":null}', 200)}), throwsA(isA<RolloutException>()));
+      await expectLater(fetch({'/v1/app/flags': ('{"code":"INTERNAL"}', 500)}), throwsA(isA<RolloutException>()));
+    });
+
+    group('判定', () {
+      late DateTime now;
+      late String? accountId;
+      late _Feed feed;
+      late FileRolloutMemory memory;
+      late List<RolloutTarget>? remote;
+      late int asked;
+      Rollouts rollouts({String platform = 'android', String channel = 'alpha', int versionCode = 30, int level = 2}) => Rollouts(
+        memory: memory,
+        channel: channel,
+        platform: platform,
+        versionCode: versionCode,
+        accountId: () => accountId,
+        feed: feed,
+        level: () async => level,
+        targets: () async => (asked++, remote).$2,
+        now: () => now,
+      );
+      setUp(() {
+        now = DateTime.utc(2026, 11, 15);
+        accountId = 'account-a';
+        feed = _Feed()..next = decodeRolloutConfig({'flags': [conditional]});
+        memory = FileRolloutMemory.memory();
+        remote = const [];
+        asked = 0;
+      });
+      const flag = FeatureFlag('game.flash2', fallback: false);
+
+      test('条件都满足才按比例开，命中时读得到参数；时间窗外、平台渠道不对、版本号不在区间、等级不够都关', () async {
+        final on = rollouts();
+        await on.refresh();
+        expect(on.isOn(flag), isTrue);
+        expect(on.param(flag, 'limit'), 3);
+        expect(on.param(flag, 'missing'), isNull);
+        expect(rollouts(platform: 'ios').isOn(flag), isFalse);
+        expect(rollouts(channel: 'beta').isOn(flag), isFalse);
+        expect(rollouts(versionCode: 28).isOn(flag), isFalse);
+        expect(rollouts(versionCode: 41).isOn(flag), isFalse);
+        expect(rollouts(platform: 'ios').param(flag, 'limit'), isNull, reason: '没开不给参数');
+        now = DateTime.utc(2026, 11, 20);
+        expect(on.isOn(flag), isFalse, reason: '过了 until 全关');
+        now = DateTime.utc(2026, 11, 13, 15, 59);
+        expect(on.isOn(flag), isFalse, reason: 'from 之前关');
+      });
+
+      test('等级条件按记着的等级：等级不够关，娱乐与积分关着按 Lv0', () async {
+        final low = rollouts(level: 1);
+        await low.refresh();
+        expect(low.isOn(flag), isFalse);
+        final off = Rollouts(memory: memory, channel: 'alpha', platform: 'android', versionCode: 30, accountId: () => accountId, feed: feed, level: () async => 5, levelsOn: () => false, now: () => now);
+        await memory.saveLevel('account-a', 5);
+        expect(off.isOn(flag), isFalse);
+      });
+
+      test('点名的不看比例与条件、只看到期时刻；撤销（问到空列表）就关；问不到照旧用记着的；没登录不问也不用', () async {
+        feed.next = decodeRolloutConfig({'flags': [{...conditional, 'percent': 0}]});
+        remote = [RolloutTarget('game.flash2', until: DateTime.utc(2026, 11, 16))];
+        final ios = rollouts(platform: 'ios', level: 0);
+        await ios.refresh();
+        expect(asked, 1);
+        expect(ios.isOn(flag), isTrue, reason: '点名不看平台、等级与比例');
+        expect(ios.param(flag, 'limit'), 3, reason: '点名开的也读配置里的参数');
+        now = DateTime.utc(2026, 11, 16);
+        expect(ios.isOn(flag), isFalse, reason: '点名到期');
+        now = DateTime.utc(2026, 11, 15).add(Rollouts.refreshGap);
+        remote = null;
+        await ios.refresh();
+        expect(ios.isOn(flag), isTrue, reason: '问不到照旧用记着的');
+        now = now.add(Rollouts.refreshGap);
+        remote = const [];
+        await ios.refresh();
+        expect(ios.isOn(flag), isFalse, reason: '撤销');
+        accountId = null;
+        now = now.add(Rollouts.refreshGap);
+        remote = [const RolloutTarget('game.flash2')];
+        final before = asked;
+        await ios.refresh();
+        expect(asked, before, reason: '没登录不问');
+        expect(ios.isOn(flag), isFalse);
+      });
+
+      test('点名跟着主体存在本机：换了账号从头记；格式不对的当没问过', () async {
+        final directory = await Directory.systemTemp.createTemp('rollout_targets');
+        addTearDown(() => directory.delete(recursive: true));
+        final file = File('${directory.path}/rollout.json');
+        final stored = await FileRolloutMemory.open(file);
+        await stored.saveTargets('account-a', [RolloutTarget('a.one', until: DateTime.utc(2026, 12, 1)), const RolloutTarget('a.two')]);
+        final again = await FileRolloutMemory.open(file);
+        expect(again.targetsOf('account-a').map((target) => (target.id, target.until)), [('a.one', DateTime.utc(2026, 12, 1)), ('a.two', null)]);
+        expect(again.targetsOf('account-b'), isEmpty);
+        await again.saveLevel('account-b', 1);
+        expect(again.targetsOf('account-a'), isEmpty);
+        await again.saveTargets('account-a', [const RolloutTarget('a.one')]);
+        final json = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+        await file.writeAsString(jsonEncode({...json, 'targets': {'flags': [{'id': 'Bad Id', 'until': null}]}}));
+        final bad = await FileRolloutMemory.open(file);
+        expect(bad.targetsOf('account-a'), isEmpty);
+        expect(bad.installId, again.installId);
+      });
+    });
+
+    test('点名的中转客户端：用应用账号的设备密钥签名问 /v1/flags/mine；没这把密钥或账号不在了为空，连不上与看不懂的回复报错', () async {
+      final vault = MemoryAppAccountVault();
+      final relay = _Relay();
+      final client = RelayFlagTargetClient(vault: vault, transport: relay);
+      const ref = AppAccountRef(accountId: 'AAAAAAAAAAAAAAAAAAAAAA', slot: appAccountSlot);
+      expect(await client.mine(ref), isNull);
+      expect(relay.requests, isEmpty, reason: '没有密钥不发请求');
+      final key = await SocialIdentity.fromSeeds(List<int>.generate(32, (index) => index + 1), List<int>.generate(32, (index) => index + 33));
+      await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
+      relay.reply = const RelayResponse(200, {'flags': [{'id': 'game.flash2', 'until': '2026-12-01T00:00:00.000Z'}]});
+      final targets = (await client.mine(ref))!;
+      expect(relay.requests.last.$1, 'GET /v1/flags/mine');
+      expect(relay.requests.last.$2['x-sxd-device'], key.deviceId);
+      expect(relay.requests.last.$2.containsKey('x-sxd-signature'), isTrue);
+      expect(targets.single.until, DateTime.utc(2026, 12, 1));
+      relay.reply = const RelayResponse(404, {'code': 'ACCOUNT_NOT_FOUND'});
+      expect(await client.mine(ref), isNull);
+      relay.reply = const RelayResponse(429, {'code': 'RATE_LIMITED', 'retryAfter': 60});
+      await expectLater(client.mine(ref), throwsA(isA<RolloutException>()));
+      relay.reply = const RelayResponse(200, {'flags': [{'id': 'Bad Id', 'until': null}]});
+      await expectLater(client.mine(ref), throwsA(isA<RolloutException>()));
+    });
+
+    test('点名列表是外部输入：编号合规、不重复、到期时刻带时区、不超过上限', () {
+      expect(decodeRolloutTargets({'flags': [{'id': 'a.b', 'until': '2026-12-01T00:00:00.000Z'}, {'id': 'c', 'until': null}]}).map((target) => target.id), ['a.b', 'c']);
+      for (final bad in <Object?>[
+        null,
+        {'flags': 'x'},
+        {'flags': [{'id': 'Bad Id', 'until': null}]},
+        {'flags': [{'id': 'a', 'until': null}, {'id': 'a', 'until': null}]},
+        {'flags': [{'id': 'a', 'until': '2026-12-01T00:00:00'}]},
+        {'flags': [{'id': 'a'}]},
+        {'flags': [{'id': 'a', 'until': 1}]},
+        {'flags': [for (var index = 0; index <= rolloutTargetLimit; index++) {'id': 'f$index', 'until': null}]},
+      ]) {
+        expect(() => decodeRolloutTargets(bad), throwsFormatException, reason: '$bad');
+      }
+    });
+  });
+}
+
+class _Relay implements RelayTransport {
+  RelayResponse reply = const RelayResponse(200, {});
+  final requests = <(String, Map<String, String>)>[];
+  @override
+  Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, int? limit, bool background = false}) async {
+    requests.add(('$method $pathWithQuery', headers));
+    return reply;
+  }
 }

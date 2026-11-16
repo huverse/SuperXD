@@ -17,6 +17,7 @@ import 'package:superxd/domain/rollout.dart';
 //   dart run tool/content_signing.dart check-release <清单.json> --channel alpha
 //   dart run tool/content_signing.dart check-notes <developer_notes.json>
 //   dart run tool/content_signing.dart check-rollout <rollout.json>
+//   dart run tool/content_signing.dart check-flags <flags.json>
 //   dart run tool/content_signing.dart public-key <私钥.pem>      换钥时取新钥的公钥，写进 lib/device/signed_content.dart
 const releaseAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64'];
 
@@ -112,9 +113,19 @@ Future<void> checkDeveloperNotes(Map<String, Object?> file, {List<TrustedSigning
 Future<void> checkRolloutConfig(Map<String, Object?> file, {List<TrustedSigningKey> keys = trustedSigningKeys}) async {
   if (file['envelope'] == null) throw const FormatException('灰度配置没有签名信封');
   final signed = await decodeSignedRolloutConfig(file, keys: keys);
-  final plain = decodeRolloutConfig({'flags': file['flags'], if (file.containsKey('levels')) 'levels': file['levels']});
-  if (jsonEncode(encodeRolloutConfig(signed)) != jsonEncode(encodeRolloutConfig(plain))) throw const FormatException('签名载荷与明文 flags、levels 不一致');
+  final plain = decodeRolloutConfig({'flags': file['flags'], if (file.containsKey('levels')) 'levels': file['levels'], if (file.containsKey('unlocks')) 'unlocks': file['unlocks']});
+  if (jsonEncode(encodeRolloutConfig(signed)) != jsonEncode(encodeRolloutConfig(plain))) throw const FormatException('签名载荷与明文 flags、levels、unlocks 不一致');
+  // 第 1 版要给 alpha.28 及以前的解码读：开关只有 id 加 percent 或 stages，多一个字段旧版本就整份拒收。
+  if (signed.rules.values.any((rule) => rule.conditional)) throw const FormatException('第 1 版里有带条件或参数的开关');
   stdout.writeln('[ContentSigning] action=check_rollout flags=${signed.rules.length} keyIds=${_keyIds(file['envelope'])}');
+}
+
+// 第 2 版（flags.json）：只有版本号与签名信封，载荷用客户端的解码读得出（人工决策见 lib/domain/rollout.dart 文件头 11-16 那条）。
+Future<RolloutConfig> checkFlagsConfig(Map<String, Object?> file, {List<TrustedSigningKey> keys = trustedSigningKeys}) async {
+  if (file.length != 2 || file['version'] != 2 || file['envelope'] == null) throw const FormatException('第 2 版灰度配置要只有 version 2 与签名信封');
+  final config = decodeRolloutConfig(jsonDecode(utf8.decode(await openSignedEnvelope(file['envelope'], SignedContent.rollout, keys: keys))));
+  stdout.writeln('[ContentSigning] action=check_flags flags=${config.rules.length} keyIds=${_keyIds(file['envelope'])}');
+  return config;
 }
 
 String _keyIds(Object? envelope) => switch (envelope) {
@@ -131,10 +142,12 @@ Future<void> main(List<String> args) async {
         await checkDeveloperNotes(jsonDecode(await File(path).readAsString()) as Map<String, Object?>);
       case ['check-rollout', final path]:
         await checkRolloutConfig(jsonDecode(await File(path).readAsString()) as Map<String, Object?>);
+      case ['check-flags', final path]:
+        await checkFlagsConfig(jsonDecode(await File(path).readAsString()) as Map<String, Object?>);
       case ['public-key', final path]:
         stdout.writeln(await publicKeyOfSeed(seedFromPem(await File(path).readAsString())));
       default:
-        stderr.writeln('usage: dart run tool/content_signing.dart check-release <file> --channel <channel> | check-notes <file> | check-rollout <file> | public-key <pem>');
+        stderr.writeln('usage: dart run tool/content_signing.dart check-release <file> --channel <channel> | check-notes <file> | check-rollout <file> | check-flags <file> | public-key <pem>');
         exitCode = 64;
     }
   } on FormatException catch (error) {

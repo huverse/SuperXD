@@ -65,7 +65,7 @@ export const developerNoteTitleMax = 40;
 export const developerNoteBodyMax = 4000;
 export const developerNotesFileMaxBytes = 1024 * 1024;
 
-// 灰度配置（人工决策见客户端 lib/domain/rollout.dart）：流水线由仓库 rollout/rollout.json 签好放进发布目录（tool/rollout_config.dart），
+// 灰度配置（人工决策见客户端 lib/domain/rollout.dart）：维护者本机签好两份放进发布目录（tool/rollout_config.dart 与 rollout_publish.sh，第 1 版 rollout.json、第 2 版 flags.json），
 // 客户端同意协议与政策后、回到前台时看一眼（间隔不到一小时不联网），同一 IP 每小时 600 次（与开发者的话同档）。最多 200 个开关、每个 20 档，
 // 明文加签名载荷两份也远不到 64KB，文件超过 64KB 视为放错文件，拒绝读取（与客户端 lib/device/relay_rollout_feed.dart 的响应上限一致）。
 export const rolloutConfigPerHour = 600;
@@ -156,6 +156,11 @@ export const unlockPriceMax = 100_000;
 export const unlockReadPerDevicePerHour = 600;
 export const unlockBuyPerAccountPerHour = 30;
 export const unlockKeepDaysAfterPublic = 30;
+
+// 灰度点名（src/modules/flag_target）：一个账号最多回这么多个点名的开关（同客户端 rolloutRuleLimit），每台设备每小时最多问这么多次
+// （客户端隔一小时、回到前台才问，给手动刷新与多设备留余量）。
+export const flagTargetLimit = 200;
+export const flagTargetReadPerDevicePerHour = 120;
 
 // 挑战（人工决策见客户端 lib/playground/challenge/challenge_rules.dart）：一个账号同时只有一局，每小时最多开 30 局；
 // 每台设备每小时 3000 个挑战请求（看列表、看局面、交答案合计）；一关错交到配置里的上限（maxErrors）就算没过。

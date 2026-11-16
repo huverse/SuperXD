@@ -11,7 +11,7 @@ import 'package:superxd/device/signed_content.dart';
 // 配置最多 rolloutRuleLimit 个开关、每个最多 rolloutStageLimit 档，明文加签名载荷两份也远不到 64KB；中转与 tool/rollout_config.dart 同一上限。
 const rolloutResponseMaxBytes = 64 * 1024;
 
-// 灰度配置的自建中转实现（人工决策见 domain/rollout.dart）：GET /v1/app/rollout，请求免设备签名、不带任何标识，单次 15 秒超时、不自动重试。
+// 灰度配置的自建中转实现（人工决策见 domain/rollout.dart）：GET /v1/app/flags（第 2 版，没有时退回 /v1/app/rollout），请求免设备签名、不带任何标识，单次 15 秒超时、不自动重试。
 // 经共用请求内核 CampusHttp 发（请求记录在内核里记，模块 rollout）。只认验签通过的内容（device/signed_content.dart 的 rollout 类）。
 class RelayRolloutFeed implements RolloutFeed {
   RelayRolloutFeed(this.baseUrl, {this.keys = trustedSigningKeys, http.Client? client, this.timeout = const Duration(seconds: 15)}) : _http = CampusHttp('rollout', client: client);
@@ -20,21 +20,49 @@ class RelayRolloutFeed implements RolloutFeed {
   final Duration timeout;
   final CampusHttp _http;
 
+  // 先拉第 2 版（/v1/app/flags，开关带条件与参数，人工决策见 domain/rollout.dart 文件头 11-16 那条）；中转还没放第 2 版（信封为空）
+  // 或是还没部署这个接口的旧中转（404）时退回第 1 版 /v1/app/rollout。
   @override
   Future<RolloutConfig> fetch() async {
+    final flags = await _get('/v1/app/flags', accept404: true);
+    if (flags != null) {
+      if (flags case {'version': 2, 'envelope': final Object envelope}) return _decode(() async => decodeRolloutConfig(jsonDecode(utf8.decode(await openSignedEnvelope(envelope, SignedContent.rollout, keys: keys)))));
+      if (flags case {'version': 2, 'envelope': null}) {
+        campusLog('[Rollouts] action=feed source=legacy');
+      } else {
+        campusLog('[Rollouts] action=feed errorType=FormatException message=第 2 版回复不合法');
+        throw const RolloutException('配置格式不对');
+      }
+    }
+    final legacy = await _get('/v1/app/rollout');
+    return _decode(() => decodeSignedRolloutConfig(legacy, keys: keys));
+  }
+
+  // 取一份 JSON；accept404 为真时 404 返回空（旧中转没有这个接口）。
+  Future<Object?> _get(String path, {bool accept404 = false}) async {
     final http.Response response;
     try {
-      response = await _http.send('GET', Uri.parse('$baseUrl/v1/app/rollout'), timeout: timeout, limit: rolloutResponseMaxBytes);
+      response = await _http.send('GET', Uri.parse('$baseUrl$path'), timeout: timeout, limit: rolloutResponseMaxBytes);
     } catch (error, stack) {
       campusLog('[Rollouts] action=feed errorType=${error.runtimeType}\n$stack');
       throw const RolloutException('连不上服务器');
     }
+    if (accept404 && response.statusCode == 404) return null;
     if (response.statusCode != 200) {
       campusLog('[Rollouts] action=feed status=${response.statusCode}');
       throw RolloutException('服务器回了 ${response.statusCode}');
     }
     try {
-      return await decodeSignedRolloutConfig(jsonDecode(utf8.decode(response.bodyBytes)), keys: keys);
+      return jsonDecode(utf8.decode(response.bodyBytes));
+    } on FormatException catch (error, stack) {
+      campusLog('[Rollouts] action=feed errorType=${error.runtimeType} message=${error.message}\n$stack');
+      throw const RolloutException('配置格式不对');
+    }
+  }
+
+  Future<RolloutConfig> _decode(Future<RolloutConfig> Function() decode) async {
+    try {
+      return await decode();
     } on SignedEnvelopeException catch (error, stack) {
       campusLog('[Rollouts] action=feed errorType=${error.runtimeType} reason=${error.reason}\n$stack');
       throw const RolloutException('配置没通过校验');

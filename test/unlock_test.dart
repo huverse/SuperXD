@@ -48,7 +48,7 @@ void main() {
           const RolloutUnlock(id: 'toolbox.gone', title: '下架', minLevel: 1, retired: true),
         ]),
       );
-      rollouts = Rollouts(memory: memory, channel: 'alpha', accountId: () => appAccounts.accountId, now: () => _now);
+      rollouts = Rollouts(platform: 'android', versionCode: 30, memory: memory, channel: 'alpha', accountId: () => appAccounts.accountId, now: () => _now);
       client = _Client();
       unlocks = Unlocks(rollouts: rollouts, appAccounts: appAccounts, client: client, now: () => _now);
     });
