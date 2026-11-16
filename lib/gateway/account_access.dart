@@ -3,6 +3,7 @@ import 'package:flutter/foundation.dart';
 import 'package:superxd/domain/account.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/gateway_code.dart';
+import 'package:superxd/domain/sync_record.dart';
 
 // 账号生命周期属于应用层；页面不感知 SQLite 路径、教务客户端或 cookie。
 abstract class AccountAccess extends ChangeNotifier implements CampusGateway {
@@ -11,6 +12,11 @@ abstract class AccountAccess extends ChangeNotifier implements CampusGateway {
   AccountIdentity? get activeIdentity;
   // 学期、课表、作息、开学日或提醒设置在本机写入成功后通知；课前提醒据此重新对账。
   Listenable get scheduleChanges => const _NoChanges();
+  // 同步记录的默认实现（不接本机库的替身用）：记了不存、读出来没有；AccountGateway 转给当前账号的库。
+  @override
+  Future<GatewayResult<SyncRecord>> recordSync(SyncRecord record) async => GatewayResult(ok: true, data: record, source: 'local', fetchedAt: DateTime.now().toUtc().toIso8601String());
+  @override
+  Future<GatewayResult<List<SyncRecord>>> readSyncRecords() async => GatewayResult(ok: true, data: const [], source: 'local', fetchedAt: DateTime.now().toUtc().toIso8601String());
   Future<GatewayResult<LoginView>> loginRemembered(String account, String password, {required bool remember}) => login(account, password);
   Future<bool> isRemembered() async => false;
   // 已登录时用密码核对一次（要验证码时经 submitLoginCaptcha 接着交）后开启记住账号，不切换当前会话。

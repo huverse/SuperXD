@@ -8,12 +8,15 @@ import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/gateway_code.dart';
 import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/sync_record.dart';
 
 // 自动同步的编排（人工决策见 domain/auto_sync.dart）：设备级，经账号门面跟着当前账号走。
 // 决定什么时候同步（到期、没有别的同步在跑）、同步什么（设置里的学年与内容）、冲突怎么办（不覆盖，教务确有新改动的留到打扰时机问），
 // 并按设置排好或撤掉系统的后台任务。真正的请求与落库都经 CampusSync 与 CampusGateway。
 class AutoSync extends ChangeNotifier {
-  AutoSync({required this.gateway, int Function()? generation, this.scheduler, DateTime Function()? clock}) : _generation = generation ?? _oneAccount, _clock = clock ?? DateTime.now;
+  AutoSync({required this.gateway, int Function()? generation, this.scheduler, this.notices, DateTime Function()? clock}) : _generation = generation ?? _oneAccount, _clock = clock ?? DateTime.now;
+  // 有变化时的系统通知（人工决策见 domain/sync_record.dart）；为空时不发。
+  final SyncNotices? notices;
   final CampusGateway gateway;
   // 账号代次（组合根给 AccountAccess.generation）：门面跟着当前账号走，一轮同步中途换了账号，剩下的请求与结果就不属于新账号，
   // 在下一检查点停下、什么都不记（不变量 1）。测试替身不换账号。
@@ -128,11 +131,18 @@ class AutoSync extends ChangeNotifier {
     campusLog('[AutoSync] action=finish state=${status.state?.name} cancelled=${report.cancelled} items=${report.items.length} unfinished=${report.unfinished.length}');
     await _record(status, current, generation);
     await _reloadHeld(generation);
+    if (report.record case final record? when syncRecordNotice(record) != null) {
+      try {
+        await notices?.show(record);
+      } catch (error, stack) {
+        campusLog('[AutoSync] action=notice errorType=${error.runtimeType}\n$stack');
+      }
+    }
   }
 
   // 打扰时机里处理暂存的那份：按选择落库，再重读等着选的课表。
   Future<SyncItemResult> settle(HeldScheduleSync held, ScheduleResolution resolution, {required String? expectedRevisionId}) async {
-    final result = await _sync.settle(held.term, held.courses, resolution, expectedRevisionId: expectedRevisionId);
+    final result = await _sync.settle(held.term, held.courses, resolution, expectedRevisionId: expectedRevisionId, record: true);
     await _reloadHeld(_generation());
     return result;
   }

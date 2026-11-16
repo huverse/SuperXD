@@ -73,7 +73,7 @@ void main() {
     // 记录在后台写：等文件里写着这一幅再往下走。以前固定等 20ms，慢的 CI 上记录还没落盘就「重开」，读到旧记录（10-25 main CI 偶发红）。
     Future<void> written(String id) async {
       final memory = File('${temp.path}/splash_painting.json');
-      while (!memory.existsSync() || !memory.readAsStringSync().contains('"$id"')) {
+      while (!memory.existsSync() || !memory.readAsStringSync().contains('"last":"$id"')) {
         await Future<void>.delayed(const Duration(milliseconds: 5));
       }
     }
@@ -88,6 +88,39 @@ void main() {
         await written(seen.last);
       }
       expect(seen, ['a', 'b', 'c', 'a']);
+    });
+
+    // 11-16 用户要求开屏画作可以自己排顺序、选播哪几幅（人工决策见 domain/painting.dart）。
+    test('播放顺序：按用户排的顺序轮换、跳过不播的；刚关掉的那幅从它的位置往后找；重开还在；至少留一幅', () async {
+      final first = await open();
+      expect([for (final painting in first.arranged) painting.id], ['a', 'b', 'c']);
+      await first.arrange(['c', 'a', 'b'], {'a'});
+      expect([for (final painting in first.arranged) painting.id], ['c', 'a', 'b']);
+      expect([for (final painting in first.arranged) first.plays(painting)], [true, false, true]);
+      await expectLater(first.arrange(['a', 'b', 'c'], {'a', 'b', 'c'}), throwsArgumentError, reason: '一幅都不播不存');
+      final seen = <String>[];
+      for (var launch = 0; launch < 3; launch++) {
+        final library = await open();
+        seen.add(library.next()!.id);
+        await written(seen.last);
+      }
+      expect(seen, ['c', 'b', 'c'], reason: '没有上次记录从头找第一幅要播的，不播的 a 跳过');
+      final again = await open();
+      expect([for (final painting in again.arranged) painting.id], ['c', 'a', 'b'], reason: '顺序与不播的重开还在');
+      // 上次开屏是 c，把 c 关掉：从 c 的位置往后找，是 b，不回到开头。
+      await again.arrange(['c', 'a', 'b'], {'a', 'c'});
+      expect(again.next()!.id, 'b');
+      await written('b');
+    });
+
+    test('播放顺序：清单新加的接在后面、默认播；记录里不认识的 id 丢掉；记录里一幅都不播时当全都播', () async {
+      File('${temp.path}/splash_painting.json').writeAsStringSync('{"last":"a","order":["b","gone","b"],"muted":["c","gone"]}');
+      final library = await open();
+      expect([for (final painting in library.arranged) painting.id], ['b', 'a', 'c']);
+      expect([for (final painting in library.arranged) library.plays(painting)], [true, true, false]);
+      File('${temp.path}/splash_painting.json').writeAsStringSync('{"muted":["a","b","c"]}');
+      final muted = await open();
+      expect([for (final painting in muted.arranged) muted.plays(painting)], [true, true, true]);
     });
 
     test('记录坏了或上次那幅已不在清单里，从第一幅开始', () async {

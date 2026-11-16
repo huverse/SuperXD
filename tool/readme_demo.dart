@@ -16,6 +16,7 @@ import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/share_card.dart';
+import 'package:superxd/domain/sync_record.dart';
 import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
@@ -284,4 +285,8 @@ class _DemoAccounts extends AccountAccess {
   Future<GatewayResult<AutoSyncSetting>> saveAutoSyncSetting(AutoSyncSetting setting) => inner.saveAutoSyncSetting(setting);
   @override
   Future<GatewayResult<AutoSyncStatus>> recordAutoSync(AutoSyncStatus status) => inner.recordAutoSync(status);
+  @override
+  Future<GatewayResult<SyncRecord>> recordSync(SyncRecord record) => inner.recordSync(record);
+  @override
+  Future<GatewayResult<List<SyncRecord>>> readSyncRecords() => inner.readSyncRecords();
 }

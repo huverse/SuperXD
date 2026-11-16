@@ -441,31 +441,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     }
   }
 
-  Future<BellsChoice> _chooseBells(TermRef target, BellsView source) async {
-    if (!mounted) return BellsChoice.cancel;
-    return await showCampusDialog<BellsChoice>(
-      context: context,
-      builder: (context) => CampusGlassDialog(
-        title: const Text('采用这套作息时间？'),
-        content: SingleChildScrollView(
-          child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text('${target.label}没有可用的已采用作息。\n来源：${source.term.label}', style: const TextStyle(fontSize: 14)),
-            const SizedBox(height: 12),
-            for (final period in source.periods)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4),
-                child: Text('第${period.period}节  ${period.start}–${period.end}', style: const TextStyle(fontSize: 16)),
-              ),
-          ]),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context, BellsChoice.cancel), child: const Text('暂不采用')),
-          TextButton(onPressed: () => Navigator.pop(context, BellsChoice.next), child: const Text('看下一套')),
-          FilledButton(onPressed: () => Navigator.pop(context, BellsChoice.use), child: const Text('用这套')),
-        ],
-      ),
-    ) ?? BellsChoice.cancel;
-  }
+  Future<BellsChoice> _chooseBells(TermRef target, BellsView source) async => mounted ? await chooseBellsSource(context, target, source) : BellsChoice.cancel;
 
   Future<void> _notice(String message) async {
     if (!mounted || message.isEmpty || !TickerMode.valuesOf(context).enabled) return;

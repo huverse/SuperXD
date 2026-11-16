@@ -114,7 +114,11 @@ class _AutoSyncDialogState extends State<_AutoSyncDialog> {
                     title: const Text('到时间自动同步'),
                     subtitle: const Text('联网时在后台进行'),
                     value: setting.enabled,
-                    onChanged: _busy ? (_) {} : (value) => _save(setting.copyWith(enabled: value)),
+                    // 打开时顺带申请通知权限：有变化时发通知（人工决策见 domain/sync_record.dart），不给照样同步、只是不通知。
+                    onChanged: _busy ? (_) {} : (value) async {
+                      await _save(setting.copyWith(enabled: value));
+                      if (value) await widget.autoSync.notices?.request();
+                    },
                   ),
                   if (setting.enabled) ...[
                     const SizedBox(height: 8),

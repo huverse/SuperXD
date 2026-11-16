@@ -5,7 +5,8 @@ import 'package:liquid_glass_widgets/liquid_glass_widgets.dart' as liquid;
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/native_glass.dart';
 
-enum CampusGlassMode { auto, full, reduced }
+// off 关闭：实色，不做任何模糊（11-16 加，见下方人工决策）。
+enum CampusGlassMode { auto, full, reduced, off }
 
 // full 满档折射与色散；minimal 磨砂，不跑自定义着色器；solid 实色。
 enum CampusGlassTier { full, minimal, solid }
@@ -15,6 +16,9 @@ enum CampusGlassTier { full, minimal, solid }
 // 但用户在外观页点「完整」即解除本版本限档、当作重试，再异常退出照样限档；限档期间外观页说明一行（同 Chrome GPU 黑名单可手动覆盖）。
 // [人工决策-2026-10-27 23:53:04] 取代上两条里的中间档（用户看了 vivo 2K 高刷屏的卡顿日志后选定）：只有完整（满档）与简化（磨砂）两档，自动档库报标准也画磨砂；
 // 限档改为限到磨砂，点「完整」解除、升级后重试照旧；运行中降档按这块屏的刷新率算预算（120Hz 时连续两窗最慢 5% 的帧超过 12ms 就降，60Hz 仍是 24ms），启动时的初判阈值不动。
+// [人工决策-2026-11-16 13:13:12] 加「关闭」一档（实色，不做模糊），并在安卓上做显示自检（见 campus_glass_probe.dart）：
+// 用户的 OPPO（Android 17）在「简化」档底栏整块画成黑色、连图标都没了（驱动问题，同 campus_glass_material.dart 里弹层变黑那条），
+// 用户选「加关闭档并自动识别」：截到底栏整块近乎纯黑就把这台手机改成关闭并提示，用户可以再手动改回（同 Chrome 显卡黑名单可手动覆盖）。
 // 上面几条只管安卓：iOS 固定磨砂档（高对比度、无障碍导航、减少动画时实色），没有档位与限档（[人工决策] 见 native_glass.dart）。
 CampusGlassTier resolveCampusGlassTier({
   required CampusGlassMode mode,
@@ -23,7 +27,7 @@ CampusGlassTier resolveCampusGlassTier({
   required bool ready,
   required bool accessible,
 }) {
-  if (accessible) return CampusGlassTier.solid;
+  if (accessible || mode == CampusGlassMode.off) return CampusGlassTier.solid;
   if (!ready || mode == CampusGlassMode.reduced || capped) return CampusGlassTier.minimal;
   if (mode == CampusGlassMode.full) return CampusGlassTier.full;
   return (adaptive ?? liquid.GlassQuality.premium) == liquid.GlassQuality.premium ? CampusGlassTier.full : CampusGlassTier.minimal;
@@ -100,6 +104,16 @@ class CampusGlassGuard {
       campusLog(
         '[CampusGlass] action=guard errorType=${error.runtimeType}\n$stack',
       );
+    }
+  }
+
+  // 显示自检：截 Flutter 画面里的一块（物理像素），返回近乎纯黑的像素占比；没有实现或截不到为空。
+  static Future<double?> probe(Rect area) async {
+    try {
+      return await _channel.invokeMethod<double>('probe', {'left': area.left.round(), 'top': area.top.round(), 'width': area.width.round(), 'height': area.height.round()});
+    } catch (error, stack) {
+      campusLog('[CampusGlass] action=probe errorType=${error.runtimeType}\n$stack');
+      return null;
     }
   }
 

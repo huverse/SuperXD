@@ -39,11 +39,12 @@ class ServicePage extends StatelessWidget {
     return Column(
       children: [
         const SectionTitleBar(title: '服务'),
-        // [人工决策-2026-09-27 20:12:08] 保留课表、成绩，新增百宝箱同级入口；教务无关工具集中注册于百宝箱，不添加未定义服务。
+        // [人工决策-2026-09-27 20:12:08] 新增百宝箱同级入口；教务无关工具集中注册于百宝箱，不添加未定义服务（「保留课表、成绩」两项由下一条取代）。
+        // [人工决策-2026-11-16 13:35:18] 课表、成绩合成一项「学业」（见 academic_page.dart），以后教务相关的都放进去。
         // [人工决策-2026-11-12 21:00:20] 用户要求在服务页新增「游乐场」同级入口（小游戏属娱乐，不算工具，不进百宝箱），排在百宝箱后面。
         // [人工决策-2026-11-15 18:14:27] 娱乐与积分关着时不列游乐场（见 domain/leisure.dart）。
         Expanded(child: CampusScrollFade(bottom: inset, child: ListenableBuilder(listenable: Listenable.merge([?leisure]), builder: (context, _) => ListView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), children: [
-          for (final service in [(label: '课表', route: '/schedule', icon: CampusIcons.todaySelected), (label: '成绩', route: '/grades', icon: CampusIcons.grades), (label: '百宝箱', route: '/toolbox', icon: CampusIcons.toolbox), if (leisure?.enabled != false) (label: '游乐场', route: '/playground', icon: CampusIcons.playground)]) Padding(padding: const EdgeInsets.only(bottom: 16), child: CampusSurface(
+          for (final service in [(label: '学业', route: '/academic', icon: CampusIcons.academic), (label: '百宝箱', route: '/toolbox', icon: CampusIcons.toolbox), if (leisure?.enabled != false) (label: '游乐场', route: '/playground', icon: CampusIcons.playground)]) Padding(padding: const EdgeInsets.only(bottom: 16), child: CampusSurface(
             onTap: () => context.push(service.route), padding: const EdgeInsets.all(20),
             child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 40), child: Row(children: [CampusIcon(service.icon, color: CampusPalette.of(context).primary, size: 28), const SizedBox(width: 20), Expanded(child: Text(service.label, style: TextStyle(fontSize: 16, color: CampusPalette.of(context).onSurface))), CampusIcon(CampusIcons.next, color: CampusPalette.of(context).onSurfaceVariant)])),
           )),

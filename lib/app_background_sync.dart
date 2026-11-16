@@ -12,6 +12,7 @@ import 'package:workmanager/workmanager.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/auto_sync.dart';
 import 'package:superxd/device/diagnostic_device.dart';
+import 'package:superxd/device/sync_notifications.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/gateway/account_gateway.dart';
@@ -149,7 +150,8 @@ Future<void> headlessAutoSync(DateTime deadline, {required Directory support, re
       campusLog('[AutoSync] action=background skipped=no_session');
       return;
     }
-    await AutoSync(gateway: gateway, generation: () => gateway.generation).runIfDue(
+    // 后台这份引擎里也发同步结果通知（插件在后台引擎里同样注册），点开进同步记录。
+    await AutoSync(gateway: gateway, generation: () => gateway.generation, notices: SyncNotifications()).runIfDue(
       keepGoing: () => !_stopped && DateTime.now().isBefore(deadline) && IsolateNameServer.lookupPortByName(_portName) == null,
     );
   } finally {

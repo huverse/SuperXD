@@ -14,6 +14,7 @@ import 'package:superxd/theme/campus_glass_material.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_glass_surface.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
+import 'package:superxd/theme/campus_glass_probe.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -181,7 +182,12 @@ void main() {
     );
     for (final mode in CampusGlassMode.values) {
       expect(tier(mode, accessible: true), CampusGlassTier.solid);
-      expect(tier(mode, ready: false), CampusGlassTier.minimal);
+      expect(tier(mode, ready: false), mode == CampusGlassMode.off ? CampusGlassTier.solid : CampusGlassTier.minimal);
+    }
+    // 关闭：无论实测、限档还是没就绪都是实色，不做任何模糊（11-16 加）。
+    for (final adaptive in [null, ...liquid.GlassQuality.values]) {
+      expect(tier(CampusGlassMode.off, adaptive: adaptive), CampusGlassTier.solid);
+      expect(tier(CampusGlassMode.off, adaptive: adaptive, capped: true), CampusGlassTier.solid);
     }
     expect(tier(CampusGlassMode.reduced), CampusGlassTier.minimal);
     expect(tier(CampusGlassMode.full, adaptive: liquid.GlassQuality.minimal), CampusGlassTier.full);
@@ -193,6 +199,49 @@ void main() {
     expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.minimal), CampusGlassTier.minimal);
     expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.premium, capped: true), CampusGlassTier.minimal);
     expect(tier(CampusGlassMode.auto, adaptive: liquid.GlassQuality.minimal, capped: true), CampusGlassTier.minimal);
+  });
+  // 显示自检（11-16 用户 OPPO 简化档底栏整块画黑）：稳定 2 秒后截一下，整块近乎纯黑才报画坏；正常的同一档位本进程不再截，弹窗开着、不在前台时不截。
+  testWidgets('玻璃显示自检：整块近乎纯黑才报画坏，正常的不再截，弹窗开着不截', (tester) async {
+    debugResetCampusGlassProbe();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    final areas = <Rect>[];
+    var dark = .99;
+    campusGlassProbe = (area) async {
+      areas.add(area);
+      return dark;
+    };
+    addTearDown(() => campusGlassProbe = null);
+    final broken = <CampusGlassTier>[];
+    final subscription = campusGlassBroken.stream.listen(broken.add);
+    addTearDown(subscription.cancel);
+    Widget bar(CampusGlassTier tier) => MediaQuery(
+      data: const MediaQueryData(devicePixelRatio: 3),
+      child: Align(alignment: Alignment.bottomCenter, child: CampusGlassProbe(tier: tier, child: const SizedBox(width: 300, height: 64))),
+    );
+    await tester.pumpWidget(bar(CampusGlassTier.minimal));
+    await tester.pump(const Duration(seconds: 1));
+    expect(areas, isEmpty, reason: '换档后先等过渡走完');
+    await tester.pump(const Duration(seconds: 1));
+    expect(areas.single.size, const Size(900, 192), reason: '按物理像素截');
+    expect(broken, [CampusGlassTier.minimal]);
+    dark = .2;
+    await tester.pumpWidget(bar(CampusGlassTier.full));
+    await tester.pump(campusGlassProbeDelay);
+    expect(broken, [CampusGlassTier.minimal], reason: '有图标与文字的正常栏远到不了阈值');
+    await tester.pumpWidget(bar(CampusGlassTier.minimal));
+    await tester.pump(campusGlassProbeDelay);
+    expect(areas, hasLength(3), reason: '画坏过的档位改回来时再截一次');
+    await tester.pumpWidget(bar(CampusGlassTier.full));
+    await tester.pump(campusGlassProbeDelay);
+    expect(areas, hasLength(3), reason: '截过且正常的档位本进程不再截');
+    await tester.pumpWidget(bar(CampusGlassTier.solid));
+    debugResetCampusGlassProbe();
+    campusOverlayDepth.value = 1;
+    addTearDown(() => campusOverlayDepth.value = 0);
+    await tester.pumpWidget(bar(CampusGlassTier.full));
+    await tester.pump(campusGlassProbeDelay);
+    expect(areas, hasLength(3), reason: '弹窗开着时栏是实色，不截');
+    await tester.pumpWidget(const SizedBox());
   });
   // 自动档运行中降档按屏幕刷新率算预算：120Hz 是 8ms（最慢 5% 超过 12ms 降），60Hz 仍是库默认的 16ms。
   test('自动档的帧预算跟屏幕刷新率走', () {

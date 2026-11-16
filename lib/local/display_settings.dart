@@ -97,7 +97,8 @@ class DisplaySettings extends ChangeNotifier {
   // 存过任何一项显示设置的（整份快照连当时的苔灰一起存了）保持原样（用户选定，未选「只给新装」「苔灰的全换成雾蓝」）。苔灰本身已在 10-27 删掉（见上一条）。
   // 启动窗口底色（android res 的 launch_background）跟着默认配色走。
   static const defaultPaletteId = 'mist';
-  static const glassModes = ['auto', 'full', 'reduced'];
+  // off 关闭（实色）：11-16 加，人工决策见 theme/campus_glass_tier.dart。
+  static const glassModes = ['auto', 'full', 'reduced', 'off'];
   // 壁纸模糊与淡化为 0–100 的连续量（v6 起；此前是三档下标，升级时按原效果换算）；默认轻度模糊、不额外淡化。
   static const wallpaperMax = 100;
   static const defaultWallpaperBlur = 27;

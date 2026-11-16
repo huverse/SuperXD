@@ -588,9 +588,9 @@ class _AppearancePageState extends State<AppearancePage> {
               Text('玻璃效果', style: Theme.of(context).textTheme.titleLarge),
               const SizedBox(height: 12),
               CampusSegmented<String>(
-                values: const ['auto', 'full', 'reduced'],
+                values: const ['auto', 'full', 'reduced', 'off'],
                 selected: settings.glassMode,
-                label: (mode) => switch (mode) { 'full' => '完整', 'reduced' => '简化', _ => '自动' },
+                label: (mode) => switch (mode) { 'full' => '完整', 'reduced' => '简化', 'off' => '关闭', _ => '自动' },
                 // 限档时点「完整」（已选中也算）即解除限档重试，[人工决策] 见 campus_glass_tier.dart。
                 onSelected: (mode) => _save(() async {
                   if (mode == 'full' && campusGlassCapped.value) await CampusGlassGuard.retry();
@@ -599,7 +599,7 @@ class _AppearancePageState extends State<AppearancePage> {
               ),
               ValueListenableBuilder(
                 valueListenable: campusGlassCapped,
-                builder: (context, capped, _) => capped && settings.glassMode != 'reduced'
+                builder: (context, capped, _) => capped && settings.glassMode != 'reduced' && settings.glassMode != 'off'
                     ? Padding(
                         padding: const EdgeInsets.only(top: 8),
                         child: Text('上次异常退出，已临时降为简化效果', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),

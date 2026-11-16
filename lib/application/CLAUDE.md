@@ -8,11 +8,13 @@
   - 先刷新学期列表，再按所选学年依次处理：先同步全部学期的课表，再逐学期同步作息和成绩；每个实例内按顺序逐项请求。
   - 页面离开、会话失效或教务限流时，在下一检查点停止；报告带出已完成项、停下前已发生的失败与未处理项。
   - 学年与数据项的选择、进度口径、未提交不报已同步，见文件内人工决策。
-  - 课表和本地改过的版本冲突时交给 resolveSchedule 决定 ScheduleResolution（KeepLocal、TakeEdu、MergeEdu），settle 落库，自动同步与打扰时机共用。activeRuns 是本进程里正在跑的轮数，自动同步据此让路；让路的那轮（yields）还没收尾时，手动同步先等它停下再发请求，不撞上它在途的请求。
+  - 课表和本地改过的版本冲突时交给 resolveSchedule 决定 ScheduleResolution（KeepLocal、TakeEdu、MergeEdu），settle 落库，自动同步与打扰时机共用。
+  - 同步记录（人工决策见 domain/sync_record.dart）：每轮做完（含中途停下）记一条，yields（自动同步）记成自动、其余手动；课表每学期同步前读本机那一版，落了新版本才和教务这份比（scheduleSyncChange，本机原来没有记成第一次，before 留给撤回），冲突时按选择记落库前后的差别或「等你来选」；成绩同步前读本机缓存比出新出与改了分数的（gradeSyncChange，cached 为假记成第一次）；settle 带 record 时（打扰时机、学业页的待处理里选完）另记一条；记不成只记日志。报告 CampusSyncReport.record 是这一轮的记录。activeRuns 是本进程里正在跑的轮数，自动同步据此让路；让路的那轮（yields）还没收尾时，手动同步先等它停下再发请求，不撞上它在途的请求。
 - auto_sync.dart：自动同步的编排 AutoSync（设备级，经账号门面跟着当前账号，人工决策见 domain/auto_sync.dart）。
   - runIfDue：到期（autoSyncDue）且没有别的同步在跑才同步一轮，范围取设置里的学年与内容（当前学年按本机的当前学期取）；同一个账号同一时刻只跑一轮，有人手动同步就在下一检查点让路。
     - 开跑时记下账号代次（组合根注入 generation）：中途换了账号就在下一检查点停下，结果不记、暂存不读（门面跟着当前账号走，不变量 1）；换账号后再按新账号看一次到没到期。
     - keepGoing 由组合根给（后台任务的时限、安卓系统叫停、前台那份已经起来），返回假就在下一检查点停下。
+  - 有值得通知的变化（syncRecordNotice）时经组合根注入的 notices（device 的 SyncNotifications）发系统通知，出错只记日志；打扰时机里处理暂存的那份（settle）另记一条同步记录。
   - 冲突不覆盖：教务这份和上次同步的一样（只是自己改过）就悄悄保留本地、以后不问；教务确有新改动才留到打扰时机问（held）。作息来源一律不自动改。
   - 上次结果按报告记：登录过期记 paused（不转登录页、本机会话留着，见 keepSessionDuring；后台不到期，用户打开应用时到了间隔试一次，重新登录才清掉）、没连上网记 network（15 分钟后可再试）、限流记 limited、其余失败记 failed 并写明哪一项；让路或被叫停没做完的一轮不算成功也不算失败，上次结果照旧。
   - accountChanged 与 save 按设置排好或撤掉系统后台任务（端口 BackgroundSyncScheduler），系统接口出错只记日志。settle 处理打扰时机里选的结果；stillHeld 在弹之前从当前账号的本机库重读暂存的那份（手动同步过、换过账号就没了）。accountChanged 先清掉上一个账号的设置与暂存。

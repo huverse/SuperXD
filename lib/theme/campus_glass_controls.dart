@@ -12,8 +12,8 @@ import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/native_glass.dart';
 
-// 选择标签：复用主按钮的背景（导航层与浮层里是玻璃，内容区是中性色调胶囊）；选中时着 surfaceSelected 色并带勾。
-// 未选、选中都用可读深色文字，禁用为 onSurfaceVariant，不用 primary，避免和按钮混淆。
+// 选择标签：复用主按钮的背景（导航层与浮层里是玻璃，内容区是中性色调胶囊）；选中着色见 CampusPalette.selectedFill（11-16）。
+// 未选用可读深色文字，选中用主色文字（primary），禁用为 onSurfaceVariant；字重不变，选中前后宽度一样。
 class CampusGlassChip extends StatelessWidget {
   const CampusGlassChip({
     super.key,
@@ -40,7 +40,7 @@ class CampusGlassChip extends StatelessWidget {
             onSelected(!selected);
           };
     final style = FilledButton.styleFrom(
-      foregroundColor: palette.onSurface,
+      foregroundColor: selected ? palette.primary : palette.onSurface,
       iconColor: palette.primary,
       textStyle: TextStyle(
         fontFamily: Theme.of(context).textTheme.bodyMedium?.fontFamily,

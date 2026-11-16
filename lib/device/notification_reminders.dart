@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
 
+import 'package:superxd/device/campus_notifications.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/course_reminder.dart';
 
@@ -31,15 +32,8 @@ class NotificationReminders implements CourseReminderPort {
   );
   // iOS 每个应用最多挂 64 条待发的本地通知，多排的系统直接丢掉（安排时就按 capability 的 limit 只排这么多）。
   static const _iosPendingLimit = 64;
-  Future<void>? _ready;
-
-  // iOS 启动时不弹通知权限（权限只在用户打开提醒时申请）。
-  Future<void> _initialize() => _ready ??= _plugin.initialize(
-    settings: const InitializationSettings(
-      android: AndroidInitializationSettings('ic_stat_reminder'),
-      iOS: DarwinInitializationSettings(requestAlertPermission: false, requestSoundPermission: false, requestBadgePermission: false),
-    ),
-  );
+  // 和同步结果通知共用一份初始化（插件只认最后一次的点按回调，见 campus_notifications.dart）；iOS 启动时不弹通知权限。
+  Future<void> _initialize() => initializeCampusNotifications(_plugin);
 
   AndroidFlutterLocalNotificationsPlugin? get _android => _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
 
