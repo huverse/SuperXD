@@ -148,6 +148,11 @@ int? nonogramLineSolve(NonogramPuzzle puzzle) {
 class NonogramRules extends PuzzleRules<NonogramPuzzle, List<bool>> {
   const NonogramRules();
 
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
+  // 碎片是涂了几格。不收碎片：只有一段的行挖掉提示后逐行推不下去的，40 道里只有一两道。
+  @override
+  int? fragment(NonogramPuzzle puzzle, List<bool> solution) => solution.where((cell) => cell).length;
+
   static const _sides = {PuzzleTier.entry: 5, PuzzleTier.easy: 7, PuzzleTier.normal: 10, PuzzleTier.hard: 12, PuzzleTier.expert: 15};
   // 一行最多几段提示：多了提示栏太宽，手机上格子会挤得点不准。
   static const _maxRuns = {5: 3, 7: 4, 10: 5, 12: 5, 15: 6};

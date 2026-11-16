@@ -391,6 +391,10 @@ class _Plan {
 class LogicGridRules extends PuzzleRules<LogicGridPuzzle, List<List<int>>> {
   const LogicGridRules();
 
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
+  @override
+  int? fragment(LogicGridPuzzle puzzle, List<List<int>> solution) => solution.first.indexOf(0) + 1;
+
   static const _basic = {LogicGridClueKind.same: 2, LogicGridClueKind.differ: 3};
   static const _seated = {LogicGridClueKind.leftOf, LogicGridClueKind.nextTo, LogicGridClueKind.before};
 

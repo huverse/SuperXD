@@ -258,6 +258,11 @@ double _treeBits(_State state, int rounds, bool direction) {
 class BalanceRules extends PuzzleRules<BalancePuzzle, BalanceAnswer> {
   const BalanceRules();
 
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
+  // 碎片用题面定的称几次：秤不预定假球，没有固定的「不同的那个球」（每档都正好够用，也就是最少要称几次）。
+  @override
+  int? fragment(BalancePuzzle puzzle, BalanceAnswer solution) => puzzle.weighings;
+
   // 每档的参数。简单档原建议 4 个球称 2 次，求解器量出来比入门还容易（选择量 3.4 比特，入门 9.0），档位会倒挂，
   // 改成 9 个球不知轻重称 3 次（12.7 比特）：同样 9 个球，不知道轻重了多给一次。每档都核对过在次数内一定能找出（测试守护）。
   static const _tiers = {

@@ -273,8 +273,9 @@ void main() {
       expect(loopInside(loop, edges), 4);
       final cipher = const CipherRules().generate(3, PuzzleTier.normal);
       expect(challengeFragment('cipher', cipher.puzzle, cipher.solution), cipher.solution.fold<int>(0, (sum, digit) => sum + digit));
-      expect(challengeFragment('balance', const BalanceRules().generate(1, PuzzleTier.entry).puzzle, null), 2);
-      expect(challengeFragment('balance', const BalanceRules().generate(1, PuzzleTier.expert).puzzle, null), 3);
+      final balanceEntry = const BalanceRules().generate(1, PuzzleTier.entry), balanceExpert = const BalanceRules().generate(1, PuzzleTier.expert);
+      expect(challengeFragment('balance', balanceEntry.puzzle, balanceEntry.solution), 2);
+      expect(challengeFragment('balance', balanceExpert.puzzle, balanceExpert.solution), 3);
     });
 
     test('记忆闪光镜像：亮的照常亮，要点左右镜像的格；冰面滑行的出口只给页面画、判定只看终点', () {

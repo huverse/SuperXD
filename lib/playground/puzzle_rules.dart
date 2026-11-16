@@ -29,6 +29,18 @@ class PuzzleDraw<P, A> {
   final A solution;
 }
 
+// 收碎片的方式（挑战）：补条件（题面上那一处写成 ?，门上的数补上）、改目标（汉诺塔的目标柱、冰面滑行的真出口、记忆闪光要不要镜像，服务器改写题面）。
+enum PuzzleIntake { condition, goal }
+
+// 能由碎片补上的一处：at 是位置（24 点第几张牌、八皇后第几行、数回第几格、密码破译第几行的「位置也对」、骑士与无赖第几个人那句话的人数），
+// value 是题面里的真值（八皇后是从 0 数的列）。
+class ChallengeSlot {
+  const ChallengeSlot({required this.at, required this.value});
+  final int at, value;
+
+  Map<String, int> toJson() => {'at': at, 'value': value};
+}
+
 // 题面与答案编码成 JSON 可表示的值；decode 是外部输入的边界（题库、存档），不合法抛 FormatException。
 abstract class PuzzleRules<P, A> {
   const PuzzleRules();
@@ -51,6 +63,19 @@ abstract class PuzzleRules<P, A> {
   // 题面写法的版本（从 1 起）：改了 encodePuzzle 与 decodePuzzle 的写法，就在这个游戏的规则里覆写它加一（挑战按「游戏@版本」下发，
   // 没更新的应用照旧拿认得的版本；样例钉在 test/challenge_vectors_test.dart，人工决策见 challenge/challenge_rules.dart 的 11-15 19:18 那条）。
   int get puzzleVersion => 1;
+
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 游戏挑战特性单点登记，用户选定架构推荐方案）：能进挑战的游戏在自己的规则里覆写，
+  // challenge/challenge_rules.dart 的名单与查询都从这里取，加一个游戏或改它的碎片不用再去那边的几个 switch 里各改一处。
+  // 服务端的判定照旧逐个移植（server/src/modules/challenge），与这里共用测试向量。规则见 challenge_rules.dart 文件头 11-14 23:11 那条。
+  // 这一关的碎片：从解里读出、所有正确解都一样的一个数（solution 是题库的参考解）；不进挑战的为空。
+  int? fragment(P puzzle, A solution) => null;
+  // 收碎片的方式；不收碎片的为空。
+  PuzzleIntake? get intake => null;
+  // 补条件：写成 ? 也做不出来的那几处（出题库时算好，服务器按门上的数挑真值对得上的一处）与那一处能落的位置个数；不收补条件的为空、0。
+  List<ChallengeSlot> slots(P puzzle) => const [];
+  int slotRange(P puzzle) => 0;
+  // 困难与专家档要用的最少步数（题库存好，服务器拿答案的步数比）；不要求的为空。
+  int? minimum(P puzzle) => null;
 
   Object encodePuzzle(P puzzle);
   P decodePuzzle(Object? json);

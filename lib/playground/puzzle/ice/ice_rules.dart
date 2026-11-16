@@ -83,6 +83,14 @@ List<int>? iceSolution(IcePuzzle puzzle) {
 class IceRules extends PuzzleRules<IcePuzzle, List<int>> {
   const IceRules();
 
+  // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
+  @override
+  int? fragment(IcePuzzle puzzle, List<int> solution) => iceMinMoves(puzzle);
+  @override
+  PuzzleIntake? get intake => PuzzleIntake.goal;
+  @override
+  int? minimum(IcePuzzle puzzle) => iceMinMoves(puzzle);
+
   static const _sides = {PuzzleTier.entry: 6, PuzzleTier.easy: 7, PuzzleTier.normal: 8, PuzzleTier.hard: 10, PuzzleTier.expert: 12};
   // 每档终点的最少步数区间（含两端）。
   static const _least = {PuzzleTier.entry: (3, 5), PuzzleTier.easy: (5, 7), PuzzleTier.normal: (7, 10), PuzzleTier.hard: (10, 14), PuzzleTier.expert: (14, 99)};
