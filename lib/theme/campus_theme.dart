@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 
 // 越界与 iOS、鸿蒙一致用弹性回弹，只平移内容。Android 默认的拉伸越界会给整个列表套图像滤镜，
@@ -51,11 +52,11 @@ ThemeData campusTheme({CampusPalette? palette, String? fontFamily = 'Maple Mono 
     // [人工决策-2026-09-25 17:43:48] Maple仍为默认，可选内置Noto Serif SC；全局字体和测量口径一致，不引入在线字体。
     // 其中「内置」「不引入在线字体」两处已被 2026-11-10 的字体包决定取代（用户选定衬线改为选用时从自建中转下载、核对哈希后注册，见 lib/domain/font_pack.dart）；Maple 仍随包、仍是默认。
     fontFamily: fontFamily,
-    dialogTheme: DialogThemeData(backgroundColor: colors.surface, surfaceTintColor: Colors.transparent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)), titleTextStyle: TextStyle(fontFamily: fontFamily, fontSize: 20, fontWeight: FontWeight.w600, color: colors.onSurface), contentTextStyle: TextStyle(fontFamily: fontFamily, fontSize: 16, color: colors.onSurface)),
+    dialogTheme: DialogThemeData(backgroundColor: colors.surface, surfaceTintColor: Colors.transparent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)), titleTextStyle: TextStyle(fontFamily: fontFamily, fontSize: CampusFontSize.dialogTitle, fontWeight: FontWeight.w600, color: colors.onSurface), contentTextStyle: TextStyle(fontFamily: fontFamily, fontSize: CampusFontSize.body, color: colors.onSurface)),
     datePickerTheme: DatePickerThemeData(locale: Locale('zh', 'CN'), backgroundColor: colors.surface, surfaceTintColor: Colors.transparent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24))),
     bottomSheetTheme: BottomSheetThemeData(backgroundColor: colors.surface, shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24)))),
     popupMenuTheme: PopupMenuThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-    chipTheme: ChipThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), backgroundColor: colors.surface, selectedColor: colors.surfaceSelected, disabledColor: colors.glassFallback, checkmarkColor: colors.primary, side: BorderSide(color: colors.outline), labelStyle: TextStyle(fontFamily: fontFamily, fontSize: 14, fontWeight: FontWeight.w600, color: colors.onSurface)),
+    chipTheme: ChipThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), backgroundColor: colors.surface, selectedColor: colors.surfaceSelected, disabledColor: colors.glassFallback, checkmarkColor: colors.primary, side: BorderSide(color: colors.outline), labelStyle: TextStyle(fontFamily: fontFamily, fontSize: CampusFontSize.secondary, fontWeight: FontWeight.w600, color: colors.onSurface)),
     // 复选框选中与开关开启同为控件激活色 accent（同鸿蒙 component_activated）。
     checkboxTheme: CheckboxThemeData(checkColor: WidgetStatePropertyAll(colors.onPrimary), fillColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? colors.accent : colors.surface), side: BorderSide(color: colors.outline, width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5))),
     // 次要按钮（同 iOS、鸿蒙的灰底次要按钮）：内容区为中性浅底胶囊配主色字、不加描边；导航层与浮层里仍是玻璃。
@@ -71,7 +72,7 @@ ThemeData campusTheme({CampusPalette? palette, String? fontFamily = 'Maple Mono 
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         minimumSize: Size(40, 38),
         tapTargetSize: MaterialTapTargetSize.padded,
-        textStyle: TextStyle(fontFamily: fontFamily, fontSize: 16, fontWeight: FontWeight.w500, height: 1.25),
+        textStyle: TextStyle(fontFamily: fontFamily, fontSize: CampusFontSize.body, fontWeight: FontWeight.w500, height: 1.25),
         backgroundBuilder: (context, states, child) => CampusGlassButtonSurface(states: states, neutral: true, child: child!),
       ),
     ),
@@ -87,7 +88,7 @@ ThemeData campusTheme({CampusPalette? palette, String? fontFamily = 'Maple Mono 
         padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         minimumSize: Size(40, 38),
         tapTargetSize: MaterialTapTargetSize.padded,
-        textStyle: TextStyle(fontFamily: fontFamily, fontSize: 16, fontWeight: FontWeight.w500, height: 1.25),
+        textStyle: TextStyle(fontFamily: fontFamily, fontSize: CampusFontSize.body, fontWeight: FontWeight.w500, height: 1.25),
         backgroundBuilder: (context, states, child) => CampusGlassButtonSurface(states: states, neutral: true, child: child!),
       ),
     ),
@@ -101,16 +102,16 @@ ThemeData campusTheme({CampusPalette? palette, String? fontFamily = 'Maple Mono 
     snackBarTheme: SnackBarThemeData(behavior: SnackBarBehavior.floating, backgroundColor: colors.onSurface, contentTextStyle: TextStyle(color: colors.surface), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18))),
     progressIndicatorTheme: ProgressIndicatorThemeData(color: colors.primary),
     textTheme: TextTheme(
-      bodySmall: TextStyle(fontSize: 14, color: colors.onSurfaceVariant),
-      labelMedium: TextStyle(fontSize: 14),
-      labelSmall: TextStyle(fontSize: 14),
+      bodySmall: TextStyle(fontSize: CampusFontSize.secondary, color: colors.onSurfaceVariant),
+      labelMedium: TextStyle(fontSize: CampusFontSize.secondary),
+      labelSmall: TextStyle(fontSize: CampusFontSize.secondary),
       // 底栏根页的大标题（同 iOS Large Title、鸿蒙根页大标题），推入的二级页仍用 titleLarge。
-      headlineMedium: TextStyle(fontSize: 26, fontWeight: FontWeight.w600, color: colors.onSurface, height: 32 / 26),
-      titleLarge: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: colors.onSurface, height: 24 / 18),
-      titleMedium: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: colors.onSurface, height: 24 / 16),
-      bodyLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.w500, color: colors.onSurface, height: 24 / 16),
-      bodyMedium: TextStyle(fontSize: 14, fontWeight: FontWeight.w500, color: colors.onSurfaceVariant, height: 20 / 14),
-      labelLarge: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: colors.onSurface),
+      headlineMedium: TextStyle(fontSize: CampusFontSize.headline, fontWeight: FontWeight.w600, color: colors.onSurface, height: 32 / 26),
+      titleLarge: TextStyle(fontSize: CampusFontSize.title, fontWeight: FontWeight.w600, color: colors.onSurface, height: 24 / 18),
+      titleMedium: TextStyle(fontSize: CampusFontSize.body, fontWeight: FontWeight.w600, color: colors.onSurface, height: 24 / 16),
+      bodyLarge: TextStyle(fontSize: CampusFontSize.body, fontWeight: FontWeight.w500, color: colors.onSurface, height: 24 / 16),
+      bodyMedium: TextStyle(fontSize: CampusFontSize.secondary, fontWeight: FontWeight.w500, color: colors.onSurfaceVariant, height: 20 / 14),
+      labelLarge: TextStyle(fontSize: CampusFontSize.body, fontWeight: FontWeight.w600, color: colors.onSurface),
     ),
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
@@ -128,7 +129,7 @@ ThemeData campusTheme({CampusPalette? palette, String? fontFamily = 'Maple Mono 
         tapTargetSize: MaterialTapTargetSize.padded,
         visualDensity: VisualDensity.standard,
         shape: StadiumBorder(),
-        textStyle: TextStyle(fontFamily: fontFamily, fontSize: 16, fontWeight: FontWeight.w500, height: 1.25),
+        textStyle: TextStyle(fontFamily: fontFamily, fontSize: CampusFontSize.body, fontWeight: FontWeight.w500, height: 1.25),
         backgroundBuilder: campusButtonBackground,
       ),
     ),
