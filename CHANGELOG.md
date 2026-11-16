@@ -18,6 +18,7 @@
 
 ### 工程
 - 游乐场挑战特性单点登记（用户不可见）：每个游戏的碎片、收碎片的方式、能补的条件与位置、高档的最少步数写进各自的规则（PuzzleRules 新增 fragment、intake、slots、slotRange、minimum），challenge_rules.dart 的名单与查询从规则推出，不再按游戏写几个 switch；判定向量与题库输出逐字节不变。
+- 组合根拆分（用户不可见）：main.dart 从 950 行拆成启动顺序（main.dart）、服务的造法与打包 AppServices（app_services.dart）、生命周期钩子 AppHooks（app_lifecycle.dart，同意之后、回到前台、前台可见三个时机统一登记）与应用外壳（app_shell.dart）；新增联网服务登记表与联网策略（domain/network_policy.dart，默认全部允许，为偏向开关做准备）。启动时互不依赖的本机文件与系统调用改为同时发出；模拟器调试包上首帧前的耗时实测没有可见差别（瓶颈是第一次打开账号库约 250 毫秒）。
 
 ## 1.0.0-alpha.28 - 2026-11-16
 

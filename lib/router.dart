@@ -5,21 +5,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:superxd/theme/campus_loading.dart';
+import 'package:superxd/app_services.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
-import 'package:superxd/application/app_updates.dart';
-import 'package:superxd/application/auto_sync.dart';
-import 'package:superxd/application/campus_reminders.dart';
-import 'package:superxd/application/developer_notes.dart';
-import 'package:superxd/application/festivals.dart';
-import 'package:superxd/application/leisure.dart';
-import 'package:superxd/domain/campus_gateway.dart';
-import 'package:superxd/domain/challenge.dart';
-import 'package:superxd/domain/unlock.dart';
-import 'package:superxd/domain/painting.dart';
-import 'package:superxd/local/developer_settings.dart';
-import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/page/academic_page.dart';
 import 'package:superxd/page/sync_records_page.dart';
 import 'package:superxd/page/account_dialogs.dart';
@@ -39,7 +28,6 @@ import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/playground/playground_catalog.dart';
 import 'package:superxd/playground/playground_page.dart';
 import 'package:superxd/playground/playground_store.dart';
-import 'package:superxd/social/social_service.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
@@ -47,7 +35,10 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 void pushAppAccountPage(BuildContext context, AppAccounts appAccounts, AccountDiagnostics? diagnostics) =>
     unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (context) => AppAccountPage(appAccounts: appAccounts, diagnostics: diagnostics))));
 
-GoRouter buildRouter({required CampusGateway gateway, required AppSession session, required ToolboxRuntime toolbox, required PlaygroundStore playground, Leisure? leisure, ValueListenable<bool>? splashGone, CampusReminders? reminders, SocialService? social, AppUpdates? updates, DeveloperSettings? developer, DiagnosticLog? logs, PaintingGallery? paintings, DeveloperNotes? notes, Festivals? festivals, AppAccounts? appAccounts, AccountDiagnostics? diagnostics, ChallengeHub? challenges, UnlockAccess? unlocks, AutoSync? autoSync, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
+// 路由表（组合根）：设备级服务都在 services 里（见 app_services.dart），百宝箱运行时与游乐场记录由外壳给好。
+GoRouter buildRouter({required AppSession session, required AppServices services, required ToolboxRuntime toolbox, required PlaygroundStore playground, ValueListenable<bool>? splashGone, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
+  final AppServices(:leisure, :reminders, :social, :updates, :developer, :logs, :paintings, :notes, :festivals, :appAccounts, :diagnostics, :challenges, :unlocks, :autoSync) = services;
+  final gateway = session.gateway;
   final tools = toolbox.modules;
   // 好友分享的卡片交给注册表里认得它的工具打开（页面层不依赖百宝箱，由这里接上；路由不认识具体工具页面）。
   void openVideo(BuildContext context, VideoShare video) {

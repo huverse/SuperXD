@@ -1,6 +1,6 @@
 # application 应用编排
 
-定位：跨领域的编排，由组合根 main.dart 创建并注入页面。分层表允许依赖 domain 与 gateway，现在只用 domain 端口（CampusGateway、提醒、小组件与更新端口）。本层决定做什么、什么时候做，具体能力交给 device、local 的实现。
+定位：跨领域的编排，由组合根创建（造法在 app_services.dart）并注入页面。分层表允许依赖 domain 与 gateway，现在只用 domain 端口（CampusGateway、提醒、小组件与更新端口）。本层决定做什么、什么时候做，具体能力交给 device、local 的实现。
 
 # 文件职责
 
@@ -34,11 +34,11 @@
 - unlocks.dart：解锁的编排 Unlocks（设备级，实现 domain 的 UnlockAccess，规则见服务端 src/modules/unlock/unlock_rules.ts）：清单来自 Rollouts.config 的 unlocks，本机判定下架锁着、公开开着（没登录也开），其余看服务器给的这个账号能用哪些（换了应用账号旧状态不作数）；组合根在同意协议与政策后调 start 才联网，之后拉到新配置、切换应用账号时重问，回到前台隔 refreshGap（一小时）再问，积分页打开与买了直接更新；清单里没有要账号才开的项或没登录时不联网；中转说应用账号不在了就让 AppAccounts 马上核一次。 accountOn 为假（娱乐与积分关着）时只认公开与下架、不联网，开关变了或删了数据组合根调 reconsider（旧状态作废、开着就重问）。
 - rollouts.dart：灰度的编排 Rollouts（设备级，人工决策见 domain/rollout.dart）：本机判定，主体是应用账号号（组合根注入，没登录用本机随机编号）；enabled 判功能开关（没配用调用方给的默认值）；inUpdateBatch 判分批更新（配置里同名开关覆盖清单的放量表：暂停、直接全量、整版关停）；refresh 在同意协议与政策后、回到前台时由组合根调，两次至少隔 refreshGap（一小时），失败照旧用上次的，登录着应用账号时同一时机经组合根注入的 level 取一次积分等级（取不到照旧用记着的）；判定按等级加权，只因等级进的批次记进本机、降级不踢出，放量 0 仍全关；没配中转时不联网。 levelsOn 为假（娱乐与积分关着）时不取等级、按 Lv0 判定（已因等级进的照旧）；forgetLevel 在删了娱乐与积分数据时把记着的等级归零。
 - leisure.dart：娱乐与积分的开关与删除数据 Leisure（设备级，人工决策见 domain/leisure.dart）：enabled 给页面与路由藏入口、给组合根停掉解锁与等级加权；setEnabled 变了才写、通知一次；deleteData 登录着应用账号时先删服务器上的（组合根注入 deleteRemote，失败原样抛出、本机不动），再清本机（注入 clearLocal：游乐场记录与记着的等级），返回服务器上的有没有一起删。不认识游乐场、挑战与灰度。
-- app_moments.dart：打扰时机 AppMoments（设备级）：一次只出现一件，先后是节日动画、没揭晓的奖品、自动同步留下的课表冲突、新信；决定节日动画、新信这类不是用户要的内容什么时候出现。业务条件在这里：每次回到前台最多一件、从快捷入口进来的那次前台不出现、上下课安静期里不出现（安静期结束时提醒组合根再看一眼）；界面条件在组合根 main.dart 的 _promptMoment。next 只看不记，真的弹出来了再 begin。人工决策在类上方。
+- app_moments.dart：打扰时机 AppMoments（设备级）：一次只出现一件，先后是节日动画、没揭晓的奖品、自动同步留下的课表冲突、新信；决定节日动画、新信这类不是用户要的内容什么时候出现。业务条件在这里：每次回到前台最多一件、从快捷入口进来的那次前台不出现、上下课安静期里不出现（安静期结束时提醒组合根再看一眼）；界面条件在组合根 app_shell.dart 的 _promptMoment。next 只看不记，真的弹出来了再 begin。人工决策在类上方。
 
 # 关键规则
 
-- 课前提醒与小组件只读本地、从不联网；对账时机由 main.dart 的 watchLocalSchedule 决定（启动恢复会话后、回到前台、切换账号或退出、本机课表相关写入后 AccountAccess.scheduleChanges），1 秒防抖。小组件配色由 main.dart 的 watchWidgetTheme 跟随显示设置单独下发。
+- 课前提醒与小组件只读本地、从不联网；对账时机由 app_lifecycle.dart 的 watchLocalSchedule 决定（启动恢复会话后、回到前台、切换账号或退出、本机课表相关写入后 AccountAccess.scheduleChanges），1 秒防抖。小组件配色由 app_lifecycle.dart 的 watchWidgetTheme 跟随显示设置单独下发。
 - 同步遇到 SESSION_EXPIRED 立即停止并交给 onSessionExpired；遇到 RATE_LIMITED 本轮立即停止，不自动重试、不转登录。
 - 只经 domain 端口做事，不直接访问 SQLite、教务客户端或系统 API。
 
@@ -59,5 +59,5 @@
 - campus_sync.dart：学年与数据项统一范围、进度只报已有阶段、未提交不报已同步、离开前的失败照常写入报告、限流立即停止。
 - campus_reminders.dart：状态栏胶囊（流体云）的接入方式、显示时段与胶囊内容。
 - app_moments.dart：打扰时机的业务条件、课表冲突排在哪。
-- 应用账号的决定（自己的账号体系、与教务各管各的）在 domain/app_account.dart；组合根接线在 main.dart 的 watchAppAccounts。
+- 应用账号的决定（自己的账号体系、与教务各管各的）在 domain/app_account.dart；组合根接线在 app_lifecycle.dart 的 watchAppAccounts。
 - 自动同步与三方合并的决定在 domain/auto_sync.dart。

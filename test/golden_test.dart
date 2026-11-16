@@ -11,7 +11,8 @@ import 'package:superxd/app_session.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/week.dart';
 import 'package:superxd/local/display_settings.dart';
-import 'package:superxd/main.dart';
+import 'package:superxd/app_services.dart';
+import 'package:superxd/app_shell.dart';
 import 'package:superxd/page/shell_page.dart';
 
 import 'fixture_campus_gateway.dart';
@@ -99,14 +100,14 @@ void main() {
 
       final loggedOut = AppSession(FixtureAccounts(inner, signedIn: false));
       await loggedOut.restore();
-      await tester.pumpWidget(SuperXdApp(session: loggedOut, display: display, toolbox: fixture.runtime, backgroundPhase: .18));
+      await tester.pumpWidget(SuperXdApp(session: loggedOut, backgroundPhase: .18, services: AppServices(display: display, toolbox: fixture.runtime)));
       await _expectGolden(tester, 'login_$suffix');
       await tester.pumpWidget(const SizedBox());
       loggedOut.dispose();
 
       final session = AppSession(FixtureAccounts(inner, signedIn: true));
       await session.restore();
-      await tester.pumpWidget(SuperXdApp(session: session, display: display, toolbox: fixture.runtime, backgroundPhase: .18));
+      await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(display: display, toolbox: fixture.runtime)));
       await tester.pumpAndSettle();
       final router = GoRouter.of(tester.element(find.byType(ShellPage)));
       router.go('/service');

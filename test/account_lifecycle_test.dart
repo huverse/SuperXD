@@ -40,7 +40,9 @@ import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/page/legal_page.dart';
 import 'package:superxd/page/today_page.dart';
-import 'package:superxd/main.dart';
+import 'package:superxd/app_lifecycle.dart';
+import 'package:superxd/app_services.dart';
+import 'package:superxd/app_shell.dart';
 import 'package:superxd/page/animated_branches.dart';
 import 'package:superxd/page/schedule_page.dart';
 import 'package:superxd/page/message_page.dart';
@@ -75,7 +77,7 @@ void main() {
     await tester.runAsync(fixture.initialize);
     final gateway = _Accounts().._active = null;
     final session = AppSession(gateway); await session.restore();
-    await tester.pumpWidget(SuperXdApp(session: session, toolbox: fixture.runtime, backgroundPhase: .18));
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(toolbox: fixture.runtime)));
     await tester.pumpAndSettle();
     await tester.tap(find.text('百宝箱'));
     await tester.pumpAndSettle();
@@ -109,7 +111,7 @@ void main() {
     await tester.runAsync(fixture.initialize);
     final gateway = _Accounts().._active = null;
     final session = AppSession(gateway); await session.restore();
-    await tester.pumpWidget(SuperXdApp(session: session, toolbox: fixture.runtime, playground: PlaygroundStore.memory(), backgroundPhase: .18));
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(toolbox: fixture.runtime, playground: PlaygroundStore.memory())));
     await tester.pumpAndSettle();
     await tester.tap(find.text('游乐场'));
     await tester.pumpAndSettle();
@@ -136,7 +138,7 @@ void main() {
     final gateway = _Accounts().._active = null;
     final session = AppSession(gateway); await session.restore();
     final leisure = Leisure(memory: FileLeisureMemory.memory(enabled: false), clearLocal: () async {});
-    await tester.pumpWidget(SuperXdApp(session: session, toolbox: fixture.runtime, playground: PlaygroundStore.memory(), leisure: leisure, backgroundPhase: .18));
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(toolbox: fixture.runtime, playground: PlaygroundStore.memory(), leisure: leisure)));
     await tester.pumpAndSettle();
     expect(find.byType(LoginPage), findsOneWidget);
     expect(find.text('游乐场'), findsNothing);
@@ -161,7 +163,7 @@ void main() {
     final display = DisplaySettings.memory();
     await display.setGlassMode('reduced');
     final session = AppSession(_Accounts()); await session.restore();
-    await tester.pumpWidget(SuperXdApp(session: session, display: display, backgroundPhase: .18));
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(display: display)));
     await tester.pumpAndSettle();
     await tester.pump(campusGlassProbeDelay);
     await tester.pumpAndSettle();
@@ -177,7 +179,7 @@ void main() {
     final playground = PlaygroundStore.memory();
     await playground.finish('hanoi', PuzzleTier.entry, millis: 1000, at: DateTime.utc(2026, 11, 15));
     final leisure = Leisure(memory: FileLeisureMemory.memory(), clearLocal: playground.clear);
-    await tester.pumpWidget(SuperXdApp(session: session, playground: playground, leisure: leisure, backgroundPhase: .18)); await tester.pumpAndSettle();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(playground: playground, leisure: leisure))); await tester.pumpAndSettle();
     await tester.tap(find.text('服务').last); await tester.pumpAndSettle();
     expect(find.text('游乐场'), findsOneWidget);
     await tester.tap(find.text('我的')); await tester.pumpAndSettle();
@@ -225,7 +227,7 @@ void main() {
     final session = AppSession(gateway); await session.restore();
     final tool = fixture.runtime.modules.first;
     final unlocks = _Unlocks({'game.hanoi', toolboxUnlockId(tool.id)});
-    await tester.pumpWidget(SuperXdApp(session: session, toolbox: fixture.runtime, playground: PlaygroundStore.memory(), unlocks: unlocks, backgroundPhase: .18));
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(toolbox: fixture.runtime, playground: PlaygroundStore.memory(), unlocks: unlocks)));
     await tester.pumpAndSettle();
     GoRouter router() => GoRouter.of(tester.element(find.byType(Navigator).first));
     router().go('/playground/hanoi');
@@ -262,7 +264,7 @@ void main() {
       downloads: fixture.manager,
       services: {ExpressService.serviceId: ExpressService(vault: MemoryExpressVault(), clientFactory: (session) => throw StateError('没登录不该建客户端'))},
     );
-    await tester.pumpWidget(SuperXdApp(session: session, toolbox: toolbox, backgroundPhase: .18, shortcuts: _Shortcuts(), launch: 'express.identity'));
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, launch: 'express.identity', services: AppServices(toolbox: toolbox, shortcuts: _Shortcuts())));
     await tester.pump();
     expect(find.byType(ExpressPage), findsNothing, reason: '会话还没恢复好');
     await session.restore();
@@ -290,7 +292,7 @@ void main() {
     final developer = DeveloperSettings.memory();
     final gateway = _Accounts().._active = null;
     final session = AppSession(gateway); await session.restore();
-    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, developer: developer, logs: logs));
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(developer: developer, logs: logs)));
     await tester.pumpAndSettle();
     expect(find.byType(LoginPage), findsOneWidget);
     expect(find.byTooltip('开发者工具'), findsNothing);
@@ -325,7 +327,7 @@ void main() {
     final developer = DeveloperSettings.memory(enabled: true);
     final gateway = _Accounts().._active = null;
     final session = AppSession(gateway); await session.restore();
-    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, developer: developer, logs: logs));
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(developer: developer, logs: logs)));
     await tester.pumpAndSettle();
     final button = find.byTooltip('开发者工具');
     await tester.drag(button, const Offset(0, -200));
@@ -346,7 +348,7 @@ void main() {
     final display = DisplaySettings.memory();
     tester.platformDispatcher.platformBrightnessTestValue = Brightness.light;
     addTearDown(tester.platformDispatcher.clearPlatformBrightnessTestValue);
-    await tester.pumpWidget(SuperXdApp(session: session, display: display, backgroundPhase: .18));await tester.pumpAndSettle();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(display: display)));await tester.pumpAndSettle();
     final today = tester.element(find.byType(TodayPage));
     expect(Theme.of(today).brightness, Brightness.light);
     tester.platformDispatcher.platformBrightnessTestValue = Brightness.dark;await tester.pumpAndSettle();
@@ -379,7 +381,7 @@ void main() {
   testWidgets('启动自动检查查到新版时弹更新弹窗，只弹一次；关于页能检查更新', (tester) async {
     final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
     final fixture = UpdateFixture()..feed.next = fakeRelease();
-    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, updates: fixture.updates)); await tester.pumpAndSettle();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(updates: fixture.updates))); await tester.pumpAndSettle();
     await fixture.updates.autoCheck(); await tester.pumpAndSettle();
     expect(find.text('发现新版本'), findsOneWidget);
     await tester.tap(find.text('稍后')); await tester.pumpAndSettle();
@@ -404,7 +406,7 @@ void main() {
     final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
     final fixture = UpdateFixture()..feed.next = fakeRelease();
     final legal = LegalNoticeMemory.memory();
-    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, updates: fixture.updates, legal: legal)); await tester.pumpAndSettle();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(updates: fixture.updates, legal: legal))); await tester.pumpAndSettle();
     legal.check(legalRevision); await tester.pumpAndSettle();
     expect(find.text('用户协议与隐私政策'), findsOneWidget);
     // 点遮罩关不掉。
@@ -455,7 +457,7 @@ void main() {
   testWidgets('同意过的，协议与政策有实质变化时提示一次，只有「知道了」才记下，不再征得同意', (tester) async {
     final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
     final legal = LegalNoticeMemory.memory(agreedRevision: legalRevision - 1, seenRevision: legalRevision - 1);
-    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, legal: legal)); await tester.pumpAndSettle();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(legal: legal))); await tester.pumpAndSettle();
     legal.check(legalRevision); await tester.pumpAndSettle();
     expect(find.text('协议与政策已更新'), findsOneWidget);
     expect(find.textContaining(legalChanges), findsOneWidget);
@@ -469,7 +471,7 @@ void main() {
   testWidgets('自动检查更新等用户同意协议之后才开始', (tester) async {
     final fixture = UpdateFixture();
     final agreed = Completer<void>();
-    watchAppUpdates(fixture.updates, agreed: agreed.future);
+    watchAppUpdates(fixture.updates, AppHooks(agreed: agreed.future));
     await tester.pump(appUpdateAutoCheckDelay * 2);
     expect(fixture.feed.calls, 0);
     agreed.complete();
@@ -480,7 +482,7 @@ void main() {
   testWidgets('按启动顺序：恢复会话换了代次后再核对，同意弹窗弹在新的账号应用上，不被重建拆掉', (tester) async {
     final gateway = _Accounts(); final session = AppSession(gateway);
     final legal = LegalNoticeMemory.memory();
-    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, legal: legal)); await tester.pump();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(legal: legal))); await tester.pump();
     // 同 main：恢复会话（换代次、下一帧整个账号应用重建）后紧接着核对。
     gateway._generation++;
     await session.restore();
@@ -875,7 +877,7 @@ void main() {
     final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
     final feed = _NoteFeed();
     final notes = DeveloperNotes(feed: feed, memory: FileDeveloperNoteMemory.memory());
-    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, notes: notes)); await tester.pumpAndSettle();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(notes: notes))); await tester.pumpAndSettle();
     await tester.tap(find.text('我的')); await tester.pumpAndSettle();
     expect(find.text('开发者的话'), findsNothing);
     await tester.runAsync(notes.refresh); await tester.pumpAndSettle();
@@ -911,7 +913,7 @@ void main() {
     final festivals = Festivals(occasions: [occasion], memory: FileFestivalMemory.memory(), client: _Reward(), account: () => const AppAccountRef(accountId: 'AAAAAAAAAAAAAAAAAAAAAA', slot: 'fake-slot'));
     final moments = AppMoments(festivals: festivals, timetable: () async => const CampusTimetable([]));
     final legal = LegalNoticeMemory.memory(agreedRevision: legalRevision, seenRevision: legalRevision);
-    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, legal: legal, festivals: festivals, moments: moments)); await tester.pumpAndSettle();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(legal: legal, festivals: festivals, moments: moments))); await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 1)); await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('合成场景'), findsOneWidget);
     expect(festivals.due, isNull, reason: '开始播就记下，不再播');
@@ -938,7 +940,7 @@ void main() {
     final legal = LegalNoticeMemory.memory(agreedRevision: legalRevision, seenRevision: legalRevision);
     final appAccounts = AppAccounts(client: _NoAppAccount());
     await appAccounts.load();
-    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, legal: legal, festivals: festivals, moments: moments, appAccounts: appAccounts)); await tester.pumpAndSettle();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(legal: legal, festivals: festivals, moments: moments, appAccounts: appAccounts))); await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 1)); await tester.pump(const Duration(milliseconds: 400));
     expect(find.text('合成场景'), findsOneWidget);
     await tester.pump(const Duration(seconds: 2)); await tester.pump(const Duration(milliseconds: 500)); await tester.pump(const Duration(milliseconds: 500));
@@ -957,7 +959,7 @@ void main() {
     final moments = AppMoments(notes: notes, timetable: () async => const CampusTimetable([]));
     final splashGone = ValueNotifier(false);
     final legal = LegalNoticeMemory.memory(agreedRevision: legalRevision, seenRevision: legalRevision);
-    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, legal: legal, notes: notes, moments: moments, splashGone: splashGone)); await tester.pumpAndSettle();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, splashGone: splashGone, services: AppServices(legal: legal, notes: notes, moments: moments))); await tester.pumpAndSettle();
     await tester.pump(const Duration(seconds: 2)); await tester.pumpAndSettle();
     expect(find.text('知道了'), findsNothing, reason: '开屏还没走完');
     await tester.tap(find.text('我的')); await tester.pumpAndSettle();

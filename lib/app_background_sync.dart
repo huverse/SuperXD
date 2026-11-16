@@ -9,12 +9,14 @@ import 'package:path_provider/path_provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:workmanager/workmanager.dart';
 
+import 'package:superxd/app_lifecycle.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/auto_sync.dart';
 import 'package:superxd/device/diagnostic_device.dart';
 import 'package:superxd/device/sync_notifications.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/network_policy.dart';
 import 'package:superxd/gateway/account_gateway.dart';
 import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/credential_store.dart';
@@ -186,26 +188,26 @@ void Function() listenForBackgroundSync(AutoSync autoSync) {
 // 自动同步的时机：同意协议与政策之后才开始（同意之前不联网）。启动、切换账号或退出时重读设置、排好或撤掉后台任务，
 // 登录着的到期就补跑一轮；回到前台时也看一眼到没到期（iOS 的后台刷新由系统定时机，常常靠这里补上）。这些都是用户打开着应用（foreground）；
 // 启动时只是读回本机会话，之后代次变了才是真的重新登录（relogin，清掉登录过期的暂停）。
-void watchAutoSync(AppSession session, AutoSync autoSync, {required Future<void> agreed}) {
-  void report(Object error, StackTrace stack) => campusLog('[AutoSync] action=watch errorType=${error.runtimeType}\n$stack');
+void watchAutoSync(AppSession session, AutoSync autoSync, AppHooks hooks) {
+  late final void Function() register;
   Future<void> changed({required bool relogin}) async {
     await autoSync.accountChanged(signedIn: session.loggedIn, relogin: relogin);
     if (session.loggedIn) await autoSync.runIfDue(foreground: true);
   }
 
-  unawaited(agreed.then((_) {
-    final register = listenForBackgroundSync(autoSync);
+  hooks.afterAgreed('AutoSync', () {
+    register = listenForBackgroundSync(autoSync);
     var generation = session.generation, loggedIn = session.loggedIn;
     session.addListener(() {
       if (session.generation == generation && session.loggedIn == loggedIn) return;
       generation = session.generation;
       loggedIn = session.loggedIn;
-      unawaited(changed(relogin: true).catchError(report));
+      unawaited(changed(relogin: true).catchError((Object error, StackTrace stack) => campusLog('[AutoSync] action=watch errorType=${error.runtimeType}\n$stack')));
     });
-    AppLifecycleListener(onResume: () {
+    hooks.onResume('AutoSync', () {
       register();
-      if (session.loggedIn) unawaited(autoSync.runIfDue(foreground: true).catchError(report));
-    });
+      if (session.loggedIn) return autoSync.runIfDue(foreground: true);
+    }, service: NetworkService.eduAuto);
     return changed(relogin: false);
-  }).catchError(report));
+  }, service: NetworkService.eduAuto);
 }

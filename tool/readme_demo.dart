@@ -21,7 +21,8 @@ import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
 import 'package:superxd/local/display_settings.dart';
-import 'package:superxd/main.dart';
+import 'package:superxd/app_services.dart';
+import 'package:superxd/app_shell.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/invite_code.dart';
 import 'package:superxd/social/relay_app_account.dart';
@@ -67,7 +68,7 @@ Future<void> main() async {
   await gateway.saveScheduleRevision(term, _courses, '演示课表', expectedRevisionId: null);
   final social = await _demoSocial(term, start);
   final session = AppSession(_DemoAccounts(gateway));
-  runApp(SuperXdApp(session: session, display: DisplaySettings.memory(), social: social, toolbox: ToolboxRuntime(catalog: _demoCatalog)));
+  runApp(SuperXdApp(session: session, services: AppServices(display: DisplaySettings.memory(), social: social, toolbox: ToolboxRuntime(catalog: _demoCatalog))));
   await initializeCampusGlass();
   await session.restore();
 }

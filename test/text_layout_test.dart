@@ -8,7 +8,8 @@ import 'package:superxd/app_session.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/week.dart';
 import 'package:superxd/local/display_settings.dart';
-import 'package:superxd/main.dart';
+import 'package:superxd/app_services.dart';
+import 'package:superxd/app_shell.dart';
 import 'package:superxd/page/shell_page.dart';
 
 import 'fixture_campus_gateway.dart';
@@ -60,7 +61,7 @@ void main() {
 
       final loggedOut = AppSession(FixtureAccounts(inner, signedIn: false));
       await loggedOut.restore();
-      await tester.pumpWidget(SuperXdApp(session: loggedOut, display: display, toolbox: fixture.runtime, backgroundPhase: .18));
+      await tester.pumpWidget(SuperXdApp(session: loggedOut, backgroundPhase: .18, services: AppServices(display: display, toolbox: fixture.runtime)));
       await tester.pumpAndSettle();
       expect(_problems(tester), isEmpty, reason: '登录页');
       // 同意行：「用户协议 和 隐私政策」整组在同一行，换行后行距按文字排，不按 48 的按钮触区撑开。
@@ -74,7 +75,7 @@ void main() {
 
       final session = AppSession(FixtureAccounts(inner, signedIn: true));
       await session.restore();
-      await tester.pumpWidget(SuperXdApp(session: session, display: display, toolbox: fixture.runtime, backgroundPhase: .18));
+      await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(display: display, toolbox: fixture.runtime)));
       await tester.pumpAndSettle();
       expect(_problems(tester, checkOrphans: false), isEmpty, reason: '今天');
       final router = GoRouter.of(tester.element(find.byType(ShellPage)));

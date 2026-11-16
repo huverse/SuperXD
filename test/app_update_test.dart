@@ -317,7 +317,7 @@ void main() {
       expect((await feed(MockClient((_) async => reply(noApk, 200))).latest())!.apk, isNull);
     });
 
-    // iOS 不能在应用里安装（[人工决策] 见 main.dart 的 appUpdates）：取 arm64 那份，只看版本与更新说明，弹窗给「去发布页下载」。
+    // iOS 不能在应用里安装（[人工决策] 见 app_services.dart 的 appUpdates）：取 arm64 那份，只看版本与更新说明，弹窗给「去发布页下载」。
     test('不要安装包时清单照样有效，只是没有安装包', () async {
       final body = await signedResponse(payload);
       final release = await feed(MockClient((_) async => reply(body, 200)), packages: false).latest();

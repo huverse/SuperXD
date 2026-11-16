@@ -1,6 +1,6 @@
 # device 设备能力
 
-定位：系统能力与外部服务的适配器，只实现 domain 里定义的端口，只依赖 domain 和本目录。由组合根 main.dart 创建并注入编排层，页面不直接依赖本层。
+定位：系统能力与外部服务的适配器，只实现 domain 里定义的端口，只依赖 domain 和本目录。由组合根创建（main.dart 与 app_services.dart）并注入编排层，页面不直接依赖本层。
 
 # 文件职责
 
@@ -22,7 +22,7 @@
   - iOS：CourseBridge.swift 把同一份快照与配色写进 App Group 共享容器的 widget 目录（排除 iCloud 备份，同安卓不备份小组件数据；不用共享的 UserDefaults，那份会进备份）再让系统重排时间线；小组件在扩展 ios/CourseWidgets（WidgetKit，最低 iOS 16.2）：下一节（小号与锁屏）、接下来两节（中号）、今日课程（大号），规则与提示文案同安卓（home_widget_test.dart 守护文案一致），时间线排到 24 小时内的上下课、校园日界与快照过期时刻。App Group 名不写死，由 ios/Shared/SharedGroup.swift 从安装包的描述文件读（自签证书各人不同）。
 
 - 应用内更新的三个适配器，由 application/app_updates.dart 编排：
-  - relay_release_feed.dart：RelayReleaseFeed 实现 AppReleaseFeed（载荷里的分批放量表 rollout 经 domain 的 decodeRolloutStages 校验，没有是全量）（packages 为假时不要安装包：iOS 按 arm64 取同一份清单、只看版本，弹窗给「去发布页下载」，[人工决策] 在 main.dart 的 appUpdates），GET 自建中转的 /v1/app/releases/<渠道>?abi=（请求免设备签名），经共用请求内核 CampusHttp：单次 15 秒超时、响应上限 64KB、不重试；RELEASE_NOT_FOUND 当这个渠道还没有发布。parseSignedAppRelease 只认返回里 envelope 验签通过的载荷（明文字段留给旧客户端，一律不用），没有签名或验不过记 errorType=SignedEnvelopeException 并按失败处理、不提示更新；parseAppReleasePayload 把载荷当外部输入逐项校验，渠道与架构必须是本机的（防重放），安装包只认本服务下载路径里的文件名。appAbiName 把正在运行的架构映射成安装包架构名。
+  - relay_release_feed.dart：RelayReleaseFeed 实现 AppReleaseFeed（载荷里的分批放量表 rollout 经 domain 的 decodeRolloutStages 校验，没有是全量）（packages 为假时不要安装包：iOS 按 arm64 取同一份清单、只看版本，弹窗给「去发布页下载」，[人工决策] 在 app_services.dart 的 appUpdates），GET 自建中转的 /v1/app/releases/<渠道>?abi=（请求免设备签名），经共用请求内核 CampusHttp：单次 15 秒超时、响应上限 64KB、不重试；RELEASE_NOT_FOUND 当这个渠道还没有发布。parseSignedAppRelease 只认返回里 envelope 验签通过的载荷（明文字段留给旧客户端，一律不用），没有签名或验不过记 errorType=SignedEnvelopeException 并按失败处理、不提示更新；parseAppReleasePayload 把载荷当外部输入逐项校验，渠道与架构必须是本机的（防重放），安装包只认本服务下载路径里的文件名。appAbiName 把正在运行的架构映射成安装包架构名。
   - app_package_files.dart：CacheAppPackageFiles 实现 AppPackageFiles。安装包放在缓存的 app_update 文件夹（原生 FileProvider 只开放这里），只留一个版本；background_downloader 的独立命名空间 superxd_update 下载（回调与百宝箱的下载互不相干），有通知权限时以前台任务跑并在通知栏显示进度（规则同百宝箱 background_transfer.dart）；SHA-256 在后台 isolate 里算；prune 删掉版本号不高于已装版本的包与残留。
   - app_installer_channel.dart：ChannelAppInstaller 实现 AppInstaller，经通道 superxd/app_update 调原生 AppUpdateInstaller.kt：能否安装（Android 8 起要用户允许「安装未知应用」）、打开授权设置、读安装包的包名版本号并比对签名证书、以只读授权交给系统安装器。
 
