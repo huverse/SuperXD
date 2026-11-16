@@ -46,6 +46,9 @@ abstract final class CampusIcons {
   static const dragHandle = LucideIcons.gripVertical;
   // 排顺序、选播哪几个（开屏画作的播放顺序）。
   static const arrange = LucideIcons.arrowUpDown;
+  // 学业（课表、成绩与同步的入口）与等你来选的教务课表。
+  static const academic = LucideIcons.graduationCap;
+  static const pendingSync = LucideIcons.calendarSync;
   static const audio = LucideIcons.music;
   static const pause = LucideIcons.pause;
   static const resume = LucideIcons.play;

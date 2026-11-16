@@ -12,6 +12,8 @@
   - iOS 的胶囊是实时活动（ios/Runner/CourseBridge.swift 的 CourseLive，iOS 16.2 起，[人工决策] 在那里）：应用在后台时系统不让自己开始，所以开着胶囊也照常发课前通知；每次打开或回到前台交来计划时，正处在提醒时刻到下课之间的那节课开始或更新实时活动，其余的结束。画面在小组件扩展 ios/CourseWidgets/CourseLiveActivity.swift（锁屏与灵动岛，课前倒数到上课、上课中倒数到下课并画进度），两边共用 ios/Shared/CourseActivity.swift。
   - 开了状态栏胶囊（live）时不经插件定时，改经通道 superxd/course_live 把计划（钟点按校园时区写好）交给原生 CourseLive.kt 发 Android 16 实时更新（OPPO 流体云按同一接口显示；插件不支持「请求提升」）。两条路同一时刻只走一条，切换时另一条交空计划。
   - CourseLive.kt：计划存私有的 superxd_course_live 偏好（已排除系统备份），条数同 reminderLimit；只排下一个时刻的一个闹钟（有精确闹钟权限时准时），到点发出或改写再排下一个；开课前倒数到开课、上课中倒数到下课（系统按 when 显示剩余分钟），setTimeoutAfter 下课自动消失；只在首次发出时响铃；用户划掉的这节不再补发；开机、应用更新、改时间或时区时由 CourseLiveReceiver 重新处理。能力查询给用户是否允许（canPostPromotedNotifications）与系统有没有实时更新（允许，或有实时更新设置页可去开；Android 16 首版没有这一页，不给开关），「开启胶囊」打开这个设置页（清单 queries 里声明了它）。
+- campus_notifications.dart：本应用系统通知的共用初始化 initializeCampusNotifications（插件在一个进程里只认最后一次 initialize 的点按回调，课前提醒与同步结果共用这一份）、点了通知的 payload 流 campusNotificationTaps 与冷启动由通知拉起时取一次的 campusNotificationLaunch（组合根接到同步记录页）。
+- sync_notifications.dart：SyncNotifications 实现 domain 的 SyncNotices（人工决策见 domain/sync_record.dart）：渠道 sync_result「同步结果」，固定编号 620000（新的盖掉旧的），点开带 syncRecordsPayload 进学业页的同步记录；没有通知权限时不发只记日志；request 在打开自动同步时申请通知权限；后台同步那份引擎里同样能发。
 - home_widget_publisher.dart：HomeWidgetPublisher 实现桌面小组件端口 CourseWidgetPort。
   - 经通道 superxd/course_widget 把快照与配色（JSON）交给原生侧 CourseWidgets.kt，存进私有的 superxd_course_widget 偏好（已排除系统备份）。
   - 钟点、日期在这里按校园时区算好；原生侧只用快照带的 campusTimeZone 判断“今天”，按系统时间挑当前与下一节。

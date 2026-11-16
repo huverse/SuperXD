@@ -8,6 +8,7 @@ import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/local/legacy_import.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/schedule_edit.dart';
+import 'package:superxd/domain/sync_record.dart';
 
 class SavedSession {
   const SavedSession({
@@ -32,13 +33,13 @@ class AppDatabase {
 
   static Future<AppDatabase> open({String? databasePath}) async {
     if (databasePath == null) throw ArgumentError('必须显式指定数据库路径；账号数据库请使用 AccountStore');
-    final db = await openDatabase(databasePath, version: 8, onConfigure: _configure, onCreate: _create, onUpgrade: _upgrade);
+    final db = await openDatabase(databasePath, version: 9, onConfigure: _configure, onCreate: _create, onUpgrade: _upgrade);
     return AppDatabase(db);
   }
 
   // reclaim：前台接管旧引擎遗留的连接（人工决策见 AccountStore.open）。
   static Future<AppDatabase> openForAccount({required String databasePath, required AccountIdentity identity, bool reclaim = false}) async {
-    final db = await databaseFactory.openDatabase(databasePath, options: OpenDatabaseOptions(version: 8, singleInstance: reclaim, rollbackActiveTransactionOnOpen: reclaim,
+    final db = await databaseFactory.openDatabase(databasePath, options: OpenDatabaseOptions(version: 9, singleInstance: reclaim, rollbackActiveTransactionOnOpen: reclaim,
       onConfigure: (db) async {
         await _configure(db);
         // Android 会先创建 android_metadata；它不是旧业务数据，不能阻止新账号库初始化。
@@ -111,6 +112,7 @@ class AppDatabase {
       if (!columns.any((row) => row['name'] == 'live')) await db.execute('ALTER TABLE reminder_setting ADD COLUMN live INTEGER NOT NULL DEFAULT 0');
     }
     if (oldVersion < 8) await _createAutoSync(db);
+    if (oldVersion < 9) await _createSyncRecord(db);
   }
 
   static Future<void> _revisionIndexes(DatabaseExecutor db) async {
@@ -245,6 +247,7 @@ CREATE TABLE bells_cache (
     await _revisionIndexes(db);
     await _createReminderSetting(db);
     await _createAutoSync(db);
+    await _createSyncRecord(db);
   }
 
   // 自动同步（人工决策见 domain/auto_sync.dart，v8 新增）：schedule_sync_hold 是和本地改过的课表冲突、等用户来选的教务课表，
@@ -271,6 +274,18 @@ CREATE TABLE IF NOT EXISTS auto_sync (
   last_state TEXT,
   last_message TEXT NOT NULL DEFAULT '',
   updated_at TEXT NOT NULL
+)''');
+  }
+
+  // 同步记录（人工决策见 domain/sync_record.dart，v9 新增）：每轮同步一行，payload 是变化与失败的 JSON（名字有上限）；
+  // 写入时在同一事务里删到只剩最新 syncRecordLimit 行，行数有界。
+  static Future<void> _createSyncRecord(Database db) async {
+    await db.execute('''
+CREATE TABLE IF NOT EXISTS sync_record (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  at TEXT NOT NULL,
+  trigger TEXT NOT NULL,
+  payload TEXT NOT NULL
 )''');
   }
 
@@ -524,6 +539,18 @@ ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, interval_minutes = exc
   ]);
 
   // 还没存过设置时先按默认值落一行，再写结果。
+  Future<SyncRecord> insertSyncRecord(SyncRecord record) => _db.transaction((transaction) async {
+    final at = record.at.toUtc().toIso8601String(), payload = jsonEncode(record.toJson());
+    final id = await transaction.insert('sync_record', {'at': at, 'trigger': record.trigger.name, 'payload': payload});
+    await transaction.rawDelete('DELETE FROM sync_record WHERE id <= ?', [id - syncRecordLimit]);
+    return SyncRecord.fromRow(id: id, at: at, trigger: record.trigger.name, payload: payload);
+  });
+
+  Future<List<SyncRecord>> syncRecords() async => [
+    for (final row in await _db.query('sync_record', orderBy: 'id DESC', limit: syncRecordLimit))
+      SyncRecord.fromRow(id: row['id'] as int, at: row['at'] as String, trigger: row['trigger'] as String, payload: row['payload'] as String),
+  ];
+
   Future<void> recordAutoSync(AutoSyncStatus status, {required String now}) => _db.transaction((transaction) async {
     await transaction.rawInsert('INSERT INTO auto_sync (id, enabled, interval_minutes, contents_json, updated_at) VALUES (1, 0, ?, ?, ?) ON CONFLICT(id) DO NOTHING', [
       autoSyncDefaultInterval.inMinutes,

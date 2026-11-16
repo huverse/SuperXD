@@ -1,5 +1,6 @@
 import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/sync_record.dart';
 
 class GatewayError {
   const GatewayError({required this.code, required this.message, this.detail});
@@ -256,4 +257,7 @@ abstract class CampusGateway {
   Future<GatewayResult<AutoSyncView>> readAutoSync();
   Future<GatewayResult<AutoSyncSetting>> saveAutoSyncSetting(AutoSyncSetting setting);
   Future<GatewayResult<AutoSyncStatus>> recordAutoSync(AutoSyncStatus status);
+  // 同步记录（人工决策见 domain/sync_record.dart）：只读写本机账号库，最多 syncRecordLimit 条，新的挤掉最旧的；读出来从新到旧。
+  Future<GatewayResult<SyncRecord>> recordSync(SyncRecord record);
+  Future<GatewayResult<List<SyncRecord>>> readSyncRecords();
 }

@@ -2,6 +2,9 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/application/campus_sync.dart';
+import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/sync_record.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
@@ -45,6 +48,8 @@ Future<bool> showCampusSyncReport(
                 SyncOutcome.failed => '失败',
               }} · ${item.label}', item.message),
             for (final label in report.unfinished) row(context, CampusIcons.pause, '未处理 · $label'),
+            // 这一轮改了什么（人工决策见 domain/sync_record.dart）：每类变化一行，下面列出前几门课。
+            for (final change in report.record?.changes ?? const <SyncChange>[]) row(context, CampusIcons.history, syncChangeLine(change), syncChangeNames(change)),
             if (interrupted) Text(report.rateLimited ? '教务限流，已停止；已完成的已保存，约 1 分钟后再同步' : '离开今天页后已停止，已完成的已保存', style: const TextStyle(fontSize: 14)),
           ],
         ),
@@ -59,4 +64,30 @@ Future<bool> showCampusSyncReport(
       ],
     ),
   ) == true;
+}
+
+// 采用别的学期的作息要本人确认（今天页与学业页的同步共用）。
+Future<BellsChoice> chooseBellsSource(BuildContext context, TermRef target, BellsView source) async {
+  return await showCampusDialog<BellsChoice>(
+    context: context,
+    builder: (context) => CampusGlassDialog(
+      title: const Text('采用这套作息时间？'),
+      content: SingleChildScrollView(
+        child: Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text('${target.label}没有可用的已采用作息。\n来源：${source.term.label}', style: const TextStyle(fontSize: 14)),
+          const SizedBox(height: 12),
+          for (final period in source.periods)
+            Padding(
+              padding: const EdgeInsets.symmetric(vertical: 4),
+              child: Text('第${period.period}节  ${period.start}–${period.end}', style: const TextStyle(fontSize: 16)),
+            ),
+        ]),
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, BellsChoice.cancel), child: const Text('暂不采用')),
+        TextButton(onPressed: () => Navigator.pop(context, BellsChoice.next), child: const Text('看下一套')),
+        FilledButton(onPressed: () => Navigator.pop(context, BellsChoice.use), child: const Text('用这套')),
+      ],
+    ),
+  ) ?? BellsChoice.cancel;
 }

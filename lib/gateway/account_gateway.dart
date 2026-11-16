@@ -15,6 +15,7 @@ import 'package:superxd/local/account_store.dart';
 import 'package:superxd/local/app_database.dart';
 import 'package:superxd/local/credential_store.dart';
 import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/sync_record.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/gateway_code.dart';
 
@@ -454,6 +455,10 @@ class AccountGateway extends AccountAccess {
   Future<GatewayResult<AutoSyncSetting>> saveAutoSyncSetting(AutoSyncSetting setting) => _dispatch((gateway) => gateway.saveAutoSyncSetting(setting));
   @override
   Future<GatewayResult<AutoSyncStatus>> recordAutoSync(AutoSyncStatus status) => _dispatch((gateway) => gateway.recordAutoSync(status));
+  @override
+  Future<GatewayResult<SyncRecord>> recordSync(SyncRecord record) => _dispatch((gateway) => gateway.recordSync(record));
+  @override
+  Future<GatewayResult<List<SyncRecord>>> readSyncRecords() => _dispatch((gateway) => gateway.readSyncRecords());
 
   // 在切换锁里写回，和退出、切换账号互斥：期间账号变了（用户退出、换了账号、页面转了登录）就不动，退出就是退出。
   // 另一份引擎（后台任务跑着时用户打开了应用）可能已经退出了这个账号：账号索引里的当前账号不再是它也不写回，不让退出的会话复活。

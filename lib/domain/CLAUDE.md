@@ -30,6 +30,7 @@
   - 单时段与单周调整 changeSlot、removeSlot，冲突检测 courseOverlaps。
   - 变更对比 scheduleChanges，以及时段、周次的显示文案；节次文案只经 periodLabel（一节写「第3节」），学分只经 creditLabel（整数不带小数）。
 - auto_sync.dart：自动同步的规则与类型（[人工决策] 在文件头）：SyncContent（手动同步共用）、可选间隔 autoSyncIntervals、设置 AutoSyncSetting（years 为空表示当前学年）、上次结果 AutoSyncStatus、到期规则 autoSyncDue（早 15 分钟内算到期、没连上网的隔 15 分钟、登录过期暂停时后台不到期，用户打开着应用才照间隔试）、后台任务第一次的延迟 autoSyncDelay、等用户来选的教务课表 HeldScheduleSync、系统后台任务端口 BackgroundSyncScheduler（device 实现）。
+- sync_record.dart：同步记录（[人工决策] 在文件头：每轮同步都留一条，自动同步有变化时发通知，冲突的进学业页待处理，课表变化可撤回）：SyncRecord（时刻、自动还是手动、变化、失败、是否没做完；toJson 与 fromRow 是本机库的读写边界，名字与条数有上限）、一类变化 SyncChange（课表 ScheduleSyncChange：新增、删除、改动的课与门数、第一次、等你来选、同步前那一版 before；成绩 GradeSyncChange：新出与改了的）、文案 syncChangeLine、syncChangeNames、syncRecordHeadline、自动同步的通知 syncRecordNotice（第一次同步到的不通知）、上限 syncRecordLimit（50 条）与 syncRecordNames、通知端口 SyncNotices（device 实现）。
 - schedule_merge.dart：好友课表逐项合并的规则：planScheduleMerge 按课名配对（同管理课程），配上的那门课按时段比出差异（同一上课时间比周次、教室、教师，一样的改动合成一项；两边各剩的时段配成上课时间改动，多出来的是加上、去掉；学分对整门课），记下有没有同一个教学班；applyScheduleMerge 把勾了的套到自己的时段上再经 regroupCourse 分回教学班，加进来的课和自己课程标识撞了另起本地课程。人工决策在 page/schedule_import.dart。教务课表冲突的三方合并共用这套配对与差异，scheduleMergeOrigins 再拿两边各自和基准比，按课名分清是教务改的、你改的还是两边都改了（默认勾选由此定，人工决策在 auto_sync.dart）；applyEduMerge 落库时把整门都用教务的课（改动全勾上了，或你没改过、只是课程代码这类不显示的字段不同）换成教务的原样记录，结构和教务一致，下次同步才认得出你没改过。
 - period_spans.dart：把当日课程按节次展开成 PeriodSpan（有课段与空档段），并决定补齐哪些节次。
 - meeting_time.dart：按作息把节次换算成上课时刻 MeetingTime。
@@ -102,6 +103,7 @@
 - 课表：schedule_edit_test.dart、schedule_merge_test.dart、schedule_version_test.dart、period_day_test.dart。
 - 课程实例与下游：reminder_test.dart、calendar_export_test.dart、home_widget_test.dart。
 - 成绩、卡片与更新规则：grades_test.dart、share_card_test.dart、app_update_test.dart；开屏画作清单与轮换：painting_test.dart。
+- 同步记录（读写边界、文案与通知）：sync_record_test.dart。
 - 开发者的话与打扰时机（清单解析、弹信规则、安静期）：developer_notes_test.dart；节日规则：festival_test.dart；娱乐与积分的开关：leisure_test.dart。
 - 字体包（登记与仓库文件一致、本机文件与下载）：code_conventions_test.dart、font_pack_test.dart。
 - 灰度与分批更新（分桶向量含等级加权、配置解析、编排、签名下发、发版清单的放量表、本机记的等级与批次）：rollout_test.dart。

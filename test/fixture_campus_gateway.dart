@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/sync_record.dart';
 import 'package:superxd/domain/period_spans.dart';
 import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/grades.dart' as grades;
@@ -121,7 +122,7 @@ class FixtureCampusGateway implements CampusGateway {
   }
 
   @override
-  Future<GatewayResult<GradesView>> readGrades(TermRef term) => syncGrades(term);
+  Future<GatewayResult<GradesView>> readGrades(TermRef term) => _gradesOf(term);
 
   @override
   Future<GatewayResult<List<GradeTermOverview>>> readGradeYear(String year) async {
@@ -131,7 +132,10 @@ class FixtureCampusGateway implements CampusGateway {
   }
 
   @override
-  Future<GatewayResult<GradesView>> syncGrades(TermRef term) async {
+  Future<GatewayResult<GradesView>> syncGrades(TermRef term) => _gradesOf(term);
+
+  // 读本机与同步拿到的是同一份合成成绩；子类改 syncGrades 计数时，读本机不算一次同步。
+  Future<GatewayResult<GradesView>> _gradesOf(TermRef term) async {
     final grades = await _grades();
     if (grades.view.term.key == term.key) {
       return _ok(grades.view, source: 'local', fetchedAt: grades.fetchedAt);
@@ -284,6 +288,20 @@ class FixtureCampusGateway implements CampusGateway {
     autoSyncStatus = status;
     return _ok(status, source: 'local', fetchedAt: _stamp());
   }
+
+  // 同步记录：从新到旧，最多 syncRecordLimit 条（同本机账号库）。
+  final syncRecords = <SyncRecord>[];
+
+  @override
+  Future<GatewayResult<SyncRecord>> recordSync(SyncRecord record) async {
+    final saved = SyncRecord(id: (syncRecords.firstOrNull?.id ?? 0) + 1, at: record.at, trigger: record.trigger, changes: record.changes, failures: record.failures, cancelled: record.cancelled);
+    syncRecords.insert(0, saved);
+    if (syncRecords.length > syncRecordLimit) syncRecords.removeLast();
+    return _ok(saved, source: 'local', fetchedAt: _stamp());
+  }
+
+  @override
+  Future<GatewayResult<List<SyncRecord>>> readSyncRecords() async => _ok([...syncRecords], source: 'local', fetchedAt: _stamp());
 
   @override
   Future<GatewayResult<ReminderSetting>> readReminderSetting(TermRef term) async => _ok(_reminders[term.key] ?? ReminderSetting.initial, source: 'local', fetchedAt: _stamp());

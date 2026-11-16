@@ -2,8 +2,11 @@ import 'dart:async';
 
 import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/gateway_code.dart';
+import 'package:superxd/domain/sync_record.dart';
 
 class SyncSelection {
   SyncSelection({required Set<String> years, required Set<SyncContent> contents})
@@ -47,8 +50,10 @@ class SyncItemResult {
 }
 
 class CampusSyncReport {
-  const CampusSyncReport(this.items, {this.busy = false, this.cancelled = false, this.unfinished = const []});
+  const CampusSyncReport(this.items, {this.busy = false, this.cancelled = false, this.unfinished = const [], this.record});
   final List<SyncItemResult> items;
+  // 这一轮记下的同步记录（人工决策见 domain/sync_record.dart）；没做任何事或没记成时为空。
+  final SyncRecord? record;
   final bool busy;
   final bool cancelled;
   // 提前结束时尚未处理的同步项，按原执行顺序排列。
@@ -77,6 +82,7 @@ class CampusSync {
   static final _yielding = <Future<void>>{};
 
   // [人工决策-2026-09-24 21:39:35] 用户先多选学年与同步项，三类数据统一范围；跨学年作息来源仍须明确确认。
+  // 每一轮做完（含中途停下）记一条同步记录：自动同步（yields）记成自动，其余记成手动（人工决策见 domain/sync_record.dart）。
   Future<CampusSyncReport> run({
     required Set<SyncContent> contents,
     Set<String>? years,
@@ -85,6 +91,36 @@ class CampusSync {
     required bool Function() isActive,
     void Function(CampusSyncProgress progress)? onProgress,
     bool yields = false,
+  }) async {
+    final changes = <SyncChange>[];
+    final report = await _run(contents: contents, years: years, resolveSchedule: resolveSchedule, chooseBells: chooseBells, isActive: isActive, onProgress: onProgress, yields: yields, changes: changes);
+    if (report.busy || (report.items.isEmpty && changes.isEmpty)) return report;
+    final record = await _record(SyncRecord(
+      at: DateTime.now().toUtc(),
+      trigger: yields ? SyncTrigger.auto : SyncTrigger.manual,
+      changes: changes,
+      failures: [for (final item in report.items) if (item.outcome == SyncOutcome.failed) '${item.label}：${item.message}'],
+      cancelled: report.cancelled,
+    ));
+    return CampusSyncReport(report.items, cancelled: report.cancelled, unfinished: report.unfinished, record: record);
+  }
+
+  // 记不成只记日志：同步本身已经落库，不因记录失败报错。
+  Future<SyncRecord?> _record(SyncRecord record) async {
+    final saved = await gateway.recordSync(record);
+    if (!saved.ok) campusLog('[CampusSync] action=record errorType=${saved.error?.code}');
+    return saved.data;
+  }
+
+  Future<CampusSyncReport> _run({
+    required Set<SyncContent> contents,
+    Set<String>? years,
+    required Future<ScheduleResolution> Function(TermRef term, SyncPlan plan, List<CourseRecord> courses) resolveSchedule,
+    required Future<BellsChoice> Function(TermRef target, BellsView source) chooseBells,
+    required bool Function() isActive,
+    void Function(CampusSyncProgress progress)? onProgress,
+    required bool yields,
+    required List<SyncChange> changes,
   }) async {
     if (_running) return const CampusSyncReport([], busy: true);
     if (contents.isEmpty || years?.isEmpty == true) return const CampusSyncReport([]);
@@ -130,6 +166,8 @@ class CampusSync {
           if (!isActive()) return stop(true);
           final label = '课表 · ${term.label.isEmpty ? term.key : term.label}';
           onProgress?.call(CampusSyncProgress('正在同步$label'));
+          // 同步前本机这学期的课表：之后对比出改了什么，撤回时恢复它。
+          final before = (await gateway.readSchedule(ScheduleScope.term(term))).data;
           final fetched = await gateway.syncSchedule(term);
           if (!fetched.ok || fetched.data == null) {
             items.add(_failure(label, fetched.error));
@@ -145,13 +183,21 @@ class CampusSync {
               final resolution = await resolveSchedule(term, plan.data!, fetched.data!.courses);
               onProgress?.call(CampusSyncProgress('正在保存$label'));
               if (!isActive()) return stop(true);
-              items.add(await settle(term, fetched.data!.courses, resolution, expectedRevisionId: plan.data!.revisionId));
+              final settled = await settle(term, fetched.data!.courses, resolution, expectedRevisionId: plan.data!.revisionId);
+              items.add(settled);
+              final change = _settledChange(term, before, fetched.data!.courses, resolution, settled);
+              if (change != null) changes.add(change);
             } else {
               // [人工决策-2026-09-25 00:19:22] 沿用学年/数据项选择；再次提交在事务内核对实时head，未提交不得报已同步。
               final committed = await gateway.commitScheduleSync(term, fetched.data!.courses, confirm: false);
               items.add(committed.ok
                   ? SyncItemResult(label, SyncOutcome.completed, fetched.data!.courses.isEmpty ? '教务暂无课程，已保存空课表' : '已同步')
                   : _failure(label, committed.error));
+              // 落了新版本才算有变化（教务和本机一样时返回的还是原来那一版）。
+              if (committed.ok && committed.data?.id != before?.revisionId) {
+                final change = scheduleSyncChange(term, before, fetched.data!.courses);
+                if (change != null) changes.add(change);
+              }
             }
           }
           pending.removeAt(0);
@@ -176,7 +222,13 @@ class CampusSync {
         if (!isActive()) return stop(true);
         if (contents.contains(SyncContent.grades)) {
           onProgress?.call(CampusSyncProgress('正在同步成绩 · ${term.label}'));
+          final previous = await gateway.readGrades(term);
           final grades = await gateway.syncGrades(term);
+          if (grades.ok && grades.data != null) {
+            // 本机没同步过这学期时 readGrades 照样成功、cached 为假：当没有原来的，记成第一次。
+            final change = gradeSyncChange(term, previous.data?.cached == true ? previous.data : null, grades.data!);
+            if (change != null) changes.add(change);
+          }
           items.add(grades.ok && grades.data != null
               ? SyncItemResult('成绩 · ${term.label}', SyncOutcome.completed, grades.data!.empty ? '教务暂无成绩，已保存空结果' : '已同步')
               : _failure('成绩 · ${term.label}', grades.error));
@@ -197,7 +249,25 @@ class CampusSync {
 
   // 冲突的教务课表按选择落库；同步当中与打扰时机里处理暂存的那份共用。
   // expectedRevisionId 是比对时的当前版本（SyncPlan.revisionId），落库时在事务里核对，期间课表被改过就报冲突、不覆盖。
-  Future<SyncItemResult> settle(TermRef term, List<CourseRecord> courses, ScheduleResolution resolution, {required String? expectedRevisionId}) async {
+  // record 为真（打扰时机、学业页的待处理里选完）：另记一条手动的同步记录，写明这次落了什么。
+  Future<SyncItemResult> settle(TermRef term, List<CourseRecord> courses, ScheduleResolution resolution, {required String? expectedRevisionId, bool record = false}) async {
+    if (!record) return _settle(term, courses, resolution, expectedRevisionId: expectedRevisionId);
+    final before = (await gateway.readSchedule(ScheduleScope.term(term))).data;
+    final settled = await _settle(term, courses, resolution, expectedRevisionId: expectedRevisionId);
+    final change = _settledChange(term, before, courses, resolution, settled);
+    if (change != null) await _record(SyncRecord(at: DateTime.now().toUtc(), trigger: SyncTrigger.manual, changes: [change]));
+    return settled;
+  }
+
+  // 冲突落库后的变化：选了用教务的或合并就是落库前后的差别；留着等你来选的记成待处理（教务和本机的差别）；选了保留本地的不记。
+  SyncChange? _settledChange(TermRef term, ScheduleView? before, List<CourseRecord> courses, ScheduleResolution resolution, SyncItemResult settled) => switch (resolution) {
+    KeepLocal(remember: false) when settled.outcome == SyncOutcome.skipped => scheduleSyncChange(term, before, courses, held: true),
+    TakeEdu() when settled.outcome == SyncOutcome.completed => scheduleSyncChange(term, before, courses),
+    MergeEdu(:final merged) when settled.outcome == SyncOutcome.completed => scheduleSyncChange(term, before, merged),
+    _ => null,
+  };
+
+  Future<SyncItemResult> _settle(TermRef term, List<CourseRecord> courses, ScheduleResolution resolution, {required String? expectedRevisionId}) async {
     final label = '课表 · ${term.label.isEmpty ? term.key : term.label}';
     switch (resolution) {
       case KeepLocal(:final remember):
@@ -305,4 +375,38 @@ class CampusSync {
   SyncItemResult _failure(String label, GatewayError? error) {
     return SyncItemResult(label, SyncOutcome.failed, error?.message ?? '未获得有效结果', code: error?.code);
   }
+}
+
+// 课表这一学期的变化：同步前（before，本机还没有这学期时为空，记成第一次）与之后（after）比，没有差别时为空。
+ScheduleSyncChange? scheduleSyncChange(TermRef term, ScheduleView? before, List<CourseRecord> after, {bool held = false}) {
+  final first = before?.revisionId == null;
+  final diff = first ? const <CourseChange>[] : scheduleChanges(before!.courses, after);
+  if (!first && diff.isEmpty) return null;
+  List<String> names(String kind, String Function(CourseChange change) name) => [for (final change in diff) if (change.kind == kind) name(change)];
+  final added = names('新增', (change) => change.after!.courseName), removed = names('删除', (change) => change.before!.courseName);
+  final changed = names('修改', (change) => '${change.after!.courseName}：${change.fields.join('、')}');
+  return ScheduleSyncChange(
+    termKey: term.key,
+    termLabel: term.label,
+    added: added.take(syncRecordNames).toList(),
+    removed: removed.take(syncRecordNames).toList(),
+    changed: changed.take(syncRecordNames).toList(),
+    counts: first ? (after.length, 0, 0) : (added.length, removed.length, changed.length),
+    first: first,
+    held: held,
+    before: first || held ? null : before!.revisionId,
+  );
+}
+
+// 成绩这一学期的变化：按课程代码加课名比，新出的与分数变了的；本机原来没有这学期的成绩时记成第一次；没有差别时为空。
+GradeSyncChange? gradeSyncChange(TermRef term, GradesView? before, GradesView after) {
+  String key(GradeCourse course) => '${course.courseCode}\u0000${course.courseName}';
+  String line(GradeCourse course) => [course.courseName, if (course.score != null) '${course.score}'].join(' ');
+  final first = before == null;
+  final old = {for (final course in before?.effective ?? const <GradeCourse>[]) key(course): course};
+  final added = [for (final course in after.effective) if (!old.containsKey(key(course))) line(course)];
+  final changed = [for (final course in after.effective) if (old[key(course)] case final previous? when '${previous.score}' != '${course.score}') line(course)];
+  if (!first && added.isEmpty && changed.isEmpty) return null;
+  if (first && after.effective.isEmpty) return null;
+  return GradeSyncChange(termKey: term.key, termLabel: term.label, added: added.take(syncRecordNames).toList(), changed: changed.take(syncRecordNames).toList(), counts: (added.length, changed.length), first: first);
 }

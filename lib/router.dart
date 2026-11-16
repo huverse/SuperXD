@@ -20,6 +20,8 @@ import 'package:superxd/domain/unlock.dart';
 import 'package:superxd/domain/painting.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
+import 'package:superxd/page/academic_page.dart';
+import 'package:superxd/page/sync_records_page.dart';
 import 'package:superxd/page/account_dialogs.dart';
 import 'package:superxd/page/app_account_page.dart';
 import 'package:superxd/page/animated_branches.dart';
@@ -137,6 +139,15 @@ GoRouter buildRouter({required CampusGateway gateway, required AppSession sessio
           todaySync.request(year: year);
           router.go('/today');
         })),
+      ),
+      // 学业（人工决策见 page/academic_page.dart）：课表、成绩与同步的入口；同步记录也从系统通知「新出了几门成绩」点进来。
+      GoRoute(
+        path: '/academic', parentNavigatorKey: rootKey,
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: AcademicPage(gateway: gateway, autoSync: autoSync, onSessionExpired: () => session.expire(generation), isAccountCurrent: () => session.generation == generation && session.loggedIn)),
+      ),
+      GoRoute(
+        path: '/academic/records', parentNavigatorKey: rootKey,
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: SyncRecordsPage(gateway: gateway, autoSync: autoSync, isAccountCurrent: () => session.generation == generation && session.loggedIn)),
       ),
       GoRoute(
         path: '/grades', parentNavigatorKey: rootKey,

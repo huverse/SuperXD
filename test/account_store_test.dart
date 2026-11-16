@@ -160,12 +160,13 @@ void main() {
       expect(await database.termStartDate(_term.xn, _term.xq), '2026-08-31');
       await database.close();
       final upgraded = await openReadOnlyDatabase(file, singleInstance: false);
-      expect(await upgraded.getVersion(), 8);
+      expect(await upgraded.getVersion(), 9);
       expect(await upgraded.query('account_owner'), isEmpty);
       expect(await upgraded.query('legacy_import_marker'), isEmpty);
       expect(await upgraded.query('reminder_setting'), isEmpty);
       expect(await upgraded.query('schedule_sync_hold'), isEmpty);
       expect(await upgraded.query('auto_sync'), isEmpty);
+      expect(await upgraded.query('sync_record'), isEmpty, reason: 'v9 补建同步记录表');
       await upgraded.close();
       await directory.delete(recursive: true);
     });

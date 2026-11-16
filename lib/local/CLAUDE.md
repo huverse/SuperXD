@@ -29,6 +29,7 @@
     - reminder_setting：课前提醒设置，每学期一行（v6 新增；v7 加状态栏胶囊开关 live，默认关闭）。
     - schedule_sync_hold：和本地改过的课表冲突、等用户来选的教务课表（v8 新增），每学期最多一行，dismissed 为选过保留本地（同一份不再等）；教务课表落成新版本时在同一事务里删掉。
     - auto_sync：自动同步的设置与上次结果（v8 新增），只有一行。
+    - sync_record：同步记录（v9 新增，人工决策见 domain/sync_record.dart），每轮一行（时刻、自动还是手动、变化与失败的 JSON），写入时在同一事务里删到只剩最新 syncRecordLimit（50）行。
   - 课表写入（saveSchedule、syncSchedule、mergeSchedule、restoreRevision）在同一事务内完成：
     - mergeSchedule 一次写两版：先教务同步（下次三方合并的基准，latestEduCourses 走 (xn, xq, source, sequence) 索引取最近一版），合并结果不同时再写一版我的修改；教务这份和最近一版教务同步一样时只写我的修改。readAutoSync 认不出库里的名字时跳过那一项、不抛错。
     1. 读取 head，核对 expectedRevisionId。

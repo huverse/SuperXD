@@ -13,6 +13,7 @@ import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/local/app_database.dart';
 import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/sync_record.dart';
 import 'package:superxd/domain/period_spans.dart';
 import 'package:superxd/domain/schedule_edit.dart';
 import 'package:superxd/domain/grades.dart' as grades;
@@ -423,6 +424,12 @@ class KingoCampusGateway implements CampusGateway {
     await database.recordAutoSync(status, now: _stamp());
     return _ok(status, source: 'local', fetchedAt: _stamp());
   });
+
+  @override
+  Future<GatewayResult<SyncRecord>> recordSync(SyncRecord record) => _guard(() async => _ok(await database.insertSyncRecord(record), source: 'local', fetchedAt: _stamp()));
+
+  @override
+  Future<GatewayResult<List<SyncRecord>>> readSyncRecords() => _guard(() async => _ok(await database.syncRecords(), source: 'local', fetchedAt: _stamp()));
 
   @override
   Future<GatewayResult<RevisionView>> commitScheduleSync(TermRef term, List<CourseRecord> courses, {required bool confirm, String? expectedRevisionId}) => _guard(() async {

@@ -9,7 +9,7 @@
 - 壳层与导航：
   - shell_page.dart：底栏壳 ShellPage（今天、服务、消息、我的四个分支；在别的分支按返回先回今天，[人工决策] 在文件内）与可拖动底栏 DragNavigationBar：悬浮在安全区之上，内容延伸到玻璃下方，底栏占位作为各页的底部安全区；拖动时的透镜是栏玻璃的兄弟层、不被栏裁剪；「消息」带私信未读角标，「我的」在有没读的开发者的话时带一个不计数的小圆点（dots）。iOS 26 起换成挂在 Flutter 视图上的系统底栏 NativeTabBar（theme/native_glass.dart；iOS 16–18 用同安卓的自绘底栏，只是再点当前项同 iOS，[人工决策] 见 campusSystemTabBar），角标与小圆点照旧，拖动与悬浮由系统做，内容按系统报来的总高留位置，开屏走完（revealed）才出现；两端底栏都是提示条的锚点（theme 的 CampusToastAnchor），提示条停在底栏上方；再点当前项回到这一栏首页、已在首页时滚回顶部（[人工决策] 在 onSelected）。
   - animated_branches.dart：分支切换 AnimatedBranches，保留每个分支的 Navigator；进出两页整屏并排平移，不淡入淡出（页内玻璃在半透明图层下取不到背景）。iOS 上直接切换、不滑动（[人工决策] 在 didUpdateWidget）。
-  - section_pages.dart：服务页（课表、成绩、百宝箱、游乐场入口，[人工决策] 在列表上方；娱乐与积分关着时不列游乐场）、我的页（界面下面一行「游乐场与积分」写已开启或已关闭，点了进 leisure_page.dart，人工决策见 domain/leisure.dart；头像卡读当前会话，只写姓名，姓名未知时显示学号；学号与班级在账号页；有开发者的话时在界面与关于之间多一行，有没读的信时行尾一个小圆点；节日抽中的红包在节日结束后 3 天内是最上面一行「节日红包」，点开再看卡片，没揭晓的照样拆红包）与底栏根页的大标题顶栏 SectionTitleBar。
+  - section_pages.dart：服务页（学业、百宝箱、游乐场入口，[人工决策] 在列表上方；娱乐与积分关着时不列游乐场）、我的页（界面下面一行「游乐场与积分」写已开启或已关闭，点了进 leisure_page.dart，人工决策见 domain/leisure.dart；头像卡读当前会话，只写姓名，姓名未知时显示学号；学号与班级在账号页；有开发者的话时在界面与关于之间多一行，有没读的信时行尾一个小圆点；节日抽中的红包在节日结束后 3 天内是最上面一行「节日红包」，点开再看卡片，没揭晓的照样拆红包）与底栏根页的大标题顶栏 SectionTitleBar。
 - 私信（只有分享卡片，没有文字聊天）：
   - message_page.dart：消息页，只放私信（还没有通知来源，不放空的「通知」分段，[人工决策] 在文件头）；没登录应用账号时是一张「登录应用账号后使用私信」卡（去登录经路由注入的 openAccount 推入应用账号页），私信在另一台手机上时是「在这台手机上使用」卡（takeOverSocial：先确认写明另一台停用、好友会看到、记录不过来，再原地等待接管），打开失败时是「暂时连不上」卡给重试（人工决策见 social/social_service.dart）；未开启时是开启卡片（含数据处理说明与隐私政策），开启后是添加好友与好友列表（按最近活动排序，下拉刷新并核对好友，增删好友时那一行原地展开、收起；时间在名字一行右端、未读角标在预览一行右端，大字号下各自长高不溢出）。
   - friend_add_page.dart：添加好友：出示自己的二维码（浅色画，保证可扫）与倒计时，离开即作废；出示时本页屏幕亮度调到最高、离开恢复（screen_brightness，只改本应用窗口，[人工决策] 在 initState）；「扫一扫」扫对方的码。扫码函数可注入（InviteScanner）。
@@ -40,11 +40,14 @@
   - term_start_dialog.dart：开学日设置弹窗 editTermStart（iOS 上是系统日期选择），保存成功只出提示条写第1周从哪天开始，失败才弹窗。
 - 成绩：
   - grades_page.dart：成绩页 GradesPage：学年与学期汇总、有效成绩与原始成绩，可筛选、排序、搜索；本页只同步成绩；视图切换淡出淡入（旧内容淡出后才换数据）。筛选是一行「搜索框 + 筛选按钮」，类型、范围、排序在弹层里点了就生效；成绩按行列在一张分组卡里、分数在右，不及格警示色并写明（[人工决策] 在 _filterLabel 上方与 domain/grades.dart 的 gradeFailing）；教务汇总绩点大字（_summaryFigures，缺的那一项写「—」），教务明确这学期没有成绩时只画空状态卡（_emptyGrades）、不画汇总；详情按内容高（_details）；人工决策在方法上。
+- 学业：
+  - academic_page.dart：学业页 AcademicPage（服务页的「学业」，取代分开的课表、成绩两项，[人工决策] 在类上）：顶部写当前学期（学期列表第一项）、第几周与最近一次同步；有自动同步留下、等你来选的教务课表时一组「待处理」（点了同打扰时机里的 showHeldScheduleSync）；课表、成绩两个入口；同步（同今天页的同步范围与合并页、作息来源确认 chooseBellsSource，原地显示进度，结果弹窗列出这一轮改了什么）、自动同步、同步记录。只读本机，联网只在点了同步之后。
+  - sync_records_page.dart：同步记录 SyncRecordsPage（从新到旧，每轮一张卡写自动还是手动、时刻与一句概括；系统通知「新出了几门成绩」点开也到这里）与详情 SyncRecordPage（每类变化一张卡列出哪几门课；课表的变化可撤回：先确认，恢复同步前那一版、按当前 head 乐观锁存成新版本；等你来选的给「去处理」；查看课表、查看成绩）。人工决策见 domain/sync_record.dart。
 - 同步：
   - sync_selection_dialog.dart：同步范围选择 chooseSyncSelection：学年与内容都可多选，默认读本地学期列表，点刷新才联网；给了 autoSync 时底部有「自动同步」入口（今天页给，成绩页不给）。
   - sync_merge_page.dart：教务课表冲突时选择性覆盖（人工决策见 domain/auto_sync.dart）：合并页 SyncMergePage 分「逐项合并 / 整份替换」，每门课写明是谁改的，默认只勾只有教务改的，没勾任何一项时按钮是保留我的课表，整份替换要确认；页面只交回选择，落库由同步或打扰时机做；落库前先校验合并结果、删课先确认，两边看不出差别时不开页面直接用教务的。resolveScheduleSync 给手动同步用（退出同保留本地，本机课表没读到时留到打扰时机再问），showHeldScheduleSync 给打扰时机用（弹之前重读暂存的那份，先弹窗问，按返回是以后再说）；页面随账号切换被销毁时也交回（同退出），同步不挂着。
   - auto_sync_dialog.dart：自动同步设置 showAutoSyncSettings：开关、间隔、学年（当前学年或指定学年）、内容（至少留一项），点了就存，最下面只读写上次的结果；样子同课前提醒设置。
-  - campus_sync_dialogs.dart：同步结果弹窗 showCampusSyncReport：结果与未处理项，可重新登录或重新同步；教务限流停下时只说明约 1 分钟后再同步，不给立即重新同步。
+  - campus_sync_dialogs.dart：同步结果弹窗 showCampusSyncReport：结果与未处理项，这一轮改了什么（同步记录的每类变化一行、下面列几门课），可重新登录或重新同步；教务限流停下时只说明约 1 分钟后再同步，不给立即重新同步。采用别的学期作息的确认 chooseBellsSource（今天页与学业页共用）。
 - 账号与设置：
   - login_page.dart：登录页 LoginPage，也用于切换账号：验证码、记住账号确认、百宝箱、游乐场（娱乐与积分关着时没有）、关于（进同一个关于页，未登录也能开开发者模式、检查更新，[人工决策] 在按钮处）与法务入口；同意行勾选框读屏读整句，点「我已阅读并同意」也能勾选，放不下一行时「用户协议 和 隐私政策」整组换行、行距按文字排（_agreement）；登录按钮常亮，没填或没勾同意时原地说明，接系统自动填充（[人工决策] 在文件内）。
   - leisure_page.dart：游乐场与积分的设置页 LeisurePage：上面一组开关，最底下单独一组红字「删除数据」（先确认写明删哪些，登录着应用账号时连服务器上的一起删，没删成本机也不动），同账号页的退出登录；[人工决策] 在类上。
@@ -90,7 +93,7 @@
 # 测试
 
 - 今天与课表：today_navigation_test.dart、today_date_transition_test.dart、schedule_experience_test.dart、schedule_editor_ui_test.dart、schedule_calendar_test.dart、course_clock_performance_test.dart、calendar_export_test.dart。
-- 成绩与同步：grades_ui_test.dart、sync_ui_test.dart、sync_merge_test.dart（合并页、手动同步流程、打扰时机弹窗、自动同步设置）。
+- 成绩与同步：grades_ui_test.dart、sync_ui_test.dart、sync_merge_test.dart（合并页、手动同步流程、打扰时机弹窗、自动同步设置）；学业页与同步记录：academic_test.dart（服务页只有学业一项、待处理、学业页的同步与结果里的变化、同步记录列表与详情、撤回、点通知进同步记录）。
 - 壳层与表单：navigation_drag_test.dart、shell_layout_test.dart（含 iOS 26 系统底栏的留位、iOS 18 自绘底栏，两者都测直接切换与再点当前项；安卓与 iOS 都只竖屏）、form_spacing_test.dart（支撑 form_layout_support.dart）。
 - 排版：text_layout_test.dart（登录、今天、课表三种范围与成绩在 360dp 大字号、宋体加粗体文本、411dp 标准下不裁字、不剩一行标点、不留孤字，同意行与登录按钮、学期视图横条；扫描在 text_fit_support.dart）。改了页面排版、文案长短或字号相关的布局都跑它。
 - 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart；应用账号一组：app_account_test.dart（应用账号页的注册、登录、忘记密码、扫码登录（含刷新与离开时作废票据、批准前写出请求方）、恢复码走敏感剪贴板、登录着的各项与「我上传的诊断包」，账号页那一行）；开屏与画作页：painting_ui_test.dart（含播放顺序页的勾选、拖动排序与至少留一幅）。

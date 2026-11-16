@@ -31,6 +31,7 @@ import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/festivals.dart';
 import 'package:superxd/application/leisure.dart';
 import 'package:superxd/application/rollouts.dart';
+import 'package:superxd/device/campus_notifications.dart';
 import 'package:superxd/device/app_installer_channel.dart';
 import 'package:superxd/device/app_shortcuts.dart';
 import 'package:superxd/device/app_package_files.dart';
@@ -45,6 +46,7 @@ import 'package:superxd/device/relay_font_pack_source.dart';
 import 'package:superxd/device/relay_note_feed.dart';
 import 'package:superxd/device/relay_release_feed.dart';
 import 'package:superxd/device/relay_rollout_feed.dart';
+import 'package:superxd/device/sync_notifications.dart';
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/app_shortcut.dart';
 import 'package:superxd/domain/challenge.dart';
@@ -234,7 +236,14 @@ void main() async {
   final notes = await developerNotes(support);
   final festivals = await festivalsOf(support, appAccounts, levelsOn: leisureOn);
   // 自动同步（人工决策见 domain/auto_sync.dart）：设备级，经账号门面跟着当前账号；后台任务的入口与时机在 app_background_sync.dart。
-  final autoSync = AutoSync(gateway: session.gateway, generation: () => session.generation, scheduler: WorkmanagerSyncScheduler(autoSyncDispatcher));
+  final autoSync = AutoSync(gateway: session.gateway, generation: () => session.generation, scheduler: WorkmanagerSyncScheduler(autoSyncDispatcher), notices: SyncNotifications());
+  // 点了同步结果通知进同步记录（人工决策见 domain/sync_record.dart）：冷启动由通知拉起时取一次，开着或在后台时点了经流交来；
+  // 都等会话恢复好、先回首页再推入（同快捷入口，见 _AccountAppState._onShortcut）。
+  void openNotification(String? payload) {
+    if (payload == syncRecordsPayload) notificationRoute.value = '/academic/records';
+  }
+  campusNotificationTaps.stream.listen(openNotification);
+  unawaited(campusNotificationLaunch().then(openNotification).catchError((Object error, StackTrace stack) => campusLog('[Notifications] action=launch errorType=${error.runtimeType}\n$stack')));
   // 打扰时机（人工决策见 application/app_moments.dart）：上下课的安静期按当前账号本机今天的课算，只读本地。
   final moments = AppMoments(notes: notes, festivals: festivals, autoSync: autoSync, timetable: () => campusTimetableToday(session.gateway, signedIn: session.loggedIn));
   final splashed = painting != null && splashImage != null;
@@ -545,6 +554,9 @@ void watchWidgetTheme(DisplaySettings display, CourseWidgetPort port) {
   apply();
 }
 
+// 点了系统通知要去的页面（同步结果通知进同步记录），由账号应用等会话恢复好再推入；只有组合根写它。
+final notificationRoute = ValueNotifier<String?>(null);
+
 class SuperXdApp extends StatefulWidget {
   const SuperXdApp({super.key, required this.session, this.display, this.backgroundPhase, this.toolbox, this.playground, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.launch, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.leisure, this.moments, this.autoSync, this.splashGone});
   // 自动同步（设备级）；为空时「同步范围」里没有自动同步入口，也不会有课表冲突的打扰时机。
@@ -724,6 +736,7 @@ class _AccountAppState extends State<_AccountApp> {
     widget.updates?.addListener(_promptUpdate);
     widget.legal?.addListener(_onLegal);
     widget.shortcuts?.pending.addListener(_onShortcut);
+    notificationRoute.addListener(_onShortcut);
     _router.routerDelegate.addListener(_onShortcut);
     _onShortcut();
     _unwatchRoutes = watchRoutes(_router);
@@ -825,11 +838,18 @@ class _AccountAppState extends State<_AccountApp> {
   void _onLegal() => unawaited(_promptLegal());
 
   // 快捷入口要去的页面（见 app_shortcuts.dart 的 openShortcut）：入口来了、路由变了都看一眼；在这一帧之后做，不在路由的通知里改路由。
+  // 快捷入口与点通知要去的页面（notificationRoute）同一种走法：会话恢复好、先回首页再推入；同时有两个时先处理快捷入口。
   void _onShortcut() {
     final shortcuts = widget.shortcuts;
-    if (shortcuts?.pending.value == null) return;
+    if (shortcuts?.pending.value == null && notificationRoute.value == null) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) openShortcut(_router, shortcuts!.pending, home: widget.session.loggedIn ? '/today' : '/login');
+      if (!mounted) return;
+      final home = widget.session.loggedIn ? '/today' : '/login';
+      if (shortcuts?.pending.value != null) {
+        openShortcut(_router, shortcuts!.pending, home: home);
+      } else {
+        openShortcut(_router, notificationRoute, home: home);
+      }
     });
     WidgetsBinding.instance.ensureVisualUpdate();
   }
@@ -871,6 +891,7 @@ class _AccountAppState extends State<_AccountApp> {
     widget.updates?.removeListener(_promptUpdate);
     widget.legal?.removeListener(_onLegal);
     widget.shortcuts?.pending.removeListener(_onShortcut);
+    notificationRoute.removeListener(_onShortcut);
     _router.routerDelegate.removeListener(_onShortcut);
     for (final source in _momentSources) {
       source?.removeListener(_onMoment);

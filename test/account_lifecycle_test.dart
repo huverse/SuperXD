@@ -749,6 +749,9 @@ void main() {
     expect(identical(message, tester.element(find.byType(MessagePage))), isTrue);
     await tester.tap(find.text('服务').last);
     await tester.pumpAndSettle();
+    // 课表、成绩在「学业」里（11-16，见 page/academic_page.dart）。
+    await tester.tap(find.text('学业'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('课表'));
     await tester.pumpAndSettle();
     expect(find.byType(SchedulePage), findsOneWidget);
