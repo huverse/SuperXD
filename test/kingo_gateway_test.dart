@@ -1,11 +1,17 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/edu/parse_bells.dart';
 import 'package:superxd/edu/parse_grades.dart';
 import 'package:superxd/edu/parse_schedule.dart';
+import 'package:superxd/edu/parse_terms.dart';
+import 'package:superxd/edu/login_rules.dart';
+import 'package:superxd/domain/gateway_code.dart';
+import 'package:superxd/gateway/kingo_auth.dart';
 import 'package:superxd/gateway/kingo_campus_gateway.dart';
 import 'package:superxd/local/app_database.dart';
 import 'package:superxd/domain/schedule_store.dart';
@@ -37,6 +43,28 @@ void main() {
     final session = await restored.restoreSession();
     expect(session.ok, isTrue);
     expect(session.data?.loginId, '20260000001');
+  });
+
+  // 11-16 用户诊断包：移动网络下身份页（SetMainInfo.jsp）25 秒无响应，整轮同步卡在「学期列表」。先取公开学期列表，身份页超时或被断开时照样用列表。
+  test('刷新学期：身份页超时或被断开时照样用公开学期列表；学校整个连不上时报换网络的提示；会话失效照旧报失效', () async {
+    Future<KingoCampusGateway> signedIn(_FakeKingo client) async {
+      final gateway = KingoCampusGateway(database: await AppDatabase.openMemory(), client: client, now: () => DateTime.utc(2026, 9, 24));
+      await gateway.login('20260000001', 'secret-value');
+      expect((await gateway.submitLoginCaptcha('ok')).ok, isTrue);
+      return gateway;
+    }
+    for (final failure in [TimeoutException('教务请求超时'), http.ClientException('Connection closed before full header was received')]) {
+      final client = _FakeKingo()..profileFailure = failure;
+      final listed = await (await signedIn(client)).syncTerms();
+      expect(listed.ok, isTrue, reason: '身份页 ${failure.runtimeType} 不该让整轮同步失败');
+      expect(listed.data?.map((term) => term.key), contains('2026-0'));
+    }
+    final down = _FakeKingo()..termsFailure = TimeoutException('教务请求超时');
+    final unreachable = await (await signedIn(down)).syncTerms();
+    expect(unreachable.error?.code, GatewayCode.networkTimeout);
+    expect(unreachable.error?.message, eduTimeoutMessage);
+    final expired = _FakeKingo()..profileFailure = KingoCallException(const LoginFailure(code: GatewayCode.sessionExpired, message: '教务登录已失效'));
+    expect((await (await signedIn(expired)).syncTerms()).error?.code, GatewayCode.sessionExpired);
   });
 
   test('课表同步和自定义版本写入 SQLite，重新打开仍能回退', () async {
@@ -110,6 +138,21 @@ void main() {
 }
 
 class _FakeKingo extends KingoClient {
+  Object? profileFailure;
+  Object? termsFailure;
+
+  @override
+  Future<KingoProfile> fetchProfile() async {
+    if (profileFailure case final failure?) throw failure;
+    return const KingoProfile(userCode: 'U1', xn: '2026', xq: '0', loginId: '20260000001');
+  }
+
+  @override
+  Future<({List<ParsedTerm> terms, ({String xn, String xq})? published})> listTerms() async {
+    if (termsFailure case final failure?) throw failure;
+    return (terms: const [ParsedTerm(xn: '2026', xq: '0', label: '2026-2027学年第一学期', code: '20260')], published: (xn: '2026', xq: '0'));
+  }
+
   @override
   Future<KingoLoginResult> login(String username, String password, {String captcha = ''}) async {
     if (captcha.isEmpty) {

@@ -12,6 +12,11 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/gateway_code.dart';
 
 // 登录暂态只属于本次认证，不读取或清理正在使用的账号数据库。
+// 教务连不上时的提示（登录与同步共用）：学校对部分校外网络不回应或断开（11-16 用户诊断包：移动网络下首个请求 25 秒无响应、随后连接被断开，
+// 同一时刻从别的网络访问正常），应用这边放不行，只能请用户换网络。
+const eduTimeoutMessage = '学校教务系统没有响应，可能是当前网络连不上学校，换个网络（如校园网）再试';
+const eduUnreachableMessage = '连不上学校教务系统，换个网络（如校园网）再试';
+
 class KingoAuth {
   KingoAuth({required this.client, DateTime Function()? now}) : _now = now ?? DateTime.now;
 
@@ -112,16 +117,16 @@ class KingoAuth {
       result = _fail(error.failure.code, error.failure.message);
     } on TimeoutException catch (error, stack) {
       _log(error, stack, GatewayCode.networkTimeout);
-      result = _fail(GatewayCode.networkTimeout, '教务连接超时');
+      result = _fail(GatewayCode.networkTimeout, eduTimeoutMessage);
     } on FormatException catch (error, stack) {
       _log(error, stack, GatewayCode.upstreamFormat);
       result = _fail(GatewayCode.upstreamFormat, '教务返回的数据格式异常');
     } on SocketException catch (error, stack) {
       _log(error, stack, GatewayCode.networkFailed);
-      result = _fail(GatewayCode.networkFailed, '教务连接失败');
+      result = _fail(GatewayCode.networkFailed, eduUnreachableMessage);
     } on http.ClientException catch (error, stack) {
       _log(error, stack, GatewayCode.networkFailed);
-      result = _fail(GatewayCode.networkFailed, '教务连接失败');
+      result = _fail(GatewayCode.networkFailed, eduUnreachableMessage);
     } catch (error, stack) {
       _log(error, stack, GatewayCode.loginFailed);
       result = _fail(GatewayCode.loginFailed, '登录未完成，请重试');

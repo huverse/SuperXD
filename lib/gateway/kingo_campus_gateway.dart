@@ -67,8 +67,10 @@ class KingoCampusGateway implements CampusGateway {
   Future<GatewayResult<List<TermRef>>> syncTerms() {
     return _networkGuard(() async {
       final session = await _openSession();
-      final profile = session == null ? null : await client.fetchProfile();
+      // 先取公开的学期列表，再取身份信息：学校整个连不上时在第一个请求就报错；只有身份页没回应或被断开时（11-16 用户诊断包里是身份页 25 秒无响应），
+      // 照样用公开列表与它标注的当前学期，这次只是不刷新会话里的身份。会话失效照旧抛出、交给上层自动重登。
       final listed = await client.listTerms();
+      final profile = session == null ? null : await _profileOrSkip();
       final terms = listed.terms.map((term) => TermRef(xn: term.xn, xq: term.xq, label: term.label)).toList();
       final xn = profile?.xn ?? listed.published?.xn;
       final xq = profile?.xq ?? listed.published?.xq;
@@ -84,6 +86,19 @@ class KingoCampusGateway implements CampusGateway {
       final ordered = (await database.terms()).where((term) => terms.any((remote) => remote.key == term.key)).toList();
       return _ok(ordered, source: 'edu', fetchedAt: _stamp());
     });
+  }
+
+  Future<KingoProfile?> _profileOrSkip() async {
+    try {
+      return await client.fetchProfile();
+    } on TimeoutException catch (error, stack) {
+      campusLog('[KingoCampusGateway] action=profile skipped=true errorType=${error.runtimeType}\n$stack');
+    } on SocketException catch (error, stack) {
+      campusLog('[KingoCampusGateway] action=profile skipped=true errorType=${error.runtimeType}\n$stack');
+    } on http.ClientException catch (error, stack) {
+      campusLog('[KingoCampusGateway] action=profile skipped=true errorType=${error.runtimeType}\n$stack');
+    }
+    return null;
   }
 
   @override
@@ -556,16 +571,16 @@ class KingoCampusGateway implements CampusGateway {
       return _fail(error.failure.code, error.failure.message);
     } on TimeoutException catch (error, stack) {
       campusLog('[KingoCampusGateway] $error\n$stack');
-      return _fail(GatewayCode.networkTimeout, '教务连接超时');
+      return _fail(GatewayCode.networkTimeout, eduTimeoutMessage);
     } on FormatException catch (error, stack) {
       campusLog('[KingoCampusGateway] code=UPSTREAM_FORMAT errorType=${error.runtimeType}\n$stack');
       return _fail(GatewayCode.upstreamFormat, '教务返回的数据格式异常，未覆盖已有缓存');
     } on SocketException catch (error, stack) {
       campusLog('[KingoCampusGateway] code=NETWORK_FAILED errorType=${error.runtimeType}\n$stack');
-      return _fail(GatewayCode.networkFailed, '教务连接失败');
+      return _fail(GatewayCode.networkFailed, eduUnreachableMessage);
     } on http.ClientException catch (error, stack) {
       campusLog('[KingoCampusGateway] code=NETWORK_FAILED errorType=${error.runtimeType}\n$stack');
-      return _fail(GatewayCode.networkFailed, '教务连接失败');
+      return _fail(GatewayCode.networkFailed, eduUnreachableMessage);
     } on DatabaseException catch (error, stack) {
       campusLog('[KingoCampusGateway] code=LOCAL_STORAGE_FAILED errorType=${error.runtimeType} sqliteCode=${error.getResultCode()}\n$stack');
       return _fail(GatewayCode.localStorageFailed, '本地数据保存失败');
