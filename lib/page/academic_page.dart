@@ -11,6 +11,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/sync_record.dart';
 import 'package:superxd/domain/week.dart';
+import 'package:superxd/page/academic_catalog.dart';
 import 'package:superxd/page/auto_sync_dialog.dart';
 import 'package:superxd/page/campus_sync_dialogs.dart';
 import 'package:superxd/page/sync_merge_page.dart';
@@ -171,8 +172,9 @@ class _AcademicPageState extends State<AcademicPage> {
           ],
           const SizedBox(height: 16),
           CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
-            ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.todaySelected), title: const Text('课表'), trailing: const CampusIcon(CampusIcons.next), onTap: () => _open('/schedule')),
-            ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.grades), title: const Text('成绩'), trailing: const CampusIcon(CampusIcons.next), onTap: () => _open('/grades')),
+            // 各项数据的入口来自学业功能登记（academic_catalog.dart）。
+            for (final feature in academicFeatures)
+              ListTile(contentPadding: rowPadding, leading: CampusIcon(feature.icon), title: Text(feature.title), trailing: const CampusIcon(CampusIcons.next), onTap: () => _open(feature.path)),
           ])),
           const SizedBox(height: 16),
           CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
