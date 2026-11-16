@@ -11,7 +11,8 @@ import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/sync_record.dart';
-import 'package:superxd/main.dart';
+import 'package:superxd/app_services.dart';
+import 'package:superxd/app_shell.dart';
 import 'package:superxd/page/academic_page.dart';
 import 'package:superxd/page/campus_sync_dialogs.dart';
 import 'package:superxd/page/schedule_page.dart';
@@ -49,7 +50,7 @@ Future<(_Accounts, AppSession)> _app(WidgetTester tester, {AutoSync? autoSync}) 
   final accounts = _Accounts(inner);
   final session = AppSession(accounts);
   await session.restore();
-  await tester.pumpWidget(SuperXdApp(session: session, autoSync: autoSync, backgroundPhase: .18));
+  await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(autoSync: autoSync)));
   await tester.pumpAndSettle();
   return (accounts, session);
 }

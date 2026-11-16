@@ -27,7 +27,7 @@
 - social_store.dart：私信本机库（每个应用账号一份，文件见 social_spaces.dart，已排除备份）：profile、friend、message、invite 四张表，时间存 UTC ISO 字符串。第 2 版 profile 加 bound（已挂到应用账号；旧版升级上来是 0，打开时补挂一次）。好友换了设备时 relinkFriend 把好友连同会话改挂到新设备号与新公钥并写一条 friend_moved；新手机接管后 importFriend 补进服务器给的好友（名字先用 placeholderNickname，等对方发来昵称）。
 - social_service.dart：SocialService 私信编排，是页面唯一入口。
   - 状态：loading、unavailable（未配置中转）、signedOut（没登录应用账号）、disabled（未开启）、elsewhere（这个账号的私信在另一台手机上）、ready、failed（打开时挂不上账号等，页面给重试 reopen）。
-  - switchAccount 由组合根在同意协议与政策后、当前应用账号变化时调（main.dart 的 watchSocial）；切换后进行中的旧账号操作不再改界面状态，长轮询的旧一轮回来后让给新账号。
+  - switchAccount 由组合根在同意协议与政策后、当前应用账号变化时调（app_lifecycle.dart 的 watchSocial）；切换后进行中的旧账号操作不再改界面状态，长轮询的旧一轮回来后让给新账号。
   - 挂账号：开启、打开时补挂（bound 为 0）、中转不认这台设备时都经 _bind 挂到当前应用账号；账号的私信在另一台手机上时转成 elsewhere，用户确认后 takeOver 接管（之后带 importRemote 刷新，补进服务器给的好友）；应用账号没了转成 signedOut 并调 accountGone（组合根让应用账号马上核一次）。forgetAccount 在注销应用账号、启动清 11-15 以前的旧账号时清掉这台手机上那个账号的私信（没用过私信的什么也不动）。
   - 好友换了设备：核对好友列表时把 movedFrom 指着本机好友的改挂过来、确认提示，再给它发一条 profile（自己的昵称，失败只记日志）；收到不认识的发件人先核对一次；发送被拒 NOT_FRIEND 先核对，改挂了的报 FRIEND_MOVED（点重发即到新设备），还在旧号上的才算已解除。收到 profile 只认好友、验签后改昵称。
   - enable 生成身份、保存昵称、挂到当前应用账号；disable 先删服务端设备再清本机（中转已不认这台设备、或已被别的手机接管时照样清本机）。

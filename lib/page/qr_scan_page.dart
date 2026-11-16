@@ -16,7 +16,7 @@ import 'package:superxd/theme/campus_icons.dart';
 
 // 通用扫码页：相机取景与相册识别都用 zxing-cpp（flutter_zxing）在本机解码，画面与内容不上传、不联网。
 // 只把内容交给调用方的 accept 判断，认下的原样返回，不跳转、不打开链接；不认的原地提示后继续扫。
-// 好友二维码与课堂签到二维码共用这一页，accept 由调用方给（见 friend_add_page.dart 与 main.dart）。
+// 好友二维码与课堂签到二维码共用这一页，accept 由调用方给（见 friend_add_page.dart 与 app_shell.dart）。
 // 连续模式（onCode 非空）：认下的码交给 onCode 后接着扫，until 完成时自动关；status 是取景页上的进度文字。
 // 课堂二维码会定时刷新，给多人连签时要一直对着老师的屏幕，用的就是这个模式。
 // [人工决策-2026-10-28 14:44:29] 识别引擎由 Google ML Kit（mobile_scanner）换成 zxing-cpp（用户选定）：用户在教室后排扫投影上的签到码，

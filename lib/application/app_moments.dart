@@ -47,7 +47,7 @@ const _launchSlack = Duration(seconds: 3);
 // 一次只出现一件，先后是节日动画、没揭晓的奖品、新信（节日只有那一天，信两周内都能弹）。
 // [人工决策-2026-11-05 17:18:44] 用户要求自动同步的课表冲突按同一套打扰时机弹出：排在奖品之后、新信之前（关乎自己的课表，比信要紧；节日只有那一天）。
 // 业务条件在这里：每次回到前台最多出现一件；从快捷入口进来的那次前台不出现（用户有明确要做的事）；在上下课安静期里不出现，安静期一结束再提醒组合根看一眼。
-// 界面条件在组合根（main.dart 的 _promptMoment）：只在底栏四个根页、没有弹窗弹层、协议与政策已同意且没有待弹的提示、开屏走完，停稳一会儿再出现。
+// 界面条件在组合根（app_shell.dart 的 _promptMoment）：只在底栏四个根页、没有弹窗弹层、协议与政策已同意且没有待弹的提示、开屏走完，停稳一会儿再出现。
 class AppMoments extends ChangeNotifier {
   AppMoments({this.notes, this.festivals, this.autoSync, required this.timetable, DateTime Function()? clock}) : _clock = clock ?? DateTime.now {
     _foregroundAt = _clock();

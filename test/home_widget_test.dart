@@ -13,7 +13,7 @@ import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/domain/course_widget.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/local/display_settings.dart';
-import 'package:superxd/main.dart';
+import 'package:superxd/app_lifecycle.dart';
 import 'package:superxd/theme/campus_palette.dart';
 
 import 'fixture_campus_gateway.dart';
