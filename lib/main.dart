@@ -95,6 +95,7 @@ import 'package:superxd/social/social_spaces.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_background.dart';
+import 'package:superxd/theme/campus_glass_probe.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/glass_panel.dart';
@@ -188,6 +189,8 @@ void main() async {
   final picker = ImagePickerPlatform.instance;
   if (picker is ImagePickerAndroid) picker.useAndroidPhotoPicker = true;
   await CampusGlassGuard.load();
+  // 玻璃显示自检只在安卓上截图（iOS 是系统组件与固定磨砂档），人工决策见 theme/campus_glass_tier.dart 的 11-16 那条。
+  if (!campusIos) campusGlassProbe = CampusGlassGuard.probe;
   final reminders = CampusReminders(gateway: session.gateway, port: NotificationReminders());
   final widgetPort = HomeWidgetPublisher();
   final widgets = CampusWidgets(gateway: session.gateway, port: widgetPort);
@@ -713,6 +716,7 @@ class _AccountAppState extends State<_AccountApp> {
 
   // 协议与政策的更新提示开着时，更新弹窗先等它关掉再弹，不叠两层。
   bool _legalOpen = false;
+  late final StreamSubscription<CampusGlassTier> _glassBroken;
 
   @override
   void initState() {
@@ -723,6 +727,7 @@ class _AccountAppState extends State<_AccountApp> {
     _router.routerDelegate.addListener(_onShortcut);
     _onShortcut();
     _unwatchRoutes = watchRoutes(_router);
+    _glassBroken = campusGlassBroken.stream.listen((tier) => unawaited(_onGlassBroken(tier).catchError((Object error, StackTrace stack) => campusLog('[CampusGlass] action=switch_off errorType=${error.runtimeType}\n$stack'))));
     for (final source in _momentSources) {
       source?.addListener(_onMoment);
     }
@@ -871,10 +876,20 @@ class _AccountAppState extends State<_AccountApp> {
       source?.removeListener(_onMoment);
     }
     _momentTimer?.cancel();
+    unawaited(_glassBroken.cancel());
     _unwatchRoutes();
     _router.dispose();
     if (widget.display == null) _display.dispose();
     super.dispose();
+  }
+
+  // 玻璃画坏了（显示自检截到整块近乎纯黑，人工决策见 theme/campus_glass_tier.dart 的 11-16 那条）：这台手机改成关闭并提示，用户可在界面页再改回。
+  Future<void> _onGlassBroken(CampusGlassTier tier) async {
+    if (_display.glassMode == 'off') return;
+    campusLog('[CampusGlass] action=switch_off from=${_display.glassMode} tier=${tier.name}');
+    await _display.setGlassMode('off');
+    final context = _router.routerDelegate.navigatorKey.currentContext;
+    if (context != null && context.mounted) showCampusToast(context, '玻璃效果在这台手机上显示异常，已关闭');
   }
 
   // 色调网格缺失或损坏时按未设置壁纸处理，回到云雾；同一份网格只解码一次。

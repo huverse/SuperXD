@@ -8,6 +8,7 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/campus_glass_blend.dart';
 import 'package:superxd/theme/campus_glass_material.dart';
+import 'package:superxd/theme/campus_glass_probe.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/native_glass.dart';
 import 'package:superxd/domain/campus_log.dart';
@@ -111,7 +112,8 @@ class GlassPanel extends StatelessWidget {
             solid || campusOverlayDepth.value > 0 ? CampusGlassTier.solid : CampusGlassScope.tierOf(context, ready: ready),
           ),
           opaque: (look) => look.$2 == CampusGlassTier.solid,
-          builder: (context, look, cover) => _surface(context, look.$1, look.$2, cover, fallback),
+          // 显示自检（安卓）：稳定在某个玻璃档位后截一下，整块画黑就改关闭，见 campus_glass_probe.dart。
+          builder: (context, look, cover) => CampusGlassProbe(tier: look.$2, child: _surface(context, look.$1, look.$2, cover, fallback)),
         );
       },
     );

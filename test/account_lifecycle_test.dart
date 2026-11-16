@@ -9,6 +9,8 @@ import 'package:path/path.dart' as path;
 
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
+import 'package:superxd/theme/campus_glass_probe.dart';
+import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/app_moments.dart';
@@ -35,7 +37,6 @@ import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/page/about_page.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
-import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/page/legal_page.dart';
 import 'package:superxd/page/today_page.dart';
@@ -147,6 +148,28 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     session.dispose();
     await tester.runAsync(fixture.close);
+  });
+
+  // 11-16 用户的 OPPO 简化档底栏整块画黑（人工决策见 theme/campus_glass_tier.dart）：自检截到画坏就把这台手机改成「关闭」并提示，栏改实色。
+  testWidgets('玻璃显示自检截到底栏整块画黑：改成关闭并提示，栏不再是玻璃', (tester) async {
+    debugResetCampusGlassProbe();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    campusGlassReady.value = true;
+    addTearDown(() => campusGlassReady.value = false);
+    campusGlassProbe = (area) async => .99;
+    addTearDown(() => campusGlassProbe = null);
+    final display = DisplaySettings.memory();
+    await display.setGlassMode('reduced');
+    final session = AppSession(_Accounts()); await session.restore();
+    await tester.pumpWidget(SuperXdApp(session: session, display: display, backgroundPhase: .18));
+    await tester.pumpAndSettle();
+    await tester.pump(campusGlassProbeDelay);
+    await tester.pumpAndSettle();
+    expect(display.glassMode, 'off');
+    expect(find.text('玻璃效果在这台手机上显示异常，已关闭'), findsOneWidget);
+    expect(find.byType(BackdropFilter), findsNothing, reason: '关闭档是实色，不再做模糊');
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
   });
 
   testWidgets('娱乐与积分：「我的」里一行写开着关着、点进设置页关掉后服务页不列游乐场、直接跳过去回服务页，打开就恢复；设置页底下删除数据先确认再清本机成绩', (tester) async {
