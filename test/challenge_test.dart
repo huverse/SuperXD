@@ -291,7 +291,10 @@ void main() {
       final ice = const IceRules().generate(7, PuzzleTier.normal);
       final exits = iceExits(ice.puzzle, PuzzleRandom(1));
       expect(exits, contains(ice.puzzle.goal));
-      final labeled = IcePuzzle(width: ice.puzzle.width, height: ice.puzzle.height, rocks: ice.puzzle.rocks, start: ice.puzzle.start, goal: ice.puzzle.goal, exits: exits);
+      expect(exits.length, greaterThanOrEqualTo(2));
+      // 出口的最少步数都同终点（第 2 版起，题面的步数上限因此对哪个出口都对）。
+      expect({for (final exit in exits) iceMinMoves(ice.puzzle.copyWith(goal: exit))}, {iceMinMoves(ice.puzzle)});
+      final labeled = ice.puzzle.copyWith(exits: exits);
       expect(const IceRules().decodePuzzle(const IceRules().encodePuzzle(labeled)).exits, exits);
       expect(const IceRules().solved(labeled, ice.solution), isTrue);
       expect(() => const IceRules().decodePuzzle({...const IceRules().encodePuzzle(labeled) as Map<String, Object?>, 'exits': [ice.puzzle.start]}), throwsFormatException);
@@ -933,7 +936,7 @@ void main() {
       expect(find.text('积分 86'), findsOneWidget);
       expect(find.text('入门 · 六连环'), findsOneWidget);
       expect(_line('6 关 · 限时 15 分钟 · 还剩 2 天'), findsOneWidget);
-      expect(hub.games, {for (final game in playgroundCatalog) if (game.challengeable) '${game.id}@1'}, reason: '报给服务器的是「游戏@题面写法版本」');
+      expect(hub.games, {for (final game in playgroundCatalog) if (game.challengeable) '${game.id}@${challengeRules[game.id]!.puzzleVersion}'}, reason: '报给服务器的是「游戏@题面写法版本」');
       await tester.tap(find.text('开始'));
       await tester.pumpAndSettle();
       expect(find.textContaining('计时不暂停'), findsOneWidget);

@@ -102,6 +102,7 @@ Map<String, Object?> buildChallengeVectors({int seedsPerTier = 2, int seed = 0x5
       }
     }
     cases.addAll(_goalCases(game, rules));
+    cases.addAll(_trapCases(game, rules));
     games[game] = cases;
   }
   // 每个游戏的题面写法版本：服务端按它核对自己的判定认得哪一版（test/challenge_judge.test.ts）。
@@ -122,15 +123,51 @@ List<Map<String, Object?>> _goalCases(String game, PuzzleRules<Object?, Object?>
         [for (var round = 0; round < flash.rounds.length; round++) flashPattern(mirrored, round, 0)],
         rules.encodeAnswer(draw.solution),
       ];
-    case final IcePuzzle ice:
-      puzzle = rules.encodePuzzle(IcePuzzle(width: ice.width, height: ice.height, rocks: ice.rocks, start: ice.start, goal: ice.goal, exits: iceExits(ice, PuzzleRandom(0x60A1))));
-      answers = [rules.encodeAnswer(draw.solution), <int>[]];
+    case IcePuzzle():
+      // 第 2 版的出口要和终点最少步数相同，不是每道题都挑得出：从同一个种子往后找第一道挑得出的。
+      var seed = 0x60A1;
+      while (iceExits(rules.generate(seed, PuzzleTier.normal).puzzle as IcePuzzle, PuzzleRandom(0x60A1)).length < 2) {
+        seed++;
+      }
+      final ice = rules.generate(seed, PuzzleTier.normal);
+      puzzle = rules.encodePuzzle((ice.puzzle as IcePuzzle).copyWith(exits: iceExits(ice.puzzle as IcePuzzle, PuzzleRandom(0x60A1))));
+      answers = [rules.encodeAnswer(ice.solution), <int>[]];
     default:
       return const [];
   }
   return [
     {
       'tier': PuzzleTier.normal.name,
+      'puzzle': puzzle,
+      'answers': [for (final answer in answers) {'answer': answer, 'expect': challengeVerdict(game, puzzle, answer)}],
+    },
+  ];
+}
+
+// 冰面滑行第 2 版的几种机关（专家档一道，自己的固定种子）：照参考解（解开）、多走一步滑不动的（超了步数上限）、
+// 照参考解走到半路拐进冰洞（掉下去）、不管宝石的最短走法（宝石没收齐，同时可能碰上薄冰），两端都得判成一样。
+List<Map<String, Object?>> _trapCases(String game, PuzzleRules<Object?, Object?> rules) {
+  final draw = rules.generate(0x7CE5, PuzzleTier.expert);
+  if (draw.puzzle is! IcePuzzle) return const [];
+  final ice = draw.puzzle as IcePuzzle, solution = draw.solution as List<int>;
+  final answers = <Object?>[rules.encodeAnswer(solution)];
+  var state = IceState(ice.start);
+  final stuck = [for (var direction = 0; direction < iceDirections; direction++) direction].where((direction) => identical(iceMove(ice, state, direction), state)).firstOrNull;
+  if (stuck != null) answers.add([stuck, ...solution]);
+  // 沿参考解找第一个能拐进冰洞的局面。
+  for (final (index, step) in solution.indexed) {
+    final fall = [for (var direction = 0; direction < iceDirections; direction++) direction].where((direction) => iceMove(ice, state, direction).fallen).firstOrNull;
+    if (fall != null) {
+      answers.add([...solution.sublist(0, index), fall]);
+      break;
+    }
+    state = iceMove(ice, state, step);
+  }
+  if (iceSolution(ice.copyWith(gems: const [])) case final greedy?) answers.add(greedy);
+  final puzzle = rules.encodePuzzle(ice);
+  return [
+    {
+      'tier': PuzzleTier.expert.name,
       'puzzle': puzzle,
       'answers': [for (final answer in answers) {'answer': answer, 'expect': challengeVerdict(game, puzzle, answer)}],
     },
