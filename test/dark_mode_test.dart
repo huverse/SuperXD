@@ -97,6 +97,19 @@ void main() {
     }
   });
 
+  // 11-16 选中着色（人工决策见 campus_palette.dart 的 selectedFill）：选中的文字（主色）压在选中底上，卡片与浮层玻璃两种底都不低于 4.5:1；
+  // 选中底与未选的卡片底分得出来，激活色细边对卡片底不低于 3:1（非文字元素）。
+  test('选中着色：选中文字对选中底不低于 4.5:1，细边对卡片底不低于 3:1，八套配色', () {
+    double contrast(Color a,Color b){final left=a.computeLuminance(),right=b.computeLuminance();return (math.max(left,right)+.05)/(math.min(left,right)+.05);}
+    for(final palette in [...CampusPalette.values,...CampusPalette.darkValues]) {
+      final reason='${palette.id} ${palette.brightness.name}';
+      expect(contrast(palette.primary,Color.alphaBlend(palette.selectedFill,palette.surface)),greaterThanOrEqualTo(4.5),reason:reason);
+      expect(contrast(palette.primary,Color.alphaBlend(palette.selectedFill,palette.glassTint)),greaterThanOrEqualTo(4.5),reason:reason);
+      expect(contrast(palette.selectedEdge().color,palette.surface),greaterThanOrEqualTo(3),reason:reason);
+      expect(contrast(Color.alphaBlend(palette.selectedFill,palette.surface),palette.surface),greaterThan(1.1),reason:reason);
+    }
+  });
+
   test('激活色强调文字在八套配色的卡片底上：大号字不低于 3:1，深色不低于 4.5:1', () {
     double contrast(Color a,Color b){final left=a.computeLuminance(),right=b.computeLuminance();return (math.max(left,right)+.05)/(math.min(left,right)+.05);}
     for(final palette in [...CampusPalette.values,...CampusPalette.darkValues]) {

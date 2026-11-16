@@ -72,15 +72,20 @@ class CampusGlassButtonSurface extends StatelessWidget {
         glowColor: CampusGlassScope.tierOf(context, ready: ready) == CampusGlassTier.full
             ? Colors.white.withValues(alpha: CampusPalette.of(context).isDark ? .16 : .32)
             : null,
-        // 选中的标签与按下时同样着 surfaceSelected 色，但不鼓起。
+        // 选中的标签在玻璃上再铺一层选中着色（浅激活色底加激活色实线细边，见 CampusPalette.selectedFill），与内容区的色调胶囊一致。
         builder: (context, contentScale) => CampusGlassSurface(
           round: true,
           softOutline: !round,
           disabled: disabled,
           tint: tint,
-          pressed: pressed || states.contains(WidgetState.selected),
+          pressed: pressed,
           focused: states.contains(WidgetState.focused),
-          child: Transform.scale(scale: contentScale, child: child),
+          child: states.contains(WidgetState.selected) && !disabled
+              ? DecoratedBox(
+                  decoration: ShapeDecoration(color: CampusPalette.of(context).selectedFill, shape: StadiumBorder(side: CampusPalette.of(context).selectedEdge())),
+                  child: Transform.scale(scale: contentScale, child: child),
+                )
+              : Transform.scale(scale: contentScale, child: child),
         ),
       ),
     );
@@ -154,7 +159,7 @@ class CampusProminentSurface extends StatelessWidget {
 }
 
 // 内容区按钮与选择标签的色调胶囊：不透明、不取背景，不随背景变化；操作按钮着主色浅底配主色字，
-// 选择标签未选为中性浅底、选中为 surfaceSelected 加主色细边和勾。按下底色加深并轻缩到 97%（鸿蒙按压缩放），减少动画时不缩放。
+// 选择标签未选为中性浅底、选中为浅激活色底加激活色实线细边（见 CampusPalette.selectedFill）。按下底色加深并轻缩到 97%（鸿蒙按压缩放），减少动画时不缩放。
 class CampusTonalSurface extends StatelessWidget {
   const CampusTonalSurface({super.key, required this.states, required this.child, this.neutral = false});
   final Set<WidgetState> states;
@@ -172,7 +177,7 @@ class CampusTonalSurface extends StatelessWidget {
     final fill = disabled
         ? palette.onSurface.withValues(alpha: .05)
         : selected
-        ? (pressed ? Color.alphaBlend(palette.onSurface.withValues(alpha: .08), palette.surfaceSelected) : palette.surfaceSelected)
+        ? (pressed ? Color.alphaBlend(palette.onSurface.withValues(alpha: .08), palette.selectedFill) : palette.selectedFill)
         : neutral
         ? palette.onSurface.withValues(alpha: dark ? (pressed ? .18 : .10) : (pressed ? .13 : .07))
         : palette.primary.withValues(alpha: dark ? (pressed ? .22 : .14) : (pressed ? .14 : .08));
@@ -189,8 +194,8 @@ class CampusTonalSurface extends StatelessWidget {
             side: focused
                 ? BorderSide(color: palette.primary, width: 2)
                 : selected && !disabled
-                // 选中的细边画在外沿、不占内边距：占了的话选中那一下胶囊宽高各多 2，同一行的其他标签跟着挪。
-                ? BorderSide(color: palette.primary.withValues(alpha: .4), strokeAlign: BorderSide.strokeAlignOutside)
+                // 选中的细边画在外沿、不占内边距：占了的话选中那一下胶囊宽高各多 2，同一行的其他标签跟着挪（选中着色见 CampusPalette.selectedFill）。
+                ? palette.selectedEdge()
                 : BorderSide.none,
           ),
         ),

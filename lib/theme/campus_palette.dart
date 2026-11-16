@@ -47,6 +47,11 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
   // 激活色作大号强调文字（如快开课时的倒计时数字）：浅色就是 accent；深色的 accent 是给白字垫底的，压在深卡片上只有约 2.8:1，
   // 向正文色混 35% 后八套配色（四套各分浅深）对卡片底都不低于 4.5:1（test/dark_mode_test.dart 守护）。
   Color get accentText => isDark ? Color.lerp(accent, onSurface, .35)! : accent;
+  // [人工决策-2026-11-16 13:18:05] 选中着色（用户：选择框选中后太不显眼，选「着色选中」，同淘宝、美团的筛选标签）：浅激活色底 selectedFill、
+  // 激活色实线细边 selectedEdge、主色文字 primary（激活色作 14 号字压在选中底上只有 3.2–4.3:1，主色八套都在 4.9:1 以上）；
+  // 仍不带对号（11-11 那条），字重不变免得选中时变宽、同行的挪位置。选择标签、选择卡片（配色、字体）与菜单选中项共用（test/dark_mode_test.dart 守护对比度）。
+  Color get selectedFill => accent.withValues(alpha: isDark ? .24 : .12);
+  BorderSide selectedEdge({double width = 1.5}) => BorderSide(color: accentText, width: width, strokeAlign: BorderSide.strokeAlignOutside);
   // 提醒色（如「刚发起」的小圆点）：只读状态标记，与主色、警示红都区分开；深色下提亮一档保证在深底上醒目。
   Color get attention => isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B);
   // 标签色（如学习通的账号标签）：只给标签小图标着色，名字仍用正文色；各套配色共用，浅色深、深色亮，

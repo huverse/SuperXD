@@ -246,7 +246,7 @@ class _MenuRow<T> extends StatelessWidget {
         borderRadius: radius,
         onTap: () => Navigator.pop(context, item.value),
         child: Ink(
-          decoration: BoxDecoration(color: selected ? palette.surfaceSelected : null, borderRadius: radius),
+          decoration: BoxDecoration(color: selected ? palette.selectedFill : null, borderRadius: radius),
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: _itemExtent),
             child: Padding(
@@ -256,8 +256,8 @@ class _MenuRow<T> extends StatelessWidget {
                   CampusIcon(icon, size: 20, color: item.destructive ? palette.danger : palette.primary),
                   const SizedBox(width: 12),
                 ],
-                Expanded(child: Text(item.label, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: item.destructive ? palette.danger : palette.onSurface))),
-                // 选中项只着选中色；对号只在高对比度下画（人工决策见 campus_glass_controls.dart 的 CampusGlassChip）。
+                Expanded(child: Text(item.label, style: Theme.of(context).textTheme.bodyLarge?.copyWith(color: item.destructive ? palette.danger : selected ? palette.primary : palette.onSurface))),
+                // 选中项只着选中色（浅激活色底、主色文字，见 CampusPalette.selectedFill）；对号只在高对比度下画（人工决策见 campus_glass_controls.dart 的 CampusGlassChip）。
                 if (selected && MediaQuery.highContrastOf(context)) ...[
                   const SizedBox(width: 12),
                   CampusIcon(CampusIcons.check, size: 20, color: palette.primary),

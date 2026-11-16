@@ -203,10 +203,14 @@ void main() {
     expect(find.byType(liquid.AdaptiveGlass), findsNothing);
     expect(find.byType(CampusTonalSurface), findsNWidgets(3));
     Color fill(String text) => (tester.widget<AnimatedContainer>(find.descendant(of: find.ancestor(of: find.text(text), matching: find.byType(FilledButton)), matching: find.byType(AnimatedContainer))).decoration! as ShapeDecoration).color!;
-    // 操作按钮着主色浅底；标签未选为中性浅底、选中为 surfaceSelected，三者一眼可分。
+    // 操作按钮着主色浅底；标签未选为中性浅底、选中为浅激活色底加激活色实线细边（11-16 选中着色），三者一眼可分。
     expect(fill('保存课程'), palette.primary.withValues(alpha: .08));
     expect(fill('未选'), palette.onSurface.withValues(alpha: .07));
-    expect(fill('已选'), palette.surfaceSelected);
+    expect(fill('已选'), palette.selectedFill);
+    StadiumBorder edge(String text) => (tester.widget<AnimatedContainer>(find.descendant(of: find.ancestor(of: find.text(text), matching: find.byType(FilledButton)), matching: find.byType(AnimatedContainer))).decoration! as ShapeDecoration).shape as StadiumBorder;
+    expect(edge('已选').side, palette.selectedEdge());
+    expect(edge('保存课程').side, BorderSide.none);
+    expect(edge('未选').side, BorderSide.none);
     // 按下轻缩到 97%，不鼓起。
     final gesture = await tester.startGesture(tester.getCenter(find.text('保存课程')));
     await tester.pump(const Duration(milliseconds: 200));
