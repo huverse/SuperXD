@@ -105,8 +105,8 @@ void main() {
     expect(syncRecordNotice(auto([GradeSyncChange(termKey: _term.key, termLabel: _term.label, counts: (40, 0), first: true)])), isNull, reason: '第一次同步到的不算有变化');
     final held = ScheduleSyncChange(termKey: _term.key, termLabel: _term.label, counts: (1, 0, 1), held: true);
     expect(syncRecordNotice(auto([held]))?.title, '教务课表有改动，等你来选');
-    expect(syncChangeLine(held), '课表 · 2026-2027学年第一学期：教务有改动，和你改过的不一样，等你来选');
-    expect(syncChangeLine(ScheduleSyncChange(termKey: _term.key, termLabel: _term.label, counts: (1, 1, 2))), '课表 · 2026-2027学年第一学期：新增 1 门、删除 1 门、改动 2 门');
+    expect(syncChangeLine(held), '课表 · 2026-2027学年第一学期 · 教务有改动，和你改过的不一样，等你来选');
+    expect(syncChangeLine(ScheduleSyncChange(termKey: _term.key, termLabel: _term.label, counts: (1, 1, 2))), '课表 · 2026-2027学年第一学期 · 新增 1 门、删除 1 门、改动 2 门');
     expect(syncRecordHeadline(auto([])), '没有变化');
     expect(syncRecordHeadline(SyncRecord(at: DateTime.utc(2026), trigger: SyncTrigger.auto, failures: const ['成绩 · 2026-2027学年第一学期：学校教务系统没有响应'])), '没有同步完：成绩 · 2026-2027学年第一学期：学校教务系统没有响应');
   });

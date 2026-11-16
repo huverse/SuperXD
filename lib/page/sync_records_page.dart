@@ -14,6 +14,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
 // 同步记录（人工决策见 domain/sync_record.dart）：每轮同步一张卡，从新到旧，写自动还是手动、什么时候与一句概括；点开看这一轮改了什么。
@@ -66,7 +67,7 @@ class _SyncRecordsPageState extends State<SyncRecordsPage> {
               },
               child: Row(children: [
                 Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  Text('${record.trigger == SyncTrigger.auto ? '自动' : '手动'} · ${formatCampusRelative(record.at.toIso8601String())}', style: secondary),
+                  DotSeparatedText('${record.trigger == SyncTrigger.auto ? '自动' : '手动'} · ${formatCampusRelative(record.at.toIso8601String())}', style: secondary),
                   const SizedBox(height: 4),
                   Text(syncRecordHeadline(record), style: TextStyle(fontSize: 16, color: palette.onSurface)),
                 ])),
@@ -122,7 +123,7 @@ class SyncRecordPage extends StatelessWidget {
           CampusSurface(
             margin: const EdgeInsets.only(bottom: 12),
             child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Text(syncChangeLine(change), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+              DotSeparatedText(syncChangeLine(change), style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
               if (syncChangeNames(change) case final names when names.isNotEmpty) ...[
                 const SizedBox(height: 8),
                 for (final group in names.split('；')) Padding(padding: const EdgeInsets.only(bottom: 4), child: Text(group, style: TextStyle(fontSize: 14, color: palette.onSurface))),

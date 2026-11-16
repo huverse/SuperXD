@@ -158,7 +158,8 @@ class _AcademicPageState extends State<AcademicPage> {
                 ListTile(
                   contentPadding: rowPadding,
                   leading: CampusIcon(CampusIcons.pendingSync, color: palette.primary),
-                  title: Text('课表 · ${held.term.label.isEmpty ? held.term.key : held.term.label}'),
+                  // 「课表 · 学期」按项换行，学期名整项不拆，不折出孤字。
+                  title: DotSeparatedText('课表 · ${held.term.label.isEmpty ? held.term.key : held.term.label}', style: TextStyle(fontSize: 16, color: palette.onSurface)),
                   subtitle: Text('教务有改动，和你改过的不一样', style: secondary),
                   trailing: const CampusIcon(CampusIcons.next),
                   onTap: () async {

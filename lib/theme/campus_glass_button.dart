@@ -82,7 +82,8 @@ class CampusGlassButtonSurface extends StatelessWidget {
           focused: states.contains(WidgetState.focused),
           child: states.contains(WidgetState.selected) && !disabled
               ? DecoratedBox(
-                  decoration: ShapeDecoration(color: CampusPalette.of(context).selectedFill, shape: StadiumBorder(side: CampusPalette.of(context).selectedEdge())),
+                  // 细边画在里沿：玻璃自己会按形状裁剪，画在外沿的部分被裁掉、只剩一圈淡灰（模拟器 11-16 看到的）；装饰的边不占布局，尺寸照样不变。
+                  decoration: ShapeDecoration(color: CampusPalette.of(context).selectedFill, shape: StadiumBorder(side: CampusPalette.of(context).selectedEdge().copyWith(strokeAlign: BorderSide.strokeAlignInside))),
                   child: Transform.scale(scale: contentScale, child: child),
                 )
               : Transform.scale(scale: contentScale, child: child),

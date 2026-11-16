@@ -109,7 +109,7 @@ void main() {
     final (_, session) = await _app(tester, autoSync: autoSync);
     unawaited(GoRouter.of(tester.element(find.byType(ShellPage))).push('/academic'));
     await tester.pumpAndSettle();
-    expect(find.text('课表 · ${pageTerm.label}'), findsOneWidget);
+    expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text == '课表 · ${pageTerm.label}'), findsOneWidget);
     expect(find.text('教务有改动，和你改过的不一样'), findsOneWidget);
     notificationRoute.value = '/academic/records';
     addTearDown(() => notificationRoute.value = null);
@@ -129,8 +129,8 @@ void main() {
     await tester.pumpAndSettle();
     // 每行标题按「 · 」分项排（DotSeparatedText），按整句找。
     Finder line(String text) => find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text == text);
-    expect(line('课表 · 2026-2027学年第一学期：新增 1 门、改动 1 门'), findsOneWidget);
+    expect(line('课表 · 2026-2027学年第一学期 · 新增 1 门、改动 1 门'), findsOneWidget);
     expect(find.text('新增：合成物理；改动：合成高数：教师'), findsOneWidget);
-    expect(line('成绩 · 2026-2027学年第一学期：新出 1 门'), findsOneWidget);
+    expect(line('成绩 · 2026-2027学年第一学期 · 新出 1 门'), findsOneWidget);
   });
 }

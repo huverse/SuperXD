@@ -100,19 +100,19 @@ class SyncRecord {
   static List<String> _names(List<String> names) => [for (final name in names.take(syncRecordNames)) name.length > 60 ? name.substring(0, 60) : name];
 }
 
-// 一类变化写成一句：「课表 · 2026-2027学年第一学期：新增 1 门、改动 2 门」。
+// 一类变化写成一句：「课表 · 2026-2027学年第一学期 · 新增 1 门、改动 2 门」（按「 · 」分项，窄处整项换行）。
 String syncChangeLine(SyncChange change) {
   final label = change.termLabel.isEmpty ? change.termKey : change.termLabel;
   switch (change) {
     case ScheduleSyncChange(first: true):
-      return '课表 · $label：第一次同步';
+      return '课表 · $label · 第一次同步';
     case ScheduleSyncChange(:final counts, :final held):
       final parts = [if (counts.$1 > 0) '新增 ${counts.$1} 门', if (counts.$2 > 0) '删除 ${counts.$2} 门', if (counts.$3 > 0) '改动 ${counts.$3} 门'];
-      return held ? '课表 · $label：教务有改动，和你改过的不一样，等你来选' : '课表 · $label：${parts.join('、')}';
+      return held ? '课表 · $label · 教务有改动，和你改过的不一样，等你来选' : '课表 · $label · ${parts.join('、')}';
     case GradeSyncChange(first: true):
-      return '成绩 · $label：第一次同步';
+      return '成绩 · $label · 第一次同步';
     case GradeSyncChange(:final counts):
-      return '成绩 · $label：${[if (counts.$1 > 0) '新出 ${counts.$1} 门', if (counts.$2 > 0) '改了 ${counts.$2} 门'].join('、')}';
+      return '成绩 · $label · ${[if (counts.$1 > 0) '新出 ${counts.$1} 门', if (counts.$2 > 0) '改了 ${counts.$2} 门'].join('、')}';
   }
 }
 
@@ -152,7 +152,8 @@ String syncRecordHeadline(SyncRecord record) {
   final grades = [for (final change in record.changes.whereType<GradeSyncChange>()) if (!change.first) ...change.added];
   final held = record.changes.whereType<ScheduleSyncChange>().any((change) => !change.first && change.held);
   final title = grades.isNotEmpty ? '新出了 ${record.changes.whereType<GradeSyncChange>().where((change) => !change.first).fold(0, (sum, change) => sum + change.counts.$1)} 门成绩' : held ? '教务课表有改动，等你来选' : '课表、成绩有更新';
-  final body = grades.isNotEmpty ? grades.take(3).join('、') : syncRecordHeadline(record);
+  // 正文写具体是什么：新出成绩写课名，其余写第一处变化（哪个学期、改了什么），不重复标题。
+  final body = grades.isNotEmpty ? grades.take(3).join('、') : syncChangeLine(record.changes.firstWhere((change) => switch (change) { ScheduleSyncChange(:final first) => !first, GradeSyncChange(:final first) => !first }));
   return (title: title, body: body);
 }
 
