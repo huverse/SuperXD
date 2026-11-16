@@ -32,6 +32,7 @@ export const hanoiJudge: Judge<HanoiPuzzle, HanoiMove[]> = {
     }
     return pegs[puzzle.target].length === puzzle.disks;
   },
+  steps: (_puzzle, answer) => answer.length,
 };
 
 // ---------- 冰面滑行 ice ----------
@@ -59,6 +60,7 @@ export const iceJudge: Judge<IcePuzzle, number[]> = {
   },
   decodeAnswer: (json) => puzzleInts(json, iceMaxMoves, 0, 3),
   solved: (puzzle, answer) => answer.length <= iceMaxMoves && answer.reduce((cell, direction) => iceSlide(puzzle, cell, direction), puzzle.start) === puzzle.goal,
+  steps: (_puzzle, answer) => answer.length,
 };
 
 // ---------- 点灯 lights ----------
@@ -87,6 +89,7 @@ export const lightsJudge: Judge<LightsPuzzle, number[]> = {
     }
     return lit.every((on) => on);
   },
+  steps: (_puzzle, answer) => answer.length,
 };
 
 // ---------- 八皇后 queens ----------
@@ -174,4 +177,5 @@ export const boxesJudge: Judge<BoxesPuzzle, number[]> = {
     }
     return boxes.every((cell) => puzzle.goals.includes(cell));
   },
+  steps: boxesPushes,
 };

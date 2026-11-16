@@ -5,6 +5,8 @@ import { clientGames, judge, judgedGames, judgedVersions } from 'src/modules/cha
 // 客户端 tool/challenge_vectors.dart 用 Dart 规则生成的向量（test/challenge_vectors_test.dart 读同一份文件）：同一道题、同一个答案，两端判得一模一样。
 type Case = { tier: string; puzzle: unknown; answers: { answer: unknown; expect: { kind: string; penalties?: number } }[] };
 const vectors = JSON.parse(readFileSync(new URL('./vectors/challenge_judge_v1.json', import.meta.url), 'utf8')) as { version: number; puzzleVersions: Record<string, number>; games: Record<string, Case[]> };
+// 已经换了写法的旧版本（客户端规则里没有了、服务端判定留给旧客户端）：加版本前用 tool/challenge_vectors.dart --freeze <游戏> 把那时的向量搬来，键是「游戏@版本」。
+const frozen = JSON.parse(readFileSync(new URL('./vectors/challenge_judge_frozen.json', import.meta.url), 'utf8')) as { version: number; games: Record<string, Case[]> };
 
 describe('challenge judge vectors', () => {
   it('向量覆盖全部能进挑战的游戏', () => {
@@ -21,6 +23,26 @@ describe('challenge judge vectors', () => {
   it('客户端报的「游戏@版本」：只报游戏名的旧客户端按第 1 版；这份判定不认得的游戏或版本不算', () => {
     expect(clientGames(['hanoi', 'ice@1', 'loop@2', 'schulte@1', 'queens@0', 'cipher@1x'])).toEqual(new Map([['hanoi', 1], ['ice', 1]]));
   });
+
+  it('冻结的旧版本向量：这份判定都还认得，且不是客户端现在的版本', () => {
+    for (const token of Object.keys(frozen.games)) {
+      const [game, version] = token.split('@');
+      expect(judgedVersions.get(game)?.has(Number(version)), token).toBe(true);
+      expect(vectors.puzzleVersions[game], token).not.toBe(Number(version));
+    }
+  });
+
+  for (const [token, cases] of Object.entries(frozen.games)) {
+    it(`${token}（旧版本）判定同当时的 Dart`, () => {
+      const [game, version] = token.split('@');
+      for (const [index, item] of cases.entries()) {
+        for (const [order, { answer, expect: expected }] of item.answers.entries()) {
+          const verdict = judge(game, item.puzzle, answer, Number(version));
+          expect(verdict.kind === 'solved' ? { kind: verdict.kind, penalties: verdict.penalties } : verdict, `${token} ${item.tier} 第 ${index} 题第 ${order} 个答案`).toEqual(expected);
+        }
+      }
+    });
+  }
 
   for (const [game, cases] of Object.entries(vectors.games)) {
     it(`${game} 判定同 Dart`, () => {

@@ -215,6 +215,7 @@ export const flashJudge: Judge<FlashPuzzle, number[][]> = {
     return json.map((taps) => puzzleInts(taps, flashMaxSide * flashMaxSide, 0, flashMaxSide * flashMaxSide - 1));
   },
   solved: (puzzle, answer) => flashMistakes(puzzle, answer) !== null,
+  penalties: (puzzle, answer) => flashMistakes(puzzle, answer)!,
 };
 
 // ---------- 数回 loop ----------

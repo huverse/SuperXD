@@ -9,6 +9,9 @@ export type Judge<P, A> = {
   // 答案不合法（类型、长度、范围）抛 JudgeFormatError，同 Dart 的 decodeAnswer 抛 FormatException。
   decodeAnswer(json: unknown): A;
   solved(puzzle: P, answer: A): boolean;
+  // 计分要的附加数（解开之后才问）：答案里自带的失误（记忆闪光点错的次数）、要最少步数的游戏用了几步（推箱子按推的次数）；不计的不写。
+  penalties?(puzzle: P, answer: A): number;
+  steps?(puzzle: P, answer: A): number;
 };
 
 const isRecord = (json: unknown): json is Record<string, unknown> => typeof json === 'object' && json !== null && !Array.isArray(json);

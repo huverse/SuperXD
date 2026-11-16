@@ -24,7 +24,7 @@
 
 # 文件职责
 
-- puzzle_rules.dart：规则契约 PuzzleRules（题面写法版本 puzzleVersion 从 1 起、改了编解码写法就在这个游戏的规则里覆写加一，挑战按「游戏@版本」下发；complexity 只在本游戏里排难易，expectedSeconds 是预计用时，difficulty 由预计用时按 puzzleDifficulty 取对数，跨游戏可比；puzzlePace 把 complexity 换成秒）、档位 PuzzleTier（入门到专家，name 发出后不改）、出题结果 PuzzleDraw（题面与参考解）、可复现随机数 PuzzleRandom（xoshiro128**，种子按 splitmix32 式展开）与解码小工具 puzzleInt、puzzleInts；挑战特性（[人工决策-2026-11-16 17:26:21]，能进挑战的游戏在自己的规则里覆写）：碎片 fragment、收碎片的方式 intake（PuzzleIntake：补条件或改目标）、能补的条件 slots（ChallengeSlot）与位置个数 slotRange、高档的最少步数 minimum。人工决策在文件头（长期架构与 11-14 23:11 的预计用时标尺）。
+- puzzle_rules.dart：规则契约 PuzzleRules（题面写法版本 puzzleVersion 从 1 起、改了编解码写法就在这个游戏的规则里覆写加一，挑战按「游戏@版本」下发；complexity 只在本游戏里排难易，expectedSeconds 是预计用时，difficulty 由预计用时按 puzzleDifficulty 取对数，跨游戏可比；puzzlePace 把 complexity 换成秒）、档位 PuzzleTier（入门到专家，name 发出后不改）、出题结果 PuzzleDraw（题面与参考解）、可复现随机数 PuzzleRandom（xoshiro128**，种子按 splitmix32 式展开）与解码小工具 puzzleInt、puzzleInts；挑战特性（[人工决策-2026-11-16 17:26:21]，能进挑战的游戏在自己的规则里覆写）：碎片 fragment、收碎片的方式 intake（PuzzleIntake：补条件或改目标）、能补的条件 slots（ChallengeSlot）与位置个数 slotRange、高档的最少步数 minimum、答案里自带的失误 penalties（记忆闪光点错次数，服务端判定同口径）。人工决策在文件头（长期架构与 11-14 23:11 的预计用时标尺）。
 - playground_game.dart：登记项类型：板块 PlaygroundSection、子类 PlaygroundGroup、游戏 PlaygroundGame（名字、一句话玩法、玩法说明、图标、子类、能否进挑战、用时写不写到 0.1 秒 timeInTenths、对局页；对局页构造器另收 PlayChallenge（自由模式为空）与外壳在后台出好的第一道题 PlayFirst（种子、档位与题，没备为空））。
 - challenge 挑战（人工决策都在 challenge_rules.dart 文件头）：
   - challenge_rules.dart：纯 Dart（tool 下的题库与向量工具直接跑）：能进挑战的 15 个规则 challengeRules（id 同注册表，挑战只在这里登记一次）、报给服务器的「游戏@题面写法版本」challengeGameTokens（人工决策在文件头 11-15 19:18 那条）；碎片 challengeFragment、收碎片的游戏 challengeSlotGames（补条件）与 challengeGoalGames（改目标）、能补的条件 challengeSlots、补条件的那一处能落在哪 challengeSlotRange、高档要最少步数的 challengeMinimum 都从各游戏规则里的挑战特性取（见 puzzle_rules.dart），这里不按游戏写 switch。
@@ -43,6 +43,7 @@
 # 关键规则
 
 - 出题只用 PuzzleRandom，不用 dart:math 的 Random（挑战题库与服务器要逐位复现）；规则文件不引 Flutter（tool 下的题库工具要能直接跑）。
+- 给能进挑战的游戏换题面写法（puzzleVersion 加一）：先 dart run tool/challenge_vectors.dart --freeze <游戏>（把旧版本的向量搬进 server/test/vectors/challenge_judge_frozen.json），再改规则与版本号，服务端 judges.ts 给这个游戏加上新版本的判定、旧版本的留着（已发布的旧客户端还报旧版本），最后重跑向量工具；合并部署后由 challenge.yml 生成新版本题库，旧版本题库文件留在中转。
 - 判定按规则，不和参考解逐项比；每道题出之前用求解器确认可解，需要唯一解的游戏（如数织）确认唯一。
 - 本机记录有上限：游戏数乘五档的最好成绩、最近玩过 playgroundRecentLimit 个，不随玩的次数增长；只有成绩，不排除出云备份。
 - 对局页：计时从第一步开始；违规的操作轻震、退回，不算步数；解开后先放完收尾动画再弹结果；换档换题时页面自己清棋盘再调 session。

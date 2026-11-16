@@ -10,7 +10,10 @@ import 'package:superxd/playground/puzzle_rules.dart';
 // 参考解与按固定种子改坏的答案各判一次，结果写进 server/test/vectors/challenge_judge_v1.json；服务端 TS 判定（test/challenge_judge.test.ts）
 // 与客户端（test/challenge_vectors_test.dart）读同一份文件，结果必须一条不差。规则改了口径就重跑本工具，两端测试都要过。
 // 运行：dart run tool/challenge_vectors.dart [--out <文件>]；本机对拍可加 --seeds <每档几道> --seed <种子>（只写到 --out，不进仓库）。
+// 给某个游戏换题面写法（puzzleVersion 加一）的顺序：先 dart run tool/challenge_vectors.dart --freeze <游戏>，再改规则与版本号、服务端判定加上新版本，最后重跑本工具。
 const challengeVectorsPath = 'server/test/vectors/challenge_judge_v1.json';
+// 换了写法的旧版本的向量（服务端判定留给旧客户端，客户端规则里没有了）：加版本前 --freeze <游戏> 把那时的向量搬来，键是「游戏@版本」。
+const challengeFrozenPath = 'server/test/vectors/challenge_judge_frozen.json';
 
 // 一条判定结果：solved（附答案里自带的失误数）、unsolved 或 invalid（答案解码不了）。
 Map<String, Object> challengeVerdict(String game, Object? puzzleJson, Object? answerJson) {
@@ -23,13 +26,7 @@ Map<String, Object> challengeVerdict(String game, Object? puzzleJson, Object? an
     return {'kind': 'invalid'};
   }
   if (!rules.solved(puzzle, answer)) return {'kind': 'unsolved'};
-  return {'kind': 'solved', 'penalties': game == 'flash' ? flashPenalties(puzzle, answer) : 0};
-}
-
-int flashPenalties(Object? puzzle, Object? answer) {
-  final attempts = (answer as List).length;
-  final rounds = (challengeRules['flash']!.encodePuzzle(puzzle) as Map)['rounds'] as List;
-  return attempts - rounds.length;
+  return {'kind': 'solved', 'penalties': rules.penalties(puzzle, answer)};
 }
 
 // JSON 里的一个叶子（整数、布尔、字符串）与它的路径。
@@ -146,6 +143,19 @@ Future<void> main(List<String> arguments) async {
     return index >= 0 && index + 1 < arguments.length ? arguments[index + 1] : null;
   }
 
+  if (option('--freeze') case final game?) {
+    final current = jsonDecode(await File(challengeVectorsPath).readAsString()) as Map<String, Object?>;
+    final version = (current['puzzleVersions'] as Map)[game], cases = (current['games'] as Map)[game];
+    if (version == null || cases == null) throw ArgumentError('向量里没有 $game');
+    final frozenFile = File(challengeFrozenPath);
+    final games = Map<String, Object?>.from((jsonDecode(await frozenFile.readAsString()) as Map)['games'] as Map);
+    final token = '$game@$version';
+    if (games.containsKey(token)) throw StateError('$token 已经冻结过');
+    games[token] = cases;
+    await frozenFile.writeAsString('${jsonEncode({'version': 1, 'games': games})}\n');
+    stdout.writeln('已把 $token 的向量冻结到 $challengeFrozenPath');
+    return;
+  }
   final out = option('--out') ?? challengeVectorsPath;
   final vectors = buildChallengeVectors(seedsPerTier: int.parse(option('--seeds') ?? '2'), seed: int.parse(option('--seed') ?? '${0x5EED2026}'));
   await File(out).writeAsString('${jsonEncode(vectors)}\n');

@@ -76,6 +76,8 @@ abstract class PuzzleRules<P, A> {
   int slotRange(P puzzle) => 0;
   // 困难与专家档要用的最少步数（题库存好，服务器拿答案的步数比）；不要求的为空。
   int? minimum(P puzzle) => null;
+  // 解开的答案里自带的失误（计分同错交一样扣，记忆闪光是点错的次数）；没有的是 0。服务端判定的 penalties 同口径。
+  int penalties(P puzzle, A answer) => 0;
 
   Object encodePuzzle(P puzzle);
   P decodePuzzle(Object? json);

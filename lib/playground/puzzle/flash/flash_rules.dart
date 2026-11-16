@@ -103,6 +103,8 @@ class FlashRules extends PuzzleRules<FlashPuzzle, List<List<int>>> {
   int? fragment(FlashPuzzle puzzle, List<List<int>> solution) => puzzle.rounds.last.first.length;
   @override
   PuzzleIntake? get intake => PuzzleIntake.goal;
+  @override
+  int penalties(FlashPuzzle puzzle, List<List<int>> answer) => flashMistakes(puzzle, answer)!;
 
   // 每档的边长、每轮亮的格数区间与亮的时长：格数在 5 轮里从 low 递增到 high（第 round 轮亮 low + (high - low + 1) × round ÷ 5 格，
   // 入门 3、3、3、4、4，专家 10、10、11、11、12）；档越高格子越多、亮的格越多、亮的时间越短。
