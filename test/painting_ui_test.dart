@@ -228,6 +228,39 @@ void main() {
     expect(find.text('保存到相册'), findsOneWidget, reason: '另一幅还没存');
   });
 
+  // 11-16 用户要求开屏画作可以自己排顺序、选播哪几幅（人工决策见 domain/painting.dart）。
+  testWidgets('播放顺序：取消勾选的不在开屏播并在画作页标出；拖把手改顺序，画作页跟着排；至少留一幅', (tester) async {
+    final library = PaintingLibrary.memory([_painting, _second]);
+    await tester.binding.setSurfaceSize(const Size(400, 1400));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: PaintingsPage(gallery: library)));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('播放顺序'));
+    await tester.pumpAndSettle();
+    expect(find.byType(PaintingOrderPage), findsOneWidget);
+    await tester.tap(find.text('《合成第二幅》'));
+    await tester.pumpAndSettle();
+    expect(library.plays(_second), isFalse);
+    await tester.tap(find.text('《合成画作》'));
+    await tester.pumpAndSettle();
+    expect(library.plays(_painting), isTrue, reason: '只剩这一幅在播，不让关');
+    expect(find.text('至少留一幅在开屏播放'), findsOneWidget);
+    final handle = find.byType(ReorderableDragStartListener).first;
+    final gesture = await tester.startGesture(tester.getCenter(handle));
+    await tester.pump(const Duration(milliseconds: 100));
+    await gesture.moveBy(const Offset(0, 120));
+    await tester.pump();
+    await gesture.moveBy(const Offset(0, 120));
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+    expect([for (final painting in library.arranged) painting.id], ['b', 'a']);
+    await tester.tap(find.byTooltip('返回'));
+    await tester.pumpAndSettle();
+    expect(tester.getTopLeft(find.text('《合成第二幅》')).dy, lessThan(tester.getTopLeft(find.text('《合成画作》')).dy), reason: '画作页按排好的顺序列');
+    expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text == '测试说明 · 不在开屏播放'), findsOneWidget);
+  });
+
   testWidgets('点画作原地放大成全屏，关闭按钮与说明随后淡入；点关闭原路缩回', (tester) async {
     final library = PaintingLibrary.memory([_painting]);
     await tester.binding.setSurfaceSize(const Size(400, 900));

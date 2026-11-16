@@ -30,8 +30,13 @@ class PaintingFormatException implements Exception {
 }
 
 // 画作的来源：清单里的画作、这次冷启动开屏用的哪一幅，以及把原图存进本机公共目录（相册里可见）。
+// [人工决策-2026-11-16 13:22:06] 开屏画作可以自己排顺序、选播哪几幅（用户要求）：arranged 是按用户排的顺序列出的全部画作（新加的接在后面、默认播），
+// plays 说这一幅开屏时播不播，arrange 存下新的顺序与不播的几幅（至少留一幅播，不然不存）；开屏按这个顺序轮换、跳过不播的。
 abstract class PaintingGallery {
   List<Painting> get paintings;
+  List<Painting> get arranged;
+  bool plays(Painting painting);
+  Future<void> arrange(List<String> order, Set<String> muted);
   Painting? get current;
   // 存好返回 true；同名的已经存过时直接算存好，不重复存。
   Future<bool> save(Painting painting);

@@ -70,6 +70,7 @@ final Map<IconData, String> _symbols = {
   CampusIcons.login: 'person.badge.key',
   CampusIcons.restore: 'arrow.counterclockwise',
   CampusIcons.share: 'square.and.arrow.up',
+  CampusIcons.arrange: 'arrow.up.arrow.down',
   CampusIcons.send: 'paperplane',
   CampusIcons.qrCode: 'qrcode',
   CampusIcons.scanFace: 'faceid',

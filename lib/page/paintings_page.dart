@@ -4,7 +4,10 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/painting.dart';
+import 'package:superxd/theme/campus_glass_button.dart';
+import 'package:superxd/theme/campus_glass_material.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_motion.dart';
@@ -15,7 +18,8 @@ import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/glass_panel.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
-// 关于页「开屏画作」（人工决策见 painting_splash.dart）：清单里的全部画作按顺序列出，这次开屏的那幅标出来；每幅可把原图存进相册，
+// 关于页「开屏画作」（人工决策见 painting_splash.dart）：全部画作按用户排的顺序列出，这次开屏的那幅、不在开屏播的标出来；顶栏「播放顺序」进排序页
+// （人工决策见 domain/painting.dart 的 11-16 那条）；每幅可把原图存进相册，
 // 按钮原地转圈、存好原地变成「已保存」；点画作从卡片里原地放大成全屏（同快递身份码的全屏出示），可双指缩放，点一下或返回原路缩回。
 class PaintingsPage extends StatefulWidget {
   const PaintingsPage({super.key, required this.gallery});
@@ -97,13 +101,22 @@ class _PaintingsPageState extends State<PaintingsPage> {
       appBar: AppBar(
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
         title: const Text('开屏画作'),
+        actions: [
+          if (widget.gallery.paintings.length > 1) Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: CampusGlassCircleButton(label: '播放顺序', size: 44, icon: const CampusIcon(CampusIcons.arrange), onPressed: () async {
+              await Navigator.of(context).push(CampusPageRoute<void>(builder: (context) => PaintingOrderPage(gallery: widget.gallery)));
+              if (mounted) setState(() {});
+            }),
+          ),
+        ],
       ),
       body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListenableBuilder(
         listenable: _state,
         builder: (context, _) => ListView(
           padding: const EdgeInsets.all(16),
           children: [
-            for (final painting in widget.gallery.paintings)
+            for (final painting in widget.gallery.arranged)
               CampusSurface(
                 margin: const EdgeInsets.only(bottom: 16),
                 padding: EdgeInsets.zero,
@@ -138,7 +151,7 @@ class _PaintingsPageState extends State<PaintingsPage> {
                         Text('《${painting.title}》', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
                         const SizedBox(height: 2),
                         // 说明与「这次开屏」按项换行，不在窄处折出孤字。
-                        DotSeparatedText(painting.id == current ? '${painting.note} · 这次开屏' : painting.note, style: secondary),
+                        DotSeparatedText([painting.note, if (painting.id == current) '这次开屏', if (!widget.gallery.plays(painting)) '不在开屏播放'].join(' · '), style: secondary),
                       ])),
                       _SaveButton(painting: painting, state: _state, onSave: () => _save(context, painting)),
                     ]),
@@ -147,6 +160,104 @@ class _PaintingsPageState extends State<PaintingsPage> {
               ),
           ],
         ),
+      ))))),
+    );
+  }
+}
+
+// 播放顺序：按住右侧把手拖动排顺序，勾上的开屏时按这个顺序轮换（至少留一幅）；点了就存。
+class PaintingOrderPage extends StatefulWidget {
+  const PaintingOrderPage({super.key, required this.gallery});
+  final PaintingGallery gallery;
+
+  @override
+  State<PaintingOrderPage> createState() => _PaintingOrderPageState();
+}
+
+class _PaintingOrderPageState extends State<PaintingOrderPage> {
+  late final _order = [...widget.gallery.arranged];
+  late final _muted = {for (final painting in _order) if (!widget.gallery.plays(painting)) painting.id};
+
+  Future<void> _save() async {
+    try {
+      await widget.gallery.arrange([for (final painting in _order) painting.id], {..._muted});
+    } catch (error, stack) {
+      campusLog('[Painting] action=arrange errorType=${error.runtimeType}\n$stack');
+      if (mounted) showCampusToast(context, '保存失败，请重试');
+    }
+  }
+
+  void _toggle(Painting painting) {
+    final playing = !_muted.contains(painting.id);
+    if (playing && _order.where((other) => !_muted.contains(other.id)).length == 1) {
+      showCampusToast(context, '至少留一幅在开屏播放');
+      return;
+    }
+    setState(() => playing ? _muted.add(painting.id) : _muted.remove(painting.id));
+    unawaited(_save());
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final palette = CampusPalette.of(context);
+    return Scaffold(
+      appBar: AppBar(
+        leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
+        title: const Text('播放顺序'),
+      ),
+      body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ReorderableListView.builder(
+        buildDefaultDragHandles: false,
+        padding: const EdgeInsets.all(16),
+        // 拖起的卡片保持圆角，投影只画在卡片本身（让出下边距），同学习通账号排序。
+        proxyDecorator: (child, index, animation) => Stack(children: [
+          Positioned.fill(bottom: 8, child: FadeTransition(
+            opacity: animation,
+            child: DecoratedBox(decoration: BoxDecoration(borderRadius: BorderRadius.circular(24), boxShadow: campusFloatingShadow)),
+          )),
+          child,
+        ]),
+        itemCount: _order.length,
+        onReorderItem: (oldIndex, newIndex) {
+          setState(() => _order.insert(newIndex, _order.removeAt(oldIndex)));
+          unawaited(_save());
+        },
+        itemBuilder: (context, index) {
+          final painting = _order[index];
+          final playing = !_muted.contains(painting.id);
+          return Padding(
+            key: ValueKey(painting.id),
+            padding: const EdgeInsets.only(bottom: 8),
+            child: CampusSurface(
+              padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+              onTap: () => _toggle(painting),
+              child: Row(children: [
+                Semantics(
+                  label: '开屏时播放《${painting.title}》',
+                  child: Checkbox(value: playing, onChanged: (_) => _toggle(painting)),
+                ),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: SizedBox(width: 72, height: 48, child: Image.asset(
+                    painting.asset,
+                    fit: BoxFit.cover,
+                    cacheWidth: (72 * MediaQuery.devicePixelRatioOf(context)).round(),
+                    excludeFromSemantics: true,
+                  )),
+                ),
+                const SizedBox(width: 12),
+                Expanded(child: Text('《${painting.title}》', style: TextStyle(fontSize: 16, color: playing ? palette.onSurface : palette.onSurfaceVariant))),
+                // 拖动手柄只是按住拖的把手，不是按钮：读屏给标签，不伪装成可点的按钮。
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Semantics(
+                    label: '按住拖动排序',
+                    child: const Padding(padding: EdgeInsets.all(12), child: CampusIcon(CampusIcons.dragHandle)),
+                  ),
+                ),
+              ]),
+            ),
+          );
+        },
       ))))),
     );
   }

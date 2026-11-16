@@ -44,6 +44,8 @@ abstract final class CampusIcons {
   static const images = LucideIcons.images;
   static const camera = LucideIcons.camera;
   static const dragHandle = LucideIcons.gripVertical;
+  // 排顺序、选播哪几个（开屏画作的播放顺序）。
+  static const arrange = LucideIcons.arrowUpDown;
   static const audio = LucideIcons.music;
   static const pause = LucideIcons.pause;
   static const resume = LucideIcons.play;
