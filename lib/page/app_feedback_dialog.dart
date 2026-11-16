@@ -67,7 +67,7 @@ class _FeedbackDialogState extends State<_FeedbackDialog> {
         padding: EdgeInsets.only(top: campusFieldGap(context)),
         child: TextField(controller: _text, enabled: !_busy, minLines: 1, maxLines: 4, maxLength: feedbackTextMax, decoration: const InputDecoration(labelText: '想说的话（可不写）')),
       ),
-      if (_error case final error?) Text(error, style: TextStyle(fontSize: 14, color: CampusPalette.of(context).danger)),
+      if (_error case final error?) Text(error, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: CampusPalette.of(context).danger)),
     ]),
     actions: [
       TextButton(onPressed: _busy ? null : () => Navigator.pop(context), child: const Text('取消')),
