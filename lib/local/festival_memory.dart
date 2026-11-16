@@ -53,7 +53,15 @@ Map<String, Object?> encodeFestivalRecord(FestivalRecord record) => {
   'drawn': record.drawn,
   'prizes': [
     for (final prize in record.prizes)
-      {'occasion': prize.occasion, 'kind': prize.kind.name, 'content': prize.content, 'note': prize.note, 'wonAt': prize.wonAt.toUtc().toIso8601String(), 'revealed': prize.revealed},
+      {
+        'occasion': prize.occasion,
+        'kind': prize.kind.name,
+        'content': prize.content,
+        'note': prize.note,
+        'wonAt': prize.wonAt.toUtc().toIso8601String(),
+        'revealed': prize.revealed,
+        'keepThrough': ?prize.keepThrough,
+      },
   ],
 };
 
@@ -70,7 +78,19 @@ FestivalRecord decodeFestivalRecord(Object? json) {
         for (final item in json['prizes'] as List)
           if (item case {'occasion': final String occasion, 'kind': final String kind, 'content': final String content, 'note': final String note, 'wonAt': final String wonAt, 'revealed': final bool revealed}
               when DateTime.tryParse(wonAt) != null && FestivalPrizeKind.values.any((value) => value.name == kind))
-            FestivalPrize(occasion: occasion, kind: FestivalPrizeKind.values.byName(kind), content: content, note: note, wonAt: DateTime.parse(wonAt).toUtc(), revealed: revealed),
+            FestivalPrize(
+              occasion: occasion,
+              kind: FestivalPrizeKind.values.byName(kind),
+              content: content,
+              note: note,
+              wonAt: DateTime.parse(wonAt).toUtc(),
+              revealed: revealed,
+              // 信里领的红包留到哪天（11-16 起）；格式不对当节日的奖品（找不到节日就不留）。
+              keepThrough: switch (item['keepThrough']) {
+                final String through when RegExp(r'^\d{4}-\d{2}-\d{2}$').hasMatch(through) => through,
+                _ => null,
+              },
+            ),
     ],
   );
 }

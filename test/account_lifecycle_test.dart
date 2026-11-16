@@ -1102,6 +1102,9 @@ class _Reward implements FestivalRewardClient {
     draws++;
     return FestivalWon(FestivalPrize(occasion: occasion, kind: FestivalPrizeKind.password, content: '合成口令', note: '', wonAt: DateTime.now().toUtc()));
   }
+
+  @override
+  Future<RewardStatus> status(AppAccountRef account, String campaign, {bool levels = true}) async => const RewardStatus(RewardState.closed);
 }
 
 // 开发者的话的合成清单：两封，第二封刚发出（会弹）。
