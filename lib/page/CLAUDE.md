@@ -41,7 +41,8 @@
 - 成绩：
   - grades_page.dart：成绩页 GradesPage：学年与学期汇总、有效成绩与原始成绩，可筛选、排序、搜索；本页只同步成绩；视图切换淡出淡入（旧内容淡出后才换数据）。筛选是一行「搜索框 + 筛选按钮」，类型、范围、排序在弹层里点了就生效；成绩按行列在一张分组卡里、分数在右，不及格警示色并写明（[人工决策] 在 _filterLabel 上方与 domain/grades.dart 的 gradeFailing）；教务汇总绩点大字（_summaryFigures，缺的那一项写「—」），教务明确这学期没有成绩时只画空状态卡（_emptyGrades）、不画汇总；详情按内容高（_details）；人工决策在方法上。
 - 学业：
-  - academic_page.dart：学业页 AcademicPage（服务页的「学业」，取代分开的课表、成绩两项，[人工决策] 在类上）：顶部写当前学期（学期列表第一项）、第几周与最近一次同步；有自动同步留下、等你来选的教务课表时一组「待处理」（点了同打扰时机里的 showHeldScheduleSync）；课表、成绩两个入口；同步（同今天页的同步范围与合并页、作息来源确认 chooseBellsSource，原地显示进度，结果弹窗列出这一轮改了什么）、自动同步、同步记录。只读本机，联网只在点了同步之后。
+  - academic_catalog.dart：学业功能登记 academicFeatures（[人工决策] 在类上，同百宝箱的注册表）：每项是 id（就是路径 /schedule、/grades，发出后不改）、名字、图标与页面构造器，学业页的入口与路由都从它生成；页面共用的接线 AcademicHost（网关、代次核对、会话失效、回今天页同步、去登录、课前提醒与私信）由路由给。加一项教务数据的页面只在这里登记，怎么同步登记在 application/campus_sync.dart 的 campusSyncSteps。
+  - academic_page.dart：学业页 AcademicPage（服务页的「学业」，取代分开的课表、成绩两项，[人工决策] 在类上）：顶部写当前学期（学期列表第一项）、第几周与最近一次同步；有自动同步留下、等你来选的教务课表时一组「待处理」（点了同打扰时机里的 showHeldScheduleSync）；各项数据的入口（来自 academicFeatures，现在是课表、成绩）；同步（同今天页的同步范围与合并页、作息来源确认 chooseBellsSource，原地显示进度，结果弹窗列出这一轮改了什么）、自动同步、同步记录。只读本机，联网只在点了同步之后。
   - sync_records_page.dart：同步记录 SyncRecordsPage（从新到旧，每轮一张卡写自动还是手动、时刻与一句概括；系统通知「新出了几门成绩」点开也到这里）与详情 SyncRecordPage（每类变化一张卡列出哪几门课；课表的变化可撤回：先确认，恢复同步前那一版、按当前 head 乐观锁存成新版本；等你来选的给「去处理」；查看课表、查看成绩）。人工决策见 domain/sync_record.dart。
 - 同步：
   - sync_selection_dialog.dart：同步范围选择 chooseSyncSelection：学年与内容都可多选，默认读本地学期列表，点刷新才联网；给了 autoSync 时底部有「自动同步」入口（今天页给，成绩页不给）。

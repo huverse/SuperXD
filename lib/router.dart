@@ -9,6 +9,7 @@ import 'package:superxd/app_services.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
+import 'package:superxd/page/academic_catalog.dart';
 import 'package:superxd/page/academic_page.dart';
 import 'package:superxd/page/sync_records_page.dart';
 import 'package:superxd/page/account_dialogs.dart';
@@ -16,8 +17,6 @@ import 'package:superxd/page/app_account_page.dart';
 import 'package:superxd/page/animated_branches.dart';
 import 'package:superxd/page/login_page.dart';
 import 'package:superxd/page/legal_page.dart';
-import 'package:superxd/page/schedule_page.dart';
-import 'package:superxd/page/grades_page.dart';
 import 'package:superxd/page/message_page.dart';
 import 'package:superxd/page/section_pages.dart';
 import 'package:superxd/page/shell_page.dart';
@@ -51,6 +50,18 @@ GoRouter buildRouter({required AppSession session, required AppServices services
   // 课表页「去同步」：回到今天页、由今天页打开同步范围（人工决策见 today_page.dart 的 TodaySyncRequest）。
   final todaySync = TodaySyncRequest();
   late final GoRouter router;
+  final academic = AcademicHost(
+    gateway: gateway,
+    isAccountCurrent: () => session.generation == generation && session.loggedIn,
+    onSessionExpired: () => session.expire(generation),
+    requestSync: (year) {
+      todaySync.request(year: year);
+      router.go('/today');
+    },
+    requestLogin: () => router.push('/switch-account'),
+    reminders: reminders,
+    social: social,
+  );
   return router = GoRouter(
     navigatorKey: rootKey,
     observers: observers,
@@ -123,14 +134,9 @@ GoRouter buildRouter({required AppSession session, required AppServices services
         ))),
       for (final game in playgroundCatalog) GoRoute(path: '/playground/${game.id}', parentNavigatorKey: rootKey,
         pageBuilder: (context, state) => campusPage(key: state.pageKey, child: PlaygroundGameHost(game: game, store: playground))),
-      GoRoute(
-        path: '/schedule',
-        parentNavigatorKey: rootKey,
-        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: SchedulePage(gateway: gateway, reminders: reminders, social: social, onSync: (year) {
-          todaySync.request(year: year);
-          router.go('/today');
-        })),
-      ),
+      // 学业里各项数据的页面（课表、成绩）从学业功能登记生成（page/academic_catalog.dart）。
+      for (final feature in academicFeatures) GoRoute(path: feature.path, parentNavigatorKey: rootKey,
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: feature.builder(context, academic))),
       // 学业（人工决策见 page/academic_page.dart）：课表、成绩与同步的入口；同步记录也从系统通知「新出了几门成绩」点进来。
       GoRoute(
         path: '/academic', parentNavigatorKey: rootKey,
@@ -139,11 +145,6 @@ GoRouter buildRouter({required AppSession session, required AppServices services
       GoRoute(
         path: '/academic/records', parentNavigatorKey: rootKey,
         pageBuilder: (context, state) => campusPage(key: state.pageKey, child: SyncRecordsPage(gateway: gateway, autoSync: autoSync, isAccountCurrent: () => session.generation == generation && session.loggedIn)),
-      ),
-      GoRoute(
-        path: '/grades', parentNavigatorKey: rootKey,
-        pageBuilder: (context, state) => campusPage(key: state.pageKey,
-          child: GradesPage(gateway: gateway, isAccountCurrent: () => session.generation == generation && session.loggedIn, onLoginRequired: () => context.push('/switch-account'))),
       ),
       StatefulShellRoute(
         navigatorContainerBuilder: (context, shell, children) => AnimatedBranches(index: shell.currentIndex, children: children),

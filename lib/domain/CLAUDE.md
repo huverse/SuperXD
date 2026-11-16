@@ -6,7 +6,7 @@
 
 - account.dart：账号身份 AccountIdentity（教务来源 URL 加学号），以及旧库导入的状态与报告类型。
 - campus_gateway.dart：
-  - 业务端口 CampusGateway，覆盖会话、学期、课表、成绩、作息、开学日和课表版本的读取、同步与写入。所有方法都返回 GatewayResult，不抛异常。
+  - 业务端口 CampusGateway，覆盖会话、学期、课表、成绩、作息、开学日和课表版本的读取、同步与写入。所有方法都返回 GatewayResult，不抛异常。按功能拆成窄接口（[人工决策] 在接口上方）：CampusSessionPort、CampusTermPort、SchedulePort、GradesPort、BellsPort、SyncLedgerPort，CampusGateway 是它们的合集；同步步骤与以后的页面只依赖用到的那一块，加一类教务数据就加一个接口。
   - 视图类型：GatewayResult、GatewayError、ScheduleView、GradesView、BellsView、RevisionView 等。
 - gateway_code.dart：错误码登记表 GatewayCode，每个常量配一行语义注释。新错误码先在这里登记再使用；测试里保留字面量，用来钉住线上取值。
 - campus_log.dart：日志出口 campusLog。默认写 stderr；应用入口和设备端工具入口要注入 debugPrint，日志才会进入 logcat。campusDiagnostics 是开发者模式开关（组合根切换），campusRequestLog 是对外请求的诊断记录（只在开发者模式下记，只记路径，按原样不解码切段，像编号的段掩成 :id）。

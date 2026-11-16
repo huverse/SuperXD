@@ -6,6 +6,7 @@
 
 - campus_sync.dart：显式同步的唯一编排入口 CampusSync。
   - 先刷新学期列表，再按所选学年依次处理：先同步全部学期的课表，再逐学期同步作息和成绩；每个实例内按顺序逐项请求。
+  - 同步流水线（[人工决策] 在 CampusSyncStep 上）：每类数据一个步骤（ScheduleSyncStep、BellsSyncStep、GradesSyncStep，各自只用对应的窄端口），登记在 campusSyncSteps，登记顺序即执行顺序、leading 的先做完全部学期；CampusSync 只管学期、待办、离开与该停就停，步骤返回这一项做没做完（没做完的留在未处理里）；加一类数据只加一个步骤。
   - 页面离开、会话失效或教务限流时，在下一检查点停止；报告带出已完成项、停下前已发生的失败与未处理项。
   - 学年与数据项的选择、进度口径、未提交不报已同步，见文件内人工决策。
   - 课表和本地改过的版本冲突时交给 resolveSchedule 决定 ScheduleResolution（KeepLocal、TakeEdu、MergeEdu），settle 落库，自动同步与打扰时机共用。

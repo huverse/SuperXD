@@ -218,23 +218,30 @@ class RevisionView {
   final String summary;
 }
 
-abstract class CampusGateway {
+// 教务业务端口按功能拆成几个窄接口（[人工决策-2026-11-16 17:26:21] 学业模块化，用户选定架构推荐方案）：同步步骤与页面只依赖自己用到的那一块，
+// 加一类教务数据时新加一个接口（及网关里的实现），不往一个大接口里堆；CampusGateway 是全部的合集，网关实现照旧实现它。
+// 会话与登录。
+abstract interface class CampusSessionPort {
   Future<GatewayResult<SessionView>> restoreSession();
   Future<GatewayResult<LoginView>> login(String account, String password);
   Future<GatewayResult<LoginView>> submitLoginCaptcha(String code);
   Future<GatewayResult<CaptchaView>> refreshLoginCaptcha();
+  // 自动同步用（登录过期时不打断、只暂停，人工决策见 domain/auto_sync.dart）：body 期间教务说会话失效也不丢本机会话，
+  // 用户照常看本机数据、下次冷启动不被挡在登录页，手动操作时才按原规则重新登录。body 期间恢复成新会话的照新的。
+  Future<T> keepSessionDuring<T>(Future<T> Function() body);
+}
+
+// 学期与开学日。
+abstract interface class CampusTermPort {
   Future<GatewayResult<List<TermRef>>> listTerms();
   Future<GatewayResult<List<TermRef>>> syncTerms();
+  Future<GatewayResult<TermRef>> setTermStart(TermRef term, String date);
+}
+
+// 课表、课表版本、课前提醒设置与等用户来选的教务课表。
+abstract interface class SchedulePort {
   Future<GatewayResult<ScheduleView>> syncSchedule(TermRef term);
   Future<GatewayResult<ScheduleView>> readSchedule(ScheduleScope scope);
-  Future<GatewayResult<GradesView>> syncGrades(TermRef term);
-  Future<GatewayResult<GradesView>> readGrades(TermRef term);
-  Future<GatewayResult<List<GradeTermOverview>>> readGradeYear(String year);
-  Future<GatewayResult<BellsView>> syncBells(TermRef term);
-  Future<GatewayResult<BellsView>> readBells(TermRef term);
-  Future<GatewayResult<TermRef?>> readBellsSource(TermRef term);
-  Future<GatewayResult<TermRef>> useBellsSource(TermRef target, TermRef source);
-  Future<GatewayResult<TermRef>> setTermStart(TermRef term, String date);
   Future<GatewayResult<RevisionView>> saveScheduleRevision(TermRef term, List<CourseRecord> courses, String summary, {required String? expectedRevisionId});
   Future<GatewayResult<SyncPlan>> planScheduleSync(TermRef term, List<CourseRecord> courses);
   Future<GatewayResult<RevisionView>> commitScheduleSync(TermRef term, List<CourseRecord> courses, {required bool confirm, String? expectedRevisionId});
@@ -250,14 +257,32 @@ abstract class CampusGateway {
   // 返回之后还等不等用户来选（选过保留本地的同一份仍是 false）。教务课表落成新版本时同一学期的这一条随之删掉。
   Future<GatewayResult<bool>> holdScheduleSync(TermRef term, List<CourseRecord> courses, {required bool dismissed});
   Future<GatewayResult<List<HeldScheduleSync>>> readHeldScheduleSyncs();
-  // 自动同步用（登录过期时不打断、只暂停，人工决策见 domain/auto_sync.dart）：body 期间教务说会话失效也不丢本机会话，
-  // 用户照常看本机数据、下次冷启动不被挡在登录页，手动操作时才按原规则重新登录。body 期间恢复成新会话的照新的。
-  Future<T> keepSessionDuring<T>(Future<T> Function() body);
-  // 自动同步的设置与上次结果，只读写本机账号库；没设置过时是关着的默认值。
+}
+
+// 成绩。
+abstract interface class GradesPort {
+  Future<GatewayResult<GradesView>> syncGrades(TermRef term);
+  Future<GatewayResult<GradesView>> readGrades(TermRef term);
+  Future<GatewayResult<List<GradeTermOverview>>> readGradeYear(String year);
+}
+
+// 作息与作息的采用来源。
+abstract interface class BellsPort {
+  Future<GatewayResult<BellsView>> syncBells(TermRef term);
+  Future<GatewayResult<BellsView>> readBells(TermRef term);
+  Future<GatewayResult<TermRef?>> readBellsSource(TermRef term);
+  Future<GatewayResult<TermRef>> useBellsSource(TermRef target, TermRef source);
+}
+
+// 自动同步的设置与上次结果、同步记录：只读写本机账号库。
+abstract interface class SyncLedgerPort {
+  // 没设置过时是关着的默认值。
   Future<GatewayResult<AutoSyncView>> readAutoSync();
   Future<GatewayResult<AutoSyncSetting>> saveAutoSyncSetting(AutoSyncSetting setting);
   Future<GatewayResult<AutoSyncStatus>> recordAutoSync(AutoSyncStatus status);
-  // 同步记录（人工决策见 domain/sync_record.dart）：只读写本机账号库，最多 syncRecordLimit 条，新的挤掉最旧的；读出来从新到旧。
+  // 同步记录（人工决策见 domain/sync_record.dart）：最多 syncRecordLimit 条，新的挤掉最旧的；读出来从新到旧。
   Future<GatewayResult<SyncRecord>> recordSync(SyncRecord record);
   Future<GatewayResult<List<SyncRecord>>> readSyncRecords();
 }
+
+abstract class CampusGateway implements CampusSessionPort, CampusTermPort, SchedulePort, GradesPort, BellsPort, SyncLedgerPort {}
