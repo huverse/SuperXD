@@ -1,7 +1,7 @@
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { randomBytes } from 'node:crypto';
 import Redis from 'ioredis';
-import { DataSource } from 'typeorm';
+import { DataSource, QueryFailedError } from 'typeorm';
 
 import { createRelayApp } from 'src/relay_app';
 import { REDIS } from 'src/common/redis/redis.module';
@@ -105,6 +105,29 @@ describe('私信挂到应用账号', () => {
     expect(results.map((response) => response.status).sort()).toEqual([200, 409]);
     expect(results.find((response) => response.status === 409)!.body.code).toBe('SOCIAL_TAKEN');
     expect(Number(((await dataSource.query('SELECT COUNT(*) AS count FROM account_social WHERE device_id = ?', [shared.deviceId])) as { count: string }[])[0].count)).toBe(1);
+  });
+
+  it('挂账号的事务撞上死锁（errno 1213）重来一次照常挂上；别的数据库错误不重来', async () => {
+    const original = dataSource.transaction.bind(dataSource);
+    const deadlock = () => new QueryFailedError('INSERT', [], Object.assign(new Error('Deadlock found when trying to get lock; try restarting transaction'), { errno: 1213 }));
+    let calls = 0;
+    const spy = vi.spyOn(dataSource, 'transaction').mockImplementation(((...args: Parameters<DataSource['transaction']>) => (++calls === 1 ? Promise.reject(deadlock()) : (original as (...rest: unknown[]) => Promise<unknown>)(...args))) as DataSource['transaction']);
+    try {
+      const { device: account } = await signedIn();
+      calls = 0;
+      expect((await bind(account, new TestDevice(server))).status).toBe(200);
+      expect(calls).toBe(2);
+      const { device: other } = await signedIn();
+      calls = 0;
+      spy.mockImplementation(((...args: Parameters<DataSource['transaction']>) => {
+        calls++;
+        return Promise.reject(new QueryFailedError('INSERT', [], Object.assign(new Error('lock wait timeout'), { errno: 1205 })));
+      }) as DataSource['transaction']);
+      expect((await bind(other, new TestDevice(server))).status).toBe(500);
+      expect(calls).toBe(1);
+    } finally {
+      spy.mockRestore();
+    }
   });
 
   it('换手机：没带接管回 SOCIAL_ELSEWHERE；接管后好友关系改挂新设备，好友那边看到新公钥与旧号，确认后不再提示；旧设备与它没收的信删掉', async () => {
