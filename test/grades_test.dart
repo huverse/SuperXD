@@ -311,22 +311,28 @@ void main() {
     await directory.delete(recursive: true);
   });
 
-  // 11-15 用户校外网络：成绩数据页每次 200、content-length:0，导出接口照常给同一份成绩 HTML（见 kingo_client.dart 的 _grades）。
-  test('成绩数据页回空正文时改取导出接口（同一份 HTML，GBK、Excel 类型）；两边都空照旧报格式异常', () async {
+  // 11-15 用户校外网络：成绩数据页每次 200、content-length:0；11-16 起成绩直接走导出接口（同一份成绩 HTML、不限流，见 kingo_client.dart 的 _grades）。
+  test('成绩走导出接口（GBK、Excel 类型），导出回空正文才退回数据页；两边都空照旧报格式异常', () async {
     final paths = <String>[];
-    var exportEmpty = false;
+    var exportEmpty = false, dataEmpty = false;
     final client = KingoClient(client: MockClient((request) async {
       paths.add(request.url.path);
-      if (request.url.path.endsWith('/xscj.stuckcj_data.jsp')) return http.Response.bytes(const [], 200, headers: {'content-type': 'text/html;charset=GBK', 'content-length': '0'});
+      final export = request.url.path.endsWith('/xscj.stuckcj_data_exp.jsp');
       final original = request.body.contains('ysyx=yscj');
-      final bytes = exportEmpty ? const <int>[] : const GbkCodec().encode('<html><head><style>td{}</style></head><body>${transcript(original: original)}</body></html>');
-      return http.Response.bytes(bytes, 200, headers: {'content-type': 'application/vnd.ms-excel;charset=gbk'});
+      final empty = export ? exportEmpty : dataEmpty;
+      final bytes = empty ? const <int>[] : const GbkCodec().encode('<html><head><style>td{}</style></head><body>${transcript(original: original)}</body></html>');
+      return http.Response.bytes(bytes, 200, headers: {'content-type': export ? 'application/vnd.ms-excel;charset=gbk' : 'text/html;charset=GBK'});
     }));
     final pages = await client.fetchGrades(xn: '2025', xq: '0', rxnj: '2025', nj: '2025');
-    expect(paths, ['/student/xscj.stuckcj_data.jsp', '/student/xscj.stuckcj_data_exp.jsp', '/student/xscj.stuckcj_data.jsp', '/student/xscj.stuckcj_data_exp.jsp']);
+    expect(paths, ['/student/xscj.stuckcj_data_exp.jsp', '/student/xscj.stuckcj_data_exp.jsp']);
     expect((pages.effective.loginId, pages.effective.courses.single.courseName, pages.effective.courses.single.score), ('test', '课程&甲', 87.5));
     expect((pages.original.courses.single.finalScore, pages.original.courses.single.totalScore), (80, 87.5));
+    paths.clear();
     exportEmpty = true;
+    final fallback = await client.fetchGrades(xn: '2025', xq: '0', rxnj: '2025', nj: '2025');
+    expect(paths, ['/student/xscj.stuckcj_data_exp.jsp', '/student/xscj.stuckcj_data.jsp', '/student/xscj.stuckcj_data_exp.jsp', '/student/xscj.stuckcj_data.jsp']);
+    expect(fallback.effective.courses.single.score, 87.5);
+    dataEmpty = true;
     await expectLater(client.fetchGrades(xn: '2025', xq: '0', rxnj: '2025', nj: '2025'), throwsFormatException);
     client.dispose();
   });

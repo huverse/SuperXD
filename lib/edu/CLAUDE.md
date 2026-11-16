@@ -6,14 +6,15 @@
 
 - kingo_client.dart：HTTP 客户端 KingoClient。
   - 教务地址 kingoBase 写死为单校地址。统一设置请求头，维护 cookie 罐（jar、pageSession）。
-  - 每次请求 25 秒超时，只允许与 base 同源的地址，不跟随重定向。
+  - 每次请求 25 秒超时，另有 10 秒无进展超时（idleTimeout：连不上、没回应、响应体中途停住都算）；只允许与 base 同源的地址，不跟随重定向。
   - 会话失效的判定：重定向到登录页，或页面内容提示重新登录。非 2xx 响应报 UPSTREAM_HTTP。
   - 教务限流：几秒内连续约 10 次数据查询（课表、成绩数据页）后，会跳转 406 页（“请求太过频繁”）。
-    - 数据查询按滑动窗口排队，任意 10 秒内最多 6 次（dataQuota、dataWindow）；其他页面不排队。
+    - 数据查询按滑动窗口排队，任意 10 秒内最多 6 次（dataQuota、dataWindow）；其他页面不排队。成绩走导出接口，实测不限流、不排队（[人工决策] 在 dataQuota 上方）。
     - 排队中的请求可被 cancelRequests 立即打断。
     - 仍跳到 406 页时报 RATE_LIMITED，不自动重试。
   - cancelRequests 作废在途请求，取消后迟到的响应不得改写 cookie；dispose 之后拒绝发起请求。
-  - 请求经共用内核 domain/campus_http.dart 发：超时管到读完响应体，到点或 cancelRequests 都中断连接。成绩数据接口按块读取，上限 4MB（读法经内核的 collect 保持原样）；成绩数据页对部分校外来源回 0 字节正文（11-15 起），这时改取页面「导出」用的导出接口 xscj.stuckcj_data_exp.jsp（同一份成绩 HTML，读法与上限相同，原因见 _grades 上方注释）；其余页面上限 pageLimit（4MB），超了按格式错误报、保留本地数据。
+  - 一个会话里只取一次：成绩查询页给的入学年级（fetchGradeForm）、作息查询前要打开的公开课表页；重新登录与 dispose 时清掉。
+  - 请求经共用内核 domain/campus_http.dart 发：超时管到读完响应体，到点或 cancelRequests 都中断连接。成绩取页面「导出」用的导出接口 xscj.stuckcj_data_exp.jsp（与数据页同一份成绩 HTML，数据页对部分校外来源回 0 字节正文），导出回空正文才退回数据页 xscj.stuckcj_data.jsp（原因见 _grades 上方注释）；成绩响应按块读取，上限 4MB（读法经内核的 collect 保持原样）；其余页面上限 pageLimit（4MB），超了按格式错误报、保留本地数据。接口实测与可用的其他教务接口见自动记忆 edu-interface-map（不进仓库）。
   - 解码：content-type 或页面前 1000 字节声明 GB 系字符集时用 GBK，否则用 UTF-8；UTF-8 解码失败时回退 GBK。
   - 登录流程：
     1. 获取登录页会话。
