@@ -110,6 +110,19 @@ void main() {
     }
   });
 
+  // 11-17 设计审查：快递身份码的倒计时用浅色 attention（#F59E0B）当 14 号字，对卡片底只有约 2:1。文字与小标记改用 attentionText。
+  test('提醒文字色在八套配色的卡片底（91% 叠在背景上）与全屏白底上都不低于 4.5:1', () {
+    double contrast(Color a,Color b){final left=a.computeLuminance(),right=b.computeLuminance();return (math.max(left,right)+.05)/(math.min(left,right)+.05);}
+    for(final palette in [...CampusPalette.values,...CampusPalette.darkValues]) {
+      final reason='${palette.id} ${palette.brightness.name}';
+      final card=Color.alphaBlend(palette.surface.withValues(alpha:.91),palette.backgroundBottom);
+      expect(contrast(palette.attentionText,card),greaterThanOrEqualTo(4.5),reason:reason);
+      expect(contrast(palette.attentionText,palette.surface),greaterThanOrEqualTo(4.5),reason:reason);
+      // 快递身份码全屏出示是纯白底、只用浅色配色。
+      if(!palette.isDark) expect(contrast(palette.attentionText,Colors.white),greaterThanOrEqualTo(4.5),reason:reason);
+    }
+  });
+
   test('激活色强调文字在八套配色的卡片底上：大号字不低于 3:1，深色不低于 4.5:1', () {
     double contrast(Color a,Color b){final left=a.computeLuminance(),right=b.computeLuminance();return (math.max(left,right)+.05)/(math.min(left,right)+.05);}
     for(final palette in [...CampusPalette.values,...CampusPalette.darkValues]) {
