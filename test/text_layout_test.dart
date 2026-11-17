@@ -11,6 +11,7 @@ import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/app_services.dart';
 import 'package:superxd/app_shell.dart';
 import 'package:superxd/page/shell_page.dart';
+import 'package:superxd/theme/campus_surface.dart';
 
 import 'fixture_campus_gateway.dart';
 import 'form_layout_support.dart';
@@ -70,6 +71,12 @@ void main() {
       // 登录按钮的图标紧挨着文字（以前按「正在登录」占位，图标与「登录」之间空出两个字宽）。
       final icon = find.descendant(of: find.byType(FilledButton), matching: find.byType(Icon)).first;
       expect(tester.getTopLeft(find.text('登录')).dx - tester.getCenter(icon).dx, closeTo(12 + 8, 1));
+      // [人工决策-2026-11-17 21:24:25] 见 login_page.dart：同意行在登录卡片里、登录按钮正下方，百宝箱等入口在卡片下面。
+      final agree = find.text('我已阅读并同意'), button = find.byType(FilledButton);
+      expect(tester.getTopLeft(agree).dy, greaterThan(tester.getBottomLeft(button).dy));
+      expect(tester.getTopLeft(agree).dy - tester.getBottomLeft(button).dy, lessThan(48 * system * app));
+      expect(find.ancestor(of: agree, matching: find.byType(CampusSurface)), findsOneWidget);
+      expect(tester.getTopLeft(find.text('百宝箱')).dy, greaterThan(tester.getBottomLeft(agree).dy));
       await tester.pumpWidget(const SizedBox());
       loggedOut.dispose();
 

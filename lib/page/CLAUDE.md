@@ -50,7 +50,7 @@
   - auto_sync_dialog.dart：自动同步设置 showAutoSyncSettings：开关、间隔、学年（当前学年或指定学年）、内容（至少留一项），点了就存，最下面只读写上次的结果；样子同课前提醒设置。
   - campus_sync_dialogs.dart：同步结果弹窗 showCampusSyncReport：结果与未处理项，这一轮改了什么（同步记录的每类变化一行、下面列几门课），可重新登录或重新同步；教务限流停下时只说明约 1 分钟后再同步，不给立即重新同步。采用别的学期作息的确认 chooseBellsSource（今天页与学业页共用）。
 - 账号与设置：
-  - login_page.dart：登录页 LoginPage，也用于切换账号：验证码、记住账号确认、百宝箱、游乐场、关于（进同一个关于页，未登录也能开开发者模式、检查更新，[人工决策] 在按钮处）与法务入口；同意行勾选框读屏读整句，点「我已阅读并同意」也能勾选，放不下一行时「用户协议 和 隐私政策」整组换行、行距按文字排（_agreement）；登录按钮常亮，没填或没勾同意时原地说明，接系统自动填充（[人工决策] 在文件内）。
+  - login_page.dart：登录页 LoginPage，也用于切换账号：验证码、记住账号确认、百宝箱、游乐场、关于（进同一个关于页，未登录也能开开发者模式、检查更新，[人工决策] 在按钮处）与法务入口；同意行在登录卡片里、登录按钮正下方（[人工决策] 在同意行上，11-17），勾选框读屏读整句，点「我已阅读并同意」也能勾选，放不下一行时「用户协议 和 隐私政策」整组换行、行距按文字排（_agreement）；登录按钮常亮，没填或没勾同意时原地说明，接系统自动填充（[人工决策] 在文件内）。
   - account_dialogs.dart：旧版本数据导入确认 showLegacyImport 与登录后自动提示的 LegacyImportGate；教务验证码弹窗 LoginCaptchaDialog；开启记住账号的输密码弹窗 askRememberPassword。
   - account_page.dart：教务账号页 AccountPage（标题「教务账号」，账号卡姓名下写学号 · 班级，只在这里写；AccountTitle 我的页共用、只传姓名）：记住账号（关闭即删凭据；重新开启要输密码、后台登录核对成功才保存，不换代次）、切换账号、导入旧版本数据（本机有旧数据才显示）；应用账号单独一行（配了中转才有，写用户名或未登录，点了经组合根给的 openAppAccount 推入应用账号页）；退出登录单独一组放最底。
   - app_account_page.dart：应用账号页 AppAccountPage（人工决策见 domain/app_account.dart：自己的账号体系，与教务各管各的，没登录教务也能进；游乐场、私信、节日提示与账号页都推它）：没登录时「登录 / 注册」分段，「忘记密码」凭恢复码重设，「扫码登录」让已登录的手机批准；用户名与密码先在本机查格式、不合格原地说明不联网；注册与重设成功后弹出恢复码 showRecoveryCode（四位一组、可复制（经 sensitive_clipboard.dart），点「我已保存」才关，按返回不关）。登录着：用户名、修改密码（输一次新密码）、换新的恢复码（先确认）、让新设备登录（扫码函数可注入）、我上传的诊断包（配了诊断包上传才有），退出与注销各自单独一组放最底、居中红字，都先确认。最上面是联网偏好（组标题「联网偏好」，联网 / 仅本机，改为仅本机先确认；仅本机时登录保留但收起登录与账号管理、写暂停），最底下单独一组居中红字「删除游乐场数据」（先确认写明删哪些，仅本机或没登录只删本机），[人工决策] 在文件头。
@@ -97,7 +97,7 @@
 - 今天与课表：today_navigation_test.dart、today_date_transition_test.dart、schedule_experience_test.dart、schedule_editor_ui_test.dart、schedule_calendar_test.dart、course_clock_performance_test.dart、calendar_export_test.dart。
 - 成绩与同步：grades_ui_test.dart、sync_ui_test.dart、sync_merge_test.dart（合并页、手动同步流程、打扰时机弹窗、自动同步设置）；学业页与同步记录：academic_test.dart（服务页只有学业一项、待处理、学业页的同步与结果里的变化、同步记录列表与详情、撤回、点通知进同步记录）。
 - 壳层与表单：navigation_drag_test.dart、shell_layout_test.dart（含 iOS 26 系统底栏的留位、iOS 18 自绘底栏，两者都测直接切换与再点当前项；安卓与 iOS 都只竖屏）、form_spacing_test.dart（支撑 form_layout_support.dart）。
-- 排版：text_layout_test.dart（登录、今天、课表三种范围与成绩在 360dp 大字号、宋体加粗体文本、411dp 标准下不裁字、不剩一行标点、不留孤字，同意行与登录按钮、学期视图横条；扫描在 text_fit_support.dart）。改了页面排版、文案长短或字号相关的布局都跑它。
+- 排版：text_layout_test.dart（登录、今天、课表三种范围与成绩在 360dp 大字号、宋体加粗体文本、411dp 标准下不裁字、不剩一行标点、不留孤字，同意行与登录按钮（同意行在按钮正下方的卡片里）、学期视图横条；扫描在 text_fit_support.dart）。改了页面排版、文案长短或字号相关的布局都跑它。
 - 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart；应用账号一组：app_account_test.dart（「我的」页与教务账号页的应用账号一行、应用账号页的注册、登录、忘记密码、扫码登录（含刷新与离开时作废票据、批准前写出请求方）、恢复码走敏感剪贴板、登录着的各项与「我上传的诊断包」，账号页那一行）；开屏与画作页：painting_ui_test.dart（含播放顺序页的勾选、拖动排序与至少留一幅）。
 - 开发者的话：account_lifecycle_test.dart（「我的」页入口、小圆点与读信、新信在什么界面条件下弹）。
 - 联网偏好与删除游乐场数据：app_account_test.dart（组标题读屏是小节标题、改为仅本机先确认、登录保留与暂停、仅本机只删本机、退出注销与删除数据各自一组居中红字）；游乐场入口一直在：account_lifecycle_test.dart；消息页的仅本机卡：social_ui_test.dart。

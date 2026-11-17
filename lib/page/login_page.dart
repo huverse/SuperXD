@@ -19,6 +19,7 @@ import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/page/about_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
+import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
@@ -215,11 +216,25 @@ class _LoginPageState extends State<LoginPage> {
                     onPressed: _busy ? null : _attempt,
                     child: CampusBusyContent(busy: _busy, label: widget.switching ? '登录并切换' : '登录', busyLabel: widget.switching ? '正在登录并切换' : '正在登录', icon: const CampusIcon(CampusIcons.login)),
                   )),
+                  // [人工决策-2026-10-18 15:18:41] 勾选框读屏读整句「我已阅读并同意用户协议和隐私政策」（以前只念“复选框”），
+                  // 点「我已阅读并同意」几个字也能勾选（同常见 App 的同意行）；两个链接仍单独可点（用户从走查清单选定）。
+                  // [人工决策-2026-11-17 21:24:25] 设计审查后用户选定：同意行从屏幕最底挪到登录按钮正下方（卡片里，同淘宝、支付宝），读按钮时就看得到；
+                  // 上一条的读屏与点字勾选、10-19 那条的按钮常亮与没勾时衬色都照旧，只改位置。
+                  const SizedBox(height: CampusGap.small),
+                  AnimatedContainer(
+                    duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 200),
+                    decoration: BoxDecoration(color: _nudged ? CampusPalette.of(context).surfaceSelected : CampusPalette.of(context).surfaceSelected.withValues(alpha: 0), borderRadius: BorderRadius.circular(12)),
+                    child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      SizedBox(width: 48, height: 48, child: Checkbox(key: const ValueKey('agree-terms'), semanticLabel: '我已阅读并同意用户协议和隐私政策', value: _agreed, onChanged: _busy ? null : (value) => setState(() => _agreed = value == true))),
+                      Expanded(child: _agreement(context)),
+                    ]),
+                  ),
                 ])),
                 // [人工决策-2026-10-21 23:48:00] 登录页加「关于」入口（用户要求未登录也能进开发者模式）：进的是同一个关于页，
                 // 连点版本号开启、开着时有开发者选项，只有一种开启方式；未登录时也能检查更新、看协议。切换账号页不显示，同百宝箱。
                 // [人工决策-2026-11-12 21:00:20] 游乐场自由模式免登录（用户选定），登录页同百宝箱给一个入口。
-                if (!widget.switching) Padding(padding: const EdgeInsets.only(top: 16), child: Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
+                // 三颗入口在屏幕最底（同意行挪进卡片后它们是最后一项）；切换账号页没有它们，留同样的底边距，卡片仍在中间。
+                if (widget.switching) const SizedBox(height: 32) else Padding(padding: const EdgeInsets.only(top: 16), child: Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
                   OutlinedButton.icon(onPressed: _busy ? null : () => context.push('/toolbox'), icon: const CampusIcon(CampusIcons.toolbox), label: const Text('百宝箱')),
                   // 11-16 起游乐场入口一直在（娱乐与积分的开关并进联网偏好，人工决策见 domain/leisure.dart）。
                   OutlinedButton.icon(onPressed: _busy ? null : () => context.push('/playground'), icon: const CampusIcon(CampusIcons.playground), label: const Text('游乐场')),
@@ -229,15 +244,6 @@ class _LoginPageState extends State<LoginPage> {
                     label: const Text('关于'),
                   ),
                 ])),
-                // [人工决策-2026-10-18 15:18:41] 勾选框读屏读整句「我已阅读并同意用户协议和隐私政策」（以前只念“复选框”），
-                // 点「我已阅读并同意」几个字也能勾选（同常见 App 的同意行）；两个链接仍单独可点（用户从走查清单选定）。
-                Padding(padding: const EdgeInsets.only(top: 24), child: AnimatedContainer(
-                  duration: MediaQuery.disableAnimationsOf(context) ? Duration.zero : const Duration(milliseconds: 200),
-                  decoration: BoxDecoration(color: _nudged ? CampusPalette.of(context).surfaceSelected : CampusPalette.of(context).surfaceSelected.withValues(alpha: 0), borderRadius: BorderRadius.circular(12)),
-                  child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-                  SizedBox(width: 48, height: 48, child: Checkbox(key: const ValueKey('agree-terms'), semanticLabel: '我已阅读并同意用户协议和隐私政策', value: _agreed, onChanged: _busy ? null : (value) => setState(() => _agreed = value == true))),
-                  Expanded(child: _agreement(context)),
-                ]))),
               ]),
             ),
           )),
