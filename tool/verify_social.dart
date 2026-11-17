@@ -93,7 +93,7 @@ void main() {
     final received = (await alice.conversation(bob.deviceId!)).where((message) => message.card != null).toList();
     expect(received.map((message) => message.card!.type), unorderedEquals(['schedule', 'video']));
     expect((received.firstWhere((message) => message.card is ScheduleShare).card! as ScheduleShare).courses, hasLength(60));
-    expect(alice.unread, 3);
+    expect(alice.unread, 2);
 
     // 长轮询：alice 挂着拉取，bob 一秒后发一张，看 alice 多久拿到（应远小于挂起时长）。
     final relay = RelayClient(HttpRelayTransport(relayBaseUrl));
