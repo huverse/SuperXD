@@ -3,6 +3,7 @@ import 'dart:isolate';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import 'package:superxd/domain/campus_log.dart';
@@ -17,6 +18,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 
 // 一局的进度：档位、这一局的题、计时与完成。每个游戏的对局页持有一个，自己管棋盘状态。
@@ -463,6 +465,10 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver {
     final challenge = session.challenge;
     final clock = playDuration(Duration(seconds: _shownSeconds));
     final status = [challenge == null ? clock : '还有 $clock', ?widget.status].join(' · ');
+    final statusStyle = TextStyle(fontSize: CampusFontSize.secondary, color: palette.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()]);
+    final addedStyle = statusStyle.copyWith(fontWeight: FontWeight.w600, color: palette.danger);
+    // 会罚时的游戏（登记项 penalties）在自由模式下一直给「+N 秒」留着位置（按三位数量宽），平时空着，出现时不挤动状态行。
+    final penalties = challenge == null && session.game.penalties;
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.maybePop(context), icon: const CampusIcon(CampusIcons.back)),
@@ -475,28 +481,34 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver {
         ],
       ),
       body: SafeArea(top: false, bottom: false, child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 0), child: Row(children: [
-          // 同下拉字段：名字在前、向下的箭头在后。挑战里档位是定的，只写关名与档位。
-          if (challenge == null)
-            Builder(builder: (anchor) => TextButton.icon(
-              onPressed: () => _chooseTier(anchor),
-              iconAlignment: IconAlignment.end,
-              icon: const CampusIcon(CampusIcons.expand),
-              label: Row(mainAxisSize: MainAxisSize.min, children: [PlayTierDot(session.tier), const SizedBox(width: 8), Text(session.tier.label)]),
-            ))
-          else ...[
-            PlayTierDot(session.tier),
-            const SizedBox(width: 8),
-            Text('${challenge.name} · ${session.tier.label}', style: Theme.of(context).textTheme.titleSmall),
+        // [人工决策-2026-11-17 21:24:25] 设计审查后用户选定：状态（用时、步数等）作为一整项，放得下就跟在档位后面，
+        // 放不下整项换到档位下面一行，不再在档位旁边折成两三行、每行末尾挂「·」。放不放得下按数字至少两位量（步数从 9 到 10 时不来回跳）。
+        // 量字用 Scaffold 里面的 context（页面自己的 context 在 Scaffold 外，默认文字样式不带应用字体）。
+        Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 0), child: Builder(builder: (context) => _StatusLine(
+          statusWidth: campusTextWidth(context, status.replaceAllMapped(RegExp(r'\d+'), (digits) => '8' * math.max(digits[0]!.length, 2)), style: statusStyle),
+          children: [
+            // 同下拉字段：名字在前、向下的箭头在后。挑战里档位是定的，只写关名与档位。
+            if (challenge == null)
+              Builder(builder: (anchor) => TextButton.icon(
+                onPressed: () => _chooseTier(anchor),
+                iconAlignment: IconAlignment.end,
+                icon: const CampusIcon(CampusIcons.expand),
+                label: Row(mainAxisSize: MainAxisSize.min, children: [PlayTierDot(session.tier), const SizedBox(width: 8), Text(session.tier.label)]),
+              ))
+            else
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                PlayTierDot(session.tier),
+                const SizedBox(width: 8),
+                Text('${challenge.name} · ${session.tier.label}', style: Theme.of(context).textTheme.titleSmall),
+              ]),
+            DotSeparatedText(status, style: statusStyle),
+            // 刚加的罚时原地写在留好的位置（读屏随即播报），停一会儿收起；用时本身已经含罚时。
+            if (penalties)
+              SizedBox(width: campusTextWidth(context, '+888 秒', style: addedStyle), child: _added > Duration.zero
+                  ? Semantics(liveRegion: true, child: Text('+${_added.inSeconds} 秒', maxLines: 1, softWrap: false, textAlign: TextAlign.end, style: addedStyle))
+                  : null),
           ],
-          const SizedBox(width: 12),
-          Expanded(child: DotSeparatedText(status, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()]))),
-          // 刚加的罚时原地写在用时这一行（读屏随即播报），停一会儿收起；用时本身已经含罚时。
-          if (_added > Duration.zero) ...[
-            const SizedBox(width: CampusGap.small),
-            Semantics(liveRegion: true, child: Text('+${_added.inSeconds} 秒', style: TextStyle(fontSize: CampusFontSize.secondary, fontWeight: FontWeight.w600, color: palette.danger, fontFeatures: const [FontFeature.tabularFigures()]))),
-          ],
-        ])),
+        ))),
         // 收碎片的关：写明被改写的那一处怎么算（玩家自己算）；要最少步数的写明几步内算过。
         if (challenge != null)
           for (final (icon, line) in [
@@ -523,6 +535,76 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver {
       ])),
     );
   }
+}
+
+// 状态行的排法（人工决策见 PlayFrame 的状态行）：子项依次是档位、状态与（会罚时的游戏才有的）罚时位置。
+// 档位、状态与罚时位置一行放得下就排成一行，罚时位置在行尾；放不下时状态整项换到下一行、占满整行，罚时位置留在档位那一行的行尾。
+// 罚时位置一直占着（平时空着），「+N 秒」出现与收起都不改排版。statusWidth 是状态按数字至少两位量出的宽，用它判断放不放得下。
+class _StatusLine extends MultiChildRenderObjectWidget {
+  const _StatusLine({required this.statusWidth, required super.children});
+  final double statusWidth;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderStatusLine(statusWidth);
+
+  @override
+  void updateRenderObject(BuildContext context, _RenderStatusLine renderObject) => renderObject.statusWidth = statusWidth;
+}
+
+class _StatusLineData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderStatusLine extends RenderBox with ContainerRenderObjectMixin<RenderBox, _StatusLineData>, RenderBoxContainerDefaultsMixin<RenderBox, _StatusLineData> {
+  _RenderStatusLine(this._statusWidth);
+  static const _gap = CampusGap.medium;
+
+  double _statusWidth;
+  set statusWidth(double value) {
+    if (value == _statusWidth) return;
+    _statusWidth = value;
+    markNeedsLayout();
+  }
+
+  // 测试用：状态有没有换到档位下面一行。
+  bool stacked = false;
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _StatusLineData) child.parentData = _StatusLineData();
+  }
+
+  void _place(RenderBox child, double x, double y) => (child.parentData! as _StatusLineData).offset = Offset(x, y);
+
+  @override
+  void performLayout() {
+    final width = constraints.maxWidth;
+    final tier = firstChild!, status = childAfter(tier)!, slot = childAfter(status);
+    final loose = BoxConstraints(maxWidth: width);
+    tier.layout(loose, parentUsesSize: true);
+    slot?.layout(loose, parentUsesSize: true);
+    final slotSpan = slot == null ? 0.0 : CampusGap.small + slot.size.width;
+    stacked = tier.size.width + _gap + _statusWidth + slotSpan > width;
+    if (!stacked) {
+      status.layout(BoxConstraints(maxWidth: math.max(0, width - tier.size.width - _gap - slotSpan)), parentUsesSize: true);
+      final height = [tier.size.height, status.size.height, ?slot?.size.height].reduce(math.max);
+      _place(tier, 0, (height - tier.size.height) / 2);
+      _place(status, tier.size.width + _gap, (height - status.size.height) / 2);
+      if (slot != null) _place(slot, width - slot.size.width, (height - slot.size.height) / 2);
+      size = constraints.constrain(Size(width, height));
+      return;
+    }
+    status.layout(loose, parentUsesSize: true);
+    final row = math.max(tier.size.height, slot?.size.height ?? 0);
+    _place(tier, 0, (row - tier.size.height) / 2);
+    if (slot != null) _place(slot, width - slot.size.width, (row - slot.size.height) / 2);
+    _place(status, 0, row);
+    size = constraints.constrain(Size(width, row + status.size.height));
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) => defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) => defaultHitTestChildren(result, position: position);
 }
 
 // 棋盘的通用外框：按给定的宽高比在可用区域里居中放到最大（不超过 maxWidth），游戏在里面按尺寸画。
