@@ -35,6 +35,8 @@ linter:
     # 异步函数里没等也没标明的 Future：错误会悄悄丢掉。有意不等的（成功震动这类）用 unawaited(...) 标明。
     # discarded_futures 没开：同步回调里丢弃 Future 的写法全项目一百多处，多是按钮回调与生命周期里的有意不等。
     unawaited_futures: true
+    # lib 里一律 package:superxd/ 导入：相对导入能绕过分层守护（test/project_structure_test.dart 同时检查）。
+    always_use_package_imports: true
 
 # Additional information about this file can be found at
 # https://dart.dev/guides/language/analysis-options

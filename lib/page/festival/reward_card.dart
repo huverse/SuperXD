@@ -6,7 +6,7 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 
 import 'package:superxd/domain/festival.dart';
 import 'package:superxd/theme/campus_icons.dart';
-import 'reward_kit.dart';
+import 'package:superxd/page/festival/reward_kit.dart';
 
 // 奖品卡容器（所有开启动效共用）：整体一块，不分卡头卡身。下面是主题画的卡面（默认是流光卡：近黑玻璃、卡头流动的渐变、边上的发丝流光与外面一圈光，
 // 可以画到卡外），上面是内容层。卡形由 body 驱动从中间一团光长出来，内容由 content 浮现。

@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'reward_kit.dart';
+import 'package:superxd/page/festival/reward_kit.dart';
 
 // 默认主题：第一轮流光方向的卡（用户认可的奖品卡样子）。一块近黑的玻璃卡，卡头铺着缓慢流动的网格渐变、往下暗进卡身，
 // 边上一道发丝流光与外面一圈光（材质在 shaders/reward_aurora.frag）。颜色全从应用配色的激活色取：渐变与流光是种子色与它两侧相邻的色相，

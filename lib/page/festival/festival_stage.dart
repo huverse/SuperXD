@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import 'package:superxd/domain/festival.dart';
-import 'reward_kit.dart';
+import 'package:superxd/page/festival/reward_kit.dart';
 
 // 一次节日的定制动画（人工决策见 domain/festival.dart）：每一次各写一个场景，登记在 festival_catalog.dart。
 // builder 拿到 0→1 的进度（走完 length），自己决定每个时刻画什么；场景铺满全屏、背景透明，下面是用户正在看的页面。

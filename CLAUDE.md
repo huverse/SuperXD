@@ -25,7 +25,7 @@
 
 # 分层与依赖方向
 
-目录即分层，依赖只许自上而下，由 test/project_structure_test.dart 守护（[人工决策] 在文件内）。出现反向依赖时先重新划分职责，不要绕过检查。
+目录即分层，依赖只许自上而下，由 test/project_structure_test.dart 守护（[人工决策] 在文件内；lib 里一律 package:superxd/ 导入，analysis_options 的 always_use_package_imports 同时挡）。出现反向依赖时先重新划分职责，不要绕过检查。百宝箱各工具、游乐场各游戏同层互不依赖，只依赖本层根目录与登记的共用目录（下载、挑战），同一测试守护。
 
 - 根目录组合根：main.dart、app_services.dart、app_lifecycle.dart、app_shell.dart、router.dart、app_session.dart、app_diagnostics.dart、app_shortcuts.dart、app_background_sync.dart，可依赖任何层。
 - page 页面：可依赖 domain、application、gateway、local、social、theme 与 app_session.dart；只经 CampusGateway 与 AccountAccess 访问业务，不直接接触 SQLite、KingoClient 或 cookie（例外只有外观页读写 DisplaySettings、开发者选项页读写开发者设置与本机日志）。
@@ -113,7 +113,7 @@
 
 # 测试
 
-- 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、请求记录、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由、页面滚动区渐隐、顶栏玻璃圆钮、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、界面文案长度、字号与间距字面量只许减少），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
+- 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层（含 export、不许相对导入）、同层工具与游戏互不依赖、日志、请求记录、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由、页面滚动区渐隐、顶栏玻璃圆钮、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、界面文案长度、字号与间距字面量只许减少），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
 - 基准图 golden_test.dart：登录、服务、我的、界面、成绩、百宝箱（含左滑露出的按钮）深浅两套，只在 Linux 上比、容差万分之一；改了样子是有意的，看过 test/failures 的差异图（CI 失败时是产物 golden-failures）再 flutter test --update-goldens test/golden_test.dart 重生成一起提交。界面库升级与主题改动都靠它把关。
 - 共用的测试支撑：flutter_test_config.dart（test 下每个文件的入口配置，游乐场快得不正常的门槛按真实时间算、测试里默认关掉）、fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、page_fixture_support.dart（整应用页面测试的合成账号与教务数据）、toolbox_test_support.dart、form_layout_support.dart、text_fit_support.dart（扫一屏文字的裁切、孤字与单独成行的标点）、app_update_fakes.dart、content_signing_support.dart（测试用签名钥）、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
 - CI 的 Flutter 作业带覆盖率跑全量测试，再由 tool/coverage_check.dart 算 lib 的行覆盖率，低于工具里的门槛就失败；本机复现先 flutter test --coverage 再 dart run 它。Relay server test 同样带覆盖率跑服务端测试（npm run coverage），报告是产物 relay-coverage，先不设门槛。
