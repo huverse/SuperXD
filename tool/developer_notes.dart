@@ -15,6 +15,8 @@ import 'content_signing.dart';
 // 每封信一个 .txt 文件，文件名（不含 .txt）是这封信的编号，发出后不要改（已读、弹过都按它记）；只许字母数字与 . _ -，如 2026-10-24-hello。内容：
 //   标题：这封信的标题
 //   时间：2026-10-24 21:30
+//   红包：compensation-2026-11      （可以没有，最多 developerNoteAttachmentMax 行：信里附一个「领取红包」，编号是服务器上 reward_admin create 的活动，
+//                                    人工决策见 lib/domain/developer_note.dart 的附件；没资格的人看不到按钮）
 //   （空一行）
 //   正文……换行与空行照写的显示。
 // 时间按校园时区写。只发最近 developerNoteLimit 封，更早的留在仓库里、应用里不再显示。
@@ -33,11 +35,21 @@ DeveloperNote parseDeveloperNoteFile(String id, String text) {
   final minutes = time == null ? null : clockMinutes(time[2]!);
   final date = time == null ? null : DateTime.tryParse(time[1]!);
   if (time == null || minutes == null || date == null || formatCampusDate(date) != time[1]) throw FormatException('$id.txt：第二行要写「时间：2026-10-24 21:30」（校园时区）');
-  if (lines.length < 3 || lines[2].trim().isNotEmpty) throw FormatException('$id.txt：时间下面空一行再写正文');
-  final body = lines.sublist(3).join('\n').trim();
+  final attachments = <NoteAttachment>[];
+  var next = 2;
+  for (; next < lines.length; next++) {
+    final reward = RegExp(r'^红包[：:]\s*(\S+)\s*$').firstMatch(lines[next])?[1];
+    if (reward == null) break;
+    if (!noteAttachmentRef.hasMatch(reward)) throw FormatException('$id.txt：第 ${next + 1} 行的红包编号只能用小写字母、数字与 -');
+    if (attachments.any((attachment) => attachment.ref == reward)) throw FormatException('$id.txt：红包 $reward 写了两次');
+    attachments.add(NoteAttachment('reward', reward));
+  }
+  if (attachments.length > developerNoteAttachmentMax) throw FormatException('$id.txt：一封信最多附 $developerNoteAttachmentMax 个红包');
+  if (lines.length <= next || lines[next].trim().isNotEmpty) throw FormatException('$id.txt：时间（与红包）下面空一行再写正文');
+  final body = lines.sublist(next + 1).join('\n').trim();
   if (body.isEmpty) throw FormatException('$id.txt：正文是空的');
   if (body.length > developerNoteBodyMax) throw FormatException('$id.txt：正文最多 $developerNoteBodyMax 字，现在 ${body.length} 字');
-  return DeveloperNote(id: id, title: title, publishedAt: campusMoment(time[1]!, minutes), body: body);
+  return DeveloperNote(id: id, title: title, publishedAt: campusMoment(time[1]!, minutes), body: body, attachments: attachments);
 }
 
 // 整个目录：每个 .txt 一封，按发出时刻从新到旧取最近 developerNoteLimit 封；有一封不对就整体失败。

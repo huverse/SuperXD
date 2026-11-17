@@ -126,7 +126,21 @@ class _NotePage extends StatelessWidget {
   }
 }
 
-// 一封信的版式：标题、正文，落款处写日期（同信纸右下）。读信页与弹出的信共用。
+// 信的附件怎么画（人工决策见 domain/developer_note.dart 的附件）：组合根按附件类型登记，套在应用外壳上；信件页只按类型取，不认识红包这类业务，
+// 没登记的类型、或渲染返回空的都不显示。
+typedef NoteAttachmentBuilder = Widget? Function(BuildContext context, NoteAttachment attachment);
+
+class NoteAttachmentScope extends InheritedWidget {
+  const NoteAttachmentScope({super.key, required this.builders, required super.child});
+  final Map<String, NoteAttachmentBuilder> builders;
+
+  static Map<String, NoteAttachmentBuilder> of(BuildContext context) => context.dependOnInheritedWidgetOfExactType<NoteAttachmentScope>()?.builders ?? const {};
+
+  @override
+  bool updateShouldNotify(NoteAttachmentScope oldWidget) => !identical(builders, oldWidget.builders);
+}
+
+// 一封信的版式：标题、正文、附件，落款处写日期（同信纸右下）。读信页与弹出的信共用。
 class _Letter extends StatelessWidget {
   const _Letter({required this.note, required this.palette, this.title = true});
   final DeveloperNote note;
@@ -141,6 +155,8 @@ class _Letter extends StatelessWidget {
         const SizedBox(height: 16),
       ],
       Text(note.body.trim(), style: TextStyle(fontSize: 16, height: 1.75, color: palette.onSurface)),
+      for (final attachment in note.attachments)
+        if (NoteAttachmentScope.of(context)[attachment.type]?.call(context, attachment) case final view?) Padding(padding: const EdgeInsets.only(top: 16), child: view),
       const SizedBox(height: 20),
       Text(formatCampusRelative(note.publishedAt.toIso8601String()), textAlign: TextAlign.end, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
     ]);

@@ -42,15 +42,18 @@ enum FestivalPrizeKind { password, qrCode }
 
 // 抽中的奖品：支付宝口令原文或二维码内容，附言可为空。revealed 为揭晓过（拆过红包）。
 class FestivalPrize {
-  const FestivalPrize({required this.occasion, required this.kind, required this.content, required this.note, required this.wonAt, this.revealed = false});
+  const FestivalPrize({required this.occasion, required this.kind, required this.content, required this.note, required this.wonAt, this.revealed = false, this.keepThrough});
+  // 节日编号；附在开发者的话里的红包（11-16 起）是活动编号。
   final String occasion;
   final FestivalPrizeKind kind;
   final String content;
   final String note;
   final DateTime wonAt;
   final bool revealed;
+  // 信里领的红包留到这一天（校园日 YYYY-MM-DD，活动结束后再留 festivalPrizeKeepDays 天）；节日的奖品为空，按节日的结束日算。
+  final String? keepThrough;
 
-  FestivalPrize reveal() => FestivalPrize(occasion: occasion, kind: kind, content: content, note: note, wonAt: wonAt, revealed: true);
+  FestivalPrize reveal() => FestivalPrize(occasion: occasion, kind: kind, content: content, note: note, wonAt: wonAt, revealed: true, keepThrough: keepThrough);
 }
 
 // 一次抽签的结果：抽中、没抽中、活动不在进行（没建、还没开始或已结束）。
@@ -69,6 +72,21 @@ class FestivalMissed extends FestivalDraw {
 
 class FestivalClosed extends FestivalDraw {
   const FestivalClosed();
+}
+
+// 没资格（不在活动名单里，或积分等级不够；人工决策见 server/src/modules/reward/reward_odds.ts 的 11-16 那条）：不算抽过。
+class FestivalIneligible extends FestivalDraw {
+  const FestivalIneligible();
+}
+
+// 一个红包活动此刻能不能领（信里的「领取」先问）：能领、领过、不在进行、没资格、账号天数不够（eligibleAt 起能领）。
+enum RewardState { open, drawn, closed, ineligible, tooNew }
+
+class RewardStatus {
+  const RewardStatus(this.state, {this.endsAt, this.eligibleAt});
+  final RewardState state;
+  final DateTime? endsAt;
+  final DateTime? eligibleAt;
 }
 
 // 应用账号建立不满规定天数（服务器定，人工决策见 server/src/modules/reward/reward_odds.ts 的 11-15 那条）：这次不算抽过，eligibleAt 起再抽。
@@ -92,6 +110,9 @@ class FestivalNotSignedIn extends FestivalException {
 // 活跃度：近 30 天（含今天）里打开过应用的校园日数，抽奖时报给服务器做加权。本机只留这 30 天的日期，记录大小有上限。
 const festivalActiveWindow = 30;
 
+// 校园日往后数几天（YYYY-MM-DD）。
+String festivalShiftDate(String date, int days) => _shift(date, days);
+
 String _shift(String date, int days) {
   final shifted = DateTime.utc(int.parse(date.substring(0, 4)), int.parse(date.substring(5, 7)), int.parse(date.substring(8, 10))).add(Duration(days: days));
   return '${shifted.year}-${shifted.month.toString().padLeft(2, '0')}-${shifted.day.toString().padLeft(2, '0')}';
@@ -106,6 +127,7 @@ Set<String> festivalActiveDays(Iterable<String> days, String today) {
 const festivalPrizeKeepDays = 3;
 
 bool festivalPrizeKept(FestivalPrize prize, Iterable<FestivalOccasion> occasions, String today) {
+  if (prize.keepThrough case final through?) return today.compareTo(through) <= 0;
   final occasion = occasions.where((item) => item.id == prize.occasion).firstOrNull;
   return occasion != null && today.compareTo(_shift(occasion.to, festivalPrizeKeepDays)) <= 0;
 }
@@ -131,4 +153,6 @@ abstract class FestivalMemory {
 // 同一个人重复抽返回同一个结果。levels 为假（娱乐与积分关着，人工决策见 domain/leisure.dart）时请服务器不按积分等级加权。
 abstract class FestivalRewardClient {
   Future<FestivalDraw> draw(AppAccountRef account, String campaign, {required String occasion, required int activeDays, bool levels = true});
+  // 查一个活动此刻能不能领（只读、不记这次）；没登录抛 FestivalNotSignedIn，其余失败抛 FestivalException。
+  Future<RewardStatus> status(AppAccountRef account, String campaign, {bool levels = true});
 }

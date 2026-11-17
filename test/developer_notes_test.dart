@@ -60,6 +60,18 @@ void main() {
       expect(parsed.body, '第一段\n\n第二段');
     });
 
+    test('时间下面可以写几行「红包：活动编号」，成为信的附件；编号不合法、重复、超过 4 个、红包后没空行都说清楚', () {
+      final parsed = parseDeveloperNoteFile('2026-11-16-sorry', '标题：故障补偿\n时间：2026-11-16 21:30\n红包：compensation-2026-11\n红包: bonus-1\n\n正文');
+      expect(parsed.attachments.map((attachment) => (attachment.type, attachment.ref)), [('reward', 'compensation-2026-11'), ('reward', 'bonus-1')]);
+      expect(parsed.body, '正文');
+      expect(parseDeveloperNoteFile('a', '标题：x\n时间：2026-10-24 21:30\n\n红包：x\n').body, '红包：x', reason: '空行之后的都是正文');
+      void rejects(String text, String hint) => expect(() => parseDeveloperNoteFile('a', text), throwsA(isA<FormatException>().having((error) => error.message, 'message', contains(hint))));
+      rejects('标题：x\n时间：2026-10-24 21:30\n红包：Bad_Id\n\n正文', '红包编号');
+      rejects('标题：x\n时间：2026-10-24 21:30\n红包：a\n红包：a\n\n正文', '两次');
+      rejects('标题：x\n时间：2026-10-24 21:30\n${[for (var index = 0; index < 5; index++) '红包：r$index'].join('\n')}\n\n正文', '最多');
+      rejects('标题：x\n时间：2026-10-24 21:30\n红包：a\n正文', '空一行');
+    });
+
     test('格式不对时说清是哪个文件、哪一处', () {
       void rejects(String id, String text, String hint) => expect(() => parseDeveloperNoteFile(id, text), throwsA(isA<FormatException>().having((error) => error.message, 'message', allOf(contains(id), contains(hint)))));
       rejects('a', '题目：x\n时间：2026-10-24 21:30\n\n正文', '标题');
@@ -126,9 +138,19 @@ void main() {
         {'notes': [item('a'), item('a')]},
         {'notes': [for (var index = 0; index < 31; index++) item('n$index')]},
         {'notes': 'x'},
+        {'notes': [{...item('a'), 'attachments': [{'type': 'Reward', 'ref': 'x'}]}]},
+        {'notes': [{...item('a'), 'attachments': [{'type': 'reward', 'ref': '../x'}]}]},
+        {'notes': [{...item('a'), 'attachments': [{'type': 'reward'}]}]},
+        {'notes': [{...item('a'), 'attachments': [for (var index = 0; index < 5; index++) {'type': 'reward', 'ref': 'r$index'}]}]},
+        {'notes': [{...item('a'), 'attachments': 'x'}]},
       ]) {
         expect(() => decodeDeveloperNotes(bad), throwsFormatException);
       }
+      // 附件：认识的读出来、不认识的类型也留着（页面不显示），读回来再写一样；旧清单没有附件。
+      final withAttachments = decodeDeveloperNotes({'notes': [{...item('a'), 'attachments': [{'type': 'reward', 'ref': 'c-1'}, {'type': 'poll', 'ref': 'p'}]}]});
+      expect(withAttachments.single.attachments.map((attachment) => attachment.type), ['reward', 'poll']);
+      expect(decodeDeveloperNotes(encodeDeveloperNotes(withAttachments)).single.attachments.map((attachment) => attachment.ref), ['c-1', 'p']);
+      expect(encodeDeveloperNotes(decodeDeveloperNotes({'notes': [item('a')]}))['notes'], [item('a')..['publishedAt'] = '2026-10-24T13:30:00.000Z']);
     });
 
     test('只弹最新一封、没弹过、发出不满 14 天的', () {

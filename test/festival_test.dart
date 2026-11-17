@@ -18,12 +18,15 @@ import 'package:superxd/domain/developer_note.dart';
 import 'package:superxd/domain/festival.dart';
 import 'package:superxd/local/developer_note_memory.dart';
 import 'package:superxd/local/festival_memory.dart';
+import 'package:superxd/page/developer_notes_page.dart';
 import 'package:superxd/page/festival/festival_reward.dart';
+import 'package:superxd/page/festival/reward_attachment.dart';
 import 'package:superxd/page/festival/festival_stage.dart';
 import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/relay_reward_client.dart';
 import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/theme/campus_theme.dart';
 
 import 'fake_relay.dart';
 
@@ -35,12 +38,23 @@ class FakeRewardClient implements FestivalRewardClient {
   Completer<void>? gate;
   final requests = <({AppAccountRef account, String campaign, int activeDays, bool levels})>[];
 
+  // 信里的红包先问状态（11-16 起）：按给定状态回，statusRequests 记次数。
+  RewardStatus Function(String campaign) statusOf = (_) => RewardStatus(RewardState.open, endsAt: DateTime.utc(2027, 2, 10));
+  final statusRequests = <({String campaign, bool levels})>[];
+
   @override
   Future<FestivalDraw> draw(AppAccountRef account, String campaign, {required String occasion, required int activeDays, bool levels = true}) async {
     requests.add((account: account, campaign: campaign, activeDays: activeDays, levels: levels));
     await gate?.future;
     if (failure case final failure?) throw failure;
     return result(occasion);
+  }
+
+  @override
+  Future<RewardStatus> status(AppAccountRef account, String campaign, {bool levels = true}) async {
+    statusRequests.add((campaign: campaign, levels: levels));
+    if (failure case final failure?) throw failure;
+    return statusOf(campaign);
   }
 }
 
@@ -58,6 +72,9 @@ class _RewardRelay implements RelayTransport {
   Map<String, Object?>? prize;
   // 设了就同服务端账号建立不满规定天数：回 403 ACCOUNT_TOO_NEW 附 eligibleAt（毫秒）。
   int? eligibleAt;
+  // GET /v1/rewards/<活动> 的回复与请求过的路径（11-16 起）。
+  Map<String, Object?> status = {'state': 'open', 'endsAt': '2027-02-10T00:00:00.000Z', 'eligibleAt': null};
+  final statusPaths = <String>[];
 
   @override
   Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, int? limit, bool background = false}) async {
@@ -71,6 +88,10 @@ class _RewardRelay implements RelayTransport {
     final canonical = requestCanonical(method, pathWithQuery, headers['x-sxd-time']!, headers['x-sxd-nonce']!, body ?? const []);
     if (key == null || !await verifyEd25519(key, canonical, decodeBase64UrlNoPad(headers['x-sxd-signature']!))) return const RelayResponse(401, {'code': RelayCode.unauthorized});
     if (!accounts.contains(device)) return const RelayResponse(404, {'code': RelayCode.accountNotFound});
+    if (method == 'GET') {
+      statusPaths.add(pathWithQuery);
+      return RelayResponse(200, status);
+    }
     if (eligibleAt case final at?) return RelayResponse(403, {'code': RelayCode.accountTooNew, 'eligibleAt': at});
     draws.add((device: device, path: pathWithQuery, body: (jsonDecode(utf8.decode(body!)) as Map).cast<String, Object?>()));
     if (prize case final prize?) return RelayResponse(200, {'result': 'won', 'sealed': base64UrlNoPad(await _sealPrize(prize, pathWithQuery.split('/')[3], device, relay.devices[device]!.box))});
@@ -143,6 +164,10 @@ void main() {
       ));
       final record = (await FileFestivalMemory.open(file)).record;
       expect(record.played, [for (var index = 5; index < 25; index++) 'p$index']);
+      expect(record.prizes.single.keepThrough, isNull);
+      await memory.save(FestivalRecord(prizes: [FestivalPrize(occasion: 'c-1', kind: FestivalPrizeKind.password, content: 'x', note: '', wonAt: DateTime.utc(2027, 2, 6), keepThrough: '2027-02-13')]));
+      expect((await FileFestivalMemory.open(file)).record.prizes.single.keepThrough, '2027-02-13', reason: '信里领的红包留到哪天');
+      await memory.save(FestivalRecord(activeDays: {'2027-02-06'}, played: [for (var index = 0; index < 25; index++) 'p$index'], drawn: ['spring-2027'], prizes: [prize('spring-2027')]));
       expect(record.prizes.single.content, '88662027');
       final json = jsonDecode(await file.readAsString()) as Map;
       (json['prizes'] as List).add({'occasion': 'x', 'kind': 'cash', 'content': 'y', 'note': '', 'wonAt': 'bad', 'revealed': false});
@@ -344,6 +369,180 @@ void main() {
     });
   });
 
+  // 开发者的话里附的红包（11-16 起，人工决策见 domain/developer_note.dart 的附件与服务端 reward_odds.ts 的 11-16 那条）。
+  group('信里的红包', () {
+    AppAccountRef? signedIn = _account;
+    var gone = 0;
+    setUp(() {
+      signedIn = _account;
+      gone = 0;
+    });
+    Festivals festivals(FakeRewardClient? client, {FestivalMemory? memory, DateTime? now, bool levels = true}) =>
+        Festivals(occasions: const [spring], memory: memory ?? FileFestivalMemory.memory(), client: client, account: () => signedIn, accountGone: () => gone++, levelsOn: () => levels, clock: () => now ?? noon);
+    final endsAt = DateTime.utc(2027, 2, 9, 16); // 校园时区 2 月 10 日 0 点
+
+    test('领到的记进奖品，留到活动结束后 3 天（校园日）；再领不重复记；节日名写「红包」', () async {
+      final client = FakeRewardClient((_) => FestivalWon(prize('c-1')));
+      final memory = FileFestivalMemory.memory();
+      final subject = festivals(client, memory: memory);
+      expect(await subject.claim('c-1', endsAt: endsAt), isA<FestivalWon>());
+      expect(client.requests.single.campaign, 'c-1');
+      final kept = subject.prizeOf('c-1')!;
+      expect(kept.keepThrough, '2027-02-13');
+      expect(kept.revealed, isFalse);
+      expect(subject.occasionName('c-1'), '红包');
+      await subject.claim('c-1', endsAt: endsAt);
+      expect(memory.record.prizes, hasLength(1));
+      expect(festivals(client, memory: memory, now: campusNoon(2, 13)).prizeOf('c-1'), isNotNull);
+      expect(festivals(client, memory: memory, now: campusNoon(2, 14)).prizeOf('c-1'), isNull, reason: '过了留存日');
+    });
+
+    test('没抽中、没资格、已结束不记奖品；连不上为空；中转说账号不在为空并让应用账号马上核；没登录不联网', () async {
+      for (final result in const <FestivalDraw>[FestivalMissed(), FestivalIneligible(), FestivalClosed()]) {
+        final memory = FileFestivalMemory.memory();
+        expect(await festivals(FakeRewardClient((_) => result), memory: memory).claim('c-1', endsAt: endsAt), same(result));
+        expect(memory.record.prizes, isEmpty);
+      }
+      final failing = FakeRewardClient((_) => const FestivalMissed())..failure = const FestivalException('连不上服务器');
+      expect(await festivals(failing).claim('c-1', endsAt: endsAt), isNull);
+      failing.failure = const FestivalNotSignedIn();
+      expect(await festivals(failing).claim('c-1', endsAt: endsAt), isNull);
+      expect(gone, 1);
+      signedIn = null;
+      final idle = FakeRewardClient((_) => const FestivalMissed());
+      expect(await festivals(idle).claim('c-1', endsAt: endsAt), isNull);
+      expect(await festivals(idle).status('c-1'), isNull);
+      expect(idle.requests, isEmpty);
+      expect(idle.statusRequests, isEmpty);
+      expect(festivals(null).claimable, isFalse, reason: '没配中转时附件不显示');
+    });
+
+    test('问状态：娱乐与积分关着带上；中转说账号不在为空并马上核；连不上为空', () async {
+      final client = FakeRewardClient((_) => const FestivalMissed());
+      expect((await festivals(client, levels: false).status('c-1'))!.state, RewardState.open);
+      expect(client.statusRequests.single, (campaign: 'c-1', levels: false));
+      client.failure = const FestivalNotSignedIn();
+      expect(await festivals(client).status('c-1'), isNull);
+      expect(gone, 1);
+      client.failure = const FestivalException('连不上服务器');
+      expect(await festivals(client).status('c-1'), isNull);
+    });
+
+    test('中转客户端：GET /v1/rewards/<活动>，关着娱乐与积分带 levels=0；状态与时刻逐项校验；没资格的抽签结果认得', () async {
+      final relay = FakeRelay(), transport = _RewardRelay(relay), vault = MemoryAppAccountVault();
+      final client = RelayRewardClient(vault: vault, transport: transport);
+      await expectLater(client.status(_account, 'c-1'), throwsA(isA<FestivalNotSignedIn>()));
+      final key = await SocialIdentity.generate();
+      await vault.write(_account.slot, AppAccountKey(identity: key, accountId: _account.accountId));
+      relay.devices[key.deviceId] = (sign: key.signPublicKey, box: key.boxPublicKey);
+      transport.accounts.add(key.deviceId);
+      final open = await client.status(_account, 'c-1');
+      expect((open.state, open.endsAt), (RewardState.open, DateTime.utc(2027, 2, 10)));
+      await client.status(_account, 'c-1', levels: false);
+      expect(transport.statusPaths, ['/v1/rewards/c-1', '/v1/rewards/c-1?levels=0']);
+      transport.status = {'state': 'too_new', 'endsAt': '2027-02-10T00:00:00.000Z', 'eligibleAt': DateTime.utc(2027, 2, 9).millisecondsSinceEpoch};
+      expect((await client.status(_account, 'c-1')).eligibleAt, DateTime.utc(2027, 2, 9));
+      for (final bad in <Map<String, Object?>>[
+        {'state': 'maybe', 'endsAt': null, 'eligibleAt': null},
+        {'state': 'too_new', 'endsAt': null, 'eligibleAt': null},
+        {'state': 'open', 'endsAt': '2027-02-10 00:00', 'eligibleAt': null},
+        {'state': 'open', 'endsAt': null, 'eligibleAt': '1'},
+        {'state': 'open'},
+      ]) {
+        transport.status = bad;
+        await expectLater(client.status(_account, 'c-1'), throwsA(isA<FestivalException>()), reason: '$bad');
+      }
+      expect(parseFestivalDraw({'result': 'ineligible', 'sealed': null}, occasion: 'c-1', now: noon), isA<FestivalIneligible>());
+    });
+
+    group('附件', () {
+      Widget host(Festivals festivals, {void Function(BuildContext context)? onSignIn, ValueNotifier<int>? account}) => MaterialApp(
+        theme: campusTheme(),
+        home: Scaffold(body: RewardAttachment(festivals: festivals, campaign: 'c-1', onSignIn: onSignIn, accountChanges: account)),
+      );
+
+      testWidgets('能领给「领取红包」，点了原地转圈、领到变「查看红包」；没资格不显示；天数不够、已结束、没抽中写一行', (tester) async {
+        final gate = Completer<void>();
+        final client = FakeRewardClient((_) => FestivalWon(prize('c-1')))..gate = gate;
+        final subject = festivals(client);
+        await tester.pumpWidget(host(subject));
+        await tester.pump();
+        expect(find.text('领取红包'), findsOneWidget);
+        await tester.tap(find.text('领取红包'));
+        await tester.pump();
+        expect(find.text('领取中'), findsOneWidget);
+        expect(client.requests, hasLength(1));
+        gate.complete();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+        Navigator.of(tester.element(find.byType(RewardAttachment))).popUntil((route) => route.isFirst);
+        await tester.pumpAndSettle();
+        expect(find.text('查看红包'), findsOneWidget);
+        expect(subject.prizeOf('c-1')!.revealed, isTrue, reason: '领到就揭晓，打扰时机不再弹');
+
+        for (final (status, text) in [
+          (const RewardStatus(RewardState.ineligible), null),
+          (RewardStatus(RewardState.tooNew, eligibleAt: DateTime.utc(2027, 2, 9)), '起能领'),
+          (const RewardStatus(RewardState.closed), '红包已结束'),
+          (RewardStatus(RewardState.drawn, endsAt: endsAt), '查看结果'),
+        ]) {
+          final other = FakeRewardClient((_) => const FestivalMissed())..statusOf = (_) => status;
+          await tester.pumpWidget(host(festivals(other)));
+          await tester.pump();
+          if (text == null) {
+            expect(find.byType(FilledButton), findsNothing);
+            expect(find.byType(Text), findsNothing);
+          } else {
+            expect(find.textContaining(text), findsOneWidget, reason: '$status');
+          }
+        }
+        // 领过但本机没奖品：点「查看结果」再问一次，没抽中写一行。
+        await tester.tap(find.text('查看结果'));
+        await tester.pump();
+        expect(find.text('没有抽中'), findsOneWidget);
+      });
+
+      testWidgets('没登录给「登录应用账号领取」，登录回来再问一次；连不上提示、按钮照旧', (tester) async {
+        final client = FakeRewardClient((_) => const FestivalMissed());
+        final account = ValueNotifier(0);
+        signedIn = null;
+        var signIns = 0;
+        await tester.pumpWidget(host(festivals(client), onSignIn: (_) => signIns++, account: account));
+        await tester.pump();
+        await tester.tap(find.text('登录应用账号领取'));
+        expect(signIns, 1);
+        expect(client.statusRequests, isEmpty);
+        signedIn = _account;
+        account.value++;
+        await tester.pump();
+        await tester.pump();
+        expect(client.statusRequests, hasLength(1));
+        expect(find.text('领取红包'), findsOneWidget);
+        client.failure = const FestivalException('连不上服务器');
+        await tester.tap(find.text('领取红包'));
+        await tester.pump();
+        await tester.pump();
+        expect(find.text('领取红包'), findsOneWidget);
+        await tester.pump(const Duration(seconds: 5));
+      });
+
+      testWidgets('信件页按附件类型取组合根登记的渲染，不认识的类型不显示', (tester) async {
+        final note = DeveloperNote(id: 'n1', title: '补偿', publishedAt: noon, body: '正文', attachments: const [NoteAttachment('reward', 'c-1'), NoteAttachment('poll', 'p')]);
+        final notes = DeveloperNotes(feed: _OneNote(note), memory: FileDeveloperNoteMemory.memory());
+        await notes.refresh();
+        await tester.pumpWidget(MaterialApp(
+          theme: campusTheme(),
+          builder: (context, child) => NoteAttachmentScope(builders: {'reward': (context, attachment) => Text('附件 ${attachment.ref}')}, child: child!),
+          home: Builder(builder: (context) => Scaffold(body: TextButton(onPressed: () => showDeveloperNoteLetter(context, notes: notes, note: note), child: const Text('打开')))),
+        ));
+        await tester.tap(find.text('打开'));
+        await tester.pumpAndSettle();
+        expect(find.text('附件 c-1'), findsOneWidget);
+        expect(find.textContaining('p'), findsNothing);
+      });
+    });
+  });
+
   group('界面', () {
     // 减少动画要套在整个应用外面：浮层路由不在首页的子树里。
     Widget host(void Function(BuildContext context) open, {bool reduced = false}) => MaterialApp(
@@ -448,4 +647,11 @@ void main() {
 class _Notes implements DeveloperNoteFeed {
   @override
   Future<List<DeveloperNote>> fetch() async => [DeveloperNote(id: 'n', title: '近况', publishedAt: DateTime.utc(2027, 2, 6), body: '正文')];
+}
+
+class _OneNote implements DeveloperNoteFeed {
+  _OneNote(this.note);
+  final DeveloperNote note;
+  @override
+  Future<List<DeveloperNote>> fetch() async => [note];
 }

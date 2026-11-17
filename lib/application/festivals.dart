@@ -44,8 +44,64 @@ class Festivals extends ChangeNotifier {
 
   Iterable<FestivalPrize> get _kept => _memory.record.prizes.where((prize) => festivalPrizeKept(prize, occasions, _today));
 
-  // 奖品卡与开启动效上写的节日名。
-  String occasionName(String id) => occasions.where((occasion) => occasion.id == id).firstOrNull?.name ?? '节日红包';
+  // 奖品卡与开启动效上写的节日名；信里领的红包写「红包」。
+  String occasionName(String id) => occasions.where((occasion) => occasion.id == id).firstOrNull?.name ?? (_kept.any((prize) => prize.occasion == id && prize.keepThrough != null) ? '红包' : '节日红包');
+
+  // 信里附的红包（人工决策见 domain/developer_note.dart 的附件）：配了中转且登录着应用账号才能领；没配中转时附件不显示。
+  bool get claimable => _client != null;
+  bool get signedIn => _account() != null;
+
+  // 这个活动领到的、还留着的奖品（信里再点「查看」直接揭晓，不再联网）。
+  FestivalPrize? prizeOf(String campaign) => _kept.where((prize) => prize.occasion == campaign).firstOrNull;
+
+  // 问一个活动能不能领；没登录、没配中转或问不到为空（附件就不显示按钮）；中转说账号已不在时让应用账号马上核一次。
+  Future<RewardStatus?> status(String campaign) async {
+    final client = _client, account = _account();
+    if (client == null || account == null) return null;
+    try {
+      return await client.status(account, campaign, levels: _levelsOn());
+    } on FestivalNotSignedIn catch (error) {
+      campusLog('[Festival] action=status campaign=$campaign errorType=FestivalNotSignedIn message=$error');
+      _accountGone?.call();
+      return null;
+    } on FestivalException catch (error) {
+      campusLog('[Festival] action=status campaign=$campaign errorType=FestivalException message=$error');
+      return null;
+    }
+  }
+
+  // 领信里附的红包：同一个人重复领返回同一结果（服务器按人幂等）；抽中的记进奖品，留到活动结束后 festivalPrizeKeepDays 天。
+  // 返回空是没能问到（没登录、连不上），页面照旧显示「领取」。没资格与天数不够不记。
+  Future<FestivalDraw?> claim(String campaign, {required DateTime endsAt}) => _drawing[campaign] ??= _claim(campaign, endsAt).whenComplete(() {
+    _drawing.remove(campaign);
+  });
+
+  Future<FestivalDraw?> _claim(String campaign, DateTime endsAt) async {
+    final client = _client, account = _account();
+    if (client == null || account == null) return null;
+    final activeDays = festivalActiveDays(_memory.record.activeDays, _today).length;
+    final FestivalDraw result;
+    try {
+      result = await client.draw(account, campaign, occasion: campaign, activeDays: activeDays, levels: _levelsOn());
+    } on FestivalNotSignedIn catch (error) {
+      campusLog('[Festival] action=claim campaign=$campaign errorType=FestivalNotSignedIn message=$error');
+      _accountGone?.call();
+      return null;
+    } on FestivalException catch (error) {
+      campusLog('[Festival] action=claim campaign=$campaign errorType=FestivalException message=$error');
+      return null;
+    }
+    if (result case FestivalWon(:final prize) when prizeOf(campaign) == null) {
+      final through = festivalShiftDate(formatCampusDate(campusInstant(endsAt.toUtc())), festivalPrizeKeepDays);
+      final record = _memory.record;
+      await _save(prizes: [
+        ...record.prizes.where((item) => festivalPrizeKept(item, occasions, _today)),
+        FestivalPrize(occasion: campaign, kind: prize.kind, content: prize.content, note: prize.note, wonAt: prize.wonAt, keepThrough: through),
+      ]);
+    }
+    campusLog('[Festival] action=claimed campaign=$campaign activeDays=$activeDays result=${result.runtimeType}');
+    return result;
+  }
 
   // 记今天打开过应用（启动、回到前台时调）；只留近 30 天，同一天只写一次。
   Future<void> recordActive() async {

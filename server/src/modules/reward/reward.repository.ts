@@ -27,6 +27,10 @@ export abstract class RewardRepository {
   abstract findDraw(campaignId: string, participantHash: string): Promise<RewardDrawOutcome | null>;
   // 记一次抽签并按需发奖，同一事务；同一台设备并发来两次只记一次，后到的拿先到的结果。
   abstract draw(input: RewardDrawInput): Promise<RewardDrawOutcome>;
+  // 这个账号在不在这次活动的名单里（走 uk_campaign_account）。
+  abstract inAudience(campaignId: string, accountId: string): Promise<boolean>;
+  // 删这些账号在名单里的行（调用方事务内）：注销账号。
+  abstract deleteAudienceOf(manager: EntityManager, accountIds: string[]): Promise<void>;
   // 删除结束早于 before 的活动的奖品与抽签记录，每次最多 limit 行；都删完的活动行一并删掉。返回删除行数。
   abstract deleteEnded(before: Date, limit: number): Promise<number>;
 }
@@ -68,7 +72,9 @@ export class TypeormRewardRepository extends RewardRepository {
       await manager.query('SELECT id FROM reward_campaign WHERE id = ? FOR UPDATE', [campaign.id]);
       // 每档各自均匀放量：这一小时每档还能发的份数，再按等级加权挑一档（走 (campaign_id, tier, draw_id) 索引，行数是这次活动的奖品数）。
       const counts = (await manager.query('SELECT tier, COUNT(*) AS stock, COUNT(draw_id) AS given FROM reward_prize WHERE campaign_id = ? GROUP BY tier', [campaign.id])) as { tier: number; stock: string; given: string }[];
-      const available = counts.map((row) => ({ tier: Number(row.tier), count: Math.max(0, rewardReleased(Number(row.stock), campaign.startsAt, campaign.endsAt, now) - Number(row.given)) }));
+      // all（有资格就发）不按小时放量，发完为止。
+      const released = (stock: number) => (campaign.distribution === 'all' ? stock : rewardReleased(stock, campaign.startsAt, campaign.endsAt, now));
+      const available = counts.map((row) => ({ tier: Number(row.tier), count: Math.max(0, released(Number(row.stock)) - Number(row.given)) }));
       const open = available.filter((item) => item.count > 0);
       const tier = open.length > 1 ? rewardPickTier(open, input.levelWeight, input.tierRoll()) : (open[0]?.tier ?? null);
       if (tier === null) return { prize: null };
@@ -86,6 +92,16 @@ export class TypeormRewardRepository extends RewardRepository {
     });
   }
 
+  async inAudience(campaignId: string, accountId: string) {
+    const rows = (await this.campaigns.query('SELECT 1 AS found FROM reward_audience WHERE campaign_id = ? AND account_id = ? LIMIT 1', [campaignId, accountId])) as unknown[];
+    return rows.length > 0;
+  }
+
+  async deleteAudienceOf(manager: EntityManager, accountIds: string[]) {
+    if (accountIds.length === 0) return;
+    await manager.query('DELETE FROM reward_audience WHERE account_id IN (?)', [accountIds]);
+  }
+
   async deleteEnded(before: Date, limit: number) {
     const ended = (await this.campaigns.query('SELECT id FROM reward_campaign WHERE ends_at < ? ORDER BY ends_at LIMIT 20', [before])) as { id: string }[];
     let removed = 0;
@@ -96,6 +112,9 @@ export class TypeormRewardRepository extends RewardRepository {
       if (removed >= limit) break;
       const prizes = (await this.campaigns.query('DELETE FROM reward_prize WHERE campaign_id = ? LIMIT ?', [id, limit - removed])) as { affectedRows: number };
       removed += prizes.affectedRows;
+      if (removed >= limit) break;
+      const audience = (await this.campaigns.query('DELETE FROM reward_audience WHERE campaign_id = ? LIMIT ?', [id, limit - removed])) as { affectedRows: number };
+      removed += audience.affectedRows;
       if (removed >= limit) break;
       await this.campaigns.delete({ id });
       removed++;

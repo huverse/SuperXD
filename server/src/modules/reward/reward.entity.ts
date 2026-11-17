@@ -12,6 +12,18 @@ export class RewardCampaignEntity extends BaseEntity {
   // DECIMAL 按字符串读回（bigNumberStrings），用到时再转数。
   @Column({ name: 'base_chance', type: 'decimal', precision: 7, scale: 6 }) baseChance: string;
   @Column({ name: 'max_weight', type: 'decimal', precision: 5, scale: 2 }) maxWeight: string;
+  // 资格与发放（人工决策见 reward_odds.ts 的 11-16 那条）：lottery 或 all、everyone 或 list、账号满几天、最低积分等级。
+  @Column({ name: 'distribution', type: 'varchar', length: 8 }) distribution: string;
+  @Column({ name: 'audience', type: 'varchar', length: 8 }) audience: string;
+  @Column({ name: 'min_account_days', type: 'smallint', unsigned: true }) minAccountDays: number;
+  @Column({ name: 'min_level', type: 'tinyint', unsigned: true }) minLevel: number;
+}
+
+// 名单活动的名单：一个应用账号一行（按用户名导入时换成账号号）；随活动删除、随账号删除。
+@Entity('reward_audience')
+export class RewardAudienceEntity extends BaseEntity {
+  @Column({ name: 'campaign_id', type: 'bigint', unsigned: true }) campaignId: string;
+  @Column({ name: 'account_id', type: 'varchar', length: 32 }) accountId: string;
 }
 
 @Entity('reward_prize')

@@ -63,6 +63,8 @@ export const developerNotesPerHour = 600;
 export const developerNoteLimit = 30;
 export const developerNoteTitleMax = 40;
 export const developerNoteBodyMax = 4000;
+// 一封信最多带这么多个附件（如领取红包，人工决策见 src/modules/reward/reward_odds.ts 的 11-16 那条），与客户端 developerNoteAttachmentMax 一致。
+export const developerNoteAttachmentMax = 4;
 export const developerNotesFileMaxBytes = 1024 * 1024;
 
 // 灰度配置（人工决策见客户端 lib/domain/rollout.dart）：维护者本机签好两份放进发布目录（tool/rollout_config.dart 与 rollout_publish.sh，第 1 版 rollout.json、第 2 版 flags.json），
@@ -76,8 +78,13 @@ export const rolloutFileMaxBytes = 64 * 1024;
 // 节日抽奖（概率模型与要求设备签名的人工决策见 src/modules/reward/reward_odds.ts）：同一来源每小时 3000 次（校园网 NAT 共用出口，同代签取件的宽松档），
 // 每台设备每小时 10 次（一个应用账号一次活动只抽一次、重复请求返回同一结果，正常客户端只在没连上时补抽；按设备计数让刷请求的设备先被自己的额度挡住）；
 // 刷号的成本是应用账号的注册限流（accountRegisterPerSourcePerHour）与下面的账号年龄。活动行在进程内缓存 60 秒（建活动、改时间最迟一分钟生效）；活动结束 30 天后连同奖品与抽签记录删除。
-// 账号建立满 rewardAccountMinAgeDays 天才能抽（注册用户名谁都能建号，挡住批量新建的账号抽红包；人工决策见 reward_odds.ts）。
-export const rewardAccountMinAgeDays = 7;
+// 账号建立满几天才能抽由每个活动自己定（reward_campaign.min_account_days，人工决策见 reward_odds.ts 的 11-16 那条），建活动不写时用 rewardDefaultMinAccountDays
+// （注册用户名谁都能建号，挡住批量新建的账号抽红包；补偿红包可设 0）。名单活动的名单每次导入最多 rewardAudienceImportMax 个用户名。
+// 查一个活动的状态（信里的「领取」按钮先问能不能领）每台设备每小时 rewardStatusPerDevicePerHour 次。
+export const rewardDefaultMinAccountDays = 7;
+export const rewardMinAccountDaysMax = 3650;
+export const rewardAudienceImportMax = 100_000;
+export const rewardStatusPerDevicePerHour = 120;
 export const rewardDrawPerHour = 3000;
 export const rewardDrawPerDevicePerHour = 10;
 export const rewardCampaignCacheSeconds = 60;

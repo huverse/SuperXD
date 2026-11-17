@@ -30,6 +30,19 @@ import { pointsLevelCount } from 'src/common/relay_limits';
 // 活跃天数的倍数与等级的倍数里高的那个，等级倍数 = 1 + (maxWeight − 1) × 等级 ÷ 5，总上限仍是这次活动的 maxWeight；平权模式仍人人一样；不花积分。
 // 奖品分金额档（tier：0 普通，数越大金额越高，导入时标）：每档各自按小时均匀放量；抽中后在这一小时还有额度的档里挑，每档的分量 = 可发份数 ×
 // （大额档乘等级倍数、普通档乘 1），同样封顶 maxWeight。等级由服务端按积分算，不是客户端报的（活跃天数仍是客户端报的，概率模型其余不变）。
+// [人工决策-2026-11-16 21:17:51] 红包的资格与发放形式由每个活动的参数决定（用户 11-16 任务书第 3 项：资格取决于发布时的参数、不许写死；用户选定三项）：
+// - 账号建立满几天：每个活动自己定（min_account_days，建活动不写默认 7 天，补偿红包可设 0），取代上面 11-15 15:04:27 那条的全局常量 rewardAccountMinAgeDays。
+// - 资格 audience：everyone 人人可参加，list 只有导入名单里的应用账号（故障补偿的受影响用户、要特定授权的活动；名单按用户名导入，见 reward_admin.ts 的 audience，
+//   不按行为自动圈人，那是新增追踪）；另可要求最低积分等级 min_level（娱乐与积分关着按 Lv0）。没资格的结果是 ineligible、不记这次。
+// - 发放 distribution：lottery 抽签（概率按上面的平权或加权，奖品按小时均匀放量）；all 有资格的人来领就发（不抽签、不按小时放量，发完为止），
+//   金额由导入的档决定（只有一档就是等额，多档时按等级加权挑档，同上）。
+// - 展示：节日动画（客户端节日登记表的 campaign）与附在开发者的话里的「领取」（信的附件 {type: reward, ref: 活动编号}），没有单独的红包页；
+//   信件模块只认附件类型、不认识红包，按钮先问 GET /v1/rewards/:campaign 能不能领（没资格的人看不到按钮）。
+export const rewardDistributions = ['lottery', 'all'] as const;
+export type RewardDistribution = (typeof rewardDistributions)[number];
+export const rewardAudiences = ['everyone', 'list'] as const;
+export type RewardAudience = (typeof rewardAudiences)[number];
+
 export const rewardModes = ['uniform', 'weighted'] as const;
 export type RewardMode = (typeof rewardModes)[number];
 

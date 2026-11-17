@@ -2,14 +2,23 @@
 // 由流水线传到自建中转，应用联网拉取，不用发版（用户选「仓库写、自动下发」，未选「不进仓库、命令上传」「随版本内置」）。
 // 入口在「我的」页一行，有没读过的信时这一行与底栏「我的」各一个小圆点；新信在不迫切的时候弹出来（用户在推荐项上加的，规则见 application/app_moments.dart）。
 // 只读：没有评论、点赞，不收集任何回应。
+// 信的附件（[人工决策-2026-11-16 21:17:51] 红包可以附在信里，信件不认识红包，见 server/src/modules/reward/reward_odds.ts 的 11-16 那条）：
+// 类型加指向的对象（reward 的 ref 是红包活动编号）；页面按类型找组合根登记的渲染，不认识的类型不显示。
+class NoteAttachment {
+  const NoteAttachment(this.type, this.ref);
+  final String type;
+  final String ref;
+}
+
 class DeveloperNote {
-  const DeveloperNote({required this.id, required this.title, required this.publishedAt, required this.body});
+  const DeveloperNote({required this.id, required this.title, required this.publishedAt, required this.body, this.attachments = const []});
   // notes 目录里的文件名（不含 .txt）：发出去之后不改，已读与弹过都按它记。
   final String id;
   final String title;
   // UTC 绝对时刻；维护者按校园时区写，tool/developer_notes.dart 换算。
   final DateTime publishedAt;
   final String body;
+  final List<NoteAttachment> attachments;
 }
 
 // 上限：工具按它出清单、中转按它校验、客户端按它解析（外部输入的边界）。只留最近的 developerNoteLimit 封，更早的不再下发。
@@ -17,6 +26,19 @@ const developerNoteLimit = 30;
 const developerNoteTitleMax = 40;
 const developerNoteBodyMax = 4000;
 final developerNoteId = RegExp(r'^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$');
+// 附件：每封最多 developerNoteAttachmentMax 个（中转 relay_limits.ts 同一上限），类型与编号的写法同中转的校验。
+const developerNoteAttachmentMax = 4;
+final noteAttachmentType = RegExp(r'^[a-z][a-z0-9_-]{0,15}$');
+final noteAttachmentRef = RegExp(r'^[a-z0-9][a-z0-9-]{0,63}$');
+
+List<NoteAttachment> _attachments(Object? json) => switch (json) {
+  null => const [],
+  final List<Object?> items when items.length <= developerNoteAttachmentMax => [
+    for (final item in items)
+      if (item case {'type': final String type, 'ref': final String ref} when noteAttachmentType.hasMatch(type) && noteAttachmentRef.hasMatch(ref)) NoteAttachment(type, ref) else throw const FormatException('附件格式不对'),
+  ],
+  _ => throw const FormatException('附件格式不对'),
+};
 
 // 新信只在发出后这么久之内弹出：新装或很久没打开的人不会被一封旧信弹到，旧信只在入口处标没读。
 const developerNoteLetterFresh = Duration(days: 14);
@@ -31,7 +53,7 @@ List<DeveloperNote> decodeDeveloperNotes(Object? json) {
       switch (item) {
         {'id': final String id, 'title': final String title, 'publishedAt': final String publishedAt, 'body': final String body}
             when developerNoteId.hasMatch(id) && title.trim().isNotEmpty && title.length <= developerNoteTitleMax && body.trim().isNotEmpty && body.length <= developerNoteBodyMax && DateTime.tryParse(publishedAt) != null =>
-          DeveloperNote(id: id, title: title, publishedAt: DateTime.parse(publishedAt).toUtc(), body: body),
+          DeveloperNote(id: id, title: title, publishedAt: DateTime.parse(publishedAt).toUtc(), body: body, attachments: _attachments(item['attachments'])),
         _ => throw const FormatException('有一封信格式不对'),
       },
   ];
@@ -40,7 +62,16 @@ List<DeveloperNote> decodeDeveloperNotes(Object? json) {
 }
 
 Map<String, Object?> encodeDeveloperNotes(List<DeveloperNote> notes) => {
-  'notes': [for (final note in notes) {'id': note.id, 'title': note.title, 'publishedAt': note.publishedAt.toUtc().toIso8601String(), 'body': note.body}],
+  'notes': [
+    for (final note in notes)
+      {
+        'id': note.id,
+        'title': note.title,
+        'publishedAt': note.publishedAt.toUtc().toIso8601String(),
+        'body': note.body,
+        if (note.attachments.isNotEmpty) 'attachments': [for (final attachment in note.attachments) {'type': attachment.type, 'ref': attachment.ref}],
+      },
+  ],
 };
 
 // 从新到旧；同一时刻按编号，顺序稳定。

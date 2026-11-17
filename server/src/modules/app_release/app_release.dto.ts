@@ -2,7 +2,7 @@ import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { ArrayMaxSize, ArrayMinSize, IsArray, IsIn, IsInt, IsISO8601, IsOptional, IsString, Matches, Max, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 
-import { developerNoteBodyMax, developerNoteLimit, developerNoteTitleMax, pointsLevelCount, rolloutFlagLimit, rolloutStageLimit, unlockLimit, unlockPriceMax, unlockTitleMax } from 'src/common/relay_limits';
+import { developerNoteAttachmentMax, developerNoteBodyMax, developerNoteLimit, developerNoteTitleMax, pointsLevelCount, rolloutFlagLimit, rolloutStageLimit, unlockLimit, unlockPriceMax, unlockTitleMax } from 'src/common/relay_limits';
 
 // 客户端按自己正在运行的 CPU 架构取安装包，与发布附件的三种分包一致。
 export const appAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64'] as const;
@@ -88,12 +88,26 @@ export class AppReleaseFile {
   @IsOptional() @ValidateNested() @Type(() => AppReleaseFileEnvelopes) envelopes?: AppReleaseFileEnvelopes;
 }
 
+// 信的附件（11-16 起，人工决策见 src/modules/reward/reward_odds.ts 的 11-16 那条）：类型加指向的对象，客户端按类型找渲染、不认识的不显示；
+// 现在只有 reward（ref 是红包活动编号）。旧版本客户端不认这个字段，照常显示信。
+export class DeveloperNoteAttachmentDto {
+  @ApiProperty({ description: '附件类型，如 reward' }) @Matches(/^[a-z][a-z0-9_-]{0,15}$/) type: string;
+  @ApiProperty({ description: '附件指向的对象，reward 是活动编号' }) @Matches(/^[a-z0-9][a-z0-9-]{0,63}$/) ref: string;
+}
+
 // 开发者的话：流水线由仓库 notes 目录生成的 developer_notes.json（tool/developer_notes.dart），读入时逐项校验，写坏了不往外发。
 export class DeveloperNoteDto {
   @ApiProperty({ description: '编号，即仓库 notes 目录里的文件名，发出后不改' }) @Matches(/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/) id: string;
   @ApiProperty({ description: '标题' }) @IsString() @MinLength(1) @MaxLength(developerNoteTitleMax) title: string;
   @ApiProperty({ description: '发出时刻，ISO 8601 带时区' }) @IsISO8601({ strict: true }) publishedAt: string;
   @ApiProperty({ description: '正文，原样显示' }) @IsString() @MinLength(1) @MaxLength(developerNoteBodyMax) body: string;
+  @ApiProperty({ description: '附件，可以没有', type: [DeveloperNoteAttachmentDto], required: false })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(developerNoteAttachmentMax)
+  @ValidateNested({ each: true })
+  @Type(() => DeveloperNoteAttachmentDto)
+  attachments?: DeveloperNoteAttachmentDto[];
 }
 
 export class DeveloperNotesDto {

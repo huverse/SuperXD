@@ -44,12 +44,64 @@ class RelayRewardClient implements FestivalRewardClient {
       throw const FestivalException('服务器返回的格式不对');
     }
   }
+
+  // 查活动能不能领（信里的「领取」先问，人工决策见 domain/developer_note.dart 的附件）：同样用这个应用账号的设备密钥签名，娱乐与积分关着带 levels=0。
+  @override
+  Future<RewardStatus> status(AppAccountRef account, String campaign, {bool levels = true}) async {
+    final saved = await vault.read(account.slot);
+    if (saved == null) throw const FestivalNotSignedIn();
+    final Map<String, Object?> body;
+    try {
+      body = await _relay.request(saved.identity, 'GET', '/v1/rewards/$campaign${levels ? '' : '?levels=0'}', null);
+    } on RelayException catch (error) {
+      throw switch (error.code) {
+        RelayCode.accountNotFound || RelayCode.unauthorized => const FestivalNotSignedIn(),
+        RelayCode.network || RelayCode.timeout => const FestivalException('连不上服务器'),
+        RelayCode.rateLimited => const FestivalException('请求过于频繁'),
+        _ => FestivalException('服务器暂时不可用（${error.code}）'),
+      };
+    }
+    try {
+      return parseRewardStatus(body);
+    } on FormatException catch (error, stack) {
+      campusLog('[Festival] action=status errorType=${error.runtimeType} message=${error.message}\n$stack');
+      throw const FestivalException('服务器返回的格式不对');
+    }
+  }
+}
+
+// 活动状态是外部输入（GET /v1/rewards/<活动>，11-16 起）：state 只认那五个，时刻逐项校验。
+RewardStatus parseRewardStatus(Object? json) {
+  if (json case {'state': final String state, 'endsAt': final Object? endsAt, 'eligibleAt': final Object? eligibleAt}) {
+    final parsed = switch (state) {
+      'open' => RewardState.open,
+      'drawn' => RewardState.drawn,
+      'closed' => RewardState.closed,
+      'ineligible' => RewardState.ineligible,
+      'too_new' => RewardState.tooNew,
+      _ => throw const FormatException('活动状态不认识'),
+    };
+    final ends = switch (endsAt) {
+      null => null,
+      final String text when DateTime.tryParse(text) != null && text.endsWith('Z') => DateTime.parse(text).toUtc(),
+      _ => throw const FormatException('结束时刻不对'),
+    };
+    final eligible = switch (eligibleAt) {
+      null => null,
+      final int millis => DateTime.fromMillisecondsSinceEpoch(millis, isUtc: true),
+      _ => throw const FormatException('能领的时刻不对'),
+    };
+    if (parsed == RewardState.tooNew && eligible == null) throw const FormatException('天数不够却没给能领的时刻');
+    return RewardStatus(parsed, endsAt: ends, eligibleAt: eligible);
+  }
+  throw const FormatException('不是活动状态');
 }
 
 // 抽签结果是外部输入：逐项校验，不合格抛 FormatException；抽中时 prize 是解开的奖品信封。
 FestivalDraw parseFestivalDraw(Object? json, {required String occasion, required DateTime now, Map<String, Object?>? prize}) => switch ((json, prize)) {
   ({'result': 'closed'}, _) => const FestivalClosed(),
   ({'result': 'missed'}, _) => const FestivalMissed(),
+  ({'result': 'ineligible'}, _) => const FestivalIneligible(),
   ({'result': 'won'}, {'kind': final String kind, 'content': final String content, 'note': final String note})
       when (kind == 'password' || kind == 'qrcode') && content.trim().isNotEmpty && content.length <= 1024 && note.length <= 200 =>
     FestivalWon(FestivalPrize(occasion: occasion, kind: kind == 'password' ? FestivalPrizeKind.password : FestivalPrizeKind.qrCode, content: content.trim(), note: note.trim(), wonAt: now)),

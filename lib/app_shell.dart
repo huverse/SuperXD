@@ -24,6 +24,7 @@ import 'package:superxd/page/developer_notes_page.dart';
 import 'package:superxd/page/developer_page.dart';
 import 'package:superxd/page/festival/festival_catalog.dart';
 import 'package:superxd/page/festival/festival_reward.dart';
+import 'package:superxd/page/festival/reward_attachment.dart';
 import 'package:superxd/page/festival/festival_stage.dart';
 import 'package:superxd/page/image_copy_pick.dart';
 import 'package:superxd/page/legal_page.dart';
@@ -392,6 +393,21 @@ class _AccountAppState extends State<_AccountApp> {
     return CampusWallpaper(image: FileImage(file), tone: _tone!.$2, look: _display.wallpaperLook);
   }
 
+  // 开发者的话的附件怎么画（人工决策见 domain/developer_note.dart 的附件）：红包交给节日模块的 RewardAttachment，信件页不认识红包。
+  late final Map<String, NoteAttachmentBuilder> _noteAttachments = {
+    if (widget.services.festivals case final festivals?)
+      'reward': (context, attachment) => RewardAttachment(
+        festivals: festivals,
+        campaign: attachment.ref,
+        saveQrCode: saveRewardPicture,
+        accountChanges: widget.services.appAccounts,
+        onSignIn: switch (widget.services.appAccounts) {
+          final accounts? => (context) => pushAppAccountPage(context, accounts, widget.services.diagnostics),
+          null => null,
+        },
+      ),
+  };
+
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(listenable: Listenable.merge([_display, campusGlassCapped]), builder: (context, _) => MaterialApp.router(
@@ -402,7 +418,7 @@ class _AccountAppState extends State<_AccountApp> {
       locale: const Locale('zh', 'CN'), supportedLocales: const [Locale('zh', 'CN')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       // 跟随系统时字号最多到这台手机的推荐上限（[人工决策] 见 local/display_settings.dart 的 textSizeMin），上限由 TextSizeComfort 按页面规则量。
-      builder: (context, child) => DisplayScope(settings: _display, child: TextSizeComfort(builder: (context, comfortable) => CampusTextScale(
+      builder: (context, child) => NoteAttachmentScope(builders: _noteAttachments, child: DisplayScope(settings: _display, child: TextSizeComfort(builder: (context, comfortable) => CampusTextScale(
         textSize: _display.textSize,
         followLimit: comfortable,
         child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: NativeAppearanceSync(child: CampusStatusBarScroll(child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: campusGlassCapped.value, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, wallpaper: _wallpaper(), overlays: campusOverlayDepth, child: CampusEntryFade(child: LiveClock(child: switch ((widget.services.developer, widget.services.logs)) {
@@ -410,7 +426,7 @@ class _AccountAppState extends State<_AccountApp> {
         (final developer?, final logs?) => TextSizeWatch(developer: developer, logs: logs, display: _display, child: DeveloperOverlay(developer: developer, logs: logs, navigator: _router.routerDelegate.navigatorKey, location: () => _router.routerDelegate.currentConfiguration.uri.path, child: child!)),
         _ => child!,
       })))))))),
-      ))),
+      )))),
     ));
   }
 }
