@@ -148,7 +148,7 @@ void main() async {
   final displayOpen = DisplaySettings.open(wallpaperDirectory: Directory(path.join(support.path, 'display', 'wallpaper')), fontPacks: fontPacks);
   final glassLoad = CampusGlassGuard.load();
   final databasesPath = getDatabasesPath();
-  final networkOpen = FileNetworkModeMemory.open(File(path.join(support.path, 'network_mode.json')));
+  final networkOpen = FileNetworkModeMemory.open(File(path.join(support.path, 'network_mode.json')), legacy: File(path.join(support.path, 'leisure.json')));
   final legalOpen = LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
   ensureCampusClock();
   configureCampusIcons();

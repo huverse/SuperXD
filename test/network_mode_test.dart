@@ -33,6 +33,30 @@ void main() {
     expect((await FileNetworkModeMemory.open(file)).mode, NetworkMode.local);
   });
 
+  // 人工决策见 lib/local/network_mode_memory.dart 的 11-17 14:17:05 那条。
+  test('老用户迁移：还没有联网偏好时，旧的 leisure.json 写着关过就改为本地化并写下来、删掉旧文件；开着、坏文件、已有偏好都不改', () async {
+    final directory = await Directory.systemTemp.createTemp('network_mode_migrate');
+    addTearDown(() => directory.delete(recursive: true));
+    File fileOf(String name) => File(path.join(directory.path, name));
+    final file = fileOf('network_mode.json'), legacy = fileOf('leisure.json');
+    await legacy.writeAsString('{"enabled":false}');
+    expect((await FileNetworkModeMemory.open(file, legacy: legacy)).mode, NetworkMode.local);
+    expect(await legacy.exists(), isFalse);
+    expect((await FileNetworkModeMemory.open(file)).mode, NetworkMode.local, reason: '迁移结果写进了 network_mode.json');
+
+    await file.delete();
+    await legacy.writeAsString('{"enabled":true}');
+    expect((await FileNetworkModeMemory.open(file, legacy: legacy)).mode, NetworkMode.online);
+    expect(await legacy.exists(), isFalse);
+    await legacy.writeAsString('{坏');
+    expect((await FileNetworkModeMemory.open(file, legacy: legacy)).mode, NetworkMode.online);
+
+    final chosen = await FileNetworkModeMemory.open(file);
+    await chosen.saveMode(NetworkMode.online);
+    await legacy.writeAsString('{"enabled":false}');
+    expect((await FileNetworkModeMemory.open(file, legacy: legacy)).mode, NetworkMode.online, reason: '已经有联网偏好就不再看旧开关');
+  });
+
   test('偏好：变了才写、通知一次；本身就是联网策略', () async {
     final memory = FileNetworkModeMemory.memory();
     final network = NetworkPreference(memory: memory);
