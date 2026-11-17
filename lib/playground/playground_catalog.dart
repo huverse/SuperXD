@@ -26,7 +26,9 @@ import 'package:superxd/theme/campus_icons.dart';
 // 怎么操作靠界面本身（按钮、分段、方向键）说明，不写「每道题都唯一」这类安心话。全项目同一口径，守护见 test/code_conventions_test.dart。
 // [人工决策-2026-11-17 20:13:19] 自由模式的计时口径（PlayClock）：题面全摊在眼前、看题就能开始推理或规划的都是题一出现就计时（默认，
 // 骑士与无赖、逻辑网格、密码破译、八皇后、数织、数回、点灯、24 点、天平称球、过河、汉诺塔、推箱子、冰面滑行、画线入杯）；
-// 扫雷照旧从第一下算（用户定）；舒尔特（开局盖住）与记忆闪光（点了才亮）开始前看不到题，按各自的「开始」计时。
+// 舒尔特（开局盖住）与记忆闪光（点了才亮）开始前看不到题，按各自的「开始」计时。
+// [人工决策-2026-11-17 20:37:07] 扫雷也题一出现就计时（取代上面 20:13:19 那条里「扫雷照旧从第一下算」）：这个应用的扫雷出题时起点那一片已经翻开，
+// 第一下之前就能看着推，和别的推理类一样。
 const puzzleSection = PlaygroundSection(id: 'puzzle', name: '益智', icon: CampusIcons.puzzle);
 
 const logicGroup = PlaygroundGroup(id: 'logic', name: '逻辑推理', section: puzzleSection);
@@ -150,7 +152,6 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '数字是周围八格里的雷数。翻开所有不是雷的格，长按插旗。',
     icon: CampusIcons.mines,
     group: gridGroup,
-    clock: PlayClock.firstMove,
     builder: (context, game, store, challenge, first) => MinesPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
