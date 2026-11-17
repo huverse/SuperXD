@@ -601,9 +601,9 @@ void main() {
         await _step(tester);
       }
       await tester.pumpAndSettle();
-      expect(find.text('解开了'), findsOneWidget);
+      expect(find.text('这局不记成绩'), findsOneWidget);
+      expect(find.text('这道题看过答案'), findsOneWidget);
       expect(find.text('新纪录'), findsNothing);
-      expect(find.textContaining('不记成绩'), findsWidgets);
       expect(store.best('mines', PuzzleTier.entry), isNull);
       // 换一道题照常记成绩（看过雷位只跟着那一道题）。
       await tester.tap(find.text('再来一局'));

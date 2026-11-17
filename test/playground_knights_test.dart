@@ -397,10 +397,20 @@ void main() {
       for (final (person, knight) in draw.solution.indexed) {
         await _tapChip(tester, person, knight);
       }
+      final haptics = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, (call) async {
+        if (call.method == 'HapticFeedback.vibrate') haptics.add(call.arguments as String);
+        return null;
+      });
+      addTearDown(() => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(SystemChannels.platform, null));
       await tester.pumpAndSettle();
-      expect(find.text('解开了'), findsOneWidget);
+      // 11-17 设计审查：不记成绩时标题直接写明、不用成功图标与成功触感，原因只陈述事实（不说「解得太快」）。
+      expect(find.text('这局不记成绩'), findsOneWidget);
+      expect(find.text('解开了'), findsNothing);
       expect(find.text('新纪录'), findsNothing);
-      expect(find.textContaining('解得太快，不记成绩'), findsOneWidget);
+      expect(find.text('比这道题的预计用时快得多'), findsOneWidget);
+      expect(find.textContaining('解得太快'), findsNothing);
+      expect(haptics, isNot(contains('HapticFeedbackType.successNotification')));
       expect(store.best('knights', PuzzleTier.entry), isNull);
       // 再来一局（注入的种子不变，还是这一道）：想过门槛那么久再定，照记成新纪录。
       await tester.tap(find.text('再来一局'));
@@ -413,6 +423,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('新纪录'), findsOneWidget);
       expect(find.textContaining('不记成绩'), findsNothing);
+      expect(haptics.last, 'HapticFeedbackType.successNotification', reason: '记上成绩照旧成功触感');
       expect(store.best('knights', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(threshold));
       semantics.dispose();
     });

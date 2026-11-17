@@ -35,6 +35,7 @@ import 'package:superxd/theme/dot_separated_text.dart';
 // [人工决策-2026-11-17 20:13:19] 用户选「快得不正常的不记纪录」：自由模式解开时用时（含罚时）不到这题预计用时的 playTooFastRatio、也不到 playTooFastFloor，
 // 就不进最好成绩（tooFast），结果写「解得太快，不记成绩」。堵的是换一道题接着蒙：骑士入门第一次就蒙对是 1/8、冰面入门乱滑一轮约 1/5，
 // 换几道题就能碰出一两秒的纪录。舒尔特与记忆闪光（clock 是 start）不套：开始前看不到题、没有蒙的捷径，拼的就是快（闪光的用时大半是固定的亮灭）。
+// 结果弹层的写法 11-17 设计审查改成标题「这局不记成绩」加一行原因（见 play_result.dart），规则不变。
 const playTooFastRatio = .15;
 const playTooFastFloor = Duration(seconds: 30);
 
