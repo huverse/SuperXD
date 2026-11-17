@@ -72,15 +72,15 @@ List<Object?> _mutations(Object? answer, PuzzleRandom random) {
   return mutated;
 }
 
-// 记忆闪光：第一轮先点错一次（换下一组图案），再照参考解点完，解得开、失误 1 次。
-Object? _flashWithMistake(Object? puzzleJson, Object? reference) {
-  final rounds = (puzzleJson as Map)['rounds'] as List;
-  final first = (rounds.first as List).cast<List<Object?>>();
-  final side = puzzleJson['side'] as int;
-  final wrong = [for (var cell = 0; cell < side * side; cell++) cell].firstWhere((cell) => !first.first.contains(cell));
-  final answer = [...(reference as List)];
-  answer[0] = first[1 % first.length];
-  return [[wrong], ...answer];
+// 记忆闪光：第一轮先点错一次，换下一组照规则点齐，再照参考解点完，解得开、失误 1 次。点错有两种：点一格不在这组里的
+// （每种题型都算错，数字顺序里就是点了块外的格），按先后点的另给一份先点第二格的（格对先后错）。
+List<Object?> _flashWithMistake(Object? puzzleJson, Object? reference) {
+  final puzzle = const FlashRules().decodePuzzle(puzzleJson);
+  final first = flashPattern(puzzle, 0, 0);
+  final outside = [for (var cell = 0; cell < puzzle.side * puzzle.side; cell++) cell].firstWhere((cell) => !first.contains(cell));
+  return [
+    for (final wrong in [outside, if (puzzle.variant.ordered) first[1]]) [[wrong], flashPattern(puzzle, 0, 1), ...(reference as List).skip(1)],
+  ];
 }
 
 Map<String, Object?> buildChallengeVectors({int seedsPerTier = 2, int seed = 0x5EED2026}) {
@@ -93,7 +93,7 @@ Map<String, Object?> buildChallengeVectors({int seedsPerTier = 2, int seed = 0x5
         final draw = rules.generate(random.nextUint32(), tier);
         final puzzle = rules.encodePuzzle(draw.puzzle);
         final reference = rules.encodeAnswer(draw.solution);
-        final answers = [reference, ..._mutations(reference, random), if (game == 'flash') _flashWithMistake(puzzle, reference)];
+        final answers = [reference, ..._mutations(reference, random), if (game == 'flash') ..._flashWithMistake(puzzle, reference)];
         cases.add({
           'tier': tier.name,
           'puzzle': puzzle,
@@ -109,19 +109,26 @@ Map<String, Object?> buildChallengeVectors({int seedsPerTier = 2, int seed = 0x5
   return {'version': 1, 'puzzleVersions': {for (final MapEntry(key: game, value: rules) in challengeRules.entries) game: rules.puzzleVersion}, 'games': games};
 }
 
-// 收碎片改目标的题面（人工决策见 challenge_rules.dart 的 11-14 23:11 那条）：记忆闪光镜像（照亮的点不算、点镜像的才算）、冰面滑行标了几个出口
-// （判定仍只看终点）。用自己的固定种子出，不动上面已有的向量。
+// 收碎片改目标的题面（人工决策见 challenge_rules.dart 的 11-14 23:11 那条）：记忆闪光镜像（照亮的点不算、点镜像的才算，每档一道、各题型都有；
+// 另给一份第一下点了原来亮的那格、换下一组再点镜像的，算失误 1 次）、冰面滑行标了几个出口（判定仍只看终点）。用自己的固定种子出，不动上面已有的向量。
 List<Map<String, Object?>> _goalCases(String game, PuzzleRules<Object?, Object?> rules) {
+  Map<String, Object?> item(PuzzleTier tier, Object? puzzle, List<Object?> answers) => {
+    'tier': tier.name,
+    'puzzle': puzzle,
+    'answers': [for (final answer in answers) {'answer': answer, 'expect': challengeVerdict(game, puzzle, answer)}],
+  };
   final draw = rules.generate(0x60A1, PuzzleTier.normal);
-  final Object? puzzle;
-  final List<Object?> answers;
   switch (draw.puzzle) {
-    case final FlashPuzzle flash:
-      final mirrored = FlashPuzzle(side: flash.side, showMillis: flash.showMillis, rounds: flash.rounds, mirror: true);
-      puzzle = rules.encodePuzzle(mirrored);
-      answers = [
-        [for (var round = 0; round < flash.rounds.length; round++) flashPattern(mirrored, round, 0)],
-        rules.encodeAnswer(draw.solution),
+    case FlashPuzzle():
+      return [
+        for (final tier in PuzzleTier.values)
+          if (rules.generate(0x60A1, tier) case PuzzleDraw(puzzle: final FlashPuzzle flash, :final solution))
+            item(tier, rules.encodePuzzle(flash.mirrored), [
+              [for (var round = 0; round < flash.rounds.length; round++) flashPattern(flash.mirrored, round, 0)],
+              rules.encodeAnswer(solution),
+              if (flashShown(flash, 0, 0).where((cell) => !flashPattern(flash.mirrored, 0, 0).contains(cell)).firstOrNull case final decoy?)
+                [[decoy], flashPattern(flash.mirrored, 0, 1), for (var round = 1; round < flash.rounds.length; round++) flashPattern(flash.mirrored, round, 0)],
+            ]),
       ];
     case IcePuzzle():
       // 第 2 版的出口要和终点最少步数相同，不是每道题都挑得出：从同一个种子往后找第一道挑得出的。
@@ -130,18 +137,11 @@ List<Map<String, Object?>> _goalCases(String game, PuzzleRules<Object?, Object?>
         seed++;
       }
       final ice = rules.generate(seed, PuzzleTier.normal);
-      puzzle = rules.encodePuzzle((ice.puzzle as IcePuzzle).copyWith(exits: iceExits(ice.puzzle as IcePuzzle, PuzzleRandom(0x60A1))));
-      answers = [rules.encodeAnswer(ice.solution), <int>[]];
+      final labeled = (ice.puzzle as IcePuzzle).copyWith(exits: iceExits(ice.puzzle as IcePuzzle, PuzzleRandom(0x60A1)));
+      return [item(PuzzleTier.normal, rules.encodePuzzle(labeled), [rules.encodeAnswer(ice.solution), <int>[]])];
     default:
       return const [];
   }
-  return [
-    {
-      'tier': PuzzleTier.normal.name,
-      'puzzle': puzzle,
-      'answers': [for (final answer in answers) {'answer': answer, 'expect': challengeVerdict(game, puzzle, answer)}],
-    },
-  ];
 }
 
 // 冰面滑行第 2 版的几种机关（专家档一道，自己的固定种子）：照参考解（解开）、多走一步滑不动的（超了步数上限）、

@@ -14,9 +14,10 @@ import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
 
-// 亮之前先暗一下、一轮点齐后停一下、点错后亮着答案的时长（测试按它推进时钟）；亮着的时长在题面里。
+// 亮之前先暗一下、一轮点齐后停一下、点错后亮着答案的时长（测试按它推进时钟）；亮与暗的时长在题面里（见 flashExposure）。
 const flashLead = Duration(milliseconds: 450);
 const flashHold = Duration(milliseconds: 500);
 const flashReveal = Duration(milliseconds: 1200);
@@ -24,11 +25,15 @@ const flashReveal = Duration(milliseconds: 1200);
 // 一次尝试走过的阶段：开始前、暗一下、亮着、作答、点错后亮答案、这一轮点齐、全部解开。
 enum _Phase { ready, lead, showing, input, reveal, passed, solved }
 
-// 记忆闪光对局页：先点棋盘上的「开始」（计时从这里起），每次先暗一下，再同时亮起这一组，亮够题面给的时长熄灭，熄灭后才能点。
-// 点对的格保持点亮（激活色）；点错的格标警示色打叉并轻震，同时亮出漏掉的格，停一会儿换这一轮的下一组重来。
+// 记忆闪光对局页：先点棋盘上的「开始」（计时从这里起），每次先暗一下再按题型亮：位置记忆整组同时亮、到时熄灭；
+// 顺序与倒序一格接一格亮（每格亮多久、格与格之间暗多久都在题面里）；数字顺序在几格上写出 1 到 N，到时或点了第一下就在原位藏成空白块。
+// 熄灭后才能点（数字顺序亮着时也能点，点第一下就藏），整盘每格都响应，点在这一次要点的格以外都算点错。
+// 镜像题（挑战改目标）的空白块也留在数字原来的位置、要点的是镜像格：镜像与不镜像在棋盘上看不出差别，要不要镜像只能按门上的数自己算
+// （人工决策见 challenge_rules.dart 的 11-14 23:11 那条）。
+// 点对的格保持点亮（激活色）；点错的格标警示色打叉并重震，同时亮出漏掉的格（按先后点的在每格写出该第几个点），停一会儿换这一轮的下一组重来。
 // 亮起与熄灭是游戏内容不是装饰：减少动画时照样亮、照样灭，只是不渐变。阶段用 Timer 计时，不用 AnimationController
 // （减少动画时它的时长会被压成二十分之一，图案就一闪而过）。切到后台时正在亮的这一组作废，回来重新暗一下再亮。
-// 读屏：每格一个按钮读行列与亮灭；棋盘下的一行提示是播报区，亮起时把亮的格逐个念出来，读屏用户听完再点。
+// 读屏：每格一个按钮读行列与亮灭（数字顺序读数）；棋盘下的一行提示是播报区，亮起时把亮的格按先后念出来，读屏用户听完再点。
 class FlashPage extends StatefulWidget {
   const FlashPage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
@@ -49,11 +54,16 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
   var _phase = _Phase.ready;
   // 第几轮、这一轮第几次尝试（从 0 数）与这一局点错的次数：点齐或点错的那一下就记上，下一次亮哪一组按它取（同规则的 flashPattern）。
   var _round = 0, _tries = 0, _mistakes = 0;
-  // 这一次的图案、点对的格（按点的先后）与点错的那一格；换下一组时先淡掉再清。
+  // 这一次要点的格（按要点的先后）、点对的格（按点的先后）与点错的那一格；换下一组时先淡掉再清。
   var _target = <int>[];
-  // 亮的那组：平时就是要点的；挑战里碎片算出要镜像时（人工决策见 challenge_rules.dart），亮的照常亮、要点的是它左右镜像的格（_target）。
+  // 亮的那组（按亮的先后）：平时同要点的；倒序是它反过来，挑战里碎片算出要镜像时（人工决策见 challenge_rules.dart）要点的是左右镜像的格。
   var _shown = <int>[];
-  var _hits = <int>{};
+  var _hits = <int>[];
+  // 顺序与倒序：正亮到第几格（熄灭渐暗时还指着它），与这一格是不是亮着（格与格之间暗着时为假）。
+  int? _step;
+  var _stepLit = false;
+  // 数字顺序藏起后的空白块：留在数字原来亮的位置（镜像题也不挪，不露出要点的是镜像格），下一次亮起时清掉。
+  var _blocks = <int>[];
   // 每次尝试依次点的格（答案，挑战模式交服务器核对）。
   final _attempts = <List<int>>[];
   int? _wrong;
@@ -70,13 +80,13 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
   // 解开后的收尾：从中心一圈一圈往外亮一下，最外一圈晚 _waveSpread 开始，每圈亮 _pulse。
   late final _wave = AnimationController(vsync: this, duration: _waveSpread + _pulse);
   late final _motion = Listenable.merge([_flash, _mark, _answer, _press, _wave]);
+  final _numbers = _FlashNumbers();
 
   static const _fade = Duration(milliseconds: 140);
   static const _waveSpread = Duration(milliseconds: 360);
   static const _pulse = Duration(milliseconds: 320);
-  // 一格最大的边长：3×3 在宽屏上不铺得过分大。
+  // 一格最大的边长：4×4 在宽屏上不铺得过分大。
   static const _maxPitch = 88.0;
-  static const _hintGap = 16.0;
 
   @override
   void initState() {
@@ -93,6 +103,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
     _answer.dispose();
     _press.dispose();
     _wave.dispose();
+    _numbers.dispose();
     _session.dispose();
     super.dispose();
   }
@@ -110,8 +121,10 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
   }
 
   FlashPuzzle get _puzzle => _session.puzzle;
+  FlashVariant get _variant => _puzzle.variant;
   int get _side => _puzzle.side;
   bool get _reduced => MediaQuery.disableAnimationsOf(context);
+  int? get _stepCell => _step == null ? null : _shown[_step!];
 
   // 亮起熄灭与标记出现：平时渐变，减少动画时直接到位。
   void _fadeTo(AnimationController controller, double target) {
@@ -144,7 +157,10 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
     _attempts.clear();
     _target = [];
     _shown = [];
-    _hits = {};
+    _hits = [];
+    _step = null;
+    _stepLit = false;
+    _blocks = [];
     _wrong = null;
     _pressed = null;
     for (final controller in [_flash, _mark, _press, _wave]) {
@@ -170,7 +186,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
     _show();
   }
 
-  // 暗一下再亮：上一次的标记淡掉，flashLead 后换上这一次的图案亮起，亮够题面给的时长熄灭、开始作答。
+  // 暗一下再亮：上一次的标记淡掉，flashLead 后换上这一次的组亮起（顺序与倒序一格接一格），到时熄灭、开始作答。
   void _show() {
     setState(() => _phase = _Phase.lead);
     _fadeTo(_answer, 0);
@@ -179,7 +195,8 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
       setState(() {
         _target = flashPattern(_puzzle, _round, _tries);
         _shown = flashShown(_puzzle, _round, _tries);
-        _hits = {};
+        _hits = [];
+        _blocks = [];
         // 新的一次尝试；切后台回来重亮的还是同一次（还没点过）。
         if (_attempts.isEmpty || _attempts.last.isNotEmpty) _attempts.add([]);
         _wrong = null;
@@ -187,17 +204,51 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
       });
       _answer.value = 1;
       _mark.value = 0;
-      _fadeTo(_flash, 1);
-      _schedule(Duration(milliseconds: _puzzle.showMillis), () {
-        setState(() => _phase = _Phase.input);
-        _fadeTo(_flash, 0);
-      });
+      if (_variant.stepwise) {
+        _light(0);
+      } else {
+        _fadeTo(_flash, 1);
+        _schedule(Duration(milliseconds: flashExposure(_puzzle, _shown.length)), _hide);
+      }
     });
   }
 
-  // 只有作答时按下才算：亮着、暗着时点了不响应、不震。
+  // 顺序与倒序：第 step 格亮题面给的时长，暗一下再亮下一格；最后一格熄灭就开始作答。
+  void _light(int step) {
+    setState(() {
+      _step = step;
+      _stepLit = true;
+    });
+    _flash.value = 0;
+    _fadeTo(_flash, 1);
+    _schedule(Duration(milliseconds: _puzzle.showMillis), () {
+      if (step + 1 == _shown.length) {
+        _hide();
+        return;
+      }
+      setState(() => _stepLit = false);
+      _fadeTo(_flash, 0);
+      _schedule(Duration(milliseconds: _puzzle.gapMillis), () => _light(step + 1));
+    });
+  }
+
+  // 熄灭（数字顺序藏成空白块），开始作答。
+  void _hide() {
+    _timer?.cancel();
+    setState(() {
+      _phase = _Phase.input;
+      _stepLit = false;
+      if (_variant == FlashVariant.numbers) _blocks = _shown;
+    });
+    _fadeTo(_flash, 0);
+  }
+
+  // 作答时整盘每格都能点；数字顺序亮着时也能点（点第一下就藏起）。
+  bool get _accepting => _phase == _Phase.input || (_phase == _Phase.showing && _variant == FlashVariant.numbers);
+
+  // 不能点的时候按下不响应、不震。
   void _down(int cell) {
-    _pressed = _phase == _Phase.input ? cell : null;
+    _pressed = _accepting ? cell : null;
     if (_pressed != null) _press.value = 1;
   }
 
@@ -210,11 +261,15 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
   }
 
   void _tap(int cell) {
-    if (_phase != _Phase.input) return;
-    final tap = flashTap(_target, _hits, cell);
-    if (tap != FlashTap.repeated) _attempts.last.add(cell);
+    if (!_accepting) return;
+    final tap = flashTap(_variant, _target, _hits, cell);
+    if (tap != FlashTap.ignored) {
+      // 数字顺序亮着时点了第一下：先全部藏起，这一下照常算。
+      if (_phase == _Phase.showing) _hide();
+      _attempts.last.add(cell);
+    }
     switch (tap) {
-      case FlashTap.repeated:
+      case FlashTap.ignored:
         return;
       case FlashTap.hit:
         playTick();
@@ -286,26 +341,61 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
 
   String _cellName(int cell) => '第${cell ~/ _side + 1}行第${cell % _side + 1}列';
 
-  String _cellState(int cell) => switch (_phase) {
-    _Phase.showing when _shown.contains(cell) => '亮',
-    _ when _hits.contains(cell) => '已点亮',
-    _ when cell == _wrong => '点错了',
-    _Phase.reveal when _target.contains(cell) => '应该亮',
-    _ => '未点亮',
-  };
+  String _cellState(int cell) {
+    final order = _target.indexOf(cell);
+    final lit = _variant.stepwise ? _stepLit && cell == _stepCell : _shown.contains(cell);
+    return switch (_phase) {
+      _Phase.showing when lit => _variant == FlashVariant.numbers ? '数字 ${_shown.indexOf(cell) + 1}' : '亮',
+      _ when _hits.contains(cell) => '已点亮',
+      _ when cell == _wrong => '点错了',
+      _Phase.reveal when order >= 0 => _variant.ordered ? '应该第 ${order + 1} 个点' : '应该亮',
+      _ when _blocks.contains(cell) => '空白块',
+      _ => '未点亮',
+    };
+  }
 
-  // 棋盘下的提示（看得见的短句）与读屏播报（亮着时逐个念出亮的格）。
+  // 棋盘下的提示（看得见的短句）与读屏播报（亮着时按先后念出亮的格）。
   // [人工决策-2026-11-13 15:35:06] 阶段提示行保留（用户选定）：点错换图案时靠它说明发生了什么，同时是读屏的播报区。
-  String get _hint => switch (_phase) {
-    _Phase.ready => '记住亮起的格，再点出来',
-    _Phase.lead || _Phase.showing => '记住亮起的格',
-    _Phase.input => '点出刚才亮的格',
+  String _hintOf(_Phase phase) => switch (phase) {
+    _Phase.ready => switch (_variant) {
+      FlashVariant.spot => '记住亮起的格，再点出来',
+      FlashVariant.sequence => '记住亮的先后，再按顺序点',
+      FlashVariant.reverse => '记住亮的先后，再倒着点',
+      FlashVariant.numbers => '记住数字的位置，从小到大点',
+    },
+    _Phase.lead || _Phase.showing => switch (_variant) {
+      FlashVariant.spot => '记住亮起的格',
+      FlashVariant.numbers => '记住每个数在哪',
+      FlashVariant.sequence || FlashVariant.reverse => '记住亮的先后',
+    },
+    _Phase.input => switch (_variant) {
+      FlashVariant.spot => '点出刚才亮的格',
+      FlashVariant.sequence => '按亮的顺序点',
+      FlashVariant.reverse => '倒着点，最后亮的先点',
+      FlashVariant.numbers => '从 1 开始从小到大点',
+    },
     _Phase.reveal => '点错了，换一组重来',
     _Phase.passed => '这一轮全对',
     _Phase.solved => '全部记对了',
   };
 
-  String get _announcement => _phase == _Phase.showing ? '亮起 ${_shown.length} 格：${_shown.map(_cellName).join('、')}' : _hint;
+  String get _hint => _hintOf(_phase);
+
+  String get _announcement => _phase != _Phase.showing
+      ? _hint
+      : switch (_variant) {
+          FlashVariant.spot => '亮起 ${_shown.length} 格：${_shown.map(_cellName).join('、')}',
+          FlashVariant.numbers => '${_shown.length} 个数：${[for (final (index, cell) in _shown.indexed) '${index + 1} 在${_cellName(cell)}'].join('、')}',
+          FlashVariant.sequence || FlashVariant.reverse => '依次亮起 ${_shown.length} 格：${_shown.map(_cellName).join('、')}',
+        };
+
+  // 状态行写按先后点的题型；位置记忆顺序不限，不写。
+  String? get _order => switch (_variant) {
+    FlashVariant.spot => null,
+    FlashVariant.sequence => '按顺序',
+    FlashVariant.reverse => '倒着点',
+    FlashVariant.numbers => '从小到大',
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -317,21 +407,27 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
       session: _session,
       onNewGame: _newGame,
       onRestart: _restart,
-      status: '第 $current/$rounds 轮 · 点错 $_mistakes 次',
+      status: ['第 $current/$rounds 轮', ?_order, '点错 $_mistakes 次'].join(' · '),
       // 提示行紧跟在棋盘下面、两者一起居中（不被挤到屏幕底部）：棋盘边长按扣掉提示行后剩下的高度定。
+      // 提示行按这一题几句提示里最高的那句留高度，换阶段时棋盘不跟着上下跳。
       board: LayoutBuilder(builder: (context, constraints) {
-        final style = TextStyle(fontSize: 14, color: palette.onSurfaceVariant);
-        final hintHeight = campusTextPainter(context, _hint, style: style, maxWidth: constraints.maxWidth).height;
-        final side = math.min(math.min(constraints.maxWidth, _maxPitch * (_side + 2 * _FlashLayout.inset)), constraints.maxHeight - _hintGap - hintHeight);
+        final style = TextStyle(fontSize: CampusFontSize.secondary, color: palette.onSurfaceVariant);
+        final hintHeight = _Phase.values.map((phase) {
+          final painter = campusTextPainter(context, _hintOf(phase), style: style, maxWidth: constraints.maxWidth);
+          final height = painter.height;
+          painter.dispose();
+          return height;
+        }).reduce(math.max);
+        final side = math.min(math.min(constraints.maxWidth, _maxPitch * (_side + 2 * _FlashLayout.inset)), constraints.maxHeight - CampusGap.large - hintHeight);
         return Center(child: Column(mainAxisSize: MainAxisSize.min, children: [
           SizedBox.square(dimension: side, child: _board(context, Size.square(side))),
-          const SizedBox(height: _hintGap),
-          Semantics(
+          const SizedBox(height: CampusGap.large),
+          SizedBox(height: hintHeight, child: Semantics(
             container: true,
             liveRegion: true,
             label: _announcement,
             child: ExcludeSemantics(child: Text(_hint, textAlign: TextAlign.center, style: style)),
-          ),
+          )),
         ]));
       }),
     );
@@ -341,6 +437,10 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
     final palette = CampusPalette.of(context);
     final side = _side;
     final layout = _FlashLayout(side, size.width);
+    // 格上的数 14 号起、跟着字号缩放，格子大时跟着放大（约格宽的四成），封顶到格宽的六成，按半号取整免得每次重排。
+    final scaled = math.max(MediaQuery.textScalerOf(context).scale(CampusFontSize.secondary), layout.pitch * .42);
+    final fontSize = (math.max(CampusFontSize.secondary, math.min(scaled, layout.pitch * .6)) * 2).roundToDouble() / 2;
+    _numbers.prepare(DefaultTextStyle.of(context).style.merge(TextStyle(fontSize: fontSize, height: 1, fontWeight: FontWeight.w700, fontFeatures: const [FontFeature.tabularFigures()])), palette);
     // 点错后：点对的都已停稳，漏掉的格与点错的格一起出现；没点错时最新点对的那一格在出现。
     final missed = _wrong == null ? const <int>[] : [for (final cell in _target) if (!_hits.contains(cell)) cell];
     final fresh = _wrong == null ? _hits.lastOrNull : null;
@@ -359,28 +459,35 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
           animation: _motion,
           builder: (context, _) => CustomPaint(painter: _FlashPainter(
             layout: layout,
-            target: _shown,
+            // 亮的那层：位置记忆与数字顺序是整组，顺序与倒序是正亮的那一格。
+            glowing: _variant.stepwise ? [?_stepCell] : _shown,
             flash: _flash.value,
+            shownNumbers: _variant == FlashVariant.numbers ? {for (final (index, cell) in _shown.indexed) cell: index + 1} : const {},
+            blocks: _blocks,
             settled: [for (final cell in _hits) if (cell != fresh) cell],
             fresh: fresh,
+            hits: _hits,
             missed: missed,
             wrong: _wrong,
+            // 点错后按先后点的在要点的格上写出第几个（点错的那格画叉，不写）。
+            orderNumbers: _variant.ordered && _wrong != null ? {for (final (index, cell) in _target.indexed) if (cell != _wrong) cell: index + 1} : const {},
             mark: _mark.value,
             answer: _answer.value,
             pressed: _pressed,
             press: _press.value,
             pulses: _pulses(layout.rings),
             palette: palette,
+            numbers: _numbers,
           )),
         ))),
-        // 读屏：开始以后每格一个按钮，读出第几行第几列与亮灭，只有作答时能点；开始前不放，读屏直接走到「开始」。
+        // 读屏：开始以后每格一个按钮，读出第几行第几列与亮灭，只有能点的时候能点；开始前不放，读屏直接走到「开始」。
         if (_phase != _Phase.ready)
           for (var cell = 0; cell < side * side; cell++)
             Positioned.fromRect(rect: layout.cellRect(cell), child: Semantics(
               container: true,
               button: true,
               label: '${_cellName(cell)}，${_cellState(cell)}',
-              onTap: _phase == _Phase.input ? () => _tap(cell) : null,
+              onTap: _accepting ? () => _tap(cell) : null,
               child: const SizedBox.expand(),
             )),
         if (_phase == _Phase.ready)
@@ -409,32 +516,75 @@ class _FlashLayout {
   int ring(int cell) => math.max((cell ~/ side - (side - 1) / 2).abs(), (cell % side - (side - 1) / 2).abs()).floor();
 }
 
+// 压在激活色、警示红底上的浅色：浅色模式取卡片底色，深色模式取正文色（深色配色的 onDanger、onPrimary 是深色，压不住红底）。
+Color _paperOf(CampusPalette palette) => palette.isDark ? palette.onSurface : palette.surface;
+
+// 格上数字的排版缓存：1 到一组最多的格数，压在激活色上的浅色与写在淡底上的激活色各一份；字体、字号或配色变了才重排。
+class _FlashNumbers {
+  Object? _key;
+  final _paper = <TextPainter>[], _accent = <TextPainter>[];
+
+  void dispose() {
+    for (final painter in [..._paper, ..._accent]) {
+      painter.dispose();
+    }
+    _paper.clear();
+    _accent.clear();
+  }
+
+  void prepare(TextStyle style, CampusPalette palette) {
+    final key = (style, palette);
+    if (key == _key) return;
+    _key = key;
+    dispose();
+    TextPainter laid(int number, Color color) => TextPainter(text: TextSpan(text: '$number', style: style.copyWith(color: color)), textDirection: TextDirection.ltr)..layout();
+    for (var number = 1; number <= flashMaxSide * flashMaxSide ~/ 2; number++) {
+      _paper.add(laid(number, _paperOf(palette)));
+      _accent.add(laid(number, palette.accent));
+    }
+  }
+
+  TextPainter paper(int number) => _paper[number - 1];
+  TextPainter accent(int number) => _accent[number - 1];
+}
+
 class _FlashPainter extends CustomPainter {
   _FlashPainter({
     required this.layout,
-    required this.target,
+    required this.glowing,
     required this.flash,
+    required this.shownNumbers,
+    required this.blocks,
     required this.settled,
     required this.fresh,
+    required this.hits,
     required this.missed,
     required this.wrong,
+    required this.orderNumbers,
     required this.mark,
     required this.answer,
     required this.pressed,
     required this.press,
     required this.pulses,
     required this.palette,
+    required this.numbers,
   });
   final _FlashLayout layout;
-  // 这一次的图案与它亮起的程度 0–1。
-  final List<int> target;
+  // 亮的格与亮起的程度 0–1；数字顺序亮着时每格写的数。
+  final List<int> glowing;
   final double flash;
+  final Map<int, int> shownNumbers;
+  // 数字顺序藏起后的空白块：亮的那层淡掉时浮出来，换下一组时随标记一起淡出。
+  final List<int> blocks;
   // 这一次的标记：停稳的点对的格、正在出现的最新点对的一格、点错后亮出的漏掉的格与点错的格；
   // mark 是最新一下出现的程度，answer 是这一层整体的程度（换下一组时淡出）。
   final List<int> settled;
   final int? fresh;
+  final List<int> hits;
   final List<int> missed;
   final int? wrong;
+  // 点错后每格该第几个点（按先后点的题型）。
+  final Map<int, int> orderNumbers;
   final double mark;
   final double answer;
   final int? pressed;
@@ -442,6 +592,7 @@ class _FlashPainter extends CustomPainter {
   // 收尾时每一圈亮一下的幅度 0–1。
   final List<double> pulses;
   final CampusPalette palette;
+  final _FlashNumbers numbers;
 
   // 同一种样子的格拼成一条路径，一次画完。
   Path _tiles(Iterable<int> cells) {
@@ -452,13 +603,24 @@ class _FlashPainter extends CustomPainter {
     return path;
   }
 
+  // 格上的数按 alpha 一起淡入淡出（只在过渡中间叠一层，停稳时直接画）。
+  void _numbers(Canvas canvas, Map<int, int> labels, double alpha, TextPainter Function(int cell, int number) painter) {
+    if (labels.isEmpty || alpha <= 0) return;
+    final faded = alpha < 1;
+    if (faded) canvas.saveLayer(null, Paint()..color = Color.fromRGBO(0, 0, 0, alpha));
+    for (final MapEntry(key: cell, value: number) in labels.entries) {
+      final text = painter(cell, number);
+      text.paint(canvas, layout.center(cell) - Offset(text.width / 2, text.height / 2));
+    }
+    if (faded) canvas.restore();
+  }
+
   @override
   void paint(Canvas canvas, Size size) {
     final dark = palette.isDark;
     final count = layout.side * layout.side;
     final accent = palette.accent;
-    // 压在激活色、警示红底上的浅色：浅色模式取卡片底色，深色模式取正文色（深色配色的 onDanger、onPrimary 是深色，压不住红底）。
-    final paper = dark ? palette.onSurface : palette.surface;
+    final paper = _paperOf(palette);
     // 暗着的格：同点灯的灭灯，底色加一圈细边。
     final all = _tiles([for (var cell = 0; cell < count; cell++) cell]);
     canvas.drawPath(all, Paint()..color = dark ? Color.lerp(palette.surface, palette.backgroundTop, .55)! : Color.lerp(palette.surface, palette.outlineSubtle, .55)!);
@@ -466,10 +628,16 @@ class _FlashPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1
       ..color = dark ? palette.outlineSubtle.withValues(alpha: .85) : Color.lerp(palette.outlineSubtle, palette.outline, .18)!);
+    // 空白块：次要文字色铺一层，和暗格、激活色的亮格与漏掉的格都分得开。
+    final shelf = answer * (1 - flash);
+    if (blocks.isNotEmpty && shelf > 0) canvas.drawPath(_tiles(blocks), Paint()..color = palette.onSurfaceVariant.withValues(alpha: shelf * .42));
     final pressed = this.pressed;
     if (pressed != null && press > 0) canvas.drawRRect(layout.tile(pressed), Paint()..color = palette.onSurface.withValues(alpha: press * (dark ? .14 : .08)));
 
-    if (flash > 0) canvas.drawPath(_tiles(target), Paint()..color = accent.withValues(alpha: flash));
+    if (flash > 0) {
+      canvas.drawPath(_tiles(glowing), Paint()..color = accent.withValues(alpha: flash));
+      _numbers(canvas, shownNumbers, flash, (cell, number) => numbers.paper(number));
+    }
     if (answer > 0) {
       canvas.drawPath(_tiles(settled), Paint()..color = accent.withValues(alpha: answer));
       final shown = answer * mark;
@@ -502,6 +670,8 @@ class _FlashPainter extends CustomPainter {
             ..color = paper.withValues(alpha: shown),
         );
       }
+      // 点对的格上写浅色，漏掉的格上写激活色。
+      _numbers(canvas, orderNumbers, shown, (cell, number) => hits.contains(cell) ? numbers.paper(number) : numbers.accent(number));
     }
 
     // 收尾：每一圈的格拼成一条路径，盖一层提亮的激活色（暗着的格亮成浅激活色，点亮的格更亮一下）。

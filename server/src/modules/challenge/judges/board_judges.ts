@@ -218,6 +218,88 @@ export const flashJudge: Judge<FlashPuzzle, number[][]> = {
   penalties: (puzzle, answer) => flashMistakes(puzzle, answer)!,
 };
 
+// ---------- 记忆闪光第 2 版 flash@2 ----------
+// 第 2 版加了题型（同 Dart 的 FlashVariant）：位置记忆 spot（顺序不限，每组升序）、顺序 sequence、倒序 reverse、数字顺序 numbers（后三种按先后点，
+// 每组按亮的先后或数字排）；顺序与倒序另带格间暗多久 gap。只有已点亮的格不响应（答案里不该有），其余点在要点的格以外都算点错，数字顺序也一样。
+type FlashVariant = 'spot' | 'sequence' | 'reverse' | 'numbers';
+type FlashPuzzleV2 = { side: number; variant: FlashVariant; rounds: number[][][]; mirror: boolean };
+const flashVariants: readonly string[] = ['spot', 'sequence', 'reverse', 'numbers'];
+const flashMinShowMillis = 200, flashMaxShowMillis = 3000, flashMaxGapMillis = 1000;
+
+// 这一次要点的格（同 Dart 的 flashPattern）：镜像时每格换成左右镜像的格、先后不变（位置记忆重新排成升序）；倒序反过来。
+const flashPatternV2 = (puzzle: FlashPuzzleV2, round: number, tries: number): number[] => {
+  const patterns = puzzle.rounds[round];
+  const shown = patterns[tries % patterns.length];
+  const cells = puzzle.mirror ? shown.map((cell) => Math.trunc(cell / puzzle.side) * puzzle.side + puzzle.side - 1 - (cell % puzzle.side)) : [...shown];
+  if (puzzle.variant === 'spot' && puzzle.mirror) cells.sort((left, right) => left - right);
+  return puzzle.variant === 'reverse' ? cells.reverse() : cells;
+};
+
+// 按规则重放答案，返回点错的次数；不合规或没走完全部轮次返回 null（同 Dart 的 flashMistakes 与 flashTap）。
+const flashMistakesV2 = (puzzle: FlashPuzzleV2, attempts: number[][]): number | null => {
+  if (attempts.length > flashMaxAttempts) return null;
+  const count = puzzle.side * puzzle.side, ordered = puzzle.variant !== 'spot';
+  let round = 0, tries = 0, mistakes = 0;
+  for (const taps of attempts) {
+    if (round === puzzle.rounds.length) return null;
+    const pattern = flashPatternV2(puzzle, round, tries);
+    const hits: number[] = [];
+    let last: 'hit' | 'cleared' | 'missed' | null = null;
+    for (const cell of taps) {
+      if (last === 'cleared' || last === 'missed' || cell >= count || hits.includes(cell)) return null;
+      const right = ordered ? pattern[hits.length] === cell : pattern.includes(cell);
+      last = !right ? 'missed' : hits.length + 1 === pattern.length ? 'cleared' : 'hit';
+      hits.push(cell);
+    }
+    if (last === 'cleared') {
+      round++;
+      tries = 0;
+    } else if (last === 'missed') {
+      mistakes++;
+      tries++;
+    } else {
+      return null;
+    }
+  }
+  return round === puzzle.rounds.length ? mistakes : null;
+};
+
+export const flashJudgeV2: Judge<FlashPuzzleV2, number[][]> = {
+  // 同 Dart 的 decodePuzzle：题型认得；顺序与倒序要有 gap、其余题型不许有；每组在棋盘内、不超过一半、没有重格（位置记忆严格升序）；同一轮几组格数相同、互不相同。
+  decodePuzzle: (json) => {
+    const side = puzzleInt(json, 'side', flashMinSide, flashMaxSide);
+    const variant = field(json, 'variant');
+    if (typeof variant !== 'string' || !flashVariants.includes(variant)) throw new JudgeFormatError('题型不合法');
+    puzzleInt(json, 'show', flashMinShowMillis, flashMaxShowMillis);
+    if (variant === 'sequence' || variant === 'reverse') puzzleInt(json, 'gap', 0, flashMaxGapMillis);
+    else if (field(json, 'gap') !== undefined) throw new JudgeFormatError('格间不合法');
+    const rounds = field(json, 'rounds');
+    if (!Array.isArray(rounds) || rounds.length === 0 || rounds.length > flashMaxRounds) throw new JudgeFormatError('轮数不合法');
+    const mirror = field(json, 'mirror') ?? false;
+    if (typeof mirror !== 'boolean') throw new JudgeFormatError('镜像不合法');
+    return {
+      side,
+      variant: variant as FlashVariant,
+      mirror,
+      rounds: rounds.map((raw) => {
+        if (!Array.isArray(raw) || raw.length === 0 || raw.length > flashMaxPatterns) throw new JudgeFormatError('一轮的图案不合法');
+        const patterns = raw.map((pattern) => puzzleInts(pattern, Math.trunc((side * side) / 2), 0, side * side - 1));
+        const seen = new Set<string>();
+        for (const pattern of patterns) {
+          if (pattern.length === 0 || pattern.length !== patterns[0].length || seen.has(pattern.join(','))) throw new JudgeFormatError('一轮的图案不合法');
+          seen.add(pattern.join(','));
+          if (new Set(pattern).size !== pattern.length) throw new JudgeFormatError('图案的格不合法');
+          if (variant === 'spot' && pattern.some((cell, index) => index > 0 && cell <= pattern[index - 1])) throw new JudgeFormatError('图案的格不合法');
+        }
+        return patterns;
+      }),
+    };
+  },
+  decodeAnswer: flashJudge.decodeAnswer,
+  solved: (puzzle, answer) => flashMistakesV2(puzzle, answer) !== null,
+  penalties: (puzzle, answer) => flashMistakesV2(puzzle, answer)!,
+};
+
 // ---------- 数回 loop ----------
 // 边的下标同 Dart 的 LoopGrid：先横边（第 r 条横线第 c 段是 r × 宽 + c），后竖边（横边总数 + r ×（宽 + 1）+ c）；点的下标是 r ×（宽 + 1）+ c。
 type LoopPuzzle = { width: number; height: number; clues: number[] };
