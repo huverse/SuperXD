@@ -44,7 +44,7 @@ void main() {
       expect(rules.puzzleVersion, version, reason: game);
       expect(jsonEncode(rules.encodePuzzle(rules.decodePuzzle(sample))), jsonEncode(sample), reason: '$game 的题面写法变了：把 puzzleVersion 加一、换上新写法的样例，再重出题库');
     }
-    expect(challengeGameTokens(['hanoi', 'schulte', 'pour', 'twentyfour']), {'hanoi@1', 'twentyfour@1'});
+    expect(challengeGameTokens(['hanoi', 'schulte', 'pour', 'twentyfour']), {'hanoi@2', 'twentyfour@1'});
     final vectors = jsonDecode(File(challengeVectorsPath).readAsStringSync()) as Map<String, Object?>;
     expect(vectors['puzzleVersions'], {for (final MapEntry(key: game, value: rules) in challengeRules.entries) game: rules.puzzleVersion}, reason: '服务端按向量里的版本核对它认得的写法');
   });
@@ -58,11 +58,11 @@ void main() {
     });
 
     test('题库按「游戏@题面写法版本.档位」分文件，文件里写着题面写法版本', () {
-      expect(challengeBankName('hanoi', PuzzleTier.entry), 'hanoi@1.entry.json');
+      expect(challengeBankName('hanoi', PuzzleTier.entry), 'hanoi@2.entry.json');
       expect(challengeBankName('loop', PuzzleTier.expert), 'loop@1.expert.json');
       final file = challengeBankFile('local-test-seed-0001', 'hanoi', PuzzleTier.entry, 2);
       expect(file['version'], challengeBankVersion);
-      expect(file['puzzleVersion'], 1);
+      expect(file['puzzleVersion'], 2);
       expect(file['entries'], isNotEmpty);
     });
 
@@ -124,7 +124,7 @@ void main() {
 
 // 每个能进挑战的游戏当前题面写法版本的一道样例（取自判定向量的入门档），键的顺序同 encodePuzzle。
 const _samples = <String, (int, Object)>{
-  'hanoi': (1, {'disks': 3, 'start': [0, 0, 0], 'target': 2}),
+  'hanoi': (2, {'pegs': 3, 'variant': 0, 'start': [1, 0, 2, 2], 'goal': [1, 2, 0, 0]}),
   'ice': (2, {'width': 6, 'height': 6, 'tiles': '000110001000000000010010100000001000', 'gems': <int>[], 'start': 17, 'goal': 9, 'limit': 7}),
   'lights': (1, {'side': 3, 'lights': '011101100'}),
   'boxes': (1, {'width': 7, 'height': 7, 'walls': '1111111100000110011011101001100001110000111111111', 'goals': [12], 'boxes': [31], 'player': 29}),

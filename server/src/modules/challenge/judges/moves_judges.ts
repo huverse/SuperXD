@@ -35,6 +35,51 @@ export const hanoiJudge: Judge<HanoiPuzzle, HanoiMove[]> = {
   steps: (_puzzle, answer) => answer.length,
 };
 
+// 第 2 版题面（客户端 hanoi_rules.dart 的 puzzleVersion 2）：三或四根柱子、挪法（0 经典、1 只挪到旁边、2 只顺着方向挪到下一根）、
+// 开局与目标都是每个盘子所在的柱子；答案每步「起点 × 4 + 终点」，解开 = 每一步合规且最后摆成目标的样子。
+type HanoiPuzzleV2 = { pegs: number; variant: number; start: number[]; goal: number[] };
+const hanoiMaxPegsV2 = 4, hanoiMaxDisksV2 = 8;
+
+const hanoiAllowed = (puzzle: HanoiPuzzleV2, from: number, to: number) => {
+  if (from === to || from >= puzzle.pegs || to >= puzzle.pegs) return false;
+  if (puzzle.variant === 1) return Math.abs(from - to) === 1;
+  if (puzzle.variant === 2) return to === (from + 1) % puzzle.pegs;
+  return true;
+};
+
+export const hanoiJudgeV2: Judge<HanoiPuzzleV2, HanoiMove[]> = {
+  decodePuzzle: (json) => {
+    const pegs = puzzleInt(json, 'pegs', 3, hanoiMaxPegsV2);
+    const variant = puzzleInt(json, 'variant', 0, 2);
+    const start = puzzleInts(field(json, 'start'), hanoiMaxDisksV2, 0, pegs - 1);
+    const goal = puzzleInts(field(json, 'goal'), hanoiMaxDisksV2, 0, pegs - 1);
+    if (start.length === 0 || goal.length !== start.length) throw new JudgeFormatError('开局与目标的盘子数不一致');
+    if (start.every((peg, disk) => peg === goal[disk])) throw new JudgeFormatError('开局已经是目标');
+    return { pegs, variant, start, goal };
+  },
+  decodeAnswer: (json) => puzzleInts(json, hanoiMaxMoves, 0, hanoiMaxPegsV2 * hanoiMaxPegsV2 - 1).map((code) => ({ from: Math.trunc(code / hanoiMaxPegsV2), to: code % hanoiMaxPegsV2 })),
+  solved: (puzzle, answer) => {
+    if (answer.length > hanoiMaxMoves) return false;
+    // 每根柱子从底到顶的盘号（盘号 0 最小）。
+    const stacksOf = (positions: number[]) =>
+      Array.from({ length: puzzle.pegs }, (_, peg) => {
+        const stack: number[] = [];
+        for (let disk = positions.length - 1; disk >= 0; disk--) if (positions[disk] === peg) stack.push(disk);
+        return stack;
+      });
+    const pegs = stacksOf(puzzle.start);
+    for (const move of answer) {
+      if (!hanoiAllowed(puzzle, move.from, move.to)) return false;
+      const source = pegs[move.from], destination = pegs[move.to];
+      if (source.length === 0) return false;
+      if (destination.length > 0 && destination[destination.length - 1] < source[source.length - 1]) return false;
+      destination.push(source.pop()!);
+    }
+    return JSON.stringify(pegs) === JSON.stringify(stacksOf(puzzle.goal));
+  },
+  steps: (_puzzle, answer) => answer.length,
+};
+
 // ---------- 冰面滑行 ice 第 1 版题面（只有岩石；已发布的客户端还报第 1 版，留着不动） ----------
 type IcePuzzle = { width: number; height: number; rocks: boolean[]; start: number; goal: number };
 const iceMinSide = 3, iceMaxSide = 16, iceMaxMoves = 2048;

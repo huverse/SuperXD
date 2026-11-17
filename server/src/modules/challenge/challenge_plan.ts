@@ -59,7 +59,11 @@ export const puzzleDifficulty = (seconds: number) => (seconds <= 10 ? 1 : Math.m
 // 以及这道题里哪几处能改成哪个值（candidates：at 与值）。改不了（冰面滑行没标出口）为 null。
 type ConsumeRule = { kind: 'slot' | 'goal'; modulus: number; offset: number; candidates: { at: number; value: number }[] };
 
-const consumeRuleOf = (game: string, tier: ChallengeTier, entry: BankEntry): ConsumeRule | null => {
+// 汉诺塔第 2 版（客户端 hanoi_rules.dart 的 puzzleVersion 2）能改目标柱的题：目标是全部叠到一根柱上，且轮换柱子不改最少步数
+// （经典与循环的挪法轮换后照旧，相邻的两头不相连、轮换就变了）。
+const hanoiTurnable = (puzzle: Record<string, unknown>) => (puzzle.variant as number) !== 1 && new Set(puzzle.goal as number[]).size === 1;
+
+const consumeRuleOf = (game: string, tier: ChallengeTier, entry: BankEntry, version: number): ConsumeRule | null => {
   const puzzle = entry.puzzle as Record<string, unknown>;
   switch (game) {
     case 'twentyfour': {
@@ -74,8 +78,12 @@ const consumeRuleOf = (game: string, tier: ChallengeTier, entry: BankEntry): Con
       return { kind: 'slot', modulus: 3, offset: 0, candidates: entry.slots };
     case 'knights':
       return { kind: 'slot', modulus: (puzzle.claims as unknown[]).length - 1, offset: 1, candidates: entry.slots };
-    case 'hanoi':
-      return { kind: 'goal', modulus: 3, offset: 1, candidates: [1, 2, 3].map((value) => ({ at: 0, value })) };
+    case 'hanoi': {
+      if (version === 1) return { kind: 'goal', modulus: 3, offset: 1, candidates: [1, 2, 3].map((value) => ({ at: 0, value })) };
+      if (!hanoiTurnable(puzzle)) return null;
+      const pegs = puzzle.pegs as number;
+      return { kind: 'goal', modulus: pegs, offset: 1, candidates: Array.from({ length: pegs }, (_, index) => ({ at: 0, value: index + 1 })) };
+    }
     case 'ice':
       return entry.exits.length < 2 ? null : { kind: 'goal', modulus: entry.exits.length, offset: 1, candidates: entry.exits.map((_, index) => ({ at: 0, value: index + 1 })) };
     case 'flash':
@@ -85,15 +93,21 @@ const consumeRuleOf = (game: string, tier: ChallengeTier, entry: BankEntry): Con
   }
 };
 
-// 按改目标的值改写题面（返回新题面、这一关的碎片、最少步数与题库预计用时）：汉诺塔把柱子轮换到目标柱是第 value 根（最少步数不变），
-// 冰面滑行把终点换成第 value 个出口（碎片、最少步数与预计用时都换成那个出口的），记忆闪光 value 为 1 时镜像。
-const applyGoal = (game: string, entry: BankEntry, value: number) => {
+// 按改目标的值改写题面（返回新题面、这一关的碎片、最少步数与题库预计用时）：汉诺塔把柱子轮换到目标柱是第 value 根（最少步数不变；
+// 第 2 版开局与目标一起轮换，按这道题的柱子数），冰面滑行把终点换成第 value 个出口（碎片、最少步数与预计用时都换成那个出口的），记忆闪光 value 为 1 时镜像。
+const applyGoal = (game: string, entry: BankEntry, value: number, version: number) => {
   const puzzle = { ...(entry.puzzle as Record<string, unknown>) };
   switch (game) {
     case 'hanoi': {
-      const shift = (value - 1 - (puzzle.target as number) + 3) % 3;
-      puzzle.start = (puzzle.start as number[]).map((peg) => (peg + shift) % 3);
-      puzzle.target = value - 1;
+      if (version === 1) {
+        const shift = (value - 1 - (puzzle.target as number) + 3) % 3;
+        puzzle.start = (puzzle.start as number[]).map((peg) => (peg + shift) % 3);
+        puzzle.target = value - 1;
+      } else {
+        const pegs = puzzle.pegs as number, shift = (value - 1 - (puzzle.goal as number[])[0] + pegs) % pegs;
+        puzzle.start = (puzzle.start as number[]).map((peg) => (peg + shift) % pegs);
+        puzzle.goal = (puzzle.goal as number[]).map((peg) => (peg + shift) % pegs);
+      }
       return { puzzle, fragment: entry.fragment, minimum: entry.minimum, expected: entry.expected };
     }
     case 'ice': {
@@ -160,7 +174,7 @@ const planOnce = async (input: PlanInput, bank: Bank, random: PlanRandom): Promi
           choices.push({ entry, rule: null, at: 0, value: 0 });
           continue;
         }
-        const rule = consumeRuleOf(game, node.tier, entry);
+        const rule = consumeRuleOf(game, node.tier, entry, input.supported.get(game)!);
         if (rule === null) continue;
         const value = valueOf(gate, rule);
         for (const candidate of rule.candidates) if (candidate.value === value) choices.push({ entry, rule, at: candidate.at, value });
@@ -174,7 +188,7 @@ const planOnce = async (input: PlanInput, bank: Bank, random: PlanRandom): Promi
     const chosen = pick(plain.length > 0 ? plain : fresh.length > 0 ? fresh : candidates, random);
     used.add(chosen.game);
     const { entry, rule, at, value } = pick(chosen.entries, random);
-    const goal = rule?.kind === 'goal' ? applyGoal(chosen.game, entry, value) : { puzzle: entry.puzzle, fragment: entry.fragment, minimum: entry.minimum, expected: entry.expected };
+    const goal = rule?.kind === 'goal' ? applyGoal(chosen.game, entry, value, input.supported.get(chosen.game)!) : { puzzle: entry.puzzle, fragment: entry.fragment, minimum: entry.minimum, expected: entry.expected };
     const expected = Math.max(1, Math.round(goal.expected * input.pace(chosen.game)));
     levels.set(node.id, {
       id: node.id,

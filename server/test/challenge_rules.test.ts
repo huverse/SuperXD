@@ -114,6 +114,20 @@ describe('出题、碎片与门', () => {
     expect((await pick('flash')).puzzle).toMatchObject({ mirror: true });
   });
 
+  it('汉诺塔第 2 版改目标：开局与目标一起轮换，按柱子数取余；目标不是一根柱的、相邻挪法的（轮换会改最少步数）不收碎片', async () => {
+    const goals = template({ nodes: [{ id: 'a', tier: 'hard', games: ['mines'] }, { id: 'b', tier: 'hard', games: ['hanoi'] }], edges: [['a', 'b']] });
+    const pick = async (towers: BankEntry[]) =>
+      (await planChallenge({ ...input, template: goals, supported: new Map([['mines', 1], ['hanoi', 2]]), allGames: new Set(['mines', 'hanoi']) }, async (game) => (game === 'mines' ? [entry('m', { fragment: 7 })] : towers), sequence([0]))).levels[1];
+    // 门上的数是 7：四柱 7 ÷ 4 余 3 → 第 4 根，目标原在第 3 根，开局与目标一起轮换 1 格。
+    const tower = await pick([entry('h', { puzzle: { pegs: 4, variant: 2, start: [3, 0, 2, 1], goal: [2, 2, 2, 2] }, fragment: 9, minimum: 9 })]);
+    expect(tower.consume).toEqual({ kind: 'goal', at: 0, modulus: 4, offset: 1 });
+    expect(tower.puzzle).toEqual({ pegs: 4, variant: 2, start: [0, 1, 3, 2], goal: [3, 3, 3, 3] });
+    expect(tower).toMatchObject({ fragment: 9, minimum: 9 });
+    const spread = entry('x', { puzzle: { pegs: 3, variant: 0, start: [0, 0, 1], goal: [1, 2, 2] } });
+    const adjacent = entry('y', { puzzle: { pegs: 4, variant: 1, start: [3, 0, 2, 0], goal: [1, 1, 1, 1] } });
+    await expect(pick([spread, adjacent])).rejects.toThrow(ChallengePlanError);
+  });
+
   it('按真实过关用时回调的倍数乘在预计用时上，难度分跟着变；排几次留预计总用时接近限时一半多的那份', async () => {
     const plan = await planChallenge({ ...input, supported: v1('hanoi', 'ice', 'twentyfour'), pace: (game) => (game === 'hanoi' ? 2 : 1) }, bank, sequence([0]));
     const hanoi = plan.levels.find((level) => level.game === 'hanoi')!;

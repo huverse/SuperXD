@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:superxd/playground/challenge/challenge_rules.dart';
 import 'package:superxd/playground/puzzle/flash/flash_rules.dart';
+import 'package:superxd/playground/puzzle/hanoi/hanoi_rules.dart';
 import 'package:superxd/playground/puzzle/ice/ice_rules.dart';
 import 'package:superxd/playground/puzzle/river/river_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
@@ -112,7 +113,7 @@ Map<String, Object?> buildChallengeVectors({int seedsPerTier = 2, int seed = 0x5
 }
 
 // 收碎片改目标的题面（人工决策见 challenge_rules.dart 的 11-14 23:11 那条）：记忆闪光镜像（照亮的点不算、点镜像的才算，每档一道、各题型都有；
-// 另给一份第一下点了原来亮的那格、换下一组再点镜像的，算失误 1 次）、冰面滑行标了几个出口（判定仍只看终点）。用自己的固定种子出，不动上面已有的向量。
+// 另给一份第一下点了原来亮的那格、换下一组再点镜像的，算失误 1 次）、冰面滑行标了几个出口（判定仍只看终点）、汉诺塔见 _hanoiCases。用自己的固定种子出，不动上面已有的向量。
 List<Map<String, Object?>> _goalCases(String game, PuzzleRules<Object?, Object?> rules) {
   Map<String, Object?> item(PuzzleTier tier, Object? puzzle, List<Object?> answers) => {
     'tier': tier.name,
@@ -141,6 +142,8 @@ List<Map<String, Object?>> _goalCases(String game, PuzzleRules<Object?, Object?>
       final ice = rules.generate(seed, PuzzleTier.normal);
       final labeled = (ice.puzzle as IcePuzzle).copyWith(exits: iceExits(ice.puzzle as IcePuzzle, PuzzleRandom(0x60A1)));
       return [item(PuzzleTier.normal, rules.encodePuzzle(labeled), [rules.encodeAnswer(ice.solution), <int>[]])];
+    case HanoiPuzzle():
+      return _hanoiCases(rules);
     default:
       return const [];
   }
@@ -239,6 +242,29 @@ List<Map<String, Object?>> _riverCases(String game, RiverRules rules) {
   }
   return cases;
 }
+
+// 汉诺塔改目标的题（目标是全部叠到一根柱上，服务器按门上的数轮换柱子）：每种挪法各一道，参考解、按经典挪法的最短走法（相邻、循环下有不许的方向）、
+// 少走最后一步各判一次，两端的方向规矩逐条对上。
+List<Map<String, Object?>> _hanoiCases(PuzzleRules<Object?, Object?> rules) => [
+  for (final puzzle in const [
+    HanoiPuzzle(pegs: 3, variant: HanoiVariant.cyclic, start: [1, 0, 2, 0], goal: [1, 1, 1, 1]),
+    HanoiPuzzle(pegs: 4, variant: HanoiVariant.adjacent, start: [3, 0, 2, 0], goal: [1, 1, 1, 1]),
+    HanoiPuzzle(pegs: 4, variant: HanoiVariant.cyclic, start: [3, 0, 2, 1], goal: [2, 2, 2, 2]),
+    HanoiPuzzle(pegs: 4, variant: HanoiVariant.classic, start: [0, 3, 0, 3], goal: [2, 2, 2, 2]),
+  ])
+    {
+      'tier': PuzzleTier.normal.name,
+      'puzzle': rules.encodePuzzle(puzzle),
+      'answers': [
+        for (final answer in [
+          hanoiSolution(puzzle),
+          hanoiSolution(HanoiPuzzle(pegs: puzzle.pegs, variant: HanoiVariant.classic, start: puzzle.start, goal: puzzle.goal)),
+          hanoiSolution(puzzle).sublist(1),
+        ])
+          {'answer': rules.encodeAnswer(answer), 'expect': challengeVerdict('hanoi', rules.encodePuzzle(puzzle), rules.encodeAnswer(answer))},
+      ],
+    },
+];
 
 Future<void> main(List<String> arguments) async {
   String? option(String name) {
