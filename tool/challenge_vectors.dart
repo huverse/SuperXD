@@ -143,7 +143,7 @@ List<Map<String, Object?>> _goalCases(String game, PuzzleRules<Object?, Object?>
       final labeled = (ice.puzzle as IcePuzzle).copyWith(exits: iceExits(ice.puzzle as IcePuzzle, PuzzleRandom(0x60A1)));
       return [item(PuzzleTier.normal, rules.encodePuzzle(labeled), [rules.encodeAnswer(ice.solution), <int>[]])];
     case HanoiPuzzle():
-      return _hanoiCases(rules);
+      return [..._hanoiCases(rules), ..._hanoiLimitCases(rules)];
     default:
       return const [];
   }
@@ -265,6 +265,40 @@ List<Map<String, Object?>> _hanoiCases(PuzzleRules<Object?, Object?> rules) => [
       ],
     },
 ];
+
+// [人工决策-2026-11-17 14:17:05] 汉诺塔高档放宽到最少步数的 1.2 倍以内（向下取整）：最少 60 步（上限正好 72）与最少 63 步（75.6 取 75）各一道，
+// 参考解后面补挪最小盘的空步，走到上限的算过、多一步的不算。这几道带 minimum、答案带 passed，服务端按 judges.ts 的 withinStepLimit 核。
+List<Map<String, Object?>> _hanoiLimitCases(PuzzleRules<Object?, Object?> rules) => [
+  for (final puzzle in const [
+    HanoiPuzzle(pegs: 3, variant: HanoiVariant.classic, start: [2, 2, 0, 0, 0, 0], goal: [2, 2, 2, 2, 2, 2]),
+    HanoiPuzzle(pegs: 3, variant: HanoiVariant.classic, start: [0, 0, 0, 0, 0, 0], goal: [2, 2, 2, 2, 2, 2]),
+  ])
+    {
+      'tier': PuzzleTier.hard.name,
+      'puzzle': rules.encodePuzzle(puzzle),
+      'minimum': hanoiMinMoves(puzzle),
+      'answers': [
+        for (final extra in [0, 1])
+          for (final answer in [rules.encodeAnswer([...hanoiSolution(puzzle), ..._hanoiIdle(rules.stepLimit(hanoiMinMoves(puzzle)) - hanoiMinMoves(puzzle) + extra)])])
+            {
+              'answer': answer,
+              'expect': challengeVerdict('hanoi', rules.encodePuzzle(puzzle), answer),
+              'passed': challengePassed('hanoi', rules.encodePuzzle(puzzle), answer, hanoiMinMoves(puzzle)),
+            },
+      ],
+    },
+];
+
+// 摆好之后来回挪最小的盘子（停在第 3 根柱上）凑够 extra 步，最后仍是目标局面：两步一来回，单数时最后绕一圈三步。
+List<HanoiMove> _hanoiIdle(int extra) => [
+  for (var pair = 0; pair < (extra.isOdd ? extra - 3 : extra) ~/ 2; pair++) ...[(from: 2, to: 0), (from: 0, to: 2)],
+  if (extra.isOdd) ...[(from: 2, to: 0), (from: 0, to: 1), (from: 1, to: 2)],
+];
+
+// 要最少步数的关这份答案算不算过：解开且步数不超过这个游戏的上限（challengeStepLimit；服务端 judges.ts 的 withinStepLimit 同口径）。
+// 步数按答案的项数算（汉诺塔一项一步），只给带 minimum 的向量用。
+bool challengePassed(String game, Object? puzzleJson, Object? answerJson, int minimum) =>
+    challengeVerdict(game, puzzleJson, answerJson)['kind'] == 'solved' && (answerJson! as List).length <= challengeStepLimit(game, minimum);
 
 Future<void> main(List<String> arguments) async {
   String? option(String name) {

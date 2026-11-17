@@ -209,6 +209,13 @@ void main() {
       expect(passed, isTrue);
     });
 
+    // [人工决策-2026-11-17 14:17:05]（见 challenge_rules.dart）：挑战高档的汉诺塔走到最少步数的 1.2 倍以内（含、向下取整）算过，其他游戏正好最少。
+    test('挑战高档的步数上限：最少步数的 1.2 倍向下取整，其他游戏正好最少', () {
+      expect([for (final least in [1, 5, 7, 60, 63, 84]) rules.stepLimit(least)], [1, 6, 8, 72, 75, 100]);
+      expect(challengeStepLimit('hanoi', 60), 72);
+      expect([for (final game in challengeRules.keys.where((game) => game != 'hanoi')) challengeStepLimit(game, 60)], everyElement(60));
+    });
+
     test('编解码往返，坏输入抛 FormatException', () {
       final draw = rules.generate(5, PuzzleTier.expert);
       final puzzle = rules.decodePuzzle(jsonDecode(jsonEncode(rules.encodePuzzle(draw.puzzle))));

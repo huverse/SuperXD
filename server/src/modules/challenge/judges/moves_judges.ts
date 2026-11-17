@@ -39,6 +39,9 @@ export const hanoiJudge: Judge<HanoiPuzzle, HanoiMove[]> = {
 // 开局与目标都是每个盘子所在的柱子；答案每步「起点 × 4 + 终点」，解开 = 每一步合规且最后摆成目标的样子。
 type HanoiPuzzleV2 = { pegs: number; variant: number; start: number[]; goal: number[] };
 const hanoiMaxPegsV2 = 4, hanoiMaxDisksV2 = 8;
+// [人工决策-2026-11-17 14:17:05] 挑战困难、专家档的汉诺塔（第 2 版）走到最少步数的 1.2 倍以内（含）就算过：步数上限 = 最少步数 × 120 ÷ 100 向下取整
+// （最少 60 步 72 步内算过，最少 63 步 75 步内）；按百分比写成整数免得浮点误差，同客户端 hanoi_rules.dart 的 hanoiStepPercent。第 1 版照旧要正好最少。
+const hanoiStepPercent = 120;
 
 const hanoiAllowed = (puzzle: HanoiPuzzleV2, from: number, to: number) => {
   if (from === to || from >= puzzle.pegs || to >= puzzle.pegs) return false;
@@ -78,6 +81,7 @@ export const hanoiJudgeV2: Judge<HanoiPuzzleV2, HanoiMove[]> = {
     return JSON.stringify(pegs) === JSON.stringify(stacksOf(puzzle.goal));
   },
   steps: (_puzzle, answer) => answer.length,
+  stepLimit: (minimum) => Math.floor((minimum * hanoiStepPercent) / 100),
 };
 
 // ---------- 冰面滑行 ice 第 1 版题面（只有岩石；已发布的客户端还报第 1 版，留着不动） ----------

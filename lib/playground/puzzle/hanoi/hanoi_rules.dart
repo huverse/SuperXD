@@ -42,6 +42,10 @@ const hanoiMinPegs = 3, hanoiMaxPegs = 4;
 const hanoiMaxDisks = 8;
 // 一局最多记这么多步（外部输入的上限；专家档最少 80 来步，留足走弯路的余地）。
 const hanoiMaxMoves = 4096;
+// [人工决策-2026-11-17 14:17:05] 挑战困难、专家档要最少步数时，汉诺塔走到最少步数的 1.2 倍以内（含）就算过（其他游戏照旧要正好最少）：
+// 步数上限 = 最少步数 × hanoiStepPercent ÷ 100 向下取整（最少 60 步 72 步内算过，最少 63 步 75 步内）；按百分比写成整数免得浮点误差，
+// 服务端 moves_judges.ts 的 hanoiStepPercent 同值。第 1 版（服务端留着的旧判定）照旧要正好最少。
+const hanoiStepPercent = 120;
 
 // 只看方向的规矩：这一步在这道题里许不许挪（不看盘子大小）。
 bool hanoiAllowed(HanoiPuzzle puzzle, int from, int to) => _allowed(puzzle.pegs, puzzle.variant, from, to);
@@ -193,6 +197,8 @@ class HanoiRules extends PuzzleRules<HanoiPuzzle, List<HanoiMove>> {
   PuzzleIntake? get intake => PuzzleIntake.goal;
   @override
   int? minimum(HanoiPuzzle puzzle) => hanoiMinMoves(puzzle);
+  @override
+  int stepLimit(int minimum) => minimum * hanoiStepPercent ~/ 100;
 
   // 每档的几种题（出题时按种子挑一种）：柱子数、挪法、盘子数，spare 为真时开局与目标都空着同一根柱（四柱经典，第四根是周转用的）。
   static const _kinds = <PuzzleTier, List<({int pegs, HanoiVariant variant, int disks, bool spare})>>{

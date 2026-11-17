@@ -30,6 +30,8 @@ void main() {
       for (final item in (cases! as List).cast<Map<String, Object?>>()) {
         for (final answer in (item['answers']! as List).cast<Map<String, Object?>>()) {
           expect(challengeVerdict(game, item['puzzle'], answer['answer']), answer['expect'], reason: '$game ${item['tier']}');
+          // 带 minimum 的（汉诺塔高档放宽到 1.2 倍，人工决策见 challenge_rules.dart 的 11-17 14:17:05 那条）另核算不算过。
+          if (item['minimum'] case final int minimum) expect(challengePassed(game, item['puzzle'], answer['answer'], minimum), answer['passed'], reason: '$game 最少 $minimum 步');
         }
       }
     }

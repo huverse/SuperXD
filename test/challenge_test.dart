@@ -439,7 +439,7 @@ void main() {
     });
 
     // 人工决策见 challenge_rules.dart 的 11-14 23:11 那条：门上的数改写的那一处写成 ?（补条件）或不标目标（改目标），页面写出算式，玩家自己算。
-    testWidgets('收碎片的关：写出算式与最少步数；24 点的 ? 牌点了选数才能用；汉诺塔不标目标柱、柱子标 ①②③', (tester) async {
+    testWidgets('收碎片的关：写出算式与几步内算过；24 点的 ? 牌点了选数才能用；汉诺塔不标目标柱、柱子标 ①②③', (tester) async {
       Future<void> open(Widget page) async {
         await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: page));
         await tester.pump(const Duration(milliseconds: 500));
@@ -466,7 +466,8 @@ void main() {
       final tower = challenge(_levelJson('c', inputs: ['a'], gate: {'op': 'sum', 'value': 7}, consume: {'kind': 'goal', 'at': 0, 'modulus': 3, 'offset': 1}, minimum: 7, puzzle: {'pegs': 3, 'variant': 0, 'start': [0, 0, 0], 'goal': [1, 1, 1]}));
       await open(HanoiPage(game: playgroundCatalog.firstWhere((game) => game.id == 'hanoi'), store: PlaygroundStore.memory(), challenge: tower));
       expect(find.text('= 7 ÷ 3 的余数 + 1'), findsOneWidget);
-      expect(find.text('最少 7 步'), findsOneWidget);
+      // 汉诺塔要最少步数时放宽到 1.2 倍以内（7 × 1.2 = 8.4，向下取整 8，人工决策见 challenge_rules.dart 的 11-17 14:17:05 那条）。
+      expect(find.text('8 步内算过'), findsOneWidget);
       expect(find.text('目标'), findsNothing);
       expect(find.text('②'), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp('柱子，目标')), findsNothing);

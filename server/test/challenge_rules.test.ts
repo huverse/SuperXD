@@ -236,6 +236,21 @@ describe('进度与计分', () => {
     expect(progress.levels.a).toMatchObject({ state: 'solved', solvedAt: 2000, errors: 1 });
   });
 
+  // [人工决策-2026-11-17 14:17:05]（见客户端 challenge_rules.dart）：汉诺塔第 2 版走到最少步数的 1.2 倍以内（向下取整）算过，第 1 版与其他游戏照旧正好最少。
+  it('要最少步数的上限：汉诺塔第 2 版最少 60 步 72 步内算过、73 步不算；第 1 版与冰面照旧多一步不算', () => {
+    const demo = plan([60, 60, 60]);
+    demo.levels[0] = { ...demo.levels[0], version: 2, minimum: 60 };
+    demo.levels[1] = { ...demo.levels[1], minimum: 60 };
+    const progress = startProgress(demo, 0);
+    expect(recordVerdict(demo, progress, 'a', { ...yes, steps: 73 }, 1000).solved).toBe(false);
+    expect(recordVerdict(demo, progress, 'a', { ...yes, steps: 72 }, 2000).solved).toBe(true);
+    expect(recordVerdict(demo, progress, 'b', { ...yes, steps: 61 }, 3000).solved).toBe(false);
+    expect(recordVerdict(demo, progress, 'b', { ...yes, steps: 60 }, 4000).solved).toBe(true);
+    const old = plan([60, 60, 60]);
+    old.levels[0].minimum = 60;
+    expect(recordVerdict(old, startProgress(old, 0), 'a', { ...yes, steps: 61 }, 1000).solved).toBe(false);
+  });
+
   it('加试题直接开着，做完前终章开不了，不给碎片也不计分；错交到上限算没过、剩下的开不了是 stuck', () => {
     const demo = plan([60, 60, 60]);
     const progress = startProgress(demo, 0);

@@ -1,9 +1,10 @@
 import { readFileSync } from 'node:fs';
 
-import { clientGames, judge, judgedGames, judgedVersions } from 'src/modules/challenge/judges/judges';
+import { clientGames, judge, judgedGames, judgedVersions, withinStepLimit } from 'src/modules/challenge/judges/judges';
 
 // 客户端 tool/challenge_vectors.dart 用 Dart 规则生成的向量（test/challenge_vectors_test.dart 读同一份文件）：同一道题、同一个答案，两端判得一模一样。
-type Case = { tier: string; puzzle: unknown; answers: { answer: unknown; expect: { kind: string; penalties?: number } }[] };
+// minimum 与 passed 只在要最少步数的显式用例里有（汉诺塔高档放宽到 1.2 倍，人工决策见客户端 challenge_rules.dart 的 11-17 14:17:05 那条）。
+type Case = { tier: string; puzzle: unknown; minimum?: number; answers: { answer: unknown; expect: { kind: string; penalties?: number }; passed?: boolean }[] };
 const vectors = JSON.parse(readFileSync(new URL('./vectors/challenge_judge_v1.json', import.meta.url), 'utf8')) as { version: number; puzzleVersions: Record<string, number>; games: Record<string, Case[]> };
 // 已经换了写法的旧版本（客户端规则里没有了、服务端判定留给旧客户端）：加版本前用 tool/challenge_vectors.dart --freeze <游戏> 把那时的向量搬来，键是「游戏@版本」。
 const frozen = JSON.parse(readFileSync(new URL('./vectors/challenge_judge_frozen.json', import.meta.url), 'utf8')) as { version: number; games: Record<string, Case[]> };
@@ -51,6 +52,10 @@ describe('challenge judge vectors', () => {
           // 只比两端共用的口径（kind 与失误数）；步数与按答案给的碎片另在 challenge_rules 里测。
           const verdict = judge(game, item.puzzle, answer, vectors.puzzleVersions[game]);
           expect(verdict.kind === 'solved' ? { kind: verdict.kind, penalties: verdict.penalties } : verdict, `${game} ${item.tier} 第 ${index} 题第 ${order} 个答案`).toEqual(expected);
+          if (item.minimum !== undefined) {
+            const passed = verdict.kind === 'solved' && withinStepLimit(game, vectors.puzzleVersions[game], item.minimum, verdict.steps!);
+            expect(passed, `${game} 最少 ${item.minimum} 步第 ${order} 个答案`).toBe(item.answers[order].passed);
+          }
         }
       }
     });

@@ -1,4 +1,5 @@
 import { ChallengePlan, PlanLevel } from 'src/modules/challenge/challenge_plan';
+import { withinStepLimit } from 'src/modules/challenge/judges/judges';
 
 // 一局的进度与计分（纯函数，服务层在行锁里调用；人工决策见客户端 lib/playground/challenge/challenge_rules.dart 的 11-14 23:11 那条）。
 // 时刻一律是服务器的 UTC 毫秒，客户端的时间不参与。
@@ -27,13 +28,13 @@ export const addExtra = (plan: ChallengePlan, progress: RunProgress, level: Plan
 
 export type JudgedAnswer = { solved: boolean; penalties: number; steps: number | null };
 
-// 记一次判定。这一关开着：解开就记过关时刻与碎片（要最少步数的多一步不算解开），收它碎片的那关碎片都齐了就到门前；没解开计一次错交，到上限算没过。
+// 记一次判定。这一关开着：解开就记过关时刻与碎片（要最少步数的超过上限不算解开：多数游戏多一步都不行，汉诺塔第 2 版放宽到 1.2 倍，见 judges.ts 的 withinStepLimit），收它碎片的那关碎片都齐了就到门前；没解开计一次错交，到上限算没过。
 // 这一关已经过了（重做一遍看碎片）：对了再给一次碎片，不改进度，错了也不计错交。返回这次算不算解开与给的碎片。
 export const recordVerdict = (plan: ChallengePlan, progress: RunProgress, levelId: string, judged: JudgedAnswer, now: number) => {
   const level = plan.levels.find((item) => item.id === levelId)!;
   const state = progress.levels[levelId];
   state.submissions++;
-  const solved = judged.solved && (level.minimum === null || judged.steps === null || judged.steps <= level.minimum);
+  const solved = judged.solved && (level.minimum === null || judged.steps === null || withinStepLimit(level.game, level.version ?? 1, level.minimum, judged.steps));
   if (state.state === 'solved') return { solved, fragment: solved ? state.fragment : null, replay: true };
   if (!solved) {
     state.errors++;

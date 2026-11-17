@@ -44,7 +44,10 @@ export const clientGames = (tokens: string[]): Map<string, number> => {
   return games;
 };
 
-export type Verdict = { kind: 'solved'; penalties: number; steps: number | null } | { kind: 'unsolved' } | { kind: 'invalid' };
+// 要最少步数的关这次的步数算不算数：不超过这个游戏这一版判定给的上限（没写就是正好最少；汉诺塔第 2 版放宽到 1.2 倍，见 moves_judges.ts）。
+export const withinStepLimit = (game: string, version: number, minimum: number, steps: number) => steps <= (judges[game]?.[version]?.stepLimit?.(minimum) ?? minimum);
+
+export type Verdict ={ kind: 'solved'; penalties: number; steps: number | null } | { kind: 'unsolved' } | { kind: 'invalid' };
 
 // 判一次作答：答案不合法是 invalid（同 Dart 的 decodeAnswer 抛错），合法但没解开是 unsolved。
 // penalties 是答案里自带的失误（记忆闪光一题内点错的次数），计分时同错交一样扣；steps 是要最少步数的游戏用了几步（推箱子按推的次数）。
