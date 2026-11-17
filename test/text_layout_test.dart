@@ -130,8 +130,10 @@ void main() {
 
   // 11-17 设计审查：11-12 之后上线的页面没进排版体检，窄屏大字号下有孤字、截断与拆词（学业页学期名、挑战总览游戏名、删除游乐场数据、
   // 开发者的话标题、对局页状态行、新版本反馈的输入框标签）。这里按同样三种条件扫一遍。
+  // 系统 1.3 倍在 Maple 360dp 上跟随时封顶到推荐上限（100%），真要 1.3 倍得在应用里自己选，所以两种都扫。
   for (final (font, width, system, app, bold) in [
     ('maple', 360.0, 1.3, 1.0, false),
+    ('maple', 360.0, 1.0, 1.3, false),
     ('serif', 360.0, 1.0, 1.4, true),
     ('maple', 411.0, 1.0, 1.0, false),
   ]) {
@@ -185,12 +187,22 @@ void main() {
       await tester.scrollUntilVisible(find.text('删除游乐场数据'), 200);
       expect(_problems(tester), isEmpty, reason: '应用账号·登录着·最底下');
       await back();
+      // 登录着时那一行写用户名：「应用账号」不被长用户名挤得折行。
+      expect(_problems(tester), isEmpty, reason: '我的·应用账号登录着');
+      expect(tester.getSize(find.text('应用账号')).height, lessThan(16 * system * app * 1.8), reason: '「应用账号」只占一行');
+      await tester.tap(find.byType(CircleAvatar).first);
+      await tester.pumpAndSettle();
+      expect(_problems(tester), isEmpty, reason: '教务账号');
+      expect(tester.getSize(find.text('应用账号')).height, lessThan(16 * system * app * 1.8), reason: '教务账号页「应用账号」只占一行');
+      await back();
       await tester.tap(find.text('开发者的话'));
       await tester.pumpAndSettle();
       expect(_problems(tester), isEmpty, reason: '开发者的话');
       await tester.tap(find.text('新版本来了：课表同步更快'));
       await tester.pumpAndSettle();
-      expect(_problems(tester), isEmpty, reason: '读信');
+      // 正文是开发者写的长段落，段末剩一两个字属长文排版的常态（同书页），只查标题与裁字。
+      expect(_problems(tester, checkOrphans: false), isEmpty, reason: '读信');
+      expect([for (final issue in scanTexts(tester)) if (issue.kind == 'orphan' && issue.text.startsWith('新版本来了')) '$issue'], isEmpty, reason: '读信的标题');
       await back();
       await back();
       unawaited(showAppFeedback(tester.element(find.byType(ShellPage)), health));

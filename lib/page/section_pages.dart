@@ -6,7 +6,6 @@ import 'package:go_router/go_router.dart';
 
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
-import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
@@ -108,15 +107,7 @@ class MinePage extends StatelessWidget {
               }),
               // [人工决策-2026-11-17 21:24:25] 设计审查后用户选定：「我的」首页加一行应用账号（同组的界面、关于之前；配了中转才有），行尾写用户名或未登录，
               // 点了推入应用账号页（联网偏好也在那页，少走一层）；教务账号页里那一行照留（扩展 account_page.dart 的 11-13 23:07:30 那条，不取代）。
-              if ((appAccounts, openAppAccount) case (final appAccounts?, final open?)) ListenableBuilder(listenable: appAccounts, builder: (context, _) => ListTile(
-                contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.mainAccount), title: const Text('应用账号'),
-                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                  Text(!appAccounts.loaded ? '' : appAccounts.username ?? '未登录', style: TextStyle(fontSize: CampusFontSize.secondary, color: CampusPalette.of(context).onSurfaceVariant)),
-                  if (appAccounts.loaded) ...[const SizedBox(width: CampusGap.tight), const CampusIcon(CampusIcons.next)],
-                ]),
-                enabled: appAccounts.loaded,
-                onTap: () => open(context),
-              )),
+              if ((appAccounts, openAppAccount) case (final appAccounts?, final open?)) AppAccountRow(appAccounts: appAccounts, padding: rowPadding, onTap: () => open(context)),
               ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.palette), trailing: const CampusIcon(CampusIcons.next), title: const Text('界面'), onTap: () => _push(context, const AppearancePage())),
               // 开发者的话（人工决策见 domain/developer_note.dart）：有没读的信时行尾一个小圆点，底栏「我的」同时有一个。
               if (notes case final notes?) ListenableBuilder(listenable: notes, builder: (context, _) => notes.notes.isEmpty ? const SizedBox.shrink() : ListTile(
