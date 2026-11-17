@@ -97,7 +97,7 @@ final playgroundCatalog = <PlaygroundGame>[
     id: 'river',
     name: '过河问题',
     summary: '小船往返，全员过河',
-    howToPlay: '用小船把大家都送到右岸，不能违反河上方写的规矩。',
+    howToPlay: '坐船或过桥，把大家都送到右岸，不能违反上方写的规矩。',
     icon: CampusIcons.river,
     group: planningGroup,
     builder: (context, game, store, challenge, first) => RiverPage(game: game, store: store, first: first, challenge: challenge),
