@@ -205,6 +205,49 @@ export const lightsJudge: Judge<LightsPuzzle, number[]> = {
   steps: (_puzzle, answer) => answer.length,
 };
 
+// 第 2 版题面（客户端 lights_rules.dart 的 puzzleVersion 2）：边长、形状（0 十字、1 斜十字）、环面、灯的级数（2 或 3）与每格的状态串
+// （0 灭到级数减 1 亮）；点一格，它和相邻的几格（十字是上下左右，斜十字是四个斜角；环面上下、左右边相连，绕到对边）各往亮走一级、亮的回到灭，
+// 全部亮了算解开。答案同第 1 版：依次点的格。
+type LightsPuzzleV2 = { side: number; shape: number; wrap: boolean; states: number; cells: number[] };
+const lightsMaxStates = 3;
+const lightsOffsets = [
+  [[-1, 0], [1, 0], [0, -1], [0, 1]],
+  [[-1, -1], [-1, 1], [1, -1], [1, 1]],
+];
+
+export const lightsJudgeV2: Judge<LightsPuzzleV2, number[]> = {
+  decodePuzzle: (json) => {
+    const side = puzzleInt(json, 'side', lightsMinSide, lightsMaxSide);
+    const shape = puzzleInt(json, 'shape', 0, lightsOffsets.length - 1);
+    const states = puzzleInt(json, 'states', 2, lightsMaxStates);
+    const wrap = field(json, 'wrap'), lights = field(json, 'lights');
+    if (typeof wrap !== 'boolean') throw new JudgeFormatError('题目字段 wrap 不合法');
+    if (typeof lights !== 'string' || lights.length !== side * side || ![...lights].every((char) => char >= '0' && char < String(states))) throw new JudgeFormatError('灯的状态不合法');
+    const cells = [...lights].map(Number);
+    if (cells.every((state) => state === states - 1)) throw new JudgeFormatError('题面已经全亮');
+    return { side, shape, wrap, states, cells };
+  },
+  decodeAnswer: (json) => puzzleInts(json, lightsMaxPresses, 0, lightsMaxSide * lightsMaxSide - 1),
+  solved: (puzzle, answer) => {
+    if (answer.length > lightsMaxPresses) return false;
+    const { side, states, wrap } = puzzle;
+    const cells = [...puzzle.cells];
+    for (const cell of answer) {
+      if (cell >= side * side) return false;
+      const row = Math.trunc(cell / side), column = cell % side;
+      const reached = [cell];
+      for (const [down, right] of lightsOffsets[puzzle.shape]) {
+        const toRow = row + down, toColumn = column + right;
+        if (wrap) reached.push(((toRow + side) % side) * side + ((toColumn + side) % side));
+        else if (toRow >= 0 && toRow < side && toColumn >= 0 && toColumn < side) reached.push(toRow * side + toColumn);
+      }
+      for (const target of reached) cells[target] = (cells[target] + 1) % states;
+    }
+    return cells.every((state) => state === states - 1);
+  },
+  steps: (_puzzle, answer) => answer.length,
+};
+
 // ---------- 八皇后 queens ----------
 type QueensPuzzle = { size: number; given: number[] };
 const queensMinSize = 4, queensMaxSize = 16;
