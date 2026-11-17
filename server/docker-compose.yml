@@ -58,7 +58,11 @@ services:
       MYSQL_PASSWORD: ${MYSQL_PASSWORD}
     # 只读查询 5 秒、锁等待 5 秒超时，慢查询不拖垮连接池；服务端会话时区 UTC。
     # 小内存机器（2GB 以内）：关闭 performance_schema（约省 200MB），缓冲池 128MB 足够信箱规模；数据量增长后再调大。
-    command: ["--max-execution-time=5000", "--innodb-lock-wait-timeout=5", "--default-time-zone=+00:00", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_bin", "--performance-schema=OFF", "--innodb-buffer-pool-size=128M"]
+    # [人工决策-2026-11-17 21:24:25] 关掉 binlog（用户同意审查建议 P2-6，同时定了备份只放服务器本机盘、不做按时间点恢复）：没有从库、也不做时间点恢复，
+    # binlog 只让每次提交多一次落盘与两阶段提交，8.4 默认还保留 30 天，在 40GB 的小盘上随信箱的写删一直涨。恢复靠每天的 mysqldump（scripts/backup_db.sh）。
+    # 没选「保留 1 天」：binlog 不进备份，留着也做不了时间点恢复，只剩开销。以后要从库或时间点恢复再打开（去掉这一项、设 binlog_expire_logs_seconds、binlog 一起备份）。
+    # 已有的库第一次换上这一项前先删旧 binlog，步骤见 README「部署」。
+    command: ["--max-execution-time=5000", "--innodb-lock-wait-timeout=5", "--default-time-zone=+00:00", "--character-set-server=utf8mb4", "--collation-server=utf8mb4_bin", "--performance-schema=OFF", "--innodb-buffer-pool-size=128M", "--disable-log-bin"]
     volumes:
       - mysql-data:/var/lib/mysql
       # 仅首次初始化空库时执行建表；之后的表结构变更由人工执行。

@@ -137,6 +137,10 @@
 3. 中转镜像按下面「镜像部署与回滚」加载，再 docker compose up -d --no-build（只在没有流水线镜像时才用 --build 在服务器上构建，小内存机器上约 6 分钟）。首次启动时 MySQL 自动执行 sql/schema.sql 建表，起来后跑一次 scripts/migrate_db.sh 把升级文件都登记进台账（在新库上都是空操作）；之后的表结构变更由人工执行，服务启动不做 DDL：已有的库先备份、再用 scripts/migrate_db.sh 执行还没登记的 upgrade_*.sql、最后部署新版服务，见下面「表结构升级台账」。
 4. curl http://服务器:端口/v1/health 应返回 {"protocol":1,...,"version":"<提交号>"}。防火墙（云服务器还有安全组）只放行中转端口，MySQL 与 Redis 不对外。
    小内存机器（2GB 以内）已按 compose 里的参数关闭 MySQL performance_schema、缓冲池 128MB。
+   MySQL 不开 binlog（--disable-log-bin，人工决策在 compose 的 mysql 一节）：没有从库、不做时间点恢复，恢复只靠每天的备份。已有的库第一次换上这一项（11-17 这一版）：
+   先跑备份，再 docker compose exec mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "RESET BINARY LOGS AND GTIDS"' 删掉旧 binlog（8.4 默认保留 30 天），
+   然后 docker compose up -d --no-deps --wait mysql 按新参数重建 MySQL 容器（数据在卷里不动，约 15 秒，期间中转查库失败），
+   最后 docker compose exec mysql sh -c 'rm -f /var/lib/mysql/binlog.*' 删掉留下的空 binlog 与索引文件；核对 SELECT @@log_bin 为 0。
    MySQL 与 Redis 镜像在 compose 里固定到补丁版：第一次按固定版本启动（或以后改版本）会换掉服务器上原来的镜像，MySQL 在 8.4 长期支持线内原地升级，先跑一次备份。
 5. 客户端构建时传入地址：flutter build apk --flavor alpha --dart-define=SUPERXD_RELAY=http://服务器IP:端口。
 6. 应用更新：compose 把本目录下的 releases 只读挂进容器（/srv/releases）。发版时把各架构安装包、仓库 font_packs 里的字体包与 tool/release_manifest.dart 生成的 <渠道>.json 传进 releases，先传安装包、最后传清单（清单一出现客户端就会来下载），再删掉旧版本的安装包；由仓库的发版流水线（.github/workflows/release.yml）自动完成，步骤见仓库根目录 CONTRIBUTING.md。清单与开发者的话带签名信封后，本服务要先于下一次发版部署（见上面「更新清单与开发者的话的签名」的上线顺序）。
