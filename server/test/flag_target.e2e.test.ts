@@ -132,9 +132,10 @@ describe('第 2 版灰度配置', () => {
 
   it('还没放文件时信封为空；放了原样透传信封；写坏了不往外发', async () => {
     await rm(flagsFile(), { force: true });
-    expect((await fetch(`${server}/v1/app/flags`).then((response) => response.json())) as unknown).toEqual({ version: 2, envelope: null });
+    // paused 是健康回报自动暂停的版本（不签名，见 app_health.e2e.test.ts），别的用例可能留下几条，这里只看它是数组。
+    expect((await fetch(`${server}/v1/app/flags`).then((response) => response.json())) as unknown).toMatchObject({ version: 2, envelope: null, paused: expect.any(Array) });
     await write({ version: 2, envelope });
-    expect((await fetch(`${server}/v1/app/flags`).then((response) => response.json())) as unknown).toEqual({ version: 2, envelope });
+    expect((await fetch(`${server}/v1/app/flags`).then((response) => response.json())) as unknown).toMatchObject({ version: 2, envelope, paused: expect.any(Array) });
     await write({ version: 2, envelope, flags: [] });
     expect((await fetch(`${server}/v1/app/flags`)).status).toBe(500);
     await write({ version: 1, envelope });

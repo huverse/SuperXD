@@ -163,6 +163,11 @@ export class FlagConfigDto {
   envelope: SignedEnvelopeDto | null;
 }
 
+// /v1/app/flags 的回复：文件里的签名信封，另带健康回报自动暂停的分批更新（不签名，人工决策见 src/modules/app_health/app_health_rules.ts；客户端只拿它少提示）。
+export class FlagConfigResponseDto extends FlagConfigDto {
+  @ApiProperty({ description: '自动暂停的分批更新开关名（app_update.<渠道>.<版本号>），不签名', type: [String] }) paused: string[];
+}
+
 export class RolloutConfigDto {
   @ApiProperty({ description: '全部开关', type: [RolloutFlagDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RolloutFlagDto) @ArrayMaxSize(rolloutFlagLimit) flags: RolloutFlagDto[];
   // 积分等级 Lv0–Lv5 的门槛（近 12 个月获得的积分，规则见 src/modules/points/points_level.ts），从 0 起严格递增，由 RolloutSource 再核一遍。

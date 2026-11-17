@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_accounts.dart';
+import 'package:superxd/application/app_health.dart';
 import 'package:superxd/application/app_moments.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/campus_reminders.dart';
@@ -85,6 +86,14 @@ void watchUnlocks(Unlocks unlocks, AppHooks hooks) {
 }
 
 // 同意协议与政策之后拉一次灰度配置，之后每次回到前台再看一眼（距上次不到一小时不联网）；请求不带任何标识。
+// 分批更新的健康回报（人工决策见 domain/app_health.dart）：启动与回到前台记今天打开过（只写本机，同意之前也记）；同意之后、回到前台时补发前几天的（联网策略 appHealth 允许才发）。
+void watchAppHealth(AppHealth health, AppHooks hooks) {
+  unawaited(health.markActive());
+  hooks.onResume('AppHealth', health.markActive, agreedOnly: false);
+  hooks.afterAgreed('AppHealth', health.reportDue, service: NetworkService.appHealth);
+  hooks.onResume('AppHealthReport', health.reportDue, service: NetworkService.appHealth);
+}
+
 void watchRollouts(Rollouts rollouts, AppHooks hooks) {
   hooks.afterAgreed('Rollouts', rollouts.refresh, service: NetworkService.rollout);
   hooks.onResume('Rollouts', rollouts.refresh, service: NetworkService.rollout);

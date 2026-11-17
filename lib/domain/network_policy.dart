@@ -36,6 +36,10 @@ enum NetworkService {
   express,
   // 网页版高德地图（学习通位置签到选点）。
   map,
+  // 分批更新的匿名健康回报（每天最多一次，人工决策见 server/src/modules/app_health/app_health_rules.ts）。
+  appHealth,
+  // 新版本的匿名意见反馈（用户点了提交才发）。
+  appFeedback,
 }
 
 // 联网策略：这项服务现在能不能联网。

@@ -12,6 +12,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
+import 'package:superxd/application/app_health.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/application/festivals.dart';
@@ -55,7 +56,7 @@ class ServicePage extends StatelessWidget {
 }
 
 class MinePage extends StatelessWidget {
-  const MinePage({super.key, required this.session, this.social, this.updates, this.developer, this.logs, this.paintings, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.leisure, this.saveRewardPicture});
+  const MinePage({super.key, required this.session, this.social, this.updates, this.health, this.developer, this.logs, this.paintings, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.leisure, this.saveRewardPicture});
   final AppSession session;
   // 娱乐与积分的开关（设备级，人工决策见 domain/leisure.dart）：界面下面一行，写开着关着，点了进设置页。
   final Leisure? leisure;
@@ -70,6 +71,7 @@ class MinePage extends StatelessWidget {
   final Festivals? festivals;
   final Future<bool> Function(Uint8List png)? saveRewardPicture;
   final AppUpdates? updates;
+  final AppHealth? health;
   final DeveloperSettings? developer;
   final DiagnosticLog? logs;
   final PaintingGallery? paintings;
@@ -133,7 +135,7 @@ class MinePage extends StatelessWidget {
                 ]),
                 onTap: () => _push(context, DeveloperNotesPage(notes: notes)),
               )),
-              ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.info), trailing: const CampusIcon(CampusIcons.next), title: const Text('关于'), onTap: () => _push(context, AboutPage(updates: updates, developer: developer, logs: logs, paintings: paintings))),
+              ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.info), trailing: const CampusIcon(CampusIcons.next), title: const Text('关于'), onTap: () => _push(context, AboutPage(updates: updates, health: health, developer: developer, logs: logs, paintings: paintings))),
             ])),
           ]),
         ))))),

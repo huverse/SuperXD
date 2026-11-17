@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import 'package:superxd/application/app_health.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/domain/app_update.dart';
 import 'package:superxd/domain/campus_log.dart';
@@ -10,6 +11,7 @@ import 'package:superxd/domain/painting.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
 import 'package:superxd/page/app_update_dialog.dart';
+import 'package:superxd/page/app_feedback_dialog.dart';
 import 'package:superxd/page/developer_page.dart';
 import 'package:superxd/page/licenses_page.dart';
 import 'package:superxd/page/paintings_page.dart';
@@ -24,12 +26,14 @@ const sourceRepositoryUrl = 'https://github.com/huverse/SuperXD';
 
 // [人工决策-2026-10-05 01:28:53] “我的”只留“关于”一个入口：版本、用户协议、隐私政策、开源许可（原“开源与第三方声明”并入）、源代码与反馈都在关于页。
 class AboutPage extends StatefulWidget {
-  const AboutPage({super.key, this.packageInfo, this.openUrl, this.updates, this.developer, this.logs, this.paintings});
+  const AboutPage({super.key, this.packageInfo, this.openUrl, this.updates, this.health, this.developer, this.logs, this.paintings});
   // 测试注入版本信息与打开链接，默认读安装包、交给系统浏览器。
   final Future<PackageInfo>? packageInfo;
   final Future<bool> Function(Uri url)? openUrl;
   // 应用内更新；没配中转或不是发布渠道的构建为空，不显示检查更新。
   final AppUpdates? updates;
+  // 新版本反馈（装了这个版本 14 天内、没交过才显示，人工决策见 domain/app_health.dart）；没配中转为空。
+  final AppHealth? health;
   // 开发者模式与本机日志（设备级）；为空时连点版本号不开启开发者模式。
   final DeveloperSettings? developer;
   final DiagnosticLog? logs;
@@ -51,6 +55,10 @@ class _AboutPageState extends State<AboutPage> {
       campusLog('[About] action=openUrl errorType=${error.runtimeType}\n$stack');
     }
     if (!opened && mounted) await showCampusNotice(context, '没有可打开链接的浏览器。\n$url');
+  }
+
+  Future<void> _feedback(AppHealth health) async {
+    if (await showAppFeedback(context, health) == true && mounted) showCampusToast(context, '收到了，谢谢');
   }
 
   // 手动检查：已查到新版或正在下载时直接打开更新弹窗；否则先查，查到再弹，查不到在行尾说明。
@@ -155,6 +163,13 @@ class _AboutPageState extends State<AboutPage> {
             )),
             const SizedBox(height: 16),
           ],
+          if (widget.health case final health?)
+            ListenableBuilder(
+              listenable: health,
+              builder: (context, _) => health.feedbackOpen
+                  ? Padding(padding: const EdgeInsets.only(bottom: 16), child: CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: row(CampusIcons.thumbsUp, '新版本反馈', () => _feedback(health))))
+                  : const SizedBox.shrink(),
+            ),
           CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
             row(CampusIcons.terms, '用户协议', () => context.push('/legal/service')),
             row(CampusIcons.privacy, '隐私政策', () => context.push('/legal/privacy')),

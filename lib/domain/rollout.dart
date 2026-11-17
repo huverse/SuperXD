@@ -100,8 +100,11 @@ const rolloutUnlockTitleMax = 20;
 const rolloutUnlockPriceMax = 100000;
 
 class RolloutConfig {
-  const RolloutConfig(this.rules, {this.levels = const [], this.unlocks = const []});
+  const RolloutConfig(this.rules, {this.levels = const [], this.unlocks = const [], this.paused = const {}});
   final Map<String, RolloutRule> rules;
+  // 健康回报自动暂停的分批更新（app_update.<渠道>.<版本号>，人工决策见 domain/app_health.dart）：中转不签名地附在第 2 版回复里，
+  // 只拿来少提示（自动检查不提示这一版），被冒充最多让人晚点更新；不进签名载荷、旧版视图不带。
+  final Set<String> paused;
   // 积分等级 Lv0–Lv5 的门槛（近 12 个月获得的积分，[人工决策-2026-11-14 20:20:18] 见服务端 src/modules/points/points_level.ts）：
   // 跟着灰度配置下发，服务端算等级读同一份；没写为空。
   final List<int> levels;
@@ -110,6 +113,8 @@ class RolloutConfig {
 
   // 给第 1 版接口（alpha.28 及以前）的那份：去掉带新字段的开关，等级门槛与解锁照旧。
   RolloutConfig get legacy => RolloutConfig({for (final rule in rules.values) if (!rule.conditional) rule.id: rule}, levels: levels, unlocks: unlocks);
+
+  RolloutConfig withPaused(Set<String> paused) => RolloutConfig(rules, levels: levels, unlocks: unlocks, paused: paused);
 }
 
 // 问点名的回复（人工决策见文件头 11-16 那条）：点名的开关与这个应用账号建立的时刻（判 minAccountDays 用）。
@@ -306,7 +311,7 @@ RolloutRule _rule(Object? flag) {
 // 每个开关 {id, percent 或 stages, 另可写 from、until、platforms、channels、minVersion、maxVersion、minLevel、minAccountDays、params}（第 2 版；第 1 版只有前两项）。
 // version 只是给人看的写法版本，可写可不写（第 1 版接口发出去的那份不写，旧版本见了会拒收）。
 RolloutConfig decodeRolloutConfig(Object? json) {
-  const keys = {'version', 'flags', 'levels', 'unlocks'};
+  const keys = {'version', 'flags', 'levels', 'unlocks', 'paused'};
   if (json case {'flags': final List<Object?> flags} when flags.length <= rolloutRuleLimit && json.keys.every(keys.contains) && (json['version'] == null || json['version'] == 1 || json['version'] == 2)) {
     final rules = <String, RolloutRule>{};
     for (final flag in flags) {
@@ -314,7 +319,7 @@ RolloutConfig decodeRolloutConfig(Object? json) {
       if (rules.containsKey(rule.id)) throw FormatException('开关 ${rule.id} 重复');
       rules[rule.id] = rule;
     }
-    return RolloutConfig(rules, levels: json.containsKey('levels') ? _levels(json['levels']) : const [], unlocks: json.containsKey('unlocks') ? _unlocks(json['unlocks']) : const []);
+    return RolloutConfig(rules, levels: json.containsKey('levels') ? _levels(json['levels']) : const [], unlocks: json.containsKey('unlocks') ? _unlocks(json['unlocks']) : const [], paused: decodeRolloutPaused(json['paused']));
   }
   throw const FormatException('灰度配置不合法');
 }
@@ -338,6 +343,7 @@ Map<String, Object?> encodeRolloutConfig(RolloutConfig config) => {
       },
   ],
   if (config.levels.isNotEmpty) 'levels': config.levels,
+  if (config.paused.isNotEmpty) 'paused': [...config.paused],
   if (config.unlocks.isNotEmpty)
     'unlocks': [
       for (final unlock in config.unlocks)
@@ -351,6 +357,12 @@ Map<String, Object?> encodeRolloutConfig(RolloutConfig config) => {
           if (unlock.retired) 'retired': true,
         },
     ],
+};
+
+// 自动暂停的名单是外部输入：只认分批更新的开关名，最多 rolloutRuleLimit 个，不合格的整份不用（当没有暂停）。
+Set<String> decodeRolloutPaused(Object? json) => switch (json) {
+  final List<Object?> items when items.length <= rolloutRuleLimit && items.every((item) => item is String && item.startsWith('app_update.') && rolloutIdPattern.hasMatch(item)) => {...items.cast<String>()},
+  _ => const {},
 };
 
 // 拉配置失败，message 只记日志（灰度配置没有界面）。
