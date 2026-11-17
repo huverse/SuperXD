@@ -15,6 +15,7 @@ import 'package:superxd/playground/puzzle/ice/ice_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_tokens.dart';
 
 // 冰面滑行对局页：在棋盘上朝上下左右滑动（或点棋盘下方的方向按钮）推动小企鹅，它一直滑到撞上岩石或边界、滑进雪地才停；
 // 收齐宝石后正好停在终点（插旗的光圈）上就解开。滑行时长按距离算、前快后慢，撞停时轻轻一压再弹回；滑不动时轻震、朝那边抖一下，不算步数。
@@ -257,7 +258,7 @@ class _IcePageState extends State<IcePage> with TickerProviderStateMixin {
       ],
       board: Column(children: [
         Expanded(child: PlayBoardBox(aspectRatio: _session.puzzle.width / _session.puzzle.height, builder: _board)),
-        const SizedBox(height: 16),
+        const SizedBox(height: CampusGap.large),
         PlayDirectionPad(verb: '滑', onPush: finished || stopped ? null : _push),
       ]),
     );
