@@ -123,6 +123,20 @@ void main() {
     }
   });
 
+  // [人工决策-2026-11-17 21:24:25] 见 campus_theme.dart 的 inputDecorationTheme：输入框底色与卡片同色，边界只靠边框，组件边界要 3:1。
+  test('输入框边框用轮廓色：八套配色对卡片底不低于 3:1，聚焦时主色加粗', () {
+    double contrast(Color a,Color b){final left=a.computeLuminance(),right=b.computeLuminance();return (math.max(left,right)+.05)/(math.min(left,right)+.05);}
+    for(final palette in [...CampusPalette.values,...CampusPalette.darkValues]) {
+      final reason='${palette.id} ${palette.brightness.name}';
+      final input=campusTheme(palette:palette).inputDecorationTheme;
+      final enabled=input.enabledBorder!.borderSide, focused=input.focusedBorder!.borderSide;
+      final card=Color.alphaBlend(palette.surface.withValues(alpha:.91),palette.backgroundBottom);
+      expect(contrast(enabled.color,card),greaterThanOrEqualTo(3),reason:reason);
+      expect(contrast(enabled.color,input.fillColor!),greaterThanOrEqualTo(3),reason:reason);
+      expect((focused.color,focused.width),(palette.primary,2),reason:reason);
+    }
+  });
+
   test('激活色强调文字在八套配色的卡片底上：大号字不低于 3:1，深色不低于 4.5:1', () {
     double contrast(Color a,Color b){final left=a.computeLuminance(),right=b.computeLuminance();return (math.max(left,right)+.05)/(math.min(left,right)+.05);}
     for(final palette in [...CampusPalette.values,...CampusPalette.darkValues]) {
