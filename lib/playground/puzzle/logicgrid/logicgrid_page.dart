@@ -80,7 +80,7 @@ class _LogicGridPageState extends State<LogicGridPage> with TickerProviderStateM
   // 标了用过的线索；填满却不成立时不成立的线索（改了任何一格就重新算）。
   var _used = <int>{};
   var _violations = <int>{};
-  // 这一局判错过几次（结果里写）。
+  // 这一题判错过几次（结果里写；从头来接着算，同罚时，换题才清）。
   var _wrongs = 0;
   late var _clueKeys = _keys();
   final _scroll = ScrollController();
@@ -107,7 +107,6 @@ class _LogicGridPageState extends State<LogicGridPage> with TickerProviderStateM
     _history.clear();
     _used = {};
     _violations = {};
-    _wrongs = 0;
     _shake.value = 0;
     _glow.value = 0;
   }
@@ -121,6 +120,7 @@ class _LogicGridPageState extends State<LogicGridPage> with TickerProviderStateM
   void _newGame(PuzzleTier? tier) {
     setState(() {
       _clear();
+      _wrongs = 0;
       _session.next(tier: tier);
       _reset();
     });
@@ -188,6 +188,9 @@ class _LogicGridPageState extends State<LogicGridPage> with TickerProviderStateM
   }
 
   // 全部填满就按规则判：成立即解开；不成立只标出不成立的线索（题目唯一，所以一定有），alert 时轻震、晃一下、滚到第一条并记一次判错。
+  // [人工决策-2026-11-17 19:19:39] 用户要求堵上乱点碰通关：自由模式判错一次罚时 wrongPenalty（这道题预计用时的四分之一，见 PlaySession）。
+  // 以前判错不罚：入门 3 人 2 类只有 36 种填法，随手填满后照着标红的线索对调两人，判错 10 次上下、约 16 秒就碰对（预计约 100 秒），
+  // 简单档约 50 秒；罚时后都比预计用时慢。普通起靠试错碰不出来。撤销退回的局面照样标、不罚；挑战模式由服务器计错交。
   void _judge({required bool alert}) {
     final complete = _values.every((row) => !row.contains(-1));
     if (widget.challenge != null) {
@@ -204,6 +207,7 @@ class _LogicGridPageState extends State<LogicGridPage> with TickerProviderStateM
     }
     if (!alert) return;
     _wrongs++;
+    _session.penalize(_session.wrongPenalty);
     playRejected();
     showCampusToast(context, '有 ${violations.length} 条线索对不上');
     if (!_still) unawaited(_shake.forward(from: 0));
@@ -236,11 +240,12 @@ class _LogicGridPageState extends State<LogicGridPage> with TickerProviderStateM
     // 表格一行一行亮一下，亮完再弹结果；减少动画时直接弹。
     if (!_still) await _glow.animateTo(1, duration: Duration(milliseconds: _glowEach + (_puzzle.people - 1) * _glowGap));
     if (!mounted) return;
+    final penalty = _session.penalty.inSeconds;
     final choice = await showPlayResult(
       context,
       session: _session,
       newBest: newBest,
-      detail: '${_puzzle.people} 人 · ${_puzzle.categories.length} 类 · ${_wrongs == 0 ? '一次就对' : '判错 $_wrongs 次'}',
+      detail: '${_puzzle.people} 人 · ${_puzzle.categories.length} 类 · ${_wrongs == 0 ? '一次就对' : penalty > 0 ? '判错 $_wrongs 次，罚时 $penalty 秒' : '判错 $_wrongs 次'}',
     );
     if (!mounted) return;
     switch (choice) {
