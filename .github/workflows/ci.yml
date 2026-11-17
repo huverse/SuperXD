@@ -202,9 +202,9 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          # -feature -Vulkan：软件渲染的模拟器上，Flutter 走 Vulkan 一出首帧整个模拟器就崩（11-17 第一次跑：am start 后 adb 连接断开、5554 端口没了，
-          # 本机软件渲染的模拟器也一样），关掉 Vulkan 让 Impeller 走 OpenGL ES。真机与硬件渲染的模拟器照旧走 Vulkan。
-          emulator-options: -no-window -gpu swiftshader_indirect -feature -Vulkan -noaudio -no-boot-anim -no-snapshot-save
+          # -gpu guest：在系统镜像里用软件渲染，不经模拟器宿主的渲染器。11-17 前两次用 swiftshader_indirect（第二次另关了 Vulkan）
+          # 都是应用一出首帧整个模拟器进程就崩（宿主渲染器报 Failed to find ColorBuffer，adb 连接断开、5554 端口没了；本机软件渲染的模拟器也一样）。
+          emulator-options: -no-window -gpu guest -noaudio -no-boot-anim -no-snapshot-save
           # 这个动作把 script 的每一行分开执行，所以只写一行、逻辑放在脚本里。
           script: bash tool/android_smoke.sh
       - if: always() && steps.android-smoke.outcome != 'skipped'
