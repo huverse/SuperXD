@@ -10,6 +10,7 @@ import { AccountRetentionTask } from 'src/modules/account/account_retention.task
 import { AccountService } from 'src/modules/account/account.service';
 import { DeviceModule } from 'src/modules/device/device.module';
 import { IpRegion } from 'src/common/ip_region';
+import { RelaySigner } from 'src/common/crypto/relay_signer';
 import { env } from 'src/config/env';
 
 // 应用账号：借设备模块验签与登记密钥，设备模块不知道账号。设备删除时的连带删除由 pairing 编排。
@@ -22,6 +23,8 @@ import { env } from 'src/config/env';
     // 扫码登录查属地的离线库，路径取 env（没配就查不出），一个实例一份。
     { provide: IpRegion, useFactory: () => new IpRegion(env().ipRegionDb) },
     AccountKeys,
+    // 「账号已注销」的回复带服务器签名（控制器上的拦截器 account_deleted_proof.ts 用）。
+    RelaySigner,
     AccountDataHooks,
     AccountService,
     AccountRetentionTask,

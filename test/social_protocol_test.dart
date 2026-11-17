@@ -58,6 +58,17 @@ void main() {
       expect(relayServerKeys, isNot(contains(keys['publicKey'])));
     });
 
+    test('「账号已注销」的证明原文逐字节一致、服务器签名验得过，换个随机数就验不过', () async {
+      final deleted = vectors['accountDeleted'] as Map<String, dynamic>;
+      final canonical = accountDeletedCanonical(deleted['deviceId'] as String, deleted['nonce'] as String);
+      expect(utf8.decode(canonical), deleted['canonical']);
+      final keys = [deleted['publicKey'] as String];
+      final proof = decodeBase64UrlNoPad(deleted['proof'] as String);
+      expect(await verifyRelaySignature(keys, canonical, proof), isTrue);
+      expect(await verifyRelaySignature(keys, accountDeletedCanonical(deleted['deviceId'] as String, 'AAAAAAAAAAAAAAAAAAAAAA'), proof), isFalse);
+      expect(await verifyRelaySignature(relayServerKeys, canonical, proof), isFalse, reason: '内置的是真钥');
+    });
+
     test('base64url 只认无填充的规范写法', () {
       expect(() => decodeBase64UrlNoPad('AA=='), throwsA(isA<SocialCryptoException>()));
       expect(() => decodeBase64UrlNoPad('A+A'), throwsA(isA<SocialCryptoException>()));

@@ -1,4 +1,4 @@
-import { createCipheriv, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes } from 'node:crypto';
+import { createCipheriv, createPrivateKey, createPublicKey, diffieHellman, generateKeyPairSync, hkdfSync, randomBytes } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import Redis from 'ioredis';
@@ -8,7 +8,7 @@ import { createRelayApp } from 'src/relay_app';
 import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
 import { accountDeviceLimit, accountJoinPerSourcePerHour, accountLoginPerUserSourcePerHour, accountRegisterPerDevicePerHour } from 'src/common/relay_limits';
-import { decodeBase64url, x25519PrivateKey, x25519PublicOf } from 'src/common/crypto/relay_crypto';
+import { accountDeletedCanonical, decodeBase64url, ed25519Key, verifyEd25519, x25519PrivateKey, x25519PublicOf } from 'src/common/crypto/relay_crypto';
 import { openAccountSeal } from 'src/modules/account/account_keys';
 import { AccountRetentionTask } from 'src/modules/account/account_retention.task';
 import { IpRegion } from 'src/common/ip_region';
@@ -354,6 +354,32 @@ describe('退出、注销与保留', () => {
     await app.get(AccountRetentionTask).sweep();
     expect(await database.query('SELECT id FROM account_tombstone WHERE device_id = ?', [first.deviceId])).toHaveLength(0);
     expect((await first.call('GET', '/v1/account')).body.code).toBe('ACCOUNT_NOT_FOUND');
+  });
+
+  // [人工决策-2026-11-17 21:24:25] 「账号已注销」带服务器签名、绑定这次请求（见 src/modules/account/account_deleted_proof.ts）：客户端验过才清本机私信。
+  it('ACCOUNT_DELETED 的回复带 proof：服务器对「设备号、这次请求的随机数」的签名，换个随机数（重放）或换台设备都验不过；别的错误不带', async () => {
+    const serverKey = ed25519Key(Buffer.from(createPublicKey(createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), decodeBase64url(process.env.RELAY_FRIEND_SIGN_KEY!, 32)!]), format: 'der', type: 'pkcs8' })).export({ format: 'jwk' }).x!, 'base64url'));
+    const { device: first, username } = await registered();
+    const second = new TestDevice(server);
+    await login(second, username);
+    expect((await first.call('DELETE', '/v1/account')).status).toBe(204);
+    const nonce = randomBytes(16).toString('base64url');
+    const gone = await second.call('GET', '/v1/account', undefined, nonce);
+    expect(gone.body.code).toBe('ACCOUNT_DELETED');
+    expect(gone.status).toBe(410);
+    const proof = decodeBase64url(gone.body.proof, 64)!;
+    expect(verifyEd25519(serverKey, accountDeletedCanonical(second.deviceId, nonce), proof)).toBe(true);
+    expect(verifyEd25519(serverKey, accountDeletedCanonical(second.deviceId, randomBytes(16).toString('base64url')), proof), '别的请求（重放）').toBe(false);
+    expect(verifyEd25519(serverKey, accountDeletedCanonical(first.deviceId, nonce), proof), '别的设备').toBe(false);
+    const changed = await second.call('POST', '/v1/account/password', { sealed: seal({ password: 'changed-synthetic' }, second.deviceId) });
+    expect(changed.body.code).toBe('ACCOUNT_DELETED');
+    expect(changed.body.proof).not.toBe(gone.body.proof);
+    const stranger = new TestDevice(server);
+    await stranger.register();
+    const missing = await stranger.call('GET', '/v1/account');
+    expect(missing.body.proof).toBeUndefined();
+    expect(missing.body.code).toBe('ACCOUNT_NOT_FOUND');
+    expect(accountDeletedCanonical('d', 'n').toString('utf8')).toBe('SXD1-account-deleted\nd\nn');
   });
 
   it(`一个账号最多 ${accountDeviceLimit} 把设备密钥，再登录顶掉最久没用的`, async () => {

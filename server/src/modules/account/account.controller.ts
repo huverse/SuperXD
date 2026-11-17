@@ -1,15 +1,17 @@
-import { Body, Controller, Delete, Get, HttpCode, Ip, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Ip, Param, Post, UseGuards, UseInterceptors } from '@nestjs/common';
 import { ApiTags } from '@nestjs/swagger';
 
 import { AccountService } from 'src/modules/account/account.service';
+import { AccountDeletedProof } from 'src/modules/account/account_deleted_proof';
 import { CurrentDevice, DeviceAuthGuard, SelfSigned } from 'src/modules/device/device_auth.guard';
 import * as dtos from 'src/modules/account/account.dto';
 
 // 应用账号（人工决策见 AccountService）：用户名加密码，一把设备密钥登录一个账号，全部请求带设备签名；
-// 退出账号就是删掉这把设备密钥（DELETE /v1/devices，pairing 连带删登记）。
+// 退出账号就是删掉这把设备密钥（DELETE /v1/devices，pairing 连带删登记）。回 ACCOUNT_DELETED 时带服务器签名的 proof（见 account_deleted_proof.ts）。
 @ApiTags('account')
 @Controller('v1/account')
 @UseGuards(DeviceAuthGuard)
+@UseInterceptors(AccountDeletedProof)
 export class AccountController {
   constructor(private readonly accounts: AccountService) {}
 

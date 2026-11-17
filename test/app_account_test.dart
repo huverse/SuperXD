@@ -13,6 +13,7 @@ import 'package:superxd/application/leisure.dart';
 import 'package:superxd/application/network_preference.dart';
 import 'package:superxd/domain/account.dart';
 import 'package:superxd/domain/app_account.dart';
+import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/diagnostic_upload.dart';
 import 'package:superxd/domain/network_policy.dart';
@@ -26,6 +27,8 @@ import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_crypto.dart';
 import 'package:superxd/theme/campus_theme.dart';
+
+import 'fake_relay.dart';
 
 // 应用账号（人工决策见 domain/app_account.dart 的 11-15 16:40:33 那条）：自己的账号体系，用户名加密码；中转客户端、编排、账号页与应用账号页。合成数据。
 const _accountId = 'AAAAAAAAAAAAAAAAAAAAAA';
@@ -62,7 +65,7 @@ void main() {
       relay = _Relay();
       vault = MemoryAppAccountVault();
       sealPair = await X25519().newKeyPairFromSeed(List<int>.generate(32, (index) => index + 1));
-      client = RelayAppAccountClient(vault: vault, transport: relay, sealKey: (await sealPair.extractPublicKey()).bytes);
+      client = RelayAppAccountClient(vault: vault, transport: relay, sealKey: (await sealPair.extractPublicKey()).bytes, serverKeys: FakeRelay.serverKeys);
     });
 
     test('注册：只发用户名与封装好的秘密（只有中转打得开、只认这台设备）；成功才把密钥、账号号与用户名存本机', () async {
@@ -212,9 +215,26 @@ void main() {
     });
 
     // [人工决策-2026-11-15 19:18:31] 区分「账号已注销」与「这把密钥不在账号里」（用户选推荐）。
-    test('查看账号：账号已注销（ACCOUNT_DELETED）同样删本机记录，失败分类是账号已注销', () async {
-      await vault.write(appAccountSlot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId, username: 'tester_one'));
-      relay.reply = (request) => const RelayResponse(410, {'code': 'ACCOUNT_DELETED'});
+    // [人工决策-2026-11-17 21:24:25] 「账号已注销」要带服务器对「设备号、这次请求的随机数」的签名才认，没有或验不过当连不上、什么也不删。
+    test('查看账号：账号已注销（ACCOUNT_DELETED，带服务器签名）同样删本机记录，失败分类是账号已注销；没签名、签错、重放旧证明都当连不上、不删', () async {
+      final key = await SocialIdentity.generate();
+      await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: _accountId, username: 'tester_one'));
+      final server = FakeRelay(), forger = FakeRelay()..serverSeedOverride = List.filled(32, 9);
+      Future<String> proofOf(FakeRelay signer, String nonce) async => base64UrlNoPad(await signer.serverSign(accountDeletedCanonical(key.deviceId, nonce)));
+      // 截下来的上一次的证明（别的随机数）。
+      final replayed = await proofOf(server, base64UrlNoPad(List.filled(16, 7)));
+      final forged = <String, Future<RelayResponse> Function(_Request request)>{
+        '没签名': (request) async => const RelayResponse(410, {'code': 'ACCOUNT_DELETED'}),
+        '签名不是 base64url': (request) async => const RelayResponse(410, {'code': 'ACCOUNT_DELETED', 'proof': '!!'}),
+        '别的钥签的': (request) async => RelayResponse(410, {'code': 'ACCOUNT_DELETED', 'proof': await proofOf(forger, request.headers['x-sxd-nonce']!)}),
+        '重放旧证明': (request) async => RelayResponse(410, {'code': 'ACCOUNT_DELETED', 'proof': replayed}),
+      };
+      for (final MapEntry(key: reason, value: reply) in forged.entries) {
+        relay.asyncReply = reply;
+        await expectLater(client.summary(), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.network)), reason: reason);
+        expect(await client.accountOf(), isNotNull, reason: reason);
+      }
+      relay.asyncReply = (request) async => RelayResponse(410, {'code': 'ACCOUNT_DELETED', 'proof': await proofOf(server, request.headers['x-sxd-nonce']!)});
       await expectLater(client.summary(), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.deleted)));
       expect(await client.accountOf(), isNull);
     });
@@ -725,11 +745,14 @@ class _Request {
 class _Relay implements RelayTransport {
   final requests = <_Request>[];
   RelayResponse Function(_Request request) reply = (request) => const RelayResponse(204, {});
+  // 设了就用它回（要签名的回复）。
+  Future<RelayResponse> Function(_Request request)? asyncReply;
   @override
   Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, int? limit, bool background = false}) async {
     final request = _Request(method, pathWithQuery, headers, body == null ? const {} : (jsonDecode(utf8.decode(body)) as Map).cast<String, Object?>());
     requests.add(request);
-    return reply(request);
+    final pending = asyncReply;
+    return pending == null ? reply(request) : await pending(request);
   }
 }
 

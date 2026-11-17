@@ -191,9 +191,21 @@ class RelayClient {
         clockOffset = serverTime - DateTime.now().millisecondsSinceEpoch;
         continue;
       }
+      if (code == RelayCode.accountDeleted && !await _deletionProven(identity.deviceId, nonce, response.body['proof'])) {
+        campusLog('[Relay] action=account_deleted errorType=signature route=$method ${path.split('?').first}');
+        throw const RelayException(RelayCode.network);
+      }
       final retryAfter = response.body['retryAfter'];
       throw RelayException(code, retryAfter: retryAfter is int ? retryAfter : null, detail: response.body);
     }
+  }
+
+  // [人工决策-2026-11-17 21:24:25] 「账号已注销」要服务器签名（用户选「只给两类关键回复加认证」）：收到它会不可逆地清掉本机那个账号的私信与私信身份私钥，
+  // 明文 HTTP 下同一网络里的人伪造一条就够了。服务器的 proof 是对「这把密钥的设备号、这次请求的随机数」的签名（原文见 social_crypto.dart 的 accountDeletedCanonical，
+  // 服务端 src/modules/account/account_deleted_proof.ts）：随机数每次新起，截下来的旧证明对这次请求验不过。没有或验不过当连不上（NETWORK），什么也不删。
+  Future<bool> _deletionProven(String deviceId, String nonce, Object? proof) async {
+    final signature = proof is String ? tryDecodeBase64UrlNoPad(proof, length: 64) : null;
+    return signature != null && await verifyRelaySignature(serverKeys, accountDeletedCanonical(deviceId, nonce), signature);
   }
 
   Future<void> register(SocialIdentity identity) =>
