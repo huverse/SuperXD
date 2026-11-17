@@ -220,7 +220,7 @@ export const flashJudge: Judge<FlashPuzzle, number[][]> = {
 
 // ---------- 记忆闪光第 2 版 flash@2 ----------
 // 第 2 版加了题型（同 Dart 的 FlashVariant）：位置记忆 spot（顺序不限，每组升序）、顺序 sequence、倒序 reverse、数字顺序 numbers（后三种按先后点，
-// 每组按亮的先后或数字排）；顺序与倒序另带格间暗多久 gap。数字顺序里不是要点的块的格不响应，答案里不该有。
+// 每组按亮的先后或数字排）；顺序与倒序另带格间暗多久 gap。只有已点亮的格不响应（答案里不该有），其余点在要点的格以外都算点错，数字顺序也一样。
 type FlashVariant = 'spot' | 'sequence' | 'reverse' | 'numbers';
 type FlashPuzzleV2 = { side: number; variant: FlashVariant; rounds: number[][][]; mirror: boolean };
 const flashVariants: readonly string[] = ['spot', 'sequence', 'reverse', 'numbers'];
@@ -246,9 +246,7 @@ const flashMistakesV2 = (puzzle: FlashPuzzleV2, attempts: number[][]): number | 
     const hits: number[] = [];
     let last: 'hit' | 'cleared' | 'missed' | null = null;
     for (const cell of taps) {
-      if (last === 'cleared' || last === 'missed' || cell >= count) return null;
-      // 不响应的格：已点亮的，数字顺序里不是要点的块的。
-      if (hits.includes(cell) || (puzzle.variant === 'numbers' && !pattern.includes(cell))) return null;
+      if (last === 'cleared' || last === 'missed' || cell >= count || hits.includes(cell)) return null;
       const right = ordered ? pattern[hits.length] === cell : pattern.includes(cell);
       last = !right ? 'missed' : hits.length + 1 === pattern.length ? 'cleared' : 'hit';
       hits.push(cell);

@@ -26,8 +26,10 @@ const flashReveal = Duration(milliseconds: 1200);
 enum _Phase { ready, lead, showing, input, reveal, passed, solved }
 
 // 记忆闪光对局页：先点棋盘上的「开始」（计时从这里起），每次先暗一下再按题型亮：位置记忆整组同时亮、到时熄灭；
-// 顺序与倒序一格接一格亮（每格亮多久、格与格之间暗多久都在题面里）；数字顺序在几格上写出 1 到 N，到时或点了第一下就藏成空白块，
-// 之后只有块能点（块外的格不响应，同黑猩猩测试）。熄灭后才能点（数字顺序亮着时也能点，点第一下就藏）。
+// 顺序与倒序一格接一格亮（每格亮多久、格与格之间暗多久都在题面里）；数字顺序在几格上写出 1 到 N，到时或点了第一下就在原位藏成空白块。
+// 熄灭后才能点（数字顺序亮着时也能点，点第一下就藏），整盘每格都响应，点在这一次要点的格以外都算点错。
+// 镜像题（挑战改目标）的空白块也留在数字原来的位置、要点的是镜像格：镜像与不镜像在棋盘上看不出差别，要不要镜像只能按门上的数自己算
+// （人工决策见 challenge_rules.dart 的 11-14 23:11 那条）。
 // 点对的格保持点亮（激活色）；点错的格标警示色打叉并重震，同时亮出漏掉的格（按先后点的在每格写出该第几个点），停一会儿换这一轮的下一组重来。
 // 亮起与熄灭是游戏内容不是装饰：减少动画时照样亮、照样灭，只是不渐变。阶段用 Timer 计时，不用 AnimationController
 // （减少动画时它的时长会被压成二十分之一，图案就一闪而过）。切到后台时正在亮的这一组作废，回来重新暗一下再亮。
@@ -60,7 +62,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
   // 顺序与倒序：正亮到第几格（熄灭渐暗时还指着它），与这一格是不是亮着（格与格之间暗着时为假）。
   int? _step;
   var _stepLit = false;
-  // 数字顺序藏起后的空白块（就是要点的格），下一次亮起时清掉。
+  // 数字顺序藏起后的空白块：留在数字原来亮的位置（镜像题也不挪，不露出要点的是镜像格），下一次亮起时清掉。
   var _blocks = <int>[];
   // 每次尝试依次点的格（答案，挑战模式交服务器核对）。
   final _attempts = <List<int>>[];
@@ -236,17 +238,17 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
     setState(() {
       _phase = _Phase.input;
       _stepLit = false;
-      if (_variant == FlashVariant.numbers) _blocks = _target;
+      if (_variant == FlashVariant.numbers) _blocks = _shown;
     });
     _fadeTo(_flash, 0);
   }
 
-  // 作答时能点；数字顺序亮着时也能点（点第一下就藏起），块外的格不响应。
-  bool _tappable(int cell) => (_phase == _Phase.input || (_phase == _Phase.showing && _variant == FlashVariant.numbers)) && (_variant != FlashVariant.numbers || _target.contains(cell));
+  // 作答时整盘每格都能点；数字顺序亮着时也能点（点第一下就藏起）。
+  bool get _accepting => _phase == _Phase.input || (_phase == _Phase.showing && _variant == FlashVariant.numbers);
 
   // 不能点的时候按下不响应、不震。
   void _down(int cell) {
-    _pressed = _tappable(cell) ? cell : null;
+    _pressed = _accepting ? cell : null;
     if (_pressed != null) _press.value = 1;
   }
 
@@ -259,7 +261,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
   }
 
   void _tap(int cell) {
-    if (!_tappable(cell)) return;
+    if (!_accepting) return;
     final tap = flashTap(_variant, _target, _hits, cell);
     if (tap != FlashTap.ignored) {
       // 数字顺序亮着时点了第一下：先全部藏起，这一下照常算。
@@ -485,7 +487,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
               container: true,
               button: true,
               label: '${_cellName(cell)}，${_cellState(cell)}',
-              onTap: _tappable(cell) ? () => _tap(cell) : null,
+              onTap: _accepting ? () => _tap(cell) : null,
               child: const SizedBox.expand(),
             )),
         if (_phase == _Phase.ready)

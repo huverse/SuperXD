@@ -6,6 +6,8 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/domain/challenge.dart';
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/playground_catalog.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/playground/puzzle/flash/flash_page.dart';
@@ -28,10 +30,10 @@ const _tiers = {
 // 不在这一组里的第一格。
 int _outside(FlashPuzzle puzzle, List<int> pattern) => List.generate(puzzle.side * puzzle.side, (cell) => cell).firstWhere((cell) => !pattern.contains(cell));
 
-// 第 round 轮第 attempt 次：先点对 hits 格再点错一下（数字顺序点块外的格不响应，点错是跳过下一个数先点了后面的块）。
+// 第 round 轮第 attempt 次：先点对 hits 格再点一格不在这一组里的（每种题型都算点错）。
 List<int> _miss(FlashPuzzle puzzle, int round, int attempt, {int hits = 0}) {
   final pattern = flashPattern(puzzle, round, attempt);
-  return [...pattern.take(hits), puzzle.variant == FlashVariant.numbers ? pattern[hits + 1] : _outside(puzzle, pattern)];
+  return [...pattern.take(hits), _outside(puzzle, pattern)];
 }
 
 final _app = GlobalKey();
@@ -184,7 +186,7 @@ void main() {
       expect(flashExposure(draws[PuzzleTier.expert]!, 10), 3000);
     });
 
-    test('点一格：已点亮的不响应；位置记忆顺序不限，按先后点的要正好是下一格；数字顺序里块外的格不响应、跳过数字算点错', () {
+    test('点一格：已点亮的不响应；位置记忆顺序不限，按先后点的要正好是下一格；数字顺序跳过数字与点了块外的格都算点错', () {
       expect(flashTap(FlashVariant.spot, [1, 4, 7], [1], 1), FlashTap.ignored);
       expect(flashTap(FlashVariant.spot, [1, 4, 7], [1], 7), FlashTap.hit);
       expect(flashTap(FlashVariant.spot, [1, 4, 7], [1, 7], 4), FlashTap.cleared);
@@ -201,7 +203,8 @@ void main() {
 
       expect(flashTap(FlashVariant.numbers, [7, 1, 4], [], 7), FlashTap.hit);
       expect(flashTap(FlashVariant.numbers, [7, 1, 4], [], 4), FlashTap.missed);
-      expect(flashTap(FlashVariant.numbers, [7, 1, 4], [], 2), FlashTap.ignored, reason: '块外的格');
+      expect(flashTap(FlashVariant.numbers, [7, 1, 4], [], 2), FlashTap.missed, reason: '块外的格');
+      expect(flashTap(FlashVariant.numbers, [7, 1, 4], [7], 2), FlashTap.missed, reason: '块外的格');
       expect(flashTap(FlashVariant.numbers, [7, 1, 4], [7], 7), FlashTap.ignored);
       expect(flashTap(FlashVariant.numbers, [7, 1, 4], [7, 1], 4), FlashTap.cleared);
     });
@@ -239,7 +242,7 @@ void main() {
       expect(_rules.solved(puzzle, missing(flashMaxAttempts - 4)), isFalse);
     });
 
-    test('按规则判定（按先后点）：顺序与数字顺序照亮的先后、倒序反过来，换了先后不算；数字顺序答案里有块外的格不合规；镜像点镜像的格', () {
+    test('按规则判定（按先后点）：顺序与数字顺序照亮的先后、倒序反过来，换了先后不算；数字顺序点块外的格算点错（镜像也一样，点原来那块也算错）；镜像点镜像的格', () {
       for (final tier in [PuzzleTier.normal, PuzzleTier.hard, PuzzleTier.expert]) {
         final draw = _rules.generate(9, tier);
         final puzzle = draw.puzzle, solution = draw.solution;
@@ -262,10 +265,19 @@ void main() {
         expect(_rules.solved(mirrored, solution), isFalse, reason: reason);
         expect(_rules.solved(mirrored, [for (var round = 0; round < flashRounds; round++) flashPattern(mirrored, round, 0)]), isTrue, reason: reason);
       }
+      // 数字顺序：块外的格（不是这一组的）算点错，换下一组照先后点齐。
       final numbers = _rules.generate(9, PuzzleTier.expert);
-      final outside = _outside(numbers.puzzle, numbers.solution.first);
-      expect(flashMistakes(numbers.puzzle, [[outside], ...numbers.solution]), isNull);
-      expect(flashMistakes(numbers.puzzle, [[numbers.solution.first.first, outside], ...numbers.solution.sublist(1)]), isNull);
+      final puzzle = numbers.puzzle, solution = numbers.solution;
+      final outside = _outside(puzzle, solution.first);
+      expect(flashMistakes(puzzle, [[outside], flashPattern(puzzle, 0, 1), ...solution.sublist(1)]), 1);
+      expect(flashMistakes(puzzle, [[solution.first.first, outside], flashPattern(puzzle, 0, 1), ...solution.sublist(1)]), 1);
+      expect(flashMistakes(puzzle, [[outside], ...solution]), isNull, reason: '点错后照旧点第一组');
+      // 镜像：点数字原来那块（不在镜像后的这一组里）同样算点错。
+      final mirrored = puzzle.mirrored;
+      final rest = [for (var round = 1; round < flashRounds; round++) flashPattern(mirrored, round, 0)];
+      final original = flashShown(mirrored, 0, 0).firstWhere((cell) => !flashPattern(mirrored, 0, 0).contains(cell));
+      expect(flashMistakes(mirrored, [[original], flashPattern(mirrored, 0, 1), ...rest]), 1);
+      expect(flashMistakes(mirrored, [[_outside(mirrored, flashPattern(mirrored, 0, 0))], flashPattern(mirrored, 0, 1), ...rest]), 1);
     });
 
     test('错的次数从答案里数得出：每次点错换这一轮的下一组，备用用完从第一组轮换', () {
@@ -591,7 +603,7 @@ void main() {
       semantics.dispose();
     });
 
-    testWidgets('数字顺序：亮着时块上读数、块外的格不响应；点 1 全部藏成空白块，跳过数字算点错并写出每块该第几个；到时间没点也藏', (tester) async {
+    testWidgets('数字顺序：亮着时块上读数；点 1 全部在原位藏成空白块；跳过数字或点块外的格都算点错并写出每块该第几个；到时间没点也藏', (tester) async {
       final semantics = tester.ensureSemantics();
       final haptics = _haptics(tester);
       await _open(tester, seed: 7, tier: PuzzleTier.expert);
@@ -603,14 +615,8 @@ void main() {
       await tester.tap(_start);
       await tester.pump();
       await tester.pump(flashLead);
-      String numbered(int cell) => first.contains(cell) ? '数字 ${first.indexOf(cell) + 1}' : '未点亮';
-      _expectBoard(6, numbered);
+      _expectBoard(6, (cell) => first.contains(cell) ? '数字 ${first.indexOf(cell) + 1}' : '未点亮');
       expect(find.bySemanticsLabel('${first.length} 个数：${[for (final (index, cell) in first.indexed) '${index + 1} 在${_name(cell, 6)}'].join('、')}'), findsOneWidget);
-
-      // 块外的格不响应：不震、数字也不藏。
-      await _tapCell(tester, outside, 6);
-      expect(haptics, hasLength(1));
-      _expectBoard(6, numbered);
 
       // 亮着时点 1：全部藏起，这一下算点对。
       await _tapCell(tester, first[0], 6);
@@ -622,9 +628,6 @@ void main() {
       final block = await _colorAt(tester, tester.getCenter(_cell(first[1], 6)));
       final plain = await _colorAt(tester, tester.getCenter(_cell(outside, 6)));
       expect(_distance(block, plain), greaterThan(20));
-      // 作答时块外的格也不响应。
-      await _tapCell(tester, outside, 6);
-      expect(haptics, hasLength(2));
 
       // 跳过 2 先点 3：点错，每块写出该第几个点。
       await _tapCell(tester, first[2], 6);
@@ -632,19 +635,102 @@ void main() {
       expect(_status(1, 1, order: '从小到大'), findsOneWidget);
       _expectBoard(6, (cell) => cell == first[0] ? '已点亮' : cell == first[2] ? '点错了' : first.contains(cell) ? '应该第 ${first.indexOf(cell) + 1} 个点' : '未点亮');
 
-      // 下一组到时间没点也藏起，按从小到大点齐过这一轮。
+      // 下一组到时间没点也藏起；点了块外的格同样算点错。
       final second = flashPattern(puzzle, 0, 1);
       await tester.pump(flashReveal);
       await tester.pump(flashLead);
       _expectBoard(6, (cell) => second.contains(cell) ? '数字 ${second.indexOf(cell) + 1}' : '未点亮');
       await tester.pump(Duration(milliseconds: flashExposure(puzzle, second.length)));
       _expectBoard(6, (cell) => second.contains(cell) ? '空白块' : '未点亮');
-      for (final cell in second) {
+      final stray = _outside(puzzle, second);
+      await _tapCell(tester, stray, 6);
+      expect(haptics.last, _heavy);
+      expect(_status(1, 2, order: '从小到大'), findsOneWidget);
+      _expectBoard(6, (cell) => cell == stray ? '点错了' : second.contains(cell) ? '应该第 ${second.indexOf(cell) + 1} 个点' : '未点亮');
+
+      // 第三组按从小到大点齐过这一轮。
+      final third = flashPattern(puzzle, 0, 2);
+      await _showRound(tester, puzzle, third, before: flashReveal);
+      for (final cell in third) {
         await _tapCell(tester, cell, 6);
       }
       expect(find.bySemanticsLabel('这一轮全对'), findsOneWidget);
       await tester.pump(flashHold);
-      expect(_status(2, 1, order: '从小到大'), findsOneWidget);
+      expect(_status(2, 2, order: '从小到大'), findsOneWidget);
+      semantics.dispose();
+    });
+
+    // 人工决策见 challenge_rules.dart 的 11-14 23:11 那条：要不要镜像是玩家按门上的数自己算的，棋盘上不能看出来。
+    testWidgets('数字顺序镜像（挑战改目标）：空白块留在数字原来的位置、镜像格和暗格一个样；点镜像格算对，点原来那块或块外的格都算点错', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final haptics = _haptics(tester);
+      final puzzle = _rules.generate(7, PuzzleTier.expert).puzzle.mirrored;
+      final level = ChallengeLevel(
+        id: 'c',
+        game: 'flash',
+        tier: 'expert',
+        difficulty: 6,
+        expected: const Duration(seconds: 230),
+        inputs: const ['a'],
+        output: null,
+        letter: 'C',
+        state: ChallengeLevelState.open,
+        submissions: 0,
+        errors: 0,
+        minimum: null,
+        gate: const ChallengeGate(product: false, value: 11),
+        consume: const ChallengeConsume(slot: false, at: 0, modulus: 2, offset: 0),
+        extraOf: null,
+        puzzle: jsonDecode(jsonEncode(_rules.encodePuzzle(puzzle))),
+      );
+      final challenge = PlayChallenge(level: level, name: 'C 关', deadline: DateTime.now().add(const Duration(minutes: 5)), submit: (answer) async => const PlayVerdict(correct: true));
+      final game = playgroundCatalog.firstWhere((game) => game.id == 'flash');
+      await tester.pumpWidget(RepaintBoundary(key: _app, child: MaterialApp(theme: campusTheme(), home: FlashPage(game: game, store: PlaygroundStore.memory(), challenge: challenge))));
+      await tester.pump(const Duration(milliseconds: 500));
+      final shown = flashShown(puzzle, 0, 0), target = flashPattern(puzzle, 0, 0);
+      expect(target, [for (final cell in shown) flashMirror(6, cell)]);
+      // 要点的镜像格里有不和数字重合的，数字里也有不在镜像格里的（这道题两边都有，下面才测得出）。
+      final hidden = target.firstWhere((cell) => !shown.contains(cell));
+      final decoy = shown.firstWhere((cell) => !target.contains(cell));
+      expect(_status(1, 0, order: '从小到大'), findsOneWidget);
+      await tester.tap(_start);
+      await tester.pump();
+      await tester.pump(flashLead);
+      _expectBoard(6, (cell) => shown.contains(cell) ? '数字 ${shown.indexOf(cell) + 1}' : '未点亮');
+
+      // 到时间藏起：空白块就在数字原来的位置，要点的镜像格不露出来（读屏与画面都和暗格一个样）。
+      await tester.pump(Duration(milliseconds: flashExposure(puzzle, shown.length)));
+      await tester.pump(const Duration(milliseconds: 200));
+      _expectBoard(6, (cell) => shown.contains(cell) ? '空白块' : '未点亮');
+      final plain = _outside(puzzle, [...shown, ...target]);
+      final dark = await _colorAt(tester, tester.getCenter(_cell(plain, 6)));
+      expect(_distance(await _colorAt(tester, tester.getCenter(_cell(hidden, 6))), dark), lessThan(1));
+      expect(_distance(await _colorAt(tester, tester.getCenter(_cell(decoy, 6))), dark), greaterThan(20));
+
+      // 点 1 的镜像格算对。
+      await _tapCell(tester, target[0], 6);
+      expect(haptics, [_tick, _tick]);
+      _expectBoard(6, (cell) => cell == target[0] ? '已点亮' : shown.contains(cell) ? '空白块' : '未点亮');
+      // 点原来那块（不是镜像格）算点错。
+      await _tapCell(tester, decoy, 6);
+      expect(haptics.last, _heavy);
+      expect(_status(1, 1, order: '从小到大'), findsOneWidget);
+
+      // 下一组：点块外又不是镜像格的格也算点错，和不镜像时一样。
+      final next = flashPattern(puzzle, 0, 1), nextShown = flashShown(puzzle, 0, 1);
+      await _showRound(tester, puzzle, nextShown, before: flashReveal);
+      _expectBoard(6, (cell) => nextShown.contains(cell) ? '空白块' : '未点亮');
+      await _tapCell(tester, _outside(puzzle, [...nextShown, ...next]), 6);
+      expect(haptics.last, _heavy);
+      expect(_status(1, 2, order: '从小到大'), findsOneWidget);
+
+      // 第三组照镜像格按从小到大点齐过这一轮。
+      final third = flashPattern(puzzle, 0, 2);
+      await _showRound(tester, puzzle, flashShown(puzzle, 0, 2), before: flashReveal);
+      for (final cell in third) {
+        await _tapCell(tester, cell, 6);
+      }
+      expect(find.bySemanticsLabel('这一轮全对'), findsOneWidget);
       semantics.dispose();
     });
 

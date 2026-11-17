@@ -80,13 +80,15 @@ int flashExposure(FlashPuzzle puzzle, int count) => switch (puzzle.variant) {
   FlashVariant.numbers => count * puzzle.showMillis,
 };
 
-// 一次尝试里点一格的结果：不响应的（已点亮的格；数字顺序里不是数字块的格，同黑猩猩测试只有块能点）不算一下；
-// 该点的算点对（位置记忆是这组里没点过的哪一格都行，按先后点的要正好是下一格），点齐这一组就过了这一轮；其余算点错，这一次就此作废。
+// 一次尝试里点一格的结果：已点亮的格不响应（不算一下）；该点的算点对（位置记忆是这组里没点过的哪一格都行，按先后点的要正好是下一格），
+// 点齐这一组就过了这一轮；其余算点错，这一次就此作废。数字顺序也一样：整盘每格都响应，点了空白块以外的格同样算点错——
+// 镜像题的空白块留在数字原来的位置（页面），要点的是它的镜像格，镜像与不镜像走同一条规则、看不出差别
+// （要不要镜像是玩家按门上的数自己算的，不能从棋盘上看出来，人工决策见 challenge_rules.dart 的 11-14 23:11 那条）。
 enum FlashTap { ignored, hit, cleared, missed }
 
 // hits 是这一次已点对的格（按点的先后），一定比 pattern 短（点齐就不再点）。
 FlashTap flashTap(FlashVariant variant, List<int> pattern, List<int> hits, int cell) {
-  if (hits.contains(cell) || (variant == FlashVariant.numbers && !pattern.contains(cell))) return FlashTap.ignored;
+  if (hits.contains(cell)) return FlashTap.ignored;
   final right = variant.ordered ? pattern[hits.length] == cell : pattern.contains(cell);
   return !right
       ? FlashTap.missed
@@ -97,7 +99,7 @@ FlashTap flashTap(FlashVariant variant, List<int> pattern, List<int> hits, int c
 
 // 按规则重放答案（每次尝试点的格依次排开），返回点错的次数；答案不合规或没走完全部轮次返回 null。
 // 合规：每次尝试按这一轮第几次取要点的格（flashPattern），之前的尝试都正好结束在第一个点错的格上，每轮最后一次正好点齐、没有多点；
-// 点棋盘外的格、不响应的格（页面里不会记下）、空的一次都不合规。
+// 点棋盘外的格、已点亮的格（页面里不响应、不会记下）、空的一次都不合规。
 int? flashMistakes(FlashPuzzle puzzle, List<List<int>> attempts) {
   if (attempts.length > flashMaxAttempts) return null;
   final count = puzzle.side * puzzle.side;
@@ -194,7 +196,7 @@ class FlashRules extends PuzzleRules<FlashPuzzle, List<List<int>>> {
   bool solved(FlashPuzzle puzzle, List<List<int>> answer) => flashMistakes(puzzle, answer) != null;
 
   // 一组的记忆负荷（约等于要记几件事）：位置记忆的格能连成形状一起记，一格算 0.55 件；顺序一格一件；倒序还要在脑子里倒一遍，一格 1.4 件；
-  // 数字顺序一个数 1.2 件（块的位置看得见、记的是先后，但每个数只给 0.3 秒左右）。
+  // 数字顺序一个数 1.2 件（藏起后块的位置看得见、记的是先后，但每个数只给 0.3 秒左右）。
   static double _load(FlashVariant variant, int count) =>
       count *
       switch (variant) {
