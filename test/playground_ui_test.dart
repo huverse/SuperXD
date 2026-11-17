@@ -14,6 +14,7 @@ import 'package:superxd/playground/playground_page.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_page.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_rules.dart';
+import 'package:superxd/playground/puzzle/mines/mines_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
@@ -264,7 +265,8 @@ void main() {
   // 人工决策见 play_frame.dart 的 PlaySession（11-17 19:19:39）：从头来用时接着算、罚时算进成绩、看过答案的题不记成绩，换一道题才清。
   test('从头来不清表、罚时算进成绩、揭开过答案的题不记成绩；换一道题才都清掉', () async {
     final store = PlaygroundStore.memory();
-    final session = PlaySession(game: _game('hanoi'), rules: const _CountingRules(), store: store, seeds: () => 3);
+    // 用第一下才计时的登记项（扫雷），看得出从头来之后表停着、下一步才接着走。
+    final session = PlaySession(game: _game('mines'), rules: const _CountingRules(), store: store, seeds: () => 3);
     expect(session.wrongPenalty, const Duration(seconds: 5), reason: '预计用时 10 秒的四分之一按 5 秒取整，至少 5 秒');
     session.moved();
     session.penalize(const Duration(seconds: 7));
@@ -281,7 +283,7 @@ void main() {
     session.moved();
     expect(session.running, isTrue);
     expect(await session.finish(moves: 1), isTrue);
-    expect(store.best('hanoi', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(7000), reason: '成绩含罚时');
+    expect(store.best('mines', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(7000), reason: '成绩含罚时');
     // 解开后从头来再解一遍：用时只会更长，不刷新纪录。
     session
       ..restart()
@@ -297,10 +299,60 @@ void main() {
       ..moved();
     expect(await session.finish(moves: 1), isFalse);
     expect(session.spoiled, isTrue);
-    expect(store.best('hanoi', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(7000));
+    expect(store.best('mines', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(7000));
     session.next();
     expect(session.spoiled, isFalse);
     session.dispose();
+  });
+
+  // 人工决策见 playground_catalog.dart 文件头与 PlaySession（11-17 20:13:19）：看题就能推理的游戏题一出现就计时，不用等第一步；
+  // 换档前确认只看动没动过；从头来表接着走，换一道题从零重走；挑战模式不看它。
+  test('题一出现就计时：建好就走表、没动不算动过；从头来接着走，换一道题从零重走，解开才停', () async {
+    final session = PlaySession(game: _game('hanoi'), rules: const _CountingRules(), store: PlaygroundStore.memory(), seeds: () => 3);
+    expect((_game('hanoi').clock, session.running, session.started), (PlayClock.sight, true, false));
+    await Future<void>.delayed(const Duration(milliseconds: 30));
+    expect(session.elapsed, greaterThanOrEqualTo(const Duration(milliseconds: 30)), reason: '没走一步表也在走');
+    session.moved();
+    expect(session.started, isTrue);
+    session.restart();
+    expect((session.running, session.started), (true, true));
+    final before = session.elapsed;
+    session.next();
+    expect((session.running, session.started), (true, false));
+    expect(session.elapsed, lessThan(before));
+    await session.finish(moves: 1);
+    expect(session.running, isFalse);
+    session.restart();
+    expect(session.running, isTrue, reason: '解开后从头来，题又摆出来了');
+    session.dispose();
+    // 扫雷第一下才计时，舒尔特与记忆闪光按自己的「开始」。
+    final mines = PlaySession(game: _game('mines'), rules: const _CountingRules(), store: PlaygroundStore.memory(), seeds: () => 3);
+    expect(mines.running, isFalse);
+    mines.dispose();
+    expect({for (final game in playgroundCatalog) if (game.clock != PlayClock.sight) game.id: game.clock}, {'mines': PlayClock.firstMove, 'flash': PlayClock.start, 'schulte': PlayClock.start});
+  });
+
+  testWidgets('题一出现就计时：汉诺塔打开不动也在走表；扫雷第一下才开始', (tester) async {
+    final store = PlaygroundStore.memory();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: HanoiPage(game: _game('hanoi'), store: store, seeds: () => 1)));
+    await tester.pumpAndSettle();
+    // 用时是真实时间（Stopwatch），等过一秒再推进假时钟，计时器到点刷新状态行。
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1100)));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.textContaining(RegExp(r'^0:0[1-9]')), findsOneWidget, reason: '汉诺塔没走一步也在走表');
+    expect(find.textContaining('0 步'), findsOneWidget);
+    // 还没动过：换难度不用确认。
+    await tester.tap(find.widgetWithText(TextButton, '入门'));
+    await _step(tester);
+    await tester.tap(find.text('简单'));
+    await _step(tester);
+    expect(find.text('换成简单？'), findsNothing);
+
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: MinesPage(key: UniqueKey(), game: _game('mines'), store: store, seeds: () => 1)));
+    await tester.pumpAndSettle();
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1100)));
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.textContaining(RegExp(r'^0:00')), findsOneWidget, reason: '扫雷第一下才计时');
   });
 
   // 作弊机器人：解开以后从头来，照着刚才的走法飞快再走一遍。以前从头来把表清零，这一遍的几秒就成了新纪录。

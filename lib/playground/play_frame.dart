@@ -20,7 +20,10 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 
 // 一局的进度：档位、这一局的题、计时与完成。每个游戏的对局页持有一个，自己管棋盘状态。
-// 计时从第一步开始（同常见的谜题游戏），切到后台暂停，完成即停；记录写进 PlaygroundStore。
+// 自由模式按登记项的 clock 开始计时：看题就能推理的题一出现就走表（出题、换题、从头来时），扫雷第一下、舒尔特与记忆闪光按自己的「开始」才走；
+// 切到后台暂停，完成即停；记录写进 PlaygroundStore。
+// [人工决策-2026-11-17 20:13:19] 用户选「推理类题一出现就计时」（取代原来一律从第一步算）：以前可以不碰棋盘先把题想好，成绩只剩点几下的时间；
+// 各游戏的归类写在 playground_catalog.dart 文件头。挑战模式以服务器计时为准，不看它。
 // 挑战模式（给了 challenge）：题面与档位是服务器给的，不出题、不换档、不记本机成绩；判对错与完成都交服务器核对（人工决策见 challenge/challenge_rules.dart）。
 // [人工决策-2026-11-17 19:19:39] 用户要求把「乱点、全点、穷举就能通关或刷出快成绩」的路子都堵上（全游戏审查结论见 lib/playground/CLAUDE.md）。框架里的三条：
 // 1. 同一道题从头来，用时与罚时接着算（表停在原处、下一步接着走），同挑战里服务器的计时不因从头来归零：不然乱试几轮、从头来再碰对的那一轮，
@@ -42,6 +45,7 @@ class PlaySession<P, A> extends ChangeNotifier {
         _draw(_seed = _seeds());
       }
       _prepare(tier);
+      if (_onSight) _run();
     } else {
       // 题面在建 PlayChallenge 时已按这个游戏的规则解好（认不得的那一关挑战那一页就拦下了）。
       _puzzle = challenge!.puzzle as P;
@@ -64,8 +68,11 @@ class PlaySession<P, A> extends ChangeNotifier {
   late int _seed;
   final _watch = Stopwatch();
   bool _paused = false;
-  // 表在走：第一步起到解开或结束为止（切后台时 _watch 停着、这里不变，回来接着走）；从头来停在原处，下一步接着走。
+  // 表在走：题一出现（或第一步）起到解开或结束为止（切后台时 _watch 停着、这里不变，回来接着走）；
+  // 从头来时题一出现就计时的接着走，其余停在原处、下一步接着走。
   bool _ticking = false;
+  // 这道题动过（走过一步）：换档前要不要先确认看它，换一道题才清。
+  bool _touched = false;
   // 罚时与看过答案（见类上的人工决策）：同一道题从头来都留着，换一道题才清。
   var _penalty = Duration.zero;
   bool _spoiled = false;
@@ -101,19 +108,28 @@ class PlaySession<P, A> extends ChangeNotifier {
   @visibleForTesting
   Future<void>? upcoming(PuzzleTier tier) => _upcoming[tier]?.done;
 
-  bool get started => _watch.elapsedTicks > 0 || _ticking;
-  // 表在走（对局页据此刷新用时）：从头来之后、下一步之前不算。
+  // 这道题走过一步（换档前先确认）。题一出现就计时的游戏表早就在走，动没动看这个。
+  bool get started => _touched;
+  // 表在走（对局页据此刷新用时）。
   bool get running => _ticking;
   // 用时含罚时（成绩也按它记）。
   Duration get elapsed => _watch.elapsed + _penalty;
   Duration get penalty => _penalty;
   bool get spoiled => _spoiled;
 
-  // 一步：表没走就开始走（第一步、从头来之后的第一步）。
-  void moved() {
-    if (finished || _ticking) return;
+  // 题一出现就计时（自由模式、登记项的 clock 是 sight）。
+  bool get _onSight => challenge == null && game.clock == PlayClock.sight;
+
+  void _run() {
     _ticking = true;
     if (!_paused) _watch.start();
+  }
+
+  // 一步：记下动过；表没走就开始走（第一步、从头来之后的第一步）。
+  void moved() {
+    if (finished || (_touched && _ticking)) return;
+    _touched = true;
+    if (!_ticking) _run();
     notifyListeners();
   }
 
@@ -140,17 +156,19 @@ class PlaySession<P, A> extends ChangeNotifier {
   Duration get wrongPenalty => _wrongPenalty ??= Duration(seconds: math.max(5, (rules.expectedSeconds(puzzle) / 20).round() * 5));
   Duration? _wrongPenalty;
 
-  // 同一道题从头来（见类上的人工决策第 1 条）：棋盘由对局页清，用时与罚时接着算，表停到下一步再走。
+  // 同一道题从头来（见类上的人工决策第 1 条）：棋盘由对局页清，用时与罚时接着算；题一出现就计时的表接着走，其余停到下一步再走。
   void restart() {
     _ticking = false;
     _watch.stop();
+    if (_onSight) _run();
     finished = false;
     notifyListeners();
   }
 
-  // 换了一道题：用时、罚时与看过答案都清掉。
+  // 换了一道题：用时、罚时与看过答案都清掉；题一出现就计时的从这一刻走表。
   void _fresh() {
     _ticking = false;
+    _touched = false;
     _watch
       ..stop()
       ..reset();
@@ -158,6 +176,7 @@ class PlaySession<P, A> extends ChangeNotifier {
     _wrongPenalty = null;
     _spoiled = false;
     finished = false;
+    if (_onSight) _run();
     notifyListeners();
   }
 
