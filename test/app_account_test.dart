@@ -445,7 +445,7 @@ void main() {
       expect(find.text('联网'), findsOneWidget);
       expect(find.text('修改密码'), findsOneWidget);
       // 分段上面有组标题，和「登录 | 注册」分得开；读屏把它当小节标题，排在两段前面。
-      expect(tester.getSemantics(find.text('联网偏好')), containsSemantics(label: '联网偏好', isHeader: true));
+      expect(tester.getSemantics(find.text('联网偏好')), isSemantics(label: '联网偏好', isHeader: true));
       expect(tester.getTopLeft(find.text('联网偏好')).dy, lessThan(tester.getTopLeft(find.text('联网')).dy));
       await tester.tap(find.text('仅本机'));
       await tester.pumpAndSettle();

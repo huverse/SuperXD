@@ -42,7 +42,7 @@
   - grades_page.dart：成绩页 GradesPage：学年与学期汇总、有效成绩与原始成绩，可筛选、排序、搜索；本页只同步成绩；视图切换淡出淡入（旧内容淡出后才换数据）。筛选是一行「搜索框 + 筛选按钮」，类型、范围、排序在弹层里点了就生效；成绩按行列在一张分组卡里、分数在右，不及格警示色并写明（[人工决策] 在 _filterLabel 上方与 domain/grades.dart 的 gradeFailing）；教务汇总绩点大字（_summaryFigures，缺的那一项写「—」），教务明确这学期没有成绩时只画空状态卡（_emptyGrades）、不画汇总；详情按内容高（_details）；人工决策在方法上。
 - 学业：
   - academic_catalog.dart：学业功能登记 academicFeatures（[人工决策] 在类上，同百宝箱的注册表）：每项是 id（就是路径 /schedule、/grades，发出后不改）、名字、图标与页面构造器，学业页的入口与路由都从它生成；页面共用的接线 AcademicHost（网关、代次核对、会话失效、回今天页同步、去登录、课前提醒与私信）由路由给。加一项教务数据的页面只在这里登记，怎么同步登记在 application/campus_sync.dart 的 campusSyncSteps。
-  - academic_page.dart：学业页 AcademicPage（服务页的「学业」，取代分开的课表、成绩两项，[人工决策] 在类上）：顶部写当前学期（学期列表第一项）、第几周与最近一次同步；有自动同步留下、等你来选的教务课表时一组「待处理」（点了同打扰时机里的 showHeldScheduleSync）；各项数据的入口（来自 academicFeatures，现在是课表、成绩）；同步（同今天页的同步范围与合并页、作息来源确认 chooseBellsSource，原地显示进度，结果弹窗列出这一轮改了什么）、自动同步、同步记录。只读本机，联网只在点了同步之后。
+  - academic_page.dart：学业页 AcademicPage（服务页的「学业」，取代分开的课表、成绩两项，[人工决策] 在类上）：顶部写当前学期（学期列表第一项）、第几周与最近一次同步；有自动同步留下、等你来选的教务课表时一组「待处理」（点了同打扰时机里的 showHeldScheduleSync）；各项数据的入口（来自 academicFeatures，现在是课表、成绩）；同步（同今天页的同步范围与合并页、作息来源确认 chooseBellsSource，原地显示进度（行尾利萨茹曲线；这是动作，行尾不画「›」），结果弹窗列出这一轮改了什么）、自动同步、同步记录。只读本机，联网只在点了同步之后。
   - sync_records_page.dart：同步记录 SyncRecordsPage（从新到旧，每轮一张卡写自动还是手动、时刻与一句概括；系统通知「新出了几门成绩」点开也到这里）与详情 SyncRecordPage（每类变化一张卡列出哪几门课；课表的变化可撤回：先确认，恢复同步前那一版、按当前 head 乐观锁存成新版本；等你来选的给「去处理」；查看课表、查看成绩）。人工决策见 domain/sync_record.dart。
 - 同步：
   - sync_selection_dialog.dart：同步范围选择 chooseSyncSelection：学年与内容都可多选，默认读本地学期列表，点刷新才联网；给了 autoSync 时底部有「自动同步」入口（今天页给，成绩页不给）。
@@ -75,7 +75,7 @@
   - paintings_page.dart：开屏画作页 PaintingsPage：按用户排的顺序列出全部画作、标出这次开屏的那幅与不在开屏播的；顶栏「播放顺序」推入 PaintingOrderPage（每幅一行：勾选开屏播不播、缩略图、按住右侧把手拖动排序，点了就存，只剩一幅在播时不让取消，人工决策见 domain/painting.dart）；「保存到相册」原地转圈、存好原地变成「已保存」；点画作从卡片里原地放大成全屏（浮层路由，同快递身份码的全屏出示，黑底渐显到不透明），可双指缩放，点一下或返回原路缩回。
   - app_update_dialog.dart：更新弹窗 showAppUpdateDialog：可选更新给更新、稍后、跳过这个版本，点更新才下载，下载、核对、等授权、安装都在弹窗里原地切换；必须更新时关不掉（人工决策见文件内）。
   - legal_page.dart：用户协议与隐私政策 LegalPage（/legal/service、/legal/privacy），顶部显示更新日期 legalUpdated；正文经 theme 的 CampusProse 按行排版。隐私政策先摘要、再按功能分节，末尾附第三方 SDK 与服务、系统权限、保存期限三份清单与 iOS 版的不同之处（[人工决策] 在文件头；iOS 上的做法变了改附录四）；改动数据处理、新增 SDK 或权限、改上限时同步改对应一节与清单并更新日期。首次打开（含没在弹窗里同意过的老用户）由组合根弹 askLegalConsent 征得同意，不同意先二次确认再退出应用（[人工决策] 在函数上）；同意过的，有实质变化时 legalRevision 加一并改写 legalChanges，打开后弹一次 showLegalUpdateNotice（只有「知道了」才算看过）。
-  - app_feedback_dialog.dart：新版本反馈 showAppFeedback（人工决策见 domain/app_health.dart）：好用或不好用必选、一句话可不写（最多 200 字），提交原地转圈，成功返回给关于页出提示条，失败原地写原因。
+  - app_feedback_dialog.dart：新版本反馈 showAppFeedback（人工决策见 domain/app_health.dart）：好用或不好用必选（两个选择标签 CampusGlassChip，开始时都不选）、一句话可不写（最多 200 字），提交原地转圈，成功返回给关于页出提示条，失败原地写原因。
   - licenses_page.dart：全部依赖许可 CampusLicensesPage 与应用署名 GalaxyousAttribution。
   - third_party_page.dart：开源许可页 ThirdPartyPage，读 assets/third_party_notices.txt。
 

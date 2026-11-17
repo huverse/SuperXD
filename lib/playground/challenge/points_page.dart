@@ -164,10 +164,9 @@ class _PointsPageState extends State<PointsPage> {
                           DotSeparatedText(unlockTerms(unlock), style: secondary),
                         ])),
                         const SizedBox(width: 12),
-                        FilledButton.tonalIcon(
+                        FilledButton.tonal(
                           onPressed: _buying == null ? () => unawaited(_buy(unlocks, unlock)) : null,
-                          icon: _buying == unlock.id ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const CampusIcon(CampusIcons.unlock),
-                          label: const Text('解锁'),
+                          child: CampusBusyContent(busy: _buying == unlock.id, label: '解锁', busyLabel: '解锁', icon: const CampusIcon(CampusIcons.unlock)),
                         ),
                       ])),
                   ])),

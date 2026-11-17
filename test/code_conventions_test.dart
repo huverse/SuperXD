@@ -81,6 +81,21 @@ void main() {
     expect(offenders, isEmpty);
   });
 
+  // 11-17 设计审查：新模块回到了 Material 默认件（选中带对勾的 ChoiceChip、加载圆环、下拉小球），和全应用的选择标签、曲线加载、下拉刷新不是一套。
+  // 选择用 CampusGlassChip 或 CampusSegmented，等待用 CampusLoader、CampusLoading 或 CampusBusyContent，下拉刷新用 CampusRefreshControl（都在 lib/theme）。
+  // 确定进度的 LinearProgressIndicator 照旧允许；短视频结果页图集每张的下载按钮外圈是下载百分比圈（同应用商店的下载圈，审查没列入），暂留。
+  test('lib/theme 以外不直接用 Material 的筹码、加载圆环与下拉刷新', () {
+    final offenders = <String>[];
+    final banned = RegExp(r'\b(ChoiceChip|FilterChip|InputChip|ActionChip|CircularProgressIndicator|RefreshIndicator)\b');
+    for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart') && !file.path.startsWith('lib/theme/') && !file.path.endsWith('short_video/media_result_page.dart'))) {
+      final lines = file.readAsLinesSync();
+      for (var index = 0; index < lines.length; index++) {
+        if (!lines[index].trimLeft().startsWith('//') && banned.hasMatch(lines[index])) offenders.add('${file.path}:${index + 1}');
+      }
+    }
+    expect(offenders, isEmpty);
+  });
+
   // 大半透明的离屏贴图在部分安卓驱动上有脏像素（10-27 vivo 骁龙 2K 屏上卡片颗粒整排冒出绿黑虚线，见 theme 的 FrostTexture）：
   // toImageSync 只留给先铺满底色的云雾贴图（campus_background.dart）；小图改成一次画完或在 CPU 上算好像素再上传（粒子贴图 RewardSprites）。
   test('toImageSync只用于铺满底色的云雾贴图', () {

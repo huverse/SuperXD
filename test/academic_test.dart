@@ -67,7 +67,9 @@ void main() {
     await tester.tap(find.text('学业'));
     await tester.pumpAndSettle();
     expect(find.byType(AcademicPage), findsOneWidget);
-    expect(find.text(pageTerm.label), findsOneWidget);
+    expect(find.byWidgetPredicate((widget) => widget is DotSeparatedText && widget.text == pageTerm.label), findsOneWidget, reason: '学期名在「学年」后切开换行，不折出孤字');
+    // 11-17 设计审查：「同步」是动作、不推入新页，行尾不画「›」（同 iOS、鸿蒙设置的动作行）。
+    expect(tester.widget<ListTile>(find.ancestor(of: find.text('同步'), matching: find.byType(ListTile)).first).trailing, isNull);
     expect(find.textContaining('自动同步于'), findsOneWidget);
     expect(find.text('课表有变化 · 新出 1 门成绩'), findsOneWidget, reason: '同步记录一行写最近一次的概括');
     await tester.tap(find.text('课表'));

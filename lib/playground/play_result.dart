@@ -9,6 +9,7 @@ import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
@@ -95,7 +96,7 @@ Future<PlayResultChoice> _showLevelResult(BuildContext context, PlaySession<Obje
         };
         return Column(mainAxisSize: MainAxisSize.min, crossAxisAlignment: CrossAxisAlignment.stretch, children: [
           Row(children: [
-            if (waiting) const SizedBox.square(dimension: 28, child: CircularProgressIndicator(strokeWidth: 3)) else CampusIcon(icon, size: 28, color: palette.accentText),
+            if (waiting) const CampusLoader(size: 28) else CampusIcon(icon, size: 28, color: palette.accentText),
             const SizedBox(width: 12),
             Expanded(child: Text(title, style: Theme.of(context).textTheme.titleLarge)),
           ]),
