@@ -372,8 +372,8 @@ List<Map<String, Object?>> _lightsCases(String game) {
     final reference = lightsSolve(puzzle)!, encoded = rules.encodePuzzle(puzzle);
     final answers = <Object?>[
       reference,
-      if (lightsSolve(puzzle.copyWith(shape: LightsShape.values[1 - puzzle.shape.index])) case final other?) other,
-      if (lightsSolve(puzzle.copyWith(wrap: !puzzle.wrap)) case final other?) other,
+      ?lightsSolve(puzzle.copyWith(shape: LightsShape.values[1 - puzzle.shape.index])),
+      ?lightsSolve(puzzle.copyWith(wrap: !puzzle.wrap)),
       [...reference, ...List.filled(puzzle.states, 15)],
       reference.sublist(1),
     ];
