@@ -71,6 +71,22 @@ Future<Color> _colorAt(WidgetTester tester, Offset point) async => (await tester
   return Color.fromARGB(bytes.getUint8(offset + 3), bytes.getUint8(offset), bytes.getUint8(offset + 1), bytes.getUint8(offset + 2));
 }))!;
 
+// 同一帧里几个点的颜色（只截一次图）。
+Future<List<Color>> _colorsAt(WidgetTester tester, List<Offset> points) async => (await tester.runAsync(() async {
+  final boundary = _app.currentContext!.findRenderObject()! as RenderRepaintBoundary;
+  final image = await boundary.toImage();
+  final bytes = (await image.toByteData())!;
+  final colors = [
+    for (final point in points)
+      () {
+        final offset = (point.dy.round() * image.width + point.dx.round()) * 4;
+        return Color.fromARGB(bytes.getUint8(offset + 3), bytes.getUint8(offset), bytes.getUint8(offset + 1), bytes.getUint8(offset + 2));
+      }(),
+  ];
+  image.dispose();
+  return colors;
+}))!;
+
 double _distance(Color left, Color right) => ((left.r - right.r).abs() + (left.g - right.g).abs() + (left.b - right.b).abs()) * 255;
 
 // 记下触感：选择触感是点对（与开始），重震是点错。
@@ -93,6 +109,32 @@ Future<PlaygroundStore> _open(WidgetTester tester, {required int seed, PuzzleTie
   await tester.pumpWidget(RepaintBoundary(key: _app, child: MaterialApp(theme: campusTheme(), home: FlashPage(game: game, store: store, seeds: () => seed))));
   await tester.pumpAndSettle();
   return store;
+}
+
+// 挑战里的一关（改目标）：题面由服务器给，要不要镜像按门上的数定（这里直接给出镜像或不镜像的题面）。
+Future<void> _openChallenge(WidgetTester tester, FlashPuzzle puzzle, PuzzleTier tier) async {
+  final level = ChallengeLevel(
+    id: 'c',
+    game: 'flash',
+    tier: tier.name,
+    difficulty: _rules.difficulty(puzzle),
+    expected: Duration(seconds: _rules.expectedSeconds(puzzle)),
+    inputs: const ['a'],
+    output: null,
+    letter: 'C',
+    state: ChallengeLevelState.open,
+    submissions: 0,
+    errors: 0,
+    minimum: null,
+    gate: const ChallengeGate(product: false, value: 11),
+    consume: const ChallengeConsume(slot: false, at: 0, modulus: 2, offset: 0),
+    extraOf: null,
+    puzzle: jsonDecode(jsonEncode(_rules.encodePuzzle(puzzle))),
+  );
+  final challenge = PlayChallenge(level: level, name: 'C 关', deadline: DateTime.now().add(const Duration(minutes: 5)), submit: (answer) async => const PlayVerdict(correct: true));
+  final game = playgroundCatalog.firstWhere((game) => game.id == 'flash');
+  await tester.pumpWidget(RepaintBoundary(key: _app, child: MaterialApp(theme: campusTheme(), home: FlashPage(game: game, store: PlaygroundStore.memory(), challenge: challenge))));
+  await tester.pump(const Duration(milliseconds: 500));
 }
 
 // 一组从暗一下到熄灭（顺序与倒序一格接一格亮完）：before 是这一组前要等的（开局什么都不等，一轮点齐后等 flashHold，点错后等 flashReveal）。
@@ -495,7 +537,7 @@ void main() {
       await _tapCell(tester, outside, 4);
       expect(haptics.last, _heavy);
       expect(_status(1, 1), findsOneWidget);
-      String reveal(int cell) => cell == first.first ? '已点亮' : cell == outside ? '点错了' : first.contains(cell) ? '应该亮' : '未点亮';
+      String reveal(int cell) => cell == first.first ? '已点亮' : cell == outside ? '点错了' : first.contains(cell) ? '亮过' : '未点亮';
       _expectBoard(4, reveal);
       expect(find.bySemanticsLabel('点错了，换一组重来'), findsOneWidget);
       await _tapCell(tester, first.last, 4);
@@ -557,7 +599,7 @@ void main() {
       await _tapCell(tester, first[2], 5);
       expect(haptics.last, _heavy);
       expect(_status(1, 1, order: '按顺序'), findsOneWidget);
-      _expectBoard(5, (cell) => cell == first[0] ? '已点亮' : cell == first[2] ? '点错了' : first.contains(cell) ? '应该第 ${first.indexOf(cell) + 1} 个点' : '未点亮');
+      _expectBoard(5, (cell) => cell == first[0] ? '已点亮' : cell == first[2] ? '点错了' : first.contains(cell) ? '亮过，第 ${first.indexOf(cell) + 1} 个' : '未点亮');
 
       // 换下一组，照亮的先后点齐过这一轮。
       final second = flashPattern(puzzle, 0, 1);
@@ -589,8 +631,8 @@ void main() {
 
       await _tapCell(tester, shown.first, 6);
       expect(haptics.last, _heavy);
-      _expectBoard(6, (cell) => cell == shown.first ? '点错了' : target.contains(cell) ? '应该第 ${target.indexOf(cell) + 1} 个点' : '未点亮');
-      expect(find.bySemanticsLabel('${_name(shown.last, 6)}，应该第 1 个点'), findsOneWidget);
+      _expectBoard(6, (cell) => cell == shown.first ? '点错了' : target.contains(cell) ? '亮过，第 ${target.indexOf(cell) + 1} 个' : '未点亮');
+      expect(find.bySemanticsLabel('${_name(shown.last, 6)}，亮过，第 1 个'), findsOneWidget);
 
       final next = flashPattern(puzzle, 0, 1);
       expect(next, flashShown(puzzle, 0, 1).reversed.toList());
@@ -633,7 +675,7 @@ void main() {
       await _tapCell(tester, first[2], 6);
       expect(haptics.last, _heavy);
       expect(_status(1, 1, order: '从小到大'), findsOneWidget);
-      _expectBoard(6, (cell) => cell == first[0] ? '已点亮' : cell == first[2] ? '点错了' : first.contains(cell) ? '应该第 ${first.indexOf(cell) + 1} 个点' : '未点亮');
+      _expectBoard(6, (cell) => cell == first[0] ? '已点亮' : cell == first[2] ? '点错了' : first.contains(cell) ? '数字 ${first.indexOf(cell) + 1}' : '未点亮');
 
       // 下一组到时间没点也藏起；点了块外的格同样算点错。
       final second = flashPattern(puzzle, 0, 1);
@@ -646,7 +688,7 @@ void main() {
       await _tapCell(tester, stray, 6);
       expect(haptics.last, _heavy);
       expect(_status(1, 2, order: '从小到大'), findsOneWidget);
-      _expectBoard(6, (cell) => cell == stray ? '点错了' : second.contains(cell) ? '应该第 ${second.indexOf(cell) + 1} 个点' : '未点亮');
+      _expectBoard(6, (cell) => cell == stray ? '点错了' : second.contains(cell) ? '数字 ${second.indexOf(cell) + 1}' : '未点亮');
 
       // 第三组按从小到大点齐过这一轮。
       final third = flashPattern(puzzle, 0, 2);
@@ -665,28 +707,7 @@ void main() {
       final semantics = tester.ensureSemantics();
       final haptics = _haptics(tester);
       final puzzle = _rules.generate(7, PuzzleTier.expert).puzzle.mirrored;
-      final level = ChallengeLevel(
-        id: 'c',
-        game: 'flash',
-        tier: 'expert',
-        difficulty: 6,
-        expected: const Duration(seconds: 230),
-        inputs: const ['a'],
-        output: null,
-        letter: 'C',
-        state: ChallengeLevelState.open,
-        submissions: 0,
-        errors: 0,
-        minimum: null,
-        gate: const ChallengeGate(product: false, value: 11),
-        consume: const ChallengeConsume(slot: false, at: 0, modulus: 2, offset: 0),
-        extraOf: null,
-        puzzle: jsonDecode(jsonEncode(_rules.encodePuzzle(puzzle))),
-      );
-      final challenge = PlayChallenge(level: level, name: 'C 关', deadline: DateTime.now().add(const Duration(minutes: 5)), submit: (answer) async => const PlayVerdict(correct: true));
-      final game = playgroundCatalog.firstWhere((game) => game.id == 'flash');
-      await tester.pumpWidget(RepaintBoundary(key: _app, child: MaterialApp(theme: campusTheme(), home: FlashPage(game: game, store: PlaygroundStore.memory(), challenge: challenge))));
-      await tester.pump(const Duration(milliseconds: 500));
+      await _openChallenge(tester, puzzle, PuzzleTier.expert);
       final shown = flashShown(puzzle, 0, 0), target = flashPattern(puzzle, 0, 0);
       expect(target, [for (final cell in shown) flashMirror(6, cell)]);
       // 要点的镜像格里有不和数字重合的，数字里也有不在镜像格里的（这道题两边都有，下面才测得出）。
@@ -711,10 +732,11 @@ void main() {
       await _tapCell(tester, target[0], 6);
       expect(haptics, [_tick, _tick]);
       _expectBoard(6, (cell) => cell == target[0] ? '已点亮' : shown.contains(cell) ? '空白块' : '未点亮');
-      // 点原来那块（不是镜像格）算点错。
+      // 点原来那块（不是镜像格）算点错。点错后按亮过的位置标：点对的 1 在点的那格，其余没点到的写在它亮过的那块上，要点的镜像格不露出来。
       await _tapCell(tester, decoy, 6);
       expect(haptics.last, _heavy);
       expect(_status(1, 1, order: '从小到大'), findsOneWidget);
+      _expectBoard(6, (cell) => cell == target[0] ? '已点亮' : cell == decoy ? '点错了' : shown.contains(cell) && cell != shown[0] ? '数字 ${shown.indexOf(cell) + 1}' : shown.contains(cell) ? '空白块' : '未点亮');
 
       // 下一组：点块外又不是镜像格的格也算点错，和不镜像时一样。
       final next = flashPattern(puzzle, 0, 1), nextShown = flashShown(puzzle, 0, 1);
@@ -731,6 +753,45 @@ void main() {
         await _tapCell(tester, cell, 6);
       }
       expect(find.bySemanticsLabel('这一轮全对'), findsOneWidget);
+      semantics.dispose();
+    });
+
+    // [人工决策-2026-11-17 14:17:05]（见 flash_page.dart 的 _answerOf）：点错后的标记不能让人看出这一题要不要镜像。
+    testWidgets('挑战里点错后标出来的格，镜像题与不镜像题一模一样（四种题型的读屏与画面逐格比对），标的都是亮过的格', (tester) async {
+      final semantics = tester.ensureSemantics();
+      for (final tier in [PuzzleTier.easy, PuzzleTier.normal, PuzzleTier.hard, PuzzleTier.expert]) {
+        final base = _rules.generate(12, tier).puzzle;
+        final shown = flashShown(base, 0, 0);
+        // 第一下点一格亮过的与镜像后的都不是的：两边都算点错。
+        final stray = _outside(base, [...shown, ...flashPattern(base.mirrored, 0, 0)]);
+        final boards = <List<Object?>>[];
+        for (final puzzle in [base, base.mirrored]) {
+          await _openChallenge(tester, puzzle, tier);
+          await tester.tap(_start);
+          await tester.pump();
+          await _showRound(tester, puzzle, shown);
+          await tester.pump(const Duration(milliseconds: 200));
+          await _tapCell(tester, stray, base.side);
+          expect(_status(1, 1, order: switch (base.variant) {
+            FlashVariant.spot => null,
+            FlashVariant.sequence => '按顺序',
+            FlashVariant.reverse => '倒着点',
+            FlashVariant.numbers => '从小到大',
+          }), findsOneWidget, reason: '$tier mirror=${puzzle.mirror}');
+          await tester.pump(const Duration(milliseconds: 200));
+          final cells = [for (var cell = 0; cell < base.side * base.side; cell++) cell];
+          boards.add([
+            for (final cell in cells) tester.getSemantics(_cell(cell, base.side)).label,
+            ...await _colorsAt(tester, [for (final cell in cells) tester.getCenter(_cell(cell, base.side))]),
+          ]);
+          await tester.pumpWidget(const SizedBox());
+        }
+        expect(boards.last, boards.first, reason: '$tier 镜像题点错后的标记和不镜像的不一样');
+        // 标的是亮过的格（不镜像时它们就是要点的格，同自由模式）。
+        for (final cell in shown) {
+          expect(boards.first[cell], startsWith('${_name(cell, base.side)}，${base.variant == FlashVariant.numbers ? '数字' : '亮过'}'), reason: '$tier $cell');
+        }
+      }
       semantics.dispose();
     });
 
