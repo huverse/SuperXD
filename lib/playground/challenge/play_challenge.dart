@@ -1,5 +1,6 @@
 import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/playground/challenge/challenge_rules.dart';
+import 'package:superxd/playground/puzzle/flash/flash_rules.dart';
 import 'package:superxd/playground/puzzle/knights/knights_rules.dart';
 import 'package:superxd/playground/puzzle/logicgrid/logicgrid_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
@@ -62,7 +63,7 @@ String challengeFragmentName(String game, Object? puzzle) => switch (game) {
   'cipher' => '密码各位之和',
   'twentyfour' => '四个数之和',
   'mines' => '第一行有几颗雷',
-  'flash' => '最后一轮亮几格',
+  'flash' => puzzle is FlashPuzzle && puzzle.variant == FlashVariant.numbers ? '最后一轮有几个数' : '最后一轮亮几格',
   'loop' => '圈里围住几格',
   'balance' => '称几次',
   _ => '碎片',

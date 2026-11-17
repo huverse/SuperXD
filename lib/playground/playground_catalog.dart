@@ -124,7 +124,7 @@ final playgroundCatalog = <PlaygroundGame>[
     id: 'flash',
     name: '记忆闪光',
     summary: '记住亮起的格，再点出来',
-    howToPlay: '记住亮起的格，熄灭后全部点出来，顺序不限。一道题 5 轮。',
+    howToPlay: '记住亮起的格再点：入门简单不论先后，普通按先后，困难倒着点，专家按数字从小到大。',
     icon: CampusIcons.flash,
     group: memoryGroup,
     builder: (context, game, store, challenge, first) => FlashPage(game: game, store: store, first: first, challenge: challenge),
