@@ -463,7 +463,7 @@ void main() {
       expect(find.text('?'), findsNothing);
       expect(find.text('2'), findsOneWidget);
 
-      final tower = challenge(_levelJson('c', inputs: ['a'], gate: {'op': 'sum', 'value': 7}, consume: {'kind': 'goal', 'at': 0, 'modulus': 3, 'offset': 1}, minimum: 7, puzzle: {'disks': 3, 'start': [0, 0, 0], 'target': 1}));
+      final tower = challenge(_levelJson('c', inputs: ['a'], gate: {'op': 'sum', 'value': 7}, consume: {'kind': 'goal', 'at': 0, 'modulus': 3, 'offset': 1}, minimum: 7, puzzle: {'pegs': 3, 'variant': 0, 'start': [0, 0, 0], 'goal': [1, 1, 1]}));
       await open(HanoiPage(game: playgroundCatalog.firstWhere((game) => game.id == 'hanoi'), store: PlaygroundStore.memory(), challenge: tower));
       expect(find.text('= 7 ÷ 3 的余数 + 1'), findsOneWidget);
       expect(find.text('最少 7 步'), findsOneWidget);
@@ -471,7 +471,7 @@ void main() {
       expect(find.text('②'), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp('柱子，目标')), findsNothing);
       // 目标藏起来了：全部盘子到了不是开局的那根柱就交（对不对由服务器按门上的数核对），这里搬到第 3 根。
-      for (final move in hanoiSolution(const HanoiPuzzle(disks: 3, start: [0, 0, 0], target: 2))) {
+      for (final move in hanoiSolution(const HanoiPuzzle(pegs: 3, variant: HanoiVariant.classic, start: [0, 0, 0], goal: [2, 2, 2]))) {
         await tester.tapAt(tester.getCenter(find.bySemanticsLabel(RegExp('^第${move.from + 1}根柱子'))));
         await tester.pump(const Duration(milliseconds: 300));
         await tester.tapAt(tester.getCenter(find.bySemanticsLabel(RegExp('^第${move.to + 1}根柱子'))));

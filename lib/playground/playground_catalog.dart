@@ -50,8 +50,8 @@ final playgroundCatalog = <PlaygroundGame>[
   PlaygroundGame(
     id: 'hanoi',
     name: '汉诺塔',
-    summary: '把整叠盘子挪到目标柱',
-    howToPlay: '把整叠盘子挪到「目标」柱：一次挪一个，大盘不能压在小盘上。',
+    summary: '把盘子摆成目标的样子',
+    howToPlay: '照「目标」摆好盘子：一次挪一个，大盘不压小盘；有箭头就只能顺着箭头挪。',
     icon: CampusIcons.hanoi,
     group: planningGroup,
     builder: (context, game, store, challenge, first) => HanoiPage(game: game, store: store, first: first, challenge: challenge),

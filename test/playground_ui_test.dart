@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -29,6 +30,25 @@ Future<void> _tapOn(WidgetTester tester, Finder finder) => tester.tapAt(tester.g
 
 // 对局中计时器每秒出帧，pumpAndSettle 等不到停；走棋时只推进固定时长。
 Future<void> _step(WidgetTester tester) => tester.pump(const Duration(milliseconds: 300));
+
+// 汉诺塔开局里的一步（题随种子变，按规则找）：合规或不合规的，rightward 为真时只找往右挪的。
+HanoiMove _hanoiMove(HanoiPuzzle puzzle, {required bool legal, bool rightward = false}) {
+  final stacks = hanoiStacks(puzzle.pegs, puzzle.start);
+  for (var from = 0; from < puzzle.pegs; from++) {
+    for (var to = rightward ? from + 1 : 0; to < puzzle.pegs; to++) {
+      if (from != to && stacks[from].isNotEmpty && hanoiLegal(puzzle, stacks, (from: from, to: to)) == legal) return (from: from, to: to);
+    }
+  }
+  throw StateError('开局没有这样的一步');
+}
+
+// 汉诺塔点选走一步：点起点柱再点终点柱。
+Future<void> _hanoiTap(WidgetTester tester, HanoiMove move) async {
+  await _tapOn(tester, _peg(move.from));
+  await _step(tester);
+  await _tapOn(tester, _peg(move.to));
+  await _step(tester);
+}
 
 void main() {
   testWidgets('首页按子类分组、只列已登记的游戏，点卡片进对局页，最近玩过记下来', (tester) async {
@@ -72,22 +92,32 @@ void main() {
     expect(find.widgetWithText(OutlinedButton, '汉诺塔'), findsOneWidget);
   });
 
-  testWidgets('汉诺塔：点选走完最优解弹出新纪录，违规不算步数，撤销退回，拖动也能挪', (tester) async {
+  testWidgets('汉诺塔：点选走完最优解弹出新纪录，违规不算步数，撤销退回，拖动也能挪；目标缩略图读出目标局面', (tester) async {
     final semantics = tester.ensureSemantics();
     final store = PlaygroundStore.memory();
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: HanoiPage(game: _game('hanoi'), store: store, seeds: () => 1)));
     await tester.pumpAndSettle();
-    final puzzle = const HanoiRules().generate(1, PuzzleTier.entry).puzzle;
-    expect(find.textContaining('最少 7 步'), findsOneWidget);
+    final draw = const HanoiRules().generate(1, PuzzleTier.entry);
+    final puzzle = draw.puzzle, least = draw.solution.length;
+    expect(find.textContaining('最少 $least 步'), findsOneWidget);
+    expect(find.text('目标'), findsOneWidget);
+    final goal = hanoiStacks(puzzle.pegs, puzzle.goal);
+    final described = [for (var peg = 0; peg < puzzle.pegs; peg++) if (goal[peg].isNotEmpty) '第${peg + 1}根柱子从下到上是${goal[peg].map((disk) => '${disk + 1}号').join('、')}'].join('，');
+    expect(find.bySemanticsLabel('目标，$described'), findsOneWidget);
 
-    // 拖动：从第一根拖到第二根。
-    await tester.dragFrom(tester.getCenter(_peg(0)), tester.getCenter(_peg(1)) - tester.getCenter(_peg(0)));
+    // 违规：大盘压小盘，轻震退回、不算步数。
+    await _hanoiTap(tester, _hanoiMove(puzzle, legal: false));
+    expect(find.textContaining('0 步'), findsOneWidget);
+    // 拿起时能放的柱子读屏读「可以放」。
+    final first = _hanoiMove(puzzle, legal: true);
+    await _tapOn(tester, _peg(first.from));
     await _step(tester);
-    expect(find.textContaining('1 步'), findsOneWidget);
-    // 违规：第一根最上面的 1 号盘压到第二根的 0 号上。
-    await _tapOn(tester, _peg(0));
+    expect(find.bySemanticsLabel(RegExp('^第${first.to + 1}根柱子.*可以放')), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('^第${first.from + 1}根柱子.*已拿起')), findsOneWidget);
+    await _tapOn(tester, _peg(first.from));
     await _step(tester);
-    await _tapOn(tester, _peg(1));
+    // 拖动挪一步。
+    await tester.dragFrom(tester.getCenter(_peg(first.from)), tester.getCenter(_peg(first.to)) - tester.getCenter(_peg(first.from)));
     await _step(tester);
     expect(find.textContaining('1 步'), findsOneWidget);
     // 撤销回到开局。
@@ -95,23 +125,91 @@ void main() {
     await _step(tester);
     expect(find.textContaining('0 步'), findsOneWidget);
 
-    for (final move in hanoiSolution(puzzle)) {
-      await _tapOn(tester, _peg(move.from));
-      await _step(tester);
-      await _tapOn(tester, _peg(move.to));
-      await _step(tester);
+    for (final move in draw.solution) {
+      await _hanoiTap(tester, move);
     }
     await tester.pumpAndSettle();
     expect(find.text('新纪录'), findsOneWidget);
-    expect(find.textContaining('7 步，正好最少'), findsOneWidget);
+    expect(find.textContaining('$least 步，正好最少'), findsOneWidget);
     expect(store.best('hanoi', PuzzleTier.entry), isNotNull);
-    expect(store.best('hanoi', PuzzleTier.entry)!.moves, 7);
+    expect(store.best('hanoi', PuzzleTier.entry)!.moves, least);
 
-    // 换到下一档：换一道 4 盘的题。
+    // 换到下一档：换一道简单档的题。
     await tester.tap(find.text('换到简单'));
     await tester.pumpAndSettle();
-    expect(find.textContaining('最少 15 步'), findsOneWidget);
+    expect(find.textContaining('最少 ${hanoiMinMoves(const HanoiRules().generate(1, PuzzleTier.easy).puzzle)} 步'), findsOneWidget);
     expect(store.tierOf('hanoi'), PuzzleTier.easy);
+    semantics.dispose();
+  });
+
+  testWidgets('汉诺塔的相邻与循环：底座下画箭头、读屏读规矩；逆着方向放提示条说规矩、不算步数，接着走一步合规的提示收起', (tester) async {
+    final semantics = tester.ensureSemantics();
+    // 普通档第 1 道是三柱循环，困难档第 2 道是四柱相邻。
+    for (final (tier, seed, rule, reason) in [(PuzzleTier.normal, 1, '只能顺着箭头挪到下一根，最后一根挪回第一根', '只能顺着箭头挪到下一根'), (PuzzleTier.hard, 2, '只能挪到旁边的柱子', '只能挪到旁边的柱子')]) {
+      final store = PlaygroundStore.memory();
+      await store.chooseTier('hanoi', tier);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: HanoiPage(key: ValueKey(tier), game: _game('hanoi'), store: store, seeds: () => seed)));
+      await tester.pumpAndSettle();
+      final puzzle = const HanoiRules().generate(seed, tier).puzzle;
+      expect(puzzle.variant, tier == PuzzleTier.normal ? HanoiVariant.cyclic : HanoiVariant.adjacent);
+      expect(find.bySemanticsLabel(rule), findsOneWidget);
+      expect(find.bySemanticsLabel(RegExp('^第${puzzle.pegs}根柱子')), findsOneWidget);
+      // 一步大小合规、方向不许的：从有盘子的柱子挪到空柱或更大的盘子上，但不是许可的方向。
+      final stacks = hanoiStacks(puzzle.pegs, puzzle.start);
+      final wrong = [
+        for (var from = 0; from < puzzle.pegs; from++)
+          for (var to = 0; to < puzzle.pegs; to++)
+            if (from != to && stacks[from].isNotEmpty && !hanoiAllowed(puzzle, from, to) && (stacks[to].isEmpty || stacks[to].last > stacks[from].last)) (from: from, to: to),
+      ].first;
+      await _hanoiTap(tester, wrong);
+      expect(find.text(reason), findsOneWidget);
+      expect(find.textContaining(RegExp('^0 步')), findsOneWidget);
+      await _hanoiTap(tester, _hanoiMove(puzzle, legal: true));
+      await tester.pump(const Duration(seconds: 1));
+      expect(find.text(reason), findsNothing);
+      expect(find.textContaining(RegExp('^1 步')), findsOneWidget);
+    }
+    semantics.dispose();
+  });
+
+  testWidgets('汉诺塔四柱在 360 宽、1.3 倍字号下放得下：柱子的触区并排不出界，盘子扁平不出列，拿起的盘子不压到上方的目标缩略图', (tester) async {
+    final semantics = tester.ensureSemantics();
+    tester.view.devicePixelRatio = 2;
+    tester.view.physicalSize = const Size(720, 1400);
+    tester.platformDispatcher.textScaleFactorTestValue = 1.3;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    final disks = find.byWidgetPredicate((widget) => widget.runtimeType.toString() == '_Disk');
+    // 普通档第 2 道是四柱 8 盘，专家档第 1 道是四柱循环 6 盘（底座下有箭头）。
+    for (final (tier, seed) in [(PuzzleTier.normal, 2), (PuzzleTier.expert, 1)]) {
+      final store = PlaygroundStore.memory();
+      await store.chooseTier('hanoi', tier);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: HanoiPage(key: ValueKey(tier), game: _game('hanoi'), store: store, seeds: () => seed)));
+      await tester.pumpAndSettle();
+      final puzzle = const HanoiRules().generate(seed, tier).puzzle;
+      expect(puzzle.pegs, 4);
+      expect(tester.takeException(), isNull);
+      for (var peg = 0; peg < 4; peg++) {
+        final rect = tester.getRect(_peg(peg));
+        expect(rect.left, greaterThanOrEqualTo(0));
+        expect(rect.right, lessThanOrEqualTo(360));
+        expect(rect.width, greaterThanOrEqualTo(72));
+      }
+      expect(disks, findsNWidgets(puzzle.disks));
+      final column = tester.getRect(_peg(0)).width;
+      for (final element in disks.evaluate()) {
+        final rect = tester.getRect(find.byElementPredicate((candidate) => candidate == element));
+        expect(rect.height, lessThanOrEqualTo(32));
+        expect(rect.width, lessThan(column));
+      }
+      final goal = tester.getRect(find.bySemanticsLabel(RegExp('^目标，')));
+      expect(goal.right, lessThanOrEqualTo(360));
+      final from = _hanoiMove(puzzle, legal: true).from;
+      await _tapOn(tester, _peg(from));
+      await tester.pumpAndSettle();
+      final lifted = [for (final element in disks.evaluate()) tester.getRect(find.byElementPredicate((candidate) => candidate == element)).top].reduce(math.min);
+      expect(lifted, greaterThanOrEqualTo(goal.bottom));
+    }
     semantics.dispose();
   });
 
@@ -120,10 +218,8 @@ void main() {
     final store = PlaygroundStore.memory();
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: HanoiPage(game: _game('hanoi'), store: store, seeds: () => 2)));
     await tester.pumpAndSettle();
-    await _tapOn(tester, _peg(0));
-    await _step(tester);
-    await _tapOn(tester, _peg(1));
-    await _step(tester);
+    final draw = const HanoiRules().generate(2, PuzzleTier.entry);
+    await _hanoiTap(tester, draw.solution.first);
     await tester.tap(find.widgetWithText(TextButton, '入门'));
     await _step(tester);
     await tester.tap(find.text('专家'));
@@ -131,7 +227,7 @@ void main() {
     expect(find.text('换成专家？'), findsOneWidget);
     await tester.tap(find.text('取消'));
     await _step(tester);
-    expect(find.textContaining('最少 7 步'), findsOneWidget);
+    expect(find.textContaining('最少 ${draw.solution.length} 步'), findsOneWidget);
     await tester.tap(find.widgetWithText(TextButton, '入门'));
     await _step(tester);
     await tester.tap(find.text('专家'));
@@ -148,9 +244,10 @@ void main() {
     final store = PlaygroundStore.memory();
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: HanoiPage(game: _game('hanoi'), store: store, seeds: () => 1)));
     await tester.pumpAndSettle();
-    await _tapOn(tester, _peg(0));
+    final first = const HanoiRules().generate(1, PuzzleTier.entry).solution.first;
+    await _tapOn(tester, _peg(first.from));
     await _step(tester);
-    await _tapOn(tester, _peg(1));
+    await _tapOn(tester, _peg(first.to));
     // 落盘的动画走完（几帧接力，逐段推进）。
     for (var frame = 0; frame < 3; frame++) {
       await tester.pump(const Duration(milliseconds: 500));
@@ -336,7 +433,8 @@ void main() {
 
     unawaited(navigator.currentState!.push(CampusPageRoute<void>(builder: (_) => HanoiPage(game: _game('hanoi'), store: store, seeds: () => 1))));
     await tester.pumpAndSettle();
-    await dragRight(tester.getCenter(_peg(0)), tester.getCenter(_peg(1)));
+    final right = _hanoiMove(const HanoiRules().generate(1, PuzzleTier.entry).puzzle, legal: true, rightward: true);
+    await dragRight(tester.getCenter(_peg(right.from)), tester.getCenter(_peg(right.to)));
     expect(tester.getTopLeft(find.byType(HanoiPage)).dx, 0);
     expect(find.textContaining('1 步'), findsOneWidget);
     semantics.dispose();
