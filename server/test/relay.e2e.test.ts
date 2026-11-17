@@ -8,6 +8,7 @@ import { createRelayApp } from 'src/relay_app';
 import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
 import { base64url } from 'src/common/crypto/relay_crypto';
+import { httpKeepAliveTimeoutMs, httpRequestTimeoutMs } from 'src/common/relay_limits';
 import { DeviceRepository } from 'src/modules/device/device.repository';
 import { MailboxNotifier } from 'src/modules/message/mailbox_notifier';
 import { RetentionTask } from 'src/modules/pairing/retention.task';
@@ -59,6 +60,10 @@ describe('健康检查', () => {
     expect(Math.abs(response.body.serverTime - Date.now())).toBeLessThan(5000);
     // 不经镜像构建（没有 RELAY_BUILD_VERSION）即为 dev。
     expect(response.body.version).toBe('dev');
+    // 不报框架；HTTP 服务端的超时是显式设的（见 src/common/http_server.ts）。
+    expect(response.headers['x-powered-by']).toBeUndefined();
+    expect(app.getHttpServer().requestTimeout).toBe(httpRequestTimeoutMs);
+    expect(app.getHttpServer().keepAliveTimeout).toBe(httpKeepAliveTimeoutMs);
   });
 });
 
