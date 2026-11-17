@@ -352,6 +352,38 @@ void main() {
       semantics.dispose();
     });
 
+    // 作弊机器人（人工决策见 knights_page.dart 的 _judge）：不看话，从「全是骑士」起按格雷码挨个试，每次只改一个人，全部定了就判。
+    // 以前判错不罚，几秒就碰对；现在自由模式判错一次罚预计用时的四分之一，成绩含罚时，状态行原地写加了几秒。
+    testWidgets('作弊机器人按格雷码挨个试：每判错一次罚时，碰对的成绩不短于预计用时', (tester) async {
+      final semantics = tester.ensureSemantics();
+      // 挑一道第一次（全是骑士）蒙不对、要试几组的题。
+      var seed = 0;
+      while (_rules.generate(seed, PuzzleTier.entry).solution.every((knight) => knight)) {
+        seed++;
+      }
+      final store = await _open(tester, seed: seed);
+      final draw = _rules.generate(seed, PuzzleTier.entry);
+      final puzzle = draw.puzzle, people = puzzle.people, answer = _mask(draw.solution);
+      final expected = _rules.expectedSeconds(puzzle);
+      final penalty = math.max(5, (expected / 20).round() * 5);
+      var marks = (1 << people) - 1, wrongs = 0;
+      for (var person = 0; person < people; person++) {
+        await _tapChip(tester, person, true);
+      }
+      for (var index = 1; marks != answer; index++) {
+        wrongs++;
+        if (wrongs == 1) expect(find.text('+$penalty 秒'), findsOneWidget, reason: '判错的罚时原地写在状态行');
+        final flipped = ((index ^ (index >> 1)) ^ ((index - 1) ^ ((index - 1) >> 1))).bitLength - 1;
+        marks ^= 1 << flipped;
+        await _tapChip(tester, flipped, marks >> flipped & 1 == 1);
+      }
+      await tester.pumpAndSettle();
+      expect(wrongs, greaterThan(0));
+      expect(find.textContaining('判错 $wrongs 次，罚时 ${wrongs * penalty} 秒'), findsOneWidget);
+      expect(store.best('knights', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(wrongs * penalty * 1000), reason: '成绩含罚时');
+      semantics.dispose();
+    });
+
     testWidgets('判错时对不上的卡片左右晃一下，晃完回原位；这一题从头来清掉标记', (tester) async {
       final semantics = tester.ensureSemantics();
       await _open(tester, seed: 6, tier: PuzzleTier.normal);
