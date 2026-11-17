@@ -61,11 +61,12 @@ Map<String, Object?> challengeBankFile(String secret, String game, PuzzleTier ti
   'entries': challengeBankEntries(secret, game, tier, count),
 };
 
-// 冰面滑行的几个出口：每个当终点时的最少步数、碎片与预计用时（出口按格号排，玩家看到的 ①②③ 就是这个顺序）。
+// 冰面滑行的几个出口：每个当终点时的最少步数、碎片与预计用时（出口按格号排，玩家看到的 ①②③ 就是这个顺序；第 2 版起出口的最少步数与终点相同，
+// 题面的步数上限对每个出口都一样，服务器换终点不用改上限）。
 List<Map<String, int>> _iceExits(IcePuzzle puzzle, int seed) => [
   for (final cell in iceExits(puzzle, PuzzleRandom(seed ^ 0x5bd1e995)))
     () {
-      final goal = IcePuzzle(width: puzzle.width, height: puzzle.height, rocks: puzzle.rocks, start: puzzle.start, goal: cell);
+      final goal = puzzle.copyWith(goal: cell);
       final least = iceMinMoves(goal)!;
       return {'cell': cell, 'minimum': least, 'fragment': least, 'expected': const IceRules().expectedSeconds(goal), 'difficulty': const IceRules().difficulty(goal)};
     }(),

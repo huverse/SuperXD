@@ -2,7 +2,7 @@ import { balanceJudge, flashJudge, loopJudge, minesJudge, twentyFourJudge } from
 import { cipherJudge, logicGridJudge } from 'src/modules/challenge/judges/deduction_judges';
 import { Judge, JudgeFormatError } from 'src/modules/challenge/judges/judge_input';
 import { knightsJudge, nonogramJudge, riverJudge } from 'src/modules/challenge/judges/logic_judges';
-import { boxesJudge, hanoiJudge, iceJudge, lightsJudge, queensJudge } from 'src/modules/challenge/judges/moves_judges';
+import { boxesJudge, hanoiJudge, iceJudge, iceJudgeV2, lightsJudge, queensJudge } from 'src/modules/challenge/judges/moves_judges';
 
 // 能进挑战的游戏（同客户端 playground_catalog.dart 里 challengeable 为真的，id 发出后不改），按题面写法版本登记判定
 // （同客户端规则的 puzzleVersion，人工决策见客户端 lib/playground/challenge/challenge_rules.dart 的 11-15 19:18 那条）。舒尔特方格（拼手速）与画线入杯（物理模拟）不在这里。
@@ -10,7 +10,7 @@ import { boxesJudge, hanoiJudge, iceJudge, lightsJudge, queensJudge } from 'src/
 // test/vectors/challenge_judge_frozen.json（tool/challenge_vectors.dart --freeze <游戏> 在加版本前搬过去）。
 const judges = {
   hanoi: { 1: hanoiJudge },
-  ice: { 1: iceJudge },
+  ice: { 1: iceJudge, 2: iceJudgeV2 },
   lights: { 1: lightsJudge },
   boxes: { 1: boxesJudge },
   queens: { 1: queensJudge },

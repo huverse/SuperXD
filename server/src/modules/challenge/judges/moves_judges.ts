@@ -35,7 +35,7 @@ export const hanoiJudge: Judge<HanoiPuzzle, HanoiMove[]> = {
   steps: (_puzzle, answer) => answer.length,
 };
 
-// ---------- 冰面滑行 ice ----------
+// ---------- 冰面滑行 ice 第 1 版题面（只有岩石；已发布的客户端还报第 1 版，留着不动） ----------
 type IcePuzzle = { width: number; height: number; rocks: boolean[]; start: number; goal: number };
 const iceMinSide = 3, iceMaxSide = 16, iceMaxMoves = 2048;
 const rowStep = [-1, 0, 1, 0], columnStep = [0, 1, 0, -1];
@@ -60,6 +60,70 @@ export const iceJudge: Judge<IcePuzzle, number[]> = {
   },
   decodeAnswer: (json) => puzzleInts(json, iceMaxMoves, 0, 3),
   solved: (puzzle, answer) => answer.length <= iceMaxMoves && answer.reduce((cell, direction) => iceSlide(puzzle, cell, direction), puzzle.start) === puzzle.goal,
+  steps: (_puzzle, answer) => answer.length,
+};
+
+// ---------- 冰面滑行 ice 第 2 版题面（11-16 起：雪地、冰洞、薄冰、宝石与步数上限，同 Dart 的 ice_rules.dart 的 iceMove 与 solved） ----------
+// 格子 tiles 一格一位数字：0 冰面、1 岩石、2 雪地（滑进去就停）、3 冰洞（滑进去就掉下去）、4 薄冰（同冰面滑过，滑过或停过一次就碎成冰洞）。
+// 宝石滑过或停在上面就收走；收齐宝石后停在终点、且步数不超过上限才算解开。题面出自自己的题库，这里只按结构解析。
+type IcePuzzleV2 = { width: number; height: number; tiles: number[]; gems: number[]; thin: number[]; start: number; goal: number; limit: number };
+type IceState = { cell: number; gems: number; broken: number; fallen: boolean };
+const iceRock = 1, iceSnow = 2, iceHole = 3, iceThin = 4;
+const iceMaxGems = 3;
+
+// 从 state 朝 direction 滑一次：撞上岩石或边界、滑进雪地为止，路上（含停下的那格）收宝石、记碎的薄冰；碰到冰洞或碎了的薄冰就掉下去。滑不动原样返回。
+const iceMoveV2 = (puzzle: IcePuzzleV2, state: IceState, direction: number): IceState => {
+  const { width } = puzzle;
+  let row = Math.trunc(state.cell / width), column = state.cell % width;
+  let { gems, broken } = state;
+  for (;;) {
+    const nextRow = row + rowStep[direction], nextColumn = column + columnStep[direction];
+    if (nextRow < 0 || nextRow >= puzzle.height || nextColumn < 0 || nextColumn >= width) break;
+    const next = nextRow * width + nextColumn;
+    const tile = puzzle.tiles[next];
+    if (tile === iceRock) break;
+    const thin = tile === iceThin ? puzzle.thin.indexOf(next) : -1;
+    if (tile === iceHole || (thin >= 0 && (broken & (1 << thin)) !== 0)) return { cell: next, gems, broken, fallen: true };
+    row = nextRow;
+    column = nextColumn;
+    const gem = puzzle.gems.indexOf(next);
+    if (gem >= 0) gems |= 1 << gem;
+    if (thin >= 0) broken |= 1 << thin;
+    if (tile === iceSnow) break;
+  }
+  return { cell: row * width + column, gems, broken, fallen: false };
+};
+
+export const iceJudgeV2: Judge<IcePuzzleV2, number[]> = {
+  decodePuzzle: (json) => {
+    const width = puzzleInt(json, 'width', iceMinSide, iceMaxSide), height = puzzleInt(json, 'height', iceMinSide, iceMaxSide);
+    const cells = width * height;
+    const text = field(json, 'tiles');
+    if (typeof text !== 'string' || text.length !== cells || !/^[0-4]*$/.test(text)) throw new JudgeFormatError('题面的格子串不合法');
+    const tiles = [...text].map(Number);
+    // 挑战里标的几个出口（exits）只给页面画，判定只看终点。
+    if (field(json, 'exits') !== undefined) puzzleInts(field(json, 'exits'), 4, 0, cells - 1);
+    return {
+      width,
+      height,
+      tiles,
+      gems: puzzleInts(field(json, 'gems'), iceMaxGems, 0, cells - 1),
+      thin: tiles.flatMap((tile, cell) => (tile === iceThin ? [cell] : [])),
+      start: puzzleInt(json, 'start', 0, cells - 1),
+      goal: puzzleInt(json, 'goal', 0, cells - 1),
+      limit: puzzleInt(json, 'limit', 1, iceMaxMoves),
+    };
+  },
+  decodeAnswer: (json) => puzzleInts(json, iceMaxMoves, 0, 3),
+  solved: (puzzle, answer) => {
+    if (answer.length > puzzle.limit) return false;
+    let state: IceState = { cell: puzzle.start, gems: 0, broken: 0, fallen: false };
+    for (const direction of answer) {
+      state = iceMoveV2(puzzle, state, direction);
+      if (state.fallen) return false;
+    }
+    return state.cell === puzzle.goal && state.gems === (1 << puzzle.gems.length) - 1;
+  },
   steps: (_puzzle, answer) => answer.length,
 };
 

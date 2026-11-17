@@ -82,7 +82,7 @@ void main() {
       }
     });
 
-    test('收碎片的游戏：记下的每一处写成 ? 都做不出来，值对得上题面；冰面的出口里有原终点、每个出口带自己的最少步数', () {
+    test('收碎片的游戏：记下的每一处写成 ? 都做不出来，值对得上题面；冰面的出口里有原终点、每个出口带自己的最少步数（同终点的一样，步数上限因此对哪个出口都对）', () {
       for (final entry in challengeBankEntries('local-test-seed-0001', 'queens', PuzzleTier.normal, 3)) {
         final puzzle = const QueensRules().decodePuzzle(entry['puzzle']);
         for (final slot in (entry['slots']! as List).cast<Map<String, int>>()) {
@@ -112,8 +112,9 @@ void main() {
         final exits = (entry['exits']! as List).cast<Map<String, int>>();
         expect(exits.map((exit) => exit['cell']), contains(puzzle.goal));
         for (final exit in exits) {
-          final goal = IcePuzzle(width: puzzle.width, height: puzzle.height, rocks: puzzle.rocks, start: puzzle.start, goal: exit['cell']!);
+          final goal = puzzle.copyWith(goal: exit['cell']);
           expect(exit['minimum'], iceMinMoves(goal));
+          expect(exit['minimum'], entry['minimum']);
           expect(exit['fragment'], exit['minimum']);
         }
       }
@@ -124,7 +125,7 @@ void main() {
 // 每个能进挑战的游戏当前题面写法版本的一道样例（取自判定向量的入门档），键的顺序同 encodePuzzle。
 const _samples = <String, (int, Object)>{
   'hanoi': (1, {'disks': 3, 'start': [0, 0, 0], 'target': 2}),
-  'ice': (1, {'width': 6, 'height': 6, 'rocks': '000001110000000111001101000100000001', 'start': 18, 'goal': 22}),
+  'ice': (2, {'width': 6, 'height': 6, 'tiles': '000110001000000000010010100000001000', 'gems': <int>[], 'start': 17, 'goal': 9, 'limit': 7}),
   'lights': (1, {'side': 3, 'lights': '011101100'}),
   'boxes': (1, {'width': 7, 'height': 7, 'walls': '1111111100000110011011101001100001110000111111111', 'goals': [12], 'boxes': [31], 'player': 29}),
   'queens': (1, {'size': 5, 'given': [-1, -1, 3, 1, -1]}),

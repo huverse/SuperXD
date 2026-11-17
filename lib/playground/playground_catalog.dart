@@ -69,7 +69,8 @@ final playgroundCatalog = <PlaygroundGame>[
     id: 'ice',
     name: '冰面滑行',
     summary: '一滑到底，停在终点上',
-    howToPlay: '小企鹅一滑到底，撞到岩石或边界才停；正好停在终点上才算到达。',
+    // 长文案：五种格子（岩石、雪地、冰洞、薄冰、宝石）与步数上限各一条规则，少一条就看不懂棋盘。
+    howToPlay: '一滑到底，撞岩石或边界才停，进雪地就停；别掉进冰洞，薄冰滑过就碎。收齐宝石，限步停在终点。',
     icon: CampusIcons.ice,
     group: planningGroup,
     builder: (context, game, store, challenge, first) => IcePage(game: game, store: store, first: first, challenge: challenge),
