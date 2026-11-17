@@ -17,6 +17,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 
 // 画线入杯对局页：在棋盘上用手指画线（每走 pourMinSegment 记一个点，墨水用完或碰到球的起点这一笔就停），松手后线固定不动；
 // 点「放球」后按固定步长逐帧推进同一份物理模拟，全部球进杯停稳就解开，没进提示再试一次，可以撤销上一笔或整个重画。
+// 墨水条上标着 3 星与 2 星的位置（用墨越省星越多，pourStars），用过了那颗就暗下去；进杯后棋盘上方亮出这一局的星，结果弹层也写几星。
 class PourPage extends StatefulWidget {
   const PourPage({super.key, required this.game, required this.store, this.seeds});
   final PlaygroundGame game;
@@ -254,14 +255,14 @@ class _PourPageState extends State<PourPage> with TickerProviderStateMixin, Widg
     if (simulation.outcome == PourOutcome.won) unawaited(_finish());
   }
 
-  // 解开：停表记成绩，杯子亮一下、光圈漾开，再弹结果；减少动画时直接弹。中途换题或从头来会停掉动画，等着的这一段就不再往下走。
+  // 解开：停表记成绩，杯子亮一下、光圈漾开、星一颗颗亮出来，再弹结果；减少动画时星直接亮着、马上弹。中途换题或从头来会停掉动画，等着的这一段就不再往下走。
   Future<void> _finish() async {
-    final strokes = _strokes.length, used = 100 - _inkLeft;
+    final strokes = _strokes.length, used = 100 - _inkLeft, stars = pourStars(_puzzle, _strokes);
     final newBest = await _session.finish(moves: strokes);
     if (!mounted) return;
     if (!MediaQuery.disableAnimationsOf(context)) await _cheer.forward(from: 0);
     if (!mounted) return;
-    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: '$strokes 笔，用掉 $used% 的墨水');
+    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: '$stars 星 · $strokes 笔，用掉 $used% 的墨水');
     if (!mounted) return;
     switch (choice) {
       case PlayResultChoice.again:
@@ -279,6 +280,12 @@ class _PourPageState extends State<PourPage> with TickerProviderStateMixin, Widg
     return [
       for (var index = 0; index < _puzzle.ballCount; index++) simulation?.ball(index) ?? (x: balls[index * 2].toDouble(), y: balls[index * 2 + 1].toDouble(), angle: 0.0),
     ];
+  }
+
+  // 风车杆此刻的转角（弧度）：放过球就取模拟里的，否则停在开始的转角。
+  List<double> _spinners() {
+    final simulation = _simulation;
+    return [for (final (index, spinner) in _puzzle.spinners.indexed) simulation?.spinner(index) ?? spinner.angle * math.pi / 180];
   }
 
   @override
@@ -303,13 +310,21 @@ class _PourPageState extends State<PourPage> with TickerProviderStateMixin, Widg
     );
   }
 
-  // 读屏：画线对读屏不友好，至少讲清楚球、杯子与障碍在哪、墨水还剩多少、上一次放球的结果；放球、撤销、重画是下方的按钮。
+  // 读屏：画线对读屏不友好，至少讲清楚球（几处）、杯子、障碍与风车在哪、墨水还剩多少与够几星、上一次放球的结果；放球、撤销、重画是下方的按钮。
   String _describe() {
     final puzzle = _puzzle;
     String side(num x) => x < pourWidth / 3 ? '左侧' : (x > pourWidth * 2 / 3 ? '右侧' : '正中');
+    final sides = {for (var index = 0; index < puzzle.balls.length; index += 2) side(puzzle.balls[index])}.join('和');
+    final things = [if (puzzle.blocks.isNotEmpty) '${puzzle.blocks.length} 块障碍', if (puzzle.spinners.isNotEmpty) '${puzzle.spinners.length} 个转动的风车'];
     final state = _running ? '，球在滚' : (_simulation?.outcome == PourOutcome.lost ? '，上一次没进杯' : '');
-    return '画线入杯：上方${side(puzzle.balls[0])}有 ${puzzle.ballCount} 个球，杯子在下方${side(puzzle.cup.x)}'
-        '${puzzle.blocks.isEmpty ? '' : '，中间有 ${puzzle.blocks.length} 块障碍'}，墨水还剩 $_inkLeft%，已画 ${_strokes.length} 笔$state';
+    final parts = [
+      '上方$sides有 ${puzzle.ballCount} 个球',
+      '杯子在下方${side(puzzle.cup.x)}',
+      if (things.isNotEmpty) '中间有 ${things.join('、')}',
+      '墨水还剩 $_inkLeft%，够 ${pourStarsFor(puzzle, _committed + _current)} 星',
+      '已画 ${_strokes.length} 笔',
+    ];
+    return '画线入杯：${parts.join('，')}$state';
   }
 
   Widget _board(BuildContext context, Size size) {
@@ -337,7 +352,11 @@ class _PourPageState extends State<PourPage> with TickerProviderStateMixin, Widg
               scene: scene,
               drawing: _drawing,
               balls: _balls,
+              spinners: _spinners,
               ink: _inkLeft / 100,
+              potential: pourStarsFor(_puzzle, _committed + _current),
+              stars: _simulation?.outcome == PourOutcome.won ? pourStars(_puzzle, _strokes) : null,
+              still: MediaQuery.disableAnimationsOf(context),
               cheer: _cheer,
               repaint: _motion,
             ))),
@@ -349,7 +368,7 @@ class _PourPageState extends State<PourPage> with TickerProviderStateMixin, Widg
 }
 
 // 配色全从当前配色推出：棋盘是卡片底色上一层淡方格（像方格纸），线用正文色（像墨水），障碍从轮廓色推出，杯子用控件激活色，
-// 球用提醒色（琥珀）。
+// 球与星用提醒色（琥珀），风车杆用障碍的描边色（比障碍深，转起来看得出），扫过的范围是一圈淡线。
 class _PourColors {
   factory _PourColors(CampusPalette palette) {
     final dark = palette.isDark, cup = dark ? palette.accentText : palette.accent;
@@ -368,6 +387,7 @@ class _PourColors {
       shine: Colors.white.withValues(alpha: dark ? .55 : .8),
       track: palette.outlineSubtle.withValues(alpha: .8),
       low: palette.attention,
+      dim: dark ? palette.outline : palette.outlineSubtle,
     );
   }
 
@@ -386,8 +406,23 @@ class _PourColors {
     required this.shine,
     required this.track,
     required this.low,
+    required this.dim,
   });
-  final Color paper, grid, edge, block, blockEdge, cup, glass, ink, guide, ball, ballShade, shine, track, low;
+  // dim 是没拿到（或已经用掉）的星。
+  final Color paper, grid, edge, block, blockEdge, cup, glass, ink, guide, ball, ballShade, shine, track, low, dim;
+}
+
+// 五角星（尖朝上，内外半径之比 0.45），加进 path。
+void _addStar(Path path, Offset center, double radius) {
+  for (var index = 0; index < 10; index++) {
+    final angle = -math.pi / 2 + index * math.pi / 5, point = center + Offset(math.cos(angle), math.sin(angle)) * (index.isEven ? radius : radius * .45);
+    if (index == 0) {
+      path.moveTo(point.dx, point.dy);
+    } else {
+      path.lineTo(point.dx, point.dy);
+    }
+  }
+  path.close();
 }
 
 // 棋盘的静态几何：方格、障碍与杯子都拼成路径，题、尺寸或配色变了才重建。
@@ -414,6 +449,9 @@ class _PourScene {
       walls.addRRect(RRect.fromLTRBR(left * scale, top * scale, right * scale, bottom * scale, Radius.circular(3 * scale)));
     }
     glass = Rect.fromLTRB(cup.left * scale, cup.top * scale, cup.right * scale, cup.bottom * scale);
+    for (final spinner in puzzle.spinners) {
+      sweeps.addOval(Rect.fromCircle(center: at(spinner.x, spinner.y), radius: spinner.halfLength * scale));
+    }
   }
 
   final PourPuzzle puzzle;
@@ -421,7 +459,8 @@ class _PourScene {
   final double scale;
   late final RRect board;
   late final Rect glass;
-  final grid = Path(), blocks = Path(), walls = Path();
+  // sweeps 是风车杆扫过的圆（静态层画一圈淡线，杆在动的那一层画）。
+  final grid = Path(), blocks = Path(), walls = Path(), sweeps = Path();
 
   Offset at(num x, num y) => Offset(x * scale, y * scale);
 
@@ -470,7 +509,7 @@ class _PourArt {
   }
 }
 
-// 静态层：方格纸、障碍、杯子与画好的线。
+// 静态层：方格纸、风车扫过的范围、障碍、杯子与画好的线。
 class _StagePainter extends CustomPainter {
   _StagePainter(this.scene, this.lines);
   final _PourScene scene;
@@ -483,6 +522,7 @@ class _StagePainter extends CustomPainter {
     canvas.save();
     canvas.clipRRect(scene.board);
     canvas.drawPath(scene.grid, Paint()..style = PaintingStyle.stroke..strokeWidth = 1..color = colors.grid);
+    canvas.drawPath(scene.sweeps, Paint()..style = PaintingStyle.stroke..strokeWidth = 1.5..color = colors.guide);
     canvas.drawRect(scene.glass, Paint()..color = colors.glass);
     canvas.drawPath(scene.walls, Paint()..color = colors.cup);
     canvas.drawPath(scene.blocks, Paint()..color = colors.block);
@@ -496,25 +536,59 @@ class _StagePainter extends CustomPainter {
   bool shouldRepaint(_StagePainter oldDelegate) => !identical(oldDelegate.scene, scene) || !identical(oldDelegate.lines, lines);
 }
 
-// 动的那一层：墨水条、正在画的这一笔、画线时球四周不能画的范围、球与解开时杯子的光圈。按模拟逐帧重画，球最多三个。
+// 动的那一层：墨水条与条上的星、正在画的这一笔、画线时球四周不能画的范围、风车杆、球、解开时杯子的光圈与这一局的星。
+// 按模拟逐帧重画，球最多三个、风车最多两个。
 class _MotionPainter extends CustomPainter {
-  _MotionPainter({required this.scene, required this.drawing, required this.balls, required this.ink, required this.cheer, required Listenable repaint}) : super(repaint: repaint);
+  _MotionPainter({
+    required this.scene,
+    required this.drawing,
+    required this.balls,
+    required this.spinners,
+    required this.ink,
+    required this.potential,
+    required this.stars,
+    required this.still,
+    required this.cheer,
+    required Listenable repaint,
+  }) : super(repaint: repaint);
   final _PourScene scene;
   final List<int>? drawing;
   final List<({double x, double y, double angle})> Function() balls;
+  final List<double> Function() spinners;
   final double ink;
+  // potential 是按现在的用墨能得几星（墨水条上的星）；stars 是进杯后这一局的星（没进为空）；still 是减少动画（星直接亮着、不弹出来）。
+  final int potential;
+  final int? stars;
+  final bool still;
   final Animation<double> cheer;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final colors = scene.colors, scale = scene.scale;
+    final colors = scene.colors, scale = scene.scale, puzzle = scene.puzzle;
     canvas.save();
     canvas.clipRRect(scene.board);
-    // 墨水条：棋盘顶上一条细条，剩得少时换提醒色。
+    // 墨水条：棋盘顶上一条细条，剩得少时换提醒色。条上在用到 3 星、2 星为止的地方各立一颗星，用墨超过了那颗就暗下去
+    // （墨水紧的题 2 星那颗在条的尽头之外，不画）。
     final track = RRect.fromLTRBR(16, 10, size.width - 16, 14, const Radius.circular(2));
     canvas.drawRRect(track, Paint()..color = colors.track);
     if (ink > 0) canvas.drawRRect(RRect.fromLTRBR(track.left, track.top, track.left + track.width * ink, track.bottom, const Radius.circular(2)), Paint()..color = ink < .2 ? colors.low : colors.cup);
+    final lit = Path(), dim = Path();
+    for (final (count, limit) in [(3, pourThreeStars), (2, pourTwoStars)]) {
+      final left = 1 - limit * puzzle.par / puzzle.ink;
+      if (left > 0) _addStar(potential >= count ? lit : dim, Offset(track.left + track.width * left, track.center.dy), 7);
+    }
     final cheer = this.cheer.value;
+    // 这一局的星：棋盘上方正中三颗，拿到的亮、没拿到的暗；随杯子的光一颗颗弹出来。
+    if (stars case final stars?) {
+      for (var index = 0; index < 3; index++) {
+        final pop = still ? 1.0 : Curves.easeOutBack.transform(((cheer - index * .15) / .45).clamp(0.0, 1.0));
+        if (pop > 0) _addStar(index < stars ? lit : dim, Offset(size.width / 2 + (index - 1) * 40, 44), 16 * pop);
+      }
+    }
+    canvas.drawPath(dim, Paint()..color = colors.dim);
+    canvas.drawPath(lit, Paint()..color = colors.ball);
+    final outline = Paint()..style = PaintingStyle.stroke..strokeWidth = 1.2..strokeJoin = StrokeJoin.round;
+    canvas.drawPath(lit, outline..color = colors.ballShade);
     if (cheer > 0) {
       final glow = math.sin(math.pi * cheer);
       canvas.drawRect(scene.glass, Paint()..color = colors.cup.withValues(alpha: .35 * glow));
@@ -538,6 +612,22 @@ class _MotionPainter extends CustomPainter {
       } else {
         canvas.drawCircle(scene.at(drawing[0], drawing[1]), pourLineRadius * scale, Paint()..color = colors.ink);
       }
+    }
+    // 风车：一根两头圆的杆（粗线圆头）加中间的轴，轴心一个底色小点（看得出是转轴）；杆、轴、轴心各拼成一条路径。
+    final angles = spinners();
+    if (angles.isNotEmpty) {
+      final blades = Path(), hubs = Path(), pins = Path();
+      for (final (index, spinner) in puzzle.spinners.indexed) {
+        final center = scene.at(spinner.x, spinner.y), arm = Offset(math.cos(angles[index]), math.sin(angles[index])) * ((spinner.halfLength - pourSpinnerHalf) * scale);
+        blades
+          ..moveTo(center.dx - arm.dx, center.dy - arm.dy)
+          ..lineTo(center.dx + arm.dx, center.dy + arm.dy);
+        hubs.addOval(Rect.fromCircle(center: center, radius: pourSpinnerHub * scale));
+        pins.addOval(Rect.fromCircle(center: center, radius: pourSpinnerHub * scale * .35));
+      }
+      canvas.drawPath(blades, Paint()..style = PaintingStyle.stroke..strokeWidth = pourSpinnerHalf * 2 * scale..strokeCap = StrokeCap.round..color = colors.blockEdge);
+      canvas.drawPath(hubs, Paint()..color = colors.blockEdge);
+      canvas.drawPath(pins, Paint()..color = colors.paper);
     }
     // 球：琥珀色圆、细描边、跟着转的一个小斑点（看得出在滚）与左上角固定的高光，各拼成一条路径一次画完。
     final radius = pourBallRadius * scale;
