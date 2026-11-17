@@ -137,6 +137,16 @@ void main() {
     }
   });
 
+  // 11-17 设计审查 P2-2：深色复选框的对勾原来是 onPrimary（墨绿黑），压在激活色上约 3.6:1；改成同强调按钮的白字。
+  test('复选框选中的对勾对激活色底不低于 4.5:1，八套配色', () {
+    double contrast(Color a,Color b){final left=a.computeLuminance(),right=b.computeLuminance();return (math.max(left,right)+.05)/(math.min(left,right)+.05);}
+    for(final palette in [...CampusPalette.values,...CampusPalette.darkValues]) {
+      final checkbox=campusTheme(palette:palette).checkboxTheme;
+      final check=checkbox.checkColor!.resolve({WidgetState.selected})!, fill=checkbox.fillColor!.resolve({WidgetState.selected})!;
+      expect(contrast(check,fill),greaterThanOrEqualTo(4.5),reason:'${palette.id} ${palette.brightness.name}');
+    }
+  });
+
   test('激活色强调文字在八套配色的卡片底上：大号字不低于 3:1，深色不低于 4.5:1', () {
     double contrast(Color a,Color b){final left=a.computeLuminance(),right=b.computeLuminance();return (math.max(left,right)+.05)/(math.min(left,right)+.05);}
     for(final palette in [...CampusPalette.values,...CampusPalette.darkValues]) {

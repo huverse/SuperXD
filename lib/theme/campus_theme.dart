@@ -57,8 +57,8 @@ ThemeData campusTheme({CampusPalette? palette, String? fontFamily = 'Maple Mono 
     bottomSheetTheme: BottomSheetThemeData(backgroundColor: colors.surface, shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24)))),
     popupMenuTheme: PopupMenuThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
     chipTheme: ChipThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), backgroundColor: colors.surface, selectedColor: colors.surfaceSelected, disabledColor: colors.glassFallback, checkmarkColor: colors.primary, side: BorderSide(color: colors.outline), labelStyle: TextStyle(fontFamily: fontFamily, fontSize: CampusFontSize.secondary, fontWeight: FontWeight.w600, color: colors.onSurface)),
-    // 复选框选中与开关开启同为控件激活色 accent（同鸿蒙 component_activated）。
-    checkboxTheme: CheckboxThemeData(checkColor: WidgetStatePropertyAll(colors.onPrimary), fillColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? colors.accent : colors.surface), side: BorderSide(color: colors.outline, width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5))),
+    // 复选框选中与开关开启同为控件激活色 accent（同鸿蒙 component_activated）；对勾同强调按钮的白字（深色的 onPrimary 是墨绿黑，压在激活色上只有约 3.6:1）。
+    checkboxTheme: CheckboxThemeData(checkColor: const WidgetStatePropertyAll(Colors.white), fillColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? colors.accent : colors.surface), side: BorderSide(color: colors.outline, width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5))),
     // 次要按钮（同 iOS、鸿蒙的灰底次要按钮）：内容区为中性浅底胶囊配主色字、不加描边；导航层与浮层里仍是玻璃。
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(

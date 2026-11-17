@@ -517,12 +517,15 @@ void main() {
     skipped.dispose();
   });
 
-  testWidgets('外壳读好本机记录就在后台出第一道题交给对局页；后台迟迟没出好就由对局页当场出；画线入杯不备', (tester) async {
+  testWidgets('外壳读好本机记录就在后台出第一道题交给对局页（等的时候已有顶栏）；后台迟迟没出好就由对局页当场出；画线入杯不备', (tester) async {
     final store = PlaygroundStore.memory();
     Widget host(String id) => MaterialApp(theme: campusTheme(), home: PlaygroundGameHost(key: ValueKey(id), game: _game(id), store: store));
     await tester.pumpWidget(host('hanoi'));
     await tester.pump();
     expect(find.text('正在准备'), findsOneWidget);
+    // 等题时就有同对局页的顶栏：返回与游戏名（11-17 设计审查）。
+    expect(find.byTooltip('返回'), findsOneWidget);
+    expect(find.descendant(of: find.byType(AppBar), matching: find.text('汉诺塔')), findsOneWidget);
     // 另一个 isolate 按真实时间出题：让出真实的事件循环等它回来。
     await tester.runAsync(() => Future<void>.delayed(const Duration(seconds: 1)));
     await tester.pump();
