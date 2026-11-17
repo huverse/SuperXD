@@ -12,7 +12,7 @@ class Leisure extends ChangeNotifier {
   final Future<void> Function()? _deleteRemote;
   final bool Function() _signedIn;
 
-  // 删除数据时会连服务器上的一起删（配了中转、登录着应用账号、联网化）。
+  // 删除数据时会连服务器上的一起删（配了中转、登录着应用账号、联网）。
   bool get signedIn => _deleteRemote != null && _signedIn();
 
   // 返回服务器上的有没有一起删。

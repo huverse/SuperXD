@@ -24,7 +24,7 @@ class Festivals extends ChangeNotifier {
   final AppAccountRef? Function() _account;
   final void Function()? _accountGone;
   final bool Function() _levelsOn;
-  // 本地化时为假（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）：动画照常播，不抽签、不领红包、不提示去登录。
+  // 仅本机时为假（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）：动画照常播，不抽签、不领红包、不提示去登录。
   final bool Function() _online;
   final DateTime Function() _clock;
   final _drawing = <String, Future<FestivalDraw?>>{};

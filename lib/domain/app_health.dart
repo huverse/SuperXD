@@ -3,7 +3,7 @@
 // - 本机按校园日记「这天打开过、装着哪个版本、有没有致命错误」（致命 = 没接住的异常、框架报错、系统记下的崩溃与无响应）；前一天过完后发一份，
 //   只有渠道、平台、版本号、那天与有没有致命错误，不带账号、设备号与错误内容；每天最多一份，只补最近 healthReportDays 天里没发过的。
 // - 意见：装了这个版本 feedbackOpenDays 天内关于页给「新版本反馈」，好或不好、可加一句话（最多 feedbackTextMax 字），每个版本只收一次。
-// - 联网按 NetworkService 的 appHealth、appFeedback（本地化模式下都不发）。
+// - 联网按 NetworkService 的 appHealth、appFeedback（仅本机时都不发）。
 const healthReportDays = 7;
 const healthReportBatch = 3;
 const feedbackOpenDays = 14;

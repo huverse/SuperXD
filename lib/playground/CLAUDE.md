@@ -12,7 +12,7 @@
   - 页面用 play_frame.dart 的 PlaySession 管档位、计时与记成绩，用 PlayFrame 搭顶栏、状态行与底部操作，棋盘自己画。
 - 挑战模式（人工决策见 challenge/challenge_rules.dart 文件头）：服务器（server/src/modules/challenge）按配置下发每周的 N 连环，出题用题库（tool/challenge_bank.dart 用同一份规则、保密种子离线生成）、逐关核对（TS 判定从规则逐个移植，与 Dart 共用 server/test/vectors/challenge_judge_v1.json）、计时（不暂停）与结算积分；关卡之间用碎片连起来（11-14 夜取代钥匙填空）：过关给一次从解里读出的碎片，收碎片的关先开门（门上的数是几块碎片之和或之积），门上的数改写这一关的一处条件或目标，全部过了输终章（全部碎片之和），快得不正常追加加试题。客户端只按服务器给的关卡图通用地画，模板、计分与题库改了不用发版；新游戏要发版。同一个对局页给了 PlayChallenge 就是挑战里的一关：题面与档位固定、不换题、不记本机成绩，判对错与完成都交服务器。拼手速与物理模拟的游戏（challengeable 为假）只进自由模式。
 - 挑战与积分经组合根注入的 domain 端口 ChallengeHub（application/challenges.dart 实现）使用，游乐场不依赖应用账号与中转；去登录应用账号的页面也由组合根以回调给。
-- 11-16 起游乐场一直能进（娱乐与积分的开关并进应用账号页的联网偏好，人工决策见 domain/leisure.dart 与 domain/network_policy.dart）：本地化时路由不给挑战分段，组合根停掉解锁与等级加权；游乐场自己不知道联网偏好。
+- 11-16 起游乐场一直能进（娱乐与积分的开关并进应用账号页的联网偏好，人工决策见 domain/leisure.dart 与 domain/network_policy.dart）：仅本机时路由不给挑战分段，组合根停掉解锁与等级加权；游乐场自己不知道联网偏好。
 
 # 长期路线（用户 11-12 选定，做到哪一阶段在哪一阶段落代码与人工决策）
 

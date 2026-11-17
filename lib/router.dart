@@ -122,7 +122,7 @@ GoRouter buildRouter({required AppSession session, required AppServices services
         for (final shortcut in tool.shortcuts) GoRoute(path: '/toolbox/${tool.id}/${shortcut.id}', parentNavigatorKey: rootKey,
           pageBuilder: (context, state) => campusPage(key: state.pageKey, child: shortcut.builder(context))),
       GoRoute(path: '/playground', parentNavigatorKey: rootKey,
-        // 本地化时没有挑战分段（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条），自由模式照常。
+        // 仅本机时没有挑战分段（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条），自由模式照常。
         pageBuilder: (context, state) => campusPage(key: state.pageKey, child: ListenableBuilder(listenable: Listenable.merge([?network]), builder: (context, _) => PlaygroundPage(
           store: playground,
           games: playgroundCatalog,

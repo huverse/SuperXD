@@ -125,7 +125,7 @@ void main() {
   });
 
   // 人工决策见 social/social_service.dart 文件头（11-14）：私信跟着应用账号。
-  testWidgets('本地化：一张卡写明不经服务器收发，点「改为联网化」交给应用账号页，不联网', (tester) async {
+  testWidgets('仅本机：一张卡写明不经服务器收发，点「改为联网」交给应用账号页，不联网', (tester) async {
     final relay = FakeRelay();
     final directory = Directory(path.join(temporary.path, 'offline'))..createSync();
     final social = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: directory.path), accountKeys: MemoryAppAccountVault(), transport: relay.transport(), serverKeys: FakeRelay.serverKeys);
@@ -136,8 +136,8 @@ void main() {
     var opened = 0;
     await tester.pumpWidget(app(Scaffold(body: MessagePage(social: social, openAccount: (_) => opened++))));
     await advance(tester);
-    expect(find.text('本地化模式下不经服务器收发私信'), findsOneWidget);
-    await tester.tap(find.text('改为联网化'));
+    expect(find.text('仅本机时不经服务器收发私信'), findsOneWidget);
+    await tester.tap(find.text('改为联网'));
     expect(opened, 1);
     expect(relay.calls, isEmpty);
   });

@@ -19,7 +19,7 @@ Future<void> showShareSheet(BuildContext context, {required SocialService social
       SocialStatus.unavailable => '当前版本未配置私信服务',
       SocialStatus.signedOut => '请先在“我的 › 账号”登录应用账号，再开启私信',
       SocialStatus.elsewhere => '私信在另一台手机上，可以在“消息”里改到这台手机上使用',
-      SocialStatus.offline => '本地化模式下不经服务器分享，可以在应用账号页改为联网化',
+      SocialStatus.offline => '仅本机时不经服务器分享，可以在应用账号页改为联网',
       _ => '请先在“消息 › 私信”开启私信并添加好友',
     });
     return;

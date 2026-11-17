@@ -96,7 +96,7 @@ class AppServices {
   final AutoSync? autoSync;
   // 分批更新的健康回报与新版本反馈（人工决策见 domain/app_health.dart）。
   final AppHealth? health;
-  // 联网偏好（本地化或联网化，人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）；测试里为空当联网化。
+  // 联网偏好（仅本机或联网，人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）；测试里为空当联网。
   final NetworkPreference? network;
 }
 
@@ -160,7 +160,7 @@ Future<AppHealth> appHealthOf(Directory support, RelayWiring? relay) async => Ap
 
 // 积分等级经挑战与积分的签名请求取（取不到时 Challenges 已记日志，这里按没取到算）。
 // 11-16 起（人工决策见 domain/rollout.dart 文件头 11-16 那条）：开关的平台与版本号条件按这台设备判定；登录着应用账号时同一时机问点名（用这个账号的设备密钥签名）。
-// 本地化时（online 为假）不取等级、按 Lv0，也不问点名（记着的照旧用）。
+// 仅本机时（online 为假）不取等级、按 Lv0，也不问点名（记着的照旧用）。
 Future<Rollouts> rolloutsOf(Directory support, RelayWiring? relay, AppAccounts? appAccounts, Challenges? challenges, {required bool Function() online}) async {
   final targets = relay == null ? null : RelayFlagTargetClient(vault: relay.accountKeys, transport: relay.transport);
   return Rollouts(
@@ -209,7 +209,7 @@ Future<DeveloperNotes?> developerNotes(Directory support, RelayWiring? relay) as
 // 节日（人工决策见 domain/festival.dart）：登记在 page/festival/festival_catalog.dart；没配中转时只播动画、不抽签。
 // 抽签用当前应用账号的设备密钥签名（social/relay_reward_client.dart）；没登录应用账号不抽，中转说账号已不在时让应用账号马上核一次。
 // 登录应用账号后补抽在 app_lifecycle.dart 的 watchMoments 里接（同意协议与政策之后才联网）。
-// 本地化时（online 为假，人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）不抽签、不领红包，也不按等级加权。
+// 仅本机时（online 为假，人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）不抽签、不领红包，也不按等级加权。
 Future<Festivals> festivalsOf(Directory support, RelayWiring? relay, AppAccounts? appAccounts, {required bool Function() online}) async {
   return Festivals(
     occasions: [for (final scene in festivalCatalog) scene.occasion],
@@ -224,7 +224,7 @@ Future<Festivals> festivalsOf(Directory support, RelayWiring? relay, AppAccounts
 
 // 诊断包上传（人工决策见 domain/diagnostic_upload.dart）：没配中转时为空；配了就是包着中转上传的 AccountDiagnostics，登录着应用账号时传完认领到账号下，
 // 账号页也经它看与删自己认领过的包。
-// 本地化时（online 为假）上传照旧、只是不认领到应用账号下。
+// 仅本机时（online 为假）上传照旧、只是不认领到应用账号下。
 AccountDiagnostics? diagnosticsOf(RelayWiring? relay, AppAccounts? Function() appAccounts, {required bool Function() online}) {
   if (relay == null) return null;
   return AccountDiagnostics(

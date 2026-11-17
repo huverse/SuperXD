@@ -120,8 +120,8 @@ class _MessagePageState extends State<MessagePage> {
                 final open? => () => open(context),
                 null => null,
               }),
-              // 本地化模式（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）：经中转的私信停着，去应用账号页切回联网化。
-              SocialStatus.offline => _SocialNotice(title: '本地化模式下不经服务器收发私信', action: '改为联网化', icon: CampusIcons.sync, onPressed: switch (widget.openAccount) {
+              // 仅本机模式（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）：经中转的私信停着，去应用账号页切回联网。
+              SocialStatus.offline => _SocialNotice(title: '仅本机时不经服务器收发私信', action: '改为联网', icon: CampusIcons.sync, onPressed: switch (widget.openAccount) {
                 final open? => () => open(context),
                 null => null,
               }),
