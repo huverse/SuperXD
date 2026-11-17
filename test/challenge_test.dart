@@ -616,8 +616,10 @@ void main() {
       expect(find.text('挑战总览'), findsOneWidget);
 
       // 走完交上去、结果弹层等着服务器时到点：退回挑战那一页，不多退一层。
+      // 期限按真实时间算，走完一局在慢机器上（CI）可能就要一两秒：给足 6 秒，交上去以后再按剩下的真实时间等到点。
       final reply = Completer<PlayVerdict>();
-      await open(challenge(const Duration(milliseconds: 1500), submit: (answer) => reply.future));
+      final pending = challenge(const Duration(seconds: 6), submit: (answer) => reply.future);
+      await open(pending);
       for (final move in hanoiSolution(_hanoi)) {
         await tester.tapAt(tester.getCenter(find.bySemanticsLabel(RegExp('^第${move.from + 1}根柱子'))));
         await tester.pump(const Duration(milliseconds: 300));
@@ -626,7 +628,7 @@ void main() {
       }
       await tester.pump(const Duration(seconds: 1));
       expect(find.text('正在交给服务器核对'), findsOneWidget);
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1600)));
+      await tester.runAsync(() => Future<void>.delayed(pending.deadline.difference(DateTime.now()) + const Duration(milliseconds: 100)));
       await tester.pump(const Duration(seconds: 1));
       await tester.pump(const Duration(seconds: 1));
       expect(find.byType(HanoiPage), findsNothing);
