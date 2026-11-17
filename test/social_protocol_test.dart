@@ -78,10 +78,12 @@ void main() {
   });
 
   // 应用账号的密码与恢复码在发出前封装（人工决策见 domain/app_account.dart）：服务端 server/test/account.e2e.test.ts 打开同一份向量（明文是任意 JSON 对象）。
-  test('应用账号信封与服务端共用向量', () async {
-    final vector = jsonDecode(File('server/test/vectors/account_seal_v1.json').readAsStringSync()) as Map<String, dynamic>;
+  // 11-17 起是第 2 版（带钥号，服务器按它挑私钥、换钥不断旧客户端）；第 1 版的向量留给服务端核对旧客户端照旧能用。
+  test('应用账号信封与服务端共用向量：第 2 版带钥号（中转公钥 sha256 的前 8 字节）', () async {
+    final vector = jsonDecode(File('server/test/vectors/account_seal_v2.json').readAsStringSync()) as Map<String, dynamic>;
+    expect(base64UrlNoPad(accountSealKeyId(decodeBase64UrlNoPad(vector['recipientPublic'] as String))), vector['keyId']);
     final sealed = await sealAccountSecrets(
-      (vector['proof'] as Map).cast<String, Object?>(),
+      (vector['plaintext'] as Map).cast<String, Object?>(),
       vector['deviceId'] as String,
       decodeBase64UrlNoPad(vector['recipientPublic'] as String),
       ephemeral: await X25519().newKeyPairFromSeed(decodeBase64UrlNoPad(vector['ephemeralSeed'] as String)),

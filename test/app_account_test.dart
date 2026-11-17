@@ -23,6 +23,7 @@ import 'package:superxd/page/account_page.dart';
 import 'package:superxd/page/app_account_join_page.dart';
 import 'package:superxd/page/app_account_page.dart';
 import 'package:superxd/page/sensitive_clipboard.dart';
+import 'package:superxd/social/account_seal.dart';
 import 'package:superxd/social/relay_app_account.dart';
 import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_crypto.dart';
@@ -722,15 +723,19 @@ void main() {
 }
 
 // 按服务端的布局解开信封（同 server/src/modules/account/account_keys.ts），验证只有中转私钥、而且只按发起的设备号打得开。
+// 按服务端的布局解开第 2 版信封（版本 2 | 钥号 8 | 一次性公钥 32 | 随机数 12 | 密文 | 标签 16），钥号要是这把中转公钥的。
 Future<List<int>> _open(SimpleKeyPair recipient, List<int> sealed, String deviceId) async {
   final recipientPublic = (await recipient.extractPublicKey()).bytes;
-  final ephemeral = sealed.sublist(1, 33);
+  expect(sealed[0], 2);
+  final header = sealed.sublist(0, 9);
+  expect(header.sublist(1), accountSealKeyId(recipientPublic));
+  final ephemeral = sealed.sublist(9, 41);
   final shared = await X25519().sharedSecretKey(keyPair: recipient, remotePublicKey: SimplePublicKey(ephemeral, type: KeyPairType.x25519));
   final key = await Hkdf(hmac: Hmac.sha256(), outputLength: 32).deriveKey(secretKey: shared, nonce: [...ephemeral, ...recipientPublic], info: utf8.encode('SXD1-account-sign-in'));
-  final box = SecretBox(sealed.sublist(45, sealed.length - 16), nonce: sealed.sublist(33, 45), mac: Mac(sealed.sublist(sealed.length - 16)));
+  final box = SecretBox(sealed.sublist(53, sealed.length - 16), nonce: sealed.sublist(41, 53), mac: Mac(sealed.sublist(sealed.length - 16)));
   final aes = AesGcm.with256bits();
-  await expectLater(aes.decrypt(box, secretKey: key, aad: [1, ...ephemeral, ...utf8.encode('CCCCCCCCCCCCCCCCCCCCCC')]), throwsA(isA<SecretBoxAuthenticationError>()));
-  return aes.decrypt(box, secretKey: key, aad: [1, ...ephemeral, ...utf8.encode(deviceId)]);
+  await expectLater(aes.decrypt(box, secretKey: key, aad: [...header, ...ephemeral, ...utf8.encode('CCCCCCCCCCCCCCCCCCCCCC')]), throwsA(isA<SecretBoxAuthenticationError>()));
+  return aes.decrypt(box, secretKey: key, aad: [...header, ...ephemeral, ...utf8.encode(deviceId)]);
 }
 
 class _Request {

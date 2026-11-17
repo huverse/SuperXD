@@ -63,8 +63,10 @@
 - 签名挡不住冻结与回滚（一直回放旧清单）：版本只升不降由客户端已装版本号与系统安装器保证，冻结只能靠将来的 HTTPS；载荷不带过期时间。
 - 上线顺序：先部署本服务（能透传信封的版本），再发带验签的客户端。旧版服务会把带 envelopes 的清单当写坏的文件拒绝（新旧客户端都查不到更新），所以发版与 notes 流水线上传前都先确认返回里有 envelope 字段，没有就停。部署后旧客户端照常靠明文字段更新，不受影响。
 
-应用账号的信封（客户端 lib/social/account_seal.dart，双端共用 test/vectors/account_seal_v1.json，向量里的明文是任意 JSON 对象）
-- 版本(1) | 一次性 X25519 公钥(32) | 随机数(12) | AES-256-GCM 密文 | 标签(16)；HKDF-SHA256 的盐是一次性公钥接本服务公钥，info 为 SXD1-account-sign-in；附加数据是版本、一次性公钥与发起请求的设备号（别的设备拿去重放打不开）。
+应用账号的信封（客户端 lib/social/account_seal.dart，双端共用 test/vectors/account_seal_v2.json，第 1 版 account_seal_v1.json 留着核对旧客户端，向量里的明文是任意 JSON 对象）
+- 第 2 版（11-17 起的客户端）：版本 2(1) | 钥号(8) | 一次性 X25519 公钥(32) | 随机数(12) | AES-256-GCM 密文 | 标签(16)；钥号是本服务公钥 sha256 的前 8 字节，服务器按它挑私钥；HKDF-SHA256 的盐是一次性公钥接本服务公钥，info 为 SXD1-account-sign-in；附加数据是版本、钥号、一次性公钥与发起请求的设备号（别的设备拿去重放打不开）。
+- 第 1 版（11-17 以前的客户端）：版本 1(1) | 一次性公钥(32) | 随机数(12) | 密文 | 标签(16)，附加数据是版本、一次性公钥与设备号；没有钥号，服务器按认的每一把逐个试。
+- 服务器可以同时认几把（RELAY_ACCOUNT_SEAL_KEY 逗号分隔，最多 4 把，现用的在前），换钥不断旧客户端，步骤见「部署」应用账号一条。
 - 明文是 UTF-8 的 JSON 对象（各接口要的秘密，见上）。密码与恢复码只在内存里用来算或核对 scrypt 哈希（src/modules/account/account_keys.ts：N=2^15、r=8、p=1，每条随机盐，存「scrypt$N$r$p$盐$哈希」），不落库原文、不进日志、不进 Redis。
 
 长轮询
@@ -142,7 +144,7 @@
    挑战题面带写法版本（11-15）：先部署新版服务（新旧文件名都认、旧客户端只报游戏 id 照常按第 1 版），再按需经流水线 challenge.yml（bank=true）重出题库（出的是带版本号的文件名，新版服务先读它；旧文件名的那几份留着无害，可手动删）。顺序反了旧版服务读不到带版本号的新题，但旧文件名的还在、照旧能用；不重出题库也能用（第 1 版读旧文件名）。
    挑战重做（碎片、门、终章、加试题与预计用时）：库按 sql/upgrade_2026_11_15.sql 建 challenge_pace 表并把还在进行中的旧格式局按提前结束收掉，再经流水线 challenge.yml 传新题库与配置，最后部署新版服务（旧格式的题库新版认不出，顺序不能反）。
    红包金额档：库按 sql/upgrade_2026_11_14d.sql 给 reward_prize 加 tier 列（默认 0）并换成 (campaign_id, tier, draw_id) 索引；新列带默认值，旧版服务照常能用，可以先执行再部署。导入大额档用 import <编号> --tier 1。
-   应用账号：库按 sql/upgrade_2026_11_13.sql 建三张表后再部署；.env 要 RELAY_ACCOUNT_SEAL_KEY（X25519 私钥种子，32 字节 base64url，对应的公钥写死在客户端 lib/social/account_seal.dart 的 accountSealKey），在开发者本机生成、本机另存一份（~/.local/share/superxd-release/account，600），经 ssh 写进服务器 .env，不回显、不进仓库；换钥两边一起换，旧客户端随之登录不了。11-13 起另有的 RELAY_KINGO_BASE 与 RELAY_ACCOUNT_SUBJECT_KEY 从 11-15 起不再读（.env 里留着无害）。11-15 起另要 RELAY_FRIEND_SIGN_KEY（给好友公钥签名的 Ed25519 私钥种子，32 字节 base64url，公钥写死在客户端 lib/social/relay_client.dart 的 relayServerKeys，11-17 起也签奖品信封与「账号已注销」），生成与存放同上（本机 relay_friend_sign_key）；没写服务起不来，切镜像前先写进 .env。
+   应用账号：库按 sql/upgrade_2026_11_13.sql 建三张表后再部署；.env 要 RELAY_ACCOUNT_SEAL_KEY（X25519 私钥种子，32 字节 base64url，对应的公钥写死在客户端 lib/social/account_seal.dart 的 accountSealKey），在开发者本机生成、本机另存一份（~/.local/share/superxd-release/account，600），经 ssh 写进服务器 .env，不回显、不进仓库。换钥（11-17 起信封带钥号，不断旧客户端）：1. 本机生成新种子并另存；2. 服务器 .env 改成 RELAY_ACCOUNT_SEAL_KEY=<新>,<旧> 后重启中转（两把都认）；3. 发把 accountSealKey 换成新公钥的客户端；4. 等最低可用版本高过上一步之前的版本（旧客户端用不了了）再从 .env 删掉旧的那把。顺序不能反：客户端先换、服务器还不认新钥，新客户端就登录不了。11-13 起另有的 RELAY_KINGO_BASE 与 RELAY_ACCOUNT_SUBJECT_KEY 从 11-15 起不再读（.env 里留着无害）。11-15 起另要 RELAY_FRIEND_SIGN_KEY（给好友公钥签名的 Ed25519 私钥种子，32 字节 base64url，公钥写死在客户端 lib/social/relay_client.dart 的 relayServerKeys，11-17 起也签奖品信封与「账号已注销」），生成与存放同上（本机 relay_friend_sign_key）；没写服务起不来，切镜像前先写进 .env。
    自己的账号体系：库按 sql/upgrade_2026_11_15b.sql 清掉 11-13 起的测试期应用账号与挂在下面的数据（应用账号没在任何发布版里出现过）、删 account_identity、给 app_account 加用户名与两个哈希后，紧接着部署新版服务（旧版服务在这之后登录会失败；可重复执行，清数据只在账号表还没有 username 列时做，上线后再跑不会删新注册的账号）。
    灰度点名：库按 sql/upgrade_2026_11_16c.sql 建 rollout_target 表后再部署（只建表、可重复执行，旧版服务不碰它）；部署后用维护者本机的 tool/rollout_publish.sh 发第 2 版配置 flags.json（同时重签第 1 版 rollout.json）。
    分批更新的健康回报：库按 sql/upgrade_2026_11_16e.sql 建 app_health_daily、app_release_pause、app_feedback 三张表后再部署（只建表、可重复执行）。

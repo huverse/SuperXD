@@ -42,8 +42,9 @@ export const loadEnv = () => ({
   // 业务时区（IANA 名，同客户端 lib/domain/campus_clock.dart 的 campusTimeZone）：每周轮换的挑战按它的周一 0 点换，日界只在这里取，不写死偏移。
   businessTimeZone: timeZone('RELAY_BUSINESS_TIME_ZONE'),
   account: {
-    // 客户端封装密码与恢复码用的 X25519 私钥种子（32 字节 base64url）；公钥写死在客户端 lib/social/account_seal.dart，换钥两边一起换。
-    sealKey: required('RELAY_ACCOUNT_SEAL_KEY'),
+    // 客户端封装密码与恢复码用的 X25519 私钥种子（32 字节 base64url）：一把或几把，逗号分隔、现用的在前（换钥过渡期新旧都在，见 src/modules/account/account_keys.ts）；
+    // 现用那把的公钥写死在客户端 lib/social/account_seal.dart 的 accountSealKey。
+    sealKeys: required('RELAY_ACCOUNT_SEAL_KEY').split(','),
   },
   signing: {
     // 服务器在线签名钥的 Ed25519 私钥种子（32 字节 base64url，见 src/common/crypto/relay_signer.ts）：签好友公钥、奖品信封与「账号已注销」，

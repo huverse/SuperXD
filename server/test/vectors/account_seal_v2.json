@@ -1,0 +1,14 @@
+{
+  "note": "应用账号封装秘密的第 2 版信封（带钥号：中转公钥 sha256 的前 8 字节，服务器按它挑私钥）：客户端 lib/social/account_seal.dart 封装、服务端 src/modules/account/account_keys.ts 打开；全部合成数据，种子与随机数同第 1 版向量。",
+  "recipientSeed": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
+  "recipientPublic": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9_AsrhtHHw",
+  "keyId": "qqj_9wO1CyI",
+  "ephemeralSeed": "yMfGxcTDwsHAv769vLu6ubi3trW0s7KxsK-urayrqqk",
+  "nonce": "AAcOFRwjKjE4P0ZN",
+  "deviceId": "AAAAAAAAAAAAAAAAAAAAAA",
+  "plaintext": {
+    "password": "synthetic-pass",
+    "recoveryCode": "ABCD0123EFGH4567JKMN89PQ"
+  },
+  "sealed": "Aqqo__cDtQsija_P7q6QRe6aeNeKmfzzLneB5EHrBzCWw0K44tzDthIABw4VHCMqMTg_Rk0uc1S7ueUZ_CcUhXt7kPPgRXw2rRW_WS7DeQ_VGOJQAN6VEgESCb8GafaLpx0tOL3exwADynmBtPFoEOamdJy9IUA_GU7-WQqc-VFmX7MCKvaANrMke94"
+}

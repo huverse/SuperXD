@@ -9,7 +9,7 @@ import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
 import { accountDeviceLimit, accountJoinPerSourcePerHour, accountLoginPerUserSourcePerHour, accountRegisterPerDevicePerHour } from 'src/common/relay_limits';
 import { accountDeletedCanonical, decodeBase64url, ed25519Key, verifyEd25519, x25519PrivateKey, x25519PublicOf } from 'src/common/crypto/relay_crypto';
-import { openAccountSeal } from 'src/modules/account/account_keys';
+import { accountSealKeyId, accountSealKeyOf, openAccountSeal } from 'src/modules/account/account_keys';
 import { AccountRetentionTask } from 'src/modules/account/account_retention.task';
 import { IpRegion } from 'src/common/ip_region';
 import { createInviteKeys, helloOf, inviteProof, socialBindBody, TestDevice } from './test_device';
@@ -20,6 +20,19 @@ import { createInviteKeys, helloOf, inviteProof, socialBindBody, TestDevice } fr
 const testSealPrivate = x25519PrivateKey(decodeBase64url(process.env.RELAY_ACCOUNT_SEAL_KEY!, 32)!);
 const testSealPublic = x25519PublicOf(testSealPrivate);
 const x25519SpkiPrefix = Buffer.from('302a300506032b656e032100', 'hex');
+// 第 2 版（11-17 起的客户端）：版本 2 后接钥号（中转公钥 sha256 的前 8 字节），钥号也进附加数据；keyId 给了就冒充别的钥号。
+const sealKeyed = (secrets: Record<string, unknown>, deviceId: string, keyId = accountSealKeyId(testSealPublic)) => {
+  const ephemeral = generateKeyPairSync('x25519');
+  const ephemeralPublic = Buffer.from(ephemeral.publicKey.export({ format: 'jwk' }).x!, 'base64url');
+  const shared = diffieHellman({ privateKey: ephemeral.privateKey, publicKey: createPublicKey({ key: Buffer.concat([x25519SpkiPrefix, testSealPublic]), format: 'der', type: 'spki' }) });
+  const key = Buffer.from(hkdfSync('sha256', shared, Buffer.concat([ephemeralPublic, testSealPublic]), 'SXD1-account-sign-in', 32));
+  const nonce = randomBytes(12);
+  const cipher = createCipheriv('aes-256-gcm', key, nonce);
+  const header = Buffer.concat([Buffer.from([2]), keyId]);
+  cipher.setAAD(Buffer.concat([header, ephemeralPublic, Buffer.from(deviceId, 'utf8')]));
+  const body = Buffer.concat([cipher.update(JSON.stringify(secrets), 'utf8'), cipher.final()]);
+  return Buffer.concat([header, ephemeralPublic, nonce, body, cipher.getAuthTag()]).toString('base64url');
+};
 const seal = (secrets: Record<string, unknown>, deviceId: string) => {
   const ephemeral = generateKeyPairSync('x25519');
   const ephemeralPublic = Buffer.from(ephemeral.publicKey.export({ format: 'jwk' }).x!, 'base64url');
@@ -70,21 +83,33 @@ afterAll(async () => {
 });
 
 describe('信封', () => {
-  it('打得开客户端封装的向量，换设备号或改一个字节就打不开', () => {
+  it('打得开旧客户端（第 1 版、没有钥号）封装的向量，换设备号或改一个字节就打不开', () => {
     const vector = JSON.parse(readFileSync(new URL('./vectors/account_seal_v1.json', import.meta.url), 'utf8')) as { recipientSeed: string; recipientPublic: string; deviceId: string; proof: Record<string, string>; sealed: string };
-    const privateKey = x25519PrivateKey(decodeBase64url(vector.recipientSeed, 32)!);
-    const publicKey = x25519PublicOf(privateKey);
-    expect(publicKey.toString('base64url')).toBe(vector.recipientPublic);
+    const key = accountSealKeyOf(decodeBase64url(vector.recipientSeed, 32)!);
+    expect(key.publicKey.toString('base64url')).toBe(vector.recipientPublic);
     const sealed = decodeBase64url(vector.sealed)!;
-    expect(JSON.parse(openAccountSeal(sealed, vector.deviceId, privateKey, publicKey)!.toString('utf8'))).toEqual(vector.proof);
-    expect(openAccountSeal(sealed, 'BBBBBBBBBBBBBBBBBBBBBB', privateKey, publicKey)).toBeNull();
+    expect(JSON.parse(openAccountSeal(sealed, vector.deviceId, [key])!.toString('utf8'))).toEqual(vector.proof);
+    expect(openAccountSeal(sealed, 'BBBBBBBBBBBBBBBBBBBBBB', [key])).toBeNull();
     const tampered = Buffer.from(sealed);
     tampered[60] ^= 1;
-    expect(openAccountSeal(tampered, vector.deviceId, privateKey, publicKey)).toBeNull();
+    expect(openAccountSeal(tampered, vector.deviceId, [key])).toBeNull();
   });
 });
 
 describe('注册与登录', () => {
+  // 账号封装钥带钥号（11-17）：新客户端发第 2 版，旧客户端的第 1 版照旧认；钥号不是服务器认的就当解不开。
+  it('第 2 版信封（带钥号）注册与登录都认；钥号对不上回 INVALID_REQUEST；第 1 版照旧能登录', async () => {
+    const username = name();
+    const device = new TestDevice(server);
+    const code = recoveryCode();
+    expect((await device.call('POST', '/v1/account/register', { ...keys(device), username, sealed: sealKeyed({ password: 'synthetic-pass', recoveryCode: code }, device.deviceId) })).status).toBe(200);
+    const keyed = new TestDevice(server);
+    expect((await keyed.call('POST', '/v1/account/login', { ...keys(keyed), username, sealed: sealKeyed({ password: 'synthetic-pass' }, keyed.deviceId) })).status).toBe(200);
+    const unknown = new TestDevice(server);
+    expect((await unknown.call('POST', '/v1/account/login', { ...keys(unknown), username, sealed: sealKeyed({ password: 'synthetic-pass' }, unknown.deviceId, Buffer.alloc(8, 7)) })).body.code).toBe('INVALID_REQUEST');
+    expect((await login(new TestDevice(server), username)).status, '旧客户端的第 1 版').toBe(200);
+  });
+
   it('注册：用户名不分大小写、先到先得；库里只有 scrypt 哈希，没有密码与恢复码原文', async () => {
     const username = name();
     const device = new TestDevice(server);

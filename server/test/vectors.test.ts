@@ -4,6 +4,7 @@ import { createPrivateKey, sign } from 'node:crypto';
 
 import { accountDeletedCanonical, base64url, decodeBase64url, deviceIdOf, ed25519Key, friendKeysCanonical, inviteProofCanonical, requestCanonical, rewardPrizeCanonical, socialBindCanonical, verifyEd25519, x25519PrivateKey, x25519PublicOf } from 'src/common/crypto/relay_crypto';
 import { sealRewardPrize, sealSignedRewardPrize } from 'src/modules/reward/reward_seal';
+import { accountSealKeyId, accountSealKeyOf, openAccountSeal } from 'src/modules/account/account_keys';
 
 // 协议 v1 测试向量：客户端 test/social_protocol_test.dart 读同一份文件，双端逐字节一致。
 const vectors = JSON.parse(readFileSync(new URL('./vectors/protocol_v1.json', import.meta.url), 'utf8'));
@@ -89,5 +90,38 @@ describe('节日奖品的第 2 版信封向量', () => {
     expect(verifyEd25519(key, rewardPrizeCanonical(`${signedPrize.campaign}x`, signedPrize.deviceId, body), sealed.subarray(sealed.length - 64)), '别的活动').toBe(false);
     expect(verifyEd25519(key, rewardPrizeCanonical(signedPrize.campaign, 'BBBBBBBBBBBBBBBBBBBBBB', body), sealed.subarray(sealed.length - 64)), '别的设备').toBe(false);
     expect(rewardPrizeCanonical('c', 'd', Buffer.from([1, 2])).equals(Buffer.concat([Buffer.from('SXD1-reward-prize\nc\nd\n', 'utf8'), Buffer.from([1, 2])]))).toBe(true);
+  });
+});
+
+// 应用账号的信封（11-17 起第 2 版带钥号，服务器可以同时认几把私钥）：客户端 test/social_protocol_test.dart 用同一份 account_seal_v2.json 逐字节封出来。
+const keyedSeal = JSON.parse(readFileSync(new URL('./vectors/account_seal_v2.json', import.meta.url), 'utf8'));
+const legacySeal = JSON.parse(readFileSync(new URL('./vectors/account_seal_v1.json', import.meta.url), 'utf8'));
+
+describe('应用账号信封的钥号', () => {
+  const current = accountSealKeyOf(decodeBase64url(keyedSeal.recipientSeed, 32)!);
+  const next = accountSealKeyOf(Buffer.alloc(32, 0x5a));
+
+  it('第 2 版按钥号挑私钥：几把钥里有它就打得开，换设备号、改钥号、改一个字节、钥不在都打不开', () => {
+    expect(base64url(accountSealKeyId(current.publicKey))).toBe(keyedSeal.keyId);
+    const sealed = decodeBase64url(keyedSeal.sealed)!;
+    expect(sealed[0]).toBe(2);
+    expect(base64url(sealed.subarray(1, 9))).toBe(keyedSeal.keyId);
+    expect(JSON.parse(openAccountSeal(sealed, keyedSeal.deviceId, [current])!.toString('utf8'))).toEqual(keyedSeal.plaintext);
+    expect(JSON.parse(openAccountSeal(sealed, keyedSeal.deviceId, [next, current])!.toString('utf8')), '换钥过渡期新钥在前').toEqual(keyedSeal.plaintext);
+    expect(openAccountSeal(sealed, keyedSeal.deviceId, [next]), '服务器不认这把').toBeNull();
+    expect(openAccountSeal(sealed, 'BBBBBBBBBBBBBBBBBBBBBB', [current])).toBeNull();
+    const renamed = Buffer.from(sealed);
+    renamed.set(next.keyId, 1);
+    expect(openAccountSeal(renamed, keyedSeal.deviceId, [next, current]), '钥号被改成另一把').toBeNull();
+    const tampered = Buffer.from(sealed);
+    tampered[70] ^= 1;
+    expect(openAccountSeal(tampered, keyedSeal.deviceId, [current])).toBeNull();
+    expect(openAccountSeal(Buffer.from([3, ...sealed.subarray(1)]), keyedSeal.deviceId, [current]), '不认识的版本').toBeNull();
+  });
+
+  it('第 1 版（旧客户端，没有钥号）逐把试：旧钥还在就打得开，删了就打不开', () => {
+    const sealed = decodeBase64url(legacySeal.sealed)!;
+    expect(JSON.parse(openAccountSeal(sealed, legacySeal.deviceId, [next, current])!.toString('utf8'))).toEqual(legacySeal.proof);
+    expect(openAccountSeal(sealed, legacySeal.deviceId, [next])).toBeNull();
   });
 });
