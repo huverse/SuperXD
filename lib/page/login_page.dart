@@ -59,7 +59,7 @@ class _LoginPageState extends State<LoginPage> {
     if (!value) { setState(() => _remember = false); return; }
     final confirmed = await showCampusConfirm(context, title: '记住账号', action: '同意并开启',
       // 长文案：记住账号的授权说明。
-      message: 'SuperXD本地版的记住账号功能将会把账号鉴权数据加密存储在本地，用于会话失效后自动登录。\n\n仅在此账号成功登录后保存，你可在“我的 › 账号”关闭记住账号，或退出登录清除凭据。\n\n本地加密不等于传输加密：当前教务系统使用HTTP。请只在你信任的设备和网络上启用。');
+      message: 'SuperXD本地版的记住账号功能将会把账号鉴权数据加密存储在本地，用于会话失效后自动登录。\n\n仅在此账号成功登录后保存，你可在「我的 › 教务账号」关闭记住账号，或退出登录清除凭据。\n\n本地加密不等于传输加密：当前教务系统使用HTTP。请只在你信任的设备和网络上启用。');
     if (mounted && confirmed) setState(() => _remember = true);
   }
   bool _busy = false;

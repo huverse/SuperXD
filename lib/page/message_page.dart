@@ -279,7 +279,7 @@ class _FriendList extends StatelessWidget {
           ]),
           const SizedBox(height: 12),
           if (friends.isEmpty)
-            Padding(padding: const EdgeInsets.only(top: 48), child: Center(child: Text('还没有好友，点“添加好友”面对面扫码', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: colors.onSurface))))
+            Padding(padding: const EdgeInsets.only(top: 48), child: Center(child: Text('还没有好友，点「添加好友」面对面扫码', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: colors.onSurface))))
           else
             // 多行卡片去掉横向内边距，行自带 20 边距：按下变暗时整行铺满卡片宽度（同“我的”页）。
             // 加了或删了好友时那一行原地展开、收起（人工决策见 campus_animated_list.dart）。

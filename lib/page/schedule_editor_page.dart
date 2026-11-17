@@ -321,7 +321,7 @@ class _ScheduleEditorPageState extends State<ScheduleEditorPage> {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
                 if (sharedTeacher != null && sharedTeacher.isNotEmpty) Text(sharedTeacher),
-                if (slots.isEmpty) const Text('暂无上课时间'),
+                if (slots.isEmpty) const Text('还没有上课时间'),
                 for (final slot in slots)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),

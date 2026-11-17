@@ -327,7 +327,7 @@ void main() {
     await tester.tap(find.byTooltip('清空历史'));
     await tester.pumpAndSettle();
     await tester.tap(find.widgetWithText(FilledButton, '删除'));
-    await waitForWidget(tester, find.text('暂无解析历史'));
+    await waitForWidget(tester, find.text('还没有解析历史'));
     await tester.pumpAndSettle();
     expect(find.text('删除未完成，请重试'), findsNothing);
     await tester.runAsync(() async => rows = await fixture.shortVideo.store.history());
