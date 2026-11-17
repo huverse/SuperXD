@@ -111,16 +111,25 @@ String? relayBase() {
   return relayBaseUrl;
 }
 
-RelayTransport? relayTransport() => switch (relayBase()) {
-  final base? => HttpRelayTransport(base),
+// 自建中转的接法：地址给不签名的设备侧客户端（更新清单、开发者的话、灰度配置、健康回报、诊断包上传、字体包），签名请求共用一个传输（一套连接池），
+// 应用账号的设备密钥在系统安全存储。组合根启动时算一次交给下面各个造法；组合根接线测试（test/composition_root_test.dart）换成假中转与内存密钥库。
+class RelayWiring {
+  const RelayWiring({required this.base, required this.transport, this.accountKeys = const SecureAppAccountVault()});
+  final String base;
+  final RelayTransport transport;
+  final AppAccountVault accountKeys;
+}
+
+RelayWiring? relayWiring() => switch (relayBase()) {
+  final base? => RelayWiring(base: base, transport: HttpRelayTransport(base)),
   null => null,
 };
 
 // 应用内更新走同一个自建中转，渠道就是构建渠道（appFlavor，如 alpha）；没配中转、不是渠道构建（测试）或认不出架构时不检查更新。
 // [人工决策-2026-10-26 22:08:25] iOS 不能在应用里安装（用户选定「检查新版后去下载页」）：按 arm64 取同一份清单，只看版本与更新说明、不要安装包，
 // 弹窗里给「去发布页下载」，由用户下载未签名包后自己重新签名安装。
-Future<AppUpdates?> appUpdates(Directory support, Rollouts rollouts) async {
-  final base = relayBase(), channel = appFlavor, abi = Platform.isIOS ? 'arm64-v8a' : appAbiName(Abi.current());
+Future<AppUpdates?> appUpdates(Directory support, RelayWiring? relay, Rollouts rollouts) async {
+  final base = relay?.base, channel = appFlavor, abi = Platform.isIOS ? 'arm64-v8a' : appAbiName(Abi.current());
   if (base == null || channel == null || abi == null) return null;
   final installed = int.tryParse((await PackageInfo.fromPlatform()).buildNumber);
   if (installed == null) return null;
@@ -138,13 +147,13 @@ Future<AppUpdates?> appUpdates(Directory support, Rollouts rollouts) async {
 // 灰度（人工决策见 domain/rollout.dart）：配置走同一个自建中转（没配中转时只用本机存着的，一般为空）；本机随机编号与上次的配置在 rollout.json。
 // 分桶主体是当前应用账号的账号号，没登录用本机随机编号；渠道同应用更新（测试与没有渠道的构建记作 development）。
 // 分批更新的健康回报与意见（人工决策见 domain/app_health.dart）：本机记录 health.json；没配中转时不发、关于页不给反馈入口。
-Future<AppHealth> appHealthOf(Directory support) async => AppHealth(
+Future<AppHealth> appHealthOf(Directory support, RelayWiring? relay) async => AppHealth(
   memory: await FileAppHealthMemory.open(File(path.join(support.path, 'health.json'))),
   channel: appFlavor ?? 'development',
   platform: Platform.isIOS ? 'ios' : 'android',
   versionCode: int.tryParse((await PackageInfo.fromPlatform()).buildNumber) ?? 0,
-  client: switch (relayBase()) {
-    final base? => RelayAppHealthClient(base),
+  client: switch (relay) {
+    final relay? => RelayAppHealthClient(relay.base),
     null => null,
   },
 );
@@ -152,9 +161,8 @@ Future<AppHealth> appHealthOf(Directory support) async => AppHealth(
 // 积分等级经挑战与积分的签名请求取（取不到时 Challenges 已记日志，这里按没取到算）。
 // 11-16 起（人工决策见 domain/rollout.dart 文件头 11-16 那条）：开关的平台与版本号条件按这台设备判定；登录着应用账号时同一时机问点名（用这个账号的设备密钥签名）。
 // 本地化时（online 为假）不取等级、按 Lv0，也不问点名（记着的照旧用）。
-Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challenges? challenges, {required bool Function() online}) async {
-  final transport = relayTransport();
-  final targets = transport == null ? null : RelayFlagTargetClient(vault: const SecureAppAccountVault(), transport: transport);
+Future<Rollouts> rolloutsOf(Directory support, RelayWiring? relay, AppAccounts? appAccounts, Challenges? challenges, {required bool Function() online}) async {
+  final targets = relay == null ? null : RelayFlagTargetClient(vault: relay.accountKeys, transport: relay.transport);
   return Rollouts(
   memory: await FileRolloutMemory.open(File(path.join(support.path, 'rollout.json'))),
   channel: appFlavor ?? 'development',
@@ -179,37 +187,34 @@ Future<Rollouts> rolloutsOf(Directory support, AppAccounts? appAccounts, Challen
     },
     null => null,
   },
-  feed: switch (relayBase()) {
-    final base? => RelayRolloutFeed(base),
+  feed: switch (relay) {
+    final relay? => RelayRolloutFeed(relay.base),
     null => null,
   },
 );
 }
 
 // 解锁（人工决策见服务端 src/modules/unlock/unlock_rules.ts）：清单跟着灰度配置，这个账号能用哪些问同一个中转（应用账号签名）；没配中转时为空，游戏与工具都照常开着。
-Unlocks? unlocksOf(Rollouts rollouts, AppAccounts? appAccounts, {required bool Function() accountOn}) {
-  final transport = relayTransport();
-  if (transport == null || appAccounts == null) return null;
-  return Unlocks(rollouts: rollouts, appAccounts: appAccounts, client: RelayUnlockClient(vault: const SecureAppAccountVault(), transport: transport), accountOn: accountOn);
+Unlocks? unlocksOf(RelayWiring? relay, Rollouts rollouts, AppAccounts? appAccounts, {required bool Function() accountOn}) {
+  if (relay == null || appAccounts == null) return null;
+  return Unlocks(rollouts: rollouts, appAccounts: appAccounts, client: RelayUnlockClient(vault: relay.accountKeys, transport: relay.transport), accountOn: accountOn);
 }
 
 // 开发者的话走同一个自建中转；没配中转时为空，「我的」页不显示这一行。
-Future<DeveloperNotes?> developerNotes(Directory support) async {
-  final base = relayBase();
-  if (base == null) return null;
-  return DeveloperNotes(feed: RelayNoteFeed(base), memory: await FileDeveloperNoteMemory.open(File(path.join(support.path, 'developer_notes.json'))));
+Future<DeveloperNotes?> developerNotes(Directory support, RelayWiring? relay) async {
+  if (relay == null) return null;
+  return DeveloperNotes(feed: RelayNoteFeed(relay.base), memory: await FileDeveloperNoteMemory.open(File(path.join(support.path, 'developer_notes.json'))));
 }
 
 // 节日（人工决策见 domain/festival.dart）：登记在 page/festival/festival_catalog.dart；没配中转时只播动画、不抽签。
 // 抽签用当前应用账号的设备密钥签名（social/relay_reward_client.dart）；没登录应用账号不抽，中转说账号已不在时让应用账号马上核一次。
 // 登录应用账号后补抽在 app_lifecycle.dart 的 watchMoments 里接（同意协议与政策之后才联网）。
 // 本地化时（online 为假，人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）不抽签、不领红包，也不按等级加权。
-Future<Festivals> festivalsOf(Directory support, AppAccounts? appAccounts, {required bool Function() online}) async {
-  final transport = relayTransport();
+Future<Festivals> festivalsOf(Directory support, RelayWiring? relay, AppAccounts? appAccounts, {required bool Function() online}) async {
   return Festivals(
     occasions: [for (final scene in festivalCatalog) scene.occasion],
     memory: await FileFestivalMemory.open(File(path.join(support.path, 'festival.json'))),
-    client: transport == null || appAccounts == null ? null : RelayRewardClient(vault: const SecureAppAccountVault(), transport: transport),
+    client: relay == null || appAccounts == null ? null : RelayRewardClient(vault: relay.accountKeys, transport: relay.transport),
     account: () => appAccounts?.current,
     accountGone: () => unawaited(appAccounts?.check(force: true)),
     levelsOn: online,
@@ -220,12 +225,11 @@ Future<Festivals> festivalsOf(Directory support, AppAccounts? appAccounts, {requ
 // 诊断包上传（人工决策见 domain/diagnostic_upload.dart）：没配中转时为空；配了就是包着中转上传的 AccountDiagnostics，登录着应用账号时传完认领到账号下，
 // 账号页也经它看与删自己认领过的包。
 // 本地化时（online 为假）上传照旧、只是不认领到应用账号下。
-AccountDiagnostics? diagnosticsOf(AppAccounts? Function() appAccounts, {required bool Function() online}) {
-  final base = relayBase(), transport = relayTransport();
-  if (base == null || transport == null) return null;
+AccountDiagnostics? diagnosticsOf(RelayWiring? relay, AppAccounts? Function() appAccounts, {required bool Function() online}) {
+  if (relay == null) return null;
   return AccountDiagnostics(
-    uploader: RelayDiagnosticUpload(base),
-    client: RelayDiagnosticAccountClient(vault: const SecureAppAccountVault(), transport: transport),
+    uploader: RelayDiagnosticUpload(relay.base),
+    client: RelayDiagnosticAccountClient(vault: relay.accountKeys, transport: relay.transport),
     account: () => online() ? appAccounts()?.current : null,
     accountGone: () => unawaited(appAccounts()?.check(force: true)),
   );
@@ -233,16 +237,14 @@ AccountDiagnostics? diagnosticsOf(AppAccounts? Function() appAccounts, {required
 
 // 应用账号（人工决策见 domain/app_account.dart）走同一个自建中转；没配中转时为空，账号页不显示那一组。
 // 这台设备一把设备密钥，存在自己的安全存储命名空间（social/relay_app_account.dart），与私信身份互不关联。
-AppAccounts? appAccountsOf({void Function(AppAccountRef account)? onDeleted}) {
-  final transport = relayTransport();
-  if (transport == null) return null;
-  return AppAccounts(client: RelayAppAccountClient(vault: const SecureAppAccountVault(), transport: transport, deviceModel: readDeviceModel), onDeleted: onDeleted);
+AppAccounts? appAccountsOf(RelayWiring? relay, {void Function(AppAccountRef account)? onDeleted}) {
+  if (relay == null) return null;
+  return AppAccounts(client: RelayAppAccountClient(vault: relay.accountKeys, transport: relay.transport, deviceModel: readDeviceModel), onDeleted: onDeleted);
 }
 
 // 挑战与积分（人工决策见 playground/challenge/challenge_rules.dart）：同应用账号走自建中转，用那个应用账号的设备密钥签名；
 // 没配中转时为空，游乐场不显示「挑战」。
-Challenges? challengesOf(AppAccounts? appAccounts) {
-  final transport = relayTransport();
-  if (transport == null || appAccounts == null) return null;
-  return Challenges(appAccounts: appAccounts, client: RelayChallengeClient(vault: const SecureAppAccountVault(), transport: transport));
+Challenges? challengesOf(RelayWiring? relay, AppAccounts? appAccounts) {
+  if (relay == null || appAccounts == null) return null;
+  return Challenges(appAccounts: appAccounts, client: RelayChallengeClient(vault: relay.accountKeys, transport: relay.transport));
 }

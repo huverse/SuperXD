@@ -139,6 +139,80 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # [人工决策-2026-11-17 21:24:25] 安卓构建与模拟器启动冒烟（用户同意审查建议 P1-5，按最佳实践做）：安卓是主平台，以前 CI 不编安卓原生，
+  # 插件、Gradle 与 Kotlin 的问题要到发版构建才暴露。Android build 编开发包的 profile 包（arm64：Dart 按发版同样 AOT 编译、原生照常编，调试签名）；
+  # release 的 R8 不在这里（release 必须正式签名，见 android/app/build.gradle.kts 的人工决策）。Android emulator smoke 同 iOS 冒烟：
+  # x86_64 模拟器上装调试包、冷启动、停 30 秒看进程还在不在（tool/android_smoke.sh），截图与 logcat 留作产物 android-emulator-smoke。
+  # 两个作业先不设为必需检查，跑稳了再由维护者加进 main 的保护规则。
+  android-build:
+    name: Android build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      # 只缓存 Gradle 下载的依赖与发行包，依赖版本照旧每次按构建脚本解析。
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle.kts', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock') }}
+          restore-keys: gradle-${{ runner.os }}-
+      - run: flutter build apk --profile --flavor production --target-platform android-arm64
+      - run: echo "[AndroidBuild] action=profile bytes=$(stat -c %s build/app/outputs/flutter-apk/app-production-profile.apk)"
+
+  android-smoke:
+    name: Android emulator smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle.kts', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock') }}
+          restore-keys: gradle-${{ runner.os }}-
+      # 模拟器只跑得了 x86_64：编调试包（JIT）。抓得到启动就崩的原生与插件问题，抓不到只在 AOT 或 release 下才出的问题（那部分由上一个作业与发版流水线编）。
+      - run: flutter build apk --debug --flavor production --target-platform android-x64
+      # GitHub 的 Linux 机器带 KVM，要先给普通用户开权限，模拟器才能硬件加速。
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+      - name: Android emulator smoke
+        id: android-smoke
+        uses: reactivecircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
+        with:
+          api-level: 34
+          arch: x86_64
+          target: google_apis
+          disable-animations: true
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save
+          # 这个动作把 script 的每一行分开执行，所以只写一行、逻辑放在脚本里。
+          script: bash tool/android_smoke.sh
+      - if: always() && steps.android-smoke.outcome != 'skipped'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: android-emulator-smoke
+          path: build/android-smoke
+          if-no-files-found: ignore
+          retention-days: 14
+
   relay-check:
     name: Relay server test
     runs-on: ubuntu-latest
