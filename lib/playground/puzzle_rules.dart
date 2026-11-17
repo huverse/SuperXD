@@ -67,6 +67,8 @@ abstract class PuzzleRules<P, A> {
   // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 游戏挑战特性单点登记，用户选定架构推荐方案）：能进挑战的游戏在自己的规则里覆写，
   // challenge/challenge_rules.dart 的名单与查询都从这里取，加一个游戏或改它的碎片不用再去那边的几个 switch 里各改一处。
   // 服务端的判定照旧逐个移植（server/src/modules/challenge），与这里共用测试向量。规则见 challenge_rules.dart 文件头 11-14 23:11 那条。
+  // 挑战题库的出题入口（tool/challenge_bank.dart 用它，不用 generate）：默认同自由模式；有的题型碎片不从解里来、不适合进挑战的游戏覆写，出题时排除那一类。
+  PuzzleDraw<P, A> challengeDraw(int seed, PuzzleTier tier) => generate(seed, tier);
   // 这一关的碎片：从解里读出、所有正确解都一样的一个数（solution 是题库的参考解）；不进挑战的为空。
   int? fragment(P puzzle, A solution) => null;
   // 收碎片的方式；不收碎片的为空。
@@ -76,6 +78,8 @@ abstract class PuzzleRules<P, A> {
   int slotRange(P puzzle) => 0;
   // 困难与专家档要用的最少步数（题库存好，服务器拿答案的步数比）；不要求的为空。
   int? minimum(P puzzle) => null;
+  // 要最少步数时答案最多能走几步（服务端判定的 stepLimit 同口径）：默认正好最少；汉诺塔放宽（人工决策见 challenge/challenge_rules.dart 的 11-17 14:17:05 那条）。
+  int stepLimit(int minimum) => minimum;
   // 解开的答案里自带的失误（计分同错交一样扣，记忆闪光是点错的次数）；没有的是 0。服务端判定的 penalties 同口径。
   int penalties(P puzzle, A answer) => 0;
 

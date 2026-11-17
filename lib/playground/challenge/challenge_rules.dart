@@ -29,6 +29,8 @@ import 'package:superxd/playground/puzzle_rules.dart';
 //    改目标的是目标柱、真正的出口、要不要镜像；页面写出算式，自己算。能收碎片的游戏见 challengeConsumers。
 // 3. 终章：全部碎片相加是最终密码，输对才算全部过关；某一关过得快得不正常，追加一道同一游戏的加试题，做完才开终章。
 // 4. 困难与专家档的汉诺塔、冰面滑行、推箱子、点灯要用最少步数（challengeMinimum），多一步都不算过。
+// [人工决策-2026-11-17 14:17:05] 上一条第 4 点的例外：汉诺塔（第 2 版）在困难、专家档走到最少步数的 1.2 倍以内（含、向下取整）就算过，
+// 其他游戏照旧要正好最少；上限由各游戏规则的 stepLimit 给（challengeStepLimit，见 hanoi_rules.dart 的 hanoiStepPercent），服务端同口径。
 // [人工决策-2026-11-15 19:18:31] 用户选「题面带版本号」（推荐）：每个游戏的题面写法有版本号（PuzzleRules.puzzleVersion，从 1 起，改了写法加一），
 // 客户端报「游戏@版本」（challengeGameTokens），服务器只排、只下发认得的版本，题库按版本分文件。原因：服务器那边换了某个游戏的题面写法时，
 // 没更新的应用照样能玩它认得的版本，不会进了关才发现看不懂（以前只按游戏名判断能不能玩）。
@@ -75,3 +77,6 @@ int challengeSlotRange(String game, Object? puzzle) => challengeRules[game]?.slo
 
 // 要用最少步数的游戏在困难与专家档的最少步数：汉诺塔、冰面滑行、点灯按步数，推箱子按推的次数。
 int? challengeMinimum(String game, Object? puzzle) => challengeRules[game]?.minimum(puzzle);
+
+// 要最少步数的关答案最多能走几步：多数游戏正好最少，汉诺塔放宽到 1.2 倍（人工决策见文件头 11-17 14:17:05 那条）。
+int challengeStepLimit(String game, int minimum) => challengeRules[game]?.stepLimit(minimum) ?? minimum;

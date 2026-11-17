@@ -130,6 +130,8 @@ abstract final class CampusIcons {
   static const knight = LucideIcons.shield;
   static const knave = LucideIcons.venetianMask;
   static const river = LucideIcons.sailboat;
+  // 过河问题的桥与火把：「过桥」按钮与桥上那支火把。
+  static const torch = LucideIcons.flame;
   // 24 点：游戏图标是计算器，对局页的运算键是加减乘除号，困难起多乘方（x 带上标）与开方（根号）。
   static const twentyfour = LucideIcons.calculator;
   static const operatorAdd = LucideIcons.plus;

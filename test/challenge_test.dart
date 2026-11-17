@@ -273,9 +273,10 @@ void main() {
       expect(loopInside(loop, edges), 4);
       final cipher = const CipherRules().generate(3, PuzzleTier.normal);
       expect(challengeFragment('cipher', cipher.puzzle, cipher.solution), cipher.solution.fold<int>(0, (sum, digit) => sum + digit));
-      final balanceEntry = const BalanceRules().generate(1, PuzzleTier.entry), balanceExpert = const BalanceRules().generate(1, PuzzleTier.expert);
+      // 入门种子 2 是 9 个已知偏重称 2 次，简单种子 1 是 13 个说轻重称 4 次。
+      final balanceEntry = const BalanceRules().generate(2, PuzzleTier.entry), balanceEasy = const BalanceRules().generate(1, PuzzleTier.easy);
       expect(challengeFragment('balance', balanceEntry.puzzle, balanceEntry.solution), 2);
-      expect(challengeFragment('balance', balanceExpert.puzzle, balanceExpert.solution), 3);
+      expect(challengeFragment('balance', balanceEasy.puzzle, balanceEasy.solution), 4);
     });
 
     test('记忆闪光镜像：亮的照常亮，要点左右镜像的格；冰面滑行的出口只给页面画、判定只看终点', () {
@@ -439,7 +440,7 @@ void main() {
     });
 
     // 人工决策见 challenge_rules.dart 的 11-14 23:11 那条：门上的数改写的那一处写成 ?（补条件）或不标目标（改目标），页面写出算式，玩家自己算。
-    testWidgets('收碎片的关：写出算式与最少步数；24 点的 ? 牌点了选数才能用；汉诺塔不标目标柱、柱子标 ①②③', (tester) async {
+    testWidgets('收碎片的关：写出算式与几步内算过；24 点的 ? 牌点了选数才能用；汉诺塔不标目标柱、柱子标 ①②③', (tester) async {
       Future<void> open(Widget page) async {
         await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: page));
         await tester.pump(const Duration(milliseconds: 500));
@@ -463,15 +464,16 @@ void main() {
       expect(find.text('?'), findsNothing);
       expect(find.text('2'), findsOneWidget);
 
-      final tower = challenge(_levelJson('c', inputs: ['a'], gate: {'op': 'sum', 'value': 7}, consume: {'kind': 'goal', 'at': 0, 'modulus': 3, 'offset': 1}, minimum: 7, puzzle: {'disks': 3, 'start': [0, 0, 0], 'target': 1}));
+      final tower = challenge(_levelJson('c', inputs: ['a'], gate: {'op': 'sum', 'value': 7}, consume: {'kind': 'goal', 'at': 0, 'modulus': 3, 'offset': 1}, minimum: 7, puzzle: {'pegs': 3, 'variant': 0, 'start': [0, 0, 0], 'goal': [1, 1, 1]}));
       await open(HanoiPage(game: playgroundCatalog.firstWhere((game) => game.id == 'hanoi'), store: PlaygroundStore.memory(), challenge: tower));
       expect(find.text('= 7 ÷ 3 的余数 + 1'), findsOneWidget);
-      expect(find.text('最少 7 步'), findsOneWidget);
+      // 汉诺塔要最少步数时放宽到 1.2 倍以内（7 × 1.2 = 8.4，向下取整 8，人工决策见 challenge_rules.dart 的 11-17 14:17:05 那条）。
+      expect(find.text('8 步内算过'), findsOneWidget);
       expect(find.text('目标'), findsNothing);
       expect(find.text('②'), findsOneWidget);
       expect(find.bySemanticsLabel(RegExp('柱子，目标')), findsNothing);
       // 目标藏起来了：全部盘子到了不是开局的那根柱就交（对不对由服务器按门上的数核对），这里搬到第 3 根。
-      for (final move in hanoiSolution(const HanoiPuzzle(disks: 3, start: [0, 0, 0], target: 2))) {
+      for (final move in hanoiSolution(const HanoiPuzzle(pegs: 3, variant: HanoiVariant.classic, start: [0, 0, 0], goal: [2, 2, 2]))) {
         await tester.tapAt(tester.getCenter(find.bySemanticsLabel(RegExp('^第${move.from + 1}根柱子'))));
         await tester.pump(const Duration(milliseconds: 300));
         await tester.tapAt(tester.getCenter(find.bySemanticsLabel(RegExp('^第${move.to + 1}根柱子'))));
@@ -614,8 +616,10 @@ void main() {
       expect(find.text('挑战总览'), findsOneWidget);
 
       // 走完交上去、结果弹层等着服务器时到点：退回挑战那一页，不多退一层。
+      // 期限按真实时间算，走完一局在慢机器上（CI）可能就要一两秒：给足 6 秒，交上去以后再按剩下的真实时间等到点。
       final reply = Completer<PlayVerdict>();
-      await open(challenge(const Duration(milliseconds: 1500), submit: (answer) => reply.future));
+      final pending = challenge(const Duration(seconds: 6), submit: (answer) => reply.future);
+      await open(pending);
       for (final move in hanoiSolution(_hanoi)) {
         await tester.tapAt(tester.getCenter(find.bySemanticsLabel(RegExp('^第${move.from + 1}根柱子'))));
         await tester.pump(const Duration(milliseconds: 300));
@@ -624,7 +628,7 @@ void main() {
       }
       await tester.pump(const Duration(seconds: 1));
       expect(find.text('正在交给服务器核对'), findsOneWidget);
-      await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1600)));
+      await tester.runAsync(() => Future<void>.delayed(pending.deadline.difference(DateTime.now()) + const Duration(milliseconds: 100)));
       await tester.pump(const Duration(seconds: 1));
       await tester.pump(const Duration(seconds: 1));
       expect(find.byType(HanoiPage), findsNothing);

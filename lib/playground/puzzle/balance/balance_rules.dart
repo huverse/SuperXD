@@ -2,55 +2,85 @@ import 'dart:math' as math;
 
 import 'package:superxd/playground/puzzle_rules.dart';
 
-// 天平称球：一组外观一样的球里恰有一个重量不同，用天平称有限次找出它（有的档还要说出它偏轻还是偏重）。
-// 秤按「对手」规则回答，所以靠运气猜不中、要真推理：秤不预先定好假球，每称一次，在「和之前全部结果都对得上的候选（球 × 偏轻 / 偏重）」上
+// 天平称球：一组外观一样的球里有一个（或两个一样重的）重量不同，用天平称有限次找出来（有的题还要说出偏轻还是偏重）。
+// 题型照经典称球问题的几种变体（理论上限见 Dyson 1946，测试拿求解器逐条核对）：
+// 1. 已知那个球偏重（或偏轻）：称 k 次最多分得清 3^k 个。
+// 2. 不知轻重、只要找出：最多 (3^k − 1) / 2 个；另给一个标准球（确定是真的，可以上秤）时 (3^k + 1) / 2 个。
+// 3. 不知轻重、还要说出轻重：最多 (3^k − 3) / 2 个；有标准球时 (3^k − 1) / 2 个。
+// 4. 两个一样重的假球（已知都偏重或都偏轻）：一边各放一个就平衡；C(n, 2) ≤ 3^k 只是信息下界，以求解器为准（7 个称 3 次可以，8 个不行）。
+// 5. 可能根本没有假球（最多一个）：多一种答案「都是真的」。已知轻重时最多 3^k − 1 个；不知轻重时只需找出与说轻重都是 (3^k − 3) / 2 个，
+//    有标准球时 (3^k − 1) / 2 个（只需找出时「最后一个不上秤的球」那一招不能用了，因为全都平衡也可能是都是真的）。
+// 每档的题型、球数与次数在档内随机（_pools），每道题都核对过：给的次数一定找得出、少一次一定不行（上限是紧的）。
+// 秤按「对手」规则回答，所以靠运气猜不中、要真推理：秤不预先定好假球，每称一次，在「和之前全部结果都对得上的候选」上
 // 看左边重、右边重、平衡三种结果各剩下哪些候选，挑「剩下的候选还要称最多次才分得清」的那个（剩下的次数已经不够用的排在最前），
 // 一样多时按这道题的种子与第几次挑。同一道题同样的称法回答一样，服务器按同一份规则重放就能核对。
 // 为什么不按「剩下的候选最多」挑：只需找出的档里，剩 3 个可疑球、只剩 1 次时称 1 对 2，三种结果各剩 2 个候选，平局若挑到「平衡」，
 // 剩下的是同一个球的偏轻与偏重，已经找出来了，称错了也能靠运气赢；按球数比又会让 13 个球的第一次 4 对 4 永远答「倾斜」，专家档最难的那一支从不出现。
-// 按「还要称几次」挑就是标准的对手论证：称错一步（某个结果在剩下的次数里分不清）必定挑到分不清的结果，此后怎么称都分不清。
+// 按「还要称几次」挑就是标准的对手论证：称错一步（某个结果在剩下的次数里分不清）必定挑到分不清的结果，此后怎么称都分不清；
+// 上限又是紧的，每称一次「还要称几次」最多少 1，所以次数用完之前也不会提前分清。
 
-// 一道题：球数、最多称几次、是否已知那个球偏重、是否还要说出偏轻还是偏重、平局怎么答的种子。球按下标 0 起（页面上从 1 号叫起）。
+// 假球偏哪边：已知偏重、已知偏轻、不知道。题面里写 name，发出后不改。
+enum BalanceWeight { heavy, light, unknown }
+
+// 一道题：candidates 个可能是假球的球（下标 0 起，页面上从 1 号叫起）、standards 个标准球（下标接在后面，确定是真的）、
+// fakes 个假球（两个时一样重）、偏哪边、是否还要说出偏轻还是偏重（只有不知轻重时才可能要）、是否可能根本没有假球（只有一个假球的题才可能）、
+// 最多称几次、平局怎么答的种子。
 class BalancePuzzle {
-  const BalancePuzzle({required this.balls, required this.weighings, required this.knownHeavy, required this.direction, required this.seed});
-  final int balls, weighings;
-  final bool knownHeavy;
-  // 指认时要说出偏轻还是偏重（已知偏重的题不用说）。
-  final bool direction;
-  final int seed;
+  const BalancePuzzle({
+    required this.balls,
+    required this.weighings,
+    required this.weight,
+    this.direction = false,
+    this.standards = 0,
+    this.fakes = 1,
+    this.maybeNone = false,
+    required this.seed,
+  });
+  final int balls, weighings, standards, fakes, seed;
+  final BalanceWeight weight;
+  final bool direction, maybeNone;
 
+  // 桌上一共几个球（含标准球）。
+  int get total => balls + standards;
   int get everyone => (1 << balls) - 1;
+  bool get paired => fakes == 2;
 }
 
-// 外部输入的边界：球最多 13 个（页面一排放得下的量、称 3 次只需找出的上限），最多称 3 次。
+// 外部输入的边界：可疑的球 3 到 16 个、标准球最多 1 个、桌上一共最多 16 个（360 宽加 1.3 倍字号时桌面三排、一个盘三列三排放得下），
+// 两个假球时最多 8 个（球对最多 28 个，位集在服务端的 32 位运算里也放得下），最多称 4 次。
 const balanceMinBalls = 3;
-const balanceMaxBalls = 13;
-const balanceMaxWeighings = 3;
+const balanceMaxBalls = 16;
+const balanceMaxStandards = 1;
+const balanceMaxTotal = 16;
+const balanceMaxPairBalls = 8;
+const balanceMaxWeighings = 4;
 
-// 称一次：左盘、右盘各放哪些球（下标升序）。
+// 称一次：左盘、右盘各放哪些球（下标升序，可以有标准球）。
 class BalanceWeighing {
   const BalanceWeighing(this.left, this.right);
   final List<int> left, right;
 }
 
-// 答案：依次的称法加最后的指认（哪个球，要说轻重的题再带偏重 true、偏轻 false，其余为 null）。
+// 答案：依次的称法加最后的指认（一个假球是一个球、两个假球是两个球，升序；要说轻重的题再带偏重 true、偏轻 false，其余为 null）。
+// 指认「都是真的」是空列表、不带轻重。
 class BalanceAnswer {
-  const BalanceAnswer(this.weighings, this.ball, [this.heavy]);
+  const BalanceAnswer(this.weighings, this.balls, [this.heavy]);
   final List<BalanceWeighing> weighings;
-  final int ball;
+  final List<int> balls;
   final bool? heavy;
 }
 
 // 称的结果：左边重（左盘沉下去）、右边重、平衡。
 enum BalanceTilt { left, right, level }
 
-// 还可能是假球的：heavy 是可能偏重的球的位集，light 是可能偏轻的。一个球两位都在就是还不知道偏轻还是偏重。
-typedef BalanceSuspects = ({int heavy, int light});
+// 还可能的情况：一个假球时 heavy 是可能偏重的球的位集、light 是可能偏轻的（一个球两位都在就是还不知道轻重），none 是还可能都是真的；
+// 两个假球时 pairs 是还可能的球对的位集（球对按 balancePairs 的顺序）。用不到的位集是 0。
+typedef BalanceSuspects = ({int heavy, int light, int pairs, bool none});
 
 // 一次称法不合规的原因：有一边空着、两边球数不一样；invalid 是同一个球放了两边或编号越界（只会出自外部输入）。
 enum BalanceFault { empty, uneven, invalid }
 
-// 指认的判定：解开（候选恰好就是这一个）、还确定不了（它还是候选，但不止它一个）、和称的结果对不上（它已经不是候选）。
+// 指认的判定：解开（候选恰好就是这一个、这一对或都是真的）、还确定不了（它还是候选，但不止它一个）、和称的结果对不上（它已经不是候选）。
 enum BalanceVerdict { solved, undetermined, contradicts }
 
 int balanceBits(int mask) {
@@ -65,19 +95,59 @@ List<int> balanceMembers(int mask) => [for (var index = 0; mask >> index != 0; i
 
 int balanceMask(Iterable<int> balls) => balls.fold(0, (mask, ball) => mask | (1 << ball));
 
-BalanceSuspects balanceStart(BalancePuzzle puzzle) => (heavy: puzzle.everyone, light: puzzle.knownHeavy ? 0 : puzzle.everyone);
+// n 个球的全部球对：(0, 1)、(0, 2)、…、(1, 2)、…，下标就是 pairs 位集里的位。
+List<(int, int)> balancePairs(int balls) => _pairLists[balls] ??= [
+  for (var first = 0; first < balls; first++)
+    for (var second = first + 1; second < balls; second++) (first, second),
+];
+final _pairLists = <int, List<(int, int)>>{};
+
+// 球对 (first, second)（first < second）在 balancePairs 里的下标。
+int balancePairIndex(int balls, int first, int second) => first * (2 * balls - first - 1) ~/ 2 + second - first - 1;
+
+BalanceSuspects balanceStart(BalancePuzzle puzzle) => puzzle.paired
+    ? (heavy: 0, light: 0, pairs: (1 << balancePairs(puzzle.balls).length) - 1, none: false)
+    : (
+        heavy: puzzle.weight == BalanceWeight.light ? 0 : puzzle.everyone,
+        light: puzzle.weight == BalanceWeight.heavy ? 0 : puzzle.everyone,
+        pairs: 0,
+        none: puzzle.maybeNone,
+      );
+
+bool _empty(BalanceSuspects suspects) => suspects.heavy | suspects.light | suspects.pairs == 0 && !suspects.none;
 
 // 两盘放的是 left、right（位集）时，三种结果各剩下哪些候选，按 BalanceTilt 的顺序：
-// 左边重 = 左盘里可能偏重的或右盘里可能偏轻的；右边重反过来；平衡 = 没上秤的。
-List<BalanceSuspects> balanceSplit(BalanceSuspects suspects, int left, int right) => [
-  (heavy: suspects.heavy & left, light: suspects.light & right),
-  (heavy: suspects.heavy & right, light: suspects.light & left),
-  (heavy: suspects.heavy & ~(left | right), light: suspects.light & ~(left | right)),
-];
+// 一个假球：左边重 = 左盘里可能偏重的或右盘里可能偏轻的；右边重反过来；平衡 = 没上秤的，还有都是真的。
+// 两个假球：数一对里各有几个在左盘、几个在右盘，多的那边沉（偏重时）或翘（偏轻时），一样多就平衡。
+List<BalanceSuspects> balanceSplit(BalancePuzzle puzzle, BalanceSuspects suspects, int left, int right) {
+  if (!puzzle.paired) {
+    return [
+      (heavy: suspects.heavy & left, light: suspects.light & right, pairs: 0, none: false),
+      (heavy: suspects.heavy & right, light: suspects.light & left, pairs: 0, none: false),
+      (heavy: suspects.heavy & ~(left | right), light: suspects.light & ~(left | right), pairs: 0, none: suspects.none),
+    ];
+  }
+  final parts = _pairSplit(puzzle.balls, suspects.pairs, left, right);
+  final (down, up) = puzzle.weight == BalanceWeight.light ? (parts[1], parts[0]) : (parts[0], parts[1]);
+  return [
+    for (final pairs in [down, up, parts[2]]) (heavy: 0, light: 0, pairs: pairs, none: false),
+  ];
+}
+
+// 按「多的一边」把球对分三份：左边多、右边多、一样多。
+List<int> _pairSplit(int balls, int mask, int left, int right) {
+  final parts = [0, 0, 0];
+  for (final (index, (first, second)) in balancePairs(balls).indexed) {
+    if (mask & (1 << index) == 0) continue;
+    final onLeft = (left >> first & 1) + (left >> second & 1), onRight = (right >> first & 1) + (right >> second & 1);
+    parts[onLeft > onRight ? 0 : onLeft < onRight ? 1 : 2] |= 1 << index;
+  }
+  return parts;
+}
 
 BalanceFault? balanceFault(BalancePuzzle puzzle, List<int> left, List<int> right) {
   final (leftMask, rightMask) = (balanceMask(left), balanceMask(right));
-  final inside = [...left, ...right].every((ball) => ball >= 0 && ball < puzzle.balls);
+  final inside = [...left, ...right].every((ball) => ball >= 0 && ball < puzzle.total);
   if (!inside || balanceBits(leftMask) != left.length || balanceBits(rightMask) != right.length || leftMask & rightMask != 0) return BalanceFault.invalid;
   if (left.isEmpty || right.isEmpty) return BalanceFault.empty;
   if (left.length != right.length) return BalanceFault.uneven;
@@ -88,8 +158,8 @@ BalanceFault? balanceFault(BalancePuzzle puzzle, List<int> left, List<int> right
 BalanceTilt balanceRespond(BalancePuzzle puzzle, BalanceSuspects suspects, int left, int right, int index) {
   final remaining = puzzle.weighings - index - 1;
   final keys = [
-    for (final next in balanceSplit(suspects, left, right))
-      if (next.heavy | next.light == 0) -1 else _needed(_stateOf(puzzle, next), remaining, puzzle.direction),
+    for (final next in balanceSplit(puzzle, suspects, left, right))
+      if (_empty(next)) -1 else _needed(puzzle, next, remaining),
   ];
   final top = keys.reduce(math.max);
   final tied = [for (final (tilt, key) in keys.indexed) if (key == top) tilt];
@@ -100,12 +170,18 @@ BalanceTilt balanceRespond(BalancePuzzle puzzle, BalanceSuspects suspects, int l
 }
 
 // 还要称几次才分得清（最多数到 remaining + 1，即剩下的次数不够用）。
-int _needed(_State state, int remaining, bool direction) {
+int _needed(BalancePuzzle puzzle, BalanceSuspects suspects, int remaining) {
   for (var rounds = 0; rounds <= remaining; rounds++) {
-    if (_solvable(state, rounds, direction)) return rounds;
+    if (_solvableFrom(puzzle, suspects, rounds)) return rounds;
   }
   return remaining + 1;
 }
+
+bool _solvableFrom(BalancePuzzle puzzle, BalanceSuspects suspects, int rounds) =>
+    puzzle.paired ? _pairSolvable(puzzle.balls, suspects.pairs, rounds) : _solvable(_stateOf(puzzle, suspects), rounds, puzzle.direction);
+
+// 已经分清了：只剩一种可能（一个假球只需找出时，只剩一个球就算，不管轻重；只剩都是真的也算）。
+bool balanceDone(BalancePuzzle puzzle, BalanceSuspects suspects) => _solvableFrom(puzzle, suspects, 0);
 
 // 按次重放：每次都合规、次数不超才往下走，返回每次的结果与最后的候选；有一次不合规返回 null。
 ({List<BalanceTilt> tilts, BalanceSuspects suspects})? balanceReplay(BalancePuzzle puzzle, List<BalanceWeighing> weighings) {
@@ -117,47 +193,60 @@ int _needed(_State state, int remaining, bool direction) {
     final (left, right) = (balanceMask(weighing.left), balanceMask(weighing.right));
     final tilt = balanceRespond(puzzle, suspects, left, right, index);
     tilts.add(tilt);
-    suspects = balanceSplit(suspects, left, right)[tilt.index];
+    suspects = balanceSplit(puzzle, suspects, left, right)[tilt.index];
   }
   return (tilts: tilts, suspects: suspects);
 }
 
-// 指认 ball（要说轻重的题 heavy 是偏重 true、偏轻 false，其余为 null）在当前候选下算不算解开。
-BalanceVerdict balanceVerdict(BalancePuzzle puzzle, BalanceSuspects suspects, int ball, bool? heavy) {
-  if (ball < 0 || ball >= puzzle.balls || (heavy != null) != puzzle.direction) return BalanceVerdict.contradicts;
-  final bit = 1 << ball;
+// 指认 balls（一个假球一个、两个假球两个、都是真的为空；要说轻重的题 heavy 是偏重 true、偏轻 false，其余为 null）在当前候选下算不算解开。
+// 个数不对、有重复、指了标准球或越界的都算对不上；不可能都是真的（题面没说可能，或称的结果已经排除）时指认都是真的也算对不上。
+BalanceVerdict balanceVerdict(BalancePuzzle puzzle, BalanceSuspects suspects, List<int> balls, bool? heavy) {
+  if (balls.isEmpty) {
+    if (heavy != null || !suspects.none) return BalanceVerdict.contradicts;
+    return suspects.heavy | suspects.light | suspects.pairs == 0 ? BalanceVerdict.solved : BalanceVerdict.undetermined;
+  }
+  final sorted = [...balls]..sort();
+  final valid = sorted.length == puzzle.fakes && sorted.toSet().length == sorted.length && sorted.every((ball) => ball >= 0 && ball < puzzle.balls);
+  if (!valid || (heavy != null) != puzzle.direction) return BalanceVerdict.contradicts;
+  if (puzzle.paired) {
+    final bit = 1 << balancePairIndex(puzzle.balls, sorted[0], sorted[1]);
+    if (suspects.pairs & bit == 0) return BalanceVerdict.contradicts;
+    return suspects.pairs == bit ? BalanceVerdict.solved : BalanceVerdict.undetermined;
+  }
+  final bit = 1 << sorted.single;
   final pool = switch (heavy) {
     null => suspects.heavy | suspects.light,
     true => suspects.heavy,
     false => suspects.light,
   };
   if (pool & bit == 0) return BalanceVerdict.contradicts;
-  final unique = heavy == null ? suspects.heavy | suspects.light == bit : pool == bit && (heavy ? suspects.light : suspects.heavy) == 0;
+  final unique = !suspects.none && (heavy == null ? suspects.heavy | suspects.light == bit : pool == bit && (heavy ? suspects.light : suspects.heavy) == 0);
   return unique ? BalanceVerdict.solved : BalanceVerdict.undetermined;
 }
 
-// ---------- 求解器 ----------
-// 球除了编号都一样，所以局面只看每类有几个：u 个两向都可能、h 个只可能偏重、l 个只可能偏轻、g 个确定是好球。
-// 称法也只看每类各放几个到左右盘；两边都放好球等于都拿掉，左右镜像结果也镜像，这两种重复只留一种（13 个球的局面一共几十种，极小极大一下就搜完）。
-typedef _State = (int u, int h, int l, int g);
+// ---------- 一个假球的求解器 ----------
+// 球除了编号都一样，所以局面只看每类有几个：u 个两向都可能、h 个只可能偏重、l 个只可能偏轻、g 个确定是好球（标准球一开始就在这里），
+// z 是还可能都是真的（1）或不可能（0），只有称平衡时留着。
+// 称法也只看每类各放几个到左右盘；两边都放好球等于都拿掉，左右镜像结果也镜像，这两种重复只留一种（16 个球的局面一共几百种，极小极大一下就搜完）。
+typedef _State = (int u, int h, int l, int g, int z);
 typedef _Move = ({int uL, int uR, int hL, int hR, int lL, int lR, int gL, int gR});
 
 _State _stateOf(BalancePuzzle puzzle, BalanceSuspects suspects) {
   final both = balanceBits(suspects.heavy & suspects.light);
   final heavy = balanceBits(suspects.heavy & ~suspects.light), light = balanceBits(suspects.light & ~suspects.heavy);
-  return (both, heavy, light, puzzle.balls - both - heavy - light);
+  return (both, heavy, light, puzzle.total - both - heavy - light, suspects.none ? 1 : 0);
 }
 
 extension on _State {
-  // 要分清的东西：要说轻重时是候选数，只需找出时是球数。分清 = 不超过 1 个。
-  int measure(bool direction) => direction ? 2 * $1 + $2 + $3 : $1 + $2 + $3;
+  // 要分清的东西：要说轻重时是候选数，只需找出时是球数，都再算上「都是真的」。分清 = 不超过 1 个。
+  int measure(bool direction) => (direction ? 2 * $1 + $2 + $3 : $1 + $2 + $3) + $5;
   bool done(bool direction) => measure(direction) <= 1;
-  bool get empty => $1 + $2 + $3 == 0;
+  bool get empty => $1 + $2 + $3 + $5 == 0;
 }
 
 // 每类各放几个：先定左右盘上的可疑球，好球只补在少的一边（补齐两边球数，好球不够就不行）；左边的类数元组不小于右边的（镜像只留一种）。
 List<_Move> _moves(_State state) {
-  final (u, h, l, g) = state;
+  final (u, h, l, g, _) = state;
   final moves = <_Move>[];
   for (var uL = 0; uL <= u; uL++) {
     for (var uR = 0; uR <= u - uL; uR++) {
@@ -183,13 +272,13 @@ List<_Move> _moves(_State state) {
 
 // 三种结果之后的局面（同 balanceSplit 的顺序）。
 List<_State> _outcomes(_State state, _Move move) {
-  final (u, h, l, g) = state;
+  final (u, h, l, g, z) = state;
   final total = u + h + l + g;
-  _State of(int both, int heavy, int light) => (both, heavy, light, total - both - heavy - light);
+  _State of(int both, int heavy, int light, int none) => (both, heavy, light, total - both - heavy - light, none);
   return [
-    of(0, move.uL + move.hL, move.uR + move.lR),
-    of(0, move.uR + move.hR, move.uL + move.lL),
-    of(u - move.uL - move.uR, h - move.hL - move.hR, l - move.lL - move.lR),
+    of(0, move.uL + move.hL, move.uR + move.lR, 0),
+    of(0, move.uR + move.hR, move.uL + move.lL, 0),
+    of(u - move.uL - move.uR, h - move.hL - move.hR, l - move.lL - move.lR, z),
   ];
 }
 
@@ -204,32 +293,11 @@ bool _solvable(_State state, int rounds, bool direction) {
 
 bool _winning(_State state, _Move move, int rounds, bool direction) => _outcomes(state, move).every((next) => next.empty || _solvable(next, rounds - 1, direction));
 
-// 这道题在限定次数内一定找得出（不管秤怎么答）。
-bool balanceSolvable(BalancePuzzle puzzle) => _solvable(_stateOf(puzzle, balanceStart(puzzle)), puzzle.weighings, puzzle.direction);
-
-// 参考解：每一步取第一个「不管秤怎么答都还来得及」的称法，具体放哪几个球按编号从小取，秤按规则回答，最后指认剩下的那一个。题目解不开返回 null。
-BalanceAnswer? balanceSolve(BalancePuzzle puzzle) {
-  if (!balanceSolvable(puzzle)) return null;
-  var suspects = balanceStart(puzzle);
-  final weighings = <BalanceWeighing>[];
-  for (var index = 0; index < puzzle.weighings; index++) {
-    final state = _stateOf(puzzle, suspects);
-    if (state.done(puzzle.direction)) break;
-    final move = _moves(state).firstWhere((move) => _winning(state, move, puzzle.weighings - index, puzzle.direction));
-    final weighing = _place(puzzle, suspects, move);
-    weighings.add(weighing);
-    final (left, right) = (balanceMask(weighing.left), balanceMask(weighing.right));
-    suspects = balanceSplit(suspects, left, right)[balanceRespond(puzzle, suspects, left, right, index).index];
-  }
-  final ball = balanceMembers(suspects.heavy | suspects.light).first;
-  return BalanceAnswer(weighings, ball, puzzle.direction ? suspects.heavy != 0 : null);
-}
-
 // 把按类数的称法落到具体的球上：每类按编号从小取，先放左盘再放右盘。
 BalanceWeighing _place(BalancePuzzle puzzle, BalanceSuspects suspects, _Move move) {
   final both = balanceMembers(suspects.heavy & suspects.light);
   final heavy = balanceMembers(suspects.heavy & ~suspects.light), light = balanceMembers(suspects.light & ~suspects.heavy);
-  final good = balanceMembers(puzzle.everyone & ~(suspects.heavy | suspects.light));
+  final good = [for (var ball = 0; ball < puzzle.total; ball++) if ((suspects.heavy | suspects.light) & (1 << ball) == 0) ball];
   return BalanceWeighing(
     [...both.take(move.uL), ...heavy.take(move.hL), ...light.take(move.lL), ...good.take(move.gL)]..sort(),
     [...both.skip(move.uL).take(move.uR), ...heavy.skip(move.hL).take(move.hR), ...light.skip(move.lL).take(move.lR), ...good.skip(move.gL).take(move.gR)]..sort(),
@@ -255,90 +323,314 @@ double _treeBits(_State state, int rounds, bool direction) {
   return _treeMemo[key] = math.log(moves.length / good.length) / math.ln2 + below / good.length;
 }
 
+// ---------- 两个假球的求解器 ----------
+// 局面是还可能的球对的位集（偏重、偏轻只是左右结果互换，分不分得清一样，所以按偏重算）。对换两个球后位集不变的球可以互换，归成一类，
+// 称法只看每类各放几个（同一个假球时的 u、h、l、g 就是这样的类）；确定是真的球（不在任何还可能的球对里）只补在少的一边，镜像只留一种。
+typedef _PairMove = ({int left, int right});
+
+// 对换 first、second 两个球后的球对位集。
+int _pairSwap(int balls, int mask, int first, int second) {
+  int image(int ball) => ball == first ? second : ball == second ? first : ball;
+  var swapped = 0;
+  for (final (index, (one, other)) in balancePairs(balls).indexed) {
+    if (mask & (1 << index) == 0) continue;
+    final (low, high) = (math.min(image(one), image(other)), math.max(image(one), image(other)));
+    swapped |= 1 << balancePairIndex(balls, low, high);
+  }
+  return swapped;
+}
+
+List<_PairMove> _pairMoves(int balls, int mask) {
+  var involved = 0;
+  for (final (index, (first, second)) in balancePairs(balls).indexed) {
+    if (mask & (1 << index) != 0) involved |= (1 << first) | (1 << second);
+  }
+  final classes = <List<int>>[];
+  for (final ball in balanceMembers(involved)) {
+    final home = classes.where((group) => _pairSwap(balls, mask, group.first, ball) == mask).firstOrNull;
+    if (home == null) {
+      classes.add([ball]);
+    } else {
+      home.add(ball);
+    }
+  }
+  final good = [for (var ball = 0; ball < balls; ball++) if (involved & (1 << ball) == 0) ball];
+  final moves = <_PairMove>[];
+  final lefts = <int>[], rights = <int>[];
+  void place(int depth) {
+    if (depth < classes.length) {
+      for (var onLeft = 0; onLeft <= classes[depth].length; onLeft++) {
+        for (var onRight = 0; onLeft + onRight <= classes[depth].length; onRight++) {
+          lefts.add(onLeft);
+          rights.add(onRight);
+          place(depth + 1);
+          lefts.removeLast();
+          rights.removeLast();
+        }
+      }
+      return;
+    }
+    final (sizeLeft, sizeRight) = (lefts.fold(0, (sum, count) => sum + count), rights.fold(0, (sum, count) => sum + count));
+    if (sizeLeft + sizeRight == 0) return;
+    final goodLeft = math.max(0, sizeRight - sizeLeft), goodRight = math.max(0, sizeLeft - sizeRight);
+    if (goodLeft + goodRight > good.length) return;
+    final mirrored = [for (final (index, count) in lefts.indexed) count - rights[index], goodLeft - goodRight].firstWhere((difference) => difference != 0, orElse: () => 0);
+    if (mirrored < 0) return;
+    var left = 0, right = 0;
+    for (final (index, group) in classes.indexed) {
+      left |= balanceMask(group.take(lefts[index]));
+      right |= balanceMask(group.skip(lefts[index]).take(rights[index]));
+    }
+    left |= balanceMask(good.take(goodLeft));
+    right |= balanceMask(good.skip(goodLeft).take(goodRight));
+    moves.add((left: left, right: right));
+  }
+
+  place(0);
+  return moves;
+}
+
+final _pairMemo = <(int, int, int), bool>{};
+
+bool _pairSolvable(int balls, int mask, int rounds) {
+  final count = balanceBits(mask);
+  if (count <= 1) return true;
+  if (rounds == 0 || count > math.pow(3, rounds)) return false;
+  return _pairMemo[(balls, mask, rounds)] ??= _pairMoves(balls, mask).any((move) => _pairWinning(balls, mask, move, rounds));
+}
+
+bool _pairWinning(int balls, int mask, _PairMove move, int rounds) =>
+    _pairSplit(balls, mask, move.left, move.right).every((next) => next == 0 || _pairSolvable(balls, next, rounds - 1));
+
+final _pairTreeMemo = <(int, int, int), double>{};
+
+// 同 _treeBits 的口径。
+double _pairTreeBits(int balls, int mask, int rounds) {
+  if (balanceBits(mask) <= 1) return 0;
+  final key = (balls, mask, rounds);
+  if (_pairTreeMemo[key] case final bits?) return bits;
+  final moves = _pairMoves(balls, mask);
+  final good = [for (final move in moves) if (_pairWinning(balls, mask, move, rounds)) move];
+  var below = 0.0;
+  for (final move in good) {
+    for (final next in _pairSplit(balls, mask, move.left, move.right)) {
+      if (next != 0) below += _pairTreeBits(balls, next, rounds - 1);
+    }
+  }
+  return _pairTreeMemo[key] = math.log(moves.length / good.length) / math.ln2 + below / good.length;
+}
+
+// ---------- 对外的求解 ----------
+
+// rounds 次之内一定找得出（不管秤怎么答）。
+bool balanceSolvableIn(BalancePuzzle puzzle, int rounds) => _solvableFrom(puzzle, balanceStart(puzzle), rounds);
+
+// 这道题在限定次数内一定找得出。
+bool balanceSolvable(BalancePuzzle puzzle) => balanceSolvableIn(puzzle, puzzle.weighings);
+
+// 上限是紧的：限定次数内找得出，少称一次就不一定。
+bool balanceTight(BalancePuzzle puzzle) => balanceSolvable(puzzle) && !balanceSolvableIn(puzzle, puzzle.weighings - 1);
+
+// 参考解：每一步取第一个「不管秤怎么答都还来得及」的称法（具体放哪几个球按编号从小取），秤按规则回答，最后指认剩下的那一个（一对，或都是真的）。
+// 题目解不开返回 null。
+BalanceAnswer? balanceSolve(BalancePuzzle puzzle) {
+  if (!balanceSolvable(puzzle)) return null;
+  var suspects = balanceStart(puzzle);
+  final weighings = <BalanceWeighing>[];
+  for (var index = 0; index < puzzle.weighings && !balanceDone(puzzle, suspects); index++) {
+    final rounds = puzzle.weighings - index;
+    final BalanceWeighing weighing;
+    if (puzzle.paired) {
+      final move = _pairMoves(puzzle.balls, suspects.pairs).firstWhere((move) => _pairWinning(puzzle.balls, suspects.pairs, move, rounds));
+      weighing = BalanceWeighing(balanceMembers(move.left), balanceMembers(move.right));
+    } else {
+      final state = _stateOf(puzzle, suspects);
+      weighing = _place(puzzle, suspects, _moves(state).firstWhere((move) => _winning(state, move, rounds, puzzle.direction)));
+    }
+    weighings.add(weighing);
+    final (left, right) = (balanceMask(weighing.left), balanceMask(weighing.right));
+    suspects = balanceSplit(puzzle, suspects, left, right)[balanceRespond(puzzle, suspects, left, right, index).index];
+  }
+  if (puzzle.paired) {
+    final (first, second) = balancePairs(puzzle.balls)[balanceMembers(suspects.pairs).single];
+    return BalanceAnswer(weighings, [first, second]);
+  }
+  if (suspects.heavy | suspects.light == 0) return BalanceAnswer(weighings, const []);
+  return BalanceAnswer(weighings, [balanceMembers(suspects.heavy | suspects.light).first], puzzle.direction ? suspects.heavy != 0 : null);
+}
+
+// 整道题的策略树选择量（比特），难易分由它换算。
+double balanceTreeBits(BalancePuzzle puzzle) => puzzle.paired
+    ? _pairTreeBits(puzzle.balls, balanceStart(puzzle).pairs, puzzle.weighings)
+    : _treeBits(_stateOf(puzzle, balanceStart(puzzle)), puzzle.weighings, puzzle.direction);
+
+// 档内的一种题型：可疑的球几个、称几次、是否已知轻重（已知时出题再随机定偏重或偏轻）、要不要说轻重、标准球几个、假球几个、可不可能都是真的。
+typedef BalancePlan = ({int balls, int weighings, bool known, bool direction, int standards, int fakes, bool maybeNone});
+
+BalancePlan _plan(int balls, int weighings, {bool known = false, bool direction = false, int standards = 0, int fakes = 1, bool maybeNone = false}) =>
+    (balls: balls, weighings: weighings, known: known, direction: direction, standards: standards, fakes: fakes, maybeNone: maybeNone);
+
 class BalanceRules extends PuzzleRules<BalancePuzzle, BalanceAnswer> {
   const BalanceRules();
 
+  // 第 2 版题面（11-17 深改）：加了偏哪边、标准球与假球个数，答案的指认改成球的列表。
+  @override
+  int get puzzleVersion => 2;
+
   // 挑战里的特性（[人工决策-2026-11-16 17:26:21] 见 puzzle_rules.dart 的 PuzzleRules.fragment）。
-  // 碎片用题面定的称几次：秤不预定假球，没有固定的「不同的那个球」（每档都正好够用，也就是最少要称几次）。
+  // 碎片用题面定的称几次：秤不预定假球，没有固定的「不同的那个球」（每道题都正好够用，也就是最少要称几次）。
   @override
   int? fragment(BalancePuzzle puzzle, BalanceAnswer solution) => puzzle.weighings;
 
-  // 每档的参数。简单档原建议 4 个球称 2 次，求解器量出来比入门还容易（选择量 3.4 比特，入门 9.0），档位会倒挂，
-  // 改成 9 个球不知轻重称 3 次（12.7 比特）：同样 9 个球，不知道轻重了多给一次。每档都核对过在次数内一定能找出（测试守护）。
-  static const _tiers = {
-    PuzzleTier.entry: (balls: 9, weighings: 2, knownHeavy: true, direction: false),
-    PuzzleTier.easy: (balls: 9, weighings: 3, knownHeavy: false, direction: false),
+  // 每档的题型（出题时等概率挑一种，已知轻重的再等概率定偏重或偏轻），都核对过上限是紧的、难易分落在这一档的两级里（测试守护）。
+  // 题型按经典变体递进：入门只有已知轻重；简单起不知轻重、标准球与两个假球；普通是 9 到 11 个球、起有「可能都是真的」；
+  // 困难是 11 个球的各种变体、12 个只需找出、7 个里两个假球；专家是经典的 12 个球说轻重与 13、14 个球（理论上限，Dyson）。
+  // [人工决策-2026-11-17 14:17:05] 用户定的天平称球三项：普通档放宽到 9–11 个球（见普通档上方）；加「可能根本没有假球」（作答多一个「都是真的」），
+  // 从普通档起放（它是不知轻重的延伸：不能再靠「最后一个不上秤的球」，难度与同球数的说轻重一样，入门与简单先把不知轻重练熟）；
+  // 删掉困难档「16 个球称 4 次」的两种（点按繁琐）。
+  static final pools = <PuzzleTier, List<BalancePlan>>{
+    PuzzleTier.entry: [
+      _plan(6, 2, known: true),
+      _plan(7, 2, known: true),
+      _plan(8, 2, known: true),
+      _plan(9, 2, known: true),
+      _plan(10, 3, known: true),
+      _plan(11, 3, known: true),
+      _plan(12, 3, known: true),
+    ],
+    PuzzleTier.easy: [
+      _plan(14, 3, known: true),
+      _plan(16, 3, known: true),
+      _plan(8, 3),
+      _plan(9, 3),
+      _plan(8, 3, standards: 1),
+      _plan(8, 3, direction: true),
+      _plan(8, 3, direction: true, standards: 1),
+      _plan(6, 3, known: true, fakes: 2),
+      _plan(13, 4, direction: true),
+    ],
     // [人工决策-2026-11-15 10:54:57] 普通档改为 10 个球（用户选定）：按预计用时标尺量，12 个球比简单档长约 3 倍（95 秒到 303 秒），10 个球是 120 秒。
-    PuzzleTier.normal: (balls: 10, weighings: 3, knownHeavy: false, direction: false),
-    PuzzleTier.hard: (balls: 12, weighings: 3, knownHeavy: false, direction: true),
-    PuzzleTier.expert: (balls: 13, weighings: 3, knownHeavy: false, direction: false),
+    // （已被下面 11-17 14:17:05 那条取代。）
+    // [人工决策-2026-11-17 14:17:05] 用户确认普通档放宽到 9–11 个球，取代上面那条：9–11 个球里上限是紧的、难易分落在 5–6 级的题型都放进来
+    // （9 个只需找出或说轻重、11 个说轻重只有 4 级或 7 级，不在这一档）。
+    PuzzleTier.normal: [
+      _plan(10, 3),
+      _plan(11, 3),
+      _plan(10, 3, standards: 1),
+      _plan(10, 3, direction: true),
+      _plan(9, 3, direction: true, standards: 1),
+      _plan(10, 3, direction: true, standards: 1),
+      _plan(9, 3, standards: 1, maybeNone: true),
+      _plan(10, 3, maybeNone: true),
+      _plan(10, 3, direction: true, maybeNone: true),
+      _plan(10, 3, direction: true, standards: 1, maybeNone: true),
+    ],
+    PuzzleTier.hard: [
+      _plan(11, 3, standards: 1),
+      _plan(12, 3),
+      _plan(11, 3, direction: true),
+      _plan(11, 3, direction: true, standards: 1),
+      _plan(11, 3, maybeNone: true),
+      _plan(11, 3, direction: true, standards: 1, maybeNone: true),
+      _plan(7, 3, known: true, fakes: 2),
+    ],
+    PuzzleTier.expert: [
+      _plan(12, 3, direction: true),
+      _plan(13, 3),
+      _plan(14, 3, standards: 1),
+      _plan(12, 3, direction: true, standards: 1),
+      _plan(13, 3, direction: true, standards: 1),
+      _plan(12, 3, direction: true, maybeNone: true),
+      _plan(12, 3, standards: 1, maybeNone: true),
+    ],
   };
 
-  // 出题：参数按档定，种子定平局时秤怎么答（第一次称就有平局，走到哪一支、最后是哪个球都跟着变）；出题前用求解器确认一定找得出。
+  // 出题：按种子挑这一档的题型与偏哪边，再定平局时秤怎么答（第一次称就有平局，走到哪一支、最后是哪个球都跟着变）；出题前核对上限是紧的。
   @override
   PuzzleDraw<BalancePuzzle, BalanceAnswer> generate(int seed, PuzzleTier tier) {
-    final plan = _tiers[tier]!;
-    final puzzle = BalancePuzzle(balls: plan.balls, weighings: plan.weighings, knownHeavy: plan.knownHeavy, direction: plan.direction, seed: PuzzleRandom(seed).nextUint32());
-    final solution = balanceSolve(puzzle);
-    if (solution == null) throw StateError('天平称球 ${tier.name} 档在 ${plan.weighings} 次内找不出');
+    final random = PuzzleRandom(seed);
+    final plans = pools[tier]!;
+    final plan = plans[random.nextInt(plans.length)];
+    final light = random.nextInt(2) == 1;
+    final puzzle = BalancePuzzle(
+      balls: plan.balls,
+      weighings: plan.weighings,
+      weight: !plan.known ? BalanceWeight.unknown : light ? BalanceWeight.light : BalanceWeight.heavy,
+      direction: plan.direction,
+      standards: plan.standards,
+      fakes: plan.fakes,
+      maybeNone: plan.maybeNone,
+      seed: random.nextUint32(),
+    );
+    final solution = balanceTight(puzzle) ? balanceSolve(puzzle) : null;
+    if (solution == null) throw StateError('天平称球 ${tier.name} 档的题型 $plan 不是正好 ${plan.weighings} 次');
     return PuzzleDraw(puzzle, solution);
   }
 
+  // 指认球时，要说轻重的题才带轻重；指认都是真的不带轻重（由 balanceVerdict 判）。
   @override
   bool solved(BalancePuzzle puzzle, BalanceAnswer answer) {
-    if ((answer.heavy != null) != puzzle.direction) return false;
+    if (answer.balls.isNotEmpty && (answer.heavy != null) != puzzle.direction) return false;
     final replay = balanceReplay(puzzle, answer.weighings);
-    return replay != null && balanceVerdict(puzzle, replay.suspects, answer.ball, answer.heavy) == BalanceVerdict.solved;
+    return replay != null && balanceVerdict(puzzle, replay.suspects, answer.balls, answer.heavy) == BalanceVerdict.solved;
   }
 
-  // 难易分口径：整棵策略树的选择量（_treeBits）÷ 2 − 3.5，取整夹在 1–10。参数只由档定、种子不影响，所以同档同分。
-  // 实测：入门 9 个已知偏重称 2 次 9.0 比特 → 1；简单 9 个称 3 次 12.7 → 3；普通 12 个称 3 次 22.9 → 8；
-  // 困难 12 个称 3 次还要说轻重 24.9 → 9；专家 13 个称 3 次 26.8 → 10。普通以上三档都是一次 4 对 4 起手的满载题，推理量本来就接近，所以挤在高分段。
+  // 难易分口径：整棵策略树的选择量（balanceTreeBits）从 3.2 比特起每 2.5 比特一级，取整夹在 1–10。题型由档里挑、种子只定平局，所以同一题型同分。
+  // 实测（比特 → 分）：入门 3.8–9.0 → 1–2；简单 10.1–13.7 → 3–4；普通 9–11 个 15.4–18.5 → 5–6；困难 19.8–22.9 → 7–8（两个假球 7 个称 3 次 22.3 → 8）；
+  // 专家经典 12 个说轻重 24.9 → 9、13 个只需找出 26.8 → 9，到理论上限的 13、14 个带标准球 32.7、34.6 → 10。各档离分界都留了 0.3 比特以上。
+  // 可能都是真的题，只需找出与说轻重的比特一样，都等于同球数的说轻重（不能再靠最后一个不上秤的球）。
   // 解不开的题面（出题与解码都会拦下）按 10 分算。
-  // 预计用时：9 个球称 2 次约 1 分钟、13 个球还要说轻重约 8 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.26。
+  // 预计用时：1 分 45 秒、每高一级乘 1.24（各档多数题型的分是入门 1、简单 3、普通 5、困难 7、专家 9，约 45、70、105、165、250 秒），按常见的人工解题速度估。
   @override
-  int expectedSeconds(BalancePuzzle puzzle) => puzzlePace(complexity(puzzle), base: 60, growth: 1.26);
+  int expectedSeconds(BalancePuzzle puzzle) => puzzlePace(complexity(puzzle), base: 45, growth: 1.24);
 
   @override
   int complexity(BalancePuzzle puzzle) {
     if (!balanceSolvable(puzzle)) return 10;
-    final bits = _treeBits(_stateOf(puzzle, balanceStart(puzzle)), puzzle.weighings, puzzle.direction);
-    return (bits / 2 - 3.5).round().clamp(1, 10);
+    return ((balanceTreeBits(puzzle) - 3.2) / 2.5).round().clamp(1, 10);
   }
 
   @override
   Object encodePuzzle(BalancePuzzle puzzle) => {
     'balls': puzzle.balls,
-    'weighings': puzzle.weighings,
-    'knownHeavy': puzzle.knownHeavy,
+    'standards': puzzle.standards,
+    'fakes': puzzle.fakes,
+    'weight': puzzle.weight.name,
     'direction': puzzle.direction,
+    'maybeNone': puzzle.maybeNone,
+    'weighings': puzzle.weighings,
     'seed': puzzle.seed,
   };
 
-  // 外部输入：球数、次数、种子逐项校验；已知偏重就不用说轻重，两个都为真的不收；在次数内找不出的不是题。
+  // 外部输入：各字段逐项校验；说轻重只给不知轻重的题，两个假球要已知轻重、不带标准球、不会都是真的；桌上的球数有上限；在次数内找不出的不是题。
   @override
   BalancePuzzle decodePuzzle(Object? json) {
     final balls = puzzleInt(json, 'balls', min: balanceMinBalls, max: balanceMaxBalls);
+    final standards = puzzleInt(json, 'standards', min: 0, max: balanceMaxStandards);
+    final fakes = puzzleInt(json, 'fakes', min: 1, max: 2);
     final weighings = puzzleInt(json, 'weighings', min: 1, max: balanceMaxWeighings);
     final seed = puzzleInt(json, 'seed', min: 0, max: 0xFFFFFFFF);
-    final (knownHeavy, direction) = ((json as Map)['knownHeavy'], json['direction']);
-    if (knownHeavy is! bool || direction is! bool || knownHeavy && direction) throw const FormatException('题目字段不合法');
-    final puzzle = BalancePuzzle(balls: balls, weighings: weighings, knownHeavy: knownHeavy, direction: direction, seed: seed);
+    final (weight, direction, maybeNone) = (BalanceWeight.values.asNameMap()[(json as Map)['weight']], json['direction'], json['maybeNone']);
+    if (weight == null || direction is! bool || maybeNone is! bool || balls + standards > balanceMaxTotal) throw const FormatException('题目字段不合法');
+    if (direction && weight != BalanceWeight.unknown) throw const FormatException('题目字段不合法');
+    if (fakes == 2 && (weight == BalanceWeight.unknown || standards > 0 || maybeNone || balls > balanceMaxPairBalls)) throw const FormatException('题目字段不合法');
+    final puzzle = BalancePuzzle(balls: balls, weighings: weighings, weight: weight, direction: direction, standards: standards, fakes: fakes, maybeNone: maybeNone, seed: seed);
     if (!balanceSolvable(puzzle)) throw const FormatException('这道题在限定次数内找不出');
     return puzzle;
   }
 
-  // 答案编成 {'weighings': [[左盘的球, 右盘的球], …], 'ball': 指认的球, 'heavy': 偏重 true / 偏轻 false（不用说轻重的题不写）}。
+  // 答案编成 {'weighings': [[左盘的球, 右盘的球], …], 'balls': [指认的球]（都是真的是空列表）, 'heavy': 偏重 true / 偏轻 false（不用说轻重的题与都是真的不写）}。
   @override
   Object encodeAnswer(BalanceAnswer answer) => {
     'weighings': [
       for (final weighing in answer.weighings) [[...weighing.left], [...weighing.right]],
     ],
-    'ball': answer.ball,
+    'balls': [...answer.balls],
     if (answer.heavy != null) 'heavy': answer.heavy,
   };
 
-  // 只核对结构：次数不超过上限、每次是左右两组编号、同一次里一个球不放两边也不重复；两边球数等不等、编号在不在这道题里由 solved 按规则判。
+  // 只核对结构：次数不超过上限、每次是左右两组编号、同一次里一个球不放两边也不重复，指认零到两个不重复的球；
+  // 两边球数等不等、编号在不在这道题里、指认几个由 solved 按规则判。
   @override
   BalanceAnswer decodeAnswer(Object? json) {
     final raw = json is Map ? json['weighings'] : null;
@@ -347,15 +639,16 @@ class BalanceRules extends PuzzleRules<BalancePuzzle, BalanceAnswer> {
       for (final item in raw)
         () {
           if (item is! List || item.length != 2) throw const FormatException('答案不合法');
-          final left = puzzleInts(item[0], maxLength: balanceMaxBalls, min: 0, max: balanceMaxBalls - 1);
-          final right = puzzleInts(item[1], maxLength: balanceMaxBalls, min: 0, max: balanceMaxBalls - 1);
+          final left = puzzleInts(item[0], maxLength: balanceMaxTotal, min: 0, max: balanceMaxTotal - 1);
+          final right = puzzleInts(item[1], maxLength: balanceMaxTotal, min: 0, max: balanceMaxTotal - 1);
           if ({...left, ...right}.length != left.length + right.length) throw const FormatException('答案不合法');
           return BalanceWeighing(left, right);
         }(),
     ];
-    final ball = puzzleInt(json, 'ball', min: 0, max: balanceMaxBalls - 1);
-    final heavy = (json as Map)['heavy'];
+    final balls = puzzleInts((json as Map)['balls'], maxLength: 2, min: 0, max: balanceMaxBalls - 1);
+    if (balls.toSet().length != balls.length) throw const FormatException('答案不合法');
+    final heavy = json['heavy'];
     if (heavy != null && heavy is! bool) throw const FormatException('答案不合法');
-    return BalanceAnswer(weighings, ball, heavy as bool?);
+    return BalanceAnswer(weighings, balls, heavy as bool?);
   }
 }

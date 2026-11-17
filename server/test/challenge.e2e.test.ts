@@ -19,11 +19,12 @@ import { TestDevice } from './test_device';
 // 入门档的 24 点按 9 取余加 1 都是 1，向量里的 24 点（1 6 9 9）有一张 1 能写成 ?。
 type Case = { tier: string; puzzle: unknown; answers: { answer: unknown; expect: { kind: string } }[] };
 const vectors = JSON.parse(await readFile(new URL('./vectors/challenge_judge_v1.json', import.meta.url), 'utf8')) as { games: Record<string, Case[]> };
-// 冰面滑行换了第 2 版写法：本文件的冰面仍按第 1 版（旧文件名、只报游戏名），题从冻结的 ice@1 向量里取。
+// 冰面滑行与汉诺塔换了第 2 版写法：本文件的这两个游戏仍按第 1 版（旧文件名、只报游戏名），题从冻结的第 1 版向量里取。
 const frozen = JSON.parse(await readFile(new URL('./vectors/challenge_judge_frozen.json', import.meta.url), 'utf8')) as { games: Record<string, Case[]> };
-const casesOf = (game: string) => (game === 'ice' ? frozen.games['ice@1'] : vectors.games[game]);
+const legacy: Record<string, string> = { ice: 'ice@1', hanoi: 'hanoi@1' };
+const casesOf = (game: string) => (game in legacy ? frozen.games[legacy[game]] : vectors.games[game]);
 const reference = new Map<string, unknown>();
-for (const cases of [...Object.values(vectors.games), frozen.games['ice@1']]) for (const item of cases) reference.set(JSON.stringify(item.puzzle), item.answers[0].answer);
+for (const cases of [...Object.values(vectors.games), ...Object.values(legacy).map((key) => frozen.games[key])]) for (const item of cases) reference.set(JSON.stringify(item.puzzle), item.answers[0].answer);
 
 const fragments: Record<string, number> = { hanoi: 3, ice: 6, twentyfour: 25 };
 // 向量里入门档的两道汉诺塔一模一样，加试题要另一道：再放一道挪到第 2 根柱子的（参考解按经典走法写好）。
@@ -168,8 +169,8 @@ describe('积分与挑战', () => {
     expect(listed.status).toBe(200);
     expect(listed.body.challenges[0].playable).toBe(true);
     const id = listed.body.challenges[0].id as string;
-    expect((await list(device, ['hanoi@2', 'ice@1', 'twentyfour@1'])).body.challenges[0].playable).toBe(false);
-    expect((await device.call('POST', `/v1/challenges/${id}/runs`, { games: ['hanoi@2', 'ice@1', 'twentyfour@1'] })).body.code).toBe('CHALLENGE_UNAVAILABLE');
+    expect((await list(device, ['hanoi@9', 'ice@1', 'twentyfour@1'])).body.challenges[0].playable).toBe(false);
+    expect((await device.call('POST', `/v1/challenges/${id}/runs`, { games: ['hanoi@9', 'ice@1', 'twentyfour@1'] })).body.code).toBe('CHALLENGE_UNAVAILABLE');
     expect((await device.call('GET', '/v1/challenges?games=hanoi@1x')).status).toBe(400);
 
     // 冰面多一份写着第 2 版的 ice@1 文件：版本对不上，这一份不用（冰面没题可出），删掉后回到旧文件名的那份。

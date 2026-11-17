@@ -388,11 +388,11 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver {
           const SizedBox(width: 12),
           Expanded(child: DotSeparatedText(status, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()]))),
         ])),
-        // 收碎片的关：写明被改写的那一处怎么算（玩家自己算）；要最少步数的写明几步。
+        // 收碎片的关：写明被改写的那一处怎么算（玩家自己算）；要最少步数的写明几步内算过。
         if (challenge != null)
           for (final (icon, line) in [
             if (challengeConsumeText(challenge.level) case final consume?) (CampusIcons.key, consume),
-            if (challenge.level.minimum case final least?) (CampusIcons.flag, '最少 $least 步'),
+            if (challengeStepsText(challenge.level) case final steps?) (CampusIcons.flag, steps),
           ])
             Padding(padding: const EdgeInsets.fromLTRB(16, 4, 16, 0), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
               CampusIcon(icon, size: 18, color: palette.onSurfaceVariant),

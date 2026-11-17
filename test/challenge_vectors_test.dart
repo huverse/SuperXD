@@ -30,6 +30,8 @@ void main() {
       for (final item in (cases! as List).cast<Map<String, Object?>>()) {
         for (final answer in (item['answers']! as List).cast<Map<String, Object?>>()) {
           expect(challengeVerdict(game, item['puzzle'], answer['answer']), answer['expect'], reason: '$game ${item['tier']}');
+          // 带 minimum 的（汉诺塔高档放宽到 1.2 倍，人工决策见 challenge_rules.dart 的 11-17 14:17:05 那条）另核算不算过。
+          if (item['minimum'] case final int minimum) expect(challengePassed(game, item['puzzle'], answer['answer'], minimum), answer['passed'], reason: '$game 最少 $minimum 步');
         }
       }
     }
@@ -44,7 +46,7 @@ void main() {
       expect(rules.puzzleVersion, version, reason: game);
       expect(jsonEncode(rules.encodePuzzle(rules.decodePuzzle(sample))), jsonEncode(sample), reason: '$game 的题面写法变了：把 puzzleVersion 加一、换上新写法的样例，再重出题库');
     }
-    expect(challengeGameTokens(['hanoi', 'schulte', 'pour', 'twentyfour']), {'hanoi@1', 'twentyfour@1'});
+    expect(challengeGameTokens(['hanoi', 'schulte', 'pour', 'twentyfour']), {'hanoi@2', 'twentyfour@1'});
     final vectors = jsonDecode(File(challengeVectorsPath).readAsStringSync()) as Map<String, Object?>;
     expect(vectors['puzzleVersions'], {for (final MapEntry(key: game, value: rules) in challengeRules.entries) game: rules.puzzleVersion}, reason: '服务端按向量里的版本核对它认得的写法');
   });
@@ -58,11 +60,11 @@ void main() {
     });
 
     test('题库按「游戏@题面写法版本.档位」分文件，文件里写着题面写法版本', () {
-      expect(challengeBankName('hanoi', PuzzleTier.entry), 'hanoi@1.entry.json');
+      expect(challengeBankName('hanoi', PuzzleTier.entry), 'hanoi@2.entry.json');
       expect(challengeBankName('loop', PuzzleTier.expert), 'loop@1.expert.json');
       final file = challengeBankFile('local-test-seed-0001', 'hanoi', PuzzleTier.entry, 2);
       expect(file['version'], challengeBankVersion);
-      expect(file['puzzleVersion'], 1);
+      expect(file['puzzleVersion'], 2);
       expect(file['entries'], isNotEmpty);
     });
 
@@ -124,12 +126,12 @@ void main() {
 
 // 每个能进挑战的游戏当前题面写法版本的一道样例（取自判定向量的入门档），键的顺序同 encodePuzzle。
 const _samples = <String, (int, Object)>{
-  'hanoi': (1, {'disks': 3, 'start': [0, 0, 0], 'target': 2}),
+  'hanoi': (2, {'pegs': 3, 'variant': 0, 'start': [1, 0, 2, 2], 'goal': [1, 2, 0, 0]}),
   'ice': (2, {'width': 6, 'height': 6, 'tiles': '000110001000000000010010100000001000', 'gems': <int>[], 'start': 17, 'goal': 9, 'limit': 7}),
   'lights': (1, {'side': 3, 'lights': '011101100'}),
   'boxes': (1, {'width': 7, 'height': 7, 'walls': '1111111100000110011011101001100001110000111111111', 'goals': [12], 'boxes': [31], 'player': 29}),
   'queens': (1, {'size': 5, 'given': [-1, -1, 3, 1, -1]}),
-  'river': (1, {'variant': 'farmer', 'capacity': 2, 'people': [0, 2, 3, 1]}),
+  'river': (2, {'variant': 'farmer', 'capacity': 2, 'people': [3, 1, 2, 0], 'rowers': [3]}),
   'nonogram': (1, {'width': 5, 'height': 5, 'rows': [[2, 2], [5], [1, 1], [1], [3]], 'columns': [[3], [2, 1], [1, 2], [2, 1], [3]]}),
   'knights': (1, {'claims': [[1, 1], [3, 0]]}),
   'logicgrid': (1, {'people': 3, 'categories': [[2, [1, 3, 4]], [5, [1, 2, 5]]], 'clues': [[0, 0, 1, 1, 0], [1, 0, 0, 1, 1], [1, 1, 1, 2, 2], [0, 1, 0, 2, 1]]}),
@@ -138,5 +140,5 @@ const _samples = <String, (int, Object)>{
   'mines': (1, {'width': 6, 'height': 6, 'mines': '000010101010100000000000000000000000', 'start': 25}),
   'flash': (2, {'side': 4, 'variant': 'spot', 'show': 1500, 'rounds': [[[6, 9, 12], [6, 7, 12], [1, 2, 11], [5, 9, 15], [6, 13, 15], [5, 6, 7]], [[0, 6, 14], [4, 5, 9], [1, 3, 8], [1, 6, 15], [3, 8, 12], [1, 12, 14]], [[4, 10, 11, 14], [3, 4, 6, 14], [6, 8, 12, 15], [7, 8, 10, 12], [1, 7, 13, 15], [0, 11, 12, 15]], [[1, 6, 9, 12], [0, 2, 5, 11], [4, 8, 9, 10], [3, 8, 10, 15], [0, 4, 9, 15], [1, 6, 12, 14]], [[2, 8, 10, 14, 15], [3, 8, 9, 11, 13], [1, 2, 10, 11, 15], [2, 5, 6, 14, 15], [5, 8, 11, 13, 14], [1, 2, 11, 14, 15]]]}),
   'loop': (1, {'width': 4, 'height': 4, 'clues': [-1, 2, -1, -1, -1, -1, -1, 1, 3, 0, 3, -1, -1, -1, -1, -1]}),
-  'balance': (1, {'balls': 9, 'weighings': 2, 'knownHeavy': true, 'direction': false, 'seed': 3308915240}),
+  'balance': (2, {'balls': 7, 'standards': 0, 'fakes': 1, 'weight': 'light', 'direction': false, 'maybeNone': false, 'weighings': 2, 'seed': 1681425135}),
 };

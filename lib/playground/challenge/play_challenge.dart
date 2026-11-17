@@ -3,6 +3,7 @@ import 'package:superxd/playground/challenge/challenge_rules.dart';
 import 'package:superxd/playground/puzzle/flash/flash_rules.dart';
 import 'package:superxd/playground/puzzle/knights/knights_rules.dart';
 import 'package:superxd/playground/puzzle/logicgrid/logicgrid_rules.dart';
+import 'package:superxd/playground/puzzle/river/river_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 
 // 挑战里的一关交给对局页的东西（人工决策见 challenge_rules.dart 的 11-14 23:11 那条）：这一关（题面已由服务器给出）、给玩家看的关名、
@@ -56,7 +57,7 @@ String challengeFragmentName(String game, Object? puzzle) => switch (game) {
   'lights' => '最少点几下',
   'boxes' => '最少推几次',
   'queens' => '最后一行的皇后在第几列',
-  'river' => '最少渡河几次',
+  'river' => (puzzle as RiverPuzzle).timed ? '最短几分钟' : '最少渡河几次',
   'nonogram' => '一共涂几格',
   'knights' => '有几个骑士',
   'logicgrid' => '「${(puzzle as LogicGridPuzzle).categories.first.label(0)}」是第几个人',
@@ -68,6 +69,14 @@ String challengeFragmentName(String game, Object? puzzle) => switch (game) {
   'balance' => '称几次',
   _ => '碎片',
 };
+
+// 要最少步数的关写给玩家看的步数要求：多数游戏「最少 7 步」；汉诺塔放宽到 1.2 倍以内，写「72 步内算过」（人工决策见 challenge_rules.dart 的 11-17 14:17:05 那条）；不要求为空。
+String? challengeStepsText(ChallengeLevel level) {
+  final least = level.minimum;
+  if (least == null) return null;
+  final limit = challengeStepLimit(level.game, least);
+  return limit == least ? '最少 $least 步' : '$limit 步内算过';
+}
 
 // 门上的数改写的那一处怎么算，写给玩家看：「第 3 张牌 = 37 ÷ 9 的余数 + 1」；门还没开（不知道门上的数）或不收碎片为空。
 String? challengeConsumeText(ChallengeLevel level) {

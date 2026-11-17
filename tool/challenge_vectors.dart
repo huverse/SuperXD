@@ -2,8 +2,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:superxd/playground/challenge/challenge_rules.dart';
+import 'package:superxd/playground/puzzle/balance/balance_rules.dart';
 import 'package:superxd/playground/puzzle/flash/flash_rules.dart';
+import 'package:superxd/playground/puzzle/hanoi/hanoi_rules.dart';
 import 'package:superxd/playground/puzzle/ice/ice_rules.dart';
+import 'package:superxd/playground/puzzle/river/river_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 
 // 挑战判定的双端测试向量（人工决策见 lib/playground/challenge/challenge_rules.dart）：每个能进挑战的游戏、每档出几道题，
@@ -103,6 +106,8 @@ Map<String, Object?> buildChallengeVectors({int seedsPerTier = 2, int seed = 0x5
     }
     cases.addAll(_goalCases(game, rules));
     cases.addAll(_trapCases(game, rules));
+    if (rules is RiverRules) cases.addAll(_riverCases(game, rules));
+    cases.addAll(_balanceCases(game));
     games[game] = cases;
   }
   // 每个游戏的题面写法版本：服务端按它核对自己的判定认得哪一版（test/challenge_judge.test.ts）。
@@ -110,7 +115,7 @@ Map<String, Object?> buildChallengeVectors({int seedsPerTier = 2, int seed = 0x5
 }
 
 // 收碎片改目标的题面（人工决策见 challenge_rules.dart 的 11-14 23:11 那条）：记忆闪光镜像（照亮的点不算、点镜像的才算，每档一道、各题型都有；
-// 另给一份第一下点了原来亮的那格、换下一组再点镜像的，算失误 1 次）、冰面滑行标了几个出口（判定仍只看终点）。用自己的固定种子出，不动上面已有的向量。
+// 另给一份第一下点了原来亮的那格、换下一组再点镜像的，算失误 1 次）、冰面滑行标了几个出口（判定仍只看终点）、汉诺塔见 _hanoiCases。用自己的固定种子出，不动上面已有的向量。
 List<Map<String, Object?>> _goalCases(String game, PuzzleRules<Object?, Object?> rules) {
   Map<String, Object?> item(PuzzleTier tier, Object? puzzle, List<Object?> answers) => {
     'tier': tier.name,
@@ -139,6 +144,8 @@ List<Map<String, Object?>> _goalCases(String game, PuzzleRules<Object?, Object?>
       final ice = rules.generate(seed, PuzzleTier.normal);
       final labeled = (ice.puzzle as IcePuzzle).copyWith(exits: iceExits(ice.puzzle as IcePuzzle, PuzzleRandom(0x60A1)));
       return [item(PuzzleTier.normal, rules.encodePuzzle(labeled), [rules.encodeAnswer(ice.solution), <int>[]])];
+    case HanoiPuzzle():
+      return [..._hanoiCases(rules), ..._hanoiLimitCases(rules)];
     default:
       return const [];
   }
@@ -188,6 +195,169 @@ List<Map<String, Object?>> _trapCases(String game, PuzzleRules<Object?, Object?>
       [0, 0, 0, 1, 0, 0, 3],
     ]),
   ];
+}
+
+// 过河问题：每种题型一道（固定种子从入门往上找），把参考解的某一步换成别的坐法，后面接着按最短走法走完（犯规的那一步也假装开得了再走完）：
+// 判定漏查哪一条，这里就会判成解开、两端对不上。换法按 Dart 查出的问题（超载、不在这一岸、没人会划、各条规矩在哪一处、火把不够、合规）分类，
+// 每类在整条参考解上按固定种子挑两个，免得只有一步可挑时漏掉「船上也算」这种少见的问题。
+List<Map<String, Object?>> _riverCases(String game, RiverRules rules) {
+  final random = PuzzleRandom(0x81BE);
+  final cases = <Map<String, Object?>>[];
+  // 大人与小孩另要一道船上也算的（只有它会出现「只在船上出事」）。
+  for (final (variant, boat) in [for (final variant in RiverVariant.values) (variant, false), (RiverVariant.guardians, true)]) {
+    final (tier, draw) = [
+      for (final tier in PuzzleTier.values)
+        for (var seed = 0; seed < 32; seed++) (tier, seed),
+    ].map((item) => (item.$1, rules.generate(item.$2, item.$1))).firstWhere((item) => item.$2.puzzle.variant == variant && (variant != RiverVariant.guardians || item.$2.puzzle.boat == boat));
+    final puzzle = draw.puzzle, reference = draw.solution;
+    final buckets = <String, List<List<RiverCrossing>>>{};
+    var left = puzzle.everyone, side = riverLeft, spent = 0;
+    for (final (step, crossing) in reference.indexed) {
+      for (var group = 1; group <= puzzle.everyone; group++) {
+        if (riverBits(group) > puzzle.capacity + 1 || group == riverMask(crossing)) continue;
+        // 分类看第一处问题，再看船上、留下的岸、到的岸各自有没有出事（只在船上出事的要单独有一类）。
+        final violation = riverCheck(puzzle, left, side, group, spent: spent);
+        final here = side == riverLeft ? left : puzzle.everyone & ~left;
+        final places = [
+          if (puzzle.boat && riverTrouble(puzzle, group, RiverPlace.boat) != null) 'boat',
+          if (riverTrouble(puzzle, here & ~group, RiverPlace.left) != null) 'from',
+          if (riverTrouble(puzzle, (puzzle.everyone & ~here) | group, RiverPlace.right) != null) 'to',
+        ];
+        final rest = riverSolve(puzzle, left: riverAfter(left, side, group), side: 1 - side);
+        buckets.putIfAbsent('${violation?.fault}/${places.join('+')}', () => []).add([...reference.take(step), riverMembers(group), ...?rest]);
+      }
+      spent += riverCost(puzzle, riverMask(crossing));
+      left = riverAfter(left, side, riverMask(crossing));
+      side = 1 - side;
+    }
+    final answers = [
+      rules.encodeAnswer(reference),
+      for (final key in buckets.keys.toList()..sort())
+        for (var pick = 0; pick < 2 && buckets[key]!.isNotEmpty; pick++) rules.encodeAnswer(buckets[key]!.removeAt(random.nextInt(buckets[key]!.length))),
+    ];
+    final encoded = rules.encodePuzzle(puzzle);
+    cases.add({
+      'tier': tier.name,
+      'puzzle': encoded,
+      'answers': [for (final answer in answers) {'answer': answer, 'expect': challengeVerdict(game, encoded, answer)}],
+    });
+  }
+  return cases;
+}
+
+// 汉诺塔改目标的题（目标是全部叠到一根柱上，服务器按门上的数轮换柱子）：每种挪法各一道，参考解、按经典挪法的最短走法（相邻、循环下有不许的方向）、
+// 少走最后一步各判一次，两端的方向规矩逐条对上。
+List<Map<String, Object?>> _hanoiCases(PuzzleRules<Object?, Object?> rules) => [
+  for (final puzzle in const [
+    HanoiPuzzle(pegs: 3, variant: HanoiVariant.cyclic, start: [1, 0, 2, 0], goal: [1, 1, 1, 1]),
+    HanoiPuzzle(pegs: 4, variant: HanoiVariant.adjacent, start: [3, 0, 2, 0], goal: [1, 1, 1, 1]),
+    HanoiPuzzle(pegs: 4, variant: HanoiVariant.cyclic, start: [3, 0, 2, 1], goal: [2, 2, 2, 2]),
+    HanoiPuzzle(pegs: 4, variant: HanoiVariant.classic, start: [0, 3, 0, 3], goal: [2, 2, 2, 2]),
+  ])
+    {
+      'tier': PuzzleTier.normal.name,
+      'puzzle': rules.encodePuzzle(puzzle),
+      'answers': [
+        for (final answer in [
+          hanoiSolution(puzzle),
+          hanoiSolution(HanoiPuzzle(pegs: puzzle.pegs, variant: HanoiVariant.classic, start: puzzle.start, goal: puzzle.goal)),
+          hanoiSolution(puzzle).sublist(1),
+        ])
+          {'answer': rules.encodeAnswer(answer), 'expect': challengeVerdict('hanoi', rules.encodePuzzle(puzzle), rules.encodeAnswer(answer))},
+      ],
+    },
+];
+
+// [人工决策-2026-11-17 14:17:05] 汉诺塔高档放宽到最少步数的 1.2 倍以内（向下取整）：最少 60 步（上限正好 72）与最少 63 步（75.6 取 75）各一道，
+// 参考解后面补挪最小盘的空步，走到上限的算过、多一步的不算。这几道带 minimum、答案带 passed，服务端按 judges.ts 的 withinStepLimit 核。
+List<Map<String, Object?>> _hanoiLimitCases(PuzzleRules<Object?, Object?> rules) => [
+  for (final puzzle in const [
+    HanoiPuzzle(pegs: 3, variant: HanoiVariant.classic, start: [2, 2, 0, 0, 0, 0], goal: [2, 2, 2, 2, 2, 2]),
+    HanoiPuzzle(pegs: 3, variant: HanoiVariant.classic, start: [0, 0, 0, 0, 0, 0], goal: [2, 2, 2, 2, 2, 2]),
+  ])
+    {
+      'tier': PuzzleTier.hard.name,
+      'puzzle': rules.encodePuzzle(puzzle),
+      'minimum': hanoiMinMoves(puzzle),
+      'answers': [
+        for (final extra in [0, 1])
+          for (final answer in [rules.encodeAnswer([...hanoiSolution(puzzle), ..._hanoiIdle(rules.stepLimit(hanoiMinMoves(puzzle)) - hanoiMinMoves(puzzle) + extra)])])
+            {
+              'answer': answer,
+              'expect': challengeVerdict('hanoi', rules.encodePuzzle(puzzle), answer),
+              'passed': challengePassed('hanoi', rules.encodePuzzle(puzzle), answer, hanoiMinMoves(puzzle)),
+            },
+      ],
+    },
+];
+
+// 摆好之后来回挪最小的盘子（停在第 3 根柱上）凑够 extra 步，最后仍是目标局面：两步一来回，单数时最后绕一圈三步。
+List<HanoiMove> _hanoiIdle(int extra) => [
+  for (var pair = 0; pair < (extra.isOdd ? extra - 3 : extra) ~/ 2; pair++) ...[(from: 2, to: 0), (from: 0, to: 2)],
+  if (extra.isOdd) ...[(from: 2, to: 0), (from: 0, to: 1), (from: 1, to: 2)],
+];
+
+// 要最少步数的关这份答案算不算过：解开且步数不超过这个游戏的上限（challengeStepLimit；服务端 judges.ts 的 withinStepLimit 同口径）。
+// 步数按答案的项数算（汉诺塔一项一步），只给带 minimum 的向量用。
+bool challengePassed(String game, Object? puzzleJson, Object? answerJson, int minimum) =>
+    challengeVerdict(game, puzzleJson, answerJson)['kind'] == 'solved' && (answerJson! as List).length <= challengeStepLimit(game, minimum);
+
+// 天平称球的题型在档内随机，上面每档两道不一定碰得到每种题型：每档每种题型（已知轻重的偏重、偏轻各一）再出一道，向量覆盖题库会有的全部题型。
+// 另加「可能都是真的」的显式用例：按参考称法走到只剩都是真的时答都是真的算对、答成某个球或带了轻重算错；走到有假球时答都是真的算错；
+// 题面不可能都是真的时答都是真的也算错。用自己的固定种子，不动上面已有的向量。
+List<Map<String, Object?>> _balanceCases(String game) {
+  if (game != 'balance') return const [];
+  final rules = challengeRules[game]!;
+  final random = PuzzleRandom(0xBA1A);
+  Map<String, Object?> item(PuzzleTier tier, BalancePuzzle puzzle, List<Object?> extra) {
+    final encoded = rules.encodePuzzle(puzzle), reference = rules.encodeAnswer(balanceSolve(puzzle)!);
+    return {
+      'tier': tier.name,
+      'puzzle': encoded,
+      'answers': [for (final answer in [reference, ..._mutations(reference, random), ...extra]) {'answer': answer, 'expect': challengeVerdict(game, encoded, answer)}],
+    };
+  }
+
+  BalancePuzzle of(BalancePlan plan, BalanceWeight weight, int seed) =>
+      BalancePuzzle(balls: plan.balls, weighings: plan.weighings, weight: weight, direction: plan.direction, standards: plan.standards, fakes: plan.fakes, maybeNone: plan.maybeNone, seed: seed);
+  final cases = [
+    for (final MapEntry(key: tier, value: plans) in BalanceRules.pools.entries)
+      for (final plan in plans)
+        for (final weight in plan.known ? [BalanceWeight.heavy, BalanceWeight.light] : [BalanceWeight.unknown]) item(tier, of(plan, weight, random.nextUint32()), const []),
+  ];
+  Object? weighingsOf(BalanceAnswer answer) => (rules.encodeAnswer(answer) as Map)['weighings'];
+  for (final (tier, plan) in [
+    for (final MapEntry(key: tier, value: plans) in BalanceRules.pools.entries)
+      for (final plan in plans)
+        if (plan.maybeNone) (tier, plan),
+  ]) {
+    // 各找一个参考解走到都是真的、走到有假球的种子（平局按种子答，走到哪一支跟着变；约每 40 道有一道走到都是真的，2000 道还没有就是规则坏了）。
+    BalancePuzzle? none, fake;
+    for (var seed = 0; none == null || fake == null; seed++) {
+      if (seed == 2000) throw StateError('天平称球 $plan 的参考解走不到${none == null ? '都是真的' : '有假球'}');
+      final puzzle = of(plan, BalanceWeight.unknown, PuzzleRandom(0xBA1B + seed).nextUint32());
+      if (balanceSolve(puzzle)!.balls.isEmpty) {
+        none ??= puzzle;
+      } else {
+        fake ??= puzzle;
+      }
+    }
+    final allGenuine = balanceSolve(none)!, oneFake = balanceSolve(fake)!;
+    cases
+      ..add(item(tier, none, [
+        {'weighings': weighingsOf(allGenuine), 'balls': [0], if (plan.direction) 'heavy': true},
+        {'weighings': weighingsOf(allGenuine), 'balls': <int>[], 'heavy': true},
+      ]))
+      ..add(item(tier, fake, [
+        {'weighings': weighingsOf(oneFake), 'balls': <int>[]},
+      ]));
+  }
+  // 不可能都是真的题（普通档第一种题型）按参考称法称完答都是真的。
+  final plain = of(BalanceRules.pools[PuzzleTier.normal]!.first, BalanceWeight.unknown, random.nextUint32());
+  cases.add(item(PuzzleTier.normal, plain, [
+    {'weighings': weighingsOf(balanceSolve(plain)!), 'balls': <int>[]},
+  ]));
+  return cases;
 }
 
 Future<void> main(List<String> arguments) async {

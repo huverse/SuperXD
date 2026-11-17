@@ -362,7 +362,7 @@ export const loopJudge: Judge<LoopPuzzle, boolean[]> = {
   },
 };
 
-// ---------- 天平称球 balance ----------
+// ---------- 天平称球 balance（第 1 版题面，留给旧客户端；第 2 版在 balance_judges.ts） ----------
 // 秤不预定假球，按对手规则答（挑剩下的候选还要称最多次的结果，一样多按种子挑），同 Dart 的 balanceRespond。
 type BalancePuzzle = { balls: number; weighings: number; knownHeavy: boolean; direction: boolean; seed: number };
 type BalanceAnswer = { weighings: { left: number[]; right: number[] }[]; ball: number; heavy: boolean | null };

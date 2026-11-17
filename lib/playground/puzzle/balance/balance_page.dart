@@ -20,11 +20,11 @@ import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
-// 天平称球对局页：上面一架天平，下面桌上排着编号的球（每个球在桌上有固定的位置，拿走后留一个空圈，不挪别人）。
-// 底部分段选「放左盘 / 放右盘 / 做记号」：点桌上的球放进选中的盘，点盘里的球拿回桌上；做记号时点球轮换自己的记号（不自动替玩家排除）。
+// 天平称球对局页：上面一架天平，下面桌上排着编号的球（每个球在桌上有固定的位置，拿走后留一个空圈，不挪别人）；有标准球的题，标准球排在最后、写「标」。
+// 底部分段选「放左盘 / 放右盘 / 做记号」：点桌上的球放进选中的盘，点盘里的球拿回桌上；做记号时点球轮换自己的记号（不自动替玩家排除，标准球不用记）。
 // 「称一下」：两边有一边空着或球数不一样就不称，轻震、天平晃一下、提示条写原因；称了天平倾斜（减少动画时直接到位），
-// 下方记一行结果，停一会儿球回到桌上、天平回平。「指认」进入指认：点一个球（要说轻重的档再选偏重或偏轻）确认，
-// 只有剩下的候选恰好就是它才解开；还确定不了或和称的结果对不上就轻震并提示。没有撤销：称的次数就是这道题的限制，放错的球点一下就拿回来了。
+// 下方记一行结果，停一会儿球回到桌上、天平回平。「指认」进入指认：点一个球（两个假球的题点两个，再点取消；要说轻重的题再选偏重或偏轻；
+// 可能都是真的题也可以选「都是真的」）确认，只有剩下的候选恰好就是它（它们，或都是真的）才解开；还确定不了或和称的结果对不上就轻震并提示。没有撤销：称的次数就是这道题的限制，放错的球点一下就拿回来了。
 class BalancePage extends StatefulWidget {
   const BalancePage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
@@ -57,11 +57,13 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
   var _tool = _Tool.left;
   final _records = <({BalanceWeighing weighing, BalanceTilt tilt})>[];
   late BalanceSuspects _suspects = balanceStart(_puzzle);
-  late var _marks = List.filled(_puzzle.balls, _Mark.none);
-  // 指认：选中的球与偏重 true、偏轻 false（还没选是 null）；解开后的那个球。
+  late var _marks = List.filled(_puzzle.total, _Mark.none);
+  // 指认：选中的球（按点的先后，两个假球的题最多两个）与偏重 true、偏轻 false（还没选是 null），或选了「都是真的」；解开后的那个（那两个）球。
   var _guessing = false;
-  int? _guess, _found;
+  final _guesses = <int>[];
+  var _found = const <int>[];
   bool? _guessHeavy;
+  var _guessNone = false;
   var _wrongs = 0;
   // 称的过程中（倾斜、停住、球回桌上之前）不接受操作。
   var _weighing = false;
@@ -96,7 +98,8 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
   BalancePuzzle get _puzzle => _session.puzzle;
   bool get _reduced => MediaQuery.disableAnimationsOf(context);
   bool get _busy => _session.finished || _weighing;
-  int get _perSide => _puzzle.balls ~/ 2;
+  int get _perSide => _puzzle.total ~/ 2;
+  bool _standard(int ball) => ball >= _puzzle.balls;
   bool get _usedUp => _records.length >= _puzzle.weighings;
 
   void _reset() {
@@ -107,10 +110,13 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
     }
     _records.clear();
     _suspects = balanceStart(_puzzle);
-    _marks = List.filled(_puzzle.balls, _Mark.none);
+    _marks = List.filled(_puzzle.total, _Mark.none);
     _tool = _Tool.left;
     _guessing = false;
-    _guess = _found = _guessHeavy = _shaking = _pressed = null;
+    _guesses.clear();
+    _found = const [];
+    _guessNone = false;
+    _guessHeavy = _shaking = _pressed = null;
     _wrongs = 0;
     _weighing = false;
     _from.clear();
@@ -169,7 +175,7 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
   // 改局面并让换了位置的球走过去：起点是改之前显示的位置（上一段没走完的从半路接着走）。
   void _shift(VoidCallback change) {
     final layout = _layout;
-    final before = [for (var ball = 0; ball < _puzzle.balls; ball++) layout == null ? null : _shown(layout, ball)];
+    final before = [for (var ball = 0; ball < _puzzle.total; ball++) layout == null ? null : _shown(layout, ball)];
     change();
     _from.clear();
     if (layout == null) return;
@@ -208,9 +214,11 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
     _session.moved();
   }
 
+  // 已知轻重（含两个假球）的题只记好球；不知轻重的轮换可能偏重、可能偏轻、好球。
   void _cycleMark(int ball) {
+    if (_standard(ball)) return _refuse(ball, '标准球是真的');
     _stepped();
-    final next = _puzzle.knownHeavy
+    final next = _puzzle.weight != BalanceWeight.unknown
         ? (_marks[ball] == _Mark.good ? _Mark.none : _Mark.good)
         : _Mark.values[(_marks[ball].index + 1) % _Mark.values.length];
     setState(() => _marks[ball] = next);
@@ -243,7 +251,7 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
     final from = _angle;
     setState(() {
       _records.add((weighing: BalanceWeighing(left, right), tilt: tilt));
-      _suspects = balanceSplit(_suspects, leftMask, rightMask)[tilt.index];
+      _suspects = balanceSplit(_puzzle, _suspects, leftMask, rightMask)[tilt.index];
       _weighing = true;
       _shaking = null;
       _angleFrom = from;
@@ -276,8 +284,9 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
     _stepped();
     setState(() {
       _guessing = true;
-      _guess = null;
+      _guesses.clear();
       _guessHeavy = null;
+      _guessNone = false;
     });
   }
 
@@ -288,25 +297,52 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
     setState(() => _guessing = false);
   }
 
+  // 一个假球：点哪个选哪个。两个假球：点没选的加上（已经两个时换掉先选的那个），点选着的取消。点了球就不再是「都是真的」。
   void _pick(int ball) {
-    if (_guess == ball) return;
+    if (_standard(ball)) return _refuse(ball, '标准球是真的');
+    if (!_puzzle.paired && _guesses.contains(ball)) return;
     _stepped();
-    setState(() => _guess = ball);
+    setState(() {
+      _guessNone = false;
+      if (!_puzzle.paired) {
+        _guesses
+          ..clear()
+          ..add(ball);
+      } else if (!_guesses.remove(ball)) {
+        if (_guesses.length == 2) _guesses.removeAt(0);
+        _guesses.add(ball);
+      }
+    });
   }
 
   void _chooseHeavy(bool? heavy) {
     _stepped();
-    setState(() => _guessHeavy = heavy);
+    setState(() {
+      _guessHeavy = heavy;
+      if (heavy != null) _guessNone = false;
+    });
   }
 
-  bool get _guessReady => _guess != null && (!_puzzle.direction || _guessHeavy != null);
+  // 选「都是真的」清掉选着的球与轻重，再点取消。
+  void _chooseNone(bool none) {
+    _stepped();
+    setState(() {
+      _guessNone = none;
+      if (!none) return;
+      _guesses.clear();
+      _guessHeavy = null;
+    });
+  }
+
+  bool get _guessReady => _guessNone || _guesses.length == _puzzle.fakes && (!_puzzle.direction || _guessHeavy != null);
 
   // 指认：自由模式按规则在本机判，挑战模式连同称过的几次交服务器判（判错计一次错交；连不上不算数，提示后可以再点一次）。
   Future<void> _confirm() async {
     if (_busy || _session.judging || !_guessReady) return;
-    final ball = _guess!, heavy = _puzzle.direction ? _guessHeavy : null;
+    final balls = _guessNone ? <int>[] : ([..._guesses]..sort());
+    final heavy = _puzzle.direction && !_guessNone ? _guessHeavy : null;
     _session.moved();
-    final answer = BalanceAnswer([for (final record in _records) record.weighing], ball, heavy);
+    final answer = BalanceAnswer([for (final record in _records) record.weighing], balls, heavy);
     final correct = await _session.judge(answer);
     if (!mounted) return;
     if (correct == null) return showCampusToast(context, '没交上，连不上服务器，再点一次指认');
@@ -316,33 +352,35 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
       unawaited(_finish(answer));
       return;
     }
-    final verdict = balanceVerdict(_puzzle, _suspects, ball, heavy);
+    final verdict = balanceVerdict(_puzzle, _suspects, balls, heavy);
     _wrongs++;
-    final name = '${ball + 1} 号${heavy == null ? '' : heavy ? '偏重' : '偏轻'}';
+    final name = balls.isEmpty ? '「都是真的」' : '${balls.map((ball) => ball + 1).join('、')} 号${heavy == null ? '' : heavy ? '偏重' : '偏轻'}';
     final message = verdict == BalanceVerdict.contradicts
         ? '$name和称的结果对不上'
         : _usedUp
         ? '还确定不了，次数已用完'
         : '还确定不了';
-    _refuse(ball, message);
+    // 指认的是球就晃那个球，都是真的就晃天平。
+    _refuse(balls.isEmpty ? -1 : balls.last, message);
     // 还能称就回到称球，次数用完了留在指认里（可以换一个再试）。
     setState(() {
-      _guess = null;
+      _guesses.clear();
       _guessHeavy = null;
+      _guessNone = false;
       _guessing = _usedUp;
     });
   }
 
-  // 解开：停表记成绩；那个球轻轻鼓一下、别的球淡下去，再弹结果。减少动画时直接弹。中途换题或从头来就不再往下走。
+  // 解开：停表记成绩；那个球轻轻鼓一下、别的球淡下去，再弹结果（都是真的没有要鼓的球，直接弹）。减少动画时直接弹。中途换题或从头来就不再往下走。
   Future<void> _finish(BalanceAnswer answer) async {
-    final epoch = _epoch, ball = answer.ball;
+    final epoch = _epoch;
     final newBest = await _session.finish(moves: _records.length, answer: answer);
     if (!mounted || epoch != _epoch) return;
     setState(() {
       _guessing = false;
-      _found = ball;
+      _found = answer.balls;
     });
-    await _play(_cheer);
+    if (answer.balls.isNotEmpty) await _play(_cheer);
     if (!mounted || epoch != _epoch) return;
     final weighed = _records.length;
     final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: '称 $weighed 次 · ${_wrongs == 0 ? '一次指认就对' : '指认错 $_wrongs 次'}');
@@ -362,7 +400,7 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
   @override
   Widget build(BuildContext context) {
     final finished = _session.finished;
-    final status = ['称了 ${_records.length}/${_puzzle.weighings} 次', if (_guessing) '点一个球指认'].join(' · ');
+    final status = ['称了 ${_records.length}/${_puzzle.weighings} 次', if (_guessing) _puzzle.paired ? '点两个球指认' : '点一个球指认'].join(' · ');
     return PlayFrame(
       session: _session,
       onNewGame: _newGame,
@@ -381,7 +419,7 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
             _Brief(puzzle: _puzzle),
             const SizedBox(height: 12),
             _scene(context, layout),
-            if (_records.isNotEmpty) ...[const SizedBox(height: 16), _Records(records: _records)],
+            if (_records.isNotEmpty) ...[const SizedBox(height: 16), _Records(puzzle: _puzzle, records: _records)],
           ]))),
         ));
       }),
@@ -411,20 +449,29 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
   List<Widget> _guessControls() {
     final palette = CampusPalette.of(context);
     return [
-      if (_puzzle.direction)
+      if (_puzzle.direction || _puzzle.maybeNone)
         Wrap(spacing: 8, runSpacing: 8, children: [
-          CampusGlassChip(
-            label: '偏重',
-            selected: _guessHeavy == true,
-            leading: CampusIcon(CampusIcons.arrowDown, size: 18, color: palette.onSurfaceVariant),
-            onSelected: (selected) => _chooseHeavy(selected ? true : null),
-          ),
-          CampusGlassChip(
-            label: '偏轻',
-            selected: _guessHeavy == false,
-            leading: CampusIcon(CampusIcons.arrowUp, size: 18, color: palette.onSurfaceVariant),
-            onSelected: (selected) => _chooseHeavy(selected ? false : null),
-          ),
+          if (_puzzle.direction) ...[
+            CampusGlassChip(
+              label: '偏重',
+              selected: _guessHeavy == true,
+              leading: CampusIcon(CampusIcons.arrowDown, size: 18, color: palette.onSurfaceVariant),
+              onSelected: (selected) => _chooseHeavy(selected ? true : null),
+            ),
+            CampusGlassChip(
+              label: '偏轻',
+              selected: _guessHeavy == false,
+              leading: CampusIcon(CampusIcons.arrowUp, size: 18, color: palette.onSurfaceVariant),
+              onSelected: (selected) => _chooseHeavy(selected ? false : null),
+            ),
+          ],
+          if (_puzzle.maybeNone)
+            CampusGlassChip(
+              label: '都是真的',
+              selected: _guessNone,
+              leading: CampusIcon(CampusIcons.check, size: 18, color: palette.onSurfaceVariant),
+              onSelected: _chooseNone,
+            ),
         ]),
       FilledButton.icon(onPressed: _cancelGuess, icon: const CampusIcon(CampusIcons.close), label: const Text('取消')),
       FilledButton.icon(style: campusProminent, onPressed: _guessReady && !_busy ? _confirm : null, icon: const CampusIcon(CampusIcons.check), label: const Text('确认')),
@@ -437,12 +484,12 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
     final numberStyle = TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.1, fontFeatures: const [FontFeature.tabularFigures()]);
     return SizedBox(width: layout.width, height: layout.height, child: AnimatedBuilder(animation: _motion, builder: (context, _) {
       final angle = _angle;
-      final onTable = [for (var ball = 0; ball < _puzzle.balls; ball++) _panOf(ball) == null];
-      final cheer = _found == null ? 0.0 : _cheer.value;
+      final onTable = [for (var ball = 0; ball < _puzzle.total; ball++) _panOf(ball) == null];
+      final cheer = _found.isEmpty ? 0.0 : _cheer.value;
       return Stack(clipBehavior: Clip.none, children: [
         Positioned.fill(child: CustomPaint(painter: _ScenePainter(layout: layout, colors: colors, angle: angle, onTable: onTable))),
         Positioned(left: 0, top: 0, width: layout.width, height: layout.scaleHeight, child: Semantics(label: _scaleLabel(), child: const SizedBox.expand())),
-        for (var ball = 0; ball < _puzzle.balls; ball++)
+        for (var ball = 0; ball < _puzzle.total; ball++)
           () {
             final at = _shown(layout, ball);
             final where = switch (_panOf(ball)) {
@@ -456,7 +503,8 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
               _Mark.light => '，记号：可能偏轻',
               _Mark.good => '，记号：好球',
             };
-            final found = _found == ball;
+            final found = _found.contains(ball);
+            final standard = _standard(ball);
             return Positioned(
               key: ValueKey(ball),
               left: at.dx - layout.slot / 2,
@@ -465,8 +513,8 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
               height: layout.slot,
               child: Semantics(
                 button: true,
-                selected: _guessing ? _guess == ball : null,
-                label: '${ball + 1} 号球，$where$mark${found ? '，就是它' : ''}',
+                selected: _guessing && !standard ? _guesses.contains(ball) : null,
+                label: '${standard ? '标准球' : '${ball + 1} 号球'}，$where$mark${found ? '，就是它' : ''}',
                 onTap: _busy ? null : () => _tap(ball),
                 child: GestureDetector(
                   behavior: HitTestBehavior.opaque,
@@ -478,16 +526,17 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
                     _tap(ball);
                   },
                   child: ExcludeSemantics(child: Center(child: _BallFace(
-                    number: ball + 1,
+                    label: standard ? '标' : '${ball + 1}',
+                    standard: standard,
                     diameter: layout.ball,
                     colors: colors,
                     style: numberStyle,
                     mark: _marks[ball],
                     pressed: _pressed == ball,
-                    chosen: _guessing && _guess == ball,
+                    chosen: _guessing && _guesses.contains(ball),
                     found: found,
                     pulse: found ? cheer : 0,
-                    faded: _found != null && !found ? cheer : 0,
+                    faded: _found.isNotEmpty && !found ? cheer : 0,
                   ))),
                 ),
               ),
@@ -498,12 +547,12 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
   }
 
   String _scaleLabel() {
-    String pan(int side) => _pans[side].isEmpty ? '空着' : '有 ${([..._pans[side]]..sort()).map((ball) => ball + 1).join('、')} 号';
+    String pan(int side) => _pans[side].isEmpty ? '空着' : '有 ${balanceSpoken(_puzzle, [..._pans[side]]..sort())}';
     return '天平：左盘${pan(0)}，右盘${pan(1)}';
   }
 }
 
-// 天平上方写这一道的规矩（「玩法」里是总的说明，这里按这一档的参数讲）。
+// 天平上方写这一道的规矩（「玩法」里是总的说明，这里按这道题的题型讲）。
 class _Brief extends StatelessWidget {
   const _Brief({required this.puzzle});
   final BalancePuzzle puzzle;
@@ -511,35 +560,41 @@ class _Brief extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
-    final rule = puzzle.knownHeavy
-        ? '其中一个偏重，找出它'
-        : puzzle.direction
-        ? '有一个轻重不明，找出它并说出轻重'
-        : '有一个轻重不明，找出它';
+    final side = puzzle.weight == BalanceWeight.light ? '偏轻' : '偏重';
+    final rule = switch (puzzle) {
+      BalancePuzzle(paired: true) => '其中两个一样$side，找出这两个',
+      BalancePuzzle(maybeNone: true, direction: true) => '可能有一个轻重不明，也可能都是真的；找出它并说出轻重',
+      BalancePuzzle(maybeNone: true) => '可能有一个轻重不明，也可能都是真的；找出它',
+      BalancePuzzle(weight: BalanceWeight.unknown, direction: true) => '有一个轻重不明，找出它并说出轻重',
+      BalancePuzzle(weight: BalanceWeight.unknown) => '有一个轻重不明，找出它',
+      _ => '其中一个$side，找出它',
+    };
+    final count = puzzle.standards == 0 ? '${puzzle.balls} 个球' : '${puzzle.balls} 个球和 ${puzzle.standards} 个标准球';
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text('${puzzle.balls} 个球，最多称 ${puzzle.weighings} 次', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.4, color: palette.onSurface)),
+      Text('$count，最多称 ${puzzle.weighings} 次', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.4, color: palette.onSurface)),
       const SizedBox(height: 2),
-      BalancedText(rule, style: TextStyle(fontSize: 14, height: 1.43, color: palette.onSurfaceVariant)),
+      BalancedText(puzzle.standards == 0 ? rule : '$rule；标准球是真的', style: TextStyle(fontSize: 14, height: 1.43, color: palette.onSurfaceVariant)),
     ]);
   }
 }
 
-// 每次称的记录：「1  左 1 2 3 · 右 4 5 6 → 左边重」，读屏读成一句。
+// 每次称的记录：「1  左 1 2 3 · 右 4 5 标 → 左边重」（标准球写「标」），读屏读成一句。
 class _Records extends StatelessWidget {
-  const _Records({required this.records});
+  const _Records({required this.puzzle, required this.records});
+  final BalancePuzzle puzzle;
   final List<({BalanceWeighing weighing, BalanceTilt tilt})> records;
 
   @override
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
     final style = TextStyle(fontSize: 14, height: 1.43, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()]);
-    String balls(List<int> list) => list.map((ball) => ball + 1).join(' ');
+    String balls(List<int> list) => list.map((ball) => ball < puzzle.balls ? '${ball + 1}' : '标').join(' ');
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       for (final (index, (:weighing, :tilt)) in records.indexed) ...[
         if (index > 0) const SizedBox(height: 8),
         Semantics(
           container: true,
-          label: '第 ${index + 1} 次：左盘 ${weighing.left.map((ball) => ball + 1).join('、')} 号，右盘 ${weighing.right.map((ball) => ball + 1).join('、')} 号，${balanceTiltName(tilt)}',
+          label: '第 ${index + 1} 次：左盘 ${balanceSpoken(puzzle, weighing.left)}，右盘 ${balanceSpoken(puzzle, weighing.right)}，${balanceTiltName(tilt)}',
           child: ExcludeSemantics(child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Container(
               constraints: BoxConstraints(minWidth: MediaQuery.textScalerOf(context).scale(14) * 1.43),
@@ -557,6 +612,14 @@ class _Records extends StatelessWidget {
   }
 }
 
+// 一组球的念法：「1、2 号」「1、2 号与标准球」「标准球」。
+String balanceSpoken(BalancePuzzle puzzle, List<int> balls) {
+  final numbers = [for (final ball in balls) if (ball < puzzle.balls) ball + 1];
+  final standard = balls.any((ball) => ball >= puzzle.balls);
+  if (numbers.isEmpty) return '标准球';
+  return '${numbers.join('、')} 号${standard ? '与标准球' : ''}';
+}
+
 String balanceTiltName(BalanceTilt tilt) => switch (tilt) {
   BalanceTilt.left => '左边重',
   BalanceTilt.right => '右边重',
@@ -564,12 +627,12 @@ String balanceTiltName(BalanceTilt tilt) => switch (tilt) {
 };
 
 // 场景几何：上面是天平（中间立柱，横梁两头吊着盘，盘里的球按格从下往上排），下面隔一段是桌面（每个球一个固定的格，几排居中）。
-// 球的格（触区）至少 48，跟着字号放大；一个盘放不下三列就排两列（360 宽加 1.3 倍字号时是两列三排）。
+// 球的格（触区）至少 48，跟着字号放大；一个盘最多三列，放不下就少一列（360 宽加 1.3 倍字号时 13 个球的题两列三排，16 个球的题三列三排）。
 class _BalanceLayout {
   factory _BalanceLayout(BalancePuzzle puzzle, double width, TextScaler scaler) {
     final ball = math.max(40.0, scaler.scale(16) + 22);
     final slot = math.max(48.0, ball + 6);
-    final perSide = math.max(1, puzzle.balls ~/ 2);
+    final perSide = math.max(1, puzzle.total ~/ 2);
     var columns = math.min(3, perSide);
     while (columns > 1 && 2 * (columns * slot + 2 * _panPad) + _postGap > width) {
       columns--;
@@ -581,8 +644,8 @@ class _BalanceLayout {
     final footY = _top + arm * math.sin(_maxAngle) + _hang + stack + _dish + 6;
     final scaleHeight = footY + _foot + 4;
     final tableColumns = math.max(1, ((width - 2 * _tablePad) / slot).floor());
-    final tableRows = (puzzle.balls / tableColumns).ceil();
-    final perRow = (puzzle.balls / tableRows).ceil();
+    final tableRows = (puzzle.total / tableColumns).ceil();
+    final perRow = (puzzle.total / tableRows).ceil();
     final tableTop = scaleHeight + _gap;
     return _BalanceLayout._(
       puzzle: puzzle,
@@ -647,12 +710,13 @@ class _BalanceLayout {
 
   // 桌上第 ball 个球的固定格。
   Offset tableSlot(int ball) {
-    final row = ball ~/ perRow, inRow = math.min(perRow, puzzle.balls - row * perRow);
+    final row = ball ~/ perRow, inRow = math.min(perRow, puzzle.total - row * perRow);
     return Offset(width / 2 + (ball % perRow - (inRow - 1) / 2) * slot, tableTop + _tablePad + (row + .5) * slot);
   }
 }
 
-// 配色全从当前配色推出：架子是次要文字色压淡的金属灰，盘是卡片色带一点灰，桌面同选中底；球是卡片色带一点激活色、字用正文色。
+// 配色全从当前配色推出：架子是次要文字色压淡的金属灰，盘是卡片色带一点灰，桌面同选中底；球是卡片色带一点激活色、字用正文色；
+// 标准球是不带激活色的灰球、描一圈次要文字色（和做了好球记号的淡球分得开）。
 class _BalanceColors {
   _BalanceColors._(this.palette) {
     final dark = palette.isDark;
@@ -664,6 +728,7 @@ class _BalanceColors {
     ballFill = Color.lerp(palette.surface, palette.accent, dark ? .3 : .17)!;
     ballEdge = Color.lerp(palette.surface, palette.accent, dark ? .55 : .42)!;
     goodFill = Color.lerp(palette.surface, palette.surfaceSelected, .7)!;
+    standardFill = Color.lerp(palette.surface, palette.onSurfaceVariant, dark ? .3 : .16)!;
     shadow = Colors.black.withValues(alpha: dark ? .35 : .12);
   }
 
@@ -671,7 +736,7 @@ class _BalanceColors {
   static _BalanceColors of(CampusPalette palette) => _cache[palette] ??= _BalanceColors._(palette);
 
   final CampusPalette palette;
-  late final Color frame, dishFill, strings, table, hole, ballFill, ballEdge, goodFill, shadow;
+  late final Color frame, dishFill, strings, table, hole, ballFill, ballEdge, goodFill, standardFill, shadow;
 }
 
 // 天平与桌面：立柱、底座与横梁拼成一条路径，吊绳一条路径，两个盘一条路径；桌面一块圆角底，被拿走的球留下的空圈拼成一条路径。
@@ -743,11 +808,12 @@ class _ScenePainter extends CustomPainter {
   static bool _same(List<bool> first, List<bool> second) => first.length == second.length && first.indexed.every((entry) => second[entry.$1] == entry.$2);
 }
 
-// 一个球：圆形淡底、编号；自己的记号在右上角挂个小角标（可能偏重是向下的箭头、可能偏轻向上、好球是勾，球也淡下去）；
-// 按下变暗；指认时选中的描一圈激活色；解开后那个球换成激活色鼓一下，别的球淡下去。
+// 一个球：圆形淡底、编号（标准球写「标」、灰底描边）；自己的记号在右上角挂个小角标（可能偏重是向下的箭头、可能偏轻向上、好球是勾，球也淡下去）；
+// 按下变暗；指认时选中的描一圈激活色；解开后那个（那两个）球换成激活色鼓一下，别的球淡下去。
 class _BallFace extends StatelessWidget {
   const _BallFace({
-    required this.number,
+    required this.label,
+    required this.standard,
     required this.diameter,
     required this.colors,
     required this.style,
@@ -758,21 +824,22 @@ class _BallFace extends StatelessWidget {
     required this.pulse,
     required this.faded,
   });
-  final int number;
+  final String label;
   final double diameter, pulse, faded;
   final _BalanceColors colors;
   final TextStyle style;
   final _Mark mark;
-  final bool pressed, chosen, found;
+  final bool standard, pressed, chosen, found;
 
   @override
   Widget build(BuildContext context) {
     final palette = colors.palette;
     final good = mark == _Mark.good && !found;
-    var fill = found ? palette.accent : good ? colors.goodFill : colors.ballFill;
+    var fill = found ? palette.accent : standard ? colors.standardFill : good ? colors.goodFill : colors.ballFill;
     if (pressed) fill = Color.lerp(fill, palette.onSurface, palette.isDark ? .12 : .08)!;
     // 激活色底上的白字不低于 4.5:1（见 CampusPalette.accent）。
-    final ink = found ? Colors.white : good ? palette.onSurfaceVariant : palette.onSurface;
+    final ink = found ? Colors.white : good || standard ? palette.onSurfaceVariant : palette.onSurface;
+    final edge = chosen ? palette.accent : standard ? palette.onSurfaceVariant : good ? palette.outlineSubtle : colors.ballEdge;
     final badge = switch (mark) {
       _Mark.none => null,
       _Mark.heavy => CampusIcons.arrowDown,
@@ -789,12 +856,12 @@ class _BallFace extends StatelessWidget {
             decoration: BoxDecoration(
               shape: BoxShape.circle,
               color: fill,
-              border: Border.all(color: chosen ? palette.accent : good ? palette.outlineSubtle : colors.ballEdge, width: chosen ? 3 : 1.2),
+              border: Border.all(color: edge, width: chosen ? 3 : standard ? 1.6 : 1.2),
               boxShadow: [BoxShadow(color: colors.shadow, blurRadius: 4, offset: const Offset(0, 1.5))],
             ),
             child: Center(child: Padding(
               padding: const EdgeInsets.all(3),
-              child: FittedBox(fit: BoxFit.scaleDown, child: Text('$number', style: style.copyWith(color: ink))),
+              child: FittedBox(fit: BoxFit.scaleDown, child: Text(label, style: style.copyWith(color: ink))),
             )),
           )),
           if (badge != null)

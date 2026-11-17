@@ -1,20 +1,21 @@
+import { balanceJudgeV2 } from 'src/modules/challenge/judges/balance_judges';
 import { balanceJudge, flashJudge, flashJudgeV2, loopJudge, minesJudge, twentyFourJudge } from 'src/modules/challenge/judges/board_judges';
 import { cipherJudge, logicGridJudge } from 'src/modules/challenge/judges/deduction_judges';
 import { Judge, JudgeFormatError } from 'src/modules/challenge/judges/judge_input';
-import { knightsJudge, nonogramJudge, riverJudge } from 'src/modules/challenge/judges/logic_judges';
-import { boxesJudge, hanoiJudge, iceJudge, iceJudgeV2, lightsJudge, queensJudge } from 'src/modules/challenge/judges/moves_judges';
+import { knightsJudge, nonogramJudge, riverJudge, riverJudgeV2 } from 'src/modules/challenge/judges/logic_judges';
+import { boxesJudge, hanoiJudge, hanoiJudgeV2, iceJudge, iceJudgeV2, lightsJudge, queensJudge } from 'src/modules/challenge/judges/moves_judges';
 
 // 能进挑战的游戏（同客户端 playground_catalog.dart 里 challengeable 为真的，id 发出后不改），按题面写法版本登记判定
 // （同客户端规则的 puzzleVersion，人工决策见客户端 lib/playground/challenge/challenge_rules.dart 的 11-15 19:18 那条）。舒尔特方格（拼手速）与画线入杯（物理模拟）不在这里。
 // 客户端改了某个游戏的题面写法（版本加一）时，这里加上新版本的判定、旧版本的留到不再有客户端报它；旧版本的测试向量冻结在
 // test/vectors/challenge_judge_frozen.json（tool/challenge_vectors.dart --freeze <游戏> 在加版本前搬过去）。
 const judges = {
-  hanoi: { 1: hanoiJudge },
+  hanoi: { 1: hanoiJudge, 2: hanoiJudgeV2 },
   ice: { 1: iceJudge, 2: iceJudgeV2 },
   lights: { 1: lightsJudge },
   boxes: { 1: boxesJudge },
   queens: { 1: queensJudge },
-  river: { 1: riverJudge },
+  river: { 1: riverJudge, 2: riverJudgeV2 },
   nonogram: { 1: nonogramJudge },
   knights: { 1: knightsJudge },
   logicgrid: { 1: logicGridJudge },
@@ -23,7 +24,7 @@ const judges = {
   mines: { 1: minesJudge },
   flash: { 1: flashJudge, 2: flashJudgeV2 },
   loop: { 1: loopJudge },
-  balance: { 1: balanceJudge },
+  balance: { 1: balanceJudge, 2: balanceJudgeV2 },
 } as unknown as Record<string, Record<number, Judge<unknown, unknown>>>;
 
 export const judgedGames = new Set(Object.keys(judges));
@@ -44,7 +45,10 @@ export const clientGames = (tokens: string[]): Map<string, number> => {
   return games;
 };
 
-export type Verdict = { kind: 'solved'; penalties: number; steps: number | null } | { kind: 'unsolved' } | { kind: 'invalid' };
+// 要最少步数的关这次的步数算不算数：不超过这个游戏这一版判定给的上限（没写就是正好最少；汉诺塔第 2 版放宽到 1.2 倍，见 moves_judges.ts）。
+export const withinStepLimit = (game: string, version: number, minimum: number, steps: number) => steps <= (judges[game]?.[version]?.stepLimit?.(minimum) ?? minimum);
+
+export type Verdict ={ kind: 'solved'; penalties: number; steps: number | null } | { kind: 'unsolved' } | { kind: 'invalid' };
 
 // 判一次作答：答案不合法是 invalid（同 Dart 的 decodeAnswer 抛错），合法但没解开是 unsolved。
 // penalties 是答案里自带的失误（记忆闪光一题内点错的次数），计分时同错交一样扣；steps 是要最少步数的游戏用了几步（推箱子按推的次数）。

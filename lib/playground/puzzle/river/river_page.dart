@@ -15,13 +15,16 @@ import 'package:superxd/playground/puzzle_rules.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
 
 // 过河问题对局页：俯看一条河，左岸、河、右岸横排，船停在当前这一岸的岸边。点岸上的人上船（船要在这一岸、没坐满），
 // 点船上的人下船回到船所在的岸；人齐了点「开船」，船载着人渡到对岸，船上的人靠岸后留在船上（算在那一岸），下一趟可以接着坐。
-// 开船那一刻按规则查：会犯规就不开，轻震、船晃一下，把牵涉的人圈出来，提示条写明原因。撤销按整次渡河退回到开船前。
-// 每个人在两岸各有固定的站位（左右镜像），上下船只在站位与座位之间移动，别人不挪。全部到了右岸：船上的人下船，大家依次轻轻跳一下，再弹结果。
+// 桥与火把把船换成一座横跨河面的桥：点人站到桥头、点「过桥」，大家举着火把走到对岸，按最慢的人记分钟；河面上写火把还能烧几分钟。
+// 开船那一刻按规则查：会犯规就不开，轻震、船晃一下，把牵涉的人圈出来，提示条写明原因（接着做一步能做的操作就收起）。撤销按整次渡河退回到开船前。
+// 会划船的人徽章右下角带一支桨（人人会划时不画）。每个人在两岸各有固定的站位（左右镜像），上下船只在站位与座位之间移动，别人不挪。
+// 全部到了右岸：船上的人下船，大家依次轻轻跳一下，再弹结果。
 class RiverPage extends StatefulWidget {
   const RiverPage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
@@ -37,16 +40,17 @@ class RiverPage extends StatefulWidget {
   State<RiverPage> createState() => _RiverPageState();
 }
 
-// 开船前的局面：撤销整次渡河就回到这里（船上坐的人也照原样）。
-typedef _Before = ({int left, int side, List<int?> seats});
+// 开船前的局面：撤销整次渡河就回到这里（船上坐的人也照原样，桥与火把连同用掉的分钟）。
+typedef _Before = ({int left, int side, List<int?> seats, int spent});
 
 class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
   static const _rules = RiverRules();
   late final _session = PlaySession<RiverPuzzle, List<RiverCrossing>>(game: widget.game, rules: _rules, store: widget.store, seeds: widget.seeds, first: widget.first, challenge: widget.challenge);
-  // 左岸有谁（含停在左岸的船上的人）、船在哪岸、船上每个座位坐着谁（座位固定，下船的人空出座位，别人不挪）。
+  // 左岸有谁（含停在左岸的船上的人）、船在哪岸、船上每个座位坐着谁（座位固定，下船的人空出座位，别人不挪）、桥与火把用了几分钟。
   late int _left = _puzzle.everyone;
   int _side = riverLeft;
   late List<int?> _seats = List.filled(_puzzle.capacity, null);
+  int _spent = 0;
   final _history = <_Before>[];
 
   // 上下船：每个人从按下那一刻显示的位置走到新的站位或座位；座位跟着船走，所以坐着没动的人不记起点，直接贴着座位。
@@ -80,7 +84,8 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
   }
 
   RiverPuzzle get _puzzle => _session.puzzle;
-  // 最少几次：挑战模式没有参考解（服务器不给），就不写。
+  bool get _bridge => _puzzle.timed;
+  // 最少几次：挑战模式没有参考解（服务器不给），就不写。桥与火把写火把能烧几分钟（题面上就有）。
   int? get _least => _session.reference?.length;
   bool get _reduced => MediaQuery.disableAnimationsOf(context);
   bool get _busy => _session.finished || _sail.isAnimating;
@@ -90,6 +95,7 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
     _left = _puzzle.everyone;
     _side = riverLeft;
     _seats = List.filled(_puzzle.capacity, null);
+    _spent = 0;
     _history.clear();
     _from.clear();
     _boatFrom = 0;
@@ -166,9 +172,9 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
     final seat = _seats.indexOf(person);
     if (seat < 0) {
       final bank = _left & (1 << person) != 0 ? riverLeft : riverRight;
-      if (bank != _side) return _refuse(person, '船在对岸');
+      if (bank != _side) return _refuse(person, _bridge ? '火把在对岸' : '船在对岸');
       final free = _seats.indexOf(null);
-      if (free < 0) return _refuse(person, '船上最多 ${_puzzle.capacity} 个');
+      if (free < 0) return _refuse(person, _crowded);
     }
     playTick();
     // 犯规的提示已经过时（用户接着做了一步能做的操作），收起来，免得还停在屏幕上像是在说这一步。
@@ -186,6 +192,8 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
     });
   }
 
+  String get _crowded => _bridge ? '桥上最多 ${_puzzle.capacity} 个人' : '船上最多 ${_puzzle.capacity} 个';
+
   void _refuse(int person, String message) {
     playRejected();
     showCampusToast(context, message);
@@ -199,15 +207,16 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
   void _launch() {
     if (_busy) return;
     final group = riverMask(_seats.nonNulls);
-    if (riverCheck(_puzzle, _left, _side, group) case final violation?) return _reject(violation);
+    if (riverCheck(_puzzle, _left, _side, group, spent: _spent) case final violation?) return _reject(violation);
     playTick();
     hideCampusToast();
     _session.moved();
     final from = _boatAt;
     setState(() {
-      _history.add((left: _left, side: _side, seats: [..._seats]));
+      _history.add((left: _left, side: _side, seats: [..._seats], spent: _spent));
       _left = riverAfter(_left, _side, group);
       _side = 1 - _side;
+      _spent += riverCost(_puzzle, group);
       _boatFrom = from;
       _flagged = {};
     });
@@ -232,22 +241,26 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
   }
 
   String _message(RiverViolation violation) {
-    final people = _puzzle.people;
-    String name(int index) => riverName(people[index]);
+    final puzzle = _puzzle;
+    String name(int index) => riverName(puzzle, index);
     final place = switch (violation.place) {
       RiverPlace.left => '左岸',
       RiverPlace.right => '右岸',
       RiverPlace.boat => '船上',
       null => '',
     };
+    final first = violation.people.firstOrNull ?? -1, second = violation.people.length > 1 ? violation.people[1] : -1;
     return switch (violation.fault) {
-      RiverFault.empty => '船上还没有人',
-      RiverFault.crowded => '船上最多 ${_puzzle.capacity} 个',
-      RiverFault.absent => '有人不在船这一岸',
-      RiverFault.noRower => _puzzle.variant == RiverVariant.farmer ? '只有农夫会划船' : '船上没有会划船的人',
-      RiverFault.eaten => '$place没人看着，${name(violation.people[0])}会吃掉${name(violation.people[1])}',
+      RiverFault.empty => _bridge ? '还没选人过桥' : '船上还没有人',
+      RiverFault.crowded => _crowded,
+      RiverFault.absent => _bridge ? '有人不在火把这一岸' : '有人不在船这一岸',
+      RiverFault.noRower => puzzle.variant == RiverVariant.farmer ? '只有农夫会划船' : '船上没有会划船的人',
+      RiverFault.eaten => '$place没人看着，${name(first)}${puzzle.people[first].role == RiverRole.dog ? '会咬' : '会吃掉'}${name(second)}',
       RiverFault.outnumbered => '$place小孩比大人多，管不过来',
-      RiverFault.unguarded => '$place：大${riverFamilyNames[people[violation.people[0]].family]}不在，${name(violation.people[0])}不能和${name(violation.people[1])}待在一起',
+      RiverFault.unguarded => '$place：大${riverFamilyNames[puzzle.people[first].family]}不在，${name(first)}不能和${name(second)}待在一起',
+      RiverFault.scolded => '$place：${puzzle.people[first].role == RiverRole.mom ? '爸爸' : '妈妈'}不在，${name(first)}会骂${name(second)}',
+      RiverFault.robbed => '$place：警察不在，小偷会欺负${name(second)}',
+      RiverFault.overtime => '火把只剩 ${puzzle.limit - _spent} 分钟，这一趟要 ${puzzle.minutes[first]} 分钟',
     };
   }
 
@@ -263,6 +276,7 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
         _left = last.left;
         _side = last.side;
         _seats = [...last.seats];
+        _spent = last.spent;
         _boatFrom = from;
       });
     });
@@ -284,7 +298,14 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
     }
     if (!mounted) return;
     final least = _least, crossings = _history.length;
-    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: least == null ? '渡河 $crossings 次' : crossings == least ? '渡河 $least 次，正好最少' : '渡河 $crossings 次，最少 $least 次');
+    final detail = _bridge
+        ? '过桥 $crossings 次，用了 $_spent 分钟'
+        : least == null
+        ? '渡河 $crossings 次'
+        : crossings == least
+        ? '渡河 $least 次，正好最少'
+        : '渡河 $crossings 次，最少 $least 次';
+    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: detail);
     if (!mounted) return;
     switch (choice) {
       case PlayResultChoice.again:
@@ -305,19 +326,21 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
       session: _session,
       onNewGame: _newGame,
       onRestart: _restart,
-      status: ['渡河 ${_history.length} 次', if (_least case final least?) '最少 $least 次'].join(' · '),
+      status: _bridge
+          ? ['过桥 ${_history.length} 次', '$_spent/${_puzzle.limit} 分钟'].join(' · ')
+          : ['渡河 ${_history.length} 次', if (_least case final least?) '最少 $least 次'].join(' · '),
       controls: [
         FilledButton.icon(onPressed: _history.isEmpty || finished ? null : _undo, icon: const CampusIcon(CampusIcons.undo), label: const Text('撤销')),
         FilledButton.icon(
           style: campusProminent,
           onPressed: finished || _seats.every((seat) => seat == null) ? null : _launch,
-          icon: const CampusIcon(CampusIcons.river),
-          label: const Text('开船'),
+          icon: CampusIcon(_bridge ? CampusIcons.torch : CampusIcons.river),
+          label: Text(_bridge ? '过桥' : '开船'),
         ),
       ],
       board: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
         _Brief(puzzle: _puzzle),
-        const SizedBox(height: 12),
+        const SizedBox(height: CampusGap.medium),
         Expanded(child: LayoutBuilder(builder: (context, constraints) => _scene(context, constraints.biggest))),
       ]),
     );
@@ -329,19 +352,35 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
     final cached = _layout;
     final layout = cached != null && cached.puzzle == _puzzle && cached.area == area && cached.scale == scaler.scale(16) ? cached : _layout = _RiverLayout(_puzzle, area, scaler);
     final colors = _RiverColors.of(palette);
-    final label = TextStyle(fontSize: 14, height: 1.3, color: palette.onSurfaceVariant);
+    final label = TextStyle(fontSize: CampusFontSize.secondary, height: 1.3, color: palette.onSurfaceVariant);
     final scene = SizedBox.fromSize(size: layout.size, child: Stack(clipBehavior: Clip.none, children: [
       Positioned.fill(child: RepaintBoundary(child: CustomPaint(painter: _ScenePainter(layout: layout, colors: colors)))),
-      // 两岸的名字写在岸下方；右岸带一面小旗，是要去的地方。
+      // 两岸的名字写在岸下方；右岸带一面小旗，是要去的地方（岸只有一列、字又大时小旗折到字上面）。
       for (final side in [riverLeft, riverRight])
         Positioned(
           left: side == riverLeft ? 0 : layout.size.width - layout.bank,
           width: layout.bank,
           bottom: layout.labelBottom,
-          child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            if (side == riverRight) ...[CampusIcon(CampusIcons.flag, size: 16, color: palette.onSurfaceVariant), const SizedBox(width: 4)],
+          child: Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: CampusGap.tight, children: [
+            if (side == riverRight) CampusIcon(CampusIcons.flag, size: 16, color: palette.onSurfaceVariant),
             Text(side == riverLeft ? '左岸' : '右岸', style: label),
           ]),
+        ),
+      // 桥与火把：桥下的河面上写火把还能烧几分钟（火苗加分钟，河窄时火苗折到上面）。
+      if (_bridge)
+        Positioned(
+          left: layout.bank,
+          width: layout.size.width - layout.bank * 2,
+          top: layout.middle + layout.boatLength / 2 + CampusGap.medium,
+          child: Semantics(
+            label: '火把还能烧 ${_puzzle.limit - _spent} 分钟',
+            child: ExcludeSemantics(
+              child: Wrap(alignment: WrapAlignment.center, crossAxisAlignment: WrapCrossAlignment.center, spacing: CampusGap.hairline, children: [
+                CampusIcon(CampusIcons.torch, size: 16, color: colors.flame),
+                Text('${_puzzle.limit - _spent} 分钟', style: label),
+              ]),
+            ),
+          ),
         ),
       Positioned.fill(child: AnimatedBuilder(animation: _motion, builder: (context, _) => _pieces(layout, colors))),
     ]));
@@ -352,16 +391,21 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
     final puzzle = _puzzle;
     final boat = layout.boatRect(_boatAt).shift(Offset(_wobble(-1), 0));
     final travel = _sail.isAnimating ? math.sin(_sail.value * math.pi) * (_side - _boatFrom).sign : 0.0;
-    final aboard = _seats.nonNulls.map((index) => riverName(puzzle.people[index]));
+    final aboard = _seats.nonNulls.map(_label);
     final alert = _flagged.isEmpty ? 0.0 : _flash.value < .6 ? 1.0 : 1 - Curves.easeIn.transform((_flash.value - .6) / .4);
+    // 会划船的人带桨：人人会划（含桥与火把）时不画。
+    final oars = puzzle.rowers != puzzle.everyone;
     // 收尾时每个人跳到哪：按站位从上到下、从靠河到岸里错开。
     final hopAt = _hop.value * (_hopEach + (puzzle.count - 1) * _hopGap);
+    final bank = _side == riverLeft ? '左岸' : '右岸';
     return Stack(clipBehavior: Clip.none, children: [
       Positioned.fromRect(
         rect: boat.inflate(_BoatPainter.margin),
         child: Semantics(
-          label: '船，停在${_side == riverLeft ? '左岸' : '右岸'}，${aboard.isEmpty ? '空着' : '船上有${aboard.join('、')}'}',
-          child: CustomPaint(painter: _BoatPainter(colors: colors, capacity: puzzle.capacity, slot: layout.slot, cap: layout.boatCap, wake: travel)),
+          label: _bridge ? '火把，在$bank，${aboard.isEmpty ? '桥头没人' : '桥头有${aboard.join('、')}'}' : '船，停在$bank，${aboard.isEmpty ? '空着' : '船上有${aboard.join('、')}'}',
+          child: _bridge
+              ? CustomPaint(painter: _TorchPainter(colors: colors, cap: layout.boatCap, walking: travel.abs()), child: Align(alignment: Alignment.topCenter, child: Padding(padding: EdgeInsets.only(top: _BoatPainter.margin + layout.boatCap * .2), child: CampusIcon(CampusIcons.torch, size: math.min(20, layout.boatCap * .6), color: colors.flame))))
+              : CustomPaint(painter: _BoatPainter(colors: colors, capacity: puzzle.capacity, slot: layout.slot, cap: layout.boatCap, wake: travel)),
         ),
       ),
       for (var person = 0; person < puzzle.count; person++)
@@ -369,7 +413,7 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
           final at = _shown(layout, person);
           final local = ((hopAt - layout.rank[person] * _hopGap) / _hopEach).clamp(0.0, 1.0);
           final seated = _seats.contains(person);
-          final where = seated ? '在船上' : _left & (1 << person) != 0 ? '在左岸' : '在右岸';
+          final where = seated ? (_bridge ? '在桥头' : '在船上') : _left & (1 << person) != 0 ? '在左岸' : '在右岸';
           return Positioned(
             key: ValueKey(person),
             left: at.dx - layout.slot / 2,
@@ -378,7 +422,7 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
             height: layout.slot,
             child: Semantics(
               button: true,
-              label: '${_label(person)}，$where',
+              label: '${_label(person)}，${oars && puzzle.rows(person) ? '会划船，' : ''}$where',
               onTap: _session.finished ? null : () => _tap(person),
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
@@ -389,14 +433,19 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
                   setState(() => _pressed = null);
                   _tap(person);
                 },
-                child: _Badge(
-                  person: puzzle.people[person],
-                  diameter: layout.diameter(puzzle.people[person]),
-                  colors: colors,
-                  pressed: _pressed == person,
-                  alert: _flagged.contains(person) ? alert : 0,
-                  hop: local == 0 || local == 1 ? 0 : math.sin(local * math.pi),
-                  lift: layout.slot * .24,
+                // 徽章上的字（「爸」「5」）读屏不再念，名字已在标签里。
+                child: ExcludeSemantics(
+                  child: _Badge(
+                    person: puzzle.people[person],
+                    glyph: _glyph(person),
+                    oar: oars && puzzle.rows(person),
+                    diameter: layout.diameter(puzzle.people[person]),
+                    colors: colors,
+                    pressed: _pressed == person,
+                    alert: _flagged.contains(person) ? alert : 0,
+                    hop: local == 0 || local == 1 ? 0 : math.sin(local * math.pi),
+                    lift: layout.slot * .24,
+                  ),
                 ),
               ),
             ),
@@ -405,20 +454,36 @@ class _RiverPageState extends State<RiverPage> with TickerProviderStateMixin {
     ]);
   }
 
-  // 读屏名字：一样的人（大人、小孩）按站位编号。
+  // 读屏名字：一样的人（大人、小孩）按站位编号，桥与火把按分钟。
   String _label(int person) {
     final people = _puzzle.people;
     final role = people[person].role;
-    if (role != RiverRole.adult && role != RiverRole.kid) return riverName(people[person]);
+    if (role == RiverRole.walker) return '过桥 ${_puzzle.minutes[person]} 分钟的人';
+    if (role != RiverRole.adult && role != RiverRole.kid) return riverName(_puzzle, person);
     final order = people.take(person + 1).where((item) => item.role == role).length;
-    return '第$order个${riverName(people[person])}';
+    return '第$order个${riverName(_puzzle, person)}';
   }
+
+  // 徽章上的字：大人、小孩画人形（为空），父子写家里的那个字，桥与火把写分钟，其余写一个字。
+  String? _glyph(int person) => switch (_puzzle.people[person].role) {
+    RiverRole.adult || RiverRole.kid => null,
+    RiverRole.father || RiverRole.son => riverFamilyNames[_puzzle.people[person].family],
+    RiverRole.walker => '${_puzzle.minutes[person]}',
+    RiverRole.farmer => '农',
+    RiverRole.cabbage => '菜',
+    RiverRole.mouse => '鼠',
+    RiverRole.dad => '爸',
+    RiverRole.mom => '妈',
+    RiverRole.police => '警',
+    RiverRole.thief => '偷',
+    _ => riverName(_puzzle, person).substring(0, 1),
+  };
 }
 
 // 中文数字（题面上的「三对父子」「两个小孩」）。
 String _chinese(int value) => const ['零', '一', '两', '三', '四', '五', '六', '七', '八', '九', '十'][value];
 
-// 河上方的题面说明：这一道是哪种题、船载几个、要守什么规矩（「玩法」里是总的说明，这里按这一道的题型讲）。
+// 河上方的题面说明：这一道是哪种题、船载几个、谁会划、要守什么规矩（「玩法」里是总的说明，这里按这一道讲），几句用分号连成一段。
 class _Brief extends StatelessWidget {
   const _Brief({required this.puzzle});
   final RiverPuzzle puzzle;
@@ -427,30 +492,54 @@ class _Brief extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = CampusPalette.of(context);
     final capacity = puzzle.capacity;
-    final roles = [for (final person in puzzle.people) person.role];
-    final (title, rule) = switch (puzzle.variant) {
-      RiverVariant.farmer => ('农夫过河', '农夫划船，最多再带一样；没人看着时狼吃羊、羊吃白菜'),
-      RiverVariant.guardians => (
-        '${_chinese(roles.where((role) => role == RiverRole.adult).length)}个大人、${_chinese(roles.where((role) => role == RiverRole.kid).length)}个小孩',
-        '船坐 $capacity 人；岸上有大人时小孩不能比大人多，船上的也算',
+    int count(RiverRole role) => puzzle.people.where((person) => person.role == role).length;
+    final oars = puzzle.rowers != puzzle.everyone ? '，带桨的会划船' : '';
+    final (title, rules) = switch (puzzle.variant) {
+      RiverVariant.farmer => (
+        '农夫过河',
+        [
+          '只有农夫会划船，一次最多带 ${capacity - 1} 样',
+          '没人看着时：${[
+            for (final rule in riverRules(puzzle)) '${riverName(puzzle, rule.a)}${puzzle.people[rule.a].role == RiverRole.dog ? '咬' : '吃'}${riverName(puzzle, rule.b)}',
+          ].join('、')}',
+        ],
       ),
-      RiverVariant.families => ('${_chinese(puzzle.count ~/ 2)}对父子', '船坐 $capacity 人；爸爸不在时，孩子不能和别人家的爸爸在一起，船上也算'),
+      RiverVariant.guardians => (
+        '${_chinese(count(RiverRole.adult))}个大人、${_chinese(count(RiverRole.kid))}个小孩',
+        ['船坐 $capacity 人$oars', '哪边有大人，小孩就不能比大人多${puzzle.boat ? '，船上也算' : ''}'],
+      ),
+      RiverVariant.families => ('${_chinese(puzzle.count ~/ 2)}对父子', ['船坐 $capacity 人$oars', '爸爸不在时，孩子不能和别人家的爸爸在一起，船上也算']),
+      RiverVariant.household => (
+        '家庭过河',
+        [
+          '船坐 $capacity 人$oars',
+          if (count(RiverRole.boy) > 0) '爸爸不在，妈妈会骂儿子',
+          if (count(RiverRole.girl) > 0) '妈妈不在，爸爸会骂女儿',
+          if (count(RiverRole.thief) > 0) '警察不在，小偷会欺负家里人',
+          '船上也算',
+        ],
+      ),
+      RiverVariant.bridge => (
+        '${_chinese(puzzle.count)}个人过桥',
+        ['桥上一次最多 $capacity 人，要带火把，按慢的算', '火把只能烧 ${puzzle.limit} 分钟', '数字是过桥要几分钟'],
+      ),
     };
     return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      Text(title, style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, height: 1.4, color: palette.onSurface)),
-      const SizedBox(height: 2),
-      BalancedText(rule, style: TextStyle(fontSize: 14, height: 1.43, color: palette.onSurfaceVariant)),
+      Text(title, style: TextStyle(fontSize: CampusFontSize.body, fontWeight: FontWeight.w600, height: 1.4, color: palette.onSurface)),
+      const SizedBox(height: CampusGap.hairline),
+      BalancedText(rules.join('；'), style: TextStyle(fontSize: CampusFontSize.secondary, height: 1.43, color: palette.onSurfaceVariant)),
     ]);
   }
 }
 
-// 场景几何：岸上每人一格（触区 slot 见方），农夫过河一列，其余两列（大人、爸爸靠河，小孩、孩子在里侧，父子同一行）；
-// 两岸左右镜像，同一个人在两岸站同一行同一列。船竖着停在河里靠当前岸的一边，座位从上到下一格一个。
+// 场景几何：岸上每人一格（触区 slot 见方）。农夫过河一列（农夫在上），桥与火把四人以内一列、多了两列（按分钟从快到慢），其余两列：
+// 大人与小孩是大人靠河、小孩在里侧（会划船的在上）；父子同一家同一行、爸爸靠河；家庭过河第一行爸爸妈妈、中间儿子女儿、最后一行警察小偷。
+// 两岸左右镜像，同一个人在两岸站同一行同一列。船竖着停在河里靠当前岸的一边，座位从上到下一格一个；桥与火把的桥横跨河面，人在桥头竖着排。
 // 宽度不够时先把格子收到 48（徽章跟着收），高度不够时整个场景等比缩小放进去（只在极端大字号的小屏上发生）。
 class _RiverLayout {
   factory _RiverLayout(RiverPuzzle puzzle, Size area, TextScaler scaler) {
-    final columns = puzzle.variant == RiverVariant.farmer ? 1 : 2;
     final cells = _cells(puzzle);
+    final columns = cells.fold(0, (most, cell) => math.max(most, cell.column + 1));
     final rows = cells.fold(0.0, (most, cell) => math.max(most, cell.row + 1)).ceil();
     final width = math.min(area.width, 560.0);
     var big = math.max(40.0, scaler.scale(16) + 18), small = math.max(32.0, scaler.scale(14) + 12);
@@ -467,7 +556,8 @@ class _RiverLayout {
     final boatWidth = big + 16, boatCap = boatWidth * .62;
     final boatLength = puzzle.capacity * slot + boatCap * 2;
     final label = scaler.scale(14) * 1.3;
-    final content = math.max(rows * slot, boatLength);
+    // 桥与火把在桥下写火把还能烧几分钟，多留一行。
+    final content = math.max(rows * slot, boatLength + (puzzle.timed ? 2 * (label + CampusGap.medium) : 0));
     final natural = _top + content + _gap + label + _bottom;
     final height = math.max(natural, math.min(area.height, width * 1.1));
     final middle = _top + (height - _top - _gap - label - _bottom) / 2;
@@ -521,7 +611,7 @@ class _RiverLayout {
   final int rows;
   final List<int> rank;
 
-  double diameter(RiverPerson person) => person.role == RiverRole.kid || person.role == RiverRole.son ? small : big;
+  double diameter(RiverPerson person) => const {RiverRole.kid, RiverRole.son, RiverRole.boy, RiverRole.girl}.contains(person.role) ? small : big;
 
   Offset cell(int person, int side) {
     final (:row, :column) = cells[person];
@@ -541,20 +631,52 @@ class _RiverLayout {
   // 每个人在岸上的格：列 0 靠河。一列人比另一列少时居中。
   static List<({double row, int column})> _cells(RiverPuzzle puzzle) {
     final people = puzzle.people;
+    final indices = [for (var index = 0; index < people.length; index++) index];
+    // 按 key 排好后一列往下排（一列的人比别的列少时居中，rows 是最多那一列的人数）。
+    List<({double row, int column})> stack(List<(int column, num key)> placed) {
+      final cells = List.filled(people.length, (row: 0.0, column: 0));
+      final columns = <int, List<int>>{};
+      for (final index in [...indices]..sort((first, second) => placed[first].$2.compareTo(placed[second].$2))) {
+        columns.putIfAbsent(placed[index].$1, () => []).add(index);
+      }
+      final rows = columns.values.fold(0, (most, members) => math.max(most, members.length));
+      for (final MapEntry(key: column, value: members) in columns.entries) {
+        for (final (row, index) in members.indexed) {
+          cells[index] = (row: row + (rows - members.length) / 2, column: column);
+        }
+      }
+      return cells;
+    }
+
     switch (puzzle.variant) {
       case RiverVariant.farmer:
-        return [for (var index = 0; index < people.length; index++) (row: index.toDouble(), column: 0)];
+        return stack([for (final index in indices) (0, people[index].role.code)]);
       case RiverVariant.guardians:
-        final adults = people.where((person) => person.role == RiverRole.adult).length, kids = people.length - adults;
-        final rows = math.max(adults, kids);
-        var adult = 0, kid = 0;
+        return stack([for (final index in indices) (people[index].role == RiverRole.adult ? 0 : 1, (puzzle.rows(index) ? 0 : 100) + index)]);
+      case RiverVariant.bridge:
+        final order = [...indices]..sort((first, second) => puzzle.minutes[first].compareTo(puzzle.minutes[second]));
+        final columns = people.length > 4 ? 2 : 1;
         return [
-          for (final person in people)
-            person.role == RiverRole.adult ? (row: adult++ + (rows - adults) / 2, column: 0) : (row: kid++ + (rows - kids) / 2, column: 1),
+          for (final index in indices) (row: (order.indexOf(index) ~/ columns).toDouble(), column: order.indexOf(index) % columns),
         ];
       case RiverVariant.families:
-        final families = [for (final person in people) if (person.role == RiverRole.father) person.family];
+        final families = {for (final person in people) person.family}.toList()..sort();
         return [for (final person in people) (row: families.indexOf(person.family).toDouble(), column: person.role == RiverRole.father ? 0 : 1)];
+      case RiverVariant.household:
+        // 第一行爸爸（靠河）、妈妈；接着儿子在爸爸这一列、女儿在妈妈这一列；最后一行警察、小偷。
+        final kids = math.max(people.where((person) => person.role == RiverRole.boy).length, people.where((person) => person.role == RiverRole.girl).length);
+        var boys = 0, girls = 0;
+        return [
+          for (final person in people)
+            switch (person.role) {
+              RiverRole.dad => (row: 0.0, column: 0),
+              RiverRole.mom => (row: 0.0, column: 1),
+              RiverRole.boy => (row: 1.0 + boys++, column: 0),
+              RiverRole.girl => (row: 1.0 + girls++, column: 1),
+              RiverRole.police => (row: 1.0 + kids, column: 0),
+              _ => (row: 1.0 + kids, column: 1),
+            },
+        ];
     }
   }
 
@@ -571,7 +693,7 @@ class _RiverLayout {
 }
 
 // 配色全从当前配色推出：岸是卡片底色带一点标签绿（草地），岸边一道暖色的沙，河取三种雾色里最冷的那一个，近岸浅、河心深；
-// 船是提醒色（琥珀）压深的木色。人物徽章是各自色相的淡底、同色相压深（深色下提亮）的字，字和底的对比度不低于 4.5。
+// 船与桥是提醒色（琥珀）压深的木色，火把是提醒色。人物徽章是各自色相的淡底、同色相压深（深色下提亮）的字，字和底的对比度不低于 4.5。
 class _RiverColors {
   _RiverColors._(this.palette) {
     final dark = palette.isDark, surface = palette.surface;
@@ -595,24 +717,32 @@ class _RiverColors {
     plank = dark ? Color.lerp(hull, palette.backgroundTop, .25)! : Color.lerp(hull, surface, .18)!;
     rim = dark ? Color.lerp(hull, palette.onSurface, .22)! : Color.lerp(hull, Colors.white, .3)!;
     shadow = Colors.black.withValues(alpha: dark ? .4 : .16);
+    flame = palette.attention;
   }
 
   static final _cache = Expando<_RiverColors>();
   static _RiverColors of(CampusPalette palette) => _cache[palette] ??= _RiverColors._(palette);
 
   final CampusPalette palette;
-  late final Color land, speck, sand, shallow, deep, foam, ripple, edge, hull, deck, plank, rim, shadow;
+  late final Color land, speck, sand, shallow, deep, foam, ripple, edge, hull, deck, plank, rim, shadow, flame;
   final _tones = <Color, (Color, Color)>{};
 
-  // 每个人的色相：农夫与大人取控件激活色，狼取轮廓灰，羊取提醒色，白菜与小孩取标签色的绿与橙，父子按家取标签色（同一家同色）。
-  Color hue(RiverPerson person) => switch (person.role) {
-    RiverRole.farmer || RiverRole.adult => palette.accent,
-    RiverRole.wolf => Color.lerp(palette.outline, palette.onSurfaceVariant, .35)!,
-    RiverRole.goat => palette.attention,
-    RiverRole.cabbage => palette.tagColors[2],
-    RiverRole.kid => palette.tagColors[1],
-    RiverRole.father || RiverRole.son => palette.tagColors[person.family % palette.tagColors.length],
-  };
+  // 每个人的色相：农夫、大人、警察与桥上的人取控件激活色，狼与小偷取轮廓灰，羊与米取提醒色，其余动物与东西、小孩取标签色；
+  // 家庭过河的儿子与爸爸同色、女儿与妈妈同色（护着他们的那个人），父子按家取标签色（同一家同色）。
+  Color hue(RiverPerson person) {
+    final tags = palette.tagColors;
+    return switch (person.role) {
+      RiverRole.farmer || RiverRole.adult || RiverRole.police || RiverRole.walker => palette.accent,
+      RiverRole.wolf || RiverRole.thief => Color.lerp(palette.outline, palette.onSurfaceVariant, .35)!,
+      RiverRole.goat || RiverRole.rice => palette.attention,
+      RiverRole.cabbage => tags[2],
+      RiverRole.kid || RiverRole.chicken => tags[1],
+      RiverRole.dog || RiverRole.dad || RiverRole.boy => tags[3 % tags.length],
+      RiverRole.cat || RiverRole.mom || RiverRole.girl => tags[4 % tags.length],
+      RiverRole.mouse => tags[5 % tags.length],
+      RiverRole.father || RiverRole.son => tags[person.family % tags.length],
+    };
+  }
 
   // 徽章的底与字：底是卡片色带一点色相；字从色相出发往正文色走，直到对底的对比度不低于 4.5。
   (Color, Color) tone(Color hue) => _tones[hue] ??= () {
@@ -631,7 +761,7 @@ class _RiverColors {
   }
 }
 
-// 静态层：两岸草地（细小的草点）、岸边的沙、河（近岸浅河心深，几道水纹，岸边一线白浪）与外框。题、尺寸或配色变了才重画。
+// 静态层：两岸草地（细小的草点）、岸边的沙、河（近岸浅河心深，几道水纹，岸边一线白浪）与外框；桥与火把再横着画一座木桥。题、尺寸或配色变了才重画。
 class _ScenePainter extends CustomPainter {
   _ScenePainter({required this.layout, required this.colors});
   final _RiverLayout layout;
@@ -670,11 +800,41 @@ class _ScenePainter extends CustomPainter {
       ..strokeCap = StrokeCap.round
       ..color = colors.ripple);
     canvas.restore();
+    if (layout.puzzle.timed) _bridge(canvas, size);
     canvas.restore();
     canvas.drawRRect(frame.deflate(.5), Paint()
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1
       ..color = colors.edge);
+  }
+
+  // 桥：两岸之间一块木桥面（宽刚好站下桥上一次能走的人，两头搭到岸上），桥板横缝拼成一条路径，上下两道栏杆，水面上一道影子。
+  void _bridge(Canvas canvas, Size size) {
+    final half = layout.puzzle.capacity * layout.slot / 2 + 4;
+    final deck = Rect.fromLTRB(layout.bank - 10, layout.middle - half, size.width - layout.bank + 10, layout.middle + half);
+    canvas.drawRect(deck.shift(const Offset(0, 5)), Paint()
+      ..color = colors.shadow
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5));
+    canvas.drawRect(deck, Paint()..color = colors.deck);
+    final seams = Path();
+    for (var x = deck.left + 9; x < deck.right; x += 9) {
+      seams
+        ..moveTo(x, deck.top + 3)
+        ..lineTo(x, deck.bottom - 3);
+    }
+    canvas.drawPath(seams, Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = colors.plank);
+    final rails = Path()
+      ..moveTo(deck.left, deck.top + 1.5)
+      ..lineTo(deck.right, deck.top + 1.5)
+      ..moveTo(deck.left, deck.bottom - 1.5)
+      ..lineTo(deck.right, deck.bottom - 1.5);
+    canvas.drawPath(rails, Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 3
+      ..color = colors.hull);
   }
 
   // 河：两条岸线（竖着走、左右轻轻起伏）围成的一条带子；岸线是隔一段取一个点、按点平滑连成的曲线。
@@ -816,11 +976,42 @@ class _BoatPainter extends CustomPainter {
   bool shouldRepaint(_BoatPainter old) => old.wake != wake || !identical(old.colors, colors) || old.capacity != capacity || old.slot != slot;
 }
 
-// 人物徽章：圆形淡底、同色相的字（农夫过河写「农」「狼」「羊」「菜」，父子写家里的那个字），大人与小孩画一个人形；
-// 小孩、孩子的徽章小一圈。按下变暗；犯规时外面圈一道警示色；收尾时跳起来（影子留在地上）。
+// 火把的光：桥头那群人脚下一团暖色的光（提醒色径向渐变，一个圆一次画完），走在桥上时亮一点。
+class _TorchPainter extends CustomPainter {
+  _TorchPainter({required this.colors, required this.cap, required this.walking});
+  final _RiverColors colors;
+  final double cap, walking;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final body = (Offset.zero & size).deflate(_BoatPainter.margin);
+    final radius = body.height / 2 + _BoatPainter.margin * .6;
+    final strength = (colors.palette.isDark ? .3 : .26) + walking * .12;
+    canvas.drawCircle(body.center, radius, Paint()
+      ..shader = RadialGradient(colors: [colors.flame.withValues(alpha: strength), colors.flame.withValues(alpha: 0)]).createShader(Rect.fromCircle(center: body.center, radius: radius)));
+  }
+
+  @override
+  bool shouldRepaint(_TorchPainter old) => old.walking != walking || !identical(old.colors, colors) || old.cap != cap;
+}
+
+// 人物徽章：圆形淡底、同色相的字（农夫过河写「农」「狼」……，父子写家里的那个字，家庭过河写「爸」「妈」「哥」……，桥与火把写分钟），
+// 大人与小孩画一个人形；小孩、孩子、儿子与女儿的徽章小一圈。会划船的人右下角带一支桨。按下变暗；犯规时外面圈一道警示色；收尾时跳起来（影子留在地上）。
 class _Badge extends StatelessWidget {
-  const _Badge({required this.person, required this.diameter, required this.colors, required this.pressed, required this.alert, required this.hop, required this.lift});
+  const _Badge({
+    required this.person,
+    required this.glyph,
+    required this.oar,
+    required this.diameter,
+    required this.colors,
+    required this.pressed,
+    required this.alert,
+    required this.hop,
+    required this.lift,
+  });
   final RiverPerson person;
+  final String? glyph;
+  final bool oar;
   final double diameter, alert, hop, lift;
   final _RiverColors colors;
   final bool pressed;
@@ -829,38 +1020,65 @@ class _Badge extends StatelessWidget {
   Widget build(BuildContext context) {
     final palette = colors.palette;
     final (fill, ink) = colors.tone(colors.hue(person));
-    final glyph = switch (person.role) {
-      RiverRole.farmer => '农',
-      RiverRole.wolf => '狼',
-      RiverRole.goat => '羊',
-      RiverRole.cabbage => '菜',
-      RiverRole.father || RiverRole.son => riverFamilyNames[person.family],
-      RiverRole.adult || RiverRole.kid => null,
-    };
-    final small = person.role == RiverRole.kid || person.role == RiverRole.son;
+    final small = const {RiverRole.kid, RiverRole.son, RiverRole.boy, RiverRole.girl}.contains(person.role);
+    final text = glyph;
+    final badge = Container(
+      width: diameter,
+      height: diameter,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        color: pressed ? Color.lerp(fill, palette.onSurface, palette.isDark ? .12 : .08) : fill,
+        border: Border.all(color: Color.lerp(ink.withValues(alpha: palette.isDark ? .45 : .3), palette.danger, alert)!, width: 1 + alert * 1.6),
+        boxShadow: [
+          BoxShadow(color: colors.shadow.withValues(alpha: colors.shadow.a * (1 - hop * .5)), blurRadius: 5 + hop * 6, offset: Offset(0, 2 + hop * lift * .6)),
+        ],
+      ),
+      alignment: Alignment.center,
+      child: text == null
+          ? CustomPaint(size: Size.square(diameter), painter: _FigurePainter(color: ink, child: small))
+          : Padding(
+              padding: const EdgeInsets.all(4),
+              child: FittedBox(fit: BoxFit.scaleDown, child: Text(text, style: TextStyle(fontSize: small ? CampusFontSize.secondary : CampusFontSize.body, fontWeight: FontWeight.w600, height: 1.1, color: ink))),
+            ),
+    );
+    final oarSize = math.max(16.0, diameter * .42);
     return Center(child: Transform.translate(
       offset: Offset(0, -hop * lift),
-      child: Container(
-        width: diameter,
-        height: diameter,
-        decoration: BoxDecoration(
-          shape: BoxShape.circle,
-          color: pressed ? Color.lerp(fill, palette.onSurface, palette.isDark ? .12 : .08) : fill,
-          border: Border.all(color: Color.lerp(ink.withValues(alpha: palette.isDark ? .45 : .3), palette.danger, alert)!, width: 1 + alert * 1.6),
-          boxShadow: [
-            BoxShadow(color: colors.shadow.withValues(alpha: colors.shadow.a * (1 - hop * .5)), blurRadius: 5 + hop * 6, offset: Offset(0, 2 + hop * lift * .6)),
-          ],
-        ),
-        alignment: Alignment.center,
-        child: glyph == null
-            ? CustomPaint(size: Size.square(diameter), painter: _FigurePainter(color: ink, child: small))
-            : Padding(
-                padding: const EdgeInsets.all(4),
-                child: FittedBox(fit: BoxFit.scaleDown, child: Text(glyph, style: TextStyle(fontSize: small ? 14 : 16, fontWeight: FontWeight.w600, height: 1.1, color: ink))),
-              ),
-      ),
+      child: oar
+          ? Stack(clipBehavior: Clip.none, children: [
+              badge,
+              Positioned(right: -oarSize * .3, bottom: -oarSize * .2, child: CustomPaint(size: Size.square(oarSize), painter: _OarPainter(fill: palette.surface, ink: ink))),
+            ])
+          : badge,
     ));
   }
+}
+
+// 桨：徽章右下角一枚小圆片，里面一根斜杆加一片椭圆桨叶（杆与叶拼成一条路径一次画完）。
+class _OarPainter extends CustomPainter {
+  _OarPainter({required this.fill, required this.ink});
+  final Color fill, ink;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final side = size.width, center = size.center(Offset.zero);
+    canvas.drawCircle(center, side / 2, Paint()..color = fill);
+    canvas.drawCircle(center, side / 2 - .5, Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = ink.withValues(alpha: .45));
+    canvas.save();
+    canvas.translate(center.dx, center.dy);
+    canvas.rotate(-math.pi / 4);
+    final oar = Path()
+      ..addRRect(RRect.fromRectAndRadius(Rect.fromCenter(center: Offset(-side * .1, 0), width: side * .5, height: side * .09), Radius.circular(side * .05)))
+      ..addOval(Rect.fromCenter(center: Offset(side * .2, 0), width: side * .3, height: side * .2));
+    canvas.drawPath(oar, Paint()..color = ink);
+    canvas.restore();
+  }
+
+  @override
+  bool shouldRepaint(_OarPainter old) => old.fill != fill || old.ink != ink;
 }
 
 // 人形：圆脑袋加一段圆肩（同通讯录的默认头像），裁在徽章里；小孩的脑袋相对大一点、肩窄一点。

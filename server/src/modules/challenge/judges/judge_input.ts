@@ -12,6 +12,8 @@ export type Judge<P, A> = {
   // 计分要的附加数（解开之后才问）：答案里自带的失误（记忆闪光点错的次数）、要最少步数的游戏用了几步（推箱子按推的次数）；不计的不写。
   penalties?(puzzle: P, answer: A): number;
   steps?(puzzle: P, answer: A): number;
+  // 要最少步数的关（困难、专家档）答案最多能走几步，不写就是正好最少（同客户端 PuzzleRules.stepLimit；汉诺塔第 2 版放宽，见 moves_judges.ts）。
+  stepLimit?(minimum: number): number;
 };
 
 const isRecord = (json: unknown): json is Record<string, unknown> => typeof json === 'object' && json !== null && !Array.isArray(json);
