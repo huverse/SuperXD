@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 安卓模拟器启动冒烟（CI 的 Android emulator smoke 作业在模拟器起好后调用，人工决策见 .github/workflows/ci.yml）：
+# 安卓模拟器启动冒烟（手动入口；CI 跑不了，原因见 .github/workflows/ci.yml 的 android-build 上方）：模拟器要用真显卡（-gpu host），软件渲染下应用一出首帧模拟器就崩。
 # 装开发包的调试包、冷启动、停 30 秒看进程还在不在、logcat 里有没有这个应用的 FATAL EXCEPTION；截图与 logcat 写进 build/android-smoke。
 # 本机也能跑：模拟器开着、先 flutter build apk --debug --flavor production --target-platform android-x64，再 bash tool/android_smoke.sh。
 set -euo pipefail

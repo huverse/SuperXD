@@ -120,7 +120,7 @@
 - tool 下其余是手动入口，不进 CI（发版三个工具由发版流水线调用），运行方式见各文件头：
   - 访问真实服务，只在授权环境与授权账号上手动运行：verify_edu.dart、verify_grades.dart（教务）、verify_chaoxing.dart（学习通，输出脱敏）。
   - 经真实中转、只用合成数据：verify_social.dart、verify_chaoxing_pack.dart。
-  - 设备与原生验证：verify_toolbox.dart（原生下载导出）、verify_chaoxing_map.dart（网页版高德选点，要 SUPERXD_AMAP_WEB_KEY 与 SUPERXD_AMAP_WEB_SECRET）、motion_release_test.dart（发布包的图标字体）、android_smoke.sh（安卓模拟器启动冒烟，CI 的 Android emulator smoke 调用，本机也能跑）。
+  - 设备与原生验证：verify_toolbox.dart（原生下载导出）、verify_chaoxing_map.dart（网页版高德选点，要 SUPERXD_AMAP_WEB_KEY 与 SUPERXD_AMAP_WEB_SECRET）、motion_release_test.dart（发布包的图标字体）、android_smoke.sh（安卓模拟器启动冒烟，模拟器要用真显卡；CI 没有显卡跑不了）。
   - 诊断包：open_diagnostic.dart（解开用户上传的诊断包、生成开发者密钥对，只读写本机文件）。
   - 发版：release_changelog.dart（从 CHANGELOG 取更新说明与 Release 正文，正文模板 release_body.md）、release_manifest.dart（生成更新清单并按架构签名）、content_signing.dart（清单、开发者的话与灰度配置的签名，以及签完按客户端内置公钥再验一遍的 check-release、check-notes、check-rollout、check-flags；私钥在仓库外，人工决策见 lib/device/signed_content.dart），开发者的话流水线另用它与 developer_notes.dart；灰度配置不在仓库（人工决策见 lib/domain/rollout.dart 文件头 11-16 那两条），维护者本机用 rollout_publish.sh（调 rollout_config.dart 签出第 1、2 版两份并核对、传中转、公网核对）。
   - 挑战：challenge_vectors.dart（生成双端判定向量 server/test/vectors/challenge_judge_v1.json，规则改了就重跑；本机对拍可加 --seeds）、challenge_bank.dart（用保密种子 CHALLENGE_BANK_SEED 出题库，连同仓库 challenge/config.json 由流水线 challenge.yml 传到中转发布目录的 challenge 下，中转热加载）。
@@ -134,5 +134,5 @@
 - 安卓上退出再进入会新建 Flutter 引擎而进程还在，sqflite 的原生连接不随引擎关：前台的本机库一律单实例打开并显式写回滚开关，后台引擎被叫停时收回自己的连接（人工决策在 local/account_store.dart，test/account_store_test.dart 守护）。
 - 安卓明文 HTTP 只对教务与中转放行：清单引用的网络安全配置由 android/app/build.gradle.kts 构建时生成（教务地址写在脚本里，同 kingoBase；中转取构建参数 SUPERXD_RELAY，是 http 才放），其余原生网络一律 HTTPS；Dart 的请求不受它管。test/legal_page_test.dart 守护。
 - 对外开放文件只经两个 FileProvider：CalendarFileProvider（缓存 calendar_export 文件夹）与 AppUpdateFileProvider（缓存 app_update 文件夹，清单声明 REQUEST_INSTALL_PACKAGES）。
-- release 包开启 R8：接入不带混淆规则的原生 SDK 时要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件还要自己在清单里声明（现在没有这类 SDK：原生高德 11-10 随地图改网页版删掉，test/legal_page_test.dart 守护它与规则同进同出）。CI 另编开发包的 arm64 profile 包（Android build）并在 x86_64 模拟器上做启动冒烟（Android emulator smoke，tool/android_smoke.sh），两项先不是必需检查；release 包与 R8 只在发版流水线构建，正式发版前可先试跑，用试跑产物在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
+- release 包开启 R8：接入不带混淆规则的原生 SDK 时要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件还要自己在清单里声明（现在没有这类 SDK：原生高德 11-10 随地图改网页版删掉，test/legal_page_test.dart 守护它与规则同进同出）。CI 另编开发包的 arm64 profile 包（Android build，先不是必需检查；没有模拟器冒烟，软件渲染下模拟器会崩）；release 包与 R8 只在发版流水线构建，正式发版前可先试跑，用试跑产物在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
 - 暂不改动的事项（只被测试使用的公开方法、性能观察项、单校写死）记在对应模块 CLAUDE.md 的关键规则里，改动前先看。

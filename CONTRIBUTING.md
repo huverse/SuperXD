@@ -56,7 +56,7 @@ ORG_GRADLE_PROJECT_superxdSigningProperties=/仓库外的绝对路径/signing.pr
 - main 合并要 CI 的 Flutter analyze and test、Relay server test 与 iOS build 三项都通过，且分支先与 main 同步。
 - 依赖自动更新：.github/dependabot.yml 让 Dependabot 每周一检查 GitHub Actions、server 的 npm、根目录的 pub 与 android 的 Gradle（[人工决策]在文件头）。补丁与次版本每处合成一条 PR，主版本各自一条，新版本发布满 7 天才提；安全更新不等。这些 PR 照常等 CI、squash 合并，不自动合并。
 - Dependabot 在 GitHub 上直接从 pub.dev 取包，它改出来的 pubspec.lock 本来就是 pub.dev 的来源，与「本机镜像会改写 pubspec.lock」那条规矩不冲突。在本机接着改这类 PR 时，命令照旧加 PUB_HOSTED_URL=https://pub.dev，提交前确认锁文件里只有这次升级带来的变化。
-- 安卓原生：CI 的 Android build（开发包 arm64 profile 包）与 Android emulator smoke（x86_64 模拟器启动冒烟）编安卓原生，先不是必需检查；插件升级与 Gradle 的 PR 合并前看这两项过没过，没过或没跑时在本机编一次安卓（PUB_HOSTED_URL=https://pub.dev flutter build apk --debug --flavor production --target-platform android-arm64），iOS 由 CI 的 iOS build 编。R8 只在 release 下跑，由发版流水线编，改了混淆规则先试跑发版。
+- 安卓原生：CI 的 Android build（开发包 arm64 profile 包）编安卓原生，先不是必需检查；插件升级与 Gradle 的 PR 合并前看它过没过，启动有没有崩在本机真显卡模拟器上跑 tool/android_smoke.sh；没过或没跑时在本机编一次安卓（PUB_HOSTED_URL=https://pub.dev flutter build apk --debug --flavor production --target-platform android-arm64），iOS 由 CI 的 iOS build 编。R8 只在 release 下跑，由发版流水线编，改了混淆规则先试跑发版。
 - 界面库升级前要走查：liquid_glass_widgets 不进合并的那条、单独一条 PR，它和 morphnext、flutter_slidable、lucide_icons_flutter 这类改外观的库升级后，先看基准图测试（test/golden_test.dart）过没过、差异图是否在意料之中，再在模拟器上看受影响的页面、深浅色、字号与转场，看过再合并。
 - 不让 Dependabot 提的升级写进 dependabot.yml 的 ignore 并注明原因（如 permission_handler 13 要 compileSdk 37），条件满足后删掉那条。
 - iOS 依赖锁定：CocoaPods 的 ios/Podfile.lock 与 Swift Package 的 Package.resolved 都提交进仓库，CI 与发版的 iOS 作业构建后核对它们没被改写，被改写或新生成就失败（[人工决策]在 ci.yml）。本机是 Linux、没有 Mac，改了 iOS 依赖（升降插件、改 ios/Podfile）后这样取新锁文件：
