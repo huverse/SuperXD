@@ -203,7 +203,7 @@ class HanoiRules extends PuzzleRules<HanoiPuzzle, List<HanoiMove>> {
     PuzzleTier.expert: [(pegs: 4, variant: HanoiVariant.cyclic, disks: 6, spare: false), (pegs: 4, variant: HanoiVariant.adjacent, disks: 7, spare: false)],
   };
   // 每档预计用时的区间（秒）：落在难度分 3、4、5、6、7 各自的区间里，五档不重叠。
-  static const _window = {PuzzleTier.entry: (36, 54), PuzzleTier.easy: (57, 80), PuzzleTier.normal: (94, 130), PuzzleTier.hard: (154, 190), PuzzleTier.expert: (250, 280)};
+  static const _window = {PuzzleTier.entry: (36, 54), PuzzleTier.easy: (57, 80), PuzzleTier.normal: (94, 130), PuzzleTier.hard: (153, 178), PuzzleTier.expert: (250, 280)};
   // 目标是全部叠到一根柱上的题占的比例。
   static const _towerShare = .25;
 
