@@ -128,7 +128,7 @@ void main() {
     });
   }
 
-  // 11-17 设计审查：11-12 之后上线的页面没进排版体检，窄屏大字号下有孤字、截断与拆词（学业页学期名、挑战总览游戏名、删除游乐场数据、
+  // 11-17 设计审查：11-12 之后上线的页面没进排版体检，窄屏大字号下有孤字、截断与拆词（学业页学期名、挑战总览游戏名、删除游乐场与积分、
   // 开发者的话标题、对局页状态行、新版本反馈的输入框标签）。这里按同样三种条件扫一遍。
   // 系统 1.3 倍在 Maple 360dp 上跟随时封顶到推荐上限（100%），真要 1.3 倍得在应用里自己选，所以两种都扫。
   for (final (font, width, system, app, bold) in [
@@ -184,7 +184,7 @@ void main() {
       await tester.runAsync(appAccounts.load);
       await tester.pumpAndSettle();
       expect(_problems(tester), isEmpty, reason: '应用账号·登录着');
-      await tester.scrollUntilVisible(find.text('删除游乐场数据'), 200);
+      await tester.scrollUntilVisible(find.text('删除游乐场与积分'), 200);
       expect(_problems(tester), isEmpty, reason: '应用账号·登录着·最底下');
       await back();
       // 登录着时那一行写用户名：「应用账号」不被长用户名挤得折行。

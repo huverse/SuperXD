@@ -28,7 +28,7 @@ import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
-// 推入应用账号页（与教务各管各的，没登录教务也能进）：游乐场的挑战、私信、账号页与节日动画后的抽奖提示共用；联网偏好与删除游乐场数据也在这页。
+// 推入应用账号页（与教务各管各的，没登录教务也能进）：游乐场的挑战、私信、账号页与节日动画后的抽奖提示共用；联网偏好与删除游乐场与积分也在这页。
 // 只在配了中转（有应用账号）时调。
 void pushAppAccountPage(BuildContext context, AppServices services) => unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(
   builder: (context) => AppAccountPage(appAccounts: services.appAccounts!, diagnostics: services.diagnostics, network: services.network, leisure: services.leisure),

@@ -433,8 +433,8 @@ void main() {
       await tester.pump();
     }
 
-    // 联网偏好与删除游乐场数据（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条；11-17 21:24:25 改叫「联网 / 仅本机」、加组标题，见 app_account_page.dart 文件头）。
-    testWidgets('联网偏好：组标题读屏是小节标题；改为仅本机先确认，确认后登录保留但账号管理收起、写暂停；改回联网不用确认；最底下删除游乐场数据', (tester) async {
+    // 联网偏好与删除游乐场与积分（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条；11-17 21:24:25 改叫「联网 / 仅本机」、加组标题，见 app_account_page.dart 文件头）。
+    testWidgets('联网偏好：组标题读屏是小节标题；改为仅本机先确认，确认后登录保留但账号管理收起、写暂停；改回联网不用确认；最底下删除游乐场与积分', (tester) async {
       client.session = _session;
       await appAccounts.load();
       final network = NetworkPreference(memory: FileNetworkModeMemory.memory());
@@ -464,8 +464,8 @@ void main() {
       expect(appAccounts.current, isNotNull);
       await clearToast(tester);
 
-      await tester.scrollUntilVisible(find.text('删除游乐场数据'), 100);
-      await tester.tap(find.text('删除游乐场数据'));
+      await tester.scrollUntilVisible(find.text('删除游乐场与积分'), 100);
+      await tester.tap(find.text('删除游乐场与积分'));
       await tester.pumpAndSettle();
       expect(find.textContaining('要改为联网并登录应用账号后才能删'), findsOneWidget, reason: '仅本机时只删本机');
       await tester.tap(find.text('删除'));
@@ -713,14 +713,14 @@ void main() {
     });
 
     // [人工决策-2026-11-17 21:24:25] 见 app_account_page.dart 文件头：两处「退出」统一成单独一组、居中红字（同教务账号页的退出登录）。
-    testWidgets('登录着：退出、注销与删除游乐场数据各自单独一组，图标与红字在卡片里居中', (tester) async {
+    testWidgets('登录着：退出、注销与删除游乐场与积分各自单独一组，图标与红字在卡片里居中', (tester) async {
       client.session = _session;
       await appAccounts.load();
       final leisure = Leisure(clearLocal: () async {}, signedIn: () => true);
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: AppAccountPage(appAccounts: appAccounts, leisure: leisure)));
       await tester.pumpAndSettle();
       final danger = CampusPalette.of(tester.element(find.byType(AppAccountPage))).danger;
-      for (final label in ['退出应用账号', '注销应用账号', '删除游乐场数据']) {
+      for (final label in ['退出应用账号', '注销应用账号', '删除游乐场与积分']) {
         await tester.scrollUntilVisible(find.text(label), 100);
         final surface = find.ancestor(of: find.text(label), matching: find.byType(CampusSurface)).first;
         expect(find.descendant(of: surface, matching: find.byType(ListTile)), findsOneWidget, reason: '$label 单独一组');

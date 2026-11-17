@@ -31,7 +31,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 // 本地化时不显示登录与账号管理（登录保留、只是不联网），只写一句暂停；最底下单独一组红字「删除游乐场与积分的数据」（从原来的游乐场与积分设置页挪来）。
 // [人工决策-2026-11-17 21:24:25] 设计审查后用户选定（位置与规则不变）：叫法改成「联网 / 仅本机」（取代上一条的「联网化 / 本地化」，「本地化」常被读成翻译成本地语言），
 // 分段上面加组标题「联网偏好」（同界面页的小节标题，和下面的「登录 | 注册」分得开）；退出与注销各自单独一组、居中红字（同教务账号页的退出登录、iOS 的退出与删除账户），
-// 删除数据那一组同样居中红字，改叫「删除游乐场数据」（原来的长名字在窄屏大字号下折成两行）。
+// 删除数据那一组同样居中红字，改叫「删除游乐场与积分」（11-17 主会话改：设计包缩成的「删除游乐场数据」漏了积分；原来的长名字在窄屏大字号下折成两行）。
 class AppAccountPage extends StatefulWidget {
   const AppAccountPage({super.key, required this.appAccounts, this.diagnostics, this.network, this.leisure, this.scanJoin = scanJoinWithCamera});
   final AppAccounts appAccounts;
@@ -210,7 +210,7 @@ class _AppAccountPageState extends State<AppAccountPage> {
   // 游乐场与积分的删除数据（原来在游乐场与积分设置页，人工决策见 domain/leisure.dart）：先确认写明删哪些；联网且登录着应用账号时连服务器上的一起删，没删成本机也不动。
   List<Widget> _deleteData(BuildContext context, Leisure leisure) => [
     const Padding(padding: EdgeInsets.only(top: 16)),
-    _DangerRow(icon: CampusIcons.delete, label: '删除游乐场数据', enabled: !_accounts.busy, onTap: () => unawaited(_delete(leisure))),
+    _DangerRow(icon: CampusIcons.delete, label: '删除游乐场与积分', enabled: !_accounts.busy, onTap: () => unawaited(_delete(leisure))),
   ];
 
   Future<void> _delete(Leisure leisure) async {
@@ -219,7 +219,7 @@ class _AppAccountPageState extends State<AppAccountPage> {
     final message = leisure.signedIn ? '本机的游戏成绩与笔记，以及应用账号 $username 在服务器上的积分、挑战成绩与解锁记录都会删除，不能恢复。'
         // 长文案：仅本机或没登录应用账号时要说明服务器上的积分不在这次删除里。
         : '本机的游戏成绩与笔记会删除，不能恢复；服务器上的积分要改为联网并登录应用账号后才能删。';
-    final confirmed = await showCampusConfirm(context, title: '删除游乐场数据？', message: message, action: '删除', destructive: true);
+    final confirmed = await showCampusConfirm(context, title: '删除游乐场与积分？', message: message, action: '删除', destructive: true);
     if (!mounted || !confirmed) return;
     String? failure;
     await showCampusWaiting(context, label: '正在删除', operation: () async {

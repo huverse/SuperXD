@@ -66,7 +66,7 @@ class AccountPage extends StatefulWidget {
   final String name;
   // 应用账号（人工决策见 application/app_accounts.dart）；没配中转时为空，不显示这一组。
   final AppAccounts? appAccounts;
-  // 推入应用账号页（组合根给，同游乐场与私信；那页还有联网偏好与删除游乐场数据）。
+  // 推入应用账号页（组合根给，同游乐场与私信；那页还有联网偏好与删除游乐场与积分）。
   final void Function(BuildContext context)? openAppAccount;
 
   @override
