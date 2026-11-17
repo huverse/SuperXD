@@ -10,6 +10,8 @@ import 'package:superxd/playground/puzzle/river/river_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
+import '../tool/challenge_bank.dart';
+
 const _rules = RiverRules();
 
 RiverPerson _one(RiverRole role, [int family = -1]) => (role: role, family: family);
@@ -270,6 +272,38 @@ void main() {
         // 桥与火把从普通档起才有（要用到技巧）。
         expect(variants.contains(RiverVariant.bridge), tier.index >= PuzzleTier.normal.index, reason: '$tier');
       }
+    });
+
+    // [人工决策-2026-11-17 14:17:05]（见 RiverRules.challengeDraw）：挑战里不出桥与火把，自由模式照常出。
+    test('挑战出题（题库工具走的入口）各档都不出桥与火把，出的题照样过同样的检查、仍有三种以上题型；自由模式照常出；题库里也没有', () {
+      for (final tier in PuzzleTier.values) {
+        final (low, high) = _bands[tier]!;
+        final variants = <RiverVariant>{};
+        var bridges = 0;
+        for (var seed = 0; seed < 60; seed++) {
+          final draw = _rules.challengeDraw(seed, tier);
+          final puzzle = draw.puzzle;
+          expect(riverChallengeless.contains(puzzle.variant), isFalse, reason: '$tier $seed');
+          variants.add(puzzle.variant);
+          expect(_rules.solved(puzzle, draw.solution), isTrue, reason: '$tier $seed');
+          expect(riverNeeded(puzzle), isTrue, reason: '$tier $seed');
+          expect(_rules.complexity(puzzle), inInclusiveRange(low, high), reason: '$tier $seed');
+          expect(draw.solution.length, greaterThanOrEqualTo(_floors[tier]!), reason: '$tier $seed');
+          if (_rules.generate(seed, tier).puzzle.variant == RiverVariant.bridge) bridges++;
+        }
+        expect(variants.length, greaterThanOrEqualTo(3), reason: '$tier');
+        expect(bridges > 0, tier.index >= PuzzleTier.normal.index, reason: '$tier 自由模式');
+      }
+      for (final tier in [PuzzleTier.normal, PuzzleTier.hard, PuzzleTier.expert]) {
+        final entries = challengeBankEntries('local-test-seed-0001', 'river', tier, 40);
+        expect(entries, hasLength(40));
+        for (final entry in entries) {
+          expect(_rules.decodePuzzle(jsonDecode(jsonEncode(entry['puzzle']))).variant, isNot(RiverVariant.bridge), reason: '${entry['id']}');
+        }
+      }
+      // 判定照样认得桥与火把的题面（旧数据与判定向量不受影响）。
+      final bridge = _rules.generate(_seedWhere(PuzzleTier.normal, (puzzle) => puzzle.timed), PuzzleTier.normal);
+      expect(_rules.solved(_rules.decodePuzzle(_rules.encodePuzzle(bridge.puzzle)), bridge.solution), isTrue);
     });
 
     test('预计用时：五档中位数约 45、70、110、165、245 秒（±25%）且逐档上升，难度分由它取对数', () {

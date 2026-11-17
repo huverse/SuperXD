@@ -7,7 +7,7 @@ import 'package:superxd/playground/challenge/challenge_rules.dart';
 import 'package:superxd/playground/puzzle/ice/ice_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 
-// 挑战题库（人工决策见 lib/playground/challenge/challenge_rules.dart）：每个能进挑战的游戏每档出 count 道题，用的就是客户端自由模式的同一份规则；
+// 挑战题库（人工决策见 lib/playground/challenge/challenge_rules.dart）：每个能进挑战的游戏每档出 count 道题，用的就是客户端自由模式的同一份规则（经挑战的出题入口 challengeDraw，有的游戏排除个别题型）；
 // 每道记题面、预计用时（秒）、难度分、碎片（天平称球没有，按玩家指认的球给）、要最少步数的游戏的最少步数，补条件的游戏再记能写成 ? 的几处，
 // 冰面滑行另记几个标号的出口（每个出口当终点时的最少步数、碎片与预计用时，服务器按碎片挑真的那个）。输出 <out>/bank/<游戏>@<题面写法版本>.<档位>.json
 // （文件里也写着题面写法版本 puzzleVersion，人工决策见 challenge_rules.dart 的 11-15 19:18 那条），连同仓库的 challenge/config.json 一起
