@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:superxd/playground/puzzle_rules.dart';
 
 // 扫雷（无猜）：格子里藏着雷，翻开的格写着周围八格里有几颗雷；把所有不是雷的格翻完就解开。
@@ -226,20 +228,23 @@ class MinesRules extends PuzzleRules<MinesPuzzle, List<int>> {
   @override
   int? fragment(MinesPuzzle puzzle, List<int> solution) => puzzle.mines.take(puzzle.width).where((mine) => mine).length;
 
-  // 每档的边长、雷数（密度 14% 到 20% 逐档加），与至少要几轮子集或全局推理（minesDeep；普通起排除只靠单格就推得完的题，档越高要的越多）。
-  // 随机撒的雷能推完且推理够深的比例：入门约九成、专家约一成半，专家档平均撒七八次，一次求解不到 1 毫秒。
+  // 每档的边长、雷数（密度 14% 到 20% 逐档加）、至少要几轮子集或全局推理（minesDeep；普通起排除只靠单格就推得完的题，档越高要的越多），
+  // 与预计用时的区间（秒，含两端）：落在难度分 3、4、5、6、7 各自的区间里，五档不重叠。
+  // 11-17 小修（每档 300 道实测）：原来难易按雷数分段，同档的题不管开局翻开多少都算一样久，入门有一成翻开局面后点一两下就完；
+  // 五档预计用时中位 46、61、111、199、360 秒，难度分 2–3、4、4、6–7、7–8。现在按每道题要翻几格算用时，区间外的重撒：
+  // 中位约 44、69、107、180、267 秒；专家档平均撒二十来次，一次求解不到 1 毫秒。
   static const _tiers = {
-    PuzzleTier.entry: (side: 6, mines: 5, deep: 0),
-    PuzzleTier.easy: (side: 8, mines: 10, deep: 0),
-    PuzzleTier.normal: (side: 9, mines: 15, deep: 1),
-    PuzzleTier.hard: (side: 12, mines: 28, deep: 2),
-    PuzzleTier.expert: (side: 14, mines: 40, deep: 3),
+    PuzzleTier.entry: (side: 6, mines: 5, deep: 0, seconds: (36, 56)),
+    PuzzleTier.easy: (side: 8, mines: 10, deep: 0, seconds: (57, 92)),
+    PuzzleTier.normal: (side: 9, mines: 15, deep: 1, seconds: (93, 152)),
+    PuzzleTier.hard: (side: 12, mines: 28, deep: 2, seconds: (153, 249)),
+    PuzzleTier.expert: (side: 14, mines: 40, deep: 3, seconds: (250, 409)),
   };
 
-  // 出题：起点随机取一格不靠边的，起点和周围八格不放雷，其余格里随机撒雷；求解器从起点推得完、推理够深才用，否则重撒。
+  // 出题：起点随机取一格不靠边的，起点和周围八格不放雷，其余格里随机撒雷；求解器从起点推得完、推理够深、预计用时落在这一档的区间才用，否则重撒。
   @override
   PuzzleDraw<MinesPuzzle, List<int>> generate(int seed, PuzzleTier tier) {
-    final (:side, :mines, :deep) = _tiers[tier]!;
+    final (:side, :mines, :deep, seconds: (least, most)) = _tiers[tier]!;
     final random = PuzzleRandom(seed);
     while (true) {
       final start = (1 + random.nextInt(side - 2)) * side + 1 + random.nextInt(side - 2);
@@ -253,6 +258,8 @@ class MinesRules extends PuzzleRules<MinesPuzzle, List<int>> {
       final puzzle = MinesPuzzle(width: side, height: side, mines: List.unmodifiable(layout), start: start);
       final result = minesSolve(puzzle);
       if (!result.solved || result.taps.isEmpty || minesDeep(result) < deep) continue;
+      final paced = minesSeconds(result);
+      if (paced < least || paced > most) continue;
       return PuzzleDraw(puzzle, List.unmodifiable(result.taps));
     }
   }
@@ -269,12 +276,13 @@ class MinesRules extends PuzzleRules<MinesPuzzle, List<int>> {
     return true;
   }
 
-  // 预计用时：6 见方约 40 秒、14 见方约 7 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.343。
   @override
-  int expectedSeconds(MinesPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 34, growth: 1.343);
+  int expectedSeconds(MinesPuzzle puzzle) => minesSeconds(minesSolve(puzzle));
 
+  // 难易分直接由预计用时定（用时已按要翻几格与难推理的轮数算好，同汉诺塔）：难度分的每一档再对半分成两级，
+  // 各档的用时区间对齐难度分 3–7，所以入门 1–2、简单 3–4、普通 5–6、困难 7–8、专家 9–10，五档分段不重叠。
   @override
-  int complexity(MinesPuzzle puzzle) => minesDifficulty(puzzle.mines.where((mine) => mine).length, minesDeep(minesSolve(puzzle)));
+  int complexity(MinesPuzzle puzzle) => ((1.4 * math.log(expectedSeconds(puzzle) / 10) / math.ln2 - 2.5) * 2).floor().clamp(0, 9) + 1;
 
   @override
   Object encodePuzzle(MinesPuzzle puzzle) => {
@@ -312,10 +320,6 @@ class MinesRules extends PuzzleRules<MinesPuzzle, List<int>> {
 // 推理量：子集推理的轮数加全局推理轮数的两倍（数雷要通盘看，比两格对比更难想到）。
 int minesDeep(MinesSolveResult result) => result.subsets + result.globals * 2;
 
-// 难易分 1–10 的口径：以雷数为主（雷越多、要推的格越多），按雷数分五段（段界 8、13、22、34，对着五档的 5、10、15、28、40 颗），
-// 基础分 1、3、5、7、9；推理量到了这一段的门槛（第几段就是几轮，入门 1 轮到专家 5 轮，约是各档出题的中位数）再加 1。
-// 所以同档的题最多差 1 分，下一档最低不低于上一档最高：入门 1–2、简单 3–4、普通 5–6、困难 7–8、专家 9–10。
-int minesDifficulty(int mines, int deep) {
-  final band = [8, 13, 22, 34].where((limit) => mines >= limit).length;
-  return 1 + band * 2 + (deep > band ? 1 : 0);
-}
+// 预计用时（秒）：看题 16 秒，开局之后每翻一格约 2.4 秒（看数字、想、点一下；参考解里一格一下，0 格连开的不算），
+// 每轮子集或全局推理（minesDeep）另加 6 秒（要停下来比几个数字）。按常见的人工解题速度估：6 见方点十来下约 40 秒，14 见方点八十来下约 4 分半。
+int minesSeconds(MinesSolveResult result) => (16 + 2.4 * result.taps.length + 6 * minesDeep(result)).round();

@@ -34,7 +34,7 @@ Future<void> _open(WidgetTester tester, PlaygroundStore store, int seed) async {
 void main() {
   group('规则', () {
     const rules = QueensRules();
-    const sizes = {PuzzleTier.entry: 5, PuzzleTier.easy: 6, PuzzleTier.normal: 8, PuzzleTier.hard: 10, PuzzleTier.expert: 12};
+    const sizes = {PuzzleTier.entry: 5, PuzzleTier.easy: 7, PuzzleTier.normal: 8, PuzzleTier.hard: 9, PuzzleTier.expert: 11};
 
     test('求解器：空棋盘 4 皇后 2 个解、8 皇后 92 个解，锁定的皇后互相攻击无解', () {
       expect(queensSolve(const QueensPuzzle(size: 4, given: [-1, -1, -1, -1]), limit: 10).count, 2);
@@ -74,7 +74,7 @@ void main() {
       expect(rules.generate(11, PuzzleTier.hard).puzzle.given, isNot(rules.generate(12, PuzzleTier.hard).puzzle.given));
     });
 
-    test('难度分：1–10，同档最多差 1 分，下一档最低不低于上一档最高，平均分逐档上升', () {
+    test('难度分：1–10，同档最多差 1 分，下一档最低高过上一档最高，平均分逐档上升', () {
       final scores = {for (final tier in PuzzleTier.values) tier: [for (var seed = 0; seed < 20; seed++) rules.complexity(rules.generate(seed, tier).puzzle)]};
       double average(List<int> values) => values.reduce((sum, value) => sum + value) / values.length;
       for (final (index, tier) in PuzzleTier.values.indexed) {
@@ -85,11 +85,33 @@ void main() {
         expect(list.reduce((a, b) => a > b ? a : b) - list.reduce((a, b) => a < b ? a : b), lessThanOrEqualTo(1), reason: '$tier $list');
         if (index == 0) continue;
         final previous = scores[PuzzleTier.values[index - 1]]!;
-        expect(list.reduce((a, b) => a < b ? a : b), greaterThanOrEqualTo(previous.reduce((a, b) => a > b ? a : b)), reason: '$tier');
+        expect(list.reduce((a, b) => a < b ? a : b), greaterThan(previous.reduce((a, b) => a > b ? a : b)), reason: '$tier');
         expect(average(list), greaterThan(average(previous)), reason: '$tier');
       }
       expect(scores[PuzzleTier.entry]!.every((score) => score <= 2), isTrue);
       expect(scores[PuzzleTier.expert]!.every((score) => score >= 9), isTrue);
+    });
+
+    test('题量：每档 120 个种子出的题大多不重样（6×6 只有 4 种摆法，简单档原来只出得了 24 道）', () {
+      // 5×5 只有 10 种摆法、每道锁两个皇后，入门档一共就一百来道。
+      const least = {PuzzleTier.entry: 60, PuzzleTier.easy: 100, PuzzleTier.normal: 80, PuzzleTier.hard: 100, PuzzleTier.expert: 110};
+      for (final tier in PuzzleTier.values) {
+        final draws = [for (var seed = 1; seed <= 120; seed++) rules.generate(seed * 7919, tier)];
+        expect({for (final draw in draws) draw.puzzle.given.join(',')}.length, greaterThanOrEqualTo(least[tier]!), reason: '$tier');
+        expect({for (final draw in draws) draw.solution.join(',')}.length, greaterThan(tier == PuzzleTier.entry ? 8 : 30), reason: '$tier 摆法');
+      }
+    });
+
+    test('预计用时：五档中位数逐档上升，落在同档别的游戏附近（约 45、70、110、165、245 秒的六成到一倍半）', () {
+      const targets = {PuzzleTier.entry: 45, PuzzleTier.easy: 70, PuzzleTier.normal: 110, PuzzleTier.hard: 165, PuzzleTier.expert: 245};
+      var previous = 0;
+      for (final tier in PuzzleTier.values) {
+        final seconds = [for (var seed = 1; seed <= 40; seed++) rules.expectedSeconds(rules.generate(seed * 7919, tier).puzzle)]..sort();
+        final median = seconds[seconds.length ~/ 2];
+        expect(median, greaterThan(previous), reason: '$tier');
+        expect(median, inInclusiveRange(targets[tier]! * .6, targets[tier]! * 1.5), reason: '$tier $median');
+        previous = median;
+      }
     });
 
     test('按规则判定：任何合规的补法都算，同列、同斜线、缺一个、挪动锁定的都不算', () {
@@ -109,7 +131,7 @@ void main() {
     test('编解码往返，坏输入抛 FormatException', () {
       final draw = rules.generate(9, PuzzleTier.expert);
       final puzzle = rules.decodePuzzle(rules.encodePuzzle(draw.puzzle));
-      expect(puzzle.size, 12);
+      expect(puzzle.size, 11);
       expect(puzzle.given, draw.puzzle.given);
       expect(rules.solved(puzzle, rules.decodeAnswer(rules.encodeAnswer(draw.solution))), isTrue);
       expect(rules.decodeAnswer([-1, 3]), [-1, 3]);
@@ -184,11 +206,11 @@ void main() {
       expect(find.textContaining('5×5'), findsOneWidget);
       expect(store.best('queens', PuzzleTier.entry), isNotNull);
 
-      // 换到下一档：换一道 6×6 的题，棋盘清空。
+      // 换到下一档：换一道 7×7 的题，棋盘清空。
       await tester.tap(find.text('换到简单'));
       await tester.pumpAndSettle();
       final next = const QueensRules().generate(7, PuzzleTier.easy).puzzle;
-      expect(find.textContaining('已放 ${_lockedRows(next).length}/6'), findsOneWidget);
+      expect(find.textContaining('已放 ${_lockedRows(next).length}/7'), findsOneWidget);
       expect(store.tierOf('queens'), PuzzleTier.easy);
       semantics.dispose();
     });
@@ -219,7 +241,7 @@ void main() {
       semantics.dispose();
     });
 
-    testWidgets('12×12 格子不到 48：双指张开放大到 48，放大后单指拖动平移、都不算落子', (tester) async {
+    testWidgets('11×11 格子不到 48：双指张开放大到 48，放大后单指拖动平移、都不算落子', (tester) async {
       final semantics = tester.ensureSemantics();
       final store = PlaygroundStore.memory();
       await store.chooseTier('queens', PuzzleTier.expert);
@@ -243,14 +265,14 @@ void main() {
       final after = tester.getRect(_cell(6, 6));
       expect(after.width, greaterThan(before * 1.2));
       expect(after.width, lessThanOrEqualTo(48.01));
-      expect(find.textContaining('已放 $lockedCount/12'), findsOneWidget);
+      expect(find.textContaining('已放 $lockedCount/11'), findsOneWidget);
 
       await tester.dragFrom(after.center, const Offset(40, 30));
       await _step(tester);
       final moved = tester.getRect(_cell(6, 6));
       expect(moved.left, greaterThan(after.left));
       expect(moved.top, greaterThan(after.top));
-      expect(find.textContaining('已放 $lockedCount/12'), findsOneWidget);
+      expect(find.textContaining('已放 $lockedCount/11'), findsOneWidget);
       expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '撤销')).onPressed, isNull);
       semantics.dispose();
     });

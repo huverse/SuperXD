@@ -45,13 +45,13 @@ const _needsGlobal = '0000000000000001000100100';
 // 1 1 1 1 1
 final _needsGuess = '10010${'0' * 20}';
 
-// 每档的边长、雷数、至少几轮子集或全局推理与难度分区间（同 mines_rules.dart 的注释）。
+// 每档的边长、雷数、至少几轮子集或全局推理、难易分区间、难度分与预计用时的中位数（同 mines_rules.dart 的 _tiers）。
 const _bands = {
-  PuzzleTier.entry: (side: 6, mines: 5, deep: 0, score: (1, 2)),
-  PuzzleTier.easy: (side: 8, mines: 10, deep: 0, score: (3, 4)),
-  PuzzleTier.normal: (side: 9, mines: 15, deep: 1, score: (5, 6)),
-  PuzzleTier.hard: (side: 12, mines: 28, deep: 2, score: (7, 8)),
-  PuzzleTier.expert: (side: 14, mines: 40, deep: 3, score: (9, 10)),
+  PuzzleTier.entry: (side: 6, mines: 5, deep: 0, score: (1, 2), difficulty: 3, median: 44),
+  PuzzleTier.easy: (side: 8, mines: 10, deep: 0, score: (3, 4), difficulty: 4, median: 70),
+  PuzzleTier.normal: (side: 9, mines: 15, deep: 1, score: (5, 6), difficulty: 5, median: 107),
+  PuzzleTier.hard: (side: 12, mines: 28, deep: 2, score: (7, 8), difficulty: 6, median: 183),
+  PuzzleTier.expert: (side: 14, mines: 40, deep: 3, score: (9, 10), difficulty: 7, median: 268),
 };
 
 String _place(MinesPuzzle puzzle, int cell) => '第${cell ~/ puzzle.width + 1}行第${cell % puzzle.width + 1}列';
@@ -251,7 +251,7 @@ void main() {
       expect(watch.elapsedMilliseconds, lessThan(2000));
     });
 
-    test('难度分：同档最多差 1 分，下一档最低不低于上一档最高，平均分逐档上升；推理量过门槛才加 1', () {
+    test('难易分：同档最多差 1 分，下一档最低不低于上一档最高，平均分逐档上升', () {
       final scores = {for (final tier in PuzzleTier.values) tier: [for (var seed = 0; seed < 30; seed++) _rules.complexity(_rules.generate(seed, tier).puzzle)]};
       double average(List<int> values) => values.reduce((sum, value) => sum + value) / values.length;
       int lowest(List<int> values) => values.reduce((a, b) => a < b ? a : b);
@@ -264,10 +264,25 @@ void main() {
         expect(lowest(list), greaterThanOrEqualTo(highest(previous)), reason: '$tier');
         expect(average(list), greaterThan(average(previous)), reason: '$tier');
       }
-      expect((minesDifficulty(5, 0), minesDifficulty(5, 1)), (1, 2));
-      expect((minesDifficulty(15, 2), minesDifficulty(15, 3)), (5, 6));
-      expect((minesDifficulty(40, 4), minesDifficulty(40, 5)), (9, 10));
-      expect(minesDifficulty(99, 99), 10);
+    });
+
+    test('预计用时按要翻几格与难推理的轮数算，五档各占难度分的一级、中位数逐档约 1.5 倍；入门开局之后至少还要点 4 下', () {
+      // 看题 16 秒、每翻一格 2.4 秒、每轮子集或全局推理 6 秒（_needsSubset 开局后点 3 下：上三、左上、右上，子集 1 轮）。
+      final subset = minesSolve(_small(_needsSubset));
+      expect(subset.taps, [2, 0, 4]);
+      expect((minesDeep(subset), minesSeconds(subset)), (1, (16 + 2.4 * 3 + 6).round()));
+      for (final MapEntry(key: tier, value: band) in _bands.entries) {
+        final seconds = <int>[];
+        for (var seed = 0; seed < 60; seed++) {
+          final puzzle = _rules.generate(seed * 7919, tier).puzzle;
+          expect(_rules.difficulty(puzzle), band.difficulty, reason: '$tier $seed');
+          seconds.add(_rules.expectedSeconds(puzzle));
+          // 原来入门有一成翻开局面后点一两下就完（每档 300 道里 26 道不到 4 下）。
+          if (tier == PuzzleTier.entry) expect(minesSolve(puzzle).taps.length, greaterThanOrEqualTo(4), reason: '$seed');
+        }
+        seconds.sort();
+        expect(seconds[seconds.length ~/ 2], inInclusiveRange(band.median * .85, band.median * 1.15), reason: '$tier');
+      }
     });
 
     test('按规则重放：翻未翻格、点数字连开都算；翻到雷、漏翻、越界、重复翻已翻的、点 0 格、解开后多点都不算', () {

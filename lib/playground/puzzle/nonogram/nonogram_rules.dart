@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:superxd/playground/puzzle_rules.dart';
 
 // 数织（Nonogram）：按每行每列的提示数字涂格，提示是这一行（列）里连续涂色段的长度、按顺序排列，段与段之间至少空一格。
@@ -153,16 +155,25 @@ class NonogramRules extends PuzzleRules<NonogramPuzzle, List<bool>> {
   @override
   int? fragment(NonogramPuzzle puzzle, List<bool> solution) => solution.where((cell) => cell).length;
 
-  static const _sides = {PuzzleTier.entry: 5, PuzzleTier.easy: 7, PuzzleTier.normal: 10, PuzzleTier.hard: 12, PuzzleTier.expert: 15};
-  // 一行最多几段提示：多了提示栏太宽，手机上格子会挤得点不准。
-  static const _maxRuns = {5: 3, 7: 4, 10: 5, 12: 5, 15: 6};
+  // 每档的边长、一行最多几段提示（多了提示栏太宽，手机上格子会挤得点不准）、逐行求解要的轮数区间（含两端）与要不要左右对称。
+  // 轮数是这一档的推理深度：1 轮是每行推一遍、每列再推一遍就全定下，越多越要行列来回对照。区间按预计用时卡在各档的难度分里
+  // （入门 3、简单 4、普通 5、困难 6、专家 7，五档不重叠，见 expectedSeconds），所以高档不只是变大、也要多推几轮。
+  // 11-17 小修（每档 300 个种子实测）：原来 5、7、10、12、15 见方不限轮数，五档预计用时中位 35、55、138、217、540 秒、难度分 3、3–5、4–6、6–8、8–10 互相重叠，
+  // 入门有四分之三一轮就推完；入门对称时 5 见方只有十几位能变，300 道里只有 219 种（不对称 2000 道里 1925 种）。现在约 47、61、109、175、302 秒。
+  static const _tiers = {
+    PuzzleTier.entry: (side: 5, runs: 3, sweeps: (2, 2), mirrored: false),
+    PuzzleTier.easy: (side: 7, runs: 4, sweeps: (2, 3), mirrored: true),
+    PuzzleTier.normal: (side: 10, runs: 5, sweeps: (2, 3), mirrored: true),
+    PuzzleTier.hard: (side: 11, runs: 5, sweeps: (3, 4), mirrored: false),
+    PuzzleTier.expert: (side: 13, runs: 6, sweeps: (3, 4), mirrored: false),
+  };
 
-  // 出图：随机涂一半多一点，再按九宫格多数平滑一遍成块（像小像素画而不是噪点），小档左右对称更像图案；逐行求解器解得开才用，否则换下一张。
+  // 出图：随机涂一半多一点，再按九宫格多数平滑一遍成块（像小像素画而不是噪点），简单、普通左右对称更像图案；
+  // 逐行求解器解得开、轮数落在这一档的区间才用，否则换下一张（平均三四张出一道，一张不到 1 毫秒）。
   @override
   PuzzleDraw<NonogramPuzzle, List<bool>> generate(int seed, PuzzleTier tier) {
-    final side = _sides[tier]!, maxRuns = _maxRuns[side]!;
+    final (:side, runs: maxRuns, sweeps: (low, high), :mirrored) = _tiers[tier]!;
     final random = PuzzleRandom(seed);
-    final mirrored = tier.index <= PuzzleTier.normal.index;
     while (true) {
       var grid = [for (var index = 0; index < side * side; index++) random.chance(.58)];
       grid = _smooth(grid, side, random);
@@ -177,7 +188,8 @@ class NonogramRules extends PuzzleRules<NonogramPuzzle, List<bool>> {
       if (filled < side * side * .35 || filled > side * side * .75) continue;
       final puzzle = nonogramClues(grid, side, side);
       if ([...puzzle.rows, ...puzzle.columns].any((runs) => runs.length > maxRuns || runs.isEmpty)) continue;
-      if (nonogramLineSolve(puzzle) == null) continue;
+      final sweeps = nonogramLineSolve(puzzle);
+      if (sweeps == null || sweeps < low || sweeps > high) continue;
       return PuzzleDraw(puzzle, grid);
     }
   }
@@ -213,16 +225,16 @@ class NonogramRules extends PuzzleRules<NonogramPuzzle, List<bool>> {
     return true;
   }
 
-  // 格数与推理轮数：5×5 约 2 分，15×15 约 7–9 分。
-  // 预计用时：5 见方约 40 秒、15 见方约 9 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.578。
+  // 难易按格数与推理轮数：分 = 格数 / 40 + 轮数 / 2（解不开按 10 轮），complexity 取整：入门 2、简单 2–3、普通 4、困难 5、专家 6。
+  // 预计用时：5 见方一轮约 37 秒、15 见方三轮约 9 分半（按常见的人工解题速度估），按没取整的分每高 1 乘 1.578（同 puzzlePace 的口径；
+  // 取整后再换算时同档的题只落在一两级上，五档的中位数离目标远）。
   @override
-  int expectedSeconds(NonogramPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 35, growth: 1.578);
+  int expectedSeconds(NonogramPuzzle puzzle) => (35 * math.pow(1.578, _score(puzzle) - 1)).round();
 
   @override
-  int complexity(NonogramPuzzle puzzle) {
-    final sweeps = nonogramLineSolve(puzzle) ?? 10;
-    return (puzzle.width * puzzle.height / 40 + sweeps * .5).round().clamp(1, 10);
-  }
+  int complexity(NonogramPuzzle puzzle) => _score(puzzle).round();
+
+  static double _score(NonogramPuzzle puzzle) => (puzzle.width * puzzle.height / 40 + (nonogramLineSolve(puzzle) ?? 10) * .5).clamp(1, 10);
 
   @override
   Object encodePuzzle(NonogramPuzzle puzzle) => {'width': puzzle.width, 'height': puzzle.height, 'rows': puzzle.rows, 'columns': puzzle.columns};

@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:typed_data';
 
 import 'package:superxd/playground/puzzle_rules.dart';
@@ -13,7 +14,7 @@ class LoopPuzzle {
 }
 
 const loopMinSide = 2;
-// 外部输入的上限：专家档 10 见方留有余地，再大的坏题求解器可能要算很久。
+// 外部输入的上限：专家档 8 见方（11-17 前出过 10 见方）留有余地，再大的坏题求解器可能要算很久。
 const loopMaxSide = 12;
 // 解码时证明唯一最多试探几次：出过的专家题多数几百次、试过最多六千多次，这里留够余量；随便拼的 12 见方题面不设上限能搜几分钟。
 const loopDecodeBudget = 50000;
@@ -642,28 +643,27 @@ class LoopRules extends PuzzleRules<LoopPuzzle, List<bool>> {
   @override
   int slotRange(LoopPuzzle puzzle) => puzzle.clues.length;
 
-  // 档位：入门 4 见方、简单 5 见方只靠推理就能解开（不用试探）；普通 6 见方起只要求唯一；困难 7 见方、专家 10 见方还要求光靠推理推不完
-  // （要用到试探，不只是数字、点与格角的直接规则），并出几道候选留试探最多的（专家一道候选几十毫秒，只比两道）。
-  static const _sides = {PuzzleTier.entry: 4, PuzzleTier.easy: 5, PuzzleTier.normal: 6, PuzzleTier.hard: 7, PuzzleTier.expert: 10};
-  static const _candidates = {PuzzleTier.entry: 1, PuzzleTier.easy: 1, PuzzleTier.normal: 1, PuzzleTier.hard: 3, PuzzleTier.expert: 2};
+  // 档位：入门 4 见方、简单 5 见方只靠推理就能解开（不用试探）；普通 6 见方起只要求唯一；每档只收预计用时（loopSeconds）落在这一档区间里的，
+  // 区间对齐难度分 3、4、5、6、7，五档不重叠，所以普通 6 见方要试探 1 到 13 次、困难 7 见方 2 到 60 次、专家 8 见方 10 到 498 次（光靠数字、点、格角
+  // 与圈里圈外的规则推不完，要往前看几步）。
+  // 11-17 小修（每档 200 道实测）：原来专家 10 见方，难易按边长每大一圈用时乘 1.9，五档预计用时中位 48、91、125、327、619 秒，难度分 3、4、5–6、6–7、8，
+  // 困难起是别的游戏同档的两倍上下；现在约 45、65、113、197、310 秒（见 loopSeconds）。
+  static const _sides = {PuzzleTier.entry: 4, PuzzleTier.easy: 5, PuzzleTier.normal: 6, PuzzleTier.hard: 7, PuzzleTier.expert: 8};
+  static const _window = {PuzzleTier.entry: (36, 56), PuzzleTier.easy: (57, 92), PuzzleTier.normal: (93, 152), PuzzleTier.hard: (153, 249), PuzzleTier.expert: (250, 409)};
   static const _removalBudget = 1000;
 
   @override
   PuzzleDraw<LoopPuzzle, List<bool>> generate(int seed, PuzzleTier tier) {
     final side = _sides[tier]!;
+    final (least, most) = _window[tier]!;
     final random = PuzzleRandom(seed);
-    final guessing = tier.index >= PuzzleTier.normal.index, mustGuess = tier.index >= PuzzleTier.hard.index;
-    PuzzleDraw<LoopPuzzle, List<bool>>? best;
-    var bestBranches = -1, drawn = 0;
-    while (drawn < _candidates[tier]!) {
+    final guessing = tier.index >= PuzzleTier.normal.index;
+    while (true) {
       final draw = _draw(side, random, guessing: guessing);
       if (draw == null) continue;
-      final branches = loopSolve(draw.puzzle).branches;
-      if (mustGuess && branches == 0) continue;
-      drawn++;
-      if (branches > bestBranches) (best, bestBranches) = (draw, branches);
+      final seconds = loopSeconds(draw.puzzle);
+      if (seconds >= least && seconds <= most) return draw;
     }
-    return best!;
   }
 
   // 一道候选：长出区域，它的边界就是答案，算出每格的数字（全给上还不唯一、或入门与简单档光靠推理解不开的区域不用，返回 null）；
@@ -789,21 +789,13 @@ class LoopRules extends PuzzleRules<LoopPuzzle, List<bool>> {
     return walked == total;
   }
 
-  // 难易分口径：以边长为主（4、5、6、7 见方记 1、3、5、7，8 见方起记 9）；要试探的题试探分支数不少于格数的四分之一、
-  // 只靠推理的题推理轮数不少于格数的一半，再加 1。五档各占两分（入门 1–2 到专家 9–10），同档最多差 1、档间不重叠。
-  // 预计用时：4 见方约 45 秒、10 见方约 10 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.376。
   @override
-  int expectedSeconds(LoopPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 35, growth: 1.376);
+  int expectedSeconds(LoopPuzzle puzzle) => loopSeconds(puzzle);
 
+  // 难易分直接由预计用时定（用时已按格数与试探次数算好，同汉诺塔）：难度分的每一档再对半分成两级，
+  // 各档的用时区间对齐难度分 3–7，所以入门 1–2、简单 3–4、普通 5–6、困难 7–8、专家 9–10，五档分段不重叠。
   @override
-  int complexity(LoopPuzzle puzzle) {
-    final result = loopSolve(puzzle);
-    final side = (puzzle.width + puzzle.height) / 2;
-    final base = (2 * side - 7).round().clamp(1, 9);
-    final cells = puzzle.width * puzzle.height;
-    final deep = result.branches > 0 ? result.branches * 4 >= cells : result.rounds * 2 >= cells;
-    return (base + (deep ? 1 : 0)).clamp(1, 10);
-  }
+  int complexity(LoopPuzzle puzzle) => ((1.4 * math.log(expectedSeconds(puzzle) / 10) / math.ln2 - 2.5) * 2).floor().clamp(0, 9) + 1;
 
   @override
   Object encodePuzzle(LoopPuzzle puzzle) => {'width': puzzle.width, 'height': puzzle.height, 'clues': puzzle.clues};
@@ -831,6 +823,13 @@ class LoopRules extends PuzzleRules<LoopPuzzle, List<bool>> {
     if (json is! String || json.length > most || !RegExp(r'^[01]*$').hasMatch(json)) throw const FormatException('答案不合法');
     return [for (final char in json.split('')) char == '1'];
   }
+}
+
+// 预计用时（秒）：看题 10 秒，每格约 2.2 秒（看数字、画线、标叉），要试探的题每格另加 0.45 × log2(1 + 试探次数) 秒（推不动时要往前看几步，
+// 越要看得远越慢，按对数涨）。按常见的人工解题速度估：4 见方不用试探约 45 秒、10 见方试探两三百次约 10 分钟；按格数算，不按边长翻倍。
+int loopSeconds(LoopPuzzle puzzle) {
+  final branches = loopSolve(puzzle).branches;
+  return (10 + puzzle.width * puzzle.height * (2.2 + .45 * math.log(1 + branches) / math.ln2)).round();
 }
 
 // 圈里围住几格：每一格往左数，这一行左边在圈上的竖边是奇数条就在圈里（挑战的碎片）。

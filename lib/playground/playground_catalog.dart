@@ -79,7 +79,8 @@ final playgroundCatalog = <PlaygroundGame>[
     id: 'lights',
     name: '点灯',
     summary: '翻转十字，把灯全点亮',
-    howToPlay: '点一格，它和上下左右的灯一起翻转。把灯全部点亮。',
+    // 长文案：十字、斜十字、三态、环面各一条规则，少一条就看不懂棋盘上方写的规矩。
+    howToPlay: '点一格，它和相邻的灯一起变：十字是上下左右，斜十字是四个斜角；三态的灯按灭、暗、亮轮换；环面的边连着对边。把灯全部点亮。',
     icon: CampusIcons.lights,
     group: gridGroup,
     builder: (context, game, store, challenge, first) => LightsPage(game: game, store: store, first: first, challenge: challenge),

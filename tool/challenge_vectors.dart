@@ -6,6 +6,7 @@ import 'package:superxd/playground/puzzle/balance/balance_rules.dart';
 import 'package:superxd/playground/puzzle/flash/flash_rules.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_rules.dart';
 import 'package:superxd/playground/puzzle/ice/ice_rules.dart';
+import 'package:superxd/playground/puzzle/lights/lights_rules.dart';
 import 'package:superxd/playground/puzzle/river/river_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 
@@ -108,6 +109,7 @@ Map<String, Object?> buildChallengeVectors({int seedsPerTier = 2, int seed = 0x5
     cases.addAll(_trapCases(game, rules));
     if (rules is RiverRules) cases.addAll(_riverCases(game, rules));
     cases.addAll(_balanceCases(game));
+    cases.addAll(_lightsCases(game));
     games[game] = cases;
   }
   // 每个游戏的题面写法版本：服务端按它核对自己的判定认得哪一版（test/challenge_judge.test.ts）。
@@ -358,6 +360,40 @@ List<Map<String, Object?>> _balanceCases(String game) {
     {'weighings': weighingsOf(balanceSolve(plain)!), 'balls': <int>[]},
   ]));
   return cases;
+}
+
+// 点灯第 2 版：形状、环面、级数的 8 种组合各一道手搭的 4×4（从全亮点左上角与第 2 行第 2 格，三态时角上点两下），参考解、
+// 按另一种形状或另一种边（环面与否）求出的点法（那样解得开时）、参考解后多点同一格「级数」下（局面不变）、少点第一下各判一次：
+// 移植时漏了绕到对边、斜角或模 3，这里两端就对不上。用自己的题面，不动上面已有的向量。
+List<Map<String, Object?>> _lightsCases(String game) {
+  if (game != 'lights') return const [];
+  final rules = challengeRules[game]!;
+  Map<String, Object?> item(LightsPuzzle puzzle) {
+    final reference = lightsSolve(puzzle)!, encoded = rules.encodePuzzle(puzzle);
+    final answers = <Object?>[
+      reference,
+      ?lightsSolve(puzzle.copyWith(shape: LightsShape.values[1 - puzzle.shape.index])),
+      ?lightsSolve(puzzle.copyWith(wrap: !puzzle.wrap)),
+      [...reference, ...List.filled(puzzle.states, 15)],
+      reference.sublist(1),
+    ];
+    return {'tier': PuzzleTier.normal.name, 'puzzle': encoded, 'answers': [for (final answer in answers) {'answer': answer, 'expect': challengeVerdict(game, encoded, answer)}]};
+  }
+
+  LightsPuzzle pressed(LightsPuzzle lit, List<int> presses) {
+    final cells = [...lit.cells];
+    for (final cell in presses) {
+      lightsPress(lit, cells, cell);
+    }
+    return lit.copyWith(cells: cells);
+  }
+
+  return [
+    for (final states in [2, 3])
+      for (final shape in LightsShape.values)
+        for (final wrap in [false, true])
+          item(pressed(LightsPuzzle(side: 4, cells: List.filled(16, states - 1), shape: shape, wrap: wrap, states: states), [if (states == 3) 0, 0, 5])),
+  ];
 }
 
 Future<void> main(List<String> arguments) async {

@@ -279,6 +279,34 @@ void main() {
       expect(watch.elapsedMilliseconds, lessThan(5000));
     });
 
+    test('每档的边长与推理轮数在这一档的区间里，难度分五档各占一级不重叠，预计用时中位数逐档约 1.5 倍', () {
+      // 边长、逐行求解的轮数区间、难度分与预计用时中位数（同 nonogram_rules.dart 的 _tiers）。
+      const bands = {
+        PuzzleTier.entry: (side: 5, sweeps: (2, 2), score: 3, median: 47),
+        PuzzleTier.easy: (side: 7, sweeps: (2, 3), score: 4, median: 61),
+        PuzzleTier.normal: (side: 10, sweeps: (2, 3), score: 5, median: 109),
+        PuzzleTier.hard: (side: 11, sweeps: (3, 4), score: 6, median: 175),
+        PuzzleTier.expert: (side: 13, sweeps: (3, 4), score: 7, median: 302),
+      };
+      for (final MapEntry(key: tier, value: band) in bands.entries) {
+        final seconds = <int>[];
+        for (var seed = 0; seed < 40; seed++) {
+          final puzzle = rules.generate(seed, tier).puzzle;
+          expect(puzzle.width, band.side, reason: '$tier');
+          expect(nonogramLineSolve(puzzle), inInclusiveRange(band.sweeps.$1, band.sweeps.$2), reason: '$tier $seed');
+          expect(rules.difficulty(puzzle), band.score, reason: '$tier $seed');
+          seconds.add(rules.expectedSeconds(puzzle));
+        }
+        seconds.sort();
+        expect(seconds[seconds.length ~/ 2], band.median, reason: '$tier');
+      }
+    });
+
+    test('题量：入门 200 道里不同的题不少于 190 种（左右对称时 5 见方只有十几格能变，只有一百五十种上下）', () {
+      final seen = {for (var seed = 0; seed < 200; seed++) rules.generate(seed * 7919, PuzzleTier.entry).solution.map((cell) => cell ? 1 : 0).join()};
+      expect(seen.length, greaterThanOrEqualTo(190));
+    });
+
     test('按提示判定，不和参考解逐格比', () {
       // 两种涂法提示相同（对角两格）：这种题不会出，但判定只看提示。
       const puzzle = NonogramPuzzle(width: 2, height: 2, rows: [[1], [1]], columns: [[1], [1]]);

@@ -21,9 +21,10 @@ BoxesPuzzle _corridor({List<int> boxes = const [9], List<int> goals = const [12]
   return BoxesPuzzle(width: width, height: height, walls: [for (var cell = 0; cell < width * height; cell++) cell < width || cell >= width * 2 || cell % width == 0 || cell % width == width - 1], goals: goals, boxes: boxes, player: 8);
 }
 
-// 每档最少推数的区间（同规则文件里的 _tiers）与难度分段。
-const _least = {PuzzleTier.entry: (4, 8), PuzzleTier.easy: (9, 13), PuzzleTier.normal: (14, 19), PuzzleTier.hard: (20, 26), PuzzleTier.expert: (27, 40)};
-const _scores = {PuzzleTier.entry: (1, 2), PuzzleTier.easy: (3, 3), PuzzleTier.normal: (4, 5), PuzzleTier.hard: (6, 7), PuzzleTier.expert: (8, 10)};
+// 每档最少推数的区间（同规则文件里的 _tiers）、难易分段与难度分（五档各占一级）。
+const _least = {PuzzleTier.entry: (4, 6), PuzzleTier.easy: (9, 13), PuzzleTier.normal: (14, 19), PuzzleTier.hard: (20, 23), PuzzleTier.expert: (24, 31)};
+const _scores = {PuzzleTier.entry: (1, 1), PuzzleTier.easy: (3, 3), PuzzleTier.normal: (4, 5), PuzzleTier.hard: (6, 6), PuzzleTier.expert: (7, 8)};
+const _difficulty = {PuzzleTier.entry: 3, PuzzleTier.easy: 4, PuzzleTier.normal: 5, PuzzleTier.hard: 6, PuzzleTier.expert: 7};
 
 const _verbs = {playUp: '向上走', playRight: '向右走', playDown: '向下走', playLeft: '向左走'};
 
@@ -69,10 +70,36 @@ void main() {
           expect(pushes, inInclusiveRange(low, high), reason: '$tier $seed');
           expect(boxesSolve(puzzle)!.pushes, pushes, reason: '$tier $seed 参考解应当是最少推数');
           expect(_rules.complexity(puzzle), inInclusiveRange(lowScore, highScore), reason: '$tier $seed');
+          // 原来入门 7、8 推的与简单同为 4 分，困难 24 推起与专家同为 7 分。
+          expect(_rules.difficulty(puzzle), _difficulty[tier], reason: '$tier $seed');
         }
       }
       expect(_rules.generate(5, PuzzleTier.hard).puzzle.boxes, _rules.generate(5, PuzzleTier.hard).puzzle.boxes);
       expect(watch.elapsedMilliseconds, lessThan(6000));
+    });
+
+    test('同样的推数挑要多换几次箱子或方向的：普通起参考解平均每段不到 1.75 推（原来约 1.82）', () {
+      for (final tier in [PuzzleTier.normal, PuzzleTier.hard, PuzzleTier.expert]) {
+        var segments = 0, pushes = 0;
+        for (var seed = 0; seed < 40; seed++) {
+          final draw = _rules.generate(seed, tier);
+          final puzzle = draw.puzzle;
+          final boxes = [...puzzle.boxes];
+          var player = puzzle.player, lastBox = -1, lastDirection = -1;
+          for (final direction in draw.solution) {
+            final step = boxesStep(puzzle, boxes, player, direction);
+            if (step == null) continue;
+            if (step.box >= 0) {
+              if (step.box != lastBox || direction != lastDirection) segments++;
+              pushes++;
+              (lastBox, lastDirection) = (step.box, direction);
+              boxes[step.box] = boxesNeighbor(puzzle, step.to, direction)!;
+            }
+            player = step.to;
+          }
+        }
+        expect(pushes / segments, lessThan(1.75), reason: '$tier');
+      }
     });
 
     test('编解码往返，坏输入抛 FormatException', () {

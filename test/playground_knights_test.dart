@@ -124,7 +124,7 @@ void main() {
         for (final (seed, draw) in list.indexed) {
           final puzzle = draw.puzzle;
           final reason = '$tier $seed';
-          expect(puzzle.people, tier.index + 2, reason: reason);
+          expect(puzzle.people, const {PuzzleTier.entry: 3, PuzzleTier.easy: 4, PuzzleTier.normal: 4, PuzzleTier.hard: 5, PuzzleTier.expert: 6}[tier], reason: reason);
           expect(knightsSolutions(puzzle), [_mask(draw.solution)], reason: reason);
           expect(_rules.solved(puzzle, draw.solution), isTrue, reason: reason);
           for (final (speaker, claim) in puzzle.claims.indexed) {
@@ -171,8 +171,28 @@ void main() {
         if (lowerTop != null) expect(lowest, greaterThan(lowerTop), reason: '$tier 要高过下一档');
         lowerTop = highest;
       }
-      expect(_rules.complexity(_rules.generate(0, PuzzleTier.entry).puzzle), 1);
+      expect(_rules.complexity(_rules.generate(0, PuzzleTier.entry).puzzle), 2);
       expect(_rules.complexity(_rules.generate(0, PuzzleTier.expert).puzzle), greaterThanOrEqualTo(9));
+    });
+
+    test('题量：每档 120 个种子出的题大多不重样（两人的题一共只有 8 道，入门原来翻来覆去就是这 8 道）', () {
+      const least = {PuzzleTier.entry: 70, PuzzleTier.easy: 100, PuzzleTier.normal: 110, PuzzleTier.hard: 110, PuzzleTier.expert: 110};
+      for (final tier in PuzzleTier.values) {
+        final puzzles = {for (var seed = 1; seed <= 120; seed++) jsonEncode(_rules.encodePuzzle(_rules.generate(seed * 7919, tier).puzzle))};
+        expect(puzzles.length, greaterThanOrEqualTo(least[tier]!), reason: '$tier');
+      }
+    });
+
+    test('预计用时：五档中位数逐档上升，入门到困难落在同档别的游戏附近（约 45、70、110、165 秒的六成到一倍半）', () {
+      const targets = {PuzzleTier.entry: 45, PuzzleTier.easy: 70, PuzzleTier.normal: 110, PuzzleTier.hard: 165};
+      var previous = 0;
+      for (final tier in PuzzleTier.values) {
+        final seconds = [for (var seed = 1; seed <= 40; seed++) _rules.expectedSeconds(_rules.generate(seed * 7919, tier).puzzle)]..sort();
+        final median = seconds[seconds.length ~/ 2];
+        expect(median, greaterThan(previous), reason: '$tier');
+        if (targets[tier] case final target?) expect(median, inInclusiveRange(target * .6, target * 1.5), reason: '$tier $median');
+        previous = median;
+      }
     });
 
     test('按规则判定：任何一组让每句话都和身份对得上的都算（不和参考解比）；改错一个人、人数不对都不算，并标出对不上的人', () {
@@ -269,7 +289,7 @@ void main() {
       final store = await _open(tester, seed: 4);
       final draw = _rules.generate(4, PuzzleTier.entry);
       final puzzle = draw.puzzle, solution = draw.solution;
-      expect(_status(0, 2), findsOneWidget);
+      expect(_status(0, 3), findsOneWidget);
       expect(find.bySemanticsLabel(_label(puzzle, 0, '未定')), findsOneWidget);
       expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '撤销')).onPressed, isNull);
       // 标签触区至少 48。
@@ -279,11 +299,11 @@ void main() {
       await _tapChip(tester, 0, true);
       expect(find.bySemanticsLabel(_label(puzzle, 0, '骑士')), findsOneWidget);
       expect(tester.getSemantics(_chip(0, true)), isSemantics(label: '骑士', isButton: true, isSelected: true));
-      expect(_status(1, 2), findsOneWidget);
+      expect(_status(1, 3), findsOneWidget);
       expect(haptics, ['HapticFeedbackType.selectionClick']);
       await _tapChip(tester, 0, true);
       expect(find.bySemanticsLabel(_label(puzzle, 0, '未定')), findsOneWidget);
-      expect(_status(0, 2), findsOneWidget);
+      expect(_status(0, 3), findsOneWidget);
       await tester.tap(find.widgetWithText(FilledButton, '撤销'));
       await _step(tester);
       expect(find.bySemanticsLabel(_label(puzzle, 0, '骑士')), findsOneWidget);
@@ -292,19 +312,20 @@ void main() {
       expect(find.bySemanticsLabel(_label(puzzle, 0, '未定')), findsOneWidget);
       expect(tester.widget<FilledButton>(find.widgetWithText(FilledButton, '撤销')).onPressed, isNull);
 
-      // 甲标反、乙标对：全部定了就判，只有话和身份对不上的人标出来，重震一下，不弹结果。
-      final wrong = [!solution[0], solution[1]];
+      // 甲标反、乙丙标对：全部定了就判，只有话和身份对不上的人标出来，重震一下，不弹结果。
+      final wrong = [!solution[0], solution[1], solution[2]];
       final mismatches = knightsMismatches(puzzle, _mask(wrong));
       expect(mismatches, isNotEmpty);
       haptics.clear();
       await _tapChip(tester, 0, wrong[0]);
       await _tapChip(tester, 1, wrong[1]);
-      for (var person = 0; person < 2; person++) {
+      await _tapChip(tester, 2, wrong[2]);
+      for (var person = 0; person < 3; person++) {
         expect(find.bySemanticsLabel(_label(puzzle, person, wrong[person] ? '骑士' : '无赖', mismatch: mismatches.contains(person))), findsOneWidget);
       }
       expect(haptics.last, 'HapticFeedbackType.heavyImpact');
       expect(find.text('新纪录'), findsNothing);
-      expect(_status(2, 2), findsOneWidget);
+      expect(_status(3, 3), findsOneWidget);
 
       // 甲直接改选另一个标签：解开。卡片先翻（中途看上去只剩薄薄一条），翻完才弹结果。
       final height = tester.getRect(_card(0)).height;
@@ -319,15 +340,15 @@ void main() {
       expect(thinnest, lessThan(height * .5));
       await tester.pumpAndSettle();
       expect(find.text('新纪录'), findsOneWidget);
-      expect(find.textContaining('2 人'), findsOneWidget);
+      expect(find.textContaining('3 人'), findsOneWidget);
       expect(find.textContaining('判错 1 次'), findsOneWidget);
       expect(store.best('knights', PuzzleTier.entry), isNotNull);
 
       await tester.tap(find.text('换到简单'));
       await tester.pumpAndSettle();
       expect(store.tierOf('knights'), PuzzleTier.easy);
-      expect(_status(0, 3), findsOneWidget);
-      expect(_card(2), findsOneWidget);
+      expect(_status(0, 4), findsOneWidget);
+      expect(_card(3), findsOneWidget);
       semantics.dispose();
     });
 
@@ -372,11 +393,16 @@ void main() {
       await _open(tester, seed: 2);
       final solution = _rules.generate(2, PuzzleTier.entry).solution;
       await _tapChip(tester, 0, !solution[0]);
+      await _tapChip(tester, 1, solution[1]);
+      await tester.ensureVisible(_chip(2, solution[2]));
+      await tester.pump();
       final rest = tester.getRect(_card(0));
-      await tester.tap(_chip(1, solution[1]));
+      await tester.tap(_chip(2, solution[2]));
       await tester.pump();
       await tester.pump(const Duration(milliseconds: 100));
       expect(tester.getRect(_card(0)), rest);
+      await tester.ensureVisible(_chip(0, solution[0]));
+      await tester.pump();
       await tester.tap(_chip(0, solution[0]));
       await tester.pump();
       await tester.pump();

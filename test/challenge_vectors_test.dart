@@ -128,7 +128,7 @@ void main() {
 const _samples = <String, (int, Object)>{
   'hanoi': (2, {'pegs': 3, 'variant': 0, 'start': [1, 0, 2, 2], 'goal': [1, 2, 0, 0]}),
   'ice': (2, {'width': 6, 'height': 6, 'tiles': '000110001000000000010010100000001000', 'gems': <int>[], 'start': 17, 'goal': 9, 'limit': 7}),
-  'lights': (1, {'side': 3, 'lights': '011101100'}),
+  'lights': (2, {'side': 4, 'shape': 0, 'wrap': false, 'states': 2, 'lights': '0000111110011001'}),
   'boxes': (1, {'width': 7, 'height': 7, 'walls': '1111111100000110011011101001100001110000111111111', 'goals': [12], 'boxes': [31], 'player': 29}),
   'queens': (1, {'size': 5, 'given': [-1, -1, 3, 1, -1]}),
   'river': (2, {'variant': 'farmer', 'capacity': 2, 'people': [3, 1, 2, 0], 'rowers': [3]}),
