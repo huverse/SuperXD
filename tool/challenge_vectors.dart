@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:superxd/playground/challenge/challenge_rules.dart';
 import 'package:superxd/playground/puzzle/flash/flash_rules.dart';
 import 'package:superxd/playground/puzzle/ice/ice_rules.dart';
+import 'package:superxd/playground/puzzle/river/river_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 
 // 挑战判定的双端测试向量（人工决策见 lib/playground/challenge/challenge_rules.dart）：每个能进挑战的游戏、每档出几道题，
@@ -103,6 +104,7 @@ Map<String, Object?> buildChallengeVectors({int seedsPerTier = 2, int seed = 0x5
     }
     cases.addAll(_goalCases(game, rules));
     cases.addAll(_trapCases(game, rules));
+    if (rules is RiverRules) cases.addAll(_riverCases(game, rules));
     games[game] = cases;
   }
   // 每个游戏的题面写法版本：服务端按它核对自己的判定认得哪一版（test/challenge_judge.test.ts）。
@@ -188,6 +190,54 @@ List<Map<String, Object?>> _trapCases(String game, PuzzleRules<Object?, Object?>
       [0, 0, 0, 1, 0, 0, 3],
     ]),
   ];
+}
+
+// 过河问题：每种题型一道（固定种子从入门往上找），把参考解的某一步换成别的坐法，后面接着按最短走法走完（犯规的那一步也假装开得了再走完）：
+// 判定漏查哪一条，这里就会判成解开、两端对不上。换法按 Dart 查出的问题（超载、不在这一岸、没人会划、各条规矩在哪一处、火把不够、合规）分类，
+// 每类在整条参考解上按固定种子挑两个，免得只有一步可挑时漏掉「船上也算」这种少见的问题。
+List<Map<String, Object?>> _riverCases(String game, RiverRules rules) {
+  final random = PuzzleRandom(0x81BE);
+  final cases = <Map<String, Object?>>[];
+  // 大人与小孩另要一道船上也算的（只有它会出现「只在船上出事」）。
+  for (final (variant, boat) in [for (final variant in RiverVariant.values) (variant, false), (RiverVariant.guardians, true)]) {
+    final (tier, draw) = [
+      for (final tier in PuzzleTier.values)
+        for (var seed = 0; seed < 32; seed++) (tier, seed),
+    ].map((item) => (item.$1, rules.generate(item.$2, item.$1))).firstWhere((item) => item.$2.puzzle.variant == variant && (variant != RiverVariant.guardians || item.$2.puzzle.boat == boat));
+    final puzzle = draw.puzzle, reference = draw.solution;
+    final buckets = <String, List<List<RiverCrossing>>>{};
+    var left = puzzle.everyone, side = riverLeft, spent = 0;
+    for (final (step, crossing) in reference.indexed) {
+      for (var group = 1; group <= puzzle.everyone; group++) {
+        if (riverBits(group) > puzzle.capacity + 1 || group == riverMask(crossing)) continue;
+        // 分类看第一处问题，再看船上、留下的岸、到的岸各自有没有出事（只在船上出事的要单独有一类）。
+        final violation = riverCheck(puzzle, left, side, group, spent: spent);
+        final here = side == riverLeft ? left : puzzle.everyone & ~left;
+        final places = [
+          if (puzzle.boat && riverTrouble(puzzle, group, RiverPlace.boat) != null) 'boat',
+          if (riverTrouble(puzzle, here & ~group, RiverPlace.left) != null) 'from',
+          if (riverTrouble(puzzle, (puzzle.everyone & ~here) | group, RiverPlace.right) != null) 'to',
+        ];
+        final rest = riverSolve(puzzle, left: riverAfter(left, side, group), side: 1 - side);
+        buckets.putIfAbsent('${violation?.fault}/${places.join('+')}', () => []).add([...reference.take(step), riverMembers(group), ...?rest]);
+      }
+      spent += riverCost(puzzle, riverMask(crossing));
+      left = riverAfter(left, side, riverMask(crossing));
+      side = 1 - side;
+    }
+    final answers = [
+      rules.encodeAnswer(reference),
+      for (final key in buckets.keys.toList()..sort())
+        for (var pick = 0; pick < 2 && buckets[key]!.isNotEmpty; pick++) rules.encodeAnswer(buckets[key]!.removeAt(random.nextInt(buckets[key]!.length))),
+    ];
+    final encoded = rules.encodePuzzle(puzzle);
+    cases.add({
+      'tier': tier.name,
+      'puzzle': encoded,
+      'answers': [for (final answer in answers) {'answer': answer, 'expect': challengeVerdict(game, encoded, answer)}],
+    });
+  }
+  return cases;
 }
 
 Future<void> main(List<String> arguments) async {

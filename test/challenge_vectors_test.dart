@@ -129,7 +129,7 @@ const _samples = <String, (int, Object)>{
   'lights': (1, {'side': 3, 'lights': '011101100'}),
   'boxes': (1, {'width': 7, 'height': 7, 'walls': '1111111100000110011011101001100001110000111111111', 'goals': [12], 'boxes': [31], 'player': 29}),
   'queens': (1, {'size': 5, 'given': [-1, -1, 3, 1, -1]}),
-  'river': (1, {'variant': 'farmer', 'capacity': 2, 'people': [0, 2, 3, 1]}),
+  'river': (2, {'variant': 'farmer', 'capacity': 2, 'people': [3, 1, 2, 0], 'rowers': [3]}),
   'nonogram': (1, {'width': 5, 'height': 5, 'rows': [[2, 2], [5], [1, 1], [1], [3]], 'columns': [[3], [2, 1], [1, 2], [2, 1], [3]]}),
   'knights': (1, {'claims': [[1, 1], [3, 0]]}),
   'logicgrid': (1, {'people': 3, 'categories': [[2, [1, 3, 4]], [5, [1, 2, 5]]], 'clues': [[0, 0, 1, 1, 0], [1, 0, 0, 1, 1], [1, 1, 1, 2, 2], [0, 1, 0, 2, 1]]}),

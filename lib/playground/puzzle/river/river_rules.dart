@@ -351,12 +351,14 @@ class _RiverGraph {
 }
 
 // 最短（不计时的是次数最少，桥与火把是用时最短）的一份走法；解不开返回 null。桥与火把不看火把能烧多久（出题时火把就定成这个用时）。
-List<RiverCrossing>? riverSolve(RiverPuzzle puzzle) {
+// 给了 left、side 就从那个局面（左岸有谁、船在哪岸）算起（判定向量从半路接着走完用）。
+List<RiverCrossing>? riverSolve(RiverPuzzle puzzle, {int? left, int side = riverLeft}) {
   final graph = _RiverGraph.of(puzzle);
-  final search = graph.search(graph.start);
+  final origin = left == null ? graph.start : left * 2 + side;
+  final search = graph.search(origin);
   if (search.cost[_RiverGraph.goal] < 0) return null;
   final crossings = <RiverCrossing>[];
-  for (var state = _RiverGraph.goal; state != graph.start; state = search.previous[state]) {
+  for (var state = _RiverGraph.goal; state != origin; state = search.previous[state]) {
     crossings.add(riverMembers(search.carried[state]));
   }
   return crossings.reversed.toList();

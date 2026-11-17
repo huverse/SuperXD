@@ -3,6 +3,7 @@ import 'package:superxd/playground/challenge/challenge_rules.dart';
 import 'package:superxd/playground/puzzle/flash/flash_rules.dart';
 import 'package:superxd/playground/puzzle/knights/knights_rules.dart';
 import 'package:superxd/playground/puzzle/logicgrid/logicgrid_rules.dart';
+import 'package:superxd/playground/puzzle/river/river_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 
 // 挑战里的一关交给对局页的东西（人工决策见 challenge_rules.dart 的 11-14 23:11 那条）：这一关（题面已由服务器给出）、给玩家看的关名、
@@ -56,7 +57,7 @@ String challengeFragmentName(String game, Object? puzzle) => switch (game) {
   'lights' => '最少点几下',
   'boxes' => '最少推几次',
   'queens' => '最后一行的皇后在第几列',
-  'river' => '最少渡河几次',
+  'river' => (puzzle as RiverPuzzle).timed ? '最短几分钟' : '最少渡河几次',
   'nonogram' => '一共涂几格',
   'knights' => '有几个骑士',
   'logicgrid' => '「${(puzzle as LogicGridPuzzle).categories.first.label(0)}」是第几个人',

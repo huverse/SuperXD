@@ -1,7 +1,7 @@
 import { balanceJudge, flashJudge, flashJudgeV2, loopJudge, minesJudge, twentyFourJudge } from 'src/modules/challenge/judges/board_judges';
 import { cipherJudge, logicGridJudge } from 'src/modules/challenge/judges/deduction_judges';
 import { Judge, JudgeFormatError } from 'src/modules/challenge/judges/judge_input';
-import { knightsJudge, nonogramJudge, riverJudge } from 'src/modules/challenge/judges/logic_judges';
+import { knightsJudge, nonogramJudge, riverJudge, riverJudgeV2 } from 'src/modules/challenge/judges/logic_judges';
 import { boxesJudge, hanoiJudge, iceJudge, iceJudgeV2, lightsJudge, queensJudge } from 'src/modules/challenge/judges/moves_judges';
 
 // 能进挑战的游戏（同客户端 playground_catalog.dart 里 challengeable 为真的，id 发出后不改），按题面写法版本登记判定
@@ -14,7 +14,7 @@ const judges = {
   lights: { 1: lightsJudge },
   boxes: { 1: boxesJudge },
   queens: { 1: queensJudge },
-  river: { 1: riverJudge },
+  river: { 1: riverJudge, 2: riverJudgeV2 },
   nonogram: { 1: nonogramJudge },
   knights: { 1: knightsJudge },
   logicgrid: { 1: logicGridJudge },
