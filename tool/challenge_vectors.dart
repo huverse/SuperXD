@@ -145,7 +145,7 @@ List<Map<String, Object?>> _goalCases(String game, PuzzleRules<Object?, Object?>
 }
 
 // 冰面滑行第 2 版的几种机关（专家档一道，自己的固定种子）：照参考解（解开）、多走一步滑不动的（超了步数上限）、
-// 照参考解走到半路拐进冰洞（掉下去）、不管宝石的最短走法（宝石没收齐，同时可能碰上薄冰），两端都得判成一样。
+// 照参考解走到半路拐进冰洞（掉下去）、不管宝石的最短走法（宝石没收齐，同时可能碰上薄冰），两端都得判成一样；另加两道手搭的小图。
 List<Map<String, Object?>> _trapCases(String game, PuzzleRules<Object?, Object?> rules) {
   final draw = rules.generate(0x7CE5, PuzzleTier.expert);
   if (draw.puzzle is! IcePuzzle) return const [];
@@ -164,13 +164,29 @@ List<Map<String, Object?>> _trapCases(String game, PuzzleRules<Object?, Object?>
     state = iceMove(ice, state, step);
   }
   if (iceSolution(ice.copyWith(gems: const [])) case final greedy?) answers.add(greedy);
-  final puzzle = rules.encodePuzzle(ice);
+  Map<String, Object?> verdicts(String tier, Object? puzzle, List<Object?> answers) => {
+    'tier': tier,
+    'puzzle': puzzle,
+    'answers': [for (final answer in answers) {'answer': answer, 'expect': challengeVerdict(game, puzzle, answer)}],
+  };
   return [
-    {
-      'tier': PuzzleTier.expert.name,
-      'puzzle': puzzle,
-      'answers': [for (final answer in answers) {'answer': answer, 'expect': challengeVerdict(game, puzzle, answer)}],
-    },
+    verdicts(PuzzleTier.expert.name, rules.encodePuzzle(ice), answers),
+    // 手搭的两道 3×3（0 上、1 右、2 下、3 左），钉住移植时容易漏的口径（漏了哪条，下面就有一个答案两端判得不一样）：
+    // 起点右边是冰洞：掉下去就结束，不能接着从洞里滑到终点（右、右）；上限 4 步，多走一步不算。
+    verdicts('entry', rules.encodePuzzle(rules.decodePuzzle({'width': 3, 'height': 3, 'tiles': '030000000', 'gems': <int>[], 'start': 0, 'goal': 2, 'limit': 4})), [
+      [1, 1],
+      [2, 1, 0],
+      [2, 1, 0, 0, 0],
+    ]),
+    // 第 0 行「终点 薄冰 冰」、第 1 行「岩石 岩石 雪地」、第 2 行「起点 宝石 冰」：右滑过宝石也收、上滑进雪地就停、
+    // 向左滑过薄冰到终点，再往右就掉进它碎成的洞；朝岩石滑不动的那步也算一步；上限 6 步。
+    verdicts('entry', rules.encodePuzzle(rules.decodePuzzle({'width': 3, 'height': 3, 'tiles': '040112000', 'gems': [7], 'start': 6, 'goal': 0, 'limit': 6})), [
+      [1, 0, 0, 3],
+      [1, 0, 3],
+      [1, 0, 0, 3, 1, 3],
+      [0, 1, 0, 0, 3],
+      [0, 0, 0, 1, 0, 0, 3],
+    ]),
   ];
 }
 
