@@ -202,7 +202,9 @@ jobs:
           arch: x86_64
           target: google_apis
           disable-animations: true
-          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -no-snapshot-save
+          # -feature -Vulkan：软件渲染的模拟器上，Flutter 走 Vulkan 一出首帧整个模拟器就崩（11-17 第一次跑：am start 后 adb 连接断开、5554 端口没了，
+          # 本机软件渲染的模拟器也一样），关掉 Vulkan 让 Impeller 走 OpenGL ES。真机与硬件渲染的模拟器照旧走 Vulkan。
+          emulator-options: -no-window -gpu swiftshader_indirect -feature -Vulkan -noaudio -no-boot-anim -no-snapshot-save
           # 这个动作把 script 的每一行分开执行，所以只写一行、逻辑放在脚本里。
           script: bash tool/android_smoke.sh
       - if: always() && steps.android-smoke.outcome != 'skipped'
