@@ -133,7 +133,7 @@ final playgroundCatalog = <PlaygroundGame>[
     id: 'balance',
     name: '天平称球',
     summary: '用天平找出不一样的球',
-    howToPlay: '有一个球重量不同，在限定次数内称出它；称的结果能唯一确定它才算找出。',
+    howToPlay: '有一个或两个球重量不同，在限定次数内称出来；称的结果能唯一确定才算找出。',
     icon: CampusIcons.balance,
     group: logicGroup,
     builder: (context, game, store, challenge, first) => BalancePage(game: game, store: store, first: first, challenge: challenge),
