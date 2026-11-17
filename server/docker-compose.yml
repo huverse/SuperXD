@@ -35,9 +35,10 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
-    # 同镜像里的 HEALTHCHECK：请求本机 /v1/health；docker ps 与 docker inspect 的 Health 可见，部署后等它变成 healthy。
+    # 同镜像里的 HEALTHCHECK：请求本机就绪探测 /v1/health/ready（MySQL 与 Redis 各限 1 秒，人工决策见 src/common/error_monitor.ts）；
+    # docker ps 与 docker inspect 的 Health 可见，部署后等它变成 healthy；连续 3 次不就绪标成 unhealthy。
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://127.0.0.1:$${RELAY_PORT}/v1/health || exit 1"]
+      test: ["CMD-SHELL", "wget -q -T 3 -O /dev/null http://127.0.0.1:$${RELAY_PORT}/v1/health/ready || exit 1"]
       interval: 30s
       timeout: 5s
       start_period: 30s

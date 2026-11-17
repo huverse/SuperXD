@@ -20,7 +20,8 @@
 - 双端一致性由 test/vectors/protocol_v1.json 守护，客户端 test/social_protocol_test.dart 读同一份文件。
 
 接口（base64url 一律无填充）
-- GET /v1/health：免签名，返回协议版本、服务器时间与构建版本 version（流水线构建的镜像是提交号前 12 位，本地开发为 dev；客户端只读前两项）。
+- GET /v1/health：免签名，返回协议版本、服务器时间与构建版本 version（流水线构建的镜像是提交号前 12 位，本地开发为 dev；客户端只读前两项）。只说明进程活着，不查依赖。
+- GET /v1/health/ready（就绪探测，人工决策见 src/common/error_monitor.ts）：免签名，用服务自己的连接池查 MySQL（SELECT 1）、用自己的 Redis 连接 PING，各限 readinessTimeoutMs，都回应了 200，否则 503；返回 {ready, mysql, redis（ok、timeout 或 down）, alerts（最近一个折叠窗口里告警过的错误签名个数，只有个数）, version}。容器健康检查与外部探活用它，客户端不用。
 - POST /v1/devices：注册（自签名，请求体带两把公钥），幂等。DELETE /v1/devices：删除本设备及其好友关系与待取消息（用户关闭私信；退出应用账号时删那把设备密钥）。
 - POST /v1/invites：登记邀请号与邀请公钥，5 分钟有效，同时作废本设备旧邀请。DELETE /v1/invites/:id：作废。
 - POST /v1/friends/redeem：扫码方提交邀请号、凭证（邀请私钥对“SXD1-invite、邀请号、扫码方设备号”的签名）与给邀请人的问候密文；关系与问候同一事务写入。邀请有效期内可多人使用。
@@ -124,7 +125,7 @@
 
 - 环境变量见 .env.example，只在 src/config/env.ts 读取，缺必填项启动即失败。
 - 起测试库：docker compose -f docker-compose.test.yml up -d --wait（宿主机网络，MySQL 3307、Redis 6380，库在内存里）。
-- npm test：类型检查用 npm run typecheck；npm run build && npm run smoke 检查编译产物能在 Node ESM 下加载（类型导入被编译成运行时导入这类问题只在这里暴露，Vitest 测不到；Docker 构建与 CI 都会跑）；e2e 覆盖注册、签名、防重放、校时、未注册设备号的负缓存（只查一次库、注册立刻生效、与注册交错不误记）、扫码加好友（多人、凭证防盗用、作废）、收发幂等、分页、上限、发送的分钟与每天限流、关闭私信与数据保留；代签凭据包（chaoxing_pack.e2e.test.ts）覆盖取走即删、并发只取到一份、大小与格式、2KB 边界与 8KB 请求体上限、提交与取件限流、作废口令、过期与清理不误删、IPv6 按 /64 聚合；应用更新（app_release.e2e.test.ts）覆盖按架构取包、换清单即生效、灰度配置的透传与写坏不外发、清单写坏不外发、签名信封按架构原样透传与写坏不外发、128KB 文件上限、参数与文件名校验、整包与 Range 下载、限流；私信挂到应用账号（social_account.e2e.test.ts）覆盖挂上与幂等、凭证不对与没登录、一台私信设备不能挂两个账号、换手机没带接管被拒与接管后好友改挂（对方看到新公钥与旧号、确认后不再提示、旧设备与没收的信删掉）、再接管回来、两台手机的好友合在一起、关闭私信与注销连带删除；节日抽奖（reward.e2e.test.ts）覆盖要求登录了应用账号的设备签名、一个账号只抽一次（换设备还是同一个结果）、账号不满 7 天不能抽、加权与均匀放量、积分等级加权与按等级挑金额档、并发发奖、按设备与按来源限流、删除设备后不能再抽、维护命令与保留；应用账号（account.e2e.test.ts）覆盖客户端信封向量、注册（不分大小写、先到先得、库里只有 scrypt 哈希）、登录（不对一律 CREDENTIALS_INVALID）、信封封给别的设备或内容不全不认、按用户名加来源与按设备的限流、恢复码重设（旧密码旧恢复码作废、别的设备下线，改密码不动）、登录着改密码换恢复码、扫码登录（核对码、没登录的设备、别的设备来问、过期、已被别的账号批准、出示的新设备按来源限流、机型与属地记进票据且不存 IP、批准前看票据、新设备作废票据）、退出连带删登记、注销后用户名空出与墓碑（ACCOUNT_DELETED、保留期清理）、别的签名请求按小时记最后活跃、20 把密钥上限与 400 天清理；属地写法在 ip_region.test.ts（本机有离线库时顺带核对真实查询）；积分与挑战（challenge.e2e.test.ts，题库用判定向量里的题）覆盖没登录不给、本周挑战与玩不了的标记、整局走完（错交计数、重发只算一次、碎片只在过关回复里给、门输错扣时间、门开了才给题面、终章输对全通关结算、快得不正常追加加试题且最多几道、最少步数不对算错交）、只补最好成绩差额、同时一局与错交到上限、到点结算与定时结算、注销连带删除、积分过期与保留、门票（不够不开也不扣、先扣快过期的、结束不退）与等级（花了不减、门槛来自灰度配置）、配置热加载与写坏不换；解锁（unlock.e2e.test.ts）覆盖谁能用（公开、等级、买、下架、配置读不了）、花积分买（不够、先扣快过期、不重复扣、买不了的几种、等级够不扣）、抽中记下与降级不踢出、下架退回不算等级且不重复退、公开满 30 天删记录、注销连带删、配置不合规不外发；健康回报（app_health.e2e.test.ts）覆盖暂停判定的阈值、回报的累加与拒收、限流、自动暂停经 /v1/app/flags 透出与解除、意见与维护命令、保留期；灰度点名（flag_target.e2e.test.ts）覆盖没登录、管理命令的点名改期撤销列出与坏输入、只回没过期的、清理任务与注销连带删，以及第 2 版配置 /v1/app/flags 的透传与写坏不外发；判定与 Dart 逐条一致在 challenge_judge.test.ts（向量由客户端 tool/challenge_vectors.dart 生成），周期日界、配置校验、出题（碎片、门与改写题面、计划挑选）、预计用时的回调与计分口径在 challenge_rules.test.ts；诊断包（diagnostic.e2e.test.ts）覆盖原样落盘与 600 权限、没有下载、只收二进制、24MB 与分块在读请求体前拒收、限流、目录满回 503、中途断开不留残片并退回额度、到期清理与已用量校正。
+- npm test：类型检查用 npm run typecheck；npm run build && npm run smoke 检查编译产物能在 Node ESM 下加载（类型导入被编译成运行时导入这类问题只在这里暴露，Vitest 测不到；Docker 构建与 CI 都会跑）；e2e 覆盖注册、签名、防重放、校时、未注册设备号的负缓存（只查一次库、注册立刻生效、与注册交错不误记）、扫码加好友（多人、凭证防盗用、作废）、收发幂等、分页、上限、发送的分钟与每天限流、关闭私信与数据保留；代签凭据包（chaoxing_pack.e2e.test.ts）覆盖取走即删、并发只取到一份、大小与格式、2KB 边界与 8KB 请求体上限、提交与取件限流、作废口令、过期与清理不误删、IPv6 按 /64 聚合；应用更新（app_release.e2e.test.ts）覆盖按架构取包、换清单即生效、灰度配置的透传与写坏不外发、清单写坏不外发、签名信封按架构原样透传与写坏不外发、128KB 文件上限、参数与文件名校验、整包与 Range 下载、限流；私信挂到应用账号（social_account.e2e.test.ts）覆盖挂上与幂等、凭证不对与没登录、一台私信设备不能挂两个账号、换手机没带接管被拒与接管后好友改挂（对方看到新公钥与旧号、确认后不再提示、旧设备与没收的信删掉）、再接管回来、两台手机的好友合在一起、关闭私信与注销连带删除；节日抽奖（reward.e2e.test.ts）覆盖要求登录了应用账号的设备签名、一个账号只抽一次（换设备还是同一个结果）、账号不满 7 天不能抽、加权与均匀放量、积分等级加权与按等级挑金额档、并发发奖、按设备与按来源限流、删除设备后不能再抽、维护命令与保留；应用账号（account.e2e.test.ts）覆盖客户端信封向量、注册（不分大小写、先到先得、库里只有 scrypt 哈希）、登录（不对一律 CREDENTIALS_INVALID）、信封封给别的设备或内容不全不认、按用户名加来源与按设备的限流、恢复码重设（旧密码旧恢复码作废、别的设备下线，改密码不动）、登录着改密码换恢复码、扫码登录（核对码、没登录的设备、别的设备来问、过期、已被别的账号批准、出示的新设备按来源限流、机型与属地记进票据且不存 IP、批准前看票据、新设备作废票据）、退出连带删登记、注销后用户名空出与墓碑（ACCOUNT_DELETED、保留期清理）、别的签名请求按小时记最后活跃、20 把密钥上限与 400 天清理；属地写法在 ip_region.test.ts（本机有离线库时顺带核对真实查询）；积分与挑战（challenge.e2e.test.ts，题库用判定向量里的题）覆盖没登录不给、本周挑战与玩不了的标记、整局走完（错交计数、重发只算一次、碎片只在过关回复里给、门输错扣时间、门开了才给题面、终章输对全通关结算、快得不正常追加加试题且最多几道、最少步数不对算错交）、只补最好成绩差额、同时一局与错交到上限、到点结算与定时结算、注销连带删除、积分过期与保留、门票（不够不开也不扣、先扣快过期的、结束不退）与等级（花了不减、门槛来自灰度配置）、配置热加载与写坏不换；解锁（unlock.e2e.test.ts）覆盖谁能用（公开、等级、买、下架、配置读不了）、花积分买（不够、先扣快过期、不重复扣、买不了的几种、等级够不扣）、抽中记下与降级不踢出、下架退回不算等级且不重复退、公开满 30 天删记录、注销连带删、配置不合规不外发；健康回报（app_health.e2e.test.ts）覆盖暂停判定的阈值、回报的累加与拒收、限流、自动暂停经 /v1/app/flags 透出与解除、意见与维护命令、保留期；灰度点名（flag_target.e2e.test.ts）覆盖没登录、管理命令的点名改期撤销列出与坏输入、只回没过期的、清理任务与注销连带删，以及第 2 版配置 /v1/app/flags 的透传与写坏不外发；判定与 Dart 逐条一致在 challenge_judge.test.ts（向量由客户端 tool/challenge_vectors.dart 生成），周期日界、配置校验、出题（碎片、门与改写题面、计划挑选）、预计用时的回调与计分口径在 challenge_rules.test.ts；诊断包（diagnostic.e2e.test.ts）覆盖原样落盘与 600 权限、没有下载、只收二进制、24MB 与分块在读请求体前拒收、限流、目录满回 503、中途断开不留残片并退回额度、到期清理与已用量校正。就绪探测（health.e2e.test.ts）覆盖都能用时 200、告警个数、Redis 卡住时限时内回 503（timeout）、连接断了 503（down）而存活探测照样 200、连回来恢复；错误计数与告警的签名、阈值、折叠窗口与汇总、签名上限在 error_monitor.test.ts。
 - 表结构漂移检查：本机没有 mysql 客户端时在同版本镜像里跑，docker run --rm --network host -v "$PWD":/w -w /w -e MIGRATE_MYSQL_HOST=127.0.0.1 -e MIGRATE_MYSQL_PORT=3307 -e MIGRATE_ROOT_PASSWORD=test-root mysql:8.4.13 bash scripts/schema_drift_check.sh（建删临时库，库名带进程号，不碰测试库里的表）。
 - npm run dev：swc 监听编译，bun 运行并在产物变化时重启。
 - 客户端联调：仓库根目录 flutter test tool/verify_social.dart --dart-define=SUPERXD_RELAY=http://127.0.0.1:端口。
@@ -176,7 +177,7 @@
 2. 同步配置：本次提交的 server 目录（compose、sql、scripts）照第 2 步 git archive 覆盖上去；scripts/migrate_db.sh --status 有 pending 的，先跑 scripts/backup_db.sh 再 scripts/migrate_db.sh。
 3. 记下正在跑的镜像（回滚用）：docker inspect -f '{{.Config.Image}}' superxd-relay-relay-1（容器名以 docker compose ps 为准）。
 4. 把 .env 里的 RELAY_IMAGE 改成 superxd-relay:<版本>，docker compose up -d --no-build --no-deps relay。--no-build 让标签写错时直接报错，不会在服务器上现场构建；--no-deps 不顺带重建 MySQL 与 Redis。
-5. 核对：docker inspect -f '{{.State.Health.Status}}' 容器名 变成 healthy（约半分钟内），curl /v1/health 的 version 等于这次的版本，docker logs 没有报错。
+5. 核对：docker inspect -f '{{.State.Health.Status}}' 容器名 变成 healthy（约半分钟内，即就绪探测通过），curl /v1/health 的 version 等于这次的版本，docker logs 没有报错。
 6. 回滚：RELAY_IMAGE 改回第 3 步记下的标签，同样 docker compose up -d --no-build --no-deps relay。所以服务器上至少留着上一个版本的镜像，更早的再用 docker image rm 删；表结构只做加法（upgrade_*.sql 只加表加列），回滚旧镜像不用回退表结构。
 
 不要把 RELAY_BUILD_VERSION 写进 .env：env_file 会把它注入容器，盖掉镜像里的版本。
@@ -195,6 +196,9 @@
 - 恢复的代价：备份之后才注册的设备、新加的好友关系与抽签记录会丢。私信客户端遇到 UNAUTHORIZED 会自己重新挂到应用账号（顺带登记设备）并重放一次，关闭私信遇到 UNAUTHORIZED 也照样清本机（人工决策见客户端 lib/social/social_service.dart 的 _authorized），所以丢了设备记录的用户下次收发时自动补上；只是备份之后加的好友要重新扫码。
 - 演练：用临时 MySQL（同一固定版本、服务名 mysql）加 COMPOSE_FILE、COMPOSE_PROJECT_NAME 环境变量指向它，造合成数据后备份、删表与删行、恢复，比对 CHECKSUM TABLE；坏的备份（截断、缺结束标记）与不带 --yes 一律被拒。不要拿共用的测试库演练。
 
-# 探活
+# 探活与告警
 
-.github/workflows/relay-health.yml 每 30 分钟从 GitHub 请求一次 /v1/health，隔 30 秒共试 3 次都失败才让工作流失败，由 GitHub 发邮件（发给最后改过它 cron 的人，要在个人设置里开着 Actions 失败通知）。地址取 relay 环境的 RELAY_URL 机密，日志里只有退出码与 health 里的版本。它只发现服务整个挂了或网络不通；公开仓库 60 天没有提交时 GitHub 会停用定时工作流，要在 Actions 页手动启用。容器内的健康检查（Dockerfile 的 HEALTHCHECK 与 compose 的 healthcheck）只把状态标成 unhealthy，不会自动重启。
+人工决策见 src/common/error_monitor.ts 与 .github/workflows/relay-health.yml 文件头。
+- 容器健康检查（Dockerfile 的 HEALTHCHECK 与 compose 的 healthcheck）请求本机 /v1/health/ready，每 30 秒一次，连续 3 次不就绪标成 unhealthy；docker 自己不会因此重启容器。
+- 错误计数：error 级日志按签名「模块/动作/错误类型」每分钟计数，一分钟里有一次就写一行 [Alert] action=error_rate（主动卸载负载的 503 按 Shed/错误码/状态码计，一分钟 shedAlertPerMinute 次才告警）；同一签名 errorAlertFoldMinutes 分钟内只写第一条，其余在窗口结束时合成一行 [Alert] action=error_rate_folded；每 errorStatsMinutes 分钟有错误时写一行 [ErrorStats]。最多跟踪 errorMonitorMaxSignatures 个签名，多的并进 other。看明细：docker compose logs relay | grep '\[Alert\]'。
+- 外部探活：.github/workflows/relay-health.yml 每 30 分钟从 GitHub 请求一次 /v1/health/ready：不就绪或连不上隔 30 秒共试 3 次都不行就让工作流失败；就绪但 alerts 非零也失败（不重试）。失败由 GitHub 发邮件（发给最后改过它 cron 的人，要在个人设置里开着 Actions 失败通知）。地址取 relay 环境的 RELAY_URL 机密，日志里只有结果、依赖状态、告警个数与版本。线上还没部署就绪探测时退回只看 /v1/health。公开仓库 60 天没有提交时 GitHub 会停用定时工作流，要在 Actions 页手动启用。

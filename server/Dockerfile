@@ -36,6 +36,6 @@ ARG RELAY_BUILD_VERSION=dev
 ENV RELAY_BUILD_VERSION=$RELAY_BUILD_VERSION
 USER node
 EXPOSE 8080
-# 健康检查：用镜像自带的 busybox wget 请求本机 /v1/health（3 秒超时），不另起 node 进程；端口取运行时的 RELAY_PORT。
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD wget -q -T 3 -O /dev/null "http://127.0.0.1:${RELAY_PORT}/v1/health" || exit 1
+# 健康检查：用镜像自带的 busybox wget 请求本机就绪探测 /v1/health/ready（MySQL 与 Redis 都能用才 200；3 秒超时），不另起 node 进程；端口取运行时的 RELAY_PORT。
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 CMD wget -q -T 3 -O /dev/null "http://127.0.0.1:${RELAY_PORT}/v1/health/ready" || exit 1
 CMD ["node", "dist/main.js"]

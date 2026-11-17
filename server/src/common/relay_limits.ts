@@ -222,3 +222,13 @@ export const seenWriteSeconds = 60 * 60;
 export const cleanupBatch = 1000;
 // 不活跃设备按每 10 台一个事务删除：每台连带最多 1000 行好友关系（双向）与 1000 条待取消息，单个事务约 2 万行封顶。
 export const deviceRemovalChunk = 10;
+
+// 运维（人工决策见 src/common/error_monitor.ts）：就绪探测 /v1/health/ready 对 MySQL 与 Redis 各等 readinessTimeoutMs；
+// 错误计数按签名每分钟一轮，error 级日志一分钟 errorAlertPerMinute 次、主动卸载负载的 503 一分钟 shedAlertPerMinute 次即告警，
+// 同一签名 errorAlertFoldMinutes 分钟内只写第一条、其余合成一条汇总；最多跟踪 errorMonitorMaxSignatures 个签名（多的并进 other）；每 errorStatsMinutes 分钟写一行汇总。
+export const readinessTimeoutMs = 1000;
+export const errorAlertPerMinute = 1;
+export const shedAlertPerMinute = 20;
+export const errorAlertFoldMinutes = 60;
+export const errorMonitorMaxSignatures = 50;
+export const errorStatsMinutes = 60;
