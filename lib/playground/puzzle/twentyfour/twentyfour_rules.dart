@@ -135,6 +135,9 @@ const twentyFourExtended = {...twentyFourClassic, TwentyFourOp.power, TwentyFour
 
 // 专家档的题最多几种解法（人工决策在文件头）。
 const twentyFourExpertSolutions = 2;
+// 困难档的题加上乘方与开方后最多几种解法：困难档按经典四则定档（每种解法都要用除法），可 183 组里有 46 组加上乘方开方后冒出 13 种以上
+// （4 8 9 9 有 178 种，9 + 9 + 8 − √4 一眼就出来），比普通档还好凑；只留不超过这么多种的 110 组。
+const twentyFourHardSolutions = 6;
 
 // 一步。下标规则：四个位置按题面的顺序编 0–3（第 i 个数开局在第 i 个位置）。
 // 二元运算：first 与 second 是两个不同的位置，结果放进第二张（second）的位置，第一张的位置空出来，之后不能再用；
@@ -418,7 +421,7 @@ TwentyFourAnalysis twentyFourAnalyze(List<int> numbers, Set<TwentyFourOp> ops) {
 // - 只用加减乘就能解的，按解法数：8 种以上 1、5–7 种 2、4 种 3、3 种 4、2 种 5、只有 1 种 6。
 // 只有经典四则时就是原来的口径（入门到普通出的题不变）。各档按分数段出题（_scores），所以同档最多差 1 分、档与档之间不重叠地往上走。
 // 1–13 的 1820 组数（不计顺序），经典四则有解的 1362 组：1–2 分 192 组（1–9 里 63 组）、3–4 分 357 组（1–10 里 170 组）、
-// 5–6 分 614 组、7–8 分 183 组（加上乘方与开方后 7 分 154 组、8 分 29 组）；9–10 分加上乘方与开方有 358 组（9 分 285、10 分 73，
+// 5–6 分 614 组、7–8 分 183 组（加上乘方与开方后 7 分 154 组、8 分 29 组；困难档只取加上乘方开方后解法不超过 twentyFourHardSolutions 种的 110 组）；9–10 分加上乘方与开方有 358 组（9 分 285、10 分 73，
 // 原来只靠分数只有 3 3 8 8、1 5 5 5 这类 16 组；专家档只取解法不超过 twentyFourExpertSolutions 种的 107 组），仍算不出的 116 组。1^b、a^0 这类白吃一张卡的乘方照样算数（禁掉只少 2 组，不值得多一条规矩）。
 // 没有解的题面不会出、也解码不进来，按 10 分算。
 int twentyFourScore(TwentyFourAnalysis analysis) {
@@ -465,7 +468,8 @@ class TwentyFourRules extends PuzzleRules<TwentyFourPuzzle, List<TwentyFourStep>
   // - 专家档：经典四则不经过分数就能解的不要（先用找到就停的求解筛，大多数组合几步就找到），剩下的用全部运算求解，
   //   有解且解法不超过 twentyFourExpertSolutions 种才用；
   // - 其余各档：分数段只取决于「只用加减乘能不能解、经典四则有没有不经过分数的解法」与解法数，前两条与乘方、开方无关，
-  //   困难档按经典四则求解定档（乘方、开方是多给的办法，解法数在难易分里另算，仍落在 7–8 分）。
+  //   困难档按经典四则求解定档（乘方、开方是多给的办法，解法数在难易分里另算，仍落在 7–8 分），再用全部运算求解，
+  //   解法超过 twentyFourHardSolutions 种的不要（乘方、开方把它变成了好凑的题）。
   @override
   PuzzleDraw<TwentyFourPuzzle, List<TwentyFourStep>> generate(int seed, PuzzleTier tier) {
     final (low, high) = _ranges[tier]!;
@@ -483,6 +487,7 @@ class TwentyFourRules extends PuzzleRules<TwentyFourPuzzle, List<TwentyFourStep>
       final analysis = twentyFourAnalyze(numbers, twentyFourClassic);
       final score = twentyFourScore(analysis);
       if (analysis.sample == null || score < lowest || score > highest) continue;
+      if (tier == PuzzleTier.hard && twentyFourAnalyze(numbers, ops).solutions > twentyFourHardSolutions) continue;
       return PuzzleDraw(TwentyFourPuzzle(numbers, ops), analysis.sample!);
     }
   }

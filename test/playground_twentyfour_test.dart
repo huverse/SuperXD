@@ -242,15 +242,17 @@ void main() {
       expect(_rules.complexity(_puzzle([1, 1, 6, 8], twentyFourExtended)), inInclusiveRange(7, 8));
     });
 
-    test('1–13 的 1820 组数：困难档能出 183 组，加上乘方与开方经典四则不经过分数解不开的有 358 组，专家档只取解法不超过 2 种的 107 组（原来只靠分数的 16 组）', () {
-      var hard = 0, fractionOnly = 0, extendedOnly = 0, expert = 0;
+    test('1–13 的 1820 组数：经典四则要除法的 183 组里困难档只取加上乘方开方后解法不超过 6 种的 110 组，加上乘方与开方经典四则不经过分数解不开的有 358 组，专家档只取解法不超过 2 种的 107 组（原来只靠分数的 16 组）', () {
+      var division = 0, hard = 0, fractionOnly = 0, extendedOnly = 0, expert = 0;
       for (var a = 1; a <= 13; a++) {
         for (var b = a; b <= 13; b++) {
           for (var c = b; c <= 13; c++) {
             for (var d = c; d <= 13; d++) {
               final classic = twentyFourAnalyze([a, b, c, d], twentyFourClassic);
               if (classic.whole) {
-                if (!classic.plain) hard++;
+                if (classic.plain) continue;
+                division++;
+                if (twentyFourAnalyze([a, b, c, d], twentyFourExtended).solutions <= twentyFourHardSolutions) hard++;
                 continue;
               }
               if (classic.solutions > 0) fractionOnly++;
@@ -261,7 +263,11 @@ void main() {
           }
         }
       }
-      expect([hard, fractionOnly, extendedOnly, expert], [183, 16, 358, 107]);
+      expect([division, hard, fractionOnly, extendedOnly, expert], [183, 110, 16, 358, 107]);
+      // 乘方开方把它变成好凑的题的一例：经典四则只有一种解法（要除法），加上乘方开方有一百多种，9 + 9 + 8 − √4 一眼就出来。
+      expect(twentyFourAnalyze([4, 8, 9, 9], twentyFourClassic).solutions, 1);
+      expect(twentyFourAnalyze([4, 8, 9, 9], twentyFourExtended).solutions, greaterThan(100));
+      expect(_rules.solved(_puzzle([4, 8, 9, 9], twentyFourExtended), [_step(0, _root, 0), _step(2, _add, 3), _step(3, _add, 1), _step(1, _subtract, 0)]), isTrue);
     });
 
     test('每档出 20 道：数在这一档的区间、参考解解得开、档位要求（入门只用加减乘也能解且解法多，困难要除法，专家要用到乘方、开方或分数）；难度分同档最多差 1、档间不倒挂；出题快且可复现', () {
@@ -295,6 +301,7 @@ void main() {
               expect(classic.solutions, inInclusiveRange(1, 2), reason: reason);
             case PuzzleTier.hard:
               expect((classic.plain, classic.whole), (false, true), reason: reason);
+              expect(twentyFourAnalyze(numbers, twentyFourExtended).solutions, inInclusiveRange(1, twentyFourHardSolutions), reason: reason);
             case PuzzleTier.expert:
               expect(classic.whole, isFalse, reason: reason);
               expect(twentyFourAnalyze(numbers, twentyFourExtended).solutions, inInclusiveRange(1, twentyFourExpertSolutions), reason: reason);
