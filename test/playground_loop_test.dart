@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/rendering.dart';
@@ -16,7 +17,7 @@ import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 
 const _rules = LoopRules();
-const _sides = {PuzzleTier.entry: 4, PuzzleTier.easy: 5, PuzzleTier.normal: 6, PuzzleTier.hard: 7, PuzzleTier.expert: 10};
+const _sides = {PuzzleTier.entry: 4, PuzzleTier.easy: 5, PuzzleTier.normal: 6, PuzzleTier.hard: 7, PuzzleTier.expert: 8};
 final _app = GlobalKey();
 
 PlaygroundGame get _game => playgroundCatalog.firstWhere((game) => game.id == 'loop');
@@ -253,7 +254,7 @@ void main() {
       }
     });
 
-    test('出题耗时：每档 10 道都在上限内（专家 10 见方单道几十毫秒，留足机器差）', () {
+    test('出题耗时：每档 10 道都在上限内（专家 8 见方单道几毫秒到几十毫秒，留足机器差）', () {
       const limits = {PuzzleTier.entry: 1000, PuzzleTier.easy: 1000, PuzzleTier.normal: 1000, PuzzleTier.hard: 1500, PuzzleTier.expert: 4000};
       for (final tier in PuzzleTier.values) {
         final watch = Stopwatch()..start();
@@ -286,6 +287,33 @@ void main() {
       expect(scores[PuzzleTier.expert], everyElement(greaterThanOrEqualTo(9)));
     });
 
+    test('预计用时按格数与试探次数算，五档各占难度分的一级，中位数逐档约 1.5 倍', () {
+      // 看题 10 秒、每格 2.2 秒，要试探的每格另加 0.45 × log2(1 + 试探次数) 秒。
+      final entry = _rules.generate(1, PuzzleTier.entry).puzzle;
+      expect(loopSolve(entry).branches, 0);
+      expect(loopSeconds(entry), (10 + 16 * 2.2).round());
+      // 原来按边长每大一圈用时乘 1.9：困难 7 见方中位 327 秒、专家 10 见方 619 秒，是别的游戏同档的两倍上下。
+      const bands = {
+        PuzzleTier.entry: (difficulty: 3, median: 45),
+        PuzzleTier.easy: (difficulty: 4, median: 65),
+        PuzzleTier.normal: (difficulty: 5, median: 131),
+        PuzzleTier.hard: (difficulty: 6, median: 197),
+        PuzzleTier.expert: (difficulty: 7, median: 293),
+      };
+      for (final MapEntry(key: tier, value: band) in bands.entries) {
+        final seconds = <int>[];
+        for (var seed = 0; seed < 30; seed++) {
+          final puzzle = _rules.generate(seed * 7919, tier).puzzle;
+          final branches = loopSolve(puzzle).branches;
+          expect(_rules.expectedSeconds(puzzle), (10 + puzzle.width * puzzle.height * (2.2 + .45 * math.log(1 + branches) / math.ln2)).round(), reason: '$tier $seed');
+          expect(_rules.difficulty(puzzle), band.difficulty, reason: '$tier $seed');
+          seconds.add(_rules.expectedSeconds(puzzle));
+        }
+        seconds.sort();
+        expect(seconds[seconds.length ~/ 2], inInclusiveRange(band.median * .85, band.median * 1.15), reason: '$tier');
+      }
+    });
+
     test('按规则判定：任何合规的回路都算；两个圈、分叉、交叉、没闭合、数字对不上、长度不对都不算', () {
       final grid = LoopGrid.of(3, 3);
       final blank = _puzzleOf(3, 3);
@@ -312,7 +340,7 @@ void main() {
     test('编解码往返，坏输入抛 FormatException，不唯一与无解的题拒收', () {
       final draw = _rules.generate(9, PuzzleTier.expert);
       final puzzle = _rules.decodePuzzle(_rules.encodePuzzle(draw.puzzle));
-      expect((puzzle.width, puzzle.height), (10, 10));
+      expect((puzzle.width, puzzle.height), (8, 8));
       expect(puzzle.clues, draw.puzzle.clues);
       final answer = _rules.decodeAnswer(_rules.encodeAnswer(draw.solution));
       expect(answer, draw.solution);
@@ -550,8 +578,12 @@ void main() {
       semantics.dispose();
     });
 
-    testWidgets('10×10 格子不到 48：双指张开放大到 48，第二根手指落下时这一笔作废、不算一步', (tester) async {
+    testWidgets('8×8 格子不到 48：双指张开放大到 48，第二根手指落下时这一笔作废、不算一步', (tester) async {
       final semantics = tester.ensureSemantics();
+      // 手机宽度（360dp）：8 见方在测试默认的 800 宽窗口里一格已接近 48。
+      tester.view.physicalSize = const Size(1080, 2340);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
       await _open(tester, seed: 2, tier: PuzzleTier.expert);
       final before = tester.getRect(_cell(5, 5));
       expect(before.width, lessThan(48));
