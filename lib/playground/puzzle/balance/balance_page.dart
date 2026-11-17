@@ -117,7 +117,6 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
     _found = const [];
     _guessNone = false;
     _guessHeavy = _shaking = _pressed = null;
-    _wrongs = 0;
     _weighing = false;
     _from.clear();
     _angleFrom = _angleTo = 0;
@@ -131,6 +130,8 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
     setState(() {
       _session.next(tier: tier);
       _reset();
+      // 指认错的次数同罚时：从头来接着算，换题才清。
+      _wrongs = 0;
     });
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
@@ -337,6 +338,9 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
   bool get _guessReady => _guessNone || _guesses.length == _puzzle.fakes && (!_puzzle.direction || _guessHeavy != null);
 
   // 指认：自由模式按规则在本机判，挑战模式连同称过的几次交服务器判（判错计一次错交；连不上不算数，提示后可以再点一次）。
+  // [人工决策-2026-11-17 19:19:39] 用户要求堵上乱点碰通关：自由模式指认错一次罚时 wrongPenalty（这道题预计用时的四分之一，见 PlaySession）。
+  // 以前指认错不罚、次数用完后能一直换着指认：乱称满次数再把球挨个指认一遍，入门 21%、简单 15% 的局能碰对（挑对称法也省掉最后那步推理），
+  // 罚时后挨个指认一遍就比预计用时慢。挑战模式由服务器计错交。
   Future<void> _confirm() async {
     if (_busy || _session.judging || !_guessReady) return;
     final balls = _guessNone ? <int>[] : ([..._guesses]..sort());
@@ -354,6 +358,7 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
     }
     final verdict = balanceVerdict(_puzzle, _suspects, balls, heavy);
     _wrongs++;
+    _session.penalize(_session.wrongPenalty);
     final name = balls.isEmpty ? '「都是真的」' : '${balls.map((ball) => ball + 1).join('、')} 号${heavy == null ? '' : heavy ? '偏重' : '偏轻'}';
     final message = verdict == BalanceVerdict.contradicts
         ? '$name和称的结果对不上'
@@ -382,8 +387,8 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
     });
     if (answer.balls.isNotEmpty) await _play(_cheer);
     if (!mounted || epoch != _epoch) return;
-    final weighed = _records.length;
-    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: '称 $weighed 次 · ${_wrongs == 0 ? '一次指认就对' : '指认错 $_wrongs 次'}');
+    final weighed = _records.length, penalty = _session.penalty.inSeconds;
+    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: '称 $weighed 次 · ${_wrongs == 0 ? '一次指认就对' : penalty > 0 ? '指认错 $_wrongs 次，罚时 $penalty 秒' : '指认错 $_wrongs 次'}');
     if (!mounted) return;
     switch (choice) {
       case PlayResultChoice.again:

@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -495,6 +496,46 @@ void main() {
       await tester.pumpAndSettle();
       expect(store.tierOf('logicgrid'), PuzzleTier.easy);
       expect(_status(0, 9), findsOneWidget);
+      semantics.dispose();
+    });
+
+    // 作弊机器人（人工决策见 logicgrid_page.dart 的 _judge）：不看线索，入门 3 人 2 类按顺序把 36 种填法挨个填满，填满就判。
+    // 以前判错不罚，十几秒就碰对；现在自由模式判错一次罚预计用时的四分之一，成绩含罚时。
+    testWidgets('作弊机器人把填法挨个试：每判错一次罚时，成绩含罚时', (tester) async {
+      final semantics = tester.ensureSemantics();
+      // 挑一道参考解不是「按顺序的第一种填法」的题，要试几种才碰对。
+      var seed = 0;
+      while (_rules.generate(seed, PuzzleTier.entry).solution.every((row) => row[0] == 0 && row[1] == 1)) {
+        seed++;
+      }
+      final store = await _open(tester, seed: seed);
+      final draw = _rules.generate(seed, PuzzleTier.entry);
+      final puzzle = draw.puzzle, solution = draw.solution;
+      final penalty = math.max(5, (_rules.expectedSeconds(puzzle) / 20).round() * 5);
+      const orders = [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]];
+      final filled = [for (final _ in puzzle.categories) List.filled(puzzle.people, -1)];
+      search:
+      for (final second in orders) {
+        for (final first in orders) {
+          for (final (category, order) in [first, second].indexed) {
+            for (var person = 0; person < puzzle.people; person++) {
+              if (filled[category][person] == order[person]) continue;
+              // 填这个值：它原来在别人那一格就挪过来，那一格空出来。
+              final holder = filled[category].indexOf(order[person]);
+              if (holder >= 0) filled[category][holder] = -1;
+              filled[category][person] = order[person];
+              await _choose(tester, puzzle, category, person, order[person]);
+            }
+          }
+          if ([for (var category = 0; category < 2; category++) for (var person = 0; person < puzzle.people; person++) filled[category][person] == solution[category][person]].every((same) => same)) break search;
+        }
+      }
+      await tester.pumpAndSettle();
+      final result = RegExp(r'判错 (\d+) 次，罚时 (\d+) 秒').firstMatch(tester.widgetList<Text>(find.byType(Text)).map((text) => text.data ?? '').join('\n'));
+      expect(result, isNotNull, reason: '判错过、罚了时');
+      final wrongs = int.parse(result!.group(1)!), seconds = int.parse(result.group(2)!);
+      expect(seconds, wrongs * penalty);
+      expect(store.best('logicgrid', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(seconds * 1000), reason: '成绩含罚时');
       semantics.dispose();
     });
 

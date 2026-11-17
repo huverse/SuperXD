@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/playground_catalog.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/playground/puzzle/knights/knights_page.dart';
@@ -349,6 +350,70 @@ void main() {
       expect(store.tierOf('knights'), PuzzleTier.easy);
       expect(_status(0, 4), findsOneWidget);
       expect(_card(3), findsOneWidget);
+      semantics.dispose();
+    });
+
+    // 作弊机器人（人工决策见 knights_page.dart 的 _judge）：不看话，从「全是骑士」起按格雷码挨个试，每次只改一个人，全部定了就判。
+    // 以前判错不罚，几秒就碰对；现在自由模式判错一次罚预计用时的四分之一，成绩含罚时，状态行原地写加了几秒。
+    testWidgets('作弊机器人按格雷码挨个试：每判错一次罚时，碰对的成绩不短于预计用时', (tester) async {
+      final semantics = tester.ensureSemantics();
+      // 挑一道第一次（全是骑士）蒙不对、要试几组的题。
+      var seed = 0;
+      while (_rules.generate(seed, PuzzleTier.entry).solution.every((knight) => knight)) {
+        seed++;
+      }
+      final store = await _open(tester, seed: seed);
+      final draw = _rules.generate(seed, PuzzleTier.entry);
+      final puzzle = draw.puzzle, people = puzzle.people, answer = _mask(draw.solution);
+      final expected = _rules.expectedSeconds(puzzle);
+      final penalty = math.max(5, (expected / 20).round() * 5);
+      var marks = (1 << people) - 1, wrongs = 0;
+      for (var person = 0; person < people; person++) {
+        await _tapChip(tester, person, true);
+      }
+      for (var index = 1; marks != answer; index++) {
+        wrongs++;
+        if (wrongs == 1) expect(find.text('+$penalty 秒'), findsOneWidget, reason: '判错的罚时原地写在状态行');
+        final flipped = ((index ^ (index >> 1)) ^ ((index - 1) ^ ((index - 1) >> 1))).bitLength - 1;
+        marks ^= 1 << flipped;
+        await _tapChip(tester, flipped, marks >> flipped & 1 == 1);
+      }
+      await tester.pumpAndSettle();
+      expect(wrongs, greaterThan(0));
+      expect(find.textContaining('判错 $wrongs 次，罚时 ${wrongs * penalty} 秒'), findsOneWidget);
+      expect(store.best('knights', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(wrongs * penalty * 1000), reason: '成绩含罚时');
+      semantics.dispose();
+    });
+
+    // 作弊机器人（人工决策见 PlaySession 上 11-17 20:13:19 那条）：换一道题接着蒙，蒙对的那一道一两秒就解开（入门第一次蒙对是 1/8）。
+    // 快得不正常（不到预计用时 15% 且不到 30 秒）的不进最好成绩，结果写明；认真想过的照记。测试里门槛默认关着，这里打开。
+    testWidgets('作弊机器人换题重蒙：蒙对的极快成绩不记纪录，认真解的照记', (tester) async {
+      PlaySession.tooFastGuard = true;
+      addTearDown(() => PlaySession.tooFastGuard = false);
+      final semantics = tester.ensureSemantics();
+      final store = await _open(tester, seed: 4);
+      final draw = _rules.generate(4, PuzzleTier.entry);
+      // 一上来就蒙对（这一道的参考解就是蒙对的那一组）。
+      for (final (person, knight) in draw.solution.indexed) {
+        await _tapChip(tester, person, knight);
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('解开了'), findsOneWidget);
+      expect(find.text('新纪录'), findsNothing);
+      expect(find.textContaining('解得太快，不记成绩'), findsOneWidget);
+      expect(store.best('knights', PuzzleTier.entry), isNull);
+      // 再来一局（注入的种子不变，还是这一道）：想过门槛那么久再定，照记成新纪录。
+      await tester.tap(find.text('再来一局'));
+      await tester.pumpAndSettle();
+      final threshold = (_rules.expectedSeconds(draw.puzzle) * 1000 * playTooFastRatio).ceil();
+      await tester.runAsync(() => Future<void>.delayed(Duration(milliseconds: threshold + 200)));
+      for (final (person, knight) in draw.solution.indexed) {
+        await _tapChip(tester, person, knight);
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('新纪录'), findsOneWidget);
+      expect(find.textContaining('不记成绩'), findsNothing);
+      expect(store.best('knights', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(threshold));
       semantics.dispose();
     });
 

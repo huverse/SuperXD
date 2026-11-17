@@ -865,6 +865,32 @@ void main() {
       semantics.dispose();
     });
 
+    // 作弊机器人（人工决策见 balance_page.dart 的 _confirm）：照着现成的称法称满次数，不推是哪个，从 1 号起挨个指认到对为止。
+    // 以前指认错不罚、次数用完后能一直换，最后那步推理白省；现在自由模式指认错一次罚预计用时的四分之一，成绩含罚时。
+    testWidgets('作弊机器人称完挨个指认：每指认错一次罚时，成绩含罚时', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final seed = [for (var seed = 0; seed < 200; seed++) seed].firstWhere((seed) => _rules.generate(seed, PuzzleTier.entry).solution.balls.single >= 2);
+      final store = await _open(tester, PuzzleTier.entry, seed);
+      final draw = _rules.generate(seed, PuzzleTier.entry);
+      final penalty = math.max(5, (_rules.expectedSeconds(draw.puzzle) / 20).round() * 5);
+      for (final weighing in draw.solution.weighings) {
+        await _weigh(tester, weighing);
+      }
+      await _button(tester, '指认');
+      await _frames(tester, 300);
+      final answer = draw.solution.balls.single;
+      for (var ball = 0; ball <= answer; ball++) {
+        await _tapBall(tester, ball);
+        await _button(tester, '确认');
+        await _frames(tester, 300);
+        if (ball == 0) expect(find.text('+$penalty 秒'), findsOneWidget, reason: '指认错的罚时原地写在状态行');
+      }
+      await _frames(tester, 1500);
+      expect(find.textContaining('指认错 $answer 次，罚时 ${answer * penalty} 秒'), findsOneWidget);
+      expect(store.best('balance', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(answer * penalty * 1000), reason: '成绩含罚时');
+      semantics.dispose();
+    });
+
     testWidgets('要说轻重的题：选偏重或偏轻才能确认，说对了才解开', (tester) async {
       final semantics = tester.ensureSemantics();
       // 困难种子 3 是 11 个球说轻重称 3 次。

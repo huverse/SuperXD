@@ -17,6 +17,7 @@ import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_segmented.dart';
+import 'package:superxd/theme/campus_transitions.dart';
 
 enum _Mode { reveal, flag }
 
@@ -59,6 +60,8 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
   var _mode = _Mode.reveal;
   // 踩到的雷（点数字连开可能一次踩到几颗）；不为空就是这一局结束了，只能从头来或换一道题。
   var _boom = <int>{};
+  // 挑战里踩雷这一次服务器已经计了错交（见 _lose）：计上之前不能从头来。
+  var _reported = false;
   // 手势：一根手指点按（移动超过触摸容差就不算点）、按住到长按时长插旗或拔旗，两根手指缩放；放大后单指拖动平移。
   final _pointers = <int, Offset>{};
   Timer? _hold;
@@ -95,6 +98,8 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
   MinesPuzzle get _puzzle => _session.puzzle;
   bool get _still => MediaQuery.disableAnimationsOf(context);
   bool get _lost => _boom.isNotEmpty;
+  // 踩雷后揭开全部雷：只在自由模式（挑战里只露踩到的那颗，见 _lose）。
+  bool get _revealAll => widget.challenge == null;
 
   void _reset() {
     _hold?.cancel();
@@ -105,6 +110,7 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
     _moves.clear();
     _history.clear();
     _boom = {};
+    _reported = false;
     _rings.clear();
     _finaleFlags = {};
     _pressed = _tapCell = _popCell = _shakeCell = null;
@@ -121,10 +127,19 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
     _reset();
   });
 
-  void _restart() => setState(() {
-    _session.restart();
-    _reset();
-  });
+  // 从头来：挑战里踩雷那一次还没交上就先重交（底部的按钮这时停用，⋯ 里的同名项走这里）。
+  // 自由模式踩过雷的题雷位都看过了，之后解开不记成绩（PlaySession.spoiled），从头来时说一声。
+  void _restart() {
+    if (widget.challenge != null && _lost && !_reported) {
+      if (!_session.judging) unawaited(_report(_boom.first));
+      return;
+    }
+    setState(() {
+      _session.restart();
+      _reset();
+    });
+    if (_session.spoiled) showCampusToast(context, '雷位看过了，这一题不记成绩');
+  }
 
   // ---------- 操作 ----------
 
@@ -173,13 +188,21 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
   }
 
   // [人工决策-2026-11-13 16:05:37] 用户选定：踩雷即结束（揭开全部雷、锁住棋盘、不能撤销、不记成绩，只能从头来或换一道题）；加长按插旗（任何模式下长按未翻开的格插旗、长按旗子拔旗，长按只管旗）。
+  // （挑战模式里的「揭开全部雷」与「换一道题」由下面 11-17 20:13:19 那条取代；自由模式照这一条。）
+  // [人工决策-2026-11-17 20:13:19] 用户确认挑战里踩雷只露踩到的那颗、算一次错交（交上之前不能从头来，没有换一道题），可以改上一条在挑战模式下的做法；
+  // 自由模式照旧揭开全部雷，那一题之后解开不记成绩。做法与原因见下面 11-17 19:19:39 那条。
   // 踩雷：揭开全部雷、踩到的垫警示红、插错的旗打叉，重震；缩放复原看全盘，棋盘锁住，底部原地换成「这一题从头来」「换一道题」（build 里）。
   // 不弹提示条：结束是停住的状态，棋盘、状态行（改写「踩到雷了」）与换掉的按钮一直都在，提示条几秒就收、还压在新按钮上方；读屏靠棋盘上的播报。
   // 停表不记成绩用 PlaySession.end（切后台回来不再走表、换难度不再确认、对局页停走表），只有 finish 才记成绩，这里不调。
+  // [人工决策-2026-11-17 19:19:39] 用户要求堵上乱点碰通关：上一条揭开全部雷以后，从头来同一道题就是照着雷位点（随手点两下就踩雷，入门再点 9 下约 3 秒、
+  // 专家约 27 秒，预计 42 到 266 秒），所以自由模式踩过雷的题之后解开不记成绩（end 的 revealed）。挑战里服务器不知道踩雷、从头来不计错交，
+  // 揭开全部雷等于白给答案：挑战里只露踩到的那颗、插错的旗不打叉，连同踩到的雷交服务器计一次错交（同判对错类判错），交上之前不能从头来，
+  // 也没有「换一道题」（挑战的题是服务器给的）。自由模式照上一条不变。
   void _lose(List<(int, int)> opened, Set<int> boom) {
     playRejected();
     _hold?.cancel();
-    _session.end();
+    _session.end(revealed: _revealAll);
+    if (widget.challenge != null) unawaited(_report(boom.first));
     setState(() {
       _boom = boom;
       _startWave(opened);
@@ -189,6 +212,19 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
       _zoom = 1;
       _pan = Offset.zero;
     });
+  }
+
+  // 挑战里踩雷：这一局的翻法加上踩到的那颗雷交服务器（重放翻到雷不算解开，计一次错交）；连不上不算数，提示条带「重交」。
+  // 连开踩雷时也接踩到的雷而不是那个数字：服务器按插对了旗重放连开，接数字会被当成正常的一步。
+  Future<void> _report(int mine) async {
+    final counted = await _session.judge([..._moves, mine]);
+    if (!mounted || !_lost) return;
+    if (counted == null) {
+      return showCampusToast(context, '没交上，连不上服务器', action: '重交', onAction: () {
+        if (_lost && !_reported && !_session.judging) unawaited(_report(mine));
+      });
+    }
+    setState(() => _reported = true);
   }
 
   // 长按（见上面的人工决策）：手指按住未翻的格到系统的长按时长、期间没挪出拖动阈值也没落第二根手指，就插旗或拔旗，不看当前模式；
@@ -377,10 +413,16 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
     onRestart: _restart,
     status: _status,
     // 踩雷后原地换成下一步能做的两件事（同 ⋯ 里的同名项）；主操作是换一道题：这一题的雷已经全看过了，从头来留作次要的。
+    // 挑战里的题不能换，只有从头来（踩雷这一次交给服务器计上之前停用，见 _lose）。
     controls: _lost
         ? [
-            FilledButton.icon(onPressed: _restart, icon: const CampusIcon(CampusIcons.restore), label: const Text('这一题从头来')),
-            FilledButton.icon(style: campusProminent, onPressed: () => _newGame(null), icon: const CampusIcon(CampusIcons.shuffle), label: const Text('换一道题')),
+            FilledButton.icon(
+              style: _revealAll ? null : campusProminent,
+              onPressed: _revealAll || _reported ? _restart : null,
+              icon: const CampusIcon(CampusIcons.restore),
+              label: const Text('这一题从头来'),
+            ),
+            if (_revealAll) FilledButton.icon(style: campusProminent, onPressed: () => _newGame(null), icon: const CampusIcon(CampusIcons.shuffle), label: const Text('换一道题')),
           ]
         : [
             SizedBox(width: 200, child: CampusSegmented<_Mode>(
@@ -417,6 +459,7 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
                 revealed: _revealed,
                 flags: _flags,
                 boom: _boom,
+                revealAll: _revealAll,
                 palette: palette,
                 digits: _digits,
                 rings: _rings,
@@ -456,8 +499,8 @@ class _MinesPageState extends State<MinesPage> with TickerProviderStateMixin {
   String _cellState(int cell) {
     if (_boom.contains(cell)) return '踩到的雷';
     final flagged = _flags.contains(cell);
-    if (_lost && _puzzle.mines[cell] && !flagged) return '雷';
-    if (_lost && flagged && !_puzzle.mines[cell]) return '插错的旗';
+    if (_lost && _revealAll && _puzzle.mines[cell] && !flagged) return '雷';
+    if (_lost && _revealAll && flagged && !_puzzle.mines[cell]) return '插错的旗';
     if (flagged) return '已插旗';
     if (!_revealed[cell]) return '未翻开';
     return _counts[cell] == 0 ? '空白' : '数字 ${_counts[cell]}';
@@ -558,6 +601,7 @@ class _MinesPainter extends CustomPainter {
     required this.revealed,
     required this.flags,
     required this.boom,
+    required this.revealAll,
     required this.palette,
     required this.digits,
     required this.rings,
@@ -575,6 +619,8 @@ class _MinesPainter extends CustomPainter {
   final List<int> counts;
   final List<bool> revealed;
   final Set<int> flags, boom, finaleFlags;
+  // 输了以后揭开全部雷、插错的旗打叉（挑战里为假：只露踩到的那颗）。
+  final bool revealAll;
   final CampusPalette palette;
   final _DigitPainters digits;
   // 这一步翻开的格在第几圈与淡出走过的毫秒数；收尾走过的毫秒数。
@@ -644,7 +690,7 @@ class _MinesPainter extends CustomPainter {
     final fading = <double, (Path, Path)>{};
     final lip = math.max(1.0, step * .05);
     for (var cell = 0; cell < cells; cell++) {
-      final cover = lost && puzzle.mines[cell] && !flags.contains(cell) ? 0.0 : _cover(cell);
+      final cover = lost && revealAll && puzzle.mines[cell] && !flags.contains(cell) ? 0.0 : _cover(cell);
       if (cover <= 0) continue;
       final rect = _plate(cell);
       if (!rect.outerRect.overlaps(viewport)) continue;
@@ -685,7 +731,7 @@ class _MinesPainter extends CustomPainter {
       if (finaleFlags.contains(cell)) scale = Curves.easeOutBack.transform((finale / _flagMs).clamp(0.0, 1.0));
       if (scale <= 0) continue;
       _flag(poles, pennants, rect.center.translate(cell == shakeCell ? _wobble(step) : 0, 0), step * scale);
-      if (lost && !puzzle.mines[cell]) {
+      if (lost && revealAll && !puzzle.mines[cell]) {
         final mark = rect.deflate(step * .22);
         crosses
           ..moveTo(mark.left, mark.top)
@@ -699,7 +745,7 @@ class _MinesPainter extends CustomPainter {
     if (popped != null && !flags.contains(popped) && pop < 1) _flag(poles, pennants, layout.cellRect(popped).center, step * (1 - pop));
     if (lost) {
       for (var cell = 0; cell < cells; cell++) {
-        if (!puzzle.mines[cell] || flags.contains(cell)) continue;
+        if (!puzzle.mines[cell] || flags.contains(cell) || (!revealAll && !boom.contains(cell))) continue;
         _mine(boom.contains(cell) ? boomMines : mines, layout.cellRect(cell).center, step);
       }
     }

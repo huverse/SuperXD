@@ -24,6 +24,9 @@ import 'package:superxd/theme/campus_icons.dart';
 // 移动与规划：汉诺塔、过河问题、推箱子、冰面滑行；记忆与反应：记忆闪光、舒尔特方格；物理：画线入杯。
 // [人工决策-2026-11-14 23:11:48] 用户第三次提描述性文字太多：一句话玩法十个字上下，玩法说明只写规则与目标、一两句，
 // 怎么操作靠界面本身（按钮、分段、方向键）说明，不写「每道题都唯一」这类安心话。全项目同一口径，守护见 test/code_conventions_test.dart。
+// [人工决策-2026-11-17 20:13:19] 自由模式的计时口径（PlayClock）：题面全摊在眼前、看题就能开始推理或规划的都是题一出现就计时（默认，
+// 骑士与无赖、逻辑网格、密码破译、八皇后、数织、数回、点灯、24 点、天平称球、过河、汉诺塔、推箱子、冰面滑行、画线入杯）；
+// 扫雷照旧从第一下算（用户定）；舒尔特（开局盖住）与记忆闪光（点了才亮）开始前看不到题，按各自的「开始」计时。
 const puzzleSection = PlaygroundSection(id: 'puzzle', name: '益智', icon: CampusIcons.puzzle);
 
 const logicGroup = PlaygroundGroup(id: 'logic', name: '逻辑推理', section: puzzleSection);
@@ -128,6 +131,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '记住亮起的格再点：入门简单不论先后，普通按先后，困难倒着点，专家按数字从小到大。',
     icon: CampusIcons.flash,
     group: memoryGroup,
+    clock: PlayClock.start,
     builder: (context, game, store, challenge, first) => FlashPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
@@ -146,6 +150,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '数字是周围八格里的雷数。翻开所有不是雷的格，长按插旗。',
     icon: CampusIcons.mines,
     group: gridGroup,
+    clock: PlayClock.firstMove,
     builder: (context, game, store, challenge, first) => MinesPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
@@ -184,6 +189,7 @@ final playgroundCatalog = <PlaygroundGame>[
     group: memoryGroup,
     challengeable: false,
     timeInTenths: true,
+    clock: PlayClock.start,
     builder: (context, game, store, _, _) => SchultePage(game: game, store: store),
   ),
   PlaygroundGame(

@@ -6,6 +6,8 @@ import 'package:flutter/semantics.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/domain/challenge.dart';
+import 'package:superxd/playground/challenge/play_challenge.dart';
 import 'package:superxd/playground/playground_catalog.dart';
 import 'package:superxd/playground/playground_game.dart';
 import 'package:superxd/playground/playground_store.dart';
@@ -569,6 +571,94 @@ void main() {
       expect(_anyCell, findsNWidgets(64));
       expect(find.textContaining('剩 10 颗雷'), findsOneWidget);
       expect(store.best('mines', PuzzleTier.entry), isNull);
+      semantics.dispose();
+    });
+
+    // 作弊机器人（人工决策见 mines_page.dart 的 _lose，11-17 19:19:39）：随手点到雷，揭开的全部雷位看清，从头来照着把安全格点完。
+    // 以前从头来同一道题把表清零、照常记成绩，这样几秒就是新纪录；现在踩过雷的题之后解开不记成绩。
+    testWidgets('作弊机器人踩雷看清雷位再从头来照着点：解开了但不记成绩', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final store = PlaygroundStore.memory();
+      await _open(tester, store, 4);
+      final puzzle = _rules.generate(4, PuzzleTier.entry).puzzle;
+      final (:counts, :open) = _opening(puzzle);
+      final mines = [for (var cell = 0; cell < puzzle.mines.length; cell++) if (puzzle.mines[cell]) cell];
+      await _tapOn(tester, _cell(puzzle, mines.first));
+      await _step(tester);
+      for (final cell in mines.skip(1)) {
+        expect(_cellIs(puzzle, cell, '雷'), findsOneWidget, reason: '自由模式踩雷揭开全部雷');
+      }
+      await tester.tap(find.widgetWithText(FilledButton, '这一题从头来'));
+      await _step(tester);
+      expect(find.text('雷位看过了，这一题不记成绩'), findsOneWidget);
+      // 等提示条自己收起（它压着的格点下去是收提示条），再照着雷位每片安全区点一下。
+      await tester.pump(const Duration(seconds: 6));
+      await _step(tester);
+      for (var cell = 0; cell < puzzle.mines.length; cell++) {
+        if (open[cell] || puzzle.mines[cell]) continue;
+        minesOpen(puzzle, counts, open, cell);
+        await _tapOn(tester, _cell(puzzle, cell));
+        await _step(tester);
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('解开了'), findsOneWidget);
+      expect(find.text('新纪录'), findsNothing);
+      expect(find.textContaining('不记成绩'), findsWidgets);
+      expect(store.best('mines', PuzzleTier.entry), isNull);
+      // 换一道题照常记成绩（看过雷位只跟着那一道题）。
+      await tester.tap(find.text('再来一局'));
+      await tester.pumpAndSettle();
+      expect(find.text('雷位看过了，这一题不记成绩'), findsNothing);
+      semantics.dispose();
+    });
+
+    // 挑战里踩雷（人工决策同上）：揭开全部雷就把答案白给了，从头来又不计错交。挑战里只露踩到的那颗、插错的旗不打叉，
+    // 连同踩到的雷交服务器计一次错交；交上之前不能从头来（断网时提示条带「重交」），也没有「换一道题」。
+    testWidgets('挑战里踩雷：只露踩到的那颗，交服务器计错交，交上之前不能从头来，没有换一道题', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final draw = _rules.generate(4, PuzzleTier.entry);
+      final puzzle = draw.puzzle;
+      final mines = [for (var cell = 0; cell < puzzle.mines.length; cell++) if (puzzle.mines[cell]) cell];
+      final (:counts, :open) = _opening(puzzle);
+      final safe = _hiddenNumber(puzzle, counts, open)!;
+      final answers = <Object?>[];
+      var offline = true;
+      final challenge = PlayChallenge(
+        level: ChallengeLevel(
+          id: 'a', game: 'mines', tier: 'entry', difficulty: 3, expected: const Duration(seconds: 40), inputs: const [], output: null, letter: 'A',
+          state: ChallengeLevelState.open, submissions: 0, errors: 0, minimum: null, gate: null, consume: null, extraOf: null, puzzle: _rules.encodePuzzle(puzzle),
+        ),
+        name: 'A 关',
+        deadline: DateTime.now().add(const Duration(minutes: 5)),
+        submit: (answer) async {
+          if (offline) throw const ChallengeException(ChallengeFailure.network, '连不上');
+          answers.add(answer);
+          return const PlayVerdict(correct: false);
+        },
+      );
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: MinesPage(game: _game, store: PlaygroundStore.memory(), challenge: challenge)));
+      await tester.pumpAndSettle();
+      await _tapOn(tester, _cell(puzzle, safe));
+      await _step(tester);
+      await _tapOn(tester, _cell(puzzle, mines.first));
+      await _step(tester);
+      expect(_cellIs(puzzle, mines.first, '踩到的雷'), findsOneWidget);
+      for (final cell in mines.skip(1)) {
+        expect(_cellIs(puzzle, cell, '未翻开'), findsOneWidget, reason: '挑战里别的雷不露');
+      }
+      expect(find.widgetWithText(FilledButton, '换一道题'), findsNothing);
+      FilledButton restart() => tester.widget<FilledButton>(find.widgetWithText(FilledButton, '这一题从头来'));
+      // 连不上：踩雷这一次没交上，从头来停用，提示条带「重交」。
+      expect(restart().onPressed, isNull);
+      expect(find.text('没交上，连不上服务器'), findsOneWidget);
+      offline = false;
+      await tester.tap(find.text('重交'));
+      await _step(tester);
+      expect(answers.single, [safe, mines.first], reason: '连同踩到的雷交上去，服务器重放翻到雷算错交');
+      expect(restart().onPressed, isNotNull);
+      await tester.tap(find.widgetWithText(FilledButton, '这一题从头来'));
+      await _step(tester);
+      _expectOpening(puzzle);
       semantics.dispose();
     });
 
