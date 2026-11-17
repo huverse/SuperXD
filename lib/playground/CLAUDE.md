@@ -43,7 +43,7 @@
 # 关键规则
 
 - 出题只用 PuzzleRandom，不用 dart:math 的 Random（挑战题库与服务器要逐位复现）；规则文件不引 Flutter（tool 下的题库工具要能直接跑）。
-- 给能进挑战的游戏换题面写法（puzzleVersion 加一）：先 dart run tool/challenge_vectors.dart --freeze <游戏>（把旧版本的向量搬进 server/test/vectors/challenge_judge_frozen.json），再改规则与版本号，服务端 judges.ts 给这个游戏加上新版本的判定、旧版本的留着（已发布的旧客户端还报旧版本），最后重跑向量工具；合并部署后由 challenge.yml 生成新版本题库，旧版本题库文件留在中转。
+- 给能进挑战的游戏换题面写法（puzzleVersion 加一）：先 dart run tool/challenge_vectors.dart --freeze <游戏>（把旧版本的向量搬进 server/test/vectors/challenge_judge_frozen.json），再改规则与版本号，服务端 judges.ts 给这个游戏加上新版本的判定、旧版本的留着（已发布的旧客户端还报旧版本），最后重跑向量工具；合并部署后由 challenge.yml 生成新版本题库，旧版本题库文件留在中转。服务端 challenge.e2e.test.ts 用当前向量入门档的题当题库、按第 1 版（旧文件名、只报游戏名）放，换了版本的游戏要加进 legacy 改从冻结的「游戏@1」取（11-17 冰面与汉诺塔升版本时 CI 踩过）。几个游戏同时换版本合并时，冻结文件取各家的并集，当前向量用本工具重生成。
 - 判定按规则，不和参考解逐项比；每道题出之前用求解器确认可解，需要唯一解的游戏（如数织）确认唯一。
 - 本机记录有上限：游戏数乘五档的最好成绩、最近玩过 playgroundRecentLimit 个，不随玩的次数增长；只有成绩，不排除出云备份。
 - 对局页：计时从第一步开始；违规的操作轻震、退回，不算步数；解开后先放完收尾动画再弹结果；换档换题时页面自己清棋盘再调 session。
