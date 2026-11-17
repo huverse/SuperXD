@@ -303,25 +303,60 @@ bool challengePassed(String game, Object? puzzleJson, Object? answerJson, int mi
     challengeVerdict(game, puzzleJson, answerJson)['kind'] == 'solved' && (answerJson! as List).length <= challengeStepLimit(game, minimum);
 
 // 天平称球的题型在档内随机，上面每档两道不一定碰得到每种题型：每档每种题型（已知轻重的偏重、偏轻各一）再出一道，向量覆盖题库会有的全部题型。
-// 用自己的固定种子，不动上面已有的向量。
+// 另加「可能都是真的」的显式用例：按参考称法走到只剩都是真的时答都是真的算对、答成某个球或带了轻重算错；走到有假球时答都是真的算错；
+// 题面不可能都是真的时答都是真的也算错。用自己的固定种子，不动上面已有的向量。
 List<Map<String, Object?>> _balanceCases(String game) {
   if (game != 'balance') return const [];
   final rules = challengeRules[game]!;
   final random = PuzzleRandom(0xBA1A);
-  return [
+  Map<String, Object?> item(PuzzleTier tier, BalancePuzzle puzzle, List<Object?> extra) {
+    final encoded = rules.encodePuzzle(puzzle), reference = rules.encodeAnswer(balanceSolve(puzzle)!);
+    return {
+      'tier': tier.name,
+      'puzzle': encoded,
+      'answers': [for (final answer in [reference, ..._mutations(reference, random), ...extra]) {'answer': answer, 'expect': challengeVerdict(game, encoded, answer)}],
+    };
+  }
+
+  BalancePuzzle of(BalancePlan plan, BalanceWeight weight, int seed) =>
+      BalancePuzzle(balls: plan.balls, weighings: plan.weighings, weight: weight, direction: plan.direction, standards: plan.standards, fakes: plan.fakes, maybeNone: plan.maybeNone, seed: seed);
+  final cases = [
     for (final MapEntry(key: tier, value: plans) in BalanceRules.pools.entries)
       for (final plan in plans)
-        for (final weight in plan.known ? [BalanceWeight.heavy, BalanceWeight.light] : [BalanceWeight.unknown])
-          () {
-            final puzzle = BalancePuzzle(balls: plan.balls, weighings: plan.weighings, weight: weight, direction: plan.direction, standards: plan.standards, fakes: plan.fakes, seed: random.nextUint32());
-            final encoded = rules.encodePuzzle(puzzle), reference = rules.encodeAnswer(balanceSolve(puzzle)!);
-            return {
-              'tier': tier.name,
-              'puzzle': encoded,
-              'answers': [for (final answer in [reference, ..._mutations(reference, random)]) {'answer': answer, 'expect': challengeVerdict(game, encoded, answer)}],
-            };
-          }(),
+        for (final weight in plan.known ? [BalanceWeight.heavy, BalanceWeight.light] : [BalanceWeight.unknown]) item(tier, of(plan, weight, random.nextUint32()), const []),
   ];
+  Object? weighingsOf(BalanceAnswer answer) => (rules.encodeAnswer(answer) as Map)['weighings'];
+  for (final (tier, plan) in [
+    for (final MapEntry(key: tier, value: plans) in BalanceRules.pools.entries)
+      for (final plan in plans)
+        if (plan.maybeNone) (tier, plan),
+  ]) {
+    // 各找一个参考解走到都是真的、走到有假球的种子（平局按种子答，走到哪一支跟着变）。
+    BalancePuzzle? none, fake;
+    for (var seed = 0; none == null || fake == null; seed++) {
+      final puzzle = of(plan, BalanceWeight.unknown, PuzzleRandom(0xBA1B + seed).nextUint32());
+      if (balanceSolve(puzzle)!.balls.isEmpty) {
+        none ??= puzzle;
+      } else {
+        fake ??= puzzle;
+      }
+    }
+    final allGenuine = balanceSolve(none)!, oneFake = balanceSolve(fake)!;
+    cases
+      ..add(item(tier, none, [
+        {'weighings': weighingsOf(allGenuine), 'balls': [0], if (plan.direction) 'heavy': true},
+        {'weighings': weighingsOf(allGenuine), 'balls': <int>[], 'heavy': true},
+      ]))
+      ..add(item(tier, fake, [
+        {'weighings': weighingsOf(oneFake), 'balls': <int>[]},
+      ]));
+  }
+  // 不可能都是真的题（普通档第一种题型）按参考称法称完答都是真的。
+  final plain = of(BalanceRules.pools[PuzzleTier.normal]!.first, BalanceWeight.unknown, random.nextUint32());
+  cases.add(item(PuzzleTier.normal, plain, [
+    {'weighings': weighingsOf(balanceSolve(plain)!), 'balls': <int>[]},
+  ]));
+  return cases;
 }
 
 Future<void> main(List<String> arguments) async {
