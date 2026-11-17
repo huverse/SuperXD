@@ -369,6 +369,45 @@ void main() {
       semantics.dispose();
     });
 
+    // 作弊机器人（人工决策见 schulte_page.dart 的 11-17 19:19:39 那条）：不看数字，按行一格格扫过去、扫完一遍再从头扫，直到点完。
+    // 以前点错不罚时，这样扫完 3×3 只要手快就几秒；现在每点错一次罚 1 秒，成绩按含罚时的用时记，状态行原地写「+1 秒」。
+    testWidgets('作弊机器人按行扫：每点错一次罚 1 秒，状态行原地写加了几秒，成绩含罚时', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final store = await _open(tester, seed: 7);
+      final draw = _rules.generate(7, PuzzleTier.entry);
+      final puzzle = draw.puzzle;
+      final stepOf = List.filled(9, 0);
+      for (final (step, cell) in draw.solution.indexed) {
+        stepOf[cell] = step;
+      }
+      // 第一下就点错：状态行末尾写「+1 秒」，停一会儿收起。
+      final miss = draw.solution[1];
+      await _tapOn(tester, _cell(puzzle, miss));
+      await _step(tester);
+      expect(find.text('+1 秒'), findsOneWidget);
+      expect(_status('下一个：1', 1), findsOneWidget);
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.text('+1 秒'), findsNothing);
+      var step = 0, misses = 1;
+      while (step < 9) {
+        for (var cell = 0; cell < 9 && step < 9; cell++) {
+          if (stepOf[cell] == step) {
+            step++;
+          } else if (stepOf[cell] > step) {
+            misses++;
+          }
+          await _tapOn(tester, _cell(puzzle, cell));
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+      }
+      await tester.pump(const Duration(seconds: 1));
+      await tester.pumpAndSettle();
+      expect(misses, greaterThan(1));
+      expect(find.textContaining('点错 $misses 次，罚时 $misses 秒'), findsWidgets);
+      expect(store.best('schulte', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(misses * 1000), reason: '成绩按含罚时的用时记');
+      semantics.dispose();
+    });
+
     testWidgets('两根手指交替点都算；按下后滑出触摸容差这一下作废', (tester) async {
       final semantics = tester.ensureSemantics();
       await _open(tester, seed: 3, tier: PuzzleTier.easy);

@@ -18,7 +18,7 @@ import 'package:superxd/theme/campus_typesetting.dart';
 
 // 舒尔特方格对局页：开局数字盖着，棋盘中间是「开始」，点了才揭开并开始计时；数字格排在一张卡片上，整张卡按格均分作热区（缝与卡边归最近一格），落点按按下的那一格算、抬手才算点了一下；
 // 每根手指各算各的（两只手轮流点不丢），按下后滑出触摸容差就作废，留给页面的右滑返回。按下的格微微缩小、往字色偏一点。
-// 点对的格 200ms 变淡缩小，点错轻震、那一格左右晃一下并描一圈警示色，记一次错、不往下走；点过的格再点不算错。
+// 点对的格 200ms 变淡缩小，点错轻震、那一格左右晃一下并描一圈警示色，记一次错、罚时 1 秒（状态行原地写「+1 秒」）、不往下走；点过的格再点不算错。
 // 全部点完从中心向外依次亮一下（点过的格短暂恢复原色、微微放大），再弹结果。减少动画时直接到位、不晃不亮。
 class SchultePage extends StatefulWidget {
   const SchultePage({super.key, required this.game, required this.store, this.seeds});
@@ -34,11 +34,16 @@ class SchultePage extends StatefulWidget {
 class _SchultePageState extends State<SchultePage> with TickerProviderStateMixin {
   late final _session = PlaySession<SchultePuzzle, List<int>>(game: widget.game, rules: const SchulteRules(), store: widget.store, seeds: widget.seeds);
   // [人工决策-2026-11-13 17:14:54] 用户选定（三项都选推荐）：开局先盖住数字、点「开始」才揭开并计时（不能先记位置）；用时写到 0.1 秒（只有舒尔特，框架加标记）；点错不罚时、只记次数。
+  // （其中「点错不罚时」由下面 11-17 19:19:39 那条取代，前两项照旧。）
+  // [人工决策-2026-11-17 19:19:39] 点错一次罚时 1 秒（用户定，取代上一条的「点错不罚时」）：不看数字、按行一格格扫过去也点得完（点过的格再点不算错），
+  // 3×3 中位要点 40 下、错 18 次，手快的不罚时约 5 秒，比找着点的预计用时 10 秒还快；罚 1 秒后中位 22 秒，750 局里最快的也要 3.8 秒，扫着点不再划算。
+  // 成绩按含罚时的用时记；状态行写点错次数、末尾原地写「+1 秒」，结果写点错几次罚了几秒。
   // 点了「开始」没有：之前格子全是空白的浅底格（红黑表也不露颜色），点格不算，读屏只有「开始」；换题、从头来回到盖着。
   var _started = false;
-  // 点对了几下（下一下该点第 _step 个数）与一共点错几下。
+  // 点对了几下（下一下该点第 _step 个数）；点错的次数就是这一题的罚时秒数（从头来接着算，换题才清，见 PlaySession）。
   var _step = 0;
-  var _misses = 0;
+  static const _missPenalty = Duration(seconds: 1);
+  int get _misses => _session.penalty.inMilliseconds ~/ _missPenalty.inMilliseconds;
   // 每格是第几下该点的：小于 _step 的格已经点过。
   late var _stepOf = _steps();
   // 按着的手指各落在哪一格、从哪里按下。
@@ -84,7 +89,6 @@ class _SchultePageState extends State<SchultePage> with TickerProviderStateMixin
   void _reset() {
     _started = false;
     _step = 0;
-    _misses = 0;
     _stepOf = _steps();
     _downs.clear();
     _pressed = null;
@@ -141,10 +145,8 @@ class _SchultePageState extends State<SchultePage> with TickerProviderStateMixin
     if (_session.finished || _stepOf[cell] < _step) return;
     if (_stepOf[cell] != _step) {
       playRejected();
-      setState(() {
-        _misses++;
-        _shaken = cell;
-      });
+      _session.penalize(_missPenalty);
+      setState(() => _shaken = cell);
       if (!_reduced) unawaited(_shake.forward(from: 0));
       return;
     }
@@ -161,8 +163,8 @@ class _SchultePageState extends State<SchultePage> with TickerProviderStateMixin
     if (!mounted) return;
     if (!_reduced) await _wave.forward(from: 0);
     if (!mounted) return;
-    // 用时已是大字（写到 0.1 秒），这里只写点错次数。
-    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: _misses == 0 ? '没有点错' : '点错 $_misses 次');
+    // 用时已是大字（写到 0.1 秒、含罚时），这里只写点错次数与罚了几秒。
+    final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: _misses == 0 ? '没有点错' : '点错 $_misses 次，罚时 ${_session.penalty.inSeconds} 秒');
     if (!mounted) return;
     switch (choice) {
       case PlayResultChoice.again:
