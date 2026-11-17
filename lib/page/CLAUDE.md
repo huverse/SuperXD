@@ -19,7 +19,7 @@
   - friend_schedule_page.dart：好友课表与「共同空闲」（读本机同学期课表按日期对齐）；没有同学期课表或缺开学日时如实说明；顶栏可导入到自己的课表。
   - schedule_merge_view.dart：逐项合并的列表行（MergeCheckRow、MergeChangedCourse、MergeWholeCourse），好友课表导入与教务课表合并共用。
   - schedule_import.dart：好友课表导入 importSharedSchedule：先读好本机课表再打开导入页（推入根导航器），顶部分段「逐项合并 / 整份替换」：逐项合并按 domain 的 planScheduleMerge 列出有改动的课（每处差异一行、原来的划掉，整门可半选）、TA有你没有的课、你有TA没有的课（勾上会删掉），默认只勾有同一个教学班的那几门课的改动；应用按钮原地转圈，与其余课重叠时先确认；都存成当前账号的新版本、可在历史版本恢复，开学日与作息不动，成功的提示条回到发起页显示；本机没有那个学期时说明原因、不联网（[人工决策] 在文件内）。会话卡片与好友课表页共用。
-  - share_target_sheet.dart：分享弹层 showShareSheet（私信没就绪时按状态只提示去哪开启、登录、接管或改为联网）：多选好友后逐个发送，每行原地显示状态，失败的可重发；课表页、百宝箱结果页共用。
+  - share_target_sheet.dart：分享弹层 showShareSheet（私信没就绪或没有好友时按状态弹确认框，按钮经组合根套的 ShareGuide 直达应用账号页（登录、改为联网）或消息页（开启、加好友、接管、重试），去不了的只提示）：多选好友后逐个发送，每行原地显示状态，失败的可重发；课表页、百宝箱结果页共用。
   - social_dialogs.dart：错误码文案 socialErrorText、列表时间 socialShortTime、单行输入弹窗 showSocialTextInput。
 - 今天：
   - today_page.dart：今天页 TodayPage（顶栏放不下日期时「同步」只留图标）：读当前学期的课表与作息按日浏览；同步按钮走 chooseSyncSelection → CampusSync.run → showCampusSyncReport，没同步时正中给「同步课表」；课表页的「去同步」经 TodaySyncRequest 回到这里打开同步范围（组合根创建，[人工决策] 在类上）；含作息来源确认与缺开学日引导；同步中离开时结果暂存、回来再提示；切回本页或回到前台重读本地，学期、课表版本、开学日与作息都没变时不刷新内容（不整页重排）。顶部「此刻」卡（_ClassNow）显示上课中或下一节，课上完或没课时大字写状态、下面一行预告下一节（以后没课的日子也预告，不放右侧大号时刻，免得像课程卡），没课只在这张卡里说；到点换状态平滑过渡、开课前 15 分钟强调倒计时、5 分钟内按秒倒数、倒计时换数字时滚动、上课中此刻点定时漾开、整卡可点（[人工决策] 在 _ClassNow 上方）；看别的日子时底栏上方居中显示回「今天」胶囊（[人工决策] 见 _layout，显示时也是提示条的锚点）；上课中此刻点的漾开跟云雾同一节拍（[人工决策] 在 _TimeTrack）；单击有课卡弹只读详情（_openCourse）。
@@ -102,7 +102,7 @@
 - 开发者的话：account_lifecycle_test.dart（「我的」页入口、小圆点与读信、新信在什么界面条件下弹）。
 - 联网偏好与删除游乐场数据：app_account_test.dart（组标题读屏是小节标题、改为仅本机先确认、登录保留与暂停、仅本机只删本机、退出注销与删除数据各自一组居中红字）；游乐场入口一直在：account_lifecycle_test.dart；消息页的仅本机卡：social_ui_test.dart。
 - 节日：festival_test.dart（舞台、红包揭晓与按钮；信里的红包：编排、中转客户端、附件的各状态与信件页按类型渲染）、reward_sprites_test.dart（粒子贴图同原来画布画的对照；单独一个文件，因为贴图的加载全局缓存）与 account_lifecycle_test.dart（节日当天播动画、抽中接着拆红包）。
-- 私信页面：social_ui_test.dart（含好友课表导入的整份替换与逐项合并、没登录应用账号与私信在另一台手机上的卡片与接管确认、会话里的换设备提示）、share_card_test.dart；合并规则在 schedule_merge_test.dart。
+- 私信页面：social_ui_test.dart（含好友课表导入的整份替换与逐项合并、没登录应用账号与私信在另一台手机上的卡片与接管确认、会话里的换设备提示）、share_card_test.dart（分享弹层没就绪时的直达在 social_ui_test.dart）；合并规则在 schedule_merge_test.dart。
 - 开发者模式：developer_mode_test.dart（含上传诊断包的确认、原地状态与诊断编号，没配中转时不出现）。
 - 扫码：qr_scan_test.dart（相机打不开与没给权限的说明、单次与连续模式、同一个码只交一次、iOS 两指缩放不触发右滑返回）。
 - 页面测试的合成数据网关是 fixture_campus_gateway.dart（读 assets/fixtures）。

@@ -415,7 +415,12 @@ class _AccountAppState extends State<_AccountApp> {
       locale: const Locale('zh', 'CN'), supportedLocales: const [Locale('zh', 'CN')],
       localizationsDelegates: GlobalMaterialLocalizations.delegates,
       // 跟随系统时字号最多到这台手机的推荐上限（[人工决策] 见 local/display_settings.dart 的 textSizeMin），上限由 TextSizeComfort 按页面规则量。
-      builder: (context, child) => NoteAttachmentScope(builders: _noteAttachments, child: DisplayScope(settings: _display, child: TextSizeComfort(builder: (context, comfortable) => CampusTextScale(
+      // 分享弹层在私信没就绪时直达能处理的那一页（见 page/share_target_sheet.dart 的 ShareGuide）：应用账号页（配了中转才有），
+      // 消息页（在底栏壳里，没登录教务时进不去，不给）。
+      builder: (context, child) => ShareGuide(
+        openAccount: widget.services.appAccounts == null ? null : (context) => pushAppAccountPage(context, widget.services),
+        openMessages: widget.session.loggedIn ? (context) => _router.go('/message') : null,
+        child: NoteAttachmentScope(builders: _noteAttachments, child: DisplayScope(settings: _display, child: TextSizeComfort(builder: (context, comfortable) => CampusTextScale(
         textSize: _display.textSize,
         followLimit: comfortable,
         child: AnnotatedRegion<SystemUiOverlayStyle>(value: campusSystemOverlay(CampusPalette.of(context)), child: NativeAppearanceSync(child: CampusStatusBarScroll(child: CampusGlassScope.wrap(mode: CampusGlassMode.values.byName(_display.glassMode), capped: campusGlassCapped.value, child: CampusMotion(child: CampusAtmosphere(phase: widget.backgroundPhase, wallpaper: _wallpaper(), overlays: campusOverlayDepth, child: CampusEntryFade(child: LiveClock(child: switch ((widget.services.developer, widget.services.logs)) {
@@ -423,7 +428,7 @@ class _AccountAppState extends State<_AccountApp> {
         (final developer?, final logs?) => TextSizeWatch(developer: developer, logs: logs, display: _display, child: DeveloperOverlay(developer: developer, logs: logs, navigator: _router.routerDelegate.navigatorKey, location: () => _router.routerDelegate.currentConfiguration.uri.path, child: child!)),
         _ => child!,
       })))))))),
-      )))),
+      ))))),
     ));
   }
 }
