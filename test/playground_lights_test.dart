@@ -486,11 +486,16 @@ void main() {
         expectBoard();
       }
       expect(cells, draw.puzzle.cells);
-      for (var time = 0; time < 3; time++) {
+      // 撤销每次退回一级（不是再往前走一级）：退一下是点了两下的样子，再退一下是点了一下的样子。
+      for (var undone = 1; undone <= 3; undone++) {
         await tester.tap(find.widgetWithText(FilledButton, '撤销'));
         await _step(tester);
+        for (var time = 0; time < 2; time++) {
+          lightsPress(draw.puzzle, cells, cell);
+        }
+        expectBoard();
       }
-      expectBoard();
+      expect(cells, draw.puzzle.cells);
       for (final pressed in draw.solution) {
         await _tapOn(tester, _cell(pressed ~/ side, pressed % side));
         await _step(tester);
