@@ -46,3 +46,12 @@ export const socialBindCanonical = (accountDeviceId: string, socialDeviceId: str
 // 客户端用内置公钥验过才收（人工决策见 src/modules/friend/friend_key_signer.ts）。
 export const friendKeysCanonical = (ownerDeviceId: string, deviceId: string, signPublicKey: string, boxPublicKey: string, movedFrom: string | null) =>
   Buffer.from(['SXD1-friend-keys', ownerDeviceId, deviceId, signPublicKey, boxPublicKey, movedFrom ?? ''].join('\n'), 'utf8');
+
+// 服务器给奖品信封的签名原文（第 2 版信封，见 src/modules/reward/reward_seal.ts；客户端 lib/social/social_crypto.dart 同一份）：
+// 域前缀、活动编号、抽签的设备号各占一行，后面接信封签名前的全部字节。绑定活动与设备，别的活动、别的设备拿去用验不过。
+export const rewardPrizeCanonical = (campaign: string, deviceId: string, sealed: Uint8Array) =>
+  Buffer.concat([Buffer.from(['SXD1-reward-prize', campaign, deviceId, ''].join('\n'), 'utf8'), sealed]);
+
+// 服务器证明「这把设备密钥所在的应用账号已注销」的签名原文（见 src/modules/account/account_deleted_proof.ts；客户端同一份）：
+// 绑定设备号与这次请求的随机数（x-sxd-nonce，客户端每次新起），截下来的旧证明换一次请求就验不过，挡住重放。
+export const accountDeletedCanonical = (deviceId: string, nonce: string) => Buffer.from(['SXD1-account-deleted', deviceId, nonce].join('\n'), 'utf8');

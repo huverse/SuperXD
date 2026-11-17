@@ -85,9 +85,10 @@ final _accountIdPattern = RegExp(r'^[A-Za-z0-9_-]{22}$');
 // 应用账号端口的中转实现（人工决策见 domain/app_account.dart，协议见 server/README.md「应用账号」）：
 // 签名请求、校时重发一次都复用私信的 RelayClient；这台设备一把设备密钥，登录成功才连同账号号存进安全存储。
 // 注册、登录、用恢复码重设都先生成一把新密钥（服务端把它登记到账号下），密码与恢复码经 account_seal.dart 封装后才发出。
+// 「账号已注销」要带服务器签名才认（RelayClient 核，验不过当连不上）；serverKeys 是受信的服务器在线签名公钥，测试换成测试钥。
 class RelayAppAccountClient implements AppAccountClient {
-  RelayAppAccountClient({required this.vault, required RelayTransport transport, List<int>? sealKey, this.deviceModel})
-    : _relay = RelayClient(transport),
+  RelayAppAccountClient({required this.vault, required RelayTransport transport, List<int>? sealKey, this.deviceModel, List<String> serverKeys = relayServerKeys})
+    : _relay = RelayClient(transport, serverKeys: serverKeys),
       _sealKey = sealKey ?? decodeBase64UrlNoPad(accountSealKey, length: 32);
   final AppAccountVault vault;
   final RelayClient _relay;

@@ -1,0 +1,14 @@
+{
+  "note": "节日奖品的第 2 版信封（带服务器签名，服务端 src/modules/reward/reward_seal.ts 的 sealSignedRewardPrize，客户端 lib/social/relay_reward_client.dart 的 openRewardPrize）：合成数据，设备与一次性密钥、随机数同第 1 版向量，服务器签名钥是公开的测试值（同 protocol_v1.json 的 friendKeys.seed）",
+  "signSeed": "EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8",
+  "deviceSeed": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8",
+  "devicePublic": "eaYx7t4b-cmPEgMs3q3Q56B5OY_HhriMyEbsia-FpRo",
+  "ephemeralSeed": "gIGCg4SFhoeIiYqLjI2Oj5CRkpOUlZaXmJmam5ydnp8",
+  "nonce": "wMHCw8TFxsfIycrL",
+  "campaign": "spring-2027",
+  "deviceId": "CltnVJVCyaVe1qgLpcdkaw",
+  "plaintext": "{\"kind\":\"password\",\"content\":\"合成口令 88888888\",\"note\":\"合成附言\"}",
+  "serverSeed": "ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0A",
+  "serverPublic": "5_FioQvsVZr-oZXk3OhLaVaNXSywlj60RsBoXisX8vA",
+  "sealed": "Akk-gvx0RkpZJogXYj0gU8XrjizEqYi0_uF57GsBDVMdwMHCw8TFxsfIycrLZ3Wp1LwGKKNmxLw-STDjxweYOkBAtK7ROkVdeoEEx0WwYz5tQwcglg8gisT2IAW7tRW-i33HIg-x_c6ZDrMFh7JczgSShVHmvIbLSB5T4a9FKG0bjXnmKRyMlHOSJWAfXv9JPKGmBAWsGefdr3A3jjrIhxtTwKVLP-SiK9HPNCtpzbCUINjces_dO2wOlTR4-4wzEoOWaXCZ7gQ"
+}

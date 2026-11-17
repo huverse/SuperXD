@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
+import { RelaySigner } from 'src/common/crypto/relay_signer';
 import { AccountModule } from 'src/modules/account/account.module';
 import { DeviceModule } from 'src/modules/device/device.module';
 import { PointsModule } from 'src/modules/points/points.module';
@@ -14,6 +15,6 @@ import { RewardDice, RewardService } from 'src/modules/reward/reward.service';
 @Module({
   imports: [TypeOrmModule.forFeature([RewardCampaignEntity, RewardPrizeEntity, RewardDrawEntity, RewardAudienceEntity]), DeviceModule, AccountModule, PointsModule],
   controllers: [RewardController],
-  providers: [{ provide: RewardRepository, useClass: TypeormRewardRepository }, RewardService, RewardDice, RewardRetentionTask],
+  providers: [{ provide: RewardRepository, useClass: TypeormRewardRepository }, RewardService, RewardDice, RewardRetentionTask, RelaySigner],
 })
 export class RewardModule {}

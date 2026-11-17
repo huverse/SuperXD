@@ -42,9 +42,18 @@ Uint8List inviteProofCanonical(String inviteId, String redeemerDeviceId) => utf8
 Uint8List socialBindCanonical(String accountDeviceId, String socialDeviceId) => utf8.encode(['SXD1-social-bind', accountDeviceId, socialDeviceId].join('\n'));
 
 // 服务器给好友公钥的签名原文：「谁问的、好友设备号、两把公钥（base64url）、认得的旧设备号（没有为空）」（与服务端 relay_crypto.ts 的 friendKeysCanonical 同一份，
-// 共用 server/test/vectors/protocol_v1.json 的 friendKeys；人工决策见 relay_client.dart 的 relayFriendKeys）。
+// 共用 server/test/vectors/protocol_v1.json 的 friendKeys；人工决策见 relay_client.dart 的 relayServerKeys）。
 Uint8List friendKeysCanonical(String ownerDeviceId, String deviceId, String signPublicKey, String boxPublicKey, String? movedFrom) =>
     utf8.encode(['SXD1-friend-keys', ownerDeviceId, deviceId, signPublicKey, boxPublicKey, movedFrom ?? ''].join('\n'));
+
+// 服务器给奖品信封的签名原文：域前缀、活动编号、设备号各占一行，后面接信封签名前的全部字节（与服务端 relay_crypto.ts 的 rewardPrizeCanonical 同一份，
+// 共用 server/test/vectors/reward_prize_v2.json；信封见 relay_reward_client.dart 的 openRewardPrize）。
+Uint8List rewardPrizeCanonical(String campaign, String deviceId, List<int> sealed) =>
+    Uint8List.fromList([...utf8.encode(['SXD1-reward-prize', campaign, deviceId, ''].join('\n')), ...sealed]);
+
+// 服务器证明「这把设备密钥所在的应用账号已注销」的签名原文：设备号与这次请求的随机数（与服务端 relay_crypto.ts 的 accountDeletedCanonical 同一份，
+// 共用 server/test/vectors/protocol_v1.json 的 accountDeleted；见 relay_client.dart 的 _call）。
+Uint8List accountDeletedCanonical(String deviceId, String nonce) => utf8.encode(['SXD1-account-deleted', deviceId, nonce].join('\n'));
 
 // 消息签名带域前缀，签名不能被挪作请求或邀请签名使用。
 Uint8List _messageCanonical(List<int> compressed) => Uint8List.fromList([...utf8.encode('SXD1-msg\n'), ...compressed]);

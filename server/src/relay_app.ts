@@ -7,6 +7,7 @@ import type { NextFunction, Request, Response } from 'express';
 
 import { AppModule } from 'src/app.module';
 import { env } from 'src/config/env';
+import { applyHttpTimeouts } from 'src/common/http_server';
 import { RelayErrorFilter } from 'src/common/relay_error.filter';
 import { RelayCode } from 'src/common/relay_error';
 import { chaoxingRequestMaxBytes } from 'src/common/relay_limits';
@@ -15,6 +16,9 @@ import { diagnosticBodyLimit } from 'src/modules/diagnostic/diagnostic_body_limi
 // 组装 HTTP 应用，测试与启动共用；rawBody 供请求签名核对请求体哈希。
 export const createRelayApp = async () => {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, { rawBody: true, abortOnError: false });
+  applyHttpTimeouts(app.getHttpServer());
+  // 不在回复头里报框架（x-powered-by: Express），少给扫描器一条线索。
+  app.disable('x-powered-by');
   // 代签接口不签名、包只有 2KB：在通用的请求体解析之前按声明长度挡掉超过 8KB 的，不让它先吃掉 400KB 的解析成本
   // （校验不过的请求进不到限流计数）。没声明长度的分块上传一律拒，客户端总会带长度。
   app.use('/v1/chaoxing', (request: Request, response: Response, next: NextFunction) => {

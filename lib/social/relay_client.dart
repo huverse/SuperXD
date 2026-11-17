@@ -145,14 +145,24 @@ class InboxItem {
 // [人工决策-2026-11-15 19:18:31] 好友列表里带的公钥（换了设备的好友、新手机接管拿名单）由服务器签名（用户选「服务器签名新公钥」，没选「中转改 HTTPS」）：
 // 中转是明文 HTTP，同一网络里的人能把好友的新公钥换成自己的、之后的私信就被他看到；服务器用在线签名钥签（服务端 src/modules/friend/friend_key_signer.ts），
 // 这里内置它的公钥，带公钥的每一条都要有任一把验得过的签名，不然整份当格式不对。只挡网络上的人，挡不住服务器本身。换钥时先在这里加新公钥、发版后再换服务器的。
-const relayFriendKeys = ['hPOt9e7eTElfw24qcN7bccM1K3-rHX9KtVHCwhn-xaI'];
+// [人工决策-2026-11-17 21:24:25] 明文 HTTP 期间只给两类关键回复加服务器认证（用户选定，不做通用回复签名）：同一把在线签名钥（服务端 src/common/crypto/relay_signer.ts）
+// 另签奖品信封（relay_reward_client.dart 的 openRewardPrize）与「账号已注销」（本文件 _call），各带域前缀、不能互相挪用；这份公钥由 relayFriendKeys 改名 relayServerKeys。
+const relayServerKeys = ['hPOt9e7eTElfw24qcN7bccM1K3-rHX9KtVHCwhn-xaI'];
+
+// 服务器在线签名钥签的原文：任一把受信公钥（base64url）验得过才算服务器发的。
+Future<bool> verifyRelaySignature(List<String> serverKeys, List<int> message, List<int> signature) async {
+  for (final trusted in serverKeys) {
+    if (await verifyEd25519(tryDecodeBase64UrlNoPad(trusted, length: 32)!, message, signature)) return true;
+  }
+  return false;
+}
 
 // 协议 v1 的接口调用：每个请求用设备签名私钥签名（方法、路径、时间、随机数、请求体哈希），没有会话令牌。
-// friendKeys 是受信的好友公钥签名钥（base64url），默认内置的；测试换成测试钥。
+// serverKeys 是受信的服务器在线签名公钥（base64url），默认内置的；测试换成测试钥。
 class RelayClient {
-  RelayClient(this.transport, {this.friendKeys = relayFriendKeys});
+  RelayClient(this.transport, {this.serverKeys = relayServerKeys});
   final RelayTransport transport;
-  final List<String> friendKeys;
+  final List<String> serverKeys;
   // 本机时钟与服务器的差（毫秒）。收到 CLOCK_SKEW 时按服务器时间校正，并只重发这一次。
   int clockOffset = 0;
 
@@ -181,9 +191,21 @@ class RelayClient {
         clockOffset = serverTime - DateTime.now().millisecondsSinceEpoch;
         continue;
       }
+      if (code == RelayCode.accountDeleted && !await _deletionProven(identity.deviceId, nonce, response.body['proof'])) {
+        campusLog('[Relay] action=account_deleted errorType=signature route=$method ${path.split('?').first}');
+        throw const RelayException(RelayCode.network);
+      }
       final retryAfter = response.body['retryAfter'];
       throw RelayException(code, retryAfter: retryAfter is int ? retryAfter : null, detail: response.body);
     }
+  }
+
+  // [人工决策-2026-11-17 21:24:25] 「账号已注销」要服务器签名（用户选「只给两类关键回复加认证」）：收到它会不可逆地清掉本机那个账号的私信与私信身份私钥，
+  // 明文 HTTP 下同一网络里的人伪造一条就够了。服务器的 proof 是对「这把密钥的设备号、这次请求的随机数」的签名（原文见 social_crypto.dart 的 accountDeletedCanonical，
+  // 服务端 src/modules/account/account_deleted_proof.ts）：随机数每次新起，截下来的旧证明对这次请求验不过。没有或验不过当连不上（NETWORK），什么也不删。
+  Future<bool> _deletionProven(String deviceId, String nonce, Object? proof) async {
+    final signature = proof is String ? tryDecodeBase64UrlNoPad(proof, length: 64) : null;
+    return signature != null && await verifyRelaySignature(serverKeys, accountDeletedCanonical(deviceId, nonce), signature);
   }
 
   Future<void> register(SocialIdentity identity) =>
@@ -207,7 +229,7 @@ class RelayClient {
   }
 
   // 服务端的好友列表（最多 500 个）。换了设备的好友带新公钥与 movedFrom（本机认得的旧设备号）；keys 为真时每个都带公钥（新手机接管后拿名单），
-  // 这时响应放宽到 256KB（500 个好友各两把公钥约 120KB）。公钥与设备号对不上、没有服务器签名或验不过的当格式不对（见 relayFriendKeys）。
+  // 这时响应放宽到 256KB（500 个好友各两把公钥约 120KB）。公钥与设备号对不上、没有服务器签名或验不过的当格式不对（见 relayServerKeys）。
   Future<Map<String, RemoteFriend>> friends(SocialIdentity identity, {bool keys = false}) async {
     final list = (await _call(identity, 'GET', keys ? '/v1/friends?keys=1' : '/v1/friends', null, null, false, keys ? 256 * 1024 : null))['friends'];
     if (list is! List) throw const RelayException(RelayCode.badResponse);
@@ -231,10 +253,7 @@ class RelayClient {
     if (sign == null || box == null || signature == null) throw const RelayException(RelayCode.badResponse);
     final keys = PeerKeys(sign, box);
     if (keys.deviceId != deviceId) throw const RelayException(RelayCode.badResponse);
-    final message = friendKeysCanonical(ownerDeviceId, deviceId, signText, boxText, movedFrom);
-    for (final trusted in friendKeys) {
-      if (await verifyEd25519(tryDecodeBase64UrlNoPad(trusted, length: 32)!, message, signature)) return keys;
-    }
+    if (await verifyRelaySignature(serverKeys, friendKeysCanonical(ownerDeviceId, deviceId, signText, boxText, movedFrom), signature)) return keys;
     campusLog('[Relay] action=friend_keys errorType=signature deviceId=$deviceId');
     throw const RelayException(RelayCode.badResponse);
   }

@@ -55,7 +55,18 @@ void main() {
       expect(base64UrlNoPad(await ed25519PublicOf(seed)), keys['publicKey']);
       expect(await verifyEd25519(decodeBase64UrlNoPad(keys['publicKey'] as String), canonical, decodeBase64UrlNoPad(keys['signature'] as String)), isTrue);
       expect(utf8.decode(friendKeysCanonical('a', 'b', 'c', 'd', null)), 'SXD1-friend-keys\na\nb\nc\nd\n');
-      expect(relayFriendKeys, isNot(contains(keys['publicKey'])));
+      expect(relayServerKeys, isNot(contains(keys['publicKey'])));
+    });
+
+    test('「账号已注销」的证明原文逐字节一致、服务器签名验得过，换个随机数就验不过', () async {
+      final deleted = vectors['accountDeleted'] as Map<String, dynamic>;
+      final canonical = accountDeletedCanonical(deleted['deviceId'] as String, deleted['nonce'] as String);
+      expect(utf8.decode(canonical), deleted['canonical']);
+      final keys = [deleted['publicKey'] as String];
+      final proof = decodeBase64UrlNoPad(deleted['proof'] as String);
+      expect(await verifyRelaySignature(keys, canonical, proof), isTrue);
+      expect(await verifyRelaySignature(keys, accountDeletedCanonical(deleted['deviceId'] as String, 'AAAAAAAAAAAAAAAAAAAAAA'), proof), isFalse);
+      expect(await verifyRelaySignature(relayServerKeys, canonical, proof), isFalse, reason: '内置的是真钥');
     });
 
     test('base64url 只认无填充的规范写法', () {
@@ -67,10 +78,12 @@ void main() {
   });
 
   // 应用账号的密码与恢复码在发出前封装（人工决策见 domain/app_account.dart）：服务端 server/test/account.e2e.test.ts 打开同一份向量（明文是任意 JSON 对象）。
-  test('应用账号信封与服务端共用向量', () async {
-    final vector = jsonDecode(File('server/test/vectors/account_seal_v1.json').readAsStringSync()) as Map<String, dynamic>;
+  // 11-17 起是第 2 版（带钥号，服务器按它挑私钥、换钥不断旧客户端）；第 1 版的向量留给服务端核对旧客户端照旧能用。
+  test('应用账号信封与服务端共用向量：第 2 版带钥号（中转公钥 sha256 的前 8 字节）', () async {
+    final vector = jsonDecode(File('server/test/vectors/account_seal_v2.json').readAsStringSync()) as Map<String, dynamic>;
+    expect(base64UrlNoPad(accountSealKeyId(decodeBase64UrlNoPad(vector['recipientPublic'] as String))), vector['keyId']);
     final sealed = await sealAccountSecrets(
-      (vector['proof'] as Map).cast<String, Object?>(),
+      (vector['plaintext'] as Map).cast<String, Object?>(),
       vector['deviceId'] as String,
       decodeBase64UrlNoPad(vector['recipientPublic'] as String),
       ephemeral: await X25519().newKeyPairFromSeed(decodeBase64UrlNoPad(vector['ephemeralSeed'] as String)),

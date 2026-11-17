@@ -12,11 +12,15 @@ import 'package:superxd/social/social_crypto.dart';
 // 内存版中转服务：按协议 v1 与服务端同样的规则验签、管理邀请、好友与信箱，供客户端编排测试使用。
 // 真实服务端的行为由 server/test 的 e2e 覆盖；两边共用 server/test/vectors 下的测试向量。
 class FakeRelay {
-  // 给好友公钥签名的测试钥（种子同 server/test/setup_env.ts 的 RELAY_FRIEND_SIGN_KEY）：用到假中转的 SocialService 把 friendKeys 换成它。
-  static const friendKeys = ['5_FioQvsVZr-oZXk3OhLaVaNXSywlj60RsBoXisX8vA'];
-  static final _friendSeed = List.generate(32, (index) => 0x21 + index);
-  // 设了就拿这把钥签好友公钥（模拟网络上的人换了公钥、签名对不上）。
-  List<int>? friendSeedOverride;
+  // 服务器在线签名钥的测试钥（种子同 server/test/setup_env.ts 的 RELAY_FRIEND_SIGN_KEY）：签好友公钥、奖品信封与「账号已注销」，
+  // 用到假中转的 SocialService、RelayRewardClient、RelayAppAccountClient 把 serverKeys 换成它。
+  static const serverKeys = ['5_FioQvsVZr-oZXk3OhLaVaNXSywlj60RsBoXisX8vA'];
+  static final _serverSeed = List.generate(32, (index) => 0x21 + index);
+  // 设了就拿这把钥签（模拟网络上的人换了公钥或伪造回复、签名对不上）。
+  List<int>? serverSeedOverride;
+
+  // 用服务器在线签名钥（或 serverSeedOverride）签一段原文。
+  Future<List<int>> serverSign(List<int> message) async => (await Ed25519().sign(message, keyPair: await Ed25519().newKeyPairFromSeed(serverSeedOverride ?? _serverSeed))).bytes;
   final devices = <String, ({List<int> sign, List<int> box})>{};
   final invites = <String, ({String owner, List<int> publicKey, int expiresAt})>{};
   final friendships = <String>{};
@@ -156,14 +160,11 @@ class FakeRelay {
         return RelayResponse(200, {'deviceId': invite.owner, 'since': now});
       case ('GET', '/v1/friends'):
         final withKeys = uri.queryParameters['keys'] == '1';
-        final signer = await Ed25519().newKeyPairFromSeed(friendSeedOverride ?? _friendSeed);
         final friends = <Map<String, Object?>>[];
         for (final pair in friendships.where((pair) => pair.startsWith('$deviceId|'))) {
           final peer = pair.split('|')[1], keys = withKeys || movedFrom.containsKey(pair) ? _keysOf(peer) : null;
-          final signature = keys == null
-              ? null
-              : await Ed25519().sign(friendKeysCanonical(deviceId, peer, keys['signPublicKey']! as String, keys['boxPublicKey']! as String, movedFrom[pair]), keyPair: signer);
-          friends.add({'deviceId': peer, 'since': now, ...?keys, if (signature != null) 'keysSignature': base64UrlNoPad(signature.bytes), 'movedFrom': ?movedFrom[pair]});
+          final signature = keys == null ? null : await serverSign(friendKeysCanonical(deviceId, peer, keys['signPublicKey']! as String, keys['boxPublicKey']! as String, movedFrom[pair]));
+          friends.add({'deviceId': peer, 'since': now, ...?keys, if (signature != null) 'keysSignature': base64UrlNoPad(signature), 'movedFrom': ?movedFrom[pair]});
         }
         return RelayResponse(200, {'friends': friends});
       case ('POST', '/v1/friends/moves/ack'):

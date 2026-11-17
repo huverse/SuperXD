@@ -44,7 +44,7 @@ class Phone {
 
   Future<SocialService> start({bool polling = false, Random? random}) async {
     final spaces = _spaces = SocialSpaces(vault: vault, directory: directory.path);
-    final service = SocialService(spaces: spaces, accountKeys: keys, transport: relay?.transport(), accountGone: () => gone++, polling: polling, random: random, friendKeys: FakeRelay.friendKeys);
+    final service = SocialService(spaces: spaces, accountKeys: keys, transport: relay?.transport(), accountGone: () => gone++, polling: polling, random: random, serverKeys: FakeRelay.serverKeys);
     _phoneOf[service] = this;
     await service.switchAccount(account);
     return service;
@@ -676,11 +676,11 @@ void main() {
       final after = await newPhone.start();
       await expectLater(after.enable('小红'), throwsA(isA<SocialException>()));
       await after.takeOver();
-      relay.friendSeedOverride = List.filled(32, 9);
+      relay.serverSeedOverride = List.filled(32, 9);
       await bob.refresh(reconcile: true);
       expect(bob.friends.single.deviceId, before.deviceId, reason: '没收下新公钥');
       expect(relay.movedFrom, isNotEmpty, reason: '没确认，签名对了再处理');
-      relay.friendSeedOverride = null;
+      relay.serverSeedOverride = null;
       await bob.refresh(reconcile: true);
       expect(bob.friends.single.deviceId, after.deviceId);
     });

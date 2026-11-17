@@ -1,4 +1,6 @@
 import java.io.File
+import java.net.URI
+import java.util.Base64
 import java.util.Properties
 
 plugins {
@@ -81,6 +83,56 @@ android {
     }
     buildTypes {
         release { signingConfig = signingConfigs.getByName("release") }
+    }
+}
+
+// 明文 HTTP 只对教务与中转两个地址放行（安卓网络安全配置，取代清单里全局的 usesCleartextTraffic），其余一律 HTTPS，以后接入的第三方误写成 http 会被系统拦下。
+// 只管安卓原生的网络栈（应用更新的安装包下载、网页视图等）；Dart 的请求不看这份配置。清单引用 @xml/network_security_config，由下面的任务按构建生成。
+// 教务地址同 lib/edu/kingo_client.dart 的 kingoBase（test/legal_page_test.dart 核对两边一致）。中转地址来自构建参数 --dart-define=SUPERXD_RELAY
+// （Flutter 经 -Pdart-defines 交给 Gradle，每项是「名=值」的 base64，逗号分隔），是 http 时放行它的主机，是 https 或没给就不放；写坏了构建失败。
+val superxdEduHost = "42.247.18.146"
+val superxdRelayHost: String? = run {
+    val relay = project.findProperty("dart-defines")?.toString().orEmpty().split(',').filter { it.isNotEmpty() }
+        .map { String(Base64.getDecoder().decode(it), Charsets.UTF_8) }
+        .firstOrNull { it.startsWith("SUPERXD_RELAY=") }?.substringAfter('=').orEmpty()
+    if (relay.isEmpty()) return@run null
+    val uri = URI(relay)
+    if (uri.scheme == "https") return@run null
+    val host = uri.host
+    check(uri.scheme == "http" && host != null && Regex("[A-Za-z0-9.-]+").matches(host)) { "SUPERXD_RELAY should be http(s)://host:port" }
+    host
+}
+
+abstract class NetworkSecurityConfigTask : DefaultTask() {
+    @get:Input abstract val cleartextHosts: ListProperty<String>
+    @get:OutputDirectory abstract val outputDirectory: DirectoryProperty
+
+    @TaskAction
+    fun write() {
+        val file = outputDirectory.get().file("xml/network_security_config.xml").asFile
+        file.parentFile.mkdirs()
+        val domains = cleartextHosts.get().joinToString("\n") { "        <domain includeSubdomains=\"false\">$it</domain>" }
+        file.writeText(
+            """
+            |<?xml version="1.0" encoding="utf-8"?>
+            |<!-- 构建时由 android/app/build.gradle.kts 生成：明文 HTTP 只对教务与中转放行，其余一律 HTTPS。 -->
+            |<network-security-config>
+            |    <base-config cleartextTrafficPermitted="false" />
+            |    <domain-config cleartextTrafficPermitted="true">
+            |$domains
+            |    </domain-config>
+            |</network-security-config>
+            |""".trimMargin(),
+        )
+    }
+}
+
+androidComponents {
+    onVariants { variant ->
+        val task = tasks.register<NetworkSecurityConfigTask>("superxdNetworkSecurityConfig${variant.name.replaceFirstChar { it.uppercase() }}") {
+            cleartextHosts.set(listOfNotNull(superxdEduHost, superxdRelayHost).distinct())
+        }
+        variant.sources.res?.addGeneratedSourceDirectory(task, NetworkSecurityConfigTask::outputDirectory)
     }
 }
 

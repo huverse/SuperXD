@@ -1,5 +1,13 @@
 // 中转服务的全部上限与保留期集中在这里；改动须同步 README 的“上限与保留”，以及客户端索引（私信见 lib/social/CLAUDE.md，代签见 lib/toolbox/CLAUDE.md 与根 CLAUDE.md 的数据保留）。
 
+// HTTP 服务端的超时（src/common/http_server.ts 设到 Node 的 http.Server 上，不用 Node 默认值）：
+// 收完一个请求（头加体）最多 httpRequestTimeoutMs：最大的请求体是 24MB 的诊断包，客户端整次最多 5 分钟（lib/device/relay_diagnostic_upload.dart），这里多留 30 秒；
+// 长轮询挂起的是回复、不算在内。收完请求头最多 httpHeadersTimeoutMs。空闲的保活连接留 httpKeepAliveTimeoutMs：要长过客户端自己关空闲连接的时刻
+// （Dart HttpClient 默认 15 秒）与以后前置代理的上游保活（Nginx 默认 60 秒），不然两边一关一用撞上会被重置；请求头超时比它多 1 秒（Node 的老建议，防保活连接上的下一个请求被误判超时）。
+export const httpRequestTimeoutMs = 330_000;
+export const httpKeepAliveTimeoutMs = 65_000;
+export const httpHeadersTimeoutMs = 66_000;
+
 // 请求签名：时间戳与服务器相差超过 5 分钟拒绝；随机数 10 分钟内不得重复（覆盖时间窗两侧）。
 export const clockSkewMs = 5 * 60 * 1000;
 export const nonceTtlSeconds = 10 * 60;

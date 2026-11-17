@@ -36,5 +36,13 @@
     "movedFrom": "EBESExQVFhcYGRobHB0eHw",
     "canonical": "SXD1-friend-keys\nAAECAwQFBgcICQoLDA0ODw\nZbYGc9btiEvwHCwiLYKtoA\nebVWLo_mVPlAeLES6KmLp5AfhTrmlb7X4OORC60ElmQ\nYGFiY2RlZmdoaWprbG1ub3BxcnN0dXZ3eHl6e3x9fn8\nEBESExQVFhcYGRobHB0eHw",
     "signature": "4Np-cW0eEJ7DEmT1pls5oqhuNCW7pCpQTVK-WUh42k1g_Rkci-z-nPRbxwvyfa_XDBWh2Mm0ldhyms404S6bAw"
+  },
+  "accountDeleted": {
+    "note": "服务器证明「这把设备密钥所在的应用账号已注销」（src/modules/account/account_deleted_proof.ts，客户端 lib/social/relay_client.dart 验）：签名钥同 friendKeys 的测试种子，nonce 是这次请求的 x-sxd-nonce",
+    "publicKey": "5_FioQvsVZr-oZXk3OhLaVaNXSywlj60RsBoXisX8vA",
+    "deviceId": "ZbYGc9btiEvwHCwiLYKtoA",
+    "nonce": "MDEyMzQ1Njc4OTo7PD0-Pw",
+    "canonical": "SXD1-account-deleted\nZbYGc9btiEvwHCwiLYKtoA\nMDEyMzQ1Njc4OTo7PD0-Pw",
+    "proof": "uW6BMeRdQKwYsOaUDPhyEYeaYNPrQ0GgeOjl3tSbSDmOjFsy8xzNay8p3NMZ-jAmOU2QJoPTn0Z5Swy3NFdvCA"
   }
 }

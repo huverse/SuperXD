@@ -1,4 +1,4 @@
-import { createDecipheriv, createHash, diffieHellman, hkdfSync, randomBytes } from 'node:crypto';
+import { createDecipheriv, createHash, createPrivateKey, createPublicKey, diffieHellman, hkdfSync, randomBytes } from 'node:crypto';
 import { NestExpressApplication } from '@nestjs/platform-express';
 import Redis from 'ioredis';
 import { createConnection, Connection } from 'mysql2/promise';
@@ -13,7 +13,7 @@ import { createRelayApp } from 'src/relay_app';
 import { env } from 'src/config/env';
 import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
-import { x25519PublicKey } from 'src/common/crypto/relay_crypto';
+import { decodeBase64url, ed25519Key, rewardPrizeCanonical, verifyEd25519, x25519PublicKey } from 'src/common/crypto/relay_crypto';
 import { rewardDrawPerDevicePerHour, rewardDrawPerHour, rewardKeepDays } from 'src/common/relay_limits';
 import { RewardAdminError, runRewardAdmin } from 'src/modules/reward/reward_admin';
 import { RewardRetentionTask } from 'src/modules/reward/reward_retention.task';
@@ -66,10 +66,20 @@ const registered = async (accountId = randomBytes(16).toString('base64url'), cre
 
 const draw = (device: TestDevice, key: string, body: Record<string, unknown>) => device.call('POST', `/v1/rewards/${key}/draw`, body);
 
-// 解开奖品信封（同客户端 openRewardPrize，布局见 src/modules/reward/reward_seal.ts）：只有抽签设备的加密私钥打得开，打不开抛错。
+// 服务器在线签名钥的公钥（测试钥，同 setup_env.ts 的 RELAY_FRIEND_SIGN_KEY）：第 2 版奖品信封用它验签（同客户端 relayServerKeys）。
+const serverPublic = () =>
+  ed25519Key(Buffer.from(createPublicKey(createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b657004220420', 'hex'), decodeBase64url(process.env.RELAY_FRIEND_SIGN_KEY!, 32)!]), format: 'der', type: 'pkcs8' })).export({ format: 'jwk' }).x!, 'base64url'));
+
+// 解开奖品信封（同客户端 openRewardPrize，布局见 src/modules/reward/reward_seal.ts）：只有抽签设备的加密私钥打得开，打不开抛错；
+// 第 2 版先按服务器签名验过（绑定活动与设备）再解，验不过抛错。
 const prizeOf = (device: TestDevice, key: string, body: { result: string; sealed: string | null }) => {
   if (body.sealed === null) return null;
-  const sealed = Buffer.from(body.sealed, 'base64url');
+  let sealed = Buffer.from(body.sealed, 'base64url');
+  if (sealed[0] === 2) {
+    const signature = sealed.subarray(sealed.length - 64);
+    sealed = sealed.subarray(0, sealed.length - 64);
+    if (!verifyEd25519(serverPublic(), rewardPrizeCanonical(key, device.deviceId, sealed), signature)) throw new Error('奖品信封的服务器签名不对');
+  }
   const ephemeral = sealed.subarray(1, 33), devicePublic = Buffer.from(device.boxPublicKey, 'base64url');
   const shared = diffieHellman({ privateKey: device.boxPrivate, publicKey: x25519PublicKey(ephemeral) });
   const decipher = createDecipheriv('aes-256-gcm', Buffer.from(hkdfSync('sha256', shared, Buffer.concat([ephemeral, devicePublic]), 'SXD1-reward-prize', 32)), sealed.subarray(33, 45));
@@ -243,6 +253,28 @@ describe('抽奖', () => {
     expect((await draw(unlucky, key, { activeDays: 5 })).body.result).toBe('missed');
     const hashes = (await database.query('SELECT participant_hash AS hash FROM reward_draw d JOIN reward_campaign c ON c.id = d.campaign_id WHERE c.campaign_key = ?', [key])) as { hash: string }[];
     expect(hashes.map((row) => row.hash).sort()).toEqual([luckySubject, unluckySubject].map(participantHash).sort());
+  });
+
+  // [人工决策-2026-11-17 21:24:25] 奖品信封加服务器认证：带 seal: 2 的（11-17 起的客户端）给第 2 版，没带的旧客户端照旧第 1 版。
+  it('请求带 seal: 2 给第 2 版信封：末尾是服务器签名、绑定活动与设备，改一个字节或挪给别的设备都验不过；没带的照旧第 1 版；seal 只认 2', async () => {
+    const key = await setup();
+    const account = randomBytes(16).toString('base64url');
+    const device = await registered(account), other = await registered(randomBytes(16).toString('base64url'));
+    roll.mockReturnValue(0);
+    const signed = await draw(device, key, { activeDays: 5, seal: 2 });
+    expect(signed.body.result).toBe('won');
+    const sealed = Buffer.from(signed.body.sealed, 'base64url');
+    expect(sealed[0]).toBe(2);
+    expect(prizeOf(device, key, signed.body)).toEqual({ kind: 'password', content: '口令0', note: '附言0' });
+    expect(() => prizeOf(other, key, signed.body), '别的设备验不过').toThrow('签名');
+    expect(() => prizeOf(device, `${key}x`, signed.body), '别的活动验不过').toThrow('签名');
+    const tampered = Buffer.from(sealed);
+    tampered[50] ^= 1;
+    expect(() => prizeOf(device, key, { result: 'won', sealed: tampered.toString('base64url') }), '改了密文').toThrow('签名');
+    const legacy = await draw(device, key, { activeDays: 5 });
+    expect(Buffer.from(legacy.body.sealed, 'base64url')[0], '旧客户端照旧第 1 版').toBe(1);
+    expect(prizeOf(device, key, legacy.body)).toEqual({ kind: 'password', content: '口令0', note: '附言0' });
+    expect((await draw(device, key, { activeDays: 5, seal: 3 })).body.code).toBe('INVALID_REQUEST');
   });
 
   it('按活跃度加权：同一个骰子点数，活跃的抽中、新用户没抽中；平权时活跃天数不起作用', async () => {

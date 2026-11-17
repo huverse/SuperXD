@@ -54,14 +54,14 @@ class _Session {
 // 私信只认当前应用账号（AppAccountRef，组合根按 AppAccounts.current 调 switchAccount），不认是用什么登录的；每个应用账号在这台手机上一份身份与本机库
 // （social_spaces.dart），服务端记「账号 → 当前私信设备」。没登录应用账号时私信停用（signedOut）；退出应用账号不动服务器、本机记录留着，再登录接着用。
 // 多设备用户选「新手机接管并提示对方」：账号的私信在另一台手机上时（elsewhere）先确认再接管（takeOver）——好友关系改挂到这台，好友那边会话里提示
-// 「对方换了设备」并自动发来昵称；新手机的好友名单与公钥由服务器给（这一步信任服务器，靠那条提示让人看得到；公钥带服务器签名，挡住网络上的人，见 relay_client.dart 的 relayFriendKeys），那台手机上的聊天记录、备注与没收的消息不过来；
+// 「对方换了设备」并自动发来昵称；新手机的好友名单与公钥由服务器给（这一步信任服务器，靠那条提示让人看得到；公钥带服务器签名，挡住网络上的人，见 relay_client.dart 的 relayServerKeys），那台手机上的聊天记录、备注与没收的消息不过来；
 // 被接管的手机变成 elsewhere，可以再接管回去。这台手机旧版留下的设备级私信并进第一次用私信的应用账号（两台手机原来各有好友的，接管后合在一起）。
 // 注销应用账号时服务器删掉它的私信设备，本机这份也清掉（[人工决策-2026-11-14 17:56:46] 用户选「一并删除」，组合根接 forgetAccount）。
 // 私信编排：本机库、私信身份与中转服务之间的唯一入口，页面只经它读写。
 // 联网时机：切到一个应用账号、开启、出示/扫码、发送、刷新（回到前台、进入私信、下拉），以及前台长轮询收消息。除校时重发一次、中转不认这台设备时重新挂账号后重放一次（见 _authorized）外不自动重试。
 class SocialService extends ChangeNotifier {
-  SocialService({required this.spaces, required this.accountKeys, RelayTransport? transport, this.accountGone, DateTime Function()? clock, Random? random, this.polling = false, List<String> friendKeys = relayFriendKeys})
-    : _relay = transport == null ? null : RelayClient(transport, friendKeys: friendKeys),
+  SocialService({required this.spaces, required this.accountKeys, RelayTransport? transport, this.accountGone, DateTime Function()? clock, Random? random, this.polling = false, List<String> serverKeys = relayServerKeys})
+    : _relay = transport == null ? null : RelayClient(transport, serverKeys: serverKeys),
       _clock = clock ?? DateTime.now,
       _random = random ?? Random();
   // 就绪后是否在前台持续长轮询收消息（应用里开启；测试关闭，避免残留请求与定时器）。

@@ -132,6 +132,7 @@
 - 屏幕方向：安卓主界面锁竖屏、iOS 只竖屏（[人工决策] 在清单的 MainActivity；Android 16 起系统对大屏设备会忽略这个设置，属正常；test/shell_layout_test.dart 守护）。
 - iOS：宿主在 ios 目录（入口 ios/Runner/AppDelegate.swift；小组件与实时活动的扩展在 ios/CourseWidgets，两边共用的在 ios/Shared；最低 iOS 16 与渠道配置的人工决策在 ios/Podfile），原生代码同样登记在使用它的模块 CLAUDE.md。本机是 Linux、没有 Mac，iOS 只在 CI 的 ios-build 作业里编译（同一作业另在模拟器上装调试包做启动冒烟，截图在产物 ios-simulator-smoke，[人工决策] 在 ci.yml），产物是未签名 ipa，测试者用全能签加自己的证书签名安装（人工决策在 ci.yml）；没有模拟器与本机调试，iOS 结论只认用户 iPhone 上的结果。系统启动图只铺默认配色的底色（LaunchBackground）；应用自己的隐私清单 ios/Runner/PrivacyInfo.xcprivacy 登记原生代码用到的需说明理由的接口（现在只有 UserDefaults），新增这类接口时同步。各项原生能力还在补，补齐前 iOS 未验收。
 - 安卓上退出再进入会新建 Flutter 引擎而进程还在，sqflite 的原生连接不随引擎关：前台的本机库一律单实例打开并显式写回滚开关，后台引擎被叫停时收回自己的连接（人工决策在 local/account_store.dart，test/account_store_test.dart 守护）。
+- 安卓明文 HTTP 只对教务与中转放行：清单引用的网络安全配置由 android/app/build.gradle.kts 构建时生成（教务地址写在脚本里，同 kingoBase；中转取构建参数 SUPERXD_RELAY，是 http 才放），其余原生网络一律 HTTPS；Dart 的请求不受它管。test/legal_page_test.dart 守护。
 - 对外开放文件只经两个 FileProvider：CalendarFileProvider（缓存 calendar_export 文件夹）与 AppUpdateFileProvider（缓存 app_update 文件夹，清单声明 REQUEST_INSTALL_PACKAGES）。
 - release 包开启 R8：接入不带混淆规则的原生 SDK 时要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件还要自己在清单里声明（现在没有这类 SDK：原生高德 11-10 随地图改网页版删掉，test/legal_page_test.dart 守护它与规则同进同出）。CI 只跑测试；release 包由发版流水线构建，正式发版前可先试跑，用试跑产物在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
 - 暂不改动的事项（只被测试使用的公开方法、性能观察项、单校写死）记在对应模块 CLAUDE.md 的关键规则里，改动前先看。
