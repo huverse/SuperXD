@@ -29,7 +29,8 @@ List<Map<String, Object?>> challengeBankEntries(String secret, String game, Puzz
   final entries = <Map<String, Object?>>[];
   for (var index = 0; entries.length < count && index < count * 3; index++) {
     final seed = challengeBankSeed(secret, game, tier, index);
-    final draw = rules.generate(seed, tier);
+    // 挑战的出题入口（同自由模式，个别不适合进挑战的题型由规则自己排除，见 PuzzleRules.challengeDraw）。
+    final draw = rules.challengeDraw(seed, tier);
     final puzzle = rules.encodePuzzle(draw.puzzle);
     if (!seen.add(jsonEncode(puzzle))) continue;
     // 只收这个版本的客户端自己解得开的题（解码对证明唯一的试探有上限，如数回的 loopDecodeBudget）：发下去的题不会被客户端拒收。

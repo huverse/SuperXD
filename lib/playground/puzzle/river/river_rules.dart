@@ -444,6 +444,9 @@ int riverDifficulty(RiverPuzzle puzzle) => riverScore(puzzle).round().clamp(1, 1
 // - bridge：crew = [几个人, 分钟最多几]，分钟从 1 到它里不重复地挑，人人能拿火把；要用到技巧、难易分落在这一档才用。
 typedef _RiverPlan = ({RiverVariant variant, int capacity, List<int> crew, List<int> rowing, bool boat});
 
+// 挑战题库不出的题型（人工决策见 RiverRules.challengeDraw）：只在自由模式出。
+const riverChallengeless = {RiverVariant.bridge};
+
 class RiverRules extends PuzzleRules<RiverPuzzle, List<RiverCrossing>> {
   const RiverRules();
 
@@ -606,9 +609,17 @@ class RiverRules extends PuzzleRules<RiverPuzzle, List<RiverCrossing>> {
   // 出题前核对：解得开、最少次数不低于这一档的下限、每条机制都有用（riverNeeded）、难易分落在这一档，不合就在同一题型里再挑
   // （骨架都实测过，坐船的第一个就能用；桥与火把的分钟是随机的，平均两三次）。
   @override
-  PuzzleDraw<RiverPuzzle, List<RiverCrossing>> generate(int seed, PuzzleTier tier) {
+  PuzzleDraw<RiverPuzzle, List<RiverCrossing>> generate(int seed, PuzzleTier tier) => _draw(seed, _plans[tier]!, tier);
+
+  // [人工决策-2026-11-17 14:17:05] 挑战里不出桥与火把（用户选定）：它的碎片（最短分钟）就是题面上写的火把分钟、不解也看得到，
+  // 违背「碎片从解里来」；改用渡河次数又恒为 2n − 3、没有信息。所以挑战题库出题时排除这一类的骨架（riverChallengeless），自由模式照常有；
+  // 服务端判定、解码与判定向量照样认得桥与火把的题面（旧数据与向量不受影响）。排除后每档仍有三种以上题型、骨架数见测试。
+  @override
+  PuzzleDraw<RiverPuzzle, List<RiverCrossing>> challengeDraw(int seed, PuzzleTier tier) =>
+      _draw(seed, [for (final plan in _plans[tier]!) if (!riverChallengeless.contains(plan.variant)) plan], tier);
+
+  PuzzleDraw<RiverPuzzle, List<RiverCrossing>> _draw(int seed, List<_RiverPlan> plans, PuzzleTier tier) {
     final random = PuzzleRandom(seed);
-    final plans = _plans[tier]!;
     final variants = [for (final variant in RiverVariant.values) if (plans.any((plan) => plan.variant == variant)) variant];
     final variant = random.pick(variants);
     final candidates = [for (final plan in plans) if (plan.variant == variant) plan];
