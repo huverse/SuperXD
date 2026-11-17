@@ -4,13 +4,14 @@ import 'package:forge2d/forge2d.dart';
 
 import 'package:superxd/playground/puzzle_rules.dart';
 
-// 画线入杯：上方几个小球、下方一只杯子、中间几块固定的障碍。玩家用有限的墨水画线（松手后成为固定不动的刚体），
-// 点「放球」后小球在重力下落，全部滚进杯子并停稳才算过关。
+// 画线入杯：上方几个小球、下方一只杯子、中间几块固定的障碍（有的题还有一根转动的风车杆）。玩家用有限的墨水画线（松手后成为固定不动的刚体），
+// 点「放球」后小球在重力下落，全部滚进杯子并停稳才算过关；用墨越省星越多（pourStars）。
 // 物理模拟用 forge2d（Box2D v3 的 Dart 绑定，原生库经 FFI 调用，不依赖 Flutter），规则与页面跑的是同一份 PourSimulation。
 // 坐标是整数单位，1 单位当 1 厘米：棋盘 pourWidth × pourHeight，y 朝下（重力也朝下）；送进物理世界时除以 100 换成米（Box2D 按米调参）。
-// 判定的稳定性：模拟是固定步长、固定子步数、按同一顺序建物体的确定性计算，同一台设备上同一道题同一种画法每次结果一样；
+// 判定的稳定性：模拟是固定步长、固定子步数、按同一顺序建物体的确定性计算（风车是匀速转动的运动体，转角只看过了几步），同一台设备上同一道题同一种画法每次结果一样；
 // 换平台（arm64 与 x64、不同编译器）浮点细节可能有微小差异、边缘情况会走向不同结果，所以这个游戏只进自由模式（challengeable 为假），
 // 不承诺跨设备逐位复现。出题时只有坐标取整等整数运算用 PuzzleRandom，验证可解靠同一份模拟。
+// 题型（PourKind）有十类，每档从自己的几类里按种子挑一类（_tiers），换种子换的是结构，不只是位置。
 
 const pourWidth = 600, pourHeight = 800;
 const pourBallRadius = 18;
@@ -19,26 +20,68 @@ const pourLineRadius = 5;
 const pourCupWall = 12;
 // 线离球的起点至少这么远（球半径加线半径再留一点），否则放球那一刻球就压在线上。
 const pourBallClearance = pourBallRadius + pourLineRadius + 6;
-const pourMaxBalls = 3, pourMaxBlocks = 6, pourMaxInk = 3000;
+const pourMaxBalls = 3, pourMaxBlocks = 8, pourMaxSpinners = 2, pourMaxInk = 3000;
+// 风车杆的半厚（杆是两头圆的长条）。
+const pourSpinnerHalf = 7;
 // 答案的上限：笔数与总点数（页面每走 pourMinSegment 记一个点，满墨水也远用不到）。
 const pourMaxStrokes = 20, pourMaxPoints = 800;
 const pourMinSegment = 8;
 // 模拟的固定步长与最长时长（12 秒）；页面每帧按真实流逝的时间推进若干步。
 const pourStep = 1 / 60;
 const pourMaxSteps = 60 * 12;
+// 星级：用墨不超过参考线长的 1.25 倍 3 星、不超过 1.75 倍 2 星，其余 1 星（同类游戏按用墨给星的常见做法）。
+const pourThreeStars = 1.25, pourTwoStars = 1.75;
+// 墨水比参考线长的这个倍数还少算「墨水紧」（难易分加 1；这时至少 2 星）。
+const pourTight = 1.6;
+
+// 题型（code 发出后不改）：base 是这一类在难易分里的起点，structure 是这一类自带几块固定障碍（多出来的算随机障碍），balls 是这一类至少几个球。
+enum PourKind {
+  // 直坡：一段斜坡把球引到杯口近侧。
+  ramp(0, base: 1, structure: 0),
+  // 两笔折返：球在杯子正上方、挡板拦着，先往外引过挡板外沿，再用第二笔接住、从挡板下面引回杯口。
+  switchback(1, base: 8, structure: 1),
+  // 漏斗：杯口上方一对张开的斜板，把球送进漏斗口就会滑进杯里。
+  funnel(2, base: 1, structure: 2),
+  // 缓冲接住：球顺着陡滑板冲出去会飞过杯子，要在杯子远侧挡一下让它落进去。
+  catcher(3, base: 2, structure: 1),
+  // 搭桥：两段固定斜板中间断开，球会掉进缺口，要补上一段桥。
+  bridge(4, base: 3, structure: 2),
+  // 借板回头：球下方的斜板把球往外送（板也挡住了杯口），要在板的末端接住、从板底下引回杯口。
+  uturn(5, base: 5, structure: 1),
+  // 绕障：直坡的路上有一块障碍，线要折一下从它上面或下面绕过去。
+  detour(6, base: 5, structure: 1),
+  // 两边来球：杯子两边都有球，每边各画一笔。
+  pair(7, base: 5, structure: 0, balls: 2),
+  // 窄口：杯口盖着两块板、只留一道窄缝，球滚得太快会越过缝，要在缝的远边挡一下。
+  slot(8, base: 7, structure: 2),
+  // 风车：直坡的路上有一根匀速转动的杆，线要折一下绕开它扫过的范围。
+  windmill(9, base: 7, structure: 0);
+
+  const PourKind(this.code, {required this.base, required this.structure, this.balls = 1});
+  final int code, base, structure, balls;
+
+  static PourKind? coded(int code) => values.where((kind) => kind.code == code).firstOrNull;
+}
 
 // 一块固定的障碍：中心、半宽、半高与转角（度，y 朝下所以正角是顺时针）。
 class PourBlock {
   const PourBlock({required this.x, required this.y, required this.halfWidth, required this.halfHeight, required this.angle});
   final int x, y, halfWidth, halfHeight, angle;
 
-  // 四个角，按 x、y 交替排（顺序绕一圈）。
+  // 四个角，按 x、y 交替排（顺序绕一圈；前两个是上沿：转角在 ±90 度以内时它朝上）。
   List<double> get corners {
     final radians = angle * math.pi / 180, cos = math.cos(radians), sin = math.sin(radians);
     return [
       for (final (dx, dy) in [(-halfWidth, -halfHeight), (halfWidth, -halfHeight), (halfWidth, halfHeight), (-halfWidth, halfHeight)]) ...[x + dx * cos - dy * sin, y + dx * sin + dy * cos],
     ];
   }
+}
+
+// 一根转动的杆（风车）：中心、半长（扫过的圆的半径）、转速（度每秒，正的是顺时针）与开始的转角（度）。
+// 放球那一刻从开始的转角匀速转，没放球时停在开始的转角。
+class PourSpinner {
+  const PourSpinner({required this.x, required this.y, required this.halfLength, required this.speed, required this.angle});
+  final int x, y, halfLength, speed, angle;
 }
 
 // 杯子：杯口中线 x、杯底内面的 y、杯内宽与杯内深；杯壁厚 pourCupWall，杯底也是这么厚。
@@ -62,13 +105,17 @@ class PourCup {
 }
 
 class PourPuzzle {
-  const PourPuzzle({required this.balls, required this.cup, required this.blocks, required this.ink});
+  const PourPuzzle({required this.kind, required this.balls, required this.cup, required this.blocks, this.spinners = const [], required this.ink, required this.par});
+  final PourKind kind;
   // 球的起点，按 x、y 交替排。
   final List<int> balls;
   final PourCup cup;
   final List<PourBlock> blocks;
+  final List<PourSpinner> spinners;
   // 墨水：所有线的总长上限（单位）。
   final int ink;
+  // 参考线的总长（向上取整），星级按它算。
+  final int par;
 
   int get ballCount => balls.length ~/ 2;
 }
@@ -83,6 +130,11 @@ double pourStrokeLength(List<int> stroke) {
 }
 
 double pourInkUsed(List<List<int>> strokes) => strokes.fold(0.0, (sum, stroke) => sum + pourStrokeLength(stroke));
+
+// 用掉这么多墨水能得几颗星（1–3）：只看用墨，进没进杯由判定管。
+int pourStarsFor(PourPuzzle puzzle, double used) => used <= puzzle.par * pourThreeStars ? 3 : (used <= puzzle.par * pourTwoStars ? 2 : 1);
+
+int pourStars(PourPuzzle puzzle, List<List<int>> strokes) => pourStarsFor(puzzle, pourInkUsed(strokes));
 
 // 一段线离每个球的起点都够远（页面画线时逐段查，判定时整份答案再查一遍）。
 bool pourSegmentClear(PourPuzzle puzzle, int x1, int y1, int x2, int y2) {
@@ -125,6 +177,17 @@ class PourSimulation {
       _world.createBody(BodyDef(position: _meters(block.x, block.y), rotation: Rot.fromAngle(block.angle * math.pi / 180)))
           .createShape(Polygon.box((block.halfWidth - round) / 100, (block.halfHeight - round) / 100, radius: round / 100), ShapeDef(material: SurfaceMaterial(friction: .6, restitution: .1)));
     }
+    // 风车：匀速转动的运动体（不受力、转角只看过了几步），不睡眠，碰到球照常把球拨开。
+    for (final spinner in puzzle.spinners) {
+      final reach = (spinner.halfLength - pourSpinnerHalf) / 100;
+      _spinners.add(_world.createBody(BodyDef(
+        type: BodyType.kinematic,
+        position: _meters(spinner.x, spinner.y),
+        rotation: Rot.fromAngle(spinner.angle * math.pi / 180),
+        angularVelocity: spinner.speed * math.pi / 180,
+        enableSleep: false,
+      ))..createShape(Capsule(center1: Vector2(-reach, 0), center2: Vector2(reach, 0), radius: pourSpinnerHalf / 100), ShapeDef(material: SurfaceMaterial(friction: .5, restitution: .2))));
+    }
     // 每笔线一个静态物体，每段是一根胶囊（两端是圆头，相邻两段接得上、球滚过拐点不磕）。
     for (final stroke in strokes) {
       final line = _world.createBody(BodyDef());
@@ -142,7 +205,7 @@ class PourSimulation {
 
   final PourPuzzle puzzle;
   final World _world;
-  final _balls = <Body>[];
+  final _balls = <Body>[], _spinners = <Body>[];
   int steps = 0;
   PourOutcome outcome = PourOutcome.running;
   int _settled = 0, _resting = 0;
@@ -154,6 +217,9 @@ class PourSimulation {
     final body = _balls[index], position = body.position;
     return (x: position.x * 100, y: position.y * 100, angle: body.angle);
   }
+
+  // 第 index 根风车杆此刻的转角（弧度）。
+  double spinner(int index) => _spinners[index].angle;
 
   void step() {
     if (outcome != PourOutcome.running) return;
@@ -195,40 +261,74 @@ PourOutcome pourSimulate(PourPuzzle puzzle, List<List<int>> strokes) {
   }
 }
 
-// 每档的参数：球数、随机障碍数、杯内宽、坡道的水平跨度、坡度（百分比，竖直落差除以水平跨度）、墨水是参考线长的几倍（百分比）、
-// 是否折返（专家：球就在杯子正上方，中间横着一块挡板，参考解是先往外引、再用第二笔接住引回杯口）。
-typedef _Tier = ({int balls, int blocks, (int, int) cup, (int, int) span, (int, int) grade, (int, int) ink, bool switchback});
+// 每档的几类题（出题时按种子挑一类）：题型、球数、随机障碍数、墨水是参考线长的几倍（百分比）。
+// 难易分 = 题型的起点 + 多出来的球 + 随机障碍 + 墨水紧（墨水不到参考线的 pourTight 倍）加 1，每类的组合按档凑进这一档的分段：
+// 入门 1–2（直坡、漏斗、缓冲接住，一个球、墨水宽）；简单 3–4（直坡与漏斗两个球加一块障碍、接住加一块障碍、搭桥）；
+// 普通 5–6（搭桥两个球加一块障碍、绕障、借板回头、两边来球且墨水紧）；困难 7–8（绕障与借板回头两个球加一块障碍、两边三个球、窄口、风车）；
+// 专家 9–10（两笔折返、窄口两个球、风车两个球，两边来球与借板回头再加障碍且墨水紧）。
+typedef _Recipe = ({PourKind kind, int balls, int blocks, (int, int) ink});
 
-const Map<PuzzleTier, _Tier> _tiers = {
-  PuzzleTier.entry: (balls: 1, blocks: 0, cup: (130, 150), span: (150, 230), grade: (35, 60), ink: (220, 260), switchback: false),
-  PuzzleTier.easy: (balls: 1, blocks: 1, cup: (115, 135), span: (190, 290), grade: (32, 60), ink: (180, 210), switchback: false),
-  PuzzleTier.normal: (balls: 1, blocks: 2, cup: (100, 120), span: (280, 400), grade: (25, 50), ink: (155, 180), switchback: false),
-  PuzzleTier.hard: (balls: 2, blocks: 2, cup: (100, 120), span: (220, 340), grade: (28, 50), ink: (140, 160), switchback: false),
-  PuzzleTier.expert: (balls: 2, blocks: 1, cup: (95, 115), span: (0, 0), grade: (25, 45), ink: (125, 140), switchback: true),
+const Map<PuzzleTier, List<_Recipe>> _tiers = {
+  PuzzleTier.entry: [
+    (kind: PourKind.ramp, balls: 1, blocks: 0, ink: (200, 250)),
+    (kind: PourKind.funnel, balls: 1, blocks: 0, ink: (200, 250)),
+    (kind: PourKind.catcher, balls: 1, blocks: 0, ink: (200, 250)),
+  ],
+  PuzzleTier.easy: [
+    (kind: PourKind.ramp, balls: 2, blocks: 1, ink: (165, 200)),
+    (kind: PourKind.funnel, balls: 2, blocks: 1, ink: (165, 200)),
+    (kind: PourKind.catcher, balls: 1, blocks: 1, ink: (165, 200)),
+    (kind: PourKind.bridge, balls: 1, blocks: 0, ink: (165, 200)),
+  ],
+  PuzzleTier.normal: [
+    (kind: PourKind.bridge, balls: 2, blocks: 1, ink: (165, 190)),
+    (kind: PourKind.detour, balls: 1, blocks: 0, ink: (165, 190)),
+    (kind: PourKind.uturn, balls: 1, blocks: 0, ink: (165, 190)),
+    (kind: PourKind.pair, balls: 2, blocks: 0, ink: (135, 155)),
+  ],
+  PuzzleTier.hard: [
+    (kind: PourKind.detour, balls: 2, blocks: 1, ink: (165, 185)),
+    (kind: PourKind.uturn, balls: 2, blocks: 1, ink: (165, 185)),
+    (kind: PourKind.pair, balls: 3, blocks: 1, ink: (165, 185)),
+    (kind: PourKind.slot, balls: 1, blocks: 0, ink: (135, 155)),
+    (kind: PourKind.windmill, balls: 1, blocks: 0, ink: (165, 185)),
+  ],
+  PuzzleTier.expert: [
+    (kind: PourKind.switchback, balls: 2, blocks: 0, ink: (135, 150)),
+    (kind: PourKind.slot, balls: 2, blocks: 1, ink: (165, 180)),
+    (kind: PourKind.windmill, balls: 2, blocks: 1, ink: (135, 150)),
+    (kind: PourKind.pair, balls: 3, blocks: 2, ink: (135, 150)),
+    (kind: PourKind.uturn, balls: 2, blocks: 2, ink: (135, 150)),
+  ],
 };
-
-// 难易分里「墨水紧」的分界：墨水除以最远的球到杯口近侧内沿的直线距离，低于这一类的分界加 1 分（分界取各类出题的中位数附近）。
-const _tight = [2.1, 1.8, 1.7, 1.45, 1.85];
 
 class PourRules extends PuzzleRules<PourPuzzle, List<List<int>>> {
   const PourRules();
 
-  // 出题：先按档搭出一条参考线（一段把球引向杯口的斜坡，专家是两笔折返），再在不挡参考线的地方摆障碍；
-  // 用同一份模拟确认「画了参考线放球能进杯」、参考线整体上下挪 6 单位也照样进（不是卡在刀刃上的题），并且「什么都不画放球进不了杯」，才用。
+  // 题面加了题型、风车与参考线长（第 1 版只有球、杯、障碍与墨水）；这个游戏不进挑战，版本号只为守住「改了写法就加一」。
+  @override
+  int get puzzleVersion => 2;
+
+  // 出题：先按种子挑这一档的一类题，搭出结构与参考线，再在不挡参考线的地方摆随机障碍；用同一份模拟确认
+  // 「画了参考线放球能进杯」、参考线整体上下挪 6 单位也照样进（不是卡在刀刃上的题）、「什么都不画放球进不了杯」，
+  // 再过这一类自己的检查（多笔的题少画哪一笔都不进、绕障与风车照直画一条坡不进），才用。
   @override
   PuzzleDraw<PourPuzzle, List<List<int>>> generate(int seed, PuzzleTier tier) {
     final random = PuzzleRandom(seed);
-    final spec = _tiers[tier]!;
+    final recipe = random.pick(_tiers[tier]!);
+    final floor = tier.index * 2 + 1;
     while (true) {
-      final layout = spec.switchback ? _switchback(random, spec) : _ramp(random, spec);
-      if (layout == null || !_placeBlocks(random, layout, spec.blocks)) continue;
-      final length = pourInkUsed(layout.strokes);
-      final ink = ((length * _between(random, spec.ink) / 100) / 10).ceil() * 10;
-      final puzzle = PourPuzzle(balls: layout.balls, cup: layout.cup, blocks: layout.blocks, ink: math.min(ink, pourMaxInk));
-      if (!pourAnswerValid(puzzle, layout.strokes)) continue;
+      final layout = _sketch(random, recipe);
+      if (layout == null || !_placeBlocks(random, layout, recipe.blocks)) continue;
+      final par = pourInkUsed(layout.strokes).ceil();
+      final ink = math.min((par * _between(random, recipe.ink) / 100 / 5).ceil() * 5, pourMaxInk);
+      final puzzle = PourPuzzle(kind: recipe.kind, balls: layout.balls, cup: layout.cup, blocks: layout.blocks, spinners: layout.spinners, ink: ink, par: par);
+      final score = complexity(puzzle);
+      if (score < floor || score > floor + 1 || !pourAnswerValid(puzzle, layout.strokes)) continue;
+      if (pourSimulate(puzzle, const []) == PourOutcome.won) continue;
       if (pourSimulate(puzzle, layout.strokes) != PourOutcome.won) continue;
       if (pourSimulate(puzzle, _shift(layout.strokes, -6)) != PourOutcome.won || pourSimulate(puzzle, _shift(layout.strokes, 6)) != PourOutcome.won) continue;
-      if (pourSimulate(puzzle, const []) == PourOutcome.won) continue;
+      if (layout.misses.any((miss) => pourSimulate(puzzle, miss) == PourOutcome.won)) continue;
       return PuzzleDraw(puzzle, layout.strokes);
     }
   }
@@ -236,38 +336,37 @@ class PourRules extends PuzzleRules<PourPuzzle, List<List<int>>> {
   @override
   bool solved(PourPuzzle puzzle, List<List<int>> answer) => pourAnswerValid(puzzle, answer) && pourSimulate(puzzle, answer) == PourOutcome.won;
 
-  // 难易分：先按结构分五类（单球没有障碍、单球一块、单球两块及以上、多球、多球且球在杯子正上方要折返），各占两分，
-  // 再看墨水：墨水比这一类的分界紧就加 1。同一档出的题结构相同，所以同档相差最多 1 分，档与档之间不重叠。
-  // 预计用时：一段直坡约 30 秒、挡板加折返约 2.5 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.2。
+  // 预计用时：入门约 20–25 秒，难易每高一级乘 1.28，专家（9–10）约 2.5–3 分钟（要想结构、反复放球试，按常见的人工解题速度估）。
   @override
-  int expectedSeconds(PourPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 25, growth: 1.2);
+  int expectedSeconds(PourPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 20, growth: 1.28);
 
+  // 难易分：题型的起点（直坡与漏斗 1、缓冲接住 2、搭桥 3、绕障与借板回头与两边来球 5、窄口与风车 7、两笔折返 8），
+  // 加多出来的球、多出来的随机障碍、墨水紧再加 1；各档的分段见 _tiers 上面的注释。
   @override
   int complexity(PourPuzzle puzzle) {
-    final cup = puzzle.cup;
-    var reach = 0.0, above = false;
-    for (var index = 0; index < puzzle.balls.length; index += 2) {
-      final x = puzzle.balls[index], y = puzzle.balls[index + 1];
-      above = above || (x > cup.left - pourCupWall && x < cup.right + pourCupWall);
-      reach = math.max(reach, math.sqrt(math.pow(x - (x < cup.x ? cup.left : cup.right), 2) + math.pow(y - cup.top, 2)));
-    }
-    final rank = puzzle.ballCount == 1 ? math.min(puzzle.blocks.length, 2) : (above ? 4 : 3);
-    final tight = puzzle.ink / math.max(reach, 100) < _tight[rank];
-    return 1 + rank * 2 + (tight ? 1 : 0);
+    final kind = puzzle.kind;
+    final extraBalls = math.max(0, puzzle.ballCount - kind.balls), extraBlocks = math.max(0, puzzle.blocks.length - kind.structure);
+    final tight = puzzle.ink < puzzle.par * pourTight;
+    return (kind.base + extraBalls + extraBlocks + (tight ? 1 : 0)).clamp(1, 10);
   }
 
   @override
   Object encodePuzzle(PourPuzzle puzzle) => {
+    'kind': puzzle.kind.code,
     'balls': puzzle.balls,
     'cup': [puzzle.cup.x, puzzle.cup.bottom, puzzle.cup.width, puzzle.cup.depth],
     'blocks': [for (final block in puzzle.blocks) ...[block.x, block.y, block.halfWidth, block.halfHeight, block.angle]],
+    'spinners': [for (final spinner in puzzle.spinners) ...[spinner.x, spinner.y, spinner.halfLength, spinner.speed, spinner.angle]],
     'ink': puzzle.ink,
+    'par': puzzle.par,
   };
 
-  // 解码校验：球、杯、障碍都在棋盘里、尺寸在范围内，球与球、球与障碍和杯壁不重叠（重叠的话放球那一刻会被弹飞）。
+  // 解码校验：题型认得，球、杯、障碍、风车都在棋盘里、尺寸在范围内，球与球、球与障碍和杯壁不重叠、不在风车扫过的范围里（重叠的话放球那一刻会被弹飞）。
   @override
   PourPuzzle decodePuzzle(Object? json) {
     if (json is! Map) throw const FormatException('题目不合法');
+    final kind = PourKind.coded(puzzleInt(json, 'kind', min: 0, max: 99));
+    if (kind == null) throw const FormatException('题目字段 kind 不合法');
     final balls = puzzleInts(json['balls'], maxLength: pourMaxBalls * 2, min: 0, max: pourHeight);
     if (balls.isEmpty || balls.length.isOdd) throw const FormatException('题目字段 balls 不合法');
     for (var index = 0; index < balls.length; index += 2) {
@@ -288,7 +387,19 @@ class PourRules extends PuzzleRules<PourPuzzle, List<List<int>>> {
     for (final block in blocks) {
       if (block.x < 0 || block.x > pourWidth || block.y < 0 || block.y > pourHeight || block.halfWidth < 6 || block.halfWidth > 200 || block.halfHeight < 6 || block.halfHeight > 200) throw const FormatException('题目字段 blocks 不合法');
     }
+    final spinnerValues = puzzleInts(json['spinners'], maxLength: pourMaxSpinners * 5, min: -360, max: pourHeight);
+    if (spinnerValues.length % 5 != 0) throw const FormatException('题目字段 spinners 不合法');
+    final spinners = [
+      for (var index = 0; index < spinnerValues.length; index += 5)
+        PourSpinner(x: spinnerValues[index], y: spinnerValues[index + 1], halfLength: spinnerValues[index + 2], speed: spinnerValues[index + 3], angle: spinnerValues[index + 4]),
+    ];
+    for (final spinner in spinners) {
+      if (spinner.x < 0 || spinner.x > pourWidth || spinner.y < 0 || spinner.y > pourHeight || spinner.halfLength < 20 || spinner.halfLength > 120 || spinner.speed == 0 || spinner.angle < -180 || spinner.angle > 180) {
+        throw const FormatException('题目字段 spinners 不合法');
+      }
+    }
     final ink = puzzleInt(json, 'ink', min: 50, max: pourMaxInk);
+    final par = puzzleInt(json, 'par', min: 20, max: ink);
     final walls = [for (final (left, top, right, bottom) in cup.walls) [left, top, right, top, right, bottom, left, bottom]];
     for (var index = 0; index < balls.length; index += 2) {
       final x = balls[index].toDouble(), y = balls[index + 1].toDouble();
@@ -298,8 +409,11 @@ class PourRules extends PuzzleRules<PourPuzzle, List<List<int>>> {
       for (final polygon in [for (final block in blocks) block.corners, ...walls]) {
         if (_polygonPoint(polygon, x, y) < pourBallRadius) throw const FormatException('题目里的球压在障碍上');
       }
+      for (final spinner in spinners) {
+        if (_distance(x, y, spinner.x, spinner.y) < spinner.halfLength + pourBallRadius) throw const FormatException('题目里的球在风车扫过的范围里');
+      }
     }
-    return PourPuzzle(balls: balls, cup: cup, blocks: blocks, ink: ink);
+    return PourPuzzle(kind: kind, balls: balls, cup: cup, blocks: blocks, spinners: spinners, ink: ink, par: par);
   }
 
   @override
@@ -324,14 +438,17 @@ class PourRules extends PuzzleRules<PourPuzzle, List<List<int>>> {
 
 // ---------- 出题 ----------
 
-// 一张草图：球、杯、参考线，和摆障碍时要让开的通道（球会经过的路线，每段带要让开的距离）。
+// 一张草图：球、杯、结构（固定障碍与风车）、参考线、摆障碍时要让开的通道（球会经过的路线，每段带要让开的距离），
+// 与这一类自己的检查：misses 里的每一种画法放球都必须进不了。
 class _Layout {
-  _Layout({required this.balls, required this.cup, required this.strokes, required this.lanes});
+  _Layout({required this.balls, required this.cup, required this.strokes, required this.lanes, List<PourBlock>? blocks, this.spinners = const [], this.misses = const []}) : blocks = blocks ?? [];
   final List<int> balls;
   final PourCup cup;
   final List<List<int>> strokes;
   final List<_Lane> lanes;
-  final blocks = <PourBlock>[];
+  final List<PourBlock> blocks;
+  final List<PourSpinner> spinners;
+  final List<List<List<int>>> misses;
   // 摆随机障碍时优先放在参考线附近（不挡路，但挡住别的画法），这里记下参考线的各段。
   List<_Lane> get ramps => [for (final lane in lanes) if (lane.ramp) lane];
 }
@@ -343,6 +460,18 @@ class _Lane {
 }
 
 int _between(PuzzleRandom random, (int, int) range) => range.$1 + random.nextInt(range.$2 - range.$1 + 1);
+
+_Layout? _sketch(PuzzleRandom random, _Recipe recipe) => switch (recipe.kind) {
+  PourKind.ramp => _ramp(random, recipe),
+  PourKind.switchback => _switchback(random, recipe),
+  PourKind.funnel => _funnel(random, recipe),
+  PourKind.catcher => _catcher(random, recipe),
+  PourKind.bridge => _bridge(random, recipe),
+  PourKind.uturn => _uturn(random, recipe),
+  PourKind.detour || PourKind.windmill => _detour(random, recipe),
+  PourKind.pair => _pair(random, recipe),
+  PourKind.slot => _slot(random, recipe),
+};
 
 // 球心沿坡道滚过的路线：坡道朝上（y 变小的一侧）平移球半径加线半径。
 _Lane _rolling(double x1, double y1, double x2, double y2) {
@@ -356,50 +485,337 @@ _Lane _rolling(double x1, double y1, double x2, double y2) {
 }
 
 // 坡道本身（线宽外再让一点）、球心沿坡道的路线。
-List<_Lane> _rampLanes(double x1, double y1, double x2, double y2) => [_Lane(x1, y1, x2, y2, pourLineRadius + 10, ramp: true), _rolling(x1, y1, x2, y2)];
+List<_Lane> _rampLanes(num x1, num y1, num x2, num y2) => [_Lane(x1.toDouble(), y1.toDouble(), x2.toDouble(), y2.toDouble(), pourLineRadius + 10, ramp: true), _rolling(x1.toDouble(), y1.toDouble(), x2.toDouble(), y2.toDouble())];
 
-double _lift(double x1, double y1, double x2, double y2) => (pourBallRadius + pourLineRadius) * _distance(x1, y1, x2, y2) / (x2 - x1).abs();
+double _lift(num x1, num y1, num x2, num y2) => (pourBallRadius + pourLineRadius) * _distance(x1, y1, x2, y2) / (x2 - x1).abs();
 
-// 入门到困难：球在一侧上方，一段直坡从球下方斜着通到杯口近侧（略探进杯口、高出杯沿一点），球顺坡滚下、越过近侧杯沿落进杯里，远侧杯壁挡住不飞出去。
-_Layout? _ramp(PuzzleRandom random, _Tier spec) {
-  final toward = random.chance(.5) ? 1 : -1;
-  final width = _between(random, spec.cup);
-  final depth = spec.balls > 1 ? _between(random, (72, 90)) : _between(random, (60, 80));
-  final bottom = _between(random, (690, 760));
-  final span = _between(random, spec.span), grade = _between(random, spec.grade);
-  final gap = _between(random, (12, 28)), over = _between(random, (8, 22));
-  // 杯子离球那一侧棋盘边的距离：坡道起点离边至少 30，杯子外沿离另一边至少 8。
-  final low = 30 + span + width ~/ 2 - over, high = pourWidth - 8 - pourCupWall - (width + 1) ~/ 2;
-  if (low > high) return null;
-  final offset = _between(random, (low, high));
-  final cup = PourCup(x: toward > 0 ? offset : pourWidth - offset, bottom: bottom, width: width, depth: depth);
-  final endX = cup.x - toward * (width ~/ 2 - over), endY = cup.top - gap - pourLineRadius;
-  final startX = endX - toward * span, startY = endY - span * grade ~/ 100;
-  if (startY < 150) return null;
-  int rampY(int x) => startY + (x - startX) * toward * grade ~/ 100;
-  final balls = <int>[];
-  final lanes = <_Lane>[..._rampLanes(startX.toDouble(), startY.toDouble(), endX.toDouble(), endY.toDouble())];
-  var ballX = startX + toward * _between(random, (30, math.max(30, math.min(90, span * 35 ~/ 100))));
-  final fall = _between(random, (50, 140));
-  final ballY = rampY(ballX) - fall - pourBallRadius - pourLineRadius;
-  for (var count = 0; count < spec.balls; count++) {
-    final y = ballY + (count == 0 ? 0 : _between(random, (-20, 20)));
-    // 每个球都要落在坡道的上半段，离坡道末端至少 80。
-    if (y < 40 || (endX - ballX) * toward < 80) return null;
+// 从坡道末端落进杯底的那一段通道。
+_Lane _into(num x, num y, PourCup cup) => _Lane(x.toDouble(), y - pourBallRadius - pourLineRadius.toDouble(), cup.x.toDouble(), (cup.bottom - pourBallRadius).toDouble(), pourBallRadius + 12);
+
+// 在一段朝 toward 斜下的坡（线或板的上表面，从 (x1, y1) 到 (x2, y2)）的上半段正上方摆 count 个球：第一个离上端 30–90，往后每个隔 44–56，
+// 各自落下 fall 再加线宽碰到坡。球进 balls、每个球落到坡上的那一段进 lanes；放不下（太靠上、离坡的下端不到 80）返回假。
+bool _dropBalls(PuzzleRandom random, {required int toward, required int x1, required int y1, required int x2, required int y2, required int count, required List<int> balls, required List<_Lane> lanes, (int, int) fall = (50, 140), int surface = pourLineRadius}) {
+  final span = (x2 - x1).abs();
+  if (span == 0) return false;
+  int slopeY(int x) => y1 + (x - x1) * toward * (y2 - y1) ~/ span;
+  var ballX = x1 + toward * _between(random, (30, math.max(30, math.min(90, span * 35 ~/ 100))));
+  final drop = _between(random, fall);
+  final ballY = slopeY(ballX) - drop - pourBallRadius - surface;
+  final lift = (pourBallRadius + surface) * _distance(x1, y1, x2, y2) / span;
+  for (var index = 0; index < count; index++) {
+    final y = ballY + (index == 0 ? 0 : _between(random, (-20, 20)));
+    if (y < 40 || (x2 - ballX) * toward < 80) return false;
     balls.addAll([ballX, y]);
-    lanes.add(_Lane(ballX.toDouble(), y.toDouble(), ballX.toDouble(), rampY(ballX) - _lift(startX.toDouble(), startY.toDouble(), endX.toDouble(), endY.toDouble()), pourBallRadius + 12));
+    lanes.add(_Lane(ballX.toDouble(), y.toDouble(), ballX.toDouble(), slopeY(ballX) - lift, pourBallRadius + 12));
     ballX += toward * _between(random, (44, 56));
   }
-  // 从坡道末端落进杯底。
-  lanes.add(_Lane(endX.toDouble(), endY - pourBallRadius - pourLineRadius.toDouble(), cup.x.toDouble(), (bottom - pourBallRadius).toDouble(), pourBallRadius + 12));
-  return _Layout(balls: balls, cup: cup, strokes: [[startX, startY, endX, endY]], lanes: lanes);
+  return true;
 }
 
-// 专家：球在杯子正上方，中间横着一块挡板（什么都不画时球落在挡板上停住）。参考解两笔：第一笔从球下方往外斜下、越过挡板外沿；
-// 第二笔先竖着一小段挡住飞出来的球，再从挡板下面斜着引回杯口近侧。
-_Layout? _switchback(PuzzleRandom random, _Tier spec) {
+// 一段直坡：从 (endX, endY) 往回（朝 -toward）水平跨 span、按坡度 grade（百分比）抬高到起点，球摆在坡道上半段正上方。
+// 返回坡道这一笔、球与通道；放不下（出了棋盘、太靠上）为空。
+({List<int> stroke, List<int> balls, List<_Lane> lanes})? _slope(PuzzleRandom random, {required int toward, required int endX, required int endY, required int span, required int grade, required int count}) {
+  final startX = endX - toward * span, startY = endY - span * grade ~/ 100;
+  if (startY < 150 || startX < 16 || startX > pourWidth - 16) return null;
+  final balls = <int>[];
+  final lanes = <_Lane>[..._rampLanes(startX, startY, endX, endY)];
+  if (!_dropBalls(random, toward: toward, x1: startX, y1: startY, x2: endX, y2: endY, count: count, balls: balls, lanes: lanes)) return null;
+  return (stroke: [startX, startY, endX, endY], balls: balls, lanes: lanes);
+}
+
+// 杯子横向放在哪：离 toward 背面那一侧棋盘边至少 behind（坡道、球在那一侧），另一侧杯壁外沿离边至少 8。放不下为空。
+PourCup? _cupBeside(PuzzleRandom random, {required int toward, required int behind, required int width, required int depth, required int bottom}) {
+  final low = behind + width ~/ 2, high = pourWidth - 8 - pourCupWall - (width + 1) ~/ 2;
+  if (low > high) return null;
+  final offset = _between(random, (low, high));
+  return PourCup(x: toward > 0 ? offset : pourWidth - offset, bottom: bottom, width: width, depth: depth);
+}
+
+// 一块板，上表面是 (x1, y1)–(x2, y2) 这一段（板厚是 half 的两倍、往下长），球滚在上表面上。
+PourBlock _plank(num x1, num y1, num x2, num y2, int half) {
+  if (x2 < x1) return _plank(x2, y2, x1, y1, half);
+  final length = _distance(x1, y1, x2, y2), dx = (x2 - x1) / length, dy = (y2 - y1) / length;
+  // 朝下的法线是 (-dy, dx)（x2 ≥ x1，所以 y 分量不为负）。
+  return PourBlock(x: ((x1 + x2) / 2 - dy * half).round(), y: ((y1 + y2) / 2 + dx * half).round(), halfWidth: (length / 2).round(), halfHeight: half, angle: (math.atan2(dy, dx) * 180 / math.pi).round());
+}
+
+// 板（取整之后）的上表面在 x 处的 y：沿上沿两角插值。
+double _topAt(PourBlock block, num x) {
+  final corners = block.corners;
+  final (ax, ay, bx, by) = (corners[0], corners[1], corners[2], corners[3]);
+  return ay + (by - ay) * (x - ax) / (bx - ax);
+}
+
+// 入门到困难的直坡：球在一侧上方，一段直坡从球下方斜着通到杯口近侧（略探进杯口、高出杯沿一点），球顺坡滚下、越过近侧杯沿落进杯里，远侧杯壁挡住不飞出去。
+_Layout? _ramp(PuzzleRandom random, _Recipe recipe) {
+  final toward = random.chance(.5) ? 1 : -1;
+  final width = _between(random, recipe.balls > 1 ? (110, 135) : (100, 140));
+  final depth = recipe.balls > 1 ? _between(random, (72, 90)) : _between(random, (60, 80));
+  final bottom = _between(random, (690, 760));
+  final span = _between(random, (160, 360)), grade = _between(random, (28, 58));
+  final gap = _between(random, (12, 28)), over = _between(random, (8, 22));
+  final cup = _cupBeside(random, toward: toward, behind: 30 + span - over, width: width, depth: depth, bottom: bottom);
+  if (cup == null) return null;
+  final endX = cup.x - toward * (width ~/ 2 - over), endY = cup.top - gap - pourLineRadius;
+  final slope = _slope(random, toward: toward, endX: endX, endY: endY, span: span, grade: grade, count: recipe.balls);
+  if (slope == null) return null;
+  return _Layout(balls: slope.balls, cup: cup, strokes: [slope.stroke], lanes: [...slope.lanes, _into(endX, endY, cup)]);
+}
+
+// 漏斗：杯口上方一对张开的斜板（下端搭在杯沿上方、上端往外张开），球在漏斗外侧的上方；一段直坡把球送过漏斗外沿，球落在斜板上滑进杯里。
+_Layout? _funnel(PuzzleRandom random, _Recipe recipe) {
+  final toward = random.chance(.5) ? 1 : -1;
+  final width = _between(random, recipe.balls > 1 ? (100, 125) : (90, 120)), depth = _between(random, recipe.balls > 1 ? (72, 90) : (64, 84));
+  final bottom = _between(random, (690, 760));
+  final rise = _between(random, (70, 110)), spread = _between(random, (60, 100));
+  final span = _between(random, (140, 260)), grade = _between(random, (28, 55));
+  // 坡道末端越过漏斗外沿 reach、比外沿高 lift。
+  final reach = _between(random, (0, 20)), lift = _between(random, (16, 32));
+  final mouth = width ~/ 2 - 6 + spread;
+  final cup = _cupBeside(random, toward: toward, behind: 24 + span + mouth - reach, width: width, depth: depth, bottom: bottom);
+  if (cup == null || cup.x + mouth + 10 > pourWidth || cup.x - mouth - 10 < 0) return null;
+  final blocks = [
+    for (final side in [-1, 1]) _plank(cup.x + side * (width ~/ 2 - 6), cup.top - 4, cup.x + side * mouth, cup.top - 4 - rise, 7),
+  ];
+  final lipX = cup.x - toward * mouth, lipY = cup.top - 4 - rise;
+  final endX = lipX + toward * reach, endY = lipY - lift;
+  final slope = _slope(random, toward: toward, endX: endX, endY: endY, span: span, grade: grade, count: recipe.balls);
+  if (slope == null) return null;
+  return _Layout(
+    balls: slope.balls,
+    cup: cup,
+    blocks: blocks,
+    strokes: [slope.stroke],
+    lanes: [...slope.lanes, _Lane(endX.toDouble(), endY - 23.0, cup.x.toDouble(), cup.bottom - 18.0, pourBallRadius + 12), _Lane(lipX.toDouble(), lipY - 23.0, cup.x.toDouble(), cup.top - 23.0, pourBallRadius + 12)],
+  );
+}
+
+// 缓冲接住：球落在一块陡滑板的上端，顺板冲出去，什么都不画会飞过杯子；参考解是杯子远侧杯壁上方一笔竖着（略往外斜）的挡板，球撞上就落进杯里。
+// 挡板摆在哪按同一份模拟算：先不画线放一次球，取球飞到杯子远侧那一刻的高度。
+_Layout? _catcher(PuzzleRandom random, _Recipe recipe) {
+  final toward = random.chance(.5) ? 1 : -1;
+  final width = _between(random, (95, 130)), depth = _between(random, (64, 84)), bottom = _between(random, (690, 760));
+  final grade = _between(random, (55, 100)), span = _between(random, (110, 190)), lift = _between(random, (90, 220)), reach = _between(random, (10, 90));
+  final cup = _cupBeside(random, toward: toward, behind: 24 + span + reach + pourCupWall, width: width, depth: depth, bottom: bottom);
+  if (cup == null) return null;
+  final endX = cup.x - toward * (width ~/ 2 + pourCupWall + reach), endY = cup.top - lift;
+  final startX = endX - toward * span, startY = endY - span * grade ~/ 100;
+  if (startY < 120) return null;
+  final slide = _plank(startX, startY, endX, endY, 8);
+  final balls = <int>[], lanes = <_Lane>[];
+  if (!_dropBalls(random, toward: toward, x1: startX, y1: startY, x2: endX, y2: endY, count: recipe.balls, balls: balls, lanes: lanes, fall: (30, 80), surface: 0)) return null;
+  final (outcome, path) = _trace(PourPuzzle(kind: PourKind.catcher, balls: balls, cup: cup, blocks: [slide], ink: pourMaxInk, par: 1), const []);
+  if (outcome == PourOutcome.won) return null;
+  // 挡板的中线在远侧杯壁内面往里 4；球撞上时球心离它半个线宽加球半径。
+  final catchX = cup.x + toward * (width ~/ 2 - 4), contact = catchX - toward * (pourLineRadius + pourBallRadius);
+  var hit = -1;
+  for (var index = 0; index < path.length; index += 2) {
+    if ((path[index] - contact) * toward >= 0) {
+      hit = index;
+      break;
+    }
+  }
+  if (hit < 0) return null;
+  final hitY = path[hit + 1];
+  if (hitY > cup.top - 40 || hitY < 100) return null;
+  final top = (hitY - _between(random, (45, 80))).round(), tilt = _between(random, (0, 16));
+  if (top < 30) return null;
+  // 球飞过的路线（每 4 步一段）与撞上之后落进杯里的那一段。
+  for (var index = 8; index <= hit; index += 8) {
+    lanes.add(_Lane(path[index - 8], path[index - 7], path[index], path[index + 1], pourBallRadius + 10));
+  }
+  lanes
+    ..add(_Lane(catchX.toDouble(), top.toDouble(), catchX.toDouble(), cup.top - 2.0, pourLineRadius + 10, ramp: true))
+    ..add(_Lane(contact.toDouble(), hitY, cup.x.toDouble(), cup.bottom - 18.0, pourBallRadius + 12));
+  return _Layout(balls: balls, cup: cup, blocks: [slide], strokes: [[catchX + toward * tilt, top, catchX, cup.top - 2]], lanes: lanes);
+}
+
+// 搭桥：两块固定的斜板，下面那块的末端探进杯口上方；两块中间断开，缺口两头的落差比上面那块的坡缓得多，球冲下来会扎进缺口、从板底下掉出去。
+// 参考解是一段比两块板都缓的桥：起点比上面那块的末端低一点（球落上去），终点比下面那块的起点高一点（球落下去）。
+_Layout? _bridge(PuzzleRandom random, _Recipe recipe) {
+  final toward = random.chance(.5) ? 1 : -1;
+  final width = _between(random, recipe.balls > 1 ? (110, 135) : (100, 130)), depth = _between(random, recipe.balls > 1 ? (72, 90) : (64, 84));
+  final bottom = _between(random, (700, 760));
+  final upper = _between(random, (60, 85)), lean = _between(random, (22, 32)), lower = _between(random, (25, 45));
+  final spanA = _between(random, (110, 160)), gapWidth = _between(random, (80, 120)), spanB = _between(random, (100, 160));
+  final over = _between(random, (10, 22)), rise = _between(random, (24, 36));
+  if (gapWidth * (upper - lean) ~/ 100 < 30) return null;
+  final cup = _cupBeside(random, toward: toward, behind: 24 + spanA + gapWidth + spanB - over, width: width, depth: depth, bottom: bottom);
+  if (cup == null) return null;
+  final bx2 = cup.x - toward * (width ~/ 2 - over), by2 = cup.top - rise;
+  final bx1 = bx2 - toward * spanB, by1 = by2 - spanB * lower ~/ 100;
+  final ax2 = bx1 - toward * gapWidth, ay2 = by1 - gapWidth * lean ~/ 100;
+  final ax1 = ax2 - toward * spanA, ay1 = ay2 - spanA * upper ~/ 100;
+  if (ay1 < 150) return null;
+  final shelfA = _plank(ax1, ay1, ax2, ay2, 8), shelfB = _plank(bx1, by1, bx2, by2, 8);
+  final startX = ax2 + toward * 2, startY = (_topAt(shelfA, ax2) + 8).round();
+  final finishX = bx1 + toward * 14, finishY = (_topAt(shelfB, finishX) - 9).round();
+  if (finishY - startY < 8) return null;
+  final balls = <int>[], lanes = <_Lane>[];
+  if (!_dropBalls(random, toward: toward, x1: ax1, y1: ay1, x2: ax2, y2: ay2, count: recipe.balls, balls: balls, lanes: lanes, fall: (30, 70), surface: 0)) return null;
+  lanes
+    ..add(_rolling(ax1.toDouble(), ay1.toDouble(), ax2.toDouble(), ay2.toDouble()))
+    ..addAll(_rampLanes(startX, startY, finishX, finishY))
+    ..add(_rolling(bx1.toDouble(), by1.toDouble(), bx2.toDouble(), by2.toDouble()))
+    ..add(_into(bx2, by2, cup));
+  return _Layout(balls: balls, cup: cup, blocks: [shelfA, shelfB], strokes: [[startX, startY, finishX, finishY]], lanes: lanes);
+}
+
+// 借板回头：球下方一块往外斜下的板，内端在杯子内侧外沿以里、外端越过杯子外侧外沿，球滚出板外端就掉出棋盘（板也挡住了杯口）。
+// 参考解一笔：板外端再往外一段竖着挡住飞出来的球，底下接一段斜坡从板底下穿回杯口外侧上方。
+_Layout? _uturn(PuzzleRandom random, _Recipe recipe) {
   final outward = random.chance(.5) ? 1 : -1;
-  final width = _between(random, spec.cup);
+  final width = _between(random, recipe.balls > 1 ? (105, 125) : (95, 120)), depth = _between(random, (72, 90));
+  final bottom = _between(random, (700, 760));
+  final inset = _between(random, (16, 40)), beyond = _between(random, (40, 60)), lip = _between(random, (56, 84));
+  final grade = _between(random, (18, 32)), height = _between(random, (140, 200));
+  final inner = (width + 1) ~/ 2 + pourCupWall + inset, outer = (width + 1) ~/ 2 + pourCupWall + beyond;
+  final low = math.max(inner + 20, 90), high = pourWidth - (outer + lip + 24);
+  if (low > high) return null;
+  final offset = _between(random, (low, high));
+  final cup = PourCup(x: outward > 0 ? offset : pourWidth - offset, bottom: bottom, width: width, depth: depth);
+  final endX = cup.x + outward * outer, endY = cup.top - height;
+  final startX = cup.x - outward * inner, startY = endY - (inner + outer) * grade ~/ 100;
+  final plank = _plank(startX, startY, endX, endY, 8);
+  final balls = <int>[], lanes = <_Lane>[];
+  if (!_dropBalls(random, toward: outward, x1: startX, y1: startY, x2: endX, y2: endY, count: recipe.balls, balls: balls, lanes: lanes, fall: (40, 100), surface: 0)) return null;
+  final over = _between(random, (8, 22)), gap = _between(random, (12, 28));
+  final lipX = endX + outward * lip, lipTop = endY - _between(random, (10, 30));
+  final finishX = cup.x + outward * (width ~/ 2 - over), finishY = cup.top - gap - pourLineRadius;
+  final lipBottom = finishY - (lipX - finishX).abs() * _between(random, (18, 40)) ~/ 100;
+  if (lipBottom - endY < pourBallRadius * 2 + 30 || lipBottom - lipTop < 60) return null;
+  // 回头的那一段在板外端处离板底要留出球滚过的空间。
+  final underPlank = lipBottom + (lipX - endX).abs() * (finishY - lipBottom) ~/ (lipX - finishX).abs();
+  if (underPlank - (endY + 16) < pourBallRadius * 2 + pourLineRadius + 16) return null;
+  lanes
+    ..add(_rolling(startX.toDouble(), startY.toDouble(), endX.toDouble(), endY.toDouble()))
+    ..add(_Lane(endX.toDouble(), endY - 18.0, lipX - outward * 24.0, lipBottom - 24.0, pourBallRadius + 12))
+    ..add(_Lane(lipX.toDouble(), lipTop.toDouble(), lipX.toDouble(), lipBottom.toDouble(), pourLineRadius + 10, ramp: true))
+    ..addAll(_rampLanes(lipX, lipBottom, finishX, finishY))
+    ..add(_into(finishX, finishY, cup));
+  return _Layout(balls: balls, cup: cup, blocks: [plank], strokes: [[lipX, lipTop, lipX, lipBottom, finishX, finishY]], lanes: lanes);
+}
+
+// 绕障与风车：照直从球下方到杯口近侧的那条坡上有一块障碍（绕障）或一根转动的杆（风车），参考线折一下：
+// 从上面绕是先缓后陡（障碍垫在缓的那段下面），从下面绕是先陡后缓（障碍悬在拐点上方，留出球滚过的空间）。照直画的那条坡必须进不了。
+_Layout? _detour(PuzzleRandom random, _Recipe recipe) {
+  final toward = random.chance(.5) ? 1 : -1;
+  final spin = recipe.kind == PourKind.windmill;
+  final width = _between(random, recipe.balls > 1 ? (110, 135) : (100, 135));
+  final depth = recipe.balls > 1 ? _between(random, (72, 90)) : _between(random, (60, 80));
+  final bottom = _between(random, (690, 760));
+  final over = _between(random, (8, 22)), gap = _between(random, (12, 28));
+  final above = random.chance(.5);
+  final g1 = _between(random, above ? (14, 24) : (65, 95)), g2 = _between(random, above ? (65, 95) : (12, 24));
+  final l1 = _between(random, (150, 210)), l2 = _between(random, (110, 160));
+  final cup = _cupBeside(random, toward: toward, behind: 24 + l1 + l2 - over, width: width, depth: depth, bottom: bottom);
+  if (cup == null) return null;
+  final endX = cup.x - toward * (width ~/ 2 - over), endY = cup.top - gap - pourLineRadius;
+  final kinkX = endX - toward * l2, kinkY = endY - l2 * g2 ~/ 100;
+  final startX = kinkX - toward * l1, startY = kinkY - l1 * g1 ~/ 100;
+  if (startY < 150) return null;
+  double lineY(num x) => (x - kinkX) * toward <= 0 ? startY + (x - startX) * toward * g1 / 100 : kinkY + (x - kinkX) * toward * g2 / 100;
+  final balls = <int>[];
+  final lanes = <_Lane>[..._rampLanes(startX, startY, kinkX, kinkY), ..._rampLanes(kinkX, kinkY, endX, endY), _into(endX, endY, cup)];
+  if (!_dropBalls(random, toward: toward, x1: startX, y1: startY, x2: kinkX, y2: kinkY, count: recipe.balls, balls: balls, lanes: lanes, fall: (40, 120))) return null;
+  final layout = _Layout(balls: balls, cup: cup, strokes: [[startX, startY, kinkX, kinkY, endX, endY]], lanes: lanes, misses: [[[startX, startY, endX, endY]]]);
+  // 照直那条坡上滚的球心（坡上方抬起球半径加线半径）：障碍要挡住它。
+  final straight = _rolling(startX.toDouble(), startY.toDouble(), endX.toDouble(), endY.toDouble());
+  if (spin) {
+    final reach = _between(random, (40, 60));
+    final speed = _between(random, (60, 120)) * (random.chance(.5) ? 1 : -1);
+    final angle = _between(random, (0, 179));
+    final int x, y;
+    if (above) {
+      x = kinkX - toward * (reach + _between(random, (6, 20)));
+      y = (lineY(x) + (reach + pourLineRadius + 14) * math.sqrt(1 + g1 * g1 / 10000) + 2).round();
+    } else {
+      x = kinkX + toward * _between(random, (reach * 3 ~/ 10, reach * 8 ~/ 10));
+      y = (math.min(lineY(x - reach), lineY(x + reach)) - reach - pourLineRadius - pourBallRadius * 2 - 14).round();
+    }
+    final spinner = PourSpinner(x: x, y: y, halfLength: reach, speed: speed, angle: angle);
+    if (_pointSegment(x.toDouble(), y.toDouble(), straight.x1, straight.y1, straight.x2, straight.y2) > reach + pourBallRadius - 6 || !_spinnerFits(layout, spinner)) return null;
+    return _Layout(balls: balls, cup: cup, strokes: layout.strokes, lanes: lanes, spinners: [spinner], misses: layout.misses);
+  }
+  final PourBlock block;
+  if (above) {
+    final half = _between(random, (22, 34)), angle = _between(random, (-8, 8));
+    final x = kinkX - toward * (half + _between(random, (4, 16)));
+    block = PourBlock(x: x, y: (lineY(x + toward * half) + pourLineRadius + 12 + half + half * 15 ~/ 100).round(), halfWidth: half, halfHeight: half, angle: angle);
+  } else {
+    final halfWidth = _between(random, (36, 64)), halfHeight = _between(random, (9, 13)), angle = _between(random, (-10, 10));
+    final x = kinkX + toward * (halfWidth ~/ 2 + _between(random, (0, 20)));
+    final clear = math.min(lineY(x - halfWidth), lineY(x + halfWidth));
+    block = PourBlock(x: x, y: (clear - pourLineRadius - pourBallRadius * 2 - 14 - halfHeight - halfWidth * 18 ~/ 100).round(), halfWidth: halfWidth, halfHeight: halfHeight, angle: angle);
+  }
+  if (_polygonSegment(block.corners, straight.x1, straight.y1, straight.x2, straight.y2) > pourBallRadius - 4 || !_fits(layout, block)) return null;
+  layout.blocks.add(block);
+  return layout;
+}
+
+// 两边来球：杯子在中间一带，两边各有球（三个球时一边两个），参考解每边一段直坡引到杯口那一侧；少画哪一边都进不了。
+_Layout? _pair(PuzzleRandom random, _Recipe recipe) {
+  final width = _between(random, recipe.balls > 2 ? (130, 155) : (115, 140)), depth = _between(random, (76, 92));
+  final cup = PourCup(x: _between(random, (240, 360)), bottom: _between(random, (700, 760)), width: width, depth: depth);
+  final heavy = random.chance(.5) ? 1 : -1;
+  final balls = <int>[], strokes = <List<int>>[], lanes = <_Lane>[];
+  for (final toward in [1, -1]) {
+    final over = _between(random, (8, 18)), gap = _between(random, (12, 34));
+    final endX = cup.x - toward * (width ~/ 2 - over), endY = cup.top - gap - pourLineRadius;
+    final room = toward > 0 ? endX - 24 : pourWidth - 24 - endX;
+    if (room < 130) return null;
+    final slope = _slope(random, toward: toward, endX: endX, endY: endY, span: _between(random, (130, math.min(230, room))), grade: _between(random, (30, 60)), count: recipe.balls > 2 && toward == heavy ? 2 : 1);
+    if (slope == null) return null;
+    balls.addAll(slope.balls);
+    strokes.add(slope.stroke);
+    lanes
+      ..addAll(slope.lanes)
+      ..add(_into(endX, endY, cup));
+  }
+  return _Layout(balls: balls, cup: cup, strokes: strokes, lanes: lanes, misses: [[strokes[0]], [strokes[1]]]);
+}
+
+// 窄口：杯口盖着两块搭在杯壁顶上的平板，中间只留一道比球宽一点的缝；球滚得快会越过缝、从远侧盖板滚出去。
+// 参考解两笔：一段直坡把球送上近侧盖板，缝的远边再竖着挡一下，球撞上就落进缝里。只画坡道必须进不了。
+_Layout? _slot(PuzzleRandom random, _Recipe recipe) {
+  final toward = random.chance(.5) ? 1 : -1;
+  final width = _between(random, (110, 140));
+  final depth = recipe.balls > 1 ? _between(random, (84, 96)) : _between(random, (64, 84));
+  final bottom = _between(random, (700, 760));
+  final opening = _between(random, (52, 60)), near = _between(random, (24, width - opening - 24));
+  final span = _between(random, (150, 300)), grade = _between(random, (28, 55));
+  final cup = _cupBeside(random, toward: toward, behind: 30 + span + pourCupWall, width: width, depth: depth, bottom: bottom);
+  if (cup == null) return null;
+  const lidHalf = 6;
+  final lidTop = cup.top - lidHalf * 2;
+  final edge = cup.x - toward * (width ~/ 2 + pourCupWall), far = cup.x + toward * ((width + 1) ~/ 2 + pourCupWall);
+  final slotNear = cup.x - toward * (width ~/ 2) + toward * near, slotFar = slotNear + toward * opening;
+  PourBlock lid(int from, int to) => PourBlock(x: (from + to) ~/ 2, y: cup.top - lidHalf, halfWidth: (to - from).abs() ~/ 2, halfHeight: lidHalf, angle: 0);
+  final endX = edge + toward * _between(random, (0, 12)), endY = lidTop - _between(random, (16, 28));
+  final slope = _slope(random, toward: toward, endX: endX, endY: endY, span: span, grade: grade, count: recipe.balls);
+  if (slope == null) return null;
+  final stopX = slotFar - toward * 3;
+  final stopper = [stopX + toward * _between(random, (0, 10)), lidTop - _between(random, (56, 76)), stopX, lidTop + 4];
+  return _Layout(
+    balls: slope.balls,
+    cup: cup,
+    blocks: [lid(edge, slotNear), lid(slotFar, far)],
+    strokes: [slope.stroke, stopper],
+    lanes: [
+      ...slope.lanes,
+      _Lane(endX.toDouble(), lidTop - 18.0, stopX - toward * 23.0, lidTop - 18.0, pourBallRadius + 12),
+      _Lane(stopX.toDouble(), stopper[1].toDouble(), stopX.toDouble(), lidTop.toDouble(), pourLineRadius + 10, ramp: true),
+      _Lane(stopX - toward * 26.0, lidTop - 18.0, stopX - toward * 26.0, cup.bottom - 18.0, pourBallRadius + 12),
+    ],
+    misses: [[slope.stroke]],
+  );
+}
+
+// 两笔折返：球在杯子正上方，中间横着一块挡板（什么都不画时球落在挡板上停住）。参考解两笔：第一笔从球下方往外斜下、越过挡板外沿；
+// 第二笔先竖着一小段挡住飞出来的球，再从挡板下面斜着引回杯口近侧。少画哪一笔都进不了。
+_Layout? _switchback(PuzzleRandom random, _Recipe recipe) {
+  final outward = random.chance(.5) ? 1 : -1;
+  final width = _between(random, (95, 115));
   final depth = _between(random, (72, 90));
   final bottom = _between(random, (700, 760));
   final reach = (width + 1) ~/ 2 + pourCupWall + _between(random, (30, 60));
@@ -415,18 +831,18 @@ _Layout? _switchback(PuzzleRandom random, _Tier spec) {
   final endX = edge + outward * beyond, endY = roofY - roofHalf - _between(random, (64, 100));
   final ballX = cup.x - outward * _between(random, (0, 20));
   final startX = ballX - outward * _between(random, (30, 50));
-  final grade = _between(random, spec.grade);
+  final grade = _between(random, (25, 45));
   final startY = endY - (endX - startX).abs() * grade ~/ 100;
   int rampY(int x) => startY + (x - startX) * outward * grade ~/ 100;
   final fall = _between(random, (40, 100));
   final balls = <int>[];
-  final lanes = <_Lane>[..._rampLanes(startX.toDouble(), startY.toDouble(), endX.toDouble(), endY.toDouble())];
+  final lanes = <_Lane>[..._rampLanes(startX, startY, endX, endY)];
   var x = ballX;
-  for (var count = 0; count < spec.balls; count++) {
+  for (var count = 0; count < recipe.balls; count++) {
     final y = rampY(x) - fall - pourBallRadius - pourLineRadius + (count == 0 ? 0 : _between(random, (-12, 12)));
     if (y < 40 || (endX - x) * outward < 80) return null;
     balls.addAll([x, y]);
-    lanes.add(_Lane(x.toDouble(), y.toDouble(), x.toDouble(), rampY(x) - _lift(startX.toDouble(), startY.toDouble(), endX.toDouble(), endY.toDouble()), pourBallRadius + 12));
+    lanes.add(_Lane(x.toDouble(), y.toDouble(), x.toDouble(), rampY(x) - _lift(startX, startY, endX, endY), pourBallRadius + 12));
     x += outward * _between(random, (44, 52));
   }
   // 第二笔：竖挡的顶比第一笔末端高一点，底下接一段斜坡穿过挡板下方、停在杯口近侧上方。
@@ -441,12 +857,31 @@ _Layout? _switchback(PuzzleRandom random, _Tier spec) {
   lanes
     ..add(_Lane(endX.toDouble(), endY - pourBallRadius - pourLineRadius.toDouble(), endX + outward * 40.0, lipBottom - pourBallRadius - 20.0, pourBallRadius + 12))
     ..add(_Lane(lipX.toDouble(), lipTop.toDouble(), lipX.toDouble(), lipBottom.toDouble(), pourLineRadius + 10, ramp: true))
-    ..addAll(_rampLanes(lipX.toDouble(), lipBottom.toDouble(), finishX.toDouble(), finishY.toDouble()))
-    ..add(_Lane(finishX.toDouble(), finishY - pourBallRadius - pourLineRadius.toDouble(), cup.x.toDouble(), (bottom - pourBallRadius).toDouble(), pourBallRadius + 12));
-  final layout = _Layout(balls: balls, cup: cup, strokes: [[startX, startY, endX, endY], [lipX, lipTop, lipX, lipBottom, finishX, finishY]], lanes: lanes);
+    ..addAll(_rampLanes(lipX, lipBottom, finishX, finishY))
+    ..add(_into(finishX, finishY, cup));
+  final first = [startX, startY, endX, endY], second = [lipX, lipTop, lipX, lipBottom, finishX, finishY];
+  final layout = _Layout(balls: balls, cup: cup, strokes: [first, second], lanes: lanes, misses: [[first], [second]]);
   if (!_fits(layout, roof)) return null;
   layout.blocks.add(roof);
   return layout;
+}
+
+// 模拟一次，记下第一个球每一步的球心（缓冲接住按它摆挡板）。
+(PourOutcome, List<double>) _trace(PourPuzzle puzzle, List<List<int>> strokes) {
+  final simulation = PourSimulation(puzzle, strokes);
+  final path = <double>[];
+  try {
+    while (simulation.outcome == PourOutcome.running) {
+      simulation.step();
+      final ball = simulation.ball(0);
+      path
+        ..add(ball.x)
+        ..add(ball.y);
+    }
+    return (simulation.outcome, path);
+  } finally {
+    simulation.dispose();
+  }
 }
 
 // 摆随机障碍：一半贴着参考线（在线的上方或下方，留出通道），其余在棋盘里随便放；第一块尽量放在球正下方、坡道底下，
@@ -460,12 +895,13 @@ bool _placeBlocks(PuzzleRandom random, _Layout layout, int count) {
       final halfHeight = plank ? _between(random, (9, 13)) : halfWidth;
       final angle = plank ? _between(random, (-35, 35)) : _between(random, (-20, 20));
       final int x, y;
-      final mode = index == 0 && attempt < 20 ? 0 : (random.chance(.6) ? 1 : 2);
+      final ramps = layout.ramps;
+      final mode = index == 0 && attempt < 20 ? 0 : (ramps.isNotEmpty && random.chance(.6) ? 1 : 2);
       if (mode == 0) {
         x = layout.balls[0] + _between(random, (-16, 16));
         y = layout.balls[1] + _between(random, (160, 360));
       } else if (mode == 1) {
-        final lane = random.pick(layout.ramps);
+        final lane = random.pick(ramps);
         final t = _between(random, (10, 90)) / 100;
         final length = _distance(lane.x1, lane.y1, lane.x2, lane.y2);
         final side = random.chance(.5) ? 1 : -1;
@@ -487,7 +923,10 @@ bool _placeBlocks(PuzzleRandom random, _Layout layout, int count) {
   return true;
 }
 
-// 一块障碍放得下：在棋盘里，不挡通道，离杯子、球与别的障碍都留出空隙。
+// 杯子外沿（含杯壁）。
+List<double> _cupOutline(PourCup cup) => [cup.left - pourCupWall, cup.top.toDouble(), cup.right + pourCupWall, cup.top.toDouble(), cup.right + pourCupWall, cup.bottom + pourCupWall.toDouble(), cup.left - pourCupWall, cup.bottom + pourCupWall.toDouble()];
+
+// 一块障碍放得下：在棋盘里，不挡通道，离杯子、球、别的障碍与风车都留出空隙。
 bool _fits(_Layout layout, PourBlock block) {
   final corners = block.corners;
   for (var index = 0; index < corners.length; index += 2) {
@@ -496,13 +935,28 @@ bool _fits(_Layout layout, PourBlock block) {
   for (final lane in layout.lanes) {
     if (_polygonSegment(corners, lane.x1, lane.y1, lane.x2, lane.y2) < lane.clearance) return false;
   }
-  final cup = layout.cup;
-  final outer = [cup.left - pourCupWall, cup.top.toDouble(), cup.right + pourCupWall, cup.top.toDouble(), cup.right + pourCupWall, cup.bottom + pourCupWall.toDouble(), cup.left - pourCupWall, cup.bottom + pourCupWall.toDouble()];
-  if (_polygonPolygon(corners, outer) < 24) return false;
+  if (_polygonPolygon(corners, _cupOutline(layout.cup)) < 24) return false;
   for (var index = 0; index < layout.balls.length; index += 2) {
     if (_polygonPoint(corners, layout.balls[index].toDouble(), layout.balls[index + 1].toDouble()) < pourBallRadius + 24) return false;
   }
+  for (final spinner in layout.spinners) {
+    if (_polygonPoint(corners, spinner.x.toDouble(), spinner.y.toDouble()) < spinner.halfLength + 20) return false;
+  }
   return layout.blocks.every((other) => _polygonPolygon(corners, other.corners) >= 20);
+}
+
+// 一根风车杆放得下：扫过的圆在棋盘里，离通道、杯子、球与障碍都留出空隙。
+bool _spinnerFits(_Layout layout, PourSpinner spinner) {
+  final x = spinner.x.toDouble(), y = spinner.y.toDouble(), reach = spinner.halfLength;
+  if (x - reach < 10 || x + reach > pourWidth - 10 || y - reach < 60 || y + reach > pourHeight - 10) return false;
+  for (final lane in layout.lanes) {
+    if (_pointSegment(x, y, lane.x1, lane.y1, lane.x2, lane.y2) < reach + lane.clearance) return false;
+  }
+  if (_polygonPoint(_cupOutline(layout.cup), x, y) < reach + 24) return false;
+  for (var index = 0; index < layout.balls.length; index += 2) {
+    if (_distance(x, y, layout.balls[index], layout.balls[index + 1]) < reach + pourBallRadius + 24) return false;
+  }
+  return layout.blocks.every((block) => _polygonPoint(block.corners, x, y) >= reach + 20);
 }
 
 // 参考线整体上下平移（检查参考线挪一点也能进）。
