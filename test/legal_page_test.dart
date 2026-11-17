@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:superxd/edu/kingo_client.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/page/legal_page.dart';
 import 'package:superxd/theme/campus_theme.dart';
@@ -258,5 +259,21 @@ void main() {
       expect(rules.contains('-keep class $package.** { *; }'), native, reason: package);
     }
     expect(File('android/app/src/main/AndroidManifest.xml').readAsStringSync().contains('com.amap.api.location.APSService'), native);
+  });
+
+  // 明文 HTTP 只对教务与中转放行（P2-10）：清单不再全局允许明文，网络安全配置由 android/app/build.gradle.kts 在构建时生成
+  // （教务地址写在脚本里，中转地址取构建参数 SUPERXD_RELAY）。CI 不打安卓包，这里只核对清单与脚本里的那几处；生成结果在本机构建时核过。
+  test('安卓只对教务与中转放行明文：清单引用生成的网络安全配置，脚本里的教务地址同 kingoBase', () {
+    final manifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
+    expect(manifest, isNot(contains('usesCleartextTraffic')));
+    expect(manifest, contains('android:networkSecurityConfig="@xml/network_security_config"'));
+    final gradle = File('android/app/build.gradle.kts').readAsStringSync();
+    final edu = Uri.parse(kingoBase);
+    expect(edu.scheme, 'http', reason: '教务改成 https 后把它从放行名单里拿掉');
+    expect(gradle, contains('val superxdEduHost = "${edu.host}"'));
+    expect(gradle, contains('<base-config cleartextTrafficPermitted="false" />'));
+    expect(gradle, contains('"SUPERXD_RELAY="'));
+    expect(gradle, contains('xml/network_security_config.xml'));
+    expect(Directory('android/app/src/main/res/xml').listSync().map((file) => file.uri.pathSegments.last), isNot(contains('network_security_config.xml')), reason: '只用生成的那份');
   });
 }
