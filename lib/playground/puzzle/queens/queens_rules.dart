@@ -166,8 +166,10 @@ class QueensRules extends PuzzleRules<QueensPuzzle, List<int>> {
   @override
   int slotRange(QueensPuzzle puzzle) => puzzle.size;
 
-  static const _sizes = {PuzzleTier.entry: 5, PuzzleTier.easy: 6, PuzzleTier.normal: 8, PuzzleTier.hard: 10, PuzzleTier.expert: 12};
-  // 高档出几道候选、留提示最少（一样少时要试探最深）的那道：档越高提示越少、推理越深。一道 12×12 不到 1 毫秒，八道也不卡界面。
+  // 简单档不用 6×6：6 皇后只有 4 种摆法（转一转、翻一翻都是同一种），一个锁定皇后就定下，300 个种子只出得了 24 道；7×7 有 40 种摆法。
+  // 困难、专家用 9×9、11×11（原来 10×10、12×12 预计 3.7、6.6 分钟，比同档别的游戏长一半以上）。
+  static const _sizes = {PuzzleTier.entry: 5, PuzzleTier.easy: 7, PuzzleTier.normal: 8, PuzzleTier.hard: 9, PuzzleTier.expert: 11};
+  // 高档出几道候选、留提示最少（一样少时要试探最深）的那道：档越高提示越少、推理越深。一道 11×11 不到 1 毫秒，八道也不卡界面。
   static const _candidates = {PuzzleTier.entry: 1, PuzzleTier.easy: 1, PuzzleTier.normal: 4, PuzzleTier.hard: 6, PuzzleTier.expert: 8};
 
   @override
@@ -242,18 +244,19 @@ class QueensRules extends PuzzleRules<QueensPuzzle, List<int>> {
     return true;
   }
 
-  // 难易分口径：以棋盘边长为主（要补的皇后与要排除的格都随边长涨），入门 5×5 记 1、专家 12×12 记 9，中间按边长线性取整
-  // （6、8、10 记 2、4、7）；求解器要试探的分支多于边长（光靠逐行逐列排除推不完、得反复试）再加 1。
-  // 所以同档的题最多差 1 分，下一档最低不低于上一档最高：5×5 是 1–2，6×6 是 2–3，8×8 是 4–5，10×10 是 7–8，12×12 是 9–10。
-  // 预计用时：入门约 30 秒、专家约 6 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.333。
+  // 难易分口径：以棋盘边长为主（要补的皇后与要排除的格都随边长涨），五档的边长 5、7、8、9、11 依次记 1、3、5、7、9（_bases，
+  // 解码进来的其他边长夹在相邻两档之间，12 起记 10）；求解器要试探的分支多于边长（光靠逐行逐列排除推不完、得反复试）再加 1。
+  // 所以同档的题最多差 1 分，下一档最低高过上一档最高：入门 1–2、简单 3–4、普通 5–6、困难 7–8、专家 9–10。
+  // 预计用时：5×5 约 40 秒、7×7 约 1 分钟、8×8 约 1.5 分钟、9×9 约 2 分钟、11×11 约 4 分钟（按常见的人工解题速度估），按这个游戏里的难易每高一级乘 1.22。
   @override
-  int expectedSeconds(QueensPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 30, growth: 1.333);
+  int expectedSeconds(QueensPuzzle puzzle) => puzzlePace(complexity(puzzle), base: 40, growth: 1.22);
+
+  static const _bases = {4: 1, 5: 1, 6: 2, 7: 3, 8: 5, 9: 7, 10: 8, 11: 9};
 
   @override
   int complexity(QueensPuzzle puzzle) {
     final size = puzzle.size;
-    final base = (1 + (size - 5) * 8 / 7).round();
-    return (base + (queensSolve(puzzle).branches > size ? 1 : 0)).clamp(1, 10);
+    return ((_bases[size] ?? 10) + (queensSolve(puzzle).branches > size ? 1 : 0)).clamp(1, 10);
   }
 
   @override
