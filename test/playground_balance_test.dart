@@ -14,8 +14,8 @@ import 'package:superxd/theme/campus_theme.dart';
 
 const _rules = BalanceRules();
 
-BalancePuzzle _puzzle(int balls, int weighings, {BalanceWeight weight = BalanceWeight.unknown, bool direction = false, int standards = 0, int fakes = 1, int seed = 0}) =>
-    BalancePuzzle(balls: balls, weighings: weighings, weight: weight, direction: direction, standards: standards, fakes: fakes, seed: seed);
+BalancePuzzle _puzzle(int balls, int weighings, {BalanceWeight weight = BalanceWeight.unknown, bool direction = false, int standards = 0, int fakes = 1, bool maybeNone = false, int seed = 0}) =>
+    BalancePuzzle(balls: balls, weighings: weighings, weight: weight, direction: direction, standards: standards, fakes: fakes, maybeNone: maybeNone, seed: seed);
 
 BalancePuzzle _fromPlan(BalancePlan plan, {bool light = false, int seed = 0}) => _puzzle(
   plan.balls,
@@ -24,6 +24,7 @@ BalancePuzzle _fromPlan(BalancePlan plan, {bool light = false, int seed = 0}) =>
   direction: plan.direction,
   standards: plan.standards,
   fakes: plan.fakes,
+  maybeNone: plan.maybeNone,
   seed: seed,
 );
 
@@ -37,18 +38,19 @@ BalanceTilt _physical(List<int> balls, bool heavy, List<int> left, List<int> rig
   return (onLeft > onRight) == heavy ? BalanceTilt.left : BalanceTilt.right;
 }
 
-// 每类球有几个：两向都可能、只可能偏重、只可能偏轻、确定是好球（含标准球）。
-(int, int, int, int) _counts(BalancePuzzle puzzle, BalanceSuspects suspects) {
+// 每类球有几个：两向都可能、只可能偏重、只可能偏轻、确定是好球（含标准球），最后一位是还可能都是真的（1 或 0）。
+(int, int, int, int, int) _counts(BalancePuzzle puzzle, BalanceSuspects suspects) {
   final both = balanceBits(suspects.heavy & suspects.light);
   final heavy = balanceBits(suspects.heavy & ~suspects.light), light = balanceBits(suspects.light & ~suspects.heavy);
-  return (both, heavy, light, puzzle.total - both - heavy - light);
+  return (both, heavy, light, puzzle.total - both - heavy - light, suspects.none ? 1 : 0);
 }
 
 // 测试自己的一份极小极大（一个假球，按每类球的个数，左右盘的好球个数全部枚举，不借规则文件里的剪枝）：rounds 次内不管秤怎么答都分得清。
+// 「都是真的」只在平衡时留着，算一种要分清的可能。
 final _memo = <String, bool>{};
-bool _canSolve((int, int, int, int) state, int rounds, bool direction) {
-  final (u, h, l, g) = state;
-  if ((direction ? 2 * u + h + l : u + h + l) <= 1) return true;
+bool _canSolve((int, int, int, int, int) state, int rounds, bool direction) {
+  final (u, h, l, g, z) = state;
+  if ((direction ? 2 * u + h + l : u + h + l) + z <= 1) return true;
   if (rounds == 0) return false;
   return _memo['$state $rounds $direction'] ??= () {
     for (var uL = 0; uL <= u; uL++) {
@@ -63,13 +65,13 @@ bool _canSolve((int, int, int, int) state, int rounds, bool direction) {
                     if (size == 0 || size != uR + hR + lR + gR) continue;
                     final total = u + h + l + g;
                     final outcomes = [
-                      (0, uL + hL, uR + lR),
-                      (0, uR + hR, uL + lL),
-                      (u - uL - uR, h - hL - hR, l - lL - lR),
+                      (0, uL + hL, uR + lR, 0),
+                      (0, uR + hR, uL + lL, 0),
+                      (u - uL - uR, h - hL - hR, l - lL - lR, z),
                     ];
                     if (outcomes.every((next) {
-                      final (a, b, c) = next;
-                      return a + b + c == 0 || _canSolve((a, b, c, total - a - b - c), rounds - 1, direction);
+                      final (a, b, c, none) = next;
+                      return a + b + c + none == 0 || _canSolve((a, b, c, total - a - b - c, none), rounds - 1, direction);
                     })) {
                       return true;
                     }
@@ -85,7 +87,7 @@ bool _canSolve((int, int, int, int) state, int rounds, bool direction) {
   }();
 }
 
-int _needed((int, int, int, int) state, int remaining, bool direction) {
+int _needed((int, int, int, int, int) state, int remaining, bool direction) {
   for (var rounds = 0; rounds <= remaining; rounds++) {
     if (_canSolve(state, rounds, direction)) return rounds;
   }
@@ -175,7 +177,7 @@ int _pairNeeded(int balls, int mask, int remaining) {
 int _neededOf(BalancePuzzle puzzle, BalanceSuspects suspects, int remaining) =>
     puzzle.paired ? _pairNeeded(puzzle.balls, suspects.pairs, remaining) : _needed(_counts(puzzle, suspects), remaining, puzzle.direction);
 
-bool _empty(BalanceSuspects suspects) => suspects.heavy | suspects.light | suspects.pairs == 0;
+bool _empty(BalanceSuspects suspects) => suspects.heavy | suspects.light | suspects.pairs == 0 && !suspects.none;
 
 // 秤按对手规则可能给的回答：三种结果里「还要称几次」最多的那几个（平局时按种子挑其中一个）。
 Set<BalanceTilt> _possible(BalancePuzzle puzzle, BalanceSuspects suspects, int left, int right, int index) {
@@ -241,6 +243,12 @@ Future<void> _weigh(WidgetTester tester, BalanceWeighing weighing, [BalancePuzzl
   await _frames(tester, 1800);
 }
 
+// 普通档里第一道「可能都是真的」且参考解满足 matches 的种子（平局按种子答，参考解走到都是真的还是有假球跟着变）。
+int _maybeNoneSeed(bool Function(PuzzleDraw<BalancePuzzle, BalanceAnswer> draw) matches) => [for (var seed = 0; seed < 400; seed++) seed].firstWhere((seed) {
+  final draw = _rules.generate(seed, PuzzleTier.normal);
+  return draw.puzzle.maybeNone && matches(draw);
+});
+
 Future<PlaygroundStore> _open(WidgetTester tester, PuzzleTier tier, int seed) async {
   final store = PlaygroundStore.memory();
   await store.chooseTier('balance', tier);
@@ -283,12 +291,12 @@ void main() {
 
     test('理论上限：每种题型称 k 次最多几个球，与经典结论（Dyson）一致，也与测试里另写的极小极大一致', () {
       // 一个假球：最多能分清几个（3 到 16 个里数）。
-      int most(BalanceWeight weight, bool direction, int standards, int weighings) {
+      int most(BalanceWeight weight, bool direction, int standards, int weighings, {bool maybeNone = false}) {
         var best = 0;
         for (var balls = balanceMinBalls; balls + standards <= balanceMaxTotal; balls++) {
-          final puzzle = _puzzle(balls, weighings, weight: weight, direction: direction, standards: standards);
+          final puzzle = _puzzle(balls, weighings, weight: weight, direction: direction, standards: standards, maybeNone: maybeNone);
           final solvable = balanceSolvable(puzzle);
-          expect(_canSolve(_counts(puzzle, balanceStart(puzzle)), weighings, direction), solvable, reason: '$balls 球 $weighings 次 $weight 说轻重=$direction 标准球=$standards');
+          expect(_canSolve(_counts(puzzle, balanceStart(puzzle)), weighings, direction), solvable, reason: '$balls 球 $weighings 次 $weight 说轻重=$direction 标准球=$standards 可能都是真的=$maybeNone');
           if (solvable) best = balls;
         }
         return best;
@@ -305,6 +313,13 @@ void main() {
         // 还要说轻重：(3^k − 3) / 2，有标准球 (3^k − 1) / 2。
         expect(most(BalanceWeight.unknown, true, 0, weighings), (power - 3) ~/ 2);
         expect(most(BalanceWeight.unknown, true, 1, weighings), (power - 1) ~/ 2);
+        // 可能都是真的：已知轻重 3^k − 1；不知轻重只需找出与说轻重都是 (3^k − 3) / 2，有标准球 (3^k − 1) / 2。
+        expect(most(BalanceWeight.heavy, false, 0, weighings, maybeNone: true), math.min(power - 1, balanceMaxBalls));
+        expect(most(BalanceWeight.light, false, 0, weighings, maybeNone: true), math.min(power - 1, balanceMaxBalls));
+        for (final direction in [false, true]) {
+          expect(most(BalanceWeight.unknown, direction, 0, weighings, maybeNone: true), (power - 3) ~/ 2, reason: '说轻重=$direction');
+          expect(most(BalanceWeight.unknown, direction, 1, weighings, maybeNone: true), (power - 1) ~/ 2, reason: '说轻重=$direction');
+        }
       }
       // 称 4 次不知轻重说轻重的上限是 39，桌上放得下的 16 个都分得清。
       expect(most(BalanceWeight.unknown, true, 0, 4), balanceMaxBalls);
@@ -345,15 +360,20 @@ void main() {
         if (lastSeconds != null) expect(seconds.first, greaterThan(lastSeconds), reason: '$tier');
         lastSeconds = seconds.last;
       }
-      // 普通档仍是 10 个球（[人工决策-2026-11-15 10:54:57]）。
-      expect(BalanceRules.pools[PuzzleTier.normal]!.map((plan) => plan.balls).toSet(), {10});
-      // 题型递进：入门只有已知轻重；两个假球、标准球、说轻重、称 4 次都出现在简单以上。
+      // 普通档 9 到 11 个球（[人工决策-2026-11-17 14:17:05]，取代 11-15 10:54:57 的 10 个球）。
+      expect(BalanceRules.pools[PuzzleTier.normal]!.map((plan) => plan.balls).toSet(), {9, 10, 11});
+      // 题型递进：入门只有已知轻重；两个假球、标准球、说轻重、称 4 次都出现在简单以上；可能都是真的从普通档起、每档都有。
       expect(BalanceRules.pools[PuzzleTier.entry]!.every((plan) => plan.known && plan.fakes == 1), isTrue);
       final above = [for (final tier in PuzzleTier.values.skip(1)) ...BalanceRules.pools[tier]!];
       expect(above.any((plan) => plan.fakes == 2), isTrue);
       expect(above.any((plan) => plan.standards == 1), isTrue);
       expect(above.any((plan) => plan.direction), isTrue);
       expect(above.any((plan) => plan.weighings == 4), isTrue);
+      for (final tier in PuzzleTier.values) {
+        expect(BalanceRules.pools[tier]!.any((plan) => plan.maybeNone), tier.index >= PuzzleTier.normal.index, reason: '$tier');
+      }
+      // 16 个球称 4 次的两种删掉了（用户嫌点按繁琐）。
+      expect([for (final plans in BalanceRules.pools.values) ...plans].where((plan) => plan.balls == 16 && plan.weighings == 4), isEmpty);
     });
 
     test('每档题目多样：同档不同种子出不同的题（题型、偏哪边、平局怎么答都随种子变），同一个种子出同一道题', () {
@@ -361,7 +381,7 @@ void main() {
         final draws = [for (var seed = 0; seed < 120; seed++) _rules.generate(seed, tier)];
         final puzzles = {for (final draw in draws) jsonEncode(_rules.encodePuzzle(draw.puzzle))};
         expect(puzzles, hasLength(120), reason: '$tier');
-        final kinds = {for (final draw in draws) (draw.puzzle.balls, draw.puzzle.weighings, draw.puzzle.weight, draw.puzzle.direction, draw.puzzle.standards, draw.puzzle.fakes)};
+        final kinds = {for (final draw in draws) (draw.puzzle.balls, draw.puzzle.weighings, draw.puzzle.weight, draw.puzzle.direction, draw.puzzle.standards, draw.puzzle.fakes, draw.puzzle.maybeNone)};
         final expected = plans.fold(0, (sum, plan) => sum + (plan.known ? 2 : 1));
         expect(kinds, hasLength(expected), reason: '$tier 120 道里每种题型（已知轻重的偏重、偏轻各算一种）都出过');
         // 参考解最后指认的球也随种子变（平局按种子答，走到哪一支跟着变）。
@@ -392,8 +412,9 @@ void main() {
               expect(((heavy ? suspects.heavy : suspects.light) >> ball) & 1 == 1, allowed && fits([ball], heavy), reason: '$tier $round $ball $heavy');
             }
           }
-          // 标准球从来不是候选。
+          // 标准球从来不是候选；都是真的只在题面可能、每次都称平衡时还留着。
           expect((suspects.heavy | suspects.light) >> puzzle.balls, 0);
+          expect(suspects.none, puzzle.maybeNone && replay.tilts.every((tilt) => tilt == BalanceTilt.level), reason: '$tier $round');
         }
       }
     });
@@ -457,7 +478,7 @@ void main() {
             // 这一步能放的称法，同类的球换着放结果一样：两个假球按 _pairClassWeighings；一个假球按类数（每类按编号从小取，好球补在少的一边）。
             List<(int, int)> weighingsOf(BalanceSuspects suspects) {
               if (puzzle.paired) return _pairClassWeighings(puzzle.balls, suspects.pairs);
-              final (u, h, l, g) = _counts(puzzle, suspects);
+              final (u, h, l, g, _) = _counts(puzzle, suspects);
               final both = balanceMembers(suspects.heavy & suspects.light);
               final heavy = balanceMembers(suspects.heavy & ~suspects.light), lightOnes = balanceMembers(suspects.light & ~suspects.heavy);
               final good = [for (var ball = 0; ball < puzzle.total; ball++) if ((suspects.heavy | suspects.light) >> ball & 1 == 0) ball];
@@ -512,15 +533,15 @@ void main() {
       }
     });
 
-    test('每档 20 道：参考解按规则判定通过、正好称满次数、最后候选恰好是指认的那个（那一对）', () {
+    test('每档 20 道：参考解按规则判定通过、正好称满次数、最后候选恰好是指认的那个（那一对，或都是真的）', () {
       for (final tier in PuzzleTier.values) {
         for (var seed = 0; seed < 20; seed++) {
           final draw = _rules.generate(seed, tier);
           final puzzle = draw.puzzle, solution = draw.solution;
           expect(_rules.solved(puzzle, solution), isTrue, reason: '$tier $seed');
           expect(solution.weighings, hasLength(puzzle.weighings), reason: '$tier $seed');
-          expect(solution.heavy != null, puzzle.direction);
-          expect(solution.balls, hasLength(puzzle.fakes));
+          expect(solution.heavy != null, puzzle.direction && solution.balls.isNotEmpty);
+          expect(solution.balls, hasLength(solution.balls.isEmpty && puzzle.maybeNone ? 0 : puzzle.fakes));
           final suspects = balanceReplay(puzzle, solution.weighings)!.suspects;
           expect(balanceVerdict(puzzle, suspects, solution.balls, solution.heavy), BalanceVerdict.solved);
         }
@@ -547,9 +568,9 @@ void main() {
       expect(_rules.solved(puzzle, variant(balls: [first, (first + 1) % puzzle.balls])), isFalse);
       expect(_rules.solved(puzzle, variant(heavy: !solution.heavy!)), isFalse);
       expect(_rules.solved(puzzle, variant(keepHeavy: false)), isFalse);
-      // 只需找出的题不收轻重；标准球可以上秤、不能指认。普通种子 2 是 10 个球加 1 个标准球只需找出。
-      final find = _rules.generate(2, PuzzleTier.normal);
-      expect((find.puzzle.balls, find.puzzle.standards, find.puzzle.direction), (10, 1, false));
+      // 只需找出的题不收轻重；标准球可以上秤、不能指认。普通种子 11 是 10 个球加 1 个标准球只需找出。
+      final find = _rules.generate(11, PuzzleTier.normal);
+      expect((find.puzzle.balls, find.puzzle.standards, find.puzzle.direction, find.puzzle.maybeNone), (10, 1, false, false));
       expect(_rules.solved(find.puzzle, find.solution), isTrue);
       expect(_rules.solved(find.puzzle, BalanceAnswer(find.solution.weighings, find.solution.balls, true)), isFalse);
       expect(balanceFault(find.puzzle, [0, 10], [1, 2]), isNull);
@@ -573,7 +594,7 @@ void main() {
       expect(balanceVerdict(puzzle, suspects, [first], !solution.heavy!), BalanceVerdict.contradicts);
       expect(balanceVerdict(pair.puzzle, balanceStart(pair.puzzle), [0, 1], null), BalanceVerdict.undetermined);
       // 只剩一个球、还不知道轻重：要说轻重的题还确定不了，只需找出的题已经找出来了。
-      const both = (heavy: 1 << 5, light: 1 << 5, pairs: 0);
+      const both = (heavy: 1 << 5, light: 1 << 5, pairs: 0, none: false);
       expect(balanceVerdict(puzzle, both, [5], true), BalanceVerdict.undetermined);
       expect(balanceVerdict(puzzle, both, [5], false), BalanceVerdict.undetermined);
       expect(balanceVerdict(find.puzzle, both, [5], null), BalanceVerdict.solved);
@@ -583,12 +604,39 @@ void main() {
       expect(balanceFault(puzzle, [0], [1]), isNull);
     });
 
+    test('可能都是真的：只剩都是真的时答「都是真的」才算，答成某个球或带了轻重不算；还剩假球或题面不可能时答都是真的不算', () {
+      // 普通档里参考解走到都是真的、走到有假球的各一道（平局按种子答，走到哪一支跟着变）。
+      final draws = [for (var seed = 0; seed < 400; seed++) _rules.generate(seed, PuzzleTier.normal)].where((draw) => draw.puzzle.maybeNone).toList();
+      final none = draws.firstWhere((draw) => draw.solution.balls.isEmpty), fake = draws.firstWhere((draw) => draw.solution.balls.isNotEmpty);
+      expect(none.solution.heavy, isNull);
+      expect(_rules.solved(none.puzzle, none.solution), isTrue);
+      final wrongBall = BalanceAnswer(none.solution.weighings, [0], none.puzzle.direction ? true : null);
+      expect(_rules.solved(none.puzzle, wrongBall), isFalse);
+      expect(_rules.solved(none.puzzle, BalanceAnswer(none.solution.weighings, const [], true)), isFalse);
+      final noneSuspects = balanceReplay(none.puzzle, none.solution.weighings)!.suspects;
+      expect(noneSuspects, (heavy: 0, light: 0, pairs: 0, none: true));
+      expect(balanceVerdict(none.puzzle, noneSuspects, [0], wrongBall.heavy), BalanceVerdict.contradicts);
+      // 还有假球：答都是真的对不上；一开始谁都还确定不了，都是真的也是。
+      expect(_rules.solved(fake.puzzle, BalanceAnswer(fake.solution.weighings, const [])), isFalse);
+      expect(balanceVerdict(fake.puzzle, balanceReplay(fake.puzzle, fake.solution.weighings)!.suspects, const [], null), BalanceVerdict.contradicts);
+      expect(balanceVerdict(fake.puzzle, balanceStart(fake.puzzle), const [], null), BalanceVerdict.undetermined);
+      // 只剩一个球但还可能都是真的：指认那个球还确定不了。
+      const ballOrNone = (heavy: 1 << 5, light: 0, pairs: 0, none: true);
+      expect(balanceVerdict(none.puzzle, ballOrNone, [5], none.puzzle.direction ? true : null), BalanceVerdict.undetermined);
+      expect(balanceVerdict(none.puzzle, ballOrNone, const [], null), BalanceVerdict.undetermined);
+      // 题面不可能都是真的：答都是真的一律对不上。困难种子 3 是 11 个球说轻重。
+      final plain = _rules.generate(3, PuzzleTier.hard);
+      expect(plain.puzzle.maybeNone, isFalse);
+      expect(_rules.solved(plain.puzzle, BalanceAnswer(plain.solution.weighings, const [])), isFalse);
+      expect(balanceVerdict(plain.puzzle, balanceStart(plain.puzzle), const [], null), BalanceVerdict.contradicts);
+    });
+
     test('难度分：同一题型同分、种子不影响，解不开的按 10 分', () {
       for (final tier in PuzzleTier.values) {
         final scores = <String, Set<int>>{};
         for (var seed = 0; seed < 30; seed++) {
           final puzzle = _rules.generate(seed, tier).puzzle;
-          scores.putIfAbsent('${puzzle.balls} ${puzzle.weighings} ${puzzle.weight} ${puzzle.direction} ${puzzle.standards} ${puzzle.fakes}', () => {}).add(_rules.complexity(puzzle));
+          scores.putIfAbsent('${puzzle.balls} ${puzzle.weighings} ${puzzle.weight} ${puzzle.direction} ${puzzle.standards} ${puzzle.fakes} ${puzzle.maybeNone}', () => {}).add(_rules.complexity(puzzle));
         }
         for (final MapEntry(key: kind, value: values) in scores.entries) {
           expect(values, hasLength(1), reason: '$tier $kind');
@@ -613,8 +661,9 @@ void main() {
           expect(answer.balls, draw.solution.balls);
         }
       }
-      const good = {'balls': 12, 'standards': 0, 'fakes': 1, 'weight': 'unknown', 'direction': true, 'weighings': 3, 'seed': 5};
+      const good = {'balls': 12, 'standards': 0, 'fakes': 1, 'weight': 'unknown', 'direction': true, 'maybeNone': false, 'weighings': 3, 'seed': 5};
       expect(_rules.decodePuzzle(good).direction, isTrue);
+      expect(_rules.decodePuzzle({...good, 'maybeNone': true}).maybeNone, isTrue);
       expect(_rules.decodePuzzle({...good, 'balls': 7, 'fakes': 2, 'weight': 'light', 'direction': false}).paired, isTrue);
       expect(_rules.decodePuzzle({...good, 'balls': 13, 'standards': 1}).standards, 1);
       for (final bad in <Object?>[
@@ -635,16 +684,20 @@ void main() {
         {...good, 'weight': null},
         {...good, 'direction': null},
         {...good, 'direction': 1},
+        {...good, 'maybeNone': null},
+        {...good, 'maybeNone': 0},
         // 已知轻重就不用说轻重。
         {...good, 'weight': 'heavy'},
         // 桌上最多 16 个。
         {...good, 'balls': 16, 'standards': 1, 'weighings': 4},
-        // 两个假球：要已知轻重、不带标准球、最多 8 个。
+        // 两个假球：要已知轻重、不带标准球、不会都是真的、最多 8 个。
         {...good, 'balls': 6, 'fakes': 2, 'direction': false},
+        {...good, 'balls': 6, 'fakes': 2, 'weight': 'heavy', 'direction': false, 'maybeNone': true},
         {...good, 'balls': 6, 'fakes': 2, 'weight': 'heavy', 'direction': false, 'standards': 1},
         {...good, 'balls': 9, 'fakes': 2, 'weight': 'heavy', 'direction': false, 'weighings': 4},
-        // 在限定次数内找不出：13 个球称 3 次还要说轻重、10 个已知偏重称 2 次、8 个里两个假球称 3 次。
+        // 在限定次数内找不出：13 个球称 3 次还要说轻重、13 个只需找出但可能都是真的、10 个已知偏重称 2 次、8 个里两个假球称 3 次。
         {...good, 'balls': 13},
+        {...good, 'balls': 13, 'direction': false, 'maybeNone': true},
         {...good, 'balls': 10, 'weight': 'heavy', 'direction': false, 'weighings': 2},
         {...good, 'balls': 8, 'fakes': 2, 'weight': 'heavy', 'direction': false},
         // 第 1 版的写法不收。
@@ -654,10 +707,10 @@ void main() {
       }
       expect(_rules.decodeAnswer({'weighings': <Object>[], 'balls': [3]}).heavy, isNull);
       expect(_rules.decodeAnswer({'weighings': <Object>[], 'balls': [3, 5]}).balls, [3, 5]);
+      expect(_rules.decodeAnswer({'weighings': <Object>[], 'balls': <Object>[]}).balls, isEmpty);
       for (final bad in <Object?>[
         null,
         [1],
-        {'weighings': <Object>[], 'balls': <Object>[]},
         {'weighings': <Object>[], 'balls': [1, 1]},
         {'weighings': <Object>[], 'balls': [1, 2, 3]},
         {'weighings': <Object>[], 'balls': [16]},
@@ -886,9 +939,9 @@ void main() {
 
     testWidgets('标准球：写「标」排在最后，能上秤、记录与读屏念「标准球」，不能做记号也不能指认，按参考称法走完解开', (tester) async {
       final semantics = tester.ensureSemantics();
-      // 普通种子 2 是 10 个球加 1 个标准球只需找出。
-      await _open(tester, PuzzleTier.normal, 2);
-      final draw = _rules.generate(2, PuzzleTier.normal);
+      // 普通种子 11 是 10 个球加 1 个标准球只需找出。
+      await _open(tester, PuzzleTier.normal, 11);
+      final draw = _rules.generate(11, PuzzleTier.normal);
       final puzzle = draw.puzzle;
       expect(find.text('10 个球和 1 个标准球，最多称 3 次'), findsOneWidget);
       expect(find.text('有一个轻重不明，找出它；标准球是真的'), findsOneWidget);
@@ -924,6 +977,68 @@ void main() {
       await _tapBall(tester, draw.solution.balls.single);
       await _button(tester, '确认');
       await _frames(tester, 1500);
+      expect(find.text('新纪录'), findsOneWidget);
+      semantics.dispose();
+    });
+
+    testWidgets('可能都是真的、还有假球：选「都是真的」才能单独确认，点球就换掉它；称完答都是真的提示对不上，指认那个球解开', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final fakeSeed = _maybeNoneSeed((draw) => draw.solution.balls.isNotEmpty);
+      final fake = _rules.generate(fakeSeed, PuzzleTier.normal);
+      await _open(tester, PuzzleTier.normal, fakeSeed);
+      expect(find.textContaining('也可能都是真的'), findsOneWidget);
+      for (final weighing in fake.solution.weighings) {
+        await _weigh(tester, weighing, fake.puzzle);
+      }
+      await _button(tester, '指认');
+      await _frames(tester, 300);
+      bool confirmable() => tester.widget<FilledButton>(find.widgetWithText(FilledButton, '确认')).onPressed != null;
+      expect(confirmable(), isFalse);
+      await tester.tap(find.text('都是真的'));
+      await _frames(tester, 300);
+      expect(confirmable(), isTrue);
+      // 点了球就不再是都是真的。
+      await _tapBall(tester, fake.solution.balls.single);
+      expect(confirmable(), fake.puzzle.direction ? isFalse : isTrue);
+      await tester.tap(find.text('都是真的'));
+      await _frames(tester, 300);
+      expect(tester.getSemantics(_ball(fake.solution.balls.single)), isSemantics(label: '${fake.solution.balls.single + 1} 号球，在桌上', isButton: true, isSelected: false, hasTapAction: true));
+      await _button(tester, '确认');
+      await _frames(tester, 300);
+      expect(find.text('「都是真的」和称的结果对不上'), findsOneWidget);
+      await _tapBall(tester, fake.solution.balls.single);
+      if (fake.puzzle.direction) {
+        await tester.tap(find.text(fake.solution.heavy! ? '偏重' : '偏轻'));
+        await _frames(tester, 300);
+      }
+      await _button(tester, '确认');
+      await _frames(tester, 1500);
+      expect(find.text('新纪录'), findsOneWidget);
+      semantics.dispose();
+    });
+
+    testWidgets('可能都是真的、只剩都是真的：答成某个球提示对不上，答都是真的解开（没有要鼓的球，直接弹结果）', (tester) async {
+      final semantics = tester.ensureSemantics();
+      final noneSeed = _maybeNoneSeed((draw) => draw.solution.balls.isEmpty);
+      final none = _rules.generate(noneSeed, PuzzleTier.normal);
+      await _open(tester, PuzzleTier.normal, noneSeed);
+      for (final weighing in none.solution.weighings) {
+        await _weigh(tester, weighing, none.puzzle);
+      }
+      await _button(tester, '指认');
+      await _frames(tester, 300);
+      await _tapBall(tester, 0);
+      if (none.puzzle.direction) {
+        await tester.tap(find.text('偏重'));
+        await _frames(tester, 300);
+      }
+      await _button(tester, '确认');
+      await _frames(tester, 300);
+      expect(find.textContaining('和称的结果对不上'), findsOneWidget);
+      await tester.tap(find.text('都是真的'));
+      await _frames(tester, 300);
+      await _button(tester, '确认');
+      await _frames(tester, 400);
       expect(find.text('新纪录'), findsOneWidget);
       semantics.dispose();
     });
@@ -999,9 +1114,9 @@ void main() {
       tester.platformDispatcher.textScaleFactorTestValue = 1.3;
       addTearDown(tester.view.reset);
       addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
-      // 困难种子 4 是 16 个球称 4 次。
-      await _open(tester, PuzzleTier.hard, 4);
-      expect(find.text('16 个球，最多称 4 次'), findsOneWidget);
+      // 简单种子 3 是 16 个已知偏轻称 3 次。
+      await _open(tester, PuzzleTier.easy, 3);
+      expect(find.text('16 个球，最多称 3 次'), findsOneWidget);
       for (var ball = 0; ball < 16; ball++) {
         await tester.ensureVisible(_ball(ball));
         final rect = tester.getRect(_ball(ball));

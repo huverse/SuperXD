@@ -331,9 +331,10 @@ List<Map<String, Object?>> _balanceCases(String game) {
       for (final plan in plans)
         if (plan.maybeNone) (tier, plan),
   ]) {
-    // 各找一个参考解走到都是真的、走到有假球的种子（平局按种子答，走到哪一支跟着变）。
+    // 各找一个参考解走到都是真的、走到有假球的种子（平局按种子答，走到哪一支跟着变；约每 40 道有一道走到都是真的，2000 道还没有就是规则坏了）。
     BalancePuzzle? none, fake;
     for (var seed = 0; none == null || fake == null; seed++) {
+      if (seed == 2000) throw StateError('天平称球 $plan 的参考解走不到${none == null ? '都是真的' : '有假球'}');
       final puzzle = of(plan, BalanceWeight.unknown, PuzzleRandom(0xBA1B + seed).nextUint32());
       if (balanceSolve(puzzle)!.balls.isEmpty) {
         none ??= puzzle;

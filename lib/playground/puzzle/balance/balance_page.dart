@@ -23,8 +23,8 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 // 天平称球对局页：上面一架天平，下面桌上排着编号的球（每个球在桌上有固定的位置，拿走后留一个空圈，不挪别人）；有标准球的题，标准球排在最后、写「标」。
 // 底部分段选「放左盘 / 放右盘 / 做记号」：点桌上的球放进选中的盘，点盘里的球拿回桌上；做记号时点球轮换自己的记号（不自动替玩家排除，标准球不用记）。
 // 「称一下」：两边有一边空着或球数不一样就不称，轻震、天平晃一下、提示条写原因；称了天平倾斜（减少动画时直接到位），
-// 下方记一行结果，停一会儿球回到桌上、天平回平。「指认」进入指认：点一个球（两个假球的题点两个，再点取消；要说轻重的题再选偏重或偏轻）确认，
-// 只有剩下的候选恰好就是它（它们）才解开；还确定不了或和称的结果对不上就轻震并提示。没有撤销：称的次数就是这道题的限制，放错的球点一下就拿回来了。
+// 下方记一行结果，停一会儿球回到桌上、天平回平。「指认」进入指认：点一个球（两个假球的题点两个，再点取消；要说轻重的题再选偏重或偏轻；
+// 可能都是真的题也可以选「都是真的」）确认，只有剩下的候选恰好就是它（它们，或都是真的）才解开；还确定不了或和称的结果对不上就轻震并提示。没有撤销：称的次数就是这道题的限制，放错的球点一下就拿回来了。
 class BalancePage extends StatefulWidget {
   const BalancePage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
@@ -58,11 +58,12 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
   final _records = <({BalanceWeighing weighing, BalanceTilt tilt})>[];
   late BalanceSuspects _suspects = balanceStart(_puzzle);
   late var _marks = List.filled(_puzzle.total, _Mark.none);
-  // 指认：选中的球（按点的先后，两个假球的题最多两个）与偏重 true、偏轻 false（还没选是 null）；解开后的那个（那两个）球。
+  // 指认：选中的球（按点的先后，两个假球的题最多两个）与偏重 true、偏轻 false（还没选是 null），或选了「都是真的」；解开后的那个（那两个）球。
   var _guessing = false;
   final _guesses = <int>[];
   var _found = const <int>[];
   bool? _guessHeavy;
+  var _guessNone = false;
   var _wrongs = 0;
   // 称的过程中（倾斜、停住、球回桌上之前）不接受操作。
   var _weighing = false;
@@ -114,6 +115,7 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
     _guessing = false;
     _guesses.clear();
     _found = const [];
+    _guessNone = false;
     _guessHeavy = _shaking = _pressed = null;
     _wrongs = 0;
     _weighing = false;
@@ -284,6 +286,7 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
       _guessing = true;
       _guesses.clear();
       _guessHeavy = null;
+      _guessNone = false;
     });
   }
 
@@ -294,12 +297,13 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
     setState(() => _guessing = false);
   }
 
-  // 一个假球：点哪个选哪个。两个假球：点没选的加上（已经两个时换掉先选的那个），点选着的取消。
+  // 一个假球：点哪个选哪个。两个假球：点没选的加上（已经两个时换掉先选的那个），点选着的取消。点了球就不再是「都是真的」。
   void _pick(int ball) {
     if (_standard(ball)) return _refuse(ball, '标准球是真的');
     if (!_puzzle.paired && _guesses.contains(ball)) return;
     _stepped();
     setState(() {
+      _guessNone = false;
       if (!_puzzle.paired) {
         _guesses
           ..clear()
@@ -313,16 +317,30 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
 
   void _chooseHeavy(bool? heavy) {
     _stepped();
-    setState(() => _guessHeavy = heavy);
+    setState(() {
+      _guessHeavy = heavy;
+      if (heavy != null) _guessNone = false;
+    });
   }
 
-  bool get _guessReady => _guesses.length == _puzzle.fakes && (!_puzzle.direction || _guessHeavy != null);
+  // 选「都是真的」清掉选着的球与轻重，再点取消。
+  void _chooseNone(bool none) {
+    _stepped();
+    setState(() {
+      _guessNone = none;
+      if (!none) return;
+      _guesses.clear();
+      _guessHeavy = null;
+    });
+  }
+
+  bool get _guessReady => _guessNone || _guesses.length == _puzzle.fakes && (!_puzzle.direction || _guessHeavy != null);
 
   // 指认：自由模式按规则在本机判，挑战模式连同称过的几次交服务器判（判错计一次错交；连不上不算数，提示后可以再点一次）。
   Future<void> _confirm() async {
     if (_busy || _session.judging || !_guessReady) return;
-    final balls = [..._guesses]..sort();
-    final heavy = _puzzle.direction ? _guessHeavy : null;
+    final balls = _guessNone ? <int>[] : ([..._guesses]..sort());
+    final heavy = _puzzle.direction && !_guessNone ? _guessHeavy : null;
     _session.moved();
     final answer = BalanceAnswer([for (final record in _records) record.weighing], balls, heavy);
     final correct = await _session.judge(answer);
@@ -336,22 +354,24 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
     }
     final verdict = balanceVerdict(_puzzle, _suspects, balls, heavy);
     _wrongs++;
-    final name = '${balls.map((ball) => ball + 1).join('、')} 号${heavy == null ? '' : heavy ? '偏重' : '偏轻'}';
+    final name = balls.isEmpty ? '「都是真的」' : '${balls.map((ball) => ball + 1).join('、')} 号${heavy == null ? '' : heavy ? '偏重' : '偏轻'}';
     final message = verdict == BalanceVerdict.contradicts
         ? '$name和称的结果对不上'
         : _usedUp
         ? '还确定不了，次数已用完'
         : '还确定不了';
-    _refuse(balls.last, message);
+    // 指认的是球就晃那个球，都是真的就晃天平。
+    _refuse(balls.isEmpty ? -1 : balls.last, message);
     // 还能称就回到称球，次数用完了留在指认里（可以换一个再试）。
     setState(() {
       _guesses.clear();
       _guessHeavy = null;
+      _guessNone = false;
       _guessing = _usedUp;
     });
   }
 
-  // 解开：停表记成绩；那个球轻轻鼓一下、别的球淡下去，再弹结果。减少动画时直接弹。中途换题或从头来就不再往下走。
+  // 解开：停表记成绩；那个球轻轻鼓一下、别的球淡下去，再弹结果（都是真的没有要鼓的球，直接弹）。减少动画时直接弹。中途换题或从头来就不再往下走。
   Future<void> _finish(BalanceAnswer answer) async {
     final epoch = _epoch;
     final newBest = await _session.finish(moves: _records.length, answer: answer);
@@ -360,7 +380,7 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
       _guessing = false;
       _found = answer.balls;
     });
-    await _play(_cheer);
+    if (answer.balls.isNotEmpty) await _play(_cheer);
     if (!mounted || epoch != _epoch) return;
     final weighed = _records.length;
     final choice = await showPlayResult(context, session: _session, newBest: newBest, detail: '称 $weighed 次 · ${_wrongs == 0 ? '一次指认就对' : '指认错 $_wrongs 次'}');
@@ -429,20 +449,29 @@ class _BalancePageState extends State<BalancePage> with TickerProviderStateMixin
   List<Widget> _guessControls() {
     final palette = CampusPalette.of(context);
     return [
-      if (_puzzle.direction)
+      if (_puzzle.direction || _puzzle.maybeNone)
         Wrap(spacing: 8, runSpacing: 8, children: [
-          CampusGlassChip(
-            label: '偏重',
-            selected: _guessHeavy == true,
-            leading: CampusIcon(CampusIcons.arrowDown, size: 18, color: palette.onSurfaceVariant),
-            onSelected: (selected) => _chooseHeavy(selected ? true : null),
-          ),
-          CampusGlassChip(
-            label: '偏轻',
-            selected: _guessHeavy == false,
-            leading: CampusIcon(CampusIcons.arrowUp, size: 18, color: palette.onSurfaceVariant),
-            onSelected: (selected) => _chooseHeavy(selected ? false : null),
-          ),
+          if (_puzzle.direction) ...[
+            CampusGlassChip(
+              label: '偏重',
+              selected: _guessHeavy == true,
+              leading: CampusIcon(CampusIcons.arrowDown, size: 18, color: palette.onSurfaceVariant),
+              onSelected: (selected) => _chooseHeavy(selected ? true : null),
+            ),
+            CampusGlassChip(
+              label: '偏轻',
+              selected: _guessHeavy == false,
+              leading: CampusIcon(CampusIcons.arrowUp, size: 18, color: palette.onSurfaceVariant),
+              onSelected: (selected) => _chooseHeavy(selected ? false : null),
+            ),
+          ],
+          if (_puzzle.maybeNone)
+            CampusGlassChip(
+              label: '都是真的',
+              selected: _guessNone,
+              leading: CampusIcon(CampusIcons.check, size: 18, color: palette.onSurfaceVariant),
+              onSelected: _chooseNone,
+            ),
         ]),
       FilledButton.icon(onPressed: _cancelGuess, icon: const CampusIcon(CampusIcons.close), label: const Text('取消')),
       FilledButton.icon(style: campusProminent, onPressed: _guessReady && !_busy ? _confirm : null, icon: const CampusIcon(CampusIcons.check), label: const Text('确认')),
@@ -534,6 +563,8 @@ class _Brief extends StatelessWidget {
     final side = puzzle.weight == BalanceWeight.light ? '偏轻' : '偏重';
     final rule = switch (puzzle) {
       BalancePuzzle(paired: true) => '其中两个一样$side，找出这两个',
+      BalancePuzzle(maybeNone: true, direction: true) => '可能有一个轻重不明，也可能都是真的；找出它并说出轻重',
+      BalancePuzzle(maybeNone: true) => '可能有一个轻重不明，也可能都是真的；找出它',
       BalancePuzzle(weight: BalanceWeight.unknown, direction: true) => '有一个轻重不明，找出它并说出轻重',
       BalancePuzzle(weight: BalanceWeight.unknown) => '有一个轻重不明，找出它',
       _ => '其中一个$side，找出它',
