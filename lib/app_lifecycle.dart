@@ -31,20 +31,26 @@ class AppHooks {
     AppLifecycleListener(onResume: () => _fire(_resume), onShow: () => _fire(_show));
     unawaited(agreed.then((_) {
       _agreed = true;
-      _fire(_once);
+      for (final hook in _once) {
+        _runOnce(hook);
+      }
       _once.clear();
     }));
+    // 联网策略会变（联网偏好）：变了就把之前被挡下的一次性钩子补做（11-17 审查发现本地化启动、改回联网化后私信与账号核对要重启才恢复）。
+    if (policy case final Listenable changes) changes.addListener(_retryBlocked);
   }
   final NetworkPolicy policy;
   bool _agreed = false;
   final _once = <_Hook>[], _resume = <_Hook>[], _show = <_Hook>[];
+  // 同意之后该做一次、但当时联网策略不允许的钩子：策略放行时补做一次（不丢）。
+  final _blocked = <_Hook>[];
 
   bool get agreed => _agreed;
 
   // 同意之后做一次（已经同意过的马上做）。
   void afterAgreed(String module, FutureOr<void> Function() action, {NetworkService? service}) {
     final hook = _Hook(module, action, service, agreedOnly: true);
-    _agreed ? _run(hook) : _once.add(hook);
+    _agreed ? _runOnce(hook) : _once.add(hook);
   }
 
   // 每次回到前台做；agreedOnly 为真（默认）时同意之前不做。
@@ -59,9 +65,18 @@ class AppHooks {
     }
   }
 
+  bool _allowed(_Hook hook) => hook.service == null || policy.allows(hook.service!);
+
+  void _runOnce(_Hook hook) => _allowed(hook) ? _run(hook) : _blocked.add(hook);
+
+  void _retryBlocked() {
+    final ready = [for (final hook in _blocked) if (_allowed(hook)) hook];
+    _blocked.removeWhere(ready.contains);
+    ready.forEach(_run);
+  }
+
   void _run(_Hook hook) {
-    final service = hook.service;
-    if (service != null && !policy.allows(service)) return;
+    if (!_allowed(hook)) return;
     void report(Object error, StackTrace stack) => campusLog('[${hook.module}] action=hook errorType=${error.runtimeType}\n$stack');
     try {
       final result = hook.action();
@@ -115,6 +130,7 @@ void watchSocial(SocialService social, AppAccounts? appAccounts, AppHooks hooks,
     unawaited(social.setOffline(!network.online));
     network.addListener(() => unawaited(social.setOffline(!network.online)));
   }
+  // 不挂联网策略：本地化时 SocialService 自己停着（setOffline，不联网、状态 offline），切到账号照样要做，消息页才写得出本地化卡。
   hooks.afterAgreed('Social', () {
     if (appAccounts == null) return social.switchAccount(null);
     void follow() {
@@ -122,7 +138,7 @@ void watchSocial(SocialService social, AppAccounts? appAccounts, AppHooks hooks,
     }
     appAccounts.addListener(follow);
     follow();
-  }, service: NetworkService.social);
+  });
 }
 
 // 应用账号与教务各管各的（人工决策见 domain/app_account.dart 的 11-15 16:40:33 那条，取代 11-13「跟着教务走」：退出教务不再连带退出应用账号）。
