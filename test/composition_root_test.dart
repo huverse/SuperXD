@@ -61,7 +61,7 @@ Future<_App> _compose({required NetworkMode mode, bool signedIn = true}) async {
     accountKeys: wiring.accountKeys,
     transport: wiring.transport,
     accountGone: () => unawaited(appAccounts?.check(force: true)),
-    friendKeys: FakeRelay.friendKeys,
+    serverKeys: FakeRelay.serverKeys,
   );
   appAccounts = appAccountsOf(wiring, onDeleted: (account) => unawaited(social.forgetAccount(account)));
   final challenges = challengesOf(wiring, appAccounts);
