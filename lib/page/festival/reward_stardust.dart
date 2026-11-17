@@ -2,8 +2,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import 'reward_card.dart';
-import 'reward_kit.dart';
+import 'package:superxd/page/festival/reward_card.dart';
+import 'package:superxd/page/festival/reward_kit.dart';
 
 // 开启动效「星尘」：几百颗星尘绕着中间一粒光转成一张斜看的盘（开普勒转速，里快外慢；迎着你转来的一侧略亮；沿旋度噪声场轻轻流动，像一缕缕气流），
 // 中间那粒光是白芯、一圈柔晕与一道很淡的四角星芒，晕与星盘的底光自然接上，外面不画环（试过正圆环与躺在盘面里的环，都像贴上去的）；背后一层稀疏的远景星。

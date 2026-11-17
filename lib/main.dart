@@ -95,7 +95,9 @@ void main() async {
   // 联网偏好（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）在下面第一批里打开；诊断包认领只在用户点了上传以后才读它。
   late final NetworkPreference network;
   bool networkOnline() => network.online;
-  final diagnostics = diagnosticsOf(() => appAccounts, online: networkOnline);
+  // 自建中转：地址与签名请求的传输只建一份，下面各个造法共用（没配中转时为空，见 app_services.dart 的 RelayWiring）。
+  final relay = relayWiring();
+  final diagnostics = diagnosticsOf(relay, () => appAccounts, online: networkOnline);
   final logs = await DiagnosticLog.open(
     directory: Directory(path.join((external ?? deviceOnly).path, 'logs')),
     exports: Directory(path.join(temporary.path, 'diagnostics_export')),
@@ -141,8 +143,8 @@ void main() async {
   final storeOpen = AccountStore.open(reclaim: true);
   // 衬线等要下载的字体（人工决策见 domain/font_pack.dart）：文件在应用支持目录的 font_packs（排除备份）；选着的在显示设置打开时（首帧前）核对并注册，
   // 升级上来还没下的等同意协议与政策之后自动下回来（见下面 ensureFontPack）；没配中转时下不了。
-  final fontPacks = FontPackLibrary(directory: Directory(path.join(support.path, 'font_packs')), source: switch (relayBase()) {
-    final base? => RelayFontPackSource(base),
+  final fontPacks = FontPackLibrary(directory: Directory(path.join(support.path, 'font_packs')), source: switch (relay) {
+    final relay? => RelayFontPackSource(relay.base),
     null => null,
   });
   final displayOpen = DisplaySettings.open(wallpaperDirectory: Directory(path.join(support.path, 'display', 'wallpaper')), fontPacks: fontPacks);
@@ -174,8 +176,8 @@ void main() async {
   // 挂账号用应用账号的设备密钥签名，中转说账号不在了让应用账号马上核一次。
   final social = SocialService(
     spaces: SocialSpaces(vault: const SecureIdentityVault(), directory: socialDirectory),
-    accountKeys: const SecureAppAccountVault(),
-    transport: relayTransport(),
+    accountKeys: relay?.accountKeys ?? const SecureAppAccountVault(),
+    transport: relay?.transport,
     accountGone: () => unawaited(appAccounts?.check(force: true)),
     polling: true,
   );
@@ -190,11 +192,11 @@ void main() async {
       files: [File(path.join(socialDirectory, SocialSpaces.legacyDatabase))],
     ));
   }
-  appAccounts = appAccountsOf(onDeleted: (account) => unawaited(social.forgetAccount(account)));
+  appAccounts = appAccountsOf(relay, onDeleted: (account) => unawaited(social.forgetAccount(account)));
   // 本地化时（联网偏好）解锁只认公开与下架、不联网，灰度与节日抽签不按等级加权、不问点名（11-16 起取代娱乐与积分的开关，见 domain/leisure.dart）。
-  final challenges = challengesOf(appAccounts);
-  final rollouts = await rolloutsOf(support, appAccounts, challenges, online: networkOnline);
-  final unlocks = unlocksOf(rollouts, appAccounts, accountOn: networkOnline);
+  final challenges = challengesOf(relay, appAccounts);
+  final rollouts = await rolloutsOf(support, relay, appAccounts, challenges, online: networkOnline);
+  final unlocks = unlocksOf(relay, rollouts, appAccounts, accountOn: networkOnline);
   final playground = PlaygroundStore.inSupportDirectory();
   // 删除数据清本机的游乐场记录与记着的等级（服务器上的由 Leisure 经挑战与积分先删，本地化时只删本机）；联网偏好变了、删了数据，解锁都重新判定。
   final leisure = Leisure(deleteRemote: challenges?.deleteData, signedIn: () => network.online && (challenges?.signedIn ?? false), clearLocal: () async {
@@ -206,10 +208,10 @@ void main() async {
     network.addListener(unlocks.reconsider);
   }
   // 第二批：要等灰度与应用账号造好的几份本机记录同时打开。
-  final updatesOpen = appUpdates(support, rollouts), notesOpen = developerNotes(support), festivalsOpen = festivalsOf(support, appAccounts, online: networkOnline);
+  final updatesOpen = appUpdates(support, relay, rollouts), notesOpen = developerNotes(support, relay), festivalsOpen = festivalsOf(support, relay, appAccounts, online: networkOnline);
   await Future.wait<Object?>([updatesOpen, notesOpen, festivalsOpen]);
   final updates = await updatesOpen, notes = await notesOpen, festivals = await festivalsOpen;
-  final health = await appHealthOf(support);
+  final health = await appHealthOf(support, relay);
   for (final at in fatalBefore) {
     unawaited(health.markFatal(at));
   }

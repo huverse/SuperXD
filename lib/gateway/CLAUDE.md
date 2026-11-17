@@ -70,7 +70,7 @@
 
 # 测试
 
-- account_isolation_test.dart、account_lifecycle_test.dart、remembered_session_test.dart、kingo_gateway_test.dart、sync_boundary_regression_test.dart。
+- account_isolation_test.dart、account_lifecycle_test.dart、remembered_session_test.dart、kingo_gateway_test.dart、kingo_auth_test.dart（一次登录的各条分支：验证码、密码错误与锁定、迟到回写、处理中重复提交、异常换码与落库）、sync_boundary_regression_test.dart。
 - 页面与同步用的合成数据网关是 test/fixture_campus_gateway.dart（读 assets/fixtures），新增端口方法时一并补齐。
 
 # 人工决策检索

@@ -5,6 +5,9 @@ name: Relay health
 # 地址只在 relay 环境的 RELAY_URL 机密里，不写进仓库与日志：主机名先打码，curl 的报错不输出，只打印退出码与 health 里的协议版本、构建版本。
 # GitHub 到阿里云的线路偶有抖动：隔 30 秒共试 3 次都失败才算挂。不建部署记录（deployment: false），环境页不被探活刷屏。
 # 公开仓库 60 天没有提交时 GitHub 会自动停用定时工作流，停用后要在 Actions 页手动启用。
+# [人工决策-2026-11-17 21:24:25] 改探就绪探测 /v1/health/ready（用户同意审查建议 P1-4，人工决策见 server/src/common/error_monitor.ts）：
+# 数据库或 Redis 用不了（503）同样隔 30 秒试 3 次；就绪但最近一小时有错误告警（alerts 非零）也让工作流失败、发邮件，不重试，明细在服务器日志的 [Alert] 行。
+# 线上还没部署就绪探测（404）时退回只看 /v1/health，并留一条警告。其余同上一条。
 on:
   schedule:
     - cron: '13,43 * * * *'
@@ -25,23 +28,53 @@ jobs:
       name: relay
       deployment: false
     steps:
-      - name: 请求 /v1/health
+      - name: 请求 /v1/health/ready
         env:
           RELAY_URL: ${{ secrets.RELAY_URL }}
         run: |
           set -euo pipefail
           host=${RELAY_URL#*://}; host=${host%%/*}; host=${host%:*}
           echo "::add-mask::$host"
-          code=0
+          outcome=unreachable
+          detail=
           for attempt in 1 2 3; do
-            if body=$(curl -fsS --max-time 15 "$RELAY_URL/v1/health" 2> /dev/null); then
-              if python3 -I -c 'import json, sys; health = json.loads(sys.argv[1]); assert health["protocol"] == 1; print("[RelayHealth] action=probe result=ok attempt=%s version=%s" % (sys.argv[2], health.get("version", "unknown")))' "$body" "$attempt"; then exit 0; fi
-              code=json
-            else
-              code=$?
-            fi
-            echo "[RelayHealth] action=probe result=failed attempt=$attempt code=$code"
+            code=$(curl -sS --max-time 15 -o ready.json -w '%{http_code}' "$RELAY_URL/v1/health/ready" 2> /dev/null) || code=000
+            result=$(python3 -I - "$code" <<'PY'
+          import json, sys
+          code = sys.argv[1]
+          try:
+              with open('ready.json', encoding='utf-8') as file:
+                  body = json.load(file)
+          except (OSError, ValueError):
+              body = None
+          if not isinstance(body, dict):
+              body = {}
+          if code == '200' and body.get('ready') is True:
+              alerts = body.get('alerts', 0)
+              print('ok' if alerts == 0 else 'alerts', 'alerts=%s version=%s' % (alerts, body.get('version', 'unknown')))
+          elif code == '503':
+              print('not_ready', 'mysql=%s redis=%s' % (body.get('mysql'), body.get('redis')))
+          elif code == '404':
+              print('missing', 'code=404')
+          else:
+              print('unreachable', 'code=%s' % code)
+          PY
+            )
+            outcome=${result%% *}
+            detail=${result#* }
+            echo "[RelayHealth] action=probe attempt=$attempt result=$outcome $detail"
+            case $outcome in
+              ok) exit 0 ;;
+              alerts)
+                echo "::error::中转最近一小时有错误告警（$detail），在服务器上 docker compose logs relay 里找 [Alert] 看明细"
+                exit 1 ;;
+              missing)
+                if curl -fsS --max-time 15 "$RELAY_URL/v1/health" > /dev/null 2>&1; then
+                  echo "::warning::中转还没部署就绪探测，这次只核对了存活"
+                  exit 0
+                fi ;;
+            esac
             if [ "$attempt" -lt 3 ]; then sleep 30; fi
           done
-          echo "::error::中转健康检查连续 3 次失败（最后一次 code=$code）"
+          echo "::error::中转就绪检查连续 3 次失败（最后一次 $outcome $detail）"
           exit 1

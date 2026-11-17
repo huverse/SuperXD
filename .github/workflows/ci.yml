@@ -139,6 +139,35 @@ jobs:
           if-no-files-found: ignore
           retention-days: 14
 
+  # [人工决策-2026-11-17 21:24:25] 安卓构建与模拟器启动冒烟（用户同意审查建议 P1-5，按最佳实践做）：安卓是主平台，以前 CI 不编安卓原生，
+  # 插件、Gradle 与 Kotlin 的问题要到发版构建才暴露。Android build 编开发包的 profile 包（arm64：Dart 按发版同样 AOT 编译、原生照常编，调试签名）；
+  # release 的 R8 不在这里（release 必须正式签名，见 android/app/build.gradle.kts 的人工决策）。先不设为必需检查，跑稳了再由维护者加进 main 的保护规则。
+  # 没有安卓模拟器启动冒烟：11-17 试了三次（swiftshader_indirect、再关 Vulkan、-gpu guest），GitHub 的机器没有显卡，
+  # 软件渲染下应用一出首帧（玻璃与云雾着色器）整个模拟器进程就崩，同本机软件渲染时的老问题，测不到应用本身。
+  # 冒烟脚本 tool/android_smoke.sh 留着，在本机用真显卡（-gpu host）的模拟器手动跑。
+  android-build:
+    name: Android build
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+      - run: flutter pub get --enforce-lockfile
+      # 只缓存 Gradle 下载的依赖与发行包，依赖版本照旧每次按构建脚本解析。
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle.kts', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock') }}
+          restore-keys: gradle-${{ runner.os }}-
+      - run: flutter build apk --profile --flavor production --target-platform android-arm64
+      - run: echo "[AndroidBuild] action=profile bytes=$(stat -c %s build/app/outputs/flutter-apk/app-production-profile.apk)"
+
   relay-check:
     name: Relay server test
     runs-on: ubuntu-latest
@@ -146,9 +175,10 @@ jobs:
     defaults:
       run:
         working-directory: server
+    # MySQL 与 Redis 的版本同线上（server/docker-compose.yml），升级时连同 docker-compose.test.yml 与 relay-image.yml 的试运行一起改。
     services:
       mysql:
-        image: mysql:8.4
+        image: mysql:8.4.13
         env:
           MYSQL_ROOT_PASSWORD: test-root
           MYSQL_DATABASE: superxd_relay_test
@@ -159,7 +189,7 @@ jobs:
           --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -ptest-root --silent"
           --health-interval 5s --health-timeout 5s --health-retries 30
       redis:
-        image: redis:8-alpine
+        image: redis:8.10.3-alpine
         ports: ['6380:6379']
         options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 30
     steps:
@@ -170,8 +200,26 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: mysql -h 127.0.0.1 -P 3307 -usuperxd -ptest superxd_relay_test < sql/schema.sql
+      # 表结构漂移检查（人工决策见 server/scripts/migrate_db.sh 文件头）：最早的基线 + 全部升级文件 = schema.sql、升级文件可重复执行、台账登记完整。
+      # 在同版本的 mysql 镜像里跑（客户端与服务端一致，镜像已随上面的服务拉好），临时库跑完即删。
+      - name: Schema drift check
+        run: docker run --rm --network host -v "$PWD":/w -w /w -e MIGRATE_MYSQL_HOST=127.0.0.1 -e MIGRATE_MYSQL_PORT=3307 -e MIGRATE_ROOT_PASSWORD=test-root mysql:8.4.13 bash scripts/schema_drift_check.sh
       - run: npm ci
       - run: npm run typecheck
-      - run: npm test
+      # 带覆盖率跑测试（先不设门槛）：合计写进运行摘要，按文件的报告留作产物 relay-coverage。
+      - run: npm run coverage
+      - name: Coverage summary
+        if: always()
+        run: |
+          if [ -f coverage/coverage-summary.json ]; then
+            python3 -I -c 'import json, sys; total = json.load(open(sys.argv[1]))["total"]; print("### Relay server coverage\n\n| 指标 | 覆盖 |\n| --- | --- |"); [print("| %s | %s%% (%s/%s) |" % (name, total[name]["pct"], total[name]["covered"], total[name]["total"])) for name in ("lines", "branches", "functions", "statements")]' coverage/coverage-summary.json >> "$GITHUB_STEP_SUMMARY"
+          fi
+      - if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        with:
+          name: relay-coverage
+          path: server/coverage
+          if-no-files-found: ignore
+          retention-days: 14
       # 编译产物能在 Node ESM 下加载（Vitest 不经过编译产物，测不到）。
       - run: npm run build && npm run smoke

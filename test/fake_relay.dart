@@ -206,6 +206,14 @@ class FakeRelay {
       case ('DELETE', final route) when route.startsWith('/v1/invites/'):
         invites.remove(route.substring('/v1/invites/'.length));
         return const RelayResponse(204, {});
+      // 应用账号的查看与灰度点名（组合根接线测试用到）：只认登记过的账号密钥，账号的数据都是固定的合成值。
+      case ('GET', '/v1/account'):
+        final accountId = accountDevices[deviceId];
+        if (accountId == null) return _error(404, RelayCode.accountNotFound);
+        return RelayResponse(200, {'accountId': accountId, 'username': 'synthetic_user', 'deviceCount': 1, 'createdAt': DateTime.utc(2026, 11).millisecondsSinceEpoch});
+      case ('GET', '/v1/flags/mine'):
+        if (!accountDevices.containsKey(deviceId)) return _error(404, RelayCode.accountNotFound);
+        return const RelayResponse(200, {'flags': <Object?>[], 'accountCreatedAt': '2026-11-01T00:00:00.000Z'});
     }
     return _error(404, RelayCode.invalidRequest);
   }

@@ -12,5 +12,7 @@ export default defineConfig({
     testTimeout: 30000,
     hookTimeout: 60000,
     fileParallelism: false,
+    // 覆盖率（npm run coverage，CI 每次产出报告）：先不设门槛，用来找判定与清理任务里没测到的分支。
+    coverage: { provider: 'v8', include: ['src/**/*.ts'], reporter: ['text-summary', 'json-summary', 'html'], reportsDirectory: 'coverage' },
   },
 });

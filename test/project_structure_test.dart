@@ -21,27 +21,70 @@ const _allowed = {
   'page': {'domain', 'application', 'gateway', 'local', 'social', 'theme', 'page', 'app_session.dart'},
 };
 
+// [人工决策-2026-11-17 21:24:25] 同层子模块互不依赖（用户同意审查建议 P2-1）：各占一个目录的百宝箱工具与游乐场游戏只依赖自己、所在层根目录的文件
+// 与这里登记的共用目录，彼此不互引（以前只靠自觉，实际为零）；共用目录（下载、挑战）与层根目录的注册表可以依赖各子模块。
+// 键是子模块所在的目录，值是其中的共用目录；新加的工具或游戏目录自动受约束，要新开共用目录先在这里登记。
+const _siblingFamilies = {
+  'toolbox': {'download'},
+  'playground/puzzle': <String>{},
+};
+
 Iterable<File> _dartFiles(String root) => Directory(root)
     .listSync(recursive: true)
     .whereType<File>()
     .where((file) => file.path.endsWith('.dart'));
 
+// 导入与导出指令（可跨行、可带条件导入）里的全部 URI。
+final _directive = RegExp(r'''^\s*(?:import|export)\s[^;]*;''', multiLine: true);
+final _uri = RegExp(r'''['"]([^'"]+)['"]''');
+
+Iterable<String> _uris(String source) => [
+  for (final directive in _directive.allMatches(source))
+    for (final uri in _uri.allMatches(directive[0]!)) uri[1]!,
+];
+
 void main() {
+  // 以前只认 import 'package:superxd/…'：相对导入与 export 能绕过（审查 P2-1）。现在 export 一样查，lib 里不许相对导入（analysis_options 的 always_use_package_imports 同时挡）。
   test('lib分层依赖只允许自上而下', () {
     final violations = <String>[];
     for (final file in _dartFiles('lib')) {
       final parts = path.split(path.relative(file.path, from: 'lib'));
+      final uris = _uris(file.readAsStringSync());
+      for (final uri in uris) {
+        if (!uri.startsWith('package:') && !uri.startsWith('dart:')) violations.add('${file.path} → $uri：lib 里一律用 package:superxd/ 导入');
+      }
       if (parts.length == 1) continue;
       final allowed = _allowed[parts.first];
       if (allowed == null) {
         violations.add('${file.path}：目录${parts.first}未登记分层');
         continue;
       }
-      final imports = RegExp(r'''^import\s+['"]package:superxd/([^'"]+)['"]''', multiLine: true);
-      for (final match in imports.allMatches(file.readAsStringSync())) {
-        final target = match[1]!;
+      for (final uri in uris) {
+        if (!uri.startsWith('package:superxd/')) continue;
+        final target = uri.substring('package:superxd/'.length);
         if (!allowed.contains(target.split('/').first) && !allowed.contains(target)) {
           violations.add('${file.path} → $target');
+        }
+      }
+    }
+    expect(violations, isEmpty);
+  });
+
+  test('同层子模块互不依赖，只依赖本模块、层根目录与登记的共用目录', () {
+    final violations = <String>[];
+    for (final MapEntry(key: family, value: shared) in _siblingFamilies.entries) {
+      final members = {
+        for (final entity in Directory(path.join('lib', family)).listSync())
+          if (entity is Directory && !shared.contains(path.basename(entity.path))) path.basename(entity.path),
+      };
+      expect(members, isNotEmpty, reason: '$family 下要有子模块，规则才没失效');
+      for (final member in members) {
+        for (final file in _dartFiles(path.join('lib', family, member))) {
+          for (final uri in _uris(file.readAsStringSync())) {
+            if (!uri.startsWith('package:superxd/$family/')) continue;
+            final other = uri.substring('package:superxd/$family/'.length).split('/');
+            if (other.length > 1 && other.first != member && members.contains(other.first)) violations.add('${file.path} → $uri');
+          }
         }
       }
     }

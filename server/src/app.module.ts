@@ -3,6 +3,7 @@ import { ScheduleModule } from '@nestjs/schedule';
 import { TypeOrmModule } from '@nestjs/typeorm';
 
 import { env } from 'src/config/env';
+import { ErrorMonitorModule } from 'src/common/error_monitor';
 import { RedisModule } from 'src/common/redis/redis.module';
 import { AccountDeviceEntity, AppAccountEntity } from 'src/modules/account/account.entity';
 import { AccountModule } from 'src/modules/account/account.module';
@@ -18,7 +19,7 @@ import { DeviceModule } from 'src/modules/device/device.module';
 import { DiagnosticModule } from 'src/modules/diagnostic/diagnostic.module';
 import { FriendshipEntity } from 'src/modules/friend/friendship.entity';
 import { FriendModule } from 'src/modules/friend/friend.module';
-import { HealthController } from 'src/modules/health/health.controller';
+import { HealthModule } from 'src/modules/health/health.module';
 import { InviteModule } from 'src/modules/invite/invite.module';
 import { LeisureModule } from 'src/modules/leisure/leisure.module';
 import { MessageEntity } from 'src/modules/message/message.entity';
@@ -54,7 +55,9 @@ import { UnlockModule } from 'src/modules/unlock/unlock.module';
       }),
     }),
     ScheduleModule.forRoot(),
+    ErrorMonitorModule,
     RedisModule,
+    HealthModule,
     DeviceModule,
     InviteModule,
     FriendModule,
@@ -72,6 +75,5 @@ import { UnlockModule } from 'src/modules/unlock/unlock.module';
     FlagTargetModule,
     LeisureModule,
   ],
-  controllers: [HealthController],
 })
 export class AppModule {}

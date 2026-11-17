@@ -1,5 +1,7 @@
 -- SuperXD 中转服务表结构 v1。由人工执行，服务启动时不做任何 DDL。
 -- 无外键，表间关联全靠代码；时间一律 UTC（DATETIME(3)）。
+-- 这里是新库的完整结构；已有的库按 sql 下的 upgrade_*.sql 升级（scripts/migrate_db.sh 执行并登记台账）。两条路得到的结构必须一样（含列的先后，
+-- 所以升级时加在末尾的列这里也写在末尾），由 scripts/schema_drift_check.sh 在 CI 里核对。新库建好后跑一次 scripts/migrate_db.sh 把升级文件都登记上（在新库上都是空操作）。
 
 CREATE TABLE IF NOT EXISTS device (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -19,9 +21,9 @@ CREATE TABLE IF NOT EXISTS friendship (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   owner_device_id VARCHAR(32) NOT NULL,
   peer_device_id VARCHAR(32) NOT NULL,
-  moved_from VARCHAR(32) NULL COMMENT '对方的私信换到了 peer 这台新设备，owner 还认得的旧设备号；owner 确认后清空',
   create_time DATETIME(3) NOT NULL,
   update_time DATETIME(3) NOT NULL,
+  moved_from VARCHAR(32) NULL COMMENT '对方的私信换到了 peer 这台新设备，owner 还认得的旧设备号；owner 确认后清空',
   PRIMARY KEY (id),
   UNIQUE KEY uk_owner_peer (owner_device_id, peer_device_id),
   KEY idx_peer (peer_device_id)
@@ -69,12 +71,12 @@ CREATE TABLE IF NOT EXISTS reward_campaign (
   mode VARCHAR(16) NOT NULL COMMENT 'uniform 平权，weighted 按活跃度加权',
   base_chance DECIMAL(7,6) NOT NULL COMMENT '权重为 1 的人一次抽中的概率',
   max_weight DECIMAL(5,2) NOT NULL COMMENT '加权上限：最活跃的人是新用户的几倍，平权时为 1',
+  create_time DATETIME(3) NOT NULL,
+  update_time DATETIME(3) NOT NULL,
   distribution VARCHAR(8) NOT NULL DEFAULT 'lottery' COMMENT 'lottery 抽签，all 有资格就发（发完为止）',
   audience VARCHAR(8) NOT NULL DEFAULT 'everyone' COMMENT 'everyone 人人可参加，list 只有 reward_audience 名单里的应用账号',
   min_account_days SMALLINT UNSIGNED NOT NULL DEFAULT 7 COMMENT '应用账号建立满几天才能参加',
   min_level TINYINT UNSIGNED NOT NULL DEFAULT 0 COMMENT '最低积分等级 0–5',
-  create_time DATETIME(3) NOT NULL,
-  update_time DATETIME(3) NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uk_campaign_key (campaign_key),
   KEY idx_ends (ends_at)
@@ -350,4 +352,17 @@ CREATE TABLE IF NOT EXISTS app_feedback (
   PRIMARY KEY (id),
   KEY idx_channel_version (channel, version_code, id),
   KEY idx_create (create_time)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- 表结构升级台账（人工决策见 scripts/migrate_db.sh 文件头）：执行过哪些 upgrade_*.sql、何时、文件的 sha256；服务不读不写。
+-- 一个升级文件一行，永久保留、不清理；进备份。已有的库由台账脚本按 sql/upgrade_2026_11_17.sql 建。
+CREATE TABLE IF NOT EXISTS schema_migration (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  file_name VARCHAR(64) NOT NULL COMMENT 'sql 下的升级文件名，如 upgrade_2026_11_17.sql',
+  checksum CHAR(64) NOT NULL COMMENT '登记时文件内容的 sha256 十六进制；之后文件被改过，台账脚本停下等人核对',
+  mode VARCHAR(8) NOT NULL COMMENT 'applied 由台账脚本执行，baseline 接入台账前已手工执行、只登记',
+  create_time DATETIME(3) NOT NULL COMMENT '执行或登记的时刻',
+  update_time DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_file (file_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;

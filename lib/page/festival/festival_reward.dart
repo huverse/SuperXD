@@ -11,11 +11,11 @@ import 'package:url_launcher/url_launcher.dart';
 import 'package:superxd/domain/festival.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_transitions.dart';
-import 'festival_catalog.dart';
-import 'festival_stage.dart';
-import 'reward_card.dart';
-import 'reward_kit.dart';
-import 'reward_stardust.dart';
+import 'package:superxd/page/festival/festival_catalog.dart';
+import 'package:superxd/page/festival/festival_stage.dart';
+import 'package:superxd/page/festival/reward_card.dart';
+import 'package:superxd/page/festival/reward_kit.dart';
+import 'package:superxd/page/festival/reward_stardust.dart';
 
 // 奖品揭晓（预制，所有节日共用；抽签与时机的人工决策见 domain/festival.dart）。本文件是入口、时间线与操作，画面分两部分：
 // 开启动效（等点的那件东西与拆开的那一段，reward_stardust.dart）与奖品卡容器（reward_card.dart，外形、主题画的背景层、内容层）。

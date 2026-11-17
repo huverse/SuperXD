@@ -19,13 +19,13 @@
 
 - 静态检查与测试：PUB_HOSTED_URL=https://pub.dev flutter analyze；PUB_HOSTED_URL=https://pub.dev flutter test test/<文件>.dart，必要时去掉文件名跑全量。本机默认镜像会改写 pubspec.lock，所以 flutter 命令一律加这个前缀，提交前确认 pubspec.lock 没变。
 - 运行：flutter run 默认是 production flavor（开发包，与 Alpha 包并装、数据不共享）。私信与代签要 --dart-define=SUPERXD_RELAY=<中转地址>，地图（网页版高德）要 --dart-define=SUPERXD_AMAP_WEB_KEY=<key> 与 --dart-define=SUPERXD_AMAP_WEB_SECRET=<安全密钥>，视频解析的 BugPK 新版来源要 --dart-define=SUPERXD_SVPARSE_KEY=<key>，这些都不写进源码（发版流水线从 release 环境的机密注入）。
-- 服务端：cd server，docker compose -f docker-compose.test.yml up -d --wait 起测试库后 npm test；npm run typecheck。
+- 服务端：cd server，docker compose -f docker-compose.test.yml up -d --wait 起测试库后 npm test；npm run typecheck。改了 server/sql 跑表结构漂移检查 scripts/schema_drift_check.sh，线上升级只经台账脚本 scripts/migrate_db.sh（用法见两个文件头与 server/README.md「表结构升级台账」）。
 - 发版由流水线 .github/workflows/release.yml 全自动完成（安卓三个架构加 iOS 未签名包）：升版本 PR 合并到 main 即构建与发布，不再要网页批准；升版本 PR 只在用户明确要求发版时开；约定与本机构建见 CONTRIBUTING.md。
 - 依赖升级由 Dependabot 每周提 PR（.github/dependabot.yml）；main 合并要 CI 三个作业都过；iOS 锁文件怎么从 CI 取、发布来源证明怎么核对，见 CONTRIBUTING.md「供应链」。
 
 # 分层与依赖方向
 
-目录即分层，依赖只许自上而下，由 test/project_structure_test.dart 守护（[人工决策] 在文件内）。出现反向依赖时先重新划分职责，不要绕过检查。
+目录即分层，依赖只许自上而下，由 test/project_structure_test.dart 守护（[人工决策] 在文件内；lib 里一律 package:superxd/ 导入，analysis_options 的 always_use_package_imports 同时挡）。出现反向依赖时先重新划分职责，不要绕过检查。百宝箱各工具、游乐场各游戏同层互不依赖，只依赖本层根目录与登记的共用目录（下载、挑战），同一测试守护。
 
 - 根目录组合根：main.dart、app_services.dart、app_lifecycle.dart、app_shell.dart、router.dart、app_session.dart、app_diagnostics.dart、app_shortcuts.dart、app_background_sync.dart，可依赖任何层。
 - page 页面：可依赖 domain、application、gateway、local、social、theme 与 app_session.dart；只经 CampusGateway 与 AccountAccess 访问业务，不直接接触 SQLite、KingoClient 或 cookie（例外只有外观页读写 DisplaySettings、开发者选项页读写开发者设置与本机日志）。
@@ -41,7 +41,7 @@
 
 # 组合根与路由门禁
 
-- 组合根分四个文件（[人工决策] 在 app_services.dart 与 app_lifecycle.dart）：main.dart 只管启动顺序，互不依赖的本机文件与系统调用同时发出、用 Future.wait 一起等；app_services.dart 是服务的造法与打包 AppServices（新功能加一个字段，外壳、账号应用与路由都从它取）；app_lifecycle.dart 是生命周期钩子 AppHooks（同意之后、回到前台、前台可见三个时机统一登记，会联网的写明属于哪项联网服务，联网策略 domain/network_policy.dart 不允许时不做，测试在 app_lifecycle_test.dart）与各功能的接线 watchX；app_shell.dart 是应用外壳 SuperXdApp 与账号应用（开发者的话的附件渲染也在这里按类型登记，套成 NoteAttachmentScope）。
+- 组合根分四个文件（[人工决策] 在 app_services.dart 与 app_lifecycle.dart）：main.dart 只管启动顺序，互不依赖的本机文件与系统调用同时发出、用 Future.wait 一起等；app_services.dart 是服务的造法与打包 AppServices（新功能加一个字段，外壳、账号应用与路由都从它取；自建中转的接法 RelayWiring 启动时算一次交给各造法，签名请求共用一个传输）；app_lifecycle.dart 是生命周期钩子 AppHooks（同意之后、回到前台、前台可见三个时机统一登记，会联网的写明属于哪项联网服务，联网策略 domain/network_policy.dart 不允许时不做，测试在 app_lifecycle_test.dart；用真实造法与钩子按 main.dart 的先后接上假中转的接线测试在 composition_root_test.dart，main.dart 的接线改了它跟着改）与各功能的接线 watchX；app_shell.dart 是应用外壳 SuperXdApp 与账号应用（开发者的话的附件渲染也在这里按类型登记，套成 NoteAttachmentScope）。
 - main.dart 启动顺序：
   1. 把日志出口注入为 debugPrint，接住没被处理的异步错误与框架报错（带堆栈走 campusLog）；打开本机诊断日志与开发者设置（诊断包上传也在这里接上，传完认领用的应用账号后面才建好、点了上传才读），把出口接成 logcat 加文件两份，按开发者模式切换诊断记录（app_diagnostics.dart 的 watchDeveloperMode）；再初始化时区库、图标与第三方许可。
   2. 先问这次是不是从快捷入口冷启动（是的话跳过开屏画作、这次也不轮换）；打开开屏画作库（local/painting_library.dart，按清单顺序取这次的一幅并马上开始解码）；打开 AccountStore（reclaim：接管同一进程里旧引擎遗留的账号库连接，人工决策在 local/account_store.dart），组装 AppSession（含 AccountGateway 与 SecureCredentialStore）、DisplaySettings（选着下载的字体包时在这里核对本机文件并注册，首帧就用上；缺了先用默认字体，同意协议与政策后再下回来，见 local/font_packs.dart）、私信 SocialService（每个应用账号一份，SocialSpaces 管库与身份）（中转未配置或格式不对时为不可用）、AppUpdates（没配中转或不是渠道构建时为空，渠道取 appFlavor）、开发者的话 DeveloperNotes（没配中转时为空）、应用账号 AppAccounts（没配中转时为空，要在应用更新与节日之前建好；用到账号的功能只认它给的当前应用账号 AppAccountRef，人工决策见 domain/app_account.dart）、节日 Festivals（登记来自 page/festival/festival_catalog.dart，抽签用当前应用账号签名，没配中转时只播动画不抽签）、挑战与积分 Challenges（跟着应用账号，没配中转时为空，游乐场不显示挑战）、联网偏好 NetworkPreference（network_mode.json，默认联网化；本地化时应用账号、经中转的私信、挑战积分与解锁、节日抽奖与健康回报不联网，解锁只认公开与下架、灰度与节日抽签按 Lv0，本机账号与记录都留着；它本身就是 AppHooks 的联网策略，人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）与游乐场与积分的删除数据 Leisure（先删服务器上的再清本机游乐场记录与记着的等级，人工决策见 domain/leisure.dart）、灰度 Rollouts（本机随机编号与上次的配置在 rollout.json，没配中转时不联网；应用更新的自动检查按它分批）、解锁 Unlocks（清单跟着灰度配置，没配中转时为空，游戏与工具照常开着）与打扰时机 AppMoments。
@@ -113,14 +113,14 @@
 
 # 测试
 
-- 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层、日志、请求记录、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由、页面滚动区渐隐、顶栏玻璃圆钮、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、界面文案长度、字号与间距字面量只许减少），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
+- 改哪个模块先跑该模块 CLAUDE.md「测试」一节；全局规范测试 project_structure_test.dart（分层（含 export、不许相对导入）、同层工具与游戏互不依赖、日志、请求记录、索引登记）与 code_conventions_test.dart（setState、IconButton tooltip、路由、页面滚动区渐隐、顶栏玻璃圆钮、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、界面文案长度、字号与间距字面量只许减少），每次都跑。改发版工具或 CHANGELOG 版本节时跑 release_changelog_test.dart。
 - 基准图 golden_test.dart：登录、服务、我的、界面、成绩、百宝箱（含左滑露出的按钮）深浅两套，只在 Linux 上比、容差万分之一；改了样子是有意的，看过 test/failures 的差异图（CI 失败时是产物 golden-failures）再 flutter test --update-goldens test/golden_test.dart 重生成一起提交。界面库升级与主题改动都靠它把关。
 - 共用的测试支撑：flutter_test_config.dart（test 下每个文件的入口配置，游乐场快得不正常的门槛按真实时间算、测试里默认关掉）、fixture_campus_gateway.dart（合成数据教务网关，读 assets/fixtures）、page_fixture_support.dart（整应用页面测试的合成账号与教务数据）、toolbox_test_support.dart、form_layout_support.dart、text_fit_support.dart（扫一屏文字的裁切、孤字与单独成行的标点）、app_update_fakes.dart、content_signing_support.dart（测试用签名钥）、fake_relay.dart、chaoxing_fake_server.dart、chaoxing_fake_hub.dart。
-- CI 的 Flutter 作业带覆盖率跑全量测试，再由 tool/coverage_check.dart 算 lib 的行覆盖率，低于工具里的门槛就失败；本机复现先 flutter test --coverage 再 dart run 它。
+- CI 的 Flutter 作业带覆盖率跑全量测试，再由 tool/coverage_check.dart 算 lib 的行覆盖率，低于工具里的门槛就失败；本机复现先 flutter test --coverage 再 dart run 它。Relay server test 同样带覆盖率跑服务端测试（npm run coverage），报告是产物 relay-coverage，先不设门槛。
 - tool 下其余是手动入口，不进 CI（发版三个工具由发版流水线调用），运行方式见各文件头：
   - 访问真实服务，只在授权环境与授权账号上手动运行：verify_edu.dart、verify_grades.dart（教务）、verify_chaoxing.dart（学习通，输出脱敏）。
   - 经真实中转、只用合成数据：verify_social.dart、verify_chaoxing_pack.dart。
-  - 设备与原生验证：verify_toolbox.dart（原生下载导出）、verify_chaoxing_map.dart（网页版高德选点，要 SUPERXD_AMAP_WEB_KEY 与 SUPERXD_AMAP_WEB_SECRET）、motion_release_test.dart（发布包的图标字体）。
+  - 设备与原生验证：verify_toolbox.dart（原生下载导出）、verify_chaoxing_map.dart（网页版高德选点，要 SUPERXD_AMAP_WEB_KEY 与 SUPERXD_AMAP_WEB_SECRET）、motion_release_test.dart（发布包的图标字体）、android_smoke.sh（安卓模拟器启动冒烟，模拟器要用真显卡；CI 没有显卡跑不了）。
   - 诊断包：open_diagnostic.dart（解开用户上传的诊断包、生成开发者密钥对，只读写本机文件）。
   - 发版：release_changelog.dart（从 CHANGELOG 取更新说明与 Release 正文，正文模板 release_body.md）、release_manifest.dart（生成更新清单并按架构签名）、content_signing.dart（清单、开发者的话与灰度配置的签名，以及签完按客户端内置公钥再验一遍的 check-release、check-notes、check-rollout、check-flags；私钥在仓库外，人工决策见 lib/device/signed_content.dart），开发者的话流水线另用它与 developer_notes.dart；灰度配置不在仓库（人工决策见 lib/domain/rollout.dart 文件头 11-16 那两条），维护者本机用 rollout_publish.sh（调 rollout_config.dart 签出第 1、2 版两份并核对、传中转、公网核对）。
   - 挑战：challenge_vectors.dart（生成双端判定向量 server/test/vectors/challenge_judge_v1.json，规则改了就重跑；本机对拍可加 --seeds）、challenge_bank.dart（用保密种子 CHALLENGE_BANK_SEED 出题库，连同仓库 challenge/config.json 由流水线 challenge.yml 传到中转发布目录的 challenge 下，中转热加载）。
@@ -134,5 +134,5 @@
 - 安卓上退出再进入会新建 Flutter 引擎而进程还在，sqflite 的原生连接不随引擎关：前台的本机库一律单实例打开并显式写回滚开关，后台引擎被叫停时收回自己的连接（人工决策在 local/account_store.dart，test/account_store_test.dart 守护）。
 - 安卓明文 HTTP 只对教务与中转放行：清单引用的网络安全配置由 android/app/build.gradle.kts 构建时生成（教务地址写在脚本里，同 kingoBase；中转取构建参数 SUPERXD_RELAY，是 http 才放），其余原生网络一律 HTTPS；Dart 的请求不受它管。test/legal_page_test.dart 守护。
 - 对外开放文件只经两个 FileProvider：CalendarFileProvider（缓存 calendar_export 文件夹）与 AppUpdateFileProvider（缓存 app_update 文件夹，清单声明 REQUEST_INSTALL_PACKAGES）。
-- release 包开启 R8：接入不带混淆规则的原生 SDK 时要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件还要自己在清单里声明（现在没有这类 SDK：原生高德 11-10 随地图改网页版删掉，test/legal_page_test.dart 守护它与规则同进同出）。CI 只跑测试；release 包由发版流水线构建，正式发版前可先试跑，用试跑产物在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
+- release 包开启 R8：接入不带混淆规则的原生 SDK 时要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件还要自己在清单里声明（现在没有这类 SDK：原生高德 11-10 随地图改网页版删掉，test/legal_page_test.dart 守护它与规则同进同出）。CI 另编开发包的 arm64 profile 包（Android build，先不是必需检查；没有模拟器冒烟，软件渲染下模拟器会崩）；release 包与 R8 只在发版流水线构建，正式发版前可先试跑，用试跑产物在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
 - 暂不改动的事项（只被测试使用的公开方法、性能观察项、单校写死）记在对应模块 CLAUDE.md 的关键规则里，改动前先看。
