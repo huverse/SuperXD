@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:superxd/playground/challenge/challenge_rules.dart';
+import 'package:superxd/playground/puzzle/balance/balance_rules.dart';
 import 'package:superxd/playground/puzzle/flash/flash_rules.dart';
 import 'package:superxd/playground/puzzle/hanoi/hanoi_rules.dart';
 import 'package:superxd/playground/puzzle/ice/ice_rules.dart';
@@ -106,6 +107,7 @@ Map<String, Object?> buildChallengeVectors({int seedsPerTier = 2, int seed = 0x5
     cases.addAll(_goalCases(game, rules));
     cases.addAll(_trapCases(game, rules));
     if (rules is RiverRules) cases.addAll(_riverCases(game, rules));
+    cases.addAll(_balanceCases(game));
     games[game] = cases;
   }
   // 每个游戏的题面写法版本：服务端按它核对自己的判定认得哪一版（test/challenge_judge.test.ts）。
@@ -299,6 +301,28 @@ List<HanoiMove> _hanoiIdle(int extra) => [
 // 步数按答案的项数算（汉诺塔一项一步），只给带 minimum 的向量用。
 bool challengePassed(String game, Object? puzzleJson, Object? answerJson, int minimum) =>
     challengeVerdict(game, puzzleJson, answerJson)['kind'] == 'solved' && (answerJson! as List).length <= challengeStepLimit(game, minimum);
+
+// 天平称球的题型在档内随机，上面每档两道不一定碰得到每种题型：每档每种题型（已知轻重的偏重、偏轻各一）再出一道，向量覆盖题库会有的全部题型。
+// 用自己的固定种子，不动上面已有的向量。
+List<Map<String, Object?>> _balanceCases(String game) {
+  if (game != 'balance') return const [];
+  final rules = challengeRules[game]!;
+  final random = PuzzleRandom(0xBA1A);
+  return [
+    for (final MapEntry(key: tier, value: plans) in BalanceRules.pools.entries)
+      for (final plan in plans)
+        for (final weight in plan.known ? [BalanceWeight.heavy, BalanceWeight.light] : [BalanceWeight.unknown])
+          () {
+            final puzzle = BalancePuzzle(balls: plan.balls, weighings: plan.weighings, weight: weight, direction: plan.direction, standards: plan.standards, fakes: plan.fakes, seed: random.nextUint32());
+            final encoded = rules.encodePuzzle(puzzle), reference = rules.encodeAnswer(balanceSolve(puzzle)!);
+            return {
+              'tier': tier.name,
+              'puzzle': encoded,
+              'answers': [for (final answer in [reference, ..._mutations(reference, random)]) {'answer': answer, 'expect': challengeVerdict(game, encoded, answer)}],
+            };
+          }(),
+  ];
+}
 
 Future<void> main(List<String> arguments) async {
   String? option(String name) {

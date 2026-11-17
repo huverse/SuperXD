@@ -1,3 +1,4 @@
+import { balanceJudgeV2 } from 'src/modules/challenge/judges/balance_judges';
 import { balanceJudge, flashJudge, flashJudgeV2, loopJudge, minesJudge, twentyFourJudge } from 'src/modules/challenge/judges/board_judges';
 import { cipherJudge, logicGridJudge } from 'src/modules/challenge/judges/deduction_judges';
 import { Judge, JudgeFormatError } from 'src/modules/challenge/judges/judge_input';
@@ -23,7 +24,7 @@ const judges = {
   mines: { 1: minesJudge },
   flash: { 1: flashJudge, 2: flashJudgeV2 },
   loop: { 1: loopJudge },
-  balance: { 1: balanceJudge },
+  balance: { 1: balanceJudge, 2: balanceJudgeV2 },
 } as unknown as Record<string, Record<number, Judge<unknown, unknown>>>;
 
 export const judgedGames = new Set(Object.keys(judges));

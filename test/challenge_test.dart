@@ -273,9 +273,10 @@ void main() {
       expect(loopInside(loop, edges), 4);
       final cipher = const CipherRules().generate(3, PuzzleTier.normal);
       expect(challengeFragment('cipher', cipher.puzzle, cipher.solution), cipher.solution.fold<int>(0, (sum, digit) => sum + digit));
-      final balanceEntry = const BalanceRules().generate(1, PuzzleTier.entry), balanceExpert = const BalanceRules().generate(1, PuzzleTier.expert);
+      // 入门种子 2 是 9 个已知偏重称 2 次，困难种子 4 是 16 个称 4 次。
+      final balanceEntry = const BalanceRules().generate(2, PuzzleTier.entry), balanceHard = const BalanceRules().generate(4, PuzzleTier.hard);
       expect(challengeFragment('balance', balanceEntry.puzzle, balanceEntry.solution), 2);
-      expect(challengeFragment('balance', balanceExpert.puzzle, balanceExpert.solution), 3);
+      expect(challengeFragment('balance', balanceHard.puzzle, balanceHard.solution), 4);
     });
 
     test('记忆闪光镜像：亮的照常亮，要点左右镜像的格；冰面滑行的出口只给页面画、判定只看终点', () {
