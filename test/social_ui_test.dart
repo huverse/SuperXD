@@ -389,7 +389,7 @@ void main() {
     }
     Future<SocialService> bare({bool offline = false}) async {
       final directory = Directory(path.join(temporary.path, 'share_${_databases++}'))..createSync();
-      final social = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: directory.path), accountKeys: MemoryAppAccountVault(), transport: relay.transport(), friendKeys: FakeRelay.friendKeys);
+      final social = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: directory.path), accountKeys: MemoryAppAccountVault(), transport: relay.transport(), serverKeys: FakeRelay.serverKeys);
       if (offline) await social.setOffline(true);
       await social.switchAccount(null);
       return social;
