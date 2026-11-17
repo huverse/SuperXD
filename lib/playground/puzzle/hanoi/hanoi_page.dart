@@ -16,7 +16,8 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 
-// 汉诺塔对局页：点一根柱子拿起最上面的盘子（盘子浮到柱顶上方，能放的柱子柱身亮起），再点另一根放下；也可以直接按住盘子拖到别的柱子上。
+// 汉诺塔对局页：点一根柱子拿起最上面的盘子（盘子浮到柱顶上方），再点另一根放下；也可以直接按住盘子拖到别的柱子上。
+// [人工决策-2026-11-17 14:17:05] 拿起盘子时不亮出能放的柱子（柱身不变色、读屏不读「可以放」）：用户认为那等于直接告诉哪里合规；方向不许时的提示条照旧。
 // 棋盘上方是目标的缩略图（同样的配色）；相邻、循环的挪法在底座下面画箭头。不合规的放法轻震、盘子左右晃一晃退回原处，不算步数；方向不许时提示条说规矩。
 class HanoiPage extends StatefulWidget {
   const HanoiPage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
@@ -70,9 +71,6 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
     final start = puzzle.start.every((peg) => peg == puzzle.start.first) ? puzzle.start.first : null;
     return [for (var peg = 0; peg < puzzle.pegs; peg++) if (peg != start && _pegs[peg].length == puzzle.disks) peg].isNotEmpty;
   }
-
-  // 拿着盘子时（点选或拖动）它的那根柱子；没拿着为空。
-  int? get _holding => _dragPeg ?? _lifted;
 
   void _reset() {
     hideCampusToast();
@@ -245,21 +243,16 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
     final rodTop = top + height * 1.8;
     final base = rodTop + rod;
     final motion = MediaQuery.disableAnimationsOf(context) ? Duration.zero : _settle;
-    final holding = _holding;
-    bool droppable(int peg) => holding != null && peg != holding && hanoiLegal(puzzle, _pegs, (from: holding, to: peg));
 
     int pegAt(double x) => (x / column).floor().clamp(0, pegs - 1);
 
     final children = <Widget>[
-      // 底座与柱子；拿着盘子时能放的柱子柱身着激活色淡色。
+      // 底座与柱子。
       Positioned(left: 4, right: 4, top: base, height: 10, child: DecoratedBox(decoration: BoxDecoration(color: palette.outlineSubtle, borderRadius: BorderRadius.circular(5)))),
       for (var peg = 0; peg < pegs; peg++) ...[
         Positioned(
           left: column * (peg + .5) - 3, width: 6, top: rodTop, height: rod + 2,
-          child: AnimatedContainer(
-            duration: motion,
-            decoration: BoxDecoration(color: droppable(peg) ? Color.lerp(palette.outlineSubtle, palette.accent, .45) : palette.outlineSubtle, borderRadius: BorderRadius.circular(3)),
-          ),
+          child: DecoratedBox(decoration: BoxDecoration(color: palette.outlineSubtle, borderRadius: BorderRadius.circular(3))),
         ),
         if (_hidden)
           Positioned(left: column * peg, width: column, top: base + 10 + arrows, child: Text('①②③④'[peg], textAlign: TextAlign.center, style: TextStyle(fontSize: CampusFontSize.body, color: palette.onSurfaceVariant))),
@@ -301,13 +294,13 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
         ));
       }
     }
-    // 读屏：每根柱子一个按钮，读出盘子数与最上面是几号、拿着盘子时能不能放，点按同手指点柱子。
+    // 读屏：每根柱子一个按钮，读出盘子数与最上面是几号，点按同手指点柱子。
     for (var peg = 0; peg < pegs; peg++) {
       final stack = _pegs[peg];
       children.add(Positioned(left: column * peg, width: column, top: 0, bottom: 0, child: Semantics(
         container: true,
         button: true,
-        label: '第${peg + 1}根柱子，${stack.isEmpty ? '空' : '${stack.length}个盘子，最上面是${stack.last + 1}号'}${_lifted == peg ? '，已拿起' : ''}${droppable(peg) ? '，可以放' : ''}',
+        label: '第${peg + 1}根柱子，${stack.isEmpty ? '空' : '${stack.length}个盘子，最上面是${stack.last + 1}号'}${_lifted == peg ? '，已拿起' : ''}',
         onTap: () => _tapPeg(peg),
         child: const SizedBox.expand(),
       )));

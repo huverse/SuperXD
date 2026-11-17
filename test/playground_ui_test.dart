@@ -92,7 +92,7 @@ void main() {
     expect(find.widgetWithText(OutlinedButton, '汉诺塔'), findsOneWidget);
   });
 
-  testWidgets('汉诺塔：点选走完最优解弹出新纪录，违规不算步数，撤销退回，拖动也能挪；目标缩略图读出目标局面', (tester) async {
+  testWidgets('汉诺塔：点选走完最优解弹出新纪录，违规不算步数，撤销退回，拖动也能挪；目标缩略图读出目标局面，拿起时不亮出能放的柱子', (tester) async {
     final semantics = tester.ensureSemantics();
     final store = PlaygroundStore.memory();
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: HanoiPage(game: _game('hanoi'), store: store, seeds: () => 1)));
@@ -108,12 +108,12 @@ void main() {
     // 违规：大盘压小盘，轻震退回、不算步数。
     await _hanoiTap(tester, _hanoiMove(puzzle, legal: false));
     expect(find.textContaining('0 步'), findsOneWidget);
-    // 拿起时能放的柱子读屏读「可以放」。
+    // 拿起时只读「已拿起」，不亮出能放的柱子（人工决策见 hanoi_page.dart 文件头）。
     final first = _hanoiMove(puzzle, legal: true);
     await _tapOn(tester, _peg(first.from));
     await _step(tester);
-    expect(find.bySemanticsLabel(RegExp('^第${first.to + 1}根柱子.*可以放')), findsOneWidget);
     expect(find.bySemanticsLabel(RegExp('^第${first.from + 1}根柱子.*已拿起')), findsOneWidget);
+    expect(find.bySemanticsLabel(RegExp('可以放')), findsNothing);
     await _tapOn(tester, _peg(first.from));
     await _step(tester);
     // 拖动挪一步。
