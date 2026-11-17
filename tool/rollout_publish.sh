@@ -21,5 +21,6 @@ curl -fsS --max-time 30 -o /dev/null "$RELAY_URL/v1/app/flags" || { echo '中转
 rsync -t --chmod=F644 "$out/flags.json" "$out/rollout.json" "$RELAY_TARGET"
 for name in flags rollout; do
   curl -fsS --max-time 30 -o "$out/served_$name.json" "$RELAY_URL/v1/app/$name"
-  python3 -I -c 'import json, sys; built, served = (json.load(open(path, encoding="utf-8")) for path in sys.argv[1:3]); assert served.get("envelope") is not None, "中转返回里没有签名信封"; assert built == served, "中转上的 %s 与签好的不一致" % sys.argv[3]; print("[RolloutPublish] action=relay_check file=%s signed=true" % sys.argv[3])' "$out/$name.json" "$out/served_$name.json" "$name"
+  # 第 2 版的返回另带中转自己加的 paused（自动暂停的分批更新，不签名，见服务端 app_release.service.ts），比对前拿掉。
+  python3 -I -c 'import json, sys; built, served = (json.load(open(path, encoding="utf-8")) for path in sys.argv[1:3]); paused = served.pop("paused", []) if sys.argv[3] == "flags" else []; assert isinstance(paused, list), "paused 不是数组"; assert served.get("envelope") is not None, "中转返回里没有签名信封"; assert built == served, "中转上的 %s 与签好的不一致" % sys.argv[3]; print("[RolloutPublish] action=relay_check file=%s signed=true" % sys.argv[3])' "$out/$name.json" "$out/served_$name.json" "$name"
 done
