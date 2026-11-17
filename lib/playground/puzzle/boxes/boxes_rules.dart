@@ -105,15 +105,17 @@ class BoxesRules extends PuzzleRules<BoxesPuzzle, List<int>> {
   // 区间与参数按实测定（11-12 每档 200 个种子）：
   // - 最少推数的区间档与档之间不重叠。各档房间不限推数时最深能倒到：入门 3–9（中位 5）、简单 3–19（中位 9）、普通中位约 15、
   //   困难中位约 20、专家中位约 27；区间下沿取在中位附近，倒不到的房间整张换掉（专家平均两三张出一道），上沿以上的房间取上沿那一层。
-  // - 专家上沿压到 40：再深的参考走法要四五百步，手机上推完太久。
+  // - 11-17 小修：区间对齐预计用时的难度分（boxesDifficulty 的段与 puzzlePace），五档各占一级（3、4、5、6、7）：原来入门 4–8、困难 20–26、
+  //   专家 27–40，入门 7、8 推的与简单同为 4 分，困难 24 推起与专家同为 7 分，五档预计用时中位 49、85、148、257、446 秒（每档 200 道实测），
+  //   困难、专家是别的游戏同档的一倍半以上；现在入门 4–6、困难 20–23、专家 24–31，中位 49、85、148、195、339 秒。
   // - 墙块占比试过整体再加一成：房间更像走廊，但能放箱子的格少了，反而倒不深，所以只比小房间略高。
   // - 倒推上限：专家 9×9 四个箱子的局面最多，上限内倒不到区间就换房间；实测每档 200 道都没碰到出不来题的情况。
   static const _tiers = <PuzzleTier, _Shape>{
-    PuzzleTier.entry: (inner: 5, boxes: (1, 1), least: (4, 8), density: (.14, .24), reverseLimit: 3000),
+    PuzzleTier.entry: (inner: 5, boxes: (1, 1), least: (4, 6), density: (.14, .24), reverseLimit: 3000),
     PuzzleTier.easy: (inner: 6, boxes: (2, 2), least: (9, 13), density: (.14, .24), reverseLimit: 8000),
     PuzzleTier.normal: (inner: 7, boxes: (2, 3), least: (14, 19), density: (.16, .26), reverseLimit: 12000),
-    PuzzleTier.hard: (inner: 8, boxes: (3, 3), least: (20, 26), density: (.18, .28), reverseLimit: 16000),
-    PuzzleTier.expert: (inner: 9, boxes: (3, 4), least: (27, 40), density: (.2, .3), reverseLimit: 20000),
+    PuzzleTier.hard: (inner: 8, boxes: (3, 3), least: (20, 23), density: (.18, .28), reverseLimit: 16000),
+    PuzzleTier.expert: (inner: 9, boxes: (3, 4), least: (24, 31), density: (.2, .3), reverseLimit: 20000),
   };
 
   // 出题（倒推法）：
@@ -125,8 +127,8 @@ class BoxesRules extends PuzzleRules<BoxesPuzzle, List<int>> {
   //    倒推的每一步都能原样推回去，所以拉到的每个局面都可解；广度优先第一次拉到某个局面时的层数，就是它的最少推数
   //    （倒推本身就是一个按推数分层的完整搜索，所以不再从开局正着求一遍：正向 A* 在专家档要多花四成时间。
   //    测试里每道题都拿正向求解器 boxesSolve 核对过最少推数一致）。局面数超过这一档的上限还没倒到区间，就换一张房间。
-  // 4. 在层数落在这一档区间里的局面中挑最深的一层，随机取一个合格的（每个箱子都得挪，且不是每个箱子各自一推到底），
-  //    玩家放在它那块区域里随机一格。
+  // 4. 在层数落在这一档区间里的局面中挑最深的一层，打乱后看 12 个，合格的（每个箱子都得挪，且不是每个箱子各自一推到底）里取推的段数最多的
+  //    （11-17 起；原来取第一个合格的，普通起参考解平均每段 1.82 推，现在约 1.68 推，同样的推数要多换几次箱子或方向），玩家放在它那块区域里随机一格。
   // 5. 顺着倒推链正着推回去，展开成每步的走法作参考解，按规则重放确认推得回去（推不回去就换一道）。
   @override
   PuzzleDraw<BoxesPuzzle, List<int>> generate(int seed, PuzzleTier tier) {
@@ -311,8 +313,9 @@ class BoxesRules extends PuzzleRules<BoxesPuzzle, List<int>> {
   List<int> decodeAnswer(Object? json) => puzzleInts(json, maxLength: boxesMaxMoves, min: 0, max: boxesDirections - 1);
 }
 
-// 难易分 1–10：按最少推数分段，段界对齐各档最少推数的区间（入门 4–8、简单 9–13、普通 14–19、困难 20–26、专家 27–40），
-// 所以档与档的分数段不重叠：入门 1–2、简单 3、普通 4–5、困难 6–7、专家 8–10。箱子数已经随档定，推数又随箱子数涨，不另算。
+// 难易分 1–10：按最少推数分段，各档最少推数的区间（入门 4–6、简单 9–13、普通 14–19、困难 20–23、专家 24–31）对齐段界，
+// 所以档与档的分数段不重叠：入门 1、简单 3、普通 4–5、困难 6、专家 7–8，换成预计用时是难度分 3、4、5、6、7 各一级。
+// 箱子数已经随档定，推数又随箱子数涨，不另算。
 int boxesDifficulty(int pushes) => switch (pushes) {
   <= 6 => 1,
   <= 8 => 2,
@@ -636,25 +639,31 @@ class _Board {
     for (final depth in order.reversed) {
       final candidates = levels[depth]!;
       random.shuffle(candidates);
+      // 这一层打乱后看前 12 个，合格的里留推的段数最多的（一样多留先看到的）：同样的推数，要来回换着推、换方向推的比一推到底的难想。
+      int? best;
+      List<_Push>? bestPushes;
+      var bestSegments = 0;
       for (final head in candidates.take(12)) {
         // 顺着倒推链正着推回去：倒推那一步把箱子从 pullBox 拉到它的 pullDirection 一侧，正着推是从那一侧推回 pullBox，方向相反。
         final pushes = <_Push>[
           for (var at = head; parents[at] >= 0; at = parents[at]) (box: next[pullBox[at] * 4 + pullDirection[at]], direction: (pullDirection[at] + 2) % 4),
         ];
-        final boxes = _unpack(keys[head]);
-        if (!_lively(boxes, pushes)) continue;
-        _load(keys[head]);
-        _fill(players[head]);
-        final region = [for (var index = 0; index < _filled; index++) _queue[index]]..sort();
-        _unload();
-        return (boxes: boxes..sort(), player: random.pick(region), depth: depth, pushes: pushes);
+        final segments = _segments(_unpack(keys[head]), pushes);
+        if (segments > bestSegments) (best, bestPushes, bestSegments) = (head, pushes, segments);
       }
+      if (best == null) continue;
+      final boxes = _unpack(keys[best]);
+      _load(keys[best]);
+      _fill(players[best]);
+      final region = [for (var index = 0; index < _filled; index++) _queue[index]]..sort();
+      _unload();
+      return (boxes: boxes..sort(), player: random.pick(region), depth: depth, pushes: bestPushes!);
     }
     return null;
   }
 
-  // 合格的开局：每个箱子都至少挪一次，且「推的段数」（同一个箱子朝同一方向连着推算一段）比箱子数多，不是每个箱子各自一推到底就完。
-  bool _lively(List<int> start, List<_Push> pushes) {
+  // 推的段数（同一个箱子朝同一方向连着推算一段）；不合格的开局是 0：要每个箱子都至少挪一次，且段数比箱子数多，不是每个箱子各自一推到底就完。
+  int _segments(List<int> start, List<_Push> pushes) {
     final boxes = [...start];
     final moved = List.filled(count, false);
     var segments = 0, lastBox = -1, lastDirection = -1;
@@ -666,7 +675,7 @@ class _Board {
       lastBox = index;
       lastDirection = push.direction;
     }
-    return !moved.contains(false) && segments > count;
+    return !moved.contains(false) && segments > count ? segments : 0;
   }
 
   // 把一串推法展开成每步的方向：每次推之前，广度优先走最短的路到箱子背后那一格，再推。
