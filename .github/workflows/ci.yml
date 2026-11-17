@@ -146,9 +146,10 @@ jobs:
     defaults:
       run:
         working-directory: server
+    # MySQL 与 Redis 的版本同线上（server/docker-compose.yml），升级时连同 docker-compose.test.yml 与 relay-image.yml 的试运行一起改。
     services:
       mysql:
-        image: mysql:8.4
+        image: mysql:8.4.13
         env:
           MYSQL_ROOT_PASSWORD: test-root
           MYSQL_DATABASE: superxd_relay_test
@@ -159,7 +160,7 @@ jobs:
           --health-cmd "mysqladmin ping -h 127.0.0.1 -uroot -ptest-root --silent"
           --health-interval 5s --health-timeout 5s --health-retries 30
       redis:
-        image: redis:8-alpine
+        image: redis:8.10.3-alpine
         ports: ['6380:6379']
         options: --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 30
     steps:
@@ -170,6 +171,10 @@ jobs:
           cache: npm
           cache-dependency-path: server/package-lock.json
       - run: mysql -h 127.0.0.1 -P 3307 -usuperxd -ptest superxd_relay_test < sql/schema.sql
+      # 表结构漂移检查（人工决策见 server/scripts/migrate_db.sh 文件头）：最早的基线 + 全部升级文件 = schema.sql、升级文件可重复执行、台账登记完整。
+      # 在同版本的 mysql 镜像里跑（客户端与服务端一致，镜像已随上面的服务拉好），临时库跑完即删。
+      - name: Schema drift check
+        run: docker run --rm --network host -v "$PWD":/w -w /w -e MIGRATE_MYSQL_HOST=127.0.0.1 -e MIGRATE_MYSQL_PORT=3307 -e MIGRATE_ROOT_PASSWORD=test-root mysql:8.4.13 bash scripts/schema_drift_check.sh
       - run: npm ci
       - run: npm run typecheck
       - run: npm test

@@ -19,7 +19,7 @@
 
 - 静态检查与测试：PUB_HOSTED_URL=https://pub.dev flutter analyze；PUB_HOSTED_URL=https://pub.dev flutter test test/<文件>.dart，必要时去掉文件名跑全量。本机默认镜像会改写 pubspec.lock，所以 flutter 命令一律加这个前缀，提交前确认 pubspec.lock 没变。
 - 运行：flutter run 默认是 production flavor（开发包，与 Alpha 包并装、数据不共享）。私信与代签要 --dart-define=SUPERXD_RELAY=<中转地址>，地图（网页版高德）要 --dart-define=SUPERXD_AMAP_WEB_KEY=<key> 与 --dart-define=SUPERXD_AMAP_WEB_SECRET=<安全密钥>，视频解析的 BugPK 新版来源要 --dart-define=SUPERXD_SVPARSE_KEY=<key>，这些都不写进源码（发版流水线从 release 环境的机密注入）。
-- 服务端：cd server，docker compose -f docker-compose.test.yml up -d --wait 起测试库后 npm test；npm run typecheck。
+- 服务端：cd server，docker compose -f docker-compose.test.yml up -d --wait 起测试库后 npm test；npm run typecheck。改了 server/sql 跑表结构漂移检查 scripts/schema_drift_check.sh，线上升级只经台账脚本 scripts/migrate_db.sh（用法见两个文件头与 server/README.md「表结构升级台账」）。
 - 发版由流水线 .github/workflows/release.yml 全自动完成（安卓三个架构加 iOS 未签名包）：升版本 PR 合并到 main 即构建与发布，不再要网页批准；升版本 PR 只在用户明确要求发版时开；约定与本机构建见 CONTRIBUTING.md。
 - 依赖升级由 Dependabot 每周提 PR（.github/dependabot.yml）；main 合并要 CI 三个作业都过；iOS 锁文件怎么从 CI 取、发布来源证明怎么核对，见 CONTRIBUTING.md「供应链」。
 

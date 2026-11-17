@@ -125,6 +125,7 @@
 - 环境变量见 .env.example，只在 src/config/env.ts 读取，缺必填项启动即失败。
 - 起测试库：docker compose -f docker-compose.test.yml up -d --wait（宿主机网络，MySQL 3307、Redis 6380，库在内存里）。
 - npm test：类型检查用 npm run typecheck；npm run build && npm run smoke 检查编译产物能在 Node ESM 下加载（类型导入被编译成运行时导入这类问题只在这里暴露，Vitest 测不到；Docker 构建与 CI 都会跑）；e2e 覆盖注册、签名、防重放、校时、未注册设备号的负缓存（只查一次库、注册立刻生效、与注册交错不误记）、扫码加好友（多人、凭证防盗用、作废）、收发幂等、分页、上限、发送的分钟与每天限流、关闭私信与数据保留；代签凭据包（chaoxing_pack.e2e.test.ts）覆盖取走即删、并发只取到一份、大小与格式、2KB 边界与 8KB 请求体上限、提交与取件限流、作废口令、过期与清理不误删、IPv6 按 /64 聚合；应用更新（app_release.e2e.test.ts）覆盖按架构取包、换清单即生效、灰度配置的透传与写坏不外发、清单写坏不外发、签名信封按架构原样透传与写坏不外发、128KB 文件上限、参数与文件名校验、整包与 Range 下载、限流；私信挂到应用账号（social_account.e2e.test.ts）覆盖挂上与幂等、凭证不对与没登录、一台私信设备不能挂两个账号、换手机没带接管被拒与接管后好友改挂（对方看到新公钥与旧号、确认后不再提示、旧设备与没收的信删掉）、再接管回来、两台手机的好友合在一起、关闭私信与注销连带删除；节日抽奖（reward.e2e.test.ts）覆盖要求登录了应用账号的设备签名、一个账号只抽一次（换设备还是同一个结果）、账号不满 7 天不能抽、加权与均匀放量、积分等级加权与按等级挑金额档、并发发奖、按设备与按来源限流、删除设备后不能再抽、维护命令与保留；应用账号（account.e2e.test.ts）覆盖客户端信封向量、注册（不分大小写、先到先得、库里只有 scrypt 哈希）、登录（不对一律 CREDENTIALS_INVALID）、信封封给别的设备或内容不全不认、按用户名加来源与按设备的限流、恢复码重设（旧密码旧恢复码作废、别的设备下线，改密码不动）、登录着改密码换恢复码、扫码登录（核对码、没登录的设备、别的设备来问、过期、已被别的账号批准、出示的新设备按来源限流、机型与属地记进票据且不存 IP、批准前看票据、新设备作废票据）、退出连带删登记、注销后用户名空出与墓碑（ACCOUNT_DELETED、保留期清理）、别的签名请求按小时记最后活跃、20 把密钥上限与 400 天清理；属地写法在 ip_region.test.ts（本机有离线库时顺带核对真实查询）；积分与挑战（challenge.e2e.test.ts，题库用判定向量里的题）覆盖没登录不给、本周挑战与玩不了的标记、整局走完（错交计数、重发只算一次、碎片只在过关回复里给、门输错扣时间、门开了才给题面、终章输对全通关结算、快得不正常追加加试题且最多几道、最少步数不对算错交）、只补最好成绩差额、同时一局与错交到上限、到点结算与定时结算、注销连带删除、积分过期与保留、门票（不够不开也不扣、先扣快过期的、结束不退）与等级（花了不减、门槛来自灰度配置）、配置热加载与写坏不换；解锁（unlock.e2e.test.ts）覆盖谁能用（公开、等级、买、下架、配置读不了）、花积分买（不够、先扣快过期、不重复扣、买不了的几种、等级够不扣）、抽中记下与降级不踢出、下架退回不算等级且不重复退、公开满 30 天删记录、注销连带删、配置不合规不外发；健康回报（app_health.e2e.test.ts）覆盖暂停判定的阈值、回报的累加与拒收、限流、自动暂停经 /v1/app/flags 透出与解除、意见与维护命令、保留期；灰度点名（flag_target.e2e.test.ts）覆盖没登录、管理命令的点名改期撤销列出与坏输入、只回没过期的、清理任务与注销连带删，以及第 2 版配置 /v1/app/flags 的透传与写坏不外发；判定与 Dart 逐条一致在 challenge_judge.test.ts（向量由客户端 tool/challenge_vectors.dart 生成），周期日界、配置校验、出题（碎片、门与改写题面、计划挑选）、预计用时的回调与计分口径在 challenge_rules.test.ts；诊断包（diagnostic.e2e.test.ts）覆盖原样落盘与 600 权限、没有下载、只收二进制、24MB 与分块在读请求体前拒收、限流、目录满回 503、中途断开不留残片并退回额度、到期清理与已用量校正。
+- 表结构漂移检查：本机没有 mysql 客户端时在同版本镜像里跑，docker run --rm --network host -v "$PWD":/w -w /w -e MIGRATE_MYSQL_HOST=127.0.0.1 -e MIGRATE_MYSQL_PORT=3307 -e MIGRATE_ROOT_PASSWORD=test-root mysql:8.4.13 bash scripts/schema_drift_check.sh（建删临时库，库名带进程号，不碰测试库里的表）。
 - npm run dev：swc 监听编译，bun 运行并在产物变化时重启。
 - 客户端联调：仓库根目录 flutter test tool/verify_social.dart --dart-define=SUPERXD_RELAY=http://127.0.0.1:端口。
 
@@ -132,7 +133,7 @@
 
 1. 安装 Docker 与 Compose 插件。
 2. 复制本目录到服务器（git archive <提交>:server 打包，天然不含 .env、node_modules 与 dist），cp .env.example .env，把三个密码换成随机长串（如 openssl rand -hex 24，只留在服务器上）；RELAY_PUBLIC_PORT 为对外端口。国内服务器：NPM_REGISTRY 改为 https://registry.npmmirror.com；Docker Hub 不通时在 /etc/docker/daemon.json 配 registry-mirrors（如 https://docker.m.daocloud.io、https://docker.1ms.run）。
-3. 中转镜像按下面「镜像部署与回滚」加载，再 docker compose up -d --no-build（只在没有流水线镜像时才用 --build 在服务器上构建，小内存机器上约 6 分钟）。首次启动时 MySQL 自动执行 sql/schema.sql 建表；之后的表结构变更由人工执行，服务启动不做 DDL。已有的库按日期执行 sql 下的 upgrade_*.sql（先备份、再执行升级、最后部署新版服务），例如 upgrade_2026_10_08.sql 给 chaoxing_pack 加作废口令哈希列。
+3. 中转镜像按下面「镜像部署与回滚」加载，再 docker compose up -d --no-build（只在没有流水线镜像时才用 --build 在服务器上构建，小内存机器上约 6 分钟）。首次启动时 MySQL 自动执行 sql/schema.sql 建表，起来后跑一次 scripts/migrate_db.sh 把升级文件都登记进台账（在新库上都是空操作）；之后的表结构变更由人工执行，服务启动不做 DDL：已有的库先备份、再用 scripts/migrate_db.sh 执行还没登记的 upgrade_*.sql、最后部署新版服务，见下面「表结构升级台账」。
 4. curl http://服务器:端口/v1/health 应返回 {"protocol":1,...,"version":"<提交号>"}。防火墙（云服务器还有安全组）只放行中转端口，MySQL 与 Redis 不对外。
    小内存机器（2GB 以内）已按 compose 里的参数关闭 MySQL performance_schema、缓冲池 128MB。
    MySQL 与 Redis 镜像在 compose 里固定到补丁版：第一次按固定版本启动（或以后改版本）会换掉服务器上原来的镜像，MySQL 在 8.4 长期支持线内原地升级，先跑一次备份。
@@ -157,13 +158,22 @@
 
 换正式域名：在前面加 Nginx 或 Caddy 终止 HTTPS，把 RELAY_TRUST_PROXY 设为 1（按 X-Forwarded-For 取客户端 IP），客户端改用 --dart-define=SUPERXD_RELAY=https://域名 重新构建即可，协议与数据不变。中国大陆服务器使用域名须先完成 ICP 备案。
 
+# 表结构升级台账
+
+人工决策见 scripts/migrate_db.sh 文件头。
+- 台账表 schema_migration 记执行过哪些 sql/upgrade_*.sql、何时、文件内容的 sha256。scripts/migrate_db.sh 按文件名顺序（字节序，upgrade_2026_11_14.sql 在 upgrade_2026_11_14b.sql 之前）执行台账里没有的、每执行完一个登记一行；--status 列出 applied、baseline、pending 与 changed；--structure 打印规范化的表结构。连接同 backup_db.sh（在 mysql 容器里用容器自己的账号环境变量）。
+- 升级文件的规矩：每个都可重复执行（加列、加索引先查 information_schema，改数据的语句带「只在旧结构时做」的条件，见 upgrade_2026_11_15b.sql 的 @legacy）；只做加法；合并上线后不再改，要改就新加一个。已登记的文件内容变了，台账脚本停下、什么也不执行，并给出核对后改校验和的语句。
+- 线上第一次接入（11-17 这一版）：升级文件到 upgrade_2026_11_16e.sql 都已手工执行过，先 scripts/migrate_db.sh --baseline upgrade_2026_11_16e.sql（建台账表、把这些只登记不执行），再照常 scripts/backup_db.sh、scripts/migrate_db.sh（执行建台账的 upgrade_2026_11_17.sql，空操作）。
+- 漂移检查 scripts/schema_drift_check.sh（CI 的 Relay server test 每次跑）：在临时库上核对「最早的基线 sql/baseline/schema_2026_10_06.sql + 全部升级文件」与 sql/schema.sql 的结构一致（列的先后、类型、可空、默认值、生成列、字符集、索引、引擎与排序规则，不比注释），每个升级文件再执行一遍结构不变，新库跑台账脚本只是登记。所以升级时加在末尾的列，schema.sql 里也写在末尾。
+- 想核对线上结构：在服务器上 scripts/migrate_db.sh --structure，与本机对新库跑出的结果比。
+
 # 镜像部署与回滚
 
 镜像由流水线构建，服务器只加载（人工决策见 .github/workflows/relay-image.yml）：main 上 server 目录有改动就构建一次，镜像标签与 /v1/health 的 version 都是提交号前 12 位。部署仍由维护者在用户当次授权后手动执行，流水线不接触服务器。
 
 1. 取镜像包（主路径）：在 Actions 的 Relay image 运行页下载产物 superxd-relay-<版本>（含 superxd-relay-<版本>.tar.gz 与 .sha256，保留 30 天），传到服务器的 /opt/superxd-relay/images，sha256sum -c superxd-relay-<版本>.tar.gz.sha256 核对后 docker load -i superxd-relay-<版本>.tar.gz。
    备选：服务器能连上 ghcr.io 时 docker pull ghcr.io/huverse/superxd-relay:<版本>，再 docker tag 成 superxd-relay:<版本>（包默认私有，要先在包设置里改公开或用只读令牌登录）。
-2. 同步配置：本次提交的 server 目录（compose、sql、scripts）照第 2 步 git archive 覆盖上去；有新的 upgrade_*.sql 先跑备份再执行。
+2. 同步配置：本次提交的 server 目录（compose、sql、scripts）照第 2 步 git archive 覆盖上去；scripts/migrate_db.sh --status 有 pending 的，先跑 scripts/backup_db.sh 再 scripts/migrate_db.sh。
 3. 记下正在跑的镜像（回滚用）：docker inspect -f '{{.Config.Image}}' superxd-relay-relay-1（容器名以 docker compose ps 为准）。
 4. 把 .env 里的 RELAY_IMAGE 改成 superxd-relay:<版本>，docker compose up -d --no-build --no-deps relay。--no-build 让标签写错时直接报错，不会在服务器上现场构建；--no-deps 不顺带重建 MySQL 与 Redis。
 5. 核对：docker inspect -f '{{.State.Health.Status}}' 容器名 变成 healthy（约半分钟内），curl /v1/health 的 version 等于这次的版本，docker logs 没有报错。
@@ -180,7 +190,7 @@
 - 恢复：
   1. docker compose stop relay（恢复期间不再有写入）。
   2. scripts/restore_db.sh backups/<文件>.sql.gz --yes：先核对压缩包完整、以 mysqldump 的结束标记收尾，再整表替换备份里的那几张（message、chaoxing_pack 与 challenge_run 不动）。
-  3. 备份之后执行过的 upgrade_*.sql 要再执行一遍（备份里是当时的表结构）。
+  3. scripts/migrate_db.sh：备份里是当时的表结构与当时的台账，备份之后执行过的升级文件会显示为 pending，它按顺序补上（都可重复执行）。
   4. docker compose start relay，等 healthy 后 curl /v1/health。
 - 恢复的代价：备份之后才注册的设备、新加的好友关系与抽签记录会丢。私信客户端遇到 UNAUTHORIZED 会自己重新挂到应用账号（顺带登记设备）并重放一次，关闭私信遇到 UNAUTHORIZED 也照样清本机（人工决策见客户端 lib/social/social_service.dart 的 _authorized），所以丢了设备记录的用户下次收发时自动补上；只是备份之后加的好友要重新扫码。
 - 演练：用临时 MySQL（同一固定版本、服务名 mysql）加 COMPOSE_FILE、COMPOSE_PROJECT_NAME 环境变量指向它，造合成数据后备份、删表与删行、恢复，比对 CHECKSUM TABLE；坏的备份（截断、缺结束标记）与不带 --yes 一律被拒。不要拿共用的测试库演练。

@@ -1,8 +1,8 @@
 # 本机跑 e2e 用的临时 MySQL 与 Redis：docker compose -f docker-compose.test.yml up -d --wait
-# 用宿主机网络并改端口（MySQL 3307、Redis 6380），不依赖容器虚拟网卡，也不占用本机已有的 3306/6379。
+# 用宿主机网络并改端口（MySQL 3307、Redis 6380），不依赖容器虚拟网卡，也不占用本机已有的 3306/6379。版本同线上 docker-compose.yml 与 CI。
 services:
   mysql:
-    image: mysql:8.4
+    image: mysql:8.4.13
     network_mode: host
     environment:
       MYSQL_ROOT_PASSWORD: test-root
@@ -19,7 +19,7 @@ services:
       timeout: 5s
       retries: 60
   redis:
-    image: redis:8-alpine
+    image: redis:8.10.3-alpine
     network_mode: host
     command: ["redis-server", "--port", "6380", "--bind", "127.0.0.1", "--save", "", "--appendonly", "no"]
     healthcheck:

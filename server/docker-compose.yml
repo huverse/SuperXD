@@ -46,7 +46,7 @@ services:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }
 
-  # MySQL 与 Redis 固定到补丁版：升级时改这里，先跑一次备份（scripts/backup_db.sh）。
+  # MySQL 与 Redis 固定到补丁版：升级时改这里，先跑一次备份（scripts/backup_db.sh）；CI（ci.yml、relay-image.yml）与 docker-compose.test.yml 用同一版本，一起改。
   mysql:
     image: mysql:8.4.13
     restart: unless-stopped
