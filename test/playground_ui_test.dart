@@ -261,6 +261,81 @@ void main() {
     expect(tester.binding.hasScheduledFrame, isFalse);
   });
 
+  // 人工决策见 play_frame.dart 的 PlaySession（11-17 19:19:39）：从头来用时接着算、罚时算进成绩、看过答案的题不记成绩，换一道题才清。
+  test('从头来不清表、罚时算进成绩、揭开过答案的题不记成绩；换一道题才都清掉', () async {
+    final store = PlaygroundStore.memory();
+    final session = PlaySession(game: _game('hanoi'), rules: const _CountingRules(), store: store, seeds: () => 3);
+    expect(session.wrongPenalty, const Duration(seconds: 5), reason: '预计用时 10 秒的四分之一按 5 秒取整，至少 5 秒');
+    session.moved();
+    session.penalize(const Duration(seconds: 7));
+    expect(session.elapsed, greaterThanOrEqualTo(const Duration(seconds: 7)));
+    session.restart();
+    expect((session.running, session.started, session.penalty), (false, true, const Duration(seconds: 7)));
+    // 从头来之后、下一步之前表停着（切回前台也不走）。
+    final kept = session.elapsed;
+    session
+      ..pause()
+      ..resume();
+    await Future<void>.delayed(const Duration(milliseconds: 20));
+    expect(session.elapsed, kept);
+    session.moved();
+    expect(session.running, isTrue);
+    expect(await session.finish(moves: 1), isTrue);
+    expect(store.best('hanoi', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(7000), reason: '成绩含罚时');
+    // 解开后从头来再解一遍：用时只会更长，不刷新纪录。
+    session
+      ..restart()
+      ..moved();
+    expect(await session.finish(moves: 1), isFalse);
+    // 换一道题：表与罚时清零。踩雷那样揭开过答案的题，从头来再解开不记成绩（刚换的题用时很短，记的话就是新纪录）。
+    session.next();
+    expect((session.elapsed, session.penalty, session.started, session.spoiled), (Duration.zero, Duration.zero, false, false));
+    session
+      ..moved()
+      ..end(revealed: true)
+      ..restart()
+      ..moved();
+    expect(await session.finish(moves: 1), isFalse);
+    expect(session.spoiled, isTrue);
+    expect(store.best('hanoi', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(7000));
+    session.next();
+    expect(session.spoiled, isFalse);
+    session.dispose();
+  });
+
+  // 作弊机器人：解开以后从头来，照着刚才的走法飞快再走一遍。以前从头来把表清零，这一遍的几秒就成了新纪录。
+  testWidgets('解开后从头来照着走一遍：用时接着算，不刷新纪录', (tester) async {
+    final store = PlaygroundStore.memory();
+    await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: HanoiPage(game: _game('hanoi'), store: store, seeds: () => 1)));
+    await tester.pumpAndSettle();
+    final moves = const HanoiRules().generate(1, PuzzleTier.entry).solution;
+    // 第一遍边走边想：走了第一步后过了 1.5 秒（真实时间，用时按 Stopwatch 算），再走完，记下纪录。
+    await _hanoiTap(tester, moves.first);
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 1500)));
+    for (final move in moves.skip(1)) {
+      await _hanoiTap(tester, move);
+    }
+    await tester.pumpAndSettle();
+    expect(find.text('新纪录'), findsOneWidget);
+    final best = store.best('hanoi', PuzzleTier.entry)!.millis;
+    expect(best, greaterThanOrEqualTo(1500));
+    // 关掉结果、从头来，照着走一遍（几乎不花真实时间）。
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('更多操作'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('这一题从头来'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining(RegExp(r'^0:0[1-9]')), findsOneWidget, reason: '从头来不清表');
+    for (final move in moves) {
+      await _hanoiTap(tester, move);
+    }
+    await tester.pumpAndSettle();
+    expect(find.text('新纪录'), findsNothing);
+    expect(find.text('解开了'), findsOneWidget);
+    expect(store.best('hanoi', PuzzleTier.entry)!.millis, best);
+  });
+
   // 专家档出一道题要几十到上百毫秒：下一道题先在另一个 isolate 里出好，换题时直接用，界面线程不再出题。
   test('自由模式的下一道题先在后台出好：换一道题、换到下一档直接用出好的，没备的档当场出', () async {
     _generatedHere = 0;

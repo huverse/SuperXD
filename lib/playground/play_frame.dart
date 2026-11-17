@@ -15,12 +15,18 @@ import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 
 // 一局的进度：档位、这一局的题、计时与完成。每个游戏的对局页持有一个，自己管棋盘状态。
 // 计时从第一步开始（同常见的谜题游戏），切到后台暂停，完成即停；记录写进 PlaygroundStore。
 // 挑战模式（给了 challenge）：题面与档位是服务器给的，不出题、不换档、不记本机成绩；判对错与完成都交服务器核对（人工决策见 challenge/challenge_rules.dart）。
+// [人工决策-2026-11-17 19:19:39] 用户要求把「乱点、全点、穷举就能通关或刷出快成绩」的路子都堵上（全游戏审查结论见 lib/playground/CLAUDE.md）。框架里的三条：
+// 1. 同一道题从头来，用时与罚时接着算（表停在原处、下一步接着走），同挑战里服务器的计时不因从头来归零：不然乱试几轮、从头来再碰对的那一轮，
+//    或者解开、判错看过标记后从头来照着走一遍，成绩只算最后那几秒（冰面入门乱滑一轮成功率中位 17%，碰对的那一轮约 1.4 秒）。换一道题才清零。
+// 2. 罚时 penalize：自由模式点错（舒尔特）、判错（骑士与无赖、逻辑网格、天平称球的指认）加的时间，算进用时与成绩；挑战模式由服务器计错交，不罚时。
+// 3. 看过答案 spoiled：答案整个亮出来过的题（扫雷踩雷揭开全部雷），之后再解开也不记成绩。
 class PlaySession<P, A> extends ChangeNotifier {
   // first：外壳在后台出好的第一道题（档位对得上才用，没给就当场出）。
   PlaySession({required this.game, required this.rules, required this.store, int Function()? seeds, PlayFirst? first, this.challenge})
@@ -58,6 +64,11 @@ class PlaySession<P, A> extends ChangeNotifier {
   late int _seed;
   final _watch = Stopwatch();
   bool _paused = false;
+  // 表在走：第一步起到解开或结束为止（切后台时 _watch 停着、这里不变，回来接着走）；从头来停在原处，下一步接着走。
+  bool _ticking = false;
+  // 罚时与看过答案（见类上的人工决策）：同一道题从头来都留着，换一道题才清。
+  var _penalty = Duration.zero;
+  bool _spoiled = false;
   bool finished = false;
   // 挑战模式：服务器判过对的那一次，与完成时交出去的那份答案（连不上时原样重交）。
   PlayVerdict? _passed;
@@ -90,13 +101,19 @@ class PlaySession<P, A> extends ChangeNotifier {
   @visibleForTesting
   Future<void>? upcoming(PuzzleTier tier) => _upcoming[tier]?.done;
 
-  bool get started => _watch.elapsedTicks > 0 || _watch.isRunning;
-  Duration get elapsed => _watch.elapsed;
+  bool get started => _watch.elapsedTicks > 0 || _ticking;
+  // 表在走（对局页据此刷新用时）：从头来之后、下一步之前不算。
+  bool get running => _ticking;
+  // 用时含罚时（成绩也按它记）。
+  Duration get elapsed => _watch.elapsed + _penalty;
+  Duration get penalty => _penalty;
+  bool get spoiled => _spoiled;
 
-  // 第一步：开始计时。
+  // 一步：表没走就开始走（第一步、从头来之后的第一步）。
   void moved() {
-    if (finished || _watch.isRunning || _paused) return;
-    _watch.start();
+    if (finished || _ticking) return;
+    _ticking = true;
+    if (!_paused) _watch.start();
     notifyListeners();
   }
 
@@ -107,14 +124,39 @@ class PlaySession<P, A> extends ChangeNotifier {
 
   void resume() {
     _paused = false;
-    if (started && !finished) _watch.start();
+    if (_ticking) _watch.start();
   }
 
-  // 同一道题从头来。
+  // 罚时（自由模式点错、判错）：加进用时，状态行原地写一下加了几秒（PlayFrame）。挑战模式不罚（服务器计错交）。
+  void penalize(Duration amount) {
+    if (challenge != null || finished) return;
+    _penalty += amount;
+    notifyListeners();
+  }
+
+  // 判错一次的罚时：这道题预计用时的四分之一，按 5 秒取整、至少 5 秒（按题缓存）。
+  // 量法（build 下的作弊摸底）：骑士与无赖不看题挨个试、或只翻标出来的人，入门到专家要判错 4–7 次，罚四分之一时这样碰对的用时都不比预计用时短；
+  // 也约等于挑战里错交一次扣一成分的分量（参考用时是预计用时的 1.5 倍）。
+  Duration get wrongPenalty => _wrongPenalty ??= Duration(seconds: math.max(5, (rules.expectedSeconds(puzzle) / 20).round() * 5));
+  Duration? _wrongPenalty;
+
+  // 同一道题从头来（见类上的人工决策第 1 条）：棋盘由对局页清，用时与罚时接着算，表停到下一步再走。
   void restart() {
+    _ticking = false;
+    _watch.stop();
+    finished = false;
+    notifyListeners();
+  }
+
+  // 换了一道题：用时、罚时与看过答案都清掉。
+  void _fresh() {
+    _ticking = false;
     _watch
       ..stop()
       ..reset();
+    _penalty = Duration.zero;
+    _wrongPenalty = null;
+    _spoiled = false;
     finished = false;
     notifyListeners();
   }
@@ -133,13 +175,16 @@ class PlaySession<P, A> extends ChangeNotifier {
     } else {
       _draw(_seed = upcoming?.seed ?? _seeds());
     }
-    restart();
+    _fresh();
     _prepare(this.tier);
   }
 
   // 结束但不记成绩（如扫雷踩雷）：停表、置为结束并通知对局页停走表，之后只能从头来或换一道题。
-  void end() {
+  // revealed：答案整个亮出来了（扫雷揭开全部雷），这一题之后再解开也不记成绩（见类上的人工决策第 3 条）。
+  void end({bool revealed = false}) {
+    _ticking = false;
     _watch.stop();
+    if (revealed) _spoiled = true;
     finished = true;
     notifyListeners();
   }
@@ -170,8 +215,10 @@ class PlaySession<P, A> extends ChangeNotifier {
     super.dispose();
   }
 
-  // 解开了：停表、记成绩，返回是不是这一档的新纪录。挑战模式不记本机成绩，把答案交服务器核对（submission，结果弹层等它），返回 false。
+  // 解开了：停表、记成绩（用时含罚时），返回是不是这一档的新纪录；看过答案的题不记（返回 false）。
+  // 挑战模式不记本机成绩，把答案交服务器核对（submission，结果弹层等它），返回 false。
   Future<bool> finish({int? moves, A? answer}) async {
+    _ticking = false;
     _watch.stop();
     finished = true;
     notifyListeners();
@@ -179,7 +226,8 @@ class PlaySession<P, A> extends ChangeNotifier {
     if (challenge == null) {
       // 结果弹层里有「换到下一档」：下一档也先备一道。
       if (tier.index + 1 < PuzzleTier.values.length) _prepare(PuzzleTier.values[tier.index + 1]);
-      return store.finish(game.id, tier, millis: _watch.elapsedMilliseconds, moves: moves, at: DateTime.now());
+      if (_spoiled) return false;
+      return store.finish(game.id, tier, millis: elapsed.inMilliseconds, moves: moves, at: DateTime.now());
     }
     if (_passed case final passed?) {
       submission = Future.value(passed);
@@ -241,6 +289,10 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver {
   var _shownSeconds = 0;
   var _timeUp = false;
   var _foreground = true;
+  // 刚加的罚时：状态行末尾用警示色写「+1 秒」，停一会儿收起（连着加就合在一起、重新计时）。
+  var _seenPenalty = Duration.zero, _added = Duration.zero;
+  Timer? _addedFade;
+  static const _addedShown = Duration(milliseconds: 1500);
 
   int get _seconds => switch (widget.session.challenge) {
     final challenge? => math.max(0, challenge.deadline.difference(DateTime.now()).inSeconds),
@@ -297,6 +349,7 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver {
     WidgetsBinding.instance.removeObserver(this);
     widget.session.removeListener(_sessionChanged);
     _clock?.cancel();
+    _addedFade?.cancel();
     super.dispose();
   }
 
@@ -314,7 +367,7 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver {
   // 走表的时候排下一次刷新，停了就撤掉；用时有变（换题、从头来）时重排。
   void _syncClock({bool reset = false}) {
     final session = widget.session;
-    final running = _foreground && (session.challenge != null ? !_timeUp : session.started && !session.finished);
+    final running = _foreground && (session.challenge != null ? !_timeUp : session.running);
     if (!running || reset) {
       _clock?.cancel();
       _clock = null;
@@ -324,6 +377,18 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver {
 
   void _sessionChanged() {
     _syncClock(reset: true);
+    final penalty = widget.session.penalty;
+    if (penalty > _seenPenalty) {
+      _added += penalty - _seenPenalty;
+      _addedFade?.cancel();
+      _addedFade = Timer(_addedShown, () {
+        if (mounted) setState(() => _added = Duration.zero);
+      });
+    } else if (penalty < _seenPenalty) {
+      _addedFade?.cancel();
+      _added = Duration.zero;
+    }
+    _seenPenalty = penalty;
     if (mounted) setState(() => _shownSeconds = _seconds);
   }
 
@@ -387,6 +452,11 @@ class _PlayFrameState extends State<PlayFrame> with WidgetsBindingObserver {
           ],
           const SizedBox(width: 12),
           Expanded(child: DotSeparatedText(status, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant, fontFeatures: const [FontFeature.tabularFigures()]))),
+          // 刚加的罚时原地写在用时这一行（读屏随即播报），停一会儿收起；用时本身已经含罚时。
+          if (_added > Duration.zero) ...[
+            const SizedBox(width: CampusGap.small),
+            Semantics(liveRegion: true, child: Text('+${_added.inSeconds} 秒', style: TextStyle(fontSize: CampusFontSize.secondary, fontWeight: FontWeight.w600, color: palette.danger, fontFeatures: const [FontFeature.tabularFigures()]))),
+          ],
         ])),
         // 收碎片的关：写明被改写的那一处怎么算（玩家自己算）；要最少步数的写明几步内算过。
         if (challenge != null)
