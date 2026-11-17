@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/playground_catalog.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/playground/puzzle/knights/knights_page.dart';
@@ -381,6 +382,38 @@ void main() {
       expect(wrongs, greaterThan(0));
       expect(find.textContaining('判错 $wrongs 次，罚时 ${wrongs * penalty} 秒'), findsOneWidget);
       expect(store.best('knights', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(wrongs * penalty * 1000), reason: '成绩含罚时');
+      semantics.dispose();
+    });
+
+    // 作弊机器人（人工决策见 PlaySession 上 11-17 20:13:19 那条）：换一道题接着蒙，蒙对的那一道一两秒就解开（入门第一次蒙对是 1/8）。
+    // 快得不正常（不到预计用时 15% 且不到 30 秒）的不进最好成绩，结果写明；认真想过的照记。测试里门槛默认关着，这里打开。
+    testWidgets('作弊机器人换题重蒙：蒙对的极快成绩不记纪录，认真解的照记', (tester) async {
+      PlaySession.tooFastGuard = true;
+      addTearDown(() => PlaySession.tooFastGuard = false);
+      final semantics = tester.ensureSemantics();
+      final store = await _open(tester, seed: 4);
+      final draw = _rules.generate(4, PuzzleTier.entry);
+      // 一上来就蒙对（这一道的参考解就是蒙对的那一组）。
+      for (final (person, knight) in draw.solution.indexed) {
+        await _tapChip(tester, person, knight);
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('解开了'), findsOneWidget);
+      expect(find.text('新纪录'), findsNothing);
+      expect(find.textContaining('解得太快，不记成绩'), findsOneWidget);
+      expect(store.best('knights', PuzzleTier.entry), isNull);
+      // 再来一局（注入的种子不变，还是这一道）：想过门槛那么久再定，照记成新纪录。
+      await tester.tap(find.text('再来一局'));
+      await tester.pumpAndSettle();
+      final threshold = (_rules.expectedSeconds(draw.puzzle) * 1000 * playTooFastRatio).ceil();
+      await tester.runAsync(() => Future<void>.delayed(Duration(milliseconds: threshold + 200)));
+      for (final (person, knight) in draw.solution.indexed) {
+        await _tapChip(tester, person, knight);
+      }
+      await tester.pumpAndSettle();
+      expect(find.text('新纪录'), findsOneWidget);
+      expect(find.textContaining('不记成绩'), findsNothing);
+      expect(store.best('knights', PuzzleTier.entry)!.millis, greaterThanOrEqualTo(threshold));
       semantics.dispose();
     });
 

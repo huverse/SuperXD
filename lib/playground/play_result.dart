@@ -38,11 +38,16 @@ Future<PlayResultChoice> showPlayResult(BuildContext context, {required PlaySess
         const SizedBox(height: 16),
         Text(duration(session.elapsed), style: TextStyle(fontSize: 40, fontWeight: FontWeight.w600, height: 1.15, color: palette.onSurface, fontFeatures: const [FontFeature.tabularFigures()])),
         const SizedBox(height: 4),
-        // 看过答案的题（扫雷踩雷后揭开了全部雷）不记成绩，见 PlaySession 上的人工决策。
+        // 看过答案的题（扫雷踩雷后揭开了全部雷）与解得快得不正常的不记成绩，见 PlaySession 上的人工决策。
         DotSeparatedText([
           session.tier.label,
           ?detail,
-          if (session.spoiled) '不记成绩' else if (!newBest && best != null) '最好 ${duration(Duration(milliseconds: best.millis))}',
+          if (session.spoiled)
+            '不记成绩'
+          else if (session.tooFast)
+            '解得太快，不记成绩'
+          else if (!newBest && best != null)
+            '最好 ${duration(Duration(milliseconds: best.millis))}',
         ].join(' · '), style: secondary),
         const SizedBox(height: 20),
         FilledButton.icon(style: campusProminent, onPressed: () => Navigator.pop(context, PlayResultChoice.again), icon: const CampusIcon(CampusIcons.shuffle), label: const Text('再来一局')),

@@ -332,6 +332,42 @@ void main() {
     expect({for (final game in playgroundCatalog) if (game.clock != PlayClock.sight) game.id: game.clock}, {'mines': PlayClock.firstMove, 'flash': PlayClock.start, 'schulte': PlayClock.start});
   });
 
+  // 人工决策见 PlaySession 上 11-17 20:13:19 那条：自由模式用时（含罚时）不到预计用时的 15% 且不到 30 秒不进最好成绩，同挑战加试题的门槛；
+  // 舒尔特与记忆闪光不套。测试里默认关着（test/flutter_test_config.dart），这里打开。
+  test('快得不正常的不记纪录：不到预计用时 15% 且不到 30 秒不记，罚时算在用时里，认真解的照记，舒尔特与记忆闪光不套', () async {
+    PlaySession.tooFastGuard = true;
+    addTearDown(() => PlaySession.tooFastGuard = false);
+    expect((playTooFastRatio, playTooFastFloor), (.15, const Duration(seconds: 30)), reason: '同挑战 challenge/config.json 的 extraRatio 与 extraFloor');
+    final store = PlaygroundStore.memory();
+    // 预计用时 10 秒的题：门槛是 1.5 秒。
+    final session = PlaySession(game: _game('hanoi'), rules: const _CountingRules(), store: store, seeds: () => 3);
+    session.moved();
+    expect(await session.finish(moves: 1), isFalse);
+    expect((session.tooFast, store.best('hanoi', PuzzleTier.entry)), (true, null));
+    session.restart();
+    expect(session.tooFast, isFalse);
+    // 罚时算在用时里：手上很快、罚过 5 秒的照记。
+    session
+      ..next()
+      ..moved()
+      ..penalize(const Duration(seconds: 5));
+    expect(await session.finish(moves: 1), isTrue);
+    expect(session.tooFast, isFalse);
+    // 认真想了 1.6 秒（过了门槛）：照记，比罚过时的那次快就是新纪录。
+    session.next();
+    await Future<void>.delayed(const Duration(milliseconds: 1600));
+    session.moved();
+    expect(await session.finish(moves: 1), isTrue);
+    expect(store.best('hanoi', PuzzleTier.entry)!.millis, inInclusiveRange(1500, 5000));
+    session.dispose();
+    for (final id in ['schulte', 'flash']) {
+      final quick = PlaySession(game: _game(id), rules: const _CountingRules(), store: store, seeds: () => 3);
+      quick.moved();
+      expect(await quick.finish(moves: 1), isTrue, reason: '$id 拼的就是快，不套门槛');
+      quick.dispose();
+    }
+  });
+
   testWidgets('题一出现就计时：汉诺塔打开不动也在走表；扫雷第一下才开始', (tester) async {
     final store = PlaygroundStore.memory();
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: HanoiPage(game: _game('hanoi'), store: store, seeds: () => 1)));

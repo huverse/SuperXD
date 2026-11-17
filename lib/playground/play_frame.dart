@@ -30,6 +30,12 @@ import 'package:superxd/theme/dot_separated_text.dart';
 //    或者解开、判错看过标记后从头来照着走一遍，成绩只算最后那几秒（冰面入门乱滑一轮成功率中位 17%，碰对的那一轮约 1.4 秒）。换一道题才清零。
 // 2. 罚时 penalize：自由模式点错（舒尔特）、判错（骑士与无赖、逻辑网格、天平称球的指认）加的时间，算进用时与成绩；挑战模式由服务器计错交，不罚时。
 // 3. 看过答案 spoiled：答案整个亮出来过的题（扫雷踩雷揭开全部雷），之后再解开也不记成绩。
+// [人工决策-2026-11-17 20:13:19] 用户选「快得不正常的不记纪录」：自由模式解开时用时（含罚时）不到这题预计用时的 playTooFastRatio、也不到 playTooFastFloor，
+// 就不进最好成绩（tooFast），结果写「解得太快，不记成绩」。堵的是换一道题接着蒙：骑士入门第一次就蒙对是 1/8、冰面入门乱滑一轮约 1/5，
+// 换几道题就能碰出一两秒的纪录。舒尔特与记忆闪光（clock 是 start）不套：开始前看不到题、没有蒙的捷径，拼的就是快（闪光的用时大半是固定的亮灭）。
+const playTooFastRatio = .15;
+const playTooFastFloor = Duration(seconds: 30);
+
 class PlaySession<P, A> extends ChangeNotifier {
   // first：外壳在后台出好的第一道题（档位对得上才用，没给就当场出）。
   PlaySession({required this.game, required this.rules, required this.store, int Function()? seeds, PlayFirst? first, this.challenge})
@@ -76,6 +82,8 @@ class PlaySession<P, A> extends ChangeNotifier {
   // 罚时与看过答案（见类上的人工决策）：同一道题从头来都留着，换一道题才清。
   var _penalty = Duration.zero;
   bool _spoiled = false;
+  // 这一次解开得快得不正常、没记成绩（见类上 11-17 20:13:19 那条）；从头来、换题清掉。
+  bool _tooFast = false;
   bool finished = false;
   // 挑战模式：服务器判过对的那一次，与完成时交出去的那份答案（连不上时原样重交）。
   PlayVerdict? _passed;
@@ -116,6 +124,11 @@ class PlaySession<P, A> extends ChangeNotifier {
   Duration get elapsed => _watch.elapsed + _penalty;
   Duration get penalty => _penalty;
   bool get spoiled => _spoiled;
+  bool get tooFast => _tooFast;
+
+  // 测试用：测试一下子就走完一局、用的又是真实时间，快得不正常的门槛在测试里默认关掉（test/flutter_test_config.dart），专门测它的用例自己打开。
+  @visibleForTesting
+  static bool tooFastGuard = true;
 
   // 题一出现就计时（自由模式、登记项的 clock 是 sight）。
   bool get _onSight => challenge == null && game.clock == PlayClock.sight;
@@ -153,14 +166,20 @@ class PlaySession<P, A> extends ChangeNotifier {
   // 判错一次的罚时：这道题预计用时的四分之一，按 5 秒取整、至少 5 秒（按题缓存）。
   // 量法（build 下的作弊摸底）：骑士与无赖不看题挨个试、或只翻标出来的人，入门到专家要判错 4–7 次，罚四分之一时这样碰对的用时都不比预计用时短；
   // 也约等于挑战里错交一次扣一成分的分量（参考用时是预计用时的 1.5 倍）。
-  Duration get wrongPenalty => _wrongPenalty ??= Duration(seconds: math.max(5, (rules.expectedSeconds(puzzle) / 20).round() * 5));
-  Duration? _wrongPenalty;
+  Duration get wrongPenalty => Duration(seconds: math.max(5, (_expectedSeconds / 20).round() * 5));
+  // 这道题的预计用时（按题缓存：有的游戏要跑一遍求解器）。
+  int get _expectedSeconds => _expected ??= rules.expectedSeconds(puzzle);
+  int? _expected;
+
+  // 快得不正常（见类上 11-17 20:13:19 那条）：先比 30 秒（多数局到不了这一步就不用算预计用时）。
+  bool get _tooFastNow => tooFastGuard && game.clock != PlayClock.start && elapsed < playTooFastFloor && elapsed.inMilliseconds < _expectedSeconds * 1000 * playTooFastRatio;
 
   // 同一道题从头来（见类上的人工决策第 1 条）：棋盘由对局页清，用时与罚时接着算；题一出现就计时的表接着走，其余停到下一步再走。
   void restart() {
     _ticking = false;
     _watch.stop();
     if (_onSight) _run();
+    _tooFast = false;
     finished = false;
     notifyListeners();
   }
@@ -173,8 +192,9 @@ class PlaySession<P, A> extends ChangeNotifier {
       ..stop()
       ..reset();
     _penalty = Duration.zero;
-    _wrongPenalty = null;
+    _expected = null;
     _spoiled = false;
+    _tooFast = false;
     finished = false;
     if (_onSight) _run();
     notifyListeners();
@@ -234,7 +254,7 @@ class PlaySession<P, A> extends ChangeNotifier {
     super.dispose();
   }
 
-  // 解开了：停表、记成绩（用时含罚时），返回是不是这一档的新纪录；看过答案的题不记（返回 false）。
+  // 解开了：停表、记成绩（用时含罚时），返回是不是这一档的新纪录；看过答案的题与快得不正常的不记（返回 false）。
   // 挑战模式不记本机成绩，把答案交服务器核对（submission，结果弹层等它），返回 false。
   Future<bool> finish({int? moves, A? answer}) async {
     _ticking = false;
@@ -245,7 +265,7 @@ class PlaySession<P, A> extends ChangeNotifier {
     if (challenge == null) {
       // 结果弹层里有「换到下一档」：下一档也先备一道。
       if (tier.index + 1 < PuzzleTier.values.length) _prepare(PuzzleTier.values[tier.index + 1]);
-      if (_spoiled) return false;
+      if (_spoiled || (_tooFast = _tooFastNow)) return false;
       return store.finish(game.id, tier, millis: elapsed.inMilliseconds, moves: moves, at: DateTime.now());
     }
     if (_passed case final passed?) {
