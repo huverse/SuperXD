@@ -125,7 +125,7 @@ void main() {
 // 每个能进挑战的游戏当前题面写法版本的一道样例（取自判定向量的入门档），键的顺序同 encodePuzzle。
 const _samples = <String, (int, Object)>{
   'hanoi': (1, {'disks': 3, 'start': [0, 0, 0], 'target': 2}),
-  'ice': (2, {'width': 6, 'height': 6, 'tiles': '000110001000000000010010100000001000', 'gems': [], 'start': 17, 'goal': 9, 'limit': 7}),
+  'ice': (2, {'width': 6, 'height': 6, 'tiles': '000110001000000000010010100000001000', 'gems': <int>[], 'start': 17, 'goal': 9, 'limit': 7}),
   'lights': (1, {'side': 3, 'lights': '011101100'}),
   'boxes': (1, {'width': 7, 'height': 7, 'walls': '1111111100000110011011101001100001110000111111111', 'goals': [12], 'boxes': [31], 'player': 29}),
   'queens': (1, {'size': 5, 'given': [-1, -1, 3, 1, -1]}),
