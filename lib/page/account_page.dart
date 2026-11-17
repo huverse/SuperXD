@@ -132,7 +132,8 @@ class _AccountPageState extends State<AccountPage> {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
-        title: const Text('账号'),
+        // 标题写「教务账号」（11-17 设计审查：有了应用账号后只写「账号」分不清是哪个）。
+        title: const Text('教务账号'),
       ),
       body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListView(
         padding: const EdgeInsets.all(16),

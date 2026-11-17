@@ -9,7 +9,7 @@
 - 壳层与导航：
   - shell_page.dart：底栏壳 ShellPage（今天、服务、消息、我的四个分支；在别的分支按返回先回今天，[人工决策] 在文件内）与可拖动底栏 DragNavigationBar：悬浮在安全区之上，内容延伸到玻璃下方，底栏占位作为各页的底部安全区；拖动时的透镜是栏玻璃的兄弟层、不被栏裁剪；「消息」带私信未读角标，「我的」在有没读的开发者的话时带一个不计数的小圆点（dots）。iOS 26 起换成挂在 Flutter 视图上的系统底栏 NativeTabBar（theme/native_glass.dart；iOS 16–18 用同安卓的自绘底栏，只是再点当前项同 iOS，[人工决策] 见 campusSystemTabBar），角标与小圆点照旧，拖动与悬浮由系统做，内容按系统报来的总高留位置，开屏走完（revealed）才出现；两端底栏都是提示条的锚点（theme 的 CampusToastAnchor），提示条停在底栏上方；再点当前项回到这一栏首页、已在首页时滚回顶部（[人工决策] 在 onSelected）。
   - animated_branches.dart：分支切换 AnimatedBranches，保留每个分支的 Navigator；进出两页整屏并排平移，不淡入淡出（页内玻璃在半透明图层下取不到背景）。iOS 上直接切换、不滑动（[人工决策] 在 didUpdateWidget）。
-  - section_pages.dart：服务页（学业、百宝箱、游乐场入口，[人工决策] 在列表上方；游乐场一直列着）、我的页（11-16 起没有游乐场与积分一行，开关并进应用账号页的联网偏好；头像卡读当前会话，只写姓名，姓名未知时显示学号；学号与班级在账号页；有开发者的话时在界面与关于之间多一行，有没读的信时行尾一个小圆点；节日抽中的红包在节日结束后 3 天内是最上面一行「节日红包」，点开再看卡片，没揭晓的照样拆红包）与底栏根页的大标题顶栏 SectionTitleBar。
+  - section_pages.dart：服务页（学业、百宝箱、游乐场入口，[人工决策] 在列表上方；游乐场一直列着）、我的页（11-16 起没有游乐场与积分一行，开关并进应用账号页的联网偏好；配了中转时界面那一组最上面有「应用账号」一行，写用户名或未登录，点了推入应用账号页（[人工决策] 在那一行上，教务账号页那一行照留）；头像卡读当前会话，只写姓名，姓名未知时显示学号；学号与班级在账号页；有开发者的话时在界面与关于之间多一行，有没读的信时行尾一个小圆点；节日抽中的红包在节日结束后 3 天内是最上面一行「节日红包」，点开再看卡片，没揭晓的照样拆红包）与底栏根页的大标题顶栏 SectionTitleBar。
 - 私信（只有分享卡片，没有文字聊天）：
   - message_page.dart：消息页，只放私信（还没有通知来源，不放空的「通知」分段，[人工决策] 在文件头）；没登录应用账号时是一张「登录应用账号后使用私信」卡（去登录经路由注入的 openAccount 推入应用账号页），私信在另一台手机上时是「在这台手机上使用」卡（takeOverSocial：先确认写明另一台停用、好友会看到、记录不过来，再原地等待接管），打开失败时是「暂时连不上」卡给重试（人工决策见 social/social_service.dart），仅本机时是「仅本机时不经服务器收发私信」卡（改为联网经 openAccount 推入应用账号页）；未开启时是开启卡片（含数据处理说明与隐私政策），开启后是添加好友与好友列表（按最近活动排序，下拉刷新并核对好友，增删好友时那一行原地展开、收起；时间在名字一行右端、未读角标在预览一行右端，大字号下各自长高不溢出）。
   - friend_add_page.dart：添加好友：出示自己的二维码（浅色画，保证可扫）与倒计时，离开即作废；出示时本页屏幕亮度调到最高、离开恢复（screen_brightness，只改本应用窗口，[人工决策] 在 initState）；「扫一扫」扫对方的码。扫码函数可注入（InviteScanner）。
@@ -52,7 +52,7 @@
 - 账号与设置：
   - login_page.dart：登录页 LoginPage，也用于切换账号：验证码、记住账号确认、百宝箱、游乐场、关于（进同一个关于页，未登录也能开开发者模式、检查更新，[人工决策] 在按钮处）与法务入口；同意行勾选框读屏读整句，点「我已阅读并同意」也能勾选，放不下一行时「用户协议 和 隐私政策」整组换行、行距按文字排（_agreement）；登录按钮常亮，没填或没勾同意时原地说明，接系统自动填充（[人工决策] 在文件内）。
   - account_dialogs.dart：旧版本数据导入确认 showLegacyImport 与登录后自动提示的 LegacyImportGate；教务验证码弹窗 LoginCaptchaDialog；开启记住账号的输密码弹窗 askRememberPassword。
-  - account_page.dart：账号页 AccountPage（账号卡姓名下写学号 · 班级，只在这里写；AccountTitle 我的页共用、只传姓名）：记住账号（关闭即删凭据；重新开启要输密码、后台登录核对成功才保存，不换代次）、切换账号、导入旧版本数据（本机有旧数据才显示）；应用账号单独一行（配了中转才有，写用户名或未登录，点了经组合根给的 openAppAccount 推入应用账号页）；退出登录单独一组放最底。
+  - account_page.dart：教务账号页 AccountPage（标题「教务账号」，账号卡姓名下写学号 · 班级，只在这里写；AccountTitle 我的页共用、只传姓名）：记住账号（关闭即删凭据；重新开启要输密码、后台登录核对成功才保存，不换代次）、切换账号、导入旧版本数据（本机有旧数据才显示）；应用账号单独一行（配了中转才有，写用户名或未登录，点了经组合根给的 openAppAccount 推入应用账号页）；退出登录单独一组放最底。
   - app_account_page.dart：应用账号页 AppAccountPage（人工决策见 domain/app_account.dart：自己的账号体系，与教务各管各的，没登录教务也能进；游乐场、私信、节日提示与账号页都推它）：没登录时「登录 / 注册」分段，「忘记密码」凭恢复码重设，「扫码登录」让已登录的手机批准；用户名与密码先在本机查格式、不合格原地说明不联网；注册与重设成功后弹出恢复码 showRecoveryCode（四位一组、可复制（经 sensitive_clipboard.dart），点「我已保存」才关，按返回不关）。登录着：用户名、修改密码（输一次新密码）、换新的恢复码（先确认）、让新设备登录（扫码函数可注入）、我上传的诊断包（配了诊断包上传才有），退出与注销各自单独一组放最底、居中红字，都先确认。最上面是联网偏好（组标题「联网偏好」，联网 / 仅本机，改为仅本机先确认；仅本机时登录保留但收起登录与账号管理、写暂停），最底下单独一组居中红字「删除游乐场数据」（先确认写明删哪些，仅本机或没登录只删本机），[人工决策] 在文件头。
   - app_account_join_page.dart：扫码登录：新手机出示登录二维码的页面 AppAccountJoinPage（5 分钟有效、可刷新，显示 6 位核对码与倒计时，每 3 秒问一次批准了没有、批准了返回，亮度同添加好友页调到最高；刷新与离开时不等地作废票据）；登录着的手机扫码批准 approveAppAccountJoin（扫码函数可注入 JoinScanner，先读请求方的机型与属地，确认框写核对码、机型、属地与「不是你本人操作就不要确认」，[人工决策] 在函数上）。
   - sensitive_clipboard.dart：复制敏感内容 copySensitive（恢复码用）：经通道 superxd/sensitive_clipboard，安卓 SensitiveClipboard.kt 标成敏感内容、一分钟后清掉（只在剪贴板里还是这一串时清，在后台读不到就等拿回焦点再看），iOS 是 AppDelegate.swift 里的 SensitiveClipboard（只放本机、系统到点清掉，只有 CI 编译过、真机没验）；没有通道的平台退回普通复制。人工决策见 domain/app_account.dart 的 19:18:31 那条。
@@ -98,7 +98,7 @@
 - 成绩与同步：grades_ui_test.dart、sync_ui_test.dart、sync_merge_test.dart（合并页、手动同步流程、打扰时机弹窗、自动同步设置）；学业页与同步记录：academic_test.dart（服务页只有学业一项、待处理、学业页的同步与结果里的变化、同步记录列表与详情、撤回、点通知进同步记录）。
 - 壳层与表单：navigation_drag_test.dart、shell_layout_test.dart（含 iOS 26 系统底栏的留位、iOS 18 自绘底栏，两者都测直接切换与再点当前项；安卓与 iOS 都只竖屏）、form_spacing_test.dart（支撑 form_layout_support.dart）。
 - 排版：text_layout_test.dart（登录、今天、课表三种范围与成绩在 360dp 大字号、宋体加粗体文本、411dp 标准下不裁字、不剩一行标点、不留孤字，同意行与登录按钮、学期视图横条；扫描在 text_fit_support.dart）。改了页面排版、文案长短或字号相关的布局都跑它。
-- 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart；应用账号一组：app_account_test.dart（应用账号页的注册、登录、忘记密码、扫码登录（含刷新与离开时作废票据、批准前写出请求方）、恢复码走敏感剪贴板、登录着的各项与「我上传的诊断包」，账号页那一行）；开屏与画作页：painting_ui_test.dart（含播放顺序页的勾选、拖动排序与至少留一幅）。
+- 设置与关于：appearance_settings_test.dart、wallpaper_test.dart、legal_page_test.dart、about_page_test.dart、app_update_ui_test.dart；应用账号一组：app_account_test.dart（「我的」页与教务账号页的应用账号一行、应用账号页的注册、登录、忘记密码、扫码登录（含刷新与离开时作废票据、批准前写出请求方）、恢复码走敏感剪贴板、登录着的各项与「我上传的诊断包」，账号页那一行）；开屏与画作页：painting_ui_test.dart（含播放顺序页的勾选、拖动排序与至少留一幅）。
 - 开发者的话：account_lifecycle_test.dart（「我的」页入口、小圆点与读信、新信在什么界面条件下弹）。
 - 联网偏好与删除游乐场数据：app_account_test.dart（组标题读屏是小节标题、改为仅本机先确认、登录保留与暂停、仅本机只删本机、退出注销与删除数据各自一组居中红字）；游乐场入口一直在：account_lifecycle_test.dart；消息页的仅本机卡：social_ui_test.dart。
 - 节日：festival_test.dart（舞台、红包揭晓与按钮；信里的红包：编排、中转客户端、附件的各状态与信件页按类型渲染）、reward_sprites_test.dart（粒子贴图同原来画布画的对照；单独一个文件，因为贴图的加载全局缓存）与 account_lifecycle_test.dart（节日当天播动画、抽中接着拆红包）。

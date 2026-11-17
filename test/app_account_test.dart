@@ -22,6 +22,7 @@ import 'package:superxd/local/network_mode_memory.dart';
 import 'package:superxd/page/account_page.dart';
 import 'package:superxd/page/app_account_join_page.dart';
 import 'package:superxd/page/app_account_page.dart';
+import 'package:superxd/page/section_pages.dart';
 import 'package:superxd/page/sensitive_clipboard.dart';
 import 'package:superxd/social/account_seal.dart';
 import 'package:superxd/social/relay_app_account.dart';
@@ -497,6 +498,28 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.text('应用账号'), findsNothing);
       expect(find.text('退出登录'), findsOneWidget);
+    });
+
+    // [人工决策-2026-11-17 21:24:25] 见 section_pages.dart：「我的」首页也有应用账号一行，同组在界面之前；教务账号页那一行照留。
+    testWidgets('「我的」页：应用账号一行（在界面之前）写用户名或未登录，点了推入应用账号页；没配中转时不显示', (tester) async {
+      final session = AppSession(_Accounts());
+      addTearDown(session.dispose);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Scaffold(body: MinePage(session: session, appAccounts: appAccounts, openAppAccount: (context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => AppAccountPage(appAccounts: appAccounts)))))));
+      await tester.pumpAndSettle();
+      expect(find.text('未登录'), findsOneWidget);
+      expect(tester.getTopLeft(find.text('应用账号')).dy, lessThan(tester.getTopLeft(find.text('界面')).dy));
+      expect(tester.element(find.ancestor(of: find.text('应用账号'), matching: find.byType(CampusSurface)).first), same(tester.element(find.ancestor(of: find.text('界面'), matching: find.byType(CampusSurface)).first)), reason: '和界面、关于同一组');
+      client.session = _session;
+      await appAccounts.load();
+      await tester.pumpAndSettle();
+      expect(find.text('tester_one'), findsOneWidget);
+      await tester.tap(find.text('应用账号'));
+      await tester.pumpAndSettle();
+      expect(find.text('修改密码'), findsOneWidget);
+      await tester.pumpWidget(MaterialApp(key: const ValueKey('bare'), theme: campusTheme(), home: Scaffold(body: MinePage(session: session))));
+      await tester.pumpAndSettle();
+      expect(find.text('应用账号'), findsNothing);
+      expect(find.text('界面'), findsOneWidget);
     });
 
     testWidgets('注册：格式不对原地说明、不联网；注册成功弹出恢复码（按返回不关，可复制），点「我已保存」后显示用户名', (tester) async {
