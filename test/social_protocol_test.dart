@@ -55,7 +55,7 @@ void main() {
       expect(base64UrlNoPad(await ed25519PublicOf(seed)), keys['publicKey']);
       expect(await verifyEd25519(decodeBase64UrlNoPad(keys['publicKey'] as String), canonical, decodeBase64UrlNoPad(keys['signature'] as String)), isTrue);
       expect(utf8.decode(friendKeysCanonical('a', 'b', 'c', 'd', null)), 'SXD1-friend-keys\na\nb\nc\nd\n');
-      expect(relayFriendKeys, isNot(contains(keys['publicKey'])));
+      expect(relayServerKeys, isNot(contains(keys['publicKey'])));
     });
 
     test('base64url 只认无填充的规范写法', () {

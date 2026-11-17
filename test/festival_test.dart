@@ -94,20 +94,21 @@ class _RewardRelay implements RelayTransport {
     }
     if (eligibleAt case final at?) return RelayResponse(403, {'code': RelayCode.accountTooNew, 'eligibleAt': at});
     draws.add((device: device, path: pathWithQuery, body: (jsonDecode(utf8.decode(body!)) as Map).cast<String, Object?>()));
-    if (prize case final prize?) return RelayResponse(200, {'result': 'won', 'sealed': base64UrlNoPad(await _sealPrize(prize, pathWithQuery.split('/')[3], device, relay.devices[device]!.box))});
+    if (prize case final prize?) return RelayResponse(200, {'result': 'won', 'sealed': base64UrlNoPad(await _sealPrize(relay, prize, pathWithQuery.split('/')[3], device, relay.devices[device]!.box))});
     return RelayResponse(200, result);
   }
 }
 
-// 测试这边按服务端的布局封一份奖品（一次性密钥每次新起）。
-Future<List<int>> _sealPrize(Map<String, Object?> prize, String campaign, String deviceId, List<int> devicePublic) async {
+// 测试这边按服务端的布局封一份奖品（一次性密钥每次新起）：version 2 是带服务器签名的第 2 版（假中转的服务器钥签，serverSeedOverride 设了就是网络上的人伪造的），1 是旧版。
+Future<List<int>> _sealPrize(FakeRelay relay, Map<String, Object?> prize, String campaign, String deviceId, List<int> devicePublic, {int version = 2}) async {
   final x25519 = X25519(), aes = AesGcm.with256bits();
   final ephemeral = await x25519.newKeyPair();
   final ephemeralPublic = (await ephemeral.extractPublicKey()).bytes;
   final shared = await x25519.sharedSecretKey(keyPair: ephemeral, remotePublicKey: SimplePublicKey(devicePublic, type: KeyPairType.x25519));
   final key = await Hkdf(hmac: Hmac.sha256(), outputLength: 32).deriveKey(secretKey: shared, nonce: [...ephemeralPublic, ...devicePublic], info: utf8.encode('SXD1-reward-prize'));
-  final box = await aes.encrypt(utf8.encode(jsonEncode(prize)), secretKey: key, nonce: aes.newNonce(), aad: [1, ...ephemeralPublic, ...utf8.encode('$campaign\n$deviceId')]);
-  return [1, ...ephemeralPublic, ...box.nonce, ...box.cipherText, ...box.mac.bytes];
+  final box = await aes.encrypt(utf8.encode(jsonEncode(prize)), secretKey: key, nonce: aes.newNonce(), aad: [version, ...ephemeralPublic, ...utf8.encode('$campaign\n$deviceId')]);
+  final sealed = [version, ...ephemeralPublic, ...box.nonce, ...box.cipherText, ...box.mac.bytes];
+  return version == 1 ? sealed : [...sealed, ...await relay.serverSign(rewardPrizeCanonical(campaign, deviceId, sealed))];
 }
 
 FestivalPrize prize(String occasion, {FestivalPrizeKind kind = FestivalPrizeKind.password, String content = '88662027', bool revealed = false}) =>
@@ -310,23 +311,36 @@ void main() {
   });
 
   group('抽签客户端（经假中转）', () {
-    test('奖品信封与服务端共用向量：设备的 box 私钥解得开，换个活动编号、换台设备、改一个字节都解不开', () async {
-      final vector = jsonDecode(File('server/test/vectors/reward_prize_v1.json').readAsStringSync()) as Map<String, Object?>;
+    // [人工决策-2026-11-17 21:24:25] 奖品信封带服务器签名，客户端只认第 2 版、验过签才解。
+    test('奖品信封与服务端共用向量：先验服务器签名再解；换个活动编号、换台设备、改一个字节、别的钥签的、第 1 版都不认', () async {
+      final vector = jsonDecode(File('server/test/vectors/reward_prize_v2.json').readAsStringSync()) as Map<String, Object?>;
       List<int> bytes(String key) => decodeBase64UrlNoPad(vector[key]! as String);
       final identity = await SocialIdentity.fromSeeds(bytes('signSeed'), bytes('deviceSeed'));
       expect(identity.deviceId, vector['deviceId']);
       expect(base64UrlNoPad(identity.boxPublicKey), vector['devicePublic']);
+      final keys = [vector['serverPublic']! as String];
+      expect(keys, FakeRelay.serverKeys, reason: '向量与假中转用同一把测试钥');
+      expect(relayServerKeys, isNot(contains(keys.single)), reason: '内置的是真钥');
       final sealed = bytes('sealed'), campaign = vector['campaign']! as String;
-      expect(jsonEncode(await openRewardPrize(sealed, identity, campaign)), vector['plaintext']);
-      await expectLater(openRewardPrize(sealed, identity, '${campaign}x'), throwsFormatException);
-      await expectLater(openRewardPrize(sealed, await SocialIdentity.generate(), campaign), throwsFormatException);
-      await expectLater(openRewardPrize([...sealed.take(50), sealed[50] ^ 1, ...sealed.skip(51)], identity, campaign), throwsFormatException);
-      await expectLater(openRewardPrize([2, ...sealed.skip(1)], identity, campaign), throwsFormatException, reason: '版本不对');
+      expect(jsonEncode(await openRewardPrize(sealed, identity, campaign, serverKeys: keys)), vector['plaintext']);
+      await expectLater(openRewardPrize(sealed, identity, campaign), throwsFormatException, reason: '内置的真钥验不过测试钥签的');
+      await expectLater(openRewardPrize(sealed, identity, '${campaign}x', serverKeys: keys), throwsFormatException);
+      await expectLater(openRewardPrize(sealed, await SocialIdentity.generate(), campaign, serverKeys: keys), throwsFormatException);
+      await expectLater(openRewardPrize([...sealed.take(50), sealed[50] ^ 1, ...sealed.skip(51)], identity, campaign, serverKeys: keys), throwsFormatException, reason: '改了密文');
+      await expectLater(openRewardPrize([...sealed.take(sealed.length - 1), sealed.last ^ 1], identity, campaign, serverKeys: keys), throwsFormatException, reason: '改了签名');
+      await expectLater(openRewardPrize(sealed.take(sealed.length - 64).toList(), identity, campaign, serverKeys: keys), throwsFormatException, reason: '去掉签名');
+      final legacy = jsonDecode(File('server/test/vectors/reward_prize_v1.json').readAsStringSync()) as Map<String, Object?>;
+      await expectLater(openRewardPrize(decodeBase64UrlNoPad(legacy['sealed']! as String), identity, campaign, serverKeys: keys), throwsFormatException, reason: '第 1 版没有服务器签名');
+      // 网络上的人用这台设备公开的 box 公钥自己封一份、用自己的钥签：解得开也不认。
+      final forger = FakeRelay()..serverSeedOverride = List.filled(32, 9);
+      final forged = await _sealPrize(forger, {'kind': 'password', 'content': '钓鱼口令', 'note': ''}, campaign, identity.deviceId, identity.boxPublicKey);
+      await expectLater(openRewardPrize(forged, identity, campaign, serverKeys: keys), throwsFormatException);
+      expect(await openRewardPrize(await _sealPrize(FakeRelay(), {'kind': 'password', 'content': '口令', 'note': ''}, campaign, identity.deviceId, identity.boxPublicKey), identity, campaign, serverKeys: keys), {'kind': 'password', 'content': '口令', 'note': ''});
     });
 
     test('用这个应用账号的设备密钥签名，只发活跃天数；本机没有这把密钥、中转说账号不在都算没登录；连不上、格式不对给原因', () async {
       final relay = FakeRelay(), transport = _RewardRelay(relay), vault = MemoryAppAccountVault();
-      final client = RelayRewardClient(vault: vault, transport: transport);
+      final client = RelayRewardClient(vault: vault, transport: transport, serverKeys: FakeRelay.serverKeys);
       await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalNotSignedIn>()), reason: '本机没有这个账号的密钥');
       expect(transport.draws, isEmpty);
       final key = await SocialIdentity.generate();
@@ -339,10 +353,14 @@ void main() {
       expect((result as FestivalWon).prize.content, '口令');
       expect(transport.draws.single.device, key.deviceId);
       expect(transport.draws.single.path, '/v1/rewards/spring-2027/draw');
-      expect(transport.draws.single.body, {'activeDays': 7});
+      expect(transport.draws.single.body, {'activeDays': 7, 'seal': 2});
       transport.draws.clear();
       await client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7, levels: false);
-      expect(transport.draws.single.body, {'activeDays': 7, 'levels': false}, reason: '娱乐与积分关着');
+      expect(transport.draws.single.body, {'activeDays': 7, 'levels': false, 'seal': 2}, reason: '娱乐与积分关着');
+      // 同一网络里的人把回复换成自己封的奖品（签名对不上）：当领取失败（格式不对），不给内容。
+      relay.serverSeedOverride = List.filled(32, 9);
+      await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalException>().having((error) => error.message, 'message', contains('格式'))));
+      relay.serverSeedOverride = null;
       transport.prize = null;
       transport.result = {'result': 'won'};
       await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalException>().having((error) => error.message, 'message', contains('格式'))));
@@ -443,7 +461,7 @@ void main() {
 
     test('中转客户端：GET /v1/rewards/<活动>，关着娱乐与积分带 levels=0；状态与时刻逐项校验；没资格的抽签结果认得', () async {
       final relay = FakeRelay(), transport = _RewardRelay(relay), vault = MemoryAppAccountVault();
-      final client = RelayRewardClient(vault: vault, transport: transport);
+      final client = RelayRewardClient(vault: vault, transport: transport, serverKeys: FakeRelay.serverKeys);
       await expectLater(client.status(_account, 'c-1'), throwsA(isA<FestivalNotSignedIn>()));
       final key = await SocialIdentity.generate();
       await vault.write(_account.slot, AppAccountKey(identity: key, accountId: _account.accountId));
