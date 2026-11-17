@@ -137,6 +137,7 @@
 3. 中转镜像按下面「镜像部署与回滚」加载，再 docker compose up -d --no-build（只在没有流水线镜像时才用 --build 在服务器上构建，小内存机器上约 6 分钟）。首次启动时 MySQL 自动执行 sql/schema.sql 建表，起来后跑一次 scripts/migrate_db.sh 把升级文件都登记进台账（在新库上都是空操作）；之后的表结构变更由人工执行，服务启动不做 DDL：已有的库先备份、再用 scripts/migrate_db.sh 执行还没登记的 upgrade_*.sql、最后部署新版服务，见下面「表结构升级台账」。
 4. curl http://服务器:端口/v1/health 应返回 {"protocol":1,...,"version":"<提交号>"}。防火墙（云服务器还有安全组）只放行中转端口，MySQL 与 Redis 不对外。
    小内存机器（2GB 以内）已按 compose 里的参数关闭 MySQL performance_schema、缓冲池 128MB。
+   内存上限（人工决策在 compose 的 relay 一节）：中转 512MB（V8 堆 256MB，NODE_OPTIONS）、MySQL 512MB、Redis 320MB，合计约 1.34GB；超限只杀那一个容器并由 restart 拉起，整机吃紧时系统先杀中转、最后才杀 MySQL。换上时 docker compose up -d --no-deps 依次重建三个容器（MySQL 那次同下面的 binlog 一起做）。
    MySQL 不开 binlog（--disable-log-bin，人工决策在 compose 的 mysql 一节）：没有从库、不做时间点恢复，恢复只靠每天的备份。已有的库第一次换上这一项（11-17 这一版）：
    先跑备份，再 docker compose exec mysql sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "RESET BINARY LOGS AND GTIDS"' 删掉旧 binlog（8.4 默认保留 30 天），
    然后 docker compose up -d --no-deps --wait mysql 按新参数重建 MySQL 容器（数据在卷里不动，约 15 秒，期间中转查库失败），
@@ -204,5 +205,6 @@
 
 人工决策见 src/common/error_monitor.ts 与 .github/workflows/relay-health.yml 文件头。
 - 容器健康检查（Dockerfile 的 HEALTHCHECK 与 compose 的 healthcheck）请求本机 /v1/health/ready，每 30 秒一次，连续 3 次不就绪标成 unhealthy；docker 自己不会因此重启容器。
+- 看门狗 scripts/relay_watchdog.sh（人工决策在文件头）：root 的 crontab 每分钟跑一次，* * * * * /opt/superxd-relay/scripts/relay_watchdog.sh >> /var/log/superxd-relay-watchdog.log 2>&1。中转 unhealthy 且 MySQL、Redis 都 healthy 时重启中转，两次重启至少隔 10 分钟；依赖不健康时只记一行等它恢复，不重启 MySQL 与 Redis。正常时什么也不写，同一种情况只在变化时记一行。
 - 错误计数：error 级日志按签名「模块/动作/错误类型」每分钟计数，一分钟里有一次就写一行 [Alert] action=error_rate（主动卸载负载的 503 按 Shed/错误码/状态码计，一分钟 shedAlertPerMinute 次才告警）；同一签名 errorAlertFoldMinutes 分钟内只写第一条，其余在窗口结束时合成一行 [Alert] action=error_rate_folded；每 errorStatsMinutes 分钟有错误时写一行 [ErrorStats]。最多跟踪 errorMonitorMaxSignatures 个签名，多的并进 other。看明细：docker compose logs relay | grep '\[Alert\]'。
 - 外部探活：.github/workflows/relay-health.yml 每 30 分钟从 GitHub 请求一次 /v1/health/ready：不就绪或连不上隔 30 秒共试 3 次都不行就让工作流失败；就绪但 alerts 非零也失败（不重试）。失败由 GitHub 发邮件（发给最后改过它 cron 的人，要在个人设置里开着 Actions 失败通知）。地址取 relay 环境的 RELAY_URL 机密，日志里只有结果、依赖状态、告警个数与版本。线上还没部署就绪探测时退回只看 /v1/health。公开仓库 60 天没有提交时 GitHub 会停用定时工作流，要在 Actions 页手动启用。
