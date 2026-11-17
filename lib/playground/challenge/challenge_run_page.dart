@@ -17,6 +17,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
@@ -306,9 +307,15 @@ class _TileGrid extends StatelessWidget {
   Widget build(BuildContext context) => LayoutBuilder(builder: (context, constraints) {
     final columns = levels.length == 1 ? 1 : constraints.maxWidth >= 600 ? 3 : 2;
     final width = (constraints.maxWidth - 8 * (columns - 1)) / columns;
-    return Wrap(spacing: 8, runSpacing: 8, children: [
-      for (final level in levels)
-        SizedBox(width: width, child: _LevelTile(level: level, game: games.where((game) => game.id == level.game).firstOrNull, running: running, onTap: () => onTap(level))),
+    // 游戏名放不下一行时在卡片里均衡折成两行（窄屏大字号下以前省略成「冰面…」），同一行的卡等高。
+    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+      for (var start = 0; start < levels.length; start += columns)
+        Padding(padding: EdgeInsets.only(top: start == 0 ? 0 : 8), child: IntrinsicHeight(child: Row(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
+          for (final (index, level) in levels.skip(start).take(columns).indexed) ...[
+            if (index > 0) const SizedBox(width: 8),
+            SizedBox(width: width, child: _LevelTile(level: level, game: games.where((game) => game.id == level.game).firstOrNull, running: running, onTap: () => onTap(level))),
+          ],
+        ]))),
     ]);
   });
 }
@@ -365,7 +372,7 @@ class _LevelTile extends StatelessWidget {
           )),
           const SizedBox(width: 10),
           Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-            Text(game?.name ?? level.game, maxLines: 1, overflow: TextOverflow.ellipsis, style: Theme.of(context).textTheme.titleSmall),
+            BalancedText(game?.name ?? level.game, style: Theme.of(context).textTheme.titleSmall),
             Row(children: [PlayTierDot(tier, size: 8), const SizedBox(width: 6), Flexible(child: Text(tier.label, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)))]),
           ])),
           CampusIcon(icon, size: 22, color: active ? palette.primary : palette.onSurfaceVariant),
