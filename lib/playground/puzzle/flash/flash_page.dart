@@ -30,7 +30,8 @@ enum _Phase { ready, lead, showing, input, reveal, passed, solved }
 // 熄灭后才能点（数字顺序亮着时也能点，点第一下就藏），整盘每格都响应，点在这一次要点的格以外都算点错。
 // 镜像题（挑战改目标）的空白块也留在数字原来的位置、要点的是镜像格：镜像与不镜像在棋盘上看不出差别，要不要镜像只能按门上的数自己算
 // （人工决策见 challenge_rules.dart 的 11-14 23:11 那条）。
-// 点对的格保持点亮（激活色）；点错的格标警示色打叉并重震，同时亮出漏掉的格（按先后点的在每格写出该第几个点），停一会儿换这一轮的下一组重来。
+// 点对的格保持点亮（激活色）；点错的格标警示色打叉并重震，同时把没点到的项亮过的那格标出来（按先后点的写出该第几个点，按亮的位置标、
+// 不露出要不要镜像，人工决策见 _answerOf 上方），停一会儿换这一轮的下一组重来。
 // 亮起与熄灭是游戏内容不是装饰：减少动画时照样亮、照样灭，只是不渐变。阶段用 Timer 计时，不用 AnimationController
 // （减少动画时它的时长会被压成二十分之一，图案就一闪而过）。切到后台时正在亮的这一组作废，回来重新暗一下再亮。
 // 读屏：每格一个按钮读行列与亮灭（数字顺序读数）；棋盘下的一行提示是播报区，亮起时把亮的格按先后念出来，读屏用户听完再点。
@@ -341,14 +342,39 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
 
   String _cellName(int cell) => '第${cell ~/ _side + 1}行第${cell % _side + 1}列';
 
+  // [人工决策-2026-11-17 14:17:05] 点错后不露出要不要镜像（用户定）：点错后按「这一次亮过的格」标，不按「要点的格」标——
+  // 每一项点对了的在点的那格（实心），没点到的在它亮过的那格（淡框），按先后点的再写它该第几个点；读屏只说亮过与第几个，不说「应该」。
+  // 不镜像时亮过的格就是要点的格，和原来一样；镜像题（挑战改目标）标出来的只是刚才看到的，要点的镜像格不出现，镜像与不镜像的标法与位置口径一致。
+  int _answerOf(int cell) => _puzzle.mirror ? flashMirror(_side, cell) : cell;
+
+  // 亮过的第 index 项该第几个点（倒序倒过来数，镜像不改先后）。
+  int _rank(int index) => _variant == FlashVariant.reverse ? _shown.length - index : index + 1;
+
+  // 点错后标出来的：没点到的项亮过的那格（淡框），与每一项写的数（点对了的写在点的那格上，点错的那格画叉不写）。
+  List<int> get _unreached => _wrong == null ? const [] : [for (final cell in _shown) if (!_hits.contains(_answerOf(cell))) cell];
+
+  Map<int, int> get _revealNumbers {
+    if (!_variant.ordered || _wrong == null) return const {};
+    final numbers = <int, int>{};
+    for (final (index, cell) in _shown.indexed) {
+      final at = _hits.contains(_answerOf(cell)) ? _answerOf(cell) : cell;
+      if (at != _wrong) numbers[at] = _rank(index);
+    }
+    return numbers;
+  }
+
   String _cellState(int cell) {
-    final order = _target.indexOf(cell);
-    final lit = _variant.stepwise ? _stepLit && cell == _stepCell : _shown.contains(cell);
+    final index = _shown.indexOf(cell);
+    final lit = _variant.stepwise ? _stepLit && cell == _stepCell : index >= 0;
     return switch (_phase) {
-      _Phase.showing when lit => _variant == FlashVariant.numbers ? '数字 ${_shown.indexOf(cell) + 1}' : '亮',
+      _Phase.showing when lit => _variant == FlashVariant.numbers ? '数字 ${index + 1}' : '亮',
       _ when _hits.contains(cell) => '已点亮',
       _ when cell == _wrong => '点错了',
-      _Phase.reveal when order >= 0 => _variant.ordered ? '应该第 ${order + 1} 个点' : '应该亮',
+      _Phase.reveal when index >= 0 && !_hits.contains(_answerOf(cell)) => switch (_variant) {
+        FlashVariant.spot => '亮过',
+        FlashVariant.numbers => '数字 ${_rank(index)}',
+        FlashVariant.sequence || FlashVariant.reverse => '亮过，第 ${_rank(index)} 个',
+      },
       _ when _blocks.contains(cell) => '空白块',
       _ => '未点亮',
     };
@@ -441,8 +467,7 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
     final scaled = math.max(MediaQuery.textScalerOf(context).scale(CampusFontSize.secondary), layout.pitch * .42);
     final fontSize = (math.max(CampusFontSize.secondary, math.min(scaled, layout.pitch * .6)) * 2).roundToDouble() / 2;
     _numbers.prepare(DefaultTextStyle.of(context).style.merge(TextStyle(fontSize: fontSize, height: 1, fontWeight: FontWeight.w700, fontFeatures: const [FontFeature.tabularFigures()])), palette);
-    // 点错后：点对的都已停稳，漏掉的格与点错的格一起出现；没点错时最新点对的那一格在出现。
-    final missed = _wrong == null ? const <int>[] : [for (final cell in _target) if (!_hits.contains(cell)) cell];
+    // 点错后：点对的都已停稳，没点到的项亮过的那格与点错的格一起出现（见 _answerOf 上的人工决策）；没点错时最新点对的那一格在出现。
     final fresh = _wrong == null ? _hits.lastOrNull : null;
     // 热区是整张卡片按格均分（格与格之间的缝、卡片的边都算进最近的那一格）：6×6 在 360dp 上一格约 52dp。
     return GestureDetector(
@@ -467,10 +492,9 @@ class _FlashPageState extends State<FlashPage> with TickerProviderStateMixin, Wi
             settled: [for (final cell in _hits) if (cell != fresh) cell],
             fresh: fresh,
             hits: _hits,
-            missed: missed,
+            missed: _unreached,
             wrong: _wrong,
-            // 点错后按先后点的在要点的格上写出第几个（点错的那格画叉，不写）。
-            orderNumbers: _variant.ordered && _wrong != null ? {for (final (index, cell) in _target.indexed) if (cell != _wrong) cell: index + 1} : const {},
+            orderNumbers: _revealNumbers,
             mark: _mark.value,
             answer: _answer.value,
             pressed: _pressed,
@@ -583,7 +607,7 @@ class _FlashPainter extends CustomPainter {
   final List<int> hits;
   final List<int> missed;
   final int? wrong;
-  // 点错后每格该第几个点（按先后点的题型）。
+  // 点错后每一项该第几个点（按先后点的题型；点对了的写在点的那格，没点到的写在亮过的那格）。
   final Map<int, int> orderNumbers;
   final double mark;
   final double answer;
@@ -643,7 +667,7 @@ class _FlashPainter extends CustomPainter {
       final shown = answer * mark;
       final fresh = this.fresh, wrong = this.wrong;
       if (fresh != null) canvas.drawRRect(layout.tile(fresh), Paint()..color = accent.withValues(alpha: shown));
-      // 漏掉的格：淡激活色铺底加激活色的边，和点对的实心格分得开。
+      // 没点到的项亮过的那格：淡激活色铺底加激活色的边，和点对的实心格分得开。
       if (missed.isNotEmpty) {
         final ghosts = _tiles(missed);
         canvas.drawPath(ghosts, Paint()..color = accent.withValues(alpha: shown * (dark ? .32 : .26)));
