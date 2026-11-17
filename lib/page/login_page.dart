@@ -13,7 +13,6 @@ import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_health.dart';
 import 'package:superxd/application/app_updates.dart';
-import 'package:superxd/application/leisure.dart';
 import 'package:superxd/domain/painting.dart';
 import 'package:superxd/gateway/account_access.dart';
 import 'package:superxd/local/developer_settings.dart';
@@ -27,7 +26,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/account_dialogs.dart';
 
 class LoginPage extends StatefulWidget {
-  const LoginPage({super.key, required this.gateway, required this.session, this.switching = false, this.updates, this.health, this.developer, this.logs, this.paintings, this.leisure});
+  const LoginPage({super.key, required this.gateway, required this.session, this.switching = false, this.updates, this.health, this.developer, this.logs, this.paintings});
   final AccountAccess gateway;
   final AppSession session;
   final bool switching;
@@ -37,8 +36,6 @@ class LoginPage extends StatefulWidget {
   final DeveloperSettings? developer;
   final DiagnosticLog? logs;
   final PaintingGallery? paintings;
-  // 娱乐与积分关着（人工决策见 domain/leisure.dart）时不给游乐场入口。
-  final Leisure? leisure;
 
   @override
   State<LoginPage> createState() => _LoginPageState();
@@ -224,8 +221,8 @@ class _LoginPageState extends State<LoginPage> {
                 // [人工决策-2026-11-12 21:00:20] 游乐场自由模式免登录（用户选定），登录页同百宝箱给一个入口。
                 if (!widget.switching) Padding(padding: const EdgeInsets.only(top: 16), child: Wrap(alignment: WrapAlignment.center, spacing: 8, runSpacing: 8, children: [
                   OutlinedButton.icon(onPressed: _busy ? null : () => context.push('/toolbox'), icon: const CampusIcon(CampusIcons.toolbox), label: const Text('百宝箱')),
-                  // [人工决策-2026-11-15 18:14:27] 娱乐与积分关着时不给这个入口（见 domain/leisure.dart）。
-                  if (widget.leisure?.enabled != false) OutlinedButton.icon(onPressed: _busy ? null : () => context.push('/playground'), icon: const CampusIcon(CampusIcons.playground), label: const Text('游乐场')),
+                  // 11-16 起游乐场入口一直在（娱乐与积分的开关并进联网偏好，人工决策见 domain/leisure.dart）。
+                  OutlinedButton.icon(onPressed: _busy ? null : () => context.push('/playground'), icon: const CampusIcon(CampusIcons.playground), label: const Text('游乐场')),
                   OutlinedButton.icon(
                     onPressed: _busy ? null : () => Navigator.push(context, CampusPageRoute<void>(builder: (_) => AboutPage(updates: widget.updates, health: widget.health, developer: widget.developer, logs: widget.logs, paintings: widget.paintings))),
                     icon: const CampusIcon(CampusIcons.info),

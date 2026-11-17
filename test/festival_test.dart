@@ -417,6 +417,19 @@ void main() {
       expect(festivals(null).claimable, isFalse, reason: '没配中转时附件不显示');
     });
 
+    test('本地化（online 为假）：不抽签、不领、不问状态，附件不显示，节日动画后也不提示去登录', () async {
+      final client = FakeRewardClient((_) => FestivalWon(prize('c-1')));
+      final offline = Festivals(occasions: const [spring], memory: FileFestivalMemory.memory(), client: client, account: () => signedIn, online: () => false, clock: () => noon);
+      expect(await offline.claim('c-1', endsAt: endsAt), isNull);
+      expect(await offline.status('c-1'), isNull);
+      expect(await offline.draw(spring), isNull);
+      expect(offline.claimable, isFalse);
+      signedIn = null;
+      expect(offline.needsSignIn(spring), isFalse);
+      expect(client.requests, isEmpty);
+      expect(client.statusRequests, isEmpty);
+    });
+
     test('问状态：娱乐与积分关着带上；中转说账号不在为空并马上核；连不上为空', () async {
       final client = FakeRewardClient((_) => const FestivalMissed());
       expect((await festivals(client, levels: false).status('c-1'))!.state, RewardState.open);

@@ -53,3 +53,20 @@ class OnlineNetworkPolicy implements NetworkPolicy {
   @override
   bool allows(NetworkService service) => true;
 }
+
+// [人工决策-2026-11-16 22:24:59] 联网偏好（用户 17:05:21 选定与「娱乐与积分」开关合成一个、放应用账号页，22:24 从完整清单里选定本地化要关的服务）：
+// 默认联网化（全部服务）；本地化关掉下面这几项会主动连开发者中转的服务：应用账号、私信经中转、挑战积分与解锁、节日抽奖与红包、健康回报
+// （第一轮说过本地化不发，用户追问时确认）。其余照常（开发者的话、灰度、自动检查更新、字体包、教务、学习通、视频解析、快递、地图），
+// 用户自己点的操作（手动检查更新、上传诊断包、提交反馈）也不禁止。登录着应用账号时切到本地化保留登录、只是不联网（用户选定），切回联网化接着用；
+// 游乐场自由模式照常，不再单独有收起游乐场（取代 domain/leisure.dart 的 11-15 两条开关）。
+enum NetworkMode { online, local }
+
+const localModeDenied = {NetworkService.appAccount, NetworkService.social, NetworkService.challenge, NetworkService.unlock, NetworkService.festival, NetworkService.appHealth};
+
+bool networkModeAllows(NetworkMode mode, NetworkService service) => mode == NetworkMode.online || !localModeDenied.contains(service);
+
+// 联网偏好的本机记录（local 实现）：读不到或坏文件当联网化。
+abstract interface class NetworkModeMemory {
+  NetworkMode get mode;
+  Future<void> saveMode(NetworkMode mode);
+}

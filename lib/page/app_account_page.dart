@@ -4,7 +4,11 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
+import 'package:superxd/application/leisure.dart';
+import 'package:superxd/application/network_preference.dart';
 import 'package:superxd/domain/app_account.dart';
+import 'package:superxd/domain/challenge.dart';
+import 'package:superxd/domain/network_policy.dart';
 import 'package:superxd/page/app_account_join_page.dart';
 import 'package:superxd/page/diagnostic_uploads_page.dart';
 import 'package:superxd/page/sensitive_clipboard.dart';
@@ -22,10 +26,15 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 // 应用账号页（人工决策见 domain/app_account.dart 的 11-15 16:40:33 那条）：与教务各管各的，没登录教务也能进（游乐场、私信、节日提示都推它）。
 // 没登录：登录 / 注册两段，「忘记密码」用恢复码重设，「扫码登录」让已登录的手机批准；注册与重设成功后弹出恢复码让用户抄下。
 // 登录着：用户名、改密码、换恢复码、让新设备登录、我上传的诊断包（配了诊断包上传才有），退出与注销单独一组放最底，都先确认。
+// [人工决策-2026-11-16 22:24:59] 最上面是联网偏好（联网化 / 本地化，规则见 domain/network_policy.dart；用户 17:05:21 选定与娱乐与积分的开关合成一个放在这页）：
+// 本地化时不显示登录与账号管理（登录保留、只是不联网），只写一句暂停；最底下单独一组红字「删除游乐场与积分的数据」（从原来的游乐场与积分设置页挪来）。
 class AppAccountPage extends StatefulWidget {
-  const AppAccountPage({super.key, required this.appAccounts, this.diagnostics, this.scanJoin = scanJoinWithCamera});
+  const AppAccountPage({super.key, required this.appAccounts, this.diagnostics, this.network, this.leisure, this.scanJoin = scanJoinWithCamera});
   final AppAccounts appAccounts;
   final AccountDiagnostics? diagnostics;
+  // 联网偏好（测试里可以没有，当联网化）与游乐场与积分的删除数据（没有就不显示那一组）。
+  final NetworkPreference? network;
+  final Leisure? leisure;
   // 让新设备登录时扫码的入口（测试注入假扫码）。
   final JoinScanner scanJoin;
 
@@ -136,10 +145,95 @@ class _AppAccountPageState extends State<AppAccountPage> {
       title: const Text('应用账号'),
     ),
     body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListenableBuilder(
-      listenable: _accounts,
-      builder: (context, _) => ListView(padding: const EdgeInsets.all(16), children: _accounts.username == null ? _signedOut(context) : _signedIn(context)),
+      listenable: Listenable.merge([_accounts, ?widget.network]),
+      builder: (context, _) => ListView(padding: const EdgeInsets.all(16), children: [
+        if (widget.network case final network?) ..._preference(context, network),
+        if (widget.network?.online == false)
+          ..._paused(context)
+        else if (_accounts.username == null)
+          ..._signedOut(context)
+        else
+          ..._signedIn(context),
+        if (widget.leisure case final leisure?) ..._deleteData(context, leisure),
+      ]),
     ))))),
   );
+
+  // 联网偏好：改为本地化先确认写明关掉哪些、本机都留着；改回联网化不用确认。
+  List<Widget> _preference(BuildContext context, NetworkPreference network) => [
+    CampusSurface(padding: const EdgeInsets.all(20), child: CampusSegmented<NetworkMode>(
+      values: NetworkMode.values,
+      selected: network.mode,
+      label: (mode) => mode == NetworkMode.online ? '联网化' : '本地化',
+      onSelected: (mode) => unawaited(_switchMode(network, mode)),
+    )),
+    const Padding(padding: EdgeInsets.only(top: 16)),
+  ];
+
+  Future<void> _switchMode(NetworkPreference network, NetworkMode mode) async {
+    if (mode == network.mode) return;
+    if (mode == NetworkMode.local) {
+      // 长文案：切到本地化要写清哪些服务停下、本机的账号与记录都留着。
+      const message = '应用账号、经服务器的私信、挑战积分与解锁、节日抽奖和健康回报都不再联网；本机的账号与记录都留着，随时可以改回来。';
+      final confirmed = await showCampusConfirm(context, title: '改为本地化？', message: message, action: '改为本地化');
+      if (!mounted || !confirmed) return;
+    }
+    await network.setMode(mode);
+    if (mounted) showCampusToast(context, mode == NetworkMode.local ? '已改为本地化' : '已改为联网化');
+  }
+
+  // 本地化时：登录着的写用户名与暂停，没登录什么也不写。
+  List<Widget> _paused(BuildContext context) {
+    final username = _accounts.username;
+    if (username == null) return const [];
+    final colors = CampusPalette.of(context);
+    return [
+      CampusSurface(padding: const EdgeInsets.all(20), child: Row(children: [
+        CircleAvatar(radius: 28, backgroundColor: colors.surfaceSelected, child: CampusIcon(CampusIcons.mainAccount, color: colors.onSurfaceVariant, size: 28)),
+        const Padding(padding: EdgeInsets.only(left: 16)),
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(username, style: Theme.of(context).textTheme.titleLarge),
+          Text('本地化时暂停使用', style: Theme.of(context).textTheme.bodyMedium),
+        ])),
+      ])),
+    ];
+  }
+
+  // 游乐场与积分的删除数据（原来在游乐场与积分设置页，人工决策见 domain/leisure.dart）：先确认写明删哪些；联网化且登录着应用账号时连服务器上的一起删，没删成本机也不动。
+  List<Widget> _deleteData(BuildContext context, Leisure leisure) {
+    final colors = CampusPalette.of(context);
+    return [
+      const Padding(padding: EdgeInsets.only(top: 16)),
+      CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 20),
+        leading: CampusIcon(CampusIcons.delete, color: colors.danger),
+        title: Text('删除游乐场与积分的数据', style: TextStyle(color: colors.danger)),
+        enabled: !_accounts.busy,
+        onTap: () => unawaited(_delete(leisure)),
+      )),
+    ];
+  }
+
+  Future<void> _delete(Leisure leisure) async {
+    final username = _accounts.username;
+    // 长文案：删除确认要写清删哪些数据、删了不能恢复。
+    final message = leisure.signedIn ? '本机的游戏成绩与笔记，以及应用账号 $username 在服务器上的积分、挑战成绩与解锁记录都会删除，不能恢复。'
+        // 长文案：本地化或没登录应用账号时要说明服务器上的积分不在这次删除里。
+        : '本机的游戏成绩与笔记会删除，不能恢复；服务器上的积分要在联网化并登录应用账号后才能删。';
+    final confirmed = await showCampusConfirm(context, title: '删除游乐场与积分的数据？', message: message, action: '删除', destructive: true);
+    if (!mounted || !confirmed) return;
+    String? failure;
+    await showCampusWaiting(context, label: '正在删除', operation: () async {
+      try {
+        await leisure.deleteData();
+      } on ChallengeException catch (error) {
+        failure = error.message;
+      }
+    });
+    if (!mounted) return;
+    if (failure case final message?) return showCampusNotice(context, message);
+    showCampusToast(context, '已删除');
+  }
 
   List<Widget> _signedOut(BuildContext context) {
     final busy = _accounts.busy;
