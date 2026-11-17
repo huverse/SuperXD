@@ -49,7 +49,6 @@
   - wallpaperLook 是壁纸模糊与淡化的当前外观：previewWallpaper 只改它、不落库，背景单独监听；setWallpaperLook 立即更新外观并在保存锁内落库，落库后不回写外观（保存期间继续拖动不会被拽回）。
   - 壁纸文件交给 WallpaperStore；复制、落库、删旧文件在保存锁内一次完成。启动时文件丢失则按未设置处理，并清理残留文件。
   - DisplayScope 负责向下传递；CampusTextScale 把字号（跟随系统或选的大小；跟随时最多到 followLimit，由组合根的 page/text_size_range.dart 的 TextSizeComfort 量好传入）按线性缩放交给全应用，变化时在 duration 内连续过渡（组合根套在 MaterialApp.builder 里，减少动画时直接换，[人工决策] 在类上），systemOf 给界面页取系统本来的字号。
-  - appearance 是当前界面配置（AppearanceShare，不含壁纸图片），用于分享与套用前的撤销点；applyAppearance 套用好友分享的配置，本版本支持的取值在保存锁内一并落库，不支持的保持不变并返回跳过的项名；里面的衬线本机没装时照样选上并开始下载，这个版本下不了（没配中转、本机也没有）才按不支持跳过。
   - 字体包（人工决策见 domain/font_pack.dart）：fontPacks 是组合根注入的 FontPackLibrary（测试与内存实例为空，此时字体包里的字体当作已装好）。fontId 是选的字体，fontInUse 是界面实际用的：选的字体包还没装好（升级上来、下载中、文件坏了）时先用默认字体、选择保留，装好再换过去，只在实际用的字体变了才通知（下载进度不让整个应用重建）。open 时选着字体包就核对本机文件并注册（首帧之前，不联网）；chooseFont（界面页点选）先下载、核对、注册好再换上，期间又点了别的就作罢；ensureFontPack 由组合根在同意协议与政策之后调，把选着却没装的下回来；deleteFontPack 正在用就先换回默认字体再删文件。
 - font_packs.dart：FontPackLibrary 管下载的字体包（人工决策见 domain/font_pack.dart）：文件放应用支持目录 font_packs（排除出系统备份与换机迁移，iOS 由组合根标记），每个文件核对大小与 SHA-256 才用（下载完一次、注册前读文件时再一次，都在后台 isolate 里读与算），用 FontLoader 注册（registerFontPack，测试可注入）；下载经组合根注入的 FontPackSource（device 层，没配中转时为空、只能用已经下好的）；同一个包同时只装一份；进度按整百分比通知；失败留着已下好的字重、重试只下缺的，取消与删除把这个包的文件全删。保留与清理：只留登记表里现有的文件（每个包几 MB 的固定一组），打开时删掉别的（旧版本、下载残留）；换字体不删，用户可在界面页⋯里删除，系统清除数据或卸载即删。
 - wallpaper_store.dart：WallpaperStore 管理壁纸文件，放在应用支持目录 display/wallpaper 下，只保留当前一份，单图上限 20MB；每次导入用新文件名。

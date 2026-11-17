@@ -13,6 +13,7 @@ import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/conversation_page.dart';
+import 'package:superxd/page/share_card_view.dart';
 import 'package:superxd/page/friend_add_page.dart';
 import 'package:superxd/page/friend_schedule_page.dart';
 import 'package:superxd/page/message_page.dart';
@@ -238,24 +239,11 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('界面配置卡片：套用立即生效，提示条撤销回到原样', (tester) async {
-    final relay = FakeRelay();
-    final display = DisplaySettings.memory();
-    final (alice, bob) = (await tester.runAsync(() => friends(relay)))!;
-    await tester.runAsync(() async {
-      await bob.send(alice.deviceId!, const AppearanceShare(paletteId: 'rose', fontId: 'serif', scale: 1.1, themeMode: 'light', glassMode: 'reduced', wallpaperBlur: 50, wallpaperFade: 20));
-      await alice.refresh();
-    });
-    await tester.pumpWidget(app(ConversationPage(social: alice, friendId: bob.deviceId!), display: display));
-    await advance(tester);
-    expect(find.textContaining('藕粉'), findsOneWidget);
-    await tester.tap(find.text('套用'));
-    await advance(tester, 4);
-    expect([display.paletteId, display.fontId, display.textSize, display.themeMode, display.glassMode], ['rose', 'serif', 1.1, ThemeMode.light, 'reduced']);
-    expect(find.text('已套用'), findsOneWidget);
-    await tester.tap(find.text('撤销'));
-    await advance(tester, 4);
-    expect([display.paletteId, display.fontId, display.textSize, display.themeMode], [DisplaySettings.defaultPaletteId, 'maple', null, ThemeMode.system]);
+  testWidgets('旧版本发来的界面配置卡片写已不再支持，没有操作按钮', (tester) async {
+    await tester.pumpWidget(app(const Scaffold(body: ShareCardView(card: RetiredShare(type: 'appearance', version: 1), outgoing: false))));
+    await tester.pump();
+    expect(find.text('这种卡片已不再支持'), findsOneWidget);
+    expect(find.byType(FilledButton), findsNothing);
   });
 
   for (final scale in [1.3, 2.0]) {
@@ -290,34 +278,30 @@ void main() {
     // 都在加好友后 5 分钟内：两张卡片上方都没有时间行（以前正是这种卡片被收窄后居中）。
     await tester.runAsync(() async {
       await bob.send(alice.deviceId!, sampleSchedule());
-      await alice.send(bob.deviceId!, DisplaySettings.memory().appearance);
+      await alice.send(bob.deviceId!, const VideoShare(sourceUrl: 'https://v.example.com/8', title: '我发的作品', author: '作者丁', platform: 'douyin', kind: 'video'));
       await alice.refresh();
     });
     await tester.pumpWidget(app(ConversationPage(social: alice, friendId: bob.deviceId!)));
-    await advanceUntil(tester, () => find.text('界面配置').evaluate().isNotEmpty && find.text('查看与对比').evaluate().isNotEmpty);
+    await advanceUntil(tester, () => find.text('我发的作品').evaluate().isNotEmpty && find.text('查看与对比').evaluate().isNotEmpty);
     final received = tester.getRect(find.ancestor(of: find.text('查看与对比'), matching: find.byType(CampusSurface)).first);
-    final sent = tester.getRect(find.ancestor(of: find.text('界面配置'), matching: find.byType(CampusSurface)).first);
+    final sent = tester.getRect(find.ancestor(of: find.text('我发的作品'), matching: find.byType(CampusSurface)).first);
     expect(received.left, 16);
     expect(sent.right, 360 - 16);
   });
 
-  testWidgets('会话底栏分享界面：卡片原地显示已发送；对方删除好友后底栏禁用', (tester) async {
+  testWidgets('会话底栏：没登录教务时没有可发的、不画这一栏；对方删除好友后写明无法发送', (tester) async {
     final relay = FakeRelay();
     final (alice, bob) = (await tester.runAsync(() => friends(relay)))!;
     await tester.pumpWidget(app(ConversationPage(social: bob, friendId: alice.deviceId!)));
     await advance(tester);
     expect(find.text('分享课表'), findsNothing, reason: '没有教务网关时不提供分享课表');
-    await tester.tap(find.text('分享界面'));
-    await advanceUntil(tester, () => find.text('界面配置').evaluate().isNotEmpty);
-    expect(find.text('界面配置'), findsOneWidget);
-    expect(relay.mailbox, hasLength(1));
+    expect(find.text('分享界面'), findsNothing, reason: '界面配置卡片已删掉');
     await tester.runAsync(() async {
       await alice.removeFriend(bob.deviceId!);
       await bob.refresh(reconcile: true);
     });
     await advance(tester);
     expect(find.text('对方已解除好友，无法发送'), findsOneWidget);
-    expect(find.text('分享界面'), findsNothing);
   });
 
   testWidgets('会话卡片右上有可见的⋯：删除标警示色并确认，取消不删、确认后只删本机', (tester) async {

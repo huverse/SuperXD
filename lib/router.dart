@@ -153,7 +153,7 @@ GoRouter buildRouter({required AppSession session, required AppServices services
           StatefulShellBranch(routes: [GoRoute(path: '/today', builder: (context, state) => TodayPage(gateway: gateway, onSessionExpired: () => session.expire(generation), isAccountCurrent: () => session.generation == generation && session.loggedIn, syncRequest: todaySync, autoSync: autoSync))]),
           StatefulShellBranch(routes: [GoRoute(path: '/service', builder: (context, state) => const ServicePage())]),
           StatefulShellBranch(routes: [GoRoute(path: '/message', builder: (context, state) => MessagePage(social: social, gateway: gateway, openVideo: openVideo, openAccount: openAccount))]),
-          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, social: social, updates: updates, health: health, developer: developer, logs: logs, paintings: paintings, notes: notes, festivals: festivals, appAccounts: appAccounts, openAppAccount: openAccount, saveRewardPicture: saveRewardPicture))]),
+          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, updates: updates, health: health, developer: developer, logs: logs, paintings: paintings, notes: notes, festivals: festivals, appAccounts: appAccounts, openAppAccount: openAccount, saveRewardPicture: saveRewardPicture))]),
         ],
       ),
     ],

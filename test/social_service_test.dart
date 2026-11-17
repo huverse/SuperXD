@@ -173,7 +173,7 @@ void main() {
   test('中转重复投递同一条消息只入库一次', () async {
     final relay = FakeRelay();
     final (alice, bob) = await friendsPair(relay);
-    await bob.send(alice.deviceId!, const AppearanceShare(paletteId: 'mist', fontId: 'maple', scale: 1, themeMode: 'system', glassMode: 'auto', wallpaperBlur: 27, wallpaperFade: 0));
+    await bob.send(alice.deviceId!, const VideoShare(sourceUrl: 'https://v.example.com/1', title: '合成作品', author: '作者甲', platform: 'douyin', kind: 'video'));
     final copy = relay.mailbox.single;
     relay.mailbox.add((id: copy.id + 100, recipient: copy.recipient, sender: copy.sender, clientId: 'dup', envelope: copy.envelope, createTime: copy.createTime));
     await alice.refresh();

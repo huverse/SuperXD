@@ -47,42 +47,6 @@ class ScheduleShare extends ShareCard {
   };
 }
 
-// 界面配置：配色、字体、字号、深浅色、玻璃效果与壁纸模糊透明度；不含壁纸图片本身。取值是否受支持由接收方的显示设置判定。
-class AppearanceShare extends ShareCard {
-  const AppearanceShare({
-    required this.paletteId,
-    required this.fontId,
-    required this.scale,
-    required this.themeMode,
-    required this.glassMode,
-    required this.wallpaperBlur,
-    required this.wallpaperFade,
-  });
-  static const typeName = 'appearance';
-  final String paletteId;
-  final String fontId;
-  final double scale;
-  final String themeMode;
-  final String glassMode;
-  final int wallpaperBlur;
-  final int wallpaperFade;
-  @override
-  String get type => typeName;
-  @override
-  int get version => 1;
-
-  @override
-  Map<String, Object?> toBody() => {
-    'paletteId': paletteId,
-    'fontId': fontId,
-    'scale': scale,
-    'themeMode': themeMode,
-    'glassMode': glassMode,
-    'wallpaperBlur': wallpaperBlur,
-    'wallpaperFade': wallpaperFade,
-  };
-}
-
 // 短视频：只分享作品原链接与标题作者，不分享会过期的媒体直链与封面（封面在对方设备上自动加载会把对方 IP 暴露给第三方图床）；
 // 接收方打开时经自己同意的解析来源重新解析。
 class VideoShare extends ShareCard {
@@ -104,6 +68,21 @@ class VideoShare extends ShareCard {
 }
 
 // 本版本不认识的卡片：原样保留类型与版本，界面提示更新应用。
+// 已删掉的卡片类型（[人工决策-2026-11-16 17:05:21] 用户选定删掉私信里的「界面配置」卡片，取代上面 10-04 那条首批卡片里的界面配置）：
+// 收到旧版本发来的照样解开、显示「已不再支持」，不提示更新应用、也不能再发。
+class RetiredShare extends ShareCard {
+  const RetiredShare({required this.type, required this.version});
+  @override
+  final String type;
+  @override
+  final int version;
+  @override
+  Map<String, Object?> toBody() => const {};
+}
+
+// 删掉的类型名：发出后不复用。
+const retiredShareTypes = {'appearance'};
+
 class UnknownShare extends ShareCard {
   const UnknownShare({required this.type, required this.version});
   @override
@@ -115,7 +94,7 @@ class UnknownShare extends ShareCard {
 }
 
 Map<String, Object?> encodeShareCard(ShareCard card) {
-  if (card is UnknownShare) throw const ShareCardException('不能发送未知卡片');
+  if (card is UnknownShare || card is RetiredShare) throw const ShareCardException('不能发送未知卡片');
   return {'type': card.type, 'version': card.version, 'body': card.toBody()};
 }
 
@@ -126,7 +105,7 @@ ShareCard decodeShareCard(Object? json) {
   final body = _map(map['body'], '卡片内容');
   return switch (type) {
     ScheduleShare.typeName when version == 1 => _schedule(body),
-    AppearanceShare.typeName when version == 1 => _appearance(body),
+    final retired when retiredShareTypes.contains(retired) => RetiredShare(type: type, version: version),
     VideoShare.typeName when version == 1 => _video(body),
     _ => UnknownShare(type: type, version: version),
   };
@@ -135,7 +114,7 @@ ShareCard decodeShareCard(Object? json) {
 // 消息列表里的一行预览。
 String shareCardSummary(ShareCard card) => switch (card) {
   ScheduleShare(:final term) => '[课表] ${term.label.isEmpty ? term.key : term.label}',
-  AppearanceShare() => '[界面配置]',
+  RetiredShare() => '[已不再支持的卡片]',
   VideoShare(:final title) => '[视频] ${title.isEmpty ? '作品分享' : title}',
   UnknownShare() => '[新版本消息] 请更新应用后查看',
 };
@@ -202,20 +181,6 @@ CourseMeeting _meeting(Map<String, Object?> json) => CourseMeeting(
   weeks: [for (final week in _list(json['weeks'], '周次', max: maxScheduleWeeks)) _integer(week, '周次', min: 1, max: maxScheduleWeeks)],
   parity: 'all',
 );
-
-AppearanceShare _appearance(Map<String, Object?> body) {
-  final scale = body['scale'];
-  if (scale is! num || !scale.isFinite) throw const ShareCardException('字号格式不正确');
-  return AppearanceShare(
-    paletteId: _text(body['paletteId'], '配色', max: 32),
-    fontId: _text(body['fontId'], '字体', max: 32),
-    scale: scale.toDouble(),
-    themeMode: _text(body['themeMode'], '深浅色', max: 32),
-    glassMode: _text(body['glassMode'], '玻璃效果', max: 32),
-    wallpaperBlur: _integer(body['wallpaperBlur'], '壁纸模糊', min: 0, max: 100),
-    wallpaperFade: _integer(body['wallpaperFade'], '壁纸透明度', min: 0, max: 100),
-  );
-}
 
 VideoShare _video(Map<String, Object?> body) {
   final sourceUrl = _text(body['sourceUrl'], '作品链接', max: 8192);

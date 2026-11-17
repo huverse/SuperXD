@@ -1,6 +1,6 @@
 # SuperXD 中转服务（superxd-relay）
 
-功能性私信的“哑信箱”：只转交端到端密文，看不到课表、界面配置、作品链接或昵称。私信要登录应用账号，私信设备挂在应用账号下（account_social），所以服务器知道哪些应用账号互为好友；换手机时由新设备接管。客户端在 lib/social。
+功能性私信的“哑信箱”：只转交端到端密文，看不到课表、作品链接或昵称。私信要登录应用账号，私信设备挂在应用账号下（account_social），所以服务器知道哪些应用账号互为好友；换手机时由新设备接管。客户端在 lib/social。
 另有一处**代签凭据包的临时信箱**（chaoxing 模块）：学习通代签时对方把凭据包用一次性密钥加密后放这里，取走即删，服务端同样没有解密用的密钥。客户端在 lib/toolbox/chaoxing。
 还负责**节日抽奖**（reward 模块）：节日里随机发的支付宝口令或二维码红包只放这里、只在这里抽，抽签要登录了应用账号的设备签名，一个应用账号一次活动只抽一次、账号建立满 7 天才能抽，概率模型（平权、按活跃度加权并按积分等级取高、全天均匀放量、奖品分金额档且大额档按等级加权挑）与人工决策见 src/modules/reward/reward_odds.ts。客户端在 lib/social/relay_reward_client.dart（用应用账号的设备密钥签名），由 lib/application/festivals.dart 编排。
 还负责**诊断包**（diagnostic 模块）：用户在开发者选项里点「上传诊断包」并确认后，应用把日志包用开发者的公钥加密再传来，这里只按诊断编号存密文、没有下载接口（开发者经 ssh 取出后在本机用私钥解），30 天后删除，人工决策见 lib/domain/diagnostic_upload.dart。上传照旧免签名、匿名完成；登录了应用账号的设备紧接着凭回执里的一次性口令把包认领到账号下，之后在账号页能看到、删除，注销账号一并删除。客户端是 lib/device/relay_diagnostic_upload.dart（上传）与 lib/social/relay_diagnostic_account.dart（认领、列出、删除），由 lib/application/account_diagnostics.dart 编排。

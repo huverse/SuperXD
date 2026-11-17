@@ -5,7 +5,6 @@ import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/share_card.dart';
-import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/friend_schedule_page.dart';
 import 'package:superxd/page/schedule_import.dart';
 import 'package:superxd/page/share_card_view.dart';
@@ -119,25 +118,6 @@ class _ConversationPageState extends State<ConversationPage> {
     }
   }
 
-  // 套用界面配置：立即生效，提示条带“撤销”回到套用前。
-  Future<void> _apply(AppearanceShare share) async {
-    final settings = DisplayScope.of(context);
-    final previous = settings.appearance;
-    try {
-      final skipped = await settings.applyAppearance(share);
-      if (!mounted) return;
-      showCampusToast(context, skipped.isEmpty ? '已套用' : '已套用，当前版本不支持：${skipped.join('、')}', action: '撤销', onAction: () {
-        settings.applyAppearance(previous).catchError((Object error, StackTrace stack) {
-          campusLog('[Conversation] action=undo_appearance errorType=${error.runtimeType}\n$stack');
-          return const <String>[];
-        });
-      });
-    } catch (error, stack) {
-      campusLog('[Conversation] action=apply_appearance errorType=${error.runtimeType}\n$stack');
-      if (mounted) showCampusToast(context, '套用未完成，请重试');
-    }
-  }
-
   void _open(SocialMessage message) {
     final card = message.card;
     switch (card) {
@@ -155,9 +135,7 @@ class _ConversationPageState extends State<ConversationPage> {
         } else {
           widget.openVideo!(context, card);
         }
-      case AppearanceShare():
-        _apply(card);
-      case UnknownShare() || null:
+      case RetiredShare() || UnknownShare() || null:
         break;
     }
   }
@@ -257,7 +235,6 @@ class _ConversationPageState extends State<ConversationPage> {
                       () => importSharedSchedule(context, gateway: widget.gateway!, share: share, friendName: _friend?.displayName ?? '好友'),
                     _ => null,
                   },
-                  onApplyAppearance: () => _open(message),
                   onOpenVideo: () => _open(message),
                 ),
               ),
@@ -308,24 +285,18 @@ class _ConversationPageState extends State<ConversationPage> {
                   )),
                 )))),
           // 底部操作栏：实色、顶部分割线（同会话页输入栏规格），不模糊，铺满宽度；是提示条的锚点，提示条停在它上方。
-          CampusToastAnchor(child: Container(
+          // 11-16 起只剩分享课表（界面配置卡片删了，人工决策见 domain/share_card.dart）：没登录教务时没有可发的，不画这一栏。
+          if (friend != null && !friend.removed && widget.gateway == null) const SafeArea(top: false, child: SizedBox.shrink()) else CampusToastAnchor(child: Container(
             width: double.infinity,
             decoration: BoxDecoration(color: colors.surface, border: Border(top: BorderSide(color: colors.outlineSubtle))),
             child: SafeArea(top: false, child: Padding(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
               child: friend == null || friend.removed
                   ? SizedBox(height: 48, child: Center(child: Text('对方已解除好友，无法发送', style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant))))
-                  // 两个操作等宽并排。
-                  : Row(children: [
-                      if (widget.gateway != null) ...[
-                        Expanded(child: Builder(builder: (anchor) => FilledButton(
-                          onPressed: _preparing ? null : () => _shareSchedule(anchor),
-                          child: CampusBusyContent(busy: _preparing, label: '分享课表', busyLabel: '读取课表', icon: const CampusIcon(CampusIcons.todaySelected)),
-                        ))),
-                        const SizedBox(width: 12),
-                      ],
-                      Expanded(child: FilledButton.icon(onPressed: () => _send(DisplayScope.of(context).appearance), icon: const CampusIcon(CampusIcons.palette), label: const Text('分享界面'))),
-                    ]),
+                  : SizedBox(width: double.infinity, child: Builder(builder: (anchor) => FilledButton(
+                      onPressed: _preparing ? null : () => _shareSchedule(anchor),
+                      child: CampusBusyContent(busy: _preparing, label: '分享课表', busyLabel: '读取课表', icon: const CampusIcon(CampusIcons.todaySelected)),
+                    ))),
             )),
           )),
         ]),

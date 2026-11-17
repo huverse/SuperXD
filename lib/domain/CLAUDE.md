@@ -51,7 +51,7 @@
   - UID 由学期、课程、日期、节次哈希而来，重复导入时更新同一事件；不含账号信息。单次最多 icalEventLimit（5000）个事件。
 - grades.dart：成绩 JSON 的编解码与边界校验（GradeDataException）、学年摘要，以及筛选与排序（GradeFilter、GradeSort、selectGrades）；不及格的口径 gradeFailing（[人工决策] 在函数上）。
 - share_card.dart：功能性私信的分享卡片协议。
-  - 卡片有类型名与版本号：ScheduleShare（课表快照：学期、开学日、课程、作息）、AppearanceShare（配色、字体、字号、深浅色、玻璃、壁纸模糊透明度，不含图片）、VideoShare（作品原链接、标题、作者、平台、类型，不含直链与封面）；不认识的类型或更高版本解成 UnknownShare，界面提示更新应用。
+  - 卡片有类型名与版本号：ScheduleShare（课表快照：学期、开学日、课程、作息）、VideoShare（作品原链接、标题、作者、平台、类型，不含直链与封面）；删掉的类型（retiredShareTypes，现在只有 11-16 删掉的界面配置 appearance，[人工决策] 在 RetiredShare 上）解成 RetiredShare、写已不再支持、不能再发；不认识的类型或更高版本解成 UnknownShare，界面提示更新应用。
   - decodeShareCard 是外部输入的边界：结构、长度、范围逐项校验，课表再走 validateSchedule，失败抛 ShareCardException。shareCardSummary 给列表预览。
   - 新增卡片类型：这里加子类与编解码，页面 share_card_view.dart 加渲染。
 - painting.dart：开屏画作 Painting（标题、说明、图片路径、尺寸、裁切焦点、顶边分段色与天空色）与来源端口 PaintingGallery（全部画作、这次开屏的那幅、存原图）；decodePaintings 逐项校验清单 assets/paintings/paintings.json（画作不写死在代码里，清单顺序即轮换顺序）。实现在 local/painting_library.dart，人工决策在 page/painting_splash.dart。

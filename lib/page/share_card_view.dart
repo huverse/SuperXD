@@ -1,19 +1,17 @@
 import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/share_card.dart';
-import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 
 // 私信里的分享卡片：标题行（图标 + 类型）、内容摘要、一个操作按钮。新增卡片类型在这里加一个分支。
 class ShareCardView extends StatelessWidget {
-  const ShareCardView({super.key, required this.card, required this.outgoing, this.onOpenSchedule, this.onImportSchedule, this.onApplyAppearance, this.onOpenVideo});
+  const ShareCardView({super.key, required this.card, required this.outgoing, this.onOpenSchedule, this.onImportSchedule, this.onOpenVideo});
   final ShareCard card;
   final bool outgoing;
   final VoidCallback? onOpenSchedule;
   // 收到的课表导入到自己的课表；为空（自己发出的、未登录）时不显示。
   final VoidCallback? onImportSchedule;
-  final VoidCallback? onApplyAppearance;
   final VoidCallback? onOpenVideo;
 
   @override
@@ -44,7 +42,11 @@ class ShareCardView extends StatelessWidget {
           ]),
         ),
       ]),
-      final AppearanceShare share => _AppearanceCard(share: share, header: header(CampusIcons.palette, '界面配置'), action: outgoing ? null : action(CampusIcons.check, '套用', onApplyAppearance)),
+      RetiredShare() => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        header(CampusIcons.info, '已不再支持'),
+        const SizedBox(height: 8),
+        Text('这种卡片已不再支持', style: secondary),
+      ]),
       VideoShare(:final title, :final author, :final kind) => Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         header(kind == 'gallery' ? CampusIcons.images : CampusIcons.video, kind == 'gallery' ? '图集' : '视频'),
         const SizedBox(height: 8),
@@ -58,44 +60,5 @@ class ShareCardView extends StatelessWidget {
         Text('当前版本无法显示，请更新应用后让对方重新发送', style: secondary),
       ]),
     };
-  }
-}
-
-class _AppearanceCard extends StatelessWidget {
-  const _AppearanceCard({required this.share, required this.header, this.action});
-  final AppearanceShare share;
-  final Widget header;
-  final Widget? action;
-
-  @override
-  Widget build(BuildContext context) {
-    final colors = CampusPalette.of(context);
-    final known = DisplaySettings.paletteIds.contains(share.paletteId);
-    final palette = known ? CampusPalette.byId(share.paletteId, brightness: Theme.of(context).brightness) : null;
-    // 字号 0 是跟随系统，其余是实际显示大小（人工决策见 local/display_settings.dart 的 textSizeMin）。
-    final textSize = share.scale == 0 ? '字号跟随系统' : DisplaySettings.knownTextSize(share.scale) ? '字号 ${(share.scale * 100).round()}%' : null;
-    final details = [
-      palette?.label ?? '新配色',
-      switch (share.fontId) { 'serif' => '文学衬线', 'maple' => 'Maple', DisplaySettings.systemFont => '系统字体', _ => '新字体' },
-      ?textSize,
-      switch (share.themeMode) { 'light' => '浅色', 'dark' => '深色', _ => '跟随系统' },
-    ];
-    return Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-      header,
-      const SizedBox(height: 12),
-      if (palette != null) Row(children: [
-        // 色板预览：背景、主色、激活色三块（背景与卡片色几乎一样白，放两块看不出差别）。
-        for (final color in [palette.backgroundTop, palette.primary, palette.accent]) Container(
-          width: 28,
-          height: 28,
-          margin: const EdgeInsets.only(right: 8),
-          decoration: BoxDecoration(color: color, shape: BoxShape.circle, border: Border.all(color: colors.outlineSubtle)),
-        ),
-      ]),
-      const SizedBox(height: 8),
-      // 各项整体换行，不在词中间断开留下孤字。
-      Wrap(spacing: 12, runSpacing: 4, children: [for (final detail in details) Text(detail, style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant))]),
-      ?action,
-    ]);
   }
 }

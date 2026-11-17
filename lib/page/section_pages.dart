@@ -23,7 +23,6 @@ import 'package:superxd/page/account_page.dart';
 import 'package:superxd/page/appearance_page.dart';
 import 'package:superxd/page/developer_notes_page.dart';
 import 'package:superxd/page/festival/festival_reward.dart';
-import 'package:superxd/social/social_service.dart';
 import 'package:superxd/theme/glass_panel.dart';
 
 class ServicePage extends StatelessWidget {
@@ -51,13 +50,12 @@ class ServicePage extends StatelessWidget {
 }
 
 class MinePage extends StatelessWidget {
-  const MinePage({super.key, required this.session, this.social, this.updates, this.health, this.developer, this.logs, this.paintings, this.notes, this.festivals, this.appAccounts, this.openAppAccount, this.saveRewardPicture});
+  const MinePage({super.key, required this.session, this.updates, this.health, this.developer, this.logs, this.paintings, this.notes, this.festivals, this.appAccounts, this.openAppAccount, this.saveRewardPicture});
   final AppSession session;
   // 应用账号（设备级，与教务各管各的）；没配中转时为空，账号页不显示那一行。
   final AppAccounts? appAccounts;
   // 推入应用账号页（组合根给），账号页里那一行用。
   final void Function(BuildContext context)? openAppAccount;
-  final SocialService? social;
   // 开发者的话（设备级）；为空（没配中转）或还没有信时不显示这一行。
   final DeveloperNotes? notes;
   // 节日抽中的红包（人工决策见 domain/festival.dart）：节日结束后 3 天内在最上面一行，可以再打开；没有时不显示。
@@ -106,7 +104,7 @@ class MinePage extends StatelessWidget {
                   },
                 ),
               }),
-              ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.palette), trailing: const CampusIcon(CampusIcons.next), title: const Text('界面'), onTap: () => _push(context, AppearancePage(social: social))),
+              ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.palette), trailing: const CampusIcon(CampusIcons.next), title: const Text('界面'), onTap: () => _push(context, const AppearancePage())),
               // 开发者的话（人工决策见 domain/developer_note.dart）：有没读的信时行尾一个小圆点，底栏「我的」同时有一个。
               if (notes case final notes?) ListenableBuilder(listenable: notes, builder: (context, _) => notes.notes.isEmpty ? const SizedBox.shrink() : ListTile(
                 contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.letter), title: const Text('开发者的话'),
