@@ -125,7 +125,7 @@ void main() {
   });
 
   // 人工决策见 social/social_service.dart 文件头（11-14）：私信跟着应用账号。
-  testWidgets('本地化：一张卡写明不经服务器收发，点「改为联网化」交给应用账号页，不联网', (tester) async {
+  testWidgets('仅本机：一张卡写明不经服务器收发，点「改为联网」交给应用账号页，不联网', (tester) async {
     final relay = FakeRelay();
     final directory = Directory(path.join(temporary.path, 'offline'))..createSync();
     final social = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: directory.path), accountKeys: MemoryAppAccountVault(), transport: relay.transport(), serverKeys: FakeRelay.serverKeys);
@@ -136,8 +136,8 @@ void main() {
     var opened = 0;
     await tester.pumpWidget(app(Scaffold(body: MessagePage(social: social, openAccount: (_) => opened++))));
     await advance(tester);
-    expect(find.text('本地化模式下不经服务器收发私信'), findsOneWidget);
-    await tester.tap(find.text('改为联网化'));
+    expect(find.text('仅本机时不经服务器收发私信'), findsOneWidget);
+    await tester.tap(find.text('改为联网'));
     expect(opened, 1);
     expect(relay.calls, isEmpty);
   });
@@ -374,6 +374,49 @@ void main() {
     await tester.tap(find.text('打开分享'));
     await advance(tester, 6);
     expect(find.textContaining('还没有好友'), findsOneWidget);
+  });
+
+  // 11-17 设计审查：私信没就绪时弹确认框，按钮直达能处理的那一页（应用账号页或消息页），不再只写去哪找。
+  testWidgets('分享弹层：没登录应用账号、仅本机、没开启私信、没有好友时给直达按钮；去不了的只提示', (tester) async {
+    final relay = FakeRelay();
+    final opened = <String>[];
+    Future<void> open(SocialService social, {bool guided = true}) async {
+      Widget home = Scaffold(body: Builder(builder: (context) => Center(child: TextButton(onPressed: () => showShareSheet(context, social: social, card: sampleSchedule()), child: const Text('打开分享')))));
+      if (guided) home = ShareGuide(openAccount: (_) => opened.add('account'), openMessages: (_) => opened.add('messages'), child: home);
+      await tester.pumpWidget(app(home));
+      await tester.tap(find.text('打开分享'));
+      await advance(tester, 6);
+    }
+    Future<SocialService> bare({bool offline = false}) async {
+      final directory = Directory(path.join(temporary.path, 'share_${_databases++}'))..createSync();
+      final social = SocialService(spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: directory.path), accountKeys: MemoryAppAccountVault(), transport: relay.transport(), serverKeys: FakeRelay.serverKeys);
+      if (offline) await social.setOffline(true);
+      await social.switchAccount(null);
+      return social;
+    }
+
+    for (final (social, title, action, target) in [
+      ((await tester.runAsync(bare))!, '先登录应用账号', '去登录', 'account'),
+      ((await tester.runAsync(() => bare(offline: true)))!, '现在是仅本机', '去改为联网', 'account'),
+      ((await tester.runAsync(() => device(relay)))!, '还没开启私信', '去开启', 'messages'),
+      ((await tester.runAsync(() => device(relay, '独行')))!, '还没有好友', '去添加', 'messages'),
+    ]) {
+      await open(social);
+      expect(find.text(title), findsOneWidget);
+      await tester.tap(find.text(action));
+      await advance(tester, 4);
+      expect(opened.removeLast(), target, reason: title);
+      // 取消就不去。
+      await open(social);
+      await tester.tap(find.text('取消'));
+      await advance(tester, 4);
+      expect(opened, isEmpty, reason: title);
+    }
+    // 去不了（组合根没给直达，如没登录教务时消息页进不去）就只提示，不给按钮。
+    await open((await tester.runAsync(() => device(relay)))!, guided: false);
+    expect(find.text('还没开启私信'), findsOneWidget);
+    expect(find.text('去开启'), findsNothing);
+    expect(find.text('知道了'), findsOneWidget);
   });
 
   testWidgets('好友课表：默认共同空闲，按周列出双方都没课的时段', (tester) async {

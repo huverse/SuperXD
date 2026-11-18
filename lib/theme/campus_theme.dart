@@ -57,8 +57,8 @@ ThemeData campusTheme({CampusPalette? palette, String? fontFamily = 'Maple Mono 
     bottomSheetTheme: BottomSheetThemeData(backgroundColor: colors.surface, shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(24)))),
     popupMenuTheme: PopupMenuThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
     chipTheme: ChipThemeData(shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), backgroundColor: colors.surface, selectedColor: colors.surfaceSelected, disabledColor: colors.glassFallback, checkmarkColor: colors.primary, side: BorderSide(color: colors.outline), labelStyle: TextStyle(fontFamily: fontFamily, fontSize: CampusFontSize.secondary, fontWeight: FontWeight.w600, color: colors.onSurface)),
-    // 复选框选中与开关开启同为控件激活色 accent（同鸿蒙 component_activated）。
-    checkboxTheme: CheckboxThemeData(checkColor: WidgetStatePropertyAll(colors.onPrimary), fillColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? colors.accent : colors.surface), side: BorderSide(color: colors.outline, width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5))),
+    // 复选框选中与开关开启同为控件激活色 accent（同鸿蒙 component_activated）；对勾同强调按钮的白字（深色的 onPrimary 是墨绿黑，压在激活色上只有约 3.6:1）。
+    checkboxTheme: CheckboxThemeData(checkColor: const WidgetStatePropertyAll(Colors.white), fillColor: WidgetStateProperty.resolveWith((states) => states.contains(WidgetState.selected) ? colors.accent : colors.surface), side: BorderSide(color: colors.outline, width: 1.5), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(5))),
     // 次要按钮（同 iOS、鸿蒙的灰底次要按钮）：内容区为中性浅底胶囊配主色字、不加描边；导航层与浮层里仍是玻璃。
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
@@ -134,6 +134,9 @@ ThemeData campusTheme({CampusPalette? palette, String? fontFamily = 'Maple Mono 
       ),
     ),
     // 描边框浮动标签凸出上边框且随字号增长：带标签的输入框/下拉框上方用campusFieldGap，选择标签换行行距8dp，固定高度容器不得裁切随字号变化的文字。
+    // [人工决策-2026-11-17 21:24:25] 输入框边框改用轮廓色 outline（用户从三种对比图里选定，同 Material 3 描边输入框）：输入框底色与卡片同色，
+    // 边界只靠这条线，原来的 outlineSubtle 对卡片底只有 1.35–1.82:1，亮处看不出框；outline 八套配色对卡片底都在 3.4:1 以上（组件边界要 3:1，
+    // test/dark_mode_test.dart 守护）。聚焦时主色加粗到 2，和平时分得开。没选灰底无边框（像按钮的色调胶囊）。
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
       fillColor: colors.surface,
@@ -141,15 +144,15 @@ ThemeData campusTheme({CampusPalette? palette, String? fontFamily = 'Maple Mono 
       hintStyle: TextStyle(fontSize: 16, color: colors.onSurfaceVariant),
       border: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: colors.outlineSubtle),
+        borderSide: BorderSide(color: colors.outline),
       ),
       enabledBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: colors.outlineSubtle),
+        borderSide: BorderSide(color: colors.outline),
       ),
       focusedBorder: OutlineInputBorder(
         borderRadius: BorderRadius.circular(12),
-        borderSide: BorderSide(color: colors.primary),
+        borderSide: BorderSide(color: colors.primary, width: 2),
       ),
     ),
   );

@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
 import 'package:path/path.dart' as path;
 
+import 'package:superxd/playground/challenge/challenge_rules.dart';
 import 'package:superxd/playground/play_frame.dart';
 import 'package:superxd/playground/playground_catalog.dart';
 import 'package:superxd/playground/playground_game.dart';
@@ -20,6 +21,9 @@ import 'package:superxd/playground/puzzle/nonogram/nonogram_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
+
+import 'form_layout_support.dart';
 
 PlaygroundGame _game(String id) => playgroundCatalog.firstWhere((game) => game.id == id);
 
@@ -391,6 +395,55 @@ void main() {
     expect(find.textContaining(RegExp(r'^0:0[1-9]')), findsOneWidget, reason: '扫雷起点那片已经翻开，打开不动也在走表');
   });
 
+  // [人工决策-2026-11-17 21:24:25] 见 play_frame.dart 的状态行：放不下时整项换到档位下面一行，不在档位旁边折成两三行；
+  // 会罚时的游戏一直留着「+N 秒」的位置（设计审查 P1-1：以前插进状态行，整行重排、棋盘在手指下跳）。
+  testWidgets('状态行：窄屏大字号放不下时整项换到档位下面一行、只占一行，宽屏跟在档位后面；「+N 秒」出现收起、步数从 9 到 10 都不挪棋盘与状态', (tester) async {
+    tester.view.devicePixelRatio = 2;
+    addTearDown(tester.view.reset);
+    addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
+    await loadCampusFonts(tester);
+    final board = GlobalKey();
+    final status = find.byType(DotSeparatedText), tier = find.byType(TextButton).first;
+    bool stacked() => tester.getTopLeft(status).dy >= tester.getBottomLeft(tier).dy - 1;
+    Widget frame(PlaySession<Object?, Object?> session, String line, String key) => MaterialApp(theme: campusTheme(), home: PlayFrame(key: ValueKey(key), session: session, board: SizedBox.expand(key: board), onNewGame: (_) {}, onRestart: () {}, status: line));
+    // 记忆闪光的状态长：放不放得下按数字至少两位量，411dp 标准字号也排在下一行（宁可多占一行，也不在点错 9 次到 10 次时整块跳）。
+    for (final (game, line, grown, width, scale, expectStacked) in [
+      ('knights', '已定 0/3', null, 360.0, 1.3, true),
+      ('flash', '第 1/5 轮 · 点错 0 次', '第 1/5 轮 · 点错 10 次', 360.0, 1.3, true),
+      ('knights', '已定 0/3', null, 411.0, 1.0, false),
+      ('hanoi', '9 步 · 最少 15 步', '10 步 · 最少 15 步', 411.0, 1.0, false),
+      ('flash', '第 1/5 轮 · 点错 9 次', '第 1/5 轮 · 点错 10 次', 411.0, 1.0, true),
+    ]) {
+      final reason = '$game ${width.toInt()}dp ×$scale';
+      tester.view.physicalSize = Size(width * 2, 1600);
+      tester.platformDispatcher.textScaleFactorTestValue = scale;
+      final session = PlaySession(game: _game(game), rules: challengeRules[game]!, store: PlaygroundStore.memory(), seeds: () => 1);
+      await tester.pumpWidget(frame(session, line, reason));
+      await tester.pump();
+      expect(stacked(), expectStacked, reason: reason);
+      expect(tester.getSize(status).height, lessThan(14 * scale * 1.8), reason: '$reason：状态只占一行');
+      final boardTop = tester.getTopLeft(find.byKey(board)).dy, statusTop = tester.getTopLeft(status);
+      Object placed() => (tester.getTopLeft(find.byKey(board)).dy, tester.getTopLeft(status), stacked());
+      if (game == 'knights') {
+        session.penalize(const Duration(seconds: 15));
+        await tester.pump();
+        expect(find.text('+15 秒'), findsOneWidget, reason: reason);
+        expect(placed(), (boardTop, statusTop, expectStacked), reason: '$reason：罚时出现不挪棋盘与状态');
+        await tester.pump(const Duration(seconds: 2));
+        expect(find.text('+15 秒'), findsNothing, reason: reason);
+        expect(placed(), (boardTop, statusTop, expectStacked), reason: '$reason：罚时收起不挪棋盘与状态');
+      }
+      if (grown != null) {
+        await tester.pumpWidget(frame(session, grown, reason));
+        await tester.pump();
+        expect(placed(), (boardTop, statusTop, expectStacked), reason: '$reason：数字多一位不换排法');
+        expect(tester.getSize(status).height, lessThan(14 * scale * 1.8), reason: '$reason：多一位也只占一行');
+      }
+      await tester.pumpWidget(const SizedBox());
+      session.dispose();
+    }
+  });
+
   // 作弊机器人：解开以后从头来，照着刚才的走法飞快再走一遍。以前从头来把表清零，这一遍的几秒就成了新纪录。
   testWidgets('解开后从头来照着走一遍：用时接着算，不刷新纪录', (tester) async {
     final store = PlaygroundStore.memory();
@@ -464,12 +517,15 @@ void main() {
     skipped.dispose();
   });
 
-  testWidgets('外壳读好本机记录就在后台出第一道题交给对局页；后台迟迟没出好就由对局页当场出；画线入杯不备', (tester) async {
+  testWidgets('外壳读好本机记录就在后台出第一道题交给对局页（等的时候已有顶栏）；后台迟迟没出好就由对局页当场出；画线入杯不备', (tester) async {
     final store = PlaygroundStore.memory();
     Widget host(String id) => MaterialApp(theme: campusTheme(), home: PlaygroundGameHost(key: ValueKey(id), game: _game(id), store: store));
     await tester.pumpWidget(host('hanoi'));
     await tester.pump();
     expect(find.text('正在准备'), findsOneWidget);
+    // 等题时就有同对局页的顶栏：返回与游戏名（11-17 设计审查）。
+    expect(find.byTooltip('返回'), findsOneWidget);
+    expect(find.descendant(of: find.byType(AppBar), matching: find.text('汉诺塔')), findsOneWidget);
     // 另一个 isolate 按真实时间出题：让出真实的事件循环等它回来。
     await tester.runAsync(() => Future<void>.delayed(const Duration(seconds: 1)));
     await tester.pump();

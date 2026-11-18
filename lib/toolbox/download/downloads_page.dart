@@ -152,7 +152,7 @@ class _DownloadsPageState extends State<DownloadsPage> {
                                 Text(switch (_filter) {
                                   1 => '没有进行中的任务',
                                   2 => '没有已结束的任务',
-                                  _ => '暂无下载任务',
+                                  _ => '还没有下载任务',
                                 }),
                               ],
                             ),

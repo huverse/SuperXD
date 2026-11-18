@@ -36,7 +36,7 @@ class AppHooks {
       }
       _once.clear();
     }));
-    // 联网策略会变（联网偏好）：变了就把之前被挡下的一次性钩子补做（11-17 审查发现本地化启动、改回联网化后私信与账号核对要重启才恢复）。
+    // 联网策略会变（联网偏好）：变了就把之前被挡下的一次性钩子补做（11-17 审查发现仅本机启动、改回联网后私信与账号核对要重启才恢复）。
     if (policy case final Listenable changes) changes.addListener(_retryBlocked);
   }
   final NetworkPolicy policy;
@@ -124,13 +124,13 @@ void watchAppUpdates(AppUpdates updates, AppHooks hooks) {
 }
 
 // 私信跟着当前应用账号（人工决策见 social/social_service.dart）：同意协议与政策之后，等应用账号读好本机记录就切过去，之后应用账号一变就跟着切；没配中转时为不可用。
-// 本地化时停下、联网化时接着用（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条：保留登录、只是不联网）；同意之前只记下。
+// 仅本机时停下、联网时接着用（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条：保留登录、只是不联网）；同意之前只记下。
 void watchSocial(SocialService social, AppAccounts? appAccounts, AppHooks hooks, {NetworkPreference? network}) {
   if (network != null) {
     unawaited(social.setOffline(!network.online));
     network.addListener(() => unawaited(social.setOffline(!network.online)));
   }
-  // 不挂联网策略：本地化时 SocialService 自己停着（setOffline，不联网、状态 offline），切到账号照样要做，消息页才写得出本地化卡。
+  // 不挂联网策略：仅本机时 SocialService 自己停着（setOffline，不联网、状态 offline），切到账号照样要做，消息页才写得出仅本机卡。
   hooks.afterAgreed('Social', () {
     if (appAccounts == null) return social.switchAccount(null);
     void follow() {

@@ -54,6 +54,10 @@ class CampusPalette extends ThemeExtension<CampusPalette> {
   BorderSide selectedEdge({double width = 1.5}) => BorderSide(color: accentText, width: width, strokeAlign: BorderSide.strokeAlignOutside);
   // 提醒色（如「刚发起」的小圆点）：只读状态标记，与主色、警示红都区分开；深色下提亮一档保证在深底上醒目。
   Color get attention => isDark ? const Color(0xFFFBBF24) : const Color(0xFFF59E0B);
+  // 提醒色当文字、小图标与小圆点用（快递身份码的倒计时、学习通「刚发起」、字号超出推荐的提示）：浅色的 attention 对卡片底只有约 2:1，
+  // 文字与小标记改用压深的琥珀，八套配色的卡片底与全屏白底都不低于 4.5:1（test/dark_mode_test.dart 守护）；深色沿用 attention。
+  // 游戏插画里的 attention 填色（企鹅嘴、球、船）不换。
+  Color get attentionText => isDark ? attention : const Color(0xFFB45309);
   // 标签色（如学习通的账号标签）：只给标签小图标着色，名字仍用正文色；各套配色共用，浅色深、深色亮，
   // 对卡片底都不低于 3:1（图形元素的对比度要求），由 test/dark_mode_test.dart 守护。顺序即存储里的序号，只能在末尾追加。
   List<Color> get tagColors => isDark ? _darkTagColors : _lightTagColors;

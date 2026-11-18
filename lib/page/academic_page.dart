@@ -17,9 +17,12 @@ import 'package:superxd/page/campus_sync_dialogs.dart';
 import 'package:superxd/page/sync_merge_page.dart';
 import 'package:superxd/page/sync_selection_dialog.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/curve_geometry.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
@@ -144,7 +147,8 @@ class _AcademicPageState extends State<AcademicPage> {
         listenable: Listenable.merge([?autoSync]),
         builder: (context, _) => ListView(padding: const EdgeInsets.all(16), children: [
           CampusSurface(padding: const EdgeInsets.all(20), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            Text(_term == null ? '还没有学期' : _term!.label.isEmpty ? _term!.key : _term!.label, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600, color: palette.onSurface)),
+            // 学期名在「学年」后切开换行（DotSeparatedText），窄屏大字号不折出孤字「期」。
+            DotSeparatedText(_term == null ? '还没有学期' : _term!.label.isEmpty ? _term!.key : _term!.label, style: TextStyle(fontSize: CampusFontSize.title, fontWeight: FontWeight.w600, color: palette.onSurface)),
             const SizedBox(height: 4),
             DotSeparatedText([
               if (_week case final week?) '第 $week 周',
@@ -178,13 +182,14 @@ class _AcademicPageState extends State<AcademicPage> {
           ])),
           const SizedBox(height: 16),
           CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
-            // 同步：原地显示进行到哪一步，同步中不能再点。
+            // 同步：原地显示进行到哪一步，同步中不能再点。这是个动作、不推入新页，行尾不画「›」（同 iOS、鸿蒙设置里的动作行），
+            // 同步中行尾是较长同步用的利萨茹曲线（设计语言第 8 节）。
             ListTile(
               contentPadding: rowPadding,
               leading: const CampusIcon(CampusIcons.sync),
               title: const Text('同步'),
               subtitle: _syncing ? Text(_progress?.label ?? '正在同步', style: secondary) : null,
-              trailing: _syncing ? const SizedBox.square(dimension: 20, child: CircularProgressIndicator(strokeWidth: 2)) : const CampusIcon(CampusIcons.next),
+              trailing: _syncing ? const CampusLoader(curve: CampusCurve.lissajous, size: 24) : null,
               onTap: _syncing ? null : _start,
             ),
             if (autoSync != null)

@@ -81,6 +81,34 @@ void main() {
     expect(offenders, isEmpty);
   });
 
+  // 11-17 设计审查：新模块回到了 Material 默认件（选中带对勾的 ChoiceChip、加载圆环、下拉小球），和全应用的选择标签、曲线加载、下拉刷新不是一套。
+  // 选择用 CampusGlassChip 或 CampusSegmented，等待用 CampusLoader、CampusLoading 或 CampusBusyContent，下拉刷新用 CampusRefreshControl（都在 lib/theme）。
+  // 确定进度的 LinearProgressIndicator 照旧允许；短视频结果页图集每张的下载按钮外圈是下载百分比圈（同应用商店的下载圈，审查没列入），暂留。
+  test('lib/theme 以外不直接用 Material 的筹码、加载圆环与下拉刷新', () {
+    final offenders = <String>[];
+    final banned = RegExp(r'\b(ChoiceChip|FilterChip|InputChip|ActionChip|CircularProgressIndicator|RefreshIndicator)\b');
+    for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart') && !file.path.startsWith('lib/theme/') && !file.path.endsWith('short_video/media_result_page.dart'))) {
+      final lines = file.readAsLinesSync();
+      for (var index = 0; index < lines.length; index++) {
+        if (!lines[index].trimLeft().startsWith('//') && banned.hasMatch(lines[index])) offenders.add('${file.path}:${index + 1}');
+      }
+    }
+    expect(offenders, isEmpty);
+  });
+
+  // 11-17 设计审查 P2-9：界面文案里的引号统一用直角引号「」，不和弯引号“”混用（协议与隐私政策正文除外，注释不查）。
+  test('界面文案的引号用「」', () {
+    final offenders = <String>[];
+    for (final file in [for (final directory in ['lib/page', 'lib/playground', 'lib/toolbox']) ...Directory(directory).listSync(recursive: true)].whereType<File>().where((file) => file.path.endsWith('.dart') && !file.path.endsWith('legal_page.dart'))) {
+      final lines = file.readAsLinesSync();
+      for (var index = 0; index < lines.length; index++) {
+        final line = lines[index].trimLeft();
+        if (!line.startsWith('//') && RegExp(r"'[^']*[“”][^']*'").hasMatch(line)) offenders.add('${file.path}:${index + 1}');
+      }
+    }
+    expect(offenders, isEmpty);
+  });
+
   // 大半透明的离屏贴图在部分安卓驱动上有脏像素（10-27 vivo 骁龙 2K 屏上卡片颗粒整排冒出绿黑虚线，见 theme 的 FrostTexture）：
   // toImageSync 只留给先铺满底色的云雾贴图（campus_background.dart）；小图改成一次画完或在 CPU 上算好像素再上传（粒子贴图 RewardSprites）。
   test('toImageSync只用于铺满底色的云雾贴图', () {
@@ -112,7 +140,7 @@ void main() {
   // 11-16 架构方案 PR D：字号与间距用 lib/theme/campus_tokens.dart 的令牌；这两个数是 lib/theme 以外现存的字面量个数，只许减少。
   // 换成令牌后把数改小（棘轮）；新代码要写字面量（一次性的超大展示数字）就在同一处换掉一个旧的。
   test('字号与间距的字面量只许减少：新代码用 CampusFontSize 与 CampusGap', () {
-    const fontSizeLiterals = 353, gapLiterals = 455;
+    const fontSizeLiterals = 348, gapLiterals = 454;
     final fontSize = RegExp(r'fontSize: [0-9]+(\.[0-9]+)?\b'), gap = RegExp(r'SizedBox\((height|width): [0-9]+(\.[0-9]+)?\)');
     var fonts = 0, gaps = 0;
     for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart') && !file.path.startsWith('lib/theme/'))) {

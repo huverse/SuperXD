@@ -1,5 +1,5 @@
 // 联网服务登记表与联网策略（[人工决策-2026-11-16 17:26:21] 组合根统一联网策略入口，用户选定架构推荐方案）：应用里每一项会主动联网的服务登记一项，
-// 组合根按策略决定做不做（application 层之上的钩子与工厂都经这里问）；偏向开关的本地化只改策略、不改各服务。
+// 组合根按策略决定做不做（application 层之上的钩子与工厂都经这里问）；偏向开关的仅本机只改策略、不改各服务。
 // 新增会联网的服务要先在这里登记；名字发出后不改（以后本机会按它记用户关掉了哪些）。
 enum NetworkService {
   // 教务：登录、手动同步课表成绩作息。
@@ -47,7 +47,7 @@ abstract interface class NetworkPolicy {
   bool allows(NetworkService service);
 }
 
-// 联网化（默认）：全部服务都能联网。
+// 联网（默认）：全部服务都能联网。
 class OnlineNetworkPolicy implements NetworkPolicy {
   const OnlineNetworkPolicy();
   @override
@@ -59,13 +59,15 @@ class OnlineNetworkPolicy implements NetworkPolicy {
 // （第一轮说过本地化不发，用户追问时确认）。其余照常（开发者的话、灰度、自动检查更新、字体包、教务、学习通、视频解析、快递、地图），
 // 用户自己点的操作（手动检查更新、上传诊断包、提交反馈）也不禁止。登录着应用账号时切到本地化保留登录、只是不联网（用户选定），切回联网化接着用；
 // 游乐场自由模式照常，不再单独有收起游乐场（取代 domain/leisure.dart 的 11-15 两条开关）。
+// [人工决策-2026-11-17 21:24:25] 设计审查后用户选定：给用户看的叫法改成「联网 / 仅本机」（取代上一条的「联网化 / 本地化」：「本地化」常被读成翻译成本地语言），
+// 界面、提示、隐私政策与文档一起改，规则与修订号都不变；代码里的名字照旧（online 即联网、local 即仅本机），注释里旧的「本地化」就是仅本机。
 enum NetworkMode { online, local }
 
 const localModeDenied = {NetworkService.appAccount, NetworkService.social, NetworkService.challenge, NetworkService.unlock, NetworkService.festival, NetworkService.appHealth};
 
 bool networkModeAllows(NetworkMode mode, NetworkService service) => mode == NetworkMode.online || !localModeDenied.contains(service);
 
-// 联网偏好的本机记录（local 实现）：读不到或坏文件当联网化。
+// 联网偏好的本机记录（local 实现）：读不到或坏文件当联网。
 abstract interface class NetworkModeMemory {
   NetworkMode get mode;
   Future<void> saveMode(NetworkMode mode);

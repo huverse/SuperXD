@@ -11,21 +11,37 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 
+// 私信没就绪时的直达（组合根套在账号应用外面）：去应用账号页（登录、改为联网）与去消息页（开启私信、加好友、接管、重试）。
+// 设计语言 8.1「空状态原地给下一步的按钮，不让人去别的页面找」；去不了的（没配中转、没登录教务时消息页进不去）为空，只提示。
+class ShareGuide extends InheritedWidget {
+  const ShareGuide({super.key, required this.openAccount, required this.openMessages, required super.child});
+  final void Function(BuildContext context)? openAccount;
+  final void Function(BuildContext context)? openMessages;
+
+  static ShareGuide? maybeOf(BuildContext context) => context.getInheritedWidgetOfExactType<ShareGuide>();
+
+  @override
+  bool updateShouldNotify(ShareGuide oldWidget) => false;
+}
+
 // 分享给好友：底部弹层里多选好友，点发送后每一行原地显示发送中、已发送或失败（可单独重发），完成后按钮变为“完成”。
-// 课表页、界面页、百宝箱结果页共用；百宝箱经组合根注入的回调调用这里。
+// 课表页、百宝箱结果页共用；百宝箱经组合根注入的回调调用这里。
+// 私信没就绪或还没有好友时弹确认框，按钮直达能处理的那一页（11-17 设计审查：以前只写「请先在“我的 › 账号”登录…」让人自己去找）。
 Future<void> showShareSheet(BuildContext context, {required SocialService social, required ShareCard card}) async {
-  if (social.status != SocialStatus.ready) {
-    await showCampusNotice(context, switch (social.status) {
-      SocialStatus.unavailable => '当前版本未配置私信服务',
-      SocialStatus.signedOut => '请先在“我的 › 账号”登录应用账号，再开启私信',
-      SocialStatus.elsewhere => '私信在另一台手机上，可以在“消息”里改到这台手机上使用',
-      SocialStatus.offline => '本地化模式下不经服务器分享，可以在应用账号页改为联网化',
-      _ => '请先在“消息 › 私信”开启私信并添加好友',
-    });
-    return;
-  }
-  if (!social.friends.any((friend) => !friend.removed)) {
-    await showCampusNotice(context, '还没有好友，先在“消息 › 私信”扫码添加');
+  final guide = ShareGuide.maybeOf(context);
+  final (title, message, action, open) = switch (social.status) {
+    SocialStatus.ready when !social.friends.any((friend) => !friend.removed) => ('还没有好友', '在消息页扫码加好友后就能分享。', '去添加', guide?.openMessages),
+    SocialStatus.ready => (null, null, null, null),
+    SocialStatus.unavailable => ('当前版本未配置私信服务', null, null, null),
+    SocialStatus.signedOut => ('先登录应用账号', '私信跟着应用账号，登录后在消息页开启就能分享。', '去登录', guide?.openAccount),
+    SocialStatus.offline => ('现在是仅本机', '仅本机时不经服务器分享，改为联网后就能分享。', '去改为联网', guide?.openAccount),
+    SocialStatus.elsewhere => ('私信在另一台手机上', '可以在消息页改到这台手机上使用。', '去消息', guide?.openMessages),
+    SocialStatus.disabled => ('还没开启私信', '在消息页开启私信、加好友后就能分享。', '去开启', guide?.openMessages),
+    SocialStatus.loading || SocialStatus.failed => ('私信暂时连不上', '可以在消息页重试。', '去消息', guide?.openMessages),
+  };
+  if (title != null) {
+    if (message == null || action == null || open == null) return showCampusNotice(context, message ?? title, title: message == null ? null : title);
+    if (await showCampusConfirm(context, title: title, message: message, action: action) && context.mounted) open(context);
     return;
   }
   await showCampusSheet<void>(context: context, builder: (context) => CampusSheetPanel(child: _ShareSheet(social: social, card: card)));

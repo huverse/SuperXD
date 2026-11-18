@@ -120,8 +120,8 @@ class _MessagePageState extends State<MessagePage> {
                 final open? => () => open(context),
                 null => null,
               }),
-              // 本地化模式（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）：经中转的私信停着，去应用账号页切回联网化。
-              SocialStatus.offline => _SocialNotice(title: '本地化模式下不经服务器收发私信', action: '改为联网化', icon: CampusIcons.sync, onPressed: switch (widget.openAccount) {
+              // 仅本机模式（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）：经中转的私信停着，去应用账号页切回联网。
+              SocialStatus.offline => _SocialNotice(title: '仅本机时不经服务器收发私信', action: '改为联网', icon: CampusIcons.sync, onPressed: switch (widget.openAccount) {
                 final open? => () => open(context),
                 null => null,
               }),
@@ -279,7 +279,7 @@ class _FriendList extends StatelessWidget {
           ]),
           const SizedBox(height: 12),
           if (friends.isEmpty)
-            Padding(padding: const EdgeInsets.only(top: 48), child: Center(child: Text('还没有好友，点“添加好友”面对面扫码', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: colors.onSurface))))
+            Padding(padding: const EdgeInsets.only(top: 48), child: Center(child: Text('还没有好友，点「添加好友」面对面扫码', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: colors.onSurface))))
           else
             // 多行卡片去掉横向内边距，行自带 20 边距：按下变暗时整行铺满卡片宽度（同“我的”页）。
             // 加了或删了好友时那一行原地展开、收起（人工决策见 campus_animated_list.dart）。

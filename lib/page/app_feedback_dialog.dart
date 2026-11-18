@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/application/app_health.dart';
 import 'package:superxd/domain/app_health.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -51,9 +52,11 @@ class _FeedbackDialogState extends State<_FeedbackDialog> {
     }
   }
 
-  Widget _choice(bool good, IconData icon, String label) => ChoiceChip(
-    avatar: CampusIcon(icon),
-    label: Text(label),
+  // 好用、不好用二选一、开始时都不选（必选，不替人预选）：用应用自己的选择标签（选中着色、不带对勾，[人工决策] 在 theme/campus_glass_controls.dart），
+  // 不用 Material 的 ChoiceChip（选中叠对勾与深色圆底）；分段控件总有一项选着，表达不了「还没选」。
+  Widget _choice(bool good, IconData icon, String label) => CampusGlassChip(
+    leading: CampusIcon(icon, size: 18),
+    label: label,
     selected: _good == good,
     onSelected: _busy ? null : (_) => setState(() => _good = good),
   );
@@ -65,7 +68,8 @@ class _FeedbackDialogState extends State<_FeedbackDialog> {
       Wrap(spacing: 8, runSpacing: 8, children: [_choice(true, CampusIcons.thumbsUp, '好用'), _choice(false, CampusIcons.thumbsDown, '不好用')]),
       Padding(
         padding: EdgeInsets.only(top: campusFieldGap(context)),
-        child: TextField(controller: _text, enabled: !_busy, minLines: 1, maxLines: 4, maxLength: feedbackTextMax, decoration: const InputDecoration(labelText: '想说的话（可不写）')),
+        // 标签只写「想说的话」，「可不写」放在聚焦后的占位里（以前整句当标签，窄屏大字号下截成「想说的话（可不…」）。
+        child: TextField(controller: _text, enabled: !_busy, minLines: 1, maxLines: 4, maxLength: feedbackTextMax, decoration: const InputDecoration(labelText: '想说的话', hintText: '可不写')),
       ),
       if (_error case final error?) Text(error, style: Theme.of(context).textTheme.bodyMedium?.copyWith(color: CampusPalette.of(context).danger)),
     ]),

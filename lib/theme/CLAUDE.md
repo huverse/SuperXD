@@ -5,9 +5,9 @@
 # 文件职责
 
 - 色彩与主题：
-  - campus_palette.dart：设备级色彩角色 CampusPalette，四套配色（雾蓝、藕粉、暮紫、燕麦）各分浅深（苔灰 10-27 删掉），默认雾蓝（默认值在 local/display_settings.dart 的 defaultPaletteId，Android 启动窗口底色 launch_background 与 iOS 启动图的 LaunchBackground 颜色集都跟着它（appearance_settings_test.dart 守护），[人工决策] 在两处文件头与常量处）。accent 是控件激活色（开关轨道、滑杆、强调按钮底），与文字主色 primary 分开（primary 为可读压得深而灰，铺成大块会发闷）；dangerFill 是破坏性按钮的红底；accentText 是激活色作大号强调文字时用的颜色（深色提亮，对卡片底不低于 4.5:1）；attention 是只读状态的提醒色；tagColors 是六种标签色，顺序即存储序号，只能在末尾追加。
+  - campus_palette.dart：设备级色彩角色 CampusPalette，四套配色（雾蓝、藕粉、暮紫、燕麦）各分浅深（苔灰 10-27 删掉），默认雾蓝（默认值在 local/display_settings.dart 的 defaultPaletteId，Android 启动窗口底色 launch_background 与 iOS 启动图的 LaunchBackground 颜色集都跟着它（appearance_settings_test.dart 守护），[人工决策] 在两处文件头与常量处）。accent 是控件激活色（开关轨道、滑杆、强调按钮底），与文字主色 primary 分开（primary 为可读压得深而灰，铺成大块会发闷）；dangerFill 是破坏性按钮的红底；accentText 是激活色作大号强调文字时用的颜色（深色提亮，对卡片底不低于 4.5:1）；attention 是只读状态的提醒色（插画填色），当文字、小图标与小圆点时用 attentionText（浅色压深，八套配色卡片底与白底都不低于 4.5:1）；tagColors 是六种标签色，顺序即存储序号，只能在末尾追加。
   - campus_tokens.dart：字号与间距令牌 CampusFontSize（14、16、17、18、20、26，与主题的文字样式同一份）与 CampusGap（2、4、8、12、16、24），只镜像现值、不改样子；新代码写字号与 SizedBox 间距用它们，lib/theme 以外的数字字面量个数由 test/code_conventions_test.dart 冻结、只许减少（碰到的文件顺手换）。
-  - campus_theme.dart：campusTheme 按配色和字体生成 ThemeData：按钮 textStyle 显式带应用字体（不带会回落系统字体）；AppBar 返回图标与内容左边距 16 对齐、标题从 56 起（人工决策见文件内）；OutlinedButton 与 TextButton 是中性胶囊。另有 campusFieldGap（带浮动标签输入框的上方间距，随字号缩放）、campusSystemOverlay（系统栏透明）、CampusScrollBehavior（弹性回弹、不加拉伸效果，拉伸会让里面的玻璃退成底色；iOS 上拖动滚动区收起键盘）；按压反馈不用水波、按下整块变暗。CampusBackground 是空包装，只为兼容现有调用点。
+  - campus_theme.dart：campusTheme 按配色和字体生成 ThemeData：按钮 textStyle 显式带应用字体（不带会回落系统字体）；AppBar 返回图标与内容左边距 16 对齐、标题从 56 起（人工决策见文件内）；OutlinedButton 与 TextButton 是中性胶囊；输入框边框是轮廓色 outline、聚焦时主色加粗（对卡片底不低于 3:1，[人工决策] 在 inputDecorationTheme）；复选框选中是激活色底白勾（同强调按钮的白字）。另有 campusFieldGap（带浮动标签输入框的上方间距，随字号缩放）、campusSystemOverlay（系统栏透明）、CampusScrollBehavior（弹性回弹、不加拉伸效果，拉伸会让里面的玻璃退成底色；iOS 上拖动滚动区收起键盘）；按压反馈不用水波、按下整块变暗。CampusBackground 是空包装，只为兼容现有调用点。
   - campus_icons.dart：CampusIcons 统一映射 Lucide 图标，CampusIcon 渲染（iOS 上返回画成向左尖角，同系统导航栏），CampusMorphIcon 做导航图标形变，configureCampusIcons 启动时配置。
 - 背景：
   - campus_background.dart：CampusAtmosphere 是全应用唯一的背景循环（24 秒柔雾），放在 MaterialApp 上方，弹窗、弹层开着时停在原处（overlays 由组合根传 campusOverlayDepth，不然整屏模糊每帧重算）；CampusWallpaper 是可选的自定义壁纸（静态图，按色调网格逐格铺淡化保证文字可读，高对比度时不显示）；FrostTexture 是固定颗粒纹理（全部小圆点拼成一组一次画完：Impeller 没有栅格缓存，逐个画的上千个小圆每帧都要重新提交；不经离屏贴图，见关键规则）；CampusBackdrop 提供同相位的背景副本，只给入场遮罩和页面转场用（安卓只在压在弹窗上时，iOS 新页面盖在旧页面上时都垫）。换背景前先按屏幕尺寸解码（precacheImage），再交叉淡化。云雾不跟屏幕刷新逐帧走，按共用节拍 campusDecorTick 每秒推约 20 次（[人工决策] 在 _ticking 上方，先 iOS 后安卓），每次更新先画成半分辨率贴图 AtmosphereCache、每帧只贴图；自己监听前后台，离开前台立即停（后台不出帧不重建，等不到 CampusMotion 传过来）。
@@ -37,7 +37,7 @@
   - campus_glass_surface.dart：按钮与手势反馈共用的玻璃材质 CampusGlassSurface、浮层面板 CampusOverlayGlass、浮层显隐 CampusOverlayReveal 与控件出现消失 CampusGlassPresence（AnimatedOpacity 的玻璃版）。
   - campus_glass_button.dart：全局 FilledButton 背景 CampusGlassButtonSurface：视觉约 38dp、触区至少 48dp；在导航层或玻璃面板里是玻璃胶囊，内容区画色调胶囊 CampusTonalSurface；圆形按钮 CampusGlassCircleButton 只用于顶栏操作与悬浮按钮。按钮四级：强调 campusProminent（每屏、每个弹窗一个主操作）、警示 campusDestructive、普通、中性；句中链接用 campusLink（规则见文件内人工决策）。色调胶囊底色改动后重测按钮文字对比度（不低于 4.5:1）。
   - campus_glass_press.dart：玻璃控件的按压物理 CampusGlassPress（按下鼓起、松手过冲一次回位，减少动画时不形变）。
-  - campus_glass_controls.dart：选择标签 CampusGlassChip（选中着色：浅激活色底、激活色实线细边、主色文字，定义在 CampusPalette.selectedFill，卡片与菜单选中项共用，[人工决策] 在 campus_palette.dart；不带勾，高对比度下才给勾号让位、淡入，[人工决策] 在 build；选中状态与按钮合成一个读屏节点，否则读屏听不到“已选中”；减少动画时不包 AnimatedSize，它时长为 0 会在自己的布局里报错）、开关行 CampusSwitchTile（可带前置图标 leading）、滑杆 CampusSlider（GlassSlider 在系统取消与读屏增减时不回调 onChangeEnd，调用方要兜底保存；iOS 上两者是 Flutter 的 CupertinoSwitch、CupertinoSlider，iOS 样式滑杆要撑满整行；可带 CampusSliderMarks 在下方画一段带名字的色条与带名字的刻度，按这一种滑杆的拇指行程对齐，名字挤时色条的名字换到下一行）。页面不再直接用 ChoiceChip、FilterChip、SwitchListTile、Slider。
+  - campus_glass_controls.dart：选择标签 CampusGlassChip（选中着色：浅激活色底、激活色实线细边、主色文字，定义在 CampusPalette.selectedFill，卡片与菜单选中项共用，[人工决策] 在 campus_palette.dart；不带勾，高对比度下才给勾号让位、淡入，[人工决策] 在 build；选中状态与按钮合成一个读屏节点，否则读屏听不到“已选中”；减少动画时不包 AnimatedSize，它时长为 0 会在自己的布局里报错）、开关行 CampusSwitchTile（可带前置图标 leading）、滑杆 CampusSlider（GlassSlider 在系统取消与读屏增减时不回调 onChangeEnd，调用方要兜底保存；iOS 上两者是 Flutter 的 CupertinoSwitch、CupertinoSlider，iOS 样式滑杆要撑满整行；可带 CampusSliderMarks 在下方画一段带名字的色条与带名字的刻度，按这一种滑杆的拇指行程对齐，名字挤时色条的名字换到下一行）。页面不再直接用 ChoiceChip、FilterChip、SwitchListTile、Slider（筹码类由 code_conventions_test.dart 守护）。
   - campus_glass_menu.dart：玻璃菜单 showCampusMenu（是路由：返回键关闭、读屏模态、登记层数；不用库的 GlassMenu，它直接插 OverlayEntry，返回键会退出底下的页面）与下拉字段 CampusMenuField。页面不再直接用 DropdownButtonFormField、PopupMenuButton、showModalBottomSheet。
 - 通用组件：
   - campus_surface.dart：通用卡片表面 CampusSurface，可带点击（带点击时读屏报按钮）；卡片底色 campusSurfaceFill（平时 91% 不透明，高对比度与读屏导航时不透明），卡片、搜索框与快递登录的胶囊框共用。
@@ -71,11 +71,11 @@
 # 测试
 
 - 玻璃与按钮：campus_glass_test.dart（含关闭档实色与显示自检）、campus_glass_button_test.dart；iOS 的系统组件分支：native_glass_test.dart（按 iOS 跑：系统弹窗、菜单的参数，开关滑杆与磨砂档、不建平台视图，系统底栏随推入与浮层交给原生的位置与显隐；原生长什么样只能在 iPhone 上看）。
-- 背景、配色与深色：atmosphere_test.dart（含 iOS 云雾每秒约 20 次、低电量停住、半分辨率贴图同直接画对照、颗粒拼贴同逐点画对照）、dark_mode_test.dart、wallpaper_test.dart。
+- 背景、配色与深色：atmosphere_test.dart（含 iOS 云雾每秒约 20 次、低电量停住、半分辨率贴图同直接画对照、颗粒拼贴同逐点画对照）、dark_mode_test.dart（含提醒文字色、选中着色、标签色与激活色文字的对比度）、wallpaper_test.dart。
 - 动效与转场：campus_motion_test.dart、transition_sync_test.dart（含 iOS 推入与任意位置右滑返回）、account_lifecycle_test.dart（入场与转场中间帧）。
 - 提示条：campus_glass_test.dart（玻璃胶囊、锚点上方、点一下收起与留白点穿、下滑横划与快甩划走、按着暂停计时、投影不裁剪、被新弹层或页面盖住就收起、读屏不自动收起、弹层里浮最上层、hideCampusToast 收起）、shell_layout_test.dart（停在两端底栏上方）。
 - 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器、点状态栏回顶、iOS 拖动收起键盘）；typesetting_test.dart（测量与 Text 同口径含粗体文本与字距、均衡换行、分段控件按字分宽、说明行的点不单独成行、说明行一项比一行长时均衡折行并占满这一行）。
-- 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
+- 规范守护：code_conventions_test.dart（不直接用 MaterialPageRoute、lib/theme 以外不直接用 Material 的筹码、加载圆环与下拉刷新（短视频结果页的下载百分比圈暂留）、toImageSync 只用于云雾贴图、内嵌网页拖动归网页、setState 不返回 Future、只有图标的 IconButton 带 tooltip、⋯菜单破坏性项标警示色、有滚动区的页面包滚动边缘渐隐、顶栏右侧操作用玻璃圆钮〔地图选点页例外，见测试注释〕）。
 
 # 人工决策检索
 

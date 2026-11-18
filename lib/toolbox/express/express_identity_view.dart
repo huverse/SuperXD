@@ -217,7 +217,7 @@ class _ExpressIdentityViewState extends State<ExpressIdentityView> {
             final controller = widget.controller;
             final expired = remaining <= 0 && !controller.refreshing && controller.running != ExpressAction.identity;
             return Column(children: [
-              Text(_identityStatus(controller, remaining), style: textTheme.bodyMedium?.copyWith(color: palette.attention)),
+              Text(_identityStatus(controller, remaining), style: textTheme.bodyMedium?.copyWith(color: palette.attentionText)),
               if (expired)
                 Padding(padding: const EdgeInsets.only(top: 8), child: OutlinedButton.icon(onPressed: controller.busy ? null : _refresh, icon: const CampusIcon(CampusIcons.sync), label: const Text('刷新'))),
             ]);
@@ -441,7 +441,7 @@ class _IdentityZoomState extends State<_IdentityZoom> {
                       valueListenable: route.remaining,
                       builder: (context, remaining, _) => Text(
                         _identityStatus(route.express, remaining),
-                        style: TextStyle(fontSize: 14, color: light.attention),
+                        style: TextStyle(fontSize: 14, color: light.attentionText),
                       ),
                     ),
                   ]),

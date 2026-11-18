@@ -274,12 +274,16 @@ class _PlaygroundGameHostState extends State<PlaygroundGameHost> {
     return result;
   }
 
+  // 等第一道题时先画同对局页的顶栏（返回、游戏名），棋盘区放加载（11-17 设计审查：以前整页只有加载，慢设备上顶栏晚一拍才长出来，也没处返回）。
   @override
   Widget build(BuildContext context) => FutureBuilder<PlayFirst?>(
     future: _first,
     builder: (context, snapshot) => snapshot.connectionState == ConnectionState.done
         ? widget.game.builder(context, widget.game, widget.store, null, snapshot.data)
-        : const Scaffold(body: CampusLoading(label: '正在准备')),
+        : Scaffold(
+            appBar: AppBar(leading: IconButton(tooltip: '返回', onPressed: () => Navigator.maybePop(context), icon: const CampusIcon(CampusIcons.back)), title: Text(widget.game.name)),
+            body: const CampusLoading(label: '正在准备'),
+          ),
   );
 }
 

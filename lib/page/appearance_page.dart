@@ -275,7 +275,7 @@ class _AppearancePageState extends State<AppearancePage> {
       adaptations.isEmpty
           ? BalancedText(system > comfortable ? '这台手机推荐 $range，跟随系统最多到 ${percent(comfortable)}' : '这台手机推荐 $range', style: secondary)
           : Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
-              Padding(padding: EdgeInsets.only(top: campusLineInset(context, 16, style: secondary)), child: CampusIcon(CampusIcons.warning, size: 16, color: colors.attention)),
+              Padding(padding: EdgeInsets.only(top: campusLineInset(context, 16, style: secondary)), child: CampusIcon(CampusIcons.warning, size: 16, color: colors.attentionText)),
               const SizedBox(width: 6),
               Expanded(child: BalancedText('超出推荐：${adaptations.join('、')}', style: secondary)),
             ]),

@@ -9,7 +9,9 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_refresh.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 
 // 开发者的话（人工决策见 domain/developer_note.dart）：信按发出时刻从新到旧列出，没读的标小圆点，点开读全文；下拉刷新。
@@ -80,12 +82,13 @@ class _NoteCard extends StatelessWidget {
         onTap: onOpen,
         child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Row(children: [
-            Expanded(child: Text(note.title, style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, height: 1.4, color: palette.onSurface))),
+            // 标题均衡折行（BalancedText），窄屏大字号下末行不只剩一两个字（以前「…课表同 / 步更快」把「同步」拆开、末行剩「更快」）。
+            Expanded(child: BalancedText(note.title, style: TextStyle(fontSize: CampusFontSize.cardTitle, fontWeight: FontWeight.w600, height: 1.4, color: palette.onSurface))),
             if (!read) Padding(padding: const EdgeInsets.only(left: 12), child: UnreadDot(color: palette.dangerFill)),
           ]),
           const SizedBox(height: 6),
-          // 摘要把换行与空行折成一个空格，三行都给正文。
-          Text(note.body.trim().replaceAll(RegExp(r'\s*\n\s*'), ' '), maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 15, height: 1.6, color: palette.onSurfaceVariant)),
+          // 摘要把换行与空行折成一个空格，三行都给正文；字号与行高同全应用的次要文字（14 号、行高 20），不用刻度外的 15 号。
+          Text(note.body.trim().replaceAll(RegExp(r'\s*\n\s*'), ' '), maxLines: 3, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: CampusFontSize.secondary, height: 20 / 14, color: palette.onSurfaceVariant)),
           const SizedBox(height: 10),
           Text(date, style: TextStyle(fontSize: 14, color: palette.onSurfaceVariant)),
         ]),
@@ -151,7 +154,7 @@ class _Letter extends StatelessWidget {
   Widget build(BuildContext context) {
     return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
       if (title) ...[
-        Text(note.title, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, height: 1.4, color: palette.onSurface)),
+        BalancedText(note.title, style: TextStyle(fontSize: 22, fontWeight: FontWeight.w600, height: 1.4, color: palette.onSurface)),
         const SizedBox(height: 16),
       ],
       Text(note.body.trim(), style: TextStyle(fontSize: 16, height: 1.75, color: palette.onSurface)),

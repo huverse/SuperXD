@@ -52,9 +52,9 @@ class ServicePage extends StatelessWidget {
 class MinePage extends StatelessWidget {
   const MinePage({super.key, required this.session, this.updates, this.health, this.developer, this.logs, this.paintings, this.notes, this.festivals, this.appAccounts, this.openAppAccount, this.saveRewardPicture});
   final AppSession session;
-  // 应用账号（设备级，与教务各管各的）；没配中转时为空，账号页不显示那一行。
+  // 应用账号（设备级，与教务各管各的）；没配中转时为空，本页与账号页都不显示那一行。
   final AppAccounts? appAccounts;
-  // 推入应用账号页（组合根给），账号页里那一行用。
+  // 推入应用账号页（组合根给），本页与账号页里的「应用账号」一行用。
   final void Function(BuildContext context)? openAppAccount;
   // 开发者的话（设备级）；为空（没配中转）或还没有信时不显示这一行。
   final DeveloperNotes? notes;
@@ -87,7 +87,8 @@ class MinePage extends StatelessWidget {
                 CircleAvatar(radius: 28, backgroundColor: CampusPalette.of(context).surfaceSelected, child: CampusIcon(CampusIcons.account, color: CampusPalette.of(context).primary, size: 28)),
                 const SizedBox(width: 16),
                 Expanded(child: AccountTitle(name: name)),
-                const CampusIcon(CampusIcons.next),
+                // 箭头同下面各行（ListTile 给的次要色）。
+                CampusIcon(CampusIcons.next, color: CampusPalette.of(context).onSurfaceVariant),
               ]));
             }),
             const SizedBox(height: 16),
@@ -104,6 +105,9 @@ class MinePage extends StatelessWidget {
                   },
                 ),
               }),
+              // [人工决策-2026-11-17 21:24:25] 设计审查后用户选定：「我的」首页加一行应用账号（同组的界面、关于之前；配了中转才有），行尾写用户名或未登录，
+              // 点了推入应用账号页（联网偏好也在那页，少走一层）；教务账号页里那一行照留（扩展 account_page.dart 的 11-13 23:07:30 那条，不取代）。
+              if ((appAccounts, openAppAccount) case (final appAccounts?, final open?)) AppAccountRow(appAccounts: appAccounts, padding: rowPadding, onTap: () => open(context)),
               ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.palette), trailing: const CampusIcon(CampusIcons.next), title: const Text('界面'), onTap: () => _push(context, const AppearancePage())),
               // 开发者的话（人工决策见 domain/developer_note.dart）：有没读的信时行尾一个小圆点，底栏「我的」同时有一个。
               if (notes case final notes?) ListenableBuilder(listenable: notes, builder: (context, _) => notes.notes.isEmpty ? const SizedBox.shrink() : ListTile(

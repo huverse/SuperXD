@@ -521,7 +521,7 @@ void main() {
     expect(find.text('A'), findsNothing);
     await tester.tap(find.text('用户A'));
     await tester.pumpAndSettle();
-    expect(find.text('账号'), findsOneWidget);
+    expect(find.text('教务账号'), findsOneWidget);
     expect(find.text('A'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
@@ -648,7 +648,7 @@ void main() {
     expect(find.text('已开启'), findsOneWidget);
     expect(gateway.verifyPasswords, ['wrong', 'ok']);
     expect(gateway.generation, generation);
-    expect(find.text('账号'), findsOneWidget);
+    expect(find.text('教务账号'), findsOneWidget);
     expect(gateway.activeSession?.loginId, 'A');
     expect(tester.takeException(), isNull);
     await tester.pumpWidget(const SizedBox());

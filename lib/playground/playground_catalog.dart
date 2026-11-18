@@ -29,6 +29,7 @@ import 'package:superxd/theme/campus_icons.dart';
 // 舒尔特（开局盖住）与记忆闪光（点了才亮）开始前看不到题，按各自的「开始」计时。
 // [人工决策-2026-11-17 20:37:07] 扫雷也题一出现就计时（取代上面 20:13:19 那条里「扫雷照旧从第一下算」）：这个应用的扫雷出题时起点那一片已经翻开，
 // 第一下之前就能看着推，和别的推理类一样。
+// penalties 标出自由模式会罚时的四个（舒尔特点错，骑士与无赖、逻辑网格、天平称球判错，人工决策见 play_frame.dart 的 11-17 19:19:39 那条），状态行给「+N 秒」留位置。
 const puzzleSection = PlaygroundSection(id: 'puzzle', name: '益智', icon: CampusIcons.puzzle);
 
 const logicGroup = PlaygroundGroup(id: 'logic', name: '逻辑推理', section: puzzleSection);
@@ -97,6 +98,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '骑士只说真话，无赖只说假话；「我们」包括说话的人。定下每个人的身份。',
     icon: CampusIcons.knights,
     group: logicGroup,
+    penalties: true,
     builder: (context, game, store, challenge, first) => KnightsPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
@@ -143,6 +145,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '有一个或两个球重量不同，在限定次数内称出来；称的结果能唯一确定才算找出。',
     icon: CampusIcons.balance,
     group: logicGroup,
+    penalties: true,
     builder: (context, game, store, challenge, first) => BalancePage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
@@ -170,6 +173,7 @@ final playgroundCatalog = <PlaygroundGame>[
     howToPlay: '按线索推出每个人在每一类里各是哪一样。座位从左到右是 1 号起。',
     icon: CampusIcons.logicgrid,
     group: logicGroup,
+    penalties: true,
     builder: (context, game, store, challenge, first) => LogicGridPage(game: game, store: store, first: first, challenge: challenge),
   ),
   PlaygroundGame(
@@ -191,6 +195,7 @@ final playgroundCatalog = <PlaygroundGame>[
     challengeable: false,
     timeInTenths: true,
     clock: PlayClock.start,
+    penalties: true,
     builder: (context, game, store, _, _) => SchultePage(game: game, store: store),
   ),
   PlaygroundGame(

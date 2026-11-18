@@ -77,7 +77,7 @@ class _SyncSelectionDialogState extends State<_SyncSelectionDialog> {
         ])),
         if (_loading) const CampusLoading(label: '正在读取学年', inline: true),
         if (_error != null) Text(_error!),
-        if (!_loading && _years.isEmpty) const Text('暂无学年，请先点“刷新学年”。'),
+        if (!_loading && _years.isEmpty) const Text('还没有学年，点「刷新学年」'),
         if (_years.isNotEmpty) ...[
           CheckboxListTile(contentPadding: EdgeInsets.zero, title: const Text('全部学年'),
             value: _selectedYears.length == _years.length, onChanged: _loading ? null : (value) => setState(() {

@@ -77,7 +77,7 @@ void main() {
     expect(calls, ['rollout', 'notes']);
   });
 
-  // 11-17 审查发现：本地化启动时被挡下的一次性钩子（私信切账号、应用账号核对、解锁、节日补抽）改回联网化后不补做，要重启才恢复。
+  // 11-17 审查发现：仅本机启动时被挡下的一次性钩子（私信切账号、应用账号核对、解锁、节日补抽）改回联网后不补做，要重启才恢复。
   testWidgets('同意时被联网策略挡下的一次性钩子，策略放行时补做一次；之后再变不重复做', (tester) async {
     await tester.pumpWidget(const SizedBox());
     final policy = _Policy()..denied.add(NetworkService.appAccount);
@@ -88,17 +88,17 @@ void main() {
     hooks.afterAgreed('Rollouts', () => calls.add('rollout'), service: NetworkService.rollout);
     agreed.complete();
     await tester.pump();
-    expect(calls, ['rollout'], reason: '同意时本地化挡下了账号核对');
+    expect(calls, ['rollout'], reason: '同意时仅本机挡下了账号核对');
     hooks.afterAgreed('Late', () => calls.add('late'), service: NetworkService.appAccount);
     expect(calls, ['rollout'], reason: '同意后再登记的也先挡下');
     policy.allowAll();
-    expect(calls, ['rollout', 'account', 'late'], reason: '改回联网化补做一次');
+    expect(calls, ['rollout', 'account', 'late'], reason: '改回联网补做一次');
     policy.denied.add(NetworkService.appAccount);
     policy.allowAll();
     expect(calls, ['rollout', 'account', 'late'], reason: '已经做过的不重复做');
   });
 
-  testWidgets('真的联网偏好：本地化启动时挡下应用账号核对，改回联网化马上补做', (tester) async {
+  testWidgets('真的联网偏好：仅本机启动时挡下应用账号核对，改回联网马上补做', (tester) async {
     await tester.pumpWidget(const SizedBox());
     final network = NetworkPreference(memory: FileNetworkModeMemory.memory(mode: NetworkMode.local));
     final hooks = AppHooks(agreed: Future.value(), policy: network);

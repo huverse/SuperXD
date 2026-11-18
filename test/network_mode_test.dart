@@ -10,18 +10,18 @@ import 'package:superxd/local/network_mode_memory.dart';
 // 联网偏好（人工决策见 lib/domain/network_policy.dart 的 11-16 22:24:59 那条）：本机记录、偏好与策略；私信停下在 social_service_test.dart，
 // 节日在 festival_test.dart，应用账号页在 app_account_test.dart，消息页在 social_ui_test.dart。
 void main() {
-  test('本地化只关应用账号、私信经中转、挑战、解锁、节日抽奖与健康回报，其余照常；联网化全开', () {
+  test('仅本机只关应用账号、私信经中转、挑战、解锁、节日抽奖与健康回报，其余照常；联网全开', () {
     for (final service in NetworkService.values) {
       expect(networkModeAllows(NetworkMode.online, service), isTrue, reason: '$service');
       expect(networkModeAllows(NetworkMode.local, service), !localModeDenied.contains(service), reason: '$service');
     }
     expect(localModeDenied, {NetworkService.appAccount, NetworkService.social, NetworkService.challenge, NetworkService.unlock, NetworkService.festival, NetworkService.appHealth});
     for (final kept in [NetworkService.edu, NetworkService.appUpdate, NetworkService.appFeedback, NetworkService.diagnostics, NetworkService.rollout, NetworkService.developerNotes]) {
-      expect(networkModeAllows(NetworkMode.local, kept), isTrue, reason: '$kept 本地化下照常');
+      expect(networkModeAllows(NetworkMode.local, kept), isTrue, reason: '$kept 仅本机下照常');
     }
   });
 
-  test('本机记录：没有文件、坏文件当联网化；改了重开还在', () async {
+  test('本机记录：没有文件、坏文件当联网；改了重开还在', () async {
     final directory = await Directory.systemTemp.createTemp('network_mode');
     addTearDown(() => directory.delete(recursive: true));
     final file = File(path.join(directory.path, 'network_mode.json'));
@@ -34,7 +34,7 @@ void main() {
   });
 
   // 人工决策见 lib/local/network_mode_memory.dart 的 11-17 14:17:05 那条。
-  test('老用户迁移：还没有联网偏好时，旧的 leisure.json 写着关过就改为本地化并写下来、删掉旧文件；开着、坏文件、已有偏好都不改', () async {
+  test('老用户迁移：还没有联网偏好时，旧的 leisure.json 写着关过就改为仅本机并写下来、删掉旧文件；开着、坏文件、已有偏好都不改', () async {
     final directory = await Directory.systemTemp.createTemp('network_mode_migrate');
     addTearDown(() => directory.delete(recursive: true));
     File fileOf(String name) => File(path.join(directory.path, name));

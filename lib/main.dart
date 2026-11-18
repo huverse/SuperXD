@@ -193,12 +193,12 @@ void main() async {
     ));
   }
   appAccounts = appAccountsOf(relay, onDeleted: (account) => unawaited(social.forgetAccount(account)));
-  // 本地化时（联网偏好）解锁只认公开与下架、不联网，灰度与节日抽签不按等级加权、不问点名（11-16 起取代娱乐与积分的开关，见 domain/leisure.dart）。
+  // 仅本机时（联网偏好）解锁只认公开与下架、不联网，灰度与节日抽签不按等级加权、不问点名（11-16 起取代娱乐与积分的开关，见 domain/leisure.dart）。
   final challenges = challengesOf(relay, appAccounts);
   final rollouts = await rolloutsOf(support, relay, appAccounts, challenges, online: networkOnline);
   final unlocks = unlocksOf(relay, rollouts, appAccounts, accountOn: networkOnline);
   final playground = PlaygroundStore.inSupportDirectory();
-  // 删除数据清本机的游乐场记录与记着的等级（服务器上的由 Leisure 经挑战与积分先删，本地化时只删本机）；联网偏好变了、删了数据，解锁都重新判定。
+  // 删除数据清本机的游乐场记录与记着的等级（服务器上的由 Leisure 经挑战与积分先删，仅本机时只删本机）；联网偏好变了、删了数据，解锁都重新判定。
   final leisure = Leisure(deleteRemote: challenges?.deleteData, signedIn: () => network.online && (challenges?.signedIn ?? false), clearLocal: () async {
     await playground.clear();
     await rollouts.forgetLevel();

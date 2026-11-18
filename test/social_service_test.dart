@@ -153,8 +153,8 @@ void main() {
     expect(alice.unread, 0);
   });
 
-  // 本地化（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）：保留登录、只是不联网。
-  test('本地化时停下：状态 offline、不再发任何请求，好友与记录都留着；改回联网化接着用', () async {
+  // 仅本机（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）：保留登录、只是不联网。
+  test('仅本机时停下：状态 offline、不再发任何请求，好友与记录都留着；改回联网接着用', () async {
     final relay = FakeRelay();
     final (alice, bob) = await friendsPair(relay);
     await bob.send(alice.deviceId!, const VideoShare(sourceUrl: 'https://v.example.com/2', title: '合成作品', author: '作者乙', platform: 'douyin', kind: 'video'));
@@ -167,7 +167,7 @@ void main() {
     expect(alice.status, SocialStatus.ready);
     expect(alice.friends.single.displayName, '小明');
     await alice.refresh();
-    expect(alice.unread, 1, reason: '停着期间的私信改回联网化后收到');
+    expect(alice.unread, 1, reason: '停着期间的私信改回联网后收到');
   });
 
   test('中转重复投递同一条消息只入库一次', () async {

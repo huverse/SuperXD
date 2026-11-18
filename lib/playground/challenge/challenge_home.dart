@@ -15,6 +15,7 @@ import 'package:superxd/playground/puzzle_rules.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_refresh.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
@@ -157,9 +158,12 @@ class _ChallengeHomeState extends State<ChallengeHome> {
     }
     final catalog = _catalog;
     if (catalog == null) return _error == null ? const CampusLoading(label: '正在读本周的挑战') : CampusLoadError(message: _error!, onRetry: () => unawaited(_load()));
-    return RefreshIndicator(
-      onRefresh: _load,
-      child: ListView(padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + widget.bottom), children: [
+    // 下拉刷新用应用自己的曲线动效（同消息页、开发者的话，见 theme/campus_refresh.dart），不用 Material 的下拉小球。
+    return CustomScrollView(
+      physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
+      slivers: [
+        CampusRefreshControl(onRefresh: _load),
+        SliverPadding(padding: EdgeInsets.fromLTRB(16, 8, 16, 16 + widget.bottom), sliver: SliverList.list(children: [
         CampusSurface(
           onTap: () => Navigator.of(context).push(CampusPageRoute<void>(builder: (context) => PointsPage(hub: hub, unlocks: widget.unlocks))),
           padding: const EdgeInsets.all(20),
@@ -211,15 +215,15 @@ class _ChallengeHomeState extends State<ChallengeHome> {
                 ? Text('更新应用后可玩', style: secondary)
                 : challenge.ticket > (_points?.balance ?? 0)
                 ? Text('积分不够付门票', style: secondary)
-                : FilledButton.icon(
+                : FilledButton(
                     onPressed: _starting == null ? () => unawaited(_start(challenge)) : null,
-                    icon: _starting == challenge.id ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2)) : const CampusIcon(CampusIcons.resume),
-                    label: Text(challenge.best == null ? '开始' : '再挑战'),
+                    child: CampusBusyContent(busy: _starting == challenge.id, label: challenge.best == null ? '开始' : '再挑战', busyLabel: challenge.best == null ? '开始' : '再挑战', icon: const CampusIcon(CampusIcons.resume)),
                   )),
           ])),
           const SizedBox(height: 12),
         ],
-      ]),
+        ])),
+      ],
     );
   }
 }

@@ -134,7 +134,7 @@ class _ParseHistoryPageState extends State<ParseHistoryPage> {
             return const Center(child: CampusLoading(label: '读取历史'));
           }
           final rows = snapshot.data!;
-          if (rows.isEmpty) return const Center(child: Text('暂无解析历史'));
+          if (rows.isEmpty) return const Center(child: Text('还没有解析历史'));
           return ListView.builder(
             itemCount: rows.length,
             itemBuilder: (context, index) {
