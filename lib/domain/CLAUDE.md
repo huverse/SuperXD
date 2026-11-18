@@ -13,7 +13,7 @@
 - campus_http.dart：对外请求共用的有界请求内核 CampusHttp（一个模块一份，底层 http.Client 可注入，[人工决策] 在类上方）。一次请求给定超时（管到读完响应体，到点中断连接，抛 TimeoutException；可另给无进展超时 idleTimeout，发出或收到一块就重新计时）、响应字节上限（声明的长度或读到的超了就停、中断连接，抛 CampusHttpTooLarge）与外部取消（抛 http.RequestAbortedException）；底层不理会中断时也按时返回；断网等其余异常原样抛出，堆栈接上调用方那一串；每个请求经 campusRequestLog 记一条。只管机制，各模块的请求头、会话、错误码映射与日志文案在各自的封装里。请求体可以是 body、bodyBytes、multipart 或边读边发的 bodyStream（声明长度、不分块）。collect 让调用方自己累加响应体（教务成绩那条性能观察项、字体包下载的进度）。lib 里自己构造 http 客户端或请求的只许是它与还没迁过来的 iOS 下载传输（toolbox/download/http_transfer.dart，原因写在守护测试里），test/project_structure_test.dart 守护。
 - campus_crypto.dart：各模块共用的密码学小工具，只在这里实现一遍：base64UrlNoPad 与严格解码 tryDecodeBase64UrlNoPad（只认无填充的规范写法、可要求字节数，不合格返回 null）、secureRandomBytes、verifyEd25519（长度不对算验不过）。私信、签名信封、诊断包、学习通代签包与发版工具都用它；各协议自己的布局、域前缀与加密构造留在各自文件。
 - campus_clock.dart：
-  - campusTimeZone：校园时区的唯一定义。
+  - campusTimeZone：校园时区的唯一定义。时区库用 latest_10y（前后各约五年的规则，换校园时区照样可用）。
   - campusToday：校园时区的今天。campusNow：校园时区今天的零点。
   - formatCampusRelative：展示时刻按远近写到分钟（今天、昨天、明天、今年写月日、跨年带年份，[人工决策] 在函数上），页面展示时刻都用它。formatCampusMoment：短写「10月17日 09:12」，历史版本按时刻指代某一版时用。
   - clockMinutes：把 HH:mm 转成分钟数。

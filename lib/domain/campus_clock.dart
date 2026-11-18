@@ -1,4 +1,6 @@
-import 'package:timezone/data/latest.dart' as tzdata;
+// 时区库用 10y 版（前后各约五年的规则，约为默认版的四分之一，11-18 性能审查 P2-5）：业务只算眼前的课表、日界与提醒，
+// 校园时区换成别的地方也照样可用；库版本随依赖每月更新，窗口跟着往后挪。
+import 'package:timezone/data/latest_10y.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 const campusTimeZone = 'Asia/Shanghai';
