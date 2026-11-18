@@ -1,7 +1,9 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_log.dart';
@@ -34,6 +36,8 @@ class CampusAtmosphere extends StatefulWidget {
   final double? phase;
   final CampusWallpaper? wallpaper;
   final ValueListenable<int>? overlays;
+  // 没人操作满这么久云雾就停在原处（[人工决策] 见 _ticking 上方 11-17 那条）。
+  static const idleAfter = Duration(seconds: 8);
   @override
   State<CampusAtmosphere> createState() => _CampusAtmosphereState();
 }
@@ -49,7 +53,16 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   // 按屏幕刷新率（ProMotion 每秒 120 次）整屏重画看不出区别，却让手机发烫；低电量模式下停（见 CampusMotion）。停下再开从原处接着走。
   // [人工决策-2026-10-27 17:42:49] 安卓也照此（用户「按照建议做」：安卓同样没有栅格缓存、手上的 OPPO 与 vivo 都是高刷屏）：每秒约 20 次、半分辨率贴图、省电模式下停。
   // 节拍是全应用共用的 campusDecorTick（见 campus_motion.dart），上课中此刻点的漾开跟它同一拍出帧。
+  // [人工决策-2026-11-17 21:24:25] 补充上面两条的「一直流动」（用户选定，任务书第 6 项性能审查 P1-2）：CampusAtmosphere.idleAfter（8 秒）里没有任何指针事件
+  // （点、按、滑、滚）就停在原处，一碰就从原处接着走（下一拍只多走一步，看不出跳变）；重新具备流动条件时（回到前台、开屏走完、弹窗关掉、省电模式关掉）
+  // 也重新计这 8 秒。起因：云雾每秒 20 次重画，底栏玻璃与页面边缘渐隐跟着每帧重算，应用开着放着不动也一直在用 GPU（发热与耗电）；
+  // 同 iOS 动态壁纸、天气背景不操作时静止。上课中此刻点的漾开照旧（它自己听节拍，云雾停了节拍照样有人听就走，见 campus_motion.dart 的 campusDecorTick）。
+  // 没选：不停只减半、连漾开一起停、保持一直流动。
   var _ticking = false;
+  // 当前具备流动条件（前台、允许动效、没壁纸、没弹窗），与是否空闲无关；从无到有时重新计空闲。
+  var _wanted = false;
+  var _idle = false;
+  Timer? _idleTimer;
   // 每一拍先画成半分辨率贴图，每帧只贴图（见 AtmosphereCache）。
   final _fogCache = AtmosphereCache();
   // 离开前台立即停：后台不出帧、不重建，等 CampusMotion 经重建传过来要到回前台，定时器会在后台一直空转。
@@ -90,10 +103,31 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   }
 
   void _updatePlayback() {
-    final run = _allowed && _foreground && widget.phase == null && _shown == null && (widget.overlays?.value ?? 0) == 0;
+    final want = _allowed && _foreground && widget.phase == null && _shown == null && (widget.overlays?.value ?? 0) == 0;
+    if (want && !_wanted) _armIdle();
+    _wanted = want;
+    final run = want && !_idle;
     if (run == _ticking) return;
     _ticking = run;
     run ? campusDecorTick.addListener(_advance) : campusDecorTick.removeListener(_advance);
+  }
+
+  // 重新计空闲：清掉空闲、idleAfter 后再停。不具备流动条件时不计（等具备时从头计）。
+  void _armIdle() {
+    _idleTimer?.cancel();
+    _idle = false;
+    _idleTimer = Timer(CampusAtmosphere.idleAfter, () {
+      _idle = true;
+      _updatePlayback();
+    });
+  }
+
+  // 全局指针路由：任何指针事件（不论落在哪一层、有没有控件接）都算有人在操作。
+  void _onPointer(PointerEvent event) {
+    if (!_wanted) return;
+    final idle = _idle;
+    _armIdle();
+    if (idle) _updatePlayback();
   }
 
   void _advance() => _controller.value = (_controller.value + campusDecorStep.inMicroseconds / _controller.duration!.inMicroseconds) % 1;
@@ -102,6 +136,7 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointer);
     widget.overlays?.addListener(_updatePlayback);
   }
 
@@ -119,7 +154,9 @@ class _CampusAtmosphereState extends State<CampusAtmosphere>
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointer);
     widget.overlays?.removeListener(_updatePlayback);
+    _idleTimer?.cancel();
     if (_ticking) campusDecorTick.removeListener(_advance);
     _fogCache.dispose();
     _controller.dispose();
