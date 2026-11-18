@@ -57,6 +57,18 @@ void main() {
     }
   });
 
+  // 11-18 用户诊断包：会话失效时学期下拉回「凭证已失效」的脚本（不是 JSON），要报会话失效、交给上层自动重登，不能当格式错误。
+  test('学期下拉回「凭证已失效」报会话失效；回别的非 JSON 才是格式错误', () async {
+    KingoClient client(String dropBody) => KingoClient(client: MockClient((request) async => request.url.path.endsWith('SchoolTimetable.jsp')
+        ? http.Response('<html>公开课表</html>', 200, headers: {'content-type': 'text/html; charset=utf-8'})
+        : http.Response(dropBody, 200, headers: {'content-type': 'text/html; charset=utf-8'})));
+    const expired = "<script>alert('温馨提示：凭证已失效，请重新登录!');window.top.location.href='/';</script>";
+    await expectLater(client(expired).listTerms(), throwsA(isA<KingoCallException>().having((error) => error.failure.code, 'code', 'SESSION_EXPIRED')));
+    await expectLater(client('<html>维护中</html>').listTerms(), throwsA(isA<FormatException>()));
+    final ok = await client('[{"code":"2026-0","name":"2026-2027学年第一学期"}]').listTerms();
+    expect(ok.terms, isNotEmpty);
+  });
+
   test('作息明确未设置才是empty，未知内容拒绝', () async {
     final empty = KingoClient(client: MockClient((_) async => http.Response('未设置作息时间', 200, headers: {'content-type': 'text/html; charset=utf-8'})));
     expect((await empty.fetchBells(xn: '2026', xq: '0')).empty, isTrue);

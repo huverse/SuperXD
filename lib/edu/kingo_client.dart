@@ -164,6 +164,9 @@ class KingoClient {
       referer: '/public/SchoolTimetable.jsp',
       accept: 'application/json',
     );
+    // 学期下拉要登录着的会话：失效时教务回一段「凭证已失效，请重新登录」的脚本而不是 JSON（11-18 用户诊断包，547 字节），
+    // 先按会话失效抛出、交给上层自动重登并重放；以前直接当 JSON 解析，报成格式错误、登录过期后每次同步都卡在这一步。
+    _throwIfExpired(posted.body);
     return (terms: parseTerms(jsonDecode(posted.body) as List<Object?>), published: parsePublicCurrent(shell.body));
   }
 
