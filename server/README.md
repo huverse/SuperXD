@@ -56,7 +56,7 @@
 - POST /v1/messages：投递密文，按（发送方, clientId）幂等，只能发给好友。GET /v1/messages?after=&limit=&wait=：按 id 游标取；wait（0–25 秒）为长轮询，没有消息时挂起到有新消息、到时或客户端断开。POST /v1/messages/ack：确认即删除。
 
 更新清单与开发者的话的签名（人工决策见客户端 lib/device/signed_content.dart）
-- 现在是明文 HTTP：清单里的最低可用版本可被改成全员强制更新、开发者的话可被改成钓鱼文字，所以两者由流水线用 Ed25519 签名，客户端内置公钥校验；HTTPS 等备案后再做。安装包本身仍由客户端核对 SHA-256 与签名证书。
+- 旧版本客户端还在走明文 HTTP（新版本 11-18 起走 HTTPS）：清单里的最低可用版本可被改成全员强制更新、开发者的话可被改成钓鱼文字，所以两者由流水线用 Ed25519 签名，客户端内置公钥校验；改 HTTPS 后签名照旧保留（纵深防御）。安装包本身仍由客户端核对 SHA-256 与签名证书。
 - 信封 {signed, signatures}：signed 是载荷 UTF-8 JSON 字节的 base64url，signatures 每项 {keyId, sig}（最多 4 个，任一受信公钥验过即可，便于换钥）；签名原文是域前缀（SXD1-release 或 SXD1-notes 加换行）接载荷字节，两类不能互相挪用。
 - 清单文件 <渠道>.json 在明文字段之外带 envelopes：每个架构一份（载荷含渠道、架构、版本、最低可用版本、更新说明、发布页与这个架构的安装包文件名、大小、SHA-256），按请求的架构挑一份放进返回的 envelope；developer_notes.json 带一个 envelope（载荷是 {"notes": [...]}）。
 - 中转只校验信封形状（base64url、签名个数与长度、keyId 格式，多出字段即当写坏）、原样透传，不解码、不验签；明文字段照旧给 1.0.0-alpha.15 及以前不验签的旧客户端。
@@ -144,7 +144,7 @@
    然后 docker compose up -d --no-deps --wait mysql 按新参数重建 MySQL 容器（数据在卷里不动，约 15 秒，期间中转查库失败），
    最后 docker compose exec mysql sh -c 'rm -f /var/lib/mysql/binlog.*' 删掉留下的空 binlog 与索引文件；核对 SELECT @@log_bin 为 0。
    MySQL 与 Redis 镜像在 compose 里固定到补丁版：第一次按固定版本启动（或以后改版本）会换掉服务器上原来的镜像，MySQL 在 8.4 长期支持线内原地升级，先跑一次备份。
-5. 客户端构建时传入地址：flutter build apk --flavor alpha --dart-define=SUPERXD_RELAY=http://服务器IP:端口。
+5. 客户端构建时传入地址：flutter build apk --flavor alpha --dart-define=SUPERXD_RELAY=https://服务器IP:8443（HTTPS 见下面「HTTPS」；本机调试临时中转可用 http://）。
 6. 应用更新：compose 把本目录下的 releases 只读挂进容器（/srv/releases）。发版时把各架构安装包、仓库 font_packs 里的字体包与 tool/release_manifest.dart 生成的 <渠道>.json 传进 releases，先传安装包、最后传清单（清单一出现客户端就会来下载），再删掉旧版本的安装包；由仓库的发版流水线（.github/workflows/release.yml）自动完成，步骤见仓库根目录 CONTRIBUTING.md。清单与开发者的话带签名信封后，本服务要先于下一次发版部署（见上面「更新清单与开发者的话的签名」的上线顺序）。
    节日抽奖：库按 sql/upgrade_2026_10_23.sql 建三张表后再部署；每次节日在服务器上进中转容器执行维护命令（用法见 src/modules/reward/reward_admin.ts 文件头）：create 建活动（编号、带时区的起止时刻、模式、基础概率、加权上限），import 从标准输入导入奖品（每行「口令<TAB>内容」或「二维码<TAB>内容」，可加附言），status 看发放情况。奖品只经标准输入进库，不放进仓库、不落地成文件。
    积分与挑战：库按 sql/upgrade_2026_11_14.sql 建四张表后再部署；compose 里固定了业务时区 RELAY_BUSINESS_TIME_ZONE（Asia/Shanghai），.env 不用改；挑战的配置与题库由流水线 challenge.yml 传进 releases/challenge（题库种子是 GitHub 机密 CHALLENGE_BANK_SEED，开发者本机另存一份），没传之前挑战列表为空。
@@ -164,7 +164,15 @@
    诊断包：compose 把命名卷 diagnostics 挂到容器 /srv/diagnostics（镜像里这个目录归 node，命名卷第一次创建时沿用，非 root 进程能写），不用改 .env。认领到应用账号要先按 sql/upgrade_2026_11_14b.sql 建 diagnostic_upload 表再部署。用户报来诊断编号后，在服务器 /opt/superxd-relay 下 docker compose cp relay:/srv/diagnostics/<诊断编号> /tmp/<诊断编号> 取出，拷回开发者本机用 tool/open_diagnostic.dart 解开（私钥只在开发者本机，见该文件头）；用户要求提前删除时 docker compose exec relay rm /srv/diagnostics/<诊断编号>。
    流水线用的上传账号只能读写 releases：建系统用户（如 superxd-release，不设密码），把 releases 及其中文件交给它；它的 authorized_keys 只放流水线专用的一把密钥，写成 restrict,command="/usr/bin/rrsync /opt/superxd-relay/releases" ssh-ed25519 …，这把密钥只能经 rsync 读写这个目录，不能登录或执行别的命令。私钥只放进 GitHub 的 relay 环境，主机指纹用 ssh-keyscan 取得后一并存入。
 
-换正式域名：在前面加 Nginx 或 Caddy 终止 HTTPS，把 RELAY_TRUST_PROXY 设为 1（按 X-Forwarded-For 取客户端 IP），客户端改用 --dart-define=SUPERXD_RELAY=https://域名 重新构建即可，协议与数据不变。中国大陆服务器使用域名须先完成 ICP 备案。
+# HTTPS（11-18 起，人工决策见 docker-compose.yml 的 tls）
+
+- 证书：Let's Encrypt 的公网 IP 证书（不要域名、不要备案），shortlived 档 160 小时，webroot 经 80 端口验证。Nginx（compose 的 tls）在 8443 终止 HTTPS 转给内网里的中转；客户端按 IP 连接不带 SNI，所以一个端口一张证书。
+- 安全组放行 80（只给签发验证，其余 404）与 8443；8080 明文先留给旧版本客户端，等提高最低可用版本后再关。
+- .env 的 RELAY_TRUST_PROXY 设为 uniquelocal：只有内网（Nginx）来的请求按 X-Forwarded-For 取客户端 IP，直连 8080 的照旧按真实地址，伪造的头不起作用（Nginx 覆盖这个头，人工决策见 src/config/env.ts）。8080 关掉后也可以照旧这样设。
+- 第一次：覆盖配置后跑 scripts/tls_cert.sh issue <公网 IP>（没有证书时先放一张占位证书、启动 Nginx，再签发、装好、让 Nginx 重读）；root 的 crontab 加 27 3 * * * /opt/superxd-relay/scripts/tls_cert.sh renew >> /var/log/superxd-relay-tls.log 2>&1（每天检查、剩 3 天续，续了才让 Nginx 重读）。scripts/tls_cert.sh status 看签发者、到期时间与 IP。
+- 证书、验证目录与 acme.sh 的账号在命名卷 tls-certs、acme-webroot、acme-home，不在部署目录里，不进备份（丢了重新 issue）。
+- 监控：外部探活（.github/workflows/relay-health.yml）在 RELAY_URL 是 https 时另查证书，剩不到 72 小时让工作流失败、发邮件；看 /var/log/superxd-relay-tls.log 与 status 找原因（常见：80 端口被拦、Let's Encrypt 故障、Docker 拉不到镜像），修好后手动 renew。
+- 客户端：发版流水线的 RELAY_URL 机密是 https://<公网 IP>:8443，新构建的包走 HTTPS；安卓网络安全配置只在中转地址是 http 时才放行它的明文（android/app/build.gradle.kts）。
 
 # 表结构升级台账
 

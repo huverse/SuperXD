@@ -1,4 +1,6 @@
 // 环境变量唯一入口：业务代码一律从 env 取值，禁止散落 process.env。缺失必填项启动即失败。
+import { isIP } from 'node:net';
+
 const required = (name: string): string => {
   const value = process.env[name];
   if (value === undefined || value === '') throw new Error(`缺少环境变量 ${name}`);
@@ -17,6 +19,23 @@ const flag = (name: string): boolean => {
   return value === 'true';
 };
 
+// 反向代理的信任范围：整数是代理层数（0 为前面没有代理）；否则是逗号分隔的地址、网段或 express 认得的名字（loopback、linklocal、uniquelocal），
+// 只有从这些地址来的请求才按 X-Forwarded-For 取客户端 IP。
+const proxyNames = new Set(['loopback', 'linklocal', 'uniquelocal']);
+export const parseTrustProxy = (name: string, value: string): number | string[] => {
+  if (/^\d+$/.test(value)) return Number(value);
+  const entries = value.split(',').map((entry) => entry.trim()).filter((entry) => entry !== '');
+  const valid = (entry: string): boolean => {
+    if (proxyNames.has(entry)) return true;
+    const [address, prefix, ...rest] = entry.split('/');
+    const family = isIP(address);
+    if (family === 0 || rest.length > 0) return false;
+    return prefix === undefined || (/^\d+$/.test(prefix) && Number(prefix) <= (family === 4 ? 32 : 128));
+  };
+  if (entries.length === 0 || !entries.every(valid)) throw new Error(`环境变量 ${name} 要么是代理层数，要么是逗号分隔的地址、网段或 loopback、linklocal、uniquelocal`);
+  return entries;
+};
+
 const timeZone = (name: string): string => {
   const value = required(name);
   try {
@@ -29,8 +48,11 @@ const timeZone = (name: string): string => {
 
 export const loadEnv = () => ({
   port: integer('RELAY_PORT'),
-  // 反向代理层数：部署在 Nginx 等之后时设为 1，按 X-Forwarded-For 取客户端 IP 做注册与代签接口的限流；前面没有代理时必须为 0，否则来源 IP 可被伪造。
-  trustProxy: integer('RELAY_TRUST_PROXY'),
+  // 反向代理：按 X-Forwarded-For 取客户端 IP 做注册、登录与代签接口的限流与扫码登录的属地。前面没有代理时必须为 0，否则来源 IP 可被伪造。
+  // [人工决策-2026-11-18 18:10:39] 中转改用 Let's Encrypt 公网 IP 证书的 HTTPS（用户在两路实验后选定）：Nginx 在 8443 终止 HTTPS 再转给中转，
+  // 旧版本客户端仍直连 8080 明文。两条路同时开着时不能用层数（直连 8080 的人可以自己写 X-Forwarded-For 冒充来源），
+  // 线上设为 uniquelocal：只信内网来的请求（Nginx 在 compose 内网里），直连的公网来源一律按真实地址，见 docker-compose.yml 的 tls。
+  trustProxy: parseTrustProxy('RELAY_TRUST_PROXY', required('RELAY_TRUST_PROXY')),
   swagger: flag('RELAY_SWAGGER'),
   // 构建版本：流水线构建镜像时把提交号经构建参数写进镜像（Dockerfile 的 RELAY_BUILD_VERSION），/v1/health 原样返回；
   // 本地开发与测试不经镜像构建，没有这个变量即为 dev。不要写进 .env（env_file 会盖掉镜像里的值）。

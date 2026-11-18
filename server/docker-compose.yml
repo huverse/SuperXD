@@ -54,6 +54,37 @@ services:
       driver: json-file
       options: { max-size: "20m", max-file: "5" }
 
+  # [人工决策-2026-11-18 18:10:39] HTTPS 用 Let's Encrypt 的公网 IP 证书（用户在两路实验后选定，没选自签证书加客户端内置：维护省、浏览器能直接打开中转链接）。
+  # Nginx 在 8443 终止 HTTPS、转给内网里的中转；80 只给证书签发验证（ACME http-01），其余一律 404。证书 160 小时有效，scripts/tls_cert.sh 每天检查、剩 3 天续，
+  # 续不上会在 6 天内全挂，所以外部探活另查证书到期（.github/workflows/relay-health.yml）。旧版本客户端照旧直连 8080 明文，等提高最低版本后再关。
+  # 中转按 X-Forwarded-For 取客户端 IP 只信内网来的请求（RELAY_TRUST_PROXY=uniquelocal，人工决策见 src/config/env.ts），Nginx 覆盖这个头、不接客户端自己写的。
+  tls:
+    image: nginx:1.28.0-alpine
+    restart: unless-stopped
+    depends_on:
+      - relay
+    ports:
+      - "80:80"
+      - "8443:8443"
+    volumes:
+      - ./tls/nginx.conf:/etc/nginx/nginx.conf:ro
+      - tls-certs:/certs:ro
+      - acme-webroot:/srv/acme:ro
+    mem_limit: 64m
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+  # 签发与续期证书的工具，不常驻：scripts/tls_cert.sh 用 docker compose run 调它（profiles 让 up 不启动它）。
+  # acme.sh 按镜像摘要固定（v3.1.7；3.1.1 还没有 --cert-profile，Docker Hub 上没有 3.1.7 这个标签），升级时改摘要并先在非线上核对 shortlived 档能签。
+  acme:
+    image: neilpang/acme.sh@sha256:475e6c0f1fb861ea8011d7ab9dd3d7490d98540970827ecc36290a3afa411673
+    profiles: ["tools"]
+    volumes:
+      - acme-home:/acme.sh
+      - acme-webroot:/webroot
+      - tls-certs:/out
+
   # MySQL 与 Redis 固定到补丁版：升级时改这里，先跑一次备份（scripts/backup_db.sh）；CI（ci.yml、relay-image.yml）与 docker-compose.test.yml 用同一版本，一起改。
   mysql:
     image: mysql:8.4.13
@@ -101,3 +132,7 @@ services:
 volumes:
   mysql-data:
   diagnostics:
+  # 证书、签发验证用的目录与 acme.sh 的账号和续期记录：命名卷，不在部署目录里（部署脚本比对文件时不碰），也不进备份（丢了重新签发即可）。
+  tls-certs:
+  acme-webroot:
+  acme-home:
