@@ -5,6 +5,7 @@ import 'package:sqflite/sqflite.dart';
 import 'package:superxd/domain/share_card.dart';
 
 // 私信本机库（每个应用账号一份，文件见 social_spaces.dart；切换教务账号保留）：资料、好友、消息、邀请。
+// 面对面私信（蓝牙）用同一套表，另开一个库 social/nearby.db（人工决策见 nearby_service.dart），好友多一列归属 owner 并按范围读，见 scopeTo。
 // 时间一律存 UTC ISO 字符串；私钥不在这里，在系统安全存储（identity_vault.dart）。
 // 上限：好友 500；每个好友保留最近 200 条消息；邀请保留 31 天（覆盖信箱 30 天保留期内迟到的问候）。
 
@@ -24,6 +25,7 @@ class SocialFriend {
     this.removed = false,
     this.lastPreview = '',
     this.unread = 0,
+    this.owner,
   });
   final String deviceId;
   final String nickname;
@@ -36,6 +38,8 @@ class SocialFriend {
   final bool removed;
   final String lastPreview;
   final int unread;
+  // 面对面好友的归属：空是这台手机自己的，账号号是并进了那个应用账号的；线上私信一律为空。
+  final String? owner;
   String get displayName => remark?.isNotEmpty == true ? remark! : nickname;
 
   static SocialFriend fromRow(Map<String, Object?> row) => SocialFriend(
@@ -49,6 +53,7 @@ class SocialFriend {
     removed: row['removed'] == 1,
     lastPreview: row['last_preview'] as String,
     unread: row['unread'] as int,
+    owner: row['owner'] as String?,
   );
 }
 
@@ -102,14 +107,32 @@ class SocialProfile {
 // 新手机从服务器拿到、还没收到对方资料的好友，先用这个名字（对方上线后自动发来昵称）。
 String placeholderNickname(String deviceId) => '好友 ${deviceId.substring(0, 4)}';
 
+// 面对面好友的读取范围：account 为空是没登录应用账号（只看这台手机自己的），否则另看并进这个账号的；merged 为真时新加的好友也归这个账号。
+class FriendScope {
+  const FriendScope({required this.account, required this.merged});
+  final String? account;
+  final bool merged;
+}
+
 class SocialStore {
   SocialStore._(this._database);
   final Database _database;
+  FriendScope? _scope;
+
+  // 只有面对面的库设范围（线上私信每个应用账号一个库，不用）：之后读好友、未读与加好友都按它。
+  void scopeTo(FriendScope scope) => _scope = scope;
+
+  (String, List<Object?>) get _visible => switch (_scope) {
+    null => ('1 = 1', const []),
+    FriendScope(account: null) => ('owner IS NULL', const []),
+    FriendScope(:final account) => ('(owner IS NULL OR owner = ?)', [account]),
+  };
 
   // 单实例并回滚遗留的事务：退出再进入时接回旧引擎留下的连接（人工决策见 local/account_store.dart 的 open）。
-  // 第 2 版（11-14 私信跟着应用账号）：profile 加 bound。
-  static Future<SocialStore> open(String path) async => SocialStore._(await databaseFactory.openDatabase(path, options: OpenDatabaseOptions(version: 2, rollbackActiveTransactionOnOpen: true, onUpgrade: (database, from, _) async {
+  // 第 2 版（11-14 私信跟着应用账号）：profile 加 bound。第 3 版（11-18 面对面私信）：friend 加归属 owner、加并进账号的选择 owner_choice，线上私信的库用不到、留空。
+  static Future<SocialStore> open(String path) async => SocialStore._(await databaseFactory.openDatabase(path, options: OpenDatabaseOptions(version: 3, rollbackActiveTransactionOnOpen: true, onUpgrade: (database, from, _) async {
     if (from < 2) await database.execute('ALTER TABLE profile ADD COLUMN bound INTEGER NOT NULL DEFAULT 0');
+    if (from < 3) await _addOwners(database);
   }, onCreate: (database, _) async {
     await database.execute('CREATE TABLE profile (id INTEGER PRIMARY KEY CHECK(id=1), nickname TEXT NOT NULL, registered INTEGER NOT NULL, bound INTEGER NOT NULL DEFAULT 0)');
     await database.execute(
@@ -123,7 +146,13 @@ class SocialStore {
     await database.execute('CREATE INDEX message_conversation ON message (friend_id, create_time DESC, id DESC)');
     await database.execute('CREATE TABLE invite (invite_id TEXT PRIMARY KEY, public_key TEXT NOT NULL, create_time TEXT NOT NULL)');
     await database.execute('CREATE INDEX invite_time ON invite (create_time)');
+    await _addOwners(database);
   })));
+
+  static Future<void> _addOwners(Database database) async {
+    await database.execute('ALTER TABLE friend ADD COLUMN owner TEXT');
+    await database.execute('CREATE TABLE owner_choice (account_id TEXT PRIMARY KEY, merged INTEGER NOT NULL)');
+  }
 
   Future<void> close() => _database.close();
 
@@ -137,18 +166,21 @@ class SocialStore {
 
   // 关闭私信：清空本机全部私信数据。
   Future<void> clear() => _database.transaction((transaction) async {
-    for (final table in ['profile', 'friend', 'message', 'invite']) {
+    for (final table in ['profile', 'friend', 'message', 'invite', 'owner_choice']) {
       await transaction.delete(table);
     }
   });
 
   // 按最近活动倒序；好友最多 500 个，结果有界。
-  Future<List<SocialFriend>> friends() async => [
-    for (final row in await _database.query('friend', orderBy: 'last_activity DESC, device_id', limit: friendLimit)) SocialFriend.fromRow(row),
-  ];
+  Future<List<SocialFriend>> friends() async {
+    final (where, args) = _visible;
+    return [for (final row in await _database.query('friend', where: where, whereArgs: args, orderBy: 'last_activity DESC, device_id', limit: friendLimit)) SocialFriend.fromRow(row)];
+  }
 
+  // 范围外的好友（面对面里并进了别的应用账号的）当作不是好友：收不下它的信、也发不过去。
   Future<SocialFriend?> friend(String deviceId) async {
-    final row = (await _database.query('friend', where: 'device_id = ?', whereArgs: [deviceId])).firstOrNull;
+    final (where, args) = _visible;
+    final row = (await _database.query('friend', where: 'device_id = ? AND $where', whereArgs: [deviceId, ...args])).firstOrNull;
     return row == null ? null : SocialFriend.fromRow(row);
   }
 
@@ -158,10 +190,15 @@ class SocialStore {
   Future<void> upsertFriend({required String deviceId, required String nickname, required String signPublicKey, required String boxPublicKey, required String now, required String systemId}) =>
       _database.transaction((transaction) async {
         final existing = (await transaction.query('friend', columns: ['removed'], where: 'device_id = ?', whereArgs: [deviceId])).firstOrNull;
+        // 面对面：新加（或重新扫码加回）的好友归这次的范围，见 scopeTo。
+        final owner = switch (_scope) {
+          FriendScope(merged: true, :final account) => account,
+          _ => null,
+        };
         if (existing == null) {
-          await transaction.insert('friend', {'device_id': deviceId, 'nickname': nickname, 'sign_public_key': signPublicKey, 'box_public_key': boxPublicKey, 'since': now, 'last_activity': now, 'last_preview': '已成为好友'});
+          await transaction.insert('friend', {'device_id': deviceId, 'nickname': nickname, 'sign_public_key': signPublicKey, 'box_public_key': boxPublicKey, 'since': now, 'last_activity': now, 'last_preview': '已成为好友', 'owner': owner});
         } else {
-          await transaction.update('friend', {'nickname': nickname, 'sign_public_key': signPublicKey, 'box_public_key': boxPublicKey, 'removed': 0, 'last_activity': now, 'last_preview': '已成为好友'}, where: 'device_id = ?', whereArgs: [deviceId]);
+          await transaction.update('friend', {'nickname': nickname, 'sign_public_key': signPublicKey, 'box_public_key': boxPublicKey, 'removed': 0, 'last_activity': now, 'last_preview': '已成为好友', 'owner': owner}, where: 'device_id = ?', whereArgs: [deviceId]);
           if (existing['removed'] == 0) return;
         }
         await transaction.insert('message', {'id': systemId, 'friend_id': deviceId, 'outgoing': 0, 'state': MessageState.received.name, 'system': 'friend_added', 'create_time': now}, conflictAlgorithm: ConflictAlgorithm.ignore);
@@ -253,5 +290,32 @@ class SocialStore {
 
   Future<void> pruneInvites(String before) => _database.delete('invite', where: 'create_time < ?', whereArgs: [before]);
 
-  Future<int> unreadTotal() async => Sqflite.firstIntValue(await _database.rawQuery('SELECT COALESCE(SUM(unread), 0) FROM friend'))!;
+  Future<int> unreadTotal() async {
+    final (where, args) = _visible;
+    return Sqflite.firstIntValue(await _database.rawQuery('SELECT COALESCE(SUM(unread), 0) FROM friend WHERE $where', args))!;
+  }
+
+  // ---------- 面对面好友并进应用账号（人工决策见 nearby_service.dart） ----------
+
+  // 这个应用账号选过没有：并进为真、不并为假、还没问为空。
+  Future<bool?> ownerChoice(String account) async {
+    final row = (await _database.query('owner_choice', where: 'account_id = ?', whereArgs: [account])).firstOrNull;
+    return row == null ? null : row['merged'] == 1;
+  }
+
+  // 这台手机自己的（还没并进任何账号的）好友有几个。
+  Future<int> unownedCount() async => Sqflite.firstIntValue(await _database.rawQuery('SELECT COUNT(*) FROM friend WHERE owner IS NULL'))!;
+
+  // 记下选择；并进时把这台手机自己的好友都归到这个账号下。
+  Future<void> chooseOwner(String account, {required bool merge}) => _database.transaction((transaction) async {
+    if (merge) await transaction.update('friend', {'owner': account}, where: 'owner IS NULL');
+    await transaction.insert('owner_choice', {'account_id': account, 'merged': merge ? 1 : 0}, conflictAlgorithm: ConflictAlgorithm.replace);
+  });
+
+  // 应用账号注销了：删掉并进它的好友连同会话与它的选择。
+  Future<void> forgetOwner(String account) => _database.transaction((transaction) async {
+    await transaction.rawDelete('DELETE FROM message WHERE friend_id IN (SELECT device_id FROM friend WHERE owner = ?)', [account]);
+    await transaction.delete('friend', where: 'owner = ?', whereArgs: [account]);
+    await transaction.delete('owner_choice', where: 'account_id = ?', whereArgs: [account]);
+  });
 }

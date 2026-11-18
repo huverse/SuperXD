@@ -9,14 +9,17 @@ import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 
 // 私信没就绪时的直达（组合根套在账号应用外面）：去应用账号页（登录、改为联网）与去消息页（开启私信、加好友、接管、重试）。
 // 设计语言 8.1「空状态原地给下一步的按钮，不让人去别的页面找」；去不了的（没配中转、没登录教务时消息页进不去）为空，只提示。
+// openNearby：面对面发送这张卡（推入面对面页，人工决策见 social/nearby_service.dart），不受私信状态影响；没有面对面时为空。
 class ShareGuide extends InheritedWidget {
-  const ShareGuide({super.key, required this.openAccount, required this.openMessages, required super.child});
+  const ShareGuide({super.key, required this.openAccount, required this.openMessages, this.openNearby, required super.child});
   final void Function(BuildContext context)? openAccount;
   final void Function(BuildContext context)? openMessages;
+  final void Function(BuildContext context, ShareCard card)? openNearby;
 
   static ShareGuide? maybeOf(BuildContext context) => context.getInheritedWidgetOfExactType<ShareGuide>();
 
@@ -26,7 +29,8 @@ class ShareGuide extends InheritedWidget {
 
 // 分享给好友：底部弹层里多选好友，点发送后每一行原地显示发送中、已发送或失败（可单独重发），完成后按钮变为“完成”。
 // 课表页、百宝箱结果页共用；百宝箱经组合根注入的回调调用这里。
-// 私信没就绪或还没有好友时弹确认框，按钮直达能处理的那一页（11-17 设计审查：以前只写「请先在“我的 › 账号”登录…」让人自己去找）。
+// 私信没就绪或还没有好友时弹确认框，按钮直达能处理的那一页（11-17 设计审查：以前只写「请先在“我的 › 账号”登录…」让人自己去找）；
+// 有面对面时弹层照样打开：最上面一行面对面发送，下面写私信为什么用不了与去处理的按钮。
 Future<void> showShareSheet(BuildContext context, {required SocialService social, required ShareCard card}) async {
   final guide = ShareGuide.maybeOf(context);
   final (title, message, action, open) = switch (social.status) {
@@ -39,18 +43,26 @@ Future<void> showShareSheet(BuildContext context, {required SocialService social
     SocialStatus.disabled => ('还没开启私信', '在消息页开启私信、加好友后就能分享。', '去开启', guide?.openMessages),
     SocialStatus.loading || SocialStatus.failed => ('私信暂时连不上', '可以在消息页重试。', '去消息', guide?.openMessages),
   };
-  if (title != null) {
+  final nearby = switch (guide?.openNearby) {
+    final open? => () => open(context, card),
+    null => null,
+  };
+  if (title != null && nearby == null) {
     if (message == null || action == null || open == null) return showCampusNotice(context, message ?? title, title: message == null ? null : title);
     if (await showCampusConfirm(context, title: title, message: message, action: action) && context.mounted) open(context);
     return;
   }
-  await showCampusSheet<void>(context: context, builder: (context) => CampusSheetPanel(child: _ShareSheet(social: social, card: card)));
+  final notice = title == null ? null : (title: title, message: message, action: action, open: open == null ? null : () => open(context));
+  await showCampusSheet<void>(context: context, builder: (context) => CampusSheetPanel(child: _ShareSheet(social: social, card: card, nearby: nearby, notice: notice)));
 }
 
 class _ShareSheet extends StatefulWidget {
-  const _ShareSheet({required this.social, required this.card});
+  const _ShareSheet({required this.social, required this.card, this.nearby, this.notice});
   final SocialService social;
   final ShareCard card;
+  final VoidCallback? nearby;
+  // 私信用不了时的说明（有面对面才走到弹层里）。
+  final ({String title, String? message, String? action, VoidCallback? open})? notice;
   @override
   State<_ShareSheet> createState() => _ShareSheetState();
 }
@@ -107,6 +119,28 @@ class _ShareSheetState extends State<_ShareSheet> {
             padding: const EdgeInsets.only(right: 12, bottom: 8),
             child: Text(shareCardSummary(widget.card), maxLines: 2, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant)),
           ),
+          if (widget.nearby case final nearby? when !_started) Padding(
+            padding: const EdgeInsets.only(right: 12),
+            child: ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const CampusIcon(CampusIcons.nearby),
+              title: const Text('面对面发送'),
+              subtitle: Text('两人都打开面对面，经蓝牙发送', style: TextStyle(fontSize: CampusFontSize.secondary, color: colors.onSurfaceVariant)),
+              trailing: const CampusIcon(CampusIcons.next),
+              onTap: () {
+                Navigator.pop(context);
+                nearby();
+              },
+            ),
+          ),
+          if (widget.notice case final notice?) ...[
+            Padding(padding: const EdgeInsets.only(right: 12, top: 8), child: Text(notice.title, style: Theme.of(context).textTheme.titleMedium)),
+            if (notice.message != null) Padding(padding: const EdgeInsets.only(right: 12, top: 4), child: Text(notice.message!, style: TextStyle(fontSize: CampusFontSize.secondary, color: colors.onSurfaceVariant))),
+            if (notice.action != null && notice.open != null) Padding(padding: const EdgeInsets.only(right: 12, top: 12), child: FilledButton(onPressed: () {
+              Navigator.pop(context);
+              notice.open!();
+            }, child: Text(notice.action!))),
+          ] else ...[
           Flexible(child: ListView(shrinkWrap: true, padding: const EdgeInsets.only(right: 12), children: [
             for (final friend in _friends)
               if (!_started)
@@ -153,6 +187,7 @@ class _ShareSheetState extends State<_ShareSheet> {
                         ? FilledButton.icon(style: campusProminent, onPressed: () => _send(failed), icon: const CampusIcon(CampusIcons.sync), label: Text('重发失败的 ${failed.length} 条'))
                         : FilledButton.icon(style: campusProminent, onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.check), label: const Text('完成')),
           ),
+          ],
         ]),
       ),
     );

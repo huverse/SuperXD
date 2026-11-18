@@ -9,6 +9,7 @@ import 'package:superxd/page/friend_schedule_page.dart';
 import 'package:superxd/page/schedule_import.dart';
 import 'package:superxd/page/share_card_view.dart';
 import 'package:superxd/page/social_dialogs.dart';
+import 'package:superxd/social/friend_messaging.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_store.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
@@ -24,10 +25,10 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 // 打开好友分享的视频：由组合根接到百宝箱的短视频页（页面层不依赖百宝箱）。
 typedef VideoOpener = void Function(BuildContext context, VideoShare video);
 
-// 与一位好友的私信会话：只有功能性卡片，没有文字聊天。底部操作栏发送课表、界面配置；视频从百宝箱结果页分享。
+// 与一位好友的私信会话：只有功能性卡片，没有文字聊天。底部操作栏发送课表；视频从百宝箱结果页分享。线上私信与面对面私信共用（FriendMessaging）。
 class ConversationPage extends StatefulWidget {
   const ConversationPage({super.key, required this.social, required this.friendId, this.gateway, this.openVideo});
-  final SocialService social;
+  final FriendMessaging social;
   final String friendId;
   // 读取本机课表用于分享与对比；为空时不提供分享课表（未登录或测试）。
   final CampusGateway? gateway;
@@ -43,7 +44,7 @@ class _ConversationPageState extends State<ConversationPage> {
   int _loadVersion = 0;
   bool _preparing = false;
 
-  SocialService get _social => widget.social;
+  FriendMessaging get _social => widget.social;
   SocialFriend? get _friend => _social.friends.where((friend) => friend.deviceId == widget.friendId).firstOrNull;
 
   @override

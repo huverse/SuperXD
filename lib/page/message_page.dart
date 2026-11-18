@@ -7,9 +7,11 @@ import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/conversation_page.dart';
 import 'package:superxd/page/friend_add_page.dart';
+import 'package:superxd/page/nearby_page.dart';
 import 'package:superxd/page/section_pages.dart';
 import 'package:superxd/page/social_dialogs.dart';
 import 'package:superxd/social/invite_code.dart';
+import 'package:superxd/social/nearby_service.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_store.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
@@ -28,9 +30,11 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 // 消息页：私信。私信是功能性的：只有好友之间的分享卡片，没有文字聊天。
 // [人工决策-2026-10-19 17:55:48] 去掉还没接入的「通知」分段，消息页只放私信，等真有通知来源再加回（用户选定：一直空着的入口像功能坏了）。
 class MessagePage extends StatefulWidget {
-  const MessagePage({super.key, this.social, this.gateway, this.openVideo, this.openAccount, this.scan = scanInviteWithCamera});
+  const MessagePage({super.key, this.social, this.nearby, this.gateway, this.openVideo, this.openAccount, this.scan = scanInviteWithCamera});
   // 为空表示本次运行未接入私信（测试或未配置中转服务）。
   final SocialService? social;
+  // 面对面私信（蓝牙，人工决策见 social/nearby_service.dart）：不用中转与应用账号，顶栏右侧一个入口，私信什么状态都在。
+  final NearbyService? nearby;
   // 没登录应用账号时去登录（推入应用账号页）。
   final void Function(BuildContext context)? openAccount;
   final CampusGateway? gateway;
@@ -108,8 +112,14 @@ class _MessagePageState extends State<MessagePage> {
   @override
   Widget build(BuildContext context) {
     final social = widget.social;
+    final nearby = widget.nearby;
     return Column(children: [
-      const SectionTitleBar(title: '消息'),
+      SectionTitleBar(title: '消息', trailing: nearby == null ? null : CampusGlassCircleButton(
+        label: '面对面',
+        size: 44,
+        icon: const CampusIcon(CampusIcons.nearby),
+        onPressed: () => Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (_) => NearbyPage(nearby: nearby, gateway: widget.gateway, openVideo: widget.openVideo))),
+      )),
       Expanded(child: social == null
           ? const _CenteredText('当前版本未配置私信服务')
           : ListenableBuilder(listenable: social, builder: (context, _) => switch (social.status) {

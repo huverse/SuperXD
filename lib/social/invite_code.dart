@@ -6,6 +6,8 @@ import 'package:superxd/relay/relay_crypto.dart';
 import 'package:superxd/social/social_crypto.dart';
 
 const invitePrefix = 'SXD1F:';
+// 面对面（蓝牙）好友的二维码：同一种布局换个前缀，线上的扫码认不出它、它也认不出线上的（人工决策见 nearby_service.dart）。
+const nearbyInvitePrefix = 'SXD1N:';
 const nicknameMaxLength = 20;
 
 // 二维码内容：邀请号、邀请私钥种子、出示方公钥与昵称、过期时刻。
@@ -13,19 +15,20 @@ const nicknameMaxLength = 20;
 // 编码：二进制布局再转 Base45（RFC 9285，欧盟健康码同款）：只用 QR 字母数字模式的字符，同样内容比 JSON + base64 的字节模式小好几个版本，扫码更稳。
 // 布局：版本 1(1) | 邀请号(16) | 邀请种子(32) | 签名公钥(32) | 加密公钥(32) | 过期毫秒(8，大端) | 昵称 UTF-8(其余)。
 class InviteCode {
-  const InviteCode({required this.inviteId, required this.inviteSeed, required this.owner, required this.nickname, required this.expiresAt});
+  const InviteCode({required this.inviteId, required this.inviteSeed, required this.owner, required this.nickname, required this.expiresAt, this.prefix = invitePrefix});
   final String inviteId;
   final Uint8List inviteSeed;
   final PeerKeys owner;
   final String nickname;
-  // 毫秒，服务器时间。
+  // 毫秒：线上是服务器时间，面对面是出示方本机时间。
   final int expiresAt;
+  final String prefix;
 
   static const _fixed = 1 + 16 + 32 + 32 + 32 + 8;
 
   String encode() {
     final expires = ByteData(8)..setInt64(0, expiresAt);
-    return invitePrefix + base45Encode([
+    return prefix + base45Encode([
       1,
       ...decodeBase64UrlNoPad(inviteId, length: 16),
       ...inviteSeed,
@@ -37,9 +40,9 @@ class InviteCode {
   }
 
   // 扫到的任意文本都是外部输入：不是本应用的二维码或格式坏了都返回 null。
-  static InviteCode? decode(String text) {
-    if (!text.startsWith(invitePrefix) || text.length > 1024) return null;
-    final bytes = base45Decode(text.substring(invitePrefix.length));
+  static InviteCode? decode(String text, {String prefix = invitePrefix}) {
+    if (!text.startsWith(prefix) || text.length > 1024) return null;
+    final bytes = base45Decode(text.substring(prefix.length));
     if (bytes == null || bytes.length <= _fixed || bytes[0] != 1) return null;
     final String nickname;
     try {
@@ -54,6 +57,7 @@ class InviteCode {
       owner: PeerKeys(bytes.sublist(49, 81), bytes.sublist(81, 113)),
       nickname: nickname,
       expiresAt: ByteData.sublistView(bytes, 113, 121).getInt64(0),
+      prefix: prefix,
     );
   }
 }

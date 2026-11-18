@@ -21,6 +21,7 @@ import 'package:superxd/domain/network_policy.dart';
 import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/local/legal_notice_memory.dart';
 import 'package:superxd/page/legal_page.dart';
+import 'package:superxd/social/nearby_service.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/theme/campus_palette.dart';
 
@@ -150,6 +151,17 @@ void watchSocial(SocialService social, AppAccounts? appAccounts, AppHooks hooks,
     appAccounts.addListener(follow);
     follow();
   });
+}
+
+// 面对面私信跟着当前应用账号换读取范围（人工决策见 social/nearby_service.dart：并进账号的面对面好友只在登录这个账号时看得到）。
+// 只走蓝牙、不联网，不等同意协议与政策（蓝牙只在用户打开面对面页时才开）；没配中转（没有应用账号）时一直是这台手机自己的。
+void watchNearby(NearbyService nearby, AppAccounts? appAccounts) {
+  if (appAccounts == null) return;
+  void follow() {
+    if (appAccounts.loaded) unawaited(nearby.setAccount(appAccounts.current?.accountId));
+  }
+  appAccounts.addListener(follow);
+  follow();
 }
 
 // 应用账号与教务各管各的（人工决策见 domain/app_account.dart 的 11-15 16:40:33 那条，取代 11-13「跟着教务走」：退出教务不再连带退出应用账号）。

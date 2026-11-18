@@ -83,6 +83,8 @@ abstract final class CampusIcons {
   static const scanFace = LucideIcons.scanFace;
   static const scan = LucideIcons.scanQrCode;
   static const addFriend = LucideIcons.userPlus;
+  // 面对面私信（蓝牙）。
+  static const nearby = LucideIcons.bluetooth;
   static const removeFriend = LucideIcons.userMinus;
   static const palette = LucideIcons.palette;
   static const commonFree = LucideIcons.calendarCheck2;

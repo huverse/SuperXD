@@ -9,9 +9,18 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <!-- 课前提醒开了状态栏胶囊时发成实时更新（Android 16 起，OPPO 流体云按它显示），见 CourseLive.kt；不是运行时权限，用户可在系统设置里按应用关掉。 -->
     <uses-permission android:name="android.permission.POST_PROMOTED_NOTIFICATIONS"/>
-    <!-- 学习通位置签到的地图页才申请，仅使用期间（不要后台定位）：地图里的内嵌网页经系统定位取当前位置。 -->
+    <!-- 学习通位置签到的地图页才申请，仅使用期间（不要后台定位）：地图里的内嵌网页经系统定位取当前位置。
+         Android 11 上打开面对面私信时也申请（系统规定扫描蓝牙要位置权限，不读位置；人工决策见 social/nearby_service.dart）。 -->
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
+    <!-- 面对面私信（蓝牙低功耗，打开面对面页才申请，见 device/ble_nearby_radio.dart）：Android 12 起是「附近的设备」，扫描声明不用于定位；
+         Android 11 用旧的蓝牙权限（安装时授予）加上面的位置权限。 -->
+    <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="s"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30"/>
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30"/>
+    <uses-feature android:name="android.hardware.bluetooth_le" android:required="false"/>
     <!-- 应用内更新：把下载并核对过的新版本安装包交给系统安装器；Android 8 起还要用户在设置里允许本应用「安装未知应用」。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <!-- 学习通签到取 OAID 的 Android_CN_OAID 会并入这些权限，应用用不到，一律移除，只走各厂商不需授权的标识服务。 -->
