@@ -166,7 +166,8 @@ jobs:
           key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle.kts', 'android/gradle/wrapper/gradle-wrapper.properties', 'pubspec.lock') }}
           restore-keys: gradle-${{ runner.os }}-
       - run: flutter build apk --profile --flavor production --target-platform android-arm64
-      - run: echo "[AndroidBuild] action=profile bytes=$(stat -c %s build/app/outputs/flutter-apk/app-production-profile.apk)"
+      # 安装包体积预算（11-18 性能审查 P2-6）：超了失败，有意变大在同一个 PR 里调高预算并写原因（口径与做法见 tool/apk_size_check.dart 文件头）。
+      - run: dart run tool/apk_size_check.dart build/app/outputs/flutter-apk/app-production-profile.apk
 
   relay-check:
     name: Relay server test
