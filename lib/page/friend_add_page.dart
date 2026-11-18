@@ -7,6 +7,7 @@ import 'package:screen_brightness/screen_brightness.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/qr_scan_page.dart';
 import 'package:superxd/page/social_dialogs.dart';
+import 'package:superxd/social/friend_messaging.dart';
 import 'package:superxd/social/invite_code.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
@@ -33,24 +34,36 @@ QrImage inviteQrImage(String text) {
 // 扫码页的入口函数可注入，测试用假扫码。
 typedef InviteScanner = Future<InviteCode?> Function(BuildContext context);
 
-Future<InviteCode?> scanInviteWithCamera(BuildContext context) async {
+Future<InviteCode?> scanInviteWithCamera(BuildContext context) => _scanInvite(context, invitePrefix);
+
+// 面对面好友的二维码（前缀不同，见 social/invite_code.dart）。
+Future<InviteCode?> scanNearbyInviteWithCamera(BuildContext context) => _scanInvite(context, nearbyInvitePrefix);
+
+Future<InviteCode?> _scanInvite(BuildContext context, String prefix) async {
   final raw = await Navigator.of(context).push<String>(
     CampusPageRoute(
       builder: (_) => QrScanPage(
         hint: '将好友的二维码放入框内',
-        accept: (value) => InviteCode.decode(value) == null ? '不是 SuperXD 好友二维码' : null,
+        accept: (value) => switch (InviteCode.decode(value, prefix: prefix)) {
+          InviteCode() => null,
+          null when value.startsWith(nearbyInvitePrefix) => '这是面对面好友的二维码，请在面对面里扫',
+          null when value.startsWith(invitePrefix) => '这是私信好友的二维码，请在消息页扫',
+          null => '不是 SuperXD 好友二维码',
+        },
       ),
     ),
   );
-  return raw == null ? null : InviteCode.decode(raw);
+  return raw == null ? null : InviteCode.decode(raw, prefix: prefix);
 }
 
 // 添加好友：出示自己的二维码（5 分钟有效，可刷新），或扫对方的二维码。
-// 出示期间每 3 秒拉一次信箱，对方一扫就原地提示“已添加”；离开页面即作废二维码。返回新加好友的设备号。
+// 出示期间对方一扫就原地提示“已添加”（线上靠长轮询收到问候，面对面经蓝牙直接收到）；离开页面即作废二维码。返回新加好友的设备号。
+// nearby 为真是面对面好友：二维码在本机生成、不联网，扫码后在附近找对方。
 class FriendAddPage extends StatefulWidget {
-  const FriendAddPage({super.key, required this.social, this.scan = scanInviteWithCamera});
-  final SocialService social;
+  const FriendAddPage({super.key, required this.social, this.scan = scanInviteWithCamera, this.nearby = false});
+  final FriendMessaging social;
   final InviteScanner scan;
+  final bool nearby;
   @override
   State<FriendAddPage> createState() => _FriendAddPageState();
 }
@@ -66,7 +79,7 @@ class _FriendAddPageState extends State<FriendAddPage> {
   late Set<String> _known;
   final _added = <String>[];
 
-  SocialService get _social => widget.social;
+  FriendMessaging get _social => widget.social;
   int get _remaining => _code == null ? 0 : ((_code!.expiresAt - _social.serverNow) / 1000).ceil();
 
   @override
@@ -163,7 +176,7 @@ class _FriendAddPageState extends State<FriendAddPage> {
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
-        title: const Text('添加好友'),
+        title: Text(widget.nearby ? '添加面对面好友' : '添加好友'),
       ),
       body: CampusScrollFade(child: SafeArea(child: ListView(padding: const EdgeInsets.all(20), children: [
         CampusSurface(padding: const EdgeInsets.all(20), child: Column(children: [
@@ -173,7 +186,7 @@ class _FriendAddPageState extends State<FriendAddPage> {
             decoration: BoxDecoration(color: light.surface, borderRadius: BorderRadius.circular(20), border: Border.all(color: colors.outlineSubtle)),
             padding: const EdgeInsets.all(12),
             child: code == null
-                ? Center(child: _error == null ? const CampusLoading(label: '正在生成二维码', network: true, remote: '中转服务') : Text(_error!, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: light.danger)))
+                ? Center(child: _error == null ? (widget.nearby ? const CampusLoading(label: '正在生成二维码') : const CampusLoading(label: '正在生成二维码', network: true, remote: '中转服务')) : Text(_error!, textAlign: TextAlign.center, style: TextStyle(fontSize: 14, color: light.danger)))
                 : Stack(fit: StackFit.expand, children: [
                     Semantics(
                       label: '我的好友二维码',
@@ -199,12 +212,12 @@ class _FriendAddPageState extends State<FriendAddPage> {
           if (_added.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 12), child: Text('已添加：${_added.join('、')}', textAlign: TextAlign.center, style: secondary)),
         ])),
         const SizedBox(height: 16),
-        Text('用 SuperXD 扫码互加好友', textAlign: TextAlign.center, style: secondary),
+        Text(widget.nearby ? '对方也打开面对面，扫码互加' : '用 SuperXD 扫码互加好友', textAlign: TextAlign.center, style: secondary),
         const SizedBox(height: 20),
         FilledButton(
           style: campusProminent,
           onPressed: _redeeming ? null : _scan,
-          child: CampusBusyContent(busy: _redeeming, label: '扫一扫', busyLabel: '正在添加', icon: const CampusIcon(CampusIcons.scan)),
+          child: CampusBusyContent(busy: _redeeming, label: '扫一扫', busyLabel: widget.nearby ? '正在附近寻找' : '正在添加', icon: const CampusIcon(CampusIcons.scan)),
         ),
       ]))),
     );

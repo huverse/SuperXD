@@ -24,6 +24,7 @@ import 'package:superxd/application/campus_widgets.dart';
 import 'package:superxd/application/leisure.dart';
 import 'package:superxd/application/network_preference.dart';
 import 'package:superxd/device/background_sync.dart';
+import 'package:superxd/device/ble_nearby_radio.dart';
 import 'package:superxd/device/backup_exclusion.dart';
 import 'package:superxd/device/campus_notifications.dart';
 import 'package:superxd/device/diagnostic_device.dart';
@@ -50,8 +51,10 @@ import 'package:superxd/page/painting_splash.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/social/nearby_service.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_spaces.dart';
+import 'package:superxd/social/social_store.dart';
 import 'package:superxd/theme/campus_glass_probe.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -182,6 +185,13 @@ void main() async {
     accountGone: () => unawaited(appAccounts?.check(force: true)),
     polling: true,
   );
+  // 面对面私信（蓝牙，人工决策见 social/nearby_service.dart）：设备级，身份在私信的安全存储命名空间（nearby 一项），库是 social 文件夹里的 nearby.db（同私信排除备份）；
+  // 蓝牙插件只在面对面页打开时才创建，这里只造服务、不碰蓝牙。
+  final nearby = NearbyService(radio: BleNearbyRadio(), vault: const SecureIdentityVault(), openStore: () async {
+    final folder = Directory(path.join(socialDirectory, SocialSpaces.accountFolder));
+    await folder.create(recursive: true);
+    return SocialStore.open(path.join(folder.path, 'nearby.db'));
+  });
   // iOS 默认把应用数据带进 iCloud 备份与换机迁移：与安卓 data_extraction_rules.xml 排除的同一批（百宝箱、下载记录、字体包、日志与开发者设置、私信库）在这里标记排除；钥匙串见 ios/Runner/DeviceOnlyData.swift。
   if (Platform.isIOS) {
     unawaited(excludeFromBackup(
@@ -193,7 +203,10 @@ void main() async {
       files: [File(path.join(socialDirectory, SocialSpaces.legacyDatabase))],
     ));
   }
-  appAccounts = appAccountsOf(relay, onDeleted: (account) => unawaited(social.forgetAccount(account)));
+  appAccounts = appAccountsOf(relay, onDeleted: (account) {
+    unawaited(social.forgetAccount(account));
+    unawaited(nearby.forgetAccount(account.accountId));
+  });
   // 仅本机时（联网偏好）解锁只认公开与下架、不联网，灰度与节日抽签不按等级加权、不问点名（11-16 起取代娱乐与积分的开关，见 domain/leisure.dart）。
   final challenges = challengesOf(relay, appAccounts);
   final rollouts = await rolloutsOf(support, relay, appAccounts, challenges, online: networkOnline);
@@ -231,7 +244,7 @@ void main() async {
   final splashed = painting != null && splashImage != null;
   final splashGone = ValueNotifier(!splashed);
   final restored = Completer<void>();
-  final services = AppServices(display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, unlocks: unlocks, playground: playground, leisure: leisure, moments: moments, autoSync: autoSync, health: health, network: network);
+  final services = AppServices(display: display, reminders: reminders, social: social, nearby: nearby, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, unlocks: unlocks, playground: playground, leisure: leisure, moments: moments, autoSync: autoSync, health: health, network: network);
   final app = SuperXdApp(session: session, services: services, launch: launched, splashGone: splashGone);
   runApp(splashed ? PaintingSplash(painting: painting, image: splashImage, ready: restored.future, onGone: () => splashGone.value = true, child: app) : app);
   // 首帧上屏：健康回报的启动档按这段时长记（只记档位次数，人工决策见 domain/app_health.dart 的 11-17 那条）。
@@ -246,6 +259,7 @@ void main() async {
   final hooks = AppHooks(agreed: legal.agreed, policy: network);
   // 私信跟着当前应用账号；打开失败只影响私信（状态 failed），不影响应用。已开启私信的会立即联网收取，所以等用户同意协议与政策之后再打开。
   watchSocial(social, appAccounts, hooks, network: network);
+  watchNearby(nearby, appAccounts);
   // 选着字体包而本机没有（升级上来原先就选着衬线的）：同意之后下回来，装好界面就换过去；失败下次启动再试。
   hooks.afterAgreed('FontPacks', display.ensureFontPack, service: NetworkService.fontPack);
   try {

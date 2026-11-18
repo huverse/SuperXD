@@ -130,21 +130,23 @@ class MinePage extends StatelessWidget {
 
 // 底栏根页的大标题顶栏（今天以外的三个分支共用）。
 class SectionTitleBar extends StatelessWidget {
-  const SectionTitleBar({super.key, required this.title});
+  const SectionTitleBar({super.key, required this.title, this.trailing});
   final String title;
+  // 右侧的顶栏操作（玻璃圆钮），消息页的「面对面」用。
+  final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     return CampusTopBar(
       child: SizedBox(
         height: 56 * MediaQuery.textScalerOf(context).scale(14) / 14,
-        child: Align(
-          alignment: Alignment.centerLeft,
-          child: Padding(
+        child: Row(children: [
+          Expanded(child: Padding(
             padding: const EdgeInsets.only(left: 16),
             child: Text(title, style: Theme.of(context).textTheme.headlineMedium),
-          ),
-        ),
+          )),
+          if (trailing != null) Padding(padding: const EdgeInsets.only(right: 12), child: trailing),
+        ]),
       ),
     );
   }

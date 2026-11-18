@@ -56,13 +56,14 @@ import 'package:superxd/relay/relay_egress.dart';
 import 'package:superxd/relay/relay_flag_target_client.dart';
 import 'package:superxd/relay/relay_reward_client.dart';
 import 'package:superxd/relay/relay_unlock_client.dart';
+import 'package:superxd/social/nearby_service.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 // 组合根造好的设备级服务（[人工决策-2026-11-16 17:26:21] 组合根改应用模块，用户选定架构推荐方案）：打包成一份交给应用外壳、账号应用与路由，
 // 新功能只在这里加一个字段，不再在 SuperXdApp、账号应用与 buildRouter 三处各加一个参数。为空的表示这项没有（没配中转、测试没给），页面照各自的规则藏起入口。
 class AppServices {
-  const AppServices({this.display, this.toolbox, this.playground, this.reminders, this.social, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.leisure, this.moments, this.autoSync, this.health, this.network});
+  const AppServices({this.display, this.toolbox, this.playground, this.reminders, this.social, this.nearby, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.leisure, this.moments, this.autoSync, this.health, this.network});
   // 显示设置；为空时用一份只在内存里的。
   final DisplaySettings? display;
   // 百宝箱运行时；为空时外壳按注册表自己建。
@@ -72,6 +73,8 @@ class AppServices {
   final CampusReminders? reminders;
   // 私信服务，切换账号不重建；为空时私信入口显示未配置。
   final SocialService? social;
+  // 面对面私信（蓝牙，人工决策见 social/nearby_service.dart）：不要中转，设备级；为空时消息页没有「面对面」。
+  final NearbyService? nearby;
   // 应用内更新；为空时关于页不显示检查更新、也不弹更新。
   final AppUpdates? updates;
   // 协议与政策看过哪一版；为空时不做更新提示。

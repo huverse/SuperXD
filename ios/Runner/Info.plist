@@ -36,6 +36,8 @@
 	<array>
 		<string>com.superxd.superxd.autoSync</string>
 	</array>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>面对面私信经蓝牙发现附近打开面对面的好友并互发卡片，不用于定位。</string>
 	<key>NSCameraUsageDescription</key>
 	<string>扫好友二维码、签到二维码与驿站码，以及拍照签到时使用相机。</string>
 	<key>NSLocationWhenInUseUsageDescription</key>

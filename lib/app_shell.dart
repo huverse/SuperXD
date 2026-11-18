@@ -22,6 +22,7 @@ import 'package:superxd/local/display_settings.dart';
 import 'package:superxd/page/app_update_dialog.dart';
 import 'package:superxd/page/developer_notes_page.dart';
 import 'package:superxd/page/developer_page.dart';
+import 'package:superxd/page/nearby_page.dart';
 import 'package:superxd/page/festival/festival_catalog.dart';
 import 'package:superxd/page/festival/festival_reward.dart';
 import 'package:superxd/page/festival/reward_attachment.dart';
@@ -420,6 +421,10 @@ class _AccountAppState extends State<_AccountApp> {
       builder: (context, child) => ShareGuide(
         openAccount: widget.services.appAccounts == null ? null : (context) => pushAppAccountPage(context, widget.services),
         openMessages: widget.session.loggedIn ? (context) => _router.go('/message') : null,
+        openNearby: switch (widget.services.nearby) {
+          final nearby? => (context, card) => unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (_) => NearbyPage(nearby: nearby, card: card)))),
+          null => null,
+        },
         child: NoteAttachmentScope(builders: _noteAttachments, child: DisplayScope(settings: _display, child: TextSizeComfort(builder: (context, comfortable) => CampusTextScale(
         textSize: _display.textSize,
         followLimit: comfortable,

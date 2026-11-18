@@ -80,6 +80,7 @@ dependencies:
   archive: ^4.6.0
   workmanager: ^0.10.10
   forge2d: ^0.15.3
+  bluetooth_low_energy: ^6.2.1
 
 dev_dependencies:
   flutter_test:

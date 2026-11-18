@@ -22,6 +22,10 @@ String socialErrorText(String? code) => switch (code) {
   SocialCode.peerNotFound => '对方已关闭私信',
   SocialCode.mailboxFull => '对方待收消息太多，请稍后再发',
   SocialCode.envelopeTooLarge => '内容太大，无法发送',
+  SocialCode.nearbyOff => '蓝牙还没准备好',
+  SocialCode.nearbyAbsent => '对方不在附近，两人都打开面对面再发',
+  SocialCode.nearbyFailed => '没送到，靠近一点再试',
+  SocialCode.nearbyRejected => '对方没有收下',
   'INTERRUPTED' => '发送被中断',
   _ => '操作未完成，请重试',
 };

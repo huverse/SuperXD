@@ -12,8 +12,10 @@ import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/relay/app_account_vault.dart';
 import 'package:superxd/relay/relay_client.dart';
 import 'package:superxd/relay/relay_crypto.dart';
+import 'package:superxd/social/friend_messaging.dart';
 import 'package:superxd/social/invite_code.dart';
 import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/social/social_inbox.dart';
 import 'package:superxd/social/social_relay.dart';
 import 'package:superxd/social/social_spaces.dart';
 import 'package:superxd/social/social_store.dart';
@@ -40,6 +42,11 @@ abstract final class SocialCode {
   static const friendMoved = 'FRIEND_MOVED'; // 对方换了设备：好友已改挂到新设备，点重发
   static const identityLost = 'IDENTITY_LOST'; // 安全存储里的身份丢失，需重新开启
   static const signedOut = 'APP_ACCOUNT_SIGNED_OUT'; // 没登录应用账号，或这台手机上那把应用账号密钥已不在任何账号下
+  // 面对面私信（nearby_service.dart）：
+  static const nearbyOff = 'NEARBY_OFF'; // 蓝牙没准备好（关着、没给权限）
+  static const nearbyAbsent = 'NEARBY_ABSENT'; // 对方不在附近或没开面对面页
+  static const nearbyFailed = 'NEARBY_FAILED'; // 没送到（走开了、连不上、超时）
+  static const nearbyRejected = 'NEARBY_REJECTED'; // 送到了但对方没收下（已删了你、二维码已换等）
   // 中转报来、原样带出的错误码（值就是 relay 的 RelayCode）：页面只认私信这一份，不依赖 relay 层。
   static const network = RelayCode.network;
   static const timeout = RelayCode.timeout;
@@ -75,7 +82,7 @@ class _Session {
 // 注销应用账号时服务器删掉它的私信设备，本机这份也清掉（[人工决策-2026-11-14 17:56:46] 用户选「一并删除」，组合根接 forgetAccount）。
 // 私信编排：本机库、私信身份与中转服务之间的唯一入口，页面只经它读写。
 // 联网时机：切到一个应用账号、开启、出示/扫码、发送、刷新（回到前台、进入私信、下拉），以及前台长轮询收消息。除校时重发一次、中转不认这台设备时重新挂账号后重放一次（见 _authorized）外不自动重试。
-class SocialService extends ChangeNotifier {
+class SocialService extends ChangeNotifier implements FriendMessaging {
   SocialService({required this.spaces, required this.accountKeys, RelayTransport? transport, this.accountGone, DateTime Function()? clock, Random? random, this.polling = false, List<String> serverKeys = relayServerKeys})
     : _relay = transport == null ? null : SocialRelay(transport, serverKeys: serverKeys),
       _clock = clock ?? DateTime.now,
@@ -107,7 +114,9 @@ class SocialService extends ChangeNotifier {
   bool _disposed = false;
 
   SocialStatus status = SocialStatus.loading;
+  @override
   SocialProfile? profile;
+  @override
   List<SocialFriend> friends = const [];
   int unread = 0;
   bool refreshing = false;
@@ -115,6 +124,7 @@ class SocialService extends ChangeNotifier {
   String? refreshError;
   String? get deviceId => _session?.identity?.deviceId;
   // 按服务器校正过的当前时刻（毫秒），用于二维码倒计时。
+  @override
   int get serverNow => _clock().millisecondsSinceEpoch + (_relay?.clockOffset ?? 0);
 
   String _now() => _clock().toUtc().toIso8601String();
@@ -374,6 +384,7 @@ class SocialService extends ChangeNotifier {
   });
 
   // 出示二维码：新建一次性邀请（服务端同时作废本设备之前的邀请），本机记下邀请公钥用于核验扫码方的问候。
+  @override
   Future<InviteCode> createInvite() async {
     final session = _ready();
     final inviteSeed = secureRandomBytes(32);
@@ -391,6 +402,7 @@ class SocialService extends ChangeNotifier {
   }
 
   // 离开二维码页即作废，不让截图在有效期内继续被扫。失败只记日志：5 分钟后自然过期。
+  @override
   Future<void> revokeInvite(String inviteId) async {
     try {
       final session = _ready();
@@ -402,6 +414,7 @@ class SocialService extends ChangeNotifier {
 
   // [人工决策-2026-10-04 16:44:36] 扫码即成为好友（出示二维码视为同意），不做申请确认；二维码 5 分钟有效、期内可被多人扫。
   // 扫码：用邀请私钥签凭证，连同给对方的问候（自己的公钥与昵称，端到端加密）一起提交；成功后本机加对方为好友。
+  @override
   Future<SocialFriend> redeem(InviteCode code) async {
     final session = _ready();
     final relay = _relay!, identity = session.identity!, store = session.store;
@@ -411,21 +424,11 @@ class SocialService extends ChangeNotifier {
     if (existing == null && await store.friendCount() >= friendLimit) throw const SocialException(SocialCode.localFriendLimit);
     final helloId = _uuid.v4();
     final proof = await signWithSeed(code.inviteSeed, inviteProofCanonical(code.inviteId, identity.deviceId));
-    final hello = await sealEnvelope(sender: identity, recipient: code.owner, message: {
-      'v': 1,
-      'id': helloId,
-      'from': identity.deviceId,
-      'to': code.owner.deviceId,
-      'sentAt': _clock().millisecondsSinceEpoch,
-      'kind': 'hello',
-      'hello': {
-        'nickname': profile!.nickname,
-        'signPublicKey': base64UrlNoPad(identity.signPublicKey),
-        'boxPublicKey': base64UrlNoPad(identity.boxPublicKey),
-        'inviteId': code.inviteId,
-        'proof': base64UrlNoPad(proof),
-      },
-    });
+    final hello = await sealEnvelope(
+      sender: identity,
+      recipient: code.owner,
+      message: helloMessage(id: helloId, identity: identity, to: code.owner.deviceId, sentAt: _clock().millisecondsSinceEpoch, nickname: profile!.nickname, inviteId: code.inviteId, proof: proof),
+    );
     try {
       await _authorized(session, (relay, identity) => relay.redeem(identity, inviteId: code.inviteId, proof: proof, helloId: helloId, hello: hello));
     } on RelayException catch (error) {
@@ -538,7 +541,7 @@ class SocialService extends ChangeNotifier {
       final envelope = await sealEnvelope(
         sender: identity,
         recipient: PeerKeys(decodeBase64UrlNoPad(friend.signPublicKey, length: 32), decodeBase64UrlNoPad(friend.boxPublicKey, length: 32)),
-        message: {'v': 1, 'id': id, 'from': identity.deviceId, 'to': friendId, 'sentAt': _clock().millisecondsSinceEpoch, 'kind': 'profile', 'profile': {'nickname': profile!.nickname}},
+        message: profileMessage(id: id, from: identity.deviceId, to: friendId, sentAt: _clock().millisecondsSinceEpoch, nickname: profile!.nickname),
       );
       await _authorized(session, (relay, identity) => relay.send(identity, to: friendId, clientId: id, envelope: envelope));
       campusLog('[Social] action=send_profile friendId=$friendId state=sent');
@@ -547,65 +550,19 @@ class SocialService extends ChangeNotifier {
     }
   }
 
-  // 处理一条信箱消息，返回是否新增了内容。任何不合格的消息都丢弃并记日志（照样确认删除，避免反复拉取同一条坏消息）。
+  // 处理一条信箱消息，返回是否新增了内容（规则在 social_inbox.dart，与面对面共用）。任何不合格的消息都丢弃并记日志（照样确认删除，避免反复拉取同一条坏消息）。
   Future<bool> _accept(_Session session, InboxItem item) async {
-    final identity = session.identity!, store = session.store;
     try {
-      final opened = await openEnvelope(recipient: identity, envelope: item.envelope);
-      final message = opened.message;
-      final id = message['id'];
-      if (message['v'] != 1 || id is! String || !RegExp(r'^[0-9a-f-]{36}$').hasMatch(id) || message['from'] != item.from || message['to'] != identity.deviceId) {
-        throw const SocialCryptoException('消息头不符');
-      }
       final now = DateTime.fromMillisecondsSinceEpoch(item.createTime, isUtc: true).toIso8601String();
-      switch (message['kind']) {
-        case 'hello':
-          return await _acceptHello(store, item.from, message['hello'], opened, id, now);
-        case 'card':
-          await _verifiedFriend(store, item.from, opened);
-          return await store.addCard(id: id, friendId: item.from, outgoing: false, state: MessageState.received, card: decodeShareCard(message['card']), now: now);
-        case 'profile':
-          await _verifiedFriend(store, item.from, opened);
-          final nickname = switch (message['profile']) {
-            {'nickname': final String nickname} when validNickname(nickname) => nickname,
-            _ => throw const SocialCryptoException('资料格式不正确'),
-          };
-          await store.setNickname(item.from, nickname);
-          return false;
-        default:
-          throw const SocialCryptoException('未知消息类型');
-      }
+      return await acceptEnvelope(store: session.store, identity: session.identity!, envelope: item.envelope, relayFrom: item.from, now: now);
     } catch (error, stack) {
       campusLog('[Social] action=accept errorType=${error.runtimeType} from=${item.from}\n$stack');
       return false;
     }
   }
 
-  // 卡片与资料只收好友发来、按好友公钥验签过的。
-  Future<void> _verifiedFriend(SocialStore store, String from, OpenedEnvelope opened) async {
-    final friend = await store.friend(from);
-    if (friend == null) throw const SocialCryptoException('非好友消息');
-    if (!await verifyOpened(opened, decodeBase64UrlNoPad(friend.signPublicKey, length: 32))) throw const SocialCryptoException('签名无效');
-  }
-
-  // 问候：扫码方的公钥由凭证担保——凭证须由本机出示过的邀请私钥签出、且绑定扫码方设备号，服务器无法伪造。
-  Future<bool> _acceptHello(SocialStore store, String from, Object? json, OpenedEnvelope opened, String id, String now) async {
-    if (json is! Map) throw const SocialCryptoException('问候格式不正确');
-    final hello = json.cast<String, Object?>();
-    final nickname = hello['nickname'], inviteId = hello['inviteId'];
-    if (nickname is! String || !validNickname(nickname) || inviteId is! String) throw const SocialCryptoException('问候格式不正确');
-    final keys = PeerKeys(decodeBase64UrlNoPad(hello['signPublicKey'] as String, length: 32), decodeBase64UrlNoPad(hello['boxPublicKey'] as String, length: 32));
-    if (keys.deviceId != from || !await verifyOpened(opened, keys.signPublicKey)) throw const SocialCryptoException('问候签名无效');
-    final invitePublic = await store.invitePublicKey(inviteId);
-    if (invitePublic == null) throw const SocialCryptoException('邀请不存在');
-    final proof = decodeBase64UrlNoPad(hello['proof'] as String, length: 64);
-    if (!await verifyEd25519(decodeBase64UrlNoPad(invitePublic, length: 32), inviteProofCanonical(inviteId, from), proof)) throw const SocialCryptoException('邀请凭证无效');
-    if (await store.friend(from) == null && await store.friendCount() >= friendLimit) throw const SocialCryptoException('本机好友已满');
-    await store.upsertFriend(deviceId: from, nickname: nickname, signPublicKey: base64UrlNoPad(keys.signPublicKey), boxPublicKey: base64UrlNoPad(keys.boxPublicKey), now: now, systemId: id);
-    return true;
-  }
-
   // 发送卡片：先在本机记为“发送中”（界面原地显示），再加密投递；失败记错误码，由用户点重发（同一消息号，服务端幂等）。
+  @override
   Future<SocialMessage> send(String friendId, ShareCard card) async {
     final session = _ready();
     final id = _uuid.v4();
@@ -614,6 +571,7 @@ class SocialService extends ChangeNotifier {
     return _deliver(session, id);
   }
 
+  @override
   Future<SocialMessage> retry(String messageId) async {
     final session = _ready();
     await session.store.setState(messageId, MessageState.sending);
@@ -634,7 +592,7 @@ class SocialService extends ChangeNotifier {
         final envelope = await sealEnvelope(
           sender: identity,
           recipient: PeerKeys(decodeBase64UrlNoPad(friend.signPublicKey, length: 32), decodeBase64UrlNoPad(friend.boxPublicKey, length: 32)),
-          message: {'v': 1, 'id': messageId, 'from': identity.deviceId, 'to': friend.deviceId, 'sentAt': _clock().millisecondsSinceEpoch, 'kind': 'card', 'card': encodeShareCard(message.card!)},
+          message: cardMessage(id: messageId, from: identity.deviceId, to: friend.deviceId, sentAt: _clock().millisecondsSinceEpoch, card: message.card!),
         );
         await _authorized(session, (relay, identity) => relay.send(identity, to: friend.deviceId, clientId: messageId, envelope: envelope));
       } on RelayException catch (relayError) {
@@ -669,24 +627,29 @@ class SocialService extends ChangeNotifier {
     return RelayCode.notFriend;
   }
 
+  @override
   Future<List<SocialMessage>> conversation(String friendId) => _session!.store.conversation(friendId);
 
+  @override
   Future<void> markRead(String friendId) async {
     await _session?.store.markRead(friendId);
     await _reload();
   }
 
+  @override
   Future<void> setRemark(String friendId, String? remark) async {
     await _session!.store.setRemark(friendId, remark == null || remark.trim().isEmpty ? null : remark.trim());
     await _reload();
   }
 
+  @override
   Future<void> deleteMessage(String messageId) async {
     await _session!.store.deleteMessage(messageId);
     await _reload();
   }
 
   // 删除好友：服务端双向解除（对方之后发来的被拒收），本机删除会话。对方已解除时服务端无关系可删，直接删本机。
+  @override
   Future<void> removeFriend(String friendId) async {
     final session = _ready();
     try {
