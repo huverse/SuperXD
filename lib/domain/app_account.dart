@@ -113,7 +113,7 @@ class AppAccountException implements Exception {
   String toString() => 'AppAccountException($failure)';
 }
 
-// 应用账号的中转端口（social 实现）：这台设备一个应用账号、一把设备密钥，存在安全存储。
+// 应用账号的中转端口（relay 实现）：这台设备一个应用账号、一把设备密钥，存在安全存储。
 abstract interface class AppAccountClient {
   // 本机记着的应用账号，没登录为空；不联网。
   Future<AppAccountSession?> accountOf();

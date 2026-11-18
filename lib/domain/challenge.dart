@@ -192,7 +192,7 @@ class ChallengeException implements Exception {
   String toString() => 'ChallengeException($failure)';
 }
 
-// 中转端口（social 实现）：用这个应用账号的设备密钥签名。games 是这个版本玩得了的「游戏 id@题面写法版本」（如 hanoi@1，见 challenge_rules.dart 的 challengeGameTokens）。
+// 中转端口（relay 实现）：用这个应用账号的设备密钥签名。games 是这个版本玩得了的「游戏 id@题面写法版本」（如 hanoi@1，见 challenge_rules.dart 的 challengeGameTokens）。
 abstract interface class ChallengeClient {
   Future<ChallengeCatalog> catalog(AppAccountRef account, Set<String> games);
   Future<ChallengeRun> start(AppAccountRef account, String challengeId, Set<String> games);

@@ -6,41 +6,44 @@ import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/festival.dart';
+import 'package:superxd/relay/account_relay.dart';
 import 'package:superxd/relay/app_account_vault.dart';
 import 'package:superxd/relay/relay_client.dart';
 import 'package:superxd/relay/relay_crypto.dart';
 
 // 节日抽签的自建中转实现（人工决策见 domain/festival.dart）：POST /v1/rewards/<活动>/draw，用这个应用账号的设备密钥签名
 // （同挑战，密钥在安全存储 superxd_account 的 account.slot），请求体是近 30 天打开过的天数与要第 2 版奖品信封（seal: 2），娱乐与积分关着时另带 levels: false。
-// 超时（15 秒）、请求记录与校时后重发一次都沿用 RelayClient；不自动重试（同一个人重复抽返回同一结果，下次回到前台再补抽）。
+// 签名、超时（15 秒）、请求记录与校时后重发一次都在 AccountRelay；不自动重试（同一个人重复抽返回同一结果，下次回到前台再补抽）。
 // 抽中的奖品用这台设备的 box 公钥封装、另带服务器签名（openRewardPrize），只有它打得开、验过签才揭晓。serverKeys 是受信的服务器在线签名公钥，测试换成测试钥。
 class RelayRewardClient implements FestivalRewardClient {
-  RelayRewardClient({required this.vault, required RelayTransport transport, this.serverKeys = relayServerKeys}) : _relay = RelayClient(transport, serverKeys: serverKeys);
+  RelayRewardClient({required this.vault, required RelayTransport transport, this.serverKeys = relayServerKeys}) : _relay = AccountRelay(vault: vault, transport: transport, serverKeys: serverKeys);
   final AppAccountVault vault;
   final List<String> serverKeys;
-  final RelayClient _relay;
+  final AccountRelay _relay;
+
+  static final _errors = RelayErrors(
+    signedOut: const FestivalNotSignedIn(),
+    network: const FestivalException('连不上服务器'),
+    rateLimited: const FestivalException('请求过于频繁'),
+    failed: (code) => FestivalException('服务器暂时不可用（$code）'),
+  );
 
   @override
   Future<FestivalDraw> draw(AppAccountRef account, String campaign, {required String occasion, required int activeDays, bool levels = true}) async {
-    final saved = await vault.read(account.slot);
-    if (saved == null) throw const FestivalNotSignedIn();
-    final Map<String, Object?> body;
+    final SignedReply reply;
     try {
-      body = await _relay.request(saved.identity, 'POST', '/v1/rewards/$campaign/draw', payload: {'activeDays': activeDays, if (!levels) 'levels': false, 'seal': rewardSignedSealVersion});
+      // 账号太新是一种结果（带能抽的时刻），不当失败：所以这里自己接中转的错误码，其余照通用几类换。
+      reply = await _relay.send(account, 'POST', '/v1/rewards/$campaign/draw', payload: {'activeDays': activeDays, if (!levels) 'levels': false, 'seal': rewardSignedSealVersion}) ?? (throw const FestivalNotSignedIn());
     } on RelayException catch (error) {
       final eligibleAt = error.detail['eligibleAt'];
       if (error.code == RelayCode.accountTooNew && eligibleAt is int) return FestivalTooNew(DateTime.fromMillisecondsSinceEpoch(eligibleAt, isUtc: true));
-      throw switch (error.code) {
-        RelayCode.accountNotFound || RelayCode.unauthorized => const FestivalNotSignedIn(),
-        RelayCode.network || RelayCode.timeout => const FestivalException('连不上服务器'),
-        RelayCode.rateLimited => const FestivalException('请求过于频繁'),
-        _ => FestivalException('服务器暂时不可用（${error.code}）'),
-      };
+      throw _errors.of(error);
     }
+    final (:body, :identity) = reply;
     try {
       final sealed = body['sealed'];
       final prize = body['result'] == 'won' && sealed is String
-          ? await openRewardPrize(tryDecodeBase64UrlNoPad(sealed) ?? (throw const FormatException('奖品不是 base64url')), saved.identity, campaign, serverKeys: serverKeys)
+          ? await openRewardPrize(tryDecodeBase64UrlNoPad(sealed) ?? (throw const FormatException('奖品不是 base64url')), identity, campaign, serverKeys: serverKeys)
           : null;
       return parseFestivalDraw(body, prize: prize, occasion: occasion, now: DateTime.now().toUtc());
     } on FormatException catch (error, stack) {
@@ -52,19 +55,7 @@ class RelayRewardClient implements FestivalRewardClient {
   // 查活动能不能领（信里的「领取」先问，人工决策见 domain/developer_note.dart 的附件）：同样用这个应用账号的设备密钥签名，娱乐与积分关着带 levels=0。
   @override
   Future<RewardStatus> status(AppAccountRef account, String campaign, {bool levels = true}) async {
-    final saved = await vault.read(account.slot);
-    if (saved == null) throw const FestivalNotSignedIn();
-    final Map<String, Object?> body;
-    try {
-      body = await _relay.request(saved.identity, 'GET', '/v1/rewards/$campaign${levels ? '' : '?levels=0'}');
-    } on RelayException catch (error) {
-      throw switch (error.code) {
-        RelayCode.accountNotFound || RelayCode.unauthorized => const FestivalNotSignedIn(),
-        RelayCode.network || RelayCode.timeout => const FestivalException('连不上服务器'),
-        RelayCode.rateLimited => const FestivalException('请求过于频繁'),
-        _ => FestivalException('服务器暂时不可用（${error.code}）'),
-      };
-    }
+    final body = (await _relay.signedCall(account, 'GET', '/v1/rewards/$campaign${levels ? '' : '?levels=0'}', errors: _errors)).body;
     try {
       return parseRewardStatus(body);
     } on FormatException catch (error, stack) {

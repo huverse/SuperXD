@@ -51,7 +51,7 @@ class DiagnosticRecord {
   final DateTime expiresAt;
 }
 
-// 应用账号下的诊断包（social 实现：用这个应用账号的设备密钥签名）：凭回执认领、列出（从新到旧）、删除。
+// 应用账号下的诊断包（relay 实现：用这个应用账号的设备密钥签名）：凭回执认领、列出（从新到旧）、删除。
 // 连不上、限流、包不在了抛 DiagnosticUploadException，账号已不在抛 DiagnosticNotSignedIn。
 abstract interface class DiagnosticAccountClient {
   Future<DiagnosticRecord> claim(AppAccountRef account, String id, String claim);
