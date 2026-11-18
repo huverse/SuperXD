@@ -37,10 +37,10 @@ import 'package:superxd/playground/puzzle/knights/knights_page.dart';
 import 'package:superxd/playground/puzzle/knights/knights_rules.dart';
 import 'package:superxd/playground/puzzle/loop/loop_page.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_challenge_client.dart';
-import 'package:superxd/social/relay_client.dart';
-import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_challenge_client.dart';
+import 'package:superxd/relay/relay_client.dart';
+import 'package:superxd/relay/relay_crypto.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
@@ -157,11 +157,11 @@ void main() {
     late _Relay relay;
     late MemoryAppAccountVault vault;
     late RelayChallengeClient client;
-    late SocialIdentity key;
+    late RelayIdentity key;
     setUp(() async {
       relay = _Relay();
       vault = MemoryAppAccountVault();
-      key = await SocialIdentity.generate();
+      key = await RelayIdentity.generate();
       client = RelayChallengeClient(vault: vault, transport: relay);
     });
 

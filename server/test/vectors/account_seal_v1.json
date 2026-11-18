@@ -1,5 +1,5 @@
 {
-  "note": "应用账号封装秘密的信封（现在封的是密码与恢复码；信封不挑明文，这里的 proof 是 11-13 代登录时的口令摘要对象，留作固定明文）：客户端 lib/social/account_seal.dart 封装、服务端 src/modules/account/account_keys.ts 打开；全部合成数据。",
+  "note": "应用账号封装秘密的信封（现在封的是密码与恢复码；信封不挑明文，这里的 proof 是 11-13 代登录时的口令摘要对象，留作固定明文）：客户端 lib/relay/account_seal.dart 封装、服务端 src/modules/account/account_keys.ts 打开；全部合成数据。",
   "recipientSeed": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
   "recipientPublic": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9_AsrhtHHw",
   "ephemeralSeed": "yMfGxcTDwsHAv769vLu6ubi3trW0s7KxsK-urayrqqk",

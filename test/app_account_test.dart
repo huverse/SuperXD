@@ -24,10 +24,11 @@ import 'package:superxd/page/app_account_join_page.dart';
 import 'package:superxd/page/app_account_page.dart';
 import 'package:superxd/page/section_pages.dart';
 import 'package:superxd/page/sensitive_clipboard.dart';
-import 'package:superxd/social/account_seal.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
-import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/relay/account_seal.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_app_account.dart';
+import 'package:superxd/relay/relay_client.dart';
+import 'package:superxd/relay/relay_crypto.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
@@ -150,7 +151,7 @@ void main() {
       expect((await client.startJoin()).ticketId, _ticketId);
       expect(relay.requests.last.body.containsKey('device'), isFalse, reason: '取不到机型就不带');
 
-      await vault.write(appAccountSlot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId, username: 'tester_one'));
+      await vault.write(appAccountSlot, AppAccountKey(identity: await RelayIdentity.generate(), accountId: _accountId, username: 'tester_one'));
       relay.reply = (request) => const RelayResponse(200, {'device': 'Xiaomi 23127PN0CC', 'region': '广东省深圳市'});
       final request = await client.inspectJoin(join.payload);
       expect((request.device, request.region), ('Xiaomi 23127PN0CC', '广东省深圳市'));
@@ -185,7 +186,7 @@ void main() {
     test('改密码、换恢复码：用登录着的密钥签名、秘密封装；没登录不发', () async {
       await expectLater(client.changePassword('changed-synthetic'), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.notSignedIn)));
       expect(relay.requests, isEmpty);
-      final key = await SocialIdentity.generate();
+      final key = await RelayIdentity.generate();
       await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: _accountId, username: 'tester_one'));
       relay.reply = (request) => const RelayResponse(204, {});
       await client.changePassword('changed-synthetic');
@@ -197,20 +198,20 @@ void main() {
     });
 
     test('查看账号：别处注销了就删本机记录；退出连不上也删本机；注销要服务端删成才算', () async {
-      await vault.write(appAccountSlot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId, username: 'tester_one'));
+      await vault.write(appAccountSlot, AppAccountKey(identity: await RelayIdentity.generate(), accountId: _accountId, username: 'tester_one'));
       relay.reply = (request) => const RelayResponse(200, {'accountId': _accountId, 'username': 'tester_one', 'deviceCount': 2, 'createdAt': 1763000000000});
       expect((await client.summary()).deviceCount, 2);
       relay.reply = (request) => const RelayResponse(404, {'code': 'ACCOUNT_NOT_FOUND'});
       await expectLater(client.summary(), throwsA(isA<AppAccountException>().having((error) => error.failure, 'failure', AppAccountFailure.notSignedIn)));
       expect(await client.accountOf(), isNull);
 
-      await vault.write(appAccountSlot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId, username: 'tester_one'));
+      await vault.write(appAccountSlot, AppAccountKey(identity: await RelayIdentity.generate(), accountId: _accountId, username: 'tester_one'));
       relay.reply = (request) => throw const RelayException(RelayCode.network);
       await client.signOut();
       expect('${relay.requests.last.method} ${relay.requests.last.path}', 'DELETE /v1/devices');
       expect(await vault.read(appAccountSlot), isNull);
 
-      await vault.write(appAccountSlot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId, username: 'tester_one'));
+      await vault.write(appAccountSlot, AppAccountKey(identity: await RelayIdentity.generate(), accountId: _accountId, username: 'tester_one'));
       await expectLater(client.delete(), throwsA(isA<AppAccountException>()));
       expect(await client.accountOf(), isNotNull);
       relay.reply = (request) => const RelayResponse(204, {});
@@ -222,7 +223,7 @@ void main() {
     // [人工决策-2026-11-15 19:18:31] 区分「账号已注销」与「这把密钥不在账号里」（用户选推荐）。
     // [人工决策-2026-11-17 21:24:25] 「账号已注销」要带服务器对「设备号、这次请求的随机数」的签名才认，没有或验不过当连不上、什么也不删。
     test('查看账号：账号已注销（ACCOUNT_DELETED，带服务器签名）同样删本机记录，失败分类是账号已注销；没签名、签错、重放旧证明都当连不上、不删', () async {
-      final key = await SocialIdentity.generate();
+      final key = await RelayIdentity.generate();
       await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: _accountId, username: 'tester_one'));
       final server = FakeRelay(), forger = FakeRelay()..serverSeedOverride = List.filled(32, 9);
       Future<String> proofOf(FakeRelay signer, String nonce) async => base64UrlNoPad(await signer.serverSign(accountDeletedCanonical(key.deviceId, nonce)));
@@ -245,9 +246,9 @@ void main() {
     });
 
     test('11-15 以前每个教务账号一把的旧密钥：删掉并交出把手，新的那把不动', () async {
-      final legacy = await SocialIdentity.generate();
+      final legacy = await RelayIdentity.generate();
       await vault.write('account.AAAA', AppAccountKey(identity: legacy, accountId: 'OLDOLDOLDOLDOLDOLDOLDO'));
-      await vault.write(appAccountSlot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: _accountId, username: 'tester_one'));
+      await vault.write(appAccountSlot, AppAccountKey(identity: await RelayIdentity.generate(), accountId: _accountId, username: 'tester_one'));
       expect(await client.dropLegacy(), [const AppAccountRef(accountId: 'OLDOLDOLDOLDOLDOLDOLDO', slot: 'account.AAAA')]);
       expect(await vault.slots(), [appAccountSlot]);
       expect(await client.dropLegacy(), isEmpty);

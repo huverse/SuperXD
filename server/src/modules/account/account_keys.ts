@@ -7,7 +7,7 @@ import { passwordHashConcurrency } from 'src/common/relay_limits';
 import { decodeBase64url, sha256, x25519PrivateKey, x25519PublicKey, x25519PublicOf } from 'src/common/crypto/relay_crypto';
 
 
-// 封装密码与恢复码的信封，客户端 lib/social/account_seal.dart 与此一致（共用 test/vectors/account_seal_v1.json 与 account_seal_v2.json）：
+// 封装密码与恢复码的信封，客户端 lib/relay/account_seal.dart 与此一致（共用 test/vectors/account_seal_v1.json 与 account_seal_v2.json）：
 // 一次性 X25519 与中转公钥协商，HKDF-SHA256（盐 = 一次性公钥 + 中转公钥，info = SXD1-account-sign-in）派生 AES-256-GCM 密钥，
 // 附加数据绑定版本、（第 2 版另有钥号）、一次性公钥与发起的设备号（别的设备拿去重放解不开；同一设备重放整条请求由请求签名的随机数挡住）。
 // 第 1 版：版本(1) | 一次性公钥(32) | 随机数(12) | 密文 | GCM 标签(16)。中转是明文 HTTP，密码不加这层就会被同一网络里的人看到。

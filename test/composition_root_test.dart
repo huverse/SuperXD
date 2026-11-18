@@ -17,7 +17,7 @@ import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/domain/network_policy.dart';
 import 'package:superxd/local/network_mode_memory.dart';
 import 'package:superxd/social/identity_vault.dart';
-import 'package:superxd/social/relay_app_account.dart';
+import 'package:superxd/relay/app_account_vault.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_spaces.dart';
 

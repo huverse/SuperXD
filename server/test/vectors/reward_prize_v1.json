@@ -1,5 +1,5 @@
 {
-  "note": "节日奖品的信封（服务端 src/modules/reward/reward_seal.ts，客户端 lib/social/relay_reward_client.dart 的 openRewardPrize）：合成数据，种子与随机数都是固定的递增字节",
+  "note": "节日奖品的信封（服务端 src/modules/reward/reward_seal.ts，客户端 lib/relay/relay_reward_client.dart 的 openRewardPrize）：合成数据，种子与随机数都是固定的递增字节",
   "signSeed": "EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8",
   "deviceSeed": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8",
   "devicePublic": "eaYx7t4b-cmPEgMs3q3Q56B5OY_HhriMyEbsia-FpRo",

@@ -6,9 +6,9 @@ import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/festival.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
-import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_client.dart';
+import 'package:superxd/relay/relay_crypto.dart';
 
 // 节日抽签的自建中转实现（人工决策见 domain/festival.dart）：POST /v1/rewards/<活动>/draw，用这个应用账号的设备密钥签名
 // （同挑战，密钥在安全存储 superxd_account 的 account.slot），请求体是近 30 天打开过的天数与要第 2 版奖品信封（seal: 2），娱乐与积分关着时另带 levels: false。
@@ -26,7 +26,7 @@ class RelayRewardClient implements FestivalRewardClient {
     if (saved == null) throw const FestivalNotSignedIn();
     final Map<String, Object?> body;
     try {
-      body = await _relay.request(saved.identity, 'POST', '/v1/rewards/$campaign/draw', {'activeDays': activeDays, if (!levels) 'levels': false, 'seal': rewardSignedSealVersion});
+      body = await _relay.request(saved.identity, 'POST', '/v1/rewards/$campaign/draw', payload: {'activeDays': activeDays, if (!levels) 'levels': false, 'seal': rewardSignedSealVersion});
     } on RelayException catch (error) {
       final eligibleAt = error.detail['eligibleAt'];
       if (error.code == RelayCode.accountTooNew && eligibleAt is int) return FestivalTooNew(DateTime.fromMillisecondsSinceEpoch(eligibleAt, isUtc: true));
@@ -56,7 +56,7 @@ class RelayRewardClient implements FestivalRewardClient {
     if (saved == null) throw const FestivalNotSignedIn();
     final Map<String, Object?> body;
     try {
-      body = await _relay.request(saved.identity, 'GET', '/v1/rewards/$campaign${levels ? '' : '?levels=0'}', null);
+      body = await _relay.request(saved.identity, 'GET', '/v1/rewards/$campaign${levels ? '' : '?levels=0'}');
     } on RelayException catch (error) {
       throw switch (error.code) {
         RelayCode.accountNotFound || RelayCode.unauthorized => const FestivalNotSignedIn(),
@@ -126,7 +126,7 @@ final _x25519 = X25519();
 final _aes = AesGcm.with256bits();
 final _hkdf = Hkdf(hmac: Hmac.sha256(), outputLength: 32);
 
-Future<Map<String, Object?>> openRewardPrize(List<int> sealed, SocialIdentity identity, String campaign, {List<String> serverKeys = relayServerKeys}) async {
+Future<Map<String, Object?>> openRewardPrize(List<int> sealed, RelayIdentity identity, String campaign, {List<String> serverKeys = relayServerKeys}) async {
   if (sealed.length <= _sealOverhead + _signatureLength || sealed[0] != rewardSignedSealVersion) throw const FormatException('奖品信封格式不对');
   final body = sealed.sublist(0, sealed.length - _signatureLength), signature = sealed.sublist(sealed.length - _signatureLength);
   if (!await verifyRelaySignature(serverKeys, rewardPrizeCanonical(campaign, identity.deviceId, body), signature)) throw const FormatException('奖品不是服务器发的');

@@ -7,7 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
-import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/relay/relay_crypto.dart';
 
 // [人工决策-2026-10-04 16:44:36] 私信经自建加密中转送达（NestJS + MySQL + Redis）；测试期用国内服务器 IP，之后换正式域名，地址不写死。
 // 中转服务地址在构建时传入：--dart-define=SUPERXD_RELAY=http://IP:端口（正式环境换成 https 域名），不写进代码。
@@ -73,7 +73,7 @@ class RelayResponse {
 // 传输端口：生产用 HTTP，测试用内存假服务。
 abstract interface class RelayTransport {
   // timeout 为空用传输的默认超时；长轮询按挂起时长另给。limit 是响应字节上限，为空用传输的默认值，拉信箱按这次要的条数另给。
-  // background 为真是收消息的长轮询：断网与超时不在这里记错误，由收取循环按连续失败次数决定（见 social_service.dart 的 liveFailureLimit）。
+  // background 为真是持续接收通道的长轮询（私信收消息）：断网与超时不在这里记错误，由调用方的接收循环按连续失败次数决定。
   Future<RelayResponse> send(String method, String pathWithQuery, Map<String, String> headers, List<int>? body, {Duration? timeout, int? limit, bool background = false});
 }
 
@@ -125,28 +125,11 @@ class HttpRelayTransport implements RelayTransport {
   void close() => _http.close();
 }
 
-// 服务端好友列表里的一项：换了设备的好友 movedFrom 是本机认得的旧设备号，keys 是它的新公钥（已核对与设备号一致）。
-class RemoteFriend {
-  const RemoteFriend({required this.deviceId, required this.since, this.keys, this.movedFrom});
-  final String deviceId;
-  final int since;
-  final PeerKeys? keys;
-  final String? movedFrom;
-}
-
-class InboxItem {
-  const InboxItem({required this.id, required this.from, required this.envelope, required this.createTime});
-  final String id;
-  final String from;
-  final List<int> envelope;
-  final int createTime;
-}
-
 // [人工决策-2026-11-15 19:18:31] 好友列表里带的公钥（换了设备的好友、新手机接管拿名单）由服务器签名（用户选「服务器签名新公钥」，没选「中转改 HTTPS」）：
 // 中转是明文 HTTP，同一网络里的人能把好友的新公钥换成自己的、之后的私信就被他看到；服务器用在线签名钥签（服务端 src/modules/friend/friend_key_signer.ts），
-// 这里内置它的公钥，带公钥的每一条都要有任一把验得过的签名，不然整份当格式不对。只挡网络上的人，挡不住服务器本身。换钥时先在这里加新公钥、发版后再换服务器的。
+// 这里内置它的公钥，带公钥的每一条都要有任一把验得过的签名，不然整份当格式不对（social/social_relay.dart 的 friends）。只挡网络上的人，挡不住服务器本身。换钥时先在这里加新公钥、发版后再换服务器的。
 // [人工决策-2026-11-17 21:24:25] 明文 HTTP 期间只给两类关键回复加服务器认证（用户选定，不做通用回复签名）：同一把在线签名钥（服务端 src/common/crypto/relay_signer.ts）
-// 另签奖品信封（relay_reward_client.dart 的 openRewardPrize）与「账号已注销」（本文件 _call），各带域前缀、不能互相挪用；这份公钥由 relayFriendKeys 改名 relayServerKeys。
+// 另签奖品信封（relay_reward_client.dart 的 openRewardPrize）与「账号已注销」（本文件 request），各带域前缀、不能互相挪用；这份公钥由 relayFriendKeys 改名 relayServerKeys。
 const relayServerKeys = ['hPOt9e7eTElfw24qcN7bccM1K3-rHX9KtVHCwhn-xaI'];
 
 // 服务器在线签名钥签的原文：任一把受信公钥（base64url）验得过才算服务器发的。
@@ -157,8 +140,8 @@ Future<bool> verifyRelaySignature(List<String> serverKeys, List<int> message, Li
   return false;
 }
 
-// 协议 v1 的接口调用：每个请求用设备签名私钥签名（方法、路径、时间、随机数、请求体哈希），没有会话令牌。
-// serverKeys 是受信的服务器在线签名公钥（base64url），默认内置的；测试换成测试钥。
+// 协议 v1 的签名请求：每个请求用设备签名私钥签名（方法、路径、时间、随机数、请求体哈希），没有会话令牌；接口路径由调用方给。
+// 应用账号与它签名的各个客户端、私信（social/social_relay.dart）都经它发。serverKeys 是受信的服务器在线签名公钥（base64url），默认内置的；测试换成测试钥。
 class RelayClient {
   RelayClient(this.transport, {this.serverKeys = relayServerKeys});
   final RelayTransport transport;
@@ -166,11 +149,9 @@ class RelayClient {
   // 本机时钟与服务器的差（毫秒）。收到 CLOCK_SKEW 时按服务器时间校正，并只重发这一次。
   int clockOffset = 0;
 
-  // 拉信箱的响应上限按这次要的条数算：单条密文最多 256KB（服务端 relay_limits.ts 的 envelopeMaxBytes），经 base64url 约 342KB，
-  // 加上消息号、发送方与时刻，每条按 360KB 算，再留普通接口那份余量（50 条约 18MB）。
-  static int inboxLimit(int count) => count * 360 * 1024 + HttpRelayTransport.responseLimit;
-
-  Future<Map<String, Object?>> _call(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload, Duration? timeout, bool background = false, int? limit]) async {
+  // 用给定身份签名发一个请求，返回响应体；错误响应的其余字段放在 RelayException.detail。
+  // timeout 为空用传输的默认值（长轮询另给）；limit 为空用传输的默认响应上限；background 见 RelayTransport。
+  Future<Map<String, Object?>> request(RelayIdentity identity, String method, String path, {Map<String, Object?>? payload, Duration? timeout, int? limit, bool background = false}) async {
     final body = payload == null ? <int>[] : utf8.encode(jsonEncode(payload));
     for (var attempt = 0;; attempt++) {
       final time = '${DateTime.now().millisecondsSinceEpoch + clockOffset}';
@@ -201,107 +182,17 @@ class RelayClient {
   }
 
   // [人工决策-2026-11-17 21:24:25] 「账号已注销」要服务器签名（用户选「只给两类关键回复加认证」）：收到它会不可逆地清掉本机那个账号的私信与私信身份私钥，
-  // 明文 HTTP 下同一网络里的人伪造一条就够了。服务器的 proof 是对「这把密钥的设备号、这次请求的随机数」的签名（原文见 social_crypto.dart 的 accountDeletedCanonical，
+  // 明文 HTTP 下同一网络里的人伪造一条就够了。服务器的 proof 是对「这把密钥的设备号、这次请求的随机数」的签名（原文见 relay_crypto.dart 的 accountDeletedCanonical，
   // 服务端 src/modules/account/account_deleted_proof.ts）：随机数每次新起，截下来的旧证明对这次请求验不过。没有或验不过当连不上（NETWORK），什么也不删。
   Future<bool> _deletionProven(String deviceId, String nonce, Object? proof) async {
     final signature = proof is String ? tryDecodeBase64UrlNoPad(proof, length: 64) : null;
     return signature != null && await verifyRelaySignature(serverKeys, accountDeletedCanonical(deviceId, nonce), signature);
   }
 
-  Future<void> register(SocialIdentity identity) =>
-      _call(identity, 'POST', '/v1/devices', {'signPublicKey': base64UrlNoPad(identity.signPublicKey), 'boxPublicKey': base64UrlNoPad(identity.boxPublicKey)});
+  // 登记这台设备的密钥（自签名、幂等）。
+  Future<void> register(RelayIdentity identity) =>
+      request(identity, 'POST', '/v1/devices', payload: {'signPublicKey': base64UrlNoPad(identity.signPublicKey), 'boxPublicKey': base64UrlNoPad(identity.boxPublicKey)});
 
-  // 删除本设备：服务端删掉本设备的好友关系、待收消息与注册记录。
-  Future<void> deleteDevice(SocialIdentity identity) => _call(identity, 'DELETE', '/v1/devices');
-
-  Future<int> createInvite(SocialIdentity identity, String inviteId, List<int> publicKey) async =>
-      _integer((await _call(identity, 'POST', '/v1/invites', {'inviteId': inviteId, 'publicKey': base64UrlNoPad(publicKey)}))['expiresAt']);
-
-  Future<void> revokeInvite(SocialIdentity identity, String inviteId) => _call(identity, 'DELETE', '/v1/invites/$inviteId');
-
-  Future<int> redeem(SocialIdentity identity, {required String inviteId, required List<int> proof, required String helloId, required List<int> hello}) async {
-    final body = await _call(identity, 'POST', '/v1/friends/redeem', {
-      'inviteId': inviteId,
-      'proof': base64UrlNoPad(proof),
-      'hello': {'clientId': helloId, 'envelope': base64UrlNoPad(hello)},
-    });
-    return _integer(body['since']);
-  }
-
-  // 服务端的好友列表（最多 500 个）。换了设备的好友带新公钥与 movedFrom（本机认得的旧设备号）；keys 为真时每个都带公钥（新手机接管后拿名单），
-  // 这时响应放宽到 256KB（500 个好友各两把公钥约 120KB）。公钥与设备号对不上、没有服务器签名或验不过的当格式不对（见 relayServerKeys）。
-  Future<Map<String, RemoteFriend>> friends(SocialIdentity identity, {bool keys = false}) async {
-    final list = (await _call(identity, 'GET', keys ? '/v1/friends?keys=1' : '/v1/friends', null, null, false, keys ? 256 * 1024 : null))['friends'];
-    if (list is! List) throw const RelayException(RelayCode.badResponse);
-    final friends = <String, RemoteFriend>{};
-    for (final item in list.cast<Map<Object?, Object?>>()) {
-      final deviceId = _text(item['deviceId']);
-      final movedFrom = switch (item['movedFrom']) {
-        null => null,
-        final String movedFrom => movedFrom,
-        _ => throw const RelayException(RelayCode.badResponse),
-      };
-      friends[deviceId] = RemoteFriend(deviceId: deviceId, since: _integer(item['since']), keys: await _keys(item, identity.deviceId, deviceId, movedFrom), movedFrom: movedFrom);
-    }
-    return friends;
-  }
-
-  Future<PeerKeys?> _keys(Map<Object?, Object?> item, String ownerDeviceId, String deviceId, String? movedFrom) async {
-    if (item['signPublicKey'] == null && item['boxPublicKey'] == null) return null;
-    final signText = _text(item['signPublicKey']), boxText = _text(item['boxPublicKey']);
-    final sign = tryDecodeBase64UrlNoPad(signText, length: 32), box = tryDecodeBase64UrlNoPad(boxText, length: 32), signature = tryDecodeBase64UrlNoPad(_text(item['keysSignature']), length: 64);
-    if (sign == null || box == null || signature == null) throw const RelayException(RelayCode.badResponse);
-    final keys = PeerKeys(sign, box);
-    if (keys.deviceId != deviceId) throw const RelayException(RelayCode.badResponse);
-    if (await verifyRelaySignature(serverKeys, friendKeysCanonical(ownerDeviceId, deviceId, signText, boxText, movedFrom), signature)) return keys;
-    campusLog('[Relay] action=friend_keys errorType=signature deviceId=$deviceId');
-    throw const RelayException(RelayCode.badResponse);
-  }
-
-  // 处理完这些好友换设备的提示（新设备号），服务端清掉 movedFrom。
-  Future<void> ackMoves(SocialIdentity identity, List<String> deviceIds) => _call(identity, 'POST', '/v1/friends/moves/ack', {'deviceIds': deviceIds});
-
-  // 把私信设备挂到应用账号（用应用账号的设备密钥 account 签名，请求体带私信密钥对两把钥匙的签名）；没注册过的私信设备顺带登记。
-  // 账号的私信在另一台设备上时抛 SOCIAL_ELSEWHERE，takeover 为真时接管过来；返回这次是否从别的设备接管。
-  Future<bool> bindSocial(SocialIdentity account, SocialIdentity social, {bool takeover = false}) async {
-    final proof = await social.sign(socialBindCanonical(account.deviceId, social.deviceId));
-    final body = await _call(account, 'POST', '/v1/account/social', {
-      'signPublicKey': base64UrlNoPad(social.signPublicKey),
-      'boxPublicKey': base64UrlNoPad(social.boxPublicKey),
-      'proof': base64UrlNoPad(proof),
-      if (takeover) 'takeover': true,
-    });
-    final moved = body['moved'];
-    return body['deviceId'] == social.deviceId && moved is bool ? moved : throw const RelayException(RelayCode.badResponse);
-  }
-
-  Future<void> removeFriend(SocialIdentity identity, String peerDeviceId) => _call(identity, 'DELETE', '/v1/friends/$peerDeviceId');
-
-  Future<int> send(SocialIdentity identity, {required String to, required String clientId, required List<int> envelope}) async =>
-      _integer((await _call(identity, 'POST', '/v1/messages', {'to': to, 'clientId': clientId, 'envelope': base64UrlNoPad(envelope)}))['createTime']);
-
-  // wait 为长轮询挂起时长（服务端上限 25 秒）：没有消息时服务端挂起到有新消息或到时；本次请求超时放宽到挂起时长再加 10 秒。
-  // 长轮询按后台请求发（background），断网与超时算不算错误交给收取循环。
-  Future<({List<InboxItem> messages, bool more})> fetch(SocialIdentity identity, {String? after, int limit = 50, Duration? wait}) async {
-    final query = '${after == null ? '' : 'after=$after&'}limit=$limit${wait == null ? '' : '&wait=${wait.inSeconds}'}';
-    final body = await _call(identity, 'GET', '/v1/messages?$query', null, wait == null ? null : wait + const Duration(seconds: 10), wait != null, inboxLimit(limit));
-    final list = body['messages'], more = body['more'];
-    if (list is! List || more is! bool) throw const RelayException(RelayCode.badResponse);
-    return (
-      messages: [
-        for (final item in list.cast<Map<Object?, Object?>>())
-          InboxItem(id: _text(item['id']), from: _text(item['from']), envelope: decodeBase64UrlNoPad(_text(item['envelope'])), createTime: _integer(item['createTime'])),
-      ],
-      more: more,
-    );
-  }
-
-  Future<void> ack(SocialIdentity identity, List<String> ids) => _call(identity, 'POST', '/v1/messages/ack', {'ids': ids});
-
-  // 用给定身份签名发一个请求，返回响应体：应用账号、挑战与节日抽签都用这个应用账号的设备密钥发，接口路径由调用方给。
-  // timeout 为空用传输的默认值（现在没有调用方另给）；limit 为空用传输的默认响应上限，挑战一局与解锁另给。
-  Future<Map<String, Object?>> request(SocialIdentity identity, String method, String path, [Map<String, Object?>? payload, Duration? timeout, int? limit]) => _call(identity, method, path, payload, timeout, false, limit);
-
-  static int _integer(Object? value) => value is int ? value : throw const RelayException(RelayCode.badResponse);
-  static String _text(Object? value) => value is String ? value : throw const RelayException(RelayCode.badResponse);
+  // 删除本设备：服务端删掉本设备的好友关系、待收消息与注册记录；应用账号退出时删它的设备密钥也用这个。
+  Future<void> deleteDevice(RelayIdentity identity) => request(identity, 'DELETE', '/v1/devices');
 }

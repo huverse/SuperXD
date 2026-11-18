@@ -6,9 +6,10 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/page/friend_add_page.dart';
-import 'package:superxd/social/account_seal.dart';
+import 'package:superxd/relay/account_seal.dart';
 import 'package:superxd/social/invite_code.dart';
-import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/relay/relay_client.dart';
+import 'package:superxd/relay/relay_crypto.dart';
 import 'package:superxd/social/social_crypto.dart';
 
 // 协议 v1 客户端密码学：与服务端共用 server/test/vectors/protocol_v1.json，双端逐字节一致。
@@ -70,9 +71,9 @@ void main() {
     });
 
     test('base64url 只认无填充的规范写法', () {
-      expect(() => decodeBase64UrlNoPad('AA=='), throwsA(isA<SocialCryptoException>()));
-      expect(() => decodeBase64UrlNoPad('A+A'), throwsA(isA<SocialCryptoException>()));
-      expect(() => decodeBase64UrlNoPad(vectors['deviceId'] as String, length: 32), throwsA(isA<SocialCryptoException>()));
+      expect(() => decodeBase64UrlNoPad('AA=='), throwsA(isA<RelayCryptoException>()));
+      expect(() => decodeBase64UrlNoPad('A+A'), throwsA(isA<RelayCryptoException>()));
+      expect(() => decodeBase64UrlNoPad(vectors['deviceId'] as String, length: 32), throwsA(isA<RelayCryptoException>()));
       expect(decodeBase64UrlNoPad(vectors['deviceId'] as String, length: 16), hasLength(16));
     });
   });
@@ -95,13 +96,13 @@ void main() {
   });
 
   group('端到端信封', () {
-    late SocialIdentity alice, bob, eve;
+    late RelayIdentity alice, bob, eve;
     setUpAll(() async {
-      alice = await SocialIdentity.generate();
-      bob = await SocialIdentity.generate();
-      eve = await SocialIdentity.generate();
+      alice = await RelayIdentity.generate();
+      bob = await RelayIdentity.generate();
+      eve = await RelayIdentity.generate();
     });
-    PeerKeys keysOf(SocialIdentity identity) => PeerKeys(identity.signPublicKey, identity.boxPublicKey);
+    PeerKeys keysOf(RelayIdentity identity) => PeerKeys(identity.signPublicKey, identity.boxPublicKey);
 
     test('收件人能解开并验签，中文内容原样还原', () async {
       final envelope = await sealEnvelope(sender: alice, recipient: keysOf(bob), message: {'kind': 'card', 'text': '周三下午一起自习'});
@@ -133,7 +134,7 @@ void main() {
 
   group('好友二维码', () {
     test('编码解码往返，设备号由公钥推出', () async {
-      final owner = await SocialIdentity.generate();
+      final owner = await RelayIdentity.generate();
       final code = InviteCode(inviteId: base64UrlNoPad(secureRandomBytes(16)), inviteSeed: secureRandomBytes(32), owner: PeerKeys(owner.signPublicKey, owner.boxPublicKey), nickname: '小明', expiresAt: 1791100000000);
       final text = code.encode();
       expect(text, startsWith('SXD1F:'));

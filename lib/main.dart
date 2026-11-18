@@ -49,7 +49,7 @@ import 'package:superxd/local/painting_library.dart';
 import 'package:superxd/page/painting_splash.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/social/identity_vault.dart';
-import 'package:superxd/social/relay_app_account.dart';
+import 'package:superxd/relay/app_account_vault.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_spaces.dart';
 import 'package:superxd/theme/campus_glass_probe.dart';

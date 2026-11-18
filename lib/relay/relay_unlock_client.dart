@@ -3,8 +3,8 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/domain/rollout.dart';
 import 'package:superxd/domain/unlock.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_client.dart';
 
 // 解锁的中转客户端（协议见 server/README.md「解锁」，规则见服务端 src/modules/unlock/unlock_rules.ts）：用这个应用账号的设备密钥签名（同挑战与积分）；
 // 服务器的回复是外部输入，逐项校验，看不懂的按失败报。
@@ -20,7 +20,7 @@ class RelayUnlockClient implements UnlockClient {
     final saved = await vault.read(account.slot);
     if (saved == null) throw const UnlockException(UnlockFailure.notSignedIn, '请先登录应用账号');
     try {
-      return await _relay.request(saved.identity, method, path, null, null, limit);
+      return await _relay.request(saved.identity, method, path, limit: limit);
     } on RelayException catch (error) {
       throw switch (error.code) {
         RelayCode.accountNotFound || RelayCode.unauthorized => const UnlockException(UnlockFailure.notSignedIn, '应用账号已经退出，请重新登录'),

@@ -1,8 +1,8 @@
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/diagnostic_upload.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_client.dart';
 
 // 应用账号下的诊断包的中转实现（人工决策见 domain/diagnostic_upload.dart，协议见 server/README.md）：用这个应用账号的设备密钥签名
 // （安全存储 superxd_account 的 account.slot，没有这把密钥算没登录）；超时、请求记录与校时重发一次沿用 RelayClient，不重试；回复逐项校验。
@@ -17,7 +17,7 @@ class RelayDiagnosticAccountClient implements DiagnosticAccountClient {
     final saved = await vault.read(account.slot);
     if (saved == null) throw const DiagnosticNotSignedIn();
     try {
-      return await _relay.request(saved.identity, method, path, payload);
+      return await _relay.request(saved.identity, method, path, payload: payload);
     } on RelayException catch (error) {
       throw switch (error.code) {
         RelayCode.accountNotFound || RelayCode.unauthorized => const DiagnosticNotSignedIn(),

@@ -11,9 +11,10 @@ import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/invite_code.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
-import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_client.dart';
+import 'package:superxd/relay/relay_crypto.dart';
+import 'package:superxd/social/social_relay.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_spaces.dart';
 import 'package:superxd/social/social_store.dart';
@@ -46,13 +47,13 @@ void main() {
   test('真实中转服务：扫码加好友、收发卡片、删除好友、关闭私信', () async {
     expect(relayBaseUrl, isNotEmpty, reason: '用 --dart-define=SUPERXD_RELAY=… 指定中转服务地址');
     final directory = Directory.systemTemp.createTempSync('verify_social');
-    final identities = <String, SocialIdentity>{};
+    final identities = <String, RelayIdentity>{};
     Future<SocialService> device(String name) async {
       final vault = MemoryIdentityVault(), keys = MemoryAppAccountVault();
       final account = AppAccountRef(accountId: 'verify-${identities.length}', slot: appAccountSlot);
-      await keys.write(account.slot, AppAccountKey(identity: await SocialIdentity.generate(), accountId: account.accountId));
+      await keys.write(account.slot, AppAccountKey(identity: await RelayIdentity.generate(), accountId: account.accountId));
       final spaces = SocialSpaces(vault: vault, directory: (Directory(path.join(directory.path, account.accountId))..createSync()).path);
-      final social = identities[name] = await SocialIdentity.generate();
+      final social = identities[name] = await RelayIdentity.generate();
       await RelayClient(HttpRelayTransport(relayBaseUrl)).register(social);
       await vault.write((await spaces.of(account.accountId)).identityKey, social);
       final service = SocialService(spaces: spaces, accountKeys: keys, transport: _BoundLocally(HttpRelayTransport(relayBaseUrl)));
@@ -96,7 +97,7 @@ void main() {
     expect(alice.unread, 2);
 
     // 长轮询：alice 挂着拉取，bob 一秒后发一张，看 alice 多久拿到（应远小于挂起时长）。
-    final relay = RelayClient(HttpRelayTransport(relayBaseUrl));
+    final relay = SocialRelay(HttpRelayTransport(relayBaseUrl));
     final waiting = relay.fetch(identities['联调甲']!, wait: SocialService.longPollWait);
     await Future<void>.delayed(const Duration(seconds: 1));
     final sentAt = DateTime.now();

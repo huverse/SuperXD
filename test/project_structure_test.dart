@@ -16,8 +16,11 @@ const _allowed = {
   'toolbox': {'domain', 'theme', 'toolbox'},
   // 游乐场（设备级，同百宝箱）：小游戏的规则与页面，只依赖 domain 与 theme；以后的挑战、积分与账号经组合根注入的接口使用。
   'playground': {'domain', 'theme', 'playground'},
-  // 功能性私信（设备级）：本机库、设备身份与中转服务客户端，只依赖 domain；页面经 SocialService 使用，百宝箱经组合根注入的回调使用。
-  'social': {'domain', 'social'},
+  // [人工决策-2026-11-17 21:24:25] 新增 relay 层（用户选审查 P1-6 的选项 1，蓝牙私信之前做）：自建中转的签名请求（传输、设备身份、校时重发与「账号已注销」核对）、
+  // 应用账号与它签名的各个中转客户端（挑战与积分、节日抽签、解锁、灰度点名、诊断包认领），只依赖 domain，实现 domain 的端口、由组合根注入；页面不直接依赖。
+  'relay': {'domain', 'relay'},
+  // 功能性私信：本机库、私信身份与私信经中转的接口，依赖 domain 与 relay（签名请求、应用账号的设备密钥）；页面经 SocialService 使用，百宝箱经组合根注入的回调使用。
+  'social': {'domain', 'relay', 'social'},
   'page': {'domain', 'application', 'gateway', 'local', 'social', 'theme', 'page', 'app_session.dart'},
 };
 
@@ -111,7 +114,7 @@ void main() {
   test('lib发请求的地方都经共用内核并接上开发者模式的请求记录', () {
     // 还没迁到内核的只剩 iOS 下载传输：它要先看响应头（状态、Content-Range、ETag）再决定续写还是重下、边收边写文件、逐跳自己跟跳转，
     // 内核交回的是读完的整份响应，接不上可续传的大文件下载。设备侧的中转清单、开发者的话与诊断包上传已经迁过去（内核加了无进展超时与流式请求体）；
-    // 节日抽签经私信中转客户端（RelayClient.request），跟着它走内核。
+    // 应用账号签名的各个中转客户端与私信都经 relay/relay_client.dart 的 RelayClient 与 HttpRelayTransport，跟着它走内核。
     final unmigrated = {
       for (final name in ['toolbox/download/http_transfer.dart']) path.joinAll(['lib', ...name.split('/')]),
     };

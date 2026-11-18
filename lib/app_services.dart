@@ -46,13 +46,14 @@ import 'package:superxd/local/app_health_memory.dart';
 import 'package:superxd/local/rollout_memory.dart';
 import 'package:superxd/page/festival/festival_catalog.dart';
 import 'package:superxd/playground/playground_store.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_challenge_client.dart';
-import 'package:superxd/social/relay_client.dart';
-import 'package:superxd/social/relay_diagnostic_account.dart';
-import 'package:superxd/social/relay_flag_target_client.dart';
-import 'package:superxd/social/relay_reward_client.dart';
-import 'package:superxd/social/relay_unlock_client.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_app_account.dart';
+import 'package:superxd/relay/relay_challenge_client.dart';
+import 'package:superxd/relay/relay_client.dart';
+import 'package:superxd/relay/relay_diagnostic_account.dart';
+import 'package:superxd/relay/relay_flag_target_client.dart';
+import 'package:superxd/relay/relay_reward_client.dart';
+import 'package:superxd/relay/relay_unlock_client.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
@@ -207,7 +208,7 @@ Future<DeveloperNotes?> developerNotes(Directory support, RelayWiring? relay) as
 }
 
 // 节日（人工决策见 domain/festival.dart）：登记在 page/festival/festival_catalog.dart；没配中转时只播动画、不抽签。
-// 抽签用当前应用账号的设备密钥签名（social/relay_reward_client.dart）；没登录应用账号不抽，中转说账号已不在时让应用账号马上核一次。
+// 抽签用当前应用账号的设备密钥签名（relay/relay_reward_client.dart）；没登录应用账号不抽，中转说账号已不在时让应用账号马上核一次。
 // 登录应用账号后补抽在 app_lifecycle.dart 的 watchMoments 里接（同意协议与政策之后才联网）。
 // 仅本机时（online 为假，人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）不抽签、不领红包，也不按等级加权。
 Future<Festivals> festivalsOf(Directory support, RelayWiring? relay, AppAccounts? appAccounts, {required bool Function() online}) async {
@@ -236,7 +237,7 @@ AccountDiagnostics? diagnosticsOf(RelayWiring? relay, AppAccounts? Function() ap
 }
 
 // 应用账号（人工决策见 domain/app_account.dart）走同一个自建中转；没配中转时为空，账号页不显示那一组。
-// 这台设备一把设备密钥，存在自己的安全存储命名空间（social/relay_app_account.dart），与私信身份互不关联。
+// 这台设备一把设备密钥，存在自己的安全存储命名空间（relay/app_account_vault.dart），与私信身份互不关联。
 AppAccounts? appAccountsOf(RelayWiring? relay, {void Function(AppAccountRef account)? onDeleted}) {
   if (relay == null) return null;
   return AppAccounts(client: RelayAppAccountClient(vault: relay.accountKeys, transport: relay.transport, deviceModel: readDeviceModel), onDeleted: onDeleted);

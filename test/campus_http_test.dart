@@ -8,7 +8,8 @@ import 'package:http/testing.dart';
 
 import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
-import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/relay/relay_client.dart';
+import 'package:superxd/social/social_relay.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_http.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_models.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_pack_client.dart';
@@ -268,9 +269,9 @@ void main() {
       final transport = HttpRelayTransport('http://relay.example:8080', client: MockClient((_) async => http.Response(big, 200)));
       await expectLater(transport.send('GET', '/v1/friends', const {}, null), throwsA(isA<RelayException>().having((error) => error.code, 'code', RelayCode.badResponse)));
       expect(logs.where((log) => log.startsWith('[RelayTransport] action=request route=GET /v1/friends code=BAD_RESPONSE errorType=CampusHttpTooLarge')), hasLength(1));
-      final response = await transport.send('GET', '/v1/messages?limit=50', const {}, null, limit: RelayClient.inboxLimit(50));
+      final response = await transport.send('GET', '/v1/messages?limit=50', const {}, null, limit: SocialRelay.inboxLimit(50));
       expect(response.body['more'], isFalse);
-      expect(RelayClient.inboxLimit(50), greaterThan(50 * (256 * 1024 * 4 ~/ 3)), reason: '50 条最大的密文经 base64url 也放得下');
+      expect(SocialRelay.inboxLimit(50), greaterThan(50 * (256 * 1024 * 4 ~/ 3)), reason: '50 条最大的密文经 base64url 也放得下');
     });
   });
 

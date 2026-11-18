@@ -25,7 +25,7 @@ import 'package:superxd/app_services.dart';
 import 'package:superxd/app_shell.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/invite_code.dart';
-import 'package:superxd/social/relay_app_account.dart';
+import 'package:superxd/relay/app_account_vault.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_spaces.dart';
 import 'package:superxd/theme/campus_icons.dart';

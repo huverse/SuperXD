@@ -1,28 +1,27 @@
 import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_clock.dart';
-import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 
 // 私信错误码 → 界面文案，页面只按错误码取文案。
 String socialErrorText(String? code) => switch (code) {
-  RelayCode.network => '连不上私信服务，请检查网络',
-  RelayCode.timeout => '私信服务响应超时，请重试',
-  RelayCode.rateLimited => '操作太频繁，请稍后再试',
-  RelayCode.clockSkew => '手机时间不准，请校准后重试',
-  RelayCode.inviteNotFound || SocialCode.inviteExpired => '二维码已失效，请对方刷新后再扫',
-  RelayCode.inviteSelf => '这是你自己的二维码',
-  RelayCode.inviteProofInvalid || SocialCode.notInvite => '不是有效的 SuperXD 好友二维码',
-  RelayCode.friendLimit || SocialCode.localFriendLimit => '好友数量已达上限',
-  RelayCode.notFriend || SocialCode.friendRemoved => '对方已解除好友',
+  SocialCode.network => '连不上私信服务，请检查网络',
+  SocialCode.timeout => '私信服务响应超时，请重试',
+  SocialCode.rateLimited => '操作太频繁，请稍后再试',
+  SocialCode.clockSkew => '手机时间不准，请校准后重试',
+  SocialCode.inviteNotFound || SocialCode.inviteExpired => '二维码已失效，请对方刷新后再扫',
+  SocialCode.inviteSelf => '这是你自己的二维码',
+  SocialCode.inviteProofInvalid || SocialCode.notInvite => '不是有效的 SuperXD 好友二维码',
+  SocialCode.friendLimit || SocialCode.localFriendLimit => '好友数量已达上限',
+  SocialCode.notFriend || SocialCode.friendRemoved => '对方已解除好友',
   SocialCode.friendMoved => '对方换了设备，点重发',
-  RelayCode.socialElsewhere => '私信在另一台手机上',
+  SocialCode.socialElsewhere => '私信在另一台手机上',
   SocialCode.signedOut => '请先登录应用账号',
-  RelayCode.peerNotFound => '对方已关闭私信',
-  RelayCode.mailboxFull => '对方待收消息太多，请稍后再发',
-  RelayCode.envelopeTooLarge => '内容太大，无法发送',
+  SocialCode.peerNotFound => '对方已关闭私信',
+  SocialCode.mailboxFull => '对方待收消息太多，请稍后再发',
+  SocialCode.envelopeTooLarge => '内容太大，无法发送',
   'INTERRUPTED' => '发送被中断',
   _ => '操作未完成，请重试',
 };

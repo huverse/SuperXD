@@ -1,8 +1,8 @@
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/challenge.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_client.dart';
 
 // 挑战与积分的中转客户端（协议见 server/README.md「挑战与积分」，人工决策见 lib/playground/challenge/challenge_rules.dart）：
 // 用这个应用账号的设备密钥签名（同 RelayAppAccountClient，密钥在安全存储 superxd_account 的 account.slot），校时重发一次复用 RelayClient；
@@ -21,7 +21,7 @@ class RelayChallengeClient implements ChallengeClient {
     final saved = await vault.read(account.slot);
     if (saved == null) throw const ChallengeException(ChallengeFailure.notSignedIn, '请先登录应用账号');
     try {
-      return await _relay.request(saved.identity, method, path, payload, null, runLimit);
+      return await _relay.request(saved.identity, method, path, payload: payload, limit: runLimit);
     } on RelayException catch (error) {
       final detail = error.detail;
       final run = detail['run'] is Map ? _tryRun(detail['run']) : null;
