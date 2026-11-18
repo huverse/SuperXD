@@ -55,6 +55,23 @@ void main() {
       expect(healthRecent(record.days, '2026-11-16').first.day, '2026-11-10');
     });
 
+    // [人工决策-2026-11-17 21:24:25] 见 lib/domain/app_health.dart：只发档位，原始时长与帧数只在本机。
+    test('性能档位：启动按 0.5/1/2 秒分四档、一天取中位档；慢帧占比按 5%/15%/40% 分四档，帧太少不报', () {
+      expect([400, 500, 999, 1000, 1999, 2000, 9000].map((ms) => healthLaunchTier(Duration(milliseconds: ms))), [0, 1, 1, 2, 2, 3, 3]);
+      const empty = HealthDay(day: '2026-11-15', versionCode: 30);
+      expect((empty.launchTier, empty.frameTier), (null, null));
+      var day = empty;
+      for (final ms in [300, 2500, 700]) {
+        day = day.withLaunch(Duration(milliseconds: ms));
+      }
+      expect(day.launches, [1, 1, 0, 1]);
+      expect(day.launchTier, 1);
+      expect(day.withLaunch(const Duration(seconds: 3)).launchTier, 1, reason: '偶数次取低的那个中位');
+      expect(day.withLaunch(const Duration(seconds: 3)).withLaunch(const Duration(seconds: 3)).launchTier, 3);
+      expect(empty.copyWith(frames: healthFrameMinimum - 1, slowFrames: 0).frameTier, isNull);
+      expect([0, 29, 30, 89, 90, 239, 240, 600].map((slow) => empty.copyWith(frames: 600, slowFrames: slow).frameTier), [0, 0, 1, 1, 2, 2, 3, 3]);
+    });
+
     test('新版本反馈：这个版本装了不到 14 天、没交过', () {
       const record = HealthRecord(versionCode: 30, versionSince: '2026-11-10');
       expect(healthFeedbackOpen(record, 30, '2026-11-23'), isTrue);
@@ -79,6 +96,26 @@ void main() {
       expect((await FileAppHealthMemory.open(file)).record.days, hasLength(1));
       await file.writeAsString('{坏');
       expect((await FileAppHealthMemory.open(file)).record.days, isEmpty);
+    });
+
+    test('性能档位的原始数写得下读得回；坏的当没有', () async {
+      final directory = await Directory.systemTemp.createTemp('health');
+      addTearDown(() => directory.delete(recursive: true));
+      final file = File('${directory.path}/health.json');
+      final memory = await FileAppHealthMemory.open(file);
+      await memory.save(const HealthRecord(days: [HealthDay(day: '2026-11-15', versionCode: 30, launches: [2, 1, 0, 0], frames: 900, slowFrames: 50)]));
+      final day = (await FileAppHealthMemory.open(file)).record.days.single;
+      expect(day.launches, [2, 1, 0, 0]);
+      expect((day.frames, day.slowFrames, day.launchTier, day.frameTier), (900, 50, 0, 1));
+      await file.writeAsString(jsonEncode({
+        'days': [
+          {'day': '2026-11-15', 'versionCode': 30, 'fatal': false, 'reported': false, 'launches': [1, 2], 'frames': -5, 'slowFrames': 3},
+          {'day': '2026-11-16', 'versionCode': 30, 'fatal': false, 'reported': false, 'launches': 'x', 'frames': 100, 'slowFrames': 900},
+        ],
+      }));
+      final days = (await FileAppHealthMemory.open(file)).record.days;
+      expect([for (final day in days) day.launches], [isEmpty, isEmpty]);
+      expect([for (final day in days) (day.frames, day.slowFrames)], [(0, 0), (100, 100)]);
     });
   });
 
@@ -133,6 +170,41 @@ void main() {
       expect(healthDue(memory.record, '2026-11-17'), isEmpty, reason: '拒收的不再重发');
     });
 
+    test('启动用时与帧数记进当天（帧数在内存里攒着、切后台或过了日界才写）；回报带档位', () async {
+      final subject = health();
+      await subject.markLaunch(const Duration(milliseconds: 1500));
+      await subject.markActive();
+      await subject.markLaunch(const Duration(milliseconds: 1200));
+      expect(memory.record.days.single.launches, [0, 0, 2, 0]);
+      expect(memory.record.days.single.launchTier, 2);
+      subject.countFrames(500, 10);
+      subject.countFrames(500, 90);
+      expect(memory.record.days.single.frames, 0, reason: '没切后台不写盘');
+      await subject.flushFrames();
+      expect((memory.record.days.single.frames, memory.record.days.single.slowFrames), (1000, 100));
+      await subject.flushFrames();
+      expect(memory.record.days.single.frames, 1000, reason: '写过的不重复加');
+      subject.countFrames(200, 200);
+      // 跨过日界：前一天攒着的先记到前一天。
+      now = _noon(11, 16);
+      subject.countFrames(700, 0);
+      await Future<void>.delayed(Duration.zero);
+      await subject.flushFrames();
+      final days = {for (final day in memory.record.days) day.day: day};
+      expect((days['2026-11-15']!.frames, days['2026-11-15']!.slowFrames, days['2026-11-15']!.frameTier), (1200, 300, 2));
+      expect((days['2026-11-16']!.frames, days['2026-11-16']!.launchTier), (700, null));
+      await subject.reportDue();
+      expect((client.reports.single.day, client.reports.single.launchTier, client.reports.single.frameTier), ('2026-11-15', 2, 2));
+    });
+
+    test('升级当天：启动记到新版本那一项，换版本前的不带过去', () async {
+      await health(versionCode: 30).markLaunch(const Duration(milliseconds: 300));
+      final updated = health(versionCode: 31);
+      await updated.markLaunch(const Duration(seconds: 3));
+      expect(memory.record.days.single.versionCode, 31);
+      expect(memory.record.days.single.launches, [0, 0, 0, 1]);
+    });
+
     test('上次退出原因里的崩溃与无响应交出系统记下的时刻，后台被回收不算', () async {
       final directory = await Directory.systemTemp.createTemp('exit');
       addTearDown(() => directory.delete(recursive: true));
@@ -158,7 +230,9 @@ void main() {
       }));
       await client.report(channel: 'alpha', platform: 'android', day: const HealthDay(day: '2026-11-15', versionCode: 30, fatal: true));
       expect(requests.single.url.path, '/v1/app/health');
-      expect(jsonDecode(requests.single.body), {'channel': 'alpha', 'platform': 'android', 'versionCode': 30, 'day': '2026-11-15', 'fatal': true});
+      expect(jsonDecode(requests.single.body), {'channel': 'alpha', 'platform': 'android', 'versionCode': 30, 'day': '2026-11-15', 'fatal': true}, reason: '没有档位的不带');
+      await client.report(channel: 'alpha', platform: 'android', day: const HealthDay(day: '2026-11-15', versionCode: 30, launches: [0, 3, 0, 0], frames: 800, slowFrames: 400));
+      expect(jsonDecode(requests.last.body), {'channel': 'alpha', 'platform': 'android', 'versionCode': 30, 'day': '2026-11-15', 'fatal': false, 'launch': 1, 'frames': 3}, reason: '只带档位，不带原始时长与帧数');
       await client.feedback(channel: 'alpha', platform: 'ios', versionCode: 30, good: false, text: '卡');
       expect(requests.last.url.path, '/v1/app/feedback');
       expect(jsonDecode(requests.last.body), {'channel': 'alpha', 'platform': 'ios', 'versionCode': 30, 'good': false, 'text': '卡'});

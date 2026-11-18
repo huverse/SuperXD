@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:synchronized/synchronized.dart';
 
@@ -47,8 +48,23 @@ class FileAppHealthMemory implements AppHealthMemory {
 
 final _dayPattern = RegExp(r'^\d{4}-\d{2}-\d{2}$');
 
+// 性能档位的原始数（11-17 加）：坏的或超出范围的当没有（最坏是少报这一项）。
+int _count(Object? value) => value is int && value >= 0 && value <= 1 << 31 ? value : 0;
+List<int> _launches(Object? value) => value is List && value.length == healthLaunchBounds.length + 1 && value.every((count) => count is int && count >= 0 && count <= 100000) ? List<int>.of(value.cast<int>()) : const [];
+
 Map<String, Object?> encodeHealthRecord(HealthRecord record) => {
-  'days': [for (final day in record.days) {'day': day.day, 'versionCode': day.versionCode, 'fatal': day.fatal, 'reported': day.reported}],
+  'days': [
+    for (final day in record.days)
+      {
+        'day': day.day,
+        'versionCode': day.versionCode,
+        'fatal': day.fatal,
+        'reported': day.reported,
+        if (day.launches.isNotEmpty) 'launches': day.launches,
+        if (day.frames > 0) 'frames': day.frames,
+        if (day.frames > 0) 'slowFrames': day.slowFrames,
+      },
+  ],
   'versionCode': ?record.versionCode,
   'versionSince': ?record.versionSince,
   'feedbackSent': record.feedbackSent,
@@ -60,7 +76,7 @@ HealthRecord decodeHealthRecord(Object? json) {
     if (json['days'] is List)
       for (final item in (json['days'] as List).take(healthReportDays * 2))
         if (item case {'day': final String day, 'versionCode': final int versionCode, 'fatal': final bool fatal, 'reported': final bool reported} when _dayPattern.hasMatch(day) && versionCode > 0)
-          HealthDay(day: day, versionCode: versionCode, fatal: fatal, reported: reported),
+          HealthDay(day: day, versionCode: versionCode, fatal: fatal, reported: reported, launches: _launches(item['launches']), frames: _count(item['frames']), slowFrames: math.min(_count(item['slowFrames']), _count(item['frames']))),
   ];
   return HealthRecord(
     days: days,

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import 'package:superxd/domain/app_health.dart';
@@ -10,6 +12,8 @@ import 'package:superxd/domain/campus_log.dart';
 // - reportDue：同意协议与政策后、回到前台时由组合根调（联网策略 appHealth 允许才调）：发前一天及以前没发过的，最多 healthReportBatch 份；
 //   连不上的留着下次，服务器拒收的记成发过；同一时刻只发一轮。
 // - sendFeedback：关于页「新版本反馈」提交，成功后这个版本不再出现入口。没配中转时 client 为空，什么都不发、也不给入口。
+// - markLaunch、countFrames、flushFrames：性能档位的本机原始数（11-17 的 [人工决策] 见 domain/app_health.dart）：组合根在首帧上屏时记一次启动用时，
+//   引擎交来的帧耗时按批累加在内存里（不逐批写盘），切到后台与跨过校园日界时写进那一天的记录。
 class AppHealth extends ChangeNotifier {
   AppHealth({required this._memory, required this.channel, required this.platform, required this.versionCode, this._client, DateTime Function()? clock}) : _clock = clock ?? DateTime.now;
   final AppHealthMemory _memory;
@@ -54,6 +58,43 @@ class AppHealth extends ChangeNotifier {
     ));
   }
 
+  // 记一次启动（Dart 入口到首帧上屏）；今天的记录是别的版本时同 markActive 换成这个版本的一项。
+  Future<void> markLaunch(Duration elapsed) {
+    final record = _memory.record, today = _today;
+    final days = healthRecent(record.days, today);
+    final current = days.where((day) => day.day == today && day.versionCode == versionCode).firstOrNull;
+    final day = (current ?? HealthDay(day: today, versionCode: versionCode, fatal: days.any((day) => day.day == today && day.fatal))).withLaunch(elapsed);
+    return _save(HealthRecord(days: [...days.where((item) => item.day != today), day], versionCode: record.versionCode, versionSince: record.versionSince, feedbackSent: record.feedbackSent));
+  }
+
+  String? _framesDay;
+  var _frames = 0, _slowFrames = 0;
+
+  // 一批帧：只在内存里加；跨过校园日界时先把前一天的写进记录。
+  void countFrames(int frames, int slow) {
+    final today = _today;
+    if (_framesDay != today) unawaited(flushFrames());
+    _framesDay = today;
+    _frames += frames;
+    _slowFrames += slow;
+  }
+
+  Future<void> flushFrames() async {
+    final day = _framesDay, frames = _frames, slow = _slowFrames;
+    _frames = 0;
+    _slowFrames = 0;
+    if (day == null || frames == 0) return;
+    final record = _memory.record;
+    final days = healthRecent(record.days, _today);
+    if (!days.any((item) => item.day == day)) days.add(HealthDay(day: day, versionCode: versionCode));
+    await _save(HealthRecord(
+      days: [for (final item in days) item.day == day ? item.copyWith(frames: item.frames + frames, slowFrames: item.slowFrames + slow) : item],
+      versionCode: record.versionCode,
+      versionSince: record.versionSince,
+      feedbackSent: record.feedbackSent,
+    ));
+  }
+
   Future<void> reportDue() => _reporting ??= _report().whenComplete(() => _reporting = null);
 
   Future<void> _report() async {
@@ -73,7 +114,7 @@ class AppHealth extends ChangeNotifier {
         versionSince: record.versionSince,
         feedbackSent: record.feedbackSent,
       ));
-      campusLog('[AppHealth] action=reported day=${day.day} versionCode=${day.versionCode} fatal=${day.fatal}');
+      campusLog('[AppHealth] action=reported day=${day.day} versionCode=${day.versionCode} fatal=${day.fatal} launch=${day.launchTier} frames=${day.frameTier}');
     }
   }
 

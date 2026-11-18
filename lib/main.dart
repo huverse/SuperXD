@@ -234,8 +234,10 @@ void main() async {
   final services = AppServices(display: display, reminders: reminders, social: social, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, unlocks: unlocks, playground: playground, leisure: leisure, moments: moments, autoSync: autoSync, health: health, network: network);
   final app = SuperXdApp(session: session, services: services, launch: launched, splashGone: splashGone);
   runApp(splashed ? PaintingSplash(painting: painting, image: splashImage, ready: restored.future, onGone: () => splashGone.value = true, child: app) : app);
+  // 首帧上屏：健康回报的启动档按这段时长记（只记档位次数，人工决策见 domain/app_health.dart 的 11-17 那条）。
   unawaited(WidgetsBinding.instance.waitUntilFirstFrameRasterized.then((_) {
     if (campusDiagnostics) campusLog('[App] action=first_frame ms=${launch.elapsedMilliseconds}');
+    return health.markLaunch(launch.elapsed);
   }));
   unawaited(initializeCampusGlass());
   // 低电量（iOS）与省电模式（安卓）时装饰动效停下，先要一次当前状态（见 theme/native_glass.dart 的 nativeLowPower）。

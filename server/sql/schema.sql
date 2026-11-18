@@ -309,7 +309,7 @@ CREATE TABLE IF NOT EXISTS rollout_target (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
 -- 分批更新的健康回报、自动暂停与意见反馈（人工决策见 src/modules/app_health/app_health_rules.ts），都不带账号与设备号。
--- 健康回报的按日汇总：渠道、平台、版本、校园日各一行，只有份数与致命份数；保留 90 天。
+-- 健康回报的按日汇总：渠道、平台、版本、校园日各一行，只有份数、致命份数与启动档、慢帧档各档的份数（11-18 加）；保留 90 天。
 CREATE TABLE IF NOT EXISTS app_health_daily (
   id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
   channel VARCHAR(32) NOT NULL,
@@ -320,6 +320,14 @@ CREATE TABLE IF NOT EXISTS app_health_daily (
   fatal INT UNSIGNED NOT NULL COMMENT '其中那天有致命错误的份数',
   create_time DATETIME(3) NOT NULL,
   update_time DATETIME(3) NOT NULL,
+  launch_t0 INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '启动档 0（不到 0.5 秒）的份数',
+  launch_t1 INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '启动档 1（0.5–1 秒）的份数',
+  launch_t2 INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '启动档 2（1–2 秒）的份数',
+  launch_t3 INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '启动档 3（2 秒以上）的份数',
+  frames_t0 INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '慢帧档 0（不到 5%）的份数',
+  frames_t1 INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '慢帧档 1（5–15%）的份数',
+  frames_t2 INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '慢帧档 2（15–40%）的份数',
+  frames_t3 INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '慢帧档 3（40% 以上）的份数',
   PRIMARY KEY (id),
   UNIQUE KEY uk_health_day (channel, day, version_code, platform),
   KEY idx_day (day)

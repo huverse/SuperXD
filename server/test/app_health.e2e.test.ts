@@ -81,6 +81,35 @@ describe('健康回报', () => {
     }
   });
 
+  // [人工决策-2026-11-17 21:24:25] 见 app_health_rules.ts：性能档位只存与汇总，自动暂停仍只看致命率。
+  it('启动档与慢帧档按档累加（不带的不计入任何一档）；档位只收 0–3 的整数；维护命令列出各版本的分布', async () => {
+    const channel = channelOf();
+    const day = daysAgo(1);
+    for (const body of [
+      { launch: 0, frames: 0 },
+      { launch: 0, frames: 2 },
+      { launch: 3 },
+      { frames: 3 },
+      {},
+    ]) {
+      expect((await report({ channel, platform: 'android', versionCode: 31, day, fatal: false, ...body })).status).toBe(204);
+    }
+    const [row] = (await database.query(
+      'SELECT reports, launch_t0, launch_t1, launch_t2, launch_t3, frames_t0, frames_t1, frames_t2, frames_t3 FROM app_health_daily WHERE channel = ?',
+      [channel],
+    )) as Record<string, number>[];
+    expect(row).toEqual({ reports: 5, launch_t0: 2, launch_t1: 0, launch_t2: 0, launch_t3: 1, frames_t0: 1, frames_t1: 0, frames_t2: 1, frames_t3: 1 });
+    for (const bad of [{ launch: 4 }, { launch: -1 }, { frames: 1.5 }, { frames: '2' }]) {
+      expect((await report({ channel, platform: 'android', versionCode: 31, day, fatal: false, ...bad })).body.code, JSON.stringify(bad)).toBe('INVALID_REQUEST');
+    }
+    const status = await runHealthAdmin(admin, ['status', channel]);
+    expect(status).toContain('31 android：5 份，致命 0（0.0%）；启动 <0.5s 2 · 0.5–1s 0 · 1–2s 0 · ≥2s 1；慢帧 <5% 1 · 5–15% 0 · 15–40% 1 · ≥40% 1');
+    // 只带旧字段的版本不写档位分布。
+    const old = channelOf();
+    await report({ channel: old, platform: 'android', versionCode: 30, day, fatal: true });
+    expect(await runHealthAdmin(admin, ['status', old])).toContain('30 android：1 份，致命 1（100.0%）\n');
+  });
+
   it('同一来源每小时超过上限回 RATE_LIMITED', async () => {
     const channel = channelOf();
     for (let index = 0; index < healthReportPerSourcePerHour; index++) await report({ channel, platform: 'android', versionCode: 30, day: daysAgo(1), fatal: false });

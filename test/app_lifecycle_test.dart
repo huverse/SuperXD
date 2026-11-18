@@ -51,6 +51,19 @@ void main() {
     expect(calls, ['late']);
   });
 
+  // 11-17 加：切到后台的收尾（健康回报把内存里攒的帧数写盘），每次不再可见时做一次，先于回到前台的钩子。
+  testWidgets('切到后台的钩子每次不再可见时做一次；不看同意的同意前也做', (tester) async {
+    await tester.pumpWidget(const SizedBox());
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    final hooks = AppHooks(agreed: Completer<void>().future);
+    final calls = <String>[];
+    hooks.onHide('Frames', () => calls.add('hide'), agreedOnly: false);
+    hooks.onHide('Agreed', () => calls.add('agreed'));
+    hooks.onResume('Local', () => calls.add('resume'), agreedOnly: false);
+    _cycle(tester);
+    expect(calls, ['hide', 'resume']);
+  });
+
   testWidgets('联网策略不允许的服务钩子不做；一个钩子出错只记日志，别的照常做', (tester) async {
     await tester.pumpWidget(const SizedBox());
     tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);

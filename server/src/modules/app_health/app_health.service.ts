@@ -31,7 +31,7 @@ export class AppHealthService {
     const retryAfter = await this.limiter.hit('health_report', rateSubjectOf(ip), healthReportPerSourcePerHour, 3600);
     if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '回报过于频繁', { retryAfter });
     if (body.day >= dayBefore(now, 0) || body.day < dayBefore(now, healthReportMaxAgeDays) || Number.isNaN(Date.parse(`${body.day}T00:00:00Z`))) return;
-    await this.health.addReport(body.channel, body.platform, body.versionCode, body.day, body.fatal, now);
+    await this.health.addReport(body.channel, body.platform, body.versionCode, body.day, body.fatal, { launch: body.launch, frames: body.frames }, now);
   }
 
   async feedback(ip: string, body: dtos.FeedbackDto, now = new Date()) {

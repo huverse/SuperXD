@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_accounts.dart';
@@ -28,7 +29,7 @@ import 'package:superxd/theme/campus_palette.dart';
 // 会联网的钩子写明属于哪一项联网服务，联网策略不允许时不做（domain/network_policy.dart）。一个钩子出错只记日志，不影响别的钩子。
 class AppHooks {
   AppHooks({required Future<void> agreed, this.policy = const OnlineNetworkPolicy()}) {
-    AppLifecycleListener(onResume: () => _fire(_resume), onShow: () => _fire(_show));
+    AppLifecycleListener(onResume: () => _fire(_resume), onShow: () => _fire(_show), onHide: () => _fire(_hide));
     unawaited(agreed.then((_) {
       _agreed = true;
       for (final hook in _once) {
@@ -41,7 +42,7 @@ class AppHooks {
   }
   final NetworkPolicy policy;
   bool _agreed = false;
-  final _once = <_Hook>[], _resume = <_Hook>[], _show = <_Hook>[];
+  final _once = <_Hook>[], _resume = <_Hook>[], _show = <_Hook>[], _hide = <_Hook>[];
   // 同意之后该做一次、但当时联网策略不允许的钩子：策略放行时补做一次（不丢）。
   final _blocked = <_Hook>[];
 
@@ -58,6 +59,9 @@ class AppHooks {
 
   // 每次前台可见做（含从快捷入口、通知拉起）；agreedOnly 同上。
   void onShow(String module, FutureOr<void> Function() action, {NetworkService? service, bool agreedOnly = true}) => _show.add(_Hook(module, action, service, agreedOnly: agreedOnly));
+
+  // 每次切到后台（不再可见）做，只给写本机的收尾用（11-17 加，健康回报把内存里的帧数写盘）；agreedOnly 同上。
+  void onHide(String module, FutureOr<void> Function() action, {bool agreedOnly = true}) => _hide.add(_Hook(module, action, null, agreedOnly: agreedOnly));
 
   void _fire(List<_Hook> hooks) {
     for (final hook in hooks) {
@@ -103,8 +107,15 @@ void watchUnlocks(Unlocks unlocks, AppHooks hooks) {
 
 // 同意协议与政策之后拉一次灰度配置，之后每次回到前台再看一眼（距上次不到一小时不联网）；请求不带任何标识。
 // 分批更新的健康回报（人工决策见 domain/app_health.dart）：启动与回到前台记今天打开过（只写本机，同意之前也记）；同意之后、回到前台时补发前几天的（联网策略 appHealth 允许才发）。
+// 慢帧档（11-17 加）：引擎每交来一批帧耗时，按屏幕刷新率算一帧的预算，构建或栅格超出的算慢帧（同开发者模式的卡顿统计），只在内存里累加，切到后台时写盘。
 void watchAppHealth(AppHealth health, AppHooks hooks) {
   unawaited(health.markActive());
+  SchedulerBinding.instance.addTimingsCallback((timings) {
+    final rate = WidgetsBinding.instance.platformDispatcher.views.firstOrNull?.display.refreshRate ?? 60;
+    final budget = Duration(microseconds: (1000000 / (rate > 0 ? rate : 60)).round());
+    health.countFrames(timings.length, timings.where((timing) => timing.buildDuration > budget || timing.rasterDuration > budget).length);
+  });
+  hooks.onHide('AppHealthFrames', health.flushFrames, agreedOnly: false);
   hooks.onResume('AppHealth', health.markActive, agreedOnly: false);
   hooks.afterAgreed('AppHealth', health.reportDue, service: NetworkService.appHealth);
   hooks.onResume('AppHealthReport', health.reportDue, service: NetworkService.appHealth);
