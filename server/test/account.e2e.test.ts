@@ -16,7 +16,7 @@ import { createInviteKeys, helloOf, inviteProof, socialBindBody, TestDevice } fr
 
 // 应用账号（人工决策见 src/modules/account/account.service.ts）：用户名加密码，密码与恢复码封装后交来，库里只有 scrypt 哈希。合成数据。
 
-// 测试里的客户端封装（同 lib/social/account_seal.dart），中转公钥由测试私钥推出。
+// 测试里的客户端封装（同 lib/relay/account_seal.dart），中转公钥由测试私钥推出。
 const testSealPrivate = x25519PrivateKey(decodeBase64url(process.env.RELAY_ACCOUNT_SEAL_KEY!, 32)!);
 const testSealPublic = x25519PublicOf(testSealPrivate);
 const x25519SpkiPrefix = Buffer.from('302a300506032b656e032100', 'hex');

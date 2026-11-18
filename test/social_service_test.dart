@@ -14,9 +14,9 @@ import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/social/identity_vault.dart';
 import 'package:superxd/social/invite_code.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
-import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_client.dart';
+import 'package:superxd/relay/relay_crypto.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_spaces.dart';
 import 'package:superxd/social/social_store.dart';
@@ -52,7 +52,7 @@ class Phone {
 
   Future<SocialStore> store([AppAccountRef? of]) async => (await _spaces!.of((of ?? account)!.accountId)).store;
   Future<void> stop() async => (await store()).close();
-  Future<SocialIdentity?> identity([AppAccountRef? of]) async => vault.read((await _spaces!.of((of ?? account)!.accountId)).identityKey);
+  Future<RelayIdentity?> identity([AppAccountRef? of]) async => vault.read((await _spaces!.of((of ?? account)!.accountId)).identityKey);
 }
 
 Phone phoneOf(SocialService service) => _phoneOf[service]!;
@@ -584,7 +584,7 @@ void main() {
       final relay = FakeRelay();
       final phone = Phone(relay);
       // 旧版：设备级身份、注册过的设备、第 1 版的库（profile 没有 bound）。
-      final legacy = await SocialIdentity.generate();
+      final legacy = await RelayIdentity.generate();
       phone.vault.identities['identity'] = legacy;
       relay.devices[legacy.deviceId] = (sign: legacy.signPublicKey, box: legacy.boxPublicKey);
       final old = await databaseFactory.openDatabase(path.join(phone.directory.path, SocialSpaces.legacyDatabase), options: OpenDatabaseOptions(version: 1, onCreate: (database, _) async {
@@ -733,7 +733,7 @@ void main() {
     test('清掉这台手机上没用过私信的旧账号：不认领旧版留下的设备级私信、不为它建库，之后第一个用私信的账号照样并进来', () async {
       final relay = FakeRelay();
       final phone = Phone(relay);
-      final legacy = await SocialIdentity.generate();
+      final legacy = await RelayIdentity.generate();
       phone.vault.identities['identity'] = legacy;
       relay.devices[legacy.deviceId] = (sign: legacy.signPublicKey, box: legacy.boxPublicKey);
       final old = await SocialStore.open(path.join(phone.directory.path, SocialSpaces.legacyDatabase));

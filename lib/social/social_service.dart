@@ -9,10 +9,12 @@ import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/share_card.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_client.dart';
+import 'package:superxd/relay/relay_crypto.dart';
 import 'package:superxd/social/invite_code.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
 import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/social/social_relay.dart';
 import 'package:superxd/social/social_spaces.dart';
 import 'package:superxd/social/social_store.dart';
 
@@ -38,6 +40,20 @@ abstract final class SocialCode {
   static const friendMoved = 'FRIEND_MOVED'; // 对方换了设备：好友已改挂到新设备，点重发
   static const identityLost = 'IDENTITY_LOST'; // 安全存储里的身份丢失，需重新开启
   static const signedOut = 'APP_ACCOUNT_SIGNED_OUT'; // 没登录应用账号，或这台手机上那把应用账号密钥已不在任何账号下
+  // 中转报来、原样带出的错误码（值就是 relay 的 RelayCode）：页面只认私信这一份，不依赖 relay 层。
+  static const network = RelayCode.network;
+  static const timeout = RelayCode.timeout;
+  static const rateLimited = RelayCode.rateLimited;
+  static const clockSkew = RelayCode.clockSkew;
+  static const inviteNotFound = RelayCode.inviteNotFound;
+  static const inviteSelf = RelayCode.inviteSelf;
+  static const inviteProofInvalid = RelayCode.inviteProofInvalid;
+  static const friendLimit = RelayCode.friendLimit;
+  static const notFriend = RelayCode.notFriend;
+  static const socialElsewhere = RelayCode.socialElsewhere;
+  static const peerNotFound = RelayCode.peerNotFound;
+  static const mailboxFull = RelayCode.mailboxFull;
+  static const envelopeTooLarge = RelayCode.envelopeTooLarge;
 }
 
 // 当前应用账号在这台手机上的私信：账号、本机库与身份（还没开启时为空）。切换账号就换一个对象，进行中的操作据此认出自己已经过时。
@@ -45,7 +61,7 @@ class _Session {
   _Session(this.account, this.space, this.identity);
   final AppAccountRef account;
   final SocialSpace space;
-  SocialIdentity? identity;
+  RelayIdentity? identity;
   SocialStore get store => space.store;
 }
 
@@ -54,14 +70,14 @@ class _Session {
 // 私信只认当前应用账号（AppAccountRef，组合根按 AppAccounts.current 调 switchAccount），不认是用什么登录的；每个应用账号在这台手机上一份身份与本机库
 // （social_spaces.dart），服务端记「账号 → 当前私信设备」。没登录应用账号时私信停用（signedOut）；退出应用账号不动服务器、本机记录留着，再登录接着用。
 // 多设备用户选「新手机接管并提示对方」：账号的私信在另一台手机上时（elsewhere）先确认再接管（takeOver）——好友关系改挂到这台，好友那边会话里提示
-// 「对方换了设备」并自动发来昵称；新手机的好友名单与公钥由服务器给（这一步信任服务器，靠那条提示让人看得到；公钥带服务器签名，挡住网络上的人，见 relay_client.dart 的 relayServerKeys），那台手机上的聊天记录、备注与没收的消息不过来；
+// 「对方换了设备」并自动发来昵称；新手机的好友名单与公钥由服务器给（这一步信任服务器，靠那条提示让人看得到；公钥带服务器签名，挡住网络上的人，见 relay/relay_client.dart 的 relayServerKeys），那台手机上的聊天记录、备注与没收的消息不过来；
 // 被接管的手机变成 elsewhere，可以再接管回去。这台手机旧版留下的设备级私信并进第一次用私信的应用账号（两台手机原来各有好友的，接管后合在一起）。
 // 注销应用账号时服务器删掉它的私信设备，本机这份也清掉（[人工决策-2026-11-14 17:56:46] 用户选「一并删除」，组合根接 forgetAccount）。
 // 私信编排：本机库、私信身份与中转服务之间的唯一入口，页面只经它读写。
 // 联网时机：切到一个应用账号、开启、出示/扫码、发送、刷新（回到前台、进入私信、下拉），以及前台长轮询收消息。除校时重发一次、中转不认这台设备时重新挂账号后重放一次（见 _authorized）外不自动重试。
 class SocialService extends ChangeNotifier {
   SocialService({required this.spaces, required this.accountKeys, RelayTransport? transport, this.accountGone, DateTime Function()? clock, Random? random, this.polling = false, List<String> serverKeys = relayServerKeys})
-    : _relay = transport == null ? null : RelayClient(transport, serverKeys: serverKeys),
+    : _relay = transport == null ? null : SocialRelay(transport, serverKeys: serverKeys),
       _clock = clock ?? DateTime.now,
       _random = random ?? Random();
   // 就绪后是否在前台持续长轮询收消息（应用里开启；测试关闭，避免残留请求与定时器）。
@@ -73,7 +89,7 @@ class SocialService extends ChangeNotifier {
   final AppAccountVault accountKeys;
   // 中转说应用账号已不在（别处注销、被清理）：组合根让应用账号马上核一次。
   final void Function()? accountGone;
-  final RelayClient? _relay;
+  final SocialRelay? _relay;
   final DateTime Function() _clock;
   // 长轮询退避的随机抖动（见 liveRetryDelay）；测试注入固定的随机源。
   final Random _random;
@@ -250,7 +266,7 @@ class SocialService extends ChangeNotifier {
   // 只注册一次、只重放一次，重放后仍失败就照常报错；几个请求同时遇到时共用一次注册。没选「只标记未注册、等用户再点」：
   // 用户看到的会是一次说不清原因的失败。服务端那边的好友关系随设备一起没了，之后发送照常回 NOT_FRIEND 并标记对方已解除，要重新扫码。
   // 11-14 私信跟着应用账号后，「重新注册」换成重新挂到应用账号（同样顺带登记设备）：被别的手机接管了的这里得到 SOCIAL_ELSEWHERE，转成 elsewhere 不再重放。
-  Future<T> _authorized<T>(_Session session, Future<T> Function(RelayClient relay, SocialIdentity identity) call) async {
+  Future<T> _authorized<T>(_Session session, Future<T> Function(SocialRelay relay, RelayIdentity identity) call) async {
     final relay = _relay!, identity = session.identity!;
     try {
       return await call(relay, identity);
@@ -274,7 +290,7 @@ class SocialService extends ChangeNotifier {
     if (_relay == null || session == null) throw const SocialException(SocialCode.notReady);
     if (!validNickname(nickname)) throw ArgumentError.value(nickname, 'nickname');
     session.identity ??= await spaces.vault.read(session.space.identityKey) ?? await () async {
-      final created = await SocialIdentity.generate();
+      final created = await RelayIdentity.generate();
       await spaces.vault.write(session.space.identityKey, created);
       return created;
     }();

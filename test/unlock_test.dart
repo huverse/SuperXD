@@ -15,10 +15,10 @@ import 'package:superxd/playground/challenge/points_page.dart';
 import 'package:superxd/playground/playground_catalog.dart';
 import 'package:superxd/playground/playground_page.dart';
 import 'package:superxd/playground/playground_store.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
-import 'package:superxd/social/relay_unlock_client.dart';
-import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_client.dart';
+import 'package:superxd/relay/relay_unlock_client.dart';
+import 'package:superxd/relay/relay_crypto.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 
@@ -147,7 +147,7 @@ void main() {
       final client = RelayUnlockClient(vault: vault, transport: relay);
       final ref = AppAccountRef(accountId: 'AAAAAAAAAAAAAAAAAAAAAA', slot: appAccountSlot);
       await expectLater(client.state(ref), throwsA(isA<UnlockException>().having((error) => error.failure, 'failure', UnlockFailure.notSignedIn)));
-      final key = await SocialIdentity.fromSeeds(List<int>.generate(32, (index) => index + 1), List<int>.generate(32, (index) => index + 33));
+      final key = await RelayIdentity.fromSeeds(List<int>.generate(32, (index) => index + 1), List<int>.generate(32, (index) => index + 33));
       await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
       relay.reply = const RelayResponse(200, {'level': 3, 'open': ['game.early'], 'serverTime': 1});
       final state = await client.state(ref);

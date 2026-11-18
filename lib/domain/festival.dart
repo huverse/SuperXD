@@ -149,7 +149,7 @@ abstract class FestivalMemory {
   Future<void> save(FestivalRecord record);
 }
 
-// 抽签（social 实现：自建中转，用这个应用账号的设备密钥签名）。连不上、限流时抛 FestivalException，账号已不在抛 FestivalNotSignedIn；
+// 抽签（relay 实现：自建中转，用这个应用账号的设备密钥签名）。连不上、限流时抛 FestivalException，账号已不在抛 FestivalNotSignedIn；
 // 同一个人重复抽返回同一个结果。levels 为假（娱乐与积分关着，人工决策见 domain/leisure.dart）时请服务器不按积分等级加权。
 abstract class FestivalRewardClient {
   Future<FestivalDraw> draw(AppAccountRef account, String campaign, {required String occasion, required int activeDays, bool levels = true});

@@ -22,7 +22,7 @@ class UnlockException implements Exception {
   String toString() => 'UnlockException($failure)';
 }
 
-// 中转端口（social 实现）：用这个应用账号的设备密钥签名。
+// 中转端口（relay 实现）：用这个应用账号的设备密钥签名。
 abstract interface class UnlockClient {
   Future<UnlockState> state(AppAccountRef account);
   Future<UnlockState> buy(AppAccountRef account, String id);

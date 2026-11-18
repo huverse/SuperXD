@@ -43,12 +43,12 @@ export const loadEnv = () => ({
   businessTimeZone: timeZone('RELAY_BUSINESS_TIME_ZONE'),
   account: {
     // 客户端封装密码与恢复码用的 X25519 私钥种子（32 字节 base64url）：一把或几把，逗号分隔、现用的在前（换钥过渡期新旧都在，见 src/modules/account/account_keys.ts）；
-    // 现用那把的公钥写死在客户端 lib/social/account_seal.dart 的 accountSealKey。
+    // 现用那把的公钥写死在客户端 lib/relay/account_seal.dart 的 accountSealKey。
     sealKeys: required('RELAY_ACCOUNT_SEAL_KEY').split(','),
   },
   signing: {
     // 服务器在线签名钥的 Ed25519 私钥种子（32 字节 base64url，见 src/common/crypto/relay_signer.ts）：签好友公钥、奖品信封与「账号已注销」，
-    // 公钥写死在客户端 lib/social/relay_client.dart 的 relayServerKeys。变量名沿用最早只签好友公钥时的叫法，线上 .env 不用改。
+    // 公钥写死在客户端 lib/relay/relay_client.dart 的 relayServerKeys。变量名沿用最早只签好友公钥时的叫法，线上 .env 不用改。
     key: required('RELAY_FRIEND_SIGN_KEY'),
   },
   // IP 属地离线库 ip2region_v4.xdb 的路径（src/common/ip_region.ts）：镜像里由 Dockerfile 设好；本地开发与测试不配，扫码登录照常、只是不显示属地。

@@ -1,5 +1,5 @@
 {
-  "note": "节日奖品的第 2 版信封（带服务器签名，服务端 src/modules/reward/reward_seal.ts 的 sealSignedRewardPrize，客户端 lib/social/relay_reward_client.dart 的 openRewardPrize）：合成数据，设备与一次性密钥、随机数同第 1 版向量，服务器签名钥是公开的测试值（同 protocol_v1.json 的 friendKeys.seed）",
+  "note": "节日奖品的第 2 版信封（带服务器签名，服务端 src/modules/reward/reward_seal.ts 的 sealSignedRewardPrize，客户端 lib/relay/relay_reward_client.dart 的 openRewardPrize）：合成数据，设备与一次性密钥、随机数同第 1 版向量，服务器签名钥是公开的测试值（同 protocol_v1.json 的 friendKeys.seed）",
   "signSeed": "EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8",
   "deviceSeed": "QEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFlaW1xdXl8",
   "devicePublic": "eaYx7t4b-cmPEgMs3q3Q56B5OY_HhriMyEbsia-FpRo",

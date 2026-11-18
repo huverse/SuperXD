@@ -1,45 +1,45 @@
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/challenge.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/relay/account_relay.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_client.dart';
 
 // 挑战与积分的中转客户端（协议见 server/README.md「挑战与积分」，人工决策见 lib/playground/challenge/challenge_rules.dart）：
-// 用这个应用账号的设备密钥签名（同 RelayAppAccountClient，密钥在安全存储 superxd_account 的 account.slot），校时重发一次复用 RelayClient；
+// 用这个应用账号的设备密钥签名（同 RelayAppAccountClient，密钥在安全存储 superxd_account 的 account.slot），签名与校时重发一次在 AccountRelay；
 // 服务器的回复是外部输入，逐项校验，看不懂的按失败报、不猜。
 class RelayChallengeClient implements ChallengeClient {
-  RelayChallengeClient({required this.vault, required RelayTransport transport}) : _relay = RelayClient(transport);
+  RelayChallengeClient({required this.vault, required RelayTransport transport}) : _relay = AccountRelay(vault: vault, transport: transport);
   final AppAccountVault vault;
-  final RelayClient _relay;
+  final AccountRelay _relay;
 
   // 一局的回复里带着开着的几关题面（专家档十二连环一开局有 7 关），放宽到 256KB。
   static const runLimit = 256 * 1024;
 
   static String _games(Set<String> games) => (games.toList()..sort()).join(',');
 
-  Future<Map<String, Object?>> _send(AppAccountRef account, String method, String path, [Map<String, Object?>? payload]) async {
-    final saved = await vault.read(account.slot);
-    if (saved == null) throw const ChallengeException(ChallengeFailure.notSignedIn, '请先登录应用账号');
-    try {
-      return await _relay.request(saved.identity, method, path, payload, null, runLimit);
-    } on RelayException catch (error) {
-      final detail = error.detail;
-      final run = detail['run'] is Map ? _tryRun(detail['run']) : null;
-      throw switch (error.code) {
-        RelayCode.accountNotFound || RelayCode.unauthorized => const ChallengeException(ChallengeFailure.notSignedIn, '应用账号已经退出，请重新登录'),
-        RelayCode.challengeNotFound => const ChallengeException(ChallengeFailure.notFound, '这个挑战已经结束了'),
-        RelayCode.challengeUnavailable => const ChallengeException(ChallengeFailure.unavailable, '这个挑战暂时开不了，请稍后再试或更新应用'),
-        RelayCode.runActive => ChallengeException(ChallengeFailure.runActive, '还有一局没结束', runId: detail['runId'] is String ? detail['runId'] as String : null),
-        RelayCode.runNotFound => const ChallengeException(ChallengeFailure.runNotFound, '这一局找不到了'),
-        RelayCode.runOver => ChallengeException(ChallengeFailure.runOver, '这一局已经结束', run: run),
-        RelayCode.levelLocked => ChallengeException(ChallengeFailure.levelLocked, '现在不能交', run: run),
-        RelayCode.pointsShort => ChallengeException(ChallengeFailure.pointsShort, detail['price'] is int ? '积分不够，门票要 ${detail['price']} 分' : '积分不够'),
-        RelayCode.rateLimited => const ChallengeException(ChallengeFailure.rateLimited, '操作太频繁，请稍后再试'),
-        RelayCode.network || RelayCode.timeout => const ChallengeException(ChallengeFailure.network, '连不上服务器'),
-        _ => ChallengeException(ChallengeFailure.failed, '服务器暂时不可用（${error.code}）'),
-      };
-    }
-  }
+  // 结束了的一局与现在不能交的关带着现状（服务端只给 RUN_OVER 与 LEVEL_LOCKED 附 run），看不懂就不带。
+  static ChallengeRun? _runOf(RelayException error) => error.detail['run'] is Map ? _tryRun(error.detail['run']) : null;
+
+  static final _errors = RelayErrors(
+    missingKey: const ChallengeException(ChallengeFailure.notSignedIn, '请先登录应用账号'),
+    signedOut: const ChallengeException(ChallengeFailure.notSignedIn, '应用账号已经退出，请重新登录'),
+    network: const ChallengeException(ChallengeFailure.network, '连不上服务器'),
+    rateLimited: const ChallengeException(ChallengeFailure.rateLimited, '操作太频繁，请稍后再试'),
+    failed: (code) => ChallengeException(ChallengeFailure.failed, '服务器暂时不可用（$code）'),
+    codes: {
+      RelayCode.challengeNotFound: (_) => const ChallengeException(ChallengeFailure.notFound, '这个挑战已经结束了'),
+      RelayCode.challengeUnavailable: (_) => const ChallengeException(ChallengeFailure.unavailable, '这个挑战暂时开不了，请稍后再试或更新应用'),
+      RelayCode.runActive: (error) => ChallengeException(ChallengeFailure.runActive, '还有一局没结束', runId: error.detail['runId'] is String ? error.detail['runId'] as String : null),
+      RelayCode.runNotFound: (_) => const ChallengeException(ChallengeFailure.runNotFound, '这一局找不到了'),
+      RelayCode.runOver: (error) => ChallengeException(ChallengeFailure.runOver, '这一局已经结束', run: _runOf(error)),
+      RelayCode.levelLocked: (error) => ChallengeException(ChallengeFailure.levelLocked, '现在不能交', run: _runOf(error)),
+      RelayCode.pointsShort: (error) => ChallengeException(ChallengeFailure.pointsShort, error.detail['price'] is int ? '积分不够，门票要 ${error.detail['price']} 分' : '积分不够'),
+    },
+  );
+
+  Future<Map<String, Object?>> _send(AppAccountRef account, String method, String path, [Map<String, Object?>? payload]) async =>
+      (await _relay.signedCall(account, method, path, payload: payload, limit: runLimit, errors: _errors)).body;
 
   static Never _bad(String what) {
     campusLog('[Challenge] action=decode code=${RelayCode.badResponse} what=$what');

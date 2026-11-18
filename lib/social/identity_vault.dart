@@ -3,12 +3,12 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import 'package:superxd/domain/campus_crypto.dart';
-import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/relay/relay_crypto.dart';
 
 // 私信身份私钥种子的存放处：每个应用账号一项（键由 social_spaces.dart 定），另记旧版留下的设备级私信归哪个应用账号。
 abstract interface class IdentityVault {
-  Future<SocialIdentity?> read(String key);
-  Future<void> write(String key, SocialIdentity identity);
+  Future<RelayIdentity?> read(String key);
+  Future<void> write(String key, RelayIdentity identity);
   Future<void> delete(String key);
   // 旧版留下的设备级私信归哪个应用账号（social_spaces.dart），还没定为空。
   Future<String?> legacyOwner();
@@ -22,16 +22,16 @@ class SecureIdentityVault implements IdentityVault {
   static const _legacyOwner = 'legacyOwner';
 
   @override
-  Future<SocialIdentity?> read(String key) async {
+  Future<RelayIdentity?> read(String key) async {
     final raw = await _storage.read(key: key);
     if (raw == null) return null;
     final data = jsonDecode(raw);
     if (data is! Map || data['version'] != 1 || data['sign'] is! String || data['box'] is! String) throw const FormatException('保存的设备身份不可用');
-    return SocialIdentity.fromSeeds(decodeBase64UrlNoPad(data['sign'] as String, length: 32), decodeBase64UrlNoPad(data['box'] as String, length: 32));
+    return RelayIdentity.fromSeeds(decodeBase64UrlNoPad(data['sign'] as String, length: 32), decodeBase64UrlNoPad(data['box'] as String, length: 32));
   }
 
   @override
-  Future<void> write(String key, SocialIdentity identity) => _storage.write(key: key, value: jsonEncode({'version': 1, 'sign': base64UrlNoPad(identity.signSeed), 'box': base64UrlNoPad(identity.boxSeed)}));
+  Future<void> write(String key, RelayIdentity identity) => _storage.write(key: key, value: jsonEncode({'version': 1, 'sign': base64UrlNoPad(identity.signSeed), 'box': base64UrlNoPad(identity.boxSeed)}));
 
   @override
   Future<void> delete(String key) => _storage.delete(key: key);
@@ -44,12 +44,12 @@ class SecureIdentityVault implements IdentityVault {
 }
 
 class MemoryIdentityVault implements IdentityVault {
-  final identities = <String, SocialIdentity>{};
+  final identities = <String, RelayIdentity>{};
   String? owner;
   @override
-  Future<SocialIdentity?> read(String key) async => identities[key];
+  Future<RelayIdentity?> read(String key) async => identities[key];
   @override
-  Future<void> write(String key, SocialIdentity value) async => identities[key] = value;
+  Future<void> write(String key, RelayIdentity value) async => identities[key] = value;
   @override
   Future<void> delete(String key) async => identities.remove(key);
   @override

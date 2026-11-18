@@ -1,33 +1,29 @@
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/diagnostic_upload.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/relay/account_relay.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_client.dart';
 
 // 应用账号下的诊断包的中转实现（人工决策见 domain/diagnostic_upload.dart，协议见 server/README.md）：用这个应用账号的设备密钥签名
-// （安全存储 superxd_account 的 account.slot，没有这把密钥算没登录）；超时、请求记录与校时重发一次沿用 RelayClient，不重试；回复逐项校验。
+// （安全存储 superxd_account 的 account.slot，没有这把密钥算没登录）；签名、超时、请求记录与校时重发一次都在 AccountRelay，不重试；回复逐项校验。
 class RelayDiagnosticAccountClient implements DiagnosticAccountClient {
-  RelayDiagnosticAccountClient({required this.vault, required RelayTransport transport}) : _relay = RelayClient(transport);
+  RelayDiagnosticAccountClient({required this.vault, required RelayTransport transport}) : _relay = AccountRelay(vault: vault, transport: transport);
   final AppAccountVault vault;
-  final RelayClient _relay;
+  final AccountRelay _relay;
 
   static final _idPattern = RegExp(r'^[0-9A-HJKMNP-TV-Z]{8}$');
 
-  Future<Map<String, Object?>> _send(AppAccountRef account, String method, String path, [Map<String, Object?>? payload]) async {
-    final saved = await vault.read(account.slot);
-    if (saved == null) throw const DiagnosticNotSignedIn();
-    try {
-      return await _relay.request(saved.identity, method, path, payload);
-    } on RelayException catch (error) {
-      throw switch (error.code) {
-        RelayCode.accountNotFound || RelayCode.unauthorized => const DiagnosticNotSignedIn(),
-        RelayCode.diagnosticNotFound => const DiagnosticUploadException('诊断包不存在或已经删除'),
-        RelayCode.network || RelayCode.timeout => const DiagnosticUploadException('连不上服务器'),
-        RelayCode.rateLimited => const DiagnosticUploadException('操作太频繁，请稍后再试'),
-        _ => DiagnosticUploadException('服务器暂时不可用（${error.code}）'),
-      };
-    }
-  }
+  static final _errors = RelayErrors(
+    signedOut: const DiagnosticNotSignedIn(),
+    network: const DiagnosticUploadException('连不上服务器'),
+    rateLimited: const DiagnosticUploadException('操作太频繁，请稍后再试'),
+    failed: (code) => DiagnosticUploadException('服务器暂时不可用（$code）'),
+    codes: {RelayCode.diagnosticNotFound: (_) => const DiagnosticUploadException('诊断包不存在或已经删除')},
+  );
+
+  Future<Map<String, Object?>> _send(AppAccountRef account, String method, String path, [Map<String, Object?>? payload]) async =>
+      (await _relay.signedCall(account, method, path, payload: payload, errors: _errors)).body;
 
   static DiagnosticRecord _record(Object? json) => switch (json) {
     {'id': final String id, 'bytes': final int bytes, 'uploadedAt': final int uploadedAt, 'expiresAt': final int expiresAt} when _idPattern.hasMatch(id) && bytes >= 0 =>

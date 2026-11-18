@@ -16,10 +16,10 @@ import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/device/diagnostic_seal.dart';
 import 'package:superxd/device/relay_diagnostic_upload.dart';
 import 'package:superxd/domain/diagnostic_upload.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
-import 'package:superxd/social/relay_diagnostic_account.dart';
-import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_client.dart';
+import 'package:superxd/relay/relay_diagnostic_account.dart';
+import 'package:superxd/relay/relay_crypto.dart';
 
 void main() {
   // 测试钥每次现生成，私钥只在内存里；源码里的开发者公钥对应的私钥不在仓库，测试只核它的形状。
@@ -180,7 +180,7 @@ void main() {
       final client = RelayDiagnosticAccountClient(vault: vault, transport: relay);
       await expectLater(client.list(account), throwsA(isA<DiagnosticNotSignedIn>()), reason: '本机没有这个账号的密钥');
       expect(relay.requests, isEmpty);
-      final key = await SocialIdentity.generate();
+      final key = await RelayIdentity.generate();
       await vault.write(account.slot, AppAccountKey(identity: key, accountId: account.accountId));
       final json = {'id': '7KQ2M9XD', 'bytes': 2048, 'uploadedAt': 1763078400000, 'expiresAt': 1765670400000};
       relay.reply = (_) => RelayResponse(200, json);

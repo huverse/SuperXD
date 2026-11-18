@@ -1,5 +1,5 @@
 {
-  "note": "应用账号封装秘密的第 2 版信封（带钥号：中转公钥 sha256 的前 8 字节，服务器按它挑私钥）：客户端 lib/social/account_seal.dart 封装、服务端 src/modules/account/account_keys.ts 打开；全部合成数据，种子与随机数同第 1 版向量。",
+  "note": "应用账号封装秘密的第 2 版信封（带钥号：中转公钥 sha256 的前 8 字节，服务器按它挑私钥）：客户端 lib/relay/account_seal.dart 封装、服务端 src/modules/account/account_keys.ts 打开；全部合成数据，种子与随机数同第 1 版向量。",
   "recipientSeed": "AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyA",
   "recipientPublic": "B6N8vBQgk8i3VdwbEOhstCY3StFqqFPtC9_AsrhtHHw",
   "keyId": "qqj_9wO1CyI",

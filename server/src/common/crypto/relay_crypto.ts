@@ -1,6 +1,6 @@
 import { createHash, createPrivateKey, createPublicKey, KeyObject, verify } from 'node:crypto';
 
-// 协议 v1 的密码学约定，客户端 lib/social/social_crypto.dart 与此逐字节一致（双端共用 test/vectors 下的测试向量）。
+// 协议 v1 的密码学约定，客户端 lib/relay/relay_crypto.dart（签名请求与设备身份）与 lib/social/social_crypto.dart（私信信封与凭证）与此逐字节一致（双端共用 test/vectors 下的测试向量）。
 // 设备身份：Ed25519 签名公钥；设备号 = base64url(sha256(签名公钥) 前 16 字节)，22 个字符。
 
 const ed25519SpkiPrefix = Buffer.from('302a300506032b6570032100', 'hex');
@@ -47,7 +47,7 @@ export const socialBindCanonical = (accountDeviceId: string, socialDeviceId: str
 export const friendKeysCanonical = (ownerDeviceId: string, deviceId: string, signPublicKey: string, boxPublicKey: string, movedFrom: string | null) =>
   Buffer.from(['SXD1-friend-keys', ownerDeviceId, deviceId, signPublicKey, boxPublicKey, movedFrom ?? ''].join('\n'), 'utf8');
 
-// 服务器给奖品信封的签名原文（第 2 版信封，见 src/modules/reward/reward_seal.ts；客户端 lib/social/social_crypto.dart 同一份）：
+// 服务器给奖品信封的签名原文（第 2 版信封，见 src/modules/reward/reward_seal.ts；客户端 lib/relay/relay_crypto.dart 同一份）：
 // 域前缀、活动编号、抽签的设备号各占一行，后面接信封签名前的全部字节。绑定活动与设备，别的活动、别的设备拿去用验不过。
 export const rewardPrizeCanonical = (campaign: string, deviceId: string, sealed: Uint8Array) =>
   Buffer.concat([Buffer.from(['SXD1-reward-prize', campaign, deviceId, ''].join('\n'), 'utf8'), sealed]);

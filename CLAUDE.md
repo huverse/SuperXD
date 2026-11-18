@@ -4,7 +4,7 @@
 
 - [人工决策-2026-09-29 21:40:28] 索引采用仓库内分层 CLAUDE.md（根目录加 lib 各模块），授权 AI 创建，并在每次改动时同步维护。用户全局 CLAUDE.md 仍由 AI 只提建议、由人工修改。
 - [人工决策-2026-10-17 13:25:26] 索引按官方与大厂做法重整（用户四项都选推荐）：本文件控制在 200 行内，只放全局原则、命令与流程，具体超时、上限与测试清单下沉到模块文件；application 与学习通各建模块索引；守护测试按最近的 CLAUDE.md 登记；文件条目一两行，写职责、约束与人工决策位置，行为细节以代码为准。
-- 模块索引共 14 个：lib 下 domain、edu、local、gateway、device、application、page、theme、toolbox、social、playground 各一个，外加 lib/toolbox/chaoxing、lib/toolbox/express 与 lib/playground/puzzle。lib 根目录的 main.dart、app_services.dart、app_lifecycle.dart、app_shell.dart、router.dart、app_session.dart、app_diagnostics.dart、app_shortcuts.dart、app_background_sync.dart 登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md。
+- 模块索引共 15 个：lib 下 domain、edu、local、gateway、device、application、page、theme、toolbox、relay、social、playground 各一个，外加 lib/toolbox/chaoxing、lib/toolbox/express 与 lib/playground/puzzle。lib 根目录的 main.dart、app_services.dart、app_lifecycle.dart、app_shell.dart、router.dart、app_session.dart、app_diagnostics.dart、app_shortcuts.dart、app_background_sync.dart 登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md。
 - test/project_structure_test.dart 兜底两条：lib 下每个 dart 文件按文件名登记在最近的 CLAUDE.md（从所在目录往上找到 lib 为止，都没有就是本文件）；索引里提到的 dart 或 kt 文件必须真实存在。
 - 写法：纯文字，只用 # 标题、- 列表与 1. 编号；不写会随提交变化的数字（测试条数、提交号、库版本号），常量写名字或指到定义处。
 
@@ -31,7 +31,8 @@
 - page 页面：可依赖 domain、application、gateway、local、social、theme 与 app_session.dart；只经 CampusGateway 与 AccountAccess 访问业务，不直接接触 SQLite、KingoClient 或 cookie（例外只有外观页读写 DisplaySettings、开发者选项页读写开发者设置与本机日志）。
 - toolbox 百宝箱：设备级、免登录，可依赖 domain、theme，不依赖教务相关任何层；分享给好友、读本应用课表（学习通推断正在上的课）都经组合根注入的回调，不依赖 social 与 application。
 - playground 游乐场：服务页里的小游戏，设备级、自由模式免登录，同百宝箱只依赖 domain、theme；游戏的规则是纯 Dart（挑战模式的题库与服务器核对复用），长期路线（应用账号、灰度、积分与挑战）见 lib/playground/CLAUDE.md。
-- social 私信：跟着当前应用账号的身份、好友、本机库与中转客户端（应用账号的中转客户端也在这里），只依赖 domain；页面经 SocialService 使用。
+- social 私信：跟着当前应用账号的身份、好友、本机库与私信经中转的接口，依赖 domain 与 relay；页面经 SocialService 使用（错误码认 SocialCode，不依赖 relay）。
+- relay 自建中转的签名请求（[人工决策] 在 test/project_structure_test.dart，11-17 从 social 拆出）：传输、设备身份、校时重发与「账号已注销」核对，应用账号与它签名的各个中转客户端（挑战与积分、节日抽签、解锁、灰度点名、诊断包认领），只依赖 domain、实现 domain 端口，由组合根注入；页面不直接依赖。
 - application 应用编排：可依赖 domain、gateway。
 - device 设备能力：系统通知、桌面小组件、应用更新等适配器，只实现 domain 端口、只依赖 domain，由组合根注入；页面不直接依赖。
 - gateway 网关：账号生命周期与教务网关实现，可依赖 domain、edu、local。
@@ -41,7 +42,7 @@
 
 # 组合根与路由门禁
 
-- 组合根分四个文件（[人工决策] 在 app_services.dart 与 app_lifecycle.dart）：main.dart 只管启动顺序，互不依赖的本机文件与系统调用同时发出、用 Future.wait 一起等；app_services.dart 是服务的造法与打包 AppServices（新功能加一个字段，外壳、账号应用与路由都从它取；自建中转的接法 RelayWiring 启动时算一次交给各造法，签名请求共用一个传输）；app_lifecycle.dart 是生命周期钩子 AppHooks（同意之后、回到前台、前台可见三个时机统一登记，会联网的写明属于哪项联网服务，联网策略 domain/network_policy.dart 不允许时不做，测试在 app_lifecycle_test.dart；用真实造法与钩子按 main.dart 的先后接上假中转的接线测试在 composition_root_test.dart，main.dart 的接线改了它跟着改）与各功能的接线 watchX；app_shell.dart 是应用外壳 SuperXdApp 与账号应用（开发者的话的附件渲染也在这里按类型登记，套成 NoteAttachmentScope；分享弹层没就绪时的直达套成 ShareGuide）。
+- 组合根分四个文件（[人工决策] 在 app_services.dart 与 app_lifecycle.dart）：main.dart 只管启动顺序，互不依赖的本机文件与系统调用同时发出、用 Future.wait 一起等；app_services.dart 是服务的造法与打包 AppServices（新功能加一个字段，外壳、账号应用与路由都从它取；自建中转的接法 RelayWiring 启动时算一次交给各造法，签名请求共用一个传输，各签名客户端经 transportFor 按所属联网服务套上出口策略、联网策略不许就在本机拒掉，见 lib/relay/CLAUDE.md）；app_lifecycle.dart 是生命周期钩子 AppHooks（同意之后、回到前台、前台可见三个时机统一登记，会联网的写明属于哪项联网服务，联网策略 domain/network_policy.dart 不允许时不做，测试在 app_lifecycle_test.dart；用真实造法与钩子按 main.dart 的先后接上假中转的接线测试在 composition_root_test.dart，main.dart 的接线改了它跟着改）与各功能的接线 watchX；app_shell.dart 是应用外壳 SuperXdApp 与账号应用（开发者的话的附件渲染也在这里按类型登记，套成 NoteAttachmentScope；分享弹层没就绪时的直达套成 ShareGuide）。
 - main.dart 启动顺序：
   1. 把日志出口注入为 debugPrint，接住没被处理的异步错误与框架报错（带堆栈走 campusLog）；打开本机诊断日志与开发者设置（诊断包上传也在这里接上，传完认领用的应用账号后面才建好、点了上传才读），把出口接成 logcat 加文件两份，按开发者模式切换诊断记录（app_diagnostics.dart 的 watchDeveloperMode）；再初始化时区库、图标与第三方许可。
   2. 先问这次是不是从快捷入口冷启动（是的话跳过开屏画作、这次也不轮换）；打开开屏画作库（local/painting_library.dart，按清单顺序取这次的一幅并马上开始解码）；打开 AccountStore（reclaim：接管同一进程里旧引擎遗留的账号库连接，人工决策在 local/account_store.dart），组装 AppSession（含 AccountGateway 与 SecureCredentialStore）、DisplaySettings（选着下载的字体包时在这里核对本机文件并注册，首帧就用上；缺了先用默认字体，同意协议与政策后再下回来，见 local/font_packs.dart）、私信 SocialService（每个应用账号一份，SocialSpaces 管库与身份）（中转未配置或格式不对时为不可用）、AppUpdates（没配中转或不是渠道构建时为空，渠道取 appFlavor）、开发者的话 DeveloperNotes（没配中转时为空）、应用账号 AppAccounts（没配中转时为空，要在应用更新与节日之前建好；用到账号的功能只认它给的当前应用账号 AppAccountRef，人工决策见 domain/app_account.dart）、节日 Festivals（登记来自 page/festival/festival_catalog.dart，抽签用当前应用账号签名，没配中转时只播动画不抽签）、挑战与积分 Challenges（跟着应用账号，没配中转时为空，游乐场不显示挑战）、联网偏好 NetworkPreference（network_mode.json，默认联网；仅本机时应用账号、经中转的私信、挑战积分与解锁、节日抽奖与健康回报不联网，解锁只认公开与下架、灰度与节日抽签按 Lv0，本机账号与记录都留着；它本身就是 AppHooks 的联网策略，人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）与游乐场与积分的删除数据 Leisure（先删服务器上的再清本机游乐场记录与记着的等级，人工决策见 domain/leisure.dart）、灰度 Rollouts（本机随机编号与上次的配置在 rollout.json，没配中转时不联网；应用更新的自动检查按它分批）、解锁 Unlocks（清单跟着灰度配置，没配中转时为空，游戏与工具照常开着）与打扰时机 AppMoments。
@@ -75,7 +76,7 @@
    - 第三方解析来源逐个来源、按授权版本单独征得同意，自动模式只尝试已启用且已同意的来源。
    - 开发者的话的本机记录（最近的信、读过与弹过的编号）与节日的本机记录（近 30 天打开过的日期、播过抽过的节日、奖品）属于设备；节日抽奖要登录应用账号、按人只抽一次（人工决策见 domain/festival.dart）。
 9. 对外网络：
-   - 每个外部请求都有显式超时与响应上限，只发必要字段；具体数值写在所属模块（教务 edu、解析 toolbox、代签 chaoxing、私信、节日抽签与应用账号 social、应用更新、开发者的话、灰度配置、诊断包上传与字体包下载 device）。
+   - 每个外部请求都有显式超时与响应上限，只发必要字段；具体数值写在所属模块（教务 edu、解析 toolbox、代签 chaoxing、私信 social、应用账号与它签名的节日抽签、挑战、解锁等 relay、应用更新、开发者的话、灰度配置、诊断包上传与字体包下载 device）。
    - 除会话自动恢复后的一次重放、时钟偏差校正后的一次重发、私信中转不认这台设备时重新挂到应用账号后的一次重放外，不自动重试；私信收取的长轮询是持续接收通道，失败后退避继续；自动同步按间隔来，没连上网的隔 15 分钟后再试，都不算重试，后台任务也不交给系统重试。
    - 教务默认只在用户点同步时访问；自动同步是用户开启后的例外（默认关闭），登录过期时只暂停、不转登录页。
    - CampusSync 每个实例内按顺序逐项请求，今天页和成绩页各持有一个实例；成绩同步与其他教务网络请求互斥（SYNC_BUSY）；教务限流时报 RATE_LIMITED，本轮立即停止。

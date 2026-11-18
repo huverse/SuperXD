@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 import 'package:superxd/domain/campus_crypto.dart';
+import 'package:superxd/relay/relay_crypto.dart';
 import 'package:superxd/social/social_crypto.dart';
 
 const invitePrefix = 'SXD1F:';

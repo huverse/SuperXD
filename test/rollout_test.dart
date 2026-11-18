@@ -15,10 +15,10 @@ import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/domain/rollout.dart';
 import 'package:superxd/local/rollout_memory.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
-import 'package:superxd/social/relay_flag_target_client.dart';
-import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_client.dart';
+import 'package:superxd/relay/relay_flag_target_client.dart';
+import 'package:superxd/relay/relay_crypto.dart';
 
 import '../tool/content_signing.dart';
 import '../tool/release_manifest.dart';
@@ -686,7 +686,7 @@ void main() {
       const ref = AppAccountRef(accountId: 'AAAAAAAAAAAAAAAAAAAAAA', slot: appAccountSlot);
       expect(await client.mine(ref), isNull);
       expect(relay.requests, isEmpty, reason: '没有密钥不发请求');
-      final key = await SocialIdentity.fromSeeds(List<int>.generate(32, (index) => index + 1), List<int>.generate(32, (index) => index + 33));
+      final key = await RelayIdentity.fromSeeds(List<int>.generate(32, (index) => index + 1), List<int>.generate(32, (index) => index + 33));
       await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
       relay.reply = const RelayResponse(200, {'flags': [{'id': 'game.flash2', 'until': '2026-12-01T00:00:00.000Z'}], 'accountCreatedAt': '2026-11-01T08:00:00.000Z'});
       final targets = (await client.mine(ref))!;

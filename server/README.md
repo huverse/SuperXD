@@ -2,10 +2,10 @@
 
 功能性私信的“哑信箱”：只转交端到端密文，看不到课表、作品链接或昵称。私信要登录应用账号，私信设备挂在应用账号下（account_social），所以服务器知道哪些应用账号互为好友；换手机时由新设备接管。客户端在 lib/social。
 另有一处**代签凭据包的临时信箱**（chaoxing 模块）：学习通代签时对方把凭据包用一次性密钥加密后放这里，取走即删，服务端同样没有解密用的密钥。客户端在 lib/toolbox/chaoxing。
-还负责**节日抽奖**（reward 模块）：节日里随机发的支付宝口令或二维码红包只放这里、只在这里抽，抽签要登录了应用账号的设备签名，一个应用账号一次活动只抽一次，账号要建立满几天、名单与最低等级这些资格由每个活动的参数定（建活动不写时满 7 天），概率模型（平权、按活跃度加权并按积分等级取高、全天均匀放量、奖品分金额档且大额档按等级加权挑）与人工决策见 src/modules/reward/reward_odds.ts。客户端在 lib/social/relay_reward_client.dart（用应用账号的设备密钥签名），由 lib/application/festivals.dart 编排。
-还负责**诊断包**（diagnostic 模块）：用户在开发者选项里点「上传诊断包」并确认后，应用把日志包用开发者的公钥加密再传来，这里只按诊断编号存密文、没有下载接口（开发者经 ssh 取出后在本机用私钥解），30 天后删除，人工决策见 lib/domain/diagnostic_upload.dart。上传照旧免签名、匿名完成；登录了应用账号的设备紧接着凭回执里的一次性口令把包认领到账号下，之后在账号页能看到、删除，注销账号一并删除。客户端是 lib/device/relay_diagnostic_upload.dart（上传）与 lib/social/relay_diagnostic_account.dart（认领、列出、删除），由 lib/application/account_diagnostics.dart 编排。
-还负责**应用账号**（account 模块，人工决策见 src/modules/account/account.service.ts 与客户端 lib/domain/app_account.dart）：自己的账号体系，用户名加密码。学校把本服务的 IP 整个挡了、教务又是明文 http，服务器核实不了学号，11-13 起的代登录教务与 11-15 当天的设备核对都作废、删除。客户端把密码与恢复码用本服务公钥封装后交来（中转是明文 HTTP），这里只存 scrypt 哈希；忘了密码凭注册时给的恢复码重设，或在登录着的设备上直接改，没有人工找回；新设备可由登录着的设备扫码批准登录。账号对外只有随机账号号与用户名，一把设备密钥登录一个账号，全部请求带设备签名。客户端在 lib/social（请求与封装），由 lib/application 编排。
-还负责**积分与挑战**（points 与 challenge 模块，人工决策见客户端 lib/playground/challenge/challenge_rules.dart 与 src/modules/points/points.service.ts）：游乐场的挑战由这里按配置下发（每周一换）、出题、逐关核对、计时（不暂停）与结算，成绩换成积分记在应用账号下；挑战的内容（模板、轮换、计分参数、限时）与题库是发布目录 challenge 下的文件，换文件即生效。判定在 src/modules/challenge/judges，从客户端 Dart 规则逐个移植、共用测试向量。客户端在 lib/social/relay_challenge_client.dart，由 lib/application/challenges.dart 编排。
+还负责**节日抽奖**（reward 模块）：节日里随机发的支付宝口令或二维码红包只放这里、只在这里抽，抽签要登录了应用账号的设备签名，一个应用账号一次活动只抽一次，账号要建立满几天、名单与最低等级这些资格由每个活动的参数定（建活动不写时满 7 天），概率模型（平权、按活跃度加权并按积分等级取高、全天均匀放量、奖品分金额档且大额档按等级加权挑）与人工决策见 src/modules/reward/reward_odds.ts。客户端在 lib/relay/relay_reward_client.dart（用应用账号的设备密钥签名），由 lib/application/festivals.dart 编排。
+还负责**诊断包**（diagnostic 模块）：用户在开发者选项里点「上传诊断包」并确认后，应用把日志包用开发者的公钥加密再传来，这里只按诊断编号存密文、没有下载接口（开发者经 ssh 取出后在本机用私钥解），30 天后删除，人工决策见 lib/domain/diagnostic_upload.dart。上传照旧免签名、匿名完成；登录了应用账号的设备紧接着凭回执里的一次性口令把包认领到账号下，之后在账号页能看到、删除，注销账号一并删除。客户端是 lib/device/relay_diagnostic_upload.dart（上传）与 lib/relay/relay_diagnostic_account.dart（认领、列出、删除），由 lib/application/account_diagnostics.dart 编排。
+还负责**应用账号**（account 模块，人工决策见 src/modules/account/account.service.ts 与客户端 lib/domain/app_account.dart）：自己的账号体系，用户名加密码。学校把本服务的 IP 整个挡了、教务又是明文 http，服务器核实不了学号，11-13 起的代登录教务与 11-15 当天的设备核对都作废、删除。客户端把密码与恢复码用本服务公钥封装后交来（中转是明文 HTTP），这里只存 scrypt 哈希；忘了密码凭注册时给的恢复码重设，或在登录着的设备上直接改，没有人工找回；新设备可由登录着的设备扫码批准登录。账号对外只有随机账号号与用户名，一把设备密钥登录一个账号，全部请求带设备签名。客户端在 lib/relay（请求与封装），由 lib/application 编排。
+还负责**积分与挑战**（points 与 challenge 模块，人工决策见客户端 lib/playground/challenge/challenge_rules.dart 与 src/modules/points/points.service.ts）：游乐场的挑战由这里按配置下发（每周一换）、出题、逐关核对、计时（不暂停）与结算，成绩换成积分记在应用账号下；挑战的内容（模板、轮换、计分参数、限时）与题库是发布目录 challenge 下的文件，换文件即生效。判定在 src/modules/challenge/judges，从客户端 Dart 规则逐个移植、共用测试向量。客户端在 lib/relay/relay_challenge_client.dart，由 lib/application/challenges.dart 编排。
 还负责**应用内更新**（app_release 模块）：按渠道给出最新版本清单、下载各架构安装包，内容是发版时放进发布目录的文件，不碰数据库。客户端是 lib/device/relay_release_feed.dart，由 lib/application/app_updates.dart 编排。
 
 技术栈：NestJS 12（ESM）+ TypeORM + MySQL 8.4 + Redis 8，swc 构建，Vitest 测试。分层：每个领域模块（device、invite、friend、message、chaoxing）对外只暴露服务与仓储端口（抽象类），TypeORM / Redis 实现可替换；跨领域的编排（扫码加好友、删除设备、私信挂到应用账号与换设备接管、数据保留清理）在 pairing 模块；app_release 只读发布目录，reward 只管节日抽奖（借设备模块的验签、借账号模块按设备认人，两者都不知道抽奖），diagnostic 只收诊断包，都与其他模块无关；account 借设备模块验签与登记密钥，注册、登录、重设与扫码登录都在 account 里，设备删除时连带删账号登记由 pairing 编排；points 借账号模块按设备认账号，challenge 与 unlock 再借 points 记积分、花积分；这三者与 diagnostic（认领记录）、pairing（私信设备）都在 onModuleInit 往账号模块的 AccountDataHooks 登记删除函数，删账号时在同一事务里连带删，账号模块不知道它们。
@@ -64,7 +64,7 @@
 - 签名挡不住冻结与回滚（一直回放旧清单）：版本只升不降由客户端已装版本号与系统安装器保证，冻结只能靠将来的 HTTPS；载荷不带过期时间。
 - 上线顺序：先部署本服务（能透传信封的版本），再发带验签的客户端。旧版服务会把带 envelopes 的清单当写坏的文件拒绝（新旧客户端都查不到更新），所以发版与 notes 流水线上传前都先确认返回里有 envelope 字段，没有就停。部署后旧客户端照常靠明文字段更新，不受影响。
 
-应用账号的信封（客户端 lib/social/account_seal.dart，双端共用 test/vectors/account_seal_v2.json，第 1 版 account_seal_v1.json 留着核对旧客户端，向量里的明文是任意 JSON 对象）
+应用账号的信封（客户端 lib/relay/account_seal.dart，双端共用 test/vectors/account_seal_v2.json，第 1 版 account_seal_v1.json 留着核对旧客户端，向量里的明文是任意 JSON 对象）
 - 第 2 版（11-17 起的客户端）：版本 2(1) | 钥号(8) | 一次性 X25519 公钥(32) | 随机数(12) | AES-256-GCM 密文 | 标签(16)；钥号是本服务公钥 sha256 的前 8 字节，服务器按它挑私钥；HKDF-SHA256 的盐是一次性公钥接本服务公钥，info 为 SXD1-account-sign-in；附加数据是版本、钥号、一次性公钥与发起请求的设备号（别的设备拿去重放打不开）。
 - 第 1 版（11-17 以前的客户端）：版本 1(1) | 一次性公钥(32) | 随机数(12) | 密文 | 标签(16)，附加数据是版本、一次性公钥与设备号；没有钥号，服务器按认的每一把逐个试。
 - 服务器可以同时认几把（RELAY_ACCOUNT_SEAL_KEY 逗号分隔，最多 4 把，现用的在前），换钥不断旧客户端，步骤见「部署」应用账号一条。
@@ -75,7 +75,7 @@
 - 上限：每设备同时挂起 2 个（再来让最早的先返回），每实例 2 万个（超出立即返回空，客户端按最小 5 秒间隔重来）；挂起只占内存与空闲连接，不占数据库连接。
 - 前面有 Nginx 等代理时，读超时须大于 35 秒（如 proxy_read_timeout 60s），否则长轮询会被代理提前掐断；代理到本服务的上游保活要短于本服务的保活 65 秒（Nginx upstream keepalive_timeout 默认 60 秒正好），否则会撞上连接被重置。
 
-错误响应统一为 {code, message, ...}，code 登记在 src/common/relay_error.ts，客户端 lib/social/relay_client.dart 的 RelayCode 保持一致（代签与应用更新的客户端各按自己用到的码分支，见 relay_error.ts 头部）。
+错误响应统一为 {code, message, ...}，code 登记在 src/common/relay_error.ts，客户端 lib/relay/relay_client.dart 的 RelayCode 保持一致（代签与应用更新的客户端各按自己用到的码分支，见 relay_error.ts 头部）。
 
 # 挑战的配置与题库（人工决策见客户端 lib/playground/challenge/challenge_rules.dart）
 
@@ -153,7 +153,7 @@
    挑战题面带写法版本（11-15）：先部署新版服务（新旧文件名都认、旧客户端只报游戏 id 照常按第 1 版），再按需经流水线 challenge.yml（bank=true）重出题库（出的是带版本号的文件名，新版服务先读它；旧文件名的那几份留着无害，可手动删）。顺序反了旧版服务读不到带版本号的新题，但旧文件名的还在、照旧能用；不重出题库也能用（第 1 版读旧文件名）。
    挑战重做（碎片、门、终章、加试题与预计用时）：库按 sql/upgrade_2026_11_15.sql 建 challenge_pace 表并把还在进行中的旧格式局按提前结束收掉，再经流水线 challenge.yml 传新题库与配置，最后部署新版服务（旧格式的题库新版认不出，顺序不能反）。
    红包金额档：库按 sql/upgrade_2026_11_14d.sql 给 reward_prize 加 tier 列（默认 0）并换成 (campaign_id, tier, draw_id) 索引；新列带默认值，旧版服务照常能用，可以先执行再部署。导入大额档用 import <编号> --tier 1。
-   应用账号：库按 sql/upgrade_2026_11_13.sql 建三张表后再部署；.env 要 RELAY_ACCOUNT_SEAL_KEY（X25519 私钥种子，32 字节 base64url，对应的公钥写死在客户端 lib/social/account_seal.dart 的 accountSealKey），在开发者本机生成、本机另存一份（~/.local/share/superxd-release/account，600），经 ssh 写进服务器 .env，不回显、不进仓库。换钥（11-17 起信封带钥号，不断旧客户端）：1. 本机生成新种子并另存；2. 服务器 .env 改成 RELAY_ACCOUNT_SEAL_KEY=<新>,<旧> 后重启中转（两把都认）；3. 发把 accountSealKey 换成新公钥的客户端；4. 等最低可用版本高过上一步之前的版本（旧客户端用不了了）再从 .env 删掉旧的那把。顺序不能反：客户端先换、服务器还不认新钥，新客户端就登录不了。11-13 起另有的 RELAY_KINGO_BASE 与 RELAY_ACCOUNT_SUBJECT_KEY 从 11-15 起不再读（.env 里留着无害）。11-15 起另要 RELAY_FRIEND_SIGN_KEY（给好友公钥签名的 Ed25519 私钥种子，32 字节 base64url，公钥写死在客户端 lib/social/relay_client.dart 的 relayServerKeys，11-17 起也签奖品信封与「账号已注销」），生成与存放同上（本机 relay_friend_sign_key）；没写服务起不来，切镜像前先写进 .env。
+   应用账号：库按 sql/upgrade_2026_11_13.sql 建三张表后再部署；.env 要 RELAY_ACCOUNT_SEAL_KEY（X25519 私钥种子，32 字节 base64url，对应的公钥写死在客户端 lib/relay/account_seal.dart 的 accountSealKey），在开发者本机生成、本机另存一份（~/.local/share/superxd-release/account，600），经 ssh 写进服务器 .env，不回显、不进仓库。换钥（11-17 起信封带钥号，不断旧客户端）：1. 本机生成新种子并另存；2. 服务器 .env 改成 RELAY_ACCOUNT_SEAL_KEY=<新>,<旧> 后重启中转（两把都认）；3. 发把 accountSealKey 换成新公钥的客户端；4. 等最低可用版本高过上一步之前的版本（旧客户端用不了了）再从 .env 删掉旧的那把。顺序不能反：客户端先换、服务器还不认新钥，新客户端就登录不了。11-13 起另有的 RELAY_KINGO_BASE 与 RELAY_ACCOUNT_SUBJECT_KEY 从 11-15 起不再读（.env 里留着无害）。11-15 起另要 RELAY_FRIEND_SIGN_KEY（给好友公钥签名的 Ed25519 私钥种子，32 字节 base64url，公钥写死在客户端 lib/relay/relay_client.dart 的 relayServerKeys，11-17 起也签奖品信封与「账号已注销」），生成与存放同上（本机 relay_friend_sign_key）；没写服务起不来，切镜像前先写进 .env。
    自己的账号体系：库按 sql/upgrade_2026_11_15b.sql 清掉 11-13 起的测试期应用账号与挂在下面的数据（应用账号没在任何发布版里出现过）、删 account_identity、给 app_account 加用户名与两个哈希后，紧接着部署新版服务（旧版服务在这之后登录会失败；可重复执行，清数据只在账号表还没有 username 列时做，上线后再跑不会删新注册的账号）。
    灰度点名：库按 sql/upgrade_2026_11_16c.sql 建 rollout_target 表后再部署（只建表、可重复执行，旧版服务不碰它）；部署后用维护者本机的 tool/rollout_publish.sh 发第 2 版配置 flags.json（同时重签第 1 版 rollout.json）。
    分批更新的健康回报：库按 sql/upgrade_2026_11_16e.sql 建 app_health_daily、app_release_pause、app_feedback 三张表后再部署（只建表、可重复执行）。

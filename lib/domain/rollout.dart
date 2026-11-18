@@ -395,7 +395,7 @@ abstract interface class RolloutMemory {
   Future<void> saveTargets(String subject, RolloutTargets targets);
 }
 
-// 问中转「当前应用账号被点名了哪些」（social 实现，用这个账号的设备密钥签名）；没登录或账号不在了为空，连不上抛 RolloutException。
+// 问中转「当前应用账号被点名了哪些」（relay 实现，用这个账号的设备密钥签名）；没登录或账号不在了为空，连不上抛 RolloutException。
 abstract interface class RolloutTargetClient {
   Future<RolloutTargets?> mine(AppAccountRef account);
 }

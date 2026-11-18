@@ -22,10 +22,10 @@ import 'package:superxd/page/developer_notes_page.dart';
 import 'package:superxd/page/festival/festival_reward.dart';
 import 'package:superxd/page/festival/reward_attachment.dart';
 import 'package:superxd/page/festival/festival_stage.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
-import 'package:superxd/social/relay_reward_client.dart';
-import 'package:superxd/social/social_crypto.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_client.dart';
+import 'package:superxd/relay/relay_reward_client.dart';
+import 'package:superxd/relay/relay_crypto.dart';
 import 'package:superxd/theme/campus_theme.dart';
 
 import 'fake_relay.dart';
@@ -315,7 +315,7 @@ void main() {
     test('奖品信封与服务端共用向量：先验服务器签名再解；换个活动编号、换台设备、改一个字节、别的钥签的、第 1 版都不认', () async {
       final vector = jsonDecode(File('server/test/vectors/reward_prize_v2.json').readAsStringSync()) as Map<String, Object?>;
       List<int> bytes(String key) => decodeBase64UrlNoPad(vector[key]! as String);
-      final identity = await SocialIdentity.fromSeeds(bytes('signSeed'), bytes('deviceSeed'));
+      final identity = await RelayIdentity.fromSeeds(bytes('signSeed'), bytes('deviceSeed'));
       expect(identity.deviceId, vector['deviceId']);
       expect(base64UrlNoPad(identity.boxPublicKey), vector['devicePublic']);
       final keys = [vector['serverPublic']! as String];
@@ -325,7 +325,7 @@ void main() {
       expect(jsonEncode(await openRewardPrize(sealed, identity, campaign, serverKeys: keys)), vector['plaintext']);
       await expectLater(openRewardPrize(sealed, identity, campaign), throwsFormatException, reason: '内置的真钥验不过测试钥签的');
       await expectLater(openRewardPrize(sealed, identity, '${campaign}x', serverKeys: keys), throwsFormatException);
-      await expectLater(openRewardPrize(sealed, await SocialIdentity.generate(), campaign, serverKeys: keys), throwsFormatException);
+      await expectLater(openRewardPrize(sealed, await RelayIdentity.generate(), campaign, serverKeys: keys), throwsFormatException);
       await expectLater(openRewardPrize([...sealed.take(50), sealed[50] ^ 1, ...sealed.skip(51)], identity, campaign, serverKeys: keys), throwsFormatException, reason: '改了密文');
       await expectLater(openRewardPrize([...sealed.take(sealed.length - 1), sealed.last ^ 1], identity, campaign, serverKeys: keys), throwsFormatException, reason: '改了签名');
       await expectLater(openRewardPrize(sealed.take(sealed.length - 64).toList(), identity, campaign, serverKeys: keys), throwsFormatException, reason: '去掉签名');
@@ -343,7 +343,7 @@ void main() {
       final client = RelayRewardClient(vault: vault, transport: transport, serverKeys: FakeRelay.serverKeys);
       await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalNotSignedIn>()), reason: '本机没有这个账号的密钥');
       expect(transport.draws, isEmpty);
-      final key = await SocialIdentity.generate();
+      final key = await RelayIdentity.generate();
       await vault.write(_account.slot, AppAccountKey(identity: key, accountId: _account.accountId));
       relay.devices[key.deviceId] = (sign: key.signPublicKey, box: key.boxPublicKey);
       await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalNotSignedIn>()), reason: '中转说这把密钥不在任何账号下');
@@ -463,7 +463,7 @@ void main() {
       final relay = FakeRelay(), transport = _RewardRelay(relay), vault = MemoryAppAccountVault();
       final client = RelayRewardClient(vault: vault, transport: transport, serverKeys: FakeRelay.serverKeys);
       await expectLater(client.status(_account, 'c-1'), throwsA(isA<FestivalNotSignedIn>()));
-      final key = await SocialIdentity.generate();
+      final key = await RelayIdentity.generate();
       await vault.write(_account.slot, AppAccountKey(identity: key, accountId: _account.accountId));
       relay.devices[key.deviceId] = (sign: key.signPublicKey, box: key.boxPublicKey);
       transport.accounts.add(key.deviceId);

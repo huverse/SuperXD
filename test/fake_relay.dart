@@ -5,8 +5,9 @@ import 'package:cryptography/cryptography.dart';
 
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_crypto.dart';
-import 'package:superxd/social/relay_app_account.dart';
-import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/relay/app_account_vault.dart';
+import 'package:superxd/relay/relay_client.dart';
+import 'package:superxd/relay/relay_crypto.dart';
 import 'package:superxd/social/social_crypto.dart';
 
 // 内存版中转服务：按协议 v1 与服务端同样的规则验签、管理邀请、好友与信箱，供客户端编排测试使用。
@@ -50,7 +51,7 @@ class FakeRelay {
 
   // 在这台「手机」上登录应用账号（账号号给了就登到已有的账号）：生成账号密钥、登记到中转并存进 vault，返回当前应用账号。
   Future<AppAccountRef> signIn(MemoryAppAccountVault vault, {String? accountId, String? slot}) async {
-    final key = await SocialIdentity.generate();
+    final key = await RelayIdentity.generate();
     final account = AppAccountRef(accountId: accountId ?? 'acct-${base64UrlNoPad(secureRandomBytes(6))}', slot: slot ?? 'account.${base64UrlNoPad(secureRandomBytes(6))}');
     devices[key.deviceId] = (sign: key.signPublicKey, box: key.boxPublicKey);
     accountDevices[key.deviceId] = account.accountId;

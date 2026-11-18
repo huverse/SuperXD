@@ -35,7 +35,7 @@ import 'package:superxd/page/sync_merge_page.dart';
 import 'package:superxd/page/text_size_range.dart';
 import 'package:superxd/playground/playground_store.dart';
 import 'package:superxd/router.dart';
-import 'package:superxd/social/relay_client.dart';
+import 'package:superxd/relay/relay_client.dart';
 import 'package:superxd/theme/campus_background.dart';
 import 'package:superxd/theme/campus_glass_probe.dart';
 import 'package:superxd/theme/campus_glass_tier.dart';

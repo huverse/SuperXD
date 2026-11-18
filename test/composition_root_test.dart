@@ -11,13 +11,15 @@ import 'package:superxd/app_lifecycle.dart';
 import 'package:superxd/app_services.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/app_moments.dart';
+import 'package:superxd/application/challenges.dart';
 import 'package:superxd/application/network_preference.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/domain/course_occurrence.dart';
 import 'package:superxd/domain/network_policy.dart';
 import 'package:superxd/local/network_mode_memory.dart';
 import 'package:superxd/social/identity_vault.dart';
-import 'package:superxd/social/relay_app_account.dart';
+import 'package:superxd/relay/app_account_vault.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/social/social_spaces.dart';
 
@@ -27,14 +29,16 @@ import 'fake_relay.dart';
 // 用 app_services.dart 的真实造法、app_lifecycle.dart 的真实钩子与 watchX，按 lib/main.dart 的先后接起来，中转换成内存版 FakeRelay、
 // 应用账号与私信身份的密钥库换成内存版，不签名的设备侧客户端在测试绑定下一律拿到 400（失败只记日志）。main.dart 的这段接线改了，这里跟着改。
 // 走的路径：同意之前不发签名请求；同意之后私信切到账号（还没开启）、看一眼账号、问点名，开启后挂到账号；本地化时私信停下、不再联网；改回联网化接着用；
-// 本地化启动、改回联网化后被挡下的钩子补做（11-17 审查发现的缺陷，#310）；退出应用账号时私信跟着退。
+// 本地化启动、改回联网化后被挡下的钩子补做（11-17 审查发现的缺陷，#310）；退出应用账号时私信跟着退；
+// 签名请求的出口策略（审查 P2-2）：上层的判断照旧挡住，出口一次也没拒过；绕过钩子直接调，仅本机时也出不去。
 class _App {
-  _App({required this.relay, required this.keys, required this.network, required this.social, required this.appAccounts, required this.agreed});
+  _App({required this.relay, required this.keys, required this.network, required this.social, required this.appAccounts, required this.challenges, required this.agreed});
   final FakeRelay relay;
   final MemoryAppAccountVault keys;
   final NetworkPreference network;
   final SocialService social;
   final AppAccounts appAccounts;
+  final Challenges challenges;
   final Completer<void> agreed;
 
   List<String> get calls => relay.calls;
@@ -48,18 +52,18 @@ Future<_App> _compose({required NetworkMode mode, bool signedIn = true}) async {
   final support = Directory(path.join(_temporary.path, 'app_${_apps++}'))..createSync();
   final relay = FakeRelay(), keys = MemoryAppAccountVault();
   if (signedIn) await relay.signIn(keys, slot: appAccountSlot);
-  final wiring = RelayWiring(base: 'http://127.0.0.1:9', transport: relay.transport(), accountKeys: keys);
   final memory = FileNetworkModeMemory.memory();
   await memory.saveMode(mode);
   final network = NetworkPreference(memory: memory);
   bool networkOnline() => network.online;
+  final wiring = RelayWiring(base: 'http://127.0.0.1:9', transport: relay.transport(), allows: network.allows, accountKeys: keys);
   // 以下按 lib/main.dart 的先后。
   late final AppAccounts? appAccounts;
   final diagnostics = diagnosticsOf(wiring, () => appAccounts, online: networkOnline);
   final social = SocialService(
     spaces: SocialSpaces(vault: MemoryIdentityVault(), directory: path.join(support.path, 'databases')),
     accountKeys: wiring.accountKeys,
-    transport: wiring.transport,
+    transport: wiring.transportFor(NetworkService.social),
     accountGone: () => unawaited(appAccounts?.check(force: true)),
     serverKeys: FakeRelay.serverKeys,
   );
@@ -85,7 +89,7 @@ Future<_App> _compose({required NetworkMode mode, bool signedIn = true}) async {
   watchRollouts(rollouts, hooks);
   watchAppHealth(health, hooks);
   watchUnlocks(unlocks, hooks);
-  return _App(relay: relay, keys: keys, network: network, social: social, appAccounts: appAccounts, agreed: agreed);
+  return _App(relay: relay, keys: keys, network: network, social: social, appAccounts: appAccounts, challenges: challenges!, agreed: agreed);
 }
 
 // 切到后台再回来，按系统真实的先后一步步走（监听器只认合法的相邻状态）。
@@ -127,8 +131,11 @@ void main() {
 
   setUp(_logged.clear);
 
-  // 钩子与造法都不该把异常漏出来（AppHooks 接住的会记 action=hook）。
-  void expectNoHookErrors() => expect(_logged.where((line) => line.contains('action=hook errorType=')), isEmpty);
+  // 钩子与造法都不该把异常漏出来（AppHooks 接住的会记 action=hook）；上层的判断照旧挡住了，没有请求走到出口才被拒。
+  void expectNoHookErrors() {
+    expect(_logged.where((line) => line.contains('action=hook errorType=')), isEmpty);
+    expect(_logged.where((line) => line.startsWith('[RelayEgress]')), isEmpty);
+  }
 
   test('联网化：同意之前不发签名请求；同意之后看一眼账号、问点名，开启私信挂到账号；本地化停下、改回接着用；退出应用账号私信跟着退', () async {
     final app = await _compose(mode: NetworkMode.online);
@@ -176,6 +183,26 @@ void main() {
     await _until(() => app.calls.contains('GET /v1/account'), '改回联网化后补做被挡下的应用账号核对（以前要重启应用）');
     await _until(() => app.social.status == SocialStatus.disabled, '改回联网化后私信按原账号重新打开');
     expectNoHookErrors();
+  });
+
+  test('仅本机时绕过钩子直接调也出不去：出口策略在本机拒掉应用账号与挑战的签名请求，当连不上处理、账号照旧；改回联网就放行', () async {
+    final app = await _compose(mode: NetworkMode.local);
+    app.agreed.complete();
+    await _until(() => app.social.status == SocialStatus.offline, '仅本机时私信切到账号、停着');
+    await _settle();
+    app.calls.clear();
+    _logged.clear();
+
+    await app.appAccounts.check(force: true);
+    await expectLater(app.challenges.points(), throwsA(isA<ChallengeException>().having((error) => error.failure, 'failure', ChallengeFailure.network)));
+    expect(app.calls, isEmpty, reason: '出口在本机拒掉，一个也没发到中转');
+    expect(_logged, containsAll(['[RelayEgress] action=deny service=appAccount route=GET /v1/account errorType=policy', '[RelayEgress] action=deny service=challenge route=GET /v1/points errorType=policy']));
+    expect(app.appAccounts.current, isNotNull, reason: '拒掉当连不上，不当退出');
+
+    // 改回联网就放行（补做的账号核对隔一天才联网，刚才那次已算核过，这里直接调）。
+    await app.network.setMode(NetworkMode.online);
+    await app.appAccounts.check(force: true);
+    expect(app.calls, contains('GET /v1/account'));
   });
 
   test('没登录应用账号：同意之后私信是未登录，不发签名请求；联网策略本身就是联网偏好', () async {

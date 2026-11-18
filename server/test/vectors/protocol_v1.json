@@ -26,7 +26,7 @@
     "proof": "3ZrN2k72gZLmEUVhxB-vVn_PDDh_sEsOg7s95yv88tXdVGO1hAVmPlE-GIun6xuGoaMqA_27UTgOsI_tA_WLBw"
   },
   "friendKeys": {
-    "note": "服务器给好友公钥的签名（src/modules/friend/friend_key_signer.ts，客户端 lib/social/relay_client.dart 验）：种子是公开的测试值，同 test/setup_env.ts 的 RELAY_FRIEND_SIGN_KEY",
+    "note": "服务器给好友公钥的签名（src/modules/friend/friend_key_signer.ts，客户端 lib/relay/relay_client.dart 验）：种子是公开的测试值，同 test/setup_env.ts 的 RELAY_FRIEND_SIGN_KEY",
     "seed": "ISIjJCUmJygpKissLS4vMDEyMzQ1Njc4OTo7PD0-P0A",
     "publicKey": "5_FioQvsVZr-oZXk3OhLaVaNXSywlj60RsBoXisX8vA",
     "ownerDeviceId": "AAECAwQFBgcICQoLDA0ODw",
@@ -38,7 +38,7 @@
     "signature": "4Np-cW0eEJ7DEmT1pls5oqhuNCW7pCpQTVK-WUh42k1g_Rkci-z-nPRbxwvyfa_XDBWh2Mm0ldhyms404S6bAw"
   },
   "accountDeleted": {
-    "note": "服务器证明「这把设备密钥所在的应用账号已注销」（src/modules/account/account_deleted_proof.ts，客户端 lib/social/relay_client.dart 验）：签名钥同 friendKeys 的测试种子，nonce 是这次请求的 x-sxd-nonce",
+    "note": "服务器证明「这把设备密钥所在的应用账号已注销」（src/modules/account/account_deleted_proof.ts，客户端 lib/relay/relay_client.dart 验）：签名钥同 friendKeys 的测试种子，nonce 是这次请求的 x-sxd-nonce",
     "publicKey": "5_FioQvsVZr-oZXk3OhLaVaNXSywlj60RsBoXisX8vA",
     "deviceId": "ZbYGc9btiEvwHCwiLYKtoA",
     "nonce": "MDEyMzQ1Njc4OTo7PD0-Pw",
