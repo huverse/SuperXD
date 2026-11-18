@@ -37,10 +37,16 @@ class _CampusGlassProbeState extends State<CampusGlassProbe> {
   // 本进程里截过且正常的档位不再截；画坏了的不记，改回来时再截一次。
   static final _healthy = <CampusGlassTier>{};
   Timer? _timer;
+  // 栏真画在屏幕上：TickerMode 关着（冷启动时开屏画作盖着、下面的应用不画，或被推入的页面盖住）时截到的是别的东西，等露出来再计时。
+  // 以前冷启动时开屏还没溶解完就截了（截到的是画作，记成正常，这一进程里不再截）。
+  bool? _shown;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final shown = TickerMode.valuesOf(context).enabled;
+    if (shown == _shown) return;
+    _shown = shown;
     _schedule();
   }
 
@@ -58,7 +64,7 @@ class _CampusGlassProbeState extends State<CampusGlassProbe> {
 
   void _schedule() {
     _timer?.cancel();
-    if (campusGlassProbe == null || widget.tier == CampusGlassTier.solid || _healthy.contains(widget.tier)) return;
+    if (campusGlassProbe == null || _shown != true || widget.tier == CampusGlassTier.solid || _healthy.contains(widget.tier)) return;
     final tier = widget.tier;
     _timer = Timer(campusGlassProbeDelay, () => unawaited(_probe(tier).catchError((Object error, StackTrace stack) => campusLog('[CampusGlass] action=probe errorType=${error.runtimeType}\n$stack'))));
   }

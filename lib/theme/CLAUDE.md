@@ -31,7 +31,7 @@
   - campus_symbols.dart：系统组件用的 SF Symbols 对照 campusSymbol（CampusIcons 到 SF Symbols 名）；新增会进系统菜单、底栏或顶栏圆钮的图标时在这里登记，没登记的在系统组件里不画图标。
   - glass_panel.dart：液态玻璃面板 GlassPanel（现只用于悬浮底栏）、透明顶栏 CampusTopBar、导航层标记 CampusChrome、玻璃初始化 initializeCampusGlass（失败退回磨砂）；campusOverlayDepth 是正在显示的弹窗层数，大于 0 时顶栏和底栏改实色，不让玻璃叠玻璃。
   - campus_glass_tier.dart：三档（满档、磨砂、实色）与 resolveCampusGlassTier（无障碍与「关闭」走实色，简化、未就绪或限档走磨砂，完整固定满档，自动跟随实测、只在满档与磨砂之间切，库报标准也画磨砂；人工决策见文件内）；自动档运行中降档的预算按屏幕刷新率 campusGlassBudgetMs（120Hz 是 8ms，库在最慢 5% 的帧超过 1.5 倍时降）。CampusGlassScope 向下传模式与限档，按模式增减树层会让整个应用重建，所以不能这样做（campus_glass_test.dart 守护）；玻璃组件统一用 tierOf 取档位。CampusGlassGuard 经通道 superxd/glass 读写原生限档状态（安卓 GlassGuard.kt；iOS GlassGuard.swift 读不到退出原因，改记切后台前是否还在前台，前台时异常结束才算），点「完整」解除本版本限档（人工决策见文件内）。iOS 固定磨砂档（无障碍时实色），不按帧耗时升降、没有限档。
-  - campus_glass_probe.dart：玻璃显示自检 CampusGlassProbe（人工决策见 campus_glass_tier.dart 的 11-16 那条）：底栏 GlassPanel 以某个玻璃档位稳定 2 秒后，经组合根接上的 campusGlassProbe（安卓 GlassGuard.kt 的 probe，PixelCopy 截 Flutter 的 SurfaceView）截它那块，近乎纯黑的像素占到 97% 才算画坏、发 campusGlassBroken，组合根改成「关闭」并提示；截过且正常的档位本进程不再截，弹窗开着、不在前台时不截；iOS 与测试不接、不计时。
+  - campus_glass_probe.dart：玻璃显示自检 CampusGlassProbe（人工决策见 campus_glass_tier.dart 的 11-16 那条）：底栏 GlassPanel 以某个玻璃档位稳定 2 秒后，经组合根接上的 campusGlassProbe（安卓 GlassGuard.kt 的 probe，PixelCopy 截 Flutter 的 SurfaceView）截它那块，近乎纯黑的像素占到 97% 才算画坏、发 campusGlassBroken，组合根改成「关闭」并提示；截过且正常的档位本进程不再截，弹窗开着、不在前台时不截，栏没露出来（TickerMode 关：冷启动时开屏画作盖着、被推入的页面盖住）时不计时、露出来再从头计；iOS 与测试不接、不计时。
   - campus_glass_material.dart：玻璃材质表，按角色（navigation、control、overlay）、配色与档位生成参数 campusGlassSettings。磨砂档不调饱和：饱和不为 1 时库会在背景模糊里再嵌一层 BackdropFilter，OPPO 上键盘顶起的弹层会整块画黑（campus_glass_test.dart 守护「简化档弹层只有一层 BackdropFilter」）。底色、饱和与提亮都按五套配色深浅色实测取，改动后重测玻璃上文字的对比度（不低于 4.5:1）。
   - campus_glass_blend.dart：玻璃换档的过渡 CampusGlassBlend：玻璃内容层最底下铺同形状实色盖板，渐显到不透明后才换档、再渐隐。
   - campus_glass_surface.dart：按钮与手势反馈共用的玻璃材质 CampusGlassSurface、浮层面板 CampusOverlayGlass、浮层显隐 CampusOverlayReveal 与控件出现消失 CampusGlassPresence（AnimatedOpacity 的玻璃版）。
@@ -71,7 +71,7 @@
 # 测试
 
 - 玻璃与按钮：campus_glass_test.dart（含关闭档实色与显示自检）、campus_glass_button_test.dart；iOS 的系统组件分支：native_glass_test.dart（按 iOS 跑：系统弹窗、菜单的参数，开关滑杆与磨砂档、不建平台视图，系统底栏随推入与浮层交给原生的位置与显隐；原生长什么样只能在 iPhone 上看）。
-- 背景、配色与深色：atmosphere_test.dart（含 iOS 云雾每秒约 20 次、低电量停住、半分辨率贴图同直接画对照、颗粒拼贴同逐点画对照）、dark_mode_test.dart（含提醒文字色、选中着色、标签色与激活色文字的对比度）、wallpaper_test.dart。
+- 背景、配色与深色：atmosphere_test.dart（含 iOS 云雾每秒约 20 次、低电量停住、没人操作 8 秒停住与一碰接着走（漾开照旧有节拍）、半分辨率贴图同直接画对照、颗粒拼贴同逐点画对照）、dark_mode_test.dart（含提醒文字色、选中着色、标签色与激活色文字的对比度）、wallpaper_test.dart。
 - 动效与转场：campus_motion_test.dart、transition_sync_test.dart（含 iOS 推入与任意位置右滑返回）、account_lifecycle_test.dart（入场与转场中间帧）。
 - 提示条：campus_glass_test.dart（玻璃胶囊、锚点上方、点一下收起与留白点穿、下滑横划与快甩划走、按着暂停计时、投影不裁剪、被新弹层或页面盖住就收起、读屏不自动收起、弹层里浮最上层、hideCampusToast 收起）、shell_layout_test.dart（停在两端底栏上方）。
 - 通用组件：theme_components_test.dart（长说明排版、列表增删过渡、滚动锚定、底部弹层挂根导航器、点状态栏回顶、iOS 拖动收起键盘）；typesetting_test.dart（测量与 Text 同口径含粗体文本与字距、均衡换行、分段控件按字分宽、说明行的点不单独成行、说明行一项比一行长时均衡折行并占满这一行）。

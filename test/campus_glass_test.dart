@@ -243,6 +243,30 @@ void main() {
     expect(areas, hasLength(3), reason: '弹窗开着时栏是实色，不截');
     await tester.pumpWidget(const SizedBox());
   });
+  // 冷启动时开屏画作盖着、下面的应用不画（TickerMode 关，见 page/painting_splash.dart）：截到的是画作，要等栏露出来再从头计 2 秒。
+  testWidgets('玻璃显示自检：栏没露出来（TickerMode 关）时不计时，露出来后再等满 2 秒才截', (tester) async {
+    debugResetCampusGlassProbe();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    final areas = <Rect>[];
+    campusGlassProbe = (area) async {
+      areas.add(area);
+      return .2;
+    };
+    addTearDown(() => campusGlassProbe = null);
+    Widget bar(bool shown) => TickerMode(
+      enabled: shown,
+      child: Align(alignment: Alignment.bottomCenter, child: CampusGlassProbe(tier: CampusGlassTier.full, child: const SizedBox(width: 300, height: 64))),
+    );
+    await tester.pumpWidget(bar(false));
+    await tester.pump(campusGlassProbeDelay * 2);
+    expect(areas, isEmpty, reason: '盖着时不截');
+    await tester.pumpWidget(bar(true));
+    await tester.pump(campusGlassProbeDelay - const Duration(milliseconds: 100));
+    expect(areas, isEmpty, reason: '露出来后从头计');
+    await tester.pump(const Duration(milliseconds: 200));
+    expect(areas, hasLength(1));
+    await tester.pumpWidget(const SizedBox());
+  });
   // 自动档运行中降档按屏幕刷新率算预算：120Hz 是 8ms（最慢 5% 超过 12ms 降），60Hz 仍是库默认的 16ms。
   test('自动档的帧预算跟屏幕刷新率走', () {
     expect([campusGlassBudgetMs(60), campusGlassBudgetMs(59.94), campusGlassBudgetMs(90), campusGlassBudgetMs(120), campusGlassBudgetMs(0)], [16, 16, 11, 8, 16]);
