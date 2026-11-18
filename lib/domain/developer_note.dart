@@ -98,13 +98,15 @@ abstract class DeveloperNoteFeed {
   Future<List<DeveloperNote>> fetch();
 }
 
-// 本机记录（local 实现）：上次拉到的信（离线时照样能看）、读过与弹过的编号、上次拉取成功的时刻。
+// 本机记录（local 实现）：上次拉到的信（离线时照样能看）、读过与弹过的编号、上次拉取成功的时刻与那时的构建号。
+// 弹过 = 弹出来后用户关掉了（见 application/app_moments.dart 的 closed）。
 class DeveloperNoteRecord {
-  const DeveloperNoteRecord({this.notes = const [], this.read = const {}, this.shown = const {}, this.fetchedAt});
+  const DeveloperNoteRecord({this.notes = const [], this.read = const {}, this.shown = const {}, this.fetchedAt, this.fetchedBuild});
   final List<DeveloperNote> notes;
   final Set<String> read;
   final Set<String> shown;
   final DateTime? fetchedAt;
+  final int? fetchedBuild;
 }
 
 abstract class DeveloperNoteMemory {

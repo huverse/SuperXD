@@ -49,6 +49,9 @@ class AppUpdates extends ChangeNotifier {
     return prompt;
   }
 
+  // 有强制更新还没装（这次查到的，或上次查到、这次还没重查）：打扰时机不弹信（见 app_moments.dart）。
+  bool get forced => urgency == AppUpdateUrgency.forced || memory.forcedPending;
+
   bool get _busy => phase == AppUpdatePhase.checking || phase == AppUpdatePhase.downloading || phase == AppUpdatePhase.verifying;
 
   // 启动时调用：不到时候（今天查过、也没有待办的必须更新）不联网；失败只记日志，不打扰用户。

@@ -261,6 +261,7 @@ class _AccountAppState extends State<_AccountApp> {
           await showHeldScheduleSync(context, autoSync: widget.services.autoSync!, gateway: widget.session.gateway, held: held);
         case NoteLetterMoment(:final note):
           await showDeveloperNoteLetter(context, notes: widget.services.notes!, note: note);
+          moments.closed(moment);
       }
     } finally {
       _momentOpen = false;

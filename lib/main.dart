@@ -240,7 +240,7 @@ void main() async {
   campusNotificationTaps.stream.listen(openNotification);
   unawaited(campusNotificationLaunch().then(openNotification).catchError((Object error, StackTrace stack) => campusLog('[Notifications] action=launch errorType=${error.runtimeType}\n$stack')));
   // 打扰时机（人工决策见 application/app_moments.dart）：上下课的安静期按当前账号本机今天的课算，只读本地。
-  final moments = AppMoments(notes: notes, festivals: festivals, autoSync: autoSync, timetable: () => campusTimetableToday(session.gateway, signedIn: session.loggedIn));
+  final moments = AppMoments(notes: notes, festivals: festivals, autoSync: autoSync, updates: updates, timetable: () => campusTimetableToday(session.gateway, signedIn: session.loggedIn));
   final splashed = painting != null && splashImage != null;
   final splashGone = ValueNotifier(!splashed);
   final restored = Completer<void>();

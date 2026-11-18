@@ -836,7 +836,7 @@ void main() {
     final semantics = tester.ensureSemantics();
     final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
     final feed = _NoteFeed();
-    final notes = DeveloperNotes(feed: feed, memory: FileDeveloperNoteMemory.memory());
+    final notes = DeveloperNotes(build: 1, feed: feed, memory: FileDeveloperNoteMemory.memory());
     await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(notes: notes))); await tester.pumpAndSettle();
     await tester.tap(find.text('我的')); await tester.pumpAndSettle();
     expect(find.text('开发者的话'), findsNothing);
@@ -914,7 +914,7 @@ void main() {
   });
   testWidgets('新信在不迫切的时候弹出：开屏走完、停在底栏根页且上面没有别的页面；从别的页面回到根页时立即看一眼；每次前台最多一次', (tester) async {
     final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
-    final notes = DeveloperNotes(feed: _NoteFeed(), memory: FileDeveloperNoteMemory.memory());
+    final notes = DeveloperNotes(build: 1, feed: _NoteFeed(), memory: FileDeveloperNoteMemory.memory());
     await tester.runAsync(notes.refresh);
     final moments = AppMoments(notes: notes, timetable: () async => const CampusTimetable([]));
     final splashGone = ValueNotifier(false);

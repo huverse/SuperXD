@@ -387,7 +387,7 @@ void main() {
 
   group('打扰时机的先后', () {
     test('节日动画先于没揭晓的奖品，奖品先于新信；播过就轮到下一件', () async {
-      final notes = DeveloperNotes(feed: _Notes(), memory: FileDeveloperNoteMemory.memory(), clock: () => noon);
+      final notes = DeveloperNotes(build: 1, feed: _Notes(), memory: FileDeveloperNoteMemory.memory(), clock: () => noon);
       await notes.refresh();
       final memory = FileFestivalMemory.memory(FestivalRecord(prizes: [prize('spring-2027')]));
       final festivals = Festivals(occasions: const [spring], memory: memory, clock: () => noon);
@@ -578,7 +578,7 @@ void main() {
 
       testWidgets('信件页按附件类型取组合根登记的渲染，不认识的类型不显示', (tester) async {
         final note = DeveloperNote(id: 'n1', title: '补偿', publishedAt: noon, body: '正文', attachments: const [NoteAttachment('reward', 'c-1'), NoteAttachment('poll', 'p')]);
-        final notes = DeveloperNotes(feed: _OneNote(note), memory: FileDeveloperNoteMemory.memory());
+        final notes = DeveloperNotes(build: 1, feed: _OneNote(note), memory: FileDeveloperNoteMemory.memory());
         await notes.refresh();
         await tester.pumpWidget(MaterialApp(
           theme: campusTheme(),
