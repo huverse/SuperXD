@@ -11,6 +11,7 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity_card.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
+import 'package:superxd/toolbox/toolbox_image.dart';
 
 // 按课程查看：课程列表可搜课名、老师与学校，可置顶常用的课；同名课程（一门课多个班）合并成一项。
 // 点进去看这门课的全部签到，进行中与已结束分开两组。
@@ -106,7 +107,14 @@ class _ChaoxingCoursePageState extends State<ChaoxingCoursePage> {
                               padding: const EdgeInsets.only(right: 12),
                               child: ClipRRect(
                                 borderRadius: BorderRadius.circular(12),
-                                child: Image.network(group.courses.first.cover, fit: BoxFit.cover, width: 44, height: 44, errorBuilder: (_, _, _) => const SizedBox.square(dimension: 44, child: Center(child: CampusIcon(CampusIcons.course)))),
+                                // 经请求内核取、按 44dp 解码（见 toolbox_image.dart）。
+                                child: Image(
+                                  image: ToolboxRemoteImage(group.courses.first.cover, module: 'chaoxing_image', side: (44 * MediaQuery.devicePixelRatioOf(context)).ceil()),
+                                  fit: BoxFit.cover,
+                                  width: 44,
+                                  height: 44,
+                                  errorBuilder: (_, _, _) => const SizedBox.square(dimension: 44, child: Center(child: CampusIcon(CampusIcons.course))),
+                                ),
                               ),
                             ),
                           Expanded(

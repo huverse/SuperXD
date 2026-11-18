@@ -20,6 +20,7 @@ import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_account_sheet.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_activity_card.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_controller.dart';
+import 'package:superxd/toolbox/toolbox_image.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_course_page.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_credential_pack.dart';
@@ -462,8 +463,9 @@ class _ChaoxingPageState extends State<ChaoxingPage> {
                         children: [
                           const Center(child: CampusIcon(CampusIcons.account)),
                           if (controller.currentPhoto.isNotEmpty)
-                            Image.network(
-                              controller.currentPhoto,
+                            // 经请求内核取、按 44dp 解码（见 toolbox_image.dart）。
+                            Image(
+                              image: ToolboxRemoteImage(controller.currentPhoto, module: 'chaoxing_image', side: (44 * MediaQuery.devicePixelRatioOf(context)).ceil()),
                               fit: BoxFit.cover,
                               frameBuilder: (_, child, frame, synchronous) => synchronous
                                   ? child
