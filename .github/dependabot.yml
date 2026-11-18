@@ -2,13 +2,14 @@
 # [人工决策-2026-11-10 12:58:48] 用户同意按最佳实践开依赖自动更新：Actions、server 的 npm、根目录的 pub、android 的 Gradle 四处，每周一一次；
 # 补丁与次版本每处合成一条 PR，主版本各自单独一条；新版本发布满 7 天才提（cooldown，避开刚发布就被投毒、随后撤下的版本；安全更新不等）。
 # 没选每天检查（PR 太碎）与自动合并（CI 不编安卓与 iOS 的原生部分，界面库升级要人看过）。提交信息前缀跟随仓库写法。
+# [人工决策-2026-11-17 23:40:55] 用户嫌每周一轮堆在 PR 列表里，改成每月一次（每月 1 日；取代上一条里的「每周一一次」，其余照旧）。
+# 安全更新不受这里的频率限制（仓库设置里单独开着，有漏洞随时提）。
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '09:00'
       timezone: Asia/Shanghai
     cooldown:
@@ -23,8 +24,7 @@ updates:
   - package-ecosystem: pub
     directory: /
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '09:00'
       timezone: Asia/Shanghai
     cooldown:
@@ -45,8 +45,7 @@ updates:
   - package-ecosystem: npm
     directory: /server
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '09:00'
       timezone: Asia/Shanghai
     cooldown:
@@ -61,8 +60,7 @@ updates:
   - package-ecosystem: gradle
     directory: /android
     schedule:
-      interval: weekly
-      day: monday
+      interval: monthly
       time: '09:00'
       timezone: Asia/Shanghai
     cooldown:
