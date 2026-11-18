@@ -156,7 +156,7 @@ void main() {
       final appAccounts = AppAccounts(client: client);
       await tester.runAsync(appAccounts.load);
       final network = NetworkPreference(memory: FileNetworkModeMemory.memory());
-      final notes = DeveloperNotes(feed: _NoteFeed(), memory: FileDeveloperNoteMemory.memory());
+      final notes = DeveloperNotes(build: 1, feed: _NoteFeed(), memory: FileDeveloperNoteMemory.memory());
       await tester.runAsync(notes.refresh);
       final health = AppHealth(memory: FileAppHealthMemory.memory(), channel: 'alpha', platform: 'android', versionCode: 30, client: _HealthClient());
       final services = AppServices(display: display, toolbox: fixture.runtime, playground: PlaygroundStore.memory(), appAccounts: appAccounts, network: network, notes: notes, health: health, leisure: Leisure(clearLocal: () async {}, signedIn: () => false));

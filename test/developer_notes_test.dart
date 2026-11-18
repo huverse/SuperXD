@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 import 'package:superxd/application/app_moments.dart';
+import 'package:superxd/domain/app_update.dart';
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/device/relay_note_feed.dart';
 import 'package:superxd/device/signed_content.dart';
@@ -18,6 +19,7 @@ import 'package:superxd/local/developer_note_memory.dart';
 
 import '../tool/content_signing.dart';
 import '../tool/developer_notes.dart';
+import 'app_update_fakes.dart';
 import 'content_signing_support.dart';
 
 DeveloperNote note(String id, DateTime publishedAt, {String title = '近况', String body = '正文'}) => DeveloperNote(id: id, title: title, publishedAt: publishedAt, body: body);
@@ -189,12 +191,19 @@ void main() {
       addTearDown(() => directory.delete(recursive: true));
       final file = File('${directory.path}/developer_notes.json');
       final memory = await FileDeveloperNoteMemory.open(file);
-      await memory.save(DeveloperNoteRecord(notes: [note('a', now)], read: {'a', 'gone'}, shown: {'gone'}, fetchedAt: now));
+      await memory.save(DeveloperNoteRecord(notes: [note('a', now)], read: {'a', 'gone'}, shown: {'a', 'gone'}, fetchedAt: now, fetchedBuild: 31));
       final reopened = (await FileDeveloperNoteMemory.open(file)).record;
       expect([for (final item in reopened.notes) item.id], ['a']);
       expect(reopened.read, {'a'});
-      expect(reopened.shown, isEmpty);
+      expect(reopened.shown, {'a'});
       expect(reopened.fetchedAt, now);
+      expect(reopened.fetchedBuild, 31);
+      // 11-18：旧版本一弹出就记在 shown 里（被强制更新盖住的也算了），新版不认，那封在新版里再弹一次。
+      await file.writeAsString(jsonEncode({...encodeDeveloperNotes([note('a', now)]), 'read': ['a'], 'shown': ['a'], 'fetchedAt': now.toIso8601String()}));
+      final legacy = (await FileDeveloperNoteMemory.open(file)).record;
+      expect(legacy.read, {'a'});
+      expect(legacy.shown, isEmpty);
+      expect(legacy.fetchedBuild, isNull);
       await file.writeAsString('{坏');
       expect((await FileDeveloperNoteMemory.open(file)).record.notes, isEmpty);
     });
@@ -204,7 +213,7 @@ void main() {
     test('自动拉取间隔不到一小时不联网，下拉刷新不受限；失败照旧显示上次的', () async {
       var clock = now;
       final feed = FakeNoteFeed([note('a', now)]);
-      final notes = DeveloperNotes(feed: feed, memory: FileDeveloperNoteMemory.memory(), clock: () => clock);
+      final notes = DeveloperNotes(build: 1, feed: feed, memory: FileDeveloperNoteMemory.memory(), clock: () => clock);
       await notes.autoRefresh();
       await notes.autoRefresh();
       expect(feed.calls, 1);
@@ -218,9 +227,26 @@ void main() {
       expect(feed.calls, 3);
     });
 
+    // 11-18：alpha.28 拉到欢迎信时还不认红包附件，更新后一小时内不重拉、本机那份没有红包；换了版本要立刻重拉，重拉之前不弹旧版本拉的信。
+    test('换了版本：一打开就重拉，不等一小时；重拉之前不弹旧版本拉的信', () async {
+      final memory = FileDeveloperNoteMemory.memory(DeveloperNoteRecord(notes: [note('a', now)], fetchedAt: now, fetchedBuild: 30));
+      final feed = FakeNoteFeed([note('a', now)]);
+      final older = DeveloperNotes(build: 30, feed: feed, memory: memory, clock: () => now);
+      expect(older.letter?.id, 'a');
+      await older.autoRefresh();
+      expect(feed.calls, 0, reason: '同一版本不到一小时不联网');
+      final notes = DeveloperNotes(build: 31, feed: feed, memory: memory, clock: () => now);
+      expect(notes.letter, isNull, reason: '本机的信是旧版本拉的，先不弹');
+      expect([for (final item in notes.notes) item.id], ['a'], reason: '「我的」里照样列出');
+      await notes.autoRefresh();
+      expect(feed.calls, 1);
+      expect(notes.letter?.id, 'a');
+      expect(memory.record.fetchedBuild, 31);
+    });
+
     test('同一时刻只拉一次', () async {
       final feed = FakeNoteFeed([note('a', now)])..gate = Completer<void>();
-      final notes = DeveloperNotes(feed: feed, memory: FileDeveloperNoteMemory.memory(), clock: () => now);
+      final notes = DeveloperNotes(build: 1, feed: feed, memory: FileDeveloperNoteMemory.memory(), clock: () => now);
       final first = notes.refresh(), second = notes.refresh();
       feed.gate!.complete();
       await Future.wait([first, second]);
@@ -228,7 +254,7 @@ void main() {
     });
 
     test('弹出一封：当时的信都记成弹过，只有这封记成读过；点开别的再记读过', () async {
-      final notes = DeveloperNotes(feed: FakeNoteFeed([note('b', now), note('a', now.subtract(const Duration(hours: 1)))]), memory: FileDeveloperNoteMemory.memory(), clock: () => now);
+      final notes = DeveloperNotes(build: 1, feed: FakeNoteFeed([note('b', now), note('a', now.subtract(const Duration(hours: 1)))]), memory: FileDeveloperNoteMemory.memory(), clock: () => now);
       await notes.refresh();
       expect(notes.letter?.id, 'b');
       await notes.markLetterShown(notes.letter!);
@@ -242,7 +268,7 @@ void main() {
 
   group('打扰时机（AppMoments）', () {
     Future<(AppMoments, DeveloperNotes)> setup({List<CourseOccurrence> classes = const [], DateTime Function()? clock}) async {
-      final notes = DeveloperNotes(feed: FakeNoteFeed([note('b', now)]), memory: FileDeveloperNoteMemory.memory(), clock: clock ?? () => now);
+      final notes = DeveloperNotes(build: 1, feed: FakeNoteFeed([note('b', now)]), memory: FileDeveloperNoteMemory.memory(), clock: clock ?? () => now);
       await notes.refresh();
       final moments = AppMoments(notes: notes, timetable: () async => CampusTimetable(classes), clock: clock ?? () => now);
       addTearDown(moments.dispose);
@@ -255,10 +281,38 @@ void main() {
       expect(moment, isA<NoteLetterMoment>());
       moments.begin(moment!);
       expect(await moments.next(), isNull);
+      moments.closed(moment);
+      await pumpEventQueue();
       await notes.refresh();
       moments.foreground();
-      // 信已经记成弹过，回到前台也没有该弹的了。
+      // 用户关掉了，信记成弹过，回到前台也没有该弹的了。
       expect(await moments.next(), isNull);
+    });
+
+    // 11-18：信在旧版里刚弹出就被强制更新盖住、用户直接去更新，信没被关掉就不算弹过，下次照样弹。
+    test('信弹出来没被关掉（被盖住、应用换了新版）不算弹过，下次照样弹', () async {
+      final (moments, notes) = await setup();
+      final moment = await moments.next();
+      moments.begin(moment!);
+      moments.foreground();
+      expect(await moments.next(), isA<NoteLetterMoment>());
+      expect(notes.letter?.id, 'b');
+    });
+
+    test('有强制更新还没装时不弹信，装上新版（重查不再强制）后照常', () async {
+      final notes = DeveloperNotes(build: 1, feed: FakeNoteFeed([note('b', now)]), memory: FileDeveloperNoteMemory.memory(), clock: () => now);
+      await notes.refresh();
+      final fixture = UpdateFixture()..feed.next = fakeRelease(minSupported: 5);
+      final moments = AppMoments(notes: notes, updates: fixture.updates, timetable: () async => const CampusTimetable([]), clock: () => now);
+      addTearDown(moments.dispose);
+      await fixture.updates.autoCheck();
+      expect(fixture.updates.urgency, AppUpdateUrgency.forced);
+      expect(await moments.next(), isNull);
+      final upgraded = UpdateFixture(installed: 5)..feed.next = fakeRelease(minSupported: 5);
+      final after = AppMoments(notes: notes, updates: upgraded.updates, timetable: () async => const CampusTimetable([]), clock: () => now);
+      addTearDown(after.dispose);
+      await upgraded.updates.autoCheck();
+      expect(await after.next(), isA<NoteLetterMoment>());
     });
 
     test('从快捷入口进来的这次前台不出现（系统先报回到前台还是先交入口都算），下次回到前台照常', () async {

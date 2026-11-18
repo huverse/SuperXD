@@ -216,7 +216,11 @@ Unlocks? unlocksOf(RelayWiring? relay, Rollouts rollouts, AppAccounts? appAccoun
 // 开发者的话走同一个自建中转；没配中转时为空，「我的」页不显示这一行。
 Future<DeveloperNotes?> developerNotes(Directory support, RelayWiring? relay) async {
   if (relay == null) return null;
-  return DeveloperNotes(feed: RelayNoteFeed(relay.base), memory: await FileDeveloperNoteMemory.open(File(path.join(support.path, 'developer_notes.json'))));
+  return DeveloperNotes(
+    feed: RelayNoteFeed(relay.base),
+    memory: await FileDeveloperNoteMemory.open(File(path.join(support.path, 'developer_notes.json'))),
+    build: int.tryParse((await PackageInfo.fromPlatform()).buildNumber) ?? 0,
+  );
 }
 
 // 节日（人工决策见 domain/festival.dart）：登记在 page/festival/festival_catalog.dart；没配中转时只播动画、不抽签。

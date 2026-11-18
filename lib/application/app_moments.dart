@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 
+import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/auto_sync.dart';
 import 'package:superxd/application/developer_notes.dart';
 import 'package:superxd/application/festivals.dart';
@@ -48,16 +49,20 @@ const _launchSlack = Duration(seconds: 3);
 // [人工决策-2026-11-05 17:18:44] 用户要求自动同步的课表冲突按同一套打扰时机弹出：排在奖品之后、新信之前（关乎自己的课表，比信要紧；节日只有那一天）。
 // 业务条件在这里：每次回到前台最多出现一件；从快捷入口进来的那次前台不出现（用户有明确要做的事）；在上下课安静期里不出现，安静期一结束再提醒组合根看一眼。
 // 界面条件在组合根（app_shell.dart 的 _promptMoment）：只在底栏四个根页、没有弹窗弹层、协议与政策已同意且没有待弹的提示、开屏走完，停稳一会儿再出现。
+// [人工决策-2026-11-18 23:24:41] 信在用户关掉时才记成弹过（closed），有强制更新还没装时不弹信：11-18 欢迎信在旧版里刚弹出就被强制更新盖住，
+// 用户直接去更新，新版认为弹过、再也不弹（用户要求修好、让它在新版里再弹一次，人工决策另见 local/developer_note_memory.dart）。
 class AppMoments extends ChangeNotifier {
-  AppMoments({this.notes, this.festivals, this.autoSync, required this.timetable, DateTime Function()? clock}) : _clock = clock ?? DateTime.now {
+  AppMoments({this.notes, this.festivals, this.autoSync, this.updates, required this.timetable, DateTime Function()? clock}) : _clock = clock ?? DateTime.now {
     _foregroundAt = _clock();
     notes?.addListener(notifyListeners);
     festivals?.addListener(notifyListeners);
     autoSync?.addListener(notifyListeners);
+    updates?.addListener(notifyListeners);
   }
   final DeveloperNotes? notes;
   final Festivals? festivals;
   final AutoSync? autoSync;
+  final AppUpdates? updates;
   // 今天的课（当前账号本机课表，只读本地）；未登录或缺开学日、作息时为空，也就没有安静期。
   final Future<CampusTimetable> Function() timetable;
   final DateTime Function() _clock;
@@ -105,22 +110,21 @@ class AppMoments extends ChangeNotifier {
     (final occasion?, _, _, _) => CelebrationMoment(occasion),
     (_, final prize?, _, _) => RewardMoment(prize),
     (_, _, final held?, _) => SyncConflictMoment(held),
-    (_, _, _, final letter?) => NoteLetterMoment(letter),
+    (_, _, _, final letter?) when !(updates?.forced ?? false) => NoteLetterMoment(letter),
     _ => null,
   };
 
-  // 出现了：这次前台用掉，播过的节日、弹出的信记下（揭晓过的奖品由揭晓那一步记）。
+  // 出现了：这次前台用掉，播过的节日记下（揭晓过的奖品由揭晓那一步记，信等用户关掉，见 closed）。
   void begin(AppMoment moment) {
     _spent = true;
     campusLog('[AppMoments] action=begin kind=${moment.runtimeType}');
-    switch (moment) {
-      case CelebrationMoment(:final occasion):
-        unawaited(festivals?.markPlayed(occasion));
-      case RewardMoment() || SyncConflictMoment():
-        break;
-      case NoteLetterMoment(:final note):
-        unawaited(notes?.markLetterShown(note));
-    }
+    if (moment case CelebrationMoment(:final occasion)) unawaited(festivals?.markPlayed(occasion));
+  }
+
+  // 用户把它关掉了：信这时才记成弹过（被强制更新盖住、没关就换了新版的，新版里再弹）。
+  void closed(AppMoment moment) {
+    campusLog('[AppMoments] action=closed kind=${moment.runtimeType}');
+    if (moment case NoteLetterMoment(:final note)) unawaited(notes?.markLetterShown(note));
   }
 
   @override
@@ -129,6 +133,7 @@ class AppMoments extends ChangeNotifier {
     notes?.removeListener(notifyListeners);
     festivals?.removeListener(notifyListeners);
     autoSync?.removeListener(notifyListeners);
+    updates?.removeListener(notifyListeners);
     super.dispose();
   }
 }
