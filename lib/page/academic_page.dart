@@ -133,11 +133,15 @@ class _AcademicPageState extends State<AcademicPage> {
     const rowPadding = EdgeInsets.symmetric(horizontal: 20);
     final autoSync = widget.autoSync;
     final latest = _latest;
-    Widget trailing(String text) => Row(mainAxisSize: MainAxisSize.min, children: [
-      if (text.isNotEmpty) Flexible(child: Text(text, style: secondary, overflow: TextOverflow.ellipsis)),
-      const SizedBox(width: 4),
-      const CampusIcon(CampusIcons.next),
-    ]);
+    // 行尾的短状态最多占行宽的四成：ListTile 给行尾的宽度不设上限，长了会把标题挤成一字一行（11-18 用户截图）。
+    Widget trailing(String text) => ConstrainedBox(
+      constraints: BoxConstraints(maxWidth: MediaQuery.sizeOf(context).width * .4),
+      child: Row(mainAxisSize: MainAxisSize.min, children: [
+        if (text.isNotEmpty) Flexible(child: Text(text, style: secondary, overflow: TextOverflow.ellipsis)),
+        const SizedBox(width: 4),
+        const CampusIcon(CampusIcons.next),
+      ]),
+    );
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
@@ -207,7 +211,9 @@ class _AcademicPageState extends State<AcademicPage> {
               contentPadding: rowPadding,
               leading: const CampusIcon(CampusIcons.history),
               title: const Text('同步记录'),
-              trailing: trailing(latest == null ? '' : syncRecordHeadline(latest)),
+              // 最近一次的概括可能很长（没同步完时带出错的原因），写在标题下面、最多两行，不放行尾。
+              subtitle: latest == null ? null : Text(syncRecordHeadline(latest), maxLines: 2, overflow: TextOverflow.ellipsis, style: secondary),
+              trailing: const CampusIcon(CampusIcons.next),
               onTap: () => _open('/academic/records'),
             ),
           ])),

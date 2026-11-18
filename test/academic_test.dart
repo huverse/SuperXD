@@ -13,6 +13,7 @@ import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/sync_record.dart';
 import 'package:superxd/app_services.dart';
 import 'package:superxd/app_shell.dart';
+import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/page/academic_page.dart';
 import 'package:superxd/page/campus_sync_dialogs.dart';
 import 'package:superxd/page/schedule_page.dart';
@@ -75,6 +76,30 @@ void main() {
     await tester.tap(find.text('课表'));
     await tester.pumpAndSettle();
     expect(find.byType(SchedulePage), findsOneWidget);
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+  });
+
+  // 11-18 用户截图：没同步完的概括很长，放在行尾时把「同步记录」挤成一字一行、压到图标上。
+  testWidgets('没同步完的长概括写在「同步记录」下面、最多两行，标题照常一行', (tester) async {
+    tester.view.physicalSize = const Size(1080, 2400);
+    tester.view.devicePixelRatio = 1080 / 391;
+    addTearDown(tester.view.reset);
+    final (accounts, session) = await _app(tester);
+    await accounts.inner.recordSync(SyncRecord(at: DateTime.now().toUtc(), trigger: SyncTrigger.manual, failures: const ['学期列表：教务返回的数据格式不对，请稍后再试或反馈']));
+    GoRouter.of(tester.element(find.byType(ShellPage))).go('/service');
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('学业'));
+    await tester.pumpAndSettle();
+    final title = find.text('同步记录');
+    expect(tester.getSize(title).height, lessThan(30), reason: '标题一行，不被挤成竖排');
+    final row = tester.widget<ListTile>(find.ancestor(of: title, matching: find.byType(ListTile)).first);
+    expect(row.subtitle, isA<Text>());
+    expect((row.subtitle! as Text).maxLines, 2);
+    final tile = find.ancestor(of: title, matching: find.byType(ListTile)).first;
+    final icon = find.descendant(of: tile, matching: find.byType(CampusIcon)).first;
+    expect(tester.getTopLeft(title).dx, greaterThan(tester.getTopRight(icon).dx), reason: '标题在图标右边，不压到图标上');
+    expect(tester.getBottomLeft(find.descendant(of: tile, matching: find.textContaining('学期列表')).first).dy, greaterThan(tester.getBottomLeft(title).dy), reason: '概括在标题下面');
     await tester.pumpWidget(const SizedBox());
     session.dispose();
   });
