@@ -167,6 +167,11 @@ class Festivals extends ChangeNotifier {
       campusLog('[Festival] action=draw occasion=${occasion.id} state=too_new eligibleAt=${eligibleAt.toIso8601String()}');
       return result;
     }
+    // 发完为止的这一批领完了：不记抽过，补货后下次打开再来（人工决策见服务端 reward_odds.ts 的 11-18 那条）。
+    if (result is FestivalSoldOut) {
+      campusLog('[Festival] action=draw occasion=${occasion.id} state=sold_out');
+      return result;
+    }
     final record = _memory.record;
     await _save(
       drawn: [...record.drawn, occasion.id],

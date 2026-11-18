@@ -516,9 +516,27 @@ describe('资格与发放', () => {
       const body = (await draw(device, key, { activeDays: 0 })).body as { result: string; sealed: string | null };
       results.push(body.result === 'won' ? prizeOf(device, key, body)!.content : body.result);
     }
-    expect(results).toEqual(['口令0', '口令1', '口令2', 'missed']);
+    expect(results).toEqual(['口令0', '口令1', '口令2', 'sold_out']);
     expect(roll).not.toHaveBeenCalled();
     expect(await runRewardAdmin(admin, ['status', key], lines(''))).toContain('发放 all');
+  });
+
+  // 人工决策见 src/modules/reward/reward_odds.ts 的 11-18 那条：发完为止的活动分批补货。
+  it('all 分批补货：这一批领完时来领的人回 sold_out、不记这次，状态 sold_out；补货后同一个人能领到，领过的照旧拿回自己那份', async () => {
+    const key = await create(['--distribution', 'all', '--min-account-days', '0'], 1);
+    const first = await registered(), late = await registered();
+    expect((await draw(first, key, { activeDays: 0 })).body).toMatchObject({ result: 'won' });
+    expect(await status(late, key)).toMatchObject({ state: 'sold_out' });
+    expect((await draw(late, key, { activeDays: 0 })).body).toEqual({ result: 'sold_out', sealed: null });
+    expect(await draws(key)).toBe(1);
+    await runRewardAdmin(admin, ['import', key], lines('口令\t补货0'));
+    expect(await status(late, key)).toMatchObject({ state: 'open' });
+    const body = (await draw(late, key, { activeDays: 0 })).body as { result: string; sealed: string | null };
+    expect(prizeOf(late, key, body)!.content).toBe('补货0');
+    expect(await status(first, key)).toMatchObject({ state: 'drawn' });
+    const again = (await draw(first, key, { activeDays: 0 })).body as { result: string; sealed: string | null };
+    expect(prizeOf(first, key, again)!.content).toBe('口令0');
+    expect(await draws(key)).toBe(2);
   });
 
   it('名单：按用户名导入（不分大小写、报出对不上的），名单里的人能领，名单外的是 ineligible 且不记这次；状态 open、ineligible、drawn、closed', async () => {

@@ -79,8 +79,13 @@ class FestivalIneligible extends FestivalDraw {
   const FestivalIneligible();
 }
 
-// 一个红包活动此刻能不能领（信里的「领取」先问）：能领、领过、不在进行、没资格、账号天数不够（eligibleAt 起能领）。
-enum RewardState { open, drawn, closed, ineligible, tooNew }
+// 发完为止的活动这一批领完了（人工决策见 server/src/modules/reward/reward_odds.ts 的 11-18 那条）：不算领过，补货后还能领。
+class FestivalSoldOut extends FestivalDraw {
+  const FestivalSoldOut();
+}
+
+// 一个红包活动此刻能不能领（信里的「领取」先问）：能领、领过、不在进行、没资格、账号天数不够（eligibleAt 起能领）、这一批领完了。
+enum RewardState { open, drawn, closed, ineligible, tooNew, soldOut }
 
 class RewardStatus {
   const RewardStatus(this.state, {this.endsAt, this.eligibleAt});

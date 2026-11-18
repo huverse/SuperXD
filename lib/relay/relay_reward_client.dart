@@ -65,7 +65,7 @@ class RelayRewardClient implements FestivalRewardClient {
   }
 }
 
-// 活动状态是外部输入（GET /v1/rewards/<活动>，11-16 起）：state 只认那五个，时刻逐项校验。
+// 活动状态是外部输入（GET /v1/rewards/<活动>，11-16 起；sold_out 11-18 起）：state 只认这六个，时刻逐项校验。
 RewardStatus parseRewardStatus(Object? json) {
   if (json case {'state': final String state, 'endsAt': final Object? endsAt, 'eligibleAt': final Object? eligibleAt}) {
     final parsed = switch (state) {
@@ -74,6 +74,7 @@ RewardStatus parseRewardStatus(Object? json) {
       'closed' => RewardState.closed,
       'ineligible' => RewardState.ineligible,
       'too_new' => RewardState.tooNew,
+      'sold_out' => RewardState.soldOut,
       _ => throw const FormatException('活动状态不认识'),
     };
     final ends = switch (endsAt) {
@@ -97,6 +98,7 @@ FestivalDraw parseFestivalDraw(Object? json, {required String occasion, required
   ({'result': 'closed'}, _) => const FestivalClosed(),
   ({'result': 'missed'}, _) => const FestivalMissed(),
   ({'result': 'ineligible'}, _) => const FestivalIneligible(),
+  ({'result': 'sold_out'}, _) => const FestivalSoldOut(),
   ({'result': 'won'}, {'kind': final String kind, 'content': final String content, 'note': final String note})
       when (kind == 'password' || kind == 'qrcode') && content.trim().isNotEmpty && content.length <= 1024 && note.length <= 200 =>
     FestivalWon(FestivalPrize(occasion: occasion, kind: kind == 'password' ? FestivalPrizeKind.password : FestivalPrizeKind.qrCode, content: content.trim(), note: note.trim(), wonAt: now)),

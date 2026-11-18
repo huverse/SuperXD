@@ -260,6 +260,20 @@ void main() {
       expect(await subject.draw(lantern), isNull);
     });
 
+    test('发完为止的这一批领完了：不记抽过，补货后回到前台补抽能领到', () async {
+      final memory = FileFestivalMemory.memory();
+      FestivalDraw next = const FestivalSoldOut();
+      final client = FakeRewardClient((occasion) => next);
+      final subject = festivals(client: client, memory: memory);
+      expect(await subject.draw(spring), isA<FestivalSoldOut>());
+      expect(memory.record.drawn, isEmpty);
+      next = FestivalWon(prize('spring-2027'));
+      await subject.markPlayed(spring);
+      await subject.refresh();
+      expect(client.requests, hasLength(2));
+      expect(memory.record.drawn, ['spring-2027']);
+    });
+
     test('没登录应用账号：不抽、不记、提示可以去登录；登录后回到前台补抽，抽过就不再提示', () async {
       final memory = FileFestivalMemory.memory();
       final client = FakeRewardClient((occasion) => const FestivalMissed());
@@ -484,6 +498,10 @@ void main() {
         await expectLater(client.status(_account, 'c-1'), throwsA(isA<FestivalException>()), reason: '$bad');
       }
       expect(parseFestivalDraw({'result': 'ineligible', 'sealed': null}, occasion: 'c-1', now: noon), isA<FestivalIneligible>());
+      // 发完为止的这一批领完了（人工决策见服务端 reward_odds.ts 的 11-18 那条）。
+      transport.status = {'state': 'sold_out', 'endsAt': '2027-02-10T00:00:00.000Z', 'eligibleAt': null};
+      expect((await client.status(_account, 'c-1')).state, RewardState.soldOut);
+      expect(parseFestivalDraw({'result': 'sold_out', 'sealed': null}, occasion: 'c-1', now: noon), isA<FestivalSoldOut>());
     });
 
     group('附件', () {
@@ -515,6 +533,7 @@ void main() {
           (const RewardStatus(RewardState.ineligible), null),
           (RewardStatus(RewardState.tooNew, eligibleAt: DateTime.utc(2027, 2, 9)), '起能领'),
           (const RewardStatus(RewardState.closed), '红包已结束'),
+          (const RewardStatus(RewardState.soldOut), '这一批领完了，下一批再来'),
           (RewardStatus(RewardState.drawn, endsAt: endsAt), '查看结果'),
         ]) {
           final other = FakeRewardClient((_) => const FestivalMissed())..statusOf = (_) => status;

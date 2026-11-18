@@ -5,7 +5,8 @@ import { EntityManager, Repository } from 'typeorm';
 import { RewardCampaignEntity, RewardDrawEntity, RewardPrizeEntity } from 'src/modules/reward/reward.entity';
 import { rewardPickTier, rewardReleased } from 'src/modules/reward/reward_odds';
 
-export type RewardDrawOutcome = { prize: Pick<RewardPrizeEntity, 'kind' | 'content' | 'note'> | null };
+// soldOut：发完为止（all）的活动这一批发完了，这次没记（补货后还能来领，人工决策见 reward_odds.ts 的 11-18 那条）。
+export type RewardDrawOutcome = { prize: Pick<RewardPrizeEntity, 'kind' | 'content' | 'note'> | null; soldOut?: true };
 
 export type RewardDrawInput = {
   campaign: RewardCampaignEntity;
@@ -27,6 +28,8 @@ export abstract class RewardRepository {
   abstract findDraw(campaignId: string, participantHash: string): Promise<RewardDrawOutcome | null>;
   // 记一次抽签并按需发奖，同一事务；同一台设备并发来两次只记一次，后到的拿先到的结果。
   abstract draw(input: RewardDrawInput): Promise<RewardDrawOutcome>;
+  // 还没发出去的奖品份数（发完为止的活动查状态用；走 (campaign_id, tier, draw_id) 索引，行数是这次活动的奖品数）。
+  abstract unclaimed(campaignId: string): Promise<number>;
   // 这个账号在不在这次活动的名单里（走 uk_campaign_account）。
   abstract inAudience(campaignId: string, accountId: string): Promise<boolean>;
   // 删这些账号在名单里的行（调用方事务内）：注销账号。
@@ -77,19 +80,31 @@ export class TypeormRewardRepository extends RewardRepository {
       const available = counts.map((row) => ({ tier: Number(row.tier), count: Math.max(0, released(Number(row.stock)) - Number(row.given)) }));
       const open = available.filter((item) => item.count > 0);
       const tier = open.length > 1 ? rewardPickTier(open, input.levelWeight, input.tierRoll()) : (open[0]?.tier ?? null);
-      if (tier === null) return { prize: null };
+      if (tier === null) return this.empty(manager, campaign.distribution, inserted.insertId);
       const [prize] = (await manager.query('SELECT id, kind, content, note FROM reward_prize WHERE campaign_id = ? AND tier = ? AND draw_id IS NULL ORDER BY id LIMIT 1 FOR UPDATE', [campaign.id, tier])) as {
         id: string;
         kind: string;
         content: string;
         note: string;
       }[];
-      if (prize === undefined) return { prize: null };
+      if (prize === undefined) return this.empty(manager, campaign.distribution, inserted.insertId);
       const drawId = String(inserted.insertId);
       await manager.query('UPDATE reward_prize SET draw_id = ?, update_time = ? WHERE id = ?', [drawId, now, prize.id]);
       await manager.query('UPDATE reward_draw SET prize_id = ?, update_time = ? WHERE id = ?', [prize.id, now, drawId]);
       return { prize: { kind: prize.kind, content: prize.content, note: prize.note } };
     });
+  }
+
+  // 没有可发的了：抽签（lottery）照旧记成没抽中；发完为止（all）撤掉这次的记录、报这一批领完了，补货后同一个人还能来领。
+  private async empty(manager: EntityManager, distribution: string, drawId: number | string): Promise<RewardDrawOutcome> {
+    if (distribution !== 'all') return { prize: null };
+    await manager.query('DELETE FROM reward_draw WHERE id = ?', [drawId]);
+    return { prize: null, soldOut: true };
+  }
+
+  async unclaimed(campaignId: string) {
+    const [row] = (await this.campaigns.query('SELECT COUNT(*) AS count FROM reward_prize WHERE campaign_id = ? AND draw_id IS NULL', [campaignId])) as { count: string }[];
+    return Number(row.count);
   }
 
   async inAudience(campaignId: string, accountId: string) {

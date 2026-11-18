@@ -16,8 +16,8 @@ export class RewardDrawBodyDto {
 }
 
 export class RewardDrawDto {
-  @ApiProperty({ description: 'won 抽中，missed 没抽中，closed 活动不存在或不在进行中，ineligible 没资格（不在名单或等级不够，不记这次）', enum: ['won', 'missed', 'closed', 'ineligible'] })
-  result: 'won' | 'missed' | 'closed' | 'ineligible';
+  @ApiProperty({ description: 'won 抽中，missed 没抽中，closed 活动不存在或不在进行中，ineligible 没资格（不在名单或等级不够，不记这次），sold_out 发完为止的活动这一批领完了（不记这次，补货后还能领）', enum: ['won', 'missed', 'closed', 'ineligible', 'sold_out'] })
+  result: 'won' | 'missed' | 'closed' | 'ineligible' | 'sold_out';
   @ApiProperty({ description: '抽中时的奖品 {kind（password 支付宝口令、qrcode 二维码内容）, content, note}，用抽签设备的 box 公钥封装、请求带 seal: 2 时另接服务器签名（见 reward_seal.ts），base64url', nullable: true }) sealed: string | null;
 }
 
@@ -28,8 +28,8 @@ export class RewardStatusQueryDto {
 
 // 查一个活动能不能领（信里的「领取」按钮先问；人工决策见 reward_odds.ts 的 11-16 那条）。
 export class RewardStatusDto {
-  @ApiProperty({ description: 'open 能领，drawn 领过，closed 不在进行，ineligible 没资格，too_new 账号天数不够', enum: ['open', 'drawn', 'closed', 'ineligible', 'too_new'] })
-  state: 'open' | 'drawn' | 'closed' | 'ineligible' | 'too_new';
+  @ApiProperty({ description: 'open 能领，drawn 领过，closed 不在进行，ineligible 没资格，too_new 账号天数不够，sold_out 发完为止的活动这一批领完了', enum: ['open', 'drawn', 'closed', 'ineligible', 'too_new', 'sold_out'] })
+  state: 'open' | 'drawn' | 'closed' | 'ineligible' | 'too_new' | 'sold_out';
   @ApiProperty({ description: '活动结束时刻（ISO 8601，UTC）；活动不存在为空', type: String, nullable: true }) endsAt: string | null;
   @ApiProperty({ description: 'too_new 时可以领的时刻，毫秒', type: Number, nullable: true }) eligibleAt: number | null;
 }
