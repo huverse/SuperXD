@@ -8,6 +8,8 @@ name: Relay health
 # [人工决策-2026-11-17 21:24:25] 改探就绪探测 /v1/health/ready（用户同意审查建议 P1-4，人工决策见 server/src/common/error_monitor.ts）：
 # 数据库或 Redis 用不了（503）同样隔 30 秒试 3 次；就绪但最近一小时有错误告警（alerts 非零）也让工作流失败、发邮件，不重试，明细在服务器日志的 [Alert] 行。
 # 线上还没部署就绪探测（404）时退回只看 /v1/health，并留一条警告。其余同上一条。
+# [人工决策-2026-11-18 18:10:39] 中转改用 Let's Encrypt 公网 IP 证书的 HTTPS（证书 160 小时，服务器每天检查、剩 3 天续，人工决策见 server/docker-compose.yml 的 tls）：
+# RELAY_URL 是 https 时另查证书，剩不到 3 天（续期没成功）就让工作流失败、发邮件，留三天处理；连不上同样隔 30 秒试 3 次。
 on:
   schedule:
     - cron: '13,43 * * * *'
@@ -78,3 +80,28 @@ jobs:
           done
           echo "::error::中转就绪检查连续 3 次失败（最后一次 $outcome $detail）"
           exit 1
+      - name: 证书到期
+        env:
+          RELAY_URL: ${{ secrets.RELAY_URL }}
+        run: |
+          set -euo pipefail
+          case "$RELAY_URL" in https://*) ;; *) echo "not https, skip"; exit 0 ;; esac
+          address=${RELAY_URL#https://}; address=${address%%/*}
+          case "$address" in *:*) ;; *) address="$address:443" ;; esac
+          host=${address%:*}
+          echo "::add-mask::$host"
+          for attempt in 1 2 3; do
+            if echo | timeout 20 openssl s_client -connect "$address" 2> /dev/null | openssl x509 -noout -enddate > cert.txt 2> /dev/null; then
+              break
+            fi
+            [ "$attempt" = 3 ] && { echo "::error::证书读不到（连不上 TLS 端口）"; exit 1; }
+            sleep 30
+          done
+          end=$(sed 's/^notAfter=//' cert.txt)
+          left=$(( ($(date -d "$end" +%s) - $(date +%s)) / 3600 ))
+          echo "certificate notAfter=$end hours_left=$left"
+          if [ "$left" -lt 72 ]; then
+            echo "::error::中转证书剩 ${left} 小时就到期：续期可能失败了，看服务器 /var/log/superxd-relay-tls.log 与 scripts/tls_cert.sh status"
+            exit 1
+          fi
+
