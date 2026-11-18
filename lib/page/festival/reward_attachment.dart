@@ -136,6 +136,7 @@ class _RewardAttachmentState extends State<RewardAttachment> {
       (FestivalMissed(), _) => _line('没有抽中'),
       (FestivalIneligible(), _) || (_, RewardStatus(state: RewardState.ineligible)) => const SizedBox.shrink(),
       (FestivalClosed(), _) || (_, RewardStatus(state: RewardState.closed)) => _line('红包已结束'),
+      (FestivalSoldOut(), _) || (_, RewardStatus(state: RewardState.soldOut)) => _line('这一批领完了，下一批再来'),
       (FestivalTooNew(:final eligibleAt), _) || (_, RewardStatus(state: RewardState.tooNew, eligibleAt: final DateTime eligibleAt)) => _line('应用账号${formatCampusRelative(eligibleAt.toIso8601String())}起能领'),
       (_, RewardStatus(state: RewardState.drawn)) => _button('查看结果', () => unawaited(_claim())),
       (_, RewardStatus(state: RewardState.open)) => _button('领取红包', () => unawaited(_claim())),

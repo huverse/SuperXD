@@ -53,7 +53,7 @@ export class RewardService implements OnModuleInit {
   }
 
   // 信里的「领取」先问这一项：open 能领、drawn 领过（再点就是 draw 取回同一结果）、closed 不在进行、ineligible 没资格（按钮不显示）、
-  // too_new 账号天数不够（附 eligibleAt）。只读、不记这次。
+  // too_new 账号天数不够（附 eligibleAt）、sold_out 发完为止的活动这一批领完了（补货后又是 open）。只读、不记这次。
   async status(deviceId: string, campaignKey: string, levels: boolean): Promise<dtos.RewardStatusDto> {
     const retryAfter = await this.limiter.hit('reward_status', deviceId, rewardStatusPerDevicePerHour, 3600);
     if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '查询过于频繁', { retryAfter });
@@ -65,7 +65,9 @@ export class RewardService implements OnModuleInit {
     const endsAt = campaign.endsAt.toISOString();
     if ((await this.repository.findDraw(campaign.id, participantOf(accountId))) !== null) return { state: 'drawn', endsAt, eligibleAt: null };
     const gate = await this.gate(campaign, accountId, deviceId, levels, now);
-    return gate === null ? { state: 'open', endsAt, eligibleAt: null } : { state: gate.state, endsAt, eligibleAt: gate.eligibleAt };
+    if (gate !== null) return { state: gate.state, endsAt, eligibleAt: gate.eligibleAt };
+    if (campaign.distribution === 'all' && (await this.repository.unclaimed(campaign.id)) === 0) return { state: 'sold_out', endsAt, eligibleAt: null };
+    return { state: 'open', endsAt, eligibleAt: null };
   }
 
   // 资格（人工决策见 reward_odds.ts 的 11-16 那条）：名单、最低等级、账号满几天；都过返回 null。levels 为假（娱乐与积分关着）按 Lv0。
@@ -116,7 +118,8 @@ export class RewardService implements OnModuleInit {
       tierRoll: () => this.dice.roll(),
       now,
     });
-    this.logger.log(`[Reward] action=draw campaign=${campaignKey} distribution=${campaign.distribution} mode=${mode} activeDays=${body.activeDays} level=${level} chance=${chance.toFixed(4)} lucky=${lucky} won=${outcome.prize !== null}`);
+    this.logger.log(`[Reward] action=draw campaign=${campaignKey} distribution=${campaign.distribution} mode=${mode} activeDays=${body.activeDays} level=${level} chance=${chance.toFixed(4)} lucky=${lucky} won=${outcome.prize !== null}${outcome.soldOut ? ' soldOut=true' : ''}`);
+    if (outcome.soldOut) return { result: 'sold_out', sealed: null };
     return this.present(outcome.prize, campaignKey, deviceId, body.seal === 2);
   }
 
