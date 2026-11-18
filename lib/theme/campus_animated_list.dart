@@ -116,3 +116,102 @@ class _CampusAppearState extends State<CampusAppear> with SingleTickerProviderSt
   @override
   Widget build(BuildContext context) => _transition(_controller, widget.child);
 }
+
+// 按需建的长列表的增删过渡（11-18 性能审查 P2-4：好友列表最多 500 行，一次建满、收一条信就整列重建）：同 CampusAnimatedColumn 按 key 比对，
+// 新的展开淡入、去掉的原地收起后再移除，第一次显示不动画、减少动画时直接换；只是条目按需建（SliverList.builder），只有正在进出的条目才有动画控制器。
+// 去掉的条目收起时用它最后的数据再画一遍（itemBuilder 拿到的是旧的那一项）。index 与 count 含正在收起的条目，给卡片的首尾行用。
+class CampusAnimatedSliverList<T> extends StatefulWidget {
+  const CampusAnimatedSliverList({super.key, required this.items, required this.keyOf, required this.itemBuilder});
+  final List<T> items;
+  final Key Function(T item) keyOf;
+  final Widget Function(BuildContext context, T item, int index, int count) itemBuilder;
+
+  @override
+  State<CampusAnimatedSliverList<T>> createState() => _CampusAnimatedSliverListState<T>();
+}
+
+class _SliverEntry<T> {
+  _SliverEntry(this.item, this.key);
+  T item;
+  final Key key;
+  // 只在展开或收起时才有；停稳的条目没有控制器（画成满的）。
+  AnimationController? controller;
+  bool leaving = false;
+}
+
+const _settled = AlwaysStoppedAnimation<double>(1);
+
+class _CampusAnimatedSliverListState<T> extends State<CampusAnimatedSliverList<T>> with TickerProviderStateMixin {
+  late List<_SliverEntry<T>> _entries = [for (final item in widget.items) _SliverEntry(item, widget.keyOf(item))];
+
+  void _settle(_SliverEntry<T> entry, AnimationController controller) {
+    if (!identical(entry.controller, controller) || entry.leaving) return;
+    entry.controller = null;
+    controller.dispose();
+  }
+
+  @override
+  void didUpdateWidget(CampusAnimatedSliverList<T> oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final instant = MediaQuery.disableAnimationsOf(context);
+    final old = {for (final entry in _entries) entry.key: entry};
+    final next = <_SliverEntry<T>>[];
+    for (final item in widget.items) {
+      final key = widget.keyOf(item);
+      final existing = old.remove(key);
+      final entry = existing ?? _SliverEntry(item, key);
+      entry.item = item;
+      final returning = entry.leaving;
+      entry.leaving = false;
+      if (!instant && (returning || existing == null)) {
+        final controller = entry.controller ??= AnimationController(vsync: this, duration: campusListDuration, value: 0);
+        controller.forward().whenCompleteOrCancel(() => _settle(entry, controller));
+      }
+      next.add(entry);
+    }
+    // 去掉的条目插回它原来前一个还在的条目后面，收起后再移除。
+    final placed = Set<_SliverEntry<T>>.identity()..addAll(next);
+    for (final (index, entry) in _entries.indexed) {
+      if (!old.containsKey(entry.key)) continue;
+      if (instant) {
+        entry.controller?.dispose();
+        continue;
+      }
+      final before = _entries.take(index).lastWhere(placed.contains, orElse: () => entry);
+      next.insert(identical(before, entry) ? 0 : next.indexOf(before) + 1, entry);
+      placed.add(entry);
+      if (!entry.leaving) {
+        entry.leaving = true;
+        final controller = entry.controller ??= AnimationController(vsync: this, duration: campusListDuration, value: 1);
+        controller.reverse().whenComplete(() {
+          if (!mounted || !entry.leaving) return;
+          setState(() => _entries.remove(entry));
+          entry.controller = null;
+          controller.dispose();
+        });
+      }
+    }
+    _entries = next;
+  }
+
+  @override
+  void dispose() {
+    for (final entry in _entries) {
+      entry.controller?.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final indexOf = {for (final (index, entry) in _entries.indexed) entry.key: index};
+    return SliverList.builder(
+      itemCount: _entries.length,
+      findChildIndexCallback: (key) => indexOf[key],
+      itemBuilder: (context, index) {
+        final entry = _entries[index];
+        return KeyedSubtree(key: entry.key, child: _transition(entry.controller ?? _settled, IgnorePointer(ignoring: entry.leaving, child: widget.itemBuilder(context, entry.item, index, _entries.length))));
+      },
+    );
+  }
+}
