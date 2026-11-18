@@ -146,6 +146,18 @@ flutter {
     source = "../.."
 }
 
+// 依赖随包登记、应用用不到的 Flutter 资源，拷进安装包时排除（11-18 性能审查 P2-1、P2-5，按审查建议做）：
+// - lucide_icons_flutter 在自己的 pubspec 里登记了六个可变字重字体族 Lucide100–Lucide600（原始约 2.9MB、压缩后约 1.3MB），应用只用 Lucide 一族
+//   （lib/theme/campus_icons.dart）；Flutter 的图标裁剪只裁有引用的族，没引用的原样打包。FontManifest 里还登记着，但字体只在用到那一族时才读，
+//   应用不引用带字重后缀的图标（test/code_conventions_test.dart 守护）。
+// - forge2d 给网页版带的 box2d.wasm：安卓走原生的 libbox2d.so，不读它。
+// iOS 包照旧带着（Xcode 没有对应的过滤，iOS 包不走应用内更新下载）。
+tasks.withType<Copy>().configureEach {
+    if (name.startsWith("copyFlutterAssets")) {
+        exclude("**/packages/lucide_icons_flutter/assets/build_font/**", "**/packages/forge2d/lib/src/backend/wasm/**")
+    }
+}
+
 dependencies {
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     // 学习通签到的设备码按 OAID 算（与官方客户端一致）；它自带的存储、电话状态等权限在清单里移除。

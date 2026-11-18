@@ -136,8 +136,8 @@ class _AboutPageState extends State<AboutPage> {
               final info = snapshot.data;
               return Column(children: [
                 // [人工决策-2026-10-19 18:51:59] 名称上方放应用图标（用户从只有名称、应用图标、XD 字标三种实物中选定，同 iOS、鸿蒙的关于页）。
-                // 图是测试期临时图标，用途写在开源许可第五节；正式版换原创图标时 assets/app_icon.png 与启动图标一起换。
-                ClipRRect(borderRadius: BorderRadius.circular(20), child: Image.asset('assets/app_icon.png', width: 80, height: 80, semanticLabel: '应用图标')),
+                // 图是测试期临时图标，用途写在开源许可第五节；正式版换原创图标时 assets/app_icon.webp 与启动图标一起换（11-18 起两者都是无损 WebP，像素同原 PNG）。
+                ClipRRect(borderRadius: BorderRadius.circular(20), child: Image.asset('assets/app_icon.webp', width: 80, height: 80, semanticLabel: '应用图标')),
                 const SizedBox(height: 16),
                 Text(info?.appName ?? 'SuperXD', style: Theme.of(context).textTheme.headlineMedium),
                 const SizedBox(height: 8),

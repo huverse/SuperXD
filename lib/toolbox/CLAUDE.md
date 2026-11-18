@@ -12,6 +12,7 @@
   - toolbox_models.dart：公共模型与接口：ToolboxException、ToolboxCancellation、ToolboxResource、ToolboxDownloadRequest、ToolboxDownload 及其状态机（origin 是发起工具的附加信息，下载管理原样存取），接口 ToolboxTransfer、ToolboxFilePublisher、ToolboxService（close 与 clearData）。
   - toolbox_store.dart：toolbox.db：downloads（下载记录）、consent（按来源与版本记录同意，清除工具数据时按工具 id 撤销）、resources（已装的按需资源）。旧版本的 toolbox_preferences、parse_history 属于短视频，由短视频库打开时搬走后删表。
   - toolbox_resource_manager.dart：重型按需资源的安装、校验（版本、sha256、字节数）与卸载；每个工具只留当前版本，卸载只删本工具的资源、不删用户已导出的文件。
+  - toolbox_image.dart：小网络图 ToolboxRemoteImage（学习通头像与课程封面）：经共用内核 CampusHttp 取字节（整次 15 秒、上限 2MB、请求记录带模块名），逐跳只认公网 https、最多跳 5 次，按铺满边长 side 物理像素的方块解码（不按原图），取失败的从图片缓存拿掉、不自动重试；lib 里不许用 Flutter 自带的 Image.network、NetworkImage（test/project_structure_test.dart 守护）。
   - toolbox_url.dart：toolboxPublicUrl 只接受公开的 http 或 https 地址（拒绝本机、内网、带凭据或非标准端口，长度上限 8192）；shortVideoInput 从分享文案中提取唯一的作品链接。
 - download 下载：
   - toolbox_download_manager.dart：通用下载管理 ToolboxDownloadManager，不认识任何工具的数据（[人工决策] 在 enqueue）。按工具 id 与 identity 加每项 id 去重；负责入队、暂停、继续、取消、校验、导出与清理，clearTool 清除一个工具的下载数据（已导出的文件不动）。每组 1–100 项、待处理任务组最多 10 个、同时传输最多 2 个。
@@ -58,7 +59,7 @@
 - background_transfer_test.dart：安卓后台传输的插件状态换算、失败原因日志、进度与交给插件的任务参数（插件本身与原生下载只有设备实测）。
 - http_transfer_test.dart：iOS 传输（整段下载、跳转只认 https、失败状态、Range 续传、中途断开、不能续传不给暂停、接在下载管理上走完导出）。
 - toolbox_media_features_test.dart：短视频库迁移、旧下载记录兼容、按工具清空下载、清除数据、分享卡片按注册表打开。
-- short_video_parser_test.dart、media_image_test.dart；支撑在 toolbox_test_support.dart。
+- short_video_parser_test.dart、media_image_test.dart、toolbox_image_test.dart（小网络图按显示大小解码、只认公网 https、上限与时限、失败不留缓存）；支撑在 toolbox_test_support.dart。
 - 手动入口：tool/verify_toolbox.dart（Android 原生下载与导出）。
 
 # 人工决策检索

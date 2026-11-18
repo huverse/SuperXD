@@ -152,6 +152,18 @@ void main() {
     expect(gaps, lessThanOrEqualTo(gapLiterals), reason: '新写的 SizedBox 间距用 CampusGap（lib/theme/campus_tokens.dart）');
   });
 
+  // 11-18 性能审查 P2-1：安卓包排除了 lucide_icons_flutter 的六个可变字重字体（android/app/build.gradle.kts 的 copyFlutterAssets），
+  // 所以 lib 里只许用 Lucide 一族；用了带字重后缀的图标（如 LucideIcons.check300）在安卓上会画成空白。
+  test('只用 Lucide 一族的图标：安卓包里没有可变字重字体', () {
+    final weighted = RegExp(r'\bLucideIcons\.\w+?[1-6]00(Dir)?\b');
+    final offenders = [
+      for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart')))
+        for (final match in weighted.allMatches(file.readAsStringSync())) '${file.path}：${match.group(0)}',
+    ];
+    expect(offenders, isEmpty);
+    expect(File('android/app/build.gradle.kts').readAsStringSync(), contains('**/packages/lucide_icons_flutter/assets/build_font/**'), reason: '排除写在构建脚本里，这条测试才成立');
+  });
+
   test('IconButton都带tooltip', () {
     final offenders = <String>[];
     final files = Directory('lib')

@@ -123,7 +123,7 @@ flutter:
     - assets/fonts/LICENSE.txt
     - assets/fonts/noto_serif_sc_license.txt
     - assets/third_party_notices.txt
-    - assets/app_icon.png
+    - assets/app_icon.webp
     - assets/font_previews/
     - assets/paintings/
     - assets/chaoxing_map/

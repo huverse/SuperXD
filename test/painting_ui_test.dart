@@ -40,6 +40,35 @@ class _ProbeState extends State<_Probe> {
   Widget build(BuildContext context) => const MaterialApp(home: Scaffold(body: Text('应用')));
 }
 
+// 下面的应用里一直在走的动画：数它走了几拍。
+class _Ticking extends StatefulWidget {
+  const _Ticking({required this.onTick});
+  final VoidCallback onTick;
+  @override
+  State<_Ticking> createState() => _TickingState();
+}
+
+class _TickingState extends State<_Ticking> with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(vsync: this, duration: const Duration(seconds: 1))
+      ..addListener(widget.onTick)
+      ..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => const MaterialApp(home: Scaffold(body: Text('应用')));
+}
+
 void main() {
   Widget splash(Future<void> ready, GlobalKey appKey) => PaintingSplash(
     painting: _painting,
@@ -58,18 +87,52 @@ void main() {
     _Probe.created = 0;
     await tester.pumpWidget(splash(ready.future, GlobalKey()));
     expect(signature, findsOneWidget);
-    expect(find.text('应用'), findsOneWidget, reason: '应用在下面照常启动');
+    expect(find.text('应用', skipOffstage: false), findsOneWidget, reason: '应用在下面照常启动');
     await tester.pump(const Duration(milliseconds: 200));
     ready.complete();
     await tester.pump(const Duration(milliseconds: 1700));
     expect(leaving(tester), isFalse, reason: '还没写完再停一会儿（2 秒）');
     await tester.pump(const Duration(milliseconds: 200));
+    // 到点的这一帧先把下面的应用放出来画一帧，下一帧才开始溶解。
+    await tester.pump();
     expect(leaving(tester), isTrue);
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
     expect(signature, findsNothing);
     expect(find.text('应用'), findsOneWidget);
     expect(_Probe.created, 1);
+  });
+
+  // [人工决策-2026-11-17 21:24:25] 见 PaintingSplash 类上：开屏不透明时下面的应用照常构建，但不画、不接手势、动画不走；
+  // 要溶解时先放出来画一帧（开屏仍不透明、仍接手势），下一帧才开始溶解。
+  testWidgets('开屏不透明时下面的应用不画、动画不走；要溶解时先放出来画一帧，下一帧才开始溶解', (tester) async {
+    var ticks = 0;
+    await tester.pumpWidget(PaintingSplash(painting: _painting, image: MemoryImage(_png), ready: Future<void>.value(), shown: Future<void>.value(), child: _Ticking(onTick: () => ticks++)));
+    final app = find.text('应用', skipOffstage: false);
+    bool painted() => find.text('应用').evaluate().isNotEmpty;
+    bool animating() => TickerMode.valuesOf(tester.element(app)).enabled;
+    double opacity() => tester.widget<Opacity>(find.ancestor(of: signature, matching: find.byType(Opacity)).first).opacity;
+    expect(app, findsOneWidget, reason: '下面的应用照常构建');
+    expect(painted(), isFalse, reason: '开屏不透明时不画');
+    expect(animating(), isFalse);
+    await tester.pump(const Duration(seconds: 1));
+    expect(ticks, 0, reason: '开屏不透明时下面的动画不走');
+    await tester.tap(signature);
+    await tester.pump();
+    expect(painted(), isTrue, reason: '先放出来画一帧');
+    expect(animating(), isTrue);
+    expect(leaving(tester), isFalse, reason: '这一帧开屏还不透明、还接手势');
+    expect(opacity(), 1);
+    await tester.pump();
+    expect(leaving(tester), isTrue, reason: '下一帧才开始溶解');
+    await tester.pump(const Duration(milliseconds: 260));
+    expect(opacity(), inExclusiveRange(0, 1));
+    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump();
+    expect(signature, findsNothing);
+    expect(painted(), isTrue);
+    expect(ticks, greaterThan(0));
+    await tester.pump(PaintingSplash.longest);
   });
 
   testWidgets('开屏只写应用名：一笔写出，起笔前不画、途中画到一半、写完是整个签名；画名与说明不在开屏上', (tester) async {
@@ -93,8 +156,9 @@ void main() {
         recorder.endRecording().dispose();
       }
     }
-    // 一直没恢复好：到最长时间照常溶解，等溶解走完再结束。
+    // 一直没恢复好：到最长时间照常溶解（先放出来一帧），等溶解走完再结束。
     await tester.pump(PaintingSplash.longest);
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
   });
 
@@ -107,6 +171,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 300));
     expect(leaving(tester), isFalse, reason: '恢复好了还要等页面转场走完');
     await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
     expect(signature, findsNothing);
@@ -115,6 +180,7 @@ void main() {
     await tester.pumpWidget(splash(Completer<void>().future, GlobalKey()));
     await tester.pump(const Duration(milliseconds: 100));
     await tester.tap(signature);
+    await tester.pump();
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
@@ -135,6 +201,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1900));
     expect(leaving(tester), isFalse, reason: '上屏后还没写完再停一会儿');
     await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump();
     expect(leaving(tester), isTrue);
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
@@ -147,6 +214,7 @@ void main() {
     await tester.pump(PaintingSplash.longest - const Duration(milliseconds: 100));
     expect(leaving(tester), isFalse);
     await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 600));
     await tester.pump();
     expect(signature, findsNothing);
@@ -160,6 +228,7 @@ void main() {
     expect(find.descendant(of: find.byType(PaintingSplash), matching: find.byWidgetPredicate((widget) => widget is Transform && widget.transform.getMaxScaleOnAxis() != 1)), findsNothing);
     await tester.tap(signature);
     await tester.pump();
+    await tester.pump();
     await tester.pump(const Duration(milliseconds: 300));
     await tester.pump();
     expect(signature, findsNothing);
@@ -170,6 +239,7 @@ void main() {
     await tester.pump(const Duration(milliseconds: 1100));
     expect(leaving(tester), isFalse);
     await tester.pump(const Duration(milliseconds: 200));
+    await tester.pump();
     expect(leaving(tester), isTrue);
     await tester.pump(PaintingSplash.longest);
   });

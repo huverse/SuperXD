@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/theme/campus_animated_list.dart';
 import 'package:superxd/theme/campus_prose.dart';
+import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_anchor.dart';
@@ -44,6 +45,44 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('乙'), findsNothing);
     expect(tester.getSize(find.byType(CampusAnimatedColumn)).height, 80);
+  });
+
+  // 11-18 性能审查 P2-4：好友列表按需建，增删过渡照 campus_animated_list.dart 的人工决策保留。
+  testWidgets('按需建的列表：只建看得见的几行；第一次不动画，新条目展开，去掉的条目原地收起后才移除；首尾行裁成卡片圆角', (tester) async {
+    var built = 0;
+    Widget list(List<String> items) => MaterialApp(home: Scaffold(body: SizedBox(height: 400, child: CustomScrollView(slivers: [
+      CampusSliverCard(sliver: CampusAnimatedSliverList<String>(
+        items: items,
+        keyOf: ValueKey.new,
+        itemBuilder: (context, item, index, count) {
+          built++;
+          return CampusCardRow(first: index == 0, last: index == count - 1, child: SizedBox(height: 40, child: Text(item)));
+        },
+      )),
+    ]))));
+    final many = [for (var index = 0; index < 500; index++) '第$index'];
+    await tester.pumpWidget(list(many));
+    expect(built, lessThan(30), reason: '500 行只建看得见的');
+    expect(find.text('第0'), findsOneWidget);
+    expect(find.text('第499'), findsNothing);
+    // 行自己那层裁剪（透明 Material 里另有一层不裁剪的 ShapeBorderClipper）。
+    Clip clipOf(String label) => tester.widget<ClipPath>(find.ancestor(of: find.text(label), matching: find.byWidgetPredicate((widget) => widget is ClipPath && widget.clipper is! ShapeBorderClipper)).first).clipBehavior;
+    expect(clipOf('第0'), Clip.antiAlias);
+    expect(clipOf('第1'), Clip.none, reason: '中间的行不裁');
+    double top(String label) => tester.getTopLeft(find.text(label)).dy;
+    final second = top('第1');
+    await tester.pumpWidget(list(['新', ...many]));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(top('第1'), inExclusiveRange(second, second + 40), reason: '新条目展开途中，下面的往下让');
+    await tester.pumpAndSettle();
+    expect(top('第1'), second + 40);
+    await tester.pumpWidget(list(many.where((item) => item != '第1').toList()));
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(find.text('第1'), findsOneWidget, reason: '收起途中还在原位');
+    expect(top('第1'), lessThan(top('第2')));
+    await tester.pumpAndSettle();
+    expect(find.text('第1'), findsNothing);
+    expect(top('第2'), second, reason: '「新」也去掉了，第2 补到原来第1 的位置');
   });
 
   testWidgets('列表过渡不改条目的横向排布：按内容收窄的条目照旧靠左、靠右，展开途中也不被居中', (tester) async {

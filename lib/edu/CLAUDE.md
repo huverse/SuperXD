@@ -16,6 +16,7 @@
   - 一个会话里只取一次：成绩查询页给的入学年级（fetchGradeForm）、作息查询前要打开的公开课表页；重新登录与 dispose 时清掉。
   - 请求经共用内核 domain/campus_http.dart 发：超时管到读完响应体，到点或 cancelRequests 都中断连接。成绩取页面「导出」用的导出接口 xscj.stuckcj_data_exp.jsp（与数据页同一份成绩 HTML，数据页对部分校外来源回 0 字节正文），导出回空正文才退回数据页 xscj.stuckcj_data.jsp（原因见 _grades 上方注释）；成绩响应按块读取，上限 4MB（读法经内核的 collect 保持原样）；其余页面上限 pageLimit（4MB），超了按格式错误报、保留本地数据。接口实测与可用的其他教务接口见自动记忆 edu-interface-map（不进仓库）。
   - 解码：content-type 或页面前 1000 字节声明 GB 系字符集时用 GBK，否则用 UTF-8；UTF-8 解码失败时回退 GBK。
+  - 课表、作息与成绩页的解析（建整棵 DOM）放在后台 isolate 里（_offMain，Isolate.run），不占主线程的帧；进出只有页面字符串与纯数据结果，解析抛的 FormatException 原样带回。
   - 登录流程：
     1. 获取登录页会话。
     2. 获取临时 DES 密钥和时间戳，加密参数后提交。

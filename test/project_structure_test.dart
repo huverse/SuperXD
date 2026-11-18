@@ -123,9 +123,13 @@ void main() {
       r'\bhttp\.(Client|Request|AbortableRequest|StreamedRequest|AbortableStreamedRequest|MultipartRequest|AbortableMultipartRequest)\(|\bhttp\.Client\.new\b|(?<![\w.])http\.(get|post|put|patch|delete|head|read|readBytes)\(',
     );
     final ioRaw = RegExp(r'\b(HttpClient|IOClient)\(');
+    // Flutter 自带的网络图片与资源包（Image.network、NetworkImage、NetworkAssetBundle）底下是 dart:io 的 HttpClient：没有超时与上限、不进请求记录。
+    // 一律不许（11-17 性能审查 P1-4 抓到学习通头像与课程封面两处）；百宝箱的小网络图用 toolbox/toolbox_image.dart 的 ToolboxRemoteImage。
+    final flutterNetwork = RegExp(r'\bImage\.network\(|(?<![\w.])(NetworkImage|NetworkAssetBundle)\(');
     final senders = <String>[], offenders = <String>[];
     for (final file in _dartFiles('lib')) {
       final text = file.readAsStringSync();
+      if (flutterNetwork.hasMatch(text)) offenders.add('${file.path}：用了 Flutter 自带的网络图片或资源包，没经 CampusHttp');
       if (!(text.contains('package:http/http.dart') && httpRaw.hasMatch(text)) && !ioRaw.hasMatch(text)) continue;
       senders.add(file.path);
       if (file.path != kernel && !unmigrated.contains(file.path)) {

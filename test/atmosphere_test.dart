@@ -351,6 +351,74 @@ void main() {
     await tester.pumpWidget(const SizedBox());
   }, variant: const TargetPlatformVariant({TargetPlatform.android, TargetPlatform.iOS}));
 
+  // [人工决策-2026-11-17 21:24:25] 见 lib/theme/campus_background.dart 的 _ticking：8 秒没有任何指针事件就停在原处，一碰从原处接着走；漾开照旧有节拍。
+  testWidgets('没人操作满 8 秒云雾停在原处、不再出帧，一碰从原处接着走；漾开照旧有节拍', (tester) async {
+    await tester.pumpWidget(MaterialApp(home: CampusMotion(child: CampusAtmosphere(child: const SizedBox.expand()))));
+    Animation<double> progress() => (tester.widget<CustomPaint>(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter)).painter! as AtmospherePainter).progress;
+    await tester.pump(CampusAtmosphere.idleAfter - const Duration(milliseconds: 200));
+    final moving = progress().value;
+    await tester.pump(const Duration(milliseconds: 100));
+    expect(progress().value, greaterThan(moving), reason: '不到 8 秒照常流动');
+    await tester.pump(const Duration(milliseconds: 200));
+    final paused = progress().value;
+    await tester.pump(const Duration(seconds: 5));
+    expect(progress().value, paused, reason: '满 8 秒停在原处');
+    expect(tester.binding.hasScheduledFrame, isFalse, reason: '停下后没人听节拍就不出帧');
+    // 上课中此刻点的漾开另听同一个节拍：云雾停着它也照常一拍一拍地走。
+    var ripples = 0;
+    void ripple() => ripples++;
+    campusDecorTick.addListener(ripple);
+    await tester.pump(const Duration(seconds: 1));
+    expect(ripples, inInclusiveRange(18, 21));
+    expect(progress().value, paused);
+    campusDecorTick.removeListener(ripple);
+    // 一碰（按下抬起都算指针事件，落在哪里都行）：从停下的地方接着走，下一拍只多一步，不跳。
+    await tester.tapAt(const Offset(10, 10));
+    await tester.pump(campusDecorStep);
+    expect(progress().value, closeTo(paused, campusDecorStep.inMicroseconds / const Duration(seconds: 24).inMicroseconds + 1e-9));
+    await tester.pump(const Duration(seconds: 1));
+    expect(progress().value, closeTo(paused + 1 / 24, .01));
+    // 有人一直在操作（每几秒碰一下）就一直流动。
+    for (var round = 0; round < 3; round++) {
+      await tester.pump(const Duration(seconds: 5));
+      await tester.tapAt(const Offset(10, 10));
+    }
+    final busy = progress().value;
+    await tester.pump(const Duration(seconds: 1));
+    expect(progress().value, isNot(busy));
+    await tester.pumpWidget(const SizedBox());
+  });
+
+  testWidgets('重新具备流动条件（弹窗关掉、回到前台）时重新计 8 秒，停着的云雾接着走', (tester) async {
+    final overlays = ValueNotifier(0);
+    addTearDown(overlays.dispose);
+    await tester.pumpWidget(MaterialApp(home: CampusMotion(child: CampusAtmosphere(overlays: overlays, child: const SizedBox.expand()))));
+    Animation<double> progress() => (tester.widget<CustomPaint>(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter is AtmospherePainter)).painter! as AtmospherePainter).progress;
+    await tester.pump(const Duration(seconds: 9));
+    final idle = progress().value;
+    await tester.pump(const Duration(seconds: 1));
+    expect(progress().value, idle);
+    // 弹窗开了又关（这里不经指针，直接改层数）：关掉就从原处接着走，再满 8 秒才停。
+    overlays.value = 1;
+    await tester.pump();
+    overlays.value = 0;
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 7));
+    expect(progress().value, closeTo(idle + 7 / 24, .01));
+    await tester.pump(const Duration(seconds: 2));
+    final again = progress().value;
+    await tester.pump(const Duration(seconds: 1));
+    expect(progress().value, again);
+    // 切到后台再回来同理。
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.paused);
+    await tester.pump();
+    tester.binding.handleAppLifecycleStateChanged(AppLifecycleState.resumed);
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(progress().value, closeTo(again + 1 / 24, .01));
+    await tester.pumpWidget(const SizedBox());
+  });
+
   // 颗粒的小圆点拼成一组一次画完（见 FrostTexture）：不逐个画圆，也不经离屏贴图，图案同原来逐点画的小圆一样。
   testWidgets('颗粒每张表面一次画完，图案同逐点画的一样', (tester) async {
     // 直接画进录制再转成图片（不对渲染树截图），按测试的像素密度 3 对比；两边都按卡片的圆角裁剪（原来的颗粒自带圆角裁剪，现在由卡片裁）。

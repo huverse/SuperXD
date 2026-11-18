@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:isolate';
 
 import 'package:enough_convert/enough_convert.dart';
 import 'package:http/http.dart' as http;
@@ -172,7 +173,7 @@ class KingoClient {
     final page = await _get('/wsxk/xkjg.ckdgxsxdkchj_data10319.jsp?params=$params', referer: '/student/xkjg.wdkb.jsp?menucode=S20301', data: true);
     _throwIfExpired(page.body);
     try {
-      return parseScheduleHtml(page.body);
+      return await _offMain(page.body, parseScheduleHtml);
     } on ScheduleParseException catch (error, stack) {
       campusLog('[KingoClient] action=schedule_parse term=$xn-$xq reason=${error.message}\n$stack');
       throw KingoCallException(LoginFailure(code: GatewayCode.upstreamFormat, message: '课表解析失败：${error.message}，未覆盖已有缓存'));
@@ -215,7 +216,7 @@ class KingoClient {
     );
     _throwIfExpired(page.body);
     if (!page.body.contains('作息时间')) throw const FormatException('作息页面结构无法识别');
-    final parsed = parseBellsHtml(page.body);
+    final parsed = await _offMain(page.body, parseBellsHtml);
     if (parsed.periods.isEmpty && !page.body.contains('未设置作息时间')) throw const FormatException('作息页面缺少时间数据');
     return parsed;
   }
@@ -233,8 +234,12 @@ class KingoClient {
       page = await _post('/student/xscj.stuckcj_data.jsp', body, referer: referer, data: true);
     }
     _throwIfExpired(page.body);
-    return kind == 'yscj' ? parseOriginalGrades(page.body) : parseEffectiveGrades(page.body);
+    return _offMain(page.body, kind == 'yscj' ? parseOriginalGrades : parseEffectiveGrades);
   }
+
+  // 课表、作息与成绩页要建整棵 DOM（package:html），放到后台 isolate 里解析，不占主线程的帧（11-18 性能审查 P2-3）；
+  // 进出只有页面字符串与解析结果（都是纯数据），解析抛的 FormatException 原样带回来。静态方法：闭包只带上页面与解析函数，不带客户端本身。
+  static Future<T> _offMain<T>(String html, T Function(String html) parse) => Isolate.run(() => parse(html));
 
   KingoProfile _profileOf(String html) {
     var userCode = RegExp(r"G_USER_CODE\s*=\s*'([^']*)'").firstMatch(html)?.group(1) ?? '';

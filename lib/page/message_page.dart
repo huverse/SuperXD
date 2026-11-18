@@ -270,7 +270,7 @@ class _FriendList extends StatelessWidget {
       physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
       slivers: [
         CampusRefreshControl(onRefresh: onRefresh),
-        SliverPadding(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), sliver: SliverList.list(children: [
+        SliverPadding(padding: EdgeInsets.fromLTRB(16, 16, 16, friends.isEmpty ? 16 + inset : 0), sliver: SliverList.list(children: [
           Row(children: [
             Expanded(child: Text('我：${social.profile?.nickname ?? ''}', maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(fontSize: 14, color: colors.onSurfaceVariant))),
             FilledButton.icon(style: campusProminent, onPressed: onAdd, icon: const CampusIcon(CampusIcons.addFriend), label: const Text('添加好友')),
@@ -279,14 +279,17 @@ class _FriendList extends StatelessWidget {
           ]),
           const SizedBox(height: 12),
           if (friends.isEmpty)
-            Padding(padding: const EdgeInsets.only(top: 48), child: Center(child: Text('还没有好友，点「添加好友」面对面扫码', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: colors.onSurface))))
-          else
-            // 多行卡片去掉横向内边距，行自带 20 边距：按下变暗时整行铺满卡片宽度（同“我的”页）。
-            // 加了或删了好友时那一行原地展开、收起（人工决策见 campus_animated_list.dart）。
-            CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: CampusAnimatedColumn(children: [
-              for (final friend in friends) KeyedSubtree(key: ValueKey(friend.deviceId), child: _FriendRow(friend: friend, onTap: () => onOpen(friend.deviceId))),
-            ])),
+            Padding(padding: const EdgeInsets.only(top: 48), child: Center(child: Text('还没有好友，点「添加好友」面对面扫码', textAlign: TextAlign.center, style: TextStyle(fontSize: 16, color: colors.onSurface)))),
         ])),
+        // 多行卡片去掉横向内边距，行自带 20 边距：按下变暗时整行铺满卡片宽度（同“我的”页）。
+        // 加了或删了好友时那一行原地展开、收起（人工决策见 campus_animated_list.dart）；好友最多 500 个，按需建（11-18 性能审查 P2-4），
+        // 收到新信时只重建看得见的几行。
+        if (friends.isNotEmpty)
+          SliverPadding(padding: EdgeInsets.fromLTRB(16, 0, 16, 16 + inset), sliver: CampusSliverCard(sliver: CampusAnimatedSliverList<SocialFriend>(
+            items: friends,
+            keyOf: (friend) => ValueKey(friend.deviceId),
+            itemBuilder: (context, friend, index, count) => CampusCardRow(first: index == 0, last: index == count - 1, child: _FriendRow(friend: friend, onTap: () => onOpen(friend.deviceId))),
+          ))),
       ],
     ));
   }

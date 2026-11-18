@@ -3,10 +3,12 @@ import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
 
 import 'package:superxd/domain/painting.dart';
 import 'package:superxd/page/splash_signature.dart';
+import 'package:superxd/theme/campus_motion.dart';
 
 // [人工决策-2026-10-23 16:48:13] 开屏画作（用户要求用自己以莫奈风格 AI 生成的画作做开屏背景，视觉交给助手；四项都选推荐）：
 // 每次冷启动显示，恢复好账号再溶解进应用，点任意处立即进入，从后台切回不出现；画作随安装包内置、按清单驱动（不写死，加画只加图与清单一行），
@@ -23,6 +25,10 @@ import 'package:superxd/page/splash_signature.dart';
 // [人工决策-2026-10-23 21:12:25] 天空里只写应用名，不写画名与「仿莫奈风格 · AI 生成」（画名与说明只在关于页的开屏画作里看）；应用名改成一笔写出的手写体
 // （同苹果开机的 hello，见 splash_signature.dart）。用户选「写完再溶解」（未选保持 1.2 秒、字写得急）：上屏后 0.1 秒起笔、约 1.6 秒写完、停 0.3 秒，
 // 开屏至少约 2 秒；点一下随时进入。减少动画时不写、直接显示写好的字，至少 1.2 秒。
+// [人工决策-2026-11-17 21:24:25] 补充上面几条（用户同意，任务书第 6 项性能审查 P1-1；样子、时长与溶解条件都不变）：开屏完全不透明的这段，
+// 下面的应用照常构建、布局（恢复会话、读本机数据照走），但不画、不接手势、动画不走（Offstage 加 TickerMode 关）：以前开屏每一帧都把下面整页
+// （云雾贴图、底栏玻璃、页面边缘渐隐）重新合成一遍，Impeller 没有遮挡剔除。要溶解时先放出来画一帧（底栏玻璃的着色器、整页第一次栅格化都落在
+// 仍然不透明的开屏下面），下一帧再开始溶解；溶解按 CampusFirstFrameVsync 计时，放出来那一帧栅格化得慢也不吃掉溶解的开头。
 class PaintingSplash extends StatefulWidget {
   const PaintingSplash({super.key, required this.painting, required this.image, required this.ready, required this.child, this.shown, this.onGone});
   final Painting painting;
@@ -80,12 +86,14 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
   late final _write = AnimationController(vsync: this, duration: PaintingSplash.writing);
   // 极慢的推近（Ken Burns），整段开屏都在动，不停在一帧静止画面上。
   late final _drift = AnimationController(vsync: this, duration: const Duration(seconds: 6));
-  late final _exit = AnimationController(vsync: this, duration: const Duration(milliseconds: 520));
+  late final _exit = AnimationController(vsync: CampusFirstFrameVsync(this), duration: const Duration(milliseconds: 520));
   // 两个条件都到了才溶解：满 minimum，且账号恢复后又过了 settle（页面换到今天或登录页的转场走完）。
   final _timers = <Timer>[];
   bool _minimumPassed = false;
   bool _settled = false;
   bool _gone = false;
+  // 开屏还完全不透明：下面的应用不画、动画不走（[人工决策] 在类上）。要溶解时先放出来画一帧。
+  bool _covered = true;
   // 开屏挂在应用的 MaterialApp 之外，减少动画直接读系统设置（同组合根的主题过渡）。
   final _reduced = WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.disableAnimations || WidgetsBinding.instance.platformDispatcher.accessibilityFeatures.reduceMotion;
 
@@ -122,18 +130,25 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
     }, onError: (Object error, StackTrace stack) => _leave());
   }
 
-  // 溶解进应用：只走一次；途中手指已能点到下面的页面。走完从树上拿掉（子树位置不变，下面的应用不重建）。
+  // 溶解进应用：只走一次；先把下面的应用放出来画一帧，这一帧画完再开始溶解，途中手指已能点到下面的页面。
+  // 走完从树上拿掉（子树位置不变，下面的应用不重建）。
   void _leave() {
     for (final timer in _timers) {
       timer.cancel();
     }
-    if (!mounted || _exit.status != AnimationStatus.dismissed) return;
-    _exit.forward().whenCompleteOrCancel(() {
-      _drift.stop();
-      if (mounted) setState(() => _gone = true);
-      widget.onGone?.call();
+    if (!mounted || !_covered) return;
+    setState(() => _covered = false);
+    SchedulerBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _exit.forward().whenCompleteOrCancel(() {
+        if (mounted) {
+          _drift.stop();
+          setState(() => _gone = true);
+        }
+        widget.onGone?.call();
+      });
+      setState(() {});
     });
-    setState(() {});
   }
 
   @override
@@ -148,10 +163,11 @@ class _PaintingSplashState extends State<PaintingSplash> with TickerProviderStat
     super.dispose();
   }
 
-  // 应用在下面照常启动；开屏这层自带 MediaQuery 与文字方向（它在应用的 MaterialApp 之外）。
+  // 应用在下面照常启动（开屏不透明时不画、动画不走）；开屏这层自带 MediaQuery 与文字方向（它在应用的 MaterialApp 之外）。
+  // 两层包装溶解完也留着，下面的应用在树上的位置一直不变、不重建。
   @override
   Widget build(BuildContext context) => Stack(textDirection: TextDirection.ltr, children: [
-    widget.child,
+    TickerMode(enabled: !_covered, child: Offstage(offstage: _covered, child: widget.child)),
     if (!_gone)
       Positioned.fill(
         child: MediaQuery.fromView(

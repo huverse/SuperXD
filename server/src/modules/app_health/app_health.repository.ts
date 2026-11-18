@@ -3,12 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 
 import { AppHealthDailyEntity } from 'src/modules/app_health/app_health.entity';
-import { HealthSample } from 'src/modules/app_health/app_health_rules';
+import { healthFrameTiers, healthLaunchTiers, HealthSample, HealthTiers, tierColumns } from 'src/modules/app_health/app_health_rules';
 
 // 健康回报、暂停与意见的存储端口：服务只依赖这个抽象。
 export abstract class AppHealthRepository {
-  // 累加一份回报（渠道、平台、版本、日唯一，ON DUPLICATE KEY 原子加一）。
-  abstract addReport(channel: string, platform: string, versionCode: number, day: string, fatal: boolean, now: Date): Promise<void>;
+  // 累加一份回报（渠道、平台、版本、日唯一，ON DUPLICATE KEY 原子加一）；launch、frames 是性能档位（没有为 undefined，不计入任何一档）。
+  abstract addReport(channel: string, platform: string, versionCode: number, day: string, fatal: boolean, tiers: HealthTiers, now: Date): Promise<void>;
   abstract addFeedback(channel: string, platform: string, versionCode: number, good: boolean, text: string, now: Date): Promise<void>;
   // 有回报的渠道（最近 sinceDay 起）。
   abstract channelsSince(sinceDay: string): Promise<string[]>;
@@ -28,11 +28,14 @@ export class TypeormAppHealthRepository extends AppHealthRepository {
     super();
   }
 
-  async addReport(channel: string, platform: string, versionCode: number, day: string, fatal: boolean, now: Date) {
+  async addReport(channel: string, platform: string, versionCode: number, day: string, fatal: boolean, tiers: HealthTiers, now: Date) {
+    // 这一份在每档上是 0 或 1；列名是常量，不拼外部输入。
+    const columns = [...tierColumns('launch', healthLaunchTiers), ...tierColumns('frames', healthFrameTiers)];
+    const values = [...Array.from({ length: healthLaunchTiers }, (_, tier) => (tiers.launch === tier ? 1 : 0)), ...Array.from({ length: healthFrameTiers }, (_, tier) => (tiers.frames === tier ? 1 : 0))];
     await this.daily.query(
-      'INSERT INTO app_health_daily (channel, platform, version_code, day, reports, fatal, create_time, update_time) VALUES (?, ?, ?, ?, 1, ?, ?, ?) ' +
-        'ON DUPLICATE KEY UPDATE reports = reports + 1, fatal = fatal + VALUES(fatal), update_time = VALUES(update_time)',
-      [channel, platform, versionCode, day, fatal ? 1 : 0, now, now],
+      `INSERT INTO app_health_daily (channel, platform, version_code, day, reports, fatal, ${columns.join(', ')}, create_time, update_time) VALUES (?, ?, ?, ?, 1, ?, ${columns.map(() => '?').join(', ')}, ?, ?) ` +
+        `ON DUPLICATE KEY UPDATE reports = reports + 1, fatal = fatal + VALUES(fatal), ${columns.map((column) => `${column} = ${column} + VALUES(${column})`).join(', ')}, update_time = VALUES(update_time)`,
+      [channel, platform, versionCode, day, fatal ? 1 : 0, ...values, now, now],
     );
   }
 
