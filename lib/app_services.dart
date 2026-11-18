@@ -33,6 +33,7 @@ import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/app_shortcut.dart';
 import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/network_policy.dart';
 import 'package:superxd/domain/painting.dart';
 import 'package:superxd/domain/unlock.dart';
 import 'package:superxd/local/app_update_memory.dart';
@@ -51,6 +52,7 @@ import 'package:superxd/relay/relay_app_account.dart';
 import 'package:superxd/relay/relay_challenge_client.dart';
 import 'package:superxd/relay/relay_client.dart';
 import 'package:superxd/relay/relay_diagnostic_account.dart';
+import 'package:superxd/relay/relay_egress.dart';
 import 'package:superxd/relay/relay_flag_target_client.dart';
 import 'package:superxd/relay/relay_reward_client.dart';
 import 'package:superxd/relay/relay_unlock_client.dart';
@@ -114,15 +116,22 @@ String? relayBase() {
 
 // 自建中转的接法：地址给不签名的设备侧客户端（更新清单、开发者的话、灰度配置、健康回报、诊断包上传、字体包），签名请求共用一个传输（一套连接池），
 // 应用账号的设备密钥在系统安全存储。组合根启动时算一次交给下面各个造法；组合根接线测试（test/composition_root_test.dart）换成假中转与内存密钥库。
+// 出口策略（审查 P2-2，relay/relay_egress.dart）：每个签名客户端拿 transportFor(它属于的联网服务)，联网策略 allows 不许时在本机拒掉、不发出；
+// 各服务与钩子里原有的判断照旧（不起无用的请求），合规由出口兜底。用应用账号身份发的点名与诊断包认领归应用账号（仅本机时灰度配置与诊断包上传照旧、只是不带账号）。
 class RelayWiring {
-  const RelayWiring({required this.base, required this.transport, this.accountKeys = const SecureAppAccountVault()});
+  const RelayWiring({required this.base, required this.transport, required this.allows, this.accountKeys = const SecureAppAccountVault()});
   final String base;
   final RelayTransport transport;
+  // 发请求时才问（联网偏好在启动第一批里才打开，比这份接法晚）。
+  final bool Function(NetworkService service) allows;
   final AppAccountVault accountKeys;
+
+  // 某一项联网服务用的签名传输：同一个连接池，套上按这项服务拒绝的出口策略。
+  RelayTransport transportFor(NetworkService service) => EgressRelayTransport(transport, service: service, allows: allows);
 }
 
-RelayWiring? relayWiring() => switch (relayBase()) {
-  final base? => RelayWiring(base: base, transport: HttpRelayTransport(base)),
+RelayWiring? relayWiring({required bool Function(NetworkService service) allows}) => switch (relayBase()) {
+  final base? => RelayWiring(base: base, transport: HttpRelayTransport(base), allows: allows),
   null => null,
 };
 
@@ -163,7 +172,7 @@ Future<AppHealth> appHealthOf(Directory support, RelayWiring? relay) async => Ap
 // 11-16 起（人工决策见 domain/rollout.dart 文件头 11-16 那条）：开关的平台与版本号条件按这台设备判定；登录着应用账号时同一时机问点名（用这个账号的设备密钥签名）。
 // 仅本机时（online 为假）不取等级、按 Lv0，也不问点名（记着的照旧用）。
 Future<Rollouts> rolloutsOf(Directory support, RelayWiring? relay, AppAccounts? appAccounts, Challenges? challenges, {required bool Function() online}) async {
-  final targets = relay == null ? null : RelayFlagTargetClient(vault: relay.accountKeys, transport: relay.transport);
+  final targets = relay == null ? null : RelayFlagTargetClient(vault: relay.accountKeys, transport: relay.transportFor(NetworkService.appAccount));
   return Rollouts(
   memory: await FileRolloutMemory.open(File(path.join(support.path, 'rollout.json'))),
   channel: appFlavor ?? 'development',
@@ -198,7 +207,7 @@ Future<Rollouts> rolloutsOf(Directory support, RelayWiring? relay, AppAccounts? 
 // 解锁（人工决策见服务端 src/modules/unlock/unlock_rules.ts）：清单跟着灰度配置，这个账号能用哪些问同一个中转（应用账号签名）；没配中转时为空，游戏与工具都照常开着。
 Unlocks? unlocksOf(RelayWiring? relay, Rollouts rollouts, AppAccounts? appAccounts, {required bool Function() accountOn}) {
   if (relay == null || appAccounts == null) return null;
-  return Unlocks(rollouts: rollouts, appAccounts: appAccounts, client: RelayUnlockClient(vault: relay.accountKeys, transport: relay.transport), accountOn: accountOn);
+  return Unlocks(rollouts: rollouts, appAccounts: appAccounts, client: RelayUnlockClient(vault: relay.accountKeys, transport: relay.transportFor(NetworkService.unlock)), accountOn: accountOn);
 }
 
 // 开发者的话走同一个自建中转；没配中转时为空，「我的」页不显示这一行。
@@ -215,7 +224,7 @@ Future<Festivals> festivalsOf(Directory support, RelayWiring? relay, AppAccounts
   return Festivals(
     occasions: [for (final scene in festivalCatalog) scene.occasion],
     memory: await FileFestivalMemory.open(File(path.join(support.path, 'festival.json'))),
-    client: relay == null || appAccounts == null ? null : RelayRewardClient(vault: relay.accountKeys, transport: relay.transport),
+    client: relay == null || appAccounts == null ? null : RelayRewardClient(vault: relay.accountKeys, transport: relay.transportFor(NetworkService.festival)),
     account: () => appAccounts?.current,
     accountGone: () => unawaited(appAccounts?.check(force: true)),
     levelsOn: online,
@@ -230,7 +239,7 @@ AccountDiagnostics? diagnosticsOf(RelayWiring? relay, AppAccounts? Function() ap
   if (relay == null) return null;
   return AccountDiagnostics(
     uploader: RelayDiagnosticUpload(relay.base),
-    client: RelayDiagnosticAccountClient(vault: relay.accountKeys, transport: relay.transport),
+    client: RelayDiagnosticAccountClient(vault: relay.accountKeys, transport: relay.transportFor(NetworkService.appAccount)),
     account: () => online() ? appAccounts()?.current : null,
     accountGone: () => unawaited(appAccounts()?.check(force: true)),
   );
@@ -240,12 +249,12 @@ AccountDiagnostics? diagnosticsOf(RelayWiring? relay, AppAccounts? Function() ap
 // 这台设备一把设备密钥，存在自己的安全存储命名空间（relay/app_account_vault.dart），与私信身份互不关联。
 AppAccounts? appAccountsOf(RelayWiring? relay, {void Function(AppAccountRef account)? onDeleted}) {
   if (relay == null) return null;
-  return AppAccounts(client: RelayAppAccountClient(vault: relay.accountKeys, transport: relay.transport, deviceModel: readDeviceModel), onDeleted: onDeleted);
+  return AppAccounts(client: RelayAppAccountClient(vault: relay.accountKeys, transport: relay.transportFor(NetworkService.appAccount), deviceModel: readDeviceModel), onDeleted: onDeleted);
 }
 
 // 挑战与积分（人工决策见 playground/challenge/challenge_rules.dart）：同应用账号走自建中转，用那个应用账号的设备密钥签名；
 // 没配中转时为空，游乐场不显示「挑战」。
 Challenges? challengesOf(RelayWiring? relay, AppAccounts? appAccounts) {
   if (relay == null || appAccounts == null) return null;
-  return Challenges(appAccounts: appAccounts, client: RelayChallengeClient(vault: relay.accountKeys, transport: relay.transport));
+  return Challenges(appAccounts: appAccounts, client: RelayChallengeClient(vault: relay.accountKeys, transport: relay.transportFor(NetworkService.challenge)));
 }

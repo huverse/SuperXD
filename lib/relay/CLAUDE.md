@@ -14,6 +14,7 @@
   - HttpRelayTransport 在断网、超时、响应格式不对时记 [RelayTransport] 日志：错误码、方法与路径、异常类型与完整堆栈，不写服务器地址与查询参数；往上只抛 RelayException 错误码。持续接收通道的长轮询按后台请求发（background），它的断网与超时不在这里记，交给调用方的接收循环。
   - RelayClient：request 用给定的设备身份签名发任意路径（可另给超时、响应上限与 background），没有会话令牌；收到 CLOCK_SKEW 按服务器时间校正并只重发这一次；收到 ACCOUNT_DELETED 要验回复里的 proof（服务器对这把密钥的设备号与这次请求随机数的签名），没有或验不过记 errorType=signature、当 NETWORK 抛，调用方什么也不删（[人工决策] 在 _deletionProven）；错误响应的其余字段放在 RelayException.detail。register 与 deleteDevice 是设备登记（POST、DELETE /v1/devices）。每个客户端各持一个 RelayClient（各自的校时偏差）。
   - 服务器在线签名钥的公钥内置在 relayServerKeys（[人工决策] 在常量上：签好友公钥、奖品信封与「账号已注销」三类，域前缀区分）；verifyRelaySignature 任一把验过即可；各客户端与 SocialService 的 serverKeys 可换成测试钥。
+- relay_egress.dart：出口策略 EgressRelayTransport（审查 P2-2）：给一项联网服务（domain/network_policy.dart 的 NetworkService）用的签名传输套一层，发请求前问联网策略，不许就在本机拒掉、不交给传输，当连不上（NETWORK）抛、记一行 [RelayEgress] action=deny ... errorType=policy（照理走不到，出现了说明上层漏了判断）。属于哪项服务由组合根接线时给（app_services.dart 的 RelayWiring.transportFor），传输本身不认识具体功能。
 - app_account_vault.dart：应用账号设备密钥的安全存储 AppAccountVault：这台设备一把设备密钥，连同账号号与用户名存进 superxd_account 命名空间（appAccountStorage，排除备份与迁移；键是 appAccountSlot）；SecureAppAccountVault 用系统安全存储，MemoryAppAccountVault 供测试。
 - account_relay.dart：用应用账号的设备密钥签名访问中转的共用调用 AccountRelay（审查 P2-3，以前六个客户端各抄一份）：signedCall 读这个账号在本机的那把密钥（没有就抛 missingKey、不发请求）、签名发出、中转的错误码按 RelayErrors 换成本模块的异常；signedWith 用给定的密钥签名（注册、登录、扫码出示的新密钥）；send 没有密钥返回空、错误码原样抛（给要按错误码返回结果的点名与抽签的账号太新）。RelayErrors 把没登录（ACCOUNT_NOT_FOUND、UNAUTHORIZED）、连不上（NETWORK、TIMEOUT）、限流与其余四类的分法写在一处，模块只给换成什么，自己的业务码放 codes。每个客户端各持一个（各自的校时偏差）。
 - account_seal.dart：应用账号的密码与恢复码发出前封装的信封 sealAccountSecrets（第 2 版：一次性 X25519 与中转公钥 accountSealKey 协商、HKDF-SHA256、AES-256-GCM，信封带钥号 accountSealKeyId（公钥 sha256 的前 8 字节），附加数据绑定钥号与设备号；布局与服务端 account_keys.ts 一致，共用 server/test/vectors/account_seal_v2.json）。中转是明文 HTTP，不封装就会被同一网络里的人看到；中转私钥只在服务器与开发者本机。服务器按钥号可以同时认几把，换钥先加服务器、再发换了公钥的版本（步骤见 server/README.md「部署」应用账号一条），这里只放现用的一把。
@@ -28,13 +29,14 @@
 
 - RelayException 与 RelayCode 不出本层（私信层另起同值的 SocialCode 给页面）：各客户端把中转的错误码换成本模块在 domain 登记的异常（经 account_relay.dart 的 RelayErrors），application 与 page 只认那些异常。新的账号签名客户端一律经 AccountRelay 发，不再自己读密钥、自己接 RelayException。
 - 不自动重试：只有时钟偏差校正后的一次重发（RelayClient）；中转不认私信设备时的那次重放在 social（SocialService 的 _authorized）。
+- 联网策略两道：上层（组合根的钩子按 NetworkService、节日与灰度点名等服务里读 online）照旧先判断，不起无用的请求；签名请求的出口再兜底（relay_egress.dart），新加的签名客户端一律经 RelayWiring.transportFor 拿传输。用应用账号身份发的点名与诊断包认领归 appAccount。不签名的设备侧中转客户端（device）不经这里，仍只靠上层。
 - 应用账号的设备密钥只在系统安全存储（superxd_account，排除备份与迁移）；业务库与日志不存密钥、密码与恢复码。
 - 回复一律是外部输入：逐项校验，看不懂的按失败报、不猜；会触发不可逆动作的两类回复（奖品、「账号已注销」）要服务器签名才认。
 
 # 测试
 
 - 签名请求与共用向量（请求签名、「账号已注销」的证明、应用账号信封）在 social_protocol_test.dart；传输的响应上限在 campus_http_test.dart。
-- relay_errors_test.dart：六个账号签名客户端把中转错误码换成本模块异常的整张表（类型、分类与文案，没这把密钥不发请求、各自的响应上限），抽共用调用前后同一张表都过。
+- relay_errors_test.dart：六个账号签名客户端把中转错误码换成本模块异常的整张表（类型、分类与文案，没这把密钥不发请求、各自的响应上限），抽共用调用前后同一张表都过；出口策略拒掉的不交给传输、客户端当连不上。组合根里出口一次也没拒过、仅本机绕过钩子直接调也出不去在 composition_root_test.dart。
 - 节日抽签 relay_reward_client.dart 在 festival_test.dart（经 fake_relay.dart 验签、用应用账号的密钥签名）；应用账号 relay_app_account.dart 在 app_account_test.dart；诊断包 relay_diagnostic_account.dart 在 diagnostic_upload_test.dart；解锁 relay_unlock_client.dart 在 unlock_test.dart；灰度点名 relay_flag_target_client.dart 在 rollout_test.dart；挑战 relay_challenge_client.dart 在 challenge_test.dart；接起来的样子在 composition_root_test.dart。
 - fake_relay.dart 是按协议 v1 规则验签的内存假中转（应用账号登记 signIn、私信与好友；serverSign 用服务器在线签名的测试钥签，serverSeedOverride 模拟网络上的人伪造）。
 

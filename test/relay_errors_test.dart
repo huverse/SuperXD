@@ -2,9 +2,11 @@ import 'package:flutter_test/flutter_test.dart';
 
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_crypto.dart';
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/domain/diagnostic_upload.dart';
 import 'package:superxd/domain/festival.dart';
+import 'package:superxd/domain/network_policy.dart';
 import 'package:superxd/domain/rollout.dart';
 import 'package:superxd/domain/unlock.dart';
 import 'package:superxd/relay/app_account_vault.dart';
@@ -13,6 +15,7 @@ import 'package:superxd/relay/relay_challenge_client.dart';
 import 'package:superxd/relay/relay_client.dart';
 import 'package:superxd/relay/relay_crypto.dart';
 import 'package:superxd/relay/relay_diagnostic_account.dart';
+import 'package:superxd/relay/relay_egress.dart';
 import 'package:superxd/relay/relay_flag_target_client.dart';
 import 'package:superxd/relay/relay_reward_client.dart';
 import 'package:superxd/relay/relay_unlock_client.dart';
@@ -21,6 +24,7 @@ import 'fake_relay.dart';
 
 // 应用账号签名的各个中转客户端把中转的错误码换成本模块异常的整张表（审查 P2-3 抽出共用的签名调用时钉住：类型、分类与文案逐项不变）。
 // 中转按这次要测的错误码回复；NETWORK 与 TIMEOUT 由传输抛出（同 HttpRelayTransport）；「账号已注销」带用测试钥签的证明。
+// 出口策略（审查 P2-2）拒掉的请求不交给传输，各客户端照连不上处理。
 
 class _Scripted implements RelayTransport {
   _Scripted(this.reply);
@@ -236,6 +240,23 @@ void main() {
       'TIMEOUT': 'Festival 连不上服务器',
       'INTERNAL': 'Festival 服务器暂时不可用（INTERNAL）',
     });
+  });
+
+  test('出口策略：不许联网的服务在本机拒掉、不交给传输、记一行，客户端照连不上处理；许的原样交给传输', () async {
+    final previousLog = campusLog;
+    final logged = <String>[];
+    campusLog = logged.add;
+    addTearDown(() => campusLog = previousLog);
+    final inner = _Scripted((_) async => const RelayResponse(200, {'level': 2, 'open': <Object?>[]}));
+    var online = false;
+    final transport = EgressRelayTransport(inner, service: NetworkService.unlock, allows: (service) => online || service != NetworkService.unlock);
+    final client = RelayUnlockClient(vault: vault, transport: transport);
+    expect(await _outcome(() => client.buy(_account, 'game.x')), 'Unlock network 连不上服务器');
+    expect(inner.calls, isEmpty);
+    expect(logged, ['[RelayEgress] action=deny service=unlock route=POST /v1/unlocks/game.x/buy errorType=policy']);
+    online = true;
+    expect(await _outcome(() => client.state(_account)), 'ok UnlockState');
+    expect(inner.calls, ['GET /v1/unlocks limit=${RelayUnlockClient.limit}'], reason: '超时、响应上限等参数原样交给传输');
   });
 
   test('应用账号：登录与查看账号的业务码、带证明的「账号已注销」、通用几类', () async {

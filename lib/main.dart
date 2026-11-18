@@ -95,8 +95,9 @@ void main() async {
   // 联网偏好（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）在下面第一批里打开；诊断包认领只在用户点了上传以后才读它。
   late final NetworkPreference network;
   bool networkOnline() => network.online;
-  // 自建中转：地址与签名请求的传输只建一份，下面各个造法共用（没配中转时为空，见 app_services.dart 的 RelayWiring）。
-  final relay = relayWiring();
+  // 自建中转：地址与签名请求的传输只建一份，下面各个造法共用（没配中转时为空，见 app_services.dart 的 RelayWiring）；
+  // 签名请求的出口策略按联网偏好拒掉仅本机时不许的服务，发请求时才问它（那时联网偏好早已打开）。
+  final relay = relayWiring(allows: (service) => network.allows(service));
   final diagnostics = diagnosticsOf(relay, () => appAccounts, online: networkOnline);
   final logs = await DiagnosticLog.open(
     directory: Directory(path.join((external ?? deviceOnly).path, 'logs')),
@@ -177,7 +178,7 @@ void main() async {
   final social = SocialService(
     spaces: SocialSpaces(vault: const SecureIdentityVault(), directory: socialDirectory),
     accountKeys: relay?.accountKeys ?? const SecureAppAccountVault(),
-    transport: relay?.transport,
+    transport: relay?.transportFor(NetworkService.social),
     accountGone: () => unawaited(appAccounts?.check(force: true)),
     polling: true,
   );
