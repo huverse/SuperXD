@@ -13,12 +13,16 @@ import 'package:superxd/playground/puzzle/hanoi/hanoi_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
+import 'package:superxd/theme/campus_tone.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 
 // 汉诺塔对局页：点一根柱子拿起最上面的盘子（盘子浮到柱顶上方），再点另一根放下；也可以直接按住盘子拖到别的柱子上。
 // [人工决策-2026-11-17 14:17:05] 拿起盘子时不亮出能放的柱子（柱身不变色、读屏不读「可以放」）：用户认为那等于直接告诉哪里合规；方向不许时的提示条照旧。
-// 棋盘上方是目标的缩略图（同样的配色）；相邻、循环的挪法在底座下面画箭头。不合规的放法轻震、盘子左右晃一晃退回原处，不算步数；方向不许时提示条说规矩。
+// 棋盘上方是目标的缩略图；相邻、循环的挪法在底座下面画箭头。不合规的放法轻震、盘子左右晃一晃退回原处，不算步数；方向不许时提示条说规矩。
+// [人工决策-2026-11-19 13:20:14] 盘子分得清、目标看得出是一组（用户截图：盘子都是一色系的相邻色，大小相近的分不出、目标与实物不像一组，选「拉开色相＋标号＋目标同款」）：
+// 每个盘子一个颜色，按大小从红到紫排成一串等距色相（OKLCH 同明度，换色相看起来一样亮），盘子正中写号码（1 最小，同读屏的「几号」）；
+// 目标缩略图用同一个盘子（同色、同号、同描边与渐变）按比例缩小，号码照写。
 class HanoiPage extends StatefulWidget {
   const HanoiPage({super.key, required this.game, required this.store, this.seeds, this.first, this.challenge});
   final PlaygroundGame game;
@@ -182,13 +186,14 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
     return disks == 1 ? widest : narrowest + (widest - narrowest) * disk / (disks - 1);
   }
 
-  // 目标的缩略图：旗子与「目标」，右边一排小柱子摆着目标局面（同样的配色），读屏念出每根柱子上从下到上是几号。
+  // 目标的缩略图：旗子与「目标」，右边一排小柱子摆着目标局面（同一个盘子按比例缩小、同色同号，人工决策见文件头 11-19 那条），读屏念出每根柱子上从下到上是几号。
   Widget _goal(BuildContext context, double width) {
     final palette = CampusPalette.of(context);
     final puzzle = _puzzle;
     final goal = hanoiStacks(puzzle.pegs, puzzle.goal);
-    final miniWidth = math.min(width * .5, 52.0 * puzzle.pegs), column = miniWidth / puzzle.pegs, widest = column - 6;
-    final diskHeight = puzzle.disks > 6 ? 5.0 : 6.0, rod = puzzle.disks * diskHeight + 6, height = rod + 3;
+    // 盘子高到写得下 14 号的号码；底座与柱子同棋盘一个颜色、按比例细一些。
+    final miniWidth = math.min(width * .62, 60.0 * puzzle.pegs), column = miniWidth / puzzle.pegs, widest = column - 6;
+    final diskHeight = _goalDiskHeight(context), rod = puzzle.disks * diskHeight + 6, height = rod + 4;
     final tower = puzzle.tower;
     final label = tower != null
         ? '目标，全部叠到第${tower + 1}根柱子'
@@ -202,19 +207,16 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
         Text('目标', style: TextStyle(fontSize: CampusFontSize.secondary, color: palette.onSurfaceVariant)),
         const SizedBox(width: CampusGap.medium),
         SizedBox(width: miniWidth, height: height, child: Stack(children: [
-          Positioned(left: 0, right: 0, bottom: 0, height: 3, child: DecoratedBox(decoration: BoxDecoration(color: palette.outlineSubtle, borderRadius: BorderRadius.circular(2)))),
+          Positioned(left: 0, right: 0, bottom: 0, height: 4, child: DecoratedBox(decoration: BoxDecoration(color: palette.outlineSubtle, borderRadius: BorderRadius.circular(2)))),
           for (var peg = 0; peg < puzzle.pegs; peg++) ...[
-            Positioned(left: column * (peg + .5) - 1, width: 2, bottom: 3, height: rod, child: ColoredBox(color: palette.outlineSubtle)),
+            Positioned(left: column * (peg + .5) - 1.5, width: 3, bottom: 4, height: rod, child: DecoratedBox(decoration: BoxDecoration(color: palette.outlineSubtle, borderRadius: BorderRadius.circular(1.5)))),
             for (final (level, disk) in goal[peg].indexed)
               Positioned(
                 left: column * (peg + .5) - _diskWidth(disk, puzzle.disks, widest) / 2,
                 width: _diskWidth(disk, puzzle.disks, widest),
-                bottom: 3 + level * diskHeight,
+                bottom: 4 + level * diskHeight,
                 height: diskHeight,
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: .5),
-                  child: DecoratedBox(decoration: BoxDecoration(color: _diskColor(palette, disk, puzzle.disks), borderRadius: BorderRadius.circular(999))),
-                ),
+                child: _Disk(color: _diskColor(palette, disk, puzzle.disks), label: disk + 1, raised: false),
               ),
           ],
         ])),
@@ -289,7 +291,7 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
               final progress = _shakingDisk == disk && _shake.isAnimating ? _shake.value : 1.0;
               return Transform.translate(offset: Offset(math.sin(progress * math.pi * 5) * 7 * (1 - progress), 0), child: child);
             },
-            child: _Disk(color: _diskColor(palette, disk, disks), raised: lifted || dragging),
+            child: _Disk(color: _diskColor(palette, disk, disks), label: disk + 1, raised: lifted || dragging),
           ),
         ));
       }
@@ -369,13 +371,15 @@ class _HanoiPageState extends State<HanoiPage> with SingleTickerProviderStateMix
     if (to != from) _attempt(from, to);
   }
 
-  // 盘子配色：以控件激活色为中心、色相向两边各偏 35°，小盘浅、大盘深，同一套配色里成一组相邻色（深色模式整体提亮）。
+  // 盘子配色（人工决策见文件头 11-19 那条）：从小到大按 OKLCH 色相从红（约 29°）到紫（约 310°）等距排开，明度、彩度一样，
+  // 盘数少时相邻两个隔得更开；颜色够浅，号码一律用深色写（深浅两种模式都对得上 4.5:1 以上）。
   static Color _diskColor(CampusPalette palette, int disk, int count) {
-    final base = HSLColor.fromColor(palette.accent);
-    final progress = count == 1 ? .5 : disk / (count - 1);
-    final lightness = palette.isDark ? .74 - progress * .18 : .64 - progress * .22;
-    return HSLColor.fromAHSL(1, (base.hue + (progress - .5) * 70) % 360, base.saturation.clamp(.45, .7), lightness).toColor();
+    final progress = count == 1 ? 0.0 : disk / (count - 1);
+    return CampusTone.degrees(29 + progress * 281).pick(palette.isDark ? .76 : .8, .15);
   }
+
+  // 目标里的盘子高：写得下一行 14 号的号码（跟着字号放大）。
+  static double _goalDiskHeight(BuildContext context) => MediaQuery.textScalerOf(context).scale(14) + 3;
 }
 
 // 底座下面的挪法箭头（拼成一条路径一次画完）：相邻是相邻两根之间的双向箭头；循环是指向下一根的单向箭头，再从最后一根下面绕回第一根。
@@ -425,10 +429,12 @@ class _RulePainter extends CustomPainter {
   bool shouldRepaint(_RulePainter oldDelegate) => oldDelegate.variant != variant || oldDelegate.pegs != pegs || oldDelegate.color != color;
 }
 
-// 一个盘子：圆角胶囊，上沿略亮（同实物的受光面），细边加深一点保证浅色盘在浅底上也看得清；拿起时浮起一层柔和投影。
+// 一个盘子：圆角胶囊，上沿略亮（同实物的受光面），细边加深一点保证浅色盘在浅底上也看得清，正中写号码；拿起时浮起一层柔和投影。
+// 棋盘与目标缩略图共用（人工决策见文件头 11-19 那条）。号码放不下时整体缩小，不挤出盘子。
 class _Disk extends StatelessWidget {
-  const _Disk({required this.color, required this.raised});
+  const _Disk({required this.color, required this.label, required this.raised});
   final Color color;
+  final int label;
   final bool raised;
 
   @override
@@ -444,6 +450,11 @@ class _Disk extends StatelessWidget {
           border: Border.all(color: Color.lerp(color, palette.onSurface, .25)!),
           boxShadow: [if (raised) BoxShadow(color: Colors.black.withValues(alpha: palette.isDark ? .4 : .18), blurRadius: 14, offset: const Offset(0, 6))],
         ),
+        // 号码不单独读：读屏按柱子读「从下到上是几号」。盘子都是浅色，深浅两种模式都用深色字（深色模式下深色的是 backgroundBottom）。
+        child: ExcludeSemantics(child: Center(child: FittedBox(fit: BoxFit.scaleDown, child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4),
+          child: Text('$label', style: TextStyle(fontSize: 14, height: 1, fontWeight: FontWeight.w600, color: palette.isDark ? palette.backgroundBottom : palette.onSurface)),
+        )))),
       ),
     );
   }
