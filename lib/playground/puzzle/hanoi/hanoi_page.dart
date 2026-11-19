@@ -453,7 +453,7 @@ class _Disk extends StatelessWidget {
         // 号码不单独读：读屏按柱子读「从下到上是几号」。盘子都是浅色，深浅两种模式都用深色字（深色模式下深色的是 backgroundBottom）。
         child: ExcludeSemantics(child: Center(child: FittedBox(fit: BoxFit.scaleDown, child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 4),
-          child: Text('$label', style: TextStyle(fontSize: 14, height: 1, fontWeight: FontWeight.w600, color: palette.isDark ? palette.backgroundBottom : palette.onSurface)),
+          child: Text('$label', style: TextStyle(fontSize: CampusFontSize.secondary, height: 1, fontWeight: FontWeight.w600, color: palette.isDark ? palette.backgroundBottom : palette.onSurface)),
         )))),
       ),
     );

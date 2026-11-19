@@ -120,7 +120,7 @@ class AppAccountRow extends StatelessWidget {
       Expanded(child: Text(!appAccounts.loaded ? '' : appAccounts.username ?? '未登录', maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.end, style: TextStyle(fontSize: CampusFontSize.secondary, color: CampusPalette.of(context).onSurfaceVariant))),
     ]),
     trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-      if (notes?.unread ?? false) ...[Semantics(label: '有新的', child: UnreadDot(color: CampusPalette.of(context).dangerFill)), const SizedBox(width: 12)],
+      if (notes?.unread ?? false) ...[Semantics(label: '有新的', child: UnreadDot(color: CampusPalette.of(context).dangerFill)), const SizedBox(width: CampusGap.medium)],
       const CampusIcon(CampusIcons.next),
     ]),
     enabled: appAccounts.loaded,

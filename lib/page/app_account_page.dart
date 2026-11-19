@@ -185,7 +185,7 @@ class _AppAccountPageState extends State<AppAccountPage> {
         ListTile(
           contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.letter), title: const Text('开发者的话'),
           trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-            if (notes.unread) ...[Semantics(label: '有新的', child: UnreadDot(color: CampusPalette.of(context).dangerFill)), const SizedBox(width: 12)],
+            if (notes.unread) ...[Semantics(label: '有新的', child: UnreadDot(color: CampusPalette.of(context).dangerFill)), const SizedBox(width: CampusGap.medium)],
             const CampusIcon(CampusIcons.next),
           ]),
           onTap: () => Navigator.of(context).push(CampusPageRoute<void>(builder: (_) => DeveloperNotesPage(notes: notes))),
