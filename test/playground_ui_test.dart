@@ -125,7 +125,7 @@ void main() {
       for (var index = 1; index < colors.length; index++) {
         final (a, b) = (colors[index - 1], colors[index]);
         final distance = math.sqrt(math.pow(a.r - b.r, 2) + math.pow(a.g - b.g, 2) + math.pow(a.b - b.b, 2));
-        expect(distance, greaterThan(.25), reason: '${index} 号与 ${index + 1} 号颜色分得开');
+        expect(distance, greaterThan(.25), reason: '$index 号与 ${index + 1} 号颜色分得开');
       }
     });
   }
