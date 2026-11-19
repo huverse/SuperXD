@@ -72,7 +72,7 @@ class TodayPage extends StatefulWidget {
     this.autoSync,
   });
   final CampusGateway gateway;
-  // 自动同步（设备级，经账号门面跟着当前账号）；给了时「同步范围」里多一个自动同步入口。
+  // 自动同步（设备级，经账号门面跟着当前账号）：这页只听它记下的结果、看得见时马上重读本机；设置入口只在学业页（同步范围里不再给）。
   final AutoSync? autoSync;
   final Future<void> Function()? onSessionExpired;
   final bool Function()? isAccountCurrent;

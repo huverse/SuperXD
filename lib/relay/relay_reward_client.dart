@@ -12,7 +12,7 @@ import 'package:superxd/relay/relay_client.dart';
 import 'package:superxd/relay/relay_crypto.dart';
 
 // 节日抽签的自建中转实现（人工决策见 domain/festival.dart）：POST /v1/rewards/<活动>/draw，用这个应用账号的设备密钥签名
-// （同挑战，密钥在安全存储 superxd_account 的 account.slot），请求体是近 30 天打开过的天数与要第 2 版奖品信封（seal: 2），娱乐与积分关着时另带 levels: false。
+// （同挑战，密钥在安全存储 superxd_account 的 account.slot），请求体是近 30 天打开过的天数与要第 2 版奖品信封（seal: 2），仅本机时另带 levels: false。
 // 签名、超时（15 秒）、请求记录与校时后重发一次都在 AccountRelay；不自动重试（同一个人重复抽返回同一结果，下次回到前台再补抽）。
 // 抽中的奖品用这台设备的 box 公钥封装、另带服务器签名（openRewardPrize），只有它打得开、验过签才揭晓。serverKeys 是受信的服务器在线签名公钥，测试换成测试钥。
 class RelayRewardClient implements FestivalRewardClient {

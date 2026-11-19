@@ -35,7 +35,7 @@
   - 辅助函数：expandWeeks 展开周次表达式与单双周；parseMeetings 解析上课时段文本。
   - 解析失败抛 ScheduleParseException。
 - parse_grades.dart：按列名解析成绩页 HTML，包括有效成绩、原始成绩、分类汇总和抬头信息；buildGradeBody 拼装查询表单。
-- parse_bells.dart：把作息页 HTML 解析为节次、时段（上午、下午、晚上）和起止时间。页面标题的匹配规则里写死了校名。
+- parse_bells.dart：把作息页 HTML 解析为节次、时段（上午、下午、晚上）和起止时间；起止两格都空的节次（学校没填，如 2022-2023 学年第一学期第 8 节）跳过、不进结果，其余照常。页面标题的匹配规则里写死了校名。
 
 # 关键规则
 

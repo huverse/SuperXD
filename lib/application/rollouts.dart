@@ -118,7 +118,7 @@ class Rollouts extends ChangeNotifier {
     }
   }
 
-  // 删除了娱乐与积分数据：记着的等级归零，不等下次取等级。
+  // 删除了游乐场与积分的数据：记着的等级归零，不等下次取等级。
   Future<void> forgetLevel() => memory.saveLevel(subject, 0);
 
   Future<void> _refreshLevel() async {
