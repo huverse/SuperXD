@@ -143,8 +143,10 @@ void main() async {
   final developerOpen = DeveloperSettings.open(File(path.join(deviceOnly.path, 'developer.json')));
   // Android 10–14默认不绘制到导航栏后，透明导航栏会露出原生窗口底色（浅色为白条）；15+系统已强制全面屏。
   final edgeToEdge = SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
-  // 接管同一进程里旧引擎遗留的账号库连接、回滚停在中间的事务（人工决策见 local/account_store.dart 的 open）。
-  final storeOpen = AccountStore.open(reclaim: true);
+  // 先登记前台、让正在后台自己跑的自动同步停下交还账号库，再开库（同一时刻只有一份引擎用账号库，人工决策见 app_background_sync.dart 文件头 11-19 那条）；
+  // 开库时接管同一进程里旧引擎遗留的账号库连接、回滚停在中间的事务（人工决策见 local/account_store.dart 的 open）。
+  final foregroundClaim = claimAccountStore();
+  final storeOpen = foregroundClaim.then((_) => AccountStore.open(reclaim: true));
   // 衬线等要下载的字体（人工决策见 domain/font_pack.dart）：文件在应用支持目录的 font_packs（排除备份）；选着的在显示设置打开时（首帧前）核对并注册，
   // 升级上来还没下的等同意协议与政策之后自动下回来（见下面 ensureFontPack）；没配中转时下不了。
   final fontPacks = FontPackLibrary(directory: Directory(path.join(support.path, 'font_packs')), source: switch (relay) {
@@ -273,7 +275,7 @@ void main() async {
   watchWidgetTheme(display, widgetPort);
   if (updates != null) watchAppUpdates(updates, hooks);
   watchMoments(moments, hooks, notes: notes, festivals: festivals, appAccounts: appAccounts);
-  watchAutoSync(session, autoSync, hooks);
+  watchAutoSync(session, autoSync, hooks, await foregroundClaim);
   if (appAccounts != null) watchAppAccounts(appAccounts, hooks);
   watchRollouts(rollouts, hooks);
   watchAppHealth(health, hooks);

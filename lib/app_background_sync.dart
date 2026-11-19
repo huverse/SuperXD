@@ -27,10 +27,19 @@ import 'package:superxd/local/legal_notice_memory.dart';
 // 应用开着时（同一进程里有前台登记的端口）交给前台那份同步——用它已经开着的账号门面与教务会话，不让两份引擎同时动一个账号库、
 // 抢同一个教务会话；应用不在时自己开账号库跑一轮，只用本机会话恢复，恢复不了就算了（不自动登录、不清活动账号、不打扰）。
 // 任务的结果一律报成功：没同步成的由自动同步按间隔与网络规则下次再来，不交给系统的失败重试（除会话恢复的一次重放外不自动重试）。
+//
+// [人工决策-2026-11-19 12:48:20] 同一进程里同一时刻只让一份引擎用账号库（用户选「保留后台，修并发」）：11-19 早上用户打开应用课表、成绩一直在读取，
+// 模拟器上复现为永久卡死——后台任务那份与前台各开一条连接连同一个库，sqflite 整个进程只有一条原生工作线程，一边拿着写锁等下一句、另一边在同一条线程上等锁，
+// 谁也走不了。做法：前台启动一开始、开账号库之前就登记（claimAccountStore），后台任务来了一律交给前台（前台还没准备好就这次不跑），前台在时后台那份不开库；
+// 后台那份自己跑着时用户打开了应用，前台先让它停下、关好账号库（在途的教务请求当场中断，HeadlessClaim）再开库。
 
 const _portName = 'superxd_auto_sync';
+// 后台那份自己跑一轮期间登记的端口：前台起来时经它要回账号库。
+const _headlessName = 'superxd_auto_sync_headless';
 // 前台收到后先回一声；这么久没回声说明登记的前台已经不在了。
 const _ackWait = Duration(seconds: 5);
+// 前台等后台那份停下、关好账号库的时间：中断在途请求、回滚没提交的事务都是毫秒级；等不到（那份引擎已经没了、登记还在）就照常开库。
+const _releaseWait = Duration(seconds: 5);
 
 // 系统给一次后台任务的时间：iOS 的后台刷新大约 30 秒（超时系统会终止应用、以后少给机会），安卓 WorkManager 单次 10 分钟；都留出收尾的余量。
 // 到点了这一轮在下一检查点停下（同步按检查点逐项来，停下的部分下次再同步），交给前台跑时同样按它等、也按它停。
@@ -105,6 +114,11 @@ Future<bool> forwardAutoSync(DateTime deadline, {Duration ackWait = _ackWait}) a
       if (IsolateNameServer.lookupPortByName(_portName) == app) IsolateNameServer.removePortNameMapping(_portName);
       return false;
     }
+    // 前台在、还没准备好（没同意协议与政策、自动同步还没接上）：这一轮不跑，也不自己开账号库，前台准备好后按到期补跑。
+    if (replies.current != true) {
+      campusLog('[AutoSync] action=background skipped=foreground_not_ready');
+      return true;
+    }
     await replies.moveNext().timeout(deadline.difference(DateTime.now()), onTimeout: () => false);
     campusLog('[AutoSync] action=background forwarded=true');
     return true;
@@ -126,27 +140,37 @@ Future<void> _runHeadless(DateTime deadline) async {
     publish: publishDiagnosticArchive,
   );
   campusLog = logs.tee(debugPrint);
+  final claim = HeadlessClaim();
   try {
     // 记住了账号的，会话过期时照常用存着的密码重新登录一次再重放（用户 11-09 允许后台自动重登，隐私政策第一节写明）。
-    await headlessAutoSync(deadline, support: support, openGateway: () async {
+    await headlessAutoSync(deadline, support: support, claim: claim, openGateway: () async {
       final store = await AccountStore.open();
       _release = store.release;
       return AccountGateway(store: store, credentials: SecureCredentialStore());
     });
   } finally {
+    claim.close();
     _release = null;
     await logs.flush(settle: true);
   }
 }
 
 // 应用不在时那一轮里不碰平台的部分（拆出来让测试注入应用支持目录与账号门面）：没同意协议与政策不联网，只用本机会话恢复，
-// 恢复不了就算了；到时限、系统叫停或前台登记了端口就在下一检查点停下；账号门面用完关掉。
+// 恢复不了就算了；前台此刻已经在了就不开库（交给前台时它还没登记）；到时限、系统叫停、前台登记了端口或要回了账号库就在下一检查点停下；账号门面用完关掉。
 @visibleForTesting
-Future<void> headlessAutoSync(DateTime deadline, {required Directory support, required Future<AccountGateway> Function() openGateway}) async {
+Future<void> headlessAutoSync(DateTime deadline, {required Directory support, required Future<AccountGateway> Function() openGateway, HeadlessClaim? claim}) async {
   final legal = await LegalNoticeMemory.open(File(path.join(support.path, 'legal_notice.json')));
   if (legal.agreedRevision == null) return;
   ensureCampusClock();
-  final gateway = await openGateway();
+  if (IsolateNameServer.lookupPortByName(_portName) != null) {
+    campusLog('[AutoSync] action=background skipped=foreground');
+    return;
+  }
+  final gateway = claim == null ? await openGateway() : await claim.open(openGateway);
+  if (gateway == null) {
+    campusLog('[AutoSync] action=background skipped=handed_over');
+    return;
+  }
   try {
     if (!(await gateway.restoreLocalSession()).ok) {
       campusLog('[AutoSync] action=background skipped=no_session');
@@ -154,49 +178,123 @@ Future<void> headlessAutoSync(DateTime deadline, {required Directory support, re
     }
     // 后台这份引擎里也发同步结果通知（插件在后台引擎里同样注册），点开进同步记录。
     await AutoSync(gateway: gateway, generation: () => gateway.generation, notices: SyncNotifications()).runIfDue(
-      keepGoing: () => !_stopped && DateTime.now().isBefore(deadline) && IsolateNameServer.lookupPortByName(_portName) == null,
+      keepGoing: () => !_stopped && !(claim?.released ?? false) && DateTime.now().isBefore(deadline) && IsolateNameServer.lookupPortByName(_portName) == null,
     );
   } finally {
     await gateway.close();
   }
 }
 
-// 前台登记：后台任务来了就在这里跑（到后台任务的时限为止），先回一声收到、跑完再回一声。热重启后旧登记可能还在，先撤再登。
-// 返回重新登记的函数：前台卡过一阵、被后台任务当成不在而撤掉了登记时，回到前台再登一次。
+// 后台那份自己跑一轮期间登记的端口（人工决策见文件头 11-19 那条）：前台起来时发来回话端口，这里马上关掉账号门面
+// （在途的教务请求当场中断、没提交的事务回滚）再回话；要回去以后不再开库，开到一半的开完马上关。同一时刻只有一份后台任务（WorkManager 的唯一任务）。
 @visibleForTesting
-void Function() listenForBackgroundSync(AutoSync autoSync) {
-  final port = ReceivePort();
-  void register() {
-    if (IsolateNameServer.lookupPortByName(_portName) == port.sendPort) return;
-    IsolateNameServer.removePortNameMapping(_portName);
-    IsolateNameServer.registerPortWithName(port.sendPort, _portName);
+class HeadlessClaim {
+  HeadlessClaim() {
+    IsolateNameServer.removePortNameMapping(_headlessName);
+    IsolateNameServer.registerPortWithName(_port.sendPort, _headlessName);
+    _port.listen((message) {
+      if (message is SendPort) unawaited(_handOver(message));
+    });
   }
 
-  register();
-  port.listen((message) {
+  final _port = ReceivePort();
+  bool _released = false;
+  Future<AccountGateway?>? _opening;
+
+  // 前台要回了账号库：这一轮在下一检查点停下。
+  bool get released => _released;
+
+  Future<AccountGateway?> open(Future<AccountGateway> Function() opener) {
+    if (_released) return Future.value(null);
+    return _opening = opener().then((gateway) async {
+      if (!_released) return gateway;
+      await gateway.close();
+      return null;
+    });
+  }
+
+  Future<void> _handOver(SendPort reply) async {
+    _released = true;
+    try {
+      await (await _opening)?.close();
+    } catch (error, stack) {
+      campusLog('[AutoSync] action=hand_over errorType=${error.runtimeType}\n$stack');
+    } finally {
+      campusLog('[AutoSync] action=background handed_over=true');
+      reply.send(true);
+    }
+  }
+
+  void close() {
+    if (IsolateNameServer.lookupPortByName(_headlessName) == _port.sendPort) IsolateNameServer.removePortNameMapping(_headlessName);
+    _port.close();
+  }
+}
+
+// 前台启动一开始、开账号库之前调（人工决策见文件头 11-19 那条）：登记前台的端口，再让正在后台自己跑的那一轮停下、关好账号库，
+// 回话了（或等不到：那份引擎已经没了、登记还在，撤掉这条登记）才返回。
+Future<ForegroundSync> claimAccountStore({Duration releaseWait = _releaseWait}) async {
+  final foreground = ForegroundSync._();
+  final headless = IsolateNameServer.lookupPortByName(_headlessName);
+  if (headless == null) return foreground;
+  final reply = ReceivePort();
+  try {
+    headless.send(reply.sendPort);
+    final handed = await reply.first.timeout(releaseWait, onTimeout: () => false);
+    campusLog('[AutoSync] action=claim handed_over=$handed');
+    if (handed != true && IsolateNameServer.lookupPortByName(_headlessName) == headless) IsolateNameServer.removePortNameMapping(_headlessName);
+  } finally {
+    reply.close();
+  }
+  return foreground;
+}
+
+// 前台的登记：后台任务来了交给前台跑（到后台任务的时限为止），先回一声收到、跑完再回一声；同意协议与政策、自动同步接上之前回「这次不跑」。
+class ForegroundSync {
+  ForegroundSync._() {
+    register();
+    _port.listen(_receive);
+  }
+
+  final _port = ReceivePort();
+  AutoSync? _autoSync;
+
+  void attach(AutoSync autoSync) => _autoSync = autoSync;
+
+  // 前台卡过一阵、被后台任务当成不在而撤掉了登记时，回到前台再登一次。热重启后旧登记可能还在，先撤再登。
+  void register() {
+    if (IsolateNameServer.lookupPortByName(_portName) == _port.sendPort) return;
+    IsolateNameServer.removePortNameMapping(_portName);
+    IsolateNameServer.registerPortWithName(_port.sendPort, _portName);
+  }
+
+  void _receive(Object? message) {
     if (message case [final SendPort reply, final int deadline]) {
+      final autoSync = _autoSync;
+      if (autoSync == null) {
+        reply.send(false);
+        return;
+      }
       reply.send(true);
       final until = DateTime.fromMillisecondsSinceEpoch(deadline);
       unawaited(autoSync.runIfDue(keepGoing: () => DateTime.now().isBefore(until)).catchError((Object error, StackTrace stack) {
         campusLog('[AutoSync] action=forwarded errorType=${error.runtimeType}\n$stack');
       }).whenComplete(() => reply.send(true)));
     }
-  });
-  return register;
+  }
 }
 
 // 自动同步的时机：同意协议与政策之后才开始（同意之前不联网）。启动、切换账号或退出时重读设置、排好或撤掉后台任务，
 // 登录着的到期就补跑一轮；回到前台时也看一眼到没到期（iOS 的后台刷新由系统定时机，常常靠这里补上）。这些都是用户打开着应用（foreground）；
 // 启动时只是读回本机会话，之后代次变了才是真的重新登录（relogin，清掉登录过期的暂停）。
-void watchAutoSync(AppSession session, AutoSync autoSync, AppHooks hooks) {
-  late final void Function() register;
+void watchAutoSync(AppSession session, AutoSync autoSync, AppHooks hooks, ForegroundSync foreground) {
   Future<void> changed({required bool relogin}) async {
     await autoSync.accountChanged(signedIn: session.loggedIn, relogin: relogin);
     if (session.loggedIn) await autoSync.runIfDue(foreground: true);
   }
 
   hooks.afterAgreed('AutoSync', () {
-    register = listenForBackgroundSync(autoSync);
+    foreground.attach(autoSync);
     var generation = session.generation, loggedIn = session.loggedIn;
     session.addListener(() {
       if (session.generation == generation && session.loggedIn == loggedIn) return;
@@ -205,7 +303,7 @@ void watchAutoSync(AppSession session, AutoSync autoSync, AppHooks hooks) {
       unawaited(changed(relogin: true).catchError((Object error, StackTrace stack) => campusLog('[AutoSync] action=watch errorType=${error.runtimeType}\n$stack')));
     });
     hooks.onResume('AutoSync', () {
-      register();
+      foreground.register();
       if (session.loggedIn) return autoSync.runIfDue(foreground: true);
     }, service: NetworkService.eduAuto);
     return changed(relogin: false);
