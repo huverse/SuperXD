@@ -41,12 +41,14 @@ class GradeSyncChange extends SyncChange {
 }
 
 class SyncRecord {
-  const SyncRecord({this.id, required this.at, required this.trigger, this.changes = const [], this.failures = const [], this.cancelled = false});
+  const SyncRecord({this.id, required this.at, required this.trigger, this.changes = const [], this.same = const [], this.failures = const [], this.cancelled = false});
   // 本机库里的编号，写入前为空。
   final int? id;
   final DateTime at;
   final SyncTrigger trigger;
   final List<SyncChange> changes;
+  // 比对过、和上次一样的几项（「课表 · 学期」「成绩 · 学期」）：11-19 用户说只写「没有变化」看不出查了什么，记下来逐项写出。
+  final List<String> same;
   // 「项目：原因」。
   final List<String> failures;
   final bool cancelled;
@@ -67,6 +69,7 @@ class SyncRecord {
             'counts': [change.counts.$1, change.counts.$2], 'first': change.first},
         },
     ],
+    if (same.isNotEmpty) 'same': _names(same),
     'failures': _names(failures),
     if (cancelled) 'cancelled': true,
   };
@@ -81,6 +84,7 @@ class SyncRecord {
       id: id,
       at: DateTime.parse(at),
       trigger: SyncTrigger.values.asNameMap()[trigger] ?? SyncTrigger.manual,
+      same: strings(map['same']),
       failures: strings(map['failures']),
       cancelled: map['cancelled'] == true,
       changes: [
@@ -143,7 +147,17 @@ String syncRecordHeadline(SyncRecord record) {
   if (record.failures.isNotEmpty) return '没有同步完：${record.failures.first}';
   if (record.cancelled) return '没有同步完';
   if (record.changes.isNotEmpty) return '第一次同步';
-  return '没有变化';
+  return syncSameLine(record) ?? '没有变化';
+}
+
+// 比对过、都和上次一样时写出查了哪几类：「课表、成绩都和上次一样」；没记下比对了什么（旧记录）为空。
+String? syncSameLine(SyncRecord record) {
+  final kinds = [for (final kind in const ['课表', '成绩']) if (record.same.any((item) => item.startsWith('$kind · '))) kind];
+  return switch (kinds) {
+    [] => null,
+    [final kind] => '$kind和上次一样',
+    _ => '${kinds.join('、')}都和上次一样',
+  };
 }
 
 // 自动同步有变化时的系统通知（标题与正文）；没有值得通知的为空。
@@ -151,7 +165,12 @@ String syncRecordHeadline(SyncRecord record) {
   if (record.trigger != SyncTrigger.auto || !record.changed) return null;
   final grades = [for (final change in record.changes.whereType<GradeSyncChange>()) if (!change.first) ...change.added];
   final held = record.changes.whereType<ScheduleSyncChange>().any((change) => !change.first && change.held);
-  final title = grades.isNotEmpty ? '新出了 ${record.changes.whereType<GradeSyncChange>().where((change) => !change.first).fold(0, (sum, change) => sum + change.counts.$1)} 门成绩' : held ? '教务课表有改动，等你来选' : '课表、成绩有更新';
+  // 标题只写变了的那几类（11-19 只有课表变了时写成「课表、成绩有更新」，看不出成绩到底变没变）。
+  final schedule = record.changes.whereType<ScheduleSyncChange>().any((change) => !change.first && !change.held);
+  final graded = record.changes.whereType<GradeSyncChange>().any((change) => !change.first);
+  final title = grades.isNotEmpty
+      ? '新出了 ${record.changes.whereType<GradeSyncChange>().where((change) => !change.first).fold(0, (sum, change) => sum + change.counts.$1)} 门成绩'
+      : held ? '教务课表有改动，等你来选' : schedule && graded ? '课表、成绩有更新' : schedule ? '课表有更新' : '成绩有改动';
   // 正文写具体是什么：新出成绩写课名，其余写第一处变化（哪个学期、改了什么），不重复标题。
   final body = grades.isNotEmpty ? grades.take(3).join('、') : syncChangeLine(record.changes.firstWhere((change) => switch (change) { ScheduleSyncChange(:final first) => !first, GradeSyncChange(:final first) => !first }));
   return (title: title, body: body);

@@ -118,7 +118,7 @@ class SyncRecordPage extends StatelessWidget {
       body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListView(padding: const EdgeInsets.all(16), children: [
         Text(formatCampusRelative(record.at.toIso8601String()), style: secondary),
         const SizedBox(height: 12),
-        if (record.changes.isEmpty && record.failures.isEmpty) Text(syncRecordHeadline(record), style: TextStyle(fontSize: 16, color: palette.onSurface)),
+        if (record.changes.isEmpty && record.failures.isEmpty && record.same.isEmpty) Text(syncRecordHeadline(record), style: TextStyle(fontSize: 16, color: palette.onSurface)),
         for (final change in record.changes)
           CampusSurface(
             margin: const EdgeInsets.only(bottom: 12),
@@ -140,6 +140,13 @@ class SyncRecordPage extends StatelessWidget {
               ]),
             ]),
           ),
+        // 比对过、和上次一样的几项逐项写出（11-19 用户：只写「没有变化」看不出查了什么）。
+        if (record.same.isNotEmpty)
+          CampusSurface(margin: const EdgeInsets.only(bottom: 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('和上次一样', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),
+            const SizedBox(height: 8),
+            for (final item in record.same) Padding(padding: const EdgeInsets.only(bottom: 4), child: DotSeparatedText(item, style: TextStyle(fontSize: 14, color: palette.onSurface))),
+          ])),
         if (record.failures.isNotEmpty)
           CampusSurface(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('没有同步完', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),

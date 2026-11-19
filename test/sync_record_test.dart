@@ -108,6 +108,17 @@ void main() {
     expect(syncChangeLine(held), '课表 · 2026-2027学年第一学期 · 教务有改动，和你改过的不一样，等你来选');
     expect(syncChangeLine(ScheduleSyncChange(termKey: _term.key, termLabel: _term.label, counts: (1, 1, 2))), '课表 · 2026-2027学年第一学期 · 新增 1 门、删除 1 门、改动 2 门');
     expect(syncRecordHeadline(auto([])), '没有变化');
+    // 11-19：只有课表变了写「课表有更新」，只改了分数写「成绩有改动」，两类都变才写「课表、成绩有更新」。
+    final schedule = ScheduleSyncChange(termKey: _term.key, termLabel: _term.label, counts: (1, 0, 0), before: 'r1');
+    final regraded = GradeSyncChange(termKey: _term.key, termLabel: _term.label, changed: const ['合成线代 82'], counts: (0, 1));
+    expect(syncRecordNotice(auto([schedule]))?.title, '课表有更新');
+    expect(syncRecordNotice(auto([regraded]))?.title, '成绩有改动');
+    expect(syncRecordNotice(auto([schedule, regraded]))?.title, '课表、成绩有更新');
+    // 比对过、和上次一样的逐项记下：概括写查了哪几类。
+    SyncRecord same(List<String> items) => SyncRecord(at: DateTime.utc(2026, 11, 16), trigger: SyncTrigger.auto, same: items);
+    expect(syncRecordHeadline(same(['课表 · ${_term.label}', '成绩 · ${_term.label}'])), '课表、成绩都和上次一样');
+    expect(syncRecordHeadline(same(['成绩 · ${_term.label}'])), '成绩和上次一样');
+    expect(SyncRecord.fromRow(id: 3, at: '2026-11-16T00:00:00.000Z', trigger: 'auto', payload: jsonEncodeRecord(same(['课表 · ${_term.label}']))).same, ['课表 · ${_term.label}']);
     expect(syncRecordHeadline(SyncRecord(at: DateTime.utc(2026), trigger: SyncTrigger.auto, failures: const ['成绩 · 2026-2027学年第一学期：学校教务系统没有响应'])), '没有同步完：成绩 · 2026-2027学年第一学期：学校教务系统没有响应');
   });
 
@@ -154,7 +165,9 @@ void main() {
         ..eduGrades = _grades([_grade('X', '合成线代', 80)]);
       final quiet = await CampusSync(same).run(contents: {SyncContent.schedule, SyncContent.grades}, isActive: () => true, resolveSchedule: (_, _, _) async => const KeepLocal(remember: true), chooseBells: (_, _) async => BellsChoice.cancel);
       expect(quiet.record!.changes, isEmpty);
-      expect(syncRecordHeadline(quiet.record!), '没有变化');
+      expect(quiet.record!.same, ['课表 · ${_term.label}', '成绩 · ${_term.label}'], reason: '记下比对过、和上次一样的几项');
+      expect(syncRecordHeadline(quiet.record!), '课表、成绩都和上次一样');
+      expect(report.record!.same, isEmpty, reason: '第一次同步到的记成变化，不算一样');
     });
 
     test('自动同步记成自动；和你改过的课表冲突、留着等你来选的记成待处理，有变化时发通知', () async {

@@ -54,7 +54,19 @@ class _AcademicPageState extends State<AcademicPage> {
   @override
   void initState() {
     super.initState();
+    widget.autoSync?.addListener(_onAutoSync);
     unawaited(_load());
+  }
+
+  // 前台的自动同步记下结果时重读最近一条同步记录与当前学期（11-19 用户选定：同步完马上看得到）。
+  void _onAutoSync() {
+    if (_current && !_syncing) unawaited(_load());
+  }
+
+  @override
+  void dispose() {
+    widget.autoSync?.removeListener(_onAutoSync);
+    super.dispose();
   }
 
   // 只读本机：当前学期（学期列表的第一项）、开学日算第几周、最近一条同步记录。

@@ -99,6 +99,12 @@ class CampusSync {
       at: DateTime.now().toUtc(),
       trigger: yields ? SyncTrigger.auto : SyncTrigger.manual,
       changes: changes,
+      // 同步完了、没有记下变化的课表与成绩（比对过、和上次一样），记录里逐项写出（人工决策见 domain/sync_record.dart）。
+      same: [
+        for (final item in report.items)
+          if (item.outcome == SyncOutcome.completed && (item.label.startsWith('课表 · ') || item.label.startsWith('成绩 · ')) && !changes.any((change) => item.label == '${change is ScheduleSyncChange ? '课表' : '成绩'} · ${change.termLabel.isEmpty ? change.termKey : change.termLabel}'))
+            item.label,
+      ],
       failures: [for (final item in report.items) if (item.outcome == SyncOutcome.failed) '${item.label}：${item.message}'],
       cancelled: report.cancelled,
     ));

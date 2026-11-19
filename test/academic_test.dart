@@ -9,6 +9,7 @@ import 'package:superxd/application/auto_sync.dart';
 import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/schedule_store.dart';
 import 'package:superxd/domain/sync_record.dart';
 import 'package:superxd/app_services.dart';
@@ -148,6 +149,34 @@ void main() {
     session.dispose();
   });
 
+  // 11-19 用户选定：前台的自动同步记下结果后，学业页与今天页马上重读本机，不用等切页或下次打开。
+  testWidgets('前台自动同步记下结果：学业页马上换成最新一条记录，今天页看得见时马上重读本机', (tester) async {
+    final fixtures = pageFixtures();
+    final autoSync = _PingAutoSync(FixtureCampusGateway(readText: (name) async => fixtures[name]!));
+    final logs = <String>[];
+    final previous = campusLog;
+    campusLog = logs.add;
+    addTearDown(() => campusLog = previous);
+    final (accounts, session) = await _app(tester, autoSync: autoSync);
+    bool reread() => logs.any((log) => log.contains('[TodayPage] action=read_local') && log.contains('state=start'));
+    logs.clear();
+    autoSync.ping();
+    await tester.pumpAndSettle();
+    expect(reread(), isTrue, reason: '今天页看得见：马上重读');
+    unawaited(GoRouter.of(tester.element(find.byType(ShellPage))).push('/academic'));
+    await tester.pumpAndSettle();
+    expect(find.textContaining('还没有同步记录'), findsOneWidget);
+    await accounts.inner.recordSync(_record());
+    logs.clear();
+    autoSync.ping();
+    await tester.pumpAndSettle();
+    expect(find.textContaining('自动同步于'), findsOneWidget);
+    expect(find.text('课表有变化 · 新出 1 门成绩'), findsOneWidget);
+    expect(reread(), isFalse, reason: '今天页被盖住时不重读，切回来时再读');
+    await tester.pumpWidget(const SizedBox());
+    session.dispose();
+  });
+
   testWidgets('同步结果弹窗列出这一轮改了什么', (tester) async {
     await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Builder(builder: (context) => TextButton(
       onPressed: () => showCampusSyncReport(context, CampusSyncReport(const [SyncItemResult('课表 · 2026-2027学年第一学期', SyncOutcome.completed, '已同步')], record: _record())),
@@ -161,4 +190,9 @@ void main() {
     expect(find.text('新增：合成物理；改动：合成高数：教师'), findsOneWidget);
     expect(line('成绩 · 2026-2027学年第一学期 · 新出 1 门'), findsOneWidget);
   });
+}
+
+class _PingAutoSync extends AutoSync {
+  _PingAutoSync(CampusGateway gateway) : super(gateway: gateway);
+  void ping() => notifyListeners();
 }
