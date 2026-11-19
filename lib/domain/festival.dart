@@ -23,6 +23,7 @@ import 'package:superxd/domain/app_account.dart';
 //
 // [人工决策-2026-11-15 17:59:02] 节日抽奖按应用账号认人（用户选定，服务端见 reward_odds.ts）：应用账号是自己的账号体系，没有学号这类
 // 能跨账号认人的身份，一个应用账号一次活动只抽一次，换设备、重装不能重抽，注销后重新注册算新的人；账号建立不满 7 天的结果是 FestivalTooNew。
+// [人工决策-2026-11-19 18:17:27] 用户确认上一条（按业界最佳实践：注销后不另留认人的记录，挡重复领靠每个活动的账号年龄门槛、限流与小额兜底），原因写在服务端 reward_odds.ts 同一时刻那条。
 //
 // 一次节日：编号（如 spring-2027，同一节日每一年是不同的一次；发出后不改，播过、抽过都按它记）、名字、校园时区的起止日期（含两端，YYYY-MM-DD）、
 // 抽奖活动编号（为空不抽奖；与服务器上 reward_admin create 的编号一致）。
@@ -155,7 +156,7 @@ abstract class FestivalMemory {
 }
 
 // 抽签（relay 实现：自建中转，用这个应用账号的设备密钥签名）。连不上、限流时抛 FestivalException，账号已不在抛 FestivalNotSignedIn；
-// 同一个人重复抽返回同一个结果。levels 为假（娱乐与积分关着，人工决策见 domain/leisure.dart）时请服务器不按积分等级加权。
+// 同一个人重复抽返回同一个结果。levels 为假（仅本机，人工决策见 domain/network_policy.dart）时请服务器不按积分等级加权。
 abstract class FestivalRewardClient {
   Future<FestivalDraw> draw(AppAccountRef account, String campaign, {required String occasion, required int activeDays, bool levels = true});
   // 查一个活动此刻能不能领（只读、不记这次）；没登录抛 FestivalNotSignedIn，其余失败抛 FestivalException。

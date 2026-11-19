@@ -227,6 +227,8 @@ export const deviceRemovalChunk = 10;
 // 错误计数按签名每分钟一轮，error 级日志一分钟 errorAlertPerMinute 次、主动卸载负载的 503 一分钟 shedAlertPerMinute 次即告警，
 // 同一签名 errorAlertFoldMinutes 分钟内只写第一条、其余合成一条汇总；最多跟踪 errorMonitorMaxSignatures 个签名（多的并进 other）；每 errorStatsMinutes 分钟写一行汇总。
 export const readinessTimeoutMs = 1000;
+// [人工决策-2026-11-19 18:17:27] errorAlertPerMinute 维持 1（用户让按业界最佳实践定）：Alpha 期间流量小、正常运行不该有 error 级日志，出现一条就是要看的新问题
+// （同 Sentry 的「新问题」告警）；刷屏由按签名 errorAlertFoldMinutes 折叠兜住。用户量上来、出现可接受的背景错误后，再改成按错误率与时间窗告警。
 export const errorAlertPerMinute = 1;
 export const shedAlertPerMinute = 20;
 export const errorAlertFoldMinutes = 60;

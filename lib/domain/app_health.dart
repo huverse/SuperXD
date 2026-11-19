@@ -10,6 +10,9 @@
 //   慢帧档 frames：这一天构建或栅格超出一帧预算（按屏幕刷新率）的帧占全部帧的比例按 healthSlowBounds 分四档（不到 5%、5–15%、15–40%、40% 以上），
 //   不满 healthFrameMinimum 帧的那天不报这一项。服务端先只存与汇总（health_admin status 看各版本的分布），自动暂停仍只看致命错误。
 //   参考 Android vitals 与 Firebase Performance 的冷启动与慢帧比例；没选：上报原始毫秒数与帧数、只在本机记、不加。
+// [人工决策-2026-11-19 18:17:27] 档位界线照上面不改（用户让按业界最佳实践定）：Android vitals 把冷启动 5 秒以上算慢（量的是进程起到首屏，这里只量 Dart 入口到首帧，
+// 所以最高档放在 2 秒更灵敏）、一半以上的帧超出绘制期限算渲染过慢（最高档 40% 与之接近，下面两档用来早看出变差）；同一指标的界线要稳定，
+// 中途改了各版本的分布就没法互相比，真要改只在新开一组档位时改。少于 600 帧（60Hz 约 10 秒）的那天样本太少，照旧不报。
 const healthReportDays = 7;
 const healthReportBatch = 3;
 const feedbackOpenDays = 14;
