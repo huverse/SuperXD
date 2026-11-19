@@ -9,7 +9,7 @@ import { leisureDeletePerDevicePerHour } from 'src/common/relay_limits';
 import { insertAccount } from './account_fixture';
 import { TestDevice } from './test_device';
 
-// 娱乐与积分的「删除数据」（人工决策见客户端 lib/domain/leisure.dart）：账号直接在库里登记（账号登录本身在 account.e2e.test.ts 测）。
+// 「删除游乐场与积分」（人工决策见客户端 lib/domain/leisure.dart）：账号直接在库里登记（账号登录本身在 account.e2e.test.ts 测）。
 let app: NestExpressApplication;
 let server: string;
 let database: DataSource;
@@ -57,7 +57,7 @@ afterAll(async () => {
   await app.close();
 });
 
-describe('娱乐与积分的删除数据', () => {
+describe('删除游乐场与积分', () => {
   it('只删这个账号的积分、流水、挑战成绩与解锁；账号与设备照旧，别的账号不受影响', async () => {
     const mine = await signedIn(), other = await signedIn();
     await seed(mine.accountId);

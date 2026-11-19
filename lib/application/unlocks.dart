@@ -11,7 +11,7 @@ import 'package:superxd/domain/unlock.dart';
 // 本机判定：下架的锁着、公开了的开着（没登录也开），其余看服务器给的；清单里没有要账号才开的项、或没登录应用账号时不联网。
 // 同意协议与政策之后组合根调 start 才开始联网；之后拉到新配置、切换应用账号时重问一次，回到前台时距上次超过 refreshGap 再问，
 // 积分页打开时直接 refresh；中转说应用账号不在了就让 AppAccounts 马上核一次。
-// accountOn 为假（娱乐与积分关着，人工决策见 domain/leisure.dart）时只认公开与下架、不联网，开关变了组合根调 reconsider。
+// accountOn 为假（联网偏好是仅本机，人工决策见 domain/network_policy.dart）时只认公开与下架、不联网，偏好变了组合根调 reconsider。
 class Unlocks implements UnlockAccess {
   Unlocks({required this.rollouts, required this.appAccounts, required this.client, bool Function()? accountOn, DateTime Function()? now})
     : _accountOn = accountOn ?? (() => true),

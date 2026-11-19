@@ -333,7 +333,7 @@ void main() {
       expect(leveled.enabled('feature', fallback: true), isFalse, reason: '一键关停不受等级影响');
     });
 
-    test('娱乐与积分关着时不取等级、按 Lv0 判定，已经因等级进了的批次照旧；删了数据记着的等级归零', () async {
+    test('仅本机时不取等级、按 Lv0 判定，已经因等级进了的批次照旧；删了数据记着的等级归零', () async {
       final candidates = Iterable<String>.generate(2000, (index) => 'subject-$index');
       final lifted = candidates.firstWhere((subject) => !rolloutIncludes('feature', subject, 10) && rolloutIncludes('feature', subject, 10, level: 5));
       final other = candidates.firstWhere((subject) => subject != lifted && !rolloutIncludes('other', subject, 10) && rolloutIncludes('other', subject, 10, level: 5));
@@ -619,7 +619,7 @@ void main() {
         expect(aged.isOn(flag), isFalse, reason: '没登录应用账号');
       });
 
-      test('等级条件按记着的等级：等级不够关，娱乐与积分关着按 Lv0', () async {
+      test('等级条件按记着的等级：等级不够关，仅本机按 Lv0', () async {
         final low = rollouts(level: 1);
         await low.refresh();
         expect(low.isOn(flag), isFalse);

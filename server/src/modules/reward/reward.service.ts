@@ -70,7 +70,7 @@ export class RewardService implements OnModuleInit {
     return { state: 'open', endsAt, eligibleAt: null };
   }
 
-  // 资格（人工决策见 reward_odds.ts 的 11-16 那条）：名单、最低等级、账号满几天；都过返回 null。levels 为假（娱乐与积分关着）按 Lv0。
+  // 资格（人工决策见 reward_odds.ts 的 11-16 那条）：名单、最低等级、账号满几天；都过返回 null。levels 为假（客户端仅本机）按 Lv0。
   private async gate(campaign: RewardCampaignEntity, accountId: string, deviceId: string, levels: boolean, now: Date): Promise<{ state: 'ineligible' | 'too_new'; eligibleAt: number | null } | null> {
     if (campaign.audience === 'list' && !(await this.repository.inAudience(campaign.id, accountId))) return { state: 'ineligible', eligibleAt: null };
     if (campaign.minLevel > 0 && (levels ? await this.points.levelOfAccount(accountId) : 0) < campaign.minLevel) return { state: 'ineligible', eligibleAt: null };
@@ -99,7 +99,7 @@ export class RewardService implements OnModuleInit {
     const mode = campaign.mode as RewardMode;
     if (!rewardModes.includes(mode)) throw new Error(`活动 ${campaignKey} 的模式 ${campaign.mode} 不认识`);
     // 等级只在加权模式里用（平权人人一样），按设备所在账号的积分算。
-    // 客户端关掉了娱乐与积分（levels: false，人工决策见客户端 lib/domain/leisure.dart）时按 Lv0：只会降低自己的机会，不用防篡改。
+    // 客户端仅本机（levels: false，人工决策见客户端 lib/domain/network_policy.dart）时按 Lv0：只会降低自己的机会，不用防篡改。
     const level = mode === 'weighted' && body.levels !== false ? await this.points.levelOfAccount(accountId) : 0;
     const maxWeight = Number(campaign.maxWeight);
     const weight = rewardWeight(mode, body.activeDays, level, maxWeight);

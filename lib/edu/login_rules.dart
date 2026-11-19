@@ -30,6 +30,8 @@ LoginFailure explainLogin(Object? status, Object? message, Object? rawBody) {
       failCount: failCount,
     );
   }
+  // 先认「已输错」再认「锁定」：教务的警告「您1小时内已输错2次密码，若超过8次，您的账号将被锁定！」两个词都有，反过来就把警告当成已锁定。
+  // 真锁定时的原文没见过（不为核实去锁真账号）；就算也带「已输错」被认成输错次数，两个码在网关的处理相同（删保存的凭据、显示教务原文）。
   if (text.contains('已输错')) {
     return LoginFailure(code: GatewayCode.passwordWrongCount, message: text, detail: text, failCount: failCount);
   }

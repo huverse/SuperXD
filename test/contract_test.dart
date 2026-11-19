@@ -69,6 +69,9 @@ void main() {
     expect(captchaHint('402', '您1小时内已输错2次密码，若超过8次，您的账号将被锁定！|2'), contains('已输错2次'));
     expect(explainLogin('402', '账号或密码有误!', '{}').code, 'PASSWORD_WRONG');
     expect(explainLogin('402', '您的账号已被锁定', '{}').code, 'ACCOUNT_LOCKED');
+    // 警告里也有「锁定」两个字，要认成输错次数（login_rules.dart 先认「已输错」的原因）。
+    final warning = explainLogin('402', '您1小时内已输错2次密码，若超过8次，您的账号将被锁定！|2', '{}');
+    expect([warning.code, warning.failCount], ['PASSWORD_WRONG_COUNT', 2]);
     final plain = buildLoginPlain('20260000001', 'secret-value', 'SESSION', '');
     expect(plain, '_u=MjAyNjAwMDAwMDE7O1NFU1NJT04=&_p=fe89e8eac4b27a7ed47561527e52ac60&randnumber=&isPasswordPolicy=1&txt_mm_expression=5&txt_mm_length=12&txt_mm_userzh=0&hid_flag=1&hidlag=1&hid_dxyzm=');
     final withCode = buildLoginPlain('20260000001', 'secret-value', 'SESSION', 'Ab');
