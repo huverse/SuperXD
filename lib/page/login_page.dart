@@ -206,10 +206,12 @@ class _LoginPageState extends State<LoginPage> {
                       ),
                     ),
                   ])),
-                  // 文字紧跟勾选框（同下面的同意行），不按列表行默认的 16 再空一截。
-                  CheckboxListTile(contentPadding: EdgeInsets.zero, controlAffinity: ListTileControlAffinity.leading, horizontalTitleGap: 0,
-                    title: const Text('记住账号', style: TextStyle(fontSize: 14)), value: _remember,
-                    onChanged: _busy ? null : (value) => _chooseRemember(value == true)),
+                  // 和下面的同意行同一种排法（48 见方的勾选框、文字紧跟其后、点字也能勾），两个勾选框与两行文字左边对齐；
+                  // 以前是列表行组件，勾选框与文字都比同意行往左偏几个点（11-19 用户截图）。读屏念勾选框的名字，文字不重复念。
+                  Row(children: [
+                    SizedBox(width: 48, height: 48, child: Checkbox(key: const ValueKey('remember-account'), semanticLabel: '记住账号', value: _remember, onChanged: _busy ? null : (value) => _chooseRemember(value == true))),
+                    ExcludeSemantics(child: GestureDetector(onTap: _busy ? null : () => _chooseRemember(!_remember), child: const Padding(padding: EdgeInsets.symmetric(vertical: 4), child: Text('记住账号', style: TextStyle(fontSize: CampusFontSize.secondary))))),
+                  ]),
                   const SizedBox(height: 8),
                   SizedBox(width: double.infinity, child: FilledButton(
                     style: campusProminent,

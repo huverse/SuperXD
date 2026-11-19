@@ -21,6 +21,7 @@ import 'package:superxd/local/account_store.dart';
 
 // 前台登记的端口名（已发布的后台任务按它找前台，钉住线上取值）。
 const _portName = 'superxd_auto_sync';
+const _headlessName = 'superxd_auto_sync_headless';
 const _term = TermRef(xn: '2026', xq: '0', label: '合成学期');
 
 void main() {
@@ -31,12 +32,14 @@ void main() {
   late List<String> logs;
   setUp(() {
     IsolateNameServer.removePortNameMapping(_portName);
+    IsolateNameServer.removePortNameMapping(_headlessName);
     logs = [];
     final previous = campusLog;
     campusLog = logs.add;
     addTearDown(() {
       campusLog = previous;
       IsolateNameServer.removePortNameMapping(_portName);
+      IsolateNameServer.removePortNameMapping(_headlessName);
     });
   });
 
@@ -47,7 +50,7 @@ void main() {
 
     test('前台登记了：先回一声收到，按后台任务的时限跑完再回一声，交出去了', () async {
       final autoSync = _RecordingAutoSync();
-      listenForBackgroundSync(autoSync);
+      (await claimAccountStore()).attach(autoSync);
       final deadline = DateTime.now().add(const Duration(minutes: 1));
       var returned = false;
       final forwarded = forwardAutoSync(deadline).then((value) {
@@ -65,7 +68,7 @@ void main() {
 
     test('交过去的那轮按后台任务的时限停：到点 keepGoing 就是假', () async {
       final autoSync = _RecordingAutoSync()..gate.complete();
-      listenForBackgroundSync(autoSync);
+      (await claimAccountStore()).attach(autoSync);
       final deadline = DateTime.now().add(const Duration(milliseconds: 200));
       expect(await forwardAutoSync(deadline).timeout(const Duration(seconds: 5)), isTrue);
       await Future<void>.delayed(const Duration(milliseconds: 250));
@@ -74,7 +77,7 @@ void main() {
 
     test('前台那份出错也照常回声，后台任务不挂住', () async {
       final autoSync = _RecordingAutoSync()..failure = StateError('前台坏了');
-      listenForBackgroundSync(autoSync);
+      (await claimAccountStore()).attach(autoSync);
       expect(await forwardAutoSync(DateTime.now().add(const Duration(minutes: 1))).timeout(const Duration(seconds: 5)), isTrue);
       expect(logs.any((log) => log.startsWith('[AutoSync] action=forwarded errorType=StateError')), isTrue);
     });
@@ -86,12 +89,69 @@ void main() {
       expect(await forwardAutoSync(DateTime.now().add(const Duration(minutes: 1)), ackWait: const Duration(milliseconds: 50)), isFalse);
       expect(IsolateNameServer.lookupPortByName(_portName), isNull);
 
-      final register = listenForBackgroundSync(_RecordingAutoSync()..gate.complete());
+      final foreground = await claimAccountStore();
       final mine = IsolateNameServer.lookupPortByName(_portName);
       expect(mine, isNotNull);
       IsolateNameServer.removePortNameMapping(_portName);
-      register();
+      foreground.register();
       expect(IsolateNameServer.lookupPortByName(_portName), mine);
+    });
+
+    // 人工决策见 app_background_sync.dart 文件头 11-19 那条：前台一启动就登记，还没同意协议与政策、自动同步没接上时回「这次不跑」，后台那份也不自己开库。
+    test('前台在、还没准备好：这一轮不跑，也不算交不出去（后台不开库）', () async {
+      await claimAccountStore();
+      expect(await forwardAutoSync(DateTime.now().add(const Duration(minutes: 1))).timeout(const Duration(seconds: 5)), isTrue);
+      expect(logs, contains('[AutoSync] action=background skipped=foreground_not_ready'));
+    });
+  });
+
+  // 人工决策见 app_background_sync.dart 文件头 11-19 那条：后台那份自己跑着时前台起来，先让它停下、关好账号库再开库。
+  group('前台要回账号库', () {
+    late Directory directory;
+    setUp(() async => directory = await Directory.systemTemp.createTemp('claim-'));
+    tearDown(() => directory.delete(recursive: true));
+    Future<_CountingGateway> open() async => _CountingGateway(await AccountStore.open(directory: path.join(directory.path, 'databases')));
+
+    test('后台那份开着库：前台来要，它关掉账号门面、撤掉登记，回话后前台才返回', () async {
+      final claim = HeadlessClaim();
+      final gateway = (await claim.open(open))! as _CountingGateway;
+      expect(claim.released, isFalse);
+      await claimAccountStore().timeout(const Duration(seconds: 5));
+      expect(gateway.closes, 1, reason: '前台返回之前后台那份已经关好库');
+      expect(claim.released, isTrue, reason: '这一轮在下一检查点停下');
+      expect(logs, containsAll(['[AutoSync] action=background handed_over=true', '[AutoSync] action=claim handed_over=true']));
+      claim.close();
+      expect(IsolateNameServer.lookupPortByName(_headlessName), isNull);
+    });
+
+    test('还没开库就被要回去：之后不再开库；开到一半的开完马上关', () async {
+      final early = HeadlessClaim();
+      await claimAccountStore();
+      var opened = 0;
+      expect(await early.open(() async { opened++; return open(); }), isNull);
+      expect(opened, 0);
+      early.close();
+
+      final midway = HeadlessClaim();
+      final opening = Completer<_CountingGateway>();
+      final result = midway.open(() => opening.future);
+      final claimed = claimAccountStore();
+      await pumpEventQueue();
+      final gateway = await open();
+      opening.complete(gateway);
+      expect(await result, isNull);
+      await claimed.timeout(const Duration(seconds: 5));
+      expect(gateway.closes, greaterThan(0));
+      midway.close();
+    });
+
+    test('登记还在、后台那份已经没了：等不到回话就撤掉登记照常开库', () async {
+      final stale = ReceivePort();
+      addTearDown(stale.close);
+      IsolateNameServer.registerPortWithName(stale.sendPort, _headlessName);
+      await claimAccountStore(releaseWait: const Duration(milliseconds: 50));
+      expect(IsolateNameServer.lookupPortByName(_headlessName), isNull);
+      expect(logs, contains('[AutoSync] action=claim handed_over=false'));
     });
   });
 
@@ -190,6 +250,7 @@ void main() {
       IsolateNameServer.removePortNameMapping(_portName);
       await headlessAutoSync(DateTime.now().subtract(const Duration(seconds: 1)), support: support, openGateway: open);
       expect(client.reads, 0);
+      expect(logs, contains('[AutoSync] action=background skipped=foreground'));
       expect((await status()).lastAttemptAt, isNull);
     });
   });
@@ -236,5 +297,16 @@ class _Client extends KingoClient {
   Future<ParsedSchedule> fetchSchedule({required String xn, required String xq, required String userCode}) async {
     reads++;
     return ParsedSchedule(termLabel: '', loginId: 'A', name: '', className: '', courses: const []);
+  }
+}
+
+class _CountingGateway extends AccountGateway {
+  _CountingGateway(AccountStore store) : super(store: store);
+  int closes = 0;
+
+  @override
+  Future<void> close() {
+    closes++;
+    return super.close();
   }
 }

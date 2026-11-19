@@ -3,26 +3,22 @@ import 'package:flutter/material.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
-import 'package:superxd/application/auto_sync.dart';
 import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
-import 'package:superxd/page/auto_sync_dialog.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
-import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/domain/campus_log.dart';
 
-// autoSync 给了时底部多一个「自动同步」入口（今天页给，成绩页只同步成绩、不给）。
-Future<SyncSelection?> chooseSyncSelection(BuildContext context, CampusGateway gateway, {String? initialYear, Set<SyncContent>? initialContents, Set<SyncContent>? allowedContents, AutoSync? autoSync}) => showCampusDialog<SyncSelection>(
+// 自动同步设置只在学业页一处（人工决策见 page/section_pages.dart 的 MinePage 11-19 那条一并定的：同一设置不留几个入口），这里不再给入口。
+Future<SyncSelection?> chooseSyncSelection(BuildContext context, CampusGateway gateway, {String? initialYear, Set<SyncContent>? initialContents, Set<SyncContent>? allowedContents}) => showCampusDialog<SyncSelection>(
   context: context,
-  builder: (context) => _SyncSelectionDialog(gateway: gateway, initialYear: initialYear, initialContents: initialContents, allowedContents: allowedContents, autoSync: autoSync),
+  builder: (context) => _SyncSelectionDialog(gateway: gateway, initialYear: initialYear, initialContents: initialContents, allowedContents: allowedContents),
 );
 
 class _SyncSelectionDialog extends StatefulWidget {
-  const _SyncSelectionDialog({required this.gateway, this.initialYear, this.initialContents, this.allowedContents, this.autoSync});
+  const _SyncSelectionDialog({required this.gateway, this.initialYear, this.initialContents, this.allowedContents});
   final CampusGateway gateway;
-  final AutoSync? autoSync;
   final String? initialYear;
   final Set<SyncContent>? initialContents;
   final Set<SyncContent>? allowedContents;
@@ -98,17 +94,6 @@ class _SyncSelectionDialogState extends State<_SyncSelectionDialog> {
             onChanged: (value) => setState(() { if (value == true) { _contents.add(content); } else { _contents.remove(content); } }),
           ),
         const BalancedText('覆盖所选学年已公布的学期', style: TextStyle(fontSize: 14)),
-        if (widget.autoSync case final autoSync?) ...[
-          const SizedBox(height: 8),
-          ListenableBuilder(
-            listenable: autoSync,
-            builder: (context, _) => TextButton.icon(
-              onPressed: () => showAutoSyncSettings(context, autoSync: autoSync, gateway: widget.gateway),
-              icon: const CampusIcon(CampusIcons.history),
-              label: DotSeparatedText('自动同步 · ${autoSyncSummary(autoSync.view)}', style: const TextStyle()),
-            ),
-          ),
-        ],
       ],
     ))),
     actions: [

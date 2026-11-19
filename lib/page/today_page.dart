@@ -222,7 +222,14 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     widget.syncRequest?.addListener(_onSyncRequest);
+    widget.autoSync?.addListener(_onAutoSync);
     _refresh();
+  }
+
+  // 前台的自动同步每记一次结果都会通知：看得见时马上重读本机（课表、作息变了才重排），不用等切页或下次打开（11-19 用户选定）。
+  void _onAutoSync() {
+    if (!mounted || _branchActive != true || _syncing || _loading) return;
+    unawaited(_refresh(notify: false));
   }
 
   // 只在今天页看得见时接请求；切回来之前到的，由重新可见时接着处理。
@@ -266,6 +273,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
   void dispose() {
     _clock?.removeListener(_tick);
     widget.syncRequest?.removeListener(_onSyncRequest);
+    widget.autoSync?.removeListener(_onAutoSync);
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -386,7 +394,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     if (_syncing || _choosing) return;
     _choosing = true;
     try {
-      final selected = await chooseSyncSelection(context, widget.gateway, initialYear: initialYear, autoSync: widget.autoSync);
+      final selected = await chooseSyncSelection(context, widget.gateway, initialYear: initialYear);
       if (selected != null && mounted) await _sync(selected);
     } finally {
       _choosing = false;

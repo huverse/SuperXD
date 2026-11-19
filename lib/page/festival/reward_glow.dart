@@ -1,13 +1,14 @@
 import 'package:flutter/material.dart';
 
 import 'package:superxd/page/festival/reward_kit.dart';
+import 'package:superxd/theme/campus_tone.dart';
 
 // 默认主题：第一轮流光方向的卡（用户认可的奖品卡样子）。一块近黑的玻璃卡，卡头铺着缓慢流动的网格渐变、往下暗进卡身，
 // 边上一道发丝流光与外面一圈光（材质在 shaders/reward_aurora.frag）。颜色全从应用配色的激活色取：渐变与流光是种子色与它两侧相邻的色相，
 // 每套配色各有一张。相对第一轮的卡面只改了两处：第四个颜色从对面的色相（转 125°，会出粉橙，偏彩虹）换成同一侧更远一点的相邻色相（转 75°）；边缘光与外面那圈光收了约三成。
 
 // 配色（OKLCH 的明度、彩度，色相跟种子）：房间、四个流光色、玻璃底、开启动效的主光、星尘、字、口令框、主按钮。
-RewardPalette _palette(RewardTone tone) => RewardPalette(
+RewardPalette _palette(CampusTone tone) => RewardPalette(
   night: tone.pick(.13, .035),
   flows: [tone.pick(.7, .19), tone.pick(.68, .2, turn: 55), tone.pick(.74, .17, turn: -60), tone.pick(.7, .19, turn: 75)],
   body: tone.pick(.14, .024),
@@ -24,7 +25,7 @@ class RewardGlowTheme extends RewardTheme {
   const RewardGlowTheme();
 
   @override
-  RewardPalette palette(Color seed) => _palette(RewardTone(seed));
+  RewardPalette palette(Color seed) => _palette(CampusTone(seed));
 
   @override
   void paintCard(Canvas canvas, Rect card, RewardPalette palette, {required double time, required double reveal, required Offset tilt, required bool still}) {

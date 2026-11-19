@@ -99,6 +99,9 @@ void main() {
       expect(tester.getTopLeft(agree).dy - tester.getBottomLeft(button).dy, lessThan(48 * system * app));
       expect(find.ancestor(of: agree, matching: find.byType(CampusSurface)), findsOneWidget);
       expect(tester.getTopLeft(find.text('百宝箱')).dy, greaterThan(tester.getBottomLeft(agree).dy));
+      // 记住账号与同意行的勾选框中心、文字左边对齐（11-19 用户截图里两行各偏几个点）。
+      expect(tester.getCenter(find.byKey(const ValueKey('remember-account'))).dx, closeTo(tester.getCenter(find.byKey(const ValueKey('agree-terms'))).dx, .5));
+      expect(tester.getTopLeft(find.text('记住账号')).dx, closeTo(tester.getTopLeft(agree).dx, .5));
       await tester.pumpWidget(const SizedBox());
       loggedOut.dispose();
 
@@ -193,8 +196,10 @@ void main() {
       await tester.tap(find.byType(CircleAvatar).first);
       await tester.pumpAndSettle();
       expect(_problems(tester), isEmpty, reason: '教务账号');
-      expect(tester.getSize(find.text('应用账号')).height, lessThan(16 * system * app * 1.8), reason: '教务账号页「应用账号」只占一行');
       await back();
+      // 开发者的话在应用账号页最上面一组（人工决策见 section_pages.dart 的 MinePage 11-19 那条）。
+      await tester.tap(find.text('应用账号'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('开发者的话'));
       await tester.pumpAndSettle();
       expect(_problems(tester), isEmpty, reason: '开发者的话');
@@ -203,6 +208,7 @@ void main() {
       // 正文是开发者写的长段落，段末剩一两个字属长文排版的常态（同书页），只查标题与裁字。
       expect(_problems(tester, checkOrphans: false), isEmpty, reason: '读信');
       expect([for (final issue in scanTexts(tester)) if (issue.kind == 'orphan' && issue.text.startsWith('新版本来了')) '$issue'], isEmpty, reason: '读信的标题');
+      await back();
       await back();
       await back();
       unawaited(showAppFeedback(tester.element(find.byType(ShellPage)), health));

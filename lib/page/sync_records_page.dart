@@ -13,6 +13,7 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
@@ -118,7 +119,7 @@ class SyncRecordPage extends StatelessWidget {
       body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListView(padding: const EdgeInsets.all(16), children: [
         Text(formatCampusRelative(record.at.toIso8601String()), style: secondary),
         const SizedBox(height: 12),
-        if (record.changes.isEmpty && record.failures.isEmpty) Text(syncRecordHeadline(record), style: TextStyle(fontSize: 16, color: palette.onSurface)),
+        if (record.changes.isEmpty && record.failures.isEmpty && record.same.isEmpty) Text(syncRecordHeadline(record), style: TextStyle(fontSize: CampusFontSize.body, color: palette.onSurface)),
         for (final change in record.changes)
           CampusSurface(
             margin: const EdgeInsets.only(bottom: 12),
@@ -140,6 +141,13 @@ class SyncRecordPage extends StatelessWidget {
               ]),
             ]),
           ),
+        // 比对过、和上次一样的几项逐项写出（11-19 用户：只写「没有变化」看不出查了什么）。
+        if (record.same.isNotEmpty)
+          CampusSurface(margin: const EdgeInsets.only(bottom: 12), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+            Text('和上次一样', style: TextStyle(fontSize: CampusFontSize.body, fontWeight: FontWeight.w600, color: palette.onSurface)),
+            const SizedBox(height: CampusGap.small),
+            for (final item in record.same) Padding(padding: const EdgeInsets.only(bottom: CampusGap.tight), child: DotSeparatedText(item, style: TextStyle(fontSize: CampusFontSize.secondary, color: palette.onSurface))),
+          ])),
         if (record.failures.isNotEmpty)
           CampusSurface(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Text('没有同步完', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: palette.onSurface)),

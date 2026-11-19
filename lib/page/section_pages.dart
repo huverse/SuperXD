@@ -1,6 +1,3 @@
-import 'dart:async';
-
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
@@ -8,13 +5,13 @@ import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/application/app_health.dart';
 import 'package:superxd/application/app_updates.dart';
 import 'package:superxd/application/developer_notes.dart';
-import 'package:superxd/application/festivals.dart';
 import 'package:superxd/domain/painting.dart';
 import 'package:superxd/local/developer_settings.dart';
 import 'package:superxd/local/diagnostic_log.dart';
@@ -22,7 +19,6 @@ import 'package:superxd/page/about_page.dart';
 import 'package:superxd/page/account_page.dart';
 import 'package:superxd/page/appearance_page.dart';
 import 'package:superxd/page/developer_notes_page.dart';
-import 'package:superxd/page/festival/festival_reward.dart';
 import 'package:superxd/theme/glass_panel.dart';
 
 class ServicePage extends StatelessWidget {
@@ -50,17 +46,14 @@ class ServicePage extends StatelessWidget {
 }
 
 class MinePage extends StatelessWidget {
-  const MinePage({super.key, required this.session, this.updates, this.health, this.developer, this.logs, this.paintings, this.notes, this.festivals, this.appAccounts, this.openAppAccount, this.saveRewardPicture});
+  const MinePage({super.key, required this.session, this.updates, this.health, this.developer, this.logs, this.paintings, this.notes, this.appAccounts, this.openAppAccount});
   final AppSession session;
-  // 应用账号（设备级，与教务各管各的）；没配中转时为空，本页与账号页都不显示那一行。
+  // 应用账号（设备级，与教务各管各的）；没配中转时为空，不显示那一行。
   final AppAccounts? appAccounts;
-  // 推入应用账号页（组合根给），本页与账号页里的「应用账号」一行用。
+  // 推入应用账号页（组合根给，开发者的话与红包也在那页）。
   final void Function(BuildContext context)? openAppAccount;
-  // 开发者的话（设备级）；为空（没配中转）或还没有信时不显示这一行。
+  // 开发者的话（设备级）：有没读的信时应用账号一行的行尾一个小圆点；为空（没配中转）时没有。
   final DeveloperNotes? notes;
-  // 节日抽中的红包（人工决策见 domain/festival.dart）：节日结束后 3 天内在最上面一行，可以再打开；没有时不显示。
-  final Festivals? festivals;
-  final Future<bool> Function(Uint8List png)? saveRewardPicture;
   final AppUpdates? updates;
   final AppHealth? health;
   final DeveloperSettings? developer;
@@ -78,12 +71,12 @@ class MinePage extends StatelessWidget {
         const SectionTitleBar(title: '我的'),
         Expanded(child: CampusScrollFade(bottom: inset, child: SingleChildScrollView(padding: EdgeInsets.fromLTRB(16, 16, 16, 16 + inset), child: Center(child: ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 760), child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-            // 头像卡进入账号页（同 iOS Apple ID），账号操作都在那里；卡上只写姓名，学号与班级在账号页，见 account_page.dart 的人工决策。
+            // 头像卡进入教务账号页（同 iOS Apple ID），教务账号的操作都在那里；卡上只写姓名，学号与班级在账号页，见 account_page.dart 的人工决策。
             // 直接读当前会话：姓名要等同步课表才知道（之前显示学号），网关学到后会通知，这里跟着刷新。
             ListenableBuilder(listenable: session, builder: (context, _) {
               final account = session.gateway.activeSession;
               final name = account == null ? '' : account.name.isEmpty ? account.loginId : account.name;
-              return CampusSurface(padding: const EdgeInsets.all(20), onTap: () => _push(context, AccountPage(session: session, name: name, appAccounts: appAccounts, openAppAccount: openAppAccount)), child: Row(children: [
+              return CampusSurface(padding: const EdgeInsets.all(20), onTap: () => _push(context, AccountPage(session: session, name: name)), child: Row(children: [
                 CircleAvatar(radius: 28, backgroundColor: CampusPalette.of(context).surfaceSelected, child: CampusIcon(CampusIcons.account, color: CampusPalette.of(context).primary, size: 28)),
                 const SizedBox(width: 16),
                 Expanded(child: AccountTitle(name: name)),
@@ -94,31 +87,12 @@ class MinePage extends StatelessWidget {
             const SizedBox(height: 16),
             // 多行卡片去掉横向内边距，行自带 20 边距：按下变暗时整行铺满卡片宽度，同 iOS 分组列表。
             CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: [
-              if (festivals case final festivals?) ListenableBuilder(listenable: festivals, builder: (context, _) => switch (festivals.prizes.lastOrNull) {
-                null => const SizedBox.shrink(),
-                // 还没揭晓的（动画放完时结果还没回来）在这里打开也照样拆红包。
-                final prize => ListTile(
-                  contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.gift), title: const Text('节日红包'), trailing: const CampusIcon(CampusIcons.next),
-                  onTap: () {
-                    if (!prize.revealed) festivals.markRevealed(prize);
-                    showFestivalReward(context, prize: prize, title: festivals.occasionName(prize.occasion), envelope: !prize.revealed, saveQrCode: saveRewardPicture);
-                  },
-                ),
-              }),
-              // [人工决策-2026-11-17 21:24:25] 设计审查后用户选定：「我的」首页加一行应用账号（同组的界面、关于之前；配了中转才有），行尾写用户名或未登录，
-              // 点了推入应用账号页（联网偏好也在那页，少走一层）；教务账号页里那一行照留（扩展 account_page.dart 的 11-13 23:07:30 那条，不取代）。
-              if ((appAccounts, openAppAccount) case (final appAccounts?, final open?)) AppAccountRow(appAccounts: appAccounts, padding: rowPadding, onTap: () => open(context)),
+              // [人工决策-2026-11-19 13:09:34] 「我的」只剩头像卡、应用账号、界面、关于（用户嫌入口太多太杂，选「合成一行应用账号」，
+              // 取代 11-17 21:24:25「我的页加应用账号一行、教务账号页那一行照留」与 11-13 23:07:30「教务账号页单独一组应用账号」）：
+              // 应用账号只这一个常驻入口，开发者的话与节日红包挪进应用账号页最上面一组；有没读的信时这一行行尾一个小圆点（底栏「我的」同时有一个）。
+              // 同一次选定：自动同步设置只留学业页一处（今天页与学业页的同步范围弹窗里不再给入口），检查到的同类重复入口一并收掉。
+              if ((appAccounts, openAppAccount) case (final appAccounts?, final open?)) AppAccountRow(appAccounts: appAccounts, notes: notes, padding: rowPadding, onTap: () => open(context)),
               ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.palette), trailing: const CampusIcon(CampusIcons.next), title: const Text('界面'), onTap: () => _push(context, const AppearancePage())),
-              // 开发者的话（人工决策见 domain/developer_note.dart）：有没读的信时行尾一个小圆点，底栏「我的」同时有一个。
-              if (notes case final notes?) ListenableBuilder(listenable: notes, builder: (context, _) => notes.notes.isEmpty ? const SizedBox.shrink() : ListTile(
-                contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.letter), title: const Text('开发者的话'),
-                trailing: Row(mainAxisSize: MainAxisSize.min, children: [
-                  if (notes.unread) Semantics(label: '有新的', child: UnreadDot(color: CampusPalette.of(context).dangerFill)),
-                  const SizedBox(width: 12),
-                  const CampusIcon(CampusIcons.next),
-                ]),
-                onTap: () => _push(context, DeveloperNotesPage(notes: notes)),
-              )),
               ListTile(contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.info), trailing: const CampusIcon(CampusIcons.next), title: const Text('关于'), onTap: () => _push(context, AboutPage(updates: updates, health: health, developer: developer, logs: logs, paintings: paintings))),
             ])),
           ]),
@@ -126,6 +100,32 @@ class MinePage extends StatelessWidget {
       ],
     );
   }
+}
+
+// 「应用账号」一行（人工决策见 MinePage 的 11-19 那条）：名字在左、不折行，用户名或「未登录」靠右，太长时省略（同 iOS 设置里的值），
+// 有没读的开发者的话时行尾「›」前一个小圆点。11-17 设计审查：以前用户名放在 trailing，长用户名在窄屏大字号下把「应用账号」挤成「应用账 / 号」。
+class AppAccountRow extends StatelessWidget {
+  const AppAccountRow({super.key, required this.appAccounts, required this.onTap, required this.padding, this.notes});
+  final AppAccounts appAccounts;
+  final DeveloperNotes? notes;
+  final VoidCallback? onTap;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) => ListenableBuilder(listenable: Listenable.merge([appAccounts, ?notes]), builder: (context, _) => ListTile(
+    contentPadding: padding, leading: const CampusIcon(CampusIcons.mainAccount),
+    title: Row(children: [
+      const Text('应用账号', maxLines: 1, softWrap: false),
+      const SizedBox(width: CampusGap.medium),
+      Expanded(child: Text(!appAccounts.loaded ? '' : appAccounts.username ?? '未登录', maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.end, style: TextStyle(fontSize: CampusFontSize.secondary, color: CampusPalette.of(context).onSurfaceVariant))),
+    ]),
+    trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+      if (notes?.unread ?? false) ...[Semantics(label: '有新的', child: UnreadDot(color: CampusPalette.of(context).dangerFill)), const SizedBox(width: CampusGap.medium)],
+      const CampusIcon(CampusIcons.next),
+    ]),
+    enabled: appAccounts.loaded,
+    onTap: onTap,
+  ));
 }
 
 // 底栏根页的大标题顶栏（今天以外的三个分支共用）。

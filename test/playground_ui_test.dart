@@ -19,6 +19,7 @@ import 'package:superxd/playground/puzzle/mines/mines_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_page.dart';
 import 'package:superxd/playground/puzzle/nonogram/nonogram_rules.dart';
 import 'package:superxd/playground/puzzle_rules.dart';
+import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
@@ -96,6 +97,38 @@ void main() {
     expect(find.text('最近玩过'), findsOneWidget);
     expect(find.widgetWithText(OutlinedButton, '汉诺塔'), findsOneWidget);
   });
+
+  // [人工决策-2026-11-19 13:20:14] 见 hanoi_page.dart 文件头：盘子按大小从红到紫拉开色相、正中写号码，目标缩略图用同一个盘子同色同号。
+  for (final dark in [false, true]) {
+    testWidgets('汉诺塔（${dark ? '深色' : '浅色'}）：每个盘子写号码、目标里同号同色；相邻大小的盘子颜色分得开，号码对盘子 4.5:1 以上', (tester) async {
+      tester.view.physicalSize = const Size(1080, 2400);
+      tester.view.devicePixelRatio = 1080 / 360;
+      addTearDown(tester.view.reset);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(palette: dark ? CampusPalette.darkValues.first : CampusPalette.values.first), home: HanoiPage(game: _game('hanoi'), store: PlaygroundStore.memory(), seeds: () => 1)));
+      await tester.pumpAndSettle();
+      final disks = const HanoiRules().generate(1, PuzzleTier.entry).puzzle.disks;
+      Color fill(Finder label) => (((tester.widget<AnimatedContainer>(find.ancestor(of: label, matching: find.byType(AnimatedContainer)).first).decoration as BoxDecoration).gradient as LinearGradient).colors.last);
+      double contrast(Color a, Color b) {
+        final (x, y) = (a.computeLuminance(), b.computeLuminance());
+        return (math.max(x, y) + .05) / (math.min(x, y) + .05);
+      }
+      final colors = <Color>[];
+      for (var number = 1; number <= disks; number++) {
+        final labels = find.text('$number');
+        expect(labels, findsNWidgets(2), reason: '棋盘上与目标里各一个 $number 号');
+        expect(fill(labels.first), fill(labels.last), reason: '$number 号在棋盘与目标里同色');
+        final ink = tester.widget<Text>(labels.first).style!.color!;
+        expect(contrast(ink, fill(labels.first)), greaterThan(4.5), reason: '$number 号的号码看得清');
+        expect(tester.getSize(labels.last).height, greaterThanOrEqualTo(13.5), reason: '目标里的号码也是 14 号');
+        colors.add(fill(labels.first));
+      }
+      for (var index = 1; index < colors.length; index++) {
+        final (a, b) = (colors[index - 1], colors[index]);
+        final distance = math.sqrt(math.pow(a.r - b.r, 2) + math.pow(a.g - b.g, 2) + math.pow(a.b - b.b, 2));
+        expect(distance, greaterThan(.25), reason: '$index 号与 ${index + 1} 号颜色分得开');
+      }
+    });
+  }
 
   testWidgets('汉诺塔：点选走完最优解弹出新纪录，违规不算步数，撤销退回，拖动也能挪；目标缩略图读出目标局面，拿起时不亮出能放的柱子', (tester) async {
     final semantics = tester.ensureSemantics();
@@ -185,6 +218,9 @@ void main() {
     addTearDown(tester.view.reset);
     addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
     final disks = find.byWidgetPredicate((widget) => widget.runtimeType.toString() == '_Disk');
+    // 目标缩略图也用同一个盘子（人工决策见 hanoi_page.dart 文件头 11-19 那条）：棋盘上的是目标以外的那些。
+    final goalBox = find.byWidgetPredicate((widget) => widget is Semantics && (widget.properties.label?.startsWith('目标，') ?? false));
+    List<Element> board() => [for (final element in disks.evaluate()) if (find.descendant(of: goalBox, matching: find.byElementPredicate((candidate) => candidate == element)).evaluate().isEmpty) element];
     // 普通档第 2 道是四柱 8 盘，专家档第 1 道是四柱循环 6 盘（底座下有箭头）。
     for (final (tier, seed) in [(PuzzleTier.normal, 2), (PuzzleTier.expert, 1)]) {
       final store = PlaygroundStore.memory();
@@ -200,9 +236,10 @@ void main() {
         expect(rect.right, lessThanOrEqualTo(360));
         expect(rect.width, greaterThanOrEqualTo(72));
       }
-      expect(disks, findsNWidgets(puzzle.disks));
+      expect(disks, findsNWidgets(puzzle.disks * 2), reason: '棋盘与目标各一套');
+      expect(board(), hasLength(puzzle.disks));
       final column = tester.getRect(_peg(0)).width;
-      for (final element in disks.evaluate()) {
+      for (final element in board()) {
         final rect = tester.getRect(find.byElementPredicate((candidate) => candidate == element));
         expect(rect.height, lessThanOrEqualTo(32));
         expect(rect.width, lessThan(column));
@@ -212,7 +249,7 @@ void main() {
       final from = _hanoiMove(puzzle, legal: true).from;
       await _tapOn(tester, _peg(from));
       await tester.pumpAndSettle();
-      final lifted = [for (final element in disks.evaluate()) tester.getRect(find.byElementPredicate((candidate) => candidate == element)).top].reduce(math.min);
+      final lifted = [for (final element in board()) tester.getRect(find.byElementPredicate((candidate) => candidate == element)).top].reduce(math.min);
       expect(lifted, greaterThanOrEqualTo(goal.bottom));
     }
     semantics.dispose();

@@ -52,6 +52,9 @@ ParsedBells parseBellsHtml(String html) {
     } else {
       continue;
     }
+    // 学校没给这一节填时间（2022-2023 学年第一学期的第 8 节，起止两格都空）：这一节没有作息，不进结果；
+    // 以前整份因此校验不过、报格式错误，别的节次也用不上。只填了一头的照旧交给网关按格式不对拒收。
+    if (start.isEmpty && end.isEmpty) continue;
     periods.add(ParsedBell(
       period: period,
       dayPart: dayPart,

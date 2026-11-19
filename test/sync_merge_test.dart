@@ -9,6 +9,7 @@ import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/domain/auto_sync.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/page/auto_sync_dialog.dart';
 import 'package:superxd/page/sync_merge_page.dart';
 import 'package:superxd/page/sync_selection_dialog.dart';
 import 'package:superxd/page/today_page.dart';
@@ -392,16 +393,14 @@ void main() {
       final gateway = _Gateway(), scheduler = _Scheduler();
       final autoSync = AutoSync(gateway: gateway, scheduler: scheduler, clock: () => DateTime.utc(2026, 11, 5));
       await tester.pumpWidget(host());
-      unawaited(chooseSyncSelection(hostContext, gateway, autoSync: autoSync));
-      await tester.pumpAndSettle();
-      expect(find.text('未开启'), findsOneWidget);
-      await tester.tap(find.text('未开启'));
+      expect(autoSyncSummary(autoSync.view), '未开启');
+      unawaited(showAutoSyncSettings(hostContext, autoSync: autoSync, gateway: gateway));
       await tester.pumpAndSettle();
       return (gateway, scheduler, autoSync);
     }
 
-    testWidgets('「同步范围」里能打开；打开开关后排上后台任务、入口写明间隔与范围', (tester) async {
-      final (gateway, scheduler, _) = await openSettings(tester);
+    testWidgets('打开开关后排上后台任务、学业页那一行写明间隔与范围', (tester) async {
+      final (gateway, scheduler, autoSync) = await openSettings(tester);
       expect(find.text('间隔'), findsNothing, reason: '关着时不摊开');
       await tester.tap(find.byType(Switch));
       await tester.pumpAndSettle();
@@ -410,9 +409,7 @@ void main() {
       expect(find.text('间隔'), findsOneWidget);
       await tester.tap(find.widgetWithText(TextButton, '完成'));
       await tester.pumpAndSettle();
-      // 「·」挂在前一项末尾（DotSeparatedText）。
-      expect(find.text('每天\u00A0· '), findsOneWidget);
-      expect(find.text('当前学年'), findsOneWidget);
+      expect(autoSyncSummary(autoSync.view), '每天 · 当前学年');
     });
 
     testWidgets('间隔、学年与内容点了就存；学年选具体的再全取消回到当前学年；内容至少留一项', (tester) async {
@@ -441,7 +438,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(gateway.autoSyncSetting.years, isNull);
 
-      // 下面还垫着「同步范围」弹窗（同名的学年与内容），取最上面这一层。默认课表与成绩：取消成绩后只剩课表，课表不让再取消。
+      // 默认课表与成绩：取消成绩后只剩课表，课表不让再取消。
       await tester.tap(find.widgetWithText(CheckboxListTile, '成绩').last);
       await tester.pumpAndSettle();
       expect(gateway.autoSyncSetting.contents, {SyncContent.schedule});
@@ -460,17 +457,16 @@ void main() {
       final autoSync = AutoSync(gateway: gateway);
       await autoSync.accountChanged(signedIn: true);
       await tester.pumpWidget(host());
-      unawaited(chooseSyncSelection(hostContext, gateway, autoSync: autoSync));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('每天\u00A0· '));
+      unawaited(showAutoSyncSettings(hostContext, autoSync: autoSync, gateway: gateway));
       await tester.pumpAndSettle();
       expect(find.text('合成的失败原因'), findsOneWidget);
     });
 
-    testWidgets('成绩页的同步范围没有自动同步入口', (tester) async {
+    // 11-19 用户选定（人工决策见 page/section_pages.dart 的 MinePage）：自动同步设置只留学业页一处，同步范围弹窗里不再给入口。
+    testWidgets('同步范围弹窗里没有自动同步入口（今天页、学业页与成绩页一样）', (tester) async {
       await tester.pumpWidget(host());
       final gateway = _Gateway();
-      unawaited(chooseSyncSelection(hostContext, gateway, initialContents: {SyncContent.grades}, allowedContents: {SyncContent.grades}));
+      unawaited(chooseSyncSelection(hostContext, gateway));
       await tester.pumpAndSettle();
       expect(find.textContaining('自动同步'), findsNothing);
     });
@@ -492,7 +488,7 @@ void main() {
           return const Scaffold(body: SizedBox());
         }),
       ));
-      unawaited(chooseSyncSelection(context, gateway, autoSync: autoSync));
+      unawaited(showAutoSyncSettings(context, autoSync: autoSync, gateway: gateway));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
     });

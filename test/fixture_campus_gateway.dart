@@ -294,7 +294,7 @@ class FixtureCampusGateway implements CampusGateway {
 
   @override
   Future<GatewayResult<SyncRecord>> recordSync(SyncRecord record) async {
-    final saved = SyncRecord(id: (syncRecords.firstOrNull?.id ?? 0) + 1, at: record.at, trigger: record.trigger, changes: record.changes, failures: record.failures, cancelled: record.cancelled);
+    final saved = SyncRecord(id: (syncRecords.firstOrNull?.id ?? 0) + 1, at: record.at, trigger: record.trigger, changes: record.changes, same: record.same, failures: record.failures, cancelled: record.cancelled);
     syncRecords.insert(0, saved);
     if (syncRecords.length > syncRecordLimit) syncRecords.removeLast();
     return _ok(saved, source: 'local', fetchedAt: _stamp());

@@ -18,8 +18,8 @@ tool/verify_toolbox.dart为手动Android原生下载验证入口，不进入正�
 # 版本与发布
 
 - pubspec.yaml的version是唯一版本号来源，格式为语义版本+递增构建号，所有架构共用同一构建号。变更先写入CHANGELOG.md的Unreleased。
-- 发版由流水线.github/workflows/release.yml全自动完成：升版本PR合并到main即构建与发布，不再要网页批准；发版的关口是合并升版本PR本身，普通PR不发布APK（[人工决策]在工作流文件头）：
-  1. 开升版本PR：pubspec.yaml的version改成新版本名、构建号加一；CHANGELOG.md的Unreleased改成「## <版本名> - <日期>」，最前面加「### 更新说明」，写几行面向用户的话（每条一行，合计不超过4000字），它就是应用内更新弹窗里的说明。test/release_changelog_test.dart检查最新版本节取得出更新说明。
+- 发版由流水线.github/workflows/release.yml全自动完成：改了版本号的提交合并到main即构建与发布，不再要网页批准；发版的关口是合并带新版本号的PR本身，没改版本号的PR不发布APK（[人工决策]在工作流文件头）：
+  1. 升版本：维护者说发版时，在这一轮那条PR的最后一个提交里升版本（11-19起不再单开一条升版本PR，省一整轮CI；没说发版就只写Unreleased）：pubspec.yaml的version改成新版本名、构建号加一；CHANGELOG.md的Unreleased改成「## <版本名> - <日期>」，最前面加「### 更新说明」，写几行面向用户的话（每条一行，合计不超过4000字），它就是应用内更新弹窗里的说明。test/release_changelog_test.dart检查最新版本节取得出更新说明。
   2. 合并到main后，流水线核对：还没有v<版本名>标签、构建号比上一版大、CHANGELOG有版本节和更新说明，都满足才构建；只改pubspec其他内容不会触发。
   3. 接着自动：构建三个架构的Alpha包，并在macOS机器上构建iOS未签名包（核对包名、构建号与小组件扩展，附在Release上、校验和接在SHA256SUMS后面，不传中转）；逐个核对签名证书（等于工作流里的RELEASE_CERT_SHA256、只有一个签名者）、包名、版本号、不可调试与架构；生成SHA256SUMS、Release正文（tool/release_body.md套CHANGELOG版本节）与版本清单alpha.json（按架构签名，再按客户端源码内置的公钥验一遍）；打标签发GitHub Release并下载回来校验；确认中转能透传签名后经受限账号传中转（先包、最后清单，再删旧包）；在公网逐架构核对清单（含签名信封）与断点下载。
   4. 某步失败在Actions里重跑失败的作业：已有的Release不再重建，中转上传可以重复执行。

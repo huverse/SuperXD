@@ -39,11 +39,55 @@ jobs:
       # lib 的行覆盖率低于门槛就失败（门槛与 [人工决策] 在工具文件里）。
       - run: dart run tool/coverage_check.dart
 
+  # [人工决策-2026-11-19 13:27:19] iOS 构建按改动范围跑（用户选定的流程提速：iOS 构建加模拟器冒烟每条 PR 要 14–31 分钟，是最慢的一项）：
+  # PR 上只有动了 iOS 宿主、依赖、组合根（lib/main.dart、lib/app_*.dart）、设备适配（lib/device）、这份工作流，或改到的 dart 文件里用了原生通道、
+  # 平台判断或 UiKitView 时才编 iOS 与冒烟，其余 PR 这一项跳过（跳过的必需检查算通过）；推到 main 与手动运行照常全跑，发版流水线照常编 iOS。
+  changes:
+    name: Changed paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      ios: ${{ steps.scan.outputs.ios }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+      - id: scan
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" != pull_request ]; then
+            echo ios=true >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git diff --name-only "$BASE"...HEAD > changed.txt
+          ios=false
+          if grep -qE '^(ios/|pubspec\.(yaml|lock)$|\.github/workflows/ci\.yml$|lib/(main|app_[a-z_]+)\.dart$|lib/device/)' changed.txt; then
+            ios=true
+          else
+            while IFS= read -r file; do
+              case "$file" in
+                lib/*.dart)
+                  if [ -f "$file" ] && grep -qE 'MethodChannel|EventChannel|BasicMessageChannel|Platform\.isIOS|TargetPlatform\.iOS|UiKitView' "$file"; then
+                    ios=true
+                    break
+                  fi
+                  ;;
+              esac
+            done < changed.txt
+          fi
+          echo "ios=$ios" >> "$GITHUB_OUTPUT"
+          echo "iOS 构建：$ios"
+
   # [人工决策-2026-10-26 20:18:03] iOS 只出未签名 ipa，测试者在手机上用全能签加自己的证书签名安装（用户选定，不买开发者账号、不走 TestFlight）。
   # 本机是 Linux、没有 Mac，iOS 只能在这里编译；PR 包不带中转地址与高德 key，私信、代签、更新与地图不可用。
   # 系统玻璃（UIGlassEffect、玻璃按钮）要 iOS 26 SDK，固定用带 Xcode 26 的 macos-26 镜像。
   ios-build:
     name: iOS build
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: macos-26
     timeout-minutes: 60
     steps:
