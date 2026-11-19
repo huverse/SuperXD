@@ -22,7 +22,7 @@
 - 服务端：cd server，docker compose -f docker-compose.test.yml up -d --wait 起测试库后 npm test；npm run typecheck。改了 server/sql 跑表结构漂移检查 scripts/schema_drift_check.sh，线上升级只经台账脚本 scripts/migrate_db.sh（用法见两个文件头与 server/README.md「表结构升级台账」）。
 - 发版由流水线 .github/workflows/release.yml 全自动完成（安卓三个架构加 iOS 未签名包）：带新版本号的提交合并到 main 即构建与发布，不再要网页批准；只在用户明确要求发版时升版本，升版本放进这一轮那条 PR 的最后一个提交、不单开升版本 PR（11-19 起）；约定与本机构建见 CONTRIBUTING.md。
 - 一轮改动开一条 PR（按主题分提交、CHANGELOG 只写一次），不叠多条 PR 逐条同步；本机只跑 analyze、所涉模块的测试与两个全局规范测试，全量交给 CI（跳过 CI 合并前本机仍跑全量）。
-- 依赖升级由 Dependabot 每月提 PR（安全更新随时提）（.github/dependabot.yml）；main 合并要 CI 三个作业都过（PR 上 iOS 构建只在动了 iOS 相关时跑，其余跳过算通过，[人工决策] 在 ci.yml）；iOS 锁文件怎么从 CI 取、发布来源证明怎么核对，见 CONTRIBUTING.md「供应链」。
+- 依赖升级由 Dependabot 每月提 PR（安全更新随时提）（.github/dependabot.yml）；main 合并要 CI 四个作业都过（分析测试、中转服务端、Android build、iOS build；PR 上 iOS 构建只在动了 iOS 相关时跑，其余跳过算通过，[人工决策] 在 ci.yml）；Gradle 依赖校验只核对 JitPack 与华为、荣耀仓库那几组（[人工决策] 在 android/build.gradle.kts），这几个包升级要重新生成校验文件；iOS 锁文件怎么从 CI 取、发布来源证明怎么核对、校验文件怎么重新生成，见 CONTRIBUTING.md「供应链」。
 
 # 分层与依赖方向
 
@@ -136,5 +136,5 @@
 - 安卓上退出再进入会新建 Flutter 引擎而进程还在，sqflite 的原生连接不随引擎关：前台的本机库一律单实例打开并显式写回滚开关，后台引擎被叫停时收回自己的连接（人工决策在 local/account_store.dart，test/account_store_test.dart 守护）。
 - 安卓明文 HTTP 只对教务与中转放行：清单引用的网络安全配置由 android/app/build.gradle.kts 构建时生成（教务地址写在脚本里，同 kingoBase；中转取构建参数 SUPERXD_RELAY，是 http 才放），其余原生网络一律 HTTPS；Dart 的请求不受它管。test/legal_page_test.dart 守护。
 - 对外开放文件只经两个 FileProvider：CalendarFileProvider（缓存 calendar_export 文件夹）与 AppUpdateFileProvider（缓存 app_update 文件夹，清单声明 REQUEST_INSTALL_PACKAGES）。
-- release 包开启 R8：接入不带混淆规则的原生 SDK 时要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件还要自己在清单里声明（现在没有这类 SDK：原生高德 11-10 随地图改网页版删掉，test/legal_page_test.dart 守护它与规则同进同出）。CI 另编开发包的 arm64 profile 包（Android build，先不是必需检查；没有模拟器冒烟，软件渲染下模拟器会崩）；release 包与 R8 只在发版流水线构建，正式发版前可先试跑，用试跑产物在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
+- release 包开启 R8：接入不带混淆规则的原生 SDK 时要在 android/app/proguard-rules.pro 写 keep 规则，jar 里的组件还要自己在清单里声明（现在没有这类 SDK：原生高德 11-10 随地图改网页版删掉，test/legal_page_test.dart 守护它与规则同进同出）。CI 另编开发包的 arm64 profile 包（Android build，11-19 起是必需检查；没有模拟器冒烟，软件渲染下模拟器会崩）；release 包与 R8 只在发版流水线构建，正式发版前可先试跑，用试跑产物在 arm 设备或带 ARM 转译的模拟器上走一遍原生功能。
 - 暂不改动的事项（只被测试使用的公开方法、性能观察项、单校写死）记在对应模块 CLAUDE.md 的关键规则里，改动前先看。

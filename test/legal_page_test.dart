@@ -276,4 +276,19 @@ void main() {
     expect(gradle, contains('xml/network_security_config.xml'));
     expect(Directory('android/app/src/main/res/xml').listSync().map((file) => file.uri.pathSegments.last), isNot(contains('network_security_config.xml')), reason: '只用生成的那份');
   });
+
+  // Gradle 依赖校验只核对第三方仓库那几组（[人工决策] 见 android/build.gradle.kts）：信任规则排除的组漏一组就等于没校验，
+  // 校验和缺一组构建就失败。
+  test('Gradle 依赖校验：信任规则排除的组、记了校验和的组都与限定仓库的组一致', () {
+    final gradle = File('android/build.gradle.kts').readAsStringSync();
+    final declared = RegExp(r'"(com\.[\w.-]+)"').allMatches(gradle.substring(gradle.indexOf('val thirdPartyRepositoryGroups'), gradle.indexOf('allprojects'))).map((match) => match.group(1)!).toSet();
+    expect(declared, isNotEmpty);
+    final metadata = File('android/gradle/verification-metadata.xml').readAsStringSync();
+    expect(RegExp('<trust ').allMatches(metadata), hasLength(1), reason: '只留一条反向信任规则');
+    final trust = RegExp(r'<trust group="\^\(\?!\(([^)]*)\)\$\)\.\*\$" regex="true"/>').firstMatch(metadata);
+    expect(trust, isNotNull);
+    expect(trust!.group(1)!.split('|').map((group) => group.replaceAll('[.]', '.')).toSet(), declared);
+    expect(RegExp(r'<component group="([^"]+)"').allMatches(metadata).map((match) => match.group(1)!).toSet(), declared);
+    expect(metadata, contains('<verify-metadata>true</verify-metadata>'));
+  });
 }
