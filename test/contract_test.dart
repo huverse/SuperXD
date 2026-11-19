@@ -120,6 +120,11 @@ void main() {
     expect(bells.periods.single.dayPartCode, 'morning');
     expect(bells.empty, isFalse);
     expect(parseBellsHtml('未设置作息时间').empty, isTrue);
+    // 学校某一节没填时间（起止都空）：跳过这一节，其余节次照常可用；只空一头的留给网关按格式不对拒收。
+    final gap = parseBellsHtml('<tr><td>下午</td><td>7</td><td>16:30</td><td>17:20</td></tr><tr><td>8</td><td></td><td></td><td></td></tr><tr><td>晚上</td><td>9</td><td>19:00</td><td>19:50</td></tr>');
+    expect(gap.periods.map((period) => period.period), [7, 9]);
+    expect(gap.empty, isFalse);
+    expect(parseBellsHtml('<tr><td>8</td><td>17:30</td><td></td></tr>').periods.single.end, isEmpty);
     final terms = parseTerms([
       {'code': '2026-0', 'name': '2026-2027学年第一学期'},
     ]);
