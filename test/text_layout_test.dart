@@ -99,6 +99,9 @@ void main() {
       expect(tester.getTopLeft(agree).dy - tester.getBottomLeft(button).dy, lessThan(48 * system * app));
       expect(find.ancestor(of: agree, matching: find.byType(CampusSurface)), findsOneWidget);
       expect(tester.getTopLeft(find.text('百宝箱')).dy, greaterThan(tester.getBottomLeft(agree).dy));
+      // 记住账号与同意行的勾选框中心、文字左边对齐（11-19 用户截图里两行各偏几个点）。
+      expect(tester.getCenter(find.byKey(const ValueKey('remember-account'))).dx, closeTo(tester.getCenter(find.byKey(const ValueKey('agree-terms'))).dx, .5));
+      expect(tester.getTopLeft(find.text('记住账号')).dx, closeTo(tester.getTopLeft(agree).dx, .5));
       await tester.pumpWidget(const SizedBox());
       loggedOut.dispose();
 

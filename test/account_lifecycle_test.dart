@@ -600,12 +600,12 @@ void main() {
     expect(gateway.rememberRequests, isEmpty);
     await tester.tap(find.text('取消'));
     await tester.pumpAndSettle();
-    expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value, isFalse);
+    expect(tester.widget<Checkbox>(find.byKey(const ValueKey('remember-account'))).value, isFalse);
     await tester.tap(find.text('记住账号'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('同意并开启'));
     await tester.pumpAndSettle();
-    expect(tester.widget<CheckboxListTile>(find.byType(CheckboxListTile)).value, isTrue);
+    expect(tester.widget<Checkbox>(find.byKey(const ValueKey('remember-account'))).value, isTrue);
     expect(gateway.rememberRequests, isEmpty);
     await tester.enterText(find.byType(TextField).at(0), 'A');
     await tester.enterText(find.byType(TextField).at(1), 'ok');
