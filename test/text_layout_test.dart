@@ -196,8 +196,10 @@ void main() {
       await tester.tap(find.byType(CircleAvatar).first);
       await tester.pumpAndSettle();
       expect(_problems(tester), isEmpty, reason: '教务账号');
-      expect(tester.getSize(find.text('应用账号')).height, lessThan(16 * system * app * 1.8), reason: '教务账号页「应用账号」只占一行');
       await back();
+      // 开发者的话在应用账号页最上面一组（人工决策见 section_pages.dart 的 MinePage 11-19 那条）。
+      await tester.tap(find.text('应用账号'));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('开发者的话'));
       await tester.pumpAndSettle();
       expect(_problems(tester), isEmpty, reason: '开发者的话');
@@ -206,6 +208,7 @@ void main() {
       // 正文是开发者写的长段落，段末剩一两个字属长文排版的常态（同书页），只查标题与裁字。
       expect(_problems(tester, checkOrphans: false), isEmpty, reason: '读信');
       expect([for (final issue in scanTexts(tester)) if (issue.kind == 'orphan' && issue.text.startsWith('新版本来了')) '$issue'], isEmpty, reason: '读信的标题');
+      await back();
       await back();
       await back();
       unawaited(showAppFeedback(tester.element(find.byType(ShellPage)), health));

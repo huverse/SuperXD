@@ -29,15 +29,15 @@ import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 // 推入应用账号页（与教务各管各的，没登录教务也能进）：游乐场的挑战、私信、账号页与节日动画后的抽奖提示共用；联网偏好与删除游乐场与积分也在这页。
-// 只在配了中转（有应用账号）时调。
-void pushAppAccountPage(BuildContext context, AppServices services) => unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(
-  builder: (context) => AppAccountPage(appAccounts: services.appAccounts!, diagnostics: services.diagnostics, network: services.network, leisure: services.leisure),
+// 只在配了中转（有应用账号）时调。开发者的话与节日红包也在这页（人工决策见 page/section_pages.dart 的 MinePage 11-19 那条）。
+void pushAppAccountPage(BuildContext context, AppServices services, {Future<bool> Function(Uint8List png)? saveRewardPicture}) => unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(
+  builder: (context) => AppAccountPage(appAccounts: services.appAccounts!, diagnostics: services.diagnostics, network: services.network, leisure: services.leisure, notes: services.notes, festivals: services.festivals, saveRewardPicture: saveRewardPicture),
 )));
 
 // 路由表（组合根）：设备级服务都在 services 里（见 app_services.dart），百宝箱运行时与游乐场记录由外壳给好。
 GoRouter buildRouter({required AppSession session, required AppServices services, required ToolboxRuntime toolbox, required PlaygroundStore playground, ValueListenable<bool>? splashGone, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
   final AppServices(:reminders, :social, :nearby, :updates, :developer, :logs, :paintings, :notes, :festivals, :appAccounts, :challenges, :unlocks, :autoSync, :health, :network) = services;
-  final void Function(BuildContext context)? openAccount = appAccounts == null ? null : (context) => pushAppAccountPage(context, services);
+  final void Function(BuildContext context)? openAccount = appAccounts == null ? null : (context) => pushAppAccountPage(context, services, saveRewardPicture: saveRewardPicture);
   final gateway = session.gateway;
   final tools = toolbox.modules;
   // 好友分享的卡片交给注册表里认得它的工具打开（页面层不依赖百宝箱，由这里接上；路由不认识具体工具页面）。
@@ -153,7 +153,7 @@ GoRouter buildRouter({required AppSession session, required AppServices services
           StatefulShellBranch(routes: [GoRoute(path: '/today', builder: (context, state) => TodayPage(gateway: gateway, onSessionExpired: () => session.expire(generation), isAccountCurrent: () => session.generation == generation && session.loggedIn, syncRequest: todaySync, autoSync: autoSync))]),
           StatefulShellBranch(routes: [GoRoute(path: '/service', builder: (context, state) => const ServicePage())]),
           StatefulShellBranch(routes: [GoRoute(path: '/message', builder: (context, state) => MessagePage(social: social, nearby: nearby, gateway: gateway, openVideo: openVideo, openAccount: openAccount))]),
-          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, updates: updates, health: health, developer: developer, logs: logs, paintings: paintings, notes: notes, festivals: festivals, appAccounts: appAccounts, openAppAccount: openAccount, saveRewardPicture: saveRewardPicture))]),
+          StatefulShellBranch(routes: [GoRoute(path: '/mine', builder: (context, state) => MinePage(session: session, updates: updates, health: health, developer: developer, logs: logs, paintings: paintings, notes: notes, appAccounts: appAccounts, openAppAccount: openAccount))]),
         ],
       ),
     ],

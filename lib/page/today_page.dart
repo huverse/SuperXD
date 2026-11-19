@@ -394,7 +394,7 @@ class _TodayPageState extends State<TodayPage> with WidgetsBindingObserver {
     if (_syncing || _choosing) return;
     _choosing = true;
     try {
-      final selected = await chooseSyncSelection(context, widget.gateway, initialYear: initialYear, autoSync: widget.autoSync);
+      final selected = await chooseSyncSelection(context, widget.gateway, initialYear: initialYear);
       if (selected != null && mounted) await _sync(selected);
     } finally {
       _choosing = false;

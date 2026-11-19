@@ -1,16 +1,21 @@
 import 'dart:async';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 
 import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
+import 'package:superxd/application/developer_notes.dart';
+import 'package:superxd/application/festivals.dart';
 import 'package:superxd/application/leisure.dart';
 import 'package:superxd/application/network_preference.dart';
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/domain/network_policy.dart';
 import 'package:superxd/page/app_account_join_page.dart';
+import 'package:superxd/page/developer_notes_page.dart';
 import 'package:superxd/page/diagnostic_uploads_page.dart';
+import 'package:superxd/page/festival/festival_reward.dart';
 import 'package:superxd/page/sensitive_clipboard.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -32,9 +37,15 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 // [人工决策-2026-11-17 21:24:25] 设计审查后用户选定（位置与规则不变）：叫法改成「联网 / 仅本机」（取代上一条的「联网化 / 本地化」，「本地化」常被读成翻译成本地语言），
 // 分段上面加组标题「联网偏好」（同界面页的小节标题，和下面的「登录 | 注册」分得开）；退出与注销各自单独一组、居中红字（同教务账号页的退出登录、iOS 的退出与删除账户），
 // 删除数据那一组同样居中红字，改叫「删除游乐场与积分」（11-17 主会话改：设计包缩成的「删除游乐场数据」漏了积分；原来的长名字在窄屏大字号下折成两行）。
+// [人工决策-2026-11-19 13:09:34] 「我的」页的开发者的话与节日红包并进这页（用户选「合成一行应用账号」，见 page/section_pages.dart 的 MinePage）：
+// 最上面一组「开发者的话」（有信才有，没读的带小圆点）与「我的红包」（有奖品才有，点开同原来「我的」页那一行），没登录、仅本机也看得到。
 class AppAccountPage extends StatefulWidget {
-  const AppAccountPage({super.key, required this.appAccounts, this.diagnostics, this.network, this.leisure, this.scanJoin = scanJoinWithCamera});
+  const AppAccountPage({super.key, required this.appAccounts, this.diagnostics, this.network, this.leisure, this.notes, this.festivals, this.saveRewardPicture, this.scanJoin = scanJoinWithCamera});
   final AppAccounts appAccounts;
+  // 开发者的话与节日奖品（设备级，没配中转或没有内容时不显示那一行）。
+  final DeveloperNotes? notes;
+  final Festivals? festivals;
+  final Future<bool> Function(Uint8List png)? saveRewardPicture;
   final AccountDiagnostics? diagnostics;
   // 联网偏好（测试里可以没有，当联网）与游乐场与积分的删除数据（没有就不显示那一组）。
   final NetworkPreference? network;
@@ -149,8 +160,9 @@ class _AppAccountPageState extends State<AppAccountPage> {
       title: const Text('应用账号'),
     ),
     body: CampusScrollFade(child: SafeArea(child: Center(child: ConstrainedBox(constraints: const BoxConstraints(maxWidth: 760), child: ListenableBuilder(
-      listenable: Listenable.merge([_accounts, ?widget.network]),
+      listenable: Listenable.merge([_accounts, ?widget.network, ?widget.notes, ?widget.festivals]),
       builder: (context, _) => ListView(padding: const EdgeInsets.all(16), children: [
+        ..._inbox(context),
         if (widget.network case final network?) ..._preference(context, network),
         if (widget.network?.online == false)
           ..._paused(context)
@@ -162,6 +174,35 @@ class _AppAccountPageState extends State<AppAccountPage> {
       ]),
     ))))),
   );
+
+  // 开发者的话与我的红包（人工决策见类上 11-19 那条）：两行都没有时整组不画。
+  List<Widget> _inbox(BuildContext context) {
+    const rowPadding = EdgeInsets.symmetric(horizontal: 20);
+    final notes = widget.notes, festivals = widget.festivals;
+    final prize = festivals?.prizes.lastOrNull;
+    final rows = [
+      if (notes != null && notes.notes.isNotEmpty)
+        ListTile(
+          contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.letter), title: const Text('开发者的话'),
+          trailing: Row(mainAxisSize: MainAxisSize.min, children: [
+            if (notes.unread) ...[Semantics(label: '有新的', child: UnreadDot(color: CampusPalette.of(context).dangerFill)), const SizedBox(width: 12)],
+            const CampusIcon(CampusIcons.next),
+          ]),
+          onTap: () => Navigator.of(context).push(CampusPageRoute<void>(builder: (_) => DeveloperNotesPage(notes: notes))),
+        ),
+      if ((festivals, prize) case (final festivals?, final prize?))
+        // 还没揭晓的（动画放完时结果还没回来）在这里打开也照样拆红包。
+        ListTile(
+          contentPadding: rowPadding, leading: const CampusIcon(CampusIcons.gift), title: const Text('我的红包'), trailing: const CampusIcon(CampusIcons.next),
+          onTap: () {
+            if (!prize.revealed) festivals.markRevealed(prize);
+            showFestivalReward(context, prize: prize, title: festivals.occasionName(prize.occasion), envelope: !prize.revealed, saveQrCode: widget.saveRewardPicture);
+          },
+        ),
+    ];
+    if (rows.isEmpty) return const [];
+    return [CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: Column(children: rows)), const Padding(padding: EdgeInsets.only(top: 16))];
+  }
 
   // 联网偏好：改为仅本机先确认写明关掉哪些、本机都留着；改回联网不用确认。组标题是读屏的小节标题。
   List<Widget> _preference(BuildContext context, NetworkPreference network) => [

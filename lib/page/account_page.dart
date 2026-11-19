@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 
 import 'package:superxd/app_session.dart';
-import 'package:superxd/application/app_accounts.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/page/account_dialogs.dart';
@@ -12,7 +11,6 @@ import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_surface.dart';
-import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
@@ -36,38 +34,11 @@ class AccountTitle extends StatelessWidget {
   ]);
 }
 
-// 「应用账号」一行（「我的」页与教务账号页共用，位置的人工决策在各自调用处）：名字在左、不折行，用户名或「未登录」靠右，
-// 太长时省略（同 iOS 设置里的值），行尾「›」。11-17 设计审查：以前用户名放在 trailing，长用户名在窄屏大字号下把「应用账号」挤成「应用账 / 号」。
-class AppAccountRow extends StatelessWidget {
-  const AppAccountRow({super.key, required this.appAccounts, required this.onTap, required this.padding, this.enabled = true});
-  final AppAccounts appAccounts;
-  final VoidCallback? onTap;
-  final EdgeInsetsGeometry padding;
-  final bool enabled;
-
-  @override
-  Widget build(BuildContext context) => ListenableBuilder(listenable: appAccounts, builder: (context, _) => ListTile(
-    contentPadding: padding, leading: const CampusIcon(CampusIcons.mainAccount),
-    title: Row(children: [
-      const Text('应用账号', maxLines: 1, softWrap: false),
-      const SizedBox(width: CampusGap.medium),
-      Expanded(child: Text(!appAccounts.loaded ? '' : appAccounts.username ?? '未登录', maxLines: 1, overflow: TextOverflow.ellipsis, textAlign: TextAlign.end, style: TextStyle(fontSize: CampusFontSize.secondary, color: CampusPalette.of(context).onSurfaceVariant))),
-    ]),
-    trailing: const CampusIcon(CampusIcons.next),
-    enabled: enabled && appAccounts.loaded,
-    onTap: onTap,
-  ));
-}
-
 // [人工决策-2026-10-05 01:28:53] 账号操作收进“我的”头像卡进入的账号页（同 iOS Apple ID）：记住账号、切换账号、导入旧版本数据一组，退出登录单独一组、红字放最底。
 class AccountPage extends StatefulWidget {
-  const AccountPage({super.key, required this.session, required this.name, this.appAccounts, this.openAppAccount});
+  const AccountPage({super.key, required this.session, required this.name});
   final AppSession session;
   final String name;
-  // 应用账号（人工决策见 application/app_accounts.dart）；没配中转时为空，不显示这一组。
-  final AppAccounts? appAccounts;
-  // 推入应用账号页（组合根给，同游乐场与私信；那页还有联网偏好与删除游乐场与积分）。
-  final void Function(BuildContext context)? openAppAccount;
 
   @override
   State<AccountPage> createState() => _AccountPageState();
@@ -190,18 +161,7 @@ class _AccountPageState extends State<AccountPage> {
               }),
             ),
           ])),
-          // [人工决策-2026-11-13 23:07:30] 应用账号单独一组，放在上面那组与退出登录之间（用户确认扩展 10-05 那条：账号操作都在账号页、退出登录仍单独一组放最底）。
-          // 11-15 起应用账号与教务各管各的（人工决策见 domain/app_account.dart）：这一行写用户名或未登录，点了推入应用账号页，登录、注册与管理都在那里。
-          if (widget.appAccounts case final appAccounts?) ...[
-            const SizedBox(height: 16),
-            CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: AppAccountRow(
-              appAccounts: appAccounts, padding: rowPadding, enabled: !_busy,
-              onTap: switch (widget.openAppAccount) {
-                final open? => () => open(context),
-                null => null,
-              },
-            )),
-          ],
+          // 应用账号不在这页（人工决策见「我的」页 MinePage 的 11-19 13:09:34 那条，取代 11-13 23:07:30 这页单独一组应用账号）。
           const SizedBox(height: 16),
           CampusSurface(padding: const EdgeInsets.symmetric(vertical: 8), child: ListTile(
             contentPadding: rowPadding, enabled: !_busy, onTap: _logout,

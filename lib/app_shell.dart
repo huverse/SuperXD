@@ -283,7 +283,7 @@ class _AccountAppState extends State<_AccountApp> {
     if (scene != null) await showFestivalCelebration(context, scene);
     if (signIn && context.mounted) {
       final appAccounts = widget.services.appAccounts;
-      showCampusToast(context, '登录应用账号就能参加这次抽奖', action: appAccounts == null ? null : '去登录', onAction: appAccounts == null ? null : () => pushAppAccountPage(context, widget.services));
+      showCampusToast(context, '登录应用账号就能参加这次抽奖', action: appAccounts == null ? null : '去登录', onAction: appAccounts == null ? null : () => pushAppAccountPage(context, widget.services, saveRewardPicture: saveRewardPicture));
       return;
     }
     final result = await drawing.timeout(_drawWait, onTimeout: () => null);
@@ -403,7 +403,7 @@ class _AccountAppState extends State<_AccountApp> {
         campaign: attachment.ref,
         saveQrCode: saveRewardPicture,
         accountChanges: widget.services.appAccounts,
-        onSignIn: widget.services.appAccounts == null ? null : (context) => pushAppAccountPage(context, widget.services),
+        onSignIn: widget.services.appAccounts == null ? null : (context) => pushAppAccountPage(context, widget.services, saveRewardPicture: saveRewardPicture),
       ),
   };
 
@@ -420,7 +420,7 @@ class _AccountAppState extends State<_AccountApp> {
       // 分享弹层在私信没就绪时直达能处理的那一页（见 page/share_target_sheet.dart 的 ShareGuide）：应用账号页（配了中转才有），
       // 消息页（在底栏壳里，没登录教务时进不去，不给）。
       builder: (context, child) => ShareGuide(
-        openAccount: widget.services.appAccounts == null ? null : (context) => pushAppAccountPage(context, widget.services),
+        openAccount: widget.services.appAccounts == null ? null : (context) => pushAppAccountPage(context, widget.services, saveRewardPicture: saveRewardPicture),
         openMessages: widget.session.loggedIn ? (context) => _router.go('/message') : null,
         openNearby: switch (widget.services.nearby) {
           final nearby? => (context, card) => unawaited(Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (_) => NearbyPage(nearby: nearby, card: card)))),

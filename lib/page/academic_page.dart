@@ -86,7 +86,7 @@ class _AcademicPageState extends State<AcademicPage> {
 
   Future<void> _start() async {
     if (_syncing) return;
-    final selection = await chooseSyncSelection(context, widget.gateway, autoSync: widget.autoSync);
+    final selection = await chooseSyncSelection(context, widget.gateway);
     if (selection == null || !mounted) return;
     setState(() => _syncing = true);
     try {

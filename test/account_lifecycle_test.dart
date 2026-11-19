@@ -832,18 +832,24 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     session.dispose();
   });
-  testWidgets('开发者的话：有没读的信时「我的」页那一行与底栏「我的」各一个小圆点，点开读过就消；没有信时不显示这一行', (tester) async {
+  // 11-19 起开发者的话在应用账号页（人工决策见 page/section_pages.dart 的 MinePage）：「我的」页应用账号一行带小圆点。
+  testWidgets('开发者的话：有没读的信时「我的」页应用账号一行、应用账号页那一行与底栏「我的」各一个小圆点，点开读过就消；没有信时应用账号页不显示这一行', (tester) async {
     final semantics = tester.ensureSemantics();
     final gateway = _Accounts(); final session = AppSession(gateway); await session.restore();
     final feed = _NoteFeed();
     final notes = DeveloperNotes(build: 1, feed: feed, memory: FileDeveloperNoteMemory.memory());
-    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(notes: notes))); await tester.pumpAndSettle();
+    final appAccounts = AppAccounts(client: _NoAppAccount());
+    await appAccounts.load();
+    await tester.pumpWidget(SuperXdApp(session: session, backgroundPhase: .18, services: AppServices(notes: notes, appAccounts: appAccounts))); await tester.pumpAndSettle();
     await tester.tap(find.text('我的')); await tester.pumpAndSettle();
-    expect(find.text('开发者的话'), findsNothing);
+    expect(find.text('开发者的话'), findsNothing, reason: '「我的」页没有这一行');
+    await tester.tap(find.text('应用账号')); await tester.pumpAndSettle();
+    expect(find.text('开发者的话'), findsNothing, reason: '还没有信');
+    await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
     await tester.runAsync(notes.refresh); await tester.pumpAndSettle();
     expect(find.bySemanticsLabel(RegExp(r'^我的，有新的')), findsOneWidget);
-    expect(find.text('开发者的话'), findsOneWidget);
     expect(find.bySemanticsLabel(RegExp('有新的')), findsNWidgets(2));
+    await tester.tap(find.text('应用账号')); await tester.pumpAndSettle();
     await tester.tap(find.text('开发者的话')); await tester.pumpAndSettle();
     // 从新到旧；没读的标出来。
     expect(tester.getTopLeft(find.text('第二封')).dy, lessThan(tester.getTopLeft(find.text('第一封')).dy));
@@ -856,6 +862,7 @@ void main() {
     await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
     await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
     expect(find.text('开发者的话'), findsOneWidget);
+    await tester.tap(find.byTooltip('返回')); await tester.pumpAndSettle();
     expect(find.bySemanticsLabel(RegExp('有新的')), findsNothing);
     semantics.dispose();
     await tester.pumpWidget(const SizedBox()); session.dispose();

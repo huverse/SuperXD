@@ -9,15 +9,22 @@ import 'package:pretty_qr_code/pretty_qr_code.dart';
 import 'package:superxd/app_session.dart';
 import 'package:superxd/application/account_diagnostics.dart';
 import 'package:superxd/application/app_accounts.dart';
+import 'package:superxd/application/developer_notes.dart';
+import 'package:superxd/application/festivals.dart';
 import 'package:superxd/application/leisure.dart';
 import 'package:superxd/application/network_preference.dart';
 import 'package:superxd/domain/account.dart';
 import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/campus_crypto.dart';
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_gateway.dart';
+import 'package:superxd/domain/developer_note.dart';
 import 'package:superxd/domain/diagnostic_upload.dart';
+import 'package:superxd/domain/festival.dart';
 import 'package:superxd/domain/network_policy.dart';
 import 'package:superxd/gateway/account_access.dart';
+import 'package:superxd/local/developer_note_memory.dart';
+import 'package:superxd/local/festival_memory.dart';
 import 'package:superxd/local/network_mode_memory.dart';
 import 'package:superxd/page/account_page.dart';
 import 'package:superxd/page/app_account_join_page.dart';
@@ -482,32 +489,28 @@ void main() {
       await clearToast(tester);
     });
 
-    testWidgets('账号页：应用账号一行写用户名或未登录，点了推入应用账号页；没配中转时不显示', (tester) async {
+    // [人工决策-2026-11-19 13:09:34] 见 section_pages.dart 的 MinePage：应用账号只在「我的」一个常驻入口，教务账号页不再有那一行；
+    // 「我的」只剩头像卡、应用账号、界面、关于，开发者的话与红包挪进应用账号页最上面一组。
+    testWidgets('教务账号页没有应用账号那一行', (tester) async {
       final session = AppSession(_Accounts());
       addTearDown(session.dispose);
-      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: AccountPage(session: session, name: '同学甲', appAccounts: appAccounts, openAppAccount: (context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => AppAccountPage(appAccounts: appAccounts))))));
-      await tester.pumpAndSettle();
-      expect(find.text('未登录'), findsOneWidget);
-      client.session = _session;
-      await appAccounts.load();
-      await tester.pumpAndSettle();
-      expect(find.text('tester_one'), findsOneWidget);
-      await tester.tap(find.text('应用账号'));
-      await tester.pumpAndSettle();
-      expect(find.text('修改密码'), findsOneWidget);
-      await tester.pumpWidget(MaterialApp(key: const ValueKey('bare'), theme: campusTheme(), home: AccountPage(session: session, name: '同学甲')));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: AccountPage(session: session, name: '同学甲')));
       await tester.pumpAndSettle();
       expect(find.text('应用账号'), findsNothing);
       expect(find.text('退出登录'), findsOneWidget);
     });
 
-    // [人工决策-2026-11-17 21:24:25] 见 section_pages.dart：「我的」首页也有应用账号一行，同组在界面之前；教务账号页那一行照留。
-    testWidgets('「我的」页：应用账号一行（在界面之前）写用户名或未登录，点了推入应用账号页；没配中转时不显示', (tester) async {
+    testWidgets('「我的」页：应用账号、界面、关于一组，没有开发者的话与红包；应用账号一行写用户名或未登录、有没读的信带小圆点，点了推入应用账号页；没配中转时不显示', (tester) async {
+      final semantics = tester.ensureSemantics();
       final session = AppSession(_Accounts());
       addTearDown(session.dispose);
-      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Scaffold(body: MinePage(session: session, appAccounts: appAccounts, openAppAccount: (context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => AppAccountPage(appAccounts: appAccounts)))))));
+      final notes = DeveloperNotes(build: 1, feed: _NoteFeed(), memory: FileDeveloperNoteMemory.memory());
+      await tester.runAsync(notes.refresh);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Scaffold(body: MinePage(session: session, appAccounts: appAccounts, notes: notes, openAppAccount: (context) => Navigator.of(context).push(MaterialPageRoute<void>(builder: (_) => AppAccountPage(appAccounts: appAccounts, notes: notes)))))));
       await tester.pumpAndSettle();
       expect(find.text('未登录'), findsOneWidget);
+      expect(find.text('开发者的话'), findsNothing);
+      expect(find.bySemanticsLabel(RegExp(r'应用账号[\s\S]*有新的')), findsOneWidget, reason: '没读的信标在应用账号一行');
       expect(tester.getTopLeft(find.text('应用账号')).dy, lessThan(tester.getTopLeft(find.text('界面')).dy));
       expect(tester.element(find.ancestor(of: find.text('应用账号'), matching: find.byType(CampusSurface)).first), same(tester.element(find.ancestor(of: find.text('界面'), matching: find.byType(CampusSurface)).first)), reason: '和界面、关于同一组');
       client.session = _session;
@@ -516,11 +519,40 @@ void main() {
       expect(find.text('tester_one'), findsOneWidget);
       await tester.tap(find.text('应用账号'));
       await tester.pumpAndSettle();
+      expect(find.text('开发者的话'), findsOneWidget);
       expect(find.text('修改密码'), findsOneWidget);
       await tester.pumpWidget(MaterialApp(key: const ValueKey('bare'), theme: campusTheme(), home: Scaffold(body: MinePage(session: session))));
       await tester.pumpAndSettle();
       expect(find.text('应用账号'), findsNothing);
       expect(find.text('界面'), findsOneWidget);
+      semantics.dispose();
+    });
+
+    testWidgets('应用账号页最上面一组：有信才有「开发者的话」、有奖品才有「我的红包」（没登录、仅本机也在）；都没有时整组不画', (tester) async {
+      final notes = DeveloperNotes(build: 1, feed: _NoteFeed(), memory: FileDeveloperNoteMemory.memory());
+      final through = formatCampusDate(campusInstant().add(const Duration(days: 3)));
+      final festivals = Festivals(occasions: const [], memory: FileFestivalMemory.memory(FestivalRecord(prizes: [FestivalPrize(occasion: 'test-campaign', kind: FestivalPrizeKind.password, content: '合成口令', note: '', wonAt: DateTime.utc(2026, 11, 19), revealed: true, keepThrough: through)])));
+      final network = NetworkPreference(memory: FileNetworkModeMemory.memory());
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: AppAccountPage(appAccounts: appAccounts, notes: notes, festivals: festivals, network: network)));
+      await tester.pumpAndSettle();
+      expect(find.text('开发者的话'), findsNothing, reason: '还没有信');
+      expect(find.text('我的红包'), findsOneWidget);
+      expect(tester.getTopLeft(find.text('我的红包')).dy, lessThan(tester.getTopLeft(find.text('联网偏好')).dy), reason: '在联网偏好上面');
+      await tester.runAsync(notes.refresh);
+      await tester.pumpAndSettle();
+      expect(find.text('开发者的话'), findsOneWidget);
+      await network.setMode(NetworkMode.local);
+      await tester.pumpAndSettle();
+      expect(find.text('开发者的话'), findsOneWidget, reason: '仅本机也看得到');
+      await tester.tap(find.text('我的红包'));
+      // 奖品卡的流光一直在动，不等动画停。
+      await tester.pump();
+      await tester.pump(const Duration(seconds: 2));
+      expect(find.text('合成口令'), findsOneWidget, reason: '点开同原来「我的」页那一行');
+      await tester.pumpWidget(MaterialApp(key: const ValueKey('empty'), theme: campusTheme(), home: AppAccountPage(appAccounts: appAccounts)));
+      await tester.pumpAndSettle();
+      expect(find.text('我的红包'), findsNothing);
+      expect(find.text('开发者的话'), findsNothing);
     });
 
     testWidgets('注册：格式不对原地说明、不联网；注册成功弹出恢复码（按返回不关，可复制），点「我已保存」后显示用户名', (tester) async {
@@ -946,5 +978,17 @@ class _DiagnosticClient implements DiagnosticAccountClient {
   Future<void> delete(AppAccountRef account, String id) async {
     deleted.add(id);
     records.removeWhere((record) => record.id == id);
+  }
+}
+
+// 合成的开发者的话：两封，第二封刚发出、没读。
+class _NoteFeed implements DeveloperNoteFeed {
+  @override
+  Future<List<DeveloperNote>> fetch() async {
+    final now = DateTime.now().toUtc();
+    return [
+      DeveloperNote(id: 'b', title: '第二封', publishedAt: now, body: '第二封的正文'),
+      DeveloperNote(id: 'a', title: '第一封', publishedAt: now.subtract(const Duration(days: 30)), body: '第一封的正文'),
+    ];
   }
 }
