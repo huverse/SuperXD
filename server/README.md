@@ -4,7 +4,7 @@
 另有一处**代签凭据包的临时信箱**（chaoxing 模块）：学习通代签时对方把凭据包用一次性密钥加密后放这里，取走即删，服务端同样没有解密用的密钥。客户端在 lib/toolbox/chaoxing。
 还负责**节日抽奖**（reward 模块）：节日里随机发的支付宝口令或二维码红包只放这里、只在这里抽，抽签要登录了应用账号的设备签名，一个应用账号一次活动只抽一次，账号要建立满几天、名单与最低等级这些资格由每个活动的参数定（建活动不写时满 7 天），概率模型（平权、按活跃度加权并按积分等级取高、全天均匀放量、奖品分金额档且大额档按等级加权挑）与人工决策见 src/modules/reward/reward_odds.ts。客户端在 lib/relay/relay_reward_client.dart（用应用账号的设备密钥签名），由 lib/application/festivals.dart 编排。
 还负责**诊断包**（diagnostic 模块）：用户在开发者选项里点「上传诊断包」并确认后，应用把日志包用开发者的公钥加密再传来，这里只按诊断编号存密文、没有下载接口（开发者经 ssh 取出后在本机用私钥解），30 天后删除，人工决策见 lib/domain/diagnostic_upload.dart。上传照旧免签名、匿名完成；登录了应用账号的设备紧接着凭回执里的一次性口令把包认领到账号下，之后在账号页能看到、删除，注销账号一并删除。客户端是 lib/device/relay_diagnostic_upload.dart（上传）与 lib/relay/relay_diagnostic_account.dart（认领、列出、删除），由 lib/application/account_diagnostics.dart 编排。
-还负责**应用账号**（account 模块，人工决策见 src/modules/account/account.service.ts 与客户端 lib/domain/app_account.dart）：自己的账号体系，用户名加密码。学校把本服务的 IP 整个挡了、教务又是明文 http，服务器核实不了学号，11-13 起的代登录教务与 11-15 当天的设备核对都作废、删除。客户端把密码与恢复码用本服务公钥封装后交来（中转是明文 HTTP），这里只存 scrypt 哈希；忘了密码凭注册时给的恢复码重设，或在登录着的设备上直接改，没有人工找回；新设备可由登录着的设备扫码批准登录。账号对外只有随机账号号与用户名，一把设备密钥登录一个账号，全部请求带设备签名。客户端在 lib/relay（请求与封装），由 lib/application 编排。
+还负责**应用账号**（account 模块，人工决策见 src/modules/account/account.service.ts 与客户端 lib/domain/app_account.dart）：自己的账号体系，用户名加密码。学校把本服务的 IP 整个挡了、教务又是明文 http，服务器核实不了学号，11-13 起的代登录教务与 11-15 当天的设备核对都作废、删除。客户端把密码与恢复码用本服务公钥封装后交来（当初中转是明文 HTTP；11-18 起走 HTTPS，封装照旧），这里只存 scrypt 哈希；忘了密码凭注册时给的恢复码重设，或在登录着的设备上直接改，没有人工找回；新设备可由登录着的设备扫码批准登录。账号对外只有随机账号号与用户名，一把设备密钥登录一个账号，全部请求带设备签名。客户端在 lib/relay（请求与封装），由 lib/application 编排。
 还负责**积分与挑战**（points 与 challenge 模块，人工决策见客户端 lib/playground/challenge/challenge_rules.dart 与 src/modules/points/points.service.ts）：游乐场的挑战由这里按配置下发（每周一换）、出题、逐关核对、计时（不暂停）与结算，成绩换成积分记在应用账号下；挑战的内容（模板、轮换、计分参数、限时）与题库是发布目录 challenge 下的文件，换文件即生效。判定在 src/modules/challenge/judges，从客户端 Dart 规则逐个移植、共用测试向量。客户端在 lib/relay/relay_challenge_client.dart，由 lib/application/challenges.dart 编排。
 还负责**应用内更新**（app_release 模块）：按渠道给出最新版本清单、下载各架构安装包，内容是发版时放进发布目录的文件，不碰数据库。客户端是 lib/device/relay_release_feed.dart，由 lib/application/app_updates.dart 编排。
 
@@ -16,7 +16,7 @@
 - 设备身份是 Ed25519 签名公钥；设备号 = base64url(sha256(签名公钥) 前 16 字节)，22 个字符。另有 X25519 加密公钥，服务端只存档不使用。
 - 每个请求带 x-sxd-device、x-sxd-time（毫秒）、x-sxd-nonce（16 字节 base64url）、x-sxd-signature。签名原文为以下各项换行连接：SXD1、方法、路径含查询串、时间、随机数、请求体 sha256 的 base64url。
 - 时间与服务器相差超过 5 分钟返回 CLOCK_SKEW 并附 serverTime；随机数 10 分钟内不能重复（REPLAYED）。验签通过后才占用随机数。
-- 没有会话令牌：测试期用 IP + 明文 HTTP 时，截获的请求也无法冒用或重放；正式域名换 HTTPS 后同样适用。
+- 没有会话令牌：明文 HTTP 下截获的请求也无法冒用或重放。11-18 起正式入口是 tls 容器（Nginx）在 8443 用 Let's Encrypt 的 IP 证书终止 HTTPS，8080 明文入口留给还没升级的旧客户端（等它没人用再关）；两条路同一套签名规则。
 - 双端一致性由 test/vectors/protocol_v1.json 守护，客户端 test/social_protocol_test.dart 读同一份文件。
 
 接口（base64url 一律无填充）
@@ -34,7 +34,7 @@
 - GET /v1/app/rollout：免签名、不带任何标识，返回发布目录里 rollout.json 的灰度配置 {flags, levels, envelope}（levels 是积分等级的门槛，可以没有；每个开关是定值 percent 或按时刻的 stages，分批更新的开关名是 app_update.<渠道>.<构建号>），还没放时给空列表、信封为空；只校验形状、信封原样透传，写坏了回 INTERNAL 并打印堆栈、不往外发，按修改时间与大小缓存。文件由维护者本机的 tool/rollout_publish.sh 签好上传（11-16 起不在仓库，人工决策见客户端 lib/domain/rollout.dart 文件头），签名用开发者的话那把钥（域前缀 SXD1-rollout）；这一版只放没有新字段的开关，留给 alpha.28 及以前的客户端。客户端在本机判定，服务器不知道谁拿到了什么；以后要在服务端强制的功能用 src/common/rollout_bucket.ts 再算一遍（与客户端共用 test/vectors/rollout_v1.json，含按积分等级加权的判定）。
 - GET /v1/app/notes：免签名、不带任何标识，返回发布目录里 developer_notes.json 的「开发者的话」（最近 30 封，从新到旧）；还没放时给空列表，写坏了回 INTERNAL 并打印堆栈、不往外发，按修改时间与大小缓存。文件由仓库的 notes 流水线（.github/workflows/notes.yml）经同一个受限账号上传。返回另带 envelope：签好的信封原样透传（还没放文件或文件没有签名时为 null）。
 - POST /v1/rewards/:campaign/draw：要求登录了应用账号的设备签名（没签名、设备没登记或已删除回 UNAUTHORIZED，设备不在任何应用账号下回 ACCOUNT_NOT_FOUND），请求体是 {activeDays（近 30 天打开过的天数，0–30）, seal?}（11-17 起的客户端带 seal: 2，要带服务器签名的第 2 版奖品信封）；抽签人是设备所在的应用账号，库里只存「SXD1-reward\naccount\n账号号」的 sha256，换设备、重装都还是同一个人，注销后重新注册算新的人；资格由活动参数定（人工决策见 src/modules/reward/reward_odds.ts 的 11-16 那条）：名单活动不在名单、或积分等级低于 min_level 的回 ineligible，账号建立不满这个活动的 min_account_days（默认 7）天回 403 ACCOUNT_TOO_NEW（附 eligibleAt），都不记这次；distribution 为 all 时有资格就发（不掷骰子、不按小时放量，发完为止）。返回 {result, sealed}：won 时 sealed 是用抽签设备登记的 box 公钥封装的奖品 {kind（password 或 qrcode）, content, note}（信封见 src/modules/reward/reward_seal.ts，与客户端共用 test/vectors/reward_prize_v1.json 与 v2；中转是明文 HTTP，口令是真钱）；请求带 seal: 2 时是第 2 版：同样的布局后接服务器在线签名钥（RELAY_FRIEND_SIGN_KEY）对「活动、设备号、信封字节」的签名，客户端验过才揭晓（box 公钥是公开的，第 1 版谁都能封一份），没带的旧客户端照旧第 1 版，missed 没抽中，closed 活动不存在或不在进行，ineligible 没资格，后三者 sealed 为 null。同一活动同一个人只抽一次，重复请求返回同一结果（含没抽中），并发也只记一次；抽中且这一小时的放量额度与库存都还有才发奖，发奖在活动行上排队、一份只发给一人。
-- GET /v1/rewards/:campaign（开发者的话里的「领取」按钮先问，人工决策见 src/modules/reward/reward_odds.ts 的 11-16 那条）：同样要应用账号的设备签名，回 {state, endsAt, eligibleAt}：open 能领，drawn 领过（再点就是 draw 取回同一结果），closed 不在进行，ineligible 没资格（按钮不显示），too_new 账号天数不够（附 eligibleAt）；只读、不记这次；?levels=0 时按 Lv0（客户端关掉了娱乐与积分）；每台每小时 rewardStatusPerDevicePerHour 次。信的附件 attachments（每封最多 developerNoteAttachmentMax 个 {type, ref}，现在只有 type 为 reward、ref 为活动编号）由 GET /v1/app/notes 原样透传，旧客户端不认、照常显示信。
+- GET /v1/rewards/:campaign（开发者的话里的「领取」按钮先问，人工决策见 src/modules/reward/reward_odds.ts 的 11-16 那条）：同样要应用账号的设备签名，回 {state, endsAt, eligibleAt}：open 能领，drawn 领过（再点就是 draw 取回同一结果），closed 不在进行，ineligible 没资格（按钮不显示），too_new 账号天数不够（附 eligibleAt）；只读、不记这次；?levels=0 时按 Lv0（客户端不按等级时，即联网偏好为仅本机）；每台每小时 rewardStatusPerDevicePerHour 次。信的附件 attachments（每封最多 developerNoteAttachmentMax 个 {type, ref}，现在只有 type 为 reward、ref 为活动编号）由 GET /v1/app/notes 原样透传，旧客户端不认、照常显示信。
 - POST /v1/diagnostics：免签名，请求体是 application/octet-stream 的诊断包密文（版本、一次性 X25519 公钥、随机数、AES-256-GCM 密文与标签，至少 61 字节、最多 24MB，必须声明长度，分块上传拒收；超限与类型不对的在通用解析前按请求头挡掉），按流写进 RELAY_DIAGNOSTICS_DIR，文件名即诊断编号（8 位 Crockford base32），返回 {id, keepDays, claim}（claim 是 16 字节随机数的 base64url 认领口令，Redis 里只存它的 sha256，一天内有效、用一次即删）；目录满了回 503 MAILBOX_FULL。服务端没有解密用的密钥，也没有下载接口。
 - POST /v1/account/register：注册（自签名，请求体是这把设备密钥的两把公钥、username（3–20 位字母数字下划线，不分大小写，存小写）与 sealed：用本服务账号公钥封装的 {password, recoveryCode}，见下面「应用账号的信封」）。密码 8–64 个字符，恢复码是客户端生成的 24 位 Crockford base32。返回 {accountId, username, serverTime}；用户名被占用回 409 USERNAME_TAKEN。
 - POST /v1/account/login：登录（自签名，请求体同上，sealed 是 {password}），对了就把这把密钥登记到账号下，返回同上；用户名或密码不对一律回 403 CREDENTIALS_INVALID（不说是哪一项）。POST /v1/account/recover：忘了密码（自签名，sealed 是 {recoveryCode, password, newRecoveryCode}）：恢复码对了就换密码、换恢复码并登录这把密钥，同一事务里删掉账号下别的密钥登记、并删掉账号挂着的私信设备的设备登记（私信一起收回：好友与没收的信留着，私信在这台上的重新挂上就恢复，在别的手机上的由这台接管；别的设备随之下线、再来回 ACCOUNT_NOT_FOUND；登录着改密码不这样），不对回 CREDENTIALS_INVALID。
@@ -49,7 +49,7 @@
 - POST /v1/challenge-runs/:runId/final：终章 {value}（全部非加试关的碎片之和），返回 {correct, run}；对了当场结算（全通关），错了同样扣时间；还没全过回 409 LEVEL_LOCKED。
 - POST /v1/challenge-runs/:runId/end：提前结束，按已过的关结算。
 - GET /v1/points：{balance, expiring（30 天内要过期的）, expiringAt, serverTime}；GET /v1/points/entries?before=：流水从新到旧，每页 20 条，按 id 游标翻页。
-- DELETE /v1/leisure（娱乐与积分的「删除数据」，人工决策见客户端 lib/domain/leisure.dart）：应用账号签名，删这个账号的积分、流水、挑战局与最好成绩、解锁记录（同一事务；账号、私信、诊断包与节日抽签记录不动），回 204；每台设备每小时 leisureDeletePerDevicePerHour（10）次。客户端关掉娱乐与积分时抽签请求体另带 levels: false，服务器按 Lv0 算（只降自己的机会，不防篡改）。
+- DELETE /v1/leisure（应用账号页的「删除游乐场与积分」，人工决策见客户端 lib/domain/leisure.dart）：应用账号签名，删这个账号的积分、流水、挑战局与最好成绩、解锁记录（同一事务；账号、私信、诊断包与节日抽签记录不动），回 204；每台设备每小时 leisureDeletePerDevicePerHour（10）次。客户端不按等级时（仅本机）抽签请求体另带 levels: false，服务器按 Lv0 算（只降自己的机会，不防篡改）。
 - POST /v1/account/diagnostics/:id/claim：凭上传回执的口令 {claim} 把这个诊断包认领到当前应用账号，返回 {id, bytes, uploadedAt, expiresAt}（毫秒时间戳，uploadedAt 是认领时刻）；口令不对、过期、用过或包已不在都回 404 DIAGNOSTIC_NOT_FOUND。GET /v1/account/diagnostics：这个账号认领过的包 {uploads: [...]}，从新到旧、最多 50 个。DELETE /v1/account/diagnostics/:id：删这个账号下的这个包，记录与文件一起删，别人的或不存在回 DIAGNOSTIC_NOT_FOUND。
 - POST /v1/account/social：把私信设备挂到这个应用账号（人工决策见客户端 lib/social/social_service.dart 文件头）。请求体是私信设备的两把公钥、它对「SXD1-social-bind\n应用账号设备号\n私信设备号」的签名 proof（证明两把钥匙在同一台手机上，共用向量 socialBind）与可选的 takeover；没注册过的私信设备顺带登记。返回 {deviceId, moved}。账号的私信在别的设备上时，不带 takeover 回 409 SOCIAL_ELSEWHERE；带了就接管：同一事务里把好友关系改挂到这台（对方那行记 movedFrom，两边本来就有的不重复，两台互加的去掉），删掉旧设备与它没收的信，旧设备之后的请求是 UNAUTHORIZED。这台私信设备已属于别的账号回 409 SOCIAL_TAKEN。私信设备不能是应用账号的设备密钥。注销账号时私信设备连同好友关系与信箱一起删。
 - 以上都要应用账号的设备签名，没登录回 404 ACCOUNT_NOT_FOUND（账号模块的接口对已注销账号的密钥回 410 ACCOUNT_DELETED）。账号下任一设备有签名请求就记一次账号的最后活跃，同设备的最后活跃每台每小时最多写一次（设备模块的 onSeen 回调，热路径不等）。
@@ -61,7 +61,7 @@
 - 清单文件 <渠道>.json 在明文字段之外带 envelopes：每个架构一份（载荷含渠道、架构、版本、最低可用版本、更新说明、发布页与这个架构的安装包文件名、大小、SHA-256），按请求的架构挑一份放进返回的 envelope；developer_notes.json 带一个 envelope（载荷是 {"notes": [...]}）。
 - 中转只校验信封形状（base64url、签名个数与长度、keyId 格式，多出字段即当写坏）、原样透传，不解码、不验签；明文字段照旧给 1.0.0-alpha.15 及以前不验签的旧客户端。
 - 灰度配置 rollout.json 同样带一个 envelope（载荷是 {"flags": [...], "levels": [...]}，域前缀 SXD1-rollout），客户端只认开发者的话那把钥与离线备用钥签的；分批更新的放量表 rollout 写在发版清单各架构的签名载荷里，明文字段不带。
-- 签名挡不住冻结与回滚（一直回放旧清单）：版本只升不降由客户端已装版本号与系统安装器保证，冻结只能靠将来的 HTTPS；载荷不带过期时间。
+- 签名挡不住冻结与回滚（一直回放旧清单）：版本只升不降由客户端已装版本号与系统安装器保证；路上的人冻结靠 11-18 起的 HTTPS 挡（8080 明文入口上的旧客户端仍挡不住），中转自己回放旧清单签名挡不住；载荷不带过期时间。
 - 上线顺序：先部署本服务（能透传信封的版本），再发带验签的客户端。旧版服务会把带 envelopes 的清单当写坏的文件拒绝（新旧客户端都查不到更新），所以发版与 notes 流水线上传前都先确认返回里有 envelope 字段，没有就停。部署后旧客户端照常靠明文字段更新，不受影响。
 
 应用账号的信封（客户端 lib/relay/account_seal.dart，双端共用 test/vectors/account_seal_v2.json，第 1 版 account_seal_v1.json 留着核对旧客户端，向量里的明文是任意 JSON 对象）
@@ -104,7 +104,7 @@
 - 发送每设备每分钟 30 条、每天 500 条；同一 IP 每小时注册 20 台新设备；兑换邀请每设备每分钟 10 次。
 - 取走并确认的消息立即删除；未取走的 30 天后删除；设备 400 天不活跃连同关系与信箱删除。清理任务每 10 分钟一次，多实例抢分布式锁，消息每批 1000 行、每轮最多 20 批；不活跃设备每批最多 1000 台，按 10 台一个事务连带删除（每台最多约 2000 行好友关系与消息），单个事务行数有界。
 - 代签凭据包：单条 ≤2KB，取件号 10 分钟有效，取走即删；同一来源每小时最多提交 1000 个、取件与作废各 3000 次（校园网 NAT 共用出口，见 relay_limits.ts 的人工决策）。过期即取不到，清理任务每 10 分钟一轮删除过期的包（最迟约 20 分钟内删掉）。
-- 应用更新：同一来源每小时查清单 600 次、安装包请求 300 次（含断点续传的分段请求）；每个实例同时最多 32 个下载，超出回 503 RATE_LIMITED（retryAfter 60）；清单文件超过 128KB 拒绝读取（明文加三个架构的签名信封）。发布目录只放当前版本的清单与安装包，发新版时删掉旧包（每个渠道约 3 个安装包、共 300MB 上下）。
+- 应用更新：同一来源每小时查清单 600 次、安装包请求 300 次（含断点续传的分段请求）；每个实例同时最多 32 个下载，超出回 503 RATE_LIMITED（retryAfter 60）；清单文件超过 128KB 拒绝读取（明文加三个架构的签名信封）。发布目录只放当前版本的清单与安装包，发新版时删掉旧包（每个渠道 3 个安装包，现在各约 45–49MB、共 140MB 上下）。
 - 开发者的话：同一来源每小时 600 次；最多 30 封、标题 40 字、正文 4000 字，文件超过 1MB 拒绝读取（明文加签名载荷；与客户端 lib/domain/developer_note.dart 及 lib/device/relay_note_feed.dart 一致）。
 - 灰度配置：同一来源每小时 600 次；最多 200 个开关、每个 20 档，文件超过 64KB 拒绝读取（与客户端 lib/device/relay_rollout_feed.dart 一致）。
 - 节日抽奖：加权模式按设备所在账号的积分等级再算一次倍数（一次按账号的获得行求和，同积分页）；每档奖品各自按小时均匀放量，挑档只在抽中的人里、在活动行锁内做。每台设备每小时 10 次、同一来源每小时 3000 次（先按设备计数，刷请求的设备不占同一出口别人的额度）；一个应用账号只抽一次（注销后重新注册算新的人），账号建立的天数不满这个活动的 min_account_days（建活动不写为 7 天）回 403 ACCOUNT_TOO_NEW 附 eligibleAt（注册用户名谁都能建号，挡住批量新建的账号）；注销账号不删抽签记录，同其他抽签记录留到活动结束后清；活动行在进程内缓存 60 秒；活动结束 30 天后由每小时一次的清理任务连同奖品与抽签记录分批删除（多实例抢锁，每轮最多 20 批、每批 1000 行）。
@@ -114,7 +114,7 @@
 - 解锁：每台设备每小时看 600 次、每个账号每小时买 30 次；account_unlock 一个账号一项一行（行数不超过账号数乘清单项数），随账号删除，服务公开 30 天后、下架退回后由每小时一次的清理任务删除（抢锁、每轮最多 20 批、每批 1000 行，退回按批插入）。
 - 积分：每笔满 12 个月过期，每小时一次的任务把到期的清零并记过期流水（只扫还有剩余的，走虚拟列 due_time 的索引）；流水满 13 个月（395 天）删除；剩余为 0 且过期满 30 天的获得行删除；每台设备每小时查 600 次。花一笔锁住这个账号还有剩余的获得行（12 个月里的笔数，每周几笔），一条 CASE WHEN 写回。
 - 挑战：一个账号同时一局（challenge_run 的 (account_id, active) 唯一），每小时最多开 30 局；每台设备每小时 3000 个挑战请求；到点没交的局每 5 分钟结算一批（每批 200 局、每轮最多 10 批，多实例抢锁）；局结束 30 天后删除，最好成绩在挑战结束 400 天后删除（每小时一次，抢锁、每轮最多 20 批、每批 1000 行）。配置文件不超过 256KB、每个题库文件不超过 8MB，进程内最多缓存 100 个题库文件。预计用时的计数 challenge_pace 行数不超过 游戏数 × 12 周 × 25 档，满 12 周的每小时删一批（抢锁）。
-- HTTP 服务端的超时显式设置（src/common/http_server.ts，取值在 relay_limits.ts）：收完一个请求最多 330 秒（最大的诊断包上传客户端整次最多 5 分钟），收完请求头 66 秒，空闲保活连接 65 秒（长过客户端关空闲连接的 15 秒与以后前置代理上游保活的 60 秒）；回复头不带 x-powered-by。
+- HTTP 服务端的超时显式设置（src/common/http_server.ts，取值在 relay_limits.ts）：收完一个请求最多 330 秒（最大的诊断包上传客户端整次最多 5 分钟），收完请求头 66 秒，空闲保活连接 65 秒（长过客户端关空闲连接的 15 秒与常见前置代理上游保活的 60 秒；现在前置的 tls 容器 Nginx 没开上游保活，读超时 330 秒）；回复头不带 x-powered-by。
 - 按 IP 限流的计数主体：IPv4 按完整地址，IPv6 按 /64 前缀（换地址绕不过去）。
 - 发送的每分钟与每天两个窗口在一个 Lua 脚本里按顺序计数（一次往返），超了每分钟的不再计入每天的。
 - 验签用的设备公钥在进程内缓存（每实例最多 5 万台、每台 10 分钟，多实例下别的实例删掉的设备最迟 10 分钟内这里也不认）；查库没有的设备号在 Redis 记 60 秒，期间同一设备号直接拒绝、不再查库，注册成功即改记「已注册」，新注册立刻在所有实例生效（人工决策见 src/modules/device/device.service.ts）。每次换随机设备号的刷库挡不住（每个新号仍查一次唯一索引），整体流量要在前置代理或安全组按 IP 限速。
@@ -161,13 +161,13 @@
    红包的资格与发放：库按 sql/upgrade_2026_11_16d.sql 给 reward_campaign 加四列（默认值即原来的行为）、建名单表 reward_audience 后再部署（可重复执行，旧版服务不读新列）。建活动另可写 --distribution、--audience、--min-account-days、--min-level（11-18 起 --distribution all 可分批补货：这一批发完时来领的人回 sold_out、不记这次，再 import 一批他照样能领；要金额随机就把各档奖品打乱后当一档导入），名单活动用 reward_admin audience <编号> < 名单.txt 按用户名导入（用法见 src/modules/reward/reward_admin.ts 文件头）。
    注销账号的墓碑：库按 sql/upgrade_2026_11_16b.sql 建 account_tombstone 表后再部署（新版服务注销账号时要写它；只建表、可重复执行，旧版服务不碰它）。扫码登录查属地用的 ip2region 离线库在镜像构建时按固定提交下载并核对校验和（Dockerfile，约 11MB，许可 Apache-2.0 或 MIT，原文在镜像的 /app/ip2region/LICENSE.md），.env 不用改；本机现场构建连不上 GitHub 时传 --build-arg IP2REGION_BASE=<镜像站上的同一路径>。
    积分到期清零的索引：库按 sql/upgrade_2026_11_16.sql 给 points_grant 加虚拟列 due_time 与索引 idx_due（加列 INSTANT、建索引 INPLACE 不挡读写，都不重建表；新旧版服务都能用，先执行再部署；可重复执行）。
-   诊断包：compose 把命名卷 diagnostics 挂到容器 /srv/diagnostics（镜像里这个目录归 node，命名卷第一次创建时沿用，非 root 进程能写），不用改 .env。认领到应用账号要先按 sql/upgrade_2026_11_14b.sql 建 diagnostic_upload 表再部署。用户报来诊断编号后，在服务器 /opt/superxd-relay 下 docker compose cp relay:/srv/diagnostics/<诊断编号> /tmp/<诊断编号> 取出，拷回开发者本机用 tool/open_diagnostic.dart 解开（私钥只在开发者本机，见该文件头）；用户要求提前删除时 docker compose exec relay rm /srv/diagnostics/<诊断编号>。
+   诊断包：compose 把命名卷 diagnostics 挂到容器 /srv/diagnostics（镜像里这个目录归 node，命名卷第一次创建时沿用，非 root 进程能写），不用改 .env。认领到应用账号要先按 sql/upgrade_2026_11_14b.sql 建 diagnostic_upload 表再部署。用户报来诊断编号后，在开发者本机 ssh 服务器 'cd /opt/superxd-relay && docker compose exec -T relay cat /srv/diagnostics/<诊断编号>' > 本机文件（经标准输出直接拷回、服务器上不落地；几个一起取可在容器里 tar -cf - 打包），用 tool/open_diagnostic.dart 解开（私钥只在开发者本机，见该文件头）；用户要求提前删除时 docker compose exec relay rm /srv/diagnostics/<诊断编号>。
    流水线用的上传账号只能读写 releases：建系统用户（如 superxd-release，不设密码），把 releases 及其中文件交给它；它的 authorized_keys 只放流水线专用的一把密钥，写成 restrict,command="/usr/bin/rrsync /opt/superxd-relay/releases" ssh-ed25519 …，这把密钥只能经 rsync 读写这个目录，不能登录或执行别的命令。私钥只放进 GitHub 的 relay 环境，主机指纹用 ssh-keyscan 取得后一并存入。
 
 # HTTPS（11-18 起，人工决策见 docker-compose.yml 的 tls）
 
 - 证书：Let's Encrypt 的公网 IP 证书（不要域名、不要备案），shortlived 档 160 小时，webroot 经 80 端口验证。Nginx（compose 的 tls）在 8443 终止 HTTPS 转给内网里的中转；客户端按 IP 连接不带 SNI，所以一个端口一张证书。
-- 安全组放行 80（只给签发验证，其余 404）与 8443；8080 明文先留给旧版本客户端，等提高最低可用版本后再关。
+- 安全组放行 80（只给签发验证，其余 404）与 8443；8080 明文先留给还没升级的旧客户端（它们要经 8080 才查得到强制更新），等旧客户端基本都升上来、8080 没什么访问了，再关安全组与 compose 里的端口。
 - .env 的 RELAY_TRUST_PROXY 设为 uniquelocal：只有内网（Nginx）来的请求按 X-Forwarded-For 取客户端 IP，直连 8080 的照旧按真实地址，伪造的头不起作用（Nginx 覆盖这个头，人工决策见 src/config/env.ts）。8080 关掉后也可以照旧这样设。
 - 第一次：覆盖配置后跑 scripts/tls_cert.sh issue <公网 IP>（没有证书时先放一张占位证书、启动 Nginx，再签发、装好、让 Nginx 重读）；root 的 crontab 加 27 3 * * * /opt/superxd-relay/scripts/tls_cert.sh renew >> /var/log/superxd-relay-tls.log 2>&1（每天检查、剩 3 天续，续了才让 Nginx 重读）。scripts/tls_cert.sh status 看签发者、到期时间与 IP。
 - 证书、验证目录与 acme.sh 的账号在命名卷 tls-certs、acme-webroot、acme-home，不在部署目录里，不进备份（丢了重新 issue）。
@@ -185,7 +185,7 @@
 
 # 镜像部署与回滚
 
-镜像由流水线构建，服务器只加载（人工决策见 .github/workflows/relay-image.yml）：main 上 server 目录有改动就构建一次，镜像标签与 /v1/health 的 version 都是提交号前 12 位。部署仍由维护者在用户当次授权后手动执行，流水线不接触服务器。
+镜像由流水线构建，服务器只加载（人工决策见 .github/workflows/relay-image.yml）：main 上 server 目录有改动就构建一次，镜像标签与 /v1/health 的 version 都是提交号前 12 位。部署由维护者手动执行（步骤如下），流水线不接触服务器。
 
 1. 取镜像包（主路径）：在 Actions 的 Relay image 运行页下载产物 superxd-relay-<版本>（含 superxd-relay-<版本>.tar.gz 与 .sha256，保留 30 天），传到服务器的 /opt/superxd-relay/images，sha256sum -c superxd-relay-<版本>.tar.gz.sha256 核对后 docker load -i superxd-relay-<版本>.tar.gz。
    备选：服务器能连上 ghcr.io 时 docker pull ghcr.io/huverse/superxd-relay:<版本>，再 docker tag 成 superxd-relay:<版本>（包默认私有，要先在包设置里改公开或用只读令牌登录）。
@@ -202,7 +202,7 @@
 人工决策见 scripts/backup_db.sh 文件头。只导长期数据：device、friendship、节日抽奖的 reward_campaign、reward_prize、reward_draw 与红包名单 reward_audience，应用账号的 app_account（含密码与恢复码的 scrypt 哈希）、account_device、注销账号的墓碑 account_tombstone，积分的 points_grant、points_entry、挑战的最好成绩 challenge_best、私信设备属于哪个应用账号的 account_social、账号记过的解锁 account_unlock、灰度点名 rollout_target 与分批更新的暂停记录 app_release_pause（表清单以脚本里的 tables 为准）；message（30 天）、chaoxing_pack（10 分钟）、challenge_run（30 天）、预计用时的计数 challenge_pace（12 周，丢了从零再攒）与诊断包认领记录 diagnostic_upload（随诊断包 30 天）是短期数据，不导。新增长期保存的表要加进脚本里的表清单。
 
 - 备份：scripts/backup_db.sh 在 mysql 容器里用容器自己的账号环境变量执行 mysqldump --single-transaction（一致性快照，不锁表、不停服务），gzip 后写进 compose 目录下的 backups（目录 700、文件 600），文件名带 UTC 时刻，只留最新 BACKUP_KEEP 份（默认 14）。用 root 的 crontab 每天跑一次，如 17 19 * * * /opt/superxd-relay/scripts/backup_db.sh >> /var/log/superxd-relay-backup.log 2>&1（服务器是 UTC，即北京时间 03:17），日志每天三行。
-- 异地：只存本机盘只防误删与库损坏，防不了整盘丢失或整机被删。去处还没定；定了以后写一个上传脚本，用 BACKUP_UPLOAD_HOOK=脚本路径 传给备份脚本（以备份文件的绝对路径为参数调用，失败则备份脚本非零退出）。备份里有还没发出的红包口令与二维码内容，传出服务器前必须先加密。
+- 异地：只存本机盘只防误删与库损坏，防不了整盘丢失或整机被删。维护者定为只放服务器本机盘、不做异地（11-11 定、11-17 再次确认）；以后要做时写一个上传脚本，用 BACKUP_UPLOAD_HOOK=脚本路径 传给备份脚本（以备份文件的绝对路径为参数调用，失败则备份脚本非零退出）。备份里有还没发出的红包口令与二维码内容，传出服务器前必须先加密。
 - 恢复：
   1. docker compose stop relay（恢复期间不再有写入）。
   2. scripts/restore_db.sh backups/<文件>.sql.gz --yes：先核对压缩包完整、以 mysqldump 的结束标记收尾，再整表替换备份里的那几张（message、chaoxing_pack 与 challenge_run 不动）。

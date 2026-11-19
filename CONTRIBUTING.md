@@ -1,7 +1,7 @@
 # 开发流程
 
 - main保持可构建；开发使用feat/、fix/、chore/短生命周期分支。
-- 通过PR合并，等待Flutter analyze and test、Relay server test与iOS build三项检查成功，只用squash合并；不force push main。
+- 通过PR合并，等待Flutter analyze and test、Relay server test与iOS build三项检查成功，只用squash合并；不force push main。一轮改动开一条PR、按主题分提交，CHANGELOG只写一次。
 - 提交使用feat:、fix:、test:、docs:、chore:等清晰前缀，一次提交聚焦一个变化。
 - 运行flutter pub get --enforce-lockfile、flutter analyze、flutter test。只在明确更新依赖时修改pubspec.lock；本机若配置了pub镜像，命令前加PUB_HOSTED_URL=https://pub.dev，避免锁文件的来源被改写。
 - 改动前按根目录CLAUDE.md的检查清单：读项目索引与涉及模块的CLAUDE.md，检索人工决策注释；改变文件、职责、流程、库表或限额时在同一提交更新索引。
@@ -25,8 +25,8 @@ tool/verify_toolbox.dart为手动Android原生下载验证入口，不进入正�
   4. 某步失败在Actions里重跑失败的作业：已有的Release不再重建，中转上传可以重复执行。
 - 替换已发的版本（发出后才发现问题）：版本名不变、构建号加一，合并带新版本号的PR之前先删掉这个版本的Release与标签（gh release delete v<版本名> --cleanup-tag），流水线按新提交重发、覆盖中转上同名安装包；装着旧构建号的在应用内会收到更新。
 - 试跑：在Actions里手动运行Release（默认勾选dry_run），只构建、核对、生成清单并试连中转，不发Release、不改中转。改了发版流程、签名或构建配置后先试跑。
-- 机密在仓库Settings › Environments：release环境（只限受保护分支，不设审批人）放SIGNING_KEYSTORE与SIGNING_PROPERTIES（仓库外alpha.jks与signing.properties的base64）、AMAP_WEB_KEY与AMAP_WEB_SECRET（高德Web端JS API的key与安全密钥，安卓与iOS构建都带）、RELAY_URL、MANIFEST_SIGNING_KEY（更新清单签名私钥）；relay环境（只限受保护分支）放RELAY_URL、RELAY_SSH_TARGET、RELAY_SSH_KEY、RELAY_KNOWN_HOSTS（受限账号见server/README.md部署第6步）、NOTES_SIGNING_KEY（开发者的话签名私钥）。
-- 更新清单与开发者的话的签名（[人工决策]见lib/device/signed_content.dart）：中转现在是明文HTTP，两者由流水线用Ed25519签名，客户端只认验签通过的内容（明文字段留给1.0.0-alpha.15及以前的旧客户端）。三把私钥都是openssl生成的PKCS#8 PEM，放在仓库外：发版钥与开发者的话钥各在上面的机密里，离线备用钥（两类都能签）只留维护者本机；公钥与各自能签的内容内置在lib/device/signed_content.dart的trustedSigningKeys，流水线签完用这张表再验一遍，私钥与源码对不上就停。签名挡不住冻结与回滚，冻结只能靠将来的HTTPS；不加过期时间。
+- 机密在仓库Settings › Environments：release环境（只限受保护分支，不设审批人）放SIGNING_KEYSTORE与SIGNING_PROPERTIES（仓库外alpha.jks与signing.properties的base64）、AMAP_WEB_KEY与AMAP_WEB_SECRET（高德Web端JS API的key与安全密钥，安卓与iOS构建都带）、SVPARSE_KEY（视频解析BugPK新版来源的密钥）、RELAY_URL（https://<公网IP>:8443）、MANIFEST_SIGNING_KEY（更新清单签名私钥）；relay环境（只限受保护分支）放RELAY_URL、RELAY_SSH_TARGET、RELAY_SSH_KEY、RELAY_KNOWN_HOSTS（受限账号见server/README.md部署第6步）、NOTES_SIGNING_KEY（开发者的话与灰度配置的签名私钥）、CHALLENGE_BANK_SEED（挑战题库的保密种子，challenge.yml用）。
+- 更新清单与开发者的话的签名（[人工决策]见lib/device/signed_content.dart）：当初中转是明文HTTP，两者由流水线用Ed25519签名，客户端只认验签通过的内容（明文字段留给1.0.0-alpha.15及以前的旧客户端）；11-18起中转走HTTPS，签名照旧保留。三把私钥都是openssl生成的PKCS#8 PEM，放在仓库外：发版钥与开发者的话钥各在上面的机密里，离线备用钥（两类都能签）只留维护者本机；公钥与各自能签的内容内置在lib/device/signed_content.dart的trustedSigningKeys，流水线签完用这张表再验一遍，私钥与源码对不上就停。签名挡不住冻结与回滚：路上的人冻结由HTTPS挡（8080明文入口上的旧客户端仍挡不住），中转自己回放旧清单签名挡不住；不加过期时间。
   - 上线顺序：先部署中转服务（能透传签名信封的版本，见server/README.md），再发带验签的客户端；发版与Notes流水线上传前会先确认中转返回里有envelope字段，没有就停。旧客户端照常更新，不受影响。
   - 换钥（线上钥丢失或泄露）：openssl genpkey -algorithm ed25519生成新钥，dart run tool/content_signing.dart public-key 新钥.pem取公钥，在trustedSigningKeys里加新编号（泄露的那把同时删掉），用新钥更新机密；换钥这一版发布后，在本机用离线备用钥加新钥（--signing-key可给多把）重签清单或开发者的话，由维护者自己传到中转的releases目录覆盖，让手上旧版客户端也验得过。跳过了换钥版本的旧客户端要到发布页手动下载一次。
 - Alpha包名com.superxd.superxd.alpha、显示SuperXD Alpha，与开发包并装、数据不共享。默认flutter run/build是production flavor（开发包名）；只有显式--flavor alpha才构建Alpha。不要向同一设备安装debug签名的alphaDebug。
@@ -53,7 +53,7 @@ ORG_GRADLE_PROJECT_superxdSigningProperties=/仓库外的绝对路径/signing.pr
 # 供应链
 
 - 仓库开着密钥扫描与推送保护、Dependabot 告警与安全更新、私密漏洞报告。推送被推送保护拦下时先看是不是真密钥：真的就先在服务方作废、换新，再把它从提交里去掉；确认是误报才在网页上放行。
-- main 合并要 CI 的 Flutter analyze and test、Relay server test 与 iOS build 三项都通过，且分支先与 main 同步。
+- main 合并要 CI 的 Flutter analyze and test、Relay server test 与 iOS build 三项都通过（PR 上 iOS build 只在动了 ios/、pubspec、ci.yml、组合根 lib/main.dart 与 lib/app_*.dart、lib/device，或改到的 dart 里用了原生通道与 iOS 平台判断时才真正构建，其余由 changes 作业判定跳过、跳过算通过；推 main 照常全跑，[人工决策]在 ci.yml），且分支先与 main 同步。
 - 依赖自动更新：.github/dependabot.yml 让 Dependabot 每月 1 日检查 GitHub Actions、server 的 npm、根目录的 pub 与 android 的 Gradle（[人工决策]在文件头）。补丁与次版本每处合成一条 PR，主版本各自一条，新版本发布满 7 天才提；安全更新不等。这些 PR 照常等 CI、squash 合并，不自动合并。
 - Dependabot 在 GitHub 上直接从 pub.dev 取包，它改出来的 pubspec.lock 本来就是 pub.dev 的来源，与「本机镜像会改写 pubspec.lock」那条规矩不冲突。在本机接着改这类 PR 时，命令照旧加 PUB_HOSTED_URL=https://pub.dev，提交前确认锁文件里只有这次升级带来的变化。
 - 安卓原生：CI 的 Android build（开发包 arm64 profile 包）编安卓原生，先不是必需检查；插件升级与 Gradle 的 PR 合并前看它过没过，启动有没有崩在本机真显卡模拟器上跑 tool/android_smoke.sh；没过或没跑时在本机编一次安卓（PUB_HOSTED_URL=https://pub.dev flutter build apk --debug --flavor production --target-platform android-arm64），iOS 由 CI 的 iOS build 编。R8 只在 release 下跑，由发版流水线编，改了混淆规则先试跑发版。
@@ -64,7 +64,7 @@ ORG_GRADLE_PROJECT_superxdSigningProperties=/仓库外的绝对路径/signing.pr
   2. 下载这次运行的产物：gh run download <运行号> -n ios-lockfiles -D <临时目录>，里面的路径相对 ios 目录。
   3. 用 git diff --no-index 对照仓库里的旧锁文件，确认变化只来自这次改动的依赖，放回 ios 下同样的位置提交，再推一次，直到 iOS build 通过。
 - 安卓第三方仓库：android/build.gradle.kts 把 JitPack 与华为、荣耀仓库限定为各自该给的组。Gradle 依赖校验（verification-metadata.xml）暂不启用，原因见下一条。
-- 试过的做法（2026-11）：用 gradlew --write-verification-metadata sha256 跑一遍 arm64 的 Alpha release 构建，生成的文件有一千三百多个组件、六百多 KB（含 Flutter 引擎各构建模式的包与插件测试用的库），之后按校验模式正常构建能通过。没启用的原因：Dependabot 不会改这个文件，而 pub 的插件升级、Gradle 的升级与每次升 Flutter（引擎包的版本跟着变）都要重新生成；CI 又不编安卓，对不上要到发版构建时才失败、挡住发版；只生成 arm64 也缺另外两个架构的引擎包。只校验 JitPack 与华为、荣耀那几组的写法能少动很多，但 OAID 与 image_cropper（带 uCrop）升级时同样会在发版时才失败。等 CI 有了安卓构建的作业，再按这种只校验第三方仓库的写法启用。
+- 试过的做法（2026-11）：用 gradlew --write-verification-metadata sha256 跑一遍 arm64 的 Alpha release 构建，生成的文件有一千三百多个组件、六百多 KB（含 Flutter 引擎各构建模式的包与插件测试用的库），之后按校验模式正常构建能通过。没启用的原因：Dependabot 不会改这个文件，而 pub 的插件升级、Gradle 的升级与每次升 Flutter（引擎包的版本跟着变）都要重新生成；当时 CI 不编安卓，对不上要到发版构建时才失败、挡住发版；只生成 arm64 也缺另外两个架构的引擎包。只校验 JitPack 与华为、荣耀那几组的写法能少动很多，但 OAID 与 image_cropper（带 uCrop）升级时同样会在发版时才失败。原定等 CI 有了安卓构建的作业再按这种只校验第三方仓库的写法启用；11-17 起 CI 已有 Android build（开发包 arm64 profile，还不是必需检查），这一步还没做。
 - 发布来源证明：发版流水线发 Release 之前，给各架构安装包与 iOS 未签名包生成 SLSA 构建来源证明（[人工决策]在 release.yml 的 github 作业）。核对：gh attestation verify SuperXD-<版本名>-arm64-v8a.apk -R huverse/SuperXD，要更严再加 --signer-workflow huverse/SuperXD/.github/workflows/release.yml --source-ref refs/heads/main；iOS 包要在重新签名之前核对。它证明文件由本仓库这条流水线在哪个提交上构建，不代替安装时的签名证书核对。
 - 覆盖率门槛：CI 的 Flutter 作业带覆盖率跑测试，tool/coverage_check.dart 算 lib 的合计行覆盖率，低于工具里的门槛就失败。新代码带测试；门槛只在覆盖率确实涨上去后调高，不为过线调低。
 
@@ -76,4 +76,4 @@ ORG_GRADLE_PROJECT_superxdSigningProperties=/仓库外的绝对路径/signing.pr
 
 # 仓库检查
 
-main受保护：必须通过Flutter analyze and test、Relay server test与iOS build，且分支须先与main同步。需要新增协作者时由维护者在GitHub明确授权，不共享个人token。安全问题走GitHub私密漏洞报告，不公开提交Issue。
+main受保护：必须通过Flutter analyze and test、Relay server test与iOS build（PR上没动iOS相关时iOS build跳过、算通过，见「供应链」），且分支须先与main同步。需要新增协作者时由维护者在GitHub明确授权，不共享个人token。安全问题走GitHub私密漏洞报告，不公开提交Issue。

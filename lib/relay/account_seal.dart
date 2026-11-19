@@ -4,7 +4,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' as hash;
 import 'package:cryptography/cryptography.dart';
 
-// 应用账号的密码与恢复码在发出前封装的信封（人工决策见 domain/app_account.dart）：中转是明文 HTTP，不封装就会被同一网络里的人看到。
+// 应用账号的密码与恢复码在发出前封装的信封（人工决策见 domain/app_account.dart）：当初中转是明文 HTTP，不封装就会被同一网络里的人看到；11-18 起走 HTTPS 后照旧封装（中转的接入层与日志也碰不到明文）。
 // 只有中转打得开，而且只认发起的这台设备（同一设备重放整条请求由请求签名的随机数挡住）。
 // 一次性 X25519 与中转公钥协商，HKDF-SHA256（盐 = 一次性公钥 + 中转公钥，info = SXD1-account-sign-in）派生 AES-256-GCM 密钥，
 // 附加数据绑定版本、钥号、一次性公钥与设备号。布局（第 2 版）：版本(1) | 钥号(8) | 一次性公钥(32) | 随机数(12) | 密文 | GCM 标签(16)。明文是 UTF-8 的 JSON 对象。

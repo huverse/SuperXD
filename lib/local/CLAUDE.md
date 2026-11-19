@@ -13,7 +13,7 @@
     - 来源 URL 保留校园部署的 base path；端口、大小写和末尾斜线的等价写法共用同一个库。
     - 拒绝带凭据、查询或片段的来源。
   - 账号库路径为 accounts/账号键.db，打开时校验 owner。
-  - 打开方式（人工决策在 open）：前台以 reclaim 打开，账号索引与账号库用单实例并回滚遗留的事务，接管同一进程里旧 Flutter 引擎留下的连接（sqflite 的原生连接在引擎销毁时不关，停在事务中间会一直锁库）；后台自动同步那份引擎用独立连接、用完关掉；被系统叫停时 release 立即关掉它开过的全部连接（进行中的事务回滚，人工决策在 release）。
+  - 打开方式（人工决策在 open）：前台以 reclaim 打开，账号索引与账号库用单实例并回滚遗留的事务，接管同一进程里旧 Flutter 引擎留下的连接（sqflite 的原生连接在引擎销毁时不关，停在事务中间会一直锁库）；后台自动同步那份引擎用独立连接、用完关掉，而且前台与后台同一时刻只有一份用账号库（sqflite 全进程一条原生线程，两份各开连接会互等锁卡死，人工决策在 app_background_sync.dart 文件头 11-19 那条）；被系统叫停时 release 立即关掉它开过的全部连接（进行中的事务回滚，人工决策在 release）。
   - 旧版单库 superxd.db：用户确认归属后只认领一次，导入目标必须是该账号自己的库。
 - app_database.dart：单个账号的业务库 AppDatabase（版本号见 openDatabase 的 version）。
   - 表：
@@ -45,7 +45,7 @@
   - CredentialStore：记住账号的凭据存取接口。
   - SecureCredentialStore：基于系统安全存储的实现，按账号键保存带版本号的 JSON。
 - display_settings.dart：设备级显示设置。
-  - DisplaySettings 存在 display_settings.db，包括字号（text_scale：0 是跟随系统，否则是字号条上选的实际显示大小 80%–200%、5% 一档，跟随系统时也不小于 80%、最多到组合根量的推荐上限，[人工决策] 在 textSizeMin 处）、配色（四套，默认 defaultPaletteId 雾蓝；改任何一项都整份快照落库，存过的保持原值，[人工决策] 在常量处）、字体（默认 Maple；安卓与 iOS 都多一项系统字体 systemFont，fontFamily 为空即系统字体，[人工决策] 在 systemFont 处；衬线是下载的字体包）、深浅色、玻璃效果（auto、full、reduced，默认 auto），以及自定义壁纸（文件名、色调网格、模糊与淡化 0–100）。v6 把旧的三档下标按原效果换算成连续量；v7 把删掉的苔灰换成雾蓝、iOS 存着的系统字体一次性换成 Maple；v8 把字号从系统字号上的倍数换成实际大小（原来的标准跟随系统，较大及以上换成当时的系统字号 × 倍数）。
+  - DisplaySettings 存在 display_settings.db，包括字号（text_scale：0 是跟随系统，否则是字号条上选的实际显示大小 80%–200%、5% 一档，跟随系统时也不小于 80%、最多到组合根量的推荐上限，[人工决策] 在 textSizeMin 处）、配色（四套，默认 defaultPaletteId 雾蓝；改任何一项都整份快照落库，存过的保持原值，[人工决策] 在常量处）、字体（默认 Maple；安卓与 iOS 都多一项系统字体 systemFont，fontFamily 为空即系统字体，[人工决策] 在 systemFont 处；衬线是下载的字体包）、深浅色、玻璃效果（auto、full、reduced、off，默认 auto；off 是 11-16 加的「关闭」实色档），以及自定义壁纸（文件名、色调网格、模糊与淡化 0–100）。v6 把旧的三档下标按原效果换算成连续量；v7 把删掉的苔灰换成雾蓝、iOS 存着的系统字体一次性换成 Maple；v8 把字号从系统字号上的倍数换成实际大小（原来的标准跟随系统，较大及以上换成当时的系统字号 × 倍数）。
   - wallpaperLook 是壁纸模糊与淡化的当前外观：previewWallpaper 只改它、不落库，背景单独监听；setWallpaperLook 立即更新外观并在保存锁内落库，落库后不回写外观（保存期间继续拖动不会被拽回）。
   - 壁纸文件交给 WallpaperStore；复制、落库、删旧文件在保存锁内一次完成。启动时文件丢失则按未设置处理，并清理残留文件。
   - DisplayScope 负责向下传递；CampusTextScale 把字号（跟随系统或选的大小；跟随时最多到 followLimit，由组合根的 page/text_size_range.dart 的 TextSizeComfort 量好传入）按线性缩放交给全应用，变化时在 duration 内连续过渡（组合根套在 MaterialApp.builder 里，减少动画时直接换，[人工决策] 在类上），systemOf 给界面页取系统本来的字号。

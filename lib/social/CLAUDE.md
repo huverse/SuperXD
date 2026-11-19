@@ -42,7 +42,7 @@
 
 # 测试
 
-- nearby_test.dart（出现标记、面对面二维码前缀、帧的切分与拼回、扫码互加、在附近收发与重发、删了好友不收、二维码收起后加不上、并进与不并、注销删掉、身份丢失与删除数据、离开页面停蓝牙、线上私信旧库升到第 3 版）；fake_nearby_radio.dart 是内存假蓝牙（同一 hub 里开着的互相看得到）与测试手机 NearbyPhone；页面在 nearby_ui_test.dart（消息页入口没配中转也在、设昵称后开蓝牙与离开即停、没权限给去设置、在附近、并进只能二选一、分享模式发卡、分享弹层的面对面发送）。真实蓝牙只有真机实测（模拟器没有蓝牙）。
+- nearby_test.dart（出现标记、面对面二维码前缀、帧的切分与拼回、扫码互加、在附近收发与重发、删了好友不收、二维码收起后加不上、并进与不并、注销删掉、身份丢失与删除数据、离开页面停蓝牙、线上私信旧库升到第 3 版）；fake_nearby_radio.dart 是内存假蓝牙（同一 hub 里开着的互相看得到）与测试手机 NearbyPhone；页面在 nearby_ui_test.dart（消息页入口没配中转也在、设昵称后开蓝牙与离开即停、没权限给去设置、在附近、并进只能二选一、分享模式发卡、分享弹层的面对面发送）。真实蓝牙只有设备实测：安卓模拟器自带虚拟蓝牙，同时开的两台能互相发现与收发（11-18 Pixel_7 与 Pixel_8_API_36 走通）；安卓与 iPhone 互通只在真机上测过。
 - social_protocol_test.dart（与服务端共用测试向量、信封、二维码、应用账号信封、挂账号凭证、「账号已注销」的证明）、share_card_test.dart、social_service_test.dart（含「私信跟着应用账号」一组：没登录、每账号一份、旧版第 1 版库并入与升级、换手机接管与再接管、发送被拒后改挂、注销、账号没了）、social_ui_test.dart（含没登录与在另一台手机上的卡片、接管确认、会话里的换设备提示）；应用账号与它签名的中转客户端的测试登记在 lib/relay/CLAUDE.md。
 - fake_relay.dart 是按协议 v1 规则验签的内存假中转（含应用账号登记 signIn、挂账号与接管、好友公钥与 movedFrom；serverSign 用服务器在线签名的测试钥签，serverSeedOverride 模拟网络上的人伪造）。服务端：cd server 后 npm test（Vitest，需 docker-compose.test.yml 起的 MySQL 与 Redis）。
 - 手动入口：tool/verify_social.dart（两个真实客户端经真实中转联调，只用合成数据，运行方式见文件头；挂应用账号那一个请求在本地截下，免得在线上留下合成的应用账号，见文件头）。

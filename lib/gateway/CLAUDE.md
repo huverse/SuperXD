@@ -9,6 +9,7 @@
   - 提供代次 generation、当前会话与身份、记住账号（含已登录时输密码重新开启 rememberWithPassword）、登出与会话过期、旧库导入状态。
   - 页面和 AppSession 只依赖这个接口。
   - scheduleChanges：学期、课表、作息、开学日或提醒设置在本机写入成功后通知，组合根据此重新对账课前提醒；默认实现从不通知。
+  - recordSync、readSyncRecords：同步记录（人工决策见 domain/sync_record.dart），默认实现不接库（测试替身用），AccountGateway 转给账号库。
 - account_gateway.dart：AccountAccess 的实现 AccountGateway。这个门面只负责选中固定的账号上下文。
   - 活动上下文包含身份、会话和该账号专属的 KingoCampusGateway。
     - 业务调用经 _dispatch 转发，并记录在途请求数。
@@ -39,7 +40,7 @@
   - 读操作只读本地库，例如 readSchedule、readGrades、readGradeYear、readBells。
   - 同步操作访问教务网络：syncTerms、syncSchedule、syncGrades、syncBells。成绩同步与其他网络同步互斥，冲突时返回 SYNC_BUSY。
   - syncSchedule：发现本地有自定义版本时不写入，只返回确认文案；由 planScheduleSync 判断（冲突时带上基准，最近一次教务同步的版本），再由 commitScheduleSync（整份）或 commitScheduleMerge（逐项合并）提交。
-  - holdScheduleSync、readHeldScheduleSyncs：等用户来选的教务课表；readAutoSync、saveAutoSyncSetting、recordAutoSync：自动同步的设置与上次结果，只读写本机账号库。
+  - holdScheduleSync、readHeldScheduleSyncs：等用户来选的教务课表；readAutoSync、saveAutoSyncSetting、recordAutoSync：自动同步的设置与上次结果；recordSync、readSyncRecords：同步记录（最多 50 条）；都只读写本机账号库。
   - syncGrades：
     - 两份成绩页的抬头学号和学期都必须一致。
     - 学校的空成绩页没有抬头。此时要求两份都明确为空，并重新核对会话身份；已有非空缓存时不覆盖。

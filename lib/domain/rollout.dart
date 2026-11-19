@@ -47,7 +47,7 @@ class RolloutRule {
   final Set<String> platforms, channels;
   // 安装的版本号（构建号）区间，含两端；为空不限。
   final int? minVersion, maxVersion;
-  // 积分等级至少多少（娱乐与积分关着按 Lv0）。
+  // 积分等级至少多少（仅本机时按 Lv0）。
   final int? minLevel;
   // 应用账号建立满多少天（没登录应用账号、还没问到建立时刻的都不满足）。
   final int? minAccountDays;

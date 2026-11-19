@@ -70,7 +70,7 @@ class Unlocks implements UnlockAccess {
     if (_started && (fetchedAt == null || _now().difference(fetchedAt) >= refreshGap)) await refresh();
   }
 
-  // 娱乐与积分开关变了或删了数据：旧状态作废、页面重画，开着就重问一次。
+  // 联网偏好变了或删了游乐场与积分的数据：旧状态作废、页面重画，开着就重问一次。
   void reconsider() {
     _state = null;
     _changes.add(null);
