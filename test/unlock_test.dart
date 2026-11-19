@@ -77,7 +77,7 @@ void main() {
       expect(client.calls, ['state'], reason: '回前台隔一小时才再问');
     });
 
-    test('娱乐与积分关着时只认公开与下架、不联网；打开或删了数据重新判定并重问', () async {
+    test('仅本机时只认公开与下架、不联网；打开或删了数据重新判定并重问', () async {
       var accountOn = true;
       final gated = Unlocks(rollouts: rollouts, appAccounts: appAccounts, client: client, accountOn: () => accountOn, now: () => _now);
       appClient.accountId = 'AAAAAAAAAAAAAAAAAAAAAA';

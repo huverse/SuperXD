@@ -173,7 +173,7 @@ export const pointsEntryKeepDays = 395;
 export const pointsSpentGrantKeepDays = 30;
 export const pointsEntriesPage = 20;
 export const pointsReadPerDevicePerHour = 600;
-// 娱乐与积分的「删除数据」（src/modules/leisure）：一台设备每小时最多删这么多次，正常人一次就够。
+// 「删除游乐场与积分」（src/modules/leisure）：一台设备每小时最多删这么多次，正常人一次就够。
 export const leisureDeletePerDevicePerHour = 10;
 // 等级固定六档 Lv0–Lv5（门槛在灰度配置的 levels，规则见 src/modules/points/points_level.ts）。
 export const pointsLevelCount = 6;

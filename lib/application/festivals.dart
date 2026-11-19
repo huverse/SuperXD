@@ -10,7 +10,7 @@ import 'package:superxd/domain/festival.dart';
 // 节日的编排（设备级，切换账号不重建；人工决策见 domain/festival.dart）：今天该播哪一次、记活跃天数、抽签与奖品。
 // 动画什么时候播由 app_moments.dart 决定，播什么由组合根按 page/festival/festival_catalog.dart 接上。
 // 抽签用当前的应用账号（组合根注入 account，只认 AppAccountRef）；中转说账号已不在时调 accountGone（组合根让应用账号马上核一次）。
-// levelsOn 为假（娱乐与积分关着，人工决策见 domain/leisure.dart）时请服务器不按积分等级加权。
+// levelsOn 为假（联网偏好是仅本机，人工决策见 domain/network_policy.dart）时请服务器不按积分等级加权。
 class Festivals extends ChangeNotifier {
   Festivals({required this.occasions, required this._memory, this._client, AppAccountRef? Function()? account, this._accountGone, bool Function()? levelsOn, bool Function()? online, DateTime Function()? clock})
     : _account = account ?? (() => null),

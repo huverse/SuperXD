@@ -40,7 +40,7 @@ export class ChallengeService implements OnModuleInit {
     this.hooks.register((manager, accountIds) => this.deleteAccountsIn(manager, accountIds));
   }
 
-  // 删这些账号的挑战局与最好成绩（调用方事务内）：注销账号与娱乐与积分的「删除数据」共用。
+  // 删这些账号的挑战局与最好成绩（调用方事务内）：注销账号与「删除游乐场与积分」共用。
   deleteAccountsIn(manager: EntityManager, accountIds: string[]) {
     return this.runs.deleteAccounts(manager, accountIds);
   }

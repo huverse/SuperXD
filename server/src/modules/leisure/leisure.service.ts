@@ -9,7 +9,7 @@ import { ChallengeService } from 'src/modules/challenge/challenge.service';
 import { PointsService } from 'src/modules/points/points.service';
 import { UnlockService } from 'src/modules/unlock/unlock.service';
 
-// 娱乐与积分的「删除数据」（人工决策见客户端 lib/domain/leisure.dart）：删掉这个应用账号的挑战成绩、解锁记录与积分（同一事务，要么都删要么都不删），
+// 「删除游乐场与积分」（人工决策见客户端 lib/domain/leisure.dart）：删掉这个应用账号的挑战成绩、解锁记录与积分（同一事务，要么都删要么都不删），
 // 账号本身、私信、诊断包与节日抽签记录不动。跨三个模块的事归这里调度，三个模块只各自提供「在给定事务里删这些账号的」那一步，不知道有这个开关。
 @Injectable()
 export class LeisureService {

@@ -319,7 +319,7 @@ describe('抽奖', () => {
     }
   });
 
-  it('客户端关掉了娱乐与积分（levels: false）时按 Lv0：同一个骰子点数 Lv5 的也没抽中；levels 只认布尔', async () => {
+  it('客户端仅本机（levels: false）时按 Lv0：同一个骰子点数 Lv5 的也没抽中；levels 只认布尔', async () => {
     await mkdir(env().releasesDir, { recursive: true });
     await writeFile(rolloutFile(), JSON.stringify({ flags: [], levels, envelope: null }));
     await utimes(rolloutFile(), Date.now() / 1000 + 7, Date.now() / 1000 + 7);
@@ -577,7 +577,7 @@ describe('资格与发放', () => {
     await expect(runRewardAdmin(admin, ['create', campaignKey(), '--from', new Date().toISOString(), '--to', new Date(Date.now() + hour).toISOString(), '--distribution', 'all', '--min-account-days', '-1'], lines(''))).rejects.toThrow(/min-account-days/);
   });
 
-  it('最低等级：不够的 ineligible，够的能领；娱乐与积分关着（levels false、状态 levels=0）按 Lv0', async () => {
+  it('最低等级：不够的 ineligible，够的能领；仅本机（levels false、状态 levels=0）按 Lv0', async () => {
     await mkdir(env().releasesDir, { recursive: true });
     await writeFile(rolloutFile(), JSON.stringify({ flags: [], levels, envelope: null }));
     await utimes(rolloutFile(), Date.now() / 1000 + 9, Date.now() / 1000 + 9);

@@ -220,7 +220,7 @@ void main() {
       expect(client.requests.single.levels, isTrue);
     });
 
-    test('娱乐与积分关着时抽签请服务器不按等级加权', () async {
+    test('仅本机时抽签请服务器不按等级加权', () async {
       levelsOn = false;
       final client = FakeRewardClient((occasion) => const FestivalMissed());
       await festivals(client: client).draw(spring);
@@ -370,7 +370,7 @@ void main() {
       expect(transport.draws.single.body, {'activeDays': 7, 'seal': 2});
       transport.draws.clear();
       await client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7, levels: false);
-      expect(transport.draws.single.body, {'activeDays': 7, 'levels': false, 'seal': 2}, reason: '娱乐与积分关着');
+      expect(transport.draws.single.body, {'activeDays': 7, 'levels': false, 'seal': 2}, reason: '仅本机');
       // 同一网络里的人把回复换成自己封的奖品（签名对不上）：当领取失败（格式不对），不给内容。
       relay.serverSeedOverride = List.filled(32, 9);
       await expectLater(client.draw(_account, 'spring-2027', occasion: 'spring-2027', activeDays: 7), throwsA(isA<FestivalException>().having((error) => error.message, 'message', contains('格式'))));
@@ -462,7 +462,7 @@ void main() {
       expect(client.statusRequests, isEmpty);
     });
 
-    test('问状态：娱乐与积分关着带上；中转说账号不在为空并马上核；连不上为空', () async {
+    test('问状态：仅本机时带上；中转说账号不在为空并马上核；连不上为空', () async {
       final client = FakeRewardClient((_) => const FestivalMissed());
       expect((await festivals(client, levels: false).status('c-1'))!.state, RewardState.open);
       expect(client.statusRequests.single, (campaign: 'c-1', levels: false));
@@ -473,7 +473,7 @@ void main() {
       expect(await festivals(client).status('c-1'), isNull);
     });
 
-    test('中转客户端：GET /v1/rewards/<活动>，关着娱乐与积分带 levels=0；状态与时刻逐项校验；没资格的抽签结果认得', () async {
+    test('中转客户端：GET /v1/rewards/<活动>，仅本机时带 levels=0；状态与时刻逐项校验；没资格的抽签结果认得', () async {
       final relay = FakeRelay(), transport = _RewardRelay(relay), vault = MemoryAppAccountVault();
       final client = RelayRewardClient(vault: vault, transport: transport, serverKeys: FakeRelay.serverKeys);
       await expectLater(client.status(_account, 'c-1'), throwsA(isA<FestivalNotSignedIn>()));

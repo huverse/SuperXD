@@ -86,15 +86,15 @@ class AppServices {
   final PaintingGallery? paintings;
   // 常用功能的快捷入口（系统端口，接线见 app_shortcuts.dart）；为空时不发布入口、页面不显示「添加到桌面」。
   final AppShortcutPort? shortcuts;
-  // 开发者的话；为空时「我的」页不显示这一行。
+  // 开发者的话；为空时应用账号页不显示这一行。
   final DeveloperNotes? notes;
-  // 节日；为空时不播节日动画、「我的」页没有节日红包。
+  // 节日；为空时不播节日动画、应用账号页没有「我的红包」。
   final Festivals? festivals;
   final AppAccounts? appAccounts;
   final AccountDiagnostics? diagnostics;
   final Challenges? challenges;
   final UnlockAccess? unlocks;
-  // 娱乐与积分的开关（人工决策见 domain/leisure.dart）；为空时游乐场照常显示、「我的」里没有这一行。
+  // 游乐场与积分的删除数据（人工决策见 domain/leisure.dart）；为空时应用账号页没有「删除游乐场与积分」这一组。
   final Leisure? leisure;
   // 打扰时机（人工决策见 application/app_moments.dart）；为空时节日动画、新信都不出现。
   final AppMoments? moments;

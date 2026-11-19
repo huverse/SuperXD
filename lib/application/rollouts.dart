@@ -10,7 +10,7 @@ import 'package:superxd/domain/rollout.dart';
 // 灰度的编排 Rollouts（设备级，人工决策见 domain/rollout.dart）：用本机存着的配置在本机判定；配置在同意协议与政策之后、回到前台时拉，
 // 两次至少隔 refreshGap，失败照旧用上次的。分桶的主体是当前应用账号的账号号，没登录用本机随机编号（不上传）。
 // 登录着应用账号时同一时机取一次积分等级（level，经挑战与积分的签名请求），按等级加权；只因等级才进的批次记在本机，降级也不踢出。
-// levelsOn 为假（娱乐与积分关着，人工决策见 domain/leisure.dart）时不取等级、按 Lv0 判定，已经因等级进了的批次照旧算。
+// levelsOn 为假（联网偏好是仅本机，人工决策见 domain/network_policy.dart）时不取等级、按 Lv0 判定，已经因等级进了的批次照旧算。
 // 11-16 起（人工决策见 domain/rollout.dart 文件头 11-16 那条）：开关的条件（时间窗、平台、渠道、版本号、等级）都满足才按比例判定；
 // 登录着应用账号时同一时机问一次点名（targets，顺带账号建立的时刻，判 minAccountDays），点名的开关不看比例与条件、只看到期时刻，问到的记在本机（换账号从头记）。
 class Rollouts extends ChangeNotifier {

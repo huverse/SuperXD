@@ -126,7 +126,7 @@ class PlaygroundStore extends ChangeNotifier {
     return true;
   }
 
-  // 删除娱乐与积分数据（人工决策见 domain/leisure.dart）：成绩、上次选的档、最近玩过与笔记全清，连文件一起删。
+  // 「删除游乐场与积分」（人工决策见 domain/leisure.dart）：成绩、上次选的档、最近玩过与笔记全清，连文件一起删。
   Future<void> clear() async {
     await ready;
     _best.clear();
