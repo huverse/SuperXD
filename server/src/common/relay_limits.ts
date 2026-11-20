@@ -258,7 +258,8 @@ export const errorMonitorMaxSignatures = 50;
 export const errorStatsMinutes = 60;
 
 // 电影院片名目录型源的服务端索引（src/modules/cinema_catalog）：每个 IP 每小时最多搜这么多次（校园网一个出口后面人多），一次最多回这么多个编号；
-// 搜索词 1–80 个字。向源抓片名：一页最多等 20 秒、2MB，一页最多试 3 次；抓全两路并行、一轮最多抓这么多页（断了下一轮接着抓）；
+// 搜索词 1–80 个字。向源抓片名：一页最多等 20 秒、2MB，一页最多试 3 次；抓全两路并行、一批 10 页，一轮最多跑 cinemaCatalogRunMs（到点停在批与批之间，下一轮接着抓；
+// 上游深分页越往后越慢，11-20 实测前 3000 页约 3.5 秒一页、之后七八秒，按页数限一轮会跑好几个小时）；定时任务的锁 cinemaCatalogLockSeconds 要比一轮最长用时（预算加一批最坏约 6 分钟）长、比整点间隔短，两轮不会重叠；
 // 增量离上次超过 30 天就重新抓全，最多补 50 页；每个源最多这么多条（上游现在约 13 万条）。
 export const cinemaCatalogSearchPerHour = 1200;
 export const cinemaCatalogHits = 20;
@@ -267,7 +268,9 @@ export const cinemaCatalogPageTimeoutMs = 20_000;
 export const cinemaCatalogPageMaxBytes = 2 * 1024 * 1024;
 export const cinemaCatalogPageAttempts = 3;
 export const cinemaCatalogConcurrency = 2;
-export const cinemaCatalogPagesPerRun = 3000;
+export const cinemaCatalogBatchPages = 10;
+export const cinemaCatalogRunMs = 40 * 60_000;
+export const cinemaCatalogLockSeconds = 55 * 60;
 export const cinemaCatalogIncrementalDays = 30;
 export const cinemaCatalogIncrementalPages = 50;
 export const cinemaCatalogEntryLimit = 400_000;

@@ -142,6 +142,18 @@ describe('片名目录', () => {
     expect((await search('庆余年番外')).body.ids).toEqual(['106']);
   });
 
+  it('抓全一轮按时间预算跑：到点停在批与批之间、记下抓到第几页，下一轮接着抓到完', async () => {
+    const service = app.get(CinemaCatalogService);
+    await service.sync(new Date('2026-11-20T08:00:00Z'), 0);
+    expect(requests.map((query) => query.get('pg'))).toEqual(['1']);
+    const [half] = (await database.query('SELECT crawl_page AS crawlPage, synced_at AS syncedAt FROM cinema_catalog_state WHERE rule_id = ?', ['wsy'])) as { crawlPage: number; syncedAt: Date | null }[];
+    expect(half.syncedAt).toBeNull();
+    expect(half.crawlPage).toBe(1);
+    requests.length = 0;
+    await service.sync(new Date('2026-11-20T09:00:00Z'));
+    expect(requests.map((query) => query.get('pg'))).toEqual(['2', '3']);
+  });
+
   it('规则包里没有的源回 CATALOG_NOT_FOUND，拿掉的源连目录一起删；搜索词要 1 到 80 个字；每个出口每小时有上限', async () => {
     const service = app.get(CinemaCatalogService);
     await service.sync(new Date('2026-11-20T08:00:00Z'));
