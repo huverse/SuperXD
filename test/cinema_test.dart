@@ -12,13 +12,17 @@ import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
 
 import 'package:superxd/domain/feature_flags.dart';
+import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/toolbox/cinema/cinema_catalog.dart';
+import 'package:superxd/toolbox/cinema/cinema_detail_page.dart';
+import 'package:superxd/toolbox/cinema/cinema_episodes.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
 import 'package:superxd/toolbox/cinema/cinema_page.dart';
 import 'package:superxd/toolbox/cinema/cinema_playlist.dart';
+import 'package:superxd/toolbox/cinema/cinema_poster.dart';
 import 'package:superxd/toolbox/cinema/cinema_proxy.dart';
 import 'package:superxd/toolbox/cinema/cinema_rule.dart';
 import 'package:superxd/toolbox/cinema/cinema_rule_engine.dart';
@@ -135,6 +139,30 @@ Future<(int, String)> getLocal(Uri uri) => HttpOverrides.runWithHttpOverrides(()
 }, _RealHttp());
 
 String macCmsList(List<Map<String, Object?>> items) => jsonEncode({'code': 1, 'msg': '数据列表', 'page': '1', 'pagecount': 1, 'total': items.length, 'list': items});
+
+// 页面测试用的电影院：真的服务与本机库（测试目录里），片源请求走给的替身。
+Future<(ToolboxFixture, CinemaService)> openCinemaForPage(WidgetTester tester, {http.Client? client}) async {
+  final fixture = ToolboxFixture();
+  await tester.runAsync(fixture.initialize);
+  addTearDown(() => tester.runAsync(fixture.close));
+  final service = (await tester.runAsync(
+    () => CinemaService.open(
+      ToolboxServiceContext(base: fixture.directory, store: fixture.store, downloads: fixture.manager),
+      feed: CinemaRulesFeed(fetch: () async => Uint8List.fromList(packageBytes()), versionCode: () async => 40),
+      http: CinemaHttp(client: client ?? MockClient((request) async => reply('', 404))),
+    ),
+  ))!;
+  addTearDown(() => tester.runAsync(service.close));
+  return (fixture, service);
+}
+
+// 让真实的异步（本机库、替身回复）走完，直到 done 为真（最多约 1 秒）。
+Future<void> settleUntil(WidgetTester tester, bool Function() done) async {
+  for (var index = 0; index < 50 && !done(); index++) {
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+    await tester.pump();
+  }
+}
 
 void main() {
   group('规则包', () {
@@ -452,7 +480,7 @@ void main() {
       var result = await service.search('合成').last;
       expect([for (final title in result.titles) title.name], ['合成电影', '只此一家']);
       expect(result.titles.first.sources, hasLength(1));
-      expect([for (final failure in result.failures) failure.message], ['挡住的资源暂不可用（HTTP 403）']);
+      expect([for (final failure in result.failures) (failure.name, failure.message)], [('挡住的资源', '挡住的资源暂不可用（HTTP 403）')]);
       await service.grantRules(package.rules);
       result = await service.search('合成').last;
       expect([for (final ref in result.titles.first.sources) '${ref.ruleId}:${ref.source}'], ['alpha:1', 'beta:9']);
@@ -933,6 +961,106 @@ void main() {
     expect(fetched, ['/live.m3u8', '/live.m3u8']);
   });
 
+  // 人工决策见 cinema_page.dart 的 _onQuery 与 _historySlivers、cinema_episodes.dart、cinema_detail_page.dart 的 _onScroll（11-20 只留找片后的界面优化）。
+  group('页面', () {
+    testWidgets('选集网格：一格同宽（按这一段最长的集名）、超过 50 集分段只建当前一段、打开停在选中那集的一段、倒序从最后一集起、只有一集不给倒序', (tester) async {
+      final picked = <int>[];
+      List<CinemaEpisode> episodes(int count) => [for (var index = 0; index < count; index++) CinemaEpisode(name: index == 60 ? '第61集 特别篇' : '第${index + 1}集', url: 'https://media.example.com/$index.mp4')];
+      Future<void> show(List<CinemaEpisode> list, int? selected) async {
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: Scaffold(body: SingleChildScrollView(child: CinemaEpisodeGrid(episodes: list, selected: selected, onPick: picked.add)))));
+      }
+
+      await show(episodes(120), 85);
+      expect(find.text('51–100'), findsOneWidget);
+      expect(find.text('第86集'), findsOneWidget);
+      expect(find.text('第1集'), findsNothing);
+      expect(find.byType(CampusGlassChip), findsNWidgets(3 + cinemaEpisodePage));
+      expect(tester.getSize(find.widgetWithText(CampusGlassChip, '第62集')).width, tester.getSize(find.widgetWithText(CampusGlassChip, '第61集 特别篇')).width);
+      await tester.tap(find.text('倒序'));
+      await tester.pump();
+      expect(find.text('120–71'), findsOneWidget);
+      expect(find.text('正序'), findsOneWidget);
+      await tester.tap(find.text('第120集'));
+      expect(picked, [119]);
+      await show(episodes(12), null);
+      expect(find.textContaining('–'), findsNothing);
+      expect(find.text('倒序'), findsOneWidget);
+      await show(episodes(1), null);
+      expect(find.text('倒序'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('首页：看过的是横向海报条、⋯ 里删除先确认；搜索中输入框照常可改；暂不可用只写源名；清空搜索框回到看过的', (tester) async {
+      final slow = Completer<void>();
+      final client = MockClient((request) async {
+        if (request.url.host == 'beta.example.com') return reply('', 404);
+        await slow.future;
+        return reply(macCmsList([{'vod_id': 1, 'vod_name': '合成电影', 'vod_year': '2020'}]), 200);
+      });
+      final (fixture, service) = await openCinemaForPage(tester, client: client);
+      await tester.runAsync(() async {
+        await service.grantRules((await service.rules()).rules);
+        await service.store.saveHistory(CinemaHistory(key: 'seen', name: '看过的合成片', cover: '', ruleId: 'alpha', source: '1', road: 0, episode: 0, episodeName: '第01集', position: const Duration(minutes: 10), duration: const Duration(minutes: 40), updatedAt: DateTime.now().toUtc()));
+      });
+      final runtime = ToolboxRuntime.testing(catalog: toolboxCatalog, store: fixture.store, downloads: fixture.manager, services: {CinemaService.serviceId: service});
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: CinemaPage(runtime: runtime)));
+      await settleUntil(tester, () => find.text('看过的合成片').evaluate().isNotEmpty);
+      expect(find.byType(CinemaHistoryCard), findsOneWidget);
+
+      await tester.enterText(find.byType(TextField), '合成');
+      await tester.tap(find.text('搜索'));
+      await settleUntil(tester, () => find.text('看过的合成片').evaluate().isEmpty);
+      expect(tester.widget<TextField>(find.byType(TextField)).enabled, isTrue, reason: '还有源没回来，输入框照常可改');
+      slow.complete();
+      await settleUntil(tester, () => find.text('合成电影').evaluate().isNotEmpty);
+      expect(find.textContaining('另一资源'), findsOneWidget);
+      expect(find.textContaining('HTTP'), findsNothing);
+
+      await tester.enterText(find.byType(TextField), '');
+      await tester.pump();
+      expect(find.text('合成电影'), findsNothing);
+      expect(find.text('看过的合成片'), findsOneWidget);
+
+      await tester.tap(find.byTooltip('更多操作'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.text('删除'));
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(find.text('删除这条记录'), findsOneWidget);
+      await tester.tap(find.text('删除').last);
+      await settleUntil(tester, () => find.text('看过的合成片').evaluate().isEmpty);
+      expect(find.text('看过的'), findsNothing);
+      expect(await tester.runAsync(service.store.history), isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('选集页：顶栏片名在大标题滚出去后才出现；120 集打开停在上次看到那集所在的一段', (tester) async {
+      final episodes = [for (var index = 1; index <= 120; index++) '第$index集\$https://media.example.com/$index.mp4'].join('#');
+      final client = MockClient((request) async => reply(macCmsList([{'vod_id': 1, 'vod_name': '合成长剧', 'vod_play_from': 'mp4', 'vod_play_url': episodes}]), 200));
+      final (_, service) = await openCinemaForPage(tester, client: client);
+      await tester.runAsync(() async {
+        await service.rules();
+        await service.store.saveHistory(CinemaHistory(key: 'long', name: '合成长剧', cover: '', ruleId: 'alpha', source: '1', road: 0, episode: 85, episodeName: '第86集', position: const Duration(minutes: 3), duration: const Duration(minutes: 40), updatedAt: DateTime.now().toUtc()));
+      });
+      final title = CinemaTitle(key: 'long', name: '合成长剧', year: '2026', cover: '', remarks: '')..sources.add(const CinemaSourceRef(ruleId: 'alpha', source: '1', name: '合成长剧', remarks: ''));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: CinemaDetailPage(service: service, title: title)));
+      await settleUntil(tester, () => find.text('第86集').evaluate().isNotEmpty);
+      double heading() => tester.widget<AnimatedOpacity>(find.ancestor(of: find.descendant(of: find.byType(AppBar), matching: find.text('合成长剧')), matching: find.byType(AnimatedOpacity))).opacity;
+      expect(find.text('51–100'), findsOneWidget);
+      expect(find.text('第1集'), findsNothing);
+      expect(heading(), 0);
+      await tester.drag(find.byType(ListView).first, const Offset(0, -300));
+      await tester.pump();
+      expect(heading(), 1);
+      await tester.drag(find.byType(ListView).first, const Offset(0, 300));
+      await tester.pump();
+      expect(heading(), 0);
+      await tester.pumpWidget(const SizedBox());
+    });
+  });
+
   group('灰度开关', () {
     const flag = FeatureFlag('toolbox.synthetic', fallback: false);
     final module = ToolboxModule(id: 'synthetic', name: '合成工具', icon: Icons.abc, builder: (_) => const SizedBox(), flag: flag);
@@ -953,25 +1081,12 @@ void main() {
     testWidgets('解析在开关 toolbox.cinema.parse 后面（默认关）：关着只有找片、没有切换，开着才有，页面开着时被关掉就回到找片', (tester) async {
       expect(featureFlags, contains(cinemaParseFlag));
       expect((cinemaParseFlag.id, cinemaParseFlag.fallback), ('toolbox.cinema.parse', false));
-      final fixture = ToolboxFixture();
-      await tester.runAsync(fixture.initialize);
-      addTearDown(() => tester.runAsync(fixture.close));
-      final service = (await tester.runAsync(
-        () => CinemaService.open(
-          ToolboxServiceContext(base: fixture.directory, store: fixture.store, downloads: fixture.manager),
-          feed: CinemaRulesFeed(fetch: () async => Uint8List.fromList(packageBytes()), versionCode: () async => 40),
-          http: CinemaHttp(client: MockClient((request) async => reply('', 404))),
-        ),
-      ))!;
-      addTearDown(() => tester.runAsync(service.close));
+      final (fixture, service) = await openCinemaForPage(tester);
       Future<void> show(FeatureGate? features) async {
         final runtime = ToolboxRuntime.testing(catalog: toolboxCatalog, store: fixture.store, downloads: fixture.manager, services: {CinemaService.serviceId: service}, features: features);
         await tester.pumpWidget(const SizedBox());
         await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: CinemaPage(runtime: runtime)));
-        for (var index = 0; index < 20 && find.text('片名').evaluate().isEmpty; index++) {
-          await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
-          await tester.pump();
-        }
+        await settleUntil(tester, () => find.text('片名').evaluate().isNotEmpty);
       }
 
       for (final features in [null, _Gate({})]) {

@@ -93,8 +93,10 @@ List<CinemaSourceRef> rankCinemaSources(List<CinemaSourceRef> sources, Map<Strin
 
 // 一个源搜失败了：哪个源、给用户看的原因。
 class CinemaFailure {
-  const CinemaFailure({required this.ruleId, required this.message, this.paused = false});
+  const CinemaFailure({required this.ruleId, required this.name, required this.message, this.paused = false});
   final String ruleId;
+  // 片源名（页面只写这个）；message 是原因，只进日志。
+  final String name;
   final String message;
   // 连续失败暂停着、这次没去搜（CinemaService.pauseAfter）。
   final bool paused;

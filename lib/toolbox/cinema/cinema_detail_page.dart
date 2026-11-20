@@ -4,7 +4,6 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
-import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
@@ -15,6 +14,7 @@ import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/toolbox/cinema/cinema_episodes.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
 import 'package:superxd/toolbox/cinema/cinema_player_page.dart';
@@ -42,6 +42,10 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
   CinemaHistory? _history;
   // 换源、离开时这一处不再等上一次的选集（别处还在等就不中断请求）。
   Completer<void>? _cancel;
+  // 顶栏片名：正文的大标题滚出去之后才出现（人工决策见 _onScroll）。
+  final _scroll = ScrollController();
+  final _heading = GlobalKey();
+  var _titleShown = false;
 
   CinemaSourceRef get _ref => _sources[_source];
 
@@ -49,12 +53,22 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
   void initState() {
     super.initState();
     unawaited(_reloadHistory());
+    _scroll.addListener(_onScroll);
   }
 
   @override
   void dispose() {
     _cancel?.complete();
+    _scroll.dispose();
     super.dispose();
+  }
+
+  // [人工决策-2026-11-20 22:54:48] 顶栏片名滚动后才出现（同 iOS 大标题，用户选的）：正文已有大标题，顶栏先不写，大标题整个滚出列表顶端时淡入。
+  void _onScroll() {
+    final heading = _heading.currentContext?.size?.height;
+    if (heading == null) return;
+    final shown = _scroll.offset > CampusGap.large + heading;
+    if (shown != _titleShown) setState(() => _titleShown = shown);
   }
 
   Future<List<CinemaRoad>> _start() async {
@@ -130,7 +144,7 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
     final resumeSource = history == null ? null : title.sources.where((ref) => ref.ruleId == history.ruleId && ref.source == history.source).firstOrNull;
     return Scaffold(
       appBar: AppBar(
-        title: Text(title.name, maxLines: 1, overflow: TextOverflow.ellipsis),
+        title: AnimatedOpacity(opacity: _titleShown ? 1 : 0, duration: const Duration(milliseconds: 200), child: Text(title.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
         leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
       ),
       body: CampusScrollFade(
@@ -139,6 +153,7 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 800),
               child: ListView(
+                controller: _scroll,
                 padding: const EdgeInsets.all(16),
                 children: [
                   Row(
@@ -150,7 +165,7 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(title.name, style: text.titleLarge),
+                            Text(title.name, key: _heading, style: text.titleLarge),
                             const SizedBox(height: CampusGap.tight),
                             Text(
                               [if (title.year.isNotEmpty) title.year, if (title.remarks.isNotEmpty) title.remarks, '${title.sources.length} 个源'].join(' · '),
@@ -203,6 +218,8 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
                       final roads = snapshot.data;
                       if (roads == null) return const CampusLoading(label: '正在取选集', inline: true, network: true, remote: '片源站');
                       final road = _road.clamp(0, roads.length - 1);
+                      // 上次看到的那集标成选中，点它从上次的位置接着看。
+                      final resume = history != null && resumeSource == _ref && history.road == road ? history : null;
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
@@ -221,17 +238,10 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
                             ),
                             const SizedBox(height: CampusGap.medium),
                           ],
-                          Wrap(
-                            spacing: CampusGap.small,
-                            runSpacing: CampusGap.small,
-                            children: [
-                              // 上次看到的那集标成选中，点它从上次的位置接着看。
-                              for (final (index, episode) in roads[road].episodes.indexed)
-                                if (history != null && resumeSource == _ref && history.road == road && history.episode == index)
-                                  CampusGlassChip(label: episode.name, selected: true, onSelected: (_) => unawaited(_play(road, index, start: history.position)))
-                                else
-                                  CampusGlassChip(label: episode.name, selected: false, onSelected: (_) => unawaited(_play(road, index))),
-                            ],
+                          CinemaEpisodeGrid(
+                            episodes: roads[road].episodes,
+                            selected: resume?.episode,
+                            onPick: (index) => unawaited(index == resume?.episode ? _play(road, index, start: resume!.position) : _play(road, index)),
                           ),
                         ],
                       );

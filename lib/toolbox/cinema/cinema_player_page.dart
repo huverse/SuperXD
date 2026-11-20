@@ -8,7 +8,6 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import 'package:superxd/domain/campus_log.dart';
-import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -19,6 +18,7 @@ import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
+import 'package:superxd/toolbox/cinema/cinema_episodes.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
 import 'package:superxd/toolbox/cinema/cinema_player_controls.dart';
@@ -79,6 +79,8 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   List<CinemaRoad>? _roads;
   var _road = 0;
   var _episode = 0;
+  // 下面选集里正在看的线路（只是看它有哪些集，点了某一集才换过去播；为空就是正在播的那条）。
+  int? _browsing;
   CinemaParsed? _parsed;
   // 正在取选集、解析或打开。
   // 打开后进度还没动（取选集、解析、首屏缓冲），与播放中卡住缓冲（_stalled）：两者有一个就画加载圈，持续 15 秒提示可以换源。
@@ -243,6 +245,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         if (generation != _generation) return;
         _road = _road.clamp(0, roads.length - 1);
         _episode = _episode.clamp(0, roads[_road].episodes.length - 1);
+        _browsing = null;
         playable = await widget.service.playable(roads[_road].episodes[_episode].url, rule: rule, fresh: fresh);
       } else {
         final parser = widget.parser;
@@ -494,6 +497,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     final title = widget.title;
     final roads = _roads;
     final subtitle = _titleMode ? (_current?.name ?? '') : '';
+    final browsing = roads == null ? 0 : (_browsing ?? _road).clamp(0, roads.length - 1);
     return CampusScrollFade(
       child: ListView(
         padding: const EdgeInsets.all(CampusGap.large),
@@ -532,18 +536,15 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
               CampusSegmented<int>(
                 values: [for (var index = 0; index < roads.length; index++) index],
                 label: (index) => roads[index].name,
-                selected: _road,
-                onSelected: (index) => setState(() => _road = index),
+                selected: browsing,
+                onSelected: (index) => setState(() => _browsing = index),
               ),
               const SizedBox(height: CampusGap.medium),
             ],
-            Wrap(
-              spacing: CampusGap.small,
-              runSpacing: CampusGap.small,
-              children: [
-                for (final (index, episode) in roads[_road.clamp(0, roads.length - 1)].episodes.indexed)
-                  CampusGlassChip(label: episode.name, selected: index == _episode, onSelected: (_) => unawaited(_pickEpisode(_road, index))),
-              ],
+            CinemaEpisodeGrid(
+              episodes: roads[browsing].episodes,
+              selected: browsing == _road ? _episode : null,
+              onPick: (index) => unawaited(_pickEpisode(browsing, index)),
             ),
           ],
         ],

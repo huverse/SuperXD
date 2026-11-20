@@ -185,7 +185,7 @@ class CinemaService implements ToolboxService {
       if (granted[cinemaRuleSubject(rule)] != rule.host) continue;
       final until = _pausedUntil[rule.id];
       if (until != null && now.isBefore(until)) {
-        failures.add(CinemaFailure(ruleId: rule.id, message: '${rule.name}连续没连上，${formatCampusClock(until)}前先不搜', paused: true));
+        failures.add(CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}连续没连上，${formatCampusClock(until)}前先不搜', paused: true));
       } else {
         active.add(rule);
       }
@@ -216,6 +216,8 @@ class CinemaService implements ToolboxService {
         }
       }
       if (failure != null) {
+        // 页面只写源名，原因（HTTP 状态、超时、看不懂回复）记在这里；不带搜的片名。
+        campusLog('[Cinema] action=search_source rule=${rule.id} failed=${failure.message}');
         failures.add(failure);
         final strikes = (_strikes[rule.id] ?? 0) + 1;
         _strikes[rule.id] = strikes;
@@ -240,14 +242,14 @@ class CinemaService implements ToolboxService {
       final raw = await _http.text(request, userAgent: rule.userAgent, referer: rule.referer, cancel: cancel);
       return (rule, parseCinemaSearch(raw, rule, base: request.uri), null);
     } on CinemaHttpException catch (error) {
-      return (rule, null, CinemaFailure(ruleId: rule.id, message: '${rule.name}${error.message}'));
+      return (rule, null, CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}${error.message}'));
     } on CinemaRuleException catch (error) {
-      return (rule, null, CinemaFailure(ruleId: rule.id, message: '${rule.name}：${error.message}'));
+      return (rule, null, CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}：${error.message}'));
     } on http.RequestAbortedException {
       return (rule, null, null);
     } catch (error, stack) {
       campusLog('[Cinema] action=search_source errorType=${error.runtimeType}\n$stack');
-      return (rule, null, CinemaFailure(ruleId: rule.id, message: '${rule.name}出错了'));
+      return (rule, null, CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}出错了'));
     }
   }
 
