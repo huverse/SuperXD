@@ -170,6 +170,15 @@ abstract final class CampusIcons {
   static const timer = LucideIcons.hourglass;
   static const locked = LucideIcons.lockKeyhole;
   static const failed = LucideIcons.circleX;
+  // 电影院播放器：下一集、退出全屏、倍速、画面比例、亮度、音量（静音）、跳过片头。
+  static const skipNext = LucideIcons.skipForward;
+  static const exitFullscreen = LucideIcons.minimize2;
+  static const speed = LucideIcons.gauge;
+  static const aspectRatio = LucideIcons.ratio;
+  static const brightness = LucideIcons.sun;
+  static const volume = LucideIcons.volume2;
+  static const mute = LucideIcons.volumeX;
+  static const skipIntro = LucideIcons.chevronsRight;
 }
 
 void configureCampusIcons() =>

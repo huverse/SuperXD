@@ -1,6 +1,6 @@
 import { CanActivate, createParamDecorator, ExecutionContext, HttpStatus, Inject, Injectable, Logger, SetMetadata } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
-import type { Request } from 'express';
+import type { Request, Response } from 'express';
 import Redis from 'ioredis';
 
 import { REDIS } from 'src/common/redis/redis.module';
@@ -14,9 +14,12 @@ import { DeviceService } from 'src/modules/device/device.service';
 const selfSignedKey = 'relay:self_signed';
 export const SelfSigned = () => SetMetadata(selfSignedKey, true);
 
-type SignedRequest = Request & { rawBody?: Buffer; deviceId?: string };
+type SignedRequest = Request & { rawBody?: Buffer; deviceId?: string; targetsRevision?: string | null };
 
 export const CurrentDevice = createParamDecorator((_: unknown, context: ExecutionContext) => context.switchToHttp().getRequest<SignedRequest>().deviceId!);
+
+// 这台设备的点名版本（Redis 里没有为空），问点名的条件请求按它判断变没变。
+export const CurrentTargetsRevision = createParamDecorator((_: unknown, context: ExecutionContext) => context.switchToHttp().getRequest<SignedRequest>().targetsRevision ?? null);
 
 // 每个请求都用设备的 Ed25519 私钥签名，不发放会话令牌：明文 HTTP 下被截获也无法冒用或重放。
 @Injectable()
@@ -44,10 +47,16 @@ export class DeviceAuthGuard implements CanActivate {
       this.logger.warn(`[DeviceAuth] action=reject reason=signature deviceId=${deviceId} path=${request.path}`);
       throw new RelayError(RelayCode.unauthorized, HttpStatus.UNAUTHORIZED, '请求签名无效');
     }
-    // 验签通过后才占用随机数，伪造请求无法消耗他人的随机数。
-    const fresh = await this.redis.set(RedisKeys.nonce(deviceId, nonce), '1', 'EX', RedisKeyTTL.nonce, 'NX');
+    // 验签通过后才占用随机数，伪造请求无法消耗他人的随机数。同一次往返顺带读这台设备的点名版本（人工决策见 src/modules/app_release/config_revision.ts），
+    // 有就放进回复头 x-sxd-targets，手机看到变了马上重新问点名；签名请求不因此多一次 Redis 往返。
+    const replies = (await this.redis.multi().set(RedisKeys.nonce(deviceId, nonce), '1', 'EX', RedisKeyTTL.nonce, 'NX').get(RedisKeys.flagTargetsRevision(deviceId)).exec()) ?? [];
+    const [[nonceError, fresh] = [null, null], [revisionError, revision] = [null, null]] = replies;
+    if (nonceError !== null) throw nonceError;
+    if (revisionError !== null) throw revisionError;
     if (fresh !== 'OK') throw new RelayError(RelayCode.replayed, HttpStatus.UNAUTHORIZED, '请求已处理过');
     request.deviceId = deviceId;
+    request.targetsRevision = typeof revision === 'string' ? revision : null;
+    if (request.targetsRevision !== null) context.switchToHttp().getResponse<Response>().setHeader('x-sxd-targets', request.targetsRevision);
     if (!this.reflector.get<boolean>(selfSignedKey, context.getHandler())) {
       this.devices.touch(deviceId).catch((error) => console.error(error));
     }

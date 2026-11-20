@@ -389,3 +389,31 @@ CREATE TABLE IF NOT EXISTS schema_migration (
   PRIMARY KEY (id),
   UNIQUE KEY uk_file (file_name)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+-- 电影院片名目录型源的服务端索引（人工决策见 src/modules/cinema_catalog/cinema_catalog.service.ts）：只存源上公开的编号与片名折叠写法，搜索词不落库。
+-- 全文索引用 ngram 分词，建表前关掉默认停用词（会话变量，只影响这之后建的全文索引）。
+SET SESSION innodb_ft_enable_stopword = OFF;
+
+CREATE TABLE IF NOT EXISTS cinema_catalog (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  rule_id VARCHAR(32) NOT NULL COMMENT '片源规则包 catalogRules 里的规则编号',
+  source VARCHAR(64) NOT NULL COMMENT '这个源里的影片编号',
+  folded VARCHAR(255) NOT NULL COMMENT '片名的折叠写法（去空白、全角折半角、小写），只用来查',
+  create_time DATETIME(3) NOT NULL,
+  update_time DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_cinema_catalog (rule_id, source),
+  FULLTEXT KEY ft_cinema_catalog (folded) WITH PARSER ngram
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
+
+CREATE TABLE IF NOT EXISTS cinema_catalog_state (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+  rule_id VARCHAR(32) NOT NULL,
+  crawl_started DATETIME(3) NULL COMMENT '正在抓全的这一轮从什么时刻起（UTC），没在抓全为空',
+  crawl_page INT UNSIGNED NOT NULL DEFAULT 0 COMMENT '这一轮已经抓到第几页',
+  synced_at DATETIME(3) NULL COMMENT '抓全或增量补到的时刻（UTC），还没抓全过为空',
+  create_time DATETIME(3) NOT NULL,
+  update_time DATETIME(3) NOT NULL,
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_cinema_catalog_state (rule_id)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;

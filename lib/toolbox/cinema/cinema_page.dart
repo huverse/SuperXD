@@ -96,8 +96,8 @@ class _CinemaPageState extends State<CinemaPage> {
     final agreed = await showCampusConfirm(
       context,
       title: '使用第三方片源',
-      // 长文案：首次同意要说清片名发给谁、内容归谁。
-      message: '片名会直接发给以下站点，片源与画面来自第三方，版权归原权利人：\n${missing.map((rule) => rule.name).join('、')}',
+      // 长文案：首次同意要说清片名发给谁、内容归谁；片名目录型的源（人工决策见 cinema_catalog.dart）片名先发到开发者服务器查编号。
+      message: '片名会发给以下站点，片源与画面来自第三方，版权归原权利人：\n${[for (final rule in missing) rule.catalog == null ? rule.name : '${rule.name}（片名经开发者服务器查找，不保存）'].join('、')}',
       action: '同意并搜索',
     );
     if (!agreed) return false;
@@ -128,9 +128,11 @@ class _CinemaPageState extends State<CinemaPage> {
       _searched = keyword;
     });
     try {
-      final result = await _service.search(keyword, cancel: cancel.future);
-      if (!mounted || generation != _generation) return;
-      setState(() => _result = result);
+      // 边搜边显示（人工决策见 cinema_service.dart 的 pauseAfter）：每回来一个源换一份快照。
+      await for (final result in _service.search(keyword, cancel: cancel.future)) {
+        if (!mounted || generation != _generation) return;
+        setState(() => _result = result);
+      }
     } catch (error, stack) {
       campusLog('[Cinema] action=search errorType=${error.runtimeType}\n$stack');
       if (mounted && generation == _generation) setState(() => _message = '搜索没完成，稍后再试');
@@ -270,7 +272,7 @@ class _CinemaPageState extends State<CinemaPage> {
                 }),
               );
             }
-            if (snapshot.connectionState != ConnectionState.done) return const Center(child: CampusLoading(label: '正在准备', network: true));
+            if (snapshot.connectionState != ConnectionState.done) return const Center(child: CampusLoading(label: '正在准备', network: true, remote: '中转服务'));
             final passes = widget.runtime.passes;
             if (passes != null && passes.locked(CinemaService.passId)) return _passCard(context, passes);
             return Center(
@@ -401,8 +403,8 @@ class _CinemaPageState extends State<CinemaPage> {
     final palette = CampusPalette.of(context);
     final text = Theme.of(context).textTheme;
     final result = _result;
-    if (_searching && result == null) {
-      return [SliverPadding(padding: const EdgeInsets.only(top: CampusGap.section), sliver: SliverToBoxAdapter(child: CampusLoading(label: '正在搜索', inline: true, network: true)))];
+    if (_searching && (result == null || (result.titles.isEmpty && result.pending > 0))) {
+      return [SliverPadding(padding: const EdgeInsets.only(top: CampusGap.section), sliver: SliverToBoxAdapter(child: CampusLoading(label: '正在搜索', inline: true, network: true, remote: '片源站')))];
     }
     if (result == null) {
       if (_history.isEmpty) return const [];
@@ -431,6 +433,7 @@ class _CinemaPageState extends State<CinemaPage> {
       ];
     }
     final failed = [for (final failure in result.failures) failure.message];
+    final paused = result.failures.any((failure) => failure.paused);
     return [
       SliverPadding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -439,9 +442,24 @@ class _CinemaPageState extends State<CinemaPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(result.titles.isEmpty ? '没搜到「$_searched」' : '「$_searched」${result.titles.length} 部', style: text.titleMedium),
+              if (result.pending > 0) ...[
+                const SizedBox(height: CampusGap.tight),
+                Text('还在搜 ${result.pending} 个源', style: text.bodyMedium?.copyWith(color: palette.onSurfaceVariant)),
+              ],
               if (failed.isNotEmpty) ...[
                 const SizedBox(height: CampusGap.tight),
                 Text('暂不可用：${failed.join('；')}', style: text.bodyMedium?.copyWith(color: palette.onSurfaceVariant)),
+              ],
+              if (paused && !_searching) ...[
+                const SizedBox(height: CampusGap.small),
+                TextButton.icon(
+                  onPressed: () {
+                    _service.resume();
+                    unawaited(_search());
+                  },
+                  icon: const CampusIcon(CampusIcons.sync),
+                  label: const Text('重试暂停的源'),
+                ),
               ],
             ],
           ),

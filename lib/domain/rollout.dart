@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -374,9 +375,46 @@ class RolloutException implements Exception {
 }
 
 // 灰度配置的拉取端口（device 实现）：只认验签通过的内容；中转还没放过配置时给空配置。
+// etag 是上次拿到时中转给的版本号：带着它来、配置没变时 config 为空（中转回 304），为空取全量。
 abstract interface class RolloutFeed {
-  Future<RolloutConfig> fetch();
+  Future<RolloutFetch> fetch({String? etag});
 }
+
+class RolloutFetch {
+  const RolloutFetch(this.config, {this.etag});
+  // 为空是和上次一样。
+  final RolloutConfig? config;
+  // 这一份的版本号（中转的 ETag，去掉引号）；没给为空，下次取全量。
+  final String? etag;
+}
+
+// [人工决策-2026-11-20 15:38:08] 灰度改了立即生效（用户选「版本号随回复下发」，服务端见 server/src/modules/app_release/config_revision.ts）：
+// 中转每条回复的 rolloutConfigHeader 带公共配置的版本号，签名请求的 rolloutTargetsHeader 带这台设备的点名版本；传输层看到就经 RolloutSignals 报上来，
+// 和本机记的不一样时 Rollouts 马上重新取（每个版本号一次运行只触发一次，不会来回）。回到前台时带上次的版本号核对，没变中转回 304。
+// 版本号只是「该重新取了」的信号：配置照旧验签，点名照旧签名问，回复头伪造不出开关。
+const rolloutConfigHeader = 'x-sxd-config';
+const rolloutTargetsHeader = 'x-sxd-targets';
+
+class RolloutSignal {
+  const RolloutSignal({this.config, this.targets});
+  final String? config, targets;
+}
+
+// 回复头里的版本号从传输层（relay、device）报到编排（application）的通道；组合根建一份，两头各拿一端。
+class RolloutSignals {
+  final _changes = StreamController<RolloutSignal>.broadcast();
+
+  Stream<RolloutSignal> get stream => _changes.stream;
+
+  // 传一条回复的头（键是小写）；两个都没有就不报。
+  void observe(Map<String, String> headers) {
+    final config = headers[rolloutConfigHeader], targets = headers[rolloutTargetsHeader];
+    if (config != null || targets != null) _changes.add(RolloutSignal(config: config, targets: targets));
+  }
+}
+
+// ETag 去掉弱标记与引号（中转给的是 "版本号"）。
+String? rolloutEtagOf(String? header) => header?.replaceFirst(RegExp(r'^W/'), '').replaceAll('"', '');
 
 // 本机记录（local 实现）：这台设备的随机编号（没登录应用账号时分桶用，不上传）、上次拉到的配置与时刻；
 // 另记当前主体（应用账号号）上次取到的积分等级与只因等级才进的批次（最多 rolloutRuleLimit 个，旧的先丢），换了主体从头记。
@@ -384,18 +422,28 @@ abstract interface class RolloutMemory {
   String get installId;
   RolloutConfig get config;
   DateTime? get fetchedAt;
-  Future<void> save(RolloutConfig config, DateTime fetchedAt);
+  // 上次拿到的配置的版本号（条件请求用）；旧版本记的没有，取一次全量就有了。
+  String? get etag;
+  Future<void> save(RolloutConfig config, DateTime fetchedAt, {String? etag});
   int levelOf(String subject);
   bool joined(String subject, String id);
   Future<void> saveLevel(String subject, int level);
   Future<void> join(String subject, String id);
-  // 当前主体（应用账号号）上次问到的点名与账号建立的时刻；换了主体为空。
+  // 当前主体（应用账号号）上次问到的点名、账号建立的时刻与点名的版本号；换了主体为空。
   List<RolloutTarget> targetsOf(String subject);
   DateTime? accountCreatedOf(String subject);
-  Future<void> saveTargets(String subject, RolloutTargets targets);
+  String? targetsEtagOf(String subject);
+  Future<void> saveTargets(String subject, RolloutTargets targets, {String? etag});
+}
+
+// 问点名的回复：targets 为空是和上次一样（带着版本号来、中转回 304）；etag 是这一份的版本号。
+class RolloutTargetsFetch {
+  const RolloutTargetsFetch(this.targets, {this.etag});
+  final RolloutTargets? targets;
+  final String? etag;
 }
 
 // 问中转「当前应用账号被点名了哪些」（relay 实现，用这个账号的设备密钥签名）；没登录或账号不在了为空，连不上抛 RolloutException。
 abstract interface class RolloutTargetClient {
-  Future<RolloutTargets?> mine(AppAccountRef account);
+  Future<RolloutTargetsFetch?> mine(AppAccountRef account, {String? etag});
 }

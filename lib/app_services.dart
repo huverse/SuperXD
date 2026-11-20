@@ -38,6 +38,7 @@ import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/domain/network_policy.dart';
 import 'package:superxd/domain/painting.dart';
 import 'package:superxd/domain/pass.dart';
+import 'package:superxd/domain/rollout.dart';
 import 'package:superxd/domain/unlock.dart';
 import 'package:superxd/local/app_update_memory.dart';
 import 'package:superxd/local/developer_note_memory.dart';
@@ -131,9 +132,11 @@ String? relayBase() {
 // 出口策略（审查 P2-2，relay/relay_egress.dart）：每个签名客户端拿 transportFor(它属于的联网服务)，联网策略 allows 不许时在本机拒掉、不发出；
 // 各服务与钩子里原有的判断照旧（不起无用的请求），合规由出口兜底。用应用账号身份发的点名与诊断包认领归应用账号（仅本机时灰度配置与诊断包上传照旧、只是不带账号）。
 class RelayWiring {
-  const RelayWiring({required this.base, required this.transport, required this.allows, this.accountKeys = const SecureAppAccountVault()});
+  const RelayWiring({required this.base, required this.transport, required this.allows, this.accountKeys = const SecureAppAccountVault(), this.signals});
   final String base;
   final RelayTransport transport;
+  // 签名传输把回复头里的灰度版本号报到这里，灰度编排从这里听（人工决策见 domain/rollout.dart 的 RolloutSignals）；测试的假中转为空。
+  final RolloutSignals? signals;
   // 发请求时才问（联网偏好在启动第一批里才打开，比这份接法晚）。
   final bool Function(NetworkService service) allows;
   final AppAccountVault accountKeys;
@@ -142,10 +145,12 @@ class RelayWiring {
   RelayTransport transportFor(NetworkService service) => EgressRelayTransport(transport, service: service, allows: allows);
 }
 
-RelayWiring? relayWiring({required bool Function(NetworkService service) allows}) => switch (relayBase()) {
-  final base? => RelayWiring(base: base, transport: HttpRelayTransport(base), allows: allows),
-  null => null,
-};
+RelayWiring? relayWiring({required bool Function(NetworkService service) allows}) {
+  final base = relayBase();
+  if (base == null) return null;
+  final signals = RolloutSignals();
+  return RelayWiring(base: base, transport: HttpRelayTransport(base, signals: signals), allows: allows, signals: signals);
+}
 
 // 应用内更新走同一个自建中转，渠道就是构建渠道（appFlavor，如 alpha）；没配中转、不是渠道构建（测试）或认不出架构时不检查更新。
 // [人工决策-2026-10-26 22:08:25] iOS 不能在应用里安装（用户选定「检查新版后去下载页」）：按 arm64 取同一份清单，只看版本与更新说明、不要安装包，
@@ -191,13 +196,14 @@ Future<Rollouts> rolloutsOf(Directory support, RelayWiring? relay, AppAccounts? 
   platform: Platform.isIOS ? 'ios' : 'android',
   versionCode: int.tryParse((await PackageInfo.fromPlatform()).buildNumber) ?? 0,
   targets: switch ((targets, appAccounts)) {
-    (final client?, final accounts?) => () async => switch (online() ? accounts.current : null) {
-      final account? => client.mine(account),
+    (final client?, final accounts?) => (etag) async => switch (online() ? accounts.current : null) {
+      final account? => client.mine(account, etag: etag),
       null => null,
     },
     _ => null,
   },
   accountId: () => appAccounts?.accountId,
+  signals: relay?.signals,
   levelsOn: online,
   level: switch (challenges) {
     final hub? => () async {

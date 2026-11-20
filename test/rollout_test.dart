@@ -38,10 +38,16 @@ List<RolloutStage> _stages() => [
 class _Feed implements RolloutFeed {
   RolloutConfig? next;
   int fetches = 0;
+  // 带来的版本号（条件请求），与这次给出的版本号；unchanged 为真时回「没变」。
+  final etags = <String?>[];
+  String served = 'rev-1';
+  bool unchanged = false;
   @override
-  Future<RolloutConfig> fetch() async {
+  Future<RolloutFetch> fetch({String? etag}) async {
     fetches++;
-    return next ?? (throw const RolloutException('连不上服务器'));
+    etags.add(etag);
+    if (unchanged) return RolloutFetch(null, etag: etag);
+    return RolloutFetch(next ?? (throw const RolloutException('连不上服务器')), etag: served);
   }
 }
 
@@ -296,16 +302,52 @@ void main() {
       expect(rollouts.inUpdateBatch(release()), isFalse, reason: '全量的版本也能整版关停');
     });
 
-    test('拉配置隔一小时，失败照旧用上次的', () async {
+    test('回到前台就核对配置（至少隔 checkGap），带上次的版本号；没变不通知，失败照旧用上次的', () async {
       feed.next = decodeRolloutConfig({'flags': [{'id': 'challenge', 'percent': 100}]});
       await rollouts.refresh();
       await rollouts.refresh();
       expect(feed.fetches, 1);
-      now = now.add(Rollouts.refreshGap);
-      feed.next = null;
+      expect(feed.etags, [null], reason: '第一次取全量');
+      now = now.add(Rollouts.checkGap);
+      feed.unchanged = true;
+      var notified = 0;
+      rollouts.addListener(() => notified++);
       await rollouts.refresh();
-      expect(feed.fetches, 2);
+      expect((feed.etags.last, notified, memory.etag), ('rev-1', 0, 'rev-1'));
+      now = now.add(Rollouts.checkGap);
+      feed
+        ..unchanged = false
+        ..next = null;
+      await rollouts.refresh();
+      expect(feed.fetches, 3);
       expect(rollouts.enabled('challenge', fallback: false), isTrue);
+    });
+
+    // 人工决策见 domain/rollout.dart 的 RolloutSignals（11-20 灰度改了立即生效）。
+    test('回复头里的配置版本号变了马上重新取；同一个版本号只触发一次；同意协议与政策（第一次 refresh）之前不动', () async {
+      final signals = RolloutSignals();
+      final watched = Rollouts(platform: 'android', versionCode: 30, memory: memory, channel: 'alpha', accountId: () => null, feed: feed, signals: signals, now: () => now);
+      feed.next = decodeRolloutConfig({'flags': [{'id': 'challenge', 'percent': 0}]});
+      signals.observe({rolloutConfigHeader: 'rev-0'});
+      await pumpEventQueue();
+      expect(feed.fetches, 0, reason: '还没同意');
+      await watched.refresh();
+      signals.observe({rolloutConfigHeader: 'rev-1'});
+      await pumpEventQueue();
+      expect(feed.fetches, 1, reason: '和本机记的一样');
+      feed
+        ..next = decodeRolloutConfig({'flags': [{'id': 'challenge', 'percent': 100}]})
+        ..served = 'rev-2';
+      signals.observe({rolloutConfigHeader: 'rev-2', 'etag': 'x'});
+      await pumpEventQueue();
+      expect((feed.fetches, feed.etags.last, memory.etag), (2, 'rev-1', 'rev-2'));
+      expect(watched.enabled('challenge', fallback: false), isTrue, reason: '用着的时候就生效');
+      feed.served = 'rev-3';
+      signals.observe({rolloutConfigHeader: 'rev-9'});
+      signals.observe({rolloutConfigHeader: 'rev-9'});
+      await pumpEventQueue();
+      expect(feed.fetches, 3, reason: '取回来的还不是 rev-9（中转几个实例不同步），也不再为它来回');
+      watched.dispose();
     });
 
     test('登录着应用账号时同一时机取积分等级：等级加权进批次；只因等级进的降级后照旧在里面，放量 0 仍关', () async {
@@ -536,13 +578,13 @@ void main() {
       final config = decodeRolloutConfig({'flags': [conditional, {'id': 'plain', 'percent': 10}]});
       final flags = await encodeFlagsFile(config, [signing.rollout]);
       final legacy = await encodeRolloutFile(config, [signing.rollout]);
-      Future<RolloutConfig> fetch(Map<String, (String, int)> replies) {
+      Future<RolloutConfig> fetch(Map<String, (String, int)> replies) async {
         final paths = <String>[];
-        return RelayRolloutFeed('https://relay.invalid', keys: signing.keys, client: MockClient((request) async {
+        return (await RelayRolloutFeed('https://relay.invalid', keys: signing.keys, client: MockClient((request) async {
           paths.add(request.url.path);
           final (body, status) = replies[request.url.path]!;
           return http.Response.bytes(utf8.encode(body), status);
-        })).fetch();
+        })).fetch()).config!;
       }
 
       expect((await fetch({'/v1/app/flags': (flags, 200)})).rules.keys, ['game.flash2', 'plain']);
@@ -550,6 +592,24 @@ void main() {
       expect((await fetch({'/v1/app/flags': ('{"code":"NOT_FOUND"}', 404), '/v1/app/rollout': (legacy, 200)})).rules.keys, ['plain']);
       await expectLater(fetch({'/v1/app/flags': ('{"version":1,"envelope":null}', 200)}), throwsA(isA<RolloutException>()));
       await expectLater(fetch({'/v1/app/flags': ('{"code":"INTERNAL"}', 500)}), throwsA(isA<RolloutException>()));
+    });
+
+    test('拉取的条件请求：带上次的版本号（If-None-Match），304 给出没变；全量回复记下 ETag', () async {
+      final signing = await TestSigning.create();
+      final flags = await encodeFlagsFile(decodeRolloutConfig({'flags': [{'id': 'plain', 'percent': 10}]}), [signing.rollout]);
+      final sent = <String?>[];
+      var notModified = false;
+      final feed = RelayRolloutFeed('https://relay.invalid', keys: signing.keys, client: MockClient((request) async {
+        sent.add(request.headers['if-none-match']);
+        return notModified ? http.Response('', 304, headers: {'etag': '"rev-1"'}) : http.Response.bytes(utf8.encode(flags), 200, headers: {'etag': '"rev-1"'});
+      }));
+      final full = await feed.fetch();
+      expect(full.config?.rules.keys, ['plain']);
+      expect(full.etag, 'rev-1');
+      notModified = true;
+      final same = await feed.fetch(etag: 'rev-1');
+      expect((same.config, same.etag), (null, 'rev-1'));
+      expect(sent, [null, '"rev-1"']);
     });
 
     group('判定', () {
@@ -561,6 +621,10 @@ void main() {
       final created = DateTime.utc(2026, 11, 1);
       RolloutTargets reply(List<RolloutTarget> flags) => RolloutTargets(flags: flags, accountCreatedAt: created);
       late int asked;
+      late List<String?> etags;
+      late RolloutSignals signals;
+      var targetsUnchanged = false;
+      var targetsServed = 't-1';
       Rollouts rollouts({String platform = 'android', String channel = 'alpha', int versionCode = 30, int level = 2}) => Rollouts(
         memory: memory,
         channel: channel,
@@ -569,7 +633,16 @@ void main() {
         accountId: () => accountId,
         feed: feed,
         level: () async => level,
-        targets: () async => (asked++, remote).$2,
+        targets: (etag) async {
+          asked++;
+          etags.add(etag);
+          return switch (remote) {
+            final RolloutTargets targets? when !targetsUnchanged => RolloutTargetsFetch(targets, etag: targetsServed),
+            final RolloutTargets _? => RolloutTargetsFetch(null, etag: etag),
+            null => null,
+          };
+        },
+        signals: signals,
         now: () => now,
       );
       setUp(() {
@@ -579,6 +652,10 @@ void main() {
         memory = FileRolloutMemory.memory();
         remote = reply(const []);
         asked = 0;
+        etags = [];
+        signals = RolloutSignals();
+        targetsUnchanged = false;
+        targetsServed = 't-1';
       });
       const flag = FeatureFlag('game.flash2', fallback: false);
 
@@ -655,6 +732,51 @@ void main() {
         expect(ios.isOn(flag), isFalse);
       });
 
+      test('点名回到前台带版本号核对，没变不动；回复头里的点名版本变了马上问一次全量，同一个只问一次', () async {
+        feed.next = decodeRolloutConfig({'flags': [{...conditional, 'percent': 0}]});
+        final watched = rollouts(level: 0);
+        await watched.refresh();
+        expect(etags, [null]);
+        expect(memory.targetsEtagOf('account-a'), 't-1');
+        expect(watched.isOn(flag), isFalse);
+        now = now.add(Rollouts.checkGap);
+        targetsUnchanged = true;
+        await watched.refresh();
+        expect(etags.last, 't-1');
+        targetsUnchanged = false;
+        targetsServed = 't-2';
+        remote = reply([const RolloutTarget('game.flash2')]);
+        signals.observe({rolloutTargetsHeader: '1795000000000'});
+        await pumpEventQueue();
+        expect((etags.last, memory.targetsEtagOf('account-a')), (null, 't-2'), reason: '回复头触发的问全量');
+        expect(watched.isOn(flag), isTrue, reason: '点名了马上就开');
+        final before = asked;
+        signals.observe({rolloutTargetsHeader: '1795000000000'});
+        await pumpEventQueue();
+        expect(asked, before);
+        accountId = null;
+        signals.observe({rolloutTargetsHeader: '1795000000001'});
+        await pumpEventQueue();
+        expect(asked, before, reason: '没登录不问');
+        watched.dispose();
+      });
+
+      test('配置与点名的版本号记在本机，重开还在；换了主体点名的版本号从头记；格式不对的当没记过', () async {
+        final directory = await Directory.systemTemp.createTemp('rollout_etag');
+        addTearDown(() => directory.delete(recursive: true));
+        final file = File('${directory.path}/rollout.json');
+        final saved = await FileRolloutMemory.open(file);
+        await saved.save(RolloutConfig.empty, now, etag: 'rev-1');
+        await saved.saveTargets('account-a', reply(const []), etag: '1795000000000');
+        final reopened = await FileRolloutMemory.open(file);
+        expect((reopened.etag, reopened.targetsEtagOf('account-a'), reopened.targetsEtagOf('account-b')), ('rev-1', '1795000000000', null));
+        await reopened.saveLevel('account-b', 1);
+        expect(reopened.targetsEtagOf('account-a'), isNull);
+        final raw = jsonDecode(await file.readAsString()) as Map<String, Object?>;
+        await file.writeAsString(jsonEncode({...raw, 'etag': '"带引号"'}));
+        expect((await FileRolloutMemory.open(file)).etag, isNull);
+      });
+
       test('点名跟着主体存在本机：换了账号从头记；格式不对的当没问过', () async {
         final directory = await Directory.systemTemp.createTemp('rollout_targets');
         addTearDown(() => directory.delete(recursive: true));
@@ -688,13 +810,20 @@ void main() {
       expect(relay.requests, isEmpty, reason: '没有密钥不发请求');
       final key = await RelayIdentity.fromSeeds(List<int>.generate(32, (index) => index + 1), List<int>.generate(32, (index) => index + 33));
       await vault.write(appAccountSlot, AppAccountKey(identity: key, accountId: 'AAAAAAAAAAAAAAAAAAAAAA'));
-      relay.reply = const RelayResponse(200, {'flags': [{'id': 'game.flash2', 'until': '2026-12-01T00:00:00.000Z'}], 'accountCreatedAt': '2026-11-01T08:00:00.000Z'});
-      final targets = (await client.mine(ref))!;
+      relay.reply = const RelayResponse(200, {'flags': [{'id': 'game.flash2', 'until': '2026-12-01T00:00:00.000Z'}], 'accountCreatedAt': '2026-11-01T08:00:00.000Z'}, headers: {'etag': '"0"'});
+      final fetched = (await client.mine(ref))!;
+      final targets = fetched.targets!;
+      expect(fetched.etag, '0');
+      expect(relay.requests.last.$2.containsKey('if-none-match'), isFalse);
       expect(relay.requests.last.$1, 'GET /v1/flags/mine');
       expect(relay.requests.last.$2['x-sxd-device'], key.deviceId);
       expect(relay.requests.last.$2.containsKey('x-sxd-signature'), isTrue);
       expect(targets.flags.single.until, DateTime.utc(2026, 12, 1));
       expect(targets.accountCreatedAt, DateTime.utc(2026, 11, 1, 8));
+      // 条件请求：带着版本号问，没变中转回 304。
+      relay.reply = const RelayResponse(304, {}, headers: {'etag': '"0"'});
+      final same = (await client.mine(ref, etag: '0'))!;
+      expect((same.targets, same.etag, relay.requests.last.$2['if-none-match']), (null, '0', '"0"'));
       relay.reply = const RelayResponse(404, {'code': 'ACCOUNT_NOT_FOUND'});
       expect(await client.mine(ref), isNull);
       relay.reply = const RelayResponse(429, {'code': 'RATE_LIMITED', 'retryAfter': 60});

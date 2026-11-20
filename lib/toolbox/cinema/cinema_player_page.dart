@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,8 +10,6 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
-import 'package:superxd/theme/campus_loading.dart';
-import 'package:superxd/theme/curve_geometry.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
@@ -21,11 +20,14 @@ import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
+import 'package:superxd/toolbox/cinema/cinema_player_controls.dart';
 import 'package:superxd/toolbox/cinema/cinema_rule.dart';
 import 'package:superxd/toolbox/cinema/cinema_service.dart';
 
-// 播放页（media_kit，libmpv）：竖屏上面是画面、下面是选集与换源；全屏是自己的页面，横的片子把画面转 90 度铺满
-// （应用锁竖屏，[人工决策] 在清单的 MainActivity；这里不改方向设置，同样适用 iOS）。
+// 播放页（media_kit，libmpv；控件与手势在 cinema_player_controls.dart，人工决策在那里）：竖屏上面是画面、下面是选集与换源，
+// 画面区的高度跟片子的真实比例走（横片按比例、竖片最多占屏高的 cinemaPortraitMaxHeight），不再一律 16:9 留大黑边；
+// 全屏在同一页里切（画面与控件经 GlobalKey 挪过去，不重建纹理、不丢锁定与倍速），横片转成真横屏（左右两种横向都行），竖片保持竖屏，
+// 退出全屏回到竖屏（应用平时锁竖屏，[人工决策] 在清单的 MainActivity 与 ios/Runner/Info.plist）。
 // 首帧常要 10–20 秒（交接实测，腾讯系首屏要缓冲两三个分片），缓冲超过 15 秒才提示可以换源，不早报失败。
 // 看片记录（只在找片里看的记，解析的不记）：每 10 秒、换集、离开时记一次看到哪。
 class CinemaPlayerPage extends StatefulWidget {
@@ -57,6 +59,9 @@ class CinemaPlayerPage extends StatefulWidget {
 // libmpv 每个进程只要初始化一次。
 var _mediaKitReady = false;
 
+// 竖屏时画面区最多占屏高的这么多（竖片）。
+const cinemaPortraitMaxHeight = 0.6;
+
 class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   late final Player _player;
   late final VideoController _video;
@@ -77,6 +82,14 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   String? _error;
   // 只认最近一次打开：换集、换源快速连点时旧的结果不再写界面。
   var _generation = 0;
+  var _fullscreen = false;
+  var _fit = CinemaFit.automatic;
+  // 片子的宽高比（取到画面尺寸之前为空，按 16:9 排）。
+  double? _aspect;
+  // 从上次的位置接着看（只在进来的第一集），换集换源后为空。
+  Duration? _resumedFrom;
+  // 画面与控件：全屏与竖屏之间挪动时保留状态。
+  final _stageKey = GlobalKey();
 
   bool get _titleMode => widget.title != null;
 
@@ -94,8 +107,11 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     _road = widget.road;
     _episode = widget.episode;
     _parsed = widget.parsed;
+    _resumedFrom = widget.start > Duration.zero ? widget.start : null;
     _subscriptions
       ..add(_player.stream.buffering.listen(_buffering))
+      ..add(_player.stream.width.listen((_) => _measure()))
+      ..add(_player.stream.height.listen((_) => _measure()))
       ..add(_player.stream.error.listen((message) {
         campusLog('[CinemaPlayer] action=error message=${message.length > 120 ? message.substring(0, 120) : message}');
         if (mounted) setState(() => _error = '播放出错，可以重新载入或换个源');
@@ -105,12 +121,16 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
           setState(() => _opening = false);
           _watchSlow();
         }
-      }))
-      ..add(_player.stream.completed.listen((done) {
-        if (done && mounted) unawaited(_next());
       }));
     _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) => unawaited(_save()));
     unawaited(_open(start: widget.start));
+  }
+
+  void _measure() {
+    final width = _player.state.width, height = _player.state.height;
+    if (width == null || height == null || width <= 0 || height <= 0 || !mounted) return;
+    final aspect = width / height;
+    if (aspect != _aspect) setState(() => _aspect = aspect);
   }
 
   void _buffering(bool buffering) {
@@ -206,13 +226,13 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     await _save();
     _road = road;
     _episode = episode;
+    _resumedFrom = null;
     await _open();
   }
 
-  Future<void> _next() async {
+  bool get _hasNext {
     final roads = _roads;
-    if (roads == null || _episode + 1 >= roads[_road].episodes.length) return;
-    await _pickEpisode(_road, _episode + 1);
+    return roads != null && _road < roads.length && _episode + 1 < roads[_road].episodes.length;
   }
 
   // 换源：按集名在新源里找同一集（先找同序号的线路，再找全部线路），找不到就留在原来的源。
@@ -240,6 +260,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         _roads = roads;
         _road = road;
         _episode = episode;
+        _resumedFrom = null;
         await _open(start: _player.state.position);
         return;
       }
@@ -260,14 +281,28 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     }
   }
 
-  Future<void> _fullscreen() async {
-    final width = _player.state.width ?? 16, height = _player.state.height ?? 9;
-    await Navigator.push<void>(context, CampusPageRoute(builder: (_) => _CinemaFullscreen(video: _video, landscape: width > height)));
+  // 进出全屏：横片转真横屏（左右两种都行），竖片与比例未知时按横片；退出回到竖屏并恢复系统栏。
+  Future<void> _setFullscreen(bool on) async {
+    if (on == _fullscreen) return;
+    setState(() => _fullscreen = on);
+    try {
+      await _applyOrientation(on: on, landscape: (_aspect ?? 16 / 9) >= 1);
+    } catch (error, stack) {
+      campusLog('[CinemaPlayer] action=fullscreen errorType=${error.runtimeType}\n$stack');
+    }
+  }
+
+  static Future<void> _applyOrientation({required bool on, required bool landscape}) async {
+    await SystemChrome.setEnabledSystemUIMode(on ? SystemUiMode.immersiveSticky : SystemUiMode.edgeToEdge);
+    await SystemChrome.setPreferredOrientations(on && landscape ? const [DeviceOrientation.landscapeLeft, DeviceOrientation.landscapeRight] : const [DeviceOrientation.portraitUp]);
   }
 
   @override
   void dispose() {
     _generation++;
+    if (_fullscreen) {
+      unawaited(_applyOrientation(on: false, landscape: false).catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=fullscreen_exit errorType=${error.runtimeType}\n$stack')));
+    }
     _saveTimer?.cancel();
     _slowTimer?.cancel();
     for (final subscription in _subscriptions) {
@@ -277,164 +312,143 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     super.dispose();
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final palette = CampusPalette.of(context);
-    final text = Theme.of(context).textTheme;
-    final title = widget.title;
+  // 画面与控件（竖屏与全屏共用一份）。
+  Widget _stage(String heading) {
     final roads = _roads;
-    final heading = title?.name ?? (_parsed?.title.isNotEmpty == true ? _parsed!.title : '解析播放');
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(heading, maxLines: 1, overflow: TextOverflow.ellipsis),
-        leading: IconButton(tooltip: '返回', onPressed: () => Navigator.pop(context), icon: const CampusIcon(CampusIcons.back)),
-      ),
-      body: SafeArea(
-        child: Column(
+    final episodes = roads == null || _road >= roads.length ? const <CinemaEpisode>[] : roads[_road].episodes;
+    return KeyedSubtree(
+      key: _stageKey,
+      child: ColoredBox(
+        color: Colors.black,
+        child: Stack(
+          fit: StackFit.expand,
           children: [
-            AspectRatio(
-              aspectRatio: 16 / 9,
-              child: ColoredBox(
-                color: Colors.black,
-                child: Stack(
-                  fit: StackFit.expand,
-                  children: [
-                    _CinemaVideo(video: _video, onFullscreen: _fullscreen),
-                    // 画面底色是黑的（片子的底，不跟配色），加载圈用白色。
-                    if ((_opening || _stalled) && _error == null) const IgnorePointer(child: Center(child: CampusLoader(curve: CampusCurve.infinity, size: 40, color: Colors.white))),
-                  ],
-                ),
-              ),
-            ),
-            Expanded(
-              child: CampusScrollFade(
-                child: ListView(
-                  padding: const EdgeInsets.all(16),
-                  children: [
-                    Text(_titleMode ? (_current?.name ?? '') : (_parsed?.title ?? ''), style: text.titleMedium),
-                    if (_error ?? (_slow ? '还在缓冲，可以换个源试试' : null) case final message?) ...[
-                      const SizedBox(height: CampusGap.small),
-                      Text(message, style: text.bodyMedium?.copyWith(color: _error == null ? palette.onSurfaceVariant : palette.danger)),
-                    ],
-                    const SizedBox(height: CampusGap.medium),
-                    Wrap(
-                      spacing: CampusGap.small,
-                      runSpacing: CampusGap.small,
-                      children: [
-                        OutlinedButton.icon(
-                          onPressed: () => unawaited(_open(start: _player.state.position, fresh: true)),
-                          icon: const CampusIcon(CampusIcons.sync),
-                          label: Text(_titleMode ? '重新载入' : '重新解析'),
-                        ),
-                      ],
-                    ),
-                    if (title != null && title.sources.length > 1) ...[
-                      const SizedBox(height: CampusGap.large),
-                      CampusSurface(
-                        padding: EdgeInsets.fromLTRB(16, campusFieldGap(context), 16, 16),
-                        child: CampusMenuField<CinemaSourceRef>(
-                          label: '片源',
-                          value: _source!,
-                          items: [
-                            for (final ref in title.sources) CampusMenuItem(value: ref, label: [widget.service.rule(ref.ruleId)?.name ?? ref.ruleId, if (ref.remarks.isNotEmpty) ref.remarks].join(' · ')),
-                          ],
-                          onChanged: _opening ? null : (ref) => unawaited(_pickSource(ref)),
-                        ),
-                      ),
-                    ],
-                    if (roads != null) ...[
-                      const SizedBox(height: CampusGap.large),
-                      if (roads.length > 1 && roads.length <= 3) ...[
-                        CampusSegmented<int>(
-                          values: [for (var index = 0; index < roads.length; index++) index],
-                          label: (index) => roads[index].name,
-                          selected: _road,
-                          onSelected: (index) => setState(() => _road = index),
-                        ),
-                        const SizedBox(height: CampusGap.medium),
-                      ],
-                      Wrap(
-                        spacing: CampusGap.small,
-                        runSpacing: CampusGap.small,
-                        children: [
-                          for (final (index, episode) in roads[_road.clamp(0, roads.length - 1)].episodes.indexed)
-                            CampusGlassChip(label: episode.name, selected: index == _episode, onSelected: (_) => unawaited(_pickEpisode(_road, index))),
-                        ],
-                      ),
-                    ],
-                  ],
-                ),
-              ),
+            Video(controller: _video, controls: NoVideoControls, fit: _fit.fit, aspectRatio: _fit.ratio, fill: Colors.black),
+            CinemaPlayerControls(
+              player: _player,
+              title: heading,
+              subtitle: _titleMode ? (_current?.name ?? '') : '',
+              fullscreen: _fullscreen,
+              busy: (_opening || _stalled) && _error == null,
+              error: _error,
+              hint: _slow ? '还在缓冲，可以换个源试试' : null,
+              onReload: () => unawaited(_open(start: _player.state.position, fresh: true)),
+              reloadLabel: _titleMode ? '重新载入' : '重新解析',
+              fit: _fit,
+              onFit: (fit) => setState(() => _fit = fit),
+              onBack: _fullscreen ? () => unawaited(_setFullscreen(false)) : () => Navigator.maybePop(context),
+              onFullscreen: () => unawaited(_setFullscreen(!_fullscreen)),
+              onNext: _hasNext ? () => unawaited(_pickEpisode(_road, _episode + 1)) : null,
+              episodes: [for (final episode in episodes) episode.name],
+              episode: _episode,
+              onEpisode: (index) => unawaited(_pickEpisode(_road, index)),
+              resumedFrom: _resumedFrom,
             ),
           ],
         ),
       ),
     );
   }
-}
-
-// 画面与控件：底栏只留进度与全屏（全屏是自己的页面，不用 media_kit 自带的：它会改屏幕方向）。
-class _CinemaVideo extends StatelessWidget {
-  const _CinemaVideo({required this.video, required this.onFullscreen});
-  final VideoController video;
-  final VoidCallback onFullscreen;
 
   @override
   Widget build(BuildContext context) {
-    final theme = MaterialVideoControlsThemeData(
-      seekBarPositionColor: CampusPalette.of(context).accent,
-      seekBarThumbColor: CampusPalette.of(context).accent,
-      bottomButtonBar: [
-        const MaterialPositionIndicator(),
-        const Spacer(),
-        MaterialCustomButton(icon: const CampusIcon(CampusIcons.fullscreen, color: Colors.white), onPressed: onFullscreen),
-      ],
-    );
-    return MaterialVideoControlsTheme(
-      normal: theme,
-      fullscreen: theme,
-      child: Video(controller: video, controls: MaterialVideoControls),
+    final title = widget.title;
+    final heading = title?.name ?? (_parsed?.title.isNotEmpty == true ? _parsed!.title : '解析播放');
+    return PopScope(
+      canPop: !_fullscreen,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) unawaited(_setFullscreen(false));
+      },
+      child: _fullscreen
+          ? Scaffold(backgroundColor: Colors.black, body: _stage(heading))
+          : AnnotatedRegion<SystemUiOverlayStyle>(
+              // 画面区在最上面、底是黑的：状态栏用浅色图标。
+              value: SystemUiOverlayStyle.light.copyWith(statusBarColor: Colors.transparent),
+              child: Scaffold(
+                body: Column(
+                  children: [
+                    ColoredBox(
+                      color: Colors.black,
+                      child: SafeArea(
+                        bottom: false,
+                        child: LayoutBuilder(
+                          builder: (context, constraints) {
+                            // 退出全屏的那一帧可能还是横屏尺寸：下限不超过上限。
+                            final width = constraints.maxWidth, most = MediaQuery.sizeOf(context).height * cinemaPortraitMaxHeight;
+                            final height = (width / (_aspect ?? 16 / 9)).clamp(min(width * 9 / 21, most), most).toDouble();
+                            return AnimatedContainer(duration: const Duration(milliseconds: 240), curve: Curves.easeOutCubic, height: height, child: _stage(heading));
+                          },
+                        ),
+                      ),
+                    ),
+                    Expanded(child: _details(context, heading)),
+                  ],
+                ),
+              ),
+            ),
     );
   }
-}
 
-class _CinemaFullscreen extends StatefulWidget {
-  const _CinemaFullscreen({required this.video, required this.landscape});
-  final VideoController video;
-  final bool landscape;
-  @override
-  State<_CinemaFullscreen> createState() => _CinemaFullscreenState();
-}
-
-class _CinemaFullscreenState extends State<_CinemaFullscreen> {
-  @override
-  void initState() {
-    super.initState();
-    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky));
-  }
-
-  @override
-  void dispose() {
-    unawaited(SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge));
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = MaterialVideoControlsThemeData(
-      seekBarPositionColor: CampusPalette.of(context).accent,
-      seekBarThumbColor: CampusPalette.of(context).accent,
-      bottomButtonBar: [
-        const MaterialPositionIndicator(),
-        const Spacer(),
-        MaterialCustomButton(icon: const CampusIcon(CampusIcons.close, color: Colors.white), onPressed: () => Navigator.pop(context)),
-      ],
-    );
-    return Scaffold(
-      backgroundColor: Colors.black,
-      body: RotatedBox(
-        quarterTurns: widget.landscape ? 1 : 0,
-        child: MaterialVideoControlsTheme(normal: theme, fullscreen: theme, child: Video(controller: widget.video, controls: MaterialVideoControls)),
+  // 画面下面：片名与这一集、重新载入、片源、线路与选集。
+  Widget _details(BuildContext context, String heading) {
+    final palette = CampusPalette.of(context);
+    final text = Theme.of(context).textTheme;
+    final title = widget.title;
+    final roads = _roads;
+    final subtitle = _titleMode ? (_current?.name ?? '') : '';
+    return CampusScrollFade(
+      child: ListView(
+        padding: const EdgeInsets.all(CampusGap.large),
+        children: [
+          Text(heading, style: text.titleMedium),
+          if (subtitle.isNotEmpty) Text(subtitle, style: text.bodyMedium?.copyWith(color: palette.onSurfaceVariant)),
+          const SizedBox(height: CampusGap.medium),
+          Wrap(
+            spacing: CampusGap.small,
+            runSpacing: CampusGap.small,
+            children: [
+              OutlinedButton.icon(
+                onPressed: () => unawaited(_open(start: _player.state.position, fresh: true)),
+                icon: const CampusIcon(CampusIcons.sync),
+                label: Text(_titleMode ? '重新载入' : '重新解析'),
+              ),
+            ],
+          ),
+          if (title != null && title.sources.length > 1) ...[
+            const SizedBox(height: CampusGap.large),
+            CampusSurface(
+              padding: EdgeInsets.fromLTRB(CampusGap.large, campusFieldGap(context), CampusGap.large, CampusGap.large),
+              child: CampusMenuField<CinemaSourceRef>(
+                label: '片源',
+                value: _source!,
+                items: [
+                  for (final ref in title.sources) CampusMenuItem(value: ref, label: [widget.service.rule(ref.ruleId)?.name ?? ref.ruleId, if (ref.remarks.isNotEmpty) ref.remarks].join(' · ')),
+                ],
+                onChanged: _opening ? null : (ref) => unawaited(_pickSource(ref)),
+              ),
+            ),
+          ],
+          if (roads != null) ...[
+            const SizedBox(height: CampusGap.large),
+            if (roads.length > 1 && roads.length <= 3) ...[
+              CampusSegmented<int>(
+                values: [for (var index = 0; index < roads.length; index++) index],
+                label: (index) => roads[index].name,
+                selected: _road,
+                onSelected: (index) => setState(() => _road = index),
+              ),
+              const SizedBox(height: CampusGap.medium),
+            ],
+            Wrap(
+              spacing: CampusGap.small,
+              runSpacing: CampusGap.small,
+              children: [
+                for (final (index, episode) in roads[_road.clamp(0, roads.length - 1)].episodes.indexed)
+                  CampusGlassChip(label: episode.name, selected: index == _episode, onSelected: (_) => unawaited(_pickEpisode(_road, index))),
+              ],
+            ),
+          ],
+        ],
       ),
     );
   }

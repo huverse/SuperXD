@@ -81,9 +81,13 @@
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>
 	<string>Main</string>
+	<!-- [人工决策-2026-11-20 16:53:46] 平时只竖屏（同安卓清单 MainActivity 那条），例外是电影院播放器的全屏转真横屏（用户选定「全屏时真横屏」）：
+	     这里列出两种横向才转得过去，平时由 lib/main.dart 启动时 setPreferredOrientations 锁回竖屏（test/shell_layout_test.dart 守护）。 -->
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 </dict>
 </plist>

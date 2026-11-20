@@ -154,7 +154,7 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
                         );
                       }
                       final roads = snapshot.data;
-                      if (roads == null) return const CampusLoading(label: '正在取选集', inline: true, network: true);
+                      if (roads == null) return const CampusLoading(label: '正在取选集', inline: true, network: true, remote: '片源站');
                       final road = _road.clamp(0, roads.length - 1);
                       return Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,

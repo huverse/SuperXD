@@ -11,6 +11,7 @@ import 'package:http/testing.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:superxd/domain/feature_flags.dart';
+import 'package:superxd/toolbox/cinema/cinema_catalog.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
@@ -71,13 +72,34 @@ Map<String, Object?> parserRule() => {
   'cipher': {'algorithm': 'aes-128-cbc', 'key': testCipher.key, 'iv': testCipher.iv},
 };
 
-List<int> packageBytes({int version = 1, int minClient = 0, List<Map<String, Object?>>? rules}) => utf8.encode(jsonEncode({
+List<int> packageBytes({int version = 1, int minClient = 0, List<Map<String, Object?>>? rules, List<Map<String, Object?>> catalogRules = const []}) => utf8.encode(jsonEncode({
   'format': 1,
   'version': version,
   'minClient': minClient,
   'rules': rules ?? [macCmsRule('alpha', 'https://alpha.example.com/api.php/provide/vod/'), macCmsRule('beta', 'https://beta.example.com/api.php/provide/vod', name: '另一资源')],
+  'catalogRules': catalogRules,
   'parsers': [parserRule()],
 }));
+
+// 片名目录型的源（同 wsy）：搜索请求按 @ids 取详情；目录在中转上，update 是给中转抓片名的请求（@hours、@page）。
+Map<String, Object?> catalogRule(String id, String api, {String name = '目录资源'}) {
+  final rule = macCmsRule(id, api, name: name);
+  final search = rule['searchApiConfig']! as Map<String, Object?>;
+  return {
+    ...rule,
+    'searchMode': 'catalog',
+    'searchApiConfig': {...search, 'request': {'method': 'GET', 'url': api, 'query': {'ac': 'detail', 'ids': '@ids'}}},
+    'catalog': {
+      'update': {
+        'request': {'method': 'GET', 'url': api, 'query': {'ac': 'list', 'h': '@hours', 'pg': '@page'}},
+        'listPath': r'$.list[*]',
+        'idPath': r'$.vod_id',
+        'namePath': r'$.vod_name',
+        'pageCountPath': r'$.pagecount',
+      },
+    },
+  };
+}
 
 Future<String> encryptForTest(String plain) async {
   final box = await AesCbc.with128bits(macAlgorithm: MacAlgorithm.empty).encrypt(utf8.encode(plain), secretKey: SecretKey(utf8.encode(testCipher.key)), nonce: utf8.encode(testCipher.iv));
@@ -114,6 +136,24 @@ void main() {
       rejects((rule) => null, package: {'format': 2, 'version': 1, 'rules': [macCmsRule('alpha', 'https://a.example.com/')]});
       rejects((rule) => null, package: {'format': 1, 'version': 1, 'rules': [macCmsRule('alpha', 'https://a.example.com/')], 'parsers': [parserRule()..['cipher'] = {'algorithm': 'aes-128-cbc', 'key': 'short', 'iv': testCipher.iv}]});
       expect(() => decodeCinemaPackage(List.filled(cinemaPackageMaxBytes + 1, 32)), throwsA(isA<CinemaRuleException>()));
+    });
+
+    test('片名目录型的源放在 catalogRules：接在普通源后面；详情要用 @ids，增量请求要用 @hours 与 @page，不合格整包拒收', () {
+      Map<String, Object?> catalog() => catalogRule('wsy', 'https://wsy.example.com/api.php');
+      Map<String, Object?> update() => (catalog()['catalog']! as Map<String, Object?>)['update']! as Map<String, Object?>;
+      final package = decodeCinemaPackage(packageBytes(catalogRules: [catalog()]));
+      expect([for (final rule in package.rules) (rule.id, rule.catalog != null)], [('alpha', false), ('beta', false), ('wsy', true)]);
+      final wrong = <Map<String, Object?>>[
+        {...catalog(), 'searchMode': 'api'},
+        {...catalog(), 'searchApiConfig': macCmsRule('wsy', 'https://wsy.example.com/api.php')['searchApiConfig']},
+        {...catalog(), 'catalog': {'update': {...update(), 'request': {'method': 'GET', 'url': 'https://wsy.example.com/'}}}},
+        {...catalog(), 'catalog': {'update': {...update(), 'request': {'method': 'POST', 'url': 'https://wsy.example.com/?h=@hours&pg=@page'}}}},
+        {...catalog(), 'catalog': {'update': {...update(), 'listPath': r'$.list[?(@.x)]'}}},
+        {...catalog(), 'id': 'alpha'},
+      ];
+      for (final (index, rule) in wrong.indexed) {
+        expect(() => decodeCinemaPackage(packageBytes(catalogRules: [rule])), throwsA(isA<CinemaRuleException>()), reason: '第 $index 个');
+      }
     });
   });
 
@@ -274,12 +314,13 @@ void main() {
       expect(history.any((item) => item.key == 'old'), isFalse);
     });
 
-    Future<CinemaService> open(Future<List<int>> Function() fetch, {http.Client? client, int versionCode = 40, DateTime Function()? now}) async {
+    Future<CinemaService> open(Future<List<int>> Function() fetch, {http.Client? client, int versionCode = 40, DateTime Function()? now, Uri? relay}) async {
       final service = await CinemaService.open(
         ToolboxServiceContext(base: fixture.directory, store: fixture.store, downloads: fixture.manager),
         feed: CinemaRulesFeed(fetch: () async => Uint8List.fromList(await fetch()), versionCode: () async => versionCode),
         http: CinemaHttp(client: client ?? MockClient((request) async => reply('', 404))),
         now: now,
+        relay: relay,
       );
       return service;
     }
@@ -316,7 +357,7 @@ void main() {
       await service.close();
     });
 
-    test('搜索：只搜同意过的源，按片名加年份聚合、多源的排前面；一个源 403 只进失败列表；换了主机要重新同意', () async {
+    test('搜索：只搜同意过的源，按片名加年份聚合、按第一次出现的先后排；一个源 403 只进失败列表；换了主机要重新同意', () async {
       final client = MockClient((request) async => switch (request.url.host) {
         'alpha.example.com' => reply(macCmsList([
           {'vod_id': 1, 'vod_name': '合成电影', 'vod_year': '2020', 'vod_pic': 'https://img.example.com/1.jpg'},
@@ -335,16 +376,103 @@ void main() {
       final package = await service.rules();
       expect([for (final rule in await service.unconsentedRules(package)) rule.id], ['alpha', 'beta', 'gamma']);
       await service.grantRules(package.rules.where((rule) => rule.id != 'beta'));
-      var result = await service.search('合成');
+      var result = await service.search('合成').last;
       expect([for (final title in result.titles) title.name], ['合成电影', '只此一家']);
       expect(result.titles.first.sources, hasLength(1));
       expect([for (final failure in result.failures) failure.message], ['挡住的资源暂不可用（HTTP 403）']);
       await service.grantRules(package.rules);
-      result = await service.search('合成');
+      result = await service.search('合成').last;
       expect([for (final ref in result.titles.first.sources) '${ref.ruleId}:${ref.source}'], ['alpha:1', 'beta:9']);
       expect(result.titles.first.cover, 'https://img.example.com/1.jpg');
       await service.close();
     });
+
+    // 人工决策见 cinema_service.dart 的 pauseAfter（11-20 边搜边显示、连续失败就暂停）。
+    test('边搜边给快照：先给一份全在搜的，每回来一个源一份，最后一份 pending 为 0；慢的源不挡住先回来的', () async {
+      final slow = Completer<void>();
+      final client = MockClient((request) async {
+        if (request.url.host == 'beta.example.com') await slow.future;
+        return reply(macCmsList([{'vod_id': request.url.host == 'alpha.example.com' ? 1 : 2, 'vod_name': '合成电影', 'vod_year': '2020'}]), 200);
+      });
+      final service = await open(() async => packageBytes(), client: client);
+      await service.grantRules((await service.rules()).rules);
+      final snapshots = <CinemaSearchResult>[];
+      final done = service.search('合成').forEach(snapshots.add);
+      await pumpEventQueue();
+      expect([for (final snapshot in snapshots) snapshot.pending], [2, 1]);
+      expect(snapshots.last.titles.single.sources, hasLength(1), reason: '先回来的已经显示');
+      slow.complete();
+      await done;
+      expect(snapshots.last.pending, 0);
+      expect(snapshots.last.titles.single.sources, hasLength(2));
+      await service.close();
+    });
+
+    test('同一个源连续失败三次就暂停半小时、不再去请求；重试立即恢复；成功一次清零', () async {
+      var now = DateTime.utc(2026, 11, 20, 8);
+      final asked = <String>[];
+      var down = true;
+      final client = MockClient((request) async {
+        asked.add(request.url.host);
+        if (request.url.host == 'beta.example.com' && down) return reply('', 502);
+        return reply(macCmsList([{'vod_id': 1, 'vod_name': '合成电影'}]), 200);
+      });
+      final service = await open(() async => packageBytes(), client: client, now: () => now);
+      await service.grantRules((await service.rules()).rules);
+      for (var round = 0; round < CinemaService.pauseAfter; round++) {
+        await service.search('合成').last;
+      }
+      asked.clear();
+      final paused = await service.search('合成').last;
+      expect(asked, ['alpha.example.com'], reason: '暂停着的不去请求');
+      expect(paused.failures.single.paused, isTrue);
+      expect(service.hasPaused, isTrue);
+      now = now.add(CinemaService.pauseFor);
+      asked.clear();
+      await service.search('合成').last;
+      expect(asked, contains('beta.example.com'), reason: '到点恢复');
+      service.resume();
+      down = false;
+      final recovered = await service.search('合成').last;
+      expect(recovered.failures, isEmpty);
+      await service.close();
+    });
+
+    test('片名目录型的源：片名 POST 给中转（不进地址）查编号，再把编号一次发给源取详情、按中转给的先后排；中转回的不合格整份不用', () async {
+      final requests = <http.Request>[];
+      var relayReply = jsonEncode({'ids': ['102', '101']});
+      final client = MockClient((request) async {
+        requests.add(request);
+        if (request.url.host == 'relay.example.com') return reply(relayReply, 200);
+        const names = {'101': '合成电影 第二季', '102': '合成电影'};
+        return reply(macCmsList([for (final id in request.url.queryParameters['ids']!.split(',')) {'vod_id': int.parse(id), 'vod_name': names[id], 'vod_year': '2020'}]), 200);
+      });
+      final service = await open(() async => packageBytes(rules: [macCmsRule('alpha', 'https://alpha.example.com/api.php')], catalogRules: [catalogRule('wsy', 'https://wsy.example.com/api.php/provide/vod/')]), client: client, relay: Uri.parse('https://relay.example.com'));
+      final wsy = (await service.rules()).rules.singleWhere((rule) => rule.catalog != null);
+      await service.grantRules([wsy]);
+      final result = await service.search('合成电影').last;
+      final relay = requests.first;
+      expect((relay.method, relay.url.path, relay.url.query), ('POST', '/v1/app/cinema/catalogs/wsy/search', ''));
+      expect(jsonDecode(relay.body), {'q': '合成电影'});
+      final detail = requests.last;
+      expect((detail.url.host, detail.url.queryParameters['ids'], detail.url.queryParameters.containsKey('wd')), ('wsy.example.com', '102,101', false));
+      expect([for (final title in result.titles) title.sources.single.source], ['102', '101']);
+      relayReply = jsonEncode({'ids': [for (var index = 0; index <= catalogHitLimit; index++) '$index']});
+      expect((await service.search('合成电影').last).failures.single.message, contains('看不懂'));
+      expect(() => decodeCatalogIds('{"ids":[""]}'), throwsA(isA<CinemaRuleException>()));
+      await service.close();
+    });
+
+    test('片名目录型的源在没配中转的包里用不了：列进暂不可用，不影响别的源', () async {
+      final client = MockClient((request) async => reply(macCmsList([{'vod_id': 1, 'vod_name': '合成电影'}]), 200));
+      final service = await open(() async => packageBytes(rules: [macCmsRule('alpha', 'https://alpha.example.com/api.php')], catalogRules: [catalogRule('wsy', 'https://wsy.example.com/api.php')]), client: client);
+      await service.grantRules((await service.rules()).rules);
+      final result = await service.search('合成').last;
+      expect(result.titles.single.sources.single.ruleId, 'alpha');
+      expect(result.failures.single.ruleId, 'wsy');
+      await service.close();
+    });
+
 
     test('选集与播放地址：没有可播线路报错；m3u8 经本机代理、mp4 直接播，都带规则的 UA、不带 Referer；清除数据删掉整个目录', () async {
       final client = MockClient((request) async => reply(

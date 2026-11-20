@@ -7,6 +7,7 @@ import 'package:http/http.dart' as http;
 import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/rollout.dart';
 import 'package:superxd/relay/relay_crypto.dart';
 
 // [人工决策-2026-10-04 16:44:36] 私信经自建加密中转送达（NestJS + MySQL + Redis）；测试期用国内服务器 IP，之后换正式域名，地址不写死。
@@ -66,9 +67,11 @@ class RelayException implements Exception {
 }
 
 class RelayResponse {
-  const RelayResponse(this.status, this.body);
+  const RelayResponse(this.status, this.body, {this.headers = const {}});
   final int status;
   final Map<String, Object?> body;
+  // 回复头（键是小写）；条件请求读 ETag。测试的假中转可以不给。
+  final Map<String, String> headers;
 }
 
 // 传输端口：生产用 HTTP，测试用内存假服务。
@@ -79,10 +82,12 @@ abstract interface class RelayTransport {
 }
 
 class HttpRelayTransport implements RelayTransport {
-  HttpRelayTransport(this.baseUrl, {http.Client? client, this.timeout = const Duration(seconds: 15)}) : _http = CampusHttp('relay', client: client);
+  HttpRelayTransport(this.baseUrl, {http.Client? client, this.timeout = const Duration(seconds: 15), this.signals}) : _http = CampusHttp('relay', client: client);
   final String baseUrl;
   final Duration timeout;
   final CampusHttp _http;
+  // 每条回复头里的灰度版本号报给它（人工决策见 domain/rollout.dart 的 RolloutSignals）；为空不报。
+  final RolloutSignals? signals;
 
   // 默认的响应上限，只防异常响应占满内存：中转的普通接口只回几个字段，最大的好友列表（500 个）约 30KB。
   static const responseLimit = 64 * 1024;
@@ -109,10 +114,11 @@ class HttpRelayTransport implements RelayTransport {
       if (!background) _log(route, RelayCode.network, error, stack);
       throw const RelayException(RelayCode.network);
     }
-    if (response.statusCode == 204 || response.bodyBytes.isEmpty) return RelayResponse(response.statusCode, const {});
+    signals?.observe(response.headers);
+    if (response.statusCode == 204 || response.bodyBytes.isEmpty) return RelayResponse(response.statusCode, const {}, headers: response.headers);
     try {
       final decoded = jsonDecode(utf8.decode(response.bodyBytes));
-      if (decoded is Map) return RelayResponse(response.statusCode, decoded.cast<String, Object?>());
+      if (decoded is Map) return RelayResponse(response.statusCode, decoded.cast<String, Object?>(), headers: response.headers);
       campusLog('[RelayTransport] action=request route=$route code=${RelayCode.badResponse} status=${response.statusCode} errorType=${decoded.runtimeType}');
     } on FormatException catch (error, stack) {
       _log(route, RelayCode.badResponse, error, stack, status: response.statusCode);
@@ -152,7 +158,11 @@ class RelayClient {
 
   // 用给定身份签名发一个请求，返回响应体；错误响应的其余字段放在 RelayException.detail。
   // timeout 为空用传输的默认值（长轮询另给）；limit 为空用传输的默认响应上限；background 见 RelayTransport。
-  Future<Map<String, Object?>> request(RelayIdentity identity, String method, String path, {Map<String, Object?>? payload, Duration? timeout, int? limit, bool background = false}) async {
+  Future<Map<String, Object?>> request(RelayIdentity identity, String method, String path, {Map<String, Object?>? payload, Duration? timeout, int? limit, bool background = false}) async =>
+      (await exchange(identity, method, path, payload: payload, timeout: timeout, limit: limit, background: background)).body;
+
+  // 同 request，另可加请求头（条件请求的 If-None-Match），返回整条回复：2xx 与 304（没变，回复体为空）算成功，其余同 request 抛 RelayException。
+  Future<RelayResponse> exchange(RelayIdentity identity, String method, String path, {Map<String, Object?>? payload, Duration? timeout, int? limit, bool background = false, Map<String, String> headers = const {}}) async {
     final body = payload == null ? <int>[] : utf8.encode(jsonEncode(payload));
     for (var attempt = 0;; attempt++) {
       final time = '${DateTime.now().millisecondsSinceEpoch + clockOffset}';
@@ -164,8 +174,9 @@ class RelayClient {
         'x-sxd-nonce': nonce,
         'x-sxd-signature': base64UrlNoPad(signature),
         'content-type': 'application/json',
+        ...headers,
       }, payload == null ? null : body, timeout: timeout, limit: limit, background: background);
-      if (response.status >= 200 && response.status < 300) return response.body;
+      if ((response.status >= 200 && response.status < 300) || response.status == 304) return response;
       final code = response.body['code'];
       if (code is! String) throw const RelayException(RelayCode.badResponse);
       final serverTime = response.body['serverTime'];

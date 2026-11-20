@@ -13,11 +13,14 @@ import 'package:superxd/domain/rollout.dart';
 // levelsOn 为假（联网偏好是仅本机，人工决策见 domain/network_policy.dart）时不取等级、按 Lv0 判定，已经因等级进了的批次照旧算。
 // 11-16 起（人工决策见 domain/rollout.dart 文件头 11-16 那条）：开关的条件（时间窗、平台、渠道、版本号、等级）都满足才按比例判定；
 // 登录着应用账号时同一时机问一次点名（targets，顺带账号建立的时刻，判 minAccountDays），点名的开关不看比例与条件、只看到期时刻，问到的记在本机（换账号从头记）。
+// 11-20 起改了立即生效（人工决策见 domain/rollout.dart 的 RolloutSignals）：回到前台时配置与点名都带上次的版本号核对（没变中转回 304），两次至少隔 checkGap；
+// 中转回复头里的版本号和本机记的不一样就马上重新取（signals，同一个版本号一次运行只触发一次）；积分等级照旧至少隔 refreshGap 才取。
 class Rollouts extends ChangeNotifier implements FeatureGate {
-  Rollouts({required this.memory, required this.channel, required this.platform, required this.versionCode, required this._accountId, this.feed, this.level, this.targets, bool Function()? levelsOn, DateTime Function()? now})
+  Rollouts({required this.memory, required this.channel, required this.platform, required this.versionCode, required this._accountId, this.feed, this.level, this.targets, RolloutSignals? signals, bool Function()? levelsOn, DateTime Function()? now})
     : _levelsOn = levelsOn ?? (() => true),
       _now = now ?? DateTime.now {
     addListener(() => _changes.add(null));
+    _signals = signals?.stream.listen(_observe);
   }
   final RolloutMemory memory;
   // 构建渠道（如 alpha），分批更新的开关名带上它，开关的 channels 条件也按它。
@@ -25,8 +28,8 @@ class Rollouts extends ChangeNotifier implements FeatureGate {
   // 平台（android、ios）与安装的版本号（构建号），开关的 platforms 与版本区间条件按它们。
   final String platform;
   final int versionCode;
-  // 当前应用账号被点名了哪些；没登录、没配中转时为空（照旧用本机记着的）。
-  final Future<RolloutTargets?> Function()? targets;
+  // 当前应用账号被点名了哪些（etag 是上次的版本号，为空问全量）；没登录、没配中转时为空（照旧用本机记着的）。
+  final Future<RolloutTargetsFetch?> Function(String? etag)? targets;
   // 没配中转时为空：只用本机存着的配置（一般是空的），开关都按各自的默认值。
   final RolloutFeed? feed;
   // 当前应用账号的积分等级；没登录或这次取不到为空（照旧用本机记着的）。没配中转时整个为空。
@@ -35,8 +38,14 @@ class Rollouts extends ChangeNotifier implements FeatureGate {
   final bool Function() _levelsOn;
   final DateTime Function() _now;
 
+  // 积分等级至少隔这么久取一次；配置与点名回到前台就核对，至少隔 checkGap（连着切前后台不重复问）。
   static const refreshGap = Duration(hours: 1);
-  bool _fetching = false;
+  static const checkGap = Duration(seconds: 30);
+  bool _fetching = false, _asking = false, _started = false;
+  DateTime? _checkedAt, _levelAt;
+  // 这次运行里已经为之重新取过的版本号：同一个不再触发（中转几个实例算得不同步时也不来回）。
+  final _seenConfig = <String>{}, _seenTargets = <String>{};
+  StreamSubscription<RolloutSignal>? _signals;
   final _changes = StreamController<void>.broadcast();
 
   // 配置、点名或等级变了发一次（同 notifyListeners），给百宝箱这类不依赖本层的页面用。
@@ -86,13 +95,47 @@ class Rollouts extends ChangeNotifier implements FeatureGate {
     return true;
   }
 
+  // 同意协议与政策后、回到前台时由组合根调：配置与点名带版本号核对，等级隔 refreshGap 取一次。
   Future<void> refresh() async {
-    final source = feed, fetchedAt = memory.fetchedAt;
-    if (source == null || _fetching || (fetchedAt != null && _now().difference(fetchedAt) < refreshGap)) return;
+    _started = true;
+    final now = _now(), checkedAt = _checkedAt;
+    if (feed == null || (checkedAt != null && now.difference(checkedAt) < checkGap)) return;
+    _checkedAt = now;
+    await _refreshConfig();
+    final levelAt = _levelAt;
+    if (levelAt == null || now.difference(levelAt) >= refreshGap) {
+      _levelAt = now;
+      await _refreshLevel();
+    }
+    await _refreshTargets(conditional: true);
+  }
+
+  // 回复头里的版本号：和本机记的不一样、这次运行还没为它取过，就马上重新取（同意协议与政策、第一次 refresh 之前不动）。
+  void _observe(RolloutSignal signal) {
+    if (!_started) return;
+    if (signal.config case final config? when config != memory.etag && _seenConfig.add(config)) {
+      campusLog('[Rollouts] action=signal part=config');
+      unawaited(_refreshConfig());
+    }
+    if (signal.targets case final targets? when _accountId() != null && targets != memory.targetsEtagOf(subject) && _seenTargets.add(targets)) {
+      campusLog('[Rollouts] action=signal part=targets');
+      unawaited(_refreshTargets(conditional: false));
+    }
+  }
+
+  // 取配置：带上次的版本号，没变只记一下时刻；失败照旧用上次的。同一时刻只取一次。
+  Future<void> _refreshConfig() async {
+    final source = feed;
+    if (source == null || _fetching) return;
     _fetching = true;
     try {
-      final config = await source.fetch();
-      await memory.save(config, _now());
+      final fetched = await source.fetch(etag: memory.etag);
+      final config = fetched.config;
+      if (config == null) {
+        campusLog('[Rollouts] action=refresh unchanged=true');
+        return;
+      }
+      await memory.save(config, _now(), etag: fetched.etag);
       campusLog('[Rollouts] action=refresh rules=${config.rules.length}');
       notifyListeners();
     } on RolloutException catch (error) {
@@ -102,28 +145,37 @@ class Rollouts extends ChangeNotifier implements FeatureGate {
     } finally {
       _fetching = false;
     }
-    await _refreshLevel();
-    await _refreshTargets();
   }
 
-  // 问一次点名：没登录或这次问不到时照旧用记着的；问到了（含空列表，即全撤销了）就记下，变了通知。
-  Future<void> _refreshTargets() async {
+  // 问一次点名：conditional 为真时带上次的版本号（没变什么都不做）；没登录或这次问不到时照旧用记着的；问到了（含空列表，即全撤销了）就记下，变了通知。
+  // 回复头触发的问全量：头里的版本号是那台设备的（私信设备与应用账号的密钥各记一份），拿它当条件可能对不上，问一次全量最稳。
+  Future<void> _refreshTargets({required bool conditional}) async {
     final source = targets;
-    if (source == null || _accountId() == null) return;
+    if (source == null || _accountId() == null || _asking) return;
     final subject = this.subject;
+    _asking = true;
     try {
-      final current = await source();
-      if (current == null || subject != this.subject) return;
+      final reply = await source(conditional ? memory.targetsEtagOf(subject) : null);
+      final current = reply?.targets;
+      if (reply == null || current == null || subject != this.subject) return;
       String signature(Iterable<RolloutTarget> flags, DateTime? created) => '${flags.map((target) => '${target.id}@${target.until}').join(',')}|$created';
       final before = signature(memory.targetsOf(subject), memory.accountCreatedOf(subject));
-      await memory.saveTargets(subject, current);
+      await memory.saveTargets(subject, current, etag: reply.etag);
       campusLog('[Rollouts] action=targets count=${current.flags.length}');
       if (signature(current.flags, current.accountCreatedAt) != before) notifyListeners();
     } on RolloutException catch (error) {
       campusLog('[Rollouts] action=targets errorType=RolloutException message=${error.message}');
     } catch (error, stack) {
       campusLog('[Rollouts] action=targets errorType=${error.runtimeType}\n$stack');
+    } finally {
+      _asking = false;
     }
+  }
+
+  @override
+  void dispose() {
+    unawaited(_signals?.cancel());
+    super.dispose();
   }
 
   // 删除了游乐场与积分的数据：记着的等级归零，不等下次取等级。

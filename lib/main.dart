@@ -143,6 +143,8 @@ void main() async {
   final developerOpen = DeveloperSettings.open(File(path.join(deviceOnly.path, 'developer.json')));
   // Android 10–14默认不绘制到导航栏后，透明导航栏会露出原生窗口底色（浅色为白条）；15+系统已强制全面屏。
   final edgeToEdge = SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
+  // 平时只竖屏：iOS 的 Info.plist 为电影院全屏列了横向，这里锁回竖屏（安卓清单本来就写竖屏；人工决策见两处）。
+  final portrait = SystemChrome.setPreferredOrientations(const [DeviceOrientation.portraitUp]);
   // 先登记前台、让正在后台自己跑的自动同步停下交还账号库，再开库（同一时刻只有一份引擎用账号库，人工决策见 app_background_sync.dart 文件头 11-19 那条）；
   // 开库时接管同一进程里旧引擎遗留的账号库连接、回滚停在中间的事务（人工决策见 local/account_store.dart 的 open）。
   final foregroundClaim = claimAccountStore();
@@ -161,7 +163,7 @@ void main() async {
   ensureCampusClock();
   configureCampusIcons();
   registerCampusLicenses();
-  await Future.wait<Object?>([splashOpen, developerOpen, edgeToEdge, storeOpen, displayOpen, glassLoad, databasesPath, networkOpen, legalOpen]);
+  await Future.wait<Object?>([splashOpen, developerOpen, edgeToEdge, portrait, storeOpen, displayOpen, glassLoad, databasesPath, networkOpen, legalOpen]);
   final (:launched, :painting, image: splashImage) = await splashOpen;
   final paintings = await paintingsOpen, developer = await developerOpen, store = await storeOpen, display = await displayOpen;
   final socialDirectory = await databasesPath, legal = await legalOpen;

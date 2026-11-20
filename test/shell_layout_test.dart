@@ -202,14 +202,21 @@ void main() {
     expect(tester.takeException(), isNull);
   }, variant: TargetPlatformVariant.only(TargetPlatform.iOS));
 
-  // [人工决策] 见 android/app/src/main/AndroidManifest.xml 的 MainActivity：横屏下悬浮底栏盖住约三分之一内容，安卓手机锁竖屏，同 iOS 只竖屏。
-  test('安卓主界面与 iOS 都只竖屏', () {
+  // [人工决策] 见 android/app/src/main/AndroidManifest.xml 的 MainActivity：横屏下悬浮底栏盖住约三分之一内容，安卓手机锁竖屏，同 iOS 只竖屏；
+  // 例外只有电影院播放器的全屏转真横屏（同处 11-20 那条）：iOS 的 Info.plist 竖屏打头、另列两种横向，启动时由 main.dart 锁回竖屏。
+  test('安卓主界面与 iOS 平时都只竖屏，只有电影院全屏转横屏', () {
     final manifest = File('android/app/src/main/AndroidManifest.xml').readAsStringSync();
     final activity = RegExp(r'<activity\s[^>]*android:name="\.MainActivity"[^>]*>').firstMatch(manifest)!.group(0)!;
     expect(activity, contains('android:screenOrientation="portrait"'));
     final plist = File('ios/Runner/Info.plist').readAsStringSync();
     final orientations = RegExp(r'<key>UISupportedInterfaceOrientations</key>\s*<array>([\s\S]*?)</array>').firstMatch(plist)!.group(1)!;
-    expect(RegExp(r'<string>(\w+)</string>').allMatches(orientations).map((match) => match.group(1)), ['UIInterfaceOrientationPortrait']);
+    expect(RegExp(r'<string>(\w+)</string>').allMatches(orientations).map((match) => match.group(1)), ['UIInterfaceOrientationPortrait', 'UIInterfaceOrientationLandscapeLeft', 'UIInterfaceOrientationLandscapeRight']);
+    expect(File('lib/main.dart').readAsStringSync(), contains('setPreferredOrientations(const [DeviceOrientation.portraitUp])'));
+    final landscapeCallers = [
+      for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart')))
+        if (file.readAsStringSync().contains('DeviceOrientation.landscape')) file.path.replaceAll(r'\', '/'),
+    ];
+    expect(landscapeCallers, ['lib/toolbox/cinema/cinema_player_page.dart']);
   });
 
   // [人工决策] 见 lib/page/animated_branches.dart：iOS 上切分支直接到位，安卓照旧两页并排滑动。

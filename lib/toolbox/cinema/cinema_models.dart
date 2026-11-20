@@ -55,15 +55,19 @@ class CinemaRoad {
 
 // 一个源搜失败了：哪个源、给用户看的原因。
 class CinemaFailure {
-  const CinemaFailure({required this.ruleId, required this.message});
+  const CinemaFailure({required this.ruleId, required this.message, this.paused = false});
   final String ruleId;
   final String message;
+  // 连续失败暂停着、这次没去搜（CinemaService.pauseAfter）。
+  final bool paused;
 }
 
+// 边搜边给的一份快照：哪个源先回来先合进去，pending 是还没回来的源数，0 就是搜完了。
 class CinemaSearchResult {
-  const CinemaSearchResult({required this.titles, required this.failures});
+  const CinemaSearchResult({required this.titles, required this.failures, this.pending = 0});
   final List<CinemaTitle> titles;
   final List<CinemaFailure> failures;
+  final int pending;
 }
 
 // 看过的一部片（本机 cinema.db，最多 cinemaHistoryLimit 条）：接着看用哪个源、哪条线路、第几集、看到哪。
@@ -97,14 +101,17 @@ class CinemaHistory {
 
 // 聚合键：片名去掉空白、全角折成半角、转小写，加「|」加四位年份（没有年份为空）。交接原版用 NFKC，Dart 没有现成的规范化，
 // 这里只折全角 ASCII 与全角空格（交接的测试向量都在这个范围），其余写法不同的当成两部片，不会误合并。
-String cinemaTitleKey(String name, String year) {
+String cinemaTitleKey(String name, String year) => '${cinemaFold(name)}|${cinemaYear(year)}';
+
+// 片名的折叠写法：去空白、全角折半角、小写。聚合键用，中转的片名目录按同样的写法折叠（服务端 cinema_catalog_source.ts 的 cinemaFold）。
+String cinemaFold(String name) {
   final buffer = StringBuffer();
   for (final rune in name.runes) {
     final folded = rune == 0x3000 ? 0x20 : (rune >= 0xFF01 && rune <= 0xFF5E ? rune - 0xFEE0 : rune);
     final char = String.fromCharCode(folded);
     if (char.trim().isNotEmpty) buffer.write(char.toLowerCase());
   }
-  return '$buffer|${cinemaYear(year)}';
+  return buffer.toString();
 }
 
 String cinemaYear(String raw) => RegExp(r'^\d{4}$').hasMatch(raw.trim()) ? raw.trim() : '';

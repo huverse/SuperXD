@@ -123,6 +123,8 @@
         </provider>
         <!-- [人工决策-2026-11-10 18:47:56] 安卓手机锁竖屏（用户选定「锁竖屏」，没选「做横屏适配」）：横屏下悬浮底栏盖住约三分之一内容、卡片被拉满，
              iOS 本来就只竖屏。Android 16 起系统对大屏设备（平板、折叠屏展开）会忽略这个属性、照样能横过来，属正常（test/shell_layout_test.dart 守护）。 -->
+        <!-- [人工决策-2026-11-20 16:53:46] 例外只有电影院播放器的全屏（用户选定「全屏时真横屏」）：横片全屏时经 SystemChrome.setPreferredOrientations 转成横屏，
+             退出全屏马上回到竖屏（lib/toolbox/cinema/cinema_player_page.dart）；这里照旧写竖屏，平时的界面不受影响。 -->
         <activity
             android:name=".MainActivity"
             android:screenOrientation="portrait"

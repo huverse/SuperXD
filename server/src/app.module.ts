@@ -33,6 +33,7 @@ import { RewardModule } from 'src/modules/reward/reward.module';
 import { AccountUnlockEntity } from 'src/modules/unlock/unlock.entity';
 import { FlagTargetModule } from 'src/modules/flag_target/flag_target.module';
 import { PassModule } from 'src/modules/pass/pass.module';
+import { CinemaCatalogModule } from 'src/modules/cinema_catalog/cinema_catalog.module';
 import { UnlockModule } from 'src/modules/unlock/unlock.module';
 
 @Module({
@@ -74,6 +75,7 @@ import { UnlockModule } from 'src/modules/unlock/unlock.module';
     ChallengeModule,
     UnlockModule,
     PassModule,
+    CinemaCatalogModule,
     FlagTargetModule,
     LeisureModule,
   ],
