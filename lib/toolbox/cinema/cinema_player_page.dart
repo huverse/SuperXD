@@ -136,7 +136,15 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         // 换集、重新载入时上一个视频晚到的错误不算这一次的（见 _currentMedia）。
         if (!_currentMedia) return;
         _record(ok: false);
-        if (mounted) setState(() => _error = '播放出错，可以重新载入或换个源');
+        // 出错就结束这一次打开（首帧前出错也一样）：收起加载与缓冲提示、放开换源；还在等的旧请求照旧由 _cancel 取消。
+        _slowTimer?.cancel();
+        if (mounted) {
+          setState(() {
+            _error = '播放出错，可以重新载入或换个源';
+            _opening = false;
+            _slow = false;
+          });
+        }
       }))
       ..add(_player.stream.position.listen((position) {
         // 只认这一次交给播放器的媒体：重新载入时旧视频还在播，它的进度不能把这次记成播成、也不能收起加载动画。
@@ -271,10 +279,10 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     }
   }
 
-  // 记下看到哪（只在找片里）；出错只记日志，不打扰播放。进度还没动（打开中、没打开成）时不记，免得接着看的位置被 0 盖掉。
+  // 记下看到哪（只在找片里）；出错只记日志，不打扰播放。进度还没动（打开中、没打开成、出错了）时不记，免得接着看的位置被 0 盖掉。
   Future<void> _save() async {
     final title = widget.title, source = _source, episode = _current;
-    if (title == null || source == null || episode == null || _opening) return;
+    if (title == null || source == null || episode == null || _opening || _error != null) return;
     final state = _player.state;
     try {
       await widget.service.store.saveHistory(CinemaHistory(
@@ -320,6 +328,12 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     }
     _cancel?.complete();
     final cancel = _cancel = Completer<void>();
+    // 没换成时还原：原来出错的仍显示出错（能重新载入），不留一块既不转圈也不报错的黑屏。
+    final previousError = _error;
+    void stay() => setState(() {
+      _opening = false;
+      _error = previousError;
+    });
     setState(() {
       _opening = true;
       _error = null;
@@ -343,17 +357,17 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         return;
       }
       if (mounted) {
-        setState(() => _opening = false);
+        stay();
         showCampusToast(context, '这个源没有「$name」');
       }
     } on CinemaRuleException catch (error) {
       if (mounted) {
-        setState(() => _opening = false);
+        stay();
         showCampusToast(context, error.message);
       }
     } on CinemaHttpException catch (error) {
       if (mounted) {
-        setState(() => _opening = false);
+        stay();
         showCampusToast(context, '这个源${error.message}');
       }
     } on http.RequestAbortedException {
