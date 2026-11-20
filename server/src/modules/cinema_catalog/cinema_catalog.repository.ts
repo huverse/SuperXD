@@ -33,8 +33,8 @@ export class TypeormCinemaCatalogRepository extends CinemaCatalogRepository {
   async search(ruleId: string, folded: string, limit: number) {
     const rows = (
       [...folded].length < 2
-        ? // 优化器把前缀命中的行数估高、嫌回表贵，会改走 (rule_id, source) 把整个源扫一遍（6 万行合成数据实测 49 毫秒，强制走前缀索引 6 毫秒），所以写明索引。
-          await this.catalog.query('SELECT source FROM cinema_catalog FORCE INDEX (idx_cinema_catalog_prefix) WHERE rule_id = ? AND folded LIKE ? ORDER BY folded = ? DESC, CHAR_LENGTH(folded), id LIMIT ?', [ruleId, `${escapeLike(folded)}%`, folded, limit])
+        ? // 按 (rule_id, head, folded_length) 索引的顺序直接取前几条，不排序（见 sql/upgrade_2026_11_20b.sql）；片名就是这个字的长度为 1，排最前。
+          await this.catalog.query('SELECT source FROM cinema_catalog FORCE INDEX (idx_cinema_catalog_head) WHERE rule_id = ? AND head = ? ORDER BY folded_length, id LIMIT ?', [ruleId, folded, limit])
         : await this.catalog.query(
             'SELECT source FROM cinema_catalog WHERE rule_id = ? AND MATCH(folded) AGAINST(? IN BOOLEAN MODE) ORDER BY folded = ? DESC, folded LIKE ? DESC, CHAR_LENGTH(folded), id LIMIT ?',
             [ruleId, `"${folded.replace(/"/g, '')}"`, folded, `${escapeLike(folded)}%`, limit],
@@ -82,8 +82,7 @@ export class TypeormCinemaCatalogRepository extends CinemaCatalogRepository {
       if (result.affectedRows < cleanupBatch) break;
     }
     // InnoDB 的全文索引把删掉的行留在待清理列表里，之后每次全文搜索都要滤一遍（测试库删了 6 万行后，一次搜索连同请求从约 1 毫秒变成二十多毫秒）。
-    // 拿掉一个源很少发生，删了行就重建一次表：带全文索引的表重建时照常能读、写入要等（写入只来自这个定时任务自己）。
-    if (removed > 0) await this.catalog.query('OPTIMIZE TABLE cinema_catalog');
+    // 不在这里自动重建表：带全文索引的表 OPTIMIZE 会整表复制、工作量随剩下的全表走，放进定时清理不合适；删了行时记日志，由维护者挑低峰手动执行（见 server/README.md）。
     return removed;
   }
 }

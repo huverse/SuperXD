@@ -20,7 +20,7 @@
 ### 开发
 - 中转：新模块 cinema_catalog（表 cinema_catalog 与 cinema_catalog_state，ngram 全文索引，升级文件 sql/upgrade_2026_11_20.sql；POST /v1/app/cinema/catalogs/:id/search；每小时抢锁抓片名，抓全可断点续抓）与对外请求封装 common/outbound_http.ts；ConfigRevision（x-sxd-config）、鉴权顺带读 flag_targets_rev（x-sxd-targets）、/v1/app/flags、/v1/app/rollout 与 /v1/flags/mine 的条件请求。
 - iOS 的 Info.plist 另列两种横向（只给电影院全屏用），启动时 setPreferredOrientations 锁回竖屏。
-- 中转：无水印资源的单字搜索只找片名开头的、走前缀索引（sql/upgrade_2026_11_20b.sql，线上 5 万行从全扫 90 毫秒降到毫秒级）；拿掉目录型源后重建表。
+- 中转：无水印资源的单字搜索只找片名开头的，按首字与长度两个生成列的索引直接取前 20 条、不排序（sql/upgrade_2026_11_20b.sql；6 万行里 3 万行同首字时只读 20 行、0.08 毫秒，原来全扫约 90 毫秒）；拿掉目录型源后记日志，由维护者低峰手动 OPTIMIZE。
 - 中转：片名目录抓全一轮按 40 分钟预算跑、到点下一轮接着抓，锁 55 分钟（上游深分页越往后越慢，按页数限的第一轮跑了近 3 小时、超过锁的时限）；片名目录模块恢复项目原有的代码格式。
 - 中转镜像流水线的试运行先按 sql/schema.sql 建表（同线上：部署时先升级表结构再换镜像），启动就查表的服务才起得来。
 
