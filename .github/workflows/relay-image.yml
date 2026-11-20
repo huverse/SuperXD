@@ -66,6 +66,8 @@ jobs:
           VERSION: ${{ steps.build.outputs.version }}
         run: |
           set -euo pipefail
+          # 线上库总有表结构（部署时台账先升级、再换镜像）：试运行同样先按 schema.sql 建表，启动就要查表的服务（灰度配置的版本号 ConfigRevision 查自动暂停）才起得来。
+          mysql -h 127.0.0.1 -P 3306 -usuperxd -pcheck superxd_relay < server/sql/schema.sql
           docker run -d --name relay-check --network host \
             -e RELAY_PORT=8080 -e RELAY_TRUST_PROXY=0 -e RELAY_SWAGGER=false -e RELAY_RELEASES_DIR=/tmp -e RELAY_DIAGNOSTICS_DIR=/srv/diagnostics -e RELAY_BUSINESS_TIME_ZONE=Asia/Shanghai \
             -e MYSQL_HOST=127.0.0.1 -e MYSQL_PORT=3306 -e MYSQL_USER=superxd -e MYSQL_PASSWORD=check -e MYSQL_DATABASE=superxd_relay \
