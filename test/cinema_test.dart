@@ -15,15 +15,19 @@ import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/toolbox/cinema/cinema_catalog.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
+import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
+import 'package:superxd/toolbox/cinema/cinema_page.dart';
 import 'package:superxd/toolbox/cinema/cinema_playlist.dart';
 import 'package:superxd/toolbox/cinema/cinema_proxy.dart';
 import 'package:superxd/toolbox/cinema/cinema_rule.dart';
 import 'package:superxd/toolbox/cinema/cinema_rule_engine.dart';
 import 'package:superxd/toolbox/cinema/cinema_service.dart';
 import 'package:superxd/toolbox/cinema/cinema_store.dart';
+import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
+import 'package:superxd/toolbox/toolbox_runtime.dart';
 
 import 'toolbox_test_support.dart';
 
@@ -945,6 +949,49 @@ void main() {
       expect(featureFlags, contains(cinemaFlag));
       expect((cinemaFlag.id, cinemaFlag.fallback), ('toolbox.cinema', false));
     });
+
+    testWidgets('解析在开关 toolbox.cinema.parse 后面（默认关）：关着只有找片、没有切换，开着才有，页面开着时被关掉就回到找片', (tester) async {
+      expect(featureFlags, contains(cinemaParseFlag));
+      expect((cinemaParseFlag.id, cinemaParseFlag.fallback), ('toolbox.cinema.parse', false));
+      final fixture = ToolboxFixture();
+      await tester.runAsync(fixture.initialize);
+      addTearDown(() => tester.runAsync(fixture.close));
+      final service = (await tester.runAsync(
+        () => CinemaService.open(
+          ToolboxServiceContext(base: fixture.directory, store: fixture.store, downloads: fixture.manager),
+          feed: CinemaRulesFeed(fetch: () async => Uint8List.fromList(packageBytes()), versionCode: () async => 40),
+          http: CinemaHttp(client: MockClient((request) async => reply('', 404))),
+        ),
+      ))!;
+      addTearDown(() => tester.runAsync(service.close));
+      Future<void> show(FeatureGate? features) async {
+        final runtime = ToolboxRuntime.testing(catalog: toolboxCatalog, store: fixture.store, downloads: fixture.manager, services: {CinemaService.serviceId: service}, features: features);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: CinemaPage(runtime: runtime)));
+        for (var index = 0; index < 20 && find.text('片名').evaluate().isEmpty; index++) {
+          await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
+          await tester.pump();
+        }
+      }
+
+      for (final features in [null, _Gate({})]) {
+        await show(features);
+        expect(find.text('片名'), findsOneWidget);
+        expect(find.text('解析'), findsNothing);
+        expect(find.text('找片'), findsNothing);
+      }
+      final gate = _Gate({cinemaParseFlag.id});
+      await show(gate);
+      await tester.tap(find.text('解析'));
+      await tester.pump();
+      expect(find.text('视频页面地址'), findsOneWidget);
+      gate.turn(cinemaParseFlag.id, enabled: false);
+      await tester.pump();
+      expect(find.text('解析'), findsNothing);
+      expect(find.text('视频页面地址'), findsNothing);
+      expect(find.text('片名'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
   });
 }
 
@@ -953,8 +1000,14 @@ class _RealHttp extends HttpOverrides {}
 class _Gate implements FeatureGate {
   _Gate(this.on);
   final Set<String> on;
+  final _changes = StreamController<void>.broadcast(sync: true);
+  void turn(String id, {required bool enabled}) {
+    enabled ? on.add(id) : on.remove(id);
+    _changes.add(null);
+  }
+
   @override
   bool isOn(FeatureFlag flag) => on.contains(flag.id);
   @override
-  Stream<void> get changes => const Stream.empty();
+  Stream<void> get changes => _changes.stream;
 }

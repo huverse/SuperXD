@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/course_occurrence.dart';
+import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/domain/pass.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/toolbox/download/channel_file_publisher.dart';
@@ -82,6 +83,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.cinemaRules,
     this.versionCode,
     this.passes,
+    this.features,
   });
   ToolboxRuntime.testing({
     required this.catalog,
@@ -97,6 +99,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.cinemaRules,
     this.versionCode,
     this.passes,
+    this.features,
     // 外部已经打开好的服务（测试直接给实例）：runtime 只代为转交，不负责关闭。
     Map<String, ToolboxService>? services,
     // 给了目录时按注册表的 openService 真的打开服务（测清除后重开、打开失败重试）。
@@ -123,6 +126,8 @@ class ToolboxRuntime with WidgetsBindingObserver {
   final Future<int> Function()? versionCode;
   // 积分时长券（人工决策见 domain/pass.dart）：要用积分换时长的工具（电影院）按它拦；为空（没配中转、测试）都不拦。
   final PassAccess? passes;
+  // 功能开关（domain/feature_flags.dart 登记）：工具里灰度中的一部分（如电影院的解析）按它问；为空（没配中转、测试）当都关。
+  final FeatureGate? features;
   final ToolboxCatalog catalog;
   late final List<ToolboxModule> modules = catalog(this);
 

@@ -6,6 +6,7 @@ import 'package:go_router/go_router.dart';
 
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/domain/pass.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
 import 'package:superxd/theme/campus_icons.dart';
@@ -32,6 +33,7 @@ import 'package:superxd/toolbox/toolbox_url.dart';
 enum _Mode { search, parse }
 
 // 电影院首页：找片（多源搜索、按片名加年份聚合，没搜时列看过的）与解析（视频网站播放页地址 → 云解析 → 播放）。
+// 解析在功能开关 cinemaParseFlag 后面（人工决策见 domain/feature_flags.dart），关着时只有找片、不显示切换。
 // 第一次搜、第一次解析前征得同意：片名与播放页地址会直接发给第三方站点（新加的源、换了主机的要重新同意）。
 class CinemaPage extends StatefulWidget {
   const CinemaPage({super.key, required this.runtime});
@@ -56,12 +58,19 @@ class _CinemaPageState extends State<CinemaPage> {
   Completer<void>? _cancel;
   var _generation = 0;
   StreamSubscription<void>? _passChanges;
+  StreamSubscription<void>? _featureChanges;
   var _buying = false;
+
+  // 解析开着才有两段可切；关着（含页面开着时被关掉）一律是找片。
+  _Mode get _shown => widget.runtime.features?.isOn(cinemaParseFlag) == true ? _mode : _Mode.search;
 
   @override
   void initState() {
     super.initState();
     _passChanges = widget.runtime.passes?.changes.listen((_) {
+      if (mounted) setState(() {});
+    });
+    _featureChanges = widget.runtime.features?.changes.listen((_) {
       if (mounted) setState(() {});
     });
   }
@@ -249,6 +258,7 @@ class _CinemaPageState extends State<CinemaPage> {
   @override
   void dispose() {
     unawaited(_passChanges?.cancel());
+    unawaited(_featureChanges?.cancel());
     _cancel?.complete();
     _query.dispose();
     _link.dispose();
@@ -291,7 +301,7 @@ class _CinemaPageState extends State<CinemaPage> {
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                       sliver: SliverToBoxAdapter(child: _header(context)),
                     ),
-                    if (_mode == _Mode.search) ..._searchSlivers(context),
+                    if (_shown == _Mode.search) ..._searchSlivers(context),
                     const SliverToBoxAdapter(child: SizedBox(height: CampusGap.section)),
                   ],
                 ),
@@ -335,20 +345,23 @@ class _CinemaPageState extends State<CinemaPage> {
 
   Widget _header(BuildContext context) {
     final palette = CampusPalette.of(context);
+    final shown = _shown;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        CampusSegmented<_Mode>(
-          values: _Mode.values,
-          label: (mode) => mode == _Mode.search ? '找片' : '解析',
-          selected: _mode,
-          onSelected: _searching || _parsing ? null : (mode) => setState(() {
-            _mode = mode;
-            _message = null;
-          }),
-        ),
-        const SizedBox(height: CampusGap.medium),
-        if (_mode == _Mode.search)
+        if (widget.runtime.features?.isOn(cinemaParseFlag) == true) ...[
+          CampusSegmented<_Mode>(
+            values: _Mode.values,
+            label: (mode) => mode == _Mode.search ? '找片' : '解析',
+            selected: shown,
+            onSelected: _searching || _parsing ? null : (mode) => setState(() {
+              _mode = mode;
+              _message = null;
+            }),
+          ),
+          const SizedBox(height: CampusGap.medium),
+        ],
+        if (shown == _Mode.search)
           Row(
             children: [
               Expanded(child: CampusSearchField(controller: _query, hint: '片名', enabled: !_searching, onSubmitted: (_) => _search())),
