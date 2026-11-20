@@ -289,6 +289,34 @@ void main() {
       // 不开去广告原样保留。
       expect(cinemaRewritePlaylist(media, Uri.parse('https://cdn.example.com/v/'), playlist: (uri) => '$uri', media: (uri) => uri.pathSegments.last), contains('ad0.ts'));
     });
+
+    test('去广告后初始化段的加密状态不变：明文初始化段的 MAP 仍在 KEY 前面，加密的仍在后面，去掉段里的密钥不套到明文初始化段上', () {
+      final segments = [for (var index = 0; index < 30; index++) '#EXTINF:10,\nmain$index.m4s'].join('\n');
+      String filtered(String main) => cinemaRewritePlaylist(
+        '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-KEY:METHOD=AES-128,URI="ad.key"\n#EXTINF:5,\nad0.ts\n#EXT-X-DISCONTINUITY\n$main\n$segments\n#EXT-X-ENDLIST\n',
+        Uri.parse('https://cdn.example.com/v/'),
+        playlist: (uri) => '$uri',
+        media: (uri) => uri.pathSegments.last,
+        adBlocker: true,
+      );
+      const head = '#EXTM3U\n#EXT-X-TARGETDURATION:10\n';
+      const main = '#EXT-X-DISCONTINUITY\n#EXTINF:10,\nmain0.m4s\n';
+      // 明文初始化段、加密分片：原清单先写 METHOD=NONE 再写 MAP，去掉广告后照旧是明文状态下的 MAP。
+      expect(filtered('#EXT-X-KEY:METHOD=NONE\n#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"'), startsWith('$head#EXT-X-KEY:METHOD=NONE\n#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n$main'));
+      // 加密的初始化段：KEY 在 MAP 前面。
+      expect(filtered('#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n#EXT-X-MAP:URI="init.mp4"'), startsWith('$head#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n#EXT-X-MAP:URI="init.mp4"\n$main'));
+      // 整份清单第一个密钥之前的 MAP 是明文：去掉开头的广告后，MAP 仍写在密钥前面。
+      final plain = cinemaRewritePlaylist(
+        '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:5,\nad0.ts\n#EXT-X-DISCONTINUITY\n#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n$segments\n#EXT-X-ENDLIST\n',
+        Uri.parse('https://cdn.example.com/v/'),
+        playlist: (uri) => '$uri',
+        media: (uri) => uri.pathSegments.last,
+        adBlocker: true,
+      );
+      expect(plain, startsWith('$head#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n$main'));
+      expect(plain, isNot(contains('ad0.ts')));
+      expect('#EXT-X-MAP'.allMatches(plain), hasLength(1));
+    });
   });
 
   group('云解析', () {
