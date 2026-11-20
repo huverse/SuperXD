@@ -19,7 +19,7 @@ const cinemaPlaylistMaxBytes = 8 * 1024 * 1024;
 const cinemaApiTimeout = Duration(seconds: 15);
 const cinemaParseTimeout = Duration(seconds: 30);
 const cinemaPlaylistTimeout = Duration(seconds: 25);
-// 本机代理自己跟跳转（要拿到最终地址补全清单里的相对路径），最多跳这么多次。
+// 本机代理自己跟跳转（要拿到最终地址补全清单里的相对路径），最多跳这么多次；各跳共用一个总时限（timeout 管整串，不是每跳重新计）。
 const cinemaRedirectLimit = 5;
 
 class CinemaHttpException implements Exception {
@@ -76,17 +76,23 @@ class CinemaHttp {
   }
 
   // 本机代理取播放清单或探一下分片：自己跟跳转、只认 http(s)，返回最终地址与状态码（不因 4xx 抛错，调用方自己看）。
-  Future<CinemaFetched> fetch(Uri uri, Map<String, String> headers, {int limit = cinemaPlaylistMaxBytes, Duration timeout = cinemaPlaylistTimeout, String? range}) async {
+  // timeout 是整串跳转共用的总时限；cancel 完成即中断，抛 http.RequestAbortedException。
+  Future<CinemaFetched> fetch(Uri uri, Map<String, String> headers, {int limit = cinemaPlaylistMaxBytes, Duration timeout = cinemaPlaylistTimeout, String? range, Future<void>? cancel}) async {
+    final watch = Stopwatch()..start();
     var current = uri;
     for (var hop = 0; hop <= cinemaRedirectLimit; hop++) {
       if (!(current.isScheme('http') || current.isScheme('https')) || current.host.isEmpty) throw const CinemaHttpException('地址不对');
+      final left = timeout - watch.elapsed;
+      if (left <= Duration.zero) throw const CinemaHttpException('超时');
       final http.Response response;
       try {
-        response = await _http.send('GET', current, timeout: timeout, limit: limit, followRedirects: false, headers: {...headers, 'range': ?range});
+        response = await _http.send('GET', current, timeout: left, limit: limit, followRedirects: false, headers: {...headers, 'range': ?range}, cancel: cancel);
       } on TimeoutException {
         throw const CinemaHttpException('超时');
       } on CampusHttpTooLarge {
         throw const CinemaHttpException('回复太大');
+      } on http.RequestAbortedException {
+        rethrow;
       } catch (error, stack) {
         campusLog('[Cinema] action=fetch errorType=${error.runtimeType}\n$stack');
         throw const CinemaHttpException('连不上');
@@ -102,4 +108,32 @@ class CinemaHttp {
   }
 
   void close() => _http.close();
+}
+
+// 几处共用的一次请求（同一部片的选集、同一份播放清单、同一个主机的探测）：每个消费者各自可以不等了（自己的 cancel 完成即抛
+// http.RequestAbortedException，不影响别的消费者）；所有消费者都不等了才中断底层请求（run 拿到的 abort 完成），只剩一个页面在等时不会被别的页面误伤。
+class CinemaShared<T> {
+  CinemaShared(Future<T> Function(Future<void> abort) run) {
+    _future = run(_abort.future)..ignore();
+  }
+  final _abort = Completer<void>();
+  late final Future<T> _future;
+  var _waiting = 0;
+
+  // 还能接着等：没人等了（被放弃或已经结束）就别再接，另起一次（结束的结果调用方已经缓存了）。
+  bool get live => !_abort.isCompleted;
+
+  // 请求结束（成败都算），调用方据此把它从「正在取」里拿掉。
+  Future<void> get settled => _future.then((_) {}, onError: (Object _) {});
+
+  Future<T> wait(Future<void>? cancel) async {
+    _waiting++;
+    try {
+      if (cancel == null) return await _future;
+      return await Future.any([_future, cancel.then<T>((_) => throw http.RequestAbortedException())]);
+    } finally {
+      _waiting--;
+      if (_waiting == 0 && !_abort.isCompleted) _abort.complete();
+    }
+  }
 }

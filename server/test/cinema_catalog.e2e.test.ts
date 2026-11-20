@@ -100,7 +100,7 @@ afterAll(async () => {
 });
 
 describe('片名目录', () => {
-  it('第一次抓全（@hours 填大数、逐页取完），搜索完全一样的在前、开头一样的其次、短的在前；英文与全角按折叠写法认；一个字退回 LIKE', async () => {
+  it('第一次抓全（@hours 填大数、逐页取完），搜索完全一样的在前、开头一样的其次、短的在前；英文与全角按折叠写法认；一个字只找片名开头的', async () => {
     const now = new Date('2026-11-20T08:00:00Z');
     await app.get(CinemaCatalogService).sync(now);
     expect(requests.map((query) => [query.get('h'), query.get('pg')])).toEqual([
@@ -115,7 +115,8 @@ describe('片名目录', () => {
     expect(found.status).toBe(200);
     expect(found.body.ids).toEqual(['102', '101', '105']);
     expect((await search(' the boys ')).body.ids).toEqual(['103']);
-    expect((await search('生')).body.ids).toEqual(['104']);
+    expect((await search('余')).body.ids).toEqual(['104']);
+    expect((await search('生')).body.ids, '单字不找片名中间的').toEqual([]);
     expect((await search('没有这部')).body.ids).toEqual([]);
   });
 

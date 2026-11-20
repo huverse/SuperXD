@@ -7,9 +7,14 @@ import 'package:superxd/toolbox/cinema/cinema_models.dart';
 // 电影院自己的本机库 cinema.db（设备级，清除数据时整库删掉）：
 // - package：上次验签通过的规则包载荷（只留一份，拉不到新的就照旧用它）；
 // - consent：用过哪些源与云解析（按规则 id 与接口主机记，换了主机或新加的源要重新同意）；
-// - history：看过的片与看到哪，最多 cinemaHistoryLimit 条、超过 cinemaHistoryLifetime 没再看的删掉。
+// - history：看过的片与看到哪，最多 cinemaHistoryLimit 条、超过 cinemaHistoryLifetime 没再看的删掉；
+// - source_stat（第 2 版起）：各片源最近一次播成、没播成的时刻与播成那次的首帧用时（选集页排片源与标注用，人工决策见 cinema_service.dart 的 recordPlayback），
+//   每个源一行（行数不超过规则包里的源数），超过 cinemaSourceStatLifetime 没再播的删掉。
 const cinemaHistoryLimit = 50;
 const cinemaHistoryLifetime = Duration(days: 180);
+const cinemaSourceStatLifetime = Duration(days: 30);
+
+const _createSourceStat = 'CREATE TABLE source_stat (rule_id TEXT PRIMARY KEY, ok_at INTEGER, fail_at INTEGER, first_frame_ms INTEGER, updated_at INTEGER NOT NULL)';
 
 class CinemaStore {
   CinemaStore._(this._database);
@@ -20,8 +25,11 @@ class CinemaStore {
     await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: 2,
         rollbackActiveTransactionOnOpen: true,
+        onUpgrade: (database, from, _) async {
+          if (from < 2) await database.execute(_createSourceStat);
+        },
         onCreate: (database, _) async {
           await database.execute('CREATE TABLE package (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL, payload BLOB NOT NULL, fetched_at INTEGER NOT NULL)');
           await database.execute('CREATE TABLE consent (subject TEXT PRIMARY KEY, version TEXT NOT NULL)');
@@ -29,6 +37,7 @@ class CinemaStore {
             'CREATE TABLE history (key TEXT PRIMARY KEY, name TEXT NOT NULL, cover TEXT NOT NULL, rule_id TEXT NOT NULL, source TEXT NOT NULL, road INTEGER NOT NULL, episode INTEGER NOT NULL, episode_name TEXT NOT NULL, position_ms INTEGER NOT NULL, duration_ms INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
           );
           await database.execute('CREATE INDEX history_time ON history (updated_at DESC)');
+          await database.execute(_createSourceStat);
         },
       ),
     ),
@@ -93,6 +102,27 @@ class CinemaStore {
 
   Future<void> deleteHistory(String key) async {
     await _database.delete('history', where: 'key = ?', whereArgs: [key]);
+  }
+
+  // 各片源最近的播放结果；先删掉超过 cinemaSourceStatLifetime 没再播的。
+  Future<Map<String, CinemaSourceStat>> sourceStats(DateTime now) async {
+    await _database.delete('source_stat', where: 'updated_at < ?', whereArgs: [now.toUtc().subtract(cinemaSourceStatLifetime).millisecondsSinceEpoch]);
+    DateTime? time(Object? value) => value == null ? null : DateTime.fromMillisecondsSinceEpoch(value as int, isUtc: true);
+    return {
+      for (final row in await _database.query('source_stat'))
+        row['rule_id'] as String: CinemaSourceStat(okAt: time(row['ok_at']), failAt: time(row['fail_at']), firstFrame: row['first_frame_ms'] == null ? null : Duration(milliseconds: row['first_frame_ms'] as int)),
+    };
+  }
+
+  // 记一次播放：播成了记时刻与首帧用时，没播成只记时刻（另一项留着）。
+  Future<void> recordPlayback(String ruleId, {required bool ok, Duration? firstFrame, required DateTime at}) async {
+    final time = at.toUtc().millisecondsSinceEpoch;
+    await _database.execute(
+      ok
+          ? 'INSERT INTO source_stat (rule_id, ok_at, first_frame_ms, updated_at) VALUES (?, ?, ?, ?) ON CONFLICT(rule_id) DO UPDATE SET ok_at = excluded.ok_at, first_frame_ms = excluded.first_frame_ms, updated_at = excluded.updated_at'
+          : 'INSERT INTO source_stat (rule_id, fail_at, updated_at) VALUES (?, ?, ?) ON CONFLICT(rule_id) DO UPDATE SET fail_at = excluded.fail_at, updated_at = excluded.updated_at',
+      ok ? [ruleId, time, firstFrame?.inMilliseconds, time] : [ruleId, time, time],
+    );
   }
 
   Future<void> close() => _database.close();

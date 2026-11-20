@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:http/http.dart' as http;
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
@@ -30,8 +31,10 @@ import 'package:superxd/toolbox/cinema/cinema_service.dart';
 // 退出全屏回到竖屏（应用平时锁竖屏，[人工决策] 在清单的 MainActivity 与 ios/Runner/Info.plist）。
 // 首帧常要 10–20 秒（交接实测，腾讯系首屏要缓冲两三个分片），缓冲超过 15 秒才提示可以换源，不早报失败。
 // 看片记录（只在找片里看的记，解析的不记）：每 10 秒、换集、离开时记一次看到哪。
+// 选集页取到的选集直接带过来（roads），不再请求一次；「重新载入」才强制重取。每次打开记一次这个源能不能播（CinemaService.recordPlayback），
+// 一集剩最后 2 分钟时预取下一集（CinemaService.warm）。换集、换源、离开时取消还在等的请求，并把上一路交回本机代理。
 class CinemaPlayerPage extends StatefulWidget {
-  const CinemaPlayerPage.title({super.key, required this.service, required CinemaTitle this.title, required CinemaSourceRef this.source, required this.road, required this.episode, this.start = Duration.zero})
+  const CinemaPlayerPage.title({super.key, required this.service, required CinemaTitle this.title, required CinemaSourceRef this.source, required this.road, required this.episode, this.start = Duration.zero, this.roads})
     : parser = null,
       target = null,
       parsed = null;
@@ -40,13 +43,16 @@ class CinemaPlayerPage extends StatefulWidget {
       source = null,
       road = 0,
       episode = 0,
-      start = Duration.zero;
+      start = Duration.zero,
+      roads = null;
   final CinemaService service;
   final CinemaTitle? title;
   final CinemaSourceRef? source;
   final int road;
   final int episode;
   final Duration start;
+  // 选集页已经取到的这个源的选集（没有就自己取）。
+  final List<CinemaRoad>? roads;
   // 云解析的结果（重新载入时用 parser 与 target 重新解析，解出来的地址几分钟就失效）。
   final CinemaParser? parser;
   final String? target;
@@ -90,6 +96,15 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   Duration? _resumedFrom;
   // 画面与控件：全屏与竖屏之间挪动时保留状态。
   final _stageKey = GlobalKey();
+  // 这一次打开还在等的请求（换集、换源、离开时取消）与交给播放器的地址（本机代理的一路，换掉时交回）。
+  Completer<void>? _cancel;
+  CinemaPlayable? _playable;
+  // 这一次打开从什么时候算首帧、播放结果记过没有、下一集预取过没有。
+  final _openWatch = Stopwatch();
+  var _recorded = true;
+  var _warmedNext = false;
+  // 片源菜单的顺序（按本机播放记录排一次）。
+  late final List<CinemaSourceRef> _sources = widget.title == null ? const [] : rankCinemaSources(widget.title!.sources, widget.service.knownStats);
 
   bool get _titleMode => widget.title != null;
 
@@ -106,6 +121,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     _rule = widget.source == null ? null : widget.service.rule(widget.source!.ruleId);
     _road = widget.road;
     _episode = widget.episode;
+    _roads = widget.roads;
     _parsed = widget.parsed;
     _resumedFrom = widget.start > Duration.zero ? widget.start : null;
     _subscriptions
@@ -114,13 +130,16 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       ..add(_player.stream.height.listen((_) => _measure()))
       ..add(_player.stream.error.listen((message) {
         campusLog('[CinemaPlayer] action=error message=${message.length > 120 ? message.substring(0, 120) : message}');
+        _record(ok: false);
         if (mounted) setState(() => _error = '播放出错，可以重新载入或换个源');
       }))
       ..add(_player.stream.position.listen((position) {
         if (position > Duration.zero && mounted && _opening) {
+          _record(ok: true);
           setState(() => _opening = false);
           _watchSlow();
         }
+        _warmNext(position);
       }));
     _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) => unawaited(_save()));
     unawaited(_open(start: widget.start));
@@ -151,6 +170,27 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     });
   }
 
+  // 记一次这个源能不能播（只在找片里、每次打开只记一次）：出了首帧算播成，带首帧用时。
+  void _record({required bool ok}) {
+    final rule = _rule;
+    if (_recorded || rule == null || !_titleMode) return;
+    _recorded = true;
+    unawaited(widget.service.recordPlayback(rule.id, ok: ok, firstFrame: ok ? _openWatch.elapsed : null).catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=record errorType=${error.runtimeType}\n$stack')));
+  }
+
+  // 换集、换源、离开时：等了 15 秒还没出首帧的算这个源没播成。
+  void _abandon() {
+    if (_opening && _slow) _record(ok: false);
+  }
+
+  // 一集剩最后 2 分钟时预取下一集（人工决策见 cinema_service.dart 的 warm）。
+  void _warmNext(Duration position) {
+    final roads = _roads, duration = _player.state.duration;
+    if (_warmedNext || !_titleMode || !_hasNext || roads == null || duration <= Duration.zero || duration - position > const Duration(minutes: 2)) return;
+    _warmedNext = true;
+    unawaited(widget.service.warm(roads[_road].episodes[_episode + 1].url, rule: _rule));
+  }
+
   CinemaEpisode? get _current {
     final roads = _roads;
     if (roads == null || _road >= roads.length || _episode >= roads[_road].episodes.length) return null;
@@ -159,6 +199,13 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
 
   Future<void> _open({Duration start = Duration.zero, bool fresh = false}) async {
     final generation = ++_generation;
+    _cancel?.complete();
+    final cancel = _cancel = Completer<void>();
+    _openWatch
+      ..reset()
+      ..start();
+    _recorded = false;
+    _warmedNext = false;
     setState(() {
       _opening = true;
       _slow = false;
@@ -170,7 +217,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       if (_titleMode) {
         final rule = _rule;
         if (rule == null) throw const CinemaRuleException('这个源已经下架，换一个源试试');
-        final roads = _roads ??= await widget.service.chapters(rule, _source!.source);
+        final roads = _roads = fresh || _roads == null ? await widget.service.chapters(rule, _source!.source, fresh: fresh, cancel: cancel.future) : _roads!;
         if (generation != _generation) return;
         _road = _road.clamp(0, roads.length - 1);
         _episode = _episode.clamp(0, roads[_road].episodes.length - 1);
@@ -180,17 +227,29 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         final parsed = _parsed = fresh && parser != null ? await widget.service.cloud.parse(parser, widget.target!, fresh: true) : _parsed!;
         playable = await widget.service.playable(parsed.url, playlist: parsed.type == 'm3u8');
       }
-      if (generation != _generation || !mounted) return;
+      if (generation != _generation || !mounted) {
+        widget.service.release(playable);
+        return;
+      }
       await _player.open(Media(playable.uri.toString(), httpHeaders: playable.headers, start: start > Duration.zero ? start : null));
+      // 播放器换上新的之后再交回上一路（先交回的话旧的那一路会报错、误记到这一次）。
+      final previous = _playable;
+      _playable = playable;
+      if (previous != null) widget.service.release(previous);
       if (mounted) setState(() {});
+    } on http.RequestAbortedException {
+      return;
     } on CinemaRuleException catch (error) {
+      if (generation == _generation) _record(ok: false);
       if (mounted && generation == _generation) setState(() => _error = error.message);
     } on CinemaHttpException catch (error) {
+      if (generation == _generation) _record(ok: false);
       if (mounted && generation == _generation) setState(() => _error = '这个源${error.message}，换一个源试试');
     } on CinemaParseException catch (error) {
       if (mounted && generation == _generation) setState(() => _error = error.message);
     } catch (error, stack) {
       campusLog('[CinemaPlayer] action=open errorType=${error.runtimeType}\n$stack');
+      if (generation == _generation) _record(ok: false);
       if (mounted && generation == _generation) setState(() => _error = '没能打开，可以重新载入或换个源');
     } finally {
       if (mounted && generation == _generation && _error != null) setState(() => _opening = false);
@@ -223,6 +282,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
 
   Future<void> _pickEpisode(int road, int episode) async {
     if (road == _road && episode == _episode && _error == null) return;
+    _abandon();
     await _save();
     _road = road;
     _episode = episode;
@@ -243,16 +303,19 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       showCampusToast(context, '这个源已经下架');
       return;
     }
+    _cancel?.complete();
+    final cancel = _cancel = Completer<void>();
     setState(() {
       _opening = true;
       _error = null;
     });
     try {
-      final roads = await widget.service.chapters(rule, source.source);
+      final roads = await widget.service.chapters(rule, source.source, cancel: cancel.future);
       final order = [if (_road < roads.length) _road, for (var index = 0; index < roads.length; index++) if (index != _road) index];
       for (final road in order) {
         final episode = roads[road].episodes.indexWhere((item) => item.name == name);
         if (episode < 0) continue;
+        _abandon();
         await _save();
         if (!mounted) return;
         _source = source;
@@ -278,6 +341,8 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         setState(() => _opening = false);
         showCampusToast(context, '这个源${error.message}');
       }
+    } on http.RequestAbortedException {
+      return;
     }
   }
 
@@ -299,7 +364,10 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
 
   @override
   void dispose() {
+    _abandon();
     _generation++;
+    _cancel?.complete();
+    if (_playable case final playable?) widget.service.release(playable);
     if (_fullscreen) {
       unawaited(_applyOrientation(on: false, landscape: false).catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=fullscreen_exit errorType=${error.runtimeType}\n$stack')));
     }
@@ -422,7 +490,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
                 label: '片源',
                 value: _source!,
                 items: [
-                  for (final ref in title.sources) CampusMenuItem(value: ref, label: [widget.service.rule(ref.ruleId)?.name ?? ref.ruleId, if (ref.remarks.isNotEmpty) ref.remarks].join(' · ')),
+                  for (final ref in _sources) CampusMenuItem(value: ref, label: cinemaSourceLabel(widget.service, ref)),
                 ],
                 onChanged: _opening ? null : (ref) => unawaited(_pickSource(ref)),
               ),

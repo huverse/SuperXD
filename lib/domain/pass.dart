@@ -47,12 +47,14 @@ abstract interface class PassAccess {
   bool locked(String id);
   // 现在能不能买：登录着应用账号且联网偏好是联网。
   bool get canBuy;
-  Future<void> refresh();
+  // 拉清单与自己的券；同一个应用账号隔 passRefreshGap 才真去拉，force 不等（页面上的「重试」）。
+  Future<void> refresh({bool force = false});
   // 花积分续一次，失败抛 PassException。
   Future<void> buy(String id);
 }
 
 const passOfferLimit = 20;
+const passRefreshGap = Duration(minutes: 10);
 const passDaysMax = 366;
 const passPriceMax = 100000;
 final passIdPattern = RegExp(r'^[a-z0-9][a-z0-9._-]{0,63}$');

@@ -20,6 +20,9 @@ class Passes implements PassAccess {
   final DateTime Function() _now;
   final _changes = StreamController<void>.broadcast();
   Future<void>? _refreshing;
+  // 上次去拉的时刻与当时的应用账号（换了账号不等间隔）。
+  DateTime? _refreshedAt;
+  String? _refreshedFor;
 
   @override
   Stream<void> get changes => _changes.stream;
@@ -41,10 +44,14 @@ class Passes implements PassAccess {
   bool get canBuy => _online() && _account() != null;
 
   @override
-  Future<void> refresh() => _refreshing ??= _refresh().whenComplete(() => _refreshing = null);
+  Future<void> refresh({bool force = false}) => _refreshing ??= _refresh(force).whenComplete(() => _refreshing = null);
 
-  Future<void> _refresh() async {
+  Future<void> _refresh(bool force) async {
     if (!_online()) return;
+    final now = _now(), accountId = _accountId(), last = _refreshedAt;
+    if (!force && last != null && accountId == _refreshedFor && now.difference(last) < passRefreshGap) return;
+    _refreshedAt = now;
+    _refreshedFor = accountId;
     try {
       await memory.saveOffers(await client.offers());
       final account = _account(), accountId = _accountId();

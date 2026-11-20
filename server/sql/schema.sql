@@ -403,6 +403,7 @@ CREATE TABLE IF NOT EXISTS cinema_catalog (
   update_time DATETIME(3) NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uk_cinema_catalog (rule_id, source),
+  KEY idx_cinema_catalog_prefix (rule_id, folded(16)),
   FULLTEXT KEY ft_cinema_catalog (folded) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 

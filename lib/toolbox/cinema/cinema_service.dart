@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import 'package:pool/pool.dart';
+import 'package:quiver/collection.dart';
 
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
@@ -68,6 +69,11 @@ class CinemaService implements ToolboxService {
   // 同一个源连续失败 pauseAfter 次就暂停 pauseFor 不再去请求，列在「暂不可用」里，点重试（resume）立即恢复。暂停只记在内存（本次运行），不上传。
   static const pauseAfter = 3;
   static const pauseFor = Duration(minutes: 30);
+  // 拉规则包失败后这么久内不再去拉（照旧用本机的；页面上的「重试」不等）：进页面、同意、搜索不会接连撞同一个失败的请求。
+  static const retryGap = Duration(minutes: 5);
+  // 选集在内存里留多久、最多几部（规则包换了版本即失效；播放地址可能带签名会过期，所以短；「重新载入」不用缓存）。
+  static const chaptersLifetime = Duration(minutes: 10);
+  static const chaptersLimit = 64;
 
   final CinemaStore store;
   final CinemaRulesFeed? _feed;
@@ -82,6 +88,11 @@ class CinemaService implements ToolboxService {
   // 各源连续失败几次、暂停到什么时刻（只在内存）。
   final _strikes = <String, int>{};
   final _pausedUntil = <String, DateTime>{};
+  DateTime? _retryAt;
+  // 选集缓存（键见 _chaptersKey）与正在取的（同一部片同时只发一次，几处一起等）。
+  final _chapters = LruMap<String, (DateTime, List<CinemaRoad>)>(maximumSize: chaptersLimit);
+  final _chaptersLoading = <String, CinemaShared<List<CinemaRoad>>>{};
+  Map<String, CinemaSourceStat>? _stats;
 
   static Future<CinemaService> open(ToolboxServiceContext context, {required CinemaRulesFeed? feed, CinemaHttp? http, DateTime Function()? now, Uri? relay}) async {
     final directory = Directory(path.join(context.base.path, serviceId));
@@ -100,7 +111,8 @@ class CinemaService implements ToolboxService {
 
   CinemaPackage? get package => _package;
 
-  // 当前的规则包：本机没有或拉过超过 refreshGap 才去中转拉；拉不到照旧用本机的，本机也没有才报错。force 为真时不等间隔（页面上的「重试」）。
+  // 当前的规则包：本机没有或拉过超过 refreshGap 才去中转拉；拉不到照旧用本机的，本机也没有才报错；失败后 retryGap 内不再拉。
+  // force 为真时不等间隔（页面上的「重试」）。本机有规则包时页面不必等它，见 cinema_page.dart 的 _initialize。
   Future<CinemaPackage> rules({bool force = false}) => _loading ??= _rules(force).whenComplete(() => _loading = null);
 
   Future<CinemaPackage> _rules(bool force) async {
@@ -110,10 +122,14 @@ class CinemaService implements ToolboxService {
     if (feed == null || (!force && current != null && cached != null && _now().difference(cached.fetchedAt) < refreshGap)) {
       return current ?? (throw const CinemaRuleException('还没拿到片源规则'));
     }
+    final retryAt = _retryAt;
+    if (!force && retryAt != null && _now().isBefore(retryAt)) return current ?? (throw const CinemaRuleException('连不上服务器，拿不到片源规则'));
+    _retryAt = _now().add(retryGap);
     try {
       final payload = await feed.fetch();
       final fetched = decodeCinemaPackage(payload);
       if (current != null && fetched.version <= current.version) {
+        _retryAt = null;
         await store.touchPackage(_now());
         return current;
       }
@@ -124,6 +140,7 @@ class CinemaService implements ToolboxService {
         return current;
       }
       await store.savePackage(fetched.version, payload, _now());
+      _retryAt = null;
       campusLog('[Cinema] action=rules version=${fetched.version} rules=${fetched.rules.length} parsers=${fetched.parsers.length}');
       return _package = fetched;
     } on CinemaRuleException catch (error) {
@@ -181,6 +198,8 @@ class CinemaService implements ToolboxService {
       if (hits != null) {
         _strikes.remove(rule.id);
         for (final hit in hits.take(hitsPerSource)) {
+          // 搜索回复自带剧集的源：记进选集缓存，点开不再请求详情。
+          if (hit.roads case final roads? when roads.isNotEmpty) _chapters[_chaptersKey(rule, hit.source)] = (_now(), roads);
           final key = cinemaTitleKey(hit.name, hit.year);
           final title = titles.putIfAbsent(key, () => CinemaTitle(key: key, name: hit.name, year: hit.year, cover: hit.cover, remarks: hit.remarks));
           title.addCover(hit.cover);
@@ -209,8 +228,9 @@ class CinemaService implements ToolboxService {
   Future<(CinemaRule, List<CinemaHit>?, CinemaFailure?)> _searchOne(CinemaRule rule, String keyword, Future<void>? cancel) async {
     try {
       if (rule.catalog != null) return (rule, await catalog.search(rule, keyword, cancel: cancel), null);
-      final raw = await _http.text(prepareCinemaRequest(rule.search.request, {'keyword': keyword}), userAgent: rule.userAgent, referer: rule.referer, cancel: cancel);
-      return (rule, parseCinemaSearch(raw, rule), null);
+      final request = prepareCinemaRequest(rule.search.request, {'keyword': keyword});
+      final raw = await _http.text(request, userAgent: rule.userAgent, referer: rule.referer, cancel: cancel);
+      return (rule, parseCinemaSearch(raw, rule, base: request.uri), null);
     } on CinemaHttpException catch (error) {
       return (rule, null, CinemaFailure(ruleId: rule.id, message: '${rule.name}${error.message}'));
     } on CinemaRuleException catch (error) {
@@ -233,16 +253,36 @@ class CinemaService implements ToolboxService {
 
   CinemaRule? rule(String id) => _package?.rules.where((rule) => rule.id == id).firstOrNull;
 
-  // 一个源里这部片的选集（只留能直接播的线路），没有可播的报错让用户换源。
-  Future<List<CinemaRoad>> chapters(CinemaRule rule, String source) async {
+  // 选集缓存的键：规则包版本、规则与它的版本、这个源里的编号（规则包换了或这条规则改了即对不上）。
+  String _chaptersKey(CinemaRule rule, String source) => '${_package?.version}\u0000${rule.id}\u0000${rule.version}\u0000$source';
+
+  // 一个源里这部片的选集（只留能直接播的线路），没有可播的报错让用户换源。先看缓存（搜索自带的、选集页取过的）；
+  // 同一部片同时只发一次，选集页与播放页一起等；cancel 完成时这一处不等了（抛 RequestAbortedException），别处还在等就不中断请求。
+  // fresh 为真时不用缓存（「重新载入」）。
+  Future<List<CinemaRoad>> chapters(CinemaRule rule, String source, {bool fresh = false, Future<void>? cancel}) {
+    final key = _chaptersKey(rule, source);
+    final cached = _chapters[key];
+    if (!fresh && cached != null && _now().difference(cached.$1) < chaptersLifetime) return Future.value(cached.$2);
+    final loading = _chaptersLoading[key];
+    if (!fresh && loading != null && loading.live) return loading.wait(cancel);
+    final shared = _chaptersLoading[key] = CinemaShared((abort) => _fetchChapters(rule, source, key, abort));
+    unawaited(shared.settled.then((_) {
+      if (identical(_chaptersLoading[key], shared)) _chaptersLoading.remove(key);
+    }));
+    return shared.wait(cancel);
+  }
+
+  Future<List<CinemaRoad>> _fetchChapters(CinemaRule rule, String source, String key, Future<void> abort) async {
     final request = prepareCinemaRequest(rule.chapters.request, {'source': source});
-    final raw = await _http.text(request, userAgent: rule.userAgent, referer: rule.referer);
+    final raw = await _http.text(request, userAgent: rule.userAgent, referer: rule.referer, cancel: abort);
     final roads = parseCinemaChapters(raw, rule, request.uri);
     if (roads.isEmpty) throw const CinemaRuleException('这个源没有能直接播的剧集，换一个源试试');
+    _chapters[key] = (_now(), roads);
     return roads;
   }
 
   // 交给播放器的地址：m3u8 经本机代理改写清单，其余直接播；rule 为空（云解析的结果）时用默认 UA、不带 Referer、不去广告。
+  // 换集、换源、离开播放页时交回 release，本机代理里这一路还没回来的请求随之中断。
   Future<CinemaPlayable> playable(String url, {CinemaRule? rule, bool playlist = false}) async {
     final headers = cinemaHeaders(rule?.userAgent ?? '', rule?.referer ?? '');
     final uri = Uri.parse(url);
@@ -250,8 +290,36 @@ class CinemaService implements ToolboxService {
     return CinemaPlayable(uri: await _proxy.open(uri, CinemaStream(headers: headers, adBlocker: rule?.adBlocker ?? false)), headers: headers);
   }
 
+  void release(CinemaPlayable playable) => _proxy.release(playable.uri);
+
+  // [人工决策-2026-11-20 20:32:51] 预取（Codex 建议第 6 条，用户选「快播完时预取下一集，再加选集页预取当前集」）：选集页取到选集后预取「接着看」那一集（没看过就第一集），
+  // 一集剩最后 2 分钟时预取下一集。只取播放清单（主清单再取第一个码率的子清单）并探好域名前置，几 KB，发给的是用户同意过的同一个片源站；
+  // 结果在本机代理里留几分钟（直播清单不留），出错只记日志。直链（不是 m3u8）不预取。
+  Future<void> warm(String url, {CinemaRule? rule}) async {
+    if (!cinemaPlaylistUrl(url)) return;
+    await _proxy.warm(Uri.parse(url), CinemaStream(headers: cinemaHeaders(rule?.userAgent ?? '', rule?.referer ?? ''), adBlocker: rule?.adBlocker ?? false));
+  }
+
+  // [人工决策-2026-11-20 20:32:51] 选源看能不能播（Codex 建议第 5 条，用户选「本机记录，能播的排前并标注」，没选只标注与自动换源）：
+  // 播放页每次打开记一次结果（出了首帧算播成、记首帧用时；出错，或等了 15 秒还没出首帧就换集换源或离开，算没播成），只记在本机 cinema.db、30 天没再播的删掉；
+  // 选集页按 rankCinemaSources 排片源、默认选最前面的，片源名后标「上次能播」「上次没播成」；不自动换源。
+  Future<Map<String, CinemaSourceStat>> sourceStats() async => _stats ??= await store.sourceStats(_now());
+
+  // 已经读过的播放结果（没读过为空），给不便等的地方用。
+  Map<String, CinemaSourceStat> get knownStats => _stats ?? const {};
+
+  Future<void> recordPlayback(String ruleId, {required bool ok, Duration? firstFrame}) async {
+    final at = _now().toUtc();
+    await store.recordPlayback(ruleId, ok: ok, firstFrame: firstFrame, at: at);
+    final stats = await sourceStats();
+    final old = stats[ruleId];
+    stats[ruleId] = ok ? CinemaSourceStat(okAt: at, failAt: old?.failAt, firstFrame: firstFrame) : CinemaSourceStat(okAt: old?.okAt, failAt: at, firstFrame: old?.firstFrame);
+    campusLog('[Cinema] action=playback rule=$ruleId ok=$ok firstFrameMs=${firstFrame?.inMilliseconds}');
+  }
+
   @override
   Future<void> close() async {
+    _chapters.clear();
     await _proxy.close();
     _http.close();
     await store.close();
@@ -264,3 +332,10 @@ class CinemaService implements ToolboxService {
     if (await _directory.exists()) await _directory.delete(recursive: true);
   }
 }
+
+// 片源的显示名：源名、这个源里的备注、最近的播放结果（选集页与播放页的片源菜单共用）。
+String cinemaSourceLabel(CinemaService service, CinemaSourceRef ref) => [
+  service.rule(ref.ruleId)?.name ?? ref.ruleId,
+  if (ref.remarks.isNotEmpty) ref.remarks,
+  ?cinemaSourceStatLabel(service.knownStats[ref.ruleId]),
+].join(' · ');

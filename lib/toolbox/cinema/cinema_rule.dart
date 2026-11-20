@@ -54,9 +54,11 @@ class CinemaRequest {
   }
 }
 
-// 搜索：listPath 取出每一条，namePath、sourcePath 必有（sourcePath 取到的是这个源里的影片编号或详情页），其余三项是电影院的扩展、可空。
+// 搜索：listPath 取出每一条，namePath、sourcePath 必有（sourcePath 取到的是这个源里的影片编号或详情页），其余是电影院的扩展、可空。
+// chapters（11-20 起，可空）：搜索回复里每一条自带的剧集（苹果 CMS 的 ac=detail 搜索就带全部播放地址），路径相对每一条记录、格式与分隔符同 chapterApiConfig；
+// 写了的源搜到就记下选集，点开不再请求详情（见 CinemaService.chapters）。旧版本不认这个字段、照旧忽略。
 class CinemaSearchConfig {
-  const CinemaSearchConfig({required this.request, required this.listPath, required this.namePath, required this.sourcePath, this.coverPath = '', this.yearPath = '', this.remarksPath = ''});
+  const CinemaSearchConfig({required this.request, required this.listPath, required this.namePath, required this.sourcePath, this.coverPath = '', this.yearPath = '', this.remarksPath = '', this.chapters});
   final CinemaRequest request;
   final String listPath;
   final String namePath;
@@ -64,6 +66,8 @@ class CinemaSearchConfig {
   final String coverPath;
   final String yearPath;
   final String remarksPath;
+  // 路径相对每一条记录，request 不用（同搜索请求）。
+  final CinemaChapterConfig? chapters;
 }
 
 // 选集：delimited 是一个字符串里 $$$ 分线路、# 分集、$ 分集名与地址（苹果 CMS），nested 是 JSON 里一层线路一层集。
@@ -171,30 +175,34 @@ class CinemaRule {
       return value;
     }
 
+    final chapterAt = '$where.chapterApiConfig';
+    final delimited = format == 'delimited';
+    // 选集的路径一组：chapterApiConfig 自己的（相对详情回复），或搜索配置里 chapters 的（相对每一条记录）；格式与分隔符都用 chapterApiConfig 的。
+    CinemaChapterConfig chapterPaths(Map<String, Object?> source, String at, CinemaRequest request) => CinemaChapterConfig(
+      request: request,
+      format: format,
+      roadNamesPath: path(source, 'roadNamesPath', at, optional: !delimited),
+      roadEpisodesPath: path(source, 'roadEpisodesPath', at, optional: !delimited),
+      roadSeparator: _separator(chapterMap['roadSeparator'], '$chapterAt.roadSeparator', r'$$$'),
+      episodeSeparator: _separator(chapterMap['episodeSeparator'], '$chapterAt.episodeSeparator', '#'),
+      fieldSeparator: _separator(chapterMap['fieldSeparator'], '$chapterAt.fieldSeparator', r'$'),
+      roadsPath: path(source, 'roadsPath', at, optional: true),
+      roadNamePath: path(source, 'roadNamePath', at, optional: true),
+      episodesPath: path(source, 'episodesPath', at, optional: delimited),
+      episodeNamePath: path(source, 'episodeNamePath', at, optional: delimited),
+      episodeUrlPath: path(source, 'episodeUrlPath', at, optional: delimited),
+    );
+    final chapters = chapterPaths(chapterMap, chapterAt, CinemaRequest.decode(chapterMap['request'], '$chapterAt.request'));
+    final searchRequest = CinemaRequest.decode(searchMap['request'], '$where.searchApiConfig.request');
     final search = CinemaSearchConfig(
-      request: CinemaRequest.decode(searchMap['request'], '$where.searchApiConfig.request'),
+      request: searchRequest,
       listPath: path(searchMap, 'listPath', '$where.searchApiConfig'),
       namePath: path(searchMap, 'namePath', '$where.searchApiConfig'),
       sourcePath: path(searchMap, 'sourcePath', '$where.searchApiConfig'),
       coverPath: path(searchMap, 'coverPath', '$where.searchApiConfig', optional: true),
       yearPath: path(searchMap, 'yearPath', '$where.searchApiConfig', optional: true),
       remarksPath: path(searchMap, 'remarksPath', '$where.searchApiConfig', optional: true),
-    );
-    final chapterAt = '$where.chapterApiConfig';
-    final delimited = format == 'delimited';
-    final chapters = CinemaChapterConfig(
-      request: CinemaRequest.decode(chapterMap['request'], '$chapterAt.request'),
-      format: format,
-      roadNamesPath: path(chapterMap, 'roadNamesPath', chapterAt, optional: !delimited),
-      roadEpisodesPath: path(chapterMap, 'roadEpisodesPath', chapterAt, optional: !delimited),
-      roadSeparator: _separator(chapterMap['roadSeparator'], '$chapterAt.roadSeparator', r'$$$'),
-      episodeSeparator: _separator(chapterMap['episodeSeparator'], '$chapterAt.episodeSeparator', '#'),
-      fieldSeparator: _separator(chapterMap['fieldSeparator'], '$chapterAt.fieldSeparator', r'$'),
-      roadsPath: path(chapterMap, 'roadsPath', chapterAt, optional: true),
-      roadNamePath: path(chapterMap, 'roadNamePath', chapterAt, optional: true),
-      episodesPath: path(chapterMap, 'episodesPath', chapterAt, optional: delimited),
-      episodeNamePath: path(chapterMap, 'episodeNamePath', chapterAt, optional: delimited),
-      episodeUrlPath: path(chapterMap, 'episodeUrlPath', chapterAt, optional: delimited),
+      chapters: searchMap['chapters'] == null ? null : chapterPaths(_map(searchMap['chapters'], '$where.searchApiConfig.chapters'), '$where.searchApiConfig.chapters', searchRequest),
     );
     final searchUses = '${search.request.url}${jsonEncode(search.request.query)}${jsonEncode(search.request.body)}';
     final chapterUses = '${chapters.request.url}${jsonEncode(chapters.request.query)}${jsonEncode(chapters.request.body)}';
