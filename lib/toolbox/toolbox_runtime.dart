@@ -9,6 +9,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/course_occurrence.dart';
+import 'package:superxd/domain/pass.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/toolbox/download/channel_file_publisher.dart';
 import 'package:superxd/toolbox/download/background_transfer.dart';
@@ -60,6 +61,9 @@ typedef ToolboxQrWatch =
 // 桌面弹窗请用户确认；桌面不支持时返回 false。
 typedef ToolboxShortcutPin = Future<bool> Function(String toolId, String shortcutId);
 
+// 取电影院的片源规则包（自建中转下发、验签通过的载荷字节）：验签在 device 层，百宝箱不依赖它，由组合根注入（没配中转时为空，电影院只用本机缓存）。
+typedef ToolboxSignedFetch = Future<Uint8List> Function();
+
 // 工具注册表：组合根传入（见 toolbox_catalog.dart），框架只按 ToolboxModule 认工具，不认识任何工具的类型。
 typedef ToolboxCatalog = List<ToolboxModule> Function(ToolboxRuntime runtime);
 
@@ -75,6 +79,9 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.relayUrl,
     this.campusTimetable,
     this.pinShortcut,
+    this.cinemaRules,
+    this.versionCode,
+    this.passes,
   });
   ToolboxRuntime.testing({
     required this.catalog,
@@ -87,6 +94,9 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.pickImages,
     this.campusTimetable,
     this.pinShortcut,
+    this.cinemaRules,
+    this.versionCode,
+    this.passes,
     // 外部已经打开好的服务（测试直接给实例）：runtime 只代为转交，不负责关闭。
     Map<String, ToolboxService>? services,
     // 给了目录时按注册表的 openService 真的打开服务（测清除后重开、打开失败重试）。
@@ -108,6 +118,11 @@ class ToolboxRuntime with WidgetsBindingObserver {
   // 为空时（测试、只装了百宝箱的入口）当没有本应用课表。
   final ToolboxTimetable? campusTimetable;
   final ToolboxShortcutPin? pinShortcut;
+  final ToolboxSignedFetch? cinemaRules;
+  // 本机安装的构建号（规则包的最低客户端按它比）；为空（测试）当 0。
+  final Future<int> Function()? versionCode;
+  // 积分时长券（人工决策见 domain/pass.dart）：要用积分换时长的工具（电影院）按它拦；为空（没配中转、测试）都不拦。
+  final PassAccess? passes;
   final ToolboxCatalog catalog;
   late final List<ToolboxModule> modules = catalog(this);
 

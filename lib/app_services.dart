@@ -20,6 +20,7 @@ import 'package:superxd/application/festivals.dart';
 import 'package:superxd/application/leisure.dart';
 import 'package:superxd/application/network_preference.dart';
 import 'package:superxd/application/rollouts.dart';
+import 'package:superxd/application/passes.dart';
 import 'package:superxd/application/unlocks.dart';
 import 'package:superxd/device/app_installer_channel.dart';
 import 'package:superxd/device/app_package_files.dart';
@@ -33,8 +34,10 @@ import 'package:superxd/domain/app_account.dart';
 import 'package:superxd/domain/app_shortcut.dart';
 import 'package:superxd/domain/challenge.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/domain/network_policy.dart';
 import 'package:superxd/domain/painting.dart';
+import 'package:superxd/domain/pass.dart';
 import 'package:superxd/domain/unlock.dart';
 import 'package:superxd/local/app_update_memory.dart';
 import 'package:superxd/local/developer_note_memory.dart';
@@ -59,11 +62,13 @@ import 'package:superxd/relay/relay_unlock_client.dart';
 import 'package:superxd/social/nearby_service.dart';
 import 'package:superxd/social/social_service.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
+import 'package:superxd/local/pass_memory.dart';
+import 'package:superxd/relay/relay_pass_client.dart';
 
 // 组合根造好的设备级服务（[人工决策-2026-11-16 17:26:21] 组合根改应用模块，用户选定架构推荐方案）：打包成一份交给应用外壳、账号应用与路由，
 // 新功能只在这里加一个字段，不再在 SuperXdApp、账号应用与 buildRouter 三处各加一个参数。为空的表示这项没有（没配中转、测试没给），页面照各自的规则藏起入口。
 class AppServices {
-  const AppServices({this.display, this.toolbox, this.playground, this.reminders, this.social, this.nearby, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.leisure, this.moments, this.autoSync, this.health, this.network});
+  const AppServices({this.display, this.toolbox, this.playground, this.reminders, this.social, this.nearby, this.updates, this.legal, this.developer, this.logs, this.paintings, this.shortcuts, this.notes, this.festivals, this.appAccounts, this.diagnostics, this.challenges, this.unlocks, this.leisure, this.moments, this.autoSync, this.health, this.network, this.features, this.passes});
   // 显示设置；为空时用一份只在内存里的。
   final DisplaySettings? display;
   // 百宝箱运行时；为空时外壳按注册表自己建。
@@ -104,6 +109,10 @@ class AppServices {
   final AppHealth? health;
   // 联网偏好（仅本机或联网，人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条）；测试里为空当联网。
   final NetworkPreference? network;
+  // 功能开关（application 的 Rollouts，人工决策见 domain/rollout.dart）；为空时（测试）灰度中的功能都关着。
+  final FeatureGate? features;
+  // 积分时长券（人工决策见 domain/pass.dart；预接好、不启用）；没配中转时为空，要换时长的服务都不拦。
+  final PassAccess? passes;
 }
 
 // 中转服务地址来自构建参数 SUPERXD_RELAY；未配置或格式不对时私信与应用更新都不可用，不猜默认地址。
@@ -205,6 +214,19 @@ Future<Rollouts> rolloutsOf(Directory support, RelayWiring? relay, AppAccounts? 
     null => null,
   },
 );
+}
+
+// 积分时长券（人工决策见 domain/pass.dart）：清单与自己的券问同一个中转（花积分同解锁，仅本机时不联网）；本机记录在 pass.json，没配中转时为空。
+Future<Passes?> passesOf(Directory support, RelayWiring? relay, AppAccounts? appAccounts, {required bool Function() online}) async {
+  if (relay == null) return null;
+  return Passes(
+    memory: await FilePassMemory.open(File(path.join(support.path, 'pass.json'))),
+    client: RelayPassClient(vault: relay.accountKeys, transport: relay.transportFor(NetworkService.unlock)),
+    account: () => appAccounts?.current,
+    accountId: () => appAccounts?.accountId,
+    accountGone: appAccounts == null ? null : () => appAccounts.check(force: true),
+    online: online,
+  );
 }
 
 // 解锁（人工决策见服务端 src/modules/unlock/unlock_rules.ts）：清单跟着灰度配置，这个账号能用哪些问同一个中转（应用账号签名）；没配中转时为空，游戏与工具都照常开着。

@@ -6,6 +6,7 @@ import 'package:superxd/device/relay_note_feed.dart';
 import 'package:superxd/device/relay_release_feed.dart';
 import 'package:superxd/device/relay_rollout_feed.dart';
 import 'package:superxd/device/signed_content.dart';
+import 'package:superxd/toolbox/cinema/cinema_rule.dart';
 import 'package:superxd/domain/campus_crypto.dart';
 import 'package:superxd/domain/developer_note.dart';
 import 'package:superxd/domain/rollout.dart';
@@ -18,6 +19,7 @@ import 'package:superxd/domain/rollout.dart';
 //   dart run tool/content_signing.dart check-notes <developer_notes.json>
 //   dart run tool/content_signing.dart check-rollout <rollout.json>
 //   dart run tool/content_signing.dart check-flags <flags.json>
+//   dart run tool/content_signing.dart check-cinema <cinema.json>
 //   dart run tool/content_signing.dart public-key <私钥.pem>      换钥时取新钥的公钥，写进 lib/device/signed_content.dart
 const releaseAbis = ['arm64-v8a', 'armeabi-v7a', 'x86_64'];
 
@@ -128,6 +130,14 @@ Future<RolloutConfig> checkFlagsConfig(Map<String, Object?> file, {List<TrustedS
   return config;
 }
 
+// 电影院的片源规则包（cinema.json）：只有版本号与签名信封，载荷用客户端的解码读得出（人工决策见 lib/toolbox/cinema/cinema_service.dart 文件头）。
+Future<CinemaPackage> checkCinemaRules(Map<String, Object?> file, {List<TrustedSigningKey> keys = trustedSigningKeys}) async {
+  if (file.length != 2 || file['version'] != 1 || file['envelope'] == null) throw const FormatException('片源规则包要只有 version 1 与签名信封');
+  final package = decodeCinemaPackage(await openSignedEnvelope(file['envelope'], SignedContent.cinema, keys: keys));
+  stdout.writeln('[ContentSigning] action=check_cinema version=${package.version} rules=${package.rules.length} keyIds=${_keyIds(file['envelope'])}');
+  return package;
+}
+
 String _keyIds(Object? envelope) => switch (envelope) {
   {'signatures': final List<Object?> signatures} => [for (final item in signatures) if (item case {'keyId': final String keyId}) keyId].join(','),
   _ => '',
@@ -144,10 +154,12 @@ Future<void> main(List<String> args) async {
         await checkRolloutConfig(jsonDecode(await File(path).readAsString()) as Map<String, Object?>);
       case ['check-flags', final path]:
         await checkFlagsConfig(jsonDecode(await File(path).readAsString()) as Map<String, Object?>);
+      case ['check-cinema', final path]:
+        await checkCinemaRules(jsonDecode(await File(path).readAsString()) as Map<String, Object?>);
       case ['public-key', final path]:
         stdout.writeln(await publicKeyOfSeed(seedFromPem(await File(path).readAsString())));
       default:
-        stderr.writeln('usage: dart run tool/content_signing.dart check-release <file> --channel <channel> | check-notes <file> | check-rollout <file> | check-flags <file> | public-key <pem>');
+        stderr.writeln('usage: dart run tool/content_signing.dart check-release <file> --channel <channel> | check-notes <file> | check-rollout <file> | check-flags <file> | check-cinema <file> | public-key <pem>');
         exitCode = 64;
     }
   } on FormatException catch (error) {
@@ -155,6 +167,9 @@ Future<void> main(List<String> args) async {
     exitCode = 1;
   } on SignedEnvelopeException catch (error) {
     stderr.writeln('[ContentSigning] failed errorType=SignedEnvelopeException reason=${error.reason}');
+    exitCode = 1;
+  } on CinemaRuleException catch (error) {
+    stderr.writeln('[ContentSigning] failed errorType=CinemaRuleException reason=${error.message}');
     exitCode = 1;
   }
 }

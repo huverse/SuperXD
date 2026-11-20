@@ -34,6 +34,7 @@ export const RelayCode = {
   levelLocked: 'LEVEL_LOCKED', // 这一关还没解锁、已经过了或已经算没过，附 run
   pointsShort: 'POINTS_SHORT', // 积分不够付这笔（如挑战门票），附 price 与 balance
   unlockUnavailable: 'UNLOCK_UNAVAILABLE', // 没有这项解锁、已下架、已经公开或不能用积分买
+  passUnavailable: 'PASS_UNAVAILABLE', // 这项服务现在不用积分换时长（passes.json 里没有）
   diagnosticNotFound: 'DIAGNOSTIC_NOT_FOUND', // 诊断包不存在、已到期、认领口令不对或过期，或不属于这个账号
   socialElsewhere: 'SOCIAL_ELSEWHERE', // 这个应用账号的私信在另一台设备上（没带接管），客户端问用户要不要在这台上接管
   socialTaken: 'SOCIAL_TAKEN', // 这个私信设备已挂在别的应用账号下

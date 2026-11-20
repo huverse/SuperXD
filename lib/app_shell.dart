@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
 
@@ -15,6 +16,7 @@ import 'package:superxd/app_shortcuts.dart';
 import 'package:superxd/application/app_moments.dart';
 import 'package:superxd/application/campus_timetable.dart';
 import 'package:superxd/device/picture_export.dart';
+import 'package:superxd/device/relay_cinema_feed.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/festival.dart';
@@ -115,6 +117,13 @@ class _SuperXdAppState extends State<SuperXdApp> {
     // 工具页的「添加到桌面」：入口登记在注册表里，图标与名字由快捷入口接线统一给。
     // iOS 没有「添加到桌面」的接口，不给入口。
     pinShortcut: widget.services.shortcuts == null || Platform.isIOS ? null : (toolId, shortcutId) => _shortcuts!.pin(toolId, shortcutId),
+    // 电影院的片源规则包：同一个自建中转下发、在 device 层验签（人工决策见 toolbox/cinema/cinema_service.dart 文件头）；没配中转时只用本机缓存。
+    cinemaRules: switch (relayBase()) {
+      final base? => RelayCinemaFeed(base).fetch,
+      null => null,
+    },
+    versionCode: () async => int.tryParse((await PackageInfo.fromPlatform()).buildNumber) ?? 0,
+    passes: widget.services.passes,
   );
   late final AppShortcuts? _shortcuts = switch (widget.services.shortcuts) {
     final port? => AppShortcuts(port: port, tools: _toolbox.modules, pixelRatio: WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio),

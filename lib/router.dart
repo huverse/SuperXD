@@ -36,7 +36,7 @@ void pushAppAccountPage(BuildContext context, AppServices services, {Future<bool
 
 // 路由表（组合根）：设备级服务都在 services 里（见 app_services.dart），百宝箱运行时与游乐场记录由外壳给好。
 GoRouter buildRouter({required AppSession session, required AppServices services, required ToolboxRuntime toolbox, required PlaygroundStore playground, ValueListenable<bool>? splashGone, Future<bool> Function(Uint8List png)? saveRewardPicture, List<NavigatorObserver>? observers}) {
-  final AppServices(:reminders, :social, :nearby, :updates, :developer, :logs, :paintings, :notes, :festivals, :appAccounts, :challenges, :unlocks, :autoSync, :health, :network) = services;
+  final AppServices(:reminders, :social, :nearby, :updates, :developer, :logs, :paintings, :notes, :festivals, :appAccounts, :challenges, :unlocks, :autoSync, :health, :network, :features) = services;
   final void Function(BuildContext context)? openAccount = appAccounts == null ? null : (context) => pushAppAccountPage(context, services, saveRewardPicture: saveRewardPicture);
   final gateway = session.gateway;
   final tools = toolbox.modules;
@@ -85,14 +85,10 @@ GoRouter buildRouter({required AppSession session, required AppServices services
       if (session.loggedIn && atLogin) return '/today';
       // 解锁（人工决策见服务端 src/modules/unlock/unlock_rules.ts）：锁着的游戏与隐藏的工具（含它的快捷入口）不让直接进，回到各自的首页。
       final segments = location.split('/');
-      if (unlocks != null && segments.length >= 3) {
-        final lock = switch (segments[1]) {
-          'playground' => playgroundUnlockId(segments[2]),
-          'toolbox' => toolboxUnlockId(segments[2]),
-          _ => null,
-        };
-        if (lock != null && unlocks.locked(lock)) return '/${segments[1]}';
-      }
+      if (unlocks != null && segments.length >= 3 && segments[1] == 'playground' && unlocks.locked(playgroundUnlockId(segments[2]))) return '/playground';
+      // 灰度中的工具同样：开关没开不让直接进（规则见 toolbox_page.dart 的 toolboxVisible）。
+      final tool = segments.length >= 3 && segments[1] == 'toolbox' ? tools.where((tool) => tool.id == segments[2]).firstOrNull : null;
+      if (tool != null && !toolboxVisible(tool, unlocks: unlocks, features: features)) return '/toolbox';
       return null;
     },
     routes: [
@@ -115,7 +111,7 @@ GoRouter buildRouter({required AppSession session, required AppServices services
         pageBuilder: (context, state) => campusPage(key: state.pageKey, child: LegalPage(privacy: state.pathParameters['kind'] == 'privacy')),
       ),
       GoRoute(path: '/toolbox', parentNavigatorKey: rootKey,
-        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: ToolboxPage(runtime: toolbox, unlocks: unlocks))),
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: ToolboxPage(runtime: toolbox, unlocks: unlocks, features: features))),
       for (final tool in tools) GoRoute(path: '/toolbox/${tool.id}', parentNavigatorKey: rootKey,
         pageBuilder: (context, state) => campusPage(key: state.pageKey, child: tool.builder(context))),
       for (final tool in tools)

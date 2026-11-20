@@ -98,6 +98,12 @@ export const rolloutFlagLimit = 200;
 export const rolloutStageLimit = 20;
 export const rolloutFileMaxBytes = 64 * 1024;
 
+// 电影院的片源规则包（人工决策见客户端 lib/toolbox/cinema/cinema_service.dart 文件头）：维护者本机签好放进发布目录（tool/cinema_rules.dart 与 cinema_publish.sh），
+// 客户端打开电影院时拉（两次至少隔一小时），同一 IP 每小时 600 次（与灰度配置同档）。规则包载荷上限 256KB，加信封与 base64 远不到 512KB，
+// 文件超过 512KB 视为放错文件，拒绝读取（与客户端 lib/device/relay_cinema_feed.dart 的响应上限一致）。
+export const cinemaRulesPerHour = 600;
+export const cinemaFileMaxBytes = 512 * 1024;
+
 // 节日抽奖（概率模型与要求设备签名的人工决策见 src/modules/reward/reward_odds.ts）：同一来源每小时 3000 次（校园网 NAT 共用出口，同代签取件的宽松档），
 // 每台设备每小时 10 次（一个应用账号一次活动只抽一次、重复请求返回同一结果，正常客户端只在没连上时补抽；按设备计数让刷请求的设备先被自己的额度挡住）；
 // 刷号的成本是应用账号的注册限流（accountRegisterPerSourcePerHour）与下面的账号年龄。活动行在进程内缓存 60 秒（建活动、改时间最迟一分钟生效）；活动结束 30 天后连同奖品与抽签记录删除。
@@ -186,6 +192,18 @@ export const unlockPriceMax = 100_000;
 export const unlockReadPerDevicePerHour = 600;
 export const unlockBuyPerAccountPerHour = 30;
 export const unlockKeepDaysAfterPublic = 30;
+
+// 积分时长券（人工决策见客户端 lib/toolbox/cinema/cinema_service.dart 文件头：预接好、不启用）：发布目录的 passes.json 写哪些服务要用积分换时长、
+// 多少积分换几天（不放文件就都不收）；最多 passOfferLimit 种，每种最多 passDaysMax 天、passPriceMax 分，文件超过 16KB 视为放错文件。
+// 看自己的券同解锁每台每小时 600 次，买每个账号每小时 30 次；到期满 passKeepDaysAfterExpire 天删记录。
+export const passOfferLimit = 20;
+export const passDaysMax = 366;
+export const passPriceMax = 100_000;
+export const passFileMaxBytes = 16 * 1024;
+export const passOffersPerHour = 600;
+export const passReadPerDevicePerHour = 600;
+export const passBuyPerAccountPerHour = 30;
+export const passKeepDaysAfterExpire = 30;
 
 // 灰度点名（src/modules/flag_target）：一个账号最多回这么多个点名的开关（同客户端 rolloutRuleLimit），每台设备每小时最多问这么多次
 // （客户端隔一小时、回到前台才问，给手动刷新与多设备留余量）。

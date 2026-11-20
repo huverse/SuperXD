@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 
+import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/toolbox/download/toolbox_download_manager.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
@@ -40,6 +41,7 @@ class ToolboxModule {
     this.clearedData = '',
     this.openShared,
     this.shortcuts = const [],
+    this.flag,
   });
   final String id;
   final String name;
@@ -52,4 +54,6 @@ class ToolboxModule {
   // 好友分享的卡片由哪个工具打开：认得这张卡就返回要推入的页面，不认得返回空；组合根按注册表找，不直接认识工具页面。
   final Widget? Function(ShareCard card)? openShared;
   final List<ToolboxShortcut> shortcuts;
+  // 灰度中的工具：登记了开关的只在开关开着时显示入口、能进路由（domain/feature_flags.dart 登记，规则见 toolbox_page.dart 的 toolboxVisible）。
+  final FeatureFlag? flag;
 }

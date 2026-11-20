@@ -14,10 +14,13 @@ import 'package:superxd/domain/campus_crypto.dart';
 // 新客户端只认验签通过的载荷，明文字段留给 1.0.0-alpha.15 及以前不验签的旧客户端。
 // [人工决策-2026-11-13 23:38:40] 灰度配置（domain/rollout.dart）同样经明文 HTTP 下发、能改变客户端行为（分批更新的暂停与全量、功能开关），按本条同样签名
 // （用户确认这样扩展上一条）：第三类内容 rollout，由开发者的话那把钥（同在 relay 环境、同一类维护者内容）与离线备用钥签，发版钥签不了，不另加秘钥。
+// [人工决策-2026-11-19 22:42:37] 电影院的片源规则包（用户选定「中转下发不进仓库」，见 lib/toolbox/cinema/cinema_service.dart 文件头）同样经中转下发、
+// 能改变客户端去连哪些地址，按本条签名：第四类内容 cinema，同灰度配置由信件那把钥与离线备用钥签，不另加秘钥。
 enum SignedContent {
   release('SXD1-release\n'),
   notes('SXD1-notes\n'),
-  rollout('SXD1-rollout\n');
+  rollout('SXD1-rollout\n'),
+  cinema('SXD1-cinema\n');
 
   const SignedContent(this.domain);
   final String domain;
@@ -39,8 +42,8 @@ class TrustedSigningKey {
 // 发版与 notes 流水线签完用这张表与客户端的解析代码再验一遍（tool/content_signing.dart），机密里的私钥和这里的公钥对不上就停。
 const trustedSigningKeys = [
   TrustedSigningKey('release-2026-11', 'gCb1CCRvjVPWWDiVmUKY93Y2TGCObCx3Z8BHqd1194E', {SignedContent.release}),
-  TrustedSigningKey('notes-2026-11', 'SKpm-cUy-FYmrldyyjRZE-mIdU6Jt4ODG6ULf1XZEwk', {SignedContent.notes, SignedContent.rollout}),
-  TrustedSigningKey('offline-2026-11', 'tab0o-Uwvm8JQs6WwxnuBKN3fVu4y2txxU-f9eKzs6o', {SignedContent.release, SignedContent.notes, SignedContent.rollout}),
+  TrustedSigningKey('notes-2026-11', 'SKpm-cUy-FYmrldyyjRZE-mIdU6Jt4ODG6ULf1XZEwk', {SignedContent.notes, SignedContent.rollout, SignedContent.cinema}),
+  TrustedSigningKey('offline-2026-11', 'tab0o-Uwvm8JQs6WwxnuBKN3fVu4y2txxU-f9eKzs6o', {SignedContent.release, SignedContent.notes, SignedContent.rollout, SignedContent.cinema}),
 ];
 
 // 一个信封最多几个签名（换钥时新旧两把各签一份，留余量）；中转按同一上限校验（server/src/modules/app_release/app_release.dto.ts）。

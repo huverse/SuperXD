@@ -224,9 +224,9 @@ void main() async {
     network.addListener(unlocks.reconsider);
   }
   // 第二批：要等灰度与应用账号造好的几份本机记录同时打开。
-  final updatesOpen = appUpdates(support, relay, rollouts), notesOpen = developerNotes(support, relay), festivalsOpen = festivalsOf(support, relay, appAccounts, online: networkOnline);
-  await Future.wait<Object?>([updatesOpen, notesOpen, festivalsOpen]);
-  final updates = await updatesOpen, notes = await notesOpen, festivals = await festivalsOpen;
+  final updatesOpen = appUpdates(support, relay, rollouts), notesOpen = developerNotes(support, relay), festivalsOpen = festivalsOf(support, relay, appAccounts, online: networkOnline), passesOpen = passesOf(support, relay, appAccounts, online: networkOnline);
+  await Future.wait<Object?>([updatesOpen, notesOpen, festivalsOpen, passesOpen]);
+  final updates = await updatesOpen, notes = await notesOpen, festivals = await festivalsOpen, passes = await passesOpen;
   final health = await appHealthOf(support, relay);
   for (final at in fatalBefore) {
     unawaited(health.markFatal(at));
@@ -246,7 +246,7 @@ void main() async {
   final splashed = painting != null && splashImage != null;
   final splashGone = ValueNotifier(!splashed);
   final restored = Completer<void>();
-  final services = AppServices(display: display, reminders: reminders, social: social, nearby: nearby, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, unlocks: unlocks, playground: playground, leisure: leisure, moments: moments, autoSync: autoSync, health: health, network: network);
+  final services = AppServices(display: display, reminders: reminders, social: social, nearby: nearby, updates: updates, legal: legal, developer: developer, logs: logs, paintings: paintings, shortcuts: shortcuts, notes: notes, festivals: festivals, appAccounts: appAccounts, diagnostics: diagnostics, challenges: challenges, unlocks: unlocks, playground: playground, leisure: leisure, moments: moments, autoSync: autoSync, health: health, network: network, features: rollouts, passes: passes);
   final app = SuperXdApp(session: session, services: services, launch: launched, splashGone: splashGone);
   runApp(splashed ? PaintingSplash(painting: painting, image: splashImage, ready: restored.future, onGone: () => splashGone.value = true, child: app) : app);
   // 首帧上屏：健康回报的启动档按这段时长记（只记档位次数，人工决策见 domain/app_health.dart 的 11-17 那条）。

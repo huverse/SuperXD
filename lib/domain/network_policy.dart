@@ -34,6 +34,8 @@ enum NetworkService {
   videoParse,
   // 快递：拼多多身份码与快递查询。
   express,
+  // 电影院：片源规则包（经中转）、第三方片源站点与云解析（手机直连）。
+  cinema,
   // 网页版高德地图（学习通位置签到选点）。
   map,
   // 分批更新的匿名健康回报（每天最多一次，人工决策见 server/src/modules/app_health/app_health_rules.ts）。

@@ -9,7 +9,7 @@ import { env } from 'src/config/env';
 import { rateSubjectOf } from 'src/common/client_ip';
 import { RateLimiter } from 'src/common/redis/redis.module';
 import { RelayCode, RelayError } from 'src/common/relay_error';
-import { appDownloadsPerInstance, appFilePerHour, appReleaseFileMaxBytes, appReleasePerHour, developerNotesFileMaxBytes, developerNotesPerHour, rolloutConfigPerHour } from 'src/common/relay_limits';
+import { appDownloadsPerInstance, appFilePerHour, appReleaseFileMaxBytes, appReleasePerHour, cinemaFileMaxBytes, cinemaRulesPerHour, developerNotesFileMaxBytes, developerNotesPerHour, rolloutConfigPerHour } from 'src/common/relay_limits';
 import { AppHealthService } from 'src/modules/app_health/app_health.service';
 import { RolloutSource } from 'src/modules/app_release/rollout_source';
 import * as dtos from 'src/modules/app_release/app_release.dto';
@@ -25,6 +25,7 @@ export class AppReleaseService {
   private readonly cache = new Map<string, { mtimeMs: number; size: number; release: dtos.AppReleaseFile }>();
   // 开发者的话同样按修改时间与大小缓存，只有一份。
   private notesCache: { mtimeMs: number; size: number; notes: dtos.DeveloperNotesDto } | undefined;
+  private cinemaCache: { mtimeMs: number; size: number; rules: dtos.CinemaRulesDto } | undefined;
   private downloads = 0;
 
   constructor(
@@ -89,6 +90,31 @@ export class AppReleaseService {
     if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '请求过于频繁', { retryAfter });
     const [config, paused] = await Promise.all([this.rollouts.flags(), this.health.paused()]);
     return { ...config, paused };
+  }
+
+  // 电影院的片源规则包：发布目录里的 cinema.json，只核外形与大小、原样透传；还没放时信封为空（客户端照旧用本机缓存的）。按修改时间与大小缓存，换文件即生效。
+  async cinema(ip: string): Promise<dtos.CinemaRulesDto> {
+    const retryAfter = await this.limiter.hit('app_cinema', rateSubjectOf(ip), cinemaRulesPerHour, 3600);
+    if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '请求过于频繁', { retryAfter });
+    const path = join(env().releasesDir, 'cinema.json');
+    let info: Awaited<ReturnType<typeof stat>>;
+    try {
+      info = await stat(path);
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+      this.cinemaCache = undefined;
+      return { version: 1, envelope: null };
+    }
+    const cached = this.cinemaCache;
+    if (cached !== undefined && cached.mtimeMs === info.mtimeMs && cached.size === info.size) return cached.rules;
+    if (info.size > cinemaFileMaxBytes) throw new Error(`cinema.json 超过 ${cinemaFileMaxBytes} 字节`);
+    const file = plainToInstance(dtos.CinemaRulesDto, JSON.parse(await readFile(path, 'utf8')) as object);
+    const errors = validateSync(file, { whitelist: true, forbidNonWhitelisted: true });
+    if (errors.length > 0 || file.envelope === null || file.envelope === undefined) throw new Error(`cinema.json 格式不对：${errors.map((item) => item.property).join(',')}`);
+    const rules = { version: 1 as const, envelope: file.envelope };
+    this.cinemaCache = { mtimeMs: info.mtimeMs, size: info.size, rules };
+    this.logger.log('[AppRelease] action=load_cinema signed=true');
+    return rules;
   }
 
   // 交给 express 的 sendFile：支持 Range 断点续传与条件请求，按流发送不占内存；根目录限定在发布目录。安装包与字体包共用同一套限流与同时下载上限，按扩展名给类型。
