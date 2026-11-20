@@ -56,11 +56,15 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
     name: '电影院',
     icon: CampusIcons.cinema,
     builder: (context) => CinemaPage(runtime: runtime),
-    openService: (context) => CinemaService.open(context, feed: switch (runtime.cinemaRules) {
-      final fetch? => CinemaRulesFeed(fetch: fetch, versionCode: runtime.versionCode ?? () async => 0),
-      null => null,
-    }),
-    clearedData: '片源规则、片源同意与看过的记录（再用要重新同意）',
+    openService: (context) => CinemaService.open(
+      context,
+      feed: switch (runtime.cinemaRules) {
+        final fetch? => CinemaRulesFeed(fetch: fetch, versionCode: runtime.versionCode ?? () async => 0),
+        null => null,
+      },
+      relay: runtime.relayUrl,
+    ),
+    clearedData: '片源规则、片名目录、片源同意与看过的记录（再用要重新同意）',
     flag: cinemaFlag,
   ),
 ];

@@ -2,6 +2,7 @@ import 'dart:convert';
 
 // 电影院的规则包（人工决策见 cinema_service.dart 文件头）：写法沿用 Kazumi 的规则（github.com/Predidit/Kazumi，GPL-3.0，见 assets/third_party_notices.txt），
 // 第一版只实现它的 API 模式（JSONPath 取值、选集可以是苹果 CMS 那种 $$$、#、$ 分隔的字符串），外加三处扩展：规则自己的 id、搜索结果的海报年份备注路径、云解析 parsers。
+// 11-20 起另有片名目录型的源 catalogRules（采集站接口不给搜索的，如 wsy，见 CinemaCatalogConfig）：放在单独的顶层字段，1.0.0-alpha.34 不认这个字段、直接忽略，不会整包拒收。
 // 规则包由维护者本机签名后经中转下发（不进公开仓库），这里是验签之后的外部输入边界：逐项校验，不合格整包不用。
 
 // 一包最多几条规则、几个云解析，载荷多大；tool/cinema_rules.dart 与中转按同一上限。
@@ -12,6 +13,11 @@ const cinemaPackageMaxBytes = 256 * 1024;
 const cinemaPackageFormat = 1;
 
 final cinemaRuleIdPattern = RegExp(r'^[a-z0-9][a-z0-9_-]{0,31}$');
+
+// 片名目录（人工决策见 cinema_catalog.dart 文件头）：文件名、大小与条数上限；中转的下载接口只认这种文件名（server/src/modules/app_release/app_release.dto.ts）。
+final cinemaCatalogFilePattern = RegExp(r'^cinema-[a-z0-9][a-z0-9_-]{0,63}\.tsv\.gz$');
+const cinemaCatalogMaxBytes = 16 * 1024 * 1024;
+const cinemaCatalogEntryLimit = 400000;
 
 class CinemaRuleException implements Exception {
   const CinemaRuleException(this.message);
@@ -95,7 +101,69 @@ class CinemaChapterConfig {
   final String episodeUrlPath;
 }
 
-// 一条片源规则（Kazumi 的 Plugin 里 API 模式用得到的部分）。
+// 片名目录型的源：采集站把关键字搜索关了（wsy 的 ?ac=list&wd= 回「暂不支持搜索」），只能按编号取详情。
+// 维护者本机把整个片名列表抓成底包（tool/cinema_catalog.dart）放中转，规则包写它的文件名、SHA-256、大小与抓取起点 builtAt；
+// 手机第一次用时下载底包，之后直接向这个源按 update 请求（@hours 是离上次多少小时、@page 第几页）取最近更新的补上。
+// 搜索在本机目录里找片名，只把找到的编号发给这个源的 searchApiConfig 请求（@ids 是逗号连起来的编号）取详情。
+class CinemaCatalogConfig {
+  const CinemaCatalogConfig({
+    required this.file,
+    required this.sha256,
+    required this.bytes,
+    required this.builtAt,
+    required this.update,
+    required this.listPath,
+    required this.idPath,
+    required this.namePath,
+    required this.pageCountPath,
+  });
+  final String file;
+  // 64 位小写十六进制。
+  final String sha256;
+  final int bytes;
+  // UTC：底包从这一刻往前抓全了。
+  final DateTime builtAt;
+  final CinemaRequest update;
+  final String listPath;
+  final String idPath;
+  final String namePath;
+  final String pageCountPath;
+
+  static CinemaCatalogConfig decode(Object? raw, String where) {
+    final map = _map(raw, where);
+    final file = _string(map['file'], '$where.file');
+    if (!cinemaCatalogFilePattern.hasMatch(file)) throw CinemaRuleException('$where.file 写法不对');
+    final sha256 = _string(map['sha256'], '$where.sha256');
+    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(sha256)) throw CinemaRuleException('$where.sha256 要是 64 位十六进制');
+    final bytes = map['bytes'];
+    if (bytes is! int || bytes < 1 || bytes > cinemaCatalogMaxBytes) throw CinemaRuleException('$where.bytes 不对');
+    final builtAt = DateTime.tryParse(_string(map['builtAt'], '$where.builtAt'));
+    if (builtAt == null || !builtAt.isUtc) throw CinemaRuleException('$where.builtAt 要是 UTC 时刻');
+    final updateMap = _map(map['update'], '$where.update');
+    final update = CinemaRequest.decode(updateMap['request'], '$where.update.request');
+    final uses = '${update.url}${jsonEncode(update.query)}';
+    if (!uses.contains('@hours') || !uses.contains('@page')) throw CinemaRuleException('$where.update 的请求要用到 @hours 与 @page');
+    String path(String key) {
+      final value = _string(updateMap[key], '$where.update.$key');
+      validateCinemaJsonPath(value);
+      return value;
+    }
+
+    return CinemaCatalogConfig(
+      file: file,
+      sha256: sha256,
+      bytes: bytes,
+      builtAt: builtAt,
+      update: update,
+      listPath: path('listPath'),
+      idPath: path('idPath'),
+      namePath: path('namePath'),
+      pageCountPath: path('pageCountPath'),
+    );
+  }
+}
+
+// 一条片源规则（Kazumi 的 Plugin 里 API 模式用得到的部分）；catalog 不为空的是片名目录型（搜索请求用 @ids）。
 class CinemaRule {
   const CinemaRule({
     required this.id,
@@ -106,6 +174,7 @@ class CinemaRule {
     required this.adBlocker,
     required this.search,
     required this.chapters,
+    this.catalog,
   });
   final String id;
   final String name;
@@ -118,15 +187,16 @@ class CinemaRule {
   final bool adBlocker;
   final CinemaSearchConfig search;
   final CinemaChapterConfig chapters;
+  final CinemaCatalogConfig? catalog;
 
   // 规则与同意记录按它认：换了接口地址（主机）要重新征得同意。
   String get host => Uri.parse(search.request.url.replaceAll(RegExp(r'@[A-Za-z_][A-Za-z0-9_]*'), 'x')).host;
 
-  static CinemaRule decode(Object? raw, int index) {
-    final where = 'rules[$index]';
+  static CinemaRule decode(Object? raw, int index, {bool catalog = false}) {
+    final where = catalog ? 'catalogRules[$index]' : 'rules[$index]';
     final map = _map(raw, where);
-    if (_string(map['searchMode'], '$where.searchMode', fallback: 'xpath') != 'api' || _string(map['chapterMode'], '$where.chapterMode', fallback: 'xpath') != 'api') {
-      throw CinemaRuleException('$where 现在只支持 API 模式');
+    if (_string(map['searchMode'], '$where.searchMode', fallback: 'xpath') != (catalog ? 'catalog' : 'api') || _string(map['chapterMode'], '$where.chapterMode', fallback: 'xpath') != 'api') {
+      throw CinemaRuleException(catalog ? '$where 要是片名目录加 API 选集' : '$where 现在只支持 API 模式');
     }
     final id = _string(map['id'], '$where.id');
     if (!cinemaRuleIdPattern.hasMatch(id)) throw CinemaRuleException('$where.id 写法不对');
@@ -167,7 +237,7 @@ class CinemaRule {
     );
     final searchUses = '${search.request.url}${jsonEncode(search.request.query)}${jsonEncode(search.request.body)}';
     final chapterUses = '${chapters.request.url}${jsonEncode(chapters.request.query)}${jsonEncode(chapters.request.body)}';
-    if (!searchUses.contains('@keyword')) throw CinemaRuleException('$where 的搜索请求没用到 @keyword');
+    if (!searchUses.contains(catalog ? '@ids' : '@keyword')) throw CinemaRuleException(catalog ? '$where 的详情请求没用到 @ids' : '$where 的搜索请求没用到 @keyword');
     if (!chapterUses.contains('@source')) throw CinemaRuleException('$where 的选集请求没用到 @source');
     return CinemaRule(
       id: id,
@@ -178,6 +248,7 @@ class CinemaRule {
       adBlocker: map['adBlocker'] == true,
       search: search,
       chapters: chapters,
+      catalog: catalog ? CinemaCatalogConfig.decode(map['catalog'], '$where.catalog') : null,
     );
   }
 }
@@ -266,10 +337,15 @@ CinemaPackage decodeCinemaPackage(List<int> payload) {
   final minClient = map['minClient'] ?? 0;
   if (version is! int || version < 1 || minClient is! int || minClient < 0) throw const CinemaRuleException('规则包的 version、minClient 要是整数');
   final rawRules = map['rules'];
+  final rawCatalogs = map['catalogRules'] ?? const <Object?>[];
   final rawParsers = map['parsers'] ?? const <Object?>[];
-  if (rawRules is! List || rawRules.isEmpty || rawRules.length > cinemaRuleLimit) throw const CinemaRuleException('rules 要有 1 到 $cinemaRuleLimit 条');
+  if (rawRules is! List || rawCatalogs is! List || rawRules.isEmpty || rawRules.length + rawCatalogs.length > cinemaRuleLimit) throw const CinemaRuleException('rules 要有 1 条起，连同 catalogRules 最多 $cinemaRuleLimit 条');
   if (rawParsers is! List || rawParsers.length > cinemaParserLimit) throw const CinemaRuleException('parsers 最多 $cinemaParserLimit 个');
-  final rules = [for (var index = 0; index < rawRules.length; index++) CinemaRule.decode(rawRules[index], index)];
+  // 片名目录型的接在普通源后面（规则包里的先后就是聚合与列失败的先后）。
+  final rules = [
+    for (var index = 0; index < rawRules.length; index++) CinemaRule.decode(rawRules[index], index),
+    for (var index = 0; index < rawCatalogs.length; index++) CinemaRule.decode(rawCatalogs[index], index, catalog: true),
+  ];
   final parsers = [for (var index = 0; index < rawParsers.length; index++) CinemaParser.decode(rawParsers[index], index)];
   if (rules.map((rule) => rule.id).toSet().length != rules.length) throw const CinemaRuleException('rules 的 id 重复');
   if (parsers.map((parser) => parser.id).toSet().length != parsers.length) throw const CinemaRuleException('parsers 的 id 重复');

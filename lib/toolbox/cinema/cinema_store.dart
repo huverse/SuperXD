@@ -2,14 +2,20 @@ import 'dart:typed_data';
 
 import 'package:sqflite/sqflite.dart';
 
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
+import 'package:superxd/toolbox/cinema/cinema_rule.dart';
 
 // 电影院自己的本机库 cinema.db（设备级，清除数据时整库删掉）：
 // - package：上次验签通过的规则包载荷（只留一份，拉不到新的就照旧用它）；
 // - consent：用过哪些源与云解析（按规则 id 与接口主机记，换了主机或新加的源要重新同意）；
 // - history：看过的片与看到哪，最多 cinemaHistoryLimit 条、超过 cinemaHistoryLifetime 没再看的删掉。
+// - catalog、catalog_meta（第 2 版起）：片名目录型的源的本机片名目录（编号、片名与折叠写法）与它来自哪份底包、补到了哪一刻；
+//   每个源最多 cinemaCatalogEntryLimit 条（底包本身也不许超过），源从规则包里拿掉时一并删掉（dropCatalogs）。
 const cinemaHistoryLimit = 50;
 const cinemaHistoryLifetime = Duration(days: 180);
+// 一条多行 INSERT 写几条（4 个参数一条，SQLite 3.28 默认最多 999 个参数）。
+const _catalogInsertRows = 200;
 
 class CinemaStore {
   CinemaStore._(this._database);
@@ -20,9 +26,13 @@ class CinemaStore {
     await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 1,
+        version: 2,
         rollbackActiveTransactionOnOpen: true,
+        onUpgrade: (database, from, _) async {
+          if (from < 2) await _createCatalog(database);
+        },
         onCreate: (database, _) async {
+          await _createCatalog(database);
           await database.execute('CREATE TABLE package (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL, payload BLOB NOT NULL, fetched_at INTEGER NOT NULL)');
           await database.execute('CREATE TABLE consent (subject TEXT PRIMARY KEY, version TEXT NOT NULL)');
           await database.execute(
@@ -93,6 +103,70 @@ class CinemaStore {
 
   Future<void> deleteHistory(String key) async {
     await _database.delete('history', where: 'key = ?', whereArgs: [key]);
+  }
+
+  static Future<void> _createCatalog(Database database) async {
+    await database.execute('CREATE TABLE catalog (rule_id TEXT NOT NULL, source TEXT NOT NULL, name TEXT NOT NULL, folded TEXT NOT NULL, PRIMARY KEY (rule_id, source)) WITHOUT ROWID');
+    await database.execute('CREATE TABLE catalog_meta (rule_id TEXT PRIMARY KEY, file TEXT NOT NULL, synced_at INTEGER NOT NULL, entries INTEGER NOT NULL)');
+  }
+
+  // 这个源的本机片名目录来自哪份底包、补到了哪一刻、有几条；还没有为空。
+  Future<({String file, DateTime syncedAt, int entries})?> catalogMeta(String ruleId) async {
+    final row = (await _database.query('catalog_meta', where: 'rule_id = ?', whereArgs: [ruleId], limit: 1)).firstOrNull;
+    if (row == null) return null;
+    return (file: row['file'] as String, syncedAt: DateTime.fromMillisecondsSinceEpoch(row['synced_at'] as int, isUtc: true), entries: row['entries'] as int);
+  }
+
+  // 换成一份底包：同一事务里删掉旧的、整批写进新的（多行 INSERT 分批），记下来源与起点。
+  Future<void> replaceCatalog(String ruleId, String file, DateTime syncedAt, List<(String, String)> entries) async {
+    await _database.transaction((transaction) async {
+      await transaction.delete('catalog', where: 'rule_id = ?', whereArgs: [ruleId]);
+      await _insertCatalog(transaction, ruleId, entries);
+      await transaction.insert('catalog_meta', {'rule_id': ruleId, 'file': file, 'synced_at': syncedAt.toUtc().millisecondsSinceEpoch, 'entries': entries.length}, conflictAlgorithm: ConflictAlgorithm.replace);
+    });
+  }
+
+  // 补上增量（同编号的改名覆盖）并记下补到的时刻；会超过上限时这批不加（上限是现在上游规模的三倍，等维护者换新底包），只记时刻。
+  Future<int> mergeCatalog(String ruleId, DateTime syncedAt, List<(String, String)> entries) => _database.transaction((transaction) async {
+    final count = Sqflite.firstIntValue(await transaction.rawQuery('SELECT COUNT(*) FROM catalog WHERE rule_id = ?', [ruleId])) ?? 0;
+    if (count + entries.length <= cinemaCatalogEntryLimit) {
+      await _insertCatalog(transaction, ruleId, entries);
+    } else {
+      campusLog('[Cinema] action=catalog_full rule=$ruleId count=$count');
+    }
+    final total = Sqflite.firstIntValue(await transaction.rawQuery('SELECT COUNT(*) FROM catalog WHERE rule_id = ?', [ruleId])) ?? 0;
+    await transaction.update('catalog_meta', {'synced_at': syncedAt.toUtc().millisecondsSinceEpoch, 'entries': total}, where: 'rule_id = ?', whereArgs: [ruleId]);
+    return total;
+  });
+
+  // 本机找片名：折叠写法里含关键字的，完全一样的在前、开头一样的其次、短的在前。全表扫一遍（十几万条在手机上几十毫秒），不用索引。
+  Future<List<(String, String)>> searchCatalog(String ruleId, String folded, {required int limit}) async {
+    final pattern = folded.replaceAllMapped(RegExp(r'[\\%_]'), (match) => '\\${match[0]}');
+    final rows = await _database.rawQuery(
+      "SELECT source, name FROM catalog WHERE rule_id = ? AND folded LIKE ? ESCAPE '\\' ORDER BY folded = ? DESC, folded LIKE ? ESCAPE '\\' DESC, length(folded), source LIMIT ?",
+      [ruleId, '%$pattern%', folded, '$pattern%', limit],
+    );
+    return [for (final row in rows) (row['source'] as String, row['name'] as String)];
+  }
+
+  // 规则包里已经没有的片名目录型源：本机目录一并删掉。
+  Future<void> dropCatalogs(Set<String> keep) async {
+    final placeholders = List.filled(keep.length, '?').join(', ');
+    await _database.transaction((transaction) async {
+      for (final table in ['catalog', 'catalog_meta']) {
+        await transaction.delete(table, where: keep.isEmpty ? null : 'rule_id NOT IN ($placeholders)', whereArgs: keep.isEmpty ? null : [...keep]);
+      }
+    });
+  }
+
+  static Future<void> _insertCatalog(Transaction transaction, String ruleId, List<(String, String)> entries) async {
+    for (var start = 0; start < entries.length; start += _catalogInsertRows) {
+      final chunk = entries.sublist(start, (start + _catalogInsertRows).clamp(0, entries.length));
+      await transaction.rawInsert(
+        'INSERT OR REPLACE INTO catalog (rule_id, source, name, folded) VALUES ${List.filled(chunk.length, '(?, ?, ?, ?)').join(', ')}',
+        [for (final (source, name) in chunk) ...[ruleId, source, name, cinemaFold(name)]],
+      );
+    }
   }
 
   Future<void> close() => _database.close();

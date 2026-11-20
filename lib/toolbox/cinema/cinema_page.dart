@@ -128,9 +128,11 @@ class _CinemaPageState extends State<CinemaPage> {
       _searched = keyword;
     });
     try {
-      final result = await _service.search(keyword, cancel: cancel.future);
-      if (!mounted || generation != _generation) return;
-      setState(() => _result = result);
+      // 边搜边显示（人工决策见 cinema_service.dart 的 pauseAfter）：每回来一个源换一份快照。
+      await for (final result in _service.search(keyword, cancel: cancel.future)) {
+        if (!mounted || generation != _generation) return;
+        setState(() => _result = result);
+      }
     } catch (error, stack) {
       campusLog('[Cinema] action=search errorType=${error.runtimeType}\n$stack');
       if (mounted && generation == _generation) setState(() => _message = '搜索没完成，稍后再试');
@@ -401,7 +403,7 @@ class _CinemaPageState extends State<CinemaPage> {
     final palette = CampusPalette.of(context);
     final text = Theme.of(context).textTheme;
     final result = _result;
-    if (_searching && result == null) {
+    if (_searching && (result == null || (result.titles.isEmpty && result.pending > 0))) {
       return [SliverPadding(padding: const EdgeInsets.only(top: CampusGap.section), sliver: SliverToBoxAdapter(child: CampusLoading(label: '正在搜索', inline: true, network: true)))];
     }
     if (result == null) {
@@ -431,6 +433,7 @@ class _CinemaPageState extends State<CinemaPage> {
       ];
     }
     final failed = [for (final failure in result.failures) failure.message];
+    final paused = result.failures.any((failure) => failure.paused);
     return [
       SliverPadding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
@@ -439,9 +442,24 @@ class _CinemaPageState extends State<CinemaPage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(result.titles.isEmpty ? '没搜到「$_searched」' : '「$_searched」${result.titles.length} 部', style: text.titleMedium),
+              if (result.pending > 0) ...[
+                const SizedBox(height: CampusGap.tight),
+                Text('还在搜 ${result.pending} 个源', style: text.bodyMedium?.copyWith(color: palette.onSurfaceVariant)),
+              ],
               if (failed.isNotEmpty) ...[
                 const SizedBox(height: CampusGap.tight),
                 Text('暂不可用：${failed.join('；')}', style: text.bodyMedium?.copyWith(color: palette.onSurfaceVariant)),
+              ],
+              if (paused && !_searching) ...[
+                const SizedBox(height: CampusGap.small),
+                TextButton.icon(
+                  onPressed: () {
+                    _service.resume();
+                    unawaited(_search());
+                  },
+                  icon: const CampusIcon(CampusIcons.sync),
+                  label: const Text('重试暂停的源'),
+                ),
               ],
             ],
           ),

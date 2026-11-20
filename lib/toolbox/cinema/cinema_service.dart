@@ -6,7 +6,9 @@ import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as path;
 import 'package:pool/pool.dart';
 
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/toolbox/cinema/cinema_catalog.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
@@ -46,11 +48,12 @@ class CinemaPlayable {
 }
 
 class CinemaService implements ToolboxService {
-  CinemaService._(this.store, this._feed, this._directory, {CinemaHttp? http, DateTime Function()? now})
+  CinemaService._(this.store, this._feed, this._directory, {CinemaHttp? http, DateTime Function()? now, Uri? relay})
     : _http = http ?? CinemaHttp(),
       _now = now ?? DateTime.now {
     _proxy = CinemaProxy(_http);
     cloud = CinemaCloudParse(_http, now: _now);
+    catalog = CinemaCatalog(store, _http, relay: relay, now: _now);
   }
 
   static const serviceId = 'cinema';
@@ -61,6 +64,10 @@ class CinemaService implements ToolboxService {
   // 同时搜几个源、每个源最多取几条。
   static const searchConcurrency = 6;
   static const hitsPerSource = 20;
+  // [人工决策-2026-11-20 15:38:08] 边搜边显示、连续失败就暂停（用户选定，同 Kazumi、TVBox 类做法）：哪个源先回来先合进结果；
+  // 同一个源连续失败 pauseAfter 次就暂停 pauseFor 不再去请求，列在「暂不可用」里，点重试（resume）立即恢复。暂停只记在内存（本次运行），不上传。
+  static const pauseAfter = 3;
+  static const pauseFor = Duration(minutes: 30);
 
   final CinemaStore store;
   final CinemaRulesFeed? _feed;
@@ -69,13 +76,17 @@ class CinemaService implements ToolboxService {
   final DateTime Function() _now;
   late final CinemaProxy _proxy;
   late final CinemaCloudParse cloud;
+  late final CinemaCatalog catalog;
   CinemaPackage? _package;
   Future<CinemaPackage>? _loading;
+  // 各源连续失败几次、暂停到什么时刻（只在内存）。
+  final _strikes = <String, int>{};
+  final _pausedUntil = <String, DateTime>{};
 
-  static Future<CinemaService> open(ToolboxServiceContext context, {required CinemaRulesFeed? feed, CinemaHttp? http, DateTime Function()? now}) async {
+  static Future<CinemaService> open(ToolboxServiceContext context, {required CinemaRulesFeed? feed, CinemaHttp? http, DateTime Function()? now, Uri? relay}) async {
     final directory = Directory(path.join(context.base.path, serviceId));
     await directory.create(recursive: true);
-    final service = CinemaService._(await CinemaStore.open(path.join(directory.path, 'cinema.db')), feed, directory, http: http, now: now);
+    final service = CinemaService._(await CinemaStore.open(path.join(directory.path, 'cinema.db')), feed, directory, http: http, now: now, relay: relay);
     final cached = await service.store.package();
     if (cached != null) {
       try {
@@ -113,6 +124,8 @@ class CinemaService implements ToolboxService {
         return current;
       }
       await store.savePackage(fetched.version, payload, _now());
+      // 规则包里拿掉的片名目录型源：本机目录一并删掉。
+      await store.dropCatalogs({for (final rule in fetched.rules) if (rule.catalog != null) rule.id});
       campusLog('[Cinema] action=rules version=${fetched.version} rules=${fetched.rules.length} parsers=${fetched.parsers.length}');
       return _package = fetched;
     } on CinemaRuleException catch (error) {
@@ -136,50 +149,88 @@ class CinemaService implements ToolboxService {
 
   Future<void> grantParser(CinemaParser parser) => store.grant({cinemaParserSubject(parser): parser.host});
 
-  // 多源并行搜索（只搜同意过的源），按片名加年份聚合；一个源失败只进 failures，不影响别的源。cancel 完成时中断还没回来的请求。
-  Future<CinemaSearchResult> search(String keyword, {Future<void>? cancel}) async {
+  // 多源并行搜索（只搜同意过的源），按片名加年份聚合，边搜边给快照（CinemaSearchResult.pending 是还没回来的源数，最后一份为 0）。
+  // 一个源失败只进 failures，不影响别的源；暂停着的源不去请求、直接列进 failures。结果按第一次出现的先后排、只往后加，搜的过程中不跳动。
+  // cancel 完成时中断还没回来的请求。
+  Stream<CinemaSearchResult> search(String keyword, {Future<void>? cancel}) async* {
     final package = await rules();
     final granted = await store.consents();
-    final targets = [for (final rule in package.rules) if (granted[cinemaRuleSubject(rule)] == rule.host) rule];
-    final pool = Pool(searchConcurrency);
+    final now = _now();
     final failures = <CinemaFailure>[];
-    final perRule = <String, List<CinemaHit>>{};
-    campusLog('[Cinema] action=search sources=${targets.length}');
-    await Future.wait([
-      for (final rule in targets)
-        pool.withResource(() async {
-          try {
-            final raw = await _http.text(prepareCinemaRequest(rule.search.request, {'keyword': keyword}), userAgent: rule.userAgent, referer: rule.referer, cancel: cancel);
-            perRule[rule.id] = parseCinemaSearch(raw, rule).take(hitsPerSource).toList();
-          } on CinemaHttpException catch (error) {
-            failures.add(CinemaFailure(ruleId: rule.id, message: '${rule.name}${error.message}'));
-          } on CinemaRuleException catch (error) {
-            failures.add(CinemaFailure(ruleId: rule.id, message: '${rule.name}：${error.message}'));
-          } on http.RequestAbortedException {
-            // 被新的一次搜索顶掉或离开了页面：不算这个源失败。
-            return;
-          } catch (error, stack) {
-            campusLog('[Cinema] action=search_source errorType=${error.runtimeType}\n$stack');
-            failures.add(CinemaFailure(ruleId: rule.id, message: '${rule.name}出错了'));
-          }
-        }),
-    ]);
-    await pool.close();
-    // 按规则包里的顺序合并（先列的源排前面），再按有几个源能播排序（多的在前，同样多的保持原顺序）。
-    final titles = <String, CinemaTitle>{};
-    for (final rule in targets) {
-      for (final hit in perRule[rule.id] ?? const <CinemaHit>[]) {
-        final key = cinemaTitleKey(hit.name, hit.year);
-        final title = titles.putIfAbsent(key, () => CinemaTitle(key: key, name: hit.name, year: hit.year, cover: hit.cover, remarks: hit.remarks));
-        title.addCover(hit.cover);
-        if (title.sources.any((ref) => ref.ruleId == hit.ruleId && ref.source == hit.source)) continue;
-        title.sources.add(CinemaSourceRef(ruleId: hit.ruleId, source: hit.source, name: hit.name, remarks: hit.remarks));
+    final active = <CinemaRule>[];
+    for (final rule in package.rules) {
+      if (granted[cinemaRuleSubject(rule)] != rule.host) continue;
+      final until = _pausedUntil[rule.id];
+      if (until != null && now.isBefore(until)) {
+        failures.add(CinemaFailure(ruleId: rule.id, message: '${rule.name}连续没连上，${formatCampusClock(until)}前先不搜', paused: true));
+      } else {
+        active.add(rule);
       }
     }
-    final ordered = titles.values.indexed.toList()..sort((a, b) => b.$2.sources.length != a.$2.sources.length ? b.$2.sources.length - a.$2.sources.length : a.$1 - b.$1);
-    failures.sort((a, b) => a.ruleId.compareTo(b.ruleId));
-    campusLog('[Cinema] action=search titles=${ordered.length} failures=${failures.length}');
-    return CinemaSearchResult(titles: [for (final (_, title) in ordered) title], failures: failures);
+    final titles = <String, CinemaTitle>{};
+    var pending = active.length;
+    CinemaSearchResult snapshot() => CinemaSearchResult(titles: [...titles.values], failures: [...failures], pending: pending);
+    campusLog('[Cinema] action=search sources=${active.length} paused=${failures.length}');
+    yield snapshot();
+    if (active.isEmpty) return;
+    final pool = Pool(searchConcurrency);
+    final arrivals = StreamController<(CinemaRule, List<CinemaHit>?, CinemaFailure?)>();
+    for (final rule in active) {
+      unawaited(pool.withResource(() => _searchOne(rule, keyword, cancel)).then(arrivals.add));
+    }
+    await for (final (rule, hits, failure) in arrivals.stream.take(active.length)) {
+      pending--;
+      if (hits != null) {
+        _strikes.remove(rule.id);
+        for (final hit in hits.take(hitsPerSource)) {
+          final key = cinemaTitleKey(hit.name, hit.year);
+          final title = titles.putIfAbsent(key, () => CinemaTitle(key: key, name: hit.name, year: hit.year, cover: hit.cover, remarks: hit.remarks));
+          title.addCover(hit.cover);
+          if (title.sources.any((ref) => ref.ruleId == hit.ruleId && ref.source == hit.source)) continue;
+          title.sources.add(CinemaSourceRef(ruleId: hit.ruleId, source: hit.source, name: hit.name, remarks: hit.remarks));
+        }
+      }
+      if (failure != null) {
+        failures.add(failure);
+        final strikes = (_strikes[rule.id] ?? 0) + 1;
+        _strikes[rule.id] = strikes;
+        if (strikes >= pauseAfter) {
+          _strikes.remove(rule.id);
+          _pausedUntil[rule.id] = _now().add(pauseFor);
+          campusLog('[Cinema] action=pause rule=${rule.id}');
+        }
+      }
+      yield snapshot();
+    }
+    await arrivals.close();
+    await pool.close();
+    campusLog('[Cinema] action=search titles=${titles.length} failures=${failures.length}');
+  }
+
+  // 一个源搜一次：成功给结果，失败给原因，被取消（新的一次搜索顶掉或离开了页面）两个都为空、不算这个源失败。不抛错。
+  Future<(CinemaRule, List<CinemaHit>?, CinemaFailure?)> _searchOne(CinemaRule rule, String keyword, Future<void>? cancel) async {
+    try {
+      if (rule.catalog != null) return (rule, await catalog.search(rule, keyword, cancel: cancel), null);
+      final raw = await _http.text(prepareCinemaRequest(rule.search.request, {'keyword': keyword}), userAgent: rule.userAgent, referer: rule.referer, cancel: cancel);
+      return (rule, parseCinemaSearch(raw, rule), null);
+    } on CinemaHttpException catch (error) {
+      return (rule, null, CinemaFailure(ruleId: rule.id, message: '${rule.name}${error.message}'));
+    } on CinemaRuleException catch (error) {
+      return (rule, null, CinemaFailure(ruleId: rule.id, message: '${rule.name}：${error.message}'));
+    } on http.RequestAbortedException {
+      return (rule, null, null);
+    } catch (error, stack) {
+      campusLog('[Cinema] action=search_source errorType=${error.runtimeType}\n$stack');
+      return (rule, null, CinemaFailure(ruleId: rule.id, message: '${rule.name}出错了'));
+    }
+  }
+
+  // 有没有暂停着的源（页面据此给「重试」）；resume 立即恢复全部。
+  bool get hasPaused => _pausedUntil.values.any(_now().isBefore);
+
+  void resume() {
+    _pausedUntil.clear();
+    _strikes.clear();
   }
 
   CinemaRule? rule(String id) => _package?.rules.where((rule) => rule.id == id).firstOrNull;

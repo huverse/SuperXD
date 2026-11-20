@@ -94,6 +94,17 @@ List<CinemaHit> parseCinemaSearch(String raw, CinemaRule rule) {
   return hits;
 }
 
+// 片名目录的一页（增量更新与建底包共用）：每条的编号与片名（缺一样的跳过，片名里的换行与制表符换成空格），与总页数（取不到当 1）。
+({List<(String, String)> entries, int pageCount}) parseCinemaCatalogPage(String raw, CinemaCatalogConfig config) {
+  final document = decodeCinemaJson(raw);
+  final entries = <(String, String)>[];
+  for (final node in readCinemaPath(document, config.listPath)) {
+    final id = _first(node, config.idPath), name = _first(node, config.namePath).replaceAll(RegExp(r'[\t\r\n]+'), ' ').trim();
+    if (id.isNotEmpty && name.isNotEmpty && !id.contains(RegExp(r'[\t\r\n]'))) entries.add((id, name));
+  }
+  return (entries: entries, pageCount: int.tryParse(_first(document, config.pageCountPath)) ?? 1);
+}
+
 // 选集：只留能直接播的媒体地址（见 cinemaMediaUrl），去掉后空了的线路整条不要（采集站常同时给分享页与直链两组，交接 03.2）。
 // 相对地址按选集请求的地址补全。
 List<CinemaRoad> parseCinemaChapters(String raw, CinemaRule rule, Uri requestUri) {

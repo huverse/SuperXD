@@ -3,7 +3,8 @@
 # 用法：RELAY_URL=<中转地址> RELAY_TARGET=<rsync 目标：主机:发布目录/> bash tool/cinema_publish.sh [规则包] [私钥.pem]
 #   规则包默认 ~/.local/share/superxd-cinema/rules.json（写法见 lib/toolbox/cinema/cinema_rule.dart，每次发布 version 加一），
 #   私钥默认 ~/.local/share/superxd-signing/content_signing_notes.pem（信件那把钥，能签 cinema）。
-# 步骤：检查格式并签出 cinema.json → 按客户端内置公钥核对 → 确认中转已有 /v1/app/cinema → 上传（644，容器只读挂载） → 从公网取回与签好的逐字节比对。
+# 步骤：检查格式并签出 cinema.json → 按客户端内置公钥核对 → 确认中转已有 /v1/app/cinema → 先传片名目录底包（规则包里引用的，见 tool/cinema_catalog.dart）并从公网核对 SHA-256
+#   → 上传 cinema.json（644，容器只读挂载） → 从公网取回与签好的逐字节比对 → 删掉中转上不再引用的旧底包（只动 cinema-*.tsv.gz）。
 # 客户端打开电影院时拉（两次至少隔一小时），版本只升不降。
 set -euo pipefail
 source=${1:-$HOME/.local/share/superxd-cinema/rules.json}
@@ -14,9 +15,20 @@ out=$(mktemp -d)
 trap 'rm -rf "$out"' EXIT
 cd "$(dirname "$0")/.."
 
-dart run tool/cinema_rules.dart --in "$source" --out "$out/cinema.json" --signing-key "$key"
+mkdir "$out/catalogs"
+dart run tool/cinema_rules.dart --in "$source" --out "$out/cinema.json" --signing-key "$key" --catalog-dir "$out/catalogs"
 dart run tool/content_signing.dart check-cinema "$out/cinema.json"
 curl -fsS --max-time 30 -o /dev/null "$RELAY_URL/v1/app/cinema" || { echo '中转还没部署 /v1/app/cinema，先部署服务端（server/README.md 部署一节）' >&2; exit 1; }
+for catalog in "$out"/catalogs/cinema-*.tsv.gz; do
+  [ -e "$catalog" ] || continue
+  name=$(basename "$catalog")
+  rsync -t --chmod=F644 "$catalog" "$RELAY_TARGET"
+  curl -fsS --max-time 300 -o "$out/served.gz" "$RELAY_URL/v1/app/files/$name" || { echo "中转取不到 $name（中转要部署认得片名目录的版本）" >&2; exit 1; }
+  [ "$(sha256sum < "$out/served.gz" | cut -d' ' -f1)" = "$(sha256sum < "$catalog" | cut -d' ' -f1)" ] || { echo "中转上的 $name 与本机的不一致" >&2; exit 1; }
+  echo "[CinemaPublish] action=catalog_check file=$name"
+done
 rsync -t --chmod=F644 "$out/cinema.json" "$RELAY_TARGET"
 curl -fsS --max-time 30 -o "$out/served.json" "$RELAY_URL/v1/app/cinema"
 python3 -I -c 'import json, sys; built, served = (json.load(open(path, encoding="utf-8")) for path in sys.argv[1:3]); assert served.get("envelope") is not None, "中转返回里没有签名信封"; assert built == served, "中转上的 cinema.json 与签好的不一致"; print("[CinemaPublish] action=relay_check signed=true")' "$out/cinema.json" "$out/served.json"
+# 规则包已换好，再删不再引用的旧底包（手机最迟一小时后拉到新规则包、改下新的）；--delete 只作用于 cinema-*.tsv.gz，别的文件被 exclude 保护。
+rsync -r --delete --include='cinema-*.tsv.gz' --exclude='*' "$out/catalogs/" "$RELAY_TARGET"
