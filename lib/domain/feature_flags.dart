@@ -16,4 +16,9 @@ abstract interface class FeatureGate {
 // 百宝箱的电影院（灰度测试，人工决策见 lib/toolbox/cinema/cinema_service.dart 文件头）：开着才显示入口、才能进路由。
 const cinemaFlag = FeatureFlag('toolbox.cinema', fallback: false);
 
-const featureFlags = <FeatureFlag>[cinemaFlag];
+// [人工决策-2026-11-20 22:39:37] 电影院的「解析」（播放页地址交给云解析）先不向用户开放、优化完再说：用户选「开关加规则包」：
+// 开关默认关，关着时电影院只有找片、不显示找片与解析的切换，代码留着；规则包第 4 版拿掉解析源，已装 1.0.0-alpha.34 的也解析不了（直链照样能播）。
+// 没选「只靠规则包」（没法先点名给自己测）与「直接删代码」（以后要从历史捞回来重接）。重新开放：规则包加回解析源，先点名给自己测再放量。
+const cinemaParseFlag = FeatureFlag('toolbox.cinema.parse', fallback: false);
+
+const featureFlags = <FeatureFlag>[cinemaFlag, cinemaParseFlag];

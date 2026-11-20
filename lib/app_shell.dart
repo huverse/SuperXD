@@ -124,6 +124,8 @@ class _SuperXdAppState extends State<SuperXdApp> {
     },
     versionCode: () async => int.tryParse((await PackageInfo.fromPlatform()).buildNumber) ?? 0,
     passes: widget.services.passes,
+    // 工具里灰度中的一部分（电影院的解析）问的功能开关，同百宝箱首页与路由用的那份。
+    features: widget.services.features,
   );
   late final AppShortcuts? _shortcuts = switch (widget.services.shortcuts) {
     final port? => AppShortcuts(port: port, tools: _toolbox.modules, pixelRatio: WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio),

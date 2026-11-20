@@ -118,16 +118,28 @@ List<String> _filterAds(List<String> lines) {
   };
   if (ads.isEmpty) return lines;
   // 去掉的段里可能带着之后正片要用的 EXT-X-KEY、EXT-X-MAP：按到每个分片为止「当时生效的那一行」补上，不改正片的解密与初始化。
+  // 初始化段按 EXT-X-MAP 出现时生效的 EXT-X-KEY 解密（RFC 8216 4.3.2.4；明文初始化段配加密分片时 MAP 写在 KEY 前面）：
+  // MAP 记下自己那时的密钥（null 是还没有密钥，即明文），补 MAP 前先把密钥换成那时的、写完再换回分片当前的，顺序颠倒会把明文初始化段当密文解。
   final out = [...header];
-  String? key, map, emittedKey, emittedMap;
+  String? key, map, mapKey, emittedKey, emittedMap, emittedMapKey;
+  void useKey(String? target) {
+    if (target == emittedKey) return;
+    out.add(target ?? '#EXT-X-KEY:METHOD=NONE');
+    emittedKey = target;
+  }
+
   for (final block in blocks) {
     for (final tag in block.tags) {
       if (tag.startsWith('#EXT-X-KEY')) key = tag;
-      if (tag.startsWith('#EXT-X-MAP')) map = tag;
+      if (tag.startsWith('#EXT-X-MAP')) (map, mapKey) = (tag, key);
     }
     if (ads.contains(block.group)) continue;
-    if (key != emittedKey && key != null) out.add(emittedKey = key);
-    if (map != emittedMap && map != null) out.add(emittedMap = map);
+    if (map != null && (map != emittedMap || mapKey != emittedMapKey)) {
+      useKey(mapKey);
+      out.add(map);
+      (emittedMap, emittedMapKey) = (map, mapKey);
+    }
+    useKey(key);
     out.addAll(block.tags.where((tag) => !tag.startsWith('#EXT-X-KEY') && !tag.startsWith('#EXT-X-MAP')));
     out.add(block.uri);
   }

@@ -8,7 +8,6 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 
 import 'package:superxd/domain/campus_log.dart';
-import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -19,6 +18,7 @@ import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
+import 'package:superxd/toolbox/cinema/cinema_episodes.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
 import 'package:superxd/toolbox/cinema/cinema_player_controls.dart';
@@ -79,6 +79,8 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   List<CinemaRoad>? _roads;
   var _road = 0;
   var _episode = 0;
+  // 下面选集里正在看的线路（只是看它有哪些集，点了某一集才换过去播；为空就是正在播的那条）。
+  int? _browsing;
   CinemaParsed? _parsed;
   // 正在取选集、解析或打开。
   // 打开后进度还没动（取选集、解析、首屏缓冲），与播放中卡住缓冲（_stalled）：两者有一个就画加载圈，持续 15 秒提示可以换源。
@@ -136,7 +138,15 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         // 换集、重新载入时上一个视频晚到的错误不算这一次的（见 _currentMedia）。
         if (!_currentMedia) return;
         _record(ok: false);
-        if (mounted) setState(() => _error = '播放出错，可以重新载入或换个源');
+        // 出错就结束这一次打开（首帧前出错也一样）：收起加载与缓冲提示、放开换源；还在等的旧请求照旧由 _cancel 取消。
+        _slowTimer?.cancel();
+        if (mounted) {
+          setState(() {
+            _error = '播放出错，可以重新载入或换个源';
+            _opening = false;
+            _slow = false;
+          });
+        }
       }))
       ..add(_player.stream.position.listen((position) {
         // 只认这一次交给播放器的媒体：重新载入时旧视频还在播，它的进度不能把这次记成播成、也不能收起加载动画。
@@ -235,6 +245,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         if (generation != _generation) return;
         _road = _road.clamp(0, roads.length - 1);
         _episode = _episode.clamp(0, roads[_road].episodes.length - 1);
+        _browsing = null;
         playable = await widget.service.playable(roads[_road].episodes[_episode].url, rule: rule, fresh: fresh);
       } else {
         final parser = widget.parser;
@@ -271,10 +282,10 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     }
   }
 
-  // 记下看到哪（只在找片里）；出错只记日志，不打扰播放。进度还没动（打开中、没打开成）时不记，免得接着看的位置被 0 盖掉。
+  // 记下看到哪（只在找片里）；出错只记日志，不打扰播放。进度还没动（打开中、没打开成、出错了）时不记，免得接着看的位置被 0 盖掉。
   Future<void> _save() async {
     final title = widget.title, source = _source, episode = _current;
-    if (title == null || source == null || episode == null || _opening) return;
+    if (title == null || source == null || episode == null || _opening || _error != null) return;
     final state = _player.state;
     try {
       await widget.service.store.saveHistory(CinemaHistory(
@@ -320,6 +331,12 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     }
     _cancel?.complete();
     final cancel = _cancel = Completer<void>();
+    // 没换成时还原：原来出错的仍显示出错（能重新载入），不留一块既不转圈也不报错的黑屏。
+    final previousError = _error;
+    void stay() => setState(() {
+      _opening = false;
+      _error = previousError;
+    });
     setState(() {
       _opening = true;
       _error = null;
@@ -343,17 +360,17 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         return;
       }
       if (mounted) {
-        setState(() => _opening = false);
+        stay();
         showCampusToast(context, '这个源没有「$name」');
       }
     } on CinemaRuleException catch (error) {
       if (mounted) {
-        setState(() => _opening = false);
+        stay();
         showCampusToast(context, error.message);
       }
     } on CinemaHttpException catch (error) {
       if (mounted) {
-        setState(() => _opening = false);
+        stay();
         showCampusToast(context, '这个源${error.message}');
       }
     } on http.RequestAbortedException {
@@ -480,6 +497,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     final title = widget.title;
     final roads = _roads;
     final subtitle = _titleMode ? (_current?.name ?? '') : '';
+    final browsing = roads == null ? 0 : (_browsing ?? _road).clamp(0, roads.length - 1);
     return CampusScrollFade(
       child: ListView(
         padding: const EdgeInsets.all(CampusGap.large),
@@ -518,18 +536,15 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
               CampusSegmented<int>(
                 values: [for (var index = 0; index < roads.length; index++) index],
                 label: (index) => roads[index].name,
-                selected: _road,
-                onSelected: (index) => setState(() => _road = index),
+                selected: browsing,
+                onSelected: (index) => setState(() => _browsing = index),
               ),
               const SizedBox(height: CampusGap.medium),
             ],
-            Wrap(
-              spacing: CampusGap.small,
-              runSpacing: CampusGap.small,
-              children: [
-                for (final (index, episode) in roads[_road.clamp(0, roads.length - 1)].episodes.indexed)
-                  CampusGlassChip(label: episode.name, selected: index == _episode, onSelected: (_) => unawaited(_pickEpisode(_road, index))),
-              ],
+            CinemaEpisodeGrid(
+              episodes: roads[browsing].episodes,
+              selected: browsing == _road ? _episode : null,
+              onPick: (index) => unawaited(_pickEpisode(browsing, index)),
             ),
           ],
         ],

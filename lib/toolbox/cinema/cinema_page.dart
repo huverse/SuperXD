@@ -6,8 +6,10 @@ import 'package:go_router/go_router.dart';
 
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/domain/pass.dart';
 import 'package:superxd/theme/campus_glass_button.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
@@ -17,6 +19,7 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
 import 'package:superxd/toolbox/cinema/cinema_detail_page.dart';
@@ -32,6 +35,7 @@ import 'package:superxd/toolbox/toolbox_url.dart';
 enum _Mode { search, parse }
 
 // 电影院首页：找片（多源搜索、按片名加年份聚合，没搜时列看过的）与解析（视频网站播放页地址 → 云解析 → 播放）。
+// 解析在功能开关 cinemaParseFlag 后面（人工决策见 domain/feature_flags.dart），关着时只有找片、不显示切换。
 // 第一次搜、第一次解析前征得同意：片名与播放页地址会直接发给第三方站点（新加的源、换了主机的要重新同意）。
 class CinemaPage extends StatefulWidget {
   const CinemaPage({super.key, required this.runtime});
@@ -56,13 +60,36 @@ class _CinemaPageState extends State<CinemaPage> {
   Completer<void>? _cancel;
   var _generation = 0;
   StreamSubscription<void>? _passChanges;
+  StreamSubscription<void>? _featureChanges;
   var _buying = false;
+
+  // 解析开着才有两段可切；关着（含页面开着时被关掉）一律是找片。
+  _Mode get _shown => widget.runtime.features?.isOn(cinemaParseFlag) == true ? _mode : _Mode.search;
 
   @override
   void initState() {
     super.initState();
     _passChanges = widget.runtime.passes?.changes.listen((_) {
       if (mounted) setState(() {});
+    });
+    _featureChanges = widget.runtime.features?.changes.listen((_) {
+      if (mounted) setState(() {});
+    });
+    _query.addListener(_onQuery);
+  }
+
+  // [人工决策-2026-11-20 22:54:48] 首页三项（用户全选推荐）：清空搜索框（点 × 或删光）就回到「看过的」并中断还没搜完的；
+  // 搜索中输入框照常可改，按键盘的搜索重新搜（新的一次本来就顶掉旧的）；暂不可用的源只写名字（原因进日志，见 CinemaService.search）。
+  void _onQuery() {
+    if (_query.text.isNotEmpty || (_result == null && !_searching)) return;
+    _cancel?.complete();
+    _cancel = null;
+    _generation++;
+    setState(() {
+      _result = null;
+      _searched = null;
+      _searching = false;
+      _message = null;
     });
   }
 
@@ -169,6 +196,22 @@ class _CinemaPageState extends State<CinemaPage> {
     await _reloadHistory();
   }
 
+  // 看过的一条：⋯ 里只有删除（警示色，先确认），只删本机这条记录。
+  Future<void> _historyMenu(BuildContext anchor, CinemaHistory entry) async {
+    final picked = await showCampusMenu<bool>(anchor, items: const [CampusMenuItem(value: true, label: '删除', icon: CampusIcons.delete, destructive: true)]);
+    if (picked != true || !mounted) return;
+    final agreed = await showCampusConfirm(context, title: '删除这条记录', message: '「${entry.name}」看到哪也一起删掉。', action: '删除', destructive: true);
+    if (!agreed) return;
+    try {
+      await _service.store.deleteHistory(entry.key);
+    } catch (error, stack) {
+      campusLog('[Cinema] action=delete_history errorType=${error.runtimeType}\n$stack');
+      if (mounted) showCampusToast(context, '没删掉，稍后再试');
+      return;
+    }
+    await _reloadHistory();
+  }
+
   Future<void> _parse() async {
     final package = _service.package;
     final parser = package == null || package.parsers.isEmpty ? null : package.parsers.first;
@@ -249,6 +292,7 @@ class _CinemaPageState extends State<CinemaPage> {
   @override
   void dispose() {
     unawaited(_passChanges?.cancel());
+    unawaited(_featureChanges?.cancel());
     _cancel?.complete();
     _query.dispose();
     _link.dispose();
@@ -291,7 +335,7 @@ class _CinemaPageState extends State<CinemaPage> {
                       padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
                       sliver: SliverToBoxAdapter(child: _header(context)),
                     ),
-                    if (_mode == _Mode.search) ..._searchSlivers(context),
+                    if (_shown == _Mode.search) ..._searchSlivers(context),
                     const SliverToBoxAdapter(child: SizedBox(height: CampusGap.section)),
                   ],
                 ),
@@ -335,23 +379,26 @@ class _CinemaPageState extends State<CinemaPage> {
 
   Widget _header(BuildContext context) {
     final palette = CampusPalette.of(context);
+    final shown = _shown;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        CampusSegmented<_Mode>(
-          values: _Mode.values,
-          label: (mode) => mode == _Mode.search ? '找片' : '解析',
-          selected: _mode,
-          onSelected: _searching || _parsing ? null : (mode) => setState(() {
-            _mode = mode;
-            _message = null;
-          }),
-        ),
-        const SizedBox(height: CampusGap.medium),
-        if (_mode == _Mode.search)
+        if (widget.runtime.features?.isOn(cinemaParseFlag) == true) ...[
+          CampusSegmented<_Mode>(
+            values: _Mode.values,
+            label: (mode) => mode == _Mode.search ? '找片' : '解析',
+            selected: shown,
+            onSelected: _searching || _parsing ? null : (mode) => setState(() {
+              _mode = mode;
+              _message = null;
+            }),
+          ),
+          const SizedBox(height: CampusGap.medium),
+        ],
+        if (shown == _Mode.search)
           Row(
             children: [
-              Expanded(child: CampusSearchField(controller: _query, hint: '片名', enabled: !_searching, onSubmitted: (_) => _search())),
+              Expanded(child: CampusSearchField(controller: _query, hint: '片名', onSubmitted: (_) => _search())),
               const SizedBox(width: CampusGap.small),
               FilledButton(
                 style: campusProminent,
@@ -406,6 +453,41 @@ class _CinemaPageState extends State<CinemaPage> {
     );
   }
 
+  // [人工决策-2026-11-20 22:54:48] 「看过的」改成横向海报条（同腾讯视频、Netflix 的「继续观看」；用户从两种排法里选的，没选「竖列表加进度条」）：
+  // 海报底边是看到哪的进度，⋯ 里删除这条（先确认）；最多 cinemaHistoryLimit 条都在这一行横滑，首页不再被拉得很长，海报只取看得见的几张。
+  List<Widget> _historySlivers(BuildContext context) {
+    if (_history.isEmpty) return const [];
+    return [
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
+        sliver: SliverToBoxAdapter(child: Text('看过的', style: Theme.of(context).textTheme.titleMedium)),
+      ),
+      SliverToBoxAdapter(
+        child: SizedBox(
+          height: CinemaHistoryCard.heightOf(context),
+          child: ListView.separated(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.symmetric(horizontal: CampusGap.large),
+            itemCount: _history.length,
+            separatorBuilder: (_, _) => const SizedBox(width: CampusGap.medium),
+            itemBuilder: (context, index) {
+              final entry = _history[index];
+              return CinemaHistoryCard(
+                key: ValueKey(entry.key),
+                cover: entry.cover,
+                title: entry.name,
+                episode: entry.episodeName,
+                progress: entry.duration > Duration.zero ? entry.position.inMilliseconds / entry.duration.inMilliseconds : null,
+                onTap: () => unawaited(_resume(entry).catchError((Object error, StackTrace stack) => campusLog('[Cinema] action=resume errorType=${error.runtimeType}\n$stack'))),
+                onMore: (anchor) => unawaited(_historyMenu(anchor, entry)),
+              );
+            },
+          ),
+        ),
+      ),
+    ];
+  }
+
   List<Widget> _searchSlivers(BuildContext context) {
     final palette = CampusPalette.of(context);
     final text = Theme.of(context).textTheme;
@@ -413,33 +495,8 @@ class _CinemaPageState extends State<CinemaPage> {
     if (_searching && (result == null || (result.titles.isEmpty && result.pending > 0))) {
       return [SliverPadding(padding: const EdgeInsets.only(top: CampusGap.section), sliver: SliverToBoxAdapter(child: CampusLoading(label: '正在搜索', inline: true, network: true, remote: '片源站')))];
     }
-    if (result == null) {
-      if (_history.isEmpty) return const [];
-      return [
-        SliverPadding(
-          padding: const EdgeInsets.fromLTRB(16, 24, 16, 8),
-          sliver: SliverToBoxAdapter(child: Text('看过的', style: text.titleMedium)),
-        ),
-        SliverPadding(
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          sliver: SliverList.separated(
-            itemCount: _history.length,
-            separatorBuilder: (_, _) => const SizedBox(height: CampusGap.small),
-            itemBuilder: (context, index) {
-              final entry = _history[index];
-              return CinemaPosterRow(
-                key: ValueKey(entry.key),
-                covers: [entry.cover],
-                title: entry.name,
-                lines: [entry.episodeName, if (entry.position > Duration.zero) '看到 ${formatCinemaDuration(entry.position)}'],
-                onTap: () => unawaited(_resume(entry).catchError((Object error, StackTrace stack) => campusLog('[Cinema] action=resume errorType=${error.runtimeType}\n$stack'))),
-              );
-            },
-          ),
-        ),
-      ];
-    }
-    final failed = [for (final failure in result.failures) failure.message];
+    if (result == null) return _historySlivers(context);
+    final failed = [for (final failure in result.failures) failure.name];
     final paused = result.failures.any((failure) => failure.paused);
     return [
       SliverPadding(
@@ -455,7 +512,7 @@ class _CinemaPageState extends State<CinemaPage> {
               ],
               if (failed.isNotEmpty) ...[
                 const SizedBox(height: CampusGap.tight),
-                Text('暂不可用：${failed.join('；')}', style: text.bodyMedium?.copyWith(color: palette.onSurfaceVariant)),
+                DotSeparatedText('暂不可用：${failed.join('、')}', separator: '、', style: text.bodyMedium!.copyWith(color: palette.onSurfaceVariant)),
               ],
               if (paused && !_searching) ...[
                 const SizedBox(height: CampusGap.small),
