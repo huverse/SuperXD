@@ -87,7 +87,7 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
     final history = await _historyFuture;
     final resume = history != null && history.ruleId == ref.ruleId && history.source == ref.source && history.road < roads.length && history.episode < roads[history.road].episodes.length;
     final episode = resume ? roads[history.road].episodes[history.episode] : roads.first.episodes.first;
-    unawaited(widget.service.warm(episode.url, rule: rule));
+    unawaited(widget.service.warm(episode.url, rule: rule, cancel: cancel.future));
     return roads;
   }
 

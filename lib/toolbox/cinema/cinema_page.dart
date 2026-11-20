@@ -96,7 +96,7 @@ class _CinemaPageState extends State<CinemaPage> {
 
   // 还没同意过的源先问一次；不同意就不搜。
   Future<bool> _consentRules() async {
-    final package = await _service.rules();
+    final package = await _service.usable();
     final missing = await _service.unconsentedRules(package);
     if (missing.isEmpty) return true;
     if (!mounted) return false;

@@ -584,6 +584,49 @@ void main() {
       await service.close();
     });
 
+    test('选集：重新载入另起的一次先回来、旧的后回来，缓存留新的', () async {
+      final gates = <Completer<void>>[];
+      var served = 0;
+      final client = MockClient((request) async {
+        final gate = Completer<void>();
+        gates.add(gate);
+        await gate.future;
+        served++;
+        return reply(macCmsList([{'vod_id': 7, 'vod_name': '合成', 'vod_play_from': 'm3u8', 'vod_play_url': '第01集\$https://cdn.example.com/${gates.indexOf(gate) + 1}.m3u8'}]), 200);
+      });
+      final service = await open(() async => packageBytes(), client: client);
+      final rule = (await service.rules()).rules.first;
+      final old = service.chapters(rule, '7');
+      await pumpEventQueue();
+      final fresh = service.chapters(rule, '7', fresh: true);
+      await pumpEventQueue();
+      gates[1].complete();
+      expect((await fresh).single.episodes.single.url, 'https://cdn.example.com/2.m3u8');
+      gates[0].complete();
+      expect((await old).single.episodes.single.url, 'https://cdn.example.com/1.m3u8');
+      expect((await service.chapters(rule, '7')).single.episodes.single.url, 'https://cdn.example.com/2.m3u8', reason: '旧的晚回来不覆盖');
+      expect(served, 2);
+      await service.close();
+    });
+
+    test('后台在拉规则包时，搜索直接用本机的，不等它', () async {
+      var now = DateTime.utc(2026, 11, 20);
+      var gate = Completer<void>()..complete();
+      final service = await open(() async {
+        await gate.future;
+        return packageBytes();
+      }, client: MockClient((request) async => reply(macCmsList([{'vod_id': 1, 'vod_name': '合成电影'}]), 200)), now: () => now);
+      await service.grantRules((await service.rules()).rules);
+      now = now.add(const Duration(hours: 2));
+      gate = Completer<void>();
+      final refreshing = service.rules();
+      final result = await service.search('合成').last.timeout(const Duration(seconds: 2));
+      expect(result.titles.single.name, '合成电影');
+      gate.complete();
+      await refreshing;
+      await service.close();
+    });
+
     test('规则包拉不到：5 分钟内不再去拉（照旧用本机的），重试不等；拉到了就清零', () async {
       var now = DateTime.utc(2026, 11, 20);
       var fetches = 0;
@@ -775,6 +818,43 @@ void main() {
     hits.clear();
     await getLocal(await masterProxy.open(Uri.parse('https://cdn.example.com/master.m3u8'), stream));
     expect(hits, ['cdn.example.com'], reason: '主清单里是子清单，不探');
+  });
+
+  test('本机代理：重新载入登记的一路不用缓存的清单、重新探测；旧的晚回来不覆盖缓存；预取可以取消', () async {
+    var version = 0;
+    final probes = <String>[];
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('.m3u8')) {
+        version++;
+        return reply('#EXTM3U\n#EXTINF:10,\nhttps://edge.example.com/real.example.com/seg$version.ts?sign=$version\n#EXT-X-ENDLIST\n', 200);
+      }
+      probes.add(request.url.host);
+      return reply('xx', 206);
+    });
+    final proxy = CinemaProxy(CinemaHttp(client: client));
+    addTearDown(proxy.close);
+    final stream = CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false);
+    final playlist = Uri.parse('https://cdn.example.com/v/index.m3u8');
+    expect((await getLocal(await proxy.open(playlist, stream))).$2, contains('sign=1'));
+    expect((await getLocal(await proxy.open(playlist, stream))).$2, contains('sign=1'), reason: '点播清单走缓存');
+    probes.clear();
+    expect((await getLocal(await proxy.open(playlist, stream, fresh: true))).$2, contains('sign=2'), reason: '重新载入不用缓存');
+    expect(probes, isNotEmpty, reason: '重新载入也重新探测');
+    expect((await getLocal(await proxy.open(playlist, stream))).$2, contains('sign=2'), reason: '新取的进了缓存');
+    // 预取取消：没人等了，下一次另起请求。
+    final gate = Completer<void>();
+    final slow = MockClient((request) async {
+      await gate.future;
+      return reply('#EXTM3U\n#EXTINF:10,\nseg0.ts\n#EXT-X-ENDLIST\n', 200);
+    });
+    final warmProxy = CinemaProxy(CinemaHttp(client: slow));
+    addTearDown(warmProxy.close);
+    final cancel = Completer<void>();
+    final warming = warmProxy.warm(Uri.parse('https://cdn.example.com/slow.m3u8'), stream, cancel: cancel.future);
+    await pumpEventQueue();
+    cancel.complete();
+    await warming.timeout(const Duration(seconds: 1));
+    gate.complete();
   });
 
   test('本机代理：一路交回后它还在等的清单请求立即回 404，之后再来的也是 404', () async {
