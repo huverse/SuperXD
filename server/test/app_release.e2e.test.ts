@@ -262,22 +262,6 @@ describe('字体包下载', () => {
   });
 });
 
-// 电影院的片名目录（客户端 lib/toolbox/cinema/cinema_catalog.dart）：只认 cinema-<规则>-<哈希>.tsv.gz，类型 application/gzip，同一个下载接口与限流。
-describe('片名目录下载', () => {
-  const catalog = 'cinema-wsy-0123456789ab.tsv.gz';
-
-  it('整个下载与断点续传，别的 gz 文件名不认', async () => {
-    await writeFile(join(dir(), catalog), Buffer.from('catalog-bytes'));
-    const whole = await request(server).get(`/v1/app/files/${catalog}`);
-    expect(whole.status).toBe(200);
-    expect(whole.headers['content-type']).toBe('application/gzip');
-    expect((await request(server).get(`/v1/app/files/${catalog}`).set('Range', 'bytes=0-3')).status).toBe(206);
-    for (const name of ['alpha.tsv.gz', 'cinema-wsy.json.gz', 'cinema-WSY-01.tsv.gz', 'cinema-..%2Fx.tsv.gz']) {
-      expect((await request(server).get(`/v1/app/files/${name}`)).body.code, name).toBe('INVALID_REQUEST');
-    }
-  });
-});
-
 describe('开发者的话', () => {
   const note = (id: string, overrides: Record<string, unknown> = {}) => ({ id, title: '近况', publishedAt: '2026-10-24T13:30:00.000Z', body: '第一段\n\n第二段', ...overrides });
 

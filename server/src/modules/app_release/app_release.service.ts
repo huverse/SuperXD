@@ -143,7 +143,7 @@ export class AppReleaseService {
     response.once('close', () => this.downloads--);
     this.logger.debug(`[AppRelease] action=send file=${name} active=${this.downloads}`);
     const error = await new Promise<(Error & { status?: number; code?: string }) | undefined>((resolve) =>
-      response.sendFile(name, { root: env().releasesDir, dotfiles: 'deny', headers: { 'Content-Type': dtos.appFileContentType(name) } }, resolve),
+      response.sendFile(name, { root: env().releasesDir, dotfiles: 'deny', headers: { 'Content-Type': name.endsWith('.ttf') ? 'font/ttf' : 'application/vnd.android.package-archive' } }, resolve),
     );
     if (error === undefined) return;
     // 已开始发送后出错多是客户端断开（暂停、切网），无从再回错误。

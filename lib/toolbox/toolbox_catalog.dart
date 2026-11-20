@@ -64,7 +64,7 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
       },
       relay: runtime.relayUrl,
     ),
-    clearedData: '片源规则、片名目录、片源同意与看过的记录（再用要重新同意）',
+    clearedData: '片源规则、片源同意与看过的记录（再用要重新同意）',
     flag: cinemaFlag,
   ),
 ];

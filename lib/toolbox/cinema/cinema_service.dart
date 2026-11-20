@@ -53,7 +53,7 @@ class CinemaService implements ToolboxService {
       _now = now ?? DateTime.now {
     _proxy = CinemaProxy(_http);
     cloud = CinemaCloudParse(_http, now: _now);
-    catalog = CinemaCatalog(store, _http, relay: relay, now: _now);
+    catalog = CinemaCatalog(_http, relay: relay);
   }
 
   static const serviceId = 'cinema';
@@ -124,8 +124,6 @@ class CinemaService implements ToolboxService {
         return current;
       }
       await store.savePackage(fetched.version, payload, _now());
-      // 规则包里拿掉的片名目录型源：本机目录一并删掉。
-      await store.dropCatalogs({for (final rule in fetched.rules) if (rule.catalog != null) rule.id});
       campusLog('[Cinema] action=rules version=${fetched.version} rules=${fetched.rules.length} parsers=${fetched.parsers.length}');
       return _package = fetched;
     } on CinemaRuleException catch (error) {

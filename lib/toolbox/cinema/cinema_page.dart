@@ -96,8 +96,8 @@ class _CinemaPageState extends State<CinemaPage> {
     final agreed = await showCampusConfirm(
       context,
       title: '使用第三方片源',
-      // 长文案：首次同意要说清片名发给谁、内容归谁。
-      message: '片名会直接发给以下站点，片源与画面来自第三方，版权归原权利人：\n${missing.map((rule) => rule.name).join('、')}',
+      // 长文案：首次同意要说清片名发给谁、内容归谁；片名目录型的源（人工决策见 cinema_catalog.dart）片名先发到开发者服务器查编号。
+      message: '片名会发给以下站点，片源与画面来自第三方，版权归原权利人：\n${[for (final rule in missing) rule.catalog == null ? rule.name : '${rule.name}（片名经开发者服务器查找，不保存）'].join('、')}',
       action: '同意并搜索',
     );
     if (!agreed) return false;
@@ -272,7 +272,7 @@ class _CinemaPageState extends State<CinemaPage> {
                 }),
               );
             }
-            if (snapshot.connectionState != ConnectionState.done) return const Center(child: CampusLoading(label: '正在准备', network: true));
+            if (snapshot.connectionState != ConnectionState.done) return const Center(child: CampusLoading(label: '正在准备', network: true, remote: '中转服务'));
             final passes = widget.runtime.passes;
             if (passes != null && passes.locked(CinemaService.passId)) return _passCard(context, passes);
             return Center(
@@ -404,7 +404,7 @@ class _CinemaPageState extends State<CinemaPage> {
     final text = Theme.of(context).textTheme;
     final result = _result;
     if (_searching && (result == null || (result.titles.isEmpty && result.pending > 0))) {
-      return [SliverPadding(padding: const EdgeInsets.only(top: CampusGap.section), sliver: SliverToBoxAdapter(child: CampusLoading(label: '正在搜索', inline: true, network: true)))];
+      return [SliverPadding(padding: const EdgeInsets.only(top: CampusGap.section), sliver: SliverToBoxAdapter(child: CampusLoading(label: '正在搜索', inline: true, network: true, remote: '片源站')))];
     }
     if (result == null) {
       if (_history.isEmpty) return const [];

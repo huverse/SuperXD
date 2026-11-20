@@ -103,7 +103,7 @@ class CinemaHistory {
 // 这里只折全角 ASCII 与全角空格（交接的测试向量都在这个范围），其余写法不同的当成两部片，不会误合并。
 String cinemaTitleKey(String name, String year) => '${cinemaFold(name)}|${cinemaYear(year)}';
 
-// 片名的折叠写法：去空白、全角折半角、小写。聚合键与片名目录的本机搜索共用。
+// 片名的折叠写法：去空白、全角折半角、小写。聚合键用，中转的片名目录按同样的写法折叠（服务端 cinema_catalog_source.ts 的 cinemaFold）。
 String cinemaFold(String name) {
   final buffer = StringBuffer();
   for (final rune in name.runes) {

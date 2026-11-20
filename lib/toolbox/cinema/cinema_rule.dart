@@ -2,7 +2,7 @@ import 'dart:convert';
 
 // 电影院的规则包（人工决策见 cinema_service.dart 文件头）：写法沿用 Kazumi 的规则（github.com/Predidit/Kazumi，GPL-3.0，见 assets/third_party_notices.txt），
 // 第一版只实现它的 API 模式（JSONPath 取值、选集可以是苹果 CMS 那种 $$$、#、$ 分隔的字符串），外加三处扩展：规则自己的 id、搜索结果的海报年份备注路径、云解析 parsers。
-// 11-20 起另有片名目录型的源 catalogRules（采集站接口不给搜索的，如 wsy，见 CinemaCatalogConfig）：放在单独的顶层字段，1.0.0-alpha.34 不认这个字段、直接忽略，不会整包拒收。
+// 11-20 起另有片名目录型的源 catalogRules（采集站接口不给搜索的，如 wsy，见 CinemaCatalogConfig；片名目录在中转上）：放在单独的顶层字段，1.0.0-alpha.34 不认这个字段、直接忽略，不会整包拒收。
 // 规则包由维护者本机签名后经中转下发（不进公开仓库），这里是验签之后的外部输入边界：逐项校验，不合格整包不用。
 
 // 一包最多几条规则、几个云解析，载荷多大；tool/cinema_rules.dart 与中转按同一上限。
@@ -13,11 +13,6 @@ const cinemaPackageMaxBytes = 256 * 1024;
 const cinemaPackageFormat = 1;
 
 final cinemaRuleIdPattern = RegExp(r'^[a-z0-9][a-z0-9_-]{0,31}$');
-
-// 片名目录（人工决策见 cinema_catalog.dart 文件头）：文件名、大小与条数上限；中转的下载接口只认这种文件名（server/src/modules/app_release/app_release.dto.ts）。
-final cinemaCatalogFilePattern = RegExp(r'^cinema-[a-z0-9][a-z0-9_-]{0,63}\.tsv\.gz$');
-const cinemaCatalogMaxBytes = 16 * 1024 * 1024;
-const cinemaCatalogEntryLimit = 400000;
 
 class CinemaRuleException implements Exception {
   const CinemaRuleException(this.message);
@@ -102,27 +97,10 @@ class CinemaChapterConfig {
 }
 
 // 片名目录型的源：采集站把关键字搜索关了（wsy 的 ?ac=list&wd= 回「暂不支持搜索」），只能按编号取详情。
-// 维护者本机把整个片名列表抓成底包（tool/cinema_catalog.dart）放中转，规则包写它的文件名、SHA-256、大小与抓取起点 builtAt；
-// 手机第一次用时下载底包，之后直接向这个源按 update 请求（@hours 是离上次多少小时、@page 第几页）取最近更新的补上。
-// 搜索在本机目录里找片名，只把找到的编号发给这个源的 searchApiConfig 请求（@ids 是逗号连起来的编号）取详情。
+// 片名目录由中转维护（人工决策见 cinema_catalog.dart 文件头）：中转按 update 请求（@hours 是离上次多少小时、@page 第几页）定时向源取片名，
+// 这里只核对写法（中转读同一份规则包），手机不用它；手机搜索时请中转查出编号，再按这个源的 searchApiConfig 请求（@ids 是逗号连起来的编号）取详情。
 class CinemaCatalogConfig {
-  const CinemaCatalogConfig({
-    required this.file,
-    required this.sha256,
-    required this.bytes,
-    required this.builtAt,
-    required this.update,
-    required this.listPath,
-    required this.idPath,
-    required this.namePath,
-    required this.pageCountPath,
-  });
-  final String file;
-  // 64 位小写十六进制。
-  final String sha256;
-  final int bytes;
-  // UTC：底包从这一刻往前抓全了。
-  final DateTime builtAt;
+  const CinemaCatalogConfig({required this.update, required this.listPath, required this.idPath, required this.namePath, required this.pageCountPath});
   final CinemaRequest update;
   final String listPath;
   final String idPath;
@@ -131,16 +109,9 @@ class CinemaCatalogConfig {
 
   static CinemaCatalogConfig decode(Object? raw, String where) {
     final map = _map(raw, where);
-    final file = _string(map['file'], '$where.file');
-    if (!cinemaCatalogFilePattern.hasMatch(file)) throw CinemaRuleException('$where.file 写法不对');
-    final sha256 = _string(map['sha256'], '$where.sha256');
-    if (!RegExp(r'^[0-9a-f]{64}$').hasMatch(sha256)) throw CinemaRuleException('$where.sha256 要是 64 位十六进制');
-    final bytes = map['bytes'];
-    if (bytes is! int || bytes < 1 || bytes > cinemaCatalogMaxBytes) throw CinemaRuleException('$where.bytes 不对');
-    final builtAt = DateTime.tryParse(_string(map['builtAt'], '$where.builtAt'));
-    if (builtAt == null || !builtAt.isUtc) throw CinemaRuleException('$where.builtAt 要是 UTC 时刻');
     final updateMap = _map(map['update'], '$where.update');
     final update = CinemaRequest.decode(updateMap['request'], '$where.update.request');
+    if (update.method != 'GET') throw CinemaRuleException('$where.update 只支持 GET');
     final uses = '${update.url}${jsonEncode(update.query)}';
     if (!uses.contains('@hours') || !uses.contains('@page')) throw CinemaRuleException('$where.update 的请求要用到 @hours 与 @page');
     String path(String key) {
@@ -149,17 +120,7 @@ class CinemaCatalogConfig {
       return value;
     }
 
-    return CinemaCatalogConfig(
-      file: file,
-      sha256: sha256,
-      bytes: bytes,
-      builtAt: builtAt,
-      update: update,
-      listPath: path('listPath'),
-      idPath: path('idPath'),
-      namePath: path('namePath'),
-      pageCountPath: path('pageCountPath'),
-    );
+    return CinemaCatalogConfig(update: update, listPath: path('listPath'), idPath: path('idPath'), namePath: path('namePath'), pageCountPath: path('pageCountPath'));
   }
 }
 

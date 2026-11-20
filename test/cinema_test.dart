@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:crypto/crypto.dart' as crypto;
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,7 +11,7 @@ import 'package:http/testing.dart';
 import 'package:path/path.dart' as path;
 
 import 'package:superxd/domain/feature_flags.dart';
-import 'package:superxd/toolbox/cinema/cinema_catalog_file.dart';
+import 'package:superxd/toolbox/cinema/cinema_catalog.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
@@ -82,8 +81,8 @@ List<int> packageBytes({int version = 1, int minClient = 0, List<Map<String, Obj
   'parsers': [parserRule()],
 }));
 
-// 片名目录型的源（同 wsy）：搜索请求按 @ids 取详情，目录的增量按 @hours、@page。
-Map<String, Object?> catalogRule(String id, String api, {required List<int> file, required DateTime builtAt, String name = '目录资源'}) {
+// 片名目录型的源（同 wsy）：搜索请求按 @ids 取详情；目录在中转上，update 是给中转抓片名的请求（@hours、@page）。
+Map<String, Object?> catalogRule(String id, String api, {String name = '目录资源'}) {
   final rule = macCmsRule(id, api, name: name);
   final search = rule['searchApiConfig']! as Map<String, Object?>;
   return {
@@ -91,10 +90,6 @@ Map<String, Object?> catalogRule(String id, String api, {required List<int> file
     'searchMode': 'catalog',
     'searchApiConfig': {...search, 'request': {'method': 'GET', 'url': api, 'query': {'ac': 'detail', 'ids': '@ids'}}},
     'catalog': {
-      'file': 'cinema-$id-0123456789ab.tsv.gz',
-      'sha256': sha256OfForTest(file),
-      'bytes': file.length,
-      'builtAt': builtAt.toIso8601String(),
       'update': {
         'request': {'method': 'GET', 'url': api, 'query': {'ac': 'list', 'h': '@hours', 'pg': '@page'}},
         'listPath': r'$.list[*]',
@@ -105,8 +100,6 @@ Map<String, Object?> catalogRule(String id, String api, {required List<int> file
     },
   };
 }
-
-String sha256OfForTest(List<int> bytes) => crypto.sha256.convert(bytes).toString();
 
 Future<String> encryptForTest(String plain) async {
   final box = await AesCbc.with128bits(macAlgorithm: MacAlgorithm.empty).encrypt(utf8.encode(plain), secretKey: SecretKey(utf8.encode(testCipher.key)), nonce: utf8.encode(testCipher.iv));
@@ -145,19 +138,17 @@ void main() {
       expect(() => decodeCinemaPackage(List.filled(cinemaPackageMaxBytes + 1, 32)), throwsA(isA<CinemaRuleException>()));
     });
 
-    test('片名目录型的源放在 catalogRules：接在普通源后面；详情要用 @ids，目录要写文件名、SHA-256、UTC 起点与带 @hours、@page 的增量请求，不合格整包拒收', () {
-      final file = encodeCinemaCatalog(DateTime.utc(2026, 11, 20), [('1', '甲')]);
-      Map<String, Object?> catalog() => catalogRule('wsy', 'https://wsy.example.com/api.php', file: file, builtAt: DateTime.utc(2026, 11, 20));
+    test('片名目录型的源放在 catalogRules：接在普通源后面；详情要用 @ids，增量请求要用 @hours 与 @page，不合格整包拒收', () {
+      Map<String, Object?> catalog() => catalogRule('wsy', 'https://wsy.example.com/api.php');
+      Map<String, Object?> update() => (catalog()['catalog']! as Map<String, Object?>)['update']! as Map<String, Object?>;
       final package = decodeCinemaPackage(packageBytes(catalogRules: [catalog()]));
       expect([for (final rule in package.rules) (rule.id, rule.catalog != null)], [('alpha', false), ('beta', false), ('wsy', true)]);
-      expect(package.rules.last.catalog!.sha256, sha256OfForTest(file));
       final wrong = <Map<String, Object?>>[
         {...catalog(), 'searchMode': 'api'},
         {...catalog(), 'searchApiConfig': macCmsRule('wsy', 'https://wsy.example.com/api.php')['searchApiConfig']},
-        {...catalog(), 'catalog': {...(catalog()['catalog']! as Map<String, Object?>), 'sha256': 'abc'}},
-        {...catalog(), 'catalog': {...(catalog()['catalog']! as Map<String, Object?>), 'file': 'wsy.tsv.gz'}},
-        {...catalog(), 'catalog': {...(catalog()['catalog']! as Map<String, Object?>), 'builtAt': '2026-11-20T00:00:00'}},
-        {...catalog(), 'catalog': {...(catalog()['catalog']! as Map<String, Object?>), 'update': {'request': {'method': 'GET', 'url': 'https://wsy.example.com/'}, 'listPath': r'$.list[*]', 'idPath': r'$.vod_id', 'namePath': r'$.vod_name', 'pageCountPath': r'$.pagecount'}}},
+        {...catalog(), 'catalog': {'update': {...update(), 'request': {'method': 'GET', 'url': 'https://wsy.example.com/'}}}},
+        {...catalog(), 'catalog': {'update': {...update(), 'request': {'method': 'POST', 'url': 'https://wsy.example.com/?h=@hours&pg=@page'}}}},
+        {...catalog(), 'catalog': {'update': {...update(), 'listPath': r'$.list[?(@.x)]'}}},
         {...catalog(), 'id': 'alpha'},
       ];
       for (final (index, rule) in wrong.indexed) {
@@ -447,61 +438,41 @@ void main() {
       await service.close();
     });
 
-    test('片名目录型的源：第一次搜先从中转下底包（核对 SHA-256），在本机找片名、只把编号发给源；隔一小时直连源补增量；规则包拿掉就删本机目录', () async {
-      var now = DateTime.utc(2026, 11, 20, 8);
-      final builtAt = DateTime.utc(2026, 11, 20, 7, 30);
-      final base = encodeCinemaCatalog(builtAt, [('101', '合成电影'), ('102', '合成电影 第二季'), ('103', '别的片')]);
-      final requests = <Uri>[];
+    test('片名目录型的源：片名 POST 给中转（不进地址）查编号，再把编号一次发给源取详情、按中转给的先后排；中转回的不合格整份不用', () async {
+      final requests = <http.Request>[];
+      var relayReply = jsonEncode({'ids': ['102', '101']});
       final client = MockClient((request) async {
-        requests.add(request.url);
-        if (request.url.host == 'relay.example.com') return http.Response.bytes(base, 200);
-        final query = request.url.queryParameters;
-        if (query['ac'] == 'detail') {
-          const names = {'101': '合成电影', '102': '合成电影 第二季', '104': '合成电影 第三季'};
-          return reply(macCmsList([for (final id in query['ids']!.split(',')) {'vod_id': int.parse(id), 'vod_name': names[id], 'vod_year': '2020', 'vod_pic': 'https://img.example.com/$id.jpg'}]), 200);
-        }
-        return reply(jsonEncode({'code': 1, 'pagecount': 1, 'list': [{'vod_id': 104, 'vod_name': '合成电影 第三季'}]}), 200);
+        requests.add(request);
+        if (request.url.host == 'relay.example.com') return reply(relayReply, 200);
+        const names = {'101': '合成电影 第二季', '102': '合成电影'};
+        return reply(macCmsList([for (final id in request.url.queryParameters['ids']!.split(',')) {'vod_id': int.parse(id), 'vod_name': names[id], 'vod_year': '2020'}]), 200);
       });
-      var catalogs = [catalogRule('wsy', 'https://wsy.example.com/api.php/provide/vod/', file: base, builtAt: builtAt)];
-      final service = await open(() async => packageBytes(version: catalogs.isEmpty ? 2 : 1, rules: [macCmsRule('alpha', 'https://alpha.example.com/api.php')], catalogRules: catalogs), client: client, now: () => now, relay: Uri.parse('https://relay.example.com'));
-      final package = await service.rules();
-      final wsy = package.rules.singleWhere((rule) => rule.catalog != null);
+      final service = await open(() async => packageBytes(rules: [macCmsRule('alpha', 'https://alpha.example.com/api.php')], catalogRules: [catalogRule('wsy', 'https://wsy.example.com/api.php/provide/vod/')]), client: client, relay: Uri.parse('https://relay.example.com'));
+      final wsy = (await service.rules()).rules.singleWhere((rule) => rule.catalog != null);
       await service.grantRules([wsy]);
-      final first = await service.search('合成电影').last;
-      expect(requests.first.toString(), 'https://relay.example.com/v1/app/files/cinema-wsy-0123456789ab.tsv.gz');
-      final detail = requests.singleWhere((uri) => uri.queryParameters['ac'] == 'detail');
-      expect(detail.queryParameters['ids'], '101,102', reason: '完全一样的在前，片名没发出去');
-      expect(detail.queryParameters.containsKey('wd'), isFalse);
-      expect([for (final title in first.titles) title.sources.single.source], ['101', '102']);
-      await pumpEventQueue();
-      expect(requests.where((uri) => uri.queryParameters['ac'] == 'list'), isEmpty, reason: '底包刚抓的，不用补');
-      now = now.add(const Duration(hours: 2));
-      await service.search('第三季').last;
-      await pumpEventQueue(times: 50);
-      final update = requests.singleWhere((uri) => uri.queryParameters['ac'] == 'list');
-      expect((update.queryParameters['h'], update.queryParameters['pg']), ('4', '1'), reason: '离底包起点两个半小时，向上取整再多补一小时');
-      requests.clear();
-      final third = await service.search('第三季').last;
-      expect(third.titles.single.sources.single.source, '104', reason: '补进来的能搜到');
-      expect(requests.where((uri) => uri.host == 'relay.example.com'), isEmpty, reason: '底包只下一次');
-      catalogs = [];
-      await service.rules(force: true);
-      expect(await service.store.catalogMeta('wsy'), isNull);
+      final result = await service.search('合成电影').last;
+      final relay = requests.first;
+      expect((relay.method, relay.url.path, relay.url.query), ('POST', '/v1/app/cinema/catalogs/wsy/search', ''));
+      expect(jsonDecode(relay.body), {'q': '合成电影'});
+      final detail = requests.last;
+      expect((detail.url.host, detail.url.queryParameters['ids'], detail.url.queryParameters.containsKey('wd')), ('wsy.example.com', '102,101', false));
+      expect([for (final title in result.titles) title.sources.single.source], ['102', '101']);
+      relayReply = jsonEncode({'ids': [for (var index = 0; index <= catalogHitLimit; index++) '$index']});
+      expect((await service.search('合成电影').last).failures.single.message, contains('看不懂'));
+      expect(() => decodeCatalogIds('{"ids":[""]}'), throwsA(isA<CinemaRuleException>()));
       await service.close();
     });
 
-    test('片名目录的底包是外部输入：SHA-256 对不上、首行条数不对、行格式不对都整份不用', () {
-      final builtAt = DateTime.utc(2026, 11, 20);
-      final good = encodeCinemaCatalog(builtAt, [('2', '乙'), ('1', '甲')]);
-      final decoded = decodeCinemaCatalog(good, sha256OfForTest(good));
-      expect(decoded.builtAt, builtAt);
-      expect(decoded.entries, [('1', '甲'), ('2', '乙')]);
-      expect(() => decodeCinemaCatalog(good, '0' * 64), throwsA(isA<CinemaRuleException>()));
-      for (final text in ['#SXD-CATALOG\t1\t2026-11-20T00:00:00.000Z\t2\n1\t甲\n', '#SXD-CATALOG\t2\t2026-11-20T00:00:00.000Z\t1\n1\t甲\n', '#SXD-CATALOG\t1\t2026-11-20T00:00:00.000Z\t1\n1\t甲\t多\n', 'x']) {
-        final bytes = gzip.encode(utf8.encode(text));
-        expect(() => decodeCinemaCatalog(bytes, sha256OfForTest(bytes)), throwsA(isA<CinemaRuleException>()), reason: text);
-      }
+    test('片名目录型的源在没配中转的包里用不了：列进暂不可用，不影响别的源', () async {
+      final client = MockClient((request) async => reply(macCmsList([{'vod_id': 1, 'vod_name': '合成电影'}]), 200));
+      final service = await open(() async => packageBytes(rules: [macCmsRule('alpha', 'https://alpha.example.com/api.php')], catalogRules: [catalogRule('wsy', 'https://wsy.example.com/api.php')]), client: client);
+      await service.grantRules((await service.rules()).rules);
+      final result = await service.search('合成').last;
+      expect(result.titles.single.sources.single.ruleId, 'alpha');
+      expect(result.failures.single.ruleId, 'wsy');
+      await service.close();
     });
+
 
     test('选集与播放地址：没有可播线路报错；m3u8 经本机代理、mp4 直接播，都带规则的 UA、不带 Referer；清除数据删掉整个目录', () async {
       final client = MockClient((request) async => reply(
