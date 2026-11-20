@@ -103,6 +103,9 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   final _openWatch = Stopwatch();
   var _recorded = true;
   var _warmedNext = false;
+  // 这一次交给播放器的媒体（交出去之前为空）与下一集预取的取消（离开时完成）。
+  Media? _media;
+  final _warmCancel = Completer<void>();
   // 片源菜单的顺序（按本机播放记录排一次）。
   late final List<CinemaSourceRef> _sources = widget.title == null ? const [] : rankCinemaSources(widget.title!.sources, widget.service.knownStats);
 
@@ -129,11 +132,15 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       ..add(_player.stream.width.listen((_) => _measure()))
       ..add(_player.stream.height.listen((_) => _measure()))
       ..add(_player.stream.error.listen((message) {
-        campusLog('[CinemaPlayer] action=error message=${message.length > 120 ? message.substring(0, 120) : message}');
+        campusLog('[CinemaPlayer] action=error message=${message.length > 120 ? message.substring(0, 120) : message} current=$_currentMedia');
+        // 换集、重新载入时上一个视频晚到的错误不算这一次的（见 _currentMedia）。
+        if (!_currentMedia) return;
         _record(ok: false);
         if (mounted) setState(() => _error = '播放出错，可以重新载入或换个源');
       }))
       ..add(_player.stream.position.listen((position) {
+        // 只认这一次交给播放器的媒体：重新载入时旧视频还在播，它的进度不能把这次记成播成、也不能收起加载动画。
+        if (!_currentMedia) return;
         if (position > Duration.zero && mounted && _opening) {
           _record(ok: true);
           setState(() => _opening = false);
@@ -170,6 +177,12 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     });
   }
 
+  // 播放器当前这一项是不是这一次交出去的媒体（事件不带是哪个媒体的，按播放列表的当前项对）。
+  bool get _currentMedia {
+    final media = _media, playlist = _player.state.playlist;
+    return media != null && playlist.index >= 0 && playlist.index < playlist.medias.length && playlist.medias[playlist.index].uri == media.uri;
+  }
+
   // 记一次这个源能不能播（只在找片里、每次打开只记一次）：出了首帧算播成，带首帧用时。
   void _record({required bool ok}) {
     final rule = _rule;
@@ -188,7 +201,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     final roads = _roads, duration = _player.state.duration;
     if (_warmedNext || !_titleMode || !_hasNext || roads == null || duration <= Duration.zero || duration - position > const Duration(minutes: 2)) return;
     _warmedNext = true;
-    unawaited(widget.service.warm(roads[_road].episodes[_episode + 1].url, rule: _rule));
+    unawaited(widget.service.warm(roads[_road].episodes[_episode + 1].url, rule: _rule, cancel: _warmCancel.future));
   }
 
   CinemaEpisode? get _current {
@@ -206,6 +219,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       ..start();
     _recorded = false;
     _warmedNext = false;
+    _media = null;
     setState(() {
       _opening = true;
       _slow = false;
@@ -221,17 +235,18 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         if (generation != _generation) return;
         _road = _road.clamp(0, roads.length - 1);
         _episode = _episode.clamp(0, roads[_road].episodes.length - 1);
-        playable = await widget.service.playable(roads[_road].episodes[_episode].url, rule: rule);
+        playable = await widget.service.playable(roads[_road].episodes[_episode].url, rule: rule, fresh: fresh);
       } else {
         final parser = widget.parser;
         final parsed = _parsed = fresh && parser != null ? await widget.service.cloud.parse(parser, widget.target!, fresh: true) : _parsed!;
-        playable = await widget.service.playable(parsed.url, playlist: parsed.type == 'm3u8');
+        playable = await widget.service.playable(parsed.url, playlist: parsed.type == 'm3u8', fresh: fresh);
       }
       if (generation != _generation || !mounted) {
         widget.service.release(playable);
         return;
       }
-      await _player.open(Media(playable.uri.toString(), httpHeaders: playable.headers, start: start > Duration.zero ? start : null));
+      final media = _media = Media(playable.uri.toString(), httpHeaders: playable.headers, start: start > Duration.zero ? start : null);
+      await _player.open(media);
       // 播放器换上新的之后再交回上一路（先交回的话旧的那一路会报错、误记到这一次）。
       final previous = _playable;
       _playable = playable;
@@ -367,6 +382,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     _abandon();
     _generation++;
     _cancel?.complete();
+    _warmCancel.complete();
     if (_playable case final playable?) widget.service.release(playable);
     if (_fullscreen) {
       unawaited(_applyOrientation(on: false, landscape: false).catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=fullscreen_exit errorType=${error.runtimeType}\n$stack')));

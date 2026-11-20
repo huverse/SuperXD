@@ -18,6 +18,7 @@ import 'package:superxd/toolbox/cinema/cinema_playlist.dart';
 //   原地址取得到就不换（原地址优先，免得把正常的地址改坏），取不到而换过去取得到才换；两路共用 probeBudget（默认 6 秒，弱网下也够拿到响应头）。
 //   结论按「主机、换成的主机、UA 与 Referer」记 probeKnownFor，超时、被取消这类没定论的只记 probeUnsureFor，一次网络抖动不会误判一整晚。
 // - 内容不会变的清单（点播与主清单，cinemaStaticPlaylist）按地址加请求头缓存 playlistLifetime，预取（warm）取过的直接用；直播清单每次现取。
+//   「重新载入」登记的一路（fresh）不用缓存、不接正在取的，探测也重新做（分片签名可能已经失效）；缓存与探测结论只让当前有效的那次写，旧的晚回来不覆盖新的。
 
 class CinemaStream {
   const CinemaStream({required this.headers, required this.adBlocker});
@@ -26,8 +27,10 @@ class CinemaStream {
 }
 
 class _Stream {
-  _Stream(this.stream);
+  _Stream(this.stream, {required this.fresh});
   final CinemaStream stream;
+  // 「重新载入」登记的：这一路的清单与探测都不用缓存。
+  final bool fresh;
   final released = Completer<void>();
 }
 
@@ -65,11 +68,11 @@ class CinemaProxy {
   static const playlistLifetime = Duration(minutes: 5);
   static const playlistLimit = 16;
 
-  // 登记一路播放，返回交给播放器的本机地址。
-  Future<Uri> open(Uri playlist, CinemaStream stream) async {
+  // 登记一路播放，返回交给播放器的本机地址；fresh 见文件头。
+  Future<Uri> open(Uri playlist, CinemaStream stream, {bool fresh = false}) async {
     final server = await (_starting ??= _start());
     final id = '${_nextStream++}';
-    _streams[id] = _Stream(stream);
+    _streams[id] = _Stream(stream, fresh: fresh);
     while (_streams.length > _streamLimit) {
       _drop(_streams.keys.first);
     }
@@ -87,20 +90,23 @@ class CinemaProxy {
   }
 
   // 预取一份清单（见 CinemaService.warm）：主清单再取第一个码率的子清单，分片清单探好域名前置。出错只记日志。
-  Future<void> warm(Uri playlist, CinemaStream stream) async {
+  // cancel 完成时这次预取不等了（别处还在等同一份就不中断）。
+  Future<void> warm(Uri playlist, CinemaStream stream, {Future<void>? cancel}) async {
     try {
-      var fetched = await _playlist(playlist, stream.headers, null);
+      var fetched = await _playlist(playlist, stream.headers, cancel);
       if (!cinemaLooksLikePlaylist(fetched.bytes, fetched.contentType)) return;
       var text = utf8.decode(fetched.bytes, allowMalformed: true);
       if (cinemaMasterPlaylist(text)) {
         final variant = cinemaFirstSegment(text, fetched.uri);
         if (variant == null) return;
-        fetched = await _playlist(variant, stream.headers, null);
+        fetched = await _playlist(variant, stream.headers, cancel);
         if (!cinemaLooksLikePlaylist(fetched.bytes, fetched.contentType)) return;
         text = utf8.decode(fetched.bytes, allowMalformed: true);
       }
-      await _shouldUnwrap(cinemaFirstSegment(text, fetched.uri), stream.headers, null);
+      await _shouldUnwrap(cinemaFirstSegment(text, fetched.uri), stream.headers, cancel);
       campusLog('[CinemaProxy] action=warm');
+    } on http.RequestAbortedException {
+      campusLog('[CinemaProxy] action=warm cancelled=true');
     } on CinemaHttpException catch (error) {
       campusLog('[CinemaProxy] action=warm errorType=CinemaHttpException message=${error.message}');
     } catch (error, stack) {
@@ -140,7 +146,7 @@ class CinemaProxy {
         response.add(key);
         return;
       }
-      final fetched = await _playlist(upstream, stream.headers, released);
+      final fetched = await _playlist(upstream, stream.headers, released, fresh: entry.fresh);
       if (fetched.status >= 400) {
         campusLog('[CinemaProxy] action=playlist status=${fetched.status}');
         response.statusCode = HttpStatus.badGateway;
@@ -154,7 +160,7 @@ class CinemaProxy {
       }
       final text = utf8.decode(fetched.bytes, allowMalformed: true);
       // 主清单里没有分片（第一个非注释行是子清单），不探。
-      final unwrap = !cinemaMasterPlaylist(text) && await _shouldUnwrap(cinemaFirstSegment(text, fetched.uri), stream.headers, released);
+      final unwrap = !cinemaMasterPlaylist(text) && await _shouldUnwrap(cinemaFirstSegment(text, fetched.uri), stream.headers, released, fresh: entry.fresh);
       final body = cinemaRewritePlaylist(
         text,
         fetched.uri,
@@ -180,16 +186,18 @@ class CinemaProxy {
     }
   }
 
-  // 取一份清单：缓存里有没过期的直接用，同一份正在取就一起等；cancel 是这一处不等了。
-  Future<CinemaFetched> _playlist(Uri upstream, Map<String, String> headers, Future<void>? cancel) {
+  // 取一份清单：缓存里有没过期的直接用，同一份正在取就一起等（fresh 都不用，另起一次）；cancel 是这一处不等了。
+  Future<CinemaFetched> _playlist(Uri upstream, Map<String, String> headers, Future<void>? cancel, {bool fresh = false}) {
     final key = '$upstream\u0000${headers['user-agent'] ?? ''}\u0000${headers['referer'] ?? ''}';
     final cached = _playlists[key];
-    if (cached != null && _now().isBefore(cached.$1)) return Future.value(cached.$2);
+    if (!fresh && cached != null && _now().isBefore(cached.$1)) return Future.value(cached.$2);
     final fetching = _fetching[key];
-    if (fetching != null && fetching.live) return fetching.wait(cancel);
-    final shared = _fetching[key] = CinemaShared((abort) async {
+    if (!fresh && fetching != null && fetching.live) return fetching.wait(cancel);
+    late final CinemaShared<CinemaFetched> shared;
+    shared = _fetching[key] = CinemaShared((abort) async {
       final fetched = await _http.fetch(upstream, headers, cancel: abort);
-      if (fetched.status < 400 && cinemaLooksLikePlaylist(fetched.bytes, fetched.contentType) && cinemaStaticPlaylist(utf8.decode(fetched.bytes, allowMalformed: true))) {
+      // 只有当前有效的那次写缓存：重新载入另起的一次先回来、旧的后回来时，不让旧的盖掉新的。
+      if (identical(_fetching[key], shared) && fetched.status < 400 && cinemaLooksLikePlaylist(fetched.bytes, fetched.contentType) && cinemaStaticPlaylist(utf8.decode(fetched.bytes, allowMalformed: true))) {
         _playlists[key] = (_now().add(playlistLifetime), fetched);
       }
       return fetched;
@@ -213,24 +221,26 @@ class CinemaProxy {
     return fetched.bytes;
   }
 
-  // 要不要把这份清单的分片换成路径里的域名（见文件头）。cancel 是这一处不等了。
-  Future<bool> _shouldUnwrap(Uri? segment, Map<String, String> headers, Future<void>? cancel) {
+  // 要不要把这份清单的分片换成路径里的域名（见文件头）。cancel 是这一处不等了；fresh 不用记住的结论、重新探。
+  Future<bool> _shouldUnwrap(Uri? segment, Map<String, String> headers, Future<void>? cancel, {bool fresh = false}) {
     if (segment == null) return Future.value(false);
     final alternate = cinemaUnwrapHost(segment);
     if (alternate == segment) return Future.value(false);
     final key = '${segment.host}\u0000${alternate.host}\u0000${headers['user-agent'] ?? ''}\u0000${headers['referer'] ?? ''}';
     final known = _unwrap[key];
-    if (known != null && _now().isBefore(known.$1)) return Future.value(known.$2);
+    if (!fresh && known != null && _now().isBefore(known.$1)) return Future.value(known.$2);
     final probing = _probing[key];
-    if (probing != null && probing.live) return probing.wait(cancel);
-    final shared = _probing[key] = CinemaShared((abort) => _probe(key, segment, alternate, headers, abort));
+    if (!fresh && probing != null && probing.live) return probing.wait(cancel);
+    late final CinemaShared<bool> shared;
+    shared = _probing[key] = CinemaShared((abort) => _probe(key, segment, alternate, headers, abort, current: () => identical(_probing[key], shared)));
     unawaited(shared.settled.then((_) {
       if (identical(_probing[key], shared)) _probing.remove(key);
     }));
     return shared.wait(cancel);
   }
 
-  Future<bool> _probe(String key, Uri segment, Uri alternate, Map<String, String> headers, Future<void> abort) async {
+  // current 为假时（已经有更新的一次探测）结论不记，只交给这次在等的。
+  Future<bool> _probe(String key, Uri segment, Uri alternate, Map<String, String> headers, Future<void> abort, {required bool Function() current}) async {
     final stop = Completer<void>();
     var abandoned = false;
     unawaited(abort.then((_) {
@@ -259,7 +269,7 @@ class CinemaProxy {
     if (abandoned) throw http.RequestAbortedException(segment);
     final unwrap = first != true && second == true;
     final sure = first == true || (first == false && second != null);
-    _unwrap[key] = (_now().add(sure ? probeKnownFor : probeUnsureFor), unwrap);
+    if (current()) _unwrap[key] = (_now().add(sure ? probeKnownFor : probeUnsureFor), unwrap);
     campusLog('[CinemaProxy] action=probe unwrap=$unwrap sure=$sure');
     return unwrap;
   }
