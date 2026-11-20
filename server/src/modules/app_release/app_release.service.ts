@@ -11,6 +11,7 @@ import { RateLimiter } from 'src/common/redis/redis.module';
 import { RelayCode, RelayError } from 'src/common/relay_error';
 import { appDownloadsPerInstance, appFilePerHour, appReleaseFileMaxBytes, appReleasePerHour, cinemaFileMaxBytes, cinemaRulesPerHour, developerNotesFileMaxBytes, developerNotesPerHour, rolloutConfigPerHour } from 'src/common/relay_limits';
 import { AppHealthService } from 'src/modules/app_health/app_health.service';
+import { ConfigRevision } from 'src/modules/app_release/config_revision';
 import { RolloutSource } from 'src/modules/app_release/rollout_source';
 import * as dtos from 'src/modules/app_release/app_release.dto';
 
@@ -32,6 +33,7 @@ export class AppReleaseService {
     private readonly limiter: RateLimiter,
     private readonly rollouts: RolloutSource,
     private readonly health: AppHealthService,
+    private readonly revision: ConfigRevision,
   ) {}
 
   async latest(ip: string, channel: string, abi: dtos.AppReleaseQueryDto['abi']): Promise<dtos.AppReleaseDto> {
@@ -77,15 +79,28 @@ export class AppReleaseService {
     return notes;
   }
 
+  // 条件请求（人工决策见 config_revision.ts）：回复带 ETag（公共配置的版本号），带着它来、没变就回 304，不读文件、不计限流
+  // （校园网一个出口后面人多，回到前台都来核对一次）。版本号还没算出来时不带 ETag、照常回全量。
+  private unchanged(known: string | undefined, response: Response) {
+    const revision = this.revision.value;
+    if (revision === null) return false;
+    response.setHeader('ETag', `"${revision}"`);
+    if (known !== `"${revision}"`) return false;
+    response.status(HttpStatus.NOT_MODIFIED);
+    return true;
+  }
+
   // 灰度配置：读法见 RolloutSource（积分等级的门槛也从那里读）。
-  async rollout(ip: string): Promise<dtos.RolloutConfigDto> {
+  async rollout(ip: string, known?: string, response?: Response): Promise<dtos.RolloutConfigDto | undefined> {
+    if (response !== undefined && this.unchanged(known, response)) return undefined;
     const retryAfter = await this.limiter.hit('app_rollout', rateSubjectOf(ip), rolloutConfigPerHour, 3600);
     if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '请求过于频繁', { retryAfter });
     return this.rollouts.current();
   }
 
   // 第 2 版灰度配置：读法见 RolloutSource.flags，与第 1 版共用限流。
-  async flags(ip: string): Promise<dtos.FlagConfigResponseDto> {
+  async flags(ip: string, known?: string, response?: Response): Promise<dtos.FlagConfigResponseDto | undefined> {
+    if (response !== undefined && this.unchanged(known, response)) return undefined;
     const retryAfter = await this.limiter.hit('app_rollout', rateSubjectOf(ip), rolloutConfigPerHour, 3600);
     if (retryAfter !== null) throw new RelayError(RelayCode.rateLimited, HttpStatus.TOO_MANY_REQUESTS, '请求过于频繁', { retryAfter });
     const [config, paused] = await Promise.all([this.rollouts.flags(), this.health.paused()]);
@@ -128,7 +143,7 @@ export class AppReleaseService {
     response.once('close', () => this.downloads--);
     this.logger.debug(`[AppRelease] action=send file=${name} active=${this.downloads}`);
     const error = await new Promise<(Error & { status?: number; code?: string }) | undefined>((resolve) =>
-      response.sendFile(name, { root: env().releasesDir, dotfiles: 'deny', headers: { 'Content-Type': name.endsWith('.ttf') ? 'font/ttf' : 'application/vnd.android.package-archive' } }, resolve),
+      response.sendFile(name, { root: env().releasesDir, dotfiles: 'deny', headers: { 'Content-Type': dtos.appFileContentType(name) } }, resolve),
     );
     if (error === undefined) return;
     // 已开始发送后出错多是客户端断开（暂停、切网），无从再回错误。

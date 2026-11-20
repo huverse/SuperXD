@@ -209,6 +209,10 @@ export const passKeepDaysAfterExpire = 30;
 // （客户端隔一小时、回到前台才问，给手动刷新与多设备留余量）。
 export const flagTargetLimit = 200;
 export const flagTargetReadPerDevicePerHour = 120;
+// 灰度改了立即生效（src/modules/app_release/config_revision.ts）：公共配置的版本号每 10 秒重算；点名的版本号按设备记在 Redis，30 天过期
+// （过期或丢了只是回到「没点过名」的 0，手机下次核对时多取一次全量）。
+export const configRevisionRefreshMs = 10_000;
+export const flagTargetsRevisionTtlSeconds = 30 * 24 * 60 * 60;
 
 // 挑战（人工决策见客户端 lib/playground/challenge/challenge_rules.dart）：一个账号同时只有一局，每小时最多开 30 局；
 // 每台设备每小时 3000 个挑战请求（看列表、看局面、交答案合计）；一关错交到配置里的上限（maxErrors）就算没过。

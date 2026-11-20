@@ -1,4 +1,4 @@
-import { accountJoinSeconds, deviceMissingSeconds, diagnosticClaimSeconds, inviteTtlSeconds, nonceTtlSeconds, seenWriteSeconds } from 'src/common/relay_limits';
+import { accountJoinSeconds, deviceMissingSeconds, diagnosticClaimSeconds, flagTargetsRevisionTtlSeconds, inviteTtlSeconds, nonceTtlSeconds, seenWriteSeconds } from 'src/common/relay_limits';
 
 // Redis key 注册表：所有 key 在此构造，service 不得硬编码 key 字符串。全局前缀由 REDIS_KEY_PREFIX 配置（ioredis keyPrefix）。
 // 这里全部是运行态或可丢的短期状态，权威数据只在 MySQL。丢了的后果：邀请失效需重新出示、限流窗口归零、
@@ -13,6 +13,7 @@ export const RedisKeyTTL = {
   diagnosticUsage: 24 * 60 * 60,
   diagnosticClaim: diagnosticClaimSeconds,
   accountJoin: accountJoinSeconds,
+  flagTargetsRevision: flagTargetsRevisionTtlSeconds,
 } as const;
 
 export const RedisKeys = {
@@ -36,6 +37,9 @@ export const RedisKeys = {
   diagnosticClaim: (diagnosticId: string) => `diagnostic_claim:${diagnosticId}`,
   // 扫码登录的票据：单值 JSON {deviceId, code, accountId, device, region}（机型最多 64 字、属地最多 32 字，不存 IP），几百字节；5 分钟过期。丢了只是新设备要重新出示二维码。
   accountJoin: (ticketId: string) => `account_join:${ticketId}`,
+  // 这台设备的点名版本：单值，最近一次给它所在应用账号点名或撤销的毫秒时刻；管理命令 flag_admin 写（账号下的设备密钥与挂着的私信设备各一份），
+  // 签名请求的鉴权顺带读出放进回复头 x-sxd-targets。30 天过期；丢了只是手机多取一次全量点名。
+  flagTargetsRevision: (deviceId: string) => `flag_targets_rev:${deviceId}`,
 } as const;
 
 // 发布订阅频道：ioredis 的 keyPrefix 不作用于频道名，这里手动加同一前缀隔离环境。

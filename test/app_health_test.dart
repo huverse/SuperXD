@@ -245,9 +245,9 @@ void main() {
     test('第 2 版回复里不签名的 paused 只让自动检查不提示这一版；名单不合格整份不用；签名载荷里的不认', () async {
       final signing = await TestSigning.create();
       final flags = jsonDecode(await encodeFlagsFile(decodeRolloutConfig({'flags': <Object?>[], 'paused': ['app_update.alpha.31']}), [signing.rollout])) as Map<String, Object?>;
-      Future<RolloutConfig> fetch(Object? paused) => RelayRolloutFeed('https://relay.invalid', keys: signing.keys, client: MockClient((request) async {
+      Future<RolloutConfig> fetch(Object? paused) async => (await RelayRolloutFeed('https://relay.invalid', keys: signing.keys, client: MockClient((request) async {
         return http.Response.bytes(utf8.encode(jsonEncode({...flags, 'paused': paused})), 200);
-      })).fetch();
+      })).fetch()).config!;
       expect((await fetch(['app_update.alpha.30'])).paused, {'app_update.alpha.30'}, reason: '签名载荷里的 31 不认');
       expect((await fetch(['app_update.alpha.30', 'game.flash'])).paused, isEmpty);
       expect((await fetch('x')).paused, isEmpty);

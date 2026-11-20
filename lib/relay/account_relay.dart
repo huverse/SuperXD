@@ -68,4 +68,11 @@ class AccountRelay {
     if (saved == null) return null;
     return (body: await _relay.request(saved.identity, method, path, payload: payload, limit: limit), identity: saved.identity);
   }
+
+  // 同 send，另可加请求头、拿整条回复（304 算成功）：给条件请求（灰度点名带上次的版本号）。
+  Future<RelayResponse?> exchange(AppAccountRef account, String method, String path, {Map<String, String> headers = const {}, int? limit}) async {
+    final saved = await vault.read(account.slot);
+    if (saved == null) return null;
+    return _relay.exchange(saved.identity, method, path, limit: limit, headers: headers);
+  }
 }
