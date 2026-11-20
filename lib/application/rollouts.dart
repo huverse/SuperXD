@@ -13,10 +13,12 @@ import 'package:superxd/domain/rollout.dart';
 // levelsOn 为假（联网偏好是仅本机，人工决策见 domain/network_policy.dart）时不取等级、按 Lv0 判定，已经因等级进了的批次照旧算。
 // 11-16 起（人工决策见 domain/rollout.dart 文件头 11-16 那条）：开关的条件（时间窗、平台、渠道、版本号、等级）都满足才按比例判定；
 // 登录着应用账号时同一时机问一次点名（targets，顺带账号建立的时刻，判 minAccountDays），点名的开关不看比例与条件、只看到期时刻，问到的记在本机（换账号从头记）。
-class Rollouts extends ChangeNotifier {
+class Rollouts extends ChangeNotifier implements FeatureGate {
   Rollouts({required this.memory, required this.channel, required this.platform, required this.versionCode, required this._accountId, this.feed, this.level, this.targets, bool Function()? levelsOn, DateTime Function()? now})
     : _levelsOn = levelsOn ?? (() => true),
-      _now = now ?? DateTime.now;
+      _now = now ?? DateTime.now {
+    addListener(() => _changes.add(null));
+  }
   final RolloutMemory memory;
   // 构建渠道（如 alpha），分批更新的开关名带上它，开关的 channels 条件也按它。
   final String channel;
@@ -35,6 +37,11 @@ class Rollouts extends ChangeNotifier {
 
   static const refreshGap = Duration(hours: 1);
   bool _fetching = false;
+  final _changes = StreamController<void>.broadcast();
+
+  // 配置、点名或等级变了发一次（同 notifyListeners），给百宝箱这类不依赖本层的页面用。
+  @override
+  Stream<void> get changes => _changes.stream;
 
   String get subject => _accountId() ?? memory.installId;
 
@@ -54,6 +61,7 @@ class Rollouts extends ChangeNotifier {
   }
 
   // 登记过的功能开关（domain/feature_flags.dart）：功能只经它们问。
+  @override
   bool isOn(FeatureFlag flag) => enabled(flag.id, fallback: flag.fallback);
 
   // 开着时配置给这个开关的参数；没开、没写这一项为空（点名开的也读配置里的参数）。

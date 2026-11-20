@@ -24,9 +24,9 @@ void main() {
     }
     Set<SignedContent> contentsOf(String prefix) => trustedSigningKeys.singleWhere((key) => key.keyId.startsWith(prefix)).contents;
     expect(contentsOf('release-'), {SignedContent.release});
-    // 灰度配置由开发者的话那把钥与离线备用钥签（人工决策见 lib/domain/rollout.dart），发版钥签不了。
-    expect(contentsOf('notes-'), {SignedContent.notes, SignedContent.rollout});
-    expect(contentsOf('offline-'), {SignedContent.release, SignedContent.notes, SignedContent.rollout});
+    // 灰度配置与电影院的片源规则包由开发者的话那把钥与离线备用钥签（人工决策见 lib/domain/rollout.dart 与 lib/device/signed_content.dart），发版钥签不了。
+    expect(contentsOf('notes-'), {SignedContent.notes, SignedContent.rollout, SignedContent.cinema});
+    expect(contentsOf('offline-'), {SignedContent.release, SignedContent.notes, SignedContent.rollout, SignedContent.cinema});
   });
 
   test('签名原文带域前缀：同一份载荷签成开发者的话，不能当更新清单用', () async {

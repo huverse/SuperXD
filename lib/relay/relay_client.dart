@@ -44,6 +44,7 @@ abstract final class RelayCode {
   static const levelLocked = 'LEVEL_LOCKED';
   static const pointsShort = 'POINTS_SHORT'; // 积分不够付这笔（如挑战门票），附 price 与 balance
   static const unlockUnavailable = 'UNLOCK_UNAVAILABLE'; // 没有这项解锁、已下架、已经公开或不能用积分买
+  static const passUnavailable = 'PASS_UNAVAILABLE'; // 这项服务现在不用积分换时长（passes.json 里没有）
   static const diagnosticNotFound = 'DIAGNOSTIC_NOT_FOUND';
   static const socialElsewhere = 'SOCIAL_ELSEWHERE'; // 这个应用账号的私信在另一台设备上（没带接管）
   static const socialTaken = 'SOCIAL_TAKEN'; // 这个私信设备已挂在别的应用账号下

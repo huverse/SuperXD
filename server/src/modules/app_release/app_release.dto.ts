@@ -168,6 +168,17 @@ export class FlagConfigResponseDto extends FlagConfigDto {
   @ApiProperty({ description: '自动暂停的分批更新开关名（app_update.<渠道>.<版本号>），不签名', type: [String] }) paused: string[];
 }
 
+// 电影院的片源规则包（人工决策见客户端 lib/toolbox/cinema/cinema_service.dart 文件头）：只有签名信封，载荷（片源规则与云解析）只由客户端验签后解码；
+// 还没放文件时信封为空，客户端照旧用本机缓存的。
+export class CinemaRulesDto {
+  @ApiProperty({ description: '文件写法版本，固定 1' }) @IsIn([1]) version: 1;
+  @ApiProperty({ description: '签名信封（载荷是规则包的 UTF-8 JSON）', type: SignedEnvelopeDto, nullable: true })
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => SignedEnvelopeDto)
+  envelope: SignedEnvelopeDto | null;
+}
+
 export class RolloutConfigDto {
   @ApiProperty({ description: '全部开关', type: [RolloutFlagDto] }) @IsArray() @ValidateNested({ each: true }) @Type(() => RolloutFlagDto) @ArrayMaxSize(rolloutFlagLimit) flags: RolloutFlagDto[];
   // 积分等级 Lv0–Lv5 的门槛（近 12 个月获得的积分，规则见 src/modules/points/points_level.ts），从 0 起严格递增，由 RolloutSource 再核一遍。

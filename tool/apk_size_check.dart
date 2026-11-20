@@ -9,7 +9,9 @@ import 'dart:io';
 // 同 test/code_conventions_test.dart 的字面量个数），比预算小出两倍余量以上时这里提醒一句。
 // 11-18 定的初值：本机按上面的命令编出 96,891,642 字节（Flutter 3.47.2，本工作包的包体瘦身之后）加余量。CI 的机器与本机工具链路径不同、
 // 未裁剪的原生库里调试信息长短会差一点，余量取 1MB（约 1%）；第一次在 CI 上跑完，以它打印的 bytes 为准校准一次。
-const apkBudgetBytes = 96891642 + apkBudgetSlack;
+// 11-19 电影院接入 media_kit（libmpv）调高：arm64 的 libmpv.so 约 12.4MB；它的原生库按 jar 带全部架构，这份单架构 profile 包里另夹带 armeabi-v7a 与 x86_64 两套约 36.5MB，
+// 发版按架构分包时各包只带自己的那套（用户的 arm64 包实际多约 12.5MB）。
+const apkBudgetBytes = 139625916 + apkBudgetSlack;
 const apkBudgetSlack = 1024 * 1024;
 
 void main(List<String> args) {

@@ -8,7 +8,7 @@ import { createRelayApp } from 'src/relay_app';
 import { env } from 'src/config/env';
 import { REDIS } from 'src/common/redis/redis.module';
 import { RedisKeys } from 'src/common/redis/redis_keys';
-import { appFilePerHour, appReleaseFileMaxBytes, appReleasePerHour, developerNotesPerHour, rolloutConfigPerHour, rolloutFileMaxBytes } from 'src/common/relay_limits';
+import { appFilePerHour, appReleaseFileMaxBytes, appReleasePerHour, cinemaFileMaxBytes, cinemaRulesPerHour, developerNotesPerHour, rolloutConfigPerHour, rolloutFileMaxBytes } from 'src/common/relay_limits';
 
 let app: NestExpressApplication;
 let server: string;
@@ -383,6 +383,50 @@ describe('灰度配置', () => {
     await request(server).get('/v1/app/rollout');
     await fillRate('app_rollout', rolloutConfigPerHour);
     const response = await request(server).get('/v1/app/rollout');
+    expect(response.status).toBe(429);
+    expect(response.body.code).toBe('RATE_LIMITED');
+  });
+});
+
+// 电影院的片源规则包（人工决策见客户端 lib/toolbox/cinema/cinema_service.dart 文件头）：只有签名信封，中转只核外形、原样透传。
+describe('电影院片源规则包', () => {
+  it('还没放文件时信封为空', async () => {
+    const response = await request(server).get('/v1/app/cinema');
+    expect(response.status).toBe(200);
+    expect(response.body).toEqual({ version: 1, envelope: null });
+  });
+
+  it('签好的信封原样透传，换了文件立即生效', async () => {
+    const file = { version: 1, envelope: { ...envelope('cinema'), signatures: [{ keyId: 'notes-2026-11', sig: 'D'.repeat(86) }] } };
+    await putManifest('cinema', file);
+    expect((await request(server).get('/v1/app/cinema')).body).toEqual(file);
+    await putManifest('cinema', { version: 1, envelope: envelope('next') });
+    expect((await request(server).get('/v1/app/cinema')).body).toEqual({ version: 1, envelope: envelope('next') });
+  });
+
+  it('文件写坏、没有信封、多出字段或超过上限不往外发，回 INTERNAL 并打印堆栈', async () => {
+    const printed = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    for (const body of [
+      { version: 2, envelope: envelope('x') },
+      { version: 1, envelope: null },
+      { version: 1, envelope: envelope('x'), rules: [] },
+      { version: 1, envelope: { signed: 'not base64url!', signatures: [] } },
+      { version: 1, envelope: envelope('x'), pad: 'x'.repeat(cinemaFileMaxBytes) },
+      '{not json',
+    ]) {
+      await putManifest('cinema', body);
+      const response = await request(server).get('/v1/app/cinema');
+      expect(response.status).toBe(500);
+      expect(response.body.code).toBe('INTERNAL');
+    }
+    expect(printed).toHaveBeenCalled();
+  });
+
+  it('同一 IP 每小时超过上限回 RATE_LIMITED', async () => {
+    pinClock();
+    await request(server).get('/v1/app/cinema');
+    await fillRate('app_cinema', cinemaRulesPerHour);
+    const response = await request(server).get('/v1/app/cinema');
     expect(response.status).toBe(429);
     expect(response.body.code).toBe('RATE_LIMITED');
   });

@@ -1,6 +1,9 @@
+import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_page.dart';
+import 'package:superxd/toolbox/cinema/cinema_page.dart';
+import 'package:superxd/toolbox/cinema/cinema_service.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
 import 'package:superxd/toolbox/express/express_page.dart';
 import 'package:superxd/toolbox/express/express_service.dart';
@@ -46,5 +49,18 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
     shortcuts: [
       ToolboxShortcut(id: ExpressPage.identityShortcut, label: '取件身份码', icon: CampusIcons.qrCode, builder: (context) => ExpressPage(runtime: runtime, openIdentity: true)),
     ],
+  ),
+  // 电影院（灰度测试，人工决策见 cinema/cinema_service.dart 文件头）：功能开关开着才出现。
+  ToolboxModule(
+    id: CinemaService.serviceId,
+    name: '电影院',
+    icon: CampusIcons.cinema,
+    builder: (context) => CinemaPage(runtime: runtime),
+    openService: (context) => CinemaService.open(context, feed: switch (runtime.cinemaRules) {
+      final fetch? => CinemaRulesFeed(fetch: fetch, versionCode: runtime.versionCode ?? () async => 0),
+      null => null,
+    }),
+    clearedData: '片源规则、片源同意与看过的记录（再用要重新同意）',
+    flag: cinemaFlag,
   ),
 ];

@@ -40,6 +40,9 @@ abstract final class CampusIcons {
   static const download = LucideIcons.download;
   static const toolbox = LucideIcons.box;
   static const video = LucideIcons.video;
+  // 电影院（百宝箱的在线影视）与它的选集、换源。
+  static const cinema = LucideIcons.clapperboard;
+  static const episodes = LucideIcons.listVideo;
   static const image = LucideIcons.image;
   static const images = LucideIcons.images;
   static const camera = LucideIcons.camera;

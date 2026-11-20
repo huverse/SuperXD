@@ -7,6 +7,7 @@ import { leisureDeletePerDevicePerHour } from 'src/common/relay_limits';
 import { AccountRepository } from 'src/modules/account/account.repository';
 import { ChallengeService } from 'src/modules/challenge/challenge.service';
 import { PointsService } from 'src/modules/points/points.service';
+import { PassService } from 'src/modules/pass/pass.service';
 import { UnlockService } from 'src/modules/unlock/unlock.service';
 
 // 「删除游乐场与积分」（人工决策见客户端 lib/domain/leisure.dart）：删掉这个应用账号的挑战成绩、解锁记录与积分（同一事务，要么都删要么都不删），
@@ -21,6 +22,7 @@ export class LeisureService {
     private readonly limiter: RateLimiter,
     private readonly challenges: ChallengeService,
     private readonly unlocks: UnlockService,
+    private readonly passes: PassService,
     private readonly points: PointsService,
   ) {}
 
@@ -32,6 +34,7 @@ export class LeisureService {
     await this.database.transaction(async (manager) => {
       await this.challenges.deleteAccountsIn(manager, [accountId]);
       await this.unlocks.deleteAccountsIn(manager, [accountId]);
+      await this.passes.deleteAccountsIn(manager, [accountId]);
       await this.points.deleteAccountsIn(manager, [accountId]);
     });
     this.logger.log(`[Leisure] action=delete deviceId=${deviceId}`);

@@ -21,8 +21,8 @@ class TestSigning {
     final releaseSeed = List.filled(32, 1), notesSeed = List.filled(32, 2), offlineSeed = List.filled(32, 3), strangerSeed = List.filled(32, 9);
     final keys = [
       TrustedSigningKey('release-test', await publicKeyOfSeed(releaseSeed), {SignedContent.release}),
-      TrustedSigningKey('notes-test', await publicKeyOfSeed(notesSeed), {SignedContent.notes, SignedContent.rollout}),
-      TrustedSigningKey('offline-test', await publicKeyOfSeed(offlineSeed), {SignedContent.release, SignedContent.notes, SignedContent.rollout}),
+      TrustedSigningKey('notes-test', await publicKeyOfSeed(notesSeed), {SignedContent.notes, SignedContent.rollout, SignedContent.cinema}),
+      TrustedSigningKey('offline-test', await publicKeyOfSeed(offlineSeed), {SignedContent.release, SignedContent.notes, SignedContent.rollout, SignedContent.cinema}),
     ];
     final impostor = [TrustedSigningKey('release-test', await publicKeyOfSeed(strangerSeed), {SignedContent.release, SignedContent.notes})];
     return TestSigning._(

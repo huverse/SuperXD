@@ -7,4 +7,13 @@ class FeatureFlag {
   final bool fallback;
 }
 
-const featureFlags = <FeatureFlag>[];
+// 页面与百宝箱问开关的端口（application 的 Rollouts 实现，组合根经 AppServices.features 注入）：配置、点名或等级变了 changes 发一次。
+abstract interface class FeatureGate {
+  bool isOn(FeatureFlag flag);
+  Stream<void> get changes;
+}
+
+// 百宝箱的电影院（灰度测试，人工决策见 lib/toolbox/cinema/cinema_service.dart 文件头）：开着才显示入口、才能进路由。
+const cinemaFlag = FeatureFlag('toolbox.cinema', fallback: false);
+
+const featureFlags = <FeatureFlag>[cinemaFlag];

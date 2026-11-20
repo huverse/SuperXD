@@ -34,6 +34,12 @@ export class AppReleaseController {
     return this.releases.flags(ip);
   }
 
+  // 电影院的片源规则包（人工决策见客户端 lib/toolbox/cinema/cinema_service.dart 文件头）：只有签名信封，免签名、不带标识。
+  @Get('cinema')
+  cinema(@Ip() ip: string): Promise<dtos.CinemaRulesDto> {
+    return this.releases.cinema(ip);
+  }
+
   @Get('files/:name')
   file(@Param() param: dtos.AppFileParamDto, @Ip() ip: string, @Res() response: Response): Promise<void> {
     return this.releases.send(ip, param.name, response);

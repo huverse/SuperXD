@@ -16,15 +16,19 @@ import 'package:superxd/toolbox/toolbox_models.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 import 'package:superxd/domain/campus_log.dart';
+import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/domain/unlock.dart';
 
 // 隐藏的工具（解锁 toolbox.<工具 id>，人工决策见服务端 src/modules/unlock/unlock_rules.ts）：对当前账号锁着时不显示入口，开了才出现。
+// 灰度中的工具（登记了功能开关 ToolboxModule.flag）：开关开着才显示。
 class ToolboxPage extends StatefulWidget {
-  const ToolboxPage({super.key, required this.runtime, this.modules, this.unlocks});
+  const ToolboxPage({super.key, required this.runtime, this.modules, this.unlocks, this.features});
   final ToolboxRuntime runtime;
   final List<ToolboxModule>? modules;
   // 没配中转时为空，工具都显示。
   final UnlockAccess? unlocks;
+  // 为空时（测试）灰度中的工具都不显示。
+  final FeatureGate? features;
   @override
   State<ToolboxPage> createState() => _ToolboxPageState();
 }
@@ -35,8 +39,9 @@ class _ToolboxPageState extends State<ToolboxPage> {
   final _busy = <String>{};
   String? _error;
   StreamSubscription<void>? _unlockChanges;
+  StreamSubscription<void>? _featureChanges;
 
-  List<ToolboxModule> get _modules => [for (final module in _all) if (widget.unlocks?.locked(toolboxUnlockId(module.id)) != true) module];
+  List<ToolboxModule> get _modules => [for (final module in _all) if (toolboxVisible(module, unlocks: widget.unlocks, features: widget.features)) module];
 
   @override
   void initState() {
@@ -44,11 +49,15 @@ class _ToolboxPageState extends State<ToolboxPage> {
     _unlockChanges = widget.unlocks?.changes.listen((_) {
       if (mounted) setState(() {});
     });
+    _featureChanges = widget.features?.changes.listen((_) {
+      if (mounted) setState(() {});
+    });
   }
 
   @override
   void dispose() {
     unawaited(_unlockChanges?.cancel());
+    unawaited(_featureChanges?.cancel());
     super.dispose();
   }
 
@@ -311,3 +320,10 @@ class _SwipeAction extends StatelessWidget {
 
 // 隐藏工具的解锁编号：toolbox.<工具 id>（灰度配置 unlocks 里按这个写）。
 String toolboxUnlockId(String toolId) => 'toolbox.$toolId';
+
+// 工具此刻显不显示、能不能进（首页与路由同一规则）：灰度中的工具要开关开着，隐藏的工具要对当前账号开着。
+bool toolboxVisible(ToolboxModule module, {UnlockAccess? unlocks, FeatureGate? features}) {
+  final flag = module.flag;
+  if (flag != null && features?.isOn(flag) != true) return false;
+  return unlocks?.locked(toolboxUnlockId(module.id)) != true;
+}
