@@ -67,7 +67,7 @@ export class CinemaCatalogService {
       }
     }
     const removed = await this.catalog.dropExcept(rules.map((rule) => rule.id));
-    if (removed > 0) this.logger.log(`[CinemaCatalog] action=drop removed=${removed}`);
+    if (removed > 0) this.logger.warn(`[CinemaCatalog] action=drop removed=${removed} hint=低峰时手动 OPTIMIZE TABLE cinema_catalog`);
   }
 
   async crawl(rule: CinemaCatalogRule, now: Date, budgetMs = cinemaCatalogRunMs) {

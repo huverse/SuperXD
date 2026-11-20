@@ -399,11 +399,13 @@ CREATE TABLE IF NOT EXISTS cinema_catalog (
   rule_id VARCHAR(32) NOT NULL COMMENT '片源规则包 catalogRules 里的规则编号',
   source VARCHAR(64) NOT NULL COMMENT '这个源里的影片编号',
   folded VARCHAR(255) NOT NULL COMMENT '片名的折叠写法（去空白、全角折半角、小写），只用来查',
+  head VARCHAR(1) GENERATED ALWAYS AS (LEFT(folded, 1)) STORED COMMENT '片名折叠写法的第一个字（单字搜索用）',
+  folded_length SMALLINT UNSIGNED GENERATED ALWAYS AS (CHAR_LENGTH(folded)) STORED COMMENT '片名折叠写法的字数（单字搜索按它排）',
   create_time DATETIME(3) NOT NULL,
   update_time DATETIME(3) NOT NULL,
   PRIMARY KEY (id),
   UNIQUE KEY uk_cinema_catalog (rule_id, source),
-  KEY idx_cinema_catalog_prefix (rule_id, folded(16)),
+  KEY idx_cinema_catalog_head (rule_id, head, folded_length),
   FULLTEXT KEY ft_cinema_catalog (folded) WITH PARSER ngram
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_bin;
 
