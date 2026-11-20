@@ -1,7 +1,7 @@
 // 电影院的数据：一个源搜到的一条（CinemaHit）、按片名加年份聚合后的一部片（CinemaTitle）、选集（CinemaRoad、CinemaEpisode）与看过的记录（CinemaHistory）。
 
 class CinemaHit {
-  const CinemaHit({required this.ruleId, required this.source, required this.name, this.cover = '', this.year = '', this.remarks = ''});
+  const CinemaHit({required this.ruleId, required this.source, required this.name, this.cover = '', this.year = '', this.remarks = '', this.roads});
   final String ruleId;
   // 这个源里认这部片的值（苹果 CMS 是影片编号），选集请求的 @source。
   final String source;
@@ -10,6 +10,8 @@ class CinemaHit {
   // 只留四位数字，其余当没有。
   final String year;
   final String remarks;
+  // 搜索回复自带的剧集（规则写了 search.chapters 才有）。
+  final List<CinemaRoad>? roads;
 }
 
 class CinemaSourceRef {
@@ -51,6 +53,42 @@ class CinemaRoad {
   const CinemaRoad({required this.name, required this.episodes});
   final String name;
   final List<CinemaEpisode> episodes;
+}
+
+// 一个片源在这台手机上最近的播放结果（本机 cinema.db 的 source_stat）：最近一次播成、没播成的时刻（UTC）与播成那次的首帧用时。
+class CinemaSourceStat {
+  const CinemaSourceStat({this.okAt, this.failAt, this.firstFrame});
+  final DateTime? okAt;
+  final DateTime? failAt;
+  final Duration? firstFrame;
+
+  // 最近一次是播成了（true）还是没播成（false）。
+  bool get lastOk => failAt == null || (okAt != null && okAt!.isAfter(failAt!));
+}
+
+// 片源名后面的标注：没有记录不标。
+String? cinemaSourceStatLabel(CinemaSourceStat? stat) => switch (stat?.lastOk) {
+  true => '上次能播',
+  false => '上次没播成',
+  null => null,
+};
+
+// 选集页的片源顺序：最近一次播成的在前（首帧快的在前），没记录的按搜到的先后，最近一次没播成的放最后；同一组里照搜到的先后。
+List<CinemaSourceRef> rankCinemaSources(List<CinemaSourceRef> sources, Map<String, CinemaSourceStat> stats) {
+  int group(CinemaSourceRef ref) => switch (stats[ref.ruleId]?.lastOk) {
+    true => 0,
+    null => 1,
+    false => 2,
+  };
+  int frame(CinemaSourceRef ref) => stats[ref.ruleId]?.firstFrame?.inMilliseconds ?? 1 << 30;
+  final ordered = [...sources.indexed]
+    ..sort((a, b) {
+      final byGroup = group(a.$2).compareTo(group(b.$2));
+      if (byGroup != 0) return byGroup;
+      final byFrame = group(a.$2) == 0 ? frame(a.$2).compareTo(frame(b.$2)) : 0;
+      return byFrame != 0 ? byFrame : a.$1.compareTo(b.$1);
+    });
+  return [for (final (_, ref) in ordered) ref];
 }
 
 // 一个源搜失败了：哪个源、给用户看的原因。

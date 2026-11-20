@@ -74,7 +74,9 @@ String _first(Object? document, String expression) {
   };
 }
 
-List<CinemaHit> parseCinemaSearch(String raw, CinemaRule rule) {
+// 规则写了 search.chapters 时，每一条按自己的记录解出剧集（不能把整份回复套进详情的 $.list[0]，那会给每条都配上第一条的剧集）；
+// 相对地址按搜索请求的地址 base 补全。没写为空。
+List<CinemaHit> parseCinemaSearch(String raw, CinemaRule rule, {Uri? base}) {
   final config = rule.search;
   final document = decodeCinemaJson(raw);
   final hits = <CinemaHit>[];
@@ -82,6 +84,7 @@ List<CinemaHit> parseCinemaSearch(String raw, CinemaRule rule) {
     final name = _first(node, config.namePath);
     final source = _first(node, config.sourcePath);
     if (name.isEmpty || source.isEmpty) continue;
+    final chapters = config.chapters;
     hits.add(CinemaHit(
       ruleId: rule.id,
       source: source,
@@ -89,16 +92,17 @@ List<CinemaHit> parseCinemaSearch(String raw, CinemaRule rule) {
       cover: _first(node, config.coverPath),
       year: cinemaYear(_first(node, config.yearPath)),
       remarks: _first(node, config.remarksPath),
+      roads: chapters == null ? null : parseCinemaRoads(node, chapters, base ?? Uri()),
     ));
   }
   return hits;
 }
 
-// 选集：只留能直接播的媒体地址（见 cinemaMediaUrl），去掉后空了的线路整条不要（采集站常同时给分享页与直链两组，交接 03.2）。
-// 相对地址按选集请求的地址补全。
-List<CinemaRoad> parseCinemaChapters(String raw, CinemaRule rule, Uri requestUri) {
-  final config = rule.chapters;
-  final document = decodeCinemaJson(raw);
+// 选集：详情回复整份按 chapterApiConfig 解，相对地址按选集请求的地址补全。
+List<CinemaRoad> parseCinemaChapters(String raw, CinemaRule rule, Uri requestUri) => parseCinemaRoads(decodeCinemaJson(raw), rule.chapters, requestUri);
+
+// 从一个 JSON 节点按一组选集路径解出线路：只留能直接播的媒体地址（见 cinemaMediaUrl），去掉后空了的线路整条不要（采集站常同时给分享页与直链两组，交接 03.2）。
+List<CinemaRoad> parseCinemaRoads(Object? document, CinemaChapterConfig config, Uri requestUri) {
   final roads = <CinemaRoad>[];
   void add(String name, List<(String, String)> entries) {
     final episodes = <CinemaEpisode>[];

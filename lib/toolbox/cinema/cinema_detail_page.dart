@@ -23,6 +23,8 @@ import 'package:superxd/toolbox/cinema/cinema_rule.dart';
 import 'package:superxd/toolbox/cinema/cinema_service.dart';
 
 // 一部片的选集页：选片源（同一部片在各源里的版本）、选线路、点一集播放；看过的给「接着看」。
+// 片源按这台手机上最近能不能播排（rankCinemaSources，进页面时排一次、之后不跳动），默认选最前面的，名字后标「上次能播」「上次没播成」；
+// 取到选集后预取接着看那一集（没看过就第一集）的播放清单，点播放时把已取到的选集交给播放页，不再请求一次（人工决策见 cinema_service.dart 的 warm 与 sourceStats）。
 class CinemaDetailPage extends StatefulWidget {
   const CinemaDetailPage({super.key, required this.service, required this.title});
   final CinemaService service;
@@ -34,15 +36,35 @@ class CinemaDetailPage extends StatefulWidget {
 class _CinemaDetailPageState extends State<CinemaDetailPage> {
   var _source = 0;
   var _road = 0;
-  late Future<List<CinemaRoad>> _roads = _load();
+  // 排好的片源（读到播放记录后排一次）。
+  late List<CinemaSourceRef> _sources = widget.title.sources;
+  late Future<List<CinemaRoad>> _roads = _start();
   CinemaHistory? _history;
+  // 换源、离开时这一处不再等上一次的选集（别处还在等就不中断请求）。
+  Completer<void>? _cancel;
 
-  CinemaSourceRef get _ref => widget.title.sources[_source];
+  CinemaSourceRef get _ref => _sources[_source];
 
   @override
   void initState() {
     super.initState();
     unawaited(_reloadHistory());
+  }
+
+  @override
+  void dispose() {
+    _cancel?.complete();
+    super.dispose();
+  }
+
+  Future<List<CinemaRoad>> _start() async {
+    try {
+      final stats = await widget.service.sourceStats();
+      if (mounted) setState(() => _sources = rankCinemaSources(widget.title.sources, stats));
+    } catch (error, stack) {
+      campusLog('[Cinema] action=source_stats errorType=${error.runtimeType}\n$stack');
+    }
+    return _load();
   }
 
   Future<void> _reloadHistory() async {
@@ -54,11 +76,25 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
     }
   }
 
-  Future<List<CinemaRoad>> _load() async {
-    final rule = widget.service.rule(_ref.ruleId);
+  Future<List<CinemaRoad>> _load({bool fresh = false}) async {
+    final ref = _ref;
+    final rule = widget.service.rule(ref.ruleId);
     if (rule == null) throw const CinemaRuleException('这个源已经下架，换一个源试试');
-    return widget.service.chapters(rule, _ref.source);
+    _cancel?.complete();
+    final cancel = _cancel = Completer<void>();
+    final roads = await widget.service.chapters(rule, ref.source, fresh: fresh, cancel: cancel.future);
+    // 预取接着看那一集（这个源看过且线路与集还在），没看过就第一集。
+    final history = await _historyFuture;
+    final resume = history != null && history.ruleId == ref.ruleId && history.source == ref.source && history.road < roads.length && history.episode < roads[history.road].episodes.length;
+    final episode = resume ? roads[history.road].episodes[history.episode] : roads.first.episodes.first;
+    unawaited(widget.service.warm(episode.url, rule: rule));
+    return roads;
   }
+
+  late final Future<CinemaHistory?> _historyFuture = widget.service.store.historyOf(widget.title.key).catchError((Object error, StackTrace stack) {
+    campusLog('[Cinema] action=history errorType=${error.runtimeType}\n$stack');
+    return null;
+  });
 
   void _pickSource(int index) => setState(() {
     _source = index;
@@ -66,10 +102,21 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
     _roads = _load();
   });
 
+  // 播的是当前片源时把已取到的选集交给播放页；接着看别的源时播放页自己取（缓存里有就不发请求）。
   Future<void> _play(int road, int episode, {Duration start = Duration.zero, CinemaSourceRef? source}) async {
+    final ref = source ?? _ref;
+    List<CinemaRoad>? roads;
+    if (ref == _ref) {
+      try {
+        roads = await _roads;
+      } catch (_) {
+        roads = null;
+      }
+    }
+    if (!mounted) return;
     await Navigator.push<void>(
       context,
-      CampusPageRoute(builder: (_) => CinemaPlayerPage.title(service: widget.service, title: widget.title, source: source ?? _ref, road: road, episode: episode, start: start)),
+      CampusPageRoute(builder: (_) => CinemaPlayerPage.title(service: widget.service, title: widget.title, source: ref, road: road, episode: episode, start: start, roads: roads)),
     );
     await _reloadHistory();
   }
@@ -130,8 +177,8 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
                       label: '片源',
                       value: _source,
                       items: [
-                        for (final (index, ref) in title.sources.indexed)
-                          CampusMenuItem(value: index, label: [widget.service.rule(ref.ruleId)?.name ?? ref.ruleId, if (ref.remarks.isNotEmpty) ref.remarks].join(' · ')),
+                        for (final (index, ref) in _sources.indexed)
+                          CampusMenuItem(value: index, label: cinemaSourceLabel(widget.service, ref)),
                       ],
                       onChanged: _pickSource,
                     ),
@@ -149,7 +196,7 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
                             _ => '选集没取到',
                           },
                           onRetry: () => setState(() {
-                            _roads = _load();
+                            _roads = _load(fresh: true);
                           }),
                         );
                       }

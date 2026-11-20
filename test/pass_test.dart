@@ -104,7 +104,7 @@ void main() {
       await access.refresh();
       expect(access.locked('toolbox.cinema'), isFalse);
       client.offerList = const [cinema];
-      await access.refresh();
+      await access.refresh(force: true);
       expect((access.locked('toolbox.cinema'), access.canBuy, access.offer('toolbox.cinema')?.price), (true, true, 300));
       await access.buy('toolbox.cinema');
       expect((access.locked('toolbox.cinema'), access.until('toolbox.cinema')), (false, DateTime.utc(2026, 11, 27)));
@@ -125,6 +125,24 @@ void main() {
       signedIn = null;
       expect((access.locked('toolbox.cinema'), access.canBuy), (true, false));
       await expectLater(access.buy('toolbox.cinema'), throwsA(isA<PassException>().having((error) => error.failure, 'failure', PassFailure.notSignedIn)));
+    });
+
+    test('刷新：同一个应用账号 10 分钟内不重复拉，重试不等，换了应用账号照常拉', () async {
+      final access = passes();
+      await access.refresh();
+      final first = client.calls;
+      await access.refresh();
+      expect(client.calls, first);
+      now = now.add(const Duration(minutes: 11));
+      await access.refresh();
+      final second = client.calls;
+      expect(second, greaterThan(first));
+      await access.refresh(force: true);
+      final third = client.calls;
+      expect(third, greaterThan(second));
+      signedIn = const AppAccountRef(accountId: 'acct-2', slot: 'slot-2');
+      await access.refresh();
+      expect(client.calls, greaterThan(third));
     });
 
     test('中转说账号不在了：让应用账号马上核一次，照旧用本机记的', () async {

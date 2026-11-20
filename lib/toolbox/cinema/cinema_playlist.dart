@@ -51,7 +51,13 @@ String cinemaRewritePlaylist(String text, Uri base, {required String Function(Ur
   return '${body.join('\n')}\n';
 }
 
-// 第一个分片的原始地址（决定要不要换域名前置的主机时探一次）。
+// 主清单（只列各码率的子清单，没有分片）。
+bool cinemaMasterPlaylist(String text) => text.contains('#EXT-X-STREAM-INF');
+
+// 内容不会再变的清单（点播的分片清单写了 #EXT-X-ENDLIST，或主清单）：本机代理可以短时缓存；直播的分片清单一直在变，不缓存。
+bool cinemaStaticPlaylist(String text) => cinemaMasterPlaylist(text) || text.contains('#EXT-X-ENDLIST');
+
+// 第一个分片的原始地址（决定要不要换域名前置的主机时探一次）；主清单里是第一个码率的子清单地址。
 Uri? cinemaFirstSegment(String text, Uri base) {
   for (final line in const LineSplitter().convert(text)) {
     final trimmed = line.trim();

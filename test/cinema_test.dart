@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as path;
+import 'package:sqflite/sqflite.dart';
 
 import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/toolbox/cinema/cinema_catalog.dart';
@@ -109,6 +110,26 @@ Future<String> encryptForTest(String plain) async {
 // 替身回复一律按 UTF-8 字节给（http.Response 的字符串构造默认按 Latin-1 编码，中文会报错）。
 http.Response reply(String body, int status, {Map<String, String> headers = const {}}) => http.Response.bytes(utf8.encode(body), status, headers: headers);
 
+// 搜索回复每条自带剧集的写法（search.chapters，路径相对每一条）。
+Map<String, Object?> macCmsRuleWithChapters(String id, String api) {
+  final rule = macCmsRule(id, api);
+  return {
+    ...rule,
+    'searchApiConfig': {...(rule['searchApiConfig']! as Map<String, Object?>), 'chapters': {'roadNamesPath': r'$.vod_play_from', 'roadEpisodesPath': r'$.vod_play_url'}},
+  };
+}
+
+// 绕开测试框架装的假 HttpClient，真的连本机代理。
+Future<(int, String)> getLocal(Uri uri) => HttpOverrides.runWithHttpOverrides(() async {
+  final local = HttpClient();
+  try {
+    final response = await (await local.getUrl(uri)).close();
+    return (response.statusCode, await utf8.decodeStream(response));
+  } finally {
+    local.close(force: true);
+  }
+}, _RealHttp());
+
 String macCmsList(List<Map<String, Object?>> items) => jsonEncode({'code': 1, 'msg': '数据列表', 'page': '1', 'pagecount': 1, 'total': items.length, 'list': items});
 
 void main() {
@@ -157,6 +178,15 @@ void main() {
     });
   });
 
+  test('搜索配置可以带每条自带的剧集路径（search.chapters，格式同选集）；路径写法不对整包拒收；不带为空', () {
+    final rule = decodeCinemaPackage(packageBytes(rules: [macCmsRuleWithChapters('alpha', 'https://alpha.example.com/api.php')])).rules.single;
+    expect((rule.search.chapters?.roadNamesPath, rule.search.chapters?.format), (r'$.vod_play_from', 'delimited'));
+    expect(decodeCinemaPackage(packageBytes()).rules.first.search.chapters, isNull);
+    final broken = macCmsRuleWithChapters('alpha', 'https://alpha.example.com/api.php');
+    (broken['searchApiConfig']! as Map<String, Object?>)['chapters'] = {'roadNamesPath': r'$.vod_play_from'};
+    expect(() => decodeCinemaPackage(packageBytes(rules: [broken])), throwsA(isA<CinemaRuleException>()));
+  });
+
   group('规则引擎', () {
     final rule = decodeCinemaPackage(packageBytes()).rules.first;
 
@@ -195,6 +225,17 @@ void main() {
       roads = parseCinemaChapters(chapters('m3u8', r'第01集$javascript:alert(1)#第02集$https://cdn.example.com/2.m3u8#第03集$https://user:pass@cdn.example.com/3.m3u8'), rule, requestUri);
       expect([for (final episode in roads.single.episodes) episode.name], ['第02集']);
       expect(parseCinemaChapters(chapters('share', r'第01集$https://cdn.example.com/play/a'), rule, requestUri), isEmpty);
+    });
+
+    test('搜索自带剧集：每条按自己的记录解（不是都配上第一条的），相对地址按搜索地址补全；规则没写为空', () {
+      final rule = decodeCinemaPackage(packageBytes(rules: [macCmsRuleWithChapters('alpha', 'https://alpha.example.com/api.php')])).rules.single;
+      final raw = macCmsList([
+        {'vod_id': 1, 'vod_name': '甲', 'vod_play_from': 'm3u8', 'vod_play_url': r'第01集$https://cdn.example.com/a/index.m3u8'},
+        {'vod_id': 2, 'vod_name': '乙', 'vod_play_from': 'm3u8', 'vod_play_url': r'第01集$/b/index.m3u8'},
+      ]);
+      final hits = parseCinemaSearch(raw, rule, base: Uri.parse('https://alpha.example.com/api.php?ac=detail'));
+      expect([for (final hit in hits) hit.roads!.single.episodes.single.url], ['https://cdn.example.com/a/index.m3u8', 'https://alpha.example.com/b/index.m3u8']);
+      expect(parseCinemaSearch(raw, decodeCinemaPackage(packageBytes()).rules.first).first.roads, isNull);
     });
 
     test('选集：相对地址按选集请求的地址补全', () {
@@ -474,6 +515,142 @@ void main() {
     });
 
 
+    test('选集缓存：搜索自带的剧集点开不再请求；没带的两处同时要只发一次、之后走缓存；重新载入、过了 10 分钟、规则包换了版本才重取', () async {
+      var now = DateTime.utc(2026, 11, 20);
+      var version = 1;
+      final details = <String>[];
+      var gate = Completer<void>();
+      final client = MockClient((request) async {
+        final query = request.url.queryParameters;
+        final item = {'vod_id': request.url.host.startsWith('alpha') ? 1 : 7, 'vod_name': '合成电影', 'vod_play_from': 'm3u8', 'vod_play_url': r'第01集$https://cdn.example.com/one/index.m3u8'};
+        if (query.containsKey('wd')) return reply(macCmsList([item]), 200);
+        details.add('${request.url.host} ${query['ids']}');
+        await gate.future;
+        return reply(macCmsList([item]), 200);
+      });
+      final service = await open(() async => packageBytes(version: version, rules: [macCmsRuleWithChapters('alpha', 'https://alpha.example.com/api.php'), macCmsRule('beta', 'https://beta.example.com/api.php')]), client: client, now: () => now);
+      final package = await service.rules();
+      await service.grantRules(package.rules);
+      await service.search('合成电影').last;
+      final alpha = service.rule('alpha')!, beta = service.rule('beta')!;
+      expect((await service.chapters(alpha, '1')).single.episodes.single.url, 'https://cdn.example.com/one/index.m3u8');
+      expect(details, isEmpty);
+      final both = Future.wait([service.chapters(beta, '7'), service.chapters(beta, '7')]);
+      gate.complete();
+      expect((await both).map((roads) => roads.single.episodes.length), [1, 1]);
+      await service.chapters(beta, '7');
+      expect(details, ['beta.example.com 7']);
+      await service.chapters(beta, '7', fresh: true);
+      expect(details, hasLength(2));
+      now = now.add(const Duration(minutes: 11));
+      await service.chapters(beta, '7');
+      expect(details, hasLength(3));
+      version = 2;
+      await service.rules(force: true);
+      await service.chapters(service.rule('beta')!, '7');
+      expect(details, hasLength(4));
+      gate = Completer<void>()..complete();
+      await service.close();
+    });
+
+    test('选集：一处不等了只有它抛取消，另一处照样拿到；都不等了才中断，之后再要另起一次', () async {
+      final details = <int>[];
+      var gate = Completer<void>();
+      final client = MockClient((request) async {
+        details.add(details.length);
+        await gate.future;
+        return reply(macCmsList([{'vod_id': 7, 'vod_name': '合成', 'vod_play_from': 'm3u8', 'vod_play_url': r'第01集$https://cdn.example.com/one/index.m3u8'}]), 200);
+      });
+      final service = await open(() async => packageBytes(), client: client);
+      final rule = (await service.rules()).rules.first;
+      final leaving = Completer<void>(), staying = Completer<void>();
+      final left = service.chapters(rule, '7', cancel: leaving.future), stayed = service.chapters(rule, '7', cancel: staying.future);
+      leaving.complete();
+      await expectLater(left, throwsA(isA<http.RequestAbortedException>()));
+      gate.complete();
+      expect((await stayed).single.episodes, hasLength(1));
+      expect(details, hasLength(1));
+      gate = Completer<void>();
+      final first = Completer<void>(), second = Completer<void>();
+      final a = service.chapters(rule, '8', cancel: first.future), b = service.chapters(rule, '8', cancel: second.future);
+      first.complete();
+      second.complete();
+      await expectLater(a, throwsA(isA<http.RequestAbortedException>()));
+      await expectLater(b, throwsA(isA<http.RequestAbortedException>()));
+      final again = service.chapters(rule, '8');
+      gate.complete();
+      await again;
+      expect(details, hasLength(3), reason: '都不等了的那次被中断，再要时另起一次');
+      await service.close();
+    });
+
+    test('规则包拉不到：5 分钟内不再去拉（照旧用本机的），重试不等；拉到了就清零', () async {
+      var now = DateTime.utc(2026, 11, 20);
+      var fetches = 0;
+      var fail = false;
+      final service = await open(() async {
+        fetches++;
+        if (fail) throw const SocketException('连不上');
+        return packageBytes(version: fetches);
+      }, now: () => now);
+      await service.rules();
+      fail = true;
+      now = now.add(const Duration(hours: 2));
+      expect((await service.rules()).version, 1);
+      await service.rules();
+      await service.rules();
+      expect(fetches, 2, reason: '失败后 5 分钟内不再拉');
+      now = now.add(const Duration(minutes: 6));
+      await service.rules();
+      expect(fetches, 3);
+      await service.rules(force: true);
+      expect(fetches, 4, reason: '重试不等');
+      fail = false;
+      await service.rules(force: true);
+      fail = true;
+      now = now.add(const Duration(hours: 2));
+      await service.rules();
+      expect(fetches, 6, reason: '拉到过就清零，过了一小时照常去拉');
+      await service.close();
+    });
+
+    test('播放记录：每个源一行，播成记首帧、没播成只记时刻，30 天没再播的删掉；能播的在前（首帧快的在前）、没记录的照搜到的先后、没播成的最后；标注', () async {
+      final store = await CinemaStore.open(path.join(fixture.directory.path, 'cinema_stats.db'));
+      addTearDown(store.close);
+      final now = DateTime.utc(2026, 11, 20);
+      await store.recordPlayback('alpha', ok: true, firstFrame: const Duration(seconds: 3), at: now);
+      await store.recordPlayback('beta', ok: false, at: now);
+      await store.recordPlayback('gamma', ok: true, firstFrame: const Duration(seconds: 1), at: now);
+      await store.recordPlayback('delta', ok: true, firstFrame: const Duration(seconds: 1), at: now.subtract(const Duration(days: 31)));
+      await store.recordPlayback('alpha', ok: false, at: now.subtract(const Duration(minutes: 1)));
+      final stats = await store.sourceStats(now);
+      expect(stats.keys.toSet(), {'alpha', 'beta', 'gamma'});
+      expect((stats['alpha']!.lastOk, stats['alpha']!.firstFrame), (true, const Duration(seconds: 3)));
+      CinemaSourceRef ref(String id) => CinemaSourceRef(ruleId: id, source: '1', name: id, remarks: '');
+      expect([for (final item in rankCinemaSources([ref('beta'), ref('alpha'), ref('eps'), ref('gamma'), ref('zeta')], stats)) item.ruleId], ['gamma', 'alpha', 'eps', 'zeta', 'beta']);
+      expect([cinemaSourceStatLabel(stats['gamma']), cinemaSourceStatLabel(stats['beta']), cinemaSourceStatLabel(null)], ['上次能播', '上次没播成', null]);
+      await store.recordPlayback('gamma', ok: false, at: now.add(const Duration(minutes: 1)));
+      expect((await store.sourceStats(now))['gamma']!.lastOk, isFalse);
+    });
+
+    test('本机库从第 1 版升上来补上播放记录表，原有的记录还在', () async {
+      final file = path.join(fixture.directory.path, 'cinema_v1.db');
+      final old = await databaseFactory.openDatabase(file, options: OpenDatabaseOptions(version: 1, onCreate: (database, _) async {
+        await database.execute('CREATE TABLE package (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL, payload BLOB NOT NULL, fetched_at INTEGER NOT NULL)');
+        await database.execute('CREATE TABLE consent (subject TEXT PRIMARY KEY, version TEXT NOT NULL)');
+        await database.execute(
+          'CREATE TABLE history (key TEXT PRIMARY KEY, name TEXT NOT NULL, cover TEXT NOT NULL, rule_id TEXT NOT NULL, source TEXT NOT NULL, road INTEGER NOT NULL, episode INTEGER NOT NULL, episode_name TEXT NOT NULL, position_ms INTEGER NOT NULL, duration_ms INTEGER NOT NULL, updated_at INTEGER NOT NULL)',
+        );
+        await database.insert('consent', {'subject': 'rule:alpha', 'version': 'alpha.example.com'});
+      }));
+      await old.close();
+      final store = await CinemaStore.open(file);
+      addTearDown(store.close);
+      await store.recordPlayback('alpha', ok: true, firstFrame: const Duration(seconds: 2), at: DateTime.utc(2026, 11, 20));
+      expect((await store.sourceStats(DateTime.utc(2026, 11, 20))).keys, ['alpha']);
+      expect(await store.consents(), {'rule:alpha': 'alpha.example.com'});
+    });
+
     test('选集与播放地址：没有可播线路报错；m3u8 经本机代理、mp4 直接播，都带规则的 UA、不带 Referer；清除数据删掉整个目录', () async {
       final client = MockClient((request) async => reply(
         request.url.queryParameters['ids'] == '1'
@@ -513,16 +690,7 @@ void main() {
     final proxy = CinemaProxy(CinemaHttp(client: client));
     addTearDown(proxy.close);
     final stream = CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false);
-    // 绕开测试框架装的假 HttpClient，真的连本机代理。
-    Future<(int, String)> get(Uri uri) => HttpOverrides.runWithHttpOverrides(() async {
-      final local = HttpClient();
-      try {
-        final response = await (await local.getUrl(uri)).close();
-        return (response.statusCode, await utf8.decodeStream(response));
-      } finally {
-        local.close(force: true);
-      }
-    }, _RealHttp());
+    final get = getLocal;
     final master = await get(await proxy.open(Uri.parse('https://cdn.example.com/v/index.m3u8'), stream));
     expect(master.$1, 200);
     final variant = Uri.parse(master.$2.split('\n').firstWhere((line) => line.startsWith('http')));
@@ -540,6 +708,117 @@ void main() {
     expect((await get(await proxy.open(Uri.parse('https://cdn.example.com/missing.m3u8'), stream))).$1, HttpStatus.badGateway);
     final forged = (await proxy.open(Uri.parse('https://cdn.example.com/v/index.m3u8'), stream)).replace(pathSegments: ['wrong', 'p']);
     expect((await get(forged)).$1, HttpStatus.notFound);
+  });
+
+  test('取清单的跳转共用一个总时限：三跳各 100 毫秒、总时限 180 毫秒就超时（不是每跳重新计）', () async {
+    final client = MockClient((request) async {
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      return switch (request.url.path) {
+        '/a' => reply('', 302, headers: {'location': '/b'}),
+        '/b' => reply('', 302, headers: {'location': '/c'}),
+        _ => reply('#EXTM3U\n', 200),
+      };
+    });
+    final cinema = CinemaHttp(client: client);
+    addTearDown(cinema.close);
+    await expectLater(cinema.fetch(Uri.parse('https://cdn.example.com/a'), const {}, timeout: const Duration(milliseconds: 180)), throwsA(isA<CinemaHttpException>().having((error) => error.message, 'message', '超时')));
+    expect((await cinema.fetch(Uri.parse('https://cdn.example.com/a'), const {}, timeout: const Duration(seconds: 2))).uri.path, '/c');
+  });
+
+  test('本机代理的探测：原地址与替代地址同时探、原地址取得到就不换（原地址优先），取不到而替代取得到才换；结论按主机记住；超时这类没定论的一分钟后再探；主清单不探', () async {
+    var now = DateTime.utc(2026, 11, 20);
+    final hits = <String>[];
+    final client = MockClient((request) async {
+      final url = request.url;
+      if (url.path.endsWith('.m3u8')) {
+        final edge = url.pathSegments.first;
+        // 每份分片清单都是新地址（不走清单缓存），第一个分片的路径首段是真实域名。
+        return reply('#EXTM3U\n#EXTINF:10,\nhttps://$edge.example.com/real-$edge.example.com/seg0.ts\n#EXT-X-ENDLIST\n', 200);
+      }
+      hits.add(url.host);
+      return switch (url.host) {
+        'ok.example.com' || 'real-ok.example.com' => reply('xx', 206),
+        'front.example.com' => reply('', 418),
+        'real-front.example.com' => reply('xx', 206),
+        'slow.example.com' => await Completer<http.Response>().future,
+        _ => reply('xx', 206),
+      };
+    });
+    final proxy = CinemaProxy(CinemaHttp(client: client), now: () => now, probeBudget: const Duration(milliseconds: 200));
+    addTearDown(proxy.close);
+    final stream = CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false);
+    var serial = 0;
+    Future<String> playlist(String edge) async => (await getLocal(await proxy.open(Uri.parse('https://cdn.example.com/$edge/${serial++}.m3u8'), stream))).$2;
+    expect(await playlist('ok'), contains('https://ok.example.com/real-ok.example.com/seg0.ts'));
+    expect(hits.toSet(), {'ok.example.com', 'real-ok.example.com'}, reason: '两路同时探');
+    expect(await playlist('front'), contains('https://real-front.example.com/seg0.ts'));
+    hits.clear();
+    await playlist('front');
+    expect(hits, isEmpty, reason: '同一主机记住结论');
+    expect(await playlist('slow'), contains('https://real-slow.example.com/seg0.ts'));
+    hits.clear();
+    await playlist('slow');
+    expect(hits, isEmpty);
+    now = now.add(const Duration(minutes: 2));
+    await playlist('slow');
+    expect(hits, contains('slow.example.com'), reason: '没定论的一分钟后再探');
+    hits.clear();
+    now = now.add(const Duration(minutes: 2));
+    await playlist('front');
+    expect(hits, isEmpty, reason: '确定的结论记 30 分钟');
+    final master = MockClient((request) async {
+      hits.add(request.url.host);
+      return reply('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nhttps://edge.example.com/real.example.com/1080/index.m3u8\n', 200);
+    });
+    final masterProxy = CinemaProxy(CinemaHttp(client: master));
+    addTearDown(masterProxy.close);
+    hits.clear();
+    await getLocal(await masterProxy.open(Uri.parse('https://cdn.example.com/master.m3u8'), stream));
+    expect(hits, ['cdn.example.com'], reason: '主清单里是子清单，不探');
+  });
+
+  test('本机代理：一路交回后它还在等的清单请求立即回 404，之后再来的也是 404', () async {
+    final gate = Completer<void>();
+    final client = MockClient((request) async {
+      await gate.future;
+      return reply('#EXTM3U\n#EXTINF:10,\nseg0.ts\n', 200);
+    });
+    final proxy = CinemaProxy(CinemaHttp(client: client));
+    addTearDown(proxy.close);
+    final link = await proxy.open(Uri.parse('https://cdn.example.com/v/index.m3u8'), CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false));
+    final waiting = getLocal(link);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    proxy.release(link);
+    expect((await waiting).$1, HttpStatus.notFound);
+    gate.complete();
+    expect((await getLocal(link)).$1, HttpStatus.notFound);
+  });
+
+  test('预取：取主清单与第一个码率的子清单并探好，之后播放直接用缓存的（点播几分钟内不再取）；直播清单每次现取', () async {
+    final fetched = <String>[];
+    final client = MockClient((request) async {
+      fetched.add(request.url.path);
+      return switch (request.url.path) {
+        '/v/index.m3u8' => reply('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\n1080/index.m3u8\n', 200),
+        '/v/1080/index.m3u8' => reply('#EXTM3U\n#EXTINF:10,\nhttps://edge.example.com/real.example.com/seg0.ts\n#EXT-X-ENDLIST\n', 200),
+        '/live.m3u8' => reply('#EXTM3U\n#EXTINF:10,\nseg0.ts\n', 200),
+        _ => reply('xx', 206),
+      };
+    });
+    final proxy = CinemaProxy(CinemaHttp(client: client));
+    addTearDown(proxy.close);
+    final stream = CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false);
+    await proxy.warm(Uri.parse('https://cdn.example.com/v/index.m3u8'), stream);
+    expect(fetched, ['/v/index.m3u8', '/v/1080/index.m3u8', '/real.example.com/seg0.ts', '/seg0.ts']);
+    fetched.clear();
+    final master = await getLocal(await proxy.open(Uri.parse('https://cdn.example.com/v/index.m3u8'), stream));
+    final variant = Uri.parse(master.$2.split('\n').firstWhere((line) => line.startsWith('http')));
+    expect((await getLocal(variant)).$2, contains('https://edge.example.com/real.example.com/seg0.ts'));
+    expect(fetched, isEmpty, reason: '预取过的清单与探测结论直接用');
+    final live = await proxy.open(Uri.parse('https://cdn.example.com/live.m3u8'), stream);
+    await getLocal(live);
+    await getLocal(live);
+    expect(fetched, ['/live.m3u8', '/live.m3u8']);
   });
 
   group('灰度开关', () {

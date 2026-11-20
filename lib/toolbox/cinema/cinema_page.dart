@@ -66,13 +66,20 @@ class _CinemaPageState extends State<CinemaPage> {
     });
   }
 
+  // 本机已有规则包时先显示页面、在后台更新（拉不到照旧用本机的）；第一次用要等规则包。看过的记录与规则包一起读。
+  // 时长券不挡页面：先照本机记的判定，拉到新的经 changes 刷新（人工决策见 domain/pass.dart）。force 是页面上的「重试」，都不等间隔。
   Future<void> _initialize({bool force = false}) async {
     try {
       await widget.runtime.initialize();
-      _service = await widget.runtime.service<CinemaService>(CinemaService.serviceId);
-      await _service.rules(force: force);
-      await widget.runtime.passes?.refresh();
-      await _reloadHistory();
+      final service = _service = await widget.runtime.service<CinemaService>(CinemaService.serviceId);
+      unawaited(widget.runtime.passes?.refresh(force: force).catchError((Object error, StackTrace stack) => campusLog('[Cinema] action=passes errorType=${error.runtimeType}\n$stack')));
+      final history = _reloadHistory();
+      if (service.package == null || force) {
+        await service.rules(force: force);
+      } else {
+        unawaited(service.rules().then<void>((_) {}, onError: (Object error, StackTrace stack) => campusLog('[Cinema] action=rules_background errorType=${error.runtimeType}\n$stack')));
+      }
+      await history;
     } on CinemaRuleException catch (error) {
       campusLog('[Cinema] action=initialize errorType=CinemaRuleException message=${error.message}');
       rethrow;
