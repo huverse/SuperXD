@@ -141,6 +141,7 @@ class CinemaRule {
     required this.search,
     required this.chapters,
     this.catalog,
+    this.forward,
   });
   final String id;
   final String name;
@@ -153,11 +154,18 @@ class CinemaRule {
   final CinemaSearchConfig search;
   final CinemaChapterConfig chapters;
   final CinemaCatalogConfig? catalog;
+  // [人工决策-2026-11-21 15:30:18] 国内连不上的源走开发者的境外转发（用户选定、知道风险，见 cinema_service.dart 文件头）：规则写 "forward": true，
+  // 搜索与选集请求改发给规则包顶层 forward 写的转发地址（cinema_http.dart 的 text），只支持 GET；为空是手机直连。播放列表与视频照旧直连。
+  final Uri? forward;
 
-  // 规则与同意记录按它认：换了接口地址（主机）要重新征得同意。
-  String get host => Uri.parse(search.request.url.replaceAll(RegExp(r'@[A-Za-z_][A-Za-z0-9_]*'), 'x')).host;
+  // 规则与同意记录按它认：换了接口地址（主机）要重新征得同意；改走转发多了一个收到片名的，同样要重新同意。
+  String get host {
+    final api = Uri.parse(search.request.url.replaceAll(RegExp(r'@[A-Za-z_][A-Za-z0-9_]*'), 'x')).host;
+    final via = forward;
+    return via == null ? api : '${via.host}>$api';
+  }
 
-  static CinemaRule decode(Object? raw, int index, {bool catalog = false}) {
+  static CinemaRule decode(Object? raw, int index, {bool catalog = false, Uri? forward}) {
     final where = catalog ? 'catalogRules[$index]' : 'rules[$index]';
     final map = _map(raw, where);
     if (_string(map['searchMode'], '$where.searchMode', fallback: 'xpath') != (catalog ? 'catalog' : 'api') || _string(map['chapterMode'], '$where.chapterMode', fallback: 'xpath') != 'api') {
@@ -209,6 +217,10 @@ class CinemaRule {
     final chapterUses = '${chapters.request.url}${jsonEncode(chapters.request.query)}${jsonEncode(chapters.request.body)}';
     if (!searchUses.contains(catalog ? '@ids' : '@keyword')) throw CinemaRuleException(catalog ? '$where 的详情请求没用到 @ids' : '$where 的搜索请求没用到 @keyword');
     if (!chapterUses.contains('@source')) throw CinemaRuleException('$where 的选集请求没用到 @source');
+    final forwarded = map['forward'] ?? false;
+    if (forwarded is! bool) throw CinemaRuleException('$where.forward 要是 true 或 false');
+    if (forwarded && forward == null) throw CinemaRuleException('$where 要走转发，规则包却没写 forward');
+    if (forwarded && (search.request.method != 'GET' || chapters.request.method != 'GET')) throw CinemaRuleException('$where 走转发时只支持 GET');
     return CinemaRule(
       id: id,
       name: _string(map['name'], '$where.name'),
@@ -218,6 +230,7 @@ class CinemaRule {
       search: search,
       chapters: chapters,
       catalog: catalog ? CinemaCatalogConfig.decode(map['catalog'], '$where.catalog') : null,
+      forward: forwarded ? forward : null,
     );
   }
 }
@@ -310,15 +323,24 @@ CinemaPackage decodeCinemaPackage(List<int> payload) {
   final rawParsers = map['parsers'] ?? const <Object?>[];
   if (rawRules is! List || rawCatalogs is! List || rawRules.isEmpty || rawRules.length + rawCatalogs.length > cinemaRuleLimit) throw const CinemaRuleException('rules 要有 1 条起，连同 catalogRules 最多 $cinemaRuleLimit 条');
   if (rawParsers is! List || rawParsers.length > cinemaParserLimit) throw const CinemaRuleException('parsers 最多 $cinemaParserLimit 个');
+  final forward = _forwardUrl(map['forward']);
   // 片名目录型的接在普通源后面（规则包里的先后就是聚合与列失败的先后）。
   final rules = [
-    for (var index = 0; index < rawRules.length; index++) CinemaRule.decode(rawRules[index], index),
-    for (var index = 0; index < rawCatalogs.length; index++) CinemaRule.decode(rawCatalogs[index], index, catalog: true),
+    for (var index = 0; index < rawRules.length; index++) CinemaRule.decode(rawRules[index], index, forward: forward),
+    for (var index = 0; index < rawCatalogs.length; index++) CinemaRule.decode(rawCatalogs[index], index, catalog: true, forward: forward),
   ];
   final parsers = [for (var index = 0; index < rawParsers.length; index++) CinemaParser.decode(rawParsers[index], index)];
   if (rules.map((rule) => rule.id).toSet().length != rules.length) throw const CinemaRuleException('rules 的 id 重复');
   if (parsers.map((parser) => parser.id).toSet().length != parsers.length) throw const CinemaRuleException('parsers 的 id 重复');
   return CinemaPackage(version: version, minClient: minClient, rules: rules, parsers: parsers);
+}
+
+// 境外转发的地址（可空，人工决策见 CinemaRule.forward）：只认 https、不带端口与查询串（原地址由请求放进查询串 u）；旧版本不认这个字段、照旧直连。
+Uri? _forwardUrl(Object? raw) {
+  if (raw == null) return null;
+  final uri = raw is String ? Uri.tryParse(raw) : null;
+  if (uri == null || !uri.isScheme('https') || uri.host.isEmpty || uri.userInfo.isNotEmpty || uri.hasPort || uri.hasQuery || uri.hasFragment) throw const CinemaRuleException('forward 要是 https 地址，不带端口与查询串');
+  return uri;
 }
 
 // 只认 Kazumi 限定的 JSONPath 写法：$ 开头，后面是 .名字、[数字]、[*]、['名字']（同它的 RestrictedJsonPath，挡住过滤表达式这类重活）。

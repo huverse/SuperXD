@@ -130,8 +130,9 @@ class _CinemaPageState extends State<CinemaPage> {
     final agreed = await showCampusConfirm(
       context,
       title: '使用第三方片源',
-      // 长文案：首次同意要说清片名发给谁、内容归谁；片名目录型的源（人工决策见 cinema_catalog.dart）片名先发到开发者服务器查编号。
-      message: '片名会发给以下站点，片源与画面来自第三方，版权归原权利人：\n${[for (final rule in missing) rule.catalog == null ? rule.name : '${rule.name}（片名经开发者服务器查找，不保存）'].join('、')}',
+      // 长文案：首次同意要说清片名发给谁、内容归谁；片名目录型的源（人工决策见 cinema_catalog.dart）片名先发到开发者服务器查编号，
+      // 国内连不上的源（人工决策见 cinema_rule.dart 的 CinemaRule.forward）经开发者的境外转发。
+      message: '片名会发给以下站点，片源与画面来自第三方，版权归原权利人：\n${[for (final rule in missing) cinemaConsentName(rule)].join('、')}',
       action: '同意并搜索',
     );
     if (!agreed) return false;
@@ -566,4 +567,10 @@ class _CinemaPageState extends State<CinemaPage> {
       ),
     ];
   }
+}
+
+// 同意弹窗里的一个源：经开发者的服务器（片名目录型）或境外转发（人工决策见 cinema_rule.dart 的 CinemaRule.forward）的在名字后面写明。
+String cinemaConsentName(CinemaRule rule) {
+  final via = [if (rule.catalog != null) '片名经开发者服务器查找', if (rule.forward != null) '经开发者的境外转发'];
+  return via.isEmpty ? rule.name : '${rule.name}（${via.join('，')}，不保存）';
 }

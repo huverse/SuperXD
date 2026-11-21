@@ -7,6 +7,7 @@
 还负责**应用账号**（account 模块，人工决策见 src/modules/account/account.service.ts 与客户端 lib/domain/app_account.dart）：自己的账号体系，用户名加密码。学校把本服务的 IP 整个挡了、教务又是明文 http，服务器核实不了学号，11-13 起的代登录教务与 11-15 当天的设备核对都作废、删除。客户端把密码与恢复码用本服务公钥封装后交来（当初中转是明文 HTTP；11-18 起走 HTTPS，封装照旧），这里只存 scrypt 哈希；忘了密码凭注册时给的恢复码重设，或在登录着的设备上直接改，没有人工找回；新设备可由登录着的设备扫码批准登录。账号对外只有随机账号号与用户名，一把设备密钥登录一个账号，全部请求带设备签名。客户端在 lib/relay（请求与封装），由 lib/application 编排。
 还负责**积分与挑战**（points 与 challenge 模块，人工决策见客户端 lib/playground/challenge/challenge_rules.dart 与 src/modules/points/points.service.ts）：游乐场的挑战由这里按配置下发（每周一换）、出题、逐关核对、计时（不暂停）与结算，成绩换成积分记在应用账号下；挑战的内容（模板、轮换、计分参数、限时）与题库是发布目录 challenge 下的文件，换文件即生效。判定在 src/modules/challenge/judges，从客户端 Dart 规则逐个移植、共用测试向量。客户端在 lib/relay/relay_challenge_client.dart，由 lib/application/challenges.dart 编排。
 还负责**应用内更新**（app_release 模块）：按渠道给出最新版本清单、下载各架构安装包，内容是发版时放进发布目录的文件，不碰数据库。客户端是 lib/device/relay_release_feed.dart，由 lib/application/app_updates.dart 编排。
+另有**电影院的境外转发**（edge 目录，不是本服务的一部分，部署在 Cloudflare Workers，见下文「电影院的境外转发」）。
 
 技术栈：NestJS 12（ESM）+ TypeORM + MySQL 8.4 + Redis 8，swc 构建，Vitest 测试。分层：每个领域模块（device、invite、friend、message、chaoxing）对外只暴露服务与仓储端口（抽象类），TypeORM / Redis 实现可替换；跨领域的编排（扫码加好友、删除设备、私信挂到应用账号与换设备接管、数据保留清理）在 pairing 模块；app_release 只读发布目录，reward 只管节日抽奖（借设备模块的验签、借账号模块按设备认人，两者都不知道抽奖），diagnostic 只收诊断包，都与其他模块无关；account 借设备模块验签与登记密钥，注册、登录、重设与扫码登录都在 account 里，设备删除时连带删账号登记由 pairing 编排；points 借账号模块按设备认账号，challenge 与 unlock 再借 points 记积分、花积分；这三者与 diagnostic（认领记录）、pairing（私信设备）都在 onModuleInit 往账号模块的 AccountDataHooks 登记删除函数，删账号时在同一事务里连带删，账号模块不知道它们。
 
@@ -131,6 +132,17 @@
 - 验签用的设备公钥在进程内缓存（每实例最多 5 万台、每台 10 分钟，多实例下别的实例删掉的设备最迟 10 分钟内这里也不认）；查库没有的设备号在 Redis 记 60 秒，期间同一设备号直接拒绝、不再查库，注册成功即改记「已注册」，新注册立刻在所有实例生效（人工决策见 src/modules/device/device.service.ts）。每次换随机设备号的刷库挡不住（每个新号仍查一次唯一索引），整体流量要在前置代理或安全组按 IP 限速。
 - 备份（scripts/backup_db.sh）：每天一份，只留最新 14 份，见「备份与恢复」。
 - Redis 只放可丢的运行态（邀请、扫码登录的票据、随机数、限流计数、写库节流标记（设备与账号的最后活跃共用一个）、设备号负缓存、诊断包目录已用量与认领口令、清理任务锁），权威数据只在 MySQL。丢了的后果：邀请需重新出示、限流归零、负缓存清空后每个未注册设备号多查一次库、诊断包已用量由下一轮清理任务按目录重建（在那之前上限偏松）、没用的认领口令失效（那次上传的包只能匿名留着）、锁释放后下一轮重抢；随机数丢了则 5 分钟校时窗口内截获的请求可被重放一次。部署用 maxmemory-policy volatile-ttl（内存满时先淘汰寿命最短的 key，随机数与邀请首当其冲），Redis 内存要留足余量。
+
+# 电影院的境外转发（Cloudflare Worker，人工决策见 edge/cinema_forward.ts 文件头）
+
+国内连不上的片源站，客户端把搜索与选集请求发到这里（原地址在查询串 u），由它转给片源站、原样带回；播放列表、密钥与视频不经这里。只转白名单里的主机、只转 GET，回复上限 2MB、整次 12 秒，不记日志、不保存，每个 IP 每分钟最多 120 次。中转服务器在国内，连不上这些站，所以放在境外的 Cloudflare。
+
+- 配置放在仓库外：~/.local/share/superxd-cinema/edge.env 两行，FORWARD_HOST（在 Cloudflare 上托管的域名；workers.dev 在国内被封）与 ALLOWED_HOSTS（逗号分隔的片源站接口主机）。转发地址 https://FORWARD_HOST/v1/forward 写在签名的片源规则包顶层 forward，要转发的源写 forward: true。
+- 部署：第一次 npx --yes wrangler@4.162.0 login，之后 server/edge/deploy.sh（现生成 wrangler.toml，不开 workers.dev、预览地址与 observability）。
+- 白名单与规则包一起改：新标 forward 的源先把接口主机加进 ALLOWED_HOSTS 重新部署、核对通了再签发规则包；取消转发时先发规则包、再从白名单删。
+- 核对：从国内的中转 curl "https://FORWARD_HOST/v1/forward?u=<URL 编码的片源接口地址>" 看状态码与内容；白名单外的地址回 403、回复头 x-forward-error: target。
+- 用量：免费额度每天 10 万次请求，超了 Cloudflare 直接回错误，客户端算这个源这次没搜成；排查时 npx wrangler@4.162.0 tail superxd-cinema-forward 现场看（不落盘）。
+- 测试：test/edge_cinema_forward.test.ts，随 npm test 跑，不连真实站点。
 
 # 本地开发与测试
 

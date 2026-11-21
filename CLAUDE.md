@@ -4,13 +4,13 @@
 
 - [人工决策-2026-09-29 21:40:28] 索引采用仓库内分层 CLAUDE.md（根目录加 lib 各模块），授权 AI 创建，并在每次改动时同步维护。用户全局 CLAUDE.md 仍由 AI 只提建议、由人工修改。
 - [人工决策-2026-10-17 13:25:26] 索引按官方与大厂做法重整（用户四项都选推荐）：本文件控制在 200 行内，只放全局原则、命令与流程，具体超时、上限与测试清单下沉到模块文件；application 与学习通各建模块索引；守护测试按最近的 CLAUDE.md 登记；文件条目一两行，写职责、约束与人工决策位置，行为细节以代码为准。
-- 模块索引共 16 个：lib 下 domain、edu、local、gateway、device、application、page、theme、toolbox、relay、social、playground 各一个，外加 lib/toolbox/chaoxing、lib/toolbox/express、lib/toolbox/cinema 与 lib/playground/puzzle。lib 根目录的 main.dart、app_services.dart、app_lifecycle.dart、app_shell.dart、router.dart、app_session.dart、app_diagnostics.dart、app_shortcuts.dart、app_background_sync.dart 登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md。
+- 模块索引共 16 个：lib 下 domain、edu、local、gateway、device、application、page、theme、toolbox、relay、social、playground 各一个，外加 lib/toolbox/chaoxing、lib/toolbox/express、lib/toolbox/cinema 与 lib/playground/puzzle。lib 根目录的 main.dart、app_services.dart、app_lifecycle.dart、app_shell.dart、router.dart、app_session.dart、app_diagnostics.dart、app_shortcuts.dart、app_background_sync.dart 登记在本文件。私信中转服务端在 server 目录，说明见 server/README.md；电影院的境外转发（Cloudflare Worker）在 server/edge，说明在同一份 README。
 - test/project_structure_test.dart 兜底两条：lib 下每个 dart 文件按文件名登记在最近的 CLAUDE.md（从所在目录往上找到 lib 为止，都没有就是本文件）；索引里提到的 dart 或 kt 文件必须真实存在。
 - 写法：纯文字，只用 # 标题、- 列表与 1. 编号；不写会随提交变化的数字（测试条数、提交号、库版本号），常量写名字或指到定义处。
 
 # 定位
 
-- 校园课表与成绩 Flutter 应用，Android 与 iOS 两端（iOS 适配 11-19 用户确认已完成，自签安装与验证边界见「已知约束」），对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱（视频解析与下载、学习通签到、快递，以及灰度测试中的电影院：在线搜片与播放，片源全在手机上直连）。
+- 校园课表与成绩 Flutter 应用，Android 与 iOS 两端（iOS 适配 11-19 用户确认已完成，自签安装与验证边界见「已知约束」），对接单所学校的 Kingo 教务系统；另有免教务登录的百宝箱（视频解析与下载、学习通签到、快递，以及灰度测试中的电影院：在线搜片与播放，片源在手机上直连，国内连不上的源的搜索与选集经开发者部署在 Cloudflare 上的境外转发）。
 - 功能性私信：扫码互加好友后分享课表、短视频等卡片（界面配置卡片 11-16 删掉），没有文字聊天；要登录应用账号、每个应用账号一份（换手机可以接管）；经自建中转（server 目录，NestJS + MySQL + Redis）端到端加密转交；另有只走蓝牙的面对面私信（两人都打开面对面页时互发同样的卡片，不要中转与应用账号，见 lib/social/nearby_service.dart）。学习通代签的凭据包、应用内更新的版本清单与安装包、按需下载的衬线字体包也放在这个中转；应用账号（自己的账号体系：用户名加密码、恢复码，与教务各管各的）、开发者的话、灰度配置、电影院的签名片源规则包、游乐场挑战与积分（含预接好未启用的积分时长券）、节日抽签、匿名健康回报也在这里。
 - 公开 Alpha 测试，仓库公开、以 GPL-3.0 开源（curve_geometry.dart 例外，见 README 许可一节）。Flutter 与 Dart 版本以 CI 配置和 pubspec.yaml 为准，依赖锁定在 pubspec.lock。
 - 相关文档：设计语言 UITEMP/design_language.md；用户介绍、隐私摘要与从源码构建 README.md（只放首页要的，细节链到 docs）；百宝箱说明 docs/toolbox.md、常见问题 docs/faq.md，README 截图在 docs/images（tool/readme_demo.dart 的合成数据拍）；发布、签名与贡献约定 CONTRIBUTING.md；变更记录 CHANGELOG.md。功能、数据流向或隐私政策变了，README 的亮点与隐私要点、docs 两页一起看要不要改。
@@ -19,7 +19,7 @@
 
 - 静态检查与测试：PUB_HOSTED_URL=https://pub.dev flutter analyze；PUB_HOSTED_URL=https://pub.dev flutter test test/<文件>.dart，必要时去掉文件名跑全量。本机默认镜像会改写 pubspec.lock，所以 flutter 命令一律加这个前缀，提交前确认 pubspec.lock 没变。
 - 运行：flutter run 默认是 production flavor（开发包，与 Alpha 包并装、数据不共享）。私信与代签要 --dart-define=SUPERXD_RELAY=<中转地址>，地图（网页版高德）要 --dart-define=SUPERXD_AMAP_WEB_KEY=<key> 与 --dart-define=SUPERXD_AMAP_WEB_SECRET=<安全密钥>，视频解析的 BugPK 新版来源要 --dart-define=SUPERXD_SVPARSE_KEY=<key>，这些都不写进源码（发版流水线从 release 环境的机密注入）。
-- 服务端：cd server，docker compose -f docker-compose.test.yml up -d --wait 起测试库后 npm test；npm run typecheck。改了 server/sql 跑表结构漂移检查 scripts/schema_drift_check.sh，线上升级只经台账脚本 scripts/migrate_db.sh（用法见两个文件头与 server/README.md「表结构升级台账」）。
+- 服务端：cd server，docker compose -f docker-compose.test.yml up -d --wait 起测试库后 npm test；npm run typecheck（境外转发的代码与测试一起查、一起跑；部署用 server/edge/deploy.sh，域名与白名单在仓库外，用法见文件头）。改了 server/sql 跑表结构漂移检查 scripts/schema_drift_check.sh，线上升级只经台账脚本 scripts/migrate_db.sh（用法见两个文件头与 server/README.md「表结构升级台账」）。
 - 发版由流水线 .github/workflows/release.yml 全自动完成（安卓三个架构加 iOS 未签名包）：带新版本号的提交合并到 main 即构建与发布，不再要网页批准；只在用户明确要求发版时升版本，升版本放进这一轮那条 PR 的最后一个提交、不单开升版本 PR（11-19 起）；约定与本机构建见 CONTRIBUTING.md。
 - 一轮改动开一条 PR（按主题分提交、CHANGELOG 只写一次），不叠多条 PR 逐条同步；本机只跑 analyze、所涉模块的测试与两个全局规范测试，全量交给 CI（跳过 CI 合并前本机仍跑全量）。
 - 依赖升级由 Dependabot 每月提 PR（安全更新随时提）（.github/dependabot.yml）；main 合并要 CI 四个作业都过（分析测试、中转服务端、Android build、iOS build；PR 上 iOS 构建只在动了 iOS 相关时跑，其余跳过算通过，[人工决策] 在 ci.yml）；Gradle 依赖校验只核对 JitPack 与华为、荣耀仓库那几组（[人工决策] 在 android/build.gradle.kts），这几个包升级要重新生成校验文件；iOS 锁文件怎么从 CI 取、发布来源证明怎么核对、校验文件怎么重新生成，见 CONTRIBUTING.md「供应链」。

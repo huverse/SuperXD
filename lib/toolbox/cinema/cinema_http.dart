@@ -7,7 +7,8 @@ import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/cinema/cinema_rule_engine.dart';
 
-// 电影院对外请求的封装（经共用内核 CampusHttp，请求记录的模块名 cinema）：手机直连片源接口与 CDN，不经自建中转。
+// 电影院对外请求的封装（经共用内核 CampusHttp，请求记录的模块名 cinema）：手机直连片源接口与 CDN，不经自建中转；
+// 国内连不上的源的接口请求经开发者的境外转发（规则里 forward，人工决策见 cinema_rule.dart 的 CinemaRule.forward）。
 // 片源的 CDN 按 UA 掐断非浏览器请求，所以默认带桌面浏览器 UA；一律不带 Referer，除非规则自己写了（交接踩坑第 1、2 条）。
 // 不自动重试（跨模块不变量 9）：一个源失败就记进失败列表，换别的源。
 
@@ -53,12 +54,14 @@ class CinemaHttp {
   final CampusHttp _http;
 
   // 发一次接口请求，回复按 UTF-8 解成文字（容错坏字节）；非 2xx、超时、连不上都抛 CinemaHttpException（给用户看的原因）。
-  Future<String> text(CinemaPreparedRequest request, {required String userAgent, required String referer, Duration timeout = cinemaApiTimeout, Future<void>? cancel}) async {
+  // forward 不为空时发给境外转发，原地址放在查询串 u 里，请求头原样带上；转发服务自己出的错写在回复头 x-forward-error，
+  // 按直连时的原因报（超时、回复太大、连不上），页面与日志的分类不变，别的一律算转发不可用。
+  Future<String> text(CinemaPreparedRequest request, {required String userAgent, required String referer, Duration timeout = cinemaApiTimeout, Future<void>? cancel, Uri? forward}) async {
     final http.Response response;
     try {
       response = await _http.send(
         request.method,
-        request.uri,
+        forward == null ? request.uri : forward.replace(queryParameters: {'u': request.uri.toString()}),
         timeout: timeout,
         limit: cinemaApiMaxBytes,
         headers: {...cinemaHeaders(userAgent, referer), ...cinemaApiHeaders, ...request.headers},
@@ -74,6 +77,15 @@ class CinemaHttp {
     } catch (error, stack) {
       campusLog('[Cinema] action=request errorType=${error.runtimeType}\n$stack');
       throw const CinemaHttpException('连不上');
+    }
+    final forwardError = forward == null ? null : response.headers['x-forward-error'];
+    if (forwardError != null) {
+      throw switch (forwardError) {
+        'timeout' => const CinemaHttpException('超时'),
+        'too_large' => const CinemaHttpException('回复太大'),
+        'unreachable' => const CinemaHttpException('连不上'),
+        _ => CinemaHttpException('转发不可用（HTTP ${response.statusCode}）', status: response.statusCode),
+      };
     }
     if (response.statusCode < 200 || response.statusCode >= 300) throw CinemaHttpException('暂不可用（HTTP ${response.statusCode}）', status: response.statusCode);
     return utf8.decode(response.bodyBytes, allowMalformed: true);

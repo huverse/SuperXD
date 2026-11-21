@@ -87,10 +87,11 @@ Map<String, Object?> parserRule() => {
   'cipher': {'algorithm': 'aes-128-cbc', 'key': testCipher.key, 'iv': testCipher.iv},
 };
 
-List<int> packageBytes({int version = 1, int minClient = 0, List<Map<String, Object?>>? rules, List<Map<String, Object?>> catalogRules = const []}) => utf8.encode(jsonEncode({
+List<int> packageBytes({int version = 1, int minClient = 0, List<Map<String, Object?>>? rules, List<Map<String, Object?>> catalogRules = const [], String? forward}) => utf8.encode(jsonEncode({
   'format': 1,
   'version': version,
   'minClient': minClient,
+  'forward': ?forward,
   'rules': rules ?? [macCmsRule('alpha', 'https://alpha.example.com/api.php/provide/vod/'), macCmsRule('beta', 'https://beta.example.com/api.php/provide/vod', name: '另一资源')],
   'catalogRules': catalogRules,
   'parsers': [parserRule()],
@@ -188,6 +189,27 @@ Future<void> settleUntil(WidgetTester tester, bool Function() done) async {
 
 void main() {
   group('规则包', () {
+    // 人工决策见 cinema_rule.dart 的 CinemaRule.forward（11-21 国内连不上的源走境外转发）。
+    test('境外转发：规则写 forward 要规则包有 https 的转发地址、只支持 GET；改走转发的源同意记录对不上（要重新同意），同意弹窗写明', () {
+      Map<String, Object?> forwarded(Map<String, Object?> rule) => {...rule, 'forward': true};
+      const edge = 'https://edge.example.net/v1/forward';
+      final direct = decodeCinemaPackage(packageBytes());
+      final package = decodeCinemaPackage(packageBytes(forward: edge, rules: [forwarded(macCmsRule('alpha', 'https://alpha.example.com/api.php/provide/vod/')), macCmsRule('beta', 'https://beta.example.com/api.php/provide/vod', name: '另一资源')]));
+      expect(package.rules.first.forward, Uri.parse(edge));
+      expect(package.rules.last.forward, isNull);
+      expect(package.rules.first.host, isNot(direct.rules.first.host));
+      expect(package.rules.last.host, direct.rules.last.host);
+      expect(cinemaConsentName(package.rules.first), '合成资源（经开发者的境外转发，不保存）');
+      expect(cinemaConsentName(package.rules.last), '另一资源');
+      expect(() => decodeCinemaPackage(packageBytes(rules: [forwarded(macCmsRule('alpha', 'https://alpha.example.com/api.php'))])), throwsA(isA<CinemaRuleException>()), reason: '规则包没写转发地址');
+      for (final bad in ['http://edge.example.net/f', 'https://edge.example.net/f?x=1', 'https://edge.example.net:8443/f', 'https://user@edge.example.net/f']) {
+        expect(() => decodeCinemaPackage(packageBytes(forward: bad)), throwsA(isA<CinemaRuleException>()), reason: bad);
+      }
+      final post = forwarded(macCmsRule('alpha', 'https://alpha.example.com/api.php'));
+      post['searchApiConfig'] = {...(post['searchApiConfig']! as Map<String, Object?>), 'request': {'method': 'POST', 'url': 'https://alpha.example.com/api.php', 'bodyType': 'form', 'body': {'wd': '@keyword'}}};
+      expect(() => decodeCinemaPackage(packageBytes(forward: edge, rules: [post])), throwsA(isA<CinemaRuleException>()), reason: '走转发只支持 GET');
+    });
+
     test('合法的包解得出；规则 id、主机与路径都在', () {
       final package = decodeCinemaPackage(packageBytes(version: 3));
       expect(package.version, 3);
@@ -621,6 +643,47 @@ void main() {
       await service.close();
     });
 
+    // 人工决策见 cinema_rule.dart 的 CinemaRule.forward（11-21 国内连不上的源走境外转发）。
+    test('境外转发：走转发的源搜索与选集发给转发地址（原地址在 u 里、请求头照带），相对地址仍按原地址补全；转发自己出的错按直连时的原因算；别的源照旧直连', () async {
+      final requests = <http.BaseRequest>[];
+      var forwardError = '';
+      final client = MockClient((request) async {
+        requests.add(request);
+        if (request.url.host == 'edge.example.net' && forwardError.isNotEmpty) return reply('', forwardError == 'timeout' ? 504 : 403, headers: {'x-forward-error': forwardError});
+        return reply(macCmsList([{'vod_id': 7, 'vod_name': '合成电影', 'vod_play_from': '线路', 'vod_play_url': r'第1集$/v/1.m3u8'}]), 200);
+      });
+      final rules = [{...macCmsRule('alpha', 'https://alpha.example.com/api.php'), 'forward': true}, macCmsRule('beta', 'https://beta.example.com/api.php', name: '另一资源')];
+      final service = await open(() async => packageBytes(forward: 'https://edge.example.net/v1/forward', rules: rules), client: client);
+      await service.grantRules((await service.rules()).rules);
+      await service.search('合成').drain<void>();
+      final viaEdge = requests.singleWhere((request) => request.url.host == 'edge.example.net');
+      final original = Uri.parse(viaEdge.url.queryParameters['u']!);
+      expect((viaEdge.method, viaEdge.url.path, original.host, original.queryParameters['wd']), ('GET', '/v1/forward', 'alpha.example.com', '合成'));
+      expect((viaEdge.headers['user-agent'], viaEdge.headers['accept']), (cinemaDefaultUserAgent, 'application/json, text/plain, */*'));
+      expect(requests.where((request) => request.url.host == 'beta.example.com'), hasLength(1), reason: '没走转发的照旧直连');
+      final roads = await service.chapters(service.rule('alpha')!, '7');
+      expect(requests.last.url.host, 'edge.example.net');
+      expect(Uri.parse(requests.last.url.queryParameters['u']!).queryParameters['ids'], '7');
+      expect(roads.single.episodes.single.url, 'https://alpha.example.com/v/1.m3u8', reason: '相对地址按原地址补全，不按转发地址');
+      forwardError = 'timeout';
+      expect((await service.search('超时').last).failures.single.message, '合成资源超时');
+      forwardError = 'target';
+      expect((await service.search('拒绝').last).failures.single.message, '合成资源转发不可用（HTTP 403）');
+      await service.close();
+    });
+
+    test('境外转发：同意过直连的源改走转发后要重新同意', () async {
+      var payload = packageBytes();
+      final service = await open(() async => payload);
+      await service.grantRules((await service.rules()).rules);
+      expect(await service.unconsentedRules(await service.rules()), isEmpty);
+      payload = packageBytes(version: 2, forward: 'https://edge.example.net/v1/forward', rules: [{...macCmsRule('alpha', 'https://alpha.example.com/api.php/provide/vod/'), 'forward': true}, macCmsRule('beta', 'https://beta.example.com/api.php/provide/vod', name: '另一资源')]);
+      final package = await service.rules(force: true);
+      expect(package.version, 2);
+      expect([for (final rule in await service.unconsentedRules(package)) rule.id], ['alpha']);
+      await service.close();
+    });
+
     // 11-21：并发由 6 调到 16、接口请求带浏览器常见的两个头（cinema_service.dart 的 searchConcurrency、cinema_http.dart 的 cinemaApiHeaders）。
     test('一次搜索 14 个源同时发出（挂着的源不让别的源排队）；接口请求带 accept 与 accept-language，规则写了同名头以规则为准', () async {
       final gate = Completer<void>();
@@ -926,7 +989,7 @@ void main() {
       expect(logs.where((line) => line.contains('action=search_source rule=alpha result=ok waitMs=')), hasLength(1));
       expect(logs.where((line) => line.contains('action=search_source rule=alpha result=cached')), hasLength(1));
       expect(logs.where((line) => line.contains('action=search_source rule=beta result=failed_no_list')), hasLength(2));
-      expect(logs.any((line) => line.contains('action=search_fetch rule=alpha fetchMs=') && line.contains('bytes=')), isTrue);
+      expect(logs.any((line) => line.contains('action=search_fetch rule=alpha forward=false fetchMs=') && line.contains('bytes=')), isTrue);
       expect(logs.where((line) => line.startsWith('[Cinema] action=search titles=') && line.contains('firstMs=') && line.contains('totalMs=')), hasLength(2));
       expect(logs.where((line) => line.contains('合成机密片')), isEmpty);
       await service.close();
