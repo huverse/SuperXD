@@ -2,6 +2,7 @@ import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_page.dart';
+import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/toolbox/cinema/cinema_page.dart';
 import 'package:superxd/toolbox/cinema/cinema_service.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
@@ -63,8 +64,16 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
         null => null,
       },
       relay: runtime.relayUrl,
+      // 原生网络栈的对比试验：开关开着（或试验包的构建参数强制打开）、这台手机建得起来才用（人工决策见 domain/feature_flags.dart 的 cinemaNativeHttpFlag）。
+      http: switch (cinemaNativeHttpForced || runtime.features?.isOn(cinemaNativeHttpFlag) == true ? runtime.nativeHttp?.call() : null) {
+        (final client, final kind)? => CinemaHttp(client: client, kind: kind),
+        null => null,
+      },
     ),
     clearedData: '片源规则、片源同意与看过的记录（再用要重新同意）',
     flag: cinemaFlag,
   ),
 ];
+
+// 试验包的构建参数（--dart-define=SUPERXD_NATIVE_HTTP=true）：不配灰度点名也打开原生网络栈对比试验。
+const cinemaNativeHttpForced = bool.fromEnvironment('SUPERXD_NATIVE_HTTP');

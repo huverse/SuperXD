@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
+import 'package:http/http.dart' as http;
 import 'package:image_picker/image_picker.dart';
 import 'package:path/path.dart' as path;
 import 'package:path_provider/path_provider.dart';
@@ -65,6 +66,9 @@ typedef ToolboxShortcutPin = Future<bool> Function(String toolId, String shortcu
 // 取电影院的片源规则包（自建中转下发、验签通过的载荷字节）：验签在 device 层，百宝箱不依赖它，由组合根注入（没配中转时为空，电影院只用本机缓存）。
 typedef ToolboxSignedFetch = Future<Uint8List> Function();
 
+// 系统原生网络栈的客户端与它的名字（对比试验，人工决策见 domain/feature_flags.dart 的 cinemaNativeHttpFlag）：在 device 层建，由组合根注入；建不起来为空。
+typedef ToolboxNativeHttp = (http.Client, String)? Function();
+
 // 工具注册表：组合根传入（见 toolbox_catalog.dart），框架只按 ToolboxModule 认工具，不认识任何工具的类型。
 typedef ToolboxCatalog = List<ToolboxModule> Function(ToolboxRuntime runtime);
 
@@ -84,6 +88,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.versionCode,
     this.passes,
     this.features,
+    this.nativeHttp,
   });
   ToolboxRuntime.testing({
     required this.catalog,
@@ -100,6 +105,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
     this.versionCode,
     this.passes,
     this.features,
+    this.nativeHttp,
     // 外部已经打开好的服务（测试直接给实例）：runtime 只代为转交，不负责关闭。
     Map<String, ToolboxService>? services,
     // 给了目录时按注册表的 openService 真的打开服务（测清除后重开、打开失败重试）。
@@ -128,6 +134,8 @@ class ToolboxRuntime with WidgetsBindingObserver {
   final PassAccess? passes;
   // 功能开关（domain/feature_flags.dart 登记）：工具里灰度中的一部分（如电影院的解析）按它问；为空（没配中转、测试）当都关。
   final FeatureGate? features;
+  // 系统原生网络栈（开关开着的工具才用，如电影院）；为空（测试、桌面）用 Dart 自带的。
+  final ToolboxNativeHttp? nativeHttp;
   final ToolboxCatalog catalog;
   late final List<ToolboxModule> modules = catalog(this);
 

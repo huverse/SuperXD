@@ -1628,6 +1628,31 @@ void main() {
       expect((cinemaFlag.id, cinemaFlag.fallback), ('toolbox.cinema', false));
     });
 
+    test('原生网络栈的对比试验在开关 toolbox.cinema.native_http 后面（默认关）：开着且这台手机建得起来才用，否则照旧用 Dart 自带的', () async {
+      expect(featureFlags, contains(cinemaNativeHttpFlag));
+      expect((cinemaNativeHttpFlag.id, cinemaNativeHttpFlag.fallback), ('toolbox.cinema.native_http', false));
+      Future<String> kindWith({required bool on, required bool available}) async {
+        final fixture = ToolboxFixture();
+        await fixture.initialize();
+        final runtime = ToolboxRuntime.testing(
+          catalog: toolboxCatalog,
+          store: fixture.store,
+          downloads: fixture.manager,
+          base: fixture.directory,
+          features: _Gate({if (on) cinemaNativeHttpFlag.id}),
+          nativeHttp: () => available ? (MockClient((request) async => reply('', 404)), 'fake') : null,
+        );
+        final service = await runtime.service<CinemaService>(CinemaService.serviceId);
+        final kind = service.httpKind;
+        await service.close();
+        return kind;
+      }
+
+      expect(await kindWith(on: true, available: true), 'fake');
+      expect(await kindWith(on: false, available: true), 'dart');
+      expect(await kindWith(on: true, available: false), 'dart', reason: '安卓没有 Play 服务时建不起来');
+    });
+
     testWidgets('解析在开关 toolbox.cinema.parse 后面（默认关）：关着只有找片、没有切换，开着才有，页面开着时被关掉就回到找片', (tester) async {
       expect(featureFlags, contains(cinemaParseFlag));
       expect((cinemaParseFlag.id, cinemaParseFlag.fallback), ('toolbox.cinema.parse', false));

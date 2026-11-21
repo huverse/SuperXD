@@ -131,6 +131,9 @@ class CinemaService implements ToolboxService {
 
   CinemaPackage? get package => _package;
 
+  // 请求用的是哪个客户端（原生网络栈对比试验，见 domain/feature_flags.dart 的 cinemaNativeHttpFlag）。
+  String get httpKind => _http.kind;
+
   // 当前的规则包：本机没有或拉过超过 refreshGap 才去中转拉；拉不到照旧用本机的，本机也没有才报错；失败后 retryGap 内不再拉。
   // force 为真时不等间隔（页面上的「重试」）。本机有规则包时页面不必等它，见 cinema_page.dart 的 _initialize。
   Future<CinemaPackage> rules({bool force = false}) => _loading ??= _rules(force).whenComplete(() => _loading = null);
@@ -216,7 +219,7 @@ class CinemaService implements ToolboxService {
     final titles = <String, CinemaTitle>{};
     var pending = active.length;
     CinemaSearchResult snapshot() => CinemaSearchResult(titles: [...titles.values], failures: [...failures], pending: pending);
-    campusLog('[Cinema] action=search rules=${package.version} sources=${active.length} paused=${failures.length} fresh=$fresh');
+    campusLog('[Cinema] action=search rules=${package.version} sources=${active.length} paused=${failures.length} fresh=$fresh client=${_http.kind}');
     yield snapshot();
     if (active.isEmpty) return;
     // 开发者模式的诊断（11-21 Codex 总交接第 8 节）：每个源排队多久、从发出搜索到回来多久、结果分类，整轮的首条结果与全部结束；不记片名。

@@ -49,8 +49,10 @@ Map<String, String> cinemaHeaders(String userAgent, String referer) => {
 const cinemaApiHeaders = {'accept': 'application/json, text/plain, */*', 'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8'};
 
 class CinemaHttp {
-  CinemaHttp({http.Client? client}) : _http = CampusHttp('cinema', client: client);
+  CinemaHttp({http.Client? client, this.kind = 'dart'}) : _http = CampusHttp('cinema', client: client);
   final CampusHttp _http;
+  // 底下用的是哪个客户端（dart、cronet、urlsession），开发者模式的诊断带上它（原生网络栈对比试验，见 domain/feature_flags.dart）。
+  final String kind;
 
   // 发一次接口请求，回复按 UTF-8 解成文字（容错坏字节）；非 2xx、超时、连不上都抛 CinemaHttpException（给用户看的原因）。
   Future<String> text(CinemaPreparedRequest request, {required String userAgent, required String referer, Duration timeout = cinemaApiTimeout, Future<void>? cancel}) async {

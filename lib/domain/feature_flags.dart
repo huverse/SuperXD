@@ -21,4 +21,10 @@ const cinemaFlag = FeatureFlag('toolbox.cinema', fallback: false);
 // 没选「只靠规则包」（没法先点名给自己测）与「直接删代码」（以后要从历史捞回来重接）。重新开放：规则包加回解析源，先点名给自己测再放量。
 const cinemaParseFlag = FeatureFlag('toolbox.cinema.parse', fallback: false);
 
-const featureFlags = <FeatureFlag>[cinemaFlag, cinemaParseFlag];
+// [人工决策-2026-11-21 14:20:18] 电影院改用系统原生网络栈的对比试验（11-21 Codex 总交接第 7.7 节，用户说按最佳实践做）：开着时电影院的接口、
+// 播放清单与密钥请求改走安卓的 Cronet（Google Play 服务提供，没有 Play 服务的手机建不起来就照旧用 Dart 自带的）或 iOS 的 URLSession，
+// 仍经共用内核 CampusHttp（超时、上限、取消与请求记录不变）；开发者模式的诊断带上 client= 好对比。只在试验分支：Cronet 让每个人的安卓包
+// 多约 1.5–2MB，默认关、国内多数手机没有 Play 服务，正式接入要先有更快的证据。试验包用构建参数 SUPERXD_NATIVE_HTTP=true 强制打开。
+const cinemaNativeHttpFlag = FeatureFlag('toolbox.cinema.native_http', fallback: false);
+
+const featureFlags = <FeatureFlag>[cinemaFlag, cinemaParseFlag, cinemaNativeHttpFlag];

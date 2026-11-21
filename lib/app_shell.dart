@@ -16,6 +16,7 @@ import 'package:superxd/app_shortcuts.dart';
 import 'package:superxd/application/app_moments.dart';
 import 'package:superxd/application/campus_timetable.dart';
 import 'package:superxd/device/picture_export.dart';
+import 'package:superxd/device/native_http.dart';
 import 'package:superxd/device/relay_cinema_feed.dart';
 import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_log.dart';
@@ -126,6 +127,8 @@ class _SuperXdAppState extends State<SuperXdApp> {
     passes: widget.services.passes,
     // 工具里灰度中的一部分（电影院的解析）问的功能开关，同百宝箱首页与路由用的那份。
     features: widget.services.features,
+    // 电影院的原生网络栈对比试验（开关开着才用，人工决策见 domain/feature_flags.dart 的 cinemaNativeHttpFlag）。
+    nativeHttp: nativeHttpClient,
   );
   late final AppShortcuts? _shortcuts = switch (widget.services.shortcuts) {
     final port? => AppShortcuts(port: port, tools: _toolbox.modules, pixelRatio: WidgetsBinding.instance.platformDispatcher.views.first.devicePixelRatio),
