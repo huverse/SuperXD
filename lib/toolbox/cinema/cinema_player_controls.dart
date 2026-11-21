@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:screen_brightness/screen_brightness.dart';
@@ -73,7 +74,8 @@ class CinemaPlayerControls extends StatefulWidget {
     this.episode = 0,
     this.onEpisode,
     this.resumedFrom,
-    this.onSeeked,
+    this.onSeek,
+    this.seekable,
   });
   final Player player;
   final String title;
@@ -99,8 +101,10 @@ class CinemaPlayerControls extends StatefulWidget {
   final ValueChanged<int>? onEpisode;
   // 从上次的位置接着看时给，画「从头播放」。
   final Duration? resumedFrom;
-  // 每次跳转（拖进度、点进度条、从头播放）做完之后告诉播放页，给的是跳转的目标：记看到哪、开发者模式下记目标与落点。
-  final ValueChanged<Duration>? onSeeked;
+  // 每次跳转（拖进度、点进度条、从头播放）发出时告诉播放页（命令交给播放器之前），给的是跳转的目标：记看到哪、开发者模式下计这次跳转真正恢复用了多久。
+  final ValueChanged<Duration>? onSeek;
+  // 真实能本地跳转的缓存段（libmpv 的 seekable-ranges，见 cinema_playback_truth.dart）；进度条按它画已缓冲的几段。
+  final ValueListenable<List<(Duration, Duration)>>? seekable;
 
   @override
   State<CinemaPlayerControls> createState() => _CinemaPlayerControlsState();
@@ -131,10 +135,10 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
 
   Player get _player => widget.player;
 
-  // 一切跳转都经这里，跳完交给 onSeeked。
+  // 一切跳转都经这里：先告诉播放页（onSeek 要在命令之前开始计时），再交给播放器。
   Future<void> _seek(Duration target) async {
+    widget.onSeek?.call(target);
     await _player.seek(target);
-    widget.onSeeked?.call(target);
   }
 
   @override
@@ -509,7 +513,7 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
       onPressed: widget.onFullscreen,
       icon: CampusIcon(widget.fullscreen ? CampusIcons.exitFullscreen : CampusIcons.fullscreen, color: Colors.white),
     );
-    final progress = _CinemaProgress(player: _player, seek: _seek, onSeekStart: () => _hide?.cancel(), onSeekEnd: _scheduleHide);
+    final progress = _CinemaProgress(player: _player, seek: _seek, seekable: widget.seekable, onSeekStart: () => _hide?.cancel(), onSeekEnd: _scheduleHide);
     return DecoratedBox(
       decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black54, Colors.transparent])),
       child: SafeArea(
@@ -617,13 +621,25 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
 
 // 进度：已播的一段用激活色、已缓冲的一段淡白、其余更淡；按住拖动只预览，松手才跳；两边写时刻。
 // 片长还不知道（打开中）时两边写「--:--」、不画圆点：原来写「00:00 / 00:00」，和旁边的「已从 2:13:42 继续」对不上（11-21 用户截图）。
+// 已缓冲按真实能本地跳转的几段画（11-21 Codex 总交接第 12.5 节）：原来从零画到缓存末端，跳回前面没缓存的地方时灰条在、却还要联网等。
 // 轨道左右各缩进这么多（给圆点留位置）：画与点按同一条边界换算，点在画出来的起点是 0、终点是片尾（11-21 Codex 指出原来按整宽换算）。
 const _progressInset = 10.0;
 
+// 进度条上该画成已缓冲的几段（片长的比例）：有真实的缓存段就按它；问不到（测试替身、刚打开）时只画当前位置到缓存末端那一段（播放器往前读的那段），
+// 不画从零开始的整段。
+List<(double, double)> cinemaCachedSpans(List<(Duration, Duration)> ranges, {required Duration duration, required Duration position, required Duration bufferEnd}) {
+  final total = duration.inMilliseconds;
+  if (total <= 0) return const [];
+  double fraction(Duration at) => (at.inMilliseconds / total).clamp(0.0, 1.0);
+  if (ranges.isNotEmpty) return [for (final (start, end) in ranges) (fraction(start), fraction(end))];
+  return bufferEnd > position ? [(fraction(position), fraction(bufferEnd))] : const [];
+}
+
 class _CinemaProgress extends StatefulWidget {
-  const _CinemaProgress({required this.player, required this.seek, required this.onSeekStart, required this.onSeekEnd});
+  const _CinemaProgress({required this.player, required this.seek, required this.seekable, required this.onSeekStart, required this.onSeekEnd});
   final Player player;
   final Future<void> Function(Duration) seek;
+  final ValueListenable<List<(Duration, Duration)>>? seekable;
   final VoidCallback onSeekStart;
   final VoidCallback onSeekEnd;
   @override
@@ -638,14 +654,17 @@ class _CinemaProgressState extends State<_CinemaProgress> {
     final accent = CampusPalette.of(context).accent;
     final text = Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white, fontFeatures: const [FontFeature.tabularFigures()]);
     final player = widget.player;
-    return StreamBuilder<Duration>(
+    return ValueListenableBuilder<List<(Duration, Duration)>>(
+      valueListenable: widget.seekable ?? _noRanges,
+      builder: (context, ranges, _) => StreamBuilder<Duration>(
       stream: player.stream.position,
       initialData: player.state.position,
       builder: (context, snapshot) {
         final duration = player.state.duration;
         final total = duration.inMilliseconds;
-        final played = total == 0 ? 0.0 : ((snapshot.data ?? Duration.zero).inMilliseconds / total).clamp(0.0, 1.0);
-        final buffered = total == 0 ? 0.0 : (player.state.buffer.inMilliseconds / total).clamp(0.0, 1.0);
+        final position = snapshot.data ?? Duration.zero;
+        final played = total == 0 ? 0.0 : (position.inMilliseconds / total).clamp(0.0, 1.0);
+        final cached = cinemaCachedSpans(ranges, duration: duration, position: position, bufferEnd: player.state.buffer);
         final value = _dragging ?? played;
         Duration at(double fraction) => Duration(milliseconds: (fraction * total).round());
         final known = total > 0;
@@ -676,7 +695,7 @@ class _CinemaProgressState extends State<_CinemaProgress> {
                           },
                     child: SizedBox(
                       height: 44,
-                      child: CustomPaint(painter: _ProgressPainter(played: value, buffered: buffered, accent: accent, dragging: _dragging != null, known: known)),
+                      child: CustomPaint(painter: _ProgressPainter(played: value, cached: cached, accent: accent, dragging: _dragging != null, known: known)),
                     ),
                   );
                 },
@@ -686,14 +705,18 @@ class _CinemaProgressState extends State<_CinemaProgress> {
           ],
         );
       },
+      ),
     );
   }
 }
 
+final _noRanges = ValueNotifier<List<(Duration, Duration)>>(const []);
+
 class _ProgressPainter extends CustomPainter {
-  _ProgressPainter({required this.played, required this.buffered, required this.accent, required this.dragging, required this.known});
+  _ProgressPainter({required this.played, required this.cached, required this.accent, required this.dragging, required this.known});
   final double played;
-  final double buffered;
+  // 已缓冲的几段（片长的比例，见 cinemaCachedSpans）。
+  final List<(double, double)> cached;
   final Color accent;
   final bool dragging;
   // 片长知道了才画圆点。
@@ -702,16 +725,17 @@ class _ProgressPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final width = size.width - _progressInset * 2, middle = size.height / 2, thickness = dragging ? 5.0 : 3.0;
-    RRect bar(double fraction) => RRect.fromLTRBR(_progressInset, middle - thickness / 2, _progressInset + width * fraction, middle + thickness / 2, Radius.circular(thickness));
-    canvas
-      ..drawRRect(bar(1), Paint()..color = Colors.white24)
-      ..drawRRect(bar(buffered), Paint()..color = Colors.white54)
-      ..drawRRect(bar(played), Paint()..color = accent);
+    RRect bar(double from, double to) => RRect.fromLTRBR(_progressInset + width * from, middle - thickness / 2, _progressInset + width * to, middle + thickness / 2, Radius.circular(thickness));
+    canvas.drawRRect(bar(0, 1), Paint()..color = Colors.white24);
+    for (final (from, to) in cached) {
+      canvas.drawRRect(bar(from, to), Paint()..color = Colors.white54);
+    }
+    canvas.drawRRect(bar(0, played), Paint()..color = accent);
     if (known) canvas.drawCircle(Offset(_progressInset + width * played, middle), dragging ? 9 : 7, Paint()..color = Colors.white);
   }
 
   @override
-  bool shouldRepaint(_ProgressPainter old) => old.played != played || old.buffered != buffered || old.accent != accent || old.dragging != dragging || old.known != known;
+  bool shouldRepaint(_ProgressPainter old) => old.played != played || !listEquals(old.cached, cached) || old.accent != accent || old.dragging != dragging || old.known != known;
 }
 
 class _AdjustHud extends StatelessWidget {
