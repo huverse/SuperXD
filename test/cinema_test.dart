@@ -395,6 +395,12 @@ void main() {
       expect(cinemaTitleKey('流浪地球', '2019', category: '幕后花絮'), '流浪地球|2019|花絮');
     });
 
+    test('播放器报错的原话进日志前去掉网址（本机代理的口令、上游的签名地址），主机名留着，截到 120 字', () {
+      expect(cinemaLogSafe('Failed to open http://127.0.0.1:44129/W9Rvh/p?s=0&u=https%3A%2F%2Fmedia.example.com%2F86.m3u8.'), 'Failed to open <地址>');
+      expect(cinemaLogSafe('tcp: Failed to resolve hostname seg.invalid'), 'tcp: Failed to resolve hostname seg.invalid');
+      expect(cinemaLogSafe('x' * 200), hasLength(120));
+    });
+
     // 11-21 总交接第 6.6 节：原来只有每 10 秒、换集与离开时记，暂停后被强杀会退回 10 秒前。
     testWidgets('看到哪的保存：每 10 秒一次；暂停、跳转后等 1 秒合并成一次；切后台、换集立即记并取消还没到的；离开后不再记', (tester) async {
       var saves = 0;
@@ -1130,6 +1136,32 @@ void main() {
       expect('#EXTINF'.allMatches(body), hasLength(31));
       await service.close();
     });
+
+    // 人工决策见 cinema_proxy.dart 文件头（11-21 总交接第 7.8 节：播放器 5 秒读不到就放弃，先备好再交给它）。
+    test('打开前先备好：主清单的各码率子清单、第一把密钥与探测都取好，播放器来取时一个请求都不再发', () async {
+      final fetched = <String>[];
+      final client = MockClient((request) async {
+        fetched.add(request.url.path);
+        return switch (request.url.path) {
+          '/v/index.m3u8' => reply('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2\n1080/index.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1\n720/index.m3u8\n', 200),
+          '/v/1080/index.m3u8' || '/v/720/index.m3u8' => reply('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="enc.key"\n#EXTINF:10,\nseg0.ts\n#EXT-X-ENDLIST\n', 200),
+          '/v/1080/enc.key' || '/v/720/enc.key' => reply('0123456789abcdef', 200),
+          _ => reply('xx', 206),
+        };
+      });
+      final service = await open(() async => packageBytes(), client: client);
+      final playable = await service.playable('https://cdn.example.com/v/index.m3u8');
+      expect(fetched.toSet(), {'/v/index.m3u8', '/v/1080/index.m3u8', '/v/720/index.m3u8', '/v/1080/enc.key'});
+      fetched.clear();
+      final master = await getLocal(playable.uri);
+      for (final variant in master.$2.split('\n').where((line) => line.startsWith('http'))) {
+        final media = await getLocal(Uri.parse(variant));
+        await getLocal(Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(media.$2)!.group(1)!));
+      }
+      expect(fetched.where((path) => path != '/v/720/enc.key'), isEmpty, reason: '清单与第一把密钥都命中缓存（720 的密钥地址不同，播放器选了它才取）');
+      await service.close();
+    });
+
   });
 
   test('本机代理：只认带令牌的路径；改写清单后交回，子清单与密钥回到代理（密钥取一次就记住），分片是绝对地址；上游失败回 502', () async {
@@ -1234,7 +1266,7 @@ void main() {
     expect(hits, ['cdn.example.com'], reason: '主清单里是子清单，不探');
   });
 
-  test('本机代理：重新载入登记的一路不用缓存的清单、重新探测；旧的晚回来不覆盖缓存；预取可以取消', () async {
+  test('本机代理：重新载入的预取不用缓存的清单、重新探测，取到的进缓存给播放器用；预取可以取消', () async {
     var version = 0;
     final probes = <String>[];
     final client = MockClient((request) async {
@@ -1252,9 +1284,10 @@ void main() {
     expect((await getLocal(await proxy.open(playlist, stream))).$2, contains('sign=1'));
     expect((await getLocal(await proxy.open(playlist, stream))).$2, contains('sign=1'), reason: '点播清单走缓存');
     probes.clear();
-    expect((await getLocal(await proxy.open(playlist, stream, fresh: true))).$2, contains('sign=2'), reason: '重新载入不用缓存');
+    await proxy.warm(playlist, stream, fresh: true);
     expect(probes, isNotEmpty, reason: '重新载入也重新探测');
-    expect((await getLocal(await proxy.open(playlist, stream))).$2, contains('sign=2'), reason: '新取的进了缓存');
+    expect((await getLocal(await proxy.open(playlist, stream))).$2, contains('sign=2'), reason: '重新载入的预取不用缓存，取到的进了缓存');
+    expect(version, 2, reason: '播放器来取时用的是刚取的，不再请求一次');
     // 预取取消：没人等了，下一次另起请求。
     final gate = Completer<void>();
     final slow = MockClient((request) async {
@@ -1337,7 +1370,7 @@ void main() {
     expect(playlists, hasLength(3));
     expect(playlists.take(2).every((line) => line.contains('cache=hit warmed=yes') && line.contains('redirected=false')), isTrue);
     expect(playlists.last, contains('cache=miss warmed=no'));
-    expect(logs.any((line) => line.contains('action=key') && line.contains('cached=false ok=true')), isTrue);
+    expect(logs.any((line) => line.contains('action=key') && line.contains('cached=true ok=true')), isTrue, reason: '预取时已经取好第一把密钥');
     expect(logs.where((line) => line.contains('cdn.example.com')), isEmpty, reason: '不记地址');
   });
 

@@ -58,6 +58,35 @@ bool cinemaMasterPlaylist(String text) => text.contains('#EXT-X-STREAM-INF');
 // 内容不会再变的清单（点播的分片清单写了 #EXT-X-ENDLIST，或主清单）：本机代理可以短时缓存；直播的分片清单一直在变，不缓存。
 bool cinemaStaticPlaylist(String text) => cinemaMasterPlaylist(text) || text.contains('#EXT-X-ENDLIST');
 
+// 主清单里各码率子清单的地址（EXT-X-STREAM-INF 下面那一行），按出现的先后；打开前预取用（见 cinema_proxy.dart 文件头）。
+List<Uri> cinemaVariants(String text, Uri base) {
+  final variants = <Uri>[];
+  var next = false;
+  for (final line in const LineSplitter().convert(text)) {
+    final trimmed = line.trim();
+    if (trimmed.startsWith('#EXT-X-STREAM-INF')) {
+      next = true;
+    } else if (next && trimmed.isNotEmpty && !trimmed.startsWith('#')) {
+      variants.add(base.resolve(trimmed));
+      next = false;
+    }
+  }
+  return variants;
+}
+
+// 分片清单里第一把网络地址的 AES 密钥（EXT-X-KEY 的 URI；METHOD=NONE、skd:// 之类不算），没有为空；打开前预取用。
+Uri? cinemaFirstKey(String text, Uri base) {
+  for (final line in const LineSplitter().convert(text)) {
+    final trimmed = line.trim();
+    if (!trimmed.startsWith('#EXT-X-KEY') || trimmed.contains('METHOD=NONE')) continue;
+    final uri = RegExp(r'URI="([^"]*)"').firstMatch(trimmed)?.group(1);
+    if (uri == null) continue;
+    final target = base.resolve(uri);
+    if (target.isScheme('http') || target.isScheme('https')) return target;
+  }
+  return null;
+}
+
 // 第一个分片的原始地址（决定要不要换域名前置的主机时探一次）；主清单里是第一个码率的子清单地址。
 Uri? cinemaFirstSegment(String text, Uri base) {
   for (final line in const LineSplitter().convert(text)) {

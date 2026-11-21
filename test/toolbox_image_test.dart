@@ -31,6 +31,44 @@ void main() {
 
   setUp(() => PaintingBinding.instance.imageCache.clear());
 
+  // 人工决策见 toolbox_image.dart 的 ToolboxRemoteImage 与 ToolboxImageGate（11-21 总交接第 7.3、7.5 节）。
+  test('没注入客户端时一个模块共用一份请求内核（跨图片复用连接），不同模块各一份', () {
+    expect(identical(ToolboxRemoteImage.transportFor('cinema'), ToolboxRemoteImage.transportFor('cinema')), isTrue);
+    expect(identical(ToolboxRemoteImage.transportFor('cinema'), ToolboxRemoteImage.transportFor('chaoxing_image')), isFalse);
+  });
+
+  testWidgets('同时最多取 concurrency 张，其余排队；视频打开或卡住时先等、放开了再取', (tester) async {
+    // 在真实时间里建（在假时钟里建的已完成 future，后来才等它的会卡在假时钟的微任务里）。
+    final gate = (await tester.runAsync(() async => Completer<void>()))!;
+    var running = 0, most = 0, requests = 0;
+    // 注入的客户端每张图取完都会关掉，所以每张各给一个。
+    Future<http.Response> handler(http.Request request) async {
+      requests++;
+      running++;
+      most = running > most ? running : most;
+      await gate.future;
+      running--;
+      return http.Response.bytes(wide, 200);
+    }
+
+    final owner = Object();
+    ToolboxImageGate.hold(owner);
+    addTearDown(() => ToolboxImageGate.release(owner));
+    // 在真实时间里发起（解码要真的异步），之后都在 runAsync 里等。
+    final loads = (await tester.runAsync(() async => [for (var index = 0; index < ToolboxRemoteImage.concurrency + 4; index++) load(ToolboxRemoteImage('https://p.example.com/$index.png', module: 'cinema', side: 44, client: () => MockClient(handler)))]))!;
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    expect(requests, 0, reason: '播放在等，图先不取');
+    ToolboxImageGate.release(owner);
+    await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 100)));
+    expect(most, ToolboxRemoteImage.concurrency);
+    final results = await tester.runAsync(() {
+      gate.complete();
+      return Future.wait(loads);
+    });
+    expect(results!.whereType<ImageInfo>(), hasLength(ToolboxRemoteImage.concurrency + 4));
+    expect(most, ToolboxRemoteImage.concurrency);
+  });
+
   testWidgets('按铺满边长 side 的方块解码：短边就是 side 个像素，不按原图', (tester) async {
     final requests = <Uri>[];
     final client = MockClient((request) async {

@@ -406,12 +406,15 @@ class CinemaService implements ToolboxService {
   }
 
   // 交给播放器的地址：m3u8 经本机代理改写清单（不删分片，人工决策见 cinema_playlist.dart 文件头），其余直接播；rule 为空（云解析的结果）时用默认 UA、不带 Referer。
-  // 换集、换源、离开播放页时交回 release，本机代理里这一路还没回来的请求随之中断。fresh（「重新载入」）时清单不用缓存、探测重新做。
-  Future<CinemaPlayable> playable(String url, {CinemaRule? rule, bool playlist = false, bool fresh = false}) async {
+  // m3u8 先等本机代理把清单、密钥与探测备好再交出去（播放器 5 秒读不到就放弃，人工决策见 cinema_proxy.dart 文件头）；cancel 完成时不再等。
+  // 换集、换源、离开播放页时交回 release，本机代理里这一路还没回来的请求随之中断。fresh（「重新载入」）时预取不用缓存、探测重新做。
+  Future<CinemaPlayable> playable(String url, {CinemaRule? rule, bool playlist = false, bool fresh = false, Future<void>? cancel}) async {
     final headers = cinemaHeaders(rule?.userAgent ?? '', rule?.referer ?? '');
     final uri = Uri.parse(url);
     if (!playlist && !cinemaPlaylistUrl(url)) return CinemaPlayable(uri: uri, headers: headers);
-    return CinemaPlayable(uri: await _proxy.open(uri, CinemaStream(headers: headers), fresh: fresh), headers: headers);
+    final stream = CinemaStream(headers: headers);
+    await _proxy.warm(uri, stream, cancel: cancel, fresh: fresh);
+    return CinemaPlayable(uri: await _proxy.open(uri, stream), headers: headers);
   }
 
   void release(CinemaPlayable playable) => _proxy.release(playable.uri);

@@ -18,6 +18,7 @@ import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/toolbox/toolbox_image.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
 import 'package:superxd/toolbox/cinema/cinema_episodes.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
@@ -148,7 +149,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       ..add(_player.stream.duration.listen(_compareCut))
       ..add(_player.stream.height.listen((_) => _measure()))
       ..add(_player.stream.error.listen((message) {
-        campusLog('[CinemaPlayer] action=error id=$_generation message=${message.length > 120 ? message.substring(0, 120) : message} current=$_currentMedia');
+        campusLog('[CinemaPlayer] action=error id=$_generation message=${cinemaLogSafe(message)} current=$_currentMedia');
         // 换集、重新载入时上一个视频晚到的错误不算这一次的（见 _currentMedia）。
         if (!_currentMedia) return;
         _record(ok: false);
@@ -201,6 +202,15 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       if (mounted) setState(() => _finding = false);
     }
   }
+
+  // 每次状态变了都对一下播放优先：打开中或卡住缓冲（没出错）时让小网络图先等等（人工决策见 toolbox_image.dart 的 ToolboxImageGate）。
+  @override
+  void setState(VoidCallback fn) {
+    super.setState(fn);
+    _syncGate();
+  }
+
+  void _syncGate() => (_opening || _stalled) && _error == null ? ToolboxImageGate.hold(this) : ToolboxImageGate.release(this);
 
   void _measure() {
     final width = _player.state.width, height = _player.state.height;
@@ -255,10 +265,10 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     if (_opening && _slow) _record(ok: false);
   }
 
-  // 一集剩最后 2 分钟时预取下一集（人工决策见 cinema_service.dart 的 warm）。
+  // 一集剩最后 2 分钟时预取下一集（人工决策见 cinema_service.dart 的 warm）；打开中或卡住缓冲时先不取（播放优先，播顺了下一次进度再取）。
   void _warmNext(Duration position) {
     final roads = _roads, duration = _player.state.duration;
-    if (_warmedNext || !_titleMode || !_hasNext || roads == null || duration <= Duration.zero || duration - position > const Duration(minutes: 2)) return;
+    if (_warmedNext || !_titleMode || !_hasNext || roads == null || _opening || _stalled || duration <= Duration.zero || duration - position > const Duration(minutes: 2)) return;
     _warmedNext = true;
     unawaited(widget.service.warm(roads[_road].episodes[_episode + 1].url, rule: _rule, cancel: _warmCancel.future));
   }
@@ -295,11 +305,11 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         _road = _road.clamp(0, roads.length - 1);
         _episode = _episode.clamp(0, roads[_road].episodes.length - 1);
         _browsing = null;
-        playable = await widget.service.playable(roads[_road].episodes[_episode].url, rule: rule, fresh: fresh);
+        playable = await widget.service.playable(roads[_road].episodes[_episode].url, rule: rule, fresh: fresh, cancel: cancel.future);
       } else {
         final parser = widget.parser;
         final parsed = _parsed = fresh && parser != null ? await widget.service.cloud.parse(parser, widget.target!, fresh: true) : _parsed!;
-        playable = await widget.service.playable(parsed.url, playlist: parsed.type == 'm3u8', fresh: fresh);
+        playable = await widget.service.playable(parsed.url, playlist: parsed.type == 'm3u8', fresh: fresh, cancel: cancel.future);
       }
       if (generation != _generation || !mounted) {
         widget.service.release(playable);
@@ -482,6 +492,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
 
   @override
   void dispose() {
+    ToolboxImageGate.release(this);
     unawaited(_sourceChanges?.cancel());
     _findCancel.complete();
     _abandon();
@@ -646,6 +657,13 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       ),
     );
   }
+}
+
+// 播放器报错的原话进日志前去掉网址（11-21 模拟器上看到 mpv 的原话里有本机代理的口令与上游的完整地址，签名地址会原样进日志）：
+// 网址一律换成「<地址>」，主机名留着（解析不了域名时有用），截到 120 字。
+String cinemaLogSafe(String message) {
+  final text = message.replaceAll(RegExp(r'[a-z][a-z0-9+.-]*://\S+', caseSensitive: false), '<地址>');
+  return text.length > 120 ? text.substring(0, 120) : text;
 }
 
 // 记看到哪的时机（11-21 Codex 总交接第 6.6 节，用户说按最佳实践做；同主流视频 App 的进度保存）：播放中每 periodic 记一次；
