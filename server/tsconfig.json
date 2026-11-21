@@ -15,5 +15,5 @@
     "useDefineForClassFields": false,
     "noEmit": true
   },
-  "include": ["src", "test", "vitest.config.ts"]
+  "include": ["src", "test", "edge", "vitest.config.ts"]
 }

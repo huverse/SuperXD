@@ -33,7 +33,7 @@ class CinemaCatalog {
     final ids = decodeCatalogIds(reply);
     if (ids.isEmpty) return const [];
     final detail = prepareCinemaRequest(rule.search.request, {'ids': ids.join(',')});
-    final raw = await _http.text(detail, userAgent: rule.userAgent, referer: rule.referer, cancel: cancel);
+    final raw = await _http.text(detail, userAgent: rule.userAgent, referer: rule.referer, cancel: cancel, forward: rule.forward);
     final hits = {for (final hit in parseCinemaSearch(raw, rule, base: detail.uri)) hit.source: hit};
     return [for (final id in ids) ?hits[id]];
   }

@@ -28,6 +28,10 @@ import 'package:superxd/toolbox/toolbox_module.dart';
 // - 播放器用 media_kit（libmpv，Kazumi 同款）。
 // 服务器负担（用户要求尽量不在服务端处理）：搜索、选集、云解析、取流全在手机上直连片源，中转只发几 KB 的签名规则包；
 // 交接原设计把视频字节经服务端转发（一个 1080p 观众约 3–8 Mbps），这里改成手机上的本机代理只改写 m3u8 文本、播放器直连 CDN。
+// [人工决策-2026-11-21 15:30:18] 改上面「搜索、选集全在手机上直连」一句（用户选「境外转发，直连不通的源才走它」，并在说明了绕过封锁的法律风险后确认照做）：
+// 国内连不上的源（11-21 从国内出口实测 6 个源的接口域名被封，它们的播放列表与分片在国内照样连得上），规则里标 forward，
+// 搜索与选集请求经开发者部署在 Cloudflare 上的转发（server/edge/cinema_forward.ts：只转白名单主机的 GET、不保存不记录、不把手机 IP 转给片源站）；
+// 播放列表、密钥与视频照旧手机直连。同意弹窗写明、改走转发的源重新同意，隐私政策升修订 13。
 // 规则写法借鉴 Kazumi（GPL-3.0，与本项目同许可，出处见 assets/third_party_notices.txt），第一版只做它的 API 模式；XPath 规则与网页嗅探下一轮做。
 
 // 组合根注入的规则包来源：中转下发、验签通过的载荷字节，与本机构建号（规则包的 minClient 按它比）。
@@ -322,12 +326,12 @@ class CinemaService implements ToolboxService {
     if (rule.catalog != null) return catalog.search(rule, keyword, cancel: abort);
     final request = prepareCinemaRequest(rule.search.request, {'keyword': keyword});
     final watch = Stopwatch()..start();
-    final raw = await _http.text(request, userAgent: rule.userAgent, referer: rule.referer, cancel: abort);
+    final raw = await _http.text(request, userAgent: rule.userAgent, referer: rule.referer, cancel: abort, forward: rule.forward);
     final fetched = watch.elapsedMilliseconds;
     try {
       return parseCinemaSearch(raw, rule, base: request.uri);
     } finally {
-      if (campusDiagnostics) campusLog('[Cinema] action=search_fetch rule=${rule.id} fetchMs=$fetched parseMs=${watch.elapsedMilliseconds - fetched} bytes=${utf8.encode(raw).length}');
+      if (campusDiagnostics) campusLog('[Cinema] action=search_fetch rule=${rule.id} forward=${rule.forward != null} fetchMs=$fetched parseMs=${watch.elapsedMilliseconds - fetched} bytes=${utf8.encode(raw).length}');
     }
   }
 
@@ -398,7 +402,7 @@ class CinemaService implements ToolboxService {
   // current 为假时（「重新载入」另起了更新的一次）不写缓存：新的先回来、旧的后回来时，旧地址不会盖掉新的。
   Future<List<CinemaRoad>> _fetchChapters(CinemaRule rule, String source, String key, Future<void> abort, {required bool Function() current}) async {
     final request = prepareCinemaRequest(rule.chapters.request, {'source': source});
-    final raw = await _http.text(request, userAgent: rule.userAgent, referer: rule.referer, cancel: abort);
+    final raw = await _http.text(request, userAgent: rule.userAgent, referer: rule.referer, cancel: abort, forward: rule.forward);
     final roads = parseCinemaChapters(raw, rule, request.uri);
     if (roads.isEmpty) throw const CinemaRuleException('这个源没有能直接播的剧集，换一个源试试');
     if (current()) _chapters[key] = (_now(), roads);
