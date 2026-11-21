@@ -288,6 +288,8 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
 
   Future<void> _open({Duration start = Duration.zero, bool fresh = false}) async {
     final generation = ++_generation;
+    // 换了媒体：上一个视频还在等的跳转不再算（媒体归属）。
+    _truth.reset();
     _cancel?.complete();
     final cancel = _cancel = Completer<void>();
     _openWatch
@@ -392,8 +394,8 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     showCampusToast(context, '这个源比原来${diff.isNegative ? '短' : '长'} ${diff.abs().inMinutes} 分钟，可能是别的剪辑，进度不一定对得上');
   }
 
-  // 发出跳转（命令交给播放器之前，见 CinemaPlayerControls.onSeek）：等 1 秒合并着记看到哪。开发者模式下等跳转真正恢复（libmpv 的 seeking 变回 no，
-  // 见 cinema_playback_truth.dart）再记目标、发出时在不在缓存里、用了多久与落点；连着跳只记最后一次（前面的记 superseded）。
+  // 发出跳转（命令交给播放器之前，见 CinemaPlayerControls.onSeek）：等 1 秒合并着记看到哪。开发者模式下等跳转回报（见 cinema_playback_truth.dart）
+  // 再记目标、发出时在不在缓存里（true、false、unknown）、原生恢复与目标处走起来各用了多久、结果与落点；连着跳只记最后一次（前面的记 superseded）。
   // 11-21 Codex 总交接第 12.5 节：原来 await seek 之后 1 秒读位置，seek 0–1 毫秒就返回、位置立刻报成目标，记到的是目标本身、不是恢复时间。
   void _seeked(Duration target) {
     _saves.soon();
@@ -401,7 +403,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     final generation = _generation;
     unawaited(_truth.begin(target).then((seek) {
       if (mounted && generation == _generation) {
-        campusLog('[CinemaPlayer] action=seek id=$generation seek=${seek.id} targetMs=${target.inMilliseconds} cached=${seek.cached} result=${seek.result} ms=${seek.ms} landedMs=${_player.state.position.inMilliseconds}');
+        campusLog('[CinemaPlayer] action=seek id=$generation seek=${seek.id} targetMs=${target.inMilliseconds} cached=${seek.cached ?? 'unknown'} result=${seek.result} restartMs=${seek.restartMs ?? '-'} playingMs=${seek.playingMs ?? '-'} landedMs=${_player.state.position.inMilliseconds}');
       }
     }));
   }

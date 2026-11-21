@@ -1673,44 +1673,78 @@ void main() {
     });
 
     // 11-21 Codex 总交接第 12.5 节：实际可跳的缓存是好几段，seek 一交出就返回、位置立刻报成目标（cinema_playback_truth.dart）。
-    test('缓存状态：libmpv 写成 JSON 的 demuxer-cache-state 取出几段能本地跳转的缓存，按起点排、起点不小于零；读不懂为空', () {
+    test('缓存状态：libmpv 写成 JSON 的 demuxer-cache-state 取出几段能本地跳转的缓存，按起点排、起点不小于零；给了空列表是明确没有，读不懂是读不到（null）', () {
       // 同 11-21 本机 mpv 跳到 20:00 后读到的形状（截掉无关字段）。
       const state = '{"cache-end":1287.38,"reader-pts":1209.54,"eof":false,"ts-per-stream":[{"type":"video","cache-end":1288.8}],"bof-cached":true,"seekable-ranges":[{"start":1198.623222,"end":1283.703222},{"start":-0.000000,"end":49.143222}]}';
       expect(cinemaSeekableRanges(state), [(Duration.zero, const Duration(milliseconds: 49100)), (const Duration(milliseconds: 1198600), const Duration(milliseconds: 1283700))]);
       expect(cinemaSeekableRanges('{"seekable-ranges":[{"start":10,"end":20},{"start":5,"end":3},{"start":"x","end":9},{"start":-2,"end":3}]}'), [(Duration.zero, const Duration(seconds: 3)), (const Duration(seconds: 10), const Duration(seconds: 20))], reason: '倒着的、不是数字的段不要，起点夹到零');
-      expect(cinemaSeekableRanges('{"cache-end":3}'), isEmpty);
-      expect(cinemaSeekableRanges('not json'), isEmpty);
-      expect(cinemaSeekableRanges('[]'), isEmpty);
+      expect(cinemaSeekableRanges('{"seekable-ranges":[]}'), isEmpty, reason: '明确没有缓存');
+      expect(cinemaSeekableRanges('{"seekable-ranges":[{"start":"x","end":9}]}'), isNull, reason: '列了段却一段都读不懂：读不到，不当成没有');
+      expect(cinemaSeekableRanges('{"cache-end":3}'), isNull);
+      expect(cinemaSeekableRanges('not json'), isNull);
+      expect(cinemaSeekableRanges('[]'), isNull);
     });
 
-    test('跳转计时：发出时记下目标在不在缓存里，seeking 变回 no 才算恢复；连着跳只认最后一次，前面的记 superseded；问不到时缓存段为空', () async {
-      final truth = CinemaPlaybackTruth(Player(platformPlayer: _SeekRecorder()));
+    // 11-21 Codex 复核 #344：上一次跳转晚到的 no 把这一次记成 0 毫秒；原生恢复与目标处走起来要分开记；读不到缓存段要记 unknown。
+    test('跳转计时：原生恢复要 seeking 变回 no 且位置就是这次的目标（上一次晚到的 no 不算）；在播的再等时钟越过目标才算走起来；缓存记 true、false、unknown', () async {
+      final platform = _SeekRecorder()..state = const PlayerState(duration: Duration(hours: 1));
+      final truth = CinemaPlaybackTruth(Player(platformPlayer: platform));
       addTearDown(truth.dispose);
-      expect(truth.seekable.value, isEmpty, reason: '测试替身不是 libmpv');
+      void at(Duration position, {bool playing = false}) => platform.state = platform.state.copyWith(position: position, playing: playing);
+      expect(truth.seekable.value, isNull, reason: '测试替身不是 libmpv，读不到');
       expect(await truth.decoder(), '', reason: '问不到解码器');
+
+      // 读不到缓存段：unknown（null），不当成确定没命中。
+      final unknown = truth.begin(const Duration(minutes: 2));
+      at(const Duration(minutes: 2));
+      truth.notify(seeking: 'no');
+      expect((await unknown).cached, isNull);
+
       truth.notify(cacheState: '{"seekable-ranges":[{"start":0,"end":80},{"start":1198,"end":1214}]}');
       expect(truth.seekable.value, hasLength(2));
-      final far = truth.begin(const Duration(minutes: 10));
-      final near = truth.begin(const Duration(minutes: 20, seconds: 5));
-      var settled = false;
-      unawaited(near.then((_) => settled = true));
+      // Codex 复现的顺序：A 进行中（yes）开始 B，A 晚到的 no 读到的位置是 A 的落点，不能把 B 记成恢复。
+      // 暂停着：原生恢复就算完，晚到的 no 一旦被认成这一次的会立刻记成恢复（在播时还有「走起来」那一步挡着，测不出归属）。
+      final first = truth.begin(const Duration(minutes: 10));
+      at(const Duration(minutes: 10));
       truth.notify(seeking: 'yes');
+      final second = truth.begin(const Duration(minutes: 20, seconds: 5));
+      var settled = false;
+      unawaited(second.then((_) => settled = true));
+      truth.notify(seeking: 'no');
       await pumpEventQueue();
-      expect(settled, isFalse, reason: 'seeking 还是 yes 时没恢复');
+      expect(settled, isFalse, reason: '位置还是上一次的落点');
+      expect(((await first).result, (await first).cached), ('superseded', false));
+      // B 原生恢复了（位置是 B 的目标）；在播的还要等时钟越过目标才算走起来。
+      at(const Duration(minutes: 20, seconds: 5), playing: true);
       truth.notify(seeking: 'no');
-      final (first, second) = (await far, await near);
-      expect((first.result, first.cached), ('superseded', false));
-      expect((second.result, second.cached, second.id), ('ok', true, first.id + 1));
+      await pumpEventQueue();
+      expect(settled, isFalse, reason: '原生恢复了还没走起来');
+      truth.notify(position: const Duration(minutes: 20, seconds: 5, milliseconds: 400));
+      final done = await second;
+      expect((done.result, done.cached, done.id, done.restartMs != null, done.playingMs != null), ('ok', true, (await first).id + 1, true, true));
+      expect(done.playingMs! >= done.restartMs!, isTrue);
+
+      // 命中缓存时 yes、no 挨得很近、两次通知都读到 no：不要求先看到 yes；暂停着跳的原生恢复就算完。
       final quick = truth.begin(const Duration(seconds: 30));
+      at(const Duration(seconds: 30));
       truth.notify(seeking: 'no');
-      expect((await quick).result, 'ok', reason: '命中缓存时 yes、no 挨得很近，两次通知都可能读到 no');
+      final quickDone = await quick;
+      expect((quickDone.result, quickDone.cached, quickDone.playingMs), ('ok', true, null));
+
+      // 播放器明确说没有缓存：cached=false，不是 unknown。
+      truth.notify(cacheState: '{"seekable-ranges":[]}');
+      expect(truth.seekable.value, isEmpty);
+      final empty = truth.begin(const Duration(seconds: 40));
+      truth.reset();
+      expect(((await empty).cached, (await empty).result), (false, 'cancelled'), reason: '换了媒体不再算');
     });
 
-    test('进度条的已缓冲：按真实的几段画；问不到时只画当前位置到缓存末端，不从零画起；片长不知道时不画', () {
+    test('进度条的已缓冲：按真实的几段画；播放器明确说没有就不画；读不到时只画当前位置到缓存末端，不从零画起；片长不知道时不画', () {
       const hour = Duration(hours: 1);
       expect(cinemaCachedSpans([(Duration.zero, const Duration(minutes: 6)), (const Duration(minutes: 30), const Duration(minutes: 36))], duration: hour, position: const Duration(minutes: 31), bufferEnd: const Duration(minutes: 36)), [(0.0, 0.1), (0.5, 0.6)]);
-      expect(cinemaCachedSpans(const [], duration: hour, position: const Duration(minutes: 30), bufferEnd: const Duration(minutes: 36)), [(0.5, 0.6)]);
-      expect(cinemaCachedSpans(const [], duration: hour, position: const Duration(minutes: 30), bufferEnd: const Duration(minutes: 30)), isEmpty);
+      expect(cinemaCachedSpans(const [], duration: hour, position: const Duration(minutes: 10), bufferEnd: const Duration(minutes: 11)), isEmpty, reason: '明确没有（Codex 复现：原来照样画出 600–660 秒）');
+      expect(cinemaCachedSpans(null, duration: hour, position: const Duration(minutes: 30), bufferEnd: const Duration(minutes: 36)), [(0.5, 0.6)]);
+      expect(cinemaCachedSpans(null, duration: hour, position: const Duration(minutes: 30), bufferEnd: const Duration(minutes: 30)), isEmpty);
       expect(cinemaCachedSpans([(Duration.zero, const Duration(minutes: 6))], duration: Duration.zero, position: Duration.zero, bufferEnd: Duration.zero), isEmpty);
     });
 

@@ -103,8 +103,8 @@ class CinemaPlayerControls extends StatefulWidget {
   final Duration? resumedFrom;
   // 每次跳转（拖进度、点进度条、从头播放）发出时告诉播放页（命令交给播放器之前），给的是跳转的目标：记看到哪、开发者模式下计这次跳转真正恢复用了多久。
   final ValueChanged<Duration>? onSeek;
-  // 真实能本地跳转的缓存段（libmpv 的 seekable-ranges，见 cinema_playback_truth.dart）；进度条按它画已缓冲的几段。
-  final ValueListenable<List<(Duration, Duration)>>? seekable;
+  // 真实能本地跳转的缓存段（libmpv 的 seekable-ranges，见 cinema_playback_truth.dart）；明确没有为空列表、读不到为 null。进度条按它画已缓冲的几段。
+  final ValueListenable<List<(Duration, Duration)>?>? seekable;
 
   @override
   State<CinemaPlayerControls> createState() => _CinemaPlayerControlsState();
@@ -625,13 +625,13 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
 // 轨道左右各缩进这么多（给圆点留位置）：画与点按同一条边界换算，点在画出来的起点是 0、终点是片尾（11-21 Codex 指出原来按整宽换算）。
 const _progressInset = 10.0;
 
-// 进度条上该画成已缓冲的几段（片长的比例）：有真实的缓存段就按它；问不到（测试替身、刚打开）时只画当前位置到缓存末端那一段（播放器往前读的那段），
-// 不画从零开始的整段。
-List<(double, double)> cinemaCachedSpans(List<(Duration, Duration)> ranges, {required Duration duration, required Duration position, required Duration bufferEnd}) {
+// 进度条上该画成已缓冲的几段（片长的比例）：有真实的缓存段就按它，播放器明确说没有就一段都不画；读不到（null：测试替身、刚打开）时
+// 只画当前位置到缓存末端那一段（播放器往前读的那段），不画从零开始的整段（11-21 Codex 复核：明确为空时原来也退回去画了 600–660 秒）。
+List<(double, double)> cinemaCachedSpans(List<(Duration, Duration)>? ranges, {required Duration duration, required Duration position, required Duration bufferEnd}) {
   final total = duration.inMilliseconds;
   if (total <= 0) return const [];
   double fraction(Duration at) => (at.inMilliseconds / total).clamp(0.0, 1.0);
-  if (ranges.isNotEmpty) return [for (final (start, end) in ranges) (fraction(start), fraction(end))];
+  if (ranges != null) return [for (final (start, end) in ranges) (fraction(start), fraction(end))];
   return bufferEnd > position ? [(fraction(position), fraction(bufferEnd))] : const [];
 }
 
@@ -639,7 +639,7 @@ class _CinemaProgress extends StatefulWidget {
   const _CinemaProgress({required this.player, required this.seek, required this.seekable, required this.onSeekStart, required this.onSeekEnd});
   final Player player;
   final Future<void> Function(Duration) seek;
-  final ValueListenable<List<(Duration, Duration)>>? seekable;
+  final ValueListenable<List<(Duration, Duration)>?>? seekable;
   final VoidCallback onSeekStart;
   final VoidCallback onSeekEnd;
   @override
@@ -654,7 +654,7 @@ class _CinemaProgressState extends State<_CinemaProgress> {
     final accent = CampusPalette.of(context).accent;
     final text = Theme.of(context).textTheme.bodyMedium?.copyWith(color: Colors.white, fontFeatures: const [FontFeature.tabularFigures()]);
     final player = widget.player;
-    return ValueListenableBuilder<List<(Duration, Duration)>>(
+    return ValueListenableBuilder<List<(Duration, Duration)>?>(
       valueListenable: widget.seekable ?? _noRanges,
       builder: (context, ranges, _) => StreamBuilder<Duration>(
       stream: player.stream.position,
@@ -710,7 +710,7 @@ class _CinemaProgressState extends State<_CinemaProgress> {
   }
 }
 
-final _noRanges = ValueNotifier<List<(Duration, Duration)>>(const []);
+final _noRanges = ValueNotifier<List<(Duration, Duration)>?>(null);
 
 class _ProgressPainter extends CustomPainter {
   _ProgressPainter({required this.played, required this.cached, required this.accent, required this.dragging, required this.known});
