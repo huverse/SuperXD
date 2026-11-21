@@ -279,6 +279,8 @@ void main() {
     expect(gradle, contains('<base-config cleartextTrafficPermitted="false" />'));
     expect(gradle, contains('"SUPERXD_RELAY="'));
     expect(gradle, contains('xml/network_security_config.xml'));
+    expect(gradle, contains('val superxdLoopbackHost = "127.0.0.1"'), reason: '系统播放器经电影院的本机代理取清单（只监听回环地址）');
+    expect(gradle, contains('listOfNotNull(superxdEduHost, superxdRelayHost, superxdLoopbackHost)'));
     expect(Directory('android/app/src/main/res/xml').listSync().map((file) => file.uri.pathSegments.last), isNot(contains('network_security_config.xml')), reason: '只用生成的那份');
   });
 
