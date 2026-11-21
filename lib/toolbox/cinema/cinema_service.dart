@@ -62,13 +62,16 @@ class CinemaService implements ToolboxService {
   static const passId = 'toolbox.cinema';
   // 两次拉规则包至少隔这么久（同灰度配置）。
   static const refreshGap = Duration(hours: 1);
-  // 同时搜几个源、每个源最多取几条。
-  static const searchConcurrency = 6;
+  // 同时搜几个源、每个源最多取几条。各源是不同域名，一次全发（11-21 由 6 调到 16，现有 14 个源）：只有 6 路时，挂着的源要占名额到接口超时，
+  // 其余的源排在后面等（DeepSeek 实测 10 个源 6 路 3.10 秒、10 路 1.82 秒）。
+  static const searchConcurrency = 16;
   static const hitsPerSource = 20;
   // [人工决策-2026-11-20 15:38:08] 边搜边显示、连续失败就暂停（用户选定，同 Kazumi、TVBox 类做法）：哪个源先回来先合进结果；
   // 同一个源连续失败 pauseAfter 次就暂停 pauseFor 不再去请求，列在「暂不可用」里，点重试（resume）立即恢复。暂停只记在内存（本次运行），不上传。
+  // [人工决策-2026-11-21 10:46:00] 暂停由 30 分钟缩短到 2 分钟（DeepSeek 建议，用户选定；没选 5 分钟、保持 30 分钟）：搜索一次全发后坏源不再拖慢别的源，
+  // 暂停只为少打连着失败的源；偶发超时这类瞬时故障连着 3 次就被停半小时，源早恢复了还搜不到。同常见熔断的短冷却。
   static const pauseAfter = 3;
-  static const pauseFor = Duration(minutes: 30);
+  static const pauseFor = Duration(minutes: 2);
   // 拉规则包失败后这么久内不再去拉（照旧用本机的；页面上的「重试」不等）：进页面、同意、搜索不会接连撞同一个失败的请求。
   static const retryGap = Duration(minutes: 5);
   // 选集在内存里留多久、最多几部（规则包换了版本即失效；播放地址可能带签名会过期，所以短；「重新载入」不用缓存）。
