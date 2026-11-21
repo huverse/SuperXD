@@ -1671,6 +1671,46 @@ void main() {
       await player.dispose();
     });
 
+    // 11-21 用户截图：中间闪的是刚进入的状态、下栏写的是点了会怎样，两处正好相反，还叠在加载动画上（cinema_player_controls.dart 的 _playButton）。
+    testWidgets('播放暂停：中间与下栏是同一个意思（暂停时都是「播放」、播放中都是「暂停」）；打开中、出错时中间不放，只剩下栏一颗', (tester) async {
+      Future<void> show(PlayerState state, {bool busy = false, String? error}) async {
+        final player = Player(platformPlayer: _SeekRecorder()..state = state);
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpWidget(MaterialApp(
+          theme: campusTheme(),
+          home: Scaffold(body: SizedBox(width: 360, height: 220, child: CinemaPlayerControls(player: player, title: '合成', subtitle: '', fullscreen: false, busy: busy, error: error, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}))),
+        ));
+        await tester.pump();
+        addTearDown(player.dispose);
+      }
+
+      const length = Duration(minutes: 95);
+      await show(const PlayerState(duration: length));
+      expect((find.byTooltip('播放').evaluate().length, find.byTooltip('暂停').evaluate().length), (2, 0));
+      await show(const PlayerState(duration: length, playing: true));
+      expect((find.byTooltip('播放').evaluate().length, find.byTooltip('暂停').evaluate().length), (0, 2));
+      await show(const PlayerState(duration: length, playing: true), busy: true);
+      expect(find.byTooltip('暂停'), findsOneWidget, reason: '打开中中间是加载动画');
+      await show(const PlayerState(duration: length), error: '这个源暂不可用（HTTP 404），换一个源试试');
+      expect(find.byTooltip('播放'), findsOneWidget, reason: '出错时中间是报错卡片');
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 10));
+    });
+
+    testWidgets('片长还不知道（打开中）时进度两边写「--:--」，不写「00:00」', (tester) async {
+      final player = Player(platformPlayer: _SeekRecorder()..state = const PlayerState());
+      await tester.pumpWidget(MaterialApp(
+        theme: campusTheme(),
+        home: Scaffold(body: SizedBox(width: 360, height: 220, child: CinemaPlayerControls(player: player, title: '合成', subtitle: '', fullscreen: false, busy: true, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}, resumedFrom: const Duration(hours: 2, minutes: 13, seconds: 42)))),
+      ));
+      await tester.pump();
+      expect(find.text('--:--'), findsNWidgets(2));
+      expect(find.text('00:00'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 10));
+      await player.dispose();
+    });
+
     testWidgets('续播的「从头播放」出错时不显示（不和报错卡片叠在一起），没出错照常显示', (tester) async {
       final player = Player(platformPlayer: _SeekRecorder()..state = PlayerState(duration: const Duration(minutes: 95)));
       Future<void> show({String? error}) async {
