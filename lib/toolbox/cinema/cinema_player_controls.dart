@@ -19,7 +19,9 @@ import 'package:superxd/toolbox/cinema/cinema_poster.dart';
 // - 左右滑动调进度（滑满屏宽是 3 分钟，同 Kazumi），中间写目标时刻与跨度，松手才跳；左半边上下滑调亮度（只改本应用窗口），右半边调音量（播放器音量）；
 // - 锁定后只认单击、只露出锁；上栏返回、片名、倍速与画面比例，下栏播放暂停、下一集、进度（含已缓冲的一段）、选集、全屏；
 // - 画面比例同 Kazumi 的 PlayerAspectRatio（自动、裁切填充、拉伸填充、16:9、4:3），倍速 0.5–3 倍；
-// - 片头 5 分钟内给「跳过片头」（往后 cinemaSkipIntro，同 Kazumi 的 buttonSkipTime）；接着看的给「从头播放」；播完有下一集时倒数 cinemaAutoNext 自动连播，可取消。
+// - 接着看的给「从头播放」；播完有下一集时倒数 cinemaAutoNext 自动连播，可取消。
+// [人工决策-2026-11-21 17:24:56] 删掉「跳过片头」（用户要求直接删除）：原来片头 5 分钟内一直显示，每点一次从当前位置往后跳 80 秒，能连着点、也不记住，
+// 片源又没有片头片尾的时间数据，固定 80 秒常跳多或跳少，用户嫌鸡肋；没选「记住每部剧的片头片尾」与「只修按钮」。要跳过片头用左右滑或进度条。
 
 // 画面比例（同 Kazumi）：ratio 不为空时按这个比例铺满给定区域（拉伸到这个比例）。
 enum CinemaFit {
@@ -37,7 +39,6 @@ enum CinemaFit {
 
 const cinemaSpeeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
 const cinemaLongPressSpeed = 2.0;
-const cinemaSkipIntro = Duration(seconds: 80);
 const cinemaControlsHide = Duration(seconds: 4);
 const cinemaAutoNext = Duration(seconds: 5);
 // 左右滑满一屏宽跳多少（Kazumi 是 180000 毫秒）。
@@ -96,7 +97,7 @@ class CinemaPlayerControls extends StatefulWidget {
   final ValueChanged<int>? onEpisode;
   // 从上次的位置接着看时给，画「从头播放」。
   final Duration? resumedFrom;
-  // 每次跳转（拖进度、点进度条、跳过片头、从头播放）做完之后告诉播放页，给的是跳转的目标：记看到哪、开发者模式下记目标与落点。
+  // 每次跳转（拖进度、点进度条、从头播放）做完之后告诉播放页，给的是跳转的目标：记看到哪、开发者模式下记目标与落点。
   final ValueChanged<Duration>? onSeeked;
 
   @override
@@ -420,12 +421,6 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
                     },
                   ),
                 ),
-              ),
-            if (shown && _player.state.position < const Duration(minutes: 5) && _player.state.duration > const Duration(minutes: 10) && !widget.busy)
-              Positioned(
-                right: CampusGap.large,
-                bottom: widget.fullscreen ? 104 : 56,
-                child: _PillButton(icon: CampusIcons.skipIntro, label: '跳过片头', onPressed: () => unawaited(_seek(_player.state.position + cinemaSkipIntro))),
               ),
             // 出错时不给（居中的报错卡片会和它叠在一起，也没有在播的可以从头）：续播的源坏了时常见。
             if (_resumeShown && !_locked && widget.error == null)

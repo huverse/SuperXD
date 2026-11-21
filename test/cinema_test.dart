@@ -1657,6 +1657,20 @@ void main() {
       await player.dispose();
     });
 
+    // 人工决策见 cinema_player_controls.dart 文件头 11-21 那条（用户要求直接删除跳过片头）。
+    testWidgets('没有「跳过片头」：长片刚开播、控件显示着也不给', (tester) async {
+      final player = Player(platformPlayer: _SeekRecorder()..state = PlayerState(duration: const Duration(minutes: 95)));
+      await tester.pumpWidget(MaterialApp(
+        theme: campusTheme(),
+        home: Scaffold(body: SizedBox(width: 360, height: 220, child: CinemaPlayerControls(player: player, title: '合成', subtitle: '', fullscreen: false, busy: false, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}))),
+      ));
+      await tester.pump();
+      expect(find.text('合成'), findsOneWidget, reason: '控件显示着');
+      expect(find.textContaining('片头'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      await player.dispose();
+    });
+
     testWidgets('续播的「从头播放」出错时不显示（不和报错卡片叠在一起），没出错照常显示', (tester) async {
       final player = Player(platformPlayer: _SeekRecorder()..state = PlayerState(duration: const Duration(minutes: 95)));
       Future<void> show({String? error}) async {
