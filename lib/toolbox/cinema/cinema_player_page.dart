@@ -74,8 +74,9 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   final _subscriptions = <StreamSubscription<Object?>>[];
   // 系统播放器在这一页退回过 mpv（首帧前打不开），之后不再自动退。
   var _fellBack = false;
-  // 这一次打开从哪里开始（首帧要等时钟越过它，见 cinemaFirstFrame）。
+  // 这一次打开从哪里开始，与打开中见过的最早位置（首帧要等时钟越过它们，见 cinemaFirstFrame）。
   var _openStart = Duration.zero;
+  Duration? _firstSeen;
   late final CinemaSaveSchedule _saves;
   late final AppLifecycleListener _lifecycle;
   // 开发者模式的诊断：这一次卡住缓冲从什么时候开始。
@@ -174,7 +175,11 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       ..add(_engine.stream.position.listen((position) {
         // 只认这一次交给播放器的媒体：重新载入时旧视频还在播，它的进度不能把这次记成播成、也不能收起加载动画。
         if (!_currentMedia) return;
-        if (cinemaFirstFrame(position, _openStart) && mounted && _opening) {
+        if (_opening) {
+          final seen = _firstSeen;
+          if (seen == null || position < seen) _firstSeen = position;
+        }
+        if (cinemaFirstFrame(position, start: _openStart, firstSeen: _firstSeen) && mounted && _opening) {
           _record(ok: true);
           if (campusDiagnostics) {
             campusLog('[CinemaPlayer] action=first_frame id=$_generation ms=${_openWatch.elapsedMilliseconds}');
@@ -329,6 +334,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     // 换了媒体：上一个视频还在等的跳转不再算（媒体归属）。
     _engine.resetSeeks();
     _openStart = start;
+    _firstSeen = null;
     _cancel?.complete();
     final cancel = _cancel = Completer<void>();
     _openWatch
@@ -448,6 +454,13 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   // 11-21 Codex 总交接第 12.5 节：原来 await seek 之后 1 秒读位置，seek 0–1 毫秒就返回、位置立刻报成目标，记到的是目标本身、不是恢复时间。
   void _seeked(Duration target) {
     _saves.soon();
+    // 打开中（还没出首帧）就跳：两个内核在媒体还没就绪时都可能吞掉跳转（11-21 真机：续播打开中点「从头播放」，mpv 那次等满 20 秒没动），
+    // 改成在目标位置重开；首帧也就按新的起点算（原来 ExoPlayer 跳回片头后一直等原来起点的首帧，转圈不停、菜单一直不能点）。
+    if (_opening && _error == null) {
+      if (campusDiagnostics) campusLog('[CinemaPlayer] action=seek_while_opening id=$_generation engine=${_engine.kind.name} targetMs=${target.inMilliseconds}');
+      unawaited(_open(start: target));
+      return;
+    }
     if (!campusDiagnostics) return;
     final generation = _generation;
     unawaited(_engine.beginSeek(target).then((seek) {
@@ -745,8 +758,13 @@ String cinemaLogSafe(String message) {
 }
 
 // 首帧（11-21 真机诊断发现）：从中途打开时播放器在出画之前就把位置报成起点（原来「位置大于零」把这一刻当首帧，从「看过的」打开记的 2.8 秒并不是真出画）。
-// 从头开的照旧看位置动了，从中途开的要等时钟越过起点 playingLead 才算。
-bool cinemaFirstFrame(Duration position, Duration start) => start <= Duration.zero ? position > Duration.zero : position >= start + CinemaPlaybackTruth.playingLead;
+// 从头开的照旧看位置动了；从中途开的要等时钟越过起点 playingLead，或越过打开中见过的最早位置 firstSeen（落点比起点早、或打开中跳回了片头，
+// 11-21 真机：ExoPlayer 续播到 38 分时点了从头播放，只看起点就永远等不到，转圈不停）。
+bool cinemaFirstFrame(Duration position, {required Duration start, required Duration? firstSeen}) {
+  if (start <= Duration.zero) return position > Duration.zero;
+  const lead = CinemaPlaybackTruth.playingLead;
+  return position >= start + lead || (firstSeen != null && position >= firstSeen + lead);
+}
 
 // 记看到哪的时机（11-21 Codex 总交接第 6.6 节，用户说按最佳实践做；同主流视频 App 的进度保存）：播放中每 periodic 记一次；
 // 暂停、跳转做完时等 settle 再记（连着拖几下只记最后一次）；切到后台、换集换源、离开时立即记（now）。被强杀时，最近一次暂停或跳转已经落库。

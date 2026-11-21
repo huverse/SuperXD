@@ -17,6 +17,7 @@ import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
+import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/toolbox/cinema/cinema_catalog.dart';
 import 'package:superxd/toolbox/cinema/cinema_detail_page.dart';
 import 'package:superxd/toolbox/cinema/cinema_engine.dart';
@@ -1865,12 +1866,42 @@ void main() {
       expect(cinemaSystemHeaders({'User-Agent': 'UA'}), {'User-Agent': 'UA'});
     });
 
-    test('首帧：从头开的位置动了就算；从中途开的要等时钟越过起点 0.3 秒（播放器出画之前就把位置报成起点）', () {
-      expect(cinemaFirstFrame(const Duration(milliseconds: 40), Duration.zero), isTrue);
-      expect(cinemaFirstFrame(Duration.zero, Duration.zero), isFalse);
+    test('首帧：从头开的位置动了就算；从中途开的要等时钟越过起点 0.3 秒（播放器出画之前就把位置报成起点），或越过打开中见过的最早位置（跳回了片头）', () {
+      expect(cinemaFirstFrame(const Duration(milliseconds: 40), start: Duration.zero, firstSeen: null), isTrue);
+      expect(cinemaFirstFrame(Duration.zero, start: Duration.zero, firstSeen: null), isFalse);
       const start = Duration(minutes: 27, seconds: 32);
-      expect(cinemaFirstFrame(start, start), isFalse, reason: '只是位置报成了起点');
-      expect(cinemaFirstFrame(start + const Duration(milliseconds: 300), start), isTrue);
+      expect(cinemaFirstFrame(start, start: start, firstSeen: start), isFalse, reason: '只是位置报成了起点');
+      expect(cinemaFirstFrame(start + const Duration(milliseconds: 300), start: start, firstSeen: start), isTrue);
+      // 11-21 真机：打开中跳回片头，位置从 0 开始走。
+      expect(cinemaFirstFrame(const Duration(milliseconds: 100), start: start, firstSeen: Duration.zero), isFalse);
+      expect(cinemaFirstFrame(const Duration(milliseconds: 400), start: start, firstSeen: Duration.zero), isTrue);
+    });
+
+    testWidgets('播放页：打开中（还没出首帧）点「从头播放」改成从片头重开，出画后加载圈收起、菜单能点（11-21 真机卡在转圈）', (tester) async {
+      final created = <_FakeEngine>[];
+      debugCinemaEngineFactory = (kind) {
+        final engine = _FakeEngine(kind);
+        created.add(engine);
+        return engine;
+      };
+      addTearDown(() => debugCinemaEngineFactory = null);
+      final (_, service) = await openCinemaForPage(tester);
+      await tester.runAsync(service.rules);
+      final title = CinemaTitle(key: 'film', name: '合成电影', year: '2026', cover: '', remarks: '')..addSource(const CinemaSourceRef(ruleId: 'alpha', source: '1', name: '合成电影', remarks: ''));
+      const roads = [CinemaRoad(name: 'mp4', episodes: [CinemaEpisode(name: '正片', url: 'https://media.example.com/1.mp4')])];
+      const start = Duration(minutes: 38, seconds: 18);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: CinemaPlayerPage.title(service: service, title: title, source: title.sources.single, road: 0, episode: 0, start: start, roads: roads)));
+      await settleUntil(tester, () => created.single.opens.isNotEmpty);
+      expect(find.byType(CampusLoader), findsWidgets, reason: '打开中');
+      await tester.tap(find.textContaining('从头播放'));
+      await settleUntil(tester, () => created.single.opens.length == 2);
+      expect(created.single.opens.last.$2, Duration.zero, reason: '在目标位置重开');
+      created.single.frame(const Duration(milliseconds: 400));
+      await tester.pump();
+      expect(find.byType(CampusLoader), findsNothing, reason: '出画了');
+      expect(tester.widget<CampusMenuField<CinemaEngineKind>>(find.byType(CampusMenuField<CinemaEngineKind>)).onChanged, isNotNull);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 11));
     });
 
     testWidgets('播放页：系统播放器打不开时这一页退回 mpv、在同一位置再开；「播放内核」写正在用的，换了记在本机并用新内核在当前位置重开', (tester) async {
