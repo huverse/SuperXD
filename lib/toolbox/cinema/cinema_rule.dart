@@ -136,7 +136,6 @@ class CinemaRule {
     required this.version,
     required this.userAgent,
     required this.referer,
-    required this.adBlocker,
     required this.search,
     required this.chapters,
     this.catalog,
@@ -148,8 +147,7 @@ class CinemaRule {
   final String userAgent;
   // 空表示一律不带 Referer（交接实测：带任何 Referer 都会被部分 CDN 重置连接）。
   final String referer;
-  // 过滤播放清单里插的广告片段（按不连续分段的时长判断，同 Kazumi 的 M3u8AdFilter）。
-  final bool adBlocker;
+  // 规则里的 adBlocker（去广告）不再读：播放清单一个分片都不删，人工决策见 cinema_playlist.dart 文件头。
   final CinemaSearchConfig search;
   final CinemaChapterConfig chapters;
   final CinemaCatalogConfig? catalog;
@@ -214,7 +212,6 @@ class CinemaRule {
       version: _string(map['version'], '$where.version', fallback: '1'),
       userAgent: _string(map['userAgent'], '$where.userAgent', fallback: ''),
       referer: _string(map['referer'], '$where.referer', fallback: ''),
-      adBlocker: map['adBlocker'] == true,
       search: search,
       chapters: chapters,
       catalog: catalog ? CinemaCatalogConfig.decode(map['catalog'], '$where.catalog') : null,

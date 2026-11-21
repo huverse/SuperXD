@@ -175,23 +175,25 @@ class _CinemaPageState extends State<CinemaPage> {
     }
   }
 
+  // [人工决策-2026-11-21 11:59:29] 搜索结果点开一律进选集页（用户选「保持选集页」，没选单集电影点卡片直接播）：直接播等于替用户选了源，
+  // 不合「由用户选源」；选集页已预取接着看那一集的播放列表，点一集就快。
   Future<void> _openTitle(CinemaTitle title) async {
     await Navigator.push<void>(context, CampusPageRoute(builder: (_) => CinemaDetailPage(service: _service, title: title)));
     await _reloadHistory();
   }
 
-  // 看过的：按记下的源直接接着播；源已不在规则包里时进选集页让用户换源。
+  // 看过的：按记下的源直接接着播，看完了的（CinemaHistory.finished）从下一集开头播，没有下一集时播放页落回这一集从头；
+  // 源坏了或已不在规则包里，播放页报错并可「找其他片源」（人工决策见 CinemaService.findMoreSources）。
   Future<void> _resume(CinemaHistory entry) async {
-    final rule = _service.rule(entry.ruleId);
-    final title = CinemaTitle(key: entry.key, name: entry.name, year: '', cover: entry.cover, remarks: '')
-      ..sources.add(CinemaSourceRef(ruleId: entry.ruleId, source: entry.source, name: entry.name, remarks: ''));
-    if (rule == null) {
-      await _openTitle(title);
-      return;
-    }
+    final title = CinemaTitle(key: entry.key, name: entry.name, year: '', cover: entry.cover, remarks: '');
+    final source = CinemaSourceRef(ruleId: entry.ruleId, source: entry.source, name: entry.name, remarks: '');
+    title.addSource(source);
+    final finished = entry.finished;
     await Navigator.push<void>(
       context,
-      CampusPageRoute(builder: (_) => CinemaPlayerPage.title(service: _service, title: title, source: title.sources.first, road: entry.road, episode: entry.episode, start: entry.position)),
+      CampusPageRoute(
+        builder: (_) => CinemaPlayerPage.title(service: _service, title: title, source: source, road: entry.road, episode: finished ? entry.episode + 1 : entry.episode, start: finished ? Duration.zero : entry.position),
+      ),
     );
     await _reloadHistory();
   }

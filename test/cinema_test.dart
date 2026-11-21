@@ -8,11 +8,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
 
 import 'package:superxd/domain/feature_flags.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
+import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/toolbox/cinema/cinema_catalog.dart';
 import 'package:superxd/toolbox/cinema/cinema_detail_page.dart';
 import 'package:superxd/toolbox/cinema/cinema_episodes.dart';
@@ -21,6 +23,7 @@ import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
 import 'package:superxd/toolbox/cinema/cinema_page.dart';
+import 'package:superxd/toolbox/cinema/cinema_player_controls.dart';
 import 'package:superxd/toolbox/cinema/cinema_playlist.dart';
 import 'package:superxd/toolbox/cinema/cinema_poster.dart';
 import 'package:superxd/toolbox/cinema/cinema_proxy.dart';
@@ -47,6 +50,7 @@ Map<String, Object?> macCmsRule(String id, String api, {String name = '合成资
   'version': '1',
   'userAgent': '',
   'referer': '',
+  // 线上第 4 版以前的规则包都写着 true：照样能解，播放清单也不删分片（人工决策见 cinema_playlist.dart 文件头）。
   'adBlocker': true,
   'searchMode': 'api',
   'chapterMode': 'api',
@@ -245,6 +249,19 @@ void main() {
       expect(() => parseCinemaSearch('暂不支持搜索', rule), throwsA(isA<CinemaRuleException>()));
     });
 
+    // 11-21 Codex 指出：金鹰、光速 HTTP 200 回「服务器繁忙」，原来当成搜不到。
+    test('搜不到与回复不对分开：list 是空数组或 null（如意）是搜不到；连 list 都没有、是别的类型、不是 JSON 都报错；上游的 msg 不进原因（可能带着片名）', () {
+      expect(parseCinemaSearch('{"code":1,"msg":"数据列表","list":[]}', rule), isEmpty);
+      expect(parseCinemaSearch('{"code":1,"msg":"数据列表","list":null}', rule), isEmpty);
+      Matcher fails(String message) => throwsA(isA<CinemaRuleException>().having((error) => error.message, 'message', message));
+      expect(() => parseCinemaSearch('{"code":1,"msg":"服务器繁忙，请稍后搜索"}', rule), fails('回复里没有结果列表'));
+      expect(() => parseCinemaSearch('{"code":1,"msg":"没有找到合成电影"}', rule), fails('回复里没有结果列表'));
+      expect(() => parseCinemaSearch('[]', rule), fails('回复里没有结果列表'));
+      expect(() => parseCinemaSearch('{"list":"维护中"}', rule), fails('结果列表格式不对'));
+      expect(() => parseCinemaSearch('{"list":{}}', rule), fails('结果列表格式不对'));
+      expect(() => parseCinemaSearch('<html>验证</html>', rule), fails('返回的不是 JSON'));
+    });
+
     String chapters(String from, String url) => macCmsList([{'vod_id': 1, 'vod_name': '合成剧', 'vod_play_from': from, 'vod_play_url': url}]);
     final requestUri = Uri.parse('https://alpha.example.com/api.php/provide/vod/?ac=detail&ids=1');
 
@@ -284,6 +301,57 @@ void main() {
     });
   });
 
+  // 11-21 Codex 总交接：换源集名要一字不差、晚到的源进不了菜单；看完的再打开停在片尾（人工决策见 CinemaHistory.finished）。
+  group('换源与看完', () {
+    test('集号：第01集、第1集、01、EP1、1、第1话都是 1；特别篇、预告、上下集、正片、HD中字没有集号', () {
+      for (final name in ['第01集', '第1集', '01', 'EP1', 'ep01', '1', '第1话', '第 1 集', 'Ｅ１']) {
+        expect(cinemaEpisodeNumber(name), 1, reason: name);
+      }
+      for (final name in ['第1集特别篇', '预告', '第1集上', '正片', 'HD中字', '1080P', '第一集', '20231201期']) {
+        expect(cinemaEpisodeNumber(name), isNull, reason: name);
+      }
+    });
+
+    test('换源找同一集：先比原名，再比集号，两边都只有一集按同一集；不知道原名时按第几集；找不到为 -1', () {
+      List<CinemaEpisode> named(List<String> names) => [for (final name in names) CinemaEpisode(name: name, url: 'https://media.example.com/$name.mp4')];
+      expect(cinemaMatchEpisode(named(['第1集', '第01集', '第02集']), '第01集', index: 0, single: false), 1, reason: '原名优先');
+      expect(cinemaMatchEpisode(named(['第01集', '第02集', '第03集']), '第2集', index: 0, single: false), 1);
+      expect(cinemaMatchEpisode(named(['EP1', 'EP2']), '02', index: 0, single: false), 1);
+      expect(cinemaMatchEpisode(named(['第1集', '第1集特别篇']), '第1集特别篇', index: 0, single: false), 1);
+      expect(cinemaMatchEpisode(named(['第1集', '第2集']), '第1集特别篇', index: 0, single: false), -1, reason: '特别篇不配到正片');
+      expect(cinemaMatchEpisode(named(['HD中字']), '正片', index: 0, single: true), 0, reason: '电影两边都只有一集');
+      expect(cinemaMatchEpisode(named(['HD中字', '预告']), '正片', index: 0, single: true), -1);
+      expect(cinemaMatchEpisode(named(['HD中字']), '正片', index: 0, single: false), -1);
+      expect(cinemaMatchEpisode(named(['第1集', '第2集', '第3集']), null, index: 2, single: false), 2);
+      expect(cinemaMatchEpisode(named(['第1集']), null, index: 2, single: false), -1);
+    });
+
+    test('看完了：剩下的不到片长 5% 或 3 分钟（取更短的）才算', () {
+      CinemaHistory watched(Duration position, Duration duration) => CinemaHistory(key: 'k', name: 'k', cover: '', ruleId: 'alpha', source: '1', road: 0, episode: 0, episodeName: '正片', position: position, duration: duration, updatedAt: DateTime.utc(2026, 11, 21));
+      const movie = Duration(hours: 2), episode = Duration(minutes: 20);
+      expect(watched(movie - const Duration(minutes: 3), movie).finished, isTrue, reason: '长片按 3 分钟');
+      expect(watched(movie - const Duration(minutes: 3, seconds: 1), movie).finished, isFalse);
+      expect(watched(episode - const Duration(minutes: 1), episode).finished, isTrue, reason: '短片按 5%（1 分钟）');
+      expect(watched(episode - const Duration(minutes: 1, seconds: 1), episode).finished, isFalse);
+      expect(watched(const Duration(minutes: 5), Duration.zero).finished, isFalse, reason: '不知道片长的不算');
+    });
+
+    test('一部片的片源：同一个源只留一条、加上了才通知；新来的接在已排好的后面，不往前插', () {
+      final title = CinemaTitle(key: 'k', name: '合成电影', year: '2020', cover: '', remarks: '');
+      var notified = 0;
+      title.addListener(() => notified++);
+      CinemaSourceRef ref(String id) => CinemaSourceRef(ruleId: id, source: '1', name: '合成电影', remarks: '');
+      expect(title.addSource(ref('alpha')), isTrue);
+      expect(title.addSource(ref('alpha')), isFalse);
+      expect(title.addSource(ref('beta')), isTrue);
+      expect(notified, 2);
+      final shown = [title.sources.last, title.sources.first];
+      title.addSource(ref('gamma'));
+      expect([for (final source in appendCinemaSources(shown, title.sources)) source.ruleId], ['beta', 'alpha', 'gamma']);
+      expect(() => title.sources.add(ref('delta')), throwsUnsupportedError, reason: '只能经 addSource 加');
+    });
+  });
+
   group('播放清单', () {
     test('域名前置还原：路径第一段像域名才换，端口一并去掉，其余原样', () {
       expect(cinemaUnwrapHost(Uri.parse('https://edge.cdn.example.com/real.example.com/a.ts?token=1')).toString(), 'https://real.example.com/a.ts?token=1');
@@ -309,45 +377,15 @@ void main() {
       expect(cinemaFirstSegment(media, Uri.parse('https://cdn.example.com/v/1080/index.m3u8')).toString(), 'https://cdn.example.com/v/1080/seg0.ts');
     });
 
-    test('去广告：比正片短很多的不连续段去掉，去掉段里换过的密钥照旧补给后面的正片', () {
+    // 人工决策见 cinema_playlist.dart 文件头（11-21 不删任何分片）。
+    test('不删分片：短的不连续段、换过的密钥、初始化段、BYTERANGE 与媒体序号原样留着、顺序不变，只改地址', () {
       final segments = [for (var index = 0; index < 30; index++) '#EXTINF:10,\nmain$index.ts'].join('\n');
-      final media = '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-KEY:METHOD=AES-128,URI="ad.key"\n#EXTINF:5,\nad0.ts\n#EXTINF:5,\nad1.ts\n#EXT-X-DISCONTINUITY\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n$segments\n#EXT-X-ENDLIST\n';
-      final out = cinemaRewritePlaylist(media, Uri.parse('https://cdn.example.com/v/'), playlist: (uri) => '$uri', media: (uri) => uri.pathSegments.last, adBlocker: true);
-      expect(out, isNot(contains('ad0.ts')));
-      expect(out, isNot(contains('ad.key')));
-      expect(out, contains('URI="main.key"'));
-      expect('\n'.allMatches(out).length, greaterThan(60));
-      expect(out.trimRight().endsWith('#EXT-X-ENDLIST'), isTrue);
-      // 不开去广告原样保留。
-      expect(cinemaRewritePlaylist(media, Uri.parse('https://cdn.example.com/v/'), playlist: (uri) => '$uri', media: (uri) => uri.pathSegments.last), contains('ad0.ts'));
-    });
-
-    test('去广告后初始化段的加密状态不变：明文初始化段的 MAP 仍在 KEY 前面，加密的仍在后面，去掉段里的密钥不套到明文初始化段上', () {
-      final segments = [for (var index = 0; index < 30; index++) '#EXTINF:10,\nmain$index.m4s'].join('\n');
-      String filtered(String main) => cinemaRewritePlaylist(
-        '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-KEY:METHOD=AES-128,URI="ad.key"\n#EXTINF:5,\nad0.ts\n#EXT-X-DISCONTINUITY\n$main\n$segments\n#EXT-X-ENDLIST\n',
-        Uri.parse('https://cdn.example.com/v/'),
-        playlist: (uri) => '$uri',
-        media: (uri) => uri.pathSegments.last,
-        adBlocker: true,
-      );
-      const head = '#EXTM3U\n#EXT-X-TARGETDURATION:10\n';
-      const main = '#EXT-X-DISCONTINUITY\n#EXTINF:10,\nmain0.m4s\n';
-      // 明文初始化段、加密分片：原清单先写 METHOD=NONE 再写 MAP，去掉广告后照旧是明文状态下的 MAP。
-      expect(filtered('#EXT-X-KEY:METHOD=NONE\n#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"'), startsWith('$head#EXT-X-KEY:METHOD=NONE\n#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n$main'));
-      // 加密的初始化段：KEY 在 MAP 前面。
-      expect(filtered('#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n#EXT-X-MAP:URI="init.mp4"'), startsWith('$head#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n#EXT-X-MAP:URI="init.mp4"\n$main'));
-      // 整份清单第一个密钥之前的 MAP 是明文：去掉开头的广告后，MAP 仍写在密钥前面。
-      final plain = cinemaRewritePlaylist(
-        '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:5,\nad0.ts\n#EXT-X-DISCONTINUITY\n#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n$segments\n#EXT-X-ENDLIST\n',
-        Uri.parse('https://cdn.example.com/v/'),
-        playlist: (uri) => '$uri',
-        media: (uri) => uri.pathSegments.last,
-        adBlocker: true,
-      );
-      expect(plain, startsWith('$head#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n$main'));
-      expect(plain, isNot(contains('ad0.ts')));
-      expect('#EXT-X-MAP'.allMatches(plain), hasLength(1));
+      final media = '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:7\n#EXT-X-KEY:METHOD=AES-128,URI="ad.key"\n#EXTINF:5,\nad0.ts\n#EXTINF:5,\nad1.ts\n'
+          '#EXT-X-DISCONTINUITY\n#EXT-X-KEY:METHOD=NONE\n#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n$segments\n'
+          '#EXT-X-DISCONTINUITY\n#EXTINF:4,\n#EXT-X-BYTERANGE:1000@0\nshort.ts\n#EXT-X-ENDLIST\n';
+      final base = Uri.parse('https://cdn.example.com/v/');
+      expect(cinemaRewritePlaylist(media, base, playlist: (uri) => '$uri', media: (uri) => uri.pathSegments.last, key: (uri) => uri.pathSegments.last), media);
+      expect(cinemaRewritePlaylist(media, base, playlist: (uri) => '$uri', media: (uri) => '$uri'), contains('\n#EXTINF:5,\nhttps://cdn.example.com/v/ad0.ts\n'));
     });
   });
 
@@ -573,6 +611,18 @@ void main() {
       await service.close();
     });
 
+    test('上游 HTTP 200 回繁忙（没有 list）算这个源失败：进暂不可用、计连续失败到暂停；回空列表的源不算失败', () async {
+      final client = MockClient((request) async => request.url.host == 'beta.example.com' ? reply('{"code":1,"msg":"服务器繁忙，请稍后搜索"}', 200) : reply(macCmsList(const []), 200));
+      final service = await open(() async => packageBytes(), client: client);
+      await service.grantRules((await service.rules()).rules);
+      for (var round = 0; round < CinemaService.pauseAfter; round++) {
+        final result = await service.search('合成').last;
+        expect([for (final failure in result.failures) (failure.name, failure.paused)], [('另一资源', false)]);
+      }
+      expect(service.hasPaused, isTrue);
+      await service.close();
+    });
+
     test('片名目录型的源：片名 POST 给中转（不进地址）查编号，再把编号一次发给源取详情、按中转给的先后排；中转回的不合格整份不用', () async {
       final requests = <http.Request>[];
       var relayReply = jsonEncode({'ids': ['102', '101']});
@@ -625,10 +675,12 @@ void main() {
       final service = await open(() async => packageBytes(version: version, rules: [macCmsRuleWithChapters('alpha', 'https://alpha.example.com/api.php'), macCmsRule('beta', 'https://beta.example.com/api.php')]), client: client, now: () => now);
       final package = await service.rules();
       await service.grantRules(package.rules);
-      await service.search('合成电影').last;
+      final found = await service.search('合成电影').last;
       final alpha = service.rule('alpha')!, beta = service.rule('beta')!;
-      expect((await service.chapters(alpha, '1')).single.episodes.single.url, 'https://cdn.example.com/one/index.m3u8');
+      final carried = found.titles.single.sources.firstWhere((ref) => ref.ruleId == 'alpha').carried;
+      expect((await service.chapters(alpha, '1', carried: carried)).single.episodes.single.url, 'https://cdn.example.com/one/index.m3u8');
       expect(details, isEmpty);
+      expect(found.titles.single.sources.firstWhere((ref) => ref.ruleId == 'beta').carried, isNull, reason: '规则没写 search.chapters 的不带');
       final both = Future.wait([service.chapters(beta, '7'), service.chapters(beta, '7')]);
       gate.complete();
       expect((await both).map((roads) => roads.single.episodes.length), [1, 1]);
@@ -644,6 +696,62 @@ void main() {
       await service.chapters(service.rule('beta')!, '7');
       expect(details, hasLength(4));
       gate = Completer<void>()..complete();
+      await service.close();
+    });
+
+    // 11-21 Codex 总交接：原来搜索自带的剧集都写进 64 条的选集缓存，5 个源各 20 条时先回来的被挤掉，点开又请求一次。
+    test('一次搜索 5 个源各 20 条：搜索自带的剧集跟着结果走，点开哪一条都不再请求详情；一次搜索最多带 carriedEpisodeLimit 集', () async {
+      var details = 0;
+      final client = MockClient((request) async {
+        if (!request.url.queryParameters.containsKey('wd')) {
+          details++;
+          return reply(macCmsList(const []), 200);
+        }
+        return reply(macCmsList([for (var index = 1; index <= 20; index++) {'vod_id': index, 'vod_name': '合成电影$index', 'vod_play_from': 'm3u8', 'vod_play_url': '第01集\$https://cdn.example.com/${request.url.host}/$index.m3u8'}]), 200);
+      });
+      final service = await open(() async => packageBytes(rules: [for (var index = 0; index < 5; index++) macCmsRuleWithChapters('s$index', 'https://s$index.example.com/api.php')]), client: client);
+      await service.grantRules((await service.rules()).rules);
+      final result = await service.search('合成电影').last;
+      final refs = [for (final title in result.titles) ...title.sources];
+      expect(refs, hasLength(100));
+      for (final ref in refs) {
+        await service.chapters(service.rule(ref.ruleId)!, ref.source, carried: ref.carried);
+      }
+      expect(details, 0);
+      await service.close();
+    });
+
+    test('搜索自带的剧集超过一次搜索的上限：超出的那条不带，点开再取', () async {
+      String episodes(int count, String tag) => [for (var index = 1; index <= count; index++) '第$index集\$https://cdn.example.com/$tag/$index.m3u8'].join('#');
+      const first = CinemaService.carriedEpisodeLimit - 10;
+      final client = MockClient((request) async => reply(macCmsList([
+        {'vod_id': 1, 'vod_name': '合成长剧', 'vod_play_from': 'm3u8', 'vod_play_url': episodes(first, 'a')},
+        {'vod_id': 2, 'vod_name': '合成长剧 续', 'vod_play_from': 'm3u8', 'vod_play_url': episodes(20, 'b')},
+        {'vod_id': 3, 'vod_name': '合成短片', 'vod_play_from': 'm3u8', 'vod_play_url': episodes(10, 'c')},
+      ]), 200));
+      final service = await open(() async => packageBytes(rules: [macCmsRuleWithChapters('alpha', 'https://alpha.example.com/api.php')]), client: client);
+      await service.grantRules((await service.rules()).rules);
+      final result = await service.search('合成').last;
+      final carried = {for (final title in result.titles) title.sources.single.source: title.sources.single.carried != null};
+      expect(carried, {'1': true, '2': false, '3': true});
+      await service.close();
+    });
+
+    test('找其他片源：按片名搜同意过的源，片名加年份相同的接进这部片并通知，年份不同的不要；返回新加了几个', () async {
+      final client = MockClient((request) async => switch (request.url.host) {
+        'alpha.example.com' => reply(macCmsList([{'vod_id': 1, 'vod_name': '合成电影', 'vod_year': '2020'}]), 200),
+        'beta.example.com' => reply(macCmsList([{'vod_id': 9, 'vod_name': '合成 电影', 'vod_year': '2020'}, {'vod_id': 10, 'vod_name': '合成电影', 'vod_year': '1999'}]), 200),
+        _ => reply('', 404),
+      });
+      final service = await open(() async => packageBytes(), client: client);
+      await service.grantRules((await service.rules()).rules);
+      final title = CinemaTitle(key: cinemaTitleKey('合成电影', '2020'), name: '合成电影', year: '', cover: '', remarks: '')..addSource(const CinemaSourceRef(ruleId: 'alpha', source: '1', name: '合成电影', remarks: ''));
+      var notified = 0;
+      title.addListener(() => notified++);
+      expect(await service.findMoreSources(title), 1);
+      expect([for (final ref in title.sources) '${ref.ruleId}:${ref.source}'], ['alpha:1', 'beta:9']);
+      expect(notified, 1);
+      expect(await service.findMoreSources(title), 0, reason: '已有的不重复加');
       await service.close();
     });
 
@@ -810,6 +918,19 @@ void main() {
       await service.clearData();
       expect(directory.existsSync(), isFalse);
     });
+
+    test('旧规则包写着 adBlocker 也不删分片：经本机代理拿到的清单一个分片不少', () async {
+      final segments = [for (var index = 0; index < 30; index++) '#EXTINF:10,\nmain$index.ts'].join('\n');
+      final playlist = '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:5,\nad0.ts\n#EXT-X-DISCONTINUITY\n$segments\n#EXT-X-ENDLIST\n';
+      final client = MockClient((request) async => reply(playlist, 200, headers: {'content-type': 'application/vnd.apple.mpegurl'}));
+      final service = await open(() async => packageBytes(), client: client);
+      final playable = await service.playable('https://cdn.example.com/v/index.m3u8', rule: (await service.rules()).rules.first);
+      final (status, body) = await getLocal(playable.uri);
+      expect(status, 200);
+      expect(body, contains('\nhttps://cdn.example.com/v/ad0.ts\n'));
+      expect('#EXTINF'.allMatches(body), hasLength(31));
+      await service.close();
+    });
   });
 
   test('本机代理：只认带令牌的路径；改写清单后交回，子清单与密钥回到代理（密钥取一次就记住），分片是绝对地址；上游失败回 502', () async {
@@ -826,7 +947,7 @@ void main() {
     });
     final proxy = CinemaProxy(CinemaHttp(client: client));
     addTearDown(proxy.close);
-    final stream = CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false);
+    final stream = CinemaStream(headers: cinemaHeaders('', ''));
     final get = getLocal;
     final master = await get(await proxy.open(Uri.parse('https://cdn.example.com/v/index.m3u8'), stream));
     expect(master.$1, 200);
@@ -883,7 +1004,7 @@ void main() {
     });
     final proxy = CinemaProxy(CinemaHttp(client: client), now: () => now, probeBudget: const Duration(milliseconds: 200));
     addTearDown(proxy.close);
-    final stream = CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false);
+    final stream = CinemaStream(headers: cinemaHeaders('', ''));
     var serial = 0;
     Future<String> playlist(String edge) async => (await getLocal(await proxy.open(Uri.parse('https://cdn.example.com/$edge/${serial++}.m3u8'), stream))).$2;
     expect(await playlist('ok'), contains('https://ok.example.com/real-ok.example.com/seg0.ts'));
@@ -927,7 +1048,7 @@ void main() {
     });
     final proxy = CinemaProxy(CinemaHttp(client: client));
     addTearDown(proxy.close);
-    final stream = CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false);
+    final stream = CinemaStream(headers: cinemaHeaders('', ''));
     final playlist = Uri.parse('https://cdn.example.com/v/index.m3u8');
     expect((await getLocal(await proxy.open(playlist, stream))).$2, contains('sign=1'));
     expect((await getLocal(await proxy.open(playlist, stream))).$2, contains('sign=1'), reason: '点播清单走缓存');
@@ -959,7 +1080,7 @@ void main() {
     });
     final proxy = CinemaProxy(CinemaHttp(client: client));
     addTearDown(proxy.close);
-    final link = await proxy.open(Uri.parse('https://cdn.example.com/v/index.m3u8'), CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false));
+    final link = await proxy.open(Uri.parse('https://cdn.example.com/v/index.m3u8'), CinemaStream(headers: cinemaHeaders('', '')));
     final waiting = getLocal(link);
     await Future<void>.delayed(const Duration(milliseconds: 50));
     proxy.release(link);
@@ -981,7 +1102,7 @@ void main() {
     });
     final proxy = CinemaProxy(CinemaHttp(client: client));
     addTearDown(proxy.close);
-    final stream = CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false);
+    final stream = CinemaStream(headers: cinemaHeaders('', ''));
     await proxy.warm(Uri.parse('https://cdn.example.com/v/index.m3u8'), stream);
     expect(fetched, ['/v/index.m3u8', '/v/1080/index.m3u8', '/real.example.com/seg0.ts', '/seg0.ts']);
     fetched.clear();
@@ -1078,7 +1199,7 @@ void main() {
         await service.rules();
         await service.store.saveHistory(CinemaHistory(key: 'long', name: '合成长剧', cover: '', ruleId: 'alpha', source: '1', road: 0, episode: 85, episodeName: '第86集', position: const Duration(minutes: 3), duration: const Duration(minutes: 40), updatedAt: DateTime.now().toUtc()));
       });
-      final title = CinemaTitle(key: 'long', name: '合成长剧', year: '2026', cover: '', remarks: '')..sources.add(const CinemaSourceRef(ruleId: 'alpha', source: '1', name: '合成长剧', remarks: ''));
+      final title = CinemaTitle(key: 'long', name: '合成长剧', year: '2026', cover: '', remarks: '')..addSource(const CinemaSourceRef(ruleId: 'alpha', source: '1', name: '合成长剧', remarks: ''));
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: CinemaDetailPage(service: service, title: title)));
       await settleUntil(tester, () => find.text('第86集').evaluate().isNotEmpty);
       double heading() => tester.widget<AnimatedOpacity>(find.ancestor(of: find.descendant(of: find.byType(AppBar), matching: find.text('合成长剧')), matching: find.byType(AnimatedOpacity))).opacity;
@@ -1092,6 +1213,106 @@ void main() {
       await tester.pump();
       expect(heading(), 0);
       await tester.pumpWidget(const SizedBox());
+    });
+
+    // 11-21 Codex 总交接：原来选集页进页面时复制一份片源就不变了，搜索晚回来的源只在「几个源」里数得到。
+    testWidgets('选集页：进页面以后又回来的源接在片源菜单末尾，已选的那个不变', (tester) async {
+      final client = MockClient((request) async => reply(macCmsList([{'vod_id': 1, 'vod_name': '合成电影', 'vod_play_from': 'mp4', 'vod_play_url': r'正片$https://media.example.com/movie.mp4'}]), 200));
+      final (_, service) = await openCinemaForPage(tester, client: client);
+      await tester.runAsync(service.rules);
+      final title = CinemaTitle(key: 'movie', name: '合成电影', year: '', cover: '', remarks: '')..addSource(const CinemaSourceRef(ruleId: 'alpha', source: '1', name: '合成电影', remarks: ''));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: CinemaDetailPage(service: service, title: title)));
+      await settleUntil(tester, () => find.text('正片').evaluate().isNotEmpty);
+      CampusMenuField<int> menu() => tester.widget<CampusMenuField<int>>(find.byType(CampusMenuField<int>));
+      expect(menu().items, hasLength(1));
+      title.addSource(const CinemaSourceRef(ruleId: 'beta', source: '2', name: '合成电影', remarks: ''));
+      await tester.pump();
+      expect([for (final item in menu().items) item.label], ['合成资源', '另一资源']);
+      expect(menu().value, 0);
+      expect(find.textContaining('2 个源'), findsOneWidget);
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    testWidgets('选集页：看完了的「接着看」变成看下一集，没有下一集是从头看（人工决策见 CinemaHistory.finished）', (tester) async {
+      final client = MockClient((request) async => reply(
+        macCmsList([
+          request.url.queryParameters['ids'] == '1'
+              ? {'vod_id': 1, 'vod_name': '合成剧', 'vod_play_from': 'mp4', 'vod_play_url': r'第01集$https://media.example.com/1.mp4#第02集$https://media.example.com/2.mp4'}
+              : {'vod_id': 2, 'vod_name': '合成电影', 'vod_play_from': 'mp4', 'vod_play_url': r'正片$https://media.example.com/movie.mp4'},
+        ]),
+        200,
+      ));
+      final (_, service) = await openCinemaForPage(tester, client: client);
+      CinemaHistory watched(String key, String source, String episodeName, Duration position) =>
+          CinemaHistory(key: key, name: key, cover: '', ruleId: 'alpha', source: source, road: 0, episode: 0, episodeName: episodeName, position: position, duration: const Duration(minutes: 40), updatedAt: DateTime.now().toUtc());
+      await tester.runAsync(() async {
+        await service.rules();
+        await service.store.saveHistory(watched('series', '1', '第01集', const Duration(minutes: 39)));
+        await service.store.saveHistory(watched('movie', '2', '正片', const Duration(minutes: 39)));
+        await service.store.saveHistory(watched('half', '1', '第01集', const Duration(minutes: 20)));
+      });
+      Future<void> show(String key, String source, String label) async {
+        final title = CinemaTitle(key: key, name: key, year: '', cover: '', remarks: '')..addSource(CinemaSourceRef(ruleId: 'alpha', source: source, name: key, remarks: ''));
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: CinemaDetailPage(service: service, title: title)));
+        await settleUntil(tester, () => find.text(label).evaluate().isNotEmpty);
+        expect(find.text(label), findsOneWidget, reason: key);
+      }
+
+      await show('series', '1', '看下一集 第02集');
+      await show('movie', '2', '从头看 正片');
+      await show('half', '1', '接着看 第01集');
+      await tester.pumpWidget(const SizedBox());
+    });
+
+    // 11-21 Codex 指出：进度条画的时候左右各缩进 10，点按却按整宽换算，点画出来的起点不是 0、终点到不了片尾（轨道越窄、片子越长差得越多）。
+    testWidgets('进度条：点画出来的起点跳到 0、终点跳到片尾，拖到起点松手也是 0', (tester) async {
+      final platform = _SeekRecorder()..state = PlayerState(duration: const Duration(seconds: 10417));
+      final player = Player(platformPlayer: platform);
+      await tester.pumpWidget(MaterialApp(
+        theme: campusTheme(),
+        home: Scaffold(body: Center(child: SizedBox(width: 360, height: 220, child: CinemaPlayerControls(player: player, title: '合成', subtitle: '', fullscreen: false, busy: false, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {})))),
+      ));
+      await tester.pump();
+      final bar = tester.getRect(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter.runtimeType.toString() == '_ProgressPainter'));
+      // 两次点按隔开双击的时限，免得算成双击暂停。
+      await tester.tapAt(Offset(bar.left + 10, bar.center.dy));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(platform.target, Duration.zero);
+      await tester.tapAt(Offset(bar.right - 10, bar.center.dy));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(platform.target, const Duration(seconds: 10417));
+      await tester.dragFrom(bar.center, Offset(-(bar.width / 2 - 10), 0));
+      await tester.pump();
+      expect(platform.target, Duration.zero);
+      await tester.pumpWidget(const SizedBox());
+      await player.dispose();
+    });
+
+    testWidgets('续播的「从头播放」出错时不显示（不和报错卡片叠在一起），没出错照常显示', (tester) async {
+      final player = Player(platformPlayer: _SeekRecorder()..state = PlayerState(duration: const Duration(minutes: 95)));
+      Future<void> show({String? error}) async {
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpWidget(MaterialApp(
+          theme: campusTheme(),
+          home: Scaffold(
+            body: SizedBox(
+              width: 360,
+              height: 220,
+              child: CinemaPlayerControls(player: player, title: '合成', subtitle: '', fullscreen: false, busy: false, error: error, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}, resumedFrom: const Duration(minutes: 30, seconds: 20)),
+            ),
+          ),
+        ));
+        await tester.pump();
+      }
+
+      await show();
+      expect(find.textContaining('从头播放'), findsOneWidget);
+      await show(error: '这个源暂不可用（HTTP 404），换一个源试试');
+      expect(find.textContaining('从头播放'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 10));
+      await player.dispose();
     });
   });
 
@@ -1145,6 +1366,15 @@ void main() {
 }
 
 class _RealHttp extends HttpOverrides {}
+
+// 不接 libmpv 的播放器替身：只记下最后一次跳到哪。
+class _SeekRecorder extends PlatformPlayer {
+  _SeekRecorder() : super(configuration: const PlayerConfiguration());
+  Duration? target;
+
+  @override
+  Future<void> seek(Duration duration) async => target = duration;
+}
 
 class _Gate implements FeatureGate {
   _Gate(this.on);

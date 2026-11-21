@@ -21,9 +21,8 @@ import 'package:superxd/toolbox/cinema/cinema_playlist.dart';
 //   「重新载入」登记的一路（fresh）不用缓存、不接正在取的，探测也重新做（分片签名可能已经失效）；缓存与探测结论只让当前有效的那次写，旧的晚回来不覆盖新的。
 
 class CinemaStream {
-  const CinemaStream({required this.headers, required this.adBlocker});
+  const CinemaStream({required this.headers});
   final Map<String, String> headers;
-  final bool adBlocker;
 }
 
 class _Stream {
@@ -167,7 +166,6 @@ class CinemaProxy {
         playlist: (target) => _link(server, streamId, target).toString(),
         media: (target) => (unwrap ? cinemaUnwrapHost(target) : target).toString(),
         key: (target) => _link(server, streamId, target, kind: 'k').toString(),
-        adBlocker: stream.adBlocker,
       );
       response.headers.contentType = ContentType('application', 'vnd.apple.mpegurl', charset: 'utf-8');
       response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');

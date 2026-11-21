@@ -418,7 +418,8 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
                 bottom: widget.fullscreen ? 104 : 56,
                 child: _PillButton(icon: CampusIcons.skipIntro, label: '跳过片头', onPressed: () => unawaited(_player.seek(_player.state.position + cinemaSkipIntro))),
               ),
-            if (_resumeShown && !_locked)
+            // 出错时不给（居中的报错卡片会和它叠在一起，也没有在播的可以从头）：续播的源坏了时常见。
+            if (_resumeShown && !_locked && widget.error == null)
               Positioned(
                 left: CampusGap.large,
                 bottom: widget.fullscreen ? 104 : 56,
@@ -610,6 +611,9 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
 }
 
 // 进度：已播的一段用激活色、已缓冲的一段淡白、其余更淡；按住拖动只预览，松手才跳；两边写时刻。
+// 轨道左右各缩进这么多（给圆点留位置）：画与点按同一条边界换算，点在画出来的起点是 0、终点是片尾（11-21 Codex 指出原来按整宽换算）。
+const _progressInset = 10.0;
+
 class _CinemaProgress extends StatefulWidget {
   const _CinemaProgress({required this.player, required this.onSeekStart, required this.onSeekEnd});
   final Player player;
@@ -643,7 +647,7 @@ class _CinemaProgressState extends State<_CinemaProgress> {
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  double fractionOf(double dx) => (dx / constraints.maxWidth).clamp(0.0, 1.0);
+                  double fractionOf(double dx) => ((dx - _progressInset) / (constraints.maxWidth - _progressInset * 2)).clamp(0.0, 1.0);
                   return GestureDetector(
                     behavior: HitTestBehavior.opaque,
                     onTapUp: total == 0 ? null : (details) => unawaited(player.seek(at(fractionOf(details.localPosition.dx)))),
@@ -687,14 +691,13 @@ class _ProgressPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const inset = 10.0;
-    final width = size.width - inset * 2, middle = size.height / 2, thickness = dragging ? 5.0 : 3.0;
-    RRect bar(double fraction) => RRect.fromLTRBR(inset, middle - thickness / 2, inset + width * fraction, middle + thickness / 2, Radius.circular(thickness));
+    final width = size.width - _progressInset * 2, middle = size.height / 2, thickness = dragging ? 5.0 : 3.0;
+    RRect bar(double fraction) => RRect.fromLTRBR(_progressInset, middle - thickness / 2, _progressInset + width * fraction, middle + thickness / 2, Radius.circular(thickness));
     canvas
       ..drawRRect(bar(1), Paint()..color = Colors.white24)
       ..drawRRect(bar(buffered), Paint()..color = Colors.white54)
       ..drawRRect(bar(played), Paint()..color = accent)
-      ..drawCircle(Offset(inset + width * played, middle), dragging ? 9 : 7, Paint()..color = Colors.white);
+      ..drawCircle(Offset(_progressInset + width * played, middle), dragging ? 9 : 7, Paint()..color = Colors.white);
   }
 
   @override

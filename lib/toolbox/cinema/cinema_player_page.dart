@@ -10,6 +10,7 @@ import 'package:media_kit_video/media_kit_video.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
@@ -33,6 +34,7 @@ import 'package:superxd/toolbox/cinema/cinema_service.dart';
 // 看片记录（只在找片里看的记，解析的不记）：每 10 秒、换集、离开时记一次看到哪。
 // 选集页取到的选集直接带过来（roads），不再请求一次；「重新载入」才强制重取。每次打开记一次这个源能不能播（CinemaService.recordPlayback），
 // 一集剩最后 2 分钟时预取下一集（CinemaService.warm）。换集、换源、离开时取消还在等的请求，并把上一路交回本机代理。
+// 片源菜单：打开以后又来的源接在末尾；「找其他片源」点了才按片名补搜（人工决策见 CinemaService.findMoreSources）；换源按 cinemaMatchEpisode 找同一集。
 class CinemaPlayerPage extends StatefulWidget {
   const CinemaPlayerPage.title({super.key, required this.service, required CinemaTitle this.title, required CinemaSourceRef this.source, required this.road, required this.episode, this.start = Duration.zero, this.roads})
     : parser = null,
@@ -108,8 +110,11 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   // 这一次交给播放器的媒体（交出去之前为空）与下一集预取的取消（离开时完成）。
   Media? _media;
   final _warmCancel = Completer<void>();
-  // 片源菜单的顺序（按本机播放记录排一次）。
-  late final List<CinemaSourceRef> _sources = widget.title == null ? const [] : rankCinemaSources(widget.title!.sources, widget.service.knownStats);
+  // 片源菜单的顺序（按本机播放记录排一次，之后来的源接在末尾，见 _onSources）。
+  late List<CinemaSourceRef> _sources = widget.title == null ? const [] : rankCinemaSources(widget.title!.sources, widget.service.knownStats);
+  // 「找其他片源」正在搜（按钮原地转圈），离开时不再等。
+  var _finding = false;
+  final _findCancel = Completer<void>();
 
   bool get _titleMode => widget.title != null;
 
@@ -159,7 +164,27 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         _warmNext(position);
       }));
     _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) => unawaited(_save()));
+    widget.title?.addListener(_onSources);
     unawaited(_open(start: widget.start));
+  }
+
+  // 打开以后又来的源（搜索晚回来的、「找其他片源」补到的）接在片源菜单末尾，已有的顺序与正在播的不动。
+  void _onSources() => setState(() => _sources = appendCinemaSources(_sources, widget.title!.sources));
+
+  // 「找其他片源」（人工决策见 CinemaService.findMoreSources）：点了才按片名搜同意过的源，找到的接进片源菜单，由用户自己换。
+  Future<void> _findSources() async {
+    setState(() => _finding = true);
+    try {
+      final added = await widget.service.findMoreSources(widget.title!, cancel: _findCancel.future);
+      if (mounted) showCampusToast(context, added == 0 ? '没找到其他片源' : '又找到 $added 个片源，在「片源」里换');
+    } on CinemaRuleException catch (error) {
+      if (mounted) showCampusToast(context, error.message);
+    } catch (error, stack) {
+      campusLog('[CinemaPlayer] action=find_sources errorType=${error.runtimeType}\n$stack');
+      if (mounted) showCampusToast(context, '没找成，稍后再试');
+    } finally {
+      if (mounted) setState(() => _finding = false);
+    }
   }
 
   void _measure() {
@@ -241,7 +266,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       if (_titleMode) {
         final rule = _rule;
         if (rule == null) throw const CinemaRuleException('这个源已经下架，换一个源试试');
-        final roads = _roads = fresh || _roads == null ? await widget.service.chapters(rule, _source!.source, fresh: fresh, cancel: cancel.future) : _roads!;
+        final roads = _roads = fresh || _roads == null ? await widget.service.chapters(rule, _source!.source, fresh: fresh, cancel: cancel.future, carried: _source!.carried) : _roads!;
         if (generation != _generation) return;
         _road = _road.clamp(0, roads.length - 1);
         _episode = _episode.clamp(0, roads[_road].episodes.length - 1);
@@ -321,10 +346,12 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     return roads != null && _road < roads.length && _episode + 1 < roads[_road].episodes.length;
   }
 
-  // 换源：按集名在新源里找同一集（先找同序号的线路，再找全部线路），找不到就留在原来的源。
+  // 换源：在新源里找同一集（cinemaMatchEpisode：原名、集号、两边都只有一集；先找同序号的线路，再找全部线路），找不到就留在原来的源。
+  // 原来的源一直没取到选集（如续播时源已下架）时按第几集找，从记下的位置接着看。
   Future<void> _pickSource(CinemaSourceRef source) async {
     final rule = widget.service.rule(source.ruleId);
     final name = _current?.name;
+    final single = _roads != null && _road < _roads!.length && _roads![_road].episodes.length == 1;
     if (rule == null) {
       showCampusToast(context, '这个源已经下架');
       return;
@@ -342,26 +369,28 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       _error = null;
     });
     try {
-      final roads = await widget.service.chapters(rule, source.source, cancel: cancel.future);
+      final roads = await widget.service.chapters(rule, source.source, cancel: cancel.future, carried: source.carried);
       final order = [if (_road < roads.length) _road, for (var index = 0; index < roads.length; index++) if (index != _road) index];
       for (final road in order) {
-        final episode = roads[road].episodes.indexWhere((item) => item.name == name);
+        final episode = cinemaMatchEpisode(roads[road].episodes, name, index: _episode, single: single);
         if (episode < 0) continue;
         _abandon();
         await _save();
         if (!mounted) return;
+        final position = _player.state.position;
+        final start = position > Duration.zero ? position : (_resumedFrom ?? Duration.zero);
         _source = source;
         _rule = rule;
         _roads = roads;
         _road = road;
         _episode = episode;
         _resumedFrom = null;
-        await _open(start: _player.state.position);
+        await _open(start: start);
         return;
       }
       if (mounted) {
         stay();
-        showCampusToast(context, '这个源没有「$name」');
+        showCampusToast(context, name == null ? '这个源没有这一集' : '这个源没有「$name」');
       }
     } on CinemaRuleException catch (error) {
       if (mounted) {
@@ -396,6 +425,8 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
 
   @override
   void dispose() {
+    widget.title?.removeListener(_onSources);
+    _findCancel.complete();
     _abandon();
     _generation++;
     _cancel?.complete();
@@ -514,9 +545,14 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
                 icon: const CampusIcon(CampusIcons.sync),
                 label: Text(_titleMode ? '重新载入' : '重新解析'),
               ),
+              if (title != null)
+                OutlinedButton(
+                  onPressed: _finding ? null : () => unawaited(_findSources()),
+                  child: CampusBusyContent(busy: _finding, label: '找其他片源', busyLabel: '正在找', icon: const CampusIcon(CampusIcons.search)),
+                ),
             ],
           ),
-          if (title != null && title.sources.length > 1) ...[
+          if (title != null && _sources.length > 1) ...[
             const SizedBox(height: CampusGap.large),
             CampusSurface(
               padding: EdgeInsets.fromLTRB(CampusGap.large, campusFieldGap(context), CampusGap.large, CampusGap.large),
