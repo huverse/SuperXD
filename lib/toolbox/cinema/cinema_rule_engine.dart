@@ -79,8 +79,10 @@ String _first(Object? document, String expression) {
 List<CinemaHit> parseCinemaSearch(String raw, CinemaRule rule, {Uri? base}) {
   final config = rule.search;
   final document = decodeCinemaJson(raw);
+  final nodes = readCinemaPath(document, config.listPath);
+  if (nodes.isEmpty) _expectList(document, config.listPath);
   final hits = <CinemaHit>[];
-  for (final node in readCinemaPath(document, config.listPath)) {
+  for (final node in nodes) {
     final name = _first(node, config.namePath);
     final source = _first(node, config.sourcePath);
     if (name.isEmpty || source.isEmpty) continue;
@@ -96,6 +98,15 @@ List<CinemaHit> parseCinemaSearch(String raw, CinemaRule rule, {Uri? base}) {
     ));
   }
   return hits;
+}
+
+// 一条都没取到时分清「搜不到」与「回复不对」（11-21 Codex 指出）：列表路径写成「容器[*]」时，回复里有这个容器就是搜不到
+// （苹果 CMS 多数回空数组，如意回 null，11-21 用搜不到的词实测 13 个源）；连这个键都没有算这个源这次失败
+// （金鹰、光速 HTTP 200 回 {"code":1,"msg":"服务器繁忙，请稍后搜索"}，code 也是 1，原来当成搜不到、还清了连续失败），上游的 msg 截短进日志。
+void _expectList(Object? document, String listPath) {
+  if (!listPath.endsWith('[*]') || JsonPath(listPath.substring(0, listPath.length - 3)).read(document).isNotEmpty) return;
+  final message = document is Map && document['msg'] is String ? '：${document['msg']}' : '';
+  throw CinemaRuleException('回复里没有结果列表${message.length > 41 ? message.substring(0, 41) : message}');
 }
 
 // 选集：详情回复整份按 chapterApiConfig 解，相对地址按选集请求的地址补全。

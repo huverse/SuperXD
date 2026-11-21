@@ -248,6 +248,16 @@ void main() {
       expect(() => parseCinemaSearch('暂不支持搜索', rule), throwsA(isA<CinemaRuleException>()));
     });
 
+    // 11-21 Codex 指出：金鹰、光速 HTTP 200 回「服务器繁忙」，原来当成搜不到。
+    test('搜不到与回复不对分开：list 是空数组或 null（如意）是搜不到；连 list 都没有报错，原因带上游的 msg（截短）', () {
+      expect(parseCinemaSearch('{"code":1,"msg":"数据列表","list":[]}', rule), isEmpty);
+      expect(parseCinemaSearch('{"code":1,"msg":"数据列表","list":null}', rule), isEmpty);
+      Matcher fails(String message) => throwsA(isA<CinemaRuleException>().having((error) => error.message, 'message', message));
+      expect(() => parseCinemaSearch('{"code":1,"msg":"服务器繁忙，请稍后搜索"}', rule), fails('回复里没有结果列表：服务器繁忙，请稍后搜索'));
+      expect(() => parseCinemaSearch(jsonEncode({'code': 1, 'msg': '长' * 60}), rule), fails('回复里没有结果列表：${'长' * 40}'));
+      expect(() => parseCinemaSearch('[]', rule), fails('回复里没有结果列表'));
+    });
+
     String chapters(String from, String url) => macCmsList([{'vod_id': 1, 'vod_name': '合成剧', 'vod_play_from': from, 'vod_play_url': url}]);
     final requestUri = Uri.parse('https://alpha.example.com/api.php/provide/vod/?ac=detail&ids=1');
 
@@ -543,6 +553,18 @@ void main() {
       down = false;
       final recovered = await service.search('合成').last;
       expect(recovered.failures, isEmpty);
+      await service.close();
+    });
+
+    test('上游 HTTP 200 回繁忙（没有 list）算这个源失败：进暂不可用、计连续失败到暂停；回空列表的源不算失败', () async {
+      final client = MockClient((request) async => request.url.host == 'beta.example.com' ? reply('{"code":1,"msg":"服务器繁忙，请稍后搜索"}', 200) : reply(macCmsList(const []), 200));
+      final service = await open(() async => packageBytes(), client: client);
+      await service.grantRules((await service.rules()).rules);
+      for (var round = 0; round < CinemaService.pauseAfter; round++) {
+        final result = await service.search('合成').last;
+        expect([for (final failure in result.failures) (failure.name, failure.paused)], [('另一资源', false)]);
+      }
+      expect(service.hasPaused, isTrue);
       await service.close();
     });
 

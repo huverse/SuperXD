@@ -196,9 +196,11 @@ class CinemaService implements ToolboxService {
     final titles = <String, CinemaTitle>{};
     var pending = active.length;
     CinemaSearchResult snapshot() => CinemaSearchResult(titles: [...titles.values], failures: [...failures], pending: pending);
-    campusLog('[Cinema] action=search sources=${active.length} paused=${failures.length}');
+    campusLog('[Cinema] action=search rules=${package.version} sources=${active.length} paused=${failures.length}');
     yield snapshot();
     if (active.isEmpty) return;
+    // 开发者模式下逐源记从发出搜索到这个源回来用了多久（请求记录只有路径，各源同一个路径分不出是哪个源），用来在手机上比各源快慢。
+    final watch = Stopwatch()..start();
     final pool = Pool(searchConcurrency);
     final arrivals = StreamController<(CinemaRule, List<CinemaHit>?, CinemaFailure?)>();
     for (final rule in active) {
@@ -206,6 +208,7 @@ class CinemaService implements ToolboxService {
     }
     await for (final (rule, hits, failure) in arrivals.stream.take(active.length)) {
       pending--;
+      if (campusDiagnostics) campusLog('[Cinema] action=search_arrival rule=${rule.id} ms=${watch.elapsedMilliseconds} hits=${hits?.length ?? '-'}');
       if (hits != null) {
         _strikes.remove(rule.id);
         for (final hit in hits.take(hitsPerSource)) {
