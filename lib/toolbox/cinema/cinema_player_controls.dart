@@ -42,7 +42,8 @@ enum CinemaFit {
 
 const cinemaSpeeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
 const cinemaLongPressSpeed = 2.0;
-const cinemaControlsHide = Duration(seconds: 4);
+// 播放中控件自动收起的时间（11-21 用户嫌原来 4 秒太久，同主流视频 App 约 3 秒）。
+const cinemaControlsHide = Duration(seconds: 3);
 const cinemaAutoNext = Duration(seconds: 5);
 // 左右滑满一屏宽跳多少（Kazumi 是 180000 毫秒）。
 const _seekPerScreen = Duration(minutes: 3);
@@ -473,12 +474,20 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
     );
   }
 
+  // 上下栏的渐变只是底色，不接点击：原来整条渐变都接住点击，竖屏画面矮、上下两条几乎盖满，中间的播放暂停与点画面显隐都点不到（11-21 真机）。
+  Widget _barBackdrop({required Alignment from, required Widget child}) => Stack(
+    children: [
+      Positioned.fill(child: IgnorePointer(child: DecoratedBox(decoration: BoxDecoration(gradient: LinearGradient(begin: from, end: -from, colors: const [Colors.black54, Colors.transparent]))))),
+      child,
+    ],
+  );
+
   Widget _fade(bool shown, Widget child) => IgnorePointer(ignoring: !shown, child: AnimatedOpacity(opacity: shown ? 1 : 0, duration: const Duration(milliseconds: 200), child: child));
 
   Widget _topBar(BuildContext context) {
     final text = Theme.of(context).textTheme;
-    return DecoratedBox(
-      decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.topCenter, end: Alignment.bottomCenter, colors: [Colors.black54, Colors.transparent])),
+    return _barBackdrop(
+      from: Alignment.topCenter,
       child: SafeArea(
         bottom: false,
         child: Padding(
@@ -514,8 +523,8 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
       icon: CampusIcon(widget.fullscreen ? CampusIcons.exitFullscreen : CampusIcons.fullscreen, color: Colors.white),
     );
     final progress = _CinemaProgress(player: _player, seek: _seek, seekable: widget.seekable, onSeekStart: () => _hide?.cancel(), onSeekEnd: _scheduleHide);
-    return DecoratedBox(
-      decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black54, Colors.transparent])),
+    return _barBackdrop(
+      from: Alignment.bottomCenter,
       child: SafeArea(
         top: false,
         child: Padding(

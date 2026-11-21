@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_icons.dart';
+import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_typesetting.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
@@ -70,34 +71,18 @@ class _CinemaEpisodeGridState extends State<CinemaEpisodeGrid> {
   @override
   Widget build(BuildContext context) {
     final start = _page * cinemaEpisodePage, end = (start + cinemaEpisodePage).clamp(0, _count);
+    final text = Theme.of(context).textTheme;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        // 标题行「选集 · 共 N 集」，倒序在同一行右边（同主流视频 App 的选集区；原来倒序单独挂在分段那一行末尾，11-21 用户嫌不协调）；分段另起一行。
         if (_count > 1) ...[
           Row(
             children: [
-              Expanded(
-                child: _pages > 1
-                    ? SingleChildScrollView(
-                        controller: _ranges,
-                        scrollDirection: Axis.horizontal,
-                        child: Row(
-                          children: [
-                            for (var page = 0; page < _pages; page++)
-                              Padding(
-                                key: page == _page ? _currentRange : null,
-                                padding: const EdgeInsetsDirectional.only(end: CampusGap.small),
-                                child: CampusGlassChip(
-                                  label: '${_at(page * cinemaEpisodePage) + 1}–${_at((page * cinemaEpisodePage + cinemaEpisodePage).clamp(0, _count) - 1) + 1}',
-                                  selected: page == _page,
-                                  onSelected: (_) => setState(() => _page = page),
-                                ),
-                              ),
-                          ],
-                        ),
-                      )
-                    : const SizedBox.shrink(),
-              ),
+              Text('选集', style: text.titleSmall),
+              const SizedBox(width: CampusGap.small),
+              Text('共 $_count 集', style: text.bodyMedium?.copyWith(color: CampusPalette.of(context).onSurfaceVariant)),
+              const Spacer(),
               TextButton.icon(
                 onPressed: () => setState(() {
                   _reversed = !_reversed;
@@ -108,6 +93,27 @@ class _CinemaEpisodeGridState extends State<CinemaEpisodeGrid> {
               ),
             ],
           ),
+          if (_pages > 1) ...[
+            const SizedBox(height: CampusGap.tight),
+            SingleChildScrollView(
+              controller: _ranges,
+              scrollDirection: Axis.horizontal,
+              child: Row(
+                children: [
+                  for (var page = 0; page < _pages; page++)
+                    Padding(
+                      key: page == _page ? _currentRange : null,
+                      padding: const EdgeInsetsDirectional.only(end: CampusGap.small),
+                      child: CampusGlassChip(
+                        label: '${_at(page * cinemaEpisodePage) + 1}–${_at((page * cinemaEpisodePage + cinemaEpisodePage).clamp(0, _count) - 1) + 1}',
+                        selected: page == _page,
+                        onSelected: (_) => setState(() => _page = page),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
           const SizedBox(height: CampusGap.medium),
         ],
         LayoutBuilder(

@@ -1475,6 +1475,9 @@ void main() {
       }
 
       await show(episodes(120), 85);
+      // 标题行「选集 · 共 N 集」，倒序在同一行（11-21 用户嫌倒序单独挂着不协调）。
+      expect(find.text('共 120 集'), findsOneWidget);
+      expect(tester.getCenter(find.text('倒序')).dy, closeTo(tester.getCenter(find.text('选集')).dy, 2));
       expect(find.text('51–100'), findsOneWidget);
       expect(find.text('第86集'), findsOneWidget);
       expect(find.text('第1集'), findsNothing);
@@ -1877,6 +1880,85 @@ void main() {
       expect(cinemaFirstFrame(const Duration(milliseconds: 400), start: start, firstSeen: Duration.zero), isTrue);
     });
 
+    // 11-21 Codex 复核：旧的打开晚回来，把当前这一路当成上一路交回本机代理，当前视频再取清单 404。
+    testWidgets('播放页：旧的一次打开晚回来只交回自己，当前这一路的清单照样取得到；打开中缓冲状态卡住但位置在走时收起加载圈；竖屏画面至少 16:9', (tester) async {
+      // 手机竖屏的尺寸（400×800），画面区的上限不碰到。
+      tester.view.physicalSize = const Size(1200, 2400);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final client = MockClient((request) async => reply('#EXTM3U\n#EXT-X-TARGETDURATION:4\n#EXTINF:4,\nseg0.ts\n#EXT-X-ENDLIST\n', 200));
+      final created = <_FakeEngine>[];
+      // 挡住第一次打开的挡板要在真实时钟里建（见 flutter-test 的写法：假时钟里建的 Completer 晚完成时等的人收不到）。
+      final gate = (await tester.runAsync(() async => Completer<void>()))!;
+      debugCinemaEngineFactory = (kind) {
+        final engine = _FakeEngine(kind)..hold = gate;
+        created.add(engine);
+        return engine;
+      };
+      addTearDown(() => debugCinemaEngineFactory = null);
+      final (_, service) = await openCinemaForPage(tester, client: client);
+      await tester.runAsync(service.rules);
+      final title = CinemaTitle(key: 'film', name: '合成电影', year: '2026', cover: '', remarks: '')..addSource(const CinemaSourceRef(ruleId: 'alpha', source: '1', name: '合成电影', remarks: ''));
+      const roads = [CinemaRoad(name: 'm3u8', episodes: [CinemaEpisode(name: '正片', url: 'https://media.example.com/1/index.m3u8')])];
+      // 本机代理先在真实时钟里起来（在假时钟里起的服务器，真实的请求要等假时钟往前走才处理，等回复时会互相等）。
+      await tester.runAsync(() async => service.release(await service.playable(roads.single.episodes.single.url, rule: service.rule('alpha'))));
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: CinemaPlayerPage.title(service: service, title: title, source: title.sources.single, road: 0, episode: 0, start: const Duration(minutes: 38), roads: roads)));
+      await settleUntil(tester, () => created.single.opens.isNotEmpty);
+      final engine = created.single;
+      // 第一次还挡着，点「从头播放」开第二次；第二次先回来。
+      await tester.tap(find.textContaining('从头播放'));
+      await settleUntil(tester, () => engine.opens.length == 2);
+      final current = Uri.parse(engine.opens.last.$1);
+      expect(engine.opens.last.$2, Duration.zero);
+      expect((await tester.runAsync(() => getLocal(current)))!.$1, 200);
+      gate.complete();
+      await settleUntil(tester, () => false);
+      expect((await tester.runAsync(() => getLocal(current)))!.$1, 200, reason: '旧的晚回来不能把当前这一路交回');
+      // 出画后缓冲状态卡在「在缓冲」、位置照样在走：加载圈收起。
+      engine.frame(const Duration(milliseconds: 400));
+      await tester.pump();
+      engine.buffering(true);
+      await tester.pump();
+      expect(find.byType(CampusLoader), findsWidgets);
+      engine.frame(const Duration(seconds: 2));
+      await tester.pump();
+      expect(find.byType(CampusLoader), findsNothing);
+      // 2.35:1 的片子：竖屏画面区按 16:9 给高度，不按片子比例缩成一条。
+      engine.size(1920, 818);
+      // 尺寸的事件在下一帧才让页面重排、画面区的动画从那一帧起算：先多出两帧再拨过动画时长（pump(时长) 是先拨时间再出帧）。
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 300));
+      await tester.pump();
+      final stage = tester.getSize(find.byType(AnimatedContainer).first);
+      expect(stage.height, closeTo(stage.width * 9 / 16, 1));
+      await tester.pumpWidget(const SizedBox());
+      // 出过画的离开时会记看到哪（写本机库）：让它在真实时钟里写完，不然收尾关库时一直等。
+      await settleUntil(tester, () => false);
+      await tester.pump(const Duration(seconds: 11));
+    }, timeout: const Timeout(Duration(seconds: 60)));
+
+    // 11-21 真机：上下栏的渐变整条接住点击，竖屏画面矮时中间的播放暂停点不动、点画面也不能收起控件。
+    testWidgets('播放控件：竖屏 16:9 画面区里中间的播放暂停点得到，点上栏下面的空白处收起控件', (tester) async {
+      final engine = _FakeEngine(CinemaEngineKind.system)..frame(const Duration(seconds: 5));
+      await tester.pumpWidget(MaterialApp(
+        theme: campusTheme(),
+        home: Scaffold(body: Align(alignment: Alignment.topCenter, child: SizedBox(width: 400, height: 225, child: CinemaPlayerControls(player: engine, title: '合成', subtitle: '第01集', fullscreen: false, busy: false, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {})))),
+      ));
+      await tester.pump();
+      await tester.tap(find.byTooltip('暂停').first);
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(engine.toggles, 1);
+      double opacity() => tester.widget<AnimatedOpacity>(find.ancestor(of: find.text('第01集'), matching: find.byType(AnimatedOpacity)).first).opacity;
+      expect(opacity(), 1);
+      await tester.tapAt(const Offset(200, 72));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 300));
+      expect(opacity(), 0, reason: '点在上栏渐变里的空白处也能收起');
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 4));
+    });
+
     testWidgets('播放页：打开中（还没出首帧）点「从头播放」改成从片头重开，出画后加载圈收起、菜单能点（11-21 真机卡在转圈）', (tester) async {
       final created = <_FakeEngine>[];
       debugCinemaEngineFactory = (kind) {
@@ -1899,7 +1981,7 @@ void main() {
       created.single.frame(const Duration(milliseconds: 400));
       await tester.pump();
       expect(find.byType(CampusLoader), findsNothing, reason: '出画了');
-      expect(tester.widget<CampusMenuField<CinemaEngineKind>>(find.byType(CampusMenuField<CinemaEngineKind>)).onChanged, isNotNull);
+      expect(tester.widget<CinemaSettingRow<CinemaEngineKind>>(find.byType(CinemaSettingRow<CinemaEngineKind>)).onChanged, isNotNull);
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 11));
     });
@@ -2027,6 +2109,9 @@ class _FakeEngine implements CinemaEngine {
   final bool failOpen;
   final opens = <(String, Duration)>[];
   var disposed = false;
+  var toggles = 0;
+  // 不为空时下一次打开等它完成才返回（模拟原生回调晚到）。
+  Completer<void>? hold;
   final _positions = StreamController<Duration>.broadcast();
   final _durations = StreamController<Duration>.broadcast();
   final _playings = StreamController<bool>.broadcast();
@@ -2053,10 +2138,24 @@ class _FakeEngine implements CinemaEngine {
   @override
   Future<void> open(String uri, Map<String, String> headers, {Duration start = Duration.zero, bool playlist = false}) async {
     opens.add((uri, start));
+    final latest = opens.length, gate = hold;
+    hold = null;
     if (failOpen) throw const CinemaEngineException('打不开');
+    // 同真的内核：后开的那个才是当前的，晚回来的旧一次不改当前媒体。
     _uri = uri;
+    if (gate != null) await gate.future;
+    if (latest != opens.length) return;
     _state = CinemaEngineState(position: start, duration: const Duration(minutes: 40), playing: true);
   }
+
+  // 报出画面尺寸（宽高比）。
+  void size(int width, int height) {
+    _state = CinemaEngineState(position: _state.position, duration: _state.duration, playing: _state.playing, width: width, height: height);
+    _widths.add(width);
+    _heights.add(height);
+  }
+
+  void buffering(bool value) => _bufferings.add(value);
 
   // 出画并走到 position。
   void frame(Duration position) {
@@ -2068,7 +2167,7 @@ class _FakeEngine implements CinemaEngine {
   Future<void> seek(Duration target) async {}
 
   @override
-  Future<void> playOrPause() async {}
+  Future<void> playOrPause() async => toggles++;
 
   @override
   Future<void> setRate(double rate) async {}
