@@ -14,7 +14,9 @@ import 'package:superxd/domain/campus_log.dart';
     if (Platform.isAndroid) return (CronetClient.fromCronetEngine(CronetEngine.build(cacheMode: CacheMode.disabled, enableHttp2: true, enableQuic: true, enableBrotli: true), closeEngine: true), 'cronet');
     if (Platform.isIOS) return (CupertinoClient.fromSessionConfiguration(URLSessionConfiguration.ephemeralSessionConfiguration()), 'urlsession');
   } catch (error, stack) {
-    campusLog('[NativeHttp] action=create errorType=${error.runtimeType}\n$stack');
+    // Java 那边的异常类名与原话（如没有 Cronet 提供者）只在这里看得到，截短记下。
+    final detail = '$error'.split('\n').take(3).join(' | ');
+    campusLog('[NativeHttp] action=create errorType=${error.runtimeType} detail=${detail.length > 300 ? detail.substring(0, 300) : detail}\n$stack');
   }
   return null;
 }
