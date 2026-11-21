@@ -77,6 +77,8 @@ class CinemaService implements ToolboxService {
   // 选集在内存里留多久、最多几部（规则包换了版本即失效；播放地址可能带签名会过期，所以短；「重新载入」不用缓存）。
   static const chaptersLifetime = Duration(minutes: 10);
   static const chaptersLimit = 64;
+  // 一次搜索的结果最多带着多少集搜索自带的剧集（每集一个地址，约 2MB 内）：长剧多的词不至于把一堆用不上的地址留在内存里。
+  static const carriedEpisodeLimit = 20000;
 
   final CinemaStore store;
   final CinemaRulesFeed? _feed;
@@ -206,19 +208,22 @@ class CinemaService implements ToolboxService {
     for (final rule in active) {
       unawaited(pool.withResource(() => _searchOne(rule, keyword, cancel)).then(arrivals.add));
     }
+    var carriedEpisodes = 0;
     await for (final (rule, hits, failure) in arrivals.stream.take(active.length)) {
       pending--;
       if (campusDiagnostics) campusLog('[Cinema] action=search_arrival rule=${rule.id} ms=${watch.elapsedMilliseconds} hits=${hits?.length ?? '-'}');
       if (hits != null) {
         _strikes.remove(rule.id);
         for (final hit in hits.take(hitsPerSource)) {
-          // 搜索回复自带剧集的源：记进选集缓存，点开不再请求详情。
-          if (hit.roads case final roads? when roads.isNotEmpty) _chapters[_chaptersKey(rule, hit.source)] = (_now(), roads);
+          // 搜索回复自带的剧集挂在这条片源上（见 CinemaSourceRef.carried），点开不再请求详情；一次搜索最多带 carriedEpisodeLimit 集，超出的点开再取。
+          final roads = hit.roads;
+          final episodes = roads == null ? 0 : roads.fold(0, (sum, road) => sum + road.episodes.length);
+          final carry = episodes > 0 && carriedEpisodes + episodes <= carriedEpisodeLimit;
+          if (carry) carriedEpisodes += episodes;
           final key = cinemaTitleKey(hit.name, hit.year);
           final title = titles.putIfAbsent(key, () => CinemaTitle(key: key, name: hit.name, year: hit.year, cover: hit.cover, remarks: hit.remarks));
           title.addCover(hit.cover);
-          if (title.sources.any((ref) => ref.ruleId == hit.ruleId && ref.source == hit.source)) continue;
-          title.sources.add(CinemaSourceRef(ruleId: hit.ruleId, source: hit.source, name: hit.name, remarks: hit.remarks));
+          title.addSource(CinemaSourceRef(ruleId: hit.ruleId, source: hit.source, name: hit.name, remarks: hit.remarks, carried: carry ? (_now(), roads!) : null));
         }
       }
       if (failure != null) {
@@ -259,6 +264,21 @@ class CinemaService implements ToolboxService {
     }
   }
 
+  // [人工决策-2026-11-21 11:59:29] 播放页「找其他片源」（用户选「点了才搜」，同 TVBox、Kazumi 的换源；没选续播时后台自动补搜）：
+  // 从「看过的」续播只带着当时那个源，源坏了或下架就没得换。点了才按片名走一次 search（只搜同意过的源，暂停着的照旧不搜），
+  // 聚合键（片名加年份）与这部片相同的源接进这部片（addSource，已打开的菜单随之多出来），由用户自己选；返回新加了几个。cancel 完成时不再等。
+  Future<int> findMoreSources(CinemaTitle title, {Future<void>? cancel}) async {
+    var added = 0;
+    await for (final result in search(title.name, cancel: cancel)) {
+      for (final found in result.titles.where((found) => found.key == title.key)) {
+        for (final ref in found.sources) {
+          if (title.addSource(ref)) added++;
+        }
+      }
+    }
+    return added;
+  }
+
   // 有没有暂停着的源（页面据此给「重试」）；resume 立即恢复全部。
   bool get hasPaused => _pausedUntil.values.any(_now().isBefore);
 
@@ -272,13 +292,16 @@ class CinemaService implements ToolboxService {
   // 选集缓存的键：规则包版本、规则与它的版本、这个源里的编号（规则包换了或这条规则改了即对不上）。
   String _chaptersKey(CinemaRule rule, String source) => '${_package?.version}\u0000${rule.id}\u0000${rule.version}\u0000$source';
 
-  // 一个源里这部片的选集（只留能直接播的线路），没有可播的报错让用户换源。先看缓存（搜索自带的、选集页取过的）；
+  // 一个源里这部片的选集（只留能直接播的线路），没有可播的报错让用户换源。先看缓存（选集页取过的，再看这条片源搜索自带的 carried）；
   // 同一部片同时只发一次，选集页与播放页一起等；cancel 完成时这一处不等了（抛 RequestAbortedException），别处还在等就不中断请求。
   // fresh 为真时不用缓存（「重新载入」）。
-  Future<List<CinemaRoad>> chapters(CinemaRule rule, String source, {bool fresh = false, Future<void>? cancel}) {
+  Future<List<CinemaRoad>> chapters(CinemaRule rule, String source, {bool fresh = false, Future<void>? cancel, (DateTime, List<CinemaRoad>)? carried}) {
     final key = _chaptersKey(rule, source);
-    final cached = _chapters[key];
-    if (!fresh && cached != null && _now().difference(cached.$1) < chaptersLifetime) return Future.value(cached.$2);
+    if (!fresh) {
+      for (final entry in [_chapters[key], carried]) {
+        if (entry != null && _now().difference(entry.$1) < chaptersLifetime) return Future.value(entry.$2);
+      }
+    }
     final loading = _chaptersLoading[key];
     if (!fresh && loading != null && loading.live) return loading.wait(cancel);
     late final CinemaShared<List<CinemaRoad>> shared;

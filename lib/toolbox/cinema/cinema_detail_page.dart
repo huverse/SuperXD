@@ -40,6 +40,8 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
   late List<CinemaSourceRef> _sources = widget.title.sources;
   late Future<List<CinemaRoad>> _roads = _start();
   CinemaHistory? _history;
+  // 最近取到选集的片源与它的选集（「接着看」据此知道有没有下一集）。
+  (CinemaSourceRef, List<CinemaRoad>)? _loaded;
   // 换源、离开时这一处不再等上一次的选集（别处还在等就不中断请求）。
   Completer<void>? _cancel;
   // 顶栏片名：正文的大标题滚出去之后才出现（人工决策见 _onScroll）。
@@ -54,14 +56,19 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
     super.initState();
     unawaited(_reloadHistory());
     _scroll.addListener(_onScroll);
+    widget.title.addListener(_onSources);
   }
 
   @override
   void dispose() {
+    widget.title.removeListener(_onSources);
     _cancel?.complete();
     _scroll.dispose();
     super.dispose();
   }
+
+  // 进页面以后搜索又回来的源接在菜单末尾（11-21 Codex 指出原来进页面时复制一份就不变了，晚到的源只在「几个源」里数得到、菜单里没有）。
+  void _onSources() => setState(() => _sources = appendCinemaSources(_sources, widget.title.sources));
 
   // [人工决策-2026-11-20 22:54:48] 顶栏片名滚动后才出现（同 iOS 大标题，用户选的）：正文已有大标题，顶栏先不写，大标题整个滚出列表顶端时淡入。
   void _onScroll() {
@@ -96,13 +103,23 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
     if (rule == null) throw const CinemaRuleException('这个源已经下架，换一个源试试');
     _cancel?.complete();
     final cancel = _cancel = Completer<void>();
-    final roads = await widget.service.chapters(rule, ref.source, fresh: fresh, cancel: cancel.future);
-    // 预取接着看那一集（这个源看过且线路与集还在），没看过就第一集。
+    final roads = await widget.service.chapters(rule, ref.source, fresh: fresh, cancel: cancel.future, carried: ref.carried);
+    if (mounted) setState(() => _loaded = (ref, roads));
+    // 预取接着看那一集（这个源看过且线路与集还在；看完了是下一集），没看过就第一集。
     final history = await _historyFuture;
     final resume = history != null && history.ruleId == ref.ruleId && history.source == ref.source && history.road < roads.length && history.episode < roads[history.road].episodes.length;
-    final episode = resume ? roads[history.road].episodes[history.episode] : roads.first.episodes.first;
+    final episode = resume ? roads[history.road].episodes[_resumeTarget(history, roads).episode] : roads.first.episodes.first;
     unawaited(widget.service.warm(episode.url, rule: rule, cancel: cancel.future));
     return roads;
+  }
+
+  // 「接着看」去哪：没看完接着上次的位置；看完了有下一集就下一集、没有就这一集从头（人工决策见 CinemaHistory.finished）。
+  // roads 是记录里那个源的选集，不知道时为空：看完了就按这一集从头，不猜有没有下一集。
+  ({int road, int episode, Duration start, String label}) _resumeTarget(CinemaHistory history, List<CinemaRoad>? roads) {
+    if (!history.finished) return (road: history.road, episode: history.episode, start: history.position, label: '接着看 ${history.episodeName}');
+    final episodes = roads != null && history.road < roads.length ? roads[history.road].episodes : const <CinemaEpisode>[];
+    if (history.episode + 1 < episodes.length) return (road: history.road, episode: history.episode + 1, start: Duration.zero, label: '看下一集 ${episodes[history.episode + 1].name}');
+    return (road: history.road, episode: history.episode, start: Duration.zero, label: '从头看 ${history.episodeName}');
   }
 
   late final Future<CinemaHistory?> _historyFuture = widget.service.store.historyOf(widget.title.key).catchError((Object error, StackTrace stack) {
@@ -141,7 +158,9 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
     final palette = CampusPalette.of(context);
     final text = Theme.of(context).textTheme;
     final history = _history;
-    final resumeSource = history == null ? null : title.sources.where((ref) => ref.ruleId == history.ruleId && ref.source == history.source).firstOrNull;
+    final resumeSource = history == null ? null : _sources.where((ref) => ref.ruleId == history.ruleId && ref.source == history.source).firstOrNull;
+    final loaded = _loaded;
+    final target = history == null || resumeSource == null ? null : _resumeTarget(history, loaded != null && loaded.$1.same(resumeSource) ? loaded.$2 : resumeSource.carried?.$2);
     return Scaffold(
       appBar: AppBar(
         title: AnimatedOpacity(opacity: _titleShown ? 1 : 0, duration: const Duration(milliseconds: 200), child: Text(title.name, maxLines: 1, overflow: TextOverflow.ellipsis)),
@@ -171,13 +190,13 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
                               [if (title.year.isNotEmpty) title.year, if (title.remarks.isNotEmpty) title.remarks, '${title.sources.length} 个源'].join(' · '),
                               style: text.bodyMedium?.copyWith(color: palette.onSurfaceVariant),
                             ),
-                            if (history != null && resumeSource != null) ...[
+                            if (target != null) ...[
                               const SizedBox(height: CampusGap.medium),
                               FilledButton.icon(
                                 style: campusProminent,
-                                onPressed: () => unawaited(_play(history.road, history.episode, start: history.position, source: resumeSource)),
+                                onPressed: () => unawaited(_play(target.road, target.episode, start: target.start, source: resumeSource)),
                                 icon: const CampusIcon(CampusIcons.resume),
-                                label: Text('接着看 ${history.episodeName}'),
+                                label: Text(target.label),
                               ),
                             ],
                           ],
@@ -241,7 +260,7 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
                           CinemaEpisodeGrid(
                             episodes: roads[road].episodes,
                             selected: resume?.episode,
-                            onPick: (index) => unawaited(index == resume?.episode ? _play(road, index, start: resume!.position) : _play(road, index)),
+                            onPick: (index) => unawaited(index == resume?.episode && !resume!.finished ? _play(road, index, start: resume.position) : _play(road, index)),
                           ),
                         ],
                       );

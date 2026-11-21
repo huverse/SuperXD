@@ -418,7 +418,8 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
                 bottom: widget.fullscreen ? 104 : 56,
                 child: _PillButton(icon: CampusIcons.skipIntro, label: '跳过片头', onPressed: () => unawaited(_player.seek(_player.state.position + cinemaSkipIntro))),
               ),
-            if (_resumeShown && !_locked)
+            // 出错时不给（居中的报错卡片会和它叠在一起，也没有在播的可以从头）：续播的源坏了时常见。
+            if (_resumeShown && !_locked && widget.error == null)
               Positioned(
                 left: CampusGap.large,
                 bottom: widget.fullscreen ? 104 : 56,

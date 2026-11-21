@@ -1,3 +1,7 @@
+import 'dart:math';
+
+import 'package:flutter/foundation.dart';
+
 // 电影院的数据：一个源搜到的一条（CinemaHit）、按片名加年份聚合后的一部片（CinemaTitle）、选集（CinemaRoad、CinemaEpisode）与看过的记录（CinemaHistory）。
 
 class CinemaHit {
@@ -15,16 +19,22 @@ class CinemaHit {
 }
 
 class CinemaSourceRef {
-  const CinemaSourceRef({required this.ruleId, required this.source, required this.name, required this.remarks});
+  const CinemaSourceRef({required this.ruleId, required this.source, required this.name, required this.remarks, this.carried});
   final String ruleId;
   final String source;
   // 这个源里的原名与备注（各源的写法略有不同，选源时看得出版本）。
   final String name;
   final String remarks;
+  // 搜索回复自带的剧集与取到的时刻：跟着这一次的搜索结果走，换一次搜索就随旧结果释放，不进选集缓存
+  // （11-21 Codex 指出：一次搜索 14 个源各 20 条都写进 64 条的缓存，先回来的被自己挤掉，点开又请求一次）。过了 chaptersLifetime 不用。
+  final (DateTime, List<CinemaRoad>)? carried;
+
+  bool same(CinemaSourceRef other) => other.ruleId == ruleId && other.source == source;
 }
 
 // 同一部片在各源里编号不同、名字略有出入，按 cinemaTitleKey 聚合成一条（同交接里懒猫站点的 mediaKey）。
-class CinemaTitle {
+// 片源会在页面打开以后继续增加（边搜边回来的源、播放页「找其他片源」补到的），经 addSource 加并通知，已打开的选集页与播放页把新源接在菜单末尾。
+class CinemaTitle with ChangeNotifier {
   CinemaTitle({required this.key, required this.name, required this.year, required String cover, required this.remarks}) {
     addCover(cover);
   }
@@ -32,16 +42,29 @@ class CinemaTitle {
   final String name;
   final String year;
   final String remarks;
-  final sources = <CinemaSourceRef>[];
+  final _sources = <CinemaSourceRef>[];
   // 各源给的海报，按源的先后：一家的图床连不上时换下一家的（11-19 模拟器上实测有一家图床整片超时）。
   final covers = <String>[];
+
+  List<CinemaSourceRef> get sources => List.unmodifiable(_sources);
 
   String get cover => covers.firstOrNull ?? '';
 
   void addCover(String url) {
     if (url.isNotEmpty && !covers.contains(url)) covers.add(url);
   }
+
+  // 同一个源的同一部只留一条，加上了为真。
+  bool addSource(CinemaSourceRef ref) {
+    if (_sources.any(ref.same)) return false;
+    _sources.add(ref);
+    notifyListeners();
+    return true;
+  }
 }
+
+// 新来的片源接在已排好的后面（已显示的顺序与选中的不动；新源即使记录更好也不往前插，选源由用户）。
+List<CinemaSourceRef> appendCinemaSources(List<CinemaSourceRef> shown, List<CinemaSourceRef> all) => [...shown, for (final ref in all) if (!shown.any(ref.same)) ref];
 
 class CinemaEpisode {
   const CinemaEpisode({required this.name, required this.url});
@@ -137,6 +160,31 @@ class CinemaHistory {
   final Duration duration;
   // UTC。
   final DateTime updatedAt;
+
+  // [人工决策-2026-11-21 11:59:29] 看完了（用户选，同 Netflix、B 站）：剩下的不到片长的 cinemaFinishedShare 或 cinemaFinishedTail，两者取更短的
+  // （短片不至于看一半就算看完）。再打开时电影从头播、剧集接下一集（最后一集从头播），不再停在片尾；海报条上的进度照旧按看到哪画。
+  bool get finished => duration > Duration.zero && duration - position <= Duration(microseconds: min((duration.inMicroseconds * cinemaFinishedShare).round(), cinemaFinishedTail.inMicroseconds));
+}
+
+const cinemaFinishedShare = 0.05;
+const cinemaFinishedTail = Duration(minutes: 3);
+
+// 集号：「第01集」「第1集」「01」「EP1」「1」「第1话」都是 1；带别的字（特别篇、预告、花絮、上下集、HD中字、正片）的没有集号，只按原名配。
+int? cinemaEpisodeNumber(String name) {
+  final match = RegExp(r'^(?:第?0*(\d{1,4})(?:集|话|話|期)?|e(?:p)?0*(\d{1,4}))$').firstMatch(cinemaFold(name));
+  return match == null ? null : int.parse(match.group(1) ?? match.group(2)!);
+}
+
+// 换源时在新源的一条线路里找同一集（11-21 Codex 指出原来集名要一字不差）：先比原名，再比集号，都没有时两边都只有一集（电影的「正片」与「HD中字」）
+// 算同一集；name 为空（原来的源一直没取到选集）时按第 index 集。找不到为 -1。不同源可能是不同剪辑，配上同一集不代表时间轴一致。
+int cinemaMatchEpisode(List<CinemaEpisode> episodes, String? name, {required int index, required bool single}) {
+  if (name == null) return index < episodes.length ? index : -1;
+  final exact = episodes.indexWhere((episode) => episode.name == name);
+  if (exact >= 0) return exact;
+  final number = cinemaEpisodeNumber(name);
+  final numbered = number == null ? -1 : episodes.indexWhere((episode) => cinemaEpisodeNumber(episode.name) == number);
+  if (numbered >= 0) return numbered;
+  return single && episodes.length == 1 ? 0 : -1;
 }
 
 // 聚合键：片名去掉空白、全角折成半角、转小写，加「|」加四位年份（没有年份为空）。交接原版用 NFKC，Dart 没有现成的规范化，
