@@ -25,7 +25,7 @@ import 'package:superxd/toolbox/toolbox_module.dart';
 // - 灰度：功能开关 toolbox.cinema（domain/feature_flags.dart 的 cinemaFlag），可按比例放量与点名，没登录应用账号的设备也能被比例抽中；
 // - 积分授权预接好、不启用：以后按「有效期」卖（花积分买 N 天，到期时刻记在服务器、续买往后叠加），规则见服务端 src/modules/unlock/unlock_rules.ts；
 // - 片源规则不进公开仓库：维护者本机签名后经中转下发（/v1/app/cinema，签名内容类型 cinema），应用不内置，第一次打开时拉取并缓存；
-// - 播放器用 media_kit（libmpv，Kazumi 同款）。
+// - 播放器用 media_kit（libmpv，Kazumi 同款）。11-21 用户改：安卓默认系统播放器 ExoPlayer、可以自己换回 mpv（人工决策见 cinema_engine.dart 文件头）。
 // 服务器负担（用户要求尽量不在服务端处理）：搜索、选集、云解析、取流全在手机上直连片源，中转只发几 KB 的签名规则包；
 // 交接原设计把视频字节经服务端转发（一个 1080p 观众约 3–8 Mbps），这里改成手机上的本机代理只改写 m3u8 文本、播放器直连 CDN。
 // [人工决策-2026-11-21 15:30:18] 改上面「搜索、选集全在手机上直连」一句（用户选「境外转发，直连不通的源才走它」，并在说明了绕过封锁的法律风险后确认照做）：
@@ -46,9 +46,11 @@ String cinemaRuleSubject(CinemaRule rule) => 'rule:${rule.id}';
 String cinemaParserSubject(CinemaParser parser) => 'parser:${parser.id}';
 
 class CinemaPlayable {
-  const CinemaPlayable({required this.uri, required this.headers});
+  const CinemaPlayable({required this.uri, required this.headers, this.playlist = false});
   // 交给播放器的地址（m3u8 是本机代理地址）。
   final Uri uri;
+  // 是 HLS 清单（经本机代理，地址没有 .m3u8 后缀；系统播放器要明说格式）。
+  final bool playlist;
   // 播放器取分片、密钥时带的请求头（规则的 UA，没写 Referer 就不带）。
   final Map<String, String> headers;
 }
@@ -118,10 +120,19 @@ class CinemaService implements ToolboxService {
   final _chaptersLoading = <String, CinemaShared<List<CinemaRoad>>>{};
   Map<String, CinemaSourceStat>? _stats;
 
+  // 本机记下的播放内核（cinema_engine.dart 的 CinemaEngineKind 的名字；没选过为空，按平台默认，人工决策见 cinema_engine.dart 文件头）。
+  String? enginePreference;
+
+  Future<void> chooseEngine(String kind) async {
+    enginePreference = kind;
+    await store.savePreference('engine', kind);
+  }
+
   static Future<CinemaService> open(ToolboxServiceContext context, {required CinemaRulesFeed? feed, CinemaHttp? http, DateTime Function()? now, Uri? relay}) async {
     final directory = Directory(path.join(context.base.path, serviceId));
     await directory.create(recursive: true);
     final service = CinemaService._(await CinemaStore.open(path.join(directory.path, 'cinema.db')), feed, directory, http: http, now: now, relay: relay);
+    service.enginePreference = await service.store.preference('engine');
     final cached = await service.store.package();
     if (cached != null) {
       try {
@@ -418,7 +429,7 @@ class CinemaService implements ToolboxService {
     if (!playlist && !cinemaPlaylistUrl(url)) return CinemaPlayable(uri: uri, headers: headers);
     final stream = CinemaStream(headers: headers);
     await _proxy.warm(uri, stream, cancel: cancel, fresh: fresh);
-    return CinemaPlayable(uri: await _proxy.open(uri, stream), headers: headers);
+    return CinemaPlayable(uri: await _proxy.open(uri, stream), headers: headers, playlist: true);
   }
 
   void release(CinemaPlayable playable) => _proxy.release(playable.uri);

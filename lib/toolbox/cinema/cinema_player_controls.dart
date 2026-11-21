@@ -2,7 +2,6 @@ import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:media_kit/media_kit.dart';
 import 'package:screen_brightness/screen_brightness.dart';
 
 import 'package:superxd/domain/campus_log.dart';
@@ -11,6 +10,7 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/curve_geometry.dart';
+import 'package:superxd/toolbox/cinema/cinema_engine.dart';
 import 'package:superxd/toolbox/cinema/cinema_poster.dart';
 
 // [人工决策-2026-11-20 16:40:37] 播放器整体重做（用户嫌原来单调、别扭、黑边大，要求深度借鉴 Kazumi 与主流流媒体平台；用户选定双击暂停或继续、全屏真横屏）：
@@ -77,7 +77,7 @@ class CinemaPlayerControls extends StatefulWidget {
     this.onSeek,
     this.seekable,
   });
-  final Player player;
+  final CinemaEngine player;
   final String title;
   final String subtitle;
   final bool fullscreen;
@@ -133,7 +133,7 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
   // 选的倍速（长按倍速松手后回到它）。
   var _rate = 1.0;
 
-  Player get _player => widget.player;
+  CinemaEngine get _player => widget.player;
 
   // 一切跳转都经这里：先告诉播放页（onSeek 要在命令之前开始计时），再交给播放器。
   Future<void> _seek(Duration target) async {
@@ -637,7 +637,7 @@ List<(double, double)> cinemaCachedSpans(List<(Duration, Duration)>? ranges, {re
 
 class _CinemaProgress extends StatefulWidget {
   const _CinemaProgress({required this.player, required this.seek, required this.seekable, required this.onSeekStart, required this.onSeekEnd});
-  final Player player;
+  final CinemaEngine player;
   final Future<void> Function(Duration) seek;
   final ValueListenable<List<(Duration, Duration)>?>? seekable;
   final VoidCallback onSeekStart;

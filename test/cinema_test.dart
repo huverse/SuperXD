@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:cryptography/cryptography.dart';
+import 'package:flutter/foundation.dart' show debugDefaultTargetPlatformOverride;
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
@@ -18,6 +19,7 @@ import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
 import 'package:superxd/toolbox/cinema/cinema_catalog.dart';
 import 'package:superxd/toolbox/cinema/cinema_detail_page.dart';
+import 'package:superxd/toolbox/cinema/cinema_engine.dart';
 import 'package:superxd/toolbox/cinema/cinema_episodes.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
@@ -1173,6 +1175,19 @@ void main() {
       await store.saveHistory(entry('k', DateTime.utc(2026, 11, 21)));
       await store.saveTitleSources('k', const [CinemaSourceRef(ruleId: 'alpha', source: '1', name: '合成', remarks: '')]);
       expect(await store.titleSources('k'), hasLength(1), reason: '第 3 版的表也补上了');
+      await store.savePreference('engine', 'mpv');
+      expect(await store.preference('engine'), 'mpv', reason: '第 4 版的设置表也补上了');
+    });
+
+    // 人工决策见 cinema_engine.dart 文件头（11-21 用户选安卓默认 ExoPlayer、允许自己换）。
+    test('播放内核的选择记在本机（cinema.db），重开服务还在；没选过为空（按平台默认）', () async {
+      var service = await open(() async => packageBytes());
+      expect(service.enginePreference, isNull);
+      await service.chooseEngine('mpv');
+      await service.close();
+      service = await open(() async => packageBytes());
+      expect(service.enginePreference, 'mpv');
+      await service.close();
     });
 
     test('选集与播放地址：没有可播线路报错；m3u8 经本机代理、mp4 直接播，都带规则的 UA、不带 Referer；清除数据删掉整个目录', () async {
@@ -1646,7 +1661,7 @@ void main() {
             child: SizedBox(
               width: 360,
               height: 220,
-              child: CinemaPlayerControls(player: player, title: '合成', subtitle: '', fullscreen: false, busy: false, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}, onSeek: (target) {
+              child: CinemaPlayerControls(player: CinemaMpvEngine.wrap(player), title: '合成', subtitle: '', fullscreen: false, busy: false, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}, onSeek: (target) {
                 seeked.add(target);
                 before.add(platform.target);
               }),
@@ -1753,7 +1768,7 @@ void main() {
       final player = Player(platformPlayer: _SeekRecorder()..state = PlayerState(duration: const Duration(minutes: 95)));
       await tester.pumpWidget(MaterialApp(
         theme: campusTheme(),
-        home: Scaffold(body: SizedBox(width: 360, height: 220, child: CinemaPlayerControls(player: player, title: '合成', subtitle: '', fullscreen: false, busy: false, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}))),
+        home: Scaffold(body: SizedBox(width: 360, height: 220, child: CinemaPlayerControls(player: CinemaMpvEngine.wrap(player), title: '合成', subtitle: '', fullscreen: false, busy: false, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}))),
       ));
       await tester.pump();
       expect(find.text('合成'), findsOneWidget, reason: '控件显示着');
@@ -1769,7 +1784,7 @@ void main() {
         await tester.pumpWidget(const SizedBox());
         await tester.pumpWidget(MaterialApp(
           theme: campusTheme(),
-          home: Scaffold(body: SizedBox(width: 360, height: 220, child: CinemaPlayerControls(player: player, title: '合成', subtitle: '', fullscreen: false, busy: busy, error: error, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}))),
+          home: Scaffold(body: SizedBox(width: 360, height: 220, child: CinemaPlayerControls(player: CinemaMpvEngine.wrap(player), title: '合成', subtitle: '', fullscreen: false, busy: busy, error: error, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}))),
         ));
         await tester.pump();
         addTearDown(player.dispose);
@@ -1792,7 +1807,7 @@ void main() {
       final player = Player(platformPlayer: _SeekRecorder()..state = const PlayerState());
       await tester.pumpWidget(MaterialApp(
         theme: campusTheme(),
-        home: Scaffold(body: SizedBox(width: 360, height: 220, child: CinemaPlayerControls(player: player, title: '合成', subtitle: '', fullscreen: false, busy: true, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}, resumedFrom: const Duration(hours: 2, minutes: 13, seconds: 42)))),
+        home: Scaffold(body: SizedBox(width: 360, height: 220, child: CinemaPlayerControls(player: CinemaMpvEngine.wrap(player), title: '合成', subtitle: '', fullscreen: false, busy: true, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}, resumedFrom: const Duration(hours: 2, minutes: 13, seconds: 42)))),
       ));
       await tester.pump();
       expect(find.text('--:--'), findsNWidgets(2));
@@ -1812,7 +1827,7 @@ void main() {
             body: SizedBox(
               width: 360,
               height: 220,
-              child: CinemaPlayerControls(player: player, title: '合成', subtitle: '', fullscreen: false, busy: false, error: error, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}, resumedFrom: const Duration(minutes: 30, seconds: 20)),
+              child: CinemaPlayerControls(player: CinemaMpvEngine.wrap(player), title: '合成', subtitle: '', fullscreen: false, busy: false, error: error, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}, resumedFrom: const Duration(minutes: 30, seconds: 20)),
             ),
           ),
         ));
@@ -1826,6 +1841,75 @@ void main() {
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 10));
       await player.dispose();
+    });
+  });
+
+  // 人工决策见 cinema_engine.dart 文件头（11-21 真机对照后用户选安卓默认 ExoPlayer，允许自己换，打不开的退回 mpv）。
+  group('播放内核', () {
+    test('没选过时安卓默认系统播放器（菜单写 ExoPlayer）、iOS 默认 mpv；记下的选择优先，认不出的用默认', () {
+      try {
+        debugDefaultTargetPlatformOverride = TargetPlatform.android;
+        expect((cinemaEngineOf(null), CinemaEngineKind.system.label), (CinemaEngineKind.system, 'ExoPlayer'));
+        expect(cinemaEngineOf('mpv'), CinemaEngineKind.mpv);
+        expect(cinemaEngineOf('vlc'), CinemaEngineKind.system);
+        debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+        expect((cinemaEngineOf(null), CinemaEngineKind.system.label), (CinemaEngineKind.mpv, '系统播放器'));
+        expect(cinemaEngineOf('system'), CinemaEngineKind.system);
+      } finally {
+        debugDefaultTargetPlatformOverride = null;
+      }
+    });
+
+    test('系统播放器的请求头：UA 与 Referer 改成 video_player 认的标准写法（小写的 UA 会被它换成自己的默认 UA），其余原样', () {
+      expect(cinemaSystemHeaders({'user-agent': 'UA', 'referer': 'https://r.example.com/', 'x-token': 't'}), {'User-Agent': 'UA', 'Referer': 'https://r.example.com/', 'x-token': 't'});
+      expect(cinemaSystemHeaders({'User-Agent': 'UA'}), {'User-Agent': 'UA'});
+    });
+
+    test('首帧：从头开的位置动了就算；从中途开的要等时钟越过起点 0.3 秒（播放器出画之前就把位置报成起点）', () {
+      expect(cinemaFirstFrame(const Duration(milliseconds: 40), Duration.zero), isTrue);
+      expect(cinemaFirstFrame(Duration.zero, Duration.zero), isFalse);
+      const start = Duration(minutes: 27, seconds: 32);
+      expect(cinemaFirstFrame(start, start), isFalse, reason: '只是位置报成了起点');
+      expect(cinemaFirstFrame(start + const Duration(milliseconds: 300), start), isTrue);
+    });
+
+    testWidgets('播放页：系统播放器打不开时这一页退回 mpv、在同一位置再开；「播放内核」写正在用的，换了记在本机并用新内核在当前位置重开', (tester) async {
+      final created = <_FakeEngine>[];
+      var systemFails = true;
+      debugCinemaEngineFactory = (kind) {
+        final engine = _FakeEngine(kind, failOpen: kind == CinemaEngineKind.system && systemFails);
+        created.add(engine);
+        return engine;
+      };
+      addTearDown(() => debugCinemaEngineFactory = null);
+      final logs = captureDiagnostics();
+      final (_, service) = await openCinemaForPage(tester);
+      await tester.runAsync(service.rules);
+      final title = CinemaTitle(key: 'film', name: '合成电影', year: '2026', cover: '', remarks: '')..addSource(const CinemaSourceRef(ruleId: 'alpha', source: '1', name: '合成电影', remarks: ''));
+      const roads = [CinemaRoad(name: 'mp4', episodes: [CinemaEpisode(name: '正片', url: 'https://media.example.com/1.mp4')])];
+      const start = Duration(minutes: 12);
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: CinemaPlayerPage.title(service: service, title: title, source: title.sources.single, road: 0, episode: 0, start: start, roads: roads)));
+      await settleUntil(tester, () => created.length == 2 && created.last.opens.isNotEmpty);
+      expect([for (final engine in created) engine.kind], [CinemaEngineKind.system, CinemaEngineKind.mpv], reason: '安卓默认系统播放器，打不开退回 mpv');
+      expect((created.first.disposed, created.last.opens.single.$2), (true, start), reason: '在同一位置再开');
+      expect(logs.any((line) => line.contains('action=engine_fallback') && line.contains('to=mpv')), isTrue);
+      created.last.frame(start + const Duration(seconds: 1));
+      await tester.pump();
+      expect(find.text('播放内核'), findsOneWidget);
+      expect(find.text('mpv'), findsOneWidget, reason: '写正在用的');
+      expect(find.textContaining('播放出错'), findsNothing);
+      // 用户换回系统播放器：记在本机，在当前位置用新内核重开（这回打得开）。
+      systemFails = false;
+      await tester.ensureVisible(find.text('mpv'));
+      await tester.tap(find.text('mpv'));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.text('ExoPlayer（推荐）').last);
+      await tester.pump(const Duration(milliseconds: 500));
+      await settleUntil(tester, () => created.length == 3 && created.last.opens.isNotEmpty);
+      expect((created.last.kind, created.last.opens.single.$2, created[1].disposed), (CinemaEngineKind.system, start + const Duration(seconds: 1), true));
+      expect(service.enginePreference, 'system');
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 11));
     });
   });
 
@@ -1902,4 +1986,77 @@ class _Gate implements FeatureGate {
   bool isOn(FeatureFlag flag) => on.contains(flag.id);
   @override
   Stream<void> get changes => _changes.stream;
+}
+
+// 测试用的播放内核：记下每次打开的地址与起点，可以让它打不开、或报出首帧。
+class _FakeEngine implements CinemaEngine {
+  _FakeEngine(this.kind, {this.failOpen = false});
+  @override
+  final CinemaEngineKind kind;
+  final bool failOpen;
+  final opens = <(String, Duration)>[];
+  var disposed = false;
+  final _positions = StreamController<Duration>.broadcast();
+  final _durations = StreamController<Duration>.broadcast();
+  final _playings = StreamController<bool>.broadcast();
+  final _bufferings = StreamController<bool>.broadcast();
+  final _completions = StreamController<bool>.broadcast();
+  final _errors = StreamController<String>.broadcast();
+  final _widths = StreamController<int?>.broadcast();
+  final _heights = StreamController<int?>.broadcast();
+  String? _uri;
+  var _state = const CinemaEngineState();
+
+  @override
+  late final CinemaEngineStreams stream = CinemaEngineStreams(position: _positions.stream, duration: _durations.stream, playing: _playings.stream, buffering: _bufferings.stream, completed: _completions.stream, error: _errors.stream, width: _widths.stream, height: _heights.stream);
+
+  @override
+  CinemaEngineState get state => _state;
+
+  @override
+  String? get currentUri => _uri;
+
+  @override
+  final ValueNotifier<List<(Duration, Duration)>?> seekable = ValueNotifier(null);
+
+  @override
+  Future<void> open(String uri, Map<String, String> headers, {Duration start = Duration.zero, bool playlist = false}) async {
+    opens.add((uri, start));
+    if (failOpen) throw const CinemaEngineException('打不开');
+    _uri = uri;
+    _state = CinemaEngineState(position: start, duration: const Duration(minutes: 40), playing: true);
+  }
+
+  // 出画并走到 position。
+  void frame(Duration position) {
+    _state = CinemaEngineState(position: position, duration: const Duration(minutes: 40), playing: true);
+    _positions.add(position);
+  }
+
+  @override
+  Future<void> seek(Duration target) async {}
+
+  @override
+  Future<void> playOrPause() async {}
+
+  @override
+  Future<void> setRate(double rate) async {}
+
+  @override
+  Future<void> setVolume(double volume) async {}
+
+  @override
+  Widget view({required BoxFit fit, double? ratio}) => const ColoredBox(color: Colors.black);
+
+  @override
+  Future<CinemaSeekResult> beginSeek(Duration target) async => CinemaSeekResult(id: 1, target: target, cached: null, result: 'ok', restartMs: null, playingMs: null);
+
+  @override
+  void resetSeeks() {}
+
+  @override
+  Future<String> describe() async => 'engine=fake';
+
+  @override
+  Future<void> dispose() async => disposed = true;
 }
