@@ -8,7 +8,7 @@
 - cinema_rule_engine.dart：规则引擎（移植 Kazumi 的 ApiRuleStrategy，纯计算）：prepareCinemaRequest 填 @变量（url 里按 URL 编码、表单按 form 编码），parseCinemaSearch（写了 search.chapters 的每条按自己的记录解出剧集，不套详情的 $.list[0]）、parseCinemaChapters 与共用的 parseCinemaRoads（只留能直接播的媒体地址，空线路整条不要，相对地址按请求地址补全，集名缺省按序号起名），parseCinemaParserReply；回复不看 Content-Type 直接按 JSON 解。
 - cinema_models.dart：搜到的一条 CinemaHit（roads 是搜索自带的剧集）、各片源最近的播放结果 CinemaSourceStat 与片源排序 rankCinemaSources、标注 cinemaSourceStatLabel、聚合后的一部片 CinemaTitle（各源的海报按先后留着，取不到换下一家）、选集 CinemaRoad 与 CinemaEpisode、失败 CinemaFailure（页面只写源名 name，原因 message 只进日志；paused 是连续失败暂停着的）、边搜边给的快照 CinemaSearchResult（pending 是还没回来的源数）、看过的 CinemaHistory；片名折叠 cinemaFold（去空白、全角折半角、小写，没有 NFKC 时只折这两类）与聚合键 cinemaTitleKey（折叠加四位年份）、媒体地址判定 cinemaMediaUrl。
 - cinema_http.dart：对外请求封装（经共用内核 CampusHttp，模块 cinema）：默认桌面浏览器 UA、不带 Referer（规则写了才带），接口请求另带 accept 与 accept-language（cinemaApiHeaders，规则写了同名头以规则为准）；接口 15 秒、2MB，云解析 30 秒，清单 25 秒、8MB；本机代理取清单时自己跟跳转（最多 5 跳，各跳共用一个总时限，拿最终地址补相对路径），可取消；不自动重试。CinemaShared 是几处共用的一次请求：每处可以各自不等了，都不等了才中断。
-- cinema_playlist.dart：m3u8 改写（纯计算）：子清单与 AES 密钥回到本机代理，分片与初始化段换成绝对地址交给播放器直连；腾讯 CDN 域名前置的还原 cinemaUnwrapHost；规则开了 adBlocker 时按不连续分段去广告（同 Kazumi 的 M3u8AdFilter），去掉的段里换过的密钥照旧补给后面的正片，初始化段按它出现时生效的密钥补回（明文初始化段的 MAP 仍在 KEY 前面）。
+- cinema_playlist.dart：m3u8 改写（纯计算）：子清单与 AES 密钥回到本机代理，分片与初始化段换成绝对地址交给播放器直连，其余一行不动、一个分片不删（11-21 起不再去广告，规则里的 adBlocker 不读，[人工决策] 在文件头）；腾讯 CDN 域名前置的还原 cinemaUnwrapHost。
 - cinema_proxy.dart：手机上的本机代理 CinemaProxy：只监听 127.0.0.1 随机端口，路径带随机令牌；p 取清单并改写，k 取密钥（16 字节，按地址记最多 64 把）；每路播放换掉时 release，还在等的请求随之不等了；分片清单第一个分片的路径首段像域名时原地址与替代地址同时探（原地址优先，共用 probeBudget），结论按主机加请求头记 probeKnownFor（没定论的 probeUnsureFor），主清单不探；点播与主清单缓存 playlistLifetime（直播不缓存），warm 预取（可取消）；「重新载入」登记的一路（fresh）不用缓存、重新探测；缓存与探测结论只让当前有效的那次写。视频字节不经代理也不经服务器。
 - cinema_cloud_parse.dart：云解析 CinemaCloudParse：输入本身是媒体直链时不发给任何人；结果只在内存留 3 分钟、最多 32 条，「重新解析」跳过缓存；decryptCinemaUrl 是 AES-128-CBC 加 PKCS7（key、iv 是原文字节）。上游对不支持的地址也回成功并给提示影片，照样显示标题并播放（沿用懒猫交接里用户的决定，[人工决策] 在文件内）。
 - cinema_store.dart：本机库 cinema.db（单实例、回滚遗留事务，第 2 版起有播放记录）：上次验签通过的规则包、同意记录（按规则 id 与接口主机）、看过的记录（最多 cinemaHistoryLimit 条、cinemaHistoryLifetime 没再看的删掉）、各片源最近播成与没播成的时刻与首帧用时 source_stat（每个源一行，cinemaSourceStatLifetime 没再播的删掉）。
@@ -17,7 +17,7 @@
 - cinema_page.dart：首页（本机有规则包时先显示、后台更新，时长券不挡页面）：找片（看过的是横向海报条、⋯ 里删除先确认；搜索结果（边搜边显示，写还在搜几个源，搜索中输入框照常可改、改了词重新搜）、暂不可用的源只写名字，有暂停着的给「重试暂停的源」；清空搜索框回到看过的并中断没搜完的；[人工决策] 在 _onQuery 与 _historySlivers）与解析两段（解析开关经运行时的 features 问，关着时只有找片、不显示切换，开关变了立即刷新）；第一次搜、第一次用云解析前征得同意（片名目录型的源写明片名经开发者服务器查找、不保存）；中转写了时长券而当前账号没换时显示兑换卡（人工决策见 domain/pass.dart）。
 - cinema_detail_page.dart：选集页：顶栏片名在正文大标题滚出去后才出现（[人工决策] 在 _onScroll）；选片源（按播放记录排一次、标注）、选线路、点一集播放（CinemaEpisodeGrid），上次看到的那集标成选中、可接着看；取到选集后预取接着看那一集，播放时把选集交给播放页；换源、离开时取消这一处的等待。
 - cinema_player_page.dart：播放页（media_kit）：竖屏上面画面（高度跟片子的真实比例，竖片最多占屏高 cinemaPortraitMaxHeight）下面选集（CinemaEpisodeGrid；线路分段只换看哪条线路的集数，点了某一集才换过去播）与换源（按集名在新源里找同一集）、重新载入（云解析的重新解析）、15 秒还在缓冲提示换源；选集页给的选集直接用（重新载入才强制重取）；每次打开记一次播放结果（首帧与出错只认播放器当前项是这次交出去的媒体，旧视频晚到的事件不算；出错即结束这次打开、放开换源，换源没成时还原原来的错误）、快播完预取下一集（离开时取消）、换掉时交回本机代理并取消旧请求；「重新载入」连清单缓存与探测一起重来；每 10 秒、换集与离开时记看到哪（进度还没动、出错时不记）；全屏在同一页里切（画面与控件经 GlobalKey 挪过去），横片转真横屏、退出回竖屏（[人工决策] 在清单的 MainActivity 与 ios/Runner/Info.plist）。
-- cinema_player_controls.dart：播放器控件与手势 CinemaPlayerControls（[人工决策] 在文件头，借鉴 Kazumi 与主流平台）：单击显隐、双击暂停继续、长按倍速、左右滑调进度（松手才跳）、左半边上下滑亮度（只改本应用窗口，离开恢复）、右半边音量；上栏倍速与画面比例 CinemaFit，下栏播放、下一集、带缓冲段的进度、选集（全屏）、全屏；全屏可锁定；跳过片头、从头播放、播完倒数 cinemaAutoNext 连播下一集。不用 media_kit 自带的控件（它的转圈会叠在我们的加载动画上）。
+- cinema_player_controls.dart：播放器控件与手势 CinemaPlayerControls（[人工决策] 在文件头，借鉴 Kazumi 与主流平台）：单击显隐、双击暂停继续、长按倍速、左右滑调进度（松手才跳）、左半边上下滑亮度（只改本应用窗口，离开恢复）、右半边音量；上栏倍速与画面比例 CinemaFit，下栏播放、下一集、带缓冲段的进度（画与点按共用左右缩进 _progressInset）、选集（全屏）、全屏；全屏可锁定；跳过片头、从头播放、播完倒数 cinemaAutoNext 连播下一集。不用 media_kit 自带的控件（它的转圈会叠在我们的加载动画上）。
 - cinema_poster.dart：列表一行 CinemaPosterRow、看过的横向海报条里的一张 CinemaHistoryCard（海报底边是进度，下面片名一行、集数与⋯一行，heightOf 按字号量出整条的高）与海报 CinemaPoster（经百宝箱的小网络图，只认公网 https，按先后取、取不到换下一张）；formatCinemaDuration。
 - cinema_episodes.dart：一条线路的选集 CinemaEpisodeGrid（选集页与播放页共用，[人工决策] 在文件头）：一格同宽（按这一段最长的集名量、放得下几列排几列），超过 cinemaEpisodePage 集分段、只建当前一段，打开与选中那集变了时翻到它所在的一段，可倒序。
 
@@ -34,10 +34,10 @@
 
 - cinema_test.dart：规则包校验（含 catalogRules）、规则引擎（搜索与苹果 CMS 选集的四条交接向量、相对地址）、聚合键、域名前置、清单改写与去广告、云解析（业务码数字与字符串、缓存与重新解析、解不开）、本机库的保留、服务（规则包缓存与只升不降、拉不到用本机的、搜索聚合与失败、边搜边给快照、一次全发与接口请求头、连续失败暂停与重试、片名目录型的源问中转再只发编号给源、中转回复的外部输入边界、没配中转时进暂不可用、选集缓存与共用请求、各处单独取消、旧请求不覆盖新缓存、后台刷新不挡搜索、规则包失败退避、播放记录与排序、本机库升级、选集与播放地址、清除数据）、搜索自带剧集按每条解、跳转共用总时限、本机代理（令牌、改写、密钥只取一次、跳转、502、探测原地址优先与结论有效期、主清单不探、交回即中断、预取与点播清单缓存、重新载入不用缓存并重新探测、预取可取消）、去广告后初始化段的加密状态不变、页面（选集网格的同宽分段与倒序；首页看过的海报条删除先确认、搜索中可改词、暂不可用只写源名、清空回到看过的；选集页顶栏片名滚出去才出现、停在上次那集的一段）、灰度开关藏起入口、解析开关关着只有找片。
 - 时长券在 pass_test.dart（客户端）与 server/test/pass.e2e.test.ts；中转的片名目录在 server/test/cinema_catalog.e2e.test.ts。
-- 播放器控件要真的 libmpv，只在设备上验（手势、全屏转向、亮度音量、连播）；全屏转向的守护在 shell_layout_test.dart。
+- 播放器控件的手势、全屏转向、亮度音量、连播要真的 libmpv，只在设备上验（进度条的换算用记下跳转的播放器替身测）；全屏转向的守护在 shell_layout_test.dart。
 - 真实片源只在本机手动验（探针脚本放 build/superxd_verify，不进仓库）；播放画面模拟器上是黑的（软件渲染），画面只认真机。
 
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/toolbox/cinema
-- 本目录的标记位于：电影院的四项选择与服务器负担（cinema_service.dart 文件头）、边搜边显示与连续失败暂停（cinema_service.dart 的 pauseAfter）、片名目录型的源（cinema_catalog.dart 文件头）、播放器重做（cinema_player_controls.dart 文件头）、预取与播放记录（cinema_service.dart 的 warm 与 sourceStats）、云解析的提示影片照样播（cinema_cloud_parse.dart）、只留找片后的界面优化（cinema_page.dart 的 _onQuery 与 _historySlivers、cinema_episodes.dart 文件头、cinema_detail_page.dart 的 _onScroll）；解析先不开放的在 domain/feature_flags.dart。
+- 本目录的标记位于：电影院的四项选择与服务器负担（cinema_service.dart 文件头）、边搜边显示与连续失败暂停（cinema_service.dart 的 pauseAfter）、片名目录型的源（cinema_catalog.dart 文件头）、播放器重做（cinema_player_controls.dart 文件头）、预取与播放记录（cinema_service.dart 的 warm 与 sourceStats）、云解析的提示影片照样播（cinema_cloud_parse.dart）、不再去广告（cinema_playlist.dart 文件头）、只留找片后的界面优化（cinema_page.dart 的 _onQuery 与 _historySlivers、cinema_episodes.dart 文件头、cinema_detail_page.dart 的 _onScroll）；解析先不开放的在 domain/feature_flags.dart。

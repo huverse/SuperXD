@@ -296,13 +296,13 @@ class CinemaService implements ToolboxService {
     return roads;
   }
 
-  // 交给播放器的地址：m3u8 经本机代理改写清单，其余直接播；rule 为空（云解析的结果）时用默认 UA、不带 Referer、不去广告。
+  // 交给播放器的地址：m3u8 经本机代理改写清单（不删分片，人工决策见 cinema_playlist.dart 文件头），其余直接播；rule 为空（云解析的结果）时用默认 UA、不带 Referer。
   // 换集、换源、离开播放页时交回 release，本机代理里这一路还没回来的请求随之中断。fresh（「重新载入」）时清单不用缓存、探测重新做。
   Future<CinemaPlayable> playable(String url, {CinemaRule? rule, bool playlist = false, bool fresh = false}) async {
     final headers = cinemaHeaders(rule?.userAgent ?? '', rule?.referer ?? '');
     final uri = Uri.parse(url);
     if (!playlist && !cinemaPlaylistUrl(url)) return CinemaPlayable(uri: uri, headers: headers);
-    return CinemaPlayable(uri: await _proxy.open(uri, CinemaStream(headers: headers, adBlocker: rule?.adBlocker ?? false), fresh: fresh), headers: headers);
+    return CinemaPlayable(uri: await _proxy.open(uri, CinemaStream(headers: headers), fresh: fresh), headers: headers);
   }
 
   void release(CinemaPlayable playable) => _proxy.release(playable.uri);
@@ -312,7 +312,7 @@ class CinemaService implements ToolboxService {
   // 结果在本机代理里留几分钟（直播清单不留），出错只记日志。直链（不是 m3u8）不预取。cancel 由发起的页面管（换源、离开时完成），别处还在等同一份就不中断。
   Future<void> warm(String url, {CinemaRule? rule, Future<void>? cancel}) async {
     if (!cinemaPlaylistUrl(url)) return;
-    await _proxy.warm(Uri.parse(url), CinemaStream(headers: cinemaHeaders(rule?.userAgent ?? '', rule?.referer ?? ''), adBlocker: rule?.adBlocker ?? false), cancel: cancel);
+    await _proxy.warm(Uri.parse(url), CinemaStream(headers: cinemaHeaders(rule?.userAgent ?? '', rule?.referer ?? '')), cancel: cancel);
   }
 
   // [人工决策-2026-11-20 20:32:51] 选源看能不能播（Codex 建议第 5 条，用户选「本机记录，能播的排前并标注」，没选只标注与自动换源）：

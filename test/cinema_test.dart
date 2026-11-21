@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:media_kit/media_kit.dart';
 import 'package:path/path.dart' as path;
 import 'package:sqflite/sqflite.dart';
 
@@ -21,6 +22,7 @@ import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
 import 'package:superxd/toolbox/cinema/cinema_page.dart';
+import 'package:superxd/toolbox/cinema/cinema_player_controls.dart';
 import 'package:superxd/toolbox/cinema/cinema_playlist.dart';
 import 'package:superxd/toolbox/cinema/cinema_poster.dart';
 import 'package:superxd/toolbox/cinema/cinema_proxy.dart';
@@ -47,6 +49,7 @@ Map<String, Object?> macCmsRule(String id, String api, {String name = '合成资
   'version': '1',
   'userAgent': '',
   'referer': '',
+  // 线上第 4 版以前的规则包都写着 true：照样能解，播放清单也不删分片（人工决策见 cinema_playlist.dart 文件头）。
   'adBlocker': true,
   'searchMode': 'api',
   'chapterMode': 'api',
@@ -309,45 +312,15 @@ void main() {
       expect(cinemaFirstSegment(media, Uri.parse('https://cdn.example.com/v/1080/index.m3u8')).toString(), 'https://cdn.example.com/v/1080/seg0.ts');
     });
 
-    test('去广告：比正片短很多的不连续段去掉，去掉段里换过的密钥照旧补给后面的正片', () {
+    // 人工决策见 cinema_playlist.dart 文件头（11-21 不删任何分片）。
+    test('不删分片：短的不连续段、换过的密钥、初始化段、BYTERANGE 与媒体序号原样留着、顺序不变，只改地址', () {
       final segments = [for (var index = 0; index < 30; index++) '#EXTINF:10,\nmain$index.ts'].join('\n');
-      final media = '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-KEY:METHOD=AES-128,URI="ad.key"\n#EXTINF:5,\nad0.ts\n#EXTINF:5,\nad1.ts\n#EXT-X-DISCONTINUITY\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n$segments\n#EXT-X-ENDLIST\n';
-      final out = cinemaRewritePlaylist(media, Uri.parse('https://cdn.example.com/v/'), playlist: (uri) => '$uri', media: (uri) => uri.pathSegments.last, adBlocker: true);
-      expect(out, isNot(contains('ad0.ts')));
-      expect(out, isNot(contains('ad.key')));
-      expect(out, contains('URI="main.key"'));
-      expect('\n'.allMatches(out).length, greaterThan(60));
-      expect(out.trimRight().endsWith('#EXT-X-ENDLIST'), isTrue);
-      // 不开去广告原样保留。
-      expect(cinemaRewritePlaylist(media, Uri.parse('https://cdn.example.com/v/'), playlist: (uri) => '$uri', media: (uri) => uri.pathSegments.last), contains('ad0.ts'));
-    });
-
-    test('去广告后初始化段的加密状态不变：明文初始化段的 MAP 仍在 KEY 前面，加密的仍在后面，去掉段里的密钥不套到明文初始化段上', () {
-      final segments = [for (var index = 0; index < 30; index++) '#EXTINF:10,\nmain$index.m4s'].join('\n');
-      String filtered(String main) => cinemaRewritePlaylist(
-        '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-KEY:METHOD=AES-128,URI="ad.key"\n#EXTINF:5,\nad0.ts\n#EXT-X-DISCONTINUITY\n$main\n$segments\n#EXT-X-ENDLIST\n',
-        Uri.parse('https://cdn.example.com/v/'),
-        playlist: (uri) => '$uri',
-        media: (uri) => uri.pathSegments.last,
-        adBlocker: true,
-      );
-      const head = '#EXTM3U\n#EXT-X-TARGETDURATION:10\n';
-      const main = '#EXT-X-DISCONTINUITY\n#EXTINF:10,\nmain0.m4s\n';
-      // 明文初始化段、加密分片：原清单先写 METHOD=NONE 再写 MAP，去掉广告后照旧是明文状态下的 MAP。
-      expect(filtered('#EXT-X-KEY:METHOD=NONE\n#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"'), startsWith('$head#EXT-X-KEY:METHOD=NONE\n#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n$main'));
-      // 加密的初始化段：KEY 在 MAP 前面。
-      expect(filtered('#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n#EXT-X-MAP:URI="init.mp4"'), startsWith('$head#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n#EXT-X-MAP:URI="init.mp4"\n$main'));
-      // 整份清单第一个密钥之前的 MAP 是明文：去掉开头的广告后，MAP 仍写在密钥前面。
-      final plain = cinemaRewritePlaylist(
-        '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:5,\nad0.ts\n#EXT-X-DISCONTINUITY\n#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n$segments\n#EXT-X-ENDLIST\n',
-        Uri.parse('https://cdn.example.com/v/'),
-        playlist: (uri) => '$uri',
-        media: (uri) => uri.pathSegments.last,
-        adBlocker: true,
-      );
-      expect(plain, startsWith('$head#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n$main'));
-      expect(plain, isNot(contains('ad0.ts')));
-      expect('#EXT-X-MAP'.allMatches(plain), hasLength(1));
+      final media = '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXT-X-MEDIA-SEQUENCE:7\n#EXT-X-KEY:METHOD=AES-128,URI="ad.key"\n#EXTINF:5,\nad0.ts\n#EXTINF:5,\nad1.ts\n'
+          '#EXT-X-DISCONTINUITY\n#EXT-X-KEY:METHOD=NONE\n#EXT-X-MAP:URI="init.mp4"\n#EXT-X-KEY:METHOD=AES-128,URI="main.key"\n$segments\n'
+          '#EXT-X-DISCONTINUITY\n#EXTINF:4,\n#EXT-X-BYTERANGE:1000@0\nshort.ts\n#EXT-X-ENDLIST\n';
+      final base = Uri.parse('https://cdn.example.com/v/');
+      expect(cinemaRewritePlaylist(media, base, playlist: (uri) => '$uri', media: (uri) => uri.pathSegments.last, key: (uri) => uri.pathSegments.last), media);
+      expect(cinemaRewritePlaylist(media, base, playlist: (uri) => '$uri', media: (uri) => '$uri'), contains('\n#EXTINF:5,\nhttps://cdn.example.com/v/ad0.ts\n'));
     });
   });
 
@@ -810,6 +783,19 @@ void main() {
       await service.clearData();
       expect(directory.existsSync(), isFalse);
     });
+
+    test('旧规则包写着 adBlocker 也不删分片：经本机代理拿到的清单一个分片不少', () async {
+      final segments = [for (var index = 0; index < 30; index++) '#EXTINF:10,\nmain$index.ts'].join('\n');
+      final playlist = '#EXTM3U\n#EXT-X-TARGETDURATION:10\n#EXTINF:5,\nad0.ts\n#EXT-X-DISCONTINUITY\n$segments\n#EXT-X-ENDLIST\n';
+      final client = MockClient((request) async => reply(playlist, 200, headers: {'content-type': 'application/vnd.apple.mpegurl'}));
+      final service = await open(() async => packageBytes(), client: client);
+      final playable = await service.playable('https://cdn.example.com/v/index.m3u8', rule: (await service.rules()).rules.first);
+      final (status, body) = await getLocal(playable.uri);
+      expect(status, 200);
+      expect(body, contains('\nhttps://cdn.example.com/v/ad0.ts\n'));
+      expect('#EXTINF'.allMatches(body), hasLength(31));
+      await service.close();
+    });
   });
 
   test('本机代理：只认带令牌的路径；改写清单后交回，子清单与密钥回到代理（密钥取一次就记住），分片是绝对地址；上游失败回 502', () async {
@@ -826,7 +812,7 @@ void main() {
     });
     final proxy = CinemaProxy(CinemaHttp(client: client));
     addTearDown(proxy.close);
-    final stream = CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false);
+    final stream = CinemaStream(headers: cinemaHeaders('', ''));
     final get = getLocal;
     final master = await get(await proxy.open(Uri.parse('https://cdn.example.com/v/index.m3u8'), stream));
     expect(master.$1, 200);
@@ -883,7 +869,7 @@ void main() {
     });
     final proxy = CinemaProxy(CinemaHttp(client: client), now: () => now, probeBudget: const Duration(milliseconds: 200));
     addTearDown(proxy.close);
-    final stream = CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false);
+    final stream = CinemaStream(headers: cinemaHeaders('', ''));
     var serial = 0;
     Future<String> playlist(String edge) async => (await getLocal(await proxy.open(Uri.parse('https://cdn.example.com/$edge/${serial++}.m3u8'), stream))).$2;
     expect(await playlist('ok'), contains('https://ok.example.com/real-ok.example.com/seg0.ts'));
@@ -927,7 +913,7 @@ void main() {
     });
     final proxy = CinemaProxy(CinemaHttp(client: client));
     addTearDown(proxy.close);
-    final stream = CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false);
+    final stream = CinemaStream(headers: cinemaHeaders('', ''));
     final playlist = Uri.parse('https://cdn.example.com/v/index.m3u8');
     expect((await getLocal(await proxy.open(playlist, stream))).$2, contains('sign=1'));
     expect((await getLocal(await proxy.open(playlist, stream))).$2, contains('sign=1'), reason: '点播清单走缓存');
@@ -959,7 +945,7 @@ void main() {
     });
     final proxy = CinemaProxy(CinemaHttp(client: client));
     addTearDown(proxy.close);
-    final link = await proxy.open(Uri.parse('https://cdn.example.com/v/index.m3u8'), CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false));
+    final link = await proxy.open(Uri.parse('https://cdn.example.com/v/index.m3u8'), CinemaStream(headers: cinemaHeaders('', '')));
     final waiting = getLocal(link);
     await Future<void>.delayed(const Duration(milliseconds: 50));
     proxy.release(link);
@@ -981,7 +967,7 @@ void main() {
     });
     final proxy = CinemaProxy(CinemaHttp(client: client));
     addTearDown(proxy.close);
-    final stream = CinemaStream(headers: cinemaHeaders('', ''), adBlocker: false);
+    final stream = CinemaStream(headers: cinemaHeaders('', ''));
     await proxy.warm(Uri.parse('https://cdn.example.com/v/index.m3u8'), stream);
     expect(fetched, ['/v/index.m3u8', '/v/1080/index.m3u8', '/real.example.com/seg0.ts', '/seg0.ts']);
     fetched.clear();
@@ -1093,6 +1079,30 @@ void main() {
       expect(heading(), 0);
       await tester.pumpWidget(const SizedBox());
     });
+
+    // 11-21 Codex 指出：进度条画的时候左右各缩进 10，点按却按整宽换算，点画出来的起点不是 0、终点到不了片尾（轨道越窄、片子越长差得越多）。
+    testWidgets('进度条：点画出来的起点跳到 0、终点跳到片尾，拖到起点松手也是 0', (tester) async {
+      final platform = _SeekRecorder()..state = PlayerState(duration: const Duration(seconds: 10417));
+      final player = Player(platformPlayer: platform);
+      await tester.pumpWidget(MaterialApp(
+        theme: campusTheme(),
+        home: Scaffold(body: Center(child: SizedBox(width: 360, height: 220, child: CinemaPlayerControls(player: player, title: '合成', subtitle: '', fullscreen: false, busy: false, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {})))),
+      ));
+      await tester.pump();
+      final bar = tester.getRect(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter.runtimeType.toString() == '_ProgressPainter'));
+      // 两次点按隔开双击的时限，免得算成双击暂停。
+      await tester.tapAt(Offset(bar.left + 10, bar.center.dy));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(platform.target, Duration.zero);
+      await tester.tapAt(Offset(bar.right - 10, bar.center.dy));
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(platform.target, const Duration(seconds: 10417));
+      await tester.dragFrom(bar.center, Offset(-(bar.width / 2 - 10), 0));
+      await tester.pump();
+      expect(platform.target, Duration.zero);
+      await tester.pumpWidget(const SizedBox());
+      await player.dispose();
+    });
   });
 
   group('灰度开关', () {
@@ -1145,6 +1155,15 @@ void main() {
 }
 
 class _RealHttp extends HttpOverrides {}
+
+// 不接 libmpv 的播放器替身：只记下最后一次跳到哪。
+class _SeekRecorder extends PlatformPlayer {
+  _SeekRecorder() : super(configuration: const PlayerConfiguration());
+  Duration? target;
+
+  @override
+  Future<void> seek(Duration duration) async => target = duration;
+}
 
 class _Gate implements FeatureGate {
   _Gate(this.on);
