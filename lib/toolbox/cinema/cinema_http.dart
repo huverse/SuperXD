@@ -44,6 +44,10 @@ Map<String, String> cinemaHeaders(String userAgent, String referer) => {
   if (referer.isNotEmpty) 'referer': referer,
 };
 
+// 接口请求另带浏览器取数据时常见的两个头（11-21 DeepSeek 建议）：声称是桌面浏览器却不带它们，部分站点前面的防火墙会判成脚本。
+// 只给接口请求，播放清单、密钥与分片照旧（CDN 不看，少一个变量）；规则自己写了同名头时以规则为准。
+const cinemaApiHeaders = {'accept': 'application/json, text/plain, */*', 'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8'};
+
 class CinemaHttp {
   CinemaHttp({http.Client? client}) : _http = CampusHttp('cinema', client: client);
   final CampusHttp _http;
@@ -57,7 +61,7 @@ class CinemaHttp {
         request.uri,
         timeout: timeout,
         limit: cinemaApiMaxBytes,
-        headers: {...cinemaHeaders(userAgent, referer), ...request.headers},
+        headers: {...cinemaHeaders(userAgent, referer), ...cinemaApiHeaders, ...request.headers},
         body: request.body,
         cancel: cancel,
       );

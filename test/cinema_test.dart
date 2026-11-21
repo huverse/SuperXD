@@ -509,7 +509,41 @@ void main() {
       await service.close();
     });
 
-    test('同一个源连续失败三次就暂停半小时、不再去请求；重试立即恢复；成功一次清零', () async {
+    // 11-21：并发由 6 调到 16、接口请求带浏览器常见的两个头（cinema_service.dart 的 searchConcurrency、cinema_http.dart 的 cinemaApiHeaders）。
+    test('一次搜索 14 个源同时发出（挂着的源不让别的源排队）；接口请求带 accept 与 accept-language，规则写了同名头以规则为准', () async {
+      final gate = Completer<void>();
+      final requests = <http.BaseRequest>[];
+      final client = MockClient((request) async {
+        requests.add(request);
+        await gate.future;
+        return reply(macCmsList(const []), 200);
+      });
+      final rules = [
+        for (var index = 0; index < 13; index++) macCmsRule('s$index', 'https://s$index.example.com/api.php'),
+        {
+          ...macCmsRule('own', 'https://own.example.com/api.php'),
+          'searchApiConfig': {
+            ...(macCmsRule('own', 'https://own.example.com/api.php')['searchApiConfig']! as Map<String, Object?>),
+            'request': {'method': 'GET', 'url': 'https://own.example.com/api.php', 'query': {'ac': 'detail', 'wd': '@keyword'}, 'headers': {'Accept': 'text/html'}},
+          },
+        },
+      ];
+      final service = await open(() async => packageBytes(rules: rules), client: client);
+      await service.grantRules((await service.rules()).rules);
+      final done = service.search('合成').drain<void>();
+      await pumpEventQueue();
+      expect(requests, hasLength(14), reason: '没有一个源在排队');
+      expect(CinemaService.searchConcurrency, greaterThanOrEqualTo(14));
+      final plain = requests.firstWhere((request) => request.url.host == 's0.example.com');
+      expect((plain.headers['accept'], plain.headers['accept-language']), ('application/json, text/plain, */*', 'zh-CN,zh;q=0.9,en;q=0.8'));
+      expect(plain.headers['user-agent'], cinemaDefaultUserAgent);
+      expect(requests.firstWhere((request) => request.url.host == 'own.example.com').headers['accept'], 'text/html');
+      gate.complete();
+      await done;
+      await service.close();
+    });
+
+    test('同一个源连续失败三次就暂停 pauseFor、不再去请求；重试立即恢复；成功一次清零', () async {
       var now = DateTime.utc(2026, 11, 20, 8);
       final asked = <String>[];
       var down = true;
