@@ -71,7 +71,8 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
       },
     ),
     clearedData: '片源规则、片源同意与看过的记录（再用要重新同意）',
-    flag: cinemaFlag,
+    // 试验包（SUPERXD_NATIVE_HTTP=true）不看灰度开关，直接有电影院入口，免得要配点名。
+    flag: cinemaNativeHttpForced ? null : cinemaFlag,
   ),
 ];
 
