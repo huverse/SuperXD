@@ -1,11 +1,10 @@
+import 'dart:async';
 import 'dart:math';
-
-import 'package:flutter/foundation.dart';
 
 // 电影院的数据：一个源搜到的一条（CinemaHit）、按片名加年份聚合后的一部片（CinemaTitle）、选集（CinemaRoad、CinemaEpisode）与看过的记录（CinemaHistory）。
 
 class CinemaHit {
-  const CinemaHit({required this.ruleId, required this.source, required this.name, this.cover = '', this.year = '', this.remarks = '', this.roads});
+  const CinemaHit({required this.ruleId, required this.source, required this.name, this.cover = '', this.year = '', this.remarks = '', this.category = '', this.roads});
   final String ruleId;
   // 这个源里认这部片的值（苹果 CMS 是影片编号），选集请求的 @source。
   final String source;
@@ -14,6 +13,8 @@ class CinemaHit {
   // 只留四位数字，其余当没有。
   final String year;
   final String remarks;
+  // 分类（规则写了 categoryPath 才有，如「纪录片」「解说」）。
+  final String category;
   // 搜索回复自带的剧集（规则写了 search.chapters 才有）。
   final List<CinemaRoad>? roads;
 }
@@ -33,20 +34,26 @@ class CinemaSourceRef {
 }
 
 // 同一部片在各源里编号不同、名字略有出入，按 cinemaTitleKey 聚合成一条（同交接里懒猫站点的 mediaKey）。
-// 片源会在页面打开以后继续增加（边搜边回来的源、播放页「找其他片源」补到的），经 addSource 加并通知，已打开的选集页与播放页把新源接在菜单末尾。
-class CinemaTitle with ChangeNotifier {
-  CinemaTitle({required this.key, required this.name, required this.year, required String cover, required this.remarks}) {
+// 片源会在页面打开以后继续增加（边搜边回来的源、播放页「找其他片源」补到的），经 addSource 加并在 changes 上通知，已打开的选集页与播放页把新源接在菜单末尾。
+class CinemaTitle {
+  CinemaTitle({required this.key, required this.name, required this.year, required String cover, required this.remarks, this.category = ''}) {
     addCover(cover);
   }
   final String key;
   final String name;
   final String year;
   final String remarks;
+  // 第一个回来的源给的分类（11-21 Codex 总交接第 6.6 节：同名的正片、纪录片、解说靠它分开，少点错）。
+  final String category;
   final _sources = <CinemaSourceRef>[];
+  // 同步通知（加完立即送到），页面订阅、离开时取消；模型保持纯 Dart（探针与工具也用得上）。
+  final _changes = StreamController<void>.broadcast(sync: true);
   // 各源给的海报，按源的先后：一家的图床连不上时换下一家的（11-19 模拟器上实测有一家图床整片超时）。
   final covers = <String>[];
 
   List<CinemaSourceRef> get sources => List.unmodifiable(_sources);
+
+  Stream<void> get changes => _changes.stream;
 
   String get cover => covers.firstOrNull ?? '';
 
@@ -58,7 +65,7 @@ class CinemaTitle with ChangeNotifier {
   bool addSource(CinemaSourceRef ref) {
     if (_sources.any(ref.same)) return false;
     _sources.add(ref);
-    notifyListeners();
+    _changes.add(null);
     return true;
   }
 }
@@ -166,6 +173,19 @@ class CinemaHistory {
   bool get finished => duration > Duration.zero && duration - position <= Duration(microseconds: min((duration.inMicroseconds * cinemaFinishedShare).round(), cinemaFinishedTail.inMicroseconds));
 }
 
+// [人工决策-2026-11-21 13:37:52] 换源后片长对不上就提醒（11-21 Codex 总交接第 6.4 节，用户说按最佳实践做）：不同源可能是不同剪辑（删减版、
+// 加长版、带片头广告的），按集号配上同一集也不代表时间轴一致，接着的位置可能差出去。片长差超过 cinemaCutTolerance 与原片长的 cinemaCutShare
+// 两者里更大的那个时，提示条写比原来长或短几分钟、进度可能对不上（用户自己拖），不自动改位置（猜不准）。返回差了多少，没超过为空。
+Duration? cinemaCutDiffers(Duration before, Duration after) {
+  if (before <= Duration.zero || after <= Duration.zero) return null;
+  final diff = after - before;
+  final tolerance = Duration(microseconds: max(cinemaCutTolerance.inMicroseconds, (before.inMicroseconds * cinemaCutShare).round()));
+  return diff.abs() > tolerance ? diff : null;
+}
+
+const cinemaCutTolerance = Duration(minutes: 2);
+const cinemaCutShare = 0.03;
+
 const cinemaFinishedShare = 0.05;
 const cinemaFinishedTail = Duration(minutes: 3);
 
@@ -189,7 +209,17 @@ int cinemaMatchEpisode(List<CinemaEpisode> episodes, String? name, {required int
 
 // 聚合键：片名去掉空白、全角折成半角、转小写，加「|」加四位年份（没有年份为空）。交接原版用 NFKC，Dart 没有现成的规范化，
 // 这里只折全角 ASCII 与全角空格（交接的测试向量都在这个范围），其余写法不同的当成两部片，不会误合并。
-String cinemaTitleKey(String name, String year) => '${cinemaFold(name)}|${cinemaYear(year)}';
+// [人工决策-2026-11-21 13:37:52] 预告片、解说、花絮单独成条（11-21 Codex 总交接第 6.6 节，用户说按最佳实践做）：采集站把同名同年份的预告片、
+// 电影解说也叫「流浪地球」，只按片名加年份会和正片合成一条，选到它的源点开是两分钟预告（11-21 实测 12 个源的 type_name）。
+// 分类里带这几个字的在键后面加「|预告」这类后缀；正片的键不变，已有的看过的记录照旧对得上。分类写法各站不一，只认这几个字，认不出的照旧合并。
+String cinemaTitleKey(String name, String year, {String category = ''}) => '${cinemaFold(name)}|${cinemaYear(year)}${_sideKind(category)}';
+
+String _sideKind(String category) {
+  for (final kind in const ['预告', '解说', '花絮']) {
+    if (category.contains(kind)) return '|$kind';
+  }
+  return '';
+}
 
 // 片名的折叠写法：去空白、全角折半角、小写。聚合键用，中转的片名目录按同样的写法折叠（服务端 cinema_catalog_source.ts 的 cinemaFold）。
 String cinemaFold(String name) {

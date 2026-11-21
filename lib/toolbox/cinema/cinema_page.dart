@@ -153,6 +153,8 @@ class _CinemaPageState extends State<CinemaPage> {
       if (mounted) setState(() => _message = '拿不到片源规则，稍后再试');
       return;
     }
+    // 结果正显示着时再搜同一个词是「重新搜」，不用最近的搜索结果（人工决策见 CinemaService.searchCacheLifetime）。
+    final fresh = !_searching && _result != null && _searched == keyword;
     _cancel?.complete();
     final cancel = _cancel = Completer<void>();
     final generation = ++_generation;
@@ -163,7 +165,7 @@ class _CinemaPageState extends State<CinemaPage> {
     });
     try {
       // 边搜边显示（人工决策见 cinema_service.dart 的 pauseAfter）：每回来一个源换一份快照。
-      await for (final result in _service.search(keyword, cancel: cancel.future)) {
+      await for (final result in _service.search(keyword, cancel: cancel.future, fresh: fresh)) {
         if (!mounted || generation != _generation) return;
         setState(() => _result = result);
       }
@@ -184,10 +186,20 @@ class _CinemaPageState extends State<CinemaPage> {
 
   // 看过的：按记下的源直接接着播，看完了的（CinemaHistory.finished）从下一集开头播，没有下一集时播放页落回这一集从头；
   // 源坏了或已不在规则包里，播放页报错并可「找其他片源」（人工决策见 CinemaService.findMoreSources）。
+  // [人工决策-2026-11-21 13:37:52] 先用本机记下的别的源（11-21 Codex 总交接第 6.5 节，用户说按最佳实践做）：看的时候把这部片的各个源记在本机
+  // （cinema_store.dart 的 title_source，跟着看过的记录删），续播时一起放进片源菜单，记的源坏了直接换，记下的都不行再「找其他片源」联网搜。
   Future<void> _resume(CinemaHistory entry) async {
     final title = CinemaTitle(key: entry.key, name: entry.name, year: '', cover: entry.cover, remarks: '');
     final source = CinemaSourceRef(ruleId: entry.ruleId, source: entry.source, name: entry.name, remarks: '');
     title.addSource(source);
+    try {
+      for (final known in await _service.store.titleSources(entry.key)) {
+        title.addSource(known);
+      }
+    } catch (error, stack) {
+      campusLog('[Cinema] action=title_sources errorType=${error.runtimeType}\n$stack');
+    }
+    if (!mounted) return;
     final finished = entry.finished;
     await Navigator.push<void>(
       context,
@@ -543,7 +555,8 @@ class _CinemaPageState extends State<CinemaPage> {
               covers: title.covers,
               title: title.name,
               lines: [
-                [if (title.year.isNotEmpty) title.year, if (title.remarks.isNotEmpty) title.remarks].join(' · '),
+                // 分类写在年份后面（同名的正片、纪录片、解说靠它分开，11-21 Codex 总交接第 6.6 节）。
+                [if (title.year.isNotEmpty) title.year, if (title.category.isNotEmpty) title.category, if (title.remarks.isNotEmpty) title.remarks].join(' · '),
                 '${title.sources.length} 个源',
               ],
               onTap: () => unawaited(_openTitle(title).catchError((Object error, StackTrace stack) => campusLog('[Cinema] action=open errorType=${error.runtimeType}\n$stack'))),

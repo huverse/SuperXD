@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -79,6 +80,16 @@ class CinemaService implements ToolboxService {
   static const chaptersLimit = 64;
   // 一次搜索的结果最多带着多少集搜索自带的剧集（每集一个地址，约 2MB 内）：长剧多的词不至于把一堆用不上的地址留在内存里。
   static const carriedEpisodeLimit = 20000;
+  // [人工决策-2026-11-21 13:37:52] 最近的搜索结果（11-21 Codex 总交接第 7.4 节，用户说按最佳实践做）：同一个源、同一个词（折叠后）
+  // searchCacheLifetime 内再搜直接用上次的结果，不再请求（返回首页再搜、找其他片源、改了词又改回来），同常见搜索的短期缓存；
+  // 只记成功的（搜不到也算成功，HTTP 200 的繁忙、超时、连不上都不记）；键带规则包版本与规则版本，换了规则即失效；
+  // 最多 searchCacheLimit 份、估算大小 searchCacheWeight 内（超了先丢最旧的），只在内存，不落库、不上传。
+  // 结果正显示着时再按一次同一个词的搜索是「重新搜」（fresh），不用缓存。
+  static const searchCacheLifetime = Duration(minutes: 1);
+  static const searchCacheLimit = 64;
+  static const searchCacheWeight = 4 * 1024 * 1024;
+  // 「找其他片源」不再搜这么久内刚失败过的源（见 findMoreSources）。
+  static const recentFailure = Duration(minutes: 1);
 
   final CinemaStore store;
   final CinemaRulesFeed? _feed;
@@ -93,6 +104,10 @@ class CinemaService implements ToolboxService {
   // 各源连续失败几次、暂停到什么时刻（只在内存）。
   final _strikes = <String, int>{};
   final _pausedUntil = <String, DateTime>{};
+  // 各源最近一次失败的时刻（只在内存，找其他片源用）、正在搜的（同一个源同一个词只发一次）与最近的搜索结果。
+  final _failedAt = <String, DateTime>{};
+  final _searching = <String, CinemaShared<(DateTime, List<CinemaHit>)>>{};
+  final _searchCache = _SearchCache();
   DateTime? _retryAt;
   // 选集缓存（键见 _chaptersKey）与正在取的（同一部片同时只发一次，几处一起等）。
   final _chapters = LruMap<String, (DateTime, List<CinemaRoad>)>(maximumSize: chaptersLimit);
@@ -179,15 +194,18 @@ class CinemaService implements ToolboxService {
 
   // 多源并行搜索（只搜同意过的源），按片名加年份聚合，边搜边给快照（CinemaSearchResult.pending 是还没回来的源数，最后一份为 0）。
   // 一个源失败只进 failures，不影响别的源；暂停着的源不去请求、直接列进 failures。结果按第一次出现的先后排、只往后加，搜的过程中不跳动。
-  // cancel 完成时中断还没回来的请求。
-  Stream<CinemaSearchResult> search(String keyword, {Future<void>? cancel}) async* {
+  // cancel 完成时中断还没回来的请求。fresh 为真时不用最近的搜索结果（见 searchCacheLifetime），页面上同一个词再按一次搜索就是它。
+  Stream<CinemaSearchResult> search(String keyword, {Future<void>? cancel, bool fresh = false}) => _search(keyword, cancel: cancel, fresh: fresh);
+
+  // only 为空是全部同意过的源；「找其他片源」只搜这部片还没有的、刚才没失败的源。
+  Stream<CinemaSearchResult> _search(String keyword, {Future<void>? cancel, bool fresh = false, bool Function(CinemaRule rule)? only}) async* {
     final package = await usable();
     final granted = await store.consents();
     final now = _now();
     final failures = <CinemaFailure>[];
     final active = <CinemaRule>[];
     for (final rule in package.rules) {
-      if (granted[cinemaRuleSubject(rule)] != rule.host) continue;
+      if (granted[cinemaRuleSubject(rule)] != rule.host || (only != null && !only(rule))) continue;
       final until = _pausedUntil[rule.id];
       if (until != null && now.isBefore(until)) {
         failures.add(CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}连续没连上，${formatCampusClock(until)}前先不搜', paused: true));
@@ -198,38 +216,44 @@ class CinemaService implements ToolboxService {
     final titles = <String, CinemaTitle>{};
     var pending = active.length;
     CinemaSearchResult snapshot() => CinemaSearchResult(titles: [...titles.values], failures: [...failures], pending: pending);
-    campusLog('[Cinema] action=search rules=${package.version} sources=${active.length} paused=${failures.length}');
+    campusLog('[Cinema] action=search rules=${package.version} sources=${active.length} paused=${failures.length} fresh=$fresh');
     yield snapshot();
     if (active.isEmpty) return;
-    // 开发者模式下逐源记从发出搜索到这个源回来用了多久（请求记录只有路径，各源同一个路径分不出是哪个源），用来在手机上比各源快慢。
+    // 开发者模式的诊断（11-21 Codex 总交接第 8 节）：每个源排队多久、从发出搜索到回来多久、结果分类，整轮的首条结果与全部结束；不记片名。
     final watch = Stopwatch()..start();
+    int? firstMs;
     final pool = Pool(searchConcurrency);
-    final arrivals = StreamController<(CinemaRule, List<CinemaHit>?, CinemaFailure?)>();
+    final arrivals = StreamController<_Arrival>();
     for (final rule in active) {
-      unawaited(pool.withResource(() => _searchOne(rule, keyword, cancel)).then(arrivals.add));
+      final queued = watch.elapsed;
+      unawaited(pool.withResource(() => _searchOne(package, rule, keyword, cancel, fresh: fresh, waited: watch.elapsed - queued, started: watch)).then(arrivals.add));
     }
     var carriedEpisodes = 0;
-    await for (final (rule, hits, failure) in arrivals.stream.take(active.length)) {
+    await for (final arrival in arrivals.stream.take(active.length)) {
+      final rule = arrival.rule, hits = arrival.hits, failure = arrival.failure;
       pending--;
-      if (campusDiagnostics) campusLog('[Cinema] action=search_arrival rule=${rule.id} ms=${watch.elapsedMilliseconds} hits=${hits?.length ?? '-'}');
       if (hits != null) {
         _strikes.remove(rule.id);
+        _failedAt.remove(rule.id);
+        if (hits.isNotEmpty) firstMs ??= watch.elapsedMilliseconds;
         for (final hit in hits.take(hitsPerSource)) {
           // 搜索回复自带的剧集挂在这条片源上（见 CinemaSourceRef.carried），点开不再请求详情；一次搜索最多带 carriedEpisodeLimit 集，超出的点开再取。
+          // 取到的时刻用这份结果真正取到的时候（最近的搜索结果里拿的就是当时），地址可能带签名、按它算有效期。
           final roads = hit.roads;
           final episodes = roads == null ? 0 : roads.fold(0, (sum, road) => sum + road.episodes.length);
           final carry = episodes > 0 && carriedEpisodes + episodes <= carriedEpisodeLimit;
           if (carry) carriedEpisodes += episodes;
-          final key = cinemaTitleKey(hit.name, hit.year);
-          final title = titles.putIfAbsent(key, () => CinemaTitle(key: key, name: hit.name, year: hit.year, cover: hit.cover, remarks: hit.remarks));
+          final key = cinemaTitleKey(hit.name, hit.year, category: hit.category);
+          final title = titles.putIfAbsent(key, () => CinemaTitle(key: key, name: hit.name, year: hit.year, cover: hit.cover, remarks: hit.remarks, category: hit.category));
           title.addCover(hit.cover);
-          title.addSource(CinemaSourceRef(ruleId: hit.ruleId, source: hit.source, name: hit.name, remarks: hit.remarks, carried: carry ? (_now(), roads!) : null));
+          title.addSource(CinemaSourceRef(ruleId: hit.ruleId, source: hit.source, name: hit.name, remarks: hit.remarks, carried: carry ? (arrival.fetchedAt!, roads!) : null));
         }
       }
       if (failure != null) {
         // 页面只写源名，原因（HTTP 状态、超时、看不懂回复）记在这里；不带搜的片名。
         campusLog('[Cinema] action=search_source rule=${rule.id} failed=${failure.message}');
         failures.add(failure);
+        _failedAt[rule.id] = _now();
         final strikes = (_strikes[rule.id] ?? 0) + 1;
         _strikes[rule.id] = strikes;
         if (strikes >= pauseAfter) {
@@ -242,34 +266,92 @@ class CinemaService implements ToolboxService {
     }
     await arrivals.close();
     await pool.close();
-    campusLog('[Cinema] action=search titles=${titles.length} failures=${failures.length}');
+    campusLog('[Cinema] action=search titles=${titles.length} failures=${failures.length} firstMs=${firstMs ?? '-'} totalMs=${watch.elapsedMilliseconds}');
   }
 
   // 一个源搜一次：成功给结果，失败给原因，被取消（新的一次搜索顶掉或离开了页面）两个都为空、不算这个源失败。不抛错。
-  Future<(CinemaRule, List<CinemaHit>?, CinemaFailure?)> _searchOne(CinemaRule rule, String keyword, Future<void>? cancel) async {
+  // 先看最近的搜索结果（fresh 不看）；同一个源同一个词正在搜就一起等（CinemaShared，各处可以单独不等了，都不等了才中断）。
+  Future<_Arrival> _searchOne(CinemaPackage package, CinemaRule rule, String keyword, Future<void>? cancel, {required bool fresh, required Duration waited, required Stopwatch started}) async {
+    final key = '${package.version}\u0000${rule.id}\u0000${rule.version}\u0000${cinemaFold(keyword)}';
+    void note(String result, {List<CinemaHit>? hits}) {
+      if (campusDiagnostics) campusLog('[Cinema] action=search_source rule=${rule.id} result=$result waitMs=${waited.inMilliseconds} ms=${started.elapsedMilliseconds} hits=${hits?.length ?? '-'}');
+    }
+
+    final cached = fresh ? null : _searchCache.read(key, _now());
+    if (cached != null) {
+      note('cached', hits: cached.$2);
+      return _Arrival(rule, cached.$2, null, cached.$1);
+    }
     try {
-      if (rule.catalog != null) return (rule, await catalog.search(rule, keyword, cancel: cancel), null);
-      final request = prepareCinemaRequest(rule.search.request, {'keyword': keyword});
-      final raw = await _http.text(request, userAgent: rule.userAgent, referer: rule.referer, cancel: cancel);
-      return (rule, parseCinemaSearch(raw, rule, base: request.uri), null);
+      final running = _searching[key];
+      final CinemaShared<(DateTime, List<CinemaHit>)> shared;
+      if (!fresh && running != null && running.live) {
+        shared = running;
+      } else {
+        late final CinemaShared<(DateTime, List<CinemaHit>)> created;
+        shared = created = _searching[key] = CinemaShared((abort) async {
+          final hits = await _fetchHits(rule, keyword, abort);
+          final at = _now();
+          _searchCache.write(key, hits, at);
+          return (at, hits);
+        });
+        unawaited(created.settled.then((_) {
+          if (identical(_searching[key], created)) _searching.remove(key);
+        }));
+      }
+      final (at, hits) = await shared.wait(cancel);
+      note(hits.isEmpty ? 'empty' : 'ok', hits: hits);
+      return _Arrival(rule, hits, null, at);
     } on CinemaHttpException catch (error) {
-      return (rule, null, CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}${error.message}'));
+      note(error.status == null ? 'failed_${_failureKind(error.message)}' : 'failed_http_${error.status}');
+      return _Arrival(rule, null, CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}${error.message}'), null);
     } on CinemaRuleException catch (error) {
-      return (rule, null, CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}：${error.message}'));
+      note('failed_${_failureKind(error.message)}');
+      return _Arrival(rule, null, CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}：${error.message}'), null);
     } on http.RequestAbortedException {
-      return (rule, null, null);
+      note('cancelled');
+      return _Arrival(rule, null, null, null);
     } catch (error, stack) {
       campusLog('[Cinema] action=search_source errorType=${error.runtimeType}\n$stack');
-      return (rule, null, CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}出错了'));
+      return _Arrival(rule, null, CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}出错了'), null);
     }
   }
 
+  // 真去请求一次（几处共用，见 _searchOne）；开发者模式下记网络与解析各用了多久、回复多大。
+  Future<List<CinemaHit>> _fetchHits(CinemaRule rule, String keyword, Future<void> abort) async {
+    if (rule.catalog != null) return catalog.search(rule, keyword, cancel: abort);
+    final request = prepareCinemaRequest(rule.search.request, {'keyword': keyword});
+    final watch = Stopwatch()..start();
+    final raw = await _http.text(request, userAgent: rule.userAgent, referer: rule.referer, cancel: abort);
+    final fetched = watch.elapsedMilliseconds;
+    try {
+      return parseCinemaSearch(raw, rule, base: request.uri);
+    } finally {
+      if (campusDiagnostics) campusLog('[Cinema] action=search_fetch rule=${rule.id} fetchMs=$fetched parseMs=${watch.elapsedMilliseconds - fetched} bytes=${utf8.encode(raw).length}');
+    }
+  }
+
+  // 失败原因的分类（日志用，页面只写源名）。
+  static String _failureKind(String message) => switch (message) {
+    '超时' => 'timeout',
+    '连不上' => 'unreachable',
+    '回复太大' => 'too_large',
+    '回复里没有结果列表' => 'no_list',
+    '结果列表格式不对' => 'bad_list',
+    '返回的不是 JSON' => 'not_json',
+    _ => 'other',
+  };
+
   // [人工决策-2026-11-21 11:59:29] 播放页「找其他片源」（用户选「点了才搜」，同 TVBox、Kazumi 的换源；没选续播时后台自动补搜）：
-  // 从「看过的」续播只带着当时那个源，源坏了或下架就没得换。点了才按片名走一次 search（只搜同意过的源，暂停着的照旧不搜），
+  // 从「看过的」续播只带着当时那个源，源坏了或下架就没得换。点了才按片名搜同意过的源（暂停着的照旧不搜），
   // 聚合键（片名加年份）与这部片相同的源接进这部片（addSource，已打开的菜单随之多出来），由用户自己选；返回新加了几个。cancel 完成时不再等。
+  // 11-21 Codex 总交接第 7.2 节：这部片已经有的源、recentFailure 内刚失败过的源不再搜（刚失败的立刻再打一次多半还是失败，白占对方与流量）；
+  // 一分钟内搜过同一个词的源直接用那次的结果（见 searchCacheLifetime）。
   Future<int> findMoreSources(CinemaTitle title, {Future<void>? cancel}) async {
     var added = 0;
-    await for (final result in search(title.name, cancel: cancel)) {
+    final now = _now();
+    bool wanted(CinemaRule rule) => !title.sources.any((ref) => ref.ruleId == rule.id) && !(_failedAt[rule.id]?.add(recentFailure).isAfter(now) ?? false);
+    await for (final result in _search(title.name, cancel: cancel, only: wanted)) {
       for (final found in result.titles.where((found) => found.key == title.key)) {
         for (final ref in found.sources) {
           if (title.addSource(ref)) added++;
@@ -285,6 +367,7 @@ class CinemaService implements ToolboxService {
   void resume() {
     _pausedUntil.clear();
     _strikes.clear();
+    _failedAt.clear();
   }
 
   CinemaRule? rule(String id) => _package?.rules.where((rule) => rule.id == id).firstOrNull;
@@ -323,12 +406,15 @@ class CinemaService implements ToolboxService {
   }
 
   // 交给播放器的地址：m3u8 经本机代理改写清单（不删分片，人工决策见 cinema_playlist.dart 文件头），其余直接播；rule 为空（云解析的结果）时用默认 UA、不带 Referer。
-  // 换集、换源、离开播放页时交回 release，本机代理里这一路还没回来的请求随之中断。fresh（「重新载入」）时清单不用缓存、探测重新做。
-  Future<CinemaPlayable> playable(String url, {CinemaRule? rule, bool playlist = false, bool fresh = false}) async {
+  // m3u8 先等本机代理把清单、密钥与探测备好再交出去（播放器 5 秒读不到就放弃，人工决策见 cinema_proxy.dart 文件头）；cancel 完成时不再等。
+  // 换集、换源、离开播放页时交回 release，本机代理里这一路还没回来的请求随之中断。fresh（「重新载入」）时预取不用缓存、探测重新做。
+  Future<CinemaPlayable> playable(String url, {CinemaRule? rule, bool playlist = false, bool fresh = false, Future<void>? cancel}) async {
     final headers = cinemaHeaders(rule?.userAgent ?? '', rule?.referer ?? '');
     final uri = Uri.parse(url);
     if (!playlist && !cinemaPlaylistUrl(url)) return CinemaPlayable(uri: uri, headers: headers);
-    return CinemaPlayable(uri: await _proxy.open(uri, CinemaStream(headers: headers), fresh: fresh), headers: headers);
+    final stream = CinemaStream(headers: headers);
+    await _proxy.warm(uri, stream, cancel: cancel, fresh: fresh);
+    return CinemaPlayable(uri: await _proxy.open(uri, stream), headers: headers);
   }
 
   void release(CinemaPlayable playable) => _proxy.release(playable.uri);
@@ -380,3 +466,41 @@ String cinemaSourceLabel(CinemaService service, CinemaSourceRef ref) => [
   if (ref.remarks.isNotEmpty) ref.remarks,
   ?cinemaSourceStatLabel(service.knownStats[ref.ruleId]),
 ].join(' · ');
+
+// 一个源这一次搜索的结果：成功给 hits 与取到的时刻，失败给原因，被取消两个都为空。
+class _Arrival {
+  const _Arrival(this.rule, this.hits, this.failure, this.fetchedAt);
+  final CinemaRule rule;
+  final List<CinemaHit>? hits;
+  final CinemaFailure? failure;
+  final DateTime? fetchedAt;
+}
+
+// 最近的搜索结果（规则见 CinemaService.searchCacheLifetime）：按插入先后排，超了先丢最旧的；大小按条数与剧集数估算。
+class _SearchCache {
+  final _entries = <String, (DateTime, List<CinemaHit>, int)>{};
+  var _weight = 0;
+
+  (DateTime, List<CinemaHit>)? read(String key, DateTime now) {
+    final entry = _entries[key];
+    if (entry == null) return null;
+    if (now.difference(entry.$1) < CinemaService.searchCacheLifetime) return (entry.$1, entry.$2);
+    _remove(key);
+    return null;
+  }
+
+  void write(String key, List<CinemaHit> hits, DateTime at) {
+    _remove(key);
+    final weight = hits.fold(0, (sum, hit) => sum + 256 + (hit.roads ?? const <CinemaRoad>[]).fold(0, (sum, road) => sum + 128 * road.episodes.length));
+    _entries[key] = (at, hits, weight);
+    _weight += weight;
+    while (_entries.length > CinemaService.searchCacheLimit || (_weight > CinemaService.searchCacheWeight && _entries.length > 1)) {
+      _remove(_entries.keys.first);
+    }
+  }
+
+  void _remove(String key) {
+    final entry = _entries.remove(key);
+    if (entry != null) _weight -= entry.$3;
+  }
+}

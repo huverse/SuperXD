@@ -10,11 +10,15 @@ import 'package:superxd/toolbox/cinema/cinema_models.dart';
 // - history：看过的片与看到哪，最多 cinemaHistoryLimit 条、超过 cinemaHistoryLifetime 没再看的删掉；
 // - source_stat（第 2 版起）：各片源最近一次播成、没播成的时刻与播成那次的首帧用时（选集页排片源与标注用，人工决策见 cinema_service.dart 的 recordPlayback），
 //   每个源一行（行数不超过规则包里的源数），超过 cinemaSourceStatLifetime 没再播的删掉。
+// - title_source（第 3 版起）：看过的片在各源里的编号、原名与备注（续播时直接有别的源可换，不用再搜），跟着 history 走：
+//   每部最多 cinemaTitleSourceLimit 个，history 里没有了（删掉、超过上限或期限被清）就一起删。
 const cinemaHistoryLimit = 50;
 const cinemaHistoryLifetime = Duration(days: 180);
 const cinemaSourceStatLifetime = Duration(days: 30);
+const cinemaTitleSourceLimit = 32;
 
 const _createSourceStat = 'CREATE TABLE source_stat (rule_id TEXT PRIMARY KEY, ok_at INTEGER, fail_at INTEGER, first_frame_ms INTEGER, updated_at INTEGER NOT NULL)';
+const _createTitleSource = 'CREATE TABLE title_source (key TEXT NOT NULL, position INTEGER NOT NULL, rule_id TEXT NOT NULL, source TEXT NOT NULL, name TEXT NOT NULL, remarks TEXT NOT NULL, PRIMARY KEY (key, position))';
 
 class CinemaStore {
   CinemaStore._(this._database);
@@ -25,10 +29,11 @@ class CinemaStore {
     await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 2,
+        version: 3,
         rollbackActiveTransactionOnOpen: true,
         onUpgrade: (database, from, _) async {
           if (from < 2) await database.execute(_createSourceStat);
+          if (from < 3) await database.execute(_createTitleSource);
         },
         onCreate: (database, _) async {
           await database.execute('CREATE TABLE package (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL, payload BLOB NOT NULL, fetched_at INTEGER NOT NULL)');
@@ -38,6 +43,7 @@ class CinemaStore {
           );
           await database.execute('CREATE INDEX history_time ON history (updated_at DESC)');
           await database.execute(_createSourceStat);
+          await database.execute(_createTitleSource);
         },
       ),
     ),
@@ -97,12 +103,34 @@ class CinemaStore {
       final cutoff = entry.updatedAt.toUtc().subtract(cinemaHistoryLifetime).millisecondsSinceEpoch;
       await transaction.delete('history', where: 'updated_at < ?', whereArgs: [cutoff]);
       await transaction.execute('DELETE FROM history WHERE key NOT IN (SELECT key FROM history ORDER BY updated_at DESC LIMIT ?)', [cinemaHistoryLimit]);
+      await transaction.execute('DELETE FROM title_source WHERE key NOT IN (SELECT key FROM history)');
     });
   }
 
   Future<void> deleteHistory(String key) async {
-    await _database.delete('history', where: 'key = ?', whereArgs: [key]);
+    await _database.transaction((transaction) async {
+      await transaction.delete('history', where: 'key = ?', whereArgs: [key]);
+      await transaction.delete('title_source', where: 'key = ?', whereArgs: [key]);
+    });
   }
+
+  // 一部看过的片的各个源（按给的先后，最多 cinemaTitleSourceLimit 个），整份换掉；history 里没有这部就不记。
+  Future<void> saveTitleSources(String key, List<CinemaSourceRef> sources) async {
+    await _database.transaction((transaction) async {
+      await transaction.delete('title_source', where: 'key = ?', whereArgs: [key]);
+      if ((await transaction.query('history', columns: ['key'], where: 'key = ?', whereArgs: [key], limit: 1)).isEmpty) return;
+      final batch = transaction.batch();
+      for (final (position, ref) in sources.take(cinemaTitleSourceLimit).indexed) {
+        batch.insert('title_source', {'key': key, 'position': position, 'rule_id': ref.ruleId, 'source': ref.source, 'name': ref.name, 'remarks': ref.remarks});
+      }
+      await batch.commit(noResult: true);
+    });
+  }
+
+  Future<List<CinemaSourceRef>> titleSources(String key) async => [
+    for (final row in await _database.query('title_source', where: 'key = ?', whereArgs: [key], orderBy: 'position', limit: cinemaTitleSourceLimit))
+      CinemaSourceRef(ruleId: row['rule_id'] as String, source: row['source'] as String, name: row['name'] as String, remarks: row['remarks'] as String),
+  ];
 
   // 各片源最近的播放结果；先删掉超过 cinemaSourceStatLifetime 没再播的。
   Future<Map<String, CinemaSourceStat>> sourceStats(DateTime now) async {
