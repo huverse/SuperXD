@@ -180,6 +180,14 @@ Future<(ToolboxFixture, CinemaService)> openCinemaForPage(WidgetTester tester, {
 }
 
 // 让真实的异步（本机库、替身回复）走完，直到 done 为真（最多约 1 秒）。
+// 纯 test() 里按条件等（最多 5 秒）：搜索先读本机库（sqflite 在另一个 isolate、按真实时间完成），只让出几轮事件循环不一定够，
+// CI 忙时会还没发出请求就断言（11-21 #342 的 CI 踩过「一次搜索 14 个源同时发出」拿到 0 个请求）。
+Future<void> untilTrue(bool Function() done) async {
+  for (var waited = 0; !done() && waited < 5000; waited += 10) {
+    await Future<void>.delayed(const Duration(milliseconds: 10));
+  }
+}
+
 Future<void> settleUntil(WidgetTester tester, bool Function() done) async {
   for (var index = 0; index < 50 && !done(); index++) {
     await tester.runAsync(() => Future<void>.delayed(const Duration(milliseconds: 20)));
@@ -633,7 +641,7 @@ void main() {
       await service.grantRules((await service.rules()).rules);
       final snapshots = <CinemaSearchResult>[];
       final done = service.search('合成').forEach(snapshots.add);
-      await pumpEventQueue();
+      await untilTrue(() => snapshots.length >= 2);
       expect([for (final snapshot in snapshots) snapshot.pending], [2, 1]);
       expect(snapshots.last.titles.single.sources, hasLength(1), reason: '先回来的已经显示');
       slow.complete();
@@ -706,7 +714,7 @@ void main() {
       final service = await open(() async => packageBytes(rules: rules), client: client);
       await service.grantRules((await service.rules()).rules);
       final done = service.search('合成').drain<void>();
-      await pumpEventQueue();
+      await untilTrue(() => requests.length >= 14);
       expect(requests, hasLength(14), reason: '没有一个源在排队');
       expect(CinemaService.searchConcurrency, greaterThanOrEqualTo(14));
       final plain = requests.firstWhere((request) => request.url.host == 's0.example.com');
@@ -967,7 +975,9 @@ void main() {
       final leaving = Completer<void>();
       final first = service.search('合成', cancel: leaving.future).last;
       final second = service.search('合成').last;
-      await pumpEventQueue();
+      await untilTrue(() => requests >= 1);
+      // 第二处也要读完本机库才轮到它：多等一会儿，它若另发一次就会被数到。
+      await Future<void>.delayed(const Duration(milliseconds: 100));
       expect(requests, 1);
       leaving.complete();
       await pumpEventQueue();

@@ -38,4 +38,6 @@ namespace_id = "1001"
 simple = { limit = 120, period = 60 }
 TOML
 
+# 在临时目录里跑：wrangler 会在当前目录留 .wrangler 缓存，别落在仓库里。
+cd "$work"
 npx --yes wrangler@4.162.0 deploy --config "$work/wrangler.toml"
