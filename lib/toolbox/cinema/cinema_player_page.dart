@@ -23,6 +23,7 @@ import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
 import 'package:superxd/toolbox/cinema/cinema_episodes.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
+import 'package:superxd/toolbox/cinema/cinema_playback_truth.dart';
 import 'package:superxd/toolbox/cinema/cinema_player_controls.dart';
 import 'package:superxd/toolbox/cinema/cinema_rule.dart';
 import 'package:superxd/toolbox/cinema/cinema_service.dart';
@@ -73,6 +74,7 @@ const cinemaPortraitMaxHeight = 0.6;
 
 class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   late final Player _player;
+  late final CinemaPlaybackTruth _truth;
   late final VideoController _video;
   final _subscriptions = <StreamSubscription<Object?>>[];
   late final CinemaSaveSchedule _saves;
@@ -135,6 +137,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       _mediaKitReady = true;
     }
     _player = Player();
+    _truth = CinemaPlaybackTruth(_player);
     _video = VideoController(_player);
     _source = widget.source;
     _rule = widget.source == null ? null : widget.service.rule(widget.source!.ruleId);
@@ -168,7 +171,11 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         if (!_currentMedia) return;
         if (position > Duration.zero && mounted && _opening) {
           _record(ok: true);
-          if (campusDiagnostics) campusLog('[CinemaPlayer] action=first_frame id=$_generation ms=${_openWatch.elapsedMilliseconds}');
+          if (campusDiagnostics) {
+            campusLog('[CinemaPlayer] action=first_frame id=$_generation ms=${_openWatch.elapsedMilliseconds}');
+            final generation = _generation;
+            unawaited(_truth.decoder().then((info) => campusLog('[CinemaPlayer] action=decoder id=$generation $info')).catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=decoder errorType=${error.runtimeType}\n$stack')));
+          }
           setState(() => _opening = false);
           _watchSlow();
         }
@@ -385,13 +392,17 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     showCampusToast(context, '这个源比原来${diff.isNegative ? '短' : '长'} ${diff.abs().inMinutes} 分钟，可能是别的剪辑，进度不一定对得上');
   }
 
-  // 跳完：等 1 秒合并着记看到哪；开发者模式下 1 秒后记跳转的目标与实际落点（落点以播放器报的为准，Codex 复核时间轴用的口径）。
+  // 发出跳转（命令交给播放器之前，见 CinemaPlayerControls.onSeek）：等 1 秒合并着记看到哪。开发者模式下等跳转真正恢复（libmpv 的 seeking 变回 no，
+  // 见 cinema_playback_truth.dart）再记目标、发出时在不在缓存里、用了多久与落点；连着跳只记最后一次（前面的记 superseded）。
+  // 11-21 Codex 总交接第 12.5 节：原来 await seek 之后 1 秒读位置，seek 0–1 毫秒就返回、位置立刻报成目标，记到的是目标本身、不是恢复时间。
   void _seeked(Duration target) {
     _saves.soon();
     if (!campusDiagnostics) return;
     final generation = _generation;
-    unawaited(Future<void>.delayed(const Duration(seconds: 1), () {
-      if (mounted && generation == _generation) campusLog('[CinemaPlayer] action=seek id=$generation targetMs=${target.inMilliseconds} landedMs=${_player.state.position.inMilliseconds}');
+    unawaited(_truth.begin(target).then((seek) {
+      if (mounted && generation == _generation) {
+        campusLog('[CinemaPlayer] action=seek id=$generation seek=${seek.id} targetMs=${target.inMilliseconds} cached=${seek.cached} result=${seek.result} ms=${seek.ms} landedMs=${_player.state.position.inMilliseconds}');
+      }
     }));
   }
 
@@ -509,6 +520,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     for (final subscription in _subscriptions) {
       unawaited(subscription.cancel());
     }
+    _truth.dispose();
     unawaited(_save().whenComplete(() => _player.dispose()).catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=dispose errorType=${error.runtimeType}\n$stack')));
     super.dispose();
   }
@@ -544,7 +556,8 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
               episode: _episode,
               onEpisode: (index) => unawaited(_pickEpisode(_road, index)),
               resumedFrom: _resumedFrom,
-              onSeeked: _seeked,
+              onSeek: _seeked,
+              seekable: _truth.seekable,
             ),
           ],
         ),

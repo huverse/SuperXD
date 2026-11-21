@@ -24,6 +24,7 @@ import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
 import 'package:superxd/toolbox/cinema/cinema_page.dart';
+import 'package:superxd/toolbox/cinema/cinema_playback_truth.dart';
 import 'package:superxd/toolbox/cinema/cinema_player_controls.dart';
 import 'package:superxd/toolbox/cinema/cinema_player_page.dart';
 import 'package:superxd/toolbox/cinema/cinema_playlist.dart';
@@ -1636,9 +1637,22 @@ void main() {
       final platform = _SeekRecorder()..state = PlayerState(duration: const Duration(seconds: 10417));
       final player = Player(platformPlayer: platform);
       final seeked = <Duration>[];
+      // onSeek 要在命令交给播放器之前（播放页从这一刻开始计跳转用时）：回调里播放器还停在上一次的目标。
+      final before = <Duration?>[];
       await tester.pumpWidget(MaterialApp(
         theme: campusTheme(),
-        home: Scaffold(body: Center(child: SizedBox(width: 360, height: 220, child: CinemaPlayerControls(player: player, title: '合成', subtitle: '', fullscreen: false, busy: false, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}, onSeeked: seeked.add)))),
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: 360,
+              height: 220,
+              child: CinemaPlayerControls(player: player, title: '合成', subtitle: '', fullscreen: false, busy: false, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}, onSeek: (target) {
+                seeked.add(target);
+                before.add(platform.target);
+              }),
+            ),
+          ),
+        ),
       ));
       await tester.pump();
       final bar = tester.getRect(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter.runtimeType.toString() == '_ProgressPainter'));
@@ -1652,9 +1666,52 @@ void main() {
       await tester.dragFrom(bar.center, Offset(-(bar.width / 2 - 10), 0));
       await tester.pump();
       expect(platform.target, Duration.zero);
-      expect(seeked, [Duration.zero, const Duration(seconds: 10417), Duration.zero], reason: '每次跳完都告诉播放页（记看到哪、诊断落点）');
+      expect(seeked, [Duration.zero, const Duration(seconds: 10417), Duration.zero], reason: '每次跳转都告诉播放页（记看到哪、诊断用时）');
+      expect(before, [null, Duration.zero, const Duration(seconds: 10417)], reason: '先告诉播放页、再交给播放器');
       await tester.pumpWidget(const SizedBox());
       await player.dispose();
+    });
+
+    // 11-21 Codex 总交接第 12.5 节：实际可跳的缓存是好几段，seek 一交出就返回、位置立刻报成目标（cinema_playback_truth.dart）。
+    test('缓存状态：libmpv 写成 JSON 的 demuxer-cache-state 取出几段能本地跳转的缓存，按起点排、起点不小于零；读不懂为空', () {
+      // 同 11-21 本机 mpv 跳到 20:00 后读到的形状（截掉无关字段）。
+      const state = '{"cache-end":1287.38,"reader-pts":1209.54,"eof":false,"ts-per-stream":[{"type":"video","cache-end":1288.8}],"bof-cached":true,"seekable-ranges":[{"start":1198.623222,"end":1283.703222},{"start":-0.000000,"end":49.143222}]}';
+      expect(cinemaSeekableRanges(state), [(Duration.zero, const Duration(milliseconds: 49100)), (const Duration(milliseconds: 1198600), const Duration(milliseconds: 1283700))]);
+      expect(cinemaSeekableRanges('{"seekable-ranges":[{"start":10,"end":20},{"start":5,"end":3},{"start":"x","end":9},{"start":-2,"end":3}]}'), [(Duration.zero, const Duration(seconds: 3)), (const Duration(seconds: 10), const Duration(seconds: 20))], reason: '倒着的、不是数字的段不要，起点夹到零');
+      expect(cinemaSeekableRanges('{"cache-end":3}'), isEmpty);
+      expect(cinemaSeekableRanges('not json'), isEmpty);
+      expect(cinemaSeekableRanges('[]'), isEmpty);
+    });
+
+    test('跳转计时：发出时记下目标在不在缓存里，seeking 变回 no 才算恢复；连着跳只认最后一次，前面的记 superseded；问不到时缓存段为空', () async {
+      final truth = CinemaPlaybackTruth(Player(platformPlayer: _SeekRecorder()));
+      addTearDown(truth.dispose);
+      expect(truth.seekable.value, isEmpty, reason: '测试替身不是 libmpv');
+      expect(await truth.decoder(), '', reason: '问不到解码器');
+      truth.notify(cacheState: '{"seekable-ranges":[{"start":0,"end":80},{"start":1198,"end":1214}]}');
+      expect(truth.seekable.value, hasLength(2));
+      final far = truth.begin(const Duration(minutes: 10));
+      final near = truth.begin(const Duration(minutes: 20, seconds: 5));
+      var settled = false;
+      unawaited(near.then((_) => settled = true));
+      truth.notify(seeking: 'yes');
+      await pumpEventQueue();
+      expect(settled, isFalse, reason: 'seeking 还是 yes 时没恢复');
+      truth.notify(seeking: 'no');
+      final (first, second) = (await far, await near);
+      expect((first.result, first.cached), ('superseded', false));
+      expect((second.result, second.cached, second.id), ('ok', true, first.id + 1));
+      final quick = truth.begin(const Duration(seconds: 30));
+      truth.notify(seeking: 'no');
+      expect((await quick).result, 'ok', reason: '命中缓存时 yes、no 挨得很近，两次通知都可能读到 no');
+    });
+
+    test('进度条的已缓冲：按真实的几段画；问不到时只画当前位置到缓存末端，不从零画起；片长不知道时不画', () {
+      const hour = Duration(hours: 1);
+      expect(cinemaCachedSpans([(Duration.zero, const Duration(minutes: 6)), (const Duration(minutes: 30), const Duration(minutes: 36))], duration: hour, position: const Duration(minutes: 31), bufferEnd: const Duration(minutes: 36)), [(0.0, 0.1), (0.5, 0.6)]);
+      expect(cinemaCachedSpans(const [], duration: hour, position: const Duration(minutes: 30), bufferEnd: const Duration(minutes: 36)), [(0.5, 0.6)]);
+      expect(cinemaCachedSpans(const [], duration: hour, position: const Duration(minutes: 30), bufferEnd: const Duration(minutes: 30)), isEmpty);
+      expect(cinemaCachedSpans([(Duration.zero, const Duration(minutes: 6))], duration: Duration.zero, position: Duration.zero, bufferEnd: Duration.zero), isEmpty);
     });
 
     // 人工决策见 cinema_player_controls.dart 文件头 11-21 那条（用户要求直接删除跳过片头）。
