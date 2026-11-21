@@ -94,6 +94,7 @@ List<CinemaHit> parseCinemaSearch(String raw, CinemaRule rule, {Uri? base}) {
       cover: _first(node, config.coverPath),
       year: cinemaYear(_first(node, config.yearPath)),
       remarks: _first(node, config.remarksPath),
+      category: _first(node, config.categoryPath),
       roads: chapters == null ? null : parseCinemaRoads(node, chapters, base ?? Uri()),
     ));
   }

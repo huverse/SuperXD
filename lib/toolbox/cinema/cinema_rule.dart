@@ -58,7 +58,7 @@ class CinemaRequest {
 // chapters（11-20 起，可空）：搜索回复里每一条自带的剧集（苹果 CMS 的 ac=detail 搜索就带全部播放地址），路径相对每一条记录、格式与分隔符同 chapterApiConfig；
 // 写了的源搜到就记下选集，点开不再请求详情（见 CinemaService.chapters）。旧版本不认这个字段、照旧忽略。
 class CinemaSearchConfig {
-  const CinemaSearchConfig({required this.request, required this.listPath, required this.namePath, required this.sourcePath, this.coverPath = '', this.yearPath = '', this.remarksPath = '', this.chapters});
+  const CinemaSearchConfig({required this.request, required this.listPath, required this.namePath, required this.sourcePath, this.coverPath = '', this.yearPath = '', this.remarksPath = '', this.categoryPath = '', this.chapters});
   final CinemaRequest request;
   final String listPath;
   final String namePath;
@@ -66,6 +66,8 @@ class CinemaSearchConfig {
   final String coverPath;
   final String yearPath;
   final String remarksPath;
+  // 分类（苹果 CMS 的 type_name：电影、国产剧、纪录片、解说…），11-21 起可写，搜索结果里写出来好分清正片与解说；旧版本忽略。
+  final String categoryPath;
   // 路径相对每一条记录，request 不用（同搜索请求）。
   final CinemaChapterConfig? chapters;
 }
@@ -200,6 +202,7 @@ class CinemaRule {
       coverPath: path(searchMap, 'coverPath', '$where.searchApiConfig', optional: true),
       yearPath: path(searchMap, 'yearPath', '$where.searchApiConfig', optional: true),
       remarksPath: path(searchMap, 'remarksPath', '$where.searchApiConfig', optional: true),
+      categoryPath: path(searchMap, 'categoryPath', '$where.searchApiConfig', optional: true),
       chapters: searchMap['chapters'] == null ? null : chapterPaths(_map(searchMap['chapters'], '$where.searchApiConfig.chapters'), '$where.searchApiConfig.chapters', searchRequest),
     );
     final searchUses = '${search.request.url}${jsonEncode(search.request.query)}${jsonEncode(search.request.body)}';

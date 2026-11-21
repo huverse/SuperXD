@@ -74,7 +74,10 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   late final Player _player;
   late final VideoController _video;
   final _subscriptions = <StreamSubscription<Object?>>[];
-  Timer? _saveTimer;
+  late final CinemaSaveSchedule _saves;
+  late final AppLifecycleListener _lifecycle;
+  // 开发者模式的诊断：这一次卡住缓冲从什么时候开始。
+  DateTime? _stalledAt;
   Timer? _slowTimer;
   CinemaSourceRef? _source;
   CinemaRule? _rule;
@@ -115,6 +118,11 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   // 「找其他片源」正在搜（按钮原地转圈），离开时不再等。
   var _finding = false;
   final _findCancel = Completer<void>();
+  StreamSubscription<void>? _sourceChanges;
+  // 换源前那一集的片长（第几次打开的），新的片长出来后比一次（cinemaCutDiffers）。
+  (int, Duration)? _cutFrom;
+  // 本机记下的这部片的源有几个（片源只增不减，多了才再记，见 _save）。
+  var _savedSources = 0;
 
   bool get _titleMode => widget.title != null;
 
@@ -137,9 +145,10 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     _subscriptions
       ..add(_player.stream.buffering.listen(_buffering))
       ..add(_player.stream.width.listen((_) => _measure()))
+      ..add(_player.stream.duration.listen(_compareCut))
       ..add(_player.stream.height.listen((_) => _measure()))
       ..add(_player.stream.error.listen((message) {
-        campusLog('[CinemaPlayer] action=error message=${message.length > 120 ? message.substring(0, 120) : message} current=$_currentMedia');
+        campusLog('[CinemaPlayer] action=error id=$_generation message=${message.length > 120 ? message.substring(0, 120) : message} current=$_currentMedia');
         // 换集、重新载入时上一个视频晚到的错误不算这一次的（见 _currentMedia）。
         if (!_currentMedia) return;
         _record(ok: false);
@@ -158,13 +167,19 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         if (!_currentMedia) return;
         if (position > Duration.zero && mounted && _opening) {
           _record(ok: true);
+          if (campusDiagnostics) campusLog('[CinemaPlayer] action=first_frame id=$_generation ms=${_openWatch.elapsedMilliseconds}');
           setState(() => _opening = false);
           _watchSlow();
         }
         _warmNext(position);
       }));
-    _saveTimer = Timer.periodic(const Duration(seconds: 10), (_) => unawaited(_save()));
-    widget.title?.addListener(_onSources);
+    // 每 10 秒记一次看到哪；暂停了等 1 秒合并着记，切到后台立即记（之后可能被系统杀掉）。
+    _saves = CinemaSaveSchedule(_save);
+    _subscriptions.add(_player.stream.playing.listen((playing) {
+      if (!playing) _saves.soon();
+    }));
+    _lifecycle = AppLifecycleListener(onHide: () => unawaited(_saves.now()));
+    _sourceChanges = widget.title?.changes.listen((_) => _onSources());
     unawaited(_open(start: widget.start));
   }
 
@@ -195,6 +210,15 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   }
 
   void _buffering(bool buffering) {
+    if (campusDiagnostics && _currentMedia) {
+      final started = _stalledAt;
+      if (buffering) {
+        _stalledAt ??= DateTime.now();
+      } else if (started != null) {
+        _stalledAt = null;
+        if (!_opening) campusLog('[CinemaPlayer] action=rebuffer id=$_generation ms=${DateTime.now().difference(started).inMilliseconds}');
+      }
+    }
     if (!mounted || buffering == _stalled) return;
     setState(() => _stalled = buffering);
     _watchSlow();
@@ -281,6 +305,10 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         widget.service.release(playable);
         return;
       }
+      if (campusDiagnostics) {
+        // 一次打开一条（id 是这一页里的第几次打开，stream 对得上本机代理的日志）；不记地址与片名。
+        campusLog('[CinemaPlayer] action=open id=$generation rule=${_rule?.id ?? 'parse'} road=$_road episode=$_episode startMs=${start.inMilliseconds} fresh=$fresh stream=${playable.uri.queryParameters['s'] ?? '-'} ms=${_openWatch.elapsedMilliseconds}');
+      }
       final media = _media = Media(playable.uri.toString(), httpHeaders: playable.headers, start: start > Duration.zero ? start : null);
       await _player.open(media);
       // 播放器换上新的之后再交回上一路（先交回的话旧的那一路会报错、误记到这一次）。
@@ -326,15 +354,41 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         duration: state.duration,
         updatedAt: DateTime.now().toUtc(),
       ));
+      // 这部片的各个源也记下（人工决策见 cinema_page.dart 的 _resume）：下次从「看过的」接着看，源坏了直接换，不用再搜。
+      final sources = title.sources;
+      if (sources.length != _savedSources) {
+        await widget.service.store.saveTitleSources(title.key, sources);
+        _savedSources = sources.length;
+      }
     } catch (error, stack) {
       campusLog('[CinemaPlayer] action=save errorType=${error.runtimeType}\n$stack');
     }
   }
 
+  // 换源后新的片长出来了：和换源前差得多就提示可能是别的剪辑版本（人工决策见 cinemaCutDiffers）。
+  void _compareCut(Duration duration) {
+    final from = _cutFrom;
+    if (from == null || from.$1 != _generation || !_currentMedia || duration <= Duration.zero || !mounted) return;
+    _cutFrom = null;
+    final diff = cinemaCutDiffers(from.$2, duration);
+    if (diff == null) return;
+    showCampusToast(context, '这个源比原来${diff.isNegative ? '短' : '长'} ${diff.abs().inMinutes} 分钟，可能是别的剪辑，进度不一定对得上');
+  }
+
+  // 跳完：等 1 秒合并着记看到哪；开发者模式下 1 秒后记跳转的目标与实际落点（落点以播放器报的为准，Codex 复核时间轴用的口径）。
+  void _seeked(Duration target) {
+    _saves.soon();
+    if (!campusDiagnostics) return;
+    final generation = _generation;
+    unawaited(Future<void>.delayed(const Duration(seconds: 1), () {
+      if (mounted && generation == _generation) campusLog('[CinemaPlayer] action=seek id=$generation targetMs=${target.inMilliseconds} landedMs=${_player.state.position.inMilliseconds}');
+    }));
+  }
+
   Future<void> _pickEpisode(int road, int episode) async {
     if (road == _road && episode == _episode && _error == null) return;
     _abandon();
-    await _save();
+    await _saves.now();
     _road = road;
     _episode = episode;
     _resumedFrom = null;
@@ -375,16 +429,19 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         final episode = cinemaMatchEpisode(roads[road].episodes, name, index: _episode, single: single);
         if (episode < 0) continue;
         _abandon();
-        await _save();
+        await _saves.now();
         if (!mounted) return;
         final position = _player.state.position;
         final start = position > Duration.zero ? position : (_resumedFrom ?? Duration.zero);
+        final before = _player.state.duration;
         _source = source;
         _rule = rule;
         _roads = roads;
         _road = road;
         _episode = episode;
         _resumedFrom = null;
+        // 先登记再打开（_open 用下一个序号）：新片长的事件可能在打开返回之前就到。
+        _cutFrom = before > Duration.zero ? (_generation + 1, before) : null;
         await _open(start: start);
         return;
       }
@@ -425,7 +482,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
 
   @override
   void dispose() {
-    widget.title?.removeListener(_onSources);
+    unawaited(_sourceChanges?.cancel());
     _findCancel.complete();
     _abandon();
     _generation++;
@@ -435,7 +492,8 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     if (_fullscreen) {
       unawaited(_applyOrientation(on: false, landscape: false).catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=fullscreen_exit errorType=${error.runtimeType}\n$stack')));
     }
-    _saveTimer?.cancel();
+    _saves.dispose();
+    _lifecycle.dispose();
     _slowTimer?.cancel();
     for (final subscription in _subscriptions) {
       unawaited(subscription.cancel());
@@ -475,6 +533,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
               episode: _episode,
               onEpisode: (index) => unawaited(_pickEpisode(_road, index)),
               resumedFrom: _resumedFrom,
+              onSeeked: _seeked,
             ),
           ],
         ),
@@ -586,5 +645,37 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         ],
       ),
     );
+  }
+}
+
+// 记看到哪的时机（11-21 Codex 总交接第 6.6 节，用户说按最佳实践做；同主流视频 App 的进度保存）：播放中每 periodic 记一次；
+// 暂停、跳转做完时等 settle 再记（连着拖几下只记最后一次）；切到后台、换集换源、离开时立即记（now）。被强杀时，最近一次暂停或跳转已经落库。
+class CinemaSaveSchedule {
+  CinemaSaveSchedule(this._save, {this.periodic = const Duration(seconds: 10), this.settle = const Duration(seconds: 1)}) {
+    _timer = Timer.periodic(periodic, (_) => unawaited(_save()));
+  }
+  final Future<void> Function() _save;
+  final Duration periodic;
+  final Duration settle;
+  late final Timer _timer;
+  Timer? _pending;
+
+  void soon() {
+    _pending?.cancel();
+    _pending = Timer(settle, () {
+      _pending = null;
+      unawaited(_save());
+    });
+  }
+
+  Future<void> now() {
+    _pending?.cancel();
+    _pending = null;
+    return _save();
+  }
+
+  void dispose() {
+    _timer.cancel();
+    _pending?.cancel();
   }
 }

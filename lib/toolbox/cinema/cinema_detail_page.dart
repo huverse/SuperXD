@@ -48,6 +48,7 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
   final _scroll = ScrollController();
   final _heading = GlobalKey();
   var _titleShown = false;
+  late final StreamSubscription<void> _sourceChanges;
 
   CinemaSourceRef get _ref => _sources[_source];
 
@@ -56,12 +57,12 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
     super.initState();
     unawaited(_reloadHistory());
     _scroll.addListener(_onScroll);
-    widget.title.addListener(_onSources);
+    _sourceChanges = widget.title.changes.listen((_) => _onSources());
   }
 
   @override
   void dispose() {
-    widget.title.removeListener(_onSources);
+    unawaited(_sourceChanges.cancel());
     _cancel?.complete();
     _scroll.dispose();
     super.dispose();
@@ -187,7 +188,7 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
                             Text(title.name, key: _heading, style: text.titleLarge),
                             const SizedBox(height: CampusGap.tight),
                             Text(
-                              [if (title.year.isNotEmpty) title.year, if (title.remarks.isNotEmpty) title.remarks, '${title.sources.length} 个源'].join(' · '),
+                              [if (title.year.isNotEmpty) title.year, if (title.category.isNotEmpty) title.category, if (title.remarks.isNotEmpty) title.remarks, '${title.sources.length} 个源'].join(' · '),
                               style: text.bodyMedium?.copyWith(color: palette.onSurfaceVariant),
                             ),
                             if (target != null) ...[

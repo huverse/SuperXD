@@ -53,6 +53,8 @@ class CinemaProxy {
   final _fetching = <String, CinemaShared<CinemaFetched>>{};
   // 取过的密钥（同一集的分片共用一把，按地址记，最多 _keyLimit 把）。
   final _keys = <String, List<int>>{};
+  // 开发者模式的诊断（11-21 Codex 总交接第 7.6、8 节：先量预取命中率再定预取策略）：预取取过的清单与时刻，播放器来取时记一条用上了没有。
+  final _warmed = LruMap<String, DateTime>(maximumSize: playlistLimit);
 
   static const _streamLimit = 8;
   static const _keyLimit = 64;
@@ -92,12 +94,14 @@ class CinemaProxy {
   // cancel 完成时这次预取不等了（别处还在等同一份就不中断）。
   Future<void> warm(Uri playlist, CinemaStream stream, {Future<void>? cancel}) async {
     try {
+      _warmed[_playlistKey(playlist, stream.headers)] = _now();
       var fetched = await _playlist(playlist, stream.headers, cancel);
       if (!cinemaLooksLikePlaylist(fetched.bytes, fetched.contentType)) return;
       var text = utf8.decode(fetched.bytes, allowMalformed: true);
       if (cinemaMasterPlaylist(text)) {
         final variant = cinemaFirstSegment(text, fetched.uri);
         if (variant == null) return;
+        _warmed[_playlistKey(variant, stream.headers)] = _now();
         fetched = await _playlist(variant, stream.headers, cancel);
         if (!cinemaLooksLikePlaylist(fetched.bytes, fetched.contentType)) return;
         text = utf8.decode(fetched.bytes, allowMalformed: true);
@@ -136,7 +140,10 @@ class CinemaProxy {
       }
       final stream = entry.stream, released = entry.released.future;
       if (segments[1] == 'k') {
-        final key = _keys[upstream.toString()] ?? await _fetchKey(upstream, stream.headers, released);
+        final known = _keys[upstream.toString()];
+        final watch = Stopwatch()..start();
+        final key = known ?? await _fetchKey(upstream, stream.headers, released);
+        if (campusDiagnostics) campusLog('[CinemaProxy] action=key stream=$streamId cached=${known != null} ok=${key != null} ms=${watch.elapsedMilliseconds}');
         if (key == null) {
           response.statusCode = HttpStatus.badGateway;
           return;
@@ -145,7 +152,14 @@ class CinemaProxy {
         response.add(key);
         return;
       }
+      final cacheKey = _playlistKey(upstream, stream.headers);
+      final cached = !entry.fresh && (_playlists[cacheKey]?.$1.isAfter(_now()) ?? false);
+      final warmedAt = _warmed.remove(cacheKey);
+      final watch = Stopwatch()..start();
       final fetched = await _playlist(upstream, stream.headers, released, fresh: entry.fresh);
+      if (campusDiagnostics) {
+        campusLog('[CinemaProxy] action=playlist stream=$streamId cache=${entry.fresh ? 'fresh' : (cached ? 'hit' : 'miss')} warmed=${warmedAt == null ? 'no' : 'yes'} warmAgeMs=${warmedAt == null ? '-' : _now().difference(warmedAt).inMilliseconds} redirected=${fetched.uri != upstream} status=${fetched.status} ms=${watch.elapsedMilliseconds}');
+      }
       if (fetched.status >= 400) {
         campusLog('[CinemaProxy] action=playlist status=${fetched.status}');
         response.statusCode = HttpStatus.badGateway;
@@ -185,8 +199,10 @@ class CinemaProxy {
   }
 
   // 取一份清单：缓存里有没过期的直接用，同一份正在取就一起等（fresh 都不用，另起一次）；cancel 是这一处不等了。
+  String _playlistKey(Uri upstream, Map<String, String> headers) => '$upstream\u0000${headers['user-agent'] ?? ''}\u0000${headers['referer'] ?? ''}';
+
   Future<CinemaFetched> _playlist(Uri upstream, Map<String, String> headers, Future<void>? cancel, {bool fresh = false}) {
-    final key = '$upstream\u0000${headers['user-agent'] ?? ''}\u0000${headers['referer'] ?? ''}';
+    final key = _playlistKey(upstream, headers);
     final cached = _playlists[key];
     if (!fresh && cached != null && _now().isBefore(cached.$1)) return Future.value(cached.$2);
     final fetching = _fetching[key];
@@ -278,6 +294,7 @@ class CinemaProxy {
     }
     _keys.clear();
     _playlists.clear();
+    _warmed.clear();
     _unwrap.clear();
     await _server?.close(force: true);
     _server = null;

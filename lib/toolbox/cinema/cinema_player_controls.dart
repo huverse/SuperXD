@@ -70,6 +70,7 @@ class CinemaPlayerControls extends StatefulWidget {
     this.episode = 0,
     this.onEpisode,
     this.resumedFrom,
+    this.onSeeked,
   });
   final Player player;
   final String title;
@@ -95,6 +96,8 @@ class CinemaPlayerControls extends StatefulWidget {
   final ValueChanged<int>? onEpisode;
   // 从上次的位置接着看时给，画「从头播放」。
   final Duration? resumedFrom;
+  // 每次跳转（拖进度、点进度条、跳过片头、从头播放）做完之后告诉播放页，给的是跳转的目标：记看到哪、开发者模式下记目标与落点。
+  final ValueChanged<Duration>? onSeeked;
 
   @override
   State<CinemaPlayerControls> createState() => _CinemaPlayerControlsState();
@@ -127,6 +130,12 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
   var _rate = 1.0;
 
   Player get _player => widget.player;
+
+  // 一切跳转都经这里，跳完交给 onSeeked。
+  Future<void> _seek(Duration target) async {
+    await _player.seek(target);
+    widget.onSeeked?.call(target);
+  }
 
   @override
   void initState() {
@@ -264,7 +273,7 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
 
   void _seekEnd() {
     final to = _seekTo;
-    if (to != null) unawaited(_player.seek(to));
+    if (to != null) unawaited(_seek(to));
     setState(() => _seekFrom = _seekTo = null);
   }
 
@@ -416,7 +425,7 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
               Positioned(
                 right: CampusGap.large,
                 bottom: widget.fullscreen ? 104 : 56,
-                child: _PillButton(icon: CampusIcons.skipIntro, label: '跳过片头', onPressed: () => unawaited(_player.seek(_player.state.position + cinemaSkipIntro))),
+                child: _PillButton(icon: CampusIcons.skipIntro, label: '跳过片头', onPressed: () => unawaited(_seek(_player.state.position + cinemaSkipIntro))),
               ),
             // 出错时不给（居中的报错卡片会和它叠在一起，也没有在播的可以从头）：续播的源坏了时常见。
             if (_resumeShown && !_locked && widget.error == null)
@@ -427,7 +436,7 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
                   icon: CampusIcons.undo,
                   label: '已从 ${formatCinemaDuration(widget.resumedFrom!)} 继续 · 从头播放',
                   onPressed: () {
-                    unawaited(_player.seek(Duration.zero));
+                    unawaited(_seek(Duration.zero));
                     setState(() => _resumeShown = false);
                   },
                 ),
@@ -504,7 +513,7 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
       onPressed: widget.onFullscreen,
       icon: CampusIcon(widget.fullscreen ? CampusIcons.exitFullscreen : CampusIcons.fullscreen, color: Colors.white),
     );
-    final progress = _CinemaProgress(player: _player, onSeekStart: () => _hide?.cancel(), onSeekEnd: _scheduleHide);
+    final progress = _CinemaProgress(player: _player, seek: _seek, onSeekStart: () => _hide?.cancel(), onSeekEnd: _scheduleHide);
     return DecoratedBox(
       decoration: const BoxDecoration(gradient: LinearGradient(begin: Alignment.bottomCenter, end: Alignment.topCenter, colors: [Colors.black54, Colors.transparent])),
       child: SafeArea(
@@ -615,8 +624,9 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
 const _progressInset = 10.0;
 
 class _CinemaProgress extends StatefulWidget {
-  const _CinemaProgress({required this.player, required this.onSeekStart, required this.onSeekEnd});
+  const _CinemaProgress({required this.player, required this.seek, required this.onSeekStart, required this.onSeekEnd});
   final Player player;
+  final Future<void> Function(Duration) seek;
   final VoidCallback onSeekStart;
   final VoidCallback onSeekEnd;
   @override
@@ -650,7 +660,7 @@ class _CinemaProgressState extends State<_CinemaProgress> {
                   double fractionOf(double dx) => ((dx - _progressInset) / (constraints.maxWidth - _progressInset * 2)).clamp(0.0, 1.0);
                   return GestureDetector(
                     behavior: HitTestBehavior.opaque,
-                    onTapUp: total == 0 ? null : (details) => unawaited(player.seek(at(fractionOf(details.localPosition.dx)))),
+                    onTapUp: total == 0 ? null : (details) => unawaited(widget.seek(at(fractionOf(details.localPosition.dx)))),
                     onHorizontalDragStart: total == 0
                         ? null
                         : (details) {
@@ -663,7 +673,7 @@ class _CinemaProgressState extends State<_CinemaProgress> {
                         : (_) {
                             final target = _dragging;
                             setState(() => _dragging = null);
-                            if (target != null) unawaited(player.seek(at(target)));
+                            if (target != null) unawaited(widget.seek(at(target)));
                             widget.onSeekEnd();
                           },
                     child: SizedBox(
