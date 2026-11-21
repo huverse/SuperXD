@@ -86,11 +86,14 @@ android {
     }
 }
 
-// 明文 HTTP 只对教务与中转两个地址放行（安卓网络安全配置，取代清单里全局的 usesCleartextTraffic），其余一律 HTTPS，以后接入的第三方误写成 http 会被系统拦下。
+// 明文 HTTP 只对教务、中转与本机代理的回环地址放行（安卓网络安全配置，取代清单里全局的 usesCleartextTraffic），其余一律 HTTPS，以后接入的第三方误写成 http 会被系统拦下。
 // 只管安卓原生的网络栈（应用更新的安装包下载、网页视图等）；Dart 的请求不看这份配置。清单引用 @xml/network_security_config，由下面的任务按构建生成。
 // 教务地址同 lib/edu/kingo_client.dart 的 kingoBase（test/legal_page_test.dart 核对两边一致）。中转地址来自构建参数 --dart-define=SUPERXD_RELAY
 // （Flutter 经 -Pdart-defines 交给 Gradle，每项是「名=值」的 base64，逗号分隔），是 http 时放行它的主机，是 https 或没给就不放；写坏了构建失败。
+// 另放行回环地址：电影院的本机代理只监听 127.0.0.1（路径带随机口令），系统播放器 ExoPlayer 走安卓原生网络栈、经它取播放清单与密钥
+// （人工决策见 lib/toolbox/cinema/cinema_engine.dart 文件头；mpv 用自己的网络栈，不受这份配置管）。
 val superxdEduHost = "42.247.18.146"
+val superxdLoopbackHost = "127.0.0.1"
 val superxdRelayHost: String? = run {
     val relay = project.findProperty("dart-defines")?.toString().orEmpty().split(',').filter { it.isNotEmpty() }
         .map { String(Base64.getDecoder().decode(it), Charsets.UTF_8) }
@@ -115,7 +118,7 @@ abstract class NetworkSecurityConfigTask : DefaultTask() {
         file.writeText(
             """
             |<?xml version="1.0" encoding="utf-8"?>
-            |<!-- 构建时由 android/app/build.gradle.kts 生成：明文 HTTP 只对教务与中转放行，其余一律 HTTPS。 -->
+            |<!-- 构建时由 android/app/build.gradle.kts 生成：明文 HTTP 只对教务、中转与本机代理的回环地址放行，其余一律 HTTPS。 -->
             |<network-security-config>
             |    <base-config cleartextTrafficPermitted="false" />
             |    <domain-config cleartextTrafficPermitted="true">
@@ -130,7 +133,7 @@ abstract class NetworkSecurityConfigTask : DefaultTask() {
 androidComponents {
     onVariants { variant ->
         val task = tasks.register<NetworkSecurityConfigTask>("superxdNetworkSecurityConfig${variant.name.replaceFirstChar { it.uppercase() }}") {
-            cleartextHosts.set(listOfNotNull(superxdEduHost, superxdRelayHost).distinct())
+            cleartextHosts.set(listOfNotNull(superxdEduHost, superxdRelayHost, superxdLoopbackHost).distinct())
         }
         variant.sources.res?.addGeneratedSourceDirectory(task, NetworkSecurityConfigTask::outputDirectory)
     }

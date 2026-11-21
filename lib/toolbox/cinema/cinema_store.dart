@@ -12,12 +12,14 @@ import 'package:superxd/toolbox/cinema/cinema_models.dart';
 //   每个源一行（行数不超过规则包里的源数），超过 cinemaSourceStatLifetime 没再播的删掉。
 // - title_source（第 3 版起）：看过的片在各源里的编号、原名与备注（续播时直接有别的源可换，不用再搜），跟着 history 走：
 //   每部最多 cinemaTitleSourceLimit 个，history 里没有了（删掉、超过上限或期限被清）就一起删。
+// - preference（第 4 版起）：这台手机上电影院的设置，每项一行（现在只有播放内核 engine，人工决策见 cinema_engine.dart 文件头）。
 const cinemaHistoryLimit = 50;
 const cinemaHistoryLifetime = Duration(days: 180);
 const cinemaSourceStatLifetime = Duration(days: 30);
 const cinemaTitleSourceLimit = 32;
 
 const _createSourceStat = 'CREATE TABLE source_stat (rule_id TEXT PRIMARY KEY, ok_at INTEGER, fail_at INTEGER, first_frame_ms INTEGER, updated_at INTEGER NOT NULL)';
+const _createPreference = 'CREATE TABLE preference (key TEXT PRIMARY KEY, value TEXT NOT NULL)';
 const _createTitleSource = 'CREATE TABLE title_source (key TEXT NOT NULL, position INTEGER NOT NULL, rule_id TEXT NOT NULL, source TEXT NOT NULL, name TEXT NOT NULL, remarks TEXT NOT NULL, PRIMARY KEY (key, position))';
 
 class CinemaStore {
@@ -29,11 +31,12 @@ class CinemaStore {
     await databaseFactory.openDatabase(
       path,
       options: OpenDatabaseOptions(
-        version: 3,
+        version: 4,
         rollbackActiveTransactionOnOpen: true,
         onUpgrade: (database, from, _) async {
           if (from < 2) await database.execute(_createSourceStat);
           if (from < 3) await database.execute(_createTitleSource);
+          if (from < 4) await database.execute(_createPreference);
         },
         onCreate: (database, _) async {
           await database.execute('CREATE TABLE package (id INTEGER PRIMARY KEY CHECK (id = 1), version INTEGER NOT NULL, payload BLOB NOT NULL, fetched_at INTEGER NOT NULL)');
@@ -44,6 +47,7 @@ class CinemaStore {
           await database.execute('CREATE INDEX history_time ON history (updated_at DESC)');
           await database.execute(_createSourceStat);
           await database.execute(_createTitleSource);
+          await database.execute(_createPreference);
         },
       ),
     ),
@@ -62,6 +66,12 @@ class CinemaStore {
   // 只记拉取时刻（拉到的不比本机新时）。
   Future<void> touchPackage(DateTime fetchedAt) async {
     await _database.update('package', {'fetched_at': fetchedAt.toUtc().millisecondsSinceEpoch}, where: 'id = 1');
+  }
+
+  Future<String?> preference(String key) async => (await _database.query('preference', where: 'key = ?', whereArgs: [key], limit: 1)).firstOrNull?['value'] as String?;
+
+  Future<void> savePreference(String key, String value) async {
+    await _database.insert('preference', {'key': key, 'value': value}, conflictAlgorithm: ConflictAlgorithm.replace);
   }
 
   Future<Map<String, String>> consents() async => {

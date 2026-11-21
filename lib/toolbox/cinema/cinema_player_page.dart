@@ -4,8 +4,6 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:http/http.dart' as http;
-import 'package:media_kit/media_kit.dart';
-import 'package:media_kit_video/media_kit_video.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/theme/campus_glass_menu.dart';
@@ -14,12 +12,12 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
-import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/toolbox_image.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
+import 'package:superxd/toolbox/cinema/cinema_engine.dart';
 import 'package:superxd/toolbox/cinema/cinema_episodes.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
@@ -28,8 +26,8 @@ import 'package:superxd/toolbox/cinema/cinema_player_controls.dart';
 import 'package:superxd/toolbox/cinema/cinema_rule.dart';
 import 'package:superxd/toolbox/cinema/cinema_service.dart';
 
-// 播放页（media_kit，libmpv；控件与手势在 cinema_player_controls.dart，人工决策在那里）：竖屏上面是画面、下面是选集与换源，
-// 画面区的高度跟片子的真实比例走（横片按比例、竖片最多占屏高的 cinemaPortraitMaxHeight），不再一律 16:9 留大黑边；
+// 播放页（播放内核见 cinema_engine.dart：安卓默认系统播放器 ExoPlayer、iOS 默认 mpv，可在「播放内核」里换；控件与手势在 cinema_player_controls.dart，人工决策在那里）：竖屏上面是画面、下面是选集与换源，
+// 画面区的高度：横片至少按 16:9（比 16:9 更宽的电影在框里上下留边），竖片按比例、最多占屏高的 cinemaPortraitMaxHeight；
 // 全屏在同一页里切（画面与控件经 GlobalKey 挪过去，不重建纹理、不丢锁定与倍速），横片转成真横屏（左右两种横向都行），竖片保持竖屏，
 // 退出全屏回到竖屏（应用平时锁竖屏，[人工决策] 在清单的 MainActivity 与 ios/Runner/Info.plist）。
 // 首帧常要 10–20 秒（交接实测，腾讯系首屏要缓冲两三个分片），缓冲超过 15 秒才提示可以换源，不早报失败。
@@ -66,21 +64,24 @@ class CinemaPlayerPage extends StatefulWidget {
   State<CinemaPlayerPage> createState() => _CinemaPlayerPageState();
 }
 
-// libmpv 每个进程只要初始化一次。
-var _mediaKitReady = false;
-
 // 竖屏时画面区最多占屏高的这么多（竖片）。
 const cinemaPortraitMaxHeight = 0.6;
 
 class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
-  late final Player _player;
-  late final CinemaPlaybackTruth _truth;
-  late final VideoController _video;
+  // 播放内核（人工决策见 cinema_engine.dart 文件头）：换内核或退回 mpv 时换掉，事件订阅跟着重挂（_attach）。
+  late CinemaEngine _engine;
   final _subscriptions = <StreamSubscription<Object?>>[];
+  // 系统播放器在这一页退回过 mpv（首帧前打不开），之后不再自动退。
+  var _fellBack = false;
+  // 这一次打开从哪里开始，与打开中见过的最早位置（首帧要等时钟越过它们，见 cinemaFirstFrame）。
+  var _openStart = Duration.zero;
+  Duration? _firstSeen;
   late final CinemaSaveSchedule _saves;
   late final AppLifecycleListener _lifecycle;
   // 开发者模式的诊断：这一次卡住缓冲从什么时候开始。
   DateTime? _stalledAt;
+  // 这一次卡住缓冲时播到哪（位置照样往前走一秒多就不算卡住，见位置的监听）。
+  Duration? _stallFrom;
   Timer? _slowTimer;
   CinemaSourceRef? _source;
   CinemaRule? _rule;
@@ -113,8 +114,8 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   final _openWatch = Stopwatch();
   var _recorded = true;
   var _warmedNext = false;
-  // 这一次交给播放器的媒体（交出去之前为空）与下一集预取的取消（离开时完成）。
-  Media? _media;
+  // 这一次交给播放器的媒体地址（交出去之前为空）与下一集预取的取消（离开时完成）。
+  String? _mediaUri;
   final _warmCancel = Completer<void>();
   // 片源菜单的顺序（按本机播放记录排一次，之后来的源接在末尾，见 _onSources）。
   late List<CinemaSourceRef> _sources = widget.title == null ? const [] : rankCinemaSources(widget.title!.sources, widget.service.knownStats);
@@ -132,13 +133,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   @override
   void initState() {
     super.initState();
-    if (!_mediaKitReady) {
-      MediaKit.ensureInitialized();
-      _mediaKitReady = true;
-    }
-    _player = Player();
-    _truth = CinemaPlaybackTruth(_player);
-    _video = VideoController(_player);
+    _engine = createCinemaEngine(cinemaEngineOf(widget.service.enginePreference));
     _source = widget.source;
     _rule = widget.source == null ? null : widget.service.rule(widget.source!.ruleId);
     _road = widget.road;
@@ -146,15 +141,27 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     _roads = widget.roads;
     _parsed = widget.parsed;
     _resumedFrom = widget.start > Duration.zero ? widget.start : null;
+    // 每 10 秒记一次看到哪；暂停了等 1 秒合并着记，切到后台立即记（之后可能被系统杀掉）。
+    _saves = CinemaSaveSchedule(_save);
+    _attach();
+    _lifecycle = AppLifecycleListener(onHide: () => unawaited(_saves.now()));
+    _sourceChanges = widget.title?.changes.listen((_) => _onSources());
+    unawaited(_open(start: widget.start));
+  }
+
+  // 挂上播放内核的事件（换内核时先 _detach 再挂新的）。
+  void _attach() {
     _subscriptions
-      ..add(_player.stream.buffering.listen(_buffering))
-      ..add(_player.stream.width.listen((_) => _measure()))
-      ..add(_player.stream.duration.listen(_compareCut))
-      ..add(_player.stream.height.listen((_) => _measure()))
-      ..add(_player.stream.error.listen((message) {
-        campusLog('[CinemaPlayer] action=error id=$_generation message=${cinemaLogSafe(message)} current=$_currentMedia');
+      ..add(_engine.stream.buffering.listen(_buffering))
+      ..add(_engine.stream.width.listen((_) => _measure()))
+      ..add(_engine.stream.duration.listen(_compareCut))
+      ..add(_engine.stream.height.listen((_) => _measure()))
+      ..add(_engine.stream.error.listen((message) {
+        campusLog('[CinemaPlayer] action=error id=$_generation engine=${_engine.kind.name} message=${cinemaLogSafe(message)} current=$_currentMedia');
         // 换集、重新载入时上一个视频晚到的错误不算这一次的（见 _currentMedia）。
         if (!_currentMedia) return;
+        // 系统播放器首帧前就报错：这一页退回 mpv 再开一次（人工决策见 cinema_engine.dart 文件头）。
+        if (_opening && _canFallBack) return unawaited(_fallBack(message));
         _record(ok: false);
         // 出错就结束这一次打开（首帧前出错也一样）：收起加载与缓冲提示、放开换源；还在等的旧请求照旧由 _cancel 取消。
         _slowTimer?.cancel();
@@ -166,29 +173,69 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
           });
         }
       }))
-      ..add(_player.stream.position.listen((position) {
+      ..add(_engine.stream.position.listen((position) {
         // 只认这一次交给播放器的媒体：重新载入时旧视频还在播，它的进度不能把这次记成播成、也不能收起加载动画。
         if (!_currentMedia) return;
-        if (position > Duration.zero && mounted && _opening) {
+        if (_opening) {
+          final seen = _firstSeen;
+          if (seen == null || position < seen) _firstSeen = position;
+        }
+        if (cinemaFirstFrame(position, start: _openStart, firstSeen: _firstSeen) && mounted && _opening) {
           _record(ok: true);
           if (campusDiagnostics) {
             campusLog('[CinemaPlayer] action=first_frame id=$_generation ms=${_openWatch.elapsedMilliseconds}');
             final generation = _generation;
-            unawaited(_truth.decoder().then((info) => campusLog('[CinemaPlayer] action=decoder id=$generation $info')).catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=decoder errorType=${error.runtimeType}\n$stack')));
+            unawaited(_engine.describe().then((info) => campusLog('[CinemaPlayer] action=decoder id=$generation $info')).catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=decoder errorType=${error.runtimeType}\n$stack')));
           }
           setState(() => _opening = false);
           _watchSlow();
         }
+        // 卡住缓冲时位置照样往前走了一秒多：内核的缓冲状态没及时收回（11-21 真机：ExoPlayer 已经在播还显示「还在缓冲」），按没卡住算。
+        final stallFrom = _stallFrom;
+        if (_stalled && stallFrom != null && position >= stallFrom + const Duration(seconds: 1)) _buffering(false);
         _warmNext(position);
+      }))
+      ..add(_engine.stream.playing.listen((playing) {
+        if (!playing) _saves.soon();
       }));
-    // 每 10 秒记一次看到哪；暂停了等 1 秒合并着记，切到后台立即记（之后可能被系统杀掉）。
-    _saves = CinemaSaveSchedule(_save);
-    _subscriptions.add(_player.stream.playing.listen((playing) {
-      if (!playing) _saves.soon();
-    }));
-    _lifecycle = AppLifecycleListener(onHide: () => unawaited(_saves.now()));
-    _sourceChanges = widget.title?.changes.listen((_) => _onSources());
-    unawaited(_open(start: widget.start));
+  }
+
+  void _detach() {
+    for (final subscription in _subscriptions) {
+      unawaited(subscription.cancel());
+    }
+    _subscriptions.clear();
+  }
+
+  bool get _canFallBack => _engine.kind == CinemaEngineKind.system && !_fellBack;
+
+  // 系统播放器在首帧前打不开：这一页退回 mpv，在同一个位置再开一次（人工决策见 cinema_engine.dart 文件头）。
+  Future<void> _fallBack(String reason) async {
+    _fellBack = true;
+    campusLog('[CinemaPlayer] action=engine_fallback id=$_generation from=system to=mpv reason=${cinemaLogSafe(reason)}');
+    await _switchEngine(CinemaEngineKind.mpv, start: _openStart);
+  }
+
+  // 换内核：先挂上新的再释放旧的，倍速与音量带过去，在 start 用新的重开。
+  Future<void> _switchEngine(CinemaEngineKind kind, {required Duration start}) async {
+    final old = _engine, before = old.state;
+    _detach();
+    setState(() => _engine = createCinemaEngine(kind));
+    _attach();
+    unawaited(old.dispose().catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=engine_dispose errorType=${error.runtimeType}\n$stack')));
+    await _engine.setRate(before.rate);
+    await _engine.setVolume(before.volume);
+    await _open(start: start);
+  }
+
+  // 「播放内核」里换了：记在本机，立即在当前位置用新内核重开。
+  Future<void> _chooseEngine(CinemaEngineKind kind) async {
+    if (kind == _engine.kind) return;
+    final start = _opening ? _openStart : _engine.state.position;
+    unawaited(_saves.now());
+    unawaited(widget.service.chooseEngine(kind.name).catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=choose_engine errorType=${error.runtimeType}\n$stack')));
+    _fellBack = false;
+    await _switchEngine(kind, start: start);
   }
 
   // 打开以后又来的源（搜索晚回来的、「找其他片源」补到的）接在片源菜单末尾，已有的顺序与正在播的不动。
@@ -220,7 +267,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   void _syncGate() => (_opening || _stalled) && _error == null ? ToolboxImageGate.hold(this) : ToolboxImageGate.release(this);
 
   void _measure() {
-    final width = _player.state.width, height = _player.state.height;
+    final width = _engine.state.width, height = _engine.state.height;
     if (width == null || height == null || width <= 0 || height <= 0 || !mounted) return;
     final aspect = width / height;
     if (aspect != _aspect) setState(() => _aspect = aspect);
@@ -237,6 +284,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       }
     }
     if (!mounted || buffering == _stalled) return;
+    _stallFrom = buffering ? _engine.state.position : null;
     setState(() => _stalled = buffering);
     _watchSlow();
   }
@@ -255,8 +303,8 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
 
   // 播放器当前这一项是不是这一次交出去的媒体（事件不带是哪个媒体的，按播放列表的当前项对）。
   bool get _currentMedia {
-    final media = _media, playlist = _player.state.playlist;
-    return media != null && playlist.index >= 0 && playlist.index < playlist.medias.length && playlist.medias[playlist.index].uri == media.uri;
+    final uri = _mediaUri;
+    return uri != null && _engine.currentUri == uri;
   }
 
   // 记一次这个源能不能播（只在找片里、每次打开只记一次）：出了首帧算播成，带首帧用时。
@@ -274,7 +322,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
 
   // 一集剩最后 2 分钟时预取下一集（人工决策见 cinema_service.dart 的 warm）；打开中或卡住缓冲时先不取（播放优先，播顺了下一次进度再取）。
   void _warmNext(Duration position) {
-    final roads = _roads, duration = _player.state.duration;
+    final roads = _roads, duration = _engine.state.duration;
     if (_warmedNext || !_titleMode || !_hasNext || roads == null || _opening || _stalled || duration <= Duration.zero || duration - position > const Duration(minutes: 2)) return;
     _warmedNext = true;
     unawaited(widget.service.warm(roads[_road].episodes[_episode + 1].url, rule: _rule, cancel: _warmCancel.future));
@@ -289,7 +337,9 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   Future<void> _open({Duration start = Duration.zero, bool fresh = false}) async {
     final generation = ++_generation;
     // 换了媒体：上一个视频还在等的跳转不再算（媒体归属）。
-    _truth.reset();
+    _engine.resetSeeks();
+    _openStart = start;
+    _firstSeen = null;
     _cancel?.complete();
     final cancel = _cancel = Completer<void>();
     _openWatch
@@ -297,13 +347,15 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       ..start();
     _recorded = false;
     _warmedNext = false;
-    _media = null;
+    _mediaUri = null;
     setState(() {
       _opening = true;
       _slow = false;
       _error = null;
     });
     _watchSlow();
+    // 交给了内核却没打开成的这一路（系统播放器打不开时先交回再退回 mpv）。
+    CinemaPlayable? opened;
     try {
       final CinemaPlayable playable;
       if (_titleMode) {
@@ -326,10 +378,17 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       }
       if (campusDiagnostics) {
         // 一次打开一条（id 是这一页里的第几次打开，stream 对得上本机代理的日志）；不记地址与片名。
-        campusLog('[CinemaPlayer] action=open id=$generation rule=${_rule?.id ?? 'parse'} road=$_road episode=$_episode startMs=${start.inMilliseconds} fresh=$fresh stream=${playable.uri.queryParameters['s'] ?? '-'} ms=${_openWatch.elapsedMilliseconds}');
+        campusLog('[CinemaPlayer] action=open id=$generation engine=${_engine.kind.name} rule=${_rule?.id ?? 'parse'} road=$_road episode=$_episode startMs=${start.inMilliseconds} fresh=$fresh stream=${playable.uri.queryParameters['s'] ?? '-'} ms=${_openWatch.elapsedMilliseconds}');
       }
-      final media = _media = Media(playable.uri.toString(), httpHeaders: playable.headers, start: start > Duration.zero ? start : null);
-      await _player.open(media);
+      opened = playable;
+      final uri = _mediaUri = playable.uri.toString();
+      await _engine.open(uri, playable.headers, start: start, playlist: playable.playlist);
+      // 等内核打开的这段时间里又开了新的一次（打开中跳转重开、换集换源）：这一路只交回自己，不覆盖、不交回当前的
+      // （11-21 Codex 复核复现：旧的晚回来把新的一路当成上一路交回，当前视频再取子清单、密钥就 404）。
+      if (generation != _generation) {
+        widget.service.release(playable);
+        return;
+      }
       // 播放器换上新的之后再交回上一路（先交回的话旧的那一路会报错、误记到这一次）。
       final previous = _playable;
       _playable = playable;
@@ -345,6 +404,13 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       if (mounted && generation == _generation) setState(() => _error = '这个源${error.message}，换一个源试试');
     } on CinemaParseException catch (error) {
       if (mounted && generation == _generation) setState(() => _error = error.message);
+    } on CinemaEngineException catch (error) {
+      if (opened != null) widget.service.release(opened);
+      // 首帧前的报错事件已经让这一页退回了 mpv（见 _attach 的 error）：这是旧内核晚到的异常，不再报错。
+      if (!mounted || generation != _generation || _engine.kind != CinemaEngineKind.system) return;
+      if (_canFallBack) return _fallBack(error.message);
+      _record(ok: false);
+      setState(() => _error = '播放出错，可以重新载入或换个源');
     } catch (error, stack) {
       campusLog('[CinemaPlayer] action=open errorType=${error.runtimeType}\n$stack');
       if (generation == _generation) _record(ok: false);
@@ -358,7 +424,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   Future<void> _save() async {
     final title = widget.title, source = _source, episode = _current;
     if (title == null || source == null || episode == null || _opening || _error != null) return;
-    final state = _player.state;
+    final state = _engine.state;
     try {
       await widget.service.store.saveHistory(CinemaHistory(
         key: title.key,
@@ -399,11 +465,18 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   // 11-21 Codex 总交接第 12.5 节：原来 await seek 之后 1 秒读位置，seek 0–1 毫秒就返回、位置立刻报成目标，记到的是目标本身、不是恢复时间。
   void _seeked(Duration target) {
     _saves.soon();
+    // 打开中（还没出首帧）就跳：两个内核在媒体还没就绪时都可能吞掉跳转（11-21 真机：续播打开中点「从头播放」，mpv 那次等满 20 秒没动），
+    // 改成在目标位置重开；首帧也就按新的起点算（原来 ExoPlayer 跳回片头后一直等原来起点的首帧，转圈不停、菜单一直不能点）。
+    if (_opening && _error == null) {
+      if (campusDiagnostics) campusLog('[CinemaPlayer] action=seek_while_opening id=$_generation engine=${_engine.kind.name} targetMs=${target.inMilliseconds}');
+      unawaited(_open(start: target));
+      return;
+    }
     if (!campusDiagnostics) return;
     final generation = _generation;
-    unawaited(_truth.begin(target).then((seek) {
+    unawaited(_engine.beginSeek(target).then((seek) {
       if (mounted && generation == _generation) {
-        campusLog('[CinemaPlayer] action=seek id=$generation seek=${seek.id} targetMs=${target.inMilliseconds} cached=${seek.cached ?? 'unknown'} result=${seek.result} restartMs=${seek.restartMs ?? '-'} playingMs=${seek.playingMs ?? '-'} landedMs=${_player.state.position.inMilliseconds}');
+        campusLog('[CinemaPlayer] action=seek id=$generation engine=${_engine.kind.name} seek=${seek.id} targetMs=${target.inMilliseconds} cached=${seek.cached ?? 'unknown'} result=${seek.result} restartMs=${seek.restartMs ?? '-'} playingMs=${seek.playingMs ?? '-'} landedMs=${_engine.state.position.inMilliseconds}');
       }
     }));
   }
@@ -454,9 +527,9 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         _abandon();
         await _saves.now();
         if (!mounted) return;
-        final position = _player.state.position;
+        final position = _engine.state.position;
         final start = position > Duration.zero ? position : (_resumedFrom ?? Duration.zero);
-        final before = _player.state.duration;
+        final before = _engine.state.duration;
         _source = source;
         _rule = rule;
         _roads = roads;
@@ -522,8 +595,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     for (final subscription in _subscriptions) {
       unawaited(subscription.cancel());
     }
-    _truth.dispose();
-    unawaited(_save().whenComplete(() => _player.dispose()).catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=dispose errorType=${error.runtimeType}\n$stack')));
+    unawaited(_save().whenComplete(() => _engine.dispose()).catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=dispose errorType=${error.runtimeType}\n$stack')));
     super.dispose();
   }
 
@@ -538,16 +610,18 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         child: Stack(
           fit: StackFit.expand,
           children: [
-            Video(controller: _video, controls: NoVideoControls, fit: _fit.fit, aspectRatio: _fit.ratio, fill: Colors.black),
+            _engine.view(fit: _fit.fit, ratio: _fit.ratio),
             CinemaPlayerControls(
-              player: _player,
+              // 换了内核就换一份控件状态（订阅跟着新内核）；倍速与音量由 _switchEngine 带过去。
+              key: ObjectKey(_engine),
+              player: _engine,
               title: heading,
               subtitle: _titleMode ? (_current?.name ?? '') : '',
               fullscreen: _fullscreen,
               busy: (_opening || _stalled) && _error == null,
               error: _error,
               hint: _slow ? '还在缓冲，可以换个源试试' : null,
-              onReload: () => unawaited(_open(start: _player.state.position, fresh: true)),
+              onReload: () => unawaited(_open(start: _engine.state.position, fresh: true)),
               reloadLabel: _titleMode ? '重新载入' : '重新解析',
               fit: _fit,
               onFit: (fit) => setState(() => _fit = fit),
@@ -559,7 +633,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
               onEpisode: (index) => unawaited(_pickEpisode(_road, index)),
               resumedFrom: _resumedFrom,
               onSeek: _seeked,
-              seekable: _truth.seekable,
+              seekable: _engine.seekable,
             ),
           ],
         ),
@@ -592,7 +666,9 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
                           builder: (context, constraints) {
                             // 退出全屏的那一帧可能还是横屏尺寸：下限不超过上限。
                             final width = constraints.maxWidth, most = MediaQuery.sizeOf(context).height * cinemaPortraitMaxHeight;
-                            final height = (width / (_aspect ?? 16 / 9)).clamp(min(width * 9 / 21, most), most).toDouble();
+                            // [人工决策-2026-11-21 22:23:30] 竖屏画面区至少 16:9（用户嫌 2.35:1 的电影画面区太小，同主流视频 App 的竖屏播放器）：
+                            // 改 11-20 播放器重做时「跟片子的真实比例走」里横片那一半，原来最矮到 9:21；竖片照旧按比例、不超过 cinemaPortraitMaxHeight。
+                            final height = (width / (_aspect ?? 16 / 9)).clamp(min(width * 9 / 16, most), most).toDouble();
                             return AnimatedContainer(duration: const Duration(milliseconds: 240), curve: Curves.easeOutCubic, height: height, child: _stage(heading));
                           },
                         ),
@@ -626,7 +702,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
             runSpacing: CampusGap.small,
             children: [
               OutlinedButton.icon(
-                onPressed: () => unawaited(_open(start: _player.state.position, fresh: true)),
+                onPressed: () => unawaited(_open(start: _engine.state.position, fresh: true)),
                 icon: const CampusIcon(CampusIcons.sync),
                 label: Text(_titleMode ? '重新载入' : '重新解析'),
               ),
@@ -637,20 +713,31 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
                 ),
             ],
           ),
-          if (title != null && _sources.length > 1) ...[
-            const SizedBox(height: CampusGap.large),
-            CampusSurface(
-              padding: EdgeInsets.fromLTRB(CampusGap.large, campusFieldGap(context), CampusGap.large, CampusGap.large),
-              child: CampusMenuField<CinemaSourceRef>(
-                label: '片源',
-                value: _source!,
-                items: [
-                  for (final ref in _sources) CampusMenuItem(value: ref, label: cinemaSourceLabel(widget.service, ref)),
+          const SizedBox(height: CampusGap.large),
+          // 片源与播放内核收在一张设置卡片里，一项一行（同主流视频 App 的设置列表；原来两个大下拉框各占一张卡，11-21 用户嫌不协调）。
+          CampusSurface(
+            padding: EdgeInsets.zero,
+            child: Column(
+              children: [
+                if (title != null && _sources.length > 1) ...[
+                  CinemaSettingRow<CinemaSourceRef>(
+                    label: '片源',
+                    selected: _source!,
+                    items: [for (final ref in _sources) CampusMenuItem(value: ref, label: cinemaSourceLabel(widget.service, ref))],
+                    onChanged: _opening ? null : (ref) => unawaited(_pickSource(ref)),
+                  ),
+                  Divider(height: 1, indent: CampusGap.large, endIndent: CampusGap.large, color: palette.surfaceBorder),
                 ],
-                onChanged: _opening ? null : (ref) => unawaited(_pickSource(ref)),
-              ),
+                // 播放内核（人工决策见 cinema_engine.dart 文件头）：写正在用的（退回过 mpv 时就是 mpv），换了记在本机。
+                CinemaSettingRow<CinemaEngineKind>(
+                  label: '播放内核',
+                  selected: _engine.kind,
+                  items: [for (final kind in CinemaEngineKind.values) CampusMenuItem(value: kind, label: kind == cinemaDefaultEngine ? '${kind.label}（推荐）' : kind.label)],
+                  onChanged: _opening ? null : (kind) => unawaited(_chooseEngine(kind)),
+                ),
+              ],
             ),
-          ],
+          ),
           if (roads != null) ...[
             const SizedBox(height: CampusGap.large),
             if (roads.length > 1 && roads.length <= 3) ...[
@@ -679,6 +766,53 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
 String cinemaLogSafe(String message) {
   final text = message.replaceAll(RegExp(r'[a-z][a-z0-9+.-]*://\S+', caseSensitive: false), '<地址>');
   return text.length > 120 ? text.substring(0, 120) : text;
+}
+
+// 设置卡片里的一行（片源、播放内核）：左边名字，右边当前选的、末尾一个箭头，点了从这一行弹出玻璃菜单；打开中（onChanged 为空）变淡、点不动。
+class CinemaSettingRow<T> extends StatelessWidget {
+  const CinemaSettingRow({super.key, required this.label, required this.selected, required this.items, required this.onChanged});
+  final String label;
+  final T selected;
+  final List<CampusMenuItem<T>> items;
+  final ValueChanged<T>? onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final palette = CampusPalette.of(context);
+    final enabled = onChanged != null;
+    final value = items.where((item) => item.value == selected).firstOrNull?.label ?? '';
+    final muted = enabled ? palette.onSurfaceVariant : palette.onSurfaceVariant.withValues(alpha: 0.5);
+    return InkWell(
+      onTap: enabled
+          ? () async {
+              final picked = await showCampusMenu<T>(context, items: items, selected: selected);
+              if (picked != null && picked != selected) onChanged?.call(picked);
+            }
+          : null,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: CampusGap.large, vertical: CampusGap.medium),
+        child: Row(
+          children: [
+            Text(label, style: text.bodyLarge?.copyWith(color: enabled ? null : muted)),
+            const SizedBox(width: CampusGap.large),
+            Expanded(child: Text(value, textAlign: TextAlign.end, maxLines: 1, overflow: TextOverflow.ellipsis, style: text.bodyMedium?.copyWith(color: muted))),
+            const SizedBox(width: CampusGap.tight),
+            CampusIcon(CampusIcons.next, size: CampusFontSize.body, color: muted),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// 首帧（11-21 真机诊断发现）：从中途打开时播放器在出画之前就把位置报成起点（原来「位置大于零」把这一刻当首帧，从「看过的」打开记的 2.8 秒并不是真出画）。
+// 从头开的照旧看位置动了；从中途开的要等时钟越过起点 playingLead，或越过打开中见过的最早位置 firstSeen（落点比起点早、或打开中跳回了片头，
+// 11-21 真机：ExoPlayer 续播到 38 分时点了从头播放，只看起点就永远等不到，转圈不停）。
+bool cinemaFirstFrame(Duration position, {required Duration start, required Duration? firstSeen}) {
+  if (start <= Duration.zero) return position > Duration.zero;
+  const lead = CinemaPlaybackTruth.playingLead;
+  return position >= start + lead || (firstSeen != null && position >= firstSeen + lead);
 }
 
 // 记看到哪的时机（11-21 Codex 总交接第 6.6 节，用户说按最佳实践做；同主流视频 App 的进度保存）：播放中每 periodic 记一次；
