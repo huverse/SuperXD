@@ -16,10 +16,14 @@ import 'package:superxd/toolbox/cinema/cinema_poster.dart';
 // 控件全部自己画（不用 media_kit 自带的，它的转圈会和我们的加载动画叠在一起），手势与布局照 Kazumi（GPL-3.0，与本项目同许可，出处见 assets/third_party_notices.txt）
 // 的 player_item.dart 与 B 站、爱奇艺的常见做法：
 // - 单击显示或收起控件（播放中 cinemaControlsHide 后自动收起），双击暂停或继续，长按 cinemaLongPressSpeed 倍速、松手恢复；
+// - 播放暂停在下栏与画面中间各一颗（同 YouTube、Netflix 手机端），共用 _playButton，图标都写「点了会怎样」；中间那颗只在控件显示着、中间没别的东西时出现。
+//   11-21 用户截图：原来中间闪 0.6 秒的是刚进入的状态（暂停了闪暂停），下栏写的是点了会怎样（暂停时是播放），两处正好相反，还会叠在加载动画上。
 // - 左右滑动调进度（滑满屏宽是 3 分钟，同 Kazumi），中间写目标时刻与跨度，松手才跳；左半边上下滑调亮度（只改本应用窗口），右半边调音量（播放器音量）；
 // - 锁定后只认单击、只露出锁；上栏返回、片名、倍速与画面比例，下栏播放暂停、下一集、进度（含已缓冲的一段）、选集、全屏；
 // - 画面比例同 Kazumi 的 PlayerAspectRatio（自动、裁切填充、拉伸填充、16:9、4:3），倍速 0.5–3 倍；
-// - 片头 5 分钟内给「跳过片头」（往后 cinemaSkipIntro，同 Kazumi 的 buttonSkipTime）；接着看的给「从头播放」；播完有下一集时倒数 cinemaAutoNext 自动连播，可取消。
+// - 接着看的给「从头播放」；播完有下一集时倒数 cinemaAutoNext 自动连播，可取消。
+// [人工决策-2026-11-21 17:24:56] 删掉「跳过片头」（用户要求直接删除）：原来片头 5 分钟内一直显示，每点一次从当前位置往后跳 80 秒，能连着点、也不记住，
+// 片源又没有片头片尾的时间数据，固定 80 秒常跳多或跳少，用户嫌鸡肋；没选「记住每部剧的片头片尾」与「只修按钮」。要跳过片头用左右滑或进度条。
 
 // 画面比例（同 Kazumi）：ratio 不为空时按这个比例铺满给定区域（拉伸到这个比例）。
 enum CinemaFit {
@@ -37,7 +41,6 @@ enum CinemaFit {
 
 const cinemaSpeeds = [0.5, 0.75, 1.0, 1.25, 1.5, 2.0, 3.0];
 const cinemaLongPressSpeed = 2.0;
-const cinemaSkipIntro = Duration(seconds: 80);
 const cinemaControlsHide = Duration(seconds: 4);
 const cinemaAutoNext = Duration(seconds: 5);
 // 左右滑满一屏宽跳多少（Kazumi 是 180000 毫秒）。
@@ -96,7 +99,7 @@ class CinemaPlayerControls extends StatefulWidget {
   final ValueChanged<int>? onEpisode;
   // 从上次的位置接着看时给，画「从头播放」。
   final Duration? resumedFrom;
-  // 每次跳转（拖进度、点进度条、跳过片头、从头播放）做完之后告诉播放页，给的是跳转的目标：记看到哪、开发者模式下记目标与落点。
+  // 每次跳转（拖进度、点进度条、从头播放）做完之后告诉播放页，给的是跳转的目标：记看到哪、开发者模式下记目标与落点。
   final ValueChanged<Duration>? onSeeked;
 
   @override
@@ -109,9 +112,6 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
   var _locked = false;
   Timer? _hide;
   _Panel? _panel;
-  // 双击后在中间闪一下的图标。
-  IconData? _flash;
-  Timer? _flashTimer;
   // 左右滑动调进度：起点、目标。
   Duration? _seekFrom, _seekTo;
   // 长按倍速前的倍速。
@@ -214,15 +214,18 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
     }
   }
 
-  void _playOrPause() {
-    final playing = _player.state.playing;
-    unawaited(_player.playOrPause());
-    _flashTimer?.cancel();
-    setState(() => _flash = playing ? CampusIcons.pause : CampusIcons.resume);
-    _flashTimer = Timer(const Duration(milliseconds: 600), () {
-      if (mounted) setState(() => _flash = null);
-    });
-  }
+  void _playOrPause() => unawaited(_player.playOrPause());
+
+  // 播放暂停的按钮：下栏与画面中间共用这一份，图标都写「点了会怎样」（播放中是暂停、暂停时是播放），两处不会对不上。
+  Widget _playButton({double? size}) => StreamBuilder<bool>(
+    stream: _player.stream.playing,
+    initialData: _player.state.playing,
+    builder: (context, snapshot) => IconButton(
+      tooltip: snapshot.data == true ? '暂停' : '播放',
+      onPressed: _playOrPause,
+      icon: CampusIcon(snapshot.data == true ? CampusIcons.pause : CampusIcons.resume, color: Colors.white, size: size),
+    ),
+  );
 
   void _openPanel(_Panel panel) {
     _hide?.cancel();
@@ -327,7 +330,6 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
       unawaited(subscription.cancel());
     }
     _hide?.cancel();
-    _flashTimer?.cancel();
     _adjustTimer?.cancel();
     _countdownTimer?.cancel();
     _resumeTimer?.cancel();
@@ -339,6 +341,8 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final shown = _visible && !_locked;
+    // 画面中间同一时刻只放一样东西：加载动画、报错、拖动或调节的提示、连播倒数、侧边面板都没有时才放播放暂停。
+    final centerFree = !widget.busy && widget.error == null && _seekTo == null && _adjust == null && _countdown == null && _panel == null;
     return LayoutBuilder(
       builder: (context, constraints) {
         final width = constraints.maxWidth, height = constraints.maxHeight;
@@ -374,7 +378,13 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
                 ),
               ),
             if (widget.error case final error?) Center(child: _MessageCard(message: error, action: widget.reloadLabel, onAction: widget.onReload)),
-            if (_flash case final icon?) IgnorePointer(child: Center(child: _Bubble(child: CampusIcon(icon, color: Colors.white, size: 36)))),
+            if (centerFree)
+              _fade(
+                shown,
+                Center(
+                  child: DecoratedBox(decoration: const BoxDecoration(color: Colors.black45, shape: BoxShape.circle), child: _playButton(size: 36)),
+                ),
+              ),
             if (_seekTo case final to?)
               IgnorePointer(
                 child: Center(
@@ -420,12 +430,6 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
                     },
                   ),
                 ),
-              ),
-            if (shown && _player.state.position < const Duration(minutes: 5) && _player.state.duration > const Duration(minutes: 10) && !widget.busy)
-              Positioned(
-                right: CampusGap.large,
-                bottom: widget.fullscreen ? 104 : 56,
-                child: _PillButton(icon: CampusIcons.skipIntro, label: '跳过片头', onPressed: () => unawaited(_seek(_player.state.position + cinemaSkipIntro))),
               ),
             // 出错时不给（居中的报错卡片会和它叠在一起，也没有在播的可以从头）：续播的源坏了时常见。
             if (_resumeShown && !_locked && widget.error == null)
@@ -498,15 +502,7 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
   }
 
   Widget _bottomBar(BuildContext context) {
-    final playing = StreamBuilder<bool>(
-      stream: _player.stream.playing,
-      initialData: _player.state.playing,
-      builder: (context, snapshot) => IconButton(
-        tooltip: snapshot.data == true ? '暂停' : '播放',
-        onPressed: _playOrPause,
-        icon: CampusIcon(snapshot.data == true ? CampusIcons.pause : CampusIcons.resume, color: Colors.white),
-      ),
-    );
+    final playing = _playButton();
     final next = widget.onNext == null ? null : IconButton(tooltip: '下一集', onPressed: widget.onNext, icon: const CampusIcon(CampusIcons.skipNext, color: Colors.white));
     final fullscreen = IconButton(
       tooltip: widget.fullscreen ? '退出全屏' : '全屏',
@@ -620,6 +616,7 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
 }
 
 // 进度：已播的一段用激活色、已缓冲的一段淡白、其余更淡；按住拖动只预览，松手才跳；两边写时刻。
+// 片长还不知道（打开中）时两边写「--:--」、不画圆点：原来写「00:00 / 00:00」，和旁边的「已从 2:13:42 继续」对不上（11-21 用户截图）。
 // 轨道左右各缩进这么多（给圆点留位置）：画与点按同一条边界换算，点在画出来的起点是 0、终点是片尾（11-21 Codex 指出原来按整宽换算）。
 const _progressInset = 10.0;
 
@@ -651,9 +648,10 @@ class _CinemaProgressState extends State<_CinemaProgress> {
         final buffered = total == 0 ? 0.0 : (player.state.buffer.inMilliseconds / total).clamp(0.0, 1.0);
         final value = _dragging ?? played;
         Duration at(double fraction) => Duration(milliseconds: (fraction * total).round());
+        final known = total > 0;
         return Row(
           children: [
-            Text(formatCinemaDuration(at(value)), style: text),
+            Text(known ? formatCinemaDuration(at(value)) : '--:--', style: text),
             Expanded(
               child: LayoutBuilder(
                 builder: (context, constraints) {
@@ -678,13 +676,13 @@ class _CinemaProgressState extends State<_CinemaProgress> {
                           },
                     child: SizedBox(
                       height: 44,
-                      child: CustomPaint(painter: _ProgressPainter(played: value, buffered: buffered, accent: accent, dragging: _dragging != null)),
+                      child: CustomPaint(painter: _ProgressPainter(played: value, buffered: buffered, accent: accent, dragging: _dragging != null, known: known)),
                     ),
                   );
                 },
               ),
             ),
-            Text(formatCinemaDuration(duration), style: text),
+            Text(known ? formatCinemaDuration(duration) : '--:--', style: text),
           ],
         );
       },
@@ -693,11 +691,13 @@ class _CinemaProgressState extends State<_CinemaProgress> {
 }
 
 class _ProgressPainter extends CustomPainter {
-  _ProgressPainter({required this.played, required this.buffered, required this.accent, required this.dragging});
+  _ProgressPainter({required this.played, required this.buffered, required this.accent, required this.dragging, required this.known});
   final double played;
   final double buffered;
   final Color accent;
   final bool dragging;
+  // 片长知道了才画圆点。
+  final bool known;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -706,12 +706,12 @@ class _ProgressPainter extends CustomPainter {
     canvas
       ..drawRRect(bar(1), Paint()..color = Colors.white24)
       ..drawRRect(bar(buffered), Paint()..color = Colors.white54)
-      ..drawRRect(bar(played), Paint()..color = accent)
-      ..drawCircle(Offset(_progressInset + width * played, middle), dragging ? 9 : 7, Paint()..color = Colors.white);
+      ..drawRRect(bar(played), Paint()..color = accent);
+    if (known) canvas.drawCircle(Offset(_progressInset + width * played, middle), dragging ? 9 : 7, Paint()..color = Colors.white);
   }
 
   @override
-  bool shouldRepaint(_ProgressPainter old) => old.played != played || old.buffered != buffered || old.accent != accent || old.dragging != dragging;
+  bool shouldRepaint(_ProgressPainter old) => old.played != played || old.buffered != buffered || old.accent != accent || old.dragging != dragging || old.known != known;
 }
 
 class _AdjustHud extends StatelessWidget {
