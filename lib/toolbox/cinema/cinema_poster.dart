@@ -52,7 +52,7 @@ class CinemaPosterRow extends StatelessWidget {
   }
 }
 
-// 「看过的」横向海报条里的一张（人工决策见 cinema_page.dart 的 _historySlivers）：海报底边是看到哪的进度，下面片名占一整行、再下面集数与⋯
+// 「看过的」横向海报条里的一张（人工决策见 cinema_search_section.dart 的 _historySlivers）：海报底边是看到哪的进度，下面片名占一整行、再下面集数与⋯
 // （⋯ 放在片名那行时片名只剩三个字，Maple 中文字宽）。
 // 横向列表要定高，heightOf 按当前字号、字体量两行字，大字号时整条跟着长高、不裁字。
 class CinemaHistoryCard extends StatelessWidget {

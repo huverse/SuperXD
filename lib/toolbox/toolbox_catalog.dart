@@ -3,6 +3,8 @@ import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/theme/campus_icons.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_page.dart';
 import 'package:superxd/toolbox/cinema/cinema_page.dart';
+import 'package:superxd/toolbox/cinema/cinema_parse_section.dart';
+import 'package:superxd/toolbox/cinema/cinema_search_section.dart';
 import 'package:superxd/toolbox/cinema/cinema_service.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
 import 'package:superxd/toolbox/express/express_page.dart';
@@ -66,5 +68,13 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
     ),
     clearedData: '片源规则、片源同意与看过的记录（再用要重新同意）',
     flag: cinemaFlag,
+    // 首页里的几段（子模块，人工决策见 cinema_page.dart 的 _sections）：共用电影院的服务与数据，不各自登记服务与快捷入口。
+    children: [
+      ToolboxModule(id: CinemaSearchSection.sectionId, name: '找片', icon: CampusIcons.search, builder: (context) => const CinemaSearchSection()),
+      ToolboxModule(id: CinemaParseSection.sectionId, name: '解析', icon: CampusIcons.parse, builder: (context) => const CinemaParseSection(), flag: cinemaParseFlag),
+    ],
   ),
+  // 生活（灰度，人工决策见 domain/feature_flags.dart 的 lifeFlag）：校园生活服务的子模块列表，页面由框架列出（规则见 toolbox_module.dart）；
+  // 一个看得见的子模块都没有时不出现。子模块在 lib/toolbox/life 下，各自登记在这里的 children。
+  ToolboxModule(id: 'life', name: '生活', icon: CampusIcons.life, flag: lifeFlag),
 ];
