@@ -53,6 +53,7 @@ abstract final class CampusIcons {
   static const unfavorite = LucideIcons.starOff;
   static const deviceNumber = LucideIcons.keyboard;
   static const building = LucideIcons.building2;
+  static const swapDevice = LucideIcons.arrowLeftRight;
   static const image = LucideIcons.image;
   static const images = LucideIcons.images;
   static const camera = LucideIcons.camera;

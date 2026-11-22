@@ -71,6 +71,8 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
   DateTime? _startedAt;
   int? _balanceAfter;
   ZhuliBill? _bill;
+  // 蓝牙设备找不到或连不上时同房间的其他设备（换一台用，人工决策见 zhuli_bath.dart 的 zhuliCloudFirst）。
+  List<ZhuliDevice> _mates = const [];
   var _favorite = false;
   Timer? _ticker;
   Timer? _poll;
@@ -163,6 +165,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
     setState(() {
       _stage = _Stage.starting;
       _error = null;
+      _mates = const [];
     });
     try {
       final order = await _bath.start(plan.device);
@@ -175,6 +178,7 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
         _stage = _Stage.ready;
         _error = error.message;
       });
+      if (error.failure == ZhuliFailure.unreachable) unawaited(_findMates(plan.device));
     } catch (error, stack) {
       campusLog('[Zhuli] action=bath_start errorType=${error.runtimeType}\n$stack');
       if (!mounted) return;
@@ -184,6 +188,17 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
       });
     }
   }
+
+  Future<void> _findMates(ZhuliDevice device) async {
+    try {
+      final mates = await _bath.roomMates(device);
+      if (mounted && _stage == _Stage.ready) setState(() => _mates = mates);
+    } catch (error, stack) {
+      campusLog('[Zhuli] action=room_mates errorType=${error.runtimeType}\n$stack');
+    }
+  }
+
+  void _switchTo(ZhuliDevice mate) => unawaited(Navigator.of(context).pushReplacement(CampusPageRoute<void>(builder: (_) => ZhuliBathPage(service: widget.service, phone: widget.phone, deviceId: mate.id, link: widget.link, clock: widget.clock))));
 
   Future<void> _end() async {
     final plan = _plan!, orderId = _orderId!;
@@ -350,6 +365,16 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
                 ),
               ),
               errorLine(),
+              for (final mate in _mates)
+                Padding(
+                  padding: const EdgeInsets.only(top: CampusGap.medium),
+                  child: FilledButton.icon(
+                    key: ValueKey(mate.id),
+                    onPressed: () => _switchTo(mate),
+                    icon: const CampusIcon(CampusIcons.swapDevice),
+                    label: Text('换到设备 ${mate.name.isEmpty ? mate.id : mate.name} · ${mate.bluetooth ? '蓝牙' : '云端'}'),
+                  ),
+                ),
             ],
           ),
         );

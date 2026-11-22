@@ -165,6 +165,8 @@ class _FakeLink implements ZhuliBleLink {
   var disconnects = 0;
   // 写这一命令类型时设备不回。
   int? silentOn;
+  // 连接时就失败（附近找不到、连不上）。
+  ZhuliException? connectError;
   // 握手时设备顺带发来一张结束回执（之前在设备上关过水）。
   String? receiptOnHandshake;
   final _receipts = StreamController<String>.broadcast();
@@ -173,7 +175,10 @@ class _FakeLink implements ZhuliBleLink {
   Stream<String> get receipts => _receipts.stream;
 
   @override
-  Future<void> connect({required String bleName, required String bleMac}) async => connected.add(bleName);
+  Future<void> connect({required String bleName, required String bleMac}) async {
+    if (connectError case final error?) throw error;
+    connected.add(bleName);
+  }
 
   @override
   Future<String> exchange(String frame, Set<int> expect) async {
@@ -475,6 +480,23 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
+    testWidgets('蓝牙设备找不到：列出同房间的其他设备（按名字一级级找到房间），一键换过去（人工决策见 zhuliCloudFirst）', (tester) async {
+      await signIn(tester);
+      final link = _FakeLink()..connectError = const ZhuliException(ZhuliFailure.unreachable, '附近没找到这台设备，靠近一点再试');
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ZhuliBathPage(service: service, phone: _phone, deviceId: 102, link: () => link, clock: () => _beijing(21, 0))));
+      await _settle(tester);
+      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备 102 · 空闲 · 蓝牙')), findsOneWidget);
+      await tester.tap(find.text('开水'));
+      await _settle(tester);
+      expect(find.text('附近没找到这台设备，靠近一点再试'), findsOneWidget);
+      expect(find.text('换到设备 101 · 云端'), findsOneWidget, reason: '同房间只剩 101，自己不列');
+      await tester.tap(find.text('换到设备 101 · 云端'));
+      await _settle(tester);
+      expect(find.byWidgetPredicate((widget) => _dotted(widget, '设备 101 · 空闲 · 云端')), findsOneWidget);
+      expect(find.text('换到设备 101 · 云端'), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+    });
+
     testWidgets('拦下时写原因、不给开水；星标收藏到常用设备', (tester) async {
       await signIn(tester);
       fake.devices[101] = _device(101, status: 6);
@@ -499,6 +521,10 @@ void main() {
         await service.devices.used(_phone, const ZhuliDeviceEntry(id: 102, name: '102', place: '1号楼 2层 201'));
       });
       fake.last = {'order_id': 'O9', 'status': 'consuming', 'device_id': 102, 'device_type': 0, 'create_at': '2026-11-22 20:55:00'};
+      final blueFirst = {102: fake.devices[102]!, 101: fake.devices[101]!};
+      fake.devices
+        ..clear()
+        ..addAll(blueFirst);
       final runtime = ToolboxRuntime.testing(catalog: toolboxCatalog, store: fixture.store, downloads: fixture.manager, services: {ZhuliService.serviceId: service});
       await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: ZhuliPage(runtime: runtime)));
       await _settle(tester);
@@ -519,6 +545,7 @@ void main() {
       await tester.tap(find.text('201'));
       await _settle(tester);
       expect(find.byWidgetPredicate((widget) => _dotted(widget, zhuliDeviceState(decodeZhuliDevice(_device(102, module: '4'))))), findsOneWidget);
+      expect(tester.getTopLeft(find.text('设备 101')).dy, lessThan(tester.getTopLeft(find.text('设备 102')).dy), reason: '能走云端的排前面，住理回的顺序是蓝牙在前');
       await tester.tap(find.text('设备 101'));
       await _settle(tester);
       expect(find.byType(ZhuliBathPage), findsOneWidget);

@@ -44,6 +44,8 @@ const _scanTimeout = Duration(seconds: 5);
 const _connectTimeout = Duration(seconds: 6);
 const _connectAttempts = 3;
 const _connectPause = Duration(milliseconds: 1500);
+// 取消没连上的连接：插件对没连上的设备收不到断开的回调（模拟器上要等满超时），只等一会儿。
+const _cancelTimeout = Duration(seconds: 2);
 const _gattTimeout = Duration(seconds: 10);
 const _replyTimeout = Duration(seconds: 4);
 
@@ -156,7 +158,7 @@ class PluginZhuliBleLink implements ZhuliBleLink {
     } on TimeoutException {
       campusLog('[Zhuli] action=ble_scan result=not_found seen=${peers.length} names=${names.join('|')} byAddress=${byAddress != null}');
       if (byAddress != null) return (await central.getPeripheral(bleMac), false);
-      throw _ble('附近没找到这台设备，靠近一点再试');
+      throw const ZhuliException(ZhuliFailure.unreachable, '附近没找到这台设备，靠近一点再试');
     } finally {
       await subscription.cancel();
       try {
@@ -178,13 +180,13 @@ class PluginZhuliBleLink implements ZhuliBleLink {
       } catch (error) {
         campusLog('[Zhuli] action=ble_connect result=failed attempt=$attempt reason=${error.runtimeType} detail=${error is PlatformException ? error.message : ''}');
         try {
-          await central.disconnect(device).timeout(_connectTimeout);
+          await central.disconnect(device).timeout(_cancelTimeout);
         } catch (cancel) {
           campusLog('[Zhuli] action=ble_cancel reason=${cancel.runtimeType}');
         }
       }
     }
-    throw _ble('连不上设备，靠近一点再试');
+    throw const ZhuliException(ZhuliFailure.unreachable, '连不上这台设备，靠近一点再试');
   }
 
   void _onFrame(String frame) {

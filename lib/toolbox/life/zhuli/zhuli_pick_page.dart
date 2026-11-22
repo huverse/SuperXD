@@ -12,6 +12,7 @@ import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_bath.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_bath_page.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_client.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_devices.dart';
@@ -140,7 +141,8 @@ class _ZhuliPickPageState extends State<ZhuliPickPage> {
               return ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
-                  for (final item in items)
+                  // 同房间能走云端的排前面（人工决策见 zhuli_bath.dart 的 zhuliCloudFirst）。
+                  for (final item in _path.length == 3 ? zhuliCloudFirst(_devices) : items)
                     switch (item) {
                       ZhuliPlace(:final name, :final devices) => _row(
                         context,

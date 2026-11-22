@@ -20,6 +20,11 @@ class ZhuliBathPlan {
   final ZhuliLastRecord? running;
 }
 
+// [人工决策-2026-11-22 22:35:03] 同房间新旧设备同名（用户选「排序加一键换设备」，没选收起老设备、只改提示、本机记住扫不到的）：
+// 换下来的老蓝牙设备还挂在住理的列表里、和新的两用设备同名，住理的数据分不出哪台是死的（11-22 真机：232 的老设备不在广播，power_status 对蓝牙设备没意义）。
+// 不按猜测藏设备：同房间能走云端的排前面（列表与换设备都按这个），蓝牙设备找不到或连不上时洗浴页列出同房间的其他设备一键换过去。
+List<ZhuliDevice> zhuliCloudFirst(List<ZhuliDevice> devices) => [...devices.where((device) => !device.bluetooth), ...devices.where((device) => device.bluetooth)];
+
 // 现在（北京时间的钟点）在不在供水时段里；没给时段当全天供水。
 bool zhuliInSupply(List<ZhuliSupply> supply, DateTime now) {
   if (supply.isEmpty) return true;
@@ -115,6 +120,19 @@ class ZhuliBath {
   }
 
   Future<ZhuliBill> bill(String orderId) => _run((session) => _client.bill(session, orderId));
+
+  // 同房间的其他设备（蓝牙设备找不到时给人换一台）：设备详情里没有房间的编号，按楼栋、楼层、房间的名字一级级找（只在失败时查一次）；找不到为空。
+  Future<List<ZhuliDevice>> roomMates(ZhuliDevice device) => _run((session) async {
+    ZhuliPlace? named(List<ZhuliPlace> places, String name) => places.where((place) => place.name == name).firstOrNull;
+    final building = named(await _client.buildings(session), device.building);
+    if (building == null) return const <ZhuliDevice>[];
+    final floor = named(await _client.floors(session, building.id), device.floor);
+    if (floor == null) return const <ZhuliDevice>[];
+    final room = named(await _client.rooms(session, floor.id), device.room);
+    if (room == null) return const <ZhuliDevice>[];
+    final devices = await _client.roomDevices(session, buildingId: building.id, floorId: floor.id, roomId: room.id, page: 1);
+    return zhuliCloudFirst([for (final mate in devices) if (mate.id != device.id && mate.bath) mate]);
+  });
 
   Future<ZhuliBill> _settled(String orderId) async {
     var bill = await this.bill(orderId);
