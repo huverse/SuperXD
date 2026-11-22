@@ -72,8 +72,8 @@ class PluginZhuliBleLink implements ZhuliBleLink {
     await _authorize();
     final central = _central ??= CentralManager();
     await _poweredOn(central);
-    final device = await _find(central, bleName, bleMac);
-    await _connect(central, device);
+    final (device, seen) = await _find(central, bleName, bleMac);
+    await _connect(central, device, attempts: seen ? _connectAttempts : 1);
     _device = device;
     try {
       final services = await central.discoverGATT(device).timeout(_gattTimeout);
@@ -136,7 +136,8 @@ class PluginZhuliBleLink implements ZhuliBleLink {
   // 扫描最多 5 秒（同原 App），按广播名认；安卓上名字没带上时按地址认（插件在安卓上用地址生成标识）。
   // 安卓上原 App 本来就直接按设备地址连、扫描只是顺带（11-22 真机：扫 5 秒认不出那台设备），所以安卓扫不到时照它按地址连一次；iOS 拿不到地址，只能按名字扫到。
   // 扫描结果记进日志（扫到几台、看到的 XN 开头的名字，最多 5 个），真机上认不出时据此分清是名字对不上还是根本没扫到。
-  Future<Peripheral> _find(CentralManager central, String bleName, String bleMac) async {
+  // 返回设备与扫没扫到：扫到的连接照原 App 最多 3 次；扫不到的按地址只试 1 次（11-22 真机：扫不到的老设备按地址一次也没连上过，3 次要白等近半分钟）。
+  Future<(Peripheral, bool)> _find(CentralManager central, String bleName, String bleMac) async {
     final byAddress = Platform.isAndroid && bleMac.isNotEmpty ? UUID.fromAddress(bleMac) : null;
     final found = Completer<Peripheral>();
     final peers = <UUID>{}, names = <String>{};
@@ -151,10 +152,10 @@ class PluginZhuliBleLink implements ZhuliBleLink {
       await central.startDiscovery();
       final device = await found.future.timeout(_scanTimeout);
       campusLog('[Zhuli] action=ble_scan result=found seen=${peers.length}');
-      return device;
+      return (device, true);
     } on TimeoutException {
       campusLog('[Zhuli] action=ble_scan result=not_found seen=${peers.length} names=${names.join('|')} byAddress=${byAddress != null}');
-      if (byAddress != null) return await central.getPeripheral(bleMac);
+      if (byAddress != null) return (await central.getPeripheral(bleMac), false);
       throw _ble('附近没找到这台设备，靠近一点再试');
     } finally {
       await subscription.cancel();
@@ -167,8 +168,8 @@ class PluginZhuliBleLink implements ZhuliBleLink {
   }
 
   // 连接同原 App（关水页的 ua）：最多 3 次，每次先等 1.5 秒、最多等 6 秒；没连上先取消这次挂着的连接再试，免得几次请求叠在系统里（11-22 真机扫到了、一次 6 秒没连上）。
-  Future<void> _connect(CentralManager central, Peripheral device) async {
-    for (var attempt = 1; attempt <= _connectAttempts; attempt++) {
+  Future<void> _connect(CentralManager central, Peripheral device, {required int attempts}) async {
+    for (var attempt = 1; attempt <= attempts; attempt++) {
       await Future<void>.delayed(_connectPause);
       try {
         await central.connect(device).timeout(_connectTimeout);
