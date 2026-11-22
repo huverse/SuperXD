@@ -25,6 +25,7 @@ import 'package:superxd/domain/share_card.dart';
 import 'package:superxd/playground/playground_catalog.dart';
 import 'package:superxd/playground/playground_page.dart';
 import 'package:superxd/playground/playground_store.dart';
+import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
 
@@ -40,9 +41,11 @@ GoRouter buildRouter({required AppSession session, required AppServices services
   final void Function(BuildContext context)? openAccount = appAccounts == null ? null : (context) => pushAppAccountPage(context, services, saveRewardPicture: saveRewardPicture);
   final gateway = session.gateway;
   final tools = toolbox.modules;
+  // 有自己页面的工具与子模块（规则见 toolbox_module.dart 的 toolboxRoutable）。
+  final pages = toolboxRoutable(tools).toList();
   // 好友分享的卡片交给注册表里认得它的工具打开（页面层不依赖百宝箱，由这里接上；路由不认识具体工具页面）。
   void openVideo(BuildContext context, VideoShare video) {
-    final page = tools.map((tool) => tool.openShared?.call(video)).nonNulls.firstOrNull;
+    final page = toolboxTree(tools).map((tool) => tool.openShared?.call(video)).nonNulls.firstOrNull;
     if (page == null) return;
     Navigator.of(context, rootNavigator: true).push(CampusPageRoute<void>(builder: (_) => page));
   }
@@ -75,8 +78,8 @@ GoRouter buildRouter({required AppSession session, required AppServices services
       final atLogin = location == '/login';
       final legal = location.startsWith('/legal');
       // [人工决策-2026-09-27 20:12:08] 仅百宝箱及注册工具免教务登录，其他业务门禁不变。
-      // 工具登记的快捷入口属于这个工具，同样免登录。
-      final publicTool = location == '/toolbox' || tools.any((tool) => location == '/toolbox/${tool.id}' || tool.shortcuts.any((shortcut) => location == '/toolbox/${tool.id}/${shortcut.id}'));
+      // 工具登记的快捷入口属于这个工具，同样免登录；子模块（生活下面的）同属百宝箱。
+      final publicTool = location == '/toolbox' || pages.any((tool) => location == toolboxPath(tool) || tool.shortcuts.any((shortcut) => location == '${toolboxPath(tool)}/${shortcut.id}'));
       // [人工决策-2026-11-12 21:00:20] 游乐场的自由模式同百宝箱免教务登录（用户选定，补充 09-27 那条）：本机成绩属于设备，切换账号不丢。
       // 挑战模式要应用账号（以教务登录为登录方式之一），做好后在挑战页里自己要求登录，不在这里拦。
       // （11-15 起应用账号是自己的账号体系、与教务各管各的，人工决策见 domain/app_account.dart；挑战照旧在挑战页里要求登录。）
@@ -86,10 +89,8 @@ GoRouter buildRouter({required AppSession session, required AppServices services
       // 解锁（人工决策见服务端 src/modules/unlock/unlock_rules.ts）：锁着的游戏与隐藏的工具（含它的快捷入口）不让直接进，回到各自的首页。
       final segments = location.split('/');
       if (unlocks != null && segments.length >= 3 && segments[1] == 'playground' && unlocks.locked(playgroundUnlockId(segments[2]))) return '/playground';
-      // 灰度中的工具同样：开关没开不让直接进（规则见 toolbox_page.dart 的 toolboxVisible）。
-      final tool = segments.length >= 3 && segments[1] == 'toolbox' ? tools.where((tool) => tool.id == segments[2]).firstOrNull : null;
-      if (tool != null && !toolboxVisible(tool, unlocks: unlocks, features: features)) return '/toolbox';
-      return null;
+      // 灰度中的工具同样：开关没开不让直接进（规则见 toolbox_page.dart 的 toolboxVisible）；子模块看不见回到上一层。
+      return toolboxRedirect(tools, location, unlocks: unlocks, features: features);
     },
     routes: [
       GoRoute(
@@ -112,10 +113,11 @@ GoRouter buildRouter({required AppSession session, required AppServices services
       ),
       GoRoute(path: '/toolbox', parentNavigatorKey: rootKey,
         pageBuilder: (context, state) => campusPage(key: state.pageKey, child: ToolboxPage(runtime: toolbox, unlocks: unlocks, features: features))),
-      for (final tool in tools) GoRoute(path: '/toolbox/${tool.id}', parentNavigatorKey: rootKey,
-        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: tool.builder(context))),
-      for (final tool in tools)
-        for (final shortcut in tool.shortcuts) GoRoute(path: '/toolbox/${tool.id}/${shortcut.id}', parentNavigatorKey: rootKey,
+      // 父模块没给页面的（生活）由框架列出子模块。
+      for (final tool in pages) GoRoute(path: toolboxPath(tool), parentNavigatorKey: rootKey,
+        pageBuilder: (context, state) => campusPage(key: state.pageKey, child: tool.builder?.call(context) ?? ToolboxPage(runtime: toolbox, parent: tool, unlocks: unlocks, features: features))),
+      for (final tool in pages)
+        for (final shortcut in tool.shortcuts) GoRoute(path: '${toolboxPath(tool)}/${shortcut.id}', parentNavigatorKey: rootKey,
           pageBuilder: (context, state) => campusPage(key: state.pageKey, child: shortcut.builder(context))),
       GoRoute(path: '/playground', parentNavigatorKey: rootKey,
         // 仅本机时没有挑战分段（人工决策见 domain/network_policy.dart 的 11-16 22:24:59 那条），自由模式照常。

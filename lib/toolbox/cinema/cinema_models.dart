@@ -122,7 +122,7 @@ List<CinemaSourceRef> rankCinemaSources(List<CinemaSourceRef> sources, Map<Strin
 }
 
 // 一个源搜失败了：哪个源、给用户看的原因。
-// 暂不可用按原因分组（人工决策见 cinema_page.dart 的 _onQuery 上 11-22 那条）：连不上（连接失败、超时，换个网络可能就好）、
+// 暂不可用按原因分组（人工决策见 cinema_search_section.dart 的 _onQuery 上 11-22 那条）：连不上（连接失败、超时，换个网络可能就好）、
 // 拒绝访问（片源回 401、403、407、429、451 或 Cloudflare 人机验证）、出错（别的状态码、繁忙、回复看不懂、转发不可用）。
 enum CinemaFailureKind { unreachable, refused, broken }
 

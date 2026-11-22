@@ -147,7 +147,7 @@ const legalUpdated = '2026年11月21日';
 // 「本机保存」的连续失败暂停照 11-21 的 pauseFor 改成 2 分钟（#338 漏改的半小时），繁忙的回复也算没搜成；只少了一种处理、不新增收集与去向，
 // 按 10-28 的先例修订号不加、不再提示，日期改为当天。
 // 同日播放页「找其他片源」（人工决策见 toolbox/cinema/cinema_service.dart 的 findMoreSources）：第六节「搜索与选集」补一句，片名发给的仍是同意过的同一批站点，同样不加修订号。
-// 同日总交接第二组（人工决策见 cinema_page.dart 的 _resume 与 cinema_service.dart 的 searchCacheLifetime）：本机多记看过的片在各片源的编号、内存里留最近一分钟的搜索结果，
+// 同日总交接第二组（人工决策见 cinema_search_section.dart 的 _resume 与 cinema_service.dart 的 searchCacheLifetime）：本机多记看过的片在各片源的编号、内存里留最近一分钟的搜索结果，
 // 第六节「本机保存」与附录三第 16 项补上；只在本机、不新增去向，按 10-28 的先例不加修订号。
 // 同日播放内核可选（人工决策见 toolbox/cinema/cinema_engine.dart 文件头）：本机多记一项选的播放内核，第六节「本机保存」与附录三第 16 项补上；
 // 换成系统播放器（ExoPlayer）也是手机直连同一批第三方服务器、不新增收集与去向，按 10-28 的先例不加修订号。

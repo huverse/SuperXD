@@ -474,7 +474,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
         duration: state.duration,
         updatedAt: DateTime.now().toUtc(),
       ));
-      // 这部片的各个源也记下（人工决策见 cinema_page.dart 的 _resume）：下次从「看过的」接着看，源坏了直接换，不用再搜。
+      // 这部片的各个源也记下（人工决策见 cinema_search_section.dart 的 _resume）：下次从「看过的」接着看，源坏了直接换，不用再搜。
       final sources = title.sources;
       if (sources.length != _savedSources) {
         await widget.service.store.saveTitleSources(title.key, sources);

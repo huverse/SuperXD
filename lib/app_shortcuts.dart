@@ -13,7 +13,7 @@ import 'package:superxd/toolbox/toolbox_module.dart';
 
 // 快捷入口的接线（人工决策见 toolbox/express/express_page.dart 的 _openIdentity）：百宝箱注册表里登记的入口（ToolboxShortcut）
 // 画好图标交给系统（长按应用图标的菜单、添加到桌面）；点了入口要去的页面先记在 pending，由账号应用等会话恢复好再推入（openShortcut）。
-// 入口 id 是「工具 id.入口 id」，页面是 /toolbox/工具 id/入口 id。
+// 入口 id 是「工具 id.入口 id」，页面是 /toolbox/工具 id/入口 id；子模块的入口同理（life.zhuli.scan，/toolbox/life/zhuli/scan）。
 class AppShortcuts {
   AppShortcuts({required this.port, required this.tools, required this.pixelRatio});
   final AppShortcutPort port;
@@ -24,9 +24,9 @@ class AppShortcuts {
   StreamSubscription<String>? _launches;
 
   Iterable<({String id, ToolboxShortcut shortcut, String location})> get _entries sync* {
-    for (final tool in tools) {
+    for (final tool in toolboxRoutable(tools)) {
       for (final shortcut in tool.shortcuts) {
-        yield (id: '${tool.id}.${shortcut.id}', shortcut: shortcut, location: '/toolbox/${tool.id}/${shortcut.id}');
+        yield (id: '${tool.id}.${shortcut.id}', shortcut: shortcut, location: '${toolboxPath(tool)}/${shortcut.id}');
       }
     }
   }

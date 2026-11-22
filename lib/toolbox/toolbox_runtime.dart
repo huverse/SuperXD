@@ -129,7 +129,11 @@ class ToolboxRuntime with WidgetsBindingObserver {
   // 功能开关（domain/feature_flags.dart 登记）：工具里灰度中的一部分（如电影院的解析）按它问；为空（没配中转、测试）当都关。
   final FeatureGate? features;
   final ToolboxCatalog catalog;
+  // 顶层工具；子模块挂在各自的 children 下（规则见 ToolboxModule）。
   late final List<ToolboxModule> modules = catalog(this);
+
+  // 按 id 找注册表里的一个模块（含子模块），没有返回空。
+  ToolboxModule? module(String id) => toolboxTree(modules).where((module) => module.id == id).firstOrNull;
 
   // 自建中转（私信与学习通代签共用）的地址，只从构建参数来；没配时为空，用到它的工具自己退化。
   final Uri? relayUrl;
@@ -146,7 +150,7 @@ class ToolboxRuntime with WidgetsBindingObserver {
   ToolboxDownloadManager get downloads => _downloads!;
 
   Future<ToolboxService> _service(String id) => _opened.putIfAbsent(id, () {
-    final opener = modules.where((module) => module.id == id).firstOrNull?.openService;
+    final opener = module(id)?.openService;
     if (opener == null) throw const ToolboxException('这个工具的服务还没有配置');
     if (_base == null) throw const ToolboxException('百宝箱还没有准备好，稍后再试');
     // 打开失败不留在缓存里，页面上点「重试」才能真的再打开一次。
@@ -165,8 +169,15 @@ class ToolboxRuntime with WidgetsBindingObserver {
   }
 
   // 清除一个工具在本机的全部数据：服务自己清库与凭据并关闭，框架再撤掉它的同意记录（按工具 id 记）。
-  // 清完从缓存里拿掉，下次打开工具时重新打开一份空的服务。
+  // 清完从缓存里拿掉，下次打开工具时重新打开一份空的服务。父模块（生活）清的是它下面每个有数据的子模块。
   Future<void> clearData(String id) async {
+    final found = module(id);
+    for (final each in found == null ? [id] : toolboxClearable(found).map((module) => module.id)) {
+      await _clearOne(each);
+    }
+  }
+
+  Future<void> _clearOne(String id) async {
     final service = await this.service<ToolboxService>(id);
     // 拿掉缓存的那份打开过程（上面刚等完），不再等它。
     unawaited(_opened.remove(id));

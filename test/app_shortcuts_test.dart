@@ -67,6 +67,27 @@ void main() {
     expect(shortcuts.pending.value, isNull, reason: '以后删掉了的入口还留在桌面上，照常打开应用');
   });
 
+  testWidgets('子模块的入口：id 是「子模块 id.入口 id」（life.demo.scan），页面在子模块路径下；自己摆子模块的父模块（电影院那种）的子模块不发布入口', (tester) async {
+    final port = _FakePort();
+    ToolboxShortcut shortcut(String id) => ToolboxShortcut(id: id, label: '入口$id', icon: Icons.qr_code, builder: (context) => const Text('入口页'));
+    final shortcuts = AppShortcuts(
+      port: port,
+      tools: [
+        ToolboxModule(id: 'life', name: '合成生活', icon: Icons.home, children: [ToolboxModule(id: 'life.demo', name: '合成子模块', icon: Icons.build, builder: (context) => const Text('子模块页'), shortcuts: [shortcut('scan')])]),
+        ToolboxModule(id: 'tabs', name: '自己摆的', icon: Icons.build, builder: (context) => const Text('父页'), children: [ToolboxModule(id: 'tabs.one', name: '一段', icon: Icons.build, builder: (context) => const Text('一段'), shortcuts: [shortcut('hidden')])]),
+      ],
+      pixelRatio: 1,
+    );
+    addTearDown(shortcuts.dispose);
+    await tester.runAsync(shortcuts.start);
+    expect([for (final each in port.published.single) each.id], ['life.demo.scan']);
+    await tester.runAsync(() => shortcuts.pin('life.demo', 'scan'));
+    expect(port.pinned.single.id, 'life.demo.scan');
+    port.launchEvents.add('life.demo.scan');
+    await tester.pump();
+    expect(shortcuts.pending.value, '/toolbox/life/demo/scan');
+  });
+
   testWidgets('入口要去的页面：会话恢复好之前（启动页）不动；不在首页先回首页，到了首页再推入，返回回到首页', (tester) async {
     Widget page(String text) => Scaffold(body: Text(text));
     final router = GoRouter(initialLocation: '/boot', routes: [
