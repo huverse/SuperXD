@@ -36,6 +36,14 @@
 	<array>
 		<string>com.superxd.superxd.autoSync</string>
 	</array>
+	<!-- [人工决策-2026-11-22 17:15:38] ATS 只开本机网络（用户说「按照最佳实践优化」）：电影院的系统播放器 AVPlayer 经本机代理 http://127.0.0.1 取播放清单，
+	     iOS 17 起 ATS 默认拦直连 IP 地址（iOS 16 默认放行），只加 NSAllowsLocalNetworking（本机、.local 与直连 IP），公网照旧受 ATS 保护；
+	     不开 NSAllowsArbitraryLoads 与 NSAllowsArbitraryLoadsForMedia（明文的分片仍会被拦，打不开时这一页退回 mpv）。Dart 自己的请求不受 ATS 管。test/legal_page_test.dart 守护。 -->
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsLocalNetworking</key>
+		<true/>
+	</dict>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>面对面私信经蓝牙发现附近打开面对面的好友并互发卡片，不用于定位。</string>
 	<key>NSCameraUsageDescription</key>

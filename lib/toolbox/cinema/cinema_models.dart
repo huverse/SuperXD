@@ -122,13 +122,18 @@ List<CinemaSourceRef> rankCinemaSources(List<CinemaSourceRef> sources, Map<Strin
 }
 
 // 一个源搜失败了：哪个源、给用户看的原因。
+// 暂不可用按原因分组（人工决策见 cinema_page.dart 的 _onQuery 上 11-22 那条）：连不上（连接失败、超时，换个网络可能就好）、
+// 拒绝访问（片源回 401、403、407、429、451 或 Cloudflare 人机验证）、出错（别的状态码、繁忙、回复看不懂、转发不可用）。
+enum CinemaFailureKind { unreachable, refused, broken }
+
 class CinemaFailure {
-  const CinemaFailure({required this.ruleId, required this.name, required this.message, this.paused = false});
+  const CinemaFailure({required this.ruleId, required this.name, required this.message, this.kind = CinemaFailureKind.broken, this.paused = false});
   final String ruleId;
-  // 片源名（页面只写这个）；message 是原因，只进日志。
+  // 片源名（页面按 kind 分组只写这个）；message 是具体原因，只进日志。
   final String name;
   final String message;
-  // 连续失败暂停着、这次没去搜（CinemaService.pauseAfter）。
+  final CinemaFailureKind kind;
+  // 连续失败暂停着、这次没去搜（CinemaService.pauseAfter），kind 是暂停前最后一次失败的。
   final bool paused;
 }
 

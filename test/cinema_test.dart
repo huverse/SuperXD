@@ -749,6 +749,49 @@ void main() {
       await service.close();
     });
 
+    // 人工决策见 cinema_page.dart 的 _onQuery 上 11-22 那条（暂不可用按原因分组）。
+    test('暂不可用按原因分组：连接失败算连不上，401–451 与人机验证算拒绝访问（人机验证单独记日志），别的状态码、繁忙与转发自己出的错算出错；暂停着的照最后一次分组', () async {
+      final logs = captureDiagnostics();
+      final client = MockClient((request) async => switch (request.url.host) {
+        'down.example.com' => throw const SocketException('连不上'),
+        'shield.example.com' => reply('<!DOCTYPE html><html><head><title>Just a moment...</title></head><body><script>window._cf_chl_opt={}</script></body></html>', 403),
+        'busy.example.com' => reply('', 429),
+        'error.example.com' => reply('', 500),
+        'empty.example.com' => reply('{"code":1,"msg":"服务器繁忙"}', 200),
+        'edge.example.net' => reply('', 429, headers: {'x-forward-error': 'rate_limited'}),
+        _ => reply(macCmsList([]), 200),
+      });
+      final service = await open(() async => packageBytes(forward: 'https://edge.example.net/v1/forward', rules: [
+        macCmsRule('down', 'https://down.example.com/api.php', name: '断网资源'),
+        macCmsRule('shield', 'https://shield.example.com/api.php', name: '验证资源'),
+        macCmsRule('busy', 'https://busy.example.com/api.php', name: '限流资源'),
+        macCmsRule('error', 'https://error.example.com/api.php', name: '坏掉资源'),
+        macCmsRule('empty', 'https://empty.example.com/api.php', name: '繁忙资源'),
+        {...macCmsRule('relayed', 'https://relayed.example.com/api.php', name: '转发资源'), 'forward': true},
+      ]), client: client);
+      await service.grantRules((await service.rules()).rules);
+      Map<String, CinemaFailureKind> kinds(CinemaSearchResult result) => {for (final failure in result.failures) failure.ruleId: failure.kind};
+      var result = await service.search('合成').last;
+      expect(kinds(result), {
+        'down': CinemaFailureKind.unreachable,
+        'shield': CinemaFailureKind.refused,
+        'busy': CinemaFailureKind.refused,
+        'error': CinemaFailureKind.broken,
+        'empty': CinemaFailureKind.broken,
+        'relayed': CinemaFailureKind.broken,
+      });
+      expect(logs.where((line) => line.contains('rule=shield result=failed_challenge')), hasLength(1));
+      expect(logs.where((line) => line.contains('rule=busy result=failed_http_429')), hasLength(1));
+      for (var round = 1; round < CinemaService.pauseAfter; round++) {
+        await service.search('合成$round').last;
+      }
+      result = await service.search('合成再搜').last;
+      expect(result.failures.every((failure) => failure.paused), isTrue);
+      expect(kinds(result)['down'], CinemaFailureKind.unreachable, reason: '暂停着的照最后一次失败分组');
+      expect(kinds(result)['shield'], CinemaFailureKind.refused);
+      await service.close();
+    });
+
     test('境外转发：同意过直连的源改走转发后要重新同意', () async {
       var payload = packageBytes();
       final service = await open(() async => payload);
@@ -1637,7 +1680,7 @@ void main() {
       await tester.pumpWidget(const SizedBox());
     });
 
-    testWidgets('首页：看过的是横向海报条、⋯ 里删除先确认；搜索中输入框照常可改；暂不可用只写源名；清空搜索框回到看过的', (tester) async {
+    testWidgets('首页：看过的是横向海报条、⋯ 里删除先确认；搜索中输入框照常可改；暂不可用按原因分组只写源名；清空搜索框回到看过的', (tester) async {
       final slow = Completer<void>();
       final client = MockClient((request) async {
         if (request.url.host == 'beta.example.com') return reply('', 404);
@@ -1660,8 +1703,9 @@ void main() {
       expect(tester.widget<TextField>(find.byType(TextField)).enabled, isTrue, reason: '还有源没回来，输入框照常可改');
       slow.complete();
       await settleUntil(tester, () => find.text('合成电影').evaluate().isNotEmpty);
-      expect(find.textContaining('另一资源'), findsOneWidget);
+      expect(find.text('出错：另一资源'), findsOneWidget, reason: 'HTTP 404 算出错，只写源名');
       expect(find.textContaining('HTTP'), findsNothing);
+      expect(find.textContaining('暂不可用'), findsNothing);
 
       await tester.enterText(find.byType(TextField), '');
       await tester.pump();

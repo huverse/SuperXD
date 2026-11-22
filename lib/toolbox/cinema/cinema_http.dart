@@ -25,12 +25,26 @@ const cinemaPlaylistTimeout = Duration(seconds: 25);
 // 本机代理自己跟跳转（要拿到最终地址补全清单里的相对路径），最多跳这么多次；各跳共用一个总时限（timeout 管整串，不是每跳重新计）。
 const cinemaRedirectLimit = 5;
 
+// 片源回这些状态码算「拒绝访问」（CinemaFailureKind.refused）：要登录、被禁、要代理认证、限流、按法律屏蔽。
+const cinemaRefusedStatuses = {401, 403, 407, 429, 451};
+
 class CinemaHttpException implements Exception {
-  const CinemaHttpException(this.message, {this.status});
+  const CinemaHttpException(this.message, {this.status, this.refused = false, this.challenge = false});
   final String message;
   final int? status;
+  // 片源自己拒绝了这次请求（cinemaRefusedStatuses 或人机验证）；转发服务自己出的错不算。
+  final bool refused;
+  // 片源回的是 Cloudflare 人机验证页（日志单独记 failed_challenge）。
+  final bool challenge;
   @override
   String toString() => 'CinemaHttpException($message, status=$status)';
+}
+
+// Cloudflare 的人机验证页：直连时回复头带 cf-mitigated: challenge；经境外转发时回复头不带过来，按页面里的 _cf_chl_opt 或「Just a moment」认。
+bool cinemaChallenge(http.Response response) {
+  if (response.headers['cf-mitigated'] == 'challenge') return true;
+  final body = utf8.decode(response.bodyBytes, allowMalformed: true);
+  return body.contains('_cf_chl_opt') || body.contains('<title>Just a moment');
 }
 
 class CinemaFetched {
@@ -105,7 +119,15 @@ class CinemaHttp {
         _ => CinemaHttpException('转发不可用（HTTP ${response.statusCode}）', status: response.statusCode),
       };
     }
-    if (response.statusCode < 200 || response.statusCode >= 300) throw CinemaHttpException('暂不可用（HTTP ${response.statusCode}）', status: response.statusCode);
+    if (response.statusCode < 200 || response.statusCode >= 300) {
+      final challenge = cinemaChallenge(response);
+      throw CinemaHttpException(
+        challenge ? '暂不可用（HTTP ${response.statusCode}，人机验证）' : '暂不可用（HTTP ${response.statusCode}）',
+        status: response.statusCode,
+        refused: challenge || cinemaRefusedStatuses.contains(response.statusCode),
+        challenge: challenge,
+      );
+    }
     return utf8.decode(response.bodyBytes, allowMalformed: true);
   }
 
