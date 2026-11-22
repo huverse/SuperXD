@@ -6,7 +6,7 @@
 
 # 文件职责
 
-- zhuli_protocol.dart：请求协议（纯计算）：平台端地址与写死的签名密钥、上报的 App 版本；签名 zhuliSign（去空值、按键排序、值按 JS 的 JSON.stringify、去引号与空格、MD5 转大写，向量来自被真实服务端接受的实现）、对象参数换成 base64_<名>（zhuliBase64，同原 App 的 base64 再换 - 与 _）、带时刻与 32 位随机串的查询参数 zhuliQuery、回复 data 的 base64 解码 zhuliDecodeData。
+- zhuli_protocol.dart：请求协议（纯计算）：平台端地址与写死的签名密钥、上报的 App 版本；签名 zhuliSign（去空值、按键排序、值按 JS 的 JSON.stringify、去引号与空格、MD5 转大写，向量来自被真实服务端接受的实现）、对象参数换成 base64_<名>（zhuliBase64，同原 App 的 base64 再换 - 与 _）、带时刻与 32 位随机串的查询参数 zhuliQuery、回复 data 的解码 zhuliDecodeData（照原 App：先 base64、解开再试 JSON，不是 JSON 就是字本身，蓝牙命令帧就是这种；不是 base64 原样）。
 - zhuli_http.dart：请求封装 ZhuliHttp（经共用内核 CampusHttp，模块 zhuli）：只发 GET，整次 15 秒、响应上限 1MB，不自动重试；result 为假时 zhuliRejection 按 err_msg 与 msg 归类（login_timeout 是会话过期，三种图形验证码文案要验证码，中文文案原样给人看）；日志只记路径与英文错误码，不记查询串（有手机号、密码、签名）与回复。
 - zhuli_models.dart：失败分类 ZhuliFailure 与 ZhuliException；外部输入边界 decode*（逐项核对类型）：登录会话 ZhuliSession（业务地址只认 https 的 whxinna.com 主机、session_secret 盖过 appsecret，只在内存）、账户 ZhuliProfile（余额以用户详情为准，登录回复里的不可信；计费规则 ZhuliChargeRule 按设备类型与设备分组对上）、配置 ZhuliConfig（消费订单可查天数、洗浴开关、余额门槛、供水时段硬拦）、设备 ZhuliDevice（开水走哪一路 channel 同原 App 的 En()、供水时段按北京时间钟点）、楼栋楼层房间 ZhuliPlace、下单回复、蓝牙握手、最近一单、券 ZhuliCoupon 与三栏 ZhuliCouponTab（回复里的 status、is_blance 恒为空，只能靠入参过滤）、券的抵扣记录、充值订单、消费订单与详情 ZhuliBill；金额一律按分的整数（zhuliCents 按十进制文本四舍五入到分，不经浮点运算，zhuliYuan 写回元）；状态、消费类型、支付方式的中文。
 - zhuli_client.dart：接口 ZhuliClient：登录（手机号加 6 位数字密码，只报系统类型与本工具的随机设备串、机型报 SuperXD）、图形验证码（SVG）、找回密码（短信验证码与重设）、用户详情、配置、我的券（页从 0 起）、券的月度抵扣记录（page_index 0 是整月）、充值订单（页从 1 起、不满 20 条到底）与详情、消费订单（起止必填、一次最多 20 条，用上一页最后一条的时刻翻页）与详情；洗浴：楼栋、楼层、房间与房间设备（页从 1 起）、按设备号或蓝牙地址找设备、待支付的单、最近一单、云端开水（先唤醒、不发金额）与关水、蓝牙的六个命令帧接口（帧只在服务端与设备之间搬运，_frame 只认 20 字节的十六进制）。住理的时间是不带时区的北京时间（对方协议的写法，不是业务时区）：zhuliMoment 换成 UTC 交给界面、zhuliClock 把时刻写回去，只在这里换算。

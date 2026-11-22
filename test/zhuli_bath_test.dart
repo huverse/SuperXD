@@ -77,7 +77,8 @@ class _FakeBath {
   late final client = MockClient((request) async {
     requests.add(request.url);
     final query = request.url.queryParameters;
-    Map<String, Object?> ok(Object? data) => {'result': true, 'data': data is String ? data : zhuliBase64(jsonEncode(data))};
+    // 同真实服务端：data 一律 base64，命令帧是 base64 包着的十六进制串（不套 JSON）。
+    Map<String, Object?> ok(Object? data) => {'result': true, 'data': zhuliBase64(data is String ? data : jsonEncode(data))};
     Map<String, Object?> fail(String? code, [String? message]) => {'result': false, 'err_msg': code, 'msg': message, 'data': null};
     final Map<String, Object?> reply;
     if (request.url.host == 'pm.whxinna.com') {
@@ -238,9 +239,11 @@ void main() {
       expect([zhuliInSupply(supply, _beijing(6, 30)), zhuliInSupply(supply, _beijing(9, 0)), zhuliInSupply(supply, _beijing(23, 59)), zhuliInSupply(const [], _beijing(3, 0))], [true, false, true, true]);
     });
 
-    test('蓝牙命令帧的 data 是十六进制串，原样交回；帧的命令类型在第 3 个字节', () {
-      expect(zhuliDecodeData(_frame(1)), _frame(1));
+    test('回复的 data 照原 App 解：先 base64、再试 JSON，不是 JSON 就是字本身（命令帧），不是 base64 原样；帧的命令类型在第 3 个字节', () {
+      expect(zhuliDecodeData(zhuliBase64(_frame(1))), _frame(1));
       expect(zhuliDecodeData(zhuliBase64(jsonEncode('x'))), 'x');
+      expect(zhuliDecodeData(zhuliBase64(jsonEncode({'isn': 'I'}))), {'isn': 'I'});
+      expect(zhuliDecodeData('不是*base64'), '不是*base64');
       expect([zhuliFrameCommand(_frame(64)), zhuliFrameCommand('0000')], [64, null]);
     });
   });

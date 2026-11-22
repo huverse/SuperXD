@@ -172,8 +172,11 @@ void main() {
       expect((rejected.failure, rejected.message), (ZhuliFailure.rejected, '密码错误，请重新输入'));
       expect((await call({'result': false, 'err_msg': 'api_sign_error'})).message, '请求校验没通过，稍后再试');
       expect((await call('不是 JSON')).failure, ZhuliFailure.invalidResponse);
-      expect((await call({'result': true, 'data': 'not base64 json!'})).failure, ZhuliFailure.invalidResponse);
       expect((await call({'result': true}, status: 502)).failure, ZhuliFailure.network);
+      // data 不是 base64 时照原 App 原样交回，格式对不对由各接口的 decode* 判断。
+      final raw = await ZhuliHttp(client: MockClient((_) async => _reply({'result': true, 'data': 'not base64 json!'}, 200))).get(Uri.parse('https://zhuli999.whxinna.com'), '/x', {}, key: 'K');
+      expect(raw, 'not base64 json!');
+      expect(() => decodeZhuliProfile(raw), throwsA(isA<ZhuliException>().having((error) => error.failure, 'failure', ZhuliFailure.invalidResponse)));
     });
   });
 
