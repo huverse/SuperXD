@@ -5,7 +5,7 @@ import UIKit
 // 菜单图标只能用随包的图或系统的 SF Symbols，用不了 Dart 画好的 PNG：入口 id（工具 id.入口 id）到 SF Symbols 名在 symbols 里登记，没登记的不带图标。
 // 冷启动带来的入口 id 先记下由 Dart 取一次；Dart 已经取过之后才收到的（系统交来得晚），和后台时点的一样经 launch 交回。
 final class AppShortcuts: NSObject, FlutterSceneLifeCycleDelegate {
-  private static let symbols = ["express.identity": "qrcode"]
+  private static let symbols = ["express.identity": "qrcode", "life.zhuli.scan": "shower"]
   private var channel: FlutterMethodChannel?
   private var pending: String?
   private var launchTaken = false

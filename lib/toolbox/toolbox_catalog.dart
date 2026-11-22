@@ -91,8 +91,11 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
         icon: CampusIcons.coupon,
         builder: (context) => ZhuliPage(runtime: runtime),
         openService: ZhuliService.open,
-        clearedData: '住理账号与密码（再用要重新登录）',
+        clearedData: '住理账号与密码、常用设备与最近使用（再用要重新登录）',
         flag: zhuliFlag,
+        shortcuts: [
+          ToolboxShortcut(id: ZhuliPage.scanShortcut, label: '扫码洗浴', icon: CampusIcons.bath, builder: (context) => ZhuliPage(runtime: runtime, scanOnOpen: true)),
+        ],
       ),
     ],
   ),

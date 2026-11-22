@@ -11,7 +11,8 @@ import 'dart:io';
 // 未裁剪的原生库里调试信息长短会差一点，余量取 1MB（约 1%）；第一次在 CI 上跑完，以它打印的 bytes 为准校准一次。
 // 11-19 电影院接入 media_kit（libmpv）调高：arm64 的 libmpv.so 约 12.4MB；它的原生库按 jar 带全部架构，这份单架构 profile 包里另夹带 armeabi-v7a 与 x86_64 两套约 36.5MB，
 // 发版按架构分包时各包只带自己的那套（用户的 arm64 包实际多约 12.5MB）。
-const apkBudgetBytes = 139625916 + apkBudgetSlack;
+// 11-22 住理生活两轮（第一轮的 flutter_svg 与登录、券、订单约 0.92MB，第二轮的洗浴与蓝牙开关水约 0.13MB）调高：基数改成本机编出的 140,679,880 字节。
+const apkBudgetBytes = 140679880 + apkBudgetSlack;
 const apkBudgetSlack = 1024 * 1024;
 
 void main(List<String> args) {

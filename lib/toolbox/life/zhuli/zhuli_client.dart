@@ -3,6 +3,7 @@ import 'dart:io';
 import 'package:timezone/timezone.dart' as tz;
 
 import 'package:superxd/domain/campus_clock.dart';
+import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_http.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_models.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_protocol.dart';
@@ -102,6 +103,67 @@ class ZhuliClient {
       decodeZhuliConsumeRecords(await _call(session, '/webapi/v1/consume/list_record_by_staffid', {'staff_id': session.userId, 'start': zhuliClock(start), 'end': zhuliClock(end)}));
 
   Future<ZhuliBill> bill(ZhuliSession session, String orderId) async => decodeZhuliBill(await _call(session, '/webapi/v1/staff/get_bill_detail_by_id', {'bill_id': orderId, 'use_type': 'consume'}));
+
+  // ---------- 洗浴（资料第 4 节；蓝牙按原 App 的 bleCommon 模块） ----------
+
+  static const roomDevicePage = 20;
+
+  // 选设备的三级：楼栋（只列有设备的）、楼层、房间；房间里的设备分页从 1 起。
+  Future<List<ZhuliPlace>> buildings(ZhuliSession session) async => decodeZhuliPlaces(await _call(session, '/webapi/v1/building/list_onlybuilding', {'device_count': 1}));
+
+  Future<List<ZhuliPlace>> floors(ZhuliSession session, String buildingId) async => decodeZhuliPlaces(await _call(session, '/webapi/v1/building/list_floors', {'buildingid': buildingId}));
+
+  Future<List<ZhuliPlace>> rooms(ZhuliSession session, String floorId) async => decodeZhuliPlaces(await _call(session, '/webapi/v1/building/list_rooms', {'floorid': floorId}));
+
+  Future<List<ZhuliDevice>> roomDevices(ZhuliSession session, {required String buildingId, required String floorId, required String roomId, required int page}) async => decodeZhuliDevices(
+    await _call(session, '/webapi/v1/device/list_room_device_by_consume_type', {'building_id': buildingId, 'floor_id': floorId, 'room_id': roomId, 'type': 'all', 'page_index': page, 'page_size': roomDevicePage}),
+  );
+
+  // 按设备号或蓝牙地址（冒号格式，见 zhuli_qr.dart）找设备；不存在抛 rejected（device_not_exists）。
+  Future<ZhuliDevice> device(ZhuliSession session, int deviceId) async => decodeZhuliDevice(await _call(session, '/webapi/v1/device/get_by_id', {'id': deviceId}));
+
+  Future<ZhuliDevice> deviceByMac(ZhuliSession session, String mac) async => decodeZhuliDevice(await _call(session, '/webapi/v1/device/get_by_mac', {'mac': mac}));
+
+  // 待支付的消费单（有就不让开，同原 App）。
+  Future<int> pendingOrders(ZhuliSession session) async => zhuliRows(await _call(session, '/webapi/v1/staff/query_pending_order', {'order_status': 'need_pay'})).length;
+
+  Future<ZhuliLastRecord?> lastRecord(ZhuliSession session) async => decodeZhuliLastRecord(await _call(session, '/webapi/v1/consume/get_staff_last_record', {'staff_id': session.userId}));
+
+  // 云端开水：先唤醒设备（原 App 带同一组参数、结果不看），再下单；洗浴不发金额与用量（服务端按规则算）。
+  Future<ZhuliOrderStart> startCloud(ZhuliSession session, ZhuliDevice device) async {
+    final params = {'device_id': device.id, 'send_to_device': 1, 'staff_id': session.userId, 'act': 'consume', 'net_type': device.channel, 'port_name': 0};
+    try {
+      await _call(session, '/webapi/v1/device/collect_gprs_device_status', params);
+    } on ZhuliException catch (error) {
+      if (error.failure == ZhuliFailure.sessionExpired) rethrow;
+      campusLog('[Zhuli] action=wake reason=${error.failure.name}');
+    }
+    return decodeZhuliOrderStart(await _call(session, '/webapi/v1/consume/create_order', params));
+  }
+
+  // 云端关水：按实际用量结算，退回预扣。
+  Future<void> endCloud(ZhuliSession session, {required String orderId, required int deviceId}) => _call(session, '/webapi/v1/consume/remote_end_order', {'order_id': orderId, 'device_id': deviceId});
+
+  // 蓝牙：命令帧都由服务端生成，客户端只在服务端与设备之间搬运（同原 App）。
+  Future<String> bleHandshakeFrame(ZhuliSession session, int deviceId) async => _frame(await _call(session, '/webapi/v1/device/ble/create_hand_shake_cmd', {'device_id': deviceId}));
+
+  Future<ZhuliHandshake> bleHandshake(ZhuliSession session, int deviceId, String reply) async => decodeZhuliHandshake(await _call(session, '/webapi/v1/device/ble/heart_shark_response', {'hex': reply, 'device_id': deviceId}));
+
+  Future<String> bleHistoryFrame(ZhuliSession session, int deviceId, String isn) async => _frame(await _call(session, '/webapi/v1/device/ble/create_history_order_cmd', {'isn': isn, 'device_id': deviceId}));
+
+  Future<ZhuliOrderStart> startBluetooth(ZhuliSession session, ZhuliDevice device, String isn) async =>
+      decodeZhuliOrderStart(await _call(session, '/webapi/v1/consume/create_order', {'isn': isn, 'device_id': device.id, 'net_type': 4, 'staff_id': session.userId}));
+
+  Future<void> bleStarted(ZhuliSession session, {required int deviceId, required String orderId, required String reply}) =>
+      _call(session, '/webapi/v1/consume/ble/start_consume_response', {'hex': reply, 'device_id': deviceId, 'order_id': orderId});
+
+  Future<String> bleEndFrame(ZhuliSession session, int deviceId, String isn) async => _frame(await _call(session, '/webapi/v1/consume/ble/create_end_consume_cmd', {'device_id': deviceId, 'isn': isn}));
+
+  // 设备回的结束帧与结束回执都交这里（历史单也是）。
+  Future<void> bleEnded(ZhuliSession session, int deviceId, String reply) => _call(session, '/webapi/v1/consume/ble/end_consume_response', {'hex': reply, 'device_id': deviceId});
+
+  // 命令帧：20 字节的十六进制串（外部输入）。
+  static String _frame(Object? data) => data is String && data.length == zhuliFrameLength * 2 ? data.toUpperCase() : throw const ZhuliException(ZhuliFailure.invalidResponse, '住理生活的返回看不懂，稍后再试');
 
   void close() => http.close();
 }

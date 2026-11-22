@@ -55,9 +55,23 @@ Map<String, String> zhuliQuery(Map<String, Object?> params, {required String key
   return {for (final MapEntry(key: name, :value) in signed.entries) if (value != null) name: value is double || value is bool ? zhuliJsValue(value) : '$value'};
 }
 
-// 回复的 data 是字符串时是 base64（- 与 _ 换回 + 与 /、补齐 =）包着的 JSON；外部输入，解不开抛 FormatException。
+// 蓝牙命令帧固定 20 字节（命令类型在第 3 个字节），收发都按十六进制串。
+const zhuliFrameLength = 20;
+
+// 回复的 data 是字符串时照原 App 的响应拦截器解（外部输入）：先当 base64（- 与 _ 换回 + 与 /、补齐 =）解成 UTF-8，解不开就原样用；
+// 解开后先试 JSON，不是 JSON 就是这串字本身。蓝牙命令帧就是 base64 包着的十六进制串、不套 JSON（11-22 真机：只认 JSON 时握手帧解析失败）。
 Object? zhuliDecodeData(Object? data) {
   if (data is! String) return data;
-  final normalized = data.replaceAll('-', '+').replaceAll('_', '/');
-  return jsonDecode(utf8.decode(base64.decode(normalized.padRight((normalized.length + 3) ~/ 4 * 4, '='))));
+  final String text;
+  try {
+    final normalized = data.replaceAll('-', '+').replaceAll('_', '/');
+    text = utf8.decode(base64.decode(normalized.padRight((normalized.length + 3) ~/ 4 * 4, '=')));
+  } on FormatException {
+    return data;
+  }
+  try {
+    return jsonDecode(text);
+  } on FormatException {
+    return text;
+  }
 }

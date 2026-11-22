@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_client.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_devices.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_models.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_vault.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
@@ -17,10 +19,11 @@ import 'package:superxd/toolbox/toolbox_module.dart';
 // 会话过期时在后台用它重登并重放一次（洗澡中途会话过期也能关水）；用户选的「短信验证码登录」官方没有（资料里的 get_login_code 是图形验证码），
 // 改选「短信找回密码」，没选支付宝快捷登录（没有密码可存，会话过期不能在后台重登）。
 //
-// 服务：只持有账号的安全存储与客户端，没有业务库（余额、券与订单即查即用，不落盘）。每个账号一份会话，只在内存。
+// 服务：持有账号的安全存储、本机的设备列表与客户端，没有业务库（余额、券与订单即查即用，不落盘）。每个账号一份会话，只在内存。
 class ZhuliService implements ToolboxService {
-  ZhuliService({required this.vault, ZhuliClient? client}) : client = client ?? ZhuliClient();
+  ZhuliService({required this.vault, required this.devices, ZhuliClient? client}) : client = client ?? ZhuliClient();
   final ZhuliVault vault;
+  final ZhuliDeviceStore devices;
   final ZhuliClient client;
   final _sessions = <String, ZhuliSession>{};
   final _logins = <String, Future<ZhuliSession>>{};
@@ -30,7 +33,7 @@ class ZhuliService implements ToolboxService {
   // 第一次登录前的同意说明的版本，说明有实质变化就加一档。
   static const consentVersion = 'zhuli-1';
 
-  static Future<ZhuliService> open(ToolboxServiceContext context) async => ZhuliService(vault: SecureZhuliVault());
+  static Future<ZhuliService> open(ToolboxServiceContext context) async => ZhuliService(vault: SecureZhuliVault(), devices: ZhuliDeviceStore.file(File('${context.base.path}/zhuli_devices.json')));
 
   Future<ZhuliVaultState> state() => vault.load();
 
@@ -104,10 +107,11 @@ class ZhuliService implements ToolboxService {
   @override
   Future<void> close() async => client.close();
 
-  // 清除数据：删掉安全存储里本工具的全部账号与密码（住理那边的账号、余额与订单都不动），内存里的会话一并丢掉。
+  // 清除数据：删掉安全存储里本工具的全部账号与密码、本机的设备列表（住理那边的账号、余额与订单都不动），内存里的会话一并丢掉。
   @override
   Future<void> clearData() async {
     _sessions.clear();
     await vault.deleteAll();
+    await devices.deleteAll();
   }
 }
