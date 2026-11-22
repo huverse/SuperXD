@@ -7,8 +7,10 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:superxd/application/auto_sync.dart';
 import 'package:superxd/application/campus_sync.dart';
 import 'package:superxd/domain/auto_sync.dart';
+import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/sync_record.dart';
 import 'package:superxd/page/auto_sync_dialog.dart';
 import 'package:superxd/page/sync_merge_page.dart';
 import 'package:superxd/page/sync_selection_dialog.dart';
@@ -462,6 +464,37 @@ void main() {
       expect(find.text('合成的失败原因'), findsOneWidget);
     });
 
+    // 11-22 用户截图：学业页写「自动同步于11月20日 14:31」，自动同步弹窗写「上次自动同步：今天 14:34」：弹窗原来写的是这一轮开跑就记下的尝试时刻，
+    // 还没做完、被系统停掉也写成同步过；学业页写的是做完才有的同步记录。
+    testWidgets('上次自动同步读同步记录里最近一条自动的（同学业页），开跑时记下的尝试时刻不算；正在跑时写正在自动同步，做完换成新记录的时刻', (tester) async {
+      _tall(tester);
+      final gateway = _Gateway();
+      gateway.autoSyncSetting = const AutoSyncSetting(enabled: true);
+      // 今天开跑过一轮、没做完：尝试时刻是现在、状态照旧 ok；同步记录里最近一条自动的是两天前，之后还有一条手动的。
+      final attempt = DateTime.now().toUtc(), done = attempt.subtract(const Duration(days: 2));
+      gateway.autoSyncStatus = AutoSyncStatus(lastAttemptAt: attempt, state: AutoSyncState.ok);
+      await gateway.recordSync(SyncRecord(at: done, trigger: SyncTrigger.auto));
+      await gateway.recordSync(SyncRecord(at: done.add(const Duration(hours: 3)), trigger: SyncTrigger.manual));
+      final autoSync = _PingAutoSync(gateway);
+      await autoSync.accountChanged(signedIn: true);
+      await tester.pumpWidget(host());
+      unawaited(showAutoSyncSettings(hostContext, autoSync: autoSync, gateway: gateway));
+      await tester.pumpAndSettle();
+      expect(find.text('上次自动同步：${formatCampusRelative(done.toIso8601String())}'), findsOneWidget);
+      expect(find.text('上次自动同步：${formatCampusRelative(attempt.toIso8601String())}'), findsNothing);
+      autoSync.syncing = true;
+      autoSync.ping();
+      await tester.pumpAndSettle();
+      expect(find.text('正在自动同步'), findsOneWidget);
+      // 这一轮做完：记下同步记录、收回 syncing，弹窗跟着换成这一条的时刻。
+      final finished = attempt.add(const Duration(minutes: 2));
+      await gateway.recordSync(SyncRecord(at: finished, trigger: SyncTrigger.auto));
+      autoSync.syncing = false;
+      autoSync.ping();
+      await tester.pumpAndSettle();
+      expect(find.text('上次自动同步：${formatCampusRelative(finished.toIso8601String())}'), findsOneWidget);
+    });
+
     // 11-19 用户选定（人工决策见 page/section_pages.dart 的 MinePage）：自动同步设置只留学业页一处，同步范围弹窗里不再给入口。
     testWidgets('同步范围弹窗里没有自动同步入口（今天页、学业页与成绩页一样）', (tester) async {
       await tester.pumpWidget(host());
@@ -558,4 +591,9 @@ class _Gateway extends FixtureCampusGateway {
   Future<GatewayResult<BellsView>> readBells(TermRef term) async => _ok(BellsView(empty: true, message: '', term: term, periods: const []));
   @override
   Future<GatewayResult<TermRef?>> readBellsSource(TermRef term) async => _ok(null);
+}
+
+class _PingAutoSync extends AutoSync {
+  _PingAutoSync(CampusGateway gateway) : super(gateway: gateway);
+  void ping() => notifyListeners();
 }

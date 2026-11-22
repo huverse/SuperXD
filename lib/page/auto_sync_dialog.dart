@@ -6,13 +6,15 @@ import 'package:superxd/domain/campus_clock.dart';
 import 'package:superxd/domain/campus_gateway.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/domain/schedule_store.dart';
+import 'package:superxd/domain/sync_record.dart';
 import 'package:superxd/theme/campus_glass_controls.dart';
 import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 
 // 自动同步设置（人工决策见 domain/auto_sync.dart）：开关、间隔、学年与内容同手动同步的范围，点了就生效、存好才算；
-// 最下面只读写上次的结果。从「同步范围」弹窗里打开，样子同课前提醒设置。
+// 最下面只读写上次的结果：上次自动同步的时刻读同步记录（同学业页与同步记录页，只认这一份），正在跑时写正在自动同步，失败时写原因。
+// 样子同课前提醒设置。
 Future<void> showAutoSyncSettings(BuildContext context, {required AutoSync autoSync, required CampusGateway gateway}) =>
     showCampusDialog<void>(context: context, builder: (context) => _AutoSyncDialog(autoSync: autoSync, gateway: gateway));
 
@@ -40,6 +42,8 @@ class _AutoSyncDialog extends StatefulWidget {
 
 class _AutoSyncDialogState extends State<_AutoSyncDialog> {
   List<String> _years = const [];
+  // 最近一条自动同步的记录（没有为空）。
+  SyncRecord? _lastAuto;
   bool _loading = true;
   bool _busy = false;
   String? _error;
@@ -57,8 +61,17 @@ class _AutoSyncDialogState extends State<_AutoSyncDialog> {
     super.dispose();
   }
 
+  // 自动同步开跑、做完（记下了新的同步记录）都会通知：重读最近一条自动同步的记录。
   void _changed() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    setState(() {});
+    _readLastAuto();
+  }
+
+  Future<void> _readLastAuto() async {
+    final records = await widget.gateway.readSyncRecords();
+    final last = records.data?.where((record) => record.trigger == SyncTrigger.auto).firstOrNull;
+    if (mounted && records.ok) setState(() => _lastAuto = last);
   }
 
   // 学年读本机的学期列表，不联网；设置在登录后已读好，没读到时读一次。
@@ -66,6 +79,7 @@ class _AutoSyncDialogState extends State<_AutoSyncDialog> {
     try {
       if (widget.autoSync.view == null) await widget.autoSync.accountChanged(signedIn: true);
       final terms = await widget.gateway.listTerms();
+      await _readLastAuto();
       if (!mounted) return;
       setState(() {
         _years = {for (final term in terms.data ?? const <TermRef>[]) term.xn}.toList()..sort((a, b) => b.compareTo(a));
@@ -181,16 +195,15 @@ class _AutoSyncDialogState extends State<_AutoSyncDialog> {
     );
   }
 
-  // 上次的结果只读、不用主色。
+  // 上次的结果只读、不用主色。正在跑时写正在自动同步；上次失败、暂停写原因；其余写最近一条自动同步记录的时刻（同学业页）。
   List<Widget> _status(AutoSyncStatus status, TextStyle note) {
-    final attempt = status.lastAttemptAt;
-    if (attempt == null) return const [];
-    final success = status.lastSuccessAt;
-    final line = switch (status.state) {
-      AutoSyncState.ok => '上次自动同步：${formatCampusRelative(attempt.toUtc().toIso8601String())}',
-      null => success == null ? null : '上次自动同步：${formatCampusRelative(success.toUtc().toIso8601String())}',
-      _ => status.message,
-    };
+    final last = _lastAuto;
+    final line = widget.autoSync.syncing
+        ? '正在自动同步'
+        : switch (status.state) {
+            AutoSyncState.ok || null => last == null ? null : '上次自动同步：${formatCampusRelative(last.at.toIso8601String())}',
+            _ => status.message,
+          };
     return [if (line != null && line.isNotEmpty) ...[const SizedBox(height: 8), Text(line, style: note)]];
   }
 }
