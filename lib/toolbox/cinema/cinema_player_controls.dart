@@ -136,8 +136,9 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
 
   CinemaEngine get _player => widget.player;
 
-  // 一切跳转都经这里：先告诉播放页（onSeek 要在命令之前开始计时），再交给播放器。
+  // 一切跳转都经这里：先告诉播放页（onSeek 要在命令之前开始计时），再交给播放器。播完在倒数时跳转是回去接着看，倒数作废。
   Future<void> _seek(Duration target) async {
+    _cancelCountdown();
     widget.onSeek?.call(target);
     await _player.seek(target);
   }
@@ -145,10 +146,12 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
   @override
   void initState() {
     super.initState();
+    // 连播倒数只在「播完了、停着」时走：又播起来了或播完的状态撤销了（回拖、重新播放）就作废（11-22 Codex 复核：原来回去接着看，5 秒后照样被切到下一集）。
     _subscriptions
       ..add(_player.stream.playing.listen((playing) {
         if (!mounted) return;
         if (playing) {
+          _cancelCountdown();
           _scheduleHide();
         } else {
           _hide?.cancel();
@@ -156,7 +159,9 @@ class _CinemaPlayerControlsState extends State<CinemaPlayerControls> {
         }
       }))
       ..add(_player.stream.completed.listen((done) {
-        if (done && mounted && widget.onNext != null) _startCountdown();
+        if (!mounted) return;
+        if (!done) return _cancelCountdown();
+        if (widget.onNext != null) _startCountdown();
       }));
     _rate = _player.state.rate;
     _showResume();

@@ -16,7 +16,7 @@ import 'package:superxd/domain/campus_log.dart';
 class CinemaPlaybackTruth {
   CinemaPlaybackTruth(this._player) : _native = _player.platform is NativePlayer ? _player.platform as NativePlayer : null {
     if (_native case final native?) {
-      unawaited(native.observeProperty('demuxer-cache-state', (value) async => _ranges(cinemaSeekableRanges(value))).catchError(_observeFailed));
+      unawaited(native.observeProperty('demuxer-cache-state', (value) async => _cacheState(value)).catchError(_observeFailed));
       unawaited(native.observeProperty('seeking', (value) async => _seeking(value)).catchError(_observeFailed));
     }
     _positions = _player.stream.position.listen(_position);
@@ -36,6 +36,8 @@ class CinemaPlaybackTruth {
 
   // 真实能本地跳转的缓存段，按起点排好；明确没有为空列表，读不到为 null。
   final seekable = ValueNotifier<List<(Duration, Duration)>?>(null);
+  // 网络层最近的下载速率（字节每秒，demuxer-cache-state 的 raw-input-rate），读不到为空；开发者模式下卡顿时记（11-22 Codex 复核：先分清是线路慢还是缓冲策略）。
+  int? inputRate;
 
   var _seekId = 0;
   _PendingSeek? _pending;
@@ -73,6 +75,13 @@ class CinemaPlaybackTruth {
     }
   }
 
+  void _cacheState(String raw) {
+    final state = _decodeCacheState(raw);
+    final rate = state is Map ? state['raw-input-rate'] : null;
+    inputRate = rate is num && rate >= 0 ? rate.round() : null;
+    _ranges(_seekableRangesOf(state));
+  }
+
   void _ranges(List<(Duration, Duration)>? ranges) {
     // 播放器在离开页面后才释放，晚到的通知不写已经释放的 seekable。
     if (_disposed) return;
@@ -95,7 +104,7 @@ class CinemaPlaybackTruth {
   // 测试替身不是 libmpv：直接喂 seeking、demuxer-cache-state 的字符串与播放位置（核对归属用的位置照旧读播放器的 state）。
   @visibleForTesting
   void notify({String? seeking, String? cacheState, Duration? position}) {
-    if (cacheState != null) _ranges(cinemaSeekableRanges(cacheState));
+    if (cacheState != null) _cacheState(cacheState);
     if (seeking != null) _seeking(seeking);
     if (position != null) _position(position);
   }
@@ -140,13 +149,17 @@ class _PendingSeek {
 
 // demuxer-cache-state 的字符串（libmpv 把节点写成 JSON）→ 能本地跳转的缓存段，按起点排、起点不小于零、精确到 100 毫秒（少一点无谓的重画）。
 // 是播放器给的外部输入：读不懂、没有 seekable-ranges、或列了段却一段都读不懂时为 null（读不到）；给了空列表是明确没有缓存，返回空列表。
-List<(Duration, Duration)>? cinemaSeekableRanges(String raw) {
-  final Object? state;
+List<(Duration, Duration)>? cinemaSeekableRanges(String raw) => _seekableRangesOf(_decodeCacheState(raw));
+
+Object? _decodeCacheState(String raw) {
   try {
-    state = jsonDecode(raw);
+    return jsonDecode(raw);
   } on FormatException {
     return null;
   }
+}
+
+List<(Duration, Duration)>? _seekableRangesOf(Object? state) {
   final list = state is Map ? state['seekable-ranges'] : null;
   if (list is! List) return null;
   Duration at(num seconds) => Duration(milliseconds: (seconds * 10).round() * 100);

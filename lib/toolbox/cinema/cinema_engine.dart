@@ -82,6 +82,8 @@ abstract class CinemaEngine {
   String? get currentUri;
   // 真实能本地跳转的缓存段（明确没有为空列表，读不到为 null，见 cinema_playback_truth.dart）。
   ValueListenable<List<(Duration, Duration)>?> get seekable;
+  // 网络层最近的下载速率（字节每秒），问不到为空（系统播放器不报）；开发者模式下卡顿时记。
+  int? get inputRate;
   // 打开一个媒体，start 大于零从那里开始；playlist 是 HLS 清单（本机代理的地址没有 .m3u8 后缀，系统播放器要明说）。
   Future<void> open(String uri, Map<String, String> headers, {Duration start = Duration.zero, bool playlist = false});
   Future<void> seek(Duration target);
@@ -145,6 +147,9 @@ class CinemaMpvEngine implements CinemaEngine {
 
   @override
   ValueListenable<List<(Duration, Duration)>?> get seekable => _truth.seekable;
+
+  @override
+  int? get inputRate => _truth.inputRate;
 
   @override
   Future<void> open(String uri, Map<String, String> headers, {Duration start = Duration.zero, bool playlist = false}) =>
@@ -216,7 +221,12 @@ class CinemaSystemEngine implements CinemaEngine {
   @override
   final ValueNotifier<List<(Duration, Duration)>?> seekable = ValueNotifier(null);
 
+  @override
+  int? get inputRate => null;
+
   VideoPlayerController? _controller;
+  // 各控制器还没回来的 play（释放前等它，见 _drop）。
+  final _playing = Expando<Future<void>>();
   String? _uri;
   var _value = const VideoPlayerValue.uninitialized();
   var _position = Duration.zero;
@@ -278,7 +288,7 @@ class CinemaSystemEngine implements CinemaEngine {
       await controller.setPlaybackSpeed(_rate);
       await controller.setVolume(_volume / 100);
       if (start > Duration.zero) await controller.seekTo(start);
-      await controller.play();
+      await _play(controller);
     } catch (error, stack) {
       campusLog('[CinemaPlayer] action=system_open errorType=${error.runtimeType}\n$stack');
       if (identical(_controller, controller)) throw const CinemaEngineException('系统播放器打不开这个片源');
@@ -289,7 +299,11 @@ class CinemaSystemEngine implements CinemaEngine {
     _poll = Timer.periodic(tick, (_) => unawaited(_tick(controller)));
   }
 
-  // 丢掉上一个媒体的控制器（不再听它的事件）。
+  // video_player（2.14.1，即 pub.dev 最新版）的 play 先等平台调用，回来才起每 100 毫秒问一次位置的定时器；中间被 dispose 的话定时器照起、
+  // 之后永远不取消（回调见已释放就返回），控制器一直留在内存里、一直定时唤醒（11-22 Codex 复核）。所以 play 都经这里记下，释放前等它回来（见 _drop）。
+  Future<void> _play(VideoPlayerController controller) => _playing[controller] = controller.play();
+
+  // 丢掉上一个媒体的控制器（不再听它的事件）；还有没回来的 play 时等它回来再释放（见 _play）。
   void _drop() {
     _poll?.cancel();
     final old = _controller;
@@ -299,7 +313,13 @@ class CinemaSystemEngine implements CinemaEngine {
     _position = Duration.zero;
     if (old == null) return;
     old.removeListener(_changed);
-    unawaited(old.dispose().catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=system_dispose errorType=${error.runtimeType}\n$stack')));
+    final playing = _playing[old] ?? Future<void>.value();
+    unawaited(
+      playing
+          .then<void>((_) {}, onError: (Object _) {})
+          .then((_) => old.dispose())
+          .catchError((Object error, StackTrace stack) => campusLog('[CinemaPlayer] action=system_dispose errorType=${error.runtimeType}\n$stack')),
+    );
   }
 
   void _changed() {
@@ -354,7 +374,7 @@ class CinemaSystemEngine implements CinemaEngine {
   Future<void> playOrPause() async {
     final controller = _controller;
     if (controller == null) return;
-    await (controller.value.isPlaying ? controller.pause() : controller.play());
+    await (controller.value.isPlaying ? controller.pause() : _play(controller));
   }
 
   @override

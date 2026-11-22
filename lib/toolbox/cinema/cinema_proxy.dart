@@ -13,6 +13,8 @@ import 'package:superxd/toolbox/cinema/cinema_playlist.dart';
 // 手机上的播放清单代理（人工决策见 cinema_service.dart 文件头：取流全在手机上，不经自建中转）：只监听 127.0.0.1 的随机端口，
 // 路径带一次性随机令牌（同一台手机上别的应用猜不到、借不了它去取别的地址）。只改写 m3u8 文本与转交 AES 密钥（见 cinema_playlist.dart），
 // 分片由播放器带着规则的 UA 直连 CDN 取，本机代理与服务器都不过视频字节。
+// - 清单里的子清单、密钥、分片与跳转目标都是第三方给的，只认公网（cinema_http.dart 的 cinemaPublicUrl）：取的时候每一跳核对、连接按真实地址再核，
+//   交给播放器的分片有一个指向本机或内网就整份清单不给（回 502）。
 // - 每一路播放（open 登记）在换集、换源、离开时交回 release：这一路还在等的清单与密钥请求随之不等了，几路共用的请求没人等了才中断（CinemaShared）。
 // - 腾讯 CDN 的域名前置：分片清单里第一个分片的路径首段像域名时，原地址与换成那个域名的地址同时各探一次（只要状态与两个字节），
 //   原地址取得到就不换（原地址优先，免得把正常的地址改坏），取不到而换过去取得到才换；两路共用 probeBudget（默认 6 秒，弱网下也够拿到响应头）。
@@ -55,8 +57,9 @@ class CinemaProxy {
   // 缓存的清单与正在取的。
   final _playlists = LruMap<String, (DateTime, CinemaFetched)>(maximumSize: playlistLimit);
   final _fetching = <String, CinemaShared<CinemaFetched>>{};
-  // 取过的密钥（同一集的分片共用一把，按地址记，最多 _keyLimit 把）。
-  final _keys = <String, List<int>>{};
+  // 取过的密钥（同一集的分片共用一把）：按地址加请求头记（同清单缓存的 _playlistKey），keyLifetime 内有效、最多 _keyLimit 把。
+  // 11-22 Codex 复核：原来只按地址记、不过期，同一地址按请求条件给不同密钥时，后一路会拿到前一路的那把、解不开。
+  final _keys = LruMap<String, (DateTime, List<int>)>(maximumSize: _keyLimit);
   // 开发者模式的诊断（11-21 Codex 总交接第 7.6、8 节：先量预取命中率再定预取策略）：预取取过的清单与时刻，播放器来取时记一条用上了没有。
   final _warmed = LruMap<String, DateTime>(maximumSize: playlistLimit);
 
@@ -72,6 +75,7 @@ class CinemaProxy {
   static const _probeBytes = 4 * 1024;
   static const playlistLifetime = Duration(minutes: 5);
   static const playlistLimit = 16;
+  static const keyLifetime = Duration(minutes: 5);
   // 预取主清单里的子清单最多几个（码率）：播放器打开时会读各码率的子清单。
   static const warmVariants = 4;
 
@@ -119,7 +123,7 @@ class CinemaProxy {
         text = utf8.decode(fetched.bytes, allowMalformed: true);
       }
       final key = cinemaFirstKey(text, fetched.uri);
-      if (key != null && (fresh || !_keys.containsKey(key.toString()))) await _fetchKey(key, stream.headers, cancel ?? Completer<void>().future);
+      if (key != null && (fresh || _knownKey(key, stream.headers) == null)) await _fetchKey(key, stream.headers, cancel ?? Completer<void>().future);
       await _shouldUnwrap(cinemaFirstSegment(text, fetched.uri), stream.headers, cancel, fresh: fresh);
       campusLog('[CinemaProxy] action=warm fresh=$fresh');
     } on http.RequestAbortedException {
@@ -155,7 +159,7 @@ class CinemaProxy {
       }
       final stream = entry.stream, released = entry.released.future;
       if (segments[1] == 'k') {
-        final known = _keys[upstream.toString()];
+        final known = _knownKey(upstream, stream.headers);
         final watch = Stopwatch()..start();
         final key = known ?? await _fetchKey(upstream, stream.headers, released);
         if (campusDiagnostics) campusLog('[CinemaProxy] action=key stream=$streamId cached=${known != null} ok=${key != null} ms=${watch.elapsedMilliseconds}');
@@ -188,13 +192,24 @@ class CinemaProxy {
       final text = utf8.decode(fetched.bytes, allowMalformed: true);
       // 主清单里没有分片（第一个非注释行是子清单），不探。
       final unwrap = !cinemaMasterPlaylist(text) && await _shouldUnwrap(cinemaFirstSegment(text, fetched.uri), stream.headers, released);
+      // 播放器直连的分片与初始化段只认公网（见 cinema_http.dart 的 cinemaPublicUrl）：有一个指向本机或内网就整份不给，不交出半份清单。
+      var private = false;
       final body = cinemaRewritePlaylist(
         text,
         fetched.uri,
         playlist: (target) => _link(server, streamId, target).toString(),
-        media: (target) => (unwrap ? cinemaUnwrapHost(target) : target).toString(),
+        media: (target) {
+          final direct = unwrap ? cinemaUnwrapHost(target) : target;
+          if (!cinemaPublicUrl(direct)) private = true;
+          return direct.toString();
+        },
         key: (target) => _link(server, streamId, target, kind: 'k').toString(),
       );
+      if (private) {
+        campusLog('[CinemaProxy] action=playlist blocked=private');
+        response.statusCode = HttpStatus.badGateway;
+        return;
+      }
       response.headers.contentType = ContentType('application', 'vnd.apple.mpegurl', charset: 'utf-8');
       response.headers.set(HttpHeaders.cacheControlHeader, 'no-store');
       response.write(body);
@@ -243,11 +258,13 @@ class CinemaProxy {
       campusLog('[CinemaProxy] action=key status=${fetched.status}');
       return null;
     }
-    _keys[upstream.toString()] = fetched.bytes;
-    while (_keys.length > _keyLimit) {
-      _keys.remove(_keys.keys.first);
-    }
+    _keys[_playlistKey(upstream, headers)] = (_now().add(keyLifetime), fetched.bytes);
     return fetched.bytes;
+  }
+
+  List<int>? _knownKey(Uri upstream, Map<String, String> headers) {
+    final known = _keys[_playlistKey(upstream, headers)];
+    return known != null && _now().isBefore(known.$1) ? known.$2 : null;
   }
 
   // 要不要把这份清单的分片换成路径里的域名（见文件头）。cancel 是这一处不等了；fresh 不用记住的结论、重新探。

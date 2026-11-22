@@ -6,6 +6,8 @@ import 'package:http/http.dart' as http;
 import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/cinema/cinema_rule_engine.dart';
+import 'package:superxd/toolbox/toolbox_models.dart';
+import 'package:superxd/toolbox/toolbox_url.dart';
 
 // 电影院对外请求的封装（经共用内核 CampusHttp，请求记录的模块名 cinema）：手机直连片源接口与 CDN，不经自建中转；
 // 国内连不上的源的接口请求经开发者的境外转发（规则里 forward，人工决策见 cinema_rule.dart 的 CinemaRule.forward）。
@@ -49,9 +51,25 @@ Map<String, String> cinemaHeaders(String userAgent, String referer) => {
 // 只给接口请求，播放清单、密钥与分片照旧（CDN 不看，少一个变量）；规则自己写了同名头时以规则为准。
 const cinemaApiHeaders = {'accept': 'application/json, text/plain, */*', 'accept-language': 'zh-CN,zh;q=0.9,en;q=0.8'};
 
+// 第三方给的媒体地址只认公网（11-22 Codex 复核 P1：外部清单能让手机去取 127.0.0.1 上的服务，签名的规则包与本机代理的口令都挡不住，
+// 因为清单、选集与跳转都不签名；同主流客户端核对外部媒体引用的网络边界）：本机、内网、单段主机名、.local 一律不认，端口不限。
+// 本机代理取清单、密钥与探测时每一跳都看它，连接时另按真实地址再核一次（CampusHttp.publicOnly，挡住域名解析成本机的）；
+// 交给播放器的分片、初始化段与直链也看它（cinema_proxy.dart、CinemaService.playable）。本机代理自己生成的 127.0.0.1 地址不经这里。
+// 播放器取分片时自己跟的跳转管不到（ExoPlayer 与 libmpv 自己的网络栈），是已知边界。家庭 NAS 这类内网片源不支持。
+bool cinemaPublicUrl(Uri uri) {
+  try {
+    toolboxPublicUrl(uri.toString(), anyPort: true);
+    return true;
+  } on ToolboxException {
+    return false;
+  }
+}
+
 class CinemaHttp {
-  CinemaHttp({http.Client? client}) : _http = CampusHttp('cinema', client: client);
-  final CampusHttp _http;
+  // 测试注入的客户端两路共用（MockClient 不经真的连接，只靠每一跳的地址核对）。
+  CinemaHttp({http.Client? client}) : _http = CampusHttp('cinema', client: client), _media = client == null ? CampusHttp.publicOnly('cinema') : CampusHttp('cinema', client: client);
+  // 接口（签名规则包里写的站点、境外转发、中转）与本机代理替第三方地址取东西的（只连公网）。
+  final CampusHttp _http, _media;
 
   // 发一次接口请求，回复按 UTF-8 解成文字（容错坏字节）；非 2xx、超时、连不上都抛 CinemaHttpException（给用户看的原因）。
   // forward 不为空时发给境外转发，原地址放在查询串 u 里，请求头原样带上；转发服务自己出的错写在回复头 x-forward-error，
@@ -91,22 +109,28 @@ class CinemaHttp {
     return utf8.decode(response.bodyBytes, allowMalformed: true);
   }
 
-  // 本机代理取播放清单或探一下分片：自己跟跳转、只认 http(s)，返回最终地址与状态码（不因 4xx 抛错，调用方自己看）。
+  // 本机代理取播放清单、密钥或探一下分片：自己跟跳转、每一跳只认公网（cinemaPublicUrl），返回最终地址与状态码（不因 4xx 抛错，调用方自己看）。
   // timeout 是整串跳转共用的总时限；cancel 完成即中断，抛 http.RequestAbortedException。
   Future<CinemaFetched> fetch(Uri uri, Map<String, String> headers, {int limit = cinemaPlaylistMaxBytes, Duration timeout = cinemaPlaylistTimeout, String? range, Future<void>? cancel}) async {
     final watch = Stopwatch()..start();
     var current = uri;
     for (var hop = 0; hop <= cinemaRedirectLimit; hop++) {
-      if (!(current.isScheme('http') || current.isScheme('https')) || current.host.isEmpty) throw const CinemaHttpException('地址不对');
+      if (!cinemaPublicUrl(current)) {
+        campusLog('[Cinema] action=fetch blocked=private hop=$hop');
+        throw const CinemaHttpException('地址不对');
+      }
       final left = timeout - watch.elapsed;
       if (left <= Duration.zero) throw const CinemaHttpException('超时');
       final http.Response response;
       try {
-        response = await _http.send('GET', current, timeout: left, limit: limit, followRedirects: false, headers: {...headers, 'range': ?range}, cancel: cancel);
+        response = await _media.send('GET', current, timeout: left, limit: limit, followRedirects: false, headers: {...headers, 'range': ?range}, cancel: cancel);
       } on TimeoutException {
         throw const CinemaHttpException('超时');
       } on CampusHttpTooLarge {
         throw const CinemaHttpException('回复太大');
+      } on CampusHttpPrivateAddress {
+        campusLog('[Cinema] action=fetch blocked=private_address hop=$hop');
+        throw const CinemaHttpException('地址不对');
       } on http.RequestAbortedException {
         rethrow;
       } catch (error, stack) {
@@ -123,7 +147,10 @@ class CinemaHttp {
     throw const CinemaHttpException('跳转太多');
   }
 
-  void close() => _http.close();
+  void close() {
+    _http.close();
+    _media.close();
+  }
 }
 
 // 几处共用的一次请求（同一部片的选集、同一份播放清单、同一个主机的探测）：每个消费者各自可以不等了（自己的 cancel 完成即抛

@@ -7,7 +7,7 @@ import 'package:superxd/toolbox/cinema/cinema_models.dart';
 // 电影院自己的本机库 cinema.db（设备级，清除数据时整库删掉）：
 // - package：上次验签通过的规则包载荷（只留一份，拉不到新的就照旧用它）；
 // - consent：用过哪些源与云解析（按规则 id 与接口主机记，换了主机或新加的源要重新同意）；
-// - history：看过的片与看到哪，最多 cinemaHistoryLimit 条、超过 cinemaHistoryLifetime 没再看的删掉；
+// - history：看过的片与看到哪，最多 cinemaHistoryLimit 条、超过 cinemaHistoryLifetime 没再看的删掉（写入与读取时都清）；
 // - source_stat（第 2 版起）：各片源最近一次播成、没播成的时刻与播成那次的首帧用时（选集页排片源与标注用，人工决策见 cinema_service.dart 的 recordPlayback），
 //   每个源一行（行数不超过规则包里的源数），超过 cinemaSourceStatLifetime 没再播的删掉。
 // - title_source（第 3 版起）：看过的片在各源里的编号、原名与备注（续播时直接有别的源可换，不用再搜），跟着 history 走：
@@ -86,14 +86,22 @@ class CinemaStore {
     await batch.commit(noResult: true);
   }
 
-  Future<List<CinemaHistory>> history({int limit = cinemaHistoryLimit}) async => [
-    for (final row in await _database.query('history', orderBy: 'updated_at DESC', limit: limit)) _historyOf(row),
-  ];
+  // 读看过的之前先删掉超过 cinemaHistoryLifetime 没再看的（11-22 Codex 复核：原来只在写新记录时清，长期不用再回来，181 天前的照样显示）。
+  Future<List<CinemaHistory>> history(DateTime now, {int limit = cinemaHistoryLimit}) async {
+    await _expireHistory(now);
+    return [for (final row in await _database.query('history', orderBy: 'updated_at DESC', limit: limit)) _historyOf(row)];
+  }
 
-  Future<CinemaHistory?> historyOf(String key) async {
+  Future<CinemaHistory?> historyOf(String key, DateTime now) async {
+    await _expireHistory(now);
     final row = (await _database.query('history', where: 'key = ?', whereArgs: [key], limit: 1)).firstOrNull;
     return row == null ? null : _historyOf(row);
   }
+
+  Future<void> _expireHistory(DateTime now) => _database.transaction((transaction) async {
+    final removed = await transaction.delete('history', where: 'updated_at < ?', whereArgs: [now.toUtc().subtract(cinemaHistoryLifetime).millisecondsSinceEpoch]);
+    if (removed > 0) await transaction.execute('DELETE FROM title_source WHERE key NOT IN (SELECT key FROM history)');
+  });
 
   Future<void> saveHistory(CinemaHistory entry) async {
     await _database.transaction((transaction) async {
