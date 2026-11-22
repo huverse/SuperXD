@@ -121,7 +121,7 @@ void main() {
       expect(all.where((module) => module.openService != null && module.clearedData.isEmpty), isEmpty, reason: '有本机数据的都写明清除会删什么');
     });
 
-    test('电影院的找片与解析是登记的两段，解析在开关 toolbox.cinema.parse 后面；生活登记在开关 toolbox.life 后面、由框架列出子模块', () {
+    test('电影院的找片与解析是登记的两段，解析在开关 toolbox.cinema.parse 后面；生活登记在开关 toolbox.life 后面、由框架列出子模块，子模块全关时不出现', () {
       final roots = toolboxCatalog(fixture.runtime);
       final cinema = roots.singleWhere((module) => module.id == CinemaService.serviceId);
       expect([for (final section in cinema.children) (section.id, section.name, section.flag)], [(CinemaSearchSection.sectionId, '找片', null), (CinemaParseSection.sectionId, '解析', cinemaParseFlag)]);
@@ -129,7 +129,7 @@ void main() {
       expect((life.name, life.flag, life.builder), ('生活', lifeFlag, null));
       expect(featureFlags, contains(lifeFlag));
       expect((lifeFlag.id, lifeFlag.fallback), ('toolbox.life', false));
-      // 还没有子模块：开关开着也不出现，不留一个点进去是空的入口。
+      // 只开生活、子模块的开关都关着：也不出现，不留一个点进去是空的入口。
       expect(toolboxVisible(life, features: _Gate({lifeFlag.id})), isFalse);
     });
 

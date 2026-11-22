@@ -29,6 +29,8 @@ const _allowed = {
 // 键是子模块所在的目录，值是其中的共用目录；新加的工具或游戏目录自动受约束，要新开共用目录先在这里登记。
 const _siblingFamilies = {
   'toolbox': {'download'},
+  // 生活下面的各个子模块（住理生活……）同样互不依赖（子模块框架见 lib/toolbox/toolbox_module.dart）。
+  'toolbox/life': <String>{},
   'playground/puzzle': <String>{},
 };
 

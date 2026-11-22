@@ -9,6 +9,8 @@ import 'package:superxd/toolbox/cinema/cinema_service.dart';
 import 'package:superxd/toolbox/chaoxing/chaoxing_service.dart';
 import 'package:superxd/toolbox/express/express_page.dart';
 import 'package:superxd/toolbox/express/express_service.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_page.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_service.dart';
 import 'package:superxd/toolbox/short_video/short_video_page.dart';
 import 'package:superxd/toolbox/short_video/short_video_service.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
@@ -76,5 +78,22 @@ List<ToolboxModule> toolboxCatalog(ToolboxRuntime runtime) => [
   ),
   // 生活（灰度，人工决策见 domain/feature_flags.dart 的 lifeFlag）：校园生活服务的子模块列表，页面由框架列出（规则见 toolbox_module.dart）；
   // 一个看得见的子模块都没有时不出现。子模块在 lib/toolbox/life 下，各自登记在这里的 children。
-  ToolboxModule(id: 'life', name: '生活', icon: CampusIcons.life, flag: lifeFlag),
+  ToolboxModule(
+    id: 'life',
+    name: '生活',
+    icon: CampusIcons.life,
+    flag: lifeFlag,
+    children: [
+      // 住理生活（灰度，人工决策见 life/zhuli/zhuli_service.dart 文件头）。
+      ToolboxModule(
+        id: ZhuliService.serviceId,
+        name: '住理生活',
+        icon: CampusIcons.coupon,
+        builder: (context) => ZhuliPage(runtime: runtime),
+        openService: ZhuliService.open,
+        clearedData: '住理账号与密码（再用要重新登录）',
+        flag: zhuliFlag,
+      ),
+    ],
+  ),
 ];
