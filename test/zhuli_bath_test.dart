@@ -63,6 +63,8 @@ class _FakeBath {
   var pending = <Object>[];
   Map<String, Object?>? last;
   var billStatus = 'created';
+  // 开着水时住理给不给用量（11-22 真机上云端设备不给，关水才回来）。
+  var liveUsage = true;
   var occupied = false;
   // 握手后补传的历史单就把这一单结算了（在设备上关了水）。
   var historySettles = false;
@@ -113,7 +115,7 @@ class _FakeBath {
           final device? => ok(device),
           null => fail('device_not_exists'),
         },
-        '/webapi/v1/building/list_onlybuilding' => ok([{'id': 'B1', 'name': '1号楼', 'device_count': {'normal_count': 2.0}}]),
+        '/webapi/v1/building/list_onlybuilding' => ok([{'id': 'B1', 'name': '1号楼', 'device_count': {'normal_count': 2.0, 'total_count': 280.0, 'unnormal_count': 5.0}}]),
         '/webapi/v1/building/list_floors' => ok([{'id': 'F2', 'building_id': 'B1', 'name': '2', 'room_count': 2}]),
         '/webapi/v1/building/list_rooms' => ok([
           {'id': 'R0', 'name': '200', 'device_count': {'normal_count': 0, 'total_room_device_count': 0}},
@@ -126,10 +128,10 @@ class _FakeBath {
           'order_id': query['bill_id'],
           'consume_type': 'bath',
           'status': billStatus,
-          'consume_money': billStatus == 'finished' ? 0.14 : 0.07,
+          'consume_money': billStatus == 'finished' ? 0.14 : liveUsage ? 0.07 : 0.0,
           'charge_money': 5.0,
           'refund_money': billStatus == 'finished' ? 4.86 : 0.0,
-          'water_volume_1': billStatus == 'finished' ? 2.34 : 1.02,
+          'water_volume_1': billStatus == 'finished' ? 2.34 : liveUsage ? 1.02 : 0.0,
           'consume_timing': 21,
           'pay_channel': 0,
           'deduct_from_coupon': billStatus == 'finished' ? 0.14 : 0.0,
@@ -450,6 +452,12 @@ void main() {
       expect(find.text('等设备开水'), findsOneWidget);
       expect(find.text('¥12.49'), findsOneWidget, reason: '预扣后的余额');
       fake.billStatus = 'consuming';
+      fake.liveUsage = false;
+      await tester.pump(const Duration(seconds: 3));
+      await _settle(tester);
+      expect(find.text('用量在关水时结算'), findsOneWidget, reason: '住理开着水时不更新用量，不写 0 升');
+      fake.liveUsage = true;
+      fake.billStatus = 'consuming';
       await tester.pump(const Duration(seconds: 3));
       await _settle(tester);
       expect(find.text('水已开'), findsOneWidget);
@@ -499,6 +507,7 @@ void main() {
       // 按楼栋选：只列有设备的房间，选中设备进洗浴页。
       await tester.tap(find.text('按楼栋选'));
       await _settle(tester);
+      expect(find.text('280 台'), findsOneWidget, reason: '楼栋的台数是 total_count');
       await tester.tap(find.text('1号楼'));
       await _settle(tester);
       await tester.tap(find.text('2层'));

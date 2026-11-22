@@ -137,17 +137,27 @@ class PluginZhuliBleLink implements ZhuliBleLink {
   }
 
   // 扫描最多 5 秒（同原 App），按广播名认；安卓上名字没带上时按地址认（插件在安卓上用地址生成标识）。
+  // 安卓上原 App 本来就直接按设备地址连、扫描只是顺带（11-22 真机：扫 5 秒认不出那台设备），所以安卓扫不到时照它按地址连一次；iOS 拿不到地址，只能按名字扫到。
+  // 扫描结果记进日志（扫到几台、看到的 XN 开头的名字，最多 5 个），真机上认不出时据此分清是名字对不上还是根本没扫到。
   Future<Peripheral> _find(CentralManager central, String bleName, String bleMac) async {
     final byAddress = Platform.isAndroid && bleMac.isNotEmpty ? UUID.fromAddress(bleMac) : null;
     final found = Completer<Peripheral>();
+    final peers = <UUID>{}, names = <String>{};
     final subscription = central.discovered.listen((event) {
+      peers.add(event.peripheral.uuid);
+      final name = event.advertisement.name ?? '';
+      if (name.startsWith('XN') && names.length < 5) names.add(name);
       if (found.isCompleted) return;
-      if ((bleName.isNotEmpty && event.advertisement.name == bleName) || (byAddress != null && event.peripheral.uuid == byAddress)) found.complete(event.peripheral);
+      if ((bleName.isNotEmpty && name == bleName) || (byAddress != null && event.peripheral.uuid == byAddress)) found.complete(event.peripheral);
     });
     try {
       await central.startDiscovery();
-      return await found.future.timeout(_scanTimeout);
+      final device = await found.future.timeout(_scanTimeout);
+      campusLog('[Zhuli] action=ble_scan result=found seen=${peers.length}');
+      return device;
     } on TimeoutException {
+      campusLog('[Zhuli] action=ble_scan result=not_found seen=${peers.length} names=${names.join('|')} byAddress=${byAddress != null}');
+      if (byAddress != null) return await central.getPeripheral(bleMac);
       throw _ble('附近没找到这台设备，靠近一点再试');
     } finally {
       await subscription.cancel();

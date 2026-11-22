@@ -494,22 +494,25 @@ ZhuliDevice decodeZhuliDevice(Object? data) {
 
 List<ZhuliDevice> decodeZhuliDevices(Object? data) => [for (final row in zhuliRows(data is Map ? zhuliObject(data)['rows'] : data)) decodeZhuliDevice(row)];
 
-// 选设备的三级（楼栋、楼层、房间）共用：id 与名字，房间多一个设备台数。
+// 选设备的三级（楼栋、楼层、房间）共用：id 与名字，楼栋与房间多一个设备台数。
 class ZhuliPlace {
   const ZhuliPlace({required this.id, required this.name, this.devices});
   final String id;
   final String name;
-  // 房间里的设备总数（total_room_device_count；normal_count 不准，资料 4.1.2）。
+  // 设备总数：房间是 total_room_device_count，楼栋是 total_count（11-22 真机：楼栋没有前者，读成了 0）；normal_count 不准（资料 4.1.2）。没有为空。
   final int? devices;
 }
 
+int? _devices(Object? raw) {
+  if (raw is! Map) return null;
+  final count = zhuliObject(raw);
+  if (count['total_room_device_count'] != null) return _int(count, 'total_room_device_count');
+  if (count['total_count'] != null) return _int(count, 'total_count');
+  return null;
+}
+
 List<ZhuliPlace> decodeZhuliPlaces(Object? data) => [
-  for (final row in zhuliRows(data))
-    ZhuliPlace(
-      id: _text(row, 'id'),
-      name: _text(row, 'name', optional: true),
-      devices: row['device_count'] is Map ? _int(zhuliObject(row['device_count']), 'total_room_device_count', fallback: 0) : null,
-    ),
+  for (final row in zhuliRows(data)) ZhuliPlace(id: _text(row, 'id'), name: _text(row, 'name', optional: true), devices: _devices(row['device_count'])),
 ];
 
 // 开水下单（create_order）的回复：订单号、预扣后的余额与蓝牙开始帧（走蓝牙时有）。

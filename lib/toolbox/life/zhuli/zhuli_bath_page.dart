@@ -364,8 +364,11 @@ class _ZhuliBathPageState extends State<ZhuliBathPage> {
               Text(waiting ? '等设备开水' : '水已开', style: Theme.of(context).textTheme.titleMedium),
               const SizedBox(height: CampusGap.tight),
               Text(_elapsed(_now().difference(_startedAt!)), style: const TextStyle(fontSize: CampusFontSize.headline, fontWeight: FontWeight.w600, fontFeatures: [FontFeature.tabularFigures()])),
-              if (!bluetooth && bill != null && bill.status == 'consuming') Text('${bill.liters.toStringAsFixed(2)} 升 · ¥${zhuliYuan(bill.money)}', style: secondary),
-              if (bluetooth) Text('用量在关水时结算', style: secondary),
+              // 住理给了用量才写；11-22 真机上云端设备开着水时住理一直不更新、关水才回来，没有数时同蓝牙一样写「用量在关水时结算」。
+              if (!bluetooth && bill != null && bill.status == 'consuming' && (bill.liters > 0 || bill.money > 0))
+                Text('${bill.liters.toStringAsFixed(2)} 升 · ¥${zhuliYuan(bill.money)}', style: secondary)
+              else if (!waiting)
+                Text('用量在关水时结算', style: secondary),
               const SizedBox(height: CampusGap.large),
               CampusToastAnchor(
                 child: FilledButton(
