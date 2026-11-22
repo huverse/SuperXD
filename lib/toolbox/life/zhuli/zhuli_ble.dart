@@ -1,9 +1,9 @@
 import 'dart:async';
 import 'dart:io';
-import 'dart:typed_data';
 
 import 'package:bluetooth_low_energy/bluetooth_low_energy.dart';
 import 'package:device_info_plus/device_info_plus.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 
 import 'package:superxd/domain/campus_log.dart';
@@ -42,6 +42,8 @@ final _writeUuid = UUID.fromString('0000ff01-0000-1000-8000-00805f9b34fb');
 final _notifyUuid = UUID.fromString('0000ff02-0000-1000-8000-00805f9b34fb');
 const _scanTimeout = Duration(seconds: 5);
 const _connectTimeout = Duration(seconds: 6);
+const _connectAttempts = 3;
+const _connectPause = Duration(milliseconds: 1500);
 const _gattTimeout = Duration(seconds: 10);
 const _replyTimeout = Duration(seconds: 4);
 
@@ -71,12 +73,7 @@ class PluginZhuliBleLink implements ZhuliBleLink {
     final central = _central ??= CentralManager();
     await _poweredOn(central);
     final device = await _find(central, bleName, bleMac);
-    try {
-      await central.connect(device).timeout(_connectTimeout);
-    } catch (error) {
-      campusLog('[Zhuli] action=ble_connect reason=${error.runtimeType}');
-      throw _ble('连不上设备，靠近一点再试');
-    }
+    await _connect(central, device);
     _device = device;
     try {
       final services = await central.discoverGATT(device).timeout(_gattTimeout);
@@ -167,6 +164,26 @@ class PluginZhuliBleLink implements ZhuliBleLink {
         campusLog('[Zhuli] action=ble_stop_scan reason=${error.runtimeType}');
       }
     }
+  }
+
+  // 连接同原 App（关水页的 ua）：最多 3 次，每次先等 1.5 秒、最多等 6 秒；没连上先取消这次挂着的连接再试，免得几次请求叠在系统里（11-22 真机扫到了、一次 6 秒没连上）。
+  Future<void> _connect(CentralManager central, Peripheral device) async {
+    for (var attempt = 1; attempt <= _connectAttempts; attempt++) {
+      await Future<void>.delayed(_connectPause);
+      try {
+        await central.connect(device).timeout(_connectTimeout);
+        campusLog('[Zhuli] action=ble_connect result=ok attempt=$attempt');
+        return;
+      } catch (error) {
+        campusLog('[Zhuli] action=ble_connect result=failed attempt=$attempt reason=${error.runtimeType} detail=${error is PlatformException ? error.message : ''}');
+        try {
+          await central.disconnect(device).timeout(_connectTimeout);
+        } catch (cancel) {
+          campusLog('[Zhuli] action=ble_cancel reason=${cancel.runtimeType}');
+        }
+      }
+    }
+    throw _ble('连不上设备，靠近一点再试');
   }
 
   void _onFrame(String frame) {
