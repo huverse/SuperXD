@@ -1,14 +1,14 @@
 # toolbox 百宝箱
 
-定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了四个工具：视频解析与下载、学习通签到、快递（拼多多身份码与快递查询）、电影院（灰度测试，功能开关开着才出现）。学习通的文件与规则在 chaoxing/CLAUDE.md，快递在 express/CLAUDE.md，电影院在 cinema/CLAUDE.md，download 与 short_video 两个子目录登记在本文件。
+定位：设备级工具集，不需要教务登录，只依赖 domain 与 theme，不依赖教务相关的任何层，不读取教务凭据或 cookie；切换账号时下载任务不销毁。当前注册了五个工具：视频解析与下载、学习通签到、快递（拼多多身份码与快递查询）、电影院（灰度测试，功能开关开着才出现）、生活（灰度，校园生活服务的子模块列表，还没有子模块）。工具可以带子模块（规则见 toolbox_module.dart 的人工决策）。学习通的文件与规则在 chaoxing/CLAUDE.md，快递在 express/CLAUDE.md，电影院在 cinema/CLAUDE.md，download 与 short_video 两个子目录登记在本文件。
 
 # 文件职责
 
 - 框架：
   - toolbox_runtime.dart：设备级组合根 ToolboxRuntime。在应用支持目录的 toolbox 子目录下打开 toolbox.db、资源目录与下载目录；组装下载管理、后台传输与文件导出这些公共能力，不替任何工具组装业务对象；跟随前后台恢复下载。注册表由组合根传入，工具服务经 runtime.service 取用、退出时按接口统一关闭，打开失败不留缓存。组合根注入的能力：relayUrl（中转地址，只来自构建参数）、shareVideo（分享给好友，为空不显示入口，百宝箱不感知私信）、pickImage 与 pickImages（取图，缓存副本用完必须 discard）、扫码、campusTimetable（本应用课表今天的课，只读，给学习通推断正在上的课；为空当没有课表）、pinShortcut（把工具登记的快捷入口放到桌面，系统不支持或测试时为空，页面据此不显示「添加到桌面」）、cinemaRules 与 versionCode（电影院的片源规则包，中转下发、device 层验签后的载荷，与本机构建号；没配中转时为空）、passes（积分时长券，人工决策见 domain/pass.dart；为空都不拦）、features（功能开关，同百宝箱首页与路由那份，工具里灰度中的一部分按它问，如电影院的解析；为空当都关）。
-  - toolbox_catalog.dart：工具注册表 toolboxCatalog，工具只在这一处登记（名称、图标、页面、资源、服务与快捷入口），路由按这里的 id 生成免登录的工具路由与快捷入口路由；工具 id 全处统一（路由、服务、同意记录同一个 id，[人工决策] 在文件头）。
-  - toolbox_module.dart：ToolboxModule 描述一个工具：id、名称、图标、页面构造器、可选的按需资源、可选的服务打开函数 openService（登记了就要给 clearedData 写明清除数据会删什么）、可选的好友分享卡片入口 openShared 与常用功能的快捷入口 shortcuts（ToolboxShortcut：工具内唯一且不改的 id、名字、图标与直达的页面；长按应用图标的菜单与「添加到桌面」都按它生成，接线在组合根 app_shortcuts.dart，谷歌建议全应用不超过 4 个），以及灰度中的工具登记的功能开关 flag（开着才显示与能进路由）。ToolboxServiceContext 是框架交给工具服务的公共能力。
-  - toolbox_page.dart：百宝箱首页 ToolboxPage：有按需资源的工具可「卸载」，有本机数据的工具（登记了 openService）可「清除数据」；入口只有卡片左滑露出的圆角按钮（卡片右侧一律「›」，读屏操作菜单里有同一操作），点了须确认，同一时刻只开一张（人工决策见 _tile）；隐藏的工具（解锁 toolbox.<工具 id>，toolboxUnlockId，规则见服务端 unlock_rules.ts）对当前账号锁着时不显示入口，组合根经路由注入 UnlockAccess；灰度中的工具开关没开不显示（FeatureGate，同经路由注入）。首页与路由同一规则 toolboxVisible。
+  - toolbox_catalog.dart：工具注册表 toolboxCatalog，工具与子模块只在这一处登记（名称、图标、页面、资源、服务与快捷入口），路由按这里的 id 生成免登录的工具路由与快捷入口路由；工具 id 全处统一（路由、服务、同意记录同一个 id，[人工决策] 在文件头）。电影院的 children 是首页的找片与解析两段，生活的 children 是它的子模块（现在没有）。
+  - toolbox_module.dart：ToolboxModule 描述一个工具或子模块：id、名称、图标、页面构造器（由框架列出子模块的父模块不给）、可选的按需资源、可选的服务打开函数 openService（登记了就要给 clearedData 写明清除数据会删什么）、可选的好友分享卡片入口 openShared 与常用功能的快捷入口 shortcuts（ToolboxShortcut：工具内唯一且不改的 id、名字、图标与直达的页面；长按应用图标的菜单与「添加到桌面」都按它生成，接线在组合根 app_shortcuts.dart，谷歌建议全应用不超过 4 个），灰度中的工具登记的功能开关 flag（开着才显示与能进路由），以及子模块 children（[人工决策] 在类上：子模块 id 写成「父 id.子 id」、路由按点分层；父模块不给页面时框架列出子模块、子模块各有路由，给了页面时自己摆子模块、子模块没有路由）。树的工具函数 toolboxPath、toolboxTree、toolboxRoutable（有自己路由的）、toolboxClearable 与 toolboxClearedData（清除父模块时按子模块逐个清、逐个写）。ToolboxServiceContext 是框架交给工具服务的公共能力。
+  - toolbox_page.dart：百宝箱首页 ToolboxPage（给了 parent 时是这个父模块的子模块列表，标题是父模块的名字，同一套卡片与左滑，一个都看不见时写「暂时没有可用的功能」）：有按需资源的工具可「卸载」，有本机数据的工具（自己或子模块登记了 openService）可「清除数据」；入口只有卡片左滑露出的圆角按钮（卡片右侧一律「›」，读屏操作菜单里有同一操作），点了须确认，同一时刻只开一张（人工决策见 _tile）；隐藏的工具（解锁 toolbox.<工具 id>，子模块是 toolbox.<父 id.子 id>，toolboxUnlockId，规则见服务端 unlock_rules.ts）对当前账号锁着时不显示入口，组合根经路由注入 UnlockAccess；灰度中的工具开关没开不显示（FeatureGate，同经路由注入）；由框架列出子模块的父模块一个看得见的子模块都没有时也不显示。首页与路由同一规则 toolboxVisible；路由门禁 toolboxRedirect 让看不见的那一层回到它的上一层。
   - toolbox_models.dart：公共模型与接口：ToolboxException、ToolboxCancellation、ToolboxResource、ToolboxDownloadRequest、ToolboxDownload 及其状态机（origin 是发起工具的附加信息，下载管理原样存取），接口 ToolboxTransfer、ToolboxFilePublisher、ToolboxService（close 与 clearData）。
   - toolbox_store.dart：toolbox.db：downloads（下载记录）、consent（按来源与版本记录同意，清除工具数据时按工具 id 撤销）、resources（已装的按需资源）。旧版本的 toolbox_preferences、parse_history 属于短视频，由短视频库打开时搬走后删表。
   - toolbox_resource_manager.dart：重型按需资源的安装、校验（版本、sha256、字节数）与卸载；每个工具只留当前版本，卸载只删本工具的资源、不删用户已导出的文件。
@@ -56,6 +56,7 @@
 # 测试
 
 - toolbox_widget_test.dart、toolbox_download_test.dart：首页、注册表与下载管理。
+- toolbox_submodule_test.dart：子模块框架（真实注册表的 id 与路径不撞、段落不登记服务与入口、电影院两段与生活的开关；路径与有自己路由的模块；显隐与路由门禁回上一层；清除父模块逐个清子模块；列表页与左滑清除）；子模块的快捷入口在 app_shortcuts_test.dart。
 - background_transfer_test.dart：安卓后台传输的插件状态换算、失败原因日志、进度与交给插件的任务参数（插件本身与原生下载只有设备实测）。
 - http_transfer_test.dart：iOS 传输（整段下载、跳转只认 https、失败状态、Range 续传、中途断开、不能续传不给暂停、接在下载管理上走完导出）。
 - toolbox_media_features_test.dart：短视频库迁移、旧下载记录兼容、按工具清空下载、清除数据、分享卡片按注册表打开。
@@ -65,4 +66,4 @@
 # 人工决策检索
 
 - 命令：grep -rn 人工决策- lib/toolbox android/app/src
-- 本目录（不含学习通）的标记位于：免登录与设备级归属（toolbox_runtime.dart）、资源卸载范围（toolbox_resource_manager.dart）、单点登记与工具 id 统一、好友分享走注册表（toolbox_catalog.dart）、卸载确认与清除数据（toolbox_page.dart）、下载管理通用化（toolbox_download_manager.dart）、iOS 改在进程内下载（http_transfer.dart）、短视频服务化与清除数据（short_video_service.dart）、历史默认开启（short_video_store.dart）、来源选择（parse_coordinator.dart）、接入 BugPK 新版（svparse_video_parser.dart）、汇总「进行中」含排队项（media_result_page.dart、downloads_page.dart）、结果页显示画质与大小（media_result_page.dart）、解析设置底部弹层（short_video_page.dart）、小网络图共用连接与播放优先（toolbox_image.dart 的 ToolboxRemoteImage 与 ToolboxImageGate）；公共目录导出在 ToolboxFileExporter.kt。
+- 本目录（不含学习通）的标记位于：子模块框架（toolbox_module.dart 的 ToolboxModule）、免登录与设备级归属（toolbox_runtime.dart）、资源卸载范围（toolbox_resource_manager.dart）、单点登记与工具 id 统一、好友分享走注册表（toolbox_catalog.dart）、卸载确认与清除数据（toolbox_page.dart）、下载管理通用化（toolbox_download_manager.dart）、iOS 改在进程内下载（http_transfer.dart）、短视频服务化与清除数据（short_video_service.dart）、历史默认开启（short_video_store.dart）、来源选择（parse_coordinator.dart）、接入 BugPK 新版（svparse_video_parser.dart）、汇总「进行中」含排队项（media_result_page.dart、downloads_page.dart）、结果页显示画质与大小（media_result_page.dart）、解析设置底部弹层（short_video_page.dart）、小网络图共用连接与播放优先（toolbox_image.dart 的 ToolboxRemoteImage 与 ToolboxImageGate）；公共目录导出在 ToolboxFileExporter.kt。

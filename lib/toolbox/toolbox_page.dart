@@ -21,9 +21,11 @@ import 'package:superxd/domain/unlock.dart';
 
 // 隐藏的工具（解锁 toolbox.<工具 id>，人工决策见服务端 src/modules/unlock/unlock_rules.ts）：对当前账号锁着时不显示入口，开了才出现。
 // 灰度中的工具（登记了功能开关 ToolboxModule.flag）：开关开着才显示。
+// 给了 parent 时是这个父模块（生活）的子模块列表，同一套卡片、左滑清除与显隐规则（人工决策见 ToolboxModule）。
 class ToolboxPage extends StatefulWidget {
-  const ToolboxPage({super.key, required this.runtime, this.modules, this.unlocks, this.features});
+  const ToolboxPage({super.key, required this.runtime, this.parent, this.modules, this.unlocks, this.features});
   final ToolboxRuntime runtime;
+  final ToolboxModule? parent;
   final List<ToolboxModule>? modules;
   // 没配中转时为空，工具都显示。
   final UnlockAccess? unlocks;
@@ -35,7 +37,7 @@ class ToolboxPage extends StatefulWidget {
 
 class _ToolboxPageState extends State<ToolboxPage> {
   late Future<void> _ready = widget.runtime.initialize();
-  late final _all = widget.modules ?? widget.runtime.modules;
+  late final _all = widget.modules ?? widget.parent?.children ?? widget.runtime.modules;
   final _busy = <String>{};
   String? _error;
   StreamSubscription<void>? _unlockChanges;
@@ -105,7 +107,7 @@ class _ToolboxPageState extends State<ToolboxPage> {
     final agreed = await showCampusConfirm(
       context,
       title: '清除${module.name}的数据？',
-      message: '会删除本机保存的${module.clearedData}；已保存到相册或下载目录的文件保留。',
+      message: '会删除本机保存的${toolboxClearedData(module)}；已保存到相册或下载目录的文件保留。',
       action: '清除', destructive: true,
     );
     if (agreed && mounted) {
@@ -122,7 +124,7 @@ class _ToolboxPageState extends State<ToolboxPage> {
         icon: const CampusIcon(CampusIcons.back),
         onPressed: () => context.pop(),
       ),
-      title: const Text('百宝箱'),
+      title: Text(widget.parent?.name ?? '百宝箱'),
     ),
     body: CampusScrollFade(child: SafeArea(
       child: FutureBuilder<void>(
@@ -157,6 +159,8 @@ class _ToolboxPageState extends State<ToolboxPage> {
                     padding: const EdgeInsets.only(bottom: 16),
                     child: _tile(module),
                   ),
+                // 页面开着时子模块的开关被关掉，或解锁收回了。
+                if (_modules.isEmpty) Center(child: Text('暂时没有可用的功能', style: TextStyle(color: CampusPalette.of(context).onSurfaceVariant))),
               ],
             )),
           );
@@ -179,7 +183,7 @@ class _ToolboxPageState extends State<ToolboxPage> {
     final card = CampusSurface(
       padding: const EdgeInsets.all(20),
       onTap: installed && !busy
-          ? () => context.push('/toolbox/${module.id}')
+          ? () => context.push(toolboxPath(module))
           : null,
       child: ConstrainedBox(constraints: const BoxConstraints(minHeight: 40), child: Row(
         children: [
@@ -232,7 +236,7 @@ class _ToolboxPageState extends State<ToolboxPage> {
       )),
     );
     final uninstallable = module.resource != null && installed;
-    final clearable = module.openService != null;
+    final clearable = toolboxClearable(module).isNotEmpty;
     if (!uninstallable && !clearable) return card;
     final label = uninstallable ? '卸载' : '清除数据';
     void act() => uninstallable ? _uninstall(module) : _clearData(module);
@@ -321,9 +325,29 @@ class _SwipeAction extends StatelessWidget {
 // 隐藏工具的解锁编号：toolbox.<工具 id>（灰度配置 unlocks 里按这个写）。
 String toolboxUnlockId(String toolId) => 'toolbox.$toolId';
 
-// 工具此刻显不显示、能不能进（首页与路由同一规则）：灰度中的工具要开关开着，隐藏的工具要对当前账号开着。
+// 工具此刻显不显示、能不能进（首页与路由同一规则）：灰度中的工具要开关开着，隐藏的工具要对当前账号开着；
+// 由框架列出子模块的父模块（生活）还要至少有一个看得见的子模块，不留一个点进去是空的入口。
 bool toolboxVisible(ToolboxModule module, {UnlockAccess? unlocks, FeatureGate? features}) {
   final flag = module.flag;
   if (flag != null && features?.isOn(flag) != true) return false;
-  return unlocks?.locked(toolboxUnlockId(module.id)) != true;
+  if (unlocks?.locked(toolboxUnlockId(module.id)) == true) return false;
+  return module.builder != null || module.children.any((child) => toolboxVisible(child, unlocks: unlocks, features: features));
+}
+
+// 路由门禁：路径上哪一层看不见就回到它的上一层（顶层工具回百宝箱首页）；不是工具页面或都看得见时返回空。
+// 路径最后一段不是子模块时是这一层登记的快捷入口，跟着所属模块走。
+String? toolboxRedirect(List<ToolboxModule> modules, String location, {UnlockAccess? unlocks, FeatureGate? features}) {
+  final segments = location.split('/');
+  if (segments.length < 3 || segments[1] != 'toolbox') return null;
+  var back = '/toolbox';
+  var level = modules;
+  for (var depth = 3; depth <= segments.length; depth++) {
+    final id = segments.sublist(2, depth).join('.');
+    final module = level.where((module) => module.id == id).firstOrNull;
+    if (module == null) return null;
+    if (!toolboxVisible(module, unlocks: unlocks, features: features)) return back;
+    back = toolboxPath(module);
+    level = module.children;
+  }
+  return null;
 }

@@ -43,6 +43,8 @@ abstract final class CampusIcons {
   // 电影院（百宝箱的在线影视）与它的选集、换源。
   static const cinema = LucideIcons.clapperboard;
   static const episodes = LucideIcons.listVideo;
+  // 百宝箱的「生活」（校园生活服务，子模块列表）。
+  static const life = LucideIcons.houseHeart;
   static const image = LucideIcons.image;
   static const images = LucideIcons.images;
   static const camera = LucideIcons.camera;

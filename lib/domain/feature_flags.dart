@@ -21,4 +21,9 @@ const cinemaFlag = FeatureFlag('toolbox.cinema', fallback: false);
 // 没选「只靠规则包」（没法先点名给自己测）与「直接删代码」（以后要从历史捞回来重接）。重新开放：规则包加回解析源，先点名给自己测再放量。
 const cinemaParseFlag = FeatureFlag('toolbox.cinema.parse', fallback: false);
 
-const featureFlags = <FeatureFlag>[cinemaFlag, cinemaParseFlag];
+// [人工决策-2026-11-22 18:46:09] 百宝箱的「生活」与它的子模块两层灰度（用户选「两层灰度，先给你测」，没选「生活直接上、子模块灰度」「都直接全量」）：
+// 生活的开关 toolbox.life 与每个子模块自己的开关（住理生活是 toolbox.life.zhuli，随子模块登记）都默认关，先在灰度配置里点名给开发者测再放量；
+// 子模块会动真钱（充值、买券、洗浴扣费），不随版本直接发给所有人。生活下面一个看得见的子模块都没有时，生活本身也不出现（toolboxVisible）。
+const lifeFlag = FeatureFlag('toolbox.life', fallback: false);
+
+const featureFlags = <FeatureFlag>[cinemaFlag, cinemaParseFlag, lifeFlag];
