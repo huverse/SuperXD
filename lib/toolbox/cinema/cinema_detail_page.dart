@@ -14,6 +14,7 @@ import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/toolbox/cinema/cinema_consent.dart';
 import 'package:superxd/toolbox/cinema/cinema_episodes.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
@@ -91,7 +92,7 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
 
   Future<void> _reloadHistory() async {
     try {
-      final history = await widget.service.store.historyOf(widget.title.key);
+      final history = await widget.service.store.historyOf(widget.title.key, DateTime.now());
       if (mounted) setState(() => _history = history);
     } catch (error, stack) {
       campusLog('[Cinema] action=history errorType=${error.runtimeType}\n$stack');
@@ -104,7 +105,8 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
     if (rule == null) throw const CinemaRuleException('这个源已经下架，换一个源试试');
     _cancel?.complete();
     final cancel = _cancel = Completer<void>();
-    final roads = await widget.service.chapters(rule, ref.source, fresh: fresh, cancel: cancel.future, carried: ref.carried);
+    // 源还没同意（换了接口主机或改走转发）当场问（人工决策见 cinema_consent.dart）。
+    final roads = await cinemaChapters(context, widget.service, rule, ref.source, fresh: fresh, cancel: cancel.future, carried: ref.carried);
     if (mounted) setState(() => _loaded = (ref, roads));
     // 预取接着看那一集（这个源看过且线路与集还在；看完了是下一集），没看过就第一集。
     final history = await _historyFuture;
@@ -123,7 +125,7 @@ class _CinemaDetailPageState extends State<CinemaDetailPage> {
     return (road: history.road, episode: history.episode, start: Duration.zero, label: '从头看 ${history.episodeName}');
   }
 
-  late final Future<CinemaHistory?> _historyFuture = widget.service.store.historyOf(widget.title.key).catchError((Object error, StackTrace stack) {
+  late final Future<CinemaHistory?> _historyFuture = widget.service.store.historyOf(widget.title.key, DateTime.now()).catchError((Object error, StackTrace stack) {
     campusLog('[Cinema] action=history errorType=${error.runtimeType}\n$stack');
     return null;
   });

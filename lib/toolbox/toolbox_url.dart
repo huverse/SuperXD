@@ -1,8 +1,10 @@
 import 'dart:io';
 
+import 'package:superxd/domain/campus_http.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
 
-Uri toolboxPublicUrl(String value, {bool httpsOnly = false}) {
+// anyPort：不限端口（电影院的媒体地址：片源的 CDN 常用非标准端口），本机与内网照样拒绝。
+Uri toolboxPublicUrl(String value, {bool httpsOnly = false, bool anyPort = false}) {
   if (value.length > 8192) throw const ToolboxException('链接过长');
   final uri = Uri.tryParse(value.trim());
   if (uri == null ||
@@ -12,7 +14,7 @@ Uri toolboxPublicUrl(String value, {bool httpsOnly = false}) {
       !(httpsOnly
           ? uri.scheme == 'https'
           : const {'http', 'https'}.contains(uri.scheme)) ||
-      (uri.hasPort && uri.port != (uri.scheme == 'https' ? 443 : 80))) {
+      (!anyPort && uri.hasPort && uri.port != (uri.scheme == 'https' ? 443 : 80))) {
     throw const ToolboxException('请使用公开的网页链接');
   }
   final host = uri.host.toLowerCase().replaceAll(RegExp(r'\.$'), '');
@@ -22,27 +24,10 @@ Uri toolboxPublicUrl(String value, {bool httpsOnly = false}) {
       host.endsWith('.localhost') ||
       host.endsWith('.local') ||
       host.endsWith('.internal') ||
-      (address != null && !toolboxPublicAddress(address))) {
+      (address != null && !campusPublicAddress(address))) {
     throw const ToolboxException('不支持本机或内网地址');
   }
   return uri.removeFragment();
-}
-
-bool toolboxPublicAddress(InternetAddress address) {
-  final bytes = address.rawAddress;
-  if (bytes.length == 4) {
-    return !(bytes[0] == 0 ||
-        bytes[0] == 10 ||
-        bytes[0] == 127 ||
-        bytes[0] >= 224 ||
-        (bytes[0] == 169 && bytes[1] == 254) ||
-        (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
-        (bytes[0] == 192 && bytes[1] == 168) ||
-        (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127) ||
-        (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19)));
-  }
-  // 只接受全球单播 IPv6；拒绝映射 IPv4、链路本地、组播和未指定地址。
-  return bytes[0] & 0xe0 == 0x20;
 }
 
 Uri shortVideoInput(String value) {

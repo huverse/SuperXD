@@ -12,11 +12,13 @@ import 'package:superxd/theme/campus_loading.dart';
 import 'package:superxd/theme/campus_palette.dart';
 import 'package:superxd/theme/campus_segmented.dart';
 import 'package:superxd/theme/campus_surface.dart';
+import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/toolbox_image.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
+import 'package:superxd/toolbox/cinema/cinema_consent.dart';
 import 'package:superxd/toolbox/cinema/cinema_engine.dart';
 import 'package:superxd/toolbox/cinema/cinema_episodes.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
@@ -66,6 +68,8 @@ class CinemaPlayerPage extends StatefulWidget {
 
 // 竖屏时画面区最多占屏高的这么多（竖片）。
 const cinemaPortraitMaxHeight = 0.6;
+// 两次报来的位置之间往前超过这么多算跳转、不算播着走（系统播放器 250 毫秒问一次，长按两倍速时一次走 0.5 秒）。
+const cinemaStallStep = Duration(milliseconds: 900);
 
 class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   // 播放内核（人工决策见 cinema_engine.dart 文件头）：换内核或退回 mpv 时换掉，事件订阅跟着重挂（_attach）。
@@ -78,10 +82,12 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
   Duration? _firstSeen;
   late final CinemaSaveSchedule _saves;
   late final AppLifecycleListener _lifecycle;
-  // 开发者模式的诊断：这一次卡住缓冲从什么时候开始。
+  // 开发者模式的诊断：这一次卡住缓冲从什么时候开始、那时往前缓冲了多少毫秒。
   DateTime? _stalledAt;
-  // 这一次卡住缓冲时播到哪（位置照样往前走一秒多就不算卡住，见位置的监听）。
+  int? _stallAhead;
+  // 这一次卡住缓冲时播到哪（位置照样连着往前走一秒多就不算卡住，见位置的监听）与上一次报来的位置（分清连着走与跳转）。
   Duration? _stallFrom;
+  Duration? _lastPosition;
   Timer? _slowTimer;
   CinemaSourceRef? _source;
   CinemaRule? _rule;
@@ -190,9 +196,19 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
           setState(() => _opening = false);
           _watchSlow();
         }
-        // 卡住缓冲时位置照样往前走了一秒多：内核的缓冲状态没及时收回（11-21 真机：ExoPlayer 已经在播还显示「还在缓冲」），按没卡住算。
+        // 卡住缓冲时位置照样连着往前走了一秒多：内核的缓冲状态没及时收回（11-21 真机：ExoPlayer 已经在播还显示「还在缓冲」），按没卡住算。
+        // 只认连着走：两次位置之间往回或一下跳过 cinemaStallStep 是跳转、换媒体，从跳到的位置重新起算（11-22 Codex 复核：原来卡住时往前一拖就收起转圈，
+        // 还没出画、慢提示也没了，rebuffer 也记早了）。
+        final last = _lastPosition;
+        _lastPosition = position;
         final stallFrom = _stallFrom;
-        if (_stalled && stallFrom != null && position >= stallFrom + const Duration(seconds: 1)) _buffering(false);
+        if (_stalled && stallFrom != null) {
+          if (last == null || position < last || position - last > cinemaStallStep) {
+            _stallFrom = position;
+          } else if (position >= stallFrom + const Duration(seconds: 1)) {
+            _buffering(false);
+          }
+        }
         _warmNext(position);
       }))
       ..add(_engine.stream.playing.listen((playing) {
@@ -275,12 +291,20 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
 
   void _buffering(bool buffering) {
     if (campusDiagnostics && _currentMedia) {
+      // 卡住与收回时往前缓冲了多少、网络层的下载速率（mpv 才有）：分清线路慢还是缓冲策略（11-22《流浪地球2》在 ExoPlayer 上反复卡，Codex 复核）。
+      final state = _engine.state, ahead = (state.buffer - state.position).inMilliseconds;
       final started = _stalledAt;
       if (buffering) {
-        _stalledAt ??= DateTime.now();
+        if (started == null) {
+          _stalledAt = DateTime.now();
+          _stallAhead = ahead;
+        }
       } else if (started != null) {
         _stalledAt = null;
-        if (!_opening) campusLog('[CinemaPlayer] action=rebuffer id=$_generation ms=${DateTime.now().difference(started).inMilliseconds}');
+        final rate = _engine.inputRate;
+        if (!_opening) {
+          campusLog('[CinemaPlayer] action=rebuffer id=$_generation engine=${_engine.kind.name} ms=${DateTime.now().difference(started).inMilliseconds} aheadStartMs=$_stallAhead aheadEndMs=$ahead positionMs=${state.position.inMilliseconds} inputKbps=${rate == null ? '-' : rate * 8 ~/ 1000}');
+        }
       }
     }
     if (!mounted || buffering == _stalled) return;
@@ -361,7 +385,18 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       if (_titleMode) {
         final rule = _rule;
         if (rule == null) throw const CinemaRuleException('这个源已经下架，换一个源试试');
-        final roads = _roads = fresh || _roads == null ? await widget.service.chapters(rule, _source!.source, fresh: fresh, cancel: cancel.future, carried: _source!.carried) : _roads!;
+        // 源还没同意（续播时规则包已换了接口主机或改走转发）当场问（人工决策见 cinema_consent.dart）。
+        // 停在同意框上的时间不算打开用时（首帧用时会记进这个源的播放记录、影响排序），慢提示也从同意那一刻重新计。
+        void agreed() {
+          if (!mounted || generation != _generation) return;
+          _openWatch
+            ..reset()
+            ..start();
+          setState(() => _slow = false);
+          _watchSlow();
+        }
+
+        final roads = _roads = fresh || _roads == null ? await cinemaChapters(context, widget.service, rule, _source!.source, fresh: fresh, cancel: cancel.future, carried: _source!.carried, onAgreed: agreed) : _roads!;
         if (generation != _generation) return;
         _road = _road.clamp(0, roads.length - 1);
         _episode = _episode.clamp(0, roads[_road].episodes.length - 1);
@@ -397,7 +432,7 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     } on http.RequestAbortedException {
       return;
     } on CinemaRuleException catch (error) {
-      if (generation == _generation) _record(ok: false);
+      if (generation == _generation && error is! CinemaConsentDeclined) _record(ok: false);
       if (mounted && generation == _generation) setState(() => _error = error.message);
     } on CinemaHttpException catch (error) {
       if (generation == _generation) _record(ok: false);
@@ -508,6 +543,9 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
     }
     _cancel?.complete();
     final cancel = _cancel = Completer<void>();
+    // 先记下旧媒体看到哪，再进「打开中」（11-22 Codex 复核：原来先置打开中，_save 见打开中直接返回，新源没打开成就退出会丢掉最近一段）。
+    await _saves.now();
+    if (!mounted) return;
     // 没换成时还原：原来出错的仍显示出错（能重新载入），不留一块既不转圈也不报错的黑屏。
     final previousError = _error;
     void stay() => setState(() {
@@ -519,14 +557,15 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
       _error = null;
     });
     try {
-      final roads = await widget.service.chapters(rule, source.source, cancel: cancel.future, carried: source.carried);
+      // 源还没同意当场问（人工决策见 cinema_consent.dart）。
+      final roads = await cinemaChapters(context, widget.service, rule, source.source, cancel: cancel.future, carried: source.carried);
       final order = [if (_road < roads.length) _road, for (var index = 0; index < roads.length; index++) if (index != _road) index];
       for (final road in order) {
         final episode = cinemaMatchEpisode(roads[road].episodes, name, index: _episode, single: single);
         if (episode < 0) continue;
         _abandon();
-        await _saves.now();
         if (!mounted) return;
+        // 位置取换过去这一刻的（取选集时旧视频还在播）。
         final position = _engine.state.position;
         final start = position > Duration.zero ? position : (_resumedFrom ?? Duration.zero);
         final before = _engine.state.duration;
@@ -746,6 +785,18 @@ class _CinemaPlayerPageState extends State<CinemaPlayerPage> {
                 label: (index) => roads[index].name,
                 selected: browsing,
                 onSelected: (index) => setState(() => _browsing = index),
+              ),
+              const SizedBox(height: CampusGap.medium),
+            ] else if (roads.length > 3) ...[
+              // 四条以上线路分段放不下，同选集页用下拉（11-22 Codex 复核：原来播放页没有入口，只能留在当前线路）。
+              CampusSurface(
+                padding: EdgeInsets.fromLTRB(CampusGap.large, campusFieldGap(context), CampusGap.large, CampusGap.large),
+                child: CampusMenuField<int>(
+                  label: '线路',
+                  value: browsing,
+                  items: [for (final (index, road) in roads.indexed) CampusMenuItem(value: index, label: road.name)],
+                  onChanged: (index) => setState(() => _browsing = index),
+                ),
               ),
               const SizedBox(height: CampusGap.medium),
             ],

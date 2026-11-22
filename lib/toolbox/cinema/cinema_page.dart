@@ -22,6 +22,7 @@ import 'package:superxd/theme/campus_transitions.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
+import 'package:superxd/toolbox/cinema/cinema_consent.dart';
 import 'package:superxd/toolbox/cinema/cinema_detail_page.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
@@ -117,27 +118,17 @@ class _CinemaPageState extends State<CinemaPage> {
   }
 
   Future<void> _reloadHistory() async {
-    final history = await _service.store.history();
+    final history = await _service.store.history(DateTime.now());
     if (mounted) setState(() => _history = history);
   }
 
-  // 还没同意过的源先问一次；不同意就不搜。
+  // 还没同意过的源先问一次（cinema_consent.dart）；不同意就不搜。
   Future<bool> _consentRules() async {
     final package = await _service.usable();
     final missing = await _service.unconsentedRules(package);
     if (missing.isEmpty) return true;
     if (!mounted) return false;
-    final agreed = await showCampusConfirm(
-      context,
-      title: '使用第三方片源',
-      // 长文案：首次同意要说清片名发给谁、内容归谁；片名目录型的源（人工决策见 cinema_catalog.dart）片名先发到开发者服务器查编号，
-      // 国内连不上的源（人工决策见 cinema_rule.dart 的 CinemaRule.forward）经开发者的境外转发。
-      message: '片名会发给以下站点，片源与画面来自第三方，版权归原权利人：\n${[for (final rule in missing) cinemaConsentName(rule)].join('、')}',
-      action: '同意并搜索',
-    );
-    if (!agreed) return false;
-    await _service.grantRules(missing);
-    return true;
+    return askCinemaConsent(context, _service, missing, action: '同意并搜索');
   }
 
   Future<void> _search() async {
@@ -567,10 +558,4 @@ class _CinemaPageState extends State<CinemaPage> {
       ),
     ];
   }
-}
-
-// 同意弹窗里的一个源：经开发者的服务器（片名目录型）或境外转发（人工决策见 cinema_rule.dart 的 CinemaRule.forward）的在名字后面写明。
-String cinemaConsentName(CinemaRule rule) {
-  final via = [if (rule.catalog != null) '片名经开发者服务器查找', if (rule.forward != null) '经开发者的境外转发'];
-  return via.isEmpty ? rule.name : '${rule.name}（${via.join('，')}，不保存）';
 }

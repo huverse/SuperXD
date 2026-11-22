@@ -23,6 +23,7 @@ import 'package:superxd/toolbox/cinema/cinema_detail_page.dart';
 import 'package:superxd/toolbox/cinema/cinema_engine.dart';
 import 'package:superxd/toolbox/cinema/cinema_episodes.dart';
 import 'package:superxd/toolbox/cinema/cinema_cloud_parse.dart';
+import 'package:superxd/toolbox/cinema/cinema_consent.dart';
 import 'package:superxd/toolbox/cinema/cinema_http.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/toolbox/cinema/cinema_models.dart';
@@ -41,6 +42,7 @@ import 'package:superxd/toolbox/toolbox_catalog.dart';
 import 'package:superxd/toolbox/toolbox_module.dart';
 import 'package:superxd/toolbox/toolbox_page.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
+import 'package:video_player_platform_interface/video_player_platform_interface.dart';
 
 import 'toolbox_test_support.dart';
 
@@ -555,10 +557,25 @@ void main() {
       for (var index = 0; index < cinemaHistoryLimit + 5; index++) {
         await store.saveHistory(entry('k$index', now.add(Duration(minutes: index))));
       }
-      final history = await store.history(limit: 100);
+      final history = await store.history(now, limit: 100);
       expect(history, hasLength(cinemaHistoryLimit));
       expect(history.first.key, 'k${cinemaHistoryLimit + 4}');
       expect(history.any((item) => item.key == 'old'), isFalse);
+    });
+
+    // 11-22 Codex 复核：原来只在写新记录时清过期的，长期不用再回来，181 天前的照样显示。
+    test('看过的读的时候也清过期的：181 天没再看的不显示，它在各源的编号一起删', () async {
+      final store = await CinemaStore.open(path.join(fixture.directory.path, 'cinema_expire.db'));
+      addTearDown(store.close);
+      final then = DateTime.utc(2026, 5, 1), later = then.add(const Duration(days: 181));
+      await store.saveHistory(entry('old', then));
+      await store.saveTitleSources('old', const [CinemaSourceRef(ruleId: 'alpha', source: '1', name: 'old', remarks: '')]);
+      expect(await store.history(then), hasLength(1));
+      expect(await store.history(later), isEmpty);
+      expect(await store.titleSources('old'), isEmpty);
+      // 选集页读一部片的记录（接着看）也一样。
+      await store.saveHistory(entry('other', then));
+      expect(await store.historyOf('other', later), isNull);
     });
 
     Future<CinemaService> open(Future<List<int>> Function() fetch, {http.Client? client, int versionCode = 40, DateTime Function()? now, Uri? relay}) async {
@@ -571,6 +588,54 @@ void main() {
       );
       return service;
     }
+
+    // 11-22 Codex 复核 P1：选集与解析结果都不签名，里面的地址可能指向手机所在的内网。
+    test('交给播放器的地址只认公网：本机、内网的直链与清单报「地址不对」，不去取', () async {
+      var requests = 0;
+      final service = await open(() async => packageBytes(), client: MockClient((request) async {
+        requests++;
+        return reply('', 404);
+      }));
+      final rule = (await service.rules()).rules.first;
+      for (final url in ['http://192.168.1.2/a.mp4', 'http://127.0.0.1:8080/index.m3u8', 'http://nas.local/a.mp4', 'http://router/a.mp4', 'http://[fe80::1]/a.mp4']) {
+        await expectLater(service.playable(url, rule: rule), throwsA(isA<CinemaHttpException>().having((error) => error.message, 'message', '地址不对')), reason: url);
+      }
+      expect(requests, 0);
+      await service.close();
+    });
+
+    // 11-22 Codex 复核 P1：同一个源换了接口主机或加了境外转发，搜索会重新问，续播与换源取选集却直接发给新地址。
+    test('取选集前核对同意：没同意过、换了接口主机或改走境外转发的源不发请求（抛 CinemaConsentNeeded），同意了才发', () async {
+      final hosts = <String>[];
+      var version = 1;
+      final client = MockClient((request) async {
+        hosts.add(request.url.host);
+        return reply(macCmsList([{'vod_id': 7, 'vod_name': '合成', 'vod_play_from': 'm3u8', 'vod_play_url': r'第01集$https://cdn.example.com/one/index.m3u8'}]), 200);
+      });
+      List<int> package() => switch (version) {
+        1 => packageBytes(rules: [macCmsRule('alpha', 'https://alpha.example.com/api.php')]),
+        2 => packageBytes(version: 2, rules: [macCmsRule('alpha', 'https://alpha2.example.com/api.php')]),
+        _ => packageBytes(version: 3, forward: 'https://edge.example.net/v1/forward', rules: [{...macCmsRule('alpha', 'https://alpha2.example.com/api.php'), 'forward': true}]),
+      };
+      final service = await open(() async => package(), client: client);
+      await service.rules();
+      await expectLater(service.chapters(service.rule('alpha')!, '7'), throwsA(isA<CinemaConsentNeeded>()), reason: '没同意过');
+      await service.grantRules([service.rule('alpha')!]);
+      await service.chapters(service.rule('alpha')!, '7');
+      expect(hosts, ['alpha.example.com']);
+      version = 2;
+      await service.rules(force: true);
+      await expectLater(service.chapters(service.rule('alpha')!, '7', fresh: true), throwsA(isA<CinemaConsentNeeded>()), reason: '换了接口主机');
+      await service.grantRules([service.rule('alpha')!]);
+      version = 3;
+      await service.rules(force: true);
+      await expectLater(service.chapters(service.rule('alpha')!, '7', fresh: true), throwsA(isA<CinemaConsentNeeded>()), reason: '改走境外转发');
+      expect(hosts, ['alpha.example.com'], reason: '没同意时一个请求都没发');
+      await service.grantRules([service.rule('alpha')!]);
+      await service.chapters(service.rule('alpha')!, '7', fresh: true);
+      expect(hosts.last, 'edge.example.net');
+      await service.close();
+    });
 
     test('规则包：拉到就缓存，一小时内不再拉；版本只升不降；要更新客户端的不换；拉不到照旧用本机的', () async {
       var now = DateTime.utc(2026, 11, 20);
@@ -1017,10 +1082,20 @@ void main() {
         await gate.future;
         return reply(macCmsList([{'vod_id': 7, 'vod_name': '合成', 'vod_play_from': 'm3u8', 'vod_play_url': r'第01集$https://cdn.example.com/one/index.m3u8'}]), 200);
       });
-      final service = await open(() async => packageBytes(), client: client);
+      final counting = _CountingClient(client);
+      final service = await open(() async => packageBytes(), client: counting);
       final rule = (await service.rules()).rules.first;
+      await service.grantRules([rule]);
+      // 等请求真的发出去（取选集先读本机库核对同意）。
+      Future<void> sent(int count) async {
+        for (var tries = 0; details.length < count && tries < 200; tries++) {
+          await Future<void>.delayed(const Duration(milliseconds: 5));
+        }
+      }
+
       final leaving = Completer<void>(), staying = Completer<void>();
       final left = service.chapters(rule, '7', cancel: leaving.future), stayed = service.chapters(rule, '7', cancel: staying.future);
+      await sent(1);
       leaving.complete();
       await expectLater(left, throwsA(isA<http.RequestAbortedException>()));
       gate.complete();
@@ -1029,6 +1104,7 @@ void main() {
       gate = Completer<void>();
       final first = Completer<void>(), second = Completer<void>();
       final a = service.chapters(rule, '8', cancel: first.future), b = service.chapters(rule, '8', cancel: second.future);
+      await sent(2);
       first.complete();
       second.complete();
       await expectLater(a, throwsA(isA<http.RequestAbortedException>()));
@@ -1037,6 +1113,11 @@ void main() {
       gate.complete();
       await again;
       expect(details, hasLength(3), reason: '都不等了的那次被中断，再要时另起一次');
+      // 还没发出去就不等了的（核对同意的这段时间里）：连发都不发（替身在中断后不调回复，只能数交给客户端的次数）。
+      final sends = counting.sends;
+      final early = Completer<void>()..complete();
+      await expectLater(service.chapters(rule, '9', cancel: early.future), throwsA(isA<http.RequestAbortedException>()));
+      expect(counting.sends, sends);
       await service.close();
     });
 
@@ -1052,6 +1133,7 @@ void main() {
       });
       final service = await open(() async => packageBytes(), client: client);
       final rule = (await service.rules()).rules.first;
+      await service.grantRules([rule]);
       final old = service.chapters(rule, '7');
       await pumpEventQueue();
       final fresh = service.chapters(rule, '7', fresh: true);
@@ -1200,6 +1282,7 @@ void main() {
       ));
       final service = await open(() async => packageBytes(), client: client);
       final rule = (await service.rules()).rules.first;
+      await service.grantRules([rule]);
       final roads = await service.chapters(rule, '1');
       expect(roads.single.episodes, hasLength(2));
       await expectLater(service.chapters(rule, '2'), throwsA(isA<CinemaRuleException>()));
@@ -1287,6 +1370,63 @@ void main() {
     expect((await get(await proxy.open(Uri.parse('https://cdn.example.com/missing.m3u8'), stream))).$1, HttpStatus.badGateway);
     final forged = (await proxy.open(Uri.parse('https://cdn.example.com/v/index.m3u8'), stream)).replace(pathSegments: ['wrong', 'p']);
     expect((await get(forged)).$1, HttpStatus.notFound);
+  });
+
+  // 11-22 Codex 复核 P1：外部清单能让手机去取 127.0.0.1 上的服务（清单、选集与跳转都不签名，规则包的签名与本机代理的口令挡不住）。
+  test('本机代理只认公网：子清单、密钥、跳转指向本机或内网都不去取，分片与初始化段指向本机或内网整份不给', () async {
+    final hosts = <String>[];
+    final client = MockClient((request) async {
+      hosts.add(request.url.host);
+      return switch (request.url.path) {
+        '/master.m3u8' => reply('#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=1\nhttp://127.0.0.1:8080/admin.m3u8\n', 200),
+        '/key.m3u8' => reply('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="http://192.168.1.1/key"\n#EXTINF:10,\nseg0.ts\n#EXT-X-ENDLIST\n', 200),
+        '/seg.m3u8' => reply('#EXTM3U\n#EXTINF:10,\nhttp://10.0.0.8:9000/seg0.ts\n#EXT-X-ENDLIST\n', 200),
+        '/map.m3u8' => reply('#EXTM3U\n#EXT-X-MAP:URI="http://router/init.mp4"\n#EXTINF:10,\nseg0.m4s\n#EXT-X-ENDLIST\n', 200),
+        '/moved.m3u8' => reply('', 302, headers: {'location': 'http://[::1]:9000/x.m3u8'}),
+        '/port.m3u8' => reply('#EXTM3U\n#EXTINF:10,\nhttps://cdn2.example.com:8443/seg0.ts\n#EXT-X-ENDLIST\n', 200),
+        _ => reply('', 404),
+      };
+    });
+    final proxy = CinemaProxy(CinemaHttp(client: client));
+    addTearDown(proxy.close);
+    final stream = CinemaStream(headers: cinemaHeaders('', ''));
+    Future<(int, String)> open(String path) async => getLocal(await proxy.open(Uri.parse('https://cdn.example.com$path'), stream));
+    final master = await open('/master.m3u8');
+    expect(master.$1, 200, reason: '主清单本身在公网');
+    expect((await getLocal(Uri.parse(master.$2.split('\n').firstWhere((line) => line.startsWith('http'))))).$1, HttpStatus.badGateway);
+    final keyed = await open('/key.m3u8');
+    expect((await getLocal(Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(keyed.$2)!.group(1)!))).$1, HttpStatus.badGateway);
+    expect((await open('/seg.m3u8')).$1, HttpStatus.badGateway, reason: '分片由播放器直连，指向内网就整份不给');
+    expect((await open('/map.m3u8')).$1, HttpStatus.badGateway, reason: '单段主机名');
+    expect((await open('/moved.m3u8')).$1, HttpStatus.badGateway);
+    expect((await open('/port.m3u8')).$1, 200, reason: '公网 CDN 的非标准端口照常');
+    expect(hosts.toSet(), {'cdn.example.com'}, reason: '本机、内网一个请求都没发');
+  });
+
+  // 11-22 Codex 复核：密钥原来只按地址记、不过期，同一地址按请求条件给不同密钥时，后一路拿到前一路的那把、解不开。
+  test('本机代理的密钥按地址加请求头记、5 分钟后重取', () async {
+    var now = DateTime.utc(2026, 11, 22);
+    final fetched = <String>[];
+    final client = MockClient((request) async {
+      if (request.url.path.endsWith('.m3u8')) return reply('#EXTM3U\n#EXT-X-KEY:METHOD=AES-128,URI="enc.key"\n#EXTINF:10,\nseg0.ts\n#EXT-X-ENDLIST\n', 200);
+      final agent = request.headers['user-agent']!;
+      fetched.add(agent);
+      return reply(agent == 'UA-A' ? 'aaaaaaaaaaaaaaaa' : 'bbbbbbbbbbbbbbbb', 200);
+    });
+    final proxy = CinemaProxy(CinemaHttp(client: client), now: () => now);
+    addTearDown(proxy.close);
+    Future<String> key(String agent) async {
+      final media = await getLocal(await proxy.open(Uri.parse('https://cdn.example.com/v/index.m3u8'), CinemaStream(headers: cinemaHeaders(agent, ''))));
+      return (await getLocal(Uri.parse(RegExp(r'URI="([^"]+)"').firstMatch(media.$2)!.group(1)!))).$2;
+    }
+
+    expect(await key('UA-A'), 'aaaaaaaaaaaaaaaa');
+    expect(await key('UA-B'), 'bbbbbbbbbbbbbbbb', reason: '请求条件不同，不拿前一路的那把');
+    expect(await key('UA-A'), 'aaaaaaaaaaaaaaaa');
+    expect(fetched, ['UA-A', 'UA-B']);
+    now = now.add(const Duration(minutes: 6));
+    await key('UA-A');
+    expect(fetched, ['UA-A', 'UA-B', 'UA-A'], reason: '过了有效期重取');
   });
 
   test('取清单的跳转共用一个总时限：三跳各 100 毫秒、总时限 180 毫秒就超时（不是每跳重新计）', () async {
@@ -1538,7 +1678,7 @@ void main() {
       await tester.tap(find.text('删除').last);
       await settleUntil(tester, () => find.text('看过的合成片').evaluate().isEmpty);
       expect(find.text('看过的'), findsNothing);
-      expect(await tester.runAsync(service.store.history), isEmpty);
+      expect(await tester.runAsync(() => service.store.history(DateTime.now())), isEmpty);
       await tester.pumpWidget(const SizedBox());
     });
 
@@ -1548,6 +1688,7 @@ void main() {
       final (_, service) = await openCinemaForPage(tester, client: client);
       await tester.runAsync(() async {
         await service.rules();
+        await service.grantRules(service.package!.rules);
         await service.store.saveHistory(CinemaHistory(key: 'long', name: '合成长剧', cover: '', ruleId: 'alpha', source: '1', road: 0, episode: 85, episodeName: '第86集', position: const Duration(minutes: 3), duration: const Duration(minutes: 40), updatedAt: DateTime.now().toUtc()));
       });
       final title = CinemaTitle(key: 'long', name: '合成长剧', year: '2026', cover: '', remarks: '')..addSource(const CinemaSourceRef(ruleId: 'alpha', source: '1', name: '合成长剧', remarks: ''));
@@ -1633,6 +1774,7 @@ void main() {
           CinemaHistory(key: key, name: key, cover: '', ruleId: 'alpha', source: source, road: 0, episode: 0, episodeName: episodeName, position: position, duration: const Duration(minutes: 40), updatedAt: DateTime.now().toUtc());
       await tester.runAsync(() async {
         await service.rules();
+        await service.grantRules(service.package!.rules);
         await service.store.saveHistory(watched('series', '1', '第01集', const Duration(minutes: 39)));
         await service.store.saveHistory(watched('movie', '2', '正片', const Duration(minutes: 39)));
         await service.store.saveHistory(watched('half', '1', '第01集', const Duration(minutes: 20)));
@@ -1705,7 +1847,7 @@ void main() {
     });
 
     // 11-21 Codex 复核 #344：上一次跳转晚到的 no 把这一次记成 0 毫秒；原生恢复与目标处走起来要分开记；读不到缓存段要记 unknown。
-    test('跳转计时：原生恢复要 seeking 变回 no 且位置就是这次的目标（上一次晚到的 no 不算）；在播的再等时钟越过目标才算走起来；缓存记 true、false、unknown', () async {
+    test('跳转计时：原生恢复要 seeking 变回 no 且位置就是这次的目标（上一次晚到的 no 不算）；在播的再等时钟越过目标才算走起来；缓存记 true、false、unknown；读出网络层的下载速率', () async {
       final platform = _SeekRecorder()..state = const PlayerState(duration: Duration(hours: 1));
       final truth = CinemaPlaybackTruth(Player(platformPlayer: platform));
       addTearDown(truth.dispose);
@@ -1721,6 +1863,11 @@ void main() {
 
       truth.notify(cacheState: '{"seekable-ranges":[{"start":0,"end":80},{"start":1198,"end":1214}]}');
       expect(truth.seekable.value, hasLength(2));
+      // 网络层的下载速率（卡顿时记，分清线路慢还是缓冲策略）；没给为空。
+      truth.notify(cacheState: '{"raw-input-rate":262144,"seekable-ranges":[{"start":0,"end":80},{"start":1198,"end":1214}]}');
+      expect(truth.inputRate, 262144);
+      truth.notify(cacheState: '{"seekable-ranges":[{"start":0,"end":80},{"start":1198,"end":1214}]}');
+      expect(truth.inputRate, isNull);
       // Codex 复现的顺序：A 进行中（yes）开始 B，A 晚到的 no 读到的位置是 A 的落点，不能把 B 记成恢复。
       // 暂停着：原生恢复就算完，晚到的 no 一旦被认成这一次的会立刻记成恢复（在播时还有「走起来」那一步挡着，测不出归属）。
       final first = truth.begin(const Duration(minutes: 10));
@@ -1914,13 +2061,21 @@ void main() {
       gate.complete();
       await settleUntil(tester, () => false);
       expect((await tester.runAsync(() => getLocal(current)))!.$1, 200, reason: '旧的晚回来不能把当前这一路交回');
-      // 出画后缓冲状态卡在「在缓冲」、位置照样在走：加载圈收起。
+      // 出画后缓冲状态卡在「在缓冲」：位置一下跳很远（跳转）不算播着走，加载圈留着（11-22 Codex 复核）；之后连着往前走一秒多才收起。
       engine.frame(const Duration(milliseconds: 400));
       await tester.pump();
       engine.buffering(true);
       await tester.pump();
       expect(find.byType(CampusLoader), findsWidgets);
-      engine.frame(const Duration(seconds: 2));
+      engine.frame(const Duration(seconds: 30));
+      await tester.pump();
+      expect(find.byType(CampusLoader), findsWidgets, reason: '跳过去不算在播');
+      for (var step = 1; step <= 3; step++) {
+        engine.frame(Duration(seconds: 30, milliseconds: 250 * step));
+        await tester.pump();
+      }
+      expect(find.byType(CampusLoader), findsWidgets, reason: '还没走满一秒');
+      engine.frame(const Duration(seconds: 31));
       await tester.pump();
       expect(find.byType(CampusLoader), findsNothing);
       // 2.35:1 的片子：竖屏画面区按 16:9 给高度，不按片子比例缩成一条。
@@ -1984,6 +2139,170 @@ void main() {
       expect(tester.widget<CinemaSettingRow<CinemaEngineKind>>(find.byType(CinemaSettingRow<CinemaEngineKind>)).onChanged, isNotNull);
       await tester.pumpWidget(const SizedBox());
       await tester.pump(const Duration(seconds: 11));
+    });
+
+    // 11-22 Codex 复核 P1：续播时规则包已给这个源换了接口主机或加了境外转发，播放页照样把请求发给新地址。
+    testWidgets('播放页：续播的源还没（重新）同意时当场弹同意框，同意了才取选集；不同意不发请求、写没同意，不算这个源没播成', (tester) async {
+      final created = <_FakeEngine>[];
+      debugCinemaEngineFactory = (kind) {
+        final engine = _FakeEngine(kind);
+        created.add(engine);
+        return engine;
+      };
+      addTearDown(() => debugCinemaEngineFactory = null);
+      final hosts = <String>[];
+      final client = MockClient((request) async {
+        hosts.add(request.url.host);
+        return reply(macCmsList([{'vod_id': 1, 'vod_name': '合成电影', 'vod_play_from': 'mp4', 'vod_play_url': r'正片$https://media.example.com/1.mp4'}]), 200);
+      });
+      final (_, service) = await openCinemaForPage(tester, client: client);
+      await tester.runAsync(service.rules);
+      final title = CinemaTitle(key: 'film', name: '合成电影', year: '2026', cover: '', remarks: '')..addSource(const CinemaSourceRef(ruleId: 'alpha', source: '1', name: '合成电影', remarks: ''));
+      Future<void> resume() async {
+        await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: CinemaPlayerPage.title(service: service, title: title, source: title.sources.single, road: 0, episode: 0, start: const Duration(minutes: 3))));
+        await settleUntil(tester, () => find.text('使用第三方片源').evaluate().isNotEmpty);
+        expect(find.textContaining('合成资源'), findsWidgets);
+        expect(hosts, isEmpty, reason: '问之前不发请求');
+      }
+
+      await resume();
+      await tester.tap(find.text('取消'));
+      await settleUntil(tester, () => find.textContaining('没同意使用这个源').evaluate().isNotEmpty);
+      expect(find.textContaining('没同意使用这个源'), findsOneWidget);
+      expect(hosts, isEmpty);
+      expect(await tester.runAsync(service.sourceStats), isEmpty, reason: '不算这个源没播成');
+      await tester.pumpWidget(const SizedBox());
+      await resume();
+      // 在同意框上停了 20 秒：同意之后慢提示从头计，不因为等用户就提示换源。
+      await tester.pump(const Duration(seconds: 20));
+      await tester.tap(find.text('同意并继续'));
+      await settleUntil(tester, () => created.isNotEmpty && created.last.opens.isNotEmpty);
+      expect(find.text('还在缓冲，可以换个源试试'), findsNothing);
+      expect(hosts, ['alpha.example.com']);
+      expect(created.last.opens.single.$1, 'https://media.example.com/1.mp4');
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 11));
+    });
+
+    // 11-22 Codex 复核：换源时先进「打开中」再记看到哪，_save 见打开中直接返回，新源没打开成就退出，最近一段进度丢了；四条以上线路播放页没有切换入口。
+    testWidgets('播放页：换源前先记下旧片源看到哪，新源没打开成也不丢；四条以上线路给线路下拉', (tester) async {
+      // 手机竖屏的尺寸（400×900），下面的选集区放得下线路下拉。
+      tester.view.physicalSize = const Size(1200, 2700);
+      tester.view.devicePixelRatio = 3;
+      addTearDown(tester.view.reset);
+      final created = <_FakeEngine>[];
+      debugCinemaEngineFactory = (kind) {
+        final engine = _FakeEngine(kind);
+        created.add(engine);
+        return engine;
+      };
+      addTearDown(() => debugCinemaEngineFactory = null);
+      final client = MockClient((request) async => reply('', request.url.host.startsWith('beta') ? 500 : 404));
+      final (_, service) = await openCinemaForPage(tester, client: client);
+      await tester.runAsync(() async {
+        await service.rules();
+        await service.grantRules(service.package!.rules);
+      });
+      final title = CinemaTitle(key: 'film', name: '合成电影', year: '2026', cover: '', remarks: '')
+        ..addSource(const CinemaSourceRef(ruleId: 'alpha', source: '1', name: '合成电影', remarks: ''))
+        ..addSource(const CinemaSourceRef(ruleId: 'beta', source: '2', name: '合成电影', remarks: ''));
+      final roads = [for (var index = 1; index <= 4; index++) CinemaRoad(name: '线路$index', episodes: const [CinemaEpisode(name: '正片', url: 'https://media.example.com/1.mp4')])];
+      await tester.pumpWidget(MaterialApp(theme: campusTheme(), home: CinemaPlayerPage.title(service: service, title: title, source: title.sources.first, road: 0, episode: 0, roads: roads)));
+      await settleUntil(tester, () => created.isNotEmpty && created.single.opens.isNotEmpty);
+      expect(find.byType(CampusMenuField<int>), findsOneWidget, reason: '四条线路分段放不下，用下拉');
+      created.single.frame(const Duration(seconds: 1));
+      await tester.pump();
+      created.single.frame(const Duration(minutes: 7));
+      await tester.pump();
+      await tester.ensureVisible(find.text('片源'));
+      await tester.tap(find.text('片源'));
+      await tester.pump(const Duration(milliseconds: 500));
+      await tester.tap(find.textContaining('另一资源').last);
+      await tester.pump(const Duration(milliseconds: 500));
+      await settleUntil(tester, () => find.textContaining('暂不可用').evaluate().isNotEmpty);
+      final history = await tester.runAsync(() => service.store.historyOf('film', DateTime.now()));
+      expect((history?.ruleId, history?.position), ('alpha', const Duration(minutes: 7)));
+      await tester.pumpWidget(const SizedBox());
+      await settleUntil(tester, () => false);
+      await tester.pump(const Duration(seconds: 11));
+    });
+
+    // 11-22 Codex 复核：播完倒数时回拖接着看，5 秒后照样被切到下一集。
+    testWidgets('播放控件：播完的连播倒数在跳转、又播起来或播完的状态撤销时作废，放着不动才连播', (tester) async {
+      final engine = _FakeEngine(CinemaEngineKind.system)..frame(const Duration(minutes: 40));
+      var nexts = 0;
+      await tester.pumpWidget(MaterialApp(
+        theme: campusTheme(),
+        home: Scaffold(body: Center(child: SizedBox(width: 800, height: 450, child: CinemaPlayerControls(player: engine, title: '合成', subtitle: '第01集', fullscreen: false, busy: false, fit: CinemaFit.automatic, onFit: (_) {}, onBack: () {}, onFullscreen: () {}, onNext: () => nexts++)))),
+      ));
+      await tester.pump();
+      final countdown = find.textContaining('秒后播放下一集');
+      // 流的事件在这一帧里才到，下一帧才画出来。
+      Future<void> frames() async {
+        await tester.pump();
+        await tester.pump();
+      }
+
+      Future<void> finish() async {
+        engine.complete(true);
+        await frames();
+        expect(countdown, findsOneWidget);
+      }
+
+      await finish();
+      engine.complete(false);
+      await frames();
+      expect(countdown, findsNothing, reason: '播完的状态撤销了（回拖）');
+      await finish();
+      engine.play(true);
+      await frames();
+      expect(countdown, findsNothing, reason: '又播起来了');
+      await finish();
+      final bar = tester.getRect(find.byWidgetPredicate((widget) => widget is CustomPaint && widget.painter.runtimeType.toString() == '_ProgressPainter'));
+      await tester.tapAt(Offset(bar.left + bar.width / 4, bar.center.dy));
+      await frames();
+      expect(countdown, findsNothing, reason: '跳转了');
+      await tester.pump(const Duration(seconds: 6));
+      expect(nexts, 0);
+      await finish();
+      await tester.pump(const Duration(seconds: 6));
+      expect(nexts, 1, reason: '放着不动照样连播');
+      await tester.pumpWidget(const SizedBox());
+      await tester.pump(const Duration(seconds: 4));
+    });
+
+    // 11-22 Codex 复核：video_player（2.14.1）的 play 还没回来就 dispose，回来后照样起每 100 毫秒的定时器、永远不取消（控制器留在内存里、一直唤醒）。
+    // 测试结束时还挂着的定时器会让 testWidgets 报错，原来的写法正好留下这一个。
+    testWidgets('系统播放器：换媒体时上一个的 play 还没回来，等它回来再释放，不留下 video_player 的定时器', (tester) async {
+      final previous = VideoPlayerPlatform.instance;
+      final platform = _FakeVideoPlatform();
+      VideoPlayerPlatform.instance = platform;
+      addTearDown(() => VideoPlayerPlatform.instance = previous);
+      final engine = CinemaSystemEngine();
+      final gate = platform.playGate = Completer<void>();
+      unawaited(engine.open('https://media.example.com/1.mp4', const {}));
+      for (var index = 0; index < 10 && platform.plays == 0; index++) {
+        await tester.pump();
+      }
+      expect(platform.plays, 1);
+      platform.playGate = null;
+      unawaited(engine.open('https://media.example.com/2.mp4', const {}));
+      await tester.pump();
+      expect(platform.disposed, isEmpty, reason: '上一个的 play 还没回来，先不释放');
+      gate.complete();
+      // video_player 释放时等的取消订阅是根区的 future，假时钟推不动：交替让真实的事件循环走一走。
+      Future<void> settle(int count) async {
+        for (var index = 0; index < 20 && platform.disposed.length < count; index++) {
+          await tester.pump();
+          await tester.runAsync(() => Future<void>.delayed(Duration.zero));
+        }
+      }
+
+      await settle(1);
+      expect(platform.disposed, [0]);
+      await engine.dispose();
+      await settle(2);
+      expect(platform.disposed, [0, 1]);
     });
 
     testWidgets('播放页：系统播放器打不开时这一页退回 mpv、在同一位置再开；「播放内核」写正在用的，换了记在本机并用新内核在当前位置重开', (tester) async {
@@ -2136,6 +2455,9 @@ class _FakeEngine implements CinemaEngine {
   final ValueNotifier<List<(Duration, Duration)>?> seekable = ValueNotifier(null);
 
   @override
+  int? get inputRate => null;
+
+  @override
   Future<void> open(String uri, Map<String, String> headers, {Duration start = Duration.zero, bool playlist = false}) async {
     opens.add((uri, start));
     final latest = opens.length, gate = hold;
@@ -2156,6 +2478,11 @@ class _FakeEngine implements CinemaEngine {
   }
 
   void buffering(bool value) => _bufferings.add(value);
+
+  // 播完了（或撤销播完）、播起来了。
+  void complete(bool done) => _completions.add(done);
+
+  void play(bool playing) => _playings.add(playing);
 
   // 出画并走到 position。
   void frame(Duration position) {
@@ -2189,4 +2516,72 @@ class _FakeEngine implements CinemaEngine {
 
   @override
   Future<void> dispose() async => disposed = true;
+}
+
+// 假的系统播放器平台（video_player 的平台接口）：打开即给出已初始化，play 等 playGate 才回来，记下 dispose 了哪些。
+class _FakeVideoPlatform extends VideoPlayerPlatform {
+  Completer<void>? playGate;
+  final disposed = <int>[];
+  var plays = 0;
+  var _next = 0;
+  final _events = <int, StreamController<VideoEvent>>{};
+
+  @override
+  Future<void> init() async {}
+
+  @override
+  Future<int?> createWithOptions(VideoCreationOptions options) async {
+    final id = _next++;
+    _events[id] = StreamController<VideoEvent>()..add(VideoEvent(eventType: VideoEventType.initialized, duration: const Duration(minutes: 40), size: const Size(1920, 1080)));
+    return id;
+  }
+
+  @override
+  Stream<VideoEvent> videoEventsFor(int playerId) => _events[playerId]!.stream;
+
+  @override
+  Future<void> play(int playerId) {
+    plays++;
+    return playGate?.future ?? Future<void>.value();
+  }
+
+  @override
+  Future<void> pause(int playerId) async {}
+
+  @override
+  Future<void> setLooping(int playerId, bool looping) async {}
+
+  @override
+  Future<void> setVolume(int playerId, double volume) async {}
+
+  @override
+  Future<void> setPlaybackSpeed(int playerId, double speed) async {}
+
+  @override
+  Future<void> seekTo(int playerId, Duration position) async {}
+
+  @override
+  Future<Duration> getPosition(int playerId) async => Duration.zero;
+
+  @override
+  Future<void> setMixWithOthers(bool mixWithOthers) async {}
+
+  @override
+  Future<void> dispose(int playerId) async {
+    disposed.add(playerId);
+    await _events.remove(playerId)?.close();
+  }
+}
+
+// 数一数交给底层客户端的请求（替身 MockClient 在请求被中断后不调回复，看不出发没发过）。
+class _CountingClient extends http.BaseClient {
+  _CountingClient(this._inner);
+  final http.Client _inner;
+  var sends = 0;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    sends++;
+    return _inner.send(request);
+  }
 }

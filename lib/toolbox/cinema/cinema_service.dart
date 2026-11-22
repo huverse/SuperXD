@@ -45,6 +45,14 @@ class CinemaRulesFeed {
 String cinemaRuleSubject(CinemaRule rule) => 'rule:${rule.id}';
 String cinemaParserSubject(CinemaParser parser) => 'parser:${parser.id}';
 
+// 这个源还没同意（新源、换了接口主机或改走境外转发），没发请求（见 CinemaService.chapters）。
+class CinemaConsentNeeded implements Exception {
+  const CinemaConsentNeeded(this.rule);
+  final CinemaRule rule;
+  @override
+  String toString() => 'CinemaConsentNeeded(${rule.id})';
+}
+
 class CinemaPlayable {
   const CinemaPlayable({required this.uri, required this.headers, this.playlist = false});
   // 交给播放器的地址（m3u8 是本机代理地址）。
@@ -393,11 +401,22 @@ class CinemaService implements ToolboxService {
   // 一个源里这部片的选集（只留能直接播的线路），没有可播的报错让用户换源。先看缓存（选集页取过的，再看这条片源搜索自带的 carried）；
   // 同一部片同时只发一次，选集页与播放页一起等；cancel 完成时这一处不等了（抛 RequestAbortedException），别处还在等就不中断请求。
   // fresh 为真时不用缓存（「重新载入」）。
-  Future<List<CinemaRoad>> chapters(CinemaRule rule, String source, {bool fresh = false, Future<void>? cancel, (DateTime, List<CinemaRoad>)? carried}) {
+  // 先核对同意（11-22 Codex 复核 P1：原来只在首页搜索前核，续播、选集页、换源直接取选集，源换了接口主机或加了境外转发也照发）：
+  // 这个源没同意过、或同意时的接口主机不是现在的（含转发主机，见 CinemaRule.host），不发请求，抛 CinemaConsentNeeded，页面当场问（cinema_consent.dart）。
+  // 放在看缓存之前：核对要读本机库，放在后面的话等它时另一处已经取完，这里会再发一次。
+  Future<List<CinemaRoad>> chapters(CinemaRule rule, String source, {bool fresh = false, Future<void>? cancel, (DateTime, List<CinemaRoad>)? carried}) async {
+    var gone = false;
+    unawaited(cancel?.then((_) => gone = true));
+    if (!await consented(rule)) {
+      campusLog('[Cinema] action=chapters consent=missing rule=${rule.id}');
+      throw CinemaConsentNeeded(rule);
+    }
+    // 核对的这段时间里这一处已经不等了：不再发请求（也不让它去中断别处还要的那一次）。
+    if (gone) throw http.RequestAbortedException();
     final key = _chaptersKey(rule, source);
     if (!fresh) {
       for (final entry in [_chapters[key], carried]) {
-        if (entry != null && _now().difference(entry.$1) < chaptersLifetime) return Future.value(entry.$2);
+        if (entry != null && _now().difference(entry.$1) < chaptersLifetime) return entry.$2;
       }
     }
     final loading = _chaptersLoading[key];
@@ -409,6 +428,9 @@ class CinemaService implements ToolboxService {
     }));
     return shared.wait(cancel);
   }
+
+  // 这个源同意过、且同意的就是现在的接口主机。
+  Future<bool> consented(CinemaRule rule) async => (await store.consents())[cinemaRuleSubject(rule)] == rule.host;
 
   // current 为假时（「重新载入」另起了更新的一次）不写缓存：新的先回来、旧的后回来时，旧地址不会盖掉新的。
   Future<List<CinemaRoad>> _fetchChapters(CinemaRule rule, String source, String key, Future<void> abort, {required bool Function() current}) async {
@@ -423,9 +445,14 @@ class CinemaService implements ToolboxService {
   // 交给播放器的地址：m3u8 经本机代理改写清单（不删分片，人工决策见 cinema_playlist.dart 文件头），其余直接播；rule 为空（云解析的结果）时用默认 UA、不带 Referer。
   // m3u8 先等本机代理把清单、密钥与探测备好再交出去（播放器 5 秒读不到就放弃，人工决策见 cinema_proxy.dart 文件头）；cancel 完成时不再等。
   // 换集、换源、离开播放页时交回 release，本机代理里这一路还没回来的请求随之中断。fresh（「重新载入」）时预取不用缓存、探测重新做。
+  // 地址是本机或内网的（选集与解析结果都不签名）不交出去，抛 CinemaHttpException（见 cinema_http.dart 的 cinemaPublicUrl）。
   Future<CinemaPlayable> playable(String url, {CinemaRule? rule, bool playlist = false, bool fresh = false, Future<void>? cancel}) async {
     final headers = cinemaHeaders(rule?.userAgent ?? '', rule?.referer ?? '');
     final uri = Uri.parse(url);
+    if (!cinemaPublicUrl(uri)) {
+      campusLog('[Cinema] action=playable blocked=private');
+      throw const CinemaHttpException('地址不对');
+    }
     if (!playlist && !cinemaPlaylistUrl(url)) return CinemaPlayable(uri: uri, headers: headers);
     final stream = CinemaStream(headers: headers);
     await _proxy.warm(uri, stream, cancel: cancel, fresh: fresh);

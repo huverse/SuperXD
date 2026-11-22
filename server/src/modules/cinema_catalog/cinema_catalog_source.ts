@@ -123,8 +123,11 @@ const firstText = (node: unknown, expression: string) => {
 };
 
 // 一页：每条的编号与片名折叠写法，与总页数（取不到当 1）。片名太长的截到 255 个字。
+// 回复里连列表都没有（HTTP 200 的「服务器繁忙」：{"code":1,"msg":"服务器繁忙，请稍后搜索"}）抛错，算这一页没取到（11-22 Codex 复核：原来当成空页，
+// 抓全第一页碰上就记成抓完、中间页碰上那一页永远漏掉）；列表是空数组或 null 是真没有（同客户端 parseCinemaSearch 按有没有列表的键分）。
 export const parseCatalogPage = (raw: string, rule: CinemaCatalogRule) => {
   const document = JSON.parse(raw) as unknown;
+  if (readPath(document, rule.listPath.replace(/\[\*\]$/, '')).length === 0) throw new Error('回复里没有结果列表');
   const entries: { source: string; folded: string }[] = [];
   for (const node of readPath(document, rule.listPath)) {
     const source = firstText(node, rule.idPath), folded = cinemaFold(firstText(node, rule.namePath)).slice(0, 255);
