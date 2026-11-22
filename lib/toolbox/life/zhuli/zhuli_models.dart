@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 // 住理生活的数据类型。回复全是外部输入：decode* 逐项核对类型，不对抛 ZhuliException(invalidResponse)。
 // 金额一律按「分」的整数存（服务端给的是 18.4、"13.3900" 这类数或字符串，按十进制文本换算、四舍五入到分，不经浮点运算）。
 
@@ -122,29 +124,77 @@ ZhuliSession decodeZhuliLogin(Object? data) {
 }
 
 // 账户：余额以 get_user_detail_by_id 为准（登录回复里的余额不可信，资料实测 0.0000 对真实 18.39）。
+// 计费规则也在这里（ChargeRules，设备级的 device_chargerule/get 这个项目返回空）。
 class ZhuliProfile {
-  const ZhuliProfile({required this.balance, required this.frozen, required this.couponCount});
+  const ZhuliProfile({required this.balance, required this.frozen, required this.couponCount, this.rules = const []});
   final int balance;
   final int frozen;
   final int couponCount;
+  final List<ZhuliChargeRule> rules;
+
+  // 一台设备的计费规则：按设备类型与设备分组对上（11-22 实测这个项目洗浴有默认分组 0 与 1001 两条）；没有为空，开不了。
+  ZhuliChargeRule? ruleFor(ZhuliDevice device) => rules.where((rule) => rule.deviceType == device.type && rule.groupId == device.groupId).firstOrNull;
 }
 
 ZhuliProfile decodeZhuliProfile(Object? data) {
   final json = zhuliObject(data);
-  return ZhuliProfile(balance: _cents(json, 'balance'), frozen: _cents(json, 'frozen_balance', optional: true), couponCount: _int(json, 'cash_coupon_count', fallback: 0));
+  return ZhuliProfile(
+    balance: _cents(json, 'balance'),
+    frozen: _cents(json, 'frozen_balance', optional: true),
+    couponCount: _int(json, 'cash_coupon_count', fallback: 0),
+    rules: [for (final row in zhuliRows(json, field: 'ChargeRules')) _rule(row)],
+  );
+}
+
+// 计费规则里开水前要给人看的几项：预扣多少、单价（按量计费时每个计费单位约 1 升）。
+class ZhuliChargeRule {
+  const ZhuliChargeRule({required this.deviceType, required this.groupId, required this.prepaid, required this.price, required this.metering});
+  final int deviceType;
+  final int groupId;
+  // 开水时先扣（charge_money），关水后按用量多退少补。
+  final int prepaid;
+  // 第一档单价（分）；没有档为空。
+  final int? price;
+  // 按量（metering）还是按时长。
+  final bool metering;
+}
+
+ZhuliChargeRule _rule(Map<String, Object?> json) {
+  final units = zhuliRows(json, field: 'charge_units');
+  return ZhuliChargeRule(
+    deviceType: _int(json, 'device_type'),
+    groupId: _int(json, 'device_group_id', fallback: 0),
+    prepaid: _cents(json, 'charge_money', optional: true),
+    price: units.isEmpty ? null : _cents(units.first, 'price'),
+    metering: _text(json, 'charge_option', optional: true) != 'timing',
+  );
 }
 
 // 项目配置里用到的几项（get_config；整份很大，只取要的）。
 class ZhuliConfig {
-  const ZhuliConfig({required this.consumeOrderDays});
+  const ZhuliConfig({required this.consumeOrderDays, this.bath = true, this.minimumBalance = 0, this.continueBelowMinimum = false, this.forceSupplyTime = false});
   // 消费订单能查最近几天（consume_order_display_cut_enable 开着时），为空表示不限。
   final int? consumeOrderDays;
+  // 洗浴开着（bath_enable，关了整个洗浴入口不显示）。
+  final bool bath;
+  // 余额低于它不让开（minimum_consume_balance，0 不拦；券不算在内，同原 App）。
+  final int minimumBalance;
+  // 低于门槛时还能选「继续使用」（continue_use_on_min_consume_balance_enabled）。
+  final bool continueBelowMinimum;
+  // 不在供水时段时不让开（force_supply_time 为 1；否则只提醒）。
+  final bool forceSupplyTime;
 }
 
 ZhuliConfig decodeZhuliConfig(Object? data) {
   final json = zhuliObject(data);
   final days = _int(json, 'consume_order_display_cut_days', fallback: 0);
-  return ZhuliConfig(consumeOrderDays: _int(json, 'consume_order_display_cut_enable', fallback: 0) == 1 && days > 0 ? days : null);
+  return ZhuliConfig(
+    consumeOrderDays: _int(json, 'consume_order_display_cut_enable', fallback: 0) == 1 && days > 0 ? days : null,
+    bath: _int(json, 'bath_enable', fallback: 1) == 1,
+    minimumBalance: _cents(json, 'minimum_consume_balance', optional: true),
+    continueBelowMinimum: _int(json, 'continue_use_on_min_consume_balance_enabled', fallback: 0) == 1,
+    forceSupplyTime: _int(json, 'force_supply_time', fallback: 0) == 1,
+  );
 }
 
 // 我的优惠券的三栏（list_staff_cash_coupon_app 的入参组合；回复里 status 与 is_blance 恒为空，只能靠入参过滤）。
@@ -324,6 +374,196 @@ ZhuliBill decodeZhuliBill(Object? data) {
     fromBalance: _cents(row, 'deduct_from_balance', optional: true),
     fromPay: _cents(row, 'deduct_from_pay', optional: true),
   );
+}
+
+// ---------- 洗浴 ----------
+
+// 供水时段的一段：一天里的分钟数（北京时间；住理写成 2025-03-08T06:00:00，只看钟点）。
+typedef ZhuliSupply = ({int start, int end});
+
+// 一台设备（device/get_by_id 与房间设备列表；列表那份少几项，缺的按没有处理）。
+class ZhuliDevice {
+  const ZhuliDevice({
+    required this.id,
+    required this.name,
+    required this.type,
+    required this.netType,
+    required this.modules,
+    required this.status,
+    required this.idle,
+    required this.groupId,
+    required this.primaryNet,
+    required this.forceBluetooth,
+    required this.supply,
+    required this.building,
+    required this.floor,
+    required this.room,
+    required this.bleName,
+    required this.bleMac,
+  });
+  final int id;
+  final String name;
+  // 0 水控机（洗浴），其余见资料 3.1.1；这一版只开洗浴。
+  final int type;
+  final int netType;
+  // 设备支持的通道（net_module 拆开：4 蓝牙、6 移动 4G、7 NBIOT…）。
+  final List<int> modules;
+  // 0 正常，其余（维护、故障）不能用。
+  final int status;
+  // consume_status 为 1：空闲。
+  final bool idle;
+  final int groupId;
+  // primary_consume_net_type：非 0 时优先用它。
+  final int? primaryNet;
+  // change_network 非空：原 App 改走蓝牙。
+  final bool forceBluetooth;
+  final List<ZhuliSupply> supply;
+  final String building;
+  final String floor;
+  final String room;
+  // 蓝牙广播名（XN-设备号）与地址（AA:BB:CC:DD:EE:FF；安卓扫描时名字没带上就按地址认）。
+  final String bleName;
+  final String bleMac;
+
+  bool get bath => type == 0;
+
+  // 楼栋/楼层/房间：1号楼 2层 201。
+  String get place => [building, if (floor.isNotEmpty) '$floor层', room].where((part) => part.isNotEmpty).join(' ');
+
+  // 开水走哪一路，同原 App 的 En()（network_selection 为 0 时）：指定了优先通道用它；change_network 改走蓝牙；
+  // 有蓝牙时用第一个不是蓝牙的通道（「4,6」走 6 云端），只有蓝牙就走蓝牙；有 NBIOT 时走 1；都没有用 net_type。
+  int get channel {
+    if (primaryNet case final net? when net != 0) return net;
+    if (forceBluetooth) return 4;
+    if (modules.contains(4)) return modules.firstWhere((module) => module != 4, orElse: () => 4);
+    if (modules.contains(7)) return 1;
+    return netType;
+  }
+
+  bool get bluetooth => channel == 4;
+}
+
+// 供水时段（JSON 串里的数组）：外部输入，认不出的段跳过。
+List<ZhuliSupply> _supply(Object? raw) {
+  if (raw is! String || raw.trim().isEmpty) return const [];
+  final Object? list;
+  try {
+    list = jsonDecode(raw);
+  } on FormatException {
+    return const [];
+  }
+  if (list is! List) return const [];
+  int? minutes(Object? text) => switch (text is String ? RegExp(r'T(\d{2}):(\d{2})').firstMatch(text) : null) {
+    final match? => int.parse(match[1]!) * 60 + int.parse(match[2]!),
+    null => null,
+  };
+  return [
+    for (final item in list)
+      if (item is Map)
+        if ((minutes(item['start_time']), minutes(item['end_time'])) case (final start?, final end?)) (start: start, end: end),
+  ];
+}
+
+ZhuliDevice decodeZhuliDevice(Object? data) {
+  final json = zhuliObject(data);
+  final netType = _int(json, 'net_type', fallback: 0);
+  final modules = [for (final part in _text(json, 'net_module', optional: true).split(',')) ?int.tryParse(part.trim())];
+  return ZhuliDevice(
+    id: _int(json, 'device_id'),
+    name: _text(json, 'device_name', optional: true),
+    type: _int(json, 'device_type'),
+    netType: netType,
+    modules: modules.isEmpty ? [netType] : modules,
+    status: _int(json, 'status', fallback: 0),
+    idle: _int(json, 'consume_status', fallback: 1) == 1,
+    groupId: _int(json, 'group_id', fallback: 0),
+    primaryNet: json['primary_consume_net_type'] == null ? null : _int(json, 'primary_consume_net_type'),
+    forceBluetooth: switch (json['change_network']) {
+      null => false,
+      final String value => value.trim().isNotEmpty,
+      _ => true,
+    },
+    supply: _supply(json['water_supply_time']),
+    building: _text(json, 'building_name', optional: true),
+    floor: _text(json, 'floor_name', optional: true),
+    room: _text(json, 'room_name', optional: true),
+    bleName: _text(json, 'ble_name', optional: true),
+    bleMac: _text(json, 'ble_mac', optional: true),
+  );
+}
+
+List<ZhuliDevice> decodeZhuliDevices(Object? data) => [for (final row in zhuliRows(data is Map ? zhuliObject(data)['rows'] : data)) decodeZhuliDevice(row)];
+
+// 选设备的三级（楼栋、楼层、房间）共用：id 与名字，房间多一个设备台数。
+class ZhuliPlace {
+  const ZhuliPlace({required this.id, required this.name, this.devices});
+  final String id;
+  final String name;
+  // 房间里的设备总数（total_room_device_count；normal_count 不准，资料 4.1.2）。
+  final int? devices;
+}
+
+List<ZhuliPlace> decodeZhuliPlaces(Object? data) => [
+  for (final row in zhuliRows(data))
+    ZhuliPlace(
+      id: _text(row, 'id'),
+      name: _text(row, 'name', optional: true),
+      devices: row['device_count'] is Map ? _int(zhuliObject(row['device_count']), 'total_room_device_count', fallback: 0) : null,
+    ),
+];
+
+// 开水下单（create_order）的回复：订单号、预扣后的余额与蓝牙开始帧（走蓝牙时有）。
+class ZhuliOrderStart {
+  const ZhuliOrderStart({required this.orderId, required this.status, this.balance, this.startFrame});
+  final String orderId;
+  final String status;
+  final int? balance;
+  final String? startFrame;
+}
+
+ZhuliOrderStart decodeZhuliOrderStart(Object? data) {
+  final json = zhuliObject(data);
+  final frame = _text(json, 'app_bytes', optional: true);
+  return ZhuliOrderStart(
+    orderId: _text(json, 'order_id'),
+    status: _text(json, 'status', optional: true),
+    balance: json['balance'] == null ? null : _cents(json, 'balance'),
+    startFrame: frame.isEmpty ? null : frame,
+  );
+}
+
+// 蓝牙握手的结果（heart_shark_response）：isn 是这次连接后续命令的校验串，rateCommand 有时要先写给设备，occupied 是设备正被占用（result 3）。
+class ZhuliHandshake {
+  const ZhuliHandshake({required this.isn, required this.rateCommand, required this.occupied});
+  final String isn;
+  final String? rateCommand;
+  final bool occupied;
+}
+
+ZhuliHandshake decodeZhuliHandshake(Object? data) {
+  final json = zhuliObject(data);
+  final rate = _text(json, 'ratecmd', optional: true);
+  return ZhuliHandshake(isn: _text(json, 'isn'), rateCommand: rate.isEmpty ? null : rate, occupied: _int(json, 'result', fallback: 0) == 3);
+}
+
+// 最近一笔消费（get_staff_last_record）：重开时接回进行中的单、蓝牙握手说设备被占用时看是不是自己的。
+class ZhuliLastRecord {
+  const ZhuliLastRecord({required this.orderId, required this.status, required this.deviceId, required this.deviceType, required this.createAt});
+  final String orderId;
+  final String status;
+  final int deviceId;
+  final int deviceType;
+  final String createAt;
+
+  bool get running => status == 'created' || status == 'consuming';
+}
+
+// 从没消费过时 data 为空。
+ZhuliLastRecord? decodeZhuliLastRecord(Object? data) {
+  if (data == null) return null;
+  final json = zhuliObject(data);
+  if (json['order_id'] == null) return null;
+  return ZhuliLastRecord(orderId: _text(json, 'order_id'), status: _text(json, 'status', optional: true), deviceId: _int(json, 'device_id', fallback: 0), deviceType: _int(json, 'device_type', fallback: 0), createAt: _text(json, 'create_at', optional: true));
 }
 
 // 充值订单状态（资料第 3.4 节）。

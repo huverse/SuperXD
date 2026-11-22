@@ -47,6 +47,12 @@ abstract final class CampusIcons {
   static const life = LucideIcons.houseHeart;
   static const coupon = LucideIcons.ticketPercent;
   static const orders = LucideIcons.receiptText;
+  // 住理生活的洗浴：开水关水、收藏到常用设备、输入设备号、按楼栋选设备。
+  static const bath = LucideIcons.showerHead;
+  static const favorite = LucideIcons.star;
+  static const unfavorite = LucideIcons.starOff;
+  static const deviceNumber = LucideIcons.keyboard;
+  static const building = LucideIcons.building2;
   static const image = LucideIcons.image;
   static const images = LucideIcons.images;
   static const camera = LucideIcons.camera;

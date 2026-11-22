@@ -90,6 +90,8 @@ final Map<IconData, String> _symbols = {
   CampusIcons.feedback: 'exclamationmark.bubble',
   CampusIcons.pin: 'pin',
   CampusIcons.unpin: 'pin.slash',
+  CampusIcons.favorite: 'star',
+  CampusIcons.unfavorite: 'star.slash',
   CampusIcons.course: 'book',
   CampusIcons.dayOff: 'cup.and.saucer',
   CampusIcons.parcel: 'shippingbox',

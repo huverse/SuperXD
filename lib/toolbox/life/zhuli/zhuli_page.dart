@@ -13,11 +13,15 @@ import 'package:superxd/theme/campus_surface.dart';
 import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/campus_tokens.dart';
 import 'package:superxd/theme/campus_transitions.dart';
+import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/theme/scroll_edge_fade.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_bath_page.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_coupons_page.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_devices.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_login.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_models.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_orders_page.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_pick_page.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_service.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_vault.dart';
 import 'package:superxd/toolbox/toolbox_runtime.dart';
@@ -25,11 +29,16 @@ import 'package:superxd/toolbox/toolbox_runtime.dart';
 // 手机号打码（130****8541），账号卡与切换菜单用。
 String zhuliMaskedPhone(String phone) => phone.length == 11 ? '${phone.substring(0, 3)}****${phone.substring(7)}' : phone;
 
-// 住理生活首页：没登录时是登录表单；登录了是账号卡（⋯ 里切换、添加与退出账号）、余额与券余额（只读）、优惠券与订单两个入口，下拉刷新。
+// 住理生活首页：没登录时是登录表单；登录了是账号卡（⋯ 里切换、添加与退出账号）、余额与券余额（只读）、洗浴、优惠券与订单，下拉刷新。
+// 洗浴（学校开了才有）：有没结束的单时最上面一条「正在用水」点进去关水；扫码、输设备号、按楼栋选三个入口，最近使用的设备与常用设备。
 // 当前账号的会话恢复不了（要图形验证码、密码改过了）时，在账号卡下面原地重新登录。
 class ZhuliPage extends StatefulWidget {
-  const ZhuliPage({super.key, required this.runtime});
+  const ZhuliPage({super.key, required this.runtime, this.scanOnOpen = false});
   final ToolboxRuntime runtime;
+  // 从「扫码洗浴」快捷入口打开：登录着就直接开扫码。
+  final bool scanOnOpen;
+  // 快捷入口 id（桌面上的快捷方式按它找回页面，发出后不改）。
+  static const scanShortcut = 'scan';
   @override
   State<ZhuliPage> createState() => _ZhuliPageState();
 }
@@ -41,6 +50,10 @@ class _ZhuliPageState extends State<ZhuliPage> {
   ZhuliSession? _session;
   ZhuliProfile? _profile;
   ({int balance, int count})? _coupons;
+  ZhuliConfig? _config;
+  ZhuliLastRecord? _last;
+  List<ZhuliDeviceEntry> _recent = const [];
+  int _favoriteCount = 0;
   String? _error;
   String? _relogin;
   // 切换账号后，旧账号晚回来的结果不再写界面。
@@ -57,7 +70,9 @@ class _ZhuliPageState extends State<ZhuliPage> {
       campusLog('[Zhuli] action=initialize errorType=${error.runtimeType}\n$stack');
       rethrow;
     }
-    if (_phone != null) unawaited(_load());
+    if (_phone == null) return;
+    unawaited(_load());
+    if (widget.scanOnOpen) WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_scan()));
   }
 
   Future<void> _load() async {
@@ -69,16 +84,21 @@ class _ZhuliPageState extends State<ZhuliPage> {
       _relogin = null;
     });
     try {
-      // 两个一起发；Future.wait 原样抛第一个错（会话过期要原样交给 run 去重登）。
+      // 一起发；Future.wait 原样抛第一个错（会话过期要原样交给 run 去重登）。
       final result = await _service.run(phone, (session) async {
-        final values = await Future.wait<Object>([_service.client.profile(session), _service.couponBalance(session)]);
-        return (session: session, profile: values[0] as ZhuliProfile, coupons: values[1] as ({int balance, int count}));
+        final values = await Future.wait<Object?>([_service.client.profile(session), _service.couponBalance(session), _service.client.config(session), _service.client.lastRecord(session)]);
+        return (session: session, profile: values[0]! as ZhuliProfile, coupons: values[1]! as ({int balance, int count}), config: values[2]! as ZhuliConfig, last: values[3] as ZhuliLastRecord?);
       });
+      final lists = await _service.devices.load(phone);
       if (!mounted || generation != _generation) return;
       setState(() {
         _session = result.session;
         _profile = result.profile;
         _coupons = result.coupons;
+        _config = result.config;
+        _last = result.last;
+        _recent = lists.recent;
+        _favoriteCount = lists.favorites.length;
       });
     } on ZhuliException catch (error) {
       if (!mounted || generation != _generation) return;
@@ -111,8 +131,31 @@ class _ZhuliPageState extends State<ZhuliPage> {
     _session = null;
     _profile = null;
     _coupons = null;
+    _config = null;
+    _last = null;
+    _recent = const [];
     if (mounted) await _load();
   }
+
+  // 去一台设备的洗浴页，回来刷新余额与进行中的单。
+  Future<void> _openBath(int deviceId) async {
+    await Navigator.of(context).push<void>(CampusPageRoute(builder: (_) => ZhuliBathPage(service: _service, phone: _phone!, deviceId: deviceId)));
+    if (mounted) unawaited(_load());
+  }
+
+  Future<void> _pickThen(Future<int?> Function() pick) async {
+    try {
+      final deviceId = await pick();
+      if (deviceId != null && mounted) await _openBath(deviceId);
+    } on ZhuliException catch (error) {
+      if (mounted) showCampusToast(context, error.message);
+    } catch (error, stack) {
+      campusLog('[Zhuli] action=pick_device errorType=${error.runtimeType}\n$stack');
+      if (mounted) showCampusToast(context, '没找到设备，稍后再试');
+    }
+  }
+
+  Future<void> _scan() => _pickThen(() => zhuliScanDevice(context, runtime: widget.runtime, service: _service, phone: _phone!));
 
   Future<void> _accountMenu(BuildContext anchor) async {
     final state = _state!, phone = _phone!;
@@ -182,8 +225,10 @@ class _ZhuliPageState extends State<ZhuliPage> {
                           child: ZhuliLoginForm(key: ValueKey(phone), service: _service, consent: _consent, phone: phone, reason: reason, onSignedIn: (phone) => unawaited(_signedIn(phone))),
                         )
                       else ...[
+                        if (_last case final last? when last.running) ...[_runningCard(context, last), const SizedBox(height: CampusGap.large)],
                         _walletCard(context),
                         const SizedBox(height: CampusGap.large),
+                        if (_config?.bath == true) ...[_bathCard(context, phone), const SizedBox(height: CampusGap.large)],
                         _entry(context, CampusIcons.coupon, '优惠券', () => ZhuliCouponsPage(service: _service, phone: phone)),
                         const SizedBox(height: CampusGap.large),
                         _entry(context, CampusIcons.orders, '订单', () => ZhuliOrdersPage(service: _service, phone: phone)),
@@ -249,6 +294,101 @@ class _ZhuliPageState extends State<ZhuliPage> {
           amount('余额', profile.balance, profile.frozen > 0 ? '冻结 ¥${zhuliYuan(profile.frozen)}' : null),
           const SizedBox(width: CampusGap.large),
           amount('券余额', coupons.balance, '${coupons.count} 张可用'),
+        ],
+      ),
+    );
+  }
+
+  // 有一单没结束（洗着澡退出了页面、重开了应用）：点进去接着显示「关水」。
+  Widget _runningCard(BuildContext context, ZhuliLastRecord last) {
+    final palette = CampusPalette.of(context);
+    return CampusSurface(
+      padding: const EdgeInsets.all(20),
+      onTap: () => unawaited(_openBath(last.deviceId)),
+      child: Row(
+        children: [
+          CampusIcon(CampusIcons.bath, size: 28, color: palette.primary),
+          const SizedBox(width: CampusGap.large),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('正在用水', style: TextStyle(fontSize: CampusFontSize.body, fontWeight: FontWeight.w600)),
+                Text('${zhuliShownTime(last.createAt)} 开始 · 点这里关水', style: TextStyle(color: palette.onSurfaceVariant)),
+              ],
+            ),
+          ),
+          const CampusIcon(CampusIcons.next),
+        ],
+      ),
+    );
+  }
+
+  // 洗浴：三个入口、最近使用（最多 6 台，新的在前）与常用设备。
+  Widget _bathCard(BuildContext context, String phone) {
+    final palette = CampusPalette.of(context);
+    return CampusSurface(
+      padding: const EdgeInsets.all(20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Row(
+            children: [
+              CampusIcon(CampusIcons.bath, size: 28, color: palette.primary),
+              const SizedBox(width: CampusGap.large),
+              const Expanded(child: Text('洗浴', style: TextStyle(fontSize: CampusFontSize.body))),
+            ],
+          ),
+          const SizedBox(height: CampusGap.medium),
+          Wrap(
+            spacing: CampusGap.medium,
+            runSpacing: CampusGap.medium,
+            children: [
+              if (widget.runtime.scanQrCode != null) FilledButton.icon(onPressed: () => unawaited(_scan()), icon: const CampusIcon(CampusIcons.scan), label: const Text('扫码')),
+              FilledButton.icon(onPressed: () => unawaited(_pickThen(() => zhuliAskDeviceId(context))), icon: const CampusIcon(CampusIcons.deviceNumber), label: const Text('设备号')),
+              FilledButton.icon(
+                onPressed: () => unawaited(_pickThen(() => Navigator.of(context).push<int>(CampusPageRoute(builder: (_) => ZhuliPickPage(service: _service, phone: phone))))),
+                icon: const CampusIcon(CampusIcons.building),
+                label: const Text('按楼栋选'),
+              ),
+            ],
+          ),
+          if (_recent.isNotEmpty) ...[
+            const SizedBox(height: CampusGap.large),
+            Text('最近使用', style: TextStyle(color: palette.onSurfaceVariant)),
+            for (final entry in _recent)
+              InkWell(
+                key: ValueKey(entry.id),
+                onTap: () => unawaited(_openBath(entry.id)),
+                child: Padding(
+                  padding: const EdgeInsets.symmetric(vertical: CampusGap.small),
+                  child: Row(
+                    children: [
+                      Expanded(child: DotSeparatedText([if (entry.place.isNotEmpty) entry.place, '设备 ${entry.name.isEmpty ? entry.id : entry.name}'].join(' · '), style: const TextStyle(fontSize: CampusFontSize.body))),
+                      const CampusIcon(CampusIcons.next),
+                    ],
+                  ),
+                ),
+              ),
+          ],
+          const SizedBox(height: CampusGap.small),
+          InkWell(
+            onTap: () async {
+              await Navigator.of(context).push<void>(CampusPageRoute(builder: (_) => ZhuliFavoritesPage(runtime: widget.runtime, service: _service, phone: phone)));
+              if (mounted) unawaited(_load());
+            },
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: CampusGap.small),
+              child: Row(
+                children: [
+                  const CampusIcon(CampusIcons.favorite),
+                  const SizedBox(width: CampusGap.medium),
+                  Expanded(child: Text(_favoriteCount > 0 ? '常用设备 · $_favoriteCount 台' : '常用设备', style: const TextStyle(fontSize: CampusFontSize.body))),
+                  const CampusIcon(CampusIcons.next),
+                ],
+              ),
+            ),
+          ),
         ],
       ),
     );

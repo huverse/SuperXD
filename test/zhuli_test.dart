@@ -12,6 +12,7 @@ import 'package:superxd/theme/campus_theme.dart';
 import 'package:superxd/theme/dot_separated_text.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_client.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_coupons_page.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_devices.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_http.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_models.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_orders_page.dart';
@@ -66,6 +67,7 @@ class _FakeZhuli {
       reply = switch (request.url.path) {
         '/webapi/v1/staff/get_user_detail_by_id' => ok({'id': 'U1', 'balance': balance, 'frozen_balance': 0.0, 'total_balance': 17.49, 'cash_coupon_count': 1}),
         '/webapi/v1/app_setting/get_config' => ok({'consume_order_display_cut_enable': 1, 'consume_order_display_cut_days': 30}),
+        '/webapi/v1/consume/get_staff_last_record' => ok(null),
         '/webapi/v1/cash_coupon/list_staff_cash_coupon_app' => ok(query['is_blance'] == '1'
             ? {'rows': [{'id': 'Q1', 'cash_coupon_name': '合成券', 'balance': 176.35, 'total_money': 280.0, 'use_limit': 'bath', 'use_order': 0, 'start_at': '2026-09-30 11:37:49', 'expire_at': '2028-09-19 11:37:49', 'status': null, 'is_blance': null}], 'total_count': 1}
             : {'rows': <Object>[], 'total_count': 0}),
@@ -102,7 +104,7 @@ class _FakeZhuli {
   int count(String path) => requests.where((uri) => uri.path == path).length;
 }
 
-ZhuliService _service(_FakeZhuli fake, {ZhuliVault? vault}) => ZhuliService(vault: vault ?? MemoryZhuliVault(), client: ZhuliClient(http: ZhuliHttp(client: fake.client)));
+ZhuliService _service(_FakeZhuli fake, {ZhuliVault? vault}) => ZhuliService(vault: vault ?? MemoryZhuliVault(), devices: ZhuliDeviceStore.memory(), client: ZhuliClient(http: ZhuliHttp(client: fake.client)));
 
 void main() {
   group('协议', () {

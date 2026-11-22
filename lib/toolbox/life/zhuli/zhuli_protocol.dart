@@ -55,9 +55,16 @@ Map<String, String> zhuliQuery(Map<String, Object?> params, {required String key
   return {for (final MapEntry(key: name, :value) in signed.entries) if (value != null) name: value is double || value is bool ? zhuliJsValue(value) : '$value'};
 }
 
+// 蓝牙命令帧固定 20 字节（命令类型在第 3 个字节），收发都按十六进制串。
+const zhuliFrameLength = 20;
+
+final _hexFrame = RegExp(r'^(?:[0-9A-Fa-f]{2})+$');
+
 // 回复的 data 是字符串时是 base64（- 与 _ 换回 + 与 /、补齐 =）包着的 JSON；外部输入，解不开抛 FormatException。
+// 例外是蓝牙命令帧：原 App 把这几个接口的 data 原样写给设备，是十六进制串（JSON 的 base64 总有十六进制以外的字符，不会混）。
 Object? zhuliDecodeData(Object? data) {
   if (data is! String) return data;
+  if (_hexFrame.hasMatch(data)) return data;
   final normalized = data.replaceAll('-', '+').replaceAll('_', '/');
   return jsonDecode(utf8.decode(base64.decode(normalized.padRight((normalized.length + 3) ~/ 4 * 4, '='))));
 }
