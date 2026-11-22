@@ -519,7 +519,6 @@ WHERE hold.dismissed = 0 ORDER BY hold.xn DESC, hold.xq DESC
       ),
       status: AutoSyncStatus(
         lastAttemptAt: moment(row['last_attempt_at']),
-        lastSuccessAt: moment(row['last_success_at']),
         state: switch (row['last_state']) { final String name => AutoSyncState.values.asNameMap()[name], _ => null },
         message: row['last_message'] as String,
       ),
@@ -559,7 +558,6 @@ ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, interval_minutes = exc
     ]);
     await transaction.update('auto_sync', {
       'last_attempt_at': status.lastAttemptAt?.toUtc().toIso8601String(),
-      'last_success_at': status.lastSuccessAt?.toUtc().toIso8601String(),
       'last_state': status.state?.name,
       'last_message': status.message,
       'updated_at': now,

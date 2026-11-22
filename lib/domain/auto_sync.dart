@@ -50,10 +50,11 @@ class AutoSyncSetting {
 // network 是没连上网，autoSyncNetworkRetry 后再试。
 enum AutoSyncState { ok, failed, network, limited, paused }
 
+// lastAttemptAt 是上次开跑的时刻，只用来算到没到期（开跑就记，中途被停也不会马上又来一轮），不是「上次同步」：
+// 那一轮做完才在同步记录里记一条，页面上写的「上次自动同步」一律读同步记录（11-22 修：弹窗原来写这个开跑时刻，学业页写同步记录，两处对不上）。
 class AutoSyncStatus {
-  const AutoSyncStatus({this.lastAttemptAt, this.lastSuccessAt, this.state, this.message = ''});
+  const AutoSyncStatus({this.lastAttemptAt, this.state, this.message = ''});
   final DateTime? lastAttemptAt;
-  final DateTime? lastSuccessAt;
   final AutoSyncState? state;
   final String message;
 }

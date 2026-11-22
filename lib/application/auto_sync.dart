@@ -34,6 +34,8 @@ class AutoSync extends ChangeNotifier {
   AutoSyncView? view;
   // 等用户来选的教务课表（打扰时机里一份一份地问）。
   List<HeldScheduleSync> held = const [];
+  // 这一份引擎正在自动同步（设置弹窗写「正在自动同步」，做完才有同步记录）。
+  bool syncing = false;
 
   // 恢复会话、切换账号或退出后调：读设置排好或撤掉后台任务，读等着选的课表。
   // relogin 是刚登录过（会话是新的）：把「登录过期、已暂停」清掉，自动同步接着跑；冷启动只是读回本机会话，并不知道它还有效，不清。
@@ -54,7 +56,7 @@ class AutoSync extends ChangeNotifier {
     if (!read.ok || read.data == null || generation != _generation()) return;
     var current = read.data!;
     if (relogin && current.status.state == AutoSyncState.paused) {
-      final status = AutoSyncStatus(lastAttemptAt: current.status.lastAttemptAt, lastSuccessAt: current.status.lastSuccessAt);
+      final status = AutoSyncStatus(lastAttemptAt: current.status.lastAttemptAt);
       if ((await gateway.recordAutoSync(status)).ok) current = AutoSyncView(setting: current.setting, status: status);
     }
     if (generation != _generation()) return;
@@ -105,12 +107,14 @@ class AutoSync extends ChangeNotifier {
     final years = current.setting.years ?? await _currentYear();
     final previous = current.status;
     if (years == null) {
-      await _record(AutoSyncStatus(lastAttemptAt: now, lastSuccessAt: previous.lastSuccessAt, state: AutoSyncState.failed, message: '还没有学期，先在今天页手动同步一次'), current, generation);
+      await _record(AutoSyncStatus(lastAttemptAt: now, state: AutoSyncState.failed, message: '还没有学期，先在今天页手动同步一次'), current, generation);
       return;
     }
     campusLog('[AutoSync] action=start years=${years.length} contents=${current.setting.contents.map((content) => content.name).join(',')}');
     // 先记下这次尝试，中途被系统停掉也不会马上又来一轮。
-    await _record(AutoSyncStatus(lastAttemptAt: now, lastSuccessAt: previous.lastSuccessAt, state: previous.state, message: previous.message), current, generation);
+    await _record(AutoSyncStatus(lastAttemptAt: now, state: previous.state, message: previous.message), current, generation);
+    syncing = true;
+    notifyListeners();
     // 登录过期时不打断：不丢本机会话（见 keepSessionDuring），只记暂停。
     final report = await gateway.keepSessionDuring(() => _sync.run(
       contents: current.setting.contents,
@@ -122,8 +126,9 @@ class AutoSync extends ChangeNotifier {
       resolveSchedule: (term, plan, courses) async => KeepLocal(remember: plan.base != null && fingerprint(plan.base!) == fingerprint(courses)),
       // 采用别的学期的作息必须本人确认，自动同步不改作息来源。
       chooseBells: (_, _) async => BellsChoice.cancel,
-    ));
+    )).whenComplete(() => syncing = false);
     if (!sameAccount()) {
+      notifyListeners();
       campusLog('[AutoSync] action=finish skipped=account_changed');
       return;
     }
@@ -160,17 +165,17 @@ class AutoSync extends ChangeNotifier {
   }
 
   AutoSyncStatus _statusOf(CampusSyncReport report, DateTime started, AutoSyncStatus previous) {
-    AutoSyncStatus failed(AutoSyncState state, String message) => AutoSyncStatus(lastAttemptAt: started, lastSuccessAt: previous.lastSuccessAt, state: state, message: message);
+    AutoSyncStatus failed(AutoSyncState state, String message) => AutoSyncStatus(lastAttemptAt: started, state: state, message: message);
     if (report.sessionExpired) return failed(AutoSyncState.paused, '登录已过期，自动同步已暂停，重新登录后继续');
     if (report.rateLimited) return failed(AutoSyncState.limited, '教务提示请求太频繁，到下次再同步');
     // 给手动同步让路、或被系统叫停：这轮没做完，不算成功也不算失败，上次的结果照旧（这次尝试已经记下，按间隔再来）。
-    if (report.cancelled) return AutoSyncStatus(lastAttemptAt: started, lastSuccessAt: previous.lastSuccessAt, state: previous.state, message: previous.message);
+    if (report.cancelled) return AutoSyncStatus(lastAttemptAt: started, state: previous.state, message: previous.message);
     final failures = report.items.where((item) => item.outcome == SyncOutcome.failed).toList();
     if (failures.isNotEmpty && failures.every((item) => item.code == GatewayCode.networkFailed || item.code == GatewayCode.networkTimeout)) {
       return failed(AutoSyncState.network, '没连上教务，联网后再试');
     }
     if (failures.isNotEmpty) return failed(AutoSyncState.failed, '${failures.first.label}：${failures.first.message}');
-    return AutoSyncStatus(lastAttemptAt: started, lastSuccessAt: started, state: AutoSyncState.ok);
+    return AutoSyncStatus(lastAttemptAt: started, state: AutoSyncState.ok);
   }
 
   // 只记进开跑时那个账号：门面跟着当前账号走，换了账号就不写（检查与发出之间没有 await，不会落到新账号）。

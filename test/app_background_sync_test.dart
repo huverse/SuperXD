@@ -236,8 +236,6 @@ void main() {
       expect(client.logins, 0, reason: '会话还有效就不重新登录');
       final last = await status();
       expect(last.state, AutoSyncState.ok);
-      expect(last.lastSuccessAt, isNotNull);
-      expect(last.lastSuccessAt, last.lastAttemptAt);
     });
 
     test('前台已经登记了端口、或者过了时限：这一轮让出去，一个请求都不发', () async {

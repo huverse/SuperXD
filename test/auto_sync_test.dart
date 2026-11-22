@@ -197,14 +197,13 @@ void main() {
 
       const setting = AutoSyncSetting(enabled: true, interval: Duration(hours: 6), years: {'2026', '2025'}, contents: {SyncContent.bells});
       expect((await gateway.saveAutoSyncSetting(setting)).ok, isTrue);
-      await gateway.recordAutoSync(AutoSyncStatus(lastAttemptAt: now, lastSuccessAt: now, state: AutoSyncState.limited, message: '说明'));
+      await gateway.recordAutoSync(AutoSyncStatus(lastAttemptAt: now, state: AutoSyncState.limited, message: '说明'));
       final read = (await gateway.readAutoSync()).data!;
       expect(read.setting.enabled, isTrue);
       expect(read.setting.interval, const Duration(hours: 6));
       expect(read.setting.years, {'2026', '2025'});
       expect(read.setting.contents, {SyncContent.bells});
       expect(read.status.lastAttemptAt, now);
-      expect(read.status.lastSuccessAt, now);
       expect(read.status.state, AutoSyncState.limited);
       expect(read.status.message, '说明');
 
@@ -274,7 +273,16 @@ void main() {
       expect(gateway.gradeTerms, [_term.key]);
       expect(gateway.autoSyncStatus.state, AutoSyncState.ok);
       expect(gateway.autoSyncStatus.lastAttemptAt, now);
-      expect(gateway.autoSyncStatus.lastSuccessAt, now);
+    });
+
+    // 11-22：设置弹窗在跑的时候写「正在自动同步」（做完才有同步记录，上次的时刻读同步记录）。
+    test('同步的这段时间 syncing 为真并通知，做完收回', () async {
+      var seen = false, notified = 0;
+      autoSync.addListener(() => notified++);
+      gateway.onSchedule = () async => seen = autoSync.syncing;
+      await autoSync.runIfDue();
+      expect((seen, autoSync.syncing), (true, false));
+      expect(notified, greaterThanOrEqualTo(2));
     });
 
     test('选了具体学年就只同步选的；没选作息就不碰作息', () async {
@@ -334,7 +342,6 @@ void main() {
       await autoSync.runIfDue();
       expect(gateway.synced, hasLength(1), reason: '第二学期不再同步');
       expect(gateway.gradeTerms, isEmpty);
-      expect(gateway.autoSyncStatus.lastSuccessAt, isNull);
       expect(gateway.autoSyncStatus.state, isNull, reason: '换账号后不记这一轮的结果');
     });
 
@@ -366,7 +373,6 @@ void main() {
       await autoSync.runIfDue();
       await manual;
       expect(gateway.autoSyncStatus.lastAttemptAt, now);
-      expect(gateway.autoSyncStatus.lastSuccessAt, isNull);
       expect((gateway.autoSyncStatus.state, gateway.autoSyncStatus.message), (AutoSyncState.failed, '合成的上次失败'));
     });
 
@@ -490,7 +496,6 @@ void main() {
       gateway.failSchedule = GatewayCode.networkFailed;
       await autoSync.runIfDue();
       expect(gateway.autoSyncStatus.state, AutoSyncState.network);
-      expect(gateway.autoSyncStatus.lastSuccessAt, isNull);
 
       gateway.autoSyncStatus = const AutoSyncStatus();
       gateway.failSchedule = GatewayCode.rateLimited;
@@ -498,13 +503,11 @@ void main() {
       expect(gateway.autoSyncStatus.state, AutoSyncState.limited);
     });
 
-    test('别的失败记成 failed 并写明哪一项；上次成功的时刻留着', () async {
-      gateway.autoSyncStatus = AutoSyncStatus(lastSuccessAt: now.subtract(const Duration(days: 9)));
+    test('别的失败记成 failed 并写明哪一项', () async {
       gateway.failSchedule = GatewayCode.upstreamFormat;
       await autoSync.runIfDue();
       expect(gateway.autoSyncStatus.state, AutoSyncState.failed);
       expect(gateway.autoSyncStatus.message, contains('课表'));
-      expect(gateway.autoSyncStatus.lastSuccessAt, now.subtract(const Duration(days: 9)));
     });
 
     test('还没有学期时不联网，写明先手动同步一次', () async {
