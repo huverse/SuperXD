@@ -26,4 +26,7 @@ const cinemaParseFlag = FeatureFlag('toolbox.cinema.parse', fallback: false);
 // 子模块会动真钱（充值、买券、洗浴扣费），不随版本直接发给所有人。生活下面一个看得见的子模块都没有时，生活本身也不出现（toolboxVisible）。
 const lifeFlag = FeatureFlag('toolbox.life', fallback: false);
 
-const featureFlags = <FeatureFlag>[cinemaFlag, cinemaParseFlag, lifeFlag];
+// 生活的子模块住理生活（洗浴、充值、优惠券与订单，人工决策见 lib/toolbox/life/zhuli/zhuli_service.dart 文件头）：两层灰度的第二层，默认关。
+const zhuliFlag = FeatureFlag('toolbox.life.zhuli', fallback: false);
+
+const featureFlags = <FeatureFlag>[cinemaFlag, cinemaParseFlag, lifeFlag, zhuliFlag];

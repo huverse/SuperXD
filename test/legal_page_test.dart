@@ -40,20 +40,22 @@ void main() {
       // 11-20 电影院（人工决策见 lib/page/legal_page.dart 的 11-20 12:15:42 那条）：片名与播放页地址同意后才发给第三方，视频不经开发者的服务器。
       ('六、百宝箱：电影院', '你同意后才把你输入的片名直接发给这些站点'),
       ('六、百宝箱：电影院', '视频本身由播放器直接从第三方服务器取，不经开发者的服务器'),
-      ('七、检查更新、开发者的话与安装', '只向开发者的自建中转服务器发送应用的构建渠道（如 Alpha）与处理器架构'),
-      ('七、检查更新、开发者的话与安装', '获取开发者写的「开发者的话」，请求不附带任何信息'),
-      ('八、节日活动与抽奖', '参加抽奖要登录应用账号'),
-      ('八、节日活动与抽奖', '应用账号要建立满 7 天'),
-      ('八、节日活动与抽奖', '同一个应用账号同一次活动只抽一次，换手机、重装后重新登录都不能再抽'),
-      ('八、节日活动与抽奖', '注销应用账号不提前删除'),
-      ('九、本机存储、备份与日志', '另在本机留一份约 1MB 的错误记录'),
-      ('九、本机存储、备份与日志', '最多保留 7 天、20MB，关闭开发者模式即删除'),
-      ('九、本机存储、备份与日志', '不会自动上传，只在你点「导出日志」时打包保存到 Download/SuperXD'),
-      ('九、本机存储、备份与日志', '只有你点了并在确认框里确认后才发送，每次都要确认，从不自动上传'),
-      ('九、本机存储、备份与日志', '服务器保存 30 天后自动删除；上传成功会给你一个诊断编号，要提前删除，凭编号按第十二节联系开发者'),
-      ('十、你的权利', '撤回同意'),
-      ('十一、未成年人', '未满 14 周岁'),
-      ('十二、政策更新与联系', '私下联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com'),
+      ('七、百宝箱：住理生活', '手机号与密码存进系统安全存储（已排除云备份与设备迁移），用来在会话过期时自动重新登录'),
+      ('七、百宝箱：住理生活', '余额、券与订单只在页面上显示，不在本机保存'),
+      ('八、检查更新、开发者的话与安装', '只向开发者的自建中转服务器发送应用的构建渠道（如 Alpha）与处理器架构'),
+      ('八、检查更新、开发者的话与安装', '获取开发者写的「开发者的话」，请求不附带任何信息'),
+      ('九、节日活动与抽奖', '参加抽奖要登录应用账号'),
+      ('九、节日活动与抽奖', '应用账号要建立满 7 天'),
+      ('九、节日活动与抽奖', '同一个应用账号同一次活动只抽一次，换手机、重装后重新登录都不能再抽'),
+      ('九、节日活动与抽奖', '注销应用账号不提前删除'),
+      ('十、本机存储、备份与日志', '另在本机留一份约 1MB 的错误记录'),
+      ('十、本机存储、备份与日志', '最多保留 7 天、20MB，关闭开发者模式即删除'),
+      ('十、本机存储、备份与日志', '不会自动上传，只在你点「导出日志」时打包保存到 Download/SuperXD'),
+      ('十、本机存储、备份与日志', '只有你点了并在确认框里确认后才发送，每次都要确认，从不自动上传'),
+      ('十、本机存储、备份与日志', '服务器保存 30 天后自动删除；上传成功会给你一个诊断编号，要提前删除，凭编号按第十三节联系开发者'),
+      ('十一、你的权利', '撤回同意'),
+      ('十二、未成年人', '未满 14 周岁'),
+      ('十三、政策更新与联系', '私下联系开发者：QQ 209320162，邮箱 vbhcchhvvvhh@gmail.com'),
       ('附录一 第三方 SDK 与服务', 'https://lbs.amap.com/pages/privacy/'),
       ('附录一 第三方 SDK 与服务', '当前位置由手机系统定位提供、不经高德'),
       ('附录一 第三方 SDK 与服务', 'zxing-cpp 条码识别（开源，经插件 flutter_zxing 集成）'),
@@ -102,9 +104,11 @@ void main() {
       expect(find.textContaining('开发者不提供、不存放任何影视内容'), findsOneWidget);
       await tester.scrollUntilVisible(find.text('七、快递'), 300, scrollable: scrollable);
       expect(find.textContaining('遵守拼多多的服务条款'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('八、应用更新'), 300, scrollable: scrollable);
+      await tester.scrollUntilVisible(find.text('八、住理生活'), 300, scrollable: scrollable);
+      expect(find.textContaining('遵守住理生活的服务条款'), findsOneWidget);
+      await tester.scrollUntilVisible(find.text('九、应用更新'), 300, scrollable: scrollable);
       expect(find.textContaining('可能要求先更新再继续使用'), findsOneWidget);
-      await tester.scrollUntilVisible(find.text('九、节日活动与奖励'), 300, scrollable: scrollable);
+      await tester.scrollUntilVisible(find.text('十、节日活动与奖励'), 300, scrollable: scrollable);
       expect(find.textContaining('不是商业抽奖'), findsOneWidget);
       expect(find.textContaining('每个应用账号每次活动只能抽一次'), findsOneWidget);
       expect(find.textContaining('待替换'), findsNothing);
@@ -205,7 +209,7 @@ void main() {
       for (final file in Directory('lib').listSync(recursive: true).whereType<File>().where((file) => file.path.endsWith('.dart')))
         for (final match in RegExp(r"storageNamespace: '(\w+)'").allMatches(file.readAsStringSync())) match.group(1)!,
     };
-    expect(namespaces, containsAll(['superxd_credentials', 'superxd_social', 'superxd_chaoxing', 'superxd_pdd', 'superxd_account']));
+    expect(namespaces, containsAll(['superxd_credentials', 'superxd_social', 'superxd_chaoxing', 'superxd_pdd', 'superxd_account', 'superxd_zhuli']));
     final backup = File('android/app/src/main/res/xml/backup_rules.xml').readAsStringSync();
     final extraction = File('android/app/src/main/res/xml/data_extraction_rules.xml').readAsStringSync();
     for (final namespace in namespaces) {

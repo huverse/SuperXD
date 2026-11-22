@@ -26,6 +26,8 @@
         <!-- 拼多多登录会话（身份码取件凭证）同样只属于这台设备，不随备份与换机迁移。 -->
         <exclude domain="sharedpref" path="superxd_pdd.xml" />
         <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_pdd.xml" />
+        <exclude domain="sharedpref" path="superxd_zhuli.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_zhuli.xml" />
         <!-- 应用账号的设备密钥同样只属于这台设备（一台设备一把，与私信身份分开），不随备份与换机迁移。 -->
         <exclude domain="sharedpref" path="superxd_account.xml" />
         <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_account.xml" />
@@ -60,6 +62,8 @@
         <!-- 拼多多登录会话（身份码取件凭证）同样只属于这台设备，不随备份与换机迁移。 -->
         <exclude domain="sharedpref" path="superxd_pdd.xml" />
         <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_pdd.xml" />
+        <exclude domain="sharedpref" path="superxd_zhuli.xml" />
+        <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_zhuli.xml" />
         <!-- 应用账号的设备密钥同样只属于这台设备（一台设备一把，与私信身份分开），不随备份与换机迁移。 -->
         <exclude domain="sharedpref" path="superxd_account.xml" />
         <exclude domain="sharedpref" path="FlutterSecureKeyStorage:superxd_account.xml" />
