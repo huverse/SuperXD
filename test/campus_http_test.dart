@@ -212,6 +212,44 @@ void main() {
     expect((given, response.body), (64, 'abc'));
   });
 
+  test('公网地址：本机、内网、链路本地、运营商级 NAT、组播都不算；映射 IPv4 与 NAT64 合成的按里面的 IPv4 认', () {
+    bool public(String text) => campusPublicAddress(InternetAddress(text));
+    for (final text in ['127.0.0.1', '10.1.2.3', '172.16.0.1', '192.168.1.1', '169.254.1.1', '100.64.0.1', '0.0.0.0', '224.0.0.1', '::1', '::', 'fe80::1', 'fc00::1', 'ff02::1', '::ffff:127.0.0.1', '64:ff9b::c0a8:101']) {
+      expect(public(text), isFalse, reason: text);
+    }
+    for (final text in ['8.8.8.8', '1.1.1.1', '2400:3200::1', '::ffff:8.8.8.8', '64:ff9b::808:808']) {
+      expect(public(text), isTrue, reason: text);
+    }
+    // 连接时另放行代理软件的 fake-ip 段（开着 Clash 这类 TUN 时所有域名都解析到这里）；网址里直接写的照旧不认。
+    bool peer(String text) => campusPublicPeer(InternetAddress(text));
+    for (final text in ['198.18.0.5', '198.19.255.1', 'fc00::5']) {
+      expect((public(text), peer(text)), (false, true), reason: text);
+    }
+    for (final text in ['127.0.0.1', '192.168.1.1', 'fd00::1', 'fe80::1']) {
+      expect(peer(text), isFalse, reason: text);
+    }
+    expect(peer('8.8.8.8'), isTrue);
+  });
+
+  // 11-22 Codex 复核 P1（电影院的本机代理替第三方清单取东西）：按连上的真实地址核对，写成域名、解析到本机的也挡得住。
+  test('只连公网：连到本机（直接写地址、或域名解析到本机）就断开并抛 CampusHttpPrivateAddress，对方一个请求都没收到', () async {
+    final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+    var served = 0;
+    server.listen((request) {
+      served++;
+      unawaited(request.response.close());
+    });
+    addTearDown(() => server.close(force: true));
+    await HttpOverrides.runWithHttpOverrides(() async {
+      final kernel = CampusHttp.publicOnly('demo');
+      addTearDown(kernel.close);
+      for (final host in ['127.0.0.1', 'localhost']) {
+        await expectLater(kernel.send('GET', Uri.parse('http://$host:${server.port}/admin'), timeout: const Duration(seconds: 5), limit: 1024), throwsA(isA<CampusHttpPrivateAddress>()), reason: host);
+      }
+    }, _RealHttp());
+    expect(served, 0);
+  });
+
   group('迁到内核后各模块的封装照旧映射', () {
     test('快递：超时、响应过大、TLS 与断网各归各的错误码，日志只记路径', () async {
       Future<ExpressFailure> failure(http.Client client) async {
@@ -305,3 +343,6 @@ class _Stalled extends http.BaseClient {
     return http.StreamedResponse(body.stream, 200, contentLength: contentLength);
   }
 }
+
+// 绕开测试框架装的假 HttpClient（它不真连），真的去连本机。
+class _RealHttp extends HttpOverrides {}

@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
+import 'package:http/io_client.dart';
 
 import 'package:superxd/domain/campus_log.dart';
 
@@ -27,8 +29,24 @@ class CampusHttpTooLarge implements Exception {
 // - 每个请求按 campusRequestLog 记一条（开发者模式才记，只记路径）：读完的记状态与字节数，
 //   没读完的记 error=timeout、cancelled、too_large 或异常类型（收到响应头的照样带状态码）。
 // 一份 CampusHttp 对应一个模块（请求记录里的 module），底层 http.Client 可注入（测试用 MockClient），close 时关掉。
+// publicOnly 只连公网地址：替第三方给的地址发请求时用（电影院的本机代理取清单与密钥），连上之后、发出请求之前核对对方的真实地址，
+// 是本机、内网、链路本地这类（campusPublicPeer 为假，代理软件的 fake-ip 段放行）就断开并抛 CampusHttpPrivateAddress；按连上的地址认，域名解析成 127.0.0.1 也挡得住。
 class CampusHttp {
   CampusHttp(this.module, {http.Client? client}) : _client = client ?? http.Client();
+  CampusHttp.publicOnly(this.module) : _client = IOClient(HttpClient()..connectionFactory = _publicConnection);
+
+  static Future<ConnectionTask<Socket>> _publicConnection(Uri url, String? proxyHost, int? proxyPort) async {
+    final host = proxyHost ?? url.host, port = proxyPort ?? (url.hasPort ? url.port : (url.isScheme('https') ? 443 : 80));
+    final task = url.isScheme('https') && proxyHost == null ? await SecureSocket.startConnect(host, port) : await Socket.startConnect(host, port);
+    return ConnectionTask.fromSocket(
+      task.socket.then((socket) {
+        if (campusPublicPeer(socket.remoteAddress)) return socket;
+        socket.destroy();
+        throw CampusHttpPrivateAddress(url.host);
+      }),
+      task.cancel,
+    );
+  }
 
   final String module;
   final http.Client _client;
@@ -175,3 +193,43 @@ final class _AbortableStreamRequest extends http.BaseRequest with http.Abortable
 
 const _timeout = 'timeout';
 const _cancelled = 'cancelled';
+
+// 只连公网的 CampusHttp 连到了本机或内网地址（见 CampusHttp.publicOnly），没发出请求。
+class CampusHttpPrivateAddress implements Exception {
+  const CampusHttpPrivateAddress(this.host);
+  final String host;
+  @override
+  String toString() => 'CampusHttpPrivateAddress($host)';
+}
+
+// 公网地址：IPv4 去掉本机、内网、链路本地、运营商级 NAT、基准测试段、组播与保留段；IPv6 认全球单播，映射 IPv4（::ffff:a.b.c.d）与
+// NAT64 合成的（64:ff9b::a.b.c.d，只有 IPv6 的移动网络连 IPv4 站点时连上的就是它）按里面的 IPv4 认，其余（链路本地、组播、未指定）都不算。
+bool campusPublicAddress(InternetAddress address) => _publicBytes(address.rawAddress);
+
+// 连接时认的对方地址（CampusHttp.publicOnly）：公网，或代理软件的 fake-ip 段。Clash、sing-box、Surge 的 TUN 模式默认把所有域名解析到
+// 198.18.0.0/15（IPv6 到 fc00::/8 里的一段），连上的是手机上的代理、再由它连出去；不放行的话开着这类代理的手机什么都取不到
+// （11-22 本机实测：开着 fake-ip 时 www.baidu.com 解析成 198.18.0.5）。这时真正连到哪由代理决定、这里核对不到，是已知边界；
+// 网址里直接写这两段的地址照旧不认（campusPublicAddress）。fc00::/8 从没分配使用过（真实的本地 IPv6 用 fd00::/8），放行不碰内网。
+bool campusPublicPeer(InternetAddress address) {
+  final bytes = address.rawAddress;
+  final fake = bytes.length == 4 ? bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19) : bytes.length == 16 && bytes[0] == 0xfc;
+  return fake || _publicBytes(bytes);
+}
+
+bool _publicBytes(List<int> bytes) {
+  if (bytes.length == 4) {
+    return !(bytes[0] == 0 ||
+        bytes[0] == 10 ||
+        bytes[0] == 127 ||
+        bytes[0] >= 224 ||
+        (bytes[0] == 169 && bytes[1] == 254) ||
+        (bytes[0] == 172 && bytes[1] >= 16 && bytes[1] <= 31) ||
+        (bytes[0] == 192 && bytes[1] == 168) ||
+        (bytes[0] == 100 && bytes[1] >= 64 && bytes[1] <= 127) ||
+        (bytes[0] == 198 && (bytes[1] == 18 || bytes[1] == 19)));
+  }
+  if (bytes.length != 16) return false;
+  final head = bytes.sublist(0, 12).join(',');
+  if (head == '0,0,0,0,0,0,0,0,0,0,255,255' || head == '0,100,255,155,0,0,0,0,0,0,0,0') return _publicBytes(bytes.sublist(12));
+  return bytes[0] & 0xe0 == 0x20;
+}
