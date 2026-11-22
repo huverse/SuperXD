@@ -115,9 +115,10 @@ class CinemaService implements ToolboxService {
   late final CinemaCatalog catalog;
   CinemaPackage? _package;
   Future<CinemaPackage>? _loading;
-  // 各源连续失败几次、暂停到什么时刻（只在内存）。
+  // 各源连续失败几次、暂停到什么时刻、最后一次失败属于哪类（暂停着时按它分组；只在内存，每个源一项）。
   final _strikes = <String, int>{};
   final _pausedUntil = <String, DateTime>{};
+  final _lastFailure = <String, CinemaFailureKind>{};
   // 各源最近一次失败的时刻（只在内存，找其他片源用）、正在搜的（同一个源同一个词只发一次）与最近的搜索结果。
   final _failedAt = <String, DateTime>{};
   final _searching = <String, CinemaShared<(DateTime, List<CinemaHit>)>>{};
@@ -231,7 +232,7 @@ class CinemaService implements ToolboxService {
       if (granted[cinemaRuleSubject(rule)] != rule.host || (only != null && !only(rule))) continue;
       final until = _pausedUntil[rule.id];
       if (until != null && now.isBefore(until)) {
-        failures.add(CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}连续没连上，${formatCampusClock(until)}前先不搜', paused: true));
+        failures.add(CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}连续没连上，${formatCampusClock(until)}前先不搜', kind: _lastFailure[rule.id] ?? CinemaFailureKind.broken, paused: true));
       } else {
         active.add(rule);
       }
@@ -273,10 +274,11 @@ class CinemaService implements ToolboxService {
         }
       }
       if (failure != null) {
-        // 页面只写源名，原因（HTTP 状态、超时、看不懂回复）记在这里；不带搜的片名。
+        // 页面按原因分组只写源名，具体原因（HTTP 状态、人机验证、超时、看不懂回复）记在这里；不带搜的片名。
         campusLog('[Cinema] action=search_source rule=${rule.id} failed=${failure.message}');
         failures.add(failure);
         _failedAt[rule.id] = _now();
+        _lastFailure[rule.id] = failure.kind;
         final strikes = (_strikes[rule.id] ?? 0) + 1;
         _strikes[rule.id] = strikes;
         if (strikes >= pauseAfter) {
@@ -326,8 +328,8 @@ class CinemaService implements ToolboxService {
       note(hits.isEmpty ? 'empty' : 'ok', hits: hits);
       return _Arrival(rule, hits, null, at);
     } on CinemaHttpException catch (error) {
-      note(error.status == null ? 'failed_${_failureKind(error.message)}' : 'failed_http_${error.status}');
-      return _Arrival(rule, null, CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}${error.message}'), null);
+      note(error.challenge ? 'failed_challenge' : error.status == null ? 'failed_${_failureKind(error.message)}' : 'failed_http_${error.status}');
+      return _Arrival(rule, null, CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}${error.message}', kind: _failureGroup(error)), null);
     } on CinemaRuleException catch (error) {
       note('failed_${_failureKind(error.message)}');
       return _Arrival(rule, null, CinemaFailure(ruleId: rule.id, name: rule.name, message: '${rule.name}：${error.message}'), null);
@@ -354,7 +356,14 @@ class CinemaService implements ToolboxService {
     }
   }
 
-  // 失败原因的分类（日志用，页面只写源名）。
+  // 页面上分的组（CinemaFailureKind）：片源拒绝的、连接失败或超时的，其余（别的状态码、回复太大、地址不对、转发不可用）算出错。
+  static CinemaFailureKind _failureGroup(CinemaHttpException error) => error.refused
+      ? CinemaFailureKind.refused
+      : error.status == null && (error.message == '超时' || error.message == '连不上')
+      ? CinemaFailureKind.unreachable
+      : CinemaFailureKind.broken;
+
+  // 失败原因的分类（日志用，页面按 _failureGroup 分组只写源名）。
   static String _failureKind(String message) => switch (message) {
     '超时' => 'timeout',
     '连不上' => 'unreachable',

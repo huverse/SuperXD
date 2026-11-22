@@ -35,6 +35,9 @@ import 'package:superxd/toolbox/toolbox_url.dart';
 
 enum _Mode { search, parse }
 
+// 暂不可用各组的开头（人工决策见 _onQuery 上 11-22 那条）。
+const _failureLabels = {CinemaFailureKind.unreachable: '连不上', CinemaFailureKind.refused: '拒绝访问', CinemaFailureKind.broken: '出错'};
+
 // 电影院首页：找片（多源搜索、按片名加年份聚合，没搜时列看过的）与解析（视频网站播放页地址 → 云解析 → 播放）。
 // 解析在功能开关 cinemaParseFlag 后面（人工决策见 domain/feature_flags.dart），关着时只有找片、不显示切换。
 // 第一次搜、第一次解析前征得同意：片名与播放页地址会直接发给第三方站点（新加的源、换了主机的要重新同意）。
@@ -80,7 +83,10 @@ class _CinemaPageState extends State<CinemaPage> {
   }
 
   // [人工决策-2026-11-20 22:54:48] 首页三项（用户全选推荐）：清空搜索框（点 × 或删光）就回到「看过的」并中断还没搜完的；
-  // 搜索中输入框照常可改，按键盘的搜索重新搜（新的一次本来就顶掉旧的）；暂不可用的源只写名字（原因进日志，见 CinemaService.search）。
+  // 搜索中输入框照常可改，按键盘的搜索重新搜（新的一次本来就顶掉旧的）；暂不可用的源只写名字（11-22 起按原因分组，见下一条）。
+  // [人工决策-2026-11-22 17:21:06] 暂不可用按原因分组写源名（用户选「按原因分组写源名」，专人建议分清网络不通与片源拒绝）：
+  // 连不上（连接失败、超时）、拒绝访问（401、403、407、429、451 与 Cloudflare 人机验证）、出错（别的）各一行，只有一组时就一行；
+  // 仍只写源名，具体原因照旧只进日志（CinemaService.search）。分组见 CinemaFailureKind。
   void _onQuery() {
     if (_query.text.isNotEmpty || (_result == null && !_searching)) return;
     _cancel?.complete();
@@ -502,7 +508,7 @@ class _CinemaPageState extends State<CinemaPage> {
       return [SliverPadding(padding: const EdgeInsets.only(top: CampusGap.section), sliver: SliverToBoxAdapter(child: CampusLoading(label: '正在搜索', inline: true, network: true, remote: '片源站')))];
     }
     if (result == null) return _historySlivers(context);
-    final failed = [for (final failure in result.failures) failure.name];
+    final failed = {for (final kind in CinemaFailureKind.values) kind: [for (final failure in result.failures) if (failure.kind == kind) failure.name]};
     final paused = result.failures.any((failure) => failure.paused);
     return [
       SliverPadding(
@@ -516,10 +522,11 @@ class _CinemaPageState extends State<CinemaPage> {
                 const SizedBox(height: CampusGap.tight),
                 Text('还在搜 ${result.pending} 个源', style: text.bodyMedium?.copyWith(color: palette.onSurfaceVariant)),
               ],
-              if (failed.isNotEmpty) ...[
-                const SizedBox(height: CampusGap.tight),
-                DotSeparatedText('暂不可用：${failed.join('、')}', separator: '、', style: text.bodyMedium!.copyWith(color: palette.onSurfaceVariant)),
-              ],
+              for (final MapEntry(key: kind, value: names) in failed.entries)
+                if (names.isNotEmpty) ...[
+                  const SizedBox(height: CampusGap.tight),
+                  DotSeparatedText('${_failureLabels[kind]}：${names.join('、')}', separator: '、', style: text.bodyMedium!.copyWith(color: palette.onSurfaceVariant)),
+                ],
               if (paused && !_searching) ...[
                 const SizedBox(height: CampusGap.small),
                 TextButton.icon(
