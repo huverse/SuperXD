@@ -2,8 +2,11 @@
 
 ## Unreleased
 
+### 新增
+- 百宝箱「生活 › 住理生活」第一轮（灰度，开关 toolbox.life 与 toolbox.life.zhuli 都默认关；11-22 用户两轮选项，人工决策见 lib/toolbox/life/zhuli/zhuli_service.dart 文件头）：用住理生活账号（手机号加 6 位数字密码，住理要图形验证码时原地输）登录，多账号切换，忘了密码用短信找回；看余额与券余额、我的优惠券三栏与每张券按月的抵扣记录、消费与充值订单和详情。密码登录成功后才存进系统安全存储（新命名空间 superxd_zhuli，排除出云备份与设备迁移），会话约半小时过期时用它在后台重登并重放一次；余额、券与订单不落盘。只发 GET、15 秒、1MB，日志不记查询串。不用资料里的测试号调试转发、只查自己的。隐私政策升修订 14（新增第七节，其后顺延）、用户协议加第八节。洗浴开关、充值与买券等后几轮做。新增依赖 flutter_svg（显示住理的图形验证码）。
+
 ### 变更
-- 百宝箱支持子模块（11-22 用户选「框架统一子模块」，人工决策见 lib/toolbox/toolbox_module.dart 的 ToolboxModule）：工具可以带子模块，子模块和工具是同一种登记，路由（/toolbox/父/子）、显示与隐藏、清除数据与桌面快捷入口都由框架按注册表生成。新登记「生活」（灰度，开关 toolbox.life 默认关，子模块各有自己的开关，人工决策见 domain/feature_flags.dart 的 lifeFlag）：由框架列出子模块，一个看得见的子模块都没有时不出现，现在还没有子模块。电影院的找片与解析改成登记的两段（cinema_search_section.dart 与 cinema_parse_section.dart），首页只负责准备与切换，界面与行为不变（时长券的「时长到」一行挪到切换下面，时长券还没启用）。
+- 百宝箱支持子模块（11-22 用户选「框架统一子模块」，人工决策见 lib/toolbox/toolbox_module.dart 的 ToolboxModule）：工具可以带子模块，子模块和工具是同一种登记，路由（/toolbox/父/子）、显示与隐藏、清除数据与桌面快捷入口都由框架按注册表生成。新登记「生活」（灰度，开关 toolbox.life 默认关，子模块各有自己的开关，人工决策见 domain/feature_flags.dart 的 lifeFlag）：由框架列出子模块，一个看得见的子模块都没有时不出现，第一个子模块住理生活见上面的新增。电影院的找片与解析改成登记的两段（cinema_search_section.dart 与 cinema_parse_section.dart），首页只负责准备与切换，界面与行为不变（时长券的「时长到」一行挪到切换下面，时长券还没启用）。
 - 电影院搜索后的「暂不可用」按原因分组写源名（11-22 专人建议分清网络不通与片源拒绝，用户选定，人工决策见 cinema_search_section.dart 的 _onQuery）：连不上（连接失败、超时）、拒绝访问（片源回 401、403、407、429、451 或 Cloudflare 人机验证页）、出错（别的状态码、繁忙、回复看不懂、境外转发自己出的错）各一行；仍只写源名，具体原因只进日志，人机验证在开发者模式的搜索诊断里单独记成 failed_challenge；连续失败暂停着的源照暂停前最后一次失败分组。
 - iOS 的 ATS 只开本机网络（人工决策见 ios/Runner/Info.plist，用户说按最佳实践）：iOS 17 起 ATS 默认拦直连 IP 地址，电影院的系统播放器 AVPlayer 经本机代理 http://127.0.0.1 取播放清单会被拦（iOS 默认仍是 mpv，手动换成系统播放器时才用到）。只加 NSAllowsLocalNetworking，公网照旧受 ATS 保护，不开任意加载；test/legal_page_test.dart 守护。
 
