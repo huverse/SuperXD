@@ -174,7 +174,16 @@ ZhuliChargeRule _rule(Map<String, Object?> json) {
 
 // 项目配置里用到的几项（get_config；整份很大，只取要的）。
 class ZhuliConfig {
-  const ZhuliConfig({required this.consumeOrderDays, this.bath = true, this.minimumBalance = 0, this.continueBelowMinimum = false, this.forceSupplyTime = false});
+  const ZhuliConfig({
+    required this.consumeOrderDays,
+    this.bath = true,
+    this.minimumBalance = 0,
+    this.continueBelowMinimum = false,
+    this.forceSupplyTime = false,
+    this.rechargeShown = true,
+    this.rechargeClosed,
+    this.alipay = true,
+  });
   // 消费订单能查最近几天（consume_order_display_cut_enable 开着时），为空表示不限。
   final int? consumeOrderDays;
   // 洗浴开着（bath_enable，关了整个洗浴入口不显示）。
@@ -185,6 +194,11 @@ class ZhuliConfig {
   final bool continueBelowMinimum;
   // 不在供水时段时不让开（force_supply_time 为 1；否则只提醒）。
   final bool forceSupplyTime;
+  // 充值入口显示（recharge_display_enable）；关着充值时（recharge_enable 为 0）给人看的原因（recharge_unenable_desc），开着为空。
+  final bool rechargeShown;
+  final String? rechargeClosed;
+  // 支付宝付款开着（alipay_enable；本应用只接支付宝）。
+  final bool alipay;
 }
 
 ZhuliConfig decodeZhuliConfig(Object? data) {
@@ -196,8 +210,98 @@ ZhuliConfig decodeZhuliConfig(Object? data) {
     minimumBalance: _cents(json, 'minimum_consume_balance', optional: true),
     continueBelowMinimum: _int(json, 'continue_use_on_min_consume_balance_enabled', fallback: 0) == 1,
     forceSupplyTime: _int(json, 'force_supply_time', fallback: 0) == 1,
+    rechargeShown: _int(json, 'recharge_display_enable', fallback: 1) == 1,
+    rechargeClosed: _int(json, 'recharge_enable', fallback: 1) == 1 ? null : switch (_text(json, 'recharge_unenable_desc', optional: true)) {
+      '' => '暂时不能充值',
+      final reason => reason,
+    },
+    alipay: _int(json, 'alipay_enable', fallback: 0) == 1,
   );
 }
+
+// ---------- 充值与买券 ----------
+
+// 充值的一档额度（list_recharge_quota）与充这一档送的券（11-22 这个学校 20/50/100/200 都不送）。
+class ZhuliQuota {
+  const ZhuliQuota({required this.value, required this.giftCount, required this.giftMoney});
+  final int value;
+  final int giftCount;
+  final int giftMoney;
+}
+
+List<ZhuliQuota> decodeZhuliQuotas(Object? data) => [
+  for (final row in zhuliRows(data))
+    ZhuliQuota(value: _cents(row, 'quota'), giftCount: _int(row, 'cash_coupon_count', fallback: 0), giftMoney: _cents(row, 'cash_coupon_money', optional: true)),
+];
+
+// 能买的券（get_cash_coupon_app，回数组）：售价与面额只给人看，下单不带金额（住理按商品定价）。
+class ZhuliGoods {
+  const ZhuliGoods({
+    required this.id,
+    required this.name,
+    required this.price,
+    required this.money,
+    required this.useLimit,
+    required this.couponFirst,
+    required this.stock,
+    required this.limit,
+    required this.bought,
+    required this.expireAt,
+    required this.validDays,
+  });
+  final String id;
+  final String name;
+  final int price;
+  final int money;
+  final List<String> useLimit;
+  final bool couponFirst;
+  // 剩余张数（total_count）。
+  final int stock;
+  // 限购张数（0 不限）与已买的张数（没付的不算）。
+  final int limit;
+  final int bought;
+  final String expireAt;
+  // 买后几天有效（validated_days，0 是按到期时刻）。
+  final int validDays;
+
+  // 买不了的原因（同原 App：限购买满、售罄），能买为空。
+  String? get unavailable => limit != 0 && bought >= limit ? '限购 $limit 张，已买满' : stock <= 0 ? '已售罄' : null;
+}
+
+List<ZhuliGoods> decodeZhuliGoods(Object? data) => [
+  for (final row in zhuliRows(data))
+    ZhuliGoods(
+      id: _text(row, 'id'),
+      name: _text(row, 'name', optional: true),
+      price: _cents(row, 'price'),
+      money: _cents(row, 'money', optional: true),
+      useLimit: [for (final part in _text(row, 'use_limit', optional: true).split(',')) if (part.trim().isNotEmpty) part.trim()],
+      couponFirst: _int(row, 'use_order', fallback: 0) == 0,
+      stock: _int(row, 'total_count', fallback: 0),
+      limit: _int(row, 'limit_count', fallback: 0),
+      bought: _int(row, 'gained_count', fallback: 0),
+      expireAt: _text(row, 'expire_at', optional: true),
+      validDays: _int(row, 'validated_days', fallback: 0),
+    ),
+];
+
+// 下好的付款单（充值 createorder 与买券 buy_cash_coupon）：订单号与交给支付宝的支付串（5 分钟内有效）。
+// 只认支付宝 APP 支付串（method=alipay.trade.app.pay）；微信、农行安心付与扫码串本应用不接。支付串不进日志。
+class ZhuliPayOrder {
+  const ZhuliPayOrder({required this.orderId, required this.orderContent});
+  final String orderId;
+  final String orderContent;
+}
+
+ZhuliPayOrder decodeZhuliPayOrder(Object? data) {
+  final json = zhuliObject(data);
+  final content = _text(json, 'order_content');
+  if (!content.contains('alipay.trade.app.pay')) throw const ZhuliException(ZhuliFailure.rejected, '住理给的不是支付宝付款单，换住理生活 App 付');
+  return ZhuliPayOrder(orderId: _text(json, 'order_id'), orderContent: content);
+}
+
+// 买的券到账没有（list_staff_cash_coupon_app 按订单号查，回调写进来之前 rows 为空）。
+bool decodeZhuliCouponPaid(Object? data) => zhuliRows(data, field: 'rows').any((row) => row['trade_status'] == 'TRADE_SUCCESS');
 
 // 我的优惠券的三栏（list_staff_cash_coupon_app 的入参组合；回复里 status 与 is_blance 恒为空，只能靠入参过滤）。
 enum ZhuliCouponTab {

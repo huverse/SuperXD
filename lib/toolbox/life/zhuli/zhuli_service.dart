@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:superxd/domain/campus_log.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_client.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_devices.dart';
+import 'package:superxd/toolbox/life/zhuli/zhuli_pay.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_models.dart';
 import 'package:superxd/toolbox/life/zhuli/zhuli_vault.dart';
 import 'package:superxd/toolbox/toolbox_models.dart';
@@ -21,9 +22,11 @@ import 'package:superxd/toolbox/toolbox_module.dart';
 //
 // 服务：持有账号的安全存储、本机的设备列表与客户端，没有业务库（余额、券与订单即查即用，不落盘）。每个账号一份会话，只在内存。
 class ZhuliService implements ToolboxService {
-  ZhuliService({required this.vault, required this.devices, ZhuliClient? client}) : client = client ?? ZhuliClient();
+  ZhuliService({required this.vault, required this.devices, ZhuliClient? client, ZhuliPayer? payer}) : client = client ?? ZhuliClient(), payer = payer ?? TobiasZhuliPayer();
   final ZhuliVault vault;
   final ZhuliDeviceStore devices;
+  // 支付宝付款（充值与买券；测试注入假的）。
+  final ZhuliPayer payer;
   final ZhuliClient client;
   final _sessions = <String, ZhuliSession>{};
   final _logins = <String, Future<ZhuliSession>>{};
