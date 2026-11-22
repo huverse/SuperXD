@@ -284,6 +284,18 @@ void main() {
     expect(Directory('android/app/src/main/res/xml').listSync().map((file) => file.uri.pathSegments.last), isNot(contains('network_security_config.xml')), reason: '只用生成的那份');
   });
 
+  // iOS 的 ATS 只开本机网络（[人工决策] 在 ios/Runner/Info.plist）：系统播放器经电影院的本机代理取清单，iOS 17 起 ATS 默认拦直连 IP 地址。
+  test('iOS 只给本机网络开 ATS 例外：有 NSAllowsLocalNetworking，没有全局或媒体的任意加载', () {
+    final plist = File('ios/Runner/Info.plist').readAsStringSync();
+    final ats = RegExp(r'<key>NSAppTransportSecurity</key>\s*<dict>(.*?)</dict>', dotAll: true).firstMatch(plist)?.group(1);
+    expect(ats, isNotNull);
+    expect(ats, matches(RegExp(r'<key>NSAllowsLocalNetworking</key>\s*<true/>')));
+    expect(RegExp('<key>').allMatches(ats!).length, 1, reason: '只此一项例外');
+    for (final key in ['NSAllowsArbitraryLoads', 'NSAllowsArbitraryLoadsForMedia', 'NSAllowsArbitraryLoadsInWebContent', 'NSExceptionDomains']) {
+      expect(plist, isNot(contains('<key>$key</key>')), reason: key);
+    }
+  });
+
   // Gradle 依赖校验只核对第三方仓库那几组（[人工决策] 见 android/build.gradle.kts）：信任规则排除的组漏一组就等于没校验，
   // 校验和缺一组构建就失败。
   test('Gradle 依赖校验：信任规则排除的组、记了校验和的组都与限定仓库的组一致', () {
