@@ -10,7 +10,6 @@ import {
   cinemaCatalogEntryLimit,
   cinemaCatalogHits,
   cinemaCatalogIncrementalDays,
-  cinemaCatalogIncrementalPages,
   cinemaCatalogPageAttempts,
   cinemaCatalogPageMaxBytes,
   cinemaCatalogBatchPages,
@@ -30,6 +29,10 @@ import { CinemaCatalogRule, CinemaCatalogSource, catalogPageUrl, cinemaFold, par
 // 抓全的起点记成补到的时刻；之后每轮按离上次多少小时（多补一小时）只取前几页。这是中转自己的后台任务，一页最多试 cinemaCatalogPageAttempts 次，
 // 不受客户端「不自动重试」的约束；源连不上就停在这一轮，下一轮再来。
 // 11-20 晚：一轮改按时间预算 cinemaCatalogRunMs 跑（上游深分页越往后越慢，按页数限的第一轮 3000 页跑了近 3 小时、超过锁的时限），上面写的页数上限不再用。
+// [人工决策-2026-11-22 14:03:26] 改上面「之后每轮只取前几页」（11-22 Codex 复核，用户选「分轮补完」）：增量原来最多取 50 页、之后照样把同步时刻推到现在，
+// 中转停了几天或上游批量更新时超出的那些永远漏掉（增量每小时刷新同步时刻，30 天重新抓全也就永远不会来）。现在增量与抓全走同一套：
+// 按离上次多少小时（多补一小时）取这个时间窗的全部页，一轮受同样的时间预算，没取完记下取到第几页、下一轮接着取，取完才把同步时刻推到这一串开始的时刻。
+// 一页回的不是结果列表（HTTP 200 的「服务器繁忙」）算这一页失败（parseCatalogPage），不当成空页、不推进进度。
 @Injectable()
 export class CinemaCatalogService {
   private readonly logger = new Logger('CinemaCatalog');
@@ -70,33 +73,28 @@ export class CinemaCatalogService {
     if (removed > 0) this.logger.warn(`[CinemaCatalog] action=drop removed=${removed} hint=低峰时手动 OPTIMIZE TABLE cinema_catalog`);
   }
 
+  // 抓全（第一次或离上次超过 cinemaCatalogIncrementalDays 天，@hours 填大数）与增量（按离上次多少小时、多补一小时）同一套分轮接续，见文件头。
+  // 增量的时间窗按没推进的同步时刻算，接着取的几轮里窗口只往新的一头长，新进来的排在前面、只会让后面的页重复几条，不会漏。
   async crawl(rule: CinemaCatalogRule, now: Date, budgetMs = cinemaCatalogRunMs) {
     const state = await this.catalog.state(rule.id);
-    const stale = state?.syncedAt == null || now.getTime() - state.syncedAt.getTime() > cinemaCatalogIncrementalDays * 86400_000;
-    if (state?.crawlStarted != null || stale) return this.crawlAll(rule, state?.crawlStarted ?? now, state?.crawlStarted != null ? state.crawlPage : 0, state?.syncedAt ?? null, now, budgetMs);
-    const hours = Math.ceil((now.getTime() - state.syncedAt!.getTime()) / 3600_000) + 1;
-    let pageCount = 1, added = 0;
-    for (let page = 1; page <= pageCount && page <= cinemaCatalogIncrementalPages; page++) {
-      const parsed = await this.page(rule, hours, page);
-      pageCount = parsed.pageCount;
-      added += await this.store(rule.id, parsed.entries, now);
-    }
-    await this.catalog.saveState(rule.id, { crawlStarted: null, crawlPage: 0, syncedAt: now }, now);
-    this.logger.log(`[CinemaCatalog] action=incremental rule=${rule.id} hours=${hours} pages=${Math.min(pageCount, cinemaCatalogIncrementalPages)} entries=${added}`);
+    const syncedAt = state?.syncedAt ?? null;
+    const stale = syncedAt == null || now.getTime() - syncedAt.getTime() > cinemaCatalogIncrementalDays * 86400_000;
+    const hours = stale ? cinemaCatalogAllHours : Math.ceil((now.getTime() - syncedAt.getTime()) / 3600_000) + 1;
+    return this.crawlPages(rule, hours, state?.crawlStarted ?? now, state?.crawlStarted != null ? state.crawlPage : 0, syncedAt, now, budgetMs);
   }
 
-  // 抓全：从 done 页之后接着抓，一批 cinemaCatalogBatchPages 页、按 cinemaCatalogConcurrency 路取，每批写库并记下抓到第几页；
-  // 过了 budgetMs 就停在批与批之间（下一轮接着抓）；抓完把起点记成补到的时刻。
-  private async crawlAll(rule: CinemaCatalogRule, started: Date, done: number, syncedAt: Date | null, now: Date, budgetMs: number) {
+  // 从 done 页之后接着取，一批 cinemaCatalogBatchPages 页、按 cinemaCatalogConcurrency 路取，每批写库并记下取到第几页；
+  // 过了 budgetMs 就停在批与批之间（下一轮接着取）；取完把这一串开始的时刻 started 记成同步时刻。
+  private async crawlPages(rule: CinemaCatalogRule, hours: number, started: Date, done: number, syncedAt: Date | null, now: Date, budgetMs: number) {
     const deadline = Date.now() + budgetMs;
-    const first = await this.page(rule, cinemaCatalogAllHours, done + 1);
+    const first = await this.page(rule, hours, done + 1);
     let pageCount = first.pageCount, page = done + 1, added = await this.store(rule.id, first.entries, now);
     await this.catalog.saveState(rule.id, { crawlStarted: started, crawlPage: page, syncedAt }, now);
     while (page < pageCount && Date.now() < deadline) {
       const batch = Array.from({ length: Math.min(cinemaCatalogBatchPages, pageCount - page) }, (_, index) => page + 1 + index);
       const results: Awaited<ReturnType<CinemaCatalogService['page']>>[] = [];
       for (let start = 0; start < batch.length; start += cinemaCatalogConcurrency) {
-        results.push(...(await Promise.all(batch.slice(start, start + cinemaCatalogConcurrency).map((number) => this.page(rule, cinemaCatalogAllHours, number)))));
+        results.push(...(await Promise.all(batch.slice(start, start + cinemaCatalogConcurrency).map((number) => this.page(rule, hours, number)))));
       }
       added += await this.store(rule.id, results.flatMap((result) => result.entries), now);
       page = batch[batch.length - 1];
@@ -105,7 +103,7 @@ export class CinemaCatalogService {
     }
     const finished = page >= pageCount;
     if (finished) await this.catalog.saveState(rule.id, { crawlStarted: null, crawlPage: 0, syncedAt: started }, now);
-    this.logger.log(`[CinemaCatalog] action=crawl_all rule=${rule.id} pages=${page}/${pageCount} entries=${added} finished=${finished}`);
+    this.logger.log(`[CinemaCatalog] action=crawl rule=${rule.id} hours=${hours} pages=${page}/${pageCount} entries=${added} finished=${finished}`);
   }
 
   // 取一页，最多试 cinemaCatalogPageAttempts 次（隔 2、4 秒）。

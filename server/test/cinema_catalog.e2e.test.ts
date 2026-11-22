@@ -12,7 +12,7 @@ import { env } from 'src/config/env';
 import { REDIS } from 'src/common/redis/redis.module';
 import { cinemaCatalogSearchPerHour } from 'src/common/relay_limits';
 import { CinemaCatalogService } from 'src/modules/cinema_catalog/cinema_catalog.service';
-import { catalogPageUrl, cinemaFold, decodeCatalogRules, readPath } from 'src/modules/cinema_catalog/cinema_catalog_source';
+import { catalogPageUrl, cinemaFold, decodeCatalogRules, parseCatalogPage, readPath } from 'src/modules/cinema_catalog/cinema_catalog_source';
 
 // 电影院片名目录型源的服务端索引（人工决策见 src/modules/cinema_catalog/cinema_catalog.service.ts）：
 // 配置读发布目录的 cinema.json，抓全可断点续抓、之后补增量，搜索按 ngram 全文索引（一个字退回 LIKE），搜索词不进地址。
@@ -24,6 +24,7 @@ let upstreamUrl: string;
 let stamp = Date.now() / 1000;
 const requests: URLSearchParams[] = [];
 let failPage: number | null = null;
+let busyPage: number | null = null;
 let pages: { vod_id: number | string; vod_name: string }[][] = [];
 
 const cinemaFile = () => join(env().releasesDir, 'cinema.json');
@@ -62,6 +63,11 @@ beforeAll(async () => {
       response.writeHead(502).end();
       return;
     }
+    if (page === busyPage) {
+      response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+      response.end(JSON.stringify({ code: 1, msg: '服务器繁忙，请稍后搜索' }));
+      return;
+    }
     response.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
     response.end(JSON.stringify({ code: 1, page, pagecount: pages.length, list: pages[page - 1] ?? [] }));
   });
@@ -79,6 +85,7 @@ beforeEach(async () => {
   await database.query('DELETE FROM cinema_catalog_state');
   requests.length = 0;
   failPage = null;
+  busyPage = null;
   pages = [
     [
       { vod_id: 101, vod_name: '庆余年 第二季' },
@@ -120,7 +127,7 @@ describe('片名目录', () => {
     expect((await search('没有这部')).body.ids).toEqual([]);
   });
 
-  it('之后每轮只按离上次多少小时补前几页；抓全中途源连不上就停，下一轮从抓到的页接着抓', async () => {
+  it('之后每轮按离上次多少小时补；抓全中途源连不上就停，下一轮从抓到的页接着抓', async () => {
     const service = app.get(CinemaCatalogService);
     failPage = 2;
     const started = new Date('2026-11-20T08:00:00Z');
@@ -152,6 +159,51 @@ describe('片名目录', () => {
     requests.length = 0;
     await service.sync(new Date('2026-11-20T09:00:00Z'));
     expect(requests.map((query) => query.get('pg'))).toEqual(['2', '3']);
+  });
+
+  // 11-22 Codex 复核：原来增量最多取 50 页、之后照样把同步时刻推到现在，超出的那些永远漏掉（用户选「分轮补完」，人工决策见服务文件头）。
+  it('增量一轮取不完：记下取到第几页、同步时刻不推进，下一轮按原来的时间窗接着取，取完才推进到这一串开始的时刻', async () => {
+    const service = app.get(CinemaCatalogService);
+    const started = new Date('2026-11-20T08:00:00Z');
+    await service.sync(started);
+    pages = [[{ vod_id: 201, vod_name: '新片甲' }], [{ vod_id: 202, vod_name: '新片乙' }], [{ vod_id: 203, vod_name: '新片丙' }]];
+    requests.length = 0;
+    const behind = new Date('2026-11-20T10:00:00Z');
+    await service.sync(behind, 0);
+    expect(requests.map((query) => [query.get('h'), query.get('pg')])).toEqual([['3', '1']]);
+    const [half] = (await database.query('SELECT crawl_page AS crawlPage, synced_at AS syncedAt FROM cinema_catalog_state WHERE rule_id = ?', ['wsy'])) as { crawlPage: number; syncedAt: Date }[];
+    expect(half.crawlPage).toBe(1);
+    expect(new Date(half.syncedAt).toISOString(), '没取完不推进').toBe(started.toISOString());
+    requests.length = 0;
+    await service.sync(new Date('2026-11-20T11:00:00Z'));
+    expect(requests.map((query) => [query.get('h'), query.get('pg')]), '时间窗从原来的同步时刻算，接着第 2 页取').toEqual([
+      ['4', '2'],
+      ['4', '3'],
+    ]);
+    const [done] = (await database.query('SELECT crawl_started AS crawlStarted, synced_at AS syncedAt FROM cinema_catalog_state WHERE rule_id = ?', ['wsy'])) as { crawlStarted: Date | null; syncedAt: Date }[];
+    expect(done.crawlStarted).toBeNull();
+    expect(new Date(done.syncedAt).toISOString(), '推进到这一串开始的时刻').toBe(behind.toISOString());
+    expect((await search('新片丙')).body.ids).toEqual(['203']);
+  });
+
+  // 11-22 Codex 复核：HTTP 200 的「服务器繁忙」原来当成空页，抓全第一页碰上就记成抓完（页数取不到当 1），中间页碰上那一页永远漏掉。
+  it('一页回「服务器繁忙」（没有结果列表）算没取到：不记成抓完、不推进，下一轮从这一页接着取；空列表照旧是真没有', async () => {
+    const service = app.get(CinemaCatalogService);
+    busyPage = 2;
+    const started = new Date('2026-11-20T08:00:00Z');
+    await service.sync(started);
+    const [half] = (await database.query('SELECT crawl_page AS crawlPage, synced_at AS syncedAt FROM cinema_catalog_state WHERE rule_id = ?', ['wsy'])) as { crawlPage: number; syncedAt: Date | null }[];
+    expect(half.syncedAt, '没记成抓完').toBeNull();
+    expect(half.crawlPage).toBe(1);
+    busyPage = null;
+    requests.length = 0;
+    await service.sync(new Date('2026-11-20T09:00:00Z'));
+    expect(requests.map((query) => query.get('pg'))).toEqual(['2', '3']);
+    expect((await search('余生')).body.ids, '繁忙的那一页补上了').toEqual(['104']);
+    const rule = decodeCatalogRules({ catalogRules: [wsyRule()] })[0];
+    expect(parseCatalogPage(JSON.stringify({ code: 1, pagecount: 1, list: [] }), rule).entries).toEqual([]);
+    expect(parseCatalogPage(JSON.stringify({ code: 1, pagecount: 1, list: null }), rule).entries).toEqual([]);
+    expect(() => parseCatalogPage(JSON.stringify({ code: 1, msg: '服务器繁忙，请稍后搜索' }), rule)).toThrow('回复里没有结果列表');
   });
 
   it('规则包里没有的源回 CATALOG_NOT_FOUND，拿掉的源连目录一起删；搜索词要 1 到 80 个字；每个出口每小时有上限', async () => {
