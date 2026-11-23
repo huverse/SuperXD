@@ -91,14 +91,28 @@ class ZhuliBath {
   Future<ZhuliOrderStart> start(ZhuliDevice device, {Future<ZhuliBleLink>? warm}) async {
     campusLog('[Zhuli] action=bath_start channel=${device.channel}');
     if (!device.bluetooth) return _run((session) => _client.startCloud(session, device));
-    return _withLink(device, warm: warm, (link, handshake) async {
+    final watch = Stopwatch()..start();
+    return _withLink(device, warm: warm, watch: watch, (link, handshake, history) async {
       if (handshake.occupied) {
         // 设备被占用：是自己这台上没结束的单就接回去，别人的就换一台（同原 App）。
         final last = await _run(_client.lastRecord);
         if (last != null && last.running && last.deviceId == device.id) return ZhuliOrderStart(orderId: last.orderId, status: last.status);
         throw const ZhuliException(ZhuliFailure.rejected, '设备正在被使用，换一台试试');
       }
-      final order = await _run((session) => _client.startBluetooth(session, device, handshake.isn));
+      // 下单和补传历史单都只要握手拿到的 isn，一起发（原 App 先补传再下单，省约 0.3 秒，11-23 对照原 App 前端确认没有依赖）；
+      // 写帧仍按历史帧在前、开始帧在后。补传了历史、下单又被拒（住理可能还当那一单在用水）时，补传完再下一次。
+      final ordering = _run((session) => _client.startBluetooth(session, device, handshake.isn));
+      unawaited(ordering.then<void>((_) {}, onError: (Object _) {}));
+      final uploaded = await history;
+      ZhuliOrderStart order;
+      try {
+        order = await ordering;
+      } on ZhuliException catch (error) {
+        if (!uploaded || error.failure != ZhuliFailure.rejected) rethrow;
+        campusLog('[Zhuli] action=ble_order_retry');
+        order = await _run((session) => _client.startBluetooth(session, device, handshake.isn));
+      }
+      campusLog('[Zhuli] action=ble_step step=order ms=${watch.elapsedMilliseconds}');
       final frame = order.startFrame;
       if (frame == null) throw const ZhuliException(ZhuliFailure.invalidResponse, '住理生活的返回看不懂，稍后再试');
       final String reply;
@@ -110,6 +124,7 @@ class ZhuliBath {
         throw ZhuliException(ZhuliFailure.rejected, '${error.message}（水没开，这一单的结果在订单里看）');
       }
       await _run((session) => _client.bleStarted(session, deviceId: device.id, orderId: order.orderId, reply: reply));
+      campusLog('[Zhuli] action=ble_step step=started ms=${watch.elapsedMilliseconds}');
       return order;
     });
   }
@@ -121,12 +136,15 @@ class ZhuliBath {
       await _run((session) => _client.endCloud(session, orderId: orderId, deviceId: device.id));
       return _settled(orderId);
     }
-    await _withLink(device, warm: warm, (link, handshake) async {
+    final watch = Stopwatch()..start();
+    await _withLink(device, warm: warm, watch: watch, (link, handshake, history) async {
       // 握手时补传了历史单：在设备上已经关了水的，这一单已结算，不用再写结束帧。查这一单与取结束帧一起发（结束帧只是取来，结算了就不写）。
+      await history;
       final (bill, frame) = await (_run((session) => _client.bill(session, orderId)), _run((session) => _client.bleEndFrame(session, device.id, handshake.isn))).wait;
       if (bill.status == 'finished') return;
       final reply = await link.exchange(frame, zhuliEndReply);
       await _run((session) => _client.bleEnded(session, device.id, reply));
+      campusLog('[Zhuli] action=ble_step step=ended ms=${watch.elapsedMilliseconds}');
     });
     return _settled(orderId);
   }
@@ -157,7 +175,9 @@ class ZhuliBath {
 
   // 连上设备并握手，做完 work 断开；连着时设备发来的结束回执都交服务端结算。
   // 预先连好、还连着的直接用，没连上或已经断了就当场再连；握手帧只要设备号，和连接同时去取（省一次来回），连不上时这个请求的结果不要了。
-  Future<T> _withLink<T>(ZhuliDevice device, Future<T> Function(ZhuliBleLink link, ZhuliHandshake handshake) work, {Future<ZhuliBleLink>? warm}) async {
+  // 补传历史单在握手后就开始，交给 work 的 history 是它（结果是补传了没有，设备被占用时不补传）；work 写自己的帧之前要先等它（帧的先后）。
+  // 每一步从点下去算的毫秒数记进日志（ble_step），真机上看慢在哪。
+  Future<T> _withLink<T>(ZhuliDevice device, Future<T> Function(ZhuliBleLink link, ZhuliHandshake handshake, Future<bool> history) work, {Future<ZhuliBleLink>? warm, required Stopwatch watch}) async {
     final helloing = _run((session) => _client.bleHandshakeFrame(session, device.id));
     // 先接住它的错：连接还没好时它就失败也不算没人接的错误，后面 await 时照样抛出来。
     unawaited(helloing.then<void>((_) {}, onError: (Object _) {}));
@@ -176,6 +196,7 @@ class ZhuliBath {
     }
     campusLog('[Zhuli] action=ble_link warm=${ready != null}');
     final link = ready ?? await this.link(device);
+    campusLog('[Zhuli] action=ble_step step=link ms=${watch.elapsedMilliseconds}');
     final receipts = link.receipts.listen((reply) => unawaited(_run((session) => _client.bleEnded(session, device.id, reply)).catchError((Object error, StackTrace stack) {
       campusLog('[Zhuli] action=ble_receipt errorType=${error.runtimeType}\n$stack');
     })));
@@ -184,23 +205,27 @@ class ZhuliBath {
       final greeting = await link.exchange(hello, zhuliHandshakeReply);
       final handshake = await _run((session) => _client.bleHandshake(session, device.id, greeting));
       if (handshake.rateCommand case final rate?) await link.exchange(rate, zhuliRateReply);
-      if (!handshake.occupied) await _history(link, device, handshake.isn);
-      return await work(link, handshake);
+      campusLog('[Zhuli] action=ble_step step=handshake ms=${watch.elapsedMilliseconds}');
+      final history = handshake.occupied ? Future<bool>.value(false) : _history(link, device, handshake.isn);
+      unawaited(history.then<void>((_) {}, onError: (Object _) {}));
+      return await work(link, handshake, history);
     } finally {
       await receipts.cancel();
       await link.disconnect();
     }
   }
 
-  // 补传设备里还没交给服务端的单（同原 App：失败不影响开关水）。
-  Future<void> _history(ZhuliBleLink link, ZhuliDevice device, String isn) async {
+  // 补传设备里还没交给服务端的单（同原 App：失败不影响开关水；没有历史单时住理不给帧）。返回补传了没有。
+  Future<bool> _history(ZhuliBleLink link, ZhuliDevice device, String isn) async {
     try {
       final frame = await _run((session) => _client.bleHistoryFrame(session, device.id, isn));
       final reply = await link.exchange(frame, zhuliHistoryReply);
       await _run((session) => _client.bleEnded(session, device.id, reply));
+      return true;
     } on ZhuliException catch (error) {
       if (error.failure == ZhuliFailure.notSignedIn || error.failure == ZhuliFailure.captchaRequired) rethrow;
       campusLog('[Zhuli] action=ble_history reason=${error.failure.name}');
+      return false;
     }
   }
 }
